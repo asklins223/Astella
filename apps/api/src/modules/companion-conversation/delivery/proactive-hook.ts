@@ -8,15 +8,15 @@
 
 import type { ApiTransaction } from "../../../db/client.ts";
 import { createHash, randomUUID } from "node:crypto";
-import { runAiTask, type AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
+import { runAiTask, type AiTaskDefinition } from "@astella/shared/ai-task-kernel";
 import { createGovernedApiRequester } from "../../../lib/ai-governance.ts";
 import { productionAiGovernancePorts } from "../../../governance/ai-governance-runtime.ts";
-import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
+import type { PublicJsonRequester } from "@astella/shared/public-json-http";
 import { resolveAssessmentCriticConfig } from "../../../lib/assessment-critic-config.ts";
 import { sql } from "drizzle-orm";
 import {
   evaluateTriggeredPush,
-} from "@ailearn/shared/companion-proactive-policy";
+} from "@astella/shared/companion-proactive-policy";
 import { deliver } from "./delivery-service.ts";
 
 /** §11.5：个性化文案 2s 上界。它同时是内核的 stepTimeout 与 taskDeadline。 */
@@ -328,7 +328,7 @@ export async function hookProactiveOnRunCompleted(
   // 所以这里不读静默时段、作答状态、24h 计数、最近展示时间、反馈窗口——那五道闸管的
   // 是"她自己想开口"的节奏（用户 2026-09-21 的口径：触发式不进频率限制）。
   // 只剩两条：账号级总开关，和设备明确不在（气泡进收件箱，人回来照样看得见）。
-  const { userCompanionAccountState } = await import("@ailearn/shared/db-schema/companion");
+  const { userCompanionAccountState } = await import("@astella/shared/db-schema/companion");
   const { eq } = await import("drizzle-orm");
   const accountRows = await tx
     .select({
@@ -357,7 +357,7 @@ export async function hookProactiveOnRunCompleted(
    * 放在这里而不是执行器里：这一条是**账号级**的当天决定，与这一轮的内容无关；
    * 而执行器看不到账号状态，也分不清"她在推学习"与"她在履约"。
    */
-  const { evaluateLearningNudgePause } = await import("@ailearn/shared/companion-proactive-quota");
+  const { evaluateLearningNudgePause } = await import("@astella/shared/companion-proactive-quota");
   const pauseVerdict = evaluateLearningNudgePause({
     pause: accountRows[0]?.suggestionPause as { paused?: boolean; localDate?: string; timezone?: string } | null,
     now,

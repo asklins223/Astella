@@ -20,7 +20,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { evaluateRoutineCueTiming } from "../companion-thought.ts";
-import { AMBIENT_QUOTA_PER_USAGE } from "@ailearn/shared/companion-proactive-quota";
+import { AMBIENT_QUOTA_PER_USAGE } from "@astella/shared/companion-proactive-quota";
 
 const source = readFileSync(join(resolve(import.meta.dirname, ".."), "companion-thought.ts"), "utf8");
 

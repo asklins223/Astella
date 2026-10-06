@@ -94,7 +94,7 @@ ALTER TABLE public.onboarding_states DISABLE ROW LEVEL SECURITY;
 -- Restore the expansion-phase privilege matrix used by roles.sql.  It remains
 -- available until every runtime path is verified against the narrower 0022
 -- SECURITY DEFINER interface and RLS enforcement is approved again.
-GRANT UPDATE ON TABLE public.jobs TO ailearn_worker;
+GRANT UPDATE ON TABLE public.jobs TO astella_worker;
 
 -- ─── 3. Verify the forward fix atomically ───────────────────────────
 
@@ -125,9 +125,9 @@ BEGIN
       USING ERRCODE = 'check_violation';
   END IF;
 
-  IF NOT has_table_privilege('ailearn_worker', 'public.jobs', 'UPDATE') THEN
+  IF NOT has_table_privilege('astella_worker', 'public.jobs', 'UPDATE') THEN
     RAISE EXCEPTION
-      'SEC-01 expansion fail-safe verification failed: ailearn_worker lacks jobs UPDATE'
+      'SEC-01 expansion fail-safe verification failed: astella_worker lacks jobs UPDATE'
       USING ERRCODE = 'insufficient_privilege';
   END IF;
 END $$;

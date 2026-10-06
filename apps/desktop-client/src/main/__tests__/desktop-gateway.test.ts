@@ -45,40 +45,40 @@ import {
   capabilityProjectionSchema,
   desktopTrustSignatureMessage,
   featureNameValues,
-} from "@ailearn/shared/desktop-ipc-contracts";
-import { learningDashboardV2Schema } from "@ailearn/shared";
+} from "@astella/shared/desktop-ipc-contracts";
+import { learningDashboardV2Schema } from "@astella/shared";
 import {
   learningRunActionResponseV2Schema,
   learningRunPublicSnapshotV2Schema,
   learningTaskDraftWriteReceiptV2Schema,
   submitTaskArtifactReceiptV2Schema,
-} from "@ailearn/shared/learning-run-v2-contracts";
-import { noteDetailV1Schema } from "@ailearn/shared/note-projection-contracts";
-import { noteSaveReceiptV1Schema } from "@ailearn/shared/note-save-contracts";
-import { cardGenerationActiveSummaryListV1Schema } from "@ailearn/shared/card-generation-desktop-contracts";
+} from "@astella/shared/learning-run-v2-contracts";
+import { noteDetailV1Schema } from "@astella/shared/note-projection-contracts";
+import { noteSaveReceiptV1Schema } from "@astella/shared/note-save-contracts";
+import { cardGenerationActiveSummaryListV1Schema } from "@astella/shared/card-generation-desktop-contracts";
 import {
   companionHomeProjectionV1Schema,
   companionRoomProfilePatchV1Schema,
   companionRoomProfileV1Schema,
-} from "@ailearn/shared/companion-home-contracts";
+} from "@astella/shared/companion-home-contracts";
 import {
   COMPANION_VOICE_MAX_AUDIO_BYTES,
   COMPANION_VOICE_SPEAK_VOICE,
   companionVoiceSpeakResultV1Schema,
-} from "@ailearn/shared/companion-voice-contracts";
+} from "@astella/shared/companion-voice-contracts";
 import {
   SOURCE_IMAGE_MAX_BYTES,
   sourceImageGetResultV1Schema,
-} from "@ailearn/shared/source-image-contracts";
-import type { GatewayErrorCode } from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/source-image-contracts";
+import type { GatewayErrorCode } from "@astella/shared/desktop-ipc-contracts";
 import {
   cardGenerationRunServerViewV2Schema,
   cardGenerationExposureEligibilityV1Schema,
-} from "@ailearn/shared/card-generation-desktop-contracts";
+} from "@astella/shared/card-generation-desktop-contracts";
 import {
   cardActivationReceiptV2Schema,
   cardPlanV2Schema,
-} from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
 import { DesktopGatewayFailure } from "../desktop-gateway-failure";
 import * as ns_assessment from "../desktop-gateway-ns-assessment";
 import * as ns_search from "../desktop-gateway-ns-search";
@@ -99,9 +99,9 @@ const pairingSecretEncoded = pairingSecret.toString("base64url");
 function environment(): NodeJS.ProcessEnv {
   return {
     DESKTOP_API_ORIGIN: "http://127.0.0.1:4000",
-    AILEARN_DESKTOP_PAIRING_KEY_ID: "desktop-key-1",
-    AILEARN_DESKTOP_PAIRING_SECRET: pairingSecretEncoded,
-    AILEARN_DOMAIN_SCHEMA_REVISION: "domain-v2-test",
+    ASTELLA_DESKTOP_PAIRING_KEY_ID: "desktop-key-1",
+    ASTELLA_DESKTOP_PAIRING_SECRET: pairingSecretEncoded,
+    ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test",
   };
 }
 
@@ -1233,7 +1233,7 @@ describe("DesktopGateway", () => {
   /**
    * 「保存并开启复习」这一档从主进程走到 HTTP 的那一段（39d W7-2 两颗按钮）。
    *
-   * 为什么要在网关这一层再量一次：渲染层的用例只到 `window.ailearn` 为止，通道那一发
+   * 为什么要在网关这一层再量一次：渲染层的用例只到 `window.astella` 为止，通道那一发
    * 替身顶掉了整个网关——**这一档真正落到请求体上**这件事没人看过。这一格丢了，
    * 屏幕上那颗按钮按下去仍然保存成功、仍然回一句"第一次复习排在…"（要是替身还带着排期），
    * 而库里一条安排都不会有。两发一起量：要排期的带着 `true`，没说的**连键都不出现**

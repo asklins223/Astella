@@ -1,12 +1,12 @@
 /**
- * `@ailearn/shared` 在**运行时**到底从哪读：必须是活源码，不是安装期快照。
+ * `@astella/shared` 在**运行时**到底从哪读：必须是活源码，不是安装期快照。
  *
  * 为什么这条要常驻（2026-09-27 量出来的三件事）：
- * ① `apps/api/node_modules/@ailearn/shared` 与 worker 那份都不是指向 `packages/shared` 的活符号链接，
+ * ① `apps/api/node_modules/@astella/shared` 与 worker 那份都不是指向 `packages/shared` 的活符号链接，
  *    而是 `.pnpm` 里的**硬链快照**（`install-links=true`）。硬链只在那一刻等于源码：
  *    编辑器保存是"写新文件再 rename"，链接当场断（本机拿 `/tmp` 一对硬链实测：改完 `dst` 仍是旧内容）。
  * ② 但跑套件**不需要重装**——`apps/api/tsconfig.json` 与 `workers/ai-worker/tsconfig.json` 都把
- *    `@ailearn/shared/*` 映射到 `../../packages/shared/src/*.ts`，而 **tsx 真的在运行时应用 `paths`**：
+ *    `@astella/shared/*` 映射到 `../../packages/shared/src/*.ts`，而 **tsx 真的在运行时应用 `paths`**：
  *    从包目录里问 `import.meta.resolve`，交回的是 `packages/shared/src/…`；临时往 shared 里放一个新文件，
  *    不重装也 import 得到。⇒ 这条映射是"改了合同马上生效"的唯一支点。
  * ③ 支点被拿掉之后的失效方向是**静默**的：typecheck 走 `paths`（读新合同），测试跑走快照（读旧合同），
@@ -28,7 +28,7 @@ import { test } from "node:test";
 const REPO_ROOT = resolve(import.meta.dirname, "..", "..", "..", "..");
 const SHARED_SRC = join(REPO_ROOT, "packages", "shared", "src");
 /** 探哪一份合同不重要，重要的是它两边都存在（快照里也有一份）。 */
-const PROBE_SUBPATH = "@ailearn/shared/learning-run-v2-contracts";
+const PROBE_SUBPATH = "@astella/shared/learning-run-v2-contracts";
 const PACKAGES = ["apps/api", "workers/ai-worker"] as const;
 
 const RESOLVE_SNIPPET = `console.log(import.meta.resolve(${JSON.stringify(PROBE_SUBPATH)}))`;
@@ -97,18 +97,18 @@ function describeFailure(error: unknown): string {
  */
 function hasLiveSharedMapping(cwdRel: string): boolean {
   const raw = readFileSync(join(REPO_ROOT, cwdRel, "tsconfig.json"), "utf8");
-  return /"@ailearn\/shared\/\*"\s*:\s*\[[^\]]*packages\/shared\/src/s.test(raw);
+  return /"@astella\/shared\/\*"\s*:\s*\[[^\]]*packages\/shared\/src/s.test(raw);
 }
 
-test("结构腿：两个包的 tsconfig 都把 @ailearn/shared/* 映射到活源码", () => {
+test("结构腿：两个包的 tsconfig 都把 @astella/shared/* 映射到活源码", () => {
   for (const cwdRel of PACKAGES) {
     assert.ok(hasLiveSharedMapping(cwdRel),
-      `${cwdRel}/tsconfig.json 里找不到「"@ailearn/shared/*" → ../../packages/shared/src/*.ts」那条映射 ⇒ `
+      `${cwdRel}/tsconfig.json 里找不到「"@astella/shared/*" → ../../packages/shared/src/*.ts」那条映射 ⇒ `
       + "运行时退回 .pnpm 里那份安装期快照，而 typecheck 还在读活源码：两边各看一份合同");
   }
 });
 
-test("行为腿：tsx 运行时真的把 @ailearn/shared 解析到活源码，不是 node_modules", () => {
+test("行为腿：tsx 运行时真的把 @astella/shared 解析到活源码，不是 node_modules", () => {
   for (const cwdRel of PACKAGES) {
     const resolved = resolvedFrom(cwdRel);
     assert.ok(!resolved.includes("/node_modules/"),
@@ -123,7 +123,7 @@ test("行为腿自己的正控制：没解析出来的东西不能被判成「�
   let threw = false;
   try {
     execFileSync("node",
-      ["--import", "tsx", "--input-type=module", "-e", 'console.log(import.meta.resolve("@ailearn/shared/这一份合同不存在-zz"))'],
+      ["--import", "tsx", "--input-type=module", "-e", 'console.log(import.meta.resolve("@astella/shared/这一份合同不存在-zz"))'],
       {
         // 与上面那条探针**同一套环境**，否则这一格就成了一次换了条件的对照：
         // 它要证明的是"解析失败会被当成失败"，不是"换个 cwd 会不会失败"。

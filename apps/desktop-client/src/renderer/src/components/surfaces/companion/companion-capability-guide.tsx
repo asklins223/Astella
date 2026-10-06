@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ArrowRight, Sparkles } from "lucide-react";
-import { agentGoalCapabilityManifest } from "@ailearn/shared/agent-capabilities";
+import { agentGoalCapabilityManifest } from "@astella/shared/agent-capabilities";
 import { companionConsentGate, SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-consent-gate";
 import { useRoomStore } from "../../../app/room-store";
 import { useCompanionResource } from "./use-companion-resource";
@@ -10,7 +10,7 @@ export const companionDiscoverableCapabilities = agentGoalCapabilityManifest.fil
 
 export function CompanionCapabilityGuide({ onContinue, onOpenChange }: { onContinue: () => void; onOpenChange?: (open: boolean) => void }) {
   const [open, setOpen] = useState(false);
-  const settings = useCompanionResource(meta => window.ailearn.workspace.getAiSettings({ meta }), [], open);
+  const settings = useCompanionResource(meta => window.astella.workspace.getAiSettings({ meta }), [], open);
   const policy = settings.section?.ok ? settings.section.value : null;
   const consentNeeded = companionConsentGate(policy) === "consent_required";
   const sendingDisabled = policy?.dataPolicy.sendToExternal === false;

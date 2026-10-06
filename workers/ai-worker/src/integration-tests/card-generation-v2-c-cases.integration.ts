@@ -14,8 +14,8 @@
  * 其余全部走真实服务与真实表。
  *
  * 运行（从仓库根，**必须单文件执行**——worker outbox claim 全局）：
- *   DATABASE_URL_WORKER="postgres://ailearn_worker:ailearn_dev@localhost:5432/ailearn" \
- *   DATABASE_URL_API="postgres://ailearn:ailearn_dev@localhost:5432/ailearn" \
+ *   DATABASE_URL_WORKER="postgres://astella_worker:astella_dev@localhost:5432/astella" \
+ *   DATABASE_URL_API="postgres://astella:astella_dev@localhost:5432/astella" \
  *   node --import ./workers/ai-worker/node_modules/tsx/dist/loader.mjs --test --test-concurrency=1 \
  *     workers/ai-worker/src/integration-tests/card-generation-v2-c-cases.integration.ts
  */
@@ -24,7 +24,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
@@ -182,7 +182,7 @@ async function activate(versionId: string, intent: { kind: "create_new" } | {
       computeCanonicalAnswerHashV2,
       computeLearningSupportHashV2,
       computeRelationsHashV2,
-    } = await import("@ailearn/shared/card-generation-v2-hashing");
+    } = await import("@astella/shared/card-generation-v2-hashing");
     const candRow = await admin`
       SELECT objective_draft, evidence_binding_plan_hash FROM card_generation_candidates_v2
       WHERE candidate_revision_id = ${first.candidate_revision_id} AND workspace_id = ${WORKSPACE_ID}`;

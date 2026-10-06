@@ -1,6 +1,6 @@
 -- 0221: reaper 不再覆盖真实死因（last_error 保留 + 追加 lease 事实）。
 --
--- 背景（2026-09-15 审计 · 稳定性 P1-9）：0018/0105 定义的 ailearn_reap_stale_jobs
+-- 背景（2026-09-15 审计 · 稳定性 P1-9）：0018/0105 定义的 astella_reap_stale_jobs
 -- 无条件把 last_error 写成 'lease expired — max attempts reached' /
 -- 'lease expired (worker crash or timeout)'。若 job 有真实死因（handler 抛出的
 -- 计费/鉴权/协议错误，已由 markJobFailed 脱敏写入 last_error），reap 会把它
@@ -11,11 +11,11 @@
 --
 -- 语义不变：status / attempts / scheduled_at / finished_at 的计算完全保留 0105
 -- 的指数退避（10s * 2^attempts，封顶 60s）。CREATE OR REPLACE 保留原 owner 与
--- 权限（security contract 白名单不变：仅 ailearn_worker / ailearn_api EXECUTE）。
+-- 权限（security contract 白名单不变：仅 astella_worker / astella_api EXECUTE）。
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_reap_stale_jobs(
+CREATE OR REPLACE FUNCTION public.astella_reap_stale_jobs(
   p_lease_timeout_ms integer,
   p_max_attempts integer
 )
@@ -91,5 +91,5 @@ $function$;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_reap_stale_jobs(integer, integer) IS
+COMMENT ON FUNCTION public.astella_reap_stale_jobs(integer, integer) IS
 'Reap stale running jobs with exponential backoff (10s * 2^attempts, cap 60s). 0221: preserve the real last_error and append the lease fact instead of overwriting it.';

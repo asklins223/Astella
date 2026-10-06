@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { useState } from "react";
-import type { AgentRunV1 } from "@ailearn/shared/agent-contracts";
+import type { AgentRunV1 } from "@astella/shared/agent-contracts";
 import { CompanionGoalBubble } from "../CompanionGoalBubble";
 import { CompanionGoalJournal } from "../CompanionGoalJournal";
 import type { AgentGoalsController } from "../use-agent-goals";

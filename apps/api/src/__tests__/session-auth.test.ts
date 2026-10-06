@@ -32,8 +32,8 @@ test("parseCookieHeader: 空字符串返回空对象", () => {
 });
 
 test("parseCookieHeader: 单个 cookie 正确解析", () => {
-  const result = parseCookieHeader("ailearn_session=abc123");
-  assert.equal(result.ailearn_session, "abc123");
+  const result = parseCookieHeader("astella_session=abc123");
+  assert.equal(result.astella_session, "abc123");
 });
 
 test("parseCookieHeader: 多个 cookie 用分号分隔", () => {

@@ -71,7 +71,7 @@ CREATE POLICY sec01_v1_workspace_audit_log_tenant_guard ON public.workspace_audi
 CREATE POLICY sec01_v1_workspace_audit_log_runtime_insert ON public.workspace_audit_log
   AS PERMISSIVE FOR INSERT TO public
   WITH CHECK (
-    CURRENT_USER = 'ailearn_api'::name
+    CURRENT_USER = 'astella_api'::name
     AND actor_user_id = (NULLIF(current_setting('app.user_id', true), ''))::uuid
   );
 
@@ -82,7 +82,7 @@ CREATE POLICY sec01_v1_workspace_audit_log_runtime_insert ON public.workspace_au
 CREATE POLICY sec01_v1_workspace_audit_log_api_owner_read ON public.workspace_audit_log
   AS PERMISSIVE FOR SELECT TO public
   USING (
-    CURRENT_USER = 'ailearn_api'::name
+    CURRENT_USER = 'astella_api'::name
     AND workspace_id = (NULLIF(current_setting('app.workspace_id', true), ''))::uuid
     AND EXISTS (
       SELECT 1 FROM public.workspaces w
@@ -107,7 +107,7 @@ CREATE POLICY sec01_v1_workspace_audit_log_no_delete ON public.workspace_audit_l
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT ON TABLE public.workspace_audit_log TO ailearn_api;
+GRANT SELECT, INSERT ON TABLE public.workspace_audit_log TO astella_api;
 
 --> statement-breakpoint
 

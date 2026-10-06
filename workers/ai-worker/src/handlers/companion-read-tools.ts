@@ -19,14 +19,14 @@
  */
 
 import { sql, type SQL } from "drizzle-orm";
-import { pageReadableV1Schema } from "@ailearn/shared/companion-bridge-contracts";
-import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
+import { pageReadableV1Schema } from "@astella/shared/companion-bridge-contracts";
+import { noteVisibleSqlText } from "@astella/shared/note-visibility";
 import { PAGE_KIND_LABELS } from "./companion-here-and-now.ts";
 import { CompanionToolUnavailableError } from "./companion-tool-result.ts";
 
 
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
-import type { CompanionAgentToolExecutionConstraints } from "@ailearn/shared";
+import type { CompanionAgentToolExecutionConstraints } from "@astella/shared";
 import type { CompanionDialogueHandlerContext, ReadContext } from "./companion-dialogue-store.ts";
 
 export interface AgentEventContext {
@@ -518,7 +518,7 @@ export function currentPageToolResult(row: PageContextRow | null): {
  * 取"这一屏"那一条 context 行（集测直接调它做跨空间守卫的往返验证）。
  *
  * workspace_id / user_id 必须在 SQL 里显式过滤：这张表的 RLS 守卫对
- * `ailearn_worker` 是**放行**的（`CURRENT_USER = 'ailearn_worker' OR ...`），
+ * `astella_worker` 是**放行**的（`CURRENT_USER = 'astella_worker' OR ...`），
  * 也就是说行级隔离在这条路径上不存在，漏一个条件就是跨账号读到别人的屏。
  */
 export async function readLatestPageContextRow(

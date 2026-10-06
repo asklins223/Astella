@@ -1,4 +1,4 @@
-import { COMPANION_VOICE_MAX_TEXT_LENGTH } from "@ailearn/shared/companion-voice-contracts";
+import { COMPANION_VOICE_MAX_TEXT_LENGTH } from "@astella/shared/companion-voice-contracts";
 
 /**
  * 伴星回复的语音分段（2026-09-18）。

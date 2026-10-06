@@ -32,4 +32,4 @@ CREATE INDEX IF NOT EXISTS interaction_qualifications_family_idx
 
 --> statement-breakpoint
 
-GRANT SELECT ON public.interaction_qualifications TO ailearn_api;
+GRANT SELECT ON public.interaction_qualifications TO astella_api;

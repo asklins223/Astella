@@ -15,9 +15,9 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import { db } from "../db/client.ts";
 import { activateCardCandidatesV2 } from "../modules/card-generation-v2/activation-service.ts";
 import { CardGenerationV2ServiceError } from "../modules/card-generation-v2/helpers.ts";
-import { computeClientReviewHashV2, computeCanonicalAnswerHashV2, computeLearningSupportHashV2, computeRelationsHashV2 } from "@ailearn/shared/card-generation-v2-hashing";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
-import type { ActivateCardCandidatesRequestV2, ActivationIntentV2 } from "@ailearn/shared/card-generation-v2-contracts";
+import { computeClientReviewHashV2, computeCanonicalAnswerHashV2, computeLearningSupportHashV2, computeRelationsHashV2 } from "@astella/shared/card-generation-v2-hashing";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
+import type { ActivateCardCandidatesRequestV2, ActivationIntentV2 } from "@astella/shared/card-generation-v2-contracts";
 
 const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const USER_ID = "00000000-0000-4000-8000-000000000002";

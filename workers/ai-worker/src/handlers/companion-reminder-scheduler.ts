@@ -2,7 +2,7 @@
  * 到点提醒的兑现 tick（方案 29 §4.6，抱怨 #9「没有定时任务/提醒」）。
  *
  * 一分钟一次。认领、写投递、NOTIFY 全在 SECURITY DEFINER 函数
- * `ailearn_fire_due_companion_reminders()`（迁移 0238）里一次做完：
+ * `astella_fire_due_companion_reminders()`（迁移 0238）里一次做完：
  * 它必须跨租户扫描（每个用户的约定由同一个 worker 统一兑现），而生产 worker 角色
  * 非 superuser、无 BYPASSRLS，直接 SELECT 会被 RLS 滤成空集——dev 正常、生产静默
  * 什么都不做，是这类定时器最难查的失效方式。
@@ -24,7 +24,7 @@ export async function tickCompanionReminderDelivery(nowMs = Date.now()): Promise
   if (nowMs - lastTickAt < TICK_INTERVAL_MS) return 0;
   try {
     const rows = await db.execute<{ fired: number }>(sql`
-      SELECT public.ailearn_fire_due_companion_reminders(${CLAIM_LIMIT}) AS fired
+      SELECT public.astella_fire_due_companion_reminders(${CLAIM_LIMIT}) AS fired
     `);
     // 只有 SQL 真的返回了才推进本地时间戳：DB 抖动要在下一轮重试。
     lastTickAt = nowMs;

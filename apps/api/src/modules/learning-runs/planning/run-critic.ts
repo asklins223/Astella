@@ -5,7 +5,7 @@
  * 与 private task 输入，输出逐 rubric verdict；绝不直接写 mastery/schedule。
  *
  * 传输：OpenAI-compatible /chat/completions（response_format=json_object），
- * 经 @ailearn/shared/public-json-http 的 postJsonToPublicEndpoint（SSRF 防护）。
+ * 经 @astella/shared/public-json-http 的 postJsonToPublicEndpoint（SSRF 防护）。
  * 配置环境变量：ASSESSMENT_CRITIC_URL / ASSESSMENT_CRITIC_KEY /
  * ASSESSMENT_CRITIC_MODEL。未配置或调用失败 → CriticUnavailableError（fail
  * closed，tick 端转 not_assessable，绝不猜结果）。
@@ -16,13 +16,13 @@
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { runAiTask, type AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
-import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
+import { runAiTask, type AiTaskDefinition } from "@astella/shared/ai-task-kernel";
+import type { PublicJsonRequester } from "@astella/shared/public-json-http";
 import { createGovernedApiRequester } from "../../../lib/ai-governance.ts";
 import { productionAiGovernancePorts } from "../../../governance/ai-governance-runtime.ts";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
-import type { LearningTargetSnapshotV2 } from "@ailearn/shared";
-import { DomainError } from "@ailearn/shared";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
+import type { LearningTargetSnapshotV2 } from "@astella/shared";
+import { DomainError } from "@astella/shared";
 import { resolveAssessmentCriticConfig } from "../../../lib/assessment-critic-config.ts";
 
 // ─── 合同 ────────────────────────────────────────────────────────────────
@@ -366,7 +366,7 @@ export function createOpenAICompatibleCritic(env: {
           taskVersion: task.version,
           attemptId: randomUUID(),
           // 这条任务没有 `jobs` 行（评估的业务写入在 API 侧的短事务里，租约是
-          // `ailearn_claim_run_processing` 那一层管的）。幂等键带着评估行 id，
+          // `astella_claim_run_processing` 那一层管的）。幂等键带着评估行 id，
           // 所以台账里"同一次评估的两次尝试"仍然认得出是同一件事。
           leaseToken: `run-processing:${scope.assessmentId}`,
           idempotencyKey: `assessment:${scope.assessmentId}`,

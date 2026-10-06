@@ -9,7 +9,7 @@
 
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { logger } from "../lib/logger.ts";
 import { resolveReplyToneEmotion } from "../lib/companion-tone.ts";

@@ -20,10 +20,10 @@
 --   - 停在 waiting_for_confirmation 的 run → failed / ACTION_EXPIRED
 --   - 每个受影响 conversation 补写 action.expired 事件（分配连续 seq + NOTIFY）
 --
--- SECURITY DEFINER：worker 角色受 RLS 约束无法跨租户扫描；owner 为 ailearn_migrator
+-- SECURITY DEFINER：worker 角色受 RLS 约束无法跨租户扫描；owner 为 astella_migrator
 -- （BYPASSRLS），与 0212 的维护函数同一模式。
 
-CREATE OR REPLACE FUNCTION public.ailearn_reclaim_stale_companion_proposals()
+CREATE OR REPLACE FUNCTION public.astella_reclaim_stale_companion_proposals()
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -106,7 +106,7 @@ BEGIN
       AND p.conversation_id = v_conv.cid;
 
     PERFORM pg_notify(
-      'ailearn_companion_events_v1',
+      'astella_companion_events_v1',
       json_build_object(
         'conversationId', v_conv.cid,
         'maxSeq', v_start_seq + v_conv.n - 1
@@ -118,16 +118,16 @@ BEGIN
 END;
 $$;
 
-ALTER FUNCTION public.ailearn_reclaim_stale_companion_proposals() OWNER TO ailearn_migrator;
+ALTER FUNCTION public.astella_reclaim_stale_companion_proposals() OWNER TO astella_migrator;
 
 -- 只有 worker 需要（API 走 TS 惰性回收路径）。不授 PUBLIC。
-REVOKE ALL ON FUNCTION public.ailearn_reclaim_stale_companion_proposals() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_reclaim_stale_companion_proposals() FROM PUBLIC;
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
-    GRANT EXECUTE ON FUNCTION public.ailearn_reclaim_stale_companion_proposals() TO ailearn_worker;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
+    GRANT EXECUTE ON FUNCTION public.astella_reclaim_stale_companion_proposals() TO astella_worker;
   END IF;
 END $$;
 
-COMMENT ON FUNCTION public.ailearn_reclaim_stale_companion_proposals() IS
+COMMENT ON FUNCTION public.astella_reclaim_stale_companion_proposals() IS
   '定时兜底：把过期或账号世代失效的 companion 确认置为终态并终结其挂起 run。';

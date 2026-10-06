@@ -27,10 +27,10 @@ test("0340 stores one bounded, owner-scoped failure span per class without priva
 });
 
 test("0340 exposes read-only scoped diagnostics and applies a retention ceiling to spans", () => {
-  assert.match(migration, /GRANT SELECT ON public\.companion_run_failure_spans TO ailearn_api/);
-  assert.match(migration, /GRANT SELECT, INSERT, UPDATE ON public\.companion_run_failure_spans TO ailearn_worker/);
+  assert.match(migration, /GRANT SELECT ON public\.companion_run_failure_spans TO astella_api/);
+  assert.match(migration, /GRANT SELECT, INSERT, UPDATE ON public\.companion_run_failure_spans TO astella_worker/);
   assert.match(roleGrants, /companion failure spans must be read-only for API/);
-  assert.match(roleGrants, /ailearn_read_companion_turn_handoff_snapshot_v1\(uuid\)/);
-  assert.match(roleGrants, /ailearn_purge_companion_audit_ttl\(integer,integer\)/);
+  assert.match(roleGrants, /astella_read_companion_turn_handoff_snapshot_v1\(uuid\)/);
+  assert.match(roleGrants, /astella_purge_companion_audit_ttl\(integer,integer\)/);
   assert.match(migration, /last_failure_at < now\(\) - make_interval\(days => p_retention_days\)[\s\S]*?DELETE FROM public\.companion_run_failure_spans/);
 });

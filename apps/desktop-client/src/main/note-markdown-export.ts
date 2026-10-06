@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { DesktopNoteListItem } from "@ailearn/shared/desktop-surface-contracts";
+import type { DesktopNoteListItem } from "@astella/shared/desktop-surface-contracts";
 
 /**
  * 笔记导出为 Markdown 目录：**一个目录、一篇一个 `.md`**。

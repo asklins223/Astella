@@ -28,7 +28,7 @@ import {
   decideHelpConditionV2,
   helpConditionCountsAsIndependentV2,
   type HelpConditionV2,
-} from "@ailearn/shared/help-condition-rules-v2";
+} from "@astella/shared/help-condition-rules-v2";
 import { StructuredTaskKind } from "../planning/run-structured.ts";
 import { isDeterministicStructuredPayload } from "../planning/run-structured.ts";
 import { uncoveredFacets } from "../run-result-facets.ts";
@@ -46,23 +46,23 @@ import {
   learningRuns,
   learningTasks,
   learningTaskVariants,
-} from "@ailearn/shared/db-schema/learning-runs";
+} from "@astella/shared/db-schema/learning-runs";
 import {
   evidenceEligibilityStatesV2,
   evidenceSnapshotsV2,
   learningExposuresV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { noteBlocks } from "@ailearn/shared/db-schema/note";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { noteBlocks } from "@astella/shared/db-schema/note";
 // W7-8 刀二：判据在纯函数里（§9.1「自动策略不能悄悄把提醒提前」），这一层只负责
 // 把那一列读出来递给它，并把「抬过」如实带回。
-import { EXPOSURE_KINDS_V2 } from "@ailearn/shared/learning-card-v2-contracts";
+import { EXPOSURE_KINDS_V2 } from "@astella/shared/learning-card-v2-contracts";
 // 39d W5-5：§14.2「待复核时不持续放大结论」的那一闸。与上面那道笔记依据闸并排调用。
 import {
-} from "@ailearn/shared";
+} from "@astella/shared";
 import { backfillPresentationHistory } from "../run-service.ts";
 // 方案 16 §20：run_result 埋点（尽力而为，独立小事务）。
-import { LearningRunResultV1, LearningRunReturnTargetV1 } from "@ailearn/shared";
-import { sha256Hex } from "@ailearn/shared/content-hash";
+import { LearningRunResultV1, LearningRunReturnTargetV1 } from "@astella/shared";
+import { sha256Hex } from "@astella/shared/content-hash";
 import {
   CriticOutputError,
   CriticUnavailableError,
@@ -859,12 +859,12 @@ export function resolveStructuredSolutionConnectionString(): string {
   if (process.env.NODE_ENV === "production") {
     throw new Error("DATABASE_URL_WORKER (or DATABASE_URL_API) is required when NODE_ENV=production");
   }
-  return "postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn";
+  return "postgres://astella:astella_dev@127.0.0.1:5432/astella";
 }
 
 /** private solutions 读取连接：worker 角色（RLS 豁免）；dev fallback 用 API 连接。 */
 import postgres from "postgres";
-import { practiceTrailEventOutbox } from "@ailearn/shared/db-schema/learning-runs";
+import { practiceTrailEventOutbox } from "@astella/shared/db-schema/learning-runs";
 
 const structuredSolutionSql = postgres(
   resolveStructuredSolutionConnectionString(),

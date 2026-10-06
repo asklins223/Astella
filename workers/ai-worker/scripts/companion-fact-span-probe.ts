@@ -12,9 +12,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import process from "node:process";
 
-import { AgentRole, type AgentTurnRequest } from "@ailearn/shared";
-import { resolveAllCompanionAgentTools } from "@ailearn/shared/companion-agent-registry";
-import { resolveSystemPlatform } from "@ailearn/shared/platform-config-node";
+import { AgentRole, type AgentTurnRequest } from "@astella/shared";
+import { resolveAllCompanionAgentTools } from "@astella/shared/companion-agent-registry";
+import { resolveSystemPlatform } from "@astella/shared/platform-config-node";
 import { buildCompanionPersonaMessages } from "../src/handlers/companion-dialogue-content.ts";
 import { FACT_SPAN_KEYS, renderFactSpansBlock, resolveFactSpans } from "../src/handlers/companion-fact-spans.ts";
 import { createProvider } from "../src/lib/ai-provider.ts";

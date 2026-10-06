@@ -1,8 +1,8 @@
 import {
   queryRows, requireVisibleInput, AgentStoreError, startAgentNoteOperation,
-} from "@ailearn/agent-host";
-import { noteAgentCapabilityManifest } from "@ailearn/shared/agent-capabilities";
-import { agentInputRefV1Schema } from "@ailearn/shared/agent-contracts";
+} from "@astella/agent-host";
+import { noteAgentCapabilityManifest } from "@astella/shared/agent-capabilities";
+import { agentInputRefV1Schema } from "@astella/shared/agent-contracts";
 import { loadNoteReadPage } from "../handlers/companion-read-tools.ts";
 import { readExpansionDrafts } from "./expansion-reading.ts";
 import type { AgentWorkerAdvanceStore } from "./store.ts";

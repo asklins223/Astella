@@ -52,5 +52,5 @@ CREATE POLICY note_recall_records_owner ON public.note_recall_records FOR ALL TO
         AND (visible_note.share_scope = 'shared' OR visible_note.created_by = note_recall_records.user_id)
     ));
 
-GRANT SELECT, INSERT, UPDATE ON public.note_recall_records TO ailearn_api;
-GRANT ALL PRIVILEGES ON public.note_recall_records TO ailearn_migrator;
+GRANT SELECT, INSERT, UPDATE ON public.note_recall_records TO astella_api;
+GRANT ALL PRIVILEGES ON public.note_recall_records TO astella_migrator;

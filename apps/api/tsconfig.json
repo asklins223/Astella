@@ -14,19 +14,19 @@
     "rewriteRelativeImportExtensions": true,
     "noEmit": true,
     // 2026-09-15：paths 改为指向 packages/shared 的**实时源码**（与 worker 一致）。
-    // 此前经 node_modules/@ailearn/shared 解析，而 pnpm 对 file: 依赖是**安装期快照**
+    // 此前经 node_modules/@astella/shared 解析，而 pnpm 对 file: 依赖是**安装期快照**
     // （pnpm install 不会因源码变化重新拷贝）——后果：对 packages/shared 的任何修改
     // 对 API 的 typecheck 与 tsx 运行**完全不可见**，新增导出会报"no exported member"，
     // 删除导出则不会报错。rootDir 相应上移到仓库根（noEmit，无产物影响）。
     "rootDir": "../..",
     "paths": {
-      "@ailearn/agent-core": ["../../packages/agent-core/src/index.ts"],
-      "@ailearn/agent-host": ["../../packages/agent-host/src/index.ts"],
+      "@astella/agent-core": ["../../packages/agent-core/src/index.ts"],
+      "@astella/agent-host": ["../../packages/agent-host/src/index.ts"],
       // 2026-10-04：制卡领域服务。指到**实时源码**而不是 node_modules 的安装期快照——
       // pnpm 对 file: 依赖只在 install 时拷贝一次，改了 packages/card-generation 而
       // typecheck 仍对着旧快照，正是上面那段 shared 注释里记过的那个分叉。
-      "@ailearn/card-generation": ["../../packages/card-generation/src/index.ts"],
-      "@ailearn/shared": [
+      "@astella/card-generation": ["../../packages/card-generation/src/index.ts"],
+      "@astella/shared": [
         "../../packages/shared/src/index.ts"
       ],
       // 2026-09-29（P2-3）：contracts/ 下的合同先试。
@@ -34,7 +34,7 @@
       // 所以把 contracts/ 放在前面，搬过的那批走它，其余仍走下面那条平铺映射。
       // 少这一条，tsx 运行时会退回 node_modules 的安装期快照（合同改了不生效），
       // 而 typecheck 还报绿——`shared-source-resolution` 守的就是这个分叉。
-      "@ailearn/shared/*": [
+      "@astella/shared/*": [
         "../../packages/shared/src/contracts/*.ts",
         "../../packages/shared/src/*.ts",
         "../../packages/shared/src/*/index.ts"

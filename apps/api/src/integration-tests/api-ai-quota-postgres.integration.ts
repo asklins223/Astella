@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 import postgres from "postgres";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { createGovernedApiRequester } from "../lib/ai-governance.ts";
 import { productionAiGovernancePorts } from "../governance/ai-governance-runtime.ts";
 import { closeDatabase } from "../db/client.ts";

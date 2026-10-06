@@ -32,12 +32,12 @@ import {
   type NoCardReasonCodeV2,
   type ObjectiveRubricV2,
   type PlannedObjectiveV2,
-} from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
 import {
   computeCandidateRevisionHashV2,
   computeCardPlanHashV2,
   computeRubricHashV2,
-} from "@ailearn/shared/card-generation-v2-hashing";
+} from "@astella/shared/card-generation-v2-hashing";
 import {
   allocatePracticeForms,
   allocateStrategies,
@@ -45,18 +45,18 @@ import {
   type AssemblerEvidenceManifest,
   type ExtractedKnowledgeAtom,
   type SealedEvidenceEntryV2,
-} from "@ailearn/shared/card-generation-v2-pipeline";
+} from "@astella/shared/card-generation-v2-pipeline";
 import {
   type CardGenerateV3CandidateDraft,
   type CardGenerateV3DraftOutput,
-} from "@ailearn/shared/card-generation-v3-contracts";
+} from "@astella/shared/card-generation-v3-contracts";
 // W7-5 刀三：判据是**纯函数**（不查库、不看模型输出），所以装配这一层只负责
 // 把"新候选的块"与"读侧给来的既有目标"递给它，然后照它交回的结论改 changeContext。
 import {
   objectiveReuseClaimHashV2,
   decideObjectiveReuseV2,
   type ObjectiveReuseCandidateV2,
-} from "@ailearn/shared/objective-reuse-rules-v2";
+} from "@astella/shared/objective-reuse-rules-v2";
 
 export interface CardGenerateV3AssemblyInput {
   readonly generated: CardGenerateV3DraftOutput;

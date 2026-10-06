@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { AgentRunHistoryV1, AgentRunV1 } from "@ailearn/shared/agent-contracts";
+import type { AgentRunHistoryV1, AgentRunV1 } from "@astella/shared/agent-contracts";
 import { CompanionGoalRevisions } from "../CompanionGoalRevisions";
 
 const room = vi.hoisted(() => ({ workspaceScopeRevision: 1, setActiveNoteRef: vi.fn(), invoke: vi.fn() }));
@@ -20,7 +20,7 @@ const page = (revision: number, nextBeforeRevision: number | null): AgentRunHist
     recordedAt: "2026-10-04T02:00:00Z", supersededByRevision: revision + 1 }], nextBeforeRevision, unrecordedRevisions: [] });
 beforeEach(() => {
   room.workspaceScopeRevision = 1; vi.clearAllMocks();
-  Object.defineProperty(window, "ailearn", { configurable: true, value: { agent: { getRunHistory } } });
+  Object.defineProperty(window, "astella", { configurable: true, value: { agent: { getRunHistory } } });
 });
 afterEach(cleanup);
 function open(summary = "之前的要求与交付") {

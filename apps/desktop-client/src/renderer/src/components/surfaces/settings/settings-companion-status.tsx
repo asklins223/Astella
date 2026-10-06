@@ -3,7 +3,7 @@
  * 归入「声音与显示」；快捷设置保留当页的临时操作。
  * 模型不可用时，角色所在处负责解释隐藏原因，这里展示实际能力读数。
  */
-import type { CapabilityProjectionV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { CapabilityProjectionV1 } from "@astella/shared/desktop-ipc-contracts";
 import { AudioLines,MessageCircle,MessagesSquare,Mic,Sparkles } from "lucide-react";
 import type { ReactElement } from "react";
 import { SettingRow } from "./settings-primitives.tsx";

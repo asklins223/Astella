@@ -2,10 +2,10 @@
 -- 03 §7.4（终态事件 24h 后幂等删除，事件表不得无限增长）与 §7.5
 -- （pending voice artifact 到期转 expired）。
 -- 与 0098 同类清理一致：companion 表 RLS ENABLE+FORCE，API 连接
--- （ailearn_api，NOBYPASSRLS）裸查询会被策略拦成 0 行，因此统一经
+-- （astella_api，NOBYPASSRLS）裸查询会被策略拦成 0 行，因此统一经
 -- SECURITY DEFINER 函数执行（migrator owner BYPASSRLS，API 仅 EXECUTE）。
 
-CREATE OR REPLACE FUNCTION public.ailearn_purge_companion_stream_events_ttl(
+CREATE OR REPLACE FUNCTION public.astella_purge_companion_stream_events_ttl(
   p_limit integer DEFAULT 500
 )
 RETURNS integer
@@ -28,7 +28,7 @@ AS $function$
   SELECT count(*)::integer FROM deleted;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.ailearn_expire_pending_voice_artifacts()
+CREATE OR REPLACE FUNCTION public.astella_expire_pending_voice_artifacts()
 RETURNS integer
 LANGUAGE sql
 SECURITY DEFINER
@@ -48,14 +48,14 @@ AS $function$
 $function$;
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
     REVOKE ALL ON FUNCTION
-      public.ailearn_purge_companion_stream_events_ttl(integer),
-      public.ailearn_expire_pending_voice_artifacts()
-      FROM PUBLIC, ailearn_worker;
+      public.astella_purge_companion_stream_events_ttl(integer),
+      public.astella_expire_pending_voice_artifacts()
+      FROM PUBLIC, astella_worker;
     GRANT EXECUTE ON FUNCTION
-      public.ailearn_purge_companion_stream_events_ttl(integer),
-      public.ailearn_expire_pending_voice_artifacts()
-      TO ailearn_api;
+      public.astella_purge_companion_stream_events_ttl(integer),
+      public.astella_expire_pending_voice_artifacts()
+      TO astella_api;
   END IF;
 END $$;

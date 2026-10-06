@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { LearningObjectivePrimaryActionV3, ObjectivePersonalStateV3 } from "@ailearn/shared/learning-objective-surface-contracts";
-import type { LearningRunResultV2 } from "@ailearn/shared/learning-run-v2-contracts";
+import type { LearningObjectivePrimaryActionV3, ObjectivePersonalStateV3 } from "@astella/shared/learning-objective-surface-contracts";
+import type { LearningRunResultV2 } from "@astella/shared/learning-run-v2-contracts";
 import { companionResultFeedbackAllowed, learningDiscoveryCard, learningRunFeedback, objectiveQuestRegion, runModePresentation } from "../run/objective-quest-presentation.ts";
 
 describe("理解远征展示模型", () => {

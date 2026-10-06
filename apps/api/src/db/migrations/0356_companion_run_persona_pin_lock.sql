@@ -21,7 +21,7 @@
 -- 把锁加到它们上面会直接把重试打断，所以这道锁只落在「一次调用」的载体上：
 -- `companion_turn_runs`。
 
-CREATE OR REPLACE FUNCTION public.ailearn_lock_companion_run_persona_pin()
+CREATE OR REPLACE FUNCTION public.astella_lock_companion_run_persona_pin()
 RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = pg_catalog, public
@@ -47,7 +47,7 @@ DROP TRIGGER IF EXISTS companion_turn_runs_persona_pin_lock
   ON public.companion_turn_runs;
 CREATE TRIGGER companion_turn_runs_persona_pin_lock
   BEFORE UPDATE ON public.companion_turn_runs
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_lock_companion_run_persona_pin();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_lock_companion_run_persona_pin();
 
 --> statement-breakpoint
 

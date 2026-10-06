@@ -1,7 +1,7 @@
-import { AgentStoreError, prepareGovernedAIPayload } from "@ailearn/agent-host";
-import { externalAgentCapabilityManifest } from "@ailearn/shared/agent-capabilities";
-import { assertOutsideRegisteredTransactions } from "@ailearn/shared/workspace-transaction";
-import type { AgentScopeV1 } from "@ailearn/shared/agent-contracts";
+import { AgentStoreError, prepareGovernedAIPayload } from "@astella/agent-host";
+import { externalAgentCapabilityManifest } from "@astella/shared/agent-capabilities";
+import { assertOutsideRegisteredTransactions } from "@astella/shared/workspace-transaction";
+import type { AgentScopeV1 } from "@astella/shared/agent-contracts";
 import { logAICall, resolveAIGovernanceContext } from "../lib/governance.ts";
 import { readAgentPublicDocument } from "./public-document.ts";
 import type { AgentWorkerAdvanceStore } from "./store.ts";

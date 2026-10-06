@@ -20,7 +20,7 @@
 -- 2. 「默认只注入**目录**，条件匹配且与用户目标有关时按需读取正文」
 --    → 这条由 `companion-playbooks.ts` 的目录读取 + 按 ID 展开保证，不是靠 prompt 文案。
 -- 3. 「用户纠正和遗忘也**传播到手册**及派生摘要。」
---    → 触发器 + `ailearn_supersede_companion_playbooks_from_memory()`。
+--    → 触发器 + `astella_supersede_companion_playbooks_from_memory()`。
 --
 -- ## 稳定 ID 与版本
 --
@@ -79,18 +79,18 @@ ALTER TABLE public.companion_procedural_playbooks FORCE ROW LEVEL SECURITY;
 CREATE POLICY companion_procedural_playbooks_user_isolation
   ON public.companion_procedural_playbooks FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   );
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE ON public.companion_procedural_playbooks TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE ON public.companion_procedural_playbooks TO ailearn_worker;
+GRANT SELECT, INSERT, UPDATE ON public.companion_procedural_playbooks TO astella_api;
+GRANT SELECT, INSERT, UPDATE ON public.companion_procedural_playbooks TO astella_worker;
 
 --> statement-breakpoint
 
@@ -99,7 +99,7 @@ GRANT SELECT, INSERT, UPDATE ON public.companion_procedural_playbooks TO ailearn
 --
 -- 用触发器而不是在删除路径里手写：删除有**四条**入口（API delete、worker forget、
 -- 纠正、离开/解散空间），漏一条就意味着「她忘掉的东西还在手册里当依据」。
-CREATE OR REPLACE FUNCTION public.ailearn_propagate_playbook_evidence_change()
+CREATE OR REPLACE FUNCTION public.astella_propagate_playbook_evidence_change()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -122,8 +122,8 @@ $$;
 
 CREATE TRIGGER assistant_memory_playbook_evidence_guard
   AFTER UPDATE ON public.assistant_memory_items
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_propagate_playbook_evidence_change();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_propagate_playbook_evidence_change();
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_propagate_playbook_evidence_change() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_propagate_playbook_evidence_change() FROM PUBLIC;

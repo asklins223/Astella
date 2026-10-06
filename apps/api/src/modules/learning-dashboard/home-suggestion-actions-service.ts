@@ -21,7 +21,7 @@
  * 交给判据，差别留给屏上的文案与日志。
  */
 import { and, eq } from "drizzle-orm";
-import { homeSuggestionDismissalsV2 } from "@ailearn/shared/db-schema/evidence";
+import { homeSuggestionDismissalsV2 } from "@astella/shared/db-schema/evidence";
 import { dayKeyForV2 } from "./daily-batch-lock-service.ts";
 
 export type ApiTx = Parameters<Parameters<typeof import("../../db/client.ts").withWorkspaceTransaction>[1]>[0];

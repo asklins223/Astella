@@ -1,6 +1,6 @@
 -- 0120: learning_task_variants 冗余 private hash/rubric 目标（P2 权限缺口修复）。
 --
--- 0116 的权限契约规定 ailearn_api 对 learning_task_private_solutions /
+-- 0116 的权限契约规定 astella_api 对 learning_task_private_solutions /
 -- learning_task_safety_reports 仅 INSERT、无 SELECT——而 submission 事务在
 -- api 进程中需要 privateSolutionHash / safetyReportHash / rubricTargetIds
 -- 才能创建 Artifact 闭包与排队 Assessment。直接读 private 表会
@@ -27,7 +27,7 @@ ALTER TABLE public.learning_task_variants
 
 --> statement-breakpoint
 
--- 回填：从 private 表补齐已有行（ailearn_migrator 执行，无 RLS 限制）。
+-- 回填：从 private 表补齐已有行（astella_migrator 执行，无 RLS 限制）。
 -- 同 variant 多报告时取最新一条。
 UPDATE public.learning_task_variants v
 SET private_solution_hash = s.private_solution_hash,

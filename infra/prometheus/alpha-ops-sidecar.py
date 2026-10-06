@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 
-MANIFEST_DIR = Path(os.environ.get("MANIFEST_DIR", "/var/lib/ailearn/manifests"))
+MANIFEST_DIR = Path(os.environ.get("MANIFEST_DIR", "/var/lib/astella/manifests"))
 MAX_ALERT_BYTES = 1024 * 1024
 
 
@@ -54,26 +54,26 @@ def collect_backup_metrics() -> str:
         latest_timestamp = timestamp if latest_timestamp is None else max(latest_timestamp, timestamp)
 
     lines = [
-        "# HELP ailearn_backup_verified_manifests_total Number of locally retained verified backup manifests.",
-        "# TYPE ailearn_backup_verified_manifests_total gauge",
-        f"ailearn_backup_verified_manifests_total {verified_count}",
-        "# HELP ailearn_backup_manifest_scan_errors Number of manifest read or validation errors in the latest scan.",
-        "# TYPE ailearn_backup_manifest_scan_errors gauge",
-        f"ailearn_backup_manifest_scan_errors {scan_errors}",
+        "# HELP astella_backup_verified_manifests_total Number of locally retained verified backup manifests.",
+        "# TYPE astella_backup_verified_manifests_total gauge",
+        f"astella_backup_verified_manifests_total {verified_count}",
+        "# HELP astella_backup_manifest_scan_errors Number of manifest read or validation errors in the latest scan.",
+        "# TYPE astella_backup_manifest_scan_errors gauge",
+        f"astella_backup_manifest_scan_errors {scan_errors}",
     ]
     if latest_timestamp is not None:
         lines.extend(
             [
-                "# HELP ailearn_db_last_successful_backup_timestamp Unix timestamp of the newest deeply verified backup.",
-                "# TYPE ailearn_db_last_successful_backup_timestamp gauge",
-                f"ailearn_db_last_successful_backup_timestamp {latest_timestamp:.0f}",
+                "# HELP astella_db_last_successful_backup_timestamp Unix timestamp of the newest deeply verified backup.",
+                "# TYPE astella_db_last_successful_backup_timestamp gauge",
+                f"astella_db_last_successful_backup_timestamp {latest_timestamp:.0f}",
             ]
         )
     return "\n".join(lines) + "\n"
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "AILearnAlphaOps/1.0"
+    server_version = "AstellaAlphaOps/1.0"
 
     def log_message(self, format: str, *args: object) -> None:
         sys.stderr.write("[alpha-ops] " + format % args + "\n")

@@ -8,8 +8,8 @@
  * 零次 LLM 调用，用户只看到长时间"生成中"——两种形状都必须被尊重。
  */
 
-import { CardGenerationPipelineErrorV2 } from "@ailearn/shared/card-generation-v2-pipeline";
-import { DomainError } from "@ailearn/shared";
+import { CardGenerationPipelineErrorV2 } from "@astella/shared/card-generation-v2-pipeline";
+import { DomainError } from "@astella/shared";
 
 /**
  * 判别错误是否不可重试（provider 5xx/429/408/超时 → retryable；

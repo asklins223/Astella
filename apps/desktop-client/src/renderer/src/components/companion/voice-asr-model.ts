@@ -11,7 +11,7 @@ import {
   type VoiceAsrModelFailure,
   type VoiceAsrModelSnapshotV1,
   type VoiceAsrModelStatus,
-} from "@ailearn/shared/voice-asr-model-contracts";
+} from "@astella/shared/voice-asr-model-contracts";
 import { createRequestMeta, unwrapGatewayResult } from "../../app/desktop-client";
 
 export type { VoiceAsrModelFailure, VoiceAsrModelSnapshotV1, VoiceAsrModelStatus };
@@ -81,20 +81,20 @@ function meta() {
 }
 
 export function readVoiceAsrModel(): Promise<VoiceAsrModelSnapshotV1> {
-  return window.ailearn.companion.voice.asrModel.getState(meta()).then(unwrapGatewayResult);
+  return window.astella.companion.voice.asrModel.getState(meta()).then(unwrapGatewayResult);
 }
 
 export function downloadVoiceAsrModel(): Promise<VoiceAsrModelSnapshotV1> {
-  return window.ailearn.companion.voice.asrModel.download(meta()).then(unwrapGatewayResult).then(state => {
-    window.dispatchEvent(new CustomEvent("ailearn:voice-model-download-started", { detail: state }));
+  return window.astella.companion.voice.asrModel.download(meta()).then(unwrapGatewayResult).then(state => {
+    window.dispatchEvent(new CustomEvent("astella:voice-model-download-started", { detail: state }));
     return state;
   });
 }
 
 export function cancelVoiceAsrModel(): Promise<VoiceAsrModelSnapshotV1> {
-  return window.ailearn.companion.voice.asrModel.cancel(meta()).then(unwrapGatewayResult);
+  return window.astella.companion.voice.asrModel.cancel(meta()).then(unwrapGatewayResult);
 }
 
 export function removeVoiceAsrModel(): Promise<VoiceAsrModelSnapshotV1> {
-  return window.ailearn.companion.voice.asrModel.remove(meta()).then(unwrapGatewayResult);
+  return window.astella.companion.voice.asrModel.remove(meta()).then(unwrapGatewayResult);
 }

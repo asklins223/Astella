@@ -99,21 +99,21 @@ console.log(`✅ Found ${groups.length} group(s) with ${alertNames.size} unique 
 
 // 定义 OPS-01 需要的指标 allowlist（来自 ADR-0006 §2）
 const REQUIRED_METRICS = [
-  "ailearn_http_requests_total",
-  "ailearn_http_request_duration_seconds",
-  "ailearn_http_errors_5xx_total",
-  "ailearn_readiness_status",
-  "ailearn_job_queue_depth",
-  "ailearn_job_oldest_pending_age_seconds",
-  "ailearn_job_terminal_total",
-  "ailearn_job_retries_total",
-  "ailearn_job_lease_lost_total",
-  "ailearn_job_duration_seconds",
-  "ailearn_provider_calls_total",
-  "ailearn_provider_call_duration_seconds",
-  "ailearn_provider_errors_total",
-  "ailearn_funnel_events_total",
-  "ailearn_release_info",
+  "astella_http_requests_total",
+  "astella_http_request_duration_seconds",
+  "astella_http_errors_5xx_total",
+  "astella_readiness_status",
+  "astella_job_queue_depth",
+  "astella_job_oldest_pending_age_seconds",
+  "astella_job_terminal_total",
+  "astella_job_retries_total",
+  "astella_job_lease_lost_total",
+  "astella_job_duration_seconds",
+  "astella_provider_calls_total",
+  "astella_provider_call_duration_seconds",
+  "astella_provider_errors_total",
+  "astella_funnel_events_total",
+  "astella_release_info",
 ];
 
 // 检查是否所有必需指标都在告警规则中被使用

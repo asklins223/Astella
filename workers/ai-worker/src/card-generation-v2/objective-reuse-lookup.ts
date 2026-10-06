@@ -1,7 +1,7 @@
 /**
  * 同目标复用的**读侧**：这一篇里已有哪些目标、各自锚在哪些块上（39d W7-5 刀二）。
  *
- * 判据在 `@ailearn/shared/objective-reuse-rules-v2`（纯函数），这一份只负责把
+ * 判据在 `@astella/shared/objective-reuse-rules-v2`（纯函数），这一份只负责把
  * 判据要的输入**按 (工作区, 笔记) 收窄后**取出来。收窄这一半不能省，也不能交给
  * 调用方自己记得写——§4.2「默认去重范围是同工作区、同笔记」，而跨笔记的相似
  * 关系**明确不抵扣**：「跨笔记仅有相似关系时仍分别记录，暂不自动抵扣复习」。
@@ -34,7 +34,7 @@
  * 等于让一次复用把新卡挂到一条已退役的目标上。
  */
 import { sql } from "drizzle-orm";
-import { objectiveReuseClaimHashV2, type ObjectiveReuseCandidateV2 } from "@ailearn/shared/objective-reuse-rules-v2";
+import { objectiveReuseClaimHashV2, type ObjectiveReuseCandidateV2 } from "@astella/shared/objective-reuse-rules-v2";
 import type { WorkerTransaction } from "../db.ts";
 
 /**

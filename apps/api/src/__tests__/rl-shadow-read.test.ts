@@ -14,7 +14,7 @@ import {
   learningObjectiveSurfaceV3Schema,
   type LearningObjectiveSurfaceV3,
   type ObjectiveListItemV3,
-} from "@ailearn/shared";
+} from "@astella/shared";
 
 const OBJ_ID = "11111111-1111-4111-8111-111111111111";
 const NOTE_ID = "33333333-3333-4333-8333-333333333333";

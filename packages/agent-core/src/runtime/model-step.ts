@@ -1,6 +1,6 @@
-import type { AgentTurnRequest, AgentTurnResult } from "@ailearn/shared";
+import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import { classifyThrownAsStepFailure, runAiTask, type AiAttemptToken, type AiTaskCheckpointPort,
-  type AiTaskContext, type AiTaskDefinition, type AiTaskReceipt } from "@ailearn/shared/ai-task-kernel";
+  type AiTaskContext, type AiTaskDefinition, type AiTaskReceipt } from "@astella/shared/ai-task-kernel";
 
 export interface AgentModelStepPorts {
   context: AiTaskContext;

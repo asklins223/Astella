@@ -33,7 +33,7 @@ import {
   updateStateV1Schema,
   type UpdatePhase,
   type UpdateStateV1,
-} from '@ailearn/shared/desktop-ipc-contracts'
+} from '@astella/shared/desktop-ipc-contracts'
 
 /** 检查结果缓存时长。GitHub 匿名限额是 60 次/小时/IP，6 小时一次对个人用户足够及时。 */
 const CHECK_CACHE_MS = 6 * 60 * 60 * 1000
@@ -160,7 +160,7 @@ function publish(next: UpdateStateV1): UpdateStateV1 {
   currentState = next
   for (const window of BrowserWindow.getAllWindows()) {
     if (window.isDestroyed()) continue
-    window.webContents.send('ailearn.v1.update.state', next)
+    window.webContents.send('astella.v1.update.state', next)
   }
   return next
 }

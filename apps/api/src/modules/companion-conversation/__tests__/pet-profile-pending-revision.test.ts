@@ -17,7 +17,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { companionPersonaV1Schema } from "@ailearn/shared/companion-memory-desktop-contracts";
+import { companionPersonaV1Schema } from "@astella/shared/companion-memory-desktop-contracts";
 
 import { nextPersonaRevisionNumber, personaRevisionEffectiveWhen } from "../pet-profile-service.ts";
 

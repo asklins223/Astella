@@ -13,7 +13,7 @@
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { db } from "../db/client.ts";
-import { noteImageAssets } from "@ailearn/shared/db-schema/note";
+import { noteImageAssets } from "@astella/shared/db-schema/note";
 import { getObject } from "./object-storage.ts";
 import { validateImageMagicBytes, readImageDimensions } from "./file-validation.ts";
 import { logger } from "./logger.ts";
@@ -137,7 +137,7 @@ export async function preRegisterImageAssetsForImport(
   if (rows.length === 0) {
     return;
   }
-  // note_image_assets FORCE RLS（0046）：ailearn_api 无 BYPASSRLS，INSERT 必须
+  // note_image_assets FORCE RLS（0046）：astella_api 无 BYPASSRLS，INSERT 必须
   // 带 workspace 上下文——包一个短事务设置 app.workspace_id（与
   // withWorkspaceTransaction 同语义；下载/校验已在前方事务外完成）。
   // N#7-8: 单事务内 500/批分块 INSERT，避免大行集突破绑定参数上限。

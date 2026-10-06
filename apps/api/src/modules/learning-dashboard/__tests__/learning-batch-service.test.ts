@@ -1,7 +1,7 @@
 /**
  * W7-4 刀二：读侧**只读库、不判**（39d §9.4）。
  *
- * 刀一的四条规定在 `@ailearn/shared/limited-batch-v2` 的纯函数里。这一组钉的是
+ * 刀一的四条规定在 `@astella/shared/limited-batch-v2` 的纯函数里。这一组钉的是
  * **分界**：读侧把候选按判据要的形状收齐，然后交给判据。任何一条规定被搬到读侧，
  * 就会出现"从首页进来和从批次页进来不是同一批"——而分叉的后果是屏上读不出来
  * （两处各自都合理）。
@@ -24,7 +24,7 @@ const SERVICE = readFileSync(
 );
 
 test("W7-4 刀二：读侧调用了刀一的判据", () => {
-  assert.match(SERVICE, /import \{[\s\S]*planLimitedBatchV2[\s\S]*\} from "@ailearn\/shared\/limited-batch-v2"/,
+  assert.match(SERVICE, /import \{[\s\S]*planLimitedBatchV2[\s\S]*\} from "@astella\/shared\/limited-batch-v2"/,
     "读侧没有 import 刀一的判据：它自己在排、自己判，于是「从哪个页面进来」会影响这一批是什么。");
   assert.match(SERVICE, /return planLimitedBatchV2\(\{/,
     "读侧没有把候选交给判据");

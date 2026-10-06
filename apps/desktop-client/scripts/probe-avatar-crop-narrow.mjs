@@ -14,7 +14,7 @@ import './load-capture-env.mjs'
 const outDir = resolve(import.meta.dirname, '../outputs/avatar-crop-20261006')
 await mkdir(outDir, { recursive: true })
 
-const browser = await chromium.connectOverCDP(process.env.AILEARN_CAPTURE_CDP ?? 'http://127.0.0.1:9222')
+const browser = await chromium.connectOverCDP(process.env.ASTELLA_CAPTURE_CDP ?? 'http://127.0.0.1:9222')
 const context = browser.contexts()[0]
 const page = context.pages()[0]
 

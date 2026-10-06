@@ -30,8 +30,8 @@ import {
 } from "../modules/note-learning-rounds/round/round-service.ts";
 import { buildRoundReadingPlan } from "../modules/note-learning-rounds/learning-plan.ts";
 import { roundBudgetsV1 } from "../modules/note-learning-rounds/round/round-budgets.ts";
-import { plainTextForGroundingV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact-measure";
-import type { DynamicArtifactDocV1, DynamicArtifactInputV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact-model";
+import { plainTextForGroundingV1 } from "@astella/shared/note-dynamic-artifact/round-artifact-measure";
+import type { DynamicArtifactDocV1, DynamicArtifactInputV1 } from "@astella/shared/note-dynamic-artifact/round-artifact-model";
 import { seedNotesOnlyWorkspace, type NotesOnlyWorkspaceFixture } from "./helpers/pure-v2-workspace-fixture.ts";
 
 const fixtureUrl = process.env.DATABASE_URL_MIGRATOR ?? process.env.DATABASE_URL;
@@ -48,10 +48,10 @@ const { noteLearningRoundRoutes } = await import("../modules/note-learning-round
 const { issueSession } = await import("../modules/identity/service.ts");
 const { currentApiWorkspaceTransaction } = await import("../db/client.ts");
 const { DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1 } = await import(
-  "@ailearn/shared/note-dynamic-artifact/round-artifact-render"
+  "@astella/shared/note-dynamic-artifact/round-artifact-render"
 );
 const { ARTIFACT_ILLUSTRATION_NOTICE_V1 } = await import(
-  "@ailearn/shared/note-dynamic-artifact/round-artifact-measure"
+  "@astella/shared/note-dynamic-artifact/round-artifact-measure"
 );
 
 let seeded: NotesOnlyWorkspaceFixture | null = null;
@@ -234,7 +234,7 @@ test("成功路径：模型分镜渲染出的整份 HTML 落进产物行，生�
   assert.match(html, /data-step/);
   assert.match(html, /document\.querySelectorAll/);
   assert.match(html, new RegExp(ARTIFACT_ILLUSTRATION_NOTICE_V1.slice(0, 12)));
-  assert.equal(/ailearn-artifact-pane/.test(html), false,
+  assert.equal(/astella-artifact-pane/.test(html), false,
     "存进去的是确定性构建器那一份：模型生成的那一刀根本没生效");
 });
 

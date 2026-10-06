@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { allWorkspacesStatsOverviewSchema } from "@ailearn/shared";
+import { allWorkspacesStatsOverviewSchema } from "@astella/shared";
 import { requireSession } from "../identity/middleware.ts";
 import { getAllWorkspacesStatsOverview, getStatsOverview } from "./service.ts";
 

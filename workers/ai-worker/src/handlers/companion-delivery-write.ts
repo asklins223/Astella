@@ -14,7 +14,7 @@
  */
 
 import { sql } from "drizzle-orm";
-import { COMPANION_INBOX_NOTIFY_CHANNEL } from "@ailearn/shared";
+import { COMPANION_INBOX_NOTIFY_CHANNEL } from "@astella/shared";
 import type { WorkerTransaction } from "../db.ts";
 
 export interface SystemEventDelivery {

@@ -7,8 +7,8 @@
  */
 
 import { sql } from "drizzle-orm";
-import { readJobPayloadString } from "@ailearn/shared";
-import { MEMORY_SEMANTIC_SIMILARITY_THRESHOLD } from "@ailearn/shared/db-schema/assistant-memory";
+import { readJobPayloadString } from "@astella/shared";
+import { MEMORY_SEMANTIC_SIMILARITY_THRESHOLD } from "@astella/shared/db-schema/assistant-memory";
 import { logger } from "../lib/logger.ts";
 import { createEmbeddingProvider } from "../lib/ai-provider.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
@@ -24,7 +24,7 @@ import type { JobPayload } from "./index.ts";
 const BATCH_LIMIT = 200;
 
 export async function runCompanionMemoryEmbeddingRebuild(job: JobPayload): Promise<void> {
-  // 设计 P1-8（2026-09-15 审计）：字段名走共享契约（见 @ailearn/shared 的
+  // 设计 P1-8（2026-09-15 审计）：字段名走共享契约（见 @astella/shared 的
   // companion-memory-job-payload），改名由编译器兜住。
   const userId = readJobPayloadString(job.payload, "userId");
   if (!userId) throw new Error("companion_memory_embedding_rebuild payload 缺 userId");

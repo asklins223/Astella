@@ -20,7 +20,7 @@ const VERSION_ID = "22222222-4222-4222-8222-222222222222";
 
 function stub(noteOver: Record<string, unknown> = {}) {
   const setShare = vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: { noteId: NOTE_ID, shareScope: "shared", changed: true, updatedAt: new Date().toISOString() } }));
-  window.ailearn = {
+  window.astella = {
     contract: { enabledRoutes: ["note.detail"] },
     auth: { getState: vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: { status: "authenticated", workspace: { workspaceId: "w-1" } } })) },
     room: {
@@ -68,7 +68,7 @@ function stub(noteOver: Record<string, unknown> = {}) {
       })),
     },
     source: { get: vi.fn(async () => ({ ok: false as const, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" } })) },
-  } as unknown as typeof window.ailearn;
+  } as unknown as typeof window.astella;
   return { setShare };
 }
 

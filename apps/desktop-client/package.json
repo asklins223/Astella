@@ -1,5 +1,5 @@
 {
-  "name": "ailearn-desktop-client",
+  "name": "astella-desktop-client",
   "version": "0.1.0",
   "description": "Astella 拾星笔记 immersive desktop study room",
   "private": true,
@@ -28,7 +28,7 @@
     "dist": "npm run typecheck && npm run test && npm run build && electron-builder"
   },
   "dependencies": {
-    "@ailearn/shared": "file:../../packages/shared",
+    "@astella/shared": "file:../../packages/shared",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/language": "^6.12.4",

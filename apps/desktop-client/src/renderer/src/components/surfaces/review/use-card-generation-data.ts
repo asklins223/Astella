@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CardGenerationCandidateV1, CardGenerationPracticeQuotaV1, CardGenerationRunSnapshotV1 } from "@ailearn/shared/card-generation-desktop-contracts";
+import type { CardGenerationCandidateV1, CardGenerationPracticeQuotaV1, CardGenerationRunSnapshotV1 } from "@astella/shared/card-generation-desktop-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { isCardGenerationInFlight, isCardGenerationReviewStage, isLandedCandidate } from "./card-generation-status";
@@ -38,13 +38,13 @@ export function useCardGenerationData() {
   const lastStatusRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (runId || runIdHealed || !window.ailearn) return;
+    if (runId || runIdHealed || !window.astella) return;
     let active = true;
     void (async () => {
       try {
-        const session = unwrapGatewayResult(await window.ailearn.auth.getState({ meta: createRequestMeta() }));
+        const session = unwrapGatewayResult(await window.astella.auth.getState({ meta: createRequestMeta() }));
         if (session.status !== "authenticated" || !session.workspace) return;
-        const response = await window.ailearn.room.getProjection({ meta: createRequestMeta(session.workspaceEpoch) });
+        const response = await window.astella.room.getProjection({ meta: createRequestMeta(session.workspaceEpoch) });
         if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
         const projection = unwrapGatewayResult(response);
         const generations = projection.activeGenerationSummary.state === "data" ? projection.activeGenerationSummary.data : [];
@@ -58,9 +58,9 @@ export function useCardGenerationData() {
   const noteId = run?.noteId;
   useEffect(() => {
     setNoteTitle(null);
-    if (!noteId || !window.ailearn) return;
+    if (!noteId || !window.astella) return;
     let active = true;
-    void window.ailearn.note.get({ meta: createRequestMeta(epochRef.current), noteId }).then((response) => {
+    void window.astella.note.get({ meta: createRequestMeta(epochRef.current), noteId }).then((response) => {
       if (active) setNoteTitle(unwrapGatewayResult(response).title || null);
     }).catch(() => { if (active) setNoteTitle(null); });
     return () => { active = false; };
@@ -68,17 +68,17 @@ export function useCardGenerationData() {
 
   const load = useCallback(async (showLoading = false): Promise<string | null> => {
     const request = ++requestRef.current;
-    if (!runId || !window.ailearn) { setLoading(false); return null; }
+    if (!runId || !window.astella) { setLoading(false); return null; }
     if (showLoading) setLoading(true);
     try {
-      const response = await window.ailearn.note.cardGeneration.getRun({ meta: createRequestMeta(epochRef.current), runId });
+      const response = await window.astella.note.cardGeneration.getRun({ meta: createRequestMeta(epochRef.current), runId });
       if (request !== requestRef.current) return null;
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       const nextRun = unwrapGatewayResult(response);
       let nextCandidates: CardGenerationCandidateV1[] = [];
       let nextQuota: CardGenerationPracticeQuotaV1 | null = null;
       if (isCardGenerationReviewStage(nextRun.status) || isCardGenerationInFlight(nextRun.status)) {
-        const candidateResponse = await window.ailearn.note.cardGeneration.getCandidates({ meta: createRequestMeta(epochRef.current), runId });
+        const candidateResponse = await window.astella.note.cardGeneration.getCandidates({ meta: createRequestMeta(epochRef.current), runId });
         if (request !== requestRef.current) return null;
         if (candidateResponse.workspaceEpoch) epochRef.current = candidateResponse.workspaceEpoch;
         const list = unwrapGatewayResult(candidateResponse);
@@ -115,11 +115,11 @@ export function useCardGenerationData() {
   }, [load]);
 
   useEffect(() => {
-    if (!runId || !window.ailearn) return;
+    if (!runId || !window.astella) return;
     let disposed = false;
     let subscriptionId: string | null = null;
     let unsubscribe: (() => void) | undefined;
-    const api = window.ailearn;
+    const api = window.astella;
     void (async () => {
       try {
       const response = await api.subscriptions.subscribe({ meta: createRequestMeta(epochRef.current), topic: { kind: "cardGeneration", runId } });

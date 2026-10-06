@@ -49,7 +49,7 @@ function installApi(create: (input: CreateInput) => Promise<unknown>) {
       create,
     },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return gateway;
 }
 
@@ -66,7 +66,7 @@ async function openCapture() {
 
 afterEach(() => {
   cleanup();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   useRoomStore.setState({ activeSourceId: null });
 });
 

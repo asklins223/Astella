@@ -50,10 +50,10 @@ const rawAuthResponseSchema = z.strictObject({
   csrfToken: nonEmptyStringSchema.optional(),
 });
 
-import type { WorkspaceContextV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import { createWorkspaceResultV1Schema, renameWorkspaceResultV1Schema } from "@ailearn/shared/desktop-ipc-contracts";
-import { nonEmptyStringSchema } from "@ailearn/shared/desktop-ipc-contracts";
-import type { CreateWorkspaceResultV1, RenameWorkspaceResultV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { WorkspaceContextV1 } from "@astella/shared/desktop-ipc-contracts";
+import { createWorkspaceResultV1Schema, renameWorkspaceResultV1Schema } from "@astella/shared/desktop-ipc-contracts";
+import { nonEmptyStringSchema } from "@astella/shared/desktop-ipc-contracts";
+import type { CreateWorkspaceResultV1, RenameWorkspaceResultV1 } from "@astella/shared/desktop-ipc-contracts";
 import { z } from "zod";
 import type { CompanionBridge } from "./desktop-gateway-companion-bridge";
 import { DesktopGatewayFailure } from "./desktop-gateway-failure";
@@ -67,12 +67,12 @@ import {
   avatarObjectKeySchema,
   avatarUploadResultV1Schema,
   sessionContextSchema,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import {
   SOURCE_IMAGE_MIME_TYPES,
   SourceImageGetResultV1,
   sourceImageGetResultV1Schema,
-} from "@ailearn/shared/source-image-contracts";
+} from "@astella/shared/source-image-contracts";
 import type { GatewayTransport } from "./desktop-gateway-transport";
 
 export async function getSession(t: GatewayTransport, requestId?: string): Promise<SessionContextV1> {

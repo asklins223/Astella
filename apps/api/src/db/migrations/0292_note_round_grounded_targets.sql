@@ -38,5 +38,5 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER nlrtarget_append_only BEFORE UPDATE OR DELETE ON public.note_learning_round_targets
   FOR EACH ROW EXECUTE FUNCTION public.prevent_note_learning_round_target_mutation();
 --> statement-breakpoint
-GRANT SELECT, INSERT ON public.note_learning_round_targets TO ailearn_api;
-GRANT ALL ON public.note_learning_round_targets TO ailearn_migrator;
+GRANT SELECT, INSERT ON public.note_learning_round_targets TO astella_api;
+GRANT ALL ON public.note_learning_round_targets TO astella_migrator;

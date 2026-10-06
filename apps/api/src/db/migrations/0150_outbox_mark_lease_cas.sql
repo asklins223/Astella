@@ -1,8 +1,8 @@
 -- 0150: learning_run_processing_outbox 的 mark-processed 增加 lease CAS。
 --
--- 背景（PERF-B8 / 审计发现）：0121 中的 ailearn_mark_run_processing_processed
+-- 背景（PERF-B8 / 审计发现）：0121 中的 astella_mark_run_processing_processed
 -- 仅按 outbox id 置 processed_at，不校验 lease_owner 也不校验 processed_at
--- IS NULL。对比同迁移的 ailearn_release_run_processing（校验 lease_owner），
+-- IS NULL。对比同迁移的 astella_release_run_processing（校验 lease_owner），
 -- 风格不一致。当 LEASE_SECONDS=120 而 Critic HTTP 调用可能超过 120s 时，
 -- 租约过期后第二实例可重领并处理同一条命令；慢一拍的第一实例随后 mark 仍会
 -- 置位，形成理论双写窗口。
@@ -17,11 +17,11 @@
 
 -- CREATE OR REPLACE 无法变更参数个数/类型（只会新建同名 overload），
 -- 因此先 DROP 旧的 2 参函数再以 3 参签名重建，确保不残留未打补丁的重载。
-DROP FUNCTION IF EXISTS public.ailearn_mark_run_processing_processed(uuid, timestamptz);
+DROP FUNCTION IF EXISTS public.astella_mark_run_processing_processed(uuid, timestamptz);
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_mark_run_processing_processed(
+CREATE OR REPLACE FUNCTION public.astella_mark_run_processing_processed(
   p_outbox_id uuid,
   p_worker_id text DEFAULT NULL,
   p_now timestamptz DEFAULT now()
@@ -43,5 +43,5 @@ $function$;
 
 --> statement-breakpoint
 
-GRANT EXECUTE ON FUNCTION public.ailearn_mark_run_processing_processed(uuid, text, timestamptz) TO ailearn_api;
-REVOKE ALL ON FUNCTION public.ailearn_mark_run_processing_processed(uuid, text, timestamptz) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_mark_run_processing_processed(uuid, text, timestamptz) TO astella_api;
+REVOKE ALL ON FUNCTION public.astella_mark_run_processing_processed(uuid, text, timestamptz) FROM PUBLIC;

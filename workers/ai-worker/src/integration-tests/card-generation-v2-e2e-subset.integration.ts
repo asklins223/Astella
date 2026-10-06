@@ -42,8 +42,8 @@
  *
  * 运行（从仓库根，**必须单文件执行**——worker outbox claim 是全局的，
  * 多文件同进程会互相抢 job）：
- *   DATABASE_URL_WORKER="postgres://ailearn_worker:ailearn_dev@localhost:5432/ailearn" \
- *   DATABASE_URL_API="postgres://ailearn:ailearn_dev@localhost:5432/ailearn" \
+ *   DATABASE_URL_WORKER="postgres://astella_worker:astella_dev@localhost:5432/astella" \
+ *   DATABASE_URL_API="postgres://astella:astella_dev@localhost:5432/astella" \
  *   node --import tsx --test --test-concurrency=1 \
  *     workers/ai-worker/src/integration-tests/card-generation-v2-e2e-subset.integration.ts
  */
@@ -52,13 +52,13 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { assertFixtureWipeClean, wipeCardGenerationFixtures } from "./card-generation-fixture-cleanup.ts";
 import { and, eq, isNull } from "drizzle-orm";
-import { objectiveReviewHoldsV2 } from "@ailearn/shared/db-schema/evidence";
+import { objectiveReviewHoldsV2 } from "@astella/shared/db-schema/evidence";
 
 const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
-// 测试体以 ailearn_worker 角色执行 pollV2Outbox（RLS NOBYPASSRLS 验证）。
+// 测试体以 astella_worker 角色执行 pollV2Outbox（RLS NOBYPASSRLS 验证）。
 void process.env.DATABASE_URL_WORKER;
 
 process.env.DATABASE_URL_API ??= ADMIN_URL;
@@ -219,7 +219,7 @@ after(async () => {
     await admin.end({ timeout: 5 }).catch(() => undefined);
     const { closeDatabase } = await import("../../../../apps/api/src/db/client.ts");
     await closeDatabase().catch(() => undefined);
-    // worker 侧独立连接池（ailearn_worker 角色）也必须关闭，否则进程挂起。
+    // worker 侧独立连接池（astella_worker 角色）也必须关闭，否则进程挂起。
     const { closeDatabase: closeWorkerDatabase } = await import("../db.ts");
     await closeWorkerDatabase().catch(() => undefined);
   }
@@ -528,7 +528,7 @@ test("C23+C25：activation 幂等重放同 receipt + 恰一 canonical mapping + 
   const snapshotId = snapshots[0].evidence_snapshot_id;
 
   const { computeCandidateEvidenceBindingPlanHashV2 } = await import(
-    "@ailearn/shared/card-generation-v2-hashing"
+    "@astella/shared/card-generation-v2-hashing"
   );
   // §14.3 targetUnitBindings 形状：targetUnit{kind,id} + evidenceSnapshotId + hash；
   // kind ∈ {answer, rubric, relation, learning_support}（DB CHECK）；
@@ -560,7 +560,7 @@ test("C23+C25：activation 幂等重放同 receipt + 恰一 canonical mapping + 
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "@ailearn/shared/card-generation-v2-hashing"
+    "@astella/shared/card-generation-v2-hashing"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId,
@@ -691,7 +691,7 @@ test("C45：开启复习那一档 → 恰一条待处理安排，回执报库里
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "@ailearn/shared/card-generation-v2-hashing"
+    "@astella/shared/card-generation-v2-hashing"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId,
@@ -759,7 +759,7 @@ test("C45：开启复习那一档 → 恰一条待处理安排，回执报库里
   // 那两个数不是这里该写死的字面量：首档由 discrete-v2 的阶梯导出，策略版本由那份模块导出。
   // 对账的是"激活这一发有没有去读唯一出处"——调用方另写一份 `1` 或 `"discrete-v2"`，
   // 阶梯改了它不会跟着改，屏幕上那句"第一次复习排在 X"就与策略悄悄分叉。
-  const { DISCRETE_V2_FIRST_INTERVAL_DAYS, DISCRETE_V2_POLICY_VERSION } = await import("@ailearn/shared");
+  const { DISCRETE_V2_FIRST_INTERVAL_DAYS, DISCRETE_V2_POLICY_VERSION } = await import("@astella/shared");
   assert.equal(row.interval_days, DISCRETE_V2_FIRST_INTERVAL_DAYS,
     "首档 = discrete-v2 阶梯的头一档（这一发不许自带第二份天数）");
   assert.equal(row.policy_version, DISCRETE_V2_POLICY_VERSION,
@@ -1165,7 +1165,7 @@ test("C24：非法 schema / hash mismatch → fail closed（0 低质激活）", 
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "@ailearn/shared/card-generation-v2-hashing"
+    "@astella/shared/card-generation-v2-hashing"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId,
@@ -1229,7 +1229,7 @@ test("C30：archive Card/Objective → lifecycle archived + epoch 前移，历�
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "@ailearn/shared/card-generation-v2-hashing"
+    "@astella/shared/card-generation-v2-hashing"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId,
@@ -1331,7 +1331,7 @@ test("C5：LearningRun PREPARE 冻结 LearningTargetSnapshotV2（真实 DB + 幂
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "@ailearn/shared/card-generation-v2-hashing"
+    "@astella/shared/card-generation-v2-hashing"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId,
@@ -1503,7 +1503,7 @@ test("§17.5 step 17：post-activation 投影消费者——幂等对账台账 +
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "@ailearn/shared/card-generation-v2-hashing"
+    "@astella/shared/card-generation-v2-hashing"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId,
@@ -1619,7 +1619,7 @@ test("C18：reveal 激活卡 → exposure-first（先持久化再返回答案）
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "@ailearn/shared/card-generation-v2-hashing"
+    "@astella/shared/card-generation-v2-hashing"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId,
@@ -1690,7 +1690,7 @@ test("C18：reveal 激活卡 → exposure-first（先持久化再返回答案）
   // 写"正好相等"就是一条会随机红的断言。60 秒仍然抓得住真正的错法：有人把这一处退回写死的
   // 12/48 小时，差的是小时级，不是秒级。
   const { PRE_RUN_REVEAL_COOLDOWN_MS, PRE_RUN_REVEAL_POLICY_VERSION } = await import(
-    "@ailearn/shared/card-generation-v2-contracts"
+    "@astella/shared/card-generation-v2-contracts"
   );
   const revealed = reminders[0] as {
     status: string;
@@ -2176,7 +2176,7 @@ async function revealCandidateAnswerAs(
 /**
  * 用**被测那条连接**（`DATABASE_URL_API`）数一眼"某个成员的候选曝光行读不读得到"。
  *
- * 这一族策略是按人挡的（`user_id = app.user_id`，只豁免 `ailearn_worker`），所以同一张表
+ * 这一族策略是按人挡的（`user_id = app.user_id`，只豁免 `astella_worker`），所以同一张表
  * 读不读得到，取决于事务上下文里塞的是谁——C48 要读的恰好是**别人**那一行。把这件事做成
  * 一次现量而不是一句注释，是为了让"跳过"只在真的看不见时发生，而且带阳性对照：以自己的
  * 身份必须看得见，看不见就是行根本没种进去，那种红不该被跳过藏掉。
@@ -2213,7 +2213,7 @@ async function saveFirstCandidate(
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "@ailearn/shared/card-generation-v2-hashing"
+    "@astella/shared/card-generation-v2-hashing"
   );
   const receipt = await activateCardCandidatesV2(
     { workspaceId: WORKSPACE_ID, userId: USER_ID },
@@ -2255,7 +2255,7 @@ async function saveFirstCandidate(
 }
 
 async function cooldownFromSharedContract(): Promise<{ cooldownMs: number; policyVersion: string }> {
-  const contracts = await import("@ailearn/shared/card-generation-v2-contracts");
+  const contracts = await import("@astella/shared/card-generation-v2-contracts");
   return {
     cooldownMs: contracts.PRE_RUN_REVEAL_COOLDOWN_MS as number,
     policyVersion: contracts.PRE_RUN_REVEAL_POLICY_VERSION as string,
@@ -2340,7 +2340,7 @@ test("C48：另一个人也翻过这张候选的答案 → 保存那一发替他
   const otherExposureId = await revealCandidateAnswerAs(otherUserId, runId, candidate, "c48");
 
   // 前提现量：这一条要读的恰好是**别人**那一行，而这一族策略按人挡（只豁免 worker 角色），
-  // 所以它在"生产口径的连接"（CI 与真部署都是 `ailearn_api`）下今天整条走不到——那一跳的
+  // 所以它在"生产口径的连接"（CI 与真部署都是 `astella_api`）下今天整条走不到——那一跳的
   // SELECT 返回空，替别人建提醒的循环连一次都不进入。看不见就**如实跳过**，不假装绿：
   // 空转本身登记在 39d §19（W7-3／W7-7 要裁的就是它——改走 worker 那条豁免通道，还是按
   // AGENTS.md 把这条没有可达方的支路删掉）。阳性对照走同一把尺：他自己的身份必须看得见
@@ -2437,7 +2437,7 @@ test("C49：复用的目标被暂不安排 ⇒ 新卡落上去也不排期（§1
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "@ailearn/shared/card-generation-v2-hashing"
+    "@astella/shared/card-generation-v2-hashing"
   );
 
   /** 跑一发：建 run → 走管线 → 强制作到可激活 → 激活并交回 receipt。 */

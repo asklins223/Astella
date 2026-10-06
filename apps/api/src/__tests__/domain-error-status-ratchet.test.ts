@@ -3,8 +3,8 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { DomainError } from "@ailearn/shared";
-import { AgentStoreError } from "@ailearn/agent-host";
+import { DomainError } from "@astella/shared";
+import { AgentStoreError } from "@astella/agent-host";
 import { asDomainError, buildSimpleErrorBody } from "../lib/error-envelope.ts";
 
 /**
@@ -121,7 +121,7 @@ test("带 statusCode 的错误类都被 asDomainError 认得出来", () => {
  */
 test("搬出扫描范围的制卡错误类：错误边界认得它，helpers 与领域包是同一个 class", async () => {
   const helpers = await import("../modules/card-generation-v2/helpers.ts");
-  const domain = await import("@ailearn/card-generation");
+  const domain = await import("@astella/card-generation");
   const helpersError = helpers.CardGenerationV2ServiceError;
 
   const err = new helpersError("stale_run_status", 409, "运行状态已被并发修改，请刷新");

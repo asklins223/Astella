@@ -19,8 +19,8 @@
 -- `apps/api/src/integration-tests/workspace-collab-postgres.integration.ts` 的
 -- 「RLS 重开后」一组用例钉住。
 --
--- 验证口径：dev 栈里 api/worker 容器与集成测试都用 `ailearn`（superuser + BYPASSRLS）
--- 连接，RLS 对它们天然不可见；真正的执行效果只能靠 `SET ROLE ailearn_api` 测出来，
+-- 验证口径：dev 栈里 api/worker 容器与集成测试都用 `astella`（superuser + BYPASSRLS）
+-- 连接，RLS 对它们天然不可见；真正的执行效果只能靠 `SET ROLE astella_api` 测出来，
 -- 所以上面那组用例走的是 SET ROLE，而不是"跑一遍看看"。
 
 --> statement-breakpoint

@@ -3,7 +3,7 @@
  *
  * 洞在哪：跨空间判据原先只长在抽取器里，API 写入端完全不知道它——用户在记忆中心把
  * "正在学数据库索引优化"存成账号级偏好，服务端照写不误，0371 的受控铺开还会把它真的
- * 复制到别的空间去。判据现在共用 `@ailearn/shared/companion-memory-scope`。
+ * 复制到别的空间去。判据现在共用 `@astella/shared/companion-memory-scope`。
  *
  * 不连数据库：断言的是"有没有发出那条写语句"与"回执长什么样"——服务在已开的事务里
  * 抛错会回滚，而**写入前就被拦下**是比回滚更强的一条保证。真实库上的副本与历史，
@@ -25,7 +25,7 @@ import {
 } from "../memory-routes.ts";
 import { executeCompanionMemoryProposalAction } from "../../companion-memory-proposal-action.ts";
 import { CompanionConversationError } from "../../turn/turn-service.ts";
-import { accountPreferenceRejectionMessage } from "@ailearn/shared/companion-memory-scope";
+import { accountPreferenceRejectionMessage } from "@astella/shared/companion-memory-scope";
 
 const SCOPE: MemoryScope = {
   workspaceId: "22222222-2222-4222-8222-222222222222",
@@ -164,7 +164,7 @@ function fakeTx(options: FakeTxOptions = {}): FakeTx {
 
 /** 服务在事务里已经写过跨空间传播？那守卫就晚了：这里要求拒绝发生在传播之前。 */
 function fannedOut(fake: FakeTx): boolean {
-  return fake.executedSql.some((text) => text.includes("ailearn_fanout_agent_global_preference"));
+  return fake.executedSql.some((text) => text.includes("astella_fanout_agent_global_preference"));
 }
 
 describe("新建账号级偏好", () => {

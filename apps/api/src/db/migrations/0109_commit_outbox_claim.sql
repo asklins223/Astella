@@ -5,8 +5,8 @@
 -- episode-commit/vertical-slice/PgCommitPort 都在 apps/api，且 proactive
 -- fireCompanionTrigger 在 API 域）。
 --
--- 但 outbox 表 RLS（0081）只放行 ailearn_worker（跨 workspace 豁免）或
--- app.workspace_id/user_id 上下文。ailearn_api 无法跨 workspace claim。
+-- 但 outbox 表 RLS（0081）只放行 astella_worker（跨 workspace 豁免）或
+-- app.workspace_id/user_id 上下文。astella_api 无法跨 workspace claim。
 -- 沿用 0098 的既有模式（SECURITY DEFINER 函数 + migrator owner BYPASSRLS，
 -- 函数内绕过 RLS；API 仅 EXECUTE），提供跨 workspace 的 claim 入口。
 -- 函数只返回 scoped 标识符 + 租约字段，不返回任何作答内容
@@ -19,7 +19,7 @@
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_claim_commit_outbox(
+CREATE OR REPLACE FUNCTION public.astella_claim_commit_outbox(
   p_worker_id text,
   p_lease_ms integer,
   p_now timestamptz DEFAULT now()
@@ -80,5 +80,5 @@ $function$;
 
 --> statement-breakpoint
 
-GRANT EXECUTE ON FUNCTION public.ailearn_claim_commit_outbox(text, integer, timestamptz)
-  TO ailearn_api;
+GRANT EXECUTE ON FUNCTION public.astella_claim_commit_outbox(text, integer, timestamptz)
+  TO astella_api;

@@ -1,5 +1,5 @@
 import pino from "pino";
-import { safeErrorSerializer } from "@ailearn/shared";
+import { safeErrorSerializer } from "@astella/shared";
 
 export const logger = pino({
   level: process.env.LOG_LEVEL ?? "info",

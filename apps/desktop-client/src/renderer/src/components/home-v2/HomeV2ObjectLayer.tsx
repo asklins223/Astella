@@ -18,7 +18,7 @@ import { resolveSceneMotionMode } from "../../scene/scene-motion";
 import { useHomeV2 } from "./HomeV2Experience";
 import { useHudPage } from "../hud/use-hud-page";
 import { usePageReadableView } from "../hud/use-page-readable-view";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { HOME_FEATURE_ICONS } from "./home-feature-icons";
 import { homeFeaturesForRegion, type HomeFeatureRegionId } from "./home-feature-registry";
 import type { HomeV2Zone } from "./home-v2";

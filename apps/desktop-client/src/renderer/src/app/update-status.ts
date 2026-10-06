@@ -15,7 +15,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 
-import type { UpdateStateV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { UpdateStateV1 } from "@astella/shared/desktop-ipc-contracts";
 import { createRequestMeta } from "./desktop-client";
 
 /** 没有收到主进程快照之前的占位。`currentVersion` 留空，由界面显示「—」。 */
@@ -61,7 +61,7 @@ export const useUpdateStatus = create<UpdateStatusStore>((set, get) => ({
     set({ checking: true });
     try {
       // 用户主动点的「检查更新」：绕过 6 小时缓存立刻联网。
-      const result = await window.ailearn.update.check({ meta: createRequestMeta(), userInitiated: true });
+      const result = await window.astella.update.check({ meta: createRequestMeta(), userInitiated: true });
       if (result.ok) set({ state: result.data });
     } catch {
       // 主进程那边已经把失败表达成 state（unreachable / failed），这里无需再抛一次。
@@ -74,7 +74,7 @@ export const useUpdateStatus = create<UpdateStatusStore>((set, get) => ({
     if (get().downloading) return;
     set({ downloading: true });
     try {
-      const result = await window.ailearn.update.download({ meta: createRequestMeta() });
+      const result = await window.astella.update.download({ meta: createRequestMeta() });
       if (result.ok) set({ state: result.data });
     } finally {
       set({ downloading: false });
@@ -85,7 +85,7 @@ export const useUpdateStatus = create<UpdateStatusStore>((set, get) => ({
     if (get().installing) return;
     set({ installing: true });
     try {
-      const result = await window.ailearn.update.install({ meta: createRequestMeta() });
+      const result = await window.astella.update.install({ meta: createRequestMeta() });
       if (result.ok) set({ state: result.data });
     } finally {
       set({ installing: false });
@@ -115,7 +115,7 @@ export function hasActionableUpdate(state: UpdateStateV1): boolean {
  */
 async function primeUpdateStatus(): Promise<void> {
   try {
-    const result = await window.ailearn.update.getState({ meta: createRequestMeta() });
+    const result = await window.astella.update.getState({ meta: createRequestMeta() });
     if (result.ok) useUpdateStatus.getState().accept(result.data.state);
   } catch {
     // 主进程不可用（浏览器预览）时保持 idle 即可，不要抛。
@@ -129,8 +129,8 @@ async function primeUpdateStatus(): Promise<void> {
  */
 export function useUpdateStatusSubscription(): void {
   useEffect(() => {
-    // `ailearnDesktop` 在浏览器预览（无 preload）下不存在，那里没有主进程。
-    const bridge = window.ailearnDesktop;
+    // `astellaDesktop` 在浏览器预览（无 preload）下不存在，那里没有主进程。
+    const bridge = window.astellaDesktop;
     if (!bridge) return;
     void primeUpdateStatus();
     return bridge.onUpdateState(state => useUpdateStatus.getState().accept(state));

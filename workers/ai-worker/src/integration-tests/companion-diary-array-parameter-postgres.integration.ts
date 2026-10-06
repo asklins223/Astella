@@ -20,7 +20,7 @@
  * **参数被驱动绑定并送进解析器**的那一刻。所以这里对着真表跑真语句。
  *
  * 覆盖面刻意包含"曾经坏掉的那两种形状"——空数组与非空数组。修法是把数组在应用侧
- * 拼成 PostgreSQL 数组字面量（`@ailearn/shared/pg-text-array`），本文件钉住这个
+ * 拼成 PostgreSQL 数组字面量（`@astella/shared/pg-text-array`），本文件钉住这个
  * 契约，免得下一次有人觉得「直接传数组更干净」而改回去。
  */
 
@@ -29,8 +29,8 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { sql as drizzleSql } from "drizzle-orm";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
-import { toTextArrayLiteral } from "@ailearn/shared/pg-text-array";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
+import { toTextArrayLiteral } from "@astella/shared/pg-text-array";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL ??= CONN;

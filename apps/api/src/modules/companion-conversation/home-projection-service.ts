@@ -22,7 +22,7 @@ import {
   type CompanionRoomProfilePatchV1,
   type CompanionRoomProfileV1,
   type CompanionRoomSlotV1,
-} from "@ailearn/shared/companion-home-contracts";
+} from "@astella/shared/companion-home-contracts";
 import type { ApiTransaction } from "../../db/client.ts";
 import {
   assistantDeliveries,
@@ -33,7 +33,7 @@ import {
   learningRuns,
   notes,
   petProfiles,
-} from "@ailearn/shared/db-schema";
+} from "@astella/shared/db-schema";
 import { visibleObjectivesCondition } from "../note/visibility.ts";
 
 export interface CompanionHomeScope {

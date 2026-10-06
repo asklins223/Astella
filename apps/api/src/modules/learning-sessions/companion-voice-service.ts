@@ -11,12 +11,12 @@
 
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { sha256Utf8V1 } from "@ailearn/shared/content-hash";
-import { companionVoiceSegmentReadyPayloadV2Schema } from "@ailearn/shared/companion-conversation-contracts";
+import { sha256Utf8V1 } from "@astella/shared/content-hash";
+import { companionVoiceSegmentReadyPayloadV2Schema } from "@astella/shared/companion-conversation-contracts";
 import {
   COMPANION_TTS_PLAYBACK_REASON_TO_OUTCOME,
   type CompanionTtsPlaybackReason,
-} from "@ailearn/shared/companion-voice-contracts";
+} from "@astella/shared/companion-voice-contracts";
 import { withWorkspaceTransaction } from "../../db/client.ts";
 import { logger } from "../../lib/logger.ts";
 import { CompanionConversationError } from "../companion-conversation/turn/turn-service.ts";

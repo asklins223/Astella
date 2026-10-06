@@ -20,7 +20,7 @@
  *
  * 长期目标用**现役 memory service** 写（`upsertMemory` + `confirmMemory` +
  * `correctMemory` / `deleteMemory` / `dismissMemory` / `archiveMemory`），
- * run 读写用**现役 agent store**（`@ailearn/agent-host` 的 `createAgentStore` +
+ * run 读写用**现役 agent store**（`@astella/agent-host` 的 `createAgentStore` +
  * worker's `agentStorePorts`）。断言的是 store 与 `longGoals()` 读到什么，
  * 不是「库里躺着什么」。
  *
@@ -41,7 +41,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 // ── 连接串：必须在这两个动态 import **之前**落定 ──────────────────────────
 // apps/api/src/db/client.ts 与 workers/ai-worker/src/db.ts 都在模块加载时读环境变量。
@@ -61,8 +61,8 @@ const {
 } = await import(
   "../../../../apps/api/src/modules/companion-conversation/memory/memory-service.ts"
 );
-const { AgentStoreError, createAgentAdvanceStore } = await import("@ailearn/agent-host");
-const { agentTurnResultSchema } = await import("@ailearn/shared");
+const { AgentStoreError, createAgentAdvanceStore } = await import("@astella/agent-host");
+const { agentTurnResultSchema } = await import("@astella/shared");
 
 type StatedInput = Parameters<typeof upsertMemory>[2];
 

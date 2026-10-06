@@ -1,7 +1,7 @@
 /**
  * 有限的一批任务——**读侧**（39d W7-4 刀二；39 §9.4）。
  *
- * 刀一落了判据（`@ailearn/shared/limited-batch-v2` 的 `planLimitedBatchV2`），这一份
+ * 刀一落了判据（`@astella/shared/limited-batch-v2` 的 `planLimitedBatchV2`），这一份
  * 负责按它要的形状收候选。两者的分界是纪律：**这一份只读库、不判**；四条规定都在
  * 纯函数里。三处各写一遍判断就是三处会分叉（屏上的批次、首页那一件、伴星读页面说的
  * 批次），而分叉的后果是"这一批里有什么"开始取决于你从哪个页面进来。
@@ -28,15 +28,15 @@
  * 复活"。判据那一格是唯一说了算的地方。
  */
 import { and, eq, inArray, isNull, max } from "drizzle-orm";
-import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
-import { objectiveReviewHoldsV2 } from "@ailearn/shared/db-schema/evidence";
+import { reviewSchedules } from "@astella/shared/db-schema/evidence";
+import { objectiveReviewHoldsV2 } from "@astella/shared/db-schema/evidence";
 import { visibleObjectivesCondition } from "../note/visibility.ts";
-import { learningObjectivesV2 } from "@ailearn/shared/db-schema/card-generation-v2";
+import { learningObjectivesV2 } from "@astella/shared/db-schema/card-generation-v2";
 import {
   planLimitedBatchV2,
   type BatchCandidateV2,
   type LimitedBatchV2,
-} from "@ailearn/shared/limited-batch-v2";
+} from "@astella/shared/limited-batch-v2";
 
 export interface LoadLimitedBatchInputV2 {
   readonly workspaceId: string;

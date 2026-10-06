@@ -1,5 +1,5 @@
 {
-  "name": "@ailearn/agent-host",
+  "name": "@astella/agent-host",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,11 +12,11 @@
     "test": "node --import tsx --test --test-concurrency=1 $(find src -name '*.test.ts' | sort)"
   },
   "dependencies": {
-    "@ailearn/agent-core": "file:../agent-core",
-    "@ailearn/shared": "file:../shared",
+    "@astella/agent-core": "file:../agent-core",
+    "@astella/shared": "file:../shared",
     "drizzle-orm": "^0.45.2",
     "zod": "^3.23.8",
-    "@ailearn/card-generation": "file:../card-generation"
+    "@astella/card-generation": "file:../card-generation"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

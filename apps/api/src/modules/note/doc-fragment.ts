@@ -6,7 +6,7 @@ import {
   noteDocSchemaSpec,
   pmNodesToNoteBlocks,
   type NoteDocBlockSpec,
-} from "@ailearn/shared/note-doc-schema";
+} from "@astella/shared/note-doc-schema";
 
 /**
  * 笔记正文的 CRDT 文档形状（批次 C 起：服务端唯一的一份内核）。

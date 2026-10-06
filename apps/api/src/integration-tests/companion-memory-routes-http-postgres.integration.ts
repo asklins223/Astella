@@ -16,7 +16,7 @@ import sensible from "@fastify/sensible";
 import {
   accountPreferenceRejectionMessage,
   type AccountPreferenceWriteRejection,
-} from "@ailearn/shared/companion-memory-scope";
+} from "@astella/shared/companion-memory-scope";
 
 process.env.COMPANION_MEMORY_VECTOR_V1 = "true";
 // 星图是独立开关（§9.8），只开 VECTOR 时 /memory/star-map 会 404。
@@ -24,7 +24,7 @@ process.env.COMPANION_MEMORY_STAR_MAP_V1 = "true";
 process.env.COMPANION_SUMMARIZER_V1 = "true";
 
 // Test fixture setup creates users/workspaces directly, while the API's own
-// pool can remain on the restricted ailearn_api role for the request path.
+// pool can remain on the restricted astella_api role for the request path.
 const CONN = process.env.DATABASE_URL_TEST_ADMIN ?? process.env.DATABASE_URL ?? process.env.DATABASE_URL_API;
 if (!CONN) {
   throw new Error("DATABASE_URL_API 未配置——memory routes HTTP 集成测试要求真实 Postgres");
@@ -552,7 +552,7 @@ test('已被替代的伴星判断可以修订，旧认识状态与四种作者�
  * 降级成空间内"：被拒的修订之后，正文、修订号与只追加历史逐字不变。
  *
  * 走真实 session + `app.inject` 打实际路由；不 mock 路由，也不直接调映射函数拿一个
- * 假回执来比较。文案取自共享模块（`@ailearn/shared/companion-memory-scope`）——那是
+ * 假回执来比较。文案取自共享模块（`@astella/shared/companion-memory-scope`）——那是
  * API、伴星工具与提案链共用的**同一句**，比对着它断言才能守住"入口之间说的是同一句话"。
  */
 test('账号级范围守卫：一般 global 偏好能存，本地内容/条件回 422 且记忆与历史不变', async () => {

@@ -11,8 +11,8 @@
  * 判据全部从 schema 现读（`HudPageId` 的 `Record` 形状、`companionPageKindValuesV2`、
  * 读侧 `pageKind` 枚举），**不抄第二份名字清单**——抄一份就等于给漂移留了第二个落点。
  */
-import { mainPageContextInputV2Schema } from "@ailearn/shared/companion-bridge-contracts";
-import { COMPANION_PAGE_DESTINATIONS_V2 } from "@ailearn/shared/companion-bridge-contracts";
+import { mainPageContextInputV2Schema } from "@astella/shared/companion-bridge-contracts";
+import { COMPANION_PAGE_DESTINATIONS_V2 } from "@astella/shared/companion-bridge-contracts";
 import { describe, expect, it } from "vitest";
 
 import { HUD_PAGE_DESTINATIONS, HUD_PAGES } from "../hud-pages.ts";

@@ -12,7 +12,7 @@
  *   node .github/scripts/capture-image-digests.mjs [--output <path>] [--allow-local]
  *
  * 环境变量：
- *   COMPOSE_PROJECT_NAME — docker compose 项目名（默认 ailearn_ci）
+ *   COMPOSE_PROJECT_NAME — docker compose 项目名（默认 astella_ci）
  *   GITHUB_RUN_ID        — GitHub Actions run ID（用于 provenance）
  *
  * 退出码：
@@ -40,7 +40,7 @@ for (let i = 0; i < args.length; i++) {
 }
 
 const repoRoot = resolve(import.meta.dirname, "..", "..");
-const projectName = process.env.COMPOSE_PROJECT_NAME || "ailearn_ci";
+const projectName = process.env.COMPOSE_PROJECT_NAME || "astella_ci";
 const githubRunId = process.env.GITHUB_RUN_ID || "0";
 
 // ─── 镜像定义 ───────────────────────────────────────────────────────────
@@ -50,8 +50,8 @@ const githubRunId = process.env.GITHUB_RUN_ID || "0";
  * 镜像名由 docker compose 基于 COMPOSE_PROJECT_NAME 和 service 名生成
  */
 const IMAGES = [
-  { key: "api", serviceName: "api", repository: "ghcr.io/asklins223/ailearn/api" },
-  { key: "worker", serviceName: "worker", repository: "ghcr.io/asklins223/ailearn/worker" },
+  { key: "api", serviceName: "api", repository: "ghcr.io/asklins223/astella/api" },
+  { key: "worker", serviceName: "worker", repository: "ghcr.io/asklins223/astella/worker" },
 ];
 
 // ─── 工具函数 ───────────────────────────────────────────────────────────

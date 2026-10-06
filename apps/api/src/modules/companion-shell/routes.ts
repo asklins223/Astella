@@ -28,7 +28,7 @@ import {
   companionAnswerModePreferencePatchV1Schema,
   onboardingTransitionRequestSchema,
   runtimeFenceRequestSchema,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import {
   CompanionStateError,
   createRuntimeFence,

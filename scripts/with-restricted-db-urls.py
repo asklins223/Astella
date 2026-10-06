@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """用**受限角色**跑集测：把 `DATABASE_URL_API` / `DATABASE_URL_WORKER` 换成 CI 用的那两个角色再执行命令。
 
-为什么要有这台：dev 根 `.env` 里四条 `DATABASE_URL*` 的用户**全是 `ailearn`**（`pg_roles` 里
+为什么要有这台：dev 根 `.env` 里四条 `DATABASE_URL*` 的用户**全是 `astella`**（`pg_roles` 里
 `rolsuper=t, rolbypassrls=t`），而 CI（`.github/workflows/main-ci.yml:386-387`）把 `_API`/`_WORKER`
-指到 `ailearn_api`/`ailearn_worker`（`NOBYPASSRLS`）。于是同一批隔离类用例在两边结论相反：
+指到 `astella_api`/`astella_worker`（`NOBYPASSRLS`）。于是同一批隔离类用例在两边结论相反：
 本地拿超户跑，"无 session context 应当零行"这种断言**必红**（2026-09-25 实测 107 条里红 5 条，
 全是这一族），而那 5 条换成真角色后 2/2、逐条绿。红本身不是产品回归，但**每次都要重新误判一遍**
 就是纯浪费——以前也踩过反方向：同一个眼罩让该红的东西假绿。
@@ -64,7 +64,7 @@ def main() -> int:
         if not password:
             die(f"`.env` 里缺 {role_key}，造不出 {url_key}（这个角色是 apply-roles.sh 建的）")
         role = url_key.removeprefix("DATABASE_URL_").lower()
-        env[url_key] = f"postgres://ailearn_{role}:{quote(password, safe='')}@{reachable}/{database}"
+        env[url_key] = f"postgres://astella_{role}:{quote(password, safe='')}@{reachable}/{database}"
     # 有的用例整份只拿一条连接，而那条必须是 NOBYPASSRLS 的角色（RLS 隔离类）。
     # 上面刚造出来的 `DATABASE_URL_API` 正是 CI 用的那一个角色，所以直接同名再给一份，
     # 让这些文件在没有一次性库的机器上也跑得起来——它们的 `testDatabaseUrl` 是故意
@@ -76,7 +76,7 @@ def main() -> int:
         if values.get(passthrough):
             env[passthrough] = values[passthrough].replace("@postgres:", "@127.0.0.1:")
     print("已注入受限角色：" + "、".join(
-        f"{key}→ailearn_{key.rsplit('_', 1)[-1].lower()}"
+        f"{key}→astella_{key.rsplit('_', 1)[-1].lower()}"
         for key in ("DATABASE_URL_API", "DATABASE_URL_WORKER")
     ) + f"（库 {database}@{reachable}；URL 与密码不打印）", flush=True)
     result = subprocess.run(command, cwd=ROOT / package, env=env)

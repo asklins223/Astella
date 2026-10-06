@@ -38,7 +38,7 @@ function gate(name) {
 
 function imageRecord(name, digest) {
   return {
-    repository: `registry.invalid/ailearn/${name}`,
+    repository: `registry.invalid/astella/${name}`,
     digest,
     provenance: {
       buildRunId: context.githubRunId,

@@ -1,8 +1,8 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import { sql } from "drizzle-orm";
 import postgres from "postgres";
-import { DomainError } from "@ailearn/shared";
-import * as schema from "@ailearn/shared/db-schema";
+import { DomainError } from "@astella/shared";
+import * as schema from "@astella/shared/db-schema";
 // 稳定 P0-4（2026-09-15 审计）：事务内 workspace/user 上下文（UUID 校验、
 // 嵌套兼容性断言、set_config 回读校验、AsyncLocalStorage）的唯一实现已下沉到
 // packages/shared/src/workspace-transaction.ts，与 worker 共用。此处只保留
@@ -12,10 +12,10 @@ import {
   registerActiveTransactionReader,
   type ActiveWorkspaceTransaction,
   type WorkspaceScopeContext,
-} from "@ailearn/shared/workspace-transaction";
+} from "@astella/shared/workspace-transaction";
 // 设计 P1-15（2026-09-15 审计）：指标此前经 `import("../lib/metrics.ts").then(...)`
 // 异步自增——关停窗口内到达的失败会被丢掉（增量永远记不上），且 `.catch(()=>{})`
-// 连丢都看不见。metrics.ts 只依赖 prom-client 与 @ailearn/shared，无循环风险，
+// 连丢都看不见。metrics.ts 只依赖 prom-client 与 @astella/shared，无循环风险，
 // 改为静态导入同步自增。
 import { dbTransactionFailuresTotal } from "../lib/metrics.ts";
 import { logger } from "../lib/logger.ts";
@@ -32,7 +32,7 @@ function resolveConnectionString(): string {
 
   return (
     process.env.DATABASE_URL?.trim() ??
-    "postgres://ailearn:ailearn_dev@postgres:5432/ailearn"
+    "postgres://astella:astella_dev@postgres:5432/astella"
   );
 }
 
@@ -117,7 +117,7 @@ const queryClient = postgres(connectionString, {
     // dbGaugeTimer），API 与 worker 挤在同一个数字里，谁也看不出自己池子的
     // 饱和度。给本进程一个专属 application_name，指标就能按进程切开。
     // postgres.js 默认发 'postgres.js'，改这一项不影响连接语义。
-    application_name: "ailearn_api",
+    application_name: "astella_api",
   },
 });
 let closePromise: Promise<void> | null = null;
@@ -127,7 +127,7 @@ export const db = drizzle(queryClient, { schema });
 /**
  * 本进程连接池上限（2026-10-03）。
  *
- * 暴露出来只有一个用途：给 `ailearn_db_pool_max_connections` 这个静态 gauge
+ * 暴露出来只有一个用途：给 `astella_db_pool_max_connections` 这个静态 gauge
  * 当分母。饱和度是个比值，没有分母就没法告警，而"池打满"正是池排队唯一
  * 可观测的表现（postgres.js 不公开等待中的请求数）。
  */
@@ -208,7 +208,7 @@ export function currentApiWorkspaceTransaction(): unknown {
 }
 
 // W3-2 的 provider 层闸门（D5 §5.2 第二件的收口）：把这份作用域读者登记给
-// 公共 HTTP 出口（`@ailearn/shared/public-json-http`）。API 侧的 critic/转写都已
+// 公共 HTTP 出口（`@astella/shared/public-json-http`）。API 侧的 critic/转写都已
 // 在内核的事务外段执行（W3-5），这道闸保证以后没有人能把它们挪回事务里。
 registerActiveTransactionReader({
   label: "api",
@@ -327,7 +327,7 @@ export async function withWorkspaceTransaction<T>(
       const elapsedMs = performance.now() - startedAt;
       // 设计 P1-15（2026-09-15 审计）：此前经动态 import 异步记日志——关停窗口
       // （正是慢事务/卡死最需要证据的时刻）会丢掉这些行。logger.ts 只依赖 pino 与
-      // @ailearn/shared，无循环风险，改为静态导入同步落日志。
+      // @astella/shared，无循环风险，改为静态导入同步落日志。
       if (elapsedMs >= 5000) {
         logger.error(
           { elapsedMs, context: normalized, poolMax: queryClient.options.max },

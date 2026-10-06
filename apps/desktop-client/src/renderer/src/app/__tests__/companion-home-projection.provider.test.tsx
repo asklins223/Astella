@@ -2,15 +2,15 @@
 
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import type {
-  AILearnDesktopApiM2,
+  AstellaDesktopApiM2,
   GatewayResultV1,
   SessionContextV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import {
   companionHomeProjectionV1Schema,
   type CompanionHomeProjectionV1,
-} from "@ailearn/shared/companion-home-contracts";
-import type { RoomProjectionV1 } from "@ailearn/shared/room-projection-contracts";
+} from "@astella/shared/companion-home-contracts";
+import type { RoomProjectionV1 } from "@astella/shared/room-projection-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../room-store.ts";
 import { HomeProjectionProvider } from "../home-projection.tsx";
@@ -157,9 +157,9 @@ function Probe() {
 }
 
 function installApi(api: unknown) {
-  Object.defineProperty(window, "ailearn", {
+  Object.defineProperty(window, "astella", {
     configurable: true,
-    value: api as AILearnDesktopApiM2,
+    value: api as AstellaDesktopApiM2,
   });
 }
 
@@ -170,7 +170,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   latest = null;
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   vi.restoreAllMocks();
 });
 

@@ -20,7 +20,7 @@
 --
 -- 只追加由触发器保证：挡 UPDATE/DELETE（沿用 `app.allow_history_mutation`
 -- 绕行口子，生产链路永不设置它，集测清理与显式维护脚本能用）。迁移内对
--- `ailearn_api` 只授 SELECT/INSERT，但仓库的 roles 步骤（迁移后 `apply_roles`，
+-- `astella_api` 只授 SELECT/INSERT，但仓库的 roles 步骤（迁移后 `apply_roles`，
 -- 与 CI fresh-migrations 同序）会把新表权限放宽到 ALL——所以"只追加"这个
 -- 不变量的家在**触发器**，不在表权限（0180 的共用触发器同一道理）。
 --
@@ -102,8 +102,8 @@ CREATE TRIGGER nlpr_plan_append_only BEFORE UPDATE OR DELETE ON public.note_lear
 
 -- 权限写在迁移里（0275 那一课）；roles 步骤会再兜底放宽。追加式的最终防线
 -- 是上面的触发器——绕行口子只对显式维护路径有效。
-GRANT SELECT, INSERT ON public.note_learning_round_plan_revisions TO ailearn_api;
-GRANT ALL PRIVILEGES ON public.note_learning_round_plan_revisions TO ailearn_migrator;
+GRANT SELECT, INSERT ON public.note_learning_round_plan_revisions TO astella_api;
+GRANT ALL PRIVILEGES ON public.note_learning_round_plan_revisions TO astella_migrator;
 
 --> statement-breakpoint
 

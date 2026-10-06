@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type Ref } from "react";
 import { BookOpen, ChevronDown, RotateCcw } from "lucide-react";
-import { markdownToBlocks } from "@ailearn/shared/markdown-parser";
+import { markdownToBlocks } from "@astella/shared/markdown-parser";
 import { renderCompanionMarkdown } from "../../companion/companion-markdown";
 import type { NoteRecallCardV1, RecallActionV1, RecallBusyV1, RecallSelfReportV1 } from "./notebook-recall-contract";
 import { recallQuestionText } from "./recall-question-text";

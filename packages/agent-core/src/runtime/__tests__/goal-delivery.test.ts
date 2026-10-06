@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentTurnRequest } from "@ailearn/shared";
-import { AGENT_GOAL_DELIVERY_CAPABILITY, type AgentGoalDeliveryV1, type AgentOperationV1 } from "@ailearn/shared/agent-contracts";
+import type { AgentTurnRequest } from "@astella/shared";
+import { AGENT_GOAL_DELIVERY_CAPABILITY, type AgentGoalDeliveryV1, type AgentOperationV1 } from "@astella/shared/agent-contracts";
 import { projectAgentGoalEvidence, validateAgentGoalDelivery } from "../goal-delivery.ts";
 
 const delivery: AgentGoalDeliveryV1 = { outcome: "completed", summary: "计算结果为 3。", requirements: [

@@ -188,7 +188,7 @@ export interface AiTaskCheckpointPort<TOutput> {
  *
  * `resourceClass` 用 `JobResourceClass` 已有的五档之一（`interactive_ai`／
  * `card_foreground`／`card_map`／`vision`／`maintenance`）——D5 §8 留给 W3-1 的
- * "取值"这一项的答案是**不新造值**：`ailearn_claim_jobs(interactiveLimit, backgroundLimit)`
+ * "取值"这一项的答案是**不新造值**：`astella_claim_jobs(interactiveLimit, backgroundLimit)`
  * 早就按 `interactive_ai` 与其余分名额，作答反馈与批量制卡的隔离靠的就是它。
  */
 export interface AiTaskDefinition<TInput, TOutput> {

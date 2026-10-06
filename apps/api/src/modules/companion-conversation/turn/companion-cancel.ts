@@ -20,7 +20,7 @@ import {
   cancelCompanionRunRequestV1Schema,
   cancelCompanionRunResponseV1Schema,
   type CompanionRunStatusV1,
-} from "@ailearn/shared";
+} from "@astella/shared";
 
 export interface CancelCompanionRunResult {
   statusCode: number;
@@ -171,7 +171,7 @@ export async function cancelCompanionRun(args: {
         ));
 
       await tx.execute(sql`
-        SELECT pg_notify('ailearn_companion_events_v1',
+        SELECT pg_notify('astella_companion_events_v1',
                          ${JSON.stringify({ conversationId: run.conversationId, maxSeq: eventSeq })})
       `);
 

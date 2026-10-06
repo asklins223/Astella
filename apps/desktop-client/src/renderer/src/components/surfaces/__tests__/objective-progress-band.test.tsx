@@ -10,7 +10,7 @@ import {
   progressSegmentForState,
 } from "../run/objective-progress-band.ts";
 import { ObjectiveProgressBand } from "../run/ObjectiveProgressBand.tsx";
-import type { ObjectivePersonalStateV3 } from "@ailearn/shared/learning-objective-surface-contracts";
+import type { ObjectivePersonalStateV3 } from "@astella/shared/learning-objective-surface-contracts";
 
 /**
  * 跨屏进度语言（31 号文档 §9.1，批次 B10）。

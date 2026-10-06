@@ -97,7 +97,7 @@ BEGIN
     EXECUTE format($p$
       DROP POLICY IF EXISTS %I_workspace_user_isolation ON public.%I
     $p$, t, t);
-    -- 不给 `CURRENT_USER = 'ailearn_worker'` 那一支：这张表的每一行都是"某个人自己的计划"，
+    -- 不给 `CURRENT_USER = 'astella_worker'` 那一支：这张表的每一行都是"某个人自己的计划"，
     -- worker 没有读取理由（伴星也不该代读别人的计划）。要看，走本人的会话上下文。
     EXECUTE format($p$
       CREATE POLICY %I_workspace_user_isolation
@@ -116,5 +116,5 @@ END $$;
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.personal_objective_bindings_v2 TO ailearn_api;
-GRANT ALL ON public.personal_objective_bindings_v2 TO ailearn_migrator;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.personal_objective_bindings_v2 TO astella_api;
+GRANT ALL ON public.personal_objective_bindings_v2 TO astella_migrator;

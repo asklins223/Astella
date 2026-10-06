@@ -16,7 +16,7 @@
 import { AIConsentRequiredError, AIDataPolicyDeniedError, AIProviderNotConfiguredError } from "./governance.ts";
 import { AIContextOverflowError } from "./context-governor.ts";
 // 稳定 P1（2026-09-15 审计）：作业 payload 与类型不符是确定性失败。
-import { JobPayloadContractError } from "@ailearn/shared/job-payload-contracts";
+import { JobPayloadContractError } from "@astella/shared/job-payload-contracts";
 
 /**
  * Patterns that identify non-retryable errors.

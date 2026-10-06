@@ -64,7 +64,7 @@ function stubGateway(options: { capture?: "allowed" | "denied"; createTitle?: st
       },
     },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return calls;
 }
 

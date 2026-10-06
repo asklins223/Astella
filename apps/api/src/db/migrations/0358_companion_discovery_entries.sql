@@ -71,7 +71,7 @@ CREATE INDEX companion_discovery_entries_recent_idx
 
 -- §7「书房仅展示用户愿意放出的少量痕迹」。这一条把"少量"交给数据库守：
 -- 即使上层算错了，第六条之后也插不进来。
-CREATE OR REPLACE FUNCTION public.ailearn_discovery_study_trace_limit()
+CREATE OR REPLACE FUNCTION public.astella_discovery_study_trace_limit()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   existing_count int;
@@ -97,11 +97,11 @@ $$;
 
 CREATE TRIGGER companion_discovery_study_trace_guard
   BEFORE INSERT OR UPDATE ON public.companion_discovery_entries
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_discovery_study_trace_limit();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_discovery_study_trace_limit();
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_discovery_study_trace_limit() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_discovery_study_trace_limit() FROM PUBLIC;
 
 --> statement-breakpoint
 
@@ -114,19 +114,19 @@ ALTER TABLE public.companion_discovery_entries FORCE ROW LEVEL SECURITY;
 -- `GET /companion/discovery` 却稳定 500（`permission denied for table`）。
 -- RLS 只管"能看哪些行"，ACL 才管"能不能碰这张表"——两者是独立的开关。
 -- 迁移测试当时只断言了约束与触发器，没断言 ACL，于是它一路绿灯。
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_discovery_entries TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_discovery_entries TO ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_discovery_entries TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_discovery_entries TO astella_worker;
 
 --> statement-breakpoint
 
 CREATE POLICY companion_discovery_entries_user_isolation
   ON public.companion_discovery_entries FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   );
 
@@ -134,7 +134,7 @@ CREATE POLICY companion_discovery_entries_user_isolation
 
 -- §7「私人内容默认不跨空间、跨成员展示」的第一道门：**默认 private**。
 -- 跨成员只由 visibility='space' 显式放行，而放行这件事本身要上层显式做。
-CREATE OR REPLACE FUNCTION public.ailearn_discovery_visibility_guard()
+CREATE OR REPLACE FUNCTION public.astella_discovery_visibility_guard()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF NEW.workspace_id <> OLD.workspace_id THEN
@@ -153,8 +153,8 @@ $$;
 
 CREATE TRIGGER companion_discovery_visibility_guard
   BEFORE UPDATE ON public.companion_discovery_entries
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_discovery_visibility_guard();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_discovery_visibility_guard();
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_discovery_visibility_guard() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_discovery_visibility_guard() FROM PUBLIC;

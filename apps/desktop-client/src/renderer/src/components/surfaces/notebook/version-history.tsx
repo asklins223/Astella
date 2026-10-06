@@ -17,7 +17,7 @@
  *     那是不存在的操作。
  */
 import { useLayoutEffect, useRef, type ReactElement } from "react";
-import type { DesktopNoteVersionItem } from "@ailearn/shared/desktop-surface-contracts";
+import type { DesktopNoteVersionItem } from "@astella/shared/desktop-surface-contracts";
 
 export function VersionHistory(props: {
   readonly versions: readonly DesktopNoteVersionItem[] | null;

@@ -42,11 +42,11 @@
  *
  * ## 运行（一次性库；缺变量当场抛，绝不静默落到日常开发库）
  *
- *   bash scripts/dev-disposable-db.sh ailearn_agent42_cards_20261004
+ *   bash scripts/dev-disposable-db.sh astella_agent42_cards_20261004
  *   cd workers/ai-worker && \
- *     DATABASE_URL_MIGRATOR='postgres://…@127.0.0.1:5432/ailearn_agent42_cards_20261004' \
- *     DATABASE_URL_API='postgres://ailearn_api:…@127.0.0.1:5432/ailearn_agent42_cards_20261004' \
- *     DATABASE_URL_WORKER='postgres://ailearn_worker:…@127.0.0.1:5432/ailearn_agent42_cards_20261004' \
+ *     DATABASE_URL_MIGRATOR='postgres://…@127.0.0.1:5432/astella_agent42_cards_20261004' \
+ *     DATABASE_URL_API='postgres://astella_api:…@127.0.0.1:5432/astella_agent42_cards_20261004' \
+ *     DATABASE_URL_WORKER='postgres://astella_worker:…@127.0.0.1:5432/astella_agent42_cards_20261004' \
  *     NODE_ENV=test \
  *     node --import tsx --test --test-concurrency=1 \
  *       src/integration-tests/agent-growth-postgres.integration.ts
@@ -58,8 +58,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import postgres from "postgres";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
-import type { AgentSqlExecutor } from "@ailearn/agent-host";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
+import type { AgentSqlExecutor } from "@astella/agent-host";
 import type { ApiTransaction } from "../../../../apps/api/src/db/client.ts";
 import type { WorkerTransaction } from "../db.ts";
 
@@ -89,7 +89,7 @@ const { runCompanionMemoryOrganize } =
 const { loadAgentLearningContext } =
   await import("../agent/learning-context.ts");
 const { createAgentMethodStore, readAgentMethod, listAgentMethods, upsertAgentMethodCandidate } =
-  await import("@ailearn/agent-host");
+  await import("@astella/agent-host");
 
 /** `upsertMemory` 的真实返回形状——夹具直接用它，不在测试里另写一个形状。 */
 type StatedMemory = NonNullable<Awaited<ReturnType<typeof upsertMemory>>>;
@@ -99,7 +99,7 @@ type PlaybookInput = Parameters<typeof upsertPlaybook>[2];
 
 /**
  * 0374 起，一条方法的证据要钉住来源的那一版（`memoryRevision`）——
- * 只写 `memoryId` 的来源对 `ailearn_agent_method_sources_current` 是不完整的。
+ * 只写 `memoryId` 的来源对 `astella_agent_method_sources_current` 是不完整的。
  *
  * `companion-playbooks.ts` 里的证据类型目前仍只有 memoryId / eventId / note，
  * 所以这处 cast 集中在**一个地方**；主会话把该类型跟上之后删掉它即可。
@@ -375,9 +375,9 @@ test("停用·归档：archived 的记忆同样不能继续给手册背书", asy
 /**
  * 彻底清除（=「彻底忘掉」）走的是**物理删除**，与 0345 的回收区到期清扫同形。
  *
- * 现场实测（2026-10-04，`ailearn_api` 角色，隔离库与日常库结论一致）：
+ * 现场实测（2026-10-04，`astella_api` 角色，隔离库与日常库结论一致）：
  * 这一条今天**在到达手册判据之前就断了**——0336
- * `REVOKE UPDATE, DELETE, TRUNCATE ON assistant_memory_item_revisions FROM ailearn_api, ailearn_worker`
+ * `REVOKE UPDATE, DELETE, TRUNCATE ON assistant_memory_item_revisions FROM astella_api, astella_worker`
  * （apps/api/src/db/migrations/0336_assistant_memory_revisions.sql:120）撤掉了
  * `eraseMemory`（memory-service.ts:731）第一步要用的 DELETE。
  * 因此这里保留原始报错，不把它改写成一条能过的断言。
@@ -494,7 +494,7 @@ test("数组证据·对照：不引用这条记忆的手册不能被误伤", asy
 // ─────────────────────────────────────────────────────────────────────────
 // 三、四（旧目录/正文路径上的「旧版本拒绝」与「跨用户/空间隔离」）
 //
-// 0374 之后 `companion-playbooks.ts` 已经是 `@ailearn/agent-host` 的薄适配层：
+// 0374 之后 `companion-playbooks.ts` 已经是 `@astella/agent-host` 的薄适配层：
 // `retrievePlaybookCatalog` = `listAgentMethods(tx, scope, true)`，
 // `readPlaybookById` = `readAgentMethod(...)`。同 key 升版、按 (user, workspace)
 // 隔离、按版本拒绝这三件事因此现在只在**新合同那条读路径**上成立，
@@ -673,7 +673,7 @@ test("长期规则 + 当前例外：例外不覆盖长期规则，只有明确�
 });
 
 // ═════════════════════════════════════════════════════════════════════════
-// 七、主会话新增的成长/方法合同（0374 + @ailearn/agent-host methods.ts）
+// 七、主会话新增的成长/方法合同（0374 + @astella/agent-host methods.ts）
 // ═════════════════════════════════════════════════════════════════════════
 
 /**
@@ -683,7 +683,7 @@ test("长期规则 + 当前例外：例外不覆盖长期规则，只有明确�
  *
  * **进目录与读正文的条件是三个一起成立**：方法 `active`（走过真实
  * `control('confirm')`）**且** 来源精确版本仍然有效
- * （`ailearn_agent_method_sources_current`）**且** 引用的能力版本没有变。
+ * （`astella_agent_method_sources_current`）**且** 引用的能力版本没有变。
  * §6.9：「能力发生版本变化、不可用或出现反证时核对适用性，必要时停用」。
  *
  * 因此这里**不做「先写一条 tentative 方法、再放宽有效性断言」**：
@@ -697,10 +697,10 @@ const methodStore = createAgentMethodStore({
 });
 
 /**
- * **用户侧**的方法存储：走 API 角色（`ailearn_api`）的真实事务。
+ * **用户侧**的方法存储：走 API 角色（`astella_api`）的真实事务。
  *
  * 区别不是形式：0374 刻意把 `companion_method_uses` 的 UPDATE 只授给
- * `ailearn_api`（"反馈是用户动作，不是模型动作"），worker 只有 SELECT/INSERT。
+ * `astella_api`（"反馈是用户动作，不是模型动作"），worker 只有 SELECT/INSERT。
  * 所以"确认 / 修订 / 停用 / 反馈"这些**用户控制**必须用这个 store 测；
  * 用 worker store 去测反馈，得到的是授权撤销而不是产品行为。
  */
@@ -1119,9 +1119,9 @@ test("隔离：新合同的方法列表与按 id 读取同样按 user + workspac
  * 这两条守的是同一类漏法：**只对着 SQL 文本做正则断言，从不在真库上执行**。
  *
  * - 0362 读 `limits.limit_items`，而 0346 的输出列是 `items` / `byte_count`
- *   ⇒ `ailearn_enforce_companion_memory_retention()` 100% 调用必抛，
+ *   ⇒ `astella_enforce_companion_memory_retention()` 100% 调用必抛，
  *   归档保留上限自那以后从未生效（worker 每小时一条 WARN）。
- * - `ailearn_agent_method_sources_current` 的 EXECUTE 一旦被
+ * - `astella_agent_method_sources_current` 的 EXECUTE 一旦被
  *   `roles.sql` 的 `REVOKE ALL ON ALL FUNCTIONS` 清掉又没被白名单重授，
  *   整个成长合同的读取路径会静默 403。
  *
@@ -1155,7 +1155,7 @@ test("归档保留上限：worker 角色真跑一次回收区到期清理（0362
 
   // 真实调用：与 `companion-memory-maintenance.ts:96` 走的是同一条语句、同一个角色。
   const result = (await inWorker(scope, (tx) => tx.execute(sql`
-    SELECT public.ailearn_enforce_companion_memory_retention() AS evicted`))) as unknown;
+    SELECT public.astella_enforce_companion_memory_retention() AS evicted`))) as unknown;
   const first = Array.isArray(result)
     ? result[0] as { evicted?: unknown }
     : (result as { rows?: { evicted?: unknown }[] } | null)?.rows?.[0];
@@ -1188,16 +1188,16 @@ test("成长合同授权：来源有效性函数对两个服务角色都必须�
   // 对它们断言"可执行"是在断言产品并不依赖的东西——真正要守的是"触发器在"。
   const rows = await admin`
     SELECT p.proname::text AS name,
-           has_function_privilege('ailearn_api', p.oid, 'EXECUTE') AS api_exec,
-           has_function_privilege('ailearn_worker', p.oid, 'EXECUTE') AS worker_exec
+           has_function_privilege('astella_api', p.oid, 'EXECUTE') AS api_exec,
+           has_function_privilege('astella_worker', p.oid, 'EXECUTE') AS worker_exec
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-     WHERE n.nspname = 'public' AND p.proname = 'ailearn_agent_method_sources_current'`;
+     WHERE n.nspname = 'public' AND p.proname = 'astella_agent_method_sources_current'`;
   assert.equal(rows.length, 1, "来源有效性函数不存在（0374 未应用？）");
   assert.equal(rows[0].api_exec, true,
-    "ailearn_agent_method_sources_current 对 ailearn_api 不可执行："
+    "astella_agent_method_sources_current 对 astella_api 不可执行："
     + "roles.sql 的 REVOKE ALL ON ALL FUNCTIONS 清掉了迁移里的 GRANT");
   assert.equal(rows[0].worker_exec, true,
-    "ailearn_agent_method_sources_current 对 ailearn_worker 不可执行：worker 读手册与方法会直接 403");
+    "astella_agent_method_sources_current 对 astella_worker 不可执行：worker 读手册与方法会直接 403");
 
   // 触发器本身必须在位，否则上面那条授权对了也没人调用它。
   const triggers = await admin`

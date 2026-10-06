@@ -58,11 +58,11 @@ const DIRECTORY_ITEMS: readonly DirectoryItem[] = [
 
 export type DirectoryRailMode = "auto" | "expanded" | "collapsed";
 
-export const DIRECTORY_COLLAPSED_KEY = "ailearn.directory-rail.collapsed.v1";
-export const DIRECTORY_RAIL_MODE_KEY = "ailearn.directory-rail.mode.v1";
-export const DIRECTORY_RAIL_STATE_EVENT = "ailearn:directory-rail-state";
-export const DIRECTORY_RAIL_MODE_EVENT = "ailearn:directory-rail-mode";
-export const DIRECTORY_RAIL_TOGGLE_EVENT = "ailearn:directory-rail-toggle";
+export const DIRECTORY_COLLAPSED_KEY = "astella.directory-rail.collapsed.v1";
+export const DIRECTORY_RAIL_MODE_KEY = "astella.directory-rail.mode.v1";
+export const DIRECTORY_RAIL_STATE_EVENT = "astella:directory-rail-state";
+export const DIRECTORY_RAIL_MODE_EVENT = "astella:directory-rail-mode";
+export const DIRECTORY_RAIL_TOGGLE_EVENT = "astella:directory-rail-toggle";
 
 function readCollapsedPreference(): boolean {
   try {

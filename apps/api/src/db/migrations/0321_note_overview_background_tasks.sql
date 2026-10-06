@@ -22,4 +22,4 @@ ALTER TABLE public.note_overviews
   ADD CONSTRAINT note_overviews_source_references_shape_check
     CHECK (jsonb_typeof(source_references) = 'array' AND jsonb_array_length(source_references) <= 32);
 
-GRANT SELECT, INSERT ON public.note_overviews TO ailearn_worker;
+GRANT SELECT, INSERT ON public.note_overviews TO astella_worker;

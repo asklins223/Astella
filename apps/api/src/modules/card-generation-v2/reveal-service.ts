@@ -11,14 +11,14 @@ import type { ApiTransaction } from "../../db/client.ts";
 import {
   cardGenerationCandidatesV2,
   cardExposureLedgerV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/card-generation-v2";
 import {
   parseCandidateRevealV2,
   type CandidateRevealV2,
   PRE_RUN_REVEAL_POLICY_VERSION,
-} from "@ailearn/shared/card-generation-v2-contracts";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
-import { EXPOSURE_KINDS_V2 } from "@ailearn/shared/learning-card-v2-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
+import { EXPOSURE_KINDS_V2 } from "@astella/shared/learning-card-v2-contracts";
 import { loadEvidencePreviewItems } from "./evidence-preview.ts";
 import {
   CardGenerationV2ServiceError,

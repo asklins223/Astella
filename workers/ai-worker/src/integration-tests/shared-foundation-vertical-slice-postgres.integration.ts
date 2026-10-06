@@ -32,14 +32,14 @@ import type {
   AiTaskCheckpointPort,
   AiTaskDefinition,
   AiTaskReceipt,
-} from "@ailearn/shared/ai-task-kernel";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+} from "@astella/shared/ai-task-kernel";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const ADMIN_CONN = testDatabaseUrl("DATABASE_URL");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 const admin = postgres(ADMIN_CONN, { max: 2 });
 
-const { runAiTask, classifyThrownAsStepFailure } = await import("@ailearn/shared/ai-task-kernel");
+const { runAiTask, classifyThrownAsStepFailure } = await import("@astella/shared/ai-task-kernel");
 const { withWorkerWorkspaceTransaction, closeDatabase, currentWorkerWorkspaceTransaction } = await import("../db.ts");
 const { isJobLeaseActive, lockJobLease } = await import("../lib/job-lease.ts");
 const { MockProvider } = await import("../lib/providers/mock.ts");
@@ -145,7 +145,7 @@ function currentJobIdFor(taskId: string): string {
  * 一个样例任务：三段都接真的东西，但**执行体可以按用例换**（超时、提交失败等）。
  *
  * `resourceClass` 走 `card_foreground` 而不是 `interactive_ai`——这正是 D5 §3 第 2 条
- * 要的那条隔离（作答反馈不能被批量制卡耗尽），`ailearn_claim_jobs` 早就按这两档分名额。
+ * 要的那条隔离（作答反馈不能被批量制卡耗尽），`astella_claim_jobs` 早就按这两档分名额。
  */
 function sampleTask(overrides: Partial<AiTaskDefinition<string, string>> & { id: string }): AiTaskDefinition<string, string> {
   const base: AiTaskDefinition<string, string> = {
@@ -310,7 +310,7 @@ test("一条链跑通：生成 → 检查 → 保存一张卡 → 开放回答 �
     sampleTask({
       id: "assess_open",
       prepare: async () => `assess:${learnerArtifactId}`,
-      // 评估行的**归属**在这一步暴露出来：`learning_assessments` 对 `ailearn_worker`
+      // 评估行的**归属**在这一步暴露出来：`learning_assessments` 对 `astella_worker`
       // 没有 INSERT 权限（生产里它是 API 侧 `run-processing-tick` 写的）。所以样例的
       // 这一步只能交出**AI 产物**，"观察"落库由 API 侧承接——这条边界交回 W3-5
       // （作答 AI 迁入）：迁的是执行，不是把领域写入挪进 worker。

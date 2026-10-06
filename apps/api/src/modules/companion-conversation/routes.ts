@@ -8,12 +8,12 @@ import {
   SSE_RECONNECT_INSTRUCTION,
 } from "../../lib/safe-sse-write.ts";
 import { CompanionConversationError, createCompanionTurn } from "./turn/turn-service.ts";
-import { createCompanionLearningRunContextGrantRequestV1Schema, createMenuProposalRequestV1Schema, createToolProposalRequestV1Schema, proposalDecisionRequestV1Schema } from "@ailearn/shared";
+import { createCompanionLearningRunContextGrantRequestV1Schema, createMenuProposalRequestV1Schema, createToolProposalRequestV1Schema, proposalDecisionRequestV1Schema } from "@astella/shared";
 import { cancelCompanionRun } from "./turn/companion-cancel.ts";
 import { openCompanionEventStream, listCompanionAgentRoutes, listCompanionRunNodes } from "./turn/companion-events.ts";
 import { openCompanionThought } from "./turn/thought-service.ts";
 import { listCompanionThoughts } from "./turn/thought-history.ts";
-import { companionChatListThoughtsRequestV1Schema } from "@ailearn/shared/companion-chat-desktop-contracts";
+import { companionChatListThoughtsRequestV1Schema } from "@astella/shared/companion-chat-desktop-contracts";
 import {
   ensureCompanionInbox,
   listCompanionMessages,
@@ -27,8 +27,8 @@ import {
   getCompanionProposalSnapshot,
   resolveCompanionLearningContext,
 } from "./learning-action-bridge.ts";
-import { createCompanionTurnRequestV1Schema } from "@ailearn/shared";
-import { allowedMainRouteV2Schema } from "@ailearn/shared";
+import { createCompanionTurnRequestV1Schema } from "@astella/shared";
+import { allowedMainRouteV2Schema } from "@astella/shared";
 import { exportCompanionDataStream } from "./turn/companion-export.ts";
 import {
   COMPANION_RATE_LIMITS,

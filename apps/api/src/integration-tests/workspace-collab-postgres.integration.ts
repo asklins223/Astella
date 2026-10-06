@@ -26,15 +26,15 @@ import sensible from "@fastify/sensible";
  * 这份夹具自己的连接必须是**能 `SET LOCAL ROLE` 的那个角色**，不是受限角色。
  *
  * 两个理由，缺一不可：
- * ① 本文件用 RLS 的方式是 `SET LOCAL ROLE ailearn_api`（见 `countDueRowsAsApiRole`），
- *    而 `ailearn_api` 自己不能 SET ROLE 到任何角色——外层再连受限角色，那几条
+ * ① 本文件用 RLS 的方式是 `SET LOCAL ROLE astella_api`（见 `countDueRowsAsApiRole`），
+ *    而 `astella_api` 自己不能 SET ROLE 到任何角色——外层再连受限角色，那几条
  *    "策略真的在执行"的用例直接就是权限错。
  * ② 夹具里对 `notes` 的原生写（`:142` 的 share_scope）在没有 `app.workspace_id` 的
  *    连接上会被 RESTRICTIVE 守卫**静默过滤成 0 行**（`notes` 没有 NULL 分支，见 doc 34 §1.2 ②）。
  *    写成"优先 DATABASE_URL_API"时，共享那一步等于没发生，后面 9 条 404/changed:true 全是它连累出来的。
  *
  * 被测的那一层仍然是生产形状：HTTP 走 app 自己的连接池，而 `db/client.ts` 优先读
- * `DATABASE_URL_API`（`ailearn_api`，NOBYPASSRLS）。**夹具写 = 超级用户、被测读数 = 受限角色**，
+ * `DATABASE_URL_API`（`astella_api`，NOBYPASSRLS）。**夹具写 = 超级用户、被测读数 = 受限角色**，
  * 这两件事不能合并成一条连接串（同 [[reference-dev-rls-blindfold]] ④ 那条判据）。
  */
 const CONN = process.env.DATABASE_URL ?? process.env.DATABASE_URL_API;
@@ -531,11 +531,11 @@ test("owner 的到期数只数自己的", async () => {
 // ─── 7. `review_schedules` 的 RLS 真的在执行（迁移 0241） ──────────────────
 
 /**
- * 以 `ailearn_api` 身份读一次到期排程。
+ * 以 `astella_api` 身份读一次到期排程。
  *
- * 为什么必须 `SET LOCAL ROLE`：dev 栈和这些测试都用 `ailearn`（superuser +
+ * 为什么必须 `SET LOCAL ROLE`：dev 栈和这些测试都用 `astella`（superuser +
  * BYPASSRLS）连接，RLS 对它天然不可见——直接跑只会得到"开了 RLS 也一切正常"的
- * 假绿。生产里 API 连的是 `ailearn_api`（NOBYPASSRLS），策略是真的会生效的。
+ * 假绿。生产里 API 连的是 `astella_api`（NOBYPASSRLS），策略是真的会生效的。
  */
 async function countDueRowsAsApiRole(
   subjectId: string,
@@ -543,7 +543,7 @@ async function countDueRowsAsApiRole(
 ): Promise<number> {
   return sql.begin(async (tx) => {
     // 静态语句，不拼任何外部输入。
-    await tx.unsafe("SET LOCAL ROLE ailearn_api");
+    await tx.unsafe("SET LOCAL ROLE astella_api");
     await tx`SELECT set_config('app.workspace_id', ${scope.workspaceId}, true)`;
     await tx`SELECT set_config('app.user_id', ${scope.userId ?? ""}, true)`;
     // 故意**不**写 workspace/user 的 WHERE：这条查询要问的是"策略本身挡不挡得住"，

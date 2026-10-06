@@ -8,13 +8,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { planEvidenceSnapshotsV2 } from "@ailearn/shared/card-generation-v2-pipeline";
-import { evidenceQuoteCopiesV2, evidenceSnapshotsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { noteBlocks, noteVersions, notes } from "@ailearn/shared/db-schema/note";
+import { planEvidenceSnapshotsV2 } from "@astella/shared/card-generation-v2-pipeline";
+import { evidenceQuoteCopiesV2, evidenceSnapshotsV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { noteBlocks, noteVersions, notes } from "@astella/shared/db-schema/note";
 import {
   classifyEvidencePreviewV2,
   EVIDENCE_PREVIEW_SOURCE_STATES_V2,
-} from "@ailearn/shared/card-generation-v2-hashing";
+} from "@astella/shared/card-generation-v2-hashing";
 import { loadEvidencePreviewItems } from "../modules/card-generation-v2/evidence-preview.ts";
 
 const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";

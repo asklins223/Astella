@@ -58,10 +58,10 @@ CREATE POLICY daily_review_batches_v2_update ON daily_review_batches_v2
             WITH CHECK (workspace_id = current_setting('app.workspace_id')::uuid
                      AND user_id      = current_setting('app.user_id')::uuid);
 
--- ⚠️ **前缀是 `app.` 不是 `ailearn.`**：全仓 379 处策略都用 `current_setting('app.workspace_id')`
+-- ⚠️ **前缀是 `app.` 不是 `astella.`**：全仓 379 处策略都用 `current_setting('app.workspace_id')`
 -- （运行时由 `db/client.ts` 的 `set_config` 建立并回读校验）。**0305/0306 第一版写成了
--- `ailearn.`**——而那个占位符在会话里**从不被创建**，于是策略求值时
--- `unrecognized configuration parameter "ailearn.workspace_id"`，被测路径一读就炸。
+-- `astella.`**——而那个占位符在会话里**从不被创建**，于是策略求值时
+-- `unrecognized configuration parameter "astella.workspace_id"`，被测路径一读就炸。
 -- **它不会红在部署上**（部署走超户/所有者，FORCE RLS 那时也还没建），只红在被测路径。
 COMMENT ON TABLE daily_review_batches_v2 IS
   '39 §9.4「批次一旦开始，不因后台新任务到期不断增加长度；用户主动加量才加入新的任务」的锁。一天一行，只记长度与加量，不记今天出了几题。';

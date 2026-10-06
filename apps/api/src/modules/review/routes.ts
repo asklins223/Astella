@@ -3,7 +3,7 @@ import { requireSession } from "../identity/middleware.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { deferReviewSchedule } from "./review-defer-service.ts";
 import { listSanitizedReviews, projectReviewQueueV2, ReviewQueueProjectionError } from "./service.ts";
-import { reviewDeferRequestV2Schema } from "@ailearn/shared";
+import { reviewDeferRequestV2Schema } from "@astella/shared";
 import {
   holdObjectiveFromReviewV2,
   holdObjectiveRequestV2Schema,
@@ -16,7 +16,7 @@ import {
   SharedCardNotFoundV2,
   startSharedCardPersonalReviewV2,
 } from "./shared-card-review-service.ts";
-import { startSharedCardPersonalReviewV2Schema } from "@ailearn/shared/review-reminder-contracts";
+import { startSharedCardPersonalReviewV2Schema } from "@astella/shared/review-reminder-contracts";
 
 import {
   acknowledgeOneTimeReminderV2,
@@ -41,7 +41,7 @@ import {
   acknowledgeOneTimeReminderV2Schema,
   requestOneTimeReminderResultV2Schema,
   requestOneTimeReminderV2Schema,
-} from "@ailearn/shared/review-reminder-contracts";
+} from "@astella/shared/review-reminder-contracts";
 import { buildSimpleErrorBody } from "../../lib/error-envelope.ts";
 
 export async function reviewRoutes(app: FastifyInstance) {

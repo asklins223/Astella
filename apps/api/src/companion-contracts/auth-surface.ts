@@ -34,7 +34,7 @@ import {
   type AuthSurfaceManifestEntryInput,
   type AuthSurfaceManifestPayload,
   type AuthSurfaceManifestV1,
-} from "@ailearn/shared";
+} from "@astella/shared";
 
 /** 签名载荷版本；与 authSurfaceManifestV1Schema.version 的 literal("1") 对应。 */
 const SIGNING_VERSION = "1";

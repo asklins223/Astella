@@ -3,27 +3,27 @@
 # ADR-0007 §1-5: Alpha 环境 12h 定时备份 cron 包装脚本
 #
 # 功能：
-#   1. 读取 /etc/ailearn/backup.env 配置
+#   1. 读取 /etc/astella/backup.env 配置
 #   2. 调用 backup.sh 执行加密备份 + S3 上传
 #   3. 调用 rotate.sh 执行保留轮换
 #   4. 调用 freshness-check.sh 检查备份新鲜度
-#   5. 记录执行日志到 /var/log/ailearn/backup-cron.log
+#   5. 记录执行日志到 /var/log/astella/backup-cron.log
 #   6. 任一步骤失败时退出非零（触发 cron 邮件告警）
 #
 # 用法（crontab 条目）：
-#   0 */12 * * * /opt/ailearn/infra/backup/alpha-backup-cron.sh
+#   0 */12 * * * /opt/astella/infra/backup/alpha-backup-cron.sh
 #
-# 配置文件 /etc/ailearn/backup.env 示例：
+# 配置文件 /etc/astella/backup.env 示例：
 #   PG_HOST=localhost
 #   PG_PORT=5432
-#   PG_USER=ailearn_migrator
-#   PG_DB=ailearn
+#   PG_USER=astella_migrator
+#   PG_DB=astella
 #   SOURCE_RELEASE=0.5.0-alpha.1
 #   SOURCE_COMMIT=abc1234
 #   SOURCE_MIGRATION=0028
-#   AGE_KEY_PATH=/etc/ailearn/backup-age.pub
+#   AGE_KEY_PATH=/etc/astella/backup-age.pub
 #   S3_ENDPOINT=http://minio:9000
-#   S3_BUCKET=ailearn-backups
+#   S3_BUCKET=astella-backups
 #   S3_ACCESS_KEY=...
 #   S3_SECRET_KEY=...
 #   MANIFEST_DIR=/data/backups/manifests
@@ -42,8 +42,8 @@ set -euo pipefail
 # ─── 常量 ───────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONFIG_FILE="${BACKUP_CONFIG_FILE:-/etc/ailearn/backup.env}"
-LOG_DIR="${BACKUP_LOG_DIR:-/var/log/ailearn}"
+CONFIG_FILE="${BACKUP_CONFIG_FILE:-/etc/astella/backup.env}"
+LOG_DIR="${BACKUP_LOG_DIR:-/var/log/astella}"
 LOG_FILE="$LOG_DIR/backup-cron.log"
 
 # ─── 工具函数 ───────────────────────────────────────────────────────────

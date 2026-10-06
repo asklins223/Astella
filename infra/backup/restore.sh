@@ -18,7 +18,7 @@
 #     --target-host restore-db.local --target-port 5432 \
 #     --target-user study_restore --target-db study_restore \
 #     --age-key ./backup.key \
-#     --s3-endpoint http://minio:9000 --s3-bucket ailearn-backups \
+#     --s3-endpoint http://minio:9000 --s3-bucket astella-backups \
 #     --s3-access-key XXX --s3-secret-key YYY \
 #     --manifest-dir /data/backups/manifests
 #
@@ -46,7 +46,7 @@ ALLOWED_HOST_PATTERNS=(
 # 禁止恢复的数据库名（生产数据库名）
 FORBIDDEN_DB_NAMES=(
   "study"
-  "ailearn"
+  "astella"
   "production"
   "prod"
 )
@@ -150,8 +150,8 @@ download_object() {
     aws s3 cp "s3://$S3_BUCKET/$object_key" "$destination" \
       --endpoint-url "$S3_ENDPOINT"
   elif command -v mc &>/dev/null; then
-    mc alias set ailearn-backup "$S3_ENDPOINT" "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null
-    mc cp "ailearn-backup/$S3_BUCKET/$object_key" "$destination"
+    mc alias set astella-backup "$S3_ENDPOINT" "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null
+    mc cp "astella-backup/$S3_BUCKET/$object_key" "$destination"
   else
     log "错误: 需要 aws CLI 或 mc (MinIO Client) 才能下载备份" >&2
     return 1

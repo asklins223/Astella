@@ -20,7 +20,7 @@ import {
   cardCandidateQualityReportsV2,
   cardGenerationEventsV2,
   cardGenerationRunOutboxV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/card-generation-v2";
 import {
   getGenerationRunV2,
   getGenerationRunCandidatesV2,
@@ -28,7 +28,7 @@ import {
   cancelGenerationRunV2,
 } from "../modules/card-generation-v2/generation-run-service.ts";
 import { CardGenerationV2ServiceError } from "../modules/card-generation-v2/helpers.ts";
-import { createGenerationRunInTransaction, type RunContext } from "@ailearn/card-generation";
+import { createGenerationRunInTransaction, type RunContext } from "@astella/card-generation";
 import { withWorkspaceTransaction } from "../db/client.ts";
 
 /**

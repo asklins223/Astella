@@ -4,7 +4,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ResumableSurface } from "../library/ResumableSurface.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /**
  * 「未完成的学习」这一屏登记给伴星读的是什么（39d W2-7）。
@@ -48,7 +48,7 @@ function stubGateway(activeRunSummary: Record<string, unknown> | null) {
       })),
     },
   };
-  Object.defineProperty(window, "ailearn", { value: gateway, configurable: true });
+  Object.defineProperty(window, "astella", { value: gateway, configurable: true });
   return gateway;
 }
 
@@ -112,7 +112,7 @@ describe("未完成的学习：她读到的就是屏幕上那一份", () => {
 
   it("第一次读取还没回来之前不登记（她不能读到上一屏的残留）", async () => {
     let release: (value: unknown) => void = () => undefined;
-    Object.defineProperty(window, "ailearn", {
+    Object.defineProperty(window, "astella", {
       configurable: true,
       value: {
         auth: {

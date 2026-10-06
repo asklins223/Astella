@@ -7,7 +7,7 @@
 import type {
   CardContentCheckV3Output,
   CardGenerateV3DraftOutput,
-} from "@ailearn/shared/card-generation-v3-contracts";
+} from "@astella/shared/card-generation-v3-contracts";
 
 export interface CardGenerateV3DroppedCandidate {
   readonly objectiveLocalId: string;

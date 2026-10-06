@@ -14,8 +14,8 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import { NoteAnnotationSidePage } from "../note-annotation-side-page";
 import { AnnotationDeleteControl, useAnnotationDeleteConfirm } from "../annotation-delete-control";
 import { renderHook, act } from "@testing-library/react";
-import type { NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
-import type { NoteLearningArtifactTaskV1 } from "@ailearn/shared/note-learning-artifact-contracts";
+import type { NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
+import type { NoteLearningArtifactTaskV1 } from "@astella/shared/note-learning-artifact-contracts";
 
 const ANNOTATION: NoteAnnotationV1 = {
   annotationId: "a-1",

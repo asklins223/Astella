@@ -102,8 +102,8 @@ CREATE TRIGGER nlra_artifact_append_only BEFORE UPDATE OR DELETE ON public.note_
 
 -- 权限写在迁移里（0275 那一课）；roles 步骤会再兜底放宽到 CRUD。
 -- "只追加"的家在触发器，不在表权限。
-GRANT SELECT, INSERT ON public.note_learning_round_artifacts TO ailearn_api;
-GRANT ALL PRIVILEGES ON public.note_learning_round_artifacts TO ailearn_migrator;
+GRANT SELECT, INSERT ON public.note_learning_round_artifacts TO astella_api;
+GRANT ALL PRIVILEGES ON public.note_learning_round_artifacts TO astella_migrator;
 
 --> statement-breakpoint
 

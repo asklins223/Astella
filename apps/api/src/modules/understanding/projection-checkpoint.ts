@@ -7,7 +7,7 @@
  */
 
 import { createHmac } from "node:crypto";
-import { sha256Hex } from "@ailearn/shared/content-hash";
+import { sha256Hex } from "@astella/shared/content-hash";
 
 export interface CheckpointWatermark {
   workspaceId: string;

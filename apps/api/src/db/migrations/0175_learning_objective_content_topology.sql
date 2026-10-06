@@ -108,12 +108,12 @@ ALTER TABLE public.learning_objective_origins_v2 FORCE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS loo_v2_ws_isolation ON public.learning_objective_origins_v2;
 CREATE POLICY loo_v2_ws_isolation ON public.learning_objective_origins_v2
-  USING (((CURRENT_USER = 'ailearn_worker'::name) OR (workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)))
-  WITH CHECK (((CURRENT_USER = 'ailearn_worker'::name) OR (workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)));
+  USING (((CURRENT_USER = 'astella_worker'::name) OR (workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)))
+  WITH CHECK (((CURRENT_USER = 'astella_worker'::name) OR (workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)));
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_objective_origins_v2 TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_objective_origins_v2 TO astella_api, astella_worker;
 
 --> statement-breakpoint
 
@@ -219,12 +219,12 @@ ALTER TABLE public.legacy_route_mappings_v2 FORCE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS lrm_v2_ws_isolation ON public.legacy_route_mappings_v2;
 CREATE POLICY lrm_v2_ws_isolation ON public.legacy_route_mappings_v2
-  USING (((CURRENT_USER = 'ailearn_worker'::name) OR (workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)))
-  WITH CHECK (((CURRENT_USER = 'ailearn_worker'::name) OR (workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)));
+  USING (((CURRENT_USER = 'astella_worker'::name) OR (workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)))
+  WITH CHECK (((CURRENT_USER = 'astella_worker'::name) OR (workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)));
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.legacy_route_mappings_v2 TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.legacy_route_mappings_v2 TO astella_api, astella_worker;
 
 --> statement-breakpoint
 

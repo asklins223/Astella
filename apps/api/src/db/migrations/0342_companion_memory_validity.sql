@@ -142,7 +142,7 @@ $$;
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_sync_global_companion_memory_copies()
+CREATE OR REPLACE FUNCTION public.astella_sync_global_companion_memory_copies()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -190,7 +190,7 @@ $function$;
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_fanout_global_companion_memory(
+CREATE OR REPLACE FUNCTION public.astella_fanout_global_companion_memory(
   p_source_id uuid
 )
 RETURNS integer

@@ -32,8 +32,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { logger } from "../src/lib/logger.ts";
-import { AgentRole, COMPANION_CHARACTER_BASE_V7, COMPANION_HOST_PROTOCOL_V6, COMPANION_IDENTITY_BOUNDARY_V2 } from "@ailearn/shared";
-import { summarizeExperienceComparison, type ExperienceComparisonSampleV1 } from "@ailearn/ai-quality";
+import { AgentRole, COMPANION_CHARACTER_BASE_V7, COMPANION_HOST_PROTOCOL_V6, COMPANION_IDENTITY_BOUNDARY_V2 } from "@astella/shared";
+import { summarizeExperienceComparison, type ExperienceComparisonSampleV1 } from "@astella/ai-quality";
 import { renderMethodCatalogBlock, selectRelevantMethods } from "../src/agent/relevant-methods.ts";
 import { resolveEvalProvider } from "../src/integration-tests/eval-provider.ts";
 

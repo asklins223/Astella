@@ -58,7 +58,7 @@
     "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", "JetBrains Mono", Menlo,
     "Cascadia Code", "Noto Sans Mono", monospace;
-  /* 品牌用衬线（与桌面客户端同一套：印章 + 理解引擎），面板拿不到它打包的
+  /* 品牌字用衬线（与桌面客户端同一套排版），面板拿不到它打包的
      Noto Serif SC，退回系统宋体。 */
   --serif: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong", Georgia, serif;
 
@@ -400,22 +400,14 @@ select.field__input { cursor: pointer; }
 }
 
 .rail__brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; flex: none; }
-/* 「理」字印章：与桌面客户端首屏同一枚（不规则圆角 + 暖边 + 轻阴影）。 */
+/* 品牌图：与桌面客户端首屏同一枚 Astella 图标。图自带圆角，这里只给占位与投影。 */
 .seal {
-  display: grid;
-  place-items: center;
   flex: none;
-  border: 1px solid var(--line-strong);
-  border-radius: 9px 12px 8px 11px;
-  background: var(--bg-raised);
-  color: var(--ink);
-  font-family: var(--serif);
-  font-weight: 760;
-  line-height: 1;
-  box-shadow: 0 4px 10px rgba(70, 47, 29, 0.12);
+  object-fit: contain;
+  filter: drop-shadow(0 4px 10px rgba(70, 47, 29, 0.14));
 }
-.seal--sm { width: 28px; height: 28px; font-size: 15px; }
-.seal--lg { width: 36px; height: 36px; font-size: 19px; border-radius: 11px 15px 10px 14px; }
+.seal--sm { width: 28px; height: 28px; }
+.seal--lg { width: 36px; height: 36px; }
 .rail__wordmark {
   font-family: var(--serif);
   font-size: 15px; font-weight: 700; letter-spacing: 0.06em;

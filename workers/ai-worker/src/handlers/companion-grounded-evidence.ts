@@ -1,4 +1,4 @@
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
 
 export interface GroundedTutorEvidenceRow {
   evidence_snapshot_id: string;

@@ -18,7 +18,7 @@ import {
   EAGER_DISPATCH_ELIGIBLE_TOOLS,
   EAGER_TOOL_DISPATCH_ENABLED,
 } from "../companion-eager-dispatch-config.ts";
-import { getCompanionAgentTool } from "@ailearn/shared";
+import { getCompanionAgentTool } from "@astella/shared";
 
 test("默认关闭 —— 收益没实测之前它不许自己开始跑", () => {
   // 40b §4.3：「无收益或等待不合格就撤回。」没量过就等于还没到能开的时候。

@@ -25,8 +25,8 @@ import {
   type CompanionDiscoveryKind,
   type CompanionDiscoverySource,
   type CompanionDiscoveryVisibility,
-} from "@ailearn/shared/companion-discovery-contracts";
-import { companionDiscoveryEntries } from "@ailearn/shared/db-schema/companion-memory";
+} from "@astella/shared/companion-discovery-contracts";
+import { companionDiscoveryEntries } from "@astella/shared/db-schema/companion-memory";
 import type { ApiTransaction } from "../../../db/client.ts";
 
 export interface DiscoveryScope {

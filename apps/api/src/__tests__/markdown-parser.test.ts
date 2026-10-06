@@ -9,7 +9,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseContent, markdownToBlocks, extractTitleFromBlocks } from "@ailearn/shared/markdown-parser";
+import { parseContent, markdownToBlocks, extractTitleFromBlocks } from "@astella/shared/markdown-parser";
 
 /** Wrapper around the public parseContent API for markdown type. */
 function parseMarkdown(content: string) {

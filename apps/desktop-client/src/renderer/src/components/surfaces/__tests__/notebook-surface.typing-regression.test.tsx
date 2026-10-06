@@ -108,7 +108,7 @@ function stubGatewayForNote(initialBlocks: readonly { ordinal: number; type: str
       })),
     },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return { gateway, state };
 }
 

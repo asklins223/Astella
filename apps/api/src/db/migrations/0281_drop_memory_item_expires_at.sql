@@ -10,7 +10,7 @@
 --   （`companionActivityDeliveryV1Schema`），不是记忆条目。
 -- 本仓未上线、不为旧实现保留兼容层（AGENTS.md），所以连列带函数一次改完而不是留着"以后可能用"。
 
-CREATE OR REPLACE FUNCTION public.ailearn_sync_global_companion_memory_copies()
+CREATE OR REPLACE FUNCTION public.astella_sync_global_companion_memory_copies()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER

@@ -31,7 +31,7 @@ receivers:
     # In production, this would be:
     # slack_configs:
     #   - api_url: "https://hooks.slack.com/services/..."
-    #     channel: "#ailearn-alerts"
+    #     channel: "#astella-alerts"
 
 inhibit_rules:
   # Suppress warning if critical is firing for the same alert

@@ -63,7 +63,7 @@ function artifactCodepointCountV1(text: string): number {
  * `--lesson-*` 上再声明一次给模型用：`artifact-hud-palette.test.ts` 钉住两份同源。
  */
 const ARTIFACT_STYLE_V1 = `<style>
-.ailearn-art{
+.astella-art{
   --ink:#30231a;--soft:#705d4d;--paper:#f5ead5;--paper-light:#fff9eb;--paper-deep:#e8d4b1;
   --cream:#fff2cf;--butter:#f3d678;--mint:#b9d3ad;--green:#66816a;
   --peach:#e89568;--clay:#bd5a31;--line:rgba(73,47,29,.22);--line-strong:rgba(66,41,25,.46);
@@ -72,25 +72,25 @@ const ARTIFACT_STYLE_V1 = `<style>
   font:16px/1.85 "Songti SC","STSong","Noto Serif CJK SC","Source Han Serif SC",serif;
   color:var(--ink);
 }
-.ailearn-art *{box-sizing:border-box}
-.ailearn-art__sans{font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif}
+.astella-art *{box-sizing:border-box}
+.astella-art__sans{font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif}
 /* 示意声明：服务端无条件加的一句，暖黄便签底。它在标题**之前**，模型写的那句替代不了它。 */
-.ailearn-art__notice{
+.astella-art__notice{
   margin:0 0 12px;padding:7px 11px;border:1px solid var(--line);
   border-left:4px solid var(--green);border-radius:11px 14px 10px 13px;
   background:color-mix(in srgb,var(--butter) 26%,var(--paper-light));
   font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif;
   font-size:12px;line-height:1.7;color:var(--soft);
 }
-.ailearn-art__title{margin:0 0 4px;font-size:23px;line-height:1.4;font-weight:680;letter-spacing:-.02em}
-.ailearn-art__subject{margin:0 0 14px;color:var(--soft);font-size:14px;line-height:1.7}
-.ailearn-art__caution{
+.astella-art__title{margin:0 0 4px;font-size:23px;line-height:1.4;font-weight:680;letter-spacing:-.02em}
+.astella-art__subject{margin:0 0 14px;color:var(--soft);font-size:14px;line-height:1.7}
+.astella-art__caution{
   margin:0 0 14px;padding-left:11px;border-left:3px solid var(--line-strong);
   color:var(--soft);font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif;
   font-size:12px;line-height:1.7;
 }
 /* 画面：纸面上的一个凹槽——粗奶油边 + 不等圆角。模型写的那一页落在里面。 */
-.ailearn-art__scene{
+.astella-art__scene{
   --lesson-paper:#fff9eb;--lesson-paper-deep:#e8d4b1;--lesson-ink:#30231a;--lesson-soft:#705d4d;
   --lesson-mint:#b9d3ad;--lesson-green:#66816a;--lesson-peach:#e89568;--lesson-clay:#bd5a31;
   --lesson-butter:#f3d678;--lesson-cream:#fff2cf;--lesson-edge:rgba(255,252,235,.78);
@@ -99,56 +99,56 @@ const ARTIFACT_STYLE_V1 = `<style>
   border-radius:27px 36px 25px 33px/31px 26px 38px 28px;background:var(--paper-light);
   box-shadow:0 12px 28px rgba(43,27,17,.22),0 3px 8px rgba(43,27,17,.14);
 }
-.ailearn-art__scene>*{max-width:100%}
+.astella-art__scene>*{max-width:100%}
 /* ── 依据回执：那句话真的在这篇笔记里，不是模型写的 ──────────────────── */
-.ailearn-art__evidence{
+.astella-art__evidence{
   margin:16px 0 0;padding:12px 15px;border:2px solid var(--cream);
   border-left:5px solid var(--peach);border-radius:16px 22px 17px 20px;background:var(--paper);
 }
-.ailearn-art__evidence-head{
+.astella-art__evidence-head{
   margin:0 0 9px;color:var(--green);font-size:12px;font-weight:800;letter-spacing:.04em;
   font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif;
 }
-.ailearn-art__evidence-item{margin:0 0 10px;padding:0 0 10px;border-bottom:1px dashed var(--line)}
-.ailearn-art__evidence-item:last-child{margin-bottom:0;padding-bottom:0;border-bottom:0}
-.ailearn-art__evidence-what{display:block;margin-bottom:3px;font-size:14px;font-weight:650;line-height:1.6}
-.ailearn-art__evidence-where{
+.astella-art__evidence-item{margin:0 0 10px;padding:0 0 10px;border-bottom:1px dashed var(--line)}
+.astella-art__evidence-item:last-child{margin-bottom:0;padding-bottom:0;border-bottom:0}
+.astella-art__evidence-what{display:block;margin-bottom:3px;font-size:14px;font-weight:650;line-height:1.6}
+.astella-art__evidence-where{
   display:block;margin-bottom:5px;color:var(--soft);font-size:12px;line-height:1.6;
   font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif;
 }
-.ailearn-art__evidence-quote{
+.astella-art__evidence-quote{
   margin:0;padding:8px 12px;border-left:3px solid var(--peach);border-radius:10px 14px 11px 13px;
   background:var(--cream);font-size:14px;line-height:1.8;overflow-wrap:anywhere;
 }
 /* ── 文字等价：frame 之外的真实 DOM，永远在屏上（§6.3）───────────────── */
-.ailearn-art__list{margin:16px 0 0;padding:14px 16px 14px 34px;border:2px solid var(--cream);
+.astella-art__list{margin:16px 0 0;padding:14px 16px 14px 34px;border:2px solid var(--cream);
   border-radius:17px 24px 16px 22px;background:var(--paper)}
-.ailearn-art__list li{margin:0 0 11px;line-height:1.85;overflow-wrap:anywhere}
-.ailearn-art__list li:last-child{margin-bottom:0}
-.ailearn-art__list b{font-weight:700}
-.ailearn-art__list span{display:block;margin-top:2px;color:var(--soft);font-size:13px;line-height:1.7;
+.astella-art__list li{margin:0 0 11px;line-height:1.85;overflow-wrap:anywhere}
+.astella-art__list li:last-child{margin-bottom:0}
+.astella-art__list b{font-weight:700}
+.astella-art__list span{display:block;margin-top:2px;color:var(--soft);font-size:13px;line-height:1.7;
   font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif}
 </style>`;
 
 function renderEvidenceV1(nodes: readonly ArtifactNodeV1[]): string {
   if (nodes.length === 0) return "";
   const items = nodes.map((node) => (
-    `<div class="ailearn-art__evidence-item">`
-    + `<b class="ailearn-art__evidence-what">${escapeArtifactTextV1(node.title)}</b>`
-    + `<span class="ailearn-art__evidence-where">笔记依据 · ${escapeArtifactTextV1(node.sectionLabel)}</span>`
-    + `<p class="ailearn-art__evidence-quote">${escapeArtifactTextV1(node.quote)}</p>`
+    `<div class="astella-art__evidence-item">`
+    + `<b class="astella-art__evidence-what">${escapeArtifactTextV1(node.title)}</b>`
+    + `<span class="astella-art__evidence-where">笔记依据 · ${escapeArtifactTextV1(node.sectionLabel)}</span>`
+    + `<p class="astella-art__evidence-quote">${escapeArtifactTextV1(node.quote)}</p>`
     + `</div>`
   )).join("");
-  return `<section class="ailearn-art__evidence" aria-label="这一页依据的笔记原句">`
-    + `<p class="ailearn-art__evidence-head">这一页画的是这几句话</p>${items}</section>`;
+  return `<section class="astella-art__evidence" aria-label="这一页依据的笔记原句">`
+    + `<p class="astella-art__evidence-head">这一页画的是这几句话</p>${items}</section>`;
 }
 
 function renderTextEquivalentV1(nodes: readonly ArtifactNodeV1[]): string {
   const items = nodes.map((node) => (
     `<li><b>${escapeArtifactTextV1(node.title)}</b>：${escapeArtifactTextV1(node.narration)}`
-    + `<span class="ailearn-art__sans">笔记依据：${escapeArtifactTextV1(node.quote)}</span></li>`
+    + `<span class="astella-art__sans">笔记依据：${escapeArtifactTextV1(node.quote)}</span></li>`
   )).join("");
-  return `<ol class="ailearn-art__list" aria-label="这一页讲的每一步（文字版）">${items}</ol>`;
+  return `<ol class="astella-art__list" aria-label="这一页讲的每一步（文字版）">${items}</ol>`;
 }
 
 /**
@@ -177,21 +177,21 @@ export function buildDynamicArtifactHtmlV1(
 
   // 顺序是**纸面在后、模型在前**：模型写的那份样式可以排在自己的标记前面，但不能压过
   // 纸面外壳——示意声明、标题、依据回执与文字等价是服务端无条件给的，它们被
-  // `.ailearn-art__notice{display:none}` 藏掉的话，「示意声明无条件上屏」就只剩标记
+  // `.astella-art__notice{display:none}` 藏掉的话，「示意声明无条件上屏」就只剩标记
   // 层面成立，屏幕上那一行不见了。（模型那一侧的内容在 `data-stage` 里，纸面规则不
   // 碰它，所以"纸面赢"不会把教具的样式也一起赢走。）
   const html = styleTags
     + ARTIFACT_STYLE_V1
-    + `<div class="ailearn-art" data-artifact-root`
+    + `<div class="astella-art" data-artifact-root`
     + ` data-generator-ref="${escapeArtifactTextV1(input.generatorRef)}"`
     + ` data-snapshot-hash="${escapeArtifactTextV1(input.snapshotHash)}"`
     + ` data-outline-count="${nodes.length}">`
     // 示意声明**无条件**在最前面：模型写的那一句只能跟在后面补充，替代不了它。
-    + `<p class="ailearn-art__notice">${escapeArtifactTextV1(ARTIFACT_ILLUSTRATION_NOTICE_V1)}</p>`
-    + `<h2 class="ailearn-art__title">${escapeArtifactTextV1(doc.title)}</h2>`
-    + `<p class="ailearn-art__subject">${escapeArtifactTextV1(doc.subject)}</p>`
-    + `<p class="ailearn-art__caution">${escapeArtifactTextV1(doc.caution)}</p>`
-    + `<div class="ailearn-art__scene" data-stage>${markup}</div>`
+    + `<p class="astella-art__notice">${escapeArtifactTextV1(ARTIFACT_ILLUSTRATION_NOTICE_V1)}</p>`
+    + `<h2 class="astella-art__title">${escapeArtifactTextV1(doc.title)}</h2>`
+    + `<p class="astella-art__subject">${escapeArtifactTextV1(doc.subject)}</p>`
+    + `<p class="astella-art__caution">${escapeArtifactTextV1(doc.caution)}</p>`
+    + `<div class="astella-art__scene" data-stage>${markup}</div>`
     + renderEvidenceV1(nodes)
     + renderTextEquivalentV1(nodes)
     + `</div>`

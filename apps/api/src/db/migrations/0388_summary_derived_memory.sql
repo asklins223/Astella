@@ -5,7 +5,7 @@
 -- 于是用户遗忘/停用那条记忆之后，那份摘要仍然每轮注入同样的内容：
 -- 用户的遗忘被摘要一句一句地undo掉了。
 --
--- 手册那一侧早就处理了这件事（0374 的 `ailearn_propagate_playbook_evidence_change`：
+-- 手册那一侧早就处理了这件事（0374 的 `astella_propagate_playbook_evidence_change`：
 -- 记忆被纠正/停用/遗忘 → 手册标争议）。摘要与记忆是同一种派生关系，却漏了这一侧。
 --
 -- 这里补上：摘要记下它派生出哪条记忆，那条记忆失效时把摘要置为 `stale`。
@@ -15,7 +15,7 @@ ALTER TABLE public.conversation_summaries
   ADD COLUMN IF NOT EXISTS derived_memory_id uuid;
 
 -- 记忆侧失效 → 摘要失效。
-CREATE OR REPLACE FUNCTION public.ailearn_invalidate_summary_on_derived_memory_change()
+CREATE OR REPLACE FUNCTION public.astella_invalidate_summary_on_derived_memory_change()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   UPDATE public.conversation_summaries s
@@ -41,7 +41,7 @@ END $$;
 DROP TRIGGER IF EXISTS assistant_memory_summary_invalidate ON public.assistant_memory_items;
 CREATE TRIGGER assistant_memory_summary_invalidate
   AFTER UPDATE OR DELETE ON public.assistant_memory_items
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_invalidate_summary_on_derived_memory_change();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_invalidate_summary_on_derived_memory_change();
 
 CREATE INDEX IF NOT EXISTS conversation_summaries_derived_memory_idx
   ON public.conversation_summaries (derived_memory_id)

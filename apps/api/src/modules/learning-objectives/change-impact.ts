@@ -1,8 +1,8 @@
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
 import type {
   ObjectiveNoteChangeEvidenceV1,
   ObjectiveNoteChangeImpactV1,
-} from "@ailearn/shared/learning-objective-surface-contracts";
+} from "@astella/shared/learning-objective-surface-contracts";
 
 const MAX_EVIDENCE_DETAILS_V1 = 200;
 const MAX_EVIDENCE_EXCERPT_CHARS_V1 = 1200;

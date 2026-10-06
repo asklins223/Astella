@@ -27,7 +27,7 @@ import {
   type AssessmentDisputeKindV2,
   type AssessmentDisputeViewV2,
   type CloseAssessmentDisputeResultV2,
-} from "@ailearn/shared/assessment-dispute-rules-v2";
+} from "@astella/shared/assessment-dispute-rules-v2";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client.ts";
 
 /**
@@ -58,7 +58,7 @@ const correctionKindLabels = {
 } as const;
 
 function desktopApi() {
-  return typeof window === "undefined" ? undefined : window.ailearn;
+  return typeof window === "undefined" ? undefined : window.astella;
 }
 
 function formatStamp(value: string): string {

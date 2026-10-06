@@ -1,7 +1,7 @@
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
-import type { CompanionLearningContextV1 } from "@ailearn/shared/companion-conversation-contracts";
-import type { CompanionJourneyAction,CompanionJourneyBootstrap } from "@ailearn/shared/companion-journey-contracts";
-import type { CompanionActivityDeliveryV1,CompanionActivityTimelineV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
+import type { CompanionLearningContextV1 } from "@astella/shared/companion-conversation-contracts";
+import type { CompanionJourneyAction,CompanionJourneyBootstrap } from "@astella/shared/companion-journey-contracts";
+import type { CompanionActivityDeliveryV1,CompanionActivityTimelineV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { Sparkles } from "lucide-react";
 import { useEffect,useMemo,useRef,useState } from "react";
 import { HUD_PAGES } from "../../hud/hud-pages";

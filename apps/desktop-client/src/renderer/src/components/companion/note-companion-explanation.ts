@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { noteAnnotationV1Schema, type NoteAnnotationAnchorV1, type NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
+import { noteAnnotationV1Schema, type NoteAnnotationAnchorV1, type NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
 import type { CompanionFeedNoteAnchor } from "./companion-feed";
@@ -83,7 +83,7 @@ export function openNoteExplanation(id: string) {
 
 export function stopNoteExplanation(id: string) {
   interruptNoteExplanation(id, "stopped");
-  window.dispatchEvent(new CustomEvent("ailearn:note-explanation-stop", { detail: { id } }));
+  window.dispatchEvent(new CustomEvent("astella:note-explanation-stop", { detail: { id } }));
 }
 
 export function noteExplanationLabel(item: NoteCompanionExplanation): string {
@@ -112,8 +112,8 @@ export async function saveNoteExplanation(id: string) {
   if (!item || item.phase !== "save-error" || !item.messageId) return;
   update(id, { phase: "saving", error: null });
   try {
-    if (!window.ailearn?.noteAnnotation) throw new Error("批注保存暂不可用，可以稍后重试。");
-    const annotation = noteAnnotationV1Schema.parse(unwrapGatewayResult(await window.ailearn.noteAnnotation.write({
+    if (!window.astella?.noteAnnotation) throw new Error("批注保存暂不可用，可以稍后重试。");
+    const annotation = noteAnnotationV1Schema.parse(unwrapGatewayResult(await window.astella.noteAnnotation.write({
       meta: createRequestMeta(), noteId: item.target.noteId,
       command: { kind: "create", anchor: item.target.anchor, explanation: item.text, sourceMessageId: item.messageId },
     })));
@@ -122,7 +122,7 @@ export async function saveNoteExplanation(id: string) {
     // A workspace reset removes the attempt: its late receipt must not enter the new workspace.
     if (!useNoteCompanionExplanations.getState().items.some(current => current.id === id)) return;
     update(id, { phase: "saved", annotation, error: null });
-    window.dispatchEvent(new CustomEvent("ailearn:note-annotation-saved", { detail: { noteId: annotation.noteId, annotation } }));
+    window.dispatchEvent(new CustomEvent("astella:note-annotation-saved", { detail: { noteId: annotation.noteId, annotation } }));
   } catch (error) {
     update(id, { phase: "save-error", error: gatewayErrorMessage(error) });
   }

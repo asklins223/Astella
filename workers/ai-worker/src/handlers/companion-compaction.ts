@@ -1,4 +1,4 @@
-import type { AgentTurnRequest, AgentTurnResult } from "@ailearn/shared";
+import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 
 /**
  * provider 消息 = agent turn 消息的元素类型。

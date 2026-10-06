@@ -6,7 +6,7 @@
  * 2026-10-01~02 实测，这两个查询（回收区到期清理 / 归档保留上限淘汰）**一次
  * 节流都没有**——同一文件里上面那次每日维护有 `lastMaintenanceAt`，它们没有；
  * 同目录所有兄弟调度器也都有（30s ~ 60min）。DB 授权缺失（0345/0346 只授了
- * `ailearn_api`）之后，失败被 catch 成一条 WARN，下一 tick 再来一次，永不停止。
+ * `astella_api`）之后，失败被 catch 成一条 WARN，下一 tick 再来一次，永不停止。
  *
  * worker tick 的退避当时也是坏的（`index.ts` 在 claimJobs 成功后无条件
  * `currentPollMs = POLL_MS`，封顶 1000ms），于是这条循环稳定 1 次/秒，
@@ -36,7 +36,7 @@ function analyze(text: string): {
 } {
   const gateIndex = text.indexOf("if (now - lastCleanupAt < CLEANUP_INTERVAL_MS) return;");
   const advanceIndex = text.indexOf("lastCleanupAt = now;");
-  const queryIndexes = ["ailearn_purge_expired_companion_memory", "ailearn_enforce_companion_memory_retention"]
+  const queryIndexes = ["astella_purge_expired_companion_memory", "astella_enforce_companion_memory_retention"]
     .map((fn) => text.indexOf(`public.${fn}()`))
     // 没出现时 indexOf 返回 -1，映射成 NaN 让后续断言失败而不是静默通过
     .map((i) => (i < 0 ? Number.NaN : i));
@@ -82,8 +82,8 @@ test("【自证】判据认得出「成功后推进」这个真实退化", () =>
   // 验的就不是判据本身了。
   const regressed = [
     "if (now - lastCleanupAt < CLEANUP_INTERVAL_MS) return;",
-    "SELECT public.ailearn_purge_expired_companion_memory() AS purged;",
-    "SELECT public.ailearn_enforce_companion_memory_retention() AS evicted;",
+    "SELECT public.astella_purge_expired_companion_memory() AS purged;",
+    "SELECT public.astella_enforce_companion_memory_retention() AS evicted;",
     "lastCleanupAt = now;",
   ].join("\n");
   const { advanceIndex, queryIndexes } = analyze(regressed);

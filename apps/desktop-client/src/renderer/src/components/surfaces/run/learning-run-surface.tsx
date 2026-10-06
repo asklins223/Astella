@@ -26,7 +26,7 @@ import type {
   RepairOperationV1,
   StructuredPartAnswerV1,
   StructuredPartPublicV1,
-} from "@ailearn/shared/learning-run-contracts";
+} from "@astella/shared/learning-run-contracts";
 import {
   ChoiceEditor,
   InteractionEditor,
@@ -42,8 +42,8 @@ import type {
   LearningRunPublicSnapshotV2,
   LearningRunReturnContractV2,
   LearningRunTargetRevealV2,
-} from "@ailearn/shared/learning-run-v2-contracts";
-import type { DesktopLearningRunActionRequestV2, DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/learning-run-v2-contracts";
+import type { DesktopLearningRunActionRequestV2, DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
 import {
   createCommandId,
   createRequestMeta,
@@ -59,7 +59,7 @@ import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { HUD_PAGES } from "../../hud/hud-pages";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { reviewTargetFromReturnContract } from "../../review-focus";
 import { resultPollDelayMs } from "../../result-polling";
 import { indexedPublicLabel } from "../../learning-run-labels";
@@ -333,7 +333,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
     // The shared audio host will speak only when unlocked, visible and unmuted.
     resultSpeechRef.current = speakCompanionLine(cue.line);
     if (cue.moment === "confirm") {
-      window.dispatchEvent(new CustomEvent("ailearn:home-v2-sound", { detail: { kind: "success" } }));
+      window.dispatchEvent(new CustomEvent("astella:home-v2-sound", { detail: { kind: "success" } }));
     }
   }, [companionFeedbackAllowed, setCompanionMoment]);
 
@@ -489,13 +489,13 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
   }, [failure, snapshot]);
 
   const loadSnapshot = useCallback(async (forceTaskResync = false) => {
-    if (!window.ailearn) {
+    if (!window.astella) {
       throw new Error("desktop API is unavailable");
     }
     const requestToken = captureLearningRunRequest(runRequestFenceRef.current);
     const requestGeneration = snapshotRequestGenerationRef.current + 1;
     snapshotRequestGenerationRef.current = requestGeneration;
-    const response = await window.ailearn.learningRun.get({ meta: createRequestMeta(epochRef.current), runId }).catch((error: unknown) => {
+    const response = await window.astella.learningRun.get({ meta: createRequestMeta(epochRef.current), runId }).catch((error: unknown) => {
       if (requestGeneration !== snapshotRequestGenerationRef.current
         || !isLearningRunRequestCurrent(requestToken, runRequestFenceRef.current)) return null;
       throw error;
@@ -555,7 +555,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
     }
     const draftEditorRevision = editorRevisionRef.current;
 
-    const draftResponse = await window.ailearn.learningRun.getDraft({ meta: createRequestMeta(epochRef.current), runId, taskId: activeTask.taskId }).catch((error: unknown) => {
+    const draftResponse = await window.astella.learningRun.getDraft({ meta: createRequestMeta(epochRef.current), runId, taskId: activeTask.taskId }).catch((error: unknown) => {
       if (requestGeneration !== snapshotRequestGenerationRef.current
         || !isLearningRunRequestCurrent(requestToken, runRequestFenceRef.current)
         || acceptedSnapshotRef.current?.snapshotId !== next.snapshotId) return null;
@@ -598,7 +598,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
   }, [runId]);
 
   const resyncLearningRun = useCallback(async (kind: PlayerRecovery) => {
-    if (!window.ailearn || resyncing) return;
+    if (!window.astella || resyncing) return;
     setResyncing(true);
     setLoading(true);
     setFailure(null);
@@ -635,13 +635,13 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
     let active = true;
     let subscriptionId: string | null = null;
     const subscribe = async () => {
-      if (!window.ailearn) return;
+      if (!window.astella) return;
       try {
-        const response = await window.ailearn.subscriptions.subscribe({ meta: createRequestMeta(epochRef.current), topic: { kind: "learningRun", runId } });
+        const response = await window.astella.subscriptions.subscribe({ meta: createRequestMeta(epochRef.current), topic: { kind: "learningRun", runId } });
         if (!active) return;
         if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
         subscriptionId = unwrapGatewayResult(response).subscriptionId;
-        const stop = window.ailearn.subscriptions.onEvent(subscriptionId, requestSnapshotRefresh);
+        const stop = window.astella.subscriptions.onEvent(subscriptionId, requestSnapshotRefresh);
         activeSubscriptionRef.current = { id: subscriptionId, stop };
       } catch {
         // GET/resync remains authoritative. A missing stream never creates a
@@ -652,8 +652,8 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
     return () => {
       active = false;
       activeSubscriptionRef.current?.stop();
-      if (subscriptionId && window.ailearn) {
-        void window.ailearn.subscriptions.unsubscribe({ meta: createRequestMeta(epochRef.current), subscriptionId });
+      if (subscriptionId && window.astella) {
+        void window.astella.subscriptions.unsubscribe({ meta: createRequestMeta(epochRef.current), subscriptionId });
       }
       activeSubscriptionRef.current = null;
     };
@@ -662,7 +662,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
   useEffect(() => {
     const activeSnapshot = snapshot;
     const activeTask = activeSnapshot?.activeTask;
-    if (!activeSnapshot || activeSnapshot.phase !== "active" || !activeTask || !window.ailearn) return;
+    if (!activeSnapshot || activeSnapshot.phase !== "active" || !activeTask || !window.astella) return;
 
     let active = true;
     let activeWindowStartedAtMs: number | null = null;
@@ -671,12 +671,12 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
 
     const drain = (): Promise<void> => {
       if (sending) return sending;
-      if (pendingWindows.length === 0 || !window.ailearn) return Promise.resolve();
+      if (pendingWindows.length === 0 || !window.astella) return Promise.resolve();
       sending = (async () => {
-        while (pendingWindows.length && window.ailearn) {
+        while (pendingWindows.length && window.astella) {
           const next = pendingWindows[0];
           try {
-            const response = await window.ailearn.learningRun.recordActivityLease({
+            const response = await window.astella.learningRun.recordActivityLease({
               meta: createRequestMeta(epochRef.current),
               runId,
               request: {
@@ -772,7 +772,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
     const requestToken = captureLearningRunRequest(runRequestFenceRef.current);
     const taskKey = `${activeTask.taskId}:${activeTask.revision}:${activeTask.activeVariant.variantId}:${activeTask.activeVariant.revision}`;
     const timer = window.setTimeout(async () => {
-      if (revision !== editorRevisionRef.current || !window.ailearn) return;
+      if (revision !== editorRevisionRef.current || !window.astella) return;
       const payload = toDraftPayload(editor);
       if (!payload) return;
       const writeGeneration = draftWriteGenerationRef.current + 1;
@@ -780,7 +780,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
       setDraftWriteBusy(true);
       setDraftStatus("正在保存草稿…");
       try {
-        const response = await window.ailearn.learningRun.saveDraft({
+        const response = await window.astella.learningRun.saveDraft({
           meta: createRequestMeta(epochRef.current),
           commandId: createCommandId("draft"),
           runId,
@@ -843,7 +843,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
   }, [dirty, draftRevision, draftWriteBlocked, draftWriteBusy, editor, loading, recovery, resyncing, runId, snapshot, submitting]);
 
   const queryResult = useCallback(async (pollGeneration: number) => {
-    if (!window.ailearn) return true;
+    if (!window.astella) return true;
     const requestToken = captureLearningRunRequest(runRequestFenceRef.current);
     const requestIsCurrent = () => isLearningRunResultQueryCurrent(
       requestToken,
@@ -851,7 +851,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
       pollGeneration,
       resultPollGenerationRef.current,
     );
-    const response = await window.ailearn.learningRun.getResult({ meta: createRequestMeta(epochRef.current), runId });
+    const response = await window.astella.learningRun.getResult({ meta: createRequestMeta(epochRef.current), runId });
     if (!requestIsCurrent()) return true;
     if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
     const value = unwrapGatewayResult(response);
@@ -911,7 +911,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
     }
     if (!requestIsCurrent()) return true;
     try {
-      const returnResponse = await window.ailearn.learningRun.getReturnContract({ meta: createRequestMeta(epochRef.current), runId });
+      const returnResponse = await window.astella.learningRun.getReturnContract({ meta: createRequestMeta(epochRef.current), runId });
       if (!requestIsCurrent()) return true;
       if (returnResponse.workspaceEpoch) epochRef.current = returnResponse.workspaceEpoch;
       const contract = unwrapGatewayResult(returnResponse);
@@ -968,7 +968,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
   };
 
   const submit = async (payload: ArtifactPayload) => {
-    if (!snapshot?.activeTask || !window.ailearn || submitting || resyncing || recovery !== null || (payload.kind === "voice" && voiceEditorBusy)) return;
+    if (!snapshot?.activeTask || !window.astella || submitting || resyncing || recovery !== null || (payload.kind === "voice" && voiceEditorBusy)) return;
     if (payload.kind === "ordering" && !orderingTouched) {
       setDraftStatus("先调整一次顺序，确认这不是题目给出的随机初始排列");
       return;
@@ -987,7 +987,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
     try {
       await activityLeaseFlushRef.current?.();
       if (!isLearningRunRequestCurrent(requestToken, runRequestFenceRef.current)) return;
-      const response = await window.ailearn.learningRun.submit({
+      const response = await window.astella.learningRun.submit({
         meta: createRequestMeta(epochRef.current),
         commandId: createCommandId("submit"),
         runId,
@@ -1043,7 +1043,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
   };
 
   const dispatchAction = async (action: LearningRunAllowedActionV2, bypassConfirmation = false) => {
-    if (!snapshot || !window.ailearn || actionBusy || resyncing || recovery !== null) return;
+    if (!snapshot || !window.astella || actionBusy || resyncing || recovery !== null) return;
     if (!bypassConfirmation && "confirmationRequired" in action && action.confirmationRequired) {
       confirmationReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setPendingAction(action);
@@ -1054,7 +1054,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
     try {
       await activityLeaseFlushRef.current?.();
       if (!isLearningRunRequestCurrent(requestToken, runRequestFenceRef.current)) return;
-      const response = await window.ailearn.learningRun.action({
+      const response = await window.astella.learningRun.action({
         meta: createRequestMeta(epochRef.current),
         commandId: createCommandId("action"),
         runId,
@@ -1335,7 +1335,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
   const loadTargetReveal = () => {
     if (targetReveal.kind === "loading" || targetReveal.kind === "ready") return;
     setTargetReveal({ kind: "loading" });
-    void window.ailearn.learningRun.revealTarget({ meta: createRequestMeta(epochRef.current), runId })
+    void window.astella.learningRun.revealTarget({ meta: createRequestMeta(epochRef.current), runId })
       .then((response) => {
         setTargetReveal({ kind: "ready", reveal: unwrapGatewayResult(response) });
       })
@@ -1801,7 +1801,7 @@ export function LearningRunSurface({ onExit }: LearningRunSurfaceProps = {}) {
       onExit(request);
       return;
     }
-    if (!activeRunId || !window.ailearn) return;
+    if (!activeRunId || !window.astella) return;
     // Remove the run tree before asking main to resolve the return route: main
     // completes FormalAssessmentGuard release only after the renderer has
     // yielded a frame with the run context unmounted.

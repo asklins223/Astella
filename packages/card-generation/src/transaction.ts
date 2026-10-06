@@ -24,7 +24,7 @@
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
 /** 真实 driver 用的那份 shared schema（与 API / worker 建库时传入的同一个模块）。 */
-type SharedSchema = typeof import("@ailearn/shared/db-schema");
+type SharedSchema = typeof import("@astella/shared/db-schema");
 
 type WorkspaceDb = PostgresJsDatabase<SharedSchema>;
 

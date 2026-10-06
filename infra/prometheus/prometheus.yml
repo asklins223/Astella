@@ -12,7 +12,7 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    monitor: "ailearn-alpha"
+    monitor: "astella-alpha"
     environment: "alpha"
 
 rule_files:
@@ -31,10 +31,10 @@ scrape_configs:
       - targets: ["localhost:9090"]
 
   # API server metrics (ADR-0006 §3)
-  # Exposes: ailearn_http_requests_total, ailearn_http_errors_5xx_total,
-  #          ailearn_http_request_duration_seconds, ailearn_readiness_status,
-  #          ailearn_funnel_events_total, etc.
-  - job_name: "ailearn-api"
+  # Exposes: astella_http_requests_total, astella_http_errors_5xx_total,
+  #          astella_http_request_duration_seconds, astella_readiness_status,
+  #          astella_funnel_events_total, etc.
+  - job_name: "astella-api"
     metrics_path: "/metrics"
     static_configs:
       - targets: ["api:4000"]
@@ -47,9 +47,9 @@ scrape_configs:
         replacement: "api"
 
   # Worker metrics server (ADR-0006 §3, OPS-01)
-  # Exposes: ailearn_job_queue_depth, ailearn_job_terminal_total,
-  #          ailearn_provider_calls_total, ailearn_provider_errors_total, etc.
-  - job_name: "ailearn-worker"
+  # Exposes: astella_job_queue_depth, astella_job_terminal_total,
+  #          astella_provider_calls_total, astella_provider_errors_total, etc.
+  - job_name: "astella-worker"
     metrics_path: "/metrics"
     static_configs:
       - targets: ["worker:9100"]
@@ -62,7 +62,7 @@ scrape_configs:
 
   # Backup verification status is derived from persistent manifests.  The
   # metric is absent until a deep RC restore verification marks one verified.
-  - job_name: "ailearn-backup"
+  - job_name: "astella-backup"
     metrics_path: "/metrics"
     static_configs:
       - targets: ["alpha-ops-sidecar:8080"]

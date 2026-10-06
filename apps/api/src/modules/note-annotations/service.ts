@@ -1,11 +1,11 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
-import { noteAnnotations } from "@ailearn/shared/db-schema/note-annotations";
-import { noteLearningArtifacts } from "@ailearn/shared/db-schema/note-learning-artifacts";
-import { jobs } from "@ailearn/shared/db-schema/job";
-import { noteBlocks, noteVersions, notes } from "@ailearn/shared/db-schema/note";
-import { JobStatus, JobType } from "@ailearn/shared/enums";
-import { noteAnchorMatchesV1, noteAnnotationAnchorV1Schema, noteAnnotationV1Schema, noteAnnotationTaskV1Schema, type NoteAnnotationAnchorV1, type NoteAnnotationTaskV1 } from "@ailearn/shared/note-annotation-contracts";
+import { noteAnnotations } from "@astella/shared/db-schema/note-annotations";
+import { noteLearningArtifacts } from "@astella/shared/db-schema/note-learning-artifacts";
+import { jobs } from "@astella/shared/db-schema/job";
+import { noteBlocks, noteVersions, notes } from "@astella/shared/db-schema/note";
+import { JobStatus, JobType } from "@astella/shared/enums";
+import { noteAnchorMatchesV1, noteAnnotationAnchorV1Schema, noteAnnotationV1Schema, noteAnnotationTaskV1Schema, type NoteAnnotationAnchorV1, type NoteAnnotationTaskV1 } from "@astella/shared/note-annotation-contracts";
 import { createJob, classifyJobFailureReason } from "../job/service.ts";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import { isAssistantReplyForNote } from "../note/companion-source.ts";

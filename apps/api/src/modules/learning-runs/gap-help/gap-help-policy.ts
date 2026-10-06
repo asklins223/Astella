@@ -15,7 +15,7 @@
  * 判不了不是没弄通）。所以它单独成"unknown"一类：**不重置计数**（这一次确实没带来
  * 改善的证据），但**也不因此说用户有缺口**。
  */
-import { learningRunOutcomeSchema } from "@ailearn/shared/learning-run-contracts";
+import { learningRunOutcomeSchema } from "@astella/shared/learning-run-contracts";
 
 export type LearningRunOutcomeNameV1 = (typeof learningRunOutcomeSchema)["_output"];
 

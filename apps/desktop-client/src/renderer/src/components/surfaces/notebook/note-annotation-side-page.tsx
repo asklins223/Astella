@@ -1,5 +1,5 @@
-import type { NoteAnnotationAnchorV1, NoteAnnotationTaskV1, NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
-import type { NoteLearningArtifactTaskV1, NoteLearningArtifactV1 } from "@ailearn/shared/note-learning-artifact-contracts";
+import type { NoteAnnotationAnchorV1, NoteAnnotationTaskV1, NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
+import type { NoteLearningArtifactTaskV1, NoteLearningArtifactV1 } from "@astella/shared/note-learning-artifact-contracts";
 import { TaskSlip } from "./task-slip";
 import { AnnotationDeleteControl, type AnnotationDeleteView } from "./annotation-delete-control";
 import { renderCompanionMarkdown } from "../../companion/companion-markdown";

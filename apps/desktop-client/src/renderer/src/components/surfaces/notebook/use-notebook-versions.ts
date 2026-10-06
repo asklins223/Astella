@@ -19,8 +19,8 @@
  * 判据见 `AGENTS.md` §工程结构与分层：单函数超过 400 行或 hook 超过 25 个就是信号。
  */
 import { useState } from "react";
-import type { DesktopNoteVersionItem } from "@ailearn/shared/desktop-surface-contracts";
-import type { NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
+import type { DesktopNoteVersionItem } from "@astella/shared/desktop-surface-contracts";
+import type { NoteDetailV1 } from "@astella/shared/note-projection-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 
 export function useNotebookVersions(input: {
@@ -34,7 +34,7 @@ export function useNotebookVersions(input: {
    * 于是这里用 `Window` 上真实的那个类型，而不是我另编一份结构类型。
    */
   /** 可能是 undefined——页面里的 `desktopApi()` 在 SSR 下就返回 undefined。 */
-  readonly api: NonNullable<Window["ailearn"]> | undefined;
+  readonly api: NonNullable<Window["astella"]> | undefined;
 }) {
   const { data, epochRef, reload, api } = input;
 

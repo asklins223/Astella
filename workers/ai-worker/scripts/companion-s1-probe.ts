@@ -26,8 +26,8 @@
  */
 import process from "node:process";
 import postgres from "postgres";
-import { companionLeakGateVersionV1 } from "@ailearn/shared/companion-leak-gates";
-import { getCompanionAgentTool, validateCompanionAgentToolArguments } from "@ailearn/shared/companion-agent-registry";
+import { companionLeakGateVersionV1 } from "@astella/shared/companion-leak-gates";
+import { getCompanionAgentTool, validateCompanionAgentToolArguments } from "@astella/shared/companion-agent-registry";
 
 /** 回合层面的归因：闸版本落了没有、落了几种（39d #28 那一列的读者之一）。 */
 interface AttributionRow {

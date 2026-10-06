@@ -2,7 +2,7 @@
 
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
-import { companionPersonaPatchV1Schema } from "@ailearn/shared/companion-memory-desktop-contracts";
+import { companionPersonaPatchV1Schema } from "@astella/shared/companion-memory-desktop-contracts";
 import { requireSession } from "../identity/middleware.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { companionPetProfileChangedTotal } from "../../lib/metrics.ts";

@@ -8,7 +8,7 @@
  *
  * ```
  * // apps/api/src/<探针>.ts
- * import { getPromptCacheProviders } from "@ailearn/shared/feature-flags";
+ * import { getPromptCacheProviders } from "@astella/shared/feature-flags";
  * ```
  *
  * ```
@@ -17,7 +17,7 @@
  * ```
  *
  * `feature-flags.ts` **在磁盘上真实存在**，所以 TypeScript 能顺着
- * `node_modules/@ailearn/shared`（本仓是 workspace 软链）找到它；
+ * `node_modules/@astella/shared`（本仓是 workspace 软链）找到它；
  * 而 Node 的解析器读的是 `package.json` 的 `exports` 字段，那条子路径没登记，
  * 于是运行时直接拒。
  *
@@ -27,7 +27,7 @@
  *
  * ## 这个脚本做什么
  *
- * 1. 扫出全仓每一处 `@ailearn/shared/<子路径>` import；
+ * 1. 扫出全仓每一处 `@astella/shared/<子路径>` import；
  * 2. **用 Node 自己的解析器**逐个试一遍（`import()`），而不是看字符串——
  *    看的���是运行时会接受的那一份；
  * 3. exports 里的每一条 target 必须在磁盘上真实存在；
@@ -45,7 +45,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const SHARED = join(ROOT, "packages/shared");
 const SHARED_PKG = join(SHARED, "package.json");
 
-/** 会 import `@ailearn/shared/...` 的地方。 */
+/** 会 import `@astella/shared/...` 的地方。 */
 const SCAN_ROOTS = [
   "apps/api/src",
   "apps/desktop-client/src",
@@ -67,14 +67,14 @@ function walk(dir, out = []) {
   return out;
 }
 
-/** 抓出源码里出现的每一个 `@ailearn/shared/<子路径>`。 */
+/** 抓出源码里出现的每一个 `@astella/shared/<子路径>`。 */
 function collectSpecifiers() {
   const found = new Map(); // specifier -> 引用它的文件
   // 只匹配**字符串字面量**里的 import/require/dynamic import，
   // 避免把注释里提到的路径算进来（注释里写错字不该让构建红）。
   const patterns = [
-    /(?:from|import|require)\s*\(?\s*["']@ailearn\/shared\/([^"']+)["']/g,
-    /import\(\s*["']@ailearn\/shared\/([^"']+)["']\s*\)/g,
+    /(?:from|import|require)\s*\(?\s*["']@astella\/shared\/([^"']+)["']/g,
+    /import\(\s*["']@astella\/shared\/([^"']+)["']\s*\)/g,
   ];
   // 扫自己会把注释里举例的 specifier 也算进来，报错信息里出现"本文件引用了它"
   // 这种自指的噪音。先把自己排掉。
@@ -86,7 +86,7 @@ function collectSpecifiers() {
       const rel = relative(ROOT, file);
       for (const pattern of patterns) {
         for (const m of source.matchAll(pattern)) {
-          const spec = `@ailearn/shared/${m[1].replace(/\/$/, "")}`;
+          const spec = `@astella/shared/${m[1].replace(/\/$/, "")}`;
           if (!found.has(spec)) found.set(spec, new Set());
           found.get(spec).add(rel);
         }
@@ -135,7 +135,7 @@ async function main() {
   // 解析器走的正是生产/测试会走的那条路径。
   const specifiers = collectSpecifiers();
   if (specifiers.size === 0) {
-    console.error("[shared-exports] 一条 @ailearn/shared 深路径 import 都没扫到——收集器坏了");
+    console.error("[shared-exports] 一条 @astella/shared 深路径 import 都没扫到——收集器坏了");
     process.exit(1);
   }
 
@@ -144,7 +144,7 @@ async function main() {
   // ⚠️ 两个踩过的坑，都写在下面，免得下一个人重写一遍：
   //
   // (a) **解析基准必须是 apps/api**，不能用本脚本自己所在的仓库根。
-  //     根目录的 `node_modules/@ailearn/` 是空的（workspace 软链只建在各包下面），
+  //     根目录的 `node_modules/@astella/` 是空的（workspace 软链只建在各包下面），
   //     从那儿解析会一律失败。
   //
   // (b) **只做"解析路径"，不要真的 import()**。`packages/shared/src` 里放的是
@@ -174,16 +174,16 @@ async function main() {
   }
   if (unresolved.length > 0) {
     fail([
-      "这些 @ailearn/shared 深路径连解析都没成功（不是 exports 的问题，是包根本找不到）：",
+      "这些 @astella/shared 深路径连解析都没成功（不是 exports 的问题，是包根本找不到）：",
       ...unresolved,
       "",
-      "常见原因：workspace 软链没建（该目录下 node_modules/@ailearn/shared 不存在）。",
+      "常见原因：workspace 软链没建（该目录下 node_modules/@astella/shared 不存在）。",
     ]);
   }
 
   if (rejected.length > 0) {
     fail([
-      "这些 @ailearn/shared 深路径**文件在磁盘上存在**、但没登记进 exports，",
+      "这些 @astella/shared 深路径**文件在磁盘上存在**、但没登记进 exports，",
       "所以 TypeScript 是绿的、运行时却是 ERR_PACKAGE_PATH_NOT_EXPORTED：",
       ...rejected,
       "",

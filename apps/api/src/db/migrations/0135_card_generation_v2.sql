@@ -10,7 +10,7 @@
 -- - review_ready 是派生视图，不是可独立写入的状态字段
 -- - 答案/rubric/private evidence 不进入 public 列或索引
 -- - (workspace_id, idempotency_key) unique 防重复创建
--- - RLS: workspace+user 双条件 + ailearn_worker 豁免
+-- - RLS: workspace+user 双条件 + astella_worker 豁免
 
 --> statement-breakpoint
 
@@ -423,7 +423,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   public.initial_validation_reminders_v2,
   public.card_activation_receipts_v2,
   public.card_generation_events_v2
-TO ailearn_api, ailearn_worker;
+TO astella_api, astella_worker;
 
 -- ─── §16.1 Learning Target Snapshot V2 ───────────────────────────────────
 
@@ -584,18 +584,18 @@ CREATE POLICY cgro_v2_ws_isolation ON public.card_generation_run_outbox_v2
 
 -- §22.1 Private column hardening for learning_target_snapshots_v2:
 -- canonical_answer, scoring_rubric, evidence_bindings are server-private.
--- ailearn_worker gets full access; ailearn_api gets only public columns.
+-- astella_worker gets full access; astella_api gets only public columns.
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   public.legacy_target_snapshot_attachments_v2,
   public.candidate_evidence_binding_plans_v2,
   public.evidence_eligibility_states_v2,
   public.card_generation_run_outbox_v2
-TO ailearn_api, ailearn_worker;
+TO astella_api, astella_worker;
 
 -- learning_target_snapshots_v2: worker gets full access
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   public.learning_target_snapshots_v2
-TO ailearn_worker;
+TO astella_worker;
 
 -- learning_target_snapshots_v2: API gets only public columns (no canonical_answer, scoring_rubric, evidence_bindings)
 GRANT SELECT (
@@ -604,7 +604,7 @@ GRANT SELECT (
   semantic_identity_class_id, semantic_identity_policy_version,
   objective_lifecycle_epoch, card_content_epoch, assistance_snapshot_hash,
   relations, preferred_intents, snapshot_hash, frozen_at
-) ON public.learning_target_snapshots_v2 TO ailearn_api;
+) ON public.learning_target_snapshots_v2 TO astella_api;
 GRANT INSERT (
   id, workspace_id, snapshot_id, run_id, objective_id, objective_revision_id,
   objective_revision, semantic_target_fingerprint, target_revision_hash,
@@ -612,25 +612,25 @@ GRANT INSERT (
   objective_lifecycle_epoch, card_content_epoch, assistance_snapshot_hash,
   canonical_answer, scoring_rubric, relations, evidence_bindings, preferred_intents,
   snapshot_hash, frozen_at
-) ON public.learning_target_snapshots_v2 TO ailearn_api;
+) ON public.learning_target_snapshots_v2 TO astella_api;
 GRANT UPDATE (
   id, workspace_id, snapshot_id, run_id, objective_id, objective_revision_id,
   objective_revision, semantic_target_fingerprint, target_revision_hash,
   semantic_identity_class_id, semantic_identity_policy_version,
   objective_lifecycle_epoch, card_content_epoch, assistance_snapshot_hash,
   relations, preferred_intents, snapshot_hash, frozen_at
-) ON public.learning_target_snapshots_v2 TO ailearn_api;
-GRANT DELETE ON public.learning_target_snapshots_v2 TO ailearn_api;
+) ON public.learning_target_snapshots_v2 TO astella_api;
+GRANT DELETE ON public.learning_target_snapshots_v2 TO astella_api;
 
 --> statement-breakpoint
 
 -- ─── §22.1 Private rubric/answer column hardening ────────────────────────
 -- learning_objective_revisions_v2: canonical_answer, learning_support,
 -- scoring_rubric, evidence_bindings, private_payload_hash are server-private.
--- Revoke from ailearn_api; only ailearn_worker has full access.
+-- Revoke from astella_api; only astella_worker has full access.
 -- API reads public fields via a view or explicit column list.
 
-REVOKE SELECT ON public.learning_objective_revisions_v2 FROM ailearn_api;
+REVOKE SELECT ON public.learning_objective_revisions_v2 FROM astella_api;
 
 -- Grant API access to only the public columns (via column-level GRANT)
 GRANT SELECT (
@@ -638,7 +638,7 @@ GRANT SELECT (
   objective_statement, public_summary, knowledge_form, preferred_intents,
   relations, supersedes_objective_revision_id, semantic_target_fingerprint,
   target_revision_hash, created_at
-) ON public.learning_objective_revisions_v2 TO ailearn_api;
+) ON public.learning_objective_revisions_v2 TO astella_api;
 
 --> statement-breakpoint
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DesktopSearchItem, DesktopSearchPage } from "@ailearn/shared/desktop-surface-contracts";
+import type { DesktopSearchItem, DesktopSearchPage } from "@astella/shared/desktop-surface-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { readAuthenticatedSession } from "../../../app/surface-session";
@@ -79,7 +79,7 @@ export function useSearchDesk(composing = false) {
     paging.current = true;
     setSearching(true); setSearchFailure(null);
     try {
-      const response = await window.ailearn.search.global({
+      const response = await window.astella.search.global({
         meta: createRequestMeta(epoch.current), query: value, limit: PAGE_SIZE,
         ...(filter === "all" ? {} : { type: filter }), ...(cursor ? { cursor } : {}),
       });

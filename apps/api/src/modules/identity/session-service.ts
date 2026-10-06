@@ -39,8 +39,8 @@ import {
 // （service.ts 从本文件 re-export 值，本文件只在类型位置引它）。
 import type { WorkspaceInfo } from "./service.ts";
 import { eq, and, inArray, isNull, lt, sql } from "drizzle-orm";
-import { users, workspaceMembers, workspaces } from "@ailearn/shared/db-schema/identity";
-import { sessions } from "@ailearn/shared/db-schema/session";
+import { users, workspaceMembers, workspaces } from "@astella/shared/db-schema/identity";
+import { sessions } from "@astella/shared/db-schema/session";
 import {
   commitAssumedActor,
   db,
@@ -103,11 +103,11 @@ export async function loginWithPassword(
   // 命中 users_email_idx 唯一索引。
   //
   // 2026-09-29（P0-4）：这一句从裸查表改成走 SECURITY DEFINER 函数
-  // `ailearn_find_user_by_email`（迁移 0327）。原因是 `users` 补上了 RLS，而
+  // `astella_find_user_by_email`（迁移 0327）。原因是 `users` 补上了 RLS，而
   // **登录发生在会话建立之前**——没有事务，就没有 `app.user_id` /
   // `app.workspace_id`，任何要求上下文的策略都会返回 0 行，那就是所有人都登不进来。
   // 函数是"刻意的、有名字的、窄口径的"跨用户读路径，与 jobs 表那套
-  // `ailearn_claim_job` 是同一个既有模式；它只读一行、只读这一列集，不提供写能力。
+  // `astella_claim_job` 是同一个既有模式；它只读一行、只读这一列集，不提供写能力。
   type LoginUserRow = {
     id: string;
     email: string;
@@ -120,7 +120,7 @@ export async function loginWithPassword(
     avatar_url: string | null;
   };
   const rows = await db.execute<LoginUserRow>(sql`
-    SELECT * FROM public.ailearn_find_user_by_email(${normalizedEmail})
+    SELECT * FROM public.astella_find_user_by_email(${normalizedEmail})
   `);
   const row = (rows as unknown as LoginUserRow[])[0];
   // 函数返回的是库的列名（snake_case），这里映回 drizzle 的 camelCase 形状，
@@ -400,10 +400,10 @@ export async function cleanupExpiredSessions(): Promise<number> {
  *
  * 读、核、写必须同在一个 **actor 事务**里：`users` 启用了 RLS，而
  * `sec02_users_self_read` 要求 `id = app.user_id`。裸 `db.query.users.findFirst`
- * 不在任何事务里，受限角色（`ailearn_api`，NOBYPASSRLS）下这条 SELECT
+ * 不在任何事务里，受限角色（`astella_api`，NOBYPASSRLS）下这条 SELECT
  * **恒为 0 行**——于是无论旧密码填什么都会走到 `!user` 这一支，接口回
  * 403 `invalid_password`，表现成"当前密码不正确"，改密永远失败。这跟
- * `loginWithPassword` 必须走 `ailearn_find_user_by_email` 是同一件事的两面：
+ * `loginWithPassword` 必须走 `astella_find_user_by_email` 是同一件事的两面：
  * 都是"没有 `app.user_id` 就看不见自己那一行"。
  *
  * 放进同一个事务也就顺带关掉了"核对通过之后、写回之前密码被别处改掉"的窗口；

@@ -25,8 +25,8 @@ import { logger } from "../../lib/logger.ts";
 import { projectNoteDetailV1, projectNoteSaveReceiptV1 } from "./note-projection.ts";
 import { applyUploadedDocUpdate, publishRestoredNoteDoc } from "./collaboration.ts";
 import { readNoteDocState } from "./document-state.ts";
-import { noteSaveRequestV1Schema } from "@ailearn/shared/note-save-contracts";
-import { noteShareScopeRequestV1Schema } from "@ailearn/shared/note-share-contracts";
+import { noteSaveRequestV1Schema } from "@astella/shared/note-save-contracts";
+import { noteShareScopeRequestV1Schema } from "@astella/shared/note-share-contracts";
 import { clampLimit } from "../../lib/pagination-utils.ts";
 
 export async function noteRoutes(app: FastifyInstance) {

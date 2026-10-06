@@ -58,11 +58,11 @@ import {
 } from "./planning/run-planner.ts";
 import { idempotencyConflict, invalidPhase, staleRunRevision, variantNotAuthorized, LearningRunServiceError } from "./run-errors.ts";
 import { buildRunPublicView } from "./run-view.ts";
-import type { LearningRunActionV1, LearningRunPublicV1, LearningRunResultV1 } from "@ailearn/shared";
-import { cardHintPairV2Schema, type CardHintPairV2 } from "@ailearn/shared/card-generation-v2-contracts";
-import { sha256Hex } from "@ailearn/shared/content-hash";
-import { learningObjectiveRevisionsV2, learningObjectivesV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { interactionQualifications, learningArtifacts, learningAssessments, learningRunActionLedger, learningRunEvents, learningRunPrivateContracts, learningRunProcessingOutbox, learningRuns, learningTaskDisclosureProfiles, learningTaskPresentationHistory, learningTaskPrivateSolutions, learningTaskSafetyReports, learningTaskVariants, learningTasks } from "@ailearn/shared/db-schema/learning-runs";
+import type { LearningRunActionV1, LearningRunPublicV1, LearningRunResultV1 } from "@astella/shared";
+import { cardHintPairV2Schema, type CardHintPairV2 } from "@astella/shared/card-generation-v2-contracts";
+import { sha256Hex } from "@astella/shared/content-hash";
+import { learningObjectiveRevisionsV2, learningObjectivesV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { interactionQualifications, learningArtifacts, learningAssessments, learningRunActionLedger, learningRunEvents, learningRunPrivateContracts, learningRunProcessingOutbox, learningRuns, learningTaskDisclosureProfiles, learningTaskPresentationHistory, learningTaskPrivateSolutions, learningTaskSafetyReports, learningTaskVariants, learningTasks } from "@astella/shared/db-schema/learning-runs";
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 
 export interface ActionInput extends RunScope {

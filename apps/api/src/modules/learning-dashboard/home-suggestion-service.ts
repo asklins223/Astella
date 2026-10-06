@@ -21,11 +21,11 @@ import type { ApiTransaction } from "../../db/client.ts";
 import {
   decideHomeSuggestionV2,
   type NextStepCandidateV2,
-} from "@ailearn/shared/home-suggestion-v2";
+} from "@astella/shared/home-suggestion-v2";
 import type {
   HomeSuggestionActionResultV2,
   HomeSuggestionWireV2,
-} from "@ailearn/shared/review-queue-v2-contracts";
+} from "@astella/shared/review-queue-v2-contracts";
 import {
   dismissedHomeItemsForTodayV2,
   recordHomeSuggestionActionV2,
@@ -211,7 +211,7 @@ export async function actOnTodayBatchV2(
   screenLine: string;
 }> {
   const now = ctx.now ?? new Date();
-  const { decideTodayBatchOptionV2 } = await import("@ailearn/shared/today-batch-options-v2");
+  const { decideTodayBatchOptionV2 } = await import("@astella/shared/today-batch-options-v2");
   const lockInput = { workspaceId: ctx.workspaceId, userId: ctx.userId, timeZone: ctx.timeZone, now };
 
   const lockedLengthBefore = await readOrStartDailyBatchV2(tx, { ...lockInput });
@@ -270,7 +270,7 @@ async function countBatchItemsDoneV2(
   ctx: HomeScope & { timeZone: string; now: Date },
 ): Promise<number> {
   const { and, eq, gte } = await import("drizzle-orm");
-  const { dailyReviewBatchesV2, reviewSchedules } = await import("@ailearn/shared/db-schema/evidence");
+  const { dailyReviewBatchesV2, reviewSchedules } = await import("@astella/shared/db-schema/evidence");
   const { dayKeyForV2 } = await import("./daily-batch-lock-service.ts");
   const dayRows = await tx
     .select({ createdAt: dailyReviewBatchesV2.createdAt })

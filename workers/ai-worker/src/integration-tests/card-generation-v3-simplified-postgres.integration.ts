@@ -19,7 +19,7 @@
  * `handleCandidateActionV2({type:"keep"})` 对它照样成立。
  *
  * 运行（一次性库，四条 DSN 全指过去；共享 dev 库上挂着别人的在制批次会造出假失败）：
- *   bash scripts/dev-disposable-db.sh ailearn_cardtest
+ *   bash scripts/dev-disposable-db.sh astella_cardtest
  *   DATABASE_URL=... DATABASE_URL_MIGRATOR=... DATABASE_URL_API=... DATABASE_URL_WORKER=... \
  *     node --import tsx --test --test-timeout=240000 \
  *     workers/ai-worker/src/integration-tests/card-generation-v3-simplified-postgres.integration.ts
@@ -28,7 +28,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { assertFixtureWipeClean, wipeCardGenerationFixtures } from "./card-generation-fixture-cleanup.ts";
 // **只取类型**：下面那些被 `await import(...)` 的模块会在模块作用域开 postgres 连接池
 // （本文件 `after` 负责关它们），类型导入编译后不留痕迹，不触发那次打开。
@@ -616,7 +616,7 @@ test("保存那一发：新链的候选过得了真实激活，并按那一档�
     WHERE run_id = ${simplifiedRunId} ORDER BY plan_version DESC LIMIT 1
   ` as unknown as Array<Record<string, unknown>>)[0];
   const { computeClientReviewHashV2 } = await import(
-    "@ailearn/shared/card-generation-v2-hashing"
+    "@astella/shared/card-generation-v2-hashing"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId: simplifiedRunId,

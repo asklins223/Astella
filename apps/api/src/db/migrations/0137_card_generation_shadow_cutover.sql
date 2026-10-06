@@ -55,24 +55,24 @@ CREATE INDEX IF NOT EXISTS cg_blind_eval_ws_idx
 ALTER TABLE public.card_generation_shadow_namespaces ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.card_generation_shadow_namespaces FORCE ROW LEVEL SECURITY;
 CREATE POLICY cg_shadow_ns_ws ON public.card_generation_shadow_namespaces
-  FOR ALL TO ailearn_api, ailearn_worker
+  FOR ALL TO astella_api, astella_worker
   USING (workspace_id = current_setting('app.workspace_id', true)::uuid)
   WITH CHECK (workspace_id = current_setting('app.workspace_id', true)::uuid);
 
 ALTER TABLE public.card_generation_shadow_namespace_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.card_generation_shadow_namespace_runs FORCE ROW LEVEL SECURITY;
 CREATE POLICY cg_shadow_ns_runs_ws ON public.card_generation_shadow_namespace_runs
-  FOR ALL TO ailearn_api, ailearn_worker
+  FOR ALL TO astella_api, astella_worker
   USING (workspace_id = current_setting('app.workspace_id', true)::uuid)
   WITH CHECK (workspace_id = current_setting('app.workspace_id', true)::uuid);
 
 ALTER TABLE public.card_generation_blind_evaluations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.card_generation_blind_evaluations FORCE ROW LEVEL SECURITY;
 CREATE POLICY cg_blind_eval_ws ON public.card_generation_blind_evaluations
-  FOR ALL TO ailearn_api, ailearn_worker
+  FOR ALL TO astella_api, astella_worker
   USING (workspace_id = current_setting('app.workspace_id', true)::uuid)
   WITH CHECK (workspace_id = current_setting('app.workspace_id', true)::uuid);
 
-GRANT SELECT, INSERT, UPDATE ON public.card_generation_shadow_namespaces TO ailearn_api, ailearn_worker;
-GRANT SELECT, INSERT ON public.card_generation_shadow_namespace_runs TO ailearn_api, ailearn_worker;
-GRANT SELECT, INSERT ON public.card_generation_blind_evaluations TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT, UPDATE ON public.card_generation_shadow_namespaces TO astella_api, astella_worker;
+GRANT SELECT, INSERT ON public.card_generation_shadow_namespace_runs TO astella_api, astella_worker;
+GRANT SELECT, INSERT ON public.card_generation_blind_evaluations TO astella_api, astella_worker;

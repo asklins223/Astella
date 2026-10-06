@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentContextReceipt } from "@ailearn/agent-core";
+import type { AgentContextReceipt } from "@astella/agent-core";
 import {
   createCompanionContextReceipts,
   COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS,

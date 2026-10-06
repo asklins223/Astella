@@ -1,4 +1,4 @@
-import type { CompanionExportKindV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { CompanionExportKindV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir, rename, rm, stat } from "node:fs/promises";
@@ -14,10 +14,10 @@ export async function saveCompanionExportFile(input: {
   beforeCommit: () => void;
 }) {
   const date = new Date().toISOString().slice(0, 10);
-  const directory = join(input.downloadsPath, "理解书房", "伴星");
+  const directory = join(input.downloadsPath, "Astella", "伴星");
   const suffix = randomBytes(6).toString("hex");
-  const fileName = input.kind === "all" ? `ailearn-companion-${date}-${suffix}.ndjson`
-    : `ailearn-companion-${input.kind}-${date}-${suffix}.json`;
+  const fileName = input.kind === "all" ? `astella-companion-${date}-${suffix}.ndjson`
+    : `astella-companion-${input.kind}-${date}-${suffix}.json`;
   const filePath = join(directory, fileName);
   const partialPath = `${filePath}.partial`;
   try {

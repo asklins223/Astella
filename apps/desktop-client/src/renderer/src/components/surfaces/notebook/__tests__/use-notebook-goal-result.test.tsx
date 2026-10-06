@@ -23,7 +23,7 @@ function deferred<T>() {
 beforeEach(() => {
   state.scope = 1; vi.clearAllMocks();
   getOverview.mockResolvedValue(receipt());
-  Object.defineProperty(window, "ailearn", { configurable: true, value: {
+  Object.defineProperty(window, "astella", { configurable: true, value: {
     noteOverview: { getTask: getOverview, startTask }, noteLearningArtifact: { getTask: getArtifact, startTask },
   } });
 });

@@ -8,7 +8,7 @@
  *  ③ 审计 tombstone 活得过解散：`workspace_audit_log` 那条 `workspace.dissolved` 要能查到，
  *     而且带着逐表计数。
  *
- * 角色：夹具写用超级用户（`DATABASE_URL`），解散由 **`ailearn_api`** 执行（生产形状）。
+ * 角色：夹具写用超级用户（`DATABASE_URL`），解散由 **`astella_api`** 执行（生产形状）。
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -18,7 +18,7 @@ import postgres from "postgres";
 const ADMIN = process.env.DATABASE_URL;
 const API = process.env.DATABASE_URL_API;
 if (!ADMIN || !API) {
-  throw new Error("解散空间集测要求 DATABASE_URL（夹具）+ DATABASE_URL_API（ailearn_api）");
+  throw new Error("解散空间集测要求 DATABASE_URL（夹具）+ DATABASE_URL_API（astella_api）");
 }
 const admin = postgres(ADMIN, { max: 2 });
 const api = postgres(API, { max: 1 });
@@ -111,7 +111,7 @@ before(async () => {
               ${tx.json({ items: [{ key: "explain", label: "先讲清多一跳访问的代价" }] })}, '换成先讲代价')`;
     await tx`INSERT INTO note_learning_round_artifacts (id, workspace_id, user_id, round_id, kind, html, snapshot_hash)
       VALUES (${artifactId}, ${ws}, ${owner}, ${roundId}, 'dynamic_explanation',
-              '<section class="ailearn-artifact-pane" data-artifact-step="0"></section>', ${ROUND_SNAPSHOT_HASH})`;
+              '<section class="astella-artifact-pane" data-artifact-step="0"></section>', ${ROUND_SNAPSHOT_HASH})`;
     await tx`INSERT INTO note_learning_round_teachings (id, workspace_id, user_id, round_id, ordinal, kind,
               content, source_block_ordinals, snapshot_hash, driving_question_revision, artifact_id)
       VALUES (${teachingId}, ${ws}, ${owner}, ${roundId}, 1, 'explanation',
@@ -159,12 +159,12 @@ test("正控制：这份 catalog 清单大到足以说明问题（不是空表�
 
 test("个人空间与非 owner 一律被挡下", async () => {
   await assert.rejects(
-    () => api`SELECT public.ailearn_dissolve_workspace(${ownerPersonal}::uuid, ${owner}::uuid)`,
+    () => api`SELECT public.astella_dissolve_workspace(${ownerPersonal}::uuid, ${owner}::uuid)`,
     /cannot_dissolve_personal_workspace/,
     "个人空间可以被解散——会话就没有落回点了",
   );
   await assert.rejects(
-    () => api`SELECT public.ailearn_dissolve_workspace(${ws}::uuid, ${member}::uuid)`,
+    () => api`SELECT public.astella_dissolve_workspace(${ws}::uuid, ${member}::uuid)`,
     /actor_is_not_active_owner/,
     "member 也能解散别人的空间",
   );
@@ -228,7 +228,7 @@ test("解散：逐表清干净、属于人的记忆活着、审计留得下", as
   }
 
   const result = await api`
-    SELECT public.ailearn_dissolve_workspace(${ws}::uuid, ${owner}::uuid) AS counts
+    SELECT public.astella_dissolve_workspace(${ws}::uuid, ${owner}::uuid) AS counts
   `;
   const counts = result[0].counts as Record<string, number>;
   assert.ok((counts.notes ?? 0) >= 1, `返回计数里没有 notes：${JSON.stringify(counts)}`);

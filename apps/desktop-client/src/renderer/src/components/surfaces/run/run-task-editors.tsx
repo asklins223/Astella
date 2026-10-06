@@ -29,8 +29,8 @@ import type {
   RepairOperationV1,
   StructuredPartAnswerV1,
   StructuredPartPublicV1,
-} from "@ailearn/shared/learning-run-contracts";
-import type { DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/learning-run-contracts";
+import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
 import { VoiceTeachbackEditor } from "./run-voice-input.tsx";
 import { indexedPublicLabel } from "../../learning-run-labels";

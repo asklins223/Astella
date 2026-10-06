@@ -26,7 +26,7 @@
  * 所以两边必须从**这里**取，不能各自复制一份。
  */
 
-import type { CompanionContentBlockV1 } from "@ailearn/shared";
+import type { CompanionContentBlockV1 } from "@astella/shared";
 
 /** 工具报错分两级：能被用户看见的，与必须停在工具面的。 */
 export class CompanionToolError extends Error {

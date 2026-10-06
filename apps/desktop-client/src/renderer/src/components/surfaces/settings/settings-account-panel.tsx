@@ -21,7 +21,7 @@
  * 判据见 `AGENTS.md` §工程结构与分层：单函数超过 400 行或 hook 超过 25 个就是信号。
  */
 import { useRef, useState, type KeyboardEvent, type ReactElement } from "react";
-import type { AuthProfileResultV1 } from "@ailearn/shared";
+import type { AuthProfileResultV1 } from "@astella/shared";
 import { ImageUp } from "lucide-react";
 import { SettingRow } from "./settings-primitives.tsx";
 import { AvatarCropDialog } from "./avatar-crop-dialog.tsx";

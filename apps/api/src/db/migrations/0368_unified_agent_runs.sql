@@ -58,14 +58,14 @@ CREATE TABLE public.agent_run_events (
 CREATE INDEX agent_run_events_pending_idx ON public.agent_run_events(run_id,seq) WHERE processed_at IS NULL;
 
 --> statement-breakpoint
-CREATE FUNCTION public.ailearn_agent_scope_current(p_workspace uuid,p_user uuid) RETURNS boolean
+CREATE FUNCTION public.astella_agent_scope_current(p_workspace uuid,p_user uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public AS $$
   SELECT p_workspace=NULLIF(current_setting('app.workspace_id',true),'')::uuid
     AND p_user=NULLIF(current_setting('app.user_id',true),'')::uuid
     AND EXISTS(SELECT 1 FROM public.workspace_members m WHERE m.workspace_id=p_workspace AND m.user_id=p_user AND m.left_at IS NULL)
 $$;
-REVOKE ALL ON FUNCTION public.ailearn_agent_scope_current(uuid,uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_agent_scope_current(uuid,uuid) TO ailearn_api,ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_agent_scope_current(uuid,uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_agent_scope_current(uuid,uuid) TO astella_api,astella_worker;
 
 --> statement-breakpoint
 DO $$ DECLARE t text; BEGIN
@@ -73,17 +73,17 @@ DO $$ DECLARE t text; BEGIN
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',t);
     EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY',t);
     EXECUTE format('CREATE POLICY owner_scope ON public.%I FOR ALL
-      USING (public.ailearn_agent_scope_current(workspace_id,user_id))
-      WITH CHECK (public.ailearn_agent_scope_current(workspace_id,user_id))', t);
-    EXECUTE format('GRANT SELECT,INSERT,UPDATE ON public.%I TO ailearn_api,ailearn_worker',t);
+      USING (public.astella_agent_scope_current(workspace_id,user_id))
+      WITH CHECK (public.astella_agent_scope_current(workspace_id,user_id))', t);
+    EXECUTE format('GRANT SELECT,INSERT,UPDATE ON public.%I TO astella_api,astella_worker',t);
   END LOOP;
 END $$;
-GRANT USAGE,SELECT ON SEQUENCE public.agent_run_events_seq_seq TO ailearn_api,ailearn_worker;
+GRANT USAGE,SELECT ON SEQUENCE public.agent_run_events_seq_seq TO astella_api,astella_worker;
 
 --> statement-breakpoint
 -- A worker may enqueue only a child bound to its owned goal, or that goal's
 -- continuation. Existing job insertion restrictions remain in force.
-CREATE POLICY agent_goal_enqueue ON public.jobs FOR INSERT TO ailearn_worker WITH CHECK (
+CREATE POLICY agent_goal_enqueue ON public.jobs FOR INSERT TO astella_worker WITH CHECK (
   (type='agent_run_advance' AND EXISTS(SELECT 1 FROM public.agent_runs r
     WHERE r.id=(payload->>'runId')::uuid AND r.revision=(payload->>'revision')::integer
       AND r.workspace_id=jobs.workspace_id AND r.user_id=jobs.requested_by))
@@ -95,7 +95,7 @@ CREATE POLICY agent_goal_enqueue ON public.jobs FOR INSERT TO ailearn_worker WIT
 --> statement-breakpoint
 -- Mutation and wakeup share the job transaction. LISTEN is only an acceleration;
 -- the durable outbox and recovery scan also work after a process restart.
-CREATE FUNCTION public.ailearn_agent_job_event() RETURNS trigger
+CREATE FUNCTION public.astella_agent_job_event() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog,public AS $$
 DECLARE op record; event_seq bigint;
 BEGIN
@@ -116,12 +116,12 @@ BEGIN
   END IF;
   RETURN NEW;
 END $$;
-REVOKE ALL ON FUNCTION public.ailearn_agent_job_event() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_agent_job_event() FROM PUBLIC;
 CREATE TRIGGER agent_job_event AFTER UPDATE OF status ON public.jobs
-FOR EACH ROW EXECUTE FUNCTION public.ailearn_agent_job_event();
+FOR EACH ROW EXECUTE FUNCTION public.astella_agent_job_event();
 
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_agent_recovery() RETURNS integer
+CREATE OR REPLACE FUNCTION public.astella_enqueue_agent_recovery() RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog,public AS $$
 DECLARE inserted integer;
 BEGIN
@@ -154,11 +154,11 @@ BEGIN
   GET DIAGNOSTICS inserted = ROW_COUNT;
   RETURN inserted;
 END $$;
-REVOKE ALL ON FUNCTION public.ailearn_enqueue_agent_recovery() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_agent_recovery() TO ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_enqueue_agent_recovery() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_enqueue_agent_recovery() TO astella_worker;
 
 --> statement-breakpoint
-CREATE FUNCTION public.ailearn_cancel_agent_operations(p_run uuid,p_revision integer) RETURNS void
+CREATE FUNCTION public.astella_cancel_agent_operations(p_run uuid,p_revision integer) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
 DECLARE r record;
 BEGIN
@@ -175,11 +175,11 @@ BEGIN
   UPDATE public.agent_operations SET status='cancelled',error=NULL,updated_at=now()
     WHERE run_id=p_run AND revision=p_revision AND status IN ('accepted','running','outcome_unknown');
 END $$;
-REVOKE ALL ON FUNCTION public.ailearn_cancel_agent_operations(uuid,integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_cancel_agent_operations(uuid,integer) TO ailearn_api,ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_cancel_agent_operations(uuid,integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_cancel_agent_operations(uuid,integer) TO astella_api,astella_worker;
 
 --> statement-breakpoint
-CREATE FUNCTION public.ailearn_agent_job_current(p_job uuid,p_workspace uuid,p_user uuid,p_lock boolean DEFAULT false) RETURNS boolean
+CREATE FUNCTION public.astella_agent_job_current(p_job uuid,p_workspace uuid,p_user uuid,p_lock boolean DEFAULT false) RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
 DECLARE allowed boolean;
 BEGIN
@@ -201,5 +201,5 @@ BEGIN
         AND n.deleted_at IS NULL AND (n.share_scope='shared' OR n.created_by=p_user)));
   RETURN coalesce(allowed,false);
 END $$;
-REVOKE ALL ON FUNCTION public.ailearn_agent_job_current(uuid,uuid,uuid,boolean) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_agent_job_current(uuid,uuid,uuid,boolean) TO ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_agent_job_current(uuid,uuid,uuid,boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_agent_job_current(uuid,uuid,uuid,boolean) TO astella_worker;

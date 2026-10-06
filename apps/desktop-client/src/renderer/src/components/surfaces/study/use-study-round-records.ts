@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { NoteLearningRoundPersonalHistoryV1 } from "@ailearn/shared/note-learning-round-contracts";
+import type { NoteLearningRoundPersonalHistoryV1 } from "@astella/shared/note-learning-round-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { useRoomStore } from "../../../app/room-store";
 import { useSurfaceProjection } from "../notebook/surface-data.tsx";
@@ -11,7 +11,7 @@ export function useStudyRoundRecords() {
   const restoreDepth = useRef(studyRoundReadingDepth(scope));
   const previousScope = useRef(scope);
   const first = useSurfaceProjection<NoteLearningRoundPersonalHistoryV1>(async ({ workspaceEpoch }) =>
-    unwrapGatewayResult(await window.ailearn.noteLearningRound.personalHistory({ meta: createRequestMeta(workspaceEpoch) })), [scope]);
+    unwrapGatewayResult(await window.astella.noteLearningRound.personalHistory({ meta: createRequestMeta(workspaceEpoch) })), [scope]);
   const [older, setOlder] = useState<NoteLearningRoundPersonalHistoryV1 | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -39,7 +39,7 @@ export function useStudyRoundRecords() {
     inFlight.current = true; setBusy(true); setFailure(null);
     const request = ++generation.current;
     try {
-      const page = unwrapGatewayResult(await window.ailearn.noteLearningRound.personalHistory({
+      const page = unwrapGatewayResult(await window.astella.noteLearningRound.personalHistory({
         meta: createRequestMeta(first.epochRef.current), before: cursor,
       }));
       if (request !== generation.current) return;

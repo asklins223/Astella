@@ -2,9 +2,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject, type PointerEvent as ReactPointerEvent, type UIEvent as ReactUIEvent } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, History, Loader2, MessageCircle, Mic, MousePointerClick, Plus, Quote, RotateCcw, Send, Settings2, Sparkles, Square, X, type LucideIcon } from "lucide-react";
-import type { CompanionAccountPatch, CompanionAccountStateV1 } from "@ailearn/shared/companion-shell-contracts";
+import type { CompanionAccountPatch, CompanionAccountStateV1 } from "@astella/shared/companion-shell-contracts";
 import { WINDOW_LIVE2D_MODEL_REGISTRY, type WindowLive2DModelId } from "./window-live2d-contract";
-import type { CompanionAgentPermissionLevel } from "@ailearn/shared/companion-agent-contracts";
+import type { CompanionAgentPermissionLevel } from "@astella/shared/companion-agent-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
 import { useCompanionChat } from "../../app/companion-chat-session";
@@ -26,7 +26,7 @@ import {
   CompanionComposerImageStatus,
   useCompanionImageAttachment,
 } from "./companion-composer-image";
-import { NOTE_IMAGE_UPLOAD_MIME_TYPES } from "@ailearn/shared/note-image-upload-contracts";
+import { NOTE_IMAGE_UPLOAD_MIME_TYPES } from "@astella/shared/note-image-upload-contracts";
 import { visibleTurnFailure } from "./companion-hud-state";
 import { shouldSendCompanionOnEnter } from "./companion-composer-key";
 import { useCompanionInteraction } from "./use-companion-interaction";
@@ -228,7 +228,7 @@ export function CompanionHud({
     const reply = chat.liveReply;
     const conversationId = chat.conversationId;
     if (!intent || intent.kind !== "recall" || !reply || !conversationId) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteRecall) {
       setRecallSaveState("error");
       setRecallSaveMessage("回想问题还在伴星对话里，但暂时没能留进笔记记录。可以重试保存。");
@@ -252,7 +252,7 @@ export function CompanionHud({
           conversationId,
         },
       }));
-      window.dispatchEvent(new CustomEvent("ailearn:note-recall-saved", {
+      window.dispatchEvent(new CustomEvent("astella:note-recall-saved", {
         detail: { noteId: intent.noteId, record },
       }));
       setRecallSaveState("saved");
@@ -270,7 +270,7 @@ export function CompanionHud({
     const reply = chat.liveReply;
     const conversationId = chat.conversationId;
     if (!intent || intent.kind !== "recall_hint" || !intent.recallId || !reply || !conversationId) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteRecall) {
       setRecallSaveState("error");
       setRecallSaveMessage("线索还在伴星对话里，但暂时没能留进这次回想记录。可以重试保存。");
@@ -285,7 +285,7 @@ export function CompanionHud({
         recallId: intent.recallId,
         action: { kind: "hint", sourceMessageId: reply.messageId, conversationId },
       }));
-      window.dispatchEvent(new CustomEvent("ailearn:note-recall-saved", {
+      window.dispatchEvent(new CustomEvent("astella:note-recall-saved", {
         detail: { noteId: intent.noteId, record },
       }));
       setRecallSaveState("saved");
@@ -389,7 +389,7 @@ export function CompanionHud({
     const conversationId = chat.conversationId;
     if (!intent || intent.kind !== "expansion" || !reply || reply.messageId !== expansionReplyMessageId
       || !conversationId || expansionTaskState === "starting" || expansionTaskState === "started") return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteExpansion) {
       setExpansionTaskState("error");
       setExpansionTaskMessage("后台整理暂时不可用。伴星回复仍保存在对话记录里，你可以回到笔记页重试。");
@@ -416,7 +416,7 @@ export function CompanionHud({
         },
       }));
       notifyTask(task, "expansion");
-      window.dispatchEvent(new CustomEvent("ailearn:note-expansion-task-started", {
+      window.dispatchEvent(new CustomEvent("astella:note-expansion-task-started", {
         detail: { noteId: intent.noteId, taskId: task.taskId },
       }));
       setExpansionTaskState("started");
@@ -528,9 +528,9 @@ export function CompanionHud({
       pendingVoiceSegmentsRef.current.push(detail as CompanionVoiceSegmentReadyDetail);
       setVoiceSegmentRevision((value) => value + 1);
     };
-    window.addEventListener("ailearn:companion-voice-segment-ready", onVoiceSegment);
+    window.addEventListener("astella:companion-voice-segment-ready", onVoiceSegment);
     return () => {
-      window.removeEventListener("ailearn:companion-voice-segment-ready", onVoiceSegment);
+      window.removeEventListener("astella:companion-voice-segment-ready", onVoiceSegment);
     };
   }, []);
 

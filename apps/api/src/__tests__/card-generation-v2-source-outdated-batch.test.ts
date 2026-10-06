@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { computeSourceOutdatedForRunsV2 } from "../modules/card-generation-v2/helpers.ts";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
 
 /**
  * `computeSourceOutdatedForRunsV2` 是 0269/H5 那批改动的核心：列表端点以前逐行调

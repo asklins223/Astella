@@ -14,7 +14,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { NOTE_DOC_CONFORMANCE } from "@ailearn/shared/note-doc-conformance";
+import { NOTE_DOC_CONFORMANCE } from "@astella/shared/note-doc-conformance";
 import {
   docFromSnapshot,
   emptyFragmentNoteDoc,

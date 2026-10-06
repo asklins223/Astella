@@ -1,13 +1,13 @@
 import { sql, type SQL } from "drizzle-orm";
-import { DomainError } from "@ailearn/shared";
-import { agentRunV1Schema, type AgentRunV1, type AgentScopeV1, type AgentInputRefV1, type AgentRunHistoryV1 } from "@ailearn/shared/agent-contracts";
-import type { AgentTurnRequest } from "@ailearn/shared";
-import { canonicalJsonV1 } from "@ailearn/shared/content-hash";
-import { executeTurn } from "@ailearn/agent-core";
-import { agentDirectRequestV1Schema, type AgentDirectRequestV1 } from "@ailearn/shared/agent-request-contracts";
-import { getAgentCapability } from "@ailearn/shared/agent-capability-catalog";
+import { DomainError } from "@astella/shared";
+import { agentRunV1Schema, type AgentRunV1, type AgentScopeV1, type AgentInputRefV1, type AgentRunHistoryV1 } from "@astella/shared/agent-contracts";
+import type { AgentTurnRequest } from "@astella/shared";
+import { canonicalJsonV1 } from "@astella/shared/content-hash";
+import { executeTurn } from "@astella/agent-core";
+import { agentDirectRequestV1Schema, type AgentDirectRequestV1 } from "@astella/shared/agent-request-contracts";
+import { getAgentCapability } from "@astella/shared/agent-capability-catalog";
 import {listAgentLongGoals,requireAgentLongGoal} from "./long-goals.ts";
-import type { AgentLongGoalsQueryV1 } from "@ailearn/shared/agent-long-goal-contracts";
+import type { AgentLongGoalsQueryV1 } from "@astella/shared/agent-long-goal-contracts";
 import {
   agentHistoryRevisionWindow, agentOperationArtifacts, archiveSupersededRunRevision,
   decodeAgentRunListCursor, encodeAgentRunListCursor, projectAgentOperation, projectAgentRunHistoryV1,
@@ -321,5 +321,5 @@ export function createAgentStore<Tx extends AgentSqlExecutor = AgentSqlExecutor>
 }
 async function cancelOutstanding(tx: AgentSqlExecutor, scope: AgentScopeV1, run: AgentRunRow) {
   if (scope.workspaceId !== run.workspace_id || scope.userId !== run.user_id) throw new AgentStoreError(403, "scope_mismatch", "这件事不在当前空间。");
-  await tx.execute(sql`SELECT ailearn_cancel_agent_operations(${run.id},${run.revision})`);
+  await tx.execute(sql`SELECT astella_cancel_agent_operations(${run.id},${run.revision})`);
 }

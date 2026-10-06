@@ -16,7 +16,7 @@ import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { seedV2Fixture } from "./helpers/v2-card-fixture.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 // LearningRun capability gate: enable it for this integration test.
 process.env.LEARNING_RUN_ENABLED ??= "true";

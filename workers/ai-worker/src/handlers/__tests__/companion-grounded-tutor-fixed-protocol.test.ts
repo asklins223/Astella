@@ -32,7 +32,7 @@ import {
   COMPANION_HOST_PROTOCOL_V6,
   COMPANION_IDENTITY_BOUNDARY_V2,
   COMPANION_CHARACTER_BASE_V7,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import {
   buildCompanionPersonaMessages,
   GROUNDED_TUTOR_COMPANION_PROMPT,

@@ -17,7 +17,7 @@
  * 判据见 `AGENTS.md` §工程结构与分层：单函数超过 400 行或 hook 超过 25 个就是信号。
  */
 import type { ReactElement } from "react";
-import type { NoteLearningRoundHistoryV1 } from "@ailearn/shared/note-learning-round-contracts";
+import type { NoteLearningRoundHistoryV1 } from "@astella/shared/note-learning-round-contracts";
 import { ROUND_COPY } from "./notebook-round-copy.ts";
 
 export function NotebookRoundHistory(props: {

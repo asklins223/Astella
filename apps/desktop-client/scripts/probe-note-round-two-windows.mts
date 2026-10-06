@@ -58,7 +58,7 @@ if (/['";]/.test(NOTE_HINT)) {
 }
 
 const sql = (statement: string): string => execFileSync(
-  'docker', ['exec', 'ailearn-dev-postgres-1', 'psql', '-U', 'ailearn', '-d', 'ailearn', '-tAc', statement],
+  'docker', ['exec', 'astella-dev-postgres-1', 'psql', '-U', 'astella', '-d', 'astella', '-tAc', statement],
   { encoding: 'utf8' },
 ).trim()
 
@@ -90,7 +90,7 @@ const roundRow = (id: string): string => firstValue(sql(`
 
 /** 起一个实例并走到"这一篇"：返回 page，登录与关对话框都在这里面。 */
 const launchIntoNote = async (tag: string) => {
-  const dir = await mkdtemp(resolve(tmpdir(), `ailearn-two-windows-${tag}-`))
+  const dir = await mkdtemp(resolve(tmpdir(), `astella-two-windows-${tag}-`))
   const app = await electron.launch({
     args: ['.', '--lang=zh-CN', `--user-data-dir=${dir}`],
     cwd: appRoot,

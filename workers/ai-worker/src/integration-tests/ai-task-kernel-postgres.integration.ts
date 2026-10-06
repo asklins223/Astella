@@ -7,7 +7,7 @@
  *
  * 所以这里的夹具形状全部照生产：
  *   - 写夹具用超级用户（`DATABASE_URL`，BYPASSRLS）；
- *   - 被测那三段各自 `withWorkerWorkspaceTransaction`（`ailearn_worker`，受限角色）；
+ *   - 被测那三段各自 `withWorkerWorkspaceTransaction`（`astella_worker`，受限角色）；
  *   - 模型调用用 mock provider（**不花钱**；真模型那一手属每波末尾那一批）。
  *
  * 事务边界本身的实测（"外部等待期间不持行锁"）是 W3-2 的判据，这里刻意不做——
@@ -26,18 +26,18 @@ import { fileURLToPath } from "node:url";
 import { sql as drizzleSql } from "drizzle-orm";
 // 类型是编译期擦掉的，所以静态 import 不会破坏"连接串在 `../db.ts` 加载时求值"那件事；
 // 值一律走下面的动态 import。（esbuild 不接受动态 import 的解构里带内联 `type`。）
-import { AgentRole, type AgentTurnRequest } from "@ailearn/shared";
-import type { AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
-import { resolveSystemPlatform } from "@ailearn/shared/platform-config-node";
+import { AgentRole, type AgentTurnRequest } from "@astella/shared";
+import type { AiTaskDefinition } from "@astella/shared/ai-task-kernel";
+import { resolveSystemPlatform } from "@astella/shared/platform-config-node";
 import type { JobLeaseContext } from "../lib/job-lease.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const ADMIN_CONN = testDatabaseUrl("DATABASE_URL");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 
 const sql = postgres(ADMIN_CONN, { max: 2 });
 
-const { runAiTask } = await import("@ailearn/shared/ai-task-kernel");
+const { runAiTask } = await import("@astella/shared/ai-task-kernel");
 const {
   withWorkerWorkspaceTransaction,
   closeDatabase,
@@ -409,7 +409,7 @@ test("真实模型慢调用期间不持业务事务与行锁（W3-2，需 REAL_M
             count(*) FILTER (WHERE state = 'idle')::int AS idle_sessions,
             count(*) FILTER (WHERE state = 'idle in transaction')::int AS idle_transactions
           FROM pg_stat_activity
-          WHERE datname = current_database() AND usename = 'ailearn_worker'
+          WHERE datname = current_database() AND usename = 'astella_worker'
         `;
         observation.workerIdleSessions = Number(sessions[0]?.idle_sessions ?? 0);
         observation.idleWorkerTransactions = Number(sessions[0]?.idle_transactions ?? 0);

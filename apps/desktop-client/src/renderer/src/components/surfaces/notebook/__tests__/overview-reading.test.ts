@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { NoteOverviewV1 } from "@ailearn/shared/note-overview-contracts";
+import type { NoteOverviewV1 } from "@astella/shared/note-overview-contracts";
 import { overviewReading, pointLead } from "../overview-reading";
 const base: NoteOverviewV1 = { overviewId: "overview", noteId: "note", noteVersionId: "version", noteVersionNumber: 1, body: "", references: [], coverage: null, generationJobId: null, sourceMessageId: null, conversationId: null, versionState: "current", createdAt: "2026-10-01T00:00:00Z" };
 

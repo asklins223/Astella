@@ -23,7 +23,7 @@ import { CompanionConversationError } from "../companion-conversation/turn/turn-
 import { setCompanionSegmentWarmHook } from "../companion-conversation/turn/companion-events.ts";
 import { assertSafeTtsInput, DEFAULT_VOICE_PROFILE } from "./voice-tts-policy.ts";
 import { edgeTtsSynthesizeStream, EdgeTtsError } from "./voice-providers/edge-tts.ts";
-import { stripVoiceExpressionTags } from "@ailearn/shared/voice-expression-tags";
+import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
 import { qwenTtsSynthesizeStreamForUser, QwenTtsError } from "./voice-providers/qwen-tts.ts";
 import { loadTtsEngineConfig } from "./voice-providers/tts-config.ts";
 import { guidanceVoiceProfile } from "./voice-providers/guidance-voice-profile.ts";
@@ -38,12 +38,12 @@ import {
 } from "../companion-shell/service.ts";
 import {
   companionVoicePreferencePatchV1Schema,
-} from "@ailearn/shared";
-import { companionTtsStreamRequestV1Schema } from "@ailearn/shared";
+} from "@astella/shared";
+import { companionTtsStreamRequestV1Schema } from "@astella/shared";
 import {
   companionVoicePlaybackOutcomeRequestV1Schema,
   companionVoiceSpeakSegmentRequestV2Schema,
-} from "@ailearn/shared/companion-voice-contracts";
+} from "@astella/shared/companion-voice-contracts";
 import { siliconFlowTranscribe, SiliconFlowAsrError } from "./voice-providers/siliconflow-asr.ts";
 import { currentApiWorkspaceTransaction, scopeOfSession } from "../../db/client.ts";
 import {
@@ -577,7 +577,7 @@ userId: session.userId,
       return reply
         .type(result.contentType)
         .header("Cache-Control", "no-store")
-        .headers(body.purpose === "guidance" ? { "X-Ailearn-Tts-Voice": result.engine === "qwen"
+        .headers(body.purpose === "guidance" ? { "X-Astella-Tts-Voice": result.engine === "qwen"
           ? loadTtsEngineConfig().qwen.voice : loadTtsEngineConfig().edge.voice } : {})
         .send(Buffer.from(result.audio));
     } catch (err) {

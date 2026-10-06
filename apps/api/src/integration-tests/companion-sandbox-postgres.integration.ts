@@ -7,7 +7,7 @@
  * TTL）、0 canonical envelope、0 official schedule → 负向：无 namespace /
  * 过期 namespace / 他人 namespace 创建 sandbox Run 均拒绝。
  *
- * 运行：DATABASE_URL_API="postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn"
+ * 运行：DATABASE_URL_API="postgres://astella:astella_dev@127.0.0.1:5432/astella"
  *   node --import tsx --test --test-concurrency=1 src/integration-tests/companion-sandbox-postgres.integration.ts
  */
 
@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { createLearningRunForTest, seedV2Fixture } from "./helpers/v2-card-fixture.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL_API ??= CONN;
@@ -27,7 +27,7 @@ const sql = postgres(CONN, { max: 2 });
  *
  * companion_account_invitations / companion_sandbox_namespaces /
  * canonical_learning_event_outbox / practice_trail_event_outbox / learning_runs
- * 都是 FORCE RLS：受限角色（ailearn_api）在无上下文事务里读或写会命中 0 行，
+ * 都是 FORCE RLS：受限角色（astella_api）在无上下文事务里读或写会命中 0 行，
  * 让"恰好 1 条 sandbox trail / 0 canonical"这类断言假失败，或让夹具 UPDATE
  * 静默失效。
  */

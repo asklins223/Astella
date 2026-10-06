@@ -10,8 +10,8 @@
  * registrations.
  */
 
-import { resolveDashScopeTextEndpoint, resolveOpenAIEmbeddingsUrl } from "@ailearn/shared/ai-endpoints";
-import type { CapabilityImpl, ProviderRuntimeConfig } from "@ailearn/shared";
+import { resolveDashScopeTextEndpoint, resolveOpenAIEmbeddingsUrl } from "@astella/shared/ai-endpoints";
+import type { CapabilityImpl, ProviderRuntimeConfig } from "@astella/shared";
 import { registerFactory } from "../provider-factory.ts";
 import { OpenAICompatibleProvider } from "./openai-compatible.ts";
 

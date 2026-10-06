@@ -20,7 +20,7 @@ import { test } from "node:test";
 import {
   SHARED_CARD_PERSONAL_REVIEW_REASON,
 } from "../shared-card-review-service.ts";
-import { startSharedCardPersonalReviewV2Schema } from "@ailearn/shared/review-reminder-contracts";
+import { startSharedCardPersonalReviewV2Schema } from "@astella/shared/review-reminder-contracts";
 
 // apps/api/src/modules/review → 上溯五级到仓库根。
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..", "..", "..");

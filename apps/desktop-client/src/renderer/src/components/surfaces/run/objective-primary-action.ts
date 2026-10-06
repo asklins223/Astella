@@ -1,4 +1,4 @@
-import type { LearningObjectivePrimaryActionV3 } from "@ailearn/shared/learning-objective-surface-contracts";
+import type { LearningObjectivePrimaryActionV3 } from "@astella/shared/learning-objective-surface-contracts";
 import { createCommandId, createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
 
 export type ObjectiveActionDeps = {
@@ -46,7 +46,7 @@ export async function startObjectiveJourney(
     : action.kind === "practice_only"
       ? "start-objective-practice"
       : "start-objective-run";
-  const response = await window.ailearn.learningRun.start({
+  const response = await window.astella.learningRun.start({
     meta: createRequestMeta(deps.epochRef.current),
     commandId: createCommandId(commandLabel),
     request: action.start,

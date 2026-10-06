@@ -3,13 +3,13 @@
  *
  * ## 为什么需要这一层
  *
- * 面板的第一版把内部标识直接摆出来当标题：`ailearn_http_requests_total`、
+ * 面板的第一版把内部标识直接摆出来当标题：`astella_http_requests_total`、
  * `companion_memory_extract`、`LEARNING_RUN_ENABLED`、`operational_error:provider:TypeError`。
  * 那些是**开发时**的坐标——排查时你需要它们，**看板上**你不需要。
  *
  * 于是这里给每一个对外出现的标识配一句人话：
  *   `companion_memory_extract` → 记忆提取　「从对话里挑出值得记住的事」
- *   `ailearn_http_requests_total` → 接口请求　「用户操作触发的服务端调用」
+ *   `astella_http_requests_total` → 接口请求　「用户操作触发的服务端调用」
  *
  * 代号**不删**，但降级成次要信息：标题是人话，代号缩在下方或展开处。
  * 一个需要精确对指标名做告警集成的人，仍然能在面板上一眼找到那个标识。
@@ -165,35 +165,35 @@ export const AUDIT_TARGET_LABELS: Record<string, string> = {
  * 猜错的解释比裸露的标识更糟。
  */
 export const METRIC_FAMILY_LABELS: Record<string, string> = {
-  ailearn_http_requests_total: "接口请求总数",
-  ailearn_http_errors_5xx_total: "服务端错误总数",
-  ailearn_http_request_duration_seconds: "接口响应耗时",
-  ailearn_readiness_status: "就绪状态",
-  ailearn_db_pool_active_connections: "数据库连接（活跃）",
-  ailearn_db_pool_max_connections: "数据库连接（上限）",
-  ailearn_db_server_connections: "数据库连接（全库）",
-  ailearn_db_transaction_failures_total: "数据库事务失败",
-  ailearn_db_rls_denied_total: "越权访问被拦截",
-  ailearn_db_migration_version: "数据库版本",
-  ailearn_learning_run_processing_outbox_depth: "学习结算积压",
-  ailearn_learning_run_processing_outbox_oldest_pending_age_seconds: "学习结算最老等待",
-  ailearn_learning_run_processing_tick_duration_seconds: "结算批处理耗时",
-  ailearn_learning_run_processing_commands_total: "结算批处理命令",
-  ailearn_learning_run_critic_calls_total: "模型判分",
-  ailearn_learning_run_critic_duration_seconds: "模型判分耗时",
-  ailearn_learning_run_critic_fail_closed_total: "判分失败保守处理",
-  ailearn_maintenance_rows_purged_total: "定期清理行数",
-  ailearn_funnel_events_total: "关键转化事件",
-  ailearn_companion_memory_retrieval_mode_total: "记忆检索方式",
-  ailearn_companion_memory_used_count: "每轮用到的记忆数",
-  ailearn_companion_memory_candidate_total: "记忆候选",
-  ailearn_companion_summary_total: "会话摘要",
-  ailearn_companion_pet_profile_changed_total: "桌宠画像变更",
-  ailearn_dashboard_build_duration_seconds: "首页组装耗时",
-  ailearn_dashboard_empty_with_active_objectives_total: "首页空但有学习目标",
-  ailearn_surface_query_duration_seconds: "目标页查询耗时",
-  ailearn_surface_slow_query_total: "目标页慢查询",
-  ailearn_release_info: "发布信息",
+  astella_http_requests_total: "接口请求总数",
+  astella_http_errors_5xx_total: "服务端错误总数",
+  astella_http_request_duration_seconds: "接口响应耗时",
+  astella_readiness_status: "就绪状态",
+  astella_db_pool_active_connections: "数据库连接（活跃）",
+  astella_db_pool_max_connections: "数据库连接（上限）",
+  astella_db_server_connections: "数据库连接（全库）",
+  astella_db_transaction_failures_total: "数据库事务失败",
+  astella_db_rls_denied_total: "越权访问被拦截",
+  astella_db_migration_version: "数据库版本",
+  astella_learning_run_processing_outbox_depth: "学习结算积压",
+  astella_learning_run_processing_outbox_oldest_pending_age_seconds: "学习结算最老等待",
+  astella_learning_run_processing_tick_duration_seconds: "结算批处理耗时",
+  astella_learning_run_processing_commands_total: "结算批处理命令",
+  astella_learning_run_critic_calls_total: "模型判分",
+  astella_learning_run_critic_duration_seconds: "模型判分耗时",
+  astella_learning_run_critic_fail_closed_total: "判分失败保守处理",
+  astella_maintenance_rows_purged_total: "定期清理行数",
+  astella_funnel_events_total: "关键转化事件",
+  astella_companion_memory_retrieval_mode_total: "记忆检索方式",
+  astella_companion_memory_used_count: "每轮用到的记忆数",
+  astella_companion_memory_candidate_total: "记忆候选",
+  astella_companion_summary_total: "会话摘要",
+  astella_companion_pet_profile_changed_total: "桌宠画像变更",
+  astella_dashboard_build_duration_seconds: "首页组装耗时",
+  astella_dashboard_empty_with_active_objectives_total: "首页空但有学习目标",
+  astella_surface_query_duration_seconds: "目标页查询耗时",
+  astella_surface_slow_query_total: "目标页慢查询",
+  astella_release_info: "发布信息",
   nodejs_eventloop_lag_seconds: "事件循环延迟",
   nodejs_heap_size_used_bytes: "内存占用",
   process_resident_memory_bytes: "常驻内存",

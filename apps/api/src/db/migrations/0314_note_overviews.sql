@@ -44,5 +44,5 @@ CREATE POLICY note_overviews_owner ON public.note_overviews FOR ALL TO PUBLIC
         AND (visible_note.share_scope = 'shared' OR visible_note.created_by = note_overviews.user_id)
     ));
 
-GRANT SELECT, INSERT ON public.note_overviews TO ailearn_api;
-GRANT ALL PRIVILEGES ON public.note_overviews TO ailearn_migrator;
+GRANT SELECT, INSERT ON public.note_overviews TO astella_api;
+GRANT ALL PRIVILEGES ON public.note_overviews TO astella_migrator;

@@ -1,12 +1,12 @@
 /**
- * `@ailearn/card-generation` — 制卡领域服务。
+ * `@astella/card-generation` — 制卡领域服务。
  *
  * 这里是**制卡这件事本身**的实现，不属于任何宿主：API 端点、worker 的简化链
  * handler、将来的 Agent 工具都调这里那**同一份**。它不认识 Fastify、不认识
  * React、不认识 provider、不读 env、也不自己开事务——它拿到的是调用方给的
  * 那一段事务的执行器（见 `transaction.ts` 的窄端口）。
  *
- * 依赖方向只有一条：`card-generation → @ailearn/shared`。**没有**反向 import
+ * 依赖方向只有一条：`card-generation → @astella/shared`。**没有**反向 import
  * API / worker / agent-core / agent-host，也没有第二条制卡链。
  *
  * 注意分工：这一层只负责**创建事务、来源 seal、run 事件与错误类**。审核、

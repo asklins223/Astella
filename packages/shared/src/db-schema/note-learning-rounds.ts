@@ -104,7 +104,7 @@ export type NoteLearningRoundInsert = typeof noteLearningRounds.$inferInsert;
  * 不产生计划行，所以这一列在这张表里不连续，状态变化与计划变化因此可区分。
  *
  * 只追加：DB 层触发器挡 UPDATE/DELETE（`app.allow_history_mutation` 绕行口子沿用
- * 0180/0282 形状），权限层对 `ailearn_api` 只授 SELECT/INSERT。
+ * 0180/0282 形状），权限层对 `astella_api` 只授 SELECT/INSERT。
  */
 export const noteLearningRoundPlanRevisions = pgTable(
   "note_learning_round_plan_revisions",

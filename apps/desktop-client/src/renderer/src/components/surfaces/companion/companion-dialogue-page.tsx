@@ -1,4 +1,4 @@
-import type { CompanionHistoryPageV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { CompanionHistoryPageV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { useEffect,useLayoutEffect,useRef,useState } from "react";
 import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
 import { useRoomStore } from "../../../app/room-store";
@@ -20,10 +20,10 @@ export function CompanionDialoguePage({ refreshKey, focusMessageId, onFocusConsu
   const requestRef = useRef(0);
   const resource = useCompanionResource<HistoryRead>(async meta => {
     if (appliedQuery) {
-      const result = await window.ailearn.companion.history.search({ meta, query: { q: appliedQuery, limit: 50 } });
+      const result = await window.astella.companion.history.search({ meta, query: { q: appliedQuery, limit: 50 } });
       return result.ok ? { ...result, data: { version: 1, items: result.data.items, nextCursor: null, search: appliedQuery, anchorId } } : result;
     }
-    const result = await window.ailearn.companion.history.list({ meta, query: { limit: 50, ...(anchorId ? { throughMessageId: anchorId } : {}) } });
+    const result = await window.astella.companion.history.list({ meta, query: { limit: 50, ...(anchorId ? { throughMessageId: anchorId } : {}) } });
     return result.ok ? { ...result, data: { ...result.data, search: "", anchorId } } : result;
   }, [appliedQuery, anchorId, refreshKey]);
   useEffect(() => {
@@ -50,7 +50,7 @@ export function CompanionDialoguePage({ refreshKey, focusMessageId, onFocusConsu
     if (!cursor || loadingMore) return;
     const request = ++requestRef.current; setLoadingMore(true); setError(null);
     try {
-      const page = unwrapGatewayResult(await window.ailearn.companion.history.list({ meta: resource.meta(), query: { before: cursor, limit: 50 } }));
+      const page = unwrapGatewayResult(await window.astella.companion.history.list({ meta: resource.meta(), query: { before: cursor, limit: 50 } }));
       if (request !== requestRef.current) return;
       const ids = new Set(items.map(item => item.messageId));
       setMore({ ...page, items: [...page.items.filter(item => !ids.has(item.messageId)), ...items] });

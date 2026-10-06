@@ -505,7 +505,7 @@ describe("页面级存在感控制（2026-09-16 裁决 3）", () => {
   it("主题颜色与主题模式一起写盘，重启后不会被时钟改写", () => {
     useRoomStore.getState().setTheme("night");
 
-    const raw = persistedStorage.entries.get("ailearn.desktop-room.v2");
+    const raw = persistedStorage.entries.get("astella.desktop-room.v2");
     const payload = JSON.parse(raw as string) as { state: Record<string, unknown> };
     expect(payload.state).toMatchObject({ theme: "night", themeMode: "manual" });
 
@@ -517,7 +517,7 @@ describe("页面级存在感控制（2026-09-16 裁决 3）", () => {
     useRoomStore.getState().setCompanionTemporarilyHidden(true);
     useRoomStore.getState().setCompanionSceneMuted("notebook", true);
 
-    const raw = persistedStorage.entries.get("ailearn.desktop-room.v2");
+    const raw = persistedStorage.entries.get("astella.desktop-room.v2");
     expect(raw).toBeTruthy();
     const payload = JSON.parse(raw as string) as { state: Record<string, unknown> };
     // 跨会话仍然成立的偏好继续写盘。
@@ -567,7 +567,7 @@ describe("设置页与搜索页的会话级状态", () => {
     expect(state.searchTypeFilter).toBe("objective");
     expect(state.searchWeakOnly).toBe(true);
 
-    const raw = persistedStorage.entries.get("ailearn.desktop-room.v2");
+    const raw = persistedStorage.entries.get("astella.desktop-room.v2");
     const payload = JSON.parse(raw as string) as { state: Record<string, unknown> };
     expect(payload.state).not.toHaveProperty("searchQuery");
     expect(payload.state).not.toHaveProperty("searchTypeFilter");
@@ -590,7 +590,7 @@ describe("设置页与搜索页的会话级状态", () => {
     useRoomStore.getState().setLive2dStatus("ready");
     expect(useRoomStore.getState().live2dStatus).toBe("ready");
 
-    const raw = persistedStorage.entries.get("ailearn.desktop-room.v2");
+    const raw = persistedStorage.entries.get("astella.desktop-room.v2");
     const payload = JSON.parse(raw as string) as { state: Record<string, unknown> };
     expect(payload.state).not.toHaveProperty("live2dStatus");
     expect(payload.state).not.toHaveProperty("workspaceScopeRevision");
@@ -627,7 +627,7 @@ describe("页面可读视图槽位（doc 37）", () => {
 
   it("实时状态不持久化：重启后由页面重新登记", () => {
     useRoomStore.getState().publishPageReadableView("t-1", view("已写出 3 / 4 张候选"));
-    const raw = persistedStorage.entries.get("ailearn.desktop-room.v2");
+    const raw = persistedStorage.entries.get("astella.desktop-room.v2");
     const payload = JSON.parse(raw as string) as { state: Record<string, unknown> };
     expect(payload.state).not.toHaveProperty("pageReadableView");
   });

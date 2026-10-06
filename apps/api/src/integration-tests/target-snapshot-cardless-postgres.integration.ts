@@ -10,8 +10,8 @@
  * "哪种输入冻结得出来、冻结出来的行长什么样"，不是端点接线。
  *
  * 运行（apps/api 下，夹具走超级用户、被测路径走受限角色）：
- *   DATABASE_URL="postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn" \
- *   DATABASE_URL_API="postgres://ailearn_api:ailearn_dev@127.0.0.1:5432/ailearn" \
+ *   DATABASE_URL="postgres://astella:astella_dev@127.0.0.1:5432/astella" \
+ *   DATABASE_URL_API="postgres://astella_api:astella_dev@127.0.0.1:5432/astella" \
  *   node --import tsx --test --test-concurrency=1 \
  *     src/integration-tests/target-snapshot-cardless-postgres.integration.ts
  */
@@ -21,7 +21,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { seedV2Fixture, seedV2ObjectiveOnly, seedObjectiveNoteEvidence } from "./helpers/v2-card-fixture.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const ADMIN_URL = testDatabaseUrl("DATABASE_URL");
 // 被测那一侧（`withWorkspaceTransaction`）读的是 API 角色：夹具写用 ADMIN，

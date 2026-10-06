@@ -4,7 +4,7 @@
  * ## 生成走公共运行基础，不自己写执行循环
  *
  * 本文件**没有任何** `for` 重试循环、没有 `setTimeout` 退避、没有"什么时候允许再花一次
- * 钱"的判断。全部交给 `@ailearn/shared/ai-task-kernel` 的 `runAiTask`（39 §15.5 明写
+ * 钱"的判断。全部交给 `@astella/shared/ai-task-kernel` 的 `runAiTask`（39 §15.5 明写
  * 禁止"各写一套"）：本文件只提供**任务定义**（`prepare`／`execute`／`commit`）与
  * **provider 端口**。预算、重试的类别表、检查点、租约核对、单步超时与 deadline
  * 全部是内核的语义——与 `teaching-explain.ts` 那一发走的是同一段外壳。
@@ -35,15 +35,15 @@
  */
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
-import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
+import type { PublicJsonRequester } from "@astella/shared/public-json-http";
 import {
   runAiTask,
   type AiAttemptToken,
   type AiStepFailure,
   type AiStepResult,
   type AiTaskDefinition,
-} from "@ailearn/shared/ai-task-kernel";
+} from "@astella/shared/ai-task-kernel";
 import {
   ARTIFACT_MAX_STEPS_V1,
   ARTIFACT_MIN_STEPS_V1,

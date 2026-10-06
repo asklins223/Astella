@@ -1,7 +1,7 @@
 import type {
   RoomProjectionV1,
   RoomSectionStatusV1,
-} from "@ailearn/shared/room-projection-contracts";
+} from "@astella/shared/room-projection-contracts";
 // 动作的词只有一份（列表／详情／笔记页也读它）：这里不再自己写一份。
 import { primaryActionLabel as surfacePrimaryActionLabel } from "../components/surfaces/run/objective-state-copy.ts";
 import type { RoomIntent } from "./room-machine";

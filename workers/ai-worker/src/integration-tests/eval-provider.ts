@@ -17,7 +17,7 @@
 
 import { readFileSync } from "node:fs";
 import { createProvider, type AIProvider } from "../lib/ai-provider.ts";
-import { resolveSystemPlatform } from "@ailearn/shared/platform-config-node";
+import { resolveSystemPlatform } from "@astella/shared/platform-config-node";
 
 /** 从仓库 .env 读取凭据（评测脚本在宿主运行，拿不到容器里的环境变量）。 */
 export function loadEnvKey(name: string): string | undefined {

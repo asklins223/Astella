@@ -3,11 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>理解引擎 · 运维管理面板</title>
-    <!-- 空 data URI：面板不需要站点图标，而浏览器默认会去打 /favicon.ico，
-         在这个只注册了几条路由的服务上那是一条注定 404 的请求（CSP 的
-         img-src 允许 data:，所以这里不会连带触发一次策略拒绝）。 -->
-    <link rel="icon" href="data:," />
+    <title>拾星笔记 · 运维管理面板</title>
+    <!-- 品牌图与面板外壳同域、同一套注册路由（见 routes.ts 的 STATIC_FILES），
+         所以这里给真实文件而不是 data: 占位——标签页上那枚图标现在认得出是谁。 -->
+    <link rel="icon" href="__BASE__/assets/astella-mark-v1.png" type="image/png" />
     <link rel="stylesheet" href="__BASE__/styles.css" />
   </head>
   <body>
@@ -15,10 +14,10 @@
     <div class="gate" id="gate" data-state="locked">
       <form class="gate__card" id="gate-form" autocomplete="off">
         <div class="gate__mark" aria-hidden="true">
-          <span class="seal seal--lg">理</span>
-          <span>理解引擎</span><em>运维管理面板</em>
+          <img class="seal seal--lg" src="__BASE__/assets/astella-mark-v1.png" alt="" width="36" height="36" />
+          <span>拾星笔记</span><em>运维管理面板</em>
         </div>
-        <h1 class="gate__title">理解引擎运维管理面板</h1>
+        <h1 class="gate__title">拾星笔记运维管理面板</h1>
         <p class="gate__hint">
           这个面板能读取跨空间的队列、审计与配置状态。请输入部署时设置的
           <code>ADMIN_PANEL_TOKEN</code>。
@@ -50,8 +49,8 @@
     <div class="shell" id="shell" hidden>
       <aside class="rail">
         <div class="rail__brand">
-          <span class="seal seal--sm" aria-hidden="true">理</span>
-          <span class="rail__wordmark">理解引擎</span>
+          <img class="seal seal--sm" src="__BASE__/assets/astella-mark-v1.png" alt="" width="28" height="28" />
+          <span class="rail__wordmark">拾星笔记</span>
           <span class="rail__wordmark-sub">运维管理面板</span>
         </div>
 

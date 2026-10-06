@@ -21,7 +21,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { upsertCommittedSummary, type CommittedSummaryUpsert } from "../handlers/companion-dialogue-store.ts";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
 

@@ -28,9 +28,9 @@ import {
   companionPersonaV1Schema,
   type CompanionPersonaPendingV1,
   type CompanionPersonaProfileVersionV1,
-} from "@ailearn/shared/companion-memory-desktop-contracts";
+} from "@astella/shared/companion-memory-desktop-contracts";
 import { useRoomStore } from "../../../app/room-store.ts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 

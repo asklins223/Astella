@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
-import { resolveCompanionMemoryTemporalMetadata } from "@ailearn/shared";
-import { queryRows, type AgentSqlExecutor } from "@ailearn/agent-host";
+import { resolveCompanionMemoryTemporalMetadata } from "@astella/shared";
+import { queryRows, type AgentSqlExecutor } from "@astella/agent-host";
 import type { AgentEventContext } from "./companion-read-tools.ts";
 import { CompanionToolNotExecutedError } from "./companion-tool-result.ts";
 

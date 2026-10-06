@@ -20,7 +20,7 @@ import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 import {
   roundTeachingViewV1Schema,
   type RoundTeachingV1,
-} from "@ailearn/shared/note-learning-round-contracts";
+} from "@astella/shared/note-learning-round-contracts";
 import type {
   TeachingEvidenceInputV1,
   TeachingExplainInputV1,

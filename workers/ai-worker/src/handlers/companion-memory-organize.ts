@@ -6,7 +6,7 @@
  * `companion-memory-organization.ts` 里五样东西早就写好了——闸、批大小、
  * 租约、提交、surface——但一个生产调用方都没有，于是 §4.6.3 的周期整理
  * **一次也没跑过**。本文件是那个调用方：0361 的
- * `ailearn_enqueue_companion_memory_organize()` 选出够格的用户投 job，
+ * `astella_enqueue_companion_memory_organize()` 选出够格的用户投 job，
  * 本文件把那一轮真正做完。
  *
  * ## 五种动作各自落地成什么，以及为什么
@@ -35,9 +35,9 @@ import { sql } from "drizzle-orm";
 import {
   companionMemoryMutationLockKey,
   MEMORY_CONTENT_SIMILARITY_THRESHOLD,
-} from "@ailearn/shared/db-schema/assistant-memory";
+} from "@astella/shared/db-schema/assistant-memory";
 
-import { readJobPayloadString } from "@ailearn/shared";
+import { readJobPayloadString } from "@astella/shared";
 
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { logger } from "../lib/logger.ts";
@@ -203,7 +203,7 @@ async function downgradeMemory(
   `));
   if (guard.length === 0) return false;
   const moved = rowsOf<{ status: string }>(await tx.execute(sql`
-    SELECT public.ailearn_move_companion_memory_budget_tier_v1(
+    SELECT public.astella_move_companion_memory_budget_tier_v1(
       ${scope.workspaceId}::uuid, ${scope.userId}::uuid, ${memoryId}::uuid,
       'archived', 'companion', NULL
     ) AS status

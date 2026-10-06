@@ -1,5 +1,5 @@
 import { and, desc, eq, gte, lt, lte, or, type SQL } from "drizzle-orm";
-import { workspaceAuditLog } from "@ailearn/shared/db-schema/identity";
+import { workspaceAuditLog } from "@astella/shared/db-schema/identity";
 import type { ApiTransaction } from "../../db/client.ts";
 import { clampLimit } from "../../lib/pagination-utils.ts";
 

@@ -1,44 +1,44 @@
-name: ailearn-dev
+name: astella-dev
 
 # Standalone local-development stack. It intentionally uses fixed local-only
 # credentials, dev image targets and source bind mounts for hot reload.
 # Do not layer this file on top of docker-compose.yml.
 
 x-dev-database: &dev-database
-  DATABASE_URL: postgres://ailearn:ailearn_dev@postgres:5432/ailearn
-  DATABASE_URL_MIGRATOR: postgres://ailearn:ailearn_dev@postgres:5432/ailearn
-  # API 用受限角色（NOBYPASSRLS），与 CI、生产同形状。dev 以前连着 `ailearn`
+  DATABASE_URL: postgres://astella:astella_dev@postgres:5432/astella
+  DATABASE_URL_MIGRATOR: postgres://astella:astella_dev@postgres:5432/astella
+  # API 用受限角色（NOBYPASSRLS），与 CI、生产同形状。dev 以前连着 `astella`
   # （superuser + BYPASSRLS），于是 RLS 在这个环境里天然不可见：漏设
   # `app.workspace_id` 的读点不会报错，只会静默返回 0 行（doc 34 L37/L43）。
   # 换过来之后"谁漏了上下文谁当场红"就是想要的行为。
-  # 换之前先跑过：CI 点名的 postgres 集测在"夹具写=超级用户 / 被测=ailearn_api"
-  # 这套形状下逐个绿，且 `ailearn_api` 对 public 里**每一张表都有 SELECT**（缺授权 0 张）。
+  # 换之前先跑过：CI 点名的 postgres 集测在"夹具写=超级用户 / 被测=astella_api"
+  # 这套形状下逐个绿，且 `astella_api` 对 public 里**每一张表都有 SELECT**（缺授权 0 张）。
   # worker 早就是受限角色（下面那行），这两行现在才对齐。
-  DATABASE_URL_API: postgres://ailearn_api:ailearn_dev@postgres:5432/ailearn
+  DATABASE_URL_API: postgres://astella_api:astella_dev@postgres:5432/astella
   # Worker must use the restricted role; learning-session outbox RLS grants
-  # queue-wide claim access only to ailearn_worker.
-  DATABASE_URL_WORKER: postgres://ailearn_worker:ailearn_dev@postgres:5432/ailearn
+  # queue-wide claim access only to astella_worker.
+  DATABASE_URL_WORKER: postgres://astella_worker:astella_dev@postgres:5432/astella
 
 services:
   postgres:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ailearn
-      POSTGRES_PASSWORD: ailearn_dev
-      POSTGRES_DB: ailearn
+      POSTGRES_USER: astella
+      POSTGRES_PASSWORD: astella_dev
+      POSTGRES_DB: astella
     ports:
       - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - dev_postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ailearn -d ailearn"]
+      test: ["CMD-SHELL", "pg_isready -U astella -d astella"]
       interval: 5s
       timeout: 5s
       retries: 10
     networks:
-      - ailearn_net
+      - astella_net
 
   minio:
     image: minio/minio:RELEASE.2024-12-18T13-15-44Z
@@ -46,8 +46,8 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ailearn
-      MINIO_ROOT_PASSWORD: ailearn_dev_secret
+      MINIO_ROOT_USER: astella
+      MINIO_ROOT_PASSWORD: astella_dev_secret
     ports:
       - "${MINIO_BIND_ADDRESS:-127.0.0.1}:${MINIO_PORT:-9000}:9000"
       - "${MINIO_BIND_ADDRESS:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9001}:9001"
@@ -59,7 +59,7 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - ailearn_net
+      - astella_net
 
   # One-shot bucket bootstrap (profile: storage).  `make storage` waits
   # for it to exit; stale containers are removed at the start of the next
@@ -72,16 +72,16 @@ services:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 ailearn ailearn_dev_secret;
-      mc mb -p local/ailearn-workspaces || true;
-      mc anonymous set none local/ailearn-workspaces;
+      mc alias set local http://minio:9000 astella astella_dev_secret;
+      mc mb -p local/astella-workspaces || true;
+      mc anonymous set none local/astella-workspaces;
       echo 'minio init done';
       "
     networks:
-      - ailearn_net
+      - astella_net
 
   # One-shot (restart: "no"): creates the restricted database roles that
-  # migrations 0022+ reference (GRANT EXECUTE TO ailearn_worker, etc.).
+  # migrations 0022+ reference (GRANT EXECUTE TO astella_worker, etc.).
   # Dev uses fixed passwords; production must set them via .env.
   role-bootstrap:
     image: pgvector/pgvector:pg16
@@ -89,20 +89,20 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
+    environment: &role-bootstrap-environment
       POSTGRES_HOST: postgres
-      POSTGRES_USER: ailearn
-      POSTGRES_PASSWORD: ailearn_dev
-      POSTGRES_DB: ailearn
-      MIGRATOR_PASSWORD: ailearn_dev
-      API_PASSWORD: ailearn_dev
-      WORKER_PASSWORD: ailearn_dev
-    volumes:
-      - ./infra/postgres/apply-roles.sh:/opt/ailearn/apply-roles.sh:ro
-      - ./infra/postgres/roles.sql:/opt/ailearn/roles.sql:ro
-    entrypoint: ["/bin/sh", "/opt/ailearn/apply-roles.sh"]
+      POSTGRES_USER: astella
+      POSTGRES_PASSWORD: astella_dev
+      POSTGRES_DB: astella
+      MIGRATOR_PASSWORD: astella_dev
+      API_PASSWORD: astella_dev
+      WORKER_PASSWORD: astella_dev
+    volumes: &role-bootstrap-volumes
+      - ./infra/postgres/apply-roles.sh:/opt/astella/apply-roles.sh:ro
+      - ./infra/postgres/roles.sql:/opt/astella/roles.sql:ro
+    entrypoint: ["/bin/sh", "/opt/astella/apply-roles.sh"]
     networks:
-      - ailearn_net
+      - astella_net
 
   # One-shot (restart: "no"): re-created at the start of every `make up` to
   # apply pending migrations (stale init containers are removed by the next
@@ -132,7 +132,26 @@ services:
       - ./packages/card-generation/package.json:/app/packages/card-generation/package.json:ro
     command: ["npm", "run", "db:migrate"]
     networks:
-      - ailearn_net
+      - astella_net
+
+  # One-shot (restart: "no"): 迁移之后再跑一遍 roles.sql，把授权落到迁移建出来的
+  # 对象上。roles.sql 里有一批"对象存在才修"的块（drizzle journal、若干
+  # SECURITY DEFINER 函数），而 role-bootstrap 必须跑在 migrate **之前**（迁移本身
+  # 要 GRANT EXECUTE TO astella_worker）。少了这一步，全新卷上第一次 `make up`
+  # 之后 api 对业务表一条 SELECT 都没有，/ready 报 "business schema is incomplete"
+  # 并一直 unhealthy，只有再 up 一次（init 容器被删掉重跑）才碰巧修好。
+  # 与 docker-compose.yml 里的同名服务同一套做法；那里的注释已经写明"每次启动都重跑"。
+  role-grants:
+    image: pgvector/pgvector:pg16
+    restart: "no"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *role-bootstrap-environment
+    volumes: *role-bootstrap-volumes
+    entrypoint: ["/bin/sh", "/opt/astella/apply-roles.sh"]
+    networks:
+      - astella_net
 
   # Demo credentials are created only when `make seed-demo` is run.
   # Uses `run --rm` so the container is removed immediately after seeding.
@@ -144,7 +163,7 @@ services:
       target: dev
     restart: "no"
     depends_on:
-      migrate:
+      role-grants:
         condition: service_completed_successfully
     environment:
       <<: *dev-database
@@ -161,7 +180,7 @@ services:
       - ./packages/card-generation/package.json:/app/packages/card-generation/package.json:ro
     command: ["npm", "run", "db:seed"]
     networks:
-      - ailearn_net
+      - astella_net
 
   api:
     build:
@@ -177,7 +196,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      migrate:
+      role-grants:
         condition: service_completed_successfully
     environment:
       <<: *dev-database
@@ -186,16 +205,16 @@ services:
       # Explicitly distinguish the container's internal listener from the
       # host's loopback-only published port.
       API_BIND_ADDRESS: ${API_INTERNAL_BIND_ADDRESS:-0.0.0.0}
-      AILEARN_CONTAINER_MODE: "true"
-      AILEARN_ALLOW_CONTAINER_WILDCARD: "true"
-      AILEARN_DESKTOP_PAIRING_KEY_ID: ${AILEARN_DESKTOP_PAIRING_KEY_ID:-dev-desktop-key}
-      AILEARN_DESKTOP_PAIRING_SECRET: ${AILEARN_DESKTOP_PAIRING_SECRET:-}
-      AILEARN_DOMAIN_SCHEMA_REVISION: ${AILEARN_DOMAIN_SCHEMA_REVISION:-domain-dev-v1}
+      ASTELLA_CONTAINER_MODE: "true"
+      ASTELLA_ALLOW_CONTAINER_WILDCARD: "true"
+      ASTELLA_DESKTOP_PAIRING_KEY_ID: ${ASTELLA_DESKTOP_PAIRING_KEY_ID:-dev-desktop-key}
+      ASTELLA_DESKTOP_PAIRING_SECRET: ${ASTELLA_DESKTOP_PAIRING_SECRET:-}
+      ASTELLA_DOMAIN_SCHEMA_REVISION: ${ASTELLA_DOMAIN_SCHEMA_REVISION:-domain-dev-v1}
       # 开发栈默认不信任透传的 X-Forwarded-For；需要真实前置代理时显式设置。
       TRUST_PROXY: ${TRUST_PROXY:-false}
       # Dev-only explicit grant signing secret（compose 显式配置，非代码回退）：
       # 未配置 AUTH_SURFACE_MANIFEST_SECRET 时 companion grant 签发 fail-closed 503。
-      AUTH_SURFACE_MANIFEST_SECRET: ailearn-dev-auth-surface-secret
+      AUTH_SURFACE_MANIFEST_SECRET: astella-dev-auth-surface-secret
       AUTH_RATE_LIMIT_STORE: ${AUTH_RATE_LIMIT_STORE:-memory}
       AUTH_RATE_LIMIT_WINDOW_MS: ${AUTH_RATE_LIMIT_WINDOW_MS:-900000}
       # Dev 栈放宽登录限流（E2E 多 spec 连续登录）；生产 compose 保持默认 5 次。
@@ -213,7 +232,7 @@ services:
       AI_PLATFORMS_CONFIG: /app/config/ai-platforms.json
       # 运维面板（/admin）。dev 给一个固定的弱口令便于本机调试；弱于 16 字符即
       # 视为未启用（面板不注册任何路由）。生产 compose 用 `:-`，即留空 = 关闭。
-      ADMIN_PANEL_TOKEN: ${ADMIN_PANEL_TOKEN:-ailearn-dev-admin-panel-token}
+      ADMIN_PANEL_TOKEN: ${ADMIN_PANEL_TOKEN:-astella-dev-admin-panel-token}
       # 运维面板的「基础设施」页：挂 Docker socket 后可以看容器状态、拉日志、
       # 做 start/stop/restart。socket 等价于宿主机 root 权限，所以只在**本机
       # 开发栈**默认打开；生产 compose 不设这一项，面板会显示"未接入"。
@@ -267,9 +286,9 @@ services:
       # Image upload: MinIO/S3 storage endpoint and credentials.
       # Must match the dev minio service's MINIO_ROOT_USER/PASSWORD below.
       STORAGE_ENDPOINT: http://minio:9000
-      S3_BUCKET: ${S3_BUCKET:-ailearn-workspaces}
-      MINIO_ROOT_USER: ailearn
-      MINIO_ROOT_PASSWORD: ailearn_dev_secret
+      S3_BUCKET: ${S3_BUCKET:-astella-workspaces}
+      MINIO_ROOT_USER: astella
+      MINIO_ROOT_PASSWORD: astella_dev_secret
     ports:
       - "${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-4000}:4000"
     healthcheck:
@@ -291,7 +310,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./config:/app/config:ro
     networks:
-      - ailearn_net
+      - astella_net
 
   worker:
     build:
@@ -308,7 +327,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      migrate:
+      role-grants:
         condition: service_completed_successfully
     environment:
       <<: *dev-database
@@ -347,9 +366,9 @@ services:
       COMPANION_THOUGHTS_V1: ${COMPANION_THOUGHTS_V1:-true}
       # Source image upload: MinIO/S3 storage for embedded images
       STORAGE_ENDPOINT: http://minio:9000
-      S3_BUCKET: ${S3_BUCKET:-ailearn-workspaces}
-      MINIO_ROOT_USER: ailearn
-      MINIO_ROOT_PASSWORD: ailearn_dev_secret
+      S3_BUCKET: ${S3_BUCKET:-astella-workspaces}
+      MINIO_ROOT_USER: astella
+      MINIO_ROOT_PASSWORD: astella_dev_secret
       # Handler timeouts (ms) — per job type, clamped below lease timeout (120s)
       WORKER_MODEL_TIMEOUT_MS: ${WORKER_MODEL_TIMEOUT_MS:-}
       WORKER_PROVIDER_TIMEOUT_MS: ${WORKER_PROVIDER_TIMEOUT_MS:-75000}
@@ -382,7 +401,7 @@ services:
       - ./packages/card-generation/package.json:/app/packages/card-generation/package.json:ro
       - ./config:/app/config:ro
     networks:
-      - ailearn_net
+      - astella_net
 
   # edge-tts：TTS 服务（Docker 容器内运行；开发环境同网络）
   edge-tts:
@@ -405,17 +424,17 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - ailearn_net
+      - astella_net
 
 volumes:
   # Keep PostgreSQL outside the Compose lifecycle so even `down -v` cannot
   # remove it accidentally. `make up` creates it; only the confirmed
   # `make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB` path deletes it.
   dev_postgres_data:
-    name: ailearn-dev_dev_postgres_data
+    name: astella-dev_dev_postgres_data
     external: true
   dev_minio_data:
 
 networks:
-  ailearn_net:
+  astella_net:
     driver: bridge

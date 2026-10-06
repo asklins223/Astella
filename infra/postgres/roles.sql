@@ -16,7 +16,7 @@
 -- 向量扩展必须**先于迁移**存在。
 --
 -- `0052_supervisor_agent_v1_schema` 起有十余份迁移 `CREATE EXTENSION IF NOT EXISTS
--- vector`，但它们跑在 `ailearn_migrator` 上，而建扩展是超级用户权限 ⇒
+-- vector`，但它们跑在 `astella_migrator` 上，而建扩展是超级用户权限 ⇒
 -- `permission denied to create extension "vector"`。
 --
 -- 0052 的注释本来就写着这件事该由本脚本负责（"fresh DB 由 init 脚本创建 extension，
@@ -31,15 +31,15 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- Fail early when the wrapper was bypassed without supplying secrets.  The
 -- values are quoted by psql's :'name' syntax before PostgreSQL sees them, then
 -- held in transaction-local custom settings for the procedural checks below.
-SELECT set_config('ailearn.migrator_password', :'migrator_password', false) AS ignored \gset
-SELECT set_config('ailearn.api_password', :'api_password', false) AS ignored \gset
-SELECT set_config('ailearn.worker_password', :'worker_password', false) AS ignored \gset
-SELECT set_config('ailearn.require_rls_disabled', :'require_rls_disabled', false) AS ignored \gset
+SELECT set_config('astella.migrator_password', :'migrator_password', false) AS ignored \gset
+SELECT set_config('astella.api_password', :'api_password', false) AS ignored \gset
+SELECT set_config('astella.worker_password', :'worker_password', false) AS ignored \gset
+SELECT set_config('astella.require_rls_disabled', :'require_rls_disabled', false) AS ignored \gset
 DO $$
 BEGIN
-  IF length(trim(current_setting('ailearn.migrator_password'))) = 0
-    OR length(trim(current_setting('ailearn.api_password'))) = 0
-    OR length(trim(current_setting('ailearn.worker_password'))) = 0
+  IF length(trim(current_setting('astella.migrator_password'))) = 0
+    OR length(trim(current_setting('astella.api_password'))) = 0
+    OR length(trim(current_setting('astella.worker_password'))) = 0
   THEN
     RAISE EXCEPTION 'role passwords must be non-empty';
   END IF;
@@ -49,36 +49,36 @@ $$;
 -- Create the roles only when absent.  ALTER ROLE below also rotates a role's
 -- password when the operator intentionally changes the environment value.
 SELECT format(
-  'CREATE ROLE ailearn_migrator LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT BYPASSRLS PASSWORD %L',
+  'CREATE ROLE astella_migrator LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT BYPASSRLS PASSWORD %L',
   :'migrator_password'
 )
 WHERE NOT EXISTS (
-  SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_migrator'
+  SELECT 1 FROM pg_roles WHERE rolname = 'astella_migrator'
 )\gexec
 
 SELECT format(
-  'CREATE ROLE ailearn_api LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS PASSWORD %L',
+  'CREATE ROLE astella_api LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS PASSWORD %L',
   :'api_password'
 )
 WHERE NOT EXISTS (
-  SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api'
+  SELECT 1 FROM pg_roles WHERE rolname = 'astella_api'
 )\gexec
 
 SELECT format(
-  'CREATE ROLE ailearn_worker LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS PASSWORD %L',
+  'CREATE ROLE astella_worker LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS PASSWORD %L',
   :'worker_password'
 )
 WHERE NOT EXISTS (
-  SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker'
+  SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker'
 )\gexec
 
-ALTER ROLE ailearn_migrator
+ALTER ROLE astella_migrator
   WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT BYPASSRLS
   PASSWORD :'migrator_password';
-ALTER ROLE ailearn_api
+ALTER ROLE astella_api
   WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
   PASSWORD :'api_password';
-ALTER ROLE ailearn_worker
+ALTER ROLE astella_worker
   WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
   PASSWORD :'worker_password';
 
@@ -86,29 +86,29 @@ ALTER ROLE ailearn_worker
 -- PostgreSQL checks database-level CREATE even when the schema already exists.
 -- Only the dedicated migrator receives that DDL capability.
 SELECT format(
-  'GRANT CONNECT, CREATE ON DATABASE %I TO ailearn_migrator',
+  'GRANT CONNECT, CREATE ON DATABASE %I TO astella_migrator',
   current_database()
 )\gexec
 SELECT format(
-  'GRANT CONNECT ON DATABASE %I TO ailearn_api, ailearn_worker',
+  'GRANT CONNECT ON DATABASE %I TO astella_api, astella_worker',
   current_database()
 )\gexec
 SELECT format(
-  'REVOKE CREATE ON DATABASE %I FROM ailearn_api, ailearn_worker',
+  'REVOKE CREATE ON DATABASE %I FROM astella_api, astella_worker',
   current_database()
 )\gexec
 
 -- Keep the migration tracking schema owned by the migrator.  It is created
 -- before the first migration so Drizzle can use a non-superuser connection.
-CREATE SCHEMA IF NOT EXISTS drizzle AUTHORIZATION ailearn_migrator;
-ALTER SCHEMA drizzle OWNER TO ailearn_migrator;
-GRANT USAGE, CREATE ON SCHEMA drizzle TO ailearn_migrator;
-GRANT USAGE ON SCHEMA public TO ailearn_migrator, ailearn_api, ailearn_worker;
-GRANT CREATE ON SCHEMA public TO ailearn_migrator;
+CREATE SCHEMA IF NOT EXISTS drizzle AUTHORIZATION astella_migrator;
+ALTER SCHEMA drizzle OWNER TO astella_migrator;
+GRANT USAGE, CREATE ON SCHEMA drizzle TO astella_migrator;
+GRANT USAGE ON SCHEMA public TO astella_migrator, astella_api, astella_worker;
+GRANT CREATE ON SCHEMA public TO astella_migrator;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-REVOKE CREATE ON SCHEMA public FROM ailearn_api, ailearn_worker;
+REVOKE CREATE ON SCHEMA public FROM astella_api, astella_worker;
 
--- The application database may have been created with the old `ailearn`
+-- The application database may have been created with the old `astella`
 -- owner.  Transfer only ordinary application objects so an existing database
 -- can be upgraded by the migrator role; extension-owned objects are skipped.
 DO $$
@@ -136,27 +136,27 @@ BEGIN
   LOOP
     IF obj.relkind = 'S' THEN
       EXECUTE format(
-        'ALTER SEQUENCE %I.%I OWNER TO ailearn_migrator',
+        'ALTER SEQUENCE %I.%I OWNER TO astella_migrator',
         obj.nspname, obj.relname
       );
     ELSIF obj.relkind = 'v' THEN
       EXECUTE format(
-        'ALTER VIEW %I.%I OWNER TO ailearn_migrator',
+        'ALTER VIEW %I.%I OWNER TO astella_migrator',
         obj.nspname, obj.relname
       );
     ELSIF obj.relkind = 'm' THEN
       EXECUTE format(
-        'ALTER MATERIALIZED VIEW %I.%I OWNER TO ailearn_migrator',
+        'ALTER MATERIALIZED VIEW %I.%I OWNER TO astella_migrator',
         obj.nspname, obj.relname
       );
     ELSIF obj.relkind = 'f' THEN
       EXECUTE format(
-        'ALTER FOREIGN TABLE %I.%I OWNER TO ailearn_migrator',
+        'ALTER FOREIGN TABLE %I.%I OWNER TO astella_migrator',
         obj.nspname, obj.relname
       );
     ELSE
       EXECUTE format(
-        'ALTER TABLE %I.%I OWNER TO ailearn_migrator',
+        'ALTER TABLE %I.%I OWNER TO astella_migrator',
         obj.nspname, obj.relname
       );
     END IF;
@@ -179,7 +179,7 @@ BEGIN
       )
   LOOP
     EXECUTE format(
-      'ALTER TYPE %I.%I OWNER TO ailearn_migrator',
+      'ALTER TYPE %I.%I OWNER TO astella_migrator',
       obj.nspname, obj.typname
     );
   END LOOP;
@@ -192,111 +192,111 @@ $$;
 -- DEFINER/search_path below; extension-owned functions remain untouched.
 DO $$
 BEGIN
-  IF to_regprocedure('public.ailearn_claim_jobs(integer,integer,integer)') IS NOT NULL THEN
-    ALTER FUNCTION public.ailearn_claim_jobs(integer, integer, integer)
-      OWNER TO ailearn_migrator;
+  IF to_regprocedure('public.astella_claim_jobs(integer,integer,integer)') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_claim_jobs(integer, integer, integer)
+      OWNER TO astella_migrator;
   END IF;
 
-  IF to_regprocedure('public.ailearn_reap_stale_jobs(integer,integer)') IS NOT NULL THEN
-    ALTER FUNCTION public.ailearn_reap_stale_jobs(integer, integer)
-      OWNER TO ailearn_migrator;
+  IF to_regprocedure('public.astella_reap_stale_jobs(integer,integer)') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_reap_stale_jobs(integer, integer)
+      OWNER TO astella_migrator;
   END IF;
 
-  IF to_regprocedure('public.ailearn_renew_job_lease(uuid,uuid,text)') IS NOT NULL THEN
-    ALTER FUNCTION public.ailearn_renew_job_lease(uuid, uuid, text)
-      OWNER TO ailearn_migrator;
+  IF to_regprocedure('public.astella_renew_job_lease(uuid,uuid,text)') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_renew_job_lease(uuid, uuid, text)
+      OWNER TO astella_migrator;
   END IF;
 
-  IF to_regprocedure('public.ailearn_finish_job(uuid,uuid,text)') IS NOT NULL THEN
-    ALTER FUNCTION public.ailearn_finish_job(uuid, uuid, text)
-      OWNER TO ailearn_migrator;
+  IF to_regprocedure('public.astella_finish_job(uuid,uuid,text)') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_finish_job(uuid, uuid, text)
+      OWNER TO astella_migrator;
   END IF;
 
-  IF to_regprocedure('public.ailearn_fail_job(uuid,uuid,text,text,integer)') IS NOT NULL THEN
-    ALTER FUNCTION public.ailearn_fail_job(uuid, uuid, text, text, integer)
-      OWNER TO ailearn_migrator;
+  IF to_regprocedure('public.astella_fail_job(uuid,uuid,text,text,integer)') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_fail_job(uuid, uuid, text, text, integer)
+      OWNER TO astella_migrator;
   END IF;
 
   -- Queue SECURITY DEFINER functions are created by migrations (dev uses the
-  -- ailearn role), so bootstrap must converge their owner to the migrator
+  -- astella role), so bootstrap must converge their owner to the migrator
   -- role on every replay (the BYPASSRLS semantics depend on this).
-  IF to_regprocedure('public.ailearn_queue_job_depth()') IS NOT NULL THEN
-    ALTER FUNCTION public.ailearn_queue_job_depth()
-      OWNER TO ailearn_migrator;
+  IF to_regprocedure('public.astella_queue_job_depth()') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_queue_job_depth()
+      OWNER TO astella_migrator;
   END IF;
-  IF to_regprocedure('public.ailearn_queue_oldest_pending_age()') IS NOT NULL THEN
-    ALTER FUNCTION public.ailearn_queue_oldest_pending_age()
-      OWNER TO ailearn_migrator;
+  IF to_regprocedure('public.astella_queue_oldest_pending_age()') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_queue_oldest_pending_age()
+      OWNER TO astella_migrator;
   END IF;
-  IF to_regprocedure('public.ailearn_purge_companion_audit_ttl(integer,integer)') IS NOT NULL THEN
-    ALTER FUNCTION public.ailearn_purge_companion_audit_ttl(integer, integer)
-      OWNER TO ailearn_migrator;
+  IF to_regprocedure('public.astella_purge_companion_audit_ttl(integer,integer)') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_purge_companion_audit_ttl(integer, integer)
+      OWNER TO astella_migrator;
   END IF;
-  IF to_regprocedure('public.ailearn_purge_invitation_ledger_ttl(integer,integer)') IS NOT NULL THEN
-    ALTER FUNCTION public.ailearn_purge_invitation_ledger_ttl(integer, integer)
-      OWNER TO ailearn_migrator;
+  IF to_regprocedure('public.astella_purge_invitation_ledger_ttl(integer,integer)') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_purge_invitation_ledger_ttl(integer, integer)
+      OWNER TO astella_migrator;
   END IF;
-  IF to_regprocedure('public.ailearn_purge_tutor_nonces_ttl(integer,integer)') IS NOT NULL THEN
-    ALTER FUNCTION public.ailearn_purge_tutor_nonces_ttl(integer, integer)
-      OWNER TO ailearn_migrator;
+  IF to_regprocedure('public.astella_purge_tutor_nonces_ttl(integer,integer)') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_purge_tutor_nonces_ttl(integer, integer)
+      OWNER TO astella_migrator;
   END IF;
   -- 0171/0172：方案 22 桌宠日记/记忆维护 SECURITY DEFINER 函数，owner 收敛到
-  -- ailearn_migrator（BYPASSRLS 语义依赖；search_path 需对齐 pg_catalog, public）。
-  IF to_regprocedure('public.ailearn_enqueue_companion_daily_summaries()') IS NOT NULL THEN
-    ALTER FUNCTION public.ailearn_enqueue_companion_daily_summaries()
+  -- astella_migrator（BYPASSRLS 语义依赖；search_path 需对齐 pg_catalog, public）。
+  IF to_regprocedure('public.astella_enqueue_companion_daily_summaries()') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_enqueue_companion_daily_summaries()
       SECURITY DEFINER;
-    ALTER FUNCTION public.ailearn_enqueue_companion_daily_summaries()
-      OWNER TO ailearn_migrator;
-    ALTER FUNCTION public.ailearn_enqueue_companion_daily_summaries()
+    ALTER FUNCTION public.astella_enqueue_companion_daily_summaries()
+      OWNER TO astella_migrator;
+    ALTER FUNCTION public.astella_enqueue_companion_daily_summaries()
       SET search_path = pg_catalog, public;
   END IF;
-  IF to_regprocedure('public.ailearn_run_companion_memory_maintenance()') IS NOT NULL THEN
-    ALTER FUNCTION public.ailearn_run_companion_memory_maintenance()
-      OWNER TO ailearn_migrator;
-    ALTER FUNCTION public.ailearn_run_companion_memory_maintenance()
+  IF to_regprocedure('public.astella_run_companion_memory_maintenance()') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_run_companion_memory_maintenance()
+      OWNER TO astella_migrator;
+    ALTER FUNCTION public.astella_run_companion_memory_maintenance()
       SET search_path = pg_catalog, public;
   END IF;
-  IF to_regprocedure('public.ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)') IS NOT NULL THEN
-    ALTER FUNCTION public.ailearn_close_companion_memory_delivery(uuid, uuid, uuid, text)
+  IF to_regprocedure('public.astella_close_companion_memory_delivery(uuid,uuid,uuid,text)') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_close_companion_memory_delivery(uuid, uuid, uuid, text)
       SECURITY DEFINER;
-    ALTER FUNCTION public.ailearn_close_companion_memory_delivery(uuid, uuid, uuid, text)
-      OWNER TO ailearn_migrator;
-    ALTER FUNCTION public.ailearn_close_companion_memory_delivery(uuid, uuid, uuid, text)
+    ALTER FUNCTION public.astella_close_companion_memory_delivery(uuid, uuid, uuid, text)
+      OWNER TO astella_migrator;
+    ALTER FUNCTION public.astella_close_companion_memory_delivery(uuid, uuid, uuid, text)
       SET search_path = pg_catalog, public;
   END IF;
 END
 $$;
 
 -- Reset grants before applying the explicit matrix.  This removes privileges
--- left by the old shared `ailearn` connection without touching ownership.
-REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM ailearn_api, ailearn_worker;
+-- left by the old shared `astella` connection without touching ownership.
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM astella_api, astella_worker;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM PUBLIC;
-REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM ailearn_api, ailearn_worker;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM astella_api, astella_worker;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM PUBLIC;
 
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ailearn_migrator;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ailearn_migrator;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO astella_migrator;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO astella_migrator;
 
 -- API is the business CRUD role.  It deliberately receives no schema DDL or
 -- migration-schema access beyond the read-only readiness query below.
 GRANT SELECT, INSERT, UPDATE, DELETE
-  ON ALL TABLES IN SCHEMA public TO ailearn_api;
+  ON ALL TABLES IN SCHEMA public TO astella_api;
 
 DO $$ BEGIN
   IF to_regclass('public.agent_run_revisions') IS NOT NULL THEN
-    REVOKE ALL ON TABLE public.agent_run_revisions FROM PUBLIC,ailearn_api,ailearn_worker;
-    GRANT SELECT,INSERT ON TABLE public.agent_run_revisions TO ailearn_api,ailearn_worker;
+    REVOKE ALL ON TABLE public.agent_run_revisions FROM PUBLIC,astella_api,astella_worker;
+    GRANT SELECT,INSERT ON TABLE public.agent_run_revisions TO astella_api,astella_worker;
   END IF;
 END $$;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ailearn_api;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO astella_api;
 
 -- Memory history is append-only. Both runtimes may read it; the database trigger
 -- writes snapshots with the same transaction as the current-row revision.
 DO $$
 BEGIN
   IF to_regclass('public.assistant_memory_item_revisions') IS NOT NULL THEN
-    GRANT SELECT, INSERT ON TABLE public.assistant_memory_item_revisions TO ailearn_api, ailearn_worker;
-    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.assistant_memory_item_revisions FROM ailearn_api, ailearn_worker;
+    GRANT SELECT, INSERT ON TABLE public.assistant_memory_item_revisions TO astella_api, astella_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.assistant_memory_item_revisions FROM astella_api, astella_worker;
   END IF;
 END
 $$;
@@ -306,9 +306,9 @@ $$;
 DO $$
 BEGIN
   IF to_regclass('public.assistant_memory_budget_events') IS NOT NULL THEN
-    REVOKE ALL PRIVILEGES ON TABLE public.assistant_memory_budget_events FROM ailearn_api, ailearn_worker;
-    GRANT SELECT, INSERT ON TABLE public.assistant_memory_budget_events TO ailearn_api, ailearn_worker;
-    REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE public.assistant_memory_budget_events FROM ailearn_api, ailearn_worker;
+    REVOKE ALL PRIVILEGES ON TABLE public.assistant_memory_budget_events FROM astella_api, astella_worker;
+    GRANT SELECT, INSERT ON TABLE public.assistant_memory_budget_events TO astella_api, astella_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE public.assistant_memory_budget_events FROM astella_api, astella_worker;
   END IF;
 END
 $$;
@@ -318,19 +318,19 @@ $$;
 -- 方案 44 §5.4 的压缩冷却状态（0385）。
 --
 -- 为什么要在这里再写一遍：上面那句 `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public
--- FROM ailearn_api, ailearn_worker` 是在**迁移之后**跑的，它会把各条迁移里逐表写的
+-- FROM astella_api, astella_worker` 是在**迁移之后**跑的，它会把各条迁移里逐表写的
 -- GRANT 一并抹掉——本文件下面每个 DO 块都在补这个漏。0385 的迁移里写了
--- `GRANT … TO ailearn_worker`，但没在这里补，于是真库上 worker 访问该表直接
+-- `GRANT … TO astella_worker`，但没在这里补，于是真库上 worker 访问该表直接
 -- `permission denied for table agent_context_compaction_state`（实测），
 -- 而压缩冷却与无进展状态——整条 §5.4 的记忆——就此静默失效。
 DO $$
 BEGIN
   IF to_regclass('public.agent_context_compaction_state') IS NOT NULL THEN
-    -- 不动 ailearn_api：下面那道「API privilege matrix」守卫要求它对每一张
+    -- 不动 astella_api：下面那道「API privilege matrix」守卫要求它对每一张
     -- 未列入例外的表都有 SELECT/INSERT/UPDATE/DELETE 且没有 TRUNCATE/REFERENCES/TRIGGER。
-    -- 这里只补 worker——它在上面那句 `REVOKE ALL … FROM ailearn_api, ailearn_worker`
+    -- 这里只补 worker——它在上面那句 `REVOKE ALL … FROM astella_api, astella_worker`
     -- 之后没有任何兜底。
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_context_compaction_state TO ailearn_worker;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_context_compaction_state TO astella_worker;
   END IF;
 END
 $$;
@@ -338,9 +338,9 @@ $$;
 DO $$
 BEGIN
   IF to_regclass('public.companion_persona_profile_versions') IS NOT NULL THEN
-    REVOKE ALL PRIVILEGES ON TABLE public.companion_persona_profile_versions FROM ailearn_api, ailearn_worker;
-    GRANT SELECT, INSERT ON TABLE public.companion_persona_profile_versions TO ailearn_api, ailearn_worker;
-    REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE public.companion_persona_profile_versions FROM ailearn_api, ailearn_worker;
+    REVOKE ALL PRIVILEGES ON TABLE public.companion_persona_profile_versions FROM astella_api, astella_worker;
+    GRANT SELECT, INSERT ON TABLE public.companion_persona_profile_versions TO astella_api, astella_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE public.companion_persona_profile_versions FROM astella_api, astella_worker;
   END IF;
 END
 $$;
@@ -351,7 +351,7 @@ $$;
 DO $$
 BEGIN
   IF to_regclass('public.companion_diary_generation_checkpoints') IS NOT NULL THEN
-    REVOKE ALL PRIVILEGES ON TABLE public.companion_diary_generation_checkpoints FROM ailearn_api;
+    REVOKE ALL PRIVILEGES ON TABLE public.companion_diary_generation_checkpoints FROM astella_api;
   END IF;
 END
 $$;
@@ -360,7 +360,7 @@ $$;
 DO $$
 BEGIN
   IF to_regclass('public.companion_context_handoff_snapshots') IS NOT NULL THEN
-    REVOKE ALL PRIVILEGES ON TABLE public.companion_context_handoff_snapshots FROM ailearn_api;
+    REVOKE ALL PRIVILEGES ON TABLE public.companion_context_handoff_snapshots FROM astella_api;
   END IF;
 END
 $$;
@@ -370,8 +370,8 @@ $$;
 DO $$
 BEGIN
   IF to_regclass('public.companion_run_failure_spans') IS NOT NULL THEN
-    REVOKE ALL PRIVILEGES ON TABLE public.companion_run_failure_spans FROM ailearn_api;
-    GRANT SELECT ON TABLE public.companion_run_failure_spans TO ailearn_api;
+    REVOKE ALL PRIVILEGES ON TABLE public.companion_run_failure_spans FROM astella_api;
+    GRANT SELECT ON TABLE public.companion_run_failure_spans TO astella_api;
   END IF;
 END
 $$;
@@ -478,21 +478,21 @@ BEGIN
   ]
   LOOP
     IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
-      EXECUTE format('GRANT SELECT ON TABLE public.%I TO ailearn_worker', table_name);
+      EXECUTE format('GRANT SELECT ON TABLE public.%I TO astella_worker', table_name);
     END IF;
   END LOOP;
   IF to_regclass('public.assistant_memory_item_revisions') IS NOT NULL THEN
-    GRANT SELECT, INSERT ON TABLE public.assistant_memory_item_revisions TO ailearn_worker;
-    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.assistant_memory_item_revisions FROM ailearn_worker;
+    GRANT SELECT, INSERT ON TABLE public.assistant_memory_item_revisions TO astella_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.assistant_memory_item_revisions FROM astella_worker;
   END IF;
   IF to_regclass('public.assistant_memory_budget_events') IS NOT NULL THEN
-    GRANT SELECT, INSERT ON TABLE public.assistant_memory_budget_events TO ailearn_worker;
-    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.assistant_memory_budget_events FROM ailearn_worker;
+    GRANT SELECT, INSERT ON TABLE public.assistant_memory_budget_events TO astella_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.assistant_memory_budget_events FROM astella_worker;
   END IF;
   IF to_regclass('public.assistant_memory_source_suppressions') IS NOT NULL THEN
     -- Extract/admit and explicit forget both consult this immutable source fence.
     -- Keep migration 0330 grants after the bootstrap REVOKE ALL.
-    GRANT SELECT, INSERT ON TABLE public.assistant_memory_source_suppressions TO ailearn_worker;
+    GRANT SELECT, INSERT ON TABLE public.assistant_memory_source_suppressions TO astella_worker;
   END IF;
 
   -- Exact write privileges exercised by the current worker handlers.  The
@@ -506,78 +506,78 @@ BEGIN
   LOOP
     IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
       EXECUTE format(
-        'GRANT INSERT, UPDATE ON TABLE public.%I TO ailearn_worker',
+        'GRANT INSERT, UPDATE ON TABLE public.%I TO astella_worker',
         table_name
       );
     END IF;
   END LOOP;
 
   IF to_regclass('public.review_attempts') IS NOT NULL THEN
-    GRANT UPDATE ON TABLE public.review_attempts TO ailearn_worker;
+    GRANT UPDATE ON TABLE public.review_attempts TO astella_worker;
   END IF;
 
   IF to_regclass('public.validation_questions') IS NOT NULL THEN
-    GRANT INSERT ON TABLE public.validation_questions TO ailearn_worker;
+    GRANT INSERT ON TABLE public.validation_questions TO astella_worker;
   END IF;
 
   -- 0077/0078 授予 worker 的最小写权限镜像（roles.sql 是唯一授权源；
   -- 不镜像的话 post-migration 重跑会 REVOKE 迁移授予的权限并被矩阵"判对"）。
   IF to_regclass('public.learning_unit_exposure') IS NOT NULL THEN
-    GRANT INSERT, UPDATE ON TABLE public.learning_unit_exposure TO ailearn_worker;
+    GRANT INSERT, UPDATE ON TABLE public.learning_unit_exposure TO astella_worker;
   END IF;
   IF to_regclass('public.learning_exposure_dependency_ledger') IS NOT NULL THEN
-    GRANT INSERT, UPDATE ON TABLE public.learning_exposure_dependency_ledger TO ailearn_worker;
+    GRANT INSERT, UPDATE ON TABLE public.learning_exposure_dependency_ledger TO astella_worker;
   END IF;
   -- P2/P5 companion runtime：worker 读取对话/run/action 状态，写入对话
   -- 结果和事件，并更新 API 已创建的 run/proposal/sequence 投影。
   IF to_regclass('public.companion_conversations') IS NOT NULL THEN
-    GRANT UPDATE ON TABLE public.companion_conversations TO ailearn_worker;
+    GRANT UPDATE ON TABLE public.companion_conversations TO astella_worker;
   END IF;
   IF to_regclass('public.companion_messages') IS NOT NULL THEN
-    GRANT INSERT ON TABLE public.companion_messages TO ailearn_worker;
+    GRANT INSERT ON TABLE public.companion_messages TO astella_worker;
   END IF;
   IF to_regclass('public.companion_turn_runs') IS NOT NULL THEN
-    GRANT UPDATE ON TABLE public.companion_turn_runs TO ailearn_worker;
+    GRANT UPDATE ON TABLE public.companion_turn_runs TO astella_worker;
   END IF;
   IF to_regclass('public.companion_context_handoff_snapshots') IS NOT NULL THEN
-    GRANT INSERT ON TABLE public.companion_context_handoff_snapshots TO ailearn_worker;
-    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.companion_context_handoff_snapshots FROM ailearn_worker;
+    GRANT INSERT ON TABLE public.companion_context_handoff_snapshots TO astella_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.companion_context_handoff_snapshots FROM astella_worker;
   END IF;
   IF to_regclass('public.companion_run_failure_spans') IS NOT NULL THEN
-    GRANT INSERT, UPDATE ON TABLE public.companion_run_failure_spans TO ailearn_worker;
-    REVOKE DELETE, TRUNCATE ON TABLE public.companion_run_failure_spans FROM ailearn_worker;
+    GRANT INSERT, UPDATE ON TABLE public.companion_run_failure_spans TO astella_worker;
+    REVOKE DELETE, TRUNCATE ON TABLE public.companion_run_failure_spans FROM astella_worker;
   END IF;
   IF to_regclass('public.companion_stream_events') IS NOT NULL THEN
-    GRANT INSERT, UPDATE ON TABLE public.companion_stream_events TO ailearn_worker;
+    GRANT INSERT, UPDATE ON TABLE public.companion_stream_events TO astella_worker;
   END IF;
   -- 0238：她答应下来的提醒。worker 要写（schedule_reminder / 到点兑现）也要改
   -- （cancel/missed），但不删行——fired 的提醒是"她说过做到"的凭据。
   IF to_regclass('public.companion_reminders') IS NOT NULL THEN
-    GRANT INSERT, UPDATE ON TABLE public.companion_reminders TO ailearn_worker;
+    GRANT INSERT, UPDATE ON TABLE public.companion_reminders TO astella_worker;
   END IF;
   -- 主动念头：SELECT 在上面的读集合里，这里补写侧。INSERT=落候选，
   -- UPDATE=定稿文本/embedding 与 candidate→delivered/suppressed 的状态机。
   -- 不给 DELETE：念头历史是"她说过什么"的凭据，过期行由 api 侧的 TTL 任务处理。
   IF to_regclass('public.assistant_thoughts') IS NOT NULL THEN
-    GRANT INSERT, UPDATE ON TABLE public.assistant_thoughts TO ailearn_worker;
+    GRANT INSERT, UPDATE ON TABLE public.assistant_thoughts TO astella_worker;
   END IF;
   -- Agent 方案 §5：高风险工具由 **worker** 冻结确认 proposal（旧链路由 API 创建，
   -- 因此这里此前只有 UPDATE）。缺 INSERT 会让所有需确认的写工具在受限角色下
   -- permission denied。worker 仍不删除会话/proposal 数据。
   IF to_regclass('public.companion_action_proposals') IS NOT NULL THEN
-    GRANT INSERT, UPDATE ON TABLE public.companion_action_proposals TO ailearn_worker;
+    GRANT INSERT, UPDATE ON TABLE public.companion_action_proposals TO astella_worker;
   END IF;
   -- Agent 审计面：worker 写入步骤/工具调用行，并更新其终态（取消、过期回收、
   -- 确认结果回填由 API 侧更新，见 0215 的 api UPDATE 授权）。
   IF to_regclass('public.companion_agent_steps') IS NOT NULL THEN
-    GRANT INSERT, UPDATE ON TABLE public.companion_agent_steps TO ailearn_worker;
+    GRANT INSERT, UPDATE ON TABLE public.companion_agent_steps TO astella_worker;
   END IF;
   IF to_regclass('public.companion_agent_tool_calls') IS NOT NULL THEN
-    GRANT INSERT, UPDATE ON TABLE public.companion_agent_tool_calls TO ailearn_worker;
+    GRANT INSERT, UPDATE ON TABLE public.companion_agent_tool_calls TO astella_worker;
   END IF;
   -- 记忆提取器投递箱：写入后回读去重。
   IF to_regclass('public.assistant_deliveries') IS NOT NULL THEN
-    GRANT INSERT ON TABLE public.assistant_deliveries TO ailearn_worker;
+    GRANT INSERT ON TABLE public.assistant_deliveries TO astella_worker;
   END IF;
 
   -- 0173：companion_dialogue read/write phase 需要读取人格并维护记忆
@@ -594,7 +594,7 @@ BEGIN
   LOOP
     IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
       EXECUTE format(
-        'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO ailearn_worker',
+        'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO astella_worker',
         table_name
       );
     END IF;
@@ -604,35 +604,35 @@ BEGIN
     -- last_active_at），并由每日维护 tick 做 >14 天衰减。只给 SELECT 会让这条
     -- UPDATE 在 bootstrap 的 REVOKE ALL 之后静默跳过（调用点按"弱事实"吞错），
     -- 关系状态因此永远停在初值。
-    GRANT SELECT, INSERT, UPDATE ON TABLE public.pet_profiles TO ailearn_worker;
+    GRANT SELECT, INSERT, UPDATE ON TABLE public.pet_profiles TO astella_worker;
   END IF;
   -- Preserve 0348's grants: memory revision triggers invalidate derived methods,
   -- and the worker's existing playbook handlers read, insert and update them.
   IF to_regclass('public.companion_procedural_playbooks') IS NOT NULL THEN
-    GRANT SELECT, INSERT, UPDATE ON TABLE public.companion_procedural_playbooks TO ailearn_worker;
+    GRANT SELECT, INSERT, UPDATE ON TABLE public.companion_procedural_playbooks TO astella_worker;
   END IF;
   IF to_regclass('public.companion_memory_organization_state') IS NOT NULL THEN
-    GRANT SELECT, INSERT, UPDATE ON TABLE public.companion_memory_organization_state TO ailearn_worker;
+    GRANT SELECT, INSERT, UPDATE ON TABLE public.companion_memory_organization_state TO astella_worker;
   END IF;
   IF to_regclass('public.companion_memory_organization_leases') IS NOT NULL THEN
-    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.companion_memory_organization_leases TO ailearn_worker;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.companion_memory_organization_leases TO astella_worker;
   END IF;
   IF to_regclass('public.companion_method_revisions') IS NOT NULL THEN
-    GRANT SELECT, INSERT ON TABLE public.companion_method_revisions TO ailearn_api, ailearn_worker;
-    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.companion_method_revisions FROM ailearn_api, ailearn_worker;
+    GRANT SELECT, INSERT ON TABLE public.companion_method_revisions TO astella_api, astella_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.companion_method_revisions FROM astella_api, astella_worker;
   END IF;
   IF to_regclass('public.companion_method_uses') IS NOT NULL THEN
-    GRANT SELECT, INSERT, UPDATE ON TABLE public.companion_method_uses TO ailearn_api;
-    GRANT SELECT, INSERT ON TABLE public.companion_method_uses TO ailearn_worker;
-    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.companion_method_uses FROM ailearn_worker;
-    REVOKE DELETE, TRUNCATE ON TABLE public.companion_method_uses FROM ailearn_api;
+    GRANT SELECT, INSERT, UPDATE ON TABLE public.companion_method_uses TO astella_api;
+    GRANT SELECT, INSERT ON TABLE public.companion_method_uses TO astella_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.companion_method_uses FROM astella_worker;
+    REVOKE DELETE, TRUNCATE ON TABLE public.companion_method_uses FROM astella_api;
   END IF;
   IF to_regclass('public.companion_persona_profiles') IS NOT NULL THEN
-    GRANT SELECT, INSERT, UPDATE ON TABLE public.companion_persona_profiles TO ailearn_worker;
+    GRANT SELECT, INSERT, UPDATE ON TABLE public.companion_persona_profiles TO astella_worker;
   END IF;
   IF to_regclass('public.companion_persona_profile_versions') IS NOT NULL THEN
-    GRANT SELECT, INSERT ON TABLE public.companion_persona_profile_versions TO ailearn_worker;
-    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.companion_persona_profile_versions FROM ailearn_worker;
+    GRANT SELECT, INSERT ON TABLE public.companion_persona_profile_versions TO astella_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.companion_persona_profile_versions FROM astella_worker;
   END IF;
 
   FOREACH table_name IN ARRAY ARRAY[
@@ -641,25 +641,25 @@ BEGIN
   ]
   LOOP
     IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
-      EXECUTE format('GRANT INSERT ON TABLE public.%I TO ailearn_worker', table_name);
+      EXECUTE format('GRANT INSERT ON TABLE public.%I TO astella_worker', table_name);
     END IF;
   END LOOP;
 
   IF to_regclass('public.sources') IS NOT NULL THEN
-    GRANT UPDATE ON TABLE public.sources TO ailearn_worker;
+    GRANT UPDATE ON TABLE public.sources TO astella_worker;
   END IF;
   IF to_regclass('public.source_segments') IS NOT NULL THEN
-    GRANT INSERT, DELETE ON TABLE public.source_segments TO ailearn_worker;
+    GRANT INSERT, DELETE ON TABLE public.source_segments TO astella_worker;
   END IF;
   IF to_regclass('public.search_documents') IS NOT NULL THEN
-    GRANT DELETE ON TABLE public.search_documents TO ailearn_worker;
+    GRANT DELETE ON TABLE public.search_documents TO astella_worker;
   END IF;
 
   IF to_regclass('public.understanding_events') IS NOT NULL THEN
-    GRANT INSERT ON TABLE public.understanding_events TO ailearn_worker;
+    GRANT INSERT ON TABLE public.understanding_events TO astella_worker;
   END IF;
   IF to_regclass('public.ai_audit_log') IS NOT NULL THEN
-    GRANT INSERT ON TABLE public.ai_audit_log TO ailearn_worker;
+    GRANT INSERT ON TABLE public.ai_audit_log TO astella_worker;
   END IF;
 
   -- companion journey / metrics 写入（迁移授权镜像）
@@ -670,7 +670,7 @@ BEGIN
   LOOP
     IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
       EXECUTE format(
-        'GRANT SELECT, INSERT ON TABLE public.%I TO ailearn_worker',
+        'GRANT SELECT, INSERT ON TABLE public.%I TO astella_worker',
         table_name
       );
     END IF;
@@ -686,7 +686,7 @@ BEGIN
   LOOP
     IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
       EXECUTE format(
-        'GRANT SELECT, INSERT, UPDATE ON TABLE public.%I TO ailearn_worker',
+        'GRANT SELECT, INSERT, UPDATE ON TABLE public.%I TO astella_worker',
         table_name
       );
     END IF;
@@ -700,7 +700,7 @@ BEGIN
   LOOP
     IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
       EXECUTE format(
-        'GRANT SELECT, UPDATE ON TABLE public.%I TO ailearn_worker',
+        'GRANT SELECT, UPDATE ON TABLE public.%I TO astella_worker',
         table_name
       );
     END IF;
@@ -721,14 +721,14 @@ BEGIN
   LOOP
     IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
       EXECUTE format(
-        'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO ailearn_worker',
+        'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO astella_worker',
         table_name
       );
     END IF;
   END LOOP;
 
   -- ─── 方案 20 V2（迁移 0135/0138；与 0142 grant repair 对齐）──────────
-  -- V2 管线以 ailearn_worker（NOBYPASSRLS）直查 V2 表。roles.sql 是唯一
+  -- V2 管线以 astella_worker（NOBYPASSRLS）直查 V2 表。roles.sql 是唯一
   -- 授权源：不镜像的话每次 bootstrap 的 REVOKE ALL 会清掉 0135/0138 的
   -- 迁移授权并导致 worker 管线 permission denied。
   -- 16 张核心表 full CRUD（outbox claim/complete、runs/plans/candidates、
@@ -754,7 +754,7 @@ BEGIN
   LOOP
     IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
       EXECUTE format(
-        'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO ailearn_worker',
+        'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO astella_worker',
         table_name
       );
     END IF;
@@ -763,7 +763,7 @@ BEGIN
   -- capability state：worker 更新/读取 epoch（§18.1）
   IF to_regclass('public.card_content_capability_state') IS NOT NULL THEN
     GRANT SELECT, INSERT, UPDATE ON TABLE public.card_content_capability_state
-      TO ailearn_worker;
+      TO astella_worker;
   END IF;
 
   -- 管线写入/回读表（specs/input snapshots/evidence 域/equivalence/lineage/
@@ -792,7 +792,7 @@ BEGIN
   LOOP
     IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
       EXECUTE format(
-        'GRANT SELECT, INSERT ON TABLE public.%I TO ailearn_worker',
+        'GRANT SELECT, INSERT ON TABLE public.%I TO astella_worker',
         table_name
       );
     END IF;
@@ -800,7 +800,7 @@ BEGIN
 END
 $$;
 
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ailearn_worker;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO astella_worker;
 
 -- SEC-01 expand phase: the Worker may cross workspace boundaries only through
 -- these fixed queue functions.  The functions are created by migrations 0018
@@ -808,7 +808,7 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ailearn_worker;
 -- the pre-migration bootstrap pass safely skips them, while the post-migration
 -- pass revokes ambient access and grants the exact signatures to Worker only.
 REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public
-  FROM PUBLIC, ailearn_api, ailearn_worker;
+  FROM PUBLIC, astella_api, astella_worker;
 
 -- 扩展函数（pg_trgm / pgvector / …）是安装的库代码，不是应用面：它们的 EXECUTE
 -- 默认来自 PUBLIC，上面的 REVOKE 会一并清掉，若不恢复，任何调用都会
@@ -827,7 +827,7 @@ BEGIN
     WHERE n.nspname = 'public'
   LOOP
     EXECUTE format(
-      'GRANT EXECUTE ON FUNCTION %s TO ailearn_migrator, ailearn_api, ailearn_worker', fn.signature
+      'GRANT EXECUTE ON FUNCTION %s TO astella_migrator, astella_api, astella_worker', fn.signature
     );
   END LOOP;
 END
@@ -837,52 +837,52 @@ DO $$
 DECLARE
   fn record;
 BEGIN
-  IF to_regprocedure('public.ailearn_claim_jobs(integer,integer,integer)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_claim_jobs(integer, integer, integer)
-      FROM PUBLIC, ailearn_api;
-    GRANT EXECUTE ON FUNCTION public.ailearn_claim_jobs(integer, integer, integer)
-      TO ailearn_worker;
+  IF to_regprocedure('public.astella_claim_jobs(integer,integer,integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_claim_jobs(integer, integer, integer)
+      FROM PUBLIC, astella_api;
+    GRANT EXECUTE ON FUNCTION public.astella_claim_jobs(integer, integer, integer)
+      TO astella_worker;
   END IF;
 
-  IF to_regprocedure('public.ailearn_reap_stale_jobs(integer,integer)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_reap_stale_jobs(integer, integer)
-      FROM PUBLIC, ailearn_api;
-    GRANT EXECUTE ON FUNCTION public.ailearn_reap_stale_jobs(integer, integer)
-      TO ailearn_worker;
+  IF to_regprocedure('public.astella_reap_stale_jobs(integer,integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_reap_stale_jobs(integer, integer)
+      FROM PUBLIC, astella_api;
+    GRANT EXECUTE ON FUNCTION public.astella_reap_stale_jobs(integer, integer)
+      TO astella_worker;
   END IF;
 
-  IF to_regprocedure('public.ailearn_renew_job_lease(uuid,uuid,text)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_renew_job_lease(uuid, uuid, text)
-      FROM PUBLIC, ailearn_api;
-    GRANT EXECUTE ON FUNCTION public.ailearn_renew_job_lease(uuid, uuid, text)
-      TO ailearn_worker;
+  IF to_regprocedure('public.astella_renew_job_lease(uuid,uuid,text)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_renew_job_lease(uuid, uuid, text)
+      FROM PUBLIC, astella_api;
+    GRANT EXECUTE ON FUNCTION public.astella_renew_job_lease(uuid, uuid, text)
+      TO astella_worker;
   END IF;
 
-  IF to_regprocedure('public.ailearn_finish_job(uuid,uuid,text)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_finish_job(uuid, uuid, text)
-      FROM PUBLIC, ailearn_api;
-    GRANT EXECUTE ON FUNCTION public.ailearn_finish_job(uuid, uuid, text)
-      TO ailearn_worker;
+  IF to_regprocedure('public.astella_finish_job(uuid,uuid,text)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_finish_job(uuid, uuid, text)
+      FROM PUBLIC, astella_api;
+    GRANT EXECUTE ON FUNCTION public.astella_finish_job(uuid, uuid, text)
+      TO astella_worker;
   END IF;
 
-  IF to_regprocedure('public.ailearn_fail_job(uuid,uuid,text,text,integer)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_fail_job(uuid, uuid, text, text, integer)
-      FROM PUBLIC, ailearn_api;
-    GRANT EXECUTE ON FUNCTION public.ailearn_fail_job(uuid, uuid, text, text, integer)
-      TO ailearn_worker;
+  IF to_regprocedure('public.astella_fail_job(uuid,uuid,text,text,integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_fail_job(uuid, uuid, text, text, integer)
+      FROM PUBLIC, astella_api;
+    GRANT EXECUTE ON FUNCTION public.astella_fail_job(uuid, uuid, text, text, integer)
+      TO astella_worker;
   END IF;
 
-  IF to_regprocedure('public.ailearn_queue_job_depth()') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_queue_job_depth()
-      FROM PUBLIC, ailearn_api;
-    GRANT EXECUTE ON FUNCTION public.ailearn_queue_job_depth()
-      TO ailearn_worker;
+  IF to_regprocedure('public.astella_queue_job_depth()') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_queue_job_depth()
+      FROM PUBLIC, astella_api;
+    GRANT EXECUTE ON FUNCTION public.astella_queue_job_depth()
+      TO astella_worker;
   END IF;
-  IF to_regprocedure('public.ailearn_queue_oldest_pending_age()') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_queue_oldest_pending_age()
-      FROM PUBLIC, ailearn_api;
-    GRANT EXECUTE ON FUNCTION public.ailearn_queue_oldest_pending_age()
-      TO ailearn_worker;
+  IF to_regprocedure('public.astella_queue_oldest_pending_age()') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_queue_oldest_pending_age()
+      FROM PUBLIC, astella_api;
+    GRANT EXECUTE ON FUNCTION public.astella_queue_oldest_pending_age()
+      TO astella_worker;
   END IF;
 
   -- 桌宠记忆 embedding 写入需要 vector 类型 input function
@@ -891,176 +891,176 @@ BEGIN
   -- 拒绝非白名单 EXECUTE）。
   IF to_regprocedure('public.vector_in(cstring,oid,integer)') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.vector_in(cstring, oid, integer)
-      TO ailearn_worker;
+      TO astella_worker;
   END IF;
   IF to_regprocedure('public.vector(vector,integer,boolean)') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.vector(vector, integer, boolean)
-      TO ailearn_worker;
+      TO astella_worker;
   END IF;
 
   -- 0171/0172/0174：方案 22 桌宠日记/记忆维护 SECURITY DEFINER 函数。
   -- roles.sql 的 REVOKE ALL ON ALL FUNCTIONS 会清掉迁移中的 GRANT EXECUTE，
   -- 必须在此重新授予，否则 worker 每分钟 tick 报 permission denied。
-  IF to_regprocedure('public.ailearn_enqueue_companion_daily_summaries()') IS NOT NULL THEN
-    GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_companion_daily_summaries()
-      TO ailearn_worker;
+  IF to_regprocedure('public.astella_enqueue_companion_daily_summaries()') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_daily_summaries()
+      TO astella_worker;
   END IF;
-  IF to_regprocedure('public.ailearn_run_companion_memory_maintenance()') IS NOT NULL THEN
-    GRANT EXECUTE ON FUNCTION public.ailearn_run_companion_memory_maintenance()
-      TO ailearn_worker;
+  IF to_regprocedure('public.astella_run_companion_memory_maintenance()') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_run_companion_memory_maintenance()
+      TO astella_worker;
   END IF;
   -- 0217：失效 companion 确认的定时兜底回收（方案 §5）。同样必须镜像，
   -- 否则 bootstrap 后 worker 每轮 tick 都会 permission denied，过期确认
   -- 无人回收 → run 永久停在 waiting_for_confirmation 并锁死该会话。
-  IF to_regprocedure('public.ailearn_reclaim_stale_companion_proposals()') IS NOT NULL THEN
-    GRANT EXECUTE ON FUNCTION public.ailearn_reclaim_stale_companion_proposals()
-      TO ailearn_worker;
+  IF to_regprocedure('public.astella_reclaim_stale_companion_proposals()') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_reclaim_stale_companion_proposals()
+      TO astella_worker;
   END IF;
   -- 0227/0231 念头批量生成入队 + 0232 孤儿 run 回收。两支都是 worker 侧定时器
   -- 调用的 SECURITY DEFINER 函数，缺授权时**不会有任何用户可见报错**：前者让
   -- assistant_thoughts 恒 0 行（"完全没感知到主动提醒"），后者让卡住的会话
   -- 永远停在"正在思考"。
-  IF to_regprocedure('public.ailearn_enqueue_companion_thoughts()') IS NOT NULL THEN
-    GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_companion_thoughts()
-      TO ailearn_worker;
+  IF to_regprocedure('public.astella_enqueue_companion_thoughts()') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_thoughts()
+      TO astella_worker;
   END IF;
-  IF to_regprocedure('public.ailearn_reclaim_orphaned_companion_runs()') IS NOT NULL THEN
-    GRANT EXECUTE ON FUNCTION public.ailearn_reclaim_orphaned_companion_runs()
-      TO ailearn_worker;
+  IF to_regprocedure('public.astella_reclaim_orphaned_companion_runs()') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_reclaim_orphaned_companion_runs()
+      TO astella_worker;
   END IF;
   -- 0238：到点提醒认领。同样必须镜像，否则 worker 每分钟 tick 都 permission
   -- denied，而它一条日志都不会暴露给用户——"她答应提醒我却没有"就这么静默着。
-  IF to_regprocedure('public.ailearn_fire_due_companion_reminders(integer)') IS NOT NULL THEN
-    GRANT EXECUTE ON FUNCTION public.ailearn_fire_due_companion_reminders(integer)
-      TO ailearn_worker;
+  IF to_regprocedure('public.astella_fire_due_companion_reminders(integer)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_fire_due_companion_reminders(integer)
+      TO astella_worker;
   END IF;
 
   -- 0267：跨空间记忆铺开。`companion-memory-extractor` 在提升一条 global 记忆时
   -- 显式 SELECT 这一支，所以 worker 必须有 EXECUTE。
   --
   -- 这一条曾经漏过：0267 自己 GRANT 了，但本文件上面那句
-  -- `REVOKE ALL PRIVILEGES ON ALL FUNCTIONS ... FROM PUBLIC, ailearn_api, ailearn_worker`
+  -- `REVOKE ALL PRIVILEGES ON ALL FUNCTIONS ... FROM PUBLIC, astella_api, astella_worker`
   -- 会把迁移里的授权整个抹掉，只在**本文件重新 GRANT 过的**才活下来。而下面那份
   -- "预期权限"清单只抓**多出来的**授权、抓不到**缺失的**，所以 role-bootstrap 不报、
   -- 调用方又把它 catch 成一行 warn——症状是"另一个空间怎么不记得"，查无实据（doc 34 L8）。
-  IF to_regprocedure('public.ailearn_fanout_global_companion_memory(uuid)') IS NOT NULL THEN
-    ALTER FUNCTION public.ailearn_fanout_global_companion_memory(uuid) OWNER TO ailearn_migrator;
-    REVOKE ALL ON FUNCTION public.ailearn_fanout_global_companion_memory(uuid)
-      FROM PUBLIC, ailearn_api;
-    GRANT EXECUTE ON FUNCTION public.ailearn_fanout_global_companion_memory(uuid)
-      TO ailearn_worker;
+  IF to_regprocedure('public.astella_fanout_global_companion_memory(uuid)') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_fanout_global_companion_memory(uuid) OWNER TO astella_migrator;
+    REVOKE ALL ON FUNCTION public.astella_fanout_global_companion_memory(uuid)
+      FROM PUBLIC, astella_api;
+    GRANT EXECUTE ON FUNCTION public.astella_fanout_global_companion_memory(uuid)
+      TO astella_worker;
   END IF;
-  IF to_regprocedure('public.ailearn_sync_global_companion_memory_copies()') IS NOT NULL THEN
-    ALTER FUNCTION public.ailearn_sync_global_companion_memory_copies() OWNER TO ailearn_migrator;
+  IF to_regprocedure('public.astella_sync_global_companion_memory_copies()') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_sync_global_companion_memory_copies() OWNER TO astella_migrator;
   END IF;
-  IF to_regprocedure('public.ailearn_fanout_agent_global_preference(uuid)') IS NOT NULL THEN
-    ALTER FUNCTION public.ailearn_fanout_agent_global_preference(uuid) OWNER TO ailearn_migrator;
-    REVOKE ALL ON FUNCTION public.ailearn_fanout_agent_global_preference(uuid) FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_fanout_agent_global_preference(uuid) TO ailearn_api;
+  IF to_regprocedure('public.astella_fanout_agent_global_preference(uuid)') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_fanout_agent_global_preference(uuid) OWNER TO astella_migrator;
+    REVOKE ALL ON FUNCTION public.astella_fanout_agent_global_preference(uuid) FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_fanout_agent_global_preference(uuid) TO astella_api;
   END IF;
   -- 0343：worker 不获得 assistant_deliveries 的 UPDATE 权限，只能在一次记忆
   -- 遗忘/修订已完成后，调用这个带 owner/workspace/memory 三重约束的收尾函数。
-  IF to_regprocedure('public.ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_close_companion_memory_delivery(uuid, uuid, uuid, text)
-      FROM PUBLIC, ailearn_api;
-    GRANT EXECUTE ON FUNCTION public.ailearn_close_companion_memory_delivery(uuid, uuid, uuid, text)
-      TO ailearn_worker;
+  IF to_regprocedure('public.astella_close_companion_memory_delivery(uuid,uuid,uuid,text)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_close_companion_memory_delivery(uuid, uuid, uuid, text)
+      FROM PUBLIC, astella_api;
+    GRANT EXECUTE ON FUNCTION public.astella_close_companion_memory_delivery(uuid, uuid, uuid, text)
+      TO astella_worker;
   END IF;
-  IF to_regprocedure('public.ailearn_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_move_companion_memory_budget_tier_v1(uuid, uuid, uuid, text, text, uuid)
+  IF to_regprocedure('public.astella_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_move_companion_memory_budget_tier_v1(uuid, uuid, uuid, text, text, uuid)
       FROM PUBLIC;
-    GRANT EXECUTE ON FUNCTION public.ailearn_move_companion_memory_budget_tier_v1(uuid, uuid, uuid, text, text, uuid)
-      TO ailearn_api, ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_move_companion_memory_budget_tier_v1(uuid, uuid, uuid, text, text, uuid)
+      TO astella_api, astella_worker;
   END IF;
 
   -- 0345–0362：回收区恢复、期限维护与记忆整理。上方的全量 REVOKE 会
   -- 清掉迁移授权；在这里按原有调用角色恢复，并与下面的允许/必需清单对账。
   FOR fn IN SELECT * FROM (VALUES
-    ('public.ailearn_restore_companion_memory(uuid,uuid,uuid)', 'ailearn_api'),
-    ('public.ailearn_purge_expired_companion_memory()', 'ailearn_api, ailearn_worker'),
-    ('public.ailearn_companion_memory_retention_limits()', 'ailearn_api, ailearn_worker'),
-    ('public.ailearn_enforce_companion_memory_retention()', 'ailearn_api, ailearn_worker'),
-    ('public.ailearn_reclaim_stale_memory_organization_leases()', 'ailearn_worker'),
-    ('public.ailearn_commit_memory_organization(uuid,uuid,text,text,integer)', 'ailearn_worker'),
-    ('public.ailearn_enqueue_companion_memory_organize()', 'ailearn_worker'),
-    ('public.ailearn_companion_memory_organization_thresholds()', 'ailearn_worker')
+    ('public.astella_restore_companion_memory(uuid,uuid,uuid)', 'astella_api'),
+    ('public.astella_purge_expired_companion_memory()', 'astella_api, astella_worker'),
+    ('public.astella_companion_memory_retention_limits()', 'astella_api, astella_worker'),
+    ('public.astella_enforce_companion_memory_retention()', 'astella_api, astella_worker'),
+    ('public.astella_reclaim_stale_memory_organization_leases()', 'astella_worker'),
+    ('public.astella_commit_memory_organization(uuid,uuid,text,text,integer)', 'astella_worker'),
+    ('public.astella_enqueue_companion_memory_organize()', 'astella_worker'),
+    ('public.astella_companion_memory_organization_thresholds()', 'astella_worker')
   ) AS required(signature, roles) LOOP
     IF to_regprocedure(fn.signature) IS NOT NULL THEN
       EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO %s', fn.signature, fn.roles);
     END IF;
   END LOOP;
 
-  -- 0273：成员退出/被移出时收掉该空间的记忆（doc 34 L38）。调用方是 ailearn_api
+  -- 0273：成员退出/被移出时收掉该空间的记忆（doc 34 L38）。调用方是 astella_api
   -- （leave / removeMember 两条路），函数本身 SECURITY DEFINER 才能越过
   -- "app.user_id 必须等于行的 user_id" 那条策略——否则 owner 移人时恒匹配 0 行。
   -- 0276：解散协作空间（doc 34 L6 的 ②）。逐表清理由函数内部按 catalog 生成清单完成，
-  -- 必须是 SECURITY DEFINER；发起者只有 ailearn_api（路由层已经判过 owner/个人空间两道门卫）。
-  IF to_regprocedure('public.ailearn_dissolve_workspace(uuid,uuid)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_dissolve_workspace(uuid, uuid)
+  -- 必须是 SECURITY DEFINER；发起者只有 astella_api（路由层已经判过 owner/个人空间两道门卫）。
+  IF to_regprocedure('public.astella_dissolve_workspace(uuid,uuid)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_dissolve_workspace(uuid, uuid)
       FROM PUBLIC;
-    GRANT EXECUTE ON FUNCTION public.ailearn_dissolve_workspace(uuid, uuid)
-      TO ailearn_api;
+    GRANT EXECUTE ON FUNCTION public.astella_dissolve_workspace(uuid, uuid)
+      TO astella_api;
   END IF;
 
-  IF to_regprocedure('public.ailearn_retire_workspace_memories_on_departure(uuid,uuid)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_retire_workspace_memories_on_departure(uuid, uuid)
+  IF to_regprocedure('public.astella_retire_workspace_memories_on_departure(uuid,uuid)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_retire_workspace_memories_on_departure(uuid, uuid)
       FROM PUBLIC;
-    GRANT EXECUTE ON FUNCTION public.ailearn_retire_workspace_memories_on_departure(uuid, uuid)
-      TO ailearn_api;
+    GRANT EXECUTE ON FUNCTION public.astella_retire_workspace_memories_on_departure(uuid, uuid)
+      TO astella_api;
   END IF;
 
   -- 0174：pgvector 距离函数（记忆向量检索由 worker 执行；api 检索也需调用）。
   -- vector 和 halfvec 签名均需授权。
   IF to_regprocedure('public.cosine_distance(vector,vector)') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.cosine_distance(vector, vector)
-      TO ailearn_worker;
+      TO astella_worker;
     GRANT EXECUTE ON FUNCTION public.cosine_distance(vector, vector)
-      TO ailearn_api;
+      TO astella_api;
   END IF;
   IF to_regprocedure('public.l2_distance(vector,vector)') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.l2_distance(vector, vector)
-      TO ailearn_worker;
+      TO astella_worker;
     GRANT EXECUTE ON FUNCTION public.l2_distance(vector, vector)
-      TO ailearn_api;
+      TO astella_api;
   END IF;
   IF to_regprocedure('public.inner_product(vector,vector)') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.inner_product(vector, vector)
-      TO ailearn_worker;
+      TO astella_worker;
     GRANT EXECUTE ON FUNCTION public.inner_product(vector, vector)
-      TO ailearn_api;
+      TO astella_api;
   END IF;
   IF to_regprocedure('public.cosine_distance(halfvec,halfvec)') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.cosine_distance(halfvec, halfvec)
-      TO ailearn_worker;
+      TO astella_worker;
   END IF;
   IF to_regprocedure('public.l2_distance(halfvec,halfvec)') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.l2_distance(halfvec, halfvec)
-      TO ailearn_worker;
+      TO astella_worker;
   END IF;
   IF to_regprocedure('public.inner_product(halfvec,halfvec)') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.inner_product(halfvec, halfvec)
-      TO ailearn_worker;
+      TO astella_worker;
   END IF;
 
   -- 0098：TTL 清理函数经 SECURITY DEFINER（migrator owner BYPASSRLS）执行，
   -- 由 API 进程（server.ts 每 6 小时定时）调用——API 需要 EXECUTE。
-  IF to_regprocedure('public.ailearn_purge_companion_audit_ttl(integer,integer)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_purge_companion_audit_ttl(integer, integer)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_purge_companion_audit_ttl(integer, integer)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_purge_companion_audit_ttl(integer,integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_purge_companion_audit_ttl(integer, integer)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_purge_companion_audit_ttl(integer, integer)
+      TO astella_api;
   END IF;
-  IF to_regprocedure('public.ailearn_purge_invitation_ledger_ttl(integer,integer)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_purge_invitation_ledger_ttl(integer, integer)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_purge_invitation_ledger_ttl(integer, integer)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_purge_invitation_ledger_ttl(integer,integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_purge_invitation_ledger_ttl(integer, integer)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_purge_invitation_ledger_ttl(integer, integer)
+      TO astella_api;
   END IF;
-  IF to_regprocedure('public.ailearn_purge_tutor_nonces_ttl(integer,integer)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_purge_tutor_nonces_ttl(integer, integer)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_purge_tutor_nonces_ttl(integer, integer)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_purge_tutor_nonces_ttl(integer,integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_purge_tutor_nonces_ttl(integer, integer)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_purge_tutor_nonces_ttl(integer, integer)
+      TO astella_api;
   END IF;
 
   -- API 侧独占的 SECURITY DEFINER 函数（跨租户批处理 / TTL 清理 / journey 查询）。
@@ -1071,159 +1071,172 @@ BEGIN
   -- 逐条列出而非按前缀放行：worker 专用函数必须继续保持 api 无权（见下方校验）。
   -- 0286：轮次空闲暂停的候选预筛（SECURITY DEFINER／migrator owner BYPASSRLS 才能越过
   -- FORCE RLS 挑候选）。调用方是 API 进程里那条定时对账，**不给 worker**（D1 §6.5）。
-  IF to_regprocedure('public.ailearn_note_rounds_idle_for_pause(integer)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_note_rounds_idle_for_pause(integer)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_note_rounds_idle_for_pause(integer)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_note_rounds_idle_for_pause(integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_note_rounds_idle_for_pause(integer)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_note_rounds_idle_for_pause(integer)
+      TO astella_api;
   END IF;
 
-  IF to_regprocedure('public.ailearn_claim_run_processing(text,integer,integer,timestamp with time zone)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_claim_run_processing(text, integer, integer, timestamp with time zone)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_claim_run_processing(text, integer, integer, timestamp with time zone)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_claim_run_processing(text,integer,integer,timestamp with time zone)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_claim_run_processing(text, integer, integer, timestamp with time zone)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_claim_run_processing(text, integer, integer, timestamp with time zone)
+      TO astella_api;
   END IF;
-  IF to_regprocedure('public.ailearn_mark_run_processing_processed(uuid,text,timestamp with time zone)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_mark_run_processing_processed(uuid, text, timestamp with time zone)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_mark_run_processing_processed(uuid, text, timestamp with time zone)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_mark_run_processing_processed(uuid,text,timestamp with time zone)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_mark_run_processing_processed(uuid, text, timestamp with time zone)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_mark_run_processing_processed(uuid, text, timestamp with time zone)
+      TO astella_api;
   END IF;
-  IF to_regprocedure('public.ailearn_expire_pending_voice_artifacts(integer)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_expire_pending_voice_artifacts(integer)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_expire_pending_voice_artifacts(integer)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_expire_pending_voice_artifacts(integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_expire_pending_voice_artifacts(integer)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_expire_pending_voice_artifacts(integer)
+      TO astella_api;
   END IF;
-  IF to_regprocedure('public.ailearn_purge_companion_stream_events_ttl(integer)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_purge_companion_stream_events_ttl(integer)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_purge_companion_stream_events_ttl(integer)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_purge_companion_stream_events_ttl(integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_purge_companion_stream_events_ttl(integer)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_purge_companion_stream_events_ttl(integer)
+      TO astella_api;
   END IF;
-  IF to_regprocedure('public.ailearn_purge_expired_proactive_deliveries(integer)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_purge_expired_proactive_deliveries(integer)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_purge_expired_proactive_deliveries(integer)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_purge_expired_proactive_deliveries(integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_purge_expired_proactive_deliveries(integer)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_purge_expired_proactive_deliveries(integer)
+      TO astella_api;
   END IF;
-  IF to_regprocedure('public.ailearn_purge_old_ai_audit_log(integer,integer)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_purge_old_ai_audit_log(integer, integer)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_purge_old_ai_audit_log(integer, integer)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_purge_old_ai_audit_log(integer,integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_purge_old_ai_audit_log(integer, integer)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_purge_old_ai_audit_log(integer, integer)
+      TO astella_api;
   END IF;
-  IF to_regprocedure('public.ailearn_find_resumable_companion_journey(uuid,uuid)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_find_resumable_companion_journey(uuid, uuid)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_find_resumable_companion_journey(uuid, uuid)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_find_resumable_companion_journey(uuid,uuid)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_find_resumable_companion_journey(uuid, uuid)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_find_resumable_companion_journey(uuid, uuid)
+      TO astella_api;
   END IF;
 
   -- 0365：运维管理面板（/admin/*）的跨租户只读视图。
   --
   -- 与上面同族（SECURITY DEFINER／migrator owner BYPASSRLS／只给 api），但**不给
   -- worker** 的理由不同：worker 的队列健康度走它自己的 /metrics，那里有
-  -- `ailearn_job_queue_depth{status}`。这四支回答的是另一个问题——
+  -- `astella_job_queue_depth{status}`。这四支回答的是另一个问题——
   -- 「哪一类**作业类型**在堆积」（0098 的既有函数只按 status 聚合，答不出）、
   -- 「最近哪条作业失败了」、「谁刚做了高危动作」，都是运维视角的全局事实。
   -- 让 worker 读审计没有对应调用方，因此按 job/queue 那一族的先例不给。
-  IF to_regprocedure('public.ailearn_admin_job_backlog()') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_admin_job_backlog()
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_admin_job_backlog()
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_admin_job_backlog()') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_admin_job_backlog()
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_admin_job_backlog()
+      TO astella_api;
   END IF;
-  IF to_regprocedure('public.ailearn_admin_recent_job_failures(integer)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_admin_recent_job_failures(integer)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_admin_recent_job_failures(integer)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_admin_recent_job_failures(integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_admin_recent_job_failures(integer)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_admin_recent_job_failures(integer)
+      TO astella_api;
   END IF;
-  IF to_regprocedure('public.ailearn_admin_recent_audit(integer)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_admin_recent_audit(integer)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_admin_recent_audit(integer)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_admin_recent_audit(integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_admin_recent_audit(integer)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_admin_recent_audit(integer)
+      TO astella_api;
   END IF;
-  IF to_regprocedure('public.ailearn_admin_platform_counts()') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_admin_platform_counts()
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_admin_platform_counts()
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_admin_platform_counts()') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_admin_platform_counts()
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_admin_platform_counts()
+      TO astella_api;
   END IF;
 
   -- 0366：运维面板的**写**操作（重试失败作业 / 清理死信）。
   -- 同样只给 api 不给 worker：人工重试与删除是运维的决定，不是队列消费者的事。
-  IF to_regprocedure('public.ailearn_admin_retry_failed_jobs(text,integer)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_admin_retry_failed_jobs(text, integer)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_admin_retry_failed_jobs(text, integer)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_admin_retry_failed_jobs(text,integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_admin_retry_failed_jobs(text, integer)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_admin_retry_failed_jobs(text, integer)
+      TO astella_api;
   END IF;
-  IF to_regprocedure('public.ailearn_admin_purge_dead_jobs(text,integer)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_admin_purge_dead_jobs(text, integer)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_admin_purge_dead_jobs(text, integer)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_admin_purge_dead_jobs(text,integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_admin_purge_dead_jobs(text, integer)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_admin_purge_dead_jobs(text, integer)
+      TO astella_api;
   END IF;
 
   -- 2026-09-29（P0-4，`users` 表 RLS）：两支 `users` 策略要用的窄口径函数。
   --
-  -- `ailearn_find_user_by_email` 是登录路径：登录发生在会话建立**之前**，
+  -- `astella_find_user_by_email` 是登录路径：登录发生在会话建立**之前**，
   -- app.user_id / app.workspace_id 都还没设，裸查表必然被 RLS 挡成 0 行
   -- ——那就是"所有人都登不进来"。
-  -- `ailearn_user_in_workspace` 是策略 2.3 的判据：**必须** SECURITY DEFINER，
+  -- `astella_user_in_workspace` 是策略 2.3 的判据：**必须** SECURITY DEFINER，
   -- 因为 workspace_members 自己有 RLS，策略里写裸 EXISTS 会被它收窄成
   -- "只看自己那一行"，于是同空间的其他成员读不到（invite-service 批量取 email 会空）。
-  IF to_regprocedure('public.ailearn_find_user_by_email(text)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_find_user_by_email(text)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_find_user_by_email(text)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_find_user_by_email(text)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_find_user_by_email(text)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_find_user_by_email(text)
+      TO astella_api;
   END IF;
 
-  IF to_regprocedure('public.ailearn_user_in_workspace(uuid, uuid)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_user_in_workspace(uuid, uuid)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_user_in_workspace(uuid, uuid)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_user_in_workspace(uuid, uuid)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_user_in_workspace(uuid, uuid)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_user_in_workspace(uuid, uuid)
+      TO astella_api;
   END IF;
 
   -- Exact model input is available only through a run-owner-scoped replay
   -- function; direct API access to the worker snapshot table remains revoked.
-  IF to_regprocedure('public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)') IS NOT NULL THEN
-    REVOKE ALL ON FUNCTION public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)
-      TO ailearn_api;
+  IF to_regprocedure('public.astella_read_companion_turn_handoff_snapshot_v1(uuid)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_read_companion_turn_handoff_snapshot_v1(uuid)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_read_companion_turn_handoff_snapshot_v1(uuid)
+      TO astella_api;
   END IF;
 END
 $$;
 
 -- Drizzle readiness only needs to inspect the journal.  The worker does not
 -- need migration metadata and therefore receives no drizzle-schema grant.
+--
+-- 这一块原先整个包在 `IF journal 表已存在` 里，而 role-bootstrap 跑在 migrate
+-- **之前**——全新卷上那张表还不存在，于是 api 拿不到 drizzle 的任何权限，
+-- 第一次 `make up` 必然 unhealthy，得再 up 一次（init 容器被删掉重跑）才补上。
+-- 现在不依赖先后：schema 是本文件上面建的，USAGE 直接授；journal 表由 migrate
+-- 之后创建，用 DEFAULT PRIVILEGES 覆盖它。**两条都要**：生产由 astella_migrator
+-- 建表，而 dev 的 DATABASE_URL_MIGRATOR 指向超级用户 astella（见 docker-compose.dev.yml
+-- 的 &dev-database 锚点），只写 migrator 那条在 dev 上正好落空。
+-- 保留 DO 块：更早的库里表已经存在时，默认权限管不到它。
+GRANT USAGE ON SCHEMA drizzle TO astella_api;
+ALTER DEFAULT PRIVILEGES FOR ROLE astella_migrator IN SCHEMA drizzle
+  GRANT SELECT ON TABLES TO astella_api;
+ALTER DEFAULT PRIVILEGES FOR ROLE astella IN SCHEMA drizzle
+  GRANT SELECT ON TABLES TO astella_api;
 DO $$
 BEGIN
   IF to_regclass('drizzle.__drizzle_migrations') IS NOT NULL THEN
-    GRANT USAGE ON SCHEMA drizzle TO ailearn_api;
-    GRANT SELECT ON TABLE drizzle.__drizzle_migrations TO ailearn_api;
-    GRANT ALL PRIVILEGES ON TABLE drizzle.__drizzle_migrations TO ailearn_migrator;
+    GRANT SELECT ON TABLE drizzle.__drizzle_migrations TO astella_api;
+    GRANT ALL PRIVILEGES ON TABLE drizzle.__drizzle_migrations TO astella_migrator;
   END IF;
 END
 $$;
 
 -- New objects created by the migrator receive the same baseline defaults.
-ALTER DEFAULT PRIVILEGES FOR ROLE ailearn_migrator IN SCHEMA public
+ALTER DEFAULT PRIVILEGES FOR ROLE astella_migrator IN SCHEMA public
   REVOKE ALL ON TABLES FROM PUBLIC;
-ALTER DEFAULT PRIVILEGES FOR ROLE ailearn_migrator IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ailearn_api;
-ALTER DEFAULT PRIVILEGES FOR ROLE ailearn_migrator IN SCHEMA public
-  GRANT USAGE, SELECT ON SEQUENCES TO ailearn_api;
-ALTER DEFAULT PRIVILEGES FOR ROLE ailearn_migrator IN SCHEMA public
+ALTER DEFAULT PRIVILEGES FOR ROLE astella_migrator IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO astella_api;
+ALTER DEFAULT PRIVILEGES FOR ROLE astella_migrator IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO astella_api;
+ALTER DEFAULT PRIVILEGES FOR ROLE astella_migrator IN SCHEMA public
   REVOKE ALL ON SEQUENCES FROM PUBLIC;
-ALTER DEFAULT PRIVILEGES FOR ROLE ailearn_migrator IN SCHEMA public
+ALTER DEFAULT PRIVILEGES FOR ROLE astella_migrator IN SCHEMA public
   REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 
 -- Worker privileges are deliberately not granted by default.  This script is
@@ -1243,11 +1256,11 @@ BEGIN
       AND t.typtype IN ('e', 'd')
   LOOP
     EXECUTE format(
-      'GRANT USAGE ON TYPE %I.%I TO ailearn_api, ailearn_worker',
+      'GRANT USAGE ON TYPE %I.%I TO astella_api, astella_worker',
       obj.nspname, obj.typname
     );
     EXECUTE format(
-      'GRANT USAGE ON TYPE %I.%I TO ailearn_migrator',
+      'GRANT USAGE ON TYPE %I.%I TO astella_migrator',
       obj.nspname, obj.typname
     );
   END LOOP;
@@ -1258,44 +1271,44 @@ $$;
 DO $$ DECLARE t text; BEGIN
   FOREACH t IN ARRAY ARRAY['agent_runs','agent_operations','agent_run_steps','agent_run_events'] LOOP
     IF to_regclass(format('public.%I',t)) IS NOT NULL THEN
-      EXECUTE format('GRANT SELECT,INSERT,UPDATE ON TABLE public.%I TO ailearn_worker',t);
+      EXECUTE format('GRANT SELECT,INSERT,UPDATE ON TABLE public.%I TO astella_worker',t);
     END IF;
   END LOOP;
   IF to_regclass('public.agent_run_events_seq_seq') IS NOT NULL THEN
-    GRANT USAGE,SELECT ON SEQUENCE public.agent_run_events_seq_seq TO ailearn_worker;
+    GRANT USAGE,SELECT ON SEQUENCE public.agent_run_events_seq_seq TO astella_worker;
   END IF;
-  FOREACH t IN ARRAY ARRAY['ailearn_agent_scope_current(uuid,uuid)','ailearn_enqueue_agent_recovery()',
-    'ailearn_cancel_agent_operations(uuid,integer)','ailearn_agent_job_current(uuid,uuid,uuid,boolean)',
-    'ailearn_agent_run_authorized(uuid)',
-    'ailearn_agent_card_job_current(uuid,uuid,boolean)',
-    'ailearn_agent_card_execution_binding(uuid,uuid)',
-    'ailearn_propagate_playbook_evidence_change()',
-    'ailearn_enforce_companion_memory_retention()',
-    'ailearn_companion_memory_retention_limits()',
-    'ailearn_commit_memory_organization(uuid,uuid,text,text,integer)',
-    'ailearn_agent_card_run_event()','ailearn_agent_job_event()'] LOOP
+  FOREACH t IN ARRAY ARRAY['astella_agent_scope_current(uuid,uuid)','astella_enqueue_agent_recovery()',
+    'astella_cancel_agent_operations(uuid,integer)','astella_agent_job_current(uuid,uuid,uuid,boolean)',
+    'astella_agent_run_authorized(uuid)',
+    'astella_agent_card_job_current(uuid,uuid,boolean)',
+    'astella_agent_card_execution_binding(uuid,uuid)',
+    'astella_propagate_playbook_evidence_change()',
+    'astella_enforce_companion_memory_retention()',
+    'astella_companion_memory_retention_limits()',
+    'astella_commit_memory_organization(uuid,uuid,text,text,integer)',
+    'astella_agent_card_run_event()','astella_agent_job_event()'] LOOP
     IF to_regprocedure('public.' || t) IS NOT NULL THEN
-      EXECUTE format('ALTER FUNCTION %s OWNER TO ailearn_migrator',to_regprocedure('public.' || t));
+      EXECUTE format('ALTER FUNCTION %s OWNER TO astella_migrator',to_regprocedure('public.' || t));
     END IF;
   END LOOP;
-  IF to_regprocedure('public.ailearn_enqueue_agent_recovery()') IS NOT NULL THEN
-    GRANT EXECUTE ON FUNCTION public.ailearn_agent_scope_current(uuid,uuid) TO ailearn_api,ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_agent_recovery() TO ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_cancel_agent_operations(uuid,integer) TO ailearn_api,ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_agent_job_current(uuid,uuid,uuid,boolean) TO ailearn_worker;
+  IF to_regprocedure('public.astella_enqueue_agent_recovery()') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_agent_scope_current(uuid,uuid) TO astella_api,astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_enqueue_agent_recovery() TO astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_cancel_agent_operations(uuid,integer) TO astella_api,astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_agent_job_current(uuid,uuid,uuid,boolean) TO astella_worker;
   END IF;
-  IF to_regprocedure('public.ailearn_agent_run_authorized(uuid)') IS NOT NULL THEN
-    GRANT EXECUTE ON FUNCTION public.ailearn_agent_run_authorized(uuid) TO ailearn_worker;
+  IF to_regprocedure('public.astella_agent_run_authorized(uuid)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_agent_run_authorized(uuid) TO astella_worker;
   END IF;
-  IF to_regprocedure('public.ailearn_agent_method_sources_current(uuid,uuid,uuid)') IS NOT NULL THEN
-    GRANT EXECUTE ON FUNCTION public.ailearn_agent_method_sources_current(uuid,uuid,uuid) TO ailearn_api, ailearn_worker;
+  IF to_regprocedure('public.astella_agent_method_sources_current(uuid,uuid,uuid)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_agent_method_sources_current(uuid,uuid,uuid) TO astella_api, astella_worker;
   END IF;
   -- 升级前的 roles 引导也会执行：0373 尚未安装时跳过新函数。
-  IF to_regprocedure('public.ailearn_agent_card_job_current(uuid,uuid,boolean)') IS NOT NULL THEN
-    GRANT EXECUTE ON FUNCTION public.ailearn_agent_card_job_current(uuid,uuid,boolean) TO ailearn_worker;
+  IF to_regprocedure('public.astella_agent_card_job_current(uuid,uuid,boolean)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_agent_card_job_current(uuid,uuid,boolean) TO astella_worker;
   END IF;
-  IF to_regprocedure('public.ailearn_agent_card_execution_binding(uuid,uuid)') IS NOT NULL THEN
-    GRANT EXECUTE ON FUNCTION public.ailearn_agent_card_execution_binding(uuid,uuid) TO ailearn_worker;
+  IF to_regprocedure('public.astella_agent_card_execution_binding(uuid,uuid)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_agent_card_execution_binding(uuid,uuid) TO astella_worker;
   END IF;
   -- 触发器函数（jobs 上的 agent_job_event、制卡 run 上的 agent_card_run_event）不给任何
   -- 角色 EXECUTE：触发执行不查 session 用户的权限。
@@ -1310,37 +1323,37 @@ DECLARE
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_roles
-    WHERE rolname = 'ailearn_migrator'
+    WHERE rolname = 'astella_migrator'
       AND rolcanlogin AND NOT rolsuper AND NOT rolcreatedb
       AND NOT rolcreaterole AND NOT rolinherit AND rolbypassrls
   ) THEN
-    RAISE EXCEPTION 'ailearn_migrator role attributes are invalid';
+    RAISE EXCEPTION 'astella_migrator role attributes are invalid';
   END IF;
   IF EXISTS (
     SELECT 1 FROM pg_roles
-    WHERE rolname IN ('ailearn_api', 'ailearn_worker')
+    WHERE rolname IN ('astella_api', 'astella_worker')
       AND (
         NOT rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole
         OR rolinherit OR rolbypassrls
       )
   ) OR (
     SELECT count(*) FROM pg_roles
-    WHERE rolname IN ('ailearn_api', 'ailearn_worker')
+    WHERE rolname IN ('astella_api', 'astella_worker')
   ) <> 2 THEN
     RAISE EXCEPTION 'API/Worker role attributes are invalid';
   END IF;
 
   IF NOT has_database_privilege(
-    'ailearn_migrator', current_database(), 'CREATE'
+    'astella_migrator', current_database(), 'CREATE'
   ) OR NOT has_schema_privilege(
-    'ailearn_migrator', 'public', 'CREATE'
+    'astella_migrator', 'public', 'CREATE'
   ) THEN
     RAISE EXCEPTION 'migrator is missing database/schema DDL privileges';
   END IF;
-  IF has_database_privilege('ailearn_api', current_database(), 'CREATE')
-    OR has_database_privilege('ailearn_worker', current_database(), 'CREATE')
-    OR has_schema_privilege('ailearn_api', 'public', 'CREATE')
-    OR has_schema_privilege('ailearn_worker', 'public', 'CREATE')
+  IF has_database_privilege('astella_api', current_database(), 'CREATE')
+    OR has_database_privilege('astella_worker', current_database(), 'CREATE')
+    OR has_schema_privilege('astella_api', 'public', 'CREATE')
+    OR has_schema_privilege('astella_worker', 'public', 'CREATE')
   THEN
     RAISE EXCEPTION 'API/Worker unexpectedly have DDL privileges';
   END IF;
@@ -1351,7 +1364,7 @@ BEGIN
   JOIN pg_namespace n ON n.oid = c.relnamespace
   WHERE n.nspname IN ('public', 'drizzle')
     AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
-    AND pg_get_userbyid(c.relowner) <> 'ailearn_migrator'
+    AND pg_get_userbyid(c.relowner) <> 'astella_migrator'
     AND NOT EXISTS (
       SELECT 1
       FROM pg_depend d
@@ -1382,25 +1395,25 @@ BEGIN
     )
     AND (
       NOT has_table_privilege(
-        'ailearn_api', format('%I.%I', n.nspname, c.relname), 'SELECT'
+        'astella_api', format('%I.%I', n.nspname, c.relname), 'SELECT'
       )
       OR NOT has_table_privilege(
-        'ailearn_api', format('%I.%I', n.nspname, c.relname), 'INSERT'
+        'astella_api', format('%I.%I', n.nspname, c.relname), 'INSERT'
       )
       OR NOT has_table_privilege(
-        'ailearn_api', format('%I.%I', n.nspname, c.relname), 'UPDATE'
+        'astella_api', format('%I.%I', n.nspname, c.relname), 'UPDATE'
       )
       OR NOT has_table_privilege(
-        'ailearn_api', format('%I.%I', n.nspname, c.relname), 'DELETE'
+        'astella_api', format('%I.%I', n.nspname, c.relname), 'DELETE'
       )
       OR has_table_privilege(
-        'ailearn_api', format('%I.%I', n.nspname, c.relname), 'TRUNCATE'
+        'astella_api', format('%I.%I', n.nspname, c.relname), 'TRUNCATE'
       )
       OR has_table_privilege(
-        'ailearn_api', format('%I.%I', n.nspname, c.relname), 'REFERENCES'
+        'astella_api', format('%I.%I', n.nspname, c.relname), 'REFERENCES'
       )
       OR has_table_privilege(
-        'ailearn_api', format('%I.%I', n.nspname, c.relname), 'TRIGGER'
+        'astella_api', format('%I.%I', n.nspname, c.relname), 'TRIGGER'
       )
     );
   IF mismatch IS NOT NULL THEN
@@ -1410,119 +1423,119 @@ BEGIN
   SELECT string_agg(format('%I.%I',n.nspname,c.relname), ', ') INTO mismatch
   FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
   WHERE n.nspname='public' AND c.relname IN ('companion_method_revisions','companion_method_uses') AND (
-    NOT has_table_privilege('ailearn_api',c.oid,'SELECT')
-    OR NOT has_table_privilege('ailearn_api',c.oid,'INSERT')
-    OR has_table_privilege('ailearn_api',c.oid,'UPDATE') <> (c.relname='companion_method_uses')
-    OR has_table_privilege('ailearn_api',c.oid,'DELETE')
-    OR has_table_privilege('ailearn_api',c.oid,'TRUNCATE')
-    OR has_table_privilege('ailearn_api',c.oid,'REFERENCES')
-    OR has_table_privilege('ailearn_api',c.oid,'TRIGGER')
+    NOT has_table_privilege('astella_api',c.oid,'SELECT')
+    OR NOT has_table_privilege('astella_api',c.oid,'INSERT')
+    OR has_table_privilege('astella_api',c.oid,'UPDATE') <> (c.relname='companion_method_uses')
+    OR has_table_privilege('astella_api',c.oid,'DELETE')
+    OR has_table_privilege('astella_api',c.oid,'TRUNCATE')
+    OR has_table_privilege('astella_api',c.oid,'REFERENCES')
+    OR has_table_privilege('astella_api',c.oid,'TRIGGER')
   );
   IF mismatch IS NOT NULL THEN RAISE EXCEPTION 'API method history/feedback privilege matrix mismatch: %',mismatch; END IF;
 
   IF to_regclass('public.companion_run_failure_spans') IS NOT NULL AND (
-    NOT has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'SELECT')
-    OR has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'INSERT')
-    OR has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'UPDATE')
-    OR has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'DELETE')
-    OR has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'TRUNCATE')
-    OR has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'REFERENCES')
-    OR has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'TRIGGER')
+    NOT has_table_privilege('astella_api', 'public.companion_run_failure_spans', 'SELECT')
+    OR has_table_privilege('astella_api', 'public.companion_run_failure_spans', 'INSERT')
+    OR has_table_privilege('astella_api', 'public.companion_run_failure_spans', 'UPDATE')
+    OR has_table_privilege('astella_api', 'public.companion_run_failure_spans', 'DELETE')
+    OR has_table_privilege('astella_api', 'public.companion_run_failure_spans', 'TRUNCATE')
+    OR has_table_privilege('astella_api', 'public.companion_run_failure_spans', 'REFERENCES')
+    OR has_table_privilege('astella_api', 'public.companion_run_failure_spans', 'TRIGGER')
   ) THEN
     RAISE EXCEPTION 'companion failure spans must be read-only for API';
   END IF;
 
   IF to_regclass('public.assistant_memory_item_revisions') IS NOT NULL AND (
-    NOT has_table_privilege('ailearn_api', 'public.assistant_memory_item_revisions', 'SELECT')
-    OR NOT has_table_privilege('ailearn_api', 'public.assistant_memory_item_revisions', 'INSERT')
-    OR has_table_privilege('ailearn_api', 'public.assistant_memory_item_revisions', 'UPDATE')
-    OR has_table_privilege('ailearn_api', 'public.assistant_memory_item_revisions', 'DELETE')
-    OR has_table_privilege('ailearn_api', 'public.assistant_memory_item_revisions', 'TRUNCATE')
-    OR has_table_privilege('ailearn_api', 'public.assistant_memory_item_revisions', 'REFERENCES')
-    OR has_table_privilege('ailearn_api', 'public.assistant_memory_item_revisions', 'TRIGGER')
+    NOT has_table_privilege('astella_api', 'public.assistant_memory_item_revisions', 'SELECT')
+    OR NOT has_table_privilege('astella_api', 'public.assistant_memory_item_revisions', 'INSERT')
+    OR has_table_privilege('astella_api', 'public.assistant_memory_item_revisions', 'UPDATE')
+    OR has_table_privilege('astella_api', 'public.assistant_memory_item_revisions', 'DELETE')
+    OR has_table_privilege('astella_api', 'public.assistant_memory_item_revisions', 'TRUNCATE')
+    OR has_table_privilege('astella_api', 'public.assistant_memory_item_revisions', 'REFERENCES')
+    OR has_table_privilege('astella_api', 'public.assistant_memory_item_revisions', 'TRIGGER')
   ) THEN
     RAISE EXCEPTION 'assistant memory revisions must be append-only for API';
   END IF;
 
   IF to_regclass('public.assistant_memory_budget_events') IS NOT NULL AND (
-    NOT has_table_privilege('ailearn_api', 'public.assistant_memory_budget_events', 'SELECT')
-    OR NOT has_table_privilege('ailearn_api', 'public.assistant_memory_budget_events', 'INSERT')
-    OR has_table_privilege('ailearn_api', 'public.assistant_memory_budget_events', 'UPDATE')
-    OR has_table_privilege('ailearn_api', 'public.assistant_memory_budget_events', 'DELETE')
-    OR has_table_privilege('ailearn_api', 'public.assistant_memory_budget_events', 'TRUNCATE')
-    OR has_table_privilege('ailearn_api', 'public.assistant_memory_budget_events', 'REFERENCES')
-    OR has_table_privilege('ailearn_api', 'public.assistant_memory_budget_events', 'TRIGGER')
-    OR NOT has_table_privilege('ailearn_worker', 'public.assistant_memory_budget_events', 'SELECT')
-    OR NOT has_table_privilege('ailearn_worker', 'public.assistant_memory_budget_events', 'INSERT')
-    OR has_table_privilege('ailearn_worker', 'public.assistant_memory_budget_events', 'UPDATE')
-    OR has_table_privilege('ailearn_worker', 'public.assistant_memory_budget_events', 'DELETE')
-    OR has_table_privilege('ailearn_worker', 'public.assistant_memory_budget_events', 'TRUNCATE')
-    OR has_table_privilege('ailearn_worker', 'public.assistant_memory_budget_events', 'REFERENCES')
-    OR has_table_privilege('ailearn_worker', 'public.assistant_memory_budget_events', 'TRIGGER')
+    NOT has_table_privilege('astella_api', 'public.assistant_memory_budget_events', 'SELECT')
+    OR NOT has_table_privilege('astella_api', 'public.assistant_memory_budget_events', 'INSERT')
+    OR has_table_privilege('astella_api', 'public.assistant_memory_budget_events', 'UPDATE')
+    OR has_table_privilege('astella_api', 'public.assistant_memory_budget_events', 'DELETE')
+    OR has_table_privilege('astella_api', 'public.assistant_memory_budget_events', 'TRUNCATE')
+    OR has_table_privilege('astella_api', 'public.assistant_memory_budget_events', 'REFERENCES')
+    OR has_table_privilege('astella_api', 'public.assistant_memory_budget_events', 'TRIGGER')
+    OR NOT has_table_privilege('astella_worker', 'public.assistant_memory_budget_events', 'SELECT')
+    OR NOT has_table_privilege('astella_worker', 'public.assistant_memory_budget_events', 'INSERT')
+    OR has_table_privilege('astella_worker', 'public.assistant_memory_budget_events', 'UPDATE')
+    OR has_table_privilege('astella_worker', 'public.assistant_memory_budget_events', 'DELETE')
+    OR has_table_privilege('astella_worker', 'public.assistant_memory_budget_events', 'TRUNCATE')
+    OR has_table_privilege('astella_worker', 'public.assistant_memory_budget_events', 'REFERENCES')
+    OR has_table_privilege('astella_worker', 'public.assistant_memory_budget_events', 'TRIGGER')
   ) THEN
     RAISE EXCEPTION 'assistant memory budget events must be append-only for API and worker';
   END IF;
 
   IF to_regclass('public.companion_persona_profile_versions') IS NOT NULL AND (
-    NOT has_table_privilege('ailearn_api', 'public.companion_persona_profile_versions', 'SELECT')
-    OR NOT has_table_privilege('ailearn_api', 'public.companion_persona_profile_versions', 'INSERT')
-    OR has_table_privilege('ailearn_api', 'public.companion_persona_profile_versions', 'UPDATE')
-    OR has_table_privilege('ailearn_api', 'public.companion_persona_profile_versions', 'DELETE')
-    OR has_table_privilege('ailearn_api', 'public.companion_persona_profile_versions', 'TRUNCATE')
-    OR has_table_privilege('ailearn_api', 'public.companion_persona_profile_versions', 'REFERENCES')
-    OR has_table_privilege('ailearn_api', 'public.companion_persona_profile_versions', 'TRIGGER')
-    OR NOT has_table_privilege('ailearn_worker', 'public.companion_persona_profile_versions', 'SELECT')
-    OR NOT has_table_privilege('ailearn_worker', 'public.companion_persona_profile_versions', 'INSERT')
-    OR has_table_privilege('ailearn_worker', 'public.companion_persona_profile_versions', 'UPDATE')
-    OR has_table_privilege('ailearn_worker', 'public.companion_persona_profile_versions', 'DELETE')
-    OR has_table_privilege('ailearn_worker', 'public.companion_persona_profile_versions', 'TRUNCATE')
-    OR has_table_privilege('ailearn_worker', 'public.companion_persona_profile_versions', 'REFERENCES')
-    OR has_table_privilege('ailearn_worker', 'public.companion_persona_profile_versions', 'TRIGGER')
+    NOT has_table_privilege('astella_api', 'public.companion_persona_profile_versions', 'SELECT')
+    OR NOT has_table_privilege('astella_api', 'public.companion_persona_profile_versions', 'INSERT')
+    OR has_table_privilege('astella_api', 'public.companion_persona_profile_versions', 'UPDATE')
+    OR has_table_privilege('astella_api', 'public.companion_persona_profile_versions', 'DELETE')
+    OR has_table_privilege('astella_api', 'public.companion_persona_profile_versions', 'TRUNCATE')
+    OR has_table_privilege('astella_api', 'public.companion_persona_profile_versions', 'REFERENCES')
+    OR has_table_privilege('astella_api', 'public.companion_persona_profile_versions', 'TRIGGER')
+    OR NOT has_table_privilege('astella_worker', 'public.companion_persona_profile_versions', 'SELECT')
+    OR NOT has_table_privilege('astella_worker', 'public.companion_persona_profile_versions', 'INSERT')
+    OR has_table_privilege('astella_worker', 'public.companion_persona_profile_versions', 'UPDATE')
+    OR has_table_privilege('astella_worker', 'public.companion_persona_profile_versions', 'DELETE')
+    OR has_table_privilege('astella_worker', 'public.companion_persona_profile_versions', 'TRUNCATE')
+    OR has_table_privilege('astella_worker', 'public.companion_persona_profile_versions', 'REFERENCES')
+    OR has_table_privilege('astella_worker', 'public.companion_persona_profile_versions', 'TRIGGER')
   ) THEN
     RAISE EXCEPTION 'companion persona profile versions must be append-only for API and worker';
   END IF;
 
   IF to_regclass('public.companion_diary_generation_checkpoints') IS NOT NULL AND (
     has_table_privilege(
-      'ailearn_api', 'public.companion_diary_generation_checkpoints', 'SELECT'
+      'astella_api', 'public.companion_diary_generation_checkpoints', 'SELECT'
     ) OR has_table_privilege(
-      'ailearn_api', 'public.companion_diary_generation_checkpoints', 'INSERT'
+      'astella_api', 'public.companion_diary_generation_checkpoints', 'INSERT'
     ) OR has_table_privilege(
-      'ailearn_api', 'public.companion_diary_generation_checkpoints', 'UPDATE'
+      'astella_api', 'public.companion_diary_generation_checkpoints', 'UPDATE'
     ) OR has_table_privilege(
-      'ailearn_api', 'public.companion_diary_generation_checkpoints', 'DELETE'
+      'astella_api', 'public.companion_diary_generation_checkpoints', 'DELETE'
     ) OR has_table_privilege(
-      'ailearn_api', 'public.companion_diary_generation_checkpoints', 'TRUNCATE'
+      'astella_api', 'public.companion_diary_generation_checkpoints', 'TRUNCATE'
     ) OR has_table_privilege(
-      'ailearn_api', 'public.companion_diary_generation_checkpoints', 'REFERENCES'
+      'astella_api', 'public.companion_diary_generation_checkpoints', 'REFERENCES'
     ) OR has_table_privilege(
-      'ailearn_api', 'public.companion_diary_generation_checkpoints', 'TRIGGER'
+      'astella_api', 'public.companion_diary_generation_checkpoints', 'TRIGGER'
     )
   ) THEN
     RAISE EXCEPTION 'API unexpectedly has access to worker-only diary checkpoints';
   END IF;
 
   IF to_regclass('public.companion_context_handoff_snapshots') IS NOT NULL AND (
-    has_table_privilege('ailearn_api', 'public.companion_context_handoff_snapshots', 'SELECT')
-    OR has_table_privilege('ailearn_api', 'public.companion_context_handoff_snapshots', 'INSERT')
-    OR has_table_privilege('ailearn_api', 'public.companion_context_handoff_snapshots', 'UPDATE')
-    OR has_table_privilege('ailearn_api', 'public.companion_context_handoff_snapshots', 'DELETE')
-    OR has_table_privilege('ailearn_api', 'public.companion_context_handoff_snapshots', 'TRUNCATE')
-    OR has_table_privilege('ailearn_api', 'public.companion_context_handoff_snapshots', 'REFERENCES')
-    OR has_table_privilege('ailearn_api', 'public.companion_context_handoff_snapshots', 'TRIGGER')
+    has_table_privilege('astella_api', 'public.companion_context_handoff_snapshots', 'SELECT')
+    OR has_table_privilege('astella_api', 'public.companion_context_handoff_snapshots', 'INSERT')
+    OR has_table_privilege('astella_api', 'public.companion_context_handoff_snapshots', 'UPDATE')
+    OR has_table_privilege('astella_api', 'public.companion_context_handoff_snapshots', 'DELETE')
+    OR has_table_privilege('astella_api', 'public.companion_context_handoff_snapshots', 'TRUNCATE')
+    OR has_table_privilege('astella_api', 'public.companion_context_handoff_snapshots', 'REFERENCES')
+    OR has_table_privilege('astella_api', 'public.companion_context_handoff_snapshots', 'TRIGGER')
   ) THEN
     RAISE EXCEPTION 'API unexpectedly has access to worker-only companion handoff snapshots';
   END IF;
 
-  IF to_regprocedure('public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)') IS NOT NULL AND (
+  IF to_regprocedure('public.astella_read_companion_turn_handoff_snapshot_v1(uuid)') IS NOT NULL AND (
     NOT has_function_privilege(
-      'ailearn_api',
-      'public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)',
+      'astella_api',
+      'public.astella_read_companion_turn_handoff_snapshot_v1(uuid)',
       'EXECUTE'
     )
     OR has_function_privilege(
-      'ailearn_worker',
-      'public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)',
+      'astella_worker',
+      'public.astella_read_companion_turn_handoff_snapshot_v1(uuid)',
       'EXECUTE'
     )
   ) THEN
@@ -1682,23 +1695,23 @@ BEGIN
     SELECT
       c.relname AS table_name,
       has_table_privilege(
-        'ailearn_worker', format('%I.%I', n.nspname, c.relname), 'SELECT'
+        'astella_worker', format('%I.%I', n.nspname, c.relname), 'SELECT'
       ) AS can_select,
       has_table_privilege(
-        'ailearn_worker', format('%I.%I', n.nspname, c.relname), 'INSERT'
+        'astella_worker', format('%I.%I', n.nspname, c.relname), 'INSERT'
       ) AS can_insert,
       has_table_privilege(
-        'ailearn_worker', format('%I.%I', n.nspname, c.relname), 'UPDATE'
+        'astella_worker', format('%I.%I', n.nspname, c.relname), 'UPDATE'
       ) AS can_update,
       has_table_privilege(
-        'ailearn_worker', format('%I.%I', n.nspname, c.relname), 'DELETE'
+        'astella_worker', format('%I.%I', n.nspname, c.relname), 'DELETE'
       ) AS can_delete,
       has_table_privilege(
-        'ailearn_worker', format('%I.%I', n.nspname, c.relname), 'TRUNCATE'
+        'astella_worker', format('%I.%I', n.nspname, c.relname), 'TRUNCATE'
       ) OR has_table_privilege(
-        'ailearn_worker', format('%I.%I', n.nspname, c.relname), 'REFERENCES'
+        'astella_worker', format('%I.%I', n.nspname, c.relname), 'REFERENCES'
       ) OR has_table_privilege(
-        'ailearn_worker', format('%I.%I', n.nspname, c.relname), 'TRIGGER'
+        'astella_worker', format('%I.%I', n.nspname, c.relname), 'TRIGGER'
       ) AS has_admin_table_privilege
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -1719,65 +1732,65 @@ BEGIN
   END IF;
 
   IF to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AND (
-    NOT has_schema_privilege('ailearn_api', 'drizzle', 'USAGE')
+    NOT has_schema_privilege('astella_api', 'drizzle', 'USAGE')
     OR NOT has_table_privilege(
-      'ailearn_api', 'drizzle.__drizzle_migrations', 'SELECT'
+      'astella_api', 'drizzle.__drizzle_migrations', 'SELECT'
     )
-    OR has_schema_privilege('ailearn_worker', 'drizzle', 'USAGE')
+    OR has_schema_privilege('astella_worker', 'drizzle', 'USAGE')
   ) THEN
     RAISE EXCEPTION 'migration journal privilege matrix mismatch';
   END IF;
 
-  IF to_regprocedure('public.ailearn_claim_jobs(integer,integer,integer)') IS NOT NULL AND (
+  IF to_regprocedure('public.astella_claim_jobs(integer,integer,integer)') IS NOT NULL AND (
     NOT has_function_privilege(
-      'ailearn_worker', 'public.ailearn_claim_jobs(integer,integer,integer)', 'EXECUTE'
+      'astella_worker', 'public.astella_claim_jobs(integer,integer,integer)', 'EXECUTE'
     )
     OR has_function_privilege(
-      'ailearn_api', 'public.ailearn_claim_jobs(integer,integer,integer)', 'EXECUTE'
+      'astella_api', 'public.astella_claim_jobs(integer,integer,integer)', 'EXECUTE'
     )
   ) THEN
     RAISE EXCEPTION 'job claim function privilege matrix mismatch';
   END IF;
 
-  IF to_regprocedure('public.ailearn_reap_stale_jobs(integer,integer)') IS NOT NULL AND (
+  IF to_regprocedure('public.astella_reap_stale_jobs(integer,integer)') IS NOT NULL AND (
     NOT has_function_privilege(
-      'ailearn_worker', 'public.ailearn_reap_stale_jobs(integer,integer)', 'EXECUTE'
+      'astella_worker', 'public.astella_reap_stale_jobs(integer,integer)', 'EXECUTE'
     )
     OR has_function_privilege(
-      'ailearn_api', 'public.ailearn_reap_stale_jobs(integer,integer)', 'EXECUTE'
+      'astella_api', 'public.astella_reap_stale_jobs(integer,integer)', 'EXECUTE'
     )
   ) THEN
     RAISE EXCEPTION 'job reap function privilege matrix mismatch';
   END IF;
 
-  IF to_regprocedure('public.ailearn_renew_job_lease(uuid,uuid,text)') IS NOT NULL AND (
+  IF to_regprocedure('public.astella_renew_job_lease(uuid,uuid,text)') IS NOT NULL AND (
     NOT has_function_privilege(
-      'ailearn_worker', 'public.ailearn_renew_job_lease(uuid,uuid,text)', 'EXECUTE'
+      'astella_worker', 'public.astella_renew_job_lease(uuid,uuid,text)', 'EXECUTE'
     )
     OR has_function_privilege(
-      'ailearn_api', 'public.ailearn_renew_job_lease(uuid,uuid,text)', 'EXECUTE'
+      'astella_api', 'public.astella_renew_job_lease(uuid,uuid,text)', 'EXECUTE'
     )
   ) THEN
     RAISE EXCEPTION 'job lease renewal function privilege matrix mismatch';
   END IF;
 
-  IF to_regprocedure('public.ailearn_finish_job(uuid,uuid,text)') IS NOT NULL AND (
+  IF to_regprocedure('public.astella_finish_job(uuid,uuid,text)') IS NOT NULL AND (
     NOT has_function_privilege(
-      'ailearn_worker', 'public.ailearn_finish_job(uuid,uuid,text)', 'EXECUTE'
+      'astella_worker', 'public.astella_finish_job(uuid,uuid,text)', 'EXECUTE'
     )
     OR has_function_privilege(
-      'ailearn_api', 'public.ailearn_finish_job(uuid,uuid,text)', 'EXECUTE'
+      'astella_api', 'public.astella_finish_job(uuid,uuid,text)', 'EXECUTE'
     )
   ) THEN
     RAISE EXCEPTION 'job finish function privilege matrix mismatch';
   END IF;
 
-  IF to_regprocedure('public.ailearn_fail_job(uuid,uuid,text,text,integer)') IS NOT NULL AND (
+  IF to_regprocedure('public.astella_fail_job(uuid,uuid,text,text,integer)') IS NOT NULL AND (
     NOT has_function_privilege(
-      'ailearn_worker', 'public.ailearn_fail_job(uuid,uuid,text,text,integer)', 'EXECUTE'
+      'astella_worker', 'public.astella_fail_job(uuid,uuid,text,text,integer)', 'EXECUTE'
     )
     OR has_function_privilege(
-      'ailearn_api', 'public.ailearn_fail_job(uuid,uuid,text,text,integer)', 'EXECUTE'
+      'astella_api', 'public.astella_fail_job(uuid,uuid,text,text,integer)', 'EXECUTE'
     )
   ) THEN
     RAISE EXCEPTION 'job failure function privilege matrix mismatch';
@@ -1787,23 +1800,23 @@ BEGIN
     SELECT 1
     FROM pg_proc p
     WHERE p.oid IN (
-      to_regprocedure('public.ailearn_claim_jobs(integer,integer,integer)'),
-      to_regprocedure('public.ailearn_reap_stale_jobs(integer,integer)'),
-      to_regprocedure('public.ailearn_renew_job_lease(uuid,uuid,text)'),
-      to_regprocedure('public.ailearn_finish_job(uuid,uuid,text)'),
-      to_regprocedure('public.ailearn_fail_job(uuid,uuid,text,text,integer)'),
-      to_regprocedure('public.ailearn_queue_job_depth()'),
-      to_regprocedure('public.ailearn_queue_oldest_pending_age()'),
-      to_regprocedure('public.ailearn_enqueue_companion_daily_summaries()'),
-      to_regprocedure('public.ailearn_run_companion_memory_maintenance()'),
-      to_regprocedure('public.ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)'),
-      to_regprocedure('public.ailearn_purge_companion_audit_ttl(integer,integer)'),
-      to_regprocedure('public.ailearn_purge_invitation_ledger_ttl(integer,integer)'),
-      to_regprocedure('public.ailearn_purge_tutor_nonces_ttl(integer,integer)')
+      to_regprocedure('public.astella_claim_jobs(integer,integer,integer)'),
+      to_regprocedure('public.astella_reap_stale_jobs(integer,integer)'),
+      to_regprocedure('public.astella_renew_job_lease(uuid,uuid,text)'),
+      to_regprocedure('public.astella_finish_job(uuid,uuid,text)'),
+      to_regprocedure('public.astella_fail_job(uuid,uuid,text,text,integer)'),
+      to_regprocedure('public.astella_queue_job_depth()'),
+      to_regprocedure('public.astella_queue_oldest_pending_age()'),
+      to_regprocedure('public.astella_enqueue_companion_daily_summaries()'),
+      to_regprocedure('public.astella_run_companion_memory_maintenance()'),
+      to_regprocedure('public.astella_close_companion_memory_delivery(uuid,uuid,uuid,text)'),
+      to_regprocedure('public.astella_purge_companion_audit_ttl(integer,integer)'),
+      to_regprocedure('public.astella_purge_invitation_ledger_ttl(integer,integer)'),
+      to_regprocedure('public.astella_purge_tutor_nonces_ttl(integer,integer)')
     )
       AND (
         NOT p.prosecdef
-        OR p.proowner <> 'ailearn_migrator'::regrole
+        OR p.proowner <> 'astella_migrator'::regrole
         OR p.proconfig IS DISTINCT FROM
           ARRAY['search_path=pg_catalog, public']::text[]
       )
@@ -1816,77 +1829,77 @@ BEGIN
   FROM pg_proc p
   JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public'
-    AND has_function_privilege('ailearn_worker', p.oid, 'EXECUTE')
+    AND has_function_privilege('astella_worker', p.oid, 'EXECUTE')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_claim_jobs(integer,integer,integer)')
+      to_regprocedure('public.astella_claim_jobs(integer,integer,integer)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_reap_stale_jobs(integer,integer)')
+      to_regprocedure('public.astella_reap_stale_jobs(integer,integer)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_renew_job_lease(uuid,uuid,text)')
+      to_regprocedure('public.astella_renew_job_lease(uuid,uuid,text)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_finish_job(uuid,uuid,text)')
+      to_regprocedure('public.astella_finish_job(uuid,uuid,text)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_fail_job(uuid,uuid,text,text,integer)')
+      to_regprocedure('public.astella_fail_job(uuid,uuid,text,text,integer)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_queue_job_depth()')
+      to_regprocedure('public.astella_queue_job_depth()')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_queue_oldest_pending_age()')
+      to_regprocedure('public.astella_queue_oldest_pending_age()')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.vector_in(cstring,oid,integer)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.vector(vector,integer,boolean)')
     -- 0171/0172/0174：方案 22 桌宠日记/记忆维护 + pgvector 距离函数。
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_enqueue_companion_daily_summaries()')
+      to_regprocedure('public.astella_enqueue_companion_daily_summaries()')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_run_companion_memory_maintenance()')
+      to_regprocedure('public.astella_run_companion_memory_maintenance()')
     -- 0217：失效 companion 确认的定时兜底回收。
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_reclaim_stale_companion_proposals()')
+      to_regprocedure('public.astella_reclaim_stale_companion_proposals()')
     -- 0227/0232/0238：上面 granted 的三支 worker 定时器函数必须同时出现在这份
     -- "预期权限"清单里。它们是**两份清单**：只加 GRANT 而忘了这里，role-bootstrap
     -- 会在下一次 `docker compose up` 时 exit 3，而 api 因为 depends_on 直接起不来——
     -- 容器一直活着的话这个洞完全看不见（实机 2026-09-21 就是这样埋下的）。
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_enqueue_companion_thoughts()')
+      to_regprocedure('public.astella_enqueue_companion_thoughts()')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_reclaim_orphaned_companion_runs()')
+      to_regprocedure('public.astella_reclaim_orphaned_companion_runs()')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_fire_due_companion_reminders(integer)')
+      to_regprocedure('public.astella_fire_due_companion_reminders(integer)')
     -- 0267：跨空间记忆铺开（与上面那条 GRANT 成对，两份清单一起改）。
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_fanout_global_companion_memory(uuid)')
-    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_scope_current(uuid,uuid)')
-    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_enqueue_agent_recovery()')
-    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_cancel_agent_operations(uuid,integer)')
-    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_method_sources_current(uuid,uuid,uuid)')
-    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_job_current(uuid,uuid,uuid,boolean)')
-    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_run_authorized(uuid)')
+      to_regprocedure('public.astella_fanout_global_companion_memory(uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_scope_current(uuid,uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_enqueue_agent_recovery()')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_cancel_agent_operations(uuid,integer)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_method_sources_current(uuid,uuid,uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_job_current(uuid,uuid,uuid,boolean)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_run_authorized(uuid)')
     -- 0373：制卡这一发的父围栏与初始归属读取（与上面 GRANT 成对，两份清单一起改）。
-    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_card_job_current(uuid,uuid,boolean)')
-    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_card_execution_binding(uuid,uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_card_job_current(uuid,uuid,boolean)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_card_execution_binding(uuid,uuid)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)')
+      to_regprocedure('public.astella_close_companion_memory_delivery(uuid,uuid,uuid,text)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_purge_expired_companion_memory()')
+      to_regprocedure('public.astella_purge_expired_companion_memory()')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_companion_memory_retention_limits()')
+      to_regprocedure('public.astella_companion_memory_retention_limits()')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_enforce_companion_memory_retention()')
+      to_regprocedure('public.astella_enforce_companion_memory_retention()')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_reclaim_stale_memory_organization_leases()')
+      to_regprocedure('public.astella_reclaim_stale_memory_organization_leases()')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_commit_memory_organization(uuid,uuid,text,text,integer)')
+      to_regprocedure('public.astella_commit_memory_organization(uuid,uuid,text,text,integer)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_enqueue_companion_memory_organize()')
+      to_regprocedure('public.astella_enqueue_companion_memory_organize()')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_companion_memory_organization_thresholds()')
+      to_regprocedure('public.astella_companion_memory_organization_thresholds()')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)')
+      to_regprocedure('public.astella_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_retire_workspace_memories_on_departure(uuid,uuid)')
+      to_regprocedure('public.astella_retire_workspace_memories_on_departure(uuid,uuid)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_dissolve_workspace(uuid,uuid)')
+      to_regprocedure('public.astella_dissolve_workspace(uuid,uuid)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.cosine_distance(vector,vector)')
     AND p.oid IS DISTINCT FROM
@@ -1914,25 +1927,25 @@ BEGIN
   FROM pg_proc p
   JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public'
-    AND has_function_privilege('ailearn_api', p.oid, 'EXECUTE')
-    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_scope_current(uuid,uuid)')
-    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_cancel_agent_operations(uuid,integer)')
-    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_method_sources_current(uuid,uuid,uuid)')
-    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_fanout_agent_global_preference(uuid)')
+    AND has_function_privilege('astella_api', p.oid, 'EXECUTE')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_scope_current(uuid,uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_cancel_agent_operations(uuid,integer)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_method_sources_current(uuid,uuid,uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_fanout_agent_global_preference(uuid)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_purge_companion_audit_ttl(integer,integer)')
+      to_regprocedure('public.astella_purge_companion_audit_ttl(integer,integer)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_purge_invitation_ledger_ttl(integer,integer)')
+      to_regprocedure('public.astella_purge_invitation_ledger_ttl(integer,integer)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_purge_tutor_nonces_ttl(integer,integer)')
+      to_regprocedure('public.astella_purge_tutor_nonces_ttl(integer,integer)')
     -- 0327（P0-4，`users` 表 RLS）：登录查询与"同空间成员"判据。
     -- 前者是登录路径（会话建立之前，没有 RLS 上下文），后者被 users 的策略
     -- 2.3 调用——**必须** SECURITY DEFINER，否则策略里的裸子查询会被
     -- workspace_members 自己的 RLS 收窄成"只看自己"。
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_find_user_by_email(text)')
+      to_regprocedure('public.astella_find_user_by_email(text)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_user_in_workspace(uuid,uuid)')
+      to_regprocedure('public.astella_user_in_workspace(uuid,uuid)')
     -- 0174：pgvector 距离函数（api 也需调用记忆向量检索）。
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.cosine_distance(vector,vector)')
@@ -1942,57 +1955,57 @@ BEGIN
       to_regprocedure('public.inner_product(vector,vector)')
     -- API 独占的 SECURITY DEFINER 函数（与上方显式白名单一一对应）。
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_note_rounds_idle_for_pause(integer)')
+      to_regprocedure('public.astella_note_rounds_idle_for_pause(integer)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_claim_run_processing(text,integer,integer,timestamp with time zone)')
+      to_regprocedure('public.astella_claim_run_processing(text,integer,integer,timestamp with time zone)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_mark_run_processing_processed(uuid,text,timestamp with time zone)')
+      to_regprocedure('public.astella_mark_run_processing_processed(uuid,text,timestamp with time zone)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_expire_pending_voice_artifacts(integer)')
+      to_regprocedure('public.astella_expire_pending_voice_artifacts(integer)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_purge_companion_stream_events_ttl(integer)')
+      to_regprocedure('public.astella_purge_companion_stream_events_ttl(integer)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_purge_expired_proactive_deliveries(integer)')
+      to_regprocedure('public.astella_purge_expired_proactive_deliveries(integer)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_purge_old_ai_audit_log(integer,integer)')
+      to_regprocedure('public.astella_purge_old_ai_audit_log(integer,integer)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_find_resumable_companion_journey(uuid,uuid)')
+      to_regprocedure('public.astella_find_resumable_companion_journey(uuid,uuid)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)')
+      to_regprocedure('public.astella_read_companion_turn_handoff_snapshot_v1(uuid)')
     -- 0365：运维管理面板的跨租户只读视图（队列按类型积压 / 最近失败作业 /
     -- 最近审计 / 平台计数）。只读且只回标识与计数，不含任何正文。
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_admin_job_backlog()')
+      to_regprocedure('public.astella_admin_job_backlog()')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_admin_recent_job_failures(integer)')
+      to_regprocedure('public.astella_admin_recent_job_failures(integer)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_admin_recent_audit(integer)')
+      to_regprocedure('public.astella_admin_recent_audit(integer)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_admin_platform_counts()')
+      to_regprocedure('public.astella_admin_platform_counts()')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_admin_retry_failed_jobs(text,integer)')
+      to_regprocedure('public.astella_admin_retry_failed_jobs(text,integer)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_admin_purge_dead_jobs(text,integer)')
+      to_regprocedure('public.astella_admin_purge_dead_jobs(text,integer)')
     -- 0273／0276：空间离开时的记忆退役与整空间解散，都是 API 路由显式调的
     -- SECURITY DEFINER 函数。下面"该有的授权不能缺"那份反向清单里已经列了它们，
     -- 而这里的白名单漏了——三处要一起改（迁移 GRANT／上面的 GRANT 块／这里），
     -- 少改一处的表现是**全新库根本起不来**（这道检查在引导时就 RAISE），
     -- 而不是某个功能静默失败。
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_retire_workspace_memories_on_departure(uuid,uuid)')
+      to_regprocedure('public.astella_retire_workspace_memories_on_departure(uuid,uuid)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_dissolve_workspace(uuid,uuid)')
+      to_regprocedure('public.astella_dissolve_workspace(uuid,uuid)')
     -- 0344：HTTP 用户请求由 API 发起，worker 侧 companion 工具也会执行同一原子函数。
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)')
+      to_regprocedure('public.astella_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_restore_companion_memory(uuid,uuid,uuid)')
+      to_regprocedure('public.astella_restore_companion_memory(uuid,uuid,uuid)')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_purge_expired_companion_memory()')
+      to_regprocedure('public.astella_purge_expired_companion_memory()')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_companion_memory_retention_limits()')
+      to_regprocedure('public.astella_companion_memory_retention_limits()')
     AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.ailearn_enforce_companion_memory_retention()')
+      to_regprocedure('public.astella_enforce_companion_memory_retention()')
     AND NOT EXISTS (
       SELECT 1 FROM pg_depend d
       WHERE d.objid = p.oid AND d.deptype = 'e'
@@ -2021,71 +2034,71 @@ BEGIN
   SELECT string_agg(required.fn, ', ' ORDER BY required.fn)
     INTO missing
     FROM (VALUES
-      ('ailearn_worker', 'ailearn_claim_jobs(integer,integer,integer)'),
-      ('ailearn_api', 'ailearn_agent_method_sources_current(uuid,uuid,uuid)'),
-      ('ailearn_worker', 'ailearn_agent_method_sources_current(uuid,uuid,uuid)'),
-      ('ailearn_api', 'ailearn_agent_scope_current(uuid,uuid)'),
-      ('ailearn_worker', 'ailearn_agent_scope_current(uuid,uuid)'),
-      ('ailearn_api', 'ailearn_cancel_agent_operations(uuid,integer)'),
-      ('ailearn_worker', 'ailearn_cancel_agent_operations(uuid,integer)'),
-      ('ailearn_worker', 'ailearn_enqueue_agent_recovery()'),
-      ('ailearn_worker', 'ailearn_agent_job_current(uuid,uuid,uuid,boolean)'),
-      ('ailearn_worker', 'ailearn_agent_run_authorized(uuid)'),
+      ('astella_worker', 'astella_claim_jobs(integer,integer,integer)'),
+      ('astella_api', 'astella_agent_method_sources_current(uuid,uuid,uuid)'),
+      ('astella_worker', 'astella_agent_method_sources_current(uuid,uuid,uuid)'),
+      ('astella_api', 'astella_agent_scope_current(uuid,uuid)'),
+      ('astella_worker', 'astella_agent_scope_current(uuid,uuid)'),
+      ('astella_api', 'astella_cancel_agent_operations(uuid,integer)'),
+      ('astella_worker', 'astella_cancel_agent_operations(uuid,integer)'),
+      ('astella_worker', 'astella_enqueue_agent_recovery()'),
+      ('astella_worker', 'astella_agent_job_current(uuid,uuid,uuid,boolean)'),
+      ('astella_worker', 'astella_agent_run_authorized(uuid)'),
       -- 0373：制卡这一发的父围栏。缺它时链内每一段短事务与每次模型调用前的判定都会
       -- permission denied，而调用方多半把异常 catch 成一行 warn——父围栏静默失效，
       -- 表现是"用户已经停下的目标，那批卡片还在跑完并烧预算"。
-      ('ailearn_worker', 'ailearn_agent_card_job_current(uuid,uuid,boolean)'),
+      ('astella_worker', 'astella_agent_card_job_current(uuid,uuid,boolean)'),
       -- 0373：初始归属读取。缺它时 worker 读不到绑定，所有 Agent 制卡被误认成普通制卡，
       -- 父预算与围栏静默失效。
-      ('ailearn_worker', 'ailearn_agent_card_execution_binding(uuid,uuid)'),
-      ('ailearn_worker', 'ailearn_reap_stale_jobs(integer,integer)'),
-      ('ailearn_worker', 'ailearn_renew_job_lease(uuid,uuid,text)'),
-      ('ailearn_worker', 'ailearn_finish_job(uuid,uuid,text)'),
-      ('ailearn_worker', 'ailearn_fail_job(uuid,uuid,text,text,integer)'),
-      ('ailearn_worker', 'ailearn_enqueue_companion_thoughts()'),
-      ('ailearn_worker', 'ailearn_reclaim_orphaned_companion_runs()'),
-      ('ailearn_worker', 'ailearn_fire_due_companion_reminders(integer)'),
-      ('ailearn_worker', 'ailearn_enqueue_companion_daily_summaries()'),
-      ('ailearn_worker', 'ailearn_run_companion_memory_maintenance()'),
-      ('ailearn_worker', 'ailearn_reclaim_stale_companion_proposals()'),
-      ('ailearn_worker', 'ailearn_fanout_global_companion_memory(uuid)'),
-      ('ailearn_api', 'ailearn_fanout_agent_global_preference(uuid)'),
-      ('ailearn_worker', 'ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)'),
-      ('ailearn_api', 'ailearn_restore_companion_memory(uuid,uuid,uuid)'),
-      ('ailearn_api', 'ailearn_purge_expired_companion_memory()'),
-      ('ailearn_worker', 'ailearn_purge_expired_companion_memory()'),
-      ('ailearn_api', 'ailearn_companion_memory_retention_limits()'),
-      ('ailearn_worker', 'ailearn_companion_memory_retention_limits()'),
-      ('ailearn_api', 'ailearn_enforce_companion_memory_retention()'),
-      ('ailearn_worker', 'ailearn_enforce_companion_memory_retention()'),
-      ('ailearn_worker', 'ailearn_reclaim_stale_memory_organization_leases()'),
-      ('ailearn_worker', 'ailearn_commit_memory_organization(uuid,uuid,text,text,integer)'),
-      ('ailearn_worker', 'ailearn_enqueue_companion_memory_organize()'),
-      ('ailearn_worker', 'ailearn_companion_memory_organization_thresholds()'),
-      ('ailearn_api', 'ailearn_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)'),
-      ('ailearn_worker', 'ailearn_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)'),
-      ('ailearn_api', 'ailearn_retire_workspace_memories_on_departure(uuid,uuid)'),
-      ('ailearn_api', 'ailearn_dissolve_workspace(uuid,uuid)'),
-      ('ailearn_api', 'ailearn_find_resumable_companion_journey(uuid,uuid)'),
-      ('ailearn_api', 'ailearn_note_rounds_idle_for_pause(integer)'),
-      ('ailearn_api', 'ailearn_claim_run_processing(text,integer,integer,timestamp with time zone)'),
-      ('ailearn_api', 'ailearn_mark_run_processing_processed(uuid,text,timestamp with time zone)'),
-      ('ailearn_api', 'ailearn_expire_pending_voice_artifacts(integer)'),
-      ('ailearn_api', 'ailearn_purge_companion_stream_events_ttl(integer)'),
-      ('ailearn_api', 'ailearn_purge_expired_proactive_deliveries(integer)'),
-      ('ailearn_api', 'ailearn_purge_old_ai_audit_log(integer,integer)'),
-      ('ailearn_api', 'ailearn_purge_companion_audit_ttl(integer,integer)'),
-      ('ailearn_api', 'ailearn_purge_invitation_ledger_ttl(integer,integer)'),
-      ('ailearn_api', 'ailearn_purge_tutor_nonces_ttl(integer,integer)'),
-      ('ailearn_api', 'ailearn_find_user_by_email(text)'),
-      ('ailearn_api', 'ailearn_user_in_workspace(uuid,uuid)'),
-      ('ailearn_api', 'ailearn_read_companion_turn_handoff_snapshot_v1(uuid)'),
-      ('ailearn_api', 'ailearn_admin_job_backlog()'),
-      ('ailearn_api', 'ailearn_admin_recent_job_failures(integer)'),
-      ('ailearn_api', 'ailearn_admin_recent_audit(integer)'),
-      ('ailearn_api', 'ailearn_admin_platform_counts()'),
-      ('ailearn_api', 'ailearn_admin_retry_failed_jobs(text,integer)'),
-      ('ailearn_api', 'ailearn_admin_purge_dead_jobs(text,integer)')
+      ('astella_worker', 'astella_agent_card_execution_binding(uuid,uuid)'),
+      ('astella_worker', 'astella_reap_stale_jobs(integer,integer)'),
+      ('astella_worker', 'astella_renew_job_lease(uuid,uuid,text)'),
+      ('astella_worker', 'astella_finish_job(uuid,uuid,text)'),
+      ('astella_worker', 'astella_fail_job(uuid,uuid,text,text,integer)'),
+      ('astella_worker', 'astella_enqueue_companion_thoughts()'),
+      ('astella_worker', 'astella_reclaim_orphaned_companion_runs()'),
+      ('astella_worker', 'astella_fire_due_companion_reminders(integer)'),
+      ('astella_worker', 'astella_enqueue_companion_daily_summaries()'),
+      ('astella_worker', 'astella_run_companion_memory_maintenance()'),
+      ('astella_worker', 'astella_reclaim_stale_companion_proposals()'),
+      ('astella_worker', 'astella_fanout_global_companion_memory(uuid)'),
+      ('astella_api', 'astella_fanout_agent_global_preference(uuid)'),
+      ('astella_worker', 'astella_close_companion_memory_delivery(uuid,uuid,uuid,text)'),
+      ('astella_api', 'astella_restore_companion_memory(uuid,uuid,uuid)'),
+      ('astella_api', 'astella_purge_expired_companion_memory()'),
+      ('astella_worker', 'astella_purge_expired_companion_memory()'),
+      ('astella_api', 'astella_companion_memory_retention_limits()'),
+      ('astella_worker', 'astella_companion_memory_retention_limits()'),
+      ('astella_api', 'astella_enforce_companion_memory_retention()'),
+      ('astella_worker', 'astella_enforce_companion_memory_retention()'),
+      ('astella_worker', 'astella_reclaim_stale_memory_organization_leases()'),
+      ('astella_worker', 'astella_commit_memory_organization(uuid,uuid,text,text,integer)'),
+      ('astella_worker', 'astella_enqueue_companion_memory_organize()'),
+      ('astella_worker', 'astella_companion_memory_organization_thresholds()'),
+      ('astella_api', 'astella_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)'),
+      ('astella_worker', 'astella_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)'),
+      ('astella_api', 'astella_retire_workspace_memories_on_departure(uuid,uuid)'),
+      ('astella_api', 'astella_dissolve_workspace(uuid,uuid)'),
+      ('astella_api', 'astella_find_resumable_companion_journey(uuid,uuid)'),
+      ('astella_api', 'astella_note_rounds_idle_for_pause(integer)'),
+      ('astella_api', 'astella_claim_run_processing(text,integer,integer,timestamp with time zone)'),
+      ('astella_api', 'astella_mark_run_processing_processed(uuid,text,timestamp with time zone)'),
+      ('astella_api', 'astella_expire_pending_voice_artifacts(integer)'),
+      ('astella_api', 'astella_purge_companion_stream_events_ttl(integer)'),
+      ('astella_api', 'astella_purge_expired_proactive_deliveries(integer)'),
+      ('astella_api', 'astella_purge_old_ai_audit_log(integer,integer)'),
+      ('astella_api', 'astella_purge_companion_audit_ttl(integer,integer)'),
+      ('astella_api', 'astella_purge_invitation_ledger_ttl(integer,integer)'),
+      ('astella_api', 'astella_purge_tutor_nonces_ttl(integer,integer)'),
+      ('astella_api', 'astella_find_user_by_email(text)'),
+      ('astella_api', 'astella_user_in_workspace(uuid,uuid)'),
+      ('astella_api', 'astella_read_companion_turn_handoff_snapshot_v1(uuid)'),
+      ('astella_api', 'astella_admin_job_backlog()'),
+      ('astella_api', 'astella_admin_recent_job_failures(integer)'),
+      ('astella_api', 'astella_admin_recent_audit(integer)'),
+      ('astella_api', 'astella_admin_platform_counts()'),
+      ('astella_api', 'astella_admin_retry_failed_jobs(text,integer)'),
+      ('astella_api', 'astella_admin_purge_dead_jobs(text,integer)')
     ) AS required(role, fn)
     -- 函数还不存在（首次 bootstrap、迁移尚未跑到）时不该报错：与本文件其余检查
     -- 一致的 `to_regprocedure IS NOT NULL` 口径。
@@ -2126,7 +2139,7 @@ BEGIN
       SELECT 1 FROM pg_policies p
       WHERE p.schemaname = 'public' AND p.tablename = c.relname
     );
-  IF coalesce(current_setting('ailearn.require_rls_disabled', true), 'false')::boolean
+  IF coalesce(current_setting('astella.require_rls_disabled', true), 'false')::boolean
     AND unprotected_count > 0
   THEN
     RAISE EXCEPTION

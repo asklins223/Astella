@@ -205,7 +205,7 @@ async function loadMetrics(ctx) {
   const rawBody = el("div", {});
   const rawSearch = el("input", {
     class: "field__input", type: "search",
-    placeholder: "按指标名过滤，比如 ailearn_http 或 nodejs_heap",
+    placeholder: "按指标名过滤，比如 astella_http 或 nodejs_heap",
     "aria-label": "过滤原始指标",
   });
   function renderRaw() {

@@ -124,13 +124,13 @@ CREATE POLICY learning_tutor_action_nonces_workspace_user_isolation
 --> statement-breakpoint
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_tutor_detours TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_tutor_permissions TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_tutor_action_nonces TO ailearn_api;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_tutor_detours TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_tutor_permissions TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_tutor_action_nonces TO astella_api;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
-    GRANT SELECT ON public.learning_tutor_detours TO ailearn_worker;
-    GRANT SELECT ON public.learning_tutor_permissions TO ailearn_worker;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
+    GRANT SELECT ON public.learning_tutor_detours TO astella_worker;
+    GRANT SELECT ON public.learning_tutor_permissions TO astella_worker;
   END IF;
 END $$;

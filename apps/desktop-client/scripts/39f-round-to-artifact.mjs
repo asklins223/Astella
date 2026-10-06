@@ -17,8 +17,8 @@ const appRoot = resolve(import.meta.dirname, '..')
 const outDir = resolve(appRoot, '../../.impeccable/review/39f-verify')
 await mkdir(outDir, { recursive: true })
 
-const NOTE_PREFIX = process.env.AILEARN_VERIFY_NOTE ?? 'IndexTTS 2.5 让声音跨越语言'
-const browser = await chromium.connectOverCDP(process.env.AILEARN_CAPTURE_CDP ?? 'http://127.0.0.1:9222')
+const NOTE_PREFIX = process.env.ASTELLA_VERIFY_NOTE ?? 'IndexTTS 2.5 让声音跨越语言'
+const browser = await chromium.connectOverCDP(process.env.ASTELLA_CAPTURE_CDP ?? 'http://127.0.0.1:9222')
 const window = browser.contexts()[0].pages()[0]
 const errors = []
 window.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
@@ -160,17 +160,17 @@ try {
     if (f) {
       const probe = await f.evaluate(() => {
         const stage = document.querySelector('[data-stage]')
-        const notice = document.querySelector('.ailearn-art__notice')
+        const notice = document.querySelector('.astella-art__notice')
         return {
           outline: document.querySelector('[data-artifact-root]')?.getAttribute('data-outline-count'),
           svgs: document.querySelectorAll('svg').length,
           buttons: document.querySelectorAll('button').length,
-          evidence: document.querySelectorAll('.ailearn-art__evidence-quote').length,
-          textEquiv: document.querySelectorAll('.ailearn-art__list li').length,
+          evidence: document.querySelectorAll('.astella-art__evidence-quote').length,
+          textEquiv: document.querySelectorAll('.astella-art__list li').length,
           lessonMotion: typeof window.setLessonMotion === 'function',
           oldStepApi: typeof window.__artifact,
-          headline: document.querySelector('.ailearn-art__title')?.textContent?.trim(),
-          // 示意声明必须**看得见**：模型写 `.ailearn-art__notice{display:none}` 藏不掉它。
+          headline: document.querySelector('.astella-art__title')?.textContent?.trim(),
+          // 示意声明必须**看得见**：模型写 `.astella-art__notice{display:none}` 藏不掉它。
           noticeVisible: notice ? getComputedStyle(notice).display !== 'none' && notice.getBoundingClientRect().height > 0 : null,
           lessonMint: stage ? getComputedStyle(stage).getPropertyValue('--lesson-mint').trim() : null,
           stageHtml: (stage?.innerHTML ?? '').length,

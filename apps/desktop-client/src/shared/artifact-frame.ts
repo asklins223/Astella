@@ -8,11 +8,11 @@
  * 同时出现（那个组合下 frame 可以自己摘掉沙箱属性）。
  */
 
-export const ARTIFACT_SCHEME = 'ailearn-app'
+export const ARTIFACT_SCHEME = 'astella-app'
 
 /**
- * 第二个 host。它不是新协议：`ailearn-app` 已注册成 standard + secure，
- * 所以 `ailearn-app://artifact` 是一个与 `ailearn-app://bundle` **不同源**的正常 origin。
+ * 第二个 host。它不是新协议：`astella-app` 已注册成 standard + secure，
+ * 所以 `astella-app://artifact` 是一个与 `astella-app://bundle` **不同源**的正常 origin。
  */
 export const ARTIFACT_HOST = 'artifact'
 
@@ -66,7 +66,7 @@ export function isArtifactFrameUrl(value: string): boolean {
  * 消息形状在这里定死，是因为两侧（模板里的播放器、渲染进程里的宿主）都要用；
  * 校验函数也放这里，好让"父侧怎么判一条消息"成为一条可测的纯逻辑。
  */
-export const ARTIFACT_FRAME_CHANNEL = 'ailearn:artifact-frame'
+export const ARTIFACT_FRAME_CHANNEL = 'astella:artifact-frame'
 
 /**
  * 产物报告运行状态（ready／heartbeat／error）与原生滚轮增量（scroll）。

@@ -2,14 +2,14 @@
  * P5 §9 固定测试：companion_action_bridge 迁移 + RLS。
  * - 表结构/唯一索引（single pending per conversation、decision key 幂等）；
  * - turn_runs 的 frozen router decision 字段；
- * - RLS：ailearn_worker 非 superuser 无 context 零行（FORCE RLS）；
- *   ailearn（superuser）无 context 可见全部（RLS 不拦截 superuser）。
+ * - RLS：astella_worker 非 superuser 无 context 零行（FORCE RLS）；
+ *   astella（superuser）无 context 可见全部（RLS 不拦截 superuser）。
  */
 
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 

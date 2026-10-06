@@ -62,5 +62,5 @@ CREATE POLICY orh_v2_owner ON public.objective_review_holds_v2 FOR ALL TO PUBLIC
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE ON public.objective_review_holds_v2 TO ailearn_api;
-GRANT ALL ON public.objective_review_holds_v2 TO ailearn_migrator;
+GRANT SELECT, INSERT, UPDATE ON public.objective_review_holds_v2 TO astella_api;
+GRANT ALL ON public.objective_review_holds_v2 TO astella_migrator;

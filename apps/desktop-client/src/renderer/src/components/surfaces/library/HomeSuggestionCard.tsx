@@ -45,7 +45,7 @@ export function TodayBatchOptions({
     setBusy(true);
     setFailure(null);
     try {
-      const api = window.ailearn;
+      const api = window.astella;
       if (!api) throw new Error("desktop_api_unavailable");
       const response = await api.review.actOnTodayBatch({
         meta: createRequestMeta(epochRef.current),

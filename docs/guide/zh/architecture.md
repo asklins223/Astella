@@ -1,4 +1,4 @@
-# 理解引擎系统架构
+# 拾星笔记系统架构
 
 中文 · [English](../en/architecture.md)
 
@@ -19,13 +19,13 @@
 
 ## 运行时拓扑
 
-开发栈是 `docker-compose.dev.yml`（Compose 项目名 `ailearn-dev`），生产镜像构建是 `docker-compose.yml`，Alpha 环境是 `docker-compose.alpha.yml`。下图是开发栈加桌面客户端的形状；`prometheus` / `alertmanager` **只存在于 alpha 文件**，开发栈里没有。
+开发栈是 `docker-compose.dev.yml`（Compose 项目名 `astella-dev`），生产镜像构建是 `docker-compose.yml`，Alpha 环境是 `docker-compose.alpha.yml`。下图是开发栈加桌面客户端的形状；`prometheus` / `alertmanager` **只存在于 alpha 文件**，开发栈里没有。
 
 ```mermaid
 flowchart TB
   subgraph client["desktop-client：宿主 Electron，单实例、单窗口"]
-    REN["沙箱渲染进程<br/>ailearn-app://bundle/index.html<br/>contextIsolation · sandbox: true · nodeIntegration: false"]
-    PRE["preload 桥<br/>window.ailearn · window.ailearnDesktop"]
+    REN["沙箱渲染进程<br/>astella-app://bundle/index.html<br/>contextIsolation · sandbox: true · nodeIntegration: false"]
+    PRE["preload 桥<br/>window.astella · window.astellaDesktop"]
     MAIN["Electron 主进程<br/>src/main/index.ts + desktop-gateway*"]
     REN <-->|"typed IPC 频道 + zod 校验"| PRE
     PRE <-->|"ipcRenderer.invoke"| MAIN
@@ -34,7 +34,7 @@ flowchart TB
   API["api：Fastify 5<br/>apps/api/src/server.ts<br/>容器内 :4000，宿主默认只回环发布"]
   WK["worker：ai-worker<br/>workers/ai-worker/src/index.ts<br/>metrics :9100"]
   PG[("postgres 16（pgvector/pgvector:pg16）<br/>:5432，migrator / api / worker 三角色 + RLS")]
-  MINIO[("minio：:9000 API<br/>:9001 控制台，桶 ailearn-workspaces")]
+  MINIO[("minio：:9000 API<br/>:9001 控制台，桶 astella-workspaces")]
   TTS["edge-tts 容器<br/>容器内 :8080 → 宿主 127.0.0.1:8088"]
   LLM["外部模型平台<br/>由 config/ai-platforms.json 声明"]
 
@@ -50,7 +50,7 @@ flowchart TB
 
 三条容易被省略、但会改变结论的边：
 
-- 渲染进程**不发业务 HTTP**。它对 API 的一切访问都要经过 `window.ailearn` → IPC → 主进程网关 → HTTP。渲染层里确实有 `fetch`，但只取同源的打包资源（Live2D 清单、字体、音频），见 `components/companion/WindowLive2DDriver.ts`、`media/learning-room-manifest.ts`。
+- 渲染进程**不发业务 HTTP**。它对 API 的一切访问都要经过 `window.astella` → IPC → 主进程网关 → HTTP。渲染层里确实有 `fetch`，但只取同源的打包资源（Live2D 清单、字体、音频），见 `components/companion/WindowLive2DDriver.ts`、`media/learning-room-manifest.ts`。
 - api 和 worker **不互相调用**。两者唯一的共享通道是 postgres：api 写 `jobs`，worker 用 `SECURITY DEFINER` 函数领取与收尾，事件通过 `pg_notify` 频道传播。
 - 自动更新**不经过 apps/api**。客户端直连 GitHub Releases（`apps/desktop-client/electron-builder.yml` 的 `publish`，以及 `src/main/desktop-update.ts`），所以自家 API 挂了不影响更新。
 
@@ -68,18 +68,18 @@ sequenceDiagram
     participant W as ai-worker
     participant P as 模型平台
 
-    R->>M: window.ailearn.<域>.<动作>（频道名 + zod 入参）
+    R->>M: window.astella.<域>.<动作>（频道名 + zod 入参）
     M->>A: POST /companion/conversations/...（Bearer 令牌在主进程）
     A->>A: withWorkspaceTransaction：set_config 后回读校验
     A->>J: createJob：pg_advisory_xact_lock(job-quota:workspaceId) → 幂等键查表 → payload 去重 → pending 计数未到 50 → INSERT
     A-->>M: 202 accepted（runId / operationId）
     M-->>R: 回执；页面把该任务挂在册页上
-    J-->>W: AFTER INSERT 触发器 pg_notify('ailearn_job_events')
-    W->>J: public.ailearn_claim_jobs(interactive, background, 3)：SKIP LOCKED + 写 lease_token
+    J-->>W: AFTER INSERT 触发器 pg_notify('astella_job_events')
+    W->>J: public.astella_claim_jobs(interactive, background, 3)：SKIP LOCKED + 写 lease_token
     W->>W: 短事务读材料（RLS 上下文内）→ 事务外调模型
     W->>P: runAiTask（预算 / 超时 / AbortSignal / 同意与外发策略闸门）
     P-->>W: 候选产物
-    W->>J: 核对 lease_token → 写领域表 + pg_notify('ailearn_companion_events_v1') → ailearn_finish_job
+    W->>J: 核对 lease_token → 写领域表 + pg_notify('astella_companion_events_v1') → astella_finish_job
     A-->>M: GET /companion/conversations/:id/events 的 SSE 帧（NOTIFY 唤醒，cursor 兜底）
     M-->>R: 投影后的最小事件形状（订阅通道）
 ```
@@ -89,10 +89,12 @@ sequenceDiagram
 | 触发方 | 入队实现 | 结果怎么回到屏幕 |
 | --- | --- | --- |
 | 伴星对话、笔记批注、来源解析、记忆与念头任务 | `apps/api/src/modules/job/service.ts` 的 `createJob()` | 伴星走 SSE；批注与来源走任务/操作状态轮询 |
-| 笔记页发起的速看、拓展、动态页面，以及制卡 | `packages/agent-host/src/note-operation.ts` 与 `store.ts:enqueueAdvance` 的直接 `INSERT INTO jobs` | 渲染层轮询 operation / job 状态，例如 `renderer/src/components/surfaces/notebook/use-notebook-overview.ts:142` |
+| 笔记页发起的速看、往外学、动态页面，以及制卡 | `packages/agent-host/src/note-operation.ts` 与 `store.ts:enqueueAdvance` 的直接 `INSERT INTO jobs` | 渲染层轮询 operation / job 状态，例如 `renderer/src/components/surfaces/notebook/use-notebook-overview.ts:142` |
 | LearningRun 的作答判定与 Commit | 不入 `jobs`：api 进程自己轮 `learning_run_processing_outbox` | 事件写入后由 `/learning-runs/:runId/events` 推给客户端 |
 
 入队两条路都**取同一把锁、同一个上限**：`note-operation.ts:37-39` 与 `job/service.ts:151-155` 都是 `pg_advisory_xact_lock(hashtextextended('job-quota:<workspaceId>', 0))` 再数 pending。差别只是 agent-host 把 50 写成了字面量，而 `createJob` 读 `MAX_PENDING_JOBS_PER_WORKSPACE`（`packages/shared/src/job-queue-limits.ts:17`）。
+
+这张图只到"进程之间怎么走"为止。回合内部怎么被驱动——内核步骤、能力与工具面、权限档位、上下文度量与压缩、状态词表——是另一套机制，单独写在 [统一 Agent 运行时（技术）](./agent-runtime.md)；伴星面向用户的那一面在 [伴星体验（产品设计）](./companion-experience.md)。
 
 ## 进程清单
 
@@ -100,27 +102,27 @@ sequenceDiagram
 | --- | --- | --- | --- | --- |
 | api | `make up` → compose `api` 服务，`target: dev` | `apps/api/src/server.ts`（`npm run dev` = `tsx watch src/server.ts`） | 容器内 4000；宿主 `${API_PORT:-4000}`，绑定 `${API_BIND_ADDRESS:-127.0.0.1}` | `/health`、`/ready`、`/metrics` |
 | worker | `make up` → compose `worker` 服务 | `workers/ai-worker/src/index.ts`（`tsx watch src/index.ts`） | metrics `${WORKER_METRICS_PORT:-9100}`，绑定 127.0.0.1 | `/metrics`（compose 健康检查打这个）、`/ready`（代码里有，`lib/metrics.ts:364`） |
-| postgres | compose `postgres`，镜像 `pgvector/pgvector:pg16` | 官方镜像 + `infra/postgres/init.sql` | `${POSTGRES_PORT:-5432}`，绑定 127.0.0.1 | `pg_isready -U ailearn -d ailearn` |
+| postgres | compose `postgres`，镜像 `pgvector/pgvector:pg16` | 官方镜像 + `infra/postgres/init.sql` | `${POSTGRES_PORT:-5432}`，绑定 127.0.0.1 | `pg_isready -U astella -d astella` |
 | minio | compose `minio`，profile `storage`；开发 `make up` 默认带上该 profile | `minio/minio:RELEASE.2024-12-18T13-15-44Z` | `${MINIO_PORT:-9000}`、`${MINIO_CONSOLE_PORT:-9001}` | `/minio/health/live` |
 | edge-tts | compose `edge-tts` | `docker/edge-tts/server.py`（`python:3.12-slim`，`user: nobody`） | 容器 8080 → 宿主 `127.0.0.1:${EDGE_TTS_PORT:-8088}` | `/health` |
 | Electron 主进程 | `make desktop-client-dev` → `npm run dev` = `electron-vite dev --remoteDebuggingPort 9222` | `apps/desktop-client/src/main/index.ts` | 无监听端口；对外只作为 HTTP 客户端 | 无 HTTP；窗口内以 `runtime.getHealth` IPC 呈现连接状态 |
-| Electron 渲染进程 | 主进程创建的**唯一** `BrowserWindow` | 开发：Vite dev server；打包：`ailearn-app://bundle/index.html` | 由 dev server 提供，端口由 electron-vite 注入 `ELECTRON_RENDERER_URL` | 同上 |
+| Electron 渲染进程 | 主进程创建的**唯一** `BrowserWindow` | 开发：Vite dev server；打包：`astella-app://bundle/index.html` | 由 dev server 提供，端口由 electron-vite 注入 `ELECTRON_RENDERER_URL` | 同上 |
 | preload 桥 | 与渲染进程同生命周期 | `apps/desktop-client/src/preload/index.ts` | — | — |
 | prometheus / alertmanager | `make alpha-up`（`scripts/alpha-env-setup.sh` + `docker-compose.alpha.yml`） | `prom/prometheus:v3.0.1`、`prom/alertmanager:v0.28.1` | 9090 / 9093 | 两者的 `/-/healthy` |
 
-一次性容器（`role-bootstrap`、`migrate`、`minio-init`、`seed-demo`）不在此表：它们跑完就退出，语义见 [development.md](development.md#一次性容器的约定)。
+一次性容器（`role-bootstrap`、`migrate`、`role-grants`、`minio-init`、`seed-demo`）不在此表：它们跑完就退出，语义见 [development.md](development.md#一次性容器的约定)。
 
 ## 包与依赖方向
 
-`packages/` 下**只有五个包**：`shared`、`agent-core`、`agent-host`、`ai-quality`、`card-generation`。**没有 `packages/db`**——根 README 的项目结构块仍写着它，那是过时的。数据库访问的真实位置是 `apps/api/src/db/` 与 `workers/ai-worker/src/db.ts`，表的唯一定义在 `packages/shared/src/db-schema/`（`make verify` 里的 `.github/scripts/verify-schema-mirror.mjs` 就是钉住这一条：不许有应用侧镜像）。
+`packages/` 下**只有五个包**：`shared`、`agent-core`、`agent-host`、`ai-quality`、`card-generation`。**没有 `packages/db`**——旧 README 写过它，那份树已经改掉了，别再把它当存在。数据库访问的真实位置是 `apps/api/src/db/` 与 `workers/ai-worker/src/db.ts`，表的唯一定义在 `packages/shared/src/db-schema/`（`make verify` 里的 `.github/scripts/verify-schema-mirror.mjs` 就是钉住这一条：不许有应用侧镜像）。
 
 | 包 | 职责 | 谁 import 它 | 它不该 import 什么 |
 | --- | --- | --- | --- |
-| `@ailearn/shared`（`packages/shared`） | zod 契约、枚举、138 张表的 drizzle schema、跨进程共用的安全工具（`safe-error`、`job-queue-limits`） | api、worker、desktop-client、其余四个包 | `src/index.ts` 里不许出现 `node:` 依赖——渲染进程加载它。服务端专用模块（`workspace-transaction.ts`、`content-hash`、`task-router`、`card-generation-v2-hashing`）只能走子路径 import，这个约束由 `verify-shared-exports.mjs` 与 `index.ts` 的逐条注释守着 |
-| `@ailearn/agent-core`（`packages/agent-core`） | 上下文计量与预算、压缩冷却、运行状态、能力描述 | api、worker、agent-host | 实测 src 下**没有** `node:` 与 `drizzle-orm` import，保持纯 TS；不要往里加持久化 |
-| `@ailearn/agent-host`（`packages/agent-host`） | `agent_runs` / `agent_operations` 的读写、治理策略、方法与回执登记 | api、worker | 不发 HTTP、不碰模型传输；它带 drizzle，所以不能进 `packages/shared/src/index.ts`，也不能被渲染进程 import |
-| `@ailearn/ai-quality`（`packages/ai-quality`） | 离线打分、数据集与 `pr-gate`（固定桩，不走付费网络） | worker（`make verify` 里唯一跑 `npm run pr-gate` 的包） | 不进渲染层，也不被 api import |
-| `@ailearn/card-generation`（`packages/card-generation`） | 制卡的创建、证据封存、事务与事件形状 | api、worker、agent-host | 只有 `typecheck` 脚本，**没有测试**；`make verify` 目前也没把它接进去（verify 覆盖 shared / agent-core / agent-host / ai-quality / api / desktop-client / ai-worker 七个） |
+| `@astella/shared`（`packages/shared`） | zod 契约、枚举、138 张表的 drizzle schema、跨进程共用的安全工具（`safe-error`、`job-queue-limits`） | api、worker、desktop-client、其余四个包 | `src/index.ts` 里不许出现 `node:` 依赖——渲染进程加载它。服务端专用模块（`workspace-transaction.ts`、`content-hash`、`task-router`、`card-generation-v2-hashing`）只能走子路径 import，这个约束由 `verify-shared-exports.mjs` 与 `index.ts` 的逐条注释守着 |
+| `@astella/agent-core`（`packages/agent-core`） | 上下文计量与预算、压缩冷却、运行状态、能力描述 | api、worker、agent-host | 实测 src 下**没有** `node:` 与 `drizzle-orm` import，保持纯 TS；不要往里加持久化 |
+| `@astella/agent-host`（`packages/agent-host`） | `agent_runs` / `agent_operations` 的读写、治理策略、方法与回执登记 | api、worker | 不发 HTTP、不碰模型传输；它带 drizzle，所以不能进 `packages/shared/src/index.ts`，也不能被渲染进程 import |
+| `@astella/ai-quality`（`packages/ai-quality`） | 离线打分、数据集与 `pr-gate`（固定桩，不走付费网络） | worker（`make verify` 里唯一跑 `npm run pr-gate` 的包） | 不进渲染层，也不被 api import |
+| `@astella/card-generation`（`packages/card-generation`） | 制卡的创建、证据封存、事务与事件形状 | api、worker、agent-host | 只有 `typecheck` 脚本，**没有测试**；`make verify` 目前也没把它接进去（verify 覆盖 shared / agent-core / agent-host / ai-quality / api / desktop-client / ai-worker 七个） |
 
 `shared` 的 `exports` 有 143 条、零通配符。这条不是风格：宿主 `tsc --noEmit` 能顺着 workspace 软链找到磁盘上的文件，而 Node 运行时读的是 `exports`——写了"文件存在但没登记"的深路径 import，类型检查是绿的，运行时才 `ERR_PACKAGE_PATH_NOT_EXPORTED`。
 
@@ -156,13 +158,13 @@ sequenceDiagram
 
 **外部调用闸门。** 同文件的 `assertOutsideWorkspaceTransaction` / `assertOutsideRegisteredTransactions`（199、249 行）判的是"当前异步作用域有没有活动事务"，不是"代码文本里有没有 `transaction`"——所以隐式嵌套一样被拒。注册制是因为 `public-json-http` 被两个进程共用，shared 不能反过来 import 任何一侧的 ALS 模块。
 
-**RLS。** 迁移里 112 张表带 `FORCE ROW LEVEL SECURITY`。`ailearn_api` 与 `ailearn_worker` 都是 `NOBYPASSRLS`，只有 `ailearn_migrator` 带 `BYPASSRLS`（`infra/postgres/roles.sql:52/60/68`）。开发栈的 `DATABASE_URL_API` 也已经是受限角色（`docker-compose.dev.yml:17`），这条是刻意改的：以前 dev 用 superuser，漏设 `app.workspace_id` 的读点不报错，只静默返回 0 行。
+**RLS。** 迁移里 112 张表带 `FORCE ROW LEVEL SECURITY`。`astella_api` 与 `astella_worker` 都是 `NOBYPASSRLS`，只有 `astella_migrator` 带 `BYPASSRLS`（`infra/postgres/roles.sql:52/60/68`）。开发栈的 `DATABASE_URL_API` 也已经是受限角色（`docker-compose.dev.yml:17`），这条是刻意改的：以前 dev 用 superuser，漏设 `app.workspace_id` 的读点不报错，只静默返回 0 行。
 
 **outbox 表。** 名字里带 outbox 的表共四张：`learning_run_processing_outbox`（api 进程消费）、`canonical_learning_event_outbox`、`practice_trail_event_outbox`（三张都在 `learning-runs.ts`）与 `card_generation_run_outbox_v2`（`card-generation-v2.ts`）。
 
 **SSE 限流。** `apps/api/src/lib/sse-connection-limiter.ts`：默认每用户 5 条、进程总量 200（28、37 行），可用 `SSE_MAX_STREAMS_PER_USER` / `SSE_MAX_STREAMS_TOTAL` 覆盖；按 namespace 分桶，现役有 `run-events`、`card-gen-events`、`inbox` 等。计数是**单进程内存态**，多副本部署时真实上限是副本数 × 本上限。写入统一走 `safe-sse-write.ts` 的 `safeSseWrite`，写失败只返回 false，绝不上冒成 HTTP 500。
 
-**LISTEN / NOTIFY 唤醒。** 频道一共这几条：`ailearn_job_events`（worker 主循环被叫醒，`workers/ai-worker/src/lib/job-notify.ts:9`）、`ailearn_companion_events_v1`（对话事件，驱动 SSE）、`ailearn_companion_inbox_v1`（投递箱）、`ailearn_companion_account_v1`。发送方全在 SQL 侧（`0115_job_insert_notify.sql`、`0271_job_ready_notify_on_retry.sql`、`0226_card_generation_outbox_notify.sql` 等），应用层只消费。worker 的空闲轮询是 500ms 指数退避到 5000ms（`index.ts:103-104`），NOTIFY 到达会直接打断当前 sleep 并回到快档；LISTEN 建立失败只警告并退回纯轮询。
+**LISTEN / NOTIFY 唤醒。** 频道一共这几条：`astella_job_events`（worker 主循环被叫醒，`workers/ai-worker/src/lib/job-notify.ts:9`）、`astella_companion_events_v1`（对话事件，驱动 SSE）、`astella_companion_inbox_v1`（投递箱）、`astella_companion_account_v1`。发送方全在 SQL 侧（`0115_job_insert_notify.sql`、`0271_job_ready_notify_on_retry.sql`、`0226_card_generation_outbox_notify.sql` 等），应用层只消费。worker 的空闲轮询是 500ms 指数退避到 5000ms（`index.ts:103-104`），NOTIFY 到达会直接打断当前 sleep 并回到快档；LISTEN 建立失败只警告并退回纯轮询。
 
 ## AI 的工作到底跑在哪一侧
 
@@ -179,10 +181,10 @@ sequenceDiagram
 ## 桌面客户端的边界
 
 - `webPreferences`：`contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`、`webSecurity: true`、`devTools: !app.isPackaged`（`src/main/index.ts:588-595`）。会话令牌与加密凭据只在主进程（`session-credential-store.ts`），渲染层拿到的是快照。
-- 自定义协议：`ailearn-app` 经 `protocol.registerSchemesAsPrivileged`（69 行）注册，`protocol.handle`（171 行）实现，两个 host：`bundle`（应用本身）与产物 host（AI 生成的 HTML/SVG 走隔离 origin，`artifact-surface.ts`）。打包后支持流式 GET、HEAD 和单段 Range，这是本地视频与音频能放的原因。
-- 导航闸：`setWindowOpenHandler` 一律 `deny`，`will-navigate` / `will-redirect` 与子 frame 导航都过 `isAllowedNavigation`（430-449 行）——开发模式放行 dev server origin，其余只允许 `ailearn-app://bundle` 且无用户名、无密码、无端口。被拦的次数计进 `isolationGateCounters`。
+- 自定义协议：`astella-app` 经 `protocol.registerSchemesAsPrivileged`（69 行）注册，`protocol.handle`（171 行）实现，两个 host：`bundle`（应用本身）与产物 host（AI 生成的 HTML/SVG 走隔离 origin，`artifact-surface.ts`）。打包后支持流式 GET、HEAD 和单段 Range，这是本地视频与音频能放的原因。
+- 导航闸：`setWindowOpenHandler` 一律 `deny`，`will-navigate` / `will-redirect` 与子 frame 导航都过 `isAllowedNavigation`（430-449 行）——开发模式放行 dev server origin，其余只允许 `astella-app://bundle` 且无用户名、无密码、无端口。被拦的次数计进 `isolationGateCounters`。
 - CSP：`onHeadersReceived` 三路分流（399-424 行）——renderer 策略、artifact 策略（`default-src 'none'`）、其余一律 `rejectAllContentSecurityPolicy`。开发模式才附加 dev origin 的 `connect-src` 与 `'unsafe-inline'`。
-- IPC 契约：频道名集中在 `DESKTOP_IPC_CHANNELS`（`packages/shared/src/contracts/desktop-ipc-contracts.ts`），主进程用 `installHandler(频道, 入参 schema, options, handler)`（`desktop-ipc.ts:627`）注册，按域拆到 `desktop-ipc-{rest,source,learning,auth,workspace,companion,agent,voice-asr}.ts`；渲染层用 `window.ailearn` 的嵌套方法名调用，两侧共享 `DESKTOP_IPC_CONTRACT_VERSION` 与 `AILEARN_DOMAIN_SCHEMA_REVISION`。
+- IPC 契约：频道名集中在 `DESKTOP_IPC_CHANNELS`（`packages/shared/src/contracts/desktop-ipc-contracts.ts`），主进程用 `installHandler(频道, 入参 schema, options, handler)`（`desktop-ipc.ts:627`）注册，按域拆到 `desktop-ipc-{rest,source,learning,auth,workspace,companion,agent,voice-asr}.ts`；渲染层用 `window.astella` 的嵌套方法名调用，两侧共享 `DESKTOP_IPC_CONTRACT_VERSION` 与 `ASTELLA_DOMAIN_SCHEMA_REVISION`。
 - 单实例单窗口：`requestSingleInstanceLock`（645 行），第二个实例只聚焦已有窗口；`new BrowserWindow` 全仓只出现一次。旧的"透明置顶桌宠窗口"在代码里已不存在。
 
 > **说明：`nativeCapabilities` 是个会骗人的投影。** `transportNativeCapabilities()`（`desktop-gateway-transport.ts:216`）把 `filePicker`、`notifications`、`live2d` 三项映射成 `null`，`null` 恒判 `unavailable`；设置页据此显示"未接入"（`capabilityChipLabel`，`settings-companion-status.tsx:45-56`）。另一半问题是它的 `registered` 集合来自 `Object.values(DESKTOP_IPC_CHANNELS)`——那是**静态频道名清单**，不是"本轮实际装了哪些 handler"。所以这条投影既说不出"通道名在清单里但没人注册"，也说不出相反的情形：`desktop-ipc-workspace.ts:611/651` 真的有 `showSaveDialog` / `showOpenDialog`，`filePicker` 却永远是未接入；Live2D 在屏幕上真实存在，但设置页的 Live2D 状态来自另一条运行时 `Live2dStatus`，而不是这个字段。改能力芯片之前先确认它读的是哪一个来源。
@@ -191,7 +193,7 @@ sequenceDiagram
 
 三条互不混用的身份。
 
-**用户会话（HTTP）。** `apps/api/src/modules/identity/session-auth.ts`：Cookie `ailearn_session`（HttpOnly）+ Cookie `ailearn_csrf`（可读）配请求头 `x-csrf-token` 双提交；`SameSite=Lax`，`Secure` 由 `AUTH_COOKIE_SECURE` 决定，未设置时跟随 `NODE_ENV === "production"`。`extractAuthCredential`（36-44 行）**优先 Bearer**，其次才读会话 Cookie——桌面网关用 Bearer，浏览器直连用 Cookie。桌面端的配对是第四道闸：`POST /_ailearn/desktop/trust/v1/challenge`（`modules/desktop-trust/routes.ts:106`）用 `AILEARN_DESKTOP_PAIRING_SECRET`（base64url，解码后 ≥32 字节）对 nonce、`serviceId`、IPC 契约版本与 `AILEARN_DOMAIN_SCHEMA_REVISION` 做 HMAC-SHA256；key id 不匹配 401，未配置直接 503 `desktop_trust_unavailable`。客户端侧对称：`local_loopback` 模式必须同时有 key id 与 secret，缺任何一个构造出的连接状态就是 `configuration_error: pairing_secret_missing`（`desktop-gateway.ts:444-476, 669-681`）。
+**用户会话（HTTP）。** `apps/api/src/modules/identity/session-auth.ts`：Cookie `astella_session`（HttpOnly）+ Cookie `astella_csrf`（可读）配请求头 `x-csrf-token` 双提交；`SameSite=Lax`，`Secure` 由 `AUTH_COOKIE_SECURE` 决定，未设置时跟随 `NODE_ENV === "production"`。`extractAuthCredential`（36-44 行）**优先 Bearer**，其次才读会话 Cookie——桌面网关用 Bearer，浏览器直连用 Cookie。桌面端的配对是第四道闸：`POST /_astella/desktop/trust/v1/challenge`（`modules/desktop-trust/routes.ts:106`）用 `ASTELLA_DESKTOP_PAIRING_SECRET`（base64url，解码后 ≥32 字节）对 nonce、`serviceId`、IPC 契约版本与 `ASTELLA_DOMAIN_SCHEMA_REVISION` 做 HMAC-SHA256；key id 不匹配 401，未配置直接 503 `desktop_trust_unavailable`。客户端侧对称：`local_loopback` 模式必须同时有 key id 与 secret，缺任何一个构造出的连接状态就是 `configuration_error: pairing_secret_missing`（`desktop-gateway.ts:444-476, 669-681`）。
 
 **运维面板（独立身份）。** `modules/admin/auth.ts` 用的是部署级令牌 `ADMIN_PANEL_TOKEN`，**不复用 `sessions` 表**：本仓库的鉴权是逐租户的，owner 是**空间内**角色，把它接到面板上只会得到一个"只能看自己空间"的全局后台。强度下限 `MIN_ADMIN_TOKEN_LENGTH = 16`，且带占位值黑名单；不达标记为未配置，此时 `adminRoutes()` **根本不注册任何路由**（不是注册了再拒绝）。挂载前缀由 `ADMIN_PANEL_PATH` 提供，它只混淆扫描噪声，边界始终是那个令牌。
 
@@ -211,8 +213,8 @@ sequenceDiagram
 | 决策 | 为什么 | 记录在哪 | 代价 |
 | --- | --- | --- | --- |
 | 本地优先、全部跑在同一份 Compose 里 | 产品是个人学习书房：资料、笔记、记忆不该先经过别人的云。`PRODUCT.md`「Operating Context」与「技术约束」把 PostgreSQL 16 列为唯一持久化存储 | [PRODUCT.md](../../../PRODUCT.md) | 没有云端多租户扩缩路径；SSE 上限这类进程内计数在多副本下会各算各的；alpha 那套监控是"有机器人才有告警"的形状，不是平台 |
-| 队列 + 独立 worker，而不是 api 直接调模型 | 模型调用慢、会超时、要重试，还要能在用户取消或租约失效后**不再写入**。[方案 41a §3](../../plans/learning-companion/41a-unified-agent-foundation-2026-09-28.md) 把这条写成运行边界：短事务准备 → 事务外执行 → 短事务核对并保存 | 41a §3；实现即 `jobs` + `ailearn_claim_jobs` + `assertOutsideRegisteredTransactions` | 一次回合跨两个进程，排障要靠 `traceId` 串；引入租约、reaper、退避与幂等这一整套；`Exited` 容器与 `LISTEN` 连接都得有人管 |
-| AI 同意作为账号级闸门，桌面端不给个人模型配置界面 | 数据出本机的决定权在写内容的人手里，而不是在每个空间的管理员手里。`PRODUCT.md`「Capabilities and Constraints」写明"账号级 AI 使用同意与数据外发政策设置（无模型/供应商配置）" | 41a §2/§3；代码 `ai-consent-gate.ts` + `lib/governance.ts` | 语音路径曾能从旁边绕过去（该文件头写明是 doc 34 L13 补的）；两处判据必须同形状，否则迟早一处松一处紧；没签同意的用户看到的是 403 引导，不是一个能自己填 key 的输入框 |
+| 队列 + 独立 worker，而不是 api 直接调模型 | 模型调用慢、会超时、要重试，还要能在用户取消或租约失效后**不再写入**。代码里的运行边界是：短事务准备 → 事务外执行 → 短事务核对并保存（最早由[方案 41a §3](../../plans/learning-companion/41a-unified-agent-foundation-2026-09-28.md) 写下） | 实现即 `jobs` + `astella_claim_jobs` + `assertOutsideRegisteredTransactions`；方案 41a §3 | 一次回合跨两个进程，排障要靠 `traceId` 串；引入租约、reaper、退避与幂等这一整套；`Exited` 容器与 `LISTEN` 连接都得有人管 |
+| AI 同意作为账号级闸门，桌面端不给个人模型配置界面 | 数据出本机的决定权在写内容的人手里，而不是在每个空间的管理员手里。`PRODUCT.md`「Capabilities and Constraints」写明"账号级 AI 使用同意与数据外发政策设置（无模型/供应商配置）" | 代码 `ai-consent-gate.ts` + `lib/governance.ts`；最早写在 41a §2/§3 | 语音路径曾能从旁边绕过去（该文件头写明是 doc 34 L13 补的）；两处判据必须同形状，否则迟早一处松一处紧；没签同意的用户看到的是 403 引导，不是一个能自己填 key 的输入框 |
 
 ## 想改 X，先看哪里
 
@@ -236,7 +238,9 @@ sequenceDiagram
 - [开发环境与日常命令](development.md)
 - [桌面客户端](desktop-client.md)
 - [API 与数据](api-and-data.md)
-- [AI 与伴星](ai-and-companion.md)
+- [模型与 Worker 链路](ai-and-companion.md)
+- [统一 Agent 运行时（技术）](agent-runtime.md)
+- [伴星体验（产品设计）](companion-experience.md)
 - [测试与质量](testing-and-quality.md)
 - [运维](operations.md)
 - [常见问题与排障](faq-and-troubleshooting.md)

@@ -11,17 +11,17 @@ import {
   cardCandidateQualityReportsV2,
   cardGenerationEventsV2,
   cardGenerationRunOutboxV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import type { CreateCardGenerationRunRequestV2 } from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/db-schema/card-generation-v2";
+import type { CreateCardGenerationRunRequestV2 } from "@astella/shared/card-generation-v2-contracts";
 import {
   cardGenerationCandidateQualityIssueV1Schema,
   isCardGenerationReviewOpen,
-} from "@ailearn/shared/card-generation-desktop-contracts";
+} from "@astella/shared/card-generation-desktop-contracts";
 // 「在制」状态集合的唯一常量；`listActiveGenerationRunsV2` 与创建事务里那条
 // (笔记, 人) 在制守卫读的是同一个数组。
 import {
   ACTIVE_GENERATION_RUN_STATUSES,
-} from "@ailearn/card-generation";
+} from "@astella/card-generation";
 import {
   sanitizeEventPayloadV2,
   CardGenerationV2ServiceError,

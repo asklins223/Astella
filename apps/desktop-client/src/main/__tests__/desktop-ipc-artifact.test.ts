@@ -16,7 +16,7 @@ import {
   DESKTOP_IPC_CONTRACT_VERSION,
   type GatewayResultV1,
   type RequestMetaV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import { type DesktopGateway } from "../desktop-gateway";
 import { registerAuthStub } from "./ns-auth-stubs";
 import * as ns_auth from "../desktop-gateway-ns-auth";
@@ -83,7 +83,7 @@ let userDataDir: string;
 beforeEach(async () => {
   electronMock.handlers.clear();
   electronMock.handle.mockClear();
-  userDataDir = await mkdtemp(join(tmpdir(), "ailearn-artifact-ipc-"));
+  userDataDir = await mkdtemp(join(tmpdir(), "astella-artifact-ipc-"));
 });
 
 afterEach(async () => {
@@ -129,13 +129,13 @@ async function register(gateway: DesktopGateway, injectUserDataDir = true) {
   ]);
   registerM1DesktopIpc({
     gateway,
-    env: { AILEARN_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
+    env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
     resolveWindow: () => ({} as never),
     getWindowState: () => ({ state: "visible", revision: 1 }),
     setTitlebarTheme: () => true,
     ...(injectUserDataDir ? { artifactUserDataDir: () => userDataDir } : {}),
   });
-  const event = { sender: {}, senderFrame: { url: "ailearn://renderer/" } };
+  const event = { sender: {}, senderFrame: { url: "astella://renderer/" } };
   // 先读一次状态把 activeWorkspaceEpoch 立起来（与通道覆盖那份同一口径）。
   const st = await electronMock.handlers.get(DESKTOP_IPC_CHANNELS.authGetState)!(event, { meta });
   return {

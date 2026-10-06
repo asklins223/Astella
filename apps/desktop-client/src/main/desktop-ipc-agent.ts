@@ -1,10 +1,10 @@
 import { z } from "zod";
-import {agentLongGoalsV1Schema,agentLongGoalsQueryV1Schema} from "@ailearn/shared/agent-long-goal-contracts";
-import { DESKTOP_IPC_CHANNELS, requestMetaSchema } from "@ailearn/shared/desktop-ipc-contracts";
-import { agentRunV1Schema, agentRunListV1Schema, agentRunListQueryV1Schema, agentRunHistoryV1Schema, agentRunHistoryQueryV1Schema, createAgentRunV1Schema, reviseAgentRunV1Schema, controlAgentRunV1Schema } from "@ailearn/shared/agent-contracts";
+import {agentLongGoalsV1Schema,agentLongGoalsQueryV1Schema} from "@astella/shared/agent-long-goal-contracts";
+import { DESKTOP_IPC_CHANNELS, requestMetaSchema } from "@astella/shared/desktop-ipc-contracts";
+import { agentRunV1Schema, agentRunListV1Schema, agentRunListQueryV1Schema, agentRunHistoryV1Schema, agentRunHistoryQueryV1Schema, createAgentRunV1Schema, reviseAgentRunV1Schema, controlAgentRunV1Schema } from "@astella/shared/agent-contracts";
 import { agentMethodV1Schema, agentMethodListV1Schema, agentMethodHistoryV1Schema, agentMethodUsesV1Schema,
   agentMethodUseV1Schema, proposeAgentMethodV1Schema, reviseAgentMethodV1Schema, controlAgentMethodV1Schema,
-  agentMethodFeedbackV1Schema } from "@ailearn/shared/agent-growth-contracts";
+  agentMethodFeedbackV1Schema } from "@astella/shared/agent-growth-contracts";
 import { DesktopGatewayFailure } from "./desktop-gateway-failure";
 import type { CompanionChannelDeps } from "./desktop-ipc-companion";
 

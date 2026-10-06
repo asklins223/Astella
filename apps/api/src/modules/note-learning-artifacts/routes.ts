@@ -6,8 +6,8 @@ import {
   noteLearningArtifactListQueryV1Schema,
   noteLearningArtifactTaskListQueryV1Schema,
   noteLearningArtifactTaskV1Schema,
-} from "@ailearn/shared/note-learning-artifact-contracts";
-import { noteLearningArtifacts } from "@ailearn/shared/db-schema/note-learning-artifacts";
+} from "@astella/shared/note-learning-artifact-contracts";
+import { noteLearningArtifacts } from "@astella/shared/db-schema/note-learning-artifacts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { requireSession } from "../identity/middleware.ts";
 import {

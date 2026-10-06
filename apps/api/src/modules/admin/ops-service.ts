@@ -96,7 +96,7 @@ function toNumber(value: unknown): number {
 /** 按作业类型的跨租户队列积压。 */
 export async function readQueueBacklog(): Promise<QueueSummary> {
   const rows = (await db.execute(sql`
-    SELECT * FROM public.ailearn_admin_job_backlog()
+    SELECT * FROM public.astella_admin_job_backlog()
   `)) as unknown as Array<Record<string, unknown>>;
 
   const byType: QueueBacklogRow[] = rows.map((row) => ({
@@ -141,7 +141,7 @@ export interface RecentFailure {
 
 export async function readRecentFailures(limit = 50): Promise<RecentFailure[]> {
   const rows = (await db.execute(sql`
-    SELECT * FROM public.ailearn_admin_recent_job_failures(${limit})
+    SELECT * FROM public.astella_admin_recent_job_failures(${limit})
   `)) as unknown as Array<Record<string, unknown>>;
 
   return rows.map((row) => ({
@@ -162,7 +162,7 @@ export async function readRecentFailures(limit = 50): Promise<RecentFailure[]> {
 /**
  * 一条失败分组：同一作业类型下、同一安全错误名的一组失败。
  *
- * 为什么要有聚合：`ailearn_admin_recent_job_failures` 返回的是**逐条**失败，
+ * 为什么要有聚合：`astella_admin_recent_job_failures` 返回的是**逐条**失败，
  * 面板上 20 条「记忆提取 · unknown · Error」平铺出来是一堵同质的墙——读的人
  * 数不出有几种病、哪种最重，而这两件事恰恰是失败列表唯一该回答的。
  * 聚合键刻意包含 status（failed / dead）：同样是 timeout，还能重试的与
@@ -238,7 +238,7 @@ export interface RecentAudit {
 
 export async function readRecentAudit(limit = 50): Promise<RecentAudit[]> {
   const rows = (await db.execute(sql`
-    SELECT * FROM public.ailearn_admin_recent_audit(${limit})
+    SELECT * FROM public.astella_admin_recent_audit(${limit})
   `)) as unknown as Array<Record<string, unknown>>;
 
   return rows.map((row) => ({
@@ -284,7 +284,7 @@ export interface PlatformCounts {
 
 export async function readPlatformCounts(): Promise<PlatformCounts> {
   const rows = (await db.execute(sql`
-    SELECT * FROM public.ailearn_admin_platform_counts()
+    SELECT * FROM public.astella_admin_platform_counts()
   `)) as unknown as Array<Record<string, unknown>>;
   const row = rows[0] ?? {};
   return {
@@ -334,8 +334,8 @@ export async function runJobAction(input: {
   const limit = Math.max(1, Math.min(500, Math.floor(input.limit ?? (input.action === "retry" ? 100 : 500))));
 
   const fn = input.action === "retry"
-    ? sql`SELECT public.ailearn_admin_retry_failed_jobs(${jobType}, ${limit}) AS n`
-    : sql`SELECT public.ailearn_admin_purge_dead_jobs(${jobType}, ${limit}) AS n`;
+    ? sql`SELECT public.astella_admin_retry_failed_jobs(${jobType}, ${limit}) AS n`
+    : sql`SELECT public.astella_admin_purge_dead_jobs(${jobType}, ${limit}) AS n`;
   const rows = (await db.execute(fn)) as unknown as Array<Record<string, unknown>>;
 
   const affected = Number(rows[0]?.n ?? 0);

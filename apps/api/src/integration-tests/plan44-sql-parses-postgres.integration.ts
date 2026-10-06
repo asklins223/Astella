@@ -122,7 +122,7 @@ const SOURCE_FILES = [
  *
  * 返回 SQL 片段的函数大多不住在被扫描的文件里：`tzSubquery()` 与两个
  * `visibleCompanion*Condition()` 在 companion-here-and-now.ts，判据本身在
- * `@ailearn/shared`。不给它们单独一份定义语料，函数体内联就没法展开——
+ * `@astella/shared`。不给它们单独一份定义语料，函数体内联就没法展开——
  * 而内联出来的正是它们最终进入的那些语句的原文。
  *
  * 这里只放**确实被上面那批模板调用**的文件；放多了不会让守卫误判（不会产生新语句），

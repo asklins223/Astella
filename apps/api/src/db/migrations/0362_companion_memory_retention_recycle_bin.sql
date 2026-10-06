@@ -2,7 +2,7 @@
 --
 -- ## 要修的事实
 --
--- 0346 的 `ailearn_enforce_companion_memory_retention()` 用两条**硬 DELETE**
+-- 0346 的 `astella_enforce_companion_memory_retention()` 用两条**硬 DELETE**
 -- 做归档保留上限：
 --
 --   1. 删掉已过声明期限的 archived 行；
@@ -23,7 +23,7 @@
 --
 -- 两步都改成**软删 + 抑制墓碑**，与 `memory-service.ts` 的 `deleteMemory`
 -- 同一条语义：deleted_at、purge_after = +30 天、写抑制。回收区里能恢复，
--- 到期之后才由 `ailearn_purge_expired_companion_memory` 真正清掉。
+-- 到期之后才由 `astella_purge_expired_companion_memory` 真正清掉。
 --
 -- 容量语义不变：`budget_tier='archived' AND deleted_at IS NULL` 是容量统计的
 -- 分母，所以软删之后这两行立刻不再占预算——「腾出了空间」这件事仍然成立，
@@ -36,7 +36,7 @@
 
 -- statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_enforce_companion_memory_retention()
+CREATE OR REPLACE FUNCTION public.astella_enforce_companion_memory_retention()
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -50,7 +50,7 @@ DECLARE
   reclaimed integer;
   n integer;
 BEGIN
-  SELECT * INTO limits FROM public.ailearn_companion_memory_retention_limits();
+  SELECT * INTO limits FROM public.astella_companion_memory_retention_limits();
 
   SELECT count(*)::integer, COALESCE(sum(octet_length(content)), 0)::bigint
     INTO archived_items, archived_bytes
@@ -124,6 +124,6 @@ $$;
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_enforce_companion_memory_retention() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_enforce_companion_memory_retention() TO ailearn_worker;
-GRANT EXECUTE ON FUNCTION public.ailearn_enforce_companion_memory_retention() TO ailearn_api;
+REVOKE ALL ON FUNCTION public.astella_enforce_companion_memory_retention() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_enforce_companion_memory_retention() TO astella_worker;
+GRANT EXECUTE ON FUNCTION public.astella_enforce_companion_memory_retention() TO astella_api;

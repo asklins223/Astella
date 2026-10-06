@@ -27,7 +27,7 @@ export const MAX_QUEUE_CONCURRENCY = 16;
  *
  * 动机：后台 job 的 handler 超时可达 110s（念头生成、记忆重建），此前它们
  * 可以占满全部槽位——用户发消息时 turn job 只能排在后面，表现为"有时候要等
- * 很久才回"。`ailearn_claim_jobs` 现在按类别限流，后台同时最多占用
+ * 很久才回"。`astella_claim_jobs` 现在按类别限流，后台同时最多占用
  * `并发 - 保留` 个槽位，交互 job 永远有槽可领。
  */
 export const INTERACTIVE_RESERVE_SLOTS = 1;

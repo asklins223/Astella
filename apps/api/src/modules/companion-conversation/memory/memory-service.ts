@@ -19,12 +19,12 @@ import {
   companionMemoryMutationLockKey,
   MEMORY_CONTENT_SIMILARITY_THRESHOLD,
   MEMORY_SEMANTIC_SIMILARITY_THRESHOLD,
-} from "@ailearn/shared/db-schema/assistant-memory";
-import type { CompanionMemoryBudgetTier } from "@ailearn/shared/db-schema/assistant-memory";
+} from "@astella/shared/db-schema/assistant-memory";
+import type { CompanionMemoryBudgetTier } from "@astella/shared/db-schema/assistant-memory";
 import {
   accountPreferenceWriteDecision,
   type AccountPreferenceWriteRejection,
-} from "@ailearn/shared/companion-memory-scope";
+} from "@astella/shared/companion-memory-scope";
 import { closeDeliveriesForMemoryItem } from "../delivery/delivery-service.ts";
 import { maskEntriesForSource, unmaskEntriesForSource } from "../discovery/discovery-service.ts";
 
@@ -76,7 +76,7 @@ export class MemoryGlobalScopeRejectedError extends Error {
 /**
  * 账号级写入守卫：这一行的**最终形状**能不能以 `scope='global'` 存在。
  * 传最终值（截断后的正文、沿用库里的条件也算）而不是单个输入字段，否则"这次恰好没传
- * scope"就绕过去了。判据本体与抽取器共用 `@ailearn/shared/companion-memory-scope`。
+ * scope"就绕过去了。判据本体与抽取器共用 `@astella/shared/companion-memory-scope`。
  */
 function assertGlobalPreferenceWritable(row: {
   scope: string;
@@ -125,7 +125,7 @@ export const COMPANION_MEMORY_RESIDENT_BUDGET_V1 = {
 /**
  * 归档保留上限（40 §4.6.6「仍受全量存储/保留预算…不承诺无限增长」/ A74）。
  *
- * 数字与迁移 0346 的 `ailearn_companion_memory_retention_limits()` 同源。
+ * 数字与迁移 0346 的 `astella_companion_memory_retention_limits()` 同源。
  * 那边是 SQL、这边是类型，两处各写一个数就会漂移——所以这里显式说明关系，
  * 并且由 `0346` 的迁移测试断言两边一致。
  */
@@ -423,7 +423,7 @@ export async function upsertMemory(
     }
   }
   // id 在这里先生成而不是交给 `defaultRandom()`：global 记忆的 `global_key` 约定是
-  // "源行认领自己的 id"（与 `ailearn_fanout_global_companion_memory` 同一句话），
+  // "源行认领自己的 id"（与 `astella_fanout_global_companion_memory` 同一句话），
   // 拿不到 id 就写不出这个 key——而没有 key 的 global 行，0268 的触发器永远不认。
   const memoryId = randomUUID();
   const memoryScope = input.scope ?? "workspace";
@@ -557,7 +557,7 @@ async function fanoutAgentGlobalPreference(
 ): Promise<void> {
   if (row.scope !== "global" || row.deletedAt !== null) return;
   await executor.execute(sql`
-    SELECT public.ailearn_fanout_agent_global_preference(${row.id}::uuid) AS inserted
+    SELECT public.astella_fanout_agent_global_preference(${row.id}::uuid) AS inserted
   `);
 }
 
@@ -610,7 +610,7 @@ export async function deleteMemory(
   // 进回收区：删除与到期时间在**同一条** UPDATE 里写下（A47 的「可恢复」那一半）。
   //
   // 为什么必须同一条（42 阶段 1 N）：账号级记忆在别的空间有一份副本，副本同步触发器
-  // （0268 / 0371 的 ailearn_sync_global_companion_memory_copies）在**这条** UPDATE
+  // （0268 / 0371 的 astella_sync_global_companion_memory_copies）在**这条** UPDATE
   // 之后同步 `deleted_at`。以前到期时间是第二条「只按 id」的 UPDATE 写的，那一条既没有
   // owner/workspace/未删条件，也发生在同步之后——于是别的空间里的副本/源行只有
   // `deleted_at` 而 `purge_after` 恒为 NULL，而到期清理的判据要求 purge_after 非空，
@@ -683,7 +683,7 @@ export async function restoreDeletedMemory(
 ): Promise<boolean> {
   await lockMemoryMutations(executor, scope.userId);
   const restored = await executor.execute<{ restored: boolean }>(sql`
-    SELECT public.ailearn_restore_companion_memory(
+    SELECT public.astella_restore_companion_memory(
       ${memoryItemId}::uuid, ${scope.workspaceId}::uuid, ${scope.userId}::uuid
     ) AS restored
   `);
@@ -747,7 +747,7 @@ export async function eraseMemory(
  * 回收区**到期清扫**不在 api 侧。
  *
  * 它由 worker 的 `companion-memory-maintenance` tick 直接调
- * `ailearn_purge_expired_companion_memory()`——每天一次，"有没有到期行"
+ * `astella_purge_expired_companion_memory()`——每天一次，"有没有到期行"
  * 决定要不要动，落后一天无害。这里原来还有一个同功能的 TS 包装，零调用方：
  * 同一个 DB 函数被两个进程各包一层，读代码的人会以为有两条路径，
  * 而改了一边不会红。AGENTS.md 说没有运行时调用的旧链路直接清理。
@@ -1115,7 +1115,7 @@ export async function moveMemoryBudgetTier(
   },
 ): Promise<MemoryTierMoveResultV1> {
   const rows = await executor.execute<{ result: MemoryTierMoveResultV1 }>(sql`
-    SELECT public.ailearn_move_companion_memory_budget_tier_v1(
+    SELECT public.astella_move_companion_memory_budget_tier_v1(
       ${scope.workspaceId}::uuid,
       ${scope.userId}::uuid,
       ${input.memoryItemId}::uuid,

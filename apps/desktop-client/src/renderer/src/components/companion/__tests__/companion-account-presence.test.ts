@@ -8,8 +8,8 @@ import {
   quietHoursPatch,
   quietHoursWithBoundary,
 } from "../companion-account-presence.ts";
-import { companionAccountStateV1Schema } from "@ailearn/shared/companion-shell-contracts";
-import { PROACTIVE_CADENCE_MS } from "@ailearn/shared/companion-proactive-policy";
+import { companionAccountStateV1Schema } from "@astella/shared/companion-shell-contracts";
+import { PROACTIVE_CADENCE_MS } from "@astella/shared/companion-proactive-policy";
 
 const accountState = (overrides: { globalEnabled?: boolean } = {}) => companionAccountStateV1Schema.parse({
   revision: 4,

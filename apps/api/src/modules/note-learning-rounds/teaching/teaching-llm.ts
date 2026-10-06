@@ -1,10 +1,10 @@
 import { z } from "zod";
-import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
+import type { PublicJsonRequester } from "@astella/shared/public-json-http";
 import { createGovernedApiRequester } from "../../../lib/ai-governance.ts";
 import { productionAiGovernancePorts } from "../../../governance/ai-governance-runtime.ts";
-import { roundTeachingContentV1Schema } from "@ailearn/shared/note-learning-round-contracts";
-import { resolveSystemPlatform } from "@ailearn/shared/platform-config-node";
-import { resolveDashScopeTextEndpoint, resolveOpenAIChatCompletionsUrl } from "@ailearn/shared/ai-endpoints";
+import { roundTeachingContentV1Schema } from "@astella/shared/note-learning-round-contracts";
+import { resolveSystemPlatform } from "@astella/shared/platform-config-node";
+import { resolveDashScopeTextEndpoint, resolveOpenAIChatCompletionsUrl } from "@astella/shared/ai-endpoints";
 import type { TeachingExplainInputV1, TeachingExplainProviderV1, TeachingExplainScope } from "./teaching-explain.ts";
 import { roundTargetDraftSchema } from "./round-target-contract.ts";
 

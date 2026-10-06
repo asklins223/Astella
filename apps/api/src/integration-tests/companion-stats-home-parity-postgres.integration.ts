@@ -24,7 +24,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = process.env.DATABASE_URL;
 if (!CONN) {
@@ -71,8 +71,8 @@ function companionStats(workspaceId: string, userId: string): {
   const runner = `${REPO_ROOT}workers/ai-worker/node_modules/.bin/tsx`;
   const bridge = `${REPO_ROOT}workers/ai-worker/scripts/companion-gate-eval.ts`;
   assert.ok(existsSync(runner), `判据桥的运行器不在：${runner}`);
-  // `--tsconfig` 显式给：桥 import 的是 `@ailearn/shared/*` 的实时源码，缺这一条时
-  // tsx 会退回 worker 的 `node_modules/@ailearn/shared` 安装期快照（新文件不在里面）。
+  // `--tsconfig` 显式给：桥 import 的是 `@astella/shared/*` 的实时源码，缺这一条时
+  // tsx 会退回 worker 的 `node_modules/@astella/shared` 安装期快照（新文件不在里面）。
   const out = execFileSync(runner, [
     "--tsconfig", `${REPO_ROOT}workers/ai-worker/tsconfig.json`,
     bridge,

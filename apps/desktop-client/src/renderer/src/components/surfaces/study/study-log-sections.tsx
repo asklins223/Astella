@@ -1,7 +1,7 @@
 import { useState, type Ref } from "react";
 import { BookOpen, Compass, FileText, Layers, LoaderCircle, MousePointerClick, Route, Settings2, Sparkles, TriangleAlert } from "lucide-react";
-import type { ActivityTargetV1 } from "@ailearn/shared/activity-surface-contracts";
-import type { NoteLearningRoundPersonalHistoryItemV1 } from "@ailearn/shared/note-learning-round-contracts";
+import type { ActivityTargetV1 } from "@astella/shared/activity-surface-contracts";
+import type { NoteLearningRoundPersonalHistoryItemV1 } from "@astella/shared/note-learning-round-contracts";
 import type { RoomIntent } from "../../../app/room-machine";
 import { ROUND_RECORD_COPY_V1, roundHistoryStateLabelV1, roundRecordDayV1, roundRecordModesLabelV1 } from "../notebook/round-record-copy.ts";
 import type { AllSpacesSummary } from "../library/all-spaces-summary.ts";

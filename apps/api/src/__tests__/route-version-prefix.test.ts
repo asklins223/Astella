@@ -20,14 +20,14 @@ import test from "node:test";
  *
  * ## 唯一豁免
  *
- * `/_ailearn/desktop/trust/v1/challenge` 是**内部命名空间**（`_ailearn` 前缀），
+ * `/_astella/desktop/trust/v1/challenge` 是**内部命名空间**（`_astella` 前缀），
  * 不是业务路由：它由桌面主进程在建立可信连接前调用，调用方与服务端是一起发布的，
  * 没有第三方消费者，版本段在中间是有意为之（`desktop/trust/v1` 读起来是
  * "桌面信任协议的 v1"，不是"reviews 的 v2"那类业务版本）。
  * 改名会把这条内部协议的语义也一起改掉，所以显式豁免并写明理由。
  */
 const INTERNAL_NAMESPACE_EXEMPTIONS: ReadonlySet<string> = new Set([
-  "/_ailearn/desktop/trust/v1/challenge",
+  "/_astella/desktop/trust/v1/challenge",
 ]);
 
 /** `/v2`、`/v3`… —— 段首形如 v + 纯数字。 */

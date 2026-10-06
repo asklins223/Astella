@@ -34,8 +34,8 @@ import {
   sessionContextSchema,
   type GatewayResultV1,
   type RequestMetaV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
-import { companionOverviewSchema } from "@ailearn/shared/companion-shell-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
+import { companionOverviewSchema } from "@astella/shared/companion-shell-contracts";
 import type { DesktopGateway } from "../desktop-gateway";
 
 type InvokeHandler = (
@@ -238,13 +238,13 @@ async function setup(options: { fakeTimers?: boolean; disabledCompanion?: boolea
   const { registerM1DesktopIpc: register } = await import("../desktop-ipc");
   register({
     gateway,
-    env: { AILEARN_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
+    env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
     resolveWindow: () => window as never,
     getWindowState: () => ({ version: 1, state: "visible", revision: 1 }) as never,
     setTitlebarTheme: () => true,
   });
 
-  const event = { sender: {}, senderFrame: { url: "ailearn://renderer/" } };
+  const event = { sender: {}, senderFrame: { url: "astella://renderer/" } };
   const call = (channel: string, input: unknown) => {
     const found = electronMock.handlers.get(channel);
     if (!found) throw new Error(`missing IPC handler for ${channel}`);

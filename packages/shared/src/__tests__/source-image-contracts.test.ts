@@ -61,7 +61,7 @@ test("SourceImageGetRequestV1 只接受受形状约束的对象键", () => {
     sourceImageGetRequestV1Schema.parse({
       version: 1,
       objectKey: `${workspaceId}/sources/${sourceId}/${imageId}.png`,
-      absolutePath: "/data/ailearn",
+      absolutePath: "/data/astella",
     }));
   assert.throws(() => sourceImageGetRequestV1Schema.parse({ ...request, version: 2 }));
 });

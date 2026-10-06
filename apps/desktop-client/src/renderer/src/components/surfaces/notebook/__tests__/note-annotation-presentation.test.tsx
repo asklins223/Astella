@@ -2,8 +2,8 @@
 import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
-import { noteAnnotationV1Schema } from "@ailearn/shared/note-annotation-contracts";
-import type { NoteLearningArtifactV1 } from "@ailearn/shared/note-learning-artifact-contracts";
+import { noteAnnotationV1Schema } from "@astella/shared/note-annotation-contracts";
+import type { NoteLearningArtifactV1 } from "@astella/shared/note-learning-artifact-contracts";
 import { NoteAnnotationMark } from "../note-annotation-mark";
 import { NoteAnnotationSidePage } from "../note-annotation-side-page";
 import { ReadingBlockContent } from "../notebook-reading-block";

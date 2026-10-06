@@ -7,7 +7,7 @@
  * 推进（learning_run.completed + created schedule → completed real_first_loop）
  * → 事件幂等（同 domainEventId 不重复推进）→ replay 新旅程。
  *
- * 运行：DATABASE_URL_API="postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn"
+ * 运行：DATABASE_URL_API="postgres://astella:astella_dev@127.0.0.1:5432/astella"
  *   node --import tsx --test --test-concurrency=1 src/integration-tests/companion-journey-postgres.integration.ts
  */
 
@@ -15,22 +15,22 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL_API ??= CONN;
 // 跨 user 隔离断言必须用**不绕过 RLS** 的角色（超级用户会让隔离断言变成假通过），
-// 因此默认值保持受限的 ailearn_api，而不是回落到主连接。需要指向别的库时用
+// 因此默认值保持受限的 astella_api，而不是回落到主连接。需要指向别的库时用
 // DATABASE_URL_API_RLS 显式覆盖（角色仍须是 NOBYPASSRLS 的受限角色）。
 //
-// 默认值由 CONN 派生 host/port/database：写死 "/ailearn" 会让套件在指向别的库
+// 默认值由 CONN 派生 host/port/database：写死 "/astella" 会让套件在指向别的库
 // （CI/测试库）时探针连到**另一个数据库**，于是"跨 user 读被拒"因读不到任何行
-// 而假通过、"本人可读"却失败。角色与密码仍取受限的 ailearn_api。
+// 而假通过、"本人可读"却失败。角色与密码仍取受限的 astella_api。
 function deriveRestrictedApiUrl(main: string): string {
   try {
     const url = new URL(main);
-    url.username = "ailearn_api";
-    url.password = process.env.API_PASSWORD ?? "ailearn_dev";
+    url.username = "astella_api";
+    url.password = process.env.API_PASSWORD ?? "astella_dev";
     return url.toString();
   } catch {
     // 以前这里会静默回落一个写死的开发库串——那正是"夹具写进别人的 dev 库"的形状。
@@ -48,7 +48,7 @@ const sql = postgres(CONN, { max: 2 });
  * 裸 SQL 夹具/校验必须带 workspace/user 上下文。
  *
  * companion_conversations / companion_journeys / companion_journey_pending_events /
- * companion_account_invitations 都是 FORCE RLS：受限角色（ailearn_api）在无上下文
+ * companion_account_invitations 都是 FORCE RLS：受限角色（astella_api）在无上下文
  * 事务里读或写会命中 0 行——校验读会取到 undefined 而假失败，夹具 UPDATE 会静默
  * 失效让后续 CAS 恒 stale。超级用户则绕过 RLS 掩盖同一问题。
  */
@@ -317,7 +317,7 @@ test("P6 RLS：跨 user 读 journey 被拒（app.user_id 上下文收口）", as
     const journeyId = boot.journey!.journeyId;
 
     // 另一个 user 以正确 workspace 上下文读该 journey → RLS 拒（0 行）。
-    // 用 ailearn_api 角色连接（NOBYPASSRLS，owner 会绕过 RLS）。
+    // 用 astella_api 角色连接（NOBYPASSRLS，owner 会绕过 RLS）。
     const apiSql = postgres(API_RLS_CONN, { max: 1 });
     // 探针连接必须与套件主连接同库、且角色不绕过 RLS。否则下面的负向断言会因
     // "探针连到别的库 → 谁都读不到"而假通过，或"角色是超级用户 → 谁都读得到"

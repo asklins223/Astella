@@ -28,7 +28,7 @@ ALTER TABLE public.companion_context_handoff_snapshots
   CHECK (snapshot_version >= 1);
 
 -- 折叠轨迹只记区间与那一轮的预算判定，不记正文（44 §3.3「只记模型路由与水位」）。
-CREATE OR REPLACE FUNCTION public.ailearn_assert_handoff_snapshot_fence(
+CREATE OR REPLACE FUNCTION public.astella_assert_handoff_snapshot_fence(
   p_run uuid, p_expected_version integer
 ) RETURNS boolean LANGUAGE plpgsql STABLE AS $$
 BEGIN
@@ -39,7 +39,7 @@ BEGIN
       AND r.status IN ('accepted', 'running', 'waiting_for_confirmation')
   );
 END $$;
-REVOKE ALL ON FUNCTION public.ailearn_assert_handoff_snapshot_fence(uuid, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_assert_handoff_snapshot_fence(uuid, integer) FROM PUBLIC;
 -- 生产路径（worker）要能调用；migrator 也要——集成夹具按仓库约定用 migrator 写数据，
 -- 少了这一条，真库验证会以 `permission denied for function` 收场，而那与围栏本身无关。
-GRANT EXECUTE ON FUNCTION public.ailearn_assert_handoff_snapshot_fence(uuid, integer) TO ailearn_worker, ailearn_migrator;
+GRANT EXECUTE ON FUNCTION public.astella_assert_handoff_snapshot_fence(uuid, integer) TO astella_worker, astella_migrator;

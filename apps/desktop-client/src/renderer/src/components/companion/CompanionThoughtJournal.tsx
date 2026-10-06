@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Cloud, CornerDownRight, Loader2 } from "lucide-react";
-import type { CompanionChatListThoughtsResultV1 } from "@ailearn/shared/companion-chat-desktop-contracts";
+import type { CompanionChatListThoughtsResultV1 } from "@astella/shared/companion-chat-desktop-contracts";
 import { createRequestMeta, gatewayErrorMessage, requireWorkspaceEpoch, unwrapGatewayResult } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
 import { messageDayLabel, messageTime } from "./CompanionChatRecord";
@@ -24,7 +24,7 @@ export function CompanionThoughtJournal({ companionName, onBringToChat, onReady 
     try {
       const epoch = await requireWorkspaceEpoch();
       if (!current()) return;
-      const page = unwrapGatewayResult(await window.ailearn.companion.chat.listThoughts({
+      const page = unwrapGatewayResult(await window.astella.companion.chat.listThoughts({
         meta: createRequestMeta(epoch), request: { version: 1, limit: 30, ...(before ? { before } : {}) },
       }));
       if (!current()) return;

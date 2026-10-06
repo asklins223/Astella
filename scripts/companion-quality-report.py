@@ -44,7 +44,7 @@ import sys
 import tempfile
 from datetime import datetime
 
-CONTAINER = "ailearn-dev-postgres-1"
+CONTAINER = "astella-dev-postgres-1"
 
 
 def rows(query: str) -> list[dict]:
@@ -60,7 +60,7 @@ def rows(query: str) -> list[dict]:
     `-t` 只用于压掉 `COPY n` 那行命令状态；表头由 `HEADER true` 给出。
     """
     out = subprocess.run(
-        ["docker", "exec", CONTAINER, "psql", "-U", "ailearn", "-d", "ailearn", "-t", "-c",
+        ["docker", "exec", CONTAINER, "psql", "-U", "astella", "-d", "astella", "-t", "-c",
          f"COPY ({query.strip().rstrip(';')}) TO STDOUT WITH (FORMAT csv, HEADER true)"],
         capture_output=True, text=True)
     if out.returncode != 0:
@@ -143,7 +143,7 @@ ADVANCE_INVITATION_TEST = re.compile(
 # 里失败 28 条 = 70%，同码跨 13 个工作区），混在一起报出来的"失败率 10.6%"
 # 把产品在线的 5.6% 抬了一倍。判据用邮箱而不是"跨工作区+挤在几分钟"那条启发式，
 # 因为同意书夹具是**几天里反复跑出来的**，时间上不挤在一起。
-DEV_REAL_ACCOUNT_EMAILS = ("owner@ailearn.local",)
+DEV_REAL_ACCOUNT_EMAILS = ("owner@astella.local",)
 
 # 系统视野类问句（方案 §8.5）：只收**学习时长**这一种。
 #

@@ -13,9 +13,9 @@
  * （空串会被 `normalizeContextUuid` 拒绝）。
  */
 import { and, eq, sql } from "drizzle-orm";
-import type { AnswerModePreferenceV1 } from "@ailearn/shared";
+import type { AnswerModePreferenceV1 } from "@astella/shared";
 import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
-import { userLearningPreferences } from "@ailearn/shared/db-schema/companion";
+import { userLearningPreferences } from "@astella/shared/db-schema/companion";
 
 /** 07-9 冻结键：default_input_priority（voice/touch_structure/text；any=未设置） */
 const ANSWER_MODE_PREFERENCE_KEY = "default_input_priority" as const;

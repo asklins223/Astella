@@ -1,4 +1,4 @@
-import type { CompanionPersonaV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { CompanionPersonaV1 } from "@astella/shared/companion-memory-desktop-contracts";
 
 /**
  * 她对自己的称呼 —— 只有一份来源。

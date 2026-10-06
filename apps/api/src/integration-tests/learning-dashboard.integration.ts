@@ -9,9 +9,9 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID as cryptoRandomUUID } from "node:crypto";
-import { findPrivatePayloadLeaks } from "@ailearn/shared";
+import { findPrivatePayloadLeaks } from "@astella/shared";
 import postgres from "postgres";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 process.env.DATABASE_URL ??= testDatabaseUrl("DATABASE_URL");
 const sql = postgres(process.env.DATABASE_URL, { max: 1 });

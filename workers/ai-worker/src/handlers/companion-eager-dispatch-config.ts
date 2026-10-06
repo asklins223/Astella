@@ -48,12 +48,12 @@ export const EAGER_DISPATCH_ELIGIBLE_TOOLS: ReadonlySet<string> = new Set([
 import {
   ensureAgentToolCall,
 } from "./companion-tool-call-ledger.ts";
-import { getCompanionAgentTool, validateCompanionAgentToolArguments } from "@ailearn/shared";
+import { getCompanionAgentTool, validateCompanionAgentToolArguments } from "@astella/shared";
 import { runCompanionToolExecution } from "./companion-tool-execution-run.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
 export type { StreamToolCallSlot } from "./companion-eager-dispatch.ts";
 import type { StreamToolCallSlot } from "./companion-eager-dispatch.ts";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 
 /**
  * 提前派发**一格**工具：登记账本，然后跑**与循环同一份**执行段。

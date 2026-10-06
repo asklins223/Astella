@@ -18,10 +18,10 @@ export function CompanionDiaryPage(props: {
   const [month, setMonth] = useState((props.requestedDate ?? todayIsoDate()).slice(0, 7));
   const bookmarks = useDiscoveryBookmarks(props.refreshKey);
   const diary = useCompanionResource(async meta => {
-    const result = await window.ailearn.companion.daily.get({ meta, ...(date ? { date } : {}) });
+    const result = await window.astella.companion.daily.get({ meta, ...(date ? { date } : {}) });
     return result.ok ? { ...result, data: { ...result.data, requestedDate: date } } : result;
   }, [date, props.refreshKey]);
-  const calendar = useCompanionResource(meta => window.ailearn.companion.daily.month({ meta, month }), [month, props.refreshKey]);
+  const calendar = useCompanionResource(meta => window.astella.companion.daily.month({ meta, month }), [month, props.refreshKey]);
   const reload = async () => { await Promise.all([diary.reload({ silent: true }), calendar.reload({ silent: true })]); };
   useCompanionRecordsRefresh(reload);
   useEffect(() => { if (props.requestedDate) setDate(props.requestedDate); }, [props.requestedDate]);

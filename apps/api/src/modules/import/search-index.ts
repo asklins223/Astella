@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db/client.ts";
-import { searchDocuments } from "@ailearn/shared/db-schema/search";
+import { searchDocuments } from "@astella/shared/db-schema/search";
 import { logger } from "../../lib/logger.ts";
 import {
   SEARCH_DOCUMENT_CONFLICT_TARGET,

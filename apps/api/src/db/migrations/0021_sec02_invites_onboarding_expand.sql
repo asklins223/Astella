@@ -145,8 +145,8 @@ CREATE POLICY "sec02_v1_invite_codes_runtime_access"
   AS PERMISSIVE
   FOR ALL
   TO PUBLIC
-  USING (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'))
-  WITH CHECK (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'));
+  USING (CURRENT_USER IN ('astella_api', 'astella_worker'))
+  WITH CHECK (CURRENT_USER IN ('astella_api', 'astella_worker'));
 
 --> statement-breakpoint
 
@@ -188,5 +188,5 @@ CREATE POLICY "sec02_v1_onboarding_states_runtime_access"
   AS PERMISSIVE
   FOR ALL
   TO PUBLIC
-  USING (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'))
-  WITH CHECK (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'));
+  USING (CURRENT_USER IN ('astella_api', 'astella_worker'))
+  WITH CHECK (CURRENT_USER IN ('astella_api', 'astella_worker'));

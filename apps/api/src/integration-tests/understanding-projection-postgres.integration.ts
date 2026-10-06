@@ -7,7 +7,7 @@
  * RoutePlan（确定性选路 + 跨 workspace checkpoint 409）→ practice 纵切
  * change set（kind=practice_only）。
  *
- * 运行：DATABASE_URL_API="postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn"
+ * 运行：DATABASE_URL_API="postgres://astella:astella_dev@127.0.0.1:5432/astella"
  *   node --import tsx --test --test-concurrency=1 src/integration-tests/understanding-projection-postgres.integration.ts
  */
 
@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { createLearningRunForTest, seedV2Fixture } from "./helpers/v2-card-fixture.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL_API ??= CONN;
@@ -28,7 +28,7 @@ const sql = postgres(CONN, { max: 2 });
  *
  * 目标表 understanding_change_sets / understanding_projection_checkpoints /
  * canonical_learning_event_outbox / practice_trail_event_outbox 都是 FORCE RLS：
- * 受限角色（ailearn_api）在无上下文事务里查询会命中 0 行，让"恰好物化 1 个
+ * 受限角色（astella_api）在无上下文事务里查询会命中 0 行，让"恰好物化 1 个
  * change set / outbox published"假失败；超级用户则绕过 RLS 让它失去隔离意义。
  */
 function scoped<T>(

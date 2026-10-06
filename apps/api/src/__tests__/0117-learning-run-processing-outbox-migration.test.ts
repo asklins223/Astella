@@ -2,7 +2,7 @@
  * 0117 LearningRun processing outbox 迁移静态验证（无 DB）。
  *
  * 覆盖：journal 注册、表创建、防答案正文入队 CHECK、命令枚举、RLS、
- * ailearn_api/worker 权限、幂等 scope key。
+ * astella_api/worker 权限、幂等 scope key。
  */
 
 import assert from "node:assert/strict";
@@ -54,16 +54,16 @@ test("0117 RLS workspace+user 双条件 + worker 豁免", () => {
   assert.match(migration, /workspace_user_isolation/);
   assert.match(migration, /app\.workspace_id/);
   assert.match(migration, /app\.user_id/);
-  assert.match(migration, /CURRENT_USER = 'ailearn_worker'/);
+  assert.match(migration, /CURRENT_USER = 'astella_worker'/);
 });
 
 test("0117 权限：api CRUD、worker 读+更新（评估/提交处理）", () => {
   assert.match(
     migration,
-    /GRANT SELECT, INSERT, UPDATE, DELETE ON public\.learning_run_processing_outbox TO ailearn_api/,
+    /GRANT SELECT, INSERT, UPDATE, DELETE ON public\.learning_run_processing_outbox TO astella_api/,
   );
   assert.match(
     migration,
-    /GRANT SELECT, UPDATE ON public\.learning_run_processing_outbox TO ailearn_worker/,
+    /GRANT SELECT, UPDATE ON public\.learning_run_processing_outbox TO astella_worker/,
   );
 });

@@ -1,10 +1,10 @@
-import { REVIEW_DIMENSION_VALUES_V2 } from "@ailearn/shared/review-dimension-v2";
+import { REVIEW_DIMENSION_VALUES_V2 } from "@astella/shared/review-dimension-v2";
 import { sql } from "drizzle-orm";
 import {
   DISCRETE_V2_FIRST_INTERVAL_DAYS,
   DISCRETE_V2_POLICY_VERSION,
   discreteV2FirstDueAt,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import type { ApiTransaction } from "../../db/client.ts";
 import { readObjectiveNoteChangeImpactV1 } from "../learning-objectives/change-impact-service.ts";
 import { ensurePendingReviewScheduleV2 } from "./review-schedule-boundary.ts";

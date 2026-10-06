@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../../../app/room-store.ts";
 import { ReviewSurface } from "../review/ReviewSurface.tsx";
 import type { ReviewItem } from "../review/review-deck.ts";
-import type { ObjectiveNoteChangeImpactV1 } from "@ailearn/shared/learning-objective-surface-contracts";
+import type { ObjectiveNoteChangeImpactV1 } from "@astella/shared/learning-objective-surface-contracts";
 
 /**
  * Page 15 reads its whole reason slip out of the queue, so the wiring between
@@ -164,7 +164,7 @@ function stubGateway(
     },
   };
 
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return gateway;
 }
 

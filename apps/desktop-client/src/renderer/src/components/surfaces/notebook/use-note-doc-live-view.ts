@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Y from "yjs";
 import { yXmlFragmentToProsemirrorJSON } from "y-prosemirror";
-import { pmNodesToNoteBlocks } from "@ailearn/shared/note-doc-schema";
-import type { NoteDocStreamEventV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import { noteBlockTypeV1Schema, type NoteBlockProjectionV1 } from "@ailearn/shared/note-projection-contracts";
+import { pmNodesToNoteBlocks } from "@astella/shared/note-doc-schema";
+import type { NoteDocStreamEventV1 } from "@astella/shared/desktop-ipc-contracts";
+import { noteBlockTypeV1Schema, type NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
 import { createCommandId, createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
 
 /**
@@ -202,7 +202,7 @@ export function useNoteDocLiveView(
    * 别人的部分一个字不动。
    */
   const saveDraft = useCallback(async (targetNoteId: string | null, updates: readonly string[]): Promise<void> => {
-    const docApi = window.ailearn?.note?.doc;
+    const docApi = window.astella?.note?.doc;
     if (!targetNoteId || updates.length === 0 || !docApi?.draftSave) return;
     let merged: string;
     try {
@@ -244,7 +244,7 @@ export function useNoteDocLiveView(
   const clearDraft = useCallback((targetNoteId: string): void => {
     draftWrittenRef.current = null;
     setRestoredDraft(null);
-    const docApi = window.ailearn?.note?.doc;
+    const docApi = window.astella?.note?.doc;
     if (!docApi?.draftClear) return;
     void docApi.draftClear({
       meta: createRequestMeta(epochRef?.current ?? undefined),
@@ -258,7 +258,7 @@ export function useNoteDocLiveView(
    * 别人的正文并进这一篇——两种错的代价不对称。
    */
   const readDraft = useCallback(async (
-    docApi: NonNullable<typeof window.ailearn>["note"]["doc"],
+    docApi: NonNullable<typeof window.astella>["note"]["doc"],
     targetNoteId: string,
   ): Promise<{ update: string; savedAt: string } | null> => {
     if (!docApi.draftGet) return null;
@@ -332,7 +332,7 @@ export function useNoteDocLiveView(
   // 起点：主进程给的那份编码。它已经把本机存着、还没送出去的编辑合并进去了，
   // 所以离线改过的字在这里是"接着改"，不是"被服务端那份覆盖"。
   useEffect(() => {
-    const api = window.ailearn;
+    const api = window.astella;
     if (!noteId || !api) return undefined;
     // 协同口不在（旧的主进程配新的渲染层、或契约降级）时退回"只看回读的那一份"，
     // 而不是让整篇笔记打不开：桌面端没有 HMR，两边版本不齐是现实状态，不是假想。
@@ -383,7 +383,7 @@ export function useNoteDocLiveView(
   }, [saveDraft]);
 
   useEffect(() => {
-    const api = window.ailearn;
+    const api = window.astella;
     if (!noteId || !enabled || !api) return undefined;
     let disposed = false;
     let subscriptionId: string | null = null;
@@ -459,7 +459,7 @@ export function useNoteDocLiveView(
   const setLocalBlock = useCallback((block: number | null): void => {
     if (blockRef.current === block) return;
     blockRef.current = block;
-    const api = window.ailearn;
+    const api = window.astella;
     if (!api?.note?.doc?.presence || !noteId) return;
     void api.note.doc
       .presence({ meta: createRequestMeta(epochRef?.current ?? undefined), noteId, state: presenceState(presenceNameRef.current, block) })
@@ -467,7 +467,7 @@ export function useNoteDocLiveView(
   }, [noteId]);
 
   const flush = useCallback(async (): Promise<"stream" | "uploaded" | "queued" | "unchanged" | null> => {
-    const api = window.ailearn;
+    const api = window.astella;
     if (!api || !noteId || !api.note?.doc?.syncUpdate || pendingRef.current.length === 0) return null;
     // 交出去的是**这一刻**攒下的那几条。往返期间敲进来的字会继续往队尾堆，所以回执
     // 回来时不能整条清空——那正是"敲了五六行、只存下来一点点"的另一半：一次自动保存

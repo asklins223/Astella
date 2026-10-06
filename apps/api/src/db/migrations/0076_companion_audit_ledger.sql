@@ -17,7 +17,7 @@
 --   - ledger 属 user-private-in-workspace → workspace_id + user_id 双条件 policy；
 --   - audit 属 user-private → 同样使用 workspace_id + user_id 双条件（0075 风格），
 --     任一 context 缺失即 fail closed；跨 workspace/user 泄漏为 0。
--- GRANT：ailearn_api 两张表读写；ailearn_worker 不授权（审计/ledger 是 API 面
+-- GRANT：astella_api 两张表读写；astella_worker 不授权（审计/ledger 是 API 面
 -- 安全与预算记录，worker 无读取必要，与 account-scoped Companion 表同原则）。
 --
 -- 幂等：CREATE TABLE/INDEX 用 IF NOT EXISTS，CHECK 用 DO $$ ... EXCEPTION
@@ -179,15 +179,15 @@ CREATE POLICY companion_audit_workspace_user_isolation
 
 -- ════════════════════════════════════════════════════════════════════════
 -- least-privilege GRANT（0071/0075 模式：按角色存在性授权）
--- ailearn_api：两张表读写（导出/删除端点依赖 DELETE）；
--- ailearn_worker：不授权（审计/ledger 是 API 面安全与预算记录，worker 无权限）。
+-- astella_api：两张表读写（导出/删除端点依赖 DELETE）；
+-- astella_worker：不授权（审计/ledger 是 API 面安全与预算记录，worker 无权限）。
 -- ════════════════════════════════════════════════════════════════════════
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_invitation_ledger TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_audit TO ailearn_api;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_invitation_ledger TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_audit TO astella_api;
   END IF;
   -- 有意不 GRANT：companion_invitation_ledger / companion_audit 对
-  -- ailearn_worker 一律不可见（隐私/安全记录，worker 无读取必要）。
+  -- astella_worker 一律不可见（隐私/安全记录，worker 无读取必要）。
 END $$;

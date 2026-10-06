@@ -1,9 +1,9 @@
 import { useMemo, useRef, type KeyboardEvent } from "react";
 import { ArrowRight, BookOpen, CalendarDays, Leaf, NotebookPen, RefreshCw, Route, Sparkles } from "lucide-react";
-import type { ActivityTargetV1, TodayActivityV1 } from "@ailearn/shared/activity-surface-contracts";
-import type { AllWorkspacesStatsOverviewV1 } from "@ailearn/shared/stats-overview-contracts";
-import type { NoteLearningRoundPersonalHistoryItemV1 } from "@ailearn/shared/note-learning-round-contracts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { ActivityTargetV1, TodayActivityV1 } from "@astella/shared/activity-surface-contracts";
+import type { AllWorkspacesStatsOverviewV1 } from "@astella/shared/stats-overview-contracts";
+import type { NoteLearningRoundPersonalHistoryItemV1 } from "@astella/shared/note-learning-round-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-consent-gate";
 import { useRoomStore } from "../../../app/room-store";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
@@ -54,7 +54,7 @@ export function StudySurface() {
 
   const { data, loading, failure, refreshing, refreshFailure, reload } = useSurfaceProjection<TodayActivityV1>(async ({ workspaceEpoch }) => {
     const meta = createRequestMeta(workspaceEpoch);
-    const result = await window.ailearn.activity.getToday({ meta, from: dayWindow.from, to: dayWindow.to });
+    const result = await window.astella.activity.getToday({ meta, from: dayWindow.from, to: dayWindow.to });
     return unwrapGatewayResult(result);
   }, [dayWindow.from, dayWindow.to], { refreshOnFocus: true });
 
@@ -62,7 +62,7 @@ export function StudySurface() {
   // 只在进入这一页时读一次（失败就地给重试，不冒充"全部"）。
   const allSpaces = useSurfaceProjection<AllWorkspacesStatsOverviewV1>(async ({ workspaceEpoch }) => {
     const meta = createRequestMeta(workspaceEpoch);
-    const result = await window.ailearn.stats.getOverviewAll({ meta });
+    const result = await window.astella.stats.getOverviewAll({ meta });
     return unwrapGatewayResult(result);
   }, []);
 

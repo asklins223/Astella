@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RoundTeachingViewV1 } from "@ailearn/shared/note-learning-round-contracts";
+import type { RoundTeachingViewV1 } from "@astella/shared/note-learning-round-contracts";
 import { TaskSurface } from "../TaskSurface.tsx";
 import { useRoomStore } from "../../app/room-store.ts";
 
@@ -139,7 +139,7 @@ function stubGateway() {
     },
     learningRun: { start: vi.fn() },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return { gateway, suspectCandidate };
 }
 

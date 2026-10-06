@@ -12,9 +12,9 @@
  */
 
 import { sql } from "drizzle-orm";
-import { companionGroundedTutorGrantV1Schema, companionLearningContextV1Schema, companionLearningRunContextV1Schema, createLearningRunV2RequestSchema, learningRunAssistanceConsequenceV1, proposedLearningActionPayloadV1Schema } from "@ailearn/shared";
-import { sha256Utf8V1, canonicalJsonV1 } from "@ailearn/shared/content-hash";
-import type { CompanionLearningContextV1, LearningRunOriginV2 } from "@ailearn/shared";
+import { companionGroundedTutorGrantV1Schema, companionLearningContextV1Schema, companionLearningRunContextV1Schema, createLearningRunV2RequestSchema, learningRunAssistanceConsequenceV1, proposedLearningActionPayloadV1Schema } from "@astella/shared";
+import { sha256Utf8V1, canonicalJsonV1 } from "@astella/shared/content-hash";
+import type { CompanionLearningContextV1, LearningRunOriginV2 } from "@astella/shared";
 import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
 import { primaryActionPrecedenceV3 } from "../learning-objectives/action-resolver.ts";
 // Plan 23 CS-05/CS-06：Objective Surface 派生 companion 上下文（不再依赖 V1 card_key_points.claim）。
@@ -247,7 +247,7 @@ export async function resolveCompanionLearningContext(args: {
 // ─── P5 §6.7 Menu proposal create（原子事务） ───────────────────────────
 
 import { randomUUID } from "node:crypto";
-import { canonicalJsonV1 as canonicalJson, sha256Utf8V1 as sha256 } from "@ailearn/shared/content-hash";
+import { canonicalJsonV1 as canonicalJson, sha256Utf8V1 as sha256 } from "@astella/shared/content-hash";
 import { CompanionConversationError } from "./turn/turn-service.ts";
 import { reclaimExpiredCompanionProposals } from "./turn/companion-proposal-expiry.ts";
 
@@ -801,7 +801,7 @@ export async function createCompanionToolProposal(args: {
 
 // ─── P5 §6.6 Proposal decision（confirm/reject 原子消费） ───────────────
 
-import { type LearningRunActionV1 } from "@ailearn/shared";
+import { type LearningRunActionV1 } from "@astella/shared";
 
 // §18.1 导航工具（纯导航同步 succeeded）；业务工具在下方分支同步执行。
 const NAVIGATION_KINDS = new Set([

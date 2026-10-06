@@ -41,9 +41,9 @@ import {
   recoverCompanionRunFailureSpanBestEffort,
 } from "./companion-dialogue-store.ts";
 import { CompanionAgentBudgetExceededError } from "../lib/non-retryable-errors.ts";
-import { COMPANION_AGENT_TOOL_TIMEOUT_MS } from "@ailearn/shared";
+import { COMPANION_AGENT_TOOL_TIMEOUT_MS } from "@astella/shared";
 import { READ_IMAGE_TOOL_TIMEOUT_MS, type AgentEventContext } from "./companion-read-tools.ts";
-import type { CompanionAgentToolDefinitionV1, CompanionAgentToolStatus } from "@ailearn/shared";
+import type { CompanionAgentToolDefinitionV1, CompanionAgentToolStatus } from "@astella/shared";
 
 export type ToolExecutionRun =
   | { kind: "success"; execution: AgentToolExecutionResult }

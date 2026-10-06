@@ -24,7 +24,7 @@
 --
 -- ─── 为什么重试必须把 attempts 归零 ───
 --
--- 这条是本文件最关键的一行。`ailearn_claim_jobs` 的取活条件是
+-- 这条是本文件最关键的一行。`astella_claim_jobs` 的取活条件是
 --
 --     WHERE j.status = 'pending' AND j.attempts < parameters.max_attempts
 --
@@ -39,14 +39,14 @@
 -- ─── 为什么死信可以直接删 ───
 --
 -- 全仓（apps/api / workers / shared 的生产 TS）没有任何地方读取
--- `status = 'dead'` 的作业——`ailearn_reap_stale_jobs` 处理的是**租约超期的
+-- `status = 'dead'` 的作业——`astella_reap_stale_jobs` 处理的是**租约超期的
 -- running**，不是 dead。dead 是终态，删掉不会让任何读方失去依据，只让
--- `ailearn_job_queue_depth{status="dead"}` 的计数归零（那正是清理的目的）。
+-- `astella_job_queue_depth{status="dead"}` 的计数归零（那正是清理的目的）。
 --
 -- 代价：这些行的失败历史不再可查。面板在删除前会把数量与类型写进服务日志
 -- （pino → stdout → 容器运行时收集），留一条事后可查的记录。
 
-CREATE OR REPLACE FUNCTION public.ailearn_admin_retry_failed_jobs(
+CREATE OR REPLACE FUNCTION public.astella_admin_retry_failed_jobs(
   p_job_type text,
   p_limit integer DEFAULT 100
 )
@@ -104,7 +104,7 @@ $function$;
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_admin_purge_dead_jobs(
+CREATE OR REPLACE FUNCTION public.astella_admin_purge_dead_jobs(
   p_job_type text,
   p_limit integer DEFAULT 500
 )
@@ -147,37 +147,37 @@ $function$;
 --> statement-breakpoint
 
 -- ─── 授权 ───────────────────────────────────────────────────────────────
--- 与 0365 的只读视图同一套：REVOKE PUBLIC，只给 ailearn_api，不给 worker。
+-- 与 0365 的只读视图同一套：REVOKE PUBLIC，只给 astella_api，不给 worker。
 -- worker 不该有"人工重试/清理"的能力——那是运维的决定，不是队列消费者的事。
 
-REVOKE ALL ON FUNCTION public.ailearn_admin_retry_failed_jobs(text, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_admin_retry_failed_jobs(text, integer) FROM PUBLIC;
 
 --> statement-breakpoint
 
-GRANT EXECUTE ON FUNCTION public.ailearn_admin_retry_failed_jobs(text, integer) TO ailearn_api;
+GRANT EXECUTE ON FUNCTION public.astella_admin_retry_failed_jobs(text, integer) TO astella_api;
 
 --> statement-breakpoint
 
-GRANT ALL PRIVILEGES ON FUNCTION public.ailearn_admin_retry_failed_jobs(text, integer) TO ailearn_migrator;
+GRANT ALL PRIVILEGES ON FUNCTION public.astella_admin_retry_failed_jobs(text, integer) TO astella_migrator;
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_admin_purge_dead_jobs(text, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_admin_purge_dead_jobs(text, integer) FROM PUBLIC;
 
 --> statement-breakpoint
 
-GRANT EXECUTE ON FUNCTION public.ailearn_admin_purge_dead_jobs(text, integer) TO ailearn_api;
+GRANT EXECUTE ON FUNCTION public.astella_admin_purge_dead_jobs(text, integer) TO astella_api;
 
 --> statement-breakpoint
 
-GRANT ALL PRIVILEGES ON FUNCTION public.ailearn_admin_purge_dead_jobs(text, integer) TO ailearn_migrator;
+GRANT ALL PRIVILEGES ON FUNCTION public.astella_admin_purge_dead_jobs(text, integer) TO astella_migrator;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_admin_retry_failed_jobs(text, integer) IS
-  '运维面板：重试某类 failed 作业。必须指定作业类型，只碰 failed（绝不碰 pending/running），上界 500。attempts 必须归零——claim_jobs 的条件是 attempts < max_attempts，不归零会得到永远取不走的僵尸作业。EXECUTE 只给 ailearn_api。';
+COMMENT ON FUNCTION public.astella_admin_retry_failed_jobs(text, integer) IS
+  '运维面板：重试某类 failed 作业。必须指定作业类型，只碰 failed（绝不碰 pending/running），上界 500。attempts 必须归零——claim_jobs 的条件是 attempts < max_attempts，不归零会得到永远取不走的僵尸作业。EXECUTE 只给 astella_api。';
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_admin_purge_dead_jobs(text, integer) IS
-  '运维面板：清理某类 dead 作业。必须指定作业类型，只碰 dead，上界 500。全仓生产代码不读 dead（reap 处理的是超期 running），因此删除安全；调用方须在删除前把数量写进服务日志。EXECUTE 只给 ailearn_api。';
+COMMENT ON FUNCTION public.astella_admin_purge_dead_jobs(text, integer) IS
+  '运维面板：清理某类 dead 作业。必须指定作业类型，只碰 dead，上界 500。全仓生产代码不读 dead（reap 处理的是超期 running），因此删除安全；调用方须在删除前把数量写进服务日志。EXECUTE 只给 astella_api。';

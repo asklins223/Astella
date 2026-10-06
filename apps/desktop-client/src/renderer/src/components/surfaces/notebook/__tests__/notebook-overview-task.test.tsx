@@ -2,8 +2,8 @@
 import { createRef } from "react";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { noteDetailV1Schema } from "@ailearn/shared/note-projection-contracts";
-import { noteOverviewTaskV1Schema, type NoteOverviewV1 } from "@ailearn/shared/note-overview-contracts";
+import { noteDetailV1Schema } from "@astella/shared/note-projection-contracts";
+import { noteOverviewTaskV1Schema, type NoteOverviewV1 } from "@astella/shared/note-overview-contracts";
 import { useNotebookOverview } from "../use-notebook-overview";
 import { useNotebookLearningView } from "../use-notebook-learning-view";
 
@@ -37,7 +37,7 @@ it("关起学习页继续读，速看迟到完成只更新结果；主动打开�
   const ok = <T,>(data: T) => ({ ok: true, data });
   const latestTask = vi.fn(async () => ok({ version: 1, task: null }));
   const getTask = vi.fn(async () => ok(ready));
-  Object.defineProperty(window, "ailearn", { configurable: true, value: { noteOverview: {
+  Object.defineProperty(window, "astella", { configurable: true, value: { noteOverview: {
     latestTask, getTask, startTask: vi.fn(async () => ok({ ...ready, status: "queued", overview: null })),
   } } });
   const epochRef = { current: undefined };
@@ -64,7 +64,7 @@ it("关起学习页继续读，速看迟到完成只更新结果；主动打开�
 
 it("选中的结果尚未读取时不回退到其他速看；解除选择后重新跟随最新生成", async () => {
   const { noteId, note, ready } = overviewFixture();
-  Object.defineProperty(window, "ailearn", { configurable: true, value: { noteOverview: {
+  Object.defineProperty(window, "astella", { configurable: true, value: { noteOverview: {
     latestTask: vi.fn(async () => ({ ok: true, data: { version: 1, task: ready } })),
   } } });
   const view = renderHook(({ requestedOverview }: { requestedOverview: NoteOverviewV1 | null | undefined }) =>

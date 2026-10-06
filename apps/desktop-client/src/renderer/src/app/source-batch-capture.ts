@@ -54,7 +54,7 @@ export const MAX_BATCH_CAPTURE_FILES = 50;
  */
 export async function canCaptureSource(): Promise<"allowed" | "denied" | "unknown"> {
   try {
-    const response = await window.ailearn.capabilities.get({ meta: createRequestMeta() });
+    const response = await window.astella.capabilities.get({ meta: createRequestMeta() });
     if (!response.ok) return "unknown";
     return response.data.actionCapabilities["source.create"] === "allowed" ? "allowed" : "denied";
   } catch {
@@ -128,7 +128,7 @@ export async function captureSourceTasks(
   for (const task of tasks) {
     if (!options.isCurrent()) return null;
     try {
-      const response = await window.ailearn.source.create({
+      const response = await window.astella.source.create({
         meta: createRequestMeta(),
         request: task.request,
       });

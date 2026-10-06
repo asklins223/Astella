@@ -71,14 +71,14 @@ DROP POLICY IF EXISTS assistant_memory_embeddings_workspace_user_isolation
 CREATE POLICY assistant_memory_embeddings_workspace_user_isolation
   ON public.assistant_memory_embeddings FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
     )
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -87,7 +87,7 @@ CREATE POLICY assistant_memory_embeddings_workspace_user_isolation
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.assistant_memory_embeddings TO ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.assistant_memory_embeddings TO astella_worker;
 
 --> statement-breakpoint
 
@@ -125,14 +125,14 @@ DROP POLICY IF EXISTS pet_profiles_workspace_user_isolation
 CREATE POLICY pet_profiles_workspace_user_isolation
   ON public.pet_profiles FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
     )
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -141,8 +141,8 @@ CREATE POLICY pet_profiles_workspace_user_isolation
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.pet_profiles TO ailearn_api;
-GRANT SELECT ON public.pet_profiles TO ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.pet_profiles TO astella_api;
+GRANT SELECT ON public.pet_profiles TO astella_worker;
 
 --> statement-breakpoint
 
@@ -176,14 +176,14 @@ DROP POLICY IF EXISTS memory_links_workspace_user_isolation
 CREATE POLICY memory_links_workspace_user_isolation
   ON public.memory_links FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
     )
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -192,8 +192,8 @@ CREATE POLICY memory_links_workspace_user_isolation
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.memory_links TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.memory_links TO ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.memory_links TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.memory_links TO astella_worker;
 
 --> statement-breakpoint
 
@@ -225,14 +225,14 @@ DROP POLICY IF EXISTS conversation_summaries_workspace_user_isolation
 CREATE POLICY conversation_summaries_workspace_user_isolation
   ON public.conversation_summaries FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
     )
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -241,8 +241,8 @@ CREATE POLICY conversation_summaries_workspace_user_isolation
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.conversation_summaries TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.conversation_summaries TO ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.conversation_summaries TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.conversation_summaries TO astella_worker;
 
 --> statement-breakpoint
 
@@ -271,14 +271,14 @@ DROP POLICY IF EXISTS memory_usage_log_workspace_user_isolation
 CREATE POLICY memory_usage_log_workspace_user_isolation
   ON public.memory_usage_log FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
     )
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -287,8 +287,8 @@ CREATE POLICY memory_usage_log_workspace_user_isolation
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.memory_usage_log TO ailearn_worker;
-GRANT SELECT ON public.memory_usage_log TO ailearn_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.memory_usage_log TO astella_worker;
+GRANT SELECT ON public.memory_usage_log TO astella_api;
 
 --> statement-breakpoint
 
@@ -323,14 +323,14 @@ DROP POLICY IF EXISTS companion_daily_summaries_workspace_user_isolation
 CREATE POLICY companion_daily_summaries_workspace_user_isolation
   ON public.companion_daily_summaries FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
     )
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -339,5 +339,5 @@ CREATE POLICY companion_daily_summaries_workspace_user_isolation
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_daily_summaries TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_daily_summaries TO ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_daily_summaries TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_daily_summaries TO astella_worker;

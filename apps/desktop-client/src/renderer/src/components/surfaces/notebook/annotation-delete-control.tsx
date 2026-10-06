@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import type { NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
+import type { NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 
 /**
  * 删批注的**就地两步确认**（用户裁决：不用会冻结整个应用的原生确认框）。

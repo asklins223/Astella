@@ -2,7 +2,7 @@
 
 中文 · [English](../en/operations.md)
 
-这篇讲什么：理解引擎现在怎么被跑起来与发出去——三份 compose 文件各自的职责、生产环境必填与可选的变量分组、两条版本线与桌面端的打包发布链、Alpha 环境的巡检与备份恢复、监控与告警的真实口径，以及面向运维者的安全边界与仍然存在的缺口。所有端口、变量名、任务名、卷名和告警名都从 `docker-compose*.yml`、`Makefile`、`scripts/alpha-env-setup.sh`、`infra/**`、`.github/workflows/**` 与 `apps/desktop-client/electron-builder.yml` 当场核对；叠加后的项目名与卷名用 `docker compose config` 验证过。这份文档只写名字与用途，不写任何凭据值。
+这篇讲什么：拾星笔记现在怎么被跑起来与发出去——三份 compose 文件各自的职责、生产环境必填与可选的变量分组、两条版本线与桌面端的打包发布链、Alpha 环境的巡检与备份恢复、监控与告警的真实口径，以及面向运维者的安全边界与仍然存在的缺口。所有端口、变量名、任务名、卷名和告警名都从 `docker-compose*.yml`、`Makefile`、`scripts/alpha-env-setup.sh`、`infra/**`、`.github/workflows/**` 与 `apps/desktop-client/electron-builder.yml` 当场核对；叠加后的项目名与卷名用 `docker compose config` 验证过。这份文档只写名字与用途，不写任何凭据值。
 
 - [三份 Compose 文件](#三份-compose-文件)
 - [环境变量分组](#环境变量分组)
@@ -19,17 +19,17 @@
 
 | 文件 | 顶层 `name:` | 定位 | 由谁驱动 |
 | --- | --- | --- | --- |
-| `docker-compose.dev.yml` | `ailearn-dev` | 本机开发栈：`target: dev` 镜像、源码 bind mount 热重载、写死的本机凭据、`seed-demo` 在 `seed` profile 下、全部端口只发回环、挂了 `docker.sock` 给 `/admin`、伴星能力开关默认打开 | `Makefile` 的 `COMPOSE := docker compose -p ailearn-dev -f docker-compose.dev.yml`，即 `make up` / `storage` / `seed-demo` / `rebuild` / `config` / `logs` / `down` / `reset-db` / `shell-*` / `desktop-client-up` |
-| `docker-compose.yml` | `ailearn` | 生产形态：`target: prod` 镜像 + `user: node`、无源码挂载、三条 `:?` 必填的数据库 URL、角色引导与迁移的一次式服务、能力开关 fail-closed、`AUTH_RATE_LIMIT_STORE` 默认 `postgres`、edge-tts **不发端口** | 没有 Makefile 目标接它（有意如此，见 README）。手动验证或 Alpha 流程使用 |
-| `docker-compose.alpha.yml` | `ailearn-alpha` | **叠加层（overlay），不能单独使用**：给 `postgres` 加一个 `restore-postgres` 网络别名，新增 `prometheus`、`alertmanager`、`alpha-ops-sidecar`、`backup-runner` 四个服务与 `prometheus_data`、`alertmanager_data`、`backup_keys`、`backup_manifests` 四个卷 | `scripts/alpha-env-setup.sh`，形如 `docker compose -f docker-compose.yml -f docker-compose.alpha.yml --profile storage` |
+| `docker-compose.dev.yml` | `astella-dev` | 本机开发栈：`target: dev` 镜像、源码 bind mount 热重载、写死的本机凭据、`seed-demo` 在 `seed` profile 下、全部端口只发回环、挂了 `docker.sock` 给 `/admin`、伴星能力开关默认打开 | `Makefile` 的 `COMPOSE := docker compose -p astella-dev -f docker-compose.dev.yml`，即 `make up` / `storage` / `seed-demo` / `rebuild` / `config` / `logs` / `down` / `reset-db` / `shell-*` / `desktop-client-up` |
+| `docker-compose.yml` | `astella` | 生产形态：`target: prod` 镜像 + `user: node`、无源码挂载、三条 `:?` 必填的数据库 URL、角色引导与迁移的一次式服务、能力开关 fail-closed、`AUTH_RATE_LIMIT_STORE` 默认 `postgres`、edge-tts **不发端口** | 没有 Makefile 目标接它（有意如此，见 README）。手动验证或 Alpha 流程使用 |
+| `docker-compose.alpha.yml` | `astella-alpha` | **叠加层（overlay），不能单独使用**：给 `postgres` 加一个 `restore-postgres` 网络别名，新增 `prometheus`、`alertmanager`、`alpha-ops-sidecar`、`backup-runner` 四个服务与 `prometheus_data`、`alertmanager_data`、`backup_keys`、`backup_manifests` 四个卷 | `scripts/alpha-env-setup.sh`，形如 `docker compose -f docker-compose.yml -f docker-compose.alpha.yml --profile storage` |
 
-> **说明：** 叠加时顶层 `name:` 取后一份文件，所以整条 Alpha 链的项目名是 `ailearn-alpha`，卷也跟着变成 `ailearn-alpha_postgres_data`、`ailearn-alpha_minio_data`、`ailearn-alpha_prometheus_data` 等（`docker compose -f docker-compose.yml -f docker-compose.alpha.yml --profile storage config` 实测）。只跑 `docker-compose.yml` 时前缀是 `ailearn_`。`docker-compose.dev.yml` 文件头明确写着**不要**把它叠在 `docker-compose.yml` 上。
+> **说明：** 叠加时顶层 `name:` 取后一份文件，所以整条 Alpha 链的项目名是 `astella-alpha`，卷也跟着变成 `astella-alpha_postgres_data`、`astella-alpha_minio_data`、`astella-alpha_prometheus_data` 等（`docker compose -f docker-compose.yml -f docker-compose.alpha.yml --profile storage config` 实测）。只跑 `docker-compose.yml` 时前缀是 `astella_`。`docker-compose.dev.yml` 文件头明确写着**不要**把它叠在 `docker-compose.yml` 上。
 
-`docker-compose.yml` 的一次式服务链（`restart: "no"`，幂等，每次部署都要跑）：
+一次性服务链（`restart: "no"`，幂等，每次部署都要；`docker-compose.yml` 与 `docker-compose.dev.yml` 同一条跑）：
 
 | 服务 | 顺序 | 做什么 |
 | --- | --- | --- |
-| `role-bootstrap` | 迁移前 | 跑 `infra/postgres/apply-roles.sh`：创建/轮换 `ailearn_migrator`、`ailearn_api`、`ailearn_worker`，并把历史对象归属转给 migrator |
+| `role-bootstrap` | 迁移前 | 跑 `infra/postgres/apply-roles.sh`：创建/轮换 `astella_migrator`、`astella_api`、`astella_worker`，并把历史对象归属转给 migrator |
 | `migrate` | role-bootstrap 之后 | `npm run db:migrate`，只读 `DATABASE_URL_MIGRATOR` |
 | `role-grants` | migrate 之后 | 再跑一次 `apply-roles.sh`，带 `REQUIRE_RLS_DISABLED=true`，对迁移新建的对象补授权 |
 | `seed-owner` | `seed` profile，需显式 `run --rm` | `npm run db:seed`。生产路径 fail-closed：缺 `OWNER_EMAIL` 或 `OWNER_PASSWORD` 直接抛错，`OWNER_PASSWORD` 少于 12 位同样抛错，`SEED_DEMO_DATA=true` 配 `NODE_ENV=production` 直接拒绝 |
@@ -64,7 +64,7 @@
 | 首个账号 | `OWNER_EMAIL`、`OWNER_PASSWORD`（≥12 位）、`OWNER_WORKSPACE` | 只在显式 `seed-owner` 时读 | 用 `make seed-demo`，不读这三项 |
 | 网络与来源 | `CORS_ORIGIN`、`TRUST_PROXY`、`API_PORT`、`API_BIND_ADDRESS`、`POSTGRES_BIND_ADDRESS` | 可选，默认见 compose | 同左 |
 | 会话与安全 | `AUTH_COOKIE_SECURE`、`AUTH_SURFACE_MANIFEST_SECRET`、`AUTH_RATE_LIMIT_STORE`、`AUTH_RATE_LIMIT_WINDOW_MS`、`AUTH_RATE_LIMIT_MAX_ATTEMPTS`、`LEARNING_DRAFT_ENC_KEY`、`PROJECTION_CHECKPOINT_SECRET` | 可选但有 fail-closed 后果，见下表 | 同左 |
-| 桌面接入与合同 | `AILEARN_DESKTOP_PAIRING_KEY_ID`、`AILEARN_DESKTOP_PAIRING_SECRET`、`AILEARN_DOMAIN_SCHEMA_REVISION`、`DESKTOP_API_ORIGIN`、`DESKTOP_DEPLOYMENT_CONFIG_REVISION` | 可选 | dev 给了固定的本机兜底值（配对口令仍为空） |
+| 桌面接入与合同 | `ASTELLA_DESKTOP_PAIRING_KEY_ID`、`ASTELLA_DESKTOP_PAIRING_SECRET`、`ASTELLA_DOMAIN_SCHEMA_REVISION`、`DESKTOP_API_ORIGIN`、`DESKTOP_DEPLOYMENT_CONFIG_REVISION` | 可选 | dev 给了固定的本机兜底值（配对口令仍为空） |
 | 运维面板 | `ADMIN_PANEL_TOKEN`、`ADMIN_PANEL_PATH`、`ADMIN_LOG_BUFFER_SIZE`、`ADMIN_DOCKER_SOCKET` | 可选：留空即 `/admin` 不注册 | dev 有默认值且挂了 socket |
 | 模型凭据 | `DASHSCOPE_API_KEY`、`OPENAI_COMPAT_API_KEY`、`SILICONFLOW_API_KEY`、`BIGMODEL_API_KEY`、`TOKENRHYTHM_API_KEY`、`OPENCODE_GO_API_KEY`、`ASSESSMENT_CRITIC_URL` / `_KEY` / `_MODEL`、`AI_PLATFORMS_CONFIG` | 可选，未配置时按 fail-closed 分支处理 | 同左 |
 | 运行参数 | `LOG_LEVEL`、`WORKER_DRAIN_TIMEOUT_MS`、`WORKER_MODEL_TIMEOUT_MS`、`WORKER_PROVIDER_TIMEOUT_MS`、`WORKER_TIMEOUT_PARSE_SOURCE_MS`、`V3_ALLOW_DETERMINISTIC_PROVIDERS`、`AI_ALLOW_DOCKER_DESKTOP_SYNTHETIC_DNS`、`AI_REQUIRE_CONFIGURED_PROVIDER`、`EDGE_TTS_BASE_URL`、`EDGE_TTS_PORT`、`EDGE_TTS_MAX_CONCURRENCY`、`QWEN_TTS_MAX_CONCURRENCY`、`TOPOLOGY_SNAPSHOT_CACHE_MS`、`V2_EVIDENCE_*` / `V2_LEASE_RENEWAL_INTERVAL_MS` / `V2_PIPELINE_BUDGET_MS` / `V2_SOURCE_CONTENT_MAX_CHARS`、`V2_E2E_DEBUG_ERRORS` | 可选，多数只在 worker 侧生效 | `V2_E2E_DEBUG_ERRORS` dev 默认为 1 |
@@ -130,9 +130,9 @@ electron-builder 的配置在 `apps/desktop-client/electron-builder.yml`，目�
 
 几个刻意的选择：
 
-- **`nsis.oneClick: true`**（2026-10-04 由 `false` 改）。原因是向导式安装器有一个 `PageEx custom` 的选目录页，`/S` 静默模式下 NSIS 跳过绘制但 MultiUser 仍需一次显式决策，安装器就一直等着——CI 上表现为安装 step 挂到超时，症状和"安装器坏了"一模一样。代价是用户不再能自己挑安装目录，改装到 `%LOCALAPPDATA%\Programs\理解引擎`。`requestedExecutionLevel: asInvoker` 也写明，不提权。
-- **`artifactName: ailearn-${version}-${os}-${arch}.${ext}` 刻意用 ASCII**。产品名「理解引擎」只影响装完之后的显示名（`productName`），而 Release 资产名会进 `latest.yml` / `latest-mac.yml` 被客户端解析，GitHub 资产 URL、NSIS 差分下载与 Squirrel.Mac 对非 ASCII 文件名都有边角问题。`desktop-release.yml` 里核对的正是 `ailearn-<version>-win-x64.exe`、`.blockmap`、`-mac-<arch>.zip`、`.dmg` 这四个名字。
-- **更新源是 GitHub Releases，不是本项目 API**。`publish: provider github / owner asklins223 / repo ai-learning-system`；`apps/desktop-client/src/main/desktop-update.ts` 里重复了同一组 owner/repo 常量用于拼"去下载页"的链接——**改仓库地址时两处要一起改**。检查走 `api.github.com`，下载走 GitHub CDN，`apps/api` 完全不在这条链路上，因此更新带宽不落在自家服务器上，也不会因为自家 API 挂了而更新不了。
+- **`nsis.oneClick: true`**（2026-10-04 由 `false` 改）。原因是向导式安装器有一个 `PageEx custom` 的选目录页，`/S` 静默模式下 NSIS 跳过绘制但 MultiUser 仍需一次显式决策，安装器就一直等着——CI 上表现为安装 step 挂到超时，症状和"安装器坏了"一模一样。代价是用户不再能自己挑安装目录，改装到 `%LOCALAPPDATA%\Programs\Astella`（2026-10-06 起包名是 ASCII 的 Astella，开始菜单与"应用和功能"里的条目才用中文显示名 拾星笔记）。`requestedExecutionLevel: asInvoker` 也写明，不提权。
+- **`artifactName: astella-${version}-${os}-${arch}.${ext}` 写死前缀**。`productName` 现在也是 ASCII 的 Astella，但产物名不取 `${productName}`：Release 资产名会进 `latest.yml` / `latest-mac.yml` 被客户端解析，显示名以后再怎么调，已发出去的更新元数据里的文件名都不该跟着漂；GitHub 资产 URL、NSIS 差分下载与 Squirrel.Mac 对非 ASCII 文件名也都有边角问题。`desktop-release.yml` 里核对的正是 `astella-<version>-win-x64.exe`、`.blockmap`、`-mac-<arch>.zip`、`.dmg` 这四个名字。
+- **更新源是 GitHub Releases，不是本项目 API**。`publish: provider github / owner asklins223 / repo Astella`；`apps/desktop-client/src/main/desktop-update.ts` 里重复了同一组 owner/repo 常量用于拼"去下载页"的链接——**改仓库地址时两处要一起改**。检查走 `api.github.com`，下载走 GitHub CDN，`apps/api` 完全不在这条链路上，因此更新带宽不落在自家服务器上，也不会因为自家 API 挂了而更新不了。
 - **没有配置代码签名**。仓库里没有 Windows 证书与 Apple 证书 / notarization 凭据，产物是未签名的：macOS 首次打开要右键 → 打开，Windows 会弹 SmartScreen，且 **macOS 的自动更新安装会被 Squirrel.Mac 拒**（它校验新旧 `.app` 的签名是否同一开发者，未签名即下载成功、安装失败）。yml 里刻意不设 `identity: null` / `notarize: false`（那两条等于主动关掉签名与公证），并补了 `hardenedRuntime: true`（公证的硬性前提）——将来配好 secret 就自动签名 + 自动公证，无需改配置。`desktop-package.yml` 里设 `CSC_IDENTITY_AUTO_DISCOVERY=false` 只为省掉翻证书库的功夫。
 
 发布流水线 `.github/workflows/desktop-release.yml` 只在 `push` tag `desktop-v*` 上发 Release，`resolve` job 先把 tag 版本与 `release/desktop-version.json` 对比（不一致直接停，否则会产出"标题写 A、包是 B"的 Release），再由 `build` job 以 `workflow_call` 复用 `desktop-package.yml` 并行打两端，最后 `release` job（`if: from_tag == 'true'`）：下载 `desktop-*` 工件 → 断言两端版本一致且四个文件非空 → **必须存在 `latest.yml`**（缺了直接失败，Windows 拿不到版本信息）、`latest-mac.yml` 缺失只 `::warning::` → 用 `softprops/action-gh-release@v2` 以 `draft: true` 建 Release 并上传全部资产 → 再用 `gh api --method PATCH … -F draft=false` 翻成公开。先 Draft 后公开是为了更新器：边传边公开可能让它读到一个只传了一半的 `latest.yml` 或半成品安装包。手动 `workflow_dispatch` 触发的那次**不发** Release。
@@ -145,9 +145,9 @@ Alpha 是一套用 compose 起在单机上的"带监控与备份基础设施"的
 | --- | --- | --- |
 | `make alpha-up` | `alpha-env-setup.sh up` | 起 `postgres minio alpha-ops-sidecar` → 等 `pg_isready` → 依次跑一次式服务 `minio-init`、`role-bootstrap`、`migrate`、`role-grants`（每次都删掉旧容器重建并 `docker wait`）→ 起 `api worker prometheus alertmanager` → 逐个 `wait_http` 探测 API `/ready`、worker `/metrics`、Prometheus `/-/healthy`、Alertmanager `/-/healthy` → 打印 status |
 | `make alpha-backup` | `… backup` | 在 `backup-runner` 容器里跑 `infra/backup/backup.sh` |
-| `make alpha-restore-verify` | `… restore-verify` | 先在 `postgres` 上 `DROP DATABASE IF EXISTS ailearn_restore_verify WITH (FORCE)` + `CREATE DATABASE`，再跑 `infra/backup/rc-restore-verify.sh` |
+| `make alpha-restore-verify` | `… restore-verify` | 先在 `postgres` 上 `DROP DATABASE IF EXISTS astella_restore_verify WITH (FORCE)` + `CREATE DATABASE`，再跑 `infra/backup/rc-restore-verify.sh` |
 | `make alpha-status` | `… status` | `docker compose ps` + 端点清单 + `curl :9090/api/v1/alerts` 与 `/api/v1/targets`（需要 `jq`） |
-| `make alpha-metrics` | `… metrics` | `curl :4000/metrics` 里 `^ailearn_` 的前 20 行 + 一条 PromQL `ailearn_job_queue_depth` |
+| `make alpha-metrics` | `… metrics` | `curl :4000/metrics` 里 `^astella_` 的前 20 行 + 一条 PromQL `astella_job_queue_depth` |
 | `make alpha-down` | `… down` | `docker compose down --remove-orphans` |
 
 脚本接受 8 个子命令，其中 **`init` 与 `freshness` 没有对应的 make 目标**，`down`/`status` 之外的运维步骤同理要直接调脚本：
@@ -163,9 +163,9 @@ Alpha 是一套用 compose 起在单机上的"带监控与备份基础设施"的
 
 | 东西 | 位置 |
 | --- | --- |
-| age 公钥（备份加密用）与私钥（恢复解密用） | 命名卷 `ailearn-alpha_backup_keys`，挂在 `backup-runner:/etc/ailearn` |
-| manifest 与 RC 报告 | 命名卷 `ailearn-alpha_backup_manifests`，挂在 `backup-runner:/var/lib/ailearn/manifests`；`alpha-ops-sidecar` 以只读挂同一份 |
-| 备份对象本体 | S3 兼容 bucket `BACKUP_BUCKET`（默认 `ailearn-backups`），在 MinIO 上，数据落 `ailearn-alpha_minio_data` |
+| age 公钥（备份加密用）与私钥（恢复解密用） | 命名卷 `astella-alpha_backup_keys`，挂在 `backup-runner:/etc/astella` |
+| manifest 与 RC 报告 | 命名卷 `astella-alpha_backup_manifests`，挂在 `backup-runner:/var/lib/astella/manifests`；`alpha-ops-sidecar` 以只读挂同一份 |
+| 备份对象本体 | S3 兼容 bucket `BACKUP_BUCKET`（默认 `astella-backups`），在 MinIO 上，数据落 `astella-alpha_minio_data` |
 
 迁移号是**动态**取的：`backup` 与 `restore-verify` 都用一行 `node -e` 从 `apps/api/src/db/migrations/meta/_journal.json` 的最后一条 `entries[].tag` 读当前末端（现在 388 条，末端 `0391_summary_verified_revision_backfill`），历史上这里曾硬编码 `0039` 而过期。
 
@@ -173,14 +173,14 @@ Alpha 是一套用 compose 起在单机上的"带监控与备份基础设施"的
 
 ## 可观测性
 
-`infra/prometheus/prometheus.yml`：`scrape_interval` 与 `evaluation_interval` 都是 15s，外部标签 `monitor: ailearn-alpha` / `environment: alpha`，规则文件 `alerts.yml`，Alertmanager 静态目标 `alertmanager:9093`；Prometheus 启动参数含 `--storage.tsdb.retention.time=30d` 与 `--web.enable-lifecycle`。
+`infra/prometheus/prometheus.yml`：`scrape_interval` 与 `evaluation_interval` 都是 15s，外部标签 `monitor: astella-alpha` / `environment: alpha`，规则文件 `alerts.yml`，Alertmanager 静态目标 `alertmanager:9093`；Prometheus 启动参数含 `--storage.tsdb.retention.time=30d` 与 `--web.enable-lifecycle`。
 
 | job | 抓取目标 | 路径 | 端口 |
 | --- | --- | --- | --- |
 | `prometheus` | `localhost:9090` | 默认 | 9090 |
-| `ailearn-api` | `api:4000` | `/metrics` | 4000 |
-| `ailearn-worker` | `worker:9100` | `/metrics` | 9100（relabel 把 `instance` 固定成 `worker`） |
-| `ailearn-backup` | `alpha-ops-sidecar:8080` | `/metrics` | 8080，只在 overlay 内网可达，不发宿主端口 |
+| `astella-api` | `api:4000` | `/metrics` | 4000 |
+| `astella-worker` | `worker:9100` | `/metrics` | 9100（relabel 把 `instance` 固定成 `worker`） |
+| `astella-backup` | `alpha-ops-sidecar:8080` | `/metrics` | 8080，只在 overlay 内网可达，不发宿主端口 |
 | `alertmanager` | `alertmanager:9093` | 默认 | 9093 |
 | （注释掉的）`postgres` | `postgres-exporter:9187` | — | 未启用 |
 
@@ -188,13 +188,13 @@ Alpha 是一套用 compose 起在单机上的"带监控与备份基础设施"的
 
 | 组 | 告警 |
 | --- | --- |
-| `ailearn_http_health` | `AILearnAPIDown`、`AILearnWorkerDown`、`AILearnHighHTTP5xxRate`、`AILearnHighHTTPLatency` |
-| `ailearn_job_health` | `AILearnJobQueueBacklog`、`AILearnStalePendingJob`、`AILearnHighJobDeadRate`、`AILearnJobLeaseLost` |
-| `ailearn_provider_health` | `AILearnHighProviderErrorRate`、`AILearnProviderHighLatency`、`AILearnProviderSchemaFailure`、`AILearnProviderQuotaExceeded` |
-| `ailearn_database_health` | `AILearnHighTransactionFailureRate`、`AILearnHighRLSDenialRate`、`AILearnBackupStale` |
-| `ailearn_funnel_monitoring` | `AILearnLowInviteConsumptionRate`、`AILearnLowCardGenerationSuccessRate` |
-| `ailearn_release_info` | `AILearnReleaseDeployed`、`AILearnReleaseRolledBack` |
-| `ailearn_search_consistency` | `AILearnSearchIndexDrift`、`AILearnHighSearchDriftRatio` |
+| `astella_http_health` | `AstellaAPIDown`、`AstellaWorkerDown`、`AstellaHighHTTP5xxRate`、`AstellaHighHTTPLatency` |
+| `astella_job_health` | `AstellaJobQueueBacklog`、`AstellaStalePendingJob`、`AstellaHighJobDeadRate`、`AstellaJobLeaseLost` |
+| `astella_provider_health` | `AstellaHighProviderErrorRate`、`AstellaProviderHighLatency`、`AstellaProviderSchemaFailure`、`AstellaProviderQuotaExceeded` |
+| `astella_database_health` | `AstellaHighTransactionFailureRate`、`AstellaHighRLSDenialRate`、`AstellaBackupStale` |
+| `astella_funnel_monitoring` | `AstellaLowInviteConsumptionRate`、`AstellaLowCardGenerationSuccessRate` |
+| `astella_release_info` | `AstellaReleaseDeployed`、`AstellaReleaseRolledBack` |
+| `astella_search_consistency` | `AstellaSearchIndexDrift`、`AstellaHighSearchDriftRatio` |
 
 通知链路只有一条：`infra/prometheus/alertmanager.yml` 的唯一 receiver 是 `log-receiver`，`webhook_configs.url` 指向 `http://alpha-ops-sidecar:8080/alerts`，而 sidecar 收到之后只做一件事——`print("[alpha-ops] alertmanager webhook " + <json>)` 到自己的 stdout。**也就是没有配置任何寻呼、Slack 或 PagerDuty；要看到告警，得去读容器日志。** 路由参数：`group_by: [alertname, service]`、`group_wait` 30s（critical 10s）、`group_interval` 5m、`repeat_interval` 4h（critical 1h）、`resolve_timeout` 5m，并有一条"同一告警的 critical 抑制 warning"的 inhibit 规则。配置文件里那段 `slack_configs` 是注释掉的示例。
 
@@ -202,12 +202,12 @@ Alpha 是一套用 compose 起在单机上的"带监控与备份基础设施"的
 
 | 想看的 | 指标 |
 | --- | --- |
-| API 存活/就绪与流量 | `ailearn_readiness_status`、`ailearn_http_requests_total`、`ailearn_http_errors_5xx_total`、`ailearn_http_request_duration_seconds`、`ailearn_sse_active_streams` |
-| 队列是否堵 | `ailearn_job_queue_depth{status="pending"}`、`ailearn_job_oldest_pending_age_seconds`、`ailearn_job_terminal_total`、`ailearn_job_lease_lost_total`、`ailearn_job_non_retryable_dead_total` |
-| 模型调用与配额 | `ailearn_provider_calls_total`、`ailearn_provider_call_duration_seconds`、`ailearn_provider_call_tokens_total`、`ailearn_ai_circuit_open_total`、`ailearn_ai_circuit_observer_healthy` |
-| 租户隔离与库健康 | `ailearn_db_rls_denied_total`、`ailearn_db_transaction_failures_total`、`ailearn_db_pool_active_connections`、`ailearn_db_migration_version` |
-| 学习闭环推进 | `ailearn_learning_run_processing_outbox_depth`、`ailearn_learning_run_processing_outbox_oldest_pending_age_seconds`、`ailearn_learning_run_critic_fail_closed_total`、`ailearn_funnel_events_total` |
-| 备份是否真的可用 | `ailearn_backup_verified_manifests_total`、`ailearn_backup_manifest_scan_errors`、`ailearn_db_last_successful_backup_timestamp`（后一个在深度校验通过前**根本不出现**） |
+| API 存活/就绪与流量 | `astella_readiness_status`、`astella_http_requests_total`、`astella_http_errors_5xx_total`、`astella_http_request_duration_seconds`、`astella_sse_active_streams` |
+| 队列是否堵 | `astella_job_queue_depth{status="pending"}`、`astella_job_oldest_pending_age_seconds`、`astella_job_terminal_total`、`astella_job_lease_lost_total`、`astella_job_non_retryable_dead_total` |
+| 模型调用与配额 | `astella_provider_calls_total`、`astella_provider_call_duration_seconds`、`astella_provider_call_tokens_total`、`astella_ai_circuit_open_total`、`astella_ai_circuit_observer_healthy` |
+| 租户隔离与库健康 | `astella_db_rls_denied_total`、`astella_db_transaction_failures_total`、`astella_db_pool_active_connections`、`astella_db_migration_version` |
+| 学习闭环推进 | `astella_learning_run_processing_outbox_depth`、`astella_learning_run_processing_outbox_oldest_pending_age_seconds`、`astella_learning_run_critic_fail_closed_total`、`astella_funnel_events_total` |
+| 备份是否真的可用 | `astella_backup_verified_manifests_total`、`astella_backup_manifest_scan_errors`、`astella_db_last_successful_backup_timestamp`（后一个在深度校验通过前**根本不出现**） |
 
 日志侧：pino 从 `LOG_LEVEL` 读级别，默认 `info`（可选 `trace`/`debug`/`info`/`warn`/`error`/`fatal`）；非生产且不在测试上下文时挂 `pino-pretty`。真正的落点仍是 stdout，由容器运行时收集。**进程内另有一条有界环给 `/admin` 的日志页用**：`apps/api/src/lib/log-buffer.ts` 通过 pino 的 `hooks.logMethod` 在序列化**之前**捕获，所以 `scope` / `runId` / `workspaceId` 字段还在。它是两条独立的环——应用日志默认 500 条（`ADMIN_LOG_BUFFER_SIZE` 可调，上限 5000），请求/访问日志固定 300 条。这条缓冲**不是审计日志**：重启即清空、不落盘、不可检索、不导出，跨重启追因仍要走 stdout 与审计表。
 
@@ -222,23 +222,23 @@ Alpha 是一套用 compose 起在单机上的"带监控与备份基础设施"的
 | `rotate.sh` | 保留最近 14 份 daily 与 4 份 weekly；**只删 `verificationStatus=verified` 的超期备份**，未验证的一律留着 |
 | `restore.sh` | 下载 → age 私钥解密 → 恢复到目标库。目标必须通过安全 allowlist 检查，不允许指向生产主机/库名 |
 | `rc-restore-verify.sh` | 端到端验证：新建一份备份 → 恢复到隔离库（Alpha 流程里目标主机写的是网络别名 `restore-postgres`）→ 比对迁移末端与核心表行数 → 用 `infra/postgres/roles.sql` 复核角色姿态 → 产出 RC 报告 |
-| `freshness-check.sh` | 扫描 manifest 目录，找最近一次 `verificationStatus=verified` 的备份，超过阈值（默认 24 小时）就以非零码退出，`AILearnBackupStale` 因此亮起 |
-| `alpha-backup-cron.sh` + `alpha-cron-setup.sh` | 每 12 小时的调度：`backup.sh` → `rotate.sh` → `freshness-check.sh`，日志到 `/var/log/ailearn/backup-cron.log`。**这两个脚本没有被 make 目标或 compose 接线**，需要在宿主机上显式安装 crontab |
+| `freshness-check.sh` | 扫描 manifest 目录，找最近一次 `verificationStatus=verified` 的备份，超过阈值（默认 24 小时）就以非零码退出，`AstellaBackupStale` 因此亮起 |
+| `alpha-backup-cron.sh` + `alpha-cron-setup.sh` | 每 12 小时的调度：`backup.sh` → `rotate.sh` → `freshness-check.sh`，日志到 `/var/log/astella/backup-cron.log`。**这两个脚本没有被 make 目标或 compose 接线**，需要在宿主机上显式安装 crontab |
 | `backup-scripts.test.sh` | 这组 shell 脚本自身的测试（manifest 形状、rotate 保留策略、restore 的 allowlist 拒绝、`manifest.schema.json` 校验）。`bash infra/backup/backup-scripts.test.sh` 手动跑，**没有任何自动链路调用它** |
 
-运维上必须区分两件事：`make alpha-backup` 只是产出一份加密备份与 manifest；`make alpha-restore-verify` 才是"这份备份真能恢复出来"的证据，而 `AILearnBackupStale` 看的是**已通过深度校验**的最近时间戳。只跑备份不跑恢复校验，这条告警会因为指标根本不出现而**永不触发**——它不会替你说"没问题"。
+运维上必须区分两件事：`make alpha-backup` 只是产出一份加密备份与 manifest；`make alpha-restore-verify` 才是"这份备份真能恢复出来"的证据，而 `AstellaBackupStale` 看的是**已通过深度校验**的最近时间戳。只跑备份不跑恢复校验，这条告警会因为指标根本不出现而**永不触发**——它不会替你说"没问题"。
 
 ## 数据库：卷保护与角色姿态
 
-开发库的卷刻意放在 Compose 生命周期之外：`docker-compose.dev.yml` 声明 `dev_postgres_data` 为 `external: true` 且固定名字 `ailearn-dev_dev_postgres_data`。`make up` 依赖 `ensure-db-volume`，卷不存在时按 `com.ailearn.protected=true` / `com.ailearn.purpose=postgres-data` 两个标签创建它。因此 `make down`、删容器、以及 `docker compose down -v` **都删不掉它**。真正清空只有一条带确认的路：
+开发库的卷刻意放在 Compose 生命周期之外：`docker-compose.dev.yml` 声明 `dev_postgres_data` 为 `external: true` 且固定名字 `astella-dev_dev_postgres_data`。`make up` 依赖 `ensure-db-volume`，卷不存在时按 `com.astella.protected=true` / `com.astella.purpose=postgres-data` 两个标签创建它。因此 `make down`、删容器、以及 `docker compose down -v` **都删不掉它**。真正清空只有一条带确认的路：
 
 ```bash
 make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB   # 值不对就打印取消信息并以 2 退出，不动任何数据
 ```
 
-删之前先完成备份。需要隔离环境跑集测时用一次性库（`make disposable-db` / `bash scripts/dev-disposable-db.sh`），脚本只删/建匹配 `ailearn_*` 且不等于 `ailearn` 的库名。生产与 Alpha 用的是**普通命名卷**（`ailearn_postgres_data` / `ailearn-alpha_postgres_data`），没有 external 保护，也不由 Makefile 管理。
+删之前先完成备份。需要隔离环境跑集测时用一次性库（`make disposable-db` / `bash scripts/dev-disposable-db.sh`），脚本只删/建匹配 `astella_*` 且不等于 `astella` 的库名。生产与 Alpha 用的是**普通命名卷**（`astella_postgres_data` / `astella-alpha_postgres_data`），没有 external 保护，也不由 Makefile 管理。
 
-角色与隔离的姿态（完整口径见 [API 与数据](./api-and-data.md)）：三个应用角色都由 `infra/postgres/apply-roles.sh` + `roles.sql` 创建，全部 `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`；`ailearn_migrator` 带 `BYPASSRLS` 并拥有表、序列、视图与类型（迁移需要 DDL），`ailearn_api` 与 `ailearn_worker` 是 `NOBYPASSRLS`、没有 DDL 权限。业务请求在事务里设 `app.workspace_id` / `app.user_id`，由 FORCE RLS 收窄可见行；跨边界动作（登录、令牌解析、空间列表、兑换邀请码）走 actor 事务。这套约定的当前缺口由 `schema-isolation-gate-postgres.integration.ts` 以棘轮方式登记：**89** 张带 `workspace_id` 的表还没有指向 `workspaces` 的外键（清单只能缩短），而"RLS 未启用"的基线自迁移 0257 之后**是空的并且必须一直是空的**。dev、CI 与 prod 现在都是受限角色形状——超级用户会绕过 RLS，让隔离断言变成假通过。
+角色与隔离的姿态（完整口径见 [API 与数据](./api-and-data.md)）：三个应用角色都由 `infra/postgres/apply-roles.sh` + `roles.sql` 创建，全部 `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`；`astella_migrator` 带 `BYPASSRLS` 并拥有表、序列、视图与类型（迁移需要 DDL），`astella_api` 与 `astella_worker` 是 `NOBYPASSRLS`、没有 DDL 权限。业务请求在事务里设 `app.workspace_id` / `app.user_id`，由 FORCE RLS 收窄可见行；跨边界动作（登录、令牌解析、空间列表、兑换邀请码）走 actor 事务。这套约定的当前缺口由 `schema-isolation-gate-postgres.integration.ts` 以棘轮方式登记：**89** 张带 `workspace_id` 的表还没有指向 `workspaces` 的外键（清单只能缩短），而"RLS 未启用"的基线自迁移 0257 之后**是空的并且必须一直是空的**。dev、CI 与 prod 现在都是受限角色形状——超级用户会绕过 RLS，让隔离断言变成假通过。
 
 ## 面向运维者的安全姿态
 
@@ -263,7 +263,7 @@ make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB   # 值不对就打印取消信息�
 
 以下都在本次核对中确认过，不是推测：
 
-1. **`infra/prometheus/alerts.yml` 里 5 条告警永远不会触发**：`AILearnHighProviderErrorRate`、`AILearnProviderSchemaFailure`、`AILearnProviderQuotaExceeded` 依赖 `ailearn_provider_errors_total`，`AILearnSearchIndexDrift` 与 `AILearnHighSearchDriftRatio` 依赖 `ailearn_search_drift_total` / `ailearn_search_documents_total`——这四个指标族在 `apps/api`、`workers/ai-worker`、`packages` 的源码里**没有任何生产者**（全仓 grep 只在 `alerts.yml`、`prometheus.yml` 注释和归档审计文档里出现）。规则文件本身没被 `--web.enable-lifecycle` 之外的任何检查校验过。
+1. **`infra/prometheus/alerts.yml` 里 5 条告警永远不会触发**：`AstellaHighProviderErrorRate`、`AstellaProviderSchemaFailure`、`AstellaProviderQuotaExceeded` 依赖 `astella_provider_errors_total`，`AstellaSearchIndexDrift` 与 `AstellaHighSearchDriftRatio` 依赖 `astella_search_drift_total` / `astella_search_documents_total`——这四个指标族在 `apps/api`、`workers/ai-worker`、`packages` 的源码里**没有任何生产者**（全仓 grep 只在 `alerts.yml`、`prometheus.yml` 注释和归档审计文档里出现）。规则文件本身没被 `--web.enable-lifecycle` 之外的任何检查校验过。
 2. **没有告警出口**：`log-receiver` 只把告警 POST 给 sidecar 打印到 stdout。没有 Slack / PagerDuty / 邮件 receiver，因此"告警响了"这件事本身需要有人主动去看日志或 Prometheus UI。
 3. **`verify-alerts-syntax.mjs` 没接线**：它本来会校验规则形状与重复告警名，并提示 15 个必需指标里有哪些没被 `alerts.yml` 引用，但它不在 `verify`、`release-check`、任何工作流或包脚本里。同样未接线的还有 `verify-shared-exports.mjs`（专防"文件存在但 `exports` 没登记、typecheck 绿而运行时 `ERR_PACKAGE_PATH_NOT_EXPORTED`"这一类）、`coverage-baseline-save.mjs`、`capture-image-digests.mjs`、`.github/ci/ai-platforms.mock.json`。
 4. **镜像 digest 链路是断的**：`release-manifest-generate.mjs` 支持 `--images` 读取 `capture-image-digests.mjs` 的产物，但 `make release-manifest` 与 `make release-check` 都没传这个参数，所以 RC manifest 的镜像字段走占位符分支。CI 也不再构建或扫描生产镜像，仓库里没有任何地方保存可拉取的 digest。
@@ -281,7 +281,9 @@ make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB   # 值不对就打印取消信息�
 - [开发环境](./development.md)
 - [桌面客户端](./desktop-client.md)
 - [API 与数据](./api-and-data.md)
-- [AI 与伴星](./ai-and-companion.md)
+- [模型与 Worker 链路](./ai-and-companion.md)
+- [统一 Agent 运行时（技术）](./agent-runtime.md)
+- [伴星体验（产品设计）](./companion-experience.md)
 - [测试与质量](./testing-and-quality.md)
 - [常见问题与排障](./faq-and-troubleshooting.md)
 - 仓库根：[README](../../../README.md)、[AGENTS.md](../../../AGENTS.md)、[第三方声明](../../../THIRD_PARTY_NOTICES.md)

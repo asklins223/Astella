@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SourceDetailSurface } from "../source/source-detail-surface.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /**
  * 「来源详情」这一屏登记给伴星读的是什么（39d W2-7）。
@@ -101,7 +101,7 @@ function installApi(options: {
       })),
     },
   };
-  window.ailearn = api as unknown as typeof window.ailearn;
+  window.astella = api as unknown as typeof window.astella;
   return api;
 }
 
@@ -123,7 +123,7 @@ function renderSurface() {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   useRoomStore.setState({ activeSourceId: null, pageReadableView: null });
 });
 
@@ -206,7 +206,7 @@ describe("来源详情：她读到的与屏幕上的是同一份", () => {
   it("读到之前不登记，卸载时槽位让开", async () => {
     useRoomStore.setState({ activeSourceId: SOURCE_ID });
     let releaseGet: (value: unknown) => void = () => undefined;
-    window.ailearn = {
+    window.astella = {
       auth: {
         getState: vi.fn(async () => ok({
           status: "authenticated",
@@ -221,7 +221,7 @@ describe("来源详情：她读到的与屏幕上的是同一份", () => {
         get: vi.fn(() => new Promise((resolve) => { releaseGet = resolve; })),
         listNotes: vi.fn(async () => ok({ items: [], total: 0, nextCursor: null, snapshotAt: "2026-09-24T00:00:00.000Z" })),
       },
-    } as unknown as typeof window.ailearn;
+    } as unknown as typeof window.astella;
     const { unmount } = render(<SourceDetailSurface />);
     await waitFor(() => expect(screen.getByText("正在读取来源详情")).not.toBeNull());
     expect(publishedView()).toBeNull();

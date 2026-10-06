@@ -56,11 +56,11 @@ CREATE POLICY companion_method_uses_scope ON public.companion_method_uses FOR AL
     AND user_id=NULLIF(current_setting('app.user_id',true),'')::uuid)
   WITH CHECK (workspace_id=NULLIF(current_setting('app.workspace_id',true),'')::uuid
     AND user_id=NULLIF(current_setting('app.user_id',true),'')::uuid);
-GRANT SELECT,INSERT ON public.companion_method_revisions TO ailearn_api,ailearn_worker;
-GRANT SELECT,INSERT,UPDATE ON public.companion_method_uses TO ailearn_api;
-GRANT SELECT,INSERT ON public.companion_method_uses TO ailearn_worker;
+GRANT SELECT,INSERT ON public.companion_method_revisions TO astella_api,astella_worker;
+GRANT SELECT,INSERT,UPDATE ON public.companion_method_uses TO astella_api;
+GRANT SELECT,INSERT ON public.companion_method_uses TO astella_worker;
 --> statement-breakpoint
-CREATE FUNCTION public.ailearn_archive_companion_method_revision() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION public.astella_archive_companion_method_revision() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF to_jsonb(NEW)-'updated_at' IS DISTINCT FROM to_jsonb(OLD)-'updated_at' THEN
     INSERT INTO public.companion_method_revisions(method_id,workspace_id,user_id,revision,snapshot)
@@ -72,10 +72,10 @@ BEGIN
 END;
 $$;
 CREATE TRIGGER companion_method_revision_archive BEFORE UPDATE ON public.companion_procedural_playbooks
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_archive_companion_method_revision();
-REVOKE ALL ON FUNCTION public.ailearn_archive_companion_method_revision() FROM PUBLIC;
+  FOR EACH ROW EXECUTE FUNCTION public.astella_archive_companion_method_revision();
+REVOKE ALL ON FUNCTION public.astella_archive_companion_method_revision() FROM PUBLIC;
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION public.ailearn_propagate_playbook_evidence_change() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION public.astella_propagate_playbook_evidence_change() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE changed boolean;
 BEGIN
   IF TG_OP='DELETE' THEN changed := true;
@@ -96,10 +96,10 @@ BEGIN
 END;
 $$;
 CREATE TRIGGER assistant_memory_playbook_delete_guard AFTER DELETE ON public.assistant_memory_items
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_propagate_playbook_evidence_change();
-REVOKE ALL ON FUNCTION public.ailearn_propagate_playbook_evidence_change() FROM PUBLIC;
+  FOR EACH ROW EXECUTE FUNCTION public.astella_propagate_playbook_evidence_change();
+REVOKE ALL ON FUNCTION public.astella_propagate_playbook_evidence_change() FROM PUBLIC;
 --> statement-breakpoint
-CREATE FUNCTION public.ailearn_agent_method_sources_current(p_id uuid,p_workspace uuid,p_user uuid)
+CREATE FUNCTION public.astella_agent_method_sources_current(p_id uuid,p_workspace uuid,p_user uuid)
 RETURNS boolean LANGUAGE plpgsql STABLE AS $$
 DECLARE method record; ref jsonb; material jsonb; input_refs jsonb; valid boolean;
 BEGIN
@@ -145,5 +145,5 @@ BEGIN
 EXCEPTION WHEN invalid_text_representation OR numeric_value_out_of_range THEN RETURN false;
 END;
 $$;
-REVOKE ALL ON FUNCTION public.ailearn_agent_method_sources_current(uuid,uuid,uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_agent_method_sources_current(uuid,uuid,uuid) TO ailearn_api,ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_agent_method_sources_current(uuid,uuid,uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_agent_method_sources_current(uuid,uuid,uuid) TO astella_api,astella_worker;

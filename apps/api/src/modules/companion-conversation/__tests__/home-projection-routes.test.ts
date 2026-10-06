@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import Fastify from "fastify";
-import { companionRoomProfilePatchV1Schema } from "@ailearn/shared/companion-home-contracts";
+import { companionRoomProfilePatchV1Schema } from "@astella/shared/companion-home-contracts";
 import { companionHomeProjectionRoutes } from "../home-projection-routes.ts";
 
 /**

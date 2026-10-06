@@ -29,15 +29,15 @@
 import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { ApiTransaction } from "../../db/client.ts";
-import { learningExposuresV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { computeExposureScopeIdV2 } from "@ailearn/shared/card-generation-v2-hashing";
+import { learningExposuresV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { computeExposureScopeIdV2 } from "@astella/shared/card-generation-v2-hashing";
 import {
   recordRecallSourceRevealRequestV1Schema,
   recordRecallSourceRevealResultV1Schema,
   type RecordRecallSourceRevealResultV1,
-} from "@ailearn/shared/recall-waiting-v2-contracts";
-import { RECALL_REVEAL_COPY_V1 } from "@ailearn/shared/recall-waiting-v2-contracts";
-import { DomainError } from "@ailearn/shared";
+} from "@astella/shared/recall-waiting-v2-contracts";
+import { RECALL_REVEAL_COPY_V1 } from "@astella/shared/recall-waiting-v2-contracts";
+import { DomainError } from "@astella/shared";
 
 export class RecallRevealError extends DomainError {
   constructor(code: string, message: string, status = 400) {

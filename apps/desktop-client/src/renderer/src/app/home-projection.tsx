@@ -8,8 +8,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { RoomProjectionV1 } from "@ailearn/shared/room-projection-contracts";
-import type { GatewayEventV1, SubscriptionTopicM2 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { RoomProjectionV1 } from "@astella/shared/room-projection-contracts";
+import type { GatewayEventV1, SubscriptionTopicM2 } from "@astella/shared/desktop-ipc-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "./desktop-client";
 import { useRoomStore } from "./room-store";
 import {
@@ -87,10 +87,10 @@ export function HomeProjectionProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(() => invalidate(), [invalidate]);
 
   useEffect(() => {
-    if (surface || !window.ailearn) return;
+    if (surface || !window.astella) return;
     let active = true;
     const cleanups: Array<() => void> = [];
-    const api = window.ailearn;
+    const api = window.astella;
 
     const subscribe = async (topic: SubscriptionTopicM2) => {
       const response = await api.subscriptions.subscribe({ meta: createRequestMeta(), topic });
@@ -135,7 +135,7 @@ export function HomeProjectionProvider({ children }: { children: ReactNode }) {
     const generation = ++requestGenerationRef.current;
     setState((current) => beginProjectionRefresh(current, scopeRef.current));
     const load = async () => {
-      if (!window.ailearn) throw new Error("unavailable");
+      if (!window.astella) throw new Error("unavailable");
       const knownScope = scopeRef.current;
       /**
        * 同代刷新不重读会话：伴星投递这类失效说的是"这份投影旧了"，账号与空间都没
@@ -146,7 +146,7 @@ export function HomeProjectionProvider({ children }: { children: ReactNode }) {
       if (knownScope && signal.workspaceEpoch === knownScope.workspaceEpoch) {
         requestScope = knownScope;
       } else {
-        const sessionResponse = await window.ailearn.auth.getState({ meta: createRequestMeta() });
+        const sessionResponse = await window.astella.auth.getState({ meta: createRequestMeta() });
         const session = unwrapGatewayResult(sessionResponse);
         if (session.status !== "authenticated" || !session.workspace) {
           if (generation === requestGenerationRef.current) {
@@ -167,7 +167,7 @@ export function HomeProjectionProvider({ children }: { children: ReactNode }) {
         scopeRef.current = requestScope;
       }
 
-      const response = await window.ailearn.room.getProjection({
+      const response = await window.astella.room.getProjection({
         meta: createRequestMeta(requestScope.workspaceEpoch),
       });
       const projection = unwrapGatewayResult(response);

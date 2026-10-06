@@ -32,14 +32,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { withWorkspaceTransaction } from "../db/client.ts";
-import { users, workspaces, workspaceMembers } from "@ailearn/shared/db-schema/identity";
-import { learningRuns } from "@ailearn/shared/db-schema/learning-runs";
+import { users, workspaces, workspaceMembers } from "@astella/shared/db-schema/identity";
+import { learningRuns } from "@astella/shared/db-schema/learning-runs";
 import {
   learningObjectivesV2,
   learningObjectiveRevisionsV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/card-generation-v2";
 import { readHomeSuggestionV2 } from "../modules/learning-dashboard/home-suggestion-service.ts";
 
 const TZ = "Asia/Shanghai";

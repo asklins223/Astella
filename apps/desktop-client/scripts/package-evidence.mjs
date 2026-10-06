@@ -24,7 +24,7 @@ async function digestFile(path) {
 }
 
 /**
- * 产物名跟着 `artifactName` 走：`ailearn-${version}-${os}-${arch}.${ext}`。
+ * 产物名跟着 `artifactName` 走：`astella-${version}-${os}-${arch}.${ext}`。
  * 版本取自 package.json（electron-builder 的 `${version}` 就是它），
  * 前缀取自 electron-builder.yml 的 artifactName——两处都不再抄写。
  *
@@ -142,7 +142,7 @@ const packagedManifest = {
 
 for (const [label, evidence] of [['Owner', ownerEvidence], ['Member', memberEvidence]]) {
   if (!evidence) continue
-  if (evidence.boundary?.protocol !== 'ailearn-app:' || !evidence.boundary?.hasDesktopPreload || !evidence.boundary?.hasM2Preload || !evidence.boundary?.hasRoomDom) {
+  if (evidence.boundary?.protocol !== 'astella-app:' || !evidence.boundary?.hasDesktopPreload || !evidence.boundary?.hasM2Preload || !evidence.boundary?.hasRoomDom) {
     throw new Error(`Packaged ${label} smoke boundary evidence is incomplete: ${JSON.stringify(evidence.boundary)}`)
   }
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import type { DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
 import type { RoomIntent } from "../../../app/room-machine";
 import { useRoomStore } from "../../../app/room-store";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
@@ -10,12 +10,12 @@ type ExitRequest = { route: DesktopRouteV1; objectiveId?: string; reflectionRoun
 type PendingExit = { intent?: RoomIntent; scopeRevision: number };
 
 async function navigateThroughMainResolver(route: DesktopRouteV1, learningRunId?: string): Promise<DesktopRouteV1> {
-  if (!window.ailearn) throw new Error("desktop API is unavailable");
-  const resolved = unwrapGatewayResult(await window.ailearn.navigation.resolve({
+  if (!window.astella) throw new Error("desktop API is unavailable");
+  const resolved = unwrapGatewayResult(await window.astella.navigation.resolve({
     meta: createRequestMeta(), route, ...(learningRunId ? { learningRunId } : {}),
   }));
   if (resolved.current.scope !== "workspace") throw new Error("navigation did not resolve to the current workspace");
-  const navigated = unwrapGatewayResult(await window.ailearn.navigation.go({
+  const navigated = unwrapGatewayResult(await window.astella.navigation.go({
     meta: createRequestMeta(resolved.current.workspaceEpoch), route: resolved.current.route,
     entryKind: "user", ...(learningRunId ? { learningRunId } : {}),
   }));
@@ -52,8 +52,8 @@ export function ValidationSurface() {
     let released = false;
     try {
       let requestedRoute = request?.route;
-      if (!requestedRoute && window.ailearn) {
-        const contract = unwrapGatewayResult(await window.ailearn.learningRun.getReturnContract({ meta: createRequestMeta(), runId }));
+      if (!requestedRoute && window.astella) {
+        const contract = unwrapGatewayResult(await window.astella.learningRun.getReturnContract({ meta: createRequestMeta(), runId }));
         const target = contract.status === "unavailable" ? contract.fallbackTargetV2 : contract.returnTargetV2;
         requestedRoute = target ? routeForReturnTarget(target) : { kind: "room.home" };
       }

@@ -1,6 +1,6 @@
 /**
  * 真机复现：把真实的桌面客户端跑起来（真实 React 树 + 真实房间场景），只替换
- * window.ailearn 这个网关桩，然后像读者一样把最上面那张牌拖走，看会不会黑屏。
+ * window.astella 这个网关桩，然后像读者一样把最上面那张牌拖走，看会不会黑屏。
  */
 import { existsSync } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'
@@ -12,7 +12,7 @@ const appRoot = resolve(import.meta.dirname, '..')
 const installed = resolve(appRoot, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron')
 const workspace = resolve(appRoot, '../desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron')
 const app = await electron.launch({
-  args: ['.', '--lang=zh-CN', `--user-data-dir=${await mkdtemp(resolve(tmpdir(), 'ailearn-realdrag-'))}`],
+  args: ['.', '--lang=zh-CN', `--user-data-dir=${await mkdtemp(resolve(tmpdir(), 'astella-realdrag-'))}`],
   cwd: appRoot,
   executablePath: existsSync(installed) ? installed : workspace,
 })
@@ -56,7 +56,7 @@ await window.addInitScript(() => {
     get: (target, key) => (key in target ? target[key] : async () => empty()),
     has: () => true,
   })
-  window.ailearn = new Proxy(real, {
+  window.astella = new Proxy(real, {
     get: (target, key) => (key in target ? make(key) : async () => empty()),
     has: () => true,
   })

@@ -43,13 +43,13 @@ import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { z } from "zod";
 import {
   COMPANION_VOICE_MAX_AUDIO_BYTES,
-} from "@ailearn/shared/companion-voice-contracts";
+} from "@astella/shared/companion-voice-contracts";
 import { DesktopGatewayFailure } from "./desktop-gateway-failure";
 import type { SessionCredentialStore } from "./desktop-gateway-credentials";
 import type { CompanionGuidanceAudioCache } from "./companion-guidance-audio-cache";
-import type { CompanionGuidanceVoiceProfileV1 } from "@ailearn/shared/companion-voice-contracts";
-import type { RoomProjectionV1 } from "@ailearn/shared/room-projection-contracts";
-import type { LearningDashboardV2 } from "@ailearn/shared/learning-objective-surface-contracts";
+import type { CompanionGuidanceVoiceProfileV1 } from "@astella/shared/companion-voice-contracts";
+import type { RoomProjectionV1 } from "@astella/shared/room-projection-contracts";
+import type { LearningDashboardV2 } from "@astella/shared/learning-objective-surface-contracts";
 import type {
   ApiConnectionStateV1,
   CapabilityProjectionV1,
@@ -60,7 +60,7 @@ import type {
   SessionContextV1,
   WorkspaceSummaryV1,
   WorkspaceContextV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 // 下面这几个是**值**（zod schema 与常量），不是类型——不能待在 `import type { … }` 里（TS1361）。
 import {
   DESKTOP_API_SERVICE_ID,
@@ -74,7 +74,7 @@ import {
   emailSchema,
   nonEmptyStringSchema,
   sessionContextSchema,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 
 /** 部署配置 + 配对密钥。**2026-09-30 从 `desktop-gateway.ts` 原样搬来。** */
 export type GatewayConfiguration = {
@@ -233,7 +233,7 @@ export class GatewayTransport {
   // **逐字搬移**：由脚本按 TS AST 的精确源区间切出后原样放入。
 
   // `sessionWorkspaceReturn` 是登录前的回跳工作区（纯状态字段）。
-  pendingWorkspaceArrival: import("@ailearn/shared/desktop-ipc-contracts").WorkspaceArrivalV1 | null = null;
+  pendingWorkspaceArrival: import("@astella/shared/desktop-ipc-contracts").WorkspaceArrivalV1 | null = null;
   sessionWorkspaceReturn: { email: string; workspaceId: string } | null = null;
   // `loadSession` 用已存凭据恢复会话——**本来就属于传输层**，第四刀搬 `restoreStoredCredential` 时漏了它。
   async loadSession(requestId?: string): Promise<SessionContextV1> {
@@ -380,7 +380,7 @@ export class GatewayTransport {
         });
         let result: { status: number; body: unknown };
         try {
-          result = await this.request("/_ailearn/desktop/trust/v1/challenge", {
+          result = await this.request("/_astella/desktop/trust/v1/challenge", {
             method: "POST",
             body: JSON.stringify(request),
           }, false, false, requestId);
@@ -444,7 +444,7 @@ export class GatewayTransport {
     async performRemoteHealth(config: DeploymentConfigV1, requestId?: string): Promise<void> {
         const result = await this.request("/health", { method: "GET" }, false, false, requestId);
         const parsed = rawHealthSchema.safeParse(result.body);
-        if (!parsed.success || parsed.data.service !== DESKTOP_API_SERVICE_ID.replace("ailearn-", "")) {
+        if (!parsed.success || parsed.data.service !== DESKTOP_API_SERVICE_ID.replace("astella-", "")) {
           this.connection = { version: 1, kind: "api_untrusted", reason: "wrong_service" };
           throw new DesktopGatewayFailure("api_untrusted", "user_action");
         }

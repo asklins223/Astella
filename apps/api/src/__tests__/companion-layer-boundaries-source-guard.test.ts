@@ -152,8 +152,8 @@ function isSourceFile(path: string): boolean {
 /**
  * 把 specifier 解析成仓库内的绝对路径；解析不出来（裸包、node: 内建）返回 null。
  *
- * `@ailearn/shared` 加子路径按 apps/api tsconfig 的 paths 顺序试：先 `contracts/`，
- * 再平铺，最后目录的 index.ts。少这一步，`@ailearn/shared/db-schema/job` 会被当成
+ * `@astella/shared` 加子路径按 apps/api tsconfig 的 paths 顺序试：先 `contracts/`，
+ * 再平铺，最后目录的 index.ts。少这一步，`@astella/shared/db-schema/job` 会被当成
  * 「外部依赖」跳过——而它恰恰是最该拦的那一类。
  */
 function resolveSpecifier(fromFile: string, spec: string): string | null {
@@ -161,10 +161,10 @@ function resolveSpecifier(fromFile: string, spec: string): string | null {
   if (spec.startsWith(".")) {
     const base = resolve(dirname(fromFile), spec);
     candidates.push(base, `${base}.ts`, join(base, "index.ts"));
-  } else if (spec === "@ailearn/shared") {
+  } else if (spec === "@astella/shared") {
     candidates.push(join(ROOT, "packages/shared/src/index.ts"));
-  } else if (spec.startsWith("@ailearn/shared/")) {
-    const rest = spec.slice("@ailearn/shared/".length);
+  } else if (spec.startsWith("@astella/shared/")) {
+    const rest = spec.slice("@astella/shared/".length);
     candidates.push(
       join(ROOT, "packages/shared/src/contracts", `${rest}.ts`),
       join(ROOT, "packages/shared/src", `${rest}.ts`),
@@ -190,7 +190,7 @@ function isForbiddenTarget(absolute: string): boolean {
   return FORBIDDEN_PREFIXES.some((prefix) => rel.startsWith(prefix));
 }
 
-/** 公共运行层的可达闭包：只跟着仓库内的相对 import 与 `@ailearn/shared` 别名走。 */
+/** 公共运行层的可达闭包：只跟着仓库内的相对 import 与 `@astella/shared` 别名走。 */
 function publicLayerClosure(entry: string): { files: string[]; unresolved: string[] } {
   const seen = new Set<string>();
   const unresolved: string[] = [];
@@ -341,7 +341,7 @@ test("③ 人格、目录与文风仍住在领域侧，且真的被领域侧装�
   // 非空断言：只定义不装配，等于没有装配。
   //
   // 领域侧**不是**从 `packages/shared/src/companion-persona.ts` 这个子路径 import 的——
-  // 它 import 的是 `@ailearn/shared` 桶。所以判据要认「从人格模块**或**桶 import」，
+  // 它 import 的是 `@astella/shared` 桶。所以判据要认「从人格模块**或**桶 import」，
   // 再加上「这个文件真的点名了某个人格常量」两个条件。只认子路径的话，这条会恒假。
   const personaModule = "packages/shared/src/companion-persona.ts";
   const sharedBarrel = "packages/shared/src/index.ts";
@@ -420,7 +420,7 @@ test("【正样本 B】临时造的违规文件被判违规，合法的同形文
     writeFileSync(violating, [
       'import { COMPANION_HOST_PROTOCOL_V6 } from "../packages/shared/src/companion-persona.ts";',
       'import { companionTurnRuns } from "../packages/shared/src/db-schema/companion-conversations.ts";',
-      'import { resolveAllCompanionAgentTools } from "@ailearn/shared/companion-agent-registry";',
+      'import { resolveAllCompanionAgentTools } from "@astella/shared/companion-agent-registry";',
       "export const companionPersonaProtocol = COMPANION_HOST_PROTOCOL_V6;",
       "export const diaryRows = companionTurnRuns;",
       "export const toolSurface = resolveAllCompanionAgentTools;",
@@ -430,7 +430,7 @@ test("【正样本 B】临时造的违规文件被判违规，合法的同形文
     const violations = findForbiddenImports(violating);
     assert.equal(violations.length, 3,
       `判据只抓到 ${violations.length} 条（${violations.map((v) => v.target).join("、")}），`
-      + "期望 3 条：相对路径的 persona、相对路径的 db-schema、@ailearn/shared 别名的工具注册表");
+      + "期望 3 条：相对路径的 persona、相对路径的 db-schema、@astella/shared 别名的工具注册表");
     assert.ok(violations.some((v) => v.target.endsWith("db-schema/companion-conversations.ts")),
       "目录前缀这条没抓到——写死文件名的版本会让新增一个 db-schema 表就绕过去");
     assert.ok(violations.every((v) => v.line > 0), "每条违规都得带行号，否则读不出是哪一句 import");

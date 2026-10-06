@@ -9,7 +9,7 @@ import {
   noteRecallPageV1Schema,
   noteRecallStartInputV1Schema,
   noteRecallStartResultV1Schema,
-} from "@ailearn/shared/note-recall-contracts";
+} from "@astella/shared/note-recall-contracts";
 import { actOnNoteRecallRecord, createNoteRecallRecord, listNoteRecallRecords, NoteRecallError } from "./service.ts";
 
 export async function noteRecallRoutes(app: FastifyInstance) {

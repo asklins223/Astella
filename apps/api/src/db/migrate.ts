@@ -98,7 +98,7 @@ function resolveConnectionString(): string {
 
   return (
     process.env.DATABASE_URL?.trim() ??
-    "postgres://ailearn:ailearn_dev@postgres:5432/ailearn"
+    "postgres://astella:astella_dev@postgres:5432/astella"
   );
 }
 

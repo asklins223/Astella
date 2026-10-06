@@ -25,13 +25,13 @@ function withSource(event: MessageEvent, source: MessageEventSource): MessageEve
 
 function frameMessage(phase: "ready" | "heartbeat" | "error" | "scroll", extra: Record<string, unknown> = {}): MessageEvent {
   return withSource(new MessageEvent("message", {
-    data: { channel: "ailearn:artifact-frame", direction: "frame->host", phase, ...extra },
+    data: { channel: "astella:artifact-frame", direction: "frame->host", phase, ...extra },
   }), FAKE_FRAME_SOURCE);
 }
 
 function foreignMessage(): MessageEvent {
   return withSource(new MessageEvent("message", {
-    data: { channel: "ailearn:artifact-frame", direction: "frame->host", phase: "ready", stepCount: 3 },
+    data: { channel: "astella:artifact-frame", direction: "frame->host", phase: "ready", stepCount: 3 },
   }), { postMessage: vi.fn() } as unknown as MessageEventSource);
 }
 
@@ -88,7 +88,7 @@ describe("ArtifactFrameHost", () => {
     });
     expect(frameWindow.postMessage).toHaveBeenCalledTimes(1);
     expect(frameWindow.postMessage.mock.calls[0][0]).toMatchObject({
-      channel: "ailearn:artifact-frame",
+      channel: "astella:artifact-frame",
       direction: "host->frame",
       command: "motion",
       motion: "full",
@@ -100,7 +100,7 @@ describe("ArtifactFrameHost", () => {
     rerender(<ArtifactFrameHost artifactId={ARTIFACT_ID} motion="reduced" isTrustedFrameSource={trusted} />);
     expect(frameWindow.postMessage).toHaveBeenCalledTimes(2);
     expect(frameWindow.postMessage.mock.calls[1][0]).toMatchObject({
-      channel: "ailearn:artifact-frame",
+      channel: "astella:artifact-frame",
       direction: "host->frame",
       command: "motion",
       motion: "reduced",
@@ -123,7 +123,7 @@ describe("ArtifactFrameHost", () => {
     act(() => {
       window.dispatchEvent(new MessageEvent("message", {
       source: FAKE_FRAME_SOURCE,
-      data: { channel: "ailearn:artifact-frame", direction: "host->frame", phase: "ready" },
+      data: { channel: "astella:artifact-frame", direction: "host->frame", phase: "ready" },
     }));
     });
     expect(screen.getByText("正在准备动态内容…")).toBeTruthy();
@@ -299,7 +299,7 @@ it("短画面保留最小高度，长画面完整铺进页面而不再嵌套滚�
 
 it("超出内容资源预算时保留可读说明，不把画面裁成带滚动条的小窗", () => {
   render(<ArtifactFrameHost artifactId={ARTIFACT_ID} contentOnly isTrustedFrameSource={trusted} />);
-  expect(document.querySelector("iframe")?.getAttribute("src")).toBe(`ailearn-app://artifact/${ARTIFACT_ID}#content`);
+  expect(document.querySelector("iframe")?.getAttribute("src")).toBe(`astella-app://artifact/${ARTIFACT_ID}#content`);
   act(() => { window.dispatchEvent(frameMessage("ready", { contentHeight: 100001 })); });
   expect(document.querySelector("iframe")).toBeNull();
   expect(screen.getByText("动态画面暂时无法运行，可继续阅读下方的说明。")).toBeTruthy();
@@ -336,6 +336,6 @@ it("来自本 frame 的滚轮只移动所属阅读滚区；未知来源和非法
   act(() => { window.dispatchEvent(frameMessage("scroll", { scrollDeltaY: 99, scrollDeltaX: 0, scrollDeltaMode: 2 })); });
   expect(owner.scrollBy).toHaveBeenLastCalledWith({ top: 1000, left: 0, behavior: "auto" });
   act(() => { window.dispatchEvent(frameMessage("scroll", { scrollDeltaY: NaN, scrollDeltaX: 0, scrollDeltaMode: 0 })); });
-  act(() => { window.dispatchEvent(withSource(new MessageEvent("message", { data: { channel: "ailearn:artifact-frame", direction: "frame->host", phase: "scroll", scrollDeltaY: 100, scrollDeltaX: 0, scrollDeltaMode: 0 } }), { postMessage: vi.fn() } as unknown as MessageEventSource)); });
+  act(() => { window.dispatchEvent(withSource(new MessageEvent("message", { data: { channel: "astella:artifact-frame", direction: "frame->host", phase: "scroll", scrollDeltaY: 100, scrollDeltaX: 0, scrollDeltaMode: 0 } }), { postMessage: vi.fn() } as unknown as MessageEventSource)); });
   expect(owner.scrollBy).toHaveBeenCalledTimes(2);
 });

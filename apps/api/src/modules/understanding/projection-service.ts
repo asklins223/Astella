@@ -16,11 +16,11 @@ import type { ApiTransaction } from "../../db/client.ts";
 import {
   understandingChangeSets,
   understandingProjectionCheckpoints,
-} from "@ailearn/shared/db-schema/understanding-projection";
-import { canonicalLearningEventOutbox, practiceTrailEventOutbox } from "@ailearn/shared/db-schema/learning-runs";
-import type { CanonicalLearningEventEnvelopeV1 } from "@ailearn/shared";
+} from "@astella/shared/db-schema/understanding-projection";
+import { canonicalLearningEventOutbox, practiceTrailEventOutbox } from "@astella/shared/db-schema/learning-runs";
+import type { CanonicalLearningEventEnvelopeV1 } from "@astella/shared";
 import { issueCheckpointToken } from "./projection-checkpoint.ts";
-import { sha256Hex } from "@ailearn/shared/content-hash";
+import { sha256Hex } from "@astella/shared/content-hash";
 
 export interface ProjectionScope {
   workspaceId: string;

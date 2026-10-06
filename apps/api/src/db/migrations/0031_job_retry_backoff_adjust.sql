@@ -4,15 +4,15 @@
 --
 -- 必须同时修改 TypeScript 常量和 SQL 函数：
 --   job-retry.ts:   RETRY_BACKOFF_BASE_MS 10_000 → 2_000
---   ailearn_fail_job:  10.0 * power(2, attempts) → 2.0 * power(2, attempts)
+--   astella_fail_job:  10.0 * power(2, attempts) → 2.0 * power(2, attempts)
 --                      (10000 * power(2, attempts-1)) → (2000 * power(2, attempts-1))
---   ailearn_reap_stale_jobs: interval '10 seconds' → interval '2 seconds'
+--   astella_reap_stale_jobs: interval '10 seconds' → interval '2 seconds'
 --
 -- 退避序列：2s → 4s（第三次失败直接 dead，无退避）
 -- 总退避从 30s 降到 6s。
 
--- ─── 1. ailearn_fail_job — 退避基数 10s → 2s ─────────────────────
-CREATE OR REPLACE FUNCTION public.ailearn_fail_job(
+-- ─── 1. astella_fail_job — 退避基数 10s → 2s ─────────────────────
+CREATE OR REPLACE FUNCTION public.astella_fail_job(
   p_job_id uuid,
   p_workspace_id uuid,
   p_lease_token text,
@@ -85,10 +85,10 @@ AS $function$
 $function$;
 --> statement-breakpoint
 
--- ─── 2. ailearn_reap_stale_jobs — lease 过期退避 10s → 2s ─────────
+-- ─── 2. astella_reap_stale_jobs — lease 过期退避 10s → 2s ─────────
 -- 此路径仅在 Worker 崩溃 / lease 超时（120s）时触发，非正常重试路径。
 -- 一并调整以保持退避基数一致。
-CREATE OR REPLACE FUNCTION public.ailearn_reap_stale_jobs(
+CREATE OR REPLACE FUNCTION public.astella_reap_stale_jobs(
   p_lease_timeout_ms integer,
   p_max_attempts integer
 )
@@ -151,7 +151,7 @@ AS $function$
 $function$;
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_fail_job(uuid, uuid, text, text, integer) IS
+COMMENT ON FUNCTION public.astella_fail_job(uuid, uuid, text, text, integer) IS
   'SEC-01 Worker job failure transition with exponential backoff (base 2s); fenced by (id, workspace_id, running, lease_token)';
-COMMENT ON FUNCTION public.ailearn_reap_stale_jobs(integer, integer) IS
+COMMENT ON FUNCTION public.astella_reap_stale_jobs(integer, integer) IS
   'SEC-01 controlled cross-workspace Worker stale-lease recovery path (backoff 2s); RLS remains disabled in expand phase';

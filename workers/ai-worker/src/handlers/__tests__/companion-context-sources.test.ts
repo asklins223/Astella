@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { assertCompanionHandoffSourcesCurrent } from "../companion-context-sources.ts";
 import { CompanionContextChangedError, isNonRetryableError } from "../../lib/non-retryable-errors.ts";
-import { type AgentSqlExecutor } from "@ailearn/agent-host";
+import { type AgentSqlExecutor } from "@astella/agent-host";
 
 const scope = { workspaceId: "11111111-1111-4111-8111-111111111111", userId: "22222222-2222-4222-8222-222222222222" };
 const memoryId = "33333333-3333-4333-8333-333333333333";

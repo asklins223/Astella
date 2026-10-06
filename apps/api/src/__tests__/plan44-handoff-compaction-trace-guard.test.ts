@@ -34,7 +34,7 @@ const traceModule = readFileSync(
 test("44 §5.3：快照推进到下一版是有围栏的，迟到结果不许覆盖", () => {
   // run 仍在进行中，且版本号正好是这一行当前的那一版。
   assert.match(dialogueStore, /r\.status IN \('accepted', 'running', 'waiting_for_confirmation'\)/);
-  assert.match(dialogueStore, /ailearn_assert_handoff_snapshot_fence/);
+  assert.match(dialogueStore, /astella_assert_handoff_snapshot_fence/);
   assert.match(migration, /p_expected_version integer/);
   assert.match(migration, /s\.snapshot_version = p_expected_version/);
   assert.match(dialogueStore, /snapshot_version = s\.snapshot_version \+ 1/);

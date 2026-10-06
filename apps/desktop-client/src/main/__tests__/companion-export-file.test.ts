@@ -6,7 +6,7 @@ import { saveCompanionExportFile } from "../companion-export-file";
 import { DesktopGatewayFailure } from "../desktop-gateway-failure";
 
 let downloadsPath: string;
-const directory = () => join(downloadsPath, "理解书房", "伴星");
+const directory = () => join(downloadsPath, "Astella", "伴星");
 beforeEach(async () => { downloadsPath = await mkdtemp(join(tmpdir(), "companion-export-")); });
 afterEach(async () => { await rm(downloadsPath, { recursive: true, force: true }); });
 
@@ -53,8 +53,8 @@ describe("伴星副本直接保存到下载目录", () => {
   });
 
   it("目录不能写入时不生成回执或破坏既有文件", async () => {
-    await writeFile(join(downloadsPath, "理解书房"), "existing file");
+    await writeFile(join(downloadsPath, "Astella"), "existing file");
     await expect(saveCompanionExportFile({ downloadsPath, kind: "audit", response: new Response("{}"), beforeCommit: () => {} })).rejects.toThrow();
-    expect(await readFile(join(downloadsPath, "理解书房"), "utf8")).toBe("existing file");
+    expect(await readFile(join(downloadsPath, "Astella"), "utf8")).toBe("existing file");
   });
 });

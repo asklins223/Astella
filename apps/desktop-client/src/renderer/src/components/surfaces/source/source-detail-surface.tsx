@@ -4,9 +4,9 @@ import type {
   DesktopSourceDetail,
   DesktopSourceNotesPage,
   DesktopSourceSegment,
-} from "@ailearn/shared/desktop-surface-contracts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
-import { parseMarkdownTable } from "@ailearn/shared/note-doc-schema";
+} from "@astella/shared/desktop-surface-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
+import { parseMarkdownTable } from "@astella/shared/note-doc-schema";
 import { useRoomStore } from "../../../app/room-store";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult, RendererGatewayError } from "../../../app/desktop-client";
 import { HudPage } from "../../hud/HudPage";
@@ -121,9 +121,9 @@ function SourceDetailContent({ scope, activeSourceId }: { readonly scope: number
     if (!activeSourceId) return null;
     const meta = () => createRequestMeta(workspaceEpoch);
     const [detailResponse, notesResponse, capabilitiesResponse] = await Promise.all([
-      window.ailearn.source.get({ meta: meta(), sourceId: activeSourceId }),
-      window.ailearn.source.listNotes({ meta: meta(), sourceId: activeSourceId }),
-      window.ailearn.capabilities.get({ meta: meta() }),
+      window.astella.source.get({ meta: meta(), sourceId: activeSourceId }),
+      window.astella.source.listNotes({ meta: meta(), sourceId: activeSourceId }),
+      window.astella.capabilities.get({ meta: meta() }),
     ]);
     const capabilities = unwrapGatewayResult(capabilitiesResponse).actionCapabilities;
     return {
@@ -324,7 +324,7 @@ function SourceDetailContent({ scope, activeSourceId }: { readonly scope: number
     busyRef.current = true; setBusy("rename");
     setNotice(null);
     try {
-      unwrapGatewayResult(await window.ailearn.source.update({
+      unwrapGatewayResult(await window.astella.source.update({
         meta: createRequestMeta(epochRef.current),
         sourceId,
         request: { title },
@@ -364,7 +364,7 @@ function SourceDetailContent({ scope, activeSourceId }: { readonly scope: number
     busyRef.current = true; setBusy("note");
     setNotice(null);
     try {
-      const result = unwrapGatewayResult(await window.ailearn.source.createNote({
+      const result = unwrapGatewayResult(await window.astella.source.createNote({
         meta: createRequestMeta(epochRef.current),
         sourceId,
         ...(force ? { force: true } : {}),
@@ -401,7 +401,7 @@ function SourceDetailContent({ scope, activeSourceId }: { readonly scope: number
     }
     busyRef.current = true; setBusy("note");
     try {
-      const note = unwrapGatewayResult(await window.ailearn.note.get({ meta: createRequestMeta(epochRef.current), noteId: duplicate.noteId }));
+      const note = unwrapGatewayResult(await window.astella.note.get({ meta: createRequestMeta(epochRef.current), noteId: duplicate.noteId }));
       if (!alive.current) return;
       setDuplicate(null); openNote(note.noteId, note.currentVersionId, "live-preview");
     } catch (error) { if (alive.current) setNotice({ tone: "error", text: `这篇笔记暂时没打开：${gatewayErrorMessage(error)}` }); }
@@ -416,7 +416,7 @@ function SourceDetailContent({ scope, activeSourceId }: { readonly scope: number
     busyRef.current = true; setBusy("archive");
     setNotice(null);
     try {
-      unwrapGatewayResult(await window.ailearn.source.archive({
+      unwrapGatewayResult(await window.astella.source.archive({
         meta: createRequestMeta(epochRef.current),
         sourceId,
       }));
@@ -443,7 +443,7 @@ function SourceDetailContent({ scope, activeSourceId }: { readonly scope: number
     busyRef.current = true; setBusy("restore");
     setNotice(null);
     try {
-      const restored = unwrapGatewayResult(await window.ailearn.source.restore({
+      const restored = unwrapGatewayResult(await window.astella.source.restore({
         meta: createRequestMeta(epochRef.current),
         sourceId,
       }));
@@ -479,7 +479,7 @@ function SourceDetailContent({ scope, activeSourceId }: { readonly scope: number
     busyRef.current = true; setBusy("reparse");
     setNotice(null);
     try {
-      unwrapGatewayResult(await window.ailearn.source.reparse({
+      unwrapGatewayResult(await window.astella.source.reparse({
         meta: createRequestMeta(epochRef.current),
         sourceId,
       }));
@@ -759,7 +759,7 @@ function SegmentBody({
  * 一个图片片段。
  *
  * 解析把网页内嵌图片下载并写进对象存储后，片段里存的是
- * `![alt](/api/uploads/{objectKey})`——渲染层的 origin 是 `ailearn-app://`，
+ * `![alt](/api/uploads/{objectKey})`——渲染层的 origin 是 `astella-app://`，
  * 这个相对路径会落到应用包内，所以图由 main 取回字节、这里用 blob URL 画。
  * 取不回来时只这一张缺位，正文照旧读下去。
  */

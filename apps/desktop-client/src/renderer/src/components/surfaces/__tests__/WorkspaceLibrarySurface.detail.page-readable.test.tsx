@@ -2,10 +2,10 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { learningObjectiveSurfaceV3Schema } from "@ailearn/shared/learning-objective-surface-contracts";
+import { learningObjectiveSurfaceV3Schema } from "@astella/shared/learning-objective-surface-contracts";
 import { ObjectiveDetailSurface } from "../library/WorkspaceLibrarySurface.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /**
  * 「挑战简报」这一屏登记给伴星读的是什么（39d W2-7）。
@@ -99,7 +99,7 @@ function installApi(objective: unknown | null) {
       }),
     },
   };
-  Object.defineProperty(window, "ailearn", { value: api, configurable: true });
+  Object.defineProperty(window, "astella", { value: api, configurable: true });
   return api;
 }
 
@@ -130,7 +130,7 @@ async function renderDetail(objective: unknown) {
 
 afterEach(() => {
   cleanup();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   useRoomStore.setState({ activeObjectiveId: null, pageReadableView: null });
   vi.restoreAllMocks();
 });
@@ -254,7 +254,7 @@ describe("挑战简报：她说出的每一句都是屏上写着的", () => {
 
   it("详情读回来之前不登记（她不能读到上一张卡的简报）", async () => {
     let release: (value: unknown) => void = () => undefined;
-    Object.defineProperty(window, "ailearn", {
+    Object.defineProperty(window, "astella", {
       configurable: true,
       value: {
         auth: {

@@ -72,5 +72,5 @@ ALTER TABLE card_domain_events_v2 ENABLE ROW LEVEL SECURITY;
 CREATE POLICY cde_v2_ws_isolation ON card_domain_events_v2
   USING (workspace_id = current_setting('app.workspace_id', true)::uuid);
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON card_domain_events_v2 TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON card_domain_events_v2 TO astella_api, astella_worker;
 

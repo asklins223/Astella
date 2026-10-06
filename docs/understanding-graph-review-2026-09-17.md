@@ -220,7 +220,7 @@
 
 ### 附带修复：陈旧的 shared 依赖拷贝
 
-- `apps/api/node_modules/@ailearn/shared` 是安装时的实体拷贝（desktop-client 侧是符号链接），契约改动后仍是旧版。已替换为与 desktop-client 一致的符号链接（`ln -s ../../../../packages/shared`）。`workers/ai-worker` 下也存在同样拷贝，但其源码不消费 topology/desktop-ipc 契约，未处理。
+- `apps/api/node_modules/@astella/shared` 是安装时的实体拷贝（desktop-client 侧是符号链接），契约改动后仍是旧版。已替换为与 desktop-client 一致的符号链接（`ln -s ../../../../packages/shared`）。`workers/ai-worker` 下也存在同样拷贝，但其源码不消费 topology/desktop-ipc 契约，未处理。
 
 ### 回归验证
 

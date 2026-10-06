@@ -18,7 +18,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
-import { learningObjectivePrimaryActionV3Schema } from "@ailearn/shared/learning-objective-surface-contracts";
+import { learningObjectivePrimaryActionV3Schema } from "@astella/shared/learning-objective-surface-contracts";
 import { PRIMARY_ACTION_PRECEDENCE_V3, primaryActionPrecedenceV3 } from "../action-resolver.ts";
 
 const REPO_ROOT = resolve(import.meta.dirname, "..", "..", "..", "..", "..", "..");

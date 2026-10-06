@@ -1,4 +1,4 @@
-import { searchDocuments } from "@ailearn/shared/db-schema";
+import { searchDocuments } from "@astella/shared/db-schema";
 import { logger } from "./logger.ts";
 import type { ApiTransaction } from "../db/client.ts";
 

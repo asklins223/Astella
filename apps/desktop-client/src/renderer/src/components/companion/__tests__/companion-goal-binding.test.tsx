@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import type { AgentRunV1 } from "@ailearn/shared/agent-contracts";
+import type { AgentRunV1 } from "@astella/shared/agent-contracts";
 import { CompanionGoalControls } from "../CompanionGoalControls";
 import type { AgentGoalsController } from "../use-agent-goals";
 

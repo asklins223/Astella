@@ -3,7 +3,7 @@ import { useState } from "react";
 import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EditorView } from "@codemirror/view";
-import type { NoteExpansionDraftV1, NoteExpansionTaskV1 } from "@ailearn/shared/note-expansion-contracts";
+import type { NoteExpansionDraftV1, NoteExpansionTaskV1 } from "@astella/shared/note-expansion-contracts";
 import { NoteExpansionDrafts } from "../notebook-expansion-drafts";
 
 const persist = vi.fn(async (_drafts: NoteExpansionDraftV1[]) => undefined);

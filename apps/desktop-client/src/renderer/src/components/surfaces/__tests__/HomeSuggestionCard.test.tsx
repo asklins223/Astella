@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { TodayBatchOptions } from "../library/HomeSuggestionCard.tsx";
 
 function installApi(impl: { act: (input: unknown) => Promise<unknown> }) {
-  (window as unknown as { ailearn?: unknown }).ailearn = {
+  (window as unknown as { astella?: unknown }).astella = {
     review: {
       actOnTodayBatch: vi.fn(async (input: unknown) => ({
         workspaceEpoch: 1,

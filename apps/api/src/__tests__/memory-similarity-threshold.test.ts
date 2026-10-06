@@ -95,7 +95,7 @@ test("所有 <=> 比较都走共享的 semanticTwinPredicateSql，不许自己�
 test("共享表达式真的带着那个常量（不是退化成空字符串）", async () => {
   const source = readFileSync(sharedBuilder, "utf8");
   const { semanticTwinPredicateSql, MEMORY_SEMANTIC_SIMILARITY_THRESHOLD } = await import(
-    "@ailearn/shared/db-schema/assistant-memory"
+    "@astella/shared/db-schema/assistant-memory"
   );
   const built = semanticTwinPredicateSql("a.embedding", "b.embedding::vector");
   assert.match(built, /a\.embedding <=> b\.embedding::vector/);

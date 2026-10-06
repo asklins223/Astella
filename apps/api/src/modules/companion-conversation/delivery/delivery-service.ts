@@ -8,12 +8,12 @@
 
 import { and, desc, eq, gt, lt, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../../db/client.ts";
-import { assistantDeliveries } from "@ailearn/shared/db-schema/assistant-deliveries";
+import { assistantDeliveries } from "@astella/shared/db-schema/assistant-deliveries";
 import { COMPANION_INBOX_NOTIFY_CHANNEL } from "../../../lib/companion-notify.ts";
-import type { AssistantDeliveryKindV2, AssistantDeliveryV2 } from "@ailearn/shared";
-import { DomainError } from "@ailearn/shared";
+import type { AssistantDeliveryKindV2, AssistantDeliveryV2 } from "@astella/shared";
+import { DomainError } from "@astella/shared";
 import { clampLimit } from "../../../lib/pagination-utils.ts";
-import { evaluateStaleAfterResume } from "@ailearn/shared/companion-proactive-quota";
+import { evaluateStaleAfterResume } from "@astella/shared/companion-proactive-quota";
 
 export interface DeliveryScope {
   workspaceId: string;

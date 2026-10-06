@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ObjectiveLibrarySurface } from "../library/WorkspaceLibrarySurface.tsx";
 import { resetObjectiveLibraryView, retargetObjectiveLibraryView, writeObjectiveLibraryView } from "../run/objective-library-view-state.ts";
 import { useRoomStore } from "../../../app/room-store.ts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /** 当前展开的纸卡与查找抽屉分开登记，隐藏卡片不冒充可见内容。 */
 
@@ -64,7 +64,7 @@ function installApi(items: Array<Record<string, unknown>>, options: { nextCursor
     },
     room: { getProjection: vi.fn(async () => ok({ primaryFocus: { state: "empty" } })) },
   };
-  Object.defineProperty(window, "ailearn", { value: api, configurable: true });
+  Object.defineProperty(window, "astella", { value: api, configurable: true });
   return api;
 }
 
@@ -88,7 +88,7 @@ async function renderLibrary(items: Array<Record<string, unknown>>, options?: { 
 
 afterEach(() => {
   cleanup();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   resetObjectiveLibraryView();
   useRoomStore.setState({ pageReadableView: null, activeObjectiveId: null, activeRunId: null });
   vi.restoreAllMocks();
@@ -160,7 +160,7 @@ describe("学习卡收藏的可读视图与真实页面一致", () => {
 
   it("第一次读取没回来之前不登记，卸载时槽位让开", async () => {
     let release: (value: unknown) => void = () => undefined;
-    Object.defineProperty(window, "ailearn", {
+    Object.defineProperty(window, "astella", {
       configurable: true,
       value: {
         auth: {

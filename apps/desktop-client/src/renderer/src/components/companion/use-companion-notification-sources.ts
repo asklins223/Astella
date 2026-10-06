@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { CompanionHomeProjectionV1 } from "@ailearn/shared/companion-home-contracts";
+import type { CompanionHomeProjectionV1 } from "@astella/shared/companion-home-contracts";
 import { createRequestMeta, unwrapGatewayResult } from "../../app/desktop-client";
 import { useHomeProjection } from "../../app/home-projection";
 import { useCompanionHomeProjection } from "../../app/companion-home-projection";
@@ -10,7 +10,7 @@ import { useVoiceModelNotifications } from "./use-voice-model-notifications";
 import { useUpdateNotifications } from "./use-update-notifications";
 
 async function reportActivity(scope: number, sequence: number, transition: "displayed" | "acted" | "dismissed"): Promise<void> {
-  const api = window.ailearn?.companion?.activity;
+  const api = window.astella?.companion?.activity;
   if (!api || scope !== useRoomStore.getState().workspaceScopeRevision) return;
   const timeline = unwrapGatewayResult(await api.timeline({ meta: createRequestMeta() }));
   const delivery = timeline.items.find(item => item.inboxSequence === sequence);
@@ -91,7 +91,7 @@ export function useCompanionNotificationSources(): void {
   }, [cue, companionCurrent, scope]);
   // The room projection is lazy on task pages; reminders still need their real event path.
   useEffect(() => {
-    const api = window.ailearn;
+    const api = window.astella;
     if (!surface || !api?.subscriptions) return;
     let active = true;
     let reading = false;

@@ -1,10 +1,10 @@
-import type { ProviderCapability } from "@ailearn/shared";
+import type { ProviderCapability } from "@astella/shared";
 import {
   contextBudgetSnapshotV1Schema,
   contextPressureDecisionV1Schema,
   type ContextBudgetSnapshotV1,
   type ContextPressureDecisionV1,
-} from "@ailearn/shared/context-budget-contracts";
+} from "@astella/shared/context-budget-contracts";
 
 /**
  * 方案 44 §4：完整模型请求的预算解析与调用前压力判定。

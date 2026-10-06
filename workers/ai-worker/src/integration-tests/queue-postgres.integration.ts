@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { sql, type SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres, { type Sql } from "postgres";
-import * as schema from "@ailearn/shared/db-schema";
+import * as schema from "@astella/shared/db-schema";
 import type {
   ClaimedJob,
   QueueSqlExecutor,
@@ -49,7 +49,7 @@ function requireDatabaseUrl(name: RequiredUrlName): string {
 
 async function readConnectionIdentity(
   client: Sql,
-  expectedRole: "ailearn_migrator" | "ailearn_worker",
+  expectedRole: "astella_migrator" | "astella_worker",
 ): Promise<ConnectionIdentity> {
   const [identity] = await client<ConnectionIdentity[]>`
     SELECT
@@ -70,7 +70,7 @@ async function readConnectionIdentity(
 
   assert.ok(identity, `could not inspect ${expectedRole} connection identity`);
   assert.equal(identity.current_user, expectedRole);
-  assert.equal(identity.bypass_rls, expectedRole === "ailearn_migrator");
+  assert.equal(identity.bypass_rls, expectedRole === "astella_migrator");
   assert.equal(
     Math.floor(identity.server_version_num / 10_000),
     16,
@@ -155,9 +155,9 @@ test("keeps Worker queue claims, leases, reaping, and pool context atomic on Pos
     closeDefaultWorkerDatabase = workerDb.closeDatabase;
 
     const [migratorIdentity, workerAIdentity, workerBIdentity] = await Promise.all([
-      readConnectionIdentity(migrator, "ailearn_migrator"),
-      readConnectionIdentity(workerA, "ailearn_worker"),
-      readConnectionIdentity(workerB, "ailearn_worker"),
+      readConnectionIdentity(migrator, "astella_migrator"),
+      readConnectionIdentity(workerA, "astella_worker"),
+      readConnectionIdentity(workerB, "astella_worker"),
     ]);
     assert.equal(databaseIdentityKey(workerAIdentity), databaseIdentityKey(migratorIdentity));
     assert.equal(databaseIdentityKey(workerBIdentity), databaseIdentityKey(migratorIdentity));
@@ -278,7 +278,7 @@ test("keeps Worker queue claims, leases, reaping, and pool context atomic on Pos
         return operation(transaction);
       });
 
-    // 生产路径就是 SQL 函数（ailearn_finish_job / ailearn_fail_job，migration 0022）。
+    // 生产路径就是 SQL 函数（astella_finish_job / astella_fail_job，migration 0022）。
     // 这里用生产实现的两个独立实例做并发/围栏对照——此前用的是仅供单测的
     // drizzle 版 updater（createDrizzleQueueJobUpdater），已按 AGENTS.md 删除旧链路，
     // 于是本用例现在验证的是**真实生产围栏**在两个 worker 连接上的行为。

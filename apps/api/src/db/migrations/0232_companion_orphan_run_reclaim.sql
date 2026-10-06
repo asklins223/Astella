@@ -12,10 +12,10 @@
 -- job 已 dead。
 --
 -- 为什么写成 SECURITY DEFINER 而不是 worker 里一条 SELECT：
---   worker 在**生产**用 DATABASE_URL_WORKER=ailearn_worker（非 superuser、无
+--   worker 在**生产**用 DATABASE_URL_WORKER=astella_worker（非 superuser、无
 --   BYPASSRLS），跨租户扫描会被 companion_turn_runs / companion_conversations 的
 --   RLS 滤成空集——回收器会在 dev 一切正常、在生产静默什么都不做。owner 取
---   ailearn_migrator（BYPASSRLS），与 0212 记忆维护、0217 确认回收同一模式。
+--   astella_migrator（BYPASSRLS），与 0212 记忆维护、0217 确认回收同一模式。
 --
 -- 副作用与 worker 侧 markCompanionRunFailed（companion-dialogue-store.ts）逐条对齐，
 -- 避免两条终结路径语义漂移：
@@ -29,7 +29,7 @@
 -- 5 分钟宽限期是给正常执行留的余量：companion_agent 的 handler 超时是 110s，
 -- 远小于此，所以不会误杀正在跑的轮次。
 
-CREATE OR REPLACE FUNCTION public.ailearn_reclaim_orphaned_companion_runs()
+CREATE OR REPLACE FUNCTION public.astella_reclaim_orphaned_companion_runs()
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -111,7 +111,7 @@ BEGIN
       WHERE id = v_run.id;
 
       PERFORM pg_notify(
-        'ailearn_companion_events_v1',
+        'astella_companion_events_v1',
         json_build_object('conversationId', v_conv.cid, 'maxSeq', v_seq + 1)::text
       );
 
@@ -123,16 +123,16 @@ BEGIN
 END;
 $$;
 
-ALTER FUNCTION public.ailearn_reclaim_orphaned_companion_runs() OWNER TO ailearn_migrator;
+ALTER FUNCTION public.astella_reclaim_orphaned_companion_runs() OWNER TO astella_migrator;
 
 -- 只有 worker 需要。不授 PUBLIC。
-REVOKE ALL ON FUNCTION public.ailearn_reclaim_orphaned_companion_runs() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_reclaim_orphaned_companion_runs() FROM PUBLIC;
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
-    GRANT EXECUTE ON FUNCTION public.ailearn_reclaim_orphaned_companion_runs() TO ailearn_worker;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
+    GRANT EXECUTE ON FUNCTION public.astella_reclaim_orphaned_companion_runs() TO astella_worker;
   END IF;
 END $$;
 
-COMMENT ON FUNCTION public.ailearn_reclaim_orphaned_companion_runs() IS
+COMMENT ON FUNCTION public.astella_reclaim_orphaned_companion_runs() IS
   '定时兜底：终结 job 已死或缺失的孤儿 companion run，解除整个会话的 409 锁死。';

@@ -13,7 +13,7 @@
 -- 执行后：
 -- - 所有 24 张核心表启用 RLS + FORCE RLS
 -- - Worker 对 public.jobs 的直接 UPDATE 权限被收回
--- - Worker 仍通过 ailearn_renew_job_lease / ailearn_finish_job / ailearn_fail_job 操作 jobs
+-- - Worker 仍通过 astella_renew_job_lease / astella_finish_job / astella_fail_job 操作 jobs
 --
 -- 失败处理：停止发布并使用前向修复迁移恢复到已知安全状态，见 docs/operations.md。
 
@@ -99,7 +99,7 @@ ALTER TABLE public.onboarding_states FORCE ROW LEVEL SECURITY;
 -- Worker 现在通过 SECURITY DEFINER 函数操作 jobs（0022 迁移），
 -- 不再需要直接 UPDATE 权限。
 -- SELECT 权限保留（用于 SELECT ... FOR UPDATE 行级锁）。
-REVOKE UPDATE ON public.jobs FROM ailearn_worker;
+REVOKE UPDATE ON public.jobs FROM astella_worker;
 
 -- ─── 3. 验证 enforce 结果 ─────────────────────────────────────────
 
@@ -132,5 +132,5 @@ BEGIN
 END $$;
 
 -- SEC-01 enforce: enable RLS+FORCE on all 24 core tables, revoke direct UPDATE
--- on jobs from ailearn_worker. Requires independent security/data review
+-- on jobs from astella_worker. Requires independent security/data review
 -- approval before execution.

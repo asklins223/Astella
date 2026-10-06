@@ -66,7 +66,7 @@ function installApi(docUpdate: string, versionBlocks: readonly { ordinal: number
     source: { get: vi.fn(async () => ({ ok: false as const, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" } })) },
     subscriptions: { subscribe: vi.fn(), unsubscribe: vi.fn(), onEvent: vi.fn(() => () => undefined) },
   };
-  Object.defineProperty(window, "ailearn", { value: api, configurable: true });
+  Object.defineProperty(window, "astella", { value: api, configurable: true });
   return api;
 }
 
@@ -79,7 +79,7 @@ async function settle(loops = 14) {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   useRoomStore.setState({ activeNoteRef: null, surface: null });
 });
 

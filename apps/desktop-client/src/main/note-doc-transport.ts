@@ -1,6 +1,6 @@
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from "@hocuspocus/provider";
 import WebSocketPolyfill from "ws";
-import { NOTE_DOC_UPDATE_MAX_CHARS, type NoteDocStreamEventV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import { NOTE_DOC_UPDATE_MAX_CHARS, type NoteDocStreamEventV1 } from "@astella/shared/desktop-ipc-contracts";
 import { createNoteDocState, type NoteDocState } from "./note-doc-state.ts";
 
 /**

@@ -2,8 +2,8 @@
  * LearningRun 服务错误与统一错误码（文档 16 §13.1）。
  */
 
-import { LearningRunErrorCode } from "@ailearn/shared";
-import { DomainError } from "@ailearn/shared";
+import { LearningRunErrorCode } from "@astella/shared";
+import { DomainError } from "@astella/shared";
 
 export class LearningRunServiceError extends DomainError {
   readonly recoveryData?: Record<string, unknown>;

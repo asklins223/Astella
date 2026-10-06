@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
-import { reduceOperationReceipt, validateAgentGoalDelivery } from "@ailearn/agent-core";
-import { AGENT_GOAL_DELIVERY_CAPABILITY, type AgentOperationStatusV1, type AgentScopeV1 } from "@ailearn/shared/agent-contracts";
-import { agentTurnResultSchema, type AgentTurnRequest, type AgentTurnResult } from "@ailearn/shared";
+import { reduceOperationReceipt, validateAgentGoalDelivery } from "@astella/agent-core";
+import { AGENT_GOAL_DELIVERY_CAPABILITY, type AgentOperationStatusV1, type AgentScopeV1 } from "@astella/shared/agent-contracts";
+import { agentTurnResultSchema, type AgentTurnRequest, type AgentTurnResult } from "@astella/shared";
 import { readOperationResultReceipt } from "./operation-receipt.ts";
 import { projectAgentOperation, type AgentOperationRow } from "./history.ts";
 import { requireAgentLongGoal } from "./long-goals.ts";
@@ -29,7 +29,7 @@ export function createAgentAdvanceStore<Tx extends AgentSqlExecutor = AgentSqlEx
     const [row] = await queryRows(tx, sql`SELECT j.id FROM jobs j JOIN user_companion_account_state a ON a.id=${run.identity_id}
       WHERE j.id=${lease.id} AND j.workspace_id=${scope.workspaceId} AND j.requested_by=${scope.userId}
       AND j.status='running' AND j.lease_token=${lease.leaseToken} AND a.user_id=${scope.userId}
-      AND public.ailearn_agent_run_authorized(${run.id})`);
+      AND public.astella_agent_run_authorized(${run.id})`);
     if (!row || run.revision !== revision || ["cancelled","completed","failed"].includes(run.status)
       || (run.status === "paused" && !receiptsOnly)
       || run.advance_job_id !== lease.id || run.advance_lease_token !== lease.leaseToken)

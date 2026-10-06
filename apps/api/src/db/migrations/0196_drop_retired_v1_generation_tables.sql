@@ -16,7 +16,7 @@ ALTER TABLE public.notes
 DROP INDEX IF EXISTS public.jobs_generation_run_idx;
 DROP INDEX IF EXISTS public.jobs_generation_unit_idx;
 
-DROP FUNCTION IF EXISTS public.ailearn_purge_old_agent_events(integer, integer);
+DROP FUNCTION IF EXISTS public.astella_purge_old_agent_events(integer, integer);
 DROP TABLE IF EXISTS public.card_generation_agent_events;
 
 DROP TABLE IF EXISTS public.card_generation_quality_reports;

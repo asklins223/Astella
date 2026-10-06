@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
-import type { CardGenerationCandidateV1 } from "@ailearn/shared/card-generation-desktop-contracts";
+import type { CardGenerationCandidateV1 } from "@astella/shared/card-generation-desktop-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import { resolveSceneMotionMode } from "../../../scene/scene-motion";
 import type { CandidateSceneController } from "./candidate-card-spring";

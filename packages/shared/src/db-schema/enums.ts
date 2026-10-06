@@ -7,7 +7,7 @@ import {
   JobStatus,
   ReviewStatus,
   SourceStatus,
-} from "@ailearn/shared";
+} from "@astella/shared";
 
 export const sourceStatusEnum = pgEnum("source_status", Object.values(SourceStatus) as [string, ...string[]]);
 export const evidenceAlignmentEnum = pgEnum("evidence_alignment", Object.values(EvidenceAlignment) as [string, ...string[]]);

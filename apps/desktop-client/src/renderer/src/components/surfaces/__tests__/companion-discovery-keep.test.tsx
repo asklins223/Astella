@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Activity } from "react";
-import type { CompanionHistoryItemV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { CompanionHistoryItemV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { DialoguePanel } from "../companion/companion-dialogue-panel";
 import { DiscoveryKeepAction, DiscoveryKeepFeedback, clipDiscoveryBody, type DiscoveryKeepProps } from "../companion/companion-discovery-offer";
 import { dialogueDiscoveryRequest } from "../companion/companion-discovery-targets";
@@ -30,7 +30,7 @@ beforeEach(() => {
     entries = [entry]; return ok({ status: "collected", entry });
   });
   uncollect.mockReset().mockImplementation(async () => { entries = []; return ok({ status: "uncollected" }); });
-  vi.stubGlobal("ailearn", { auth: { getState: vi.fn(async () => ok({ status: "authenticated", workspace: {}, workspaceEpoch: 9 })) }, companion: { memory: { discovery: { get, collect, uncollect } } } });
+  vi.stubGlobal("astella", { auth: { getState: vi.fn(async () => ok({ status: "authenticated", workspace: {}, workspaceEpoch: 9 })) }, companion: { memory: { discovery: { get, collect, uncollect } } } });
 });
 afterEach(() => { cleanup(); window.localStorage.clear(); vi.unstubAllGlobals(); useRoomStore.setState({ pageReadableView: null }); });
 
@@ -49,9 +49,9 @@ describe("稳定的手动收藏入口", () => {
   });
 
   it("旧忽略记录不屏蔽手动书签，关闭和重开仍能收藏", async () => {
-    window.localStorage.setItem("ailearn:companion-discovery-declined", "declined");
+    window.localStorage.setItem("astella:companion-discovery-declined", "declined");
     const request = dialogueDiscoveryRequest(items[2]!)!;
-    window.localStorage.setItem("ailearn:companion-discovery-dismissed:v2", JSON.stringify([`${request.kind}|${request.source}|${request.sourceId}`]));
+    window.localStorage.setItem("astella:companion-discovery-dismissed:v2", JSON.stringify([`${request.kind}|${request.source}|${request.sourceId}`]));
     const hook = renderHook(() => useDiscoveryBookmarks(0));
     await waitFor(() => expect(get).toHaveBeenCalled());
     expect(hook.result.current.forRequest(request).state).toBe("offer");

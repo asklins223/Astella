@@ -14,25 +14,25 @@
 
 import { count, and, asc, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
-import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
+import { reviewSchedules } from "@astella/shared/db-schema/evidence";
 import {
   learningCardsV2,
   learningObjectivesV2,
   learningObjectiveRevisionsV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { notes, noteVersions, sources } from "@ailearn/shared/db-schema/note";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { notes, noteVersions, sources } from "@astella/shared/db-schema/note";
 import { visibleCardsCondition, visibleNotesCondition, visibleObjectivesCondition } from "../note/visibility.ts";
 import {
   understandingProjectionCheckpoints,
   understandingRoutePlans,
-} from "@ailearn/shared/db-schema/understanding-projection";
+} from "@astella/shared/db-schema/understanding-projection";
 import {
   canonicalLearningEventOutbox,
   practiceTrailEventOutbox,
   learningRuns,
-} from "@ailearn/shared/db-schema/learning-runs";
+} from "@astella/shared/db-schema/learning-runs";
 import { issueCheckpointToken, type CheckpointWatermark } from "./projection-checkpoint.ts";
-import { sha256Hex } from "@ailearn/shared/content-hash";
+import { sha256Hex } from "@astella/shared/content-hash";
 import { logger } from "../../lib/logger.ts";
 
 export interface ProjectionReadScope {

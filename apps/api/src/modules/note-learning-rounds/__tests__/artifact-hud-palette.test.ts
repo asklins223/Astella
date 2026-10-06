@@ -6,9 +6,9 @@
  * v3 之后，产物文档里有了**两处**颜色，两处的来路必须钉死：
  *
  *  1. **服务端那圈纸**（`ARTIFACT_STYLE_V1`）：示意声明、标题、凹槽、依据回执、文字等价。
- *     产物跑在 `ailearn-app://artifact` 那个不透明 origin 的 iframe 里，取不到宿主的
+ *     产物跑在 `astella-app://artifact` 那个不透明 origin 的 iframe 里，取不到宿主的
  *     `--hud-*`，所以母本的取值是**直接写死**在这一份 `<style>` 里的。
- *  2. **模型那一页**（`.ailearn-art__scene` 上的 `--lesson-*`）：画面整份由模型写，它没法
+ *  2. **模型那一页**（`.astella-art__scene` 上的 `--lesson-*`）：画面整份由模型写，它没法
  *     取到宿主变量，于是同一组取值在**内容落点**上再声明一遍给模型 `var(--lesson-mint)` 用。
  *
  * 这两处一旦各改各的，同一间书房里就会出现两种奶油纸，而且**没有一处会红**：产物自己完全
@@ -29,10 +29,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDynamicArtifactHtmlV1, type BuildDynamicArtifactInputV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact-render";
-import { buildDynamicArtifactPrompt, dynamicArtifactDocV1Schema } from "@ailearn/shared/note-dynamic-artifact/round-artifact-model";
-import { groundArtifactStepsV1, type ArtifactEvidenceBlockV1, type ArtifactNodeV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact-measure";
-import { checkArtifactDocumentV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact-doc";
+import { buildDynamicArtifactHtmlV1, type BuildDynamicArtifactInputV1 } from "@astella/shared/note-dynamic-artifact/round-artifact-render";
+import { buildDynamicArtifactPrompt, dynamicArtifactDocV1Schema } from "@astella/shared/note-dynamic-artifact/round-artifact-model";
+import { groundArtifactStepsV1, type ArtifactEvidenceBlockV1, type ArtifactNodeV1 } from "@astella/shared/note-dynamic-artifact/round-artifact-measure";
+import { checkArtifactDocumentV1 } from "@astella/shared/note-dynamic-artifact/round-artifact-doc";
 
 const BLOCKS: readonly ArtifactEvidenceBlockV1[] = [
   { ordinal: 1, type: "heading", text: "提取练习四步走" },
@@ -92,11 +92,11 @@ assert.ok(SHELL_STYLE.length > 0, "产物里找不到服务端那一段样式：
 /** 同一段样式剥掉注释：判"哪一条规则声明了什么"时，注释会混进选择器里。 */
 const SHELL_CSS = SHELL_STYLE.replace(/\/\*[\s\S]*?\*\//g, "");
 
-/** 纸面上那些 token 的声明块（`.ailearn-art{…}`）。 */
-const SHELL_TOKENS = (): ReadonlyMap<string, string> => tokenMap(/\.ailearn-art\{([^}]*)\}/.exec(SHELL_STYLE)?.[1] ?? "");
+/** 纸面上那些 token 的声明块（`.astella-art{…}`）。 */
+const SHELL_TOKENS = (): ReadonlyMap<string, string> => tokenMap(/\.astella-art\{([^}]*)\}/.exec(SHELL_STYLE)?.[1] ?? "");
 
 /** 凹槽那一条规则的 body——给模型的那组 `--lesson-*` 就声明在这里。 */
-const SCENE_RULE = (): string => /\.ailearn-art__scene\{([^}]*)\}/.exec(SHELL_STYLE)?.[1] ?? "";
+const SCENE_RULE = (): string => /\.astella-art__scene\{([^}]*)\}/.exec(SHELL_STYLE)?.[1] ?? "";
 const LESSON_TOKENS = (): ReadonlyMap<string, string> => tokenMap(SCENE_RULE());
 
 function tokenMap(css: string): ReadonlyMap<string, string> {
@@ -129,7 +129,7 @@ const TOKEN_PAIRS: ReadonlyArray<readonly [string, string]> = [
 
 test("凹槽是母本那一块纸：4px 粗奶油边 ＋ 四角不等的圆角 ＋ 带偏移的双层柔影", () => {
   const scene = SCENE_RULE();
-  assert.ok(scene.length > 0, "样式里没有 `.ailearn-art__scene` 这一条：模型的页面落在哪儿无从对照");
+  assert.ok(scene.length > 0, "样式里没有 `.astella-art__scene` 这一条：模型的页面落在哪儿无从对照");
   assert.equal(SHELL_TOKENS().get("--edge"), "rgba(255,252,235,.78)",
     "奶油边那一道不是母本那个半透明暖白：产物里会显出第二种纸的边");
   assert.match(scene, /border:4px solid var\(--edge\)/, "凹槽外面不是母本那道 4px 粗奶油边");
@@ -159,7 +159,7 @@ test("凹槽是母本那一块纸：4px 粗奶油边 ＋ 四角不等的圆角 �
 test("字体是母本的双声部：讲内容的字走衬线，读数与操作说明走无衬线", () => {
   assert.match(SHELL_STYLE, /"Songti SC","STSong"[^\n]*serif/,
     "讲内容的字没落到衬线上：整份产物会读成一块工具面板的说明文字");
-  assert.match(SHELL_STYLE, /\.ailearn-art__sans\{font-family:"PingFang SC","Microsoft YaHei"[^\n]*sans-serif\}/,
+  assert.match(SHELL_STYLE, /\.astella-art__sans\{font-family:"PingFang SC","Microsoft YaHei"[^\n]*sans-serif\}/,
     "读数与操作说明那一路没有单独的无衬线：母本是双声部，这里被压成了单声部");
   // 两路都要有中文回退名：产物被复制到别的机器/别的系统时，中文不许掉回默认字形。
   assert.ok(SHELL_STYLE.includes('"Noto Serif CJK SC"'), "衬线那一路没有中文回退");
@@ -222,15 +222,15 @@ test("同一个颜色只有一个来源：纸面 token 与给模型的 `--lesson
 test("给模型的那组 `--lesson-*` 只声明在**落点那一条规则**上（不是全局，也不是纸面上）", () => {
   // 规则选择器：谁身上声明了 `--lesson-mint`。
   const selectors = [...SHELL_CSS.matchAll(/([^{}]+)\{([^{}]*--lesson-mint:[^{}]*)\}/g)].map((match) => match[1]!.trim());
-  assert.deepEqual(selectors, [".ailearn-art__scene"],
+  assert.deepEqual(selectors, [".astella-art__scene"],
     `声明 --lesson-* 的规则是 ${selectors.join("、")}：它得是落点那一条，`
     + "否则要么模型在自己的脚本里读不到（作用域在它之下），要么纸面自己被模型改掉了");
   // 落点就是那个带 data-stage 的元素，模型的标记落在它里面。
-  assert.equal((HTML.match(/class="ailearn-art__scene"/g) ?? []).length, 1, "凹槽不止一个：模型那一页不知道落进哪一块");
-  assert.match(HTML, /<div class="ailearn-art__scene" data-stage>/, "带 --lesson-* 的那个元素上没有 data-stage：落点与声明对不上");
+  assert.equal((HTML.match(/class="astella-art__scene"/g) ?? []).length, 1, "凹槽不止一个：模型那一页不知道落进哪一块");
+  assert.match(HTML, /<div class="astella-art__scene" data-stage>/, "带 --lesson-* 的那个元素上没有 data-stage：落点与声明对不上");
   // 变量会向下继承给模型写的标记（声明在凹槽上、模型的内容在凹槽里）。
-  const stageAt = HTML.indexOf('<div class="ailearn-art__scene" data-stage>');
-  const stageEnd = HTML.indexOf("</div><section class=\"ailearn-art__evidence\"");
+  const stageAt = HTML.indexOf('<div class="astella-art__scene" data-stage>');
+  const stageEnd = HTML.indexOf("</div><section class=\"astella-art__evidence\"");
   assert.ok(stageAt > 0 && stageEnd > stageAt, "凹槽的开合找不到了：继承关系无从核对");
   assert.ok(HTML.slice(stageAt, stageEnd).includes("<svg"), "模型那一页没落进凹槽里");
 });

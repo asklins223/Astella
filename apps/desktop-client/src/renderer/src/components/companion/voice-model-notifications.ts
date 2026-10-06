@@ -2,7 +2,7 @@ import { openVoiceModelSettings } from "./open-voice-model-settings";
 import { notifyCompanion, useCompanionNotifications } from "./companion-notifications";
 import { VOICE_ASR_MODEL_SIZE_LINE, cancelVoiceAsrModel, voiceAsrModelPercent, voiceAsrModelFailureLine, type VoiceAsrModelSnapshotV1 } from "./voice-asr-model";
 
-export const VOICE_MODEL_DOWNLOAD_STARTED = "ailearn:voice-model-download-started";
+export const VOICE_MODEL_DOWNLOAD_STARTED = "astella:voice-model-download-started";
 
 export function notifyVoiceModelDownloading(state: VoiceAsrModelSnapshotV1, started = false): void {
   const id = "voice-model-download-progress";

@@ -2,8 +2,8 @@ import type {
 CompanionMemoryEntityTargetV2,
 CompanionMemoryItemV1,
 CompanionMemoryStarMapV2,
-} from "@ailearn/shared/companion-memory-desktop-contracts";
-import type { DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/companion-memory-desktop-contracts";
+import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
 import {
 createUniverseLayout,
 normalizeUnderstandingGraph,

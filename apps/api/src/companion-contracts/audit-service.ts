@@ -19,7 +19,7 @@
  * 不进入增长画像、兴趣推断或跨 workspace analytics；不写学习事实。
  */
 
-import { DomainError } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
 import { and, eq, getTableColumns, sql } from "drizzle-orm";
 import {
   withWorkspaceTransaction,
@@ -30,7 +30,7 @@ import {
   companionInvitationLedger,
   type CompanionAuditContextPermissionHashes,
   type CompanionAuditPageActionType,
-} from "@ailearn/shared/db-schema/companion";
+} from "@astella/shared/db-schema/companion";
 
 export type {
   CompanionAuditContextPermissionHashes,

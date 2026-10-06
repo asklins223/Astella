@@ -26,14 +26,14 @@
 import { semanticRelationOfV2 } from "./relation-kind.ts";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
-import { notes } from "@ailearn/shared/db-schema/note";
-import { noteLearningRounds } from "@ailearn/shared/db-schema/note-learning-rounds";
+import { notes } from "@astella/shared/db-schema/note";
+import { noteLearningRounds } from "@astella/shared/db-schema/note-learning-rounds";
 import {
   learningAssessments,
   learningArtifacts,
   learningRuns,
   canonicalLearningEventOutbox,
-} from "@ailearn/shared/db-schema/learning-runs";
+} from "@astella/shared/db-schema/learning-runs";
 import {
   evidenceSnapshotsV2,
   learningCardsV2,
@@ -41,18 +41,18 @@ import {
   learningObjectiveOriginsV2,
   learningObjectiveRevisionsV2,
   learningObjectivesV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { objectiveReviewHoldsV2, reviewSchedules } from "@ailearn/shared/db-schema/evidence";
-import { artifactPayloadSchema } from "@ailearn/shared/learning-run-contracts";
-import { objectiveSurfaceFreshnessV1, type ObjectivePersonalStateV3 } from "@ailearn/shared/learning-objective-surface-contracts";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { objectiveReviewHoldsV2, reviewSchedules } from "@astella/shared/db-schema/evidence";
+import { artifactPayloadSchema } from "@astella/shared/learning-run-contracts";
+import { objectiveSurfaceFreshnessV1, type ObjectivePersonalStateV3 } from "@astella/shared/learning-objective-surface-contracts";
 import {
   buildNoteDeepeningV3,
   type NoteDeepeningObjectiveV3,
   type NoteDeepeningRecordV3,
   type NoteDeepeningRelationV3,
   type NoteDeepeningV3,
-} from "@ailearn/shared/note-deepening-v3-contracts";
-import type { UnderstandingEdgeProjectionV3 } from "@ailearn/shared/note-deepening-contracts";
+} from "@astella/shared/note-deepening-v3-contracts";
+import type { UnderstandingEdgeProjectionV3 } from "@astella/shared/note-deepening-contracts";
 import { visibleCardsCondition, visibleNotesCondition, visibleObjectivesCondition } from "../note/visibility.ts";
 
 export interface NoteDeepeningContext {

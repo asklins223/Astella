@@ -72,7 +72,7 @@ ALTER TABLE public.agent_run_events RENAME COLUMN job_status TO execution_status
 
 -- 0368 的字面函数体不会跟着改名，不重建它，三个现役 note 能力的终态事务全部失败。
 -- 只换列名，绑定与唤醒语义逐字保留。
-CREATE OR REPLACE FUNCTION public.ailearn_agent_job_event() RETURNS trigger
+CREATE OR REPLACE FUNCTION public.astella_agent_job_event() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog,public AS $$
 DECLARE op record; event_seq bigint;
 BEGIN
@@ -100,7 +100,7 @@ END $$;
 -- ── 5. 制卡领域的回执触发器 ────────────────────────────────────────────────
 -- 与 jobs 上那个同构，但只认被绑定的那一发初始 outbox：审核台之后的重检／重写／重排
 -- 各自产生新 outbox、没有绑定，这里整段跳过，不被已 completed 的旧目标叫醒。
-CREATE FUNCTION public.ailearn_agent_card_run_event() RETURNS trigger
+CREATE FUNCTION public.astella_agent_card_run_event() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog,public AS $$
 DECLARE op record; event_seq bigint; next_status text;
 BEGIN
@@ -137,9 +137,9 @@ BEGIN
   END IF;
   RETURN NEW;
 END $$;
-REVOKE ALL ON FUNCTION public.ailearn_agent_card_run_event() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_agent_card_run_event() FROM PUBLIC;
 CREATE TRIGGER agent_card_run_event AFTER UPDATE OF status ON public.card_generation_runs_v2
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_agent_card_run_event();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_agent_card_run_event();
 
 --> statement-breakpoint
 
@@ -147,7 +147,7 @@ CREATE TRIGGER agent_card_run_event AFTER UPDATE OF status ON public.card_genera
 -- 三支逐字保留，jobs 内连接换 LEFT JOIN。制卡的"越界再唤醒"理由只有真实交付事实：
 -- 审核开放且至少一张最新 revision 可审，或零推荐已落定。review_ready 但一张都不可审
 -- 不算——否则永远不可交付的批次会把目标一次次叫醒。
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_agent_recovery() RETURNS integer
+CREATE OR REPLACE FUNCTION public.astella_enqueue_agent_recovery() RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog,public AS $$
 DECLARE inserted integer;
 BEGIN
@@ -210,15 +210,15 @@ BEGIN
   GET DIAGNOSTICS inserted = ROW_COUNT;
   RETURN inserted;
 END $$;
-REVOKE ALL ON FUNCTION public.ailearn_enqueue_agent_recovery() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_agent_recovery() TO ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_enqueue_agent_recovery() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_enqueue_agent_recovery() TO astella_worker;
 
 --> statement-breakpoint
 
 -- ── 7. 取消／修订也停掉制卡这一发 ───────────────────────────────────────────
 -- 原来只杀 jobs 行，制卡链完全不受"停止目标"影响。锁顺序与父围栏一致：
 -- parent（上面已锁）→ card → outbox。只碰被绑定的那一发，已成功的成果保留。
-CREATE OR REPLACE FUNCTION public.ailearn_cancel_agent_operations(p_run uuid,p_revision integer) RETURNS void
+CREATE OR REPLACE FUNCTION public.astella_cancel_agent_operations(p_run uuid,p_revision integer) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
 DECLARE r record;
 BEGIN
@@ -248,15 +248,15 @@ BEGIN
     WHERE o.run_id=p_run AND o.revision=p_revision AND o.card_generation_outbox_id=b.id
       AND b.workspace_id=r.workspace_id AND b.status IN ('pending','processing');
 END $$;
-REVOKE ALL ON FUNCTION public.ailearn_cancel_agent_operations(uuid,integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_cancel_agent_operations(uuid,integer) TO ailearn_api,ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_cancel_agent_operations(uuid,integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_cancel_agent_operations(uuid,integer) TO astella_api,astella_worker;
 
 --> statement-breakpoint
 
 -- ── 8. 制卡这一发的父围栏 ──────────────────────────────────────────────────
 -- 未绑定的 outbox（用户自己点的制卡、审核台后续几发）恒 true：它们本来就没有父围栏。
--- 判据与 ailearn_agent_job_current 对齐，另加"材料确实在目标冻结输入里"。
-CREATE FUNCTION public.ailearn_agent_card_job_current(p_outbox uuid,p_workspace uuid,p_lock boolean DEFAULT false) RETURNS boolean
+-- 判据与 astella_agent_job_current 对齐，另加"材料确实在目标冻结输入里"。
+CREATE FUNCTION public.astella_agent_card_job_current(p_outbox uuid,p_workspace uuid,p_lock boolean DEFAULT false) RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
 DECLARE allowed boolean; parent_run uuid; card_run uuid;
 BEGIN
@@ -290,8 +290,8 @@ BEGIN
           AND n.deleted_at IS NULL AND (n.share_scope='shared' OR n.created_by=cr.user_id)));
   RETURN coalesce(allowed,false);
 END $$;
-REVOKE ALL ON FUNCTION public.ailearn_agent_card_job_current(uuid,uuid,boolean) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_agent_card_job_current(uuid,uuid,boolean) TO ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_agent_card_job_current(uuid,uuid,boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_agent_card_job_current(uuid,uuid,boolean) TO astella_worker;
 
 --> statement-breakpoint
 
@@ -300,7 +300,7 @@ GRANT EXECUTE ON FUNCTION public.ailearn_agent_card_job_current(uuid,uuid,boolea
 -- 要求 row.user_id = app.user_id：直查恒 0 行，所有 Agent 制卡会被误认成普通制卡，
 -- 父预算与围栏整条绕过。绑定读取不是 current 判定，不按成员资格或终态过滤——
 -- 取消或失去成员资格时仍必须知道「它有父目标」。
-CREATE FUNCTION public.ailearn_agent_card_execution_binding(p_outbox uuid,p_workspace uuid)
+CREATE FUNCTION public.astella_agent_card_execution_binding(p_outbox uuid,p_workspace uuid)
 RETURNS TABLE(operation_id uuid,agent_run_id uuid,revision integer,user_id uuid)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
 BEGIN
@@ -316,12 +316,12 @@ BEGIN
   WHERE o.card_generation_outbox_id=p_outbox AND o.workspace_id=p_workspace
     AND o.user_id=cr.user_id AND r.user_id=cr.user_id;
 END $$;
-REVOKE ALL ON FUNCTION public.ailearn_agent_card_execution_binding(uuid,uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_agent_card_execution_binding(uuid,uuid) TO ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_agent_card_execution_binding(uuid,uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_agent_card_execution_binding(uuid,uuid) TO astella_worker;
 
 --> statement-breakpoint
 
 -- 属主收敛到 migrator（BYPASSRLS 语义依赖它）。触发器函数不给任何角色 EXECUTE。
-ALTER FUNCTION public.ailearn_agent_card_run_event() OWNER TO ailearn_migrator;
-ALTER FUNCTION public.ailearn_agent_card_job_current(uuid,uuid,boolean) OWNER TO ailearn_migrator;
-ALTER FUNCTION public.ailearn_agent_card_execution_binding(uuid,uuid) OWNER TO ailearn_migrator;
+ALTER FUNCTION public.astella_agent_card_run_event() OWNER TO astella_migrator;
+ALTER FUNCTION public.astella_agent_card_job_current(uuid,uuid,boolean) OWNER TO astella_migrator;
+ALTER FUNCTION public.astella_agent_card_execution_binding(uuid,uuid) OWNER TO astella_migrator;

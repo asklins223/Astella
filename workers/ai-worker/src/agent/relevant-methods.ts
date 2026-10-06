@@ -1,4 +1,4 @@
-import type { AgentMethodV1 } from "@ailearn/shared/agent-growth-contracts";
+import type { AgentMethodV1 } from "@astella/shared/agent-growth-contracts";
 
 /**
  * 方案 44 §6.1：专业任务（制卡、拓展、速看、演示）执行时读取**相关**的合作/生成经验。

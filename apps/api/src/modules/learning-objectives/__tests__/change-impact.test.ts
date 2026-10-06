@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
 import { detectObjectiveNoteChangeImpactV1, type NoteEvidenceChangeInputV1 } from "../change-impact.ts";
 
 const NOTE_ID = "11111111-1111-4111-8111-111111111111";

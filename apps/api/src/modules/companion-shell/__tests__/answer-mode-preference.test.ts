@@ -11,7 +11,7 @@ import {
   answerModePreferenceV1Schema,
   companionAnswerModePreferencePatchV1Schema,
   companionAnswerModePreferenceV1Schema,
-} from "@ailearn/shared/companion-shell-contracts";
+} from "@astella/shared/companion-shell-contracts";
 
 describe("answerModePreferenceV1Schema（任务 14 §7 决策 4）", () => {
   it("值域恰为 voice/silent/text/any", () => {

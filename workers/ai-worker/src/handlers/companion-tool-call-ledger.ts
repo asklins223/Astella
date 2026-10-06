@@ -22,14 +22,14 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { AgentTurnRequest, AgentTurnResult } from "@ailearn/shared";
+import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import { sql } from "drizzle-orm";
 import {
   canUseCompanionAgentTool,
   type CompanionAgentToolDefinitionV1,
   type ProviderReasoningHandle,
-} from "@ailearn/shared";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+} from "@astella/shared";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { ProviderRequestError } from "../lib/provider-request-error.ts";
 import type { AIProvider } from "../lib/ai-provider.ts";

@@ -1,4 +1,4 @@
-import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
+import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
 
 export type NoteExpansionSourceBlock = { ordinal: number; type: string; content: string };
 

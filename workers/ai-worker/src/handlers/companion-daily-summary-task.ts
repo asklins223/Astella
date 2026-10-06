@@ -4,7 +4,7 @@ import type {
   AiTaskContext,
   AiTaskDefinition,
   AiTaskReceipt,
-} from "@ailearn/shared/ai-task-kernel";
+} from "@astella/shared/ai-task-kernel";
 import type { JobPayload } from "./index.ts";
 
 export function diaryTaskContext(

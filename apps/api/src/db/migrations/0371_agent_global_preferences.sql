@@ -2,7 +2,7 @@
 -- Source ownership and active membership are checked explicitly under SECURITY DEFINER.
 -- Copies share adoption/withdrawal state, while each row retains its own revision history.
 
-CREATE OR REPLACE FUNCTION public.ailearn_fanout_agent_global_preference(
+CREATE OR REPLACE FUNCTION public.astella_fanout_agent_global_preference(
   p_source_id uuid
 )
 RETURNS integer
@@ -59,26 +59,26 @@ BEGIN
       USING ERRCODE = 'insufficient_privilege';
   END IF;
 
-  RETURN public.ailearn_fanout_global_companion_memory(p_source_id);
+  RETURN public.astella_fanout_global_companion_memory(p_source_id);
 END;
 $function$;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_fanout_agent_global_preference(uuid) IS
+COMMENT ON FUNCTION public.astella_fanout_agent_global_preference(uuid) IS
   '受控铺开入口：先验事务身份、源行归属与活跃成员，再委派 0267 的唯一铺开实现。';
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_fanout_agent_global_preference(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_fanout_agent_global_preference(uuid) TO ailearn_api;
-GRANT EXECUTE ON FUNCTION public.ailearn_fanout_agent_global_preference(uuid) TO ailearn_migrator;
+REVOKE ALL ON FUNCTION public.astella_fanout_agent_global_preference(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_fanout_agent_global_preference(uuid) TO astella_api;
+GRANT EXECUTE ON FUNCTION public.astella_fanout_agent_global_preference(uuid) TO astella_migrator;
 
 --> statement-breakpoint
 
 -- Frozen domain state is copied; embedding is computed within each workspace.
 
-CREATE OR REPLACE FUNCTION public.ailearn_fanout_global_companion_memory(
+CREATE OR REPLACE FUNCTION public.astella_fanout_global_companion_memory(
   p_source_id uuid
 )
 RETURNS integer
@@ -146,14 +146,14 @@ $function$;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_fanout_global_companion_memory(uuid) IS
+COMMENT ON FUNCTION public.astella_fanout_global_companion_memory(uuid) IS
   '把一条 scope=global 的记忆铺到该用户所有活跃空间（0267 建立，0342 补时窗，0371 让副本与源行在确认/候选/作者/认识状态/预算层/撤回状态上从一开始就对齐）。';
 
 --> statement-breakpoint
 
 -- Changes propagate to copies without overwriting their local revision counters.
 
-CREATE OR REPLACE FUNCTION public.ailearn_sync_global_companion_memory_copies()
+CREATE OR REPLACE FUNCTION public.astella_sync_global_companion_memory_copies()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -206,7 +206,7 @@ $function$;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_sync_global_companion_memory_copies() IS
+COMMENT ON FUNCTION public.astella_sync_global_companion_memory_copies() IS
   '把一条跨空间记忆的变更同步到它在其他空间的副本（0268 建立，0342 补时窗，0371 补确认位/认识状态/作者/预算层）。revision 刻意不同步。';
 
 --> statement-breakpoint
@@ -217,9 +217,9 @@ BEGIN
                   WHERE tgname = 'assistant_memory_items_sync_copies' AND NOT tgisinternal) THEN
     RAISE EXCEPTION '副本同步触发器不在，重定义函数不会生效';
   END IF;
-  IF NOT has_function_privilege('ailearn_api',
-       'public.ailearn_fanout_agent_global_preference(uuid)', 'EXECUTE') THEN
-    RAISE EXCEPTION 'ailearn_api 拿不到受控入口：API 写入的 global 规则仍然不会铺开';
+  IF NOT has_function_privilege('astella_api',
+       'public.astella_fanout_agent_global_preference(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'astella_api 拿不到受控入口：API 写入的 global 规则仍然不会铺开';
   END IF;
 END
 $$;

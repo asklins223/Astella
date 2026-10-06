@@ -4,7 +4,7 @@ import { z } from "zod";
  * 站内图片对象读取合同（`source.image.get`）。
  *
  * 来源解析会把网页内嵌图片下载后写进对象存储，正文引用随之被改写成
- * `/api/uploads/{objectKey}`。桌面渲染层跑在 `ailearn-app://` 下：相对路径会
+ * `/api/uploads/{objectKey}`。桌面渲染层跑在 `astella-app://` 下：相对路径会
  * 落到应用包内（404），而外链地址又会被渲染层 CSP（`img-src 'self' data: blob:`）
  * 拦掉。因此站内图片由 main 带 Bearer 取回原始字节，投影为本模块的 strict
  * result；渲染层只拿到 mime 与 base64，自己转成 blob URL 交给 `<img>`。

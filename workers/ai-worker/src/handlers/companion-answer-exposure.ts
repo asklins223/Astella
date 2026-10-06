@@ -21,9 +21,9 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { AnswerOrClueExposureKindV2 } from "@ailearn/shared/learning-card-v2-contracts";
+import type { AnswerOrClueExposureKindV2 } from "@astella/shared/learning-card-v2-contracts";
 import { sql } from "drizzle-orm";
-import { computeExposureScopeIdV2 } from "@ailearn/shared/card-generation-v2-hashing";
+import { computeExposureScopeIdV2 } from "@astella/shared/card-generation-v2-hashing";
 import type { WorkerTransaction } from "../db.ts";
 import type { FormalAnswerTarget } from "../lib/formal-answer-signal.ts";
 import type { LivePageView } from "./companion-live-view.ts";
@@ -157,7 +157,7 @@ export interface RecordExposureArgs {
  * 写一行暴露账目。返回 false = 撞了幂等键（这一轮已经记过）。
  *
  * 两个不能省的细节：
- *   - **RLS 对 `ailearn_worker` 形同不存在**（该表策略带 `CURRENT_USER='ailearn_worker'`
+ *   - **RLS 对 `astella_worker` 形同不存在**（该表策略带 `CURRENT_USER='astella_worker'`
  *     分支），所以 workspace/user 条件必须由 SQL 自己带——这里的值全部来自
  *     调用方按 (workspace, user) 取到的那一行，不接受任何外部传入的 id。
  *   - 没有 objective 身份（快照缺失）时**不写**：这一列是 NOT NULL，硬塞一个假目标

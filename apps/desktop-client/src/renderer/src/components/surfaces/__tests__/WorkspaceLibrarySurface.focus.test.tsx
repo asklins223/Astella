@@ -65,7 +65,7 @@ function installApi(items: Array<Record<string, unknown>>, page: { total?: numbe
       }) => ok({ runId: RUN_ID, snapshotId: "00000000-0000-4000-8000-000000000008" })),
     },
   };
-  Object.defineProperty(window, "ailearn", { value: api, configurable: true });
+  Object.defineProperty(window, "astella", { value: api, configurable: true });
   return api;
 }
 
@@ -79,7 +79,7 @@ function stubRoom() {
 
 afterEach(() => {
   cleanup();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   retargetObjectiveLibraryView("ws-1");
   useRoomStore.setState({ activeRunId: null, activeObjectiveId: null, surface: null });
   vi.restoreAllMocks();

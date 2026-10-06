@@ -1,4 +1,4 @@
-import type { GatewayErrorCode } from "@ailearn/shared/desktop-ipc-contracts";
+import type { GatewayErrorCode } from "@astella/shared/desktop-ipc-contracts";
 
 const GATE_INVALIDATION_CODES = [
   "auth_required",

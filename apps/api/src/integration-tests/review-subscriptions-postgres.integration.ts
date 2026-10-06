@@ -23,7 +23,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import Fastify from "fastify";
-import { reviewSubscriptionResultV2Schema } from "@ailearn/shared";
+import { reviewSubscriptionResultV2Schema } from "@astella/shared";
 import { reviewRoutes } from "../modules/review/routes.ts";
 import { issueSession, revokeSession } from "../modules/identity/session-service.ts";
 
@@ -36,7 +36,7 @@ const fixtureSql = postgres(fixtureUrl, { max: 1 });
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
 const { activateReviewSubscriptionV2, listNoteSubscriptionsV2, liveSourcesForObjectivesV2, pauseReviewSubscriptionV2, ReviewSubscriptionNoteNotFoundV2 } =
   await import("../modules/review/review-subscriptions.ts");
-const { reviewSubscriptionsV2 } = await import("@ailearn/shared/db-schema/evidence");
+const { reviewSubscriptionsV2 } = await import("@astella/shared/db-schema/evidence");
 const { eq } = await import("drizzle-orm");
 
 const USER_ID = randomUUID();

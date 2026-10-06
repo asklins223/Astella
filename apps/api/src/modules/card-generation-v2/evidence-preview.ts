@@ -12,10 +12,10 @@
  * **当前版本**按 ordinal 重落锚点，重落不出来就判"无法确认"。
  */
 import { and, eq, inArray } from "drizzle-orm";
-import { evidenceSnapshotsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { noteBlocks, noteVersions, notes } from "@ailearn/shared/db-schema/note";
-import { evidenceQuoteCopiesV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { classifyEvidencePreviewV2 } from "@ailearn/shared/card-generation-v2-hashing";
+import { evidenceSnapshotsV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { noteBlocks, noteVersions, notes } from "@astella/shared/db-schema/note";
+import { evidenceQuoteCopiesV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { classifyEvidencePreviewV2 } from "@astella/shared/card-generation-v2-hashing";
 import type { ApiTransaction } from "../../db/client.ts";
 
 export interface EvidencePreviewItem {

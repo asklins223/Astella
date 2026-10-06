@@ -10,9 +10,9 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { and, eq, sql } from "drizzle-orm";
-import { learningObjectivesV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { searchDocuments } from "@ailearn/shared/db-schema/search";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { learningObjectivesV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { searchDocuments } from "@astella/shared/db-schema/search";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const pgSql = (await import("postgres")).default(testDatabaseUrl("DATABASE_URL"), { max: 1 });
 const { seedPureV2Workspace } = await import("./helpers/pure-v2-workspace-fixture.ts");

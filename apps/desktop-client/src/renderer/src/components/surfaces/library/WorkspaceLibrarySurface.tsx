@@ -25,18 +25,18 @@ import type {
   CapabilityProjectionV1,
   SessionContextV1,
   WorkspaceSummaryV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import type {
   DesktopNoteListItem,
   DesktopNoteListPage,
-} from "@ailearn/shared/desktop-surface-contracts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+} from "@astella/shared/desktop-surface-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import type {
   LearningObjectivePrimaryActionV3,
   LearningObjectiveSurfaceV3,
   ObjectiveListItemV3,
   ObjectiveListPageV3,
-} from "@ailearn/shared/learning-objective-surface-contracts";
+} from "@astella/shared/learning-objective-surface-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import {
   createCommandId,
@@ -54,7 +54,7 @@ import { learningRunPhaseLabels } from "../run/learning-run-surface.tsx";
 import { startObjectiveJourney } from "../run/objective-primary-action.ts";
 import { ObjectiveProgressBand } from "../run/ObjectiveProgressBand.tsx";
 import { progressSegmentForState } from "../run/objective-progress-band.ts";
-import { groupObjectiveCardsByNoteV2 } from "@ailearn/shared/objective-card-groups-v2";
+import { groupObjectiveCardsByNoteV2 } from "@astella/shared/objective-card-groups-v2";
 import {
   freshnessLabel,
   formatObjectiveDateTime,
@@ -234,8 +234,8 @@ function isActionable(action: LearningObjectivePrimaryActionV3): boolean {
 }
 
 async function readAuthenticatedSession(epochRef: React.MutableRefObject<number | undefined>): Promise<SessionContextV1> {
-  if (!window.ailearn) throw new Error("桌面端 API 不可用，无法读取真实工作区数据。");
-  const response = await window.ailearn.auth.getState({ meta: createRequestMeta(epochRef.current) });
+  if (!window.astella) throw new Error("桌面端 API 不可用，无法读取真实工作区数据。");
+  const response = await window.astella.auth.getState({ meta: createRequestMeta(epochRef.current) });
   if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
   const session = unwrapGatewayResult(response);
   if (session.status !== "authenticated" || !session.workspace) {
@@ -297,7 +297,7 @@ export function ObjectiveLibrarySurface() {
         setOpenPackKey(null);
       }
       const meta = createRequestMeta(session.workspaceEpoch);
-      const response = await window.ailearn.objective.list({ meta, limit: 60, lifecycle: "active" });
+      const response = await window.astella.objective.list({ meta, limit: 60, lifecycle: "active" });
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       setPage(unwrapGatewayResult(response));
     } catch (error) {
@@ -316,7 +316,7 @@ export function ObjectiveLibrarySurface() {
     setPageFailure(null);
     try {
       const session = await readAuthenticatedSession(epochRef);
-      const response = await window.ailearn.objective.list({
+      const response = await window.astella.objective.list({
         meta: createRequestMeta(session.workspaceEpoch),
         cursor,
         limit: 60,
@@ -518,7 +518,7 @@ export function ObjectiveDetailSurface() {
     setFailure(null);
     try {
       const session = await readAuthenticatedSession(epochRef);
-      const response = await window.ailearn.objective.get({ meta: createRequestMeta(session.workspaceEpoch), objectiveId: activeObjectiveId });
+      const response = await window.astella.objective.get({ meta: createRequestMeta(session.workspaceEpoch), objectiveId: activeObjectiveId });
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       setObjective(unwrapGatewayResult(response));
     } catch (error) {
@@ -532,7 +532,7 @@ export function ObjectiveDetailSurface() {
   const startAction = async () => {
     if (!objective || starting) return;
     setActionFailure(null);
-    if (!window.ailearn) {
+    if (!window.astella) {
       setActionFailure("这次没有拿到完整的学习凭据，先不开始。");
       return;
     }

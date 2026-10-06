@@ -5,9 +5,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isNonRetryableError, AgentOutputError, CompanionAgentBudgetExceededError, NoteDynamicArtifactAttemptExhaustedError } from "../lib/non-retryable-errors.ts";
-import { JobPayloadContractError } from "@ailearn/shared/job-payload-contracts";
-import { JobType } from "@ailearn/shared";
-import { safeErrorMessage } from "@ailearn/shared";
+import { JobPayloadContractError } from "@astella/shared/job-payload-contracts";
+import { JobType } from "@astella/shared";
+import { safeErrorMessage } from "@astella/shared";
 
 test("演示内核已耗尽预算时，队列不重跑整轮；其他普通超时仍沿各自策略重试", () => {
   assert.equal(isNonRetryableError(new NoteDynamicArtifactAttemptExhaustedError("timeout: step exceeded 35000ms")), true);

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { readNoteAnchorTextV1, type NoteAnnotationAnchorV1 } from "@ailearn/shared/note-annotation-contracts";
-import type { NoteDetailV1, NoteBlockProjectionV1 } from "@ailearn/shared/note-projection-contracts";
+import { readNoteAnchorTextV1, type NoteAnnotationAnchorV1 } from "@astella/shared/note-annotation-contracts";
+import type { NoteDetailV1, NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
 import { noteBlockText } from "./surface-data";
-import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
+import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
 import { noteReadingOffset, noteReadingText } from "./note-reading-text";
 
 export function useNotebookSelection(input: {

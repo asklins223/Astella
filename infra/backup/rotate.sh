@@ -11,7 +11,7 @@
 #
 # 用法：
 #   ./rotate.sh --manifest-dir /data/backups/manifests \
-#     --s3-endpoint http://minio:9000 --s3-bucket ailearn-backups \
+#     --s3-endpoint http://minio:9000 --s3-bucket astella-backups \
 #     --s3-access-key XXX --s3-secret-key YYY
 #
 # CI 模式（跳过 S3 删除）：
@@ -101,8 +101,8 @@ delete_object() {
     AWS_SECRET_ACCESS_KEY="$S3_SECRET_KEY" \
     aws s3 rm "s3://$S3_BUCKET/$object_key" --endpoint-url "$S3_ENDPOINT"
   elif command -v mc &>/dev/null; then
-    mc alias set ailearn-backup "$S3_ENDPOINT" "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null
-    mc rm "ailearn-backup/$S3_BUCKET/$object_key"
+    mc alias set astella-backup "$S3_ENDPOINT" "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null
+    mc rm "astella-backup/$S3_BUCKET/$object_key"
   else
     log "错误: 需要 aws CLI 或 mc (MinIO Client) 才能删除远端备份" >&2
     return 1

@@ -16,7 +16,7 @@ import {
   planRun,
   type RunPlannerTargetInput,
 } from "../run-planner.ts";
-import { sha256Hex } from "@ailearn/shared/content-hash";
+import { sha256Hex } from "@astella/shared/content-hash";
 import {
   buildRunPublicView,
   buildSchedulePolicySummary,
@@ -26,7 +26,7 @@ import {
   LEARNING_RUN_ASSISTANCE_POLICY_V1,
   learningRunPublicSchema,
   taskInteractionSchema,
-} from "@ailearn/shared";
+} from "@astella/shared";
 
 const target: RunPlannerTargetInput = {
   keyPointId: "11111111-1111-4111-8111-111111111111",

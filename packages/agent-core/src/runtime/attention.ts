@@ -1,5 +1,5 @@
 import { agentTurnInterpretationProposalV1Schema, agentTurnInterpretationV1Schema,
-  type AgentAttentionObjectV1, type AgentTurnInterpretationV1 } from "@ailearn/shared/agent-contracts";
+  type AgentAttentionObjectV1, type AgentTurnInterpretationV1 } from "@astella/shared/agent-contracts";
 
 /** Bind only host-supplied identities. Old context explains a pronoun but does
  * not restore an earlier execution instruction or confer new authority. */

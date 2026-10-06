@@ -1,7 +1,7 @@
-import { getAgentCapability, validateAgentCapabilityArguments } from "@ailearn/shared/agent-capability-catalog";
+import { getAgentCapability, validateAgentCapabilityArguments } from "@astella/shared/agent-capability-catalog";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import type { AgentScopeV1, AgentInputRefV1 } from "@ailearn/shared/agent-contracts";
+import type { AgentScopeV1, AgentInputRefV1 } from "@astella/shared/agent-contracts";
 import { AgentStoreError, queryRows, requireVisibleInput, type AgentSqlExecutor, type AgentRunRow } from "./store.ts";
 import type { AgentOperationRow } from "./history.ts";
 import { projectAgentOperation } from "./history.ts";

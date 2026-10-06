@@ -12,7 +12,7 @@ import { test } from "node:test";
 import type {
   AgentArtifactRefV1, AgentExecutionRefV1, AgentOperationEventV1,
   AgentOperationResultV1, AgentOperationV1,
-} from "@ailearn/shared/agent-contracts";
+} from "@astella/shared/agent-contracts";
 
 import { reduceOperationReceipt } from "../run-state.ts";
 

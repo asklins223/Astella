@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { safeErrorMessage } from "@ailearn/shared";
+import { safeErrorMessage } from "@astella/shared";
 import { AIConsentRequiredError } from "../governance.ts";
 
 describe("AI consent governance error", () => {

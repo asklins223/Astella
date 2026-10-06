@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { SessionContextV1, WorkspaceSummaryV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { SessionContextV1, WorkspaceSummaryV1 } from "@astella/shared/desktop-ipc-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
 import { markSpaceUsed, readSpaceRecents } from "../../app/space-recents";
@@ -38,7 +38,7 @@ export function useHudSpaces(onSwitched?: (name: string) => void) {
     setState(current => ({ ...current, loading: true, failure: null }));
     try {
       const session = await readAuthenticatedSession(epochRef);
-      const response = await window.ailearn.workspace.list({ meta: createRequestMeta(session.workspaceEpoch) });
+      const response = await window.astella.workspace.list({ meta: createRequestMeta(session.workspaceEpoch) });
       const list = unwrapGatewayResult(response);
       if (!mounted.current || revision !== generation.current) return;
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
@@ -83,7 +83,7 @@ export function useHudSpaces(onSwitched?: (name: string) => void) {
     if (activeRunId && !confirmed) { setConfirmation({ kind: "switch", workspace }); return; }
     if (!start(workspace.workspaceId)) return;
     try {
-      const response = await window.ailearn.workspace.switch({ meta: createRequestMeta(epochRef.current), workspaceId: workspace.workspaceId });
+      const response = await window.astella.workspace.switch({ meta: createRequestMeta(epochRef.current), workspaceId: workspace.workspaceId });
       unwrapGatewayResult(response);
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       completeSwitch(workspace.name, workspace.workspaceId);
@@ -98,7 +98,7 @@ export function useHudSpaces(onSwitched?: (name: string) => void) {
     if (activeRunId && !confirmed) { setConfirmation({ kind: "create", name }); return; }
     if (!start("create")) return;
     try {
-      const response = await window.ailearn.workspace.create({ meta: createRequestMeta(epochRef.current), name });
+      const response = await window.astella.workspace.create({ meta: createRequestMeta(epochRef.current), name });
       const created = unwrapGatewayResult(response);
       const nextRecents = markSpaceUsed(created.workspaceId);
       if (mounted.current) setRecents(nextRecents);
@@ -115,10 +115,10 @@ export function useHudSpaces(onSwitched?: (name: string) => void) {
     const knownIds = new Set(state.workspaces.map(workspace => workspace.workspaceId));
     let committed = false;
     try {
-      const response = await window.ailearn.auth.joinWorkspace({ meta: createRequestMeta(epochRef.current), inviteToken });
+      const response = await window.astella.auth.joinWorkspace({ meta: createRequestMeta(epochRef.current), inviteToken });
       unwrapGatewayResult(response); committed = true;
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
-      const listed = await window.ailearn.workspace.list({ meta: createRequestMeta(epochRef.current) });
+      const listed = await window.astella.workspace.list({ meta: createRequestMeta(epochRef.current) });
       const list = unwrapGatewayResult(listed);
       if (listed.workspaceEpoch) epochRef.current = listed.workspaceEpoch;
       if (!mounted.current) return true;

@@ -23,7 +23,7 @@
  */
 import { useMemo } from "react";
 import { BookOpen, CircleAlert, Leaf } from "lucide-react";
-import type { NoteRouteCoverageV1 } from "@ailearn/shared/note-route-coverage-v2";
+import type { NoteRouteCoverageV1 } from "@astella/shared/note-route-coverage-v2";
 import { ROUTE_QUESTION_STATE_COPY_V1, routeVerdictCopyV1 } from "./route-coverage-copy.ts";
 
 export type RouteCoverageProps = {

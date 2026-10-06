@@ -36,7 +36,7 @@ const journal = JSON.parse(
   readFileSync(new URL("../db/migrations/meta/_journal.json", import.meta.url), "utf8"),
 ) as { entries: Array<{ idx: number; tag: string }> };
 
-const fn = migration.slice(migration.indexOf("CREATE OR REPLACE FUNCTION public.ailearn_enforce_companion_memory_retention"));
+const fn = migration.slice(migration.indexOf("CREATE OR REPLACE FUNCTION public.astella_enforce_companion_memory_retention"));
 
 test("0362 已登记进 journal（清单是唯一迁移列表）", () => {
   assert.ok(
@@ -76,15 +76,15 @@ test("固定（pinned）不参与容量淘汰（§4.6.6「固定表达重要性�
 });
 
 test("清扫函数仍然不给客户端直接调用", () => {
-  assert.match(migration, /REVOKE ALL ON FUNCTION public\.ailearn_enforce_companion_memory_retention\(\) FROM PUBLIC/);
-  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.ailearn_enforce_companion_memory_retention\(\) TO ailearn_worker/);
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.astella_enforce_companion_memory_retention\(\) FROM PUBLIC/);
+  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.astella_enforce_companion_memory_retention\(\) TO astella_worker/);
 });
 
 test("【自证】判据认得出「退回硬删」这个真实退化", () => {
   // 把 0362 的函数体换成 0346 那条硬删，判据必须变红——
   // 否则上面几条只是对着一个空壳文件点头。
   const hardDelete = `
-    CREATE OR REPLACE FUNCTION public.ailearn_enforce_companion_memory_retention()
+    CREATE OR REPLACE FUNCTION public.astella_enforce_companion_memory_retention()
     RETURNS integer LANGUAGE plpgsql AS $$
     DECLARE n integer;
     BEGIN

@@ -22,12 +22,12 @@ ALTER TABLE public.card_generation_legacy_writer_hits FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY cg_legacy_writer_ws_sel
   ON public.card_generation_legacy_writer_hits FOR SELECT
-  TO ailearn_api, ailearn_worker
+  TO astella_api, astella_worker
   USING (workspace_id = current_setting('app.workspace_id', true)::uuid);
 
 CREATE POLICY cg_legacy_writer_ws_ins
   ON public.card_generation_legacy_writer_hits FOR INSERT
-  TO ailearn_api, ailearn_worker
+  TO astella_api, astella_worker
   WITH CHECK (workspace_id = current_setting('app.workspace_id', true)::uuid);
 
-GRANT SELECT, INSERT ON public.card_generation_legacy_writer_hits TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT ON public.card_generation_legacy_writer_hits TO astella_api, astella_worker;

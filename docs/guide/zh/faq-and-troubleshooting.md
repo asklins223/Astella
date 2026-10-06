@@ -2,7 +2,7 @@
 
 中文 · [English](../en/faq-and-troubleshooting.md)
 
-这篇讲什么：把本机跑理解引擎时真会撞上的问题按「现象 → 原因 → 处理」列清楚，每条答案都对着仓库里的 compose 文件、Makefile 与代码核对过。不写通用建议，只写这条链路上真正起作用的那一步。
+这篇讲什么：把本机跑拾星笔记时真会撞上的问题按「现象 → 原因 → 处理」列清楚，每条答案都对着仓库里的 compose 文件、Makefile 与代码核对过。不写通用建议，只写这条链路上真正起作用的那一步。
 
 - [登录与账号](#登录与账号)
 - [端口与本机服务](#端口与本机服务)
@@ -19,9 +19,9 @@
 
 ### 无法登录 → 演示账号从未创建 → `make seed-demo`
 
-**现象：** 桌面端用 `owner@ailearn.local` / `ailearn_owner` 登不进去，或 API 直接回 401 `invalid credentials`。
+**现象：** 桌面端用 `owner@astella.local` / `astella_owner` 登不进去，或 API 直接回 401 `invalid credentials`。
 
-**原因：** 开发栈启动时不建任何账号。`seed-demo` 服务在 `seed` profile 下，只有显式运行才创建。Makefile 的 `seed-demo` 目标是 `docker compose -p ailearn-dev -f docker-compose.dev.yml --profile seed run --rm seed-demo`；该容器带 `SEED_DEMO_DATA=true`，`apps/api/src/db/seed.ts` 才允许用内置的演示邮箱与密码。
+**原因：** 开发栈启动时不建任何账号。`seed-demo` 服务在 `seed` profile 下，只有显式运行才创建。Makefile 的 `seed-demo` 目标是 `docker compose -p astella-dev -f docker-compose.dev.yml --profile seed run --rm seed-demo`；该容器带 `SEED_DEMO_DATA=true`，`apps/api/src/db/seed.ts` 才允许用内置的演示邮箱与密码。
 
 **处理：** 栈起来后执行 `make seed-demo`。账号已存在时脚本只打印 `Owner already exists` 并退出，可重复执行。这对凭据**仅用于本机开发**，生产环境不会自动创建演示账号。
 
@@ -70,11 +70,11 @@ docker compose -f docker-compose.yml --profile seed run --rm seed-owner
 **处理：**
 
 ```bash
-docker compose -f docker-compose.dev.yml logs migrate role-bootstrap
+docker compose -f docker-compose.dev.yml logs migrate role-bootstrap role-grants
 docker compose -f docker-compose.dev.yml ps            # 一次性容器应停在 Exited(0)
 ```
 
-`make up` 会先清掉上一轮的一次性容器再重建，并 `docker wait` 等本轮 `role-bootstrap` 与 `migrate`（storage 模式下还有 `minio-init`）跑完，所以正常情况下迁移不需要手动触发。生产栈的依赖链不同：`api` 等的是 `postgres` 健康 + `role-grants` 成功退出，而 `role-grants` 又等 `migrate`；开发栈里对应的一次性服务名叫 `role-bootstrap`。残留容器可用 `make clean-init` 手动清除。
+`make up` 会先清掉上一轮的一次性容器再重建，并 `docker wait` 等本轮 `role-bootstrap`、`migrate` 与 `role-grants`（storage 模式下还有 `minio-init`）跑完，所以正常情况下迁移不需要手动触发。两份 compose 现在走同一条链：`role-bootstrap`（建角色，迁移要 `GRANT EXECUTE` 给它，必须在迁移前）→ `migrate` → `role-grants`（再跑一遍 `apply-roles.sh`，把授权落到迁移新建的对象上），`api` 与 `worker` 门控在 `role-grants` 成功退出。少了最后这一步，全新卷上第一次起来的 api 对业务表一条 SELECT 都没有，`/ready` 会报 `business schema is incomplete` 并一直 unhealthy——以前正是这个形状，只有再 `make up` 一次才碰巧补上；`.github/scripts/compose-init-order.test.mjs` 现在盯着它。残留容器可用 `make clean-init` 手动清除。
 
 ## 伴星语音
 
@@ -131,7 +131,7 @@ docker compose -f docker-compose.dev.yml ps            # 一次性容器应停�
 2. **平台到底解析成了谁。** 供应商健康探针必须**在 worker 容器里跑**：
 
    ```bash
-   docker exec -i -w /app ailearn-dev-worker-1 \
+   docker exec -i -w /app astella-dev-worker-1 \
      node --import tsx --eval "$(cat scripts/companion-provider-health.mjs)"
    ```
 
@@ -162,21 +162,21 @@ docker compose -f docker-compose.dev.yml ps            # 一次性容器应停�
 
 **现象：** 担心 `make down` 或 `docker compose down -v` 把练习记录清掉；或者反过来，想彻底清空却删不掉。
 
-**原因：** 开发库使用固定卷 `ailearn-dev_dev_postgres_data`，在 compose 里声明为 `external: true`，由 `make up`（`ensure-db-volume`）在首次启动时创建并打上保护标签。`make down`、删容器、`docker compose down -v` 都不会动它。唯一删除路径是带确认值的 reset：
+**原因：** 开发库使用固定卷 `astella-dev_dev_postgres_data`，在 compose 里声明为 `external: true`，由 `make up`（`ensure-db-volume`）在首次启动时创建并打上保护标签。`make down`、删容器、`docker compose down -v` 都不会动它。唯一删除路径是带确认值的 reset：
 
 ```bash
 make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB
 ```
 
-`CONFIRM_RESET_DB` 不等于 `DELETE_DEV_DB` 时，命令打印取消提示并以退出码 2 结束，什么都不改。卷不存在时也会明确说已经不在。MinIO 的数据在另一个卷 `dev_minio_data`，桶名由 `S3_BUCKET` 决定（开发缺省 `ailearn-workspaces`）。
+`CONFIRM_RESET_DB` 不等于 `DELETE_DEV_DB` 时，命令打印取消提示并以退出码 2 结束，什么都不改。卷不存在时也会明确说已经不在。MinIO 的数据在另一个卷 `dev_minio_data`，桶名由 `S3_BUCKET` 决定（开发缺省 `astella-workspaces`）。
 
 **位置一览：**
 
 | 东西 | 在哪 | 说明 |
 | --- | --- | --- |
-| 业务数据 | Docker 卷 `ailearn-dev_dev_postgres_data` | external，需先备份再 reset |
-| 上传的图片与附件 | 卷 `dev_minio_data`，桶 `ailearn-workspaces` | `make storage` 起 MinIO 与 `minio-init` |
-| 本机语音识别模型 | `<userData>/voice-models/`（`AILEARN_VOICE_ASR_DIR` 可改） | 约 228 MB，**不进安装包**，由用户在设置里自行下载 |
+| 业务数据 | Docker 卷 `astella-dev_dev_postgres_data` | external，需先备份再 reset |
+| 上传的图片与附件 | 卷 `dev_minio_data`，桶 `astella-workspaces` | `make storage` 起 MinIO 与 `minio-init` |
+| 本机语音识别模型 | `<userData>/voice-models/`（`ASTELLA_VOICE_ASR_DIR` 可改） | 约 228 MB，**不进安装包**，由用户在设置里自行下载 |
 | 桌面会话凭据 | 主进程用 Electron `safeStorage` 加密落盘 | macOS 钥匙串 / Windows DPAPI / Linux libsecret；平台没有加密后端时 fail-closed，不写盘，登录只在本轮会话有效 |
 
 ## 测试跑不动
@@ -191,10 +191,10 @@ make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB
 
 ```bash
 make test-postgres          # 遍历 apps/api 与 workers/ai-worker 的 test:*:postgres
-make disposable-db DISPOSABLE_DB=ailearn_scratch
+make disposable-db DISPOSABLE_DB=astella_scratch
 ```
 
-`test-postgres` 需要一套真实但可丢弃的 Postgres：`make disposable-db` 会在全新库上跑完全部迁移并重新授权，用完即弃——因为 `rls-policies`、`queue`、投影分页这类用例断言"库里只有我的夹具"，在共享开发库上会因历史残留行**假失败**，反过来它们又会写删数据。前置条件是开发 compose 的 postgres 容器在跑。该脚本只接受匹配 `ailearn_*` 且不等于 `ailearn` / `postgres` 的库名，避免误删开发库。
+`test-postgres` 需要一套真实但可丢弃的 Postgres：`make disposable-db` 会在全新库上跑完全部迁移并重新授权，用完即弃——因为 `rls-policies`、`queue`、投影分页这类用例断言"库里只有我的夹具"，在共享开发库上会因历史残留行**假失败**，反过来它们又会写删数据。前置条件是开发 compose 的 postgres 容器在跑。该脚本只接受匹配 `astella_*` 且不等于 `astella` / `postgres` 的库名，避免误删开发库。
 
 还有一类坑：这些用例除了 `DATABASE_URL_*` 还各读一个专用变量（`RLS_TEST_*`、`QUEUE_TEST_*`、`RATE_LIMIT_TEST_DATABASE_URL`、`CONTENT_HASH_TEST_DATABASE_URL`、`SEC02_TEST_DATABASE_URL`、`NOTE_VERSION_RESTORE_TEST_DATABASE_URL`）。少给一个是**显式抛错**而不是静默跳过，表现为"整份文件红在读环境变量上，一条用例都没跑"。`make test-postgres` 已经把这些都注入；手工单跑时要自己带全，脚本结束时会打印可复制的变量赋值。
 
@@ -203,9 +203,9 @@ make disposable-db DISPOSABLE_DB=ailearn_scratch
 以下不是"你没配好"，而是当前代码与文档如实记录的状态。出处以文件为准。
 
 - **桌面客户端 0.1.0 尚未发布**，服务端栈记 0.5.0；两条版本线不同步（`release/version.json`、`release/desktop-version.json`）。
-- **仓库根没有 `LICENSE` 文件**，许可尚未落地声明；第三方组件与素材许可见 [THIRD_PARTY_NOTICES.md](../../../THIRD_PARTY_NOTICES.md)。
+- **许可是 MIT**（[LICENSE](../../../LICENSE)），但第三方与素材许可要单独看 [THIRD_PARTY_NOTICES.md](../../../THIRD_PARTY_NOTICES.md)——伴星模型的再分发限制不随代码授权。
 - **2026-10-06 起 CI 不再构建与扫描生产镜像**，生产镜像与真实 HTTPS 部署链路只在本地手动验证过。
-- **方案 43（伴星带路与空间到达）与方案 44（上下文治理与压缩）未实现、未通过窗口验收**；方案 44 的 §8 验收尚无一条真实模型、实库或窗口证据，迁移 0382–0389 从未在实库上跑过。方案 42 已按 2026-10-05 本轮验收，但 §14.6 记录：没有严格同负载的 p95 或长期试用效果证明，未知 stream 用量不当作零，长期效果不能由闭环通过推导。详见[方案索引](../../plans/learning-companion/README.md)。
+- **伴星带路已经实现**（岛内按钮 + 7 个主题 + 本机演示不产生业务事实），但新账号的全程走查与签署同意后的语音还没在真实窗口跑过；**全系统上下文治理与压缩**代码链路已接通，验收判据还没有一条来自真实模型、真实库或真实窗口。
 - **旧"插入排序的稳定性"测试卡仍在详情里提前摊出答案**，且详情没有可用的可恢复删除/归档入口；本轮没有绕过产品直接改写已发布记录（[全流程测试 2026-10-05](../../testing/full-qa-2026-10-05-final.md)）。
 - **macOS 自动更新在有 Developer ID 签名时的真实替换安装仍未验证**（本机造不出签名包），Windows NSIS 路线同理。
 - **人工听音未做，跨天 / 并发 / 生产环境性能未验证**；已有的只是本地内存快照，不能替代压测。
@@ -221,6 +221,8 @@ make disposable-db DISPOSABLE_DB=ailearn_scratch
 - [开发环境与运行](./development.md)
 - [桌面客户端](./desktop-client.md)
 - [API 与数据](./api-and-data.md)
-- [AI 与伴星](./ai-and-companion.md)
+- [模型与 Worker 链路](./ai-and-companion.md)
+- [统一 Agent 运行时（技术）](./agent-runtime.md)
+- [伴星体验（产品设计）](./companion-experience.md)
 - [测试与质量](./testing-and-quality.md)
 - [运维](./operations.md)

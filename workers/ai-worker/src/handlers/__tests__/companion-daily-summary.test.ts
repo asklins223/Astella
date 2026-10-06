@@ -57,7 +57,7 @@ import {
   validateDiarySelection,
 } from "../companion-diary-candidates.ts";
 import { createDiaryCheckpointPort } from "../companion-diary-checkpoints.ts";
-import { COMPANION_VOICE_STYLE_LINES_V2 } from "@ailearn/shared";
+import { COMPANION_VOICE_STYLE_LINES_V2 } from "@astella/shared";
 import { sanitizePersonaField } from "../companion-dialogue-content.ts";
 import { AIConsentRequiredError, AIDataPolicyDeniedError, AIProviderNotConfiguredError } from "../../lib/governance.ts";
 import { DailyDiaryOutputError } from "../../lib/non-retryable-errors.ts";

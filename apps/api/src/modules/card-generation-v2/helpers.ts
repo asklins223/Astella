@@ -9,16 +9,16 @@ import {
   cardGenerationRunsV2,
   cardGenerationCandidatesV2,
   cardDomainEventsV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
-import { noteBlocks, notes } from "@ailearn/shared/db-schema/note";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
+import { noteBlocks, notes } from "@astella/shared/db-schema/note";
 import { visibleNotesCondition } from "../note/visibility.ts";
-import { cardGenerationRunStatusV2Schema, cardPlanResultV2Schema, isCandidateReviewReadyV2, type CandidateQualityStateV2, type PracticeItemFormV2 } from "@ailearn/shared/card-generation-v2-contracts";
+import { cardGenerationRunStatusV2Schema, cardPlanResultV2Schema, isCandidateReviewReadyV2, type CandidateQualityStateV2, type PracticeItemFormV2 } from "@astella/shared/card-generation-v2-contracts";
 import { projectCardGenerationRecoveryV1 } from "./desktop-projection.ts";
 import type {
   CardGenerationCandidateQualityIssueV1,
   CardGenerationProgressV1,
-} from "@ailearn/shared/card-generation-desktop-contracts";
+} from "@astella/shared/card-generation-desktop-contracts";
 // 2026-08-24（AI 设计审查 §4.4 第二批）：ServiceError 继承 shared 纯逻辑层的
 // CardGenerationPipelineErrorV2——seal/binding-plan 纯函数抛出 shared 类，
 // API 错误边界通过同一继承链识别 code/statusCode。
@@ -26,17 +26,17 @@ import {
   CardGenerationPipelineErrorV2,
   budgetedPlanObjectives,
   summarizePracticeQuotaV2,
-} from "@ailearn/shared/card-generation-v2-pipeline";
+} from "@astella/shared/card-generation-v2-pipeline";
 export { CardGenerationPipelineErrorV2 };
 
 // 2026-10-04：run 事件的写入、错误类与 `RunContext` 已下沉到制卡领域包
-// `@ailearn/card-generation`。这里 import 并**转出**它们，所以本模块原有的调用点
+// `@astella/card-generation`。这里 import 并**转出**它们，所以本模块原有的调用点
 // （激活/审核/揭示服务、创建事务、几十个测试）一行都不用改，而它们调到的仍然是
 // 领域包里那**同一个 class / 同一份写入实现**——不留第二份。
-import { CardGenerationV2ServiceError } from "@ailearn/card-generation";
+import { CardGenerationV2ServiceError } from "@astella/card-generation";
 export { CardGenerationV2ServiceError };
-export { insertEvent, insertEventBatch } from "@ailearn/card-generation";
-export type { RunContext } from "@ailearn/card-generation";
+export { insertEvent, insertEventBatch } from "@astella/card-generation";
+export type { RunContext } from "@astella/card-generation";
 
 export const NO_STORE = { "Cache-Control": "private, no-store" } as const;
 

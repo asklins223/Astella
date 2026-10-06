@@ -20,7 +20,7 @@ const backgrounds = {
 const toDataUrl = async (path) => `data:image/png;base64,${(await readFile(path)).toString('base64')}`
 
 await mkdir(outputRoot, { recursive: true })
-const userDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-review-data-concepts-'))
+const userDataDir = await mkdtemp(resolve(tmpdir(), 'astella-review-data-concepts-'))
 const electronApp = await electron.launch({
   args: ['.', '--lang=zh-CN', `--user-data-dir=${userDataDir}`],
   cwd: appRoot,

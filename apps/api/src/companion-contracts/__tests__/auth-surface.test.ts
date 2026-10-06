@@ -18,7 +18,7 @@ import { after, describe, it } from "node:test";
 import {
   canonicalSerializeAuthSurfacePayload,
   type AuthSurfaceManifestPayload,
-} from "@ailearn/shared";
+} from "@astella/shared";
 
 const SECRET_ENV = "AUTH_SURFACE_MANIFEST_SECRET";
 const savedSecret = process.env[SECRET_ENV];

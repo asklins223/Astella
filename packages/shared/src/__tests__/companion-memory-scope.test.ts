@@ -1,5 +1,5 @@
 /**
- * 跨空间作用范围判据（`@ailearn/shared/companion-memory-scope`）的契约用例。
+ * 跨空间作用范围判据（`@astella/shared/companion-memory-scope`）的契约用例。
  *
  * 42 阶段 1 E 把它从抽取器提到共享层：worker 决定"这条记忆落哪一档"用它，
  * API 写入端决定"这条记忆准不准以账号级存在"也用它。两边共用一份，理由是

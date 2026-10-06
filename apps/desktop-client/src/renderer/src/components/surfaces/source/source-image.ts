@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { sourceImageObjectKeyFromUrl } from "@ailearn/shared/source-image-contracts";
+import { sourceImageObjectKeyFromUrl } from "@astella/shared/source-image-contracts";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
 
 /**
  * 一张图片在渲染层可能的归宿。
  *
  * 来源解析把网页内嵌图片下载后写进对象存储，正文引用随之变成
- * `/api/uploads/{objectKey}`。渲染层跑在 `ailearn-app://` 下：这个相对路径会落到
+ * `/api/uploads/{objectKey}`。渲染层跑在 `astella-app://` 下：这个相对路径会落到
  * 应用包内（404），而回退保留的外链又会被渲染层 CSP（`img-src 'self' data: blob:`）
  * 拦掉。所以站内图片走 main 的字节通道取回，这里转成 blob URL 交给 `<img>`。
  * CSP 已经允许 `blob:`，不需要为它放宽任何策略。
@@ -39,9 +39,9 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
 }
 
 async function fetchSourceImageBlobUrl(objectKey: string, workspaceEpoch?: number): Promise<string | null> {
-  if (!window.ailearn) return null;
+  if (!window.astella) return null;
   try {
-    const result = unwrapGatewayResult(await window.ailearn.source.getImage({
+    const result = unwrapGatewayResult(await window.astella.source.getImage({
       meta: createRequestMeta(workspaceEpoch),
       request: { version: 1, objectKey },
     }));

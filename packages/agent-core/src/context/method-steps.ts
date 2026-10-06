@@ -1,4 +1,4 @@
-import type { AgentOperationStatusV1 } from "@ailearn/shared/agent-contracts";
+import type { AgentOperationStatusV1 } from "@astella/shared/agent-contracts";
 
 /**
  * 方案 44 §2（核对到的缺口）：「从已完成运行提议的方法主要按能力目录生成步骤」

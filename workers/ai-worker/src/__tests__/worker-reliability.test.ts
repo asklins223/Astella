@@ -207,7 +207,7 @@ test("production workers fail closed when the dedicated database role is missing
   );
   assert.equal(
     resolveWorkerDatabaseUrl({ NODE_ENV: "development", DATABASE_URL: "   " }),
-    "postgres://ailearn:ailearn_dev@postgres:5432/ailearn",
+    "postgres://astella:astella_dev@postgres:5432/astella",
   );
 });
 

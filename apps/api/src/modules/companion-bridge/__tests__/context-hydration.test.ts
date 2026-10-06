@@ -9,7 +9,7 @@ import {
   computeContextRevision,
   entityLookupKey,
 } from "../context-hydration.ts";
-import type { MainPageContextInputV2 } from "@ailearn/shared";
+import type { MainPageContextInputV2 } from "@astella/shared";
 
 const uuid = () => crypto.randomUUID();
 

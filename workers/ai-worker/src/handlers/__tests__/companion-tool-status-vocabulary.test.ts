@@ -43,7 +43,7 @@ import {
   companionAgentToolStatusSchema,
   companionToolReportedStatusSchema,
   resolveAllCompanionAgentTools,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import { VISION_EGRESS_DENIED_MESSAGE } from "../companion-read-tools.ts";
 
 test("每一档都由明确的条件产生，且两档新状态**不再落进 failed**", () => {

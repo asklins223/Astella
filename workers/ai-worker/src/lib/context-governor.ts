@@ -4,15 +4,15 @@ import {
   REGISTERED_FALLBACK_CONTEXT_WINDOW_TOKENS,
   CONSERVATIVE_DEFAULT_OUTPUT_TOKENS,
   type ContextTokenCountingPorts,
-} from "@ailearn/agent-core";
+} from "@astella/agent-core";
 import {
   contextPressureReceiptV1Schema,
   type ContextBudgetSnapshotV1,
   type ContextPressureDecisionV1,
   type ContextPressureReceiptV1,
   type ContextRequestMeasurementV1,
-} from "@ailearn/shared/context-budget-contracts";
-import { DomainError, type ProviderCapability } from "@ailearn/shared";
+} from "@astella/shared/context-budget-contracts";
+import { DomainError, type ProviderCapability } from "@astella/shared";
 import { logger } from "./logger.ts";
 import type { AIProvider } from "./ai-provider.ts";
 

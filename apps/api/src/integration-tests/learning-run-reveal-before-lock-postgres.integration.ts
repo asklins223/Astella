@@ -34,7 +34,7 @@ if (!CONN) {
 }
 const sql = postgres(CONN, { max: 4 });
 
-const { hashCanonicalV2 } = await import("@ailearn/shared/hash-canonical-v2");
+const { hashCanonicalV2 } = await import("@astella/shared/hash-canonical-v2");
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
 const { submitArtifact, getRunPublicView } = await import("../modules/learning-runs/run-service.ts");
 const tickModule = await import("../modules/learning-runs/processing/run-processing-tick.ts");

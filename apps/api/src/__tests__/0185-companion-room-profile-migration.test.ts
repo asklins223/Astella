@@ -104,17 +104,17 @@ test("0185 forces workspace and user RLS for API and worker roles", () => {
   assert.match(migration, /FORCE ROW LEVEL SECURITY/);
   assert.match(migration, /workspace_id = NULLIF\(current_setting\('app\.workspace_id', true\), ''\)::uuid/);
   assert.match(migration, /user_id = NULLIF\(current_setting\('app\.user_id', true\), ''\)::uuid/);
-  assert.doesNotMatch(migration, /CURRENT_USER = 'ailearn_worker'/);
+  assert.doesNotMatch(migration, /CURRENT_USER = 'astella_worker'/);
   assert.match(
     migration,
-    /GRANT SELECT, INSERT, UPDATE, DELETE ON public\.companion_room_profiles TO ailearn_api/,
+    /GRANT SELECT, INSERT, UPDATE, DELETE ON public\.companion_room_profiles TO astella_api/,
   );
   assert.match(
     migration,
-    /GRANT SELECT ON public\.companion_room_profiles TO ailearn_worker/,
+    /GRANT SELECT ON public\.companion_room_profiles TO astella_worker/,
   );
   assert.doesNotMatch(
     migration,
-    /GRANT[^;]*(?:INSERT|UPDATE|DELETE)[^;]*TO ailearn_worker/,
+    /GRANT[^;]*(?:INSERT|UPDATE|DELETE)[^;]*TO astella_worker/,
   );
 });

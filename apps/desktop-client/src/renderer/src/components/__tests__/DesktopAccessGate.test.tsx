@@ -17,12 +17,12 @@ import {
   desktopContractSnapshotSchema,
   runtimeSnapshotSchema,
   sessionContextSchema,
-  type AILearnDesktopApiM2,
+  type AstellaDesktopApiM2,
   type GatewayEventV1,
   type GatewayResultV1,
   type SessionContextV1,
   type SubscriptionTopicM2,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { publishGateInvalidation } from "../../app/gate-invalidation.ts";
 import { useRoomStore } from "../../app/room-store.ts";
@@ -46,7 +46,7 @@ const contract = desktopContractSnapshotSchema.parse({
 const runtimeSnapshot = runtimeSnapshotSchema.parse({
   version: 1,
   contractVersion: DESKTOP_IPC_CONTRACT_VERSION,
-  appId: "ailearn-desktop",
+  appId: "astella-desktop",
   appVersion: "0.0.0-test",
   platform: "darwin",
   windowState: { version: 1, state: "visible", revision: 1 },
@@ -170,7 +170,7 @@ function installApi(options: { hangSession?: boolean } = {}): Harness {
       unsubscribe: vi.fn(async () => ok({ closed: true })),
     },
   };
-  Object.defineProperty(window, "ailearn", { configurable: true, value: api as unknown as AILearnDesktopApiM2 });
+  Object.defineProperty(window, "astella", { configurable: true, value: api as unknown as AstellaDesktopApiM2 });
 
   return {
     getState,
@@ -218,7 +218,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   Reflect.deleteProperty(window, "matchMedia");
   useRoomStore.setState({ surface: null });
 });

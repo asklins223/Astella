@@ -1,7 +1,7 @@
 -- 0271（2026-09-22 性能重扫 L6）：让"重新变为可领取"的 job 也叫醒 worker。
 --
--- 0115 建的 `ailearn_jobs_insert_notify` 只挂在 **AFTER INSERT** 上。重试路径
--- （`ailearn_fail_job`：status→pending 并写 `scheduled_at = failed_at + backoff`）和
+-- 0115 建的 `astella_jobs_insert_notify` 只挂在 **AFTER INSERT** 上。重试路径
+-- （`astella_fail_job`：status→pending 并写 `scheduled_at = failed_at + backoff`）和
 -- reaper 回收（running→pending）都是 **UPDATE**，因此一条都不会发通知。worker 侧
 -- 空闲轮询已经按 500ms→5s 自适应退到最慢档，于是"到点该重试的 job"平均要多等
 -- 半个轮询周期（最坏 4.5 秒）才被领走——0031 那次把第一次重试的退避从 10s 降到 2s
@@ -18,7 +18,7 @@
 -- 通知当唤醒信号、不解析 payload，所以键名保持兼容即可。
 -- 不新增函数、不新增授权：`infra/postgres/roles.sql` 的 worker EXECUTE 断言不受影响。
 
-CREATE OR REPLACE FUNCTION public.ailearn_job_insert_notify()
+CREATE OR REPLACE FUNCTION public.astella_job_insert_notify()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -29,7 +29,7 @@ BEGIN
   END IF;
 
   PERFORM pg_notify(
-    'ailearn_job_events',
+    'astella_job_events',
     json_build_object(
       'workspaceId', NEW.workspace_id::text,
       -- 0200 已删除 generation_run_id；队列的 run 归属现在只存在于 payload。
@@ -44,10 +44,10 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS ailearn_jobs_insert_notify ON public.jobs;
-CREATE TRIGGER ailearn_jobs_insert_notify
+DROP TRIGGER IF EXISTS astella_jobs_insert_notify ON public.jobs;
+CREATE TRIGGER astella_jobs_insert_notify
   AFTER INSERT OR UPDATE OF status ON public.jobs
   FOR EACH ROW
-  EXECUTE FUNCTION public.ailearn_job_insert_notify();
+  EXECUTE FUNCTION public.astella_job_insert_notify();
 
-ALTER FUNCTION public.ailearn_job_insert_notify() OWNER TO ailearn_migrator;
+ALTER FUNCTION public.astella_job_insert_notify() OWNER TO astella_migrator;

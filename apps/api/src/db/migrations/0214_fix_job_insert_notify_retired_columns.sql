@@ -1,7 +1,7 @@
 -- 0214: 修复 jobs AFTER INSERT 通知触发器对已删除列的引用。
 --
 -- 0200 从 public.jobs 删除了 generation_run_id / generation_unit_id / stage 等
--- 退役列，但 0115 建立的 ailearn_job_insert_notify() 仍引用
+-- 退役列，但 0115 建立的 astella_job_insert_notify() 仍引用
 -- NEW.generation_run_id。PL/pgSQL 在**运行时**解析 NEW.<field>，因此 0200 之后
 -- 每一次 INSERT INTO jobs 都直接失败：
 --   ERROR: record "new" has no field "generation_run_id"
@@ -15,13 +15,13 @@
 -- 必须放在 0200 之后（前向迁移）：全新数据库按序执行时同样会经过 0200 删列，
 -- 因此只有在其后重建函数才能同时修好新库与既有库。
 
-CREATE OR REPLACE FUNCTION public.ailearn_job_insert_notify()
+CREATE OR REPLACE FUNCTION public.astella_job_insert_notify()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
   PERFORM pg_notify(
-    'ailearn_job_events',
+    'astella_job_events',
     json_build_object(
       'workspaceId', NEW.workspace_id::text,
       -- 0200 已删除 generation_run_id；队列的 run 归属现在只存在于 payload。
@@ -36,10 +36,10 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS ailearn_jobs_insert_notify ON public.jobs;
-CREATE TRIGGER ailearn_jobs_insert_notify
+DROP TRIGGER IF EXISTS astella_jobs_insert_notify ON public.jobs;
+CREATE TRIGGER astella_jobs_insert_notify
   AFTER INSERT ON public.jobs
   FOR EACH ROW
-  EXECUTE FUNCTION public.ailearn_job_insert_notify();
+  EXECUTE FUNCTION public.astella_job_insert_notify();
 
-ALTER FUNCTION public.ailearn_job_insert_notify() OWNER TO ailearn_migrator;
+ALTER FUNCTION public.astella_job_insert_notify() OWNER TO astella_migrator;

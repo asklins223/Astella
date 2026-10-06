@@ -42,7 +42,7 @@ if (/['";]/.test(NOTE_HINT)) {
 }
 
 const sql = (statement: string): string => execFileSync(
-  'docker', ['exec', 'ailearn-dev-postgres-1', 'psql', '-U', 'ailearn', '-d', 'ailearn', '-tAc', statement],
+  'docker', ['exec', 'astella-dev-postgres-1', 'psql', '-U', 'astella', '-d', 'astella', '-tAc', statement],
   { encoding: 'utf8' },
 ).trim()
 
@@ -56,7 +56,7 @@ const check = (name: string, ok: boolean, detail: unknown = ''): void => {
 function busyLoopArtifact(): string {
   return `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>忙等产物</title>
 <style>body{font:14px/1.6 system-ui;margin:16px}</style></head>
-<body><div id="ailearn-artifact-root"><h1>忙等</h1><p>这一份产物的脚本会占死自己的线程。</p></div>
+<body><div id="astella-artifact-root"><h1>忙等</h1><p>这一份产物的脚本会占死自己的线程。</p></div>
 <script>
 // 这一行**故意**不设上限：宿主的心跳看门狗是这段脚本唯一的出路（D4 §7.2 T6 第一条）。
 while (true) {}
@@ -67,7 +67,7 @@ while (true) {}
 function crashAfterReadyArtifact(): string {
   return `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>崩溃产物</title>
 <style>body{font:14px/1.6 system-ui;margin:16px}</style></head>
-<body><div id="ailearn-artifact-root"><h1>先报到再崩</h1><p>先发 ready 与两拍心跳，然后把线程占死。</p></div>
+<body><div id="astella-artifact-root"><h1>先报到再崩</h1><p>先发 ready 与两拍心跳，然后把线程占死。</p></div>
 <script>
 const post = (message) => { try { parent.postMessage(message, '*') } catch (error) { void error } }
 post({ kind: 'artifact', version: 1, phase: 'ready', stepCount: 3 })
@@ -134,13 +134,13 @@ function wipe(seeded: Seeded): void {
     COMMIT;`)
 }
 
-const userDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-t6-probe-'))
+const userDataDir = await mkdtemp(resolve(tmpdir(), 'astella-t6-probe-'))
 const app = await electron.launch({
   args: ['.', '--lang=zh-CN', `--user-data-dir=${userDataDir}`],
   cwd: appRoot,
   executablePath,
   // 两道闸的计数（请求闸／导航闸）由主进程在探针模式下挂出来——§7.3 第三层要读它们。
-  env: { ...process.env, AILEARN_ISOLATION_PROBE: '1' },
+  env: { ...process.env, ASTELLA_ISOLATION_PROBE: '1' },
 })
 
 let seeded: Seeded | null = null
@@ -253,7 +253,7 @@ try {
   const frameGone = (await page.locator('.notebook-round-teaching__artifact iframe').count()) === 0
   check('§7.3 降级之后界面上不再有产物 frame', frameGone)
   const counters = await app.evaluate(() => {
-    const value = (globalThis as Record<string, unknown>).__ailearnIsolationProbe as
+    const value = (globalThis as Record<string, unknown>).__astellaIsolationProbe as
       | { blockedRequests: number; blockedNavigations: number }
       | undefined
     return value ?? null

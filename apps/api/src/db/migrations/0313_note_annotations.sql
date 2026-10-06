@@ -70,5 +70,5 @@ END; $$ LANGUAGE plpgsql;
 CREATE TRIGGER note_annotations_update_guard BEFORE UPDATE ON public.note_annotations
   FOR EACH ROW EXECUTE FUNCTION public.guard_note_annotation_update();
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.note_annotations TO ailearn_api;
-GRANT ALL PRIVILEGES ON public.note_annotations TO ailearn_migrator;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.note_annotations TO astella_api;
+GRANT ALL PRIVILEGES ON public.note_annotations TO astella_migrator;

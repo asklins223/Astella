@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DomainError } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
 import {
   asDomainError,
   buildCompanionErrorBody,

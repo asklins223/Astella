@@ -13,7 +13,7 @@ import {
   isTtsVoiceAllowed,
   TTS_ENGINE_VALUES,
   type TtsEngineV1,
-} from "@ailearn/shared/tts-voice-catalog";
+} from "@astella/shared/tts-voice-catalog";
 import type { TtsEngineConfig } from "./tts-config.ts";
 
 /** 库里存的原样（未校验）；两键都缺 = 用户没设过。 */

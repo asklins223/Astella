@@ -112,14 +112,14 @@ BEGIN
       CREATE POLICY %I_workspace_user_isolation
         ON public.%I AS PERMISSIVE FOR ALL
         USING (
-          CURRENT_USER = 'ailearn_worker'
+          CURRENT_USER = 'astella_worker'
           OR (
             workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
             AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
           )
         )
         WITH CHECK (
-          CURRENT_USER = 'ailearn_worker'
+          CURRENT_USER = 'astella_worker'
           OR (
             workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
             AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -131,9 +131,9 @@ END $$;
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.understanding_projection_checkpoints TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.understanding_change_sets TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.understanding_route_plans TO ailearn_api;
-GRANT SELECT ON public.understanding_projection_checkpoints TO ailearn_worker;
-GRANT SELECT ON public.understanding_change_sets TO ailearn_worker;
-GRANT SELECT ON public.understanding_route_plans TO ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.understanding_projection_checkpoints TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.understanding_change_sets TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.understanding_route_plans TO astella_api;
+GRANT SELECT ON public.understanding_projection_checkpoints TO astella_worker;
+GRANT SELECT ON public.understanding_change_sets TO astella_worker;
+GRANT SELECT ON public.understanding_route_plans TO astella_worker;

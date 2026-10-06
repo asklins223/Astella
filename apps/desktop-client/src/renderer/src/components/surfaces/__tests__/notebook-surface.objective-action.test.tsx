@@ -4,9 +4,9 @@ import { noteDocResult, seedUpdate, seedBlocksUpdate } from "../../../test-suppo
 import { ROUND_COPY, roundPracticeStateLabelV1 } from "../notebook/notebook-round-copy.ts";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { objectiveListItemV3Schema, type ObjectiveListItemV3 } from "@ailearn/shared/learning-objective-surface-contracts";
-import type { NoteBlockProjectionV1 } from "@ailearn/shared/note-projection-contracts";
-import type { RoundNextStepV1 } from "@ailearn/shared/note-learning-round-contracts";
+import { objectiveListItemV3Schema, type ObjectiveListItemV3 } from "@astella/shared/learning-objective-surface-contracts";
+import type { NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
+import type { RoundNextStepV1 } from "@astella/shared/note-learning-round-contracts";
 import { NotebookSurface } from "../notebook/notebook-surface.tsx";
 import { ROUND_PRESETS_V1, STRUCTURE_QUESTION_LABEL_MAX_V1, STRUCTURE_QUESTION_LIMIT_V1, notebookReadingSectionsV1, structureQuestionCandidatesV1 } from "../notebook/notebook-surface.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
@@ -400,12 +400,12 @@ function installApi(
         : ok({ savedAt: "2026-09-25T00:00:00.000Z" }))),
     },
   };
-  Object.defineProperty(window, "ailearn", {
+  Object.defineProperty(window, "astella", {
     configurable: true,
     value: {
       ...api,
       // 这四法挂在桥对象上，**不能**塞进下面那个 `note:` 键里——上一轮就是被它整个盖掉过
-      // （`window.ailearn.note.save` 变 undefined，症状与"字没交出去"完全同形）。
+      // （`window.astella.note.save` 变 undefined，症状与"字没交出去"完全同形）。
       noteLearningRound: api.noteLearningRound,
       artifact: api.artifact,
       contract: { enabledRoutes: ["note.detail"] },
@@ -415,7 +415,7 @@ function installApi(
       },
       note: {
         // `api.note` 必须先摊开：这一整个 `note` 键会盖掉上面 `...api` 里那份，
-        // 于是 `window.ailearn.note.save` 变成 undefined。真窗口里这一发是「手动定版」
+        // 于是 `window.astella.note.save` 变成 undefined。真窗口里这一发是「手动定版」
         // 的唯一通道，盖掉它的下场是 `save("manual")` 抛 `not a function`、被 catch 咽成
         // 「保存失败」，读起来跟"字没交出去"一模一样——那两条挂起的用例卡的正是这里。
         ...api.note,
@@ -591,7 +591,7 @@ async function show(
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   useRoomStore.setState({ activeNoteRef: null, invoke: undefined, surface: null, activeRunId: null, activeObjectiveId: null });
 });
 

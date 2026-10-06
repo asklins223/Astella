@@ -19,4 +19,4 @@ CREATE INDEX IF NOT EXISTS key_point_prerequisites_kp_idx
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT ON public.key_point_prerequisites TO ailearn_api;
+GRANT SELECT, INSERT ON public.key_point_prerequisites TO astella_api;

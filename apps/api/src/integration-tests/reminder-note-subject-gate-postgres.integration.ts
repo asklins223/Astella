@@ -3,7 +3,7 @@
  *
  * §16.13 的验收有一半是"共享撤销后，**通知**和历史不泄露受保护内容"。这一份钉的就是
  * 那一半：迁移 0299 之前，`companion_reminders` 只有 `text` 一列，
- * `ailearn_fire_due_companion_reminders` 只按"账号开关／离线／空间静音"三道闸放行，
+ * `astella_fire_due_companion_reminders` 只按"账号开关／离线／空间静音"三道闸放行，
  * 于是**没有任何一处能知道一条提醒是在说哪篇笔记**——共享撤回之后，那句
  * "提醒你看《数据库索引优化策略》第 3 节"照样到点弹出来，篇名就在正文里。
  *
@@ -47,7 +47,7 @@ async function scheduleReminder(text: string, noteId: string | null): Promise<st
 }
 
 async function fireOnce(): Promise<number> {
-  const rows = await sql`SELECT public.ailearn_fire_due_companion_reminders(50) AS fired`;
+  const rows = await sql`SELECT public.astella_fire_due_companion_reminders(50) AS fired`;
   return Number(rows[0].fired ?? 0);
 }
 

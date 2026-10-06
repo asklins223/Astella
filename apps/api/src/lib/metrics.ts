@@ -58,7 +58,7 @@ export const HTTP_STATUS_CLASSES = ["2xx", "3xx", "4xx", "5xx"] as const;
  * Job type allowlist — 对应 HANDLERS 注册表。
  * BUG-74/QUAL-60/QUAL-72 修复：从 JobType 枚举派生，避免硬编码与 schema 不同步。
  */
-import { JobType as _JobType } from "@ailearn/shared";
+import { JobType as _JobType } from "@astella/shared";
 export const JOB_TYPES = Object.values(_JobType) as readonly string[];
 
 /**
@@ -106,7 +106,7 @@ export const FUNNEL_EVENTS = [
 
 /** HTTP 请求总量计数器 */
 export const httpRequestsTotal = new Counter({
-  name: "ailearn_http_requests_total",
+  name: "astella_http_requests_total",
   help: "Total HTTP requests by method, route template, and status class",
   labelNames: ["method", "route", "status_class"] as const,
   registers: [registry],
@@ -114,7 +114,7 @@ export const httpRequestsTotal = new Counter({
 
 /** HTTP 请求延迟直方图（秒）— 用于 p95 计算 */
 export const httpRequestDurationSeconds = new Histogram({
-  name: "ailearn_http_request_duration_seconds",
+  name: "astella_http_request_duration_seconds",
   help: "HTTP request duration in seconds by method and route template",
   labelNames: ["method", "route"] as const,
   buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
@@ -123,7 +123,7 @@ export const httpRequestDurationSeconds = new Histogram({
 
 /** HTTP 5xx 错误计数器 */
 export const httpErrors5xxTotal = new Counter({
-  name: "ailearn_http_errors_5xx_total",
+  name: "astella_http_errors_5xx_total",
   help: "Total HTTP 5xx responses by method and route template",
   labelNames: ["method", "route"] as const,
   registers: [registry],
@@ -131,7 +131,7 @@ export const httpErrors5xxTotal = new Counter({
 
 /** Readiness 状态 gauge（1=ready, 0=not ready） */
 export const readinessStatus = new Gauge({
-  name: "ailearn_readiness_status",
+  name: "astella_readiness_status",
   help: "API readiness status (1=ready, 0=not ready)",
   registers: [registry],
 });
@@ -160,12 +160,12 @@ export const readinessStatus = new Gauge({
  * 从 db-schema 派生而不是硬编码，与上面 JOB_TYPES 同一个理由：枚举加了命令而
  * allowlist 没跟上，标签就会静默分裂成两格。
  */
-import { LearningRunProcessingCommand as _LearningRunProcessingCommand } from "@ailearn/shared/db-schema/learning-runs";
+import { LearningRunProcessingCommand as _LearningRunProcessingCommand } from "@astella/shared/db-schema/learning-runs";
 import {
   COMPANION_SUMMARY_TOTAL_DEF,
   COMPANION_MEMORY_USED_COUNT_DEF,
   COMPANION_MEMORY_RETRIEVAL_MODE_TOTAL_DEF,
-} from "@ailearn/shared/metrics-definitions";
+} from "@astella/shared/metrics-definitions";
 export const LEARNING_RUN_PROCESSING_COMMAND_TYPES = Object.values(
   _LearningRunProcessingCommand,
 ) as readonly string[];
@@ -211,7 +211,7 @@ export const MAINTENANCE_TARGETS = [
  * = 评估已出但 canonical 结算没落地——两者的处置完全不同，所以必须分格。
  */
 export const learningRunProcessingOutboxDepth = new Gauge({
-  name: "ailearn_learning_run_processing_outbox_depth",
+  name: "astella_learning_run_processing_outbox_depth",
   help: "Unprocessed rows in learning_run_processing_outbox by command type",
   labelNames: ["command_type"] as const,
   registers: [registry],
@@ -225,7 +225,7 @@ export const learningRunProcessingOutboxDepth = new Gauge({
  * 告警必须建在它上面而不是 depth 上。
  */
 export const learningRunProcessingOutboxOldestPendingAgeSeconds = new Gauge({
-  name: "ailearn_learning_run_processing_outbox_oldest_pending_age_seconds",
+  name: "astella_learning_run_processing_outbox_oldest_pending_age_seconds",
   help: "Age of the oldest unprocessed learning_run_processing_outbox row by command type",
   labelNames: ["command_type"] as const,
   registers: [registry],
@@ -236,7 +236,7 @@ export const learningRunProcessingOutboxOldestPendingAgeSeconds = new Gauge({
  * 桶上界到 60s：批内是严格串行的，一条 Critic HTTP（数十秒）就把这一轮拉长。
  */
 export const learningRunProcessingTickDurationSeconds = new Histogram({
-  name: "ailearn_learning_run_processing_tick_duration_seconds",
+  name: "astella_learning_run_processing_tick_duration_seconds",
   help: "runLearningRunProcessingTick duration in seconds",
   buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60],
   registers: [registry],
@@ -244,7 +244,7 @@ export const learningRunProcessingTickDurationSeconds = new Histogram({
 
 /** tick 处理命令条数计数器（command_type × 终态）。 */
 export const learningRunProcessingCommandsTotal = new Counter({
-  name: "ailearn_learning_run_processing_commands_total",
+  name: "astella_learning_run_processing_commands_total",
   help: "Learning run processing commands handled by command type and outcome",
   labelNames: ["command_type", "outcome"] as const,
   registers: [registry],
@@ -255,7 +255,7 @@ export const learningRunProcessingCommandsTotal = new Counter({
  * fail-closed 率 = `rate(...{outcome="fail_closed"}[5m]) / rate(...[5m])`。
  */
 export const learningRunCriticCallsTotal = new Counter({
-  name: "ailearn_learning_run_critic_calls_total",
+  name: "astella_learning_run_critic_calls_total",
   help: "Learning run critic (model scoring) calls by terminal outcome",
   labelNames: ["outcome"] as const,
   registers: [registry],
@@ -263,7 +263,7 @@ export const learningRunCriticCallsTotal = new Counter({
 
 /** Critic 调用耗时直方图（秒）——含 provider 网络时间，是判"模型慢"与"我们慢"的唯一依据。 */
 export const learningRunCriticDurationSeconds = new Histogram({
-  name: "ailearn_learning_run_critic_duration_seconds",
+  name: "astella_learning_run_critic_duration_seconds",
   help: "Learning run critic call duration in seconds by outcome",
   labelNames: ["outcome"] as const,
   buckets: [1, 2.5, 5, 10, 20, 30, 60, 120],
@@ -272,7 +272,7 @@ export const learningRunCriticDurationSeconds = new Histogram({
 
 /** Critic fail-closed 次数（按原因码）——fail-closed 的分子，并回答"是哪一类卡住"。 */
 export const learningRunCriticFailClosedTotal = new Counter({
-  name: "ailearn_learning_run_critic_fail_closed_total",
+  name: "astella_learning_run_critic_fail_closed_total",
   help: "Learning run critic fail-closed settlements by reason code",
   labelNames: ["reason_code"] as const,
   registers: [registry],
@@ -280,7 +280,7 @@ export const learningRunCriticFailClosedTotal = new Counter({
 
 /** 维护类任务处理行数（TTL 清理/墓碑化、笔记软删物理清除、session 过期删除）。 */
 export const maintenanceRowsPurgedTotal = new Counter({
-  name: "ailearn_maintenance_rows_purged_total",
+  name: "astella_maintenance_rows_purged_total",
   help: "Rows purged or tombstoned by maintenance task (companion TTL, soft-deleted notes, expired sessions)",
   labelNames: ["kind"] as const,
   registers: [registry],
@@ -290,7 +290,7 @@ export const maintenanceRowsPurgedTotal = new Counter({
 
 /** 数据库迁移版本 gauge */
 export const dbMigrationVersion = new Gauge({
-  name: "ailearn_db_migration_version",
+  name: "astella_db_migration_version",
   help: "Latest applied database migration version",
   registers: [registry],
 });
@@ -298,19 +298,19 @@ export const dbMigrationVersion = new Gauge({
 /**
  * 本进程连接池的活跃连接数 gauge（2026-10-03 修正口径）。
  *
- * 此前这个 gauge 叫 `ailearn_db_pool_active_connections`、help 写的是
+ * 此前这个 gauge 叫 `astella_db_pool_active_connections`、help 写的是
  * "Active database connections in the pool"，取数却是一条
  * `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()`
  * ——那是**全库所有进程**的连接数，API 和 worker 挤在同一个数字里。
  * 实测压测全程它显示 13 而真实池占用是 26/25，且 30 秒才刷一次，
  * 5~6 秒的一轮压测根本读不到变化。
  *
- * 现在取数按 `application_name = 'ailearn_api'` 过滤（见 db/client.ts 里给连接池
+ * 现在取数按 `application_name = 'astella_api'` 过滤（见 db/client.ts 里给连接池
  * 配的 application_name），并由 dbGaugeTimer 每 5 秒刷新一次，所以"池打满"
  * 这件事第一次是可观测的。
  */
 export const dbPoolActiveConnections = new Gauge({
-  name: "ailearn_db_pool_active_connections",
+  name: "astella_db_pool_active_connections",
   help: "Active (non-idle) database connections in this process's pool",
   registers: [registry],
 });
@@ -319,12 +319,12 @@ export const dbPoolActiveConnections = new Gauge({
  * 本进程连接池上限（静态值，来自 postgres.js 的 max）。
  *
  * 存在的唯一理由：饱和度是个比值，没有分母就没法告警。
- * 配对使用：`ailearn_db_pool_active_connections / ailearn_db_pool_max_connections`
+ * 配对使用：`astella_db_pool_active_connections / astella_db_pool_max_connections`
  * 持续 ≥ 1 就是池在排队（postgres.js 不公开"等待中的请求数"，这个比值是
  * 目前唯一可靠的排队信号）。
  */
 export const dbPoolMaxConnections = new Gauge({
-  name: "ailearn_db_pool_max_connections",
+  name: "astella_db_pool_max_connections",
   help: "Configured maximum database connections for this process's pool",
   registers: [registry],
 });
@@ -338,13 +338,13 @@ export const dbPoolMaxConnections = new Gauge({
  * 只有个位数。
  */
 export const dbServerConnectionsTotal = new Gauge({
-  name: "ailearn_db_server_connections",
+  name: "astella_db_server_connections",
   help: "Total server-side connections to this database across all processes",
   registers: [registry],
 });
 
 /** 数据库事务失败计数器 */export const dbTransactionFailuresTotal = new Counter({
-  name: "ailearn_db_transaction_failures_total",
+  name: "astella_db_transaction_failures_total",
   help: "Total database transaction failures",
   registers: [registry],
 });
@@ -357,7 +357,7 @@ export const dbServerConnectionsTotal = new Gauge({
  * 连接泄漏的信号，而这个量此前完全不可观测——上限也只是代码里的常量。
  */
 export const sseActiveStreams = new Gauge({
-  name: "ailearn_sse_active_streams",
+  name: "astella_sse_active_streams",
   help: "Currently open server-sent event streams in this process",
   labelNames: ["namespace"] as const,
   registers: [registry],
@@ -365,7 +365,7 @@ export const sseActiveStreams = new Gauge({
 
 /** 因超过并发上限而被拒绝的 SSE 连接数（2026-10-03）。 */
 export const sseRejectedTotal = new Counter({
-  name: "ailearn_sse_rejected_total",
+  name: "astella_sse_rejected_total",
   help: "SSE stream connections rejected because a concurrency limit was reached",
   labelNames: ["namespace", "reason"] as const,
   registers: [registry],
@@ -373,7 +373,7 @@ export const sseRejectedTotal = new Counter({
 
 /** RLS 拒绝计数器 */
 export const dbRlsDeniedTotal = new Counter({
-  name: "ailearn_db_rls_denied_total",
+  name: "astella_db_rls_denied_total",
   help: "Total RLS policy denials",
   registers: [registry],
 });
@@ -382,7 +382,7 @@ export const dbRlsDeniedTotal = new Counter({
 
 /** Alpha 漏斗事件计数器 */
 export const funnelEventsTotal = new Counter({
-  name: "ailearn_funnel_events_total",
+  name: "astella_funnel_events_total",
   help: "Alpha funnel events by event type",
   labelNames: ["event"] as const,
   registers: [registry],
@@ -395,7 +395,7 @@ export const funnelEventsTotal = new Counter({
  * 分桶覆盖冷/热路径；label lifecycle 区分 active/archived 查询成本差异。
  */
 export const surfaceQueryDurationSeconds = new Histogram({
-  name: "ailearn_surface_query_duration_seconds",
+  name: "astella_surface_query_duration_seconds",
   help: "assembleObjectiveSurfaceV3 + listObjectiveSurfacesV3 latency by query type",
   labelNames: ["query_type"] as const,
   buckets: [0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
@@ -407,7 +407,7 @@ export const surfaceQueryDurationSeconds = new Histogram({
  * 表示前端/服务端态不一致（应有 primaryFocus 时却返回空首页）。
  */
 export const dashboardEmptyWithActiveObjectivesTotal = new Counter({
-  name: "ailearn_dashboard_empty_with_active_objectives_total",
+  name: "astella_dashboard_empty_with_active_objectives_total",
   help: "Dashboard home returned empty mode (first_use/notes_without) while learning_objectives_v2 had active rows",
   registers: [registry],
 });
@@ -417,7 +417,7 @@ export const dashboardEmptyWithActiveObjectivesTotal = new Counter({
  * 含 counts + listObjectiveSurfacesV3 全流程；慢请求（>1s）需告警。
  */
 export const dashboardBuildDurationSeconds = new Histogram({
-  name: "ailearn_dashboard_build_duration_seconds",
+  name: "astella_dashboard_build_duration_seconds",
   help: "buildLearningDashboardV2 E2E latency",
   buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
   registers: [registry],
@@ -428,7 +428,7 @@ export const dashboardBuildDurationSeconds = new Histogram({
  * 当 surface 装配耗时超过 1s 阈值时递增；label query_type 区分 detail/list。
  */
 export const surfaceSlowQueryTotal = new Counter({
-  name: "ailearn_surface_slow_query_total",
+  name: "astella_surface_slow_query_total",
   help: "Surface assembly queries exceeding 1s threshold",
   labelNames: ["query_type"] as const,
   registers: [registry],
@@ -463,7 +463,7 @@ export const companionMemoryUsedCount = new Histogram({
  * 记忆候选生命周期计数器（created / confirmed / rejected / deleted）。
  */
 export const companionMemoryCandidateTotal = new Counter({
-  name: "ailearn_companion_memory_candidate_total",
+  name: "astella_companion_memory_candidate_total",
   help: "Companion memory candidate lifecycle events",
   labelNames: ["event"] as const,
   registers: [registry],
@@ -483,7 +483,7 @@ export const companionSummaryTotal = new Counter({
  * 桌宠人格变更计数器。
  */
 export const companionPetProfileChangedTotal = new Counter({
-  name: "ailearn_companion_pet_profile_changed_total",
+  name: "astella_companion_pet_profile_changed_total",
   help: "Companion pet profile changes",
   registers: [registry],
 });
@@ -492,7 +492,7 @@ export const companionPetProfileChangedTotal = new Counter({
 
 /** Release 信息 gauge（固定值，用于 Prometheus label 关联） */
 export const releaseInfo = new Gauge({
-  name: "ailearn_release_info",
+  name: "astella_release_info",
   help: "Release metadata: version, commit, migration count",
   labelNames: ["version", "commit", "migrations"] as const,
   registers: [registry],

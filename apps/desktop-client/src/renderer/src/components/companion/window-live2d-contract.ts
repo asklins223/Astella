@@ -1,7 +1,7 @@
 import type {
   CharacterCueIntentV1,
   CharacterPresentationStateV1,
-} from "@ailearn/shared/companion-character-contracts";
+} from "@astella/shared/companion-character-contracts";
 import {
   LIVE2D_NEUTRAL_FACS_PARAMETERS,
   parameterRequestsForLive2DEmotion,
@@ -68,7 +68,7 @@ function toolAttentionBodyAngleOffset(atMs: number | undefined, nowMs: number): 
 /**
  * Renderer-local asset paths shared by every form. They intentionally stay
  * relative to `document.baseURI`, so the same build works under Vite's dev
- * origin and the packaged `ailearn-app://bundle/` protocol without reaching
+ * origin and the packaged `astella-app://bundle/` protocol without reaching
  * outside the app.
  *
  * 只放**所有形态共用**的运行时：模型自身的 manifest / model3 路径由

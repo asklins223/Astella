@@ -15,9 +15,9 @@ import type {
   AssistantContextSnapshotV2,
   EntityRefV2,
   MainPageContextInputV2,
-} from "@ailearn/shared";
-import { computeContextRevisionV2 } from "@ailearn/shared/companion-bridge-revision";
-import { DomainError } from "@ailearn/shared";
+} from "@astella/shared";
+import { computeContextRevisionV2 } from "@astella/shared/companion-bridge-revision";
+import { DomainError } from "@astella/shared";
 
 export { computeContextRevisionV2 };
 

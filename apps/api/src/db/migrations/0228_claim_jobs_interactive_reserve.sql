@@ -25,10 +25,10 @@
 
 --> statement-breakpoint
 
-DROP FUNCTION IF EXISTS public.ailearn_claim_jobs(integer, integer);
+DROP FUNCTION IF EXISTS public.astella_claim_jobs(integer, integer);
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_claim_jobs(
+CREATE OR REPLACE FUNCTION public.astella_claim_jobs(
   p_limit integer,
   p_background_limit integer,
   p_max_attempts integer
@@ -155,24 +155,24 @@ AS $function$
 $function$;
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_claim_jobs(integer, integer, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_claim_jobs(integer, integer, integer) FROM PUBLIC;
 --> statement-breakpoint
 
 -- 授权与 roles.sql 的队列入口矩阵一致：worker 可执行、api 不可执行。
 -- 带存在性守卫：本迁移可能先于 roles.sql 在部分环境（测试库）执行。
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
-    GRANT EXECUTE ON FUNCTION public.ailearn_claim_jobs(integer, integer, integer)
-      TO ailearn_worker;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
+    GRANT EXECUTE ON FUNCTION public.astella_claim_jobs(integer, integer, integer)
+      TO astella_worker;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
-    REVOKE ALL ON FUNCTION public.ailearn_claim_jobs(integer, integer, integer)
-      FROM ailearn_api;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
+    REVOKE ALL ON FUNCTION public.astella_claim_jobs(integer, integer, integer)
+      FROM astella_api;
   END IF;
 END
 $$;
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_claim_jobs(integer, integer, integer) IS
+COMMENT ON FUNCTION public.astella_claim_jobs(integer, integer, integer) IS
   'SEC-01 controlled cross-workspace Worker claim path; p_background_limit reserves the interactive_ai lane (see 0228)';

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { companionContentBlockV1Schema, type CompanionContentBlockV1 } from "@ailearn/shared/companion-conversation-contracts";
+import { companionContentBlockV1Schema, type CompanionContentBlockV1 } from "@astella/shared/companion-conversation-contracts";
 
 const blocksSchema = z.array(companionContentBlockV1Schema).min(1).max(32);
 

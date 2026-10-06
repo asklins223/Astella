@@ -61,13 +61,13 @@ import {
 import { CardGenerationProviderError } from "../card-generation-v2/governed-provider.ts";
 import {
   assembleCandidateEvidenceBindingPlanV2,
-} from "@ailearn/shared/card-generation-v2-pipeline";
+} from "@astella/shared/card-generation-v2-pipeline";
 import type {
   CardHintPairV2,
   CardPlanV2,
   LearningCardCandidateRevisionV2,
-} from "@ailearn/shared/card-generation-v2-contracts";
-import type { CardContentCheckV3Output } from "@ailearn/shared/card-generation-v3-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
+import type { CardContentCheckV3Output } from "@astella/shared/card-generation-v3-contracts";
 import {
   AI_TASK_RETRYABLE_FAILURE_CLASSES,
   runAiTask,
@@ -76,8 +76,8 @@ import {
   type AiTaskContext,
   type AiTaskDefinition,
   type AiTaskReceipt,
-} from "@ailearn/shared/ai-task-kernel";
-import { extractAtomsDeterministic } from "@ailearn/shared/card-generation-v2-pipeline";
+} from "@astella/shared/ai-task-kernel";
+import { extractAtomsDeterministic } from "@astella/shared/card-generation-v2-pipeline";
 import {
   createCardGenerateV3Task,
   createCardContentCheckV3Task,

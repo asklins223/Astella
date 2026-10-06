@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { companionRunIssueBundleV1Schema } from "@ailearn/shared";
+import { companionRunIssueBundleV1Schema } from "@astella/shared";
 import { projectCompanionRunIssueBundleV1 } from "../run-issue-bundle.ts";
 
 test("external issue bundle contains only allowlisted, deidentified run evidence", () => {

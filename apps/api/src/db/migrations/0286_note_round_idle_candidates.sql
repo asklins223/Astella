@@ -14,7 +14,7 @@
 -- 开事务，事务次数从"成员数"变成"候选数"。
 --
 -- 三条边界钉在这里：
---  1. **SECURITY DEFINER 是必需的，不是方便**：函数由迁移创建 ⇒ owner 是 `ailearn_migrator`
+--  1. **SECURITY DEFINER 是必需的，不是方便**：函数由迁移创建 ⇒ owner 是 `astella_migrator`
 --     （`roles.sql:37` 带 BYPASSRLS），所以它能在 FORCE RLS 下跨租户读那一行；先例是 0098 的
 --     TTL 清理函数（`roles.sql:806` 那条注释明写的就是同一件事）。
 --  2. **只回四列标识**（空间／人／轮次／最后变化时刻）：不含 driving question、正文锚点、
@@ -25,7 +25,7 @@
 -- 宽限期由调用方给（`min_age_ms`，默认 90 000 ms = 租约 30 秒 × 3）。为什么默认值也留在
 -- 这里：函数被别的读法直接调用时，一个"没有宽限期"的版本会挑出**刚刚还在动**的轮次。
 
-CREATE OR REPLACE FUNCTION public.ailearn_note_rounds_idle_for_pause(min_age_ms integer DEFAULT 90000)
+CREATE OR REPLACE FUNCTION public.astella_note_rounds_idle_for_pause(min_age_ms integer DEFAULT 90000)
 RETURNS TABLE (
   workspace_id uuid,
   user_id uuid,
@@ -45,17 +45,17 @@ $function$;
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_note_rounds_idle_for_pause(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_note_rounds_idle_for_pause(integer) FROM PUBLIC;
 
 --> statement-breakpoint
 
-GRANT EXECUTE ON FUNCTION public.ailearn_note_rounds_idle_for_pause(integer) TO ailearn_api;
+GRANT EXECUTE ON FUNCTION public.astella_note_rounds_idle_for_pause(integer) TO astella_api;
 
 --> statement-breakpoint
 
-GRANT ALL PRIVILEGES ON FUNCTION public.ailearn_note_rounds_idle_for_pause(integer) TO ailearn_migrator;
+GRANT ALL PRIVILEGES ON FUNCTION public.astella_note_rounds_idle_for_pause(integer) TO astella_migrator;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_note_rounds_idle_for_pause(integer) IS
-  '轮次空闲暂停的候选预筛（39d W4-5 ④）。SECURITY DEFINER／migrator owner（BYPASSRLS）才能在 FORCE RLS 下跨租户挑候选；只回 (workspace_id, user_id, round_id, updated_at) 四列标识，不含问题正文与快照锚点。EXECUTE 给 ailearn_api，不给 worker（D1 §6.5）。';
+COMMENT ON FUNCTION public.astella_note_rounds_idle_for_pause(integer) IS
+  '轮次空闲暂停的候选预筛（39d W4-5 ④）。SECURITY DEFINER／migrator owner（BYPASSRLS）才能在 FORCE RLS 下跨租户挑候选；只回 (workspace_id, user_id, round_id, updated_at) 四列标识，不含问题正文与快照锚点。EXECUTE 给 astella_api，不给 worker（D1 §6.5）。';

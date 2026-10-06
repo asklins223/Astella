@@ -1,15 +1,15 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
-import { noteBlocks, noteVersions, notes } from "@ailearn/shared/db-schema/note";
-import { noteRecallRecords } from "@ailearn/shared/db-schema/note-recalls";
+import { noteBlocks, noteVersions, notes } from "@astella/shared/db-schema/note";
+import { noteRecallRecords } from "@astella/shared/db-schema/note-recalls";
 import { assistantReplyTextForNote } from "../note/companion-source.ts";
-import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
+import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
 import {
   noteRecallActionResultV1Schema,
   noteRecallPageV1Schema,
   noteRecallRecordV1Schema,
   noteRecallStartResultV1Schema,
-} from "@ailearn/shared/note-recall-contracts";
+} from "@astella/shared/note-recall-contracts";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import { groundedRecallExcerpt, nextRecallExcerpt, recallExcerptCandidates } from "./recall-excerpt.ts";
 import { deterministicRecallPrompt } from "./recall-prompt.ts";

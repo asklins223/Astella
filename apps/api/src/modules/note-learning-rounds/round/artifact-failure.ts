@@ -28,7 +28,7 @@
  * 动态版本没落库"是两句不同的话。
  */
 import { and, desc, eq, sql } from "drizzle-orm";
-import { noteLearningRoundArtifactFailures } from "@ailearn/shared/db-schema/note-learning-rounds";
+import { noteLearningRoundArtifactFailures } from "@astella/shared/db-schema/note-learning-rounds";
 import type { ApiTransaction } from "../../../db/client.ts";
 
 export type RoundScopeV1 = { workspaceId: string; userId: string };

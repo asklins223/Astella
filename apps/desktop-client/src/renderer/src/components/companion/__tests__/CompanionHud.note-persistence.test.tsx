@@ -3,8 +3,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanionChatSession } from "../../../app/companion-chat-session.tsx";
-import type { GatewayResultV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import type { NoteAnnotationAnchorV1, NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
+import type { GatewayResultV1 } from "@astella/shared/desktop-ipc-contracts";
+import type { NoteAnnotationAnchorV1, NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 import { CompanionHud, type CompanionHudSettings } from "../CompanionHud.tsx";
 import { DEFAULT_WINDOW_LIVE2D_MODEL_ID } from "../window-live2d-contract.ts";
 import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, progressNoteExplanation, resetNoteExplanations, useNoteCompanionExplanations } from "../note-companion-explanation";
@@ -181,7 +181,7 @@ describe("伴星回答保存回笔记", () => {
       createdAt: "2026-09-29T00:00:00.000Z",
       updatedAt: "2026-09-29T00:00:00.000Z",
     }));
-    Object.defineProperty(window, "ailearn", {
+    Object.defineProperty(window, "astella", {
       configurable: true,
       value: {
         noteOverview: { write: writeOverview },
@@ -311,7 +311,7 @@ describe("伴星回答保存回笔记", () => {
 
   it("伴星可以把一个探索方向交给独立后台任务，草稿审核仍留在笔记页", async () => {
     const startedEvent = vi.fn();
-    window.addEventListener("ailearn:note-expansion-task-started", startedEvent);
+    window.addEventListener("astella:note-expansion-task-started", startedEvent);
     const taskId = "55555555-5555-4555-8555-555555555555";
     const startTask = vi.fn(async (_input: {
       noteId: string;
@@ -329,7 +329,7 @@ describe("伴星回答保存回笔记", () => {
       failureReason: null,
       createdAt: "2026-09-29T00:00:00.000Z",
     }));
-    Object.defineProperty(window, "ailearn", {
+    Object.defineProperty(window, "astella", {
       configurable: true,
       value: { noteExpansion: { startTask } },
     });
@@ -373,7 +373,7 @@ describe("伴星回答保存回笔记", () => {
     expect((startedEvent.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({ noteId: NOTE_ID, taskId });
     expect(await screen.findByText(/进度和可编辑草稿会留在这篇笔记里/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /确认收下/ })).toBeNull();
-    window.removeEventListener("ailearn:note-expansion-task-started", startedEvent);
+    window.removeEventListener("astella:note-expansion-task-started", startedEvent);
   });
 
   async function beginAnnotationReply() {
@@ -424,11 +424,11 @@ describe("伴星回答保存回笔记", () => {
   it.each(["current", "older"] as const)("保存 %s 版本的选文批注，回执只附在对应回复内", async (versionState) => {
     annotationVersionState = versionState;
     const savedEvent = vi.fn();
-    window.addEventListener("ailearn:note-annotation-saved", savedEvent);
+    window.addEventListener("astella:note-annotation-saved", savedEvent);
     const view = await beginAnnotationReply();
     await waitFor(() => expect(savedEvent).toHaveBeenCalledTimes(1));
     expect((savedEvent.mock.calls[0]?.[0] as CustomEvent).detail).toMatchObject({ noteId: NOTE_ID });
-    window.removeEventListener("ailearn:note-annotation-saved", savedEvent);
+    window.removeEventListener("astella:note-annotation-saved", savedEvent);
     if (versionState === "current") {
       expect((await screen.findByText("解释已贴回原句")).closest(".companion-hud__output")).toBeTruthy();
     } else {
@@ -477,7 +477,7 @@ describe("伴星回答保存回笔记", () => {
     let finishSave!: () => void;
     writeAnnotation.mockImplementationOnce(() => new Promise(resolve => { finishSave = () => resolve(receipt); }));
     const savedEvent = vi.fn();
-    window.addEventListener("ailearn:note-annotation-saved", savedEvent);
+    window.addEventListener("astella:note-annotation-saved", savedEvent);
     const view = await beginAnnotationReply();
     await screen.findByText("正在保存批注");
     const dismissFeedNoteAnchor = vi.fn();
@@ -488,7 +488,7 @@ describe("伴星回答保存回笔记", () => {
     });
     await act(async () => finishSave());
     expect(savedEvent).toHaveBeenCalledTimes(1);
-    window.removeEventListener("ailearn:note-annotation-saved", savedEvent);
+    window.removeEventListener("astella:note-annotation-saved", savedEvent);
     expect(document.querySelector(".companion-hud__output")).toBeNull();
     expect(screen.queryByRole("article", { name: /笔记关联|这次选文/ })).toBeNull();
     if (action === "换一处选文") {

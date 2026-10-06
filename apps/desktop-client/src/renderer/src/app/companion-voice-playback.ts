@@ -3,8 +3,8 @@ import { stopCompanionNotificationSpeech } from "../components/companion/compani
 import type {
   CompanionVoicePlaybackOutcomeRequestV1,
   CompanionVoiceSpeakSegmentRequestV2,
-} from "@ailearn/shared/companion-voice-contracts";
-import type { CharacterCuePayloadV1 } from "@ailearn/shared/companion-conversation-contracts";
+} from "@astella/shared/companion-voice-contracts";
+import type { CharacterCuePayloadV1 } from "@astella/shared/companion-conversation-contracts";
 import {
   COMPANION_SPEECH_FEED_INITIAL,
   splitForSpeech,
@@ -197,7 +197,7 @@ export function stopCompanionSpeech(): void {
 /**
  * 伴星台词播放服务现在是否正在念一句（2026-09-19）。
  *
- * 主动提示音（`ailearn:home-v2-speak`）用它让路：用户主动问出来的回复是他要的反馈，
+ * 主动提示音（`astella:home-v2-speak`）用它让路：用户主动问出来的回复是他要的反馈，
  * 提示音是背景——背景抢掉正在念的回复，听感上就是"气泡里没发音"。
  */
 export function isCompanionSpeechActive(): boolean {

@@ -16,8 +16,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { PET_PERSONA_PRESETS, getPresetById } from "@ailearn/shared/pet-persona-presets";
-import type { CompanionPersonaProfileContent } from "@ailearn/shared/db-schema/companion-memory";
+import { PET_PERSONA_PRESETS, getPresetById } from "@astella/shared/pet-persona-presets";
+import type { CompanionPersonaProfileContent } from "@astella/shared/db-schema/companion-memory";
 
 import { expressionResetProfile } from "../pet-profile-service.ts";
 

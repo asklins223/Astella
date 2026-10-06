@@ -31,7 +31,7 @@ const BATCH = {
 };
 
 function installApi(batch: unknown = BATCH) {
-  (window as unknown as { ailearn?: unknown }).ailearn = {
+  (window as unknown as { astella?: unknown }).astella = {
     review: {
       // 形状照 `unwrapGatewayResult` 真正读的那两格：`{ ok, data }`。它判错形状就抛
       // `RendererGatewayError`，于是组件走「今天这一批暂时读不出来」那条分支——
@@ -83,7 +83,7 @@ describe("§12.1 今日复习那一批", () => {
   });
 
   it("读不出来 ⇒ **不画空框**，给的是「读不出来」 ＋ 一个「再试一次」", async () => {
-    (window as unknown as { ailearn?: unknown }).ailearn = {
+    (window as unknown as { astella?: unknown }).astella = {
       review: { readTodayBatch: vi.fn(async () => { throw new Error("offline"); }) },
     };
     render(<TodayBatchSurface {...PROPS} />);

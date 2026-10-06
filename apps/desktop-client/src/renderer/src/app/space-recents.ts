@@ -12,7 +12,7 @@
  * 键按 `workspaceId` 记，不按账号记：同一台机器上换过账号，能同时出现在两份列表里
  * 的只有双方真正共同所属的空间，而"这台设备上最近进过它"对双方都成立。
  */
-const SPACE_RECENTS_KEY = "ailearn:space-recents";
+const SPACE_RECENTS_KEY = "astella:space-recents";
 
 /** 记录上限：更近的一次会覆盖旧值，留最近这些个足够排序，也不让记录无限长大。 */
 const MAX_SPACE_RECENTS = 60;

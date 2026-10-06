@@ -18,7 +18,7 @@ import {
   SERVER_POLICY_MAX_CARDS,
   type SourceBlockInput,
   type ExistingObjectiveRef,
-} from "@ailearn/shared/card-generation-v2-pipeline";
+} from "@astella/shared/card-generation-v2-pipeline";
 
 // ─── Mock helpers ────────────────────────────────────────────────────────
 

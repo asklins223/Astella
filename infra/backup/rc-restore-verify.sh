@@ -17,11 +17,11 @@
 # 用法：
 #   ./rc-restore-verify.sh \
 #     --source-host localhost --source-port 5432 \
-#     --source-user ailearn_migrator --source-db ailearn \
+#     --source-user astella_migrator --source-db astella \
 #     --target-host restore-db.local --target-port 5432 \
-#     --target-user ailearn_restore --target-db ailearn_restore \
-#     --age-key /etc/ailearn/backup-age.key \
-#     --s3-endpoint http://minio:9000 --s3-bucket ailearn-backups \
+#     --target-user astella_restore --target-db astella_restore \
+#     --age-key /etc/astella/backup-age.key \
+#     --s3-endpoint http://minio:9000 --s3-bucket astella-backups \
 #     --s3-access-key XXX --s3-secret-key YYY \
 #     --release 0.5.0-rc.1 --commit abc1234 --migration 0028 \
 #     --report-dir /data/backups/rc-reports
@@ -163,7 +163,7 @@ ALLOWED_HOST_PATTERNS=(
   "^staging-.*$"
 )
 
-FORBIDDEN_DB_NAMES=("study" "ailearn" "production" "prod")
+FORBIDDEN_DB_NAMES=("study" "astella" "production" "prod")
 
 check_host_allowed() {
   local host="$1"
@@ -451,7 +451,7 @@ fi
 
 # 3e. SECURITY DEFINER 函数存在
 SEC_DEF_COUNT=$(psql_target \
-  "SELECT count(*) FROM information_schema.routines WHERE routine_schema = 'public' AND routine_name LIKE 'ailearn_%' AND security_type = 'DEFINER'" 2>/dev/null || echo "0")
+  "SELECT count(*) FROM information_schema.routines WHERE routine_schema = 'public' AND routine_name LIKE 'astella_%' AND security_type = 'DEFINER'" 2>/dev/null || echo "0")
 
 if [[ "$SEC_DEF_COUNT" -ge 3 ]]; then
   record_result "SECURITY DEFINER 函数" "true" "$SEC_DEF_COUNT 个函数"
@@ -466,11 +466,11 @@ log "步骤 4/5: 角色/权限验证"
 
 # 检查受限角色是否存在
 API_ROLE_EXISTS=$(psql_target \
-  "SELECT count(*) FROM pg_roles WHERE rolname = 'ailearn_api'" 2>/dev/null || echo "0")
+  "SELECT count(*) FROM pg_roles WHERE rolname = 'astella_api'" 2>/dev/null || echo "0")
 WORKER_ROLE_EXISTS=$(psql_target \
-  "SELECT count(*) FROM pg_roles WHERE rolname = 'ailearn_worker'" 2>/dev/null || echo "0")
+  "SELECT count(*) FROM pg_roles WHERE rolname = 'astella_worker'" 2>/dev/null || echo "0")
 MIGRATOR_ROLE_EXISTS=$(psql_target \
-  "SELECT count(*) FROM pg_roles WHERE rolname = 'ailearn_migrator'" 2>/dev/null || echo "0")
+  "SELECT count(*) FROM pg_roles WHERE rolname = 'astella_migrator'" 2>/dev/null || echo "0")
 
 if [[ "$API_ROLE_EXISTS" == "1" && "$WORKER_ROLE_EXISTS" == "1" && "$MIGRATOR_ROLE_EXISTS" == "1" ]]; then
   record_result "受限角色存在" "true" "api/worker/migrator 角色均存在"
@@ -483,9 +483,9 @@ TABLES_WITH_API_SELECT=0
 TABLES_WITH_WORKER_SELECT=0
 for table in "${CORE_TABLES[@]}"; do
   API_HAS_SELECT=$(psql_target \
-    "SELECT count(*) FROM information_schema.role_table_grants WHERE grantee = 'ailearn_api' AND table_name = '$table' AND privilege_type = 'SELECT'" 2>/dev/null || echo "0")
+    "SELECT count(*) FROM information_schema.role_table_grants WHERE grantee = 'astella_api' AND table_name = '$table' AND privilege_type = 'SELECT'" 2>/dev/null || echo "0")
   WORKER_HAS_SELECT=$(psql_target \
-    "SELECT count(*) FROM information_schema.role_table_grants WHERE grantee = 'ailearn_worker' AND table_name = '$table' AND privilege_type = 'SELECT'" 2>/dev/null || echo "0")
+    "SELECT count(*) FROM information_schema.role_table_grants WHERE grantee = 'astella_worker' AND table_name = '$table' AND privilege_type = 'SELECT'" 2>/dev/null || echo "0")
   if [[ "$API_HAS_SELECT" == "1" ]]; then TABLES_WITH_API_SELECT=$((TABLES_WITH_API_SELECT + 1)); fi
   if [[ "$WORKER_HAS_SELECT" == "1" ]]; then TABLES_WITH_WORKER_SELECT=$((TABLES_WITH_WORKER_SELECT + 1)); fi
 done

@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { withWorkspaceTransaction } from "../../db/client.ts";
-import { users } from "@ailearn/shared/db-schema/identity";
+import { users } from "@astella/shared/db-schema/identity";
 import { getAIPrivacySettings, listAIAuditLog, updateAIConsent, updateAIDataPolicy } from "../identity/ai-consent-service.ts";
 import { changePassword, loginWithPassword, revokeAllSessionsForUser, revokeSession } from "../identity/session-service.ts";
 import { createCollaborativeWorkspace, dissolveWorkspace, previewWorkspaceDissolve, registerWithoutInvite, renameWorkspace, resetRecoveredUserPassword } from "../identity/workspace-lifecycle-service.ts";

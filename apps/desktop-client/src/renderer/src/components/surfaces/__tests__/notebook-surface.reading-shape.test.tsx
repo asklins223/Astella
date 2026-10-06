@@ -5,9 +5,9 @@ import { act, cleanup, fireEvent, render, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NotebookSurface } from "../notebook/notebook-surface.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
-import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
-import { noteAnnotationV1Schema } from "@ailearn/shared/note-annotation-contracts";
-import { noteRecallRecordV1Schema } from "@ailearn/shared/note-recall-contracts";
+import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
+import { noteAnnotationV1Schema } from "@astella/shared/note-annotation-contracts";
+import { noteRecallRecordV1Schema } from "@astella/shared/note-recall-contracts";
 import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, progressNoteExplanation, resetNoteExplanations, useNoteCompanionExplanations } from "../../companion/note-companion-explanation";
 import { textRangeAtOffsets } from "../notebook/notebook-reading-block";
 
@@ -39,7 +39,7 @@ function installApi(
   overviewRecords?: readonly unknown[],
   annotationRecords?: readonly unknown[],
 ) {
-  Object.defineProperty(window, "ailearn", {
+  Object.defineProperty(window, "astella", {
     configurable: true,
     value: {
       contract: { enabledRoutes: ["note.detail"] },
@@ -195,7 +195,7 @@ afterEach(() => {
   resetNoteExplanations();
   window.getSelection()?.removeAllRanges();
   vi.useRealTimers();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   useRoomStore.setState({ activeNoteRef: null, surface: null, returnTarget: null });
 });
 
@@ -407,7 +407,7 @@ describe("阅读页画的是编辑器里那一份", () => {
   it("打开旧记录折页后才读取核心路线，笔记首屏不请求旧路线", async () => {
     const view = await show([block("paragraph", "Tool 是 Agent 调用外部能力的入口。")]);
     const route = vi.fn(async () => ok(null));
-    Object.assign(window.ailearn, { noteLearningRound: { route } });
+    Object.assign(window.astella, { noteLearningRound: { route } });
     expect(route).not.toHaveBeenCalled();
 
     fireEvent.click(view.getByRole("button", { name: "学习记录" }));
@@ -566,7 +566,7 @@ describe("伴星解释与原句批注并行", () => {
       noteId: NOTE_ID, anchor: input.command.anchor, explanation: input.command.explanation, sourceMessageId: input.command.sourceMessageId ?? null,
       generationJobId: null, revision: 1, versionState: "current", createdAt: "2026-10-02T00:00:00.000Z", updatedAt: "2026-10-02T00:00:00.000Z",
     })));
-    Object.assign(window.ailearn!.noteAnnotation, { write });
+    Object.assign(window.astella!.noteAnnotation, { write });
     await act(async () => { await completeNoteExplanation(attempt.id, "55555555-5555-4555-8555-555555555555", "利息成为下一轮本金的一部分。"); });
     expect(draft.value).toBe("我的理解：下一轮用更大的本金算。");
     expect(document.activeElement).toBe(draft);

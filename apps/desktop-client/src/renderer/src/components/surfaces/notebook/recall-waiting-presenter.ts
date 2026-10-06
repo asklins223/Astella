@@ -19,13 +19,13 @@
  * 三样结构事实：这条卡来自哪一篇笔记（标题不是正文）、它是什么知识形态
  * （枚举词，不是描述）、以及"你练过几次"（一个数）。**任何一句复述都会变成半个答案。**
  */
-import type { LearningObjectiveSurfaceV3 } from "@ailearn/shared/learning-objective-surface-contracts";
+import type { LearningObjectiveSurfaceV3 } from "@astella/shared/learning-objective-surface-contracts";
 import {
   RECALL_REVEAL_COPY_V1,
   recallWaitingCueV1Schema,
   type RecallWaitingCueV1,
   type RecallWaitingKindV1,
-} from "@ailearn/shared/recall-waiting-v2-contracts";
+} from "@astella/shared/recall-waiting-v2-contracts";
 
 /**
  * 知识形态 → 一句"往哪儿想"的提示（**不是**对内容的描述）。

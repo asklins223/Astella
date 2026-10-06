@@ -7,7 +7,7 @@ import {
   COMPANION_SUMMARY_TOTAL_DEF,
   COMPANION_MEMORY_USED_COUNT_DEF,
   COMPANION_MEMORY_RETRIEVAL_MODE_TOTAL_DEF,
-} from "@ailearn/shared/metrics-definitions";
+} from "@astella/shared/metrics-definitions";
 import {
   companionSummaryTotal,
   companionMemoryUsedCount,

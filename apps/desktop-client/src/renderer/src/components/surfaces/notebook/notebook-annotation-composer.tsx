@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { NoteAnnotationAnchorV1 } from "@ailearn/shared/note-annotation-contracts";
+import type { NoteAnnotationAnchorV1 } from "@astella/shared/note-annotation-contracts";
 import { noteExplanationBusy, noteExplanationLabel, type NoteCompanionExplanation } from "../../companion/note-companion-explanation";
 
 export function NotebookAnnotationComposer(props: {

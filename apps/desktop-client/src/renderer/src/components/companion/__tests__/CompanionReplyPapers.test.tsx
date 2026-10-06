@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CompanionContentBlockV1, CompanionMessageV1 } from "@ailearn/shared/companion-conversation-contracts";
+import type { CompanionContentBlockV1, CompanionMessageV1 } from "@astella/shared/companion-conversation-contracts";
 import { CompanionReplyPapers } from "../CompanionReplyPapers";
 import { CompanionChatRecordArticle } from "../CompanionChatRecord";
 import { interactionProposal, interactionSession } from "./companion-interaction-fixtures";

@@ -7,9 +7,9 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, test, type TestContext } from "node:test";
 import postgres from "postgres";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
-import { companionRunListQueryV1Schema } from "@ailearn/shared";
+import { companionRunListQueryV1Schema } from "@astella/shared";
 import { loadCompanionTurnReplayV1 } from "../modules/companion-conversation/run-turn-replay.ts";
 import { loadCompanionRunListV1 } from "../modules/companion-conversation/run-list.ts";
 import { loadCompanionRunIssueBundleV1 } from "../modules/companion-conversation/run-issue-bundle.ts";
@@ -105,7 +105,7 @@ test("API can read only the matching owner's bounded handoff snapshot via the pr
       await tx`SELECT set_config('app.workspace_id', ${workspace}, true)`;
       await tx`SELECT set_config('app.user_id', ${user}, true)`;
       return tx`SELECT snapshot, snapshot_sha256, snapshot_version
-                FROM public.ailearn_read_companion_turn_handoff_snapshot_v1(${runId}::uuid)`;
+                FROM public.astella_read_companion_turn_handoff_snapshot_v1(${runId}::uuid)`;
     });
 
     const ownerRows = await readWithScope(workspaceId, userId);
@@ -173,21 +173,21 @@ test("API can read only the matching owner's bounded handoff snapshot via the pr
     assert.equal(directReadError?.code, "42501", "API must not get direct table SELECT even for an owned run");
 
     const privileges = await admin`
-      SELECT has_function_privilege('ailearn_api',
-               'public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)', 'EXECUTE') AS api_can_execute,
-             has_function_privilege('ailearn_worker',
-               'public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)', 'EXECUTE') AS worker_can_execute,
-             has_table_privilege('ailearn_api', 'public.companion_context_handoff_snapshots', 'SELECT') AS api_can_select_table
+      SELECT has_function_privilege('astella_api',
+               'public.astella_read_companion_turn_handoff_snapshot_v1(uuid)', 'EXECUTE') AS api_can_execute,
+             has_function_privilege('astella_worker',
+               'public.astella_read_companion_turn_handoff_snapshot_v1(uuid)', 'EXECUTE') AS worker_can_execute,
+             has_table_privilege('astella_api', 'public.companion_context_handoff_snapshots', 'SELECT') AS api_can_select_table
     `;
     assert.equal(privileges[0]?.api_can_execute, true);
     assert.equal(privileges[0]?.worker_can_execute, false);
     assert.equal(privileges[0]?.api_can_select_table, false);
     const failureSpanPrivileges = await admin`
-      SELECT has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'SELECT') AS api_can_select,
-             has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'INSERT') AS api_can_insert,
-             has_table_privilege('ailearn_worker', 'public.companion_run_failure_spans', 'INSERT') AS worker_can_insert,
-             has_table_privilege('ailearn_worker', 'public.companion_run_failure_spans', 'UPDATE') AS worker_can_update,
-             has_table_privilege('ailearn_worker', 'public.companion_run_failure_spans', 'DELETE') AS worker_can_delete
+      SELECT has_table_privilege('astella_api', 'public.companion_run_failure_spans', 'SELECT') AS api_can_select,
+             has_table_privilege('astella_api', 'public.companion_run_failure_spans', 'INSERT') AS api_can_insert,
+             has_table_privilege('astella_worker', 'public.companion_run_failure_spans', 'INSERT') AS worker_can_insert,
+             has_table_privilege('astella_worker', 'public.companion_run_failure_spans', 'UPDATE') AS worker_can_update,
+             has_table_privilege('astella_worker', 'public.companion_run_failure_spans', 'DELETE') AS worker_can_delete
     `;
     assert.equal(failureSpanPrivileges[0]?.api_can_select, true);
     assert.equal(failureSpanPrivileges[0]?.api_can_insert, false);

@@ -42,7 +42,7 @@ import {
   orderedListSchema,
   imageSchema,
 } from "@milkdown/kit/preset/commonmark";
-import { sourceImageObjectKeyFromUrl } from "@ailearn/shared/source-image-contracts";
+import { sourceImageObjectKeyFromUrl } from "@astella/shared/source-image-contracts";
 import { loadSourceImageBlobUrl } from "../source/source-image.ts";
 import { LightboxViewer } from "../source/image-viewer.tsx";
 
@@ -192,7 +192,7 @@ function imageUploadPlugin(onImagePaste: React.RefObject<((file: File) => void) 
  * 图片节点视图。
  *
  * 正文里的图有两种地址，`<img>` 都画不出来：
- * - `/api/uploads/{objectKey}` 是站内对象，渲染层的 origin 是 `ailearn-app://`，
+ * - `/api/uploads/{objectKey}` 是站内对象，渲染层的 origin 是 `astella-app://`，
  *   这个相对路径会落到应用包内；这里按 objectKey 走共享的字节缓存换成 blob URL。
  * - `uploading:{id}` 是上传中的占位地址，交给 CSS 画成一块虚线格子（见
  *   `hud-surface.css` 的 `img[src^="uploading:"]`）。

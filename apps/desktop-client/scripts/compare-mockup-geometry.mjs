@@ -9,7 +9,7 @@
  * live client attached over CDP.
  *
  * Usage:
- *   AILEARN_CAPTURE_CDP=http://127.0.0.1:9222 node scripts/compare-mockup-geometry.mjs --pages=14,15
+ *   ASTELLA_CAPTURE_CDP=http://127.0.0.1:9222 node scripts/compare-mockup-geometry.mjs --pages=14,15
  *
  * The client must be running with `--remoteDebuggingPort`; the script reloads the
  * window it attaches to so the measurement reflects the current source.
@@ -29,8 +29,8 @@ const pages = (process.argv.find((arg) => arg.startsWith('--pages='))?.slice('--
   .filter(Boolean)
 if (!pages.length) throw new Error('--pages=14,15 is required')
 
-const cdpEndpoint = process.env.AILEARN_CAPTURE_CDP ?? ''
-if (!cdpEndpoint) throw new Error('AILEARN_CAPTURE_CDP must point at the running client, e.g. http://127.0.0.1:9222')
+const cdpEndpoint = process.env.ASTELLA_CAPTURE_CDP ?? ''
+if (!cdpEndpoint) throw new Error('ASTELLA_CAPTURE_CDP must point at the running client, e.g. http://127.0.0.1:9222')
 
 /** Which surface each page number is reached from, and how. */
 const NAVIGATION = {
@@ -100,7 +100,7 @@ const mockupStyle = [...(await readFile(resolve(reviewRoot, 'mockup.html'), 'utf
  * cached keeps the reference measurement off the network.
  */
 async function resolveChromium() {
-  if (process.env.AILEARN_CAPTURE_CHROMIUM) return process.env.AILEARN_CAPTURE_CHROMIUM
+  if (process.env.ASTELLA_CAPTURE_CHROMIUM) return process.env.ASTELLA_CAPTURE_CHROMIUM
   const cacheRoot = process.platform === 'darwin'
     ? join(homedir(), 'Library/Caches/ms-playwright')
     : join(homedir(), '.cache/ms-playwright')

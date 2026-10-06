@@ -20,7 +20,7 @@ COMMENT ON COLUMN public.user_companion_account_state.diary_enabled IS
 COMMENT ON COLUMN public.user_companion_account_state.diary_enabled_since IS
   'Start of the current uninterrupted diary-enabled period; diary material before this timestamp is ineligible.';
 
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_companion_daily_summaries()
+CREATE OR REPLACE FUNCTION public.astella_enqueue_companion_daily_summaries()
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -130,11 +130,11 @@ BEGIN
 END
 $$;
 
-ALTER FUNCTION public.ailearn_enqueue_companion_daily_summaries()
-  OWNER TO ailearn_migrator;
-ALTER FUNCTION public.ailearn_enqueue_companion_daily_summaries()
+ALTER FUNCTION public.astella_enqueue_companion_daily_summaries()
+  OWNER TO astella_migrator;
+ALTER FUNCTION public.astella_enqueue_companion_daily_summaries()
   SECURITY DEFINER;
-ALTER FUNCTION public.ailearn_enqueue_companion_daily_summaries()
+ALTER FUNCTION public.astella_enqueue_companion_daily_summaries()
   SET search_path = pg_catalog, public;
-GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_companion_daily_summaries()
-  TO ailearn_worker;
+GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_daily_summaries()
+  TO astella_worker;

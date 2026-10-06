@@ -1,5 +1,5 @@
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
-import type { HomeSuggestionWireV2 } from "@ailearn/shared/review-queue-v2-contracts";
+import type { HomeSuggestionWireV2 } from "@astella/shared/review-queue-v2-contracts";
 import { useSurfaceProjection } from "../notebook/surface-data.tsx";
 
 /**
@@ -21,7 +21,7 @@ export function useHomeNextStepProjection(): HomeNextStepReadV2 {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const { data, loading, failure } = useSurfaceProjection(
     async ({ workspaceEpoch }) => unwrapGatewayResult(
-      await window.ailearn.review.readHomeSuggestion({
+      await window.astella.review.readHomeSuggestion({
         meta: createRequestMeta(workspaceEpoch),
         timeZone,
       }),

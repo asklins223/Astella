@@ -31,7 +31,7 @@ test("0356 已登记进 journal", () => {
 test("锁挂在 companion_turn_runs 上，且是 BEFORE UPDATE 的行级触发器", () => {
   assert.match(
     migration,
-    /CREATE TRIGGER companion_turn_runs_persona_pin_lock\s*BEFORE UPDATE ON public\.companion_turn_runs\s*FOR EACH ROW EXECUTE FUNCTION public\.ailearn_lock_companion_run_persona_pin\(\)/,
+    /CREATE TRIGGER companion_turn_runs_persona_pin_lock\s*BEFORE UPDATE ON public\.companion_turn_runs\s*FOR EACH ROW EXECUTE FUNCTION public\.astella_lock_companion_run_persona_pin\(\)/,
     "触发器必须挂在 run 表上：一次调用=一个 run，锁在别的表上等于没锁",
   );
   assert.match(migration, /DROP TRIGGER IF EXISTS companion_turn_runs_persona_pin_lock/, "重跑必须能落上触发器");
@@ -70,7 +70,7 @@ test("迁移自带自检：触发器没落上时当场炸", () => {
 test("【自证】删掉触发器之后，本文件的判据必须变红", () => {
   // 正控制：判据的对象是「锁在表上」，不是「文件里写了 persona_pin_lock 这几个字」。
   const withoutTrigger = migration
-    .replace(/DROP TRIGGER IF EXISTS[\s\S]*?EXECUTE FUNCTION public\.ailearn_lock_companion_run_persona_pin\(\);/, "");
+    .replace(/DROP TRIGGER IF EXISTS[\s\S]*?EXECUTE FUNCTION public\.astella_lock_companion_run_persona_pin\(\);/, "");
   assert.ok(
     !/CREATE TRIGGER companion_turn_runs_persona_pin_lock/.test(withoutTrigger),
     "自证样本没造好：触发器还在",

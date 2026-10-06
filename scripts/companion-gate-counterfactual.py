@@ -50,7 +50,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-CONTAINER = "ailearn-dev-postgres-1"
+CONTAINER = "astella-dev-postgres-1"
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTED_RUNS_FILE = ROOT / ".impeccable/companion/scripted-runs.txt"
 BRIDGE = ROOT / "workers/ai-worker/scripts/companion-gate-eval.ts"
@@ -58,7 +58,7 @@ BRIDGE_RUNNER = ROOT / "workers/ai-worker/node_modules/.bin/tsx"
 PSQL_LITE = ROOT / "scripts/psql-lite.mjs"
 
 # 开发栈的"真人账号"约定，与 companion-quality-report.py 同源。
-DEV_REAL_ACCOUNT_EMAILS = ("owner@ailearn.local",)
+DEV_REAL_ACCOUNT_EMAILS = ("owner@astella.local",)
 
 # 判据去向（39b §9.1 的"去向"列）。`keep` 不参与退出码；`delete` 必须
 # `covered + rescued-by-tool == 100%` 才允许删；`conditional` 的覆盖依赖尚未
@@ -604,12 +604,12 @@ def call_bridge(payload: dict) -> dict:
     """
     env = dict(os.environ)
     env["DATABASE_URL_WORKER"] = env.get(
-        "DATABASE_URL_WORKER", "postgres://ailearn_worker:ailearn_dev@127.0.0.1:5432/ailearn")
+        "DATABASE_URL_WORKER", "postgres://astella_worker:astella_dev@127.0.0.1:5432/astella")
     with tempfile.TemporaryDirectory() as tmp:
         out_path = Path(tmp) / "bridge.json"
-        # `--tsconfig` 必须显式给：桥 import 的是 `@ailearn/shared/*` 的**实时源码**
+        # `--tsconfig` 必须显式给：桥 import 的是 `@astella/shared/*` 的**实时源码**
         # （靠 tsconfig paths 解析），而不给这一条时 tsx 按 cwd 找 tsconfig —— 从仓库根
-        # 跑就会退回 `workers/ai-worker/node_modules/@ailearn/shared` 那份**安装期快照**，
+        # 跑就会退回 `workers/ai-worker/node_modules/@astella/shared` 那份**安装期快照**，
         # 于是新加的 shared 文件在桥里"找不到"（而服务端自己跑得好好的）。
         proc = subprocess.run(
             [str(BRIDGE_RUNNER), "--tsconfig", str(ROOT / "workers/ai-worker/tsconfig.json"),

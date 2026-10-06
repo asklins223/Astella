@@ -16,7 +16,7 @@
 --     它绝不碰"属于别的空间"的行——那是隔离，不是清理。
 --   - 表清单在函数里**动态枚举**（`pg_attribute` 里有 `workspace_id` 的所有表），
 --     不写死名单：写死就意味着下一次新增表又漏了，而那正是这份审查的主题。
---   - `SECURITY DEFINER` + 只授给 `ailearn_migrator`：这是运维动作，不是请求路径。
+--   - `SECURITY DEFINER` + 只授给 `astella_migrator`：这是运维动作，不是请求路径。
 --     API 角色拿不到 EXECUTE，所以没有任何 HTTP 入口能触发它。
 --
 -- ─── 2. 所有权转让 ───
@@ -31,7 +31,7 @@
 
 -- ─── 1. 孤儿清理 ────────────────────────────────────────────────────
 
-CREATE OR REPLACE FUNCTION public.ailearn_purge_workspace_orphans(dry_run boolean DEFAULT true)
+CREATE OR REPLACE FUNCTION public.astella_purge_workspace_orphans(dry_run boolean DEFAULT true)
 RETURNS TABLE (table_name text, orphan_rows bigint)
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -75,13 +75,13 @@ $function$;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_purge_workspace_orphans(boolean) IS
-  '清理 workspace_id 指向不存在空间的行（审查附录 C）。dry_run=true 只报表；只授给 ailearn_migrator，API 角色无 EXECUTE。';
+COMMENT ON FUNCTION public.astella_purge_workspace_orphans(boolean) IS
+  '清理 workspace_id 指向不存在空间的行（审查附录 C）。dry_run=true 只报表；只授给 astella_migrator，API 角色无 EXECUTE。';
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_purge_workspace_orphans(boolean) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_purge_workspace_orphans(boolean) TO ailearn_migrator;
+REVOKE ALL ON FUNCTION public.astella_purge_workspace_orphans(boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_purge_workspace_orphans(boolean) TO astella_migrator;
 
 --> statement-breakpoint
 
@@ -89,7 +89,7 @@ GRANT EXECUTE ON FUNCTION public.ailearn_purge_workspace_orphans(boolean) TO ail
 
 -- 新 owner 必须是这个空间的活跃成员。做成触发器而不是只写在服务层：`owner_id`
 -- 有三个写入点（注册、建协作空间、转让），触发器让"交给外人"在数据库层就不成立。
-CREATE OR REPLACE FUNCTION public.ailearn_guard_workspace_owner_is_member()
+CREATE OR REPLACE FUNCTION public.astella_guard_workspace_owner_is_member()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -116,7 +116,7 @@ $function$;
 DROP TRIGGER IF EXISTS workspaces_owner_must_be_member ON public.workspaces;
 CREATE TRIGGER workspaces_owner_must_be_member
   BEFORE UPDATE OF owner_id ON public.workspaces
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_guard_workspace_owner_is_member();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_guard_workspace_owner_is_member();
 
 --> statement-breakpoint
 
@@ -126,11 +126,11 @@ DECLARE
   v_tables integer;
 BEGIN
   SELECT count(*), coalesce(sum(orphan_rows), 0) INTO v_tables, v_orphans
-  FROM public.ailearn_purge_workspace_orphans(true);
+  FROM public.astella_purge_workspace_orphans(true);
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_roles r ON r.oid = p.proowner
-    WHERE p.proname = 'ailearn_purge_workspace_orphans'
+    WHERE p.proname = 'astella_purge_workspace_orphans'
   ) THEN
     RAISE EXCEPTION '孤儿清理函数没有建立';
   END IF;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Pause, Pencil, Play, Square } from "lucide-react";
-import type { AgentRunV1 } from "@ailearn/shared/agent-contracts";
+import type { AgentRunV1 } from "@astella/shared/agent-contracts";
 import { agentGoalActive, type AgentGoalsController } from "./use-agent-goals";
 import { useCompanionResource } from "../surfaces/companion/use-companion-resource";
 import { CompanionSelect } from "../surfaces/companion/companion-select";
@@ -14,7 +14,7 @@ export function CompanionGoalControls({ run, goals, onNewGoal }: {
   const [draftRevision, setDraftRevision] = useState(run.revision);
   const [bindingChoice, setBindingChoice] = useState("keep");
   const [selectedBinding, setSelectedBinding] = useState<{ ref: NonNullable<AgentRunV1["longGoal"]>; content: string } | null>(null);
-  const longGoals = useCompanionResource(meta => window.ailearn.agent.listLongGoals({ meta, query: { memoryId: run.longGoal?.memoryId, limit: 1 } }), [run.runId, run.revision], editing && Boolean(run.longGoal));
+  const longGoals = useCompanionResource(meta => window.astella.agent.listLongGoals({ meta, query: { memoryId: run.longGoal?.memoryId, limit: 1 } }), [run.runId, run.revision], editing && Boolean(run.longGoal));
   const latest = longGoals.section?.ok ? longGoals.section.value.items.find(item => item.ref.memoryId === run.longGoal?.memoryId) : undefined;
   const bindingChanged = bindingChoice === "current" && (!latest || !selectedBinding
     || selectedBinding.ref.memoryId !== latest.ref.memoryId || selectedBinding.ref.revision !== latest.ref.revision);

@@ -54,7 +54,7 @@ for (const [label, value] of [['PROBE_NOTE_HINT', NOTE_HINT], ['OWNER_EMAIL', pr
 }
 
 const sql = (statement: string): string => execFileSync(
-  'docker', ['exec', 'ailearn-dev-postgres-1', 'psql', '-U', 'ailearn', '-d', 'ailearn', '-tAc', statement],
+  'docker', ['exec', 'astella-dev-postgres-1', 'psql', '-U', 'astella', '-d', 'astella', '-tAc', statement],
   { encoding: 'utf8' },
 ).trim()
 
@@ -80,7 +80,7 @@ const noteShape = (noteId: string): Record<string, number> => ({
                        where v.note_id = '${noteId}'`)),
 })
 
-const userDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-w42-freshness-'))
+const userDataDir = await mkdtemp(resolve(tmpdir(), 'astella-w42-freshness-'))
 const app = await electron.launch({
   args: ['.', '--lang=zh-CN', `--user-data-dir=${userDataDir}`],
   cwd: appRoot,

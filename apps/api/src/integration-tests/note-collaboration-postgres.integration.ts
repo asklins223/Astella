@@ -27,7 +27,7 @@ import { documentNameForNote, closeNoteCollaboration, collaborationLoad } from "
 import { docFromSnapshot, editFragmentBlockText, projectFragmentBlocks, writeFragmentBlocks } from "../modules/note/doc-fragment.ts";
 
 /**
- * 夹具连接用超级用户那条（`DATABASE_URL`），被测应用连接仍是 `ailearn_api`。
+ * 夹具连接用超级用户那条（`DATABASE_URL`），被测应用连接仍是 `astella_api`。
  *
  * 这份夹具要往 `users` / `workspaces` / `note_versions` 原生写行，而它**不在事务里设
  * `app.workspace_id`**——`note_versions` 的 RESTRICTIVE 守卫没有 NULL 分支，受限角色下

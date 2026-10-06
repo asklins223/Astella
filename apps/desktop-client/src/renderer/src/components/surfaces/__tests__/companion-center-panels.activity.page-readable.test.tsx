@@ -7,17 +7,17 @@ import { primaryActionLabel } from "../run/objective-state-copy.ts";
 import {
   companionJourneyBootstrapSchema,
   type CompanionJourneyBootstrap,
-} from "@ailearn/shared/companion-journey-contracts";
+} from "@astella/shared/companion-journey-contracts";
 import {
   companionActivityDeliveryV1Schema,
   type CompanionActivityDeliveryV1,
-} from "@ailearn/shared/companion-memory-desktop-contracts";
+} from "@astella/shared/companion-memory-desktop-contracts";
 import {
   companionLearningContextV1Schema,
   type CompanionLearningContextV1,
-} from "@ailearn/shared/companion-conversation-contracts";
+} from "@astella/shared/companion-conversation-contracts";
 import { useRoomStore } from "../../../app/room-store.ts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /**
  * 伴星中心「动态」这一块登记给伴星读的是什么（39d W2-7）。

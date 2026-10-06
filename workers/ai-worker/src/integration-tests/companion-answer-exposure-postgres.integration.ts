@@ -7,7 +7,7 @@
  * （`target-snapshot-adapter` 会读回去算冷却窗口），写错一次就会污染正式判定资格。
  *
  * 角色纪律同 `companion-turn-facts`：夹具写走超级用户（`DATABASE_URL`），被测读数走
- * `DATABASE_URL_WORKER`（受限角色）；RLS 那一腿用 `SET LOCAL ROLE ailearn_api` 在
+ * `DATABASE_URL_WORKER`（受限角色）；RLS 那一腿用 `SET LOCAL ROLE astella_api` 在
  * **同一条超级用户连接**里量（受限角色自己 SET ROLE 不了）。
  */
 
@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import type { FormalAnswerFixture } from "./helpers/formal-answer-fixture.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const ADMIN_CONN = testDatabaseUrl("DATABASE_URL");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
@@ -97,7 +97,7 @@ test("换 user 读不到这笔账，也替别人写不进（RLS 对 worker 形�
     }));
 
   const asOwner = await sql.begin(async (tx) => {
-    await tx`SET LOCAL ROLE ailearn_api`;
+    await tx`SET LOCAL ROLE astella_api`;
     await tx`SELECT set_config('app.workspace_id', ${fixture.workspaceId}, true)`;
     await tx`SELECT set_config('app.user_id', ${fixture.userId}, true)`;
     return tx`SELECT exposure_kind FROM learning_exposures_v2 WHERE workspace_id = ${fixture.workspaceId}`;
@@ -106,7 +106,7 @@ test("换 user 读不到这笔账，也替别人写不进（RLS 对 worker 形�
   assert.ok(asOwner.length >= 1, "本人（API 角色）读不到自己的暴露行——上面那笔没落地");
 
   const asOther = await sql.begin(async (tx) => {
-    await tx`SET LOCAL ROLE ailearn_api`;
+    await tx`SET LOCAL ROLE astella_api`;
     await tx`SELECT set_config('app.workspace_id', ${fixture.workspaceId}, true)`;
     await tx`SELECT set_config('app.user_id', ${fixture.otherUserId}, true)`;
     return tx`SELECT 1 FROM learning_exposures_v2 WHERE workspace_id = ${fixture.workspaceId}`;
@@ -118,7 +118,7 @@ test("换 user 读不到这笔账，也替别人写不进（RLS 对 worker 形�
   let rejectedWith: string | null = null;
   try {
     await sql.begin(async (tx) => {
-      await tx`SET LOCAL ROLE ailearn_api`;
+      await tx`SET LOCAL ROLE astella_api`;
       await tx`SELECT set_config('app.workspace_id', ${fixture.workspaceId}, true)`;
       await tx`SELECT set_config('app.user_id', ${fixture.otherUserId}, true)`;
       await tx`

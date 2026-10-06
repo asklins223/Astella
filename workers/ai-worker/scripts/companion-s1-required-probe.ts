@@ -22,12 +22,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import process from "node:process";
 
-import { AgentRole, type AgentTurnRequest } from "@ailearn/shared";
+import { AgentRole, type AgentTurnRequest } from "@astella/shared";
 import {
   resolveAllCompanionAgentTools,
   validateCompanionAgentToolArguments,
-} from "@ailearn/shared/companion-agent-registry";
-import { resolveSystemPlatform } from "@ailearn/shared/platform-config-node";
+} from "@astella/shared/companion-agent-registry";
+import { resolveSystemPlatform } from "@astella/shared/platform-config-node";
 import { createProvider } from "../src/lib/ai-provider.ts";
 
 export interface RequiredProbeSample {

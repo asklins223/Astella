@@ -22,8 +22,8 @@ export function SettingsCompanionVoice(props: { onReadable: (value: SettingsRead
   const setModel = useRoomStore(state => state.setCompanionModelId);
   const masterMuted = useRoomStore(state => state.masterMuted);
   const setMasterMuted = useRoomStore(state => state.setMasterMuted);
-  const voiceResource = useCompanionResource(meta => window.ailearn.companion.voicePreference.get({ meta }));
-  const answer = useCompanionResource(meta => window.ailearn.companion.answerMode.get({ meta }));
+  const voiceResource = useCompanionResource(meta => window.astella.companion.voicePreference.get({ meta }));
+  const answer = useCompanionResource(meta => window.astella.companion.answerMode.get({ meta }));
   const [error, setError] = useState<string | null>(null);
   const [answerSaving, setAnswerSaving] = useState(false);
   const voice = useSettingsVoice({ epochRef: voiceResource.epochRef, setFailureNotice: setError });
@@ -37,7 +37,7 @@ export function SettingsCompanionVoice(props: { onReadable: (value: SettingsRead
   const changeAnswer = async (preference: NonNullable<typeof answerMode>["preference"]) => {
     if (answerSaving) return;
     setAnswerSaving(true); setError(null);
-    try { unwrapGatewayResult(await window.ailearn.companion.answerMode.patch({ meta: answer.meta(), preference })); await answer.reload({ silent: true }); }
+    try { unwrapGatewayResult(await window.astella.companion.answerMode.patch({ meta: answer.meta(), preference })); await answer.reload({ silent: true }); }
     catch (cause) { setError(gatewayErrorMessage(cause)); }
     finally { setAnswerSaving(false); }
   };

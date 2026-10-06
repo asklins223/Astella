@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import type { DesktopSearchItem, DesktopSourceDetail } from "@ailearn/shared/desktop-surface-contracts";
-import type { LearningObjectiveSurfaceV3 } from "@ailearn/shared/learning-objective-surface-contracts";
-import type { NoteDetailV1, NoteBlockProjectionV1 } from "@ailearn/shared/note-projection-contracts";
+import type { DesktopSearchItem, DesktopSourceDetail } from "@astella/shared/desktop-surface-contracts";
+import type { LearningObjectiveSurfaceV3 } from "@astella/shared/learning-objective-surface-contracts";
+import type { NoteDetailV1, NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
 import type { SearchTypeFilter } from "../../../app/room-store";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
 import { freshnessLabel } from "../run/objective-state-copy";
@@ -182,13 +182,13 @@ export async function readSearchContent(item: DesktopSearchItem, epoch: number |
   const meta = createRequestMeta(epoch);
   const key = objectKey(item);
   if (item.objectType === "note") {
-    const response = await window.ailearn.note.get({ meta, noteId: item.objectId });
+    const response = await window.astella.note.get({ meta, noteId: item.objectId });
     return { kind: "note", key, detail: unwrapGatewayResult(response) };
   }
   if (item.objectType === "source") {
-    const response = await window.ailearn.source.get({ meta, sourceId: item.objectId });
+    const response = await window.astella.source.get({ meta, sourceId: item.objectId });
     return { kind: "source", key, detail: unwrapGatewayResult(response) };
   }
-  const response = await window.ailearn.objective.get({ meta, objectiveId: item.objectId });
+  const response = await window.astella.objective.get({ meta, objectiveId: item.objectId });
   return { kind: "objective", key, detail: unwrapGatewayResult(response) };
 }

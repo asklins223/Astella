@@ -8,7 +8,7 @@
  * V2 rebase：使用 seedV2Fixture + addV2ObjectiveToWorkspace 在同一 workspace
  * 创建多个 objective（=旧 keyPoint）；token 来自 seedV2Fixture 的 sessions 行。
  *
- * 运行：DATABASE_URL_API="postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn"
+ * 运行：DATABASE_URL_API="postgres://astella:astella_dev@127.0.0.1:5432/astella"
  *   node --import tsx --test --test-concurrency=1 src/integration-tests/projection-pagination-postgres.integration.ts
  */
 
@@ -19,7 +19,7 @@ import { randomUUID } from "node:crypto";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import { seedV2Fixture, addV2ObjectiveToWorkspace } from "./helpers/v2-card-fixture.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL_API ??= CONN;
@@ -30,7 +30,7 @@ const { closeDatabase } = await import("../db/client.ts");
 /**
  * 裸 SQL 夹具/校验必须带 workspace/user 上下文。
  *
- * understanding_route_plans 是 FORCE RLS：受限角色（ailearn_api）在无上下文
+ * understanding_route_plans 是 FORCE RLS：受限角色（astella_api）在无上下文
  * 事务里 UPDATE 会静默匹配 0 行，于是"过期路线必须 409"的断言读到未过期的
  * 路线并返回 200（超级用户则绕过 RLS 掩盖同一问题）。
  */

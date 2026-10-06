@@ -42,7 +42,7 @@ export type ResolvedStorageConfig = {
 
 const DEFAULT_ENDPOINT = "http://minio:9000";
 const DEFAULT_REGION = "us-east-1";
-const DEFAULT_BUCKET = "ailearn-workspaces";
+const DEFAULT_BUCKET = "astella-workspaces";
 /** 与两个进程此前写死的一致：MinIO 半挂时 S3Client 默认无超时会让请求无限挂起。 */
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 const CONNECTION_TIMEOUT_MS = 10_000;

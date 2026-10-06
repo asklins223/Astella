@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { gatewayErrorCodeValues } from "@ailearn/shared/desktop-ipc-contracts";
+import { gatewayErrorCodeValues } from "@astella/shared/desktop-ipc-contracts";
 
 /**
  * 每一个网关错误码都必须有一句人话（doc 34 L13 的那一族：码存在、没人读它 = 等于没有）。

@@ -68,14 +68,14 @@ describe("a render crash becomes a readable page", () => {
 
   it("keeps a full-page fallback for the shell, where there is no page body left", () => {
     render(
-      <RenderErrorBoundary label="理解书房" shell>
+      <RenderErrorBoundary label="拾星书房" shell>
         <Bomb explode />
       </RenderErrorBoundary>,
     );
 
     expect(document.querySelector(".render-error-boundary--shell")).not.toBeNull();
     const paper = screen.getByRole("alert");
-    expect(paper.textContent).toContain("理解书房没能打开");
+    expect(paper.textContent).toContain("拾星书房没能打开");
     // 整页失守时版心已经不存在了，重载应用是最后一条出路，必须给出来。
     expect(screen.getByRole("button", { name: /重新载入应用/ })).toBeTruthy();
   });

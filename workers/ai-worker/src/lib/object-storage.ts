@@ -12,10 +12,10 @@ import {
   resolveStorageConfig,
   resolveStorageRequestTimeoutMs,
   type StorageEnv,
-} from "@ailearn/shared/storage-config";
+} from "@astella/shared/storage-config";
 
 /**
- * 配置判定委托给 `@ailearn/shared/storage-config`（2026-09-29，P2-16）。
+ * 配置判定委托给 `@astella/shared/storage-config`（2026-09-29，P2-16）。
  *
  * 此前这一份与 `apps/api` 那份**各写一次**凭证回退链：独立凭证优先、回退 root，
  * 且用 `||` 让空串按未配置处理。改一处不改另一处就会出现

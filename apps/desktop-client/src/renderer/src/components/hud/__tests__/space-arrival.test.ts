@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
-import type { SessionContextV1, WorkspaceArrivalV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { SessionContextV1, WorkspaceArrivalV1 } from "@astella/shared/desktop-ipc-contracts";
 import { acceptVerifiedSpaceArrival, clearSpaceArrival, useSpaceArrival } from "../space-arrival";
 const A = "11111111-1111-4111-8111-111111111111", B = "22222222-2222-4222-8222-222222222222";
 const USER = "33333333-3333-4333-8333-333333333333";

@@ -9,7 +9,7 @@
 
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkspaceTransaction } from "../../../db/client.ts";
 import { CompanionConversationError } from "./turn-service.ts";
 

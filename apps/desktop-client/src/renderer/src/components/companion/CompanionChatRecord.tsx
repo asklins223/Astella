@@ -1,7 +1,7 @@
 // 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Copy, CornerDownRight, Quote, Sparkles, UserRound } from "lucide-react";
-import type { CompanionContentBlockV1, CompanionMessageV1 } from "@ailearn/shared/companion-conversation-contracts";
+import type { CompanionContentBlockV1, CompanionMessageV1 } from "@astella/shared/companion-conversation-contracts";
 import type { CompanionChatSession } from "../../app/companion-chat-session";
 import { companionMessageText, desktopRouteFromAgentRoute } from "../../app/companion-chat-session";
 import { gatewayErrorMessage } from "../../app/desktop-client";
@@ -131,7 +131,7 @@ function NavBlockLine({
 /**
  * 她摆到对话里的那张图（§4.8 的 image 块，`companion_show_image` 服务端拼的 url）。
  *
- * 字节必须走 main 的站内图片通道：渲染层的 origin 是 `ailearn-app://`，
+ * 字节必须走 main 的站内图片通道：渲染层的 origin 是 `astella-app://`，
  * `/api/uploads/…` 会落到应用包里（404），而外链又被 CSP 的 `img-src` 拦掉。
  * 载入中与取不回来都不给 `<img>`——破图图标比一句人话更像"她坏了"。
  * 取不回来时留一个重试：这类失败通常是瞬时的（API 正在重启），

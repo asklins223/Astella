@@ -29,14 +29,14 @@ import {
   candidateActionCommandV2Schema,
   revealCandidateRequestV2Schema,
   activateCardCandidatesRequestV2Schema,
-} from "@ailearn/shared/card-generation-v2-contracts";
-import { cardGenerationExposureEligibilityV1Schema } from "@ailearn/shared/card-generation-desktop-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
+import { cardGenerationExposureEligibilityV1Schema } from "@astella/shared/card-generation-desktop-contracts";
 import {
   revealCardRequestV2Schema,
   archiveCardRequestV2Schema,
   type RevealCardRequestV2,
   type ArchiveCardRequestV2,
-} from "@ailearn/shared/learning-card-v2-contracts";
+} from "@astella/shared/learning-card-v2-contracts";
 import {
   revealCardV2,
   archiveCardV2,
@@ -72,7 +72,7 @@ import { safeSseWrite } from "../../lib/safe-sse-write.ts";
 // CardGenerationPipelineErrorV2（如 filterBlocksBySourceScope 的选区越界），
 // 错误边界必须检查父类才能同时接住 IO 壳（ServiceError 子类）与纯逻辑层
 // （PipelineError 本类）的领域错误——instanceof 子类会漏掉父类实例。
-import { CardGenerationPipelineErrorV2 } from "@ailearn/shared/card-generation-v2-pipeline";
+import { CardGenerationPipelineErrorV2 } from "@astella/shared/card-generation-v2-pipeline";
 import {
   parseCandidateRevealV2,
   parseCardActivationReceiptV2,

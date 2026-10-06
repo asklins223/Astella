@@ -9,7 +9,7 @@
  * - evidenceSnapshotHash 稳定（同输入同 hash）
  *
  * 2026-10-04：落库那一层连同纯逻辑一起搬进制卡领域包
- * `@ailearn/card-generation`（原来的 `evidence-seal-service.ts` 已删），
+ * `@astella/card-generation`（原来的 `evidence-seal-service.ts` 已删），
  * 断言原样保留——它们守的是"seal 写出去的行"，不是"文件住在哪"。
  */
 
@@ -19,7 +19,7 @@ import {
   sealEvidenceSnapshotsV2,
   filterBlocksBySourceScope,
   computeSealedEvidenceSnapshotHashV2,
-} from "@ailearn/card-generation";
+} from "@astella/card-generation";
 
 const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const SOURCE_SNAPSHOT_ID = "00000000-0000-4000-8000-000000000002";

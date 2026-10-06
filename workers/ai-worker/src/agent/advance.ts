@@ -1,10 +1,10 @@
 import { sql } from "drizzle-orm";
-import { executeTurn, executeAgentStep, runAgentModelStep, declaredAgentRequestStep } from "@ailearn/agent-core";
-import { createAgentAdvanceStore, AgentStoreError, projectRun } from "@ailearn/agent-host";
-import { agentGoalDeliveryManifest } from "@ailearn/shared/agent-capabilities";
-import { getAgentCapability } from "@ailearn/shared/agent-capability-catalog";
-import { agentTurnResultSchema } from "@ailearn/shared";
-import { sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { executeTurn, executeAgentStep, runAgentModelStep, declaredAgentRequestStep } from "@astella/agent-core";
+import { createAgentAdvanceStore, AgentStoreError, projectRun } from "@astella/agent-host";
+import { agentGoalDeliveryManifest } from "@astella/shared/agent-capabilities";
+import { getAgentCapability } from "@astella/shared/agent-capability-catalog";
+import { agentTurnResultSchema } from "@astella/shared";
+import { sha256Utf8V1 } from "@astella/shared/content-hash";
 import type { JobPayload } from "../handlers/index.ts";
 import { buildAgentGoalRequest } from "./goal-context.ts";
 import { withWorkerWorkspaceTransaction, db } from "../db.ts";
@@ -127,7 +127,7 @@ let lastRecovery = 0;
 export async function tickAgentRecovery() {
   if (Date.now()-lastRecovery < 30000) return;
   lastRecovery = Date.now();
-  await db.execute(sql`SELECT ailearn_enqueue_agent_recovery()`);
+  await db.execute(sql`SELECT astella_enqueue_agent_recovery()`);
 }
 export async function markAgentAdvanceFailed(job: JobPayload) {
   if (!job.requestedBy || typeof job.payload.runId !== "string") return;

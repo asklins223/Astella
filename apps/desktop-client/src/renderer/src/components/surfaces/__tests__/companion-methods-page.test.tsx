@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { AgentMethodV1 } from "@ailearn/shared/agent-growth-contracts";
+import type { AgentMethodV1 } from "@astella/shared/agent-growth-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import { CompanionMethodsPage } from "../companion/companion-methods-page";
 
@@ -11,7 +11,7 @@ let items:AgentMethodV1[],agent:{listMethods:ReturnType<typeof vi.fn>;controlMet
 beforeEach(()=>{
   useRoomStore.setState({workspaceScopeRevision:1});items=[{...method}];
   agent={listMethods:vi.fn(async()=>ok({version:1,items})),controlMethod:vi.fn(async()=>{items=[{...method,revision:3,state:"active",userControlled:true,availability:"available"}];return ok(items[0]);}),getMethodHistory:vi.fn(async()=>ok({version:1,items:[]})),getMethodUses:vi.fn(async()=>ok({version:1,items:[]})),reviseMethod:vi.fn()};
-  Object.defineProperty(window,"ailearn",{configurable:true,value:{auth:{getState:vi.fn(async()=>ok({version:1,status:"authenticated",workspace:{workspaceId:"22222222-2222-4222-8222-222222222222"},workspaceEpoch:1}))},agent}});
+  Object.defineProperty(window,"astella",{configurable:true,value:{auth:{getState:vi.fn(async()=>ok({version:1,status:"authenticated",workspace:{workspaceId:"22222222-2222-4222-8222-222222222222"},workspaceEpoch:1}))},agent}});
 });
 afterEach(()=>cleanup());
 

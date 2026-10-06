@@ -18,7 +18,7 @@
  *  4. **列表 / 任务 / 已收好，三样分三处**。合成一处就会出现「读完列表顺手清了任务」。
  */
 import { useState } from "react";
-import type { NoteLearningArtifactTaskV1, NoteLearningArtifactV1 } from "@ailearn/shared/note-learning-artifact-contracts";
+import type { NoteLearningArtifactTaskV1, NoteLearningArtifactV1 } from "@astella/shared/note-learning-artifact-contracts";
 
 export function useNotebookLearningArtifactState() {
   const [learningArtifactRows, setLearningArtifactRows] = useState<{ noteId: string; items: NoteLearningArtifactV1[]; nextCursor: string | null } | null>(null);

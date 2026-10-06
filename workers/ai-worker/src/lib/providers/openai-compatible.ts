@@ -3,16 +3,16 @@ import {
   type AgentTurnRequest,
   type AgentTurnResult,
   type ProviderCapability,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import { createHash } from "node:crypto";
-import { resolveOpenAIChatCompletionsUrl, resolveOpenAIEmbeddingsUrl } from "@ailearn/shared/ai-endpoints";
+import { resolveOpenAIChatCompletionsUrl, resolveOpenAIEmbeddingsUrl } from "@astella/shared/ai-endpoints";
 import {
   postSseToPublicEndpoint,
   postJsonToPublicEndpoint,
   type PublicJsonRequester,
   type PublicStreamingRequester,
-} from "@ailearn/shared/public-json-http";
-import { shouldUsePromptCache } from "@ailearn/shared";
+} from "@astella/shared/public-json-http";
+import { shouldUsePromptCache } from "@astella/shared";
 import type { AIProvider, ProviderUsage } from "../ai-provider.ts";
 import {
   readChatCompletionContent,
@@ -29,7 +29,7 @@ import type {
   ModelProfile,
   ProviderRuntimeConfig,
   PlatformOptions,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import { registerFactory } from "../provider-factory.ts";
 import { ProviderRequestError } from "../provider-request-error.ts";
 import { AgentOutputError } from "../non-retryable-errors.ts";

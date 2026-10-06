@@ -1,4 +1,4 @@
-import type { CompanionDiscoveryKind, CompanionDiscoverySource } from "@ailearn/shared/desktop-ipc-contracts";
+import type { CompanionDiscoveryKind, CompanionDiscoverySource } from "@astella/shared/desktop-ipc-contracts";
 import { AlertCircle, Bookmark, BookmarkCheck, RefreshCw } from "lucide-react";
 
 export interface DiscoveryKeepIdentity {

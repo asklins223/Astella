@@ -10,8 +10,8 @@ import { sql } from "drizzle-orm";
 import {
   companionLearningRunContextV1Schema,
   type CompanionLearningRunContextV1,
-} from "@ailearn/shared";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+} from "@astella/shared";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import type { ApiTransaction } from "../../../db/client.ts";
 
 export interface CompanionLearningRunContextRow {

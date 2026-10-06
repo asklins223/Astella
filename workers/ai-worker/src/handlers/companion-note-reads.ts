@@ -21,9 +21,9 @@
  */
 
 import { sql } from "drizzle-orm";
-import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
+import { noteVisibleSqlText } from "@astella/shared/note-visibility";
 import type { WorkerTransaction } from "../db.ts";
-import { ACTIVE_LEARNING_RUN_PHASES } from "@ailearn/shared/learning-run-contracts";
+import { ACTIVE_LEARNING_RUN_PHASES } from "@astella/shared/learning-run-contracts";
 
 /** 候选池：最近更新的 N 篇可见笔记。够用且恒定，不为它开窗口函数。 */
 const NEAREST_CANDIDATE_LIMIT = 60;

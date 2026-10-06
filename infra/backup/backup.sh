@@ -13,7 +13,7 @@
 #   ./backup.sh --pg-host localhost --pg-port 5432 --pg-user study \
 #     --pg-db study --release 0.5.0-alpha.1 --commit abc1234 \
 #     --migration 0021 --age-key ./backup.pub \
-#     --s3-endpoint http://minio:9000 --s3-bucket ailearn-backups \
+#     --s3-endpoint http://minio:9000 --s3-bucket astella-backups \
 #     --s3-access-key XXX --s3-secret-key YYY
 #
 # CI 模式（跳过加密和 S3 上传）：
@@ -117,7 +117,7 @@ if [[ "$CI_MODE" == "false" ]]; then
   fi
 else
   if [[ -z "$OUTPUT_DIR" ]]; then
-    OUTPUT_DIR="${RUNNER_TEMP:-/tmp}/ailearn-backups"
+    OUTPUT_DIR="${RUNNER_TEMP:-/tmp}/astella-backups"
   fi
   if [[ -z "$MANIFEST_DIR" ]]; then
     MANIFEST_DIR="$OUTPUT_DIR"
@@ -125,7 +125,7 @@ else
 fi
 
 if [[ -z "$MANIFEST_DIR" ]]; then
-  MANIFEST_DIR="${OUTPUT_DIR:-/tmp/ailearn-manifests}"
+  MANIFEST_DIR="${OUTPUT_DIR:-/tmp/astella-manifests}"
 fi
 
 # ─── 工具函数 ───────────────────────────────────────────────────────────
@@ -151,8 +151,8 @@ upload_object() {
     aws s3 cp "$source_file" "s3://$S3_BUCKET/$object_key" \
       --endpoint-url "$S3_ENDPOINT"
   elif command -v mc &>/dev/null; then
-    mc alias set ailearn-backup "$S3_ENDPOINT" "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null
-    mc cp "$source_file" "ailearn-backup/$S3_BUCKET/$object_key"
+    mc alias set astella-backup "$S3_ENDPOINT" "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null
+    mc cp "$source_file" "astella-backup/$S3_BUCKET/$object_key"
   else
     log "错误: 需要 aws CLI 或 mc (MinIO Client) 才能上传备份" >&2
     return 1

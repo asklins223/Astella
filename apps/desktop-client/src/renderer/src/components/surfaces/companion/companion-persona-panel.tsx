@@ -1,6 +1,6 @@
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
-import type { CompanionPersonaPendingRevisionV1,CompanionPersonaPendingV1,CompanionPersonaPresetV1,CompanionPersonaProfileV1,CompanionPersonaProfileVersionV1,CompanionPersonaV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
-import { personaOriginOf, type PersonaSwitchOption, type SwitchableField } from "@ailearn/shared/pet-persona-merge";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
+import type { CompanionPersonaPendingRevisionV1,CompanionPersonaPendingV1,CompanionPersonaPresetV1,CompanionPersonaProfileV1,CompanionPersonaProfileVersionV1,CompanionPersonaV1 } from "@astella/shared/companion-memory-desktop-contracts";
+import { personaOriginOf, type PersonaSwitchOption, type SwitchableField } from "@astella/shared/pet-persona-merge";
 import { useId,useMemo,useState } from "react";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";

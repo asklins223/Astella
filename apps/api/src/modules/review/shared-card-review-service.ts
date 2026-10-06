@@ -37,15 +37,15 @@
  * 会把笔记那份也停掉——那句话他没说过。所以这一刀只做「开启」；「停」归 W7-3 规则表行 1
  * 的完整实现（按 `reason_code` 精确撤下这一条来源，不碰排除表）。
  */
-import { REVIEW_DIMENSION_VALUES_V2 } from "@ailearn/shared/review-dimension-v2";
+import { REVIEW_DIMENSION_VALUES_V2 } from "@astella/shared/review-dimension-v2";
 import { and, eq, isNotNull } from "drizzle-orm";
 import {
   DISCRETE_V2_FIRST_INTERVAL_DAYS,
   DISCRETE_V2_POLICY_VERSION,
   discreteV2FirstDueAt,
-} from "@ailearn/shared";
-import { learningCardsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { noteVersions } from "@ailearn/shared/db-schema/note";
+} from "@astella/shared";
+import { learningCardsV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { noteVersions } from "@astella/shared/db-schema/note";
 import type { ApiTransaction } from "../../db/client.ts";
 import { visibleObjectivesCondition } from "../note/visibility.ts";
 import { ensurePendingReviewScheduleV2 } from "./review-schedule-boundary.ts";

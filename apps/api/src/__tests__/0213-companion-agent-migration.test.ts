@@ -31,5 +31,5 @@ test("0213 creates bounded, RLS-protected Agent audit ledgers", () => {
 test("0213 allows only the registered Agent job type through the worker insert fence", () => {
   assert.match(migration, /'companion_agent', 'companion_memory_extract'/);
   assert.match(migration, /'companion_daily_summary'/);
-  assert.match(migration, /CURRENT_USER = 'ailearn_worker'::name/);
+  assert.match(migration, /CURRENT_USER = 'astella_worker'::name/);
 });

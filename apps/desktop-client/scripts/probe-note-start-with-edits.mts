@@ -36,7 +36,7 @@ const check = (name: string, ok: boolean, detail: unknown = ''): void => {
   results.push({ name, ok, detail })
 }
 
-const userDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-w44-probe-'))
+const userDataDir = await mkdtemp(resolve(tmpdir(), 'astella-w44-probe-'))
 const app = await electron.launch({
   args: ['.', '--lang=zh-CN', `--user-data-dir=${userDataDir}`],
   cwd: appRoot,

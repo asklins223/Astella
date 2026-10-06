@@ -2,7 +2,7 @@
  * Captures the rebuilt note pages (07 library, 08 reading, 09 editing) from the
  * client the owner is actually looking at, over CDP.
  *
- * Usage: AILEARN_CAPTURE_CDP=http://127.0.0.1:9222 node scripts/capture-note-pages.mjs
+ * Usage: ASTELLA_CAPTURE_CDP=http://127.0.0.1:9222 node scripts/capture-note-pages.mjs
  */
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -13,7 +13,7 @@ const appRoot = resolve(import.meta.dirname, '..')
 const outRoot = resolve(appRoot, '../../.impeccable/review/desktop-pages-v3/live/notes')
 await mkdir(outRoot, { recursive: true })
 
-const endpoint = process.env.AILEARN_CAPTURE_CDP ?? 'http://127.0.0.1:9222'
+const endpoint = process.env.ASTELLA_CAPTURE_CDP ?? 'http://127.0.0.1:9222'
 const browser = await chromium.connectOverCDP(endpoint)
 const window = browser.contexts()[0].pages()[0]
 

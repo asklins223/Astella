@@ -6,7 +6,7 @@
  * 它都不会红，所以必须单独钉住。
  */
 import { expect, it } from "vitest";
-import { learningObjectiveSurfaceV3Schema, type LearningObjectiveSurfaceV3 } from "@ailearn/shared/learning-objective-surface-contracts";
+import { learningObjectiveSurfaceV3Schema, type LearningObjectiveSurfaceV3 } from "@astella/shared/learning-objective-surface-contracts";
 import { recallWaitingCueV1, recallWaitingLineV1, recallRevealReceiptLineV1 } from "../notebook/recall-waiting-presenter.ts";
 
 const surface = (over: Partial<Record<string, unknown>> = {}): LearningObjectiveSurfaceV3 =>

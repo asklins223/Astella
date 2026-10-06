@@ -1,7 +1,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import { extractQueryKeywords } from "./companion-memory-vector.ts";
 import { companionHistoryText } from "./companion-dialogue-store.ts";
-import { toTextArrayLiteral } from "@ailearn/shared/pg-text-array";
+import { toTextArrayLiteral } from "@astella/shared/pg-text-array";
 
 /**
  * 方案 44 §3.2／§8.3：跨会话找回。

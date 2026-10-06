@@ -30,8 +30,8 @@ CREATE POLICY "sec01_v1_workspaces_runtime_access"
   AS PERMISSIVE
   FOR ALL
   TO PUBLIC
-  USING (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'))
-  WITH CHECK (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'));
+  USING (CURRENT_USER IN ('astella_api', 'astella_worker'))
+  WITH CHECK (CURRENT_USER IN ('astella_api', 'astella_worker'));
 --> statement-breakpoint
 
 DO $migration$
@@ -64,8 +64,8 @@ BEGIN
     runtime_role_predicate := CASE
       WHEN table_name IN (
         'workspace_members', 'invite_codes', 'benchmark_reports', 'benchmark_labels'
-      ) THEN 'CURRENT_USER = ''ailearn_api'''
-      ELSE 'CURRENT_USER IN (''ailearn_api'', ''ailearn_worker'')'
+      ) THEN 'CURRENT_USER = ''astella_api'''
+      ELSE 'CURRENT_USER IN (''astella_api'', ''astella_worker'')'
     END;
     EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', guard_name, table_name);
     EXECUTE format(
@@ -128,8 +128,8 @@ BEGIN
     EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', access_name, table_name);
     EXECUTE format(
       'CREATE POLICY %I ON public.%I AS PERMISSIVE FOR ALL TO PUBLIC '
-      || 'USING (CURRENT_USER IN (''ailearn_api'', ''ailearn_worker'')) '
-      || 'WITH CHECK (CURRENT_USER IN (''ailearn_api'', ''ailearn_worker''))',
+      || 'USING (CURRENT_USER IN (''astella_api'', ''astella_worker'')) '
+      || 'WITH CHECK (CURRENT_USER IN (''astella_api'', ''astella_worker''))',
       access_name,
       table_name
     );
@@ -176,8 +176,8 @@ CREATE POLICY "sec01_v1_validation_questions_api_access"
   AS PERMISSIVE
   FOR ALL
   TO PUBLIC
-  USING (CURRENT_USER = 'ailearn_api')
-  WITH CHECK (CURRENT_USER = 'ailearn_api');
+  USING (CURRENT_USER = 'astella_api')
+  WITH CHECK (CURRENT_USER = 'astella_api');
 --> statement-breakpoint
 
 -- AI artifacts have mixed ownership. Workspace-derived artifacts are shared;
@@ -222,8 +222,8 @@ CREATE POLICY "sec01_v1_ai_artifacts_runtime_access"
   AS PERMISSIVE
   FOR ALL
   TO PUBLIC
-  USING (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'))
-  WITH CHECK (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'));
+  USING (CURRENT_USER IN ('astella_api', 'astella_worker'))
+  WITH CHECK (CURRENT_USER IN ('astella_api', 'astella_worker'));
 --> statement-breakpoint
 
 -- AI audit is append-only. Restrictive guards fix tenant and insert actor;
@@ -259,7 +259,7 @@ CREATE POLICY "sec01_v1_ai_audit_api_owner_read"
   FOR SELECT
   TO PUBLIC
   USING (
-    CURRENT_USER = 'ailearn_api'
+    CURRENT_USER = 'astella_api'
     AND "workspace_id" = NULLIF(pg_catalog.current_setting('app.workspace_id', true), '')::uuid
     AND EXISTS (
       SELECT 1
@@ -277,7 +277,7 @@ CREATE POLICY "sec01_v1_ai_audit_runtime_insert"
   FOR INSERT
   TO PUBLIC
   WITH CHECK (
-    CURRENT_USER IN ('ailearn_api', 'ailearn_worker')
+    CURRENT_USER IN ('astella_api', 'astella_worker')
   );
 --> statement-breakpoint
 
@@ -334,28 +334,28 @@ CREATE POLICY "sec01_v1_jobs_worker_update_actor_guard"
 DROP POLICY IF EXISTS "sec01_v1_jobs_api_workspace_select_policy" ON "jobs";
 CREATE POLICY "sec01_v1_jobs_api_workspace_select_policy"
   ON "jobs" AS PERMISSIVE FOR SELECT TO PUBLIC
-  USING (CURRENT_USER = 'ailearn_api');
+  USING (CURRENT_USER = 'astella_api');
 
 DROP POLICY IF EXISTS "sec01_v1_jobs_api_workspace_insert_actor_policy" ON "jobs";
 CREATE POLICY "sec01_v1_jobs_api_workspace_insert_actor_policy"
   ON "jobs" AS PERMISSIVE FOR INSERT TO PUBLIC
-  WITH CHECK (CURRENT_USER = 'ailearn_api');
+  WITH CHECK (CURRENT_USER = 'astella_api');
 
 DROP POLICY IF EXISTS "sec01_v1_jobs_api_workspace_delete_policy" ON "jobs";
 CREATE POLICY "sec01_v1_jobs_api_workspace_delete_policy"
   ON "jobs" AS PERMISSIVE FOR DELETE TO PUBLIC
-  USING (CURRENT_USER = 'ailearn_api');
+  USING (CURRENT_USER = 'astella_api');
 
 DROP POLICY IF EXISTS "sec01_v1_jobs_worker_workspace_select_policy" ON "jobs";
 CREATE POLICY "sec01_v1_jobs_worker_workspace_select_policy"
   ON "jobs" AS PERMISSIVE FOR SELECT TO PUBLIC
-  USING (CURRENT_USER = 'ailearn_worker');
+  USING (CURRENT_USER = 'astella_worker');
 
 DROP POLICY IF EXISTS "sec01_v1_jobs_worker_workspace_update_policy" ON "jobs";
 CREATE POLICY "sec01_v1_jobs_worker_workspace_update_policy"
   ON "jobs" AS PERMISSIVE FOR UPDATE TO PUBLIC
-  USING (CURRENT_USER = 'ailearn_worker')
-  WITH CHECK (CURRENT_USER = 'ailearn_worker');
+  USING (CURRENT_USER = 'astella_worker')
+  WITH CHECK (CURRENT_USER = 'astella_worker');
 --> statement-breakpoint
 
 -- Expand-phase invariant: policy creation must never silently become enforce.

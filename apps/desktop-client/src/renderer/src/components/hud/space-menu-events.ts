@@ -5,7 +5,7 @@
  * owns joining. The gate asks for it by name instead of reaching into the pill's
  * state, the same way the rail and the home scene already talk to their peers.
  */
-export const SPACE_MENU_OPEN_EVENT = "ailearn:space-menu-open";
+export const SPACE_MENU_OPEN_EVENT = "astella:space-menu-open";
 
 type SpaceMenuRequest = { readonly notice?: string };
 
@@ -37,7 +37,7 @@ export function takePendingSpaceMenuRequest(): SpaceMenuRequest | null {
  * re-verifies the session, so a non-invalidating update still lands as fresh
  * rows instead of a stale list.
  */
-export const SPACE_MENU_REFRESH_EVENT = "ailearn:space-menu-refresh";
+export const SPACE_MENU_REFRESH_EVENT = "astella:space-menu-refresh";
 
 export function requestSpaceMenuRefresh(): void {
   window.dispatchEvent(new CustomEvent(SPACE_MENU_REFRESH_EVENT));

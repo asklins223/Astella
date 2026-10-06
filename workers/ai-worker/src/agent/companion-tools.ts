@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
-import { queryRows } from "@ailearn/agent-host";
-import { agentInputRefV1Schema, createAgentRunV1Schema } from "@ailearn/shared/agent-contracts";
-import { agentGoalToolManifest } from "@ailearn/shared/agent-capabilities";
+import { queryRows } from "@astella/agent-host";
+import { agentInputRefV1Schema, createAgentRunV1Schema } from "@astella/shared/agent-contracts";
+import { agentGoalToolManifest } from "@astella/shared/agent-capabilities";
 import type { AgentEventContext } from "../handlers/companion-read-tools.ts";
 import { parsePageContext } from "../handlers/companion-dialogue-content.ts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";

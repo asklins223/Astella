@@ -21,9 +21,9 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { sql as query } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import type { AgentStorePorts } from "@ailearn/agent-host";
+import type { AgentStorePorts } from "@astella/agent-host";
 import type { ApiTransaction } from "../../../../apps/api/src/db/client.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { loadAgentLearningContext } from "../agent/learning-context.ts";
 
 const tag = randomUUID();
@@ -296,7 +296,7 @@ test("源行带非默认状态时的首次铺开：副本从一开始就和源�
               now(), now(), ${quirky})`;
   });
   await inApi(home, tx => tx.execute(query`
-    SELECT public.ailearn_fanout_agent_global_preference(${quirky}::uuid) AS inserted`));
+    SELECT public.astella_fanout_agent_global_preference(${quirky}::uuid) AS inserted`));
 
   // 两边读的是同一组列，逐列比对——少比一列就等于放过一处不一致。
   const [copy] = await admin`SELECT candidate, user_confirmed, epistemic_status, author_type,
@@ -344,7 +344,7 @@ test("受控铺开入口不认任意 UUID：跨用户与非法 scope 都过不�
   // 另一个用户拿着别人的记忆 id 来铺：他**是** side 的活跃成员，校验要落在源行归属上。
   await assert.rejects(
     () => inApi(otherInSide, tx => tx.execute(query`
-      SELECT public.ailearn_fanout_agent_global_preference(${account.memoryItemId}::uuid) AS inserted`)),
+      SELECT public.astella_fanout_agent_global_preference(${account.memoryItemId}::uuid) AS inserted`)),
     (error: Error & { cause?: { code?: string; message?: string } }) =>
       error.cause?.code === "42501" && /not available to the acting user/.test(error.cause.message ?? ""),
   );
@@ -353,7 +353,7 @@ test("受控铺开入口不认任意 UUID：跨用户与非法 scope 都过不�
 
   // 非法 scope 不是错误，只是不铺：workspace 级的行本来就该留在原空间。
   const [noop] = await inApi(home, tx => tx.execute(query`
-    SELECT public.ailearn_fanout_agent_global_preference(${local.memoryItemId}::uuid) AS inserted`));
+    SELECT public.astella_fanout_agent_global_preference(${local.memoryItemId}::uuid) AS inserted`));
   assert.equal(Number(noop?.inserted ?? -1), 0, "空间内规则竟然被铺开了");
   assert.deepEqual(await contents({ workspaceId: f.side, userId: f.userId }), [account.content],
     "第二空间只保留此前合法铺开的账号级规则，空间内规则不能被提升");
@@ -386,7 +386,7 @@ test("副本同步触发器：存在、启用、行级 AFTER UPDATE、绑定的�
        AND NOT t.tgisinternal`;
   assert.ok(trigger, "账号级副本同步触发器不在库里：删除与归档都不会传到别的空间");
   assert.equal(trigger.tgenabled, "O", "触发器不是默认启用态");
-  assert.equal(trigger.proname, "ailearn_sync_global_companion_memory_copies",
+  assert.equal(trigger.proname, "astella_sync_global_companion_memory_copies",
     "触发器绑到了别的函数上");
   assert.equal(trigger.prosecdef, true, "同步函数不是 SECURITY DEFINER，跨空间那一行会被 RLS 挡住");
   // pg_trigger.tgtype 位：bit0=ROW(1)、bit1=BEFORE(2)、bit4=UPDATE(16)、bit5=TRUNCATE(32)。
@@ -431,7 +431,7 @@ const revisionRows = async (memoryIds: readonly string[]) => {
 /**
  * 回收区状态：一条账号级规则在每个空间里那一行的 `deleted_at` / `purge_after`。
  *
- * `due` 就是 0345 `ailearn_purge_expired_companion_memory()` 的判据原样搬过来
+ * `due` 就是 0345 `astella_purge_expired_companion_memory()` 的判据原样搬过来
  * （deleted_at 非空 ∧ purge_after 非空 ∧ 已到期）。这里只**读**判据、不执行清理——
  * 真正到期后的物理删除另在本任务自己的隔离库上单独验。
  */

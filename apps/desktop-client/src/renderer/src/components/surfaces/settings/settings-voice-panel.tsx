@@ -27,8 +27,8 @@ import {
 } from "./settings-data-tables.ts";
 import { HudSegmented } from "../../hud/HudControls";
 import { Pause, Play } from "lucide-react";
-import { TTS_PREVIEW_TEXT, type TtsEngineV1, type TtsVoiceOptionV1 } from "@ailearn/shared/tts-voice-catalog";
-import type { CompanionVoicePreferenceV1 } from "@ailearn/shared";
+import { TTS_PREVIEW_TEXT, type TtsEngineV1, type TtsVoiceOptionV1 } from "@astella/shared/tts-voice-catalog";
+import type { CompanionVoicePreferenceV1 } from "@astella/shared";
 import type { useSettingsVoice } from "./use-settings-voice.ts";
 
   export function SettingsVoicePanel(props: {

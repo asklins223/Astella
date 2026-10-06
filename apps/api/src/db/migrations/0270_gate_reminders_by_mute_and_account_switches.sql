@@ -4,7 +4,7 @@
 --
 -- 全系统闭环审计（`docs/plans/34-systemwide-loop-closure-audit-2026-09-22.md`）L10/L11：
 -- 空间级静音（0266）当时只有**念头**那一条路读它（`companion-thought.ts`），
--- 而到点提醒这条 SQL 路径（0238 的 `ailearn_fire_due_companion_reminders`）
+-- 而到点提醒这条 SQL 路径（0238 的 `astella_fire_due_companion_reminders`）
 -- 只在取时区时碰了一下 `user_companion_account_state`，
 -- **既不看总开关，也不看勿扰，也不看这个空间是不是被静音了**。
 -- 后果是用户能亲眼看到的：把她的空间静音之后，到点的约定照样弹气泡、
@@ -27,7 +27,7 @@
 -- 缺账号行的口径与全仓一致：**当成开启**（`LEFT JOIN` + `COALESCE(..., true)`）。
 -- 那行只在用户动过伴星面板时才建（doc 34 L26 记了这个不对称，本支不改变它）。
 
-CREATE OR REPLACE FUNCTION public.ailearn_fire_due_companion_reminders(p_limit integer)
+CREATE OR REPLACE FUNCTION public.astella_fire_due_companion_reminders(p_limit integer)
   RETURNS integer
   LANGUAGE plpgsql
   SECURITY DEFINER
@@ -86,7 +86,7 @@ BEGIN
     UPDATE public.companion_reminders
        SET status = 'fired', fired_at = now(), updated_at = now()
      WHERE id = v_row.id;
-    PERFORM pg_notify('ailearn_companion_inbox_v1',
+    PERFORM pg_notify('astella_companion_inbox_v1',
                       json_build_object('userId', v_row.user_id)::text);
     v_fired := v_fired + 1;
   END LOOP;
@@ -95,16 +95,16 @@ BEGIN
 END;
 $function$;
 
-COMMENT ON FUNCTION public.ailearn_fire_due_companion_reminders(integer) IS
+COMMENT ON FUNCTION public.astella_fire_due_companion_reminders(integer) IS
   '到点提醒兑现：先作废超过 2 小时的未兑现约定，再认领到点**且此刻允许开口**的行'
   '（账号总开关、勿扰/离线、这个空间的静音三关一起判，0270），写进 '
   'assistant_deliveries 的 system_event 通道并随事务 NOTIFY。跨租户，仅供 worker 定时器调用。';
 
 -- 权限形状与 0238 一致：只给 worker（`roles.sql` 的白名单里已有这一支签名，
 -- 签名未变，所以不需要动那份清单）。
-REVOKE ALL ON FUNCTION public.ailearn_fire_due_companion_reminders(integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_fire_due_companion_reminders(integer) TO ailearn_worker;
-GRANT EXECUTE ON FUNCTION public.ailearn_fire_due_companion_reminders(integer) TO ailearn_migrator;
+REVOKE ALL ON FUNCTION public.astella_fire_due_companion_reminders(integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_fire_due_companion_reminders(integer) TO astella_worker;
+GRANT EXECUTE ON FUNCTION public.astella_fire_due_companion_reminders(integer) TO astella_migrator;
 
 -- 与本支一起自查的两条断言（跑迁移时若前提变了就红，而不是静默改成少发）：
 -- 1) 被这三道门挡下的提醒**保持 pending**，不会被标成 fired/missed——

@@ -59,9 +59,9 @@ CREATE POLICY note_expansion_tasks_owner ON public.note_expansion_tasks FOR ALL 
         AND (source_note.share_scope = 'shared' OR source_note.created_by = note_expansion_tasks.user_id)
     ));
 
-GRANT SELECT, INSERT, UPDATE ON public.note_expansion_tasks TO ailearn_api;
-GRANT SELECT, INSERT ON public.note_expansion_tasks TO ailearn_worker;
-GRANT ALL PRIVILEGES ON public.note_expansion_tasks TO ailearn_migrator;
+GRANT SELECT, INSERT, UPDATE ON public.note_expansion_tasks TO astella_api;
+GRANT SELECT, INSERT ON public.note_expansion_tasks TO astella_worker;
+GRANT ALL PRIVILEGES ON public.note_expansion_tasks TO astella_migrator;
 
 ALTER TABLE public.note_expansions
   ALTER COLUMN source_message_id DROP NOT NULL,

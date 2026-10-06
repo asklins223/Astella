@@ -21,8 +21,8 @@ import {
   answerCompletenessGate,
   frontLeakageGate,
   evidenceSpanGate,
-} from "@ailearn/shared/card-generation-v2-pipeline";
-import type { LearningCardCandidateRevisionV2 } from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/card-generation-v2-pipeline";
+import type { LearningCardCandidateRevisionV2 } from "@astella/shared/card-generation-v2-contracts";
 
 function makeCandidate(overrides: { objectiveStatement?: string; prompt?: string; answer?: string; strategy?: LearningCardCandidateRevisionV2["presentation"]["strategy"] } = {}): LearningCardCandidateRevisionV2 {
   const objStatement = overrides.objectiveStatement ?? "分布式共识的定义";

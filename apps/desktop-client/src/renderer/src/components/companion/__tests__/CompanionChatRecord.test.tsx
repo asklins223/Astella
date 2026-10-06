@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CompanionMessageV1 } from "@ailearn/shared/companion-conversation-contracts";
+import type { CompanionMessageV1 } from "@astella/shared/companion-conversation-contracts";
 import type { CompanionChatSession } from "../../../app/companion-chat-session.tsx";
 import type { CompanionRunTrace } from "../../../app/companion-agent-nodes";
 import { useSourceImage } from "../../surfaces/source/source-image.ts";
@@ -49,7 +49,7 @@ describe("手记里的选文和系统复制", () => {
   it("用户消息在提问前显示当时的原文快照，复制包含原文和问题", async () => {
     const writeText = vi.fn().mockResolvedValue({ ok: true, data: { written: true } });
     const browserWrite = vi.fn().mockRejectedValue(new DOMException("Write permission denied", "NotAllowedError"));
-    vi.stubGlobal("ailearn", { clipboard: { writeText } });
+    vi.stubGlobal("astella", { clipboard: { writeText } });
     vi.stubGlobal("navigator", { clipboard: { writeText: browserWrite } });
     render(<CompanionChatRecordArticle message={message({
       role: "user",
@@ -70,7 +70,7 @@ describe("手记里的选文和系统复制", () => {
 
   it("伴星回答和富引用也可复制；原生失败时就地显示失败，下一次点击可重试", async () => {
     const writeText = vi.fn().mockResolvedValueOnce({ ok: false }).mockResolvedValueOnce({ ok: true, data: { written: true } });
-    vi.stubGlobal("ailearn", { clipboard: { writeText } });
+    vi.stubGlobal("astella", { clipboard: { writeText } });
     render(<CompanionChatRecordArticle message={message({ blocks: [
       { type: "text", text: "复习要花在快忘的时候。" },
       { type: "quote", label: "笔记原文", text: "间隔重复把复习排在快忘还没忘的时刻。" },
@@ -296,7 +296,7 @@ describe("CompanionChatRecordArticle 的跳转块（方案 29 §4.8）", () => {
  * 图片块（方案 29 §4.8 里 B6 剩下的那一块）。
  *
  * 图由 `companion_show_image` 服务端拼出 `/api/uploads/{objectKey}`，字节走 main 的
- * 站内图片通道（渲染层 origin 是 `ailearn-app://`，相对路径会 404，外链又被 CSP 拦）。
+ * 站内图片通道（渲染层 origin 是 `astella-app://`，相对路径会 404，外链又被 CSP 拦）。
  * 这三态断言钉的是：**载入中不能出现破图**、取不回来要说得出人话而不是留一个空框、
  * 以及图注要跟图在一起（一篇笔记可能有 13 张图，没有图注就不知道她说的是哪张）。
  */

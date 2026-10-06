@@ -207,7 +207,7 @@ async function runSimplifiedChainV3Job(
  *    personal projection 保持 0 变化——消费者唯一的写就是台账，且表 CHECK
  *    `personal_projection_writes = 0` 结构化强制（§17.5 step 17）。
  *
- * 全部读写在 ailearn_worker 角色 + workspace 上下文中执行（RLS NOBYPASSRLS
+ * 全部读写在 astella_worker 角色 + workspace 上下文中执行（RLS NOBYPASSRLS
  * 验证，与主管线一致）。
  */
 async function processPostActivationProjection(job: PendingOutboxJob): Promise<void> {
@@ -401,7 +401,7 @@ export async function pollV2Outbox(limit = 1, awaitBudgetMs = V2_POLL_TIMEOUT_MS
   // 当时的形状是"整条管道跑在一个事务里、run 行 FOR UPDATE 锁 Held 到最后一个模型
   // 调用返回"，所以一次慢 job 会占住 DB 连接并让同 run 的后续 job 排队等行锁。
   // 简化链是段与段各一个短事务（`card-generation-v3/handler.ts` 文件头那份形状说明），
-  // 模型调用发生在两个短事务之间，出口闸（`@ailearn/shared/public-json-http`）还会
+  // 模型调用发生在两个短事务之间，出口闸（`@astella/shared/public-json-http`）还会
   // 直接拒掉"在事务里发公共 HTTP"。这里保留 poll 侧的小预算，是因为**墙钟**这件事
   // 仍然成立：job 该跑多久与主 tick 该多久返回，是两个互不相干的期限。
   // 硬边界照旧：job 墙钟预算（V2_PIPELINE_BUDGET_MS，默认 20min < 30min 租约）到期即

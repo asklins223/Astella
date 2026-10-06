@@ -25,7 +25,7 @@ ALTER TABLE public.companion_run_failure_spans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.companion_run_failure_spans FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY companion_run_failure_spans_worker_scope
-  ON public.companion_run_failure_spans FOR ALL TO ailearn_worker
+  ON public.companion_run_failure_spans FOR ALL TO astella_worker
   USING (
     workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
     AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -36,20 +36,20 @@ CREATE POLICY companion_run_failure_spans_worker_scope
   );
 
 CREATE POLICY companion_run_failure_spans_api_read_scope
-  ON public.companion_run_failure_spans FOR SELECT TO ailearn_api
+  ON public.companion_run_failure_spans FOR SELECT TO astella_api
   USING (
     workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
     AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   );
 
-REVOKE ALL PRIVILEGES ON public.companion_run_failure_spans FROM PUBLIC, ailearn_api, ailearn_worker;
-GRANT SELECT ON public.companion_run_failure_spans TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE ON public.companion_run_failure_spans TO ailearn_worker;
-GRANT ALL PRIVILEGES ON public.companion_run_failure_spans TO ailearn_migrator;
+REVOKE ALL PRIVILEGES ON public.companion_run_failure_spans FROM PUBLIC, astella_api, astella_worker;
+GRANT SELECT ON public.companion_run_failure_spans TO astella_api;
+GRANT SELECT, INSERT, UPDATE ON public.companion_run_failure_spans TO astella_worker;
+GRANT ALL PRIVILEGES ON public.companion_run_failure_spans TO astella_migrator;
 
 -- Reuse the existing companion audit retention job. Even an open failure span
 -- is operational metadata subject to the same retention ceiling.
-CREATE OR REPLACE FUNCTION public.ailearn_purge_companion_audit_ttl(
+CREATE OR REPLACE FUNCTION public.astella_purge_companion_audit_ttl(
   p_retention_days integer DEFAULT 30,
   p_limit integer DEFAULT 200
 )
@@ -92,7 +92,7 @@ AS $function$
   SELECT ((SELECT count(*) FROM updated) + (SELECT count(*) FROM deleted_spans))::integer;
 $function$;
 
-ALTER FUNCTION public.ailearn_purge_companion_audit_ttl(integer, integer)
-  OWNER TO ailearn_migrator;
-ALTER FUNCTION public.ailearn_purge_companion_audit_ttl(integer, integer)
+ALTER FUNCTION public.astella_purge_companion_audit_ttl(integer, integer)
+  OWNER TO astella_migrator;
+ALTER FUNCTION public.astella_purge_companion_audit_ttl(integer, integer)
   SET search_path = pg_catalog, public;

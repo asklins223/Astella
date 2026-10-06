@@ -10,7 +10,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { UpdateStateV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { UpdateStateV1 } from "@astella/shared/desktop-ipc-contracts";
 
 const openSettings = vi.fn();
 vi.mock("../open-voice-model-settings", () => ({ openVoiceModelSettings: vi.fn() }));

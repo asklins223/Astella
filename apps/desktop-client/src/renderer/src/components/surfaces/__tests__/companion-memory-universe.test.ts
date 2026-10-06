@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   companionMemoryListV1Schema,
   companionMemoryStarMapV2Schema,
-} from "@ailearn/shared/companion-memory-desktop-contracts";
+} from "@astella/shared/companion-memory-desktop-contracts";
 import { buildCompanionMemoryUniverse, routeForMemoryEntityTarget } from "../companion/companion-memory-universe.ts";
 
 const MEMORY_A = "11111111-1111-4111-8111-111111111111";

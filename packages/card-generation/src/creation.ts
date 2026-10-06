@@ -23,21 +23,21 @@ import {
   cardGenerationSemanticSpecsV2,
   cardGenerationRunOutboxV2,
   cardGenerationInputSnapshotsV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { notes, noteVersions, noteBlocks } from "@ailearn/shared/db-schema/note";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { notes, noteVersions, noteBlocks } from "@astella/shared/db-schema/note";
 // 笔记可见性的唯一判据，与 API 侧三十余处读点共用同一句（见
 // `apps/api/src/modules/note/visibility.ts` 的转出说明）。
-import { visibleNotesCondition } from "@ailearn/shared/note-visibility-condition";
+import { visibleNotesCondition } from "@astella/shared/note-visibility-condition";
 import {
   createCardGenerationRunRequestV2Schema,
   type CreateCardGenerationRunRequestV2,
-} from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
 import {
   computeGenerationSemanticSpecHashV2,
   computeGenerationFingerprintV2,
   computeInputSnapshotHashV2,
-} from "@ailearn/shared/card-generation-v2-hashing";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+} from "@astella/shared/card-generation-v2-hashing";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
 import { CardGenerationV2ServiceError } from "./errors.ts";
 import { insertEvent } from "./events.ts";
 import { sealEvidenceSnapshotsV2 } from "./evidence-seal.ts";

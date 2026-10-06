@@ -44,7 +44,7 @@ export async function cleanupProbeNoteTitles(): Promise<number | null> {
   const workspaceElectron = resolve(appRoot, '../desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron')
   const executablePath = existsSync(installedElectron) ? installedElectron : workspaceElectron
 
-  const dir = await mkdtemp(resolve(tmpdir(), 'ailearn-probe-clean-'))
+  const dir = await mkdtemp(resolve(tmpdir(), 'astella-probe-clean-'))
   const app = await electron.launch({
     args: ['.', '--lang=zh-CN', `--user-data-dir=${dir}`],
     cwd: appRoot,

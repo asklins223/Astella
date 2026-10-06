@@ -10,7 +10,7 @@
 -- 外加 worker 那一支）。`removeMember` 的事务上下文是 (这个空间, **owner**)，
 -- 按那条策略去改**那位成员**的记忆恒匹配 0 行——不报错，静默什么也没做。
 -- 只有绕过调用方身份、在函数内部按参数判范围，这件事才做得成（先例：
--- `ailearn_fanout_global_companion_memory`，0267）。
+-- `astella_fanout_global_companion_memory`，0267）。
 --
 -- 为什么写 `deleted_at` 而不是 `archived_at`：`archived_at` 有一条"取消归档"的界面上报路
 -- （`memory-service.ts:340`）和 `includeArchived` 开关，等于给"我自己翻回来"留了出口；
@@ -21,7 +21,7 @@
 -- 人走了那个空间就读不到（投递的终态结账在 L42 已经装在"用户对记忆表态"那条路上，
 -- 与"离开空间"是两件事，硬并进来会让这条函数承担它管不着的副作用）。
 
-CREATE OR REPLACE FUNCTION public.ailearn_retire_workspace_memories_on_departure(
+CREATE OR REPLACE FUNCTION public.astella_retire_workspace_memories_on_departure(
   p_workspace_id uuid,
   p_user_id uuid
 )
@@ -53,11 +53,11 @@ $function$;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_retire_workspace_memories_on_departure(uuid, uuid) IS
-  '成员退出/被移出时收掉该空间那一侧的记忆（scope=workspace，软删除）。global 那一半跟人走，不动。SECURITY DEFINER 是必需的：策略要求 app.user_id 等于行的 user_id，owner 发起的移除按策略恒匹配 0 行。只授 ailearn_api / ailearn_migrator。';
+COMMENT ON FUNCTION public.astella_retire_workspace_memories_on_departure(uuid, uuid) IS
+  '成员退出/被移出时收掉该空间那一侧的记忆（scope=workspace，软删除）。global 那一半跟人走，不动。SECURITY DEFINER 是必需的：策略要求 app.user_id 等于行的 user_id，owner 发起的移除按策略恒匹配 0 行。只授 astella_api / astella_migrator。';
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_retire_workspace_memories_on_departure(uuid, uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_retire_workspace_memories_on_departure(uuid, uuid) TO ailearn_api;
-GRANT EXECUTE ON FUNCTION public.ailearn_retire_workspace_memories_on_departure(uuid, uuid) TO ailearn_migrator;
+REVOKE ALL ON FUNCTION public.astella_retire_workspace_memories_on_departure(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_retire_workspace_memories_on_departure(uuid, uuid) TO astella_api;
+GRANT EXECUTE ON FUNCTION public.astella_retire_workspace_memories_on_departure(uuid, uuid) TO astella_migrator;

@@ -1,8 +1,8 @@
 import { exists, isNull, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
-import { notes, noteVersions } from "@ailearn/shared/db-schema/note";
+import { notes, noteVersions } from "@astella/shared/db-schema/note";
 // 目标那一层的判据要经卡才能回到笔记（见 `visibleObjectivesCondition` 的说明），
 // 所以这一句确实需要知道 `learning_cards_v2` 存在。仍然只有这一个文件说这句话。
-import { learningCardsV2, learningObjectiveOriginsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
+import { learningCardsV2, learningObjectiveOriginsV2 } from "@astella/shared/db-schema/card-generation-v2";
 // 判据文本的唯一来源。API 与 Worker 两个包共用同一段 SQL——伴星读正文那条路
 // 在 worker 里，此前它按 workspace 直接查 notes，把同空间别人的私有笔记一起读了
 // 出来（`companion_read_note` / here-and-now 快照）。
@@ -12,13 +12,13 @@ import {
   NOTE_SHARE_SCOPES,
   isNoteShareScope,
   type NoteShareScope,
-} from "@ailearn/shared/note-visibility";
+} from "@astella/shared/note-visibility";
 // 判据的 drizzle 版本。2026-10-04：这一支从本文件搬到
 // `packages/shared/src/note-visibility-condition.ts`（制卡领域服务要在自己的创建
 // 事务里用同一句判据，它不能反向 import API 的模块）。本文件继续 import 并转出
 // 它，所以 API 侧三十余处 `../note/visibility.ts` 的调用点一行都不用改，
 // 而判据在全仓仍然只有一份。
-import { visibleNotesCondition } from "@ailearn/shared/note-visibility-condition";
+import { visibleNotesCondition } from "@astella/shared/note-visibility-condition";
 
 export { NOTE_SHARE_SCOPES, isNoteShareScope, visibleNotesCondition };
 export type { NoteShareScope };
@@ -39,9 +39,9 @@ export type { NoteShareScope };
  * 所以：drizzle 读点用 `visibleNotesCondition`，手写 SQL 用 `noteVisibleSqlText`，
  * 已经握在手里的那一行用 `isNoteVisibleToViewer`。三个入口，一个规则。
  *
- * 三个入口的**文本**现在都来自 `@ailearn/shared/note-visibility`：worker 侧
+ * 三个入口的**文本**现在都来自 `@astella/shared/note-visibility`：worker 侧
  * （伴星工具）也读同一份，跨包不会漂移。drizzle 那一条的**实现**在
- * `@ailearn/shared/note-visibility-condition`（见上面那行 import 的说明），
+ * `@astella/shared/note-visibility-condition`（见上面那行 import 的说明），
  * 本文件转出它，`visibleCardsCondition` / `visibleObjectivesCondition` 用的
  * 仍是同一句。
  */

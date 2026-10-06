@@ -3,8 +3,8 @@
 import { expect, it } from "vitest";
 import * as Y from "yjs";
 import { yXmlFragmentToProsemirrorJSON } from "y-prosemirror";
-import { NOTE_DOC_CONFORMANCE } from "@ailearn/shared/note-doc-conformance";
-import { pmNodesToNoteBlocks } from "@ailearn/shared/note-doc-schema";
+import { NOTE_DOC_CONFORMANCE } from "@astella/shared/note-doc-conformance";
+import { pmNodesToNoteBlocks } from "@astella/shared/note-doc-schema";
 import { projectBlocks } from "../notebook/use-note-doc-live-view.ts";
 
 /**

@@ -27,8 +27,8 @@ import {
   proposedLearningActionPayloadV1Schema,
   startRunOriginV2,
   type CompanionAgentToolDefinitionV1,
-} from "@ailearn/shared";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+} from "@astella/shared";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { insertStreamEvent } from "./companion-dialogue-store.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
@@ -224,7 +224,7 @@ export async function createAgentProposal(
         WHERE run_id = ${event.read.runId} AND tool_call_id = ${call.id}
       `);
       await tx.execute(sql`
-        SELECT pg_notify('ailearn_companion_events_v1',
+        SELECT pg_notify('astella_companion_events_v1',
           ${JSON.stringify({ conversationId: event.read.conversationId, maxSeq: eventSeq })})
       `);
     },

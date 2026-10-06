@@ -26,8 +26,8 @@ import {
   learningRunEvents,
   learningRuns,
   learningTasks,
-} from "@ailearn/shared/db-schema/learning-runs";
-import { learningRunOutcomeSchema } from "@ailearn/shared/learning-run-contracts";
+} from "@astella/shared/db-schema/learning-runs";
+import { learningRunOutcomeSchema } from "@astella/shared/learning-run-contracts";
 import type { ApiTransaction } from "../../../db/client.ts";
 import {
   gapHelpStopThresholdV1,

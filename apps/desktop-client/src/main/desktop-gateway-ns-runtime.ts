@@ -10,7 +10,7 @@
 import { z } from "zod";
 import { DesktopGatewayFailure } from "./desktop-gateway-failure";
 import { rawHealthSchema, rawReadinessSchema } from "./desktop-gateway-transport";
-import type { ApiConnectionStateV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { ApiConnectionStateV1 } from "@astella/shared/desktop-ipc-contracts";
 import type { GatewayTransport } from "./desktop-gateway-transport";
 
 export function cancel(t: GatewayTransport, requestId: string): boolean {

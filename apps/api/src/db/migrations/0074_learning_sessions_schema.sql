@@ -503,26 +503,26 @@ CREATE POLICY user_learning_preferences_user_isolation
 
 -- ════════════════════════════════════════════════════════════════════════
 -- least-privilege GRANT（0071 模式：按角色存在性授权）
--- ailearn_api：全部新表读写；ailearn_worker：学习过程表读写（评估/commit 流程），
+-- astella_api：全部新表读写；astella_worker：学习过程表读写（评估/commit 流程），
 -- account-scoped Companion 状态表不授权（worker 无权限读取 account 状态）。
 -- ════════════════════════════════════════════════════════════════════════
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_sessions TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_episodes TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_session_probes TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_response_artifacts TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_assessment_reports TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_companion_onboarding TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_companion_account_state TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_learning_preferences TO ailearn_api;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_sessions TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_episodes TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_session_probes TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_response_artifacts TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_assessment_reports TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_companion_onboarding TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_companion_account_state TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_learning_preferences TO astella_api;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
-    GRANT SELECT, INSERT, UPDATE ON public.learning_sessions TO ailearn_worker;
-    GRANT SELECT, INSERT, UPDATE ON public.learning_episodes TO ailearn_worker;
-    GRANT SELECT, INSERT, UPDATE ON public.learning_session_probes TO ailearn_worker;
-    GRANT SELECT, INSERT, UPDATE ON public.learning_response_artifacts TO ailearn_worker;
-    GRANT SELECT, INSERT, UPDATE ON public.learning_assessment_reports TO ailearn_worker;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
+    GRANT SELECT, INSERT, UPDATE ON public.learning_sessions TO astella_worker;
+    GRANT SELECT, INSERT, UPDATE ON public.learning_episodes TO astella_worker;
+    GRANT SELECT, INSERT, UPDATE ON public.learning_session_probes TO astella_worker;
+    GRANT SELECT, INSERT, UPDATE ON public.learning_response_artifacts TO astella_worker;
+    GRANT SELECT, INSERT, UPDATE ON public.learning_assessment_reports TO astella_worker;
   END IF;
 END $$;

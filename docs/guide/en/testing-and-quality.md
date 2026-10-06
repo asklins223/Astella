@@ -90,17 +90,17 @@ On the desktop client, `npm run typecheck` is two `tsc --noEmit -p` invocations 
 
 Files on disk: 119 under `apps/api/src/integration-tests/` and 37 under `workers/ai-worker/src/integration-tests/`, **156** in total. They are referenced by **55** `test:*:postgres` scripts (40 in `apps/api`, 15 in `workers/ai-worker`), which together cover **154** distinct files. Two files are referenced by nothing: `apps/api/src/integration-tests/note-collaboration-postgres.integration.ts` and `workers/ai-worker/src/integration-tests/queue-postgres.integration.ts`. There are no dangling references in the other direction — all 154 named files exist, and `ci-test-file-references.test.ts` keeps that true.
 
-`make test-postgres` is the single entry point. For each of `apps/api` and `workers/ai-worker` it uses a one-line `node -e` to **auto-discover** every script whose name starts with `test:` and ends with `:postgres`, runs each with `npm run --silent`, and aborts on the first non-zero exit. While running, it injects these variables (values assembled from the Makefile's `IT_*` variables, which default to the `COMPANION_HOME_TEST_*` set: host `127.0.0.1`, port `5432`, database `ailearn`):
+`make test-postgres` is the single entry point. For each of `apps/api` and `workers/ai-worker` it uses a one-line `node -e` to **auto-discover** every script whose name starts with `test:` and ends with `:postgres`, runs each with `npm run --silent`, and aborts on the first non-zero exit. While running, it injects these variables (values assembled from the Makefile's `IT_*` variables, which default to the `COMPANION_HOME_TEST_*` set: host `127.0.0.1`, port `5432`, database `astella`):
 
 | Variable | Role it points at |
 | --- | --- |
-| `DATABASE_URL` | `ailearn` (superuser, fixtures and teardown only) |
-| `DATABASE_URL_MIGRATOR` | `ailearn_migrator` |
-| `DATABASE_URL_API` / `DATABASE_URL_API_RLS` / `RATE_LIMIT_TEST_DATABASE_URL` | `ailearn_api` (`NOBYPASSRLS`) |
-| `DATABASE_URL_WORKER` / `QUEUE_TEST_WORKER_A_DATABASE_URL` / `QUEUE_TEST_WORKER_B_DATABASE_URL` | `ailearn_worker` |
-| `DATABASE_URL_TEST_ADMIN` / `CONTENT_HASH_TEST_DATABASE_URL` / `SEC02_TEST_DATABASE_URL` / `NOTE_VERSION_RESTORE_TEST_DATABASE_URL` | `ailearn` |
+| `DATABASE_URL` | `astella` (superuser, fixtures and teardown only) |
+| `DATABASE_URL_MIGRATOR` | `astella_migrator` |
+| `DATABASE_URL_API` / `DATABASE_URL_API_RLS` / `RATE_LIMIT_TEST_DATABASE_URL` | `astella_api` (`NOBYPASSRLS`) |
+| `DATABASE_URL_WORKER` / `QUEUE_TEST_WORKER_A_DATABASE_URL` / `QUEUE_TEST_WORKER_B_DATABASE_URL` | `astella_worker` |
+| `DATABASE_URL_TEST_ADMIN` / `CONTENT_HASH_TEST_DATABASE_URL` / `SEC02_TEST_DATABASE_URL` / `NOTE_VERSION_RESTORE_TEST_DATABASE_URL` | `astella` |
 | `RLS_TEST_MIGRATOR_DATABASE_URL` / `RLS_TEST_API_DATABASE_URL` / `RLS_TEST_WORKER_DATABASE_URL` | the same three roles as above |
-| `QUEUE_TEST_MIGRATOR_DATABASE_URL` | `ailearn_migrator` |
+| `QUEUE_TEST_MIGRATOR_DATABASE_URL` | `astella_migrator` |
 
 The restricted roles are **not optional**: a superuser has `BYPASSRLS`, so isolation assertions either fail or pass falsely. Each suite reads its own dedicated variables (RLS, queue, content hash, SEC-02 invites, version restore, rate limiting) and a missing one produces `throw new Error('… is required')` — an explicit refusal, not a silent skip, so the whole file goes red before a single case runs.
 
@@ -113,7 +113,7 @@ These suites cannot run against the shared development database, because their a
 | `scripts/psql-lite.mjs` | A minimal `psql` stand-in so the disposable-database script also works on machines without the docker CLI |
 | `scripts/with-restricted-db-urls.py <package-dir> <command…>` | Swap `DATABASE_URL_API` / `DATABASE_URL_WORKER` for the restricted roles, then run the command |
 
-The name guard on a disposable database: the target must match `ailearn_*` and must **not** be `ailearn`, otherwise the script refuses to run. `dev-disposable-db.sh` prints the integration-test environment variables ready to copy.
+The name guard on a disposable database: the target must match `astella_*` and must **not** be `astella`, otherwise the script refuses to run. `dev-disposable-db.sh` prints the integration-test environment variables ready to copy.
 
 Two narrower targets each run one script, which helps when reproducing a single suite:
 
@@ -123,8 +123,8 @@ Two narrower targets each run one script, which helps when reproducing a single 
 Typical usage:
 
 ```bash
-bash scripts/dev-disposable-db.sh ailearn_it
-make test-postgres COMPANION_HOME_TEST_DB=ailearn_it
+bash scripts/dev-disposable-db.sh astella_it
+make test-postgres COMPANION_HOME_TEST_DB=astella_it
 ```
 
 ## Source guards and contract tests
@@ -228,7 +228,7 @@ Four workflows. `node-version` always comes from a repository-level `env.NODE_VE
 
 The rule is stated in the header of `main-ci.yml`: **CI = exactly what the local tests run**, package by package. The `packages` matrix has four labels — Shared contracts, Agent core, Agent host, AI quality (PR mock). Each entry runs `npm ci` in the packages listed in its `deps`, then `npm run typecheck` and `npm test`; the AI quality entry adds `npm run pr-gate`. The `api` and `worker` jobs set `DATABASE_URL_API` / `DATABASE_URL_WORKER` to a deliberately **unreachable** `postgres://ci:ci@127.0.0.1:1/ci`: unit tests import `db.ts` at module load, which builds a lazy pool, and the compose hostname `postgres` does not resolve on a runner — a failed DNS lookup would hang the job until timeout. The `desktop` job **builds before testing**, because `scripts/runtime-asset-containment.test.mjs` measures what ended up under `out/renderer/assets`; without `out/` there is nothing to measure (measured 2026-10-06: without this step three cases fail on a clean runner while local stays green, because the working tree still contains `out/` from an earlier build).
 
-In `desktop-client.yml`, `variant-quality` runs the v1 and v2 values of `VITE_HOME_SCENE_VARIANT` through typecheck → `validate:room-layers` → build → `validate:room-layers:output` → test and uploads `out`. `package-smoke` depends on it and, on linux-x64 / windows-x64 / macos-native runners, produces an unpacked app with `electron-builder --dir`, first **reading `productName` from `electron-builder.yml`** rather than hard-coding the executable name, then running `npm run package:smoke`. The Linux leg uses `xvfb-run` and sets `AILEARN_PACKAGED_OFFLINE_ONLY=1`.
+In `desktop-client.yml`, `variant-quality` runs the v1 and v2 values of `VITE_HOME_SCENE_VARIANT` through typecheck → `validate:room-layers` → build → `validate:room-layers:output` → test and uploads `out`. `package-smoke` depends on it and, on linux-x64 / windows-x64 / macos-native runners, produces an unpacked app with `electron-builder --dir`, first **reading `productName` from `electron-builder.yml`** rather than hard-coding the executable name, then running `npm run package:smoke`. The Linux leg uses `xvfb-run` and sets `ASTELLA_PACKAGED_OFFLINE_ONLY=1`.
 
 `desktop-package.yml` **packages only and sets no quality gate**: install → build → produce installers → upload artifacts. `windows` and `macos` do not depend on each other; `summary` runs with `if: always()`. Its reason for existing is that you should be able to get an installable, double-clickable package even when the quality gates are red — and separately decide whether that package may be released.
 
@@ -238,8 +238,6 @@ These differences were found while checking. They are listed so the next step is
 
 | Claim / symptom | Authoritative file | Actual state |
 | --- | --- | --- |
-| "GitHub Actions also runs: Prometheus alert-rule syntax checks, fresh / repeated / upgrade migrations, API and Worker production builds, non-root image checks, a full production compose start with health checks, worker task consumption, PostgreSQL backup and restore drills" | Header comment of `.github/workflows/main-ci.yml` + `GATES_THAT_LEFT_CI` in `.github/scripts/ci-workflow-contract.test.mjs` | All of these **left CI on 2026-10-06**. CI now has four jobs: the packages matrix, api, worker, desktop. The README paragraph has not been updated. |
-| The same README line about "typecheck for five packages" | `main-ci.yml` | Seven directories are typechecked: `packages/shared`, `agent-core`, `agent-host`, `ai-quality`, `apps/api`, `apps/desktop-client`, `workers/ai-worker`. |
 | "CI still builds production images from docker-compose.yml directly (see .github/workflows/main-ci.yml)" | Comment above `ensure-db-volume` in the `Makefile` | `main-ci.yml` contains no `docker build` and no compose build step. |
 | "`verify` will **really** enforce the coverage threshold" / "Skip/todo allowlist gate (blocks verify and release-check)" | The `verify` and `skip-todo-gate` comments in the `Makefile` | `verify` runs neither `coverage-gate.mjs` nor `skip-todo-gate.mjs`. Only `release-check` runs the coverage gate; the skip/todo gate is not in any chain. Both comments predate 2026-10-06. |
 | "Secret scan (Gitleaks) and container scan (Trivy) are integrated in CI" | `Makefile` comment above `verify` + `main-ci.yml` | No workflow contains a gitleaks or trivy step, and `ci-workflow-contract.test.mjs` lists both among the names that must not return. `.gitleaks.toml` is still in the repository. |
@@ -248,7 +246,6 @@ These differences were found while checking. They are listed so the next step is
 | `verify-alerts-syntax.mjs`, `verify-shared-exports.mjs`, `coverage-baseline-save.mjs`, `capture-image-digests.mjs`, `.github/ci/ai-platforms.mock.json` | Repository-wide grep excluding `node_modules` and the archive | **None of these five files is called by any make target, workflow or package script.** The output of `capture-image-digests.mjs` is consumed only by `release-manifest-generate.mjs --images`, and neither `make release-manifest` nor `release-check` passes `--images`, so RC manifest image fields take the placeholder branch. |
 | `test-companion-integration-postgres` | The two `.PHONY` lists in the `Makefile` | The target is defined on line 276 but **appears in neither `.PHONY` list**. If a directory of that name ever exists, make treats it as a prerequisite and skips the recipe. |
 | The `test-postgres` preamble says the local database must first be migrated ("`make migrate` 或容器内 migrate") | The `Makefile` target list | There is no `migrate` target; migrations are applied by the one-shot `migrate` container in the dev compose file. |
-| The README project tree lists `packages/db` | The `packages/` directory | What exists is `agent-core`, `agent-host`, `ai-quality`, `card-generation`, `shared`. `packages/db` does not exist, and `card-generation` and `ai-quality` are missing from that tree. |
 
 ## Real-window QA
 
@@ -265,7 +262,7 @@ Packaged-app evidence comes from `apps/desktop-client/scripts/`, exposed as pack
 
 | Script | What it does |
 | --- | --- |
-| `npm run package:smoke` | `node scripts/smoke-packaged.mjs`: launches the packaged app through Playwright's `_electron`; finds the bundle by reading `productName` from `electron-builder.yml`; supports `AILEARN_PACKAGED_PREFLIGHT_ONLY` and `AILEARN_PACKAGED_OFFLINE_ONLY` |
+| `npm run package:smoke` | `node scripts/smoke-packaged.mjs`: launches the packaged app through Playwright's `_electron`; finds the bundle by reading `productName` from `electron-builder.yml`; supports `ASTELLA_PACKAGED_PREFLIGHT_ONLY` and `ASTELLA_PACKAGED_OFFLINE_ONLY` |
 | `npm run package:evidence` | Runs `package:smoke` first, then `node scripts/package-evidence.mjs` to collect smoke results and artifact sha256 digests |
 | `npm run evidence:manifest` | `node --experimental-strip-types scripts/evidence-manifest.ts`, building the quality evidence manifest from `scripts/fixtures/evidence-manifest.input.json` (contract types from `packages/shared/src/quality-evidence-contracts.ts`) |
 | `npm run capture:evidence` | `npm run build`, then `node scripts/capture-evidence.mjs` |
@@ -278,8 +275,8 @@ These conventions come from `../../../AGENTS.md` plus the way existing test file
 
 1. **Keep tests next to what they cover.** Components, styles, copy and state logic live in the feature domain directory; its tests go into that domain's `__tests__/`. Do not create a top-level test directory.
 2. **The name decides whether it runs.** Backend tests must be `*.test.ts` to be picked up by `npm test`; anything needing a real database must be `*.integration.ts` **and** be added to a `test:*:postgres` script — otherwise it becomes the third file on disk nobody runs.
-3. **Declare your database need.** Read the environment through `testDatabaseUrl()` from `@ailearn/shared/integration-test-db-env`, which fails loudly when a variable is missing. Do not write `?? "postgres://…localhost…"` fallbacks (`integration-db-url-guard` scans for them, and such a fallback once wrote fixtures into the real dev database). If the case assumes an empty database, say so in a comment and point at `scripts/dev-disposable-db.sh`.
-4. **Use restricted roles for isolation assertions.** `ailearn_api` and `ailearn_worker` are `NOBYPASSRLS`; under a superuser these assertions either fail or pass falsely. `make test-postgres` supplies the whole variable set; for one-off local reproduction use `scripts/with-restricted-db-urls.py`.
+3. **Declare your database need.** Read the environment through `testDatabaseUrl()` from `@astella/shared/integration-test-db-env`, which fails loudly when a variable is missing. Do not write `?? "postgres://…localhost…"` fallbacks (`integration-db-url-guard` scans for them, and such a fallback once wrote fixtures into the real dev database). If the case assumes an empty database, say so in a comment and point at `scripts/dev-disposable-db.sh`.
+4. **Use restricted roles for isolation assertions.** `astella_api` and `astella_worker` are `NOBYPASSRLS`; under a superuser these assertions either fail or pass falsely. `make test-postgres` supplies the whole variable set; for one-off local reproduction use `scripts/with-restricted-db-urls.py`.
 5. **A static guard must include a positive control.** Source-reading guards are green by construction, so add a self-proof: feed it a deliberately violating sample and assert it reports the violation (`hud-substrate-guard`, `doc-pointer-reachability-source-guard` and `ci-test-file-references` all do this). Also assert the denominator is non-empty, so a broken parser cannot pass silently.
 6. **Do not pin criteria to file paths.** `graph-surface-shape-guard` now searches the directory tree for the file name, because sibling-relative paths let one test indefinitely postpone splitting the component. The assertion is about the shape of the control flow, not where it lives.
 7. **Ledgers may only shrink.** Exemptions, baselines and pending lists (`SIZE_DEBT`, `KNOWN_DEAD`, `PENDING_W2_7`, the two schema-ratchet baselines) must be written as "the actual set equals the list", and must also go red when something is fixed but not removed. Every exemption carries its reason, and deleting an entry deletes the reason with it.
@@ -300,7 +297,9 @@ These conventions come from `../../../AGENTS.md` plus the way existing test file
 - [Development](./development.md)
 - [Desktop client](./desktop-client.md)
 - [API and data](./api-and-data.md)
-- [AI and companion](./ai-and-companion.md)
+- [Models and the worker pipeline](./ai-and-companion.md)
+- [Unified agent runtime (technical)](./agent-runtime.md)
+- [Companion experience (product design)](./companion-experience.md)
 - [Operations](./operations.md)
 - [FAQ and troubleshooting](./faq-and-troubleshooting.md)
 - Repository root: [README](../../../README.md), [AGENTS.md](../../../AGENTS.md), [third-party notices](../../../THIRD_PARTY_NOTICES.md)

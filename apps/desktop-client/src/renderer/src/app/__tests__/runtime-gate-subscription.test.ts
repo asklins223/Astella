@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AILearnDesktopApiM2, RequestMetaV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { AstellaDesktopApiM2, RequestMetaV1 } from "@astella/shared/desktop-ipc-contracts";
 import { establishRequiredRuntimeSubscription } from "../runtime-gate-subscription.ts";
 
 const meta: RequestMetaV1 = {
@@ -41,7 +41,7 @@ function subscriptionApi(options: { onEventThrows?: boolean } = {}) {
       }),
       unsubscribe,
     },
-  } as Pick<AILearnDesktopApiM2, "subscriptions">;
+  } as Pick<AstellaDesktopApiM2, "subscriptions">;
   return { api, order, stopEvents, unsubscribe };
 }
 

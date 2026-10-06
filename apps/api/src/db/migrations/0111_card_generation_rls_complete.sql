@@ -1,12 +1,12 @@
 -- 0111_card_generation_rls_complete.sql
 -- 2026-08-11（第十轮，迁移安全审计）：
 -- 1) 0052 创建的六张表从未 ENABLE RLS（审计实测 rowsecurity=f），
---    与同域 0044/0045/0070/0100 的 FORCE RLS 不一致——生产 ailearn_api/
---    ailearn_worker（NOBYPASSRLS）对这些表无行级隔离、全表可见。
+--    与同域 0044/0045/0070/0100 的 FORCE RLS 不一致——生产 astella_api/
+--    astella_worker（NOBYPASSRLS）对这些表无行级隔离、全表可见。
 --    补齐：ENABLE + FORCE RLS + workspace_isolation 策略 + worker 豁免
 --    （照 0070/0100 模式；worker 豁免让现有裸访问点继续工作）。
--- 2) 0064 对 ailearn_fail_job 先 DROP 后 CREATE，清掉了 0022 建立的
---    REVOKE FROM PUBLIC + GRANT TO ailearn_worker ACL（SECURITY DEFINER
+-- 2) 0064 对 astella_fail_job 先 DROP 后 CREATE，清掉了 0022 建立的
+--    REVOKE FROM PUBLIC + GRANT TO astella_worker ACL（SECURITY DEFINER
 --    函数默认 PUBLIC 可 EXECUTE）——补回最小权限契约（幂等）。
 -- 3) sessions 无 FK（workspace 删除后成孤儿）+ 缺 (workspace_id,user_id)
 --    索引（invite/identity/learning 多路径按该组合吊销）——补 CASCADE FK
@@ -41,7 +41,7 @@ BEGIN
   END LOOP;
 
   -- worker 豁免（角色存在检查，fresh 库 roles.sql 先建角色；照 0100 模式）
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
     FOREACH t IN ARRAY tables LOOP
       EXECUTE format($p$
         DROP POLICY IF EXISTS %I_worker_all ON public.%I
@@ -49,9 +49,9 @@ BEGIN
       EXECUTE format($p$
         CREATE POLICY %I_worker_all
           ON public.%I AS PERMISSIVE
-          FOR ALL TO ailearn_worker
-          USING (CURRENT_USER = 'ailearn_worker')
-          WITH CHECK (CURRENT_USER = 'ailearn_worker')
+          FOR ALL TO astella_worker
+          USING (CURRENT_USER = 'astella_worker')
+          WITH CHECK (CURRENT_USER = 'astella_worker')
       $p$, t, t);
     END LOOP;
   END IF;
@@ -59,9 +59,9 @@ END $$;
 
 --> statement-breakpoint
 
--- ── 2) ailearn_fail_job 最小权限契约补回（0064 DROP+CREATE 清 ACL）───────
-REVOKE ALL ON FUNCTION public.ailearn_fail_job(uuid, uuid, text, text, integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_fail_job(uuid, uuid, text, text, integer) TO ailearn_worker;
+-- ── 2) astella_fail_job 最小权限契约补回（0064 DROP+CREATE 清 ACL）───────
+REVOKE ALL ON FUNCTION public.astella_fail_job(uuid, uuid, text, text, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_fail_job(uuid, uuid, text, text, integer) TO astella_worker;
 
 --> statement-breakpoint
 

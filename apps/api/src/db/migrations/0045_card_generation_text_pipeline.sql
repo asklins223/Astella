@@ -285,7 +285,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_guard_note_evidence_span()
+CREATE OR REPLACE FUNCTION public.astella_guard_note_evidence_span()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -305,7 +305,7 @@ DROP TRIGGER IF EXISTS note_evidence_spans_immutable_guard
   ON public.note_evidence_spans;
 CREATE TRIGGER note_evidence_spans_immutable_guard
   BEFORE UPDATE OR DELETE ON public.note_evidence_spans
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_guard_note_evidence_span();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_guard_note_evidence_span();
 --> statement-breakpoint
 
 ALTER TABLE public.note_evidence_spans ENABLE ROW LEVEL SECURITY;
@@ -349,18 +349,18 @@ CREATE POLICY card_generation_candidate_evidence_workspace_isolation
 
 -- Keep deployed least-privilege roles usable before roles.sql is replayed.
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
     GRANT SELECT, INSERT, UPDATE, DELETE ON
       public.note_evidence_spans,
       public.card_generation_units,
       public.card_generation_candidates,
       public.card_generation_candidate_evidence
-    TO ailearn_api;
+    TO astella_api;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
-    GRANT SELECT, INSERT ON public.note_evidence_spans TO ailearn_worker;
-    GRANT SELECT, INSERT, UPDATE ON public.card_generation_units TO ailearn_worker;
-    GRANT SELECT, INSERT, UPDATE ON public.card_generation_candidates TO ailearn_worker;
-    GRANT SELECT, INSERT ON public.card_generation_candidate_evidence TO ailearn_worker;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
+    GRANT SELECT, INSERT ON public.note_evidence_spans TO astella_worker;
+    GRANT SELECT, INSERT, UPDATE ON public.card_generation_units TO astella_worker;
+    GRANT SELECT, INSERT, UPDATE ON public.card_generation_candidates TO astella_worker;
+    GRANT SELECT, INSERT ON public.card_generation_candidate_evidence TO astella_worker;
   END IF;
 END $$;

@@ -40,7 +40,7 @@ CREATE POLICY "worker_type_allowlist_insert_guard"
   FOR INSERT
   TO public
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'::name
+    CURRENT_USER = 'astella_worker'::name
     AND "type" IN (
       'companion_agent', 'companion_memory_extract', 'companion_summarizer',
       'companion_daily_summary', 'companion_memory_organize'
@@ -53,7 +53,7 @@ CREATE POLICY "worker_type_allowlist_insert_guard"
 -- memoryOrganizationGate —— 两处写同一个数会漂移，所以由
 -- `0361-companion-memory-organization-job-migration.test.ts`
 -- 断言它们与 TS 那边一致。
-CREATE OR REPLACE FUNCTION public.ailearn_companion_memory_organization_thresholds()
+CREATE OR REPLACE FUNCTION public.astella_companion_memory_organization_thresholds()
 RETURNS TABLE (min_backlog bigint, min_interval_days int, oldest_pending_days int)
 LANGUAGE sql
 STABLE
@@ -73,7 +73,7 @@ $$;
 -- 「累计待处理量」的分子是**真的待整理**的行：没删、没忽略、没归档、
 -- 不是候选、没被抑制、有来源。它不是「当天新增」——那是会让低频用户
 -- 永远不触发的分母。
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_companion_memory_organize()
+CREATE OR REPLACE FUNCTION public.astella_enqueue_companion_memory_organize()
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -84,7 +84,7 @@ DECLARE
   v_inserted integer := 0;
   v_row record;
 BEGIN
-  SELECT * INTO v_thresholds FROM public.ailearn_companion_memory_organization_thresholds();
+  SELECT * INTO v_thresholds FROM public.astella_companion_memory_organization_thresholds();
 
   FOR v_row IN
     WITH pending AS (
@@ -143,7 +143,7 @@ $$;
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_enqueue_companion_memory_organize() FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.ailearn_companion_memory_organization_thresholds() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_companion_memory_organize() TO ailearn_worker;
-GRANT EXECUTE ON FUNCTION public.ailearn_companion_memory_organization_thresholds() TO ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_enqueue_companion_memory_organize() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_companion_memory_organization_thresholds() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_memory_organize() TO astella_worker;
+GRANT EXECUTE ON FUNCTION public.astella_companion_memory_organization_thresholds() TO astella_worker;

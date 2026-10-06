@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CardActivationReceiptDesktopV1, CardGenerationCandidateV1, CardGenerationExposureEligibilityV1, DesktopCandidateRevealV2, DesktopCardRejectReasonV2 } from "@ailearn/shared/card-generation-desktop-contracts";
+import type { CardActivationReceiptDesktopV1, CardGenerationCandidateV1, CardGenerationExposureEligibilityV1, DesktopCandidateRevealV2, DesktopCardRejectReasonV2 } from "@astella/shared/card-generation-desktop-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import { createCommandId, createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { resetObjectiveLibraryView } from "../run/objective-library-view-state";
@@ -65,11 +65,11 @@ export function useCardGenerationSession() {
   const revision = activeCandidate?.revision;
   useEffect(() => {
     setExposure(null); setExposureFailure(null);
-    if (!runKey || !reviewOpen || !candidateKey || revision === undefined || !window.ailearn) return;
+    if (!runKey || !reviewOpen || !candidateKey || revision === undefined || !window.astella) return;
     let active = true;
     void (async () => {
       try {
-      const response = await window.ailearn.note.cardGeneration.exposure({ meta: createRequestMeta(epochRef.current), runId: runKey, candidateId: candidateKey, revision });
+      const response = await window.astella.note.cardGeneration.exposure({ meta: createRequestMeta(epochRef.current), runId: runKey, candidateId: candidateKey, revision });
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       if (active) setExposure(unwrapGatewayResult(response));
       } catch (error) { if (active) setExposureFailure(gatewayErrorMessage(error)); }
@@ -78,7 +78,7 @@ export function useCardGenerationSession() {
   }, [runKey, reviewOpen, candidateKey, revision, reveal, epochRef]);
 
   const perform = async (key: string, write: () => Promise<void>): Promise<boolean> => {
-    if (!run || !window.ailearn || actionLock.current || revealLock.current) return false;
+    if (!run || !window.astella || actionLock.current || revealLock.current) return false;
     const scope = run.runId;
     actionLock.current = true; setBusyAction(key); setActionFailure(null);
     try {
@@ -93,8 +93,8 @@ export function useCardGenerationSession() {
   };
 
   const review = (candidate: CardGenerationCandidateV1, decision: "keep" | "reject" | "undo", reasonCode?: DesktopCardRejectReasonV2) => perform(`${candidate.candidateId}:${decision}`, async () => {
-    if (!run || !window.ailearn) return;
-    const response = await window.ailearn.note.cardGeneration.review({
+    if (!run || !window.astella) return;
+    const response = await window.astella.note.cardGeneration.review({
       meta: createRequestMeta(epochRef.current), commandId: createCommandId(`card-generation-${decision}`), runId: run.runId,
       request: { version: 2, runId: run.runId, expectedReviewDraftRevision: run.reviewDraftRevision,
         action: decision === "keep" ? { type: "keep", candidateId: candidate.candidateId, expectedRevision: candidate.revision, expectedRevisionHash: candidate.candidateRevisionHash }
@@ -115,11 +115,11 @@ export function useCardGenerationSession() {
   });
 
   const revealCandidate = async (candidate: CardGenerationCandidateV1): Promise<boolean> => {
-    if (!run || !window.ailearn || revealLock.current || actionLock.current) return false;
+    if (!run || !window.astella || revealLock.current || actionLock.current) return false;
     const scope = run.runId;
     revealLock.current = true; setRevealing(true); setRevealFailure(null);
     try {
-      const response = await window.ailearn.note.cardGeneration.reveal({
+      const response = await window.astella.note.cardGeneration.reveal({
         meta: createRequestMeta(epochRef.current), commandId: createCommandId("card-generation-reveal"), runId: run.runId, candidateId: candidate.candidateId,
         request: { candidateId: candidate.candidateId, expectedCandidateRevision: candidate.revision, expectedCandidateRevisionHash: candidate.candidateRevisionHash },
       });
@@ -132,7 +132,7 @@ export function useCardGenerationSession() {
   };
 
   const activate = (startReviewScheduling: boolean) => perform(startReviewScheduling ? "activate-scheduling" : "activate", async () => {
-    if (!run || !window.ailearn) return;
+    if (!run || !window.astella) return;
     const selected = candidates.filter(isActivatableCandidate);
     if (!selected.length) return;
     // 这里过去有一道硬闸：`actionableUndecidedCount > 0` 直接抛错，屏上那颗
@@ -145,7 +145,7 @@ export function useCardGenerationSession() {
     // 现在按「保存已保留的 N 张」走：没决定的留在这一叠里，下次进来接着看，
     // 它们既不会被创建成卡，也不会因为这一次保存而失效。真正被丢掉的只有
     // 用户明确点过「不保留」的。
-    const response = await window.ailearn.note.cardGeneration.activate({
+    const response = await window.astella.note.cardGeneration.activate({
       meta: createRequestMeta(epochRef.current), commandId: createCommandId(startReviewScheduling ? "card-generation-activate-review" : "card-generation-activate"), runId: run.runId,
       request: { version: 1, runId: run.runId, selectedCandidates: selected.map((candidate) => ({ candidateRevisionId: candidate.candidateRevisionId, candidateId: candidate.candidateId, revision: candidate.revision, revisionHash: candidate.candidateRevisionHash, candidateEvidenceBindingPlanHash: candidate.candidateEvidenceBindingPlanHash, intent: { kind: "create_new" } })), existingLifecycleActions: [], expectedReviewDraftRevision: run.reviewDraftRevision, startReviewScheduling },
     });
@@ -156,24 +156,24 @@ export function useCardGenerationSession() {
   });
 
   const cancel = () => perform("cancel", async () => {
-    if (!run || !window.ailearn) return;
-    const response = await window.ailearn.note.cardGeneration.cancel({ meta: createRequestMeta(epochRef.current), commandId: createCommandId("card-generation-cancel"), runId: run.runId });
+    if (!run || !window.astella) return;
+    const response = await window.astella.note.cardGeneration.cancel({ meta: createRequestMeta(epochRef.current), commandId: createCommandId("card-generation-cancel"), runId: run.runId });
     unwrapGatewayResult(response); if (identity.current === run.runId) await load(false);
   });
   const close = () => perform("close", async () => {
-    if (!run || !window.ailearn) return;
-    const response = await window.ailearn.note.cardGeneration.close({ meta: createRequestMeta(epochRef.current), commandId: createCommandId("card-generation-close"), runId: run.runId, expectedReviewDraftRevision: run.reviewDraftRevision });
+    if (!run || !window.astella) return;
+    const response = await window.astella.note.cardGeneration.close({ meta: createRequestMeta(epochRef.current), commandId: createCommandId("card-generation-close"), runId: run.runId, expectedReviewDraftRevision: run.reviewDraftRevision });
     unwrapGatewayResult(response); if (identity.current === run.runId) await load(false);
   });
   const retry = () => perform("retry", async () => {
-    if (!run || !window.ailearn) return;
-    const response = await window.ailearn.note.cardGeneration.retry({ meta: createRequestMeta(epochRef.current), commandId: createCommandId("card-generation-retry"), runId: run.runId });
+    if (!run || !window.astella) return;
+    const response = await window.astella.note.cardGeneration.retry({ meta: createRequestMeta(epochRef.current), commandId: createCommandId("card-generation-retry"), runId: run.runId });
     unwrapGatewayResult(response); if (identity.current === run.runId) await load(false);
   });
 
   const regenerate = () => perform("regenerate", async () => {
-    if (!run || !window.ailearn || !canRegenerate) return;
-    const api = window.ailearn;
+    if (!run || !window.astella || !canRegenerate) return;
+    const api = window.astella;
     // Read the latest saved source before ending the old review. A read failure
     // leaves that review intact; a start failure still leaves a usable retry.
     const noteResponse = await api.note.get({ meta: createRequestMeta(epochRef.current), noteId: run.noteId });

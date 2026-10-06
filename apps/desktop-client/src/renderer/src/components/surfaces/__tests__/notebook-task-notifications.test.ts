@@ -7,7 +7,7 @@ const publish = vi.hoisted(() => vi.fn());
 vi.mock("../../../app/room-store", () => ({ useRoomStore: { getState: () => ({ workspaceScopeRevision: state.scope }) } }));
 vi.mock("../../companion/companion-notification-tasks", () => ({ watchCompanionTask: watch }));
 vi.mock("../../companion/companion-events", () => ({ publishCompanionRecordsChanged: publish }));
-beforeEach(() => { state.scope = 1; vi.clearAllMocks(); Object.defineProperty(window, "ailearn", {
+beforeEach(() => { state.scope = 1; vi.clearAllMocks(); Object.defineProperty(window, "astella", {
   configurable: true, value: { noteOverview: { getTask: vi.fn() } },
 }); });
 const note = { noteId: "note", currentVersionId: "version", title: "光合作用" };

@@ -15,7 +15,7 @@
  *     具体的那个 reason 上去。
  */
 import { useState } from "react";
-import type { DesktopCardGenerationFeedbackReasonV2 } from "@ailearn/shared/card-generation-desktop-contracts";
+import type { DesktopCardGenerationFeedbackReasonV2 } from "@astella/shared/card-generation-desktop-contracts";
 
 export function useNotebookGenerationFeedback() {
   const [reasons, setReasons] = useState<readonly DesktopCardGenerationFeedbackReasonV2[]>([]);

@@ -65,7 +65,7 @@ test("可见性**默认 private** —— §7「私人内容默认不跨空间、
 test("书房只放少量：由**数据库**守住，第六条插不进来", () => {
   // §7「书房仅展示用户愿意放出的少量痕迹」。只靠上层算的话，一次并发就能
   // 插出第七条——所以这个数字要落在触发器里。
-  assert.match(migration, /ailearn_discovery_study_trace_limit/);
+  assert.match(migration, /astella_discovery_study_trace_limit/);
   assert.match(migration, /existing_count >= 6/);
   assert.match(migration, /CREATE TRIGGER companion_discovery_study_trace_guard/);
 });
@@ -85,7 +85,7 @@ test("来源撤权/删除后**遮蔽**而不是删行", () => {
 });
 
 test("簿子与空间绑死：不能跨空间搬、不能换主人", () => {
-  assert.match(migration, /ailearn_discovery_visibility_guard/);
+  assert.match(migration, /astella_discovery_visibility_guard/);
   assert.match(migration, /discovery entries do not move across workspaces/);
   assert.match(migration, /discovery entries do not change owner/);
 });
@@ -116,8 +116,8 @@ test("没有「成长里程碑」这类自动产物（§7 明令不自动生产�
 // 所以这一条不是"顺手加的"：它记的是一条**只会在真库上暴露**的判据。
 
 test("发现簿表把权限给了 api 与 worker 角色", () => {
-  // 与 0350 那条对照：companion_daily_summaries 的 ACL 里有 ailearn_api=arwd。
-    for (const role of ["ailearn_api", "ailearn_worker"]) {
+  // 与 0350 那条对照：companion_daily_summaries 的 ACL 里有 astella_api=arwd。
+    for (const role of ["astella_api", "astella_worker"]) {
     assert.match(
       migration,
       new RegExp(`GRANT[^;]*ON public\\.companion_discovery_entries TO ${role}`),

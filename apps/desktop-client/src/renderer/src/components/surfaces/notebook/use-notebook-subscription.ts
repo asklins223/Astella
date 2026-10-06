@@ -33,7 +33,7 @@ export function useNotebookSubscription(input: {
   readonly noteId: string | null;
   readonly epochRef: { current: number | undefined };
   readonly reload: (options?: { silent?: boolean }) => Promise<void>;
-  readonly api: NonNullable<Window["ailearn"]> | undefined;
+  readonly api: NonNullable<Window["astella"]> | undefined;
   readonly notices: SubscriptionNotices;
 }) {
   const { noteId, epochRef, reload, api, notices } = input;

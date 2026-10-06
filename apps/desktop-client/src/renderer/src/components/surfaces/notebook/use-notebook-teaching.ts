@@ -32,7 +32,7 @@ export type NotebookTeachingFailureV1 = {
 export function useNotebookTeaching(input: {
   readonly epochRef: { current: number | undefined };
   readonly reload: (options?: { silent?: boolean }) => Promise<void>;
-  readonly api: NonNullable<Window["ailearn"]> | undefined;
+  readonly api: NonNullable<Window["astella"]> | undefined;
   /** 没有 openRound 就不发——那是「无目标轮次」，服务端也没有可讲的那一条。 */
   readonly openRound: { readonly roundId: string; readonly revision: number } | null;
   readonly classifyError: (error: unknown) => NotebookTeachingFailureV1 extends never

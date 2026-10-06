@@ -10,18 +10,18 @@ import {
   brotliDecompressSync,
 } from "node:zlib";
 import { logger } from "../lib/logger.ts";
-import * as schema from "@ailearn/shared/db-schema";
-import { safeErrorMessage, SourceStatus } from "@ailearn/shared";
+import * as schema from "@astella/shared/db-schema";
+import { safeErrorMessage, SourceStatus } from "@astella/shared";
 // 稳定 P1（2026-09-15 审计）：parse_source payload 的精确契约 + fail-closed 读取器
 // （与 API 生产端 source/service.ts 同源），替代此前的 `as string | undefined` 弱读。
-import { readParseSourceJobPayload } from "@ailearn/shared/job-payload-contracts";
+import { readParseSourceJobPayload } from "@astella/shared/job-payload-contracts";
 import { isStorageConfigured, uploadSourceImage } from "../lib/object-storage.ts";
 import {
   parseContent,
   segmentsToBlocks,
   extractTitleFromBlocks,
   type ParsedBlock,
-} from "@ailearn/shared/markdown-parser";
+} from "@astella/shared/markdown-parser";
 import {
   assertJobLease,
   isJobLeaseActive,

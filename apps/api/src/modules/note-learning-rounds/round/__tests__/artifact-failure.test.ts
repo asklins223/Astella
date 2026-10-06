@@ -22,7 +22,7 @@ import {
   ARTIFACT_FAILURE_COMBINATIONS_V1,
   isArtifactFailureReasonV1,
 } from "../artifact-failure.ts";
-import { roundArtifactFailureV1Schema } from "@ailearn/shared/note-learning-round-contracts";
+import { roundArtifactFailureV1Schema } from "@astella/shared/note-learning-round-contracts";
 
 /**
  * 仓库根：**向上找 `apps/` 与 `packages/` 同时存在的那一层**。
@@ -161,10 +161,10 @@ test("不变量③：只追加、且同一讲解可有多次失败（重试不�
     "teaching_id 上有唯一索引 ⇒ 重试产生的多次失败被折叠成一行，次数被抹掉（§6.2 用户可重试）",
   );
   // GRANT 也要对：只追加的表不该给 UPDATE/DELETE
-  assert.match(migration, /GRANT SELECT, INSERT ON public\.note_learning_round_artifact_failures TO ailearn_api/,
+  assert.match(migration, /GRANT SELECT, INSERT ON public\.note_learning_round_artifact_failures TO astella_api/,
     "给了比 SELECT/INSERT 更多的权限：只追加这件事不能只靠触发器，权限层也要对");
   assert.ok(
-    !/GRANT[^;]*note_learning_round_artifact_failures[^;]*TO ailearn_api[^;]*;[^;]*UPDATE/.test(migration),
+    !/GRANT[^;]*note_learning_round_artifact_failures[^;]*TO astella_api[^;]*;[^;]*UPDATE/.test(migration),
     "GRANT 里出现了 UPDATE/DELETE",
   );
 });

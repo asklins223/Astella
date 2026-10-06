@@ -1,5 +1,5 @@
-import type { CompanionDailySummaryV1, CompanionHistoryItemV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
-import type { CompanionDiscoveryEntryV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { CompanionDailySummaryV1, CompanionHistoryItemV1 } from "@astella/shared/companion-memory-desktop-contracts";
+import type { CompanionDiscoveryEntryV1 } from "@astella/shared/desktop-ipc-contracts";
 import { messageText } from "./companion-center-model";
 import { clipDiscoveryBody, discoveryKindFor, type DiscoveryKeepRequest } from "./companion-discovery-offer";
 

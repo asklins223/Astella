@@ -43,7 +43,7 @@ const fixtureAuthResponse = {
 const fixtureAuthMe = {
   userId: fixtureUserId,
   workspaceId: fixtureWorkspaceId,
-  email: "owner@ailearn.local",
+  email: "owner@astella.local",
   role: "owner",
   displayName: "首页验收",
   avatarUrl: null,
@@ -114,12 +114,12 @@ async function createCaptureApiFixture() {
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     requests.push(`${request.method ?? "GET"} ${url.pathname}`);
-    if (url.pathname === "/_ailearn/desktop/trust/v1/challenge") {
+    if (url.pathname === "/_astella/desktop/trust/v1/challenge") {
       const input = await readRequestJson(request);
       const unsigned = {
         version: 1,
         nonce: input?.nonce,
-        serviceId: "ailearn-api",
+        serviceId: "astella-api",
         ipcContractVersion: "desktop-ipc-v1",
         domainSchemaRevision: fixtureSchemaRevision,
         pairingKeyId: fixturePairingKeyId,
@@ -127,7 +127,7 @@ async function createCaptureApiFixture() {
         algorithm: "HMAC-SHA256",
       };
       const message = [
-        "ailearn-local-api-trust-v1",
+        "astella-local-api-trust-v1",
         unsigned.nonce,
         unsigned.serviceId,
         unsigned.ipcContractVersion,
@@ -536,7 +536,7 @@ async function captureCompanionInteraction(page, app) {
 }
 
 async function captureTime(name, hour, minute, captureMatrix = false) {
-  const userDataDir = await mkdtemp(resolve(tmpdir(), `ailearn-home-v2-${name}-`));
+  const userDataDir = await mkdtemp(resolve(tmpdir(), `astella-home-v2-${name}-`));
   const errors = [];
   const electronApp = await electron.launch({
     args: [".", "--lang=zh-CN", `--user-data-dir=${userDataDir}`],
@@ -545,9 +545,9 @@ async function captureTime(name, hour, minute, captureMatrix = false) {
     env: {
       ...process.env,
       DESKTOP_API_ORIGIN: captureApi.origin,
-      AILEARN_DESKTOP_PAIRING_KEY_ID: fixturePairingKeyId,
-      AILEARN_DESKTOP_PAIRING_SECRET: fixturePairingSecret.toString("base64url"),
-      AILEARN_DOMAIN_SCHEMA_REVISION: fixtureSchemaRevision,
+      ASTELLA_DESKTOP_PAIRING_KEY_ID: fixturePairingKeyId,
+      ASTELLA_DESKTOP_PAIRING_SECRET: fixturePairingSecret.toString("base64url"),
+      ASTELLA_DOMAIN_SCHEMA_REVISION: fixtureSchemaRevision,
       DESKTOP_DEPLOYMENT_CONFIG_REVISION: "home-v2-capture-v1",
     },
   });

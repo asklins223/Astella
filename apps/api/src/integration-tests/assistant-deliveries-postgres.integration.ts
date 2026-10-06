@@ -5,7 +5,7 @@
  * 竞争：第二设备 claim 被拒）→ ACK 状态机（displayed/acted 幂等 + lease 不
  * 匹配拒绝）→ inbox Last-Event-ID 拉取。
  *
- * 运行：DATABASE_URL_API="postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn"
+ * 运行：DATABASE_URL_API="postgres://astella:astella_dev@127.0.0.1:5432/astella"
  *   node --import tsx --test --test-concurrency=1 src/integration-tests/assistant-deliveries-postgres.integration.ts
  */
 
@@ -13,7 +13,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL_API ??= CONN;

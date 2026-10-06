@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { noteBlocks } from "@ailearn/shared/db-schema/note";
-import { roundTeachingContentV1Schema, type RoundSuspectClaimV1 } from "@ailearn/shared/note-learning-round-contracts";
+import { noteBlocks } from "@astella/shared/db-schema/note";
+import { roundTeachingContentV1Schema, type RoundSuspectClaimV1 } from "@astella/shared/note-learning-round-contracts";
 import type { ApiTransaction } from "../../db/client.ts";
 import type { TeachingExplainBlockV1 } from "./teaching/teaching-explain.ts";
 import type { RoundTargetDraft } from "./teaching/round-target-contract.ts";

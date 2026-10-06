@@ -78,7 +78,7 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
   const spaceRef = useRef<HTMLButtonElement>(null);
   const accountRef = useRef<HTMLButtonElement>(null);
   const guideRef = useRef<HTMLButtonElement>(null);
-  const guide = useCompanionGuide();
+  const guide = useCompanionGuide(decorative);
   const guideMenuOpen = menuKind === "guide";
 
   useTactileSurface(rootRef, "room-control");
@@ -125,9 +125,9 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
       if (!guideMenuOpen && !guide.session) return;
       guide.pause(); setMenuKind(null); setExpanded(false);
     };
-    window.addEventListener("ailearn:companion-guide-pause", attend);
-    window.addEventListener("ailearn:companion-open-chat", attend);
-    return () => { window.removeEventListener("ailearn:companion-open-chat", attend); window.removeEventListener("ailearn:companion-guide-pause", attend); };
+    window.addEventListener("astella:companion-guide-pause", attend);
+    window.addEventListener("astella:companion-open-chat", attend);
+    return () => { window.removeEventListener("astella:companion-open-chat", attend); window.removeEventListener("astella:companion-guide-pause", attend); };
   }, [guideMenuOpen, guide.session, guide.pause]);
 
   // The island's own collapse rule: any open surface or the onboarding overlay

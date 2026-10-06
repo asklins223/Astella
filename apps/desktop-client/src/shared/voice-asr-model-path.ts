@@ -27,7 +27,7 @@ export function platformUserDataDirectory(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
   home: string = homedir(),
-  appName = 'ailearn-desktop-client'
+  appName = 'astella-desktop-client'
 ): string {
   if (platform === 'win32') return resolve(env.APPDATA ?? resolve(home, 'AppData', 'Roaming'), appName)
   if (platform === 'darwin') return resolve(home, 'Library', 'Application Support', appName)
@@ -43,7 +43,7 @@ export interface VoiceAsrModelDirectoryInput {
 export function voiceAsrModelDirectory(input: VoiceAsrModelDirectoryInput = {}): string {
   const env = input.env ?? process.env
   // 显式指定优先：想把模型放在共享盘上的部署走这一条。
-  const override = env.AILEARN_VOICE_ASR_DIR?.trim()
+  const override = env.ASTELLA_VOICE_ASR_DIR?.trim()
   if (override) return resolve(override)
   return resolve(input.userDataDir ?? platformUserDataDirectory(env), 'voice-models')
 }

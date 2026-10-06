@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BookmarkPlus, Pencil, Sparkles, X } from "lucide-react";
-import type { NoteReflectionCommandV1, NoteReflectionPageV1, NoteReflectionV1, ReflectionSourceV1 } from "@ailearn/shared/note-learning-reflection-contracts";
+import type { NoteReflectionCommandV1, NoteReflectionPageV1, NoteReflectionV1, ReflectionSourceV1 } from "@astella/shared/note-learning-reflection-contracts";
 import { createRequestMeta, gatewayErrorMessage, RendererGatewayError, unwrapGatewayResult } from "../../../app/desktop-client";
 import { PendingReflectionAppendError, reflectionDocumentLines } from "./note-reflection-document.ts";
 
@@ -18,7 +18,7 @@ type Props = {
   onAppend: (source: ReflectionSourceV1, annotation: string) => Promise<boolean>;
   onInspectBody: () => void;
 };
-const desktopApi = () => typeof window === "undefined" ? undefined : window.ailearn;
+const desktopApi = () => typeof window === "undefined" ? undefined : window.astella;
 const originLabel = (source: ReflectionSourceV1) => source.ref.kind === "teaching" ? "AI 整理建议" : "本人原话";
 const sameSource = (a: ReflectionSourceV1, b: ReflectionSourceV1) => a.ref.kind === b.ref.kind && a.ref.id === b.ref.id;
 const sourceExcerpt = (source: ReflectionSourceV1) => {

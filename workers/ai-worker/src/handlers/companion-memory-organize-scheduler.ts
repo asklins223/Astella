@@ -5,7 +5,7 @@
  *
  * 「哪些 (workspace_id, user_id) 够格整理」是跨用户的计数，RLS 下 worker
  * 读不到别人的行，所以这一问在数据库侧（0361 的
- * `ailearn_enqueue_companion_memory_organize`，SECURITY DEFINER）。
+ * `astella_enqueue_companion_memory_organize`，SECURITY DEFINER）。
  * 本文件只负责**把那个函数定期叫醒**，并把结果记成一行计数。
  *
  * 真正「这一轮跑不跑、跑几条、怎么处置」在 worker 侧
@@ -34,7 +34,7 @@ export async function tickCompanionMemoryOrganizeScheduler(): Promise<void> {
   if (now - lastTickAt < TICK_INTERVAL_MS) return;
   try {
     const rows = await db.execute<{ enqueued: number }>(sql`
-      SELECT public.ailearn_enqueue_companion_memory_organize() AS enqueued
+      SELECT public.astella_enqueue_companion_memory_organize() AS enqueued
     `);
     lastTickAt = now;
     const enqueued = Number((Array.isArray(rows) ? rows : [])[0]?.enqueued ?? 0);

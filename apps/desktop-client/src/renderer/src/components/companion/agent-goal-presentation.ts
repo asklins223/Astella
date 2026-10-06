@@ -1,5 +1,5 @@
-import { agentCapabilityLabel } from "@ailearn/shared/agent-capabilities";
-import type { AgentArtifactRefV1, AgentRunV1 } from "@ailearn/shared/agent-contracts";
+import { agentCapabilityLabel } from "@astella/shared/agent-capabilities";
+import type { AgentArtifactRefV1, AgentRunV1 } from "@astella/shared/agent-contracts";
 import { useRoomStore } from "../../app/room-store";
 import { plainCompanionBubbleText } from "./companion-markdown";
 

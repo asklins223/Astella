@@ -1,7 +1,7 @@
 import gsap from "gsap";
 import type { HomeV2CameraPreset } from "./home-v2";
 
-export const HOME_V2_CAMERA_FRAME_EVENT = "ailearn:home-v2-camera-frame";
+export const HOME_V2_CAMERA_FRAME_EVENT = "astella:home-v2-camera-frame";
 
 /**
  * The Home V2 scene camera transforms only `.room-camera-rig`. Animating

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { sql } from "drizzle-orm";
-import type { ChatMessage, ChatOptions } from "@ailearn/shared";
+import type { ChatMessage, ChatOptions } from "@astella/shared";
 
 delete process.env.AI_PLATFORMS_CONFIG;
 delete process.env.TOKENRHYTHM_API_KEY;
@@ -182,7 +182,7 @@ test("全局整理入队跳过孤立记忆与已退出成员，且重复调用�
       VALUES (${ws},${userId},'preference','旧的待整理夹具',false,${`organizer-${ws}`},now()-interval '31 days','user')`;
   }
   const enqueue=()=>withWorkerWorkspaceTransaction({workspaceId,userId},tx=>tx.execute<{n:number}>(sql`
-    SELECT public.ailearn_enqueue_companion_memory_organize() AS n`));
+    SELECT public.astella_enqueue_companion_memory_organize() AS n`));
   assert.equal((await enqueue())[0].n,1);
   assert.equal((await enqueue())[0].n,0);
   const jobs=await admin`SELECT workspace_id FROM jobs WHERE type='companion_memory_organize' AND requested_by=${userId}`;

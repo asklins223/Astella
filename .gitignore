@@ -161,4 +161,4 @@ apps/desktop-client/prototypes/
 apps/desktop-client/.devlog
 
 # Windows 安装生命周期测试的诊断产物（CI 上传成 artifact）
-apps/desktop-client/ailearn-diagnostics/
+apps/desktop-client/astella-diagnostics/

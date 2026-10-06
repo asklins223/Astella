@@ -41,4 +41,4 @@ ALTER TABLE learning_card_revisions_v2 ENABLE ROW LEVEL SECURITY;
 CREATE POLICY lcr_v2_ws_isolation ON learning_card_revisions_v2
   USING (workspace_id = current_setting('app.workspace_id', true)::uuid);
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON learning_card_revisions_v2 TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON learning_card_revisions_v2 TO astella_api, astella_worker;

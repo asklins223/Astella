@@ -8,7 +8,7 @@ importers:
 
   .:
     dependencies:
-      '@ailearn/shared':
+      '@astella/shared':
         specifier: file:../shared
         version: file:../shared
       zod:
@@ -27,7 +27,7 @@ importers:
 
 packages:
 
-  '@ailearn/shared@file:../shared':
+  '@astella/shared@file:../shared':
     resolution: {directory: ../shared, type: directory}
 
   '@esbuild/aix-ppc64@0.28.2':
@@ -309,7 +309,7 @@ packages:
 
 snapshots:
 
-  '@ailearn/shared@file:../shared':
+  '@astella/shared@file:../shared':
     dependencies:
       drizzle-orm: 0.45.2
       zod: 3.25.76

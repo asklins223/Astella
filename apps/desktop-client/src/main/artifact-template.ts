@@ -11,7 +11,7 @@
  *
  * ## 产物接口（D4 §9；2026-09-28 用户裁决后收紧）
  *
- * 产物渲染在 `#ailearn-artifact-root` 里，并**可选**地声明
+ * 产物渲染在 `#astella-artifact-root` 里，并**可选**地声明
  * `window.setLessonMotion(motion)`：`'reduced'` 时关掉自动播放与循环动画、停在最有
  * 信息量的那一帧。模板为 CSS、SVG 和 Web Animations 提供暂停兜底，脚本自己的
  * 自动播放由这个钩子处理。系统减少动态始终优先；暂停不改写教具的内容与交互。
@@ -33,32 +33,32 @@ const ARTIFACT_DOCUMENT_TEMPLATE = `<!doctype html>
     font: 14px/1.6 system-ui, -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
     color: #33261c; background: transparent;
   }
-  #ailearn-artifact-root { display: flow-root; }
+  #astella-artifact-root { display: flow-root; }
 </style>
-<!--__AILEARN_ARTIFACT_STYLES__-->
+<!--__ASTELLA_ARTIFACT_STYLES__-->
 <style data-artifact-host>
   /* The host owns the document viewport; the generated page owns its contents. */
   html, body { height: auto !important; min-height: 0 !important; overflow: hidden !important; }
-  #ailearn-artifact-root { box-sizing: border-box; width: 100%; }
-  html[data-artifact-motion="reduced"] #ailearn-artifact-root *,
-  html[data-artifact-motion="reduced"] #ailearn-artifact-root *::before,
-  html[data-artifact-motion="reduced"] #ailearn-artifact-root *::after {
+  #astella-artifact-root { box-sizing: border-box; width: 100%; }
+  html[data-artifact-motion="reduced"] #astella-artifact-root *,
+  html[data-artifact-motion="reduced"] #astella-artifact-root *::before,
+  html[data-artifact-motion="reduced"] #astella-artifact-root *::after {
     animation-play-state: paused !important;
     transition: none !important;
   }
 </style>
 </head>
 <body>
-<div id="ailearn-artifact-root"><!--__AILEARN_ARTIFACT__--></div>
-<!--__AILEARN_ARTIFACT_SCRIPTS__-->
+<div id="astella-artifact-root"><!--__ASTELLA_ARTIFACT__--></div>
+<!--__ASTELLA_ARTIFACT_SCRIPTS__-->
 <script>
 (function () {
-  var CHANNEL = 'ailearn:artifact-frame';
-  var root = document.getElementById('ailearn-artifact-root');
+  var CHANNEL = 'astella:artifact-frame';
+  var root = document.getElementById('astella-artifact-root');
   // The surrounding notebook presents the saved metadata and text equivalents.
   // Keep the immutable snapshot intact; project only its teaching scene here.
   if (window.location && window.location.hash === '#content') {
-    var scene = root && root.querySelector('.ailearn-art__scene');
+    var scene = root && root.querySelector('.astella-art__scene');
     if (scene) {
       var saved = root.querySelector('[data-outline-count]');
       if (saved) root.setAttribute('data-artifact-outline-count', saved.getAttribute('data-outline-count'));
@@ -205,7 +205,7 @@ export function artifactDocumentTemplate(): string {
 }
 
 /** 组装时用来定位内容落点的标记（`artifact-surface.ts` 与模板之间唯一的约定）。 */
-export const ARTIFACT_TEMPLATE_PLACEHOLDER = '<!--__AILEARN_ARTIFACT__-->'
+export const ARTIFACT_TEMPLATE_PLACEHOLDER = '<!--__ASTELLA_ARTIFACT__-->'
 
 /**
  * 样式与脚本的落点标记。
@@ -214,5 +214,5 @@ export const ARTIFACT_TEMPLATE_PLACEHOLDER = '<!--__AILEARN_ARTIFACT__-->'
  * 样式进 `<head>`、标记进内容落点、脚本进 `</body>` 前。落点分开之后，"模型在标记中间
  * 塞一个脚本、脚本跑的时候 DOM 还没排完"这一类时序问题就不由它自己承担了。
  */
-export const ARTIFACT_TEMPLATE_STYLE_PLACEHOLDER = '<!--__AILEARN_ARTIFACT_STYLES__-->'
-export const ARTIFACT_TEMPLATE_SCRIPT_PLACEHOLDER = '<!--__AILEARN_ARTIFACT_SCRIPTS__-->'
+export const ARTIFACT_TEMPLATE_STYLE_PLACEHOLDER = '<!--__ASTELLA_ARTIFACT_STYLES__-->'
+export const ARTIFACT_TEMPLATE_SCRIPT_PLACEHOLDER = '<!--__ASTELLA_ARTIFACT_SCRIPTS__-->'

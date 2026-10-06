@@ -74,7 +74,7 @@ function integrationFiles(): string[] {
  * 一个注册面里**真会执行这份文件**的那部分文本。
  *
  * package.json 只取 `scripts` 的值。动因（2026-09-27）：`apps/api/package.json` 里
- * `@ailearn/shared` 那条依赖声明被粘上了两个集成测试路径（接点名单时锚错了行），
+ * `@astella/shared` 那条依赖声明被粘上了两个集成测试路径（接点名单时锚错了行），
  * 而"整个文件里出现过文件名就算注册"的旧口径当场判成已注册——那两份集测其实没进任何脚本、
  * 一次都没跑过。同一处损坏还让 pnpm 装不动：谁跑一次 `pnpm run` 就会把 `apps/api/node_modules`
  * 剪掉一半。⇒ 声明位置与执行位置在判据里必须是两个地方。
@@ -131,16 +131,16 @@ test("注册面判据是灵敏的：被点名的算注册，没人提的不算",
 });
 
 test("注册口径是「会执行它的那一行」：依赖声明里出现文件名不算注册", () => {
-  // 09-27 真实形状：两份集测被粘进 @ailearn/shared 的 specifier，脚本里一份都没有。
+  // 09-27 真实形状：两份集测被粘进 @astella/shared 的 specifier，脚本里一份都没有。
   const corrupt = JSON.stringify({
     scripts: { test: "node --import tsx --test $(find src -name '*.test.ts')" },
-    dependencies: { "@ailearn/shared": "file:../../packages/shared src/dark-one.integration.ts" },
+    dependencies: { "@astella/shared": "file:../../packages/shared src/dark-one.integration.ts" },
   });
   assert.ok(!registrationText("apps/api/package.json", corrupt).includes("dark-one.integration.ts"),
     "package.json 的 dependencies 被当成注册面 ⇒ 粘在声明里的文件名会替一份没人跑的集测作证");
   const honest = JSON.stringify({
     scripts: { "test:companion:postgres": "node --import tsx --test src/integration-tests/dark-two.integration.ts" },
-    dependencies: { "@ailearn/shared": "file:../../packages/shared" },
+    dependencies: { "@astella/shared": "file:../../packages/shared" },
   });
   assert.ok(registrationText("apps/api/package.json", honest).includes("dark-two.integration.ts"),
     "脚本值里的点名也不算了 ⇒ 收窄把真注册一起切掉了");

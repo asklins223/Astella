@@ -15,7 +15,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { activationIntentV2Schema } from "@ailearn/shared/card-generation-v2-contracts";
+import { activationIntentV2Schema } from "@astella/shared/card-generation-v2-contracts";
 
 // 本文件在 apps/api/src/modules/card-generation-v2 下，到仓库根是**五**层。
 // 数错层级的后果很阴：路径全都不存在，而"断言只检查读到的内容"那条会一路绿到底。

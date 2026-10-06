@@ -16,8 +16,8 @@
  * 3. 幂等重放不受配额限制（同 key 返回同 run）。
  *
  * 运行（从仓库根，**必须单文件执行**——worker outbox claim 全局）：
- *   DATABASE_URL_WORKER="postgres://ailearn_worker:ailearn_dev@localhost:5432/ailearn" \
- *   DATABASE_URL_API="postgres://ailearn:ailearn_dev@localhost:5432/ailearn" \
+ *   DATABASE_URL_WORKER="postgres://astella_worker:astella_dev@localhost:5432/astella" \
+ *   DATABASE_URL_API="postgres://astella:astella_dev@localhost:5432/astella" \
  *   node --import ./workers/ai-worker/node_modules/tsx/dist/loader.mjs --test --test-concurrency=1 \
  *     workers/ai-worker/src/integration-tests/card-generation-v2-redaction-quota.integration.ts
  */
@@ -26,7 +26,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
@@ -159,7 +159,7 @@ async function forceCandidatesPassed(runId: string) {
 async function activateFirstCandidate(runId: string, snapshotId: string, snapshotHash: string) {
   const { runRow, plan, first } = await loadRunPlan(runId);
   const { computeCandidateEvidenceBindingPlanHashV2, computeClientReviewHashV2 } = await import(
-    "@ailearn/shared/card-generation-v2-hashing"
+    "@astella/shared/card-generation-v2-hashing"
   );
   const bindings = [{
     targetUnit: { kind: "rubric", rubricUnitId: "u1" },
@@ -404,7 +404,7 @@ test("§15.7/C31：Evidence Redaction — tombstone + eligibility 前移 + 幂�
   assert.ok(Number(bindingProbe[0]?.unit_rows ?? 0) >= 1,
     "C31 前置：binding plan 里抽不出任何条目 ⇒ `uniqueSnapshotIds` 为空，门同样整段放行");
   const { computeCandidateEvidenceBindingPlanHashV2, computeClientReviewHashV2 } = await import(
-    "@ailearn/shared/card-generation-v2-hashing"
+    "@astella/shared/card-generation-v2-hashing"
   );
   const bindings = [{
     targetUnit: { kind: "rubric", rubricUnitId: "u1" },

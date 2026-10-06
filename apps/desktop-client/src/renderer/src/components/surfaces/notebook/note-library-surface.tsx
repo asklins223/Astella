@@ -2,10 +2,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SpaceSharingNotice } from "../../space-sharing-notice";
 import { SpaceShareButton, noteShareScopeLabel } from "../../space-share-control";
-import type { NoteShareScopeV1 } from "@ailearn/shared/note-share-contracts";
-import type { DesktopNoteListItem, DesktopNoteListPage, DesktopSourceDetail } from "@ailearn/shared/desktop-surface-contracts";
-import type { NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
-import { NOTE_SHELF_STAGE_LABEL_V1, noteShelfStageDetailV1 } from "@ailearn/shared/note-shelf-state-contracts";
+import type { NoteShareScopeV1 } from "@astella/shared/note-share-contracts";
+import type { DesktopNoteListItem, DesktopNoteListPage, DesktopSourceDetail } from "@astella/shared/desktop-surface-contracts";
+import type { NoteDetailV1 } from "@astella/shared/note-projection-contracts";
+import { NOTE_SHELF_STAGE_LABEL_V1, noteShelfStageDetailV1 } from "@astella/shared/note-shelf-state-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import {
   createCommandId,
@@ -16,7 +16,7 @@ import {
 import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import {
   SurfaceDataState,
   daysSince,
@@ -141,11 +141,11 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
 
   const { data, loading, failure, reload, epochRef } = useSurfaceProjection(async ({ workspaceEpoch }) => {
     const [listedResponse, capabilitiesResponse, trashResponse] = await Promise.all([
-      window.ailearn.note.list({ meta: createRequestMeta(workspaceEpoch), limit: FIRST_PAGE, trashed: false }),
-      window.ailearn.capabilities.get({ meta: createRequestMeta(workspaceEpoch) }),
+      window.astella.note.list({ meta: createRequestMeta(workspaceEpoch), limit: FIRST_PAGE, trashed: false }),
+      window.astella.capabilities.get({ meta: createRequestMeta(workspaceEpoch) }),
       // One row is enough: the page only needs the trash's count, so that a
       // workspace whose notes are all deleted still offers a way back to them.
-      window.ailearn.note.list({ meta: createRequestMeta(workspaceEpoch), limit: 1, trashed: true }),
+      window.astella.note.list({ meta: createRequestMeta(workspaceEpoch), limit: 1, trashed: true }),
     ]);
     const listed = unwrapGatewayResult(listedResponse);
     const capabilities = unwrapGatewayResult(capabilitiesResponse);
@@ -159,13 +159,13 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
     // The shelf's live sheet previews real prose, so its current version is read
     // as well; a note that was never saved simply has nothing to preview.
     if (head?.currentVersionId) {
-      featured = unwrapGatewayResult(await window.ailearn.note.get({
+      featured = unwrapGatewayResult(await window.astella.note.get({
         meta: createRequestMeta(workspaceEpoch),
         noteId: head.id,
       }));
       if (featured.sourceId) {
         try {
-          source = unwrapGatewayResult(await window.ailearn.source.get({
+          source = unwrapGatewayResult(await window.astella.source.get({
             meta: createRequestMeta(workspaceEpoch),
             sourceId: featured.sourceId,
           }));
@@ -313,7 +313,7 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
     setCreating(true);
     setCreateFailure(null);
     try {
-      const created = unwrapGatewayResult(await window.ailearn.note.create({
+      const created = unwrapGatewayResult(await window.astella.note.create({
         meta: createRequestMeta(epochRef.current),
         request: { blocks: [] },
       }));
@@ -336,7 +336,7 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
     setPaging(true);
     setPageFailure(null);
     try {
-      const next = unwrapGatewayResult(await window.ailearn.note.list({
+      const next = unwrapGatewayResult(await window.astella.note.list({
         meta: createRequestMeta(epochRef.current),
         cursor: nextCursor,
         limit: FIRST_PAGE,
@@ -377,7 +377,7 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
     setTrashLoading(true);
     setTrashFailure(null);
     try {
-      const listed = unwrapGatewayResult(await window.ailearn.note.list({
+      const listed = unwrapGatewayResult(await window.astella.note.list({
         meta: createRequestMeta(epochRef.current),
         limit: FIRST_PAGE,
         trashed: true,
@@ -402,7 +402,7 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
     setTrashPaging(true);
     setTrashFailure(null);
     try {
-      const next = unwrapGatewayResult(await window.ailearn.note.list({
+      const next = unwrapGatewayResult(await window.astella.note.list({
         meta: createRequestMeta(epochRef.current),
         cursor,
         limit: FIRST_PAGE,
@@ -438,7 +438,7 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
     try {
       // 改名不走 `note.save`（那条现在是"把文档此刻定成一版"）。标题在文档的 `meta` 里，
       // 而这里没有打开的文档，所以由主进程把标题写进它那一份、再走同一个增量口。
-      unwrapGatewayResult(await window.ailearn.note.doc.syncTitle({
+      unwrapGatewayResult(await window.astella.note.doc.syncTitle({
         meta: createRequestMeta(epochRef.current),
         commandId: createCommandId("note-rename"),
         noteId: note.id,
@@ -465,7 +465,7 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
     setBusyId(note.id);
     setRowFailure(null);
     try {
-      unwrapGatewayResult(await window.ailearn.note.setShareScope({
+      unwrapGatewayResult(await window.astella.note.setShareScope({
         meta: createRequestMeta(epochRef.current),
         commandId: createCommandId("note-share"),
         noteId: note.id,
@@ -483,7 +483,7 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
     setBusyId(note.id);
     setRowFailure(null);
     try {
-      unwrapGatewayResult(await window.ailearn.note.delete({
+      unwrapGatewayResult(await window.astella.note.delete({
         meta: createRequestMeta(epochRef.current),
         noteId: note.id,
       }));
@@ -505,7 +505,7 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
     setBusyId(note.id);
     setTrashFailure(null);
     try {
-      unwrapGatewayResult(await window.ailearn.note.restore({
+      unwrapGatewayResult(await window.astella.note.restore({
         meta: createRequestMeta(epochRef.current),
         noteId: note.id,
       }));

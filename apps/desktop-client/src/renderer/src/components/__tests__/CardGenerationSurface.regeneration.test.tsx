@@ -30,7 +30,7 @@ function fixture(status: string) {
     },
     subscriptions: { subscribe: vi.fn(async () => ok({ subscriptionId: "sub" })), onEvent: vi.fn(() => () => {}), unsubscribe: vi.fn(async () => ok(null)) },
   };
-  window.ailearn = api as unknown as typeof window.ailearn;
+  window.astella = api as unknown as typeof window.astella;
   useRoomStore.setState({ activeCardGenerationRunId: OLD_RUN, activeNoteRef: { noteId: NOTE, noteVersionId: OLD_VERSION } });
   render(<CardGenerationSurface />);
   return { api, state };

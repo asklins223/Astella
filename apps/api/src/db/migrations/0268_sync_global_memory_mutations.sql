@@ -26,7 +26,7 @@
 -- 顺带把 `candidate` 也同步：用户在某个空间确认了一条候选记忆，其余空间不该还把它
 -- 当候选藏着——她已经在别处确认过了。
 
-CREATE OR REPLACE FUNCTION public.ailearn_sync_global_companion_memory_copies()
+CREATE OR REPLACE FUNCTION public.astella_sync_global_companion_memory_copies()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -71,7 +71,7 @@ $function$;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_sync_global_companion_memory_copies() IS
+COMMENT ON FUNCTION public.astella_sync_global_companion_memory_copies() IS
   '把一条跨空间记忆的变更同步到它在其他空间的副本（0268）。事务局部标记 app.memory_sync 防递归。';
 
 --> statement-breakpoint
@@ -81,14 +81,14 @@ CREATE TRIGGER assistant_memory_items_sync_copies
   AFTER UPDATE ON public.assistant_memory_items
   FOR EACH ROW
   WHEN (OLD.global_key IS NOT NULL OR NEW.global_key IS NOT NULL)
-  EXECUTE FUNCTION public.ailearn_sync_global_companion_memory_copies();
+  EXECUTE FUNCTION public.astella_sync_global_companion_memory_copies();
 
 --> statement-breakpoint
 
 -- 物理删除（定时清理、级联）也要同步：软删除走上面的 UPDATE，硬删除走这条。
 -- 用户可见的删除是软删除（`deleted_at`），硬删除只发生在保留期清理，两条都要覆盖，
 -- 否则"清掉一条旧记忆"会留下几个空间的孤儿副本。
-CREATE OR REPLACE FUNCTION public.ailearn_sync_global_companion_memory_deletes()
+CREATE OR REPLACE FUNCTION public.astella_sync_global_companion_memory_deletes()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -122,7 +122,7 @@ CREATE TRIGGER assistant_memory_items_sync_deletes
   AFTER DELETE ON public.assistant_memory_items
   FOR EACH ROW
   WHEN (OLD.global_key IS NOT NULL)
-  EXECUTE FUNCTION public.ailearn_sync_global_companion_memory_deletes();
+  EXECUTE FUNCTION public.astella_sync_global_companion_memory_deletes();
 
 --> statement-breakpoint
 
@@ -153,14 +153,14 @@ $$;
 -- 旅程步骤引用的是空间内的对象（笔记、目标、卡片），把它们带进另一个空间时那些对象
 -- 并不存在。代码侧（service 分支、契约字段、界面提示）已在同一次改动里删除，这里把
 -- 数据库对象也收掉——留着它就是一个"没人调用但能跨空间读"的入口。
-DROP FUNCTION IF EXISTS public.ailearn_find_resumable_companion_journey(uuid, uuid);
+DROP FUNCTION IF EXISTS public.astella_find_resumable_companion_journey(uuid, uuid);
 
 --> statement-breakpoint
 
 DO $$
 BEGIN
   IF EXISTS (
-    SELECT 1 FROM pg_proc WHERE proname = 'ailearn_find_resumable_companion_journey'
+    SELECT 1 FROM pg_proc WHERE proname = 'astella_find_resumable_companion_journey'
   ) THEN
     RAISE EXCEPTION '跨空间旅程查找函数没有删除';
   END IF;

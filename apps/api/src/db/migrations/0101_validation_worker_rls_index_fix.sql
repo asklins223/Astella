@@ -9,7 +9,7 @@
 --
 -- 2) validation_submissions / validation_question_rubric_items /
 --    validation_point_assessments / scheduling_shadow_decisions 自 0040/0043
---    起 RLS ENABLE（user_isolation），但从未给 ailearn_worker 豁免；
+--    起 RLS ENABLE（user_isolation），但从未给 astella_worker 豁免；
 --    evaluate_rubric handler（生产角色 NOBYPASSRLS）在 assertJobLease 事务
 --    结束后裸读这些表被拦成 0 行 → 评估任务必失败至 dead（测试环境 superuser
 --    连接掩盖）。与 0100 同类修复：加 worker 豁免 PERMISSIVE 策略。
@@ -39,12 +39,12 @@ COMMENT ON INDEX validation_events_input_unique_idx IS
 
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
     EXECUTE $policy$
       CREATE POLICY validation_submissions_worker_all
-        ON public.validation_submissions FOR ALL TO ailearn_worker
-        USING (CURRENT_USER = 'ailearn_worker')
-        WITH CHECK (CURRENT_USER = 'ailearn_worker')
+        ON public.validation_submissions FOR ALL TO astella_worker
+        USING (CURRENT_USER = 'astella_worker')
+        WITH CHECK (CURRENT_USER = 'astella_worker')
     $policy$;
   END IF;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -53,12 +53,12 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
     EXECUTE $policy$
       CREATE POLICY validation_question_rubric_items_worker_all
-        ON public.validation_question_rubric_items FOR ALL TO ailearn_worker
-        USING (CURRENT_USER = 'ailearn_worker')
-        WITH CHECK (CURRENT_USER = 'ailearn_worker')
+        ON public.validation_question_rubric_items FOR ALL TO astella_worker
+        USING (CURRENT_USER = 'astella_worker')
+        WITH CHECK (CURRENT_USER = 'astella_worker')
     $policy$;
   END IF;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -67,12 +67,12 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
     EXECUTE $policy$
       CREATE POLICY validation_point_assessments_worker_all
-        ON public.validation_point_assessments FOR ALL TO ailearn_worker
-        USING (CURRENT_USER = 'ailearn_worker')
-        WITH CHECK (CURRENT_USER = 'ailearn_worker')
+        ON public.validation_point_assessments FOR ALL TO astella_worker
+        USING (CURRENT_USER = 'astella_worker')
+        WITH CHECK (CURRENT_USER = 'astella_worker')
     $policy$;
   END IF;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -81,12 +81,12 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
     EXECUTE $policy$
       CREATE POLICY scheduling_shadow_decisions_worker_all
-        ON public.scheduling_shadow_decisions FOR ALL TO ailearn_worker
-        USING (CURRENT_USER = 'ailearn_worker')
-        WITH CHECK (CURRENT_USER = 'ailearn_worker')
+        ON public.scheduling_shadow_decisions FOR ALL TO astella_worker
+        USING (CURRENT_USER = 'astella_worker')
+        WITH CHECK (CURRENT_USER = 'astella_worker')
     $policy$;
   END IF;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;

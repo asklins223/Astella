@@ -7,7 +7,7 @@ import { useSourceImage } from "../source/source-image.ts";
 /**
  * 这张测试守的是"站内图片怎么到了 `<img>` 上"。
  *
- * 渲染层的 origin 是 `ailearn-app://`，正文里的 `/api/uploads/…` 是相对路径，
+ * 渲染层的 origin 是 `astella-app://`，正文里的 `/api/uploads/…` 是相对路径，
  * 直接交给 `<img>` 只会落到应用包内；所以它必须经 main 的字节通道换成 blob URL。
  * 站外地址则相反：原样交给 `<img>`，不该白白多一次 IPC。
  */
@@ -51,7 +51,7 @@ function stubGetImage(implementation: (objectKey: string) => unknown) {
     const { request } = input as { readonly request: { readonly objectKey: string } };
     return implementation(request.objectKey);
   });
-  window.ailearn = { source: { getImage } } as unknown as typeof window.ailearn;
+  window.astella = { source: { getImage } } as unknown as typeof window.astella;
   return getImage;
 }
 

@@ -1,6 +1,6 @@
 import { useMemo, useRef } from "react";
 import { ArrowRight, Bookmark, Leaf } from "lucide-react";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
 import { HudPage } from "../../hud/HudPage";
@@ -30,7 +30,7 @@ export function ResumableSurface() {
   const rootRef = useRef<HTMLElement>(null);
 
   const { data, loading, failure, reload, epochRef } = useSurfaceProjection(async ({ workspaceEpoch }) => {
-    const response = await window.ailearn.room.getProjection({ meta: createRequestMeta(workspaceEpoch) });
+    const response = await window.astella.room.getProjection({ meta: createRequestMeta(workspaceEpoch) });
     return unwrapGatewayResult(response);
   });
 

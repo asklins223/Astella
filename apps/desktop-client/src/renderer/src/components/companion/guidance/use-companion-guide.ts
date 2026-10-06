@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DesktopNoteListItem } from "@ailearn/shared/desktop-surface-contracts";
-import type { CompanionAccountStateV1 } from "@ailearn/shared/companion-shell-contracts";
+import type { DesktopNoteListItem } from "@astella/shared/desktop-surface-contracts";
+import type { CompanionAccountStateV1 } from "@astella/shared/companion-shell-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
+import { companionConsentGate, SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-consent-gate";
 import { useRoomStore } from "../../../app/room-store";
 import { notifyCompanion, useCompanionNotifications } from "../companion-notifications";
 import { COMPANION_ACCOUNT_CHANGED } from "../companion-events";
@@ -10,8 +11,14 @@ import { GuideProgressClient, resumableGuide, verifiedGuideIdentity, type GuideS
 
 export type GuideSession = { topic: GuideTopicId; index: number; scope: GuideScope };
 export type GuideContents = { status: "loading" | "ready" | "error"; total: number | null; notes: readonly DesktopNoteListItem[]; failure?: string };
-export function useCompanionGuide() {
+/**
+ * 伴星带路的控制器。`decorative` 是首次那张纸上还没有可操作空间时的装饰岛：
+ * 那里没有带路舞台，一次邀请都不该发出去——账号与空间的初次认识是**一次性许可**，
+ * 被看不见的带路消费掉就再也没有了。
+ */
+export function useCompanionGuide(decorative = false) {
   const identity = useRoomStore(state => state.spaceIdentity);
+  const surface = useRoomStore(state => state.surface);
   const client = useRef<GuideProgressClient | null>(null);
   const generation = useRef(0);
   const [session, setSession] = useState<GuideSession | null>(null);
@@ -19,6 +26,12 @@ export function useCompanionGuide() {
   const [revision, setRevision] = useState(0);
   const [account, setAccount] = useState<CompanionAccountStateV1 | null>(null);
   const [invitation, setInvitation] = useState<GuideScope | null>(null);
+  /** 邀请的同步副本：自动开始要在同一次调用里判定「这一步是不是初次邀请推进的」。 */
+  const invitationRef = useRef<GuideScope | null>(null);
+  const offer = (scope: GuideScope | null) => { invitationRef.current = scope; setInvitation(scope); };
+  const [consentNeeded, setConsentNeeded] = useState(false);
+  /** 被同意门送进设置页时带着的那一段；签署回来接着播，而不是从头再走。 */
+  const consentReturn = useRef<GuideTopicId | null>(null);
   const [contents, setContents] = useState<GuideContents>({ status: "loading", total: null, notes: [] });
   const refresh = () => setRevision(value => value + 1);
   const save = useCallback((scope: GuideScope, action: Parameters<GuideProgressClient["transition"]>[1]) => {
@@ -28,7 +41,7 @@ export function useCompanionGuide() {
   }, []);
   const skip = useCallback(() => {
     const scope = invitation; if (!scope) return;
-    setInvitation(null); save(scope, { action: "skip" });
+    offer(null); save(scope, { action: "skip" });
     if (scope === "account") save("space", { action: "skip" });
     const adapter = client.current;
     if (adapter) useCompanionNotifications.getState().remove(`guide:invite:${adapter.identity.userId}:${adapter.identity.workspaceId}`);
@@ -38,15 +51,55 @@ export function useCompanionGuide() {
     const currentGeneration = generation.current;
     setContents({ status: "loading", total: null, notes: [] });
     try {
-      const result = unwrapGatewayResult(await window.ailearn.note.list({ meta: createRequestMeta(adapter.identity.workspaceEpoch), limit: 3 }));
+      const result = unwrapGatewayResult(await window.astella.note.list({ meta: createRequestMeta(adapter.identity.workspaceEpoch), limit: 3 }));
       if (currentGeneration === generation.current) setContents({ status: "ready", total: result.total, notes: result.items });
     } catch (error) {
       if (currentGeneration === generation.current) setContents({ status: "error", total: null, notes: [], failure: gatewayErrorMessage(error) });
     }
   }, []);
+  /**
+   * 带路出声前的同意预读。读不到不拦：服务端那道门仍然生效，失败侧的说明仍然给。
+   * 预读的意义不是替服务端做决定，而是别让整个带路每一步都去撞同一记 403。
+   */
+  const readConsent = useCallback(async () => {
+    const adapter = client.current; if (!adapter) return false;
+    try {
+      const settings = unwrapGatewayResult(await window.astella.workspace.getAiSettings({ meta: createRequestMeta(adapter.identity.workspaceEpoch) }));
+      const needed = companionConsentGate(settings) === "consent_required";
+      setConsentNeeded(needed); return needed;
+    } catch { setConsentNeeded(false); return false; }
+  }, []);
+  const start = useCallback((topic: GuideTopicId, resume = false) => {
+    const adapter = client.current;
+    const scope: GuideScope = topic === "space" ? "space" : "account";
+    const definition = GUIDE_TOPICS.find(item => item.id === topic)!;
+    const stored = adapter?.states[scope];
+    const canResume = adapter && resumableGuide(stored ?? null, adapter.identity);
+    const stepId = resume && canResume ? stored!.activeRun!.stepId : definition.steps[0];
+    const index = Math.max(0, definition.steps.indexOf(stepId as typeof definition.steps[number]));
+    const fromInvite = invitationRef.current === scope && stored?.activeRun?.entryMode === "first_run";
+    sessionRef.current = { topic, index, scope };
+    setSession({ topic, index, scope }); offer(null);
+    void readConsent();
+    if (adapter) useCompanionNotifications.getState().remove(`guide:invite:${adapter.identity.userId}:${adapter.identity.workspaceId}`);
+    save(scope, { action: resume && canResume ? "resume" : fromInvite ? "advance" : "replay", stepId, topicId: topic });
+  }, [save, readConsent]);
+  const openConsentSettings = useCallback(() => {
+    consentReturn.current = sessionRef.current?.topic ?? null;
+    const room = useRoomStore.getState();
+    room.setSettingsSection("ai");
+    room.setSettingsAttention(SETTINGS_ATTENTION_AI_CONSENT);
+    room.invoke("open-settings");
+  }, []);
   useEffect(() => {
-    if (!verifiedGuideIdentity(identity) || !window.ailearn) return;
-    setSession(null); setInvitation(null); setAccount(null);
+    const topic = consentReturn.current;
+    if (!topic || surface === "settings") return;
+    consentReturn.current = null;
+    void readConsent().then(needed => { if (!needed) start(topic, true); });
+  }, [surface, readConsent, start]);
+  useEffect(() => {
+    if (!verifiedGuideIdentity(identity) || !window.astella) return;
+    setSession(null); offer(null); setAccount(null); setConsentNeeded(false); consentReturn.current = null;
     const adapter = new GuideProgressClient(identity); client.current = adapter;
     const currentGeneration = ++generation.current;
     let inviteId: string | null = null;
@@ -59,19 +112,20 @@ export function useCompanionGuide() {
       const account = adapter.states.account;
       const scope: GuideScope | null = (!legacy && (!account || account.offerStatus === "not_offered")) ? "account"
         : (!adapter.states.space || adapter.states.space.offerStatus === "not_offered") ? "space" : null;
-      if (!scope) return;
+      if (!scope || decorative) return;
       const result = await adapter.transition(scope, { action: "start", stepId: scope === "account" ? "room" : "space", topicId: scope === "account" ? "welcome" : "space" });
       if (currentGeneration !== generation.current || result.won === false || result.state.offerStatus === "consumed") return;
-      setInvitation(scope); refresh();
+      offer(scope); refresh();
+      // 第一次认识系统不再等一次点击：欢迎直接接上连贯带路，伴星旁的第一段讲解就是起点。
+      if (scope === "account") { start("welcome"); return; }
       inviteId = `guide:invite:${identity.userId}:${identity.workspaceId}`;
-      notifyCompanion({ id: inviteId, kind: "help", title: scope === "account" ? "欢迎来到书房" : `我们到「${identity.name}」了`,
-        body: scope === "account" ? "我可以陪你整理材料、读懂笔记，也能帮你做具体的事。一起看看从哪里开始？"
-          : identity.role === "member" ? "这里的共享内容可以阅读；回想与学习记录属于你自己。一起找到一个起点？" : "先看看这里的内容，安顿好后，再挑一篇开始。",
+      notifyCompanion({ id: inviteId, kind: "help", title: `我们到「${identity.name}」了`,
+        body: identity.role === "member" ? "这里的共享内容可以阅读；回想与学习记录属于你自己。一起找到一个起点？" : "先看看这里的内容，安顿好后，再挑一篇开始。",
         source: "伴星带路", scope: useRoomStore.getState().workspaceScopeRevision, delivery: "when-idle",
         actions: [
-          { id: "start", label: scope === "account" ? "带我看看" : "带我认识这里", kind: "navigate", run: () => openCompanionGuide(scope === "account" ? "welcome" : "space") },
+          { id: "start", label: "带我认识这里", kind: "navigate", run: () => openCompanionGuide("space") },
           { id: "explore", label: "我先自己探索", kind: "cancel", run: () => {
-            setInvitation(null); save(scope, { action: "skip" }); if (scope === "account") save("space", { action: "skip" });
+            offer(null); save(scope, { action: "skip" });
           } },
         ],
       });
@@ -90,21 +144,7 @@ export function useCompanionGuide() {
       if (inviteId) useCompanionNotifications.getState().remove(inviteId);
       useRoomStore.getState().setCompanionGuideOpen(false);
     };
-  }, [identity?.userId, identity?.deploymentRef, identity?.workspaceId, identity?.workspaceEpoch, reloadContents, save]);
-
-  const start = useCallback((topic: GuideTopicId, resume = false) => {
-    const adapter = client.current;
-    const scope: GuideScope = topic === "space" ? "space" : "account";
-    const definition = GUIDE_TOPICS.find(item => item.id === topic)!;
-    const stored = adapter?.states[scope];
-    const canResume = adapter && resumableGuide(stored ?? null, adapter.identity);
-    const stepId = resume && canResume ? stored!.activeRun!.stepId : definition.steps[0];
-    const index = Math.max(0, definition.steps.indexOf(stepId as typeof definition.steps[number]));
-    sessionRef.current = { topic, index, scope };
-    setSession({ topic, index, scope }); setInvitation(null);
-    if (adapter) useCompanionNotifications.getState().remove(`guide:invite:${adapter.identity.userId}:${adapter.identity.workspaceId}`);
-    save(scope, { action: resume && canResume ? "resume" : stored?.activeRun?.entryMode === "first_run" && invitation === scope ? "advance" : "replay", stepId, topicId: topic });
-  }, [invitation, save]);
+  }, [identity?.userId, identity?.deploymentRef, identity?.workspaceId, identity?.workspaceEpoch, decorative, reloadContents, save, start]);
   const pause = useCallback(() => {
     const current = sessionRef.current; if (!current) return;
     const topic = GUIDE_TOPICS.find(item => item.id === current.topic)!;
@@ -134,6 +174,6 @@ export function useCompanionGuide() {
   const resumeState = client.current && (["space", "account"] as const).map(scope => ({ scope, state: client.current!.states[scope] }))
     .find(item => resumableGuide(item.state, client.current!.identity));
   const resume = resumeState ? { topic: resumeState.scope === "space" ? "space" as const : resumeState.state!.activeRun!.topicId ?? topicForStep(resumeState.state!.activeRun!.stepId), step: GUIDE_STEPS[resumeState.state!.activeRun!.stepId as keyof typeof GUIDE_STEPS]?.title ?? "继续带看" } : null;
-  return { identity, account, session, invitation, contents, start, skip, pause, next, end, resume, reloadContents, pending: client.current?.pending ?? false, revision };
+  return { identity, account, session, invitation, contents, consentNeeded, openConsentSettings, start, skip, pause, next, end, resume, reloadContents, pending: client.current?.pending ?? false, revision };
 }
 export type CompanionGuideController = ReturnType<typeof useCompanionGuide>;

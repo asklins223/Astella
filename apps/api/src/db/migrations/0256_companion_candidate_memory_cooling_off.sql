@@ -18,7 +18,7 @@
 -- 不做 `updated_at = now()`：嵌入任务按 `ORDER BY updated_at ASC` 取 pending 行，
 -- 一 bump 就把这批刚解禁、还缺向量的行推到队列最后面。
 
-CREATE OR REPLACE FUNCTION public.ailearn_run_companion_memory_maintenance()
+CREATE OR REPLACE FUNCTION public.astella_run_companion_memory_maintenance()
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -89,8 +89,8 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.ailearn_run_companion_memory_maintenance() TO ailearn_worker;
+GRANT EXECUTE ON FUNCTION public.astella_run_companion_memory_maintenance() TO astella_worker;
 
-COMMENT ON FUNCTION public.ailearn_run_companion_memory_maintenance() IS
+COMMENT ON FUNCTION public.astella_run_companion_memory_maintenance() IS
   '桌宠记忆维护：每个数据库日期最多执行一次；pinned 记忆不衰减；'
   '满 3 天的候选记忆自动落库（带当前时间窗统计量的行除外），不冒充用户确认。';

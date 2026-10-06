@@ -18,7 +18,7 @@
  *     少了它这一格会被读成进度条。
  */
 import type { ReactElement, RefObject } from "react";
-import type { RoundPracticeV1, RoundTeachingViewV1 } from "@ailearn/shared/note-learning-round-contracts";
+import type { RoundPracticeV1, RoundTeachingViewV1 } from "@astella/shared/note-learning-round-contracts";
 
 export function NotebookRoundRecap(props: {
   /** 这一轮的内容按当前权限遮蔽了。`true` 时下面四档都不看。 */

@@ -18,7 +18,7 @@ COPY apps/api/package.json apps/api/package-lock.json ./
 # The shared workspace is linked explicitly after dependency installation;
 # omit the repository-external local link here so npm ci remains deterministic
 # inside the container as well as on the host.
-RUN node -e 'const fs=require("node:fs"); const pkg=JSON.parse(fs.readFileSync("package.json","utf8")); for (const name of ["shared","agent-core","agent-host","card-generation"]) delete pkg.dependencies["@ailearn/"+name]; fs.writeFileSync("package.json", JSON.stringify(pkg)); const lock=JSON.parse(fs.readFileSync("package-lock.json","utf8")); for (const name of ["shared","agent-core","agent-host","card-generation"]) { delete lock.packages[""]?.dependencies?.["@ailearn/"+name]; delete lock.packages["node_modules/@ailearn/"+name]; delete lock.packages["../../packages/"+name]; } fs.writeFileSync("package-lock.json", JSON.stringify(lock));'
+RUN node -e 'const fs=require("node:fs"); const pkg=JSON.parse(fs.readFileSync("package.json","utf8")); for (const name of ["shared","agent-core","agent-host","card-generation"]) delete pkg.dependencies["@astella/"+name]; fs.writeFileSync("package.json", JSON.stringify(pkg)); const lock=JSON.parse(fs.readFileSync("package-lock.json","utf8")); for (const name of ["shared","agent-core","agent-host","card-generation"]) { delete lock.packages[""]?.dependencies?.["@astella/"+name]; delete lock.packages["node_modules/@astella/"+name]; delete lock.packages["../../packages/"+name]; } fs.writeFileSync("package-lock.json", JSON.stringify(lock));'
 RUN npm config set registry https://registry.npmmirror.com \
  && npm ci --install-links --no-audit --no-fund
 
@@ -35,12 +35,12 @@ COPY apps/api/package.json ./package.json
 COPY apps/api/tsconfig.json ./tsconfig.json
 COPY apps/api/drizzle.config.ts ./drizzle.config.ts
 COPY apps/api/src ./src
-RUN mkdir -p node_modules/@ailearn \
- && rm -rf node_modules/@ailearn/shared \
- && ln -s /app/packages/shared node_modules/@ailearn/shared \
- && ln -sf /app/packages/agent-core node_modules/@ailearn/agent-core \
- && ln -sf /app/packages/agent-host node_modules/@ailearn/agent-host \
- && ln -sf /app/packages/card-generation node_modules/@ailearn/card-generation
+RUN mkdir -p node_modules/@astella \
+ && rm -rf node_modules/@astella/shared \
+ && ln -s /app/packages/shared node_modules/@astella/shared \
+ && ln -sf /app/packages/agent-core node_modules/@astella/agent-core \
+ && ln -sf /app/packages/agent-host node_modules/@astella/agent-host \
+ && ln -sf /app/packages/card-generation node_modules/@astella/card-generation
 EXPOSE 4000
 CMD ["npm", "run", "dev"]
 
@@ -62,12 +62,12 @@ COPY apps/api/tsconfig.prod.json ./tsconfig.prod.json
 # 复用同一条命令、只换判据，脚本参数将来若变这里自动跟随，不漂移。
 COPY apps/api/drizzle.config.ts ./drizzle.config.ts
 COPY apps/api/src ./src
-RUN mkdir -p node_modules/@ailearn \
- && rm -rf node_modules/@ailearn/shared \
- && ln -s /app/packages/shared node_modules/@ailearn/shared \
- && ln -sf /app/packages/agent-core node_modules/@ailearn/agent-core \
- && ln -sf /app/packages/agent-host node_modules/@ailearn/agent-host \
- && ln -sf /app/packages/card-generation node_modules/@ailearn/card-generation \
+RUN mkdir -p node_modules/@astella \
+ && rm -rf node_modules/@astella/shared \
+ && ln -s /app/packages/shared node_modules/@astella/shared \
+ && ln -sf /app/packages/agent-core node_modules/@astella/agent-core \
+ && ln -sf /app/packages/agent-host node_modules/@astella/agent-host \
+ && ln -sf /app/packages/card-generation node_modules/@astella/card-generation \
  && npm run typecheck -- -p tsconfig.prod.json \
  && npm run build
 # F-027: 以非 root 用户运行

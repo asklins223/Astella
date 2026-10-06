@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { NoteShareScopeV1 } from "@ailearn/shared/note-share-contracts";
+import type { NoteShareScopeV1 } from "@astella/shared/note-share-contracts";
 
 /**
  * 笔记归属那一个显式动作的界面（批次 4.5）。

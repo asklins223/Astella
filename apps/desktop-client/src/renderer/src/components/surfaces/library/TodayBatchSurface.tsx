@@ -52,7 +52,7 @@ export function TodayBatchSurface({
   const load = useCallback(async () => {
     const request = ++generation.current;
     try {
-      const api = window.ailearn;
+      const api = window.astella;
       if (!api) return;
       const response = await api.review.readTodayBatch({
         meta: createRequestMeta(epochRef.current),
@@ -70,7 +70,7 @@ export function TodayBatchSurface({
 
   useEffect(() => { void load(); return () => { generation.current++; }; }, [load]);
   useEffect(() => {
-    const api = window.ailearn;
+    const api = window.astella;
     if (!batch?.items.length || !api?.objective?.list) return;
     let current = true;
     void api.objective.list({ meta: createRequestMeta(epochRef.current), limit: 200, lifecycle: "active" })

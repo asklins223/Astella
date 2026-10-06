@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
-import type { AgentRunHistoryV1, AgentRunV1 } from "@ailearn/shared/agent-contracts";
+import type { AgentRunHistoryV1, AgentRunV1 } from "@astella/shared/agent-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
 import { artifactLabel, goalStatusText, openAgentArtifact } from "./agent-goal-presentation";
@@ -22,7 +22,7 @@ export function CompanionGoalRevisions({ run, scope, onArtifactOpen }: {
     setLoading(true); setError(null);
     const current = () => request === sequence.current && useRoomStore.getState().workspaceScopeRevision === scope;
     try {
-      const result = unwrapGatewayResult(await window.ailearn.agent.getRunHistory({ meta: createRequestMeta(), runId: run.runId,
+      const result = unwrapGatewayResult(await window.astella.agent.getRunHistory({ meta: createRequestMeta(), runId: run.runId,
         ...(beforeRevision ? { query: { beforeRevision } } : {}) }));
       if (!current()) return;
       setPage(previous => beforeRevision && previous ? { ...result,

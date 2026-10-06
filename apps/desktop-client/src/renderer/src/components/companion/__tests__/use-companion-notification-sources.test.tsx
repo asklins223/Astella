@@ -23,14 +23,14 @@ beforeEach(() => {
   useCompanionNotifications.setState({ items: [] });
   source.timeline.mockResolvedValue(ok({ items: [{ inboxSequence: 9, deliveryId: "reminder-delivery" }] }));
   source.present.mockResolvedValue(ok({})); source.ack.mockResolvedValue(ok({}));
-  window.ailearn = {
+  window.astella = {
     companion: { activity: { timeline: source.timeline, present: source.present, ack: source.ack }, home: { getProjection: source.projection } },
     subscriptions: {
       subscribe: vi.fn(async () => ok({ subscriptionId: "notifications-runtime" })),
       unsubscribe: vi.fn(async () => ok({})),
       onEvent: vi.fn((_, listener) => { receive = listener; return () => { receive = undefined; }; }),
     },
-  } as unknown as typeof window.ailearn;
+  } as unknown as typeof window.astella;
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 

@@ -15,8 +15,8 @@ import postgres from "postgres";
 import { randomUUID, createHash } from "node:crypto";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
-import { companionHistorySearchV1Schema } from "@ailearn/shared/companion-memory-desktop-contracts";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
+import { companionHistorySearchV1Schema } from "@astella/shared/companion-memory-desktop-contracts";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL_API ??= CONN;
@@ -27,7 +27,7 @@ const { closeDatabase } = await import("../db/client.ts");
  * 裸 SQL 夹具/校验必须带 workspace/user 上下文。
  *
  * companion_conversations / companion_messages 是 FORCE RLS：受限角色
- * （ailearn_api）在无上下文事务里 DELETE 会静默匹配 0 行，于是"删除会话后
+ * （astella_api）在无上下文事务里 DELETE 会静默匹配 0 行，于是"删除会话后
  * 不再命中"的断言仍然搜得到旧行（超级用户则绕过 RLS 掩盖同一问题）。
  */
 function scoped<T>(

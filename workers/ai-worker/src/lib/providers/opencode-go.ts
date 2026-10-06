@@ -35,14 +35,14 @@ import type {
   ProviderRuntimeConfig,
   ProviderUsage,
   ReasoningEffort,
-} from "@ailearn/shared";
-import { resolveOpenAIResponsesUrl } from "@ailearn/shared/ai-endpoints";
+} from "@astella/shared";
+import { resolveOpenAIResponsesUrl } from "@astella/shared/ai-endpoints";
 import {
   postJsonToPublicEndpoint,
   postSseToPublicEndpoint,
   type PublicJsonRequester,
   type PublicStreamingRequester,
-} from "@ailearn/shared/public-json-http";
+} from "@astella/shared/public-json-http";
 import type { AIProvider } from "../ai-provider.ts";
 import { registerFactory } from "../provider-factory.ts";
 import { ProviderRequestError } from "../provider-request-error.ts";
@@ -53,7 +53,7 @@ import { profileFingerprint } from "./profile-fingerprint.ts";
 const DEFAULT_BASE_PATH = "https://opencode.ai/zen/go/v1";
 
 /** 客户端自报标识——端点要求非通用 SDK/HTTP 库名。 */
-const USER_AGENT = "ailearn-ai-worker/1.0";
+const USER_AGENT = "astella-ai-worker/1.0";
 
 /** muse-spark-1.3-contributor 的上下文窗口（1M）。 */
 const OPENCODE_GO_CONTEXT_WINDOW_TOKENS = 1_048_576;

@@ -9,7 +9,7 @@ import {
   noteExpansionTaskV1Schema,
   noteExpansionTaskListQueryV1Schema,
   noteExpansionTaskPageV1Schema,
-} from "@ailearn/shared/note-expansion-contracts";
+} from "@astella/shared/note-expansion-contracts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { requireSession } from "../identity/middleware.ts";
 import {

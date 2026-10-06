@@ -15,7 +15,7 @@ import {
   createCardGenerationV3LlmProviders,
   type CardGenerationV3ChatTransport,
 } from "../llm-provider.ts";
-import type { ChatMessage, ChatOptions, ChatResult } from "@ailearn/shared";
+import type { ChatMessage, ChatOptions, ChatResult } from "@astella/shared";
 
 interface Recorded {
   messages: ChatMessage[];

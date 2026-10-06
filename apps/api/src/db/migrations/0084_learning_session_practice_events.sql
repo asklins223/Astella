@@ -57,8 +57,8 @@ CREATE POLICY learning_session_practice_events_workspace_user_isolation
 --> statement-breakpoint
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
     GRANT SELECT, INSERT, UPDATE, DELETE
-      ON public.learning_session_practice_events TO ailearn_api;
+      ON public.learning_session_practice_events TO astella_api;
   END IF;
 END $$;

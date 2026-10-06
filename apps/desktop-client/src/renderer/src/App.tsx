@@ -102,7 +102,7 @@ export const RoomExperience = memo(function RoomExperience() {
       const featureId = homeV2ShortcutFeature(event);
       if (!featureId) return;
       event.preventDefault();
-      window.dispatchEvent(new CustomEvent("ailearn:home-v2-run-feature", { detail: { featureId } }));
+      window.dispatchEvent(new CustomEvent("astella:home-v2-run-feature", { detail: { featureId } }));
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -114,7 +114,7 @@ export const RoomExperience = memo(function RoomExperience() {
       <div
         className="scene-stage"
         role="region"
-        aria-label={theme === "day" ? "日间理解书房场景" : "夜间理解书房场景"}
+        aria-label={theme === "day" ? "日间拾星书房场景" : "夜间拾星书房场景"}
       >
         <RoomStage />
       </div>
@@ -126,7 +126,7 @@ export const RoomExperience = memo(function RoomExperience() {
         ? <HudReturn label={returnTarget?.label ?? "返回学习空间"} onReturn={returnTarget?.run ?? (() => invoke("home"))} />
         : null}
       <main id="main-content" inert={onboardingOpen || undefined}>
-        <h1 className="sr-only">理解书房</h1>
+        <h1 className="sr-only">拾星书房</h1>
         <TaskSurface />
         <SourceIntakeHost />
       </main>
@@ -148,7 +148,7 @@ export function App() {
   const resetWorkspaceScope = useRoomStore((state) => state.resetWorkspaceScope);
   const setReducedMotion = useRoomStore((state) => state.setReducedMotion);
   const setWindowState = useRoomStore((state) => state.setWindowState);
-  const platform = window.ailearnDesktop?.platform ?? "unknown";
+  const platform = window.astellaDesktop?.platform ?? "unknown";
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -159,7 +159,7 @@ export function App() {
   }, [setReducedMotion]);
 
   useEffect(() => {
-    const unsubscribe = window.ailearnDesktop?.onWindowState?.(setWindowState);
+    const unsubscribe = window.astellaDesktop?.onWindowState?.(setWindowState);
     // 只看"看不看得见"。以前这里还并了 `!document.hasFocus()`，于是渲染层自己就把
     // 失焦报成离场，主进程那条真实状态白推了（方案 35 E7）。焦点不是判据，
     // 最小化 / 隐藏 / 遮挡才是——那三种 Chromium 都会吐 `visibilitychange`。
@@ -172,7 +172,7 @@ export function App() {
   }, [setWindowState]);
 
   useEffect(() => {
-    window.ailearnDesktop?.setTitleBarTheme(theme);
+    window.astellaDesktop?.setTitleBarTheme(theme);
   }, [theme]);
 
   return (
@@ -202,7 +202,7 @@ export function App() {
         渲染期抛错会让 React 卸载整棵树，用户看到的只是一片黑；有了它，最坏情况下
         也有一张能读、能重试、能重载的纸。页面级兜底见 TaskSurface。
       */}
-      <RenderErrorBoundary label="理解书房" shell>
+      <RenderErrorBoundary label="拾星书房" shell>
         {/*
           伴星会话（CompanionChatProvider）挂在门禁**之上**：它的消费方横跨两棵互不
           包含的子树——伴星叠加层本身，以及任务面里的伴星中心（CompanionCenterSurface

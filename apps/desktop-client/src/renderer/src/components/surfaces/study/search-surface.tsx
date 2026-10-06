@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, BookOpen, ChevronRight, FileText, Layers3, Leaf, Search, Sprout, X } from "lucide-react";
-import type { DesktopSearchItem } from "@ailearn/shared/desktop-surface-contracts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { DesktopSearchItem } from "@astella/shared/desktop-surface-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";

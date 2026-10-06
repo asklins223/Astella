@@ -28,7 +28,7 @@ beforeEach(() => {
   vi.useFakeTimers(); state.chat = interactionSession();
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
-  Object.defineProperty(window, "ailearn", { configurable: true, value: { companion: { chat: { listThoughts } } } });
+  Object.defineProperty(window, "astella", { configurable: true, value: { companion: { chat: { listThoughts } } } });
   listThoughts.mockReset();
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });

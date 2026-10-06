@@ -1,7 +1,7 @@
 /**
  * doc 34 L21 §1 —— "当初那段话"真能取回来（0275 冻结副本，端到端）。
  *
- * 这条测的是四件此前分开都不会红的东西：密封写进副本表 → 表在 `ailearn_api` 下可读
+ * 这条测的是四件此前分开都不会红的东西：密封写进副本表 → 表在 `astella_api` 下可读
  * （GRANT/RLS 都在迁移里，没写对就是运行期 permission denied 或静默 0 行）→
  * 原文被就地改写之后落点判成 drifted → 预览同时给出**现在的文字**与**当初那段**。
  *
@@ -17,7 +17,7 @@ if (!ADMIN) throw new Error("需要 DATABASE_URL（夹具要建 user/workspace/n
 const sql = postgres(ADMIN, { max: 2 });
 
 const { withWorkspaceTransaction } = await import("../db/client.ts");
-const { sealEvidenceSnapshotsV2 } = await import("@ailearn/card-generation");
+const { sealEvidenceSnapshotsV2 } = await import("@astella/card-generation");
 const { loadEvidencePreviewItems } = await import("../modules/card-generation-v2/evidence-preview.ts");
 
 const workspaceId = randomUUID();

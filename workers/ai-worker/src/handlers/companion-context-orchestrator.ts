@@ -8,8 +8,8 @@
  */
 
 import { sql } from "drizzle-orm";
-import { budgetAgentContextRecords } from "@ailearn/agent-core";
-import type { AgentMemoryContextSourceV1 } from "@ailearn/shared/agent-contracts";
+import { budgetAgentContextRecords } from "@astella/agent-core";
+import type { AgentMemoryContextSourceV1 } from "@astella/shared/agent-contracts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { taskEntityFromPersistedPageContext } from "./companion-task-memory.ts";
 import { logger } from "../lib/logger.ts";
@@ -18,7 +18,7 @@ import {
   retrieveResidentCompanionMemories,
   type CompanionMemoryDirectoryEntry,
 } from "./companion-memory-vector.ts";
-import { recordAgentMethodOffered } from "@ailearn/agent-host";
+import { recordAgentMethodOffered } from "@astella/agent-host";
 import { retrievePlaybookCatalog, type PlaybookCatalogEntry } from "./companion-playbooks.ts";
 import {
   companionMemoryRetrievalModeTotal,
@@ -55,7 +55,7 @@ export interface ContextAssemblyResult {
   directoryTokenEstimate: number;
 }
 
-type Executor = import("@ailearn/agent-host").AgentSqlExecutor;
+type Executor = import("@astella/agent-host").AgentSqlExecutor;
 
 const MEMORY_REF_MAX = 3;
 const MEMORY_REF_CONTENT_MAX = 80;

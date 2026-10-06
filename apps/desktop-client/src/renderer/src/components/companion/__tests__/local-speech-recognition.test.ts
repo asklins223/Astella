@@ -16,7 +16,7 @@ function snapshot(status: "absent" | "downloading" | "ready" | "error") {
   return {
     version: 1,
     modelId: "sensevoice-int8-zh-en-ja-ko-yue",
-    mountUrl: "ailearn-app://bundle/device/asr/",
+    mountUrl: "astella-app://bundle/device/asr/",
     status,
     expectedBytes: 239_549_735,
     receivedBytes: status === "ready" ? 239_549_735 : 0,
@@ -36,7 +36,7 @@ function stubRuntime(
     return { ok: true, data: { text: "本地结果" }, meta: {} };
   });
   vi.stubGlobal("window", Object.assign(globalThis.window, {
-    ailearn: {
+    astella: {
       companion: {
         voice: {
           asrModel: { getState: vi.fn(async () => ({ ok: true, data: snapshot(status), meta: {} })) },

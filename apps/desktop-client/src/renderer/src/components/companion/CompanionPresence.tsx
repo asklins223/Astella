@@ -13,7 +13,7 @@ import {
   type CompanionNormalizedAnchor,
   type CompanionPosition,
 } from "../../app/room-store";
-import type { CompanionAccountPatch, CompanionAccountStateV1 } from "@ailearn/shared/companion-shell-contracts";
+import type { CompanionAccountPatch, CompanionAccountStateV1 } from "@astella/shared/companion-shell-contracts";
 import { companionAccountDisabled as isCompanionAccountDisabled } from "./companion-account-presence";
 import {
   createRequestMeta,
@@ -94,7 +94,7 @@ function durationFor(mode: "full" | "lite" | "off", full: number) {
 }
 
 function speakHomeV2Cue(text: string): void {
-  window.dispatchEvent(new CustomEvent("ailearn:home-v2-speak", {
+  window.dispatchEvent(new CustomEvent("astella:home-v2-speak", {
     detail: { text, reason: "cue" },
   }));
 }
@@ -334,7 +334,7 @@ export function CompanionPresence() {
   const guidePreviousMode = useRef(mode);
   useEffect(() => {
     const previous = guidePreviousMode.current; guidePreviousMode.current = mode;
-    if (guideOpen && previous === "closed" && mode !== "closed") window.dispatchEvent(new Event("ailearn:companion-guide-pause"));
+    if (guideOpen && previous === "closed" && mode !== "closed") window.dispatchEvent(new Event("astella:companion-guide-pause"));
   }, [guideOpen, mode]);
   useEffect(() => {
     if (!arrival || guideOpen || assessmentMode || companionTemporarilyHidden || companionAccountDisabled || mode !== "closed") return;
@@ -375,7 +375,7 @@ export function CompanionPresence() {
     const scope = useRoomStore.getState().workspaceScopeRevision;
     const current = () => request === accountReadRequest.current && scope === useRoomStore.getState().workspaceScopeRevision;
     try {
-      const session = await window.ailearn.auth.getState({ meta: createRequestMeta() });
+      const session = await window.astella.auth.getState({ meta: createRequestMeta() });
       const context = unwrapGatewayResult(session);
       if (!current()) return;
       if (context.status !== "authenticated" || !context.workspace) {
@@ -384,7 +384,7 @@ export function CompanionPresence() {
         setAccountFailure(null);
         return;
       }
-      const response = await window.ailearn.companion.account.getState({
+      const response = await window.astella.companion.account.getState({
         meta: createRequestMeta(context.workspace.workspaceEpoch),
       });
       if (!current()) return;
@@ -396,7 +396,7 @@ export function CompanionPresence() {
       // 再抛，一次补白读取不该把工作区视图打回首页（同一条教训写在
       // `companion-chat-session.tsx` 的补白轮询上）。
       try {
-        const persona = await window.ailearn.companion.persona.get({
+        const persona = await window.astella.companion.persona.get({
           meta: createRequestMeta(context.workspace.workspaceEpoch),
         });
         if (current() && persona.ok) setCompanionName(companionDisplayName(persona.data));
@@ -428,10 +428,10 @@ export function CompanionPresence() {
     if (accountSaving || !accountState) return;
     setAccountSaving(true);
     try {
-      const session = await window.ailearn.auth.getState({ meta: createRequestMeta() });
+      const session = await window.astella.auth.getState({ meta: createRequestMeta() });
       const context = unwrapGatewayResult(session);
       if (context.status !== "authenticated" || !context.workspace) return;
-      const response = await window.ailearn.companion.account.patchState({
+      const response = await window.astella.companion.account.patchState({
         meta: createRequestMeta(context.workspace.workspaceEpoch),
         request: { ...patch, revision: accountState.revision },
       });
@@ -476,15 +476,15 @@ export function CompanionPresence() {
    */
   const cueDeliveryReporter = useMemo(() => createCueDeliveryReporter({
     lookup: async (inboxSequence) => {
-      const response = await window.ailearn.companion.activity.timeline({ meta: createRequestMeta() });
+      const response = await window.astella.companion.activity.timeline({ meta: createRequestMeta() });
       return findCueDelivery(unwrapGatewayResult(response).items, inboxSequence);
     },
-    present: (ref) => window.ailearn.companion.activity.present({
+    present: (ref) => window.astella.companion.activity.present({
       meta: createRequestMeta(),
       deliveryId: ref.deliveryId,
       inboxSequence: ref.inboxSequence,
     }),
-    act: (ref) => window.ailearn.companion.activity.ack({
+    act: (ref) => window.astella.companion.activity.ack({
       meta: createRequestMeta(),
       request: {
         deliveryId: ref.deliveryId,
@@ -706,7 +706,7 @@ export function CompanionPresence() {
       if (prioritizedCue.priority === "ordinary") {
         let lastAt = 0;
         try {
-          lastAt = Number(window.localStorage.getItem("ailearn.home-v2.last-ordinary-cue") ?? "0");
+          lastAt = Number(window.localStorage.getItem("astella.home-v2.last-ordinary-cue") ?? "0");
         } catch {
           // A privacy-restricted session may not expose persistent storage.
         }
@@ -746,10 +746,10 @@ export function CompanionPresence() {
         if (prioritizedCue.priority !== "ordinary" || isCommitment) {
           speakHomeV2Cue(prioritizedCue.text);
         }
-        window.dispatchEvent(new CustomEvent("ailearn:home-v2-sound", { detail: { kind: "footstep" } }));
+        window.dispatchEvent(new CustomEvent("astella:home-v2-sound", { detail: { kind: "footstep" } }));
         if (prioritizedCue.priority === "ordinary") {
           try {
-            window.localStorage.setItem("ailearn.home-v2.last-ordinary-cue", String(Date.now()));
+            window.localStorage.setItem("astella.home-v2.last-ordinary-cue", String(Date.now()));
           } catch {
             // The cue can still be shown without persisting its low-frequency gate.
           }
@@ -1355,7 +1355,7 @@ export function CompanionPresence() {
     setCueOpenError(null);
     const revealed = revealedCueRef.current;
     try {
-      const result = await window.ailearn.companion.chat.openThought({
+      const result = await window.astella.companion.chat.openThought({
         meta: createRequestMeta(),
         request: { version: 1, thoughtId },
       });

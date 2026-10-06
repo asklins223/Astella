@@ -12,7 +12,7 @@
  * 选择」的规矩在这一处的落法。
  */
 import type { ReactElement } from "react";
-import type { CompanionAnswerModePreferenceV1 } from "@ailearn/shared";
+import type { CompanionAnswerModePreferenceV1 } from "@astella/shared";
 import { SettingRow } from "./settings-primitives.tsx";
 import { HudSegmented } from "../../hud/HudControls";
 import { ANSWER_MODE_OPTIONS, pendingReadLine } from "./settings-data-tables.ts";

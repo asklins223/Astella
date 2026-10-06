@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
-import { objectiveReuseClaimHashV2 } from "@ailearn/shared/objective-reuse-rules-v2";
-import { learningObjectivesV2, learningObjectiveRevisionsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
+import { objectiveReuseClaimHashV2 } from "@astella/shared/objective-reuse-rules-v2";
+import { learningObjectivesV2, learningObjectiveRevisionsV2 } from "@astella/shared/db-schema/card-generation-v2";
 import type { ApiTransaction } from "../../db/client.ts";
 import { visibleObjectivesCondition } from "../note/visibility.ts";
 

@@ -28,11 +28,11 @@ import {
   dissolveWorkspaceResultV1Schema,
   transferWorkspaceOwnershipResultV1Schema,
   workspaceAiSettingsV1Schema,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import {
   DesktopAiAuditPageV1,
   desktopAiAuditPageV1Schema,
-} from "@ailearn/shared/desktop-surface-contracts";
+} from "@astella/shared/desktop-surface-contracts";
 import type {
   GatewayTransport,
 } from "./desktop-gateway-transport";

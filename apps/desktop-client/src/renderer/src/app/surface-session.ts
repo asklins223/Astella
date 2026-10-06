@@ -1,4 +1,4 @@
-import type { SessionContextV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { SessionContextV1 } from "@astella/shared/desktop-ipc-contracts";
 import { createRequestMeta, RendererGatewayError, unwrapGatewayResult } from "./desktop-client";
 
 /**
@@ -8,8 +8,8 @@ import { createRequestMeta, RendererGatewayError, unwrapGatewayResult } from "./
 export async function readAuthenticatedSession(
   epochRef: React.MutableRefObject<number | undefined>,
 ): Promise<SessionContextV1> {
-  if (!window.ailearn) throw new Error("桌面端 API 不可用，无法读取真实工作区数据。");
-  const response = await window.ailearn.auth.getState({ meta: createRequestMeta(epochRef.current) });
+  if (!window.astella) throw new Error("桌面端 API 不可用，无法读取真实工作区数据。");
+  const response = await window.astella.auth.getState({ meta: createRequestMeta(epochRef.current) });
   if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
   const session = unwrapGatewayResult(response);
   if (session.status !== "authenticated" || !session.workspace) {

@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { cardGenerationStatusLabel, isCardGenerationInFlight } from "./card-generation-status";
 import { candidateDecisionLabel } from "./candidate-review-model";

@@ -1,6 +1,6 @@
 -- A2（计划 §2.2）：统一应用层与 SQL 重试策略双源。
 --
--- 修改 ailearn_fail_job 返回类型，增加 is_dead / scheduled_at / last_error / finished_at，
+-- 修改 astella_fail_job 返回类型，增加 is_dead / scheduled_at / last_error / finished_at，
 -- 使应用层 markJobFailed / markJobDead 不再自行计算重试参数，直接消费 SQL 返回值。
 --
 -- 重试策略常量（backoff base 2s、max_attempts clamp 3-10）的唯一来源收敛到 SQL。
@@ -12,9 +12,9 @@
 
 -- PostgreSQL 不允许 CREATE OR REPLACE 改变已有函数的返回类型，
 -- 必须先 DROP 再重建。
-DROP FUNCTION IF EXISTS public.ailearn_fail_job(uuid, uuid, text, text, integer);
+DROP FUNCTION IF EXISTS public.astella_fail_job(uuid, uuid, text, text, integer);
 
-CREATE OR REPLACE FUNCTION public.ailearn_fail_job(
+CREATE OR REPLACE FUNCTION public.astella_fail_job(
   p_job_id uuid,
   p_workspace_id uuid,
   p_lease_token text,
@@ -101,5 +101,5 @@ AS $function$
 $function$;
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_fail_job(uuid, uuid, text, text, integer) IS
+COMMENT ON FUNCTION public.astella_fail_job(uuid, uuid, text, text, integer) IS
   'SEC-01 Worker job failure transition with exponential backoff (base 2s, max_attempts clamp 3-10). Returns (status, attempts, backoff_ms, is_dead, scheduled_at, last_error, finished_at) so the application layer does not need to recompute retry parameters. Fenced by (id, workspace_id, running, lease_token).';

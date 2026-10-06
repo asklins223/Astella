@@ -2,7 +2,7 @@
 
 中文 · [English](../en/testing-and-quality.md)
 
-这篇讲什么：把理解引擎现在的验证链路如实摊开——每个包用什么跑测试、`make verify` 到底执行了哪些命令、真库集成测试与单元测试的分界在哪里、源码守卫这套机制各守哪条不变量、CI 实际跑什么与不跑什么，以及文档与代码之间已知的不一致。所有命令、路径、任务名、阈值和数量都是当场从 `Makefile`、`.github/**`、各包 `package.json` 与 compose 文件里读出来的。
+这篇讲什么：把拾星笔记现在的验证链路如实摊开——每个包用什么跑测试、`make verify` 到底执行了哪些命令、真库集成测试与单元测试的分界在哪里、源码守卫这套机制各守哪条不变量、CI 实际跑什么与不跑什么，以及文档与代码之间已知的不一致。所有命令、路径、任务名、阈值和数量都是当场从 `Makefile`、`.github/**`、各包 `package.json` 与 compose 文件里读出来的。
 
 - [测试拓扑：每个包怎么跑](#测试拓扑每个包怎么跑)
 - [一条命令：`make verify`](#一条命令make-verify)
@@ -90,17 +90,17 @@ cd workers/ai-worker   && npm run typecheck && npm test
 
 盘上的集测文件：`apps/api/src/integration-tests/` 119 个、`workers/ai-worker/src/integration-tests/` 37 个，共 **156** 个。它们被 **55** 条 `test:*:postgres` 脚本引用（`apps/api` 40 条、`workers/ai-worker` 15 条），去重后覆盖 **154** 个文件；剩下 2 个没有被任何脚本引用：`apps/api/src/integration-tests/note-collaboration-postgres.integration.ts` 与 `workers/ai-worker/src/integration-tests/queue-postgres.integration.ts`。反向没有死引用：脚本点名的 154 个文件全部存在（这条由 `ci-test-file-references.test.ts` 盯着）。
 
-`make test-postgres` 是统一的入口。它进 `apps/api` 和 `workers/ai-worker`，用一行 `node -e` 从 `package.json` 里**自动发现**所有以 `test:` 开头、以 `:postgres` 结尾的脚本名，逐条 `npm run --silent`，任何一条非零退出即整体失败。执行时注入这组变量（值由 Makefile 里的 `IT_*` 变量拼出，默认沿用 `COMPANION_HOME_TEST_*`，即 host `127.0.0.1`、port `5432`、db `ailearn`）：
+`make test-postgres` 是统一的入口。它进 `apps/api` 和 `workers/ai-worker`，用一行 `node -e` 从 `package.json` 里**自动发现**所有以 `test:` 开头、以 `:postgres` 结尾的脚本名，逐条 `npm run --silent`，任何一条非零退出即整体失败。执行时注入这组变量（值由 Makefile 里的 `IT_*` 变量拼出，默认沿用 `COMPANION_HOME_TEST_*`，即 host `127.0.0.1`、port `5432`、db `astella`）：
 
 | 变量 | 指向的角色 |
 | --- | --- |
-| `DATABASE_URL` | `ailearn`（超级用户，仅用于建/清夹具） |
-| `DATABASE_URL_MIGRATOR` | `ailearn_migrator` |
-| `DATABASE_URL_API` / `DATABASE_URL_API_RLS` / `RATE_LIMIT_TEST_DATABASE_URL` | `ailearn_api`（`NOBYPASSRLS`） |
-| `DATABASE_URL_WORKER` / `QUEUE_TEST_WORKER_A_DATABASE_URL` / `QUEUE_TEST_WORKER_B_DATABASE_URL` | `ailearn_worker` |
-| `DATABASE_URL_TEST_ADMIN` / `CONTENT_HASH_TEST_DATABASE_URL` / `SEC02_TEST_DATABASE_URL` / `NOTE_VERSION_RESTORE_TEST_DATABASE_URL` | `ailearn` |
+| `DATABASE_URL` | `astella`（超级用户，仅用于建/清夹具） |
+| `DATABASE_URL_MIGRATOR` | `astella_migrator` |
+| `DATABASE_URL_API` / `DATABASE_URL_API_RLS` / `RATE_LIMIT_TEST_DATABASE_URL` | `astella_api`（`NOBYPASSRLS`） |
+| `DATABASE_URL_WORKER` / `QUEUE_TEST_WORKER_A_DATABASE_URL` / `QUEUE_TEST_WORKER_B_DATABASE_URL` | `astella_worker` |
+| `DATABASE_URL_TEST_ADMIN` / `CONTENT_HASH_TEST_DATABASE_URL` / `SEC02_TEST_DATABASE_URL` / `NOTE_VERSION_RESTORE_TEST_DATABASE_URL` | `astella` |
 | `RLS_TEST_MIGRATOR_DATABASE_URL` / `RLS_TEST_API_DATABASE_URL` / `RLS_TEST_WORKER_DATABASE_URL` | 与上面三档同名角色 |
-| `QUEUE_TEST_MIGRATOR_DATABASE_URL` | `ailearn_migrator` |
+| `QUEUE_TEST_MIGRATOR_DATABASE_URL` | `astella_migrator` |
 
 必须**显式给受限角色**：超级用户会 `BYPASSRLS`，隔离类断言在超户下会变成假通过。这些专用变量各读各的（RLS、队列、内容哈希、SEC-02 邀请、版本恢复、限流），缺一个就是**整份文件红在读环境变量上**——文件里写的是 `throw new Error('… is required')`，那是显式拒绝，不是静默 skip。
 
@@ -113,7 +113,7 @@ cd workers/ai-worker   && npm run typecheck && npm test
 | `scripts/psql-lite.mjs` | 极小 `psql` 替身，供没有 docker CLI 的机器上跑一次性库脚本 |
 | `scripts/with-restricted-db-urls.py <包目录> <命令…>` | 把 `DATABASE_URL_API`/`_WORKER` 换成受限角色再执行命令 |
 
-一次性库的名字护栏：目标库必须匹配 `ailearn_*` 且**不等于** `ailearn`，否则脚本直接拒绝执行。`dev-disposable-db.sh` 会打印可直接复制的集测环境变量。
+一次性库的名字护栏：目标库必须匹配 `astella_*` 且**不等于** `astella`，否则脚本直接拒绝执行。`dev-disposable-db.sh` 会打印可直接复制的集测环境变量。
 
 两个更窄的目标各自只跑一份脚本，便于定点复现：
 
@@ -123,8 +123,8 @@ cd workers/ai-worker   && npm run typecheck && npm test
 典型用法：
 
 ```bash
-bash scripts/dev-disposable-db.sh ailearn_it
-make test-postgres COMPANION_HOME_TEST_DB=ailearn_it
+bash scripts/dev-disposable-db.sh astella_it
+make test-postgres COMPANION_HOME_TEST_DB=astella_it
 ```
 
 ## 源码守卫与合同测试
@@ -228,7 +228,7 @@ make test-postgres COMPANION_HOME_TEST_DB=ailearn_it
 
 `main-ci.yml` 的口径写在文件头：**CI = 本地跑得通的那套测试**，逐个包一一对应。`packages` 矩阵的四个 label 是 Shared contracts、Agent core、Agent host、AI quality (PR mock)；每个条目按 `deps` 列出的包逐个 `npm ci`，再 `npm run typecheck` 与 `npm test`，AI quality 那条多跑一步 `npm run pr-gate`。`api` 与 `worker` 两个 job 给 `DATABASE_URL_API`/`DATABASE_URL_WORKER` 填了一个**明确不可达**的 `postgres://ci:ci@127.0.0.1:1/ci`：单测在模块加载时会 import `db.ts` 建连接池，池是懒的，但 compose 主机名 `postgres` 在 runner 上不解析，DNS 查不到会把 job 挂到超时。`desktop` job **先 `npm run build` 再 `npm test`**——`scripts/runtime-asset-containment.test.mjs` 量的是 `out/renderer/assets` 下的最终打包内容，没有 `out/` 就没有可量的东西（2026-10-06 实测少了这一步会在干净 runner 上红 3 条，而本地一直不红是因为工作树里躺着上次构建的 `out/`）。
 
-`desktop-client.yml` 的 `variant-quality` 按 v1/v2 两个 `VITE_HOME_SCENE_VARIANT` 各跑一遍 typecheck → `validate:room-layers` → build → `validate:room-layers:output` → test 并上传 `out`。`package-smoke` 依赖它，在 linux-x64 / windows-x64 / macos-native 三个 runner 上 `electron-builder --dir` 出未打包应用，先**从 `electron-builder.yml` 读 `productName`**（不写死可执行文件名）再跑 `npm run package:smoke`；Linux 那条走 `xvfb-run`，并带 `AILEARN_PACKAGED_OFFLINE_ONLY=1`。
+`desktop-client.yml` 的 `variant-quality` 按 v1/v2 两个 `VITE_HOME_SCENE_VARIANT` 各跑一遍 typecheck → `validate:room-layers` → build → `validate:room-layers:output` → test 并上传 `out`。`package-smoke` 依赖它，在 linux-x64 / windows-x64 / macos-native 三个 runner 上 `electron-builder --dir` 出未打包应用，先**从 `electron-builder.yml` 读 `productName`**（不写死可执行文件名）再跑 `npm run package:smoke`；Linux 那条走 `xvfb-run`，并带 `ASTELLA_PACKAGED_OFFLINE_ONLY=1`。
 
 `desktop-package.yml` **只打包不设质量闸**：装依赖 → 构建 → 出安装包 → 上传产物，`windows` 与 `macos` 互不依赖，`summary` 带 `if: always()`。它存在的理由是"质量闸挂了也该能先拿到一个能装能双击的包看看"，与"这个包能不能发"分开。
 
@@ -238,8 +238,6 @@ make test-postgres COMPANION_HOME_TEST_DB=ailearn_it
 
 | 说法 / 现象 | 权威文件 | 现状 |
 | --- | --- | --- |
-| "GitHub Actions 还会执行：Prometheus 告警规则语法检查、全新数据库迁移/重复迁移/旧版本升级迁移、API 与 Worker 生产构建、非 root 镜像检查、完整生产 Compose 启动与健康检查、Worker 实际任务消费、PostgreSQL 备份与恢复演练" | `.github/workflows/main-ci.yml` 顶部注释 + `.github/scripts/ci-workflow-contract.test.mjs` 的 `GATES_THAT_LEFT_CI` | 这些 2026-10-06 起**都不在 CI**。CI 只剩 4 个 job：packages 矩阵、api、worker、desktop。README 的这段没有同步。 |
-| 同上"五个包的 `tsc --noEmit`" | `main-ci.yml` | 实际跑 typecheck 的目录是 7 个：`packages/shared`、`agent-core`、`agent-host`、`ai-quality`、`apps/api`、`apps/desktop-client`、`workers/ai-worker`。 |
 | "CI still builds production images from docker-compose.yml directly (see .github/workflows/main-ci.yml)" | `Makefile` 的 `ensure-db-volume` 上方注释 | `main-ci.yml` 里没有任何 `docker build` / compose 构建步骤。 |
 | "`verify` 会**真的**卡覆盖率阈值" / "Skip/todo allowlist gate (blocks verify and release-check)" | `Makefile` 的 `verify` 与 `skip-todo-gate` 两段注释 | `verify` 里既没有 `coverage-gate.mjs` 也没有 `skip-todo-gate.mjs`；只有 `release-check` 跑 coverage 门禁，skip/todo 两道链都不跑。这两条注释是 2026-10-06 之前留下的。 |
 | `Secret scan (Gitleaks) and container scan (Trivy) are integrated in CI` | `Makefile` `verify` 上方的注释 + `main-ci.yml` | 两个工作流里都没有 gitleaks / trivy 步骤；`ci-workflow-contract.test.mjs` 还把它们列进"不许再回 CI"的名字里。`.gitleaks.toml` 仍在仓库里。 |
@@ -248,7 +246,6 @@ make test-postgres COMPANION_HOME_TEST_DB=ailearn_it
 | `verify-alerts-syntax.mjs`、`verify-shared-exports.mjs`、`coverage-baseline-save.mjs`、`capture-image-digests.mjs`、`.github/ci/ai-platforms.mock.json` | 全仓 grep（排除 `node_modules` 与归档目录） | 这五个文件**没有任何 make 目标、工作流或包脚本调用它们**。`capture-image-digests.mjs` 的产物只被 `release-manifest-generate.mjs --images` 消费，而 `make release-manifest` / `release-check` 都没传 `--images`，所以 RC manifest 的镜像字段走占位符分支。 |
 | `test-companion-integration-postgres` | `Makefile` 的两处 `.PHONY` | 目标定义在第 276 行，但**不在任何 `.PHONY` 清单**里。仓库里存在同名目录时会被当成目录依赖而跳过执行。 |
 | `test-postgres` 的前置说明要求"已迁移（`make migrate` 或容器内 migrate）" | `Makefile` 的目标清单 | 没有 `migrate` 目标；迁移由 dev compose 的 `migrate` 一次性容器执行。 |
-| README 项目结构里列了 `packages/db` | `packages/` 目录 | 实际存在的是 `agent-core`、`agent-host`、`ai-quality`、`card-generation`、`shared`；`packages/db` 不存在，`card-generation` 与 `ai-quality` 没被列进那份树。 |
 
 ## 真实窗口核对
 
@@ -265,7 +262,7 @@ make test-postgres COMPANION_HOME_TEST_DB=ailearn_it
 
 | 脚本 | 做什么 |
 | --- | --- |
-| `npm run package:smoke` | `node scripts/smoke-packaged.mjs`：用 Playwright 的 `_electron` 启动已打包应用；可从 `electron-builder.yml` 读 `productName` 找包，带 `AILEARN_PACKAGED_PREFLIGHT_ONLY` / `AILEARN_PACKAGED_OFFLINE_ONLY` 两种离线口径 |
+| `npm run package:smoke` | `node scripts/smoke-packaged.mjs`：用 Playwright 的 `_electron` 启动已打包应用；可从 `electron-builder.yml` 读 `productName` 找包，带 `ASTELLA_PACKAGED_PREFLIGHT_ONLY` / `ASTELLA_PACKAGED_OFFLINE_ONLY` 两种离线口径 |
 | `npm run package:evidence` | 先跑 `package:smoke`，再 `node scripts/package-evidence.mjs` 汇总冒烟结果与产物 sha256 |
 | `npm run evidence:manifest` | `node --experimental-strip-types scripts/evidence-manifest.ts`，按 `scripts/fixtures/evidence-manifest.input.json` 生成质量证据清单（合同类型来自 `packages/shared/src/quality-evidence-contracts.ts`） |
 | `npm run capture:evidence` | `npm run build` 后 `node scripts/capture-evidence.mjs` |
@@ -278,8 +275,8 @@ make test-postgres COMPANION_HOME_TEST_DB=ailearn_it
 
 1. **测试与被测放一起**：组件、样式、文案和状态逻辑放在同一个功能域目录里，测试进该域的 `__tests__/`；不要新建顶层测试目录。
 2. **命名决定它跑不跑**：后端要进 `npm test` 就必须叫 `*.test.ts`；需要真库就叫 `*.integration.ts`，并同时把它加进某个 `test:*:postgres` 脚本——否则它会变成盘上没人引用的第 3 个文件。
-3. **需要数据库就自己声明**：读环境变量用 `@ailearn/shared/integration-test-db-env` 的 `testDatabaseUrl()`，缺了当场喊，**不要写 `?? "postgres://…localhost…"` 的回落**（`integration-db-url-guard` 会扫到并判红，那条回落曾把夹具写进真实 dev 库）。用例若断言"库里只有自己的夹具"，就在注释里写清要用 `scripts/dev-disposable-db.sh` 起一次性库。
-4. **隔离类断言用受限角色**：`ailearn_api` / `ailearn_worker` 是 `NOBYPASSRLS` 的，超级用户下这类断言必红或假通过；Makefile 的 `test-postgres` 已经把这组变量补齐，本地定点复现可用 `scripts/with-restricted-db-urls.py`。
+3. **需要数据库就自己声明**：读环境变量用 `@astella/shared/integration-test-db-env` 的 `testDatabaseUrl()`，缺了当场喊，**不要写 `?? "postgres://…localhost…"` 的回落**（`integration-db-url-guard` 会扫到并判红，那条回落曾把夹具写进真实 dev 库）。用例若断言"库里只有自己的夹具"，就在注释里写清要用 `scripts/dev-disposable-db.sh` 起一次性库。
+4. **隔离类断言用受限角色**：`astella_api` / `astella_worker` 是 `NOBYPASSRLS` 的，超级用户下这类断言必红或假通过；Makefile 的 `test-postgres` 已经把这组变量补齐，本地定点复现可用 `scripts/with-restricted-db-urls.py`。
 5. **静态守卫必须自带正对照**：读源码的判据天生是绿的，所以要加一条"喂一份故意违规的样本，必须报出违例"的自证（`hud-substrate-guard`、`doc-pointer-reachability-source-guard`、`ci-test-file-references` 都这么写）。同时保证分母非空——解析器坏了不能让守卫静默通过。
 6. **判据不要钉死文件路径**：`graph-surface-shape-guard` 之所以改成在目录树里搜文件名，是因为同级兄弟路径会让"拆分组件"这件事被一条测试无限推迟。断言对象是控制流形状，不是它住在哪。
 7. **台账只许变短**：豁免、基线、待办清单（`SIZE_DEBT`、`KNOWN_DEAD`、`PENDING_W2_7`、schema 棘轮的两份基线）都要写成"实际集合与清单必须相等"，并把修好却没删的情况也判红；每条豁免写清理由，删条目连理由一起删。
@@ -300,7 +297,9 @@ make test-postgres COMPANION_HOME_TEST_DB=ailearn_it
 - [开发环境](./development.md)
 - [桌面客户端](./desktop-client.md)
 - [API 与数据](./api-and-data.md)
-- [AI 与伴星](./ai-and-companion.md)
+- [模型与 Worker 链路](./ai-and-companion.md)
+- [统一 Agent 运行时（技术）](./agent-runtime.md)
+- [伴星体验（产品设计）](./companion-experience.md)
 - [运行与发布](./operations.md)
 - [常见问题与排障](./faq-and-troubleshooting.md)
 - 仓库根：[README](../../../README.md)、[AGENTS.md](../../../AGENTS.md)、[第三方声明](../../../THIRD_PARTY_NOTICES.md)

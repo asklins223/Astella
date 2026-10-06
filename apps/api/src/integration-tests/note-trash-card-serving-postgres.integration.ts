@@ -11,7 +11,7 @@
  * 再加一条对照：没有来源笔记的卡（`note_version_id IS NULL`）不受这条影响。
  *
  * 两种角色各跑一遍（L43 的教训）：夹具写用超级用户，读数也在同一份库；
- * 把 `DATABASE_URL_API` 指成 `ailearn_api` 再跑一次才是生产形状。
+ * 把 `DATABASE_URL_API` 指成 `astella_api` 再跑一次才是生产形状。
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";

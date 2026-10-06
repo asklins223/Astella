@@ -6,7 +6,7 @@
  * 却不知道指的是哪一件（2026-09-20 实走复盘 #9、#14）。
  * 本文件是纯模块：React 组件与 `graph-sky.ts` 这类无 React 依赖的布局代码都能引。
  */
-// 深路径导入：`@ailearn/shared` 的 barrel 会把 Node 侧模块（content-hash、
+// 深路径导入：`@astella/shared` 的 barrel 会把 Node 侧模块（content-hash、
 // feature-flags、provider-capabilities）拖进 renderer 的编译与打包图里。
 import type {
   LearningObjectivePrimaryActionV3,
@@ -14,12 +14,12 @@ import type {
   ObjectiveReviewHoldV1,
   ObjectiveSurfaceFreshnessV3,
   ObjectivePersonalStateV3,
-} from "@ailearn/shared/learning-objective-surface-contracts";
+} from "@astella/shared/learning-objective-surface-contracts";
 import type {
   ObjectiveHoldResultV2,
   ObjectiveResumeResultV2,
   ReviewAuthorizationSourceV2Wire,
-} from "@ailearn/shared/review-queue-v2-contracts";
+} from "@astella/shared/review-queue-v2-contracts";
 
 const STATE_COPY: Record<ObjectivePersonalStateV3, { label: string; hint: string }> = {
   unvalidated: {

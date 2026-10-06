@@ -34,7 +34,7 @@
 -- 是为了让"取消一项授权不误删另一项"在结构上成立——它们本来就不该互相覆盖。
 --
 -- 隔离：RLS 按 (workspace_id, user_id) 两列，与 0300 同一支。不给
--- `CURRENT_USER = 'ailearn_worker'` 那一支：这张表的每一行都是"某个人自己的授权"，
+-- `CURRENT_USER = 'astella_worker'` 那一支：这张表的每一行都是"某个人自己的授权"，
 -- worker 没有读取理由（伴星也不该代读别人的授权状态）。
 
 CREATE TABLE public.review_subscriptions_v2 (
@@ -123,5 +123,5 @@ END $$;
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.review_subscriptions_v2 TO ailearn_api;
-GRANT ALL ON public.review_subscriptions_v2 TO ailearn_migrator;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.review_subscriptions_v2 TO astella_api;
+GRANT ALL ON public.review_subscriptions_v2 TO astella_migrator;

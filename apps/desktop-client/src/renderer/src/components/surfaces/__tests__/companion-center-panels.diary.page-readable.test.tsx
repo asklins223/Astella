@@ -4,9 +4,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DiaryPanel } from "../companion/companion-center-panels.tsx";
 import { todayIsoDate } from "../companion/companion-diary-day.ts";
-import type { CompanionDailySummaryV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { CompanionDailySummaryV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { useRoomStore } from "../../../app/room-store.ts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /**
  * 伴星中心「日记」这一块登记给伴星读的是什么（39d W2-7）。

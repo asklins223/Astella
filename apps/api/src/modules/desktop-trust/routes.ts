@@ -9,11 +9,11 @@ import {
   nonEmptyStringSchema,
   type DesktopTrustChallengeRequestV1,
   type DesktopTrustChallengeResponseV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 
-const TRUST_SECRET_ENV = "AILEARN_DESKTOP_PAIRING_SECRET";
-const TRUST_KEY_ID_ENV = "AILEARN_DESKTOP_PAIRING_KEY_ID";
-const DOMAIN_REVISION_ENV = "AILEARN_DOMAIN_SCHEMA_REVISION";
+const TRUST_SECRET_ENV = "ASTELLA_DESKTOP_PAIRING_SECRET";
+const TRUST_KEY_ID_ENV = "ASTELLA_DESKTOP_PAIRING_KEY_ID";
+const DOMAIN_REVISION_ENV = "ASTELLA_DOMAIN_SCHEMA_REVISION";
 
 export type DesktopTrustConfig = {
   pairingKeyId: string;
@@ -62,8 +62,8 @@ export function resolveApiBindHost(env: NodeJS.ProcessEnv = process.env): "127.0
   if (configured === "127.0.0.1") return configured;
   if (
     configured === "0.0.0.0" &&
-    env.AILEARN_CONTAINER_MODE?.trim().toLowerCase() === "true" &&
-    env.AILEARN_ALLOW_CONTAINER_WILDCARD?.trim().toLowerCase() === "true"
+    env.ASTELLA_CONTAINER_MODE?.trim().toLowerCase() === "true" &&
+    env.ASTELLA_ALLOW_CONTAINER_WILDCARD?.trim().toLowerCase() === "true"
   ) {
     return configured;
   }
@@ -103,7 +103,7 @@ export function createDesktopTrustChallengeResponse(
 const processInstanceId = randomUUID();
 
 export async function desktopTrustRoutes(app: FastifyInstance): Promise<void> {
-  app.post("/_ailearn/desktop/trust/v1/challenge", async (request, reply) => {
+  app.post("/_astella/desktop/trust/v1/challenge", async (request, reply) => {
     const parsed = desktopTrustChallengeRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_request" });

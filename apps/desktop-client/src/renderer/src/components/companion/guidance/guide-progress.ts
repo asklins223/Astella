@@ -1,4 +1,4 @@
-import { COMPANION_GUIDE_VERSION, companionOnboardingStateV1Schema, type CompanionOnboardingStateV1, type OnboardingTransitionRequest, type CompanionOverview } from "@ailearn/shared/companion-shell-contracts";
+import { COMPANION_GUIDE_VERSION, companionOnboardingStateV1Schema, type CompanionOnboardingStateV1, type OnboardingTransitionRequest, type CompanionOverview } from "@astella/shared/companion-shell-contracts";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
 import type { SpaceIdentity } from "../../../app/room-store";
 
@@ -8,7 +8,7 @@ export function verifiedGuideIdentity(identity: SpaceIdentity | null): identity 
   return Boolean(identity?.workspaceId && identity.workspaceEpoch && identity.userId && identity.deploymentRef);
 }
 export function guideProgressKey(identity: GuideIdentity, scope: GuideScope) {
-  return `ailearn.guide.v1:${encodeURIComponent(identity.deploymentRef)}:${identity.userId}:${scope === "space" ? identity.workspaceId : "account"}`;
+  return `astella.guide.v1:${encodeURIComponent(identity.deploymentRef)}:${identity.userId}:${scope === "space" ? identity.workspaceId : "account"}`;
 }
 type PendingProgress = { state: CompanionOnboardingStateV1; pending: boolean };
 function readLocal(identity: GuideIdentity, scope: GuideScope): PendingProgress | null {
@@ -57,7 +57,7 @@ export class GuideProgressClient {
   private queue: Promise<unknown> = Promise.resolve();
   constructor(identity: GuideIdentity) { this.identity = identity; }
   private async send(scope: GuideScope, request: OnboardingTransitionRequest) {
-    const result = unwrapGatewayResult(await window.ailearn.companion.account.transitionOnboarding({
+    const result = unwrapGatewayResult(await window.astella.companion.account.transitionOnboarding({
       meta: createRequestMeta(this.identity.workspaceEpoch), version: COMPANION_GUIDE_VERSION, request: { ...request, scope },
     }));
     this.states[scope] = result.state; storeLocal(this.identity, scope, result.state, false);
@@ -65,7 +65,7 @@ export class GuideProgressClient {
   }
   async load(): Promise<{ overview: CompanionOverview | null }> {
     let overview: CompanionOverview | null = null;
-    try { overview = unwrapGatewayResult(await window.ailearn.companion.account.getState({ meta: createRequestMeta(this.identity.workspaceEpoch) })); } catch { this.pending = true; }
+    try { overview = unwrapGatewayResult(await window.astella.companion.account.getState({ meta: createRequestMeta(this.identity.workspaceEpoch) })); } catch { this.pending = true; }
     for (const scope of ["account", "space"] as const) {
       const remote = overview?.onboardingStates.find(state => state.onboardingVersion === COMPANION_GUIDE_VERSION
         && (state.scope ?? "account") === scope && (scope === "account" || state.workspaceId === this.identity.workspaceId)) ?? null;
@@ -102,7 +102,7 @@ export class GuideProgressClient {
       } catch (error) {
         const code = (error as { code?: string }).code;
         if (code === "conflict") {
-          const overview = unwrapGatewayResult(await window.ailearn.companion.account.getState({ meta: createRequestMeta(this.identity.workspaceEpoch) }));
+          const overview = unwrapGatewayResult(await window.astella.companion.account.getState({ meta: createRequestMeta(this.identity.workspaceEpoch) }));
           const remote = overview.onboardingStates.find(item => item.onboardingVersion === COMPANION_GUIDE_VERSION && (item.scope ?? "account") === scope);
           if (remote) { this.states[scope] = remote; storeLocal(this.identity, scope, remote, false); return { state: remote, won: false }; }
         }

@@ -10,10 +10,10 @@ from pathlib import Path
 
 REPO = Path("/Users/asklins/Documents/asklins_workspace/study")
 DESKTOP = REPO / "apps/desktop-client"
-WANT = ("DESKTOP_API_ORIGIN", "AILEARN_DESKTOP_PAIRING_KEY_ID", "AILEARN_DESKTOP_PAIRING_SECRET",
+WANT = ("DESKTOP_API_ORIGIN", "ASTELLA_DESKTOP_PAIRING_KEY_ID", "ASTELLA_DESKTOP_PAIRING_SECRET",
         # 少了这个也是同一屏「桌面端尚未通过本机服务校验」：`readConfiguration` 先要它，
         # 才轮到那两个配对键（desktop-gateway.ts:514）。
-        "AILEARN_DOMAIN_SCHEMA_REVISION")
+        "ASTELLA_DOMAIN_SCHEMA_REVISION")
 
 env = dict(os.environ)
 for line in (REPO / ".env").read_text().splitlines():

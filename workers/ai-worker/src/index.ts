@@ -39,7 +39,7 @@ import { runWithAbortTimeout } from "./lib/handler-timeout.ts";
 import { resolveHandlerTimeout, RESOLVED_TIMEOUT_INFO } from "./lib/handler-timeout-config.ts";
 import { isNonRetryableError } from "./lib/non-retryable-errors.ts";
 import { createPollWakeSignal } from "./lib/poll-wakeup.ts";
-import { JobResourceClass, readJobPayloadString, safeErrorMessage, sanitizeOperationalError } from "@ailearn/shared";
+import { JobResourceClass, readJobPayloadString, safeErrorMessage, sanitizeOperationalError } from "@astella/shared";
 import { computeClaimLimits } from "./lib/worker-concurrency.ts";
 import {
   claimJobs,
@@ -65,7 +65,7 @@ import {
   aiCircuitOpenTotal,
   startMetricsServer,
 } from "./lib/metrics.ts";
-import { observeSharedAiCircuitRejects } from "@ailearn/shared/circuit-breaker";
+import { observeSharedAiCircuitRejects } from "@astella/shared/circuit-breaker";
 
 const HANDLERS = {
   parse_source: runParseSource,
@@ -104,7 +104,7 @@ const POLL_MS = 500;
 const POLL_MAX_MS = 5_000; // QUAL-08: max backoff when queue is idle
 
 /**
- * 终态转换（ailearn_finish_job / ailearn_fail_job / markUnknownJobFailed）的墙钟上界。
+ * 终态转换（astella_finish_job / astella_fail_job / markUnknownJobFailed）的墙钟上界。
  *
  * 稳定 P0-5（2026-09-15 审计）：这些调用此前是裸 `await`，且连接池没有
  * statement_timeout——一条挂起的语句（锁等待/半开连接）会让 processJob 的
@@ -446,10 +446,10 @@ async function refreshQueueMetrics(nowMs = Date.now()): Promise<void> {
   try {
     const [depthRows, ageRows] = await Promise.all([
       db.execute<{ status: string; total: number }>(sql`
-        SELECT * FROM public.ailearn_queue_job_depth()
+        SELECT * FROM public.astella_queue_job_depth()
       `) as unknown as Promise<Array<{ status: string; total: number }>>,
       db.execute<{ oldest_pending_age_seconds: number }>(sql`
-        SELECT public.ailearn_queue_oldest_pending_age() AS oldest_pending_age_seconds
+        SELECT public.astella_queue_oldest_pending_age() AS oldest_pending_age_seconds
       `) as unknown as Promise<Array<{ oldest_pending_age_seconds: number }>>,
     ]);
     for (const status of JOB_STATUSES) {

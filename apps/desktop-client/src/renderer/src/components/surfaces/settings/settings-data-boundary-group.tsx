@@ -16,8 +16,8 @@ import type { ReactElement } from "react";
 import { SettingRow } from "./settings-primitives.tsx";
 import { HudSwitch } from "../../hud/HudControls";
 import { AUDIT_CATEGORY_LABELS, AUDIT_STATUS_LABELS, DATA_POLICY_FIELDS } from "./settings-data-tables.ts";
-import type { DesktopAiAuditItemV1, DesktopAiAuditPageV1 } from "@ailearn/shared/desktop-surface-contracts";
-import type { AiDataPolicyV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { DesktopAiAuditItemV1, DesktopAiAuditPageV1 } from "@astella/shared/desktop-surface-contracts";
+import type { AiDataPolicyV1 } from "@astella/shared/desktop-ipc-contracts";
 
 export function SettingsDataBoundaryGroup(props: {
   /** 策略本体来自共享合同；组件按 `DATA_POLICY_FIELDS` 的键读它，不自己另定一套。 */

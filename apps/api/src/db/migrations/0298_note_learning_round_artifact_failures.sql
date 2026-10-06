@@ -97,5 +97,5 @@ CREATE TRIGGER nlraf_append_only BEFORE UPDATE OR DELETE ON public.note_learning
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT ON public.note_learning_round_artifact_failures TO ailearn_api;
-GRANT ALL ON public.note_learning_round_artifact_failures TO ailearn_migrator;
+GRANT SELECT, INSERT ON public.note_learning_round_artifact_failures TO astella_api;
+GRANT ALL ON public.note_learning_round_artifact_failures TO astella_migrator;

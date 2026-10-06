@@ -37,7 +37,7 @@ type DirectorOptions = Readonly<{
 }>;
 
 const REGIONS: readonly HomeSceneRegionId[] = ["window", "desk", "shelf", "rest"];
-export const HOME_V2_COMPANION_DRAG_EVENT = "ailearn:home-v2-companion-drag";
+export const HOME_V2_COMPANION_DRAG_EVENT = "astella:home-v2-companion-drag";
 export const HOME_AMBIENT_INTERACTION_CUE: Readonly<Record<HomeSceneRegionId, string>> = {
   window: "telescope-calibrate",
   desk: "page-lift",
@@ -51,7 +51,7 @@ const MAX_ACTIVE_REGIONS = 2;
 
 export function requestHomeAmbientRegionFeedback(region: HomeSceneRegionId): void {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent("ailearn:home-v2-ambient-cue", {
+  window.dispatchEvent(new CustomEvent("astella:home-v2-ambient-cue", {
     detail: { region, cueId: HOME_AMBIENT_INTERACTION_CUE[region] },
   }));
 }

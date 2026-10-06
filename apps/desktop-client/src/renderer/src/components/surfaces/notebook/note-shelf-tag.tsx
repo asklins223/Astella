@@ -2,7 +2,7 @@ import {
   NOTE_SHELF_STAGE_LABEL_V1,
   noteShelfStageDetailV1,
   type NoteShelfStateV1,
-} from "@ailearn/shared/note-shelf-state-contracts";
+} from "@astella/shared/note-shelf-state-contracts";
 
 /** 架上纸签只报告已保存的记录；读不到状态时不画，也不推断掌握度。 */
 export function NoteShelfTag(props: {

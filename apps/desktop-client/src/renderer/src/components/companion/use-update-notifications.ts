@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import type { UpdateStateV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { UpdateStateV1 } from "@astella/shared/desktop-ipc-contracts";
 import { useUpdateStatus, useUpdateStatusSubscription } from "../../app/update-status";
 import {
   notifyUpdateAvailable,

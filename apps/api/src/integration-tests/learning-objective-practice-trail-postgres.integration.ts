@@ -18,10 +18,10 @@
  *
  * 运行（一次性库，见 docs/performance-scan-2026-09-22.md §9.5；两个 URL 分别给，
  * 理由见下面 RLS 那段——`scripts/dev-disposable-db.sh` 末尾会打印这两种配方）：
- *   bash scripts/dev-disposable-db.sh ailearn_trail_it
+ *   bash scripts/dev-disposable-db.sh astella_trail_it
  *   cd apps/api
- *   export DATABASE_URL='postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn_trail_it' \
- *          DATABASE_URL_API='postgres://ailearn_api:<API_PASSWORD>@127.0.0.1:5432/ailearn_trail_it'
+ *   export DATABASE_URL='postgres://astella:astella_dev@127.0.0.1:5432/astella_trail_it' \
+ *          DATABASE_URL_API='postgres://astella_api:<API_PASSWORD>@127.0.0.1:5432/astella_trail_it'
  *   node --import tsx --test --test-concurrency=1 \
  *     src/integration-tests/learning-objective-practice-trail-postgres.integration.ts
  *   （也可整组跑：npm run test:objective-metrics:postgres）
@@ -29,16 +29,16 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 process.env.DATABASE_URL ??= testDatabaseUrl("DATABASE_URL");
 
-// 造数走超级用户连接（`ailearn` 有 BYPASSRLS，且这三张表上没有触发器）；
+// 造数走超级用户连接（`astella` 有 BYPASSRLS，且这三张表上没有触发器）；
 // 读取一律走产品代码 + `withWorkspaceTransaction`。
 //
 // **但 `withWorkspaceTransaction` 只 `set_config`，不做 `SET LOCAL ROLE`**——RLS 是否
 // 真的生效，取决于连接角色。所以两个变量要分开给：`DATABASE_URL`（夹具写）用超级用户，
-// `DATABASE_URL_API`（db/client 读数）用受限角色 `ailearn_api`。用同一个超级用户 URL
+// `DATABASE_URL_API`（db/client 读数）用受限角色 `astella_api`。用同一个超级用户 URL
 // 跑也能过，但那是"BYPASSRLS 下的绿"，少验一层（本文件两种角色都已实测通过）。
 // 于是"数据没种进去"与"产品读不到"都会表现为断言变红，而不是假绿。
 const pgSql = (await import("postgres")).default(process.env.DATABASE_URL, { max: 1 });

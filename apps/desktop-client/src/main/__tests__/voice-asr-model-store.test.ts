@@ -347,14 +347,14 @@ describe("voice asr model store", () => {
 
   it("env sources are an ordered list, and a blank value falls back to the shipped defaults", () => {
     expect(voiceAsrModelSources({}).map((source) => source.id)).toEqual(["modelscope", "hf-mirror", "huggingface"]);
-    expect(voiceAsrModelSources({ AILEARN_VOICE_ASR_SOURCE: "  " }).map((source) => source.id)).toEqual(["modelscope", "hf-mirror", "huggingface"]);
-    const custom = voiceAsrModelSources({ AILEARN_VOICE_ASR_SOURCE: "https://内网/models , https://备用/models" });
+    expect(voiceAsrModelSources({ ASTELLA_VOICE_ASR_SOURCE: "  " }).map((source) => source.id)).toEqual(["modelscope", "hf-mirror", "huggingface"]);
+    const custom = voiceAsrModelSources({ ASTELLA_VOICE_ASR_SOURCE: "https://内网/models , https://备用/models" });
     expect(custom.map((source) => source.baseUrl)).toEqual(["https://内网/models", "https://备用/models"]);
   });
 
   it("an externally supplied model directory is honoured, otherwise it sits under userData", () => {
     expect(voiceAsrModelDirectory({ env: {}, userDataDir: "/tmp/profile" })).toBe(resolve("/tmp/profile", "voice-models"));
-    expect(voiceAsrModelDirectory({ env: { AILEARN_VOICE_ASR_DIR: " /shared/models " }, userDataDir: "/tmp/profile" }))
+    expect(voiceAsrModelDirectory({ env: { ASTELLA_VOICE_ASR_DIR: " /shared/models " }, userDataDir: "/tmp/profile" }))
       .toBe(resolve("/shared/models"));
   });
 

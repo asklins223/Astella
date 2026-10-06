@@ -1,6 +1,6 @@
 -- Skip memory rows whose workspace or active membership no longer exists.
 -- One stale row must not abort the global organizer enqueue.
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_companion_memory_organize()
+CREATE OR REPLACE FUNCTION public.astella_enqueue_companion_memory_organize()
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -12,7 +12,7 @@ DECLARE
   v_row_inserted integer;
   v_row record;
 BEGIN
-  SELECT * INTO v_thresholds FROM public.ailearn_companion_memory_organization_thresholds();
+  SELECT * INTO v_thresholds FROM public.astella_companion_memory_organization_thresholds();
 
   FOR v_row IN
     WITH pending AS (
@@ -76,10 +76,10 @@ $$;
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_enqueue_companion_memory_organize() FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.ailearn_companion_memory_organization_thresholds() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_companion_memory_organize() TO ailearn_worker;
-GRANT EXECUTE ON FUNCTION public.ailearn_companion_memory_organization_thresholds() TO ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_enqueue_companion_memory_organize() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_companion_memory_organization_thresholds() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_memory_organize() TO astella_worker;
+GRANT EXECUTE ON FUNCTION public.astella_companion_memory_organization_thresholds() TO astella_worker;
 
 --> statement-breakpoint
 
@@ -90,7 +90,7 @@ CREATE INDEX IF NOT EXISTS companion_turn_runs_user_message_id_idx
 --> statement-breakpoint
 
 -- roles.sql previously erased migration 0330 grants when bootstrapping roles.
-GRANT SELECT, INSERT ON public.assistant_memory_source_suppressions TO ailearn_worker;
+GRANT SELECT, INSERT ON public.assistant_memory_source_suppressions TO astella_worker;
 
 --> statement-breakpoint
 

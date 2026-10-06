@@ -7,7 +7,7 @@
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_find_resumable_companion_journey(
+CREATE OR REPLACE FUNCTION public.astella_find_resumable_companion_journey(
   p_user_id uuid,
   p_workspace_id uuid
 )
@@ -55,5 +55,5 @@ $function$;
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_find_resumable_companion_journey(uuid, uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_find_resumable_companion_journey(uuid, uuid) TO ailearn_api;
+REVOKE ALL ON FUNCTION public.astella_find_resumable_companion_journey(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_find_resumable_companion_journey(uuid, uuid) TO astella_api;

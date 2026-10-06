@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import postgres from "postgres";
 import Fastify from "fastify";
 import sensible from "@fastify/sensible";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { seedV2Fixture, type V2FixtureSeeded } from "./helpers/v2-card-fixture.ts";
 import { closeDatabase } from "../db/client.ts";
 import { authRoutes } from "../modules/identity/routes.ts";

@@ -2,7 +2,7 @@
  * 目标级「暂不安排」的三个动作（39d W7-3 刀一；39 §9.1 规则表行 2 与行 3）。
  *
  * 只做"这一发要写什么"，**不判规则**：谁优先、暂停只停哪个来源、延后要不要列范围，
- * 那份判据在 `@ailearn/shared/review-authorization-rules-v2`——入口不止这里一个
+ * 那份判据在 `@astella/shared/review-authorization-rules-v2`——入口不止这里一个
  * （审核台、首页、伴星），§9.1 的原话是"不能由入口各自解释"。
  *
  * 为什么单独一个模块而不是并进 `review-schedule-boundary.ts`：那份是"唯一写入安排"的
@@ -14,16 +14,16 @@
  */
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { objectiveReviewHoldsV2, reviewSchedules } from "@ailearn/shared/db-schema/evidence";
-import { notes } from "@ailearn/shared/db-schema/note";
+import { objectiveReviewHoldsV2, reviewSchedules } from "@astella/shared/db-schema/evidence";
+import { notes } from "@astella/shared/db-schema/note";
 import {
   DISCRETE_V2_FIRST_INTERVAL_DAYS,
   DISCRETE_V2_POLICY_VERSION,
   discreteV2FirstDueAt,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import { ensurePendingReviewScheduleV2 } from "./review-schedule-boundary.ts";
-import { isReviewDimensionV2, REVIEW_DIMENSION_VALUES_V2, type ReviewDimensionV2 } from "@ailearn/shared/review-dimension-v2";
+import { isReviewDimensionV2, REVIEW_DIMENSION_VALUES_V2, type ReviewDimensionV2 } from "@astella/shared/review-dimension-v2";
 
 /** 排除只能立在自己书房里的笔记上；这一档要能被路由翻成 404，而不是 500。 */
 export class ObjectiveHoldNoteNotFoundV2 extends Error {

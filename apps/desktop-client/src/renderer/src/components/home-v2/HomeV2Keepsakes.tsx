@@ -1,7 +1,7 @@
 import type {
   CompanionDecorIdV1,
   CompanionRoomSlotV1,
-} from "@ailearn/shared/companion-home-contracts";
+} from "@astella/shared/companion-home-contracts";
 import { useCompanionHomeProjection } from "../../app/companion-home-projection";
 
 const SLOT_TRANSFORMS: Readonly<Record<CompanionRoomSlotV1, string>> = Object.freeze({

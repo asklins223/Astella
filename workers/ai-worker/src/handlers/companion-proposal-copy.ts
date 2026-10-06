@@ -38,7 +38,7 @@
  *    title≤80 / target≤160 / impact≤240。
  */
 
-import { COMPANION_AGENT_TOOL_LABELS, proposedLearningActionPayloadV1Schema } from "@ailearn/shared";
+import { COMPANION_AGENT_TOOL_LABELS, proposedLearningActionPayloadV1Schema } from "@astella/shared";
 import type { z } from "zod";
 
 type ProposalPayload = z.infer<typeof proposedLearningActionPayloadV1Schema>;

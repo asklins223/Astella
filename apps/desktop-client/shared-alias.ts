@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import sharedPackage from '../../packages/shared/package.json'
 
 /**
- * `@ailearn/shared` 的实时源码别名（2026-09-21 建立；2026-09-30 改为按 exports 逐条生成）。
+ * `@astella/shared` 的实时源码别名（2026-09-21 建立；2026-09-30 改为按 exports 逐条生成）。
  * 三处共用：`electron.vite.config.ts` 的 main/preload/renderer，以及 `vitest.config.ts`。
  *
  * 为什么必须有这一份：pnpm 对 `file:` 依赖是**安装期快照**。没被改过的文件是硬链接，
@@ -38,7 +38,7 @@ function targetFile(entry: unknown): string | null {
  *
  * ## 为什么原来那条通配不行
  *
- * 旧写法是 `@ailearn/shared/*` → `src/*.ts`，本文件旧注释也写着「子路径全是
+ * 旧写法是 `@astella/shared/*` → `src/*.ts`，本文件旧注释也写着「子路径全是
  * `src/*.ts` 平铺文件」。2026-09-30 把 46 份合同搬进 `src/contracts/` 之后，
  * 那条假设就不成立了——而它**静默失效**：`src/learning-run-v2-contracts.ts`
  * 已不存在，vite 报出来的是 `Cannot find package`，看不出"别名还指着旧位置"。
@@ -62,7 +62,7 @@ const pkg = sharedPackage as {
 }
 
 const exact: Array<{ find: RegExp; replacement: string }> = [
-  { find: /^@ailearn\/shared$/, replacement: resolve(sharedSrc, 'index.ts') },
+  { find: /^@astella\/shared$/, replacement: resolve(sharedSrc, 'index.ts') },
 ]
 
 const missing: string[] = []
@@ -77,7 +77,7 @@ for (const [key, value] of Object.entries(pkg.exports ?? {})) {
     continue
   }
   const subpath = escapeRe(key.slice(2)) // 去掉 './'；子路径里可能带 '/'
-  exact.push({ find: new RegExp(`^@ailearn/shared/${subpath}$`), replacement: file })
+  exact.push({ find: new RegExp(`^@astella/shared/${subpath}$`), replacement: file })
 }
 
 // 宁可让配置加载即失败：一条静默失效的别名，症状是"测试绿着而合同已经变了"。

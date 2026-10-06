@@ -20,9 +20,9 @@
  * 为正时动。§9.4「用户主动加量才加入新的任务」——后台新到期没有任何一条能走到这里。
  */
 import { and, eq } from "drizzle-orm";
-import { dailyReviewBatchesV2 } from "@ailearn/shared/db-schema/evidence";
+import { dailyReviewBatchesV2 } from "@astella/shared/db-schema/evidence";
 import { loadLimitedBatchV2 } from "./learning-batch-service.ts";
-import type { LimitedBatchV2 } from "@ailearn/shared/limited-batch-v2";
+import type { LimitedBatchV2 } from "@astella/shared/limited-batch-v2";
 
 /** 一批刚开头时的默认长度。§9.4 没有写死这个数，所以它是**参数**而不是常量。 */
 export const DEFAULT_BATCH_LENGTH_V2 = 5;

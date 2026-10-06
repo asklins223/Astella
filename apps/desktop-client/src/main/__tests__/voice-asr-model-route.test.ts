@@ -17,7 +17,7 @@ const FILES = [
   { name: "tokens.txt", expectedBytes: 3 },
 ] as const;
 
-const APP_ORIGIN = "ailearn-app://bundle";
+const APP_ORIGIN = "astella-app://bundle";
 
 function store(directory: string) {
   return new VoiceAsrModelStore(directory, { files: FILES, sources: [{ id: "test", name: "测试源", baseUrl: "https://example.invalid" }], fetchImpl: vi.fn() });
@@ -89,16 +89,16 @@ describe("device/asr route", () => {
   /**
    * 挂载点：两种形态都必须**同源**，且打包那条有个只在打包时才犯的错。
    *
-   * `ailearn-app` 是 Electron 注册出来的标准 scheme，可 Node 的 URL 实现不知道，
-   * `new URL('ailearn-app://bundle/index.html').origin` 是 `"null"`。用 origin 当基底
+   * `astella-app` 是 Electron 注册出来的标准 scheme，可 Node 的 URL 实现不知道，
+   * `new URL('astella-app://bundle/index.html').origin` 是 `"null"`。用 origin 当基底
    * 时开发形态没事（`http://localhost:5173` 的 origin 是对的），打包形态直接抛
    * `Invalid URL`——而打包形态恰恰是本地 `npm run dev` **测不到**的那一种。
    */
   it("挂载点：开发形态指向开发服务器，打包形态指向页面自己的 bundle host", () => {
     expect(voiceAsrModelMountUrl("http://localhost:5173/", "http://localhost:5173")).toBe("http://localhost:5173/device/asr/");
-    expect(voiceAsrModelMountUrl("ailearn-app://bundle/index.html")).toBe("ailearn-app://bundle/device/asr/");
+    expect(voiceAsrModelMountUrl("astella-app://bundle/index.html")).toBe("astella-app://bundle/device/asr/");
     // 自证：这正是那条不能用的写法。
-    expect(new URL("ailearn-app://bundle/index.html").origin).toBe("null");
+    expect(new URL("astella-app://bundle/index.html").origin).toBe("null");
   });
 
   it("rejects anything but GET/HEAD", async () => {

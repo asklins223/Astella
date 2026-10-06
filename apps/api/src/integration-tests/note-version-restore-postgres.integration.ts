@@ -15,7 +15,7 @@
  *
  * Environment variables:
  *   NOTE_VERSION_RESTORE_TEST_DATABASE_URL — connection string for the test database
- *   (must connect as ailearn_api or ailearn_migrator role)
+ *   (must connect as astella_api or astella_migrator role)
  */
 
 import assert from "node:assert/strict";
@@ -24,7 +24,7 @@ import { test } from "node:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres, { type Sql } from "postgres";
 import { type ApiTransaction } from "../db/client.ts";
-import * as schema from "@ailearn/shared/db-schema";
+import * as schema from "@astella/shared/db-schema";
 import * as Y from "yjs";
 import {
   RevisionConflictError,

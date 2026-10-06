@@ -28,7 +28,7 @@ import {
 
 const ROOT = "/Users/asklins/Documents/asklins_workspace/study";
 for (const line of readFileSync(`${ROOT}/.env`, "utf8").split("\n")) {
-  const match = /^(AILEARN_DESKTOP_[A-Z_]+|AILEARN_DOMAIN_SCHEMA_REVISION|DESKTOP_API_ORIGIN|DESKTOP_DEPLOYMENT_CONFIG_REVISION)=(.*)$/.exec(line);
+  const match = /^(ASTELLA_DESKTOP_[A-Z_]+|ASTELLA_DOMAIN_SCHEMA_REVISION|DESKTOP_API_ORIGIN|DESKTOP_DEPLOYMENT_CONFIG_REVISION)=(.*)$/.exec(line);
   if (match) process.env[match[1]] = match[2].trim();
 }
 const API = "http://127.0.0.1:4000";
@@ -42,7 +42,7 @@ const readState = () => JSON.parse(readFileSync(STATE_FILE, "utf8")) as { noteId
 async function newGateway() {
   const gateway = new DesktopGateway(process.env as NodeJS.ProcessEnv);
   await gateway.connect();
-  await gateway.login("owner@ailearn.local", "ailearn_owner");
+  await gateway.login("owner@astella.local", "astella_owner");
   const session = await gateway.getSession();
   if (!session.workspace) throw new Error("没有会话空间");
   return { gateway, userId: session.user?.userId ?? "", workspaceId: session.workspace.workspaceId };
@@ -53,7 +53,7 @@ const phase = process.argv[2];
 if (phase === "seed") {
   rmSync(CACHE_FILE, { force: true });
   const stamp = new Date().toISOString().slice(11, 19).replace(/:/g, "");
-  const login = await fetch(`${API}/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "owner@ailearn.local", password: "ailearn_owner" }) }).then((r) => r.json());
+  const login = await fetch(`${API}/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "owner@astella.local", password: "astella_owner" }) }).then((r) => r.json());
   const created = await fetch(`${API}/notes`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${login.token}` },

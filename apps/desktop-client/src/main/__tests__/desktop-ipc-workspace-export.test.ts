@@ -22,7 +22,7 @@ import {
   DESKTOP_IPC_CONTRACT_VERSION,
   type GatewayResultV1,
   type RequestMetaV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import type { DesktopGateway } from "../desktop-gateway";
 import { registerAuthStub } from "./ns-auth-stubs";
 import * as ns_auth from "../desktop-gateway-ns-auth";
@@ -102,14 +102,14 @@ function sessionStub() {
   };
 }
 
-const event = { sender: {}, senderFrame: { url: "ailearn://renderer/" } };
+const event = { sender: {}, senderFrame: { url: "astella://renderer/" } };
 
 async function register(gateway: DesktopGateway) {
   vi.resetModules();
   const { registerM1DesktopIpc } = await import("../desktop-ipc");
   registerM1DesktopIpc({
     gateway,
-    env: { AILEARN_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
+    env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
     resolveWindow: () => ({}) as never,
     getWindowState: () => ({ state: "visible", revision: 1 }),
     setTitlebarTheme: () => true,
@@ -141,7 +141,7 @@ describe("workspace export IPC", () => {
   });
 
   it("writes the server payload to the path the reader picked", async () => {
-    mocks.showSaveDialog.mockResolvedValue({ canceled: false, filePath: "/tmp/ailearn-workspace.json" });
+    mocks.showSaveDialog.mockResolvedValue({ canceled: false, filePath: "/tmp/astella-workspace.json" });
     mocks.writeFile.mockResolvedValue(undefined);
     await register(gatewayStub({ workspace: { name: "Studio" } }));
 
@@ -153,12 +153,12 @@ describe("workspace export IPC", () => {
         version: 1,
         saved: true,
         canceled: false,
-        filePath: "/tmp/ailearn-workspace.json",
+        filePath: "/tmp/astella-workspace.json",
       },
     });
     expect(mocks.writeFile).toHaveBeenCalledTimes(1);
     const [path, text] = mocks.writeFile.mock.calls[0]!;
-    expect(path).toBe("/tmp/ailearn-workspace.json");
+    expect(path).toBe("/tmp/astella-workspace.json");
     expect(JSON.parse(String(text))).toEqual({ workspace: { name: "Studio" } });
     expect((result as { data: { bytes: number } }).data.bytes).toBe(Buffer.byteLength(String(text), "utf8"));
   });
@@ -174,7 +174,7 @@ describe("workspace export IPC", () => {
   });
 
   it("reports a failed local write instead of claiming success", async () => {
-    mocks.showSaveDialog.mockResolvedValue({ canceled: false, filePath: "/tmp/ailearn-workspace.json" });
+    mocks.showSaveDialog.mockResolvedValue({ canceled: false, filePath: "/tmp/astella-workspace.json" });
     mocks.writeFile.mockRejectedValueOnce(new Error("EACCES"));
     await register(gatewayStub({ workspace: { name: "Studio" } }));
 
@@ -206,7 +206,7 @@ describe("workspace export IPC", () => {
   });
 
   it("refuses to write a file for a body the gateway could not parse", async () => {
-    mocks.showSaveDialog.mockResolvedValue({ canceled: false, filePath: "/tmp/ailearn-workspace.json" });
+    mocks.showSaveDialog.mockResolvedValue({ canceled: false, filePath: "/tmp/astella-workspace.json" });
     await register(gatewayStub(null));
 
     const result = await handler()(event, { meta });

@@ -52,8 +52,8 @@ const forkMock = vi.fn((scriptPath: string, args: string[]) => {
 
 vi.mock("electron", () => ({
   app: {
-    getAppPath: () => "/tmp/ailearn-asr-test",
-    getPath: () => "/tmp/ailearn-asr-test/userData",
+    getAppPath: () => "/tmp/astella-asr-test",
+    getPath: () => "/tmp/astella-asr-test/userData",
   },
   utilityProcess: { fork: forkMock },
 }));

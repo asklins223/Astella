@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { noteAnchorBlockRangeV1, type NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
-import { parseInlineMarkdown, type NoteDocInlineSegment } from "@ailearn/shared/note-doc-schema";
-import { isWebLinkUrl } from "@ailearn/shared/desktop-ipc-contracts";
+import { noteAnchorBlockRangeV1, type NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
+import { parseInlineMarkdown, type NoteDocInlineSegment } from "@astella/shared/note-doc-schema";
+import { isWebLinkUrl } from "@astella/shared/desktop-ipc-contracts";
 import { noteBlockText } from "./surface-data.tsx";
 import { ZoomableReadingImage } from "../source/image-viewer.tsx";
 import { useSourceImage } from "../source/source-image.ts";
@@ -96,7 +96,7 @@ export function noteInlineImages(content: string): { readonly src: string; reado
 }
 
 /**
- * 站内地址（`/api/uploads/...`）在渲染层画不出来：origin 是 `ailearn-app://`，
+ * 站内地址（`/api/uploads/...`）在渲染层画不出来：origin 是 `astella-app://`，
  * 相对路径会落到应用包内。所以和块级图片走同一条路——带会话令牌取字节，换成 blob。
  */
 function InlineImage({

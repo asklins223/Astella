@@ -21,10 +21,10 @@ import {
   isStorageConfigured as isStorageConfiguredShared,
   resolveStorageRequestTimeoutMs as resolveStorageRequestTimeoutMsShared,
   type StorageEnv,
-} from "@ailearn/shared/storage-config";
+} from "@astella/shared/storage-config";
 
 /**
- * 下面四个薄壳把判定委托给 `@ailearn/shared/storage-config`（2026-09-29，P2-16）。
+ * 下面四个薄壳把判定委托给 `@astella/shared/storage-config`（2026-09-29，P2-16）。
  *
  * 此前它们与 `workers/ai-worker` 那份**各写一次**。真正重复的是"配置怎么读"，
  * 而凭证回退链那条规则尤其只有一处才安全：用 `||`（空串按未配置处理）而不是 `??`。

@@ -22,7 +22,7 @@
  */
 import { useState } from "react";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
-import type { ObjectiveHoldResultV2, ObjectiveResumeResultV2 } from "@ailearn/shared/review-queue-v2-contracts";
+import type { ObjectiveHoldResultV2, ObjectiveResumeResultV2 } from "@astella/shared/review-queue-v2-contracts";
 
 /**
  * 「暂不安排」与「恢复安排」成功后的那两句回执。
@@ -41,7 +41,7 @@ export function useNotebookReviewHold(input: {
   readonly noteObjective: { readonly objectiveId: string } | null;
   readonly epochRef: { current: number | undefined };
   readonly reload: (options?: { silent?: boolean }) => Promise<void>;
-  readonly api: NonNullable<Window["ailearn"]> | undefined;
+  readonly api: NonNullable<Window["astella"]> | undefined;
   readonly notices: ReviewHoldNotices;
 }) {
   const { noteId, currentVersionId, noteObjective, epochRef, reload, api, notices } = input;

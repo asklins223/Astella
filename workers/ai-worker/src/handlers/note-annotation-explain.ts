@@ -1,11 +1,11 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import type { ChatMessage } from "@ailearn/shared";
-import { readNoteAnnotationExplainJobPayload } from "@ailearn/shared/job-payload-contracts";
-import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
-import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
-import { noteAnchorMatchesV1 } from "@ailearn/shared/note-annotation-contracts";
-import * as schema from "@ailearn/shared/db-schema";
+import type { ChatMessage } from "@astella/shared";
+import { readNoteAnnotationExplainJobPayload } from "@astella/shared/job-payload-contracts";
+import { noteVisibleSqlText } from "@astella/shared/note-visibility";
+import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
+import { noteAnchorMatchesV1 } from "@astella/shared/note-annotation-contracts";
+import * as schema from "@astella/shared/db-schema";
 import {
   AIConsentRequiredError,
   createGovernedProvider,

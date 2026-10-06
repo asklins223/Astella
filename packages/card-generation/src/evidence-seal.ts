@@ -16,7 +16,7 @@ import {
   evidenceSnapshotsV2,
   evidenceEligibilityStatesV2,
   evidenceQuoteCopiesV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/card-generation-v2";
 import {
   filterBlocksBySourceScope,
   computeSealedEvidenceSnapshotHashV2,
@@ -25,7 +25,7 @@ import {
   type SealedEvidenceEntryV2,
   type EvidenceSealManifestV2,
   type SealEvidenceInput,
-} from "@ailearn/shared/card-generation-v2-pipeline";
+} from "@astella/shared/card-generation-v2-pipeline";
 import type { CardGenerationEvidenceSealTx } from "./transaction.ts";
 
 export type {

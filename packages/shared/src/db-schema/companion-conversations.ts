@@ -28,7 +28,7 @@ import type {
   CompanionMessageV1,
   CompanionStreamEventV1,
   ProviderReasoningHandle,
-} from "@ailearn/shared";
+} from "@astella/shared";
 
 // ─── 7.1 companion_conversations ──────────────────────────────────────────
 
@@ -332,7 +332,7 @@ export const companionVoiceArtifacts = pgTable(
       .on(t.messageId)
       .where(sql`status = 'attached'`),
     // 2026-08-12（generate 对齐）：0152 定义 (status, expires_at) 部分索引（仅 pending）。
-    // 支撑 ailearn_expire_pending_voice_artifacts() 的分批过期清理谓词，避免全表扫描。
+    // 支撑 astella_expire_pending_voice_artifacts() 的分批过期清理谓词，避免全表扫描。
     pendingExpiresIdx: index("companion_voice_artifacts_pending_expires_idx")
       .on(t.status, t.expiresAt)
       .where(sql`status = 'pending'`),

@@ -45,7 +45,7 @@ export const VOICE_ASR_MODEL_LABEL = "SenseVoice 离线识别" as const;
  * 等一次超时才轮得到镜像，而那一次超时要几十秒，用户看到的是"点了没反应"。
  * 国内镜像命中时是一次直连；不命中才回源，反过来则是每次都先撞一次墙。
  *
- * `AILEARN_VOICE_ASR_SOURCE`（逗号分隔）可以整份换掉这份列表——自建镜像、离线机器、
+ * `ASTELLA_VOICE_ASR_SOURCE`（逗号分隔）可以整份换掉这份列表——自建镜像、离线机器、
  * 内网制品库走这一条。
  */
 export interface VoiceAsrModelSourceV1 {
@@ -136,7 +136,7 @@ export const voiceAsrModelSnapshotV1Schema = z.strictObject({
   /**
    * 模型文件在**渲染进程 URL 空间**里的挂载点，以 `/` 结尾。
    *
-   * 为什么由主进程给而不是渲染层自己拼：打包后页面在 `ailearn-app://bundle/`，
+   * 为什么由主进程给而不是渲染层自己拼：打包后页面在 `astella-app://bundle/`，
    * 开发时页面在 `http://localhost:5173/`，两种形态的绝对 URL 不一样，而 worker
    * 又拿不到任何页面对象。主进程手里正好有这一发请求的来源 URL，拼出来的那一份
    * 必定与页面同源。
@@ -167,7 +167,7 @@ export type VoiceAsrModelSnapshotV1 = z.infer<typeof voiceAsrModelSnapshotV1Sche
  * 模型文件在**渲染进程 URL 空间**里的挂载点。
  *
  * 它必须与页面**同源**：worker 用 `new URL(relative, self.location.href)` 取它，
- * 于是打包后落在 `ailearn-app://bundle/device/asr/…`、开发时落在
+ * 于是打包后落在 `astella-app://bundle/device/asr/…`、开发时落在
  * `http://localhost:5173/device/asr/…`。两种形态都命中 CSP 的 `'self'`，
  * 不需要放开任何一条 connect-src，也就不存在「为了下模型给页面开外连」这种事。
  *

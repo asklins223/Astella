@@ -23,7 +23,7 @@ import {
   noteLearningRoundV1Schema,
   noteLearningRoundViewV1Schema,
   ROUND_HISTORY_MAX_LIMIT_V1,
-} from "@ailearn/shared/note-learning-round-contracts";
+} from "@astella/shared/note-learning-round-contracts";
 import { seedNotesOnlyWorkspace, type NotesOnlyWorkspaceFixture } from "./helpers/pure-v2-workspace-fixture.ts";
 
 const fixtureUrl = process.env.DATABASE_URL_MIGRATOR ?? process.env.DATABASE_URL;

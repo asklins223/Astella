@@ -1,5 +1,5 @@
-import { noteDetailV1Schema, type NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
-import { noteSaveReceiptV1Schema, type NoteSaveReceiptV1 } from "@ailearn/shared/note-save-contracts";
+import { noteDetailV1Schema, type NoteDetailV1 } from "@astella/shared/note-projection-contracts";
+import { noteSaveReceiptV1Schema, type NoteSaveReceiptV1 } from "@astella/shared/note-save-contracts";
 
 export type NoteReadProjectionSource = {
   note: {

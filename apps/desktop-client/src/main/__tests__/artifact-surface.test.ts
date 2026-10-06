@@ -11,7 +11,7 @@ import {
 import { ARTIFACT_TEMPLATE_PLACEHOLDER } from '../artifact-template'
 
 const ID = '3f1a2b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b'
-const ARTIFACT_URL = `ailearn-app://artifact/${ID}`
+const ARTIFACT_URL = `astella-app://artifact/${ID}`
 
 describe('产物文档的 CSP（D4 §3.3）', () => {
   it('逐条与设计件一致：只有内联脚本／样式，没有任何外部源，没有 unsafe-eval', () => {
@@ -44,7 +44,7 @@ describe('产物文档的 CSP（D4 §3.3）', () => {
 
 describe('哪一类响应该套哪份策略（D4 §3.4）', () => {
   it('三路分流：主页面／产物／其余', () => {
-    expect(classifyFramePolicySubject({ url: 'ailearn-app://bundle/index.html', rendererDevOrigin: null }))
+    expect(classifyFramePolicySubject({ url: 'astella-app://bundle/index.html', rendererDevOrigin: null }))
       .toBe('renderer')
     expect(classifyFramePolicySubject({ url: ARTIFACT_URL, rendererDevOrigin: null }))
       .toBe('artifact')
@@ -55,7 +55,7 @@ describe('哪一类响应该套哪份策略（D4 §3.4）', () => {
     // 负对照：别的 origin 一律收紧——主策略对一帧不可信内容太宽。
     expect(classifyFramePolicySubject({ url: 'https://example.com/x', rendererDevOrigin: null }))
       .toBe('other')
-    expect(classifyFramePolicySubject({ url: 'ailearn-app://evil/index.html', rendererDevOrigin: null }))
+    expect(classifyFramePolicySubject({ url: 'astella-app://evil/index.html', rendererDevOrigin: null }))
       .toBe('other')
     expect(classifyFramePolicySubject({ url: 'not a url', rendererDevOrigin: null })).toBe('other')
     expect(rejectAllContentSecurityPolicy()).toBe(
@@ -72,15 +72,15 @@ describe('子 frame 的导航（D4 §4.4）', () => {
   })
 
   it('负对照：产物自己发起的导航一律拒——包括导航到主页面 origin 那一发', () => {
-    // `location.href='ailearn-app://bundle/index.html'`：那是带 preload 桥的文档。
+    // `location.href='astella-app://bundle/index.html'`：那是带 preload 桥的文档。
     expect(isAllowedSubFrameNavigation({
-      target: 'ailearn-app://bundle/index.html',
+      target: 'astella-app://bundle/index.html',
       frameUrl: ARTIFACT_URL,
       initiatedBySelf: true
     })).toBe(false)
     // 自己导航到另一个产物 id 也拒（导航能力整个不给）。
     expect(isAllowedSubFrameNavigation({
-      target: `ailearn-app://artifact/11111111-2222-4333-8444-555555555555`,
+      target: `astella-app://artifact/11111111-2222-4333-8444-555555555555`,
       frameUrl: ARTIFACT_URL,
       initiatedBySelf: true
     })).toBe(false)
@@ -107,7 +107,7 @@ describe('产物文档的组装与配额（D4 §6）', () => {
     expect(assembled.document).not.toContain(ARTIFACT_TEMPLATE_PLACEHOLDER)
     expect(assembled.document.startsWith('<!doctype html>')).toBe(true)
     // 播放器还在（产物没把我们的模板挤掉）。
-    expect(assembled.document).toContain('ailearn:artifact-frame')
+    expect(assembled.document).toContain('astella:artifact-frame')
   })
 
   it('超字节整份拒绝，不做截断后半篇', () => {

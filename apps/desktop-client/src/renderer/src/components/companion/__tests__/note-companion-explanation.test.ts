@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
+import type { NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 import { feedSelectionToCompanion } from "../companion-feed";
 import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, openNoteExplanation, pendingNoteExplanation, progressNoteExplanation, resetNoteExplanations, saveNoteExplanation, useNoteCompanionExplanations } from "../note-companion-explanation";
 import { useRoomStore } from "../../../app/room-store";
@@ -17,19 +17,19 @@ beforeEach(() => {
   resetNoteExplanations();
   useRoomStore.setState({ hudPage: "note-read", activeNoteRef: { noteId: target.noteId, noteVersionId: target.anchor.noteVersionId }, navigationGuard: null });
   write = vi.fn(async () => ({ ok: true, data: receipt() }));
-  Object.defineProperty(window, "ailearn", { configurable: true, value: { noteAnnotation: { write } } });
+  Object.defineProperty(window, "astella", { configurable: true, value: { noteAnnotation: { write } } });
 });
-afterEach(() => { resetNoteExplanations(); vi.restoreAllMocks(); Reflect.deleteProperty(window, "ailearn"); });
+afterEach(() => { resetNoteExplanations(); vi.restoreAllMocks(); Reflect.deleteProperty(window, "astella"); });
 
 it("同一句或重叠选区正在解释时复用进度，不重复发送；不同版本独立", () => {
   const feed = vi.fn();
-  window.addEventListener("ailearn:companion-feed", feed);
+  window.addEventListener("astella:companion-feed", feed);
   const request = { text: target.anchor.excerpt, source: "selection" as const, initialPrompt: "解释这句", noteAnchor: target };
   const first = feedSelectionToCompanion(request);
   const repeated = feedSelectionToCompanion({ ...request, noteAnchor: { ...target, anchor: { ...target.anchor, startOffset: 3, endOffset: 8 } } });
   expect(repeated).toBe(first); expect(feed).toHaveBeenCalledTimes(1); expect(useNoteCompanionExplanations.getState().requestedOpenId).toBe(first);
   expect(pendingNoteExplanation({ ...target, anchor: { ...target.anchor, noteVersionId: id(9) } })).toBeUndefined();
-  window.removeEventListener("ailearn:companion-feed", feed);
+  window.removeEventListener("astella:companion-feed", feed);
 });
 
 it.each(["stopped", "interrupted"] as const)("%s 的半段解释保留可读内容，晚到 final 和增量都不能写成正式批注", async phase => {
@@ -68,10 +68,10 @@ it("晚到保存仍属于原句，不改变新选区；工作区切换后不广�
   resolve({ ok: true, data: receipt() }); await pending;
   expect(useNoteCompanionExplanations.getState().activeId).toBe(next.id);
   expect(useNoteCompanionExplanations.getState().items.find(value => value.id === first.id)?.phase).toBe("saved");
-  const saved = vi.fn(); window.addEventListener("ailearn:note-annotation-saved", saved);
+  const saved = vi.fn(); window.addEventListener("astella:note-annotation-saved", saved);
   const pendingNext = completeNoteExplanation(next.id, id(5), "下一句解释");
   resetNoteExplanations(); resolve({ ok: true, data: { ...receipt(), anchor: next.target.anchor, sourceMessageId: id(5) } }); await pendingNext;
-  expect(saved).not.toHaveBeenCalled(); window.removeEventListener("ailearn:note-annotation-saved", saved);
+  expect(saved).not.toHaveBeenCalled(); window.removeEventListener("astella:note-annotation-saved", saved);
 });
 
 it("离开笔记后点气泡选文，会返回这次解释所属的笔记并请求打开附页", () => {
@@ -84,9 +84,9 @@ it("离开笔记后点气泡选文，会返回这次解释所属的笔记并请�
 
 it("回执原句范围不一致时不声称保存成功，也不把它贴到当前笔记", async () => {
   write.mockResolvedValue({ ok: true, data: { ...receipt(), anchor: { ...target.anchor, startOffset: 1 } } });
-  const saved = vi.fn(); window.addEventListener("ailearn:note-annotation-saved", saved);
+  const saved = vi.fn(); window.addEventListener("astella:note-annotation-saved", saved);
   const attempt = beginNoteExplanation(target);
   await completeNoteExplanation(attempt.id, id(3), receipt().explanation);
   expect(item()).toMatchObject({ phase: "save-error", annotation: null });
-  expect(saved).not.toHaveBeenCalled(); window.removeEventListener("ailearn:note-annotation-saved", saved);
+  expect(saved).not.toHaveBeenCalled(); window.removeEventListener("astella:note-annotation-saved", saved);
 });

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { ArrowRight, Check, CircleAlert, FileText, Link2, X } from "lucide-react";
-import { extractCandidateLinks } from "@ailearn/shared/desktop-ipc-contracts";
+import { extractCandidateLinks } from "@astella/shared/desktop-ipc-contracts";
 import { useRoomStore } from "../app/room-store";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../app/desktop-client";
 import { resolveSceneMotionMode } from "../scene/scene-motion";
@@ -74,11 +74,11 @@ function useClipboardLinkWatcher(onFreshUrl: (url: string) => void) {
   const check = useCallback(async () => {
     if (busyRef.current || pendingRef.current) return;
     if (document.hidden || onboardingRef.current || hasOpenModal()) return;
-    if (!window.ailearn?.clipboard) return;
+    if (!window.astella?.clipboard) return;
     const scope = useRoomStore.getState().workspaceScopeRevision;
     busyRef.current = true;
     try {
-      const response = await window.ailearn.clipboard.readLinks({ meta: createRequestMeta() });
+      const response = await window.astella.clipboard.readLinks({ meta: createRequestMeta() });
       // 后台轮询不进网关错误广播：不通就等下一次回到书房，不打扰。
       if (!response.ok || useRoomStore.getState().workspaceScopeRevision !== scope) return;
       const fresh = response.data.urls.find((url) => !readSeenLinks().has(url));
@@ -203,7 +203,7 @@ export function ClipboardLinkPrompt({ url, onClose }: { readonly url: string; re
     const isCurrent = () => !closedRef.current && useRoomStore.getState().workspaceScopeRevision === scope;
     setPhase({ kind: "importing" });
     try {
-      const response = await window.ailearn.source.create({
+      const response = await window.astella.source.create({
         meta: createRequestMeta(),
         request: { url },
       });

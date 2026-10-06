@@ -14,7 +14,7 @@
  * W7-2 的判据原文就是"已有同目标安排显示沿用后的实际日期"。
  */
 import { and, eq } from "drizzle-orm";
-import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
+import { reviewSchedules } from "@astella/shared/db-schema/evidence";
 import { withWorkspaceTransaction } from "../../db/client.ts";
 import { liveHoldForObjectiveV2 } from "./objective-review-holds.ts";
 import { sourceAuthorizationForObjectiveV2 } from "./review-subscriptions.ts";

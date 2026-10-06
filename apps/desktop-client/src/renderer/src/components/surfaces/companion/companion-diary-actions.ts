@@ -59,7 +59,7 @@ export function useCompanionDiaryActions(input: {
     try {
       if (action === "delete") {
         const outcome = unwrapGatewayResult(
-          await window.ailearn.companion.daily.delete({ meta: meta(), date }),
+          await window.astella.companion.daily.delete({ meta: meta(), date }),
         );
         if (dateRef.current !== date) return;
         setConfirmingDelete(false);
@@ -69,8 +69,8 @@ export function useCompanionDiaryActions(input: {
           : "这一天已经没有日记了。");
       } else {
         const outcome = unwrapGatewayResult(action === "hide"
-          ? await window.ailearn.companion.daily.hide({ meta: meta(), date })
-          : await window.ailearn.companion.daily.unhide({ meta: meta(), date }));
+          ? await window.astella.companion.daily.hide({ meta: meta(), date })
+          : await window.astella.companion.daily.unhide({ meta: meta(), date }));
         if (dateRef.current !== date) return;
         setNotice(outcome.changed
           ? (action === "hide" ? "藏起来了。内容还在，随时能取消隐藏。" : "取回来了。")

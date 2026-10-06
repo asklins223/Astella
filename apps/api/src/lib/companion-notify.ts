@@ -2,15 +2,15 @@
  * P2 companion SSE wake-up listener（03 §5.4）。
  *
  * - API 每进程只保留一个 PostgreSQL LISTEN 连接（conversation channel
- *   `ailearn_companion_events_v1` + account channel
- *   `ailearn_companion_account_v1`），再 fan-out 到本进程 subscriber；
+ *   `astella_companion_events_v1` + account channel
+ *   `astella_companion_account_v1`），再 fan-out 到本进程 subscriber；
  * - NOTIFY payload 只含 conversationId/maxSeq，不含正文；
  * - postgres-js 的 listen 在断线后自动重连并重新 LISTEN；
  * - NOTIFY 只是低延迟 wake hint——SSE 每连接另有 2.5s durable poll 兜底。
  */
 
 import postgres from "postgres";
-import { COMPANION_INBOX_NOTIFY_CHANNEL } from "@ailearn/shared/companion-conversation-contracts";
+import { COMPANION_INBOX_NOTIFY_CHANNEL } from "@astella/shared/companion-conversation-contracts";
 import {
   COMPANION_ACCOUNT_NOTIFY_CHANNEL,
   COMPANION_CONVERSATION_NOTIFY_CHANNEL,

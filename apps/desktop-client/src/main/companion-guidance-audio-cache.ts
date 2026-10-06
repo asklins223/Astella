@@ -7,7 +7,7 @@ import {
   companionVoiceSpeakResultV1Schema,
   type CompanionGuidanceVoiceProfileV1,
   type CompanionVoiceSpeakResultV1,
-} from "@ailearn/shared/companion-voice-contracts";
+} from "@astella/shared/companion-voice-contracts";
 
 export type GuidanceAudioScope = { deployment: string; userId: string };
 const hash = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");

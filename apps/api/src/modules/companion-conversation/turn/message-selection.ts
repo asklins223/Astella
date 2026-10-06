@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { companionSelectionV1Schema } from "@ailearn/shared/companion-conversation-contracts";
+import { companionSelectionV1Schema } from "@astella/shared/companion-conversation-contracts";
 
 /** 选文附在用户消息对应的 run 上；只投影这段快照，不返回整个后台上下文。 */
 export function companionMessageSelectionSql(messageTable: "companion_messages" | "m") {

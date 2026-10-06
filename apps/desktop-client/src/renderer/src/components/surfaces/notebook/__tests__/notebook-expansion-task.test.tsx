@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { noteDetailV1Schema } from "@ailearn/shared/note-projection-contracts";
-import { noteExpansionTaskV1Schema, noteExpansionLinkV1Schema, type NoteExpansionTaskV1 } from "@ailearn/shared/note-expansion-contracts";
+import { noteDetailV1Schema } from "@astella/shared/note-projection-contracts";
+import { noteExpansionTaskV1Schema, noteExpansionLinkV1Schema, type NoteExpansionTaskV1 } from "@astella/shared/note-expansion-contracts";
 import { useNotebookExpansionTask } from "../use-notebook-expansion-task";
 
 const id = (n: number) => `${String(n).padStart(8, "0")}-4111-8111-8111-${String(n).padStart(12, "0")}`;
@@ -26,11 +26,11 @@ function install() {
     startTask: vi.fn(async (_request: { noteId: string; request: { noteVersionId: string; requestId: string } }) => ok(task({ taskId: id(12) }))),
     review: vi.fn(async (request: { review: { drafts: NoteExpansionTaskV1["drafts"] } }) => ok(task({ drafts: task().drafts.map(draft => ({ ...draft, ...request.review.drafts.find(item => item.candidateId === draft.candidateId) })) }))),
     confirm: vi.fn(async (_request: { taskId: string; request: { candidateIds: string[] } }) => ok([link])) };
-  Object.defineProperty(window, "ailearn", { configurable: true, value: { noteExpansion: api } });
+  Object.defineProperty(window, "astella", { configurable: true, value: { noteExpansion: api } });
   return api;
 }
 const input = () => ({ note, dirty: false, epochRef: { current: undefined }, onConfirmed: vi.fn() });
-afterEach(() => { cleanup(); Reflect.deleteProperty(window, "ailearn"); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); Reflect.deleteProperty(window, "astella"); vi.restoreAllMocks(); });
 
 it("手记打开指定旧版草稿，修改和收下仍绑定原批次，不读取或生成新版", async () => {
   const api = install(), props = { ...input(), requestedTask: { taskId: id(3), noteVersionId: id(20) } };
@@ -42,7 +42,7 @@ it("手记打开指定旧版草稿，修改和收下仍绑定原批次，不读�
   const view = renderHook(() => useNotebookExpansionTask(props)); await act(async () => {});
   expect(view.result.current.expansionTask?.noteVersionId).toBe(id(20));
   expect(api.latestTask).not.toHaveBeenCalled(); expect(api.startTask).not.toHaveBeenCalled();
-  await act(async () => window.dispatchEvent(new CustomEvent("ailearn:note-expansion-task-started", { detail: { noteId: note.noteId, taskId: id(12) } })));
+  await act(async () => window.dispatchEvent(new CustomEvent("astella:note-expansion-task-started", { detail: { noteId: note.noteId, taskId: id(12) } })));
   expect(api.getTask).toHaveBeenCalledTimes(1);
   act(() => view.result.current.setExpansionTask(current => ({ ...current!, drafts: current!.drafts.map((draft, index) => index ? draft : { ...draft, selected: true }) })));
   await act(async () => view.result.current.confirmNoteExpansionDrafts());
@@ -176,7 +176,7 @@ it("任务进度读取越过已有草稿查询时，查询结束仍清掉加载�
   let lookup!: ReturnType<typeof view.result.current.loadLatestNoteExpansionTask>;
   act(() => { lookup = view.result.current.loadLatestNoteExpansionTask(); });
   expect(view.result.current.expansionTaskLoading).toBe(true);
-  await act(async () => { window.dispatchEvent(new CustomEvent("ailearn:note-expansion-task-started", { detail: { noteId: note.noteId, taskId: queued.taskId } })); });
+  await act(async () => { window.dispatchEvent(new CustomEvent("astella:note-expansion-task-started", { detail: { noteId: note.noteId, taskId: queued.taskId } })); });
   expect(api.getTask).toHaveBeenCalledTimes(1);
   expect(view.result.current.expansionTask?.status).toBe("ready");
   await act(async () => { pending.resolve(ok({ version: 1, task: queued })); await lookup; });
@@ -296,7 +296,7 @@ it("确认前保存失败或期间新编辑，均保留本地且不发确认", a
 
 it("确认晚到与错批次回执不能贴到当前笔记；新草稿也不被后台任务替换", async () => {
   const api = install(), props = input(); const view = renderHook(current => useNotebookExpansionTask(current), { initialProps: props }); await act(async () => {});
-  act(() => window.dispatchEvent(new CustomEvent("ailearn:note-expansion-task-started", { detail: { noteId: id(1), taskId: id(12) } })));
+  act(() => window.dispatchEvent(new CustomEvent("astella:note-expansion-task-started", { detail: { noteId: id(1), taskId: id(12) } })));
   expect(api.getTask).not.toHaveBeenCalled(); expect(view.result.current.expansionTask?.taskId).toBe(id(3));
   act(() => view.result.current.setExpansionTask(current => ({ ...current!, drafts: current!.drafts.map((draft, index) => ({ ...draft, selected: index === 0 })) })));
   const pending = deferred<ReturnType<typeof ok<typeof link[]>>>(); api.confirm.mockImplementationOnce(() => pending.promise);

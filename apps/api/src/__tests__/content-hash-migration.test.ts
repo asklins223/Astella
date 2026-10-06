@@ -4,14 +4,14 @@
  * 验证 markdownToBlocks 开始识别图片行后，已有 paragraph 中的 ![](url)
  * 在保存后正确变为 image block，导致 content hash 变化（一次性迁移）。
  *
- * 使用 @ailearn/shared 的 markdownToBlocks 和 packages/shared 的 ParsedBlock 类型。
+ * 使用 @astella/shared 的 markdownToBlocks 和 packages/shared 的 ParsedBlock 类型。
  * content hash 使用 apps/api/src/modules/note/service.ts 的 computeContentHash。
  */
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import { markdownToBlocks, type ParsedBlock } from "@ailearn/shared/markdown-parser";
+import { markdownToBlocks, type ParsedBlock } from "@astella/shared/markdown-parser";
 import { computeContentHash } from "../modules/note/content-hash.ts";
 
 function blocksToMarkdown(blocks: ParsedBlock[]): string {

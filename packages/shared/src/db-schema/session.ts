@@ -21,7 +21,7 @@ export const sessions = pgTable(
 
     workspaceUserIdx: index("sessions_workspace_user_idx").on(t.workspaceId, t.userId),
     // 2026-08-12（generate 对齐）：0159 定义单列 (expires_at) 索引，支撑过期清理
-    // （ailearn_purge_expired_sessions / 会话扫描），避免全表扫。
+    // （astella_purge_expired_sessions / 会话扫描），避免全表扫。
     expiresAtIdx: index("sessions_expires_at_idx").on(t.expiresAt),
   }),
 );

@@ -6,7 +6,7 @@
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_companion_daily_summaries()
+CREATE OR REPLACE FUNCTION public.astella_enqueue_companion_daily_summaries()
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -122,9 +122,9 @@ $$;
 
 --> statement-breakpoint
 
-GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_companion_daily_summaries() TO ailearn_worker;
+GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_daily_summaries() TO astella_worker;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_enqueue_companion_daily_summaries() IS
+COMMENT ON FUNCTION public.astella_enqueue_companion_daily_summaries() IS
   '桌宠日记调度：在用户本地时区 01:00 为前一天有活动的用户入队 companion_daily_summary（幂等）。';

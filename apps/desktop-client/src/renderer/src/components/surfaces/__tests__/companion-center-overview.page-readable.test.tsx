@@ -7,9 +7,9 @@ import {
   companionActivityTimelineV1Schema,
   companionDailySummaryV1Schema,
   companionHistoryPageV1Schema,
-} from "@ailearn/shared/companion-memory-desktop-contracts";
+} from "@astella/shared/companion-memory-desktop-contracts";
 import { useRoomStore } from "../../../app/room-store.ts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /**
  * 伴星中心「概览」这一块登记给伴星读的是什么（39d W2-7 的最后一块）。

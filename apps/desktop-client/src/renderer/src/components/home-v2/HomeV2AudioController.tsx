@@ -25,7 +25,7 @@ import {
 import type {
   CompanionVoicePlaybackOutcomeRequestV1,
   CompanionVoiceSpeakSegmentRequestV2,
-} from "@ailearn/shared/companion-voice-contracts";
+} from "@astella/shared/companion-voice-contracts";
 
 type HomeV2SoundKind = "page" | "footstep" | "magic" | "success";
 
@@ -470,11 +470,11 @@ export function HomeV2AudioController() {
   }, []);
 
   const synthesizeVoice = useCallback(async (text: string): Promise<AudioBuffer> => {
-    const speakApi = window.ailearn?.companion?.voice?.speak;
+    const speakApi = window.astella?.companion?.voice?.speak;
     if (!speakApi) throw new Error("语音通道还没准备好");
     // 图按需建：第一次解锁失败不该让这一整轮会话都没有声音。
     const graph = ensureGraph();
-    const response = await speakApi.call(window.ailearn.companion.voice, {
+    const response = await speakApi.call(window.astella.companion.voice, {
       meta: createRequestMeta(workspaceEpochRef.current ?? undefined),
       request: { version: 1, text },
     });
@@ -482,10 +482,10 @@ export function HomeV2AudioController() {
   }, [ensureGraph]);
 
   const synthesizeVoiceSegment = useCallback(async (request: CompanionVoiceSpeakSegmentRequestV2): Promise<AudioBuffer> => {
-    const speakApi = window.ailearn?.companion?.voice?.speakSegment;
+    const speakApi = window.astella?.companion?.voice?.speakSegment;
     if (!speakApi) throw new Error("语音通道还没准备好");
     const graph = ensureGraph();
-    const response = await speakApi.call(window.ailearn.companion.voice, {
+    const response = await speakApi.call(window.astella.companion.voice, {
       meta: createRequestMeta(workspaceEpochRef.current ?? undefined),
       request,
     });
@@ -506,9 +506,9 @@ export function HomeV2AudioController() {
       void pending.catch(() => notificationAudioCache.current.delete(clip));
       return pending;
     }
-    const speakApi = window.ailearn?.companion?.voice?.speak;
+    const speakApi = window.astella?.companion?.voice?.speak;
     if (!speakApi) throw new Error("notification voice unavailable");
-    const response = await speakApi.call(window.ailearn.companion.voice, {
+    const response = await speakApi.call(window.astella.companion.voice, {
       meta: createRequestMeta(workspaceEpochRef.current ?? undefined),
       request: { version: 1, text, purpose },
     });
@@ -520,9 +520,9 @@ export function HomeV2AudioController() {
    * 比"少一行统计"严重得多的失败，所以这里把所有异常咽掉。
    */
   const reportSegmentOutcome = useCallback((request: CompanionVoicePlaybackOutcomeRequestV1): void => {
-    const reportApi = window.ailearn?.companion?.voice?.reportPlaybackOutcome;
+    const reportApi = window.astella?.companion?.voice?.reportPlaybackOutcome;
     if (!reportApi) return;
-    void reportApi.call(window.ailearn.companion.voice, {
+    void reportApi.call(window.astella.companion.voice, {
       meta: createRequestMeta(workspaceEpochRef.current ?? undefined),
       request,
     }).catch(() => undefined);
@@ -601,8 +601,8 @@ export function HomeV2AudioController() {
       if (!graph || !allowed || !kind) return;
       playTransient(graph, kind);
     };
-    window.addEventListener("ailearn:home-v2-sound", play);
-    return () => window.removeEventListener("ailearn:home-v2-sound", play);
+    window.addEventListener("astella:home-v2-sound", play);
+    return () => window.removeEventListener("astella:home-v2-sound", play);
   }, []);
 
   useEffect(() => {
@@ -628,9 +628,9 @@ export function HomeV2AudioController() {
       stopCompanionSpeech();
       lastVoiceRef.current = { text, at: now };
 
-      const speakApi = window.ailearn?.companion?.voice?.speak;
+      const speakApi = window.astella?.companion?.voice?.speak;
       if (!speakApi) return;
-      void speakApi.call(window.ailearn.companion.voice, {
+      void speakApi.call(window.astella.companion.voice, {
         meta: createRequestMeta(workspaceEpochRef.current ?? undefined),
         request: { version: 1, text },
       })
@@ -659,9 +659,9 @@ export function HomeV2AudioController() {
         });
     };
 
-    window.addEventListener("ailearn:home-v2-speak", speak);
+    window.addEventListener("astella:home-v2-speak", speak);
     return () => {
-      window.removeEventListener("ailearn:home-v2-speak", speak);
+      window.removeEventListener("astella:home-v2-speak", speak);
       voiceRequestGenerationRef.current += 1;
       stopVoicePlayback();
     };

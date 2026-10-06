@@ -6,7 +6,7 @@
  * is pure so the deck geometry and the reason copy can be tested directly.
  */
 
-import type { ReviewQueueV2 } from "@ailearn/shared/review-queue-v2-contracts";
+import type { ReviewQueueV2 } from "@astella/shared/review-queue-v2-contracts";
 
 export type ReviewItem = ReviewQueueV2["items"][number];
 

@@ -10,7 +10,7 @@
 --
 -- ## 为什么是「淘汰」而不是「拒绝移入」
 --
--- 最直白的做法是像 resident 那样，在 `ailearn_move_companion_memory_budget_tier`
+-- 最直白的做法是像 resident 那样，在 `astella_move_companion_memory_budget_tier`
 -- 里拒绝超预算的移入。但那会造成一个荒谬的后果：**归档满了就再也删不掉记忆**
 -- （用户想删一条得先把它移出去，而移不出去）。容量上限绝不能变成功能锁。
 --
@@ -25,7 +25,7 @@
 
 -- 归档保留上限。与 0344 的 resident 一样是**条数 + 字节双预算**：
 -- 只看条数会让一条超长记忆占满整层，只看字节会让几千条短记忆挤进来。
-CREATE OR REPLACE FUNCTION public.ailearn_companion_memory_retention_limits()
+CREATE OR REPLACE FUNCTION public.astella_companion_memory_retention_limits()
 RETURNS TABLE (items integer, byte_count bigint)
 LANGUAGE sql
 STABLE
@@ -35,7 +35,7 @@ $$;
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_enforce_companion_memory_retention()
+CREATE OR REPLACE FUNCTION public.astella_enforce_companion_memory_retention()
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -49,7 +49,7 @@ DECLARE
   evicted integer := 0;
 BEGIN
   SELECT items, byte_count INTO limit_items, limit_bytes
-    FROM public.ailearn_companion_memory_retention_limits();
+    FROM public.astella_companion_memory_retention_limits();
 
   SELECT count(*)::integer, COALESCE(sum(octet_length(content)), 0)::bigint
     INTO archived_items, archived_bytes
@@ -109,8 +109,8 @@ $$;
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_companion_memory_retention_limits() FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.ailearn_enforce_companion_memory_retention() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_companion_memory_retention_limits() TO ailearn_api;
-GRANT EXECUTE ON FUNCTION public.ailearn_companion_memory_retention_limits() TO ailearn_worker;
-GRANT EXECUTE ON FUNCTION public.ailearn_enforce_companion_memory_retention() TO ailearn_api;
+REVOKE ALL ON FUNCTION public.astella_companion_memory_retention_limits() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_enforce_companion_memory_retention() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_companion_memory_retention_limits() TO astella_api;
+GRANT EXECUTE ON FUNCTION public.astella_companion_memory_retention_limits() TO astella_worker;
+GRANT EXECUTE ON FUNCTION public.astella_enforce_companion_memory_retention() TO astella_api;

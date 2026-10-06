@@ -14,10 +14,10 @@
 
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { AgentStoreError, queryRows, type AgentSqlExecutor } from "@ailearn/agent-host";
-import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
-import { noteExpansionDraftV1Schema, type NoteExpansionDraftV1 } from "@ailearn/shared/note-expansion-contracts";
-import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
+import { AgentStoreError, queryRows, type AgentSqlExecutor } from "@astella/agent-host";
+import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
+import { noteExpansionDraftV1Schema, type NoteExpansionDraftV1 } from "@astella/shared/note-expansion-contracts";
+import { noteVisibleSqlText } from "@astella/shared/note-visibility";
 
 /** 草稿批次行的能力名：读侧要证明的正是「这是一次 note_expansion_generate 的成果」。 */
 export const EXPANSION_CAPABILITY = "note_expansion_generate";

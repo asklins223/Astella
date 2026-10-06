@@ -2,7 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { GatewayResultV1, RequestMetaV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { GatewayResultV1, RequestMetaV1 } from "@astella/shared/desktop-ipc-contracts";
 import { HudAccountCard } from "../HudAccountCard.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
 
@@ -15,7 +15,7 @@ import { useRoomStore } from "../../../app/room-store.ts";
 
 afterEach(() => {
   cleanup();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   useRoomStore.setState({ accountIdentity: null, accountAvatar: null });
 });
 
@@ -39,7 +39,7 @@ function stubProfile(profile: { displayName: string | null; avatarUrl: string | 
   const getAvatar = vi.fn(async (_input: { meta: RequestMetaV1; request: { version: 1; objectKey: string } }) =>
     ok({ version: 1 as const, ...avatarBytes }));
   const logout = vi.fn(async () => ok({ loggedOut: true as const, serverRevoked: true as const }));
-  Object.defineProperty(window, "ailearn", {
+  Object.defineProperty(window, "astella", {
     configurable: true,
     value: { auth: { getProfile, getAvatar, logout } },
   });

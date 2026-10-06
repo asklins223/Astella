@@ -5,7 +5,7 @@ import {
   AgentStoreError, agentHistoryRevisionWindow, decodeAgentRunListCursor, encodeAgentRunListCursor,
   projectAgentRunHistoryV1, resolveAgentHistoryLimit, resolveAgentRunListLimit,
   type AgentRevisionRow,
-} from "@ailearn/agent-host";
+} from "@astella/agent-host";
 import { createAgentRouteHandlers } from "../routes.ts";
 import { closeDatabase } from "../../../db/client.ts";
 

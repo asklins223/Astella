@@ -9,7 +9,7 @@
  *
  * 与 `today-log.ts` 同一原则：判定逻辑离开 JSX，可以脱离渲染器测。
  */
-import type { AllWorkspacesStatsOverviewV1, StatsOverviewV1 } from "@ailearn/shared/stats-overview-contracts";
+import type { AllWorkspacesStatsOverviewV1, StatsOverviewV1 } from "@astella/shared/stats-overview-contracts";
 
 /** 一行里的四个数字。选它们是因为它们分别回答"有什么/学什么/为什么/该做什么"。 */
 export type AllSpacesMetric = {

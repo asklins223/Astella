@@ -15,13 +15,13 @@
  *
  * 幂等：ON CONFLICT (qualification_id) DO NOTHING。
  *
- * 运行（apps/api 目录）：DATABASE_URL_MIGRATOR="postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn"
+ * 运行（apps/api 目录）：DATABASE_URL_MIGRATOR="postgres://astella:astella_dev@127.0.0.1:5432/astella"
  *   npx tsx src/scripts/seed-interaction-qualifications.ts
  */
 
 import postgres from "postgres";
 import { createHash } from "node:crypto";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = process.env.DATABASE_URL_MIGRATOR ?? testDatabaseUrl("DATABASE_URL_API");
 const sql = postgres(CONN, { max: 2 });

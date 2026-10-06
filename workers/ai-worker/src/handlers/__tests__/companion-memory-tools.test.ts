@@ -23,7 +23,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { COMPANION_AGENT_TOOL_DEFINITIONS } from "@ailearn/shared/companion-agent-registry";
+import { COMPANION_AGENT_TOOL_DEFINITIONS } from "@astella/shared/companion-agent-registry";
 
 import { executeCompanionMemoryTool } from "../companion-memory-tools.ts";
 import { CompanionToolError } from "../companion-tool-result.ts";

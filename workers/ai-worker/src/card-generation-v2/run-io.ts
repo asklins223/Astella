@@ -25,11 +25,11 @@ import {
   assembleCandidateEvidenceBindingPlanV2,
   type SealedEvidenceEntryV2,
   type AssemblerEvidenceManifest,
-} from "@ailearn/shared/card-generation-v2-pipeline";
-import { computeCandidateEvidenceSetHashV2 } from "@ailearn/shared/card-generation-v2-hashing";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+} from "@astella/shared/card-generation-v2-pipeline";
+import { computeCandidateEvidenceSetHashV2 } from "@astella/shared/card-generation-v2-hashing";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
 // run 事件写入复用制卡领域包的唯一实现；`insertEvent` 原样转出，不在这里留第二份。
-import { insertEvent, insertEventBatch } from "@ailearn/card-generation";
+import { insertEvent, insertEventBatch } from "@astella/card-generation";
 import {
   generationSemanticSpecV2Schema,
   generationInputSnapshotV2Schema,
@@ -37,7 +37,7 @@ import {
   type GenerationSemanticSpecV2,
   type LearningCardCandidateRevisionV2,
   type CardHintPairV2,
-} from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
 
 /**
  * 单条证据文本进入 prompt 的字符上限（评审 M7）。
@@ -469,7 +469,7 @@ export async function insertRepairedCandidateV2(
 }
 
 // ─── 确定性辅助 ──────────────────────────────────────────────────────────
-// 确定性 Grounding 的实现在 `@ailearn/shared/card-generation-v2-pipeline`（W7-1 刀a 上移，V3 共用）。
+// 确定性 Grounding 的实现在 `@astella/shared/card-generation-v2-pipeline`（W7-1 刀a 上移，V3 共用）。
 
 
 /**
@@ -507,7 +507,7 @@ export async function insertBindingPlanRow(
 }
 
 /**
- * 单条 V2 运行事件写入：转出制卡领域包 `@ailearn/card-generation` 的那一个实现，
+ * 单条 V2 运行事件写入：转出制卡领域包 `@astella/card-generation` 的那一个实现，
  * 本模块不保留第二份 MAX+INSERT。
  *
  * 并发前提照旧，且不由这段写入保证：`event_seq` 由 MAX+1 分配，MAX+1 本身不保证

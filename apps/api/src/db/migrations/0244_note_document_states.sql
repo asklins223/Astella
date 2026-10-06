@@ -65,4 +65,4 @@ CREATE POLICY note_document_states_workspace_isolation
 -- worker 不碰这张表，就不给它权限——多一张表能写的角色，就多一处绕过 RLS 上下文的可能。
 -- 不依赖 ALTER DEFAULT PRIVILEGES：dev 栈没有跑 compose 里那个一次性的 role-grants
 -- 服务，缺这一行的症状是"读写静默失败"。
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.note_document_states TO ailearn_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.note_document_states TO astella_api;

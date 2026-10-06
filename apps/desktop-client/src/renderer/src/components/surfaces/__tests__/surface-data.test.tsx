@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, render, waitFor } from "@testing-library/react";
-import type { GatewayResultV1, SessionContextV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import type { NoteBlockProjectionV1 } from "@ailearn/shared/note-projection-contracts";
+import type { GatewayResultV1, SessionContextV1 } from "@astella/shared/desktop-ipc-contracts";
+import type { NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useSurfaceProjection, formatRelative, formatSourceStamp, noteBodyText, parseImageBlock, type SurfaceProjectionOptions } from "../notebook/surface-data.tsx";
 
@@ -39,7 +39,7 @@ function ok<T>(data: T): GatewayResultV1<T> {
 }
 
 function installApi() {
-  Object.defineProperty(window, "ailearn", {
+  Object.defineProperty(window, "astella", {
     configurable: true,
     value: { auth: { getState: vi.fn().mockResolvedValue(ok(session(7))) } },
   });
@@ -63,7 +63,7 @@ function defineVisibility(value: DocumentVisibilityState) {
 afterEach(() => {
   cleanup();
   latest = null;
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   Reflect.deleteProperty(document, "visibilityState");
   vi.restoreAllMocks();
 });

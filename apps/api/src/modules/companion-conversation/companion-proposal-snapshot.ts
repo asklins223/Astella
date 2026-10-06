@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { companionProposalSnapshotV1Schema } from "@ailearn/shared";
+import { companionProposalSnapshotV1Schema } from "@astella/shared";
 import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
 import { CompanionConversationError } from "./turn/turn-service.ts";
 

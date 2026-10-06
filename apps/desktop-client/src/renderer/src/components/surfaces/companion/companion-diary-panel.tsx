@@ -1,5 +1,5 @@
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
-import type { CompanionDailyFailureReasonV1,CompanionDailySummaryV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
+import type { CompanionDailyFailureReasonV1,CompanionDailySummaryV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { CalendarDays,ChevronDown,ChevronLeft,ChevronRight } from "lucide-react";
 import { useEffect,useMemo,useRef,useState } from "react";
 import { useRoomStore } from "../../../app/room-store";

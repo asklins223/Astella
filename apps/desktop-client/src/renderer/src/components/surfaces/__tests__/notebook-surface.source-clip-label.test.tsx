@@ -24,7 +24,7 @@ const ok = <T,>(data: T) => ({ ok: true as const, workspaceEpoch: 1, data });
 
 /** 三段片段：序号 0/1/2，条数 3——正好把"序号"和"条数"这两个数分开。 */
 function installApi() {
-  Object.defineProperty(window, "ailearn", {
+  Object.defineProperty(window, "astella", {
     configurable: true,
     value: {
       contract: { enabledRoutes: ["note.detail", "source.detail"] },
@@ -101,7 +101,7 @@ async function show(openBag = true) {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   useRoomStore.setState({ activeNoteRef: null, surface: null });
 });
 

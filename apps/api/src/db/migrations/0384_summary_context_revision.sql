@@ -39,7 +39,7 @@ ALTER TABLE public.conversation_summaries
 --
 -- 追加若也 +1，这份会话的所有摘要会在第一条新消息到达时全部失效，而摘要器是周期
 -- 跑的——于是大多数时候注入的会话历史里根本没有摘要，那是对现状的倒退而不是治理。
-CREATE OR REPLACE FUNCTION public.ailearn_bump_conversation_context_revision()
+CREATE OR REPLACE FUNCTION public.astella_bump_conversation_context_revision()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE target uuid;
 BEGIN
@@ -53,7 +53,7 @@ END $$;
 DROP TRIGGER IF EXISTS companion_messages_context_revision_update ON public.companion_messages;
 CREATE TRIGGER companion_messages_context_revision_update
   AFTER UPDATE OR DELETE ON public.companion_messages
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_bump_conversation_context_revision();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_bump_conversation_context_revision();
 
 -- 残留缺口（如实记录，不假装覆盖到了）：**乱序补写**一条落在既有覆盖区间内的消息
 -- 不动修订号，因此读取侧不会立刻作废那份摘要。摘要器下一次运行时会在提交事务里重算

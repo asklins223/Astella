@@ -24,10 +24,10 @@ Postgres 容器可 `docker exec`。
 并发消费测试创建的真实 job，与测试自己的 `companion_stream_events` seq 写入撞车
 （`duplicate key ... companion_stream_events_pkey`），以及把 run 提前推进到终态
 （`supersedesGeneration mismatch`）。跑法：
-    docker stop ailearn-dev-worker-1
-    cd apps/api && DATABASE_URL_API=postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn \
+    docker stop astella-dev-worker-1
+    cd apps/api && DATABASE_URL_API=postgres://astella:astella_dev@127.0.0.1:5432/astella \
         npm run test:companion:postgres
-    docker start ailearn-dev-worker-1
+    docker start astella-dev-worker-1
 """
 from __future__ import annotations
 
@@ -44,8 +44,8 @@ import urllib.request
 import uuid
 
 BASE = "http://127.0.0.1:4000"
-EMAIL = "owner@ailearn.local"
-PASSWORD = "ailearn_owner"
+EMAIL = "owner@astella.local"
+PASSWORD = "astella_owner"
 
 
 def post(path: str, body: dict, token: str | None = None, extra: dict | None = None) -> dict:
@@ -62,7 +62,7 @@ def post(path: str, body: dict, token: str | None = None, extra: dict | None = N
 
 def sql(query: str) -> str:
     out = subprocess.run(
-        ["docker", "exec", "ailearn-dev-postgres-1", "psql", "-U", "ailearn", "-d", "ailearn",
+        ["docker", "exec", "astella-dev-postgres-1", "psql", "-U", "astella", "-d", "astella",
          "-t", "-A", "-F", "\t", "-c", query],
         capture_output=True, text=True)
     return out.stdout.strip()
@@ -241,7 +241,7 @@ def reap_orphaned_runs() -> int:
     job 已 dead 但 run 还挂在非终态时，该会话之后**每一轮**都会 409 RUN_ALREADY_ACTIVE。
     worker 每 30s 的回收 tick 会处理，但验证脚本等不起也不该靠它，直接调同一个函数。
     """
-    out = sql("SELECT public.ailearn_reclaim_orphaned_companion_runs();")
+    out = sql("SELECT public.astella_reclaim_orphaned_companion_runs();")
     return int(out) if out.isdigit() else 0
 
 

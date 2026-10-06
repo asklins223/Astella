@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { eq } from "drizzle-orm";
-import { userAiSettings } from "@ailearn/shared/db-schema/identity";
+import { userAiSettings } from "@astella/shared/db-schema/identity";
 import { withWorkspaceTransaction } from "../../db/client.ts";
 
 /**

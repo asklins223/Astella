@@ -17,11 +17,11 @@
 import { sql } from "drizzle-orm";
 import { isFormalAnswerInProgress } from "../lib/formal-answer-signal.ts";
 import { createHash } from "node:crypto";
-import { companionLeakGateVersionV1 } from "@ailearn/shared/companion-leak-gates";
-import { stableStringify, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { companionLeakGateVersionV1 } from "@astella/shared/companion-leak-gates";
+import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
 import type { WorkerTransaction } from "../db.ts";
-import { readCompanionThoughtJobPayload } from "@ailearn/shared";
-import { PET_PERSONA_PRESET_VERSION } from "@ailearn/shared/pet-persona-presets";
+import { readCompanionThoughtJobPayload } from "@astella/shared";
+import { PET_PERSONA_PRESET_VERSION } from "@astella/shared/pet-persona-presets";
 import {
   proactiveCadenceMs,
   type CompanionAvailabilityV1,
@@ -29,12 +29,12 @@ import {
   type CompanionQuietHours,
   POLICY_LIMITS,
   evaluateProactivePolicy,
-} from "@ailearn/shared/companion-proactive-policy";
+} from "@astella/shared/companion-proactive-policy";
 import {
   AMBIENT_QUOTA_PER_USAGE,
   continuesUsageSession,
   evaluateAmbientQuota,
-} from "@ailearn/shared/companion-proactive-quota";
+} from "@astella/shared/companion-proactive-quota";
 import { logger } from "../lib/logger.ts";
 import { assertJobLease, JobLeaseLostError, throwIfJobAborted, withJobTransaction } from "../lib/job-lease.ts";
 import { createEmbeddingProvider } from "../lib/ai-provider.ts";

@@ -6,6 +6,6 @@
 -- were deleted together. Keep the historical migrations intact, but remove
 -- the dead runtime database objects from existing development databases.
 
-DROP FUNCTION IF EXISTS public.ailearn_claim_commit_outbox(text, integer, timestamptz);
-DROP FUNCTION IF EXISTS public.ailearn_purge_processed_outbox_ttl(integer, integer);
+DROP FUNCTION IF EXISTS public.astella_claim_commit_outbox(text, integer, timestamptz);
+DROP FUNCTION IF EXISTS public.astella_purge_processed_outbox_ttl(integer, integer);
 DROP TABLE IF EXISTS public.learning_session_processing_outbox;

@@ -8,12 +8,12 @@ import {
   reindexWorkspaceSearch,
   search,
 } from "../modules/search/service.ts";
-import { notes } from "@ailearn/shared/db-schema/note";
-import { desktopSearchPageSchema } from "@ailearn/shared/desktop-surface-contracts";
+import { notes } from "@astella/shared/db-schema/note";
+import { desktopSearchPageSchema } from "@astella/shared/desktop-surface-contracts";
 import {
   learningObjectiveRevisionsV2,
   learningObjectiveOriginsV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/card-generation-v2";
 
 const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 // 搜索的判据是查看者，所以每个调用点都要传一个（批次 4.5）。

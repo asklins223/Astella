@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import type { NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
+import type { NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 import { plainCompanionBubbleText } from "../../companion/companion-markdown";
 
 /** The short preview stays inside the visible reading paper, separate from selection text. */

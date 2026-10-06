@@ -9,10 +9,10 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { ArrowLeft, ArrowRight, BookOpen, ChevronDown, Clock3, Leaf, RotateCcw } from "lucide-react";
-import type { LearningObjectiveSurfaceV3 } from "@ailearn/shared/learning-objective-surface-contracts";
-import type { ReviewQueueV2 } from "@ailearn/shared/review-queue-v2-contracts";
-import type { AnswerModePreferenceV1 } from "@ailearn/shared/companion-shell-contracts";
-import { answerModeToResponsePreference } from "@ailearn/shared/companion-shell-contracts";
+import type { LearningObjectiveSurfaceV3 } from "@astella/shared/learning-objective-surface-contracts";
+import type { ReviewQueueV2 } from "@astella/shared/review-queue-v2-contracts";
+import type { AnswerModePreferenceV1 } from "@astella/shared/companion-shell-contracts";
+import { answerModeToResponsePreference } from "@astella/shared/companion-shell-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import {
   createCommandId,
@@ -24,8 +24,8 @@ import {
 import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
-import { DUE_REVIEW_START_LABEL } from "@ailearn/shared/review-action-copy";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
+import { DUE_REVIEW_START_LABEL } from "@astella/shared/review-action-copy";
 import { matchesReviewTarget } from "../../review-focus";
 import {
   RECALL_READ_NOTE_LABEL_V1,
@@ -33,7 +33,7 @@ import {
   recallWaitingCueV1,
   recallWaitingLineV1,
 } from "../notebook/recall-waiting-presenter.ts";
-import { RECALL_REVEAL_COPY_V1, type RecallWaitingKindV1 } from "@ailearn/shared/recall-waiting-v2-contracts";
+import { RECALL_REVEAL_COPY_V1, type RecallWaitingKindV1 } from "@astella/shared/recall-waiting-v2-contracts";
 import { SurfaceDataState, useDayAnchor } from "../notebook/surface-data.tsx";
 import {DECK_DRAG_SLOP, REVIEW_WINDOW_SIZE, deckDragOutcome, deckDragShift, reviewDeckPosition, reviewDeckRound, reviewOverdueLabel, reviewReasonFacts, reviewReasonSentence, reviewReasonTag, reviewSequenceAfter, reviewStartabilityLabel, reviewFormalValidationBlockedLabel, reviewWindowStart, sameReviewSubjectAsEarlierLabel, uniqueReviewItems, type ReviewItem} from "./review-deck.ts";
 import type { LoadedReviewQueue, ReviewFailure } from "./review-types";
@@ -159,8 +159,8 @@ export function ReviewSurface() {
   const endDeckGestureRef = useRef<(outcome: "release" | "cancel") => void>(() => {});
 
   const readSession = useCallback(async () => {
-    if (!window.ailearn) throw new Error("desktop API is unavailable");
-    const response = await window.ailearn.auth.getState({ meta: createRequestMeta(epochRef.current) });
+    if (!window.astella) throw new Error("desktop API is unavailable");
+    const response = await window.astella.auth.getState({ meta: createRequestMeta(epochRef.current) });
     if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
     const session = unwrapGatewayResult(response);
     if (session.status !== "authenticated" || !session.workspace) {
@@ -171,8 +171,8 @@ export function ReviewSurface() {
 
   /** 读一页到期项。游标是服务端签发的不透明值，客户端只负责原样回传。 */
   const fetchPage = useCallback(async (cursor: string | undefined) => {
-    if (!window.ailearn) throw new Error("desktop API is unavailable");
-    const response = await window.ailearn.review.getQueue({
+    if (!window.astella) throw new Error("desktop API is unavailable");
+    const response = await window.astella.review.getQueue({
       meta: createRequestMeta(epochRef.current),
       ...(cursor ? { cursor } : {}),
       limit: REVIEW_PAGE_SIZE,
@@ -259,11 +259,11 @@ export function ReviewSurface() {
   }, [visibleItems, objectives]);
 
   useEffect(() => {
-    if (!missingObjectiveKey || !window.ailearn) return;
+    if (!missingObjectiveKey || !window.astella) return;
     let active = true;
     const requested = missingObjectiveKey.split(",");
     void Promise.allSettled(requested.map(async (objectiveId) => {
-      const response = await window.ailearn.objective.get({ meta: createRequestMeta(epochRef.current), objectiveId });
+      const response = await window.astella.objective.get({ meta: createRequestMeta(epochRef.current), objectiveId });
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       return { objectiveId, surface: unwrapGatewayResult(response) };
     }))
@@ -567,7 +567,7 @@ export function ReviewSurface() {
    * 编排）：这一个值只是开跑时的一个提示参数，不该因为偏好读失败而点不动「开始复习」。
    */
   const readAnswerMode = useCallback(async (): Promise<AnswerModePreferenceV1> => {
-    const gateway = window.ailearn;
+    const gateway = window.astella;
     if (!gateway) return "any";
     try {
       const response = await gateway.companion.answerMode.get({ meta: createRequestMeta(epochRef.current) });
@@ -590,12 +590,12 @@ export function ReviewSurface() {
    * 把这次提醒关掉，也不会改这一轮的能力证据。
    */
   const readNoteBeforeRecall = async (item: ReviewItem, kind: RecallWaitingKindV1) => {
-    if (!window.ailearn || recallRevealing) return;
+    if (!window.astella || recallRevealing) return;
     const commandId = `recall-source-reveal-${item.reviewId}`;
     setRecallRevealing(true);
     setRecallRevealNotice(null);
     try {
-      const response = await window.ailearn.review.recordRecallSourceReveal({
+      const response = await window.astella.review.recordRecallSourceReveal({
         meta: createRequestMeta(epochRef.current),
         objectiveId: item.objectiveId,
         waitingKind: kind,
@@ -623,7 +623,7 @@ export function ReviewSurface() {
   };
 
   const startReview = async (item: ReviewItem) => {
-    if (item.startability.kind !== "ready" || commandBusyRef.current || !window.ailearn) return;
+    if (item.startability.kind !== "ready" || commandBusyRef.current || !window.astella) return;
     commandBusyRef.current = true;
     selectionIntentRef.current += 1;
     const commandId = startCommandIdsRef.current.get(item.reviewId) ?? createCommandId("start-review");
@@ -639,7 +639,7 @@ export function ReviewSurface() {
     setRecallRevealNotice(null);
     const answerMode = await readAnswerMode();
     try {
-      const response = await window.ailearn.learningRun.start({
+      const response = await window.astella.learningRun.start({
         meta: createRequestMeta(epochRef.current),
         commandId,
         request: {
@@ -692,14 +692,14 @@ export function ReviewSurface() {
    * 但 official 到期时间不变——这不是完成复习，只是「明天再提醒我」。
    */
   const deferFront = async (item: ReviewItem) => {
-    if (commandBusyRef.current || !window.ailearn) return;
+    if (commandBusyRef.current || !window.astella) return;
     commandBusyRef.current = true;
     selectionIntentRef.current += 1;
     setDeferringReviewId(item.reviewId);
     setDeferredNotice(null);
     setFailure(null);
     try {
-      const response = await window.ailearn.review.defer({
+      const response = await window.astella.review.defer({
         meta: createRequestMeta(epochRef.current),
         request: {
           scheduleId: item.scheduleId,

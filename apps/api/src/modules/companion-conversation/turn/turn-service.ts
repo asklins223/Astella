@@ -9,23 +9,23 @@
  */
 
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import { companionLeakGateVersionV1 } from "@ailearn/shared/companion-leak-gates";
+import { companionLeakGateVersionV1 } from "@astella/shared/companion-leak-gates";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../../db/client.ts";
 import { withWorkspaceTransaction } from "../../../db/client.ts";
 import { createJob } from "../../job/service.ts";
-import { type CompanionGroundedTutorGrantV1 } from "@ailearn/shared";
-import { DomainError } from "@ailearn/shared";
-import { sha256Utf8V1 } from "@ailearn/shared/content-hash";
-import { canonicalJsonV1 } from "@ailearn/shared/content-hash";
+import { type CompanionGroundedTutorGrantV1 } from "@astella/shared";
+import { DomainError } from "@astella/shared";
+import { sha256Utf8V1 } from "@astella/shared/content-hash";
+import { canonicalJsonV1 } from "@astella/shared/content-hash";
 import {
   createCompanionTurnRequestV1Schema,
   createCompanionTurnResponseV1Schema,
   type CompanionPublicErrorCodeV1,
   type CreateCompanionTurnRequestV1,
-} from "@ailearn/shared";
-import { noteImageAssets } from "@ailearn/shared/db-schema/note";
-import { sourceImageObjectKeyFromUrl, sourceImageUrlFromObjectKey } from "@ailearn/shared/source-image-contracts";
+} from "@astella/shared";
+import { noteImageAssets } from "@astella/shared/db-schema/note";
+import { sourceImageObjectKeyFromUrl, sourceImageUrlFromObjectKey } from "@astella/shared/source-image-contracts";
 import { resolveAuthSurfaceManifestSecret } from "../../../companion-contracts/auth-surface.ts";
 import { ensureCompanionAccountState, getCompanionAccountEpoch } from "./companion-account-epoch.ts";
 import { reclaimExpiredCompanionProposals, invalidateSupersededRunProposals } from "./companion-proposal-expiry.ts";
@@ -39,7 +39,7 @@ import {
   companionMessages,
   companionStreamEvents,
   companionTurnRuns,
-} from "@ailearn/shared/db-schema/companion-conversations";
+} from "@astella/shared/db-schema/companion-conversations";
 
 export {
   companionConversations,

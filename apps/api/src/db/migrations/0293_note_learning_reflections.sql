@@ -47,5 +47,5 @@ END; $$ LANGUAGE plpgsql;
 CREATE TRIGGER nlreflection_update_guard BEFORE UPDATE ON public.note_learning_reflections
   FOR EACH ROW EXECUTE FUNCTION public.guard_note_learning_reflection_update();
 --> statement-breakpoint
-GRANT SELECT,INSERT,UPDATE,DELETE ON public.note_learning_reflections TO ailearn_api;
-GRANT ALL ON public.note_learning_reflections TO ailearn_migrator;
+GRANT SELECT,INSERT,UPDATE,DELETE ON public.note_learning_reflections TO astella_api;
+GRANT ALL ON public.note_learning_reflections TO astella_migrator;

@@ -7,7 +7,7 @@ import type {
   GatewayResultV1,
   SessionContextV1,
   WorkspaceSummaryV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import { HudSpaceMenu, SPACE_SEARCH_MINIMUM } from "../HudSpaceMenu.tsx";
 import {
   SPACE_MENU_REFRESH_EVENT,
@@ -30,7 +30,7 @@ subscribeGateInvalidation((code) => { gateInvalidations.push(code); });
 
 afterEach(() => {
   cleanup();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   useRoomStore.setState({ activeRunId: null });
   gateInvalidations.length = 0;
   clearSpaceArrival();
@@ -79,7 +79,7 @@ const SECOND_HOME = workspace("11111111-9999-4999-8999-999999999999", "第二个
 const MANY_SPACES = [CURRENT, OTHER, JOINED, LAB, NIGHT, STUDIO, QUANTUM];
 
 function installApi(api: unknown) {
-  Object.defineProperty(window, "ailearn", { configurable: true, value: api });
+  Object.defineProperty(window, "astella", { configurable: true, value: api });
 }
 
 /** 列表读取成功的最小 API：绝大多数用例只关心行怎么排、怎么读。 */

@@ -13,7 +13,7 @@ import {
   noteAnnotationTaskV1Schema,
   noteAnnotationLatestTaskQueryV1Schema,
   noteAnnotationLatestTaskV1Schema,
-} from "@ailearn/shared/note-annotation-contracts";
+} from "@astella/shared/note-annotation-contracts";
 import { changeNoteAnnotation, createNoteAnnotation, listNoteAnnotations, NoteAnnotationError, startNoteAnnotationTask, getLatestNoteAnnotationTask, getNoteAnnotationTask } from "./service.ts";
 
 export async function noteAnnotationRoutes(app: FastifyInstance) {

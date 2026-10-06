@@ -13,14 +13,14 @@
 -- 加 FK 前先清孤儿：这张表没有用户数据，孤儿只可能来自夹具删行，直接删。
 --
 -- ─── 2. 35 张表 RLS enabled 但没有 FORCE ───
--- 审查原文：「33 张表 RLS enabled 但未 FORCE（表属主 `ailearn_migrator` 有
+-- 审查原文：「33 张表 RLS enabled 但未 FORCE（表属主 `astella_migrator` 有
 -- `rolbypassrls`），与 `rls-policies-postgres.integration.ts:384-390` 自称的不变量
 -- 不一致」。没有 FORCE 时，策略对**表属主**不生效——也就是"换个角色连上去就绕过"。
--- 生产里跑业务的是 `ailearn_api` / `ailearn_worker`（都不是属主），所以这一条
+-- 生产里跑业务的是 `astella_api` / `astella_worker`（都不是属主），所以这一条
 -- 不是线上漏洞；但它是"我读到的策略真的是在挡"这件事的前提，而审查反复撞到的
 -- 正是"看起来有防线、其实没生效"。
 --
--- 迁移本身不受影响：`DATABASE_URL_MIGRATOR` 连的 `ailearn` 是 superuser +
+-- 迁移本身不受影响：`DATABASE_URL_MIGRATOR` 连的 `astella` 是 superuser +
 -- `rolbypassrls`，FORCE 只对属主之外的普通角色生效（见 PostgreSQL 文档
 -- "FORCE ROW LEVEL SECURITY ... except when the row owner is the table owner"
 -- 的例外是 superuser 与 BYPASSRLS）。

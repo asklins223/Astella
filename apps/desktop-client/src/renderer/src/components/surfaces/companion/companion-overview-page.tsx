@@ -13,10 +13,10 @@ export function CompanionOverviewPage({ refreshKey, onGo, onDiary }: { refreshKe
   const resource = useSurfaceProjection(async ({ workspaceEpoch }) => {
     const meta = () => createRequestMeta(workspaceEpoch);
     const [persona, diary, history, activity] = await Promise.all([
-      readSection(() => window.ailearn.companion.persona.get({ meta: meta() })),
-      readSection(() => window.ailearn.companion.daily.get({ meta: meta() })),
-      readSection(() => window.ailearn.companion.history.list({ meta: meta(), query: { limit: 10 } })),
-      readSection(() => window.ailearn.companion.activity.timeline({ meta: meta() })),
+      readSection(() => window.astella.companion.persona.get({ meta: meta() })),
+      readSection(() => window.astella.companion.daily.get({ meta: meta() })),
+      readSection(() => window.astella.companion.history.list({ meta: meta(), query: { limit: 10 } })),
+      readSection(() => window.astella.companion.activity.timeline({ meta: meta() })),
     ]);
     return { persona, diary, history, activity };
   }, [refreshKey], { refreshOnFocus: true });

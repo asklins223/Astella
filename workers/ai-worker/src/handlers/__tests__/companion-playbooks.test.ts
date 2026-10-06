@@ -13,7 +13,7 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentSqlExecutor } from "@ailearn/agent-host";
+import type { AgentSqlExecutor } from "@astella/agent-host";
 
 import {
   PLAYBOOK_CATALOG_LIMIT,

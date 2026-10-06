@@ -354,7 +354,7 @@ async function main() {
   setReleaseInfo(releaseVersion, releaseCommit, releaseMigrations);
 
   // 2026-10-03：池上限是静态值，启动时设一次即可。有了这个分母，
-  // `ailearn_db_pool_active_connections / ailearn_db_pool_max_connections`
+  // `astella_db_pool_active_connections / astella_db_pool_max_connections`
   // 才能直接当饱和度告警——而饱和度是 postgres.js 不公开排队计数时
   // 唯一可靠的"池在排队"信号。
   dbPoolMaxConnections.set(dbPoolOptionsMax());
@@ -415,7 +415,7 @@ async function main() {
   startCompanionNotifyListener(
     process.env.DATABASE_URL_API?.trim() ??
       process.env.DATABASE_URL?.trim() ??
-      "postgres://ailearn:ailearn_dev@postgres:5432/ailearn",
+      "postgres://astella:astella_dev@postgres:5432/astella",
   );
   await app.register(learningRunRoutes);
   // 39d W5-5：§14.2 的争议与更正。与 learningRunRoutes 分开注册而不是并进去，
@@ -630,13 +630,13 @@ async function main() {
         const [poolRow, serverRow, migRow] = await Promise.all([
           // 池饱和度：只看**本进程**的连接。此前这条查的是全库所有进程，
           // API 与 worker 的连接混在一个数里，谁也看不出自己的池有没有打满。
-          // application_name 由 db/client.ts 给连接池设置（'ailearn_api'）。
+          // application_name 由 db/client.ts 给连接池设置（'astella_api'）。
           // 同时排除本连接自己，否则活跃数永远至少有 1，饱和度算不出真信号。
           db.execute(sql`
             SELECT count(*)::int AS n
             FROM pg_stat_activity
             WHERE datname = current_database()
-              AND application_name = 'ailearn_api'
+              AND application_name = 'astella_api'
               AND pid <> pg_backend_pid()
           `),
           // 全库连接数：副本数 × 池上限 对 max_connections 的预算只看这个。

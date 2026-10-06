@@ -9,7 +9,7 @@
 --> statement-breakpoint
 -- revision=1 时「这一版开始的时间」就是建目标的时间，这是事实；已经是 revision>1
 -- 的老目标，其当前版起点确实不可知，留空——迁移时间不是它开始的时间。
--- FORCE RLS 连表 owner 也要过策略，所以这条回填靠 ailearn_migrator 的 BYPASSRLS。
+-- FORCE RLS 连表 owner 也要过策略，所以这条回填靠 astella_migrator 的 BYPASSRLS。
 ALTER TABLE public.agent_runs ADD COLUMN revision_started_at timestamptz;
 UPDATE public.agent_runs SET revision_started_at = created_at
   WHERE revision = 1 AND revision_started_at IS NULL;
@@ -47,13 +47,13 @@ CREATE TABLE public.agent_run_revisions (
 ALTER TABLE public.agent_run_revisions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.agent_run_revisions FORCE ROW LEVEL SECURITY;
 CREATE POLICY owner_scope ON public.agent_run_revisions FOR ALL
-  USING (public.ailearn_agent_scope_current(workspace_id,user_id))
-  WITH CHECK (public.ailearn_agent_scope_current(workspace_id,user_id));
+  USING (public.astella_agent_scope_current(workspace_id,user_id))
+  WITH CHECK (public.astella_agent_scope_current(workspace_id,user_id));
 
 -- 最小权限：只有追加与读取。UPDATE/DELETE 一律不给，历史是凭据不是可改的状态。
 -- worker 也要写：伴星的 agent_revise_goal / agent_control_goal 工具走的是 worker
 -- 宿主上的同一个 store，存档就发生在那个事务里。
--- roles.sql 的 ALTER DEFAULT PRIVILEGES 会在建表时自动给 ailearn_api 整套 CRUD，
+-- roles.sql 的 ALTER DEFAULT PRIVILEGES 会在建表时自动给 astella_api 整套 CRUD，
 -- 所以这里显式收回——迁移一落地权限就已经是对的，不寄托在之后的 bootstrap 上。
-REVOKE ALL ON public.agent_run_revisions FROM PUBLIC, ailearn_api, ailearn_worker;
-GRANT SELECT,INSERT ON public.agent_run_revisions TO ailearn_api, ailearn_worker;
+REVOKE ALL ON public.agent_run_revisions FROM PUBLIC, astella_api, astella_worker;
+GRANT SELECT,INSERT ON public.agent_run_revisions TO astella_api, astella_worker;

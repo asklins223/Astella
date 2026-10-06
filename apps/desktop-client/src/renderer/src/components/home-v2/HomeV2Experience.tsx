@@ -129,7 +129,7 @@ export function HomeV2Provider({ children }: { readonly children: ReactNode }) {
       ? document.activeElement.id
       : HOME_V2_REGION_TRIGGER_IDS[nextZone];
     setZone(nextZone);
-    window.dispatchEvent(new CustomEvent("ailearn:home-v2-sound", { detail: { kind: "footstep" } }));
+    window.dispatchEvent(new CustomEvent("astella:home-v2-sound", { detail: { kind: "footstep" } }));
   }, [setZone]);
 
   const exitRegion = useCallback(() => {
@@ -251,7 +251,7 @@ export function HomeV2Provider({ children }: { readonly children: ReactNode }) {
       ? document.activeElement
       : null;
     setSelectedFeatureId(featureId);
-    window.dispatchEvent(new CustomEvent("ailearn:home-v2-sound", { detail: { kind: "page" } }));
+    window.dispatchEvent(new CustomEvent("astella:home-v2-sound", { detail: { kind: "page" } }));
   }, []);
 
   const closeFeatureNotice = useCallback((restoreFocus = true) => {
@@ -351,13 +351,13 @@ export function HomeV2Provider({ children }: { readonly children: ReactNode }) {
       const requested = (event as CustomEvent<{ zone?: HomeV2Zone }>).detail?.zone;
       if (requested && requested in HOME_V2_CAMERA_PRESETS) setZone(requested);
     };
-    window.addEventListener("ailearn:home-v2-run-feature", runRequestedFeature);
-    window.addEventListener("ailearn:home-unavailable", showUnavailable);
-    window.addEventListener("ailearn:home-v2-focus-zone", focusZone);
+    window.addEventListener("astella:home-v2-run-feature", runRequestedFeature);
+    window.addEventListener("astella:home-unavailable", showUnavailable);
+    window.addEventListener("astella:home-v2-focus-zone", focusZone);
     return () => {
-      window.removeEventListener("ailearn:home-v2-run-feature", runRequestedFeature);
-      window.removeEventListener("ailearn:home-unavailable", showUnavailable);
-      window.removeEventListener("ailearn:home-v2-focus-zone", focusZone);
+      window.removeEventListener("astella:home-v2-run-feature", runRequestedFeature);
+      window.removeEventListener("astella:home-unavailable", showUnavailable);
+      window.removeEventListener("astella:home-v2-focus-zone", focusZone);
     };
   }, [openFeatureNotice, runFeature, setZone]);
 

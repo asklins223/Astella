@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { learningObjectiveSurfaceV3Schema } from "@ailearn/shared/learning-objective-surface-contracts";
+import { learningObjectiveSurfaceV3Schema } from "@astella/shared/learning-objective-surface-contracts";
 import { ObjectiveDetailSurface } from "../library/WorkspaceLibrarySurface.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
 
@@ -81,7 +81,7 @@ function installApi(objective: unknown) {
         ok({ runId: RUN_ID, snapshotId: "00000000-0000-4000-8000-000000000008" })),
     },
   };
-  Object.defineProperty(window, "ailearn", { value: api, configurable: true });
+  Object.defineProperty(window, "astella", { value: api, configurable: true });
   return api;
 }
 
@@ -93,7 +93,7 @@ function stubRoom() {
 
 afterEach(() => {
   cleanup();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   useRoomStore.setState({ activeObjectiveId: null, activeRunId: null, surface: null });
   vi.restoreAllMocks();
 });

@@ -30,12 +30,12 @@ import { exportCompanionDataStream } from "../modules/companion-conversation/tur
 import { transcribeCompanionDialogueAudio } from "../modules/learning-sessions/companion-voice-service.ts";
 import { execFileSync } from "node:child_process";
 import { closeDatabase } from "../db/client.ts";
-import { companionLeakGateVersionV1 } from "@ailearn/shared/companion-leak-gates";
+import { companionLeakGateVersionV1 } from "@astella/shared/companion-leak-gates";
 
 /**
  * 直接种一条 **active run**，不经 service —— 因为它**不会入队 job**。
  *
- * 为什么需要：这几条用例的前提是"这一轮还没有人跑过"。而 `ailearn_claim_jobs` 的
+ * 为什么需要：这几条用例的前提是"这一轮还没有人跑过"。而 `astella_claim_jobs` 的
  * 条件是 `status='pending' AND scheduled_at <= now()`，开发栈上那个活着的 worker
  * 是**被 pg_notify 叫醒的**（不是 500ms 轮询），实测在 service 提交后的几毫秒内就把
  * job 认领走了——于是 run 不再是 accepted、事件流里多出 worker 写的一串帧，
@@ -695,7 +695,7 @@ async function seedVoiceArtifact(workspaceId: string, userId: string, text: stri
   status?: string;
   expiresInMs?: number;
 }): Promise<{ voiceArtifactId: string; transcriptSha256: string }> {
-  const { sha256Utf8V1 } = await import("@ailearn/shared/content-hash");
+  const { sha256Utf8V1 } = await import("@astella/shared/content-hash");
   const transcriptSha256 = sha256Utf8V1(text);
   const id = randomUUID();
   const expiresAt = new Date(Date.now() + (opts?.expiresInMs ?? 3_600_000));

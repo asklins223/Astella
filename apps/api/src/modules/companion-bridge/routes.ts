@@ -15,7 +15,7 @@ import { z } from "zod";
 import { parseBody } from "../../lib/validate.ts";
 import { requireSession } from "../identity/middleware.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
-import { mainPageContextInputV2Schema } from "@ailearn/shared";
+import { mainPageContextInputV2Schema } from "@astella/shared";
 import {
   publishContext,
   renewContext,

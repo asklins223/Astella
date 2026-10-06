@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { noteAnchorMatchesV1, readNoteAnchorTextV1 } from "@ailearn/shared/note-annotation-contracts";
+import { noteAnchorMatchesV1, readNoteAnchorTextV1 } from "@astella/shared/note-annotation-contracts";
 
 // Verify the shared guard actually used by the worker, against one or several blocks.
 function anchorMatches(text: string, anchor: Parameters<typeof noteAnchorMatchesV1>[1]) {

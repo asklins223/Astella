@@ -21,7 +21,7 @@ describe("space-recents", () => {
 
     expect(readSpaceRecents(storage)).toEqual({ "space-a": 1_000, "space-b": 2_000 });
     // 落盘才是"重启后还在"：读的是存储，不是模块里的内存。
-    expect(JSON.parse(storage.getItem("ailearn:space-recents") ?? "null"))
+    expect(JSON.parse(storage.getItem("astella:space-recents") ?? "null"))
       .toEqual({ "space-a": 1_000, "space-b": 2_000 });
   });
 
@@ -34,13 +34,13 @@ describe("space-recents", () => {
 
   it("手改坏了的记录当没有：菜单不该被一条读不出来的偏好挡住", () => {
     const storage = memoryStorage();
-    storage.setItem("ailearn:space-recents", "{不是 JSON");
+    storage.setItem("astella:space-recents", "{不是 JSON");
     expect(readSpaceRecents(storage)).toEqual({});
 
-    storage.setItem("ailearn:space-recents", JSON.stringify(["space-a"]));
+    storage.setItem("astella:space-recents", JSON.stringify(["space-a"]));
     expect(readSpaceRecents(storage)).toEqual({});
 
-    storage.setItem("ailearn:space-recents", JSON.stringify({ "space-a": "昨天", "space-b": 5 }));
+    storage.setItem("astella:space-recents", JSON.stringify({ "space-a": "昨天", "space-b": 5 }));
     expect(readSpaceRecents(storage)).toEqual({ "space-b": 5 });
   });
 

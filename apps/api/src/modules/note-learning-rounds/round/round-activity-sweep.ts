@@ -10,13 +10,13 @@
  *     `paused_at` 记账、共用计数器前进一步、身份列不动，这三件都由 reducer + CAS 那一条路保证。
  *  4. **不新增轮次**（PRD 明令）：这一发只有"转态"这一种动作，没有 createRound 的调用点。
  *
- * ─── 两条现场量到的形状（2026-09-26，一次性库 `ailearn_w45_sweep` 上以 `ailearn_api` 实测）
+ * ─── 两条现场量到的形状（2026-09-26，一次性库 `astella_w45_sweep` 上以 `astella_api` 实测）
  *  - `note_learning_rounds` 是 FORCE RLS 且谓词是纯 `(workspace_id,user_id)` GUC 匹配，
  *    **没有** worker 旁路（D1 §6.5）：裸读 0 行、只设 `app.workspace_id` 也是 0 行，
  *    必须两个 GUC 都带上才看得见（本仓库那一条"裸读也要带两个 set_config"的旧坑，同一族）。
  *    所以扫描不是"一条 SQL 扫全库"，而是**逐 scope 开一个带上下文的事务**。
- *  - 待扫的 scope 由 **0286 那支预筛函数**给（`ailearn_note_rounds_idle_for_pause`）：
- *    它以 `SECURITY DEFINER`（owner `ailearn_migrator`，带 BYPASSRLS）跨租户挑出
+ *  - 待扫的 scope 由 **0286 那支预筛函数**给（`astella_note_rounds_idle_for_pause`）：
+ *    它以 `SECURITY DEFINER`（owner `astella_migrator`，带 BYPASSRLS）跨租户挑出
  *    "active 且已过宽限期"的 (空间,人)，扫描只对这批开事务。为什么不裸枚举
  *    `workspace_members`：那样每一趟的代价随**成员数**长，而不是随在学的轮次长——
  *    实测 1 330 条成员 ⇒ 2149 / 2026 / 1846 ms 且停掉 0 条（39d §19 同日那行）。
@@ -31,9 +31,9 @@
  */
 import { and, asc, eq, gt, isNull, notInArray, sql } from "drizzle-orm";
 import { db, withWorkspaceTransaction } from "../../../db/client.ts";
-import { assistantPageContexts } from "@ailearn/shared/db-schema/companion-bridge";
-import { learningRuns } from "@ailearn/shared/db-schema/learning-runs";
-import { noteLearningRounds } from "@ailearn/shared/db-schema/note-learning-rounds";
+import { assistantPageContexts } from "@astella/shared/db-schema/companion-bridge";
+import { learningRuns } from "@astella/shared/db-schema/learning-runs";
+import { noteLearningRounds } from "@astella/shared/db-schema/note-learning-rounds";
 import { advanceRound, RoundServiceError, type RoundScopeV1 } from "./round-service.ts";
 import {
   evaluateRoundIdlePauseV1,
@@ -132,7 +132,7 @@ async function listSweepScopes(): Promise<RoundScopeV1[]> {
   // TS2352（本仓库踩过）；这里的形状由那支函数的 RETURNS TABLE 定，不是猜的。
   const rows = (await db.execute(
     sql`SELECT DISTINCT workspace_id, user_id
-          FROM public.ailearn_note_rounds_idle_for_pause(${ROUND_IDLE_PAUSE_GRACE_MS_V1})`,
+          FROM public.astella_note_rounds_idle_for_pause(${ROUND_IDLE_PAUSE_GRACE_MS_V1})`,
   )) as unknown as ReadonlyArray<{ workspace_id: string; user_id: string }>;
   return rows.map((row) => ({ workspaceId: row.workspace_id, userId: row.user_id }));
 }

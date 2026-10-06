@@ -9,8 +9,8 @@
  * completed(real_first_loop)；其余事件类型入 pending 不推进（骨架预留）。
  */
 
-import { DomainError } from "@ailearn/shared";
-import type { CompanionJourneyStepV2, CompanionJourneyV2 } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
+import type { CompanionJourneyStepV2, CompanionJourneyV2 } from "@astella/shared";
 
 export interface JourneyReducerState {
   status: CompanionJourneyV2["status"];

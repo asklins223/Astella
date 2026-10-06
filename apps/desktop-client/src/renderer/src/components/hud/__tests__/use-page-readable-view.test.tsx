@@ -2,7 +2,7 @@
 
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { useRoomStore } from "../../../app/room-store.ts";
 import { usePageReadableView } from "../use-page-readable-view.ts";
 

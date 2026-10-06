@@ -1,5 +1,5 @@
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
-import type { CompanionHistoryItemV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
+import type { CompanionHistoryItemV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { useLayoutEffect,useMemo,useRef } from "react";
 import { plainCompanionBubbleText,renderCompanionMarkdown } from "../../companion/companion-markdown";
 import { CompanionMessageRichBlocks,CompanionQuoteBlock,messageDayKey,messageDayLabel } from "../../companion/CompanionChatRecord";

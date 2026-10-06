@@ -17,10 +17,10 @@ import {
   COMPANION_IDENTITY_BOUNDARY_V2,
   COMPANION_CHARACTER_BASE_V7,
   classifyCompanionReplyEmotion,
-} from "@ailearn/shared";
-import { canonicalJsonV1 } from "@ailearn/shared/content-hash";
-import { composeAgentContext, type AgentContextSource, type AgentContextSourcePlan, type AgentContextReceipt } from "@ailearn/agent-core";
-import type { AgentScopeV1 } from "@ailearn/shared/agent-contracts";
+} from "@astella/shared";
+import { canonicalJsonV1 } from "@astella/shared/content-hash";
+import { composeAgentContext, type AgentContextSource, type AgentContextSourcePlan, type AgentContextReceipt } from "@astella/agent-core";
+import type { AgentScopeV1 } from "@astella/shared/agent-contracts";
 import type { CompanionMemoryDirectoryEntry } from "./companion-memory-vector.ts";
 // 交接快照族（40 §4.7.2）已搬出，本文件仍要用其中的类型与常量；re-export 是为了让
 // 既有的调用方（summarizer / dialogue / store）不用一次性改完 import 路径。
@@ -42,7 +42,7 @@ export {
   REPLAY_WINDOW_MESSAGES,
 };
 export type { CompanionContextHandoffSnapshotV1, CompanionContextHandoffInputV1, CompanionRecentHistoryMessage };
-import { stripVoiceExpressionTags } from "@ailearn/shared/voice-expression-tags";
+import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
 
 /** 与 turn-service 对齐的硬限额（03 §6.10）。 */
 export const COMPANION_HARD_MAX_CHARS = 20_000;
@@ -838,7 +838,7 @@ export function buildCompanionPersonaMessages(input: {
   continuationData?: string | null;
   /** 22 方案：用户自定义人格档案（有值则覆盖默认人格风格）。 */
   petProfile?: CompanionPersonaContextProfile | null;
-}): import("@ailearn/shared").ChatMessage[] {
+}): import("@astella/shared").ChatMessage[] {
   // resident 正文与 active 目录各自有独立预算；这里仅作防御性截断。
   const MEMORY_MAX_COUNT = 30;
   const MEMORY_CONTENT_MAX = 200;

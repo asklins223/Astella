@@ -31,7 +31,7 @@ export type CompanionHashV1 = z.infer<typeof companionHashV1Schema>;
  * API 的 `deliver()` 和 worker 直投的主动念头/记忆候选。通道名写不一致**不会报错**，
  * 只会让新投递安静地等到 SSE 的 durable 轮询才被发现——主动气泡因此"看起来从不出现"。
  */
-export const COMPANION_INBOX_NOTIFY_CHANNEL = "ailearn_companion_inbox_v1";
+export const COMPANION_INBOX_NOTIFY_CHANNEL = "astella_companion_inbox_v1";
 
 // ─── Conversation（§3.1） ────────────────────────────────────────────────
 

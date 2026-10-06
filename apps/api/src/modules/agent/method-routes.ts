@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import {
   proposeAgentMethodV1Schema, reviseAgentMethodV1Schema, controlAgentMethodV1Schema, agentMethodFeedbackV1Schema,
-} from "@ailearn/shared/agent-growth-contracts";
+} from "@astella/shared/agent-growth-contracts";
 import { requireSession } from "../identity/middleware.ts";
 import { agentRequestScope, respondToAgentRequest } from "./routes.ts";
 import { agentMethodStore } from "./service.ts";

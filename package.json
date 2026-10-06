@@ -1,5 +1,5 @@
 {
-  "name": "ailearn-repository-tools",
+  "name": "astella-repository-tools",
   "private": true,
   "devDependencies": {
     "c8": "^12.0.0",

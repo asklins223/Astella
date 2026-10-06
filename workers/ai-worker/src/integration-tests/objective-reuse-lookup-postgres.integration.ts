@@ -21,7 +21,7 @@
  */
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { objectiveReuseClaimHashV2 } from "@ailearn/shared/objective-reuse-rules-v2";
+import { objectiveReuseClaimHashV2 } from "@astella/shared/objective-reuse-rules-v2";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 
@@ -193,7 +193,7 @@ test("W7-5 刀二：按 (工作区, 笔记) 收窄、块锚按块去重、归档
 });
 
 test("W7-5 刀二：读出来的候选直接喂判据，同块同形态那一条会落到既有目标上", async () => {
-  const { decideObjectiveReuseV2 } = await import("@ailearn/shared/objective-reuse-rules-v2");
+  const { decideObjectiveReuseV2 } = await import("@astella/shared/objective-reuse-rules-v2");
   await withWorkerWorkspaceTransaction(ctx, async (tx) => {
     const candidates = await loadReusableObjectivesForNoteV2(tx, {
       workspaceId: WORKSPACE_ID,

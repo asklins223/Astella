@@ -1,10 +1,10 @@
-# AI and the companion
+# Models and the worker pipeline
 
 [中文](../zh/ai-and-companion.md) · English
 
 ## What this covers
 
-This page explains how the AI layer actually runs: a Node worker consuming a Postgres queue, one model-configuration file that users see, an account-level consent and egress governance layer, and the companion (dialogue, memory, diary, voice) built on top of it. Every judgement here comes from `workers/ai-worker/src/**`, `packages/*/src/**`, `config/ai-platforms.json`, `apps/api/src/modules/**` and the migration files, not from what a plan document claims. The context governance from plan 44 does have code wired into the real call path, but its acceptance evidence is still missing — that gap is called out separately below.
+This page explains how the model side actually runs: a Node worker consuming a Postgres queue, one model-configuration file that users see, an account-level consent and egress governance layer, and where the worker-side card-generation, voice and companion jobs land in files and tables. Every judgement here comes from `workers/ai-worker/src/**`, `packages/*/src/**`, `config/ai-platforms.json`, `apps/api/src/modules/**` and the migration files, not from what a plan document claims. How an agent turn is driven — the turn kernel, the capability and tool surface, context governance and the state vocabulary — now has its own page in [Unified agent runtime (technical)](./agent-runtime.md), and what the companion is for the person using it is in [Companion experience (product design)](./companion-experience.md); this page no longer expands either. The context governance from plan 44 does have code wired into the real call path, but its acceptance evidence is still missing — that gap is called out separately below.
 
 - [Worker runtime](#worker-runtime)
 - [Job type inventory](#job-type-inventory)
@@ -28,11 +28,11 @@ Entrypoint: `workers/ai-worker/src/index.ts`. `main()` starts on module load. Th
 
 ### Claim, lease and retry
 
-`claimJobs()` calls the fixed `SECURITY DEFINER` function `public.ailearn_claim_jobs(p_limit, p_background_limit, p_max_attempts)` (established in migration 0022, reworked in 0228 to rate-limit by resource class and return `resource_class`). Locking and the lease token live in that SQL; the application layer no longer issues its own `FOR UPDATE`.
+`claimJobs()` calls the fixed `SECURITY DEFINER` function `public.astella_claim_jobs(p_limit, p_background_limit, p_max_attempts)` (established in migration 0022, reworked in 0228 to rate-limit by resource class and return `resource_class`). Locking and the lease token live in that SQL; the application layer no longer issues its own `FOR UPDATE`.
 
-- Lease `LEASE_TIMEOUT_MS = 120_000`. Orphan reaping runs through `public.ailearn_reap_stale_jobs(...)`, throttled to once every 30 seconds (`REAP_THROTTLE_MS`) rather than a full scan of `jobs` on every tick.
-- `MAX_ATTEMPTS = 3`. Retry parameters are **not computed in TS**: `ailearn_fail_job(id, workspace_id, lease_token, last_error, max_attempts)` returns `status / attempts / backoff_ms / is_dead / scheduled_at` directly, with backoff `2000 * 2^(attempts-1)` milliseconds. TS keeps only `MAX_ATTEMPTS`, for dead-letter forcing and for the claim/reap arguments; `retry-strategy-contract.test.ts` asserts the two sides agree.
-- Every terminal transition is a lease-token CAS: `ailearn_finish_job` / `ailearn_fail_job` are both fenced by `(id, workspace_id, status='running', lease_token)`. Zero rows affected means the job was reaped or re-claimed, so this attempt's result is **not committed** and only `jobLeaseLostTotal` is incremented.
+- Lease `LEASE_TIMEOUT_MS = 120_000`. Orphan reaping runs through `public.astella_reap_stale_jobs(...)`, throttled to once every 30 seconds (`REAP_THROTTLE_MS`) rather than a full scan of `jobs` on every tick.
+- `MAX_ATTEMPTS = 3`. Retry parameters are **not computed in TS**: `astella_fail_job(id, workspace_id, lease_token, last_error, max_attempts)` returns `status / attempts / backoff_ms / is_dead / scheduled_at` directly, with backoff `2000 * 2^(attempts-1)` milliseconds. TS keeps only `MAX_ATTEMPTS`, for dead-letter forcing and for the claim/reap arguments; `retry-strategy-contract.test.ts` asserts the two sides agree.
+- Every terminal transition is a lease-token CAS: `astella_finish_job` / `astella_fail_job` are both fenced by `(id, workspace_id, status='running', lease_token)`. Zero rows affected means the job was reaped or re-claimed, so this attempt's result is **not committed** and only `jobLeaseLostTotal` is incremented.
 - Terminal transitions also have a wall-clock bound: `resolveWorkerStatementTimeoutMs() + 5_000` (60 s + 5 s by default). A timeout means the outcome is unknown, so it is handed to the reaper to settle by lease — never mislabelled as a failure.
 
 ### Concurrency and the interactive lane
@@ -41,13 +41,13 @@ Entrypoint: `workers/ai-worker/src/index.ts`. `main()` starts on module load. Th
 
 ### Polling, wake-up and memory backpressure
 
-When the queue is idle the poll interval backs off exponentially from `POLL_MS = 500` to `POLL_MAX_MS = 5_000`, and returns to the fast tier as soon as a claim succeeds or a NOTIFY arrives. LISTEN/NOTIFY uses channel `ailearn_job_events` (the sender is the `AFTER INSERT` trigger in migration 0115; the worker only consumes), with a 3-second connection timeout and a fall back to pure polling on failure; `WORKER_DISABLE_NOTIFY=1` turns it off explicitly. Claiming new jobs pauses while heap usage exceeds `WORKER_MEMORY_LIMIT_MB` (default 1536; invalid values fall back with a warning).
+When the queue is idle the poll interval backs off exponentially from `POLL_MS = 500` to `POLL_MAX_MS = 5_000`, and returns to the fast tier as soon as a claim succeeds or a NOTIFY arrives. LISTEN/NOTIFY uses channel `astella_job_events` (the sender is the `AFTER INSERT` trigger in migration 0115; the worker only consumes), with a 3-second connection timeout and a fall back to pure polling on failure; `WORKER_DISABLE_NOTIFY=1` turns it off explicitly. Claiming new jobs pauses while heap usage exceeds `WORKER_MEMORY_LIMIT_MB` (default 1536; invalid values fall back with a warning).
 
 ### Graceful shutdown and observability
 
 On SIGTERM/SIGINT the worker stops claiming, first returns any in-flight V2 outbox leases (without that, a force-kill leaves the run's lease held for the full 30 minutes while the note stays locked and the money already spent), then waits for the drain. `WORKER_DRAIN_TIMEOUT_MS` defaults to 45_000; after that the process exits and orphaned running jobs are reaped by the next worker. `WORKER_STATEMENT_TIMEOUT_MS` (60 s), `WORKER_LOCK_TIMEOUT_MS` (5 s), `WORKER_IDLE_IN_TRANSACTION_TIMEOUT_MS` (15 s) and `WORKER_POOL_IDLE_TIMEOUT_SECONDS` (30 s) are all set at connection time.
 
-The metrics server listens on `WORKER_METRICS_PORT`, default 9100, and exposes `/metrics` and `/ready`. `/ready` is a real dependency probe (`SELECT 1`); when no probe is wired it fails closed with 503. Queue depth and oldest-pending age refresh every 5 seconds from `ailearn_queue_job_depth()` / `ailearn_queue_oldest_pending_age()`. The DSN comes from `DATABASE_URL_WORKER`, which is required — and throws when missing — under `NODE_ENV=production`.
+The metrics server listens on `WORKER_METRICS_PORT`, default 9100, and exposes `/metrics` and `/ready`. `/ready` is a real dependency probe (`SELECT 1`); when no probe is wired it fails closed with 503. Queue depth and oldest-pending age refresh every 5 seconds from `astella_queue_job_depth()` / `astella_queue_oldest_pending_age()`. The DSN comes from `DATABASE_URL_WORKER`, which is required — and throws when missing — under `NODE_ENV=production`.
 
 The image `workers/ai-worker/Dockerfile` builds on `node:22.11.0-alpine3.20`; the prod stage bundles to `dist/index.cjs` with esbuild, runs as `USER node`, and `EXPOSE 9100`.
 
@@ -179,25 +179,15 @@ The cost is real: a single retrieval went from 7.6 s to 36 s (the measurement re
 
 ## Token measurement and context governance
 
+> How the turn runtime spends this budget, compaction cooldown and receipts are in [Agent runtime](./agent-runtime.md); this section covers only the model-side measurement rules.
+
 Measurement entry point: `packages/agent-core/src/context/measure-request.ts`. It measures **everything actually serialized and sent**: system, history, current input, tool schemas, tool call arguments and results, multimodal payloads. Measuring only the system prompt leads to the false conclusion "the system prompt is short, so we are fine".
 
-Conservative ratios and floors: CJK counts 1 token per character, non-CJK 1 token per 3 characters; each image has floor `IMAGE_TOKEN_FLOOR = 1_500`; each opaque reasoning handle has floor `REASONING_HANDLE_TOKEN_FLOOR = 64`; per-message envelope 4, per-tool-schema envelope 8. The estimation path carries an error margin of `max(256, 12% of the estimated volume)`, exact paths (provider count / tokenizer) carry none. Counting capability falls back in the order `providerCount → tokenizer → usage_anchor → heuristic`, and unknown cost is never recorded as zero.
+Conservative ratios and floors: CJK counts 1 token per character, non-CJK 1 token per 3 characters; each image has floor `IMAGE_TOKEN_FLOOR = 1_500`; each opaque reasoning handle has floor `REASONING_HANDLE_TOKEN_FLOOR = 64`; per-message envelope 4 (`ITEM_ENVELOPE_TOKENS`), per-tool-schema envelope 8 (`TOOL_SCHEMA_ENVELOPE_TOKENS`). The estimation path carries an error margin of `max(256, 12% of the estimated volume)` (`heuristicTotal`), exact paths (provider count / tokenizer) carry none (`EXACT_ERROR_MARGIN = 0`). Counting capability falls back in the order `finish()` runs it at runtime: `providerCount → tokenizer → usage_anchor → heuristic`; payloads that cannot be measured go into `unmeasured` and unknown cost is never recorded as zero. The measurement vocabulary is versioned as `CONTEXT_MEASUREMENT_VERSION = "v1"`, so a change in how a provider serialises a request invalidates older usage anchors.
 
-Budget authority: `packages/agent-core/src/context/context-budget.ts`.
+The budget line itself (`B_hard = max(0, min(C − O, I) − M)`, trigger 0.80 / target 0.60, `M = 2_048`, fallback window 128 000 and output reservation 16 384), its fixed decision order, the compaction cooldown and the companion's lossless folding are written out in full in the context-governance section of [Unified agent runtime (technical)](./agent-runtime.md). What belongs here is where the layer is attached: `createGovernedProvider` — the single boundary for every outbound model call — so it covers the first step, every tool turn, material refetch, background continuation, retries and fallback model switches, and it measures the full outgoing request **before** it is sent. Its job is only to decide and record honestly; it does not delete content.
 
-```
-B_hard = max(0, min(C − O, I) − M)
-T = floor(B_hard × 0.80)   // CONTEXT_TRIGGER_RATIO
-G = floor(B_hard × 0.60)   // CONTEXT_TARGET_RATIO
-```
-
-`M = CONTEXT_OVERHEAD_TOKENS = 2_048` covers only protocol envelope and estimation error — system prompt, persona and tool schemas are already inside P and are never deducted twice. When the window cannot be learned, `REGISTERED_FALLBACK_CONTEXT_WINDOW_TOKENS = 128_000`; when the request declares no output ceiling, or the provider does not actually send one, the output reservation is `CONSERVATIVE_DEFAULT_OUTPUT_TOKENS = 16_384`. The decision order is fixed: if the required content itself does not fit, `reject` first; past the trigger line with a compaction allowance still available this round, `compact`; if there is no way to compact, send with the effective context — the trigger line is a governance line, only the hard limit is a rejection line.
-
-On the compaction side, `packages/agent-core/src/context/compaction-cooldown.ts` allows 3 attempts, a 60-second cooldown, and declares the route closed after 2 consecutive attempts with no progress. State lives in the database, keyed by (conversation, source version, model route), so a new conversation, a recomputed summary or a different model does not inherit the previous cooldown. Folding for the companion is **lossless**: it only folds replay tails already covered by a validated summary carrying `sourceSha256`, the unit is a whole message bounded by seq (a tool call and its result are a pair; splitting them breaks the JSON), the originals stay in `companion_messages` readable back by seq, and the recovery handoff snapshot stores the shape **before** folding.
-
-This layer is attached to `createGovernedProvider` — the single boundary for every outbound model call — so it covers the first step, every tool turn, material refetch, background continuation, retries and fallback model switches, and it measures the full outgoing request **before** it is sent. Its job is only to decide and record honestly; it does not delete content.
-
-> **Evidence gap**: plan [41a](../../plans/learning-companion/41a-unified-agent-foundation-2026-09-28.md) defines the unified execution foundation and [44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md) defines the full-request budget and reliable compaction. All four phases of 44 have code wired along the real call path with their own criteria, but row 44 of the [current plan index](../../plans/learning-companion/README.md) states plainly that §8 acceptance has not a single piece of real-model, real-database or real-window evidence, and that migrations 0382–0389 have never run against a real database. [43](../../plans/learning-companion/43-companion-guidance-and-space-arrival-2026-10-04.md) is likewise marked as not yet implemented or window-accepted. Neither can be treated as accepted.
+> **Evidence gap**: all four phases of plan [44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md) have code wired along the real call path with their own criteria, but row 44 of the [current plan index](../../plans/learning-companion/README.md) states plainly that §8 acceptance has not a single piece of real-model, real-database or real-window evidence, and that migrations 0382–0389 have never run against a real database (the unified execution foundation is defined in [41a](../../plans/learning-companion/41a-unified-agent-foundation-2026-09-28.md), the full-request budget and reliable compaction in [44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md)). [Plan 43](../../plans/learning-companion/43-companion-guidance-and-space-arrival-2026-10-04.md), companion guidance, **is implemented** — the island button plus a seven-topic guide booklet under `components/companion/guidance/`; what its "not implemented or window-accepted" line still refers to is the acceptance: the brand-new-account walk and the post-consent speech have never been run in a real window.
 
 ## Governance and consent
 
@@ -251,7 +241,9 @@ The budget arithmetic is 30 + 30 + 8: qwen's default `DEFAULT_TIMEOUT_MS = 30_00
 
 **On the desktop it is local recognition, not cloud transcription.** The SenseVoice int8 model (`model.int8.onnx`, 239 MB, plus `tokens.txt`; both files' byte counts and sha256 are in the contract) is downloaded by the user from Settings and removable at any time. Recognition runs in an Electron `utilityProcess` (a Node child process) because the bundled sherpa-onnx is emscripten's Node build and needs `require`, while the window is `sandbox: true` with no `nodeIntegration`. Recording is still captured in the renderer, and the audio reaches the child process over a local IPC — it never leaves the machine. The engine starts lazily, returns its memory after 90 idle seconds, and caps a single decode at 120 seconds (the first one includes engine and model load).
 
-## Companion: persona, memory, diary
+## Where the companion lands in this pipeline
+
+> Her product role, the four surfaces, the capability list and the growth loop live in [Companion experience](./companion-experience.md), the execution body in [Agent runtime](./agent-runtime.md); this section records only which handlers and tables back those behaviours.
 
 | capability | worker side | data tables |
 | --- | --- | --- |
@@ -305,6 +297,8 @@ Handler timeout resolution order: per-type env (`WORKER_TIMEOUT_<TYPE>_MS`) > gl
 - [Development](development.md)
 - [Desktop client](desktop-client.md)
 - [API and data](api-and-data.md)
+- [Unified agent runtime (technical)](agent-runtime.md)
+- [Companion experience (product design)](companion-experience.md)
 - [Testing and quality](testing-and-quality.md)
 - [Operations](operations.md)
 - [FAQ and troubleshooting](faq-and-troubleshooting.md)

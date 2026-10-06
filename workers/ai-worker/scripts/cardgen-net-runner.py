@@ -7,7 +7,7 @@
 
 为什么要有这台：那批文件自己取 `DATABASE_URL_MIGRATOR`（夹具写入，超户）、
 `DATABASE_URL_API` / `DATABASE_URL_WORKER`（被测读写，NOBYPASSRLS 角色），
-而 dev `.env` 里四条 URL 的用户全是 `ailearn`（bypass RLS）——直接拿 `.env` 跑，
+而 dev `.env` 里四条 URL 的用户全是 `astella`（bypass RLS）——直接拿 `.env` 跑，
 隔离类断言会读到不该读到的行。这里按 `.env` 的 `MIGRATOR_PASSWORD` /
 `API_PASSWORD` / `WORKER_PASSWORD` 现拼，只打印角色与库名。
 
@@ -54,18 +54,18 @@ def dotenv() -> dict:
 
 def main() -> int:
     args = sys.argv[1:]
-    database = "ailearn_w73b"
-    if args and args[0].startswith("ailearn_"):
+    database = "astella_w73b"
+    if args and args[0].startswith("astella_"):
         database, args = args[0], args[1:]
     values = dotenv()
     host = "127.0.0.1:5432"
-    admin = f"postgres://ailearn:{quote(values['POSTGRES_PASSWORD'], safe='')}@{host}/{database}"
+    admin = f"postgres://astella:{quote(values['POSTGRES_PASSWORD'], safe='')}@{host}/{database}"
     env = dict(os.environ)
     env.update({
         "DATABASE_URL": admin,
         "DATABASE_URL_MIGRATOR": admin,
-        "DATABASE_URL_API": f"postgres://ailearn_api:{quote(values['API_PASSWORD'], safe='')}@{host}/{database}",
-        "DATABASE_URL_WORKER": f"postgres://ailearn_worker:{quote(values['WORKER_PASSWORD'], safe='')}@{host}/{database}",
+        "DATABASE_URL_API": f"postgres://astella_api:{quote(values['API_PASSWORD'], safe='')}@{host}/{database}",
+        "DATABASE_URL_WORKER": f"postgres://astella_worker:{quote(values['WORKER_PASSWORD'], safe='')}@{host}/{database}",
     })
     # 计费闸门：今天制卡唯一的真模型开关是 `CARD_GENERATION_V3_PROVIDER`（默认确定性替身，
     # 设成别的值就会去打真 provider、按次付费）。批次名单里出现付费调用是不可接受的，
@@ -79,7 +79,7 @@ def main() -> int:
     args = [a for a in args if not a.startswith("--")]
     files = args or FAMILY
     # 11 份文件并发跑会把这一个一次性库的连接打满（表现为 37 条连接级红，不是产品回归）。
-    print(f"库 {database}｜_MIGRATOR→ailearn(超户) _API→ailearn_api _WORKER→ailearn_worker｜"
+    print(f"库 {database}｜_MIGRATOR→astella(超户) _API→astella_api _WORKER→astella_worker｜"
           f"CARD_GENERATION_V3_PROVIDER 未设（确定性替身）｜{len(files)} 份文件", flush=True)
     return subprocess.run(
         ["node", "--import", "tsx", "--test", "--test-concurrency=1",

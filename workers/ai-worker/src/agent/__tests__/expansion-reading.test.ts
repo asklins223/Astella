@@ -14,8 +14,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { randomUUID } from "node:crypto";
-import { noteExpansionDraftV1Schema, type NoteExpansionDraftV1 } from "@ailearn/shared/note-expansion-contracts";
-import { noteAgentCapabilityManifest } from "@ailearn/shared/agent-capabilities";
+import { noteExpansionDraftV1Schema, type NoteExpansionDraftV1 } from "@astella/shared/note-expansion-contracts";
+import { noteAgentCapabilityManifest } from "@astella/shared/agent-capabilities";
 import {
   EXPANSION_READ_MIN_BODY_CHARS, boundExpansionReadPage, expansionDraftBlockText,
   expansionDraftEchoFields, paginateExpansionDraft, resolveExpansionReadPosition,

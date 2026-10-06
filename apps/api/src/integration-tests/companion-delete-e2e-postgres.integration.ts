@@ -7,7 +7,7 @@
  * 独立完成（§9.5：globalEnabled=false 不生成 proactive delivery，运行中的
  * Run 继续；只有显式 runtime kill 才产生 cancelled）。
  *
- * 运行：DATABASE_URL_API="postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn"
+ * 运行：DATABASE_URL_API="postgres://astella:astella_dev@127.0.0.1:5432/astella"
  *   node --import tsx --test --test-concurrency=1 src/integration-tests/companion-delete-e2e-postgres.integration.ts
  */
 
@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { createLearningRunForTest, seedV2Fixture } from "./helpers/v2-card-fixture.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL_API ??= CONN;
@@ -27,7 +27,7 @@ const sql = postgres(CONN, { max: 2 });
  *
  * 本文件校验的目标表全部是 FORCE RLS（companion_conversations、
  * companion_messages、assistant_memory_items、learning_runs、
- * learning_run_events）。受限角色（ailearn_api）在无上下文事务里查询会命中
+ * learning_run_events）。受限角色（astella_api）在无上下文事务里查询会命中
  * 0 行，让"物理清除后为 0 行"这类断言假通过，而"审计留痕保留 1 行"假失败；
  * 超级用户则绕过 RLS 让前者同样失去分辨力。校验统一走 scoped()。
  */

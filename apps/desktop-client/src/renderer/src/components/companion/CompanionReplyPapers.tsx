@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FileText, Image, Layers, Sparkles, X } from "lucide-react";
-import type { CompanionContentBlockV1 } from "@ailearn/shared/companion-conversation-contracts";
+import type { CompanionContentBlockV1 } from "@astella/shared/companion-conversation-contracts";
 import type { CompanionChatSession, CompanionProposalUiState } from "../../app/companion-chat-session";
 import { CompanionMessageRichBlocks } from "./CompanionChatRecord";
 import { CompanionProposalChoice, companionProposalExpired } from "./CompanionProposalChoice";

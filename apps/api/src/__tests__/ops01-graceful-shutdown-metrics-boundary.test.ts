@@ -293,38 +293,38 @@ describe("OPS-01 DoD: 指标 allowlist 完整性", () => {
 describe("OPS-01 DoD: SLO 必需指标暴露", () => {
   it("HTTP 指标全部在 registry 中", async () => {
     const text = await getMetricsText();
-    assert.match(text, /ailearn_http_requests_total/, "应暴露 HTTP 请求总量");
-    assert.match(text, /ailearn_http_request_duration_seconds/, "应暴露 HTTP 请求延迟");
-    assert.match(text, /ailearn_http_errors_5xx_total/, "应暴露 HTTP 5xx 错误计数");
-    assert.match(text, /ailearn_readiness_status/, "应暴露 readiness 状态");
+    assert.match(text, /astella_http_requests_total/, "应暴露 HTTP 请求总量");
+    assert.match(text, /astella_http_request_duration_seconds/, "应暴露 HTTP 请求延迟");
+    assert.match(text, /astella_http_errors_5xx_total/, "应暴露 HTTP 5xx 错误计数");
+    assert.match(text, /astella_readiness_status/, "应暴露 readiness 状态");
   });
 
   it("Job/Provider 指标在 API registry 中不再注册（由 worker 侧维护）", async () => {
     const text = await getMetricsText();
     // Job/Provider 指标由 workers/ai-worker 侧维护，API registry 不再暴露
-    assert.doesNotMatch(text, /ailearn_job_queue_depth/);
-    assert.doesNotMatch(text, /ailearn_job_terminal_total/);
-    assert.doesNotMatch(text, /ailearn_provider_calls_total/);
-    assert.doesNotMatch(text, /ailearn_db_last_successful_backup_timestamp/);
+    assert.doesNotMatch(text, /astella_job_queue_depth/);
+    assert.doesNotMatch(text, /astella_job_terminal_total/);
+    assert.doesNotMatch(text, /astella_provider_calls_total/);
+    assert.doesNotMatch(text, /astella_db_last_successful_backup_timestamp/);
   });
 
   it("Database 指标全部在 registry 中", async () => {
     const text = await getMetricsText();
-    assert.match(text, /ailearn_db_migration_version/, "应暴露数据库迁移版本");
-    assert.match(text, /ailearn_db_pool_active_connections/, "应暴露连接池活跃连接数");
-    assert.match(text, /ailearn_db_transaction_failures_total/, "应暴露事务失败计数");
-    assert.match(text, /ailearn_db_rls_denied_total/, "应暴露 RLS 拒绝计数");
+    assert.match(text, /astella_db_migration_version/, "应暴露数据库迁移版本");
+    assert.match(text, /astella_db_pool_active_connections/, "应暴露连接池活跃连接数");
+    assert.match(text, /astella_db_transaction_failures_total/, "应暴露事务失败计数");
+    assert.match(text, /astella_db_rls_denied_total/, "应暴露 RLS 拒绝计数");
   });
 
   it("Funnel 指标在 registry 中", async () => {
     const text = await getMetricsText();
-    assert.match(text, /ailearn_funnel_events_total/, "应暴露 Funnel 事件计数");
+    assert.match(text, /astella_funnel_events_total/, "应暴露 Funnel 事件计数");
   });
 
   it("Release 指标在 registry 中", async () => {
     setReleaseInfo("0.5.0", "test1234", 26);
     const text = await getMetricsText();
-    assert.match(text, /ailearn_release_info/, "应暴露 Release 信息");
+    assert.match(text, /astella_release_info/, "应暴露 Release 信息");
     assert.match(text, /version="0\.5\.0"/, "Release 信息应包含版本号");
     assert.match(text, /commit="test1234"/, "Release 信息应包含 commit");
     assert.match(text, /migrations="26"/, "Release 信息应包含迁移数");
@@ -491,8 +491,8 @@ describe("OPS-01 DoD: 指标隐私边界", () => {
   it("HTTP 指标 label 只使用 method/route/status_class（无自由文本）", () => {
     const content = readFile("lib/metrics.ts");
     const httpCounterSection = content.substring(
-      content.indexOf('name: "ailearn_http_requests_total"'),
-      content.indexOf('registers: [registry],', content.indexOf('name: "ailearn_http_requests_total"')) + 30,
+      content.indexOf('name: "astella_http_requests_total"'),
+      content.indexOf('registers: [registry],', content.indexOf('name: "astella_http_requests_total"')) + 30,
     );
     assert.ok(
       httpCounterSection.includes('labelNames: ["method", "route", "status_class"]'),
@@ -503,8 +503,8 @@ describe("OPS-01 DoD: 指标隐私边界", () => {
   it("Funnel 指标 label 只使用 event", () => {
     const content = readFile("lib/metrics.ts");
     const funnelCounterSection = content.substring(
-      content.indexOf('name: "ailearn_funnel_events_total"'),
-      content.indexOf('registers: [registry],', content.indexOf('name: "ailearn_funnel_events_total"')) + 30,
+      content.indexOf('name: "astella_funnel_events_total"'),
+      content.indexOf('registers: [registry],', content.indexOf('name: "astella_funnel_events_total"')) + 30,
     );
     assert.ok(
       funnelCounterSection.includes('labelNames: ["event"]'),
@@ -616,16 +616,16 @@ describe("OPS-01 DoD: registry 隔离与格式", () => {
     assert.match(contentType, /version=0\.0\.4/);
   });
 
-  it("所有指标使用 ailearn_ 前缀", async () => {
+  it("所有指标使用 astella_ 前缀", async () => {
     const text = await getMetricsText();
-    // 所有自定义指标应以 ailearn_ 开头
+    // 所有自定义指标应以 astella_ 开头
     const metricLines = text.split("\n").filter((line) => line && !line.startsWith("#") && !line.trim().startsWith(""));
     for (const line of metricLines) {
       // 跳过 Node.js 默认指标（process_*, node_*)
       if (line.startsWith("process_") || line.startsWith("node_")) continue;
       assert.ok(
-        line.startsWith("ailearn_"),
-        `指标行应以 ailearn_ 前缀开头: ${line.substring(0, 50)}...`,
+        line.startsWith("astella_"),
+        `指标行应以 astella_ 前缀开头: ${line.substring(0, 50)}...`,
       );
     }
   });

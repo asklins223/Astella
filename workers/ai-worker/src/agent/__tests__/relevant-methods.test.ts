@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentMethodV1 } from "@ailearn/shared/agent-growth-contracts";
+import type { AgentMethodV1 } from "@astella/shared/agent-growth-contracts";
 import {
   selectRelevantMethods, renderMethodCatalogBlock, methodRelevanceTerms, MAX_RELEVANT_METHODS,
 } from "../relevant-methods.ts";

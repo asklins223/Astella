@@ -32,7 +32,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
-import { learningRunPhaseV2Schema } from "@ailearn/shared/learning-run-v2-contracts";
+import { learningRunPhaseV2Schema } from "@astella/shared/learning-run-v2-contracts";
 
 const REPO_ROOT = resolve(import.meta.dirname, "..", "..", "..", "..");
 

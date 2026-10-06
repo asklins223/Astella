@@ -1,5 +1,5 @@
-import { readAgentMethod, listAgentMethods, AgentStoreError } from "@ailearn/agent-host";
-import { methodAgentCapabilityManifest } from "@ailearn/shared/agent-capabilities";
+import { readAgentMethod, listAgentMethods, AgentStoreError } from "@astella/agent-host";
+import { methodAgentCapabilityManifest } from "@astella/shared/agent-capabilities";
 import type { AgentWorkerAdvanceStore } from "./store.ts";
 
 export async function invokeMethodCapability(store: AgentWorkerAdvanceStore, call: { name: string; arguments: Record<string, unknown> }) {

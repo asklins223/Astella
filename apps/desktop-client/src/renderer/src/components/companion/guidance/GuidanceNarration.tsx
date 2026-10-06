@@ -8,7 +8,7 @@ import { speakCompanionNotification, stopCompanionNotificationSpeech, type Notif
 import type { GuideRect } from "./guide-layout";
 
 /** Uses the resident's audio graph, priority rules and mouth amplitude. */
-export function GuidanceNarration({ text, speechId, replay, voiceOff, chapter, anchor, onAsk, onCompanionBounds }: { text: string; speechId: string; replay: number; voiceOff: boolean; chapter: string; anchor: GuideRect | null; onAsk: () => void; onCompanionBounds: (bounds: GuideRect | null) => void }) {
+export function GuidanceNarration({ text, speechId, replay, voiceOff, consentNeeded, chapter, anchor, onAsk, onConsent, onCompanionBounds }: { text: string; speechId: string; replay: number; voiceOff: boolean; consentNeeded: boolean; chapter: string; anchor: GuideRect | null; onAsk: () => void; onConsent: () => void; onCompanionBounds: (bounds: GuideRect | null) => void }) {
   const root = useRef<HTMLDivElement>(null);
   const muted = useRoomStore(state => state.masterMuted) || voiceOff;
   const hudPage = useRoomStore(state => state.hudPage);
@@ -18,6 +18,9 @@ export function GuidanceNarration({ text, speechId, replay, voiceOff, chapter, a
   const [voiceReplay, setVoiceReplay] = useState(0);
   useEffect(() => {
     if (!enabled || muted || formal) { setVoicePhase("silent"); return; }
+    // 没签同意时合成一定被挡在门外，而且这一步没有兜底。与其让每一段都撞一次 403，
+    // 直接把话说清楚：文字与动画继续走，缺的那一步给一个按得到的入口。
+    if (consentNeeded) { setVoicePhase("consent_required"); return; }
     let alive = true;
     const allowed = () => alive && !voiceOff && !document.hidden && !useRoomStore.getState().masterMuted && HUD_PAGES[useRoomStore.getState().hudPage].companion.mode !== "assessment";
     const timer = window.setTimeout(() => {
@@ -26,7 +29,7 @@ export function GuidanceNarration({ text, speechId, replay, voiceOff, chapter, a
     const visibility = () => { if (document.hidden) stopCompanionNotificationSpeech(speechId); };
     document.addEventListener("visibilitychange", visibility);
     return () => { alive = false; window.clearTimeout(timer); document.removeEventListener("visibilitychange", visibility); stopCompanionNotificationSpeech(speechId); };
-  }, [speechId, text, replay, voiceReplay, enabled, muted, formal]);
+  }, [speechId, text, replay, voiceReplay, enabled, muted, formal, consentNeeded]);
   useLayoutEffect(() => {
     const paper = root.current; if (!paper) return;
     const position = () => {
@@ -46,9 +49,10 @@ export function GuidanceNarration({ text, speechId, replay, voiceOff, chapter, a
     return () => { observer.disconnect(); window.clearInterval(timer); window.removeEventListener("resize", position); };
   }, [text, anchor, onCompanionBounds]);
   const speaking = voicePhase === "preparing" || voicePhase === "speaking";
+  const quiet = muted || formal || consentNeeded || !enabled;
   return <div ref={root} className="guidance-narration" data-companion-owned="true" data-speaking={voicePhase === "speaking" || undefined}>
-    <div className="guidance-narration__label"><Sparkles size={14} /><span>{chapter}</span><button type="button" disabled={muted || formal} aria-label={speaking ? "暂停语音讲解" : "播放语音讲解"} title={muted ? "当前总静音" : formal ? "作答时安静带路" : speaking ? "暂停语音讲解" : "播放语音讲解"} onClick={() => { if (speaking) setEnabled(false); else { setEnabled(true); setVoiceReplay(value => value + 1); } }}>{voicePhase === "preparing" ? <Loader2 size={14} className="guidance-narration__loading" /> : enabled && !muted && !formal ? <Volume2 size={14} /> : <VolumeX size={14} />}</button></div>
+    <div className="guidance-narration__label"><Sparkles size={14} /><span>{chapter}</span><button type="button" disabled={muted || formal} aria-label={speaking ? "暂停语音讲解" : "播放语音讲解"} title={muted ? "当前总静音" : formal ? "作答时安静带路" : quiet && consentNeeded ? "签署 AI 使用同意后才会出声" : speaking ? "暂停语音讲解" : "播放语音讲解"} onClick={() => { if (speaking) setEnabled(false); else { setEnabled(true); setVoiceReplay(value => value + 1); } }}>{voicePhase === "preparing" && !quiet ? <Loader2 size={14} className="guidance-narration__loading" /> : !quiet ? <Volume2 size={14} /> : <VolumeX size={14} />}</button></div>
     <p aria-live="polite">{text}</p>
-    <div className="guidance-narration__foot"><span aria-live="polite">{voicePhase === "preparing" ? "正在准备讲解…" : voicePhase === "speaking" ? "边看，边听我讲" : voicePhase === "consent_required" ? "语音需要先在设置中确认 AI 数据同意，文字可以继续看" : voicePhase === "failed" ? "声音暂时没接通，文字可以继续看" : muted || formal || !enabled ? "安静带路" : "随时可以问我"}</span><button type="button" onClick={onAsk}><MessageCircle size={12} />问一句</button></div>
+    <div className="guidance-narration__foot"><span aria-live="polite">{voicePhase === "preparing" ? "正在准备讲解…" : voicePhase === "speaking" ? "边看，边听我讲" : voicePhase === "consent_required" ? "还差一步：签署 AI 使用同意后，我才被允许念给你听。文字可以先看。" : voicePhase === "failed" ? "声音暂时没接通，文字可以继续看" : muted || formal || !enabled ? "安静带路" : "随时可以问我"}</span>{voicePhase === "consent_required" ? <button type="button" onClick={onConsent}>去设置同意</button> : null}<button type="button" onClick={onAsk}><MessageCircle size={12} />问一句</button></div>
   </div>;
 }

@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
  * ## 为什么不是"把所有通道都收进 shared"
  *
  * 同日实测：preload 与 main 各自出现的**字面量**通道只有那一条，
- * 其余全部走 `@ailearn/shared/desktop-ipc-contracts` 的 `DESKTOP_IPC_CHANNELS`。
+ * 其余全部走 `@astella/shared/desktop-ipc-contracts` 的 `DESKTOP_IPC_CHANNELS`。
  * 所以剩下的是"守住"，不是"搬家"。
  */
 

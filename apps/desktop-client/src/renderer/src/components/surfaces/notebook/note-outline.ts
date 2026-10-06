@@ -1,6 +1,6 @@
 import { yXmlFragmentToProsemirrorJSON } from "y-prosemirror";
 import type * as Y from "yjs";
-import type { NoteBlockProjectionV1 } from "@ailearn/shared/note-projection-contracts";
+import type { NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
 
 type NoteNode = { type?: string; text?: string; attrs?: { level?: number; value?: string }; content?: NoteNode[] };
 export type NoteOutlineEntry = { readonly block: number; readonly level: number; readonly title: string };

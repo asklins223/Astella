@@ -3,9 +3,9 @@ import {
   type GatewayErrorV1,
   type GatewayResultV1,
   type RequestMetaV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import { publishGateInvalidation } from "./gate-invalidation";
-import { accountPreferenceRejectionMessage } from "@ailearn/shared/companion-memory-scope";
+import { accountPreferenceRejectionMessage } from "@astella/shared/companion-memory-scope";
 
 let requestSequence = 0;
 
@@ -85,7 +85,7 @@ export function unwrapGatewayResult<T>(result: GatewayResultV1<T>): T {
  * 新工作区上。会话发送与语音转写都从这里取。
  */
 export async function requireWorkspaceEpoch(): Promise<number> {
-  const session = await window.ailearn.auth.getState({ meta: createRequestMeta() });
+  const session = await window.astella.auth.getState({ meta: createRequestMeta() });
   const context = unwrapGatewayResult(session);
   if (context.status !== "authenticated" || !context.workspace) {
     throw new Error("请先登录并进入工作区");

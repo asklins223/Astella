@@ -26,7 +26,7 @@
 -- 除此之外函数体与 0276 逐字相同；比对办法写在 §19 那一格：把本文件从
 -- `CREATE OR REPLACE FUNCTION` 起的那段与 0276 同段做 diff，差异只应是上面这两处。
 
-CREATE OR REPLACE FUNCTION public.ailearn_dissolve_workspace(
+CREATE OR REPLACE FUNCTION public.astella_dissolve_workspace(
   p_workspace_id uuid,
   p_actor_user_id uuid
 )
@@ -89,7 +89,7 @@ BEGIN
     WHERE workspace_id = p_workspace_id AND left_at IS NULL
   LOOP
     v_retired_memories := v_retired_memories
-      + public.ailearn_retire_workspace_memories_on_departure(p_workspace_id, v_member.user_id);
+      + public.astella_retire_workspace_memories_on_departure(p_workspace_id, v_member.user_id);
 
     -- 先把"个人空间里已经有同一件事"的那一份丢掉，再改指针。
     -- 为什么必须先丢：伴星的 global 记忆是**按空间扇出**的——同一条记忆带着完全相同的

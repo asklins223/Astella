@@ -419,7 +419,7 @@ export async function failV2OutboxJob(
  * 到期即回收，与 claim 写入的 30min 租约及主队列 started_at 单窗口语义一致，
  * 修复第三轮 W#2 的"双重减去"）。
  *
- * 回收语义对齐主队列 0105 `ailearn_reap_stale_jobs`（修复第三轮 W#1）：每次
+ * 回收语义对齐主队列 0105 `astella_reap_stale_jobs`（修复第三轮 W#1）：每次
  * 回收都 `attempts = attempts + 1`；回收后即达重试上限（attempts + 1 >= 6）的行
  * 转 `failed`（不再无限重投，崩溃路径也计入重试上限）；否则重置回 `pending`
  * 并清空租约三列（started_at / lease_token / lease_expires_at），供重新认领。

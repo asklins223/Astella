@@ -1,4 +1,4 @@
-import { DomainError } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
 
 export const DEFAULT_VOICE_PROFILE = "companion-default-v1";
 

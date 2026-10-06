@@ -19,7 +19,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL ??= CONN;
@@ -47,7 +47,7 @@ after(async () => {
 
 const { runCompanionDialogue } = await import("../handlers/companion-dialogue.ts");
 const { ensureAgentToolCall, loadContinuation, safeArgumentsHash, updateToolCall } = await import("../handlers/companion-tool-call-ledger.ts");
-const { companionStreamEventV1Schema, getCompanionAgentTool } = await import("@ailearn/shared");
+const { companionStreamEventV1Schema, getCompanionAgentTool } = await import("@astella/shared");
 
 async function seedBase(): Promise<{ workspaceId: string; userId: string }> {
   const ws = randomUUID();
@@ -763,7 +763,7 @@ test("Agent epoch fence：run 冻结的 epoch 与当前不一致 → 拒绝执�
  * 通用读页面（doc 37）：`companion_read_current_page` 背后那条查询的真实往返。
  *
  * 这里唯一值得钉的是**跨空间/跨账号守卫**：`assistant_page_contexts` 的 RLS 守卫
- * 对 `ailearn_worker` 是按用户名放行的（`CURRENT_USER = 'ailearn_worker' OR ...`），
+ * 对 `astella_worker` 是按用户名放行的（`CURRENT_USER = 'astella_worker' OR ...`），
  * 也就是说行级隔离在这条路径上根本不存在，SQL 里那两个 id 条件是唯一的闸。
  * 本地绿不等于它有闸（dev 的 api 角色还是 BYPASSRLS），所以断言写成
  * "换一个 user 就必须什么都读不到"——去掉任一条件都会让它红。

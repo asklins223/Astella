@@ -52,7 +52,7 @@ test("44 §8.5：偏好/例外/撤回这三个场景单轮判断不出来——�
 
 test("44 §8.5：六道题逐条对上「至少覆盖」的场景清单，一个都不少", async () => {
   const { TASKS } = await import("../../scripts/experience-comparison-runner.ts");
-  const { REQUIRED_SCENARIOS } = await import("@ailearn/ai-quality");
+  const { REQUIRED_SCENARIOS } = await import("@astella/ai-quality");
   const covered = new Set<string>(TASKS.map(entry => entry.scenario));
   const missing = (REQUIRED_SCENARIOS as readonly string[]).filter(scenario => !covered.has(scenario));
   assert.deepEqual(missing, [], `§8.5 点名的场景题库里缺：${missing.join("、")}`);

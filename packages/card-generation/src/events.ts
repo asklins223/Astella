@@ -6,7 +6,7 @@
  * 揭示服务与创建事务调到的**仍然是这一份**——不留第二份写入实现。
  */
 import { and, eq, sql } from "drizzle-orm";
-import { cardGenerationEventsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
+import { cardGenerationEventsV2 } from "@astella/shared/db-schema/card-generation-v2";
 import type { CardGenerationEventTx } from "./transaction.ts";
 
 export async function insertEvent(

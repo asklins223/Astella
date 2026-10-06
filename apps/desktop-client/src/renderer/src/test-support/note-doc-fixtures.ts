@@ -1,7 +1,7 @@
 import * as Y from "yjs";
 import { Schema } from "prosemirror-model";
 import { prosemirrorJSONToYXmlFragment } from "y-prosemirror";
-import { noteBlocksToPmNodes, noteDocSchemaSpec } from "@ailearn/shared/note-doc-schema";
+import { noteBlocksToPmNodes, noteDocSchemaSpec } from "@astella/shared/note-doc-schema";
 
 /**
  * 协同那一侧的测试夹具：**真的 yjs 增量**，而且是从**同一起点**上改出来的。

@@ -88,9 +88,9 @@ jobs:
       - name: Install linked shared dependencies
         working-directory: packages/shared
         run: npm ci --no-audit --no-fund
-      # @ailearn/shared 是 file: 依赖（file:../../packages/shared）。上一条装的是
+      # @astella/shared 是 file: 依赖（file:../../packages/shared）。上一条装的是
       # 它**自己的**依赖，装在共享包目录里；这条把它装进 desktop-client 的
-      # node_modules。少任何一条，electron-vite 都会在解析 @ailearn/shared 时
+      # node_modules。少任何一条，electron-vite 都会在解析 @astella/shared 时
       # 拿到一份缺依赖的快照。
       - name: Install desktop-client dependencies
         working-directory: apps/desktop-client
@@ -153,16 +153,16 @@ jobs:
           # 放在**上传之前**：装不上的包不该变成 artifact，更不该变成 Release。
           #
           # oneClick 安装器没有"选目录 / 选安装范围"页，`/S` 静默安装可靠；
-          # 装到 %LOCALAPPDATA%\Programs\理解引擎。**装到哪里不猜**——从注册表读
+          # 装到 %LOCALAPPDATA%\Programs\Astella。**装到哪里不猜**——从注册表读
           # electron-builder 自己写下的 InstallLocation，读不到再退回按名字找。
           $ErrorActionPreference = 'Stop'
           $startup_failed = '0'
           # 诊断目录先建好：finally 里要用它，而 finally 一定要成立。
-          $diagDir = 'ailearn-diagnostics'
+          $diagDir = 'astella-diagnostics'
           New-Item -ItemType Directory -Force -Path $diagDir | Out-Null
           $appOut = $null; $appErr = $null; $chromiumLog = $null
           $releaseDir = (Resolve-Path 'release').Path
-          $installer = Get-ChildItem -Path $releaseDir -Filter 'ailearn-*-win-x64.exe' -File | Select-Object -First 1
+          $installer = Get-ChildItem -Path $releaseDir -Filter 'astella-*-win-x64.exe' -File | Select-Object -First 1
           if (-not $installer) { throw '找不到 Windows 安装包' }
           Write-Host "安装包: $($installer.Name)  $([math]::Round($installer.Length / 1MB, 1)) MB"
 
@@ -171,7 +171,7 @@ jobs:
             # 隐藏窗口里的 MessageBox 立刻返回非 IDOK，于是流程落到 `Quit`——
             # 症状是"什么都没删、退出码 0"。让它正常显示，行为才和真实用户一致。
             # $WorkDir：卸载器从自己的安装目录启动，与"程序和功能"一致。
-            $logBase = Join-Path $env:RUNNER_TEMP ("ailearn-installer-" + [guid]::NewGuid().ToString('N'))
+            $logBase = Join-Path $env:RUNNER_TEMP ("astella-installer-" + [guid]::NewGuid().ToString('N'))
             $stdoutPath = "$logBase.out.log"
             $stderrPath = "$logBase.err.log"
             # 绝不用 -Wait：它没有超时上限，某个页面在无人值守 runner 上等决策时，
@@ -196,18 +196,18 @@ jobs:
           Write-Host '--- 1/4 静默安装 ---'
           Invoke-Checked $installer.FullName @('/S')
 
-          # 装到哪里**不去猜**：注册表的 DisplayName 由 NSIS 模板写成 APP_FILENAME，
-          # 目录名也未必等于产品名（中文名 + 版本都可能参与）。三条路依次试，
-          # 都不中就把 Programs 目录原样列出来——否则报错只有一句"找不到"，
+          # 装到哪里**不去猜**：注册表的 DisplayName 是 NSIS 按 uninstallDisplayName 写的
+          # （中文显示名），而目录与 exe 是 ASCII 的 productName——两者不同名，猜不得。
+          # 三条路依次试，都不中就把 Programs 目录原样列出来——否则报错只有一句"找不到"，
           # 下一个人还得从头猜一遍当初猜错了什么。
           $installDir = $null
           $uninstallKey = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue |
-            Where-Object { $_.GetValue('InstallLocation') -and (Test-Path -LiteralPath ([string]$_.GetValue('InstallLocation'))) -and $_.GetValue('InstallLocation') -like '*理解引擎*' } |
+            Where-Object { $_.GetValue('InstallLocation') -and (Test-Path -LiteralPath ([string]$_.GetValue('InstallLocation'))) -and $_.GetValue('InstallLocation') -like '*Astella*' } |
             Select-Object -First 1
           if ($uninstallKey) { $installDir = [string]$uninstallKey.GetValue('InstallLocation') }
 
           if (-not $installDir) {
-            $hit = Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'Programs') -Filter '理解引擎.exe' -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+            $hit = Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'Programs') -Filter 'Astella.exe' -Recurse -Depth 3 -ErrorAction SilentlyContinue |
               Select-Object -First 1
             if ($hit) { $installDir = $hit.DirectoryName }
           }
@@ -215,9 +215,9 @@ jobs:
           if (-not $installDir) {
             $listing = (Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'Programs') -ErrorAction SilentlyContinue |
               Select-Object -ExpandProperty Name) -join ', '
-            throw "安装器跑完了，但没在 %LOCALAPPDATA%\Programs 下找到 理解引擎.exe。`n实际内容: [$listing]"
+            throw "安装器跑完了，但没在 %LOCALAPPDATA%\Programs 下找到 Astella.exe。`n实际内容: [$listing]"
           }
-          $appExe = Join-Path $installDir '理解引擎.exe'
+          $appExe = Join-Path $installDir 'Astella.exe'
           if (-not (Test-Path -LiteralPath $appExe)) { throw "安装目录里没有 $appExe" }
           Write-Host "已安装到 $installDir"
 
@@ -251,13 +251,13 @@ jobs:
           # 诊断目录：stdout / stderr / Chromium 日志 / userData 都往这里收。
           # 它在 workspace 里的固定位置，后面的 upload step 才拿得到（$RUNNER_TEMP
           # 里的东西 upload-artifact 也能读，但 workspace 路径更直观）。
-          $appOut = Join-Path $env:RUNNER_TEMP 'ailearn-installed-app.out.log'
-          $appErr = Join-Path $env:RUNNER_TEMP 'ailearn-installed-app.err.log'
+          $appOut = Join-Path $env:RUNNER_TEMP 'astella-installed-app.out.log'
+          $appErr = Join-Path $env:RUNNER_TEMP 'astella-installed-app.err.log'
           $env:ELECTRON_ENABLE_LOGGING = '1'
           # `--log-file` 收的是 **Chromium 自己的日志**（GPU / 子进程 / 网络 / 协议
           # 注册），这些**不进** stdout/stderr。前面几轮之所以"日志全空"，就是因为
           # 只接了 stdout/stderr——那些信息在另一条通道里。带上 `--v=1` 打开详细级别。
-          $chromiumLog = Join-Path $env:RUNNER_TEMP 'ailearn-chromium.log'
+          $chromiumLog = Join-Path $env:RUNNER_TEMP 'astella-chromium.log'
           # `--no-sandbox` 是**探测用的妥协**，不是产品该有的运行方式。
           # 仓库里本来就有同类妥协：scripts/smoke-packaged.mjs:444 只在 Linux 上
           # 传 --no-sandbox。
@@ -330,13 +330,13 @@ jobs:
           # unpacked 起得来、装完起不来 → 安装器的问题；
           # 两个都起不来 → 应用自己的问题，安装器只是把它暴露出来了。
           # 这一步同样是探测：不阻断，但结果决定下一步该查哪儿。
-          $unpacked = Join-Path (Resolve-Path 'release').Path 'win-unpacked\理解引擎.exe'
+          $unpacked = Join-Path (Resolve-Path 'release').Path 'win-unpacked\Astella.exe'
           if (-not (Test-Path -LiteralPath $unpacked)) {
             Write-Host "::warning::没有 win-unpacked，跳过对照（先跑 npm run package:win:x64 -- --dir）"
           } else {
-            $probeOut = Join-Path $env:RUNNER_TEMP 'ailearn-unpacked.out.log'
-            $probeErr = Join-Path $env:RUNNER_TEMP 'ailearn-unpacked.err.log'
-            $probeLog = Join-Path $env:RUNNER_TEMP 'ailearn-unpacked-chromium.log'
+            $probeOut = Join-Path $env:RUNNER_TEMP 'astella-unpacked.out.log'
+            $probeErr = Join-Path $env:RUNNER_TEMP 'astella-unpacked.err.log'
+            $probeLog = Join-Path $env:RUNNER_TEMP 'astella-unpacked-chromium.log'
             # 两份产物共用同一个 userData（`<userData>` 按应用名走，不按 exe 路径），
             # 所以**上一段那个实例还活着的话，单实例锁会让这次直接退**。上一段已经
             # 把它们杀干净并等句柄释放了；这里再杀一次兜底。
@@ -373,7 +373,7 @@ jobs:
 
           # 装得上、起得来、装与不装都能跑——这三样验的是**产品本身**，所以这里是硬闸。
           if ('$startup_failed' -eq '1') {
-            throw '已安装的程序在 40 秒内没活起来——装得上、起不来，这道闸必须拦住发版（完整日志见 ailearn-windows-startup-diag artifact）'
+            throw '已安装的程序在 40 秒内没活起来——装得上、起不来，这道闸必须拦住发版（完整日志见 astella-windows-startup-diag artifact）'
           }
           Write-Host '全新安装 → 启动 全链路通过'
           } finally {
@@ -381,7 +381,7 @@ jobs:
               foreach ($logPath in @($appOut, $appErr, $chromiumLog)) {
                 if ($logPath -and (Test-Path -LiteralPath $logPath)) { Copy-Item -LiteralPath $logPath -Destination $diagDir -Force -ErrorAction SilentlyContinue }
               }
-              $userDataDir = Join-Path $env:APPDATA 'ailearn-desktop-client'
+              $userDataDir = Join-Path $env:APPDATA 'astella-desktop-client'
               if (Test-Path -LiteralPath $userDataDir) {
                 Copy-Item -LiteralPath $userDataDir -Destination (Join-Path $diagDir 'userData') -Recurse -Force -ErrorAction SilentlyContinue
               }
@@ -422,10 +422,12 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: |
           $ErrorActionPreference = 'Continue'
-          $diagDir = 'ailearn-diagnostics'
+          $diagDir = 'astella-diagnostics'
           New-Item -ItemType Directory -Force -Path $diagDir | Out-Null
           $releaseDir = (Resolve-Path 'release').Path
-          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\ailearn-desktop-client'
+          # 安装目录取 productName（Astella），不是 package.json 的 name——这条以前写成包名，
+          # 目录永远不存在，于是卸载探测每次都静默走「跳过」分支。
+          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\Astella'
           if (-not (Test-Path -LiteralPath $installDir)) {
             Write-Host '::warning::上一步没装上，跳过卸载探测'
             exit 0
@@ -442,7 +444,7 @@ jobs:
           #   · **按路径**：Electron 派生的渲染 / GPU / 工具进程都还在 installDir 下，
           #     上一轮残留 79 项就是因为只杀了 Start-Process 给的那一个 pid。
           #   · **按可执行文件名**：electron-builder 的 NSIS 在
-          #     FIND_PROCESS 宏里就是按 `理解引擎.exe` 这个名字找的
+          #     FIND_PROCESS 宏里就是按 `Astella.exe` 这个名字找的
           #     （allowOnlyOneInstallerInstance.nsh:113）。它找不到活着的应用就会走
           #     `MessageBox MB_RETRYCANCEL … /SD IDCANCEL` —— **静默模式下默认按钮是
           #     取消，于是 Quit**，一个文件都不删、退出码还是 0。
@@ -484,7 +486,7 @@ jobs:
           # ⚠️ **参数不要自己拼，读注册表里记的那一条。**
           #
           # 这个 app 是 per-user oneClick（nsis.oneClick: true）。注册表里写着的
-          #   UninstallString = "...\Uninstall 理解引擎.exe" /currentuser
+          #   UninstallString = "...\Uninstall Astella.exe" /currentuser
           # 那个 **`/currentuser` 是必需的**：它对应模板里的 `initMultiUser` 宏，
           # 卸载器靠它知道自己在按哪种安装模式工作，从而把 $INSTDIR 指向 per-user 那把
           # 键。我们之前只传 `/S`，于是 $INSTDIR 是错的，模板末尾那句
@@ -496,12 +498,12 @@ jobs:
           # 这一条是踩了六轮之后才想明白的，前面几轮一直在猜参数。
           $uninstallArgs = @()
           $regEntry = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
-            Where-Object { $_.UninstallString -and $_.UninstallString -like '*Uninstall*' -and $_.UninstallString -like "*ailearn*" } |
+            Where-Object { $_.UninstallString -and $_.UninstallString -like '*Uninstall*' -and $_.UninstallString -like "*astella*" } |
             Select-Object -First 1
           if ($regEntry -and $regEntry.UninstallString) {
             $cmdline = $regEntry.UninstallString
             if ($cmdline.StartsWith('"')) {
-              # 形如 "C:\...\Uninstall 理解引擎.exe" /currentuser
+              # 形如 "C:\...\Uninstall Astella.exe" /currentuser
               $close = $cmdline.IndexOf('"', 1)
               $uninstallArgs = @($cmdline.Substring($close + 1).Trim() -split '\s+' | Where-Object { $_ })
             } else {
@@ -522,8 +524,8 @@ jobs:
           # `Path.StartsWith('$INSTDIR')` 找"应用还在不在"。
           #
           # 这里有个很要命的地方：**卸载器自己就住在 $INSTDIR 里**
-          # （$INSTDIR\Uninstall 理解引擎.exe），所以它会把自己当成"应用还在跑"，
-          # 进kill 循环、杀不掉自己（KILL_PROCESS 找的是 理解引擎.exe，不含自己），
+          # （$INSTDIR\Uninstall Astella.exe），所以它会把自己当成"应用还在跑"，
+          # 进kill 循环、杀不掉自己（KILL_PROCESS 找的是 Astella.exe，不含自己），
           # 两次之后 MessageBox /SD IDCANCEL → Quit。
           #
           # 真实用户为什么没事：NSIS 卸载器默认会把自己复制到 %TEMP%\nsi*.tmp\ 再跑，
@@ -545,7 +547,7 @@ jobs:
                 $v = Get-ItemProperty -LiteralPath $k.PSPath -ErrorAction SilentlyContinue
                 if (-not $v) { continue }
                 $label = "$($v.DisplayName) $($v.InstallLocation) $($v.UninstallString)"
-                if ($label -match 'ailearn|理解引擎') {
+                if ($label -match 'ailearn|astella|拾星笔记') {
                   Write-Host "  [$Tag] $($k.PSChildName)"
                   Write-Host "        DisplayName     = $($v.DisplayName)"
                   Write-Host "        InstallLocation = $($v.InstallLocation)"
@@ -571,7 +573,7 @@ jobs:
             $found = @()
             foreach ($r in $roots) {
               if (-not $r -or -not (Test-Path -LiteralPath $r)) { continue }
-              $found += @(Get-ChildItem -LiteralPath $r -Filter '*理解引擎*' -Recurse -ErrorAction SilentlyContinue |
+              $found += @(Get-ChildItem -LiteralPath $r -Filter '*Astella*' -Recurse -ErrorAction SilentlyContinue |
                             Select-Object -ExpandProperty FullName)
             }
             Write-Host "  [$Tag] 快捷方式 $($found.Count) 个"
@@ -672,8 +674,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ailearn-windows-startup-diag-${{ github.run_id }}
-          path: apps/desktop-client/ailearn-diagnostics
+          name: astella-windows-startup-diag-${{ github.run_id }}
+          path: apps/desktop-client/astella-diagnostics
           if-no-files-found: warn
           retention-days: 14
 
@@ -701,9 +703,9 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $releaseDir = (Resolve-Path 'release').Path
-          $installer = Get-ChildItem -Path $releaseDir -Filter 'ailearn-*-win-x64.exe' -File | Select-Object -First 1
+          $installer = Get-ChildItem -Path $releaseDir -Filter 'astella-*-win-x64.exe' -File | Select-Object -First 1
           Write-Host '::warning::Windows 覆盖安装分支在无头 runner 上无法完成，Windows 自动更新尚未被验证过'
-          $installDir = Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'Programs') -Filter '理解引擎.exe' -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+          $installDir = Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'Programs') -Filter 'Astella.exe' -Recurse -Depth 3 -ErrorAction SilentlyContinue |
             Select-Object -First 1
           if (-not $installDir) { throw '前一步没装上，跳过覆盖安装探测' }
           $dir = $installDir.DirectoryName
@@ -715,7 +717,7 @@ jobs:
             throw '覆盖安装 120s 未完成（预期如此：无头 runner 上这条分支会等交互）'
           }
           Write-Host "覆盖安装退出码 $($p.ExitCode)"
-          if (-not (Test-Path -LiteralPath (Join-Path $dir '理解引擎.exe'))) { throw '覆盖安装后 exe 不见了' }
+          if (-not (Test-Path -LiteralPath (Join-Path $dir 'Astella.exe'))) { throw '覆盖安装后 exe 不见了' }
           Write-Host '覆盖安装通过'
 
       - name: Upload Windows installer
@@ -809,30 +811,31 @@ jobs:
           # macOS 自动更新走的是 **zip**（ShipIt 提取的就是它），dmg 只管首次安装。
           # 所以"能装上"要验两件不同的事：dmg 挂得起来、zip 里有可用的 .app。
           # 这一步放在上传之前：发出去的包自己都验不过，就别发。
-          zip_path="release/ailearn-${RELEASE_VERSION}-mac-${RELEASE_ARCH}.zip"
-          dmg_path="release/ailearn-${RELEASE_VERSION}-mac-${RELEASE_ARCH}.dmg"
+          zip_path="release/astella-${RELEASE_VERSION}-mac-${RELEASE_ARCH}.zip"
+          dmg_path="release/astella-${RELEASE_VERSION}-mac-${RELEASE_ARCH}.dmg"
           test -s "$zip_path" || { echo "::error::缺少 $zip_path" >&2; exit 1; }
           test -s "$dmg_path" || { echo "::error::缺少 $dmg_path" >&2; exit 1; }
 
           echo '--- 1/4 解开 zip，验证 ShipIt 真正拿到的那一份可用 ---'
-          # 不去 grep \`unzip -l\` 的清单：zip 里的路径是中文（理解引擎.app），
-          # runner 的 locale 是 C.UTF-8，grep 碰到非法字节会直接判定为二进制而**不计数**，
-          # 于是一条本来有 10 行的清单会报 0——而且它报的还不是"没有 MacOS"，
-          # 是"没有匹配"，排查方向会被带到完全错误的地方。
-          # 直接解开更实在：ShipIt 做的就是这件事，验它等于验真家伙。
-          zip_dir="$(mktemp -d "$RUNNER_TEMP/ailearn-zip.XXXXXX")"
+          # 不去 grep \`unzip -l\` 的清单，直接解开：ShipIt 做的就是这件事，
+          # 验它等于验真家伙。（清单里那串名字以前还是中文的「理解引擎.app」，
+          # runner 的 locale 是 C.UTF-8，grep 碰到非法字节会判定为二进制而**不计数**，
+          # 一条有 10 行的清单会报 0，把排查方向带到完全错误的地方；现在 bundle 名
+          # 是 ASCII 的 Astella.app，这个坑不在了，但解包验货这条路本身更实在。）
+          # 直接解开更实在：验的是最终落到磁盘上的那份。
+          zip_dir="$(mktemp -d "$RUNNER_TEMP/astella-zip.XXXXXX")"
           ditto -x -k "$zip_path" "$zip_dir"
           zipped_app="$(find "$zip_dir" -maxdepth 2 -name '*.app' -type d | head -1)"
           test -n "$zipped_app" || { echo "::error::zip 里没有 .app" >&2; exit 1; }
           echo "zip 里的 bundle: $(basename "$zipped_app")"
-          test -x "$zipped_app/Contents/MacOS/理解引擎" || {
+          test -x "$zipped_app/Contents/MacOS/Astella" || {
             echo "::error::zip 里的 .app 没有可执行文件" >&2; exit 1; }
           test -s "$zipped_app/Contents/Info.plist" || { echo "::error::zip 里的 .app 没有 Info.plist" >&2; exit 1; }
           test -s "$zipped_app/Contents/Resources/app.asar" || { echo "::error::zip 里的 .app 没有 app.asar" >&2; exit 1; }
           rm -rf "$zip_dir"
 
           echo '--- 2/4 挂载 dmg 并核对 bundle ---'
-          mount_dir="$(mktemp -d "$RUNNER_TEMP/ailearn-dmg.XXXXXX")"
+          mount_dir="$(mktemp -d "$RUNNER_TEMP/astella-dmg.XXXXXX")"
           hdiutil attach "$dmg_path" -mountpoint "$mount_dir" -nobrowse -quiet
           trap 'hdiutil detach "$mount_dir" -quiet || true; rm -rf "$mount_dir"' EXIT
           # 传了 -mountpoint 就意味着卷一定落在 mount_dir 里，不必再去猜 /Volumes/…：
@@ -859,8 +862,8 @@ jobs:
           # 这比原来更强——原检查只验名字，名字对了而内容是别的也照样放行。
           asar="$app/Contents/Resources/app.asar"
           test -s "$asar" || { echo "::error::bundle 里没有 app.asar" >&2; exit 1; }
-          npx --yes asar list "$asar" > /tmp/ailearn-asar-list.txt 2>/dev/null || true
-          grep -q '^/out/main/index.js$' /tmp/ailearn-asar-list.txt || {
+          npx --yes asar list "$asar" > /tmp/astella-asar-list.txt 2>/dev/null || true
+          grep -q '^/out/main/index.js$' /tmp/astella-asar-list.txt || {
             echo "::error::asar 里没有 out/main/index.js" >&2; exit 1; }
           # 注意：这一步没有声明 `shell:`，macOS runner 上跑的是 `/bin/bash` —— 那是
           # **bash 3.2**，没有 `mapfile`。所以候选清单用 `while read` 攒，
@@ -868,10 +871,10 @@ jobs:
           updater_candidates=()
           while IFS= read -r entry; do
             [ -n "$entry" ] && updater_candidates+=("$entry")
-          done < <(grep -E '^/out/main/(.*/)?main-.*\.js$' /tmp/ailearn-asar-list.txt || true)
+          done < <(grep -E '^/out/main/(.*/)?main-.*\.js$' /tmp/astella-asar-list.txt || true)
           if [ "${#updater_candidates[@]}" -lt 1 ]; then
             echo "::error::asar 里找不到任何懒加载 chunk（out/main/**/main-*.js）" >&2
-            grep '^/out/main/' /tmp/ailearn-asar-list.txt >&2 || true
+            grep '^/out/main/' /tmp/astella-asar-list.txt >&2 || true
             exit 1
           fi
           # 提取用 `@electron/asar` 的 API，不用 `asar extract-file` CLI：
@@ -882,8 +885,8 @@ jobs:
           updater_chunk=0
           for candidate in "${updater_candidates[@]}"; do
             node -e 'const { extractFile } = require("@electron/asar"); process.stdout.write(extractFile(process.argv[1], process.argv[2]))' \
-              "$asar" "${candidate#/}" > "$RUNNER_TEMP/ailearn-chunk.js" 2>/dev/null || continue
-            if grep -q 'electron-updater' "$RUNNER_TEMP/ailearn-chunk.js"; then
+              "$asar" "${candidate#/}" > "$RUNNER_TEMP/astella-chunk.js" 2>/dev/null || continue
+            if grep -q 'electron-updater' "$RUNNER_TEMP/astella-chunk.js"; then
               updater_chunk=$((updater_chunk + 1))
               echo "electron-updater chunk: ${candidate}"
             fi
@@ -895,13 +898,13 @@ jobs:
           echo "electron-updater chunk 已随包分发：${updater_chunk} 个（候选 ${#updater_candidates[@]} 个）"
 
           echo '--- 3/4 启动 bundle ---'
-          "$app/Contents/MacOS/理解引擎" > "$RUNNER_TEMP/ailearn-launch.log" 2>&1 &
+          "$app/Contents/MacOS/Astella" > "$RUNNER_TEMP/astella-launch.log" 2>&1 &
           app_pid=$!
           sleep 25
           if ! kill -0 "$app_pid" 2>/dev/null; then
             wait "$app_pid" || true
             echo '::error::已安装的 macOS 应用提前退出' >&2
-            tail -40 "$RUNNER_TEMP/ailearn-launch.log" >&2 || true
+            tail -40 "$RUNNER_TEMP/astella-launch.log" >&2 || true
             exit 1
           fi
           echo "已安装应用存活（pid ${app_pid}）"
@@ -910,7 +913,7 @@ jobs:
 
           echo '--- 4/4 latest-mac.yml 指向的就是这份 zip ---'
           cat release/latest-mac.yml
-          grep -q "path: ailearn-${RELEASE_VERSION}-mac-${RELEASE_ARCH}.zip" release/latest-mac.yml || {
+          grep -q "path: astella-${RELEASE_VERSION}-mac-${RELEASE_ARCH}.zip" release/latest-mac.yml || {
             echo "::error::latest-mac.yml 的 path 与实际 zip 不一致" >&2; exit 1; }
 
           echo 'dmg / zip / bundle / 启动 / 更新清单 全链路通过'

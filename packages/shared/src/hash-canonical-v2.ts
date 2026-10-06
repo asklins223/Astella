@@ -21,6 +21,8 @@ import { sha256Hex } from "./content-hash.ts";
  * undefined —— 与 content-hash.ts 同一约定）。
  */
 
+// 这个串是**摘要的域分隔前缀**，逐字进了每一个 hash 的输入。
+// 改名等于作废全部存量摘要（快照哈希、证据绑定、卡片身份……），所以它不参与品牌改名。
 export const HASH_CANONICAL_V2_DOMAIN = "ailearn-hash-canonical-v2";
 export const HASH_CANONICAL_V2_VERSION = 1;
 
@@ -143,7 +145,7 @@ export function canonicalJsonV2(value: unknown): string {
 
 /**
  * 版本化 canonical hash：
- * `SHA-256("ailearn-hash-canonical-v2" \n version \n domain \n canonicalJson)`
+ * `SHA-256("astella-hash-canonical-v2" \n version \n domain \n canonicalJson)`
  */
 export function hashCanonicalV2(domain: string, value: unknown): string {
   if (!DOMAIN_PATTERN.test(domain)) {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { GatewayResultV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { GatewayResultV1 } from "@astella/shared/desktop-ipc-contracts";
 import { unwrapGatewayResult } from "../desktop-client.ts";
 import {
   asGateInvalidationCode,

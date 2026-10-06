@@ -46,14 +46,14 @@ DROP POLICY IF EXISTS assistant_page_contexts_workspace_user_isolation
 CREATE POLICY assistant_page_contexts_workspace_user_isolation
   ON public.assistant_page_contexts FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
     )
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -62,5 +62,5 @@ CREATE POLICY assistant_page_contexts_workspace_user_isolation
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.assistant_page_contexts TO ailearn_api;
-GRANT SELECT ON public.assistant_page_contexts TO ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.assistant_page_contexts TO astella_api;
+GRANT SELECT ON public.assistant_page_contexts TO astella_worker;

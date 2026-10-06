@@ -14,7 +14,7 @@ import {
   COMPANION_DISCOVERY_SOURCES,
   COMPANION_DISCOVERY_VISIBILITY,
   companionDiscoveryBookV1Schema,
-} from "@ailearn/shared/companion-discovery-contracts";
+} from "@astella/shared/companion-discovery-contracts";
 import {
   annotateEntry,
   collectEntry,

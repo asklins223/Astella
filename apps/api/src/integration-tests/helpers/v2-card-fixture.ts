@@ -156,7 +156,7 @@ const DEFAULT_SCORING_RUBRIC = JSON.stringify({
  * 按 workspace_id 清除全部相关业务数据（供各集成测试的 cleanup 复用）。
  * 事务级开启迁移 0180 的不可变触发器旁路，可安全删除追加-only 表。
  *
- * 必须同时设置 RLS 会话上下文：这些表对 ailearn_api 全部启用 RLS，缺少
+ * 必须同时设置 RLS 会话上下文：这些表对 astella_api 全部启用 RLS，缺少
  * app.workspace_id 时 DELETE 会静默删除 0 行（策略表达式为 NULL → 不可见），
  * 于是残留数据在跨套件运行中累积，并在删除父表（note_versions 等）时以
  * 外键冲突的形式爆出来。userId 之前只用于签名、从未使用。

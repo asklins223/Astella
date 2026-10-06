@@ -218,7 +218,7 @@ WHERE generation_run_id IS NULL;
 -- Prefer the explicit resource class/priority while retaining a type fallback
 -- for old producers that have not yet been migrated. Interactive validation
 -- always wins the next free slot over card fan-out work.
-CREATE OR REPLACE FUNCTION public.ailearn_claim_jobs(
+CREATE OR REPLACE FUNCTION public.astella_claim_jobs(
   p_limit integer,
   p_max_attempts integer
 )
@@ -301,7 +301,7 @@ $function$;
 
 -- Once a run seals a note version, its snapshot fields and blocks are immutable.
 -- Cascading physical deletion of an entire note remains possible.
-CREATE OR REPLACE FUNCTION public.ailearn_guard_sealed_note_version()
+CREATE OR REPLACE FUNCTION public.astella_guard_sealed_note_version()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -330,10 +330,10 @@ $$;
 DROP TRIGGER IF EXISTS note_versions_sealed_guard ON public.note_versions;
 CREATE TRIGGER note_versions_sealed_guard
   BEFORE UPDATE OR DELETE ON public.note_versions
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_guard_sealed_note_version();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_guard_sealed_note_version();
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_guard_sealed_note_blocks()
+CREATE OR REPLACE FUNCTION public.astella_guard_sealed_note_blocks()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -358,7 +358,7 @@ $$;
 DROP TRIGGER IF EXISTS note_blocks_sealed_guard ON public.note_blocks;
 CREATE TRIGGER note_blocks_sealed_guard
   BEFORE INSERT OR UPDATE OR DELETE ON public.note_blocks
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_guard_sealed_note_blocks();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_guard_sealed_note_blocks();
 --> statement-breakpoint
 
 ALTER TABLE public.card_generation_runs ENABLE ROW LEVEL SECURITY;
@@ -397,12 +397,12 @@ CREATE POLICY card_generation_events_workspace_insert
 
 -- Keep deployed least-privilege roles usable even before roles.sql is replayed.
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.card_generation_runs TO ailearn_api;
-    GRANT SELECT, INSERT ON public.card_generation_events TO ailearn_api;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.card_generation_runs TO astella_api;
+    GRANT SELECT, INSERT ON public.card_generation_events TO astella_api;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
-    GRANT SELECT, UPDATE ON public.card_generation_runs TO ailearn_worker;
-    GRANT SELECT, INSERT ON public.card_generation_events TO ailearn_worker;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
+    GRANT SELECT, UPDATE ON public.card_generation_runs TO astella_worker;
+    GRANT SELECT, INSERT ON public.card_generation_events TO astella_worker;
   END IF;
 END $$;

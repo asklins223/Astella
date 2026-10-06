@@ -57,7 +57,7 @@ export function classifyFramePolicySubject(input: {
   try {
     const url = new URL(input.url)
     if (input.rendererDevOrigin && url.origin === input.rendererDevOrigin) return 'renderer'
-    if (url.protocol === 'ailearn-app:' && url.hostname === 'bundle') return 'renderer'
+    if (url.protocol === 'astella-app:' && url.hostname === 'bundle') return 'renderer'
   } catch {
     return 'other'
   }
@@ -77,7 +77,7 @@ export function rejectAllContentSecurityPolicy(): string {
  * 自己的产物 origin。此后任何导航一律拒：`location.href=…`、`top.location=…`、
  * 表单提交、`window.open` 都落在这条之外。
  *
- * 为什么是"首次加载"而不是"目标是不是 artifact origin"：`ailearn-app://bundle` 也是
+ * 为什么是"首次加载"而不是"目标是不是 artifact origin"：`astella-app://bundle` 也是
  * 我们自己的 origin，产物若能把自己导航到主页面 origin，就拿到了一个带 preload 桥的
  * 文档——这正是探针要打的那一发（D4 §7.2 T1）。
  */

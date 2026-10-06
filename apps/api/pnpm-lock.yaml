@@ -8,7 +8,7 @@ importers:
 
   .:
     dependencies:
-      '@ailearn/shared':
+      '@astella/shared':
         specifier: file:../../packages/shared
         version: file:../../packages/shared(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(pg@8.23.0)(postgres@3.4.9)
       '@aws-sdk/client-s3':
@@ -120,7 +120,7 @@ importers:
 
 packages:
 
-  '@ailearn/shared@file:../../packages/shared':
+  '@astella/shared@file:../../packages/shared':
     resolution: {directory: ../../packages/shared, type: directory}
 
   '@aws-sdk/checksums@3.1000.28':
@@ -1364,7 +1364,7 @@ packages:
 
 snapshots:
 
-  '@ailearn/shared@file:../../packages/shared(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(pg@8.23.0)(postgres@3.4.9)':
+  '@astella/shared@file:../../packages/shared(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(pg@8.23.0)(postgres@3.4.9)':
     dependencies:
       drizzle-orm: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(pg@8.23.0)(postgres@3.4.9)
       zod: 3.25.76

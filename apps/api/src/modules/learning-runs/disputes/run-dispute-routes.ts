@@ -44,7 +44,7 @@ import type { FastifyInstance } from "fastify";
 import {
   disputeReceiptLinesV2,
   type OpenAssessmentDisputeRecheckReceiptV2,
-} from "@ailearn/shared/assessment-dispute-rules-v2";
+} from "@astella/shared/assessment-dispute-rules-v2";
 import type { DisputeRecheckResultV2 } from "./dispute-recheck.ts";
 import { requireSession } from "../../identity/middleware.ts";
 import { currentApiWorkspaceTransaction, scopeOfSession, withWorkspaceTransaction } from "../../../db/client.ts";
@@ -71,7 +71,7 @@ import {
   openAssessmentDisputeV2Schema,
   recordAssessmentCorrectionV2Schema,
   submitDisputeSupplementV2Schema,
-} from "@ailearn/shared/assessment-dispute-rules-v2";
+} from "@astella/shared/assessment-dispute-rules-v2";
 
 /** 领域错误 → HTTP。抽出来是因为下面五个入口共用同一张表。 */
 function disputeErrorStatus(error: unknown): { status: number; code: string; message: string } | null {

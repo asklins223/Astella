@@ -24,7 +24,7 @@
  * - Evidence eligibility：evidenceSetHash 存在且 qualityState 为 passed/authored
  * - Equivalence report：target_equivalent_update 要求 equivalenceReportHash 非空
  */
-import { REVIEW_DIMENSION_VALUES_V2 } from "@ailearn/shared/review-dimension-v2";
+import { REVIEW_DIMENSION_VALUES_V2 } from "@astella/shared/review-dimension-v2";
 import { canAutomaticallyReuseObjectiveV2, sameActivationReuseClaimV2 } from "./activation-reuse-claim.ts";
 
 // 复用判定的读侧已搬到 reuse-resolver.ts（P2-2）。三段都是纯函数，
@@ -61,7 +61,7 @@ import {
   learningObjectiveRevisionEquivalenceV2,
   learningExposuresV2,
   cardGenerationRunOutboxV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/card-generation-v2";
 import {
   writeActivationNoteOrigin,
   copyOriginsToRevision,
@@ -74,18 +74,18 @@ import {
   type CardActivationReceiptV2,
   type ActivationIntentV2,
   type PracticeItemV2,
-} from "@ailearn/shared/card-generation-v2-contracts";
-import { isCardGenerationReviewOpen } from "@ailearn/shared/card-generation-desktop-contracts";
-import { PRE_RUN_REVEAL_COOLDOWN_MS, PRE_RUN_REVEAL_POLICY_VERSION } from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
+import { isCardGenerationReviewOpen } from "@astella/shared/card-generation-desktop-contracts";
+import { PRE_RUN_REVEAL_COOLDOWN_MS, PRE_RUN_REVEAL_POLICY_VERSION } from "@astella/shared/card-generation-v2-contracts";
 import { closePendingSchedules } from "./card-service.ts";
-import { extractAnswerText, frontLeaksAnswerVerbatimV2 } from "@ailearn/shared/card-generation-v2-pipeline";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
-import { ANSWER_BEARING_EXPOSURE_KINDS_V2 } from "@ailearn/shared/learning-card-v2-contracts";
+import { extractAnswerText, frontLeaksAnswerVerbatimV2 } from "@astella/shared/card-generation-v2-pipeline";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
+import { ANSWER_BEARING_EXPOSURE_KINDS_V2 } from "@astella/shared/learning-card-v2-contracts";
 import {
   DISCRETE_V2_FIRST_INTERVAL_DAYS,
   DISCRETE_V2_POLICY_VERSION,
   discreteV2FirstDueAt,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import {
   computeClientReviewHashV2,
   computeSemanticTargetFingerprintV2,
@@ -103,7 +103,7 @@ import {
   computeEvidenceBindingHashV2,
   computeEvidenceEligibilityVectorHashV2,
   computeSemanticSupportReportSetHashV2,
-} from "@ailearn/shared/card-generation-v2-hashing";
+} from "@astella/shared/card-generation-v2-hashing";
 import {
   CardGenerationV2ServiceError,
   insertEvent,

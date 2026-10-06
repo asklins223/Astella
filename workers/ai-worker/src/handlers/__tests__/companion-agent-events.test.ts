@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AiCheckpointKey } from "@ailearn/shared/ai-task-kernel";
+import type { AiCheckpointKey } from "@astella/shared/ai-task-kernel";
 import {
   decodeCompanionAgentStepCheckpoint,
   resolveAgentStepCountForResume,

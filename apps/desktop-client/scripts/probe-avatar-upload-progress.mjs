@@ -17,7 +17,7 @@ const outDir = resolve(import.meta.dirname, '../outputs/avatar-crop-20261006')
 await mkdir(outDir, { recursive: true })
 const notes = []
 
-const browser = await chromium.connectOverCDP(process.env.AILEARN_CAPTURE_CDP ?? 'http://127.0.0.1:9222')
+const browser = await chromium.connectOverCDP(process.env.ASTELLA_CAPTURE_CDP ?? 'http://127.0.0.1:9222')
 const context = browser.contexts()[0]
 const page = context.pages()[0]
 
@@ -78,10 +78,10 @@ await page.evaluate(() => {
 
 const srcBefore = await page.evaluate(() => document.querySelector('.settings-identity__avatar')?.src ?? null)
 /**
- * 本地上传约 40ms 就结束，截图（一次 CDP 往返）追不上。`AILEARN_CPU_THROTTLE=20`
+ * 本地上传约 40ms 就结束，截图（一次 CDP 往返）追不上。`ASTELLA_CPU_THROTTLE=20`
  * 让渲染进程像台慢机器，把这段窗口拉宽到看得见——验的是同一段状态，只是显影更慢。
  */
-const cpuThrottle = Number(process.env.AILEARN_CPU_THROTTLE ?? 0)
+const cpuThrottle = Number(process.env.ASTELLA_CPU_THROTTLE ?? 0)
 const session = await context.newCDPSession(page)
 if (cpuThrottle > 1) await session.send('Emulation.setCPUThrottlingRate', { rate: cpuThrottle })
 
@@ -119,7 +119,7 @@ if (backupSrc) {
   const restored = await page.evaluate(async (src) => {
     const mime = /^data:(.*?);/.exec(src)?.[1] ?? 'image/png'
     const base64 = src.slice(src.indexOf(',') + 1)
-    return window.ailearn.auth.uploadAvatar({
+    return window.astella.auth.uploadAvatar({
       meta: {
         version: 1,
         contractVersion: 'desktop-ipc-v1',

@@ -3,7 +3,7 @@ import type {
   DesktopContractSnapshotV1,
   GatewayErrorV1,
   SessionContextV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import { RendererGatewayError } from "../desktop-client.ts";
 import {
   decideBootstrapGatewayFailure,

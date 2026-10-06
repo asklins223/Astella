@@ -36,7 +36,7 @@ export PATH
 command -v node >/dev/null || { echo "node not found on PATH" >&2; exit 2; }
 command -v docker >/dev/null || { echo "docker not found on PATH" >&2; exit 2; }
 
-DB_NAME="${STAGE_ONE_DB:-ailearn_stage1_gate}"
+DB_NAME="${STAGE_ONE_DB:-astella_stage1_gate}"
 # ── 并行会话护栏 ────────────────────────────────────────────────────────────
 # 一次性库是**整份共享**的：它承载"库里只有自己的夹具"这个前提，所以两个会话拿
 # 同一个库跑断言依赖空库的用例，第二个不是"红"，是**假红**（另一边的夹具还在）。
@@ -58,7 +58,7 @@ acquire_lock() {
   if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
     echo "另一个会话（pid $holder）正在用一次性库 $DB_NAME。" >&2
     echo "并行跑会互相污染夹具、得到假红或整组卡住。请换一个库名：" >&2
-    echo "    STAGE_ONE_DB=ailearn_gate_\$\$ bash scripts/verify-stage-one.sh $*" >&2
+    echo "    STAGE_ONE_DB=astella_gate_\$\$ bash scripts/verify-stage-one.sh $*" >&2
     exit 3
   fi
   printf '%s\n' "$$" >"$LOCK_FILE"   # 持有者已死（上一轮被杀），接管
@@ -149,7 +149,7 @@ if [ "$FRESH" = 1 ]; then
     exit 1
   }
 else
-  if ! docker exec -i ailearn-dev-postgres-1 psql -q -t -U ailearn -d postgres \
+  if ! docker exec -i astella-dev-postgres-1 psql -q -t -U astella -d postgres \
         -c "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" 2>/dev/null | grep -q 1; then
     echo "==> $DB_NAME 不存在，先建一个"
     bash scripts/dev-disposable-db.sh "$DB_NAME" >/dev/null 2>&1 || {
@@ -160,8 +160,8 @@ else
   fi
 fi
 
-CONN="postgres://ailearn:ailearn_dev@127.0.0.1:${DISPOSABLE_DB_PORT:-5432}/$DB_NAME"
-ROLE_CONN="postgres://ailearn_%s:ailearn_dev@127.0.0.1:${DISPOSABLE_DB_PORT:-5432}/$DB_NAME"
+CONN="postgres://astella:astella_dev@127.0.0.1:${DISPOSABLE_DB_PORT:-5432}/$DB_NAME"
+ROLE_CONN="postgres://astella_%s:astella_dev@127.0.0.1:${DISPOSABLE_DB_PORT:-5432}/$DB_NAME"
 # **四个变量不能全指超户**。夹具写走超户（`DATABASE_URL` / `DATABASE_URL_MIGRATOR`），
 # 但被测路径要跑在**受限角色**上（`DATABASE_URL_API` / `DATABASE_URL_WORKER`）：
 # 把它们也指成超户，RLS 那一族用例会集体"通过"——因为 RLS 根本没生效。

@@ -1,10 +1,10 @@
 import { and, asc, count, desc, eq, gt, inArray, isNull, lt, or } from "drizzle-orm";
 import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
-import { notes, noteVersions, noteBlocks, sources, sourceSegments } from "@ailearn/shared/db-schema/note";
+import { notes, noteVersions, noteBlocks, sources, sourceSegments } from "@astella/shared/db-schema/note";
 import { visibleCardsCondition, visibleNotesCondition, visibleObjectivesCondition } from "../note/visibility.ts";
-import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
-import { aiArtifacts } from "@ailearn/shared/db-schema/ai";
-import { workspaces, workspaceMembers, users, onboardingStates } from "@ailearn/shared/db-schema/identity";
+import { reviewSchedules } from "@astella/shared/db-schema/evidence";
+import { aiArtifacts } from "@astella/shared/db-schema/ai";
+import { workspaces, workspaceMembers, users, onboardingStates } from "@astella/shared/db-schema/identity";
 import {
   learningObjectivesV2,
   learningObjectiveRevisionsV2,
@@ -15,9 +15,9 @@ import {
   semanticSupportReportsV2,
   learningObjectiveEvidenceBindingsV2,
   evidenceEligibilityStatesV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/card-generation-v2";
 // v0.6: 当前仍使用的幂等/冷却账本 (计划 §6.9)
-import { validationAssistanceExposures } from "@ailearn/shared/db-schema/validation-v2";
+import { validationAssistanceExposures } from "@astella/shared/db-schema/validation-v2";
 import { logger } from "../../lib/logger.ts";
 
 // keyset 游标类型别名（各表 load 回调显式标注，解脱 TS 对 K/T 的联合推断）。

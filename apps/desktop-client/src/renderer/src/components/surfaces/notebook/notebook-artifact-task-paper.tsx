@@ -13,7 +13,7 @@
  *  2. **「没读到进度」不是「没有任务」**：没有任务时这一格画的是 header 而不是一个 alert。
  */
 import type { ReactElement } from "react";
-import type { NoteLearningArtifactTaskV1, NoteLearningArtifactV1 } from "@ailearn/shared/note-learning-artifact-contracts";
+import type { NoteLearningArtifactTaskV1, NoteLearningArtifactV1 } from "@astella/shared/note-learning-artifact-contracts";
 import { TaskSlip } from "./task-slip.tsx";
 
 /** 一个还在飞的任务。**只声明这一格真正要读的三项**，多写一项就多一处与源头分叉的地方。 */

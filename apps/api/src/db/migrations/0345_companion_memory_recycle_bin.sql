@@ -10,8 +10,8 @@
 --
 -- 三件事：
 --   1. `purge_after`：软删除时写下"什么时候可以真正抹掉"，窗口 30 天。
---   2. `ailearn_restore_companion_memory`：把回收区里的记忆放回去（清两个列）。
---   3. `ailearn_purge_expired_companion_memory`：到期**真删**。它只删已过
+--   2. `astella_restore_companion_memory`：把回收区里的记忆放回去（清两个列）。
+--   3. `astella_purge_expired_companion_memory`：到期**真删**。它只删已过
 --      `purge_after` 的行，不碰在用的——回收区窗口不是「到期自动消失」，
 --      而是「到期之后用户随时可以要求彻底清除时不再有版本历史挡路」。
 
@@ -45,7 +45,7 @@ UPDATE public.assistant_memory_items
 -- 用函数而不是直接 UPDATE，是因为 assistant_memory_items 的 RLS 策略
 -- 不给客户端 DELETE，而**撤销删除**同样要绕过它（这一列是被 RLS 之外的
 -- 函数写回去的，见 memory-service.restoreDeletedMemory 的调用方）。
-CREATE OR REPLACE FUNCTION public.ailearn_restore_companion_memory(
+CREATE OR REPLACE FUNCTION public.astella_restore_companion_memory(
   p_memory_item_id uuid,
   p_workspace_id uuid,
   p_user_id uuid
@@ -74,7 +74,7 @@ $$;
 
 -- 到期彻底清除。**只**删已经过了回收区窗口的行。
 -- 「用户明确要求彻底清除」走的是另一条路（eraseMemory），不等这个函数。
-CREATE OR REPLACE FUNCTION public.ailearn_purge_expired_companion_memory()
+CREATE OR REPLACE FUNCTION public.astella_purge_expired_companion_memory()
 RETURNS integer
 LANGUAGE sql
 SECURITY DEFINER
@@ -92,7 +92,7 @@ $$;
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_restore_companion_memory(uuid, uuid, uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.ailearn_purge_expired_companion_memory() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_restore_companion_memory(uuid, uuid, uuid) TO ailearn_api;
-GRANT EXECUTE ON FUNCTION public.ailearn_purge_expired_companion_memory() TO ailearn_api;
+REVOKE ALL ON FUNCTION public.astella_restore_companion_memory(uuid, uuid, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_purge_expired_companion_memory() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_restore_companion_memory(uuid, uuid, uuid) TO astella_api;
+GRANT EXECUTE ON FUNCTION public.astella_purge_expired_companion_memory() TO astella_api;

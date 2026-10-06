@@ -27,7 +27,7 @@ test("0384 invalidates coverage on rewrite and delete, but not on append", () =>
   assert.match(migration, /AFTER UPDATE OR DELETE ON public\.companion_messages/);
   assert.ok(!/AFTER INSERT ON public\.companion_messages/.test(migration),
     "追加不得让既有覆盖失效");
-  assert.match(migration, /ailearn_bump_conversation_context_revision/);
+  assert.match(migration, /astella_bump_conversation_context_revision/);
 });
 
 test("0384 indexes the reads that filter on the verified revision", () => {

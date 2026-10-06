@@ -40,15 +40,15 @@ import type {
   CompanionContentBlockV1,
   CompanionMessageV1,
   CompanionPageContextV1,
-} from "@ailearn/shared/companion-conversation-contracts";
+} from "@astella/shared/companion-conversation-contracts";
 import type {
   CompanionAgentRouteEventV1,
   CompanionChatConversationV1,
   CompanionChatProposalGetResultV1,
-} from "@ailearn/shared/companion-chat-desktop-contracts";
-import type { DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import type { MainPageContextInputV2, PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
-import { companionPageRouteV2, SETTINGS_SECTION_IDS_V2 } from "@ailearn/shared/companion-bridge-contracts";
+} from "@astella/shared/companion-chat-desktop-contracts";
+import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
+import type { MainPageContextInputV2, PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
+import { companionPageRouteV2, SETTINGS_SECTION_IDS_V2 } from "@astella/shared/companion-bridge-contracts";
 import { useRoomStore } from "./room-store";
 import type { HudPageId } from "../components/hud/hud-pages";
 import { createRequestMeta, gatewayErrorMessage, requireWorkspaceEpoch, unwrapGatewayResult, RendererGatewayError } from "./desktop-client";

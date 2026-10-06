@@ -24,16 +24,16 @@ test("0343 closes only the scoped memory delivery through a worker-only function
   assert.match(migration, /m\.id = p_memory_item_id[\s\S]*?m\.workspace_id = p_workspace_id[\s\S]*?m\.user_id = p_user_id/);
   assert.match(migration, /payload_ref ->> 'memoryItemId' = p_memory_item_id::text/);
   assert.match(migration, /state IN \('queued', 'delivered', 'displayed', 'snoozed'\)/);
-  assert.match(migration, /pg_notify\([\s\S]*?ailearn_companion_inbox_v1/);
-  assert.match(migration, /REVOKE ALL ON FUNCTION public\.ailearn_close_companion_memory_delivery[\s\S]*?FROM PUBLIC, ailearn_api, ailearn_worker/);
-  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.ailearn_close_companion_memory_delivery[\s\S]*?TO ailearn_worker/);
+  assert.match(migration, /pg_notify\([\s\S]*?astella_companion_inbox_v1/);
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.astella_close_companion_memory_delivery[\s\S]*?FROM PUBLIC, astella_api, astella_worker/);
+  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.astella_close_companion_memory_delivery[\s\S]*?TO astella_worker/);
 });
 
 test("role bootstrap restores and verifies the exact worker function grant", () => {
-  assert.match(roleGrants, /to_regprocedure\('public\.ailearn_close_companion_memory_delivery\(uuid,uuid,uuid,text\)'\)/);
-  assert.match(roleGrants, /ALTER FUNCTION public\.ailearn_close_companion_memory_delivery[\s\S]{0,160}OWNER TO ailearn_migrator[\s\S]{0,160}SET search_path = pg_catalog, public/);
-  assert.match(roleGrants, /GRANT EXECUTE ON FUNCTION public\.ailearn_close_companion_memory_delivery[\s\S]{0,160}TO ailearn_worker/);
-  assert.match(roleGrants, /'ailearn_worker', 'ailearn_close_companion_memory_delivery\(uuid,uuid,uuid,text\)'/);
+  assert.match(roleGrants, /to_regprocedure\('public\.astella_close_companion_memory_delivery\(uuid,uuid,uuid,text\)'\)/);
+  assert.match(roleGrants, /ALTER FUNCTION public\.astella_close_companion_memory_delivery[\s\S]{0,160}OWNER TO astella_migrator[\s\S]{0,160}SET search_path = pg_catalog, public/);
+  assert.match(roleGrants, /GRANT EXECUTE ON FUNCTION public\.astella_close_companion_memory_delivery[\s\S]{0,160}TO astella_worker/);
+  assert.match(roleGrants, /'astella_worker', 'astella_close_companion_memory_delivery\(uuid,uuid,uuid,text\)'/);
   assert.match(roleGrants, /Worker has unexpected function EXECUTE privileges/);
   assert.match(roleGrants, /Required function EXECUTE grants are missing/);
 });

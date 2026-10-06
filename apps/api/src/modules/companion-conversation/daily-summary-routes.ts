@@ -13,8 +13,8 @@ import { z } from "zod";
 import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { requireSession } from "../identity/middleware.ts";
 import { scopeOfSession, withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
-import { companionDailySummaries } from "@ailearn/shared/db-schema/companion-memory";
-import { toTextArrayLiteral } from "@ailearn/shared/pg-text-array";
+import { companionDailySummaries } from "@astella/shared/db-schema/companion-memory";
+import { toTextArrayLiteral } from "@astella/shared/pg-text-array";
 
 function isDailySummaryEnabled(): boolean {
   // §15.3：该 flag 独立于 COMPANION_JOURNEY_V2，默认关闭，.env 显式开启。
@@ -65,7 +65,7 @@ export async function maskDiaryAndExcerptsForRevokedSources(
 
   // 一次查全：GIN 索引在 source_event_ids 上，`&&` 是数组相交。
   // 数组参数给字面量：postgres.js 把 JS 数组序列化成行构造器 `($1,$2)`，在
-  // `text[]` 语境里那是 record 不是数组（见 @ailearn/shared/pg-text-array）。
+  // `text[]` 语境里那是 record 不是数组（见 @astella/shared/pg-text-array）。
   const rows = await executor.execute<{ date: string }>(sql`
     UPDATE companion_daily_summaries
        SET deleted_at = now(), delete_reason = 'revoked_source',

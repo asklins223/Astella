@@ -35,5 +35,5 @@ test("0385 isolates the state by workspace and user like every other private tab
   assert.match(migration, /ENABLE ROW LEVEL SECURITY/);
   assert.match(migration, /app\.workspace_id/);
   assert.match(migration, /app\.user_id/);
-  assert.match(migration, /GRANT SELECT, INSERT, UPDATE, DELETE ON public\.agent_context_compaction_state TO ailearn_worker/);
+  assert.match(migration, /GRANT SELECT, INSERT, UPDATE, DELETE ON public\.agent_context_compaction_state TO astella_worker/);
 });

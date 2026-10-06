@@ -1,4 +1,4 @@
-import type { CompanionAccountPatch } from "@ailearn/shared/companion-shell-contracts";
+import type { CompanionAccountPatch } from "@astella/shared/companion-shell-contracts";
 import { ArrowUpRight,BookOpen } from "lucide-react";
 import { Activity,useEffect,useRef,useState,type ReactNode } from "react";
 import { useRoomStore } from "../../../app/room-store";

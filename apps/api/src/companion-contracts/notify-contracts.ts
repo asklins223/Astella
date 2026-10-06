@@ -22,13 +22,13 @@
  */
 
 /** 账户维度（user/workspace epoch 变化）的专用通道。 */
-export const COMPANION_ACCOUNT_NOTIFY_CHANNEL = "ailearn_companion_account_v1";
+export const COMPANION_ACCOUNT_NOTIFY_CHANNEL = "astella_companion_account_v1";
 
 /** 对话增量（conversation maxSeq 推进）通道。 */
-export const COMPANION_CONVERSATION_NOTIFY_CHANNEL = "ailearn_companion_events_v1";
+export const COMPANION_CONVERSATION_NOTIFY_CHANNEL = "astella_companion_events_v1";
 
 /** inbox delivery 通道由 packages/shared 提供（16 §14.3），这里只做转发声明。 */
-export { COMPANION_INBOX_NOTIFY_CHANNEL } from "@ailearn/shared/companion-conversation-contracts";
+export { COMPANION_INBOX_NOTIFY_CHANNEL } from "@astella/shared/companion-conversation-contracts";
 
 export interface CompanionNotifyPayload {
   conversationId: string;

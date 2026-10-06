@@ -1,5 +1,5 @@
 /**
- * F47 的主进程这半：`ailearn.v1.search.global` 拿到的页必须**原样穿过** IPC，
+ * F47 的主进程这半：`astella.v1.search.global` 拿到的页必须**原样穿过** IPC，
  * 而形状不对的页必须**报错**，不能回一页空的。
  *
  * 为什么这条值得单独钉：审计量到界面「0 / 0 条」时，光看界面分不清是
@@ -13,7 +13,7 @@ import {
   DESKTOP_IPC_CONTRACT_VERSION,
   type GatewayResultV1,
   type RequestMetaV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import type { DesktopGateway } from "../desktop-gateway";
 
 type InvokeHandler = (
@@ -125,7 +125,7 @@ function installGateway() {
 
   registerM1DesktopIpc({
     gateway,
-    env: { AILEARN_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
+    env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
     resolveWindow: () => ({} as never),
     getWindowState: () => ({ state: "visible", revision: 1 }),
     setTitlebarTheme: () => true,
@@ -134,7 +134,7 @@ function installGateway() {
 
 installGateway();
 
-const event = { sender: {}, senderFrame: { url: "ailearn://renderer/" } };
+const event = { sender: {}, senderFrame: { url: "astella://renderer/" } };
 
 async function search(metaOverride: Partial<RequestMetaV1> = {}) {
   await electronMock.handlers.get(DESKTOP_IPC_CHANNELS.authGetState)?.(event, { meta });
@@ -145,7 +145,7 @@ async function search(metaOverride: Partial<RequestMetaV1> = {}) {
   });
 }
 
-describe("ailearn.v1.search.global · 主进程这半", () => {
+describe("astella.v1.search.global · 主进程这半", () => {
   it("服务端给 5 条，穿过 IPC 后还是 5 条、5 行、total=5", async () => {
     const page = serverPage();
     searchGlobal.mockResolvedValue(page);

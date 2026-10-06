@@ -12,10 +12,10 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PersonaPanel } from "../companion/companion-center-panels.tsx";
-import { companionPersonaV1Schema } from "@ailearn/shared/companion-memory-desktop-contracts";
-import type { PersonaSwitchOption } from "@ailearn/shared/pet-persona-merge";
+import { companionPersonaV1Schema } from "@astella/shared/companion-memory-desktop-contracts";
+import type { PersonaSwitchOption } from "@astella/shared/pet-persona-merge";
 import { useRoomStore } from "../../../app/room-store.ts";
-import { PET_PERSONA_PRESETS, getPresetById } from "@ailearn/shared/pet-persona-presets";
+import { PET_PERSONA_PRESETS, getPresetById } from "@astella/shared/pet-persona-presets";
 
 const noop = () => undefined;
 const USER_ID = "11111111-1111-1111-8111-111111111111";

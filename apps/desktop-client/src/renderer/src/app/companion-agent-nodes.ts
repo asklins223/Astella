@@ -19,12 +19,12 @@
  * 状态映射到 UI 只保留六档（轨道只需要这六档的视觉），映射表是 `TOOL_STATE`。
  */
 
-import { COMPANION_AGENT_TOOL_LABELS } from "@ailearn/shared/companion-agent-registry";
+import { COMPANION_AGENT_TOOL_LABELS } from "@astella/shared/companion-agent-registry";
 
 import type {
   CompanionRunNodeEventV1,
   CompanionRunSummaryV1,
-} from "@ailearn/shared/companion-chat-desktop-contracts";
+} from "@astella/shared/companion-chat-desktop-contracts";
 
 /**
  * 节点在 UI 上的状态。协议里的 `blocked` 归到 `failed`（都是"这条路走不通，要看见"），

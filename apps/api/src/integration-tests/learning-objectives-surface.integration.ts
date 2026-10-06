@@ -7,26 +7,26 @@
  *  - Origin 写入后 Surface 的 sources 立即反映（missingOrigin=false）；
  *  - 不存在的 objective revision 被拒绝（跨 workspace/幽灵绑定防护）。
  *
- * 运行：DATABASE_URL=postgres://ailearn:ailearn_dev@localhost:5432/ailearn
+ * 运行：DATABASE_URL=postgres://astella:astella_dev@localhost:5432/astella
  *   node --import tsx --test src/integration-tests/learning-objectives-surface.integration.ts
  */
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { findPrivatePayloadLeaks } from "@ailearn/shared";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
-import { objectiveListItemV3Schema } from "@ailearn/shared/learning-objective-surface-contracts";
+import { findPrivatePayloadLeaks } from "@astella/shared";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
+import { objectiveListItemV3Schema } from "@astella/shared/learning-objective-surface-contracts";
 import { eq, and } from "drizzle-orm";
 import {
   evidenceQuoteCopiesV2,
   evidenceSnapshotsV2,
   learningObjectivesV2,
   learningObjectiveOriginsV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { noteBlocks, noteVersions, notes } from "@ailearn/shared/db-schema/note";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { noteBlocks, noteVersions, notes } from "@astella/shared/db-schema/note";
 
 // db client 在 import 时读取 DATABASE_URL；必须先设置再动态 import。
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 process.env.DATABASE_URL ??= testDatabaseUrl("DATABASE_URL");
 // 自播种纯 V2 工作区（替代被 0176 清库抹掉的手工工作区 4f825f38-…）。
 const pgSql = (await import("postgres")).default(process.env.DATABASE_URL, { max: 1 });

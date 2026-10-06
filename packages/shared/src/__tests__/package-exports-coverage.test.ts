@@ -1,8 +1,8 @@
 /**
- * `@ailearn/shared/<sub>` 的深导入必须都在 `packages/shared/package.json` 的 `exports` 里登记。
+ * `@astella/shared/<sub>` 的深导入必须都在 `packages/shared/package.json` 的 `exports` 里登记。
  *
  * 为什么要有这条（39d #28，2026-09-25 实测）：宿主上 tsconfig 的 `paths` 把
- * `@ailearn/shared/*` 直接映射到 `packages/shared/src/*.ts`，所以**新加一个没登记的子路径
+ * `@astella/shared/*` 直接映射到 `packages/shared/src/*.ts`，所以**新加一个没登记的子路径
  * 在本机 typecheck 与全部用例里都是绿的**；而 dev 容器里那条映射不生效，运行时按
  * package exports 解析 ⇒ `ERR_PACKAGE_PATH_NOT_EXPORTED` ⇒ api 与 worker 两个进程一起崩，
  * 桌面端整屏落到「学习服务暂时不可用」。那一轮我把两个 dev 服务打挂了 46 分钟才发。
@@ -25,7 +25,7 @@ const SCAN_ROOTS = [
   SHARED,
 ];
 const SKIP = new Set(["node_modules", "dist", "out", "coverage"]);
-const DEEP_IMPORT = /@ailearn\/shared\/([A-Za-z0-9._/-]+)/g;
+const DEEP_IMPORT = /@astella\/shared\/([A-Za-z0-9._/-]+)/g;
 
 function sourceFiles(dir: string): string[] {
   const found: string[] = [];
@@ -89,7 +89,7 @@ test("深导入与 exports 对得上：两边都不许有孤儿", () => {
   // 分母自证：这条判据要是读不到任何深导入，"0 个未登记"就是假绿。
   assert.ok(imports.size >= 20, `读到的深导入太少（${imports.size}），这条判据没在读东西`);
   assert.deepEqual(unregisteredImports(exports, imports), [],
-    `这些 @ailearn/shared/* 子路径被代码导出了，但没登记进 packages/shared/package.json 的 exports`
+    `这些 @astella/shared/* 子路径被代码导出了，但没登记进 packages/shared/package.json 的 exports`
     + `（宿主靠 tsconfig paths 能跑，dev 容器按 exports 解析会 ERR_PACKAGE_PATH_NOT_EXPORTED 把 api/worker 打挂）`);
   assert.deepEqual(danglingExports(exports), [],
     "exports 指到的文件不存在（出口是假的）");

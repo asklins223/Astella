@@ -1,5 +1,5 @@
-import type { CompanionJourneyAction } from "@ailearn/shared/companion-journey-contracts";
-import type { CompanionActivityDeliveryV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { CompanionJourneyAction } from "@astella/shared/companion-journey-contracts";
+import type { CompanionActivityDeliveryV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { useCallback,useEffect,useRef,useState } from "react";
 import { useCompanionChat } from "../../../app/companion-chat-session";
 import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
@@ -10,9 +10,9 @@ import { publishCompanionRecordsChanged,useCompanionRecordsRefresh,useCompanionR
 
 export function CompanionActivityPage(props: { refreshKey: number; onMemory: (id: string) => void; onMessage: (id: string) => void }) {
   const chat = useCompanionChat();
-  const journey = useCompanionResource(meta => window.ailearn.companion.journey.bootstrap({ meta }), [props.refreshKey]);
-  const learning = useCompanionResource(meta => window.ailearn.companion.learningContext.get({ meta }), [props.refreshKey]);
-  const activity = useCompanionResource(meta => window.ailearn.companion.activity.timeline({ meta }), [props.refreshKey]);
+  const journey = useCompanionResource(meta => window.astella.companion.journey.bootstrap({ meta }), [props.refreshKey]);
+  const learning = useCompanionResource(meta => window.astella.companion.learningContext.get({ meta }), [props.refreshKey]);
+  const activity = useCompanionResource(meta => window.astella.companion.activity.timeline({ meta }), [props.refreshKey]);
   const [overrides, setOverrides] = useState<Record<string, CompanionActivityDeliveryV1>>({});
   useEffect(() => { setOverrides({}); }, [activity.section]);
   const [busy, setBusy] = useState(false);
@@ -34,21 +34,21 @@ export function CompanionActivityPage(props: { refreshKey: number; onMemory: (id
     const invitation = journey.section.value.invitation;
     void write(async () => {
       const session = await readAuthenticatedSession(journey.epochRef);
-      unwrapGatewayResult(await window.ailearn.companion.journey.actOnInvitation({ meta: journey.meta(), request: { version: 2, expectedRevision: invitation.revision, action: { kind, workspaceId: session.workspace!.workspaceId, branch: "own_material" }, idempotencyKey: crypto.randomUUID() } }));
+      unwrapGatewayResult(await window.astella.companion.journey.actOnInvitation({ meta: journey.meta(), request: { version: 2, expectedRevision: invitation.revision, action: { kind, workspaceId: session.workspace!.workspaceId, branch: "own_material" }, idempotencyKey: crypto.randomUUID() } }));
     });
   };
   const act = (action: CompanionJourneyAction) => {
     if (!journey.section?.ok || !journey.section.value.journey) return;
     const journeyId = journey.section.value.journey.journeyId;
     void write(async () => {
-      const current = unwrapGatewayResult(await window.ailearn.companion.journey.get({ meta: journey.meta(), journeyId }));
-      unwrapGatewayResult(await window.ailearn.companion.journey.act({ meta: journey.meta(), journeyId, request: { version: 2, expectedRevision: current.revision, action, idempotencyKey: crypto.randomUUID() } }));
+      const current = unwrapGatewayResult(await window.astella.companion.journey.get({ meta: journey.meta(), journeyId }));
+      unwrapGatewayResult(await window.astella.companion.journey.act({ meta: journey.meta(), journeyId, request: { version: 2, expectedRevision: current.revision, action, idempotencyKey: crypto.randomUUID() } }));
     });
   };
   const present = useCallback((item: CompanionActivityDeliveryV1) => {
     if (item.expired || !["queued", "delivered"].includes(item.state) || presentations.current.has(item.deliveryId)) return;
     presentations.current.add(item.deliveryId);
-    void window.ailearn.companion.activity.present({ meta: activity.meta(), deliveryId: item.deliveryId, inboxSequence: item.inboxSequence }).then(result => {
+    void window.astella.companion.activity.present({ meta: activity.meta(), deliveryId: item.deliveryId, inboxSequence: item.inboxSequence }).then(result => {
       const shown = unwrapGatewayResult(result);
       setOverrides(current => ({ ...current, [shown.deliveryId]: shown }));
     }).catch(cause => { presentations.current.delete(item.deliveryId); setError(gatewayErrorMessage(cause)); });
@@ -60,7 +60,7 @@ export function CompanionActivityPage(props: { refreshKey: number; onMemory: (id
         else if (item.target.kind === "dialogue") props.onMessage(item.target.messageId);
         else if (item.target.kind === "proposal") { chat.retryProposal(item.target.proposalId); chat.setMode("history"); }
       }
-      const updated = unwrapGatewayResult(await window.ailearn.companion.activity.ack({ meta: activity.meta(), request: { deliveryId: item.deliveryId, inboxSequence: item.inboxSequence, transition } }));
+      const updated = unwrapGatewayResult(await window.astella.companion.activity.ack({ meta: activity.meta(), request: { deliveryId: item.deliveryId, inboxSequence: item.inboxSequence, transition } }));
       setOverrides(current => ({ ...current, [updated.deliveryId]: updated }));
     });
   };

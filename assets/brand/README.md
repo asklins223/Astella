@@ -1,8 +1,24 @@
-# 理解引擎 — 品牌图标与产品名
+# 拾星笔记（Astella）— 品牌图标与产品名
 
-产品名 **理解引擎**，2026-10-04 由用户定名。此前叫 `AI Learn`（electron-builder
-的 `productName`、窗口标题、NSMicrophoneUsageDescription、package.json description
-已一并改掉）。
+产品名 2026-10-06 定为 **Astella**，中文名 **拾星笔记**。这是这个项目的第三次
+定名：`AI Learn` → 「理解引擎」（2026-10-04）→ Astella／拾星笔记。
+
+名字分两层，别混：
+
+| 层 | 取值 | 落在哪 |
+| --- | --- | --- |
+| 包名／身份 | `Astella`（ASCII） | `productName`、bundle 与 exe 名、`%LOCALAPPDATA%\Programs\Astella`、产物名 `astella-<version>-…`、`appId: com.asklins.astella` |
+| 显示名 | `拾星笔记` | `CFBundleDisplayName`、`nsis.shortcutName` 与 `uninstallDisplayName`、窗口标题、登录页与 /admin 面板的文案 |
+
+2026-10-06 的第二轮改名把**内部标识也一起换掉了**：npm scope `@astella/`、preload 桥
+`window.astella` / `window.astellaDesktop`、IPC 通道前缀 `astella.v1.`、环境变量
+`ASTELLA_*`、自定义协议 `astella-app://`、Docker 项目名与派生的容器/卷名。
+**仍保留 `astella` 的只有存储与时序标识**：Postgres 库名／角色／函数、MinIO 桶
+`astella-workspaces`、Prometheus 指标名 `astella_*`——改它们是数据迁移，不是改名。
+
+Electron 的 userData 目录取的是 package.json 的 `name`（现在是
+`astella-desktop-client`），**不跟 productName 走**：换显示名不动数据，换包名才会搬。
+这一点 `.github/workflows/desktop-package.yml` 里也有实测断言。
 
 - 图标母版：`app-icon.png`，1024 × 1024，RGBA。
 - 形象：宝蓝夜空里，短发女孩握着笔在蓝色笔记本上写字，旁边一枚眨眼的黄色星星。

@@ -6,7 +6,7 @@
  * `config/ai-platforms.json`（路径来自 `AI_PLATFORMS_CONFIG`）——本项目**唯一**
  * 的运行时模型路由配置：平台定义（type / apiKey / baseUrl / options）与
  * 能力→平台模型的映射，以及可选的 TTS 设置。契约见
- * `@ailearn/shared/platform-config`。
+ * `@astella/shared/platform-config`。
  *
  * feature flag 不在这里：它们是**环境变量**，改一个 flag 的正确姿势是改 compose
  * 再滚动重启，不是热写。队列上限是编译期常量。把这些做成面板上的可点开关
@@ -42,11 +42,11 @@
 import { constants as fsConstants } from "node:fs";
 import { access, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
-import type { AIPlatformConfig, PlatformDefinition } from "@ailearn/shared";
+import type { AIPlatformConfig, PlatformDefinition } from "@astella/shared";
 import {
   loadPlatformConfig,
   resetPlatformConfigCache,
-} from "@ailearn/shared/platform-config-node";
+} from "@astella/shared/platform-config-node";
 import { logger } from "../../lib/logger.ts";
 
 const DEFAULT_CONFIG_PATH = "config/ai-platforms.json";

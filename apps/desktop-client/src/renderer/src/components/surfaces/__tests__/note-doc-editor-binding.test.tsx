@@ -19,7 +19,7 @@ import {
   updateYFragment,
   yXmlFragmentToProseMirrorRootNode,
 } from "y-prosemirror";
-import { noteBlocksToPmNodes, noteDocSchemaSpec } from "@ailearn/shared/note-doc-schema";
+import { noteBlocksToPmNodes, noteDocSchemaSpec } from "@astella/shared/note-doc-schema";
 
 /**
  * 批次 C2 的门槛用例：**编辑器的 schema 带不带得住我们的块属性**。

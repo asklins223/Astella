@@ -1,12 +1,12 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import { AgentStoreError } from "@ailearn/agent-host";
-import { agentLongGoalsQueryV1Schema } from "@ailearn/shared/agent-long-goal-contracts";
-import type { AgentRunV1 } from "@ailearn/shared/agent-contracts";
+import { AgentStoreError } from "@astella/agent-host";
+import { agentLongGoalsQueryV1Schema } from "@astella/shared/agent-long-goal-contracts";
+import type { AgentRunV1 } from "@astella/shared/agent-contracts";
 import { z } from "zod";
 import {
   createAgentRunV1Schema, reviseAgentRunV1Schema, controlAgentRunV1Schema,
   agentRunListQueryV1Schema, agentRunHistoryQueryV1Schema,
-} from "@ailearn/shared/agent-contracts";
+} from "@astella/shared/agent-contracts";
 import { requireSession } from "../identity/middleware.ts";
 import { buildSimpleErrorBody } from "../../lib/error-envelope.ts";
 import { agentStore } from "./service.ts";

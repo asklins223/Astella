@@ -80,8 +80,8 @@
 
 ```
 packages/shared  → 无任何内部依赖（只依赖 drizzle-orm + zod）
-apps/api         → @ailearn/shared，无 @ailearn/ai-worker
-workers/ai-worker→ @ailearn/shared，无 @ailearn/api
+apps/api         → @astella/shared，无 @astella/ai-worker
+workers/ai-worker→ @astella/shared，无 @astella/api
 ```
 
 全仓搜索四处交叉引用均为 0。`packages/shared/package.json` 的 `exports` 映射（约 130 条子路径）显式区分了客户端安全与服务端专用入口。**这是教科书式的正确**，整改时不要动。
@@ -202,7 +202,7 @@ packages/shared/src/index.ts:11-13 "task-router 依赖 platform-config-node（no
 1. **穷举 326 支迁移，`users` 不在任何 RLS 表数组中**（`ALTER TABLE public.users ENABLE ROW LEVEL SECURITY` 零命中）
 2. `infra/postgres/roles.sql:257-258` 是**无差别授权**：
    ```sql
-   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ailearn_api;
+   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO astella_api;
    ```
 3. `users` 持有 `email` + `passwordHash`（`packages/shared/src/db-schema/identity.ts:5-19`）
 
@@ -227,7 +227,7 @@ const kind = configured || (env.NODE_ENV === "production" ? "postgres" : "memory
 
 | 问题 | 位置 | 说明 |
 | --- | --- | --- |
-| Worker 在 211 条策略上被 `CURRENT_USER='ailearn_worker'` **整体豁免** | `0116:554-569` 等 | 这些表上 RLS 对 worker 是装饰性的，隔离全靠应用层 WHERE |
+| Worker 在 211 条策略上被 `CURRENT_USER='astella_worker'` **整体豁免** | `0116:554-569` 等 | 这些表上 RLS 对 worker 是装饰性的，隔离全靠应用层 WHERE |
 | `isolated: true` 跳过 `requireActive` 断言 | `workers/ai-worker/src/db.ts:174-180` | 与 API 侧 fail-closed 不对称。当前 8 个调用点都传同一 context，属潜在而非现实缺陷 |
 | `0257:62-72` actor 事务下租户守卫**恒真** | `NULLIF(...) IS NULL OR ...` | 17 个调用点中 2 处真实读路径都带显式 `user_id` 过滤，当前不可利用，但无机制阻止将来遗漏 |
 | `memory-service.ts:145-170` 读-改-写**无锁** | 且 `assistant_memory_items` 在 `(workspace,user,kind,sourceEventId)` 上**无唯一索引** | 并发记忆抽取可插重复行 |
@@ -320,7 +320,7 @@ const kind = configured || (env.NODE_ENV === "production" ? "postgres" : "memory
 - 单跑一段脚本核对 `drizzle.__drizzle_migrations` 行数 == `_journal.json` 条目数
 - 关键集成测试**强制走受限角色**，注释明写"超级用户会绕过 RLS，让隔离断言假通过"
 
-而且这套东西**被真实缺陷打磨过**，注释如实记录了每次修复，例如："同一批还把文件里 16 处裸 `sql` 校验改成带 workspace/user 上下文的 `scoped()`…那些裸读在 `ailearn_api` 下会被 RLS 挡成 0 行（**9 条红**）"。
+而且这套东西**被真实缺陷打磨过**，注释如实记录了每次修复，例如："同一批还把文件里 16 处裸 `sql` 校验改成带 workspace/user 上下文的 `scoped()`…那些裸读在 `astella_api` 下会被 RLS 挡成 0 行（**9 条红**）"。
 
 `packages/shared/src/integration-test-db-env.ts:24` 的"变量缺失就抛错，绝不静默回落开发库"是**全仓测试基础设施里质量最高的一处**——文件头记录了它来自一次真实事故（"本机跑测试时夹具悄悄写进了开发者真实的 dev 库，那一轮多出 12 个 fixture 用户 / 10 个 workspace"），并配了棘轮测试。
 
@@ -643,7 +643,7 @@ const keyword = `%${args.query}%`;   // 没转义 % 和 _
 
 ```ts
 while (processed + failed < maxCommands) {
-  const claimedRows = await db.execute(sql`... ailearn_claim_run_processing(..., 1, ...)`);
+  const claimedRows = await db.execute(sql`... astella_claim_run_processing(..., 1, ...)`);
   if (claimed.length === 0) break;
   await processClaimedCommand(claimed[0], workerId);   // ← 一次一条，全程串行
 }
@@ -986,7 +986,7 @@ exports 指向的不同源文件数: 124
 
 > "宿主靠 tsconfig paths 能跑，dev 容器按 exports 解析会 **ERR_PACKAGE_PATH_NOT_EXPORTED** 把 api/worker 打挂"
 
-**⚠️ 这意味着：迁移 shared 文件后，跑 `npm run typecheck` 通过 ≠ 迁移正确。**宿主 tsconfig 把 `@ailearn/shared/*` 直指源码，所以 exports 没同步时 typecheck 依然是绿的。**必须在 dev 容器里起一次 api + worker 验证。**
+**⚠️ 这意味着：迁移 shared 文件后，跑 `npm run typecheck` 通过 ≠ 迁移正确。**宿主 tsconfig 把 `@astella/shared/*` 直指源码，所以 exports 没同步时 typecheck 依然是绿的。**必须在 dev 容器里起一次 api + worker 验证。**
 
 **一个降低风险的技巧**：只改 exports 的 `types` 目标路径、**保持子路径 key 不变**（`"./companion-conversation-contracts"` 仍是这个 key），则所有消费方 import 一行都不用改。这把风险从"高"降到"可控"。
 
@@ -1154,7 +1154,7 @@ assert.equal(sessionContextCount, handlerCount - exempt);
 而 `apps/api/src/modules/note-learning-rounds/routes.ts:105` **就在 import shared 那份**：
 
 ```ts
-import { ARTIFACT_MIN_STEPS_V1, groundArtifactStepsV1, plainTextForGroundingV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact-measure";
+import { ARTIFACT_MIN_STEPS_V1, groundArtifactStepsV1, plainTextForGroundingV1 } from "@astella/shared/note-dynamic-artifact/round-artifact-measure";
 ```
 
 **同一个目录下的另一个文件已经导入了，隔壁却自己重写了一遍。零成本可修。**
@@ -1224,7 +1224,7 @@ import { ARTIFACT_MIN_STEPS_V1, groundArtifactStepsV1, plainTextForGroundingV1 }
 
 ### B.5.1 我自己建的 import 图实测
 
-我解析了四个包的完整 import 图（669 个生产文件 + 446 个测试文件，解析了相对路径、`@ailearn/shared` 子路径与 barrel、带 `.ts` 后缀的显式导入）：
+我解析了四个包的完整 import 图（669 个生产文件 + 446 个测试文件，解析了相对路径、`@astella/shared` 子路径与 barrel、带 `.ts` 后缀的显式导入）：
 
 | 类别 | 数量 |
 | --- | ---: |

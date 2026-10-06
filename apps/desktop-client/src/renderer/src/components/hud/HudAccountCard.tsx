@@ -44,13 +44,13 @@ export function useAccountAvatar(): string | null {
     void (async () => {
       try {
         const profile = unwrapGatewayResult(
-          await window.ailearn.auth.getProfile({ meta: createRequestMeta() }),
+          await window.astella.auth.getProfile({ meta: createRequestMeta() }),
         );
         if (!profile.avatarUrl) {
           if (active) setAccountAvatar({ email, src: NO_AVATAR_SRC });
           return;
         }
-        const bytes = unwrapGatewayResult(await window.ailearn.auth.getAvatar({
+        const bytes = unwrapGatewayResult(await window.astella.auth.getAvatar({
           meta: createRequestMeta(),
           request: { version: 1, objectKey: profile.avatarUrl.replace("/api/uploads/", "") },
         }));

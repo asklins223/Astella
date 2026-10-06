@@ -28,7 +28,7 @@ const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.t
 const rounds = await import("../modules/note-learning-rounds/round/round-service.ts");
 const { seedNotesOnlyWorkspace } = await import("./helpers/pure-v2-workspace-fixture.ts");
 const { noteLearningRoundHistoryPageV1Schema, ROUND_HISTORY_MASKED_QUESTION_V1 } =
-  await import("@ailearn/shared/note-learning-round-contracts");
+  await import("@astella/shared/note-learning-round-contracts");
 
 const HASH = "b".repeat(64);
 const QUESTION = "判断为什么有索引，查询仍然可能慢";
@@ -167,7 +167,7 @@ test("笔记所有者始终读得到那一篇（撤回的是共享，不是把�
   // 走 **drizzle select** 而不是 `tx.execute` 裸 SQL：后者的返回形状随驱动而不同
   // （第一版按数组下标去取，报的是「Cannot read properties of undefined」——
   // 症状离病因隔了两层，而真实原因只是取错了那一层）。
-  const { notes: notesTable } = await import("@ailearn/shared/db-schema/note");
+  const { notes: notesTable } = await import("@astella/shared/db-schema/note");
   const { eq: eqOp, and: andOp } = await import("drizzle-orm");
   const rows = await withWorkspaceTransaction(author(), (tx) =>
     tx.select({ id: notesTable.id })

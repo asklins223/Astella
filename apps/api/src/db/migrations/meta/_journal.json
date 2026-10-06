@@ -454,7 +454,7 @@
       "idx": 64,
       "version": "7",
       "when": 1788498200000,
-      "tag": "0064_ailearn_fail_job_return_record",
+      "tag": "0064_astella_fail_job_return_record",
       "breakpoints": true
     },
     {
@@ -2716,6 +2716,13 @@
       "version": "7",
       "when": 1791269350527,
       "tag": "0391_summary_verified_revision_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 388,
+      "version": "7",
+      "when": 1791269351527,
+      "tag": "0392_ai_settings_default_send_image",
       "breakpoints": true
     }
   ]

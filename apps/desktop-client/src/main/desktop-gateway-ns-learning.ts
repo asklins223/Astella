@@ -27,7 +27,7 @@ import {
   DesktopRecordLearningRunActivityLeaseRequestV2,
   DesktopSubmitTaskArtifactV2,
   recordLearningRunActivityLeaseOutputV2Schema,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import {
   getLearningRunResultResponseV2Schema,
   learningRunActionResponseV2Schema,
@@ -37,7 +37,7 @@ import {
   learningTaskDraftV2Schema,
   learningTaskDraftWriteReceiptV2Schema,
   submitTaskArtifactReceiptV2Schema,
-} from "@ailearn/shared/learning-run-v2-contracts";
+} from "@astella/shared/learning-run-v2-contracts";
 import {
   isDeepStrictEqual,
 } from "node:util";

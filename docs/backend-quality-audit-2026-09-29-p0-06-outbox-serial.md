@@ -10,7 +10,7 @@
 ```ts
 while (processed + failed < maxCommands) {
   const claimedRows = await db.execute(sql`
-    SELECT * FROM public.ailearn_claim_run_processing(
+    SELECT * FROM public.astella_claim_run_processing(
       ${workerId}, ${LEASE_SECONDS * 1000}, 1, ${now.toISOString()}   // ← p_max = 1
     )`);
   const row = claimedRows[0];
@@ -112,7 +112,7 @@ C 已经能从上面两条注释看出会错。
 
 也就是说**故障态下最坏的一批**——正是把 outbox 钉住的那种——被压到接近零。
 阈值 5 次 / 冷却 30s（`packages/shared/src/circuit-breaker.ts`），
-指标 `ailearn_ai_circuit_open_total{host,reason}` 可观测。
+指标 `astella_ai_circuit_open_total{host,reason}` 可观测。
 
 熔断不解决「上游慢但没挂」（那种仍会等 55s），而那要靠 §4 的分组并发。
 
@@ -120,12 +120,12 @@ C 已经能从上面两条注释看出会错。
 
 P0-12 已补的三个指标就是为这件事准备的，配上以后不需要再猜：
 
-- `ailearn_learning_run_processing_outbox_depth{command_type}` —— 积压
-- `ailearn_learning_run_processing_oldest_pending_age_seconds` —— **串行卡住时这个会直接跳上去**
-- `ailearn_learning_run_processing_tick_duration_seconds` —— 单次 tick 耗时
+- `astella_learning_run_processing_outbox_depth{command_type}` —— 积压
+- `astella_learning_run_processing_oldest_pending_age_seconds` —— **串行卡住时这个会直接跳上去**
+- `astella_learning_run_processing_tick_duration_seconds` —— 单次 tick 耗时
 
 建议的告警口径：`oldest_pending_age_seconds` 持续 > 120s（即一个租约周期）超过若干分钟
-⇒ 串行链被卡住，去看同期 `ailearn_ai_circuit_open_total` 是否非零。
+⇒ 串行链被卡住，去看同期 `astella_ai_circuit_open_total` 是否非零。
 
 ## 7. 结论
 

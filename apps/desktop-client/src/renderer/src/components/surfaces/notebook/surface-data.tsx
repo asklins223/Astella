@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, FolderOpen, LoaderCircle, RefreshCw } from "lucide-react";
-import type { DesktopSourceListItem } from "@ailearn/shared/desktop-surface-contracts";
-import type { NoteBlockProjectionV1 } from "@ailearn/shared/note-projection-contracts";
+import type { DesktopSourceListItem } from "@astella/shared/desktop-surface-contracts";
+import type { NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
 import { gatewayErrorMessage } from "../../../app/desktop-client";
 import { readAuthenticatedSession } from "../../../app/surface-session";
 

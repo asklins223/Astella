@@ -4,7 +4,7 @@
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_run_companion_memory_maintenance()
+CREATE OR REPLACE FUNCTION public.astella_run_companion_memory_maintenance()
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -35,9 +35,9 @@ $$;
 
 --> statement-breakpoint
 
-GRANT EXECUTE ON FUNCTION public.ailearn_run_companion_memory_maintenance() TO ailearn_worker;
+GRANT EXECUTE ON FUNCTION public.astella_run_companion_memory_maintenance() TO astella_worker;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_run_companion_memory_maintenance() IS
+COMMENT ON FUNCTION public.astella_run_companion_memory_maintenance() IS
   '桌宠记忆衰减：低重要性且长期未使用的 active 记忆自动归档（pinned 不衰减）。';

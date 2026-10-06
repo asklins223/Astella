@@ -11,7 +11,7 @@
  *   - **媒介**：语音合成与语音识别。输入是文本或音频字节，输出是一条流或一段字节。
  *
  * 两种适配共用同一对准备/结算函数，所以"语音这条路忘了查同意"这种形状写不出来。
- * 公共政策与 PII 规则只在 `@ailearn/agent-host/ai-governance-policy` 里有一份，
+ * 公共政策与 PII 规则只在 `@astella/agent-host/ai-governance-policy` 里有一份，
  * 这里只做接线。
  *
  * ## 审计到底记什么
@@ -48,9 +48,9 @@
  * 取消/错误/EOF 的结算口径，都还是下面这一份实现。
  */
 
-import { normalizeWorkspaceAIPolicy, prepareGovernedAIPayload } from "@ailearn/agent-host";
-import { assertOutsideRegisteredTransactions } from "@ailearn/shared/workspace-transaction";
-import { postJsonToPublicEndpoint, type PublicJsonRequester } from "@ailearn/shared/public-json-http";
+import { normalizeWorkspaceAIPolicy, prepareGovernedAIPayload } from "@astella/agent-host";
+import { assertOutsideRegisteredTransactions } from "@astella/shared/workspace-transaction";
+import { postJsonToPublicEndpoint, type PublicJsonRequester } from "@astella/shared/public-json-http";
 import { logger } from "./logger.ts";
 import { PostgresRateLimitStore } from "./rate-limit-store.ts";
 

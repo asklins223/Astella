@@ -13,13 +13,13 @@
 import { and, eq, lt, inArray, sql, desc, isNull, or, lte } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import type { ApiTransaction } from "../../db/client.ts";
-import { learningObjectivesV2, learningObjectiveRevisionsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { learningRuns } from "@ailearn/shared/db-schema/learning-runs";
-import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
-import { notes } from "@ailearn/shared/db-schema/note";
+import { learningObjectivesV2, learningObjectiveRevisionsV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { learningRuns } from "@astella/shared/db-schema/learning-runs";
+import { reviewSchedules } from "@astella/shared/db-schema/evidence";
+import { notes } from "@astella/shared/db-schema/note";
 import { visibleNotesCondition, visibleObjectivesCondition } from "../note/visibility.ts";
-import type { LearningDashboardV2 } from "@ailearn/shared";
-import { reviewScheduleTargetsConsumableCardPredicate } from "@ailearn/shared/review-consumable-target";
+import type { LearningDashboardV2 } from "@astella/shared";
+import { reviewScheduleTargetsConsumableCardPredicate } from "@astella/shared/review-consumable-target";
 import {
   assembleObjectiveSurfaceV3,
   listObjectiveSurfacesV3,
@@ -30,7 +30,7 @@ import {
   dashboardBuildDurationSeconds,
   dashboardEmptyWithActiveObjectivesTotal,
 } from "../../lib/metrics.ts";
-import { ACTIVE_LEARNING_RUN_PHASES } from "@ailearn/shared/learning-run-contracts";
+import { ACTIVE_LEARNING_RUN_PHASES } from "@astella/shared/learning-run-contracts";
 
 // P0-16：第 4 份逐字相同的 6 档副本。改从 shared 唯一来源派生，
 // 这样新增一个"进行中"档位只需改 db-schema 一处，而不是这里 + 另外 3 处。

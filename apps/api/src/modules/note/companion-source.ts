@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
-import { companionConversations, companionMessages, companionTurnRuns } from "@ailearn/shared/db-schema/companion-conversations";
+import { companionConversations, companionMessages, companionTurnRuns } from "@astella/shared/db-schema/companion-conversations";
 
 export interface NoteCompanionSourceV1 {
   readonly workspaceId: string;

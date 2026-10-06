@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import { ArrowRight, Check, FilePlus2, FileText, Link2, LoaderCircle, Upload, X } from "lucide-react";
-import type { DesktopSourceCreateRequest, DesktopSourceDuplicateV1 } from "@ailearn/shared/desktop-surface-contracts";
+import type { DesktopSourceCreateRequest, DesktopSourceDuplicateV1 } from "@astella/shared/desktop-surface-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { MAX_CAPTURE_BYTES, TEXT_FILE_PATTERN, captureBytes, formatCaptureSize, hasOpenModal, isEditableTarget } from "../../../app/source-intake";
 import { MAX_BATCH_CAPTURE_FILES, captureSourceTasks, readCaptureFiles, type BatchCaptureOutcome } from "../../../app/source-batch-capture";
@@ -149,7 +149,7 @@ export function CaptureStrip({ disabled, lockedReason, epochRef, receipt, summar
     if (busyRef.current || disabled) return;
     busyRef.current = true; setBusy(true); setError(null);
     try {
-      const created = unwrapGatewayResult(await window.ailearn.source.create({ meta: createRequestMeta(epochRef.current), request }));
+      const created = unwrapGatewayResult(await window.astella.source.create({ meta: createRequestMeta(epochRef.current), request }));
       if (!alive.current) return;
       if (created.duplicateOf) {
         setDuplicate({ existing: created.duplicateOf, request: { ...request, force: true } }); return;

@@ -45,7 +45,7 @@ CREATE INDEX IF NOT EXISTS "jobs_workspace_requested_by_idx"
 -- caller-controlled limits, fixes search_path, and returns only the claimed rows.
 -- gen_random_uuid() is evaluated per updated row, yielding an independent lease
 -- token even if concurrency is raised above one in a later release.
-CREATE OR REPLACE FUNCTION public.ailearn_claim_jobs(
+CREATE OR REPLACE FUNCTION public.astella_claim_jobs(
   p_limit integer,
   p_max_attempts integer
 )
@@ -113,7 +113,7 @@ $function$;
 -- reapers skip rows already locked by a handler/renewal transaction.  Timeout
 -- and attempt inputs are bounded so EXECUTE permission cannot be used to reap
 -- fresh work or create an unbounded retry horizon.
-CREATE OR REPLACE FUNCTION public.ailearn_reap_stale_jobs(
+CREATE OR REPLACE FUNCTION public.astella_reap_stale_jobs(
   p_lease_timeout_ms integer,
   p_max_attempts integer
 )
@@ -176,11 +176,11 @@ AS $function$
 $function$;
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_claim_jobs(integer, integer) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.ailearn_reap_stale_jobs(integer, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_claim_jobs(integer, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_reap_stale_jobs(integer, integer) FROM PUBLIC;
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_claim_jobs(integer, integer) IS
+COMMENT ON FUNCTION public.astella_claim_jobs(integer, integer) IS
   'SEC-01 controlled cross-workspace Worker claim path; RLS remains disabled in expand phase';
-COMMENT ON FUNCTION public.ailearn_reap_stale_jobs(integer, integer) IS
+COMMENT ON FUNCTION public.astella_reap_stale_jobs(integer, integer) IS
   'SEC-01 controlled cross-workspace Worker stale-lease recovery path; RLS remains disabled in expand phase';

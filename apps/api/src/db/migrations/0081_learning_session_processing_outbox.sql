@@ -56,14 +56,14 @@ DROP POLICY IF EXISTS learning_session_processing_outbox_workspace_user_isolatio
 CREATE POLICY learning_session_processing_outbox_workspace_user_isolation
   ON public.learning_session_processing_outbox FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
     )
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -73,13 +73,13 @@ CREATE POLICY learning_session_processing_outbox_workspace_user_isolation
 --> statement-breakpoint
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
     GRANT SELECT, INSERT, UPDATE, DELETE
-      ON public.learning_session_processing_outbox TO ailearn_api;
+      ON public.learning_session_processing_outbox TO astella_api;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
     -- Worker claim/release is a deliberate cross-workspace operation. The
     -- payload contains identifiers only; learning rows remain user-scoped.
-    GRANT SELECT, UPDATE ON public.learning_session_processing_outbox TO ailearn_worker;
+    GRANT SELECT, UPDATE ON public.learning_session_processing_outbox TO astella_worker;
   END IF;
 END $$;

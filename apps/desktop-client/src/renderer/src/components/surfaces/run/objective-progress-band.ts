@@ -11,7 +11,7 @@
  *
  * 认不出来的值一律返回 null（界面上显示 `—`，见 DESIGN.md:178），不猜。
  */
-import type { ObjectivePersonalStateV3 } from "@ailearn/shared/learning-objective-surface-contracts";
+import type { ObjectivePersonalStateV3 } from "@astella/shared/learning-objective-surface-contracts";
 
 export const PROGRESS_SEGMENTS = ["还没答过", "练过了", "说清了"] as const;
 

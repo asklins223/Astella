@@ -30,10 +30,10 @@ import {
   companionPersonaActivenessV1Schema,
   companionPersonaBoundariesV1Schema,
   readJobPayloadString,
-} from "@ailearn/shared";
-import { sourceImageUrlFromObjectKey } from "@ailearn/shared/source-image-contracts";
-import { PET_PERSONA_PRESET_VERSION, resolveCompanionPersonaProfile } from "@ailearn/shared/pet-persona-presets";
-import { toTextArrayLiteral } from "@ailearn/shared/pg-text-array";
+} from "@astella/shared";
+import { sourceImageUrlFromObjectKey } from "@astella/shared/source-image-contracts";
+import { PET_PERSONA_PRESET_VERSION, resolveCompanionPersonaProfile } from "@astella/shared/pet-persona-presets";
+import { toTextArrayLiteral } from "@astella/shared/pg-text-array";
 import { logger } from "../lib/logger.ts";
 import { assertJobLease, isJobLeaseActive, lockJobLease, withJobTransaction } from "../lib/job-lease.ts";
 import { currentWorkerWorkspaceTransaction } from "../db.ts";
@@ -60,7 +60,7 @@ import {
   runAiTask,
   type AiTaskDefinition,
   type AiTaskReceipt,
-} from "@ailearn/shared/ai-task-kernel";
+} from "@astella/shared/ai-task-kernel";
 import { createDiaryCheckpointPort } from "./companion-diary-checkpoints.ts";
 import {
   committedDiaryTask,
@@ -1152,7 +1152,7 @@ if (droppedRefs.length > 0) logger.warn({ jobId: job.id, date, droppedRefs }, "c
 }
 
 export async function runCompanionDailySummary(job: JobPayload): Promise<void> {
-  // 设计 P1-8（2026-09-15 审计）：字段名与读取走共享契约（@ailearn/shared 的
+  // 设计 P1-8（2026-09-15 审计）：字段名与读取走共享契约（@astella/shared 的
   // companion-memory-job-payload），改名时编译器会在所有调用点报错。
   const date = readJobPayloadString(job.payload, "date");
   const timezone = readJobPayloadString(job.payload, "timezone");

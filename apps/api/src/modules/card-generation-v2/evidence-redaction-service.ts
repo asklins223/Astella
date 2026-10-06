@@ -21,7 +21,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { withWorkspaceTransaction } from "../../db/client.ts";
 import type { ApiTransaction } from "../../db/client.ts";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
 import {
   CardGenerationV2ServiceError,
   type RunContext,

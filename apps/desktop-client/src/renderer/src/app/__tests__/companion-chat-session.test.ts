@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import type { CompanionMessageV1 } from "@ailearn/shared/companion-conversation-contracts";
-import type { CompanionAgentRouteEventV1 } from "@ailearn/shared/companion-chat-desktop-contracts";
-import type { DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import { allowedMainRouteV2Schema } from "@ailearn/shared/companion-bridge-contracts";
+import type { CompanionMessageV1 } from "@astella/shared/companion-conversation-contracts";
+import type { CompanionAgentRouteEventV1 } from "@astella/shared/companion-chat-desktop-contracts";
+import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
+import { allowedMainRouteV2Schema } from "@astella/shared/companion-bridge-contracts";
 import type { RoomIntent } from "../room-machine.ts";
 import { useRoomStore } from "../room-store.ts";
 import {

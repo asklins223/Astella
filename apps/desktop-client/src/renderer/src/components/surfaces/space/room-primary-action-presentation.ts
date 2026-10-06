@@ -1,4 +1,4 @@
-import type { RoomPrimaryActionV1, RoomProjectionV1 } from "@ailearn/shared/room-projection-contracts";
+import type { RoomPrimaryActionV1, RoomProjectionV1 } from "@astella/shared/room-projection-contracts";
 import {
   formatObjectiveState,
   primaryActionDescription,

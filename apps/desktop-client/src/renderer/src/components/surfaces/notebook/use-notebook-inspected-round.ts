@@ -17,7 +17,7 @@
  * `finally` 里的 `if (!cancelled)` 同理。
  */
 import { useEffect, useState } from "react";
-import type { RoundTeachingViewV1 } from "@ailearn/shared/note-learning-round-contracts";
+import type { RoundTeachingViewV1 } from "@astella/shared/note-learning-round-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 
 export function useNotebookInspectedRound(input: {
@@ -30,7 +30,7 @@ export function useNotebookInspectedRound(input: {
   /** 递增一次 = 重发。`notebook-round-recap` 里那颗「重试」调的就是它。 */
   readonly inspectRevision: number;
   readonly epochRef: { current: number | undefined };
-  readonly api: NonNullable<Window["ailearn"]> | undefined;
+  readonly api: NonNullable<Window["astella"]> | undefined;
 }) {
   const { leaf, roundId, noteId, masked, inspectRevision, epochRef, api } = input;
 

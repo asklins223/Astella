@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { noteRecallRecordV1Schema, type NoteRecallRecordV1 } from "@ailearn/shared/note-recall-contracts";
-import type { NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
+import { noteRecallRecordV1Schema, type NoteRecallRecordV1 } from "@astella/shared/note-recall-contracts";
+import type { NoteDetailV1 } from "@astella/shared/note-projection-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import type { RecallActionV1, RecallBusyV1 } from "./notebook-recall-contract";
 
@@ -34,7 +34,7 @@ export function useNotebookRecallState(input: {
   const publish = (next: RecallRows | null) => { snapshot.current = next; setRows(next); };
   const load = useCallback((before?: string): Promise<NoteRecallRecordV1[] | null> => {
     if (!note) return Promise.resolve(null);
-    const api = window.ailearn?.noteRecall;
+    const api = window.astella?.noteRecall;
     if (!api) { setError("回想记录暂不可用，可以重新打开。"); return Promise.resolve(null); }
     const request = ++readRequest.current;
     setLoading(true); setError(null);
@@ -100,15 +100,15 @@ export function useNotebookRecallState(input: {
       merge(parsed.data);
       if (latest.current.active?.recallId === parsed.data.recallId) setActive(parsed.data);
     };
-    window.addEventListener("ailearn:note-recall-saved", saved);
-    return () => window.removeEventListener("ailearn:note-recall-saved", saved);
+    window.addEventListener("astella:note-recall-saved", saved);
+    return () => window.removeEventListener("astella:note-recall-saved", saved);
   }, []);
 
   const records = useMemo(() => note && rows?.noteId === note.noteId ? rows.items : [], [note?.noteId, rows]);
   const start = async (forceNew = false) => {
     const current = latest.current.note;
     if (!current?.currentVersionId || inFlight.current) return;
-    const api = window.ailearn?.noteRecall;
+    const api = window.astella?.noteRecall;
     if (!api) { setError("回想暂时没能打开，可以重试。"); return; }
     const request = ++actionRequest.current;
     inFlight.current = true; setBusy("start"); setError(null);
@@ -130,7 +130,7 @@ export function useNotebookRecallState(input: {
   };
   const act = async (action: RecallActionV1) => {
     const { note: current, active: record } = latest.current;
-    const api = window.ailearn?.noteRecall;
+    const api = window.astella?.noteRecall;
     if (!current || !record || inFlight.current) return;
     if (!api) { setError("这一步暂时没能记下，可以重试。"); return; }
     const request = ++actionRequest.current;

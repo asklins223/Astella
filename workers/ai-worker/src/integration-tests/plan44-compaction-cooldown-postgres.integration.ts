@@ -21,12 +21,12 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
-import type { AgentSqlExecutor } from "@ailearn/agent-host";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
+import type { AgentSqlExecutor } from "@astella/agent-host";
 import {
   readCompactionCooldownState,
   recordCompactionAttemptState,
-} from "@ailearn/agent-host";
+} from "@astella/agent-host";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
 
 process.env.DATABASE_URL_API = testDatabaseUrl("DATABASE_URL_API");

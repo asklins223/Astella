@@ -96,7 +96,7 @@ function stubGateway(latestRunStatus: string | null, runVersionId = VERSION_ID) 
       unsubscribe: vi.fn(async () => ({ ok: true as const, data: null })),
     },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return { gateway, state };
 }
 
@@ -145,7 +145,7 @@ describe("NotebookSurface · 生成参数与反馈重生成", () => {
     stubGateway(null);
     useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID } });
     // start 挂住不返回，这一轮就停在「正在创建任务…」。
-    (window.ailearn.note.cardGeneration.start as unknown as { mockImplementation: (fn: () => Promise<never>) => void })
+    (window.astella.note.cardGeneration.start as unknown as { mockImplementation: (fn: () => Promise<never>) => void })
       .mockImplementation(() => new Promise(() => undefined));
     render(<NotebookSurface />);
     await openSetup();

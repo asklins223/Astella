@@ -20,10 +20,10 @@ test("0330 journals durable, user-scoped source suppression tombstones", () => {
     /PRIMARY KEY \(user_id, kind, source_event_id\)/,
   );
   assert.match(migration, /ALTER TABLE public\.assistant_memory_source_suppressions FORCE ROW LEVEL SECURITY/);
-  assert.match(migration, /CURRENT_USER = 'ailearn_worker'/);
+  assert.match(migration, /CURRENT_USER = 'astella_worker'/);
   assert.match(migration, /current_setting\('app\.user_id', true\)/);
-  assert.match(migration, /GRANT SELECT, INSERT ON public\.assistant_memory_source_suppressions TO ailearn_api/);
-  assert.match(migration, /GRANT SELECT, INSERT ON public\.assistant_memory_source_suppressions TO ailearn_worker/);
+  assert.match(migration, /GRANT SELECT, INSERT ON public\.assistant_memory_source_suppressions TO astella_api/);
+  assert.match(migration, /GRANT SELECT, INSERT ON public\.assistant_memory_source_suppressions TO astella_worker/);
 });
 
 test("0330 backfills deleted sources and suppresses workspace retirement atomically", () => {

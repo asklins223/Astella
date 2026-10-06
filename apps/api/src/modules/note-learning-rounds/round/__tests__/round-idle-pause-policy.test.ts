@@ -10,7 +10,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { learningRunPhaseSchema } from "@ailearn/shared/learning-run-contracts";
+import { learningRunPhaseSchema } from "@astella/shared/learning-run-contracts";
 import { CONTEXT_LEASE_SECONDS } from "../../../companion-bridge/context-hydration.ts";
 import {
   DEFAULT_ROUND_ACTIVITY_SWEEP_INTERVAL_MS,

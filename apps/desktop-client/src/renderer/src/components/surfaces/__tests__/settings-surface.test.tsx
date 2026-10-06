@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { GatewayResultV1, SessionContextV1, WorkspaceAiSettingsV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import type { CompanionAccountPatch, CompanionAccountStateV1 } from "@ailearn/shared/companion-shell-contracts";
-import type { DesktopAiAuditItemV1 } from "@ailearn/shared/desktop-surface-contracts";
-import { AI_CONSENT_VERSION } from "@ailearn/shared/desktop-ipc-contracts";
+import type { GatewayResultV1, SessionContextV1, WorkspaceAiSettingsV1 } from "@astella/shared/desktop-ipc-contracts";
+import type { CompanionAccountPatch, CompanionAccountStateV1 } from "@astella/shared/companion-shell-contracts";
+import type { DesktopAiAuditItemV1 } from "@astella/shared/desktop-surface-contracts";
+import { AI_CONSENT_VERSION } from "@astella/shared/desktop-ipc-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { QWEN_TTS_VOICE_OPTIONS } from "@ailearn/shared/tts-voice-catalog";
+import { QWEN_TTS_VOICE_OPTIONS } from "@astella/shared/tts-voice-catalog";
 import { useRoomStore } from "../../../app/room-store.ts";
 import { SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-consent-gate.ts";
 import { SETTINGS_ATTENTION_MS, SettingsSurface, summaryOfDissolveCounts } from "../settings/settings-surface.tsx";
@@ -319,7 +319,7 @@ function installApi(options: {
           version: 1 as const,
           saved: true,
           canceled: false,
-          filePath: "/Users/reader/Documents/ailearn-workspace-2026-09-17.json",
+          filePath: "/Users/reader/Documents/astella-workspace-2026-09-17.json",
           bytes: 4096,
         });
       }),
@@ -336,7 +336,7 @@ function installApi(options: {
     },
     objective: { list: vi.fn(async () => ok({ items: [], total: 2, nextCursor: null })) },
   };
-  Object.defineProperty(window, "ailearn", { configurable: true, value: api });
+  Object.defineProperty(window, "astella", { configurable: true, value: api });
   return { api, calls, currentAi: () => ai };
 }
 
@@ -378,7 +378,7 @@ afterEach(() => {
   Reflect.deleteProperty(URL, "createObjectURL");
   Reflect.deleteProperty(URL, "revokeObjectURL");
   createdObjectUrls.length = 0;
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   Reflect.deleteProperty(window, "ResizeObserver");
   Reflect.deleteProperty(navigator, "clipboard");
   // The room store is a module singleton shared by every test file in a worker.
@@ -902,7 +902,7 @@ describe("workspace export", () => {
     await waitFor(() => expect(api.workspace.export).toHaveBeenCalledTimes(1));
     // The receipt carries the reader's own choice of path, so the confirmation
     // can name the file instead of saying "exported" into the void.
-    await screen.findByText(/已导出到 \/Users\/reader\/Documents\/ailearn-workspace-2026-09-17\.json（4\.0 KB）/);
+    await screen.findByText(/已导出到 \/Users\/reader\/Documents\/astella-workspace-2026-09-17\.json（4\.0 KB）/);
   });
 
   it("treats a cancelled save dialog as a cancellation, not a failure", async () => {
@@ -976,7 +976,7 @@ describe("笔记导出为 Markdown 目录", () => {
 
   it("取消只写一句「没有写入任何文件」，不当成失败", async () => {
     installApi();
-    (window.ailearn.note.exportMarkdown as unknown as { mockResolvedValueOnce: (value: unknown) => void })
+    (window.astella.note.exportMarkdown as unknown as { mockResolvedValueOnce: (value: unknown) => void })
       .mockResolvedValueOnce(ok({ version: 1 as const, canceled: true, directory: null, total: 0, exported: 0, failed: 0 }));
     render(<SettingsSurface />);
     await screen.findByText("理解空间", { selector: ".space-identity h3" });
@@ -990,7 +990,7 @@ describe("笔记导出为 Markdown 目录", () => {
 
   it("有几篇没写成就要照实说少了几篇，不能只报成功的数", async () => {
     installApi();
-    (window.ailearn.note.exportMarkdown as unknown as { mockResolvedValueOnce: (value: unknown) => void })
+    (window.astella.note.exportMarkdown as unknown as { mockResolvedValueOnce: (value: unknown) => void })
       .mockResolvedValueOnce(ok({ version: 1 as const, canceled: false, directory: "/tmp/书房笔记", total: 12, exported: 10, failed: 2 }));
     render(<SettingsSurface />);
     await screen.findByText("理解空间", { selector: ".space-identity h3" });
@@ -1136,7 +1136,7 @@ it("播放读数跟着音频事件走：接线不能只挂在挂载 effect 上",
 
 
 async function openVoiceSection(options: Parameters<typeof installApi>[0] = {}) {
-  // installApi 自己会把桩挂到 window.ailearn（那个属性不可重新赋值），用例只改它的成员。
+  // installApi 自己会把桩挂到 window.astella（那个属性不可重新赋值），用例只改它的成员。
   const { api, calls } = installApi({ ...options, collaborativeSpace: true });
   render(<SettingsSurface />);
   await screen.findByText("理解空间", { selector: ".space-identity h3" });
@@ -1789,7 +1789,7 @@ describe("重构后的伴星设置：规则、设备和数据各有入口", () =
   it("导出提供三种实际范围，数据同意只跳转到统一授权页", async () => {
     const { api } = await openRules();
     fireEvent.click(screen.getByRole("tab", { name: "伴星数据" }));
-    expect(screen.getByText(/副本保存在本机/).textContent).toContain("下载 / 理解书房 / 伴星");
+    expect(screen.getByText(/副本保存在本机/).textContent).toContain("下载 / Astella / 伴星");
     fireEvent.click(screen.getByRole("button", { name: /导出记忆与关联/ }));
     await waitFor(() => expect(api.companion.data.export).toHaveBeenCalledWith(expect.objectContaining({ kind: "memory", meta: expect.objectContaining({ workspaceEpoch: 7 }) })));
     await screen.findByText(/已保存 companion-test.json/);

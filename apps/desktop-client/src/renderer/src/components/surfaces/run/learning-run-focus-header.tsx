@@ -18,8 +18,8 @@
  *     目标摘要是空的：那一轮的目标是「用自己的话试一试」，再念一遍题面只会重复。
  */
 import type { ReactElement, RefObject } from "react";
-import type { LearningRunPublicSnapshotV2 } from "@ailearn/shared/learning-run-v2-contracts";
-import type { LearningTaskPublic } from "@ailearn/shared/learning-run-contracts";
+import type { LearningRunPublicSnapshotV2 } from "@astella/shared/learning-run-v2-contracts";
+import type { LearningTaskPublic } from "@astella/shared/learning-run-contracts";
 import { eligibilityLabel, formatClock, phaseLabels } from "./learning-run-copy.tsx";
 
 /** 这一步的题面形状。**只声明顶栏与抬头真正要读的那几格。 */

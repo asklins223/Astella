@@ -5,11 +5,11 @@ import {
   AgentStoreError, queryRows, requireVisibleInput,
 } from "./store.ts";
 import { projectAgentOperation, type AgentOperationRow } from "./history.ts";
-import { cardAgentCapabilityManifest } from "@ailearn/shared/agent-capabilities";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
-import { agentInputRefV1Schema, type AgentScopeV1 } from "@ailearn/shared/agent-contracts";
-import { createGenerationRunInTransaction, CardGenerationV2ServiceError, type CardGenerationRunCreationTx } from "@ailearn/card-generation";
-import type { CreateCardGenerationRunRequestV2 } from "@ailearn/shared/card-generation-v2-contracts";
+import { cardAgentCapabilityManifest } from "@astella/shared/agent-capabilities";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
+import { agentInputRefV1Schema, type AgentScopeV1 } from "@astella/shared/agent-contracts";
+import { createGenerationRunInTransaction, CardGenerationV2ServiceError, type CardGenerationRunCreationTx } from "@astella/card-generation";
+import type { CreateCardGenerationRunRequestV2 } from "@astella/shared/card-generation-v2-contracts";
 import type { AgentOperationStore } from "./operation-store.ts";
 
 /** 现役制卡链的初始那一发 outbox。绑定只认这一个 jobType——审核台那几发不是它。 */

@@ -36,11 +36,11 @@ describe('产物 frame 的契约（D4 §3.2、§4.3）', () => {
     expect(isArtifactFrameUrl(`${ARTIFACT_FRAME_ORIGIN}/not-a-uuid`)).toBe(false)
     expect(isArtifactFrameUrl(`${ARTIFACT_FRAME_ORIGIN}/`)).toBe(false)
     expect(isArtifactFrameUrl(`${ARTIFACT_FRAME_ORIGIN}/../bundle/index.html`)).toBe(false)
-    expect(isArtifactFrameUrl(`ailearn-app://user:pw@artifact/${ID}`)).toBe(false)
-    expect(isArtifactFrameUrl(`ailearn-app://artifact:8443/${ID}`)).toBe(false)
+    expect(isArtifactFrameUrl(`astella-app://user:pw@artifact/${ID}`)).toBe(false)
+    expect(isArtifactFrameUrl(`astella-app://artifact:8443/${ID}`)).toBe(false)
     expect(isArtifactFrameUrl(`https://artifact/${ID}`)).toBe(false)
     // 主页面 origin 不是产物 origin——这一条是"产物想把自己导航到主页面"那一发的反面对着。
-    expect(isArtifactFrameUrl('ailearn-app://bundle/index.html')).toBe(false)
+    expect(isArtifactFrameUrl('astella-app://bundle/index.html')).toBe(false)
   })
 
   it('id 形状就是路径安全的那道闸：uuid 之外没有东西可拼进路径', () => {
@@ -53,12 +53,12 @@ describe('产物 frame 的契约（D4 §3.2、§4.3）', () => {
 
   it('父侧只认通道名与方向都对的、阶段在白名单里的消息', () => {
     expect(parseArtifactFrameEvent({
-      channel: 'ailearn:artifact-frame',
+      channel: 'astella:artifact-frame',
       direction: 'frame->host',
       phase: 'ready',
       stepCount: 3
     })).toEqual({
-      channel: 'ailearn:artifact-frame',
+      channel: 'astella:artifact-frame',
       direction: 'frame->host',
       phase: 'ready',
       stepCount: 3
@@ -67,25 +67,25 @@ describe('产物 frame 的契约（D4 §3.2、§4.3）', () => {
     // 负对照：通道名不对／方向写反／阶段不在白名单／根本不是对象——一律忽略。
     expect(parseArtifactFrameEvent({ channel: 'x', direction: 'frame->host', phase: 'ready' })).toBeNull()
     expect(parseArtifactFrameEvent({
-      channel: 'ailearn:artifact-frame',
+      channel: 'astella:artifact-frame',
       direction: 'host->frame',
       phase: 'ready'
     })).toBeNull()
     expect(parseArtifactFrameEvent({
-      channel: 'ailearn:artifact-frame',
+      channel: 'astella:artifact-frame',
       direction: 'frame->host',
       phase: 'run'
     })).toBeNull()
-    expect(parseArtifactFrameEvent('ailearn:artifact-frame')).toBeNull()
+    expect(parseArtifactFrameEvent('astella:artifact-frame')).toBeNull()
     expect(parseArtifactFrameEvent(null)).toBeNull()
     // 阶段对但字段类型不对：字段丢掉，消息本身仍然只是一条"还活着"。
     expect(parseArtifactFrameEvent({
-      channel: 'ailearn:artifact-frame',
+      channel: 'astella:artifact-frame',
       direction: 'frame->host',
       phase: 'heartbeat',
       stepCount: '3'
     })).toEqual({
-      channel: 'ailearn:artifact-frame',
+      channel: 'astella:artifact-frame',
       direction: 'frame->host',
       phase: 'heartbeat'
     })
@@ -93,7 +93,7 @@ describe('产物 frame 的契约（D4 §3.2、§4.3）', () => {
 
   it('宿主的 motion 指令形状固定（切静态分镜走这一条）', () => {
     expect(artifactFrameMotionMessage('reduced')).toEqual({
-      channel: 'ailearn:artifact-frame',
+      channel: 'astella:artifact-frame',
       direction: 'host->frame',
       command: 'motion',
       motion: 'reduced'
@@ -101,7 +101,7 @@ describe('产物 frame 的契约（D4 §3.2、§4.3）', () => {
   })
 
   it('滚轮只接受有限增量与合法单位，夹住大值并丢弃无关状态字段', () => {
-    const scroll = { channel: 'ailearn:artifact-frame', direction: 'frame->host', phase: 'scroll',
+    const scroll = { channel: 'astella:artifact-frame', direction: 'frame->host', phase: 'scroll',
       scrollDeltaX: -2000, scrollDeltaY: 5000, scrollDeltaMode: 0 }
     expect(parseArtifactFrameEvent({ ...scroll, contentHeight: 500, stepCount: 9, detail: 'ignored' }))
       .toEqual({ ...scroll, scrollDeltaX: -1000, scrollDeltaY: 1000 })

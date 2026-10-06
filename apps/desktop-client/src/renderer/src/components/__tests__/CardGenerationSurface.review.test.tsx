@@ -252,7 +252,7 @@ function stubGateway(initial: readonly CandidateState[], runOverride: { status?:
       unsubscribe: vi.fn(async () => ({ ok: true as const, data: null })),
     },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return { gateway, state };
 }
 
@@ -581,7 +581,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
     expect(screen.getByText("排序题 · 排 4 步")).toBeTruthy();
     // 正确项与选项文本连字段都没下发，这里再确认一次界面没自己造出来。
-    const board = JSON.stringify((window.ailearn.note.cardGeneration.getCandidates as ReturnType<typeof vi.fn>).mock.calls);
+    const board = JSON.stringify((window.astella.note.cardGeneration.getCandidates as ReturnType<typeof vi.fn>).mock.calls);
     expect(board).not.toContain("correctUnitId");
   });
 

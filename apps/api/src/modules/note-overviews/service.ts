@@ -2,17 +2,17 @@ import { startDomainAgentRequest, agentRunForDomainExecution } from "../../agent
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
 import { withWorkspaceTransaction } from "../../db/client.ts";
-import { jobs } from "@ailearn/shared/db-schema/job";
-import { noteOverviews } from "@ailearn/shared/db-schema/note-overviews";
-import { noteVersions, notes } from "@ailearn/shared/db-schema/note";
-import { JobStatus, JobType } from "@ailearn/shared/enums";
+import { jobs } from "@astella/shared/db-schema/job";
+import { noteOverviews } from "@astella/shared/db-schema/note-overviews";
+import { noteVersions, notes } from "@astella/shared/db-schema/note";
+import { JobStatus, JobType } from "@astella/shared/enums";
 import {
   noteOverviewLatestTaskV1Schema,
   noteOverviewTaskV1Schema,
   noteOverviewV1Schema,
   type NoteOverviewTaskV1,
-} from "@ailearn/shared/note-overview-contracts";
-import type { createNoteOverviewTaskV1Schema } from "@ailearn/shared/note-overview-contracts";
+} from "@astella/shared/note-overview-contracts";
+import type { createNoteOverviewTaskV1Schema } from "@astella/shared/note-overview-contracts";
 import type { z } from "zod";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import { classifyJobFailureReason } from "../job/service.ts";

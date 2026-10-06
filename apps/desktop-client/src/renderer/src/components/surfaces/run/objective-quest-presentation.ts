@@ -2,8 +2,8 @@ import type {
   LearningObjectivePrimaryActionV3,
   ObjectiveListItemV3,
   ObjectivePersonalStateV3,
-} from "@ailearn/shared/learning-objective-surface-contracts";
-import type { LearningRunResultV2 } from "@ailearn/shared/learning-run-v2-contracts";
+} from "@astella/shared/learning-objective-surface-contracts";
+import type { LearningRunResultV2 } from "@astella/shared/learning-run-v2-contracts";
 export { companionCelebrationAllowed as companionResultFeedbackAllowed } from "../../../app/companion-celebration-policy";
 
 export type ObjectiveQuestRegion = "ready" | "active" | "mastered";

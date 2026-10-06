@@ -1,5 +1,5 @@
-import { createDefaultAIPolicy, normalizeWorkspaceAIPolicy, prepareGovernedAIPayload, AIConsentRequiredError, AIDataPolicyDeniedError, type WorkspaceAIPolicy } from "@ailearn/agent-host";
-export { createDefaultAIPolicy, normalizeWorkspaceAIPolicy, enforcePrivacyGovernanceWithPolicy, detectAndSanitizePII, sanitizePIIInObject, DEFAULT_AI_DATA_POLICY, prepareGovernedAIPayload, AIConsentRequiredError, AIDataPolicyDeniedError, type WorkspaceAIPolicy } from "@ailearn/agent-host";
+import { createDefaultAIPolicy, normalizeWorkspaceAIPolicy, prepareGovernedAIPayload, AIConsentRequiredError, AIDataPolicyDeniedError, type WorkspaceAIPolicy } from "@astella/agent-host";
+export { createDefaultAIPolicy, normalizeWorkspaceAIPolicy, enforcePrivacyGovernanceWithPolicy, detectAndSanitizePII, sanitizePIIInObject, DEFAULT_AI_DATA_POLICY, prepareGovernedAIPayload, AIConsentRequiredError, AIDataPolicyDeniedError, type WorkspaceAIPolicy } from "@astella/agent-host";
 /**
  * N-011: Worker 端 AI 隐私治理模块。
  *
@@ -12,16 +12,16 @@ export { createDefaultAIPolicy, normalizeWorkspaceAIPolicy, enforcePrivacyGovern
  */
 
 import { eq } from "drizzle-orm";
-import { safeErrorMessage, DomainError } from "@ailearn/shared";
-import { resolveSystemPlatform } from "@ailearn/shared/platform-config-node";
-import type { AITaskType } from "@ailearn/shared/task-router";
-import { getCapabilityForTask, getTaskComplexity } from "@ailearn/shared/task-router";
+import { safeErrorMessage, DomainError } from "@astella/shared";
+import { resolveSystemPlatform } from "@astella/shared/platform-config-node";
+import type { AITaskType } from "@astella/shared/task-router";
+import { getCapabilityForTask, getTaskComplexity } from "@astella/shared/task-router";
 import { db, withWorkerWorkspaceTransaction } from "../db.ts";
-import * as schema from "@ailearn/shared/db-schema";
+import * as schema from "@astella/shared/db-schema";
 import { logger } from "./logger.ts";
 import { recordProviderCall, type ProviderCallKind, type ProviderCallOutcome } from "./metrics.ts";
-import { measureAgentTurnRequest, measureChatRequest, type ContextTokenCountingPorts } from "@ailearn/agent-core";
-import type { ContextRequestMeasurementV1 } from "@ailearn/shared/context-budget-contracts";
+import { measureAgentTurnRequest, measureChatRequest, type ContextTokenCountingPorts } from "@astella/agent-core";
+import type { ContextRequestMeasurementV1 } from "@astella/shared/context-budget-contracts";
 import { governContextPressure, type ContextBudgetGateOptions } from "./context-governor.ts";
 
 /**
@@ -239,7 +239,7 @@ export async function getAccountAIPolicy(workspaceId: string, userId: string | n
  * 五份手抄各自漂移的。
  */
 function runtimeConfigFromResolved(
-  resolved: import("@ailearn/shared").ResolvedPlatform,
+  resolved: import("@astella/shared").ResolvedPlatform,
 ): import("./ai-provider.ts").AIProviderRuntimeConfig {
   return {
     apiKey: resolved.apiKey,

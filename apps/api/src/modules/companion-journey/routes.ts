@@ -18,14 +18,14 @@ import { withWorkspaceTransaction } from "../../db/client.ts";
 import {
   companionInvitationActionRequestSchema,
   companionJourneyActionRequestSchema,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import {
   applyInvitationAction,
   applyJourneyActionRequest,
   bootstrapJourney,
   JourneyServiceError,
 } from "./journey-service.ts";
-import { companionJourneys } from "@ailearn/shared/db-schema/companion-journey";
+import { companionJourneys } from "@astella/shared/db-schema/companion-journey";
 import { and, eq } from "drizzle-orm";
 import { isCompanionJourneyV2Enabled } from "../../config/learning-companion-flags.ts";
 

@@ -45,7 +45,7 @@ import {
   sectionLabelForBlockV1,
   type ArtifactEvidenceBlockV1,
   type ArtifactNodeV1,
-} from "@ailearn/shared/note-dynamic-artifact/round-artifact-measure";
+} from "@astella/shared/note-dynamic-artifact/round-artifact-measure";
 import {
   ARTIFACT_DOCUMENT_MAX_CHARS_V1,
   ARTIFACT_DOCUMENT_MIN_CHARS_V1,
@@ -54,7 +54,7 @@ import {
   splitArtifactDocumentV1,
   type ArtifactDocumentVerdictV1,
   type ArtifactDocumentViolationV1,
-} from "@ailearn/shared/note-dynamic-artifact/round-artifact-doc";
+} from "@astella/shared/note-dynamic-artifact/round-artifact-doc";
 import {
   ARTIFACT_COMPLETION_UNMET_V1,
   DYNAMIC_ARTIFACT_PROMPT_VERSION,
@@ -68,12 +68,12 @@ import {
   runDynamicArtifactV1,
   type DynamicArtifactDocV1,
   type DynamicArtifactProviderV1,
-} from "@ailearn/shared/note-dynamic-artifact/round-artifact-model";
+} from "@astella/shared/note-dynamic-artifact/round-artifact-model";
 import {
   DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1,
   buildDynamicArtifactHtmlV1,
-} from "@ailearn/shared/note-dynamic-artifact/round-artifact-render";
-import { ROUND_ARTIFACT_MAX_CHARS_V1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact";
+} from "@astella/shared/note-dynamic-artifact/round-artifact-render";
+import { ROUND_ARTIFACT_MAX_CHARS_V1 } from "@astella/shared/note-dynamic-artifact/round-artifact";
 import { ARTIFACT_FAILURE_COMBINATIONS_V1 } from "../round/artifact-failure.ts";
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..", "..", "..");
@@ -299,7 +299,7 @@ test("任务版本必须上到 3：换的是合同，v2 留下的检查点与半
   );
   // 上一版那套「画教学栏目／量字数」的死路不许留在渲染器里。
   const render = codeOnly(readFileSync(RENDER_FILE, "utf8"));
-  for (const dead of ["ailearn-bars", "ailearn-flow", "renderBarsSceneV1", "renderFlowSceneV1", "ARTIFACT_STATIC_MODE_NOTE_V1"]) {
+  for (const dead of ["astella-bars", "astella-flow", "renderBarsSceneV1", "renderFlowSceneV1", "ARTIFACT_STATIC_MODE_NOTE_V1"]) {
     assert.ok(!render.includes(dead), `渲染器里还留着 ${dead}：那是"画教学栏目／量字数"那条已被判死的路`);
   }
 });
@@ -571,7 +571,7 @@ test("出处由服务端纸签展示，AI 页面可按知识自由设计且无�
   });
   assert.equal(built.ok, true, "已核来源应与自由画面一起上屏");
   if (built.ok) {
-    assert.equal((built.html.match(/class="ailearn-art__evidence-quote"/g) ?? []).length, NODES.length);
+    assert.equal((built.html.match(/class="astella-art__evidence-quote"/g) ?? []).length, NODES.length);
     for (const node of NODES) assert.ok(built.html.includes(node.quote), `出处纸签缺少原文「${node.quote}」`);
   }
 });
@@ -744,8 +744,8 @@ test("示意声明无条件在标题**之前**，模型那一句替代不了它"
   assert.ok(built.html.includes(ARTIFACT_ILLUSTRATION_NOTICE_V1),
     "服务端那一句示意声明不见了：于是这一份动态内容可以被读成实测执行计划");
   assert.ok(
-    built.html.indexOf(`<p class="ailearn-art__notice">${ARTIFACT_ILLUSTRATION_NOTICE_V1}</p>`)
-      < built.html.indexOf("<h2 class=\"ailearn-art__title\">"),
+    built.html.indexOf(`<p class="astella-art__notice">${ARTIFACT_ILLUSTRATION_NOTICE_V1}</p>`)
+      < built.html.indexOf("<h2 class=\"astella-art__title\">"),
     "示意声明被排到了标题后面：先入为主的那一句必须先出现",
   );
   assert.ok(built.html.indexOf("照着做就行了") > built.html.indexOf(ARTIFACT_ILLUSTRATION_NOTICE_V1),
@@ -759,9 +759,9 @@ test("模型那三段各自落在该落的地方：样式提到落点之前、�
   assert.ok(html.includes("<style data-lesson>"), "模型的样式没被挑出来：它跟着标记落进凹槽，浏览器对位置的容忍度并不统一");
   assert.ok(html.includes("<script data-lesson>"), "模型的脚本没被摘出来");
   const styleAt = html.indexOf("<style data-lesson>");
-  const rootAt = html.indexOf('<div class="ailearn-art" data-artifact-root');
-  const stageAt = html.indexOf('<div class="ailearn-art__scene" data-stage>');
-  const stageEnd = html.indexOf("</div><section class=\"ailearn-art__evidence\"");
+  const rootAt = html.indexOf('<div class="astella-art" data-artifact-root');
+  const stageAt = html.indexOf('<div class="astella-art__scene" data-stage>');
+  const stageEnd = html.indexOf("</div><section class=\"astella-art__evidence\"");
   const scriptAt = html.lastIndexOf("<script data-lesson>");
   assert.ok(styleAt < rootAt, "模型样式排在纸面之后：它会盖掉母本的取值（这份产物是自包含的，注入顺序就是优先级）");
   assert.ok(stageAt < stageEnd, "凹槽的开口没找到");
@@ -787,7 +787,7 @@ test("依据回执与文字等价**无条件**在 frame 之外的 DOM 里（脚�
     assert.ok(built.html.includes(node.quote), `第 ${node.index + 1} 条的笔记原句不在回执里`);
     assert.ok(built.html.includes(node.narration), `第 ${node.index + 1} 条的讲解不在文字版里`);
   }
-  assert.equal((built.html.match(/class="ailearn-art__evidence-item"/g) ?? []).length, NODES.length);
+  assert.equal((built.html.match(/class="astella-art__evidence-item"/g) ?? []).length, NODES.length);
   assert.equal((built.html.match(/<li>/g) ?? []).length, NODES.length);
 });
 
@@ -969,7 +969,7 @@ test("渲染器注释里的判据与实现同源（防止注释说的和代码�
     "渲染器的输入契约没写明「已核对」：将来有人把未经核对的节点直接递进来");
   assert.ok(render.includes("frame 之外"), "注释里没写清文字等价为什么在 frame 之外：§6.3 那一道会退回去");
   assert.ok(render.includes("动效由展示宿主管理"), "保存渲染器不再重复维护宿主控制逻辑");
-  for (const dead of ["ailearn-bars", "ailearn-flow"]) {
+  for (const dead of ["astella-bars", "astella-flow"]) {
     assert.ok(!codeOnly(render).includes(dead), `渲染器里还留着 ${dead}`);
   }
 });

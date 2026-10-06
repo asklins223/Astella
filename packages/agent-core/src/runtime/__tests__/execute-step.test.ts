@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { executeAgentStep } from "../execute-step.ts";
-import type { AgentTurnRequest, AgentTurnResult } from "@ailearn/shared";
+import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 
 const request: AgentTurnRequest = { role: "companion_agent", systemPrompt: "test", messages: [{ role: "user", content: "task" }], tools: [], toolChoice: "auto", maxTokens: 200, temperature: 0 };
 const response: AgentTurnResult = { content: "", toolCalls: [1,2,3].map(id => ({ id: String(id), name: "read", arguments: {} })), finishReason: "tool_calls", usage: null, providerRequestId: null };

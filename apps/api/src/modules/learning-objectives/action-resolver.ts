@@ -19,10 +19,10 @@
  * 只会"重新读取"的主行动，等于把已经能做的事藏起来。真开不了的那种（零依据）
  * 由服务端回具体原因（`run-errors.ts` 的 `target_evidence_missing`），不是灰色按钮。
  */
-import type { AnswerModePreferenceV1, LearningObjectivePrimaryActionV3 } from "@ailearn/shared";
-import { answerModeToResponsePreference, learningRunOutcomeSchema, startRunOriginV2 } from "@ailearn/shared";
+import type { AnswerModePreferenceV1, LearningObjectivePrimaryActionV3 } from "@astella/shared";
+import { answerModeToResponsePreference, learningRunOutcomeSchema, startRunOriginV2 } from "@astella/shared";
 // 到期复习那一句话的唯一来源：桌面端复习面的主按钮读的是同一个常量（39d W4-2 收口）。
-import { DUE_REVIEW_START_LABEL } from "@ailearn/shared/review-action-copy";
+import { DUE_REVIEW_START_LABEL } from "@astella/shared/review-action-copy";
 
 export interface ActionResolverInputV3 {
   objectiveId: string;

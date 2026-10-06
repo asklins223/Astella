@@ -32,7 +32,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { roundTeachingViewV1Schema } from "@ailearn/shared/note-learning-round-contracts";
+import { roundTeachingViewV1Schema } from "@astella/shared/note-learning-round-contracts";
 
 const fixtureUrl = process.env.DATABASE_URL_MIGRATOR ?? process.env.DATABASE_URL;
 if (!fixtureUrl || !process.env.DATABASE_URL_API) {

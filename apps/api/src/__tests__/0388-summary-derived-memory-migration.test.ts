@@ -17,7 +17,7 @@ const journal = JSON.parse(readFileSync(
 test("0388 records which memory a summary produced, and forgets with it", () => {
   assert.ok(journal.entries.some((entry) => entry.idx === 384 && entry.tag === "0388_summary_derived_memory"));
   assert.match(migration, /ADD COLUMN IF NOT EXISTS derived_memory_id uuid/);
-  assert.match(migration, /ailearn_invalidate_summary_on_derived_memory_change/);
+  assert.match(migration, /astella_invalidate_summary_on_derived_memory_change/);
   assert.match(migration, /AFTER UPDATE OR DELETE ON public\.assistant_memory_items/);
 });
 

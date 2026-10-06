@@ -139,11 +139,11 @@ BEGIN
       WITH CHECK (workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
                   AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid)
     $policy$, tbl, tbl);
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
-      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON public.%I TO ailearn_worker', tbl);
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON public.%I TO astella_worker', tbl);
     END IF;
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
-      EXECUTE format('GRANT SELECT ON public.%I TO ailearn_api', tbl);
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
+      EXECUTE format('GRANT SELECT ON public.%I TO astella_api', tbl);
     END IF;
   END LOOP;
 END $$;
@@ -157,7 +157,7 @@ CREATE POLICY "worker_type_allowlist_insert_guard"
   FOR INSERT
   TO public
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'::name
+    CURRENT_USER = 'astella_worker'::name
     AND "type" IN (
       'companion_agent', 'companion_memory_extract', 'companion_summarizer',
       'companion_daily_summary'

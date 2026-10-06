@@ -37,7 +37,7 @@ export async function signOutCurrentAccount(): Promise<void> {
   let notice: string | null = null;
   try {
     const result = unwrapGatewayResult(
-      await window.ailearn.auth.logout({ meta: createRequestMeta() }),
+      await window.astella.auth.logout({ meta: createRequestMeta() }),
     );
     if (!result.serverRevoked) notice = REVOCATION_UNCONFIRMED;
   } catch {

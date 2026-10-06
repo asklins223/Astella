@@ -17,7 +17,7 @@ const companionActivityTimelineWireSchema = z.strictObject({
   serverTime: z.string().datetime({ offset: true }),
 });
 
-import { assistantDeliveryV2Schema } from "@ailearn/shared/companion-bridge-contracts";
+import { assistantDeliveryV2Schema } from "@astella/shared/companion-bridge-contracts";
 import { z } from "zod";
 import { projectCompanionDelivery } from "./desktop-gateway-companion-bridge";
 import {  DesktopGatewayFailure,
@@ -56,13 +56,13 @@ import {  CompanionAgentRoutesListRequestV1,
   companionChatProposalGetResultV1Schema,
   companionChatSendTurnResultV1Schema,
   companionRunNodesListResultV1Schema,
-} from "@ailearn/shared/companion-chat-desktop-contracts";
+} from "@astella/shared/companion-chat-desktop-contracts";
 import {
   NOTE_IMAGE_UPLOAD_MAX_BYTES,
   noteImageUploadResultV1Schema,
   type NoteImageUploadRequestV1,
   type NoteImageUploadResultV1,
-} from "@ailearn/shared/note-image-upload-contracts";
+} from "@astella/shared/note-image-upload-contracts";
 import {  CompanionGroundedTutorGrantV1,
   CompanionLearningContextV1,
   CompanionLearningRunContextV1,
@@ -71,13 +71,13 @@ import {  CompanionGroundedTutorGrantV1,
   companionGroundedTutorGrantV1Schema,
   companionLearningContextV1Schema,
   companionLearningRunContextV1Schema,
-} from "@ailearn/shared/companion-conversation-contracts";
+} from "@astella/shared/companion-conversation-contracts";
 import {  CompanionHomeProjectionV1,
   CompanionRoomProfilePatchV1,
   CompanionRoomProfileV1,
   companionHomeProjectionV1Schema,
   companionRoomProfileV1Schema,
-} from "@ailearn/shared/companion-home-contracts";
+} from "@astella/shared/companion-home-contracts";
 import {  CompanionInvitationActionRequest,
   CompanionInvitationV2,
   CompanionJourneyActionRequest,
@@ -86,7 +86,7 @@ import {  CompanionInvitationActionRequest,
   companionInvitationSchema,
   companionJourneyBootstrapSchema,
   companionJourneySchema,
-} from "@ailearn/shared/companion-journey-contracts";
+} from "@astella/shared/companion-journey-contracts";
 import {  CompanionActivityTimelineV1,
   CompanionAuditDeleteResultV1,
   CompanionDailyMonthV1,
@@ -142,7 +142,7 @@ import {  CompanionActivityTimelineV1,
   companionPersonaResetV1Schema,
   companionPersonaV1Schema,
   companionPersonaVersionListV1Schema,
-} from "@ailearn/shared/companion-memory-desktop-contracts";
+} from "@astella/shared/companion-memory-desktop-contracts";
 import {  CompanionAccountPatch,
   CompanionAccountStateV1,
   CompanionOverview,
@@ -153,7 +153,7 @@ import {  CompanionAccountPatch,
   companionOverviewSchema,
   companionVoicePreferenceV1Schema,
   onboardingTransitionResponseSchema,
-} from "@ailearn/shared/companion-shell-contracts";
+} from "@astella/shared/companion-shell-contracts";
 import {  COMPANION_VOICE_SPEAK_VOICE,
   CompanionVoicePlaybackOutcomeRequestV1,
   CompanionVoicePlaybackOutcomeResultV1,
@@ -163,17 +163,17 @@ import {  COMPANION_VOICE_SPEAK_VOICE,
   companionVoicePlaybackOutcomeResultV1Schema,
   companionGuidanceVoiceProfileV1Schema,
   companionVoiceSpeakResultV1Schema,
-} from "@ailearn/shared/companion-voice-contracts";
+} from "@astella/shared/companion-voice-contracts";
 import {
   companionDiscoveryBookV1Schema,
   type CompanionDiscoveryEntryV1,
   type DiscoveryCollectRequestV1,
   type DiscoveryIdentityV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import {  uuidSchema,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import {  TtsEngineV1,
-} from "@ailearn/shared/tts-voice-catalog";
+} from "@astella/shared/tts-voice-catalog";
 import type { GatewayTransport } from "./desktop-gateway-transport";
 
 export async function actOnCompanionInvitation(t: GatewayTransport, 
@@ -1198,7 +1198,7 @@ export async function speakCompanionVoice(t: GatewayTransport,
         mimeType: "audio/mpeg",
         audioBase64: Buffer.from(result.bytes).toString("base64"),
         byteLength: result.bytes.byteLength,
-        voice: result.headers.get("X-Ailearn-Tts-Voice") ?? COMPANION_VOICE_SPEAK_VOICE,
+        voice: result.headers.get("X-Astella-Tts-Voice") ?? COMPANION_VOICE_SPEAK_VOICE,
       });
       if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
       return parsed.data;

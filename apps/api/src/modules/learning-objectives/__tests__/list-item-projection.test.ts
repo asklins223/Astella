@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { LearningObjectiveSurfaceV3 } from "@ailearn/shared/learning-objective-surface-contracts";
+import type { LearningObjectiveSurfaceV3 } from "@astella/shared/learning-objective-surface-contracts";
 import { toObjectiveListItemV3 } from "../surface-service.ts";
 
 function surface(

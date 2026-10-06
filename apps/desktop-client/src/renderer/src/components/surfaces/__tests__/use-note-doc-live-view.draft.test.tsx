@@ -81,7 +81,7 @@ function stubNoteDocApi(options: {
     }),
     presence: vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: { shared: false } })),
   };
-  window.ailearn = { note: { doc: docApi } } as unknown as typeof window.ailearn;
+  window.astella = { note: { doc: docApi } } as unknown as typeof window.astella;
   return { docApi, drafts };
 }
 
@@ -108,7 +108,7 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   live = null;
-  window.ailearn = undefined as unknown as typeof window.ailearn;
+  window.astella = undefined as unknown as typeof window.astella;
 });
 
 describe("笔记正文的本机草稿", () => {

@@ -15,8 +15,8 @@ import time
 import urllib.request
 
 BASE = "http://127.0.0.1:4000"
-EMAIL = "owner@ailearn.local"
-PASSWORD = "ailearn_owner"
+EMAIL = "owner@astella.local"
+PASSWORD = "astella_owner"
 WORKSPACE = "97550966-adf4-47fa-8d91-f83eae9ebfc0"
 USER = "f6c4a80e-e668-4be7-a7b3-e8ad9311079a"
 
@@ -30,7 +30,7 @@ def post(path, body):
 
 def psql(sql):
     return subprocess.run(
-        ["docker", "exec", "ailearn-dev-postgres-1", "psql", "-U", "ailearn_worker", "-d", "ailearn", "-Atc", sql],
+        ["docker", "exec", "astella-dev-postgres-1", "psql", "-U", "astella_worker", "-d", "astella", "-Atc", sql],
         capture_output=True, text=True, timeout=60,
     ).stdout.strip()
 

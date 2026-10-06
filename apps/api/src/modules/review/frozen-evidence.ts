@@ -3,7 +3,7 @@ import type { ApiTransaction } from "../../db/client.ts";
 import {
   learningObjectivesV2,
   learningObjectiveRevisionsV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/card-generation-v2";
 
 /**
  * 「这个目标的正式验证有没有可比的原文证据」——判据只有一处：复习队列。

@@ -1,4 +1,4 @@
-import type { CompanionMessageV1 } from "@ailearn/shared/companion-conversation-contracts";
+import type { CompanionMessageV1 } from "@astella/shared/companion-conversation-contracts";
 
 /** 复制手记中可阅读的文字，包括选文和富内容；不把内部动作身份带进剪贴板。 */
 export function companionMessageCopyText(message: CompanionMessageV1): string {

@@ -1,4 +1,4 @@
-import type { AgentScopeV1 } from "@ailearn/shared/agent-contracts";
+import type { AgentScopeV1 } from "@astella/shared/agent-contracts";
 
 /** Content and source selection belong to the caller's domain. The core owns
  * scope checks, priority, atomic admission and the resulting budget receipt. */

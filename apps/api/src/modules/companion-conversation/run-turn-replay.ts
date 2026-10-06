@@ -5,15 +5,15 @@ import {
   companionTurnReplayV1Schema,
   type CompanionContentBlockV1,
   type CompanionTurnReplayV1,
-} from "@ailearn/shared";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+} from "@astella/shared";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import {
   companionAgentSteps,
   companionAgentToolCalls,
   companionMessages,
   companionStreamEvents,
   companionTurnRuns,
-} from "@ailearn/shared/db-schema";
+} from "@astella/shared/db-schema";
 import type { ApiTransaction } from "../../db/client.ts";
 import type { CompanionRunDoctorScope } from "./run-doctor.ts";
 
@@ -367,7 +367,7 @@ export async function loadCompanionTurnReplayV1(
 
   const handoffRows = await tx.execute(sql`
     SELECT snapshot, snapshot_sha256, snapshot_version, snapshot_bytes
-    FROM public.ailearn_read_companion_turn_handoff_snapshot_v1(${runId}::uuid)
+    FROM public.astella_read_companion_turn_handoff_snapshot_v1(${runId}::uuid)
     LIMIT 1
   `) as unknown as Array<Record<string, unknown>>;
   const handoffRow = handoffRows[0];

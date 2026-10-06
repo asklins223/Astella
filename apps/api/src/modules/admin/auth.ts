@@ -117,7 +117,7 @@ export function readAdminTokenHeader(headers: Record<string, unknown>): string |
  * 锁在外面，且没有任何办法恢复。
  *
  * 刻意做成进程内而不是共享存储：这个闸只在单实例部署里被依赖（多副本部署
- * 前面已有 `AILEARN_DESKTOP_PAIRING_SECRET` 那套共享限流设施），而一个
+ * 前面已有 `ASTELLA_DESKTOP_PAIRING_SECRET` 那套共享限流设施），而一个
  * 进程内的表不应该被误当成安全边界——它只是抬高暴力猜��的成本。
  */
 interface AttemptRecord {

@@ -19,7 +19,7 @@
 -- 超过 2 小时没兑现的约定直接作废。
 --
 -- 与 0227 同模式：RLS 按 workspace+user，worker 全权（定时器要跨租户扫）；
--- 兑现函数 SECURITY DEFINER 且只授 EXECUTE 给 ailearn_worker。**roles.sql 的
+-- 兑现函数 SECURITY DEFINER 且只授 EXECUTE 给 astella_worker。**roles.sql 的
 -- REVOKE ALL ON ALL FUNCTIONS 会清掉这里的 GRANT EXECUTE**，必须同步镜像进
 -- roles.sql 的 companion 白名单段，否则 worker 每分钟静默 permission denied。
 
@@ -52,25 +52,25 @@ DROP POLICY IF EXISTS companion_reminders_workspace_user_isolation
 CREATE POLICY companion_reminders_workspace_user_isolation
   ON public.companion_reminders FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
     )
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
     )
   );
 
--- 显式授权，不只依赖 0216 的 ALTER DEFAULT PRIVILEGES：那条只对**它之后**由 ailearn
+-- 显式授权，不只依赖 0216 的 ALTER DEFAULT PRIVILEGES：那条只对**它之后**由 astella
 -- 创建的表生效，而 dev 栈没有 docker-compose.yml 里的 role-grants 一次性服务
 -- （0235 记录的同一个坑）。缺这一行的症状是"工具调用静默失败、一条日志都不留"。
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_reminders TO ailearn_worker;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_reminders TO ailearn_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_reminders TO astella_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_reminders TO astella_api;
 
 -- 定时器每分钟只扫待兑现的那一小撮；用户侧"她答应了我什么"按人查。
 CREATE INDEX IF NOT EXISTS companion_reminders_due_idx
@@ -84,7 +84,7 @@ CREATE INDEX IF NOT EXISTS companion_reminders_user_idx
 -- 如果先翻成 fired、再由 worker 单独开事务插投递，进程在两步之间挂掉就留下一条
 -- "她已经答应、但永远不会兑现"的提醒。这里的补偿逻辑用 SQL 一次就能写完，
 -- 不值得为它引入跨事务状态。
-CREATE OR REPLACE FUNCTION public.ailearn_fire_due_companion_reminders(p_limit integer)
+CREATE OR REPLACE FUNCTION public.astella_fire_due_companion_reminders(p_limit integer)
   RETURNS integer
   LANGUAGE plpgsql
   SECURITY DEFINER
@@ -130,7 +130,7 @@ BEGIN
     UPDATE public.companion_reminders
        SET status = 'fired', fired_at = now(), updated_at = now()
      WHERE id = v_row.id;
-    PERFORM pg_notify('ailearn_companion_inbox_v1',
+    PERFORM pg_notify('astella_companion_inbox_v1',
                       json_build_object('userId', v_row.user_id)::text);
     v_fired := v_fired + 1;
   END LOOP;
@@ -139,13 +139,13 @@ BEGIN
 END;
 $function$;
 
-COMMENT ON FUNCTION public.ailearn_fire_due_companion_reminders(integer) IS
+COMMENT ON FUNCTION public.astella_fire_due_companion_reminders(integer) IS
   '到点提醒兑现：作废超过 2 小时的未兑现约定，认领到点的行、写进 assistant_deliveries 的 system_event 通道并随事务 NOTIFY。跨租户，仅供 worker 定时器调用。';
 
-REVOKE ALL ON FUNCTION public.ailearn_fire_due_companion_reminders(integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_fire_due_companion_reminders(integer) TO ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_fire_due_companion_reminders(integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_fire_due_companion_reminders(integer) TO astella_worker;
 
--- 本迁移的上一版是"只认领不投递"的 ailearn_claim_due_companion_reminders：
+-- 本迁移的上一版是"只认领不投递"的 astella_claim_due_companion_reminders：
 -- 认领与投递分处两个事务，中间崩溃就留下一条永不兑现的 fired 提醒。合并职责后
 -- 旧签名不留入口，直接删。
-DROP FUNCTION IF EXISTS public.ailearn_claim_due_companion_reminders(integer);
+DROP FUNCTION IF EXISTS public.astella_claim_due_companion_reminders(integer);

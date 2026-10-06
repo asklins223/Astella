@@ -36,13 +36,13 @@ import {
   extractAtomsDeterministic,
   runDeterministicGroundingContract,
   type SourceBlockInput,
-} from "@ailearn/shared/card-generation-v2-pipeline";
+} from "@astella/shared/card-generation-v2-pipeline";
 import { contentFromObjectiveDraftV3 } from "./expand-content.ts";
-import type { PlannedObjectiveV2 } from "@ailearn/shared/card-generation-v2-contracts";
+import type { PlannedObjectiveV2 } from "@astella/shared/card-generation-v2-contracts";
 import type {
   CardGenerateV3ObjectiveProposal,
   CardGenerateV3CandidateContent,
-} from "@ailearn/shared/card-generation-v3-contracts";
+} from "@astella/shared/card-generation-v3-contracts";
 import type {
   CardCandidateRewriteV3TaskInput,
   CardContentCheckV3TaskInput,

@@ -1,8 +1,8 @@
-import type { AgentTurnRequest, ChatMessage, ChatOptions } from "@ailearn/shared";
+import type { AgentTurnRequest, ChatMessage, ChatOptions } from "@astella/shared";
 import {
   contextRequestMeasurementV1Schema,
   type ContextRequestMeasurementV1,
-} from "@ailearn/shared/context-budget-contracts";
+} from "@astella/shared/context-budget-contracts";
 
 /**
  * 方案 44 §4.2：完整模型请求的输入计量 P。

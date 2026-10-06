@@ -1,10 +1,10 @@
-# AI 与伴星
+# 模型与 Worker 链路
 
 中文 · [English](../en/ai-and-companion.md)
 
 ## 这篇讲什么
 
-这一册讲清 AI 层真正是怎么跑的：一个消费 Postgres 队列的 Node worker、一份用户可见的模型配置、一层账号级同意与外发治理，以及站在这套基础之上的伴星（对话、记忆、日记、语音）。每条判据都来自 `workers/ai-worker/src/**`、`packages/*/src/**`、`config/ai-platforms.json`、`apps/api/src/modules/**` 与迁移文件，而不是方案文档的声明。方案 44 的上下文治理已经有代码接线，但它的验收证据仍是缺口——这一条在文中单独标出。
+这一册讲清模型这一路真正是怎么跑的：一个消费 Postgres 队列的 Node worker、一份用户可见的模型配置、一层账号级同意与外发治理，以及 worker 侧的制卡、语音与伴星作业落在哪些文件与表上。每条判据都来自 `workers/ai-worker/src/**`、`packages/*/src/**`、`config/ai-platforms.json`、`apps/api/src/modules/**` 与迁移文件，而不是方案文档的声明。统一 Agent 怎么被驱动（回合内核、能力与工具面、上下文与状态词表）已经单独写在 [统一 Agent 运行时（技术）](./agent-runtime.md)，伴星面向用户的那一面（她是什么、能做什么、哪里还做不到）写在 [伴星体验（产品设计）](./companion-experience.md)，本页不再重复展开。方案 44 的上下文治理已经有代码接线，但它的验收证据仍是缺口——这一条在文中单独标出。
 
 - [Worker 运行时](#worker-运行时)
 - [Job 类型清单](#job-类型清单)
@@ -28,11 +28,11 @@
 
 ### 认领、租约与重试
 
-`claimJobs()` 调用固定 `SECURITY DEFINER` 函数 `public.ailearn_claim_jobs(p_limit, p_background_limit, p_max_attempts)`（迁移 0022 建立、0228 改为按资源类别限流并回列 `resource_class`），锁与租约令牌都由这条 SQL 持有，应用层不再自己 `FOR UPDATE`。
+`claimJobs()` 调用固定 `SECURITY DEFINER` 函数 `public.astella_claim_jobs(p_limit, p_background_limit, p_max_attempts)`（迁移 0022 建立、0228 改为按资源类别限流并回列 `resource_class`），锁与租约令牌都由这条 SQL 持有，应用层不再自己 `FOR UPDATE`。
 
-- 租约 `LEASE_TIMEOUT_MS = 120_000`；孤儿回收 `public.ailearn_reap_stale_jobs(...)` 每 30 秒跑一次（`REAP_THROTTLE_MS`），不在每个 tick 全表扫。
-- `MAX_ATTEMPTS = 3`。重试参数**不在 TS 侧算**：`ailearn_fail_job(id, workspace_id, lease_token, last_error, max_attempts)` 直接返回 `status / attempts / backoff_ms / is_dead / scheduled_at`，回退是 `2000 * 2^(attempts-1)` 毫秒。TS 只保留 `MAX_ATTEMPTS` 给死信强制收敛与 claim/reap 传参，两侧一致性由 `retry-strategy-contract.test.ts` 断言。
-- 每一次终态转换都是租约令牌 CAS：`ailearn_finish_job` / `ailearn_fail_job` 都带 `(id, workspace_id, status='running', lease_token)` 围栏，影响 0 行就意味着 job 已被回收或重派，本轮结果**不提交**，只记 `jobLeaseLostTotal`。
+- 租约 `LEASE_TIMEOUT_MS = 120_000`；孤儿回收 `public.astella_reap_stale_jobs(...)` 每 30 秒跑一次（`REAP_THROTTLE_MS`），不在每个 tick 全表扫。
+- `MAX_ATTEMPTS = 3`。重试参数**不在 TS 侧算**：`astella_fail_job(id, workspace_id, lease_token, last_error, max_attempts)` 直接返回 `status / attempts / backoff_ms / is_dead / scheduled_at`，回退是 `2000 * 2^(attempts-1)` 毫秒。TS 只保留 `MAX_ATTEMPTS` 给死信强制收敛与 claim/reap 传参，两侧一致性由 `retry-strategy-contract.test.ts` 断言。
+- 每一次终态转换都是租约令牌 CAS：`astella_finish_job` / `astella_fail_job` 都带 `(id, workspace_id, status='running', lease_token)` 围栏，影响 0 行就意味着 job 已被回收或重派，本轮结果**不提交**，只记 `jobLeaseLostTotal`。
 - 终态转换本身有墙钟上界 `resolveWorkerStatementTimeoutMs() + 5_000`（默认 60s + 5s）。超时等于"结果未知"，一律交给 reaper 按租约收敛，绝不误判成失败。
 
 ### 并发与交互车道
@@ -41,13 +41,13 @@
 
 ### 轮询、唤醒与内存背压
 
-空闲时轮询间隔从 `POLL_MS = 500` 指数退避到 `POLL_MAX_MS = 5_000`，领到 job 或被 NOTIFY 唤醒即回到快档。LISTEN/NOTIFY 走频道 `ailearn_job_events`（发送方是迁移 0115 的 `AFTER INSERT` 触发器，worker 只消费），建立超时 3 秒，失败即回退纯轮询；`WORKER_DISABLE_NOTIFY=1` 可显式关掉。堆内存超过 `WORKER_MEMORY_LIMIT_MB`（默认 1536，非法值回退并告警）时暂停认领新 job。
+空闲时轮询间隔从 `POLL_MS = 500` 指数退避到 `POLL_MAX_MS = 5_000`，领到 job 或被 NOTIFY 唤醒即回到快档。LISTEN/NOTIFY 走频道 `astella_job_events`（发送方是迁移 0115 的 `AFTER INSERT` 触发器，worker 只消费），建立超时 3 秒，失败即回退纯轮询；`WORKER_DISABLE_NOTIFY=1` 可显式关掉。堆内存超过 `WORKER_MEMORY_LIMIT_MB`（默认 1536，非法值回退并告警）时暂停认领新 job。
 
 ### 优雅关停与观测
 
 收到 SIGTERM/SIGINT 后停止认领，先交还在途的 V2 outbox 租约（不交回的话强杀后那条 run 要挂满 30 分钟才可能被重投，而钱已经付过），再等 drain；`WORKER_DRAIN_TIMEOUT_MS` 默认 45_000，到点强制退出，遗留 job 由下一个 worker 的 reap 收。`WORKER_STATEMENT_TIMEOUT_MS`（60s）、`WORKER_LOCK_TIMEOUT_MS`（5s）、`WORKER_IDLE_IN_TRANSACTION_TIMEOUT_MS`（15s）、`WORKER_POOL_IDLE_TIMEOUT_SECONDS`（30s）都在连接初始化时设好。
 
-指标服务默认 `WORKER_METRICS_PORT = 9100`，暴露 `/metrics` 与 `/ready`；`/ready` 是真依赖探测（`SELECT 1`），未接探测时 fail-closed 返回 503。队列深度与最老 pending 年龄由 `ailearn_queue_job_depth()` / `ailearn_queue_oldest_pending_age()` 每 5 秒刷一次。数据库连接串走 `DATABASE_URL_WORKER`，`NODE_ENV=production` 时缺失直接抛错。
+指标服务默认 `WORKER_METRICS_PORT = 9100`，暴露 `/metrics` 与 `/ready`；`/ready` 是真依赖探测（`SELECT 1`），未接探测时 fail-closed 返回 503。队列深度与最老 pending 年龄由 `astella_queue_job_depth()` / `astella_queue_oldest_pending_age()` 每 5 秒刷一次。数据库连接串走 `DATABASE_URL_WORKER`，`NODE_ENV=production` 时缺失直接抛错。
 
 镜像 `workers/ai-worker/Dockerfile` 基于 `node:22.11.0-alpine3.20`，prod 阶段 esbuild 打包成 `dist/index.cjs`、`USER node` 非 root 运行、`EXPOSE 9100`。
 
@@ -179,25 +179,15 @@ chat/completions 的混合思考模型只有开/关，Responses API 有档位，
 
 ## Token 计量与上下文治理
 
+> 回合内核怎么用这份预算、压缩冷却与回执如何落库，见 [统一 Agent 运行时](./agent-runtime.md)；本节只讲模型侧的计量口径。
+
 计量入口 `packages/agent-core/src/context/measure-request.ts`。它测的是**实际序列化后送出去的全部内容**：system、历史、当前输入、工具 schema、工具调用参数与结果、多模态载荷——只测 system 会得到"system 很短所以没事"的错误结论。
 
-保守估算的比例与地板：CJK 按 1 token/字符，非 CJK 按 1 token/3 字符；单张图片地板 `IMAGE_TOKEN_FLOOR = 1_500`；不透明 reasoning 句柄地板 `REASONING_HANDLE_TOKEN_FLOOR = 64`；每条消息封套 4、每个工具 schema 封套 8。估算路径给误差余量 `max(256, 12% × 体量)`，精确路径（provider 计数 / tokenizer）余量为 0。计数能力按 `providerCount → tokenizer → usage_anchor → heuristic` 的优先级回退，未知成本绝不记作零。
+保守估算的比例与地板：CJK 按 1 token/字符，非 CJK 按 1 token/3 字符；单张图片地板 `IMAGE_TOKEN_FLOOR = 1_500`；不透明 reasoning 句柄地板 `REASONING_HANDLE_TOKEN_FLOOR = 64`；每条消息封套 4、每个工具 schema 封套 8。估算路径给误差余量 `max(256, 12% × 体量)`（`heuristicTotal`），精确路径（provider 计数 / tokenizer）余量为 0。计数能力按运行时的 `finish()` 顺序回退：`providerCount → tokenizer → usage_anchor → heuristic`，量不动的载荷进 `unmeasured`，未知成本绝不记作零；口径版本 `CONTEXT_MEASUREMENT_VERSION = "v1"`，provider 序列化规则一变旧锚点就失效。
 
-预算权威 `packages/agent-core/src/context/context-budget.ts`：
+预算那条线（`B_hard = max(0, min(C − O, I) − M)`，触发 0.80 / 目标 0.60，`M = 2_048`，窗口不可获知时兜底 128 000、输出预留 16 384）与它的判定顺序、压缩冷却参数、伴星的无损折叠，都在 [统一 Agent 运行时（技术）](./agent-runtime.md) 的上下文治理一节写全；这一层接到 `createGovernedProvider`——所有外发模型的唯一边界——因此它覆盖首步、每个工具回合、补取材料、后台继续、重试与备用模型切换，并且**在真实发送之前**计量完整送出的请求。职责只有判定与如实记录，它不删内容。
 
-```
-B_hard = max(0, min(C − O, I) − M)
-T = floor(B_hard × 0.80)   // CONTEXT_TRIGGER_RATIO
-G = floor(B_hard × 0.60)   // CONTEXT_TARGET_RATIO
-```
-
-`M = CONTEXT_OVERHEAD_TOKENS = 2_048`（只覆盖协议封套与估算误差，不重复扣系统提示和工具 schema）；窗口不可获知时 `REGISTERED_FALLBACK_CONTEXT_WINDOW_TOKENS = 128_000`；请求没声明输出上限、或 provider 根本没下发时，输出预留用 `CONSERVATIVE_DEFAULT_OUTPUT_TOKENS = 16_384`。判定顺序固定：必要内容本身装不下先 `reject`，超触发线且本轮还有压缩额度才 `compact`，压不动就带着有效上下文继续发送——触发线是治理线，只有硬上限才是拒绝线。
-
-压缩侧：`packages/agent-core/src/context/compaction-cooldown.ts` 的判据是 3 次尝试上限、60 秒冷却、连续 2 次无进展即判定这条路走不通；状态存在库里，键是 (会话, 来源版本, 模型路由)，换会话、摘要重算或换模型都不继承上一次的冷却。伴星的折叠是**无损**的：只折"已被一份带 `sourceSha256` 的校验摘要盖住"的回放尾部，单位是整条消息并以 seq 为界（工具调用与结果是一对，剪开就破坏 JSON），原文一直躺在 `companion_messages` 可按 seq 读回，恢复用的交接快照存的是折叠**之前**的形态。
-
-这层接到 `createGovernedProvider`——所有外发模型的唯一边界——因此它覆盖首步、每个工具回合、补取材料、后台继续、重试与备用模型切换，并且**在真实发送之前**计量完整送出的请求。职责只有判定与如实记录，它不删内容。
-
-> **证据缺口**：方案 [41a](../../plans/learning-companion/41a-unified-agent-foundation-2026-09-28.md) 定义统一执行基础，[44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md) 定义完整请求预算与可靠压缩。44 四个阶段的代码侧已沿真实调用链接通并有对应判据，但 [现行索引](../../plans/learning-companion/README.md) 第 44 行明确记录：§8 验收尚无一条真实模型、实库或窗口证据，迁移 0382–0389 从未在实库上跑过。[43](../../plans/learning-companion/43-companion-guidance-and-space-arrival-2026-10-04.md) 同样标注"未做实现与窗口验收"。这两份都还不能算已验收。
+> **证据缺口**：44 四个阶段的代码侧已沿真实调用链接通并有对应判据，但 [现行索引](../../plans/learning-companion/README.md) 第 44 行明确记录：§8 验收尚无一条真实模型、实库或窗口证据，迁移 0382–0389 从未在实库上跑过（统一执行基础定义在 [41a](../../plans/learning-companion/41a-unified-agent-foundation-2026-09-28.md)，完整请求预算与可靠压缩在 [44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md)）。[43](../../plans/learning-companion/43-companion-guidance-and-space-arrival-2026-10-04.md) 那套伴星带路**已经实现**（岛内按钮 + 7 个主题目录册，`components/companion/guidance/`），索引里"未做实现与窗口验收"这句针对的是它的窗口验收：新账号全程与签署同意后的语音还没在真实窗口跑过。
 
 ## 治理与同意
 
@@ -251,7 +241,9 @@ make verify                                  # 已包含 typecheck + test + pr-g
 
 **桌面侧是本地识别，不是云端转写。** SenseVoice int8 模型（`model.int8.onnx` 239 MB + `tokens.txt`，两个文件的字节数与 sha256 都在合同里）由用户在设置页自行下载、随时可移除；识别跑在 Electron 的 `utilityProcess`（Node 子进程）里，因为随包的 sherpa-onnx 是 emscripten 的 Node 构建，需要 `require`，而窗口是 sandbox + 无 nodeIntegration。录音仍只在渲染层采集，音频经一条本机 IPC 进子进程，不出这台机器。引擎懒启动、空闲 90 秒交还内存、单次解码上限 120 秒（第一次含引擎与模型加载）。
 
-## 伴星：人格、记忆、日记
+## 伴星这条链路的后端落点
+
+> 她的产品定位、四处入口、能力清单与成长闭环在 [伴星体验（产品设计）](./companion-experience.md)，执行体在 [统一 Agent 运行时](./agent-runtime.md)；本节只记这些行为落到哪些 handler 与表。
 
 | 能力 | worker 侧 | 数据表 |
 | --- | --- | --- |
@@ -305,6 +297,8 @@ handler 超时的解析优先级是：类型级 env（`WORKER_TIMEOUT_<TYPE>_MS`
 - [开发环境](development.md)
 - [桌面客户端](desktop-client.md)
 - [API 与数据](api-and-data.md)
+- [统一 Agent 运行时（技术）](agent-runtime.md)
+- [伴星体验（产品设计）](companion-experience.md)
 - [测试与质量](testing-and-quality.md)
 - [运维](operations.md)
 - [常见问题与排障](faq-and-troubleshooting.md)

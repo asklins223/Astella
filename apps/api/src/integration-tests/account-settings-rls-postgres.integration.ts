@@ -4,7 +4,7 @@ import { after, before, test } from "node:test";
 import Fastify from "fastify";
 import sensible from "@fastify/sensible";
 import postgres from "postgres";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { authRoutes } from "../modules/identity/routes.ts";
 import { hashPassword } from "../modules/identity/credentials.ts";
 import { issueSession, revokeSession } from "../modules/identity/session-service.ts";
@@ -21,7 +21,7 @@ before(async () => {
   const [role] = await restricted`SELECT rolbypassrls, rolsuper FROM pg_roles WHERE rolname = current_user`;
   assert.equal(role.rolbypassrls, false); assert.equal(role.rolsuper, false);
   await admin.begin(async tx => {
-    await tx`INSERT INTO users (id,email,password_hash) VALUES (${owner},${`settings-owner-${owner}@ailearn.test`},'fixture'),(${member},${`settings-member-${member}@ailearn.test`},'fixture')`;
+    await tx`INSERT INTO users (id,email,password_hash) VALUES (${owner},${`settings-owner-${owner}@astella.test`},'fixture'),(${member},${`settings-member-${member}@astella.test`},'fixture')`;
     await tx`INSERT INTO workspaces (id,owner_id,name,workspace_type) VALUES (${personal},${owner},'新账号个人空间','personal'),(${shared},${owner},'协作空间','collaborative')`;
     await tx`UPDATE users SET personal_workspace_id = ${personal} WHERE id = ${owner}`;
     await tx`INSERT INTO workspace_members (workspace_id,user_id,role) VALUES (${personal},${owner},'owner'),(${shared},${owner},'owner'),(${shared},${member},'member')`;
@@ -86,7 +86,7 @@ test("个人空间与协作空间的所有者都可以改名，成员不能改�
 test("受限角色可以用真实旧密码改密：核对旧哈希、写入新哈希并撤销全部会话", async () => {
   const previous = "Old-Password-20261005!";
   const next = "New-Password-20261006!";
-  const email = `settings-owner-${owner}@ailearn.test`;
+  const email = `settings-owner-${owner}@astella.test`;
   await admin`UPDATE users SET password_hash = ${await hashPassword(previous)} WHERE id = ${owner}`;
 
   const denied = await app.inject({

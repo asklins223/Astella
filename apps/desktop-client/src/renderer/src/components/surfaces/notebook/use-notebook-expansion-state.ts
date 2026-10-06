@@ -1,6 +1,6 @@
 /** Confirmed links have their own pagination; task reads cannot replace them. */
 import { useState } from "react";
-import type { NoteExpansionLinkV1 } from "@ailearn/shared/note-expansion-contracts";
+import type { NoteExpansionLinkV1 } from "@astella/shared/note-expansion-contracts";
 
 export function useNotebookExpansionState() {
   const [expansionRows, setExpansionRows] = useState<{

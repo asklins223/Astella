@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   NOTE_IMAGE_UPLOAD_MAX_BYTES,
   noteImageUploadFailureMessage,
-} from "@ailearn/shared/note-image-upload-contracts";
+} from "@astella/shared/note-image-upload-contracts";
 import {
   RendererGatewayError,
   gatewayErrorMessage,
@@ -37,7 +37,7 @@ async function picked(file: File) {
 
 beforeEach(() => {
   uploadImage.mockReset();
-  Object.defineProperty(window, "ailearn", {
+  Object.defineProperty(window, "astella", {
     configurable: true,
     value: { companion: { uploadImage } },
   });

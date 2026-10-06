@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { runAiTask, type AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
-import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
+import { runAiTask, type AiTaskDefinition } from "@astella/shared/ai-task-kernel";
+import type { PublicJsonRequester } from "@astella/shared/public-json-http";
 import { createGovernedApiRequester } from "../../lib/ai-governance.ts";
 import { productionAiGovernancePorts } from "../../governance/ai-governance-runtime.ts";
 import type { RoundTargetDraft } from "./teaching/round-target-contract.ts";

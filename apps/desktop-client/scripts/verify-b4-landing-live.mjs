@@ -2,7 +2,7 @@
  * A1·B4 实机验收：在**跑着的桌面 app** 里量「生成中那一屏逐张列出已落盘候选」。
  *
  * 实例由本脚本自己启：隔离的 user-data-dir + 自己的 CDP 端口，量完即杀，
- * 不动并行会话那两个窗口。主进程要 `AILEARN_DOMAIN_SCHEMA_REVISION` 与配对密钥才肯
+ * 不动并行会话那两个窗口。主进程要 `ASTELLA_DOMAIN_SCHEMA_REVISION` 与配对密钥才肯
  * 信任本机服务，所以启动时必须把根 .env 带进环境——少了它准入门只说一句
  * "桌面端尚未通过本机服务校验"。
  *
@@ -26,8 +26,8 @@ loadDotenv({ path: resolve(import.meta.dirname, "../../../.env"), override: fals
 if (!process.env.OWNER_EMAIL || !process.env.OWNER_PASSWORD) {
   throw new Error("OWNER_EMAIL / OWNER_PASSWORD 不在根 .env 里——填进去会变成 'undefined' 假成一次登录失败");
 }
-if (!process.env.AILEARN_DOMAIN_SCHEMA_REVISION || !process.env.AILEARN_DESKTOP_PAIRING_SECRET) {
-  throw new Error("根 .env 缺 AILEARN_DOMAIN_SCHEMA_REVISION / AILEARN_DESKTOP_PAIRING_SECRET：主进程不会信任本机服务");
+if (!process.env.ASTELLA_DOMAIN_SCHEMA_REVISION || !process.env.ASTELLA_DESKTOP_PAIRING_SECRET) {
+  throw new Error("根 .env 缺 ASTELLA_DOMAIN_SCHEMA_REVISION / ASTELLA_DESKTOP_PAIRING_SECRET：主进程不会信任本机服务");
 }
 
 const outDir = resolve(import.meta.dirname, "b4-landing-live");

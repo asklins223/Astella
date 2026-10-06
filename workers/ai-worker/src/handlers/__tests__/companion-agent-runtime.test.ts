@@ -32,7 +32,7 @@ import {
   getCompanionAgentTool,
   resolveAllCompanionAgentTools,
   validateCompanionAgentToolArguments,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import {
   classifyCompanionToolFailure as classifyRuntimeToolFailure,
   CompanionToolBlockedError as RuntimeCompanionToolBlockedError,
@@ -59,7 +59,7 @@ import { MockProvider } from "../../lib/providers/mock.ts";
 import { ProviderRequestError } from "../../lib/provider-request-error.ts";
 import { CompanionStreamStoppedError } from "../companion-dialogue-stream.ts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
-import type { AgentTurnRequest, AgentTurnResult } from "@ailearn/shared";
+import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 
 test("rate, account and authorization rejections do not repeat through a buffered fallback", () => {
   const state={emitted:false,now:10,deadline:100};

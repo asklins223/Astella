@@ -9,24 +9,24 @@
  * 定制题面（§7.8 禁止拼接答案正文）。P2 只提供 text/voice 两类 interaction。
  */
 
-import { sha256Hex } from "@ailearn/shared/content-hash";
+import { sha256Hex } from "@astella/shared/content-hash";
 import type {
   PrivateTaskSolutionV1,
   StructuredPartPublicV1,
   TaskInteractionV1,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import { generateChoiceTask, generateMatchingTask, generateOrderingFromUnits, generateStructuredBundleTask, generateStructuredTask, generateStructuredFromSnapshot, generateTrueFalseTask, type StructuredBundlePayload, type StructuredTargetInput, type StructuredTaskPayload } from "./run-structured.ts";
 import type {
   CanonicalAnswerV2,
   ObjectiveRelationV2,
   PracticeItemV2,
   ObjectiveRubricV2,
-} from "@ailearn/shared/card-generation-v2-contracts";
-import { practiceItemCrossRefError } from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
+import { practiceItemCrossRefError } from "@astella/shared/card-generation-v2-contracts";
 import type {
   LearningTargetSnapshotV2,
   TaskIntentV1,
-} from "@ailearn/shared";
+} from "@astella/shared";
 
 /**
  * §16.4 V2 planner 目标：只从 frozen snapshot 消费。public 题面用

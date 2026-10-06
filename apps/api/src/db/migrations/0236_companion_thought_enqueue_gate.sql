@@ -1,6 +1,6 @@
 -- 0236: 念头调度不再要求"30 天内有正式学习运行"（方案 29 §9.15，抱怨 #8）。
 --
--- 0227 版 `ailearn_enqueue_companion_thoughts()` 的循环条件里有一条：
+-- 0227 版 `astella_enqueue_companion_thoughts()` 的循环条件里有一条：
 --   AND EXISTS (SELECT 1 FROM learning_runs lr WHERE ... lr.created_at > now() - interval '30 days')
 -- 也就是**只有跑过正式学习的人才会被生成主动念头**。dev 库里这个用户一条
 -- `learning_runs` 都没有（有卡、有复习、有 320 次伴星互动），于是调度器每
@@ -17,7 +17,7 @@
 -- 顺带把桶从 4 小时收到 2 小时：一天 12 个窗口、日预算 2 条，提醒才有机会落在
 -- 用户真的在屏幕前的时段；4 小时桶配合静默时段判定，实测整天都在闸外。
 
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_companion_thoughts()
+CREATE OR REPLACE FUNCTION public.astella_enqueue_companion_thoughts()
   RETURNS integer
   LANGUAGE plpgsql
   SECURITY DEFINER
@@ -65,5 +65,5 @@ BEGIN
 END;
 $function$;
 
-COMMENT ON FUNCTION public.ailearn_enqueue_companion_thoughts() IS
+COMMENT ON FUNCTION public.astella_enqueue_companion_thoughts() IS
   '念头批量生成入队（2 小时桶幂等）。门槛是伴星关系是否活着（pet_profiles.last_active_at 14 天内），不是有没有上过正式学习课。';

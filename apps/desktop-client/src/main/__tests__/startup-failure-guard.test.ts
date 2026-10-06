@@ -43,7 +43,7 @@ const electronMock: ElectronMock = {
     on: vi.fn(),
     exit: vi.fn(),
     quit: vi.fn(),
-    getPath: vi.fn(() => process.env.FAKE_USER_DATA ?? "/tmp/ailearn-startup-test"),
+    getPath: vi.fn(() => process.env.FAKE_USER_DATA ?? "/tmp/astella-startup-test"),
     getVersion: vi.fn(() => "0.1.0"),
     isPackaged: true,
     // 模块顶层就会调用（取不到锁就 app.quit()）。返回 true 表示"拿到锁"，
@@ -74,7 +74,7 @@ vi.mock("../desktop-ipc", () => ({ registerM1DesktopIpc: vi.fn() }));
 vi.mock("../desktop-ipc-rest", () => ({ registerRestChannels: vi.fn() }));
 vi.mock("../artifact-surface", () => ({
   artifactDocumentContentSecurityPolicy: vi.fn(),
-  artifactFrameOrigin: "ailearn-artifact://frame",
+  artifactFrameOrigin: "astella-artifact://frame",
   assembleArtifactDocument: vi.fn(),
   classifyFramePolicySubject: vi.fn(),
   isAllowedSubFrameNavigation: vi.fn(),
@@ -100,7 +100,7 @@ describe("启动失败会被接住并以非零退出码告终", () => {
   });
 
   it("whenReady 回调抛错时，退出码不是 0，且错误落到 userData", async () => {
-    const userData = mkdtempSync(join(tmpdir(), "ailearn-startup-"));
+    const userData = mkdtempSync(join(tmpdir(), "astella-startup-"));
     process.env.FAKE_USER_DATA = userData;
 
     // 让启动链在 createMainWindow 之前就炸掉——这是实测 Windows 上的形态：
@@ -140,7 +140,7 @@ describe("启动失败会被接住并以非零退出码告终", () => {
   });
 
   it("正常启动时不会误报失败", async () => {
-    const userData = mkdtempSync(join(tmpdir(), "ailearn-startup-ok-"));
+    const userData = mkdtempSync(join(tmpdir(), "astella-startup-ok-"));
     process.env.FAKE_USER_DATA = userData;
 
     // 这条里 index.ts 一路走到最后会真的 new 一个 BrowserWindow。我们的 mock 只提供

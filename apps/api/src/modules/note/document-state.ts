@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { visibleNotesCondition } from "./visibility.ts";
 import type { ApiTransaction } from "../../db/client.ts";
-import { noteBlocks, noteDocumentStates, noteVersions, notes } from "@ailearn/shared/db-schema/note";
+import { noteBlocks, noteDocumentStates, noteVersions, notes } from "@astella/shared/db-schema/note";
 import { computeContentHash } from "./content-hash.ts";
 import { upsertSearchDocument } from "./search-projection.ts";
 import { refreshNoteObjectiveSearchProjections } from "../learning-objectives/search-projection.ts";

@@ -21,9 +21,9 @@ import { recordTurnCompactionTrace } from "./companion-compaction-trace.ts";
  * 变一处即可，值没变。
  */
 
-import type { ChatMessage } from "@ailearn/shared";
-import type { AgentMemoryContextSourceV1 } from "@ailearn/shared/agent-contracts";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import type { ChatMessage } from "@astella/shared";
+import type { AgentMemoryContextSourceV1 } from "@astella/shared/agent-contracts";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import type { CompanionMemoryDirectoryEntry } from "./companion-memory-vector.ts";
 
 

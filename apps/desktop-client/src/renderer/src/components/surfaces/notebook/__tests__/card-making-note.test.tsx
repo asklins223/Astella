@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DesktopCardGenerationFeedbackReasonV2 } from "@ailearn/shared/card-generation-desktop-contracts";
+import type { DesktopCardGenerationFeedbackReasonV2 } from "@astella/shared/card-generation-desktop-contracts";
 import { useRoomStore } from "../../../../app/room-store";
 import { GenerationSetup } from "../notebook-generation-setup";
 import { DEFAULT_GENERATION_OPTIONS, generationOptionSummary, type GenerationOptions } from "../notebook-generation-options";

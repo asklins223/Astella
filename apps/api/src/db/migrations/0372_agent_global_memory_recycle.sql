@@ -6,7 +6,7 @@
 -- active recycle sweep (0345) only purges rows whose `purge_after` is set. It therefore
 -- never reached the purge window there. Sync the column, then close the gap.
 
-CREATE OR REPLACE FUNCTION public.ailearn_sync_global_companion_memory_copies()
+CREATE OR REPLACE FUNCTION public.astella_sync_global_companion_memory_copies()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -49,7 +49,7 @@ BEGIN
          budget_tier = NEW.budget_tier,
          -- 回收时间随删除一起走（42 阶段 1 N）。
          --
-         -- 恢复侧 `ailearn_restore_companion_memory`（0345）把 deleted_at 与 purge_after
+         -- 恢复侧 `astella_restore_companion_memory`（0345）把 deleted_at 与 purge_after
          -- 一起清成 NULL，所以这一列不需要额外判断：源行活着时带过去的也是 NULL，
          -- 源行在回收区时带过去的是它自己的到期时间。**revision 仍然不同步**。
          purge_after = NEW.purge_after,
@@ -65,7 +65,7 @@ $function$;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_sync_global_companion_memory_copies() IS
+COMMENT ON FUNCTION public.astella_sync_global_companion_memory_copies() IS
   '把一条跨空间记忆的变更同步到它在其他空间的副本（0268 建立，0342 补时窗，0371 补确认位/认识状态/作者/预算层，0372 补回收时间）。revision 刻意不同步。';
 
 --> statement-breakpoint

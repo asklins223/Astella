@@ -5,7 +5,7 @@ import {
   type DesktopNamespaceV1,
   type SessionContextV1,
   type WorkspaceContextV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import { gatewayErrorMessage, RendererGatewayError } from "./desktop-client";
 
 const REQUIRED_GATE_NAMESPACES = ["runtime", "auth", "workspace", "room", "subscriptions"] as const satisfies readonly DesktopNamespaceV1[];

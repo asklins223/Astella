@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { NoteAnnotationAnchorV1, NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
+import type { NoteAnnotationAnchorV1, NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 
 type AnnotationDraft = { anchor: NoteAnnotationAnchorV1; text: string };
@@ -24,7 +24,7 @@ export function useNotebookAnnotationDraft(input: {
     const next = { ...draft, text }; buffers.current.set(draftKey(draft.anchor), next); setDraft(next);
   }, [draft]);
   const save = useCallback(async () => {
-    const { noteId, epochRef } = latest.current, api = window.ailearn?.noteAnnotation;
+    const { noteId, epochRef } = latest.current, api = window.astella?.noteAnnotation;
     if (!draft || !noteId || pending.current || !draft.text.trim()) return;
     if (!api) { setError("批注还在这页，暂时没能保存；请重试。"); return; }
     const expected = generation.current;

@@ -1,12 +1,12 @@
 import { and, eq, count, countDistinct, isNull, lt, lte, or } from "drizzle-orm";
 import { withWorkspaceTransaction } from "../../db/client.ts";
-import { learningCardsV2, learningObjectiveEvidenceBindingsV2, learningObjectiveRevisionsV2, learningObjectivesV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
-import { notes } from "@ailearn/shared/db-schema/note";
-import type { AllWorkspacesStatsOverviewV1, StatsOverviewV1, WorkspaceStatsOverviewRowV1 } from "@ailearn/shared";
+import { learningCardsV2, learningObjectiveEvidenceBindingsV2, learningObjectiveRevisionsV2, learningObjectivesV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { reviewSchedules } from "@astella/shared/db-schema/evidence";
+import { notes } from "@astella/shared/db-schema/note";
+import type { AllWorkspacesStatsOverviewV1, StatsOverviewV1, WorkspaceStatsOverviewRowV1 } from "@astella/shared";
 import { visibleCardsCondition, visibleNotesCondition, visibleObjectivesCondition } from "../note/visibility.ts";
-import { reviewScheduleTargetsConsumableCardPredicate } from "@ailearn/shared/review-consumable-target";
-import { ReviewStatus } from "@ailearn/shared";
+import { reviewScheduleTargetsConsumableCardPredicate } from "@astella/shared/review-consumable-target";
+import { ReviewStatus } from "@astella/shared";
 import { listUserWorkspaces } from "../identity/workspace-membership-service.ts";
 import { MAX_COLLABORATIVE_WORKSPACES, type WorkspaceInfo } from "../identity/service.ts";
 

@@ -21,7 +21,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
 
-import { COMPANION_AGENT_TOOL_DEFINITIONS } from "@ailearn/shared/companion-agent-registry";
+import { COMPANION_AGENT_TOOL_DEFINITIONS } from "@astella/shared/companion-agent-registry";
 
 /** 目标不是表列时用它显式说明是什么，而不是留空。 */
 type IdTarget = { readonly table: string; readonly column: string } | {

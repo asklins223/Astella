@@ -14,7 +14,7 @@
  * ## 三条形状上的硬约束
  *
  *  1. **跑在公共运行基础上**（§15.5「禁止各写一套执行循环」）：`prepare` / `execute` /
- *     `commit` 三段由 `@ailearn/shared/ai-task-kernel` 的 `runAiTask` 驱动，
+ *     `commit` 三段由 `@astella/shared/ai-task-kernel` 的 `runAiTask` 驱动，
  *     `execute` 的签名里**没有事务对象**（类型上就拿不到 `tx`），内核还会在发外部
  *     调用**之前**核一次 `currentActiveTransaction`。
  *  2. **复核者不是最初判分的那个**（§14.2 角色隔离 + §8.6「独立指**分开的任务上下文
@@ -46,13 +46,13 @@ import {
   learningArtifacts,
   learningTasks,
   learningTaskVariants,
-} from "@ailearn/shared/db-schema";
-import { noteBlocks } from "@ailearn/shared/db-schema/note";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
-import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
+} from "@astella/shared/db-schema";
+import { noteBlocks } from "@astella/shared/db-schema/note";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
+import type { PublicJsonRequester } from "@astella/shared/public-json-http";
 import { createGovernedApiRequester } from "../../../lib/ai-governance.ts";
 import { productionAiGovernancePorts } from "../../../governance/ai-governance-runtime.ts";
-import { runAiTask, type AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
+import { runAiTask, type AiTaskDefinition } from "@astella/shared/ai-task-kernel";
 import {
   decideDisputeRecheckV2,
   decideRecheckOutcomeV2,
@@ -60,7 +60,7 @@ import {
   type AssessmentDisputeKindV2,
   type AssessmentDisputeRecheckOutcomeV2,
   type DisputeRecheckReportV2,
-} from "@ailearn/shared/assessment-dispute-rules-v2";
+} from "@astella/shared/assessment-dispute-rules-v2";
 import { resolveAssessmentCriticConfig } from "../../../lib/assessment-critic-config.ts";
 import { extractCriticJson, flattenAnswerUnits, materializeCriticEvidenceRefs } from "../planning/run-critic.ts";
 import { loadFrozenTargetSnapshotV2 } from "../../card-generation-v2/target-snapshot-adapter.ts";

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { AgentTurnRequest, AgentTurnResult } from "@ailearn/shared";
-import type { AiAttemptToken, AiTaskCheckpointPort } from "@ailearn/shared/ai-task-kernel";
-import { runAgentModelStep } from "@ailearn/agent-core";
+import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
+import type { AiAttemptToken, AiTaskCheckpointPort } from "@astella/shared/ai-task-kernel";
+import { runAgentModelStep } from "@astella/agent-core";
 import { auditHash } from "./companion-tool-call-ledger.ts";
 import { HandlerTimeoutError } from "../lib/handler-timeout.ts";
 import { JobLeaseLostError, type JobLeaseContext } from "../lib/job-lease.ts";

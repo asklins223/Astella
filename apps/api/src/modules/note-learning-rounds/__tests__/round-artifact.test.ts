@@ -2,7 +2,7 @@
  * 动态产物：确定性生产者的单元半边（39d W4-6 刀五）。
  *
  * 这一份是**单元**用例，不碰库也不碰桌面模板：产出必须"能放进模板里的那一份内容"
- * （若干 `ailearn-artifact-pane` 分屏），并且满足三条硬约束——文本转义、无脚本／无外部
+ * （若干 `astella-artifact-pane` 分屏），并且满足三条硬约束——文本转义、无脚本／无外部
  * 资源、同输入逐字节相同。落库、只追加、按 id 取整份那半边在
  * `note-learning-round-artifact-postgres.integration.ts`（双口径）。
  */
@@ -13,7 +13,7 @@ import {
   buildDeterministicArtifactHtmlV1,
   escapeArtifactTextV1,
   type RoundArtifactInputV1,
-} from "@ailearn/shared/note-dynamic-artifact/round-artifact";
+} from "@astella/shared/note-dynamic-artifact/round-artifact";
 
 function input(overrides: Partial<RoundArtifactInputV1> = {}): RoundArtifactInputV1 {
   return {
@@ -26,7 +26,7 @@ function input(overrides: Partial<RoundArtifactInputV1> = {}): RoundArtifactInpu
 
 /** 产物里出现的分屏（顺序就是上屏顺序）。 */
 function panes(html: string): string[] {
-  return html.match(/<section class="ailearn-artifact-pane"[^>]*>.*?<\/section>/g) ?? [];
+  return html.match(/<section class="astella-artifact-pane"[^>]*>.*?<\/section>/g) ?? [];
 }
 
 test("转义：材料里带来的一句 <script> 只能成为文本，不许出现可执行形态", () => {
@@ -66,7 +66,7 @@ test("确定性：同输入两次调用逐字节相同（不许有时间戳或�
   assert.ok(golden.ok);
   assert.equal(
     golden.html,
-    '<section class="ailearn-artifact-pane" data-artifact-step="0" data-artifact-step-display="1">'
+    '<section class="astella-artifact-pane" data-artifact-step="0" data-artifact-step-display="1">'
     + '<h2 style="margin:0 0 6px;font-size:14px;line-height:1.5;font-weight:600">讲解</h2>'
     + '<p style="margin:0;white-space:pre-wrap;overflow-wrap:anywhere">一句话解释。</p>'
     + "</section>",

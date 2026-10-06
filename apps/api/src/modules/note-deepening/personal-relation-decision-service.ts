@@ -20,16 +20,16 @@ import { and, eq, sql } from "drizzle-orm";
 import {
   personalRelationDecisionsV2,
   type PersonalRelationKindV2,
-} from "@ailearn/shared/db-schema/personal-relation-decisions";
-import { notes } from "@ailearn/shared/db-schema/note";
-import { learningObjectiveOriginsV2, learningObjectivesV2 } from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/personal-relation-decisions";
+import { notes } from "@astella/shared/db-schema/note";
+import { learningObjectiveOriginsV2, learningObjectivesV2 } from "@astella/shared/db-schema/card-generation-v2";
 import {
   decideRelationDecisionV2,
   type PersonalRelationDecisionV2,
-} from "@ailearn/shared/personal-relation-decision-rules-v2";
+} from "@astella/shared/personal-relation-decision-rules-v2";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import type { ApiTransaction } from "../../db/client.ts";
-import { sha256Hex } from "@ailearn/shared/content-hash";
+import { sha256Hex } from "@astella/shared/content-hash";
 
 /** 两端有读不到的那一个——要让界面说清"哪一端读不到"，不是笼统一句"不行"。 */
 export class RelationEndpointNotReadableV2 extends Error {

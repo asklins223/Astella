@@ -57,5 +57,5 @@ CREATE POLICY sec01_v1_ai_artifacts_runtime_access
   AS PERMISSIVE
   FOR ALL
   TO PUBLIC
-  USING (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'))
-  WITH CHECK (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'));
+  USING (CURRENT_USER IN ('astella_api', 'astella_worker'))
+  WITH CHECK (CURRENT_USER IN ('astella_api', 'astella_worker'));

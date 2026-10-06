@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { queryRows, AgentStoreError } from "@ailearn/agent-host";
+import { queryRows, AgentStoreError } from "@astella/agent-host";
 import type { JobPayload } from "../handlers/index.ts";
 import { loadAgentExecutionContext } from "./execution-context.ts";
 
@@ -18,7 +18,7 @@ export async function loadAgentGenerationContext(job: JobPayload) {
     },
     async isCurrent(tx) {
       const [allowed] = await queryRows<{ allowed: boolean }>(tx,
-        sql`SELECT ailearn_agent_job_current(${job.id},${scope.workspaceId},${scope.userId},false) AS allowed`);
+        sql`SELECT astella_agent_job_current(${job.id},${scope.workspaceId},${scope.userId},false) AS allowed`);
       return allowed?.allowed === true;
     },
     // note job 的租约由队列内核在 handler 入口核过（`assertJobLease`），模型调用

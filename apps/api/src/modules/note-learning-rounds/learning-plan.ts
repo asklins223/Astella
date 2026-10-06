@@ -1,4 +1,4 @@
-import type { RoundPlanV1 } from "@ailearn/shared/note-learning-round-contracts";
+import type { RoundPlanV1 } from "@astella/shared/note-learning-round-contracts";
 import { plainTextOfBlockV1, type TeachingExplainBlockV1 } from "./teaching/teaching-explain.ts";
 
 /** A reading route through saved material, never a grading rubric or a mastery claim. */

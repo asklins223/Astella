@@ -4,7 +4,7 @@
     "package": "apps/api",
     "type": "skip",
     "issue": "#companion-llm-integration",
-    "owner": "ailearn-dev",
+    "owner": "astella-dev",
     "approver": "owner",
     "expiresAt": "2026-10-19",
     "reason": "CI/本地无 critic provider 凭据时跳过；带 .env provider 凭据的伴星集成回归单独运行。2026-10-05 复核：前提未变（凭据不入库），续期 14 天——那是闸的上限，过期前要么补凭据、要么把这条改造成可用本地替身，不能再顺延。"

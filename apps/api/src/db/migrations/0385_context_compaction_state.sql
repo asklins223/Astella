@@ -46,4 +46,4 @@ CREATE POLICY agent_context_compaction_state_user_isolation ON public.agent_cont
   WITH CHECK (workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
          AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid);
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_context_compaction_state TO ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_context_compaction_state TO astella_worker;

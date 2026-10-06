@@ -1,5 +1,5 @@
 /** Account voice preferences and a device-local preview player. */
-import type { CompanionVoicePreferenceV1,TtsEngineV1,TtsVoiceOptionV1 } from "@ailearn/shared";
+import type { CompanionVoicePreferenceV1,TtsEngineV1,TtsVoiceOptionV1 } from "@astella/shared";
 import { useEffect,useRef,useState } from "react";
 import { createRequestMeta,gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
 
@@ -38,7 +38,7 @@ export function useSettingsVoice(input: {
     setVoiceSaving(true);
     setFailureNotice(null);
     try {
-      const response = await window.ailearn.companion.voicePreference.patch({
+      const response = await window.astella.companion.voicePreference.patch({
         meta: createRequestMeta(epochRef.current),
         engine,
         voice,

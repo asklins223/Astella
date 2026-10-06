@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import type { NoteOverviewV1 } from "@ailearn/shared/note-overview-contracts";
-import type { NoteLearningArtifactV1 } from "@ailearn/shared/note-learning-artifact-contracts";
+import type { NoteOverviewV1 } from "@astella/shared/note-overview-contracts";
+import type { NoteLearningArtifactV1 } from "@astella/shared/note-learning-artifact-contracts";
 import type { NoteTargetRef } from "../../../app/room-store";
 import { useRoomStore } from "../../../app/room-store";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
@@ -21,13 +21,13 @@ export function useNotebookGoalResult(noteId: string | undefined, requested: Not
         const input = { meta: createRequestMeta(epochRef.current), noteId, taskId: requested.taskId };
         let result: SavedResult;
         if (requested.kind === "note_overview") {
-          const task = unwrapGatewayResult(await window.ailearn.noteOverview.getTask(input));
+          const task = unwrapGatewayResult(await window.astella.noteOverview.getTask(input));
           if (task.taskId !== requested.taskId || task.noteId !== noteId || !task.overview || task.overview.overviewId !== requested.artifactId) {
             throw new Error("这份速看暂时没有读到，可以重新读取。");
           }
           result = { kind: "note_overview", overview: task.overview };
         } else {
-          const task = unwrapGatewayResult(await window.ailearn.noteLearningArtifact.getTask(input));
+          const task = unwrapGatewayResult(await window.astella.noteLearningArtifact.getTask(input));
           if (task.taskId !== requested.taskId || task.noteId !== noteId || !task.artifact || task.artifact.artifactId !== requested.artifactId) {
             throw new Error("这份互动演示暂时没有读到，可以重新读取。");
           }

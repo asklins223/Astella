@@ -10,10 +10,10 @@
  * V1 夹具已退役：seed() 使用 V2 fixture 助手创建 learning_objectives_v2 +
  * learning_cards_v2，createRunV2 直接使用 objectiveId。
  *
- * 运行：DATABASE_URL_API="postgres://ailearn_api:ailearn_dev@127.0.0.1:5432/ailearn"
+ * 运行：DATABASE_URL_API="postgres://astella_api:astella_dev@127.0.0.1:5432/astella"
  *   node --import tsx --test --test-concurrency=1 src/integration-tests/learning-runs-postgres.integration.ts
  *
- * 角色：请使用受限的 ailearn_api（与 CI/生产一致，NOBYPASSRLS）。本文件的裸
+ * 角色：请使用受限的 astella_api（与 CI/生产一致，NOBYPASSRLS）。本文件的裸
  * SQL 校验统一经 scoped() 带 workspace/user 上下文，因此在受限角色下同样成立；
  * 用超级用户跑会绕过 RLS，让"恰好 1 行"类断言失去隔离意义。
  *
@@ -38,10 +38,10 @@ import {
   learningTaskDraftWriteReceiptV2Schema,
   reviewQueueV2Schema,
   submitTaskArtifactReceiptV2Schema,
-} from "@ailearn/shared";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+} from "@astella/shared";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
 import { createLearningRunForTest, seedV2Fixture } from "./helpers/v2-card-fixture.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 // db client 读取 DATABASE_URL_API；未设置时与 CONN 同源（本地 dev 默认）。
@@ -83,7 +83,7 @@ const { runLearningRunProcessingTick } = await import(
  * 本文件校验的目标表全部是 FORCE RLS（canonical_learning_event_outbox、
  * learning_artifacts、learning_runs、learning_run_idempotency、
  * learning_activity_leases、learning_task_variants、learning_tasks、
- * learning_cards_v2、learning_run_action_ledger…）。受限角色（ailearn_api）
+ * learning_cards_v2、learning_run_action_ledger…）。受限角色（astella_api）
  * 在无上下文的事务里读/写这些表会命中 0 行，使"恰好 1 行/0 schedule"这类断言
  * 假失败；超级用户则绕过 RLS 让同样的断言假通过。两者都不反映产品行为，因此
  * 校验统一走 scoped()，与运行时读取走同一套 RLS 上下文。
@@ -2677,12 +2677,12 @@ test("PREPARE-DISCLOSURE-RACE：同目标并发 PREPARE 都成功（disclosure �
 // 本地怎么跑（.env 里 ASSESSMENT_CRITIC_URL ＋ DASHSCOPE_API_KEY 已在）：
 //   set -a; . ../../.env; set +a
 //   # 根 .env 的四条 DATABASE_URL* 主机段是**容器内的 `postgres`**，宿主机上连不通
-//   # 且**不报错、只是静默挂住**；而它们四条都是超户 ailearn（BYPASSRLS），
+//   # 且**不报错、只是静默挂住**；而它们四条都是超户 astella（BYPASSRLS），
 //   # 拿它当"受限角色"会让依赖 RLS 的断言反过来红。所以从宿主机跑必须改两条：
 //   lf() { echo "${1/@postgres:/@localhost:}"; }
 //   export DATABASE_URL="$(lf "$DATABASE_URL")" DATABASE_URL_MIGRATOR="$(lf "$DATABASE_URL")" \
 //     DATABASE_URL_WORKER="$(lf "$DATABASE_URL")" \
-//     DATABASE_URL_API="postgres://ailearn_api:ailearn_dev@localhost:5432/ailearn"
+//     DATABASE_URL_API="postgres://astella_api:astella_dev@localhost:5432/astella"
 //   REAL_MODEL_BATCH=1 node --import tsx --test --test-concurrency=1 \
 //     --test-name-pattern="真模型一批" src/integration-tests/learning-runs-postgres.integration.ts
 // 2026-09-25 第一次照这段跑通：`submit→首个有效反馈 1413 ms；assessment=completed

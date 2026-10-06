@@ -47,7 +47,7 @@ const RUN_ID = "00000000-0000-4000-8000-000000000001";
 
 function stubGateway() {
   const ok = <T,>(data: T) => ({ ok: true as const, workspaceEpoch: 1, data });
-  (window as unknown as { ailearn: unknown }).ailearn = {
+  (window as unknown as { astella: unknown }).astella = {
     learningRun: {
       get: vi.fn(async () => ok(null)),
       getDraft: vi.fn(async () => ok(null)),

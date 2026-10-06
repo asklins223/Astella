@@ -18,7 +18,7 @@ const migration = readFileSync(
 );
 
 test("0228 删除旧的 (integer, integer) 签名，避免留下无调用方的重载", () => {
-  assert.match(migration, /DROP FUNCTION IF EXISTS public\.ailearn_claim_jobs\(integer, integer\)/);
+  assert.match(migration, /DROP FUNCTION IF EXISTS public\.astella_claim_jobs\(integer, integer\)/);
 });
 
 test("0228 新签名接收后台名额并回传 resource_class", () => {
@@ -45,6 +45,6 @@ test("0228 保留 0044 的交互优先排序与类型兜底优先级", () => {
 test("0228 安全合同不变：SECURITY DEFINER + 固定 search_path + worker 独占 EXECUTE", () => {
   assert.match(migration, /SECURITY DEFINER/);
   assert.match(migration, /SET search_path = pg_catalog, public/);
-  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.ailearn_claim_jobs\(integer, integer, integer\)/);
-  assert.match(migration, /REVOKE ALL ON FUNCTION public\.ailearn_claim_jobs\(integer, integer, integer\)\s+FROM ailearn_api/);
+  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.astella_claim_jobs\(integer, integer, integer\)/);
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.astella_claim_jobs\(integer, integer, integer\)\s+FROM astella_api/);
 });

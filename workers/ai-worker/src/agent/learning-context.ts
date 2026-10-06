@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
-import { queryRows, listAgentMethods, type AgentSqlExecutor } from "@ailearn/agent-host";
-import type { AgentScopeV1 } from "@ailearn/shared/agent-contracts";
-import { resolveCompanionPersonaProfile } from "@ailearn/shared/pet-persona-presets";
+import { queryRows, listAgentMethods, type AgentSqlExecutor } from "@astella/agent-host";
+import type { AgentScopeV1 } from "@astella/shared/agent-contracts";
+import { resolveCompanionPersonaProfile } from "@astella/shared/pet-persona-presets";
 import {
   ADOPTABLE_EPISTEMIC_STATUSES,
   ADOPTABLE_PREFERENCE_SCOPES,

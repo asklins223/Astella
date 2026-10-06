@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
-import { cardGenerationRunsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
+import { cardGenerationRunsV2 } from "@astella/shared/db-schema/card-generation-v2";
 import { createNote } from "../modules/note/service.ts";
 import { getLatestGenerationRunForNoteV2, listActiveGenerationRunsV2 } from "../modules/card-generation-v2/generation-run-service.ts";
 import { projectCardGenerationActiveSummaryListV1 } from "../modules/card-generation-v2/desktop-projection.ts";

@@ -186,7 +186,7 @@ test("W7-9 刀二 正对照：伴星**能**提议的仍然只有学习轮次那�
  *     **不在那个键空间里**，所以「暂停卡片订阅」对它没有语义——这不是漏，是它本来就不
  *     是复习授权。
  *  3. **屏上不是同一个队列。** 复习到期队列（`review/service.ts`）**不读**伴星那张表
- *     （0 处引用）；伴星的投递走 `ailearn_fire_due_companion_reminders()` 这个
+ *     （0 处引用）；伴星的投递走 `astella_fire_due_companion_reminders()` 这个
  *     SECURITY DEFINER 函数（迁移 0238），一分钟一次。
  *
  * ## 那为什么还要钉
@@ -239,7 +239,7 @@ test("W7-9 刀三 正对照：伴星的投递仍走那个 SECURITY DEFINER 函�
   );
   // 它必须**不能**被改成一条普通的 SELECT：那一句的注释里写着为什么（生产 worker 非
   // superuser、无 BYPASSRLS，直接 SELECT 会被 RLS 滤成空集——dev 正常、生产静默）。
-  assert.match(scheduler, /ailearn_fire_due_companion_reminders/,
+  assert.match(scheduler, /astella_fire_due_companion_reminders/,
     "伴星提醒的投递函数不见了：换掉它之前先读它头上那段注释——"
     + "「dev 正常、生产静默什么都不做」是这类定时器最难查的失效方式。");
 });

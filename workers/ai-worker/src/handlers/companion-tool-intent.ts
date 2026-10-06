@@ -1,15 +1,15 @@
 import { randomUUID } from "node:crypto";
-import type { ChatMessage } from "@ailearn/shared";
-import { agentTurnInterpretationProposalV1Schema, type AgentTurnInterpretationV1, type AgentAttentionObjectV1 } from "@ailearn/shared/agent-contracts";
-import { resolveAgentTurnInterpretation } from "@ailearn/agent-core";
+import type { ChatMessage } from "@astella/shared";
+import { agentTurnInterpretationProposalV1Schema, type AgentTurnInterpretationV1, type AgentAttentionObjectV1 } from "@astella/shared/agent-contracts";
+import { resolveAgentTurnInterpretation } from "@astella/agent-core";
 import {
   runAiTask,
   type AiAttemptToken,
   type AiTaskContext,
   type AiTaskDefinition,
   type AiTaskReceipt,
-} from "@ailearn/shared/ai-task-kernel";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+} from "@astella/shared/ai-task-kernel";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { currentWorkerWorkspaceTransaction } from "../db.ts";
 import { JobLeaseLostError, type JobLeaseContext } from "../lib/job-lease.ts";
 import type { AIProvider } from "../lib/ai-provider.ts";

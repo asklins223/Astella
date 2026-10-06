@@ -5,14 +5,14 @@
  *
  * `users` 是 2026-09-29 审计里**唯一一张既有身份数据、又完全没有 RLS 的表**：
  * 它存 `email` 与 `password_hash`，而 `infra/postgres/roles.sql:257` 给
- * `ailearn_api` 的是无差别授权 `GRANT SELECT, INSERT, UPDATE, DELETE
+ * `astella_api` 的是无差别授权 `GRANT SELECT, INSERT, UPDATE, DELETE
  * ON ALL TABLES IN SCHEMA public`。
  *
  * 更麻烦的是**现有安全网看不见它**：`schema-isolation-gate-postgres` 那道棘轮
  * 只检查"带 `workspace_id` 列"的表，而 `users` 用的是 `id`——于是
  * `BASELINE_WITHOUT_RLS = []`（零容忍）这个断言对 `users` 恒真通过。
  *
- * 本文件用**行为**而不是"数策略"来判据：真的用受限角色 `ailearn_api` 连上去，
+ * 本文件用**行为**而不是"数策略"来判据：真的用受限角色 `astella_api` 连上去，
  * 在事务里设好 `app.workspace_id` / `app.user_id`，然后看读得到几行。
  * 数策略条数证明不了"真的拦得住"，这里证明。
  *
@@ -69,9 +69,9 @@ const bobId = randomUUID();
 const carolId = randomUUID();
 const workspaceA = randomUUID();
 const workspaceB = randomUUID();
-const aliceEmail = `alice-rls-${stamp}@ailearn.test`;
-const bobEmail = `bob-rls-${stamp}@ailearn.test`;
-const carolEmail = `carol-rls-${stamp}@ailearn.test`;
+const aliceEmail = `alice-rls-${stamp}@astella.test`;
+const bobEmail = `bob-rls-${stamp}@astella.test`;
+const carolEmail = `carol-rls-${stamp}@astella.test`;
 
 /** 夹具写入 + 回收。全部走 migrator（超户），被测读走 api（受限）。 */
 before(async () => {
@@ -132,7 +132,7 @@ test("无上下文的裸查表：必须查不到（这正是登录必须走函�
   // 登录发生在会话建立之前，没有事务就没有 app.user_id / app.workspace_id；
   // 迁移 0327 给 users 加上 RLS 之后，裸查表必然 0 行。
   // 所以 `loginWithPassword` 改成走 SECURITY DEFINER 函数
-  // `ailearn_find_user_by_email`（见下面那几条），**不是**改策略去放行裸查。
+  // `astella_find_user_by_email`（见下面那几条），**不是**改策略去放行裸查。
   const rows = await withContext(api, {}, (tx) => tx`
     SELECT id, email FROM public.users WHERE email = ${aliceEmail}`);
   assert.equal(rows.length, 0,
@@ -201,7 +201,7 @@ test("插入别人的 id：必须插不进去（WITH CHECK 生效）", async () 
   await assert.rejects(
     () => withContext(api, { workspaceId: workspaceA, userId: aliceId }, (tx) => tx`
       INSERT INTO public.users (id, email, password_hash, role, created_at)
-      VALUES (${otherId}, ${`forged-${stamp}@ailearn.test`}, 'x', 'owner', now())
+      VALUES (${otherId}, ${`forged-${stamp}@astella.test`}, 'x', 'owner', now())
       RETURNING id`),
     (error: unknown) => {
       // WITH CHECK 失败是 42501（insufficient_privilege）。
@@ -214,14 +214,14 @@ test("插入别人的 id：必须插不进去（WITH CHECK 生效）", async () 
 
 test("SECURITY DEFINER 登录函数：只读、且真的只按 email 查", async () => {
   const rows = await withContext(api, {}, (tx) => tx`
-    SELECT id, email FROM public.ailearn_find_user_by_email(${aliceEmail})`);
+    SELECT id, email FROM public.astella_find_user_by_email(${aliceEmail})`);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].id, aliceId);
 });
 
 test("SECURITY DEFINER 登录函数查不到时不报错、返回空", async () => {
   const rows = await withContext(api, {}, (tx) => tx`
-    SELECT id FROM public.ailearn_find_user_by_email(${`nobody-${stamp}@ailearn.test`})`);
+    SELECT id FROM public.astella_find_user_by_email(${`nobody-${stamp}@astella.test`})`);
   assert.equal(rows.length, 0);
 });
 
@@ -229,7 +229,7 @@ test("业务角色不能直接执行登录函数之外的写能力（函数是�
   // 函数签名里没有写操作，这里钉的是"它不会因为 SECURITY DEFINER 而变成万能后门"：
   // 换个别的 email 必须查不到别人的行——它不是"返回全表"。
   const rows = await withContext(api, {}, (tx) => tx`
-    SELECT id FROM public.ailearn_find_user_by_email(${bobEmail})`);
+    SELECT id FROM public.astella_find_user_by_email(${bobEmail})`);
   assert.equal(rows.length, 1, "函数应只返回被问的那一行");
   assert.equal(rows[0].id, bobId);
 });

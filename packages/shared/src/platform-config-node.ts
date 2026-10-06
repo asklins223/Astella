@@ -1,8 +1,8 @@
 /**
  * node:fs 依赖的配置加载/解析（web 客户端不可打包——SilentProofScene 经
- * @ailearn/shared index 全量导出会引入 node:fs → UnhandledSchemeError）。
+ * @astella/shared index 全量导出会引入 node:fs → UnhandledSchemeError）。
  * 2026-08-13：从 platform-config.ts 拆出。worker/api（服务端）从
- * @ailearn/shared/platform-config-node 子路径 import；web 端只依赖
+ * @astella/shared/platform-config-node 子路径 import；web 端只依赖
  * platform-config.ts（纯类型/env 逻辑）。
  */
 import { readFileSync, existsSync } from "node:fs";

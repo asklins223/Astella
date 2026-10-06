@@ -21,18 +21,18 @@ import {
   DESKTOP_IPC_CONTRACT_VERSION,
   type GatewayResultV1,
   type RequestMetaV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import {
   companionHomeProjectionV1Schema,
   companionRoomProfilePatchV1Schema,
   companionRoomProfileV1Schema,
-} from "@ailearn/shared/companion-home-contracts";
-import { companionVoiceSpeakResultV1Schema } from "@ailearn/shared/companion-voice-contracts";
+} from "@astella/shared/companion-home-contracts";
+import { companionVoiceSpeakResultV1Schema } from "@astella/shared/companion-voice-contracts";
 import {
   companionAccountPatchSchema,
   companionAccountStateV1Schema,
   companionOverviewSchema,
-} from "@ailearn/shared/companion-shell-contracts";
+} from "@astella/shared/companion-shell-contracts";
 import type { DesktopGateway } from "../desktop-gateway";
 
 type InvokeHandler = (
@@ -243,13 +243,13 @@ describe("companion home desktop IPC", () => {
 
     registerM1DesktopIpc({
       gateway,
-      env: { AILEARN_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
+      env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
       resolveWindow: () => fakeWindow,
       getWindowState: () => ({ state: "visible", revision: 1 }),
       setTitlebarTheme: () => true,
     });
 
-    const event = { sender: {}, senderFrame: { url: "ailearn://renderer/" } };
+    const event = { sender: {}, senderFrame: { url: "astella://renderer/" } };
     await requiredHandler(DESKTOP_IPC_CHANNELS.authGetState)(event, { meta });
     const scopedMeta = { ...meta, workspaceEpoch: 9 };
     const homeResult = await requiredHandler(DESKTOP_IPC_CHANNELS.companionHomeGetProjection)(event, { meta: scopedMeta });
@@ -393,7 +393,7 @@ describe("companion home desktop IPC", () => {
 
 // ─── 打开外部链接（方案 35 F7）：主进程是唯一那道闸 ─────────────────────────
 describe("shell.openExternal 桌面 IPC", () => {
-  const event = { sender: {}, senderFrame: { url: "ailearn://renderer/" } };
+  const event = { sender: {}, senderFrame: { url: "astella://renderer/" } };
 
   async function open(url: string) {
     electronMock.openExternal.mockClear();
@@ -415,7 +415,7 @@ describe("shell.openExternal 桌面 IPC", () => {
     "javascript:alert(1)",
     "data:text/html;base64,PHNjcmlwdD4=",
     "file:///etc/passwd",
-    "ailearn://renderer/home",
+    "astella://renderer/home",
     "about:blank",
     "不是一条地址",
   ])("非 http(s) 一律拒绝，并且一次都不碰系统：%s", async (url) => {

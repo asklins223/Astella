@@ -18,9 +18,9 @@ import {
   type CardGenerationReviewResultV1,
   type CardGenerationCancelResultV1,
   type CardGenerationRetryResultV1,
-} from "@ailearn/shared/card-generation-desktop-contracts";
-import { cardActivationReceiptV2Schema, candidateRevealV2Schema } from "@ailearn/shared/card-generation-v2-contracts";
-import type { CardPlanV2 } from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/card-generation-desktop-contracts";
+import { cardActivationReceiptV2Schema, candidateRevealV2Schema } from "@astella/shared/card-generation-v2-contracts";
+import type { CardPlanV2 } from "@astella/shared/card-generation-v2-contracts";
 import { z } from "zod";
 
 type CardGenerationRecoveryInput = Pick<

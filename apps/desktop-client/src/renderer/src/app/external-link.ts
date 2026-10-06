@@ -12,7 +12,7 @@ import { createRequestMeta } from "./desktop-client";
  */
 export async function openExternalLink(url: string): Promise<boolean> {
   try {
-    const result = await window.ailearn.shell.openExternal({ meta: createRequestMeta(), request: { url } });
+    const result = await window.astella.shell.openExternal({ meta: createRequestMeta(), request: { url } });
     return result.ok;
   } catch {
     return false;

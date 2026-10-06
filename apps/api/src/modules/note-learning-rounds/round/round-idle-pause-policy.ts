@@ -18,7 +18,7 @@
  *     `ROUND_IDLE_PAUSE_GRACE_MS_V1` 因此**由 `CONTEXT_LEASE_SECONDS` 派生**而不是各写一个数：
  *     "比租约长"这件事从此是结构性的，改租约不会悄悄把宽限期变成比租约短。
  */
-import { learningRunPhaseSchema } from "@ailearn/shared/learning-run-contracts";
+import { learningRunPhaseSchema } from "@astella/shared/learning-run-contracts";
 import { CONTEXT_LEASE_SECONDS } from "../../companion-bridge/context-hydration.ts";
 import type { RoundPhaseV1 } from "./round-reducer.ts";
 

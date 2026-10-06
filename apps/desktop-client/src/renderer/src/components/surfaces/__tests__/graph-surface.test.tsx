@@ -5,7 +5,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type {
   UnderstandingEdgeProjectionV3,
   UnderstandingNodeProjectionV3,
-} from "@ailearn/shared/note-deepening-contracts";
+} from "@astella/shared/note-deepening-contracts";
 import { useRoomStore } from "../../../app/room-store.ts";
 import { GraphSurface } from "../space/graph-surface.tsx";
 import { clearGraphJourneys } from "../space/graph-journey";
@@ -145,7 +145,7 @@ function stubGateway(result: ReturnType<typeof snapshot> | { failure: true }) {
       )),
     },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return gateway;
 }
 

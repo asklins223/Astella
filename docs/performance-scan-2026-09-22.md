@@ -50,7 +50,7 @@
 
 其他实测事实：
 
-- 连接占用（`pg_stat_activity`）：`ailearn_api` 7、`ailearn_worker` 5，`max_connections = 100`。
+- 连接占用（`pg_stat_activity`）：`astella_api` 7、`astella_worker` 5，`max_connections = 100`。
 - 索引普查（`pg_stat_user_indexes`，我自己的口径：非主键且 `idx_scan = 0`）：**283 个里 87 个从未被扫过，9.0 MB / 21 MB 索引字节**。
 - 外键普查：**151 个单列外键里 97 个，其外键列不是任何索引的首列**。
 - 空转 90 秒只产生 18 个请求（其中 17 个是 `/ready` 健康检查）——所以 `pg_stat` 里那些几万次的 `seq_scan` 是**几个月开发累计**，不能读成"当前负载"。
@@ -86,7 +86,7 @@
 | M5 | Medium | renderer | `use-note-doc-live-view.ts` | 313,501 | Algorithmic | 每次本地 yjs 事务 bump revision → 整文档转 ProseMirror JSON，即每 keystroke 一次全量重投影 | 亲验 |
 | M6 | Medium | renderer | `CompanionHud.tsx` | 2390 | Timer | 60 ms `setInterval` 依赖为 `[]`，整个会话不停 | 亲验 |
 | M7 | Medium | worker | `companion-memory-embedding.ts` | 74-105 | Serial batch | 200 次串行 embed（且不传 signal），每行再开一个带 `lockJobLease` 的事务 | 亲验 |
-| M8 | Medium | queue | `ailearn_claim_jobs`（`pg_proc`） | ORDER BY 分支 | Missing index | 认领按 `CASE` 表达式排序，每次轮询全量排序 | 亲验 |
+| M8 | Medium | queue | `astella_claim_jobs`（`pg_proc`） | ORDER BY 分支 | Missing index | 认领按 `CASE` 表达式排序，每次轮询全量排序 | 亲验 |
 | M9 | Medium | db-index | `search_documents` | 4 个 trigram GIN | Dead index | 全部 `idx_scan=0`（3320 kB×2 + 120 kB×2）；两条 `WHERE workspace_id IS NOT NULL` 因该列 NOT NULL 而与另两条完全重复 | 亲验 |
 | M10 | Medium | db-index | 全库 | — | Dead index | 87/283 非主键索引从未被扫，9.0 MB；`note_versions` 上 `(note_id,version_no)` 有一模一样的一对 | 亲验 |
 | M11 | Medium | db-index | 全库 | — | FK index | 97/151 单列外键无前导索引，父表删除时子表全扫 | 亲验 |
@@ -113,10 +113,10 @@
 | M32 | Medium | api | `learning-objectives/surface-service.ts` | 345-437 | DB-unbounded | runIds 无上限收集后喂给两个 `inArray` | 亲验（本轮读码或测试复现，见 §9） |
 | M33 | Medium | api | `source/service.ts` → `note/service.ts` | 574 → 171 | IO-in-tx | 单篇保存路径在事务内从 MinIO 拉图（批量导入路径已修，这条没修） | 亲验（本轮读码或测试复现，见 §9） |
 | M34 | Medium | api | `card-generation-v2/routes.ts` | 317-338 | SSE poll | 每 2 s 开一个完整事务且**没有** in-flight 守卫（隔壁 `inbox-routes.ts` 专门加了） | 亲验（本轮读码或测试复现，见 §9） |
-| M35 | Medium | rls | 全库策略 | `pg_policies` | RLS | 策略普遍是 `(CURRENT_USER='ailearn_worker' OR workspace_id = current_setting(...))`，因那个 `OR`，空间等值只能落在 `Filter` 上，逐行 `current_setting`+cast | **机制撤回**（09-23 用受限角色 `ailearn_api` 实测 EXPLAIN：策略里的空间等值进了 **`Index Cond`**，`current_setting` 只在计划期出现一次，不是"因那个 OR 而逐行 Filter+cast"。只有走 heap/Seq 计划的查询里它随整条谓词每行求值——那不是 OR 造成的。策略形状统计是真的：121 条 permissive 里 81 条带 `ailearn_worker` 分支、143 条里 103 条用 `current_setting` 比空间） |
+| M35 | Medium | rls | 全库策略 | `pg_policies` | RLS | 策略普遍是 `(CURRENT_USER='astella_worker' OR workspace_id = current_setting(...))`，因那个 `OR`，空间等值只能落在 `Filter` 上，逐行 `current_setting`+cast | **机制撤回**（09-23 用受限角色 `astella_api` 实测 EXPLAIN：策略里的空间等值进了 **`Index Cond`**，`current_setting` 只在计划期出现一次，不是"因那个 OR 而逐行 Filter+cast"。只有走 heap/Seq 计划的查询里它随整条谓词每行求值——那不是 OR 造成的。策略形状统计是真的：121 条 permissive 里 81 条带 `astella_worker` 分支、143 条里 103 条用 `current_setting` 比空间） |
 | M36 | Medium | rls | `ai_audit_log` / `workspace_audit_log` | owner-read 策略 | RLS | 唯二带子查询的策略，逐行 `EXISTS` 探查 workspaces | 亲验（09-23：全库含 `EXISTS` 的策略**恰好只有** `sec01_v1_ai_audit_api_owner_read` 与 `sec01_v1_workspace_audit_log_api_owner_read` 两条，与所述一致） |
-| M37 | Medium | trigger | `0267` / `0261` | 186 / 88,123 | Write amplification | 加入空间触发 `1 + M × (W-1)` 条 insert；改一次 AI 同意对每个空间各发一条 `UPDATE workspaces`（而该行每个请求都读） | 前半亲验、**后半撤回**（09-23 读 `ailearn_backfill_global_memories_on_join`：对「该用户其它空间里每条 distinct `global_key` 记忆」各调一次 `ailearn_fanout_global_companion_memory`，后者再 `FOR target IN SELECT workspace_id FROM workspace_members …` 逐空间铺行——量级确为**记忆数 × 其它空间数**；`NEW.left_at IS NOT NULL` 时直接 return，退出不铺。后半**不成立**：AI 同意现在根本不在 `workspaces` 上——它存在 `onboarding_states.completed_steps`（jsonb，按 (workspace,user) 一行，见 `markOnboardingStep` 与 sec02 夹具 `'"ai_consent": true}'::jsonb`），全仓 `apps/api/src` 里除测试与一个 `ai_consent_required` job 原因码外**没有**任何 `UPDATE workspaces` 的扇出；0237 早已 `DROP COLUMN workspaces.ai_consent_version`。顺带核到那条 `BEFORE UPDATE ON workspaces` 的 `ailearn_bump_epoch_on_workspace_change` 只在 `name / owner_id / workspace_type` 变化时递增 epoch，所以这类 UPDATE 也不会引发纪元风暴。） |
-| M38 | Medium | trigger | `0044` | 358-361 | Write amplification | `note_blocks_sealed_guard` 每行 block 多一次 `note_versions` 查询，配合 M4 放大 | 亲验（09-23 读 `ailearn_guard_sealed_note_blocks` 函数体：FOR EACH ROW，每行一次 `SELECT sealed_at FROM public.note_versions WHERE id = …`。走主键所以单次便宜，但「每行一次」是结构性的，与 M4 的全量 block 写叠加＝一次保存 N 行就 N 次探查。注意这条守卫是**不可变性的执行者**，要减它的成本得换判定来源，不能删） |
+| M37 | Medium | trigger | `0267` / `0261` | 186 / 88,123 | Write amplification | 加入空间触发 `1 + M × (W-1)` 条 insert；改一次 AI 同意对每个空间各发一条 `UPDATE workspaces`（而该行每个请求都读） | 前半亲验、**后半撤回**（09-23 读 `astella_backfill_global_memories_on_join`：对「该用户其它空间里每条 distinct `global_key` 记忆」各调一次 `astella_fanout_global_companion_memory`，后者再 `FOR target IN SELECT workspace_id FROM workspace_members …` 逐空间铺行——量级确为**记忆数 × 其它空间数**；`NEW.left_at IS NOT NULL` 时直接 return，退出不铺。后半**不成立**：AI 同意现在根本不在 `workspaces` 上——它存在 `onboarding_states.completed_steps`（jsonb，按 (workspace,user) 一行，见 `markOnboardingStep` 与 sec02 夹具 `'"ai_consent": true}'::jsonb`），全仓 `apps/api/src` 里除测试与一个 `ai_consent_required` job 原因码外**没有**任何 `UPDATE workspaces` 的扇出；0237 早已 `DROP COLUMN workspaces.ai_consent_version`。顺带核到那条 `BEFORE UPDATE ON workspaces` 的 `astella_bump_epoch_on_workspace_change` 只在 `name / owner_id / workspace_type` 变化时递增 epoch，所以这类 UPDATE 也不会引发纪元风暴。） |
+| M38 | Medium | trigger | `0044` | 358-361 | Write amplification | `note_blocks_sealed_guard` 每行 block 多一次 `note_versions` 查询，配合 M4 放大 | 亲验（09-23 读 `astella_guard_sealed_note_blocks` 函数体：FOR EACH ROW，每行一次 `SELECT sealed_at FROM public.note_versions WHERE id = …`。走主键所以单次便宜，但「每行一次」是结构性的，与 M4 的全量 block 写叠加＝一次保存 N 行就 N 次探查。注意这条守卫是**不可变性的执行者**，要减它的成本得换判定来源，不能删） |
 | M39 | Medium | retention | `jobs` / `card_generation_events_v2` 等 | — | Unbounded growth | `jobs` 与多张追加表无任何 DELETE/TTL；`jobs_status_idx` 非部分索引，认领索引随历史永久增长 | 亲验（09-23 两条都查到具体证据：**全仓 `DELETE FROM jobs` 只出现在 5 个测试夹具的 cleanup 里**（`integration-tests/helpers/v2-card-fixture.ts:221` 等），生产代码零 purge；`pg_indexes` 实测 `jobs_status_idx (status, scheduled_at)` 与 `jobs_status_started_at_idx (status, started_at)` **都是非部分**索引，覆盖含终态在内的全部历史行，而认领只关心 pending/running。缺的是"多久历史还要能被回答"这个决定，不是技术——见 §11.3） |
 | L1 | Low | api | `search/routes.ts` | 12 | Pagination | 深 OFFSET（旧轮 8 月已报，未修） | **不存在**（09-23 实测：`apps/api/src/modules/search/*.ts` 里没有任何 `offset`，路由与游标都是 keyset——`search/routes.ts:14-16` 明写"不透明游标，解不开就 400，绝不悄悄回退到第一页"。这条 8 月的旧账已经还掉了） |
 | L2 | Low | api | `companion-events.ts` | 636-648 | SSE poll | 2.5 s 定频不退避（同文件其余实现有退避） | 亲验（本轮读码或测试复现，见 §9） |
@@ -260,7 +260,7 @@
 | M32 | 目标详情页：不再把这篇目标**历史上所有** run 的 id 收成数组喂两个 `inArray`，改成经 `learning_runs` join（`origin->>'objectiveId'` 有 0222 表达式索引，两张 outbox 各有 run_id 可用索引），两条标量子查询合成一次往返 | `learning-objectives-surface` / `-parity` / `-leakage` 三套干净库集成 6 条绿（证明 SQL 可跑、不越权）；**但 `practiceTrailCount` 与 `lastCanonicalAt` 这两个值全仓没有任何断言覆盖**（`rl-surface-e2e.test.ts` 里出现的是喂进去的字面量，不是查出来的）—— 见下方欠账 |
 
 | M13（半） | `App` 不再订阅 `windowState`：那个状态一变（失焦、最小化、`visibilitychange`，全是高频）根组件就重渲染，而 `room` 那段 JSX 是在 App 自己那次渲染里造出来的，**整棵渲染树**跟着走一遍——渲染层没有任何 `React.memo` 拦得住。顺带删掉它唯一用途 `data-window-state` 属性：全仓核对无读方（CSS 0 处、测试 0 处，探针读的是 `.companion-presence` 上那个） | 新增形状守卫 `src/main/app-render-scope.test.ts` 3 条；**变异检验过**：把那行订阅加回去，恰好"不再订阅"那条变红。桌面全量 1415 条通过（2 红仍是 prosemirror 双实例） |
-| L6 | 迁移 **0271**：`ailearn_jobs_insert_notify` 原来只挂 `AFTER INSERT`，而重试（`ailearn_fail_job` 把 status 打回 pending）与 reaper 回收都是 **UPDATE**，一条通知都不发；worker 空闲轮询已自适应退到 5 秒，于是「到点该重试的 job」平均多等半个周期（最坏 4.5 秒）——0031 把首次退避从 10s 降到 2s 省下的延迟被这里原样还回去。现在改成 `AFTER INSERT OR UPDATE OF status`，判据放在函数体里：仅「刚变成 pending 且之前不是」才发；claim（pending→running）刻意**不**发，否则每次领取都惊群。函数体建立在 0214 的版本上（0200 删过 `generation_run_id`，从 0115 复制会把那个修复冲掉） | 见下方"L6 的验证" |
+| L6 | 迁移 **0271**：`astella_jobs_insert_notify` 原来只挂 `AFTER INSERT`，而重试（`astella_fail_job` 把 status 打回 pending）与 reaper 回收都是 **UPDATE**，一条通知都不发；worker 空闲轮询已自适应退到 5 秒，于是「到点该重试的 job」平均多等半个周期（最坏 4.5 秒）——0031 把首次退避从 10s 降到 2s 省下的延迟被这里原样还回去。现在改成 `AFTER INSERT OR UPDATE OF status`，判据放在函数体里：仅「刚变成 pending 且之前不是」才发；claim（pending→running）刻意**不**发，否则每次领取都惊群。函数体建立在 0214 的版本上（0200 删过 `generation_run_id`，从 0115 复制会把那个修复冲掉） | 见下方"L6 的验证" |
 
 ### L6 的验证（真 LISTEN 收通知，不读函数源码）
 
@@ -268,7 +268,7 @@
 
 两条踩过的弯路，记下来免得下次重犯：
 - **psql 不能用来验通知**：`psql -c "LISTEN …; SELECT pg_sleep(2)"` 在单命令模式下退出前不吐异步通知，六个阶段会全部读回 0——**包括必须通知的那一条**。这是"读不到"，不是"判据对"。
-- **queue 集成套件对库里残留极敏感**：我第一次跑它失败（`expected 0, actual 3`），原因是我自己的探针在同一个库留了夹具行；`bash scripts/dev-disposable-db.sh ailearn_perf_it` 重置后 **5/5 绿**。另外它要求 `QUEUE_TEST_*` 三个 URL 用**受限角色**（`ailearn_worker`），给超级用户会先撞 `readConnectionIdentity` 断言。
+- **queue 集成套件对库里残留极敏感**：我第一次跑它失败（`expected 0, actual 3`），原因是我自己的探针在同一个库留了夹具行；`bash scripts/dev-disposable-db.sh astella_perf_it` 重置后 **5/5 绿**。另外它要求 `QUEUE_TEST_*` 三个 URL 用**受限角色**（`astella_worker`），给超级用户会先撞 `readConnectionIdentity` 断言。
 
 ### 续批三的查证结果：一条不存在、两条撤回
 
@@ -318,8 +318,8 @@ M30 那条还顺手把它自己的等价前提钉成断言：`learning_objective
 
 **两条踩过的坑（写给下一个写 Postgres 集测的人，包括并行会话）**
 
-0. **`withWorkspaceTransaction` 不切角色**（`db/client.ts:367-369` 只有 `set_config('app.workspace_id'…)`，全文件没有 `SET LOCAL ROLE`）。所以"读数走产品入口"**不等于**"读数在 RLS 下"——RLS 是否生效完全取决于连接角色，而 dev 的 `ailearn` 是 `super=true bypass=true`（见 [[reference-dev-rls-blindfold]]）。本轮两个新套件因此各跑了两遍：
-   - `DATABASE_URL`＝超级用户（夹具要写 `users`/`workspaces`/outbox）**且** `DATABASE_URL_API`＝`ailearn_api`（`db/client.ts:25` 优先取这个变量）⇒ **6 条全绿**，这才是 CI/生产的形状；
+0. **`withWorkspaceTransaction` 不切角色**（`db/client.ts:367-369` 只有 `set_config('app.workspace_id'…)`，全文件没有 `SET LOCAL ROLE`）。所以"读数走产品入口"**不等于**"读数在 RLS 下"——RLS 是否生效完全取决于连接角色，而 dev 的 `astella` 是 `super=true bypass=true`（见 [[reference-dev-rls-blindfold]]）。本轮两个新套件因此各跑了两遍：
+   - `DATABASE_URL`＝超级用户（夹具要写 `users`/`workspaces`/outbox）**且** `DATABASE_URL_API`＝`astella_api`（`db/client.ts:25` 优先取这个变量）⇒ **6 条全绿**，这才是 CI/生产的形状；
    - 两个 URL 都给超级用户 ⇒ 也全绿，但那一层少验。
    ⇒ 凡"我通过 `withWorkspaceTransaction` 读，所以验了租户隔离"这类注释都不成立，要么按上面分开给 URL，要么在注释里写明没验。`scripts/dev-disposable-db.sh` 末尾本来就打印这两种配方，只是以前没人把 `DATABASE_URL_API` 当受限角色用。
 
@@ -401,15 +401,15 @@ M30 那条还顺手把它自己的等价前提钉成断言：`learning_objective
    排除掉的干扰项：清空 `node_modules/.vite` 依赖缓存**不**复现修复；单独跑该文件同样红（与本次改动无关，
    它的 import 图里没有本轮任何一个被改文件）。**没有动它**——修依赖布局会影响并行会话与整个工作区，
    需要一次有意识的 `pnpm install`/去重决定。
-2. **集成测试必须跑在一次性干净库上**，这点文档里已有但容易踩：把 note 系列直接指到 `ailearn_it`
-   会得到 `relation "users" does not exist`（那个库没有 schema），指到共享开发库 `ailearn` 则会因残留行假失败。
+2. **集成测试必须跑在一次性干净库上**，这点文档里已有但容易踩：把 note 系列直接指到 `astella_it`
+   会得到 `relation "users" does not exist`（那个库没有 schema），指到共享开发库 `astella` 则会因残留行假失败。
    可用配方（本轮就是这么验 M3/M4 的）：
    ```
-   bash scripts/dev-disposable-db.sh ailearn_perf_it
+   bash scripts/dev-disposable-db.sh astella_perf_it
    cd apps/api
-   export DATABASE_URL_API='postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn_perf_it' \
-          DATABASE_URL='postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn_perf_it' \
-          NOTE_VERSION_RESTORE_TEST_DATABASE_URL='postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn_perf_it'
+   export DATABASE_URL_API='postgres://astella:astella_dev@127.0.0.1:5432/astella_perf_it' \
+          DATABASE_URL='postgres://astella:astella_dev@127.0.0.1:5432/astella_perf_it' \
+          NOTE_VERSION_RESTORE_TEST_DATABASE_URL='postgres://astella:astella_dev@127.0.0.1:5432/astella_perf_it'
    node --import tsx --test --test-concurrency=1 src/integration-tests/note-document-state-postgres.integration.ts
    ```
    注意各套件要的变量名不同：`note-version-restore` 只认 `NOTE_VERSION_RESTORE_TEST_DATABASE_URL`，
@@ -434,7 +434,7 @@ M30 那条还顺手把它自己的等价前提钉成断言：`learning_objective
    单独跑 **7/7 通过**，只在中间一次全量跑里红过；**最后一次全量 0 失败**。这是一个依赖墙钟分钟边界的用例，按跨分钟抖动归类，不是缺陷。
 2. `note-doc-editor-binding.test.tsx` 两条：`prosemirror-model` 双实例（§9.5），它的 import 图里没有任何本轮改过的文件。
 
-另：本轮为验证创建的一次性库 `ailearn_perf_it` 当时留在开发容器里（`scripts/dev-disposable-db.sh` 重跑一次即可回到干净状态），没有动共享开发库 `ailearn` 的数据——对它只做过 `CREATE INDEX`（迁移 0269）与只读查询。（**续批五已把它和本轮的 4 个一次性库一并 `DROP DATABASE`**。）
+另：本轮为验证创建的一次性库 `astella_perf_it` 当时留在开发容器里（`scripts/dev-disposable-db.sh` 重跑一次即可回到干净状态），没有动共享开发库 `astella` 的数据——对它只做过 `CREATE INDEX`（迁移 0269）与只读查询。（**续批五已把它和本轮的 4 个一次性库一并 `DROP DATABASE`**。）
 
 ### 续批五（09-23）：0272 删掉 6 棵**形状重复**的索引
 
@@ -453,7 +453,7 @@ M30 那条还顺手把它自己的等价前提钉成断言：`learning_objective
 
 **刻意没删的两条（免得下一轮当漏做）**
 - `companion_reminders_user_idx` 与 `companion_reminders_ws_user_idx`：逐字节同键（都是 `(workspace_id, user_id, status, fire_at)`），但后者**既不在任何迁移里、也不在 Drizzle schema 里**（`grep` 全库只命中 0238 的前者）——那是开发库漂移出来的对象，很可能是并行会话手工种的，不该由本迁移替它做主。
-  > **已移交（写给那边会话，可冷启动）**：dev 库 `ailearn` 上有一棵 `companion_reminders_ws_user_idx`，`pg_indexes` 里在、`apps/api/src/db/migrations/*.sql` 与 `packages/shared/src/db-schema/` 里都查不到（`companion_reminders` 这张表本身没有 Drizzle 声明，只由 `0238_companion_reminders.sql:78` 建）。它与 0238 建的 `companion_reminders_user_idx` **列、顺序、谓词逐字节相同**。请确认是你手工种的还是某支还没落的迁移：若属前者，要么删掉一棵，要么补一支迁移把留下的那棵登记进来——否则任何一次"从空库重放迁移"的环境（CI、`scripts/dev-disposable-db.sh`）都与 dev 库不一致，而这类不一致的表现是"本地快、CI 慢"或反过来，最难查。
+  > **已移交（写给那边会话，可冷启动）**：dev 库 `astella` 上有一棵 `companion_reminders_ws_user_idx`，`pg_indexes` 里在、`apps/api/src/db/migrations/*.sql` 与 `packages/shared/src/db-schema/` 里都查不到（`companion_reminders` 这张表本身没有 Drizzle 声明，只由 `0238_companion_reminders.sql:78` 建）。它与 0238 建的 `companion_reminders_user_idx` **列、顺序、谓词逐字节相同**。请确认是你手工种的还是某支还没落的迁移：若属前者，要么删掉一棵，要么补一支迁移把留下的那棵登记进来——否则任何一次"从空库重放迁移"的环境（CI、`scripts/dev-disposable-db.sh`）都与 dev 库不一致，而这类不一致的表现是"本地快、CI 慢"或反过来，最难查。
   >
   > **09-23 把这个"漂移类"整体量了一遍，结论比预想的干净**：按文件名顺序**重放** 272 支迁移（`CREATE` 加入、`DROP` 移除，共 29 次 DROP），与 dev 库 `pg_class`/`pg_index` 里的非约束索引对账——**漂移只有这一棵**（另有一棵 `note_versions_note_idx`，那是本迁移 0272 要删的、dev 还没跑 0272 而已，不是漂移）。同时 `pg_tables` 对账：Drizzle 声明的 107 张表在库里全部存在，**没有幽灵表**。
   > 这条量法本身有两个已知噪声，别当成发现：① 动态 `EXECUTE 'CREATE INDEX …'` 拼出来的名字静态取不到（`IF` 那一条就是正则被拼接串骗出来的假项）；② 我的 DB 侧集合**排除了约束背书的索引**（PK / `UNIQUE` 约束），所以凡是 drizzle 里 `uniqueIndex("x")` 而库里以约束形式存在的，都会假报成"schema 有、库里没有"。要把这类对账做成常驻门禁，得连"表 + 列 + 谓词"一起比而不是只比名字，并且用 `pg_get_indexdef` 归一化——那是独立一轮，不该挂在性能项上顺手做。
@@ -463,13 +463,13 @@ M30 那条还顺手把它自己的等价前提钉成断言：`learning_objective
 - 迁移 0272 已登记进 `meta/_journal.json`（idx 271）；`dev-disposable-db.sh` 从**空库**跑完全部 272 支迁移通过，落地后 `pg_indexes` 逐名核对：6 棵没了、6 棵保留方都在、0269 的 `workspace_members_user_idx` 不受影响。
 - Drizzle 侧同步删掉 6 条声明（`assistant-deliveries.ts` / `note.ts` / `search.ts` / `card-generation-v2.ts`×2），并改掉一句会**说谎**的注释：`generation-run-service.ts:547` 原写"走 `cg_v2_cand_latest_idx … DESC`"，那棵已不存在，改指 `cg_v2_cand_run_idx` 并说明反扫。
 - `packages/shared`、`apps/api` 类型检查各 **0 错**；API 单元全量 **1535 条：1534 通过 / 1 skip / 0 失败**。
-- Postgres 套件（一次性库 `ailearn_idx_it`，跑完已删）：`db-migrations` + `rls-policies` + `schema-isolation-gate` **7 条全绿**；`learning-dashboard` / `projection-pagination` / `understanding-topology-v3` / `understanding-projection` / `learning-runs-demonstrated` **12 通过 / 0 失败**；受这四张表影响的 9 个套件 **49 通过 / 2 失败**。
+- Postgres 套件（一次性库 `astella_idx_it`，跑完已删）：`db-migrations` + `rls-policies` + `schema-isolation-gate` **7 条全绿**；`learning-dashboard` / `projection-pagination` / `understanding-topology-v3` / `understanding-projection` / `learning-runs-demonstrated` **12 通过 / 0 失败**；受这四张表影响的 9 个套件 **49 通过 / 2 失败**。
 - **那 2 条失败与本迁移无关，用控制库证过**（同一份代码打在**没跑 0272** 的库上，两条一模一样地红）：
   1. `card-generation-v2-domain-events.integration.ts:42` —— `INSERT INTO workspaces (id, owner_id, name) VALUES (…, 'domain-events', 'v1', now(), ${USER_ID})`：**3 列对 6 值**（`42601`）。这是那个文件自己写坏了，与索引无关。
   2. `history-search-postgres.integration.ts` §10.4 历史搜索：期望 200 实得 **404**（路由级，同样与索引无关）。
   两条都**不在本轮改动范围内**，且都落在并行会话正在改的文件上——留给那边处理。
-- **09-24 0272 已应用到共享开发库 `ailearn`**（经用户确认）。删前把 6 棵的 `CREATE INDEX` 原句逐字导出到 `/tmp/restore-0272.sql` 作一次性还原路径；应用后复验：6 棵全部不存在、8 个保留方与 0269 的两棵都在、0271 的触发器已是 `AFTER INSERT OR UPDATE OF status`、`:4000/ready` 200。同批还补上了那边一直未跑的 0270。**没有**在 dev 上重跑 EXPLAIN 作接管证据——dev 表太小会走顺序扫描，那种"证据"是假的；接管证明仍以一次性库上 20,000 / 6,000 行夹具的三次 `Index Scan`（含 `Index Only Scan Backward`）为准。
-- 本轮的一次性库（`ailearn_trail_it` / `ailearn_stats_it` / `ailearn_obj_it` / `ailearn_idx_it`）与上一轮留下的 `ailearn_perf_it` 已全部 `DROP DATABASE`；共享开发库 `ailearn` 只被读过（`pg_index` / `information_schema` / `EXPLAIN` 未带 `ANALYZE` 的只读查询），**没动过它的索引**。
+- **09-24 0272 已应用到共享开发库 `astella`**（经用户确认）。删前把 6 棵的 `CREATE INDEX` 原句逐字导出到 `/tmp/restore-0272.sql` 作一次性还原路径；应用后复验：6 棵全部不存在、8 个保留方与 0269 的两棵都在、0271 的触发器已是 `AFTER INSERT OR UPDATE OF status`、`:4000/ready` 200。同批还补上了那边一直未跑的 0270。**没有**在 dev 上重跑 EXPLAIN 作接管证据——dev 表太小会走顺序扫描，那种"证据"是假的；接管证明仍以一次性库上 20,000 / 6,000 行夹具的三次 `Index Scan`（含 `Index Only Scan Backward`）为准。
+- 本轮的一次性库（`astella_trail_it` / `astella_stats_it` / `astella_obj_it` / `astella_idx_it`）与上一轮留下的 `astella_perf_it` 已全部 `DROP DATABASE`；共享开发库 `astella` 只被读过（`pg_index` / `information_schema` / `EXPLAIN` 未带 `ANALYZE` 的只读查询），**没动过它的索引**。
 
 ### 待核列清零（09-23，逐条实测）
 
@@ -477,14 +477,14 @@ M30 那条还顺手把它自己的等价前提钉成断言：`learning_objective
 
 | 条目 | 实测结果 |
 |---|---|
-| **M35 RLS 策略** | **机制整条撤回**。用受限角色 `ailearn_api` 在 dev 库上 `SET app.workspace_id=… ; EXPLAIN`：策略里的空间等值进了 **`Index Cond`**（`Bitmap Index Scan on notes_workspace_id_unique_idx`），`current_setting` 只出现在计划里一次，不是"因那个 `OR` 而逐行 Filter + cast"。统计部分是真的：121 条 permissive 策略里 81 条带 `ailearn_worker` 分支、143 条里 103 条用 `current_setting` 比空间——但"带分支"不等于"逐行求值"，这条**不该再按 RLS 开销去动它**。 |
+| **M35 RLS 策略** | **机制整条撤回**。用受限角色 `astella_api` 在 dev 库上 `SET app.workspace_id=… ; EXPLAIN`：策略里的空间等值进了 **`Index Cond`**（`Bitmap Index Scan on notes_workspace_id_unique_idx`），`current_setting` 只出现在计划里一次，不是"因那个 `OR` 而逐行 Filter + cast"。统计部分是真的：121 条 permissive 策略里 81 条带 `astella_worker` 分支、143 条里 103 条用 `current_setting` 比空间——但"带分支"不等于"逐行求值"，这条**不该再按 RLS 开销去动它**。 |
 | **L1 搜索深 OFFSET** | **不存在**。`apps/api/src/modules/search/*.ts` 里 `offset` 命中 0，`search/routes.ts:14-16` 明写不透明 keyset 游标、"解不开就 400，绝不悄悄回退第一页"。8 月那笔旧账已经还掉了。 |
 | **M20 base64 过桥无上限** | **不存在（撤回）**。`desktop-ipc-contracts.ts` 里没有任何 base64 图片/音频字段；唯一的大 base64 是 yjs 增量，而它**已经**带 `NOTE_DOC_UPDATE_MAX_CHARS` 上限（该文件 1381-1386 行还专门写了"必须带尺寸上限"的理由）。 |
 | **M25 `blur(20px)`** | 方向对、**数字错**：实测 `backdrop-filter: blur(20px)` 只有 **3** 处（报告写 18 处）；全 renderer 的 `backdrop-filter` 共 51 处。要动得按 3/51 重算，别按 18。 |
 | **M22 伴星存在感的拖动路径** | 形态在，**行号已迁移**：现在是 `CompanionPresence.tsx:472-479` 与 `:544-548`，同一函数里 `querySelector`×2 + `getBoundingClientRect`×3 + `offsetWidth` 交替读写。 |
 | **M36 两条带子查询的策略** | 亲验：全库含 `EXISTS` 的策略**恰好只有** `ai_audit_log` 与 `workspace_audit_log` 那两条 owner-read。 |
 | **L3 主线程 bcrypt / L10 preload `sendSync` / L7 每实例 30 s 清扫** | 全部亲验。L7 尤其具体：`REAP_THROTTLE_MS=30_000` 配的是模块级 `let lastReapAt = 0`（每实例各节流各的），而 `workers/ai-worker/src/*.ts` 里 `advisory` 命中 **0**——没有任何跨实例守卫。 |
-| **M29 / M37 / M38** | 三条都已读到**定义与函数体本身**，其中两条改判：M29 **机制撤回**（那 10 s 是 `lib/handler-timeout-config.ts:18-19` 的硬夹，不是人肉约定；V2 outbox 另有 120 s 心跳 + 丢租约即 abort，所谓"只在提交时续"不成立——残留的是"主队列无中途续约，超 110 s 就重投重付"这一条真问题）；M38 **亲验**（`ailearn_guard_sealed_note_blocks` 确实每行一次 `SELECT sealed_at FROM note_versions`，但它是不可变性的执行者，要减成本得换判定来源而不是删守卫）；M37 **前半亲验、后半未核**（回填触发器确实是"记忆数 × 其它空间数"的扇出，但"改 AI 同意 → 每空间一条 `UPDATE workspaces`"那半句我没重读函数体，仍按未核处理）。 |
+| **M29 / M37 / M38** | 三条都已读到**定义与函数体本身**，其中两条改判：M29 **机制撤回**（那 10 s 是 `lib/handler-timeout-config.ts:18-19` 的硬夹，不是人肉约定；V2 outbox 另有 120 s 心跳 + 丢租约即 abort，所谓"只在提交时续"不成立——残留的是"主队列无中途续约，超 110 s 就重投重付"这一条真问题）；M38 **亲验**（`astella_guard_sealed_note_blocks` 确实每行一次 `SELECT sealed_at FROM note_versions`，但它是不可变性的执行者，要减成本得换判定来源而不是删守卫）；M37 **前半亲验、后半未核**（回填触发器确实是"记忆数 × 其它空间数"的扇出，但"改 AI 同意 → 每空间一条 `UPDATE workspaces`"那半句我没重读函数体，仍按未核处理）。 |
 
 > **这一节自身也出过一次事故，记下来免得被当成小事**：给 M29/M37/M38 三条改状态的那个补丁脚本里，我把"跳过不匹配的行"写成了 `continue`，而那一句正好在 `out.append(ln)` **之前**——于是这三条表格行被整行删除、写回了文件。靠 `grep -n "M29"` 只命中一处才发现。**教训**：批量改文件的脚本，末尾必须有"行数/条数对账"的自检（这次是 §3 应有 59 行），不能只看"updated: N"。三条已按本轮实测结论重建，§3 重新数过：**59 行、无重复、无 `待核`**。
 
@@ -500,7 +500,7 @@ M30 那条还顺手把它自己的等价前提钉成断言：`learning_objective
 - 新用例 `src/main/desktop-ipc-companion-visibility.test.ts` 4 条。**先红后绿**：实现落地前跑，第 2、3 条红（"最小化后两条流各自被停一次"、"恢复后按游标续读"），第 1 条绿（证明这套夹具真能驱动生命周期），第 4 条当时"绿"是因为压根没人收流——它要在实现之后才有意义。
 - **5 个变异全部变红且各归各位**：收流时顺手 `clearInterval` 心跳 → 第 2 条红；恢复时不补 `snapshot_invalidated` → 第 3 条红；重开时游标写回 0 → 第 3 条红；判据取不到时 fail-**closed** → 第 4 条红；只停一条流 → 第 2、3 条都红。
 - 主进程 27 文件 **225 条全绿**；桌面全量（main + renderer）**168 文件 / 1415 条全绿**；`npm run typecheck`（node + web 两套 config）**rc=0、0 错**。
-- **09-24 事后复验（并行会话又改了 6 轮之后，全新一次性库 `ailearn_gate94`）**：`npm run test:objective-metrics:postgres` **12/12 绿**（含本轮新补的两套 + 三个既有目标套件），证明 0272 + 断账用例在跑过全部 272 支迁移的干净库上仍然成立；`note-document-state` + `note-collaboration` **全绿**——这是"删掉 `note_versions_note_idx` 之后真实写路径不受影响"的第二次证据。同一批里 `card-generation-v2-domain-events` 仍红 1 条，错误签名与今天控制库复现的**完全一致**（`INSERT has more expressions than target columns`，夹具 3 列对 6 值），不是本迁移造成的。
+- **09-24 事后复验（并行会话又改了 6 轮之后，全新一次性库 `astella_gate94`）**：`npm run test:objective-metrics:postgres` **12/12 绿**（含本轮新补的两套 + 三个既有目标套件），证明 0272 + 断账用例在跑过全部 272 支迁移的干净库上仍然成立；`note-document-state` + `note-collaboration` **全绿**——这是"删掉 `note_versions_note_idx` 之后真实写路径不受影响"的第二次证据。同一批里 `card-generation-v2-domain-events` 仍红 1 条，错误签名与今天控制库复现的**完全一致**（`INSERT has more expressions than target columns`，夹具 3 列对 6 值），不是本迁移造成的。
 - 顺带补齐一处替身缺口：`desktop-ipc-note-doc.test.ts` 的假窗口没有 `on`（真 `BrowserWindow` 一定有），产品代码一绑可见性事件就在测试里抛 `TypeError`——**是夹具没跟齐，不是缺陷**，已补 `on` / `isVisible` / `isMinimized`。
 - 上一轮卡住的根因坐实：`authGetState` 在测试里一直返回 `safe_internal_error`，而 `desktop-ipc-companion.test.ts` 从不 assert 它的返回值，所以那份"登录后伴星路径"的覆盖实际一条都没走到。这次靠"会应答的兜底替身 + 第一句就 assert `result.ok`"解开（教训已进长期记忆）。
 
@@ -545,7 +545,7 @@ M30 那条还顺手把它自己的等价前提钉成断言：`learning_objective
 **这条改动依赖的服务端语义（09-24 核过，不是猜的）**：恢复时用 `watchCompanionInboxEvents(companionInboxCursor, …)` 续订，走的是 `GET /companion/deliveries/inbox/stream?after=<inboxSequence>`——`inbox-routes.ts:56` 起：`after` 缺失才回退到 `Last-Event-ID`，随后 `let cursor = afterSequence;` 一路按这个游标 pump，取数在 `delivery-service.ts:262` 是 `gt(inboxSequence, afterSequence)`。**即"按游标重连会把隐藏期间那几条补发回来"确实成立**，补账不是我一相情愿。account 那条流的语义不同（`account-events.ts:34-57` 的 after 是 **epoch fence**，不是可回放的序号），所以恢复时那一段只能靠显式 `snapshot_invalidated` 让渲染层重取快照——这也正是实现里那么写的原因。
 
 ## 10. 查询形状的确定性基准（本轮唯一能归因的性能数字）
-端到端均值不可归因（§9.4），所以换办法：一次性库 `ailearn_bench` 里复刻三对查询形状的**访问路径**，同一份数据跑旧写法与新写法各 5 次 `EXPLAIN (ANALYZE, BUFFERS)`，取执行时间中位数。夹具量级取"上线后不久"而不是当前开发库的几十行。
+端到端均值不可归因（§9.4），所以换办法：一次性库 `astella_bench` 里复刻三对查询形状的**访问路径**，同一份数据跑旧写法与新写法各 5 次 `EXPLAIN (ANALYZE, BUFFERS)`，取执行时间中位数。夹具量级取"上线后不久"而不是当前开发库的几十行。
 
 | 对照 | 数据规模 | 旧写法 | 新写法 | 结论 |
 |---|---|---|---|---|
@@ -564,7 +564,7 @@ M30 那条还顺手把它自己的等价前提钉成断言：`learning_objective
 
 **09-24 补一条这份基准的适用条件**：同一天后来发现这台机器能被挤到 `/ready` 从 4.5 ms 涨到 22.7 ms（§9.4.1）。本节的三个数**没做负载对照**，可信度建立在两点上：① 旧写法与新写法是**同一会话内背靠背**各跑 5 次取中位数，负载对两边同等作用；② 报的是**比值与字节**，不是绝对毫秒。但绝对值（1.092 / 9.401 / 4.017 ms）当下不能当基线用——复用这套脚本时，先跑一次 `/ready` 的均值，若它比 4.5 ms 明显高，就等机器空下来再取数，或者直接只报比值。
 
-**方法学（下一轮直接复用）**：`bash scripts/tmp-shape-bench.sh` 那个形态——简化表 + 真实索引形状 + `EXPLAIN ANALYZE` 中位数 + **同时报返回行数与字节**。性能断言只有配上"它换掉了什么、又贵在哪"才可信。基准库与脚本本轮已删除，未动开发库 `ailearn`。
+**方法学（下一轮直接复用）**：`bash scripts/tmp-shape-bench.sh` 那个形态——简化表 + 真实索引形状 + `EXPLAIN ANALYZE` 中位数 + **同时报返回行数与字节**。性能断言只有配上"它换掉了什么、又贵在哪"才可信。基准库与脚本本轮已删除，未动开发库 `astella`。
 
 ## 11. 还剩什么（冷启动可执行，按"下一步就做这条"写）
 
@@ -585,7 +585,7 @@ M30 那条还顺手把它自己的等价前提钉成断言：`learning_objective
 - **主进程早就知道可见性**：`index.ts:356-364` 的 `currentWindowState()` 读 `isMinimized()/isVisible()/isFocused()`，`registerWindowLifecycle`（:392-400）在 `show/hide/focus/blur/minimize/restore` 上各挂了一次 `publishWindowState`；`registerM1DesktopIpc` 的入参里已经有 `getWindowState(window)`（`desktop-ipc.ts:274`）。**缺的只是"伴星生命周期看不到窗口句柄"**。
 
 **要做的三件事（顺序即依赖顺序）**
-1. 给 `registerM1DesktopIpc` 的 options 加一个 `getActiveWindowState?: () => AILearnWindowState | null`（`index.ts` 里用现成的主窗口引用实现，别新建窗口管理器）。
+1. 给 `registerM1DesktopIpc` 的 options 加一个 `getActiveWindowState?: () => AstellaWindowState | null`（`index.ts` 里用现成的主窗口引用实现，别新建窗口管理器）。
 2. 生命周期启动时**同时**绑一次可见性：`window.on('hide'|'minimize')` → `stopCompanionStreams()`（只停这两条 SSE，**不动 60 s 的 fence**）；`window.on('show'|'restore')` → `resumeCompanionStreams()`。
 3. 恢复路径必须**自带补账**：重开 inbox 流时用现存的 `companionInboxCursor` 作 `after`（`desktop-ipc.ts:1211` 已经这么传），并在恢复的瞬间 `emit("runtime", { kind: "snapshot_invalidated", scope: "runtime" }, epoch)` 让渲染层重取快照。漏了这一步就是"最小化期间到的投递永远看不见"——那是**功能损坏，不是性能优化**。
 
@@ -619,7 +619,7 @@ L1（早就是 keyset）、M20（过桥没有无上限 base64 字段）、M35（
 
 ## 附：本轮方法记录（供后来者复核）
 
-- 真实测量：`curl :4000/metrics` 取直方图后自己解析求均值；`docker exec ailearn-dev-postgres-1 psql` 读 `pg_stat_user_tables` / `pg_stat_user_indexes` / `pg_indexes` / `pg_policies` / `pg_proc` / `pg_constraint`，`EXPLAIN`（未用 `ANALYZE`，未执行任何写入或迁移），以及 `octet_length` 直接量行宽。
+- 真实测量：`curl :4000/metrics` 取直方图后自己解析求均值；`docker exec astella-dev-postgres-1 psql` 读 `pg_stat_user_tables` / `pg_stat_user_indexes` / `pg_indexes` / `pg_policies` / `pg_proc` / `pg_constraint`，`EXPLAIN`（未用 `ANALYZE`，未执行任何写入或迁移），以及 `octet_length` 直接量行宽。
 - 体积：`du` / `sips` 量 `out/renderer`、`public/assets` 与单个 JS chunk。
 - 读码：六个并行子代理分别扫 DB 访问、schema/索引/RLS、API 运行时、Electron main、renderer、worker/队列；**两份被整份否决**（理由见 §2），其余逐条重开文件或重跑查询后才进本文。
 - 基线：确认 `docs/performance-scan-2026-08-16*.md` 的扫描对象目录已不存在，故未沿用其任何"已修"结论。

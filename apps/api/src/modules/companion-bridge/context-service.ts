@@ -8,11 +8,11 @@
 
 import { and, eq, isNull, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
-import { assistantPageContexts } from "@ailearn/shared/db-schema/companion-bridge";
+import { assistantPageContexts } from "@astella/shared/db-schema/companion-bridge";
 import type {
   AssistantContextSnapshotV2,
   MainPageContextInputV2,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import {
   buildContextSnapshot,
   computeContextRevision,

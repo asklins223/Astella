@@ -2,7 +2,7 @@
  * 产物隔离展示面的**宿主那一侧**（39d W4-1 第二段的前半；D4 §6/§7.2）。
  *
  * 主进程侧（artifact-surface.ts／artifact-template.ts／主 CSP 的 frame-src）已经
- * 保证：产物文档跑在 `ailearn-app://artifact` 这个不透明 origin 上、只有
+ * 保证：产物文档跑在 `astella-app://artifact` 这个不透明 origin 上、只有
  * `allow-scripts` 一个能力、CSP 三路分流、子 frame 导航有闸。这一组件负责的是
  * 合同里明确留给宿主的另一半（`shared/artifact-frame.ts:96-99` 的原话：父侧判据
  * **不**检查 source——"宿主那一侧必须另做 event.source === frame.contentWindow；

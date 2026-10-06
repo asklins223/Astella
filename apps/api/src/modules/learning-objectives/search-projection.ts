@@ -2,8 +2,8 @@ import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
 import { logger } from "../../lib/logger.ts";
 import { upsertSearchProjection } from "../../lib/search-index-upsert.ts";
-import { learningObjectivesV2, learningObjectiveRevisionsV2, learningObjectiveOriginsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { notes } from "@ailearn/shared/db-schema/note";
+import { learningObjectivesV2, learningObjectiveRevisionsV2, learningObjectiveOriginsV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { notes } from "@astella/shared/db-schema/note";
 
 export function objectiveSearchTitle(revision: { conceptLabel?: string | null; publicSummary?: string | null } | undefined): string {
   return revision?.conceptLabel ?? revision?.publicSummary?.slice(0, 80) ?? "未命名目标";

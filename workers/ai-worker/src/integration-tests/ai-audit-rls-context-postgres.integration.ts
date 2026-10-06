@@ -24,7 +24,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const ADMIN_URL =
   testDatabaseUrl("DATABASE_URL_MIGRATOR");
@@ -83,7 +83,7 @@ function auditValues(workspaceId: string) {
 
 test("正控：受限角色不设上下文时，审计行写不进去", async () => {
   const { db } = await import("../db.ts");
-  const schema = await import("@ailearn/shared/db-schema");
+  const schema = await import("@astella/shared/db-schema");
 
   await assert.rejects(
     async () => {
@@ -128,7 +128,7 @@ test("logAICall 带着上下文落库：字段与参数一致", async () => {
 
 test("跨空间写入被租户守卫拒掉", async () => {
   const { withWorkerWorkspaceTransaction } = await import("../db.ts");
-  const schema = await import("@ailearn/shared/db-schema");
+  const schema = await import("@astella/shared/db-schema");
 
   await assert.rejects(
     withWorkerWorkspaceTransaction(

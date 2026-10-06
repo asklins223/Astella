@@ -51,5 +51,5 @@ CREATE POLICY note_companion_artifacts_owner ON public.note_companion_artifacts 
         AND (visible_note.share_scope = 'shared' OR visible_note.created_by = note_companion_artifacts.user_id)
     ));
 
-GRANT SELECT, INSERT ON public.note_companion_artifacts TO ailearn_api;
-GRANT ALL PRIVILEGES ON public.note_companion_artifacts TO ailearn_migrator;
+GRANT SELECT, INSERT ON public.note_companion_artifacts TO astella_api;
+GRANT ALL PRIVILEGES ON public.note_companion_artifacts TO astella_migrator;

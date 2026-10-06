@@ -32,7 +32,7 @@
  * 这个选择，而不是让它藏在某几处的三元里。
  */
 
-import { DomainError } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
 
 /** 能否读到一个 `recoveryData` 字段——不能靠 `err.recoveryData` 触发收窄。 */
 function recoveryDataOf(err: DomainError): Record<string, unknown> | undefined {

@@ -1,30 +1,30 @@
 import { and, asc, desc, eq, ne, sql, count, inArray, isNull } from "drizzle-orm";
-import { MAX_PENDING_JOBS_PER_WORKSPACE } from "@ailearn/shared/job-queue-limits";
+import { MAX_PENDING_JOBS_PER_WORKSPACE } from "@astella/shared/job-queue-limits";
 import type { ApiTransaction } from "../../db/client.ts";
 import { upsertSearchProjection } from "../../lib/search-index-upsert.ts";
-import { sources, sourceSegments, notes, noteVersions } from "@ailearn/shared/db-schema/note";
+import { sources, sourceSegments, notes, noteVersions } from "@astella/shared/db-schema/note";
 import {
   cardGenerationRunsV2,
   learningObjectiveOriginsV2,
   learningObjectivesV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/card-generation-v2";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import { applyNoteDocUpdate } from "../note/document-state.ts";
 import { writeFragmentBlocks } from "../note/doc-fragment.ts";
 import { computeContentHash } from "../note/content-hash.ts";
 import { ensureImageAssetsForBlocks } from "../note/service.ts";
-import { jobs } from "@ailearn/shared/db-schema/job";
-import { searchDocuments } from "@ailearn/shared/db-schema/search";
+import { jobs } from "@astella/shared/db-schema/job";
+import { searchDocuments } from "@astella/shared/db-schema/search";
 import {
   SourceStatus,
   JobStatus,
   JobType,
-} from "@ailearn/shared";
-import type { ParsedSegment } from "@ailearn/shared/markdown-parser";
+} from "@astella/shared";
+import type { ParsedSegment } from "@astella/shared/markdown-parser";
 import { sourceNoteBlocks } from "./source-note-blocks.ts";
 // 稳定 P1（2026-09-15 审计）：parse_source 的 payload 走共享精确契约——漏字段/
 // 拼错字段在编译期报错，而不是运行期变成一条可重试的 "missing sourceId" 失败。
-import type { ParseSourceJobPayload } from "@ailearn/shared/job-payload-contracts";
+import type { ParseSourceJobPayload } from "@astella/shared/job-payload-contracts";
 import type { SourceCreateInput, SourceUpdateInput } from "./schema.ts";
 import { logger } from "../../lib/logger.ts";
 import { encodeCursor, decodeCursor } from "../../lib/pagination.ts";

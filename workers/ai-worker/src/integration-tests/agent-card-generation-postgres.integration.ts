@@ -21,23 +21,23 @@
  *   7. 迟到结果（取消）不能成为当前交付；恢复扫描不重复创建 run，核对上限不被绕过。
  *
  * 除「造夹具」外没有手写 SQL 去伪造状态机：job 状态变化靠触发器，恢复靠真实的
- * `ailearn_enqueue_agent_recovery()`，完成判定走真正的 advance store，候选与事件
+ * `astella_enqueue_agent_recovery()`，完成判定走真正的 advance store，候选与事件
  * 全部来自**真的跑一次 V3 简化链**（确定性 provider，不外发、不付真实模型钱）。
  */
 import assert from "node:assert/strict";
-import { createGenerationRunInTransaction } from "@ailearn/card-generation";
-import type { CreateCardGenerationRunRequestV2 } from "@ailearn/shared/card-generation-v2-contracts";
+import { createGenerationRunInTransaction } from "@astella/card-generation";
+import type { CreateCardGenerationRunRequestV2 } from "@astella/shared/card-generation-v2-contracts";
 import { createHash, randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { sql as query } from "drizzle-orm";
-import * as schema from "@ailearn/shared/db-schema";
+import * as schema from "@astella/shared/db-schema";
 import {
   createAgentStore, createAgentAdvanceStore, readOperationResultReceipt,
   type AgentStorePorts, type OperationReceiptRequest, type OperationReceiptV1,
-} from "@ailearn/agent-host";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+} from "@astella/agent-host";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { invokeCardGenerationCapability } from "../agent/card-capabilities.ts";
 import type { AgentWorkerAdvanceStore } from "../agent/store.ts";
 import { assertFixtureWipeClean, wipeCardGenerationFixtures } from "./card-generation-fixture-cleanup.ts";
@@ -190,7 +190,7 @@ async function lease(scope: { workspaceId: string; userId: string }, runId: stri
 
 /**
  * advance job 的真实收尾。`store.release()` 只清 agent_runs 上的租约指针，结 jobs
- * 那一行是生产里 worker 交还租约后由 ailearn_finish_job 做的——夹具必须补上，
+ * 那一行是生产里 worker 交还租约后由 astella_finish_job 做的——夹具必须补上，
  * 否则 0368 恢复函数会判成"已经有活跃 outbox"，不再排下一次续跑。
  */
 const finishAdvance = (jobId: string) =>
@@ -209,7 +209,7 @@ async function settle(scope: { workspaceId: string; userId: string }, runId: str
 /** 走一次真实的结果未知核对：把目标放回等待态、推旧上次核对，再调生产用的恢复函数。 */
 /** 只调生产的恢复扫描，不碰目标状态。取消场景必须用它，而不是 reconcile()。 */
 async function scanRecovery() {
-  await workerClient`SELECT ailearn_enqueue_agent_recovery()`;
+  await workerClient`SELECT astella_enqueue_agent_recovery()`;
 }
 
 async function reconcile(runId: string, operationId: string, options: { exhausted?: boolean } = {}) {
@@ -221,7 +221,7 @@ async function reconcile(runId: string, operationId: string, options: { exhauste
       await tx`UPDATE agent_operations SET updated_at=now()-interval '1 minute' WHERE id=${operationId}`;
     }
   });
-  await workerClient`SELECT ailearn_enqueue_agent_recovery()`;
+  await workerClient`SELECT astella_enqueue_agent_recovery()`;
   const [{ n }] = await admin`SELECT count(*)::int n FROM agent_run_events
     WHERE operation_id=${operationId} AND processed_at IS NULL`;
   return n;
@@ -360,7 +360,7 @@ async function rejectsWith(run: () => Promise<unknown>, pattern: RegExp) {
  */
 async function cardJobCurrent(outboxId: string, workspaceId: string, userId: string, lock = false) {
   const rows = await workerPorts.transaction({ workspaceId, userId }, (tx) => tx.execute(
-    query`SELECT ailearn_agent_card_job_current(${outboxId},${workspaceId},${lock}) AS allowed`));
+    query`SELECT astella_agent_card_job_current(${outboxId},${workspaceId},${lock}) AS allowed`));
   return (rows as unknown as Array<{ allowed: boolean }>)[0]!.allowed;
 }
 
@@ -1060,7 +1060,7 @@ test("模拟进程重启：恢复扫描从持久 outbox 捡回目标，不重复
     await tx`UPDATE agent_operations SET updated_at=now()-interval '5 minutes' WHERE id=${child.operationId}`;
   });
   for (let round = 0; round < 3; round += 1) {
-    await workerClient`SELECT ailearn_enqueue_agent_recovery()`;
+    await workerClient`SELECT astella_enqueue_agent_recovery()`;
     await admin.begin(async (tx) => {
       await tx`UPDATE agent_runs SET status='waiting',advance_job_id=NULL,advance_lease_token=NULL WHERE id=${run.runId}`;
       await tx`UPDATE agent_operations SET updated_at=now()-interval '5 minutes' WHERE id=${child.operationId}`;

@@ -281,7 +281,7 @@
 7. **死代码路径扫描**：搜索 `if (false)`、`void <identifier>` 模式，识别永不执行的分支和 linter 抑制语句
 8. **501 占位路由检查**：搜索 `501`、`not_implemented`、`stub`、`placeholder` 模式，识别未实现的功能预留
 9. **退役类型枚举值分析**：检查 union type 中的枚举值是否仍有代码路径产生它们
-10. **DB schema 镜像检测**：比较 `packages/db/src/schema/` 与 `apps/api/src/db/schema/` 的同名文件，搜索 `@ailearn/db` import 确认是否有消费方
+10. **DB schema 镜像检测**：比较 `packages/db/src/schema/` 与 `apps/api/src/db/schema/` 的同名文件，搜索 `@astella/db` import 确认是否有消费方
 11. **前端路由残留检查**：搜索 AppShell 路由匹配、layout 注释、page 组件中引用已退役路由（`/card-sets/`）的代码
 12. **错误类定义普查**：搜索 `class \w+Error extends Error` 定义，识别可统一的错误基类
 13. **Schema V1 注释普查**：搜索 schema 文件中的 "V1 ... removed" 注释，统计残留引用
@@ -291,7 +291,7 @@
 17. **恒 null/void 抑制调用链追踪**：识别 `getToken()` 等恒返回 null 的函数，追踪其残留调用方的无效条件分支
 18. **Shared 零消费方 parse 函数检测**：grep `parse*` 辅助函数名，仅在定义文件出现的即为零消费方
 19. **重复 URLSearchParams 构造模式分析**：识别 `api.ts` 中重复的 query string 构造逻辑
-20. **V1 遗留类型零 import 消费方检测**：grep `import { TypeName } from "@ailearn/shared"` 确认 shared 包中的类型是否有外部消费方
+20. **V1 遗留类型零 import 消费方检测**：grep `import { TypeName } from "@astella/shared"` 确认 shared 包中的类型是否有外部消费方
 21. **重复 helper/util 函数定义普查**：搜索 `function normalizeText`、`function relativeTime`、`function formatDate` 等常见工具函数名，识别跨文件重复定义
 22. **重复错误发送函数检测**：搜索 `function send*Error`、`function validate*Id` 模式，识别路由层重复的错误处理和参数校验逻辑
 23. **CSS 引用零确认**：grep CSS 文件名/类名在全项目中的引用，确认零 import 后可安全删除
@@ -324,7 +324,7 @@
 
 > **现状**：`packages/shared/src/content-hash.ts` 已提供权威的 `sha256Hex()` 导出实现（含客户端 bundle 安全的 node:crypto 惰性获取）。但 API 侧和 shared 侧至少 14 处仍各自定义了私有/导出的同名函数，逻辑完全相同。
 >
-> **建议**：P1 — 将所有私有 `sha256Hex` 替换为从 `@ailearn/shared/content-hash` 导入；`run-planner.ts` 和 `run-structured.ts` 中的 `export sha256Hex` 应改为 re-export 或直接消费方改导入。预计可消除约 80 行重复代码。
+> **建议**：P1 — 将所有私有 `sha256Hex` 替换为从 `@astella/shared/content-hash` 导入；`run-planner.ts` 和 `run-structured.ts` 中的 `export sha256Hex` 应改为 re-export 或直接消费方改导入。预计可消除约 80 行重复代码。
 
 ### 11.2 stableStringify 函数在 7 处重复定义
 
@@ -340,7 +340,7 @@
 
 > **现状**：逻辑完全相同（对象键字典序排序、数组保序、undefined 跳过）。`canonical-events.ts` 的导出版本可被其他模块消费。
 >
-> **建议**：P2 — 统一为 `canonical-events.ts` 的 `stableStringify` 或抽取到 `@ailearn/shared` 的公共模块。预计可消除约 60 行重复代码。
+> **建议**：P2 — 统一为 `canonical-events.ts` 的 `stableStringify` 或抽取到 `@astella/shared` 的公共模块。预计可消除约 60 行重复代码。
 
 ---
 
@@ -540,7 +540,7 @@
 | **镜像目录** | `packages/db/src/schema/` |
 | **权威目录** | `apps/api/src/db/schema/` |
 | **冗余内容** | `packages/db` 包含 20 个 schema 文件（`evidence.ts`、`learning-sessions.ts`、`validation-v2.ts`、`companion.ts` 等），与 `apps/api/src/db/schema/` 中的同名文件内容相同或高度相似 |
-| **现状** | 代码中无任何 `from "@ailearn/db"` 或 `from "packages/db"` 的 import。仅在注释中引用（如 `// 与 packages/db/src/schema/outbox.ts 的...`、`// packages/db/src/schema/companion.ts 保持一致`）。测试文件 `review-attempt-active-abandon.test.ts` 用 `new URL("../../../../packages/db/src/schema/evidence.ts", ...)` 直接引用文件路径，说明该包未被作为模块导入 |
+| **现状** | 代码中无任何 `from "@astella/db"` 或 `from "packages/db"` 的 import。仅在注释中引用（如 `// 与 packages/db/src/schema/outbox.ts 的...`、`// packages/db/src/schema/companion.ts 保持一致`）。测试文件 `review-attempt-active-abandon.test.ts` 用 `new URL("../../../../packages/db/src/schema/evidence.ts", ...)` 直接引用文件路径，说明该包未被作为模块导入 |
 | **建议** | P1 — 确认 `packages/db` 是否仍作为 drizzle-kit generate 的输入。若否，整个包可删除（约 20 个文件）。若是，应合并到 `apps/api/src/db/schema/` 单一来源 |
 
 ### 20.2 Schema 中残留的 V1 列引用注释
@@ -786,7 +786,7 @@
 | 项目 | 详情 |
 |---|---|
 | **文件** | `infra/prometheus/dashboards/supervisor-agent-v1.json`（约 366 行） |
-| **现状** | Dashboard 标题 "Supervisor Agent v1 — Card Generation Quality & Ops"，引用 `ailearn_supervisor_*` 系列指标（`run_terminal_total`、`coverage_ratio`、`critic_evaluations_total`、`shadow_runs_total` 等）。但 V1 supervisor 模块已全部删除（见 §4.3），这些指标不再产生 |
+| **现状** | Dashboard 标题 "Supervisor Agent v1 — Card Generation Quality & Ops"，引用 `astella_supervisor_*` 系列指标（`run_terminal_total`、`coverage_ratio`、`critic_evaluations_total`、`shadow_runs_total` 等）。但 V1 supervisor 模块已全部删除（见 §4.3），这些指标不再产生 |
 | **建议** | P2 — 确认 dashboard 是否仍被引用。若否，可删除整个 JSON 文件 |
 
 ### 28.2 Migration SQL 文件中的 V1 表定义残留
@@ -808,7 +808,7 @@
 |---|---|
 | **文件** | `apps/web/lib/api.ts` |
 | **位置** | 第 264–269 行（定义）、第 596 行（`request` 内部）、第 735 行（`getMeCached` 内部） |
-| **现状** | `getToken()` 注释说明"Browser sessions use the HttpOnly ailearn_session cookie. Keeping this legacy accessor null prevents new code from reintroducing Web Storage bearer tokens"。函数体直接 `return null`。但 `request()` 中仍执行 `const token = getToken(); if (token) headers.set("Authorization", ...)` —— 条件永远为 false |
+| **现状** | `getToken()` 注释说明"Browser sessions use the HttpOnly astella_session cookie. Keeping this legacy accessor null prevents new code from reintroducing Web Storage bearer tokens"。函数体直接 `return null`。但 `request()` 中仍执行 `const token = getToken(); if (token) headers.set("Authorization", ...)` —— 条件永远为 false |
 | **残留调用方** | `apps/web/features/learning-run/api/sse.ts`（第 68 行）、`apps/web/lib/learning-companion/voice-api.ts`（第 201、256 行）—— 这些文件 import `getToken` 并在 SSE/fetch 调用前检查 `if (token) headers["Authorization"] = ...`，条件永远为 false |
 | **建议** | P2 — 从 `request()` 和所有外部调用方中移除 `getToken()` 调用，直接依赖 cookie credentials |
 
@@ -948,7 +948,7 @@
 
 ### 35.1 V1 域模型类型已无外部 import 消费方
 
-以下 8 个类型/接口在 `packages/shared/src/types.ts` 中定义并通过 `index.ts` 全量导出，但全项目无任何 `import { ... } from "@ailearn/shared"` 引用它们（grep 确认）：
+以下 8 个类型/接口在 `packages/shared/src/types.ts` 中定义并通过 `index.ts` 全量导出，但全项目无任何 `import { ... } from "@astella/shared"` 引用它们（grep 确认）：
 
 | 类型 | 用途 | 状态 |
 |---|---|---|
@@ -979,7 +979,7 @@
 
 > **现状**：三处实现完全相同——trim + collapse whitespace + lowercase。`fingerprint.ts` 的 `export` 版本可被其他两处消费。
 >
-> **建议**：P2 — 将 `text-similarity.ts` 和 `scene-safety.ts` 中的 `normalizeText` 改为从 `@ailearn/shared/fingerprint` 导入。注意：`fingerprint.ts` 不经 index 全量导出（node: 依赖），需从子路径导入。
+> **建议**：P2 — 将 `text-similarity.ts` 和 `scene-safety.ts` 中的 `normalizeText` 改为从 `@astella/shared/fingerprint` 导入。注意：`fingerprint.ts` 不经 index 全量导出（node: 依赖），需从子路径导入。
 
 ---
 
@@ -1170,7 +1170,7 @@
 | **位置** | 第 154–274 行 |
 | **冗余内容** | 共 10 个 Job/Provider/DB 指标被标注 `DEPRECATED（PERF-B7）`：`jobQueueDepth`、`jobOldestPendingAgeSeconds`、`jobTerminalTotal`、`jobRetriesTotal`、`jobLeaseLostTotal`、`jobDurationSeconds`、`providerCallsTotal`、`providerCallDurationSeconds`、`providerErrorsTotal`、`dbLastSuccessfulBackupTimestamp` |
 | **现状** | 注释明确说明这些指标在 API 进程内无任何生产写点（全库 grep 命中仅本文件定义 + ops01 测试），实际由 `workers/ai-worker/src/lib/metrics.ts` 维护同义指标。`dbLastSuccessfulBackupTimestamp` 更标注"目前无生产备份写点，指标输出恒为 0" |
-| **注意** | `alerts.yml` 仍然引用 `ailearn_job_queue_depth`、`ailearn_job_oldest_pending_age_seconds`、`ailearn_provider_calls_total`、`ailearn_provider_errors_total`、`ailearn_db_last_successful_backup_timestamp` 等指标进行告警——这意味着告警规则引用了在 API 进程中不产生数据的指标 |
+| **注意** | `alerts.yml` 仍然引用 `astella_job_queue_depth`、`astella_job_oldest_pending_age_seconds`、`astella_provider_calls_total`、`astella_provider_errors_total`、`astella_db_last_successful_backup_timestamp` 等指标进行告警——这意味着告警规则引用了在 API 进程中不产生数据的指标 |
 | **建议** | P1 — 确认 worker 端是否已提供同名指标。若是，API 端定义可删除（仅保留 worker 端）。`alerts.yml` 中的引用应确保指向 worker 端的 scrape target。`dbLastSuccessfulBackupTimestamp` 需确认是否有 backup exporter 实际写入此指标 |
 
 ---
@@ -1322,7 +1322,7 @@
 > - `companion-dialogue-router.ts`（第 29 行）
 > - `apps/web` 前端 3 处（浏览器端用 Web Crypto API，与 Node 端实现不同，可能属于合理重复）
 >
-> **建议**：P1 — 将所有 Node 端私有 `sha256Hex` 替换为从 `@ailearn/shared/content-hash` 导入。浏览器端的 3 处使用 Web Crypto API，实现不同，可能需单独提取为前端公共模块。预计可消除约 130 行重复代码（从 80 行增加）。
+> **建议**：P1 — 将所有 Node 端私有 `sha256Hex` 替换为从 `@astella/shared/content-hash` 导入。浏览器端的 3 处使用 Web Crypto API，实现不同，可能需单独提取为前端公共模块。预计可消除约 130 行重复代码（从 80 行增加）。
 
 ---
 
@@ -1386,7 +1386,7 @@
 | 7 | `packages/shared/src/learning-assessment.ts` | 23 | `private` |
 | 8 | `apps/api/src/modules/learning-sessions/handoff-adapter.ts` | *(新增)* | `private` |
 
-> **建议**：P2 — 统一为 `canonical-events.ts` 的 `stableStringify` 或抽取到 `@ailearn/shared` 的公共模块。预计可消除约 70 行重复代码。
+> **建议**：P2 — 统一为 `canonical-events.ts` 的 `stableStringify` 或抽取到 `@astella/shared` 的公共模块。预计可消除约 70 行重复代码。
 
 ---
 
@@ -1398,7 +1398,7 @@
 |---|---|
 | **文件** | `infra/prometheus/alerts.yml` |
 | **位置** | 第 87、99、113、128、146–148、162、174、186、229–230 行 |
-| **冗余/不一致内容** | `alerts.yml` 中的告警规则引用 `ailearn_job_queue_depth`、`ailearn_job_oldest_pending_age_seconds`、`ailearn_job_terminal_total`、`ailearn_job_lease_lost_total`、`ailearn_provider_calls_total`、`ailearn_provider_errors_total`、`ailearn_provider_call_duration_seconds`、`ailearn_db_last_successful_backup_timestamp` 等指标。但这些指标在 API 进程中被标注为 DEPRECATED（PERF-B7），无生产写点 |
+| **冗余/不一致内容** | `alerts.yml` 中的告警规则引用 `astella_job_queue_depth`、`astella_job_oldest_pending_age_seconds`、`astella_job_terminal_total`、`astella_job_lease_lost_total`、`astella_provider_calls_total`、`astella_provider_errors_total`、`astella_provider_call_duration_seconds`、`astella_db_last_successful_backup_timestamp` 等指标。但这些指标在 API 进程中被标注为 DEPRECATED（PERF-B7），无生产写点 |
 | **现状** | 这些指标的实际写点在 `workers/ai-worker/src/lib/metrics.ts` 中。如果 Prometheus 只 scrape API 端口而不 scrape worker 端口，告警将永远无法触发。反之如果同时 scrape worker，则 API 端的 DEPRECATED 定义是冗余的 |
 | **建议** | P1 — 确认 Prometheus scrape 配置是否覆盖 worker 端。若是，删除 API 端 DEPRECATED 指标定义。若否，需确保 worker 端被 scrape。`dbLastSuccessfulBackupTimestamp` 特别需要确认是否有独立的 backup exporter 进程写入此指标 |
 
@@ -1809,7 +1809,7 @@
 ||---|---|
 || **文件** | `workers/ai-worker/src/integration-tests/card-generation-v2-postgres.integration.ts` |
 || **位置** | 第 31 行 |
-|| **冗余内容** | `const WORKER_URL = process.env.DATABASE_URL_WORKER ?? "postgres://ailearn_worker:...";` 赋值后 `void WORKER_URL;` 抑制。注释说明"测试体以 ailearn_worker 角色执行 pollV2Outbox" |
+|| **冗余内容** | `const WORKER_URL = process.env.DATABASE_URL_WORKER ?? "postgres://astella_worker:...";` 赋值后 `void WORKER_URL;` 抑制。注释说明"测试体以 astella_worker 角色执行 pollV2Outbox" |
 || **现状** | `WORKER_URL` 被定义但在测试中通过 `process.env.DATABASE_URL_WORKER` 间接使用，变量本身未被直接引用 |
 || **建议** | P3 — 如果 `WORKER_URL` 不需要在该测试中直接使用，移除变量声明；如果需要作为文档存在，改为注释 |
 
@@ -2190,7 +2190,7 @@
 || **位置** | 第 716 行 |
 || **可见性** | `private` |
 || **现状** | 该函数是 `sha256Hex` 的私有副本，与 `packages/shared/src/content-hash.ts` 的权威实现逻辑完全相同。第八轮审计遗漏了此文件 |
-|| **建议** | P1 — 替换为从 `@ailearn/shared/content-hash` 导入 |
+|| **建议** | P1 — 替换为从 `@astella/shared/content-hash` 导入 |
 
 ### 81.2 `projection-checkpoint.ts` 中的 `sha256Hex` 重复定义
 
@@ -2200,7 +2200,7 @@
 || **位置** | 第 31 行 |
 || **可见性** | `private` |
 || **现状** | 该函数是 `sha256Hex` 的私有副本。第八轮审计遗漏了此文件（属于 V1 understanding 模块） |
-|| **建议** | P1 — 替换为从 `@ailearn/shared/content-hash` 导入，或随 V1 understanding 模块一并移除（参见 §5.3） |
+|| **建议** | P1 — 替换为从 `@astella/shared/content-hash` 导入，或随 V1 understanding 模块一并移除（参见 §5.3） |
 
 ---
 
@@ -2242,7 +2242,7 @@
 || **位置** | 第 743 行 |
 || **可见性** | `private` |
 || **现状** | 与 `workers/ai-worker/src/lib/text-similarity.ts`（第 28 行）和 `packages/shared/src/fingerprint.ts`（第 76 行）的 `normalizeText` 逻辑相同。第六轮审计已记录 3 处重复（§36.1），但遗漏了 `scene-safety.ts` 中的副本 |
-|| **建议** | P2 — 统一到 `@ailearn/shared` 的公共实现 |
+|| **建议** | P2 — 统一到 `@astella/shared` 的公共实现 |
 
 ---
 

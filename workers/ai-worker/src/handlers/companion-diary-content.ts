@@ -6,7 +6,7 @@ import {
   companionDailyBlockV1Schema,
   companionPersonaActivenessV1Schema,
   companionPersonaBoundariesV1Schema,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import {
   PERSONA_SAFETY_GUARD,
   renderPersonaBehaviour,

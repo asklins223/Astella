@@ -1,8 +1,8 @@
 import { Bell, Check, ChevronLeft, ChevronRight, Clock3, Download, ExternalLink, Loader2, MessageCircle, Minimize2, Sparkles, Square, Volume2, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { CompanionAccountStateV1 } from "@ailearn/shared/companion-shell-contracts";
-import { isWithinQuietHours } from "@ailearn/shared/companion-proactive-policy";
+import type { CompanionAccountStateV1 } from "@astella/shared/companion-shell-contracts";
+import { isWithinQuietHours } from "@astella/shared/companion-proactive-policy";
 import { gatewayErrorMessage } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
 import { isCompanionSpeechActive, subscribeCompanionSpeechActivity } from "../../app/companion-voice-playback";

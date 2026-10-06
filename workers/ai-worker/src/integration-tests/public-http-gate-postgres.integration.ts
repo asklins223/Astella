@@ -4,7 +4,7 @@
  * `assertOutsideRegisteredTransactions` 的判据逻辑在 shared 单测里用**假读者**证过；
  * 这一份要证的只有一件事：**worker 进程真的把自己的作用域读者登记进去了**
  * （`db.ts` 模块加载时那次 `registerActiveTransactionReader` 不是摆设）——
- *   - 在真的 `withWorkerWorkspaceTransaction`（`ailearn_worker` 受限角色）里发起
+ *   - 在真的 `withWorkerWorkspaceTransaction`（`astella_worker` 受限角色）里发起
  *     一次公共 HTTP 请求，会被 `ExternalCallInsideTransactionError` 当场拒掉；
  *   - 事务外同一个请求不再报这道闸（失败来自 SSRF 守卫/连接层，而不是事务边界）。
  *
@@ -15,13 +15,13 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
-import { ExternalCallInsideTransactionError } from "@ailearn/shared/workspace-transaction";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
+import { ExternalCallInsideTransactionError } from "@astella/shared/workspace-transaction";
 
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 
 const { withWorkerWorkspaceTransaction, closeDatabase } = await import("../db.ts");
-const { postJsonToPublicEndpoint } = await import("@ailearn/shared/public-json-http");
+const { postJsonToPublicEndpoint } = await import("@astella/shared/public-json-http");
 
 const WORKSPACE_ID = randomUUID();
 const USER_ID = randomUUID();

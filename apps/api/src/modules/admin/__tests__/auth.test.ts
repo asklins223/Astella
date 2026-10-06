@@ -168,7 +168,13 @@ test("集成：外壳公开（否则浏览器看不到登录框），数据接�
     // 拿到 {"error":"forbidden"}，而登录框就在这段 HTML 里——
     // 人永远看不到输入令牌的地方，被挡在门外。
     // 外壳里只有一个登录框和它的 CSS/JS，没有任何数据。
-    for (const path of ["/admin", "/admin/app.js", "/admin/charts.js", "/admin/styles.css"]) {
+    for (const path of [
+      "/admin",
+      "/admin/app.js",
+      "/admin/charts.js",
+      "/admin/styles.css",
+      "/admin/assets/astella-mark-v1.png",
+    ]) {
       assert.equal(
         (await app.inject({ method: "GET", url: path })).statusCode,
         200,

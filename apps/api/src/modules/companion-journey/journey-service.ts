@@ -8,19 +8,19 @@
 
 import { and, eq, inArray } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
-import { DomainError } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
 import {
   companionAccountInvitations,
   companionJourneyPendingEvents,
   companionJourneys,
-} from "@ailearn/shared/db-schema/companion-journey";
+} from "@astella/shared/db-schema/companion-journey";
 import type {
   CompanionInvitationActionV2,
   CompanionInvitationV2,
   CompanionJourneyActionV2,
   CompanionJourneyBootstrapV2,
   CompanionJourneyV2,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import {
   applyJourneyAction,
   applyJourneyEvent,
@@ -172,7 +172,7 @@ export async function bootstrapJourney(
   // 旅程是**空间级**的（2026-09-22 Owner 裁决）：一段旅程只属于它开始的那个空间。
   //
   // 这里原先还有一条"账号级可恢复旅程"的读取（0186 的
-  // `ailearn_find_resumable_companion_journey`，SECURITY DEFINER 绕过 RLS 找
+  // `astella_find_resumable_companion_journey`，SECURITY DEFINER 绕过 RLS 找
   // 其他 workspace 里 paused 的那一段）。它和空间级语义直接冲突，而且步骤引用的是
   // **空间内的对象**（笔记、目标、卡片）——把一个空间的引用带进另一个空间，那些对象
   // 在那里并不存在。所以整条链一起删掉：分支、受控函数、契约字段、界面那句
@@ -344,7 +344,7 @@ async function createJourneyRow(
   const state = initialJourneyState(branch);
   // §10.1：创建 onboarding AssistantSession（kind='journey'，历史页可区分）。
   const { randomUUID } = await import("node:crypto");
-  const { companionConversations } = await import("@ailearn/shared/db-schema/companion-conversations");
+  const { companionConversations } = await import("@astella/shared/db-schema/companion-conversations");
   const sessionId = randomUUID();
   await tx.insert(companionConversations).values({
     id: sessionId,
@@ -363,7 +363,7 @@ async function createJourneyRow(
   const sandboxNamespaceId = branch === "sandbox_sample" ? randomUUID() : null;
   const journeyId = randomUUID();
   if (sandboxNamespaceId) {
-    const { companionSandboxNamespaces } = await import("@ailearn/shared/db-schema/companion-sandbox");
+    const { companionSandboxNamespaces } = await import("@astella/shared/db-schema/companion-sandbox");
     await tx.insert(companionSandboxNamespaces).values({
       id: sandboxNamespaceId,
       workspaceId: scope.workspaceId,
@@ -451,7 +451,7 @@ export async function applyJourneyActionRequest(
   // §16.4 联动：journey 进入终态（skipped/completed）时，其 sandbox namespace
   // 同步退出（拒绝完整性不依赖 24h TTL 兜底）。
   if (["skipped", "completed"].includes(next.status) && journey.branch === "sandbox_sample" && journey.refs.sandboxNamespaceId) {
-    const { companionSandboxNamespaces } = await import("@ailearn/shared/db-schema/companion-sandbox");
+    const { companionSandboxNamespaces } = await import("@astella/shared/db-schema/companion-sandbox");
     await tx.update(companionSandboxNamespaces)
       .set({ status: "exited", exitedAt: now, updatedAt: now })
       .where(and(

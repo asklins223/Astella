@@ -26,7 +26,7 @@ import {
   type PinnedAddress,
   type PinnedRequester,
 } from "../handlers/parse-source.ts";
-import { SourceStatus } from "@ailearn/shared";
+import { SourceStatus } from "@astella/shared";
 
 function mockDeps(
   responses: Array<{

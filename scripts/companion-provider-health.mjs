@@ -15,7 +15,7 @@
  *     两套定义必然分叉，分叉之后这个探针就开始骗人。
  *
  * 用法（本项目 dev 栈）：
- *   docker exec -i -w /app ailearn-dev-worker-1 \
+ *   docker exec -i -w /app astella-dev-worker-1 \
  *     node --import tsx --eval "$(cat scripts/companion-provider-health.mjs)"
  * 退出码：agent_turn 槽位出现任一退化 = 1（那是用户正在用的那一档）。
  */

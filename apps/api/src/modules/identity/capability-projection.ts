@@ -3,7 +3,7 @@ import {
   capabilityProjectionSchema,
   featureNameValues,
   type CapabilityProjectionV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import {
   isCardGenerationV2Enabled,
   isCompanionDialogueEnabled,

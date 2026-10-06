@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   proposedLearningActionPayloadV1Schema,
   resolveCompanionMemoryTemporalMetadata,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import type { ApiTransaction } from "../../db/client.ts";
 import {
   confirmMemory,
@@ -14,7 +14,7 @@ import {
   upsertMemory,
   type MemoryKindV2,
 } from "./memory/memory-service.ts";
-import { accountPreferenceRejectionMessage } from "@ailearn/shared/companion-memory-scope";
+import { accountPreferenceRejectionMessage } from "@astella/shared/companion-memory-scope";
 import { CompanionConversationError } from "./turn/turn-service.ts";
 
 type ProposalPayload = { kind: string; [key: string]: unknown };

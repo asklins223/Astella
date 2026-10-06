@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import type { NoteLearningArtifactV1 } from "@ailearn/shared/note-learning-artifact-contracts";
+import type { NoteLearningArtifactV1 } from "@astella/shared/note-learning-artifact-contracts";
 import { NotebookArtifactTaskPaper, type ArtifactTaskV1 } from "../notebook-artifact-task-paper";
 
 afterEach(cleanup);

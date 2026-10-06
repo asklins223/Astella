@@ -139,7 +139,7 @@ export const ROUND_PRACTICE_OUTCOME_LABEL_V1: Record<string, string> = {
  * 引用不到 `roundPracticeStateLabelV1` / `roundSubmitLabelV1`——**形状不在可引用的
  * 地方，是「切不动」的一个根因**（2026-09-29）。
  */
-import type { RoundPracticeV1 } from "@ailearn/shared/note-learning-round-contracts";
+import type { RoundPracticeV1 } from "@astella/shared/note-learning-round-contracts";
 
 export function roundPracticeStateLabelV1(practice: Pick<RoundPracticeV1, "phase" | "outcome">): string {
   if (practice.outcome) {

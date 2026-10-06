@@ -31,12 +31,12 @@ import {
   type AgentTurnResult,
   type CompanionAgentBudgetSnapshotV1,
   type CompanionAgentPermissionLevel,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import type {
   AiCheckpointEntry,
   AiCheckpointKey,
   AiTaskCheckpointPort,
-} from "@ailearn/shared/ai-task-kernel";
+} from "@astella/shared/ai-task-kernel";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
@@ -45,7 +45,7 @@ import { lockJobLease } from "../lib/job-lease.ts";
 import { CompanionAgentBudgetExceededError } from "../lib/non-retryable-errors.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
-import { agentTurnInterpretationV1Schema, type AgentTurnInterpretationV1, type AgentAttentionObjectV1 } from "@ailearn/shared/agent-contracts";
+import { agentTurnInterpretationV1Schema, type AgentTurnInterpretationV1, type AgentAttentionObjectV1 } from "@astella/shared/agent-contracts";
 
 const persistedAgentStepCheckpointSchema = agentTurnResultSchema;
 
@@ -247,7 +247,7 @@ export async function appendAgentEvent(
         WHERE id = ${event.read.runId}
       `);
       await tx.execute(sql`
-        SELECT pg_notify('ailearn_companion_events_v1',
+        SELECT pg_notify('astella_companion_events_v1',
           ${JSON.stringify({ conversationId: event.read.conversationId, maxSeq: seq })})
       `);
     },

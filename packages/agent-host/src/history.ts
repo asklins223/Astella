@@ -7,7 +7,7 @@ import {
   agentRunListCursorV1Schema,
   type AgentArtifactRefV1, type AgentExecutionRefV1, type AgentOperationResultV1, type AgentOperationV1,
   type AgentRunHistoryV1, type AgentRunRevisionV1, type AgentScopeV1,
-} from "@ailearn/shared/agent-contracts";
+} from "@astella/shared/agent-contracts";
 
 /** 目标历史的策略层：游标编解码、页长、历史项形状。取数与事务边界在 store.ts。 */
 

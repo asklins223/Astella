@@ -54,7 +54,7 @@ export function pickCurrentBindingPlanV2<T extends { bindingPlanHash: string }>(
  * W7-5 刀四：从**权威计划**里读出"这条候选要落到哪颗既有目标上"。
  *
  * 候选 → `plan_objective_local_id` → 计划 `result.objectives` 里那一条 → 它的
- * `changeContext`。判据本身在 `@ailearn/shared/objective-reuse-rules-v2`（纯函数），
+ * `changeContext`。判据本身在 `@astella/shared/objective-reuse-rules-v2`（纯函数），
  * 装配那一步已经跑过；这里**只读结果，不重跑**——重跑一遍就会有两个地方能给出不同的
  * 结论，而其中一份没有 `planHash` 背书。
  *

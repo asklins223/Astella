@@ -19,7 +19,7 @@
 import { describe, expect, it } from "vitest";
 import { facetText, scheduleImpactText, scheduleReasonLabels } from "../run/learning-run-copy.tsx";
 
-/** 合同里 `kind: "none"` 那一支的 reasonCode 全集（来自 @ailearn/shared）。 */
+/** 合同里 `kind: "none"` 那一支的 reasonCode 全集（来自 @astella/shared）。 */
 const CONTRACT_REASON_CODES = [
   "not_authorized",
   "facet_only",

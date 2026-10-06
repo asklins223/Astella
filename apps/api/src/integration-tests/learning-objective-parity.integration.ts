@@ -13,9 +13,9 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { and, eq } from "drizzle-orm";
-import { findPrivatePayloadLeaks } from "@ailearn/shared";
-import { learningObjectivesV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { findPrivatePayloadLeaks } from "@astella/shared";
+import { learningObjectivesV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 process.env.DATABASE_URL ??= testDatabaseUrl("DATABASE_URL");
 // 自播种纯 V2 工作区（替代被 0176 清库抹掉的手工工作区 4f825f38-…）。

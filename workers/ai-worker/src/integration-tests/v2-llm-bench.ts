@@ -13,7 +13,7 @@
  * 直接量化了"并发"带来的收益，而不受模型当日快慢的影响。
  *
  * 运行（仓库根）：
- *   DATABASE_URL_API=postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn \
+ *   DATABASE_URL_API=postgres://astella:astella_dev@127.0.0.1:5432/astella \
  *   node --import ./workers/ai-worker/node_modules/tsx/dist/loader.mjs \
  *     workers/ai-worker/src/integration-tests/v2-llm-bench.ts
  *
@@ -32,7 +32,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { median, parseChatJsonCalls, percentile, type LlmCall } from "./v2-llm-bench-lib.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_API ??= ADMIN_URL;
@@ -41,7 +41,7 @@ process.env.DATABASE_URL_WORKER ??= ADMIN_URL;
 const ROUNDS = Number(process.env.ROUNDS ?? "3");
 const LABEL = process.env.BENCH_LABEL ?? "run";
 const VARIANT = process.env.NOTE_VARIANT ?? "multi";
-const CONTAINER = process.env.BENCH_WORKER_CONTAINER ?? "ailearn-dev-worker-1";
+const CONTAINER = process.env.BENCH_WORKER_CONTAINER ?? "astella-dev-worker-1";
 const OUT_PATH = process.env.BENCH_OUT ?? "";
 
 /** 历史三条 block 笔记（与 dev 库 2026-08-24 成功 run 完全一致，便于纵向对照）。 */

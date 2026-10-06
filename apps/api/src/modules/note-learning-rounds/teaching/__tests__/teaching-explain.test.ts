@@ -24,7 +24,7 @@ import {
   type TeachingExplainOutputV1,
   type TeachingExplainProviderV1,
 } from "../teaching-explain.ts";
-import type { AiStepResult } from "@ailearn/shared/ai-task-kernel";
+import type { AiStepResult } from "@astella/shared/ai-task-kernel";
 
 const blocks = [
   { ordinal: 1, type: "heading", text: "## 间隔重复" },

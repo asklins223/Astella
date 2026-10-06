@@ -6,16 +6,16 @@ import {
   evidenceSnapshotsV2, evidenceQuoteCopiesV2, evidenceEligibilityStatesV2,
   learningObjectivesV2, learningObjectiveRevisionsV2, learningObjectiveEvidenceBindingsV2,
   semanticSupportReportsV2, learningExposuresV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/card-generation-v2";
 import {
   computeSemanticTargetFingerprintV2, computeCanonicalAnswerHashV2, computeLearningSupportHashV2,
   computeRubricHashV2, computeRelationsHashV2, computePracticeItemHashV2, computeEvidenceBindingHashV2,
   computeEvidenceBindingSetHashV2, computeSemanticSupportReportSetHashV2, computeTargetRevisionHashV2,
   computePrivatePayloadHashV2, computeEvidenceSnapshotHashV2, computeEvidenceEligibilityVectorHashV2,
   computeExposureScopeIdV2,
-} from "@ailearn/shared/card-generation-v2-hashing";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
-import { objectiveRubricV2Schema, type CanonicalAnswerV2 } from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/card-generation-v2-hashing";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
+import { objectiveRubricV2Schema, type CanonicalAnswerV2 } from "@astella/shared/card-generation-v2-contracts";
 import { createObjectiveOrigin } from "../../learning-objectives/origin-service.ts";
 import { visibleObjectivesCondition } from "../../note/visibility.ts";
 import { roundTargetDraftSchema, type RoundTargetDraft } from "../teaching/round-target-contract.ts";

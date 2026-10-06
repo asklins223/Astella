@@ -19,7 +19,7 @@
  * 唯一=23505、RLS WITH CHECK=42501、触发器=SP002（node 侧报 `P0001` 的是 RAISE 的默认 condition）。
  *
  * 角色分工照 doc 34 §1.2：**夹具走 migrator，所有断言走受限角色**。
- * 开发库的 `DATABASE_URL` 是 `ailearn`（rolbypassrls=t），拿它跑这些断言会恒绿。
+ * 开发库的 `DATABASE_URL` 是 `astella`（rolbypassrls=t），拿它跑这些断言会恒绿。
  */
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";

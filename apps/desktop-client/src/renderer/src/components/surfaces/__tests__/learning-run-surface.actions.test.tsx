@@ -3,7 +3,7 @@
 import { act } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { learningRunPublicSnapshotV2Schema } from "@ailearn/shared/learning-run-v2-contracts";
+import { learningRunPublicSnapshotV2Schema } from "@astella/shared/learning-run-v2-contracts";
 import { LearningRunSurface } from "../run/learning-run-surface.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
 
@@ -165,7 +165,7 @@ function stubGateway(base = snapshot(), draft: unknown = null) {
     })) },
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (window as any).ailearn = gateway;
+  (window as any).astella = gateway;
   return { gateway, state };
 }
 

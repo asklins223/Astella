@@ -21,8 +21,8 @@ import type {
   TrustClassV1,
   UnderstandingGraphFilterV1,
   UnderstandingLensV1,
-} from "@ailearn/shared";
-import { LEARNING_RUN_ASSISTANCE_POLICY_V1, learningRunPublicSchema } from "@ailearn/shared";
+} from "@astella/shared";
+import { LEARNING_RUN_ASSISTANCE_POLICY_V1, learningRunPublicSchema } from "@astella/shared";
 
 function readString(source: unknown, key: string): string | undefined {
   if (!source || typeof source !== "object") return undefined;

@@ -301,7 +301,7 @@ export type {
 
 export const DESKTOP_IPC_CONTRACT_VERSION = "desktop-ipc-v1" as const;
 export const DESKTOP_IPC_SCHEMA_REVISION = "desktop-ipc-m2-2026-10-02" as const;
-export const DESKTOP_API_SERVICE_ID = "ailearn-api" as const;
+export const DESKTOP_API_SERVICE_ID = "astella-api" as const;
 /**
  * 书房静态资源的公共前缀。
  *
@@ -338,74 +338,74 @@ export const companionVoiceTranscribeResultV1Schema = z.strictObject({
 export type CompanionVoiceTranscribeResultV1 = z.infer<typeof companionVoiceTranscribeResultV1Schema>;
 
 export const DESKTOP_IPC_CHANNELS = {
-  contractGetSnapshot: "ailearn.v1.contract.getSnapshot",
-  runtimeGetSnapshot: "ailearn.v1.runtime.getSnapshot",
-  runtimeRetryApiConnection: "ailearn.v1.runtime.retryApiConnection",
-  runtimeGetHealth: "ailearn.v1.runtime.getHealth",
-  runtimeCancel: "ailearn.v1.runtime.cancel",
-  navigationResolve: "ailearn.v1.navigation.resolve",
-  navigationGo: "ailearn.v1.navigation.go",
-  navigationBack: "ailearn.v1.navigation.back",
-  navigationRestore: "ailearn.v1.navigation.restore",
-  authGetState: "ailearn.v1.auth.getState",
-  authGetSurfaceManifest: "ailearn.v1.auth.getSurfaceManifest",
-  authLogin: "ailearn.v1.auth.login",
-  authRegister: "ailearn.v1.auth.register",
-  authLogout: "ailearn.v1.auth.logout",
-  authReauthenticate: "ailearn.v1.auth.reauthenticate",
-  authChangePassword: "ailearn.v1.auth.changePassword",
-  authJoinWorkspace: "ailearn.v1.auth.joinWorkspace",
+  contractGetSnapshot: "astella.v1.contract.getSnapshot",
+  runtimeGetSnapshot: "astella.v1.runtime.getSnapshot",
+  runtimeRetryApiConnection: "astella.v1.runtime.retryApiConnection",
+  runtimeGetHealth: "astella.v1.runtime.getHealth",
+  runtimeCancel: "astella.v1.runtime.cancel",
+  navigationResolve: "astella.v1.navigation.resolve",
+  navigationGo: "astella.v1.navigation.go",
+  navigationBack: "astella.v1.navigation.back",
+  navigationRestore: "astella.v1.navigation.restore",
+  authGetState: "astella.v1.auth.getState",
+  authGetSurfaceManifest: "astella.v1.auth.getSurfaceManifest",
+  authLogin: "astella.v1.auth.login",
+  authRegister: "astella.v1.auth.register",
+  authLogout: "astella.v1.auth.logout",
+  authReauthenticate: "astella.v1.auth.reauthenticate",
+  authChangePassword: "astella.v1.auth.changePassword",
+  authJoinWorkspace: "astella.v1.auth.joinWorkspace",
   // 旧版设置页回补（2026-09-18）：档案、头像与退出工作区。
-  authProfileGet: "ailearn.v1.auth.profile.get",
-  authUpdateProfile: "ailearn.v1.auth.profile.update",
-  authUploadAvatar: "ailearn.v1.auth.avatar.upload",
-  authAvatarGet: "ailearn.v1.auth.avatar.get",
-  authLeaveWorkspace: "ailearn.v1.auth.leaveWorkspace",
-  workspaceList: "ailearn.v1.workspace.list",
-  workspaceSwitch: "ailearn.v1.workspace.switch",
-  workspaceGetCurrent: "ailearn.v1.workspace.getCurrent",
-  workspaceRename: "ailearn.v1.workspace.rename",
-  workspaceCreate: "ailearn.v1.workspace.create",
+  authProfileGet: "astella.v1.auth.profile.get",
+  authUpdateProfile: "astella.v1.auth.profile.update",
+  authUploadAvatar: "astella.v1.auth.avatar.upload",
+  authAvatarGet: "astella.v1.auth.avatar.get",
+  authLeaveWorkspace: "astella.v1.auth.leaveWorkspace",
+  workspaceList: "astella.v1.workspace.list",
+  workspaceSwitch: "astella.v1.workspace.switch",
+  workspaceGetCurrent: "astella.v1.workspace.getCurrent",
+  workspaceRename: "astella.v1.workspace.rename",
+  workspaceCreate: "astella.v1.workspace.create",
   // SEC-02 / ADR-0009：Owner 的邀请发出与成员管理。
-  inviteCreate: "ailearn.v1.invite.create",
-  inviteList: "ailearn.v1.invite.list",
-  inviteRevoke: "ailearn.v1.invite.revoke",
-  memberList: "ailearn.v1.member.list",
-  memberRemove: "ailearn.v1.member.remove",
-  workspaceDissolve: "ailearn.v1.workspace.dissolve",
-  workspaceDissolvePreview: "ailearn.v1.workspace.dissolvePreview",
-  workspaceTransferOwnership: "ailearn.v1.workspace.transferOwnership",
+  inviteCreate: "astella.v1.invite.create",
+  inviteList: "astella.v1.invite.list",
+  inviteRevoke: "astella.v1.invite.revoke",
+  memberList: "astella.v1.member.list",
+  memberRemove: "astella.v1.member.remove",
+  workspaceDissolve: "astella.v1.workspace.dissolve",
+  workspaceDissolvePreview: "astella.v1.workspace.dissolvePreview",
+  workspaceTransferOwnership: "astella.v1.workspace.transferOwnership",
   // 数据维护工具：搜索索引漂移检测与重建。
   // （Markdown 批量导入不再走设置页这一门——批量丢文件已并进来源库那条正常收录流程，
   //   见 `source-intake.ts` 的 `MAX_BATCH_CAPTURE_FILES`。设置页只留导出与索引维护。）
-  searchDriftGet: "ailearn.v1.search.drift",
-  searchReindex: "ailearn.v1.search.reindex",
+  searchDriftGet: "astella.v1.search.drift",
+  searchReindex: "astella.v1.search.reindex",
   // 任务 14：作答模态偏好（跨设备账号级）。
-  companionAnswerModeGet: "ailearn.v1.companion.answerMode.get",
-  companionAnswerModePatch: "ailearn.v1.companion.answerMode.patch",
+  companionAnswerModeGet: "astella.v1.companion.answerMode.get",
+  companionAnswerModePatch: "astella.v1.companion.answerMode.patch",
   // 设置 → 语音与伴星：引擎/音色偏好，以及"点一下听这一身"。
-  companionVoicePreferenceGet: "ailearn.v1.companion.voicePreference.get",
-  companionVoicePreferencePatch: "ailearn.v1.companion.voicePreference.patch",
-  capabilitiesGet: "ailearn.v1.capabilities.get",
-  windowGetState: "ailearn.v1.window.getState",
-  windowSetTitlebarTheme: "ailearn.v1.window.setTitlebarTheme",
-  windowFocus: "ailearn.v1.window.focus",
-  subscriptionsSubscribe: "ailearn.v1.subscriptions.subscribe",
-  subscriptionsEvent: "ailearn.v1.subscriptions.event",
-  subscriptionsUnsubscribe: "ailearn.v1.subscriptions.unsubscribe",
-  roomGetProjection: "ailearn.v1.room.getProjection",
-  companionHomeGetProjection: "ailearn.v1.companion.home.getProjection",
-  companionRoomGetProfile: "ailearn.v1.companion.room.getProfile",
-  companionRoomPatchProfile: "ailearn.v1.companion.room.patchProfile",
-  companionVoiceSpeak: "ailearn.v1.companion.voice.speak",
-  companionVoiceSpeakSegment: "ailearn.v1.companion.voice.speakSegment",
-  companionVoicePlaybackOutcome: "ailearn.v1.companion.voice.playbackOutcome",
+  companionVoicePreferenceGet: "astella.v1.companion.voicePreference.get",
+  companionVoicePreferencePatch: "astella.v1.companion.voicePreference.patch",
+  capabilitiesGet: "astella.v1.capabilities.get",
+  windowGetState: "astella.v1.window.getState",
+  windowSetTitlebarTheme: "astella.v1.window.setTitlebarTheme",
+  windowFocus: "astella.v1.window.focus",
+  subscriptionsSubscribe: "astella.v1.subscriptions.subscribe",
+  subscriptionsEvent: "astella.v1.subscriptions.event",
+  subscriptionsUnsubscribe: "astella.v1.subscriptions.unsubscribe",
+  roomGetProjection: "astella.v1.room.getProjection",
+  companionHomeGetProjection: "astella.v1.companion.home.getProjection",
+  companionRoomGetProfile: "astella.v1.companion.room.getProfile",
+  companionRoomPatchProfile: "astella.v1.companion.room.patchProfile",
+  companionVoiceSpeak: "astella.v1.companion.voice.speak",
+  companionVoiceSpeakSegment: "astella.v1.companion.voice.speakSegment",
+  companionVoicePlaybackOutcome: "astella.v1.companion.voice.playbackOutcome",
   // 本地语音识别模型的四条：读状态 / 开始下载 / 中止 / 移除。
   // **它们是设备级的**：模型在这台机器上，不在谁的名下，所以这四条不要求工作区纪元。
-  companionVoiceAsrModelState: "ailearn.v1.companion.voice.asrModel.state",
-  companionVoiceAsrModelDownload: "ailearn.v1.companion.voice.asrModel.download",
-  companionVoiceAsrModelCancel: "ailearn.v1.companion.voice.asrModel.cancel",
-  companionVoiceAsrModelRemove: "ailearn.v1.companion.voice.asrModel.remove",
+  companionVoiceAsrModelState: "astella.v1.companion.voice.asrModel.state",
+  companionVoiceAsrModelDownload: "astella.v1.companion.voice.asrModel.download",
+  companionVoiceAsrModelCancel: "astella.v1.companion.voice.asrModel.cancel",
+  companionVoiceAsrModelRemove: "astella.v1.companion.voice.asrModel.remove",
   /**
    * 本机识别（2026-10-06）：把渲染层录到的一段 16 kHz PCM 交给**主进程侧的本地引擎**，
    * 换回文字。同样是设备级通道，不要求工作区纪元。
@@ -416,130 +416,130 @@ export const DESKTOP_IPC_CHANNELS = {
    * 引擎一初始化就抛 `require is not defined`。引擎搬到 utilityProcess 后，录音仍然
    * 只在渲染层采集，音频经这一条本机 IPC 进主进程，不出机器。
    */
-  companionVoiceTranscribe: "ailearn.v1.companion.voice.transcribe",
-  companionAccountGetState: "ailearn.v1.companion.account.getState",
-  companionAccountPatchState: "ailearn.v1.companion.account.patchState",
-  companionOnboardingTransition: "ailearn.v1.companion.onboarding.transition",
-  companionMemoryList: "ailearn.v1.companion.memory.list",
-  companionMemoryStarMap: "ailearn.v1.companion.memory.starMap",
-  companionMemoryConfirm: "ailearn.v1.companion.memory.confirm",
-  companionMemoryPin: "ailearn.v1.companion.memory.pin",
-  companionMemoryUnpin: "ailearn.v1.companion.memory.unpin",
-  companionMemoryArchive: "ailearn.v1.companion.memory.archive",
-  companionMemoryRestore: "ailearn.v1.companion.memory.restore",
-  companionMemoryDelete: "ailearn.v1.companion.memory.delete",
+  companionVoiceTranscribe: "astella.v1.companion.voice.transcribe",
+  companionAccountGetState: "astella.v1.companion.account.getState",
+  companionAccountPatchState: "astella.v1.companion.account.patchState",
+  companionOnboardingTransition: "astella.v1.companion.onboarding.transition",
+  companionMemoryList: "astella.v1.companion.memory.list",
+  companionMemoryStarMap: "astella.v1.companion.memory.starMap",
+  companionMemoryConfirm: "astella.v1.companion.memory.confirm",
+  companionMemoryPin: "astella.v1.companion.memory.pin",
+  companionMemoryUnpin: "astella.v1.companion.memory.unpin",
+  companionMemoryArchive: "astella.v1.companion.memory.archive",
+  companionMemoryRestore: "astella.v1.companion.memory.restore",
+  companionMemoryDelete: "astella.v1.companion.memory.delete",
   // 40 §7 发现簿：读簿子、收藏、取消收藏、改批注、查某一份的收藏状态。
   // 「取消收藏」单独一条而不是并进 delete —— 前者不动原始内容，后者进回收区。
-  companionDiscoveryGet: "ailearn.v1.companion.discovery.get",
-  companionDiscoveryCollect: "ailearn.v1.companion.discovery.collect",
-  companionDiscoveryUncollect: "ailearn.v1.companion.discovery.uncollect",
-  companionDiscoveryAnnotate: "ailearn.v1.companion.discovery.annotate",
-  companionDiscoveryState: "ailearn.v1.companion.discovery.state",
+  companionDiscoveryGet: "astella.v1.companion.discovery.get",
+  companionDiscoveryCollect: "astella.v1.companion.discovery.collect",
+  companionDiscoveryUncollect: "astella.v1.companion.discovery.uncollect",
+  companionDiscoveryAnnotate: "astella.v1.companion.discovery.annotate",
+  companionDiscoveryState: "astella.v1.companion.discovery.state",
   // 回收区两个：恢复（可逆）与彻底清除（不可逆）。与上面的 delete 是一对——
   // delete 进回收区等 30 天，restoreDeleted 撤回，erase 是「现在就删干净」。
-  companionMemoryRestoreDeleted: "ailearn.v1.companion.memory.restore-deleted",
-  companionMemoryRecycleList: "ailearn.v1.companion.memory.recycle-list",
-  companionMemoryErase: "ailearn.v1.companion.memory.erase",
-  companionMemoryCreate: "ailearn.v1.companion.memory.create",
-  companionMemoryCorrect: "ailearn.v1.companion.memory.correct",
-  companionMemoryRevisions: "ailearn.v1.companion.memory.revisions",
-  companionMemoryDismiss: "ailearn.v1.companion.memory.dismiss",
-  companionMemoryConflicts: "ailearn.v1.companion.memory.conflicts",
-  companionMemoryResolveConflict: "ailearn.v1.companion.memory.resolveConflict",
-  companionMemoryRebuildEmbeddings: "ailearn.v1.companion.memory.rebuildEmbeddings",
-  companionMemoryClear: "ailearn.v1.companion.memory.clear",
-  companionMemorySummarizeRecent: "ailearn.v1.companion.memory.summarizeRecent",
-  companionDailyGet: "ailearn.v1.companion.daily.get",
-  companionDailyMonth: "ailearn.v1.companion.daily.month",
-  companionDailyHide: "ailearn.v1.companion.daily.hide",
-  companionDailyUnhide: "ailearn.v1.companion.daily.unhide",
-  companionDailyDelete: "ailearn.v1.companion.daily.delete",
-  companionPersonaGet: "ailearn.v1.companion.persona.get",
-  companionPersonaPatch: "ailearn.v1.companion.persona.patch",
-  companionPersonaReset: "ailearn.v1.companion.persona.reset",
-  companionPersonaVersions: "ailearn.v1.companion.persona.versions",
-  companionPersonaRestore: "ailearn.v1.companion.persona.restore",
+  companionMemoryRestoreDeleted: "astella.v1.companion.memory.restore-deleted",
+  companionMemoryRecycleList: "astella.v1.companion.memory.recycle-list",
+  companionMemoryErase: "astella.v1.companion.memory.erase",
+  companionMemoryCreate: "astella.v1.companion.memory.create",
+  companionMemoryCorrect: "astella.v1.companion.memory.correct",
+  companionMemoryRevisions: "astella.v1.companion.memory.revisions",
+  companionMemoryDismiss: "astella.v1.companion.memory.dismiss",
+  companionMemoryConflicts: "astella.v1.companion.memory.conflicts",
+  companionMemoryResolveConflict: "astella.v1.companion.memory.resolveConflict",
+  companionMemoryRebuildEmbeddings: "astella.v1.companion.memory.rebuildEmbeddings",
+  companionMemoryClear: "astella.v1.companion.memory.clear",
+  companionMemorySummarizeRecent: "astella.v1.companion.memory.summarizeRecent",
+  companionDailyGet: "astella.v1.companion.daily.get",
+  companionDailyMonth: "astella.v1.companion.daily.month",
+  companionDailyHide: "astella.v1.companion.daily.hide",
+  companionDailyUnhide: "astella.v1.companion.daily.unhide",
+  companionDailyDelete: "astella.v1.companion.daily.delete",
+  companionPersonaGet: "astella.v1.companion.persona.get",
+  companionPersonaPatch: "astella.v1.companion.persona.patch",
+  companionPersonaReset: "astella.v1.companion.persona.reset",
+  companionPersonaVersions: "astella.v1.companion.persona.versions",
+  companionPersonaRestore: "astella.v1.companion.persona.restore",
   // 「排队 → 生效」两步（40 §4.8.4 / A50）。它们**不能**并进 patch：那一条立刻改
   // 当前版本，而排队只写下内容、不动现在在用的那一版。把两步混成一步，
   // 长会话里已经说过的话与正在生成的那句就会分属两个版本。
-  companionPersonaPending: "ailearn.v1.companion.persona.pending",
-  companionPersonaStage: "ailearn.v1.companion.persona.stage",
-  companionPersonaActivate: "ailearn.v1.companion.persona.activate",
-  companionHistoryList: "ailearn.v1.companion.history.list",
-  companionHistorySearch: "ailearn.v1.companion.history.search",
-  companionHistoryClear: "ailearn.v1.companion.history.clear",
-  companionLearningContextGet: "ailearn.v1.companion.learningContext.get",
-  companionJourneyBootstrap: "ailearn.v1.companion.journey.bootstrap",
-  companionJourneyGet: "ailearn.v1.companion.journey.get",
-  companionInvitationAction: "ailearn.v1.companion.invitation.action",
-  companionJourneyAction: "ailearn.v1.companion.journey.action",
-  companionActivityTimeline: "ailearn.v1.companion.activity.timeline",
-  companionActivityPresent: "ailearn.v1.companion.activity.present",
-  companionActivityAck: "ailearn.v1.companion.activity.ack",
-  companionBridgeSetContext: "ailearn.v1.companion.bridge.setContext",
-  companionBridgeClearContext: "ailearn.v1.companion.bridge.clearContext",
-  companionDataExport: "ailearn.v1.companion.data.export",
-  companionAuditDelete: "ailearn.v1.companion.audit.delete",
+  companionPersonaPending: "astella.v1.companion.persona.pending",
+  companionPersonaStage: "astella.v1.companion.persona.stage",
+  companionPersonaActivate: "astella.v1.companion.persona.activate",
+  companionHistoryList: "astella.v1.companion.history.list",
+  companionHistorySearch: "astella.v1.companion.history.search",
+  companionHistoryClear: "astella.v1.companion.history.clear",
+  companionLearningContextGet: "astella.v1.companion.learningContext.get",
+  companionJourneyBootstrap: "astella.v1.companion.journey.bootstrap",
+  companionJourneyGet: "astella.v1.companion.journey.get",
+  companionInvitationAction: "astella.v1.companion.invitation.action",
+  companionJourneyAction: "astella.v1.companion.journey.action",
+  companionActivityTimeline: "astella.v1.companion.activity.timeline",
+  companionActivityPresent: "astella.v1.companion.activity.present",
+  companionActivityAck: "astella.v1.companion.activity.ack",
+  companionBridgeSetContext: "astella.v1.companion.bridge.setContext",
+  companionBridgeClearContext: "astella.v1.companion.bridge.clearContext",
+  companionDataExport: "astella.v1.companion.data.export",
+  companionAuditDelete: "astella.v1.companion.audit.delete",
   // 伴星聊天发送链路 + 语音转文本（2026-09-18 接线，companion-chat-desktop-contracts）。
-  agentRunsList: "ailearn.v1.agent.runs.list",
-  agentRunHistory: "ailearn.v1.agent.runs.history",
-  agentRunCreate: "ailearn.v1.agent.runs.create",
-  agentLongGoalsList:"ailearn.v1.agent.long-goals.list",
-  agentRunGet:"ailearn.v1.agent.run.get",
-  agentRunRevise: "ailearn.v1.agent.runs.revise",
-  agentRunControl: "ailearn.v1.agent.runs.control",
-  agentMethodsList: "ailearn.v1.agent.methods.list",
-  agentMethodPropose: "ailearn.v1.agent.method.propose",
-  agentMethodRevise: "ailearn.v1.agent.method.revise",
-  agentMethodControl: "ailearn.v1.agent.method.control",
-  agentMethodHistory: "ailearn.v1.agent.method.history",
-  agentMethodUses: "ailearn.v1.agent.method.uses",
-  agentMethodFeedback: "ailearn.v1.agent.method.feedback",
-  companionChatEnsureConversation: "ailearn.v1.companion.chat.ensureConversation",
-  companionChatSendTurn: "ailearn.v1.companion.chat.sendTurn",
-  companionChatListMessages: "ailearn.v1.companion.chat.listMessages",
+  agentRunsList: "astella.v1.agent.runs.list",
+  agentRunHistory: "astella.v1.agent.runs.history",
+  agentRunCreate: "astella.v1.agent.runs.create",
+  agentLongGoalsList:"astella.v1.agent.long-goals.list",
+  agentRunGet:"astella.v1.agent.run.get",
+  agentRunRevise: "astella.v1.agent.runs.revise",
+  agentRunControl: "astella.v1.agent.runs.control",
+  agentMethodsList: "astella.v1.agent.methods.list",
+  agentMethodPropose: "astella.v1.agent.method.propose",
+  agentMethodRevise: "astella.v1.agent.method.revise",
+  agentMethodControl: "astella.v1.agent.method.control",
+  agentMethodHistory: "astella.v1.agent.method.history",
+  agentMethodUses: "astella.v1.agent.method.uses",
+  agentMethodFeedback: "astella.v1.agent.method.feedback",
+  companionChatEnsureConversation: "astella.v1.companion.chat.ensureConversation",
+  companionChatSendTurn: "astella.v1.companion.chat.sendTurn",
+  companionChatListMessages: "astella.v1.companion.chat.listMessages",
   // 对话图片上传（2026-10-06 输入框传图）：与笔记图片同一份 request/result 合同。
-  companionImageUpload: "ailearn.v1.companion.image.upload",
+  companionImageUpload: "astella.v1.companion.image.upload",
   // 提案确认 + agent 导航 route 轮询（2026-09-18 补接线）。
-  companionChatProposalGet: "ailearn.v1.companion.chat.proposal.get",
-  companionChatProposalDecide: "ailearn.v1.companion.chat.proposal.decide",
-  companionChatAgentRoutes: "ailearn.v1.companion.chat.agentRoutes.list",
+  companionChatProposalGet: "astella.v1.companion.chat.proposal.get",
+  companionChatProposalDecide: "astella.v1.companion.chat.proposal.decide",
+  companionChatAgentRoutes: "astella.v1.companion.chat.agentRoutes.list",
   // 过程节点留痕（2026-09-19）：GET /companion/conversations/:id/run-nodes。
-  companionChatRunNodes: "ailearn.v1.companion.chat.runNodes.list",
+  companionChatRunNodes: "astella.v1.companion.chat.runNodes.list",
   // 停止本轮（2026-09-19）：POST /companion/runs/:id/cancel。
-  companionChatCancelRun: "ailearn.v1.companion.chat.cancelRun",
+  companionChatCancelRun: "astella.v1.companion.chat.cancelRun",
   // 念头主动开场（切片④，2026-09-18）。
-  companionChatOpenThought: "ailearn.v1.companion.chat.openThought",
-  companionChatListThoughts: "ailearn.v1.companion.chat.listThoughts",
+  companionChatOpenThought: "astella.v1.companion.chat.openThought",
+  companionChatListThoughts: "astella.v1.companion.chat.listThoughts",
   // LearningRun 页面只读上下文 + 一次性 grounded tutor 授权。HTTP 协议不变，
   // 这里只把既有服务端端点收进 Electron 的 typed bridge。
-  companionLearningRunGetContext: "ailearn.v1.companion.learningRun.getContext",
-  companionLearningRunCreateContextGrant: "ailearn.v1.companion.learningRun.createContextGrant",
-  noteGet: "ailearn.v1.note.get",
-  sourceList: "ailearn.v1.source.list",
-  sourceCreate: "ailearn.v1.source.create",
-  sourceGet: "ailearn.v1.source.get",
-  sourceNotes: "ailearn.v1.source.notes",
-  sourceUpdate: "ailearn.v1.source.update",
-  sourceCreateNote: "ailearn.v1.source.createNote",
-  sourceArchive: "ailearn.v1.source.archive",
+  companionLearningRunGetContext: "astella.v1.companion.learningRun.getContext",
+  companionLearningRunCreateContextGrant: "astella.v1.companion.learningRun.createContextGrant",
+  noteGet: "astella.v1.note.get",
+  sourceList: "astella.v1.source.list",
+  sourceCreate: "astella.v1.source.create",
+  sourceGet: "astella.v1.source.get",
+  sourceNotes: "astella.v1.source.notes",
+  sourceUpdate: "astella.v1.source.update",
+  sourceCreateNote: "astella.v1.source.createNote",
+  sourceArchive: "astella.v1.source.archive",
   /** 归档的逆操作（审计 F08）：数据一直在，只是 status=archived。 */
-  sourceRestore: "ailearn.v1.source.restore",
-  sourceReparse: "ailearn.v1.source.reparse",
-  sourceImageGet: "ailearn.v1.source.image.get",
-  noteList: "ailearn.v1.note.list",
-  noteCreate: "ailearn.v1.note.create",
-  noteDelete: "ailearn.v1.note.delete",
-  noteRestore: "ailearn.v1.note.restore",
-  noteVersions: "ailearn.v1.note.versions",
-  noteVersionRestore: "ailearn.v1.note.versionRestore",
-  noteImageUpload: "ailearn.v1.note.image.upload",
+  sourceRestore: "astella.v1.source.restore",
+  sourceReparse: "astella.v1.source.reparse",
+  sourceImageGet: "astella.v1.source.image.get",
+  noteList: "astella.v1.note.list",
+  noteCreate: "astella.v1.note.create",
+  noteDelete: "astella.v1.note.delete",
+  noteRestore: "astella.v1.note.restore",
+  noteVersions: "astella.v1.note.versions",
+  noteVersionRestore: "astella.v1.note.versionRestore",
+  noteImageUpload: "astella.v1.note.image.upload",
   // 笔记导出为 Markdown 目录：一篇一个 .md。**不是**整库导出的兄弟——那条要 owner，
   // 这条任何成员都能导自己看得见的笔记（服务端 `GET /export/notes/:id` 本来就没有
   // owner 门，可见性由 `visibleNotesCondition(userId)` 判，见 export/routes.ts）。
-  notesMarkdownExport: "ailearn.v1.notes.markdownExport",
-  objectiveList: "ailearn.v1.objective.list",
-  objectiveGet: "ailearn.v1.objective.get",
+  notesMarkdownExport: "astella.v1.notes.markdownExport",
+  objectiveList: "astella.v1.objective.list",
+  objectiveGet: "astella.v1.objective.get",
   // 39d W4-3 第三刀：笔记页那张轻量定向表单。四发对应 §16.16 那条判据的四个动作
   // （开、读、换问题、先到这里）。暂停这一版**仍不接**：§5.5 那句"没有其他活跃端
   // 才标可恢复暂停"要先有端的活跃度判据，那是 §16.39 那一刀的活，不先挂空口。
@@ -547,41 +547,41 @@ export const DESKTOP_IPC_CHANNELS = {
   // 而这一侧没有它就没有出口：任何一条从 API 造出来的 `paused` 轮次在界面上是永久死路
   // （它还占着 §6.1 那条 `phase IN ('active','paused')` 的部分唯一索引的名额，
   // 既继续不了也另开不了）。先有出口，§16.39 才谈得上把轮次扫进那个状态。
-  noteReflectionList: "ailearn.v1.noteReflection.list",
-  noteReflectionWrite: "ailearn.v1.noteReflection.write",
-  noteAnnotationList: "ailearn.v1.noteAnnotation.list",
-  noteAnnotationWrite: "ailearn.v1.noteAnnotation.write",
-  noteAnnotationStartTask: "ailearn.v1.noteAnnotation.startTask",
-  noteAnnotationLatestTask: "ailearn.v1.noteAnnotation.latestTask",
-  noteAnnotationGetTask: "ailearn.v1.noteAnnotation.getTask",
-  noteOverviewList: "ailearn.v1.noteOverview.list",
-  noteOverviewStartTask: "ailearn.v1.noteOverview.startTask",
-  noteOverviewLatestTask: "ailearn.v1.noteOverview.latestTask",
-  noteOverviewGetTask: "ailearn.v1.noteOverview.getTask",
-  noteRecallList: "ailearn.v1.noteRecall.list",
-  noteRecallStart: "ailearn.v1.noteRecall.start",
-  noteRecallAction: "ailearn.v1.noteRecall.action",
-  noteExpansionList: "ailearn.v1.noteExpansion.list",
-  noteExpansionStartTask: "ailearn.v1.noteExpansion.startTask",
-  noteExpansionLatestTask: "ailearn.v1.noteExpansion.latestTask",
-  noteExpansionListTasks: "ailearn.v1.noteExpansion.listTasks",
-  noteExpansionGetTask: "ailearn.v1.noteExpansion.getTask",
-  noteExpansionReview: "ailearn.v1.noteExpansion.review",
-  noteExpansionConfirm: "ailearn.v1.noteExpansion.confirm",
-  noteLearningArtifactList: "ailearn.v1.noteLearningArtifact.list",
-  noteLearningArtifactTaskStart: "ailearn.v1.noteLearningArtifact.taskStart",
-  noteLearningArtifactTaskList: "ailearn.v1.noteLearningArtifact.taskList",
-  noteLearningArtifactTaskGet: "ailearn.v1.noteLearningArtifact.taskGet",
-  noteLearningRoundOpen: "ailearn.v1.noteLearningRound.open",
-  noteLearningRoundCreate: "ailearn.v1.noteLearningRound.create",
-  noteLearningRoundRevise: "ailearn.v1.noteLearningRound.revise",
-  noteLearningRoundReopen: "ailearn.v1.noteLearningRound.reopen",
-  noteLearningRoundResume: "ailearn.v1.noteLearningRound.resume",
-  noteLearningRoundClose: "ailearn.v1.noteLearningRound.close",
+  noteReflectionList: "astella.v1.noteReflection.list",
+  noteReflectionWrite: "astella.v1.noteReflection.write",
+  noteAnnotationList: "astella.v1.noteAnnotation.list",
+  noteAnnotationWrite: "astella.v1.noteAnnotation.write",
+  noteAnnotationStartTask: "astella.v1.noteAnnotation.startTask",
+  noteAnnotationLatestTask: "astella.v1.noteAnnotation.latestTask",
+  noteAnnotationGetTask: "astella.v1.noteAnnotation.getTask",
+  noteOverviewList: "astella.v1.noteOverview.list",
+  noteOverviewStartTask: "astella.v1.noteOverview.startTask",
+  noteOverviewLatestTask: "astella.v1.noteOverview.latestTask",
+  noteOverviewGetTask: "astella.v1.noteOverview.getTask",
+  noteRecallList: "astella.v1.noteRecall.list",
+  noteRecallStart: "astella.v1.noteRecall.start",
+  noteRecallAction: "astella.v1.noteRecall.action",
+  noteExpansionList: "astella.v1.noteExpansion.list",
+  noteExpansionStartTask: "astella.v1.noteExpansion.startTask",
+  noteExpansionLatestTask: "astella.v1.noteExpansion.latestTask",
+  noteExpansionListTasks: "astella.v1.noteExpansion.listTasks",
+  noteExpansionGetTask: "astella.v1.noteExpansion.getTask",
+  noteExpansionReview: "astella.v1.noteExpansion.review",
+  noteExpansionConfirm: "astella.v1.noteExpansion.confirm",
+  noteLearningArtifactList: "astella.v1.noteLearningArtifact.list",
+  noteLearningArtifactTaskStart: "astella.v1.noteLearningArtifact.taskStart",
+  noteLearningArtifactTaskList: "astella.v1.noteLearningArtifact.taskList",
+  noteLearningArtifactTaskGet: "astella.v1.noteLearningArtifact.taskGet",
+  noteLearningRoundOpen: "astella.v1.noteLearningRound.open",
+  noteLearningRoundCreate: "astella.v1.noteLearningRound.create",
+  noteLearningRoundRevise: "astella.v1.noteLearningRound.revise",
+  noteLearningRoundReopen: "astella.v1.noteLearningRound.reopen",
+  noteLearningRoundResume: "astella.v1.noteLearningRound.resume",
+  noteLearningRoundClose: "astella.v1.noteLearningRound.close",
   // 这一篇的轮次记录（PRD §10.3 的读侧第一刀）。单开一发而不是塞进 `open`：
   // `open` 回的是"此刻那一轮"（没有就 404→null），而记录是"开过的每一轮"——
   // 收尾之后 `open` 变 null、记录变长，两件事的读数本来就相反。
-  noteLearningRoundHistory: "ailearn.v1.noteLearningRound.history",
+  noteLearningRoundHistory: "astella.v1.noteLearningRound.history",
   /**
    * 这一篇的**核心路线**（39d W4-5 ③；PRD §4.4）：跨全部轮次、按核心问题归并。
    *
@@ -590,31 +590,31 @@ export const DESKTOP_IPC_CHANNELS = {
    * 两者在屏上摆的地方不同、口径不同、失败时的退路也不同——合成一发就会出现
    * 「记录读到了但路线读失败」被读成「没有路线」。
    */
-  noteLearningRoundRoute: "ailearn.v1.noteLearningRound.route",
+  noteLearningRoundRoute: "astella.v1.noteLearningRound.route",
   // §10.3 第二级（本人、跨笔记）：与上面那一条同一形状，只是不带 noteId（W4-8 刀二）。
-  noteLearningRoundPersonalHistory: "ailearn.v1.noteLearningRound.personalHistory",
+  noteLearningRoundPersonalHistory: "astella.v1.noteLearningRound.personalHistory",
   // 教学产物两发（39d W4-6 刀二）。与记录那一发同一个理由不塞进 `open`：`open` 回的是
   // **轮次行**（有没有这一轮），解释是另一张表上的产物（这一轮讲没讲过）——两件事的
   // 读数本来就不在一处，合成一发会让"没有解释"和"没有轮次"分不开。
-  noteLearningRoundTeaching: "ailearn.v1.noteLearningRound.teaching",
-  noteLearningRoundPreparePractice: "ailearn.v1.noteLearningRound.preparePractice",
+  noteLearningRoundTeaching: "astella.v1.noteLearningRound.teaching",
+  noteLearningRoundPreparePractice: "astella.v1.noteLearningRound.preparePractice",
   // 动态产物的"确保落盘"（39d W4-6 刀五）。**不是**"把 HTML 塞过 IPC"：渲染层只报
   // 一个 id，main 带会话令牌去 API 取整份 HTML、按 D4 的配额检查后写进
   // `<userData>/artifacts/<id>.html`，frame 再按同一 id 从既定协议读它。
   // 这样 HTML 只走一次网络与一次落盘，不额外穿过 IPC 的两层校验。
-  artifactEnsure: "ailearn.v1.artifact.ensure",
-  noteLearningRoundExplain: "ailearn.v1.noteLearningRound.explain",
-  understandingGetTopology: "ailearn.v1.understanding.getTopology",
+  artifactEnsure: "astella.v1.artifact.ensure",
+  noteLearningRoundExplain: "astella.v1.noteLearningRound.explain",
+  understandingGetTopology: "astella.v1.understanding.getTopology",
   // 39d W8-2：本人对一条建议关系的表态。**与读那条拓扑分开的通道**——
   // 写与读混在一个通道里，界面就会在读回执的同时把整张星图重取一遍。
-  understandingSetRelationDecision: "ailearn.v1.understanding.setRelationDecision",
+  understandingSetRelationDecision: "astella.v1.understanding.setRelationDecision",
   // 39d W8-1：星图三层展开的层二／层三，按**一篇**笔记读。
   // **与读整张拓扑分开的通道**：§11.5「总览只显示当前层，局部按需加载」——
   // 挂在 getTopology 上就等于让每一次读星图都把每一篇笔记的作答与反馈搬一遍，
   // 而用户当下只点开了那一篇。
-  understandingGetNoteDeepening: "ailearn.v1.understanding.getNoteDeepening",
-  searchGlobal: "ailearn.v1.search.global",
-  noteSave: "ailearn.v1.note.save",
+  understandingGetNoteDeepening: "astella.v1.understanding.getNoteDeepening",
+  searchGlobal: "astella.v1.search.global",
+  noteSave: "astella.v1.note.save",
   // 批次 4.3：笔记协同。渲染进程不能直连 WS（sandbox + CSP + onBeforeRequest 三层
   // 硬拦截），所以下行是一条订阅事件、上行是一次性通道。
   // 只有一个写入口 `noteDocSyncUpdate`，界面交的是 **yjs 增量**（批次 C2：编辑器直接写
@@ -622,55 +622,55 @@ export const DESKTOP_IPC_CHANNELS = {
   // 文档，差分就会把对端刚写进来的字算成"我删掉了"，那是实测过的真丢内容）。
   // 有长连接就并进主进程那份影子文档由 provider 送出，没有就按 HTTP 上送；走了哪条由
   // `via` 如实回报。"能不能写"不在这里判，那判据只在服务端一处。
-  noteDocState: "ailearn.v1.note.doc.state",
-  noteDocSyncUpdate: "ailearn.v1.note.doc.syncUpdate",
+  noteDocState: "astella.v1.note.doc.state",
+  noteDocSyncUpdate: "astella.v1.note.doc.syncUpdate",
   // 本机草稿：界面手里还没交给主进程的那几个增量，落盘用（刷新/崩溃不丢字）。
   // 键由主进程按 (subjectId, workspaceId, noteId) 拼——界面只报 noteId，另一个空间
   // 因此读不到这一格（跨空间的正文缝合正是批次 1 立那条键要防的事）。
-  noteDocDraftSave: "ailearn.v1.note.doc.draft.save",
-  noteDocDraftGet: "ailearn.v1.note.doc.draft.get",
-  noteDocDraftClear: "ailearn.v1.note.doc.draft.clear",
+  noteDocDraftSave: "astella.v1.note.doc.draft.save",
+  noteDocDraftGet: "astella.v1.note.doc.draft.get",
+  noteDocDraftClear: "astella.v1.note.doc.draft.clear",
   // 从笔记列表改名：那里没有打开的文档，所以由主进程把标题写进它那一份再上行。
-  noteDocSyncTitle: "ailearn.v1.note.doc.syncTitle",
-  noteDocPresence: "ailearn.v1.note.doc.presence",
-  noteSetShare: "ailearn.v1.note.set-share",
-  noteCardGenerationStart: "ailearn.v1.note.cardGeneration.start",
-  noteCardGenerationGetRun: "ailearn.v1.note.cardGeneration.getRun",
-  noteCardGenerationGetCandidates: "ailearn.v1.note.cardGeneration.getCandidates",
-  noteCardGenerationReview: "ailearn.v1.note.cardGeneration.review",
-  noteCardGenerationExposure: "ailearn.v1.note.cardGeneration.exposure",
-  noteCardGenerationLatestRun: "ailearn.v1.note.cardGeneration.latestRun",
-  noteCardGenerationReveal: "ailearn.v1.note.cardGeneration.reveal",
-  noteCardGenerationActivate: "ailearn.v1.note.cardGeneration.activate",
-  noteCardGenerationCancel: "ailearn.v1.note.cardGeneration.cancel",
-  noteCardGenerationRetry: "ailearn.v1.note.cardGeneration.retry",
-  noteCardGenerationClose: "ailearn.v1.note.cardGeneration.close",
-  reviewGetQueue: "ailearn.v1.review.getQueue",
-  activityGetToday: "ailearn.v1.activity.getToday",
+  noteDocSyncTitle: "astella.v1.note.doc.syncTitle",
+  noteDocPresence: "astella.v1.note.doc.presence",
+  noteSetShare: "astella.v1.note.set-share",
+  noteCardGenerationStart: "astella.v1.note.cardGeneration.start",
+  noteCardGenerationGetRun: "astella.v1.note.cardGeneration.getRun",
+  noteCardGenerationGetCandidates: "astella.v1.note.cardGeneration.getCandidates",
+  noteCardGenerationReview: "astella.v1.note.cardGeneration.review",
+  noteCardGenerationExposure: "astella.v1.note.cardGeneration.exposure",
+  noteCardGenerationLatestRun: "astella.v1.note.cardGeneration.latestRun",
+  noteCardGenerationReveal: "astella.v1.note.cardGeneration.reveal",
+  noteCardGenerationActivate: "astella.v1.note.cardGeneration.activate",
+  noteCardGenerationCancel: "astella.v1.note.cardGeneration.cancel",
+  noteCardGenerationRetry: "astella.v1.note.cardGeneration.retry",
+  noteCardGenerationClose: "astella.v1.note.cardGeneration.close",
+  reviewGetQueue: "astella.v1.review.getQueue",
+  activityGetToday: "astella.v1.activity.getToday",
   // 跨空间统计（页 14 的「全部空间」栏）：与 activityGetToday 同在 room.home 面，
   // 但读的是"我"而不是"当前空间"。
-  statsGetOverviewAll: "ailearn.v1.stats.getOverviewAll",
-  reviewDefer: "ailearn.v1.review.defer",
+  statsGetOverviewAll: "astella.v1.stats.getOverviewAll",
+  reviewDefer: "astella.v1.review.defer",
   /**
    * 「先看笔记」（39d W5-4；PRD §7.1）。挂在 `review` 命名空间下而不是
    * `learningRun`：**等待态这一段还没有 run**（题目还在生成），而这一发
    * 必须在那时候就成立——挂到 learningRun 下会让人以为"没有 run 就没法记账"。
    */
-  reviewRecordRecallSourceReveal: "ailearn.v1.review.recordRecallSourceReveal",
+  reviewRecordRecallSourceReveal: "astella.v1.review.recordRecallSourceReveal",
   // W7-3 刀三：目标级「暂不安排」与「恢复并开启」（39 §9.1 行 2、行 3）。
   // 两条**分开的**通道而不是一个 toggle —— §9.1 规则表把"设排除"与
   // "恢复并开启"列成两件不同的事，合成一颗开关会把中间那半句折叠掉。
-  reviewHoldObjective: "ailearn.v1.review.holdObjective",
-  reviewResumeObjective: "ailearn.v1.review.resumeObjective",
+  reviewHoldObjective: "astella.v1.review.holdObjective",
+  reviewResumeObjective: "astella.v1.review.resumeObjective",
   // W7-3 刀六：订阅来源分别开停。**三条**通道（开／停／读），不是一颗 toggle——
   // §9.1 明写"两种意图可以分别存在"，合成一颗开关会把"停哪一个"变成系统的默认。
-  reviewSubscriptionActivate: "ailearn.v1.review.subscription.activate",
-  reviewSubscriptionPause: "ailearn.v1.review.subscription.pause",
-  reviewSubscriptionListNotes: "ailearn.v1.review.subscription.listNotes",
-  homeSuggestionRead: "ailearn.v1.home.suggestion.read",
-  homeSuggestionAct: "ailearn.v1.home.suggestion.act",
-  todayBatchOption: "ailearn.v1.home.todayBatch.option",
-  todayBatchRead: "ailearn.v1.home.todayBatch.read",
+  reviewSubscriptionActivate: "astella.v1.review.subscription.activate",
+  reviewSubscriptionPause: "astella.v1.review.subscription.pause",
+  reviewSubscriptionListNotes: "astella.v1.review.subscription.listNotes",
+  homeSuggestionRead: "astella.v1.home.suggestion.read",
+  homeSuggestionAct: "astella.v1.home.suggestion.act",
+  todayBatchOption: "astella.v1.home.todayBatch.option",
+  todayBatchRead: "astella.v1.home.todayBatch.read",
   // 判定的争议（39 §14.2、§16.11、§16.25）。**四条用户能按的通道**，
   // 刻意少于服务端那六条：`recheck` 与 `correction` 的写入方是系统，不是人
   // （§14.2「**系统**基于原题、原回答和依据进行一次重新检查」）。
@@ -680,35 +680,35 @@ export const DESKTOP_IPC_CHANNELS = {
   // 另开一个命名空间而不是塞进 `review`：那边是「复习排期」，这边是「一次判定的异议」，
   // 两者唯一的交集是 `close(holdObjective)` 顺带写的那一条目标级排除（§9.1 行 2），
   // 合成一个命名空间会让「改期」和「申诉」在界面上长得一样。
-  assessmentDisputeGet: "ailearn.v1.assessmentDispute.get",
-  assessmentDisputeOpen: "ailearn.v1.assessmentDispute.open",
-  assessmentDisputeSupplement: "ailearn.v1.assessmentDispute.supplement",
-  assessmentDisputeClose: "ailearn.v1.assessmentDispute.close",
-  learningRunGet: "ailearn.v1.learningRun.get",
-  learningRunStart: "ailearn.v1.learningRun.start",
-  learningRunGetDraft: "ailearn.v1.learningRun.getDraft",
-  learningRunSaveDraft: "ailearn.v1.learningRun.saveDraft",
-  learningRunSubmit: "ailearn.v1.learningRun.submit",
-  learningRunAction: "ailearn.v1.learningRun.action",
-  learningRunGetResult: "ailearn.v1.learningRun.getResult",
-  learningRunRevealTarget: "ailearn.v1.learningRun.revealTarget",
-  learningRunGetReturnContract: "ailearn.v1.learningRun.getReturnContract",
-  learningRunRecordActivityLease: "ailearn.v1.learningRun.recordActivityLease",
-  learningRunAbandon: "ailearn.v1.learningRun.abandon",
-  workspaceAiSettingsGet: "ailearn.v1.workspace.aiSettings.get",
-  workspaceAiConsentUpdate: "ailearn.v1.workspace.aiConsent.update",
-  workspaceAiDataPolicyUpdate: "ailearn.v1.workspace.aiDataPolicy.update",
+  assessmentDisputeGet: "astella.v1.assessmentDispute.get",
+  assessmentDisputeOpen: "astella.v1.assessmentDispute.open",
+  assessmentDisputeSupplement: "astella.v1.assessmentDispute.supplement",
+  assessmentDisputeClose: "astella.v1.assessmentDispute.close",
+  learningRunGet: "astella.v1.learningRun.get",
+  learningRunStart: "astella.v1.learningRun.start",
+  learningRunGetDraft: "astella.v1.learningRun.getDraft",
+  learningRunSaveDraft: "astella.v1.learningRun.saveDraft",
+  learningRunSubmit: "astella.v1.learningRun.submit",
+  learningRunAction: "astella.v1.learningRun.action",
+  learningRunGetResult: "astella.v1.learningRun.getResult",
+  learningRunRevealTarget: "astella.v1.learningRun.revealTarget",
+  learningRunGetReturnContract: "astella.v1.learningRun.getReturnContract",
+  learningRunRecordActivityLease: "astella.v1.learningRun.recordActivityLease",
+  learningRunAbandon: "astella.v1.learningRun.abandon",
+  workspaceAiSettingsGet: "astella.v1.workspace.aiSettings.get",
+  workspaceAiConsentUpdate: "astella.v1.workspace.aiConsent.update",
+  workspaceAiDataPolicyUpdate: "astella.v1.workspace.aiDataPolicy.update",
   /** 设置 → 隐私「记录 AI 审计日志，供你回看」那一行的读端；服务端路由挂着 requireOwner。 */
-  workspaceAiAuditLog: "ailearn.v1.workspace.aiAuditLog",
-  workspaceExport: "ailearn.v1.workspace.export",
-  clipboardReadLinks: "ailearn.v1.clipboard.readLinks",
-  clipboardWriteText: "ailearn.v1.clipboard.writeText",
-  shellOpenExternal: "ailearn.v1.shell.openExternal",
+  workspaceAiAuditLog: "astella.v1.workspace.aiAuditLog",
+  workspaceExport: "astella.v1.workspace.export",
+  clipboardReadLinks: "astella.v1.clipboard.readLinks",
+  clipboardWriteText: "astella.v1.clipboard.writeText",
+  shellOpenExternal: "astella.v1.shell.openExternal",
   // 自动更新：检查 → 下载 → 重启安装。更新源是 GitHub Releases（直连，不过服务端）。
-  updateGetState: "ailearn.v1.update.getState",
-  updateCheck: "ailearn.v1.update.check",
-  updateDownload: "ailearn.v1.update.download",
-  updateInstall: "ailearn.v1.update.install",
+  updateGetState: "astella.v1.update.getState",
+  updateCheck: "astella.v1.update.check",
+  updateDownload: "astella.v1.update.download",
+  updateInstall: "astella.v1.update.install",
 } as const;
 
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
@@ -1298,7 +1298,7 @@ export function desktopTrustSignatureMessage(
   response: Pick<DesktopTrustChallengeResponseV1, "nonce" | "serviceId" | "ipcContractVersion" | "domainSchemaRevision" | "pairingKeyId" | "instanceId">,
 ): string {
   return [
-    "ailearn-local-api-trust-v1",
+    "astella-local-api-trust-v1",
     response.nonce,
     response.serviceId,
     response.ipcContractVersion,
@@ -1498,7 +1498,7 @@ export type UpdateGetStateResultV1 = z.infer<typeof updateGetStateResultV1Schema
  * 刻意不走 `subscriptions`：更新只有一路单向状态流，没有 topic 订阅/重放语义，
  * 与 `WINDOW_STATE_CHANNEL` 是同一类"主进程推、渲染层订阅并可退订"的通道。
  */
-export const UPDATE_STATE_CHANNEL = "ailearn.v1.update.state" as const;
+export const UPDATE_STATE_CHANNEL = "astella.v1.update.state" as const;
 
 export const actionCapabilityValues = [
   "source.read", "source.create", "source.update", "source.archive", "source.createNote",
@@ -2296,7 +2296,7 @@ export interface SubscriptionApiM2 {
   unsubscribe(input: { meta: RequestMetaV1; subscriptionId: string }): Promise<GatewayResultV1<{ closed: true }>>;
 }
 
-export interface AILearnDesktopApiM1 {
+export interface AstellaDesktopApiM1 {
   readonly contract: DesktopContractSnapshotV1;
   readonly runtime: {
     getSnapshot(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<RuntimeSnapshotV1>>;
@@ -2397,7 +2397,7 @@ export interface AILearnDesktopApiM1 {
   readonly subscriptions: SubscriptionApiM1;
 }
 
-export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
+export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
   readonly agent: {
     listLongGoals(input:{meta:RequestMetaV1;query?:AgentLongGoalsQueryV1}):Promise<GatewayResultV1<z.infer<typeof agentLongGoalsV1Schema>>>;
     getRun(input:{meta:RequestMetaV1;runId:string}):Promise<GatewayResultV1<import("./agent-contracts.ts").AgentRunV1>>;
@@ -2499,7 +2499,7 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
      */
     reparse(input: { meta: RequestMetaV1; sourceId: Uuid }): Promise<GatewayResultV1<DesktopSourceReparseResult>>;
     /**
-     * 站内图片的原始字节。渲染层的 origin 是 `ailearn-app://`，相对路径
+     * 站内图片的原始字节。渲染层的 origin 是 `astella-app://`，相对路径
      * `/api/uploads/…` 会落到应用包内（404），外链又被渲染层 CSP 拦掉，所以
      * 这张图只能由 main 带 Bearer 取回，渲染层用 blob URL 显示。
      */

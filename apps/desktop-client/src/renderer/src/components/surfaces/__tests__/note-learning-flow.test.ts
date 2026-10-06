@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RoundNextStepV1 } from "@ailearn/shared/note-learning-round-contracts";
+import type { RoundNextStepV1 } from "@astella/shared/note-learning-round-contracts";
 import { noteLearningScene, notePracticeResultCopy, roundTrackNextV1, roundTrackV1 } from "../notebook/note-learning-flow.ts";
 
 const step = (kind: RoundNextStepV1["kind"], evidence: RoundNextStepV1["evidence"] = "none"): RoundNextStepV1 =>

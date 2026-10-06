@@ -4,7 +4,7 @@
 -- have no current writer or reader; keeping them would leave a second
 -- canonical learning path in a fresh database.
 
-DROP FUNCTION IF EXISTS public.ailearn_purge_tutor_nonces_ttl(integer, integer);
+DROP FUNCTION IF EXISTS public.astella_purge_tutor_nonces_ttl(integer, integer);
 
 DROP TABLE IF EXISTS public.learning_tutor_action_nonces;
 DROP TABLE IF EXISTS public.learning_tutor_permissions;

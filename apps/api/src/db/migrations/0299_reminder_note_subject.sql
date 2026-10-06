@@ -2,7 +2,7 @@
 --
 -- §16.13 的验收原话是"共享撤销后，**通知**和历史不泄露受保护内容"。今天这一半是破的，
 -- 而且破在一个很基础的地方：`companion_reminders`（0238）只有 `text` 一列，
--- `ailearn_fire_due_companion_reminders`（0270）只按"账号开关／离线／空间静音"三道闸放行。
+-- `astella_fire_due_companion_reminders`（0270）只按"账号开关／离线／空间静音"三道闸放行。
 -- 于是**没有任何一处能知道一条提醒是在说哪篇笔记**——共享撤回之后，那句"提醒你看
 -- 《数据库索引优化策略》第 3 节"照样到点弹出来，标题就在正文里。
 --
@@ -51,7 +51,7 @@ CREATE INDEX IF NOT EXISTS companion_reminders_note_idx
 -- 先 UPDATE 再 SELECT：把撤不掉的那些**当场置为 cancelled**（留下"为什么没弹"的痕迹，
 -- 而不是让它无限期停在 pending），SELECT 剩下的就是可以直接投递的。
 -- 两处都按 `user_id` 走，因为 `visibleNotesCondition` 的第二支是 `created_by = 本人`。
-CREATE OR REPLACE FUNCTION public.ailearn_fire_due_companion_reminders(p_limit integer)
+CREATE OR REPLACE FUNCTION public.astella_fire_due_companion_reminders(p_limit integer)
   RETURNS integer
   LANGUAGE plpgsql
   SECURITY DEFINER
@@ -137,11 +137,11 @@ $function$;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_fire_due_companion_reminders(integer) IS
+COMMENT ON FUNCTION public.astella_fire_due_companion_reminders(integer) IS
   '到点提醒兑现。闸：超时→missed、来源笔记失权→cancelled、账号开关/离线/空间静音→不选；余下投递 assistant_deliveries';
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_fire_due_companion_reminders(integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_fire_due_companion_reminders(integer) TO ailearn_worker;
-GRANT EXECUTE ON FUNCTION public.ailearn_fire_due_companion_reminders(integer) TO ailearn_migrator;
+REVOKE ALL ON FUNCTION public.astella_fire_due_companion_reminders(integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_fire_due_companion_reminders(integer) TO astella_worker;
+GRANT EXECUTE ON FUNCTION public.astella_fire_due_companion_reminders(integer) TO astella_migrator;

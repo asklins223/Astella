@@ -11,7 +11,7 @@
  *   - 新增一张表漏掉外键或 RLS → 变红，必须当场补上（或显式写进基线并说明理由）；
  *   - 修好一张却没从基线里删 → 也变红，保证基线只减不增、不会烂掉。
  *
- * 真实 Postgres；用受限角色（ailearn_api，NOBYPASSRLS）。
+ * 真实 Postgres；用受限角色（astella_api，NOBYPASSRLS）。
  */
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
@@ -88,7 +88,7 @@ after(async () => {
  *
  * 2026-09-29（P0-4）：这里原来只 JOIN `a.attname = 'workspace_id'`。
  * 而 `users` 用的是 `id`——于是这条"零容忍"的 RLS 棘轮对它**恒真通过**，
- * 一张存着 `email` 与 `password_hash`、且给 `ailearn_api` 开了无差别全表权限的表，
+ * 一张存着 `email` 与 `password_hash`、且给 `astella_api` 开了无差别全表权限的表，
  * 在这道检查的视野里根本不存在。它在 `users-rls-postgres.integration.ts`
  * 落地之前，实测可以被任一空间的成员读走整个工作区之外的 `email` 与
  * `password_hash`，并能被改写。

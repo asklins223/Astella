@@ -105,7 +105,7 @@ import {
   type NoteDocStateResultV1,
   type NoteDocStreamEventV1,
   type NoteDocUploadResultV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import {
   desktopSourceListPageSchema,
   desktopSourceDetailSchema,
@@ -132,7 +132,7 @@ import {
   type DesktopSearchPage,
   type DesktopAiAuditPageV1,
   desktopAiAuditPageV1Schema,
-} from "@ailearn/shared/desktop-surface-contracts";
+} from "@astella/shared/desktop-surface-contracts";
 import type { GatewayTransport } from "./desktop-gateway-transport";
 
 export async function getSearchDrift(t: GatewayTransport, requestId?: string): Promise<SearchDriftResultV1> {

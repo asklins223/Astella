@@ -29,7 +29,7 @@ name: Desktop release
 # 唯一来源是 `release/desktop-version.json`，构建前由
 # `.github/scripts/desktop-version.mjs` 同步到 `apps/desktop-client/package.json`
 # 与其 lockfile——electron-builder 的 `${version}` 取自 package.json，
-# 产物名 `ailearn-<version>-win-x64.exe` 里的版本号就是这么来的。
+# 产物名 `astella-<version>-win-x64.exe` 里的版本号就是这么来的。
 # tag 必须与它一致，否则两端产物与 Release 标题会各说各话。
 
 on:
@@ -160,10 +160,10 @@ jobs:
 
           # 两个平台必须打出**同一个版本**的包：自动更新按版本号判新旧，
           # 两端版本分叉意味着"一半用户永远升不到最新"。
-          win_installer="artifacts/ailearn-${EXPECTED_VERSION}-win-x64.exe"
+          win_installer="artifacts/astella-${EXPECTED_VERSION}-win-x64.exe"
           win_blockmap="${win_installer}.blockmap"
-          mac_zip="artifacts/ailearn-${EXPECTED_VERSION}-mac-${MACOS_ARCH}.zip"
-          mac_dmg="artifacts/ailearn-${EXPECTED_VERSION}-mac-${MACOS_ARCH}.dmg"
+          mac_zip="artifacts/astella-${EXPECTED_VERSION}-mac-${MACOS_ARCH}.zip"
+          mac_dmg="artifacts/astella-${EXPECTED_VERSION}-mac-${MACOS_ARCH}.dmg"
 
           for f in "$win_installer" "$win_blockmap" "$mac_zip" "$mac_dmg"; do
             if [ ! -s "$f" ]; then echo "::error::缺少发布产物: $f" >&2; exit 1; fi
@@ -203,7 +203,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.resolve.outputs.tag }}
-          name: 理解引擎 ${{ needs.resolve.outputs.tag }}
+          name: 拾星笔记 ${{ needs.resolve.outputs.tag }}
           # 变更清单交给 GitHub 自己按 tag 区间生成（比在 runner 上手搓 git log
           # 可靠：runner 里只有浅检出，父提交常常不在本地）。
           generate_release_notes: true
@@ -214,10 +214,10 @@ jobs:
           files: |
             artifacts/latest.yml
             artifacts/latest-mac.yml
-            artifacts/ailearn-${{ needs.resolve.outputs.version }}-win-x64.exe
-            artifacts/ailearn-${{ needs.resolve.outputs.version }}-win-x64.exe.blockmap
-            artifacts/ailearn-${{ needs.resolve.outputs.version }}-mac-${{ needs.build.outputs.macos_arch }}.zip
-            artifacts/ailearn-${{ needs.resolve.outputs.version }}-mac-${{ needs.build.outputs.macos_arch }}.dmg
+            artifacts/astella-${{ needs.resolve.outputs.version }}-win-x64.exe
+            artifacts/astella-${{ needs.resolve.outputs.version }}-win-x64.exe.blockmap
+            artifacts/astella-${{ needs.resolve.outputs.version }}-mac-${{ needs.build.outputs.macos_arch }}.zip
+            artifacts/astella-${{ needs.resolve.outputs.version }}-mac-${{ needs.build.outputs.macos_arch }}.dmg
 
       - name: Publish the release
         env:

@@ -16,12 +16,12 @@ import { after, test } from "node:test";
 // 「这个文件 import 了本地模块、因此它是行为测试」。多行 import 匹配不上，
 // 会把本文件误判成源码文本守卫并把棘轮基线顶上去。
 import { ConfigWriteError, readConfigSnapshot, resolveConfigPath, validateConfig, writeConfig } from "../config-service.ts";
-import { resetPlatformConfigCache } from "@ailearn/shared/platform-config-node";
+import { resetPlatformConfigCache } from "@astella/shared/platform-config-node";
 
 const originalPath = process.env.AI_PLATFORMS_CONFIG;
 
 async function withTempConfig(contents: unknown): Promise<{ dir: string; path: string }> {
-  const dir = await mkdtemp(join(tmpdir(), "ailearn-admin-config-"));
+  const dir = await mkdtemp(join(tmpdir(), "astella-admin-config-"));
   const path = join(dir, "ai-platforms.json");
   await writeFile(path, typeof contents === "string" ? contents : JSON.stringify(contents, null, 2), "utf8");
   process.env.AI_PLATFORMS_CONFIG = path;
@@ -332,7 +332,7 @@ test("写入：只读路径明确报错 config_read_only，不假装成功", asy
 });
 
 test("读取：配置不存在时给出可行动的状态而不是抛错", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ailearn-admin-missing-"));
+  const dir = await mkdtemp(join(tmpdir(), "astella-admin-missing-"));
   process.env.AI_PLATFORMS_CONFIG = join(dir, "nope.json");
   resetPlatformConfigCache();
   const snapshot = await readConfigSnapshot();

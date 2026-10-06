@@ -34,12 +34,12 @@ import {
   learningObjectiveLineageV2,
   learningObjectiveOriginsV2,
   learningExposuresV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { learningRuns, canonicalLearningEventOutbox, practiceTrailEventOutbox } from "@ailearn/shared/db-schema/learning-runs";
-import { notes } from "@ailearn/shared/db-schema/note";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { learningRuns, canonicalLearningEventOutbox, practiceTrailEventOutbox } from "@astella/shared/db-schema/learning-runs";
+import { notes } from "@astella/shared/db-schema/note";
 import { visibleNotesCondition, visibleObjectivesCondition } from "../note/visibility.ts";
-import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
-import { EXPOSURE_KINDS_V2 } from "@ailearn/shared/learning-card-v2-contracts";
+import { reviewSchedules } from "@astella/shared/db-schema/evidence";
+import { EXPOSURE_KINDS_V2 } from "@astella/shared/learning-card-v2-contracts";
 import type {
   LearningObjectiveSurfaceV3,
   ObjectiveOriginV3,
@@ -49,20 +49,20 @@ import type {
   KnowledgeFormV2,
   ObjectiveSurfaceLifecycleV3,
   ObjectiveSurfaceFreshnessV3,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import {
   DomainError,
   cardStrategyV2Schema,
   learningRunOutcomeSchema,
   objectiveSurfaceFreshnessV1,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import { listOriginsByObjective, rowToWire } from "./origin-service.ts";
 import { liveHoldForObjectiveV2, liveHoldsForObjectivesV2 } from "../review/objective-review-holds.ts";
 import { pickLatestCompletedRunV3, resolvePrimaryActionV3, type ActionResolverInputV3 } from "./action-resolver.ts";
 import { readAnswerModePreference } from "../companion-shell/answer-mode-preference.ts";
 import { readObjectiveNoteChangeImpactV1 } from "./change-impact-service.ts";
 import { surfaceQueryDurationSeconds, surfaceSlowQueryTotal } from "../../lib/metrics.ts";
-import { isActiveLearningRunPhase } from "@ailearn/shared/learning-run-contracts";
+import { isActiveLearningRunPhase } from "@astella/shared/learning-run-contracts";
 import { clampLimit } from "../../lib/pagination-utils.ts";
 
 export class ObjectiveNotFoundError extends DomainError {

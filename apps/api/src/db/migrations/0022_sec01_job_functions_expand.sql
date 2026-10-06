@@ -6,12 +6,12 @@
 -- functions give the Worker a narrow, fenced interface that:
 --
 --   * Accepts only (job_id, workspace_id, lease_token) as the identity fence,
---     matching the immutable token assigned by ailearn_claim_jobs.
+--     matching the immutable token assigned by astella_claim_jobs.
 --   * Performs the state transition and derived fields (attempts, backoff,
 --     finished_at, scheduled_at) inside the function so the Worker cannot set
 --     arbitrary column values.
 --   * Clamps caller-controlled inputs (max_attempts) the same way
---     ailearn_claim_jobs and ailearn_reap_stale_jobs do.
+--     astella_claim_jobs and astella_reap_stale_jobs do.
 --   * Returns enough information for the Worker to report the transition
 --     without reading the row back separately.
 --
@@ -19,11 +19,11 @@
 -- and leaves RLS disabled.  The enforce migration will REVOKE direct UPDATE
 -- on jobs from the Worker role and rely on these functions instead.
 
--- ─── 1. ailearn_renew_job_lease ────────────────────────────────────
+-- ─── 1. astella_renew_job_lease ────────────────────────────────────
 -- Called by lockJobLease() while the Worker holds the business transaction
 -- row lock.  Refreshes started_at so the reaper cannot release a lease that
 -- is still actively committing side effects.
-CREATE OR REPLACE FUNCTION public.ailearn_renew_job_lease(
+CREATE OR REPLACE FUNCTION public.astella_renew_job_lease(
   p_job_id uuid,
   p_workspace_id uuid,
   p_lease_token text
@@ -46,11 +46,11 @@ AS $function$
 $function$;
 --> statement-breakpoint
 
--- ─── 2. ailearn_finish_job ─────────────────────────────────────────
+-- ─── 2. astella_finish_job ─────────────────────────────────────────
 -- Marks a job as succeeded.  The fence (id + workspace_id + status='running'
 -- + lease_token) prevents a reaped or re-claimed job from being finished by
 -- a stale Worker.
-CREATE OR REPLACE FUNCTION public.ailearn_finish_job(
+CREATE OR REPLACE FUNCTION public.astella_finish_job(
   p_job_id uuid,
   p_workspace_id uuid,
   p_lease_token text
@@ -76,7 +76,7 @@ AS $function$
 $function$;
 --> statement-breakpoint
 
--- ─── 3. ailearn_fail_job ───────────────────────────────────────────
+-- ─── 3. astella_fail_job ───────────────────────────────────────────
 -- Marks a job as failed and either returns it to pending (with exponential
 -- backoff) or transitions it to dead when max_attempts is reached.
 --
@@ -86,7 +86,7 @@ $function$;
 --
 -- Returns (status, attempts, backoff_ms) so the Worker can report the
 -- transition without a separate read.  backoff_ms is 0 for dead jobs.
-CREATE OR REPLACE FUNCTION public.ailearn_fail_job(
+CREATE OR REPLACE FUNCTION public.astella_fail_job(
   p_job_id uuid,
   p_workspace_id uuid,
   p_lease_token text,
@@ -163,19 +163,19 @@ $function$;
 -- Only the Worker role may call these functions.  API and migrator retain
 -- their existing privileges; PUBLIC is revoked so any future role does not
 -- inherit queue mutation paths by default.
-REVOKE ALL ON FUNCTION public.ailearn_renew_job_lease(uuid, uuid, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.ailearn_finish_job(uuid, uuid, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.ailearn_fail_job(uuid, uuid, text, text, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_renew_job_lease(uuid, uuid, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_finish_job(uuid, uuid, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_fail_job(uuid, uuid, text, text, integer) FROM PUBLIC;
 --> statement-breakpoint
 
-GRANT EXECUTE ON FUNCTION public.ailearn_renew_job_lease(uuid, uuid, text) TO ailearn_worker;
-GRANT EXECUTE ON FUNCTION public.ailearn_finish_job(uuid, uuid, text) TO ailearn_worker;
-GRANT EXECUTE ON FUNCTION public.ailearn_fail_job(uuid, uuid, text, text, integer) TO ailearn_worker;
+GRANT EXECUTE ON FUNCTION public.astella_renew_job_lease(uuid, uuid, text) TO astella_worker;
+GRANT EXECUTE ON FUNCTION public.astella_finish_job(uuid, uuid, text) TO astella_worker;
+GRANT EXECUTE ON FUNCTION public.astella_fail_job(uuid, uuid, text, text, integer) TO astella_worker;
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_renew_job_lease(uuid, uuid, text) IS
+COMMENT ON FUNCTION public.astella_renew_job_lease(uuid, uuid, text) IS
   'SEC-01 Worker lease renewal; fenced by (id, workspace_id, running, lease_token)';
-COMMENT ON FUNCTION public.ailearn_finish_job(uuid, uuid, text) IS
+COMMENT ON FUNCTION public.astella_finish_job(uuid, uuid, text) IS
   'SEC-01 Worker job success transition; fenced by (id, workspace_id, running, lease_token)';
-COMMENT ON FUNCTION public.ailearn_fail_job(uuid, uuid, text, text, integer) IS
+COMMENT ON FUNCTION public.astella_fail_job(uuid, uuid, text, text, integer) IS
   'SEC-01 Worker job failure transition with exponential backoff; fenced by (id, workspace_id, running, lease_token)';

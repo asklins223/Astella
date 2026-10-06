@@ -63,7 +63,7 @@ import { isMemoryContextEnabled, isMemoryVectorRebuildEnabled } from "../../../c
 import {
   accountPreferenceRejectionMessage,
   type AccountPreferenceWriteRejection,
-} from "@ailearn/shared/companion-memory-scope";
+} from "@astella/shared/companion-memory-scope";
 
 /**
  * 账号级（跨空间）写入被拒时的对外回执（42 阶段 1 E）。

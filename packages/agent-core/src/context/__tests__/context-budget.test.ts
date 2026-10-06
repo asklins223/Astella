@@ -5,7 +5,7 @@ import {
   CONTEXT_TRIGGER_RATIO, CONTEXT_TARGET_RATIO, CONTEXT_OVERHEAD_TOKENS,
   CONSERVATIVE_DEFAULT_OUTPUT_TOKENS, REGISTERED_FALLBACK_CONTEXT_WINDOW_TOKENS,
 } from "../context-budget.ts";
-import type { ProviderCapability } from "@ailearn/shared";
+import type { ProviderCapability } from "@astella/shared";
 
 const capability = (over: Partial<ProviderCapability> = {}): ProviderCapability => ({
   providerId: "openai_compatible",

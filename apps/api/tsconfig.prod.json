@@ -28,7 +28,7 @@
     "src/integration-tests",
     // ⚠️ 唯一的例外，必须与 .dockerignore 里那一条保持一致。
     // `note-round-learning-live.ts` 是**真模型冒烟脚本**而不是生产代码：它要求
-    // NOTE_ROUND_LIVE=1、要求库名匹配 ailearn_note39_* 的**一次性可弃库**，没有任何
+    // NOTE_ROUND_LIVE=1、要求库名匹配 astella_note39_* 的**一次性可弃库**，没有任何
     // npm script / Makefile 入口，也没有任何模块 import 它（server.ts 到不了它）。
     // 但它第 9 行 import 了 `integration-tests/helpers/pure-v2-workspace-fixture.ts`。
     // tsc 的 `exclude` 只过滤 include 的 glob、**挡不住被 import 拉进来的文件**，所以

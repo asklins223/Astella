@@ -4,11 +4,11 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { ApiTransaction } from "../../db/client.ts";
 import { withWorkspaceTransaction } from "../../db/client.ts";
-import { jobs } from "@ailearn/shared/db-schema/job";
-import { noteExpansionTasks, noteExpansions } from "@ailearn/shared/db-schema/note-expansions";
-import { noteBlocks, noteVersions, notes } from "@ailearn/shared/db-schema/note";
-import { JobStatus, JobType } from "@ailearn/shared/enums";
-import { noteAnchorMatchesV1 } from "@ailearn/shared/note-annotation-contracts";
+import { jobs } from "@astella/shared/db-schema/job";
+import { noteExpansionTasks, noteExpansions } from "@astella/shared/db-schema/note-expansions";
+import { noteBlocks, noteVersions, notes } from "@astella/shared/db-schema/note";
+import { JobStatus, JobType } from "@astella/shared/enums";
+import { noteAnchorMatchesV1 } from "@astella/shared/note-annotation-contracts";
 import {
   confirmNoteExpansionTaskV1Schema,
   createNoteExpansionTaskV1Schema,
@@ -23,8 +23,8 @@ import {
   type NoteExpansionDraftV1,
   type NoteExpansionLinkV1,
   type NoteExpansionTaskV1,
-} from "@ailearn/shared/note-expansion-contracts";
-import { readNoteExpansionGenerateJobPayload } from "@ailearn/shared/job-payload-contracts";
+} from "@astella/shared/note-expansion-contracts";
+import { readNoteExpansionGenerateJobPayload } from "@astella/shared/job-payload-contracts";
 import type { z } from "zod";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import { classifyJobFailureReason } from "../job/service.ts";

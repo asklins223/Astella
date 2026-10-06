@@ -1,14 +1,14 @@
 import { sql } from "drizzle-orm";
-import { groupAgentMethodEvidenceOrigins, planAgentMethodProposal, planMethodStepsFromRun, reconcileEvidenceEpistemicStatus } from "@ailearn/agent-core";
-import { agentGoalCapabilityManifest } from "@ailearn/shared/agent-capabilities";
+import { groupAgentMethodEvidenceOrigins, planAgentMethodProposal, planMethodStepsFromRun, reconcileEvidenceEpistemicStatus } from "@astella/agent-core";
+import { agentGoalCapabilityManifest } from "@astella/shared/agent-capabilities";
 import {
   agentMethodV1Schema, agentMethodUseV1Schema,
   type AgentMethodV1, type AgentMethodEvidenceV1, type AgentMethodCapabilityV1,
   type proposeAgentMethodV1Schema, type reviseAgentMethodV1Schema, type controlAgentMethodV1Schema,
-} from "@ailearn/shared/agent-growth-contracts";
+} from "@astella/shared/agent-growth-contracts";
 import type { z } from "zod";
-import { agentMethodEvidenceV1Schema } from "@ailearn/shared/agent-growth-contracts";
-import type { AgentScopeV1 } from "@ailearn/shared/agent-contracts";
+import { agentMethodEvidenceV1Schema } from "@astella/shared/agent-growth-contracts";
+import type { AgentScopeV1 } from "@astella/shared/agent-contracts";
 import { AgentStoreError, queryRows, readRun, projectRun, type AgentSqlExecutor, type AgentStorePorts } from "./store.ts";
 
 export interface AgentMethodRow {
@@ -87,7 +87,7 @@ const stats = sql`LEFT JOIN LATERAL (SELECT
   WHERE u.method_id=p.id AND u.workspace_id=p.workspace_id AND u.user_id=p.user_id AND u.method_revision=p.version) s ON true`;
 async function readRow(tx: AgentSqlExecutor, scope: AgentScopeV1, id: string): Promise<AgentMethodRow> {
   const [row] = await queryRows<AgentMethodRow>(tx, sql`SELECT p.*,s.*,
-    ailearn_agent_method_sources_current(p.id,p.workspace_id,p.user_id) AS sources_current
+    astella_agent_method_sources_current(p.id,p.workspace_id,p.user_id) AS sources_current
     FROM companion_procedural_playbooks p ${stats}
     WHERE p.id=${id} AND p.workspace_id=${scope.workspaceId} AND p.user_id=${scope.userId}`);
   if (!row) throw new AgentStoreError(404,"method_not_found","这个方法现在读不到。");
@@ -106,7 +106,7 @@ async function lockVersion(tx: AgentSqlExecutor, scope: AgentScopeV1, id: string
  */
 export async function listAgentMethods(tx: AgentSqlExecutor, scope: AgentScopeV1, activeOnly = false) {
   const rows = await queryRows<AgentMethodRow>(tx, sql`SELECT p.*,s.*,
-    ailearn_agent_method_sources_current(p.id,p.workspace_id,p.user_id) AS sources_current
+    astella_agent_method_sources_current(p.id,p.workspace_id,p.user_id) AS sources_current
     FROM companion_procedural_playbooks p ${stats}
     WHERE p.workspace_id=${scope.workspaceId} AND p.user_id=${scope.userId}
       ${activeOnly ? sql`AND p.method_state='active' AND p.epistemic_status='supported'` : sql``}
@@ -199,7 +199,7 @@ export async function upsertAgentMethodCandidate(tx: AgentSqlExecutor, scope: Ag
    *
    * 三件事必须分开做，合成一件就会出错：
    *   - `evidence` **保完整**：一次运行派生出的记忆、摘要、候选都要留在里面。
-   *     `ailearn_propagate_playbook_evidence_change` 正是按 `memoryId` 找派生方法，
+   *     `astella_propagate_playbook_evidence_change` 正是按 `memoryId` 找派生方法，
    *     用户遗忘或纠正一条记忆时要让它失效——把记忆引用折掉，这条传播路径就断了。
    *   - `evidenceOrigins` 存来源归并回执，供**计数**用。
    *   - 认识状态按归并结果校正：同源重述不得包装成多方印证。

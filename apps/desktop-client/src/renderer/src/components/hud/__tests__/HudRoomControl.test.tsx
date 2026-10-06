@@ -169,7 +169,7 @@ function stubAccountGateway(options: { readonly avatarUrl?: string | null } = {}
     schemaRevision: "desktop-ipc-v1",
   });
   const avatarUrl = options.avatarUrl ?? null;
-  Object.defineProperty(window, "ailearn", {
+  Object.defineProperty(window, "astella", {
     configurable: true,
     value: {
       auth: {
@@ -184,7 +184,7 @@ function stubAccountGateway(options: { readonly avatarUrl?: string | null } = {}
 describe("顶栏账户槽位", () => {
   afterEach(() => {
     cleanup();
-    Reflect.deleteProperty(window, "ailearn");
+    Reflect.deleteProperty(window, "astella");
     useRoomStore.setState({ accountIdentity: null, accountAvatar: null });
   });
 
@@ -298,7 +298,7 @@ describe("顶栏账户槽位", () => {
 describe("再点同一个槽位收起它的卡", () => {
   afterEach(() => {
     cleanup();
-    Reflect.deleteProperty(window, "ailearn");
+    Reflect.deleteProperty(window, "astella");
     useRoomStore.setState({ accountIdentity: null, accountAvatar: null });
   });
 
@@ -365,7 +365,7 @@ describe("再点同一个槽位收起它的卡", () => {
 describe("折叠印章里的这张脸", () => {
   afterEach(() => {
     cleanup();
-    Reflect.deleteProperty(window, "ailearn");
+    Reflect.deleteProperty(window, "astella");
     useRoomStore.setState({ accountIdentity: null, accountAvatar: null });
   });
 

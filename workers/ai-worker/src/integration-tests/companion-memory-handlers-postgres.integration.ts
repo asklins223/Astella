@@ -15,7 +15,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { getCompanionAgentTool } from "@ailearn/shared";
+import { getCompanionAgentTool } from "@astella/shared";
 import { runCompanionMemoryEmbeddingRebuild } from "../handlers/companion-memory-embedding.ts";
 import { executeDirectTool, executeReadTool } from "../handlers/companion-tool-execution.ts";
 import { CompanionToolError } from "../handlers/companion-tool-result.ts";
@@ -117,7 +117,7 @@ await admin`
           NULL, true, true, false, 0.8, 0.9, 'global',
           'user_stated', 'user', ${userId}, 'supported', ${accountMemoryId}, 'pending')
 `;
-await admin`SELECT public.ailearn_fanout_global_companion_memory(${accountMemoryId}::uuid) AS inserted`;
+await admin`SELECT public.astella_fanout_global_companion_memory(${accountMemoryId}::uuid) AS inserted`;
 // 空间内的一条：用来证明账号级守卫没有顺手拦掉正常修订。
 await admin`
   INSERT INTO assistant_memory_items

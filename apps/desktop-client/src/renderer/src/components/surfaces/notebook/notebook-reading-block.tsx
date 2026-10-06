@@ -5,7 +5,7 @@
  *
  * 那个文件有 5519 行，其中 `NotebookSurface` 单个函数就 4449 行、约 190 个 hook。
  * 这一簇是其中**耦合最干净**的一块：三个组件全是 props 进、JSX 出，不碰任何页面级状态，
- * 依赖只有四个 `@ailearn/shared` 的类型与两个别处已导出的纯函数
+ * 依赖只有四个 `@astella/shared` 的类型与两个别处已导出的纯函数
  * （`noteBlockText` / `noteInlineDisplayText`）。所以它是拆分的第一步——
  * 先搬走「搬得动且搬完行为不变」的部分，剩下的主体再按功能域切。
  */
@@ -13,18 +13,18 @@
 import { Clock3, History, Link2, LoaderCircle, MessageCircle, PencilLine, RefreshCw, Sparkles, X } from "lucide-react";
 import { Fragment } from "react";
 import type { ReactNode } from "react";
-import type { NoteBlockProjectionV1 } from "@ailearn/shared/note-projection-contracts";
+import type { NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
 import type {
   NoteAnnotationAnchorV1,
   NoteAnnotationTaskV1,
   NoteAnnotationV1,
-} from "@ailearn/shared/note-annotation-contracts";
-import { noteAnchorBlockRangeV1 } from "@ailearn/shared/note-annotation-contracts";
-import type { NoteLearningArtifactTaskV1 } from "@ailearn/shared/note-learning-artifact-contracts";
+} from "@astella/shared/note-annotation-contracts";
+import { noteAnchorBlockRangeV1 } from "@astella/shared/note-annotation-contracts";
+import type { NoteLearningArtifactTaskV1 } from "@astella/shared/note-learning-artifact-contracts";
 import { noteBlockText } from "./surface-data.tsx";
 import { isHorizontalRule, noteInlineDisplayText, noteInlineImages, renderNoteInline, renderNotePlainText } from "./note-reading-inline.tsx";
-import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
-import { parseMarkdownTable } from "@ailearn/shared/note-doc-schema";
+import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
+import { parseMarkdownTable } from "@astella/shared/note-doc-schema";
 import { parseImageBlock } from "./surface-data.tsx";
 import { useSourceImage } from "../source/source-image.ts";
 import { ZoomableReadingImage } from "../source/image-viewer.tsx";
@@ -237,7 +237,7 @@ export function ReadingBlockContent({
  * A stored image block (`![alt](url)`).
  *
  * 从来源起稿的笔记里，这个地址是 `/api/uploads/{objectKey}`：解析把网页内嵌图片
- * 下载进对象存储后改写的站内引用。渲染层的 origin 是 `ailearn-app://`，相对路径
+ * 下载进对象存储后改写的站内引用。渲染层的 origin 是 `astella-app://`，相对路径
  * 会落到应用包内，所以图由 main 带会话令牌取回字节，这里用 blob URL 画出来。
  * 站外地址仍原样交给 `<img>`；取不回来时只这一张缺位，正文照旧读下去。
  */

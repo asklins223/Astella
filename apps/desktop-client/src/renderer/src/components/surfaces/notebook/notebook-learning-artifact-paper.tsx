@@ -1,9 +1,9 @@
 import type { Ref } from "react";
-import type { NoteLearningArtifactV1 } from "@ailearn/shared/note-learning-artifact-contracts";
-import type { NoteBlockProjectionV1 } from "@ailearn/shared/note-projection-contracts";
-import { plainTextForGroundingV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact-measure";
+import type { NoteLearningArtifactV1 } from "@astella/shared/note-learning-artifact-contracts";
+import type { NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
+import { plainTextForGroundingV1 } from "@astella/shared/note-dynamic-artifact/round-artifact-measure";
 import { ArtifactFrameHost } from "../source/artifact-frame-host";
-import type { NoteLearningArtifactTaskV1 } from "@ailearn/shared/note-learning-artifact-contracts";
+import type { NoteLearningArtifactTaskV1 } from "@astella/shared/note-learning-artifact-contracts";
 import { TaskSlip } from "./task-slip";
 
 export function NotebookLearningArtifactPaper(props: {

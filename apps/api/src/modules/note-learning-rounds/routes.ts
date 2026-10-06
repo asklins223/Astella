@@ -1,6 +1,6 @@
 /**
  * 轮次的 HTTP 入口（39d W4-5 第三刀；服务是 `round-service.ts`，合同是
- * `@ailearn/shared/note-learning-round-contracts`）。
+ * `@astella/shared/note-learning-round-contracts`）。
  *
  *   POST  /v2/note-learning-rounds                        —— 开一轮（快照与预算都在服务端定）
  *   GET   /v2/notes/:noteId/learning-round                —— 这一篇此刻未完成的那一轮
@@ -28,13 +28,13 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type {
   NoteLearningRoundHistoryMaskedItemV1,
-} from "@ailearn/shared/note-learning-round-contracts";
+} from "@astella/shared/note-learning-round-contracts";
 import { z } from "zod";
 import { and, eq, sql } from "drizzle-orm";
 import { currentApiWorkspaceTransaction, scopeOfSession, type ApiTransaction, withWorkspaceTransaction } from "../../db/client.ts";
 import { requireSession } from "../identity/middleware.ts";
 import { getNoteWithVersion } from "../note/service.ts";
-import type { NoteLearningRoundRow } from "@ailearn/shared/db-schema/note-learning-rounds";
+import type { NoteLearningRoundRow } from "@astella/shared/db-schema/note-learning-rounds";
 import {
   advanceNoteLearningRoundRequestV1Schema,
   appendRoundPlanRevisionRequestV1Schema,
@@ -62,7 +62,7 @@ import {
   type RoundPracticeStartV1,
   type RoundPracticeV1,
   type RoundSuspectClaimV1,
-} from "@ailearn/shared/note-learning-round-contracts";
+} from "@astella/shared/note-learning-round-contracts";
 import {
   advanceRound,
   appendPlanRevision,
@@ -96,26 +96,26 @@ import { createRoundRuntimeCollaborators } from "./runtime-collaborators.ts";
 import {
   runDynamicArtifactV1,
   type DynamicArtifactProviderV1,
-} from "@ailearn/shared/note-dynamic-artifact/round-artifact-model";
-import { ARTIFACT_MIN_STEPS_V1, groundArtifactStepsV1, plainTextForGroundingV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact-measure";
-import { checkArtifactDocumentV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact-doc";
-import type { RoundArtifactSourceV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact";
+} from "@astella/shared/note-dynamic-artifact/round-artifact-model";
+import { ARTIFACT_MIN_STEPS_V1, groundArtifactStepsV1, plainTextForGroundingV1 } from "@astella/shared/note-dynamic-artifact/round-artifact-measure";
+import { checkArtifactDocumentV1 } from "@astella/shared/note-dynamic-artifact/round-artifact-doc";
+import type { RoundArtifactSourceV1 } from "@astella/shared/note-dynamic-artifact/round-artifact";
 import {
   buildDynamicArtifactHtmlV1,
   DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1,
-} from "@ailearn/shared/note-dynamic-artifact/round-artifact-render";
+} from "@astella/shared/note-dynamic-artifact/round-artifact-render";
 import { buildRoundReadingPlan, suggestRoundQuestion } from "./learning-plan.ts";
 import { requireAiConsent } from "../identity/ai-consent-gate.ts";
 import { finishRoundModelAttempt, reserveRoundModelAttempt, type RoundModelAttempt } from "./model-attempt.ts";
 import { listNoteRoundPractices } from "../learning-runs/run-service.ts";
-import { learningObjectivesV2, learningObjectiveRevisionsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { objectiveRubricV2Schema } from "@ailearn/shared/card-generation-v2-contracts";
+import { learningObjectivesV2, learningObjectiveRevisionsV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { objectiveRubricV2Schema } from "@astella/shared/card-generation-v2-contracts";
 import { decideRoundNextStep } from "./round/round-progression.ts";
 import { readRoundGapHelpV1 } from "../learning-runs/gap-help/gap-help-service.ts";
 import { readRoundPrerequisiteProposalV1 } from "./prerequisite-proposal.ts";
 import { readLatestArtifactFailureV1 } from "./round/artifact-failure.ts";
 import { readNoteRouteCoverageV1 } from "./round/route-coverage.ts";
-import { noteRouteCoverageV1Schema } from "@ailearn/shared/note-route-coverage-v2";
+import { noteRouteCoverageV1Schema } from "@astella/shared/note-route-coverage-v2";
 import { assembleObjectiveSurfaceV3 } from "../learning-objectives/surface-service.ts";
 import { readNoteChangeImpactsV1 } from "../learning-objectives/change-impact-service.ts";
 import { selectGroundedApplicationScenario, selectGroundedRoundTarget, type RoundTargetGrounder } from "./target-grounding.ts";

@@ -15,8 +15,8 @@
  */
 import { StrictMode } from "react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { GatewayResultV1, SessionContextV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import { learningObjectiveSurfaceV3Schema } from "@ailearn/shared/learning-objective-surface-contracts";
+import type { GatewayResultV1, SessionContextV1 } from "@astella/shared/desktop-ipc-contracts";
+import { learningObjectiveSurfaceV3Schema } from "@astella/shared/learning-objective-surface-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../../../app/room-store.ts";
 import { SearchSurface } from "../study/search-surface.tsx";
@@ -95,7 +95,7 @@ function installApi(objectiveDetail?: unknown) {
       list: vi.fn(async () => ok({ items: [], total: 0, nextCursor: null })),
     },
   };
-  Object.defineProperty(window, "ailearn", { configurable: true, value: api });
+  Object.defineProperty(window, "astella", { configurable: true, value: api });
   return { api, calls };
 }
 
@@ -109,7 +109,7 @@ beforeEach(() => {
 afterEach(() => {
   useRoomStore.setState({ searchResume: null });
   cleanup();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   Reflect.deleteProperty(Element.prototype, "scrollTo");
   Reflect.deleteProperty(Element.prototype, "scrollIntoView");
   useRoomStore.setState({ searchQuery: "", searchTypeFilter: "all", searchWeakOnly: false, hudPage: "home" });

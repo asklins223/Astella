@@ -78,7 +78,7 @@ type AmbientRuntime = Readonly<{
 
 const COMPACT_MEDIA_QUERY = "(max-width: 760px), (max-height: 620px)";
 const LAMP_EFFECT_DURATION_MS = 520;
-const lampFrameCaptureStorageKey = "ailearn:auth-lamp-frame-capture";
+const lampFrameCaptureStorageKey = "astella:auth-lamp-frame-capture";
 
 function seededRandom(seed: number): () => number {
   let value = seed >>> 0;
@@ -115,14 +115,14 @@ function isLampFrameCaptureEnabled(): boolean {
   return window.localStorage.getItem(lampFrameCaptureStorageKey) === "paused";
 }
 
-function captureWindow(): Window & { __ailearnAuthAmbientCapture?: AmbientFrameCaptureController } {
-  return window as Window & { __ailearnAuthAmbientCapture?: AmbientFrameCaptureController };
+function captureWindow(): Window & { __astellaAuthAmbientCapture?: AmbientFrameCaptureController } {
+  return window as Window & { __astellaAuthAmbientCapture?: AmbientFrameCaptureController };
 }
 
 function clearAmbientFrameCapture(controller?: AmbientFrameCaptureController | null): void {
   const target = captureWindow();
-  if (!controller || target.__ailearnAuthAmbientCapture === controller) {
-    delete target.__ailearnAuthAmbientCapture;
+  if (!controller || target.__astellaAuthAmbientCapture === controller) {
+    delete target.__astellaAuthAmbientCapture;
   }
 }
 
@@ -481,7 +481,7 @@ export function AuthAmbientCanvas({ theme, variant, motionMode, lampCue = null }
         timing: () => ({ duration: LAMP_EFFECT_DURATION_MS / 1_000 }),
       };
       ambientCaptureController = controller;
-      captureWindow().__ailearnAuthAmbientCapture = controller;
+      captureWindow().__astellaAuthAmbientCapture = controller;
     };
 
     const triggerLampEffect = (cue: AuthAmbientLampCue) => {

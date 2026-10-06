@@ -21,12 +21,12 @@ import promClient, {
   collectDefaultMetrics,
 } from "prom-client";
 import http from "node:http";
-import { sharedAiCircuitRejectObserverHealth } from "@ailearn/shared/circuit-breaker";
+import { sharedAiCircuitRejectObserverHealth } from "@astella/shared/circuit-breaker";
 import {
   COMPANION_SUMMARY_TOTAL_DEF,
   COMPANION_MEMORY_USED_COUNT_DEF,
   COMPANION_MEMORY_RETRIEVAL_MODE_TOTAL_DEF,
-} from "@ailearn/shared/metrics-definitions";
+} from "@astella/shared/metrics-definitions";
 
 // ─── 指标注册器 ──────────────────────────────────────────────────────────
 
@@ -41,7 +41,7 @@ export const JOB_STATUSES = ["pending", "running", "succeeded", "failed", "dead"
 
 /** Job 队列深度 gauge（按 status 分桶） */
 export const jobQueueDepth = new Gauge({
-  name: "ailearn_job_queue_depth",
+  name: "astella_job_queue_depth",
   help: "Number of jobs in queue by status",
   labelNames: ["status"] as const,
   registers: [registry],
@@ -49,14 +49,14 @@ export const jobQueueDepth = new Gauge({
 
 /** 最老 pending job 的等待秒数 gauge */
 export const jobOldestPendingAgeSeconds = new Gauge({
-  name: "ailearn_job_oldest_pending_age_seconds",
+  name: "astella_job_oldest_pending_age_seconds",
   help: "Age of the oldest pending job in seconds",
   registers: [registry],
 });
 
 /** Job 终态计数器（succeeded/dead） */
 export const jobTerminalTotal = new Counter({
-  name: "ailearn_job_terminal_total",
+  name: "astella_job_terminal_total",
   help: "Total jobs that reached a terminal state",
   labelNames: ["type", "status"] as const,
   registers: [registry],
@@ -64,7 +64,7 @@ export const jobTerminalTotal = new Counter({
 
 /** Job 重试计数器 */
 export const jobRetriesTotal = new Counter({
-  name: "ailearn_job_retries_total",
+  name: "astella_job_retries_total",
   help: "Total job retries by type",
   labelNames: ["type"] as const,
   registers: [registry],
@@ -72,7 +72,7 @@ export const jobRetriesTotal = new Counter({
 
 /** Job lease 丢失计数器 */
 export const jobLeaseLostTotal = new Counter({
-  name: "ailearn_job_lease_lost_total",
+  name: "astella_job_lease_lost_total",
   help: "Total jobs where the lease was lost or reaped",
   labelNames: ["type"] as const,
   registers: [registry],
@@ -80,7 +80,7 @@ export const jobLeaseLostTotal = new Counter({
 
 /** Job 因不可重试错误（欠费/鉴权/配置）直接进入 dead 状态的计数器 */
 export const jobNonRetryableDeadTotal = new Counter({
-  name: "ailearn_job_non_retryable_dead_total",
+  name: "astella_job_non_retryable_dead_total",
   help: "Total jobs marked dead due to non-retryable errors (billing/auth/config)",
   labelNames: ["type"] as const,
   registers: [registry],
@@ -88,7 +88,7 @@ export const jobNonRetryableDeadTotal = new Counter({
 
 /** Job 运行时长直方图（秒） */
 export const jobDurationSeconds = new Histogram({
-  name: "ailearn_job_duration_seconds",
+  name: "astella_job_duration_seconds",
   help: "Job execution duration in seconds by type",
   labelNames: ["type"] as const,
   buckets: [0.5, 1, 2.5, 5, 10, 15, 30, 60, 90, 120],
@@ -138,7 +138,7 @@ export const companionSummaryTotal = new Counter({
  * 光看 jobs.status 分不出"没同意"和"模型挂了"。
  */
 export const companionDiaryTotal = new Counter({
-  name: "ailearn_companion_diary_total",
+  name: "astella_companion_diary_total",
   help: "Companion daily diary generation results",
   labelNames: ["result"] as const,
   registers: [registry],
@@ -192,7 +192,7 @@ export type ProviderCallOutcome = (typeof PROVIDER_CALL_OUTCOMES)[number];
  * 只要有一处漏了，告警就会静默少算。
  */
 export const providerCallsTotal = new Counter({
-  name: "ailearn_provider_calls_total",
+  name: "astella_provider_calls_total",
   help: "AI provider calls by provider, call kind and terminal outcome",
   labelNames: ["provider", "kind", "outcome"] as const,
   registers: [registry],
@@ -211,7 +211,7 @@ export const providerCallsTotal = new Counter({
  *   - `half_open`    half-open 里探测已在飞 → 挤掉后来者
  */
 export const aiCircuitOpenTotal = new Counter({
-  name: "ailearn_ai_circuit_open_total",
+  name: "astella_ai_circuit_open_total",
   help: "AI upstream calls rejected by the circuit breaker before any network request",
   labelNames: ["host", "reason"] as const,
   registers: [registry],
@@ -219,7 +219,7 @@ export const aiCircuitOpenTotal = new Counter({
 
 /** Optional circuit metrics observer health; a caught callback error must still alert. */
 export const aiCircuitObserverHealthy = new Gauge({
-  name: "ailearn_ai_circuit_observer_healthy",
+  name: "astella_ai_circuit_observer_healthy",
   help: "1 when the optional circuit rejection observer is installed and has no consecutive failures",
   registers: [registry],
   collect() {
@@ -228,7 +228,7 @@ export const aiCircuitObserverHealthy = new Gauge({
 });
 
 export const aiCircuitObserverFailureCount = new Gauge({
-  name: "ailearn_ai_circuit_observer_failure_count",
+  name: "astella_ai_circuit_observer_failure_count",
   help: "Process-local lifetime count of isolated circuit observer callback failures",
   registers: [registry],
   collect() {
@@ -237,7 +237,7 @@ export const aiCircuitObserverFailureCount = new Gauge({
 });
 
 export const aiCircuitObserverLastFailureTimestampSeconds = new Gauge({
-  name: "ailearn_ai_circuit_observer_last_failure_timestamp_seconds",
+  name: "astella_ai_circuit_observer_last_failure_timestamp_seconds",
   help: "Unix timestamp of the last isolated circuit observer callback failure, or zero",
   registers: [registry],
   collect() {
@@ -251,7 +251,7 @@ export const aiCircuitObserverLastFailureTimestampSeconds = new Gauge({
  * 超长调用本身就是要看的信号，不该落进 +Inf 桶。
  */
 export const providerCallDurationSeconds = new Histogram({
-  name: "ailearn_provider_call_duration_seconds",
+  name: "astella_provider_call_duration_seconds",
   help: "AI provider call duration in seconds by provider and call kind",
   labelNames: ["provider", "kind"] as const,
   buckets: [0.5, 1, 2.5, 5, 10, 20, 30, 60, 120, 300],
@@ -267,7 +267,7 @@ export const providerCallDurationSeconds = new Histogram({
  * "真的没用 token"在图上长得一样。
  */
 export const providerCallTokensTotal = new Counter({
-  name: "ailearn_provider_call_tokens_total",
+  name: "astella_provider_call_tokens_total",
   help: "AI provider tokens by provider, call kind and direction (prompt/completion)",
   labelNames: ["provider", "kind", "direction"] as const,
   registers: [registry],

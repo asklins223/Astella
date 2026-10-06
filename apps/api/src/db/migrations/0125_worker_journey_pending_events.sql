@@ -6,4 +6,4 @@
 
 --> statement-breakpoint
 
-GRANT INSERT ON public.companion_journey_pending_events TO ailearn_worker;
+GRANT INSERT ON public.companion_journey_pending_events TO astella_worker;

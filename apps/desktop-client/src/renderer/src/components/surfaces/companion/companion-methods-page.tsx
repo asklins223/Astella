@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { AgentMethodV1 } from "@ailearn/shared/agent-growth-contracts";
+import type { AgentMethodV1 } from "@astella/shared/agent-growth-contracts";
 import { gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { useRoomStore } from "../../../app/room-store";
 import { renderCompanionMarkdown } from "../../companion/companion-markdown";
@@ -16,7 +16,7 @@ const lines = (value:string) => value.split("\n").map(line=>line.trim()).filter(
 /** The paper owns full methods; the companion bubble only points here. */
 export function CompanionMethodsPage({refreshKey,requestedId,onFocusConsumed}:{refreshKey:number;requestedId?:string|null;onFocusConsumed?:()=>void}) {
   const scope=useRoomStore(state=>state.workspaceScopeRevision);
-  const resource=useCompanionResource(meta=>window.ailearn.agent.listMethods({meta}),[refreshKey,scope]);
+  const resource=useCompanionResource(meta=>window.astella.agent.listMethods({meta}),[refreshKey,scope]);
   useCompanionRecordsRefresh(resource.reload);
   const [selectedId,setSelectedId]=useState<string|null>(null), [query,setQuery]=useState("");
   const [draft,setDraft]=useState<Draft|null>(null), [busy,setBusy]=useState(false);
@@ -32,11 +32,11 @@ export function CompanionMethodsPage({refreshKey,requestedId,onFocusConsumed}:{r
     onFocusConsumed?.();
   },[requestedId,resource.section,resource.loading,onFocusConsumed]);
   const history=useCompanionResource(async meta=>{
-    const result=await window.ailearn.agent.getMethodHistory({meta,methodId:selectedId!});
+    const result=await window.astella.agent.getMethodHistory({meta,methodId:selectedId!});
     return result.ok ? {...result,data:{...result.data,methodId:selectedId}} : result;
   },[selectedId,selected?.revision,refreshKey,scope],selectedId!==null);
   const uses=useCompanionResource(async meta=>{
-    const result=await window.ailearn.agent.getMethodUses({meta,methodId:selectedId!});
+    const result=await window.astella.agent.getMethodUses({meta,methodId:selectedId!});
     return result.ok ? {...result,data:{...result.data,methodId:selectedId}} : result;
   },[selectedId,selected?.revision,refreshKey,scope],selectedId!==null);
   const write=async(action:()=>Promise<unknown>,success:string)=>{
@@ -58,14 +58,14 @@ export function CompanionMethodsPage({refreshKey,requestedId,onFocusConsumed}:{r
   const control=(action:"confirm"|"disable"|"restore")=>{
     if(!selected) return;
     const method=selected;
-    void write(async()=>unwrapGatewayResult(await window.ailearn.agent.controlMethod({meta:resource.meta(),methodId:method.methodId,
+    void write(async()=>unwrapGatewayResult(await window.astella.agent.controlMethod({meta:resource.meta(),methodId:method.methodId,
       request:{expectedRevision:method.revision,action}})),action==="disable" ? "已停用，后续合作不会再采用这条方法。" : "已确认采用；仍以你当下的要求和新材料为准。");
   };
   const save=()=>{
     if(!draft || !selected || selected.methodId!==draft.methodId) return;
     const edits=draft;
     void write(async()=>{
-      unwrapGatewayResult(await window.ailearn.agent.reviseMethod({meta:resource.meta(),methodId:edits.methodId,
+      unwrapGatewayResult(await window.astella.agent.reviseMethod({meta:resource.meta(),methodId:edits.methodId,
         request:{expectedRevision:edits.revision,title:edits.title,appliesWhen:edits.appliesWhen,steps:lines(edits.steps),exceptions:lines(edits.exceptions),reason:edits.reason}}));
       if(useRoomStore.getState().workspaceScopeRevision===scope) setDraft(null);
     },"修订已保存，旧版本和来源保留。");
@@ -114,7 +114,7 @@ export function CompanionMethodsPage({refreshKey,requestedId,onFocusConsumed}:{r
           <p>查阅表示伴星读取过这条方法；好不好用，由真实合作和你的反馈核对。</p>
           {uses.loading ? <p>正在读取使用记录…</p> : uses.section?.ok && uses.section.value.methodId===selectedId ? uses.section.value.items.length ? uses.section.value.items.map(use=><div className="cc-method-use" key={use.useId}>
             <span>{use.contextKind==="agent_goal" ? "任务中查阅" : "对话中查阅"} · 第 {use.methodRevision} 版 · {new Date(use.createdAt).toLocaleDateString("zh-CN")}</span>
-            <div className="cc-actions">{(["helpful","unhelpful"] as const).map(feedback=><button type="button" className="cc-link" key={feedback} disabled={busy} aria-pressed={use.feedback===feedback} onClick={()=>void write(async()=>unwrapGatewayResult(await window.ailearn.agent.feedbackMethod({meta:resource.meta(),useId:use.useId,request:{feedback}})),"这次合作的反馈已留下。")}>{feedback==="helpful" ? "这次有帮助" : "这次不合适"}</button>)}</div>
+            <div className="cc-actions">{(["helpful","unhelpful"] as const).map(feedback=><button type="button" className="cc-link" key={feedback} disabled={busy} aria-pressed={use.feedback===feedback} onClick={()=>void write(async()=>unwrapGatewayResult(await window.astella.agent.feedbackMethod({meta:resource.meta(),useId:use.useId,request:{feedback}})),"这次合作的反馈已留下。")}>{feedback==="helpful" ? "这次有帮助" : "这次不合适"}</button>)}</div>
           </div>) : <p>还没有后续使用记录。</p> : <SectionState message="使用记录暂时读不到" onRetry={()=>void uses.reload()} />}
         </details>
       </article> : null}

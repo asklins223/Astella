@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ReviewQueueV2 } from "@ailearn/shared/review-queue-v2-contracts";
+import type { ReviewQueueV2 } from "@astella/shared/review-queue-v2-contracts";
 import {
   DECK_DRAG_RATIO,
   DECK_EDGE_RESISTANCE,

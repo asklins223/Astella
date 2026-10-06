@@ -46,16 +46,16 @@ function chatProvider(behaviour: ChatBehaviour) {
 
 /** 读某个 (provider,kind,outcome) 桶的当前计数；没有这条样本时返回 0。 */
 async function calls(outcome: string, kind = "chat", provider = "openai_compatible"): Promise<number> {
-  return sample(`ailearn_provider_calls_total{provider="${provider}",kind="${kind}",outcome="${outcome}"}`);
+  return sample(`astella_provider_calls_total{provider="${provider}",kind="${kind}",outcome="${outcome}"}`);
 }
 
 async function tokens(direction: string, kind = "chat", provider = "openai_compatible"): Promise<number> {
-  return sample(`ailearn_provider_call_tokens_total{provider="${provider}",kind="${kind}",direction="${direction}"}`);
+  return sample(`astella_provider_call_tokens_total{provider="${provider}",kind="${kind}",direction="${direction}"}`);
 }
 
 /** 耗时直方图的观测条数。prom-client 按声明顺序输出标签，不是字典序。 */
 async function durationObserved(kind = "chat", provider = "openai_compatible"): Promise<number> {
-  return sample(`ailearn_provider_call_duration_seconds_count{provider="${provider}",kind="${kind}"}`);
+  return sample(`astella_provider_call_duration_seconds_count{provider="${provider}",kind="${kind}"}`);
 }
 
 /** 取一条指标样本的值。指标没有样本行 = 从未递增（不是 0，是"没记过"）。 */

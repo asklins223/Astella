@@ -33,13 +33,13 @@
 -- `CREATE OR REPLACE` 只在签名完全相同时才替换；签名变了就是新增一个函数，
 -- 旧的 0 参数版本会带着 `hour <> 1` 的老逻辑继续存在——而 worker 调的正是它。
 -- 结果就是"迁移成功、行为没变"，而且不报错。
-DROP FUNCTION IF EXISTS public.ailearn_enqueue_companion_daily_summaries();
+DROP FUNCTION IF EXISTS public.astella_enqueue_companion_daily_summaries();
 
 -- ⚠️ 这里**不能**给 lookback_days 写 DEFAULT 7。
 -- 带默认值的 1 参版本本身就能用 0 个实参调用，于是下面那个 0 参包装
 -- 变成多余的——同一个调用点 Postgres 报 `function ... is not unique`。
 -- （实库集成测试当场逮到：worker 调的正是无参形式。）
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_companion_daily_summaries(
+CREATE OR REPLACE FUNCTION public.astella_enqueue_companion_daily_summaries(
   lookback_days integer
 )
 RETURNS integer
@@ -177,26 +177,26 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_companion_daily_summaries(integer) TO ailearn_worker;
+GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_daily_summaries(integer) TO astella_worker;
 
 -- 无参包装：worker 的定时调用写的正是 `..._daily_summaries()`，
 -- 上面把 0 参数版本 DROP 了，所以这里必须把它加回来（否则那条调用直接失败）。
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_companion_daily_summaries()
+CREATE OR REPLACE FUNCTION public.astella_enqueue_companion_daily_summaries()
 RETURNS integer
 LANGUAGE sql
 AS $$
-  SELECT public.ailearn_enqueue_companion_daily_summaries(7);
+  SELECT public.astella_enqueue_companion_daily_summaries(7);
 $$;
 
-GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_companion_daily_summaries() TO ailearn_worker;
+GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_daily_summaries() TO astella_worker;
 
-COMMENT ON FUNCTION public.ailearn_enqueue_companion_daily_summaries() IS
+COMMENT ON FUNCTION public.astella_enqueue_companion_daily_summaries() IS
   '无参包装：等价于 lookback_days = 7。worker 的定时调用走这个签名，不要改它。';
 
-ALTER FUNCTION public.ailearn_enqueue_companion_daily_summaries(integer)
+ALTER FUNCTION public.astella_enqueue_companion_daily_summaries(integer)
   SET search_path = pg_catalog, public;
 
-COMMENT ON FUNCTION public.ailearn_enqueue_companion_daily_summaries(integer) IS
+COMMENT ON FUNCTION public.astella_enqueue_companion_daily_summaries(integer) IS
   '桌宠日记调度：本地时区 01:00 之后逐日回看最近 N 天，为**有活动且尚未入队**的日期补投 companion_daily_summary。'
   '幂等键 daily-summary:<ws>:<user>:<date> 保证重复 tick 不产生重复 job；'
   '这正是"01:00 下线导致当天日记永久丢失"能被补上的原因。';

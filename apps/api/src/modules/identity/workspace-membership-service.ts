@@ -31,10 +31,10 @@
  */
 
 import { and, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
-import { DomainError } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
 import { adoptWorkspaceContext, withActorTransaction, withWorkspaceTransaction } from "../../db/client.ts";
-import { inviteCodes, onboardingStates, users, workspaceMembers, workspaces } from "@ailearn/shared/db-schema/identity";
-import { sessions } from "@ailearn/shared/db-schema/session";
+import { inviteCodes, onboardingStates, users, workspaceMembers, workspaces } from "@astella/shared/db-schema/identity";
+import { sessions } from "@astella/shared/db-schema/session";
 import { deleteObject } from "../../lib/object-storage.ts";
 import { logger } from "../../lib/logger.ts";
 import { recordWorkspaceAudit } from "../audit/service.ts";

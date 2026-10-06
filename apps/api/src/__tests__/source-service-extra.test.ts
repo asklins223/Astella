@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { SourceStatus } from "@ailearn/shared";
-import { MAX_PENDING_JOBS_PER_WORKSPACE } from "@ailearn/shared/job-queue-limits";
-import { jobs } from "@ailearn/shared/db-schema/job";
-import { noteBlocks, notes, noteVersions, sources } from "@ailearn/shared/db-schema/note";
+import { SourceStatus } from "@astella/shared";
+import { MAX_PENDING_JOBS_PER_WORKSPACE } from "@astella/shared/job-queue-limits";
+import { jobs } from "@astella/shared/db-schema/job";
+import { noteBlocks, notes, noteVersions, sources } from "@astella/shared/db-schema/note";
 import {
   createNoteFromSource,
   deriveSourceTitle,

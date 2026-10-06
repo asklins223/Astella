@@ -1,4 +1,4 @@
-name: ailearn-alpha
+name: astella-alpha
 
 # Alpha environment overlay — adds monitoring and backup infrastructure
 # on top of the production stack (docker-compose.yml).
@@ -17,7 +17,7 @@ name: ailearn-alpha
 services:
   postgres:
     networks:
-      ailearn_net:
+      astella_net:
         aliases:
           - restore-postgres
 
@@ -47,7 +47,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - ailearn_net
+      - astella_net
 
   alertmanager:
     image: prom/alertmanager:v0.28.1
@@ -68,18 +68,18 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - ailearn_net
+      - astella_net
 
   alpha-ops-sidecar:
     image: python:3.12-alpine
     restart: unless-stopped
     environment:
-      MANIFEST_DIR: /var/lib/ailearn/manifests
+      MANIFEST_DIR: /var/lib/astella/manifests
       PORT: "8080"
     volumes:
-      - ./infra/prometheus/alpha-ops-sidecar.py:/opt/ailearn/alpha-ops-sidecar.py:ro
-      - backup_manifests:/var/lib/ailearn/manifests:ro
-    command: ["python3", "/opt/ailearn/alpha-ops-sidecar.py"]
+      - ./infra/prometheus/alpha-ops-sidecar.py:/opt/astella/alpha-ops-sidecar.py:ro
+      - backup_manifests:/var/lib/astella/manifests:ro
+    command: ["python3", "/opt/astella/alpha-ops-sidecar.py"]
     expose:
       - "8080"
     healthcheck:
@@ -90,7 +90,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - ailearn_net
+      - astella_net
 
   # ─── Backup Runner (ADR-0007) ──────────────────────────────────────
   # One-shot container that runs backup/restore/verify scripts.
@@ -114,15 +114,15 @@ services:
       API_PASSWORD: ${API_PASSWORD:?Set API_PASSWORD in .env}
       WORKER_PASSWORD: ${WORKER_PASSWORD:?Set WORKER_PASSWORD in .env}
     volumes:
-      - backup_keys:/etc/ailearn
-      - backup_manifests:/var/lib/ailearn/manifests
+      - backup_keys:/etc/astella
+      - backup_manifests:/var/lib/astella/manifests
       - ./infra/backup:/scripts:ro
-      - ./infra/postgres/roles.sql:/opt/ailearn/roles.sql:ro
+      - ./infra/postgres/roles.sql:/opt/astella/roles.sql:ro
     command: ["bash", "-c", "echo 'Usage: init | backup | restore-verify | freshness-check'; exit 0"]
     security_opt:
       - no-new-privileges:true
     networks:
-      - ailearn_net
+      - astella_net
 
 volumes:
   prometheus_data:

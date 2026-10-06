@@ -4,8 +4,8 @@ import type {
   CardGenerationProgressV1,
   CardGenerationCandidateV1,
   CardActivationSchedulingV1,
-} from "@ailearn/shared/card-generation-desktop-contracts";
-import { isCardGenerationReviewOpen } from "@ailearn/shared/card-generation-desktop-contracts";
+} from "@astella/shared/card-generation-desktop-contracts";
+import { isCardGenerationReviewOpen } from "@astella/shared/card-generation-desktop-contracts";
 import { formatDate } from "../notebook/surface-data.tsx";
 
 export { isCardGenerationReviewOpen };

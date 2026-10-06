@@ -1,4 +1,4 @@
--- 0181：修复 ailearn_claim_commit_outbox 的 PL/pgSQL 列引用歧义（42702）。
+-- 0181：修复 astella_claim_commit_outbox 的 PL/pgSQL 列引用歧义（42702）。
 --
 -- 背景（2026-08-23）：0109 原始定义中 SELECT ... INTO 的列清单未加表前缀，
 -- 与 RETURNS TABLE 声明的同名 OUT 参数构成 variable_conflict 歧义——在默认
@@ -9,7 +9,7 @@
 --
 -- 修复：SELECT 清单逐列加 t. 前缀。语义不变，幂等可重放。
 
-CREATE OR REPLACE FUNCTION public.ailearn_claim_commit_outbox(
+CREATE OR REPLACE FUNCTION public.astella_claim_commit_outbox(
   p_worker_id text,
   p_lease_ms integer,
   p_now timestamptz DEFAULT now()
@@ -70,5 +70,5 @@ $function$;
 
 --> statement-breakpoint
 
-GRANT EXECUTE ON FUNCTION public.ailearn_claim_commit_outbox(text, integer, timestamptz)
-  TO ailearn_api;
+GRANT EXECUTE ON FUNCTION public.astella_claim_commit_outbox(text, integer, timestamptz)
+  TO astella_api;

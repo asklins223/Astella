@@ -16,7 +16,7 @@
 // 2026-08-24（AI 设计审查 §4.4 第二批）：ServiceError 继承 shared 纯逻辑层的
 // CardGenerationPipelineErrorV2——seal/binding-plan 纯函数抛出 shared 类，
 // API 错误边界通过同一继承链识别 code/statusCode。
-import { CardGenerationPipelineErrorV2 } from "@ailearn/shared/card-generation-v2-pipeline";
+import { CardGenerationPipelineErrorV2 } from "@astella/shared/card-generation-v2-pipeline";
 
 export class CardGenerationV2ServiceError extends CardGenerationPipelineErrorV2 {
   constructor(code: string, statusCode: number, message: string) {

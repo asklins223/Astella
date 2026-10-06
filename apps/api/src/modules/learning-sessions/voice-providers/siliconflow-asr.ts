@@ -17,7 +17,7 @@
  *   edge-tts 合成 mp3 → 本 provider → HTTP 200 { "text": "测试语音。" }
  *
  * 运行基础（2026-09-25，39d W3-5）：这一次调用跑在
- * `@ailearn/shared/ai-task-kernel` 上——预算、重试、取消与"不许在事务里调外部模型"
+ * `@astella/shared/ai-task-kernel` 上——预算、重试、取消与"不许在事务里调外部模型"
  * 由那一层统一管，本文件只留 provider 合同（multipart 组装、错误码语汇、fail closed）。
  * 改之前这里是**一次失败就直接 502**：用户举着刚录好的音频，什么都没拿到。
  *
@@ -92,8 +92,8 @@ const ASR_TASK_DEADLINE_MS = 55_000;
 const ASR_PROMPT_VERSION = "siliconflow-asr-v1";
 
 import { createHash, randomUUID } from "node:crypto";
-import { runAiTask, type AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
-import { DomainError } from "@ailearn/shared";
+import { runAiTask, type AiTaskDefinition } from "@astella/shared/ai-task-kernel";
+import { DomainError } from "@astella/shared";
 
 /** SiliconFlow API 错误（服务端错误消息不透出到 UI，仅内部记录） */
 export class SiliconFlowAsrError extends DomainError {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DesktopSourceListItem } from "@ailearn/shared/desktop-surface-contracts";
+import type { DesktopSourceListItem } from "@astella/shared/desktop-surface-contracts";
 import {
   SOURCE_PAGE_MAX,
   countSourcesByStatus,

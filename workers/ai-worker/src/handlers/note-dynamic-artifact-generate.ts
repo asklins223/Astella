@@ -1,28 +1,28 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { classifyThrownAsStepFailure, type AiAttemptToken } from "@ailearn/shared/ai-task-kernel";
-import { readNoteDynamicArtifactGenerateJobPayload } from "@ailearn/shared/job-payload-contracts";
+import { classifyThrownAsStepFailure, type AiAttemptToken } from "@astella/shared/ai-task-kernel";
+import { readNoteDynamicArtifactGenerateJobPayload } from "@astella/shared/job-payload-contracts";
 import { loadAgentGenerationContext } from "../agent/generation-context.ts";
-import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
-import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
-import { noteAnchorMatchesV1 } from "@ailearn/shared/note-annotation-contracts";
-import * as schema from "@ailearn/shared/db-schema";
+import { noteVisibleSqlText } from "@astella/shared/note-visibility";
+import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
+import { noteAnchorMatchesV1 } from "@astella/shared/note-annotation-contracts";
+import * as schema from "@astella/shared/db-schema";
 import {
   buildDynamicArtifactPrompt,
   dynamicArtifactDocV1Schema,
   runDynamicArtifactV1,
   ARTIFACT_COMPLETION_TOKENS_V1,
   type DynamicArtifactProviderV1,
-} from "@ailearn/shared/note-dynamic-artifact/round-artifact-model";
-import { checkArtifactDocumentV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact-doc";
+} from "@astella/shared/note-dynamic-artifact/round-artifact-model";
+import { checkArtifactDocumentV1 } from "@astella/shared/note-dynamic-artifact/round-artifact-doc";
 import {
   groundArtifactStepsV1,
   plainTextForGroundingV1,
   type ArtifactEvidenceBlockV1,
-} from "@ailearn/shared/note-dynamic-artifact/round-artifact-measure";
+} from "@astella/shared/note-dynamic-artifact/round-artifact-measure";
 import {
   buildDynamicArtifactHtmlV1,
   DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1,
-} from "@ailearn/shared/note-dynamic-artifact/round-artifact-render";
+} from "@astella/shared/note-dynamic-artifact/round-artifact-render";
 import {
   AIConsentRequiredError,
   createGovernedProvider,

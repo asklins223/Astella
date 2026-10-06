@@ -36,19 +36,19 @@ import {
   assistantContextSnapshotV2Schema,
   assistantDeliveryV2Schema,
   mainPageContextInputV2Schema,
-} from "@ailearn/shared/companion-bridge-contracts";
+} from "@astella/shared/companion-bridge-contracts";
 import {
   CompanionActivityAckRequestV1,
   CompanionActivityDeliveryV1,
-} from "@ailearn/shared/companion-memory-desktop-contracts";
+} from "@astella/shared/companion-memory-desktop-contracts";
 import {
   safeUuid,
 } from "./desktop-gateway-uuid";
 import {
   DesktopGatewayFailure,
 } from "./desktop-gateway-failure";
-import { AssistantDeliveryV2 } from "@ailearn/shared/companion-bridge-contracts";
-import { companionActivityDeliveryV1Schema } from "@ailearn/shared/companion-memory-desktop-contracts";
+import { AssistantDeliveryV2 } from "@astella/shared/companion-bridge-contracts";
+import { companionActivityDeliveryV1Schema } from "@astella/shared/companion-memory-desktop-contracts";
 import type { GatewayTransport } from "./desktop-gateway-transport";
 
 export function projectCompanionDelivery(delivery: AssistantDeliveryV2 & { expired?: boolean }): CompanionActivityDeliveryV1 {

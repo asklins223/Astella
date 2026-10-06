@@ -1,4 +1,4 @@
-import { executeTurn } from "@ailearn/agent-core";
+import { executeTurn } from "@astella/agent-core";
 import {
   auditHash,
   boundedToolCallIdentity,
@@ -33,13 +33,13 @@ import {
   type AgentTurnRequest,
   type AgentTurnResult,
   type ChatMessage,
-} from "@ailearn/shared";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+} from "@astella/shared";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 
 
 import { COMPANION_TOOL_INTENT_TIMEOUT_MS, interpretCompanionTurn } from "./companion-tool-intent.ts";
 import { companionAttentionObjects } from "./companion-attention.ts";
-import { composeAgentContext } from "@ailearn/agent-core";
+import { composeAgentContext } from "@astella/agent-core";
 import { COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS, type CompanionContextReceipts } from "./companion-context-receipts.ts";
 import { boundedStepSender, type FoldedReplay, type CompactionCooldownPorts } from "./companion-compaction.ts";
 import type { CompactionTraceRecorder } from "./companion-context-handoff.ts";

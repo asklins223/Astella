@@ -1,5 +1,5 @@
-import { PRE_RUN_REVEAL_COOLDOWN_MS } from "@ailearn/shared/card-generation-v2-contracts";
-import type { CardGenerationCandidateV1, CardGenerationExposureEligibilityV1, DesktopCardRejectReasonV2 } from "@ailearn/shared/card-generation-desktop-contracts";
+import { PRE_RUN_REVEAL_COOLDOWN_MS } from "@astella/shared/card-generation-v2-contracts";
+import type { CardGenerationCandidateV1, CardGenerationExposureEligibilityV1, DesktopCardRejectReasonV2 } from "@astella/shared/card-generation-desktop-contracts";
 import { formatRelative } from "../notebook/surface-data";
 
 export const revealCooldownHours = Math.round(PRE_RUN_REVEAL_COOLDOWN_MS / 3_600_000);

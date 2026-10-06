@@ -21,7 +21,7 @@ import { createHash } from "node:crypto";
 import { and, eq, inArray, isNull, sql, desc } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
 import { logger } from "../../lib/logger.ts";
-import { notes, sources } from "@ailearn/shared/db-schema/note";
+import { notes, sources } from "@astella/shared/db-schema/note";
 import { visibleNotesCondition, visibleObjectivesCondition } from "../note/visibility.ts";
 import {
   learningObjectivesV2,
@@ -32,21 +32,21 @@ import {
   learningCardsV2,
   initialValidationRemindersV2,
   learningExposuresV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { learningRuns, canonicalLearningEventOutbox, practiceTrailEventOutbox } from "@ailearn/shared/db-schema/learning-runs";
-import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
-import { EXPOSURE_KINDS_V2 } from "@ailearn/shared/learning-card-v2-contracts";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { learningRuns, canonicalLearningEventOutbox, practiceTrailEventOutbox } from "@astella/shared/db-schema/learning-runs";
+import { reviewSchedules } from "@astella/shared/db-schema/evidence";
+import { EXPOSURE_KINDS_V2 } from "@astella/shared/learning-card-v2-contracts";
 import { pickLatestCompletedRunV3, resolvePrimaryActionV3, type ActionResolverInputV3 } from "../learning-objectives/action-resolver.ts";
 import { readAnswerModePreference } from "../companion-shell/answer-mode-preference.ts";
-import { objectiveSurfaceFreshnessV1 } from "@ailearn/shared";
+import { objectiveSurfaceFreshnessV1 } from "@astella/shared";
 import { relationEdgeIsDecidableV2 } from "./personal-relation-decision-service.ts";
 import type {
   UnderstandingNodeProjectionV3,
   UnderstandingEdgeProjectionV3,
   NoteDeepeningSnapshotV1,
   ObjectiveSurfaceLifecycleV3,
-} from "@ailearn/shared";
-import { isActiveLearningRunPhase } from "@ailearn/shared/learning-run-contracts";
+} from "@astella/shared";
+import { isActiveLearningRunPhase } from "@astella/shared/learning-run-contracts";
 
 export interface TopologyContext {
   workspaceId: string;

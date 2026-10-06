@@ -78,7 +78,7 @@ test("撤权遮蔽按 source_event_ids 匹配，而不是靠正文里猜来源",
 });
 
 test("撤权遮蔽**只遮蔽不物理删**摘录——材料可能重新可访问", () => {
-  const fn = migration.slice(migration.indexOf("ailearn_mask_diaries_for_revoked_source()"));
+  const fn = migration.slice(migration.indexOf("astella_mask_diaries_for_revoked_source()"));
   assert.match(fn, /SET masked = true/);
   assert.doesNotMatch(fn, /DELETE FROM public\.companion_discovery_entries/,
     "撤权遮蔽把摘录物理删掉了：材料重新可访问时那些内容就回不来了");

@@ -10,7 +10,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { UpdateStateV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { UpdateStateV1 } from "@astella/shared/desktop-ipc-contracts";
 
 const openExternal = vi.fn();
 vi.mock("../../../../../app/desktop-client", () => ({
@@ -39,7 +39,7 @@ function renderGroup(patch: Partial<UpdateStateV1>) {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-  (window as unknown as { ailearn?: unknown }).ailearn = { shell: { openExternal } };
+  (window as unknown as { astella?: unknown }).astella = { shell: { openExternal } };
 });
 
 describe("设置页「客户端更新」", () => {

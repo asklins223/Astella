@@ -20,7 +20,7 @@ import {
   learningTaskDraftSchema,
   learningTaskDraftWriteReceiptSchema,
   submitTaskArtifactReceiptSchema,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import {
   applyAction,
   createRunV2,
@@ -36,7 +36,7 @@ import {
   submitArtifact,
 } from "./run-service.ts";
 import { wakeLearningRunProcessing } from "./processing/run-processing-tick.ts";
-import { createLearningRunV2RequestSchema } from "@ailearn/shared";
+import { createLearningRunV2RequestSchema } from "@astella/shared";
 import { LearningRunServiceError } from "./run-errors.ts";
 import { safeSseWrite } from "../../lib/safe-sse-write.ts";
 import { companionRateLimit } from "../../lib/companion-rate-limit.ts";
@@ -53,7 +53,7 @@ import {
   recordLearningRunActivityLeaseRequestV2Schema,
   submitTaskArtifactV2Schema,
   submitTaskArtifactReceiptV2Schema,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import { buildServiceErrorBody, buildSimpleErrorBody } from "../../lib/error-envelope.ts";
 import { BoundedAsyncQueue } from "./bounded-async-queue.ts";
 

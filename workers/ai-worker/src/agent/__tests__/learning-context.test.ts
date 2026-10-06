@@ -8,8 +8,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { AgentSqlExecutor } from "@ailearn/agent-host";
-import { getDefaultPersonaPreset } from "@ailearn/shared/pet-persona-presets";
+import type { AgentSqlExecutor } from "@astella/agent-host";
+import { getDefaultPersonaPreset } from "@astella/shared/pet-persona-presets";
 import { loadAgentLearningContext } from "../learning-context.ts";
 import {
   ADOPTABLE_EPISTEMIC_STATUSES,

@@ -12,7 +12,7 @@ import { actOnHomeSuggestionV2, actOnTodayBatchV2, readHomeSuggestionV2, readTod
 import {
   homeSuggestionActionCommandV2Schema,
   todayBatchOptionCommandV2Schema,
-} from "@ailearn/shared/review-queue-v2-contracts";
+} from "@astella/shared/review-queue-v2-contracts";
 
 export async function learningDashboardRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireSession);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import {
   projectCompanionTurnReplayV1,
   type CompanionTurnReplayProjectionInput,

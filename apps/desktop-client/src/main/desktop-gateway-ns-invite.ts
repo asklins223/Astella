@@ -105,7 +105,7 @@ import {
   type NoteDocStateResultV1,
   type NoteDocStreamEventV1,
   type NoteDocUploadResultV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import type { GatewayTransport } from "./desktop-gateway-transport";
 
 export async function createInvite(t: GatewayTransport, 

@@ -16,9 +16,9 @@ import {
   learningObjectivesV2,
   learningCardsV2,
   learningObjectiveEvidenceBindingsV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { evidenceSnapshotsV2, learningObjectiveOriginsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { noteVersions } from "@ailearn/shared/db-schema/note";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { evidenceSnapshotsV2, learningObjectiveOriginsV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { noteVersions } from "@astella/shared/db-schema/note";
 import { createObjectiveOrigin } from "./origin-service.ts";
 
 export type OriginBackfillSource =

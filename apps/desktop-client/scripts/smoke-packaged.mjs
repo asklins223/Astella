@@ -64,11 +64,11 @@ function candidateExecutables() {
 }
 
 function packagedExecutable() {
-  const configured = process.env.AILEARN_PACKAGED_APP?.trim()
+  const configured = process.env.ASTELLA_PACKAGED_APP?.trim()
   if (configured && existsSync(configured)) return configured
   const found = candidateExecutables().find((candidate) => existsSync(candidate))
   if (found) return found
-  throw new Error('No packaged Electron executable found. Set AILEARN_PACKAGED_APP after npm run dist.')
+  throw new Error('No packaged Electron executable found. Set ASTELLA_PACKAGED_APP after npm run dist.')
 }
 
 const executablePath = packagedExecutable()
@@ -198,7 +198,7 @@ async function inspectPackagedArtifact(executable) {
   }
 
   const manifestJson = JSON.parse(packagedManifest.toString('utf8'))
-  if (manifestJson.id !== 'ailearn-learning-room-v1' || manifestJson.canonicalMode !== '2d') {
+  if (manifestJson.id !== 'astella-learning-room-v1' || manifestJson.canonicalMode !== '2d') {
     throw new Error('Packaged learning-room manifest identity or canonical mode drifted')
   }
   const manifestText = packagedManifest.toString('utf8')
@@ -293,12 +293,12 @@ async function inspectPackagedArtifact(executable) {
 }
 
 const packageContainment = await inspectPackagedArtifact(executablePath)
-if (process.env.AILEARN_PACKAGED_PREFLIGHT_ONLY === '1') {
+if (process.env.ASTELLA_PACKAGED_PREFLIGHT_ONLY === '1') {
   process.stdout.write(`${JSON.stringify(packageContainment, null, 2)}\n`)
   process.exit(0)
 }
-const portableOfflineOnly = process.env.AILEARN_PACKAGED_OFFLINE_ONLY === '1'
-const userDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-packaged-smoke-'))
+const portableOfflineOnly = process.env.ASTELLA_PACKAGED_OFFLINE_ONLY === '1'
+const userDataDir = await mkdtemp(resolve(tmpdir(), 'astella-packaged-smoke-'))
 const errors = []
 const ownerCredentialsAvailable = Boolean(process.env.OWNER_EMAIL?.trim() && process.env.OWNER_PASSWORD)
 const memberCredentialsAvailable = Boolean(process.env.MEMBER_EMAIL?.trim() && process.env.MEMBER_PASSWORD)
@@ -324,13 +324,13 @@ const baseAppEnv = Object.fromEntries(
 )
 const smokeAppEnv = {
   ...baseAppEnv,
-  AILEARN_PACKAGED_EVIDENCE: '1',
+  ASTELLA_PACKAGED_EVIDENCE: '1',
   // CI runners do not own the local API stack or test credentials. Point the
   // portable smoke at a closed loopback port so every supported package proves
   // the real fail-closed DesktopAccessGate instead of merely staying alive.
   //
   // **但只给端口不够**：主进程的 `readConfiguration` 要求
-  // `AILEARN_DOMAIN_SCHEMA_REVISION`，而 http（回环）模式还额外要配对 key/secret
+  // `ASTELLA_DOMAIN_SCHEMA_REVISION`，而 http（回环）模式还额外要配对 key/secret
   // （`src/main/desktop-gateway.ts`）。少了任何一样，`connect()` 连试都不试就返回
   // `configuration_error`（reason `pairing_secret_missing`）——于是这条冒烟**没有在测
   // 它自己声称测的东西**：它想验"传输层失败也照样 fail closed"，实际验到的是
@@ -348,13 +348,13 @@ const smokeAppEnv = {
   ...(portableOfflineOnly
     ? {
         DESKTOP_API_ORIGIN: 'http://127.0.0.1:9',
-        AILEARN_DOMAIN_SCHEMA_REVISION: 'portable-smoke-domain-v1',
-        AILEARN_DESKTOP_PAIRING_KEY_ID: 'portable-smoke-key',
-        AILEARN_DESKTOP_PAIRING_SECRET: Buffer.alloc(32, 23).toString('base64url'),
+        ASTELLA_DOMAIN_SCHEMA_REVISION: 'portable-smoke-domain-v1',
+        ASTELLA_DESKTOP_PAIRING_KEY_ID: 'portable-smoke-key',
+        ASTELLA_DESKTOP_PAIRING_SECRET: Buffer.alloc(32, 23).toString('base64url'),
         DESKTOP_DEPLOYMENT_CONFIG_REVISION: 'portable-smoke-v1',
       }
     : {}),
-  ...(learningRunResponseLossExpected ? { AILEARN_PACKAGED_LEARNING_RUN_RESPONSE_LOSS: learningRunResponseLossOperations.join(',') } : {}),
+  ...(learningRunResponseLossExpected ? { ASTELLA_PACKAGED_LEARNING_RUN_RESPONSE_LOSS: learningRunResponseLossOperations.join(',') } : {}),
 }
 const ownerJourney = {
   attempted: ownerCredentialsAvailable,
@@ -445,11 +445,11 @@ function attachWindowDiagnostics(window) {
 async function waitForPackagedWindow(window, label) {
   await window.waitForLoadState('domcontentloaded')
   await window.locator('.desktop-app').waitFor({ state: 'visible', timeout: 15_000 })
-  await window.waitForFunction(() => window.location.protocol === 'ailearn-app:')
+  await window.waitForFunction(() => window.location.protocol === 'astella-app:')
   const boundary = await window.evaluate(() => ({
     protocol: window.location.protocol,
-    hasDesktopPreload: typeof window.ailearnDesktop?.platform === 'string',
-    hasM2Preload: typeof window.ailearn?.contract?.version === 'number',
+    hasDesktopPreload: typeof window.astellaDesktop?.platform === 'string',
+    hasM2Preload: typeof window.astella?.contract?.version === 'number',
     hasAccessGate: document.querySelector('.desktop-access-gate') !== null,
     hasRoomDom: document.querySelector('.scene-stage') !== null,
     hasActionRail: document.querySelector('.action-rail') !== null,
@@ -457,7 +457,7 @@ async function waitForPackagedWindow(window, label) {
     hasOnboarding: document.querySelector('.onboarding-card') !== null,
   }))
   if (
-    boundary.protocol !== 'ailearn-app:'
+    boundary.protocol !== 'astella-app:'
     || !boundary.hasDesktopPreload
     || !boundary.hasM2Preload
     || (!boundary.hasAccessGate && !boundary.hasRoomDom)
@@ -567,7 +567,7 @@ async function runPortableOfflineSmoke() {
   const smokeEvidence = {
     schemaVersion: 1,
     kind: 'packaged-offline-smoke',
-    artifact: process.env.AILEARN_PACKAGED_APP?.trim() ? 'configured-external' : relative(appRoot, executablePath).split('\\').join('/'),
+    artifact: process.env.ASTELLA_PACKAGED_APP?.trim() ? 'configured-external' : relative(appRoot, executablePath).split('\\').join('/'),
     packageContainment,
     runtime,
     boundary,
@@ -614,10 +614,10 @@ async function authenticateThroughAccessGate(window, { email, password, expected
 
   const session = await window.evaluate(async () => {
     const opaqueId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-    const response = await window.ailearn.auth.getState({
+    const response = await window.astella.auth.getState({
       meta: {
         version: 1,
-        contractVersion: window.ailearn.contract.contractVersion,
+        contractVersion: window.astella.contract.contractVersion,
         requestId: opaqueId('packaged-session-request'),
         correlationId: opaqueId('packaged-session-correlation'),
         clientStartedAt: new Date().toISOString(),
@@ -726,15 +726,15 @@ async function packagedTransportProbe(window, kind) {
     const opaqueId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
     const meta = () => ({
       version: 1,
-      contractVersion: window.ailearn.contract.contractVersion,
+      contractVersion: window.astella.contract.contractVersion,
       requestId: opaqueId(`packaged-${probeKind}-request`),
       correlationId: opaqueId(`packaged-${probeKind}-correlation`),
       clientStartedAt: new Date().toISOString(),
     })
     try {
       const response = probeKind === 'room'
-        ? await window.ailearn.room.getProjection({ meta: meta() })
-        : await window.ailearn.runtime.getHealth({ meta: meta() })
+        ? await window.astella.room.getProjection({ meta: meta() })
+        : await window.astella.runtime.getHealth({ meta: meta() })
       return response.ok
         ? { ok: true, kind: probeKind, dataKind: probeKind === 'health' ? response.data.kind : 'projection' }
         : { ok: false, kind: probeKind, code: response.error.code }
@@ -747,7 +747,7 @@ async function packagedTransportProbe(window, kind) {
 async function readFormalGuardEvidence() {
   if (!electronApp) return null
   return electronApp.evaluate(() => {
-    const hook = globalThis.__ailearnFormalAssessmentGuardEvidence
+    const hook = globalThis.__astellaFormalAssessmentGuardEvidence
     if (!hook) return null
     const snapshot = hook.getSnapshot()
     const decisions = ['prompt', 'proposal', 'voice'].map((kind) => {
@@ -798,7 +798,7 @@ async function waitForLocalApiReady(timeout = 120_000) {
 }
 
 async function runOfflineStartupRecovery() {
-  const offlineUserDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-packaged-offline-'))
+  const offlineUserDataDir = await mkdtemp(resolve(tmpdir(), 'astella-packaged-offline-'))
   let offlineElectronApp
   try {
     await execFileAsync('docker', ['compose', '-f', devComposeFile, 'stop', 'api'], {
@@ -834,10 +834,10 @@ async function runOfflineStartupRecovery() {
     }
     const retry = await offlineWindow.evaluate(async () => {
       const opaqueId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-      const response = await window.ailearn.runtime.retryApiConnection({
+      const response = await window.astella.runtime.retryApiConnection({
         meta: {
           version: 1,
-          contractVersion: window.ailearn.contract.contractVersion,
+          contractVersion: window.astella.contract.contractVersion,
           requestId: opaqueId('packaged-offline-retry-request'),
           correlationId: opaqueId('packaged-offline-retry-correlation'),
           clientStartedAt: new Date().toISOString(),
@@ -896,12 +896,12 @@ async function restartApiForPackagedRecovery() {
       const opaqueId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
       const meta = () => ({
         version: 1,
-        contractVersion: window.ailearn.contract.contractVersion,
+        contractVersion: window.astella.contract.contractVersion,
         requestId: opaqueId('packaged-restart-request'),
         correlationId: opaqueId('packaged-restart-correlation'),
         clientStartedAt: new Date().toISOString(),
       })
-      const response = await window.ailearn.runtime.retryApiConnection({ meta: meta() })
+      const response = await window.astella.runtime.retryApiConnection({ meta: meta() })
       return response.ok ? { ok: true, kind: response.data.kind } : { ok: false, code: response.error.code }
     }).catch(() => ({ ok: false, code: 'invoke_failed' }))
     if (recovered.ok && recovered.kind === 'ready') break
@@ -919,18 +919,18 @@ async function prepareRestartMarker(window) {
     const opaqueId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
     const meta = (workspaceEpoch) => ({
       version: 1,
-      contractVersion: window.ailearn.contract.contractVersion,
+      contractVersion: window.astella.contract.contractVersion,
       requestId: opaqueId('packaged-marker-request'),
       correlationId: opaqueId('packaged-marker-correlation'),
       ...(workspaceEpoch > 0 ? { workspaceEpoch } : {}),
       clientStartedAt: new Date().toISOString(),
     })
-    const sessionResponse = await window.ailearn.auth.getState({ meta: meta(0) })
+    const sessionResponse = await window.astella.auth.getState({ meta: meta(0) })
     if (!sessionResponse.ok || sessionResponse.data.status !== 'authenticated' || !sessionResponse.data.user || !sessionResponse.data.workspace) {
       throw new Error(`Packaged marker recovery requires an authenticated session: ${JSON.stringify(sessionResponse)}`)
     }
     const epoch = sessionResponse.data.workspaceEpoch
-    const projectionResponse = await window.ailearn.room.getProjection({ meta: meta(epoch) })
+    const projectionResponse = await window.astella.room.getProjection({ meta: meta(epoch) })
     if (!projectionResponse.ok) throw new Error(`Packaged marker recovery room read failed: ${JSON.stringify(projectionResponse)}`)
     const focus = projectionResponse.data.primaryFocus
     const objective = focus.state === 'data' ? focus.data.objective : null
@@ -939,7 +939,7 @@ async function prepareRestartMarker(window) {
       ? { kind: 'card', cardId, objectiveId: objective.objectiveId }
       : null
     if (!resolvedOrigin) {
-      const queueResponse = await window.ailearn.review.getQueue({ meta: meta(epoch), limit: 20 })
+      const queueResponse = await window.astella.review.getQueue({ meta: meta(epoch), limit: 20 })
       if (!queueResponse.ok) throw new Error(`Packaged marker recovery queue read failed: ${JSON.stringify(queueResponse)}`)
       const item = queueResponse.data.items.find((candidate) => candidate.startability.kind === 'ready')
       if (!item) throw new Error('Packaged marker recovery requires a card origin or one ready review item')
@@ -950,7 +950,7 @@ async function prepareRestartMarker(window) {
         scheduleGeneration: item.scheduleGeneration,
       }
     }
-    const runResponse = await window.ailearn.learningRun.start({
+    const runResponse = await window.astella.learningRun.start({
       meta: meta(epoch),
       commandId: `packaged-marker-start-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       request: {
@@ -1357,7 +1357,7 @@ try {
     arch: process.arch,
   }))
 
-  if (boundary.protocol !== 'ailearn-app:' || !boundary.hasDesktopPreload || !boundary.hasM2Preload) {
+  if (boundary.protocol !== 'astella-app:' || !boundary.hasDesktopPreload || !boundary.hasM2Preload) {
     throw new Error(`Packaged boundary contract failed: ${JSON.stringify(boundary)}`)
   }
   const anonymousAccessGate = smokeRole === 'anonymous'
@@ -1366,7 +1366,7 @@ try {
   await runOwnerJourney(currentWindow)
   await runMemberJourney(currentWindow)
   if (errors.length > 0) throw new Error(`Packaged renderer emitted errors: ${errors.join('; ')}`)
-  if (process.env.AILEARN_PACKAGED_API_RESTART === '1') {
+  if (process.env.ASTELLA_PACKAGED_API_RESTART === '1') {
     await restartApiForPackagedRecovery()
     const restartCredentials = smokeRole === 'owner'
       ? { email: process.env.OWNER_EMAIL, password: process.env.OWNER_PASSWORD }
@@ -1385,7 +1385,7 @@ try {
   const smokeEvidence = {
     schemaVersion: 1,
     kind: 'packaged-smoke',
-    artifact: process.env.AILEARN_PACKAGED_APP?.trim() ? 'configured-external' : relative(appRoot, executablePath).split('\\').join('/'),
+    artifact: process.env.ASTELLA_PACKAGED_APP?.trim() ? 'configured-external' : relative(appRoot, executablePath).split('\\').join('/'),
     packageContainment,
     runtime,
     boundary,

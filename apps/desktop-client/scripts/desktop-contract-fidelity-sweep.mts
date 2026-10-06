@@ -15,33 +15,33 @@
 // 覆盖面只到**读面**：三个 schema 定义在网关文件内部（/health、/auth/me、/auth/workspaces）的不在此台，
 // 写面（POST/PUT/DELETE 那 18 处）会改 dev 数据，故意不扫。
 import {
-  todayActivityV1Schema,} from "@ailearn/shared/activity-surface-contracts";
+  todayActivityV1Schema,} from "@astella/shared/activity-surface-contracts";
 import {
-  companionJourneyBootstrapSchema,} from "@ailearn/shared/companion-journey-contracts";
+  companionJourneyBootstrapSchema,} from "@astella/shared/companion-journey-contracts";
 import {
-  companionMemoryConflictListV1Schema,} from "@ailearn/shared/companion-memory-desktop-contracts";
+  companionMemoryConflictListV1Schema,} from "@astella/shared/companion-memory-desktop-contracts";
 import {
   companionAnswerModePreferenceV1Schema,
-  companionVoicePreferenceV1Schema,} from "@ailearn/shared/companion-shell-contracts";
+  companionVoicePreferenceV1Schema,} from "@astella/shared/companion-shell-contracts";
 import {
   capabilityProjectionSchema,
   noteDocServerStateV1Schema,
-  workspaceAiSettingsV1Schema,} from "@ailearn/shared/desktop-ipc-contracts";
+  workspaceAiSettingsV1Schema,} from "@astella/shared/desktop-ipc-contracts";
 import {
   desktopNoteListPageSchema,
   desktopSearchPageSchema,
   desktopSourceDetailSchema,
   desktopSourceListPageSchema,
-  desktopSourceNotesPageSchema,} from "@ailearn/shared/desktop-surface-contracts";
+  desktopSourceNotesPageSchema,} from "@astella/shared/desktop-surface-contracts";
 import {
   learningObjectiveSurfaceV3Schema,
-  objectiveListPageV3Schema,} from "@ailearn/shared/learning-objective-surface-contracts";
+  objectiveListPageV3Schema,} from "@astella/shared/learning-objective-surface-contracts";
 import {
-  noteDetailV1Schema,} from "@ailearn/shared/note-projection-contracts";
+  noteDetailV1Schema,} from "@astella/shared/note-projection-contracts";
 import {
-  reviewQueueV2Schema,} from "@ailearn/shared/review-queue-v2-contracts";
+  reviewQueueV2Schema,} from "@astella/shared/review-queue-v2-contracts";
 import {
-  allWorkspacesStatsOverviewSchema,} from "@ailearn/shared/stats-overview-contracts";
+  allWorkspacesStatsOverviewSchema,} from "@astella/shared/stats-overview-contracts";
 
 const BASE = process.env.SWEEP_BASE ?? "http://127.0.0.1:4000";
 const EMAIL = process.env.SWEEP_EMAIL ?? "";

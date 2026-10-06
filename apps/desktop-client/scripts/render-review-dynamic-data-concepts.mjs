@@ -264,7 +264,7 @@ const styles = `
 const markupByScheme = { ledger: ledgerMarkup, tape: tapeMarkup, rail: railMarkup }
 
 await mkdir(conceptRoot, { recursive: true })
-const userDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-review-dynamic-concepts-'))
+const userDataDir = await mkdtemp(resolve(tmpdir(), 'astella-review-dynamic-concepts-'))
 const electronApp = await electron.launch({ args: ['.', '--lang=zh-CN', `--user-data-dir=${userDataDir}`], cwd: appRoot, executablePath })
 
 const toDataUrl = async (path) => `data:image/png;base64,${(await readFile(path)).toString('base64')}`

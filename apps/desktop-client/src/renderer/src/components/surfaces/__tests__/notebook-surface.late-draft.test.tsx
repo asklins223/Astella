@@ -162,7 +162,7 @@ function stubGateway(failShape: FailShape) {
       unsubscribe: vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: null })),
     },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return state;
 }
 

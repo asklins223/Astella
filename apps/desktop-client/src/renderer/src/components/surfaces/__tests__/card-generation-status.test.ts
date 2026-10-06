@@ -13,9 +13,9 @@ import {
   practiceQuotaLabel,
 } from "../review/card-generation-status.ts";
 import { candidateDecisionLabel } from "../review/candidate-review-model";
-import type { CardGenerationCandidateV1 } from "@ailearn/shared/card-generation-desktop-contracts";
-import type { CardGenerationActiveSummaryV1 } from "@ailearn/shared/card-generation-desktop-contracts";
-import { isCardGenerationReviewOpen as sharedIsCardGenerationReviewOpen } from "@ailearn/shared/card-generation-desktop-contracts";
+import type { CardGenerationCandidateV1 } from "@astella/shared/card-generation-desktop-contracts";
+import type { CardGenerationActiveSummaryV1 } from "@astella/shared/card-generation-desktop-contracts";
+import { isCardGenerationReviewOpen as sharedIsCardGenerationReviewOpen } from "@astella/shared/card-generation-desktop-contracts";
 
 it("复查停住的候选不承诺人工保留，练习配额不把题型不符误说成没有题目", () => {
   expect(candidateDecisionLabel({ qualityState: "authored" } as CardGenerationCandidateV1)).toBe("复查未通过");

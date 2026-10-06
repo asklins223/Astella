@@ -3,11 +3,11 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NoteLearningFootprint } from "../notebook/note-learning-footprint.tsx";
-import type { NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
-import type { NoteLearningArtifactV1 } from "@ailearn/shared/note-learning-artifact-contracts";
-import type { NoteExpansionLinkV1 } from "@ailearn/shared/note-expansion-contracts";
-import type { NoteOverviewV1 } from "@ailearn/shared/note-overview-contracts";
-import type { NoteRecallRecordV1 } from "@ailearn/shared/note-recall-contracts";
+import type { NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
+import type { NoteLearningArtifactV1 } from "@astella/shared/note-learning-artifact-contracts";
+import type { NoteExpansionLinkV1 } from "@astella/shared/note-expansion-contracts";
+import type { NoteOverviewV1 } from "@astella/shared/note-overview-contracts";
+import type { NoteRecallRecordV1 } from "@astella/shared/note-recall-contracts";
 
 const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 const VERSION_ID = "22222222-4222-4222-8222-222222222222";

@@ -51,7 +51,7 @@
 
 # ⚠️ 与 apps/api/tsconfig.prod.json 里那一条**必须成对出现**。
 # `src/scripts/note-round-learning-live.ts` 是真模型冒烟脚本，不是生产代码
-# （要 NOTE_ROUND_LIVE=1 + 一次性可弃库 ailearn_note39_*，无 npm script / Makefile
+# （要 NOTE_ROUND_LIVE=1 + 一次性可弃库 astella_note39_*，无 npm script / Makefile
 # 入口，server.ts 也 import 不到它），但它 import 了 integration-tests 下的夹具。
 # 上面 `**/integration-tests` 排掉夹具之后，它会被打进镜像并留下一个指向已排除
 # 目录的悬空 import；生产 typecheck 侧同样需要显式排除它（tsc 的 exclude 挡不住

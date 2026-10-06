@@ -151,7 +151,7 @@ function stubGateway(options: {
       },
     },
   };
-  Object.defineProperty(window, "ailearn", { value: gateway, configurable: true });
+  Object.defineProperty(window, "astella", { value: gateway, configurable: true });
   return gateway;
 }
 

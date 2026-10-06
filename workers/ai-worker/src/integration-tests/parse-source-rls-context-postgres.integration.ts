@@ -15,7 +15,7 @@
  *    （“粘贴一段文本，几秒后能开始写笔记”）。
  *
  * 运行（真 Postgres、零 AI 调用、不出网）：
- *   DATABASE_URL_MIGRATOR=postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn \
+ *   DATABASE_URL_MIGRATOR=postgres://astella:astella_dev@127.0.0.1:5432/astella \
  *   node --import tsx --test --test-timeout=120000 \
  *     workers/ai-worker/src/integration-tests/parse-source-rls-context-postgres.integration.ts
  */
@@ -25,8 +25,8 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import * as schema from "@ailearn/shared/db-schema";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import * as schema from "@astella/shared/db-schema";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const ADMIN_URL =
   testDatabaseUrl("DATABASE_URL_MIGRATOR");

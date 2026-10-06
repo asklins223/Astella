@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import type { NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
-import type { NoteAnnotationAnchorV1 } from "@ailearn/shared/note-annotation-contracts";
-import { noteExpansionReviewV1Schema, type NoteExpansionDraftV1, type NoteExpansionLinkV1, type NoteExpansionTaskV1 } from "@ailearn/shared/note-expansion-contracts";
+import type { NoteDetailV1 } from "@astella/shared/note-projection-contracts";
+import type { NoteAnnotationAnchorV1 } from "@astella/shared/note-annotation-contracts";
+import { noteExpansionReviewV1Schema, type NoteExpansionDraftV1, type NoteExpansionLinkV1, type NoteExpansionTaskV1 } from "@astella/shared/note-expansion-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { prepareNotebookTaskNotification } from "./notebook-task-notifications";
 
@@ -73,7 +73,7 @@ export function useNotebookExpansionTask(input: {
     const expected = { ...buffer.current };
     if (!note?.currentVersionId) return Promise.resolve({ ok: false });
     if (initialRead.current?.scope === expected.scope) return initialRead.current.promise;
-    const api = window.ailearn?.noteExpansion;
+    const api = window.astella?.noteExpansion;
     if (!api) { reportError("已有草稿暂时读不到，请重试读取。", "read"); return Promise.resolve({ ok: false }); }
     const request = ++readRequest.current, lookup = ++lookupRequest.current;
     const notifyTask = prepareNotebookTaskNotification(note, latest.current.epochRef.current);
@@ -106,7 +106,7 @@ export function useNotebookExpansionTask(input: {
 
   const loadTask = useCallback(async (taskId: string, select = false) => {
     const note = latest.current.note, expected = { ...buffer.current };
-    const api = window.ailearn?.noteExpansion;
+    const api = window.astella?.noteExpansion;
     if (!note || !api || expected.revision !== expected.savedRevision) return;
     if (!select && expected.task?.status === "ready" && expected.task.taskId !== taskId) return;
     if (select && inFlight.current) return;
@@ -120,7 +120,7 @@ export function useNotebookExpansionTask(input: {
 
   const loadHistory = useCallback(async (before?: string) => {
     const note = latest.current.note, expectedScope = buffer.current.scope;
-    const api = window.ailearn?.noteExpansion;
+    const api = window.astella?.noteExpansion;
     if (!note?.currentVersionId || !api?.listTasks) return;
     const request = ++historyRequest.current;
     setHistoryLoading(true); setHistoryError(null);
@@ -139,7 +139,7 @@ export function useNotebookExpansionTask(input: {
     const { note, dirty, epochRef } = latest.current;
     const expectedScope = buffer.current.scope;
     if (!note?.currentVersionId || dirty && !useSavedVersion || inFlight.current) return;
-    const api = window.ailearn?.noteExpansion;
+    const api = window.astella?.noteExpansion;
     if (!api) { reportError("拓展任务暂时不可用，可以重试。", "start"); return; }
     inFlight.current = true;
     const request = ++actionRequest.current;
@@ -171,7 +171,7 @@ export function useNotebookExpansionTask(input: {
 
   const persist = useCallback(async (_drafts: NoteExpansionDraftV1[]) => {
     const { note, epochRef } = latest.current, expected = { ...buffer.current };
-    const api = window.ailearn?.noteExpansion;
+    const api = window.astella?.noteExpansion;
     if (!note || !expected.task || expected.task.status !== "ready" || inFlight.current || expected.revision === expected.savedRevision) return;
     const review = noteExpansionReviewV1Schema.safeParse({ drafts: expected.task.drafts.map(({ candidateId, title, blocks, selected }) => ({ candidateId, title, blocks, selected })) });
     if (!review.success) { reportError("每篇草稿都需要标题和正文，正文不能超过 20000 字。补完整后重试保存。", "save"); return; }
@@ -190,7 +190,7 @@ export function useNotebookExpansionTask(input: {
 
   const confirm = useCallback(async () => {
     const { note, epochRef } = latest.current, expected = { ...buffer.current };
-    const api = window.ailearn?.noteExpansion;
+    const api = window.astella?.noteExpansion;
     if (!note || !expected.task || expected.task.status !== "ready" || inFlight.current) return;
     const candidateIds = expected.task.drafts.filter(draft => draft.selected && !expected.task!.confirmedCandidateIds?.includes(draft.candidateId)).map(draft => draft.candidateId);
     if (!candidateIds.length) return;
@@ -235,8 +235,8 @@ export function useNotebookExpansionTask(input: {
       const detail = (event as CustomEvent<{ noteId?: unknown; taskId?: unknown }>).detail;
       if (!latest.current.requestedTask && detail?.noteId === latest.current.note?.noteId && typeof detail?.taskId === "string") void loadTask(detail.taskId);
     };
-    window.addEventListener("ailearn:note-expansion-task-started", started);
-    return () => window.removeEventListener("ailearn:note-expansion-task-started", started);
+    window.addEventListener("astella:note-expansion-task-started", started);
+    return () => window.removeEventListener("astella:note-expansion-task-started", started);
   }, [loadTask]);
   return { expansionTask: task, setExpansionTask: setLocalTask, expansionTaskLoading: loading, expansionTaskStarting: starting,
     expansionReviewSaving: saving, expansionTaskError: error, expansionTaskErrorAction: errorAction,

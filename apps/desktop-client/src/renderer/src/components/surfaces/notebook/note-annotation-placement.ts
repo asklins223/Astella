@@ -20,8 +20,8 @@
  * 否则留在旧版记录，不按相似文本猜一个新位置。」所以这里收进来的必须是调用方
  * 已经验过的集合（页面上是 `currentNoteAnnotations`），本模块**不再**自己猜。
  */
-import { noteAnchorBlockRangeV1, noteAnchorMatchesV1 } from "@ailearn/shared/note-annotation-contracts";
-import type { NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
+import { noteAnchorBlockRangeV1, noteAnchorMatchesV1 } from "@astella/shared/note-annotation-contracts";
+import type { NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 
 /** 本模块只需要块的这三样：与 `AnchorBlock` 同形。 */
 export type PlacementBlock = { readonly ordinal: number; readonly type: string; readonly content: string };

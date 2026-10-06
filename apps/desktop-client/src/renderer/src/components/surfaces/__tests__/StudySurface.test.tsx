@@ -1,16 +1,16 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { GatewayResultV1, SessionContextV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { GatewayResultV1, SessionContextV1 } from "@astella/shared/desktop-ipc-contracts";
 import type {
   ActivityAnomalyV1,
   ActivityEventV1,
   TodayActivityV1,
-} from "@ailearn/shared/activity-surface-contracts";
+} from "@astella/shared/activity-surface-contracts";
 import type {
   AllWorkspacesStatsOverviewV1,
   StatsOverviewV1,
-} from "@ailearn/shared/stats-overview-contracts";
+} from "@astella/shared/stats-overview-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-consent-gate.ts";
 import { useRoomStore } from "../../../app/room-store.ts";
@@ -195,7 +195,7 @@ function installApi(
     return spacesResult;
   });
   const rounds = vi.fn(async (_input?: unknown) => (typeof roundsResult === "object" ? roundsResult : ok(roundPage())));
-  Object.defineProperty(window, "ailearn", {
+  Object.defineProperty(window, "astella", {
     configurable: true,
     value: {
       auth: { getState: vi.fn(async () => ok(session())) },
@@ -222,7 +222,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   Reflect.deleteProperty(Element.prototype, "scrollTo");
   Reflect.deleteProperty(Element.prototype, "scrollIntoView");
   useRoomStore.setState({
@@ -598,7 +598,7 @@ describe("all-spaces scope", () => {
       shownCount: 2, totalCount: 3, hasMore: true, nextCursor: c2,
     })));
     installApi(ok(activity()), ok(allSpaces()));
-    (window.ailearn as unknown as { noteLearningRound: { personalHistory: unknown } })
+    (window.astella as unknown as { noteLearningRound: { personalHistory: unknown } })
       .noteLearningRound.personalHistory = rounds;
     render(<StudySurface />);
     fireEvent.click(screen.getByRole("tab", { name: "学过的每一轮" }));

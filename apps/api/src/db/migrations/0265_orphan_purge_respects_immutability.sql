@@ -1,6 +1,6 @@
 -- 0265: 孤儿清理要认得"不可变行"——不该用删除去撞业务不变量。
 --
--- 0264 的 `ailearn_purge_workspace_orphans` 一跑就撞墙（实测）：
+-- 0264 的 `astella_purge_workspace_orphans` 一跑就撞墙（实测）：
 --
 --   ERROR: immutable_v2_row: DELETE rows on card_candidate_quality_reports_v2
 --          cannot be modified
@@ -21,11 +21,11 @@
 
 -- `CREATE OR REPLACE` 改不了返回类型（新增一列 `skipped_reason`），所以先 DROP。
 -- 这是**同一支迁移内**的替换，不是"改已应用的迁移"：0265 还没在任何库上成功跑过。
-DROP FUNCTION IF EXISTS public.ailearn_purge_workspace_orphans(boolean);
+DROP FUNCTION IF EXISTS public.astella_purge_workspace_orphans(boolean);
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_purge_workspace_orphans(dry_run boolean DEFAULT true)
+CREATE OR REPLACE FUNCTION public.astella_purge_workspace_orphans(dry_run boolean DEFAULT true)
 RETURNS TABLE (table_name text, orphan_rows bigint, skipped_reason text)
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -160,13 +160,13 @@ $function$;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_purge_workspace_orphans(boolean) IS
-  '清理 workspace_id 指向不存在空间的行（审查附录 C）。带 BEFORE DELETE 不可变守卫的表只报不删。dry_run=true 只报表；只授给 ailearn_migrator。';
+COMMENT ON FUNCTION public.astella_purge_workspace_orphans(boolean) IS
+  '清理 workspace_id 指向不存在空间的行（审查附录 C）。带 BEFORE DELETE 不可变守卫的表只报不删。dry_run=true 只报表；只授给 astella_migrator。';
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_purge_workspace_orphans(boolean) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_purge_workspace_orphans(boolean) TO ailearn_migrator;
+REVOKE ALL ON FUNCTION public.astella_purge_workspace_orphans(boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_purge_workspace_orphans(boolean) TO astella_migrator;
 
 --> statement-breakpoint
 
@@ -180,7 +180,7 @@ BEGIN
          count(*) FILTER (WHERE skipped_reason IS NULL),
          coalesce(sum(orphan_rows), 0)
   INTO v_blocked, v_cleanable, v_rows
-  FROM public.ailearn_purge_workspace_orphans(true);
+  FROM public.astella_purge_workspace_orphans(true);
 
   RAISE NOTICE '孤儿清理（dry run）：% 张表可清、% 张表带不可变守卫，共 % 行',
     v_cleanable, v_blocked, v_rows;

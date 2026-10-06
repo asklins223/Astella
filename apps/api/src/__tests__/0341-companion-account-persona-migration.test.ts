@@ -34,9 +34,9 @@ test("0341 isolates shared persona by user and keeps relationship state workspac
   assert.match(migration, /companion_persona_profile_versions_user_isolation[\s\S]*?user_id = NULLIF\(current_setting\('app\.user_id', true\), ''\)::uuid/);
   assert.match(migration, /DROP POLICY IF EXISTS pet_profiles_workspace_user_isolation/);
   assert.match(migration, /workspace_id = NULLIF\(current_setting\('app\.workspace_id', true\), ''\)::uuid[\s\S]*?AND user_id = NULLIF\(current_setting\('app\.user_id', true\), ''\)::uuid/);
-  assert.match(migration, /GRANT SELECT, INSERT, UPDATE, DELETE ON public\.companion_persona_profiles TO ailearn_api/);
-  assert.match(migration, /GRANT SELECT, INSERT ON public\.companion_persona_profile_versions TO ailearn_api/);
-  assert.match(migration, /GRANT SELECT, INSERT ON public\.companion_persona_profile_versions TO ailearn_worker/);
+  assert.match(migration, /GRANT SELECT, INSERT, UPDATE, DELETE ON public\.companion_persona_profiles TO astella_api/);
+  assert.match(migration, /GRANT SELECT, INSERT ON public\.companion_persona_profile_versions TO astella_api/);
+  assert.match(migration, /GRANT SELECT, INSERT ON public\.companion_persona_profile_versions TO astella_worker/);
 });
 
 test("0341 records the persona versions pinned to dialogue and diary generation", () => {
@@ -47,8 +47,8 @@ test("0341 records the persona versions pinned to dialogue and diary generation"
 
 test("runtime role bootstrap preserves persona access and append-only history", () => {
   assert.match(roleGrants, /'companion_persona_profiles'[\s\S]*?'companion_persona_profile_versions'/);
-  assert.match(roleGrants, /GRANT SELECT, INSERT, UPDATE ON TABLE public\.companion_persona_profiles TO ailearn_worker/);
-  assert.match(roleGrants, /GRANT SELECT, INSERT ON TABLE public\.companion_persona_profile_versions TO ailearn_api, ailearn_worker/);
+  assert.match(roleGrants, /GRANT SELECT, INSERT, UPDATE ON TABLE public\.companion_persona_profiles TO astella_worker/);
+  assert.match(roleGrants, /GRANT SELECT, INSERT ON TABLE public\.companion_persona_profile_versions TO astella_api, astella_worker/);
   assert.match(roleGrants, /\('companion_persona_profiles', true, true, true, false\)/);
   assert.match(roleGrants, /\('companion_persona_profile_versions', true, true, false, false\)/);
   assert.match(roleGrants, /companion persona profile versions must be append-only for API and worker/);

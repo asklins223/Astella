@@ -16,7 +16,7 @@ import { test } from "node:test";
 import {
   recordRecallSourceRevealRequestV1Schema,
   recordRecallSourceRevealResultV1Schema,
-} from "@ailearn/shared/recall-waiting-v2-contracts";
+} from "@astella/shared/recall-waiting-v2-contracts";
 
 // apps/api/src/modules/review → 上溯五级才是仓库根。
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..", "..", "..");

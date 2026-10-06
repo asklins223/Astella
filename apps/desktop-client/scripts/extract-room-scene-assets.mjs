@@ -117,7 +117,7 @@ export async function extractRoomSceneAssets(specPath) {
         }))
       ));
   if (!layers.length) throw new Error("Spec must declare layers or timeSources plus layerTemplates");
-  const tempRoot = await mkdtemp(resolve(tmpdir(), "ailearn-room-assets-"));
+  const tempRoot = await mkdtemp(resolve(tmpdir(), "astella-room-assets-"));
   try {
     for (const layer of layers) await extractLayer(layer, sourceRoot, outputRoot, tempRoot);
   } finally {

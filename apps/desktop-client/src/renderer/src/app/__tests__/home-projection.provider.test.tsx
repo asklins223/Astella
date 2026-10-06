@@ -2,12 +2,12 @@
 
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import type {
-  AILearnDesktopApiM2,
+  AstellaDesktopApiM2,
   GatewayEventV1,
   GatewayResultV1,
   SessionContextV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
-import type { RoomProjectionV1 } from "@ailearn/shared/room-projection-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
+import type { RoomProjectionV1 } from "@astella/shared/room-projection-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../room-store.ts";
 import { HomeProjectionProvider, useHomeProjection } from "../home-projection.tsx";
@@ -112,16 +112,16 @@ function Probe() {
 }
 
 function installApi(api: unknown) {
-  Object.defineProperty(window, "ailearn", {
+  Object.defineProperty(window, "astella", {
     configurable: true,
-    value: api as AILearnDesktopApiM2,
+    value: api as AstellaDesktopApiM2,
   });
 }
 
 afterEach(() => {
   cleanup();
   latest = null;
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   vi.restoreAllMocks();
 });
 

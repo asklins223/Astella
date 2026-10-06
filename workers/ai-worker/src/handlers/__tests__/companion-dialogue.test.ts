@@ -8,7 +8,7 @@ import {
   COMPANION_PERSONA_V7,
   COMPANION_PERSONA_V7_PROMPT_ID,
   type ChatMessage,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import {
   buildCompanionPersonaMessages,
   buildFinalCuePayload,
@@ -207,7 +207,7 @@ test("方法目录、人格和固定协议进入同一 system 消息，当前提
 });
 
 test("超预算的页面或旧摘要整块省略，当前问题和确定性接续仍完整保留", () => {
-  const receipts: import("@ailearn/agent-core").AgentContextReceipt[] = [];
+  const receipts: import("@astella/agent-core").AgentContextReceipt[] = [];
   const messages = buildCompanionPersonaMessages({
     userText: "今晚想做什么菜？", recentMessages: [], pageContext: { old: "x".repeat(20000) },
     conversationSummary: `<conversation_summary>${"旧任务".repeat(6000)}</conversation_summary>`,

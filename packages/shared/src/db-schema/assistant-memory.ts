@@ -86,7 +86,7 @@ export const assistantMemoryItems = pgTable(
     /**
      * 同一条"弱空间绑定"记忆在各空间的共同身份（0267）。
      *
-     * 约定与 `ailearn_fanout_global_companion_memory` 一致：**源行认领自己的 id 作为 key**，
+     * 约定与 `astella_fanout_global_companion_memory` 一致：**源行认领自己的 id 作为 key**，
      * 铺出去的副本带同一个 key。0268 的两支同步触发器的条件是
      * `OLD.global_key IS NOT NULL OR NEW.global_key IS NOT NULL`，而"加入/重新加入空间时补铺"
      * 也只挑 `global_key IS NOT NULL` 的行——所以这一位为 NULL 的 global 记忆，
@@ -187,7 +187,7 @@ export const companionProceduralPlaybooks = pgTable(
      * 依据的来源归并回执（方案 44 §6.4）。
      *
      * 与 `evidence` **分开存**：`evidence` 保完整的派生关系（引用一条不少），
-     * 因为 `ailearn_propagate_playbook_evidence_change` 要按 memoryId 找派生方法，
+     * 因为 `astella_propagate_playbook_evidence_change` 要按 memoryId 找派生方法，
      * 用户遗忘或纠正一条记忆时必须能传递到这里。「同源只算一条」说的是**计数**，
      * 不是把派生关系删掉。这里记 `{independentCount, mergedCount, origins}`。
      */

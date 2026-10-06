@@ -37,28 +37,28 @@ test("回收区窗口是 30 天，与服务层常量一致", () => {
 
 test("恢复与到期清除是两条独立的路，不是一条路的两个状态", () => {
   // 「普通删除可恢复」与「彻底清除不等窗口」是 A47 的两半，各自有入口。
-  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.ailearn_restore_companion_memory/);
-  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.ailearn_purge_expired_companion_memory/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.astella_restore_companion_memory/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.astella_purge_expired_companion_memory/);
 
   // 恢复必须同时清掉两个列——只清 deleted_at 的话 purge_after 会残留，
   // 那条记忆将来说不定会被到期清理当成"已删"再抹一次。
   const restore = migration.slice(
-    migration.indexOf("ailearn_restore_companion_memory"),
-    migration.indexOf("ailearn_purge_expired_companion_memory()\nRETURNS"),
+    migration.indexOf("astella_restore_companion_memory"),
+    migration.indexOf("astella_purge_expired_companion_memory()\nRETURNS"),
   );
   assert.match(restore, /deleted_at = NULL/);
   assert.match(restore, /purge_after = NULL/);
 });
 
 test("到期清除只删过了窗口的行，不碰在用的与回收区里的", () => {
-  const purge = migration.slice(migration.indexOf("ailearn_purge_expired_companion_memory()\nRETURNS"));
+  const purge = migration.slice(migration.indexOf("astella_purge_expired_companion_memory()\nRETURNS"));
   assert.match(purge, /deleted_at IS NOT NULL/);
   assert.match(purge, /purge_after IS NOT NULL/);
   assert.match(purge, /purge_after <= now\(\)/,
     "必须带 <= now()，否则清理的是未来到期的行");
   // 这是一条**清兜底**路径，不该拿到直接表权限。
-  assert.match(migration, /REVOKE ALL ON FUNCTION public\.ailearn_purge_expired_companion_memory\(\) FROM PUBLIC/);
-  assert.match(migration, /REVOKE ALL ON FUNCTION public\.ailearn_restore_companion_memory\(uuid, uuid, uuid\) FROM PUBLIC/);
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.astella_purge_expired_companion_memory\(\) FROM PUBLIC/);
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.astella_restore_companion_memory\(uuid, uuid, uuid\) FROM PUBLIC/);
 });
 
 test("【自证】判据认得出「只写 deleted_at、没有回收区」这个旧形状", () => {

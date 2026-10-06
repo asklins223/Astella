@@ -1,9 +1,9 @@
 -- Correct the live maintenance function; 0362 is already applied and remains historical.
-CREATE OR REPLACE FUNCTION public.ailearn_enforce_companion_memory_retention()
+CREATE OR REPLACE FUNCTION public.astella_enforce_companion_memory_retention()
 RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 DECLARE limits record; item_count integer; byte_count bigint; reclaimed integer := 0; changed integer;
 BEGIN
-  SELECT * INTO limits FROM public.ailearn_companion_memory_retention_limits();
+  SELECT * INTO limits FROM public.astella_companion_memory_retention_limits();
   -- Expiry is independent of capacity. Every removal remains recoverable and suppressed.
   WITH expired AS (
     UPDATE public.assistant_memory_items SET deleted_at=now(),purge_after=now()+interval '30 days',updated_at=now()
@@ -35,5 +35,5 @@ BEGIN
   RETURN reclaimed;
 END;
 $$;
-REVOKE ALL ON FUNCTION public.ailearn_enforce_companion_memory_retention() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_enforce_companion_memory_retention() TO ailearn_api,ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_enforce_companion_memory_retention() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_enforce_companion_memory_retention() TO astella_api,astella_worker;

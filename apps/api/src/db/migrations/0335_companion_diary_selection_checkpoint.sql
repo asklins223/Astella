@@ -30,7 +30,7 @@ ALTER TABLE public.companion_diary_generation_checkpoints ENABLE ROW LEVEL SECUR
 ALTER TABLE public.companion_diary_generation_checkpoints FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY companion_diary_checkpoint_worker_scope
-  ON public.companion_diary_generation_checkpoints FOR ALL TO ailearn_worker
+  ON public.companion_diary_generation_checkpoints FOR ALL TO astella_worker
   USING (
     workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
     AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -40,6 +40,6 @@ CREATE POLICY companion_diary_checkpoint_worker_scope
     AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   );
 
-REVOKE ALL PRIVILEGES ON public.companion_diary_generation_checkpoints FROM PUBLIC, ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_diary_generation_checkpoints TO ailearn_worker;
-GRANT ALL PRIVILEGES ON public.companion_diary_generation_checkpoints TO ailearn_migrator;
+REVOKE ALL PRIVILEGES ON public.companion_diary_generation_checkpoints FROM PUBLIC, astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_diary_generation_checkpoints TO astella_worker;
+GRANT ALL PRIVILEGES ON public.companion_diary_generation_checkpoints TO astella_migrator;

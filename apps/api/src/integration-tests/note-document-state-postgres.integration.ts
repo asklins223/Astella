@@ -19,7 +19,7 @@ import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 import { checkpointNote, createNote, restoreNoteVersion } from "../modules/note/service.ts";
 import { applyNoteDocUpdate, loadNoteDoc, persistNoteDoc, resolveNoteDocFlushTarget } from "../modules/note/document-state.ts";
 import { importMarkdownNotes, prepareMarkdownImport } from "../modules/import/markdown-import-service.ts";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
 import {
   editFragmentBlockText,
   projectFragmentBlocks,
@@ -36,11 +36,11 @@ import {
  * 夹具/管理连接优先用**超级用户**那条（`DATABASE_URL`），被测的应用连接仍然是生产形状。
  *
  * `db/client.ts` 自己优先读 `DATABASE_URL_API`，所以 HTTP 与 service 层的读写照旧跑在
- * `ailearn_api`（NOBYPASSRLS）上——被验的东西没变。变的是这份夹具：它对 `note_versions`
+ * `astella_api`（NOBYPASSRLS）上——被验的东西没变。变的是这份夹具：它对 `note_versions`
  * 的原生写在没有 `app.workspace_id` 的连接上会被 RESTRICTIVE 守卫**当场拒绝**（
  * `sec01_v1_note_versions_tenant_guard`），而它还需要故意写进"note 属于 A、workspace_id 写成 B"
  * 这种 RLS 本来就禁止的行，去证明**组合外键**在挡（不是策略在挡）。
- * 另外两处 `SET LOCAL ROLE ailearn_api` 也只有超级用户登录才做得到。
+ * 另外两处 `SET LOCAL ROLE astella_api` 也只有超级用户登录才做得到。
  * 同一形状的理由见 `workspace-collab-postgres` 与 doc 34 §1.2 ②④。
  */
 const databaseUrl = process.env.DATABASE_URL ?? process.env.DATABASE_URL_API;
@@ -355,7 +355,7 @@ test("恢复历史版本走同一入口：内容回到旧版且投影与文档�
  *
  * A. **加载器必须自己带 workspace_id**。`notes` / `note_blocks` 的 RLS 还关着（本次
  *    审查的既有事实），所以跨空间不可见只能靠 WHERE；不写就是真漏，写错也是真漏。
- * B. **新表的 RLS 生效**。这条必须换角色跑：dev 连的是 `ailearn`（superuser +
+ * B. **新表的 RLS 生效**。这条必须换角色跑：dev 连的是 `astella`（superuser +
  *    BYPASSRLS），策略对它形同不存在——同一个坑在 review_schedules 那条断言上踩过。
  */
 test("加载器按空间收窄：陌生作用域读不到别人的正文", async () => {
@@ -379,14 +379,14 @@ test("加载器按空间收窄：陌生作用域读不到别人的正文", async
 
 test("note_document_states 的 RLS 真的在挡（换角色才测得出来）", async () => {
   const asOwner = await sql.begin(async (tx) => {
-    await tx`SET LOCAL ROLE ailearn_api`;
+    await tx`SET LOCAL ROLE astella_api`;
     await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
     return tx`SELECT state FROM note_document_states WHERE note_id = ${noteId}`;
   });
   assert.equal(asOwner.length, 1, "owner 作用域该读到自己那行快照");
 
   const asForeign = await sql.begin(async (tx) => {
-    await tx`SET LOCAL ROLE ailearn_api`;
+    await tx`SET LOCAL ROLE astella_api`;
     await tx`SELECT set_config('app.workspace_id', ${otherWorkspaceId}, true)`;
     return tx`SELECT state FROM note_document_states WHERE note_id = ${noteId}`;
   });

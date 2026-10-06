@@ -11,8 +11,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { FastifyInstance } from "fastify";
 import { cardGenerationV2Routes } from "../modules/card-generation-v2/routes.ts";
-import { cardGenerationEventsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { createGenerationRunInTransaction, type RunContext } from "@ailearn/card-generation";
+import { cardGenerationEventsV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { createGenerationRunInTransaction, type RunContext } from "@astella/card-generation";
 import { db, withWorkspaceTransaction } from "../db/client.ts";
 
 /**

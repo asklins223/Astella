@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { companionMemoryContentMaxLength } from "@ailearn/shared/companion-memory-desktop-contracts";
-import type { CreateAgentRunV1 } from "@ailearn/shared/agent-contracts";
+import { companionMemoryContentMaxLength } from "@astella/shared/companion-memory-desktop-contracts";
+import type { CreateAgentRunV1 } from "@astella/shared/agent-contracts";
 import { gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { useRoomStore } from "../../../app/room-store";
 import { goalStatusText } from "../../companion/agent-goal-presentation";
@@ -14,15 +14,15 @@ export function CompanionLongGoalsPage({ refreshKey, onMemory }: { refreshKey: n
   const scope = useRoomStore(state => state.workspaceScopeRevision);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState<string | undefined>();
-  const resource = useCompanionResource(meta => window.ailearn.agent.listLongGoals({ meta, query: { query, cursor } }), [refreshKey, query, cursor]);
+  const resource = useCompanionResource(meta => window.astella.agent.listLongGoals({ meta, query: { query, cursor } }), [refreshKey, query, cursor]);
   useCompanionRecordsRefresh(resource.reload);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [browsing, setBrowsing] = useState(false), [taskCursor, setTaskCursor] = useState<string | undefined>();
-  const related = useCompanionResource(meta => window.ailearn.agent.listRuns({ meta, query: { longGoalMemoryId: selectedId!, cursor: taskCursor } }), [selectedId, taskCursor], Boolean(selectedId) && browsing);
+  const related = useCompanionResource(meta => window.astella.agent.listRuns({ meta, query: { longGoalMemoryId: selectedId!, cursor: taskCursor } }), [selectedId, taskCursor], Boolean(selectedId) && browsing);
   const [creating, setCreating] = useState(false), [content, setContent] = useState(""), [condition, setCondition] = useState("");
   const [task, setTask] = useState(""), [noteId, setNoteId] = useState("");
   const [noteCursor, setNoteCursor] = useState<string | undefined>();
-  const notes = useCompanionResource(meta => window.ailearn.note.list({ meta, limit: 20, cursor: noteCursor }), [noteCursor], selectedId !== null);
+  const notes = useCompanionResource(meta => window.astella.note.list({ meta, limit: 20, cursor: noteCursor }), [noteCursor], selectedId !== null);
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [notice, setNotice] = useState<string | null>(null);
   const writing = useRef(false), generation = useRef(0);
   const submission = useRef<{ key: string; request: CreateAgentRunV1 } | null>(null);
@@ -49,7 +49,7 @@ export function CompanionLongGoalsPage({ refreshKey, onMemory }: { refreshKey: n
     }
   };
   const create = () => void write(async () => {
-    const created = unwrapGatewayResult(await window.ailearn.companion.memory.create({ meta: resource.meta(),
+    const created = unwrapGatewayResult(await window.astella.companion.memory.create({ meta: resource.meta(),
       request: { kind: "goal", scope: "workspace", content: content.trim(), appliesWhen: condition.trim() || null } }));
     if (!current()) return;
     setSelectedId(created.memoryItemId); setCreating(false); setContent(""); setCondition("");
@@ -63,13 +63,13 @@ export function CompanionLongGoalsPage({ refreshKey, onMemory }: { refreshKey: n
       if (submission.current?.key !== key) {
         const inputs: CreateAgentRunV1["inputs"] = [];
         if (noteId) {
-          const note = unwrapGatewayResult(await window.ailearn.note.get({ meta: resource.meta(), noteId }));
+          const note = unwrapGatewayResult(await window.astella.note.get({ meta: resource.meta(), noteId }));
           if (!current()) return;
           inputs.push({ kind: "note_version", noteId: note.noteId, noteVersionId: note.currentVersionId });
         }
         submission.current = { key, request: { requestId: crypto.randomUUID(), goal, inputs, longGoal: ref } };
       }
-      const run = unwrapGatewayResult(await window.ailearn.agent.createRun({ meta: resource.meta(), request: submission.current.request }));
+      const run = unwrapGatewayResult(await window.astella.agent.createRun({ meta: resource.meta(), request: submission.current.request }));
       if (!current()) return;
       submission.current = null; setTask(""); setNotice("这次的事已交给伴星，进展与成果会留在我们的对话手记里。");
       openCompanionGoalJournal(run.runId, scope);

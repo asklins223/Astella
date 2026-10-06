@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { ArrowRight, BookOpenText, Play } from "lucide-react";
-import type { UnderstandingEdgeProjectionV3, UnderstandingNodeProjectionV3 } from "@ailearn/shared/note-deepening-contracts";
-import type { NoteApplicabilityAxisV3, NoteDeepeningV3, NoteNextStepAxisV3, NotePerformanceAxisV3 } from "@ailearn/shared/note-deepening-v3-contracts";
+import type { UnderstandingEdgeProjectionV3, UnderstandingNodeProjectionV3 } from "@astella/shared/note-deepening-contracts";
+import type { NoteApplicabilityAxisV3, NoteDeepeningV3, NoteNextStepAxisV3, NotePerformanceAxisV3 } from "@astella/shared/note-deepening-v3-contracts";
 import { graphNodeLabel, graphNodeSummary, graphObjectiveStateLabel, isNoteNode, isObjectiveNode } from "./graph-sky";
 
 type ObjectiveNode = Extract<UnderstandingNodeProjectionV3, { nodeRef: { kind: "objective" } }>;

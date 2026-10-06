@@ -7,11 +7,11 @@ const read = vi.hoisted(() => vi.fn());
 const settled = vi.hoisted(() => vi.fn());
 const progress = vi.hoisted(() => vi.fn());
 vi.mock("../voice-asr-model", () => ({ readVoiceAsrModel: read }));
-vi.mock("../voice-model-notifications", () => ({ VOICE_MODEL_DOWNLOAD_STARTED: "ailearn:voice-model-download-started", notifyVoiceModelSettled: settled, notifyVoiceModelDownloading: progress }));
+vi.mock("../voice-model-notifications", () => ({ VOICE_MODEL_DOWNLOAD_STARTED: "astella:voice-model-download-started", notifyVoiceModelSettled: settled, notifyVoiceModelDownloading: progress }));
 const snapshot = (status: string) => ({ status }) as VoiceAsrModelSnapshotV1;
 beforeEach(() => { vi.useFakeTimers(); read.mockReset().mockResolvedValue(snapshot("absent")); settled.mockReset(); progress.mockReset(); });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
-const start = async () => { await act(async () => window.dispatchEvent(new CustomEvent("ailearn:voice-model-download-started", { detail: snapshot("downloading") }))); };
+const start = async () => { await act(async () => window.dispatchEvent(new CustomEvent("astella:voice-model-download-started", { detail: snapshot("downloading") }))); };
 
 it("does not announce a model that was already installed at startup", async () => {
   read.mockResolvedValue(snapshot("ready")); renderHook(useVoiceModelNotifications); await act(async () => {});

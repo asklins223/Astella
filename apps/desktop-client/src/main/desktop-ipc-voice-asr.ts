@@ -27,8 +27,8 @@ import {
   DESKTOP_IPC_CHANNELS,
   requestMetaSchema,
   type RequestMetaV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
-import { voiceAsrModelSnapshotV1Schema } from "@ailearn/shared/voice-asr-model-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
+import { voiceAsrModelSnapshotV1Schema } from "@astella/shared/voice-asr-model-contracts";
 import { runtimeInputSchema } from "./desktop-ipc-companion";
 import type { InputSchema, ParsedMeta } from "./desktop-ipc";
 import { DesktopGatewayFailure } from "./desktop-gateway-failure";

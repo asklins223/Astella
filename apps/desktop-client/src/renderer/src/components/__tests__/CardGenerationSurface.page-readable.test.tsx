@@ -4,7 +4,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CardGenerationSurface } from "../CardGenerationSurface.tsx";
 import { useRoomStore } from "../../app/room-store.ts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /**
  * 「伴星能不能读到学习卡生成这一屏」（doc 37）。
@@ -131,7 +131,7 @@ function stubGateway(options: { status: string; landed: number; planned: number;
       },
     },
   };
-  Object.defineProperty(window, "ailearn", { value: gateway, configurable: true });
+  Object.defineProperty(window, "astella", { value: gateway, configurable: true });
   return gateway;
 }
 

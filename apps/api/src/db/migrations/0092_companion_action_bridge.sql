@@ -98,8 +98,8 @@ CREATE POLICY companion_action_runs_workspace_scope ON public.companion_action_r
 
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
-    GRANT SELECT, INSERT, UPDATE ON public.companion_action_proposals TO ailearn_worker;
-    GRANT SELECT, INSERT, UPDATE ON public.companion_action_runs TO ailearn_worker;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
+    GRANT SELECT, INSERT, UPDATE ON public.companion_action_proposals TO astella_worker;
+    GRANT SELECT, INSERT, UPDATE ON public.companion_action_runs TO astella_worker;
   END IF;
 END $$;

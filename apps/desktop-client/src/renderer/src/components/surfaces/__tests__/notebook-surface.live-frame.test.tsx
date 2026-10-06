@@ -69,7 +69,7 @@ function stub() {
   const syncUpdate = vi.fn(async (_input: { noteId: string; update: string }) => ({ ok: true as const, workspaceEpoch: 1, data: { via: "stream", revision: null, savedAt: new Date().toISOString() } }));
   const state = vi.fn(async () => noteDocResult({ update: seed }));
   const presence = vi.fn(async (_input: { noteId: string; state: string }) => ({ ok: true as const, workspaceEpoch: 1, data: { shared: true } }));
-  window.ailearn = {
+  window.astella = {
     contract: { enabledRoutes: ["note.detail"] },
     auth: { getState: vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: { status: "authenticated", workspace: { workspaceId: "w-1" } } })) },
     room: {
@@ -115,7 +115,7 @@ function stub() {
         return () => { listeners = listeners.filter((entry) => entry !== listener); };
       },
     },
-  } as unknown as typeof window.ailearn;
+  } as unknown as typeof window.astella;
   return { seed, reads: () => call, syncUpdate, state, presence };
 }
 

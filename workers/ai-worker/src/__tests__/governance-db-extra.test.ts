@@ -15,7 +15,7 @@ import {
   type AICallAuditParams,
 } from "../lib/governance.ts";
 import { db } from "../db.ts";
-import { setPlatformConfig, resetPlatformConfigCache } from "@ailearn/shared/platform-config-node";
+import { setPlatformConfig, resetPlatformConfigCache } from "@astella/shared/platform-config-node";
 
 const WS_ID = "00000000-0000-0000-0000-000000000001";
 const USER_ID = "00000000-0000-0000-0000-000000000002";

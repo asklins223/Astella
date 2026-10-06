@@ -55,7 +55,7 @@ export interface ArtifactDocumentVerdictV1 {
  *     地址还会让相对路径解析到别处，字体与图片的失败路径很难查。宁可一开始就没有。
  *   - `@import` / `<link>` / `<base>`：同上，且 `<base>` 能改掉相对路径的基准。
  *   - `<iframe>` / `<object>` / `<embed>`：子文档不在本 frame 的沙箱判据里。
- *   - `<form>`：能把这一页变成一次导航提交，父侧只认 `ailearn-app://artifact` 的
+ *   - `<form>`：能把这一页变成一次导航提交，父侧只认 `astella-app://artifact` 的
  *     source，任何一次顶层导航都是错的。
  *   - `fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / `sendBeacon`：网络。
  *   - `import(` / `importScripts`：动态加载，绕过"页面自带脚本"这一层的可读性。

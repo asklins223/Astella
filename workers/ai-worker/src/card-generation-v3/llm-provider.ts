@@ -23,7 +23,7 @@
  * 单调用（或 content 偶发为空），所以 maxTokens 提到 10000，且真机是否在
  * step 预算（120s）内跑完需要实测确认。
  */
-import type { ChatMessage, ChatOptions, ChatResult } from "@ailearn/shared";
+import type { ChatMessage, ChatOptions, ChatResult } from "@astella/shared";
 import type { AIProvider } from "../lib/ai-provider.ts";
 import type {
   CardCandidateRewriteV3TaskInput,

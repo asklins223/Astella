@@ -3,15 +3,15 @@ import {
   type LearningDashboardV2,
   type LearningObjectivePrimaryActionV3,
   type LearningObjectiveSurfaceV3,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import {
   roomProjectionV1Schema,
   type RoomActionRouteV1,
   type RoomPrimaryActionV1,
   type RoomProjectionV1,
-} from "@ailearn/shared/room-projection-contracts";
-import type { CapabilityProjectionV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import type { CardGenerationActiveSummaryV1 } from "@ailearn/shared/card-generation-desktop-contracts";
+} from "@astella/shared/room-projection-contracts";
+import type { CapabilityProjectionV1 } from "@astella/shared/desktop-ipc-contracts";
+import type { CardGenerationActiveSummaryV1 } from "@astella/shared/card-generation-desktop-contracts";
 
 type RoomProjectionContext = {
   readonly workspaceEpoch: number;

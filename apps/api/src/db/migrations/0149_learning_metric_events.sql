@@ -43,14 +43,14 @@ DROP POLICY IF EXISTS learning_metric_events_workspace_user_isolation
 CREATE POLICY learning_metric_events_workspace_user_isolation
   ON public.learning_metric_events FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
     )
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -59,5 +59,5 @@ CREATE POLICY learning_metric_events_workspace_user_isolation
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT ON public.learning_metric_events TO ailearn_api;
-GRANT SELECT, INSERT ON public.learning_metric_events TO ailearn_worker;
+GRANT SELECT, INSERT ON public.learning_metric_events TO astella_api;
+GRANT SELECT, INSERT ON public.learning_metric_events TO astella_worker;

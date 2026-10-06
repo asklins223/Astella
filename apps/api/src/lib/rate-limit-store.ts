@@ -2,7 +2,7 @@
 
 import { sql } from "drizzle-orm";
 import { db } from "../db/client.ts";
-import { authRateLimits } from "@ailearn/shared/db-schema/identity";
+import { authRateLimits } from "@astella/shared/db-schema/identity";
 
 export interface RateLimitEntry {
   count: number;

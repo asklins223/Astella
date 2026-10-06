@@ -21,7 +21,7 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { DomainError } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
 import { and, asc, eq, gt, lte, or, sql } from "drizzle-orm";
 import {
   withWorkspaceTransaction,
@@ -29,14 +29,14 @@ import {
 } from "../../db/client.ts";
 import { COMPANION_ACCOUNT_NOTIFY_CHANNEL } from "../../companion-contracts/notify-contracts.ts";
 import { type StoredVoicePreference } from "../learning-sessions/voice-providers/tts-preference.ts";
-import { type TtsEngineV1 } from "@ailearn/shared/tts-voice-catalog";
+import { type TtsEngineV1 } from "@astella/shared/tts-voice-catalog";
 import {
   companionRuntimeFences,
   type CompanionAnimationVoiceOff,
   userCompanionAccountState,
   userCompanionOnboarding,
   userLearningPreferences as userLearningPreferencesTable,
-} from "@ailearn/shared/db-schema/companion";
+} from "@astella/shared/db-schema/companion";
 import {
   CompanionOnboardingErrorCode,
   COMPANION_GUIDE_VERSION,
@@ -56,7 +56,7 @@ import {
   type TransitionAction,
   companionAgentSettingsV1Schema,
   type CompanionAgentSettingsV1,
-} from "@ailearn/shared";
+} from "@astella/shared";
 
 // ─── 常量与类型 ─────────────────────────────────────────────────────────
 

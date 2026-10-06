@@ -22,7 +22,7 @@
 /** 非白名单异常的对外统一摘要：绝不外传驱动/供应商原文。 */
 export const TOOL_FAILURE_SAFE_SUMMARY = "工具执行失败，请稍后再试";
 
-import { COMPANION_AGENT_MAX_STEPS, type CompanionContentBlockV1, type AgentTurnRequest } from "@ailearn/shared";
+import { COMPANION_AGENT_MAX_STEPS, type CompanionContentBlockV1, type AgentTurnRequest } from "@astella/shared";
 import { AGENT_GOAL_HANDOFF_INSTRUCTIONS } from "../agent/goal-handoff-instructions.ts";
 
 /** Internal repair cannot take the place of the user's current request. */

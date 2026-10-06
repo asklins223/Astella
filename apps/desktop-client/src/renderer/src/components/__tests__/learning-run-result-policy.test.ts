@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LearningRunResultV2 } from "@ailearn/shared/learning-run-v2-contracts";
+import type { LearningRunResultV2 } from "@astella/shared/learning-run-v2-contracts";
 import {
   activateLearningRunRequestFence,
   captureLearningRunRequest,

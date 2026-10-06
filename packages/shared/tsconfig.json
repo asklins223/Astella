@@ -14,7 +14,7 @@
     "noEmit": true,
     "rootDir": "src",
     "paths": {
-      "@ailearn/shared": ["./src/index.ts"]
+      "@astella/shared": ["./src/index.ts"]
     }
   },
   "include": ["src/**/*.ts"]

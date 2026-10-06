@@ -103,9 +103,9 @@ test("isStorageConfigured 与 resolveStorageCredentials 讲同一条规则", () 
 });
 
 test("桶名与超时：写坏的环境变量退回默认，而不是变成 0", () => {
-  assert.equal(resolveStorageBucket(env({})), "ailearn-workspaces");
-  assert.equal(resolveStorageBucket(env({ S3_BUCKET: "" })), "ailearn-workspaces");
-  assert.equal(resolveStorageBucket(env({ S3_BUCKET: "  " })), "ailearn-workspaces");
+  assert.equal(resolveStorageBucket(env({})), "astella-workspaces");
+  assert.equal(resolveStorageBucket(env({ S3_BUCKET: "" })), "astella-workspaces");
+  assert.equal(resolveStorageBucket(env({ S3_BUCKET: "  " })), "astella-workspaces");
   assert.equal(resolveStorageBucket(env({ S3_BUCKET: "custom" })), "custom");
 
   // 0 会让 S3Client 变成"立即超时"——比超时报错更糟

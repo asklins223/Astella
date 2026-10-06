@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AgentRunV1 } from "@ailearn/shared/agent-contracts";
+import type { AgentRunV1 } from "@astella/shared/agent-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
 import { notifyCompanion } from "./companion-notifications";
@@ -28,7 +28,7 @@ export function useAgentGoals(chatPhase: string, onReady: (runId: string) => voi
   const refresh = useCallback(async () => {
     const request = ++sequence.current;
     try {
-      const api = window.ailearn?.agent;
+      const api = window.astella?.agent;
       if (!api) return;
       const page = unwrapGatewayResult(await api.listRuns({ meta: createRequestMeta() }));
       if (!current() || request !== sequence.current) return;
@@ -82,7 +82,7 @@ export function useAgentGoals(chatPhase: string, onReady: (runId: string) => voi
     const request = ++moreSequence.current;
     moreLocked.current = true; setMoreLoading(true); setMoreError(null);
     try {
-      const page = unwrapGatewayResult(await window.ailearn.agent.listRuns({ meta: createRequestMeta(), query: { cursor: snapshot.nextCursor } }));
+      const page = unwrapGatewayResult(await window.astella.agent.listRuns({ meta: createRequestMeta(), query: { cursor: snapshot.nextCursor } }));
       if (!current() || request !== moreSequence.current) return;
       // A refreshed or locally updated goal wins over an older pagination response.
       setSnapshot(previous => ({ scope, expanded: true, nextCursor: page.nextCursor,
@@ -93,7 +93,7 @@ export function useAgentGoals(chatPhase: string, onReady: (runId: string) => voi
 
   const ensure = useCallback(async (runId: string) => {
     try {
-      const run = unwrapGatewayResult(await window.ailearn.agent.getRun({ meta: createRequestMeta(), runId }));
+      const run = unwrapGatewayResult(await window.astella.agent.getRun({ meta: createRequestMeta(), runId }));
       if (!current()) return;
       setSnapshot(previous => {
         const known = previous.items.find(item => item.runId === run.runId);
@@ -109,8 +109,8 @@ export function useAgentGoals(chatPhase: string, onReady: (runId: string) => voi
     try {
       const meta = createRequestMeta();
       const result = typeof action === "string"
-        ? await window.ailearn.agent.controlRun({ meta, runId: run.runId, request: { expectedRevision: run.revision, action } })
-        : await window.ailearn.agent.reviseRun({ meta, runId: run.runId, request: { expectedRevision: run.revision, ...action } });
+        ? await window.astella.agent.controlRun({ meta, runId: run.runId, request: { expectedRevision: run.revision, action } })
+        : await window.astella.agent.reviseRun({ meta, runId: run.runId, request: { expectedRevision: run.revision, ...action } });
       const updated = unwrapGatewayResult(result);
       if (!current()) return false;
       ++sequence.current;

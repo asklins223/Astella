@@ -132,7 +132,7 @@ export const objectiveReviewHoldsV2 = pgTable(
  *    相同目标、相同回访目的的待办；取消一项授权不误删另一项」。
  *
  * 在这张表之前，`ReviewAuthorizationSourceV2`（`note_subscription` / `card_review`）
- * 只活在 `@ailearn/shared/review-authorization-rules-v2` 的类型里：**没有任何地方
+ * 只活在 `@astella/shared/review-authorization-rules-v2` 的类型里：**没有任何地方
  * 写它、也没有任何地方读它**，于是「暂停笔记复习时说明已单独开启的卡片是否继续」
  * 这句话没有可查的来源，"分别开停"也没有那颗开关能拨。
  *

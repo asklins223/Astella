@@ -8,7 +8,7 @@ import {
   companionRateLimitReply,
 } from "../../lib/companion-rate-limit.ts";
 import { requireCompanionDialogue } from "./routes.ts";
-import { companionRunListQueryV1Schema } from "@ailearn/shared";
+import { companionRunListQueryV1Schema } from "@astella/shared";
 import { loadCompanionRunDoctorV1 } from "./run-doctor.ts";
 import { loadCompanionRunListV1 } from "./run-list.ts";
 import { loadCompanionRunIssueBundleV1 } from "./run-issue-bundle.ts";

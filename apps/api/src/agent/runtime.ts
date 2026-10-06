@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { createAgentStore, createAgentMethodStore, startAgentNoteOperation, invokeCardGenerationCapability,
-  AgentStoreError, queryRows, type AgentSqlExecutor, type AgentOperationStore } from "@ailearn/agent-host";
-import { agentInputRefV1Schema, type AgentScopeV1 } from "@ailearn/shared/agent-contracts";
-import type { AgentDirectRequestV1 } from "@ailearn/shared/agent-request-contracts";
-import { sha256Utf8V1 } from "@ailearn/shared/content-hash";
+  AgentStoreError, queryRows, type AgentSqlExecutor, type AgentOperationStore } from "@astella/agent-host";
+import { agentInputRefV1Schema, type AgentScopeV1 } from "@astella/shared/agent-contracts";
+import type { AgentDirectRequestV1 } from "@astella/shared/agent-request-contracts";
+import { sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkspaceTransaction, type ApiTransaction } from "../db/client.ts";
 
 const ports = { transaction: withWorkspaceTransaction, id: randomUUID };

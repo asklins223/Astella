@@ -20,7 +20,7 @@ test("0346 已登记", () => {
 });
 
 test("归档上限是**双预算**：条数 + 字节，不是只数条数", () => {
-  assert.match(migration, /ailearn_companion_memory_retention_limits/);
+  assert.match(migration, /astella_companion_memory_retention_limits/);
   // 只看条数会让一条超长记忆占满整层；只看字节会让几千条短记忆挤进来。
   assert.match(migration, /items integer, byte_count bigint/);
   assert.match(migration, /archived_items <= limit_items AND archived_bytes <= limit_bytes/,
@@ -35,7 +35,7 @@ test("上限由**淘汰**执行，不是在移入时拒绝——否则归档满�
   // 所以这里的 DELETE 断言守的是 0346 当初写下的形状，**不是现行行为**。
   // 现行形状由 `0362-companion-memory-retention-recycle-bin-migration.test.ts`
   // 守住（那里断言淘汰路径里**没有** DELETE）。
-  const sweep = migration.slice(migration.indexOf("ailearn_enforce_companion_memory_retention"));
+  const sweep = migration.slice(migration.indexOf("astella_enforce_companion_memory_retention"));
   assert.match(sweep, /DELETE FROM public\.assistant_memory_items/,
     "0346 当初就是硬删；0362 才换成软删——这条断言现在只描述历史形状");
   assert.match(sweep, /budget_tier = 'archived'/);
@@ -44,7 +44,7 @@ test("上限由**淘汰**执行，不是在移入时拒绝——否则归档满�
 });
 
 test("淘汰顺序是机械的，不是「最新写入驱逐有效记录」", () => {
-  const sweep = migration.slice(migration.indexOf("ailearn_enforce_companion_memory_retention"));
+  const sweep = migration.slice(migration.indexOf("astella_enforce_companion_memory_retention"));
   // 第一步清已过声明期限的 —— 那是本来就该过期的，不是被容量挤掉的。
   assert.match(sweep, /valid_until IS NOT NULL[\s\S]*?valid_until <= now\(\)/);
   // 第二步才是容量淘汰，且顺序确定：最不重要 → 最久没用 → 最早更新 → id 兜底。
@@ -57,13 +57,13 @@ test("淘汰顺序是机械的，不是「最新写入驱逐有效记录」", ()
 });
 
 test("固定（pinned）不参与容量淘汰", () => {
-  const sweep = migration.slice(migration.indexOf("ailearn_enforce_companion_memory_retention"));
+  const sweep = migration.slice(migration.indexOf("astella_enforce_companion_memory_retention"));
   assert.match(sweep, /AND pinned = false/,
     "用户固定的记忆不该被容量压力悄悄淘汰");
 });
 
 test("清扫走受控函数，不给客户端直接 DELETE", () => {
-  assert.match(migration, /REVOKE ALL ON FUNCTION public\.ailearn_enforce_companion_memory_retention\(\) FROM PUBLIC/);
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.astella_enforce_companion_memory_retention\(\) FROM PUBLIC/);
 });
 
 test("服务层与迁移的归档上限一致——两处各写一个数就会漂移", () => {

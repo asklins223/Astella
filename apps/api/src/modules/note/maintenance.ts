@@ -6,8 +6,8 @@
  */
 import { and, asc, isNotNull, sql } from "drizzle-orm";
 import { db, withWorkspaceTransaction, SYSTEM_USER_ID } from "../../db/client.ts";
-import { notes } from "@ailearn/shared/db-schema/note";
-import { workspaces } from "@ailearn/shared/db-schema/identity";
+import { notes } from "@astella/shared/db-schema/note";
+import { workspaces } from "@astella/shared/db-schema/identity";
 import { logger } from "../../lib/logger.ts";
 import { deleteObject } from "../../lib/object-storage.ts";
 import { physicalDeleteNote } from "./service.ts";
@@ -21,7 +21,7 @@ import { physicalDeleteNote } from "./service.ts";
  * RLS 修复（2026-09 后端审查）：physicalDeleteNote 会读写 note_image_assets
  * ——该表 ENABLE+FORCE RLS（0046），策略要求 workspace_id =
  * current_setting('app.workspace_id')。此前用裸 db.transaction（无事务级 GUC），
- * 在 ailearn_api（NOBYPASSRLS）下资产查询恒为 0 行：图片资产永不标记 deleted、
+ * 在 astella_api（NOBYPASSRLS）下资产查询恒为 0 行：图片资产永不标记 deleted、
  * MinIO 对象永不回收（与手动 DELETE /notes/:id/permanent 行为分叉）。改为
  * withWorkspaceTransaction，actor 用 SYSTEM_USER_ID（系统级维护无具体用户）。
  *
@@ -35,8 +35,8 @@ export async function purgeSoftDeletedNotes(retentionDays = 30): Promise<number>
   //
   // 为什么必须**按空间一个个扫**：`notes` 在 0257 里是 `ENABLE + FORCE ROW LEVEL SECURITY`，
   // 它的 RESTRICTIVE 守卫没有"没设上下文就放行"那一支，所以这一句用裸 `db` 扫，
-  // 在生产形状（`ailearn_api`，NOBYPASSRLS）下恒 0 行——30 天清除**从来没有清过任何东西**
-  // （dev 因为 API 连的是 BYPASSRLS 的 `ailearn` 而看不出来，doc 34 L37 症状 A）。
+  // 在生产形状（`astella_api`，NOBYPASSRLS）下恒 0 行——30 天清除**从来没有清过任何东西**
+  // （dev 因为 API 连的是 BYPASSRLS 的 `astella` 而看不出来，doc 34 L37 症状 A）。
   // `workspaces` 那张表的守卫有 NULL 分支（0257 专门为登录路径开的），所以枚举空间是安全的；
   // 真正读笔记的每一步都回到带上下文的事务里。
   const workspaceRows = await db.select({ id: workspaces.id }).from(workspaces);

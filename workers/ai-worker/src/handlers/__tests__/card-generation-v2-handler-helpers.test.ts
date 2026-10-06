@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { randomUUID } from "node:crypto";
-import { DomainError } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
 
 import {
   capSourceContentForPrompts,

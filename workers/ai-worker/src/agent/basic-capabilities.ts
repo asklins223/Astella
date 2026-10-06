@@ -1,6 +1,6 @@
-import { calculateAgentExpression } from "@ailearn/agent-core";
-import { AgentStoreError } from "@ailearn/agent-host";
-import { basicAgentCapabilityManifest } from "@ailearn/shared/agent-capabilities";
+import { calculateAgentExpression } from "@astella/agent-core";
+import { AgentStoreError } from "@astella/agent-host";
+import { basicAgentCapabilityManifest } from "@astella/shared/agent-capabilities";
 import type { AgentWorkerAdvanceStore } from "./store.ts";
 
 /** Both hosts validate and execute the same pure calculation capability. */

@@ -30,7 +30,7 @@ COMMENT ON COLUMN public.workspaces.workspace_epoch IS
 --> statement-breakpoint
 
 -- 边界变更的**唯一**实现：给一个空间抬 epoch。
-CREATE OR REPLACE FUNCTION public.ailearn_bump_workspace_epoch(target_workspace_id uuid)
+CREATE OR REPLACE FUNCTION public.astella_bump_workspace_epoch(target_workspace_id uuid)
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -49,7 +49,7 @@ $function$;
 
 --> statement-breakpoint
 
-GRANT EXECUTE ON FUNCTION public.ailearn_bump_workspace_epoch(uuid) TO ailearn_api;
+GRANT EXECUTE ON FUNCTION public.astella_bump_workspace_epoch(uuid) TO astella_api;
 
 --> statement-breakpoint
 
@@ -58,7 +58,7 @@ GRANT EXECUTE ON FUNCTION public.ailearn_bump_workspace_epoch(uuid) TO ailearn_a
 -- 为什么放在触发器而不是调用点：`workspace_members` 的写入点有六处（注册、建协作
 -- 空间、接受邀请、退出、被移除、重置恢复账号），逐个加"记得抬 epoch"正是审查说的
 -- 那种"靠开发者手写"的约定。触发器让"成员变了"与"边界变了"在数据库层同义。
-CREATE OR REPLACE FUNCTION public.ailearn_bump_epoch_on_membership_change()
+CREATE OR REPLACE FUNCTION public.astella_bump_epoch_on_membership_change()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -66,16 +66,16 @@ SET search_path TO 'public'
 AS $function$
 BEGIN
   IF TG_OP = 'INSERT' THEN
-    PERFORM public.ailearn_bump_workspace_epoch(NEW.workspace_id);
+    PERFORM public.astella_bump_workspace_epoch(NEW.workspace_id);
     RETURN NEW;
   ELSIF TG_OP = 'DELETE' THEN
-    PERFORM public.ailearn_bump_workspace_epoch(OLD.workspace_id);
+    PERFORM public.astella_bump_workspace_epoch(OLD.workspace_id);
     RETURN OLD;
   ELSE
     -- 软退出是 UPDATE left_at，角色变更也是 UPDATE——两者都改边界。
     IF NEW.left_at IS DISTINCT FROM OLD.left_at
        OR NEW.role IS DISTINCT FROM OLD.role THEN
-      PERFORM public.ailearn_bump_workspace_epoch(NEW.workspace_id);
+      PERFORM public.astella_bump_workspace_epoch(NEW.workspace_id);
     END IF;
     RETURN NEW;
   END IF;
@@ -87,13 +87,13 @@ $function$;
 DROP TRIGGER IF EXISTS workspace_members_epoch_bump ON public.workspace_members;
 CREATE TRIGGER workspace_members_epoch_bump
   AFTER INSERT OR UPDATE OR DELETE ON public.workspace_members
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_bump_epoch_on_membership_change();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_bump_epoch_on_membership_change();
 
 --> statement-breakpoint
 
 -- 账号级 AI 同意 / 外发政策：审查 4.5 说这是"每一次 AI 调用"的授权前提，
 -- 改了它必须让所有在线的端重新读一次边界。
-CREATE OR REPLACE FUNCTION public.ailearn_bump_epoch_on_ai_settings_change()
+CREATE OR REPLACE FUNCTION public.astella_bump_epoch_on_ai_settings_change()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -110,7 +110,7 @@ BEGIN
       SELECT m.workspace_id FROM public.workspace_members m
        WHERE m.user_id = NEW.user_id AND m.left_at IS NULL
     LOOP
-      PERFORM public.ailearn_bump_workspace_epoch(v_workspace_id);
+      PERFORM public.astella_bump_workspace_epoch(v_workspace_id);
     END LOOP;
   END IF;
   RETURN NEW;
@@ -122,12 +122,12 @@ $function$;
 DROP TRIGGER IF EXISTS user_ai_settings_epoch_bump ON public.user_ai_settings;
 CREATE TRIGGER user_ai_settings_epoch_bump
   AFTER UPDATE ON public.user_ai_settings
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_bump_epoch_on_ai_settings_change();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_bump_epoch_on_ai_settings_change();
 
 --> statement-breakpoint
 
 -- 空间自身的边界：改名、换 owner、换类型。
-CREATE OR REPLACE FUNCTION public.ailearn_bump_epoch_on_workspace_change()
+CREATE OR REPLACE FUNCTION public.astella_bump_epoch_on_workspace_change()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -148,7 +148,7 @@ $function$;
 DROP TRIGGER IF EXISTS workspaces_epoch_bump ON public.workspaces;
 CREATE TRIGGER workspaces_epoch_bump
   BEFORE UPDATE ON public.workspaces
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_bump_epoch_on_workspace_change();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_bump_epoch_on_workspace_change();
 
 --> statement-breakpoint
 

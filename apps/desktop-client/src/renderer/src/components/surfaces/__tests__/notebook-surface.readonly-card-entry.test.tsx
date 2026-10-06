@@ -18,7 +18,7 @@
  * ② 文案说清真实原因（只读身份），且**不**说成"功能没开放"；
  * ③ 能力位被拒**与**功能开关关掉，说的是两句不同的话。
  *
- * 夹具形状照 `notebook-surface.generation-options.test.tsx`（`window.ailearn`、
+ * 夹具形状照 `notebook-surface.generation-options.test.tsx`（`window.astella`、
  * 顶层 `capabilities.get`、`subscriptions`、`useRoomStore.activeNoteRef`）——
  * 第一版自己另造了一套注入（`globalThis.desktopApi` + `desktop.capabilities`），
  * 结果渲染层根本读不到，四条全红。**跟着房子里已有的那一份写，别另发明。**
@@ -91,7 +91,7 @@ function stubGateway(capabilities: Capabilities, canEdit: boolean) {
       unsubscribe: vi.fn(async () => ({ ok: true as const, data: null })),
     },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return state;
 }
 

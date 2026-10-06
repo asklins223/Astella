@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CompanionActivityDeliveryV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { CompanionActivityDeliveryV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import {
   createCueDeliveryReporter,
   findCueDelivery,

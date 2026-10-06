@@ -3,7 +3,7 @@ import { chromium } from "playwright-core";
 /**
  * 一个真窗口，从头开到编辑态，然后把"本机 ↔ 主进程"那一段量出来。
  *
- * 为什么必须这样量：jsdom 用例是把 `window.ailearn` 整个换掉跑的，IPC 的 zod 校验、
+ * 为什么必须这样量：jsdom 用例是把 `window.astella` 整个换掉跑的，IPC 的 zod 校验、
  * preload 通道白名单、主进程那条 HTTP/WS 分流**一样都不在**。真实窗口里那句
  * "标签永远停在草稿、服务端一个字节都没收到"就是这一类失败，只在真窗口看得见。
  *
@@ -19,8 +19,8 @@ import { chromium } from "playwright-core";
 const port = Number(process.env.PORT ?? 9321);
 const SPACE_HINT = process.env.SPACE_HINT ?? "验收空间 acc0921";
 const NOTE_HINT = process.env.NOTE_HINT ?? "这段全空间都读得到";
-const EMAIL = "owner@ailearn.local";
-const PASSWORD = "ailearn_owner";
+const EMAIL = "owner@astella.local";
+const PASSWORD = "astella_owner";
 const stamp = new Date().toISOString().slice(11, 19).replace(/:/g, "");
 const MARK = `｜单窗探针${stamp}`;
 
@@ -29,9 +29,9 @@ const page = browser.contexts()[0]!.pages().find((entry) => !entry.url().startsW
 
 // 先挂上拦截：起点那次 `state` 也要被记到（"取了几次起点"本身就是判据之一）。
 await page.evaluate(() => {
-  const w = window as unknown as { ailearn?: any; __ipc?: unknown[] };
+  const w = window as unknown as { astella?: any; __ipc?: unknown[] };
   w.__ipc = [];
-  const doc = w.ailearn?.note?.doc;
+  const doc = w.astella?.note?.doc;
   if (!doc) return;
   for (const method of ["state", "syncUpdate", "syncTitle", "presence"] as const) {
     const original = doc[method];
@@ -56,8 +56,8 @@ await page.evaluate(() => {
 
 /** 自证：这个拦截真的挂得上（挂不上的话，下面的空读数什么都证明不了）。 */
 const selfTest = await page.evaluate(async () => {
-  const w = window as unknown as { ailearn?: any; __ipc?: unknown[] };
-  const doc = w.ailearn?.note?.doc;
+  const w = window as unknown as { astella?: any; __ipc?: unknown[] };
+  const doc = w.astella?.note?.doc;
   if (!doc) return { hookable: false, reason: "note.doc 不在" };
   let writable = true;
   try {

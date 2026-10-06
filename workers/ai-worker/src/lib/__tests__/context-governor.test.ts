@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ProviderCapability } from "@ailearn/shared";
+import type { ProviderCapability } from "@astella/shared";
 import { createGovernedProvider, type WorkspaceAIPolicy } from "../governance.ts";
 import { AIContextCompactionRequiredError, AIContextOverflowError, REGISTERED_FALLBACK_CAPABILITY } from "../context-governor.ts";
 import { isNonRetryableError } from "../non-retryable-errors.ts";

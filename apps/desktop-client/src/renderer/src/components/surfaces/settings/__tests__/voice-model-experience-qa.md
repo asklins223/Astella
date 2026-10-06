@@ -31,7 +31,7 @@ npm run build
 
 相关 11 个测试文件、152 项测试通过。shared、api、desktop-client、ai-worker 各包的 `npm run typecheck` 通过；桌面构建通过。jsdom 仍打印既有的媒体 `pause` 未实现提示，相关断言通过。
 
-在隔离用户目录和模型目录中启动构建后的 Electron 窗口，以 `ailearn-app://bundle/` 加载页面，1440×810 内容区实际操作了：
+在隔离用户目录和模型目录中启动构建后的 Electron 窗口，以 `astella-app://bundle/` 加载页面，1440×810 内容区实际操作了：
 
 - 缺模型提示 → 设置卡定位与焦点。
 - 下载、取消、再次下载、完成、移除；进度展开后取消按钮仍可见。

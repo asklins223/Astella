@@ -40,7 +40,7 @@ describe("PendingReturnMarkerStore", () => {
   });
 
   it("round-trips only the strict marker envelope across restart", async () => {
-    const root = await mkdtemp(join(tmpdir(), "ailearn-marker-"));
+    const root = await mkdtemp(join(tmpdir(), "astella-marker-"));
     const path = join(root, "markers.json");
     try {
       const first = new FilePendingReturnMarkerStore(path);
@@ -56,7 +56,7 @@ describe("PendingReturnMarkerStore", () => {
   });
 
   it("rejects legacy V1 or malformed persisted markers instead of resurrecting them", async () => {
-    const root = await mkdtemp(join(tmpdir(), "ailearn-marker-legacy-"));
+    const root = await mkdtemp(join(tmpdir(), "astella-marker-legacy-"));
     const path = join(root, "markers.json");
     try {
       await writeFile(path, JSON.stringify({
@@ -79,7 +79,7 @@ describe("PendingReturnMarkerStore", () => {
   });
 
   it("serializes concurrent workspace mutations so the last in-memory state wins", async () => {
-    const root = await mkdtemp(join(tmpdir(), "ailearn-marker-race-"));
+    const root = await mkdtemp(join(tmpdir(), "astella-marker-race-"));
     const path = join(root, "markers.json");
     const otherWorkspaceId = "00000000-0000-4000-8000-000000000007";
     try {

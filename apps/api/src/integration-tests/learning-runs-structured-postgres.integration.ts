@@ -6,7 +6,7 @@
  * 恰好一个 practice trail event（0 canonical / 0 schedule）→ 错误顺序同样
  * practice（gap 反馈）→ 非法 payload（token 不属于题目）400 拒绝。
  *
- * 运行：DATABASE_URL_API="postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn"
+ * 运行：DATABASE_URL_API="postgres://astella:astella_dev@127.0.0.1:5432/astella"
  *   node --import tsx --test --test-concurrency=1 src/integration-tests/learning-runs-structured-postgres.integration.ts
  */
 
@@ -23,7 +23,7 @@ import {
   renderPsqlResidueQueryV1,
   renderPsqlStatementV1,
 } from "./helpers/learning-run-cleanup.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL_API ??= CONN;
@@ -33,7 +33,7 @@ const sql = postgres(CONN, { max: 2 });
  * 裸 SQL 校验必须带 workspace/user 上下文。
  *
  * 目标表 learning_task_private_solutions / canonical_learning_event_outbox /
- * practice_trail_event_outbox 都是 FORCE RLS：受限角色（ailearn_api）在无上下文
+ * practice_trail_event_outbox 都是 FORCE RLS：受限角色（astella_api）在无上下文
  * 事务里查询会命中 0 行，让"从 private solution 读正确答案"取到空数组而假失败；
  * 超级用户则绕过 RLS 让它失去隔离意义。
  */

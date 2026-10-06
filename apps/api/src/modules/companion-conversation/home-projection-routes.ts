@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { companionRoomProfilePatchV1Schema } from "@ailearn/shared/companion-home-contracts";
+import { companionRoomProfilePatchV1Schema } from "@astella/shared/companion-home-contracts";
 import { withWorkspaceTransaction } from "../../db/client.ts";
 import { requireSession } from "../identity/middleware.ts";
 import {

@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
-import { ReviewStatus } from "@ailearn/shared";
+import { ReviewStatus } from "@astella/shared";
 import { db } from "../db/client.ts";
-import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
+import { reviewSchedules } from "@astella/shared/db-schema/evidence";
 import {
   learningObjectivesV2,
   learningObjectiveRevisionsV2,
   learningCardsV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/card-generation-v2";
 import { listReviews } from "../modules/review/service.ts";
 
 const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";

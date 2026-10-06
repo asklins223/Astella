@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentTurnRequest, ChatMessage, ChatOptions } from "@ailearn/shared";
+import type { AgentTurnRequest, ChatMessage, ChatOptions } from "@astella/shared";
 import {
   measureAgentTurnRequest, measureChatRequest, estimateTextTokens,
   IMAGE_TOKEN_FLOOR, REASONING_HANDLE_TOKEN_FLOOR,

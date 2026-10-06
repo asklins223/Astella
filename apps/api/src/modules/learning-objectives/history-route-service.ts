@@ -8,8 +8,8 @@ import { and, eq, desc, lt, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
 import {
   learningObjectiveRevisionsV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import type { ObjectiveRevisionClassV2 } from "@ailearn/shared";
+} from "@astella/shared/db-schema/card-generation-v2";
+import type { ObjectiveRevisionClassV2 } from "@astella/shared";
 import { clampLimit } from "../../lib/pagination-utils.ts";
 
 // ─── W2-19: history ──────────────────────────────────────────────────────

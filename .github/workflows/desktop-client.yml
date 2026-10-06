@@ -134,7 +134,8 @@ jobs:
         run: npx electron-builder --dir
       # 可执行文件叫什么是 `electron-builder.yml` 的 `productName` 决定的，**不在这里写死**。
       #
-      # 2026-10-06：这三步此前找的是 `AI Learn`——产品早就改名成「理解引擎」了，
+      # 2026-10-06：这三步此前找的是 `AI Learn`——产品名早就换过一轮（那之后叫
+      # 「理解引擎」，现在叫 Astella），
       # 而这三条 locate 一直被上游的红挡着（v1/v2 那两条 job 从未成功过），
       # 所以从没人发现它已经对不上。写死名字的代价就是**改名时静默坏掉**，
       # 而症状（"找不到打包产物"）看起来像打包坏了，不像改名漏改。
@@ -155,15 +156,15 @@ jobs:
         shell: bash
         run: |
           # Linux 上可执行文件**不叫 productName**：electron-builder 用的是
-          # package.json 的 `name`（实测产出 `ailearn-desktop-client`），
-          # 而 Windows/macOS 用的是「理解引擎」。既然这条规则与产品名无关，
+          # package.json 的 `name`（实测产出 `astella-desktop-client`），
+          # 而 Windows/macOS 用的是 productName（现在是 Astella）。既然这条规则与产品名无关，
           # 就别按名字找——按**排除 Electron 自带的那些**来找：顶层可执行的
           # 文件里，去掉沙箱、crashpad 与所有 .so，剩下的就是应用本体。
           app_bin="$(find apps/desktop-client/release/linux-unpacked -maxdepth 1 -type f -executable \
             ! -name 'chrome-sandbox' ! -name 'chrome_crashpad_handler' ! -name '*.so*' -print -quit)"
           test -n "$app_bin" || { echo >&2 "没找到应用本体（linux-unpacked 里有什么：）"; ls -la apps/desktop-client/release/linux-unpacked | head -24; exit 1; }
           app_bin="$(realpath "$app_bin")"
-          echo "AILEARN_PACKAGED_APP=$app_bin" >> "$GITHUB_ENV"
+          echo "ASTELLA_PACKAGED_APP=$app_bin" >> "$GITHUB_ENV"
           echo "Linux 应用本体 = $app_bin"
       - name: Locate Windows package
         if: runner.os == 'Windows'
@@ -171,7 +172,7 @@ jobs:
         run: |
           $app = Get-ChildItem -Path apps/desktop-client/release/win-unpacked -Filter "$env:PRODUCT_NAME.exe" -Recurse | Select-Object -First 1
           if ($null -eq $app) { throw "Packaged $env:PRODUCT_NAME.exe not found" }
-          "AILEARN_PACKAGED_APP=$($app.FullName)" >> $env:GITHUB_ENV
+          "ASTELLA_PACKAGED_APP=$($app.FullName)" >> $env:GITHUB_ENV
       - name: Locate macOS package
         if: runner.os == 'macOS'
         shell: bash
@@ -179,18 +180,18 @@ jobs:
           app_bin="$(find apps/desktop-client/release -path "*/Contents/MacOS/${PRODUCT_NAME}" -type f -print -quit)"
           test -n "$app_bin" || { echo >&2 "没找到可执行文件 ${PRODUCT_NAME}（release 下有什么：）"; find apps/desktop-client/release -maxdepth 4 -name MacOS -type d; exit 1; }
           app_bin="$(realpath "$app_bin")"
-          echo "AILEARN_PACKAGED_APP=$app_bin" >> "$GITHUB_ENV"
+          echo "ASTELLA_PACKAGED_APP=$app_bin" >> "$GITHUB_ENV"
       - name: Verify packaged boundary and asset containment
         working-directory: apps/desktop-client
         env:
-          AILEARN_PACKAGED_PREFLIGHT_ONLY: "1"
+          ASTELLA_PACKAGED_PREFLIGHT_ONLY: "1"
         run: npm run package:smoke
       - name: Smoke packaged Linux app
         if: runner.os == 'Linux'
         shell: bash
         working-directory: apps/desktop-client
         env:
-          AILEARN_PACKAGED_OFFLINE_ONLY: "1"
+          ASTELLA_PACKAGED_OFFLINE_ONLY: "1"
         run: |
           xvfb-run --auto-servernum --server-args='-screen 0 1440x900x24' npm run package:smoke
       - name: Smoke packaged Windows app
@@ -198,14 +199,14 @@ jobs:
         shell: pwsh
         working-directory: apps/desktop-client
         env:
-          AILEARN_PACKAGED_OFFLINE_ONLY: "1"
+          ASTELLA_PACKAGED_OFFLINE_ONLY: "1"
         run: npm run package:smoke
       - name: Smoke packaged macOS app
         if: runner.os == 'macOS'
         shell: bash
         working-directory: apps/desktop-client
         env:
-          AILEARN_PACKAGED_OFFLINE_ONLY: "1"
+          ASTELLA_PACKAGED_OFFLINE_ONLY: "1"
         run: npm run package:smoke
       - name: Upload unpacked desktop-client package
         uses: actions/upload-artifact@v4

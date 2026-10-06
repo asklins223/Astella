@@ -2,7 +2,7 @@
 --
 -- 背景（2026-09-17 极限延迟改造，实测）：
 -- 主队列 public.jobs 早在 0115 就通过 AFTER INSERT 触发器发
--- pg_notify('ailearn_job_events')，worker 的 LISTEN 消费者收到后立刻唤醒轮询
+-- pg_notify('astella_job_events')，worker 的 LISTEN 消费者收到后立刻唤醒轮询
 -- （index.ts:538 → pollWake.wake()）。但 **V2 学习卡生成的 outbox 表从未接过
 -- 这条通道**：worker 只能等下一次 tick，而 worker 空闲时轮询已按自适应退避
 -- （index.ts:63 POLL_MAX_MS = 5000ms）退到 5s 一次。
@@ -21,13 +21,13 @@
 -- 注意：本迁移只加触发器，**不改任何业务语义**——通知只是"提前唤醒"，即使
 -- 通知丢失（LISTEN 断线）也仍有原轮询兜底，正确性不依赖它。
 
-CREATE OR REPLACE FUNCTION public.ailearn_card_generation_outbox_notify()
+CREATE OR REPLACE FUNCTION public.astella_card_generation_outbox_notify()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
   PERFORM pg_notify(
-    'ailearn_job_events',
+    'astella_job_events',
     json_build_object(
       'workspaceId', NEW.workspace_id::text,
       'runId', NEW.run_id::text,
@@ -42,9 +42,9 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS ailearn_card_generation_outbox_insert_notify
+DROP TRIGGER IF EXISTS astella_card_generation_outbox_insert_notify
   ON public.card_generation_run_outbox_v2;
-CREATE TRIGGER ailearn_card_generation_outbox_insert_notify
+CREATE TRIGGER astella_card_generation_outbox_insert_notify
   AFTER INSERT ON public.card_generation_run_outbox_v2
   FOR EACH ROW
-  EXECUTE FUNCTION public.ailearn_card_generation_outbox_notify();
+  EXECUTE FUNCTION public.astella_card_generation_outbox_notify();

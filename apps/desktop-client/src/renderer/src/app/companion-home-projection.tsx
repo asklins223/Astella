@@ -11,7 +11,7 @@ import {
 import type {
   CompanionHomeProjectionV1,
   CompanionRoomProfilePatchV1,
-} from "@ailearn/shared/companion-home-contracts";
+} from "@astella/shared/companion-home-contracts";
 import {
   RendererGatewayError,
   createRequestMeta,
@@ -76,7 +76,7 @@ export function CompanionHomeProjectionProvider({ children }: { readonly childre
   ): Promise<CompanionRoomProfileChangeResult> => {
     const currentProfile = state.projection?.roomProfile;
     const requestScope = scopeRef.current;
-    if (!currentProfile || !requestScope || !window.ailearn) {
+    if (!currentProfile || !requestScope || !window.astella) {
       return { ok: false, message: "伴星小屋尚未完成同步。" };
     }
     if (profileSavingRef.current) {
@@ -86,7 +86,7 @@ export function CompanionHomeProjectionProvider({ children }: { readonly childre
     const writeGeneration = ++profileWriteGenerationRef.current;
     setState((current) => ({ ...current, profileSaving: true, profileFailure: null }));
     try {
-      const sessionResponse = await window.ailearn.auth.getState({ meta: createRequestMeta() });
+      const sessionResponse = await window.astella.auth.getState({ meta: createRequestMeta() });
       const session = unwrapGatewayResult(sessionResponse);
       if (session.status !== "authenticated" || !session.workspace) throw new Error("session");
       const sessionScope = {
@@ -94,7 +94,7 @@ export function CompanionHomeProjectionProvider({ children }: { readonly childre
         workspaceEpoch: session.workspaceEpoch,
       } satisfies ProjectionWorkspaceScope;
       if (!sameProjectionScope(requestScope, sessionScope)) throw new Error("workspace changed");
-      const response = await window.ailearn.companion.room.patchProfile({
+      const response = await window.astella.companion.room.patchProfile({
         meta: createRequestMeta(session.workspaceEpoch),
         request: {
           version: 1,
@@ -164,7 +164,7 @@ export function CompanionHomeProjectionProvider({ children }: { readonly childre
 
     const generation = ++requestGenerationRef.current;
     const load = async () => {
-      if (!window.ailearn) throw new Error("unavailable");
+      if (!window.astella) throw new Error("unavailable");
       const knownScope = scopeRef.current;
       // 同代刷新不重读会话（同 home-projection）：伴星投递只说明这份投影旧了，
       // 账号与空间都没变，/auth/me 不该随事件条数增长。
@@ -172,7 +172,7 @@ export function CompanionHomeProjectionProvider({ children }: { readonly childre
       if (knownScope && invalidation.workspaceEpoch === knownScope.workspaceEpoch) {
         requestScope = knownScope;
       } else {
-        const sessionResponse = await window.ailearn.auth.getState({ meta: createRequestMeta() });
+        const sessionResponse = await window.astella.auth.getState({ meta: createRequestMeta() });
         const session = unwrapGatewayResult(sessionResponse);
         if (session.status !== "authenticated" || !session.workspace) {
           if (generation === requestGenerationRef.current) {
@@ -209,7 +209,7 @@ export function CompanionHomeProjectionProvider({ children }: { readonly childre
         scopeRef.current = requestScope;
       }
 
-      const response = await window.ailearn.companion.home.getProjection({
+      const response = await window.astella.companion.home.getProjection({
         meta: createRequestMeta(requestScope.workspaceEpoch),
       });
       const projection = unwrapGatewayResult(response);

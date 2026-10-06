@@ -6,7 +6,7 @@ import {
   nonEmptyStringSchema,
   staticAssetPathSchema,
   type LearningRoomManifestV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import {
   ROOM_SCENE_ANCHOR_IDS,
   SCENE_DEPTH_CHILD_ORDER_MAX,

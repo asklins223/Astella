@@ -6,16 +6,16 @@
 import { randomUUID } from "node:crypto";
 import { asc, and, eq } from "drizzle-orm";
 import type { ApiTransaction } from "../../../db/client.ts";
-import { noteBlocks, noteVersions } from "@ailearn/shared/db-schema/note";
+import { noteBlocks, noteVersions } from "@astella/shared/db-schema/note";
 import {
   runAiTask,
   type AiStepResult,
   type AiTaskDefinition,
-} from "@ailearn/shared/ai-task-kernel";
-import type { RoundTeachingContentV1 } from "@ailearn/shared/note-learning-round-contracts";
+} from "@astella/shared/ai-task-kernel";
+import type { RoundTeachingContentV1 } from "@astella/shared/note-learning-round-contracts";
 import type { RoundTargetDraft } from "./round-target-contract.ts";
-import type { NoteReflectionTeachingSnapshotV1 } from "@ailearn/shared/note-learning-reflection-contracts";
-import type { RoundSuspectClaimV1 } from "@ailearn/shared/note-learning-round-contracts";
+import type { NoteReflectionTeachingSnapshotV1 } from "@astella/shared/note-learning-reflection-contracts";
+import type { RoundSuspectClaimV1 } from "@astella/shared/note-learning-round-contracts";
 import type { SuspectClaimRecheckTargetV1 } from "../suspect-claim-recheck.ts";
 
 export const NOTE_TEACHING_EXPLAIN_TASK_ID = "note_teaching_explain_v1";
@@ -83,7 +83,7 @@ export interface TeachingExplainScope {
 /**
  * 「这一段正文说的是什么」的可读化：只做最小的一层标记剥离。
  *
- * 2026-09-29（P2-15）：实现搬到 `@ailearn/shared` 的
+ * 2026-09-29（P2-15）：实现搬到 `@astella/shared` 的
  * `plainTextForGroundingV1`（逐字相同的 11 行，此前在这个文件里重写了一遍）。
  * 同一个目录下 `routes.ts` 早就在 import shared 那份——两份的规则必须逐字一致，
  * 差一个正则就会让"带 `**` 的同一段话"在两条路上算成不同的东西。
@@ -91,7 +91,7 @@ export interface TeachingExplainScope {
  * 本文件保留的只是名字：`plainTextOfBlockV1` 在教学侧被叫了五年，
  * 改名的收益不抵动 5 处调用点 + 1 个测试的成本。
  */
-import { plainTextForGroundingV1 as plainTextOfBlockV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact-measure";
+import { plainTextForGroundingV1 as plainTextOfBlockV1 } from "@astella/shared/note-dynamic-artifact/round-artifact-measure";
 
 export { plainTextOfBlockV1 };
 /** 确定性输出的单段上限：够说清一件事，又不至于把整节抄进来。 */

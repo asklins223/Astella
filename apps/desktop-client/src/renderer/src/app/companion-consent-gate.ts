@@ -1,4 +1,4 @@
-import type { WorkspaceAiSettingsV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { WorkspaceAiSettingsV1 } from "@astella/shared/desktop-ipc-contracts";
 
 /**
  * 伴星的 AI 同意门禁（2026-09-19）。

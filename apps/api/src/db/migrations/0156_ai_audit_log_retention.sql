@@ -10,7 +10,7 @@
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_purge_old_ai_audit_log(
+CREATE OR REPLACE FUNCTION public.astella_purge_old_ai_audit_log(
   p_retention_days integer DEFAULT 90,
   p_batch integer DEFAULT 1000
 )
@@ -53,12 +53,12 @@ $function$;
 --> statement-breakpoint
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
     REVOKE ALL ON FUNCTION
-      public.ailearn_purge_old_ai_audit_log(integer, integer)
-      FROM PUBLIC, ailearn_worker;
+      public.astella_purge_old_ai_audit_log(integer, integer)
+      FROM PUBLIC, astella_worker;
     GRANT EXECUTE ON FUNCTION
-      public.ailearn_purge_old_ai_audit_log(integer, integer)
-      TO ailearn_api;
+      public.astella_purge_old_ai_audit_log(integer, integer)
+      TO astella_api;
   END IF;
 END $$;

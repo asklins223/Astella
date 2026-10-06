@@ -25,7 +25,7 @@ function stub() {
   listeners = [];
   subscribe = vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: { subscriptionId: "sub-1" } }));
   presence = vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: { shared: true } }));
-  window.ailearn = {
+  window.astella = {
     contract: { enabledRoutes: ["note.detail"] },
     auth: { getState: vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: { status: "authenticated", workspace: { workspaceId: "w-1" } } })) },
     room: {
@@ -79,7 +79,7 @@ function stub() {
         return () => { listeners = listeners.filter((entry) => entry !== listener); };
       },
     },
-  } as unknown as typeof window.ailearn;
+  } as unknown as typeof window.astella;
 }
 
 async function open(mode: "preview" | "live-preview") {
@@ -109,7 +109,7 @@ describe("笔记页上的在场名单", () => {
     stub();
     useRoomStore.setState({
       spaceIdentity: { name: "验收空间", role: "owner", isPersonal: false },
-      accountIdentity: { email: "owner@ailearn.local", displayName: "Asklins" },
+      accountIdentity: { email: "owner@astella.local", displayName: "Asklins" },
     });
     await open("preview");
     expect(document.body.textContent ?? "").not.toContain("人在看");
@@ -122,7 +122,7 @@ describe("笔记页上的在场名单", () => {
     stub();
     useRoomStore.setState({
       spaceIdentity: { name: "验收空间", role: "owner", isPersonal: false },
-      accountIdentity: { email: "owner@ailearn.local", displayName: "Asklins" },
+      accountIdentity: { email: "owner@astella.local", displayName: "Asklins" },
     });
     await open("live-preview");
     await deliverPresence([{ clientId: 7, state: { name: "小琳" } }]);
@@ -133,8 +133,8 @@ describe("笔记页上的在场名单", () => {
     stub();
     useRoomStore.setState({
       spaceIdentity: { name: "验收空间", role: "owner", isPersonal: false },
-      // 演示账号 owner@ailearn.local 就没有显示名——量那次对端整排都是「?」。
-      accountIdentity: { email: "owner@ailearn.local", displayName: null },
+      // 演示账号 owner@astella.local 就没有显示名——量那次对端整排都是「?」。
+      accountIdentity: { email: "owner@astella.local", displayName: null },
     });
     await open("preview");
     expect(presence).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -151,7 +151,7 @@ describe("笔记页上的在场名单", () => {
     stub();
     useRoomStore.setState({
       spaceIdentity: { name: "我的空间", role: "owner", isPersonal: true },
-      accountIdentity: { email: "owner@ailearn.local", displayName: "Asklins" },
+      accountIdentity: { email: "owner@astella.local", displayName: "Asklins" },
     });
     await open("live-preview");
     expect(subscribe).not.toHaveBeenCalled();

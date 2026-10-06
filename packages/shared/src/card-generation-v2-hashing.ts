@@ -3,7 +3,7 @@
  *
  * §9.5：所有方案 20 hash 共用版本化 canonical serializer（hash-canonical-v2），
  * 禁止各模块直接 JSON.stringify。本文件依赖 node:crypto（惰性），从子路径
- * `@ailearn/shared/card-generation-v2-hashing` 导入，不进入 index 全量导出
+ * `@astella/shared/card-generation-v2-hashing` 导入，不进入 index 全量导出
  * （客户端 bundle 约定，见 index.ts 2026-08-13 注释）。
  */
 

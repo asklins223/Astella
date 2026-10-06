@@ -41,7 +41,7 @@ import { CalendarClock, Download, HardDrive, RefreshCw, Sparkles } from "lucide-
 import { SettingRow } from "./settings-primitives.tsx";
 import { createRequestMeta } from "../../../app/desktop-client";
 import { hasActionableUpdate } from "../../../app/update-status";
-import type { UpdateStateV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { UpdateStateV1 } from "@astella/shared/desktop-ipc-contracts";
 
 function megabytes(bytes: number): string {
   if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
@@ -192,7 +192,7 @@ export function SettingsUpdateGroup(props: {
               onClick={(event) => {
                 event.preventDefault();
                 if (state.releaseUrl) {
-                  void window.ailearn.shell.openExternal({
+                  void window.astella.shell.openExternal({
                     meta: createRequestMeta(),
                     request: { url: state.releaseUrl },
                   });

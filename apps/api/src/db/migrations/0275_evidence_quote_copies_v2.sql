@@ -46,14 +46,14 @@ ALTER TABLE public.evidence_quote_copies_v2 FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY eqc_v2_ws_isolation ON public.evidence_quote_copies_v2
   AS PERMISSIVE FOR ALL TO PUBLIC
-  USING ((CURRENT_USER = 'ailearn_worker' OR workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid))
-  WITH CHECK ((CURRENT_USER = 'ailearn_worker' OR workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid));
+  USING ((CURRENT_USER = 'astella_worker' OR workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid))
+  WITH CHECK ((CURRENT_USER = 'astella_worker' OR workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid));
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.evidence_quote_copies_v2 TO ailearn_api;
-GRANT SELECT, INSERT ON public.evidence_quote_copies_v2 TO ailearn_worker;
-GRANT ALL PRIVILEGES ON public.evidence_quote_copies_v2 TO ailearn_migrator;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.evidence_quote_copies_v2 TO astella_api;
+GRANT SELECT, INSERT ON public.evidence_quote_copies_v2 TO astella_worker;
+GRANT ALL PRIVILEGES ON public.evidence_quote_copies_v2 TO astella_migrator;
 
 --> statement-breakpoint
 

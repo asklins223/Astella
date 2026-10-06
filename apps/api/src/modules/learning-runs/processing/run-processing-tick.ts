@@ -1,4 +1,4 @@
-import { practiceTrailEventOutbox } from "@ailearn/shared/db-schema/learning-runs";
+import { practiceTrailEventOutbox } from "@astella/shared/db-schema/learning-runs";
 import { uncoveredFacets } from "../run-result-facets.ts";
 import {
   appendRunEvent,
@@ -39,11 +39,11 @@ export { closeStructuredSolutionSql };
  * 进程内存构造）。
  */
 
-import { reviewDimensionForObservationV2, type ReviewDimensionV2 } from "@ailearn/shared/review-dimension-v2";
+import { reviewDimensionForObservationV2, type ReviewDimensionV2 } from "@astella/shared/review-dimension-v2";
 import { and, eq, inArray, sql, desc } from "drizzle-orm";
 import {
   helpConditionCooldownAfterV2,
-} from "@ailearn/shared/help-condition-rules-v2";
+} from "@astella/shared/help-condition-rules-v2";
 import {
   db,
   withWorkspaceTransaction,
@@ -55,33 +55,33 @@ import {
   learningArtifacts,
   learningRunPrivateContracts,
   learningRuns,
-} from "@ailearn/shared/db-schema/learning-runs";
+} from "@astella/shared/db-schema/learning-runs";
 import {
   evidenceEligibilityStatesV2,
   initialValidationRemindersV2,
   learningObjectivesV2,
   learningObjectiveRevisionsV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { reviewSchedules } from "@astella/shared/db-schema/evidence";
 // W7-8 刀二：判据在纯函数里（§9.1「自动策略不能悄悄把提醒提前」），这一层只负责
 // 把那一列读出来递给它，并把「抬过」如实带回。
 import {
   decideNextReviewAtWithManualDateV2,
   type ManualDateConstraintEndedV2,
-} from "@ailearn/shared/review-manual-date-constraint-v2";
+} from "@astella/shared/review-manual-date-constraint-v2";
 import { ensurePendingReviewScheduleV2 } from "../../review/review-schedule-boundary.ts";
 // 39d W5-5：§14.2「待复核时不持续放大结论」的那一闸。与上面那道笔记依据闸并排调用。
 import { disputeScheduleResolutionV2, markCorrectionAppliedV2 } from "../disputes/run-disputes.ts";
 import { readObjectiveNoteChangeImpactV1 } from "../../learning-objectives/change-impact-service.ts";
 import {
   calculateDiscreteV2Schedule,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import { backfillPresentationHistory } from "../run-service.ts";
 // 方案 16 §20：run_result 埋点（尽力而为，独立小事务）。
 import { insertLearningMetricEvent } from "../../observability/learning-metrics.ts";
-import { learningMetricEvents } from "@ailearn/shared/db-schema/learning-metrics";
-import { CanonicalLearningEventEnvelopeV1, LearningRunResultV1, LearningRunReturnTargetV1, SchedulingAuthorizationV1 } from "@ailearn/shared";
-import { sha256Hex } from "@ailearn/shared/content-hash";
+import { learningMetricEvents } from "@astella/shared/db-schema/learning-metrics";
+import { CanonicalLearningEventEnvelopeV1, LearningRunResultV1, LearningRunReturnTargetV1, SchedulingAuthorizationV1 } from "@astella/shared";
+import { sha256Hex } from "@astella/shared/content-hash";
 import {
   CriticOutputError,
   CriticUnavailableError,
@@ -187,7 +187,7 @@ export async function runLearningRunProcessingTick(
   // ─── 2026-10-03：逐条认领改为「小批量认领 + 批内并发」────────────────
   // 上面那条 B#1/R1 约束保护的是它**自己描述的那个失效模式**：大批量认领 +
   // 串行处理，于是靠后行等到轮到时租约已过期。它保护的不是"批量认领"本身——
-  // `ailearn_claim_run_processing` 的 FOR UPDATE SKIP LOCKED 与统一租约，对
+  // `astella_claim_run_processing` 的 FOR UPDATE SKIP LOCKED 与统一租约，对
   // 并发认领者本来就是安全的；而**批内并发恰好消除了租约失效的成因**：
   // 并发 C 时一批 C 行同时开始处理，一轮最坏耗时仍是**单条**的耗时
   // （一次 Critic 约 8s），而不是 C×8s。租约在 claim 时打 120s，到"最后一行
@@ -206,7 +206,7 @@ export async function runLearningRunProcessingTick(
     const batchSize = Math.min(concurrency, maxCommands - (processed + failed));
     const now = new Date();
     const claimedRows = await db.execute(sql`
-      SELECT * FROM public.ailearn_claim_run_processing(
+      SELECT * FROM public.astella_claim_run_processing(
         ${workerId}, ${LEASE_SECONDS * 1000}, ${batchSize}, ${now.toISOString()}
       )
     `);
@@ -351,7 +351,7 @@ async function settleFailedCommand(row: ClaimedCommand, err: unknown, workerId: 
       // PERF-B8：mark 增加 lease CAS（0150），传 workerId 防租约过期后的
       // 慢一拍实例对已由他人处理的行置位。
       await db.execute(sql`
-        SELECT public.ailearn_mark_run_processing_processed(${row.id}, ${workerId}, now())
+        SELECT public.astella_mark_run_processing_processed(${row.id}, ${workerId}, now())
       `).catch((markErr) => {
         // L9（2026-08-24 审查）：mark 失败不再静默——幂等兜底仍在（重放靠状态
         // 检查），但必须留日志，否则 outbox 行会一直可重领。
@@ -383,7 +383,7 @@ interface ClaimedCommand {
 }
 
 async function processClaimedCommand(row: ClaimedCommand, workerId: string): Promise<void> {
-  // 直接用 claim 返回字段（RLS 下 ailearn_api 不能跨 workspace 重读 outbox 行）。
+  // 直接用 claim 返回字段（RLS 下 astella_api 不能跨 workspace 重读 outbox 行）。
   const typed: CommandRow = {
     id: row.id,
     runId: row.run_id,
@@ -518,7 +518,7 @@ async function processClaimedCommand(row: ClaimedCommand, workerId: string): Pro
   // 后果：一次挂起的个性化 LLM 调用（当时无 AbortSignal，只受 300s 共享超时约束）
   // 会让这条 outbox 行的完成被推迟最多 5 分钟/条，直接拖慢整条 tick 串行链。
   await db.execute(sql`
-    SELECT public.ailearn_mark_run_processing_processed(${row.id}, ${workerId}, now())
+    SELECT public.astella_mark_run_processing_processed(${row.id}, ${workerId}, now())
   `).catch((markErr) => {
     logger.warn(
       {

@@ -30,7 +30,7 @@ export async function tickCompanionProposalExpiry(nowMs = Date.now()): Promise<n
   if (nowMs - lastSweepAt < EXPIRY_SWEEP_INTERVAL_MS) return 0;
   try {
     const rows = await db.execute<{ reclaimed: number }>(sql`
-      SELECT public.ailearn_reclaim_stale_companion_proposals() AS reclaimed
+      SELECT public.astella_reclaim_stale_companion_proposals() AS reclaimed
     `);
     lastSweepAt = nowMs;
     const reclaimed = Number((Array.isArray(rows) ? rows : [])[0]?.reclaimed ?? 0);

@@ -12,9 +12,9 @@ import {
   type CompanionPersonaProfileContent,
   type CompanionPersonaProfileVersionAction,
   type CompanionPersonaProfileVersionAuthor,
-} from "@ailearn/shared/db-schema/companion-memory";
-import { users } from "@ailearn/shared/db-schema/identity";
-import { getPresetById } from "@ailearn/shared/pet-persona-presets";
+} from "@astella/shared/db-schema/companion-memory";
+import { users } from "@astella/shared/db-schema/identity";
+import { getPresetById } from "@astella/shared/pet-persona-presets";
 export {
   DEFAULT_PERSONA_PRESET_ID,
   getDefaultPersonaPreset,
@@ -25,10 +25,10 @@ export {
   type PetProfileActiveness,
   type PetPersonaPreset,
   type PetPersonaPresetBoundaries,
-} from "@ailearn/shared/pet-persona-presets";
+} from "@astella/shared/pet-persona-presets";
 import type {
   PetPersonaPresetBoundaries,
-} from "@ailearn/shared/pet-persona-presets";
+} from "@astella/shared/pet-persona-presets";
 
 export type PetProfileBoundaries = PetPersonaPresetBoundaries;
 

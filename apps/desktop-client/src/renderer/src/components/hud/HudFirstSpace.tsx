@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { SessionContextV1, WorkspaceSummaryV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { SessionContextV1, WorkspaceSummaryV1 } from "@astella/shared/desktop-ipc-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
 import { mediaAssetUrl, useLearningRoomManifest } from "../../media/learning-room-manifest";
@@ -82,7 +82,7 @@ function HudFirstSpace({
     setBusy("enter");
     setFailure(null);
     try {
-      unwrapGatewayResult(await window.ailearn.workspace.switch({
+      unwrapGatewayResult(await window.astella.workspace.switch({
         meta: createRequestMeta(workspaceEpoch),
         workspaceId: selected.workspaceId,
       }));
@@ -100,7 +100,7 @@ function HudFirstSpace({
     setBusy("join");
     setFailure(null);
     try {
-      unwrapGatewayResult(await window.ailearn.auth.joinWorkspace({
+      unwrapGatewayResult(await window.astella.auth.joinWorkspace({
         meta: createRequestMeta(workspaceEpoch),
         inviteToken,
       }));

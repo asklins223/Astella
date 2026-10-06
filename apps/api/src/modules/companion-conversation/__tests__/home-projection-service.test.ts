@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { CompanionRoomProfileV1 } from "@ailearn/shared/companion-home-contracts";
+import type { CompanionRoomProfileV1 } from "@astella/shared/companion-home-contracts";
 import type { ApiTransaction } from "../../../db/client.ts";
 import {
   deriveMilestoneUnlocks,

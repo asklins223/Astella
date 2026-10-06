@@ -13,7 +13,7 @@ import type {
   ChatResult,
   CapabilityImpl,
   ModelProfile,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import { registerFactory } from "../provider-factory.ts";
 
 // ARCH-05: contextWindowTokens 可通过 MOCK_CONTEXT_WINDOW_TOKENS 环境变量覆盖。

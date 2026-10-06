@@ -107,7 +107,7 @@ function stubGatewayForNote(options: { readonly draft: { update: string; savedAt
       })),
     },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return { gateway };
 }
 

@@ -19,8 +19,8 @@
 
 import { and, asc, eq, gt, lt, or, sql } from "drizzle-orm";
 import { db, closeDatabase, withWorkspaceTransaction, SYSTEM_USER_ID } from "../db/client.ts";
-import { notes } from "@ailearn/shared/db-schema/note";
-import { workspaces } from "@ailearn/shared/db-schema/identity";
+import { notes } from "@astella/shared/db-schema/note";
+import { workspaces } from "@astella/shared/db-schema/identity";
 import { physicalDeleteNote } from "../modules/note/service.ts";
 import { deleteObject } from "../lib/object-storage.ts";
 import { logger } from "../lib/logger.ts";
@@ -56,7 +56,7 @@ function parseArgs(): { dryRun: boolean; retentionDays: number } {
  *
  * 为什么按空间而不是全库一把扫：`notes` 是 `ENABLE + FORCE ROW LEVEL SECURITY` 的表，
  * 它的 RESTRICTIVE 守卫没有"没设上下文就放行"那一支，裸 `db` 扫在生产角色
- * （`ailearn_api`，NOBYPASSRLS）下恒 0 行——这份 CLI 的上下两半曾经都瞎
+ * （`astella_api`，NOBYPASSRLS）下恒 0 行——这份 CLI 的上下两半曾经都瞎
  * （doc 34 L37 症状 A；`maintenance.ts` 那条 6 小时的同型问题已单独修）。
  * 键集分页的语义一条没改：只是"每个空间各有一条自己的游标"。
  */

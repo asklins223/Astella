@@ -11,7 +11,7 @@ const reviewDir = resolve(import.meta.dirname, '../../../.impeccable/review')
 await mkdir(outDir, { recursive: true })
 await mkdir(reviewDir, { recursive: true })
 
-const browser = await chromium.connectOverCDP(process.env.AILEARN_CAPTURE_CDP ?? 'http://127.0.0.1:9222')
+const browser = await chromium.connectOverCDP(process.env.ASTELLA_CAPTURE_CDP ?? 'http://127.0.0.1:9222')
 const page = browser.contexts()[0].pages()[0]
 
 const consoleErrors = []

@@ -2,7 +2,7 @@
 import { Activity, StrictMode, type ReactNode } from "react";
 import { act, cleanup, render, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VOICE_ASR_MODEL_FILES, type VoiceAsrModelSnapshotV1 } from "@ailearn/shared/voice-asr-model-contracts";
+import { VOICE_ASR_MODEL_FILES, type VoiceAsrModelSnapshotV1 } from "@astella/shared/voice-asr-model-contracts";
 import { useVoiceAsrModel, type VoiceAsrModelController } from "../use-voice-asr-model";
 import { readVoiceAsrModel, downloadVoiceAsrModel, removeVoiceAsrModel } from "../../../companion/voice-asr-model";
 
@@ -10,7 +10,7 @@ vi.mock("../../../companion/voice-asr-model", () => ({ readVoiceAsrModel: vi.fn(
 vi.mock("../../../../app/desktop-client", () => ({ gatewayErrorMessage: (error: unknown) => error instanceof Error ? error.message : "失败" }));
 
 const snapshot = (status: VoiceAsrModelSnapshotV1["status"]): VoiceAsrModelSnapshotV1 => ({
-  version: 1, modelId: "sensevoice-int8-zh-en-ja-ko-yue", mountUrl: "ailearn-app://bundle/device/asr/",
+  version: 1, modelId: "sensevoice-int8-zh-en-ja-ko-yue", mountUrl: "astella-app://bundle/device/asr/",
   status, expectedBytes: 239_549_735, receivedBytes: status === "ready" ? 239_549_735 : 0,
   installedBytes: status === "ready" ? 239_549_735 : 0, failure: null, installedAt: null,
   files: VOICE_ASR_MODEL_FILES.map(file => ({ name: file.name, expectedBytes: file.expectedBytes, bytes: status === "ready" ? file.expectedBytes : 0, complete: status === "ready" })),

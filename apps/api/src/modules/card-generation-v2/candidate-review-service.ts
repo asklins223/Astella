@@ -16,17 +16,17 @@ import {
   cardGenerationPlansV2,
   cardGenerationRunOutboxV2,
   cardCandidateFeedbackV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/card-generation-v2";
 import {
   candidateActionTouchesAnswerV2,
   type CandidateActionCommandV2,
   type CandidateActionV2,
-} from "@ailearn/shared/card-generation-v2-contracts";
-import { isCardGenerationReviewOpen } from "@ailearn/shared/card-generation-desktop-contracts";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+} from "@astella/shared/card-generation-v2-contracts";
+import { isCardGenerationReviewOpen } from "@astella/shared/card-generation-desktop-contracts";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
 import {
   computeCandidateRevisionHashV2,
-} from "@ailearn/shared/card-generation-v2-hashing";
+} from "@astella/shared/card-generation-v2-hashing";
 import {
   CardGenerationV2ServiceError,
   insertEvent,
@@ -742,7 +742,7 @@ function assertReviewable(candidate: typeof cardGenerationCandidatesV2.$inferSel
 
 // ─── 辅助：patch 构造 ──────────────────────────────────────────────────────────
 
-function buildObjectivePatch(patch: import("@ailearn/shared/card-generation-v2-contracts").CandidateEditablePatchV2): Record<string, unknown> {
+function buildObjectivePatch(patch: import("@astella/shared/card-generation-v2-contracts").CandidateEditablePatchV2): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   const learningSupport: Record<string, unknown> = {};
   if (patch.objectiveStatement !== undefined) result.objectiveStatement = patch.objectiveStatement;
@@ -761,7 +761,7 @@ function buildObjectivePatch(patch: import("@ailearn/shared/card-generation-v2-c
 }
 
 function buildPresentationPatch(
-  patch: import("@ailearn/shared/card-generation-v2-contracts").CandidateEditablePatchV2,
+  patch: import("@astella/shared/card-generation-v2-contracts").CandidateEditablePatchV2,
   current?: { front?: Record<string, unknown> } | null,
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {};

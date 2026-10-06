@@ -16,7 +16,7 @@ export default defineConfig({
     url:
       migratorUrl ??
       process.env.DATABASE_URL ??
-      "postgres://ailearn:ailearn_dev@postgres:5432/ailearn",
+      "postgres://astella:astella_dev@postgres:5432/astella",
   },
   verbose: true,
   strict: true,

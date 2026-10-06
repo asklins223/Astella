@@ -111,10 +111,10 @@ async function window(port: number, email: string, password: string) {
 const stamp = new Date().toISOString().slice(11, 19).replace(/:/g, "");
 const MARK_A = `覆盖量测A${stamp}`;
 const MARK_B = `覆盖量测B${stamp}`;
-const owner = await session("owner@ailearn.local", "ailearn_owner");
+const owner = await session("owner@astella.local", "astella_owner");
 
-const a = await window(Number(process.env.PORT_A ?? 9311), "owner@ailearn.local", "ailearn_owner");
-const b = await window(Number(process.env.PORT_B ?? 9312), "owner@ailearn.local", "ailearn_owner");
+const a = await window(Number(process.env.PORT_A ?? 9311), "owner@astella.local", "astella_owner");
+const b = await window(Number(process.env.PORT_B ?? 9312), "owner@astella.local", "astella_owner");
 console.log("两边都在编辑态:", a.editState, b.editState);
 if (!a.editState || !b.editState) {
   // 两条腿都得自证到了被测那一屏：有一腿没到，后面每一个读数都不属于被测路径

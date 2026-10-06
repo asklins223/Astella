@@ -6,10 +6,10 @@
  * 未知/错误 revision renew 拒绝。
  *
  * 运行（**要给受限角色**，与 CI 一致）：
- *   DATABASE_URL_API="postgres://ailearn_api:ailearn_dev@127.0.0.1:5432/ailearn" \
+ *   DATABASE_URL_API="postgres://astella_api:astella_dev@127.0.0.1:5432/astella" \
  *     node --import tsx --test --test-concurrency=1 \
  *     src/integration-tests/companion-bridge-postgres.integration.ts
- * 不写这个变量时会回落到 `ailearn`（超户、BYPASSRLS）⇒ 本文件全绿也**没验到 RLS**：
+ * 不写这个变量时会回落到 `astella`（超户、BYPASSRLS）⇒ 本文件全绿也**没验到 RLS**：
  * 跨用户隔离那条与 `readable_view` 落列这句，都只在受限角色下才有意义：2026-09-25
  * 第一次按 CI 的形状给受限角色跑，这句裸读就红了（见下面的 set_config）。
  */
@@ -18,10 +18,10 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
-import type { MainPageContextInputV2 } from "@ailearn/shared";
-import { assistantContextRenewResultV2Schema } from "@ailearn/shared";
+import type { MainPageContextInputV2 } from "@astella/shared";
+import { assistantContextRenewResultV2Schema } from "@astella/shared";
 import { seedV2Fixture } from "./helpers/v2-card-fixture.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL_API ??= CONN;

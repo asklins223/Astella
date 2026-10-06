@@ -20,7 +20,7 @@ import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { sql } from "drizzle-orm";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
-import { roundTeachingViewV1Schema } from "@ailearn/shared/note-learning-round-contracts";
+import { roundTeachingViewV1Schema } from "@astella/shared/note-learning-round-contracts";
 import {
   appendPlanRevision,
   createTeaching,
@@ -207,7 +207,7 @@ test("生成那一发：产物行恰好 1 条、teaching.artifact_id 指向它�
   assert.match(html, /先看小节标题/);
   assert.equal(/<script/i.test(html), false, "产物里不许出现脚本");
   // 屏数与输入对应：讲解 ＋ 例子 ＋ 2 条计划步骤。
-  assert.equal((html.match(/class="ailearn-artifact-pane"/g) ?? []).length, 4);
+  assert.equal((html.match(/class="astella-artifact-pane"/g) ?? []).length, 4);
 });
 
 test("按 id 取整份：200 ＋ text/html ＋ 与库内逐字节相同（不套 JSON 信封）", async () => {
@@ -221,7 +221,7 @@ test("按 id 取整份：200 ＋ text/html ＋ 与库内逐字节相同（不套
   const rows = await artifactRows(round.roundId as string);
   assert.ok(res.rawPayload.equals(Buffer.from(String(rows[0]?.html), "utf8")), "正文必须与库内逐字节相同");
   // 不套信封：第一段就是产物本身，而不是 `{"data": …}` 之类。
-  assert.match(res.rawPayload.toString("utf8"), /^<section class="ailearn-artifact-pane"/);
+  assert.match(res.rawPayload.toString("utf8"), /^<section class="astella-artifact-pane"/);
 
   // 不存在的 id ⇒ 404；不是 uuid ⇒ 400（错误映射照该文件既有写法）。
   const missing = await call("GET", `/v2/note-learning-round-artifacts/${randomUUID()}`);

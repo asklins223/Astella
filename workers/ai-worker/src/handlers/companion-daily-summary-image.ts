@@ -9,7 +9,7 @@ import { createProvider } from "../lib/ai-provider.ts";
 import { createGovernedProvider, resolveVisionReader, type AIGovernanceContext } from "../lib/governance.ts";
 import { getObjectBytes } from "../lib/object-storage.ts";
 import { isJobLeaseActive } from "../lib/job-lease.ts";
-import { runAiTask, type AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
+import { runAiTask, type AiTaskDefinition } from "@astella/shared/ai-task-kernel";
 import { createDiaryCheckpointPort } from "./companion-diary-checkpoints.ts";
 import { committedDiaryTask, diaryTaskAttempt, diaryTaskContext } from "./companion-daily-summary-task.ts";
 import { stripProviderControlTokens } from "./companion-dialogue-content.ts";

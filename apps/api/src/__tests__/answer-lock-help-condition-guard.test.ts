@@ -32,7 +32,7 @@ import {
   decideHelpConditionV2,
   helpConditionCountsAsIndependentV2,
   unreconcilableDispositionV2,
-} from "@ailearn/shared/help-condition-rules-v2";
+} from "@astella/shared/help-condition-rules-v2";
 
 const API_ROOT = resolve(import.meta.dirname, "..");
 // 2026-09-30（B4）：tick 进了 learning-runs/processing/。

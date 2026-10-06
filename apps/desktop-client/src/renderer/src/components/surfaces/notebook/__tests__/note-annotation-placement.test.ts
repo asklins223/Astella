@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { annotationPlacements, chronologicalAnnotations, placementsByBlock, type PlacementBlock } from "../note-annotation-placement.ts";
-import type { NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
+import type { NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 
 const BLOCK0 = "提取练习让大脑重新构建记忆痕迹。";
 const BLOCK1 = "第二段讲间隔效应。";

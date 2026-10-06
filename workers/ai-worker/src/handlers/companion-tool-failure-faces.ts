@@ -1,4 +1,4 @@
-import type { CompanionAgentToolStatus } from "@ailearn/shared";
+import type { CompanionAgentToolStatus } from "@astella/shared";
 import type { CompanionToolFailureStatus } from "./companion-tool-outcome.ts";
 
 export function companionToolFailureFaces(failure: { status: CompanionToolFailureStatus; safeSummary: string }): {

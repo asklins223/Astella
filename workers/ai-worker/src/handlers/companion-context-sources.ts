@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
-import { agentMemoryContextSourcesCurrent, queryRows, type AgentSqlExecutor } from "@ailearn/agent-host";
-import { agentMemoryContextSourceV1Schema, type AgentScopeV1 } from "@ailearn/shared/agent-contracts";
+import { agentMemoryContextSourcesCurrent, queryRows, type AgentSqlExecutor } from "@astella/agent-host";
+import { agentMemoryContextSourceV1Schema, type AgentScopeV1 } from "@astella/shared/agent-contracts";
 import { CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
 import type { CompanionContextHandoffSnapshotV1 } from "./companion-context-handoff.ts";
 

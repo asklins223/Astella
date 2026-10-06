@@ -1,5 +1,5 @@
 -- 0113_fail_job_backoff_jitter.sql
--- 2026-08-11（第十轮遗留修复）：ailearn_fail_job 的 scheduled_at 退避为
+-- 2026-08-11（第十轮遗留修复）：astella_fail_job 的 scheduled_at 退避为
 -- 确定性公式（2s * 2^attempts，0064 版）——同批失败 job 会在同一时刻再次
 -- 打 DB（惊群）。在**实际调度**处加 ±15% 随机 jitter：
 --   secs = 2 * 2^attempts * (0.85 + random() * 0.3)
@@ -7,7 +7,7 @@
 -- retry-strategy-contract 断言；真实调度以 scheduled_at 为准）。
 -- 照 0064 返回结构（7 列）完整重定义，仅 scheduled_at 一行变化。
 
-CREATE OR REPLACE FUNCTION public.ailearn_fail_job(
+CREATE OR REPLACE FUNCTION public.astella_fail_job(
   p_job_id uuid,
   p_workspace_id uuid,
   p_lease_token text,

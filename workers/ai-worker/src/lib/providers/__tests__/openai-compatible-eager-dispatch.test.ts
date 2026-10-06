@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { OpenAICompatibleProvider } from "../openai-compatible.ts";
-import type { PublicStreamingRequester } from "@ailearn/shared/public-json-http";
+import type { PublicStreamingRequester } from "@astella/shared/public-json-http";
 
 /** 把预设的 SSE 文本切成任意边界喂进去（与 opencode-go.test.ts 同一种夹具）。 */
 function streamingRequester(chunks: string[]): PublicStreamingRequester {

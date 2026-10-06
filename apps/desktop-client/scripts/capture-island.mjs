@@ -12,7 +12,7 @@ await mkdir(reviewRoot, { recursive: true })
 const installedElectron = resolve(appRoot, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron')
 const workspaceElectron = resolve(appRoot, '../desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron')
 const executablePath = existsSync(installedElectron) ? installedElectron : workspaceElectron
-const userDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-island-review-'))
+const userDataDir = await mkdtemp(resolve(tmpdir(), 'astella-island-review-'))
 const electronApp = await electron.launch({ args: ['.', '--lang=zh-CN', `--user-data-dir=${userDataDir}`], cwd: appRoot, executablePath })
 const captureOwnerCredentialsAvailable = Boolean(process.env.OWNER_EMAIL?.trim() && process.env.OWNER_PASSWORD)
 

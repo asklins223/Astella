@@ -18,7 +18,7 @@ import { logger } from "../../../lib/logger.ts";
 import {
   COMPANION_AGENT_MAX_STEPS,
   COMPANION_AGENT_MAX_TOOL_CALLS,
-} from "@ailearn/shared/companion-agent-contracts";
+} from "@astella/shared/companion-agent-contracts";
 
 // ─── 连接限制 ────────────────────────────────────────────────────────────
 // M4（审计修复·部署标注）：连接计数与 companion-rate-limit 同属单进程内存态
@@ -201,7 +201,7 @@ export async function listCompanionRunNodes(args: {
     /**
      * 显式带 `workspace_id`（2026-09-19 回审补）。
      *
-     * 这个模块原先只靠 RLS 一层兜越权，而开发/本地连接的 `ailearn` 角色是
+     * 这个模块原先只靠 RLS 一层兜越权，而开发/本地连接的 `astella` 角色是
      * `rolsuper = t AND rolbypassrls = t`——超级用户**绕过 FORCE ROW LEVEL SECURITY**，
      * 于是 RLS 在这套环境里实际不生效，"只按 id 查"等于把别人的会话交出去。
      * 仓库里其它伴随查询（turn-service、conversations-service、companion-export）都显式

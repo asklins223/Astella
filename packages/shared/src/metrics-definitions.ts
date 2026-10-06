@@ -27,16 +27,16 @@
  * 改桶会改变直方图的分位数——两者都属于"看起来是措辞、实际上是数据契约"。
  */
 
-/** `ailearn_companion_summary_total` —— 伴星日摘要产出，按结果。Counter。 */
+/** `astella_companion_summary_total` —— 伴星日摘要产出，按结果。Counter。 */
 export const COMPANION_SUMMARY_TOTAL_DEF = Object.freeze({
   kind: "counter" as const,
-  name: "ailearn_companion_summary_total",
+  name: "astella_companion_summary_total",
   help: "Companion summarizer task results",
   labelNames: ["status"] as const,
 });
 
 /**
- * `ailearn_companion_memory_used_count` —— 单次伴星对话轮里用到的长期记忆条数。
+ * `astella_companion_memory_used_count` —— 单次伴星对话轮里用到的长期记忆条数。
  *
  * **Histogram 而不是 Gauge**：名字里的 `_count` 是 prom-client 对 histogram
  * 输出的后缀（`<name>_count` / `<name>_sum` / `<name>_bucket`），
@@ -44,16 +44,16 @@ export const COMPANION_SUMMARY_TOTAL_DEF = Object.freeze({
  */
 export const COMPANION_MEMORY_USED_COUNT_DEF = Object.freeze({
   kind: "histogram" as const,
-  name: "ailearn_companion_memory_used_count",
+  name: "astella_companion_memory_used_count",
   help: "Number of memories used per companion dialogue turn",
   buckets: [0, 1, 2, 3, 4, 5, 6, 7, 8] as const,
   labelNames: [] as const,
 });
 
-/** `ailearn_companion_memory_retrieval_mode_total` —— 记忆检索走了哪条路。Counter。 */
+/** `astella_companion_memory_retrieval_mode_total` —— 记忆检索走了哪条路。Counter。 */
 export const COMPANION_MEMORY_RETRIEVAL_MODE_TOTAL_DEF = Object.freeze({
   kind: "counter" as const,
-  name: "ailearn_companion_memory_retrieval_mode_total",
+  name: "astella_companion_memory_retrieval_mode_total",
   help: "Companion memory retrieval mode (vector or keyword_fallback)",
   labelNames: ["mode"] as const,
 });

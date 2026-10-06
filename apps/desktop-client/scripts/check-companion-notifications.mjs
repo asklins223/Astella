@@ -8,9 +8,9 @@ import './load-capture-env.mjs'
 const appRoot = resolve(import.meta.dirname, '..')
 const output = resolve(appRoot, '../../outputs/companion-notifications-20261004')
 await mkdir(output, { recursive: true })
-const profile = await mkdtemp(resolve(tmpdir(), 'ailearn-notifications-'))
-if (process.env.AILEARN_QA_SESSION_PROFILE) await copyFile(resolve(process.env.AILEARN_QA_SESSION_PROFILE, 'session-credential-v1.bin'), resolve(profile, 'session-credential-v1.bin'))
-process.env.AILEARN_VOICE_ASR_DIR = resolve(profile, 'voice-models')
+const profile = await mkdtemp(resolve(tmpdir(), 'astella-notifications-'))
+if (process.env.ASTELLA_QA_SESSION_PROFILE) await copyFile(resolve(process.env.ASTELLA_QA_SESSION_PROFILE, 'session-credential-v1.bin'), resolve(profile, 'session-credential-v1.bin'))
+process.env.ASTELLA_VOICE_ASR_DIR = resolve(profile, 'voice-models')
 const { config } = await loadConfigFromFile({ command: 'serve', mode: 'development' }, resolve(appRoot, 'electron.vite.config.ts'))
 const server = await createServer({ ...config.renderer, configFile: false, server: { ...config.renderer.server, port: 5199, strictPort: true } })
 await server.listen()
@@ -60,14 +60,14 @@ try {
   await reset()
   const state = await page.evaluate(async () => {
     const { createRequestMeta, unwrapGatewayResult } = await import('/src/app/desktop-client.ts')
-    return unwrapGatewayResult(await window.ailearn.companion.voice.asrModel.getState({ meta: createRequestMeta() }))
+    return unwrapGatewayResult(await window.astella.companion.voice.asrModel.getState({ meta: createRequestMeta() }))
   })
   if (!state?.status || !state.expectedBytes) throw new Error('QA model snapshot unavailable')
   await app.evaluate(({ ipcMain }, state) => {
     globalThis.notificationQa = { state, cancelled: 0 }
     const reply = input => ({ version: 1, ok: true, requestId: input.meta.requestId, data: globalThis.notificationQa.state })
     for (const [suffix, action] of [['state', null], ['download', 'downloading'], ['cancel', 'absent']]) {
-      const channel = `ailearn.v1.companion.voice.asrModel.${suffix}`
+      const channel = `astella.v1.companion.voice.asrModel.${suffix}`
       ipcMain.removeHandler(channel)
       ipcMain.handle(channel, (_, input) => {
         if (action) { globalThis.notificationQa.state = { ...globalThis.notificationQa.state, status: action, receivedBytes: action === 'downloading' ? 80_000_000 : 0, activeSource: action === 'downloading' ? '魔搭社区' : null }; if (suffix === 'cancel') globalThis.notificationQa.cancelled++ }
@@ -173,7 +173,7 @@ try {
   check(audio.length === 6 && audio.every(clip => clip.duration > 1), 'all six Edge TTS clips decode in Electron', audio)
   const dynamicAudio = await page.evaluate(async () => {
     const { createRequestMeta, unwrapGatewayResult } = await import('/src/app/desktop-client.ts')
-    const response = unwrapGatewayResult(await window.ailearn.companion.voice.speak({ meta: createRequestMeta(), request: { version: 1, text: '这是一条通知语音，方便的时候可以打开看看。', purpose: 'notification' } }))
+    const response = unwrapGatewayResult(await window.astella.companion.voice.speak({ meta: createRequestMeta(), request: { version: 1, text: '这是一条通知语音，方便的时候可以打开看看。', purpose: 'notification' } }))
     const context = new AudioContext()
     const bytes = Uint8Array.from(atob(response.audioBase64), letter => letter.charCodeAt(0))
     const decoded = await context.decodeAudioData(bytes.buffer)

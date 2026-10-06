@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NoteLibrarySurface } from "../notebook/note-library-surface.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
-import { pageReadableV1Schema } from "@ailearn/shared/companion-bridge-contracts";
+import { pageReadableV1Schema } from "@astella/shared/companion-bridge-contracts";
 
 /**
  * 笔记库在多数据与边界情况下的合同：
@@ -138,7 +138,7 @@ function stubGateway(options: {
       })),
     },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return { gateway, state };
 }
 

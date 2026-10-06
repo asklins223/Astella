@@ -11,7 +11,7 @@ import { test } from "node:test";
 import { OpenAICompatibleProvider } from "../lib/providers/openai-compatible.ts";
 import { ProviderRequestError } from "../lib/provider-request-error.ts";
 import { AgentOutputError } from "../lib/non-retryable-errors.ts";
-import type { PublicJsonRequester, PublicJsonResponse } from "@ailearn/shared/public-json-http";
+import type { PublicJsonRequester, PublicJsonResponse } from "@astella/shared/public-json-http";
 
 const messages = [{ role: "user" as const, content: "ping" }];
 

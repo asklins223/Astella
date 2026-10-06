@@ -3,9 +3,9 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { DialoguePanel } from "../companion/companion-center-panels.tsx";
-import type { CompanionHistoryItemV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { CompanionHistoryItemV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { useRoomStore } from "../../../app/room-store.ts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /**
  * 伴星中心「对话」这一块登记给伴星读的是什么（39d W2-7）。

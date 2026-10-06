@@ -69,4 +69,4 @@ CREATE POLICY card_generation_run_progress_v2_workspace_isolation
 -- worker 的 INSERT/UPDATE 授权来自 roles.sql（唯一授权源，每次 bootstrap 先 REVOKE ALL
 -- 再按清单重授）；API 只读，且必须在迁移里显式给——dev 栈不跑 compose 里那个一次性的
 -- role-grants 服务，缺这一行的症状是"读不到读数、进度回到恒 0"。
-GRANT SELECT ON TABLE public.card_generation_run_progress_v2 TO ailearn_api;
+GRANT SELECT ON TABLE public.card_generation_run_progress_v2 TO astella_api;

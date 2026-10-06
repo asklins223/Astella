@@ -1,12 +1,12 @@
 import { useEffect,useRef,useState } from "react";
-import type { CompanionDiscoveryEntryV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { CompanionDiscoveryEntryV1 } from "@astella/shared/desktop-ipc-contracts";
 import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
 import { SectionState } from "./companion-center-primitives";
 import { DiscoveryPanel } from "./companion-discovery-panel";
 import { publishCompanionRecordsChanged,useCompanionRecordsRefresh,useCompanionResource } from "./use-companion-resource";
 
 export function CompanionDiscoveryPage(props: { refreshKey: number; onSource: (entry: CompanionDiscoveryEntryV1) => void; onBrowse: (tab: "dialogue" | "diary") => void }) {
-  const book = useCompanionResource(meta => window.ailearn.companion.memory.discovery.get({ meta }), [props.refreshKey]);
+  const book = useCompanionResource(meta => window.astella.companion.memory.discovery.get({ meta }), [props.refreshKey]);
   useCompanionRecordsRefresh(book.reload);
   const [busy, setBusy] = useState<string | null>(null);
   const lock = useRef(false);
@@ -24,6 +24,6 @@ export function CompanionDiscoveryPage(props: { refreshKey: number; onSource: (e
   };
   if (!book.section) return <SectionState message={book.loading ? "正在读取发现簿" : "发现簿暂时读不到"} detail={book.failure ?? undefined} onRetry={() => void book.reload()} />;
   return <DiscoveryPanel section={book.section} busy={busy} error={error} notice={notice} onRetry={() => void book.reload()} onSource={props.onSource} onBrowse={props.onBrowse}
-    onUncollect={entry => { void write(entry.entryId, async () => unwrapGatewayResult(await window.ailearn.companion.memory.discovery.uncollect({ meta: book.meta(), request: { kind: entry.kind, source: entry.source, sourceId: entry.sourceId } })), "已取消收藏，原始回答和日记仍然保留。"); }}
-    onAnnotate={(entry, annotation) => write(entry.entryId, async () => unwrapGatewayResult(await window.ailearn.companion.memory.discovery.annotate({ meta: book.meta(), request: { entryId: entry.entryId, annotation } })), "批注已保存。")} />;
+    onUncollect={entry => { void write(entry.entryId, async () => unwrapGatewayResult(await window.astella.companion.memory.discovery.uncollect({ meta: book.meta(), request: { kind: entry.kind, source: entry.source, sourceId: entry.sourceId } })), "已取消收藏，原始回答和日记仍然保留。"); }}
+    onAnnotate={(entry, annotation) => write(entry.entryId, async () => unwrapGatewayResult(await window.astella.companion.memory.discovery.annotate({ meta: book.meta(), request: { entryId: entry.entryId, annotation } })), "批注已保存。")} />;
 }

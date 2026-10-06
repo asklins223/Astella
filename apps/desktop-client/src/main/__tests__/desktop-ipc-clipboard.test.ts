@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DESKTOP_IPC_CHANNELS, DESKTOP_IPC_CONTRACT_VERSION } from "@ailearn/shared/desktop-ipc-contracts";
+import { DESKTOP_IPC_CHANNELS, DESKTOP_IPC_CONTRACT_VERSION } from "@astella/shared/desktop-ipc-contracts";
 import type { DesktopGateway } from "../desktop-gateway";
 
 const electronMock = vi.hoisted(() => ({
@@ -28,14 +28,14 @@ async function register(trusted = true) {
   const { registerM1DesktopIpc } = await import("../desktop-ipc");
   registerM1DesktopIpc({
     gateway: { getDeploymentConfig: () => undefined } as unknown as DesktopGateway,
-    env: { AILEARN_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
+    env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
     resolveWindow: () => trusted ? ({} as never) : null,
     getWindowState: () => ({ state: "visible", revision: 1 }),
     setTitlebarTheme: () => true,
   });
   const handler = electronMock.handlers.get(DESKTOP_IPC_CHANNELS.clipboardWriteText);
   if (!handler) throw new Error("clipboard.writeText handler missing");
-  return (request: unknown) => handler({ sender: {}, senderFrame: { url: "ailearn-app://bundle/index.html" } }, { meta, request });
+  return (request: unknown) => handler({ sender: {}, senderFrame: { url: "astella-app://bundle/index.html" } }, { meta, request });
 }
 
 describe("系统剪贴板写入 IPC", () => {

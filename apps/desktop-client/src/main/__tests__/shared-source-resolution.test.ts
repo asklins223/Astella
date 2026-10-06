@@ -33,7 +33,7 @@ const electronConfig = readFileSync(resolve(here, "electron.vite.config.ts"), "u
 // （`String(/x/)` 给的是 `/x/` 而不是 `x` —— 拿它去比子路径会永远不匹配。）
 const sharedAliasEntries = (): { find: string; replacement: string }[] =>
   sharedAlias.map((a) => ({
-    find: a.find.source.replace(/^\^@ailearn\/shared\/?/, "").replace(/\$$/, "").replace(/\\\//g, "/"),
+    find: a.find.source.replace(/^\^@astella\/shared\/?/, "").replace(/\$$/, "").replace(/\\\//g, "/"),
     replacement: a.replacement,
   }));
 // 判据不复算路径前缀——那等于把「路径怎么算出来的」又抄一遍，
@@ -41,7 +41,7 @@ const sharedAliasEntries = (): { find: string; replacement: string }[] =>
 // 真实存在、且位于 packages/shared/src 之下。
 
 
-describe("桌面测试与构建解析同一份 @ailearn/shared", () => {
+describe("桌面测试与构建解析同一份 @astella/shared", () => {
   it("main/preload 和 renderer 的类型检查也解析到实时合同，不能退回安装期快照", () => {
     for (const [configName, entry] of [
       ["tsconfig.node.json", "src/main/desktop-ipc.ts"],
@@ -52,7 +52,7 @@ describe("桌面测试与构建解析同一份 @ailearn/shared", () => {
       expect(config.error).toBeUndefined();
       const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, here);
       for (const contract of ["desktop-ipc-contracts", "companion-conversation-contracts", "companion-memory-desktop-contracts"]) {
-        const resolved = ts.resolveModuleName(`@ailearn/shared/${contract}`, resolve(here, entry), parsed.options, ts.sys);
+        const resolved = ts.resolveModuleName(`@astella/shared/${contract}`, resolve(here, entry), parsed.options, ts.sys);
         expect(resolved.resolvedModule?.resolvedFileName).toBe(resolve(here, `../../packages/shared/src/contracts/${contract}.ts`));
       }
     }
@@ -76,9 +76,9 @@ describe("桌面测试与构建解析同一份 @ailearn/shared", () => {
     // 不是「某个文件里写着某几个字」。所以这里直接 import 那个数组。
     const aliases = sharedAliasEntries();
     // barrel 与子路径各至少一条
-    // barrel：`@ailearn/shared` 本身；子路径：`@ailearn/shared/<name>`
-    expect(sharedAlias.some((a) => a.find.test("@ailearn/shared"))).toBe(true);
-    expect(sharedAlias.some((a) => a.find.test("@ailearn/shared/learning-run-v2-contracts"))).toBe(true);
+    // barrel：`@astella/shared` 本身；子路径：`@astella/shared/<name>`
+    expect(sharedAlias.some((a) => a.find.test("@astella/shared"))).toBe(true);
+    expect(sharedAlias.some((a) => a.find.test("@astella/shared/learning-run-v2-contracts"))).toBe(true);
     // 通配那条已被逐条精确匹配取代：带 '/' 的子路径（./db-schema/note）在通配下会拼错
     expect(sharedAlias.every((a) => !a.find.source.includes("(.*)"))).toBe(true);
     // 全部落在 packages/shared/src 之下，且**文件真实存在**

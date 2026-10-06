@@ -2,12 +2,12 @@ import { startDomainAgentRequest, agentRunForDomainExecution } from "../../agent
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
 import { withWorkspaceTransaction } from "../../db/client.ts";
-import { jobs } from "@ailearn/shared/db-schema/job";
-import { noteLearningArtifacts } from "@ailearn/shared/db-schema/note-learning-artifacts";
-import { noteBlocks, noteVersions, notes } from "@ailearn/shared/db-schema/note";
-import { noteAnchorMatchesV1 } from "@ailearn/shared/note-annotation-contracts";
-import { JobStatus, JobType } from "@ailearn/shared/enums";
-import { readNoteDynamicArtifactGenerateJobPayload } from "@ailearn/shared/job-payload-contracts";
+import { jobs } from "@astella/shared/db-schema/job";
+import { noteLearningArtifacts } from "@astella/shared/db-schema/note-learning-artifacts";
+import { noteBlocks, noteVersions, notes } from "@astella/shared/db-schema/note";
+import { noteAnchorMatchesV1 } from "@astella/shared/note-annotation-contracts";
+import { JobStatus, JobType } from "@astella/shared/enums";
+import { readNoteDynamicArtifactGenerateJobPayload } from "@astella/shared/job-payload-contracts";
 import {
   createNoteDynamicArtifactTaskV1Schema,
   noteLearningArtifactPageV1Schema,
@@ -15,7 +15,7 @@ import {
   noteLearningArtifactTaskV1Schema,
   noteLearningArtifactV1Schema,
   type NoteLearningArtifactTaskV1,
-} from "@ailearn/shared/note-learning-artifact-contracts";
+} from "@astella/shared/note-learning-artifact-contracts";
 import type { z } from "zod";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import { classifyJobFailureReason } from "../job/service.ts";

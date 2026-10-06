@@ -56,18 +56,18 @@ DROP POLICY IF EXISTS user_ai_settings_user_isolation ON public.user_ai_settings
 CREATE POLICY user_ai_settings_user_isolation
   ON public.user_ai_settings FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   );
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_ai_settings TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_ai_settings TO ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_ai_settings TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_ai_settings TO astella_worker;
 
 --> statement-breakpoint
 

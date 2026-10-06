@@ -1,8 +1,8 @@
 import type {
   CompanionAccountPatch,
   CompanionAccountStateV1,
-} from "@ailearn/shared/companion-shell-contracts";
-import { PROACTIVE_CADENCE_MS } from "@ailearn/shared/companion-proactive-policy";
+} from "@astella/shared/companion-shell-contracts";
+import { PROACTIVE_CADENCE_MS } from "@astella/shared/companion-proactive-policy";
 
 /**
  * 账号级 presence 的纯函数层（2026-09-16 裁决 3）。

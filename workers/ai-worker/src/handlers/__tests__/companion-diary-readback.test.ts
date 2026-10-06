@@ -14,7 +14,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { COMPANION_AGENT_TOOL_DEFINITIONS } from "@ailearn/shared/companion-agent-registry";
+import { COMPANION_AGENT_TOOL_DEFINITIONS } from "@astella/shared/companion-agent-registry";
 
 const definition = COMPANION_AGENT_TOOL_DEFINITIONS.find((d) => d.name === "companion_read_diary");
 

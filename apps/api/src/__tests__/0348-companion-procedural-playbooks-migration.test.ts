@@ -58,7 +58,7 @@ test("纠正与遗忘会**传播到手册**——用触发器，不靠每个删�
   // 手写传播漏一条就意味着"她忘掉的东西还在手册里当依据"。
   assert.match(migration, /CREATE TRIGGER assistant_memory_playbook_evidence_guard/);
   assert.match(migration, /AFTER UPDATE ON public\.assistant_memory_items/);
-  const fn = migration.slice(migration.indexOf("ailearn_propagate_playbook_evidence_change"));
+  const fn = migration.slice(migration.indexOf("astella_propagate_playbook_evidence_change"));
   assert.match(fn, /NEW\.deleted_at IS NOT NULL/);
   assert.match(fn, /NEW\.revision <> OLD\.revision/);
   assert.match(fn, /epistemic_status = 'disputed'/);

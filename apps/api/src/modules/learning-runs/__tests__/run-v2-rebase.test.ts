@@ -11,7 +11,7 @@ import { test } from "node:test";
 import { buildV2TaskPrompt, planRun, rubricTargetIdsOf, type RunPlannerTargetInput, type PlannerV2Target } from "../planning/run-planner.ts";
 import { generateStructuredFromSnapshot } from "../planning/run-structured.ts";
 import { buildCriticPromptV2, flattenAnswerUnits, type CriticInputV2 } from "../planning/run-critic.ts";
-import type { CanonicalAnswerV2, ObjectiveRubricV2, ObjectiveRelationV2 } from "@ailearn/shared/card-generation-v2-contracts";
+import type { CanonicalAnswerV2, ObjectiveRubricV2, ObjectiveRelationV2 } from "@astella/shared/card-generation-v2-contracts";
 
 function makeRubric(): ObjectiveRubricV2 {
   return {

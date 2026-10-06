@@ -254,15 +254,15 @@ export async function readMetricsSnapshot(): Promise<MetricsSnapshot> {
         })),
       );
     }
-    if (family.name.startsWith("ailearn_")) business.push(series);
+    if (family.name.startsWith("astella_")) business.push(series);
     else process.push(series);
   }
 
   const all = [...business, ...process];
-  const httpRequests = sumSamples(findSeries(all, "ailearn_http_requests_total"));
-  const http5xx = sumSamples(findSeries(all, "ailearn_http_errors_5xx_total"));
+  const httpRequests = sumSamples(findSeries(all, "astella_http_requests_total"));
+  const http5xx = sumSamples(findSeries(all, "astella_http_errors_5xx_total"));
 
-  const latencySeries = findSeries(all, "ailearn_http_request_duration_seconds");
+  const latencySeries = findSeries(all, "astella_http_request_duration_seconds");
   const slowestRoutes = (latencySeries?.histograms ?? [])
     .filter((histogram) => typeof histogram.labels.method === "string" && typeof histogram.labels.route === "string")
     .map((histogram) => ({
@@ -276,8 +276,8 @@ export async function readMetricsSnapshot(): Promise<MetricsSnapshot> {
     .sort((a, b) => (b.p95 ?? 0) - (a.p95 ?? 0))
     .slice(0, 8);
 
-  const outboxDepth = findSeries(all, "ailearn_learning_run_processing_outbox_depth");
-  const outboxAge = findSeries(all, "ailearn_learning_run_processing_outbox_oldest_pending_age_seconds");
+  const outboxDepth = findSeries(all, "astella_learning_run_processing_outbox_depth");
+  const outboxAge = findSeries(all, "astella_learning_run_processing_outbox_oldest_pending_age_seconds");
 
   return {
     collectedAt: new Date().toISOString(),
@@ -289,9 +289,9 @@ export async function readMetricsSnapshot(): Promise<MetricsSnapshot> {
       // 只有发出过请求时才算比率；0 请求时给 null 而不是 100%——
       // "成功率 100%" 在没有任何请求时是个误导性的好消息。
       httpSuccessRate: httpRequests > 0 ? (httpRequests - http5xx) / httpRequests : null,
-      dbPoolActive: findSeries(all, "ailearn_db_pool_active_connections")?.samples[0]?.value ?? null,
-      dbTransactionFailures: sumSamples(findSeries(all, "ailearn_db_transaction_failures_total")),
-      dbRlsDenied: sumSamples(findSeries(all, "ailearn_db_rls_denied_total")),
+      dbPoolActive: findSeries(all, "astella_db_pool_active_connections")?.samples[0]?.value ?? null,
+      dbTransactionFailures: sumSamples(findSeries(all, "astella_db_transaction_failures_total")),
+      dbRlsDenied: sumSamples(findSeries(all, "astella_db_rls_denied_total")),
       outboxPendingTotal: sumSamples(outboxDepth),
       outboxOldestPendingSeconds: outboxAge?.samples.length
         ? Math.max(...outboxAge.samples.map((sample) => sample.value))

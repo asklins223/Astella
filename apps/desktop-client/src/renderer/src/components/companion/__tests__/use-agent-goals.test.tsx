@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { AgentRunV1 } from "@ailearn/shared/agent-contracts";
+import type { AgentRunV1 } from "@astella/shared/agent-contracts";
 import { useAgentGoals } from "../use-agent-goals";
 import { publishCompanionRecordsChanged } from "../companion-events";
 
@@ -29,7 +29,7 @@ const listRuns = vi.fn(), controlRun = vi.fn(), reviseRun = vi.fn(), getRun = vi
 beforeEach(() => {
   state.scope = 1; vi.clearAllMocks();
   listRuns.mockResolvedValue({ version: 1, items: [run()], nextCursor: null });
-  Object.defineProperty(window, "ailearn", { configurable: true, value: { agent: { listRuns, controlRun, reviseRun, getRun } } });
+  Object.defineProperty(window, "astella", { configurable: true, value: { agent: { listRuns, controlRun, reviseRun, getRun } } });
   Object.defineProperty(document, "hidden", { configurable: true, value: false });
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });

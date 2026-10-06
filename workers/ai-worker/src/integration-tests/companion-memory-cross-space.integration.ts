@@ -18,12 +18,12 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 // 范围判据的唯一来源（42 阶段 1 E：抽取侧与 API 写入端共用同一份）。
-import { memoryScopeForKind } from "@ailearn/shared/companion-memory-scope";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { memoryScopeForKind } from "@astella/shared/companion-memory-scope";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 // 两个池，分工写死在下面（这份文件曾经整份只有一条 `DATABASE_URL_API`：
-// 本机 dev 那个变量**是超户 ailearn**，于是"用超户建多空间"的意图落地成了"用 api 角色"，
-// 而铺开函数的 EXECUTE 只给了 `ailearn_worker`（0267:142）⇒ 换到 CI 的角色形状就是
+// 本机 dev 那个变量**是超户 astella**，于是"用超户建多空间"的意图落地成了"用 api 角色"，
+// 而铺开函数的 EXECUTE 只给了 `astella_worker`（0267:142）⇒ 换到 CI 的角色形状就是
 // `permission denied for function`。名字不等于角色，这一族已经踩过不止一次。）
 const ADMIN = testDatabaseUrl("DATABASE_URL");
 const sql = postgres(ADMIN, { max: 2 });
@@ -123,7 +123,7 @@ test("global 记忆被铺到该用户的每个活跃空间，workspace 记忆不
   const localId = await insertMemory("goal", "workspace", `这个空间的目标 ${tag}`);
 
   await workerSql`
-    SELECT public.ailearn_fanout_global_companion_memory(${globalId}::uuid) AS inserted
+    SELECT public.astella_fanout_global_companion_memory(${globalId}::uuid) AS inserted
   `;
 
   const keyRows = await sql`
@@ -138,7 +138,7 @@ test("global 记忆被铺到该用户的每个活跃空间，workspace 记忆不
 
   // 负向：空间内记忆没有被铺（它的 global_key 是 NULL，函数也直接返回 0）。
   const localFan = await workerSql`
-    SELECT public.ailearn_fanout_global_companion_memory(${localId}::uuid) AS inserted
+    SELECT public.astella_fanout_global_companion_memory(${localId}::uuid) AS inserted
   `;
   assert.equal(Number(localFan[0]?.inserted ?? 0), 0, "非 global 记忆不该被铺");
   const localInB = await sql`
@@ -150,8 +150,8 @@ test("global 记忆被铺到该用户的每个活跃空间，workspace 记忆不
 
 test("幂等：同一条记忆重复铺不会在同一个空间里出现第二份", async () => {
   const id = await insertMemory("preference", "global", `重复铺的偏好 ${tag}`);
-  await workerSql`SELECT public.ailearn_fanout_global_companion_memory(${id}::uuid)`;
-  await workerSql`SELECT public.ailearn_fanout_global_companion_memory(${id}::uuid)`;
+  await workerSql`SELECT public.astella_fanout_global_companion_memory(${id}::uuid)`;
+  await workerSql`SELECT public.astella_fanout_global_companion_memory(${id}::uuid)`;
   const rows = await sql`
     SELECT workspace_id FROM assistant_memory_items
     WHERE user_id = ${userId} AND content = ${`重复铺的偏好 ${tag}`} AND deleted_at IS NULL
@@ -171,7 +171,7 @@ test("幂等：同一条记忆重复铺不会在同一个空间里出现第二�
 
 test("后来加入的新空间会补铺已有的 global 记忆", async () => {
   const id = await insertMemory("preference", "global", `别用太长的句子 ${tag}`);
-  await workerSql`SELECT public.ailearn_fanout_global_companion_memory(${id}::uuid)`;
+  await workerSql`SELECT public.astella_fanout_global_companion_memory(${id}::uuid)`;
   const keyRows = await sql`SELECT global_key FROM assistant_memory_items WHERE id = ${id}::uuid`;
   const globalKey = String(keyRows[0]?.global_key ?? "");
 
@@ -191,7 +191,7 @@ test("后来加入的新空间会补铺已有的 global 记忆", async () => {
 
 test("改一处、其余副本跟着走；删一处、其余一起消失", async () => {
   const id = await insertMemory("preference", "global", `会被改的偏好 ${tag}`);
-  await workerSql`SELECT public.ailearn_fanout_global_companion_memory(${id}::uuid)`;
+  await workerSql`SELECT public.astella_fanout_global_companion_memory(${id}::uuid)`;
   const keyRows = await sql`SELECT global_key FROM assistant_memory_items WHERE id = ${id}::uuid`;
   const globalKey = String(keyRows[0]?.global_key ?? "");
   assert.equal((await rowsIn(spaceA, globalKey)).length, 1);

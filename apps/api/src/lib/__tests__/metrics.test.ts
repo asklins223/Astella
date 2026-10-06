@@ -23,15 +23,15 @@ import {
 test("metrics registry 暴露所有定义的指标", async () => {
   const text = await getMetricsText();
   // 验证关键指标存在
-  assert.match(text, /ailearn_http_requests_total/);
-  assert.match(text, /ailearn_http_request_duration_seconds/);
-  assert.match(text, /ailearn_funnel_events_total/);
-  assert.match(text, /ailearn_release_info/);
-  assert.match(text, /ailearn_db_migration_version/);
+  assert.match(text, /astella_http_requests_total/);
+  assert.match(text, /astella_http_request_duration_seconds/);
+  assert.match(text, /astella_funnel_events_total/);
+  assert.match(text, /astella_release_info/);
+  assert.match(text, /astella_db_migration_version/);
 });
 
 test("HTTP 请求计数器按 method/route/status_class 正确递增", async () => {
-  const before = registry.getSingleMetric("ailearn_http_requests_total");
+  const before = registry.getSingleMetric("astella_http_requests_total");
   assert.ok(before);
 
   httpRequestsTotal.inc({ method: "GET", route: "/notes/:id", status_class: "2xx" });
@@ -40,8 +40,8 @@ test("HTTP 请求计数器按 method/route/status_class 正确递增", async () 
 
   const text = await getMetricsText();
   // 应包含两条 GET /notes/:id 2xx 和一条 POST /notes 4xx
-  assert.match(text, /ailearn_http_requests_total\{method="GET",route="\/notes\/:id",status_class="2xx"\} 2/);
-  assert.match(text, /ailearn_http_requests_total\{method="POST",route="\/notes",status_class="4xx"\} 1/);
+  assert.match(text, /astella_http_requests_total\{method="GET",route="\/notes\/:id",status_class="2xx"\} 2/);
+  assert.match(text, /astella_http_requests_total\{method="POST",route="\/notes",status_class="4xx"\} 1/);
 });
 
 test("HTTP 延迟直方图正确记录观察值", async () => {
@@ -49,7 +49,7 @@ test("HTTP 延迟直方图正确记录观察值", async () => {
   httpRequestDurationSeconds.observe({ method: "GET", route: "/health" }, 0.15);
 
   const text = await getMetricsText();
-  assert.match(text, /ailearn_http_request_duration_seconds_count\{method="GET",route="\/health"\} 2/);
+  assert.match(text, /astella_http_request_duration_seconds_count\{method="GET",route="\/health"\} 2/);
 });
 
 test("Funnel 事件通过 recordFunnelEvent 正确记录", async () => {
@@ -59,17 +59,17 @@ test("Funnel 事件通过 recordFunnelEvent 正确记录", async () => {
   recordFunnelEvent("backup_terminal");
 
   const text = await getMetricsText();
-  assert.match(text, /ailearn_funnel_events_total\{event="invite_created"\} 1/);
-  assert.match(text, /ailearn_funnel_events_total\{event="invite_consumed"\} 1/);
-  assert.match(text, /ailearn_funnel_events_total\{event="card_generation_terminal"\} 1/);
-  assert.match(text, /ailearn_funnel_events_total\{event="backup_terminal"\} 1/);
+  assert.match(text, /astella_funnel_events_total\{event="invite_created"\} 1/);
+  assert.match(text, /astella_funnel_events_total\{event="invite_consumed"\} 1/);
+  assert.match(text, /astella_funnel_events_total\{event="card_generation_terminal"\} 1/);
+  assert.match(text, /astella_funnel_events_total\{event="backup_terminal"\} 1/);
 });
 
 test("Release 信息 gauge 正确设置 label", async () => {
   setReleaseInfo("0.5.0", "abc1234", 24);
 
   const text = await getMetricsText();
-  assert.match(text, /ailearn_release_info\{version="0\.5\.0",commit="abc1234",migrations="24"\} 1/);
+  assert.match(text, /astella_release_info\{version="0\.5\.0",commit="abc1234",migrations="24"\} 1/);
 });
 
 test("statusToClass 正确映射 HTTP 状态码到 status class", () => {

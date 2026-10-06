@@ -18,7 +18,7 @@
 --> statement-breakpoint
 
 DROP POLICY IF EXISTS agent_goal_enqueue ON public.jobs;
-CREATE POLICY agent_goal_enqueue ON public.jobs FOR INSERT TO ailearn_worker WITH CHECK (
+CREATE POLICY agent_goal_enqueue ON public.jobs FOR INSERT TO astella_worker WITH CHECK (
   (type='agent_run_advance' AND EXISTS(SELECT 1 FROM public.agent_runs r
     WHERE r.id=(payload->>'runId')::uuid AND r.revision=(payload->>'revision')::integer
       AND r.workspace_id=jobs.workspace_id AND r.user_id=jobs.requested_by))
@@ -38,7 +38,7 @@ CREATE POLICY agent_goal_enqueue ON public.jobs FOR INSERT TO ailearn_worker WIT
 -- 的材料完全对上，并且材料在目标自己的冻结输入里。只看「有一行 id 相同的草稿」
 -- 是不够的——一个目标冻结多份材料时，别处的一行也能对上 id，那会让一个永远
 -- 拿不到产物的操作被反复唤醒，正好是核对预算想防的事。
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_agent_recovery() RETURNS integer
+CREATE OR REPLACE FUNCTION public.astella_enqueue_agent_recovery() RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
 DECLARE inserted integer;
 BEGIN
@@ -88,5 +88,5 @@ BEGIN
   GET DIAGNOSTICS inserted = ROW_COUNT;
   RETURN inserted;
 END $$;
-REVOKE ALL ON FUNCTION public.ailearn_enqueue_agent_recovery() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_agent_recovery() TO ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_enqueue_agent_recovery() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_enqueue_agent_recovery() TO astella_worker;

@@ -1,4 +1,4 @@
-import type { CompanionMemoryItemV1,CompanionMemoryKindV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { CompanionMemoryItemV1,CompanionMemoryKindV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { ArrowLeft,ExternalLink } from "lucide-react";
 import { useMemo,useRef,useState } from "react";
 import { useRoomStore } from "../../../app/room-store";
@@ -11,7 +11,7 @@ import { CompanionSelect } from "./companion-select";
 import { useCompanionResource } from "./use-companion-resource";
 
 export function CompanionMemoryMap({ refreshKey, memories, onBack, onMemory }: { refreshKey: number; memories: CompanionMemoryItemV1[]; onBack: () => void; onMemory: (id: string) => void }) {
-  const resource = useCompanionResource(meta => window.ailearn.companion.memory.starMap({ meta }), [refreshKey]);
+  const resource = useCompanionResource(meta => window.astella.companion.memory.starMap({ meta }), [refreshKey]);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<"all" | CompanionMemoryKindV1>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);

@@ -66,7 +66,7 @@
   API Key
 
 ## SenseVoice 模型（用户可选下载，不随安装包分发）
-- 位置：`<userData>/voice-models/`（`AILEARN_VOICE_ASR_DIR` 可改到别处），
+- 位置：`<userData>/voice-models/`（`ASTELLA_VOICE_ASR_DIR` 可改到别处），
   由用户在「设置 → 伴星 → 声音与显示 → 语音输入」里自己下载
 - 用途：本地 ASR。**这是语音输入唯一的识别路径**（2026-10：取消了 SiliconFlow
   云端转写这条兜底——本地失败时录音不再离开设备，界面改为提示去设置里下载模型）
@@ -77,7 +77,7 @@
   https://modelscope.cn/models/pengzhendong/sherpa-onnx-sense-voice-zh-en-ja-ko-yue
 - 下载源：**按顺序回退**——先魔搭社区的 sherpa-onnx 导出，备用为 `hf-mirror.com` 和
   Hugging Face 官方库。连接超时或传输中断会换源；正式安装前校验文件大小与 SHA-256，
-  两个文件的摘要与官方 2024-07-17 版本一致。`AILEARN_VOICE_ASR_SOURCE`
+  两个文件的摘要与官方 2024-07-17 版本一致。`ASTELLA_VOICE_ASR_SOURCE`
   （逗号分隔）可以整份换成自建镜像或内网制品库。
 - 说明：**不随应用分发**（`electron-builder.yml` 显式排除 `out/renderer/models/`，
   打包冒烟有判据）。未下载时语音输入不可用，其余功能一律不受影响。

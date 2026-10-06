@@ -25,18 +25,18 @@ const errors = []
  * script launches a second, separately built copy whose profile, workspace and
  * reload state all differ from the window under review.
  */
-const cdpEndpoint = process.env.AILEARN_CAPTURE_CDP ?? ''
+const cdpEndpoint = process.env.ASTELLA_CAPTURE_CDP ?? ''
 const liveBrowser = cdpEndpoint ? await chromium.connectOverCDP(cdpEndpoint) : null
 const attached = liveBrowser ? liveBrowser.contexts()[0].pages()[0] : null
 
 const installedElectron = resolve(appRoot, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron')
 const workspaceElectron = resolve(appRoot, '../desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron')
 const executablePath = existsSync(installedElectron) ? installedElectron : workspaceElectron
-const userDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-pages-v3-'))
+const userDataDir = await mkdtemp(resolve(tmpdir(), 'astella-pages-v3-'))
 // Chromium cannot initialize its own sandbox when the capture itself runs inside
 // a restricted environment (CI containers, sandboxed agent shells). The flag is
 // opt-in so an ordinary local run keeps Electron's sandbox in place.
-const noSandbox = process.env.AILEARN_CAPTURE_NO_SANDBOX === '1' ? ['--no-sandbox'] : []
+const noSandbox = process.env.ASTELLA_CAPTURE_NO_SANDBOX === '1' ? ['--no-sandbox'] : []
 const electronApp = liveBrowser
   ? null
   : await electron.launch({

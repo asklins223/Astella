@@ -20,7 +20,7 @@
  * 判据见 `AGENTS.md` §工程结构与分层：单函数超过 400 行或 hook 超过 25 个就是信号。
  */
 import type { ReactElement } from "react";
-import type { WorkspaceSummaryV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { WorkspaceSummaryV1 } from "@astella/shared/desktop-ipc-contracts";
 import { SettingRow, SettingsInlineState } from "./settings-primitives.tsx";
 import { ArrowRight, LogOut } from "lucide-react";
 import { spaceRoleTypeLine } from "./settings-data-tables.ts";

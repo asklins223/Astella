@@ -42,7 +42,7 @@ import type { TeachingExplainProviderV1 } from "./teaching/teaching-explain.ts";
 import {
   llmDynamicArtifactProvider,
   type DynamicArtifactProviderV1,
-} from "@ailearn/shared/note-dynamic-artifact/round-artifact-model";
+} from "@astella/shared/note-dynamic-artifact/round-artifact-model";
 
 /**
  * 一个模型协作者的装配结果。

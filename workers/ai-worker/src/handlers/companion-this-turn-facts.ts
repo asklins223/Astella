@@ -30,7 +30,7 @@
  */
 
 import { sql } from "drizzle-orm";
-import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
+import { noteVisibleSqlText } from "@astella/shared/note-visibility";
 import type { WorkerTransaction } from "../db.ts";
 import { noteSearchTerms } from "./companion-dialogue-content.ts";
 import { ageLabel, visibleCompanionCardSourceCondition, visibleCompanionDueReviewCondition } from "./companion-here-and-now.ts";

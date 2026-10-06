@@ -9,9 +9,9 @@ afterEach(() => { document.body.replaceChildren(); document.body.style.removePro
 it("reports generated content height without feeding the iframe viewport back into itself", () => {
   vi.useFakeTimers();
   const template = new DOMParser().parseFromString(artifactDocumentTemplate(), "text/html");
-  const root = template.getElementById("ailearn-artifact-root")!;
+  const root = template.getElementById("astella-artifact-root")!;
   document.body.append(document.importNode(root, true));
-  const content = document.getElementById("ailearn-artifact-root")!;
+  const content = document.getElementById("astella-artifact-root")!;
   let height = 260;
   vi.spyOn(content, "scrollHeight", "get").mockImplementation(() => height);
   vi.spyOn(content, "offsetHeight", "get").mockImplementation(() => height);
@@ -35,8 +35,8 @@ it("includes the generated page's own body spacing in its measured height", () =
   vi.useFakeTimers();
   document.body.style.marginBottom = "8px";
   const template = new DOMParser().parseFromString(artifactDocumentTemplate(), "text/html");
-  document.body.append(document.importNode(template.getElementById("ailearn-artifact-root")!, true));
-  const root = document.getElementById("ailearn-artifact-root")!;
+  document.body.append(document.importNode(template.getElementById("astella-artifact-root")!, true));
+  const root = document.getElementById("astella-artifact-root")!;
   vi.spyOn(root, "scrollHeight", "get").mockReturnValue(260);
   vi.spyOn(root, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 20, 600, 260));
   vi.spyOn(document.body, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 600, 300));
@@ -48,11 +48,11 @@ it("includes the generated page's own body spacing in its measured height", () =
 
 it.each([true, false])("embeds only the generated scene while retaining its nodes and interactions; content view: %s", (contentOnly) => {
   const template = new DOMParser().parseFromString(artifactDocumentTemplate(), "text/html");
-  document.body.innerHTML = `<div id="ailearn-artifact-root"><div class="ailearn-art" data-outline-count="3"><h2 class="ailearn-art__title">Saved title</h2><div class="ailearn-art__scene"><h2>Generated title</h2><button>Try this</button></div></div></div>`;
-  const root = document.getElementById("ailearn-artifact-root")!;
+  document.body.innerHTML = `<div id="astella-artifact-root"><div class="astella-art" data-outline-count="3"><h2 class="astella-art__title">Saved title</h2><div class="astella-art__scene"><h2>Generated title</h2><button>Try this</button></div></div></div>`;
+  const root = document.getElementById("astella-artifact-root")!;
   const before = root.innerHTML;
-  const generatedHeading = document.querySelector(".ailearn-art__scene h2")!;
-  const button = document.querySelector<HTMLButtonElement>(".ailearn-art__scene button")!;
+  const generatedHeading = document.querySelector(".astella-art__scene h2")!;
+  const button = document.querySelector<HTMLButtonElement>(".astella-art__scene button")!;
   const onClick = vi.fn();
   button.addEventListener("click", onClick);
   runInNewContext(template.querySelector("script")!.textContent!, {
@@ -60,8 +60,8 @@ it.each([true, false])("embeds only the generated scene while retaining its node
     window: { location: { hash: contentOnly ? "#content" : "" }, matchMedia: () => ({ matches: false }), addEventListener: vi.fn() },
   });
   if (contentOnly) {
-    expect(root.querySelector(".ailearn-art")).toBeNull();
-    expect(root.querySelector(".ailearn-art__scene")).toBeNull();
+    expect(root.querySelector(".astella-art")).toBeNull();
+    expect(root.querySelector(".astella-art__scene")).toBeNull();
     expect(root.getAttribute("data-artifact-outline-count")).toBe("3");
     expect(root.children).toHaveLength(2);
   } else {

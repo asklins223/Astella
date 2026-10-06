@@ -2,7 +2,7 @@
 -- Worker intentionally has INSERT but no UPDATE on assistant_deliveries; memory
 -- forget/revise still need an atomic terminal transition after a user-confirmed action.
 
-CREATE OR REPLACE FUNCTION public.ailearn_close_companion_memory_delivery(
+CREATE OR REPLACE FUNCTION public.astella_close_companion_memory_delivery(
   p_workspace_id uuid,
   p_user_id uuid,
   p_memory_item_id uuid,
@@ -44,7 +44,7 @@ BEGIN
 
   IF closed_count > 0 THEN
     PERFORM pg_catalog.pg_notify(
-      'ailearn_companion_inbox_v1',
+      'astella_companion_inbox_v1',
       jsonb_build_object('userId', p_user_id)::text
     );
   END IF;
@@ -52,10 +52,10 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text) IS
+COMMENT ON FUNCTION public.astella_close_companion_memory_delivery(uuid,uuid,uuid,text) IS
   'Close only active inbox deliveries tied to an existing memory item in the supplied workspace/user scope; worker cannot update assistant_deliveries directly.';
 
-REVOKE ALL ON FUNCTION public.ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)
-  FROM PUBLIC, ailearn_api, ailearn_worker;
-GRANT EXECUTE ON FUNCTION public.ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)
-  TO ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_close_companion_memory_delivery(uuid,uuid,uuid,text)
+  FROM PUBLIC, astella_api, astella_worker;
+GRANT EXECUTE ON FUNCTION public.astella_close_companion_memory_delivery(uuid,uuid,uuid,text)
+  TO astella_worker;

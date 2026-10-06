@@ -49,4 +49,4 @@ CREATE UNIQUE INDEX note_learning_artifacts_request_unique_idx
 ALTER INDEX public.note_companion_artifacts_workspace_id_unique_idx RENAME TO note_learning_artifacts_workspace_id_unique_idx;
 ALTER INDEX public.note_companion_artifacts_history_idx RENAME TO note_learning_artifacts_history_idx;
 
-GRANT SELECT, INSERT ON public.note_learning_artifacts TO ailearn_worker;
+GRANT SELECT, INSERT ON public.note_learning_artifacts TO astella_worker;

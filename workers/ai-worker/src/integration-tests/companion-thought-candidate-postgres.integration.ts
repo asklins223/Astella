@@ -13,8 +13,8 @@
  * type integer`）——照类型表猜形状会猜错，从生产函数拿就不会。
  *
  * 角色纪律（doc 34 L37/L43）：夹具写走超级用户 `DATABASE_URL`，被测那一发走
- * `withWorkerWorkspaceTransaction`（= `ailearn_worker`，dev 里 NOBYPASSRLS）。
- * 注意这张表的 RLS 策略对 `ailearn_worker` **一律放行**（见第二支用例里的原文），
+ * `withWorkerWorkspaceTransaction`（= `astella_worker`，dev 里 NOBYPASSRLS）。
+ * 注意这张表的 RLS 策略对 `astella_worker` **一律放行**（见第二支用例里的原文），
  * 所以这一份文件是"写得进、读得回"的证据，**不是**空间隔离的证据。
  */
 import { after, test } from "node:test";
@@ -22,9 +22,9 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { sql as dsql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { companionLeakGateVersionV1 } from "@ailearn/shared/companion-leak-gates";
+import { companionLeakGateVersionV1 } from "@astella/shared/companion-leak-gates";
 import type { ThoughtMaterial } from "../handlers/companion-thought.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const ADMIN_CONN = testDatabaseUrl("DATABASE_URL");
 // 必须在 import `../db.ts` **之前**设好：连接串在那个模块加载时求值。
@@ -94,7 +94,7 @@ after(async () => {
   await admin.end({ timeout: 2 }).catch(() => undefined);
 });
 
-test("候选行带着「它产出于哪一版闸」，且这一发是 ailearn_worker 真写进去的", async () => {
+test("候选行带着「它产出于哪一版闸」，且这一发是 astella_worker 真写进去的", async () => {
   const insertedId = await withWorkerWorkspaceTransaction(
     { workspaceId, userId: ownerId },
     (tx) => insertThoughtCandidateV1(tx, { workspaceId, userId: ownerId }, candidate),
@@ -131,7 +131,7 @@ test("另一个空间的候选在 worker 角色下读得到——这一支不是
   const seen = await withWorkerWorkspaceTransaction({ workspaceId, userId: ownerId }, (tx) => tx.execute<{ id: string }>(
     dsql`SELECT id FROM assistant_thoughts WHERE id = ${foreignId}`));
   // 策略 `assistant_thoughts_workspace_user_isolation` 的表达式是
-  // `CURRENT_USER = 'ailearn_worker' OR (workspace_id = app.workspace_id AND user_id = app.user_id)`，
+  // `CURRENT_USER = 'astella_worker' OR (workspace_id = app.workspace_id AND user_id = app.user_id)`，
   // worker 那一支是**一律放行**（它本来就要跨空间把念头送出去）。所以这一支用例判的是
   // "真角色写得进、读得回"，**不能**拿来当空间隔离的证据——那句写在这里就是为了不让人误用。
   // 反过来，哪天有人收紧了那条放行，这里会红：该改的是送念头的调度，不是这条断言。

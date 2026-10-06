@@ -7,13 +7,13 @@
 -- only and idempotent.
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
-    GRANT SELECT, UPDATE ON public.review_attempts TO ailearn_worker;
-    GRANT SELECT, INSERT ON public.validation_questions TO ailearn_worker;
-    GRANT SELECT, INSERT ON public.validation_question_rubric_items TO ailearn_worker;
-    GRANT SELECT, UPDATE ON public.validation_submissions TO ailearn_worker;
-    GRANT SELECT ON public.validation_assistance_exposures TO ailearn_worker;
-    GRANT INSERT ON public.validation_point_assessments TO ailearn_worker;
-    GRANT INSERT ON public.scheduling_shadow_decisions TO ailearn_worker;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
+    GRANT SELECT, UPDATE ON public.review_attempts TO astella_worker;
+    GRANT SELECT, INSERT ON public.validation_questions TO astella_worker;
+    GRANT SELECT, INSERT ON public.validation_question_rubric_items TO astella_worker;
+    GRANT SELECT, UPDATE ON public.validation_submissions TO astella_worker;
+    GRANT SELECT ON public.validation_assistance_exposures TO astella_worker;
+    GRANT INSERT ON public.validation_point_assessments TO astella_worker;
+    GRANT INSERT ON public.scheduling_shadow_decisions TO astella_worker;
   END IF;
 END $$;

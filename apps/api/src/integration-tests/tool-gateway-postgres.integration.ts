@@ -16,8 +16,8 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { createLearningRunForTest, seedV2Fixture } from "./helpers/v2-card-fixture.ts";
-import { learningRunAssistanceConsequenceV1 } from "@ailearn/shared/learning-run-contracts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { learningRunAssistanceConsequenceV1 } from "@astella/shared/learning-run-contracts";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 // 测试专用 checkpoint 密钥（同 AUTH_SURFACE_MANIFEST_SECRET 模式；模块级
 // 读取发生在 import 时，必须在动态 import 前设置）。

@@ -1,5 +1,5 @@
-COMPOSE := docker compose -p ailearn-dev -f docker-compose.dev.yml
-DEV_DB_VOLUME := ailearn-dev_dev_postgres_data
+COMPOSE := docker compose -p astella-dev -f docker-compose.dev.yml
+DEV_DB_VOLUME := astella-dev_dev_postgres_data
 .DEFAULT_GOAL := up
 
 # One-shot init containers (restart: "no") that exit after their task.
@@ -14,7 +14,7 @@ DEV_DB_VOLUME := ailearn-dev_dev_postgres_data
 # nothing changed, but must run every time — they are NOT
 # first-time-only.  minio-init and seed-* are genuinely one-time and are
 # already gated behind profiles.
-INIT_SERVICES := role-bootstrap migrate
+INIT_SERVICES := role-bootstrap migrate role-grants
 STORAGE_INIT_SERVICES := minio-init
 
 # Include the storage profile in every dev `up` so that avatar/note image
@@ -40,8 +40,8 @@ DEV_PROFILES := --profile storage
 ensure-db-volume:
 	@set -e; if ! docker volume inspect "$(DEV_DB_VOLUME)" >/dev/null 2>&1; then \
 		docker volume create \
-			--label com.ailearn.protected=true \
-			--label com.ailearn.purpose=postgres-data \
+			--label com.astella.protected=true \
+			--label com.astella.purpose=postgres-data \
 			"$(DEV_DB_VOLUME)" >/dev/null; \
 		echo "Created protected database volume $(DEV_DB_VOLUME)"; \
 	fi
@@ -72,7 +72,7 @@ storage: ensure-db-volume
 clean-init:
 	@$(COMPOSE) rm -f $(INIT_SERVICES) 2>/dev/null || true
 
-# Explicitly creates owner@ailearn.local / ailearn_owner in development only.
+# Explicitly creates owner@astella.local / astella_owner in development only.
 # Uses --rm so the container is removed immediately after seeding.
 seed-demo: ensure-db-volume
 	$(COMPOSE) --profile seed run --rm seed-demo
@@ -101,7 +101,7 @@ reset-db:
 # 一次性（可丢弃）数据库：见 scripts/dev-disposable-db.sh 顶部说明。
 # 用途是给"断言依赖空库"的集成测试（RLS 策略目录、worker 队列、投影分页…）
 # 一个隔离库——在共享开发库上跑这些用例会因残留行假失败。
-# 脚本带名字护栏：只删/建 ailearn_* 且不等于 ailearn 的库。
+# 脚本带名字护栏：只删/建 astella_* 且不等于 astella 的库。
 disposable-db:
 	bash scripts/dev-disposable-db.sh "$(DISPOSABLE_DB)"
 
@@ -142,7 +142,7 @@ version-check:
 # 两个门禁脚本都还在，需要时按下面两个独立目标显式调用；它们不再是这条基线
 # 的一部分，所以 CI 也不再要求它们过。
 verify: version-check
-	node --test .github/scripts/version-contract.test.mjs .github/scripts/release-manifest-contract.test.mjs .github/scripts/coverage-gate-lib.test.mjs .github/scripts/ci-workflow-contract.test.mjs .github/scripts/postgres-integration-lifecycle.test.mjs
+	node --test .github/scripts/version-contract.test.mjs .github/scripts/release-manifest-contract.test.mjs .github/scripts/coverage-gate-lib.test.mjs .github/scripts/ci-workflow-contract.test.mjs .github/scripts/postgres-integration-lifecycle.test.mjs .github/scripts/compose-init-order.test.mjs
 	node .github/scripts/verify-schema-mirror.mjs
 	node .github/scripts/verify-companion-capability-config.mjs
 	cd packages/shared && npm run typecheck && npm test
@@ -191,8 +191,8 @@ release-check:
 # 前置：本地库已就绪（`make up`），且已迁移（`make migrate` 或容器内 migrate）。
 # **必须在干净的一次性库上跑**——用例含"库里只有自己的夹具"类断言，共享开发库
 # 会假失败：
-#   bash scripts/dev-disposable-db.sh ailearn_it
-#   make test-postgres COMPANION_HOME_TEST_DB=ailearn_it
+#   bash scripts/dev-disposable-db.sh astella_it
+#   make test-postgres COMPANION_HOME_TEST_DB=astella_it
 #
 # 显式给**受限角色**：超级用户会绕过 RLS，隔离断言会变成假通过。
 # 连接参数沿用 COMPANION_HOME_TEST_* 那组变量。
@@ -202,10 +202,10 @@ IT_DB ?= $(COMPANION_HOME_TEST_DB)
 IT_MIGRATOR_PASSWORD ?= $(COMPANION_HOME_TEST_MIGRATOR_PASSWORD)
 IT_API_PASSWORD ?= $(COMPANION_HOME_TEST_API_PASSWORD)
 IT_WORKER_PASSWORD ?= $(COMPANION_HOME_TEST_API_PASSWORD)
-IT_SUPERUSER_URL = postgres://ailearn:$(POSTGRES_PASSWORD)@$(IT_HOST):$(IT_PORT)/$(IT_DB)
-IT_MIGRATOR_URL = postgres://ailearn_migrator:$(IT_MIGRATOR_PASSWORD)@$(IT_HOST):$(IT_PORT)/$(IT_DB)
-IT_API_URL = postgres://ailearn_api:$(IT_API_PASSWORD)@$(IT_HOST):$(IT_PORT)/$(IT_DB)
-IT_WORKER_URL = postgres://ailearn_worker:$(IT_WORKER_PASSWORD)@$(IT_HOST):$(IT_PORT)/$(IT_DB)
+IT_SUPERUSER_URL = postgres://astella:$(POSTGRES_PASSWORD)@$(IT_HOST):$(IT_PORT)/$(IT_DB)
+IT_MIGRATOR_URL = postgres://astella_migrator:$(IT_MIGRATOR_PASSWORD)@$(IT_HOST):$(IT_PORT)/$(IT_DB)
+IT_API_URL = postgres://astella_api:$(IT_API_PASSWORD)@$(IT_HOST):$(IT_PORT)/$(IT_DB)
+IT_WORKER_URL = postgres://astella_worker:$(IT_WORKER_PASSWORD)@$(IT_HOST):$(IT_PORT)/$(IT_DB)
 
 # 每个用例读的名字**不只** DATABASE_URL_* 那一组：RLS、队列、内容哈希、
 # SEC-02 邀请、版本恢复、限流各自读一个专用变量，缺了就直接
@@ -255,30 +255,30 @@ shell-worker:
 #   make test-companion-home-profile-postgres COMPANION_HOME_TEST_DB=other_db
 COMPANION_HOME_TEST_HOST ?= 127.0.0.1
 COMPANION_HOME_TEST_PORT ?= 5432
-COMPANION_HOME_TEST_DB ?= ailearn
-COMPANION_HOME_TEST_MIGRATOR_PASSWORD ?= ailearn_dev
-COMPANION_HOME_TEST_API_PASSWORD ?= ailearn_dev
+COMPANION_HOME_TEST_DB ?= astella
+COMPANION_HOME_TEST_MIGRATOR_PASSWORD ?= astella_dev
+COMPANION_HOME_TEST_API_PASSWORD ?= astella_dev
 
 test-companion-home-profile-postgres:
 	cd apps/api && \
 		NODE_ENV=test \
-		DATABASE_URL_MIGRATOR="postgres://ailearn_migrator:$(COMPANION_HOME_TEST_MIGRATOR_PASSWORD)@$(COMPANION_HOME_TEST_HOST):$(COMPANION_HOME_TEST_PORT)/$(COMPANION_HOME_TEST_DB)" \
-		DATABASE_URL_API="postgres://ailearn_api:$(COMPANION_HOME_TEST_API_PASSWORD)@$(COMPANION_HOME_TEST_HOST):$(COMPANION_HOME_TEST_PORT)/$(COMPANION_HOME_TEST_DB)" \
+		DATABASE_URL_MIGRATOR="postgres://astella_migrator:$(COMPANION_HOME_TEST_MIGRATOR_PASSWORD)@$(COMPANION_HOME_TEST_HOST):$(COMPANION_HOME_TEST_PORT)/$(COMPANION_HOME_TEST_DB)" \
+		DATABASE_URL_API="postgres://astella_api:$(COMPANION_HOME_TEST_API_PASSWORD)@$(COMPANION_HOME_TEST_HOST):$(COMPANION_HOME_TEST_PORT)/$(COMPANION_HOME_TEST_DB)" \
 		npm run test:companion-home-profile:postgres
 
 # ─── Companion 集成矩阵：对话/记忆/交付/旅程/工具网关（16 个套件） ──────
 # 这些套件此前没有任何 CI job 或 make 目标，只能在记得文件名时手工运行。
 # 必须在**干净库**上跑：用例含「库里只有自己的夹具」类断言，共享开发库会假失败。
 # 推荐配合一次性隔离库：
-#   bash scripts/dev-disposable-db.sh ailearn_companion_it
-#   make test-companion-integration-postgres COMPANION_HOME_TEST_DB=ailearn_companion_it
+#   bash scripts/dev-disposable-db.sh astella_companion_it
+#   make test-companion-integration-postgres COMPANION_HOME_TEST_DB=astella_companion_it
 # 与 home-profile 目标同理，显式使用受限角色（超级用户会绕过 RLS，让隔离断言假通过）。
 test-companion-integration-postgres:
 	cd apps/api && \
 		NODE_ENV=test \
-		DATABASE_URL_MIGRATOR="postgres://ailearn_migrator:$(COMPANION_HOME_TEST_MIGRATOR_PASSWORD)@$(COMPANION_HOME_TEST_HOST):$(COMPANION_HOME_TEST_PORT)/$(COMPANION_HOME_TEST_DB)" \
-		DATABASE_URL_API="postgres://ailearn_api:$(COMPANION_HOME_TEST_API_PASSWORD)@$(COMPANION_HOME_TEST_HOST):$(COMPANION_HOME_TEST_PORT)/$(COMPANION_HOME_TEST_DB)" \
-		DATABASE_URL_WORKER="postgres://ailearn_worker:$(COMPANION_HOME_TEST_API_PASSWORD)@$(COMPANION_HOME_TEST_HOST):$(COMPANION_HOME_TEST_PORT)/$(COMPANION_HOME_TEST_DB)" \
+		DATABASE_URL_MIGRATOR="postgres://astella_migrator:$(COMPANION_HOME_TEST_MIGRATOR_PASSWORD)@$(COMPANION_HOME_TEST_HOST):$(COMPANION_HOME_TEST_PORT)/$(COMPANION_HOME_TEST_DB)" \
+		DATABASE_URL_API="postgres://astella_api:$(COMPANION_HOME_TEST_API_PASSWORD)@$(COMPANION_HOME_TEST_HOST):$(COMPANION_HOME_TEST_PORT)/$(COMPANION_HOME_TEST_DB)" \
+		DATABASE_URL_WORKER="postgres://astella_worker:$(COMPANION_HOME_TEST_API_PASSWORD)@$(COMPANION_HOME_TEST_HOST):$(COMPANION_HOME_TEST_PORT)/$(COMPANION_HOME_TEST_DB)" \
 		npm run test:companion-integration:postgres
 
 # ─── Alpha environment (OPS-01) ──────────────────────────────────────
@@ -310,7 +310,7 @@ alpha-metrics:
 
 DESKTOP_CLIENT_DIR := apps/desktop-client
 DESKTOP_COMPOSE := docker-compose.dev.yml
-DESKTOP_PROJECT := ailearn-dev
+DESKTOP_PROJECT := astella-dev
 
 .PHONY: desktop-client-install desktop-client-dev desktop-client-build desktop-client-dist \
 	desktop-client-dist-arm64 desktop-client-dist-linux desktop-client-dist-win \

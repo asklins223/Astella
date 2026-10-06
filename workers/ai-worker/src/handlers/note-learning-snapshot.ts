@@ -1,5 +1,5 @@
-import type { ChatMessage } from "@ailearn/shared";
-import { sha256Utf8V1, stableStringify } from "@ailearn/shared/content-hash";
+import type { ChatMessage } from "@astella/shared";
+import { sha256Utf8V1, stableStringify } from "@astella/shared/content-hash";
 
 export function noteLearningSnapshotHash(snapshot: {
   taskVersion: number; noteVersionId: string;

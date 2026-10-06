@@ -1,8 +1,8 @@
 /** note job 与制卡 outbox 共用上下文及每次 provider 调用的父目标预算。 */
 import { sql } from "drizzle-orm";
-import { AgentStoreError, listAgentMethods, queryRows, recordAgentMethodOffered, type AgentSqlExecutor } from "@ailearn/agent-host";
-import type { AgentScopeV1 } from "@ailearn/shared/agent-contracts";
-import { composeAgentContext, type AgentContextSource } from "@ailearn/agent-core";
+import { AgentStoreError, listAgentMethods, queryRows, recordAgentMethodOffered, type AgentSqlExecutor } from "@astella/agent-host";
+import type { AgentScopeV1 } from "@astella/shared/agent-contracts";
+import { composeAgentContext, type AgentContextSource } from "@astella/agent-core";
 import { sanitizePersonaField } from "../handlers/companion-identity-context.ts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { loadAgentLearningContext } from "./learning-context.ts";

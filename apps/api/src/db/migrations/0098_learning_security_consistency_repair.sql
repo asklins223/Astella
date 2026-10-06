@@ -26,7 +26,7 @@
 -- BYPASSRLS，函数内绕过 RLS）；worker 仅 EXECUTE，不直接 SELECT/UPDATE
 -- 任意 workspace 的 job 行（保留 SELECT+UPDATE 表权限但受 RLS 行级约束）。
 
-CREATE OR REPLACE FUNCTION public.ailearn_mark_dead_jobs_under_terminal_runs()
+CREATE OR REPLACE FUNCTION public.astella_mark_dead_jobs_under_terminal_runs()
 RETURNS integer
 LANGUAGE sql
 SECURITY DEFINER
@@ -50,7 +50,7 @@ AS $function$
 $function$;
 
 -- projectReapedGenerationJobs：按 id 取 reaped 的 dead job（窄列集）。
-CREATE OR REPLACE FUNCTION public.ailearn_find_reaped_generation_jobs(
+CREATE OR REPLACE FUNCTION public.astella_find_reaped_generation_jobs(
   p_ids uuid[]
 )
 RETURNS TABLE(
@@ -77,7 +77,7 @@ $function$;
 
 -- reconcileTerminalGenerationJobs：每 generation_unit 最新一条 dead job id
 --（与 index.ts 原 SQL 语义逐字一致）。
-CREATE OR REPLACE FUNCTION public.ailearn_latest_dead_generation_job_ids(
+CREATE OR REPLACE FUNCTION public.astella_latest_dead_generation_job_ids(
   p_batch_size integer
 )
 RETURNS TABLE(id uuid)
@@ -125,7 +125,7 @@ AS $function$
 $function$;
 
 -- refreshQueueMetrics：队列深度按状态分组。
-CREATE OR REPLACE FUNCTION public.ailearn_queue_job_depth()
+CREATE OR REPLACE FUNCTION public.astella_queue_job_depth()
 RETURNS TABLE(status text, total integer)
 LANGUAGE sql
 SECURITY DEFINER
@@ -137,7 +137,7 @@ AS $function$
 $function$;
 
 -- refreshQueueMetrics：最老 pending job 的等待秒数。
-CREATE OR REPLACE FUNCTION public.ailearn_queue_oldest_pending_age()
+CREATE OR REPLACE FUNCTION public.astella_queue_oldest_pending_age()
 RETURNS double precision
 LANGUAGE sql
 SECURITY DEFINER
@@ -154,7 +154,7 @@ $function$;
 -- 跨 workspace 对账补投（specialist-persist resume / reconciler resume job）：
 -- 统一经此函数入队（migrator owner BYPASSRLS），worker 不直接 INSERT jobs。
 -- 与 drizzle 的 onConflictDoNothing() 语义一致：任意唯一冲突静默跳过。
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_agent_turn_job(
+CREATE OR REPLACE FUNCTION public.astella_enqueue_agent_turn_job(
   p_workspace_id uuid,
   p_requested_by uuid,
   p_generation_run_id uuid,
@@ -193,7 +193,7 @@ $function$;
 
 -- reconcileStuckSupervisors 的"是否已有 pending/running job"检查
 --（跨 workspace 对账读，RLS 下 worker 裸 SELECT 会被 tenant guard 拦）。
-CREATE OR REPLACE FUNCTION public.ailearn_find_active_turn_job(
+CREATE OR REPLACE FUNCTION public.astella_find_active_turn_job(
   p_workspace_id uuid,
   p_run_id uuid,
   p_unit_id uuid
@@ -213,25 +213,25 @@ AS $function$
 $function$;
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
     REVOKE ALL ON FUNCTION
-      public.ailearn_mark_dead_jobs_under_terminal_runs(),
-      public.ailearn_find_reaped_generation_jobs(uuid[]),
-      public.ailearn_latest_dead_generation_job_ids(integer),
-      public.ailearn_queue_job_depth(),
-      public.ailearn_queue_oldest_pending_age(),
-      public.ailearn_enqueue_agent_turn_job(uuid, uuid, uuid, uuid, integer, text, integer, text, text, text),
-      public.ailearn_find_active_turn_job(uuid, uuid, uuid)
-      FROM PUBLIC, ailearn_api;
+      public.astella_mark_dead_jobs_under_terminal_runs(),
+      public.astella_find_reaped_generation_jobs(uuid[]),
+      public.astella_latest_dead_generation_job_ids(integer),
+      public.astella_queue_job_depth(),
+      public.astella_queue_oldest_pending_age(),
+      public.astella_enqueue_agent_turn_job(uuid, uuid, uuid, uuid, integer, text, integer, text, text, text),
+      public.astella_find_active_turn_job(uuid, uuid, uuid)
+      FROM PUBLIC, astella_api;
     GRANT EXECUTE ON FUNCTION
-      public.ailearn_mark_dead_jobs_under_terminal_runs(),
-      public.ailearn_find_reaped_generation_jobs(uuid[]),
-      public.ailearn_latest_dead_generation_job_ids(integer),
-      public.ailearn_queue_job_depth(),
-      public.ailearn_queue_oldest_pending_age(),
-      public.ailearn_enqueue_agent_turn_job(uuid, uuid, uuid, uuid, integer, text, integer, text, text, text),
-      public.ailearn_find_active_turn_job(uuid, uuid, uuid)
-      TO ailearn_worker;
+      public.astella_mark_dead_jobs_under_terminal_runs(),
+      public.astella_find_reaped_generation_jobs(uuid[]),
+      public.astella_latest_dead_generation_job_ids(integer),
+      public.astella_queue_job_depth(),
+      public.astella_queue_oldest_pending_age(),
+      public.astella_enqueue_agent_turn_job(uuid, uuid, uuid, uuid, integer, text, integer, text, text, text),
+      public.astella_find_active_turn_job(uuid, uuid, uuid)
+      TO astella_worker;
   END IF;
 END $$;
 
@@ -263,7 +263,7 @@ CREATE POLICY learning_session_processing_outbox_workspace_user_isolation
   ON public.learning_session_processing_outbox FOR ALL
   USING (
     (
-      CURRENT_USER = 'ailearn_worker'
+      CURRENT_USER = 'astella_worker'
       AND (
         lease_owner IS NULL
         OR lease_owner = NULLIF(current_setting('app.worker_id', true), '')
@@ -279,7 +279,7 @@ CREATE POLICY learning_session_processing_outbox_workspace_user_isolation
   )
   WITH CHECK (
     (
-      CURRENT_USER = 'ailearn_worker'
+      CURRENT_USER = 'astella_worker'
       AND (
         lease_owner IS NULL
         OR lease_owner = NULLIF(current_setting('app.worker_id', true), '')
@@ -337,11 +337,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS learning_tutor_detours_episode_active_unique_i
 --> statement-breakpoint
 
 -- ─── 5. TTL 清理 SECURITY DEFINER 函数（0076/0081/0083 TTL 落地）──────────
--- 四张表均 RLS ENABLE+FORCE（workspace_id+user_id 隔离），API 连接（ailearn_api
+-- 四张表均 RLS ENABLE+FORCE（workspace_id+user_id 隔离），API 连接（astella_api
 -- NOBYPASSRLS）裸查询会全部被拦成 0 行；因此清理经 migrator owner（BYPASSRLS）
 -- 的 SECURITY DEFINER 函数执行，API 仅 EXECUTE。参数化 retention_days/limit。
 
-CREATE OR REPLACE FUNCTION public.ailearn_purge_companion_audit_ttl(
+CREATE OR REPLACE FUNCTION public.astella_purge_companion_audit_ttl(
   p_retention_days integer DEFAULT 30,
   p_limit integer DEFAULT 200
 )
@@ -369,7 +369,7 @@ AS $function$
   SELECT count(*)::integer FROM updated;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.ailearn_purge_invitation_ledger_ttl(
+CREATE OR REPLACE FUNCTION public.astella_purge_invitation_ledger_ttl(
   p_retention_days integer DEFAULT 30,
   p_limit integer DEFAULT 200
 )
@@ -397,7 +397,7 @@ AS $function$
   SELECT count(*)::integer FROM updated;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.ailearn_purge_processed_outbox_ttl(
+CREATE OR REPLACE FUNCTION public.astella_purge_processed_outbox_ttl(
   p_retention_days integer DEFAULT 30,
   p_limit integer DEFAULT 200
 )
@@ -420,7 +420,7 @@ AS $function$
   SELECT count(*)::integer FROM deleted;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.ailearn_purge_tutor_nonces_ttl(
+CREATE OR REPLACE FUNCTION public.astella_purge_tutor_nonces_ttl(
   p_retention_days integer DEFAULT 7,
   p_limit integer DEFAULT 200
 )
@@ -444,18 +444,18 @@ AS $function$
 $function$;
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
     REVOKE ALL ON FUNCTION
-      public.ailearn_purge_companion_audit_ttl(integer, integer),
-      public.ailearn_purge_invitation_ledger_ttl(integer, integer),
-      public.ailearn_purge_processed_outbox_ttl(integer, integer),
-      public.ailearn_purge_tutor_nonces_ttl(integer, integer)
-      FROM PUBLIC, ailearn_worker;
+      public.astella_purge_companion_audit_ttl(integer, integer),
+      public.astella_purge_invitation_ledger_ttl(integer, integer),
+      public.astella_purge_processed_outbox_ttl(integer, integer),
+      public.astella_purge_tutor_nonces_ttl(integer, integer)
+      FROM PUBLIC, astella_worker;
     GRANT EXECUTE ON FUNCTION
-      public.ailearn_purge_companion_audit_ttl(integer, integer),
-      public.ailearn_purge_invitation_ledger_ttl(integer, integer),
-      public.ailearn_purge_processed_outbox_ttl(integer, integer),
-      public.ailearn_purge_tutor_nonces_ttl(integer, integer)
-      TO ailearn_api;
+      public.astella_purge_companion_audit_ttl(integer, integer),
+      public.astella_purge_invitation_ledger_ttl(integer, integer),
+      public.astella_purge_processed_outbox_ttl(integer, integer),
+      public.astella_purge_tutor_nonces_ttl(integer, integer)
+      TO astella_api;
   END IF;
 END $$;

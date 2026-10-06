@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRoundTargetGrounder, selectGroundedApplicationScenario, selectGroundedRoundTarget } from "../target-grounding.ts";
-import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
+import type { PublicJsonRequester } from "@astella/shared/public-json-http";
 
 const config = { url: "https://example.test/chat/completions", key: "test", model: "grounder" };
 const options = {

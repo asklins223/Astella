@@ -8,7 +8,7 @@ import * as Y from "yjs";
  * - 正文里没有 → 渲染层根本没把改动交出来，问题在界面这一侧。
  *
  * 为什么读这个文件而不是改渲染层代码去打印：contextBridge 暴露给渲染层的那套 API 是
- * 冻结的，`window.ailearn.note.doc.syncUpdate = ...` 这种拦截**挂不上**（实测
+ * 冻结的，`window.astella.note.doc.syncUpdate = ...` 这种拦截**挂不上**（实测
  * `hookable:false`），拿它做的"有没有调用"看门狗读数永远是空，空读数会被当成结论。
  *
  * 跑法：node --experimental-strip-types scripts/note-doc-local-cache-read.mts [文件] [正文里要找的子串]

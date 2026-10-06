@@ -8,13 +8,13 @@ import {
   companionRunIssueBundleV1Schema,
   type CompanionRunListV1,
   type CompanionRunIssueBundleV1,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import {
   companionAgentSteps,
   companionAgentToolCalls,
   companionStreamEvents,
   companionTurnRuns,
-} from "@ailearn/shared/db-schema";
+} from "@astella/shared/db-schema";
 import type { ApiTransaction } from "../../db/client.ts";
 import type { CompanionRunDoctorScope } from "./run-doctor.ts";
 

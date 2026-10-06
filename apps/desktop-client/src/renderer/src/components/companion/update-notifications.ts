@@ -1,4 +1,4 @@
-import type { UpdateStateV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { UpdateStateV1 } from "@astella/shared/desktop-ipc-contracts";
 import { notifyCompanion, useCompanionNotifications } from "./companion-notifications";
 import { useUpdateStatus } from "../../app/update-status";
 import { useRoomStore } from "../../app/room-store";

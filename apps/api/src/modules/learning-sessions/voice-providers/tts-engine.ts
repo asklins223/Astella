@@ -15,14 +15,14 @@
  *   edge 合成前必须剥离（否则标签被当普通文字朗读出来）。
  */
 
-import { stripVoiceExpressionTags } from "@ailearn/shared/voice-expression-tags";
+import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
 import { createHash, randomUUID } from "node:crypto";
-import { runAiTask, type AiStepResult, type AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
+import { runAiTask, type AiStepResult, type AiTaskDefinition } from "@astella/shared/ai-task-kernel";
 import { edgeTtsSynthesize, EdgeTtsError, type EdgeTtsProviderOptions } from "./edge-tts.ts";
 import { loadTtsEngineConfig } from "./tts-config.ts";
 import type { ResolvedTtsSelection } from "./tts-preference.ts";
 import { qwenTtsSynthesizeStreamForUser, type QwenTtsOptions } from "./qwen-tts.ts";
-import { AIConsentRequiredError, AIDataPolicyDeniedError } from "@ailearn/agent-host";
+import { AIConsentRequiredError, AIDataPolicyDeniedError } from "@astella/agent-host";
 import { createGovernedMediaCall, type ApiAIGovernanceDependencies } from "../../../lib/ai-governance.ts";
 import { productionAiGovernancePorts } from "../../../governance/ai-governance-runtime.ts";
 

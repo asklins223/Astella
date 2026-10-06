@@ -47,7 +47,7 @@ const updater = {
   },
 };
 
-const userData = "/tmp/ailearn-update-test";
+const userData = "/tmp/astella-update-test";
 const windows: { isDestroyed: () => boolean; webContents: { send: (channel: string, payload: unknown) => void } }[] = [];
 
 vi.mock("electron", () => ({

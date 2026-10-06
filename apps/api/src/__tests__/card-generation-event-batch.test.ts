@@ -9,7 +9,7 @@ import test from "node:test";
  * 只比"条数对"是不够的：seq 错位或顺序颠倒时消费侧读出来的事件流是乱的，
  * 而那不会让任何一条既有断言变红。
  *
- * 2026-10-04：这两个函数已下沉到制卡领域包 `@ailearn/card-generation`
+ * 2026-10-04：这两个函数已下沉到制卡领域包 `@astella/card-generation`
  * （`packages/card-generation/src/events.ts`）。下面这些用例仍经 API 的
  * `helpers.ts` 调用——它转出的是**同一个函数对象**，而最后一条用例把这一点
  * 钉住：`insertEvent` 一旦在 helpers.ts 里被重新声明成第二份实现，事件序
@@ -120,7 +120,7 @@ test("insertEvent 自己就走批量路径（单条 = 一批）", async () => {
 
 test("API helpers 转出的就是领域包里那一个函数对象（没有第二份写入实现）", async () => {
   const helpers = await import("../modules/card-generation-v2/helpers.ts");
-  const domain = await import("@ailearn/card-generation");
+  const domain = await import("@astella/card-generation");
   // 逐个比**引用**而不是比行为：行为相等不能排除"有人复制了一份改了个名字"，
   // 而两份写入实现的后果是 event_seq 由两个基线各自算——同一批事件读出来
   // 会重号，屏上看不出异常、但事件流已经乱了。

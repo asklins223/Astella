@@ -16,6 +16,6 @@ CREATE POLICY "worker_type_allowlist_insert_guard"
   FOR INSERT
   TO public
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'::name
+    CURRENT_USER = 'astella_worker'::name
     AND "type" IN ('companion_memory_extract', 'companion_summarizer', 'companion_daily_summary', 'companion_memory_maintenance')
   );

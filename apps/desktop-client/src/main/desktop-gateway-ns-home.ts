@@ -41,7 +41,7 @@ import {
   objectiveResumeResultV2Schema,
   reviewSubscriptionCommandV2Schema,
   reviewSubscriptionResultV2Schema,
-} from "@ailearn/shared/review-queue-v2-contracts";
+} from "@astella/shared/review-queue-v2-contracts";
 import type { GatewayTransport } from "./desktop-gateway-transport";
 
 export async function actOnHomeSuggestion(t: GatewayTransport, 

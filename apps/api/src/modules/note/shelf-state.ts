@@ -1,16 +1,16 @@
 import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { type ApiTransaction } from "../../db/client.ts";
-import { noteVersions } from "@ailearn/shared/db-schema/note";
-import { noteOverviews } from "@ailearn/shared/db-schema/note-overviews";
-import { noteRecallRecords } from "@ailearn/shared/db-schema/note-recalls";
-import { noteAnnotations } from "@ailearn/shared/db-schema/note-annotations";
-import { noteLearningArtifacts } from "@ailearn/shared/db-schema/note-learning-artifacts";
-import { noteExpansions } from "@ailearn/shared/db-schema/note-expansions";
+import { noteVersions } from "@astella/shared/db-schema/note";
+import { noteOverviews } from "@astella/shared/db-schema/note-overviews";
+import { noteRecallRecords } from "@astella/shared/db-schema/note-recalls";
+import { noteAnnotations } from "@astella/shared/db-schema/note-annotations";
+import { noteLearningArtifacts } from "@astella/shared/db-schema/note-learning-artifacts";
+import { noteExpansions } from "@astella/shared/db-schema/note-expansions";
 import {
   noteShelfStageV1,
   type NoteShelfLearningFactsV1,
   type NoteShelfStateV1,
-} from "@ailearn/shared/note-shelf-state-contracts";
+} from "@astella/shared/note-shelf-state-contracts";
 
 const NO_FACTS: NoteShelfLearningFactsV1 = {
   overviewCount: 0,

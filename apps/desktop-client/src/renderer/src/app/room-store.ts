@@ -15,7 +15,7 @@ import {
 } from "./room-machine";
 import { scenePhaseForIntent, type SceneMotionPhase } from "../scene/scene-motion";
 import type { HudPageId } from "../components/hud/hud-pages";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import type { SourceStatusTab } from "../components/surfaces/source/source-index.ts";
 import type { NoteBodyMode } from "../components/surfaces/notebook/note-document-mode";
 import {
@@ -29,7 +29,7 @@ export type CompanionMoment = "idle" | "lamp" | "confirm" | "encourage";
 export type CompanionPosition = { readonly x: number; readonly y: number };
 export type CompanionNormalizedAnchor = { readonly x: number; readonly y: number };
 export type CompanionPlacementOwner = "semantic" | "user";
-/** 全局搜索的类型筛选，与 `ailearn.search.global` 的 type 参数同集合。 */
+/** 全局搜索的类型筛选，与 `astella.search.global` 的 type 参数同集合。 */
 export type SearchTypeFilter = "all" | "note" | "source" | "objective";
 /** Live2D 在渲染层的真实状态，与 WindowLive2D 的 onStatus 同集合。 */
 export type Live2dStatus = "loading" | "ready" | "unavailable";
@@ -721,7 +721,7 @@ export const useRoomStore = create<RoomStore>()(
       setLive2dStatus: (live2dStatus) => set({ live2dStatus }),
     }),
     {
-      name: "ailearn.desktop-room.v2",
+      name: "astella.desktop-room.v2",
       partialize: (state) => ({
         theme: state.theme,
         // `themeMode` has to travel with `theme`: `applyTimeTheme` only writes

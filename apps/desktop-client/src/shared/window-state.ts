@@ -8,10 +8,10 @@ export const WINDOW_STATE_SNAPSHOT_CHANNEL = 'window:get-state'
  */
 export const TITLE_BAR_THEME_CHANNEL = 'window:set-titlebar-theme'
 
-export type AILearnWindowState = 'visible' | 'hidden' | 'minimized'
+export type AstellaWindowState = 'visible' | 'hidden' | 'minimized'
 
 export interface WindowStateSnapshot {
-  readonly state: AILearnWindowState
+  readonly state: AstellaWindowState
   readonly revision: number
 }
 
@@ -27,7 +27,7 @@ export interface WindowStateSnapshot {
 export function resolveWindowState(input: {
   readonly minimized: boolean
   readonly visible: boolean
-}): AILearnWindowState {
+}): AstellaWindowState {
   if (input.minimized) return 'minimized'
   return input.visible ? 'visible' : 'hidden'
 }

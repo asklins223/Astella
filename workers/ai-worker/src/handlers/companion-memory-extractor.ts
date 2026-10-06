@@ -13,8 +13,8 @@ import { z } from "zod";
 import { taskEntityFromPersistedPageContext, type CompanionTaskEntityRef } from "./companion-task-memory.ts";
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { readJobPayloadString, resolveCompanionMemoryTemporalMetadata } from "@ailearn/shared";
-import { stableStringify, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { readJobPayloadString, resolveCompanionMemoryTemporalMetadata } from "@astella/shared";
+import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { logger } from "../lib/logger.ts";
 import { createProvider } from "../lib/ai-provider.ts";
 import {
@@ -28,11 +28,11 @@ import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { MemoryExtractOutputError } from "../lib/non-retryable-errors.ts";
 import { withoutQuotedNames } from "./companion-dialogue-content.ts";
 // 跨空间作用范围的**唯一**判据：抽取侧与 API 写入端共用（42 阶段 1 E）。
-import { memoryScopeForKind } from "@ailearn/shared/companion-memory-scope";
+import { memoryScopeForKind } from "@astella/shared/companion-memory-scope";
 import {
   companionMemoryMutationLockKey,
   MEMORY_CONTENT_SIMILARITY_THRESHOLD,
-} from "@ailearn/shared/db-schema/assistant-memory";
+} from "@astella/shared/db-schema/assistant-memory";
 import type { WorkerTransaction } from "../db.ts";
 import type { JobPayload } from "./index.ts";
 import { runWorkerAiTask } from "./worker-ai-task.ts";
@@ -116,7 +116,7 @@ export function isMemoryExtractConfidenceAccepted(confidence: number): boolean {
 
 /**
  * 跨空间同步的判据（2026-09-22 Owner 裁决 + 当日收紧）住在
- * `@ailearn/shared/companion-memory-scope`，见文件头的 import。
+ * `@astella/shared/companion-memory-scope`，见文件头的 import。
  *
  * 它是**唯一**一份：worker 抽取侧与 API 写入端共用（42 阶段 1 E）。这里不再留第二份
  * 正则——同一句产品决定在两处各判一次，早晚漂移，而漂移的方向通常是写入端那份更松。
@@ -393,7 +393,7 @@ export function parseMemoryExtractJson(raw: string): unknown {
 }
 
 export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> {
-  // 设计 P1-8（2026-09-15 审计）：字段名走共享契约（@ailearn/shared 的
+  // 设计 P1-8（2026-09-15 审计）：字段名走共享契约（@astella/shared 的
   // companion-memory-job-payload），改名由编译器兜住。
   const runId = readJobPayloadString(job.payload, "runId");
   const userId = readJobPayloadString(job.payload, "userId");
@@ -830,7 +830,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
         if (scope === "global") {
           try {
             const fanned = await tx.execute<{ inserted: number }>(sql`
-              SELECT public.ailearn_fanout_global_companion_memory(${memoryId}::uuid) AS inserted
+              SELECT public.astella_fanout_global_companion_memory(${memoryId}::uuid) AS inserted
             `);
             logger.info(
               { memoryId, kind: candidate.kind, spaces: Number(fanned[0]?.inserted ?? 0) },

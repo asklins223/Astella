@@ -13,7 +13,7 @@ grep -c "ON CONFLICT (workspace_id, run_id" "$H" 2>/dev/null | sed 's/^/     /'
 echo "③ 入口守卫（A1 之后不应再有『非 planning 就 return』）:"
 grep -c 'if (run.status !== "planning")' "$H" 2>/dev/null | sed 's/^/     /'
 echo "④ 库里真正能给 ON CONFLICT 当 arbiter 的唯一索引:"
-docker exec ailearn-dev-postgres-1 psql -U ailearn -d ailearn -Atc \
+docker exec astella-dev-postgres-1 psql -U astella -d astella -Atc \
   "SELECT '   '||indexdef FROM pg_indexes WHERE tablename='card_generation_candidates_v2' AND indexdef LIKE '%UNIQUE%' AND indexname LIKE 'cg_v2%'" 2>/dev/null \
   || echo "     （dev 库不可达）"
 
@@ -28,7 +28,7 @@ targets = {tuple(re.split(r",\s*", m)) for m in
 if not targets:
     print("⑤ 代码里没有按目标的 ON CONFLICT → A1 不在这棵树，⑤ 不适用")
 else:
-    out = subprocess.run(["docker","exec","ailearn-dev-postgres-1","psql","-U","ailearn","-d","ailearn","-Atc",
+    out = subprocess.run(["docker","exec","astella-dev-postgres-1","psql","-U","astella","-d","astella","-Atc",
       "SELECT replace(replace(indexdef,'ON public.card_generation_candidates_v2 USING btree ',''),'CREATE UNIQUE INDEX ','') FROM pg_indexes WHERE tablename='card_generation_candidates_v2' AND indexdef LIKE '%UNIQUE%'"],
       capture_output=True, text=True).stdout
     live = {tuple(re.sub(r"[()]", "", line.split(" ", 1)[1]).split(", ")) for line in out.strip().splitlines()}

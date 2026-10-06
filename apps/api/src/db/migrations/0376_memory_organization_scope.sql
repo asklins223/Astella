@@ -1,6 +1,6 @@
 -- Scoped organization uses normal worker transactions; bootstrap must preserve its table access.
-GRANT SELECT,INSERT,UPDATE ON public.companion_memory_organization_state TO ailearn_worker;
-GRANT SELECT,INSERT,UPDATE,DELETE ON public.companion_memory_organization_leases TO ailearn_worker;
+GRANT SELECT,INSERT,UPDATE ON public.companion_memory_organization_state TO astella_worker;
+GRANT SELECT,INSERT,UPDATE,DELETE ON public.companion_memory_organization_leases TO astella_worker;
 DROP POLICY companion_memory_organization_state_user_isolation ON public.companion_memory_organization_state;
 DROP POLICY companion_memory_organization_leases_user_isolation ON public.companion_memory_organization_leases;
 CREATE POLICY companion_memory_organization_state_user_isolation ON public.companion_memory_organization_state FOR ALL
@@ -10,7 +10,7 @@ CREATE POLICY companion_memory_organization_leases_user_isolation ON public.comp
   USING (workspace_id=NULLIF(current_setting('app.workspace_id',true),'')::uuid AND user_id=NULLIF(current_setting('app.user_id',true),'')::uuid)
   WITH CHECK (workspace_id=NULLIF(current_setting('app.workspace_id',true),'')::uuid AND user_id=NULLIF(current_setting('app.user_id',true),'')::uuid);
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION public.ailearn_commit_memory_organization(
+CREATE OR REPLACE FUNCTION public.astella_commit_memory_organization(
   p_workspace_id uuid,p_user_id uuid,p_holder text,p_surface text,p_backlog integer
 ) RETURNS boolean LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,public AS $$
 DECLARE held integer; committed integer;
@@ -30,5 +30,5 @@ BEGIN
   RETURN committed IS NOT NULL;
 END;
 $$;
-REVOKE ALL ON FUNCTION public.ailearn_commit_memory_organization(uuid,uuid,text,text,integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_commit_memory_organization(uuid,uuid,text,text,integer) TO ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_commit_memory_organization(uuid,uuid,text,text,integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_commit_memory_organization(uuid,uuid,text,text,integer) TO astella_worker;

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   CompanionVoicePlaybackOutcomeRequestV1,
   CompanionVoiceSpeakSegmentRequestV2,
-} from "@ailearn/shared/companion-voice-contracts";
+} from "@astella/shared/companion-voice-contracts";
 import {
   COMPANION_SPEECH_FIRST_AUDIO_DEADLINE_MS,
   COMPANION_SPEECH_GAP_DEADLINE_MS,

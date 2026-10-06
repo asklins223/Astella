@@ -26,8 +26,8 @@ import {
 import {
   setPersonalRelationDecisionV2Schema,
   type PersonalRelationDecisionV2,
-} from "@ailearn/shared/personal-relation-decision-rules-v2";
-import type { UnderstandingEdgeProjectionV3 } from "@ailearn/shared/note-deepening-contracts";
+} from "@astella/shared/personal-relation-decision-rules-v2";
+import type { UnderstandingEdgeProjectionV3 } from "@astella/shared/note-deepening-contracts";
 
 export async function understandingTopologyV3Routes(app: FastifyInstance) {
   app.addHook("preHandler", requireSession);

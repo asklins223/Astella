@@ -11,8 +11,8 @@
  * @see 原据 provider-registry-refactor.md（2026-09-29 已归档） §3.2 第二层
  */
 
-import type { Capability, CapabilityImpl } from "@ailearn/shared";
-import { getProviderById, type ProviderRuntimeConfig } from "@ailearn/shared";
+import type { Capability, CapabilityImpl } from "@astella/shared";
+import { getProviderById, type ProviderRuntimeConfig } from "@astella/shared";
 
 /**
  * 工厂注册表 — 仅 worker 进程内有效。

@@ -12,24 +12,24 @@
  *   ⇒ 正确 3；漏去重 6；漏掉 active 过滤 5。
  *
  * 运行（一次性库，见 docs/performance-scan-2026-09-22.md §9.5）：
- *   bash scripts/dev-disposable-db.sh ailearn_stats_it
+ *   bash scripts/dev-disposable-db.sh astella_stats_it
  *   cd apps/api
- *   export DATABASE_URL='postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn_stats_it' \
- *          DATABASE_URL_API='postgres://ailearn_api:<API_PASSWORD>@127.0.0.1:5432/ailearn_stats_it'
+ *   export DATABASE_URL='postgres://astella:astella_dev@127.0.0.1:5432/astella_stats_it' \
+ *          DATABASE_URL_API='postgres://astella_api:<API_PASSWORD>@127.0.0.1:5432/astella_stats_it'
  *   node --import tsx --test --test-concurrency=1 \
  *     src/integration-tests/stats-overview-hard-evidence-postgres.integration.ts
  */
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 process.env.DATABASE_URL ??= testDatabaseUrl("DATABASE_URL");
 
-// 造数走超级用户（`ailearn` 有 BYPASSRLS）；读数走产品入口 `getStatsOverview`
+// 造数走超级用户（`astella` 有 BYPASSRLS）；读数走产品入口 `getStatsOverview`
 // （内部 `withWorkspaceTransaction`）。注意后者**只 `set_config`、不 `SET LOCAL ROLE`**，
 // RLS 有没有真的生效取决于连接角色：夹具写用 `DATABASE_URL`（超级用户），
-// 读数用 `DATABASE_URL_API`（受限角色 `ailearn_api`）。两种角色本文件都实测通过。
+// 读数用 `DATABASE_URL_API`（受限角色 `astella_api`）。两种角色本文件都实测通过。
 const pgSql = (await import("postgres")).default(process.env.DATABASE_URL, { max: 1 });
 const { seedPureV2Workspace } = await import("./helpers/pure-v2-workspace-fixture.ts");
 const { getStatsOverview } = await import("../modules/stats/service.ts");

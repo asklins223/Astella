@@ -4,7 +4,7 @@ import {
   companionChatListThoughtsResultV1Schema,
   type CompanionChatListThoughtsRequestV1,
   type CompanionChatListThoughtsResultV1,
-} from "@ailearn/shared/companion-chat-desktop-contracts";
+} from "@astella/shared/companion-chat-desktop-contracts";
 import { withWorkspaceTransaction } from "../../../db/client.ts";
 import { CompanionConversationError } from "./turn-service.ts";
 

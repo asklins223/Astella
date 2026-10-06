@@ -42,7 +42,7 @@ const check = (name: string, ok: boolean, detail: unknown = ''): void => {
 const roundLines = async (root: import('@playwright/test').Locator): Promise<string[]> =>
   (await root.locator('p.notebook-note').allTextContents()).map((text) => text.trim())
 
-const userDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-w43-probe-'))
+const userDataDir = await mkdtemp(resolve(tmpdir(), 'astella-w43-probe-'))
 const app = await electron.launch({
   args: ['.', '--lang=zh-CN', `--user-data-dir=${userDataDir}`],
   cwd: appRoot,

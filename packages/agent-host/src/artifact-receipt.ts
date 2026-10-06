@@ -10,7 +10,7 @@
  * 挡不住把输入甲的产物记到输入乙那次操作上。未登记的 capability 永远拿不到产物。
  */
 import { sql, type SQL } from "drizzle-orm";
-import { agentArtifactRefV1Schema, type AgentArtifactRefV1, type AgentInputRefV1, type AgentScopeV1 } from "@ailearn/shared/agent-contracts";
+import { agentArtifactRefV1Schema, type AgentArtifactRefV1, type AgentInputRefV1, type AgentScopeV1 } from "@astella/shared/agent-contracts";
 import { queryRows, type AgentSqlExecutor } from "./store.ts";
 
 export interface OperationArtifactReceiptRequest {

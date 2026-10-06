@@ -9,11 +9,11 @@ ALTER TABLE public.learning_assessment_reports
 --> statement-breakpoint
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
     GRANT SELECT, INSERT, UPDATE, DELETE
-      ON public.learning_assessment_reports TO ailearn_api;
+      ON public.learning_assessment_reports TO astella_api;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
-    GRANT SELECT, INSERT, UPDATE ON public.learning_assessment_reports TO ailearn_worker;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
+    GRANT SELECT, INSERT, UPDATE ON public.learning_assessment_reports TO astella_worker;
   END IF;
 END $$;

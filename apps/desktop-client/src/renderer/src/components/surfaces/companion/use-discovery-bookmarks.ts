@@ -7,7 +7,7 @@ import { publishCompanionRecordsChanged, useCompanionRecordsRefresh, useCompanio
 /** Dialogue and diary use the same persisted identity and refresh after any bookmark change. */
 export function useDiscoveryBookmarks(refreshKey: number) {
   const scope = useRoomStore(state => state.workspaceScopeRevision);
-  const book = useCompanionResource(meta => window.ailearn.companion.memory.discovery.get({ meta }), [refreshKey]);
+  const book = useCompanionResource(meta => window.astella.companion.memory.discovery.get({ meta }), [refreshKey]);
   useCompanionRecordsRefresh(book.reload);
   const [receipts, setReceipts] = useState<ReadonlyMap<string, boolean>>(() => new Map());
   const [busy, setBusy] = useState<string | null>(null);
@@ -26,9 +26,9 @@ export function useDiscoveryBookmarks(refreshKey: number) {
     setBusy(identity); setFailure(null); setFeedback(null);
     try {
       if (remove) {
-        unwrapGatewayResult(await window.ailearn.companion.memory.discovery.uncollect({ meta: book.meta(), request: { kind: request.kind, source: request.source, sourceId: request.sourceId } }));
+        unwrapGatewayResult(await window.astella.companion.memory.discovery.uncollect({ meta: book.meta(), request: { kind: request.kind, source: request.source, sourceId: request.sourceId } }));
       } else {
-        unwrapGatewayResult(await window.ailearn.companion.memory.discovery.collect({ meta: book.meta(), request }));
+        unwrapGatewayResult(await window.astella.companion.memory.discovery.collect({ meta: book.meta(), request }));
       }
       if (useRoomStore.getState().workspaceScopeRevision !== currentScope) return;
       setReceipts(current => new Map(current).set(identity, !remove));

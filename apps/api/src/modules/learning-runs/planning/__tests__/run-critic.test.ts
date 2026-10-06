@@ -15,7 +15,7 @@ import {
   parseCriticOutputV2,
   type CriticInput,
 } from "../run-critic.ts";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
 
 function makeInput(): CriticInput {
   return {

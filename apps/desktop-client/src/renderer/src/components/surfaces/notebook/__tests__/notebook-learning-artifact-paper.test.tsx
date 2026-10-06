@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, within } from "@testing-library/react";
-import { noteLearningArtifactV1Schema } from "@ailearn/shared/note-learning-artifact-contracts";
-import { noteBlockProjectionV1Schema } from "@ailearn/shared/note-projection-contracts";
+import { noteLearningArtifactV1Schema } from "@astella/shared/note-learning-artifact-contracts";
+import { noteBlockProjectionV1Schema } from "@astella/shared/note-projection-contracts";
 import { NotebookLearningArtifactPaper } from "../notebook-learning-artifact-paper";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -45,7 +45,7 @@ it("画面占主位，文字说明在隔离窗口外保留，原句默认合起�
   const input = props();
   const view = render(<NotebookLearningArtifactPaper {...input} />);
   const frame = view.getByTitle("动态教学演示");
-  expect(frame.getAttribute("src")).toBe(`ailearn-app://artifact/${artifact.artifactId}#content`);
+  expect(frame.getAttribute("src")).toBe(`astella-app://artifact/${artifact.artifactId}#content`);
   expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
   const explanation = view.getByRole("region", { name: "演示的文字说明" });
   expect(within(explanation).getByText("下一轮以更大的本金继续计算。")).toBeTruthy();

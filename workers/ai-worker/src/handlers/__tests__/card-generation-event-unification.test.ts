@@ -8,7 +8,7 @@
  * 收拢后仍然必须成立的行为钉住。
  *
  * 这里钉三件事：
- *  1. **跨宿主引用相等**：`run-io.ts` 转出的 `insertEvent` 与 `@ailearn/card-generation`
+ *  1. **跨宿主引用相等**：`run-io.ts` 转出的 `insertEvent` 与 `@astella/card-generation`
  *     的是**同一个函数对象**。比的是引用，不是行为——行为相等不能排除"有人复制了
  *     一份改了个名字"。也不用"源码里含 import"代替：那种断言在有人把 import 换回
  *     私有实现时照样绿。
@@ -29,7 +29,7 @@ import {
   insertAuthoredCandidatesBatched,
   insertEvent,
 } from "../../card-generation-v2/run-io.ts";
-import type { LearningCardCandidateRevisionV2 } from "@ailearn/shared/card-generation-v2-contracts";
+import type { LearningCardCandidateRevisionV2 } from "@astella/shared/card-generation-v2-contracts";
 
 type EventRow = {
   workspaceId: string;
@@ -100,7 +100,7 @@ const CANDIDATES = [
 
 test("worker run-io 转出的就是制卡领域包里那一个函数对象（没有第二份写入实现）", async () => {
   const runIo = await import("../../card-generation-v2/run-io.ts");
-  const domain = await import("@ailearn/card-generation");
+  const domain = await import("@astella/card-generation");
   assert.equal(runIo.insertEvent, domain.insertEvent);
   // 批量那条 worker 不转出（调用点是内部的一处），但它必须存在于同一处实现里——
   // 只剩单条可用、批量留在别处，等于事件写入又分了两份。
@@ -196,7 +196,7 @@ test("单条 insertEvent 就是一批：同一条事件逐条写与批量写出�
   const one = makeTx({ initialMaxSeq: 3 });
   await insertEvent(one.tx, WORKSPACE_ID, RUN_ID, "card_generation.simplified_plan_committed", { k: 1 });
   const batch = makeTx({ initialMaxSeq: 3 });
-  const { insertEventBatch } = await import("@ailearn/card-generation");
+  const { insertEventBatch } = await import("@astella/card-generation");
   await insertEventBatch(batch.tx, WORKSPACE_ID, RUN_ID, [
     { eventType: "card_generation.simplified_plan_committed", payload: { k: 1 } },
   ]);

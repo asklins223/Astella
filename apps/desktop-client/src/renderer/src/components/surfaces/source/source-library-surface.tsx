@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, BookOpen, Code2, FileText, Globe2, LoaderCircle, Search, X } from "lucide-react";
-import type { DesktopSourceListItem } from "@ailearn/shared/desktop-surface-contracts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { DesktopSourceListItem } from "@astella/shared/desktop-surface-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import {
@@ -100,7 +100,7 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
     // 已归档 is read by its own walk because `GET /sources` excludes it.
     const [library, capabilitiesResponse] = await Promise.all([
       readSourceLibrary(async (cursor, archived) => {
-        const page = unwrapGatewayResult(await window.ailearn.source.list({
+        const page = unwrapGatewayResult(await window.astella.source.list({
           meta: meta(),
           limit: SOURCE_PAGE_LIMIT,
           ...(cursor ? { cursor } : {}),
@@ -108,7 +108,7 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
         }));
         return { items: page.items, total: page.total, nextCursor: page.nextCursor };
       }, pageBudgetRef.current),
-      window.ailearn.capabilities.get({ meta: meta() }),
+      window.astella.capabilities.get({ meta: meta() }),
     ]);
     return {
       items: library.items,
@@ -214,7 +214,7 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
     }
     setSearching(true);
     try {
-      const hits = unwrapGatewayResult(await window.ailearn.search.global({
+      const hits = unwrapGatewayResult(await window.astella.search.global({
         meta: createRequestMeta(epochRef.current),
         query: needle,
         type: "source",

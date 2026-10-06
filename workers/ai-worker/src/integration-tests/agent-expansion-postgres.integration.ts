@@ -15,22 +15,22 @@
  *      跨目标/跨用户/跨空间/错版本/错 payload 一律读不到、迟到的目标不能借工具越权。
  *
  * 除了「造夹具」之外没有手写 SQL 去伪造状态机：job 状态变化靠 0368 的触发器，
- * 后续核对靠真实的 ailearn_enqueue_agent_recovery()，完成判定走真正的 advance store。
+ * 后续核对靠真实的 astella_enqueue_agent_recovery()，完成判定走真正的 advance store。
  */
 import assert from "node:assert/strict";
 import { randomUUID, createHash } from "node:crypto";
 import { after, test } from "node:test";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
-import * as schema from "@ailearn/shared/db-schema";
+import * as schema from "@astella/shared/db-schema";
 import { sql as query } from "drizzle-orm";
 import { createAgentStore, createAgentAdvanceStore, readOperationResultReceipt,
-  type AgentStorePorts, type OperationReceiptRequest, type OperationReceiptV1 } from "@ailearn/agent-host";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+  type AgentStorePorts, type OperationReceiptRequest, type OperationReceiptV1 } from "@astella/agent-host";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { invokeNoteCapability } from "../agent/note-capabilities.ts";
 import type { AgentWorkerAdvanceStore } from "../agent/store.ts";
 import { readExpansionDrafts, type ExpansionReadResult } from "../agent/expansion-reading.ts";
-import { noteAgentCapabilityManifest } from "@ailearn/shared/agent-capabilities";
+import { noteAgentCapabilityManifest } from "@astella/shared/agent-capabilities";
 import { loadAgentGenerationContext } from "../agent/generation-context.ts";
 import { closeDatabase, type WorkerTransaction } from "../db.ts";
 
@@ -169,7 +169,7 @@ function repointDraft(jobId: string, noteId: string, noteVersionId: string) {
 
 /**
  * advance job 的真实收尾。store.release() 只清掉 agent_runs.advance_job_id，不会结掉
- * jobs 里那一行——生产中是 worker 交还租约后由 ailearn_finish_job 收尾。夹具必须补上这一步：
+ * jobs 里那一行——生产中是 worker 交还租约后由 astella_finish_job 收尾。夹具必须补上这一步：
  * 留着一条 running 的 advance job，会让 0368 恢复函数里的
  * `NOT EXISTS(... type='agent_run_advance' AND status IN ('pending','running'))` 判成假，
  * 于是它不再排下一次续跑——那是 active outbox 的防重，不是缺陷。
@@ -202,7 +202,7 @@ async function reconcile(runId: string, operationId: string, options: { exhauste
       await tx`UPDATE agent_operations SET updated_at=now()-interval '1 minute' WHERE id=${operationId}`;
     }
   });
-  await workerClient`SELECT ailearn_enqueue_agent_recovery()`;
+  await workerClient`SELECT astella_enqueue_agent_recovery()`;
   const [{ n }] = await admin`SELECT count(*)::int n FROM agent_run_events
     WHERE operation_id=${operationId} AND processed_at IS NULL`;
   return n;
@@ -231,7 +231,7 @@ test("拓展语义幂等不重排；job 成功但没有真实保存记录时不�
   assert.deepEqual(unknown.artifacts, [], "没有真实保存记录就没有产物");
   assert.match(unknown.operations[0]!.error ?? "", /回执暂时读不到/);
   const [{ allowed }] = await workerPorts.transaction(scope, (tx) => tx.execute(
-    query`SELECT ailearn_agent_job_current(${child.execution.id},${scope.workspaceId},${scope.userId},false) AS allowed`)) as { allowed: boolean }[];
+    query`SELECT astella_agent_job_current(${child.execution.id},${scope.workspaceId},${scope.userId},false) AS allowed`)) as { allowed: boolean }[];
   assert.equal(allowed, true, "结果未知不等于可以重做一次");
   const [{ rerun }] = await admin`SELECT count(*)::int rerun FROM jobs WHERE type=${EXPANSION} AND workspace_id=${scope.workspaceId}`;
   assert.equal(rerun, 1, "回执不确定时不得再排一个生成");

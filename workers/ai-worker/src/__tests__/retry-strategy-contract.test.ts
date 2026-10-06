@@ -1,6 +1,6 @@
 /**
  * A2 契约测试（计划 §2.2 验收）：
- * 重试策略的唯一来源是 SQL 函数 ailearn_fail_job——断言 Worker 只保留
+ * 重试策略的唯一来源是 SQL 函数 astella_fail_job——断言 Worker 只保留
  * 用于 claim/reap 的 MAX_ATTEMPTS，并锁定 SQL 函数的返回字段。
  *
  * 如果修改了 SQL 迁移中的默认 max_attempts，必须同时更新 queue.ts 的
@@ -25,7 +25,7 @@ const migrationContent = readFileSync(
     "src",
     "db",
     "migrations",
-    "0064_ailearn_fail_job_return_record.sql",
+    "0064_astella_fail_job_return_record.sql",
   ),
   "utf-8",
 );
@@ -43,14 +43,14 @@ test("A2 契约：TS MAX_ATTEMPTS 镜像与 SQL max_attempts 默认值一致", (
   );
 });
 
-test("A2 契约：SQL 迁移包含 ailearn_fail_job 返回 is_dead 字段", () => {
+test("A2 契约：SQL 迁移包含 astella_fail_job 返回 is_dead 字段", () => {
   assert.ok(
     migrationContent.includes("is_dead"),
     "SQL 迁移 0064 应在 RETURNS TABLE 中包含 is_dead 字段",
   );
 });
 
-test("A2 契约：SQL 迁移包含 ailearn_fail_job 返回 scheduled_at 字段", () => {
+test("A2 契约：SQL 迁移包含 astella_fail_job 返回 scheduled_at 字段", () => {
   assert.ok(
     migrationContent.includes("scheduled_at"),
     "SQL 迁移 0064 应在 RETURNS TABLE 中包含 scheduled_at 字段",

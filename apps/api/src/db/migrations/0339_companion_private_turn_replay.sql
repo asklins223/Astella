@@ -2,7 +2,7 @@
 -- but the API must not receive direct table access to worker handoff snapshots.
 -- This one-purpose function binds the run to the transaction's validated
 -- workspace/user context and withholds snapshots larger than 512 KiB.
-CREATE OR REPLACE FUNCTION public.ailearn_read_companion_turn_handoff_snapshot_v1(
+CREATE OR REPLACE FUNCTION public.astella_read_companion_turn_handoff_snapshot_v1(
   p_run_id uuid
 )
 RETURNS TABLE (
@@ -37,10 +37,10 @@ AS $function$
   LIMIT 1;
 $function$;
 
-COMMENT ON FUNCTION public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid) IS
+COMMENT ON FUNCTION public.astella_read_companion_turn_handoff_snapshot_v1(uuid) IS
   'Owner-scoped private turn replay only. Direct API table access remains revoked; the run must match transaction-local workspace/user identity, and snapshots over 512 KiB are withheld.';
 
-REVOKE ALL ON FUNCTION public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)
-  FROM PUBLIC, ailearn_worker;
-GRANT EXECUTE ON FUNCTION public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)
-  TO ailearn_api;
+REVOKE ALL ON FUNCTION public.astella_read_companion_turn_handoff_snapshot_v1(uuid)
+  FROM PUBLIC, astella_worker;
+GRANT EXECUTE ON FUNCTION public.astella_read_companion_turn_handoff_snapshot_v1(uuid)
+  TO astella_api;

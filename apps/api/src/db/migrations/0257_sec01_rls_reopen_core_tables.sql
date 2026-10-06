@@ -32,9 +32,9 @@
 --    这里只做 ENABLE + FORCE，不新增策略。
 --
 -- ─── FORCE 的含义 ───
--- 表属主是 `ailearn_migrator`（`rolbypassrls`），迁移与 `roles.sql` 的授权流程
--- 需要绕过策略；`FORCE` 只影响属主之外的普通角色，也就是 `ailearn_api` 与
--- `ailearn_worker`——正是生产里跑业务的那两个。
+-- 表属主是 `astella_migrator`（`rolbypassrls`），迁移与 `roles.sql` 的授权流程
+-- 需要绕过策略；`FORCE` 只影响属主之外的普通角色，也就是 `astella_api` 与
+-- `astella_worker`——正是生产里跑业务的那两个。
 --
 -- ─── 与 0027 的先后关系 ───
 -- 0027 是无条件批量 `DISABLE`。迁移按文件名顺序重放，所以本文件必须排在它之后
@@ -90,7 +90,7 @@ CREATE POLICY sec01_v1_workspaces_tenant_guard ON public.workspaces
 CREATE POLICY sec01_v1_workspace_members_actor_read ON public.workspace_members
   AS PERMISSIVE FOR SELECT TO public
   USING (
-    CURRENT_USER = 'ailearn_api'::name
+    CURRENT_USER = 'astella_api'::name
     AND user_id = (NULLIF(current_setting('app.user_id', true), ''))::uuid
   );
 
@@ -99,7 +99,7 @@ CREATE POLICY sec01_v1_workspace_members_actor_read ON public.workspace_members
 CREATE POLICY sec01_v1_workspaces_actor_read ON public.workspaces
   AS PERMISSIVE FOR SELECT TO public
   USING (
-    CURRENT_USER = 'ailearn_api'::name
+    CURRENT_USER = 'astella_api'::name
     -- 不能写 `owner_id = app.user_id`：空间列表要报出**加入的协作空间**的名字，
     -- 而那些行的 owner 是别人。这一支服务的是"我属于哪些空间"的读，行的范围由
     -- 上面那条租户守卫与调用方的 WHERE（`id IN (我加入的空间)`）共同收窄。
@@ -138,7 +138,7 @@ CREATE POLICY sec02_v1_invite_codes_tenant_guard ON public.invite_codes
 CREATE POLICY sec01_v1_invite_codes_actor_read ON public.invite_codes
   AS PERMISSIVE FOR SELECT TO public
   USING (
-    CURRENT_USER = 'ailearn_api'::name
+    CURRENT_USER = 'astella_api'::name
     AND token_hash = NULLIF(current_setting('app.session_token', true), '')
   );
 
@@ -159,7 +159,7 @@ CREATE POLICY sec01_v1_invite_codes_actor_read ON public.invite_codes
 CREATE POLICY sec01_v1_sessions_actor_read ON public.sessions
   AS PERMISSIVE FOR SELECT TO public
   USING (
-    CURRENT_USER = 'ailearn_api'::name
+    CURRENT_USER = 'astella_api'::name
     AND (
       token = NULLIF(current_setting('app.session_token', true), '')
       OR (
@@ -174,7 +174,7 @@ CREATE POLICY sec01_v1_sessions_actor_read ON public.sessions
 CREATE POLICY sec01_v1_sessions_actor_insert ON public.sessions
   AS PERMISSIVE FOR INSERT TO public
   WITH CHECK (
-    CURRENT_USER = 'ailearn_api'::name
+    CURRENT_USER = 'astella_api'::name
     AND user_id = (NULLIF(current_setting('app.user_id', true), ''))::uuid
   );
 
@@ -183,7 +183,7 @@ CREATE POLICY sec01_v1_sessions_actor_insert ON public.sessions
 CREATE POLICY sec01_v1_sessions_actor_update ON public.sessions
   AS PERMISSIVE FOR UPDATE TO public
   USING (
-    CURRENT_USER = 'ailearn_api'::name
+    CURRENT_USER = 'astella_api'::name
     AND (
       token = NULLIF(current_setting('app.session_token', true), '')
       OR (
@@ -193,7 +193,7 @@ CREATE POLICY sec01_v1_sessions_actor_update ON public.sessions
     )
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_api'::name
+    CURRENT_USER = 'astella_api'::name
     AND user_id = (NULLIF(current_setting('app.user_id', true), ''))::uuid
   );
 
@@ -202,7 +202,7 @@ CREATE POLICY sec01_v1_sessions_actor_update ON public.sessions
 CREATE POLICY sec01_v1_sessions_actor_delete ON public.sessions
   AS PERMISSIVE FOR DELETE TO public
   USING (
-    CURRENT_USER = 'ailearn_api'::name
+    CURRENT_USER = 'astella_api'::name
     AND (
       token = NULLIF(current_setting('app.session_token', true), '')
       OR (

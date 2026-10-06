@@ -24,14 +24,14 @@ import {
   type CardGenerateV3CandidateDraft,
   type CardGenerateV3DraftOutput,
   type CardGenerateV3ObjectiveProposal,
-} from "@ailearn/shared/card-generation-v3-contracts";
+} from "@astella/shared/card-generation-v3-contracts";
 import type {
   CanonicalAnswerV2,
   CardPresentationDraftV2,
   LearningObjectiveDraftV2,
-} from "@ailearn/shared/card-generation-v2-contracts";
-import type { TaskIntentV1 } from "@ailearn/shared/learning-run-contracts";
-import { practiceItemCrossRefError } from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
+import type { TaskIntentV1 } from "@astella/shared/learning-run-contracts";
+import { practiceItemCrossRefError } from "@astella/shared/card-generation-v2-contracts";
 
 type RubricUnitV2 = LearningObjectiveDraftV2["rubric"]["units"][number];
 

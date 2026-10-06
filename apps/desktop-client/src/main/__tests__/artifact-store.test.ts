@@ -17,7 +17,7 @@ let userDataDir: string;
 let artifactId: string;
 
 beforeEach(async () => {
-  userDataDir = await mkdtemp(join(tmpdir(), "ailearn-artifact-store-"));
+  userDataDir = await mkdtemp(join(tmpdir(), "astella-artifact-store-"));
   artifactId = randomUUID();
 });
 

@@ -13,7 +13,7 @@
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { AIPlatformConfig, TtsEngineSettings } from "@ailearn/shared";
+import type { AIPlatformConfig, TtsEngineSettings } from "@astella/shared";
 
 export interface QwenTtsConfig {
   workspaceId: string;

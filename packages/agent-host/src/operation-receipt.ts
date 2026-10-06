@@ -17,7 +17,7 @@ import {
   AGENT_CARD_GENERATION_CAPABILITY, agentArtifactRefV1Schema,
   type AgentArtifactRefV1, type AgentExecutionRefV1, type AgentInputRefV1,
   type AgentOperationResultV1, type AgentScopeV1,
-} from "@ailearn/shared/agent-contracts";
+} from "@astella/shared/agent-contracts";
 import { queryRows, type AgentSqlExecutor } from "./store.ts";
 
 export interface OperationReceiptRequest {

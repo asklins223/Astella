@@ -1,6 +1,6 @@
 import { withWorkspaceTransaction } from "../../db/client.ts";
 import { currentRequestId } from "../../lib/request-context.ts";
-import { jobs } from "@ailearn/shared/db-schema/job";
+import { jobs } from "@astella/shared/db-schema/job";
 import { and, eq, count, inArray, sql } from "drizzle-orm";
 import {
   JobResourceClass,
@@ -11,8 +11,8 @@ import {
   withCompanionActor,
   readSafeErrorCode,
   AI_CONSENT_REQUIRED_CODE,
-} from "@ailearn/shared";
-import type { JobPayloadFor } from "@ailearn/shared/job-payload-contracts";
+} from "@astella/shared";
+import type { JobPayloadFor } from "@astella/shared/job-payload-contracts";
 import { clampLimit } from "../../lib/pagination-utils.ts";
 
 /**
@@ -80,7 +80,7 @@ export type JobFailureReason =
  * 自行解析格式——与生产端 `safeErrorMessage` 的格式构成**隐式契约**，改格式或改
  * 码名都会静默失配（用户看不到"去签署同意"的引导）。现在解析器
  * （`readSafeErrorCode`）与码常量（`AI_CONSENT_REQUIRED_CODE`）都来自
- * `@ailearn/shared`，与 worker 侧同源。
+ * `@astella/shared`，与 worker 侧同源。
  *
  * 同时删除 `"external_ai_disabled"` 分支：全仓（含 docs/config）搜索确认**没有任何
  * 生产者**会发出该码，属死分支（AGENTS.md：无调用方的分支直接删除）。

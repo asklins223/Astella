@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { LearningRunPublicV1 } from "@ailearn/shared";
+import type { LearningRunPublicV1 } from "@astella/shared";
 import { buildLearningRunAllowedActionsV2 } from "../run-action-availability.ts";
 
 const baseView = (phase: LearningRunPublicV1["phase"]): LearningRunPublicV1 => ({

@@ -3,7 +3,7 @@ import type {
   AiCheckpointEntry,
   AiCheckpointKey,
   AiTaskCheckpointPort,
-} from "@ailearn/shared/ai-task-kernel";
+} from "@astella/shared/ai-task-kernel";
 import { lockJobLease, withJobTransaction, type JobLeaseContext } from "../lib/job-lease.ts";
 
 /**

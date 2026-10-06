@@ -4,7 +4,7 @@
  * 读侧走**生产装载函数**（loadNoteReadPage / loadSourceReadPage——与工具同一份
  * SQL，不是复刻形状），C8 走**生产召回函数**（retrieveCompanionMemoriesKeyword，
  * embedding 关闭时它就是真实路径）。夹具用超级用户（DATABASE_URL），被测读写用
- * 受限角色（DATABASE_URL_WORKER = ailearn_worker，与伴星运行时同角色）。
+ * 受限角色（DATABASE_URL_WORKER = astella_worker，与伴星运行时同角色）。
  *
  * 运行（一次性库，见 scripts/dev-disposable-db.sh）：
  *   node --import tsx --test --test-concurrency=1 \
@@ -14,7 +14,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const ADMIN_URL = testDatabaseUrl("DATABASE_URL");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");

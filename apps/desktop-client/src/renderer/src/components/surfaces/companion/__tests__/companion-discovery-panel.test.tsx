@@ -16,7 +16,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DiscoveryPanel } from "../companion-discovery-panel.tsx";
-import type { CompanionDiscoveryEntryV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { CompanionDiscoveryEntryV1 } from "@astella/shared/desktop-ipc-contracts";
 
 afterEach(cleanup);
 

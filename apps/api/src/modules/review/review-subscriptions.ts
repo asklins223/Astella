@@ -21,23 +21,23 @@
  *     与 §9.1 行 2 的职责，见 `review-authorization-rules-v2`）。
  */
 import { and, eq, inArray, or } from "drizzle-orm";
-import { reviewSubscriptionsV2 } from "@ailearn/shared/db-schema/evidence";
-import { notes } from "@ailearn/shared/db-schema/note";
-import { learningCardsV2, learningObjectiveOriginsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
+import { reviewSubscriptionsV2 } from "@astella/shared/db-schema/evidence";
+import { notes } from "@astella/shared/db-schema/note";
+import { learningCardsV2, learningObjectiveOriginsV2 } from "@astella/shared/db-schema/card-generation-v2";
 import {
   applySourcePauseV2,
   decideSourceAuthorizationV2,
   type ReviewAuthorizationSourceV2,
   type ReviewSourceAuthorizationV2,
-} from "@ailearn/shared/review-authorization-rules-v2";
+} from "@astella/shared/review-authorization-rules-v2";
 // P1-16：请求体合同与 desktop-client 共用同一份 zod 定义（理由见下方注释）。
 // 本文件自己只用类型，所以按 type-only 引；值 schema 走 `export ... from` 转发，
 // 让既有调用方（`routes.ts`）的 import 不用改。
-import type { ReviewSubscriptionCommandV2Wire as ReviewSubscriptionCommandV2 } from "@ailearn/shared/review-queue-v2-contracts";
+import type { ReviewSubscriptionCommandV2Wire as ReviewSubscriptionCommandV2 } from "@astella/shared/review-queue-v2-contracts";
 export {
   reviewSubscriptionCommandV2Schema,
   type ReviewSubscriptionCommandV2Wire as ReviewSubscriptionCommandV2,
-} from "@ailearn/shared/review-queue-v2-contracts";
+} from "@astella/shared/review-queue-v2-contracts";
 import { visibleCardsCondition, visibleNotesCondition } from "../note/visibility.ts";
 import type { ApiTransaction } from "../../db/client.ts";
 

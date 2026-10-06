@@ -1,11 +1,11 @@
 import {
   decideStoredCompactionAttempt, recordCompactionAttemptState,
   type CompactionStateKey,
-} from "@ailearn/agent-host";
+} from "@astella/agent-host";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
 import { logger } from "../lib/logger.ts";
 import type { CompactionCooldownPorts } from "./companion-compaction.ts";
-import type { ContextPressureReceiptV1 } from "@ailearn/shared/context-budget-contracts";
+import type { ContextPressureReceiptV1 } from "@astella/shared/context-budget-contracts";
 
 /**
  * 方案 44 §5.4 后半：把压缩的失败冷却接到真实链路上。

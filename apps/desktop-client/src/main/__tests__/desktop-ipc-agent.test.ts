@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { DESKTOP_IPC_CHANNELS, DESKTOP_IPC_CONTRACT_VERSION, type RequestMetaV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import { DESKTOP_IPC_CHANNELS, DESKTOP_IPC_CONTRACT_VERSION, type RequestMetaV1 } from "@astella/shared/desktop-ipc-contracts";
 import { registerAgentChannels } from "../desktop-ipc-agent";
 
 const runId = "11111111-1111-4111-8111-111111111111";

@@ -1,8 +1,8 @@
 import {
   formalAssessmentGuardV1Schema,
   type FormalAssessmentGuardV1,
-} from "@ailearn/shared/formal-assessment-guard-contracts";
-import { learningRunPublicSnapshotV2Schema } from "@ailearn/shared/learning-run-v2-contracts";
+} from "@astella/shared/formal-assessment-guard-contracts";
+import { learningRunPublicSnapshotV2Schema } from "@astella/shared/learning-run-v2-contracts";
 
 type GuardKey = { runId: string; runtimeEpoch: number };
 

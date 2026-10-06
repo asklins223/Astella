@@ -10,7 +10,7 @@ import {
 } from "./notebook-generation-options.ts";
 import { Brain, Check, ChevronDown, Compass, Lightbulb, NotebookPen, Sparkles } from "lucide-react";
 import { cardStrategyPresentation } from "../review/card-strategy-presentation";
-import type { DesktopCardGenerationFeedbackReasonV2 } from "@ailearn/shared/card-generation-desktop-contracts";
+import type { DesktopCardGenerationFeedbackReasonV2 } from "@astella/shared/card-generation-desktop-contracts";
 import { useNotebookPaperMotion } from "./use-notebook-paper-motion";
 import { useNotebookTouch } from "./use-notebook-touch";
 import { useRoomStore } from "../../../app/room-store";

@@ -11,21 +11,21 @@
 #   - warning：需要关注但非紧急
 #   - critical：需要立即响应
 #
-# 所有规则使用 `ailearn_` 前缀，避免与其他服务冲突。
-# Job/Provider 指标由 workers/ai-worker 维护，告警规则指定 job="ailearn-worker"。
+# 所有规则使用 `astella_` 前缀，避免与其他服务冲突。
+# Job/Provider 指标由 workers/ai-worker 维护，告警规则指定 job="astella-worker"。
 
 groups:
   # ─── HTTP 服务健康 ───────────────────────────────────────────────────────
-  - name: ailearn_http_health
+  - name: astella_http_health
     interval: 30s
     rules:
       # API 不可用（/readiness 返回 0）
-      - alert: AILearnAPIDown
+      - alert: AstellaAPIDown
         expr: |
-          (up{job="ailearn-api"} == 0)
-          or absent(up{job="ailearn-api"})
-          or (ailearn_readiness_status{job="ailearn-api"} == 0)
-          or absent(ailearn_readiness_status{job="ailearn-api"})
+          (up{job="astella-api"} == 0)
+          or absent(up{job="astella-api"})
+          or (astella_readiness_status{job="astella-api"} == 0)
+          or absent(astella_readiness_status{job="astella-api"})
         for: 1m
         labels:
           severity: critical
@@ -35,10 +35,10 @@ groups:
           description: "API readiness 状态为 0，服务可能已停止或崩溃。"
           runbook: "docs/operations.md#alerts"
 
-      - alert: AILearnWorkerDown
+      - alert: AstellaWorkerDown
         expr: |
-          (up{job="ailearn-worker"} == 0)
-          or absent(up{job="ailearn-worker"})
+          (up{job="astella-worker"} == 0)
+          or absent(up{job="astella-worker"})
         for: 1m
         labels:
           severity: critical
@@ -49,12 +49,12 @@ groups:
           runbook: "docs/operations.md#alerts"
 
       # HTTP 5xx 错误率过高（超过 0.5%）
-      - alert: AILearnHighHTTP5xxRate
+      - alert: AstellaHighHTTP5xxRate
         expr: |
           (
-            rate(ailearn_http_errors_5xx_total[5m])
+            rate(astella_http_errors_5xx_total[5m])
             /
-            rate(ailearn_http_requests_total[5m])
+            rate(astella_http_requests_total[5m])
           ) > 0.005
         for: 5m
         labels:
@@ -66,9 +66,9 @@ groups:
           runbook: "docs/operations.md#alerts"
 
       # HTTP p95 延迟超过 1 秒
-      - alert: AILearnHighHTTPLatency
+      - alert: AstellaHighHTTPLatency
         expr: |
-          histogram_quantile(0.95, rate(ailearn_http_request_duration_seconds_bucket[5m])) > 1
+          histogram_quantile(0.95, rate(astella_http_request_duration_seconds_bucket[5m])) > 1
         for: 5m
         labels:
           severity: warning
@@ -79,12 +79,12 @@ groups:
           runbook: "docs/operations.md#alerts"
 
   # ─── Job 队列健康 ─────────────────────────────────────────────────────────
-  - name: ailearn_job_health
+  - name: astella_job_health
     interval: 30s
     rules:
       # Pending 队列堆积超过 100
-      - alert: AILearnJobQueueBacklog
-        expr: ailearn_job_queue_depth{job="ailearn-worker",status="pending"} > 100
+      - alert: AstellaJobQueueBacklog
+        expr: astella_job_queue_depth{job="astella-worker",status="pending"} > 100
         for: 5m
         labels:
           severity: warning
@@ -95,8 +95,8 @@ groups:
           runbook: "docs/operations.md#alerts"
 
       # 最老 pending job 超过 5 分钟
-      - alert: AILearnStalePendingJob
-        expr: ailearn_job_oldest_pending_age_seconds{job="ailearn-worker"} > 300
+      - alert: AstellaStalePendingJob
+        expr: astella_job_oldest_pending_age_seconds{job="astella-worker"} > 300
         for: 2m
         labels:
           severity: critical
@@ -107,12 +107,12 @@ groups:
           runbook: "docs/operations.md#alerts"
 
       # Job 死信率超过 1%
-      - alert: AILearnHighJobDeadRate
+      - alert: AstellaHighJobDeadRate
         expr: |
           (
-            rate(ailearn_job_terminal_total{job="ailearn-worker",status="dead"}[10m])
+            rate(astella_job_terminal_total{job="astella-worker",status="dead"}[10m])
             /
-            rate(ailearn_job_terminal_total{job="ailearn-worker"}[10m])
+            rate(astella_job_terminal_total{job="astella-worker"}[10m])
           ) > 0.01
         for: 10m
         labels:
@@ -124,8 +124,8 @@ groups:
           runbook: "docs/operations.md#alerts"
 
       # Job lease 丢失
-      - alert: AILearnJobLeaseLost
-        expr: rate(ailearn_job_lease_lost_total{job="ailearn-worker"}[5m]) > 0
+      - alert: AstellaJobLeaseLost
+        expr: rate(astella_job_lease_lost_total{job="astella-worker"}[5m]) > 0
         for: 1m
         labels:
           severity: warning
@@ -136,16 +136,16 @@ groups:
           runbook: "docs/operations.md#alerts"
 
   # ─── Provider 调用健康 ─────────────────────────────────────────────────────
-  - name: ailearn_provider_health
+  - name: astella_provider_health
     interval: 30s
     rules:
       # Provider 错误率超过 5%
-      - alert: AILearnHighProviderErrorRate
+      - alert: AstellaHighProviderErrorRate
         expr: |
           (
-            rate(ailearn_provider_errors_total{job="ailearn-worker"}[5m])
+            rate(astella_provider_errors_total{job="astella-worker"}[5m])
             /
-            rate(ailearn_provider_calls_total{job="ailearn-worker"}[5m])
+            rate(astella_provider_calls_total{job="astella-worker"}[5m])
           ) > 0.05
         for: 5m
         labels:
@@ -157,9 +157,9 @@ groups:
           runbook: "docs/operations.md#alerts"
 
       # Provider 调用超时（p95 超过 30 秒）
-      - alert: AILearnProviderHighLatency
+      - alert: AstellaProviderHighLatency
         expr: |
-          histogram_quantile(0.95, rate(ailearn_provider_call_duration_seconds_bucket{job="ailearn-worker"}[5m])) > 30
+          histogram_quantile(0.95, rate(astella_provider_call_duration_seconds_bucket{job="astella-worker"}[5m])) > 30
         for: 5m
         labels:
           severity: warning
@@ -170,8 +170,8 @@ groups:
           runbook: "docs/operations.md#alerts"
 
       # Provider schema failure（结构化错误）
-      - alert: AILearnProviderSchemaFailure
-        expr: rate(ailearn_provider_errors_total{job="ailearn-worker",error_category="schema_failure"}[5m]) > 0
+      - alert: AstellaProviderSchemaFailure
+        expr: rate(astella_provider_errors_total{job="astella-worker",error_category="schema_failure"}[5m]) > 0
         for: 2m
         labels:
           severity: warning
@@ -182,8 +182,8 @@ groups:
           runbook: "docs/operations.md#alerts"
 
       # Provider 配额不足
-      - alert: AILearnProviderQuotaExceeded
-        expr: rate(ailearn_provider_errors_total{job="ailearn-worker",error_category="quota_exceeded"}[5m]) > 0
+      - alert: AstellaProviderQuotaExceeded
+        expr: rate(astella_provider_errors_total{job="astella-worker",error_category="quota_exceeded"}[5m]) > 0
         for: 1m
         labels:
           severity: critical
@@ -194,12 +194,12 @@ groups:
           runbook: "docs/operations.md#alerts"
 
   # ─── 数据库健康 ───────────────────────────────────────────────────────────
-  - name: ailearn_database_health
+  - name: astella_database_health
     interval: 30s
     rules:
       # 数据库事务失败率过高
-      - alert: AILearnHighTransactionFailureRate
-        expr: rate(ailearn_db_transaction_failures_total[5m]) > 1
+      - alert: AstellaHighTransactionFailureRate
+        expr: rate(astella_db_transaction_failures_total[5m]) > 1
         for: 5m
         labels:
           severity: warning
@@ -210,8 +210,8 @@ groups:
           runbook: "docs/operations.md#alerts"
 
       # RLS 拒绝率激增（可能表明 policy 配置问题或异常访问模式）
-      - alert: AILearnHighRLSDenialRate
-        expr: rate(ailearn_db_rls_denied_total[5m]) > 10
+      - alert: AstellaHighRLSDenialRate
+        expr: rate(astella_db_rls_denied_total[5m]) > 10
         for: 5m
         labels:
           severity: warning
@@ -224,10 +224,10 @@ groups:
       # 备份过期（超过 24 小时无成功备份）
       # ARCH-2026-08：dbLastSuccessfulBackupTimestamp 指标已从 API registry 移除
       #（无生产写点），改为依赖 backup job 的 up 状态检测备份可用性。
-      - alert: AILearnBackupStale
+      - alert: AstellaBackupStale
         expr: |
-          (up{job="ailearn-backup"} == 0)
-          or absent(up{job="ailearn-backup"})
+          (up{job="astella-backup"} == 0)
+          or absent(up{job="astella-backup"})
         for: 1m
         labels:
           severity: critical
@@ -238,16 +238,16 @@ groups:
           runbook: "docs/operations.md#alerts"
 
   # ─── Alpha 漏斗监控 ─────────────────────────────────────────────────────────
-  - name: ailearn_funnel_monitoring
+  - name: astella_funnel_monitoring
     interval: 60s
     rules:
       # 邀请发出后 1 小时内无人消费（可能邀请流程有问题）
-      - alert: AILearnLowInviteConsumptionRate
+      - alert: AstellaLowInviteConsumptionRate
         expr: |
           (
-            rate(ailearn_funnel_events_total{event="invite_consumed"}[1h])
+            rate(astella_funnel_events_total{event="invite_consumed"}[1h])
             /
-            rate(ailearn_funnel_events_total{event="invite_created"}[1h])
+            rate(astella_funnel_events_total{event="invite_created"}[1h])
           ) < 0.1
         for: 2h
         labels:
@@ -259,12 +259,12 @@ groups:
           runbook: "docs/operations.md#alerts"
 
       # 学习卡生成失败率过高
-      - alert: AILearnLowCardGenerationSuccessRate
+      - alert: AstellaLowCardGenerationSuccessRate
         expr: |
           (
-            rate(ailearn_funnel_events_total{event="card_generation_failed"}[10m])
+            rate(astella_funnel_events_total{event="card_generation_failed"}[10m])
             /
-            rate(ailearn_funnel_events_total{event="card_generation_terminal"}[10m])
+            rate(astella_funnel_events_total{event="card_generation_terminal"}[10m])
           ) > 0.2
         for: 10m
         labels:
@@ -276,13 +276,13 @@ groups:
           runbook: "docs/operations.md#alerts"
 
   # ─── Release 信息 ───────────────────────────────────────────────────────────
-  - name: ailearn_release_info
+  - name: astella_release_info
     interval: 60s
     rules:
       # 检测到新的部署
-      - alert: AILearnReleaseDeployed
+      - alert: AstellaReleaseDeployed
         expr: |
-          increase(ailearn_funnel_events_total{event="release_deployed"}[5m]) > 0
+          increase(astella_funnel_events_total{event="release_deployed"}[5m]) > 0
         for: 1m
         labels:
           severity: info
@@ -292,9 +292,9 @@ groups:
           description: "新的 release 已部署。"
 
       # 检测到回滚
-      - alert: AILearnReleaseRolledBack
+      - alert: AstellaReleaseRolledBack
         expr: |
-          increase(ailearn_funnel_events_total{event="release_rolled_back"}[5m]) > 0
+          increase(astella_funnel_events_total{event="release_rolled_back"}[5m]) > 0
         for: 1m
         labels:
           severity: critical
@@ -311,12 +311,12 @@ groups:
   # can cause silent drift between business data and search index. These
   # alerts detect when drift exceeds acceptable thresholds so administrators
   # can trigger reindex before users notice missing search results.
-  - name: ailearn_search_consistency
+  - name: astella_search_consistency
     interval: 60s
     rules:
       # Search index drift detected (ghosts + missing > 0)
-      - alert: AILearnSearchIndexDrift
-        expr: ailearn_search_drift_total > 0
+      - alert: AstellaSearchIndexDrift
+        expr: astella_search_drift_total > 0
         for: 10m
         labels:
           severity: warning
@@ -327,12 +327,12 @@ groups:
           runbook: "docs/operations.md#search-drift"
 
       # Search index drift ratio exceeds 5% of total documents
-      - alert: AILearnHighSearchDriftRatio
+      - alert: AstellaHighSearchDriftRatio
         expr: |
           (
-            ailearn_search_drift_total
+            astella_search_drift_total
             /
-            ailearn_search_documents_total
+            astella_search_documents_total
           ) > 0.05
         for: 15m
         labels:

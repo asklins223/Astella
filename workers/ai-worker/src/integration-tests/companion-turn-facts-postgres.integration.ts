@@ -6,7 +6,7 @@
  * 这支用例自己造夹具、跑真 SQL。
  *
  * 角色纪律（doc 34 L37/L43）：**夹具写走超级用户（`DATABASE_URL`），被测读数走受限角色**
- * （`DATABASE_URL_WORKER`，dev 里 `ailearn_worker` 是 NOBYPASSRLS）。两条串混用会让
+ * （`DATABASE_URL_WORKER`，dev 里 `astella_worker` 是 NOBYPASSRLS）。两条串混用会让
  * "读不到别人的私有笔记"这类断言变成假绿。
  *
  * 反向断言各配一条正向对照：只报"读不到"的话，判据把所有人全挡住时同样是绿的。
@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import type { LivePageView } from "../handlers/companion-live-view.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const ADMIN_CONN = testDatabaseUrl("DATABASE_URL");
 // 必须在 import `../db.ts` **之前**设好：连接串在那个模块加载时求值（动态 import 见下）。

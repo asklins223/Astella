@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RoomProjectionV1 } from "@ailearn/shared/room-projection-contracts";
+import type { RoomProjectionV1 } from "@astella/shared/room-projection-contracts";
 import { homePresentation } from "../home-presentation.ts";
 
 function projection(overrides: Partial<RoomProjectionV1> = {}): RoomProjectionV1 {

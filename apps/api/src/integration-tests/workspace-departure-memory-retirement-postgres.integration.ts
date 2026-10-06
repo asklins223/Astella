@@ -5,7 +5,7 @@
  * 人走就收，`scope='global'`（带 `global_key`）跟着人走不动。
  *
  * 夹具写用超级用户（`DATABASE_URL`），被测走 app 自己的池（`DATABASE_URL_API` 存在时
- * 就是 `ailearn_api`）——同一份库两种角色各跑一遍（doc 34 §1.2 ④ 那条判据）。
+ * 就是 `astella_api`）——同一份库两种角色各跑一遍（doc 34 §1.2 ④ 那条判据）。
  *
  * 最后一条用例守的是**这件事为什么必须有那支 SECURITY DEFINER 函数**：
  * 按调用方身份直接 UPDATE 恒匹配 0 行。哪天有人把函数"简化"成一句 SQL，那条会红。
@@ -129,7 +129,7 @@ test("再收一次不重复劳动：0 行、已收过的行时间戳不被推走
   const beforeUpdated = (await memoryRow(mem.memberWorkspace))!.updated_at as Date;
   const retired = await withWorkspaceTransaction({ workspaceId: ws, userId: owner }, (tx) =>
     tx.execute(dsql`
-      SELECT public.ailearn_retire_workspace_memories_on_departure(
+      SELECT public.astella_retire_workspace_memories_on_departure(
         ${ws}::uuid, ${member}::uuid) AS n
     `).then((rows) => Number((rows[0] as { n: number }).n)),
   );
@@ -156,7 +156,7 @@ test("为什么必须有那支函数：按调用方身份直接 UPDATE 是静默
   // 这条验的是**策略**，超级用户下它必然不成立（BYPASSRLS 改得动任何行）。
   // 与其让它在 dev 默认串下假红，不如明确说它要哪把尺子。
   if (!process.env.DATABASE_URL_API) {
-    t.skip("需要 DATABASE_URL_API 指向受限角色（ailearn_api）——被测的是行级策略本身");
+    t.skip("需要 DATABASE_URL_API 指向受限角色（astella_api）——被测的是行级策略本身");
     return;
   }
 
@@ -166,7 +166,7 @@ test("为什么必须有那支函数：按调用方身份直接 UPDATE 是静默
       WHERE workspace_id = ${ws}::uuid AND user_id = ${bystander}::uuid
     `).then((rows) => rows.length),
   );
-  // 这句话在 dev（BYPASSRLS 的 ailearn）下永远"看起来没事"，受限角色下才现形：
+  // 这句话在 dev（BYPASSRLS 的 astella）下永远"看起来没事"，受限角色下才现形：
   // owner 的上下文改不动别人的行，而且不报错。
   assert.equal(
     matched,

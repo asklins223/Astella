@@ -95,7 +95,7 @@ test("artifact 列迁成 result，存量按 artifact 结果包一层", () => {
 });
 
 test("改名后必须重建 0368 的 note 触发器：字面函数体不会跟着改写列名", () => {
-  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.ailearn_agent_job_event\(\) RETURNS trigger/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.astella_agent_job_event\(\) RETURNS trigger/);
   // 只换列名，绑定与唤醒语义逐字保留。
   assert.match(
     migration,
@@ -105,8 +105,8 @@ test("改名后必须重建 0368 的 note 触发器：字面函数体不会跟�
   assert.match(migration, /AND NEW\.status::text IN \('succeeded','dead','failed'\)/);
   // 重建后函数体里不能再出现旧列名，否则三个现役 note 能力的终态事务全部失败。
   assert.equal(
-    /CREATE OR REPLACE FUNCTION public\.ailearn_agent_job_event\(\)[\s\S]*?END \$\$;[\s\S]*?job_status/.test(
-      migration.slice(migration.indexOf("CREATE OR REPLACE FUNCTION public.ailearn_agent_job_event")),
+    /CREATE OR REPLACE FUNCTION public\.astella_agent_job_event\(\)[\s\S]*?END \$\$;[\s\S]*?job_status/.test(
+      migration.slice(migration.indexOf("CREATE OR REPLACE FUNCTION public.astella_agent_job_event")),
     ),
     false,
     "重建后的 note 触发器里仍有 job_status",
@@ -114,10 +114,10 @@ test("改名后必须重建 0368 的 note 触发器：字面函数体不会跟�
 });
 
 test("领域状态触发器只为绑定的那一发初始 outbox 写回执并持久入队", () => {
-  assert.match(migration, /CREATE FUNCTION public\.ailearn_agent_card_run_event\(\) RETURNS trigger/);
+  assert.match(migration, /CREATE FUNCTION public\.astella_agent_card_run_event\(\) RETURNS trigger/);
   assert.match(
     migration,
-    /CREATE TRIGGER agent_card_run_event AFTER UPDATE OF status ON public\.card_generation_runs_v2\s*FOR EACH ROW EXECUTE FUNCTION public\.ailearn_agent_card_run_event\(\)/,
+    /CREATE TRIGGER agent_card_run_event AFTER UPDATE OF status ON public\.card_generation_runs_v2\s*FOR EACH ROW EXECUTE FUNCTION public\.astella_agent_card_run_event\(\)/,
   );
   // 归属：必须是绑定的初始那一发（job_type 固定），审核台后续几发不受影响。
   assert.match(migration, /b\.id = op\.card_generation_outbox_id AND b\.run_id = NEW\.id[\s\S]*?b\.job_type = 'card_generation_simplified_v1'/);
@@ -127,7 +127,7 @@ test("领域状态触发器只为绑定的那一发初始 outbox 写回执并持
 });
 
 test("恢复扫描涵盖制卡，且核对预算越界后只因真实交付事实再唤醒", () => {
-  const recovery = migration.slice(migration.indexOf("CREATE OR REPLACE FUNCTION public.ailearn_enqueue_agent_recovery()"));
+  const recovery = migration.slice(migration.indexOf("CREATE OR REPLACE FUNCTION public.astella_enqueue_agent_recovery()"));
   assert.match(recovery, /LEFT JOIN public\.card_generation_runs_v2 cr ON cr\.id=o\.card_generation_run_id/);
   assert.match(recovery, /o\.receipt_checks < 4/);
   // 交付事实：审核开放 ∧ 至少一张最新 revision 的可审候选；零推荐也是一条已落定的交付。
@@ -140,7 +140,7 @@ test("恢复扫描涵盖制卡，且核对预算越界后只因真实交付事�
 });
 
 test("取消／修订也停掉制卡这一发，并按 parent → card → outbox 的顺序", () => {
-  const cancel = migration.slice(migration.indexOf("CREATE OR REPLACE FUNCTION public.ailearn_cancel_agent_operations"));
+  const cancel = migration.slice(migration.indexOf("CREATE OR REPLACE FUNCTION public.astella_cancel_agent_operations"));
   const cancelBody = cancel.slice(0, cancel.indexOf("END $$;"));
   const parentLock = cancelBody.indexOf("FROM public.agent_runs WHERE id=p_run AND revision=p_revision");
   const cardUpdate = cancelBody.indexOf("UPDATE public.card_generation_runs_v2 cr SET status='cancelled'");
@@ -155,9 +155,9 @@ test("取消／修订也停掉制卡这一发，并按 parent → card → outbo
 test("父围栏函数签名固定，且 p_lock 时先锁父目标再锁制卡行", () => {
   assert.match(
     migration,
-    /CREATE FUNCTION public\.ailearn_agent_card_job_current\(p_outbox uuid,p_workspace uuid,p_lock boolean DEFAULT false\) RETURNS boolean/,
+    /CREATE FUNCTION public\.astella_agent_card_job_current\(p_outbox uuid,p_workspace uuid,p_lock boolean DEFAULT false\) RETURNS boolean/,
   );
-  const fence = migration.slice(migration.indexOf("CREATE FUNCTION public.ailearn_agent_card_job_current"));
+  const fence = migration.slice(migration.indexOf("CREATE FUNCTION public.astella_agent_card_job_current"));
   const fenceBody = fence.slice(0, fence.indexOf("END $$;"));
   const agentLock = fenceBody.indexOf("FROM public.agent_runs r WHERE r.id=parent_run FOR SHARE");
   const cardLock = fenceBody.indexOf("FROM public.card_generation_runs_v2 cr WHERE cr.id=card_run FOR SHARE");
@@ -166,7 +166,7 @@ test("父围栏函数签名固定，且 p_lock 时先锁父目标再锁制卡行
     `p_lock 必须按 parent(${agentLock}) → card(${cardLock}) → outbox(${outboxLock})，反过来会与取消死锁`);
   // 未绑定的 outbox（用户自己点的制卡、审核台后续几发）恒为真：原域行为一个字节都不改。
   assert.match(fenceBody, /IF parent_run IS NULL THEN RETURN true; END IF;/);
-  // 判据与 ailearn_agent_job_current 对齐，另加一条冻结材料绑定。
+  // 判据与 astella_agent_job_current 对齐，另加一条冻结材料绑定。
   assert.match(fenceBody, /r\.status IN \('queued','running','waiting','paused'\)/);
   assert.match(fenceBody, /a\.epoch=r\.account_epoch/);
   assert.match(fenceBody, /o\.status IN \('accepted','running','outcome_unknown'\)/);
@@ -176,44 +176,44 @@ test("父围栏函数签名固定，且 p_lock 时先锁父目标再锁制卡行
 test("授权三处一致：新函数只给 worker，api 不得出现", () => {
   assert.match(
     migration,
-    /REVOKE ALL ON FUNCTION public\.ailearn_agent_card_job_current\(uuid,uuid,boolean\) FROM PUBLIC/,
+    /REVOKE ALL ON FUNCTION public\.astella_agent_card_job_current\(uuid,uuid,boolean\) FROM PUBLIC/,
   );
   assert.match(
     migration,
-    /GRANT EXECUTE ON FUNCTION public\.ailearn_agent_card_job_current\(uuid,uuid,boolean\) TO ailearn_worker;/,
+    /GRANT EXECUTE ON FUNCTION public\.astella_agent_card_job_current\(uuid,uuid,boolean\) TO astella_worker;/,
   );
   assert.equal(
-    /GRANT EXECUTE ON FUNCTION public\.ailearn_agent_card_job_current\(uuid,uuid,boolean\) TO [^;]*ailearn_api/.test(migration),
+    /GRANT EXECUTE ON FUNCTION public\.astella_agent_card_job_current\(uuid,uuid,boolean\) TO [^;]*astella_api/.test(migration),
     false,
     "父围栏不归 API：给了 api 就多一个能窥探目标围栏的入口",
   );
   // roles.sql：属主收敛、worker 白名单、反向必需清单，三处一起改。
   for (const signature of [
-    "ailearn_agent_card_job_current(uuid,uuid,boolean)",
-    "ailearn_agent_card_execution_binding(uuid,uuid)",
-    "ailearn_agent_card_run_event()",
+    "astella_agent_card_job_current(uuid,uuid,boolean)",
+    "astella_agent_card_execution_binding(uuid,uuid)",
+    "astella_agent_card_run_event()",
   ]) {
     assert.ok(roleGrants.includes(`'${signature}'`), `属主收敛列表遗漏 ${signature}`);
   }
   assert.match(
     roleGrants,
-    /GRANT EXECUTE ON FUNCTION public\.ailearn_agent_card_job_current\(uuid,uuid,boolean\) TO ailearn_worker;/,
+    /GRANT EXECUTE ON FUNCTION public\.astella_agent_card_job_current\(uuid,uuid,boolean\) TO astella_worker;/,
   );
   const workerAllowlist = roleGrants
-    .split("has_function_privilege('ailearn_worker'")[1]
+    .split("has_function_privilege('astella_worker'")[1]
     ?.split("RAISE EXCEPTION 'Worker has unexpected function EXECUTE privileges:")[0] ?? "";
-  assert.match(workerAllowlist, /ailearn_agent_card_job_current\(uuid,uuid,boolean\)/,
+  assert.match(workerAllowlist, /astella_agent_card_job_current\(uuid,uuid,boolean\)/,
     "worker 白名单漏了这条，bootstrap 会在下一次起容器时直接失败");
   // 反向清单（"该有的授权不能缺"）是一份 FROM (VALUES …) 列表：条数少、形状唯一，
   // 整份文件里这一对元组只可能出现在那里，不必切片段。
   assert.match(
-    roleGrants, /\('ailearn_worker', 'ailearn_agent_card_job_current\(uuid,uuid,boolean\)'\)/,
+    roleGrants, /\('astella_worker', 'astella_agent_card_job_current\(uuid,uuid,boolean\)'\)/,
     "反向清单漏了这条，缺授权时 bootstrap 不会报——而 worker 会静默跳过父围栏");
   const apiAllowlist = roleGrants
-    .split("AND has_function_privilege('ailearn_api'")[1]
+    .split("AND has_function_privilege('astella_api'")[1]
     ?.split("RAISE EXCEPTION 'API has unexpected function EXECUTE privileges:")[0] ?? "";
   assert.equal(
-    /ailearn_agent_card_job_current/.test(apiAllowlist), false,
+    /astella_agent_card_job_current/.test(apiAllowlist), false,
     "API 白名单里不该有这条（没授就不该出现；出现了只会掩盖一次误授）",
   );
 });
@@ -221,7 +221,7 @@ test("授权三处一致：新函数只给 worker，api 不得出现", () => {
 test("初始归属读取是 worker-only 受控函数，签名与授权四处一致", () => {
   assert.match(
     migration,
-    /CREATE FUNCTION public\.ailearn_agent_card_execution_binding\(p_outbox uuid,p_workspace uuid\)\s*RETURNS TABLE\(operation_id uuid,agent_run_id uuid,revision integer,user_id uuid\)/,
+    /CREATE FUNCTION public\.astella_agent_card_execution_binding\(p_outbox uuid,p_workspace uuid\)\s*RETURNS TABLE\(operation_id uuid,agent_run_id uuid,revision integer,user_id uuid\)/,
   );
   // workspace 必须等于本次事务作用域。
   assert.match(
@@ -235,32 +235,32 @@ test("初始归属读取是 worker-only 受控函数，签名与授权四处一�
   );
   assert.match(migration, /o\.user_id=cr\.user_id AND r\.user_id=cr\.user_id/);
   // 绑定读取不是 current 判定：不按成员资格或终态过滤。
-  const binding = migration.slice(migration.indexOf("CREATE FUNCTION public.ailearn_agent_card_execution_binding"));
+  const binding = migration.slice(migration.indexOf("CREATE FUNCTION public.astella_agent_card_execution_binding"));
   const body = binding.slice(0, binding.indexOf("END $$;"));
   assert.equal(/workspace_members/.test(body), false, "绑定读取不该按成员资格过滤");
   assert.equal(/status\s*(=|IN)/.test(body), false, "绑定读取不该按终态过滤");
   // 授权四处：迁移 REVOKE/GRANT、roles.sql 属主、worker 白名单、反向必需清单。
-  assert.match(migration, /REVOKE ALL ON FUNCTION public\.ailearn_agent_card_execution_binding\(uuid,uuid\) FROM PUBLIC;/);
-  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.ailearn_agent_card_execution_binding\(uuid,uuid\) TO ailearn_worker;/);
-  assert.match(migration, /ALTER FUNCTION public\.ailearn_agent_card_execution_binding\(uuid,uuid\) OWNER TO ailearn_migrator;/);
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.astella_agent_card_execution_binding\(uuid,uuid\) FROM PUBLIC;/);
+  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.astella_agent_card_execution_binding\(uuid,uuid\) TO astella_worker;/);
+  assert.match(migration, /ALTER FUNCTION public\.astella_agent_card_execution_binding\(uuid,uuid\) OWNER TO astella_migrator;/);
   assert.equal(
-    /GRANT EXECUTE ON FUNCTION public\.ailearn_agent_card_execution_binding\(uuid,uuid\) TO [^;]*ailearn_api/.test(migration),
+    /GRANT EXECUTE ON FUNCTION public\.astella_agent_card_execution_binding\(uuid,uuid\) TO [^;]*astella_api/.test(migration),
     false,
     "初始归属读取不归 API",
   );
-  assert.match(roleGrants, /'ailearn_agent_card_execution_binding\(uuid,uuid\)'/);
-  assert.match(roleGrants, /GRANT EXECUTE ON FUNCTION public\.ailearn_agent_card_execution_binding\(uuid,uuid\) TO ailearn_worker;/);
+  assert.match(roleGrants, /'astella_agent_card_execution_binding\(uuid,uuid\)'/);
+  assert.match(roleGrants, /GRANT EXECUTE ON FUNCTION public\.astella_agent_card_execution_binding\(uuid,uuid\) TO astella_worker;/);
   const workerAllowlist = roleGrants
-    .split("has_function_privilege('ailearn_worker'")[1]
+    .split("has_function_privilege('astella_worker'")[1]
     ?.split("RAISE EXCEPTION 'Worker has unexpected function EXECUTE privileges:")[0] ?? "";
-  assert.match(workerAllowlist, /ailearn_agent_card_execution_binding\(uuid,uuid\)/);
-  assert.match(roleGrants, /\('ailearn_worker', 'ailearn_agent_card_execution_binding\(uuid,uuid\)'\)/);
+  assert.match(workerAllowlist, /astella_agent_card_execution_binding\(uuid,uuid\)/);
+  assert.match(roleGrants, /\('astella_worker', 'astella_agent_card_execution_binding\(uuid,uuid\)'\)/);
 });
 
 test("触发器函数不给任何角色 EXECUTE（触发执行不查 session 用户权限）", () => {
-  assert.match(migration, /REVOKE ALL ON FUNCTION public\.ailearn_agent_card_run_event\(\) FROM PUBLIC;/);
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.astella_agent_card_run_event\(\) FROM PUBLIC;/);
   assert.equal(
-    /GRANT EXECUTE ON FUNCTION public\.ailearn_agent_card_run_event\(\)/.test(migration + roleGrants),
+    /GRANT EXECUTE ON FUNCTION public\.astella_agent_card_run_event\(\)/.test(migration + roleGrants),
     false,
     "触发器函数给了 EXECUTE 只会扩大可调用面",
   );

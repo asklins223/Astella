@@ -1,10 +1,10 @@
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "./client.ts";
-import { users, workspaces, workspaceMembers } from "@ailearn/shared/db-schema/identity";
+import { users, workspaces, workspaceMembers } from "@astella/shared/db-schema/identity";
 
-const DEMO_OWNER_EMAIL = "owner@ailearn.local";
-const DEMO_OWNER_PASSWORD = "ailearn_owner";
+const DEMO_OWNER_EMAIL = "owner@astella.local";
+const DEMO_OWNER_PASSWORD = "astella_owner";
 const DEMO_WORKSPACE_NAME = "Personal Beta";
 
 function hashPassword(plain: string): string {

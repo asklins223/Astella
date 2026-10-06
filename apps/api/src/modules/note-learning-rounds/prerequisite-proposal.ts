@@ -18,7 +18,7 @@
  * "判据依据哪一版正文"这件事复制一份——那正是 D3 反复要求只留一个来源的原因。
  */
 import { and, eq } from "drizzle-orm";
-import { noteLearningRoundTeachings } from "@ailearn/shared/db-schema/note-learning-rounds";
+import { noteLearningRoundTeachings } from "@astella/shared/db-schema/note-learning-rounds";
 import type { ApiTransaction } from "../../db/client.ts";
 import { readRound } from "./round/round-service.ts";
 import { loadTeachingSnapshotBlocks } from "./teaching/teaching-explain.ts";

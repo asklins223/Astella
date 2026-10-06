@@ -6,9 +6,9 @@
  * 与伴星树互相依赖。文本上限 2000 字（与 turn 契约一致）。
  */
 
-const COMPANION_FEED_EVENT = "ailearn:companion-feed";
-const COMPANION_OPEN_CHAT_EVENT = "ailearn:companion-open-chat";
-const COMPANION_NOTE_INTENT_EVENT = "ailearn:companion-note-intent";
+const COMPANION_FEED_EVENT = "astella:companion-feed";
+const COMPANION_OPEN_CHAT_EVENT = "astella:companion-open-chat";
+const COMPANION_NOTE_INTENT_EVENT = "astella:companion-note-intent";
 
 export const COMPANION_FEED_MAX_CHARS = 2_000;
 
@@ -216,5 +216,5 @@ export function subscribeCompanionFeed(handlers: {
   };
 }
 import { z } from "zod";
-import { noteAnnotationAnchorV1Schema, type NoteAnnotationAnchorV1 } from "@ailearn/shared/note-annotation-contracts";
+import { noteAnnotationAnchorV1Schema, type NoteAnnotationAnchorV1 } from "@astella/shared/note-annotation-contracts";
 import { beginNoteExplanation, openNoteExplanation } from "./note-companion-explanation";

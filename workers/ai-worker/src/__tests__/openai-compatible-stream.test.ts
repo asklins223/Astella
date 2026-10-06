@@ -9,7 +9,7 @@ import { test } from "node:test";
 import {
   OpenAICompatibleProvider,
 } from "../lib/providers/openai-compatible.ts";
-import type { PublicJsonRequester, PublicStreamingRequester } from "@ailearn/shared/public-json-http";
+import type { PublicJsonRequester, PublicStreamingRequester } from "@astella/shared/public-json-http";
 import { MockProvider } from "../lib/providers/mock.ts";
 import { ProviderRequestError } from "../lib/provider-request-error.ts";
 

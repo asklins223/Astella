@@ -17,9 +17,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { withActorTransaction, withWorkspaceTransaction, type WorkspaceTransactionContext } from "../../db/client.ts";
-import { noteImageAssets, notes } from "@ailearn/shared/db-schema/note";
+import { noteImageAssets, notes } from "@astella/shared/db-schema/note";
 import { visibleNotesCondition } from "../note/visibility.ts";
-import { users } from "@ailearn/shared/db-schema/identity";
+import { users } from "@astella/shared/db-schema/identity";
 import {
   uploadObject,
   getObject,
@@ -549,7 +549,7 @@ export async function downloadUploadObject(
     //
     // SEC/RLS 修复（2026-09 后端审查）：note_image_assets 是 FORCE RLS 表，
     // 策略要求 workspace_id = current_setting('app.workspace_id')。裸 db 句柄
-    // （连接池连接）没有事务级 GUC，在 ailearn_api（NOBYPASSRLS）下此处恒返回
+    // （连接池连接）没有事务级 GUC，在 astella_api（NOBYPASSRLS）下此处恒返回
     // 0 行 → 生产环境所有图片下载 404（dev/CI 用 superuser 掩盖了该缺陷）。
     // 与上传路径一致，改走 withWorkspaceTransaction 设置租户上下文。
     const assetRow = await withWorkspaceTransaction(

@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { ArrowLeft, ArrowRight, BookOpen, Check, Code2, Eye, PencilLine } from "lucide-react";
 import * as Y from "yjs";
-import type { NoteExpansionDraftV1, NoteExpansionTaskV1 } from "@ailearn/shared/note-expansion-contracts";
+import type { NoteExpansionDraftV1, NoteExpansionTaskV1 } from "@astella/shared/note-expansion-contracts";
 import { Schema } from "@milkdown/kit/prose/model";
 import { prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON } from "y-prosemirror";
-import { noteBlocksToPmNodes, noteDocSchemaSpec, pmNodesToNoteBlocks } from "@ailearn/shared/note-doc-schema";
+import { noteBlocksToPmNodes, noteDocSchemaSpec, pmNodesToNoteBlocks } from "@astella/shared/note-doc-schema";
 import { NoteDocumentEditor } from "./note-document-editor";
 import { NOTE_BODY_MODES } from "./note-document-mode";
 import type { NoteMarkdownEditorHandle } from "./note-markdown-editor";

@@ -60,8 +60,8 @@ CREATE POLICY companion_runtime_fences_user_isolation
 --> statement-breakpoint
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
     GRANT SELECT, INSERT, UPDATE, DELETE
-      ON public.companion_runtime_fences TO ailearn_api;
+      ON public.companion_runtime_fences TO astella_api;
   END IF;
 END $$;

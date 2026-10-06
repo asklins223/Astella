@@ -11,9 +11,9 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { stableStringify, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { logger } from "../lib/logger.ts";
-import { readJobPayloadString } from "@ailearn/shared";
+import { readJobPayloadString } from "@astella/shared";
 import { createProvider } from "../lib/ai-provider.ts";
 import {
   AIConsentRequiredError,
@@ -25,12 +25,12 @@ import { assertJobLease, lockJobLease, withJobTransaction } from "../lib/job-lea
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { companionSummaryTotal } from "../lib/metrics.ts";
 import { parseMemoryExtractJson } from "./companion-memory-extractor.ts";
-import { resolveContextBudget } from "@ailearn/agent-core";
+import { resolveContextBudget } from "@astella/agent-core";
 import {
   contextCoverageManifestV1Schema,
   type ContextCoverageManifestV1,
   type ContextCoverageSpanV1,
-} from "@ailearn/shared/context-budget-contracts";
+} from "@astella/shared/context-budget-contracts";
 import {
   boundCompanionRecentHistory,
   REPLAY_WINDOW_MESSAGES,
@@ -405,7 +405,7 @@ export function renderConversationSummary(
 }
 
 export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
-  // 设计 P1-8（2026-09-15 审计）：字段名走共享契约（@ailearn/shared 的
+  // 设计 P1-8（2026-09-15 审计）：字段名走共享契约（@astella/shared 的
   // companion-memory-job-payload），改名由编译器兜住。
   const conversationId = readJobPayloadString(job.payload, "conversationId");
   const userId = readJobPayloadString(job.payload, "userId");

@@ -5,7 +5,7 @@
  *   1. allowlist 完整性（JOB_STATUSES）
  *   2. 指标注册与递增正确性
  *   3. startMetricsServer HTTP 端点行为
- *   4. registry 隔离与 ailearn_ 前缀
+ *   4. registry 隔离与 astella_ 前缀
  */
 
 import assert from "node:assert/strict";
@@ -124,10 +124,10 @@ test("startMetricsServer 在 /metrics 返回 Prometheus 文本格式", async () 
   assert.match(response.headers.get("content-type") ?? "", /text\/plain/);
 
   const text = await response.text();
-  // 至少包含一个 ailearn_ 前缀的指标
-  assert.match(text, /ailearn_/);
-  assert.match(text, /ailearn_ai_circuit_observer_healthy 0/);
-  assert.match(text, /ailearn_ai_circuit_observer_failure_count 0/);
+  // 至少包含一个 astella_ 前缀的指标
+  assert.match(text, /astella_/);
+  assert.match(text, /astella_ai_circuit_observer_healthy 0/);
+  assert.match(text, /astella_ai_circuit_observer_failure_count 0/);
 
   await cleanup();
 });

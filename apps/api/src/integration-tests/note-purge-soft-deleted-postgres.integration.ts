@@ -9,7 +9,7 @@
  *      将来谁把外键改掉或者补上卡的清理，这条会红，逼他同步改这里的说法。
  *
  * 角色：夹具用超级用户写（`DATABASE_URL`），清除走的是 app 自己的连接池
- * （`DATABASE_URL_API` 存在时就是 `ailearn_api`）。两种角色各跑一遍。
+ * （`DATABASE_URL_API` 存在时就是 `astella_api`）。两种角色各跑一遍。
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";

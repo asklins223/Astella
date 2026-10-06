@@ -22,9 +22,9 @@ import type {
   PublicJsonResponse,
   PublicStreamingRequester,
   PublicStreamingResponse,
-} from "@ailearn/shared/public-json-http";
-import type { AgentTurnRequest, ChatMessage } from "@ailearn/shared";
-import { AgentRole } from "@ailearn/shared";
+} from "@astella/shared/public-json-http";
+import type { AgentTurnRequest, ChatMessage } from "@astella/shared";
+import { AgentRole } from "@astella/shared";
 import { ProviderRequestError } from "../lib/provider-request-error.ts";
 import { AgentOutputError } from "../lib/non-retryable-errors.ts";
 
@@ -161,7 +161,7 @@ test("请求必须带 x-opencode-session / User-Agent / Authorization", async ()
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://opencode.ai/zen/go/v1/responses");
   assert.equal(calls[0].headers["x-opencode-session"], "sess-fixed-1");
-  assert.equal(calls[0].headers["User-Agent"], "ailearn-ai-worker/1.0");
+  assert.equal(calls[0].headers["User-Agent"], "astella-ai-worker/1.0");
   assert.equal(calls[0].headers.Authorization, "Bearer test-key");
 });
 

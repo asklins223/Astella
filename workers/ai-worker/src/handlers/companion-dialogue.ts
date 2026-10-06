@@ -32,7 +32,7 @@ import { renderPlaybookCatalog } from "./companion-playbooks.ts";
 import { randomUUID } from "node:crypto";
 import { decideCompanionVoiceDelivery, findFormalAnswerTarget } from "../lib/formal-answer-signal.ts";
 import { assessAnswerExposure, isFormalAnswerLivePage, recordCompanionAnswerExposure } from "./companion-answer-exposure.ts";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger.ts";
 import { ProviderRequestError } from "../lib/provider-request-error.ts";
@@ -61,12 +61,12 @@ import {
   type ChatMessage,
   type PetPersonaPresetBoundaries,
   type PetProfileActiveness,
-} from "@ailearn/shared";
-import { PET_PERSONA_PRESET_VERSION, resolveCompanionPersonaProfile } from "@ailearn/shared/pet-persona-presets";
+} from "@astella/shared";
+import { PET_PERSONA_PRESET_VERSION, resolveCompanionPersonaProfile } from "@astella/shared/pet-persona-presets";
 import { runCompanionAgentLoop } from "./companion-agent-runtime.ts";
 import { CompanionAgentBudgetExceededError, CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
-import type { AgentMemoryContextSourceV1 } from "@ailearn/shared/agent-contracts";
+import type { AgentMemoryContextSourceV1 } from "@astella/shared/agent-contracts";
 import {
   companionSegmentId,
   splitCommittedDisplaySegments,
@@ -777,7 +777,7 @@ export async function runCompanionDialogue(
       WHERE id = ${read.runId}
     `);
     await tx.execute(sql`
-      SELECT pg_notify('ailearn_companion_events_v1',
+      SELECT pg_notify('astella_companion_events_v1',
                        ${JSON.stringify({ conversationId: read.conversationId, maxSeq: seq })})
     `);
   };

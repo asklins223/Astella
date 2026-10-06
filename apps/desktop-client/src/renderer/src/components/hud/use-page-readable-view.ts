@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { pageReadableV1Schema, type PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import { pageReadableV1Schema, type PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { useRoomStore } from "../../app/room-store";
 
 /**

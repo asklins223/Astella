@@ -136,7 +136,7 @@ function stubGateway(
       unsubscribe: vi.fn(async () => ({ ok: true as const, data: null })),
     },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return { gateway, state };
 }
 

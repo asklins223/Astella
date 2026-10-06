@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { DomainError } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
 
 export const INVITATION_TOKEN_ENTROPY_BYTES = 32;
 export const INVITATION_TOKEN_LENGTH = 43;
@@ -8,6 +8,8 @@ export const INVITATION_TOKEN_HINT_LENGTH = 8;
 
 const INVITATION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const INVITATION_TOKEN_HASH_PATTERN = /^[a-f0-9]{64}$/;
+// 摘要的域前缀，逐字进 hint 的输入并且**存在库里**：换串会让已发出的邀请按 hint
+// 找不到。它不是界面上的名字，因此不参与改名。
 const INVITATION_TOKEN_HINT_DOMAIN = "ailearn:invitation-token-hint:v1\0";
 
 export type InvitationTokenRandomBytes = (size: number) => Uint8Array;

@@ -4,7 +4,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { buildCompanionPersonaData } from "../companion-identity-context.ts";
 import { companionAttentionObjects } from "../companion-attention.ts";
 import { readCompanionMemoryWriteSource } from "../companion-memory-write-source.ts";
-import type { AgentSqlExecutor } from "@ailearn/agent-host";
+import type { AgentSqlExecutor } from "@astella/agent-host";
 
 const id = "11111111-1111-4111-8111-111111111111", version = "22222222-2222-4222-8222-222222222222";
 test("page references keep the actual note/version pair; malformed references never become model identities", () => {

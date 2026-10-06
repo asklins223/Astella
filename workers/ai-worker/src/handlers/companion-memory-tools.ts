@@ -27,17 +27,17 @@ import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   type CompanionAgentToolDefinitionV1,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import {
   companionMemoryMutationLockKey,
   MEMORY_CONTENT_SIMILARITY_THRESHOLD,
-} from "@ailearn/shared/db-schema/assistant-memory";
+} from "@astella/shared/db-schema/assistant-memory";
 // 跨空间范围判据的唯一来源：抽取侧、API 写入端与这里的直执行共用（42 阶段 1 E）。
 import {
   accountPreferenceRejectionMessage,
   accountPreferenceWriteDecision,
-} from "@ailearn/shared/companion-memory-scope";
-import { toTextArrayLiteral } from "@ailearn/shared/pg-text-array";
+} from "@astella/shared/companion-memory-scope";
+import { toTextArrayLiteral } from "@astella/shared/pg-text-array";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { logger } from "../lib/logger.ts";
 import { createEmbeddingProvider } from "../lib/ai-provider.ts";
@@ -441,7 +441,7 @@ export async function executeCompanionMemoryTool(
 
           // 账号级（跨空间）范围守卫（42 阶段 1 E）：`full` 档这条裸 SQL 绕开了 API 的
           // `correctMemory`，所以它**自己**也要过一次判据——判据与那条共用同一份
-          // （`@ailearn/shared/companion-memory-scope`），不留第二套正则。
+          // （`@astella/shared/companion-memory-scope`），不留第二套正则。
           // 判的是**最终形状**：修订不改 scope，所以 global 行改完仍是账号级的；
           // 条件省略即沿用库里那一条，照样要判。拦在 UPDATE 之前，源行、副本、
           // CAS 修订号与只追加历史都不动。
@@ -484,7 +484,7 @@ export async function executeCompanionMemoryTool(
 
           // 和 API correctMemory 一样，修订后不让旧候选继续挂在收件箱里。
           await tx.execute(sql`
-            SELECT public.ailearn_close_companion_memory_delivery(
+            SELECT public.astella_close_companion_memory_delivery(
               ${event.ctx.workspaceId}::uuid,
               ${event.read.userId}::uuid,
               ${memoryId}::uuid,
@@ -534,7 +534,7 @@ export async function executeCompanionMemoryTool(
       const rows = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         (tx) => tx.execute<{ result: { status: string; [key: string]: unknown } }>(sql`
-          SELECT public.ailearn_move_companion_memory_budget_tier_v1(
+          SELECT public.astella_move_companion_memory_budget_tier_v1(
             ${event.ctx.workspaceId}::uuid,
             ${event.read.userId}::uuid,
             ${memoryId}::uuid,
@@ -691,7 +691,7 @@ export async function executeCompanionMemoryTool(
             `);
           }
           await tx.execute(sql`
-            SELECT public.ailearn_close_companion_memory_delivery(
+            SELECT public.astella_close_companion_memory_delivery(
               ${event.ctx.workspaceId}::uuid,
               ${event.read.userId}::uuid,
               ${memoryId}::uuid,

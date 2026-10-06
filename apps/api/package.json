@@ -1,5 +1,5 @@
 {
-  "name": "@ailearn/api",
+  "name": "@astella/api",
   "version": "0.5.0",
   "private": true,
   "type": "module",
@@ -55,10 +55,10 @@
     "test:plan44-excerpt:postgres": "node --import tsx --test --test-concurrency=1 --test-force-exit src/integration-tests/plan44-past-excerpt-postgres.integration.ts"
   },
   "dependencies": {
-    "@ailearn/agent-core": "file:../../packages/agent-core",
-    "@ailearn/agent-host": "file:../../packages/agent-host",
-    "@ailearn/card-generation": "file:../../packages/card-generation",
-    "@ailearn/shared": "file:../../packages/shared",
+    "@astella/agent-core": "file:../../packages/agent-core",
+    "@astella/agent-host": "file:../../packages/agent-host",
+    "@astella/card-generation": "file:../../packages/card-generation",
+    "@astella/shared": "file:../../packages/shared",
     "@aws-sdk/client-s3": "^3.1090.0",
     "@fastify/compress": "^9.2.0",
     "@fastify/cors": "^10.0.1",

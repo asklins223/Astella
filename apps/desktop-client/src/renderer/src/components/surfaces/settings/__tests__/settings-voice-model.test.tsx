@@ -3,7 +3,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsVoiceModelCard } from "../settings-voice-model";
 import type { VoiceAsrModelController } from "../use-voice-asr-model";
-import { VOICE_ASR_MODEL_EXPECTED_BYTES } from "@ailearn/shared/voice-asr-model-contracts";
+import { VOICE_ASR_MODEL_EXPECTED_BYTES } from "@astella/shared/voice-asr-model-contracts";
 
 /**
  * 设置里那张「语音识别模型」卡（2026-10）。
@@ -19,7 +19,7 @@ function snapshot(status: "absent" | "downloading" | "ready" | "error", extra: R
   return {
     version: 1,
     modelId: "sensevoice-int8-zh-en-ja-ko-yue",
-    mountUrl: "ailearn-app://bundle/device/asr/",
+    mountUrl: "astella-app://bundle/device/asr/",
     status,
     expectedBytes: VOICE_ASR_MODEL_EXPECTED_BYTES,
     receivedBytes: ready ? VOICE_ASR_MODEL_EXPECTED_BYTES : status === "downloading" ? HALF : 0,

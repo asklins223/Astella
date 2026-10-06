@@ -17,8 +17,8 @@
 import { useEffect,useRef,useState } from "react";
 import { ArrowUpRight, MessageCircle, NotebookPen } from "lucide-react";
 
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
-import type { CompanionDiscoveryEntryV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
+import type { CompanionDiscoveryEntryV1 } from "@astella/shared/desktop-ipc-contracts";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { CenterFeedback,CenterSearch,SectionState } from "./companion-center-primitives";
 import { discoverySourceTarget } from "./companion-discovery-targets";

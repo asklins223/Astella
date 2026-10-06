@@ -1,12 +1,12 @@
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
-import { notes } from "@ailearn/shared/db-schema/note";
-import { noteLearningRounds, noteLearningRoundTeachings } from "@ailearn/shared/db-schema/note-learning-rounds";
-import { noteLearningReflections as reflections } from "@ailearn/shared/db-schema/note-learning-reflections";
-import { learningArtifacts, learningRuns } from "@ailearn/shared/db-schema/learning-runs";
-import { artifactPayloadSchema } from "@ailearn/shared/learning-run-contracts";
-import { roundTeachingContentV1Schema } from "@ailearn/shared/note-learning-round-contracts";
-import { noteReflectionTeachingSnapshotV1Schema, noteReflectionV1Schema, type NoteReflectionTeachingSnapshotV1, type ReflectionSourceV1 } from "@ailearn/shared/note-learning-reflection-contracts";
+import { notes } from "@astella/shared/db-schema/note";
+import { noteLearningRounds, noteLearningRoundTeachings } from "@astella/shared/db-schema/note-learning-rounds";
+import { noteLearningReflections as reflections } from "@astella/shared/db-schema/note-learning-reflections";
+import { learningArtifacts, learningRuns } from "@astella/shared/db-schema/learning-runs";
+import { artifactPayloadSchema } from "@astella/shared/learning-run-contracts";
+import { roundTeachingContentV1Schema } from "@astella/shared/note-learning-round-contracts";
+import { noteReflectionTeachingSnapshotV1Schema, noteReflectionV1Schema, type NoteReflectionTeachingSnapshotV1, type ReflectionSourceV1 } from "@astella/shared/note-learning-reflection-contracts";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import { RoundServiceError, type RoundScopeV1 } from "./round/round-service.ts";
 

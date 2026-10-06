@@ -3,17 +3,17 @@ import { randomUUID, createHash } from "node:crypto";
 import { after, test } from "node:test";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
-import * as schema from "@ailearn/shared/db-schema";
+import * as schema from "@astella/shared/db-schema";
 import { sql as query } from "drizzle-orm";
-import { createAgentStore, createAgentAdvanceStore, type AgentStorePorts } from "@ailearn/agent-host";
-import { agentTurnResultSchema, type AgentTurnRequest } from "@ailearn/shared";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { createAgentStore, createAgentAdvanceStore, type AgentStorePorts } from "@astella/agent-host";
+import { agentTurnResultSchema, type AgentTurnRequest } from "@astella/shared";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { invokeNoteCapability } from "../agent/note-capabilities.ts";
 import { loadAgentGenerationContext } from "../agent/generation-context.ts";
 import { loadAgentLearningContext } from "../agent/learning-context.ts";
 import { buildAgentGoalRequest } from "../agent/goal-context.ts";
 import { invokeBasicCapability } from "../agent/basic-capabilities.ts";
-import { AGENT_GOAL_DELIVERY_CAPABILITY, type AgentGoalDeliveryV1 } from "@ailearn/shared/agent-contracts";
+import { AGENT_GOAL_DELIVERY_CAPABILITY, type AgentGoalDeliveryV1 } from "@astella/shared/agent-contracts";
 import { closeDatabase, type WorkerTransaction } from "../db.ts";
 import { closeDatabase as closeApiDatabase } from "../../../../apps/api/src/db/client.ts";
 import { startNoteOverviewTask } from "../../../../apps/api/src/modules/note-overviews/service.ts";
@@ -318,7 +318,7 @@ test("cancelled child commits are fenced and unknown outcomes never become autom
   await resumed.acquire();
   assert.equal((await api.get(scope, run.runId)).operations[0].status, "outcome_unknown");
   await api.control(scope, run.runId, 1, "cancel");
-  const rows = await workerPorts.transaction(scope, tx => tx.execute(query`SELECT ailearn_agent_job_current(${jobId},${scope.workspaceId},${scope.userId},false) AS allowed`));
+  const rows = await workerPorts.transaction(scope, tx => tx.execute(query`SELECT astella_agent_job_current(${jobId},${scope.workspaceId},${scope.userId},false) AS allowed`));
   const [{ allowed }] = rows as unknown as { allowed: boolean }[];
   assert.equal(allowed, false);
   assert.equal((await api.get(scope, run.runId)).status, "cancelled");
@@ -507,20 +507,20 @@ test("manual page generation survives Companion off/read-only while cancellation
     { noteVersionId: f.input.noteVersionId, requestId: randomUUID() });
   assert.ok(accepted.agentRunId);
   await workerPorts.transaction(scope, async tx => {
-    const rows = await tx.execute(query`SELECT ailearn_agent_job_current(${accepted.taskId}::uuid,${scope.workspaceId}::uuid,${scope.userId}::uuid,false) AS allowed`);
+    const rows = await tx.execute(query`SELECT astella_agent_job_current(${accepted.taskId}::uuid,${scope.workspaceId}::uuid,${scope.userId}::uuid,false) AS allowed`);
     assert.equal(rows[0].allowed, true, "the explicitly chosen capability is still authorized");
   });
   await assert.rejects(api.create(scope, { requestId: randomUUID(), goal: "自选动作", inputs: [f.input] }), /伴星当前已关闭/);
   await api.control(scope, accepted.agentRunId!, 1, "cancel");
   await workerPorts.transaction(scope, async tx => {
-    const rows = await tx.execute(query`SELECT ailearn_agent_job_current(${accepted.taskId}::uuid,${scope.workspaceId}::uuid,${scope.userId}::uuid,false) AS allowed`);
+    const rows = await tx.execute(query`SELECT astella_agent_job_current(${accepted.taskId}::uuid,${scope.workspaceId}::uuid,${scope.userId}::uuid,false) AS allowed`);
     assert.equal(rows[0].allowed, false);
   });
   const next = await startNoteOverviewTask(scope, f.input.noteId,
     { noteVersionId: f.input.noteVersionId, requestId: randomUUID() });
   await admin`UPDATE user_companion_account_state SET epoch=epoch+1 WHERE user_id=${scope.userId}`;
   await workerPorts.transaction(scope, async tx => {
-    const rows = await tx.execute(query`SELECT ailearn_agent_job_current(${next.taskId}::uuid,${scope.workspaceId}::uuid,${scope.userId}::uuid,false) AS allowed`);
+    const rows = await tx.execute(query`SELECT astella_agent_job_current(${next.taskId}::uuid,${scope.workspaceId}::uuid,${scope.userId}::uuid,false) AS allowed`);
     assert.equal(rows[0].allowed, false, "account revocation invalidates even a direct request");
   });
 });

@@ -11,7 +11,7 @@ export * from "./contracts/card-agent-contracts.ts";
 export * from "./provider-capabilities.ts";
 export * from "./provider-registry.ts";
 // 2026-08-13（web 客户端打包修复）：task-router 依赖 platform-config-node
-// （node:fs）——服务端专用，改从 @ailearn/shared/task-router 子路径 import，
+// （node:fs）——服务端专用，改从 @astella/shared/task-router 子路径 import，
 // 不再经 index 全量导出（客户端加载会触发 node:fs 缺失崩溃）。
 export * from "./platform-config.ts";
 export * from "./contracts/companion-shell-contracts.ts";
@@ -25,7 +25,7 @@ export * from "./contracts/companion-bridge-contracts.ts";
 export * from "./contracts/companion-journey-contracts.ts";
 // 2026-08-14：方案 20（learning-card-v2）Generation 域合同——纯 zod schema
 // + 类型（无 node: 依赖，客户端安全）。hash 计算函数走
-// @ailearn/shared/card-generation-v2-hashing 子路径（服务端专用）。
+// @astella/shared/card-generation-v2-hashing 子路径（服务端专用）。
 export * from "./contracts/card-generation-v2-contracts.ts";
 // 2026-08-14：方案 20 LearningCard V2 公共合同（Public Card/Reveal/Publication）。
 export * from "./contracts/learning-card-v2-contracts.ts";

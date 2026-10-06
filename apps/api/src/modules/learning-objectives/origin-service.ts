@@ -11,17 +11,17 @@
 import { and, eq, asc } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { ApiTransaction } from "../../db/client.ts";
-import { DomainError } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
 import {
   learningObjectiveOriginsV2,
   learningObjectiveRevisionsV2,
   type ObjectiveOriginKindV3,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { noteVersions } from "@ailearn/shared/db-schema/note";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { noteVersions } from "@astella/shared/db-schema/note";
 import {
   objectiveOriginV3Schema,
   type ObjectiveOriginV3,
-} from "@ailearn/shared";
+} from "@astella/shared";
 
 // ─── 写（W2-01）──────────────────────────────────────────────────────────
 

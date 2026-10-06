@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { NoteReflectionShelf } from "../notebook/note-reflection-shelf.tsx";
 import { appendReflectionToDocument, PendingReflectionAppendError, reflectionDocumentLines, stageReflectionAppend } from "../notebook/note-reflection-document.ts";
-import type { ReflectionSourceV1 } from "@ailearn/shared/note-learning-reflection-contracts";
+import type { ReflectionSourceV1 } from "@astella/shared/note-learning-reflection-contracts";
 
 const source: ReflectionSourceV1 = { ref: { kind: "teaching", id: "11111111-1111-4111-8111-111111111111" },
   roundId: "22222222-2222-4222-8222-222222222222", question: "为什么先提取再校对？", text: "先合上书回忆。\n\n再查看材料。", createdAt: "2026-09-27T00:00:00Z" };
@@ -13,10 +13,10 @@ const props = { noteId: reflection.noteId, roundId: source.roundId, refreshKey: 
 function gateway(items = [] as typeof reflection[]) {
   const list = vi.fn(async () => ({ ok: true, data: { version: 1, items, sources: [source], nextCursor: null } }));
   const write = vi.fn(async (_input: unknown) => ({ ok: true, data: reflection }));
-  Object.defineProperty(window, "ailearn", { configurable: true, value: { noteReflection: { list, write } } });
+  Object.defineProperty(window, "astella", { configurable: true, value: { noteReflection: { list, write } } });
   return { list, write };
 }
-afterEach(() => { cleanup(); Object.defineProperty(window, "ailearn", { configurable: true, value: undefined }); });
+afterEach(() => { cleanup(); Object.defineProperty(window, "astella", { configurable: true, value: undefined }); });
 
 describe("voluntary understanding writeback", () => {
   it("read-only member can save a private annotation, with no body option or automatic mutation", async () => {

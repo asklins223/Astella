@@ -10,14 +10,14 @@
 import { createHash } from "node:crypto";
 import { eq, and, inArray, sql, isNull } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
-import { notes, noteVersions } from "@ailearn/shared/db-schema/note";
+import { notes, noteVersions } from "@astella/shared/db-schema/note";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import { computeContentHash } from "../note/content-hash.ts";
 import { applyNoteDocUpdate } from "../note/document-state.ts";
 import { ensureImageAssetsForBlocks } from "../note/service.ts";
 import { writeFragmentBlocks } from "../note/doc-fragment.ts";
 import { preRegisterImageAssetsForImport } from "../../lib/image-asset.ts";
-import { markdownToBlocks, extractTitleFromBlocks, type ParsedBlock } from "@ailearn/shared/markdown-parser";
+import { markdownToBlocks, extractTitleFromBlocks, type ParsedBlock } from "@astella/shared/markdown-parser";
 import { extractObjectKeyFromMarkdownImage } from "../../lib/markdown-image.ts";
 import { upsertSearchDocument } from "./search-index.ts";
 import { logger } from "../../lib/logger.ts";

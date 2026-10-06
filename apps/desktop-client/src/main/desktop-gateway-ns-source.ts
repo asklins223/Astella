@@ -22,14 +22,14 @@ import {
 import {
   CapabilityProjectionV1,
   capabilityProjectionSchema,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import {
   SOURCE_IMAGE_MAX_BYTES,
   SOURCE_IMAGE_MIME_TYPES,
   SourceImageGetRequestV1,
   SourceImageGetResultV1,
   sourceImageGetResultV1Schema,
-} from "@ailearn/shared/source-image-contracts";
+} from "@astella/shared/source-image-contracts";
 import {
   DesktopSourceArchiveResult,
   DesktopSourceCreateRequest,
@@ -46,7 +46,7 @@ import {
   desktopSourceListPageSchema,
   desktopSourceNotesPageSchema,
   desktopSourceRestoreResultSchema,
-} from "@ailearn/shared/desktop-surface-contracts";
+} from "@astella/shared/desktop-surface-contracts";
 import {
   safeUuid,
 } from "./desktop-gateway-uuid";

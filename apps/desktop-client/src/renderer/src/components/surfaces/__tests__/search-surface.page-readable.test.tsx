@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { SessionContextV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import type { GatewayResultV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import type { DesktopSearchItem } from "@ailearn/shared/desktop-surface-contracts";
+import type { SessionContextV1 } from "@astella/shared/desktop-ipc-contracts";
+import type { GatewayResultV1 } from "@astella/shared/desktop-ipc-contracts";
+import type { DesktopSearchItem } from "@astella/shared/desktop-surface-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SearchSurface } from "../study/search-surface.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /**
  * 「全局查找」这一屏登记给伴星读的是什么（39d W2-7）。
@@ -98,7 +98,7 @@ function installApi(options: {
       list: vi.fn(async () => ok({ items: [], total: 0, nextCursor: null })),
     },
   };
-  Object.defineProperty(window, "ailearn", { configurable: true, value: api });
+  Object.defineProperty(window, "astella", { configurable: true, value: api });
   return api;
 }
 
@@ -119,7 +119,7 @@ beforeEach(() => {
 afterEach(() => {
   useRoomStore.setState({ searchResume: null });
   cleanup();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   Reflect.deleteProperty(Element.prototype, "scrollTo");
   Reflect.deleteProperty(Element.prototype, "scrollIntoView");
   useRoomStore.setState({
@@ -210,7 +210,7 @@ describe("全局查找：她读到的与屏幕上的是同一份", () => {
 
   it("工作区还没确认之前不登记（她不能读到上一次查找的残留）", async () => {
     let releaseSession: (value: unknown) => void = () => undefined;
-    Object.defineProperty(window, "ailearn", {
+    Object.defineProperty(window, "astella", {
       configurable: true,
       value: {
         auth: { getState: vi.fn(() => new Promise((resolve) => { releaseSession = resolve; })) },

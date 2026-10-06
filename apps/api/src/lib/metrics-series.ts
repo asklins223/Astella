@@ -120,10 +120,10 @@ async function readRegistrySample(): Promise<RegistrySample> {
 
   for (const family of families) {
     switch (family.name) {
-      case "ailearn_http_requests_total":
+      case "astella_http_requests_total":
         for (const sample of family.values) requestsTotal += toNumber(sample.value);
         break;
-      case "ailearn_http_errors_5xx_total":
+      case "astella_http_errors_5xx_total":
         for (const sample of family.values) errors5xxTotal += toNumber(sample.value);
         break;
       case "nodejs_eventloop_lag_seconds":
@@ -132,16 +132,16 @@ async function readRegistrySample(): Promise<RegistrySample> {
       case "nodejs_heap_size_used_bytes":
         heapUsed = toNumber(family.values[0]?.value);
         break;
-      case "ailearn_learning_run_processing_outbox_depth":
+      case "astella_learning_run_processing_outbox_depth":
         for (const sample of family.values) outboxPending += toNumber(sample.value);
         break;
-      case "ailearn_db_pool_active_connections":
+      case "astella_db_pool_active_connections":
         poolActive = toNumber(family.values[0]?.value);
         break;
-      case "ailearn_readiness_status":
+      case "astella_readiness_status":
         ready = toNumber(family.values[0]?.value);
         break;
-      case "ailearn_http_request_duration_seconds": {
+      case "astella_http_request_duration_seconds": {
         let count = 0;
         for (const sample of family.values) {
           const labels = (sample.labels ?? {}) as Record<string, string>;

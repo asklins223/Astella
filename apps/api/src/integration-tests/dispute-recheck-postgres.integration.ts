@@ -28,9 +28,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
-import { assessmentDisputeViewV2Schema } from "@ailearn/shared/assessment-dispute-rules-v2";
-import { ExternalCallInsideTransactionError } from "@ailearn/shared/workspace-transaction";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
+import { assessmentDisputeViewV2Schema } from "@astella/shared/assessment-dispute-rules-v2";
+import { ExternalCallInsideTransactionError } from "@astella/shared/workspace-transaction";
 import { createLearningRunForTest, seedV2Fixture } from "./helpers/v2-card-fixture.ts";
 
 const fixtureUrl = process.env.DATABASE_URL_MIGRATOR ?? process.env.DATABASE_URL;
@@ -599,7 +599,7 @@ test("真模型：一次真实的独立复核（真实读数，不是跑通就�
   });
   t.after(() => seeded.cleanup());
 
-  const { postJsonToPublicEndpoint } = await import("@ailearn/shared/public-json-http");
+  const { postJsonToPublicEndpoint } = await import("@astella/shared/public-json-http");
   const observed: { activeTransaction: unknown; status: number; raw: string; elapsedMs: number }[] = [];
   const started = Date.now();
   const result = await recheck.runDisputeRecheckV2(
@@ -665,7 +665,7 @@ test("真模型第二发：原判达成、原回答其实不达成的那一档�
   });
   t.after(() => seeded.cleanup());
 
-  const { postJsonToPublicEndpoint } = await import("@ailearn/shared/public-json-http");
+  const { postJsonToPublicEndpoint } = await import("@astella/shared/public-json-http");
   const observed: { activeTransaction: unknown; status: number; raw: string; elapsedMs: number }[] = [];
   const started = Date.now();
   const result = await recheck.runDisputeRecheckV2(

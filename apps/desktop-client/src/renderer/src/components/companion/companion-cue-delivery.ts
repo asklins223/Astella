@@ -1,4 +1,4 @@
-import type { CompanionActivityDeliveryV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { CompanionActivityDeliveryV1 } from "@astella/shared/companion-memory-desktop-contracts";
 
 /**
  * 主动气泡的「她真的说过」回执。

@@ -16,10 +16,10 @@ import postgres from "postgres";
 import { randomUUID, createHash } from "node:crypto";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
-import { desktopSourceRestoreResultSchema } from "@ailearn/shared/desktop-surface-contracts";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
+import { desktopSourceRestoreResultSchema } from "@astella/shared/desktop-surface-contracts";
 
-// 夹具那一边用 migrator：CI 的 `DATABASE_URL_API` 是 NOBYPASSRLS 的 `ailearn_api`，
+// 夹具那一边用 migrator：CI 的 `DATABASE_URL_API` 是 NOBYPASSRLS 的 `astella_api`，
 // 而这份文件是**裸 SQL 建 session/source 行**（不带 app.workspace_id 上下文），在
 // `sec01_v1_sources_tenant_guard` 那一半 RESTRICTIVE 守卫下直接 42501。被测的 HTTP 侧
 // 仍走应用自己的池（受限角色），所以隔离语义没丢。

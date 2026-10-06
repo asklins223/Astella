@@ -65,7 +65,7 @@ export type NoteDocLocalSession = {
   shareScope: NoteShareScopeV1 | null;
 };
 import { NOTE_DOC_PREFIX, noteDocStreamUrl, toNoteDocStreamEvent } from "./note-doc-transport";
-import type { NoteDocStreamEventV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { NoteDocStreamEventV1 } from "@astella/shared/desktop-ipc-contracts";
 import type { NoteDocWatchHandle } from "./note-doc-transport";
 import type { NoteDocTransport } from "./note-doc-transport";
 import type { NoteDocState } from "./note-doc-state";
@@ -102,17 +102,17 @@ import {
   cardGenerationRunSnapshotV1Schema,
   projectCardActivationReceiptV1,
   projectCardGenerationRunSnapshotV1,
-} from "@ailearn/shared/card-generation-desktop-contracts";
+} from "@astella/shared/card-generation-desktop-contracts";
 import {
   activateCardCandidatesRequestV2Schema,
   candidateActionCommandV2Schema,
   candidateRevealV2Schema,
   cardActivationReceiptV2Schema,
   cardPlanV2Schema,
-} from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
 import {
   computeClientReviewHashV2,
-} from "@ailearn/shared/card-generation-v2-hashing";
+} from "@astella/shared/card-generation-v2-hashing";
 import {
   DesktopCandidateReviewRequestV2,
   DesktopCardGenerationActivationSelectionV1,
@@ -123,7 +123,7 @@ import {
   NoteDocUploadResultV1,
   noteDocServerStateV1Schema,
   noteDocUploadResultV1Schema,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import {
   DesktopNoteCreateRequest,
   DesktopNoteListItem,
@@ -132,7 +132,7 @@ import {
   DesktopNoteVersionList,
   desktopNoteListPageSchema,
   desktopNoteVersionListSchema,
-} from "@ailearn/shared/desktop-surface-contracts";
+} from "@astella/shared/desktop-surface-contracts";
 import {
   NoteAnnotationCommandV1,
   createNoteAnnotationTaskV1Schema,
@@ -141,7 +141,7 @@ import {
   noteAnnotationPageV1Schema,
   noteAnnotationTaskV1Schema,
   noteAnnotationWriteResultV1Schema,
-} from "@ailearn/shared/note-annotation-contracts";
+} from "@astella/shared/note-annotation-contracts";
 import {
   confirmNoteExpansionTaskV1Schema,
   createNoteExpansionTaskV1Schema,
@@ -154,25 +154,25 @@ import {
   noteExpansionTaskV1Schema,
   noteExpansionTaskListQueryV1Schema,
   noteExpansionTaskPageV1Schema,
-} from "@ailearn/shared/note-expansion-contracts";
+} from "@astella/shared/note-expansion-contracts";
 import {
   NOTE_IMAGE_UPLOAD_MAX_BYTES,
   NoteImageUploadRequestV1,
   NoteImageUploadResultV1,
   noteImageUploadResultV1Schema,
-} from "@ailearn/shared/note-image-upload-contracts";
+} from "@astella/shared/note-image-upload-contracts";
 import {
   createNoteDynamicArtifactTaskV1Schema,
   noteLearningArtifactPageV1Schema,
   noteLearningArtifactTaskListQueryV1Schema,
   noteLearningArtifactTaskPageV1Schema,
   noteLearningArtifactTaskV1Schema,
-} from "@ailearn/shared/note-learning-artifact-contracts";
+} from "@astella/shared/note-learning-artifact-contracts";
 import {
   NoteReflectionCommandV1,
   noteReflectionPageV1Schema,
   noteReflectionWriteResultV1Schema,
-} from "@ailearn/shared/note-learning-reflection-contracts";
+} from "@astella/shared/note-learning-reflection-contracts";
 import {
   NoteLearningRoundHistoryV1,
   NoteLearningRoundPersonalHistoryV1,
@@ -184,38 +184,38 @@ import {
   noteLearningRoundPersonalHistoryPageV1Schema,
   noteLearningRoundViewV1Schema,
   roundTeachingViewV1Schema,
-} from "@ailearn/shared/note-learning-round-contracts";
+} from "@astella/shared/note-learning-round-contracts";
 import {
   createNoteOverviewTaskV1Schema,
   noteOverviewLatestTaskQueryV1Schema,
   noteOverviewLatestTaskV1Schema,
   noteOverviewPageV1Schema,
   noteOverviewTaskV1Schema,
-} from "@ailearn/shared/note-overview-contracts";
+} from "@astella/shared/note-overview-contracts";
 import {
   NoteDetailV1,
   noteDetailV1Schema,
-} from "@ailearn/shared/note-projection-contracts";
+} from "@astella/shared/note-projection-contracts";
 import {
   noteRecallActionResultV1Schema,
   noteRecallActionV1Schema,
   noteRecallPageV1Schema,
   noteRecallStartInputV1Schema,
   noteRecallStartResultV1Schema,
-} from "@ailearn/shared/note-recall-contracts";
+} from "@astella/shared/note-recall-contracts";
 import {
   NoteRouteCoverageV1,
   noteRouteCoverageV1Schema,
-} from "@ailearn/shared/note-route-coverage-v2";
+} from "@astella/shared/note-route-coverage-v2";
 import {
   NoteSaveReceiptV1,
   noteSaveReceiptV1Schema,
-} from "@ailearn/shared/note-save-contracts";
+} from "@astella/shared/note-save-contracts";
 import {
   NoteShareScopeReceiptV1,
   NoteShareScopeV1,
   noteShareScopeReceiptV1Schema,
-} from "@ailearn/shared/note-share-contracts";
+} from "@astella/shared/note-share-contracts";
 import {
   z,
 } from "zod";

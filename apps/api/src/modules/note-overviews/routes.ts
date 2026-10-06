@@ -9,7 +9,7 @@ import {
   noteOverviewListQueryV1Schema,
   noteOverviewPageV1Schema,
   noteOverviewTaskV1Schema,
-} from "@ailearn/shared/note-overview-contracts";
+} from "@astella/shared/note-overview-contracts";
 import {
   getLatestNoteOverviewTask,
   getNoteOverviewTask,

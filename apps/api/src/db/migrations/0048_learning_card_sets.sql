@@ -175,12 +175,12 @@ CREATE POLICY learning_card_sets_workspace_isolation
 
 -- Keep deployed least-privilege roles usable before roles.sql is replayed.
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
     GRANT SELECT, INSERT, UPDATE, DELETE
-      ON public.learning_card_sets TO ailearn_api;
+      ON public.learning_card_sets TO astella_api;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
     GRANT SELECT, INSERT, UPDATE
-      ON public.learning_card_sets TO ailearn_worker;
+      ON public.learning_card_sets TO astella_worker;
   END IF;
 END $$;

@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from "react";
 import { Loader2, Mic, MousePointerClick, Plus, Send, Square } from "lucide-react";
 import type { CompanionVoiceInput } from "./use-companion-voice-input";
 import { isCompanionComposition, shouldSendCompanionOnEnter } from "./companion-composer-key";
-import { NOTE_IMAGE_UPLOAD_MIME_TYPES } from "@ailearn/shared/note-image-upload-contracts";
+import { NOTE_IMAGE_UPLOAD_MIME_TYPES } from "@astella/shared/note-image-upload-contracts";
 import {
   CompanionComposerImageChip,
   CompanionComposerImageStatus,

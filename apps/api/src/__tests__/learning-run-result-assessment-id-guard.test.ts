@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   learningRunResultAssessmentV2Schema,
-} from "@ailearn/shared/learning-run-v2-contracts";
+} from "@astella/shared/learning-run-v2-contracts";
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..");
 const SERVICE_FILE = join(REPO_ROOT, "apps/api/src/modules/learning-runs/run-service.ts");

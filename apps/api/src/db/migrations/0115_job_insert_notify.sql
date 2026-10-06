@@ -8,13 +8,13 @@
 -- 单点覆盖全部入队路径，pg_notify 随事务提交发送（回滚则不通知），
 -- 与 LISTEN 侧 parseNotifyPayload 的 payload 结构兼容。
 
-CREATE OR REPLACE FUNCTION public.ailearn_job_insert_notify()
+CREATE OR REPLACE FUNCTION public.astella_job_insert_notify()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
   PERFORM pg_notify(
-    'ailearn_job_events',
+    'astella_job_events',
     json_build_object(
       'workspaceId', NEW.workspace_id::text,
       'runId', COALESCE(NEW.generation_run_id::text, ''),
@@ -28,11 +28,11 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS ailearn_jobs_insert_notify ON public.jobs;
-CREATE TRIGGER ailearn_jobs_insert_notify
+DROP TRIGGER IF EXISTS astella_jobs_insert_notify ON public.jobs;
+CREATE TRIGGER astella_jobs_insert_notify
   AFTER INSERT ON public.jobs
   FOR EACH ROW
-  EXECUTE FUNCTION public.ailearn_job_insert_notify();
+  EXECUTE FUNCTION public.astella_job_insert_notify();
 
 -- 触发器函数仅 migrator 可见即可（worker/api 不需要直接调用）。
-ALTER FUNCTION public.ailearn_job_insert_notify() OWNER TO ailearn_migrator;
+ALTER FUNCTION public.astella_job_insert_notify() OWNER TO astella_migrator;

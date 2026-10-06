@@ -28,7 +28,7 @@ import postgres from "postgres";
 import {
   noteLearningRoundV1Schema,
   roundTeachingViewV1Schema,
-} from "@ailearn/shared/note-learning-round-contracts";
+} from "@astella/shared/note-learning-round-contracts";
 import { seedNotesOnlyWorkspace, type NotesOnlyWorkspaceFixture } from "./helpers/pure-v2-workspace-fixture.ts";
 
 const fixtureUrl = process.env.DATABASE_URL_MIGRATOR ?? process.env.DATABASE_URL;

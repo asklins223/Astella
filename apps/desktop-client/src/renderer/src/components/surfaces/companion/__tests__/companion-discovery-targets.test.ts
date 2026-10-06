@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { companionDailySummaryV1Schema } from "@ailearn/shared/companion-memory-desktop-contracts";
+import { companionDailySummaryV1Schema } from "@astella/shared/companion-memory-desktop-contracts";
 import { diaryDiscoveryParagraphs, discoverySourceTarget } from "../companion-discovery-targets";
 
 const daily = companionDailySummaryV1Schema.parse({ version: 1, date: "2026-10-04", revision: 2, status: "generated", generatedAt: "2026-10-04T14:00:00Z", selectionReason: null, failureReason: null, memory: null, blocks: [{ type: "text", text: "第一段原话。\n\n第二段原话。" }, { type: "text", text: "第三段原话。" }] });

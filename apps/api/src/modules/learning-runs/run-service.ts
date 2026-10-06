@@ -24,28 +24,28 @@ import { loadRun, type RunScope } from "./run-loader.ts";
 export { applyAction, getRunPublicView };
 export type { ActionInput };
 
-import { reviewDimensionForObservationV2, type ReviewDimensionV2 } from "@ailearn/shared/review-dimension-v2";
+import { reviewDimensionForObservationV2, type ReviewDimensionV2 } from "@astella/shared/review-dimension-v2";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
-import { learningActivityLeases, learningArtifacts, learningAssessments, learningRunActionLedger, learningRunEvents, learningRunIdempotency, learningRunPrivateContracts, learningRunProcessingOutbox, learningRuns, learningTaskDisclosureProfiles, learningTaskDrafts, learningTaskPresentationHistory, learningTaskPrivateSolutions, learningTaskSafetyReports, learningTaskVariants, learningTasks } from "@ailearn/shared/db-schema/learning-runs";
-import { evidenceEligibilityStatesV2, learningCardsV2, learningExposuresV2, learningObjectivesV2, learningTargetSnapshotsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
+import { learningActivityLeases, learningArtifacts, learningAssessments, learningRunActionLedger, learningRunEvents, learningRunIdempotency, learningRunPrivateContracts, learningRunProcessingOutbox, learningRuns, learningTaskDisclosureProfiles, learningTaskDrafts, learningTaskPresentationHistory, learningTaskPrivateSolutions, learningTaskSafetyReports, learningTaskVariants, learningTasks } from "@astella/shared/db-schema/learning-runs";
+import { evidenceEligibilityStatesV2, learningCardsV2, learningExposuresV2, learningObjectivesV2, learningTargetSnapshotsV2 } from "@astella/shared/db-schema/card-generation-v2";
 
-import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
+import { reviewSchedules } from "@astella/shared/db-schema/evidence";
 import { sourceAuthorizationForObjectiveV2 } from "../review/review-subscriptions.ts";
-import { noteLearningRounds } from "@ailearn/shared/db-schema/note-learning-rounds";
-import { validationAssistanceExposures } from "@ailearn/shared/db-schema/validation-v2";
-import { companionSandboxNamespaces } from "@ailearn/shared/db-schema/companion-sandbox";
-import { understandingProjectionCheckpoints } from "@ailearn/shared/db-schema/understanding-projection";
-import type { GetLearningRunResultResponseV2, LearningRunOriginV2, LearningRunPublicSnapshotV2, LearningRunPublicV1, LearningRunSubmittedAnswerV2, LearningRunResultAssessmentV2, LearningRunTargetPublicV2, LearningRunTargetRevealV2, LearningRunReturnContractV2, LearningRunResultV2, LearningRunReturnContractV1, LearningRunReturnTargetV2, SchedulingAuthorizationV1, SubmitTaskArtifactV1 } from "@ailearn/shared";
+import { noteLearningRounds } from "@astella/shared/db-schema/note-learning-rounds";
+import { validationAssistanceExposures } from "@astella/shared/db-schema/validation-v2";
+import { companionSandboxNamespaces } from "@astella/shared/db-schema/companion-sandbox";
+import { understandingProjectionCheckpoints } from "@astella/shared/db-schema/understanding-projection";
+import type { GetLearningRunResultResponseV2, LearningRunOriginV2, LearningRunPublicSnapshotV2, LearningRunPublicV1, LearningRunSubmittedAnswerV2, LearningRunResultAssessmentV2, LearningRunTargetPublicV2, LearningRunTargetRevealV2, LearningRunReturnContractV2, LearningRunResultV2, LearningRunReturnContractV1, LearningRunReturnTargetV2, SchedulingAuthorizationV1, SubmitTaskArtifactV1 } from "@astella/shared";
 import { uncoveredFacets } from "./run-result-facets.ts";
-import { getLearningRunResultResponseV2Schema, learningRunOriginV2Schema, learningRunPublicSnapshotV2Schema, artifactPayloadSchema, learningRunResultAssessmentV2Schema, learningRunResultSchema, learningRunResultV2Schema, learningRunPhaseV2Schema, learningRunReturnContractSchema, learningRunReturnContractV2Schema, learningRunReturnTargetV2Schema, learningRunTargetPublicV2Schema, learningRunTargetRevealV2Schema } from "@ailearn/shared";
-import { learningRunOutcomeSchema, taskIntentSchema } from "@ailearn/shared/learning-run-contracts";
-import type { RoundNextStepV1, RoundPracticeV1 } from "@ailearn/shared/note-learning-round-contracts";
-import { computeExposureScopeIdV2 } from "@ailearn/shared/card-generation-v2-hashing";
-import { extractAnswerText } from "@ailearn/shared/card-generation-v2-pipeline";
+import { getLearningRunResultResponseV2Schema, learningRunOriginV2Schema, learningRunPublicSnapshotV2Schema, artifactPayloadSchema, learningRunResultAssessmentV2Schema, learningRunResultSchema, learningRunResultV2Schema, learningRunPhaseV2Schema, learningRunReturnContractSchema, learningRunReturnContractV2Schema, learningRunReturnTargetV2Schema, learningRunTargetPublicV2Schema, learningRunTargetRevealV2Schema } from "@astella/shared";
+import { learningRunOutcomeSchema, taskIntentSchema } from "@astella/shared/learning-run-contracts";
+import type { RoundNextStepV1, RoundPracticeV1 } from "@astella/shared/note-learning-round-contracts";
+import { computeExposureScopeIdV2 } from "@astella/shared/card-generation-v2-hashing";
+import { extractAnswerText } from "@astella/shared/card-generation-v2-pipeline";
 import { computeRunContractHash, planRun, clampTimeBudget, rubricTargetIdsOf, type PlannerOptions, type PlannerV2Target } from "./planning/run-planner.ts";
 import { isDeterministicStructuredPayload } from "./planning/run-structured.ts";
-import { sha256Hex } from "@ailearn/shared/content-hash";
+import { sha256Hex } from "@astella/shared/content-hash";
 import { freezeTargetSnapshotV2, prepareCardContentEpoch, loadFrozenTargetSnapshotV2, buildLearningRunTargetPublicV2, TargetSnapshotError, type FrozenTargetSnapshotV2 } from "../card-generation-v2/target-snapshot-adapter.ts";
 import { artifactAlreadyLocked, contextStale, contextStaleFromFreezeCode, idempotencyConflict, invalidPhase, LearningRunServiceError, scheduleGenerationChanged, staleRunRevision, staleTaskRevision, variantNotAuthorized } from "./run-errors.ts";
 import { deriveReturnTargetV1 } from "./run-view.ts";
@@ -1928,7 +1928,7 @@ export async function submitArtifact(
   // 任何 restricted/revoked 或 epoch 漂移 → fail closed（绝不锁成 trusted Artifact）。
   await revalidateV2ArtifactEpochs(tx, run.id);
 
-  // 0120：closure 哈希从 variant 行读（private 表对 ailearn_api 无 SELECT）。
+  // 0120：closure 哈希从 variant 行读（private 表对 astella_api 无 SELECT）。
   const artifactId = crypto.randomUUID();
   const assessmentId = crypto.randomUUID();
   const payloadHash = sha256Hex(JSON.stringify(payload));
@@ -2059,7 +2059,7 @@ export async function getReturnContract(
     };
   }
   // P7：终态按 change set 物化状态返回投影语义。
-  const { understandingChangeSets } = await import("@ailearn/shared/db-schema/understanding-projection");
+  const { understandingChangeSets } = await import("@astella/shared/db-schema/understanding-projection");
   const changeSetRows = await tx
     .select()
     .from(understandingChangeSets)

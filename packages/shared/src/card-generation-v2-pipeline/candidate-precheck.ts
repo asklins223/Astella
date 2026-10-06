@@ -26,7 +26,7 @@ import type {
 import type { AssemblerEvidenceManifest } from "./binding-plan-core.ts";
 
 // `QualityIssue` 是两份 precheck 与门禁共同的结论形状，住在质量合同里（四阶段 Critic
-// 删除后不再有"critic 服务"这一层）；这里原样转出去，`@ailearn/shared/card-generation-v2-pipeline`
+// 删除后不再有"critic 服务"这一层）；这里原样转出去，`@astella/shared/card-generation-v2-pipeline`
 // 那把 barrel 的读法不变。
 export type { QualityIssue } from "../contracts/card-quality-v2-contracts.ts";
 import { runCandidateDeterministicGatesV2 } from "./deterministic-gates.ts";

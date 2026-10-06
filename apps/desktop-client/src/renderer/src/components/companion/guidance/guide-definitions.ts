@@ -1,12 +1,12 @@
 import { BookOpen, Compass, Files, MessageCircle, NotebookPen, RotateCcw, Settings2, type LucideIcon } from "lucide-react";
-import { COMPANION_GUIDE_STEP_IDS } from "@ailearn/shared/companion-shell-contracts";
+import { COMPANION_GUIDE_STEP_IDS } from "@astella/shared/companion-shell-contracts";
 import { getHomeFeature, type HomeFeatureId } from "../../home-v2/home-feature-registry";
 
 export type GuideStepId = typeof COMPANION_GUIDE_STEP_IDS[number];
 export type GuideTopicId = "welcome" | "space" | "sources" | "reading" | "agent" | "review" | "settings";
 export type GuideStep = { id: GuideStepId; title: string; detail: string; cue: string; demo: "room" | "note" | "reading" | "agent" | "review" | "return"; feature?: HomeFeatureId; action?: string; anchor?: string; target: string; practice: string };
-export const GUIDE_OPEN_EVENT = "ailearn:companion-guide-open";
-export const GUIDE_PRACTICE_EVENT = "ailearn:companion-guide-practice";
+export const GUIDE_OPEN_EVENT = "astella:companion-guide-open";
+export const GUIDE_PRACTICE_EVENT = "astella:companion-guide-practice";
 export function openCompanionGuide(topic?: GuideTopicId) { window.dispatchEvent(new CustomEvent(GUIDE_OPEN_EVENT, { detail: { topic } })); }
 export const GUIDE_STEPS: Record<GuideStepId, GuideStep> = {
   room: { id: "room", title: "同一位伴星，这一间书房", detail: "空间把资料、笔记与具体经历放在一起。右上角的门牌始终告诉你：现在在哪、能做什么。", cue: "先认一认右上角的门牌。它告诉你现在在哪间书房，以及你的身份。我会陪你一起，从一个问题开始。", demo: "room", anchor: ".room-control-space", action: "看看空间菜单", target: "右上角，是这间书房的门牌", practice: "这里可以查看、新建和切换空间。现在不用换书房，接着往下走，我带你找到第一篇笔记。" },

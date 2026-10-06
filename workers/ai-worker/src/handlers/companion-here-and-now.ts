@@ -18,16 +18,16 @@
  */
 
 import { sql } from "drizzle-orm";
-import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
-import { reviewScheduleTargetsConsumableCardPredicate } from "@ailearn/shared/review-consumable-target";
+import { noteVisibleSqlText } from "@astella/shared/note-visibility";
+import { reviewScheduleTargetsConsumableCardPredicate } from "@astella/shared/review-consumable-target";
 import type { WorkerTransaction } from "../db.ts";
 import { normalizeWorkspaceAIPolicy, visionReaderAvailableFromConfig } from "../lib/governance.ts";
 import { noteSearchTerms, parsePageContext } from "./companion-dialogue-content.ts";
 import { askableFactSpanKeys, loadFactSpans } from "./companion-fact-spans.ts";
 import { readLivePageView, type LivePageView } from "./companion-live-view.ts";
 import { findNearestNoteTitle, findNoteRuns } from "./companion-note-reads.ts";
-import { ACTIVE_LEARNING_RUN_PHASES } from "@ailearn/shared/learning-run-contracts";
-import { getDefaultPersonaPreset } from "@ailearn/shared/pet-persona-presets";
+import { ACTIVE_LEARNING_RUN_PHASES } from "@astella/shared/learning-run-contracts";
+import { getDefaultPersonaPreset } from "@astella/shared/pet-persona-presets";
 
 const FALLBACK_TIMEZONE = "Asia/Shanghai";
 
@@ -58,7 +58,7 @@ export function visibleCompanionNoteCountSql(scope: { workspaceId: string; userI
 }
 
 /**
- * 到期排程"还能不能消费"——**直接复用复习队列那一条判据**（`@ailearn/shared/review-consumable-target`）。
+ * 到期排程"还能不能消费"——**直接复用复习队列那一条判据**（`@astella/shared/review-consumable-target`）。
  *
  * 这里曾经是**手抄的一份**：形状与队列那条一样，但多带了一条"卡的来源笔记要对本人可见"。
  * 后果不是"更安全"，而是**两个都叫"到期复习"的数在协作空间里不相等**——用户点进队列看到
@@ -461,7 +461,7 @@ export async function loadHereAndNow(
       AND occurred_at >= date_trunc('day', now() AT TIME ZONE ${tzSubquery(scope.userId)}) AT TIME ZONE ${tzSubquery(scope.userId)}
   `);
 
-  // 三处笔记查询都带**归属边界**（@ailearn/shared/note-visibility，与 HTTP 侧同一
+  // 三处笔记查询都带**归属边界**（@astella/shared/note-visibility，与 HTTP 侧同一
   // 句话）。只按 workspace 数/取标题时，协作空间里她会在甲的对话里念出乙的私有笔记
   // 标题，并把这些标题注进 prompt 外发模型——审查原文把它记成"中"，但它和
   // `companion_read_note` 是同一类越界：空间隔离挡不住同空间的别人。

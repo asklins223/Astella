@@ -1,4 +1,4 @@
-import type { DesktopSourceListItem, DesktopSourceSegment } from "@ailearn/shared/desktop-surface-contracts";
+import type { DesktopSourceListItem, DesktopSourceSegment } from "@astella/shared/desktop-surface-contracts";
 
 /**
  * Reading-page helpers for one parsed source.

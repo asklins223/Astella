@@ -8,7 +8,7 @@
  * 那条限制在那段注释里，不在这里假装解决。
  *
  * 角色：夹具写用 `DATABASE_URL`（超级用户），判定走 worker 自己的事务
- * （`DATABASE_URL_WORKER` = `ailearn_worker`）。
+ * （`DATABASE_URL_WORKER` = `astella_worker`）。
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";

@@ -115,5 +115,5 @@ CREATE POLICY companion_room_profiles_workspace_user_isolation
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_room_profiles TO ailearn_api;
-GRANT SELECT ON public.companion_room_profiles TO ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_room_profiles TO astella_api;
+GRANT SELECT ON public.companion_room_profiles TO astella_worker;

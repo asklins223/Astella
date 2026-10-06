@@ -1,4 +1,4 @@
-import type { AgentMethodEvidenceV1 } from "@ailearn/shared/agent-growth-contracts";
+import type { AgentMethodEvidenceV1 } from "@astella/shared/agent-growth-contracts";
 
 /**
  * 方案 44 §6.4：识别共同原始来源，**同源只算一条依据**。
@@ -11,7 +11,7 @@ import type { AgentMethodEvidenceV1 } from "@ailearn/shared/agent-growth-contrac
  *
  * ## 为什么必须去重存储而不是只去重显示
  *
- * 存储里的 `evidence` 数组**就是**支持集：投影、`ailearn_agent_method_sources_current`
+ * 存储里的 `evidence` 数组**就是**支持集：投影、`astella_agent_method_sources_current`
  * 的有效性核对、界面上的「依据」列表全都读它。只在显示层合并，等于让所有下游继续
  * 按被放大的条数说话。所以去重发生在**写入口**。
  *

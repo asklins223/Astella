@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import sensible from "@fastify/sensible";
 import postgres from "postgres";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 process.env.COMPANION_DAILY_SUMMARY_V1 = "true";
 const admin = postgres(testDatabaseUrl("DATABASE_URL_TEST_ADMIN"), { max: 2 });

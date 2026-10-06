@@ -9,12 +9,12 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
-import { companionGroundedTutorGrantV1Schema } from "@ailearn/shared";
-import { sha256Utf8V1 } from "@ailearn/shared/content-hash";
-import { canonicalJsonV1 } from "@ailearn/shared/content-hash";
+import { companionGroundedTutorGrantV1Schema } from "@astella/shared";
+import { sha256Utf8V1 } from "@astella/shared/content-hash";
+import { canonicalJsonV1 } from "@astella/shared/content-hash";
 import { addV2ObjectiveToWorkspace, addV2ObjectiveWithoutCard, seedObjectiveNoteEvidence, cleanupWorkspaceTables } from "./helpers/v2-card-fixture.ts";
 import { withWorkspaceTransaction } from "../db/client.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 const sql = postgres(CONN, { max: 2 });

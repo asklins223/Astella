@@ -13,14 +13,14 @@
  * 2. assembleObjectiveSurfaceV3 能看到 active run → primaryAction = resume_run；
  * 3. 幂等重放路径同样满足合同。
  *
- * 运行：DATABASE_URL_API="postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn"
+ * 运行：DATABASE_URL_API="postgres://astella:astella_dev@127.0.0.1:5432/astella"
  *   node --import tsx --test --test-concurrency=1 src/integration-tests/learning-run-origin-contract.integration.ts
  */
 
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL_API ??= CONN;

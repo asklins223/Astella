@@ -29,5 +29,5 @@ CREATE POLICY nlrma_owner ON public.note_learning_round_model_attempts
     AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   );
 --> statement-breakpoint
-GRANT SELECT, INSERT, UPDATE ON public.note_learning_round_model_attempts TO ailearn_api;
-GRANT ALL ON public.note_learning_round_model_attempts TO ailearn_migrator;
+GRANT SELECT, INSERT, UPDATE ON public.note_learning_round_model_attempts TO astella_api;
+GRANT ALL ON public.note_learning_round_model_attempts TO astella_migrator;

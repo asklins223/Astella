@@ -25,24 +25,24 @@
  */
 import { and, eq, gte, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
-import { notes, sources } from "@ailearn/shared/db-schema/note";
+import { notes, sources } from "@astella/shared/db-schema/note";
 import { visibleNotesCondition, visibleObjectivesCondition } from "../note/visibility.ts";
-import { jobs } from "@ailearn/shared/db-schema/job";
-import { learningRuns } from "@ailearn/shared/db-schema/learning-runs";
+import { jobs } from "@astella/shared/db-schema/job";
+import { learningRuns } from "@astella/shared/db-schema/learning-runs";
 import {
   cardGenerationRunsV2,
   learningObjectiveRevisionsV2,
   learningObjectivesV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { JobType } from "@ailearn/shared";
-import { readParseSourceJobPayload } from "@ailearn/shared/job-payload-contracts";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { JobType } from "@astella/shared";
+import { readParseSourceJobPayload } from "@astella/shared/job-payload-contracts";
 import {
   todayActivityV1Schema,
   type ActivityAnomalyV1,
   type ActivityEventV1,
   type ActivityTargetV1,
   type TodayActivityV1,
-} from "@ailearn/shared/activity-surface-contracts";
+} from "@astella/shared/activity-surface-contracts";
 
 /** 单类事件源的查询上限；与 IPC 侧"列表窗口封顶 100"的口径一致。 */
 const SOURCE_LIMIT = 100;

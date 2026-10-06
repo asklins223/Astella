@@ -10,7 +10,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireSession } from "../identity/middleware.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
-import { ASSISTANT_DELIVERY_KIND_VALUES, type AssistantDeliveryV2 } from "@ailearn/shared";
+import { ASSISTANT_DELIVERY_KIND_VALUES, type AssistantDeliveryV2 } from "@astella/shared";
 import { listDeliveryTimeline } from "./delivery/delivery-service.ts";
 import { isCompanionJourneyV2Enabled } from "../../config/learning-companion-flags.ts";
 

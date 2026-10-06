@@ -8,7 +8,7 @@
  */
 
 import { sql } from "drizzle-orm";
-import { toTextArrayLiteral } from "@ailearn/shared/pg-text-array";
+import { toTextArrayLiteral } from "@astella/shared/pg-text-array";
 import type { CompanionTaskEntityRef } from "./companion-task-memory.ts";
 import { logger } from "../lib/logger.ts";
 
@@ -142,10 +142,10 @@ export function extractQueryKeywords(query: string, maxKeywords = 12): string[] 
 }
 
 /**
- * `toTextArrayLiteral` 已下沉到 `@ailearn/shared/pg-text-array`（API 侧的日记遮蔽
+ * `toTextArrayLiteral` 已下沉到 `@astella/shared/pg-text-array`（API 侧的日记遮蔽
  * 读路径要同一份实现）。这里转出是为了不打断既有的调用方与测试导入。
  */
-export { toTextArrayLiteral } from "@ailearn/shared/pg-text-array";
+export { toTextArrayLiteral } from "@astella/shared/pg-text-array";
 function mapMemoryRow(row: Record<string, unknown>): RetrievedMemory {
   return {
     memoryId: String(row.id ?? row.memory_id ?? ""),

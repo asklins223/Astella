@@ -1,4 +1,4 @@
-name: ailearn
+name: astella
 
 # Production-like stack. All application containers use their `prod` image
 # target, run without source bind mounts and inherit the non-root image user.
@@ -16,16 +16,16 @@ x-worker-build: &worker-build
 
 x-role-bootstrap-environment: &role-bootstrap-environment
   POSTGRES_HOST: postgres
-  POSTGRES_USER: ${POSTGRES_USER:-ailearn}
+  POSTGRES_USER: ${POSTGRES_USER:-astella}
   POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env before starting the production stack}
-  POSTGRES_DB: ${POSTGRES_DB:-ailearn}
+  POSTGRES_DB: ${POSTGRES_DB:-astella}
   MIGRATOR_PASSWORD: ${MIGRATOR_PASSWORD:?Set MIGRATOR_PASSWORD in .env before starting the production stack}
   API_PASSWORD: ${API_PASSWORD:?Set API_PASSWORD in .env before starting the production stack}
   WORKER_PASSWORD: ${WORKER_PASSWORD:?Set WORKER_PASSWORD in .env before starting the production stack}
 
 x-role-bootstrap-volumes: &role-bootstrap-volumes
-  - ./infra/postgres/apply-roles.sh:/opt/ailearn/apply-roles.sh:ro
-  - ./infra/postgres/roles.sql:/opt/ailearn/roles.sql:ro
+  - ./infra/postgres/apply-roles.sh:/opt/astella/apply-roles.sh:ro
+  - ./infra/postgres/roles.sql:/opt/astella/roles.sql:ro
 
 services:
   postgres:
@@ -34,9 +34,9 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-ailearn}
+      POSTGRES_USER: ${POSTGRES_USER:-astella}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env before starting the production stack}
-      POSTGRES_DB: ${POSTGRES_DB:-ailearn}
+      POSTGRES_DB: ${POSTGRES_DB:-astella}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
@@ -46,7 +46,7 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - ailearn_net
+      - astella_net
 
   # Runs on every deployment path, including existing data volumes.  The
   # first pass creates/rotates the roles and transfers legacy object ownership
@@ -63,11 +63,11 @@ services:
         condition: service_healthy
     environment: *role-bootstrap-environment
     volumes: *role-bootstrap-volumes
-    entrypoint: ["/bin/sh", "/opt/ailearn/apply-roles.sh"]
+    entrypoint: ["/bin/sh", "/opt/astella/apply-roles.sh"]
     security_opt:
       - no-new-privileges:true
     networks:
-      - ailearn_net
+      - astella_net
 
   # Optional object storage: started by the alpha flow, which always passes the
   # `storage` profile. The wrapper deliberately exits when credentials are empty
@@ -98,7 +98,7 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - ailearn_net
+      - astella_net
 
   # One-shot bucket bootstrap (profile: storage).  The alpha flow removes and
   # re-runs it on every start, then waits for it to exit (run_one_shot).
@@ -111,7 +111,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
-      S3_BUCKET: ${S3_BUCKET:-ailearn-workspaces}
+      S3_BUCKET: ${S3_BUCKET:-astella-workspaces}
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
@@ -122,7 +122,7 @@ services:
         mc anonymous set none "local/$${S3_BUCKET}"
         echo 'minio init done'
     networks:
-      - ailearn_net
+      - astella_net
 
   # Migrations are automatic, but account seeding is intentionally separate.
   # One-shot (restart: "no"): the alpha flow removes and re-runs it on every
@@ -141,7 +141,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - ailearn_net
+      - astella_net
 
   # One-shot (restart: "no"): re-applies role grants on objects created by
   # the migrator; the alpha flow re-runs it on every start.
@@ -155,11 +155,11 @@ services:
       <<: *role-bootstrap-environment
       REQUIRE_RLS_DISABLED: "true"
     volumes: *role-bootstrap-volumes
-    entrypoint: ["/bin/sh", "/opt/ailearn/apply-roles.sh"]
+    entrypoint: ["/bin/sh", "/opt/astella/apply-roles.sh"]
     security_opt:
       - no-new-privileges:true
     networks:
-      - ailearn_net
+      - astella_net
 
   # Run explicitly:
   #   docker compose -f docker-compose.yml --profile seed run --rm seed-owner
@@ -184,7 +184,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - ailearn_net
+      - astella_net
 
   api:
     build: *api-build
@@ -210,11 +210,11 @@ services:
       # The container may listen on all interfaces internally, but the host
       # publish below remains loopback-only by default.
       API_BIND_ADDRESS: ${API_INTERNAL_BIND_ADDRESS:-0.0.0.0}
-      AILEARN_CONTAINER_MODE: "true"
-      AILEARN_ALLOW_CONTAINER_WILDCARD: "true"
-      AILEARN_DESKTOP_PAIRING_KEY_ID: ${AILEARN_DESKTOP_PAIRING_KEY_ID:-}
-      AILEARN_DESKTOP_PAIRING_SECRET: ${AILEARN_DESKTOP_PAIRING_SECRET:-}
-      AILEARN_DOMAIN_SCHEMA_REVISION: ${AILEARN_DOMAIN_SCHEMA_REVISION:-}
+      ASTELLA_CONTAINER_MODE: "true"
+      ASTELLA_ALLOW_CONTAINER_WILDCARD: "true"
+      ASTELLA_DESKTOP_PAIRING_KEY_ID: ${ASTELLA_DESKTOP_PAIRING_KEY_ID:-}
+      ASTELLA_DESKTOP_PAIRING_SECRET: ${ASTELLA_DESKTOP_PAIRING_SECRET:-}
+      ASTELLA_DOMAIN_SCHEMA_REVISION: ${ASTELLA_DOMAIN_SCHEMA_REVISION:-}
       CORS_ORIGIN: ${CORS_ORIGIN:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # 默认关闭：Next/API 内部转发不能证明客户端 X-Forwarded-For 未被伪造。
@@ -281,7 +281,7 @@ services:
       EDGE_TTS_AUTH_TOKEN: ${EDGE_TTS_AUTH_TOKEN:?Set EDGE_TTS_AUTH_TOKEN in .env（edge-tts 与 api 必须一致）}
       # Image upload: MinIO/S3 storage endpoint
       STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-http://minio:9000}
-      S3_BUCKET: ${S3_BUCKET:-ailearn-workspaces}
+      S3_BUCKET: ${S3_BUCKET:-astella-workspaces}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
     ports:
@@ -296,7 +296,7 @@ services:
     volumes:
       - ./config:/app/config:ro
     networks:
-      - ailearn_net
+      - astella_net
 
   worker:
     build: *worker-build
@@ -364,7 +364,7 @@ services:
       COMPANION_THOUGHTS_V1: ${COMPANION_THOUGHTS_V1:-true}
       # Source image upload: MinIO/S3 storage for embedded images
       STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-http://minio:9000}
-      S3_BUCKET: ${S3_BUCKET:-ailearn-workspaces}
+      S3_BUCKET: ${S3_BUCKET:-astella-workspaces}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -391,7 +391,7 @@ services:
     volumes:
       - ./config:/app/config:ro
     networks:
-      - ailearn_net
+      - astella_net
 
   # edge-tts：TTS 服务（Docker 容器内运行，不依赖宿主 CLI）。
   # 暴露 OpenAI 协议 POST /v1/audio/speech（text → mp3），供 api 容器调用。
@@ -412,7 +412,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - ailearn_net
+      - astella_net
 
 # SEC-18 备注：PostgreSQL / MinIO 凭据目前经环境变量注入，`docker inspect` 可见。
 # 单机部署风险可接受；迁到共享主机时应改用 Docker Secrets，并同步让应用代码支持
@@ -423,5 +423,5 @@ volumes:
   minio_data:
 
 networks:
-  ailearn_net:
+  astella_net:
     driver: bridge

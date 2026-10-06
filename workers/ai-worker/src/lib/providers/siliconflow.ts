@@ -12,8 +12,8 @@
  * rerank() 失败抛出或返回空结果，由 reranker.ts 服务层降级到原序。
  */
 
-import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
-import { postJsonToPublicEndpoint } from "@ailearn/shared/public-json-http";
+import type { PublicJsonRequester } from "@astella/shared/public-json-http";
+import { postJsonToPublicEndpoint } from "@astella/shared/public-json-http";
 import { logger } from "../../lib/logger.ts";
 import type { EmbeddingProviderLike } from "../ai-provider.ts";
 
@@ -173,7 +173,7 @@ export class SiliconFlowProvider implements EmbeddingProviderLike {
 // text_generation will be added in the future via OpenAICompatibleProvider reuse.
 
 import { registerFactory } from "../provider-factory.ts";
-import type { CapabilityImpl } from "@ailearn/shared";
+import type { CapabilityImpl } from "@astella/shared";
 
 registerFactory("siliconflow", "embedding", (config) => {
   const apiKey = config.apiKey;

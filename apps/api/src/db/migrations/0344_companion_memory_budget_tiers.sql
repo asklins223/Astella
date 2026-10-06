@@ -40,16 +40,16 @@ ALTER TABLE public.assistant_memory_budget_events FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
 
 CREATE POLICY assistant_memory_budget_events_workspace_user_isolation
-  ON public.assistant_memory_budget_events FOR ALL TO ailearn_api, ailearn_worker
+  ON public.assistant_memory_budget_events FOR ALL TO astella_api, astella_worker
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
     )
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -58,12 +58,12 @@ CREATE POLICY assistant_memory_budget_events_workspace_user_isolation
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT ON public.assistant_memory_budget_events TO ailearn_api, ailearn_worker;
-REVOKE UPDATE, DELETE, TRUNCATE ON public.assistant_memory_budget_events FROM ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT ON public.assistant_memory_budget_events TO astella_api, astella_worker;
+REVOKE UPDATE, DELETE, TRUNCATE ON public.assistant_memory_budget_events FROM astella_api, astella_worker;
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_move_companion_memory_budget_tier_v1(
+CREATE OR REPLACE FUNCTION public.astella_move_companion_memory_budget_tier_v1(
   p_workspace_id uuid,
   p_user_id uuid,
   p_memory_id uuid,
@@ -91,8 +91,8 @@ BEGIN
   IF p_actor_type NOT IN ('user', 'companion', 'maintenance')
      OR (p_actor_type = 'user' AND p_actor_id IS DISTINCT FROM p_user_id)
      OR (p_actor_type <> 'user' AND p_actor_id IS NOT NULL)
-     OR (CURRENT_USER = 'ailearn_api' AND p_actor_type <> 'user')
-     OR (CURRENT_USER = 'ailearn_worker' AND p_actor_type = 'user') THEN
+     OR (CURRENT_USER = 'astella_api' AND p_actor_type <> 'user')
+     OR (CURRENT_USER = 'astella_worker' AND p_actor_type = 'user') THEN
     RAISE EXCEPTION 'invalid companion memory budget actor'
       USING ERRCODE = '22023';
   END IF;
@@ -234,7 +234,7 @@ $$;
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)
+REVOKE ALL ON FUNCTION public.astella_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)
   FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)
-  TO ailearn_api, ailearn_worker;
+GRANT EXECUTE ON FUNCTION public.astella_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)
+  TO astella_api, astella_worker;

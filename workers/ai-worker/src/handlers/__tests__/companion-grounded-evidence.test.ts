@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
 import { materializeGroundedTutorEvidence } from "../companion-grounded-evidence.ts";
 
 test("grounded tutor：只使用哈希校验通过的 sealed evidence 切片", () => {

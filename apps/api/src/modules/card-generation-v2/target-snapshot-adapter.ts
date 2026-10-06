@@ -31,11 +31,11 @@ import {
   evidenceEligibilityStatesV2,
   learningExposuresV2,
   cardContentCapabilityStateV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/card-generation-v2";
 import type {
   LearningTargetSnapshotV2,
   LearningRunTargetPublicV2,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import {
   computeTargetRevisionHashV2,
   computeRubricHashV2,
@@ -47,22 +47,22 @@ import {
   computeEvidenceEligibilityVectorHashV2,
   computeSemanticSupportReportSetHashV2,
   computeLearningTargetSnapshotHashV2,
-} from "@ailearn/shared/card-generation-v2-hashing";
+} from "@astella/shared/card-generation-v2-hashing";
 import type {
   ObjectiveRubricV2,
   CanonicalAnswerV2,
   ObjectiveRelationV2,
   PracticeItemV2,
-} from "@ailearn/shared/card-generation-v2-contracts";
-import { PRE_RUN_REVEAL_COOLDOWN_MS } from "@ailearn/shared/card-generation-v2-contracts";
-import { EXPOSURE_KINDS_V2 } from "@ailearn/shared/learning-card-v2-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
+import { PRE_RUN_REVEAL_COOLDOWN_MS } from "@astella/shared/card-generation-v2-contracts";
+import { EXPOSURE_KINDS_V2 } from "@astella/shared/learning-card-v2-contracts";
 import type {
   EvidenceBindingTargetUnitV2,
   EvidenceBindingRelationV2,
   EvidenceSupportStrengthV2,
-} from "@ailearn/shared/card-quality-v2-contracts";
-import type { KnowledgeFormV2, TaskIntentV1 } from "@ailearn/shared";
-import { DomainError } from "@ailearn/shared";
+} from "@astella/shared/card-quality-v2-contracts";
+import type { KnowledgeFormV2, TaskIntentV1 } from "@astella/shared";
+import { DomainError } from "@astella/shared";
 
 /** rubricHash 计算前剔除自引用字段（§11.3/§15.6）。 */
 function stripRubricHash(rubric: ObjectiveRubricV2): Omit<ObjectiveRubricV2, "rubricHash"> {

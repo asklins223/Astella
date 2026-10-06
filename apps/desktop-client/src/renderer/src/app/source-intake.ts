@@ -5,7 +5,7 @@
  * 抽到这里只有一处真相；事件是外部收录完成后通知来源库刷新索引的窄通道。
  */
 
-export const SOURCE_CAPTURED_EVENT = "ailearn:source-captured";
+export const SOURCE_CAPTURED_EVENT = "astella:source-captured";
 
 export type SourceCapturedDetail = {
   readonly sourceId: string;
@@ -91,7 +91,7 @@ export function hasOpenModal(): boolean {
   ));
 }
 
-const SEEN_LINKS_KEY = "ailearn:source-intake-seen-links";
+const SEEN_LINKS_KEY = "astella:source-intake-seen-links";
 const MAX_SEEN_LINKS = 100;
 
 type SeenStorage = Pick<Storage, "getItem" | "setItem">;

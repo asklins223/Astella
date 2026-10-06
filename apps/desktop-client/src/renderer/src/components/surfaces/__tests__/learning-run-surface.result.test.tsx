@@ -6,7 +6,7 @@ import {
   learningRunPublicSnapshotV2Schema,
   learningRunResultV2Schema,
   getLearningRunResultResponseV2Schema,
-} from "@ailearn/shared/learning-run-v2-contracts";
+} from "@astella/shared/learning-run-v2-contracts";
 import { LearningRunSurface } from "../run/learning-run-surface.tsx";
 import { LEARNING_RUN_CEREMONY_LITE_DURATION_MS } from "../run/LearningRunCeremony.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
@@ -120,7 +120,7 @@ function stubGateway(resultPayload: unknown, rubricLength = 12, snapshotPayload 
   const ok = <T,>(data: T) => ({ ok: true as const, workspaceEpoch: 1, data });
   const result = resultPayload === undefined ? resultWithRubric(rubricLength) : resultPayload;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (window as any).ailearn = {
+  (window as any).astella = {
     auth: {
       getState: vi.fn(async () => ok({
         status: "authenticated",
@@ -325,14 +325,14 @@ describe("LearningRunSurface · 新结果过关演出", () => {
 
   it("静音时仍呈现真实学习成功，但演出中没有伴星口吻", async () => {
     const sound = vi.fn();
-    window.addEventListener("ailearn:home-v2-sound", sound);
+    window.addEventListener("astella:home-v2-sound", sound);
     useRoomStore.setState({ masterMuted: true });
     renderResult(2, resultWithRubric(2), vi.fn(), assessingSnapshot());
     await waitFor(() => expect(document.querySelector(".learning-run-ceremony")).not.toBeNull());
     expect(document.querySelector(".learning-run-ceremony__companion")).toBeNull();
     expect(document.querySelector(".learning-run-ceremony")?.textContent).toContain("正式挑战 · 掌握完成");
     expect(sound).not.toHaveBeenCalled();
-    window.removeEventListener("ailearn:home-v2-sound", sound);
+    window.removeEventListener("astella:home-v2-sound", sound);
   });
 });
 
@@ -417,7 +417,7 @@ describe("LearningRunSurface · 结算页结构", () => {
     const result = resultWithRubric(0, { originV2: noteOrigin, returnTargetV2: noteReturn,
       outcome: "practice_completed", demonstratedFacets: [], scheduleImpact: { kind: "none", reasonCode: "practice_only" } });
     stubGateway(result, 0, snapshot);
-    const api = window.ailearn!;
+    const api = window.astella!;
     const route = { kind: "note.detail" as const, noteId };
     vi.mocked(api.navigation.resolve).mockResolvedValue({ ok: true, workspaceEpoch: 1,
       data: { current: { scope: "workspace", workspaceEpoch: 1, route } } } as never);

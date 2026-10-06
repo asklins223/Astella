@@ -15,7 +15,7 @@ import {
   NOTE_IMAGE_UPLOAD_MAX_BYTES,
   NOTE_IMAGE_UPLOAD_MIME_TYPES,
   noteImageUploadFailureMessage,
-} from "@ailearn/shared/note-image-upload-contracts";
+} from "@astella/shared/note-image-upload-contracts";
 import { createRequestMeta, gatewayErrorMessage, RendererGatewayError, requireWorkspaceEpoch, unwrapGatewayResult } from "../../app/desktop-client";
 import { readFileAsBase64 } from "../../app/read-file-base64.ts";
 import { useSourceImage } from "../surfaces/source/source-image.ts";
@@ -62,7 +62,7 @@ export function useCompanionImageAttachment(): CompanionImageAttachment {
     setError(null);
     try {
       const epoch = await requireWorkspaceEpoch();
-      const result = unwrapGatewayResult(await window.ailearn.companion.uploadImage({
+      const result = unwrapGatewayResult(await window.astella.companion.uploadImage({
         meta: createRequestMeta(epoch),
         request: {
           version: 1,

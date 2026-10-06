@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentTurnRequest } from "@ailearn/shared";
+import type { AgentTurnRequest } from "@astella/shared";
 import {
   foldReplayUnderSummaryCoverage,
   replayToMessages,

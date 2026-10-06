@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { learningRunAssistanceConsequenceV1 } from "@ailearn/shared/learning-run-contracts";
+import { learningRunAssistanceConsequenceV1 } from "@astella/shared/learning-run-contracts";
 import type { WorkerTransaction } from "../db.ts";
 
 /**

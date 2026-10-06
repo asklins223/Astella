@@ -16,11 +16,11 @@ description = "Known literal development placeholders; no source path is exempt 
 
 # Allow known development placeholder values
 regexes = [
-  # Development credentials (ailearn_dev, dev_jwt_secret, etc.)
-  "ailearn_dev(?:_secret)?",
+  # Development credentials (astella_dev, dev_jwt_secret, etc.)
+  "astella_dev(?:_secret)?",
   "dev_jwt_secret_change_me",
   "ci-(?:[a-z0-9]+-)*(?:password|secret)",
-  "ailearn-e2e-pass-[a-z0-9-]+",
+  "astella-e2e-pass-[a-z0-9-]+",
   # Deterministic UUID used by the privacy scanner's lease-token canary test.
   "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   # Test/example API keys (not real)

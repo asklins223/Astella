@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 
-import { AgentRole, type AgentTurnRequest } from "@ailearn/shared";
+import { AgentRole, type AgentTurnRequest } from "@astella/shared";
 import {
   COMPANION_PERSONA_V5,
   COMPANION_PERSONA_V5_PROMPT_ID,
@@ -19,7 +19,7 @@ import {
   COMPANION_PERSONA_V7,
   COMPANION_PERSONA_V7_PROMPT_ID,
   COMPANION_PERSONA_V7_SHA256,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import { buildCompanionPersonaMessages } from "../src/handlers/companion-dialogue-content.ts";
 import { resolveEvalProvider } from "../src/integration-tests/eval-provider.ts";
 

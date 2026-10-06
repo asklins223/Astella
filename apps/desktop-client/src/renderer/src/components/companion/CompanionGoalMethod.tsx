@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
-import type { AgentRunV1 } from "@ailearn/shared/agent-contracts";
-import type { AgentMethodV1 } from "@ailearn/shared/agent-growth-contracts";
+import type { AgentRunV1 } from "@astella/shared/agent-contracts";
+import type { AgentMethodV1 } from "@astella/shared/agent-growth-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
 import { publishCompanionRecordsChanged } from "./companion-events";
@@ -25,10 +25,10 @@ export function CompanionGoalMethod({run,scope,onOpen}:{run:AgentRunV1;scope:num
       <ol>{method.steps.map((step,index)=><li key={index}>{renderCompanionMarkdown(step)}</li>)}</ol>
       <p>这是做事的指引；下次仍需读取新材料，以你当时的要求为准。</p>
       <div className="companion-goal-controls">
-        {method.availability==="pending" ? <button type="button" className="companion-goal-primary" disabled={busy} onClick={()=>void write(async()=>unwrapGatewayResult(await window.ailearn.agent.controlMethod({meta:createRequestMeta(),methodId:method.methodId,request:{expectedRevision:method.revision,action:"confirm"}})))}>{busy ? "正在保存…" : "确认采用"}</button> : null}
+        {method.availability==="pending" ? <button type="button" className="companion-goal-primary" disabled={busy} onClick={()=>void write(async()=>unwrapGatewayResult(await window.astella.agent.controlMethod({meta:createRequestMeta(),methodId:method.methodId,request:{expectedRevision:method.revision,action:"confirm"}})))}>{busy ? "正在保存…" : "确认采用"}</button> : null}
         <button type="button" disabled={busy} onClick={visit}>查看与修订方法</button><button type="button" disabled={busy} onClick={()=>setOpen(false)}>收起</button>
       </div>
-    </> : <form className="companion-goal-edit" onSubmit={event=>{event.preventDefault();void write(async()=>unwrapGatewayResult(await window.ailearn.agent.proposeMethod({meta:createRequestMeta(),request:{runId:run.runId,expectedRunRevision:run.revision,title:title.trim(),appliesWhen:appliesWhen.trim()}})));}}>
+    </> : <form className="companion-goal-edit" onSubmit={event=>{event.preventDefault();void write(async()=>unwrapGatewayResult(await window.astella.agent.proposeMethod({meta:createRequestMeta(),request:{runId:run.runId,expectedRunRevision:run.revision,title:title.trim(),appliesWhen:appliesWhen.trim()}})));}}>
       <label>给这套做法起个名字<input value={title} maxLength={120} disabled={busy} onChange={event=>setTitle(event.currentTarget.value)} placeholder="例如：用演示和练习理解新概念" /></label>
       <label>什么时候希望这样合作<textarea value={appliesWhen} maxLength={200} disabled={busy} onChange={event=>setAppliesWhen(event.currentTarget.value)} placeholder="写清适用的内容或情境" /></label>
       <small>先从真实生成记录整理，核对后再确认采用。</small><div><button type="submit" disabled={busy || !title.trim() || !appliesWhen.trim()}>{busy ? "正在整理…" : "整理成方法"}</button><button type="button" disabled={busy} onClick={()=>setOpen(false)}>取消</button></div>

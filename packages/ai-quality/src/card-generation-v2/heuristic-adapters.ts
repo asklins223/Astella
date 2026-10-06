@@ -11,7 +11,7 @@ import {
   objectiveAtomicityGate as atomicityGateImpl,
   frontLeakageGate as frontLeakageGateImpl,
   type QualityIssue,
-} from "@ailearn/shared/card-generation-v2-pipeline";
+} from "@astella/shared/card-generation-v2-pipeline";
 import type { LeakSample } from "./heuristic-metrics.ts";
 
 /** 原子性样本：直接以 statement 驱动真实 gate。 */

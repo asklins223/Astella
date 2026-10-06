@@ -16,7 +16,7 @@
 
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import type { NoteDeepeningSnapshotV1 } from "@ailearn/shared";
+import type { NoteDeepeningSnapshotV1 } from "@astella/shared";
 import {
   readTopologySnapshotCache,
   resetTopologySnapshotCacheForTests,

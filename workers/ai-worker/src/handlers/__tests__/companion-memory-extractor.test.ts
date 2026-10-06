@@ -12,11 +12,11 @@ import {
   isMemorySourceSuppressed,
 } from "../companion-memory-extractor.ts";
 // 范围判据住在共享层（42 阶段 1 E）。抽取器只调用它，不自带一份。
-import { memoryScopeForKind } from "@ailearn/shared/companion-memory-scope";
+import { memoryScopeForKind } from "@astella/shared/companion-memory-scope";
 import {
   resolveCompanionMemoryTemporalMetadata,
   type CompanionMemoryTemporalMetadataInput,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import type { WorkerTransaction } from "../../db.ts";
 
 test("isVolatileStatisticMemory：拦『现在这一份』统计，不拦用户说过的带数字偏好", () => {
@@ -358,7 +358,7 @@ test("伴星 handler 不再关思考：思考预留由各自的 maxTokens 承担
 });
 
 // ─── 跨空间记忆的判据（2026-09-22 裁决 + 收紧）──────────────────────────
-// 判据本体在 `@ailearn/shared/companion-memory-scope`（42 阶段 1 E）。这里断言的是
+// 判据本体在 `@astella/shared/companion-memory-scope`（42 阶段 1 E）。这里断言的是
 // **worker 这一侧的用法**：仍然按模型 binding + 确定性规则两道判、缺省本地，
 // 而且抽取器不再自带第二份正则——那份判据现在同时管着手动保存的写入端。
 // 这些断言直接对着 dev 库那批真种子记忆写：分界线是从数据里读出来的，不是猜的。
@@ -425,7 +425,7 @@ test("范围判据只有一份：抽取器调用共享层，不自带正则或�
   // 判据一旦在抽取器和写入端各有一份，漂移的方向通常是写入端那份更松——那正是
   // 42 阶段 1 E 要补的洞。所以这里守的是"只有一处定义"，而不只是"值对不对"。
   const source = readFileSync(new URL("../companion-memory-extractor.ts", import.meta.url), "utf8");
-  assert.match(source, /from "@ailearn\/shared\/companion-memory-scope"/,
+  assert.match(source, /from "@astella\/shared\/companion-memory-scope"/,
     "抽取器没有走共享判据：写入端与抽取端可能已经各判各的");
   for (const duplicated of ["LOCAL_REFERENCE_PATTERN", "SUBJECT_OR_EXAM_PATTERN", "CROSS_SPACE_KINDS"]) {
     assert.ok(!source.includes(duplicated), `抽取器里又出现了一份 ${duplicated}：判据不再唯一`);

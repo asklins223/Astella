@@ -22,10 +22,10 @@ afterEach(() => { document.body.innerHTML = ""; document.documentElement.removeA
  *     且这段搬运发生在主进程，模板自己那份脚本不受影响。
  */
 const CONTENT_V1 = [
-  '<div class="ailearn-art" data-artifact-root data-outline-count="4">',
+  '<div class="astella-art" data-artifact-root data-outline-count="4">',
   '<style data-lesson>.n{fill:var(--lesson-mint)}</style>',
-  '<div class="ailearn-art__scene" data-stage><svg viewBox="0 0 10 10"><circle class="n" cx="5" cy="5" r="4" /></svg></div>',
-  '<ol class="ailearn-art__list"><li data-artifact-outline>第一步</li><li data-artifact-outline>第二步</li>',
+  '<div class="astella-art__scene" data-stage><svg viewBox="0 0 10 10"><circle class="n" cx="5" cy="5" r="4" /></svg></div>',
+  '<ol class="astella-art__list"><li data-artifact-outline>第一步</li><li data-artifact-outline>第二步</li>',
   '<li data-artifact-outline>第三步</li><li data-artifact-outline>第四步</li></ol>',
   '</div>',
   '<script data-lesson>window.setLessonMotion = function (m) { window.__lastMotion = m; };</script>',
@@ -108,19 +108,19 @@ test("reduced 转给产物自己声明的钩子，模板不重排 DOM", () => {
       addEventListener: (type: string, handler: (event: { data: unknown }) => void) => { listeners[type] = handler; },
     },
   });
-  const before = document.querySelector("#ailearn-artifact-root")!.innerHTML;
+  const before = document.querySelector("#astella-artifact-root")!.innerHTML;
   listeners.message!({ data: {
-    channel: "ailearn:artifact-frame", direction: "host->frame", command: "motion", motion: "reduced",
+    channel: "astella:artifact-frame", direction: "host->frame", command: "motion", motion: "reduced",
   } });
   // 产物声明的钩子被调用了，而且只被调用一次（重复投递不该重复通知）。
   expect(seen).toEqual(["reduced"]);
   listeners.message!({ data: {
-    channel: "ailearn:artifact-frame", direction: "host->frame", command: "motion", motion: "reduced",
+    channel: "astella:artifact-frame", direction: "host->frame", command: "motion", motion: "reduced",
   } });
   expect(seen).toEqual(["reduced", "reduced"]);
   // 而模板自己没有把 root 重建成 N 段：内容一条不少、顺序不变。
-  expect(document.querySelector("#ailearn-artifact-root")!.innerHTML).toBe(before);
-  expect(document.querySelectorAll("#ailearn-artifact-root [data-artifact-outline]")).toHaveLength(4);
+  expect(document.querySelector("#astella-artifact-root")!.innerHTML).toBe(before);
+  expect(document.querySelectorAll("#astella-artifact-root [data-artifact-outline]")).toHaveLength(4);
   delete (window as unknown as { setLessonMotion?: unknown }).setLessonMotion;
 });
 
@@ -143,11 +143,11 @@ test("产物没声明钩子时模板不报错，也不重排 DOM", () => {
       addEventListener: (type: string, handler: (event: { data: unknown }) => void) => { listeners[type] = handler; },
     },
   });
-  const before = document.querySelector("#ailearn-artifact-root")!.innerHTML;
+  const before = document.querySelector("#astella-artifact-root")!.innerHTML;
   expect(() => listeners.message!({ data: {
-    channel: "ailearn:artifact-frame", direction: "host->frame", command: "motion", motion: "reduced",
+    channel: "astella:artifact-frame", direction: "host->frame", command: "motion", motion: "reduced",
   } })).not.toThrow();
-  expect(document.querySelector("#ailearn-artifact-root")!.innerHTML).toBe(before);
+  expect(document.querySelector("#astella-artifact-root")!.innerHTML).toBe(before);
   expect(document.documentElement.getAttribute("data-artifact-motion")).toBe("reduced");
   // 缺钩子仍有公共暂停兜底，不因此摘除页面或改变手动交互。
   expect(messages.some((message) => message.phase === "error")).toBe(false);
@@ -157,7 +157,7 @@ test("缺播放钩子的页面也能 Off/Full 往返，系统减少动态优先�
   const parsed = bootTemplate(CONTENT_V1.replace(/<script data-lesson>[\s\S]*?<\/script>/, ""));
   if (!parsed) return;
   document.body.innerHTML = parsed.body.innerHTML;
-  const root = document.getElementById("ailearn-artifact-root")!;
+  const root = document.getElementById("astella-artifact-root")!;
   const svg = root.querySelector("svg")!;
   const pauseSvg = vi.fn();
   const resumeSvg = vi.fn();
@@ -184,7 +184,7 @@ test("缺播放钩子的页面也能 Off/Full 往返，系统减少动态优先�
   });
   const before = root.innerHTML;
   const sendMotion = (motion: string) => listeners.message!({ data: {
-    channel: "ailearn:artifact-frame", direction: "host->frame", command: "motion", motion,
+    channel: "astella:artifact-frame", direction: "host->frame", command: "motion", motion,
   } });
   sendMotion("reduced");
   sendMotion("reduced");
@@ -218,7 +218,7 @@ test("模型写的样式进 head、脚本进 body 末尾，root 里只剩内容"
   const bodyMarkup = parsed.body.innerHTML;
   // 脚本在 root 之外、body 的末尾；root 内部不再有 style/script。
   expect(parsed.querySelectorAll("body > script[data-lesson]")).toHaveLength(1);
-  expect(parsed.querySelectorAll("#ailearn-artifact-root style")).toHaveLength(0);
-  expect(parsed.querySelectorAll("#ailearn-artifact-root script")).toHaveLength(0);
-  expect(bodyMarkup).toContain("ailearn-art__scene");
+  expect(parsed.querySelectorAll("#astella-artifact-root style")).toHaveLength(0);
+  expect(parsed.querySelectorAll("#astella-artifact-root script")).toHaveLength(0);
+  expect(bodyMarkup).toContain("astella-art__scene");
 });

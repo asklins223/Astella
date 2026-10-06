@@ -14,7 +14,7 @@
 -- 门槛与桶同粒度：30 分钟内已有 companion_thought job 就不再入队，避免同一个用户
 -- 在两个相邻桶里被排两次。
 
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_companion_thoughts()
+CREATE OR REPLACE FUNCTION public.astella_enqueue_companion_thoughts()
   RETURNS integer
   LANGUAGE plpgsql
   SECURITY DEFINER
@@ -63,5 +63,5 @@ BEGIN
 END;
 $function$;
 
-COMMENT ON FUNCTION public.ailearn_enqueue_companion_thoughts() IS
+COMMENT ON FUNCTION public.astella_enqueue_companion_thoughts() IS
   '念头批量生成入队（30 分钟桶幂等，供最快一档 30 分钟的节奏用）。说不说由 handler 按静默时段/反馈/间隔判。门槛仍是 pet_profiles.last_active_at 14 天内 + 账号总开关。';

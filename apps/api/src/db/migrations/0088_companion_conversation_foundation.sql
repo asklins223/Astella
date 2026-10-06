@@ -201,12 +201,12 @@ END $$;
 -- ─── Grants（role-bootstrap 幂等） ────────────────────────────────────────
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
     -- Worker：turn run 状态机与事件追加（仍通过 SECURITY DEFINER 事务函数操作，
     -- 直连仅限本 workspace 上下文的只读/追加）。
-    GRANT SELECT ON public.companion_conversations TO ailearn_worker;
-    GRANT SELECT, INSERT, UPDATE ON public.companion_turn_runs TO ailearn_worker;
-    GRANT SELECT, INSERT ON public.companion_stream_events TO ailearn_worker;
-    GRANT SELECT ON public.companion_messages TO ailearn_worker;
+    GRANT SELECT ON public.companion_conversations TO astella_worker;
+    GRANT SELECT, INSERT, UPDATE ON public.companion_turn_runs TO astella_worker;
+    GRANT SELECT, INSERT ON public.companion_stream_events TO astella_worker;
+    GRANT SELECT ON public.companion_messages TO astella_worker;
   END IF;
 END $$;

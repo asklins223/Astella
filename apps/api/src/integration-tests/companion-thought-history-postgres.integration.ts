@@ -3,7 +3,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { closeDatabase } from "../db/client.ts";
 import { listCompanionThoughts } from "../modules/companion-conversation/turn/thought-history.ts";
 

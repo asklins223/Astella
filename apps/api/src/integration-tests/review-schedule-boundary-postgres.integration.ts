@@ -27,7 +27,7 @@ if (!fixtureUrl || !process.env.DATABASE_URL_API) {
 const fixtureSql = postgres(fixtureUrl, { max: 4 });
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
 const { ensurePendingReviewScheduleV2 } = await import("../modules/review/review-schedule-boundary.ts");
-const { reviewSchedules } = await import("@ailearn/shared/db-schema/evidence");
+const { reviewSchedules } = await import("@astella/shared/db-schema/evidence");
 const { and, eq } = await import("drizzle-orm");
 
 const USER_ID = randomUUID();

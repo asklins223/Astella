@@ -4,7 +4,7 @@
 -- Replace the function in place so the worker's scheduled call remains valid
 -- after the V1 card tables are removed.
 
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_companion_daily_summaries()
+CREATE OR REPLACE FUNCTION public.astella_enqueue_companion_daily_summaries()
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -118,10 +118,10 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_companion_daily_summaries() TO ailearn_worker;
+GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_daily_summaries() TO astella_worker;
 
-ALTER FUNCTION public.ailearn_run_companion_memory_maintenance()
+ALTER FUNCTION public.astella_run_companion_memory_maintenance()
   SET search_path = pg_catalog, public;
 
-COMMENT ON FUNCTION public.ailearn_enqueue_companion_daily_summaries() IS
+COMMENT ON FUNCTION public.astella_enqueue_companion_daily_summaries() IS
   '桌宠日记调度：在用户本地时区 01:00 为前一天有活动的用户入队 companion_daily_summary（幂等）。';

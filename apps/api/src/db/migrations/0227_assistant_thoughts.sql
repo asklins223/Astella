@@ -52,22 +52,22 @@ DROP POLICY IF EXISTS assistant_thoughts_workspace_user_isolation
 CREATE POLICY assistant_thoughts_workspace_user_isolation
   ON public.assistant_thoughts FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
     )
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
     )
   );
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.assistant_thoughts TO ailearn_worker;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.assistant_thoughts TO ailearn_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.assistant_thoughts TO astella_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.assistant_thoughts TO astella_api;
 
 CREATE INDEX IF NOT EXISTS assistant_thoughts_ws_user_status_idx
   ON public.assistant_thoughts (workspace_id, user_id, status, created_at DESC);
@@ -80,7 +80,7 @@ CREATE INDEX IF NOT EXISTS assistant_thoughts_dedupe_idx
 -- 念头生成调度：与 0171 日记调度同模式——SECURITY DEFINER 函数由 worker
 -- 每分钟 tick 调用（进程内 15min 节流），按 4 小时桶幂等入队（每天 2–4 次），
 -- 沉默默认：静默时段内完全不生成，30 天无活动的账号不生成。
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_companion_thoughts()
+CREATE OR REPLACE FUNCTION public.astella_enqueue_companion_thoughts()
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER

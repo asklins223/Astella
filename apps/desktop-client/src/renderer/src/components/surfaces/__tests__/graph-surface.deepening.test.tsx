@@ -30,8 +30,8 @@ import { resolve } from "node:path";
 import type {
   UnderstandingEdgeProjectionV3,
   UnderstandingNodeProjectionV3,
-} from "@ailearn/shared/note-deepening-contracts";
-import type { NoteDeepeningV3 } from "@ailearn/shared/note-deepening-v3-contracts";
+} from "@astella/shared/note-deepening-contracts";
+import type { NoteDeepeningV3 } from "@astella/shared/note-deepening-v3-contracts";
 import { useRoomStore } from "../../../app/room-store.ts";
 import { GraphSurface } from "../space/graph-surface.tsx";
 import { clearGraphJourneys } from "../space/graph-journey";
@@ -204,7 +204,7 @@ function stubGateway(options: {
       getNoteDeepening: vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: options.deepening ?? BARE_DEEPENING })),
     },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return gateway;
 }
 

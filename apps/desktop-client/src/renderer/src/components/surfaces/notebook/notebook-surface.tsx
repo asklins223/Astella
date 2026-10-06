@@ -6,36 +6,36 @@ import { LearningRunBody, releaseRunThroughMainV1 } from "../run/learning-run-su
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BookOpen, Clock3, FileText, History, Link2, MessageCircle, PencilLine, RefreshCw, Sparkles, X } from "lucide-react";
-import type { CapabilityProjectionV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { CapabilityProjectionV1 } from "@astella/shared/desktop-ipc-contracts";
 import type {
   CardGenerationActiveSummaryV1,
   CardGenerationRunSnapshotV1,
   DesktopCardGenerationFeedbackReasonV2,
-} from "@ailearn/shared/card-generation-desktop-contracts";
-import type { RoomProjectionV1 } from "@ailearn/shared/room-projection-contracts";
-import { reviewSubscriptionV2Schema } from "@ailearn/shared/review-queue-v2-contracts";
+} from "@astella/shared/card-generation-desktop-contracts";
+import type { RoomProjectionV1 } from "@astella/shared/room-projection-contracts";
+import { reviewSubscriptionV2Schema } from "@astella/shared/review-queue-v2-contracts";
 import type { z } from "zod";
-import type { DesktopNoteVersionItem, DesktopSourceDetail } from "@ailearn/shared/desktop-surface-contracts";
+import type { DesktopNoteVersionItem, DesktopSourceDetail } from "@astella/shared/desktop-surface-contracts";
 import type {
   LearningObjectiveSurfaceV3,
   ObjectiveNoteChangeImpactV1,
   ObjectiveReviewHoldV1,
-} from "@ailearn/shared/learning-objective-surface-contracts";
+} from "@astella/shared/learning-objective-surface-contracts";
 /** W7-3 刀六：笔记订阅那一行。取共享合同那份，渲染层不再自己拼形状。 */
 type NoteReviewSubscriptionV1 = z.infer<typeof reviewSubscriptionV2Schema>;
-import type { NoteBlockProjectionV1, NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
+import type { NoteBlockProjectionV1, NoteDetailV1 } from "@astella/shared/note-projection-contracts";
 import type {
   NoteLearningRoundHistoryV1,
   NoteLearningRoundV1Wire,
   RoundPracticeV1,
   RoundTeachingV1,
   RoundTeachingViewV1,
-} from "@ailearn/shared/note-learning-round-contracts";
+} from "@astella/shared/note-learning-round-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import { SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-consent-gate";
 import { SpaceShareButton, noteShareScopeLabel } from "../../space-share-control";
-import type { NoteShareScopeV1 } from "@ailearn/shared/note-share-contracts";
-import type { DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { NoteShareScopeV1 } from "@astella/shared/note-share-contracts";
+import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
 import {
   createCommandId,
   createRequestMeta,
@@ -48,9 +48,9 @@ import {
 import { imageOnlyFiles } from "../../../app/source-intake";
 import { ROUND_RECORD_COPY_V1, roundHistoryStateLabelV1, roundRecordDayV1, roundRecordModesLabelV1 } from "./round-record-copy.ts";
 import { NoteRouteCoverage } from "./note-route-coverage.tsx";
-import type { NoteRouteCoverageV1 } from "@ailearn/shared/note-route-coverage-v2";
+import type { NoteRouteCoverageV1 } from "@astella/shared/note-route-coverage-v2";
 import { useHudPage } from "../../hud/use-hud-page";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import type { HudPageId } from "../../hud/hud-pages";
 import {
@@ -85,10 +85,10 @@ import { startObjectiveJourney } from "../run/objective-primary-action.ts";
 import { ArtifactFrameHost } from "../source/artifact-frame-host.tsx";
 import { NotebookLearningArtifactPaper } from "./notebook-learning-artifact-paper";
 import { RoundNotice } from "./round-notice.tsx";
-import { parseMarkdownTable } from "@ailearn/shared/note-doc-schema";
+import { parseMarkdownTable } from "@astella/shared/note-doc-schema";
 import { isHorizontalRule, noteInlineDisplayText, noteInlineImages, renderNoteInline } from "./note-reading-inline.tsx";
-import { sourceImageObjectKeyFromUrl } from "@ailearn/shared/source-image-contracts";
-import { markdownToBlocks } from "@ailearn/shared/markdown-parser";
+import { sourceImageObjectKeyFromUrl } from "@astella/shared/source-image-contracts";
+import { markdownToBlocks } from "@astella/shared/markdown-parser";
 import { useSourceImage } from "../source/source-image.ts";
 import { ImageGalleryLightbox, useImageLightbox, ZoomableReadingImage, type GalleryImage } from "../source/image-viewer.tsx";
 import type { NoteMarkdownEditorHandle } from "./note-markdown-editor.tsx";
@@ -113,8 +113,8 @@ import { useNotebookSidePage } from "./use-notebook-side-page";
 import { VersionHistory } from "./version-history.tsx";
 import { ReadingBlock, ReadingImage } from "./notebook-reading-block.tsx";
 import { noteReadingText } from "./note-reading-text";
-import { noteAnchorMatchesV1 } from "@ailearn/shared/note-annotation-contracts";
-import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
+import { noteAnchorMatchesV1 } from "@astella/shared/note-annotation-contracts";
+import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
 import { useNotebookAnnotationState } from "./use-notebook-annotation-state.ts";
 import { useNotebookLearningArtifactState } from "./use-notebook-learning-artifact-state.ts";
 import { prepareNotebookTaskNotification } from "./notebook-task-notifications";
@@ -152,18 +152,18 @@ import { feedNoteIntentToCompanion, feedSelectionToCompanion } from "../../compa
 import { noteAnchorsOverlap, noteExplanationBusy, pendingNoteExplanation, stopNoteExplanation, useNoteCompanionExplanations } from "../../companion/note-companion-explanation";
 import { stopCompanionSpeech } from "../../../app/companion-voice-playback";
 import { NoteCompanionExplanationPaper } from "./note-companion-explanation-paper";
-import { noteAnnotationV1Schema, type NoteAnnotationAnchorV1, type NoteAnnotationTaskV1, type NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
-import type { NoteOverviewTaskV1, NoteOverviewV1 } from "@ailearn/shared/note-overview-contracts";
-import type { NoteRecallRecordV1 } from "@ailearn/shared/note-recall-contracts";
+import { noteAnnotationV1Schema, type NoteAnnotationAnchorV1, type NoteAnnotationTaskV1, type NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
+import type { NoteOverviewTaskV1, NoteOverviewV1 } from "@astella/shared/note-overview-contracts";
+import type { NoteRecallRecordV1 } from "@astella/shared/note-recall-contracts";
 import {
   noteExpansionLinkV1Schema,
   type NoteExpansionLinkV1,
-} from "@ailearn/shared/note-expansion-contracts";
+} from "@astella/shared/note-expansion-contracts";
 import {
   noteLearningArtifactV1Schema,
   type NoteLearningArtifactTaskV1,
   type NoteLearningArtifactV1,
-} from "@ailearn/shared/note-learning-artifact-contracts";
+} from "@astella/shared/note-learning-artifact-contracts";
 import { NoteLearningFootprint, type FootprintKind } from "./note-learning-footprint.tsx";
 
 /**
@@ -521,7 +521,7 @@ export function roundQuestionSourceV1(
 }
 
 function desktopApi() {
-  return typeof window === "undefined" ? undefined : window.ailearn;
+  return typeof window === "undefined" ? undefined : window.astella;
 }
 
 function formatClock(value: string | null | undefined): string {
@@ -1319,7 +1319,7 @@ const noteDocLive = useNoteDocLiveView(
 
   const loadNoteLearningArtifacts = useCallback(async (before?: string) => {
     if (!note) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteLearningArtifact) {
       setLearningArtifactError("互动讲解记录暂不可用");
       return;
@@ -1346,7 +1346,7 @@ const noteDocLive = useNoteDocLiveView(
 
   const loadNoteLearningArtifactTasks = useCallback(async () => {
     if (!note?.currentVersionId) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteLearningArtifact) {
       setLearningArtifactTaskError("互动演示任务暂不可用");
       return;
@@ -1473,7 +1473,7 @@ const noteDocLive = useNoteDocLiveView(
 
   const loadNoteExpansions = useCallback(async (before?: { createdAt: string; expansionId: string }) => {
     if (!note) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteExpansion) {
       setExpansionError("拓展记录暂不可用");
       return;
@@ -1516,8 +1516,8 @@ const noteDocLive = useNoteDocLiveView(
         return { ...base, items: [parsed.data, ...base.items.filter((item) => item.expansionId !== parsed.data.expansionId)] };
       });
     };
-    window.addEventListener("ailearn:note-expansion-saved", onExpansionSaved);
-    return () => window.removeEventListener("ailearn:note-expansion-saved", onExpansionSaved);
+    window.addEventListener("astella:note-expansion-saved", onExpansionSaved);
+    return () => window.removeEventListener("astella:note-expansion-saved", onExpansionSaved);
   }, [note?.noteId]);
 
   useEffect(() => {
@@ -1573,7 +1573,7 @@ const noteDocLive = useNoteDocLiveView(
 
   const loadNoteAnnotations = useCallback(async (before?: string) => {
     if (!note) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteAnnotation) {
       setAnnotationError("批注记录暂不可用");
       return;
@@ -1600,7 +1600,7 @@ const noteDocLive = useNoteDocLiveView(
 
   const loadLatestNoteAnnotationTask = useCallback(async () => {
     if (!note?.currentVersionId) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteAnnotation) return;
     const request = ++annotationTaskRequestRef.current;
     setAnnotationTaskError(null);
@@ -1627,7 +1627,7 @@ const noteDocLive = useNoteDocLiveView(
 
   const startNoteAnnotationTask = useCallback(async (anchor: NoteAnnotationAnchorV1, hasUnsavedChanges: boolean) => {
     if (!note || !note.currentVersionId || annotationTaskStarting || hasUnsavedChanges) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteAnnotation) {
       setAnnotationTaskError("这句解释暂时不可用");
       return;
@@ -1676,7 +1676,7 @@ const noteDocLive = useNoteDocLiveView(
    * 服务端删的是 `note_annotations` 行与按锚点对上的动态讲解页。
    */
   const removeNoteAnnotation = useCallback(async (target: NoteAnnotationV1) => {
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const api = typeof window === "undefined" ? undefined : window.astella;
     const current = note;
     if (!api?.noteAnnotation || !current || annotationDeleteInFlightRef.current) return;
     const request = Symbol("annotation-delete");
@@ -1763,7 +1763,7 @@ const noteDocLive = useNoteDocLiveView(
     if (!note || !annotationTask || annotationTask.noteId !== note.noteId
       || annotationTask.noteVersionId !== note.currentVersionId
       || (annotationTask.status !== "queued" && annotationTask.status !== "running")) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteAnnotation) return;
     let cancelled = false;
     let timer: number | undefined;
@@ -1814,8 +1814,8 @@ const noteDocLive = useNoteDocLiveView(
       // Completion updates the original quote without replacing a manual draft or another open paper.
       if (parsed.data.versionState === "older") setAnnotationShelfOpen(true);
     };
-    window.addEventListener("ailearn:note-annotation-saved", onAnnotationSaved);
-    return () => window.removeEventListener("ailearn:note-annotation-saved", onAnnotationSaved);
+    window.addEventListener("astella:note-annotation-saved", onAnnotationSaved);
+    return () => window.removeEventListener("astella:note-annotation-saved", onAnnotationSaved);
   }, [note?.noteId]);
   useEffect(() => {
     if (!activeNoteRef?.learningRoundId || note?.noteId !== activeNoteRef.noteId ||
@@ -1998,7 +1998,7 @@ const noteDocLive = useNoteDocLiveView(
       } });
     },
     onConfirmed: (links) => {
-    links.forEach(expansion => window.dispatchEvent(new CustomEvent("ailearn:note-expansion-saved", {
+    links.forEach(expansion => window.dispatchEvent(new CustomEvent("astella:note-expansion-saved", {
       detail: { noteId: note!.noteId, expansion },
     })));
     void loadNoteExpansions();
@@ -2016,7 +2016,7 @@ const noteDocLive = useNoteDocLiveView(
     }
     if (learningArtifactTasks.some(task => (task.status === "queued" || task.status === "running") && task.sourceKind === sourceKind
       && (sourceKind === "overview" || JSON.stringify(task.selectionAnchor) === JSON.stringify(anchor)))) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteLearningArtifact) {
       setLearningArtifactTaskError("互动演示暂时不可用");
       return;
@@ -2978,19 +2978,19 @@ const noteDocLive = useNoteDocLiveView(
   const noteGenerationRunId = noteGeneration?.runId ?? null;
 
   useEffect(() => {
-    if (!noteGenerationRunId || !window.ailearn) return undefined;
+    if (!noteGenerationRunId || !window.astella) return undefined;
     let disposed = false;
     let subscriptionId: string | null = null;
     let unsubscribeEvent: (() => void) | undefined;
     const subscribe = async () => {
       try {
-        const response = await window.ailearn.subscriptions.subscribe({
+        const response = await window.astella.subscriptions.subscribe({
           meta: createRequestMeta(),
           topic: { kind: "cardGeneration", runId: noteGenerationRunId },
         });
         if (disposed) return;
         subscriptionId = unwrapGatewayResult(response).subscriptionId;
-        unsubscribeEvent = window.ailearn.subscriptions.onEvent(subscriptionId, () => {
+        unsubscribeEvent = window.astella.subscriptions.onEvent(subscriptionId, () => {
           void reload({ silent: true });
         });
       } catch {
@@ -3003,7 +3003,7 @@ const noteDocLive = useNoteDocLiveView(
       disposed = true;
       unsubscribeEvent?.();
       if (subscriptionId) {
-        void window.ailearn.subscriptions.unsubscribe({
+        void window.astella.subscriptions.unsubscribe({
           meta: createRequestMeta(),
           subscriptionId,
         });

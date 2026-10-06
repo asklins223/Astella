@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
-import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
 import {
   evidenceQuoteCopiesV2,
   evidenceSnapshotsV2,
@@ -8,12 +8,12 @@ import {
   learningObjectiveOriginsV2,
   learningObjectiveRevisionsV2,
   learningObjectivesV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { noteBlocks, notes } from "@ailearn/shared/db-schema/note";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { noteBlocks, notes } from "@astella/shared/db-schema/note";
 import {
   objectiveNoteChangeImpactV1Schema,
   type ObjectiveNoteChangeImpactV1,
-} from "@ailearn/shared/learning-objective-surface-contracts";
+} from "@astella/shared/learning-objective-surface-contracts";
 import { visibleNotesCondition, visibleObjectivesCondition } from "../note/visibility.ts";
 import { detectObjectiveNoteChangeImpactV1 } from "./change-impact.ts";
 

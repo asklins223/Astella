@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import type { AgentMemoryContextSourceV1, AgentScopeV1 } from "@ailearn/shared/agent-contracts";
+import type { AgentMemoryContextSourceV1, AgentScopeV1 } from "@astella/shared/agent-contracts";
 import { queryRows, type AgentSqlExecutor } from "./store.ts";
 
 /** A committed prompt is reproducible, but never permission to reuse a memory

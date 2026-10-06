@@ -1,5 +1,5 @@
 -- 0105: Worker reaper 指数退避（重试风暴防护）。
--- 2026-08-11：ailearn_reap_stale_jobs 此前把被 reap 的 running job 的
+-- 2026-08-11：astella_reap_stale_jobs 此前把被 reap 的 running job 的
 -- scheduled_at 固定为 reaped_at + 10 秒（0018 定义）。连续崩溃/超时场景下
 -- 同一 job 每 10s 重跑一次直至 max_attempts，形成重试风暴（且与 fail_job
 -- 的 2s→4s 退避语义不一致）。改为按 attempts 指数退避：10s * 2^attempts，
@@ -8,7 +8,7 @@
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_reap_stale_jobs(
+CREATE OR REPLACE FUNCTION public.astella_reap_stale_jobs(
   p_lease_timeout_ms integer,
   p_max_attempts integer
 )
@@ -73,5 +73,5 @@ $function$;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_reap_stale_jobs(integer, integer) IS
+COMMENT ON FUNCTION public.astella_reap_stale_jobs(integer, integer) IS
 'Reap stale running jobs with exponential backoff: scheduled_at = reaped_at + 10s * 2^attempts (cap 60s). 0105 修复重试风暴。';

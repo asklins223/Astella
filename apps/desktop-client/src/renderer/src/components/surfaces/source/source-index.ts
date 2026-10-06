@@ -1,4 +1,4 @@
-import type { DesktopSourceListItem } from "@ailearn/shared/desktop-surface-contracts";
+import type { DesktopSourceListItem } from "@astella/shared/desktop-surface-contracts";
 
 /**
  * The whole working index of page 05, as data.

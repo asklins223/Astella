@@ -1,10 +1,10 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import type { ChatMessage } from "@ailearn/shared";
-import { readNoteOverviewGenerateJobPayload } from "@ailearn/shared/job-payload-contracts";
+import type { ChatMessage } from "@astella/shared";
+import { readNoteOverviewGenerateJobPayload } from "@astella/shared/job-payload-contracts";
 import { loadAgentGenerationContext } from "../agent/generation-context.ts";
-import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
-import * as schema from "@ailearn/shared/db-schema";
+import { noteVisibleSqlText } from "@astella/shared/note-visibility";
+import * as schema from "@astella/shared/db-schema";
 import {
   AIConsentRequiredError,
   createGovernedProvider,

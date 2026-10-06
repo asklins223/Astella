@@ -3,7 +3,7 @@ import { test } from "node:test";
 import {
   groupAgentMethodEvidenceOrigins, reconcileEvidenceEpistemicStatus,
 } from "../evidence-origins.ts";
-import type { AgentMethodEvidenceV1 } from "@ailearn/shared/agent-growth-contracts";
+import type { AgentMethodEvidenceV1 } from "@astella/shared/agent-growth-contracts";
 
 /**
  * 方案 44 §6.4：同源只算一条依据。

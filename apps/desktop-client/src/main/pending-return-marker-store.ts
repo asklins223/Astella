@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import {
   pendingReturnMarkerV2Schema,
   type PendingReturnMarkerV2,
-} from "@ailearn/shared/learning-run-v2-contracts";
+} from "@astella/shared/learning-run-v2-contracts";
 import { z } from "zod";
 
 const subjectWorkspaceKeySchema = z.string().uuid();

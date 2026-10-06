@@ -25,13 +25,13 @@ import { sql } from "drizzle-orm";
 import type { WorkerTransaction } from "../db.ts";
 import {
   getDefaultPersonaPreset,
-} from "@ailearn/shared/pet-persona-presets";
+} from "@astella/shared/pet-persona-presets";
 import {
   personaFromDefaultPreset,
   withAssistantEditedField,
   type SwitchableField,
-} from "@ailearn/shared/pet-persona-merge";
-import type { CompanionPersonaProfileContent } from "@ailearn/shared/db-schema/companion-memory";
+} from "@astella/shared/pet-persona-merge";
+import type { CompanionPersonaProfileContent } from "@astella/shared/db-schema/companion-memory";
 
 /** 库里那一行可能什么形状都有：null、数组、任意对象。不认识的当"没档案"。 */
 function readProfile(value: unknown): CompanionPersonaProfileContent | null {

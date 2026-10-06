@@ -20,7 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assessmentDisputeViewV2Schema,
   type AssessmentDisputeStatusV2,
-} from "@ailearn/shared/assessment-dispute-rules-v2";
+} from "@astella/shared/assessment-dispute-rules-v2";
 import { AssessmentDisputeStrip } from "../review/assessment-dispute-strip.tsx";
 
 const ASSESSMENT_ID = "00000000-0000-4000-8000-0000000000a1";
@@ -71,7 +71,7 @@ function stub(dispute: unknown, overrides: Partial<Record<keyof Api, unknown>> =
     ...overrides,
   } as Api;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (window as any).ailearn = { assessmentDispute: api };
+  (window as any).astella = { assessmentDispute: api };
 }
 
 const renderStrip = () => render(
@@ -84,7 +84,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  delete (window as any).ailearn;
+  delete (window as any).astella;
 });
 
 describe("判定的异议", () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   learningObjectiveSurfaceV3Schema,
   type ObjectivePersonalStateV3,
-} from "@ailearn/shared/learning-objective-surface-contracts";
+} from "@astella/shared/learning-objective-surface-contracts";
 import { runPhaseLabel, studyActionDescription, studyStatusLabel } from "../space/room-primary-action-presentation.ts";
 
 const OBJECTIVE_ID = "00000000-0000-4000-8000-000000000001";

@@ -28,7 +28,7 @@ test("每个 (workspace,user) **最多一条**租约 —— 靠主键，不靠�
 test("租约有到期时间 —— 崩溃的副本不会执行清理", () => {
   // 没有 expires_at 的话，一个崩掉的副本会把这个用户**永久**锁死在"有人在整理"。
   assert.match(migration, /expires_at timestamptz NOT NULL/);
-  assert.match(migration, /ailearn_reclaim_stale_memory_organization_leases/);
+  assert.match(migration, /astella_reclaim_stale_memory_organization_leases/);
 });
 
 test("用户纠正与删除**不申请**这张租约，也不等它", () => {
@@ -43,7 +43,7 @@ test("用户纠正与删除**不申请**这张租约，也不等它", () => {
 });
 
 test("提交时复查状态，冲突**不覆盖**别人已经推进的结果", () => {
-  const commit = migration.slice(migration.indexOf("ailearn_commit_memory_organization"));
+  const commit = migration.slice(migration.indexOf("astella_commit_memory_organization"));
   assert.match(commit, /holder = p_holder/);
   assert.match(commit, /expires_at > now\(\)/,
     "过期租约持有一轮再提交，等于让一个已经不存在的进程写进状态");

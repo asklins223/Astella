@@ -107,7 +107,7 @@ function stubGateway(initialStatus: string, runOverride: { updatedAt?: string } 
       unsubscribe: vi.fn(async () => ({ ok: true as const, data: null })),
     },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return { gateway, state };
 }
 
@@ -304,7 +304,7 @@ describe("CardGenerationSurface · packaged 冒烟选择器契约", () => {
       objective: { statement: "为什么提取练习有效？", publicSummary: "提取练习", knowledgeForm: "causal_model" },
       front: { cue: "回忆一次提取练习", prompt: "请解释机制" },
     });
-    window.ailearn = {
+    window.astella = {
       contract: { enabledRoutes: ["note.detail", "note.cardGeneration"] },
       auth: { getState: vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: { status: "authenticated" as const, workspace: { workspaceId: "w-1" } } })) },
       room: { getProjection: vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: { activeGenerationSummary: { state: "data", data: [{ ...runSnapshot(), route: { kind: "note.cardGeneration", cardGenerationRunId: RUN_ID } }] } } })) },
@@ -332,7 +332,7 @@ describe("CardGenerationSurface · packaged 冒烟选择器契约", () => {
         onEvent: vi.fn(() => () => {}),
         unsubscribe: vi.fn(async () => ({ ok: true as const, data: null })),
       },
-    } as unknown as typeof window.ailearn;
+    } as unknown as typeof window.astella;
     useRoomStore.setState({ activeCardGenerationRunId: RUN_ID, activeNoteRef: null });
     const { container } = render(<CardGenerationSurface />);
 

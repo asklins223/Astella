@@ -14,7 +14,7 @@ import {
   type AgentOperationEventV1,
   type AgentOperationResultV1,
   type AgentOperationV1,
-} from "@ailearn/shared/agent-contracts";
+} from "@astella/shared/agent-contracts";
 
 export type OperationReceiptReduction = {
   accepted: boolean;

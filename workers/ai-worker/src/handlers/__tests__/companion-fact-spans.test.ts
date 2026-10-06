@@ -13,7 +13,7 @@ import {
 
 test("后果那一格恒真：它不吃问句，也不许被写成一句抄来的话", async () => {
   const { learningRunAssistanceConsequenceV1 } = await import(
-    "@ailearn/shared/learning-run-contracts");
+    "@astella/shared/learning-run-contracts");
   // ① 没问数字也放行（这一格说的不是读数，是"给提示会怎样"）。
   for (const text of ["嘿嘿", "今天好累啊", undefined]) {
     assert.ok(askableFactSpanKeys(text).includes("assistance_consequence"),

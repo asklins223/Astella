@@ -17,7 +17,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 const sql = postgres(CONN, { max: 2 });
@@ -64,7 +64,7 @@ async function seedBase(): Promise<{ workspaceId: string; userId: string; cleanu
 }
 
 async function countDeliveries(workspaceId: string, userId: string): Promise<number> {
-  // dev 栈 ailearn 为 superuser（RLS 豁免）——计数按 SQL 层 scope 过滤，
+  // dev 栈 astella 为 superuser（RLS 豁免）——计数按 SQL 层 scope 过滤，
   // 与生产 RLS 语义一致（生产由 RLS 承担同一过滤）。
   return sql.begin(async (tx) => {
     await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;

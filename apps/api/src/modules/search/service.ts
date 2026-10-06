@@ -5,13 +5,13 @@ import {
   learningObjectivesV2,
   learningObjectiveRevisionsV2,
   learningObjectiveOriginsV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { notes, noteBlocks, sources, sourceSegments } from "@ailearn/shared/db-schema/note";
-import { searchDocuments } from "@ailearn/shared/db-schema/search";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { notes, noteBlocks, sources, sourceSegments } from "@astella/shared/db-schema/note";
+import { searchDocuments } from "@astella/shared/db-schema/search";
 // 目标的即时投影与重建必须用同一标题合同，否则漂移修复会反复报旧标题。
 import { objectiveSearchTitle } from "../learning-objectives/search-projection.ts";
 import { searchDocumentsVisibleSql } from "../note/visibility.ts";
-import { SourceStatus } from "@ailearn/shared";
+import { SourceStatus } from "@astella/shared";
 import { logger } from "../../lib/logger.ts";
 import { escapeLikePattern } from "../../lib/like-escape.ts";
 import { clampLimit } from "../../lib/pagination-utils.ts";

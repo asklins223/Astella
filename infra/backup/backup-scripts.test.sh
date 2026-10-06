@@ -492,7 +492,7 @@ log "测试 17: rc-restore-verify.sh 拒绝生产库名"
 RC_DB_OUTPUT=$(run_script bash "$BACKUP_DIR/rc-restore-verify.sh" \
   --source-host localhost --source-user study --source-db study \
   --target-host localhost \
-  --target-user study --target-db ailearn \
+  --target-user study --target-db astella \
   --ci-mode --release test --commit abc --migration 0028 \
   --report-dir "$TEMP_DIR/rc-reports" --force)
 assert_contains "rc-restore-verify.sh 拒绝生产库名" "$RC_DB_OUTPUT" "禁止的生产库名"
@@ -603,14 +603,14 @@ EOF
 
 cat > "$CRON_CONFIG" <<EOF
 PG_HOST=localhost
-PG_USER=ailearn_migrator
-PG_DB=ailearn
+PG_USER=astella_migrator
+PG_DB=astella
 SOURCE_RELEASE=0.5.0-test
 SOURCE_COMMIT=abc1234
 SOURCE_MIGRATION=0038
 AGE_KEY_PATH=$TEMP_DIR/backup-age.pub
 S3_ENDPOINT=http://minio:9000
-S3_BUCKET=ailearn-backups
+S3_BUCKET=astella-backups
 S3_ACCESS_KEY=test-access
 S3_SECRET_KEY=test-secret
 MANIFEST_DIR=$CRON_MANIFEST_DIR

@@ -8,7 +8,7 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { COMPANION_LEAK_GATES_V1, COMPANION_LEAK_GATE_IDS_V1, companionLeakGateVersionV1 } from "@ailearn/shared/companion-leak-gates";
+import { COMPANION_LEAK_GATES_V1, COMPANION_LEAK_GATE_IDS_V1, companionLeakGateVersionV1 } from "@astella/shared/companion-leak-gates";
 
 /** 代号 → worker 里的真文件。shared 那张表只写代号，路径住在这里。 */
 const MODULE_FILES: Record<string, string> = {

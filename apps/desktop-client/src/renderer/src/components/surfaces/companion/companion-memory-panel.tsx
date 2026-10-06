@@ -1,5 +1,5 @@
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
-import type { CompanionMemoryItemV1,CompanionMemoryKindV1,CompanionMemoryRevisionV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
+import type { CompanionMemoryItemV1,CompanionMemoryKindV1,CompanionMemoryRevisionV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { Archive,Pencil,Pin,Plus,Trash2 } from "lucide-react";
 import { useEffect,useMemo,useRef,type KeyboardEvent } from "react";
 import { HUD_PAGES } from "../../hud/hud-pages";

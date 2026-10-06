@@ -77,7 +77,7 @@ COMMENT ON TABLE public.companion_memory_organization_leases IS
 --> statement-breakpoint
 
 -- 回收过期租约。放在租约表上而不是应用层：崩溃的副本不会执行任何清理。
-CREATE OR REPLACE FUNCTION public.ailearn_reclaim_stale_memory_organization_leases()
+CREATE OR REPLACE FUNCTION public.astella_reclaim_stale_memory_organization_leases()
 RETURNS integer
 LANGUAGE sql
 SECURITY DEFINER
@@ -100,7 +100,7 @@ $$;
 --
 -- 返回 false 表示"本轮没能提交"：要么租约不在手里，要么状态被别人推进过。
 -- 两种情况下调用方都**不得**把建议当成已落地（§4.6.9「冲突不覆盖用户新修改」）。
-CREATE OR REPLACE FUNCTION public.ailearn_commit_memory_organization(
+CREATE OR REPLACE FUNCTION public.astella_commit_memory_organization(
   p_workspace_id uuid,
   p_user_id uuid,
   p_holder text,
@@ -145,11 +145,11 @@ ALTER TABLE public.companion_memory_organization_state FORCE ROW LEVEL SECURITY;
 CREATE POLICY companion_memory_organization_state_user_isolation
   ON public.companion_memory_organization_state FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   );
 
@@ -158,23 +158,23 @@ ALTER TABLE public.companion_memory_organization_leases FORCE ROW LEVEL SECURITY
 CREATE POLICY companion_memory_organization_leases_user_isolation
   ON public.companion_memory_organization_leases FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   );
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_memory_organization_state TO ailearn_worker;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_memory_organization_leases TO ailearn_worker;
-GRANT SELECT ON public.companion_memory_organization_state TO ailearn_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_memory_organization_state TO astella_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_memory_organization_leases TO astella_worker;
+GRANT SELECT ON public.companion_memory_organization_state TO astella_api;
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_reclaim_stale_memory_organization_leases() FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.ailearn_commit_memory_organization(uuid, uuid, text, text, integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_reclaim_stale_memory_organization_leases() TO ailearn_worker;
-GRANT EXECUTE ON FUNCTION public.ailearn_commit_memory_organization(uuid, uuid, text, text, integer) TO ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_reclaim_stale_memory_organization_leases() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_commit_memory_organization(uuid, uuid, text, text, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_reclaim_stale_memory_organization_leases() TO astella_worker;
+GRANT EXECUTE ON FUNCTION public.astella_commit_memory_organization(uuid, uuid, text, text, integer) TO astella_worker;

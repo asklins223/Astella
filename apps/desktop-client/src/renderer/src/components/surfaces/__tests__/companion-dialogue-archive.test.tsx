@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import type { CompanionHistoryItemV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
-import type { CompanionDiscoveryEntryV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { CompanionHistoryItemV1 } from "@astella/shared/companion-memory-desktop-contracts";
+import type { CompanionDiscoveryEntryV1 } from "@astella/shared/desktop-ipc-contracts";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useRoomStore } from "../../../app/room-store";
@@ -28,7 +28,7 @@ beforeEach(() => {
     return ok({ status: "collected", entry });
   });
   send.mockReset(); ensureConversation.mockReset(); getProposal.mockReset();
-  vi.stubGlobal("ailearn", {
+  vi.stubGlobal("astella", {
     auth: { getState: vi.fn(async () => ok({ status: "authenticated", workspace: { workspaceEpoch: 9 } })) },
     companion: {
       history: { list, search },

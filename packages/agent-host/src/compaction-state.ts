@@ -4,9 +4,9 @@ import {
   decideCompactionAttempt,
   recordCompactionAttempt,
   type CompactionCooldownDecision, type CompactionCooldownState,
-} from "@ailearn/agent-core";
-import type { ContextPressureReasonV1 } from "@ailearn/shared/context-budget-contracts";
-import type { AgentScopeV1 } from "@ailearn/shared/agent-contracts";
+} from "@astella/agent-core";
+import type { ContextPressureReasonV1 } from "@astella/shared/context-budget-contracts";
+import type { AgentScopeV1 } from "@astella/shared/agent-contracts";
 import { queryRows, type AgentSqlExecutor } from "./store.ts";
 
 /**

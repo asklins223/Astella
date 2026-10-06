@@ -11,13 +11,13 @@
 
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
-import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
+import { reviewSchedules } from "@astella/shared/db-schema/evidence";
 import {
   understandingProjectionCheckpoints,
   understandingRoutePlans,
-} from "@ailearn/shared/db-schema/understanding-projection";
+} from "@astella/shared/db-schema/understanding-projection";
 import { parseCheckpointToken, watermarkBehind, type CheckpointWatermark } from "./projection-checkpoint.ts";
-import type { UnderstandingRoutePlanRequestV1 } from "@ailearn/shared";
+import type { UnderstandingRoutePlanRequestV1 } from "@astella/shared";
 
 export interface UnderstandingRoutePlanScope {
   workspaceId: string;

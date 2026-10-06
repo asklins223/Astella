@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CompanionGuidanceAudioCache, type GuidanceAudioScope } from "../companion-guidance-audio-cache";
 import { DesktopGateway } from "../desktop-gateway";
 import { speakCompanionVoice } from "../desktop-gateway-ns-companion";
-import type { CompanionGuidanceVoiceProfileV1, CompanionVoiceSpeakResultV1 } from "@ailearn/shared/companion-voice-contracts";
+import type { CompanionGuidanceVoiceProfileV1, CompanionVoiceSpeakResultV1 } from "@astella/shared/companion-voice-contracts";
 
 let directory: string;
 const scope: GuidanceAudioScope = { deployment: "http://127.0.0.1:4000", userId: "00000000-0000-4000-8000-000000000001" };
@@ -83,8 +83,8 @@ it("bounds local recordings while retaining the newly generated chapter", async 
 
 function transport() {
   const gateway = new DesktopGateway({ DESKTOP_API_ORIGIN: scope.deployment,
-    AILEARN_DESKTOP_PAIRING_KEY_ID: "desktop-key-1", AILEARN_DESKTOP_PAIRING_SECRET: Buffer.alloc(32, 9).toString("base64url"),
-    AILEARN_DOMAIN_SCHEMA_REVISION: "domain-v2-test" }, { guidanceAudioCache: new CompanionGuidanceAudioCache(directory) });
+    ASTELLA_DESKTOP_PAIRING_KEY_ID: "desktop-key-1", ASTELLA_DESKTOP_PAIRING_SECRET: Buffer.alloc(32, 9).toString("base64url"),
+    ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" }, { guidanceAudioCache: new CompanionGuidanceAudioCache(directory) });
   const t = gateway.gatewayTransport;
   t.connection = { version: 1, kind: "ready", schemaRevision: "domain-v2-test" };
   t.credentialRestored = true; t.token = "test-voice-token";
@@ -96,7 +96,7 @@ function transport() {
 it("the real gateway reuses guidance files after restart while ordinary notifications keep their own voice path", async () => {
   let selected = profile;
   const tts = vi.fn(() => new Response(Buffer.from(audio.audioBase64, "base64"), {
-    headers: { "Content-Type": "audio/mpeg", "X-Ailearn-Tts-Voice": selected.voice } }));
+    headers: { "Content-Type": "audio/mpeg", "X-Astella-Tts-Voice": selected.voice } }));
   const lookup = vi.fn(() => new Response(JSON.stringify(selected)));
   vi.spyOn(globalThis, "fetch").mockImplementation(async input => {
     const path = new URL(String(input)).pathname;
@@ -130,7 +130,7 @@ it("an account change drops a late synthesis before it can be cached or played",
   const rejected = expect(pending).rejects.toMatchObject({ code: "cancelled" });
   await vi.waitFor(() => expect(release).toBeDefined());
   t.currentSession = null; t.token = null;
-  release!(new Response(Buffer.from(audio.audioBase64, "base64"), { headers: { "Content-Type": "audio/mpeg", "X-Ailearn-Tts-Voice": profile.voice } }));
+  release!(new Response(Buffer.from(audio.audioBase64, "base64"), { headers: { "Content-Type": "audio/mpeg", "X-Astella-Tts-Voice": profile.voice } }));
   await rejected;
   expect(await readdir(directory)).toEqual([]);
 });

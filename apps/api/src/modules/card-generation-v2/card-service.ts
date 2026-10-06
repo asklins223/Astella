@@ -30,17 +30,17 @@ import {
   learningExposuresV2,
   initialValidationRemindersV2,
   learningObjectiveEvidenceBindingsV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { noteVersions } from "@ailearn/shared/db-schema/note";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { noteVersions } from "@astella/shared/db-schema/note";
 import { visibleCardsCondition } from "../note/visibility.ts";
 import { loadEvidencePreviewItems } from "./evidence-preview.ts";
-import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
-import { frontLeaksAnswerVerbatimV2 } from "@ailearn/shared/card-generation-v2-pipeline";
+import { reviewSchedules } from "@astella/shared/db-schema/evidence";
+import { frontLeaksAnswerVerbatimV2 } from "@astella/shared/card-generation-v2-pipeline";
 import {
   PRE_RUN_REVEAL_COOLDOWN_MS,
   PRE_RUN_REVEAL_POLICY_VERSION,
   cardStrategyV2Schema,
-} from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
 import {
   parseLearningCardRevealV2,
   parsePublicLearningCardV2,
@@ -48,7 +48,7 @@ import {
   type PublicLearningCardV2,
   type RevealCardRequestV2,
   type ArchiveCardRequestV2,
-} from "@ailearn/shared/learning-card-v2-contracts";
+} from "@astella/shared/learning-card-v2-contracts";
 import {
   computeCardRevealContextHashV2,
   computeCanonicalAnswerHashV2,
@@ -56,7 +56,7 @@ import {
   computeCardPublicationPublicPayloadHashV2,
   computeCardPublicationRevealPayloadHashV2,
   computeExposureScopeIdV2,
-} from "@ailearn/shared/card-generation-v2-hashing";
+} from "@astella/shared/card-generation-v2-hashing";
 import {
   CardGenerationV2ServiceError,
   insertDomainEvent,

@@ -4,7 +4,7 @@
 -- 三条都来自 2026-09-20 多空间审查的"未完成"清单，逐条说明为什么是这个形状。
 --
 -- ─── 1. 念头调度不过滤 left_at（审查原文：中）───
--- `ailearn_enqueue_companion_thoughts` 按 `(workspace, user)` 入队念头，取对的
+-- `astella_enqueue_companion_thoughts` 按 `(workspace, user)` 入队念头，取对的
 -- 语句是 `JOIN workspace_members m ON m.user_id = s.user_id`——**没有 `left_at`
 -- 条件**（0227 起就是这样，0236/0254 两次改写都没补）。后果：用户已经退出的空间
 -- 仍然持续生成念头并投进 inbox；每退一个空间就多一路"她还在那儿跟你说话"。
@@ -29,7 +29,7 @@
 
 -- ─── 1. 念头调度补 left_at ──────────────────────────────────────────
 
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_companion_thoughts()
+CREATE OR REPLACE FUNCTION public.astella_enqueue_companion_thoughts()
   RETURNS integer
   LANGUAGE plpgsql
   SECURITY DEFINER
@@ -82,7 +82,7 @@ $function$;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_enqueue_companion_thoughts() IS
+COMMENT ON FUNCTION public.astella_enqueue_companion_thoughts() IS
   '念头批量生成入队（30 分钟桶幂等，供最快一档 30 分钟的节奏用）。说不说由 handler 按静默时段/反馈/间隔判。门槛：pet_profiles.last_active_at 14 天内 + 账号总开关 + 成员未退出（0259 补 left_at）。';
 
 --> statement-breakpoint
@@ -115,7 +115,7 @@ DECLARE
   v_has_ws_index boolean;
   v_has_user_index boolean;
 BEGIN
-  SELECT pg_get_functiondef('public.ailearn_enqueue_companion_thoughts()'::regprocedure)
+  SELECT pg_get_functiondef('public.astella_enqueue_companion_thoughts()'::regprocedure)
   INTO v_body;
   IF position('left_at IS NULL' IN v_body) = 0 THEN
     RAISE EXCEPTION '念头调度没有补上 left_at 过滤';

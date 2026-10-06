@@ -52,10 +52,10 @@ beforeEach(() => {
     noteAnnotation: { write: vi.fn(async (input: any) => ok({ annotationId: id(8), noteId: target.noteId, anchor: input.command.anchor, explanation: input.command.explanation,
       sourceMessageId: input.command.sourceMessageId, generationJobId: null, revision: 1, versionState: "current", createdAt: date, updatedAt: date })) },
   };
-  Object.defineProperty(window, "ailearn", { configurable: true, value: api });
+  Object.defineProperty(window, "astella", { configurable: true, value: api });
   render(<CompanionChatProvider><Capture /></CompanionChatProvider>);
 });
-afterEach(() => { cleanup(); resetNoteExplanations(); vi.useRealTimers(); vi.restoreAllMocks(); Reflect.deleteProperty(window, "ailearn"); });
+afterEach(() => { cleanup(); resetNoteExplanations(); vi.useRealTimers(); vi.restoreAllMocks(); Reflect.deleteProperty(window, "astella"); });
 
 it("发送前置检查还没返回时立刻停止，不提交模型请求，不保存批注", async () => {
   const preflight = deferred<ReturnType<typeof ok<typeof session>>>();

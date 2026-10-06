@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { companionRunListQueryV1Schema } from "@ailearn/shared";
+import { companionRunListQueryV1Schema } from "@astella/shared";
 import { projectCompanionRunListV1 } from "../run-list.ts";
 
 const createdAt = new Date("2026-10-01T00:00:00.000Z");

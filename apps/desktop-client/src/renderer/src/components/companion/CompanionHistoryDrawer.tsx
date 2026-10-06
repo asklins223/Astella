@@ -4,7 +4,7 @@ import { useCompanionPaperPlacement } from "./use-companion-paper-placement";
 import { Fragment, useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { ArrowDownToLine, BookHeart, BookOpenText, CalendarDays, ChevronLeft, CircleCheck, Cloud, FileText, Loader2, MessageCircle, Search, Sparkles, X } from "lucide-react";
-import type { CompanionMessageV1 } from "@ailearn/shared/companion-conversation-contracts";
+import type { CompanionMessageV1 } from "@astella/shared/companion-conversation-contracts";
 import { gatewayErrorMessage } from "../../app/desktop-client";
 import { companionMessageText, navChipsStillOutsideMessages, useCompanionChat, type CompanionNavChip } from "../../app/companion-chat-session";
 import { stopCompanionSpeech } from "../../app/companion-voice-playback";

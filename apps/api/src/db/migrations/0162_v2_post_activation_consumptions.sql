@@ -12,7 +12,7 @@
 --    新增 `card_generation_cutover_events`（审计闭包，供 C31/C39 drill 与
 --    getCutoverStatus 的 lastCutoverAt/lastRollbackAt 读取）。
 --
--- RLS：两表均按 workspace 隔离（app.workspace_id），ailearn_api + ailearn_worker
+-- RLS：两表均按 workspace 隔离（app.workspace_id），astella_api + astella_worker
 -- 全列可写（台账与事件不含 server-private 列）。
 
 --> statement-breakpoint
@@ -68,4 +68,4 @@ CREATE POLICY cgce_v2_ws_isolation ON public.card_generation_cutover_events
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   public.card_generation_post_activation_consumptions,
   public.card_generation_cutover_events
-TO ailearn_api, ailearn_worker;
+TO astella_api, astella_worker;

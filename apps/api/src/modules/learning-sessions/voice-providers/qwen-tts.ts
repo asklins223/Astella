@@ -17,7 +17,7 @@
 
 import WebSocket from "ws";
 import { randomUUID } from "node:crypto";
-import { DomainError } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
 
 export interface QwenTtsOptions {
   /** 业务空间 ID（北京地域 WS URL 前缀，如 llm-55ujpy2wafojbdp8） */

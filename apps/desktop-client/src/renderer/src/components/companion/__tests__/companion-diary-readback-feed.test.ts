@@ -28,8 +28,8 @@ function captureFeed(): { events: CompanionFeedSelection[]; opens: number } {
     events.push((event as CustomEvent<CompanionFeedSelection>).detail);
   };
   const openListener = () => { state.opens += 1; };
-  window.addEventListener("ailearn:companion-feed", listener);
-  window.addEventListener("ailearn:companion-open-chat", openListener);
+  window.addEventListener("astella:companion-feed", listener);
+  window.addEventListener("astella:companion-open-chat", openListener);
   return state;
 }
 
@@ -138,7 +138,7 @@ describe("引用穿过订阅端之后还在", () => {
       onOpenChat: () => undefined,
     });
     try {
-      window.dispatchEvent(new CustomEvent("ailearn:companion-feed", {
+      window.dispatchEvent(new CustomEvent("astella:companion-feed", {
         detail: {
           text: "日记 2026-10-01",
           source: "selection",

@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { CapabilityProjectionV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { CapabilityProjectionV1 } from "@astella/shared/desktop-ipc-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "./desktop-client";
 import { useHomeProjectionInvalidation } from "./home-projection";
 import { useRoomStore } from "./room-store";
@@ -72,8 +72,8 @@ export function HomeCapabilityProjectionProvider({ children }: { readonly childr
 
     const generation = ++requestGenerationRef.current;
     const load = async () => {
-      if (!window.ailearn) throw new Error("unavailable");
-      const sessionResponse = await window.ailearn.auth.getState({ meta: createRequestMeta() });
+      if (!window.astella) throw new Error("unavailable");
+      const sessionResponse = await window.astella.auth.getState({ meta: createRequestMeta() });
       const session = unwrapGatewayResult(sessionResponse);
       if (session.status !== "authenticated" || !session.workspace) {
         if (generation === requestGenerationRef.current) {
@@ -96,7 +96,7 @@ export function HomeCapabilityProjectionProvider({ children }: { readonly childr
         scopeRef.current = requestScope;
       }
 
-      const response = await window.ailearn.capabilities.get({
+      const response = await window.astella.capabilities.get({
         meta: createRequestMeta(requestScope.workspaceEpoch),
       });
       const projection = unwrapGatewayResult(response);

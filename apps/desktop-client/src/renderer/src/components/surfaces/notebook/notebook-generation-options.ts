@@ -22,7 +22,7 @@ import type {
   DesktopCardGenerationFeedbackReasonV2,
   DesktopCardLearningGoalV2,
   DesktopCardStrategyV2,
-} from "@ailearn/shared/card-generation-desktop-contracts";
+} from "@astella/shared/card-generation-desktop-contracts";
 
 export type GenerationOptions = {
   readonly learningGoal: DesktopCardLearningGoalV2;

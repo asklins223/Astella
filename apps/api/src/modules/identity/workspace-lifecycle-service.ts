@@ -23,8 +23,8 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { adoptWorkspaceContext, withActorTransaction, withWorkspaceTransaction } from "../../db/client.ts";
-import { onboardingStates, users, workspaceMembers, workspaces } from "@ailearn/shared/db-schema/identity";
-import { sessions } from "@ailearn/shared/db-schema/session";
+import { onboardingStates, users, workspaceMembers, workspaces } from "@astella/shared/db-schema/identity";
+import { sessions } from "@astella/shared/db-schema/session";
 import { RECOVERED_PASSWORD_SENTINEL, canonicalizeEmail, hashPassword, SessionContext } from "./credentials.ts";
 import { issueSession } from "./session-service.ts";
 import { MAX_COLLABORATIVE_WORKSPACES } from "./workspace-membership-service.ts";
@@ -373,7 +373,7 @@ export async function dissolveWorkspace(
   try {
     const rows = await withActorTransaction({ userId: actorUserId }, (tx) =>
       tx.execute(sql`
-        SELECT public.ailearn_dissolve_workspace(${workspaceId}::uuid, ${actorUserId}::uuid)
+        SELECT public.astella_dissolve_workspace(${workspaceId}::uuid, ${actorUserId}::uuid)
           AS counts
       `));
     const counts = (rows[0] as { counts: Record<string, number> } | undefined)?.counts ?? {};

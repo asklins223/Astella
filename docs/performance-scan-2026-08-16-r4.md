@@ -246,7 +246,7 @@
 ### 36. [Medium] resumeStuckWaitingParents enqueues resume jobs one DB call per parent
 - **文件**：`workers/ai-worker/src/agent/reconciler.ts:222-275`
 - **类别**：DB-N+1
-- **问题**：Children are batch-loaded, but the final per-parent loop calls db.execute(ailearn_enqueue_agent_turn_job(...)) once per resumed parent.
+- **问题**：Children are batch-loaded, but the final per-parent loop calls db.execute(astella_enqueue_agent_turn_job(...)) once per resumed parent.
 - **建议**：Enqueue all resume jobs in a single batched statement or reuse one workspace transaction/connection.
 ### 37. [Medium] O(candidates × bundles) lookup via Object.values().some() inside per-candidate loop
 - **文件**：`workers/ai-worker/src/agent/compose-consistency.ts:47-60`

@@ -4,7 +4,7 @@
  * 实现留在原处（主进程有安全存储那一支，测试有内存那一支）；这里只留接口，
  * 好让 `GatewayTransport` 依赖一个**形状**而不是某个具体实现。
  */
-import type { GatewayErrorCode } from "@ailearn/shared/desktop-ipc-contracts";
+import type { GatewayErrorCode } from "@astella/shared/desktop-ipc-contracts";
 
 /** 平台现在能不能把凭据加密落盘。 */
 export type SessionCredentialStore = {

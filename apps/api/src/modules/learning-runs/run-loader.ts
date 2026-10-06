@@ -9,7 +9,7 @@
  */
 import type { ApiTransaction } from "../../db/client.ts";
 import { runNotFound } from "./run-errors.ts";
-import { learningRuns } from "@ailearn/shared/db-schema/learning-runs";
+import { learningRuns } from "@astella/shared/db-schema/learning-runs";
 import { and, eq } from "drizzle-orm";
 
 export interface RunScope {

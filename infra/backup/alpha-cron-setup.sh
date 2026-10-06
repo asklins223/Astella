@@ -3,7 +3,7 @@
 # ADR-0007 §1: Alpha 环境 cron 调度器安装脚本
 #
 # 功能：
-#   1. 生成 /etc/ailearn/backup.env 配置文件（从参数或交互式输入）
+#   1. 生成 /etc/astella/backup.env 配置文件（从参数或交互式输入）
 #   2. 安装 cron 条目（每 12 小时执行一次备份）
 #   3. 验证所需工具（pg_dump, age, aws/mc）已安装
 #   4. 输出安装结果和后续步骤
@@ -11,10 +11,10 @@
 # 用法：
 #   ./alpha-cron-setup.sh \
 #     --pg-host localhost --pg-port 5432 \
-#     --pg-user ailearn_migrator --pg-db ailearn \
+#     --pg-user astella_migrator --pg-db astella \
 #     --release 0.5.0-alpha.1 --commit abc1234 --migration 0028 \
-#     --age-key /etc/ailearn/backup-age.pub \
-#     --s3-endpoint http://minio:9000 --s3-bucket ailearn-backups \
+#     --age-key /etc/astella/backup-age.pub \
+#     --s3-endpoint http://minio:9000 --s3-bucket astella-backups \
 #     --s3-access-key XXX --s3-secret-key YYY \
 #     --manifest-dir /data/backups/manifests
 #
@@ -33,9 +33,9 @@ set -euo pipefail
 # ─── 常量 ───────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONFIG_DIR="/etc/ailearn"
+CONFIG_DIR="/etc/astella"
 CONFIG_FILE="$CONFIG_DIR/backup.env"
-CRON_MARKER="# ailearn-alpha-backup"
+CRON_MARKER="# astella-alpha-backup"
 CRON_SCHEDULE="0 */12 * * *"
 CRON_COMMAND="$SCRIPT_DIR/alpha-backup-cron.sh"
 
@@ -182,13 +182,13 @@ if [[ "$INTERACTIVE" == "true" ]]; then
   PG_HOST=$(prompt PG_HOST "PostgreSQL 主机名")
   PG_PORT=$(prompt PG_PORT "PostgreSQL 端口" "5432")
   PG_USER=$(prompt PG_USER "PostgreSQL 用户名 (migrator)")
-  PG_DB=$(prompt PG_DB "PostgreSQL 数据库名" "ailearn")
+  PG_DB=$(prompt PG_DB "PostgreSQL 数据库名" "astella")
   SOURCE_RELEASE=$(prompt SOURCE_RELEASE "系统版本号" "0.5.0-alpha.1")
   SOURCE_COMMIT=$(prompt SOURCE_COMMIT "Git commit SHA")
   SOURCE_MIGRATION=$(prompt SOURCE_MIGRATION "最新迁移编号" "0028")
-  AGE_KEY_PATH=$(prompt AGE_KEY_PATH "age 公钥路径" "/etc/ailearn/backup-age.pub")
+  AGE_KEY_PATH=$(prompt AGE_KEY_PATH "age 公钥路径" "/etc/astella/backup-age.pub")
   S3_ENDPOINT=$(prompt S3_ENDPOINT "S3 端点" "http://minio:9000")
-  S3_BUCKET=$(prompt S3_BUCKET "S3 bucket 名称" "ailearn-backups")
+  S3_BUCKET=$(prompt S3_BUCKET "S3 bucket 名称" "astella-backups")
   S3_ACCESS_KEY=$(prompt S3_ACCESS_KEY "S3 access key")
   S3_SECRET_KEY=$(prompt S3_SECRET_KEY "S3 secret key")
   MANIFEST_DIR=$(prompt MANIFEST_DIR "manifest 目录" "/data/backups/manifests")
@@ -310,7 +310,7 @@ log ""
 log "后续步骤:"
 log "  1. 确认 age 密钥对已生成（运行 setup-backup-infrastructure.sh）"
 log "  2. 手动测试: bash $SCRIPT_DIR/alpha-backup-cron.sh"
-log "  3. 检查日志: tail -f /var/log/ailearn/backup-cron.log"
+log "  3. 检查日志: tail -f /var/log/astella/backup-cron.log"
 log "  4. 查看 cron: crontab -l"
 log ""
 log "卸载: $SCRIPT_DIR/alpha-cron-setup.sh --uninstall"

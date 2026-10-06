@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentTurnRequest, AgentTurnResult } from "@ailearn/shared";
+import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import { JobLeaseLostError } from "../../lib/job-lease.ts";
 import { runCompanionAgentModelStep } from "../companion-agent-task.ts";

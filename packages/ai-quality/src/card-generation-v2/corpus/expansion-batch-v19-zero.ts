@@ -258,7 +258,7 @@ export const EXPANSION_V19_ZERO: CardGenerationFixtureV2[] = [
     split: "holdout",
     source: {
       title: "网络信息",
-      content: "办公室 WiFi：AILEARN-5G，密码 Learn@2026；访客网络密码同前台要。",
+      content: "办公室 WiFi：astella-5G，密码 Learn@2026；访客网络密码同前台要。",
     },
     generationSpec: { learningGoal: "remember", detailThreshold: "balanced" },
     acceptableCardCountRange: { min: 0, max: 0 },
@@ -266,7 +266,7 @@ export const EXPANSION_V19_ZERO: CardGenerationFixtureV2[] = [
     supportOnlyFacts: [],
     mustMerge: [],
     mustNotMerge: [],
-    mustNotCard: ["AILEARN-5G", "密码 Learn@2026", "访客网络密码"],
+    mustNotCard: ["astella-5G", "密码 Learn@2026", "访客网络密码"],
     acceptableTransformations: ["retrieval"],
     forbiddenFrontLeaks: [],
     evidenceExpectations: [],

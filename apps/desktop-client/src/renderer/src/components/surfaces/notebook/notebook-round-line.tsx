@@ -22,8 +22,8 @@
  *  - 迟到那句话（§16.39）的带载荷写入与「先替你留着」那一行。
  */
 import type { Dispatch, ReactElement, SetStateAction } from "react";
-import type { DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import type { RoundPracticeV1 } from "@ailearn/shared/note-learning-round-contracts";
+import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
+import type { RoundPracticeV1 } from "@astella/shared/note-learning-round-contracts";
 import type { GatewayFailureKind } from "../../../app/desktop-client";
 
 /** 这一屏三处「失败」共用同一个形状。起个名是为了页面与组件引用同一份。 */

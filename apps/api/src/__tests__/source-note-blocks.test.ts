@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseContent, type ParsedSegment } from "@ailearn/shared/markdown-parser";
+import { parseContent, type ParsedSegment } from "@astella/shared/markdown-parser";
 import { emptyFragmentNoteDoc, projectFragmentBlocks, writeFragmentBlocks } from "../modules/note/doc-fragment.ts";
 import { sourceNoteBlocks } from "../modules/source/source-note-blocks.ts";
 

@@ -1,6 +1,6 @@
 import { ArrowLeft, CircleAlert, FileText, LoaderCircle, RefreshCw, RotateCcw, Square } from "lucide-react";
 import { useRef, type CSSProperties } from "react";
-import type { CardGenerationCandidateV1 } from "@ailearn/shared/card-generation-desktop-contracts";
+import type { CardGenerationCandidateV1 } from "@astella/shared/card-generation-desktop-contracts";
 import { useCardVisibleArrival } from "../../motion/card-object-spring";
 import { CardPackArt } from "../library/card-pack-object";
 import { useCardPackMotion } from "../library/use-card-pack-motion";

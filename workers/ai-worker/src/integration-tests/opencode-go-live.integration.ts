@@ -78,9 +78,9 @@ process.env.AI_PLATFORMS_CONFIG ??= resolvePath(REPO_ROOT, "config/ai-platforms.
 // 直连校验默认拒绝该网段；与 .env 保持一致的显式放行。
 process.env.AI_ALLOW_DOCKER_DESKTOP_SYNTHETIC_DNS ??= "true";
 
-const { resolveSystemPlatform } = await import("@ailearn/shared/platform-config-node");
-const { getProviderById } = await import("@ailearn/shared");
-const { resolveOpenAIChatCompletionsUrl } = await import("@ailearn/shared/ai-endpoints");
+const { resolveSystemPlatform } = await import("@astella/shared/platform-config-node");
+const { getProviderById } = await import("@astella/shared");
+const { resolveOpenAIChatCompletionsUrl } = await import("@astella/shared/ai-endpoints");
 const { createProvider } = await import("../lib/ai-provider.ts");
 const { resolveOpenCodeGoEndpoint } = await import("../lib/providers/opencode-go.ts");
 

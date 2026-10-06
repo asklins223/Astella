@@ -32,7 +32,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL ??= CONN;
@@ -46,9 +46,9 @@ const sql = postgres(CONN, { max: 2 });
 /**
  * §6c 那段**测试专用 DDL**（建一个"只让第一次发布失败"的触发器）走这一条连接。
  *
- * `ailearn_api` 在 `public` 上**没有 CREATE**——实测
- * `has_schema_privilege('ailearn_api','public','CREATE') = false`
- * （`ailearn_worker` 同样为 false，只有 migrator 为 true）。所以那段
+ * `astella_api` 在 `public` 上**没有 CREATE**——实测
+ * `has_schema_privilege('astella_api','public','CREATE') = false`
+ * （`astella_worker` 同样为 false，只有 migrator 为 true）。所以那段
  * `CREATE SEQUENCE / FUNCTION / TRIGGER` 在受限角色下必然 42501
  * `permission denied for schema public`。
  *
@@ -56,7 +56,7 @@ const sql = postgres(CONN, { max: 2 });
  * （`companion-memory-handlers-postgres` 等）用的是同一个做法——夹具/DDL 走 migrator
  * 超户连接，被测读写走自己的受限连接。
  *
- * 本文件其余部分**一律**仍用 `CONN`（`ailearn_api`），所以 RLS 那一层照旧是真的
+ * 本文件其余部分**一律**仍用 `CONN`（`astella_api`），所以 RLS 那一层照旧是真的
  * 被量到，而不是被一条超户连接绕过去。
  */
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 1 });
@@ -73,8 +73,8 @@ const scope = () => ({ workspaceId, userId });
  * 断言用的读一律落在**这一轮的作用域**里：裸读在受限角色下返回空集而不是报错。
  *
  * `client` 只在**那张表本身只对某个角色开放**时才需要换：§6c 断的
- * `companion_diary_generation_checkpoints` 只有 `ailearn_worker` 的策略与授权
- * （`ailearn_api` 连 SELECT 都没有，那是设计如此——检查点是 worker 私有的）。
+ * `companion_diary_generation_checkpoints` 只有 `astella_worker` 的策略与授权
+ * （`astella_api` 连 SELECT 都没有，那是设计如此——检查点是 worker 私有的）。
  * 其余一律走默认的 `DATABASE_URL_API`，所以 RLS 那一层照旧是真的被量到。
  */
 async function readInScope<T>(
@@ -218,7 +218,7 @@ test("§1b · 投递是**幂等**的：同一 systemEventId 重复投递不产�
 
 test("§2 · 记忆写入与召回：跨空间的那一档是**显式**的，且缺省必须落在本地", async () => {
   const { memoryScopeForKind, memoryLooksWorkspaceBound } = await import(
-    "@ailearn/shared/companion-memory-scope"
+    "@astella/shared/companion-memory-scope"
   );
   // 这一族最贵的一种错是一条记忆跑到了别人的空间。判据落在**纯函数**那一层：
   // 它决定作用域，而作用域决定"这条会不会跨空间"。
@@ -592,13 +592,13 @@ test("§6c · 选材与成稿检查点：发布写入失败后复用两步产物
   // Fail only the first final diary-row write. nextval is non-transactional,
   // so the handler's failure row can still be written and the next attempt succeeds.
   //
-  // 走 `admin`（migrator 超户）而不是 `sql`（`ailearn_api`）：后者在 `public` 上没有
+  // 走 `admin`（migrator 超户）而不是 `sql`（`astella_api`）：后者在 `public` 上没有
   // CREATE，这段 DDL 必然 `permission denied for schema public`。
   await admin.unsafe(`DROP TRIGGER IF EXISTS ${testTrigger} ON public.companion_daily_summaries`);
   await admin.unsafe(`DROP FUNCTION IF EXISTS ${testFunction}()`);
   await admin.unsafe(`DROP SEQUENCE IF EXISTS ${testSequence}`);
   await admin.unsafe(`CREATE SEQUENCE ${testSequence} START WITH 1`);
-  await admin.unsafe(`GRANT USAGE, SELECT ON SEQUENCE ${testSequence} TO ailearn_worker`);
+  await admin.unsafe(`GRANT USAGE, SELECT ON SEQUENCE ${testSequence} TO astella_worker`);
   await admin.unsafe(`CREATE FUNCTION ${testFunction}() RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
       IF NEW.date = '2026-09-21' AND nextval('${testSequence}') = 1 THEN

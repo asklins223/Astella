@@ -27,7 +27,7 @@ import {
   DESKTOP_IPC_CONTRACT_VERSION,
   type GatewayResultV1,
   type RequestMetaV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import {
   companionDailySummaryV1Schema,
   companionHistoryPageV1Schema,
@@ -35,7 +35,7 @@ import {
   companionMemoryListV1Schema,
   companionMemoryStarMapV2Schema,
   companionPersonaV1Schema,
-} from "@ailearn/shared/companion-memory-desktop-contracts";
+} from "@astella/shared/companion-memory-desktop-contracts";
 import type { DesktopGateway } from "../desktop-gateway";
 import { registerAuthStub } from "./ns-auth-stubs";
 import * as ns_auth from "../desktop-gateway-ns-auth";
@@ -202,14 +202,14 @@ async function register(gateway: DesktopGateway) {
   const { registerM1DesktopIpc } = await import("../desktop-ipc");
   registerM1DesktopIpc({
     gateway,
-    env: { AILEARN_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
+    env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
     resolveWindow: () => ({}) as never,
     getWindowState: () => ({ state: "visible", revision: 1 }),
     setTitlebarTheme: () => true,
   });
 }
 
-const event = { sender: {}, senderFrame: { url: "ailearn://renderer/" } };
+const event = { sender: {}, senderFrame: { url: "astella://renderer/" } };
 
 function sessionStub() {
   return {
@@ -259,7 +259,7 @@ describe("companion centre desktop IPC", () => {
       expect(openExport.mock.calls[0].slice(1)).toEqual(["memory", meta.requestId]);
       if (!result.ok) throw new Error("export failed");
       const receipt = result.data as { fileName: string };
-      expect(await readFile(join(electronMock.downloadsPath, "理解书房", "伴星", receipt.fileName), "utf8")).toBe('{"记忆":[]}');
+      expect(await readFile(join(electronMock.downloadsPath, "Astella", "伴星", receipt.fileName), "utf8")).toBe('{"记忆":[]}');
       expect(electronMock.showSaveDialog).not.toHaveBeenCalled();
       const invalid = await requiredHandler(DESKTOP_IPC_CHANNELS.companionDataExport)(event, { meta: scopedMeta, kind: "unknown" });
       expect(invalid).toMatchObject({ ok: false });
@@ -281,7 +281,7 @@ describe("companion centre desktop IPC", () => {
       await requiredHandler(DESKTOP_IPC_CHANNELS.authGetState)(event, { meta });
       resolveExport(new Response("{}\n"));
       expect(await operation).toMatchObject({ ok: false, error: { code: "stale_workspace", retry: "resync_first" } });
-      expect(await readdir(join(electronMock.downloadsPath, "理解书房", "伴星"))).toEqual([]);
+      expect(await readdir(join(electronMock.downloadsPath, "Astella", "伴星"))).toEqual([]);
     } finally { await rm(electronMock.downloadsPath, { recursive: true, force: true }); }
   });
 

@@ -11,8 +11,8 @@
  *      409 ROOM_PROFILE_EQUIPMENT_REJECTED / 200 strict room-profile body。
  *
  * 运行（本地开发栈；必须使用受限角色，超级用户会绕过 RLS）：
- *   DATABASE_URL_MIGRATOR="postgres://ailearn_migrator:ailearn_dev@127.0.0.1:5432/ailearn" \
- *   DATABASE_URL_API="postgres://ailearn_api:ailearn_dev@127.0.0.1:5432/ailearn" \
+ *   DATABASE_URL_MIGRATOR="postgres://astella_migrator:astella_dev@127.0.0.1:5432/astella" \
+ *   DATABASE_URL_API="postgres://astella_api:astella_dev@127.0.0.1:5432/astella" \
  *   node --import tsx --test --test-concurrency=1 \
  *     src/integration-tests/companion-home-profile-rls-postgres.integration.ts
  * 或：make test-companion-home-profile-postgres
@@ -29,7 +29,7 @@ import test, { after, type TestContext } from "node:test";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import postgres from "postgres";
-import { companionRoomProfileV1Schema } from "@ailearn/shared/companion-home-contracts";
+import { companionRoomProfileV1Schema } from "@astella/shared/companion-home-contracts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 import { companionHomeProjectionRoutes } from "../modules/companion-conversation/home-projection-routes.ts";
 import { patchCompanionRoomProfile } from "../modules/companion-conversation/home-projection-service.ts";
@@ -146,7 +146,7 @@ async function readRoomProfileRow(admin: Sql, scope: { workspaceId: string; user
 async function waitForBlockedRoomProfileUpdate(sql: Sql, timeoutMs = 15_000): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    // 观察者与被阻塞会话同为 ailearn_api 角色，因此 query 文本可见。
+    // 观察者与被阻塞会话同为 astella_api 角色，因此 query 文本可见。
     const rows = await sql`
       SELECT query
         FROM pg_stat_activity

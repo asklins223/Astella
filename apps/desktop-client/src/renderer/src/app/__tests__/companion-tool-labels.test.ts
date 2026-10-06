@@ -9,7 +9,7 @@
  *
  * 判据从注册表现读，**不抄第二份名字清单**：抄一份就等于给漂移留了第二个落点。
  */
-import { COMPANION_AGENT_TOOL_NAMES } from "@ailearn/shared/companion-agent-registry";
+import { COMPANION_AGENT_TOOL_NAMES } from "@astella/shared/companion-agent-registry";
 import { describe, expect, it } from "vitest";
 
 import { TOOL_LABELS } from "../companion-agent-nodes.ts";

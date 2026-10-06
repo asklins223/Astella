@@ -9,11 +9,11 @@
  *
  * 纯数据，零行为变化。
  */
-import type { DesktopAiAuditItemV1 } from "@ailearn/shared/desktop-surface-contracts";
-import type { AiDataPolicyV1, WorkspaceSummaryV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import { EDGE_TTS_VOICE_OPTIONS, QWEN_TTS_VOICE_OPTIONS, type TtsEngineV1 } from "@ailearn/shared/tts-voice-catalog";
-import type { CompanionAnswerModePreferenceV1 } from "@ailearn/shared";
-import { LEARNING_ROOM_ASSET_BASE_PATH } from "@ailearn/shared/desktop-ipc-contracts";
+import type { DesktopAiAuditItemV1 } from "@astella/shared/desktop-surface-contracts";
+import type { AiDataPolicyV1, WorkspaceSummaryV1 } from "@astella/shared/desktop-ipc-contracts";
+import { EDGE_TTS_VOICE_OPTIONS, QWEN_TTS_VOICE_OPTIONS, type TtsEngineV1 } from "@astella/shared/tts-voice-catalog";
+import type { CompanionAnswerModePreferenceV1 } from "@astella/shared";
+import { LEARNING_ROOM_ASSET_BASE_PATH } from "@astella/shared/desktop-ipc-contracts";
 
 export const DATA_POLICY_FIELDS: ReadonlyArray<readonly [keyof AiDataPolicyV1, string, string]> = [
   ["sendToExternal", "允许发送到外部模型服务", "关闭后，内容不会发送给外部模型服务。"],

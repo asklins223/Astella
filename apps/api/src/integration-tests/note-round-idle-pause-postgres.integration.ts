@@ -275,7 +275,7 @@ before(async () => {
     role?.bypass,
     false,
     `扫描跑在 ${String(role?.who)} 上且 rolbypassrls=${String(role?.bypass)}：`
-    + "换成旁路 RLS 的角色（例如 dev 栈的 ailearn）之后，这一份文件里所有归属断言都不再是证据",
+    + "换成旁路 RLS 的角色（例如 dev 栈的 astella）之后，这一份文件里所有归属断言都不再是证据",
   );
   app = Fastify({ logger: false });
   await app.register(sensible);
@@ -547,7 +547,7 @@ test("预筛只回候选：扫描的事务次数＝候选数，而不是成员�
 
   const candidates = (await asApp(stale, (tx) => tx`
     SELECT workspace_id, user_id, round_id, last_changed_at
-      FROM public.ailearn_note_rounds_idle_for_pause(${ROUND_IDLE_PAUSE_GRACE_MS_V1})`
+      FROM public.astella_note_rounds_idle_for_pause(${ROUND_IDLE_PAUSE_GRACE_MS_V1})`
   )) as unknown as Array<{ round_id: string }>;
   const candidateIds = candidates.map((row) => row.round_id);
   assert.ok(candidateIds.includes(staleRound), "该挑的没挑出来 ⇒ 真过期的轮次等不到暂停");

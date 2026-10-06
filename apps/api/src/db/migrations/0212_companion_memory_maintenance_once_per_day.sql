@@ -11,11 +11,11 @@ CREATE TABLE IF NOT EXISTS public.companion_memory_maintenance_runs (
 );
 
 REVOKE ALL PRIVILEGES ON TABLE public.companion_memory_maintenance_runs FROM PUBLIC;
-REVOKE ALL PRIVILEGES ON TABLE public.companion_memory_maintenance_runs FROM ailearn_api;
-REVOKE ALL PRIVILEGES ON TABLE public.companion_memory_maintenance_runs FROM ailearn_worker;
-GRANT SELECT, INSERT ON TABLE public.companion_memory_maintenance_runs TO ailearn_migrator;
+REVOKE ALL PRIVILEGES ON TABLE public.companion_memory_maintenance_runs FROM astella_api;
+REVOKE ALL PRIVILEGES ON TABLE public.companion_memory_maintenance_runs FROM astella_worker;
+GRANT SELECT, INSERT ON TABLE public.companion_memory_maintenance_runs TO astella_migrator;
 
-CREATE OR REPLACE FUNCTION public.ailearn_run_companion_memory_maintenance()
+CREATE OR REPLACE FUNCTION public.astella_run_companion_memory_maintenance()
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -68,12 +68,12 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.ailearn_run_companion_memory_maintenance() TO ailearn_worker;
+GRANT EXECUTE ON FUNCTION public.astella_run_companion_memory_maintenance() TO astella_worker;
 
 COMMENT ON TABLE public.companion_memory_maintenance_runs IS
   'Database idempotency gate: companion memory maintenance runs at most once per database date.';
 
-COMMENT ON FUNCTION public.ailearn_run_companion_memory_maintenance() IS
+COMMENT ON FUNCTION public.astella_run_companion_memory_maintenance() IS
   '桌宠记忆与关系衰减：每个数据库日期最多执行一次；pinned 记忆不衰减。';
 
 -- companion_memory_maintenance 曾被列入 worker 自入队白名单，但当前 worker
@@ -85,6 +85,6 @@ CREATE POLICY "worker_type_allowlist_insert_guard"
   FOR INSERT
   TO public
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'::name
+    CURRENT_USER = 'astella_worker'::name
     AND "type" IN ('companion_memory_extract', 'companion_summarizer', 'companion_daily_summary')
   );

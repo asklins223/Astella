@@ -65,5 +65,5 @@ CREATE POLICY note_expansions_owner ON public.note_expansions FOR ALL TO PUBLIC
         AND (expanded_note.share_scope = 'shared' OR expanded_note.created_by = note_expansions.user_id)
     ));
 
-GRANT SELECT, INSERT ON public.note_expansions TO ailearn_api;
-GRANT ALL PRIVILEGES ON public.note_expansions TO ailearn_migrator;
+GRANT SELECT, INSERT ON public.note_expansions TO astella_api;
+GRANT ALL PRIVILEGES ON public.note_expansions TO astella_migrator;

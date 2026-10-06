@@ -64,7 +64,7 @@ import {
 } from "../src/handlers/companion-here-and-now.ts";
 import { loadThisTurnFacts } from "../src/handlers/companion-this-turn-facts.ts";
 import { withWorkerWorkspaceTransaction } from "../src/db.ts";
-import { COMPANION_LEAK_GATES_V1, companionLeakGateVersionV1 } from "@ailearn/shared/companion-leak-gates";
+import { COMPANION_LEAK_GATES_V1, companionLeakGateVersionV1 } from "@astella/shared/companion-leak-gates";
 
 interface ReplayTurn {
   runId: string;

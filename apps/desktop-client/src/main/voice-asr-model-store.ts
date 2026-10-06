@@ -14,7 +14,7 @@ import {
   type VoiceAsrModelSourceV1,
   type VoiceAsrModelSnapshotV1,
   type VoiceAsrModelStatus
-} from '@ailearn/shared/voice-asr-model-contracts'
+} from '@astella/shared/voice-asr-model-contracts'
 
 export { voiceAsrModelDirectory } from '../shared/voice-asr-model-path'
 
@@ -92,7 +92,7 @@ export interface VoiceAsrModelFileSpec {
 export interface VoiceAsrModelStoreOptions {
   /**
    * 按顺序试的上游地址。默认魔搭社区优先、国内镜像和官方库兜底（见合同的说明）；
-   * `AILEARN_VOICE_ASR_SOURCE` 可以整份换掉——自建镜像、离线机器、内网制品库走这一条。
+   * `ASTELLA_VOICE_ASR_SOURCE` 可以整份换掉——自建镜像、离线机器、内网制品库走这一条。
    *
    * 列表的语义是「第一个成了就用它」，不是「第一个不行就报错」。
    */
@@ -411,13 +411,13 @@ export class VoiceAsrModelStore {
 
 
 /**
- * 读 `AILEARN_VOICE_ASR_SOURCE`：逗号分隔的地址列表，**顺序即优先级**。
+ * 读 `ASTELLA_VOICE_ASR_SOURCE`：逗号分隔的地址列表，**顺序即优先级**。
  *
  * 为什么支持多个而不是一个：换源这件事最常见的形态是"镜像挂了，先用官方的"，
  * 一条环境变量就能表达，不必重启前改代码。给了空值 / 全是空白 → 用合同里的默认列表。
  */
 export function voiceAsrModelSources(env: NodeJS.ProcessEnv): readonly VoiceAsrModelSourceV1[] {
-  const raw = env.AILEARN_VOICE_ASR_SOURCE?.trim()
+  const raw = env.ASTELLA_VOICE_ASR_SOURCE?.trim()
   if (!raw) return VOICE_ASR_MODEL_SOURCES
   const sources = raw
     .split(',')

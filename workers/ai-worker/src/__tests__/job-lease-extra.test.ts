@@ -77,7 +77,7 @@ function setupDbMock(hasActiveLease: boolean = true, renewFails: boolean = false
 
   // Mock transaction — creates a mockTx that handles execute calls by call order:
   //   call 1: setWorkerTransactionContext → return context data
-  //   call 2: ailearn_renew_job_lease     → return renew result (only in lockJobLease)
+  //   call 2: astella_renew_job_lease     → return renew result (only in lockJobLease)
   db.transaction = (async (fn: any) => {
     const mockTx = createMockTx(hasActiveLease, renewFails);
     return fn(mockTx);
@@ -326,7 +326,7 @@ describe("job-lease withJobTransaction (DB mock)", () => {
 function createMockTx(hasActiveLease: boolean = true, renewFails: boolean = false): any {
   // Use a call counter to distinguish between execute calls:
   //   call 1: setWorkerTransactionContext (returns context data)
-  //   call 2: ailearn_renew_job_lease (returns renew result, only in lockJobLease)
+  //   call 2: astella_renew_job_lease (returns renew result, only in lockJobLease)
   let executeCallCount = 0;
 
   return {
@@ -336,7 +336,7 @@ function createMockTx(hasActiveLease: boolean = true, renewFails: boolean = fals
         // setWorkerTransactionContext: return context data
         return [{ workspace_id: WS_ID, user_id: USER_ID }];
       }
-      // ailearn_renew_job_lease (called by lockJobLease after select)
+      // astella_renew_job_lease (called by lockJobLease after select)
       if (renewFails) return [];
       return [{ ok: true }];
     },

@@ -10,12 +10,12 @@
  * - feature flags 与 grounded-tutor prompt 常量。
  */
 
-import { canonicalJsonV1, sha256Hex, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { canonicalJsonV1, sha256Hex, sha256Utf8V1 } from "@astella/shared/content-hash";
 import type {
   CompanionRunFailureClassV1,
   PetPersonaPresetBoundaries,
   PetProfileActiveness,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger.ts";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
@@ -457,7 +457,7 @@ export async function recordCompanionContextCompactions(args: {
            AND s.workspace_id = ${args.workspaceId} AND s.user_id = ${args.userId}
            AND r.id = s.run_id
            AND r.status IN ('accepted', 'running', 'waiting_for_confirmation')
-           AND public.ailearn_assert_handoff_snapshot_fence(${args.runId}, s.snapshot_version)
+           AND public.astella_assert_handoff_snapshot_fence(${args.runId}, s.snapshot_version)
         RETURNING s.snapshot_sha256
       `);
       if (updated[0]) return true;
@@ -1100,7 +1100,7 @@ export async function markCompanionRunFailed(
           WHERE conversation_id = ${read.conversationId} AND run_id = ${read.runId}
         `);
         await tx.execute(sql`
-          SELECT pg_notify('ailearn_companion_events_v1',
+          SELECT pg_notify('astella_companion_events_v1',
                            ${JSON.stringify({ conversationId: read.conversationId, maxSeq: seq + 1 })})
         `);
         logger.warn({ runId: read.runId, code, reason }, "companion run marked failed");

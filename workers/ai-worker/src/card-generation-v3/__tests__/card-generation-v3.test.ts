@@ -13,7 +13,7 @@
  *  6. **零候选是正常结果**——no_cards 出得来一份合法计划，全被剔除时也出得来。
  */
 import assert from "node:assert/strict";
-import { objectiveReuseClaimHashV2 } from "@ailearn/shared/objective-reuse-rules-v2";
+import { objectiveReuseClaimHashV2 } from "@astella/shared/objective-reuse-rules-v2";
 import { test } from "node:test";
 import {
   buildCardGenerateV3Prompt,
@@ -39,25 +39,25 @@ import {
   createDeterministicCardGenerateV3Provider,
   createDeterministicCardContentCheckV3Provider,
 } from "../deterministic.ts";
-import { cardGenerateV3OutputSchema } from "@ailearn/shared/card-generation-v3-contracts";
-import { KnowledgeFormValuesV2 } from "@ailearn/shared/card-generation-v2-contracts";
+import { cardGenerateV3OutputSchema } from "@astella/shared/card-generation-v3-contracts";
+import { KnowledgeFormValuesV2 } from "@astella/shared/card-generation-v2-contracts";
 import type {
   CardGenerateV3CandidateContent,
   CardGenerateV3CandidateDraft,
   CardGenerateV3DraftOutput,
   CardGenerateV3Output,
-} from "@ailearn/shared/card-generation-v3-contracts";
-import type { LearningCardCandidateRevisionV2 } from "@ailearn/shared/card-generation-v2-contracts";
-import type { AiTaskContext } from "@ailearn/shared/ai-task-kernel";
-import type { GroundingCriticReportV2 } from "@ailearn/shared/card-quality-v2-contracts";
+} from "@astella/shared/card-generation-v3-contracts";
+import type { LearningCardCandidateRevisionV2 } from "@astella/shared/card-generation-v2-contracts";
+import type { AiTaskContext } from "@astella/shared/ai-task-kernel";
+import type { GroundingCriticReportV2 } from "@astella/shared/card-quality-v2-contracts";
 import {
   computeRubricHashV2,
-} from "@ailearn/shared/card-generation-v2-hashing";
+} from "@astella/shared/card-generation-v2-hashing";
 import {
   extractAtomsDeterministic,
   type AssemblerEvidenceManifest,
   type SealedEvidenceEntryV2,
-} from "@ailearn/shared/card-generation-v2-pipeline";
+} from "@astella/shared/card-generation-v2-pipeline";
 
 const RUN_ID = "0f1e2d3c-4b5a-4978-8796-a5b4c3d2e1f0";
 const PLAN_REVISION_ID = "aaaa0000-0000-4000-8000-000000000001";
@@ -612,7 +612,7 @@ test("组装：两级提示是候选行的兄弟列，不进候选修订哈希",
   // 不能拿"两次组装的哈希相等"当判据——`candidateRevisionId` 每次都是新 uuid，两次组装
   // 本来就不可能相等（第一版我就栽在这里）。改问那件真正不变的事：**被哈希的那一份里没有提示**。
   const { computeCandidateRevisionHashV2 } = await import(
-    "@ailearn/shared/card-generation-v2-hashing"
+    "@astella/shared/card-generation-v2-hashing"
   );
   const content = candidateContent("obj-1");
   const assembled = assembleCardGenerationV3(

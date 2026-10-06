@@ -1,6 +1,6 @@
 -- 0152: companion_voice_artifacts pending 过期清理加分批 LIMIT + 支撑索引。
 --
--- 背景（PERF-BN3 / 审计发现）：0104 的 ailearn_expire_pending_voice_artifacts()
+-- 背景（PERF-BN3 / 审计发现）：0104 的 astella_expire_pending_voice_artifacts()
 -- 对 status='pending' AND expires_at<'now()' 一次性 UPDATE 全量，无 LIMIT
 -- 分批（对比同迁移 stream_events 清理带 p_limit）；且表仅 status='attached'
 -- 的 partial 唯一索引，无 (status, expires_at) 支撑索引 → 每次全表扫描 +
@@ -19,11 +19,11 @@ CREATE INDEX IF NOT EXISTS companion_voice_artifacts_pending_expires_idx
 
 -- CREATE OR REPLACE 无法变更参数个数（只会新建 overload），先 DROP 旧 0 参
 -- 函数再以带 p_limit 的版本重建，确保不残留。
-DROP FUNCTION IF EXISTS public.ailearn_expire_pending_voice_artifacts();
+DROP FUNCTION IF EXISTS public.astella_expire_pending_voice_artifacts();
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_expire_pending_voice_artifacts(
+CREATE OR REPLACE FUNCTION public.astella_expire_pending_voice_artifacts(
   p_limit integer DEFAULT 200
 )
 RETURNS integer
@@ -62,10 +62,10 @@ $function$;
 --> statement-breakpoint
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
-    REVOKE ALL ON FUNCTION public.ailearn_expire_pending_voice_artifacts(integer)
-      FROM PUBLIC, ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_expire_pending_voice_artifacts(integer)
-      TO ailearn_api;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
+    REVOKE ALL ON FUNCTION public.astella_expire_pending_voice_artifacts(integer)
+      FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_expire_pending_voice_artifacts(integer)
+      TO astella_api;
   END IF;
 END $$;

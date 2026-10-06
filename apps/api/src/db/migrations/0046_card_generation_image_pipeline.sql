@@ -262,7 +262,7 @@ ALTER TABLE public.evidences
   );
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_guard_note_image_asset_identity()
+CREATE OR REPLACE FUNCTION public.astella_guard_note_image_asset_identity()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -287,9 +287,9 @@ $$;
 DROP TRIGGER IF EXISTS note_image_assets_identity_guard ON public.note_image_assets;
 CREATE TRIGGER note_image_assets_identity_guard
   BEFORE UPDATE ON public.note_image_assets
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_guard_note_image_asset_identity();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_guard_note_image_asset_identity();
 
-CREATE OR REPLACE FUNCTION public.ailearn_guard_succeeded_image_insight()
+CREATE OR REPLACE FUNCTION public.astella_guard_succeeded_image_insight()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -308,9 +308,9 @@ $$;
 DROP TRIGGER IF EXISTS note_image_insights_immutable_guard ON public.note_image_insights;
 CREATE TRIGGER note_image_insights_immutable_guard
   BEFORE UPDATE OR DELETE ON public.note_image_insights
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_guard_succeeded_image_insight();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_guard_succeeded_image_insight();
 
-CREATE OR REPLACE FUNCTION public.ailearn_guard_note_image_evidence_unit()
+CREATE OR REPLACE FUNCTION public.astella_guard_note_image_evidence_unit()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -329,7 +329,7 @@ $$;
 DROP TRIGGER IF EXISTS note_image_evidence_units_immutable_guard ON public.note_image_evidence_units;
 CREATE TRIGGER note_image_evidence_units_immutable_guard
   BEFORE UPDATE OR DELETE ON public.note_image_evidence_units
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_guard_note_image_evidence_unit();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_guard_note_image_evidence_unit();
 --> statement-breakpoint
 
 ALTER TABLE public.note_image_assets ENABLE ROW LEVEL SECURITY;
@@ -357,16 +357,16 @@ CREATE POLICY note_image_evidence_units_workspace_isolation
 --> statement-breakpoint
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
     GRANT SELECT, INSERT, UPDATE, DELETE ON
       public.note_image_assets,
       public.note_image_insights,
       public.note_image_evidence_units
-    TO ailearn_api;
+    TO astella_api;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
-    GRANT SELECT ON public.note_image_assets TO ailearn_worker;
-    GRANT SELECT, INSERT, UPDATE ON public.note_image_insights TO ailearn_worker;
-    GRANT SELECT, INSERT ON public.note_image_evidence_units TO ailearn_worker;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
+    GRANT SELECT ON public.note_image_assets TO astella_worker;
+    GRANT SELECT, INSERT, UPDATE ON public.note_image_insights TO astella_worker;
+    GRANT SELECT, INSERT ON public.note_image_evidence_units TO astella_worker;
   END IF;
 END $$;

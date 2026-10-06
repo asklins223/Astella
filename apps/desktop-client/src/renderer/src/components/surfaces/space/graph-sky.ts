@@ -11,7 +11,7 @@ import {
 import type {
   UnderstandingEdgeProjectionV3,
   UnderstandingNodeProjectionV3,
-} from "@ailearn/shared/note-deepening-contracts";
+} from "@astella/shared/note-deepening-contracts";
 export type GraphNodeKind = UnderstandingNodeProjectionV3["nodeRef"]["kind"];
 /** The record's own id, whichever kind it is — the one field all four node
  *  refs share under a different name. */

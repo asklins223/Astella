@@ -97,14 +97,14 @@ ALTER TABLE public.assistant_memory_item_revisions FORCE ROW LEVEL SECURITY;
 CREATE POLICY assistant_memory_item_revisions_workspace_user_isolation
   ON public.assistant_memory_item_revisions FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
     )
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -113,11 +113,11 @@ CREATE POLICY assistant_memory_item_revisions_workspace_user_isolation
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT ON public.assistant_memory_item_revisions TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT ON public.assistant_memory_item_revisions TO astella_api, astella_worker;
 
 --> statement-breakpoint
 
-REVOKE UPDATE, DELETE, TRUNCATE ON public.assistant_memory_item_revisions FROM ailearn_api, ailearn_worker;
+REVOKE UPDATE, DELETE, TRUNCATE ON public.assistant_memory_item_revisions FROM astella_api, astella_worker;
 
 --> statement-breakpoint
 

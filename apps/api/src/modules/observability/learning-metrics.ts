@@ -18,7 +18,7 @@
 import { and, desc, eq, gte } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
 import { withWorkspaceTransaction } from "../../db/client.ts";
-import { learningMetricEvents } from "@ailearn/shared/db-schema/learning-metrics";
+import { learningMetricEvents } from "@astella/shared/db-schema/learning-metrics";
 import { clampLimit } from "../../lib/pagination-utils.ts";
 
 export interface LearningMetricScope {

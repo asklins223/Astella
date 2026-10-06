@@ -8,8 +8,8 @@
  *
  * 边界：
  * - 模型调用一律经调用方注入的 provider 接口，本目录不做任何网络/DB I/O；
- * - 哈希计算走 @ailearn/shared/card-generation-v2-hashing；
- * - 合同类型走 @ailearn/shared/card-generation-v2-contracts 与
+ * - 哈希计算走 @astella/shared/card-generation-v2-hashing；
+ * - 合同类型走 @astella/shared/card-generation-v2-contracts 与
  *   card-quality-v2-contracts。
  */
 

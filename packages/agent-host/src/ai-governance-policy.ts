@@ -1,4 +1,4 @@
-import { AI_CONSENT_REQUIRED_CODE, DomainError } from "@ailearn/shared";
+import { AI_CONSENT_REQUIRED_CODE, DomainError } from "@astella/shared";
 
 export class AIConsentRequiredError extends DomainError {
   readonly code = AI_CONSENT_REQUIRED_CODE;

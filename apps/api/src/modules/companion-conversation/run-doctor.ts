@@ -12,14 +12,14 @@ import {
   type CompanionAgentPermissionLevel,
   type CompanionRunDoctorV1,
   type CompanionRunFailureClassV1,
-} from "@ailearn/shared";
+} from "@astella/shared";
 import {
   companionAgentSteps,
   companionAgentToolCalls,
   companionStreamEvents,
   companionTurnRuns,
   jobs,
-} from "@ailearn/shared/db-schema";
+} from "@astella/shared/db-schema";
 import type { ApiTransaction } from "../../db/client.ts";
 
 export interface CompanionRunDoctorScope {

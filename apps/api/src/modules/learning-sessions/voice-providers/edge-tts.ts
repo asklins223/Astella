@@ -13,7 +13,7 @@
  *   容器内 server.py 合成 zh-CN-XiaoxiaoNeural → audio/mpeg mp3 字节。
  */
 
-import { DomainError } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
 
 export interface EdgeTtsProviderOptions {
   /** 服务地址（优先于环境变量；宿主缺省使用开发容器的回环端口） */

@@ -180,8 +180,8 @@ ALTER TABLE public.assistant_thoughts
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_persona_profiles TO ailearn_api;
-GRANT SELECT, INSERT ON public.companion_persona_profile_versions TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE ON public.companion_persona_profiles TO ailearn_worker;
-GRANT SELECT, INSERT ON public.companion_persona_profile_versions TO ailearn_worker;
-GRANT SELECT, INSERT, UPDATE ON public.pet_profiles TO ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_persona_profiles TO astella_api;
+GRANT SELECT, INSERT ON public.companion_persona_profile_versions TO astella_api;
+GRANT SELECT, INSERT, UPDATE ON public.companion_persona_profiles TO astella_worker;
+GRANT SELECT, INSERT ON public.companion_persona_profile_versions TO astella_worker;
+GRANT SELECT, INSERT, UPDATE ON public.pet_profiles TO astella_worker;

@@ -16,10 +16,10 @@
 --
 -- 权限契约：
 -- - 全部表 RLS：workspace+user 双条件（app.workspace_id / app.user_id setting）
---   + ailearn_worker 豁免（与 0081 模式一致）；
--- - private 三表：ailearn_api 仅 INSERT（Planner 写入），无 SELECT/UPDATE/DELETE
---   ——公共 API 账号无读取路径（§16.1）；ailearn_worker 读写（评估/激活服务）；
--- - learning_task_drafts：ailearn_worker 显式 REVOKE ALL（§12.7 服务端草稿
+--   + astella_worker 豁免（与 0081 模式一致）；
+-- - private 三表：astella_api 仅 INSERT（Planner 写入），无 SELECT/UPDATE/DELETE
+--   ——公共 API 账号无读取路径（§16.1）；astella_worker 读写（评估/激活服务）；
+-- - learning_task_drafts：astella_worker 显式 REVOKE ALL（§12.7 服务端草稿
 --   不可被模型/Tutor/Assessment/主动策略读取）。
 
 --> statement-breakpoint
@@ -519,7 +519,7 @@ CREATE TABLE IF NOT EXISTS public.learning_run_idempotency (
 
 --> statement-breakpoint
 
--- ── RLS：workspace+user 双条件隔离 + ailearn_worker 豁免 ────────────────
+-- ── RLS：workspace+user 双条件隔离 + astella_worker 豁免 ────────────────
 
 DO $$
 DECLARE
@@ -554,14 +554,14 @@ BEGIN
       CREATE POLICY %I_workspace_user_isolation
         ON public.%I AS PERMISSIVE FOR ALL
         USING (
-          CURRENT_USER = 'ailearn_worker'
+          CURRENT_USER = 'astella_worker'
           OR (
             workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
             AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
           )
         )
         WITH CHECK (
-          CURRENT_USER = 'ailearn_worker'
+          CURRENT_USER = 'astella_worker'
           OR (
             workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
             AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -574,45 +574,45 @@ END $$;
 --> statement-breakpoint
 
 -- ── 表级权限契约 ────────────────────────────────────────────────────────
--- ailearn_api：业务读写（行级由 RLS 收口）。
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_runs TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_run_private_contracts TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_tasks TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_task_variants TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_artifacts TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_assessments TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_task_drafts TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_run_events TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_run_action_ledger TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_activity_leases TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_task_presentation_history TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.canonical_learning_event_outbox TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.practice_trail_event_outbox TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_run_idempotency TO ailearn_api;
+-- astella_api：业务读写（行级由 RLS 收口）。
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_runs TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_run_private_contracts TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_tasks TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_task_variants TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_artifacts TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_assessments TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_task_drafts TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_run_events TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_run_action_ledger TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_activity_leases TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_task_presentation_history TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.canonical_learning_event_outbox TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.practice_trail_event_outbox TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_run_idempotency TO astella_api;
 
--- private 三表：ailearn_api 仅 INSERT（Planner 写入），无 SELECT/UPDATE/DELETE。
+-- private 三表：astella_api 仅 INSERT（Planner 写入），无 SELECT/UPDATE/DELETE。
 -- 公共 API 账号无读取路径（§16.1）。
-REVOKE SELECT, UPDATE, DELETE ON public.learning_task_private_solutions FROM ailearn_api;
-REVOKE SELECT, UPDATE, DELETE ON public.learning_task_safety_reports FROM ailearn_api;
-REVOKE SELECT, UPDATE, DELETE ON public.learning_task_disclosure_profiles FROM ailearn_api;
-GRANT INSERT ON public.learning_task_private_solutions TO ailearn_api;
-GRANT INSERT ON public.learning_task_safety_reports TO ailearn_api;
-GRANT INSERT ON public.learning_task_disclosure_profiles TO ailearn_api;
+REVOKE SELECT, UPDATE, DELETE ON public.learning_task_private_solutions FROM astella_api;
+REVOKE SELECT, UPDATE, DELETE ON public.learning_task_safety_reports FROM astella_api;
+REVOKE SELECT, UPDATE, DELETE ON public.learning_task_disclosure_profiles FROM astella_api;
+GRANT INSERT ON public.learning_task_private_solutions TO astella_api;
+GRANT INSERT ON public.learning_task_safety_reports TO astella_api;
+GRANT INSERT ON public.learning_task_disclosure_profiles TO astella_api;
 
--- ailearn_worker：评估/激活服务读 private 三表与 evidence 链；其余表只读诊断。
-GRANT SELECT, INSERT, UPDATE ON public.learning_task_private_solutions TO ailearn_worker;
-GRANT SELECT, INSERT, UPDATE ON public.learning_task_safety_reports TO ailearn_worker;
-GRANT SELECT, INSERT, UPDATE ON public.learning_task_disclosure_profiles TO ailearn_worker;
-GRANT SELECT ON public.learning_runs TO ailearn_worker;
-GRANT SELECT ON public.learning_run_private_contracts TO ailearn_worker;
-GRANT SELECT ON public.learning_tasks TO ailearn_worker;
-GRANT SELECT ON public.learning_task_variants TO ailearn_worker;
-GRANT SELECT ON public.learning_artifacts TO ailearn_worker;
-GRANT SELECT, UPDATE ON public.learning_assessments TO ailearn_worker;
-GRANT SELECT ON public.learning_run_events TO ailearn_worker;
-GRANT SELECT ON public.learning_task_presentation_history TO ailearn_worker;
-GRANT SELECT ON public.learning_run_idempotency TO ailearn_worker;
+-- astella_worker：评估/激活服务读 private 三表与 evidence 链；其余表只读诊断。
+GRANT SELECT, INSERT, UPDATE ON public.learning_task_private_solutions TO astella_worker;
+GRANT SELECT, INSERT, UPDATE ON public.learning_task_safety_reports TO astella_worker;
+GRANT SELECT, INSERT, UPDATE ON public.learning_task_disclosure_profiles TO astella_worker;
+GRANT SELECT ON public.learning_runs TO astella_worker;
+GRANT SELECT ON public.learning_run_private_contracts TO astella_worker;
+GRANT SELECT ON public.learning_tasks TO astella_worker;
+GRANT SELECT ON public.learning_task_variants TO astella_worker;
+GRANT SELECT ON public.learning_artifacts TO astella_worker;
+GRANT SELECT, UPDATE ON public.learning_assessments TO astella_worker;
+GRANT SELECT ON public.learning_run_events TO astella_worker;
+GRANT SELECT ON public.learning_task_presentation_history TO astella_worker;
+GRANT SELECT ON public.learning_run_idempotency TO astella_worker;
 
 -- §12.7：draft 不可被模型/Tutor/Assessment/主动策略读取——worker 无任何权限
 -- （显式 REVOKE 防御 roles.sql 全表矩阵放大）。
-REVOKE ALL ON public.learning_task_drafts FROM ailearn_worker;
+REVOKE ALL ON public.learning_task_drafts FROM astella_worker;

@@ -1,17 +1,17 @@
-import { noteReflectionPageV1Schema, noteReflectionWriteResultV1Schema, type NoteReflectionCommandV1 } from "@ailearn/shared/note-learning-reflection-contracts";
+import { noteReflectionPageV1Schema, noteReflectionWriteResultV1Schema, type NoteReflectionCommandV1 } from "@astella/shared/note-learning-reflection-contracts";
 import type { NoteDocLocalSession } from "./desktop-gateway-ns-note";
 const noteDocLocalSessions = new Map<string, NoteDocLocalSession>();
 import * as ns_note from "./desktop-gateway-ns-note";
 import type { CompanionGuidanceAudioCache } from "./companion-guidance-audio-cache";
-import { noteAnnotationPageV1Schema, noteAnnotationWriteResultV1Schema, createNoteAnnotationTaskV1Schema, noteAnnotationLatestTaskQueryV1Schema, noteAnnotationLatestTaskV1Schema, noteAnnotationTaskV1Schema, type NoteAnnotationCommandV1 } from "@ailearn/shared/note-annotation-contracts";
+import { noteAnnotationPageV1Schema, noteAnnotationWriteResultV1Schema, createNoteAnnotationTaskV1Schema, noteAnnotationLatestTaskQueryV1Schema, noteAnnotationLatestTaskV1Schema, noteAnnotationTaskV1Schema, type NoteAnnotationCommandV1 } from "@astella/shared/note-annotation-contracts";
 import {
   createNoteOverviewTaskV1Schema,
   noteOverviewLatestTaskQueryV1Schema,
   noteOverviewLatestTaskV1Schema,
   noteOverviewPageV1Schema,
   noteOverviewTaskV1Schema,
-} from "@ailearn/shared/note-overview-contracts";
-import { noteRecallActionV1Schema, noteRecallActionResultV1Schema, noteRecallPageV1Schema, noteRecallStartInputV1Schema, noteRecallStartResultV1Schema } from "@ailearn/shared/note-recall-contracts";
+} from "@astella/shared/note-overview-contracts";
+import { noteRecallActionV1Schema, noteRecallActionResultV1Schema, noteRecallPageV1Schema, noteRecallStartInputV1Schema, noteRecallStartResultV1Schema } from "@astella/shared/note-recall-contracts";
 import {
   createNoteExpansionTaskV1Schema,
   confirmNoteExpansionTaskV1Schema,
@@ -22,14 +22,14 @@ import {
   noteExpansionPageV1Schema,
   noteExpansionReviewV1Schema,
   noteExpansionTaskV1Schema,
-} from "@ailearn/shared/note-expansion-contracts";
+} from "@astella/shared/note-expansion-contracts";
 import {
   createNoteDynamicArtifactTaskV1Schema,
   noteLearningArtifactPageV1Schema,
   noteLearningArtifactTaskListQueryV1Schema,
   noteLearningArtifactTaskPageV1Schema,
   noteLearningArtifactTaskV1Schema,
-} from "@ailearn/shared/note-learning-artifact-contracts";
+} from "@astella/shared/note-learning-artifact-contracts";
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
@@ -38,9 +38,9 @@ import {
   type PersonalRelationDecisionV2,
   type PersonalRelationKindV2Wire,
   type SetPersonalRelationDecisionV2Result,
-} from "@ailearn/shared/personal-relation-decision-rules-v2";
-import { learningDashboardV2Schema, type LearningDashboardV2 } from "@ailearn/shared";
-import { allWorkspacesStatsOverviewSchema, type AllWorkspacesStatsOverviewV1 } from "@ailearn/shared/stats-overview-contracts";
+} from "@astella/shared/personal-relation-decision-rules-v2";
+import { learningDashboardV2Schema, type LearningDashboardV2 } from "@astella/shared";
+import { allWorkspacesStatsOverviewSchema, type AllWorkspacesStatsOverviewV1 } from "@astella/shared/stats-overview-contracts";
 import {
   DESKTOP_API_SERVICE_ID,
   DESKTOP_IPC_CHANNELS,
@@ -119,7 +119,7 @@ import {
   type NoteDocStateResultV1,
   type NoteDocStreamEventV1,
   type NoteDocUploadResultV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import {
   createNoteDocState,
   mergeNoteDocUpdates,
@@ -143,8 +143,8 @@ import {
   learningTaskDraftV2Schema,
   learningTaskDraftWriteReceiptV2Schema,
   submitTaskArtifactReceiptV2Schema,
-} from "@ailearn/shared/learning-run-v2-contracts";
-import { reviewDeferRequestV2Schema, reviewDeferResultV2Schema, reviewQueueV2Schema } from "@ailearn/shared/review-queue-v2-contracts";
+} from "@astella/shared/learning-run-v2-contracts";
+import { reviewDeferRequestV2Schema, reviewDeferResultV2Schema, reviewQueueV2Schema } from "@astella/shared/review-queue-v2-contracts";
 import {
   noteReviewSubscriptionsV2Schema,
   homeSuggestionWireV2Schema,
@@ -159,7 +159,7 @@ import {
   objectiveResumeResultV2Schema,
   reviewSubscriptionCommandV2Schema,
   reviewSubscriptionResultV2Schema,
-} from "@ailearn/shared/review-queue-v2-contracts";
+} from "@astella/shared/review-queue-v2-contracts";
 import {
   closeAssessmentDisputeCommandV2Schema,
   closeAssessmentDisputeResultV2Schema,
@@ -167,9 +167,9 @@ import {
   openAssessmentDisputeResultV2Schema,
   supplementAssessmentDisputeCommandV2Schema,
   assessmentDisputeEnvelopeV2Schema,
-} from "@ailearn/shared/assessment-dispute-rules-v2";
-import { todayActivityV1Schema } from "@ailearn/shared/activity-surface-contracts";
-import { roomProjectionV1Schema, type RoomProjectionV1 } from "@ailearn/shared/room-projection-contracts";
+} from "@astella/shared/assessment-dispute-rules-v2";
+import { todayActivityV1Schema } from "@astella/shared/activity-surface-contracts";
+import { roomProjectionV1Schema, type RoomProjectionV1 } from "@astella/shared/room-projection-contracts";
 import {
   companionAccountGlobalOffEventV1Schema,
   companionAccountStateV1Schema,
@@ -185,15 +185,15 @@ import {
   type OnboardingTransitionRequest,
   type OnboardingTransitionResponse,
   type RuntimeFenceResponse,
-} from "@ailearn/shared/companion-shell-contracts";
-import { type TtsEngineV1 } from "@ailearn/shared/tts-voice-catalog";
+} from "@astella/shared/companion-shell-contracts";
+import { type TtsEngineV1 } from "@astella/shared/tts-voice-catalog";
 import {
   companionHomeProjectionV1Schema,
   companionRoomProfileV1Schema,
   type CompanionHomeProjectionV1,
   type CompanionRoomProfilePatchV1,
   type CompanionRoomProfileV1,
-} from "@ailearn/shared/companion-home-contracts";
+} from "@astella/shared/companion-home-contracts";
 import {
   COMPANION_VOICE_MAX_AUDIO_BYTES,
   COMPANION_VOICE_SPEAK_VOICE,
@@ -204,7 +204,7 @@ import {
   type CompanionVoiceSpeakRequestV1,
   type CompanionVoiceSpeakSegmentRequestV2,
   type CompanionVoiceSpeakResultV1,
-} from "@ailearn/shared/companion-voice-contracts";
+} from "@astella/shared/companion-voice-contracts";
 import {
   companionAgentRoutesListResultV1Schema,
   companionRunNodesListResultV1Schema,
@@ -233,7 +233,7 @@ import {
   companionChatCancelRunResultV1Schema,
   type CompanionRunNodesListRequestV1,
   type CompanionRunNodesListResultV1,
-} from "@ailearn/shared/companion-chat-desktop-contracts";
+} from "@astella/shared/companion-chat-desktop-contracts";
 import {
   companionGroundedTutorGrantV1Schema,
   companionLearningContextV1Schema,
@@ -243,20 +243,20 @@ import {
   type CompanionLearningContextV1,
   type CompanionLearningRunContextV1,
   type CreateCompanionLearningRunContextGrantRequestV1,
-} from "@ailearn/shared/companion-conversation-contracts";
+} from "@astella/shared/companion-conversation-contracts";
 import {
   SOURCE_IMAGE_MAX_BYTES,
   SOURCE_IMAGE_MIME_TYPES,
   sourceImageGetResultV1Schema,
   type SourceImageGetRequestV1,
   type SourceImageGetResultV1,
-} from "@ailearn/shared/source-image-contracts";
+} from "@astella/shared/source-image-contracts";
 import {
   NOTE_IMAGE_UPLOAD_MAX_BYTES,
   noteImageUploadResultV1Schema,
   type NoteImageUploadRequestV1,
   type NoteImageUploadResultV1,
-} from "@ailearn/shared/note-image-upload-contracts";
+} from "@astella/shared/note-image-upload-contracts";
 import {
   assistantDeliveryV2Schema,
   assistantContextRenewResultV2Schema,
@@ -265,7 +265,7 @@ import {
   type AssistantContextSnapshotV2,
   type AssistantDeliveryV2,
   type MainPageContextInputV2,
-} from "@ailearn/shared/companion-bridge-contracts";
+} from "@astella/shared/companion-bridge-contracts";
 import {
   companionDailySummaryV1Schema,
   companionDailyMonthV1Schema,
@@ -306,8 +306,8 @@ import {
   type CompanionPersonaPatchV1,
   type CompanionPersonaResetV1,
   type CompanionPersonaV1,
-} from "@ailearn/shared/companion-memory-desktop-contracts";
-import { companionConversationV1Schema } from "@ailearn/shared/companion-conversation-contracts";
+} from "@astella/shared/companion-memory-desktop-contracts";
+import { companionConversationV1Schema } from "@astella/shared/companion-conversation-contracts";
 import {
   companionInvitationSchema,
   companionJourneyBootstrapSchema,
@@ -317,11 +317,11 @@ import {
   type CompanionJourneyActionRequest,
   type CompanionJourneyBootstrap,
   type CompanionJourneyV2,
-} from "@ailearn/shared/companion-journey-contracts";
+} from "@astella/shared/companion-journey-contracts";
 
-import { noteDetailV1Schema, type NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
-import { noteSaveReceiptV1Schema, type NoteSaveReceiptV1 } from "@ailearn/shared/note-save-contracts";
-import { noteShareScopeReceiptV1Schema, type NoteShareScopeV1, type NoteShareScopeReceiptV1 } from "@ailearn/shared/note-share-contracts";
+import { noteDetailV1Schema, type NoteDetailV1 } from "@astella/shared/note-projection-contracts";
+import { noteSaveReceiptV1Schema, type NoteSaveReceiptV1 } from "@astella/shared/note-save-contracts";
+import { noteShareScopeReceiptV1Schema, type NoteShareScopeV1, type NoteShareScopeReceiptV1 } from "@astella/shared/note-share-contracts";
 import {
   desktopSourceListPageSchema,
   desktopSourceDetailSchema,
@@ -348,8 +348,8 @@ import {
   type DesktopSearchPage,
   type DesktopAiAuditPageV1,
   desktopAiAuditPageV1Schema,
-} from "@ailearn/shared/desktop-surface-contracts";
-import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema, type ObjectiveListPageV3, type LearningObjectiveSurfaceV3 } from "@ailearn/shared/learning-objective-surface-contracts";
+} from "@astella/shared/desktop-surface-contracts";
+import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema, type ObjectiveListPageV3, type LearningObjectiveSurfaceV3 } from "@astella/shared/learning-objective-surface-contracts";
 import {
   noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundPersonalHistoryPageV1Schema,
@@ -361,22 +361,22 @@ import {
   type NoteLearningRoundPersonalHistoryV1,
   type NoteLearningRoundV1Wire,
   type RoundTeachingViewV1,
-} from "@ailearn/shared/note-learning-round-contracts";
-import { noteRouteCoverageV1Schema, type NoteRouteCoverageV1 } from "@ailearn/shared/note-route-coverage-v2";
+} from "@astella/shared/note-learning-round-contracts";
+import { noteRouteCoverageV1Schema, type NoteRouteCoverageV1 } from "@astella/shared/note-route-coverage-v2";
 import {
   recordRecallSourceRevealResultV1Schema,
   type RecallWaitingKindV1,
   type RecordRecallSourceRevealResultV1,
-} from "@ailearn/shared/recall-waiting-v2-contracts";
-import { understandingTopologySnapshotV3Schema, type NoteDeepeningSnapshotV1 } from "@ailearn/shared/note-deepening-contracts";
-import { noteDeepeningV3Schema, type NoteDeepeningV3 } from "@ailearn/shared/note-deepening-v3-contracts";
+} from "@astella/shared/recall-waiting-v2-contracts";
+import { understandingTopologySnapshotV3Schema, type NoteDeepeningSnapshotV1 } from "@astella/shared/note-deepening-contracts";
+import { noteDeepeningV3Schema, type NoteDeepeningV3 } from "@astella/shared/note-deepening-v3-contracts";
 import {
   activateCardCandidatesRequestV2Schema,
   candidateActionCommandV2Schema,
   candidateRevealV2Schema,
   cardActivationReceiptV2Schema,
   cardPlanV2Schema,
-} from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
 import {
   cardActivationReceiptDesktopV1Schema,
   cardGenerationActiveSummaryListV1Schema,
@@ -403,9 +403,9 @@ import {
   type CardGenerationRetryResultV1,
   type CardGenerationExposureEligibilityV1,
   type CardActivationReceiptDesktopV1,
-} from "@ailearn/shared/card-generation-desktop-contracts";
+} from "@astella/shared/card-generation-desktop-contracts";
 import { projectLearningDashboardToRoomProjection } from "./room-projection";
-import { computeClientReviewHashV2 } from "@ailearn/shared/card-generation-v2-hashing";
+import { computeClientReviewHashV2 } from "@astella/shared/card-generation-v2-hashing";
 import { ARTIFACT_MAX_BYTES } from "./artifact-surface";
 // 2026-09-30 拆出：传输层与它依赖的两个类型各自成文件。`GatewayTransport` 持有
 // 发请求所需的那一小块状态（`request` 的传递闭包，恰好 11 个成员）——
@@ -443,7 +443,7 @@ function readPairingSecret(value: string | undefined): Buffer | null {
 
 function readConfiguration(env: NodeJS.ProcessEnv): { ok: true; value: GatewayConfiguration } | { ok: false; reason: "missing" | "invalid" } {
   const apiOrigin = env.DESKTOP_API_ORIGIN?.trim() || DEFAULT_API_ORIGIN;
-  const expectedDomainSchemaRevision = env.AILEARN_DOMAIN_SCHEMA_REVISION?.trim();
+  const expectedDomainSchemaRevision = env.ASTELLA_DOMAIN_SCHEMA_REVISION?.trim();
   const configRevision = env.DESKTOP_DEPLOYMENT_CONFIG_REVISION?.trim() || "desktop-dev-config-v1";
 
   if (!expectedDomainSchemaRevision) return { ok: false, reason: "missing" };
@@ -459,8 +459,8 @@ function readConfiguration(env: NodeJS.ProcessEnv): { ok: true; value: GatewayCo
     return parsed.success ? { ok: true, value: { config: parsed.data, pairingSecret: null } } : { ok: false, reason: "invalid" };
   }
 
-  const pairingKeyId = env.AILEARN_DESKTOP_PAIRING_KEY_ID?.trim();
-  const pairingSecret = readPairingSecret(env.AILEARN_DESKTOP_PAIRING_SECRET?.trim());
+  const pairingKeyId = env.ASTELLA_DESKTOP_PAIRING_KEY_ID?.trim();
+  const pairingSecret = readPairingSecret(env.ASTELLA_DESKTOP_PAIRING_SECRET?.trim());
   if (!pairingKeyId || !pairingSecret) return { ok: false, reason: "missing" };
 
   const parsed = deploymentConfigSchema.safeParse({
@@ -718,7 +718,7 @@ export class DesktopGateway {
     return runtimeSnapshotSchema.parse({
       version: 1,
       contractVersion: DESKTOP_IPC_CONTRACT_VERSION,
-      appId: "ailearn-desktop-client",
+      appId: "astella-desktop-client",
       appVersion: this.env.npm_package_version?.trim() || "0.1.0",
       platform: process.platform === "darwin" || process.platform === "win32" ? process.platform : "linux",
       windowState: windowStateSnapshotV1Schema.parse(windowState),
@@ -897,7 +897,7 @@ export class DesktopGateway {
    *
    * ⚠️ 2026-09-30 补上：这一条**端点、preload、组件、共享契约四段都在，唯独网关与主进程
    * 这一段没人写**——`desktop-ipc-channel-coverage` 那道守卫就是为这件事立的，它一直红着
-   * （`ailearn.v1.home.todayBatch.read: expected { Object (unaccounted) }`）。结果是
+   * （`astella.v1.home.todayBatch.read: expected { Object (unaccounted) }`）。结果是
    * 「今天这一批」在真窗口里**永远读不出来**，屏上只能落进 `TodayBatchSurface` 那个
    * 「今天这一批暂时读不出来」＋「再试一次」的失败分支。
    *

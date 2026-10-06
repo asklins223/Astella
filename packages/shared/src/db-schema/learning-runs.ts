@@ -1,7 +1,7 @@
 /**
  * LearningRun V1 数据模型（原据 learning-companion/16，2026-09-29 已归档）§16.1 目标表演进）。
  *
- * 对象语言与 wire contract 对齐（@ailearn/shared learning-run-contracts.ts）：
+ * 对象语言与 wire contract 对齐（@astella/shared learning-run-contracts.ts）：
  * - learning_runs              ← run lifecycle（phase/budget/activeTask/revision/checkpoint）
  * - learning_run_private_contracts ← private target/scheduling/epoch/planHash
  * - learning_tasks / learning_task_variants ← task intent + public variant
@@ -20,8 +20,8 @@
  *
  * 隔离（文档 16 §1.3/§16.4）：
  * - 全部表 workspace/user RLS（迁移中 ENABLE + FORCE + workspace_isolation policy）；
- * - private solution / safety / disclosure 表对 ailearn_api REVOKE ALL（公共
- *   API 账号无 SELECT 路径），仅 ailearn_worker 可读。
+ * - private solution / safety / disclosure 表对 astella_api REVOKE ALL（公共
+ *   API 账号无 SELECT 路径），仅 astella_worker 可读。
  */
 
 import {
@@ -258,7 +258,7 @@ export const learningTaskVariants = pgTable(
 );
 
 // ─── server-private：solution / safety / disclosure ────────────────────────
-// 公共 API 账号无 SELECT 路径（迁移 REVOKE ALL FROM ailearn_api）。
+// 公共 API 账号无 SELECT 路径（迁移 REVOKE ALL FROM astella_api）。
 
 export const learningTaskPrivateSolutions = pgTable(
   "learning_task_private_solutions",

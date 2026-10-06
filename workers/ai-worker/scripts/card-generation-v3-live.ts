@@ -10,7 +10,7 @@
  */
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const GATE = process.env.V3_LIVE;
 const PROVIDER = process.env.CARD_GENERATION_V3_PROVIDER;
@@ -189,7 +189,7 @@ async function main(): Promise<number> {
   const wipe = await wipeCardGenerationFixtures(admin, [workspaceId], [userId]);
   console.log(`[v3-live] verdict=${ok ? "review_ready" : "NOT review_ready"} wipe=${JSON.stringify(wipe)}`);
   // 三个池都要关：这一发为了走真入口还间接开了 api 与 worker 各自的连接池，只关 `admin`
-  // 会让进程挂在那里不退（实测挂过一次，四条 idle 连接把一次性库 `ailearn_cardtest`
+  // 会让进程挂在那里不退（实测挂过一次，四条 idle 连接把一次性库 `astella_cardtest`
   // 挡得没法重建——下一次真跑前必须先清点上一发的收尾）。
   const { closeDatabase: closeWorkerDatabase } = await import("../src/db.ts");
   await closeWorkerDatabase().catch(() => undefined);

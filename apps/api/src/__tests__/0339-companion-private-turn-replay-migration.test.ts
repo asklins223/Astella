@@ -25,14 +25,14 @@ function hasOwnerScope(source: string): boolean {
 
 test("0339 exposes exact handoff inputs only through a workspace/user-bound run read function", () => {
   assert.ok(journal.entries.some((entry) => entry.idx === 338 && entry.tag === "0339_companion_private_turn_replay"));
-  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.ailearn_read_companion_turn_handoff_snapshot_v1\(\s*p_run_id uuid/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.astella_read_companion_turn_handoff_snapshot_v1\(\s*p_run_id uuid/);
   assert.match(migration, /STABLE\s+SECURITY DEFINER\s+SET search_path = pg_catalog, public/);
   assert.ok(hasOwnerScope(migration), "read function lost workspace/user/run identity checks");
   assert.match(migration, /pg_catalog\.pg_column_size\(s\.snapshot\) <= 524288/);
   assert.match(migration, /pg_catalog\.octet_length\(s\.snapshot::text\) <= 524288/);
   assert.match(migration, /LIMIT 1/);
-  assert.match(migration, /REVOKE ALL ON FUNCTION public\.ailearn_read_companion_turn_handoff_snapshot_v1\(uuid\)\s+FROM PUBLIC, ailearn_worker/);
-  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.ailearn_read_companion_turn_handoff_snapshot_v1\(uuid\)\s+TO ailearn_api/);
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.astella_read_companion_turn_handoff_snapshot_v1\(uuid\)\s+FROM PUBLIC, astella_worker/);
+  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.astella_read_companion_turn_handoff_snapshot_v1\(uuid\)\s+TO astella_api/);
 });
 
 test("owner-scope guard is sensitive and bootstrap keeps direct table access closed", () => {
@@ -43,5 +43,5 @@ test("owner-scope guard is sensitive and bootstrap keeps direct table access clo
   );
   assert.match(roleGrants, /API unexpectedly has access to worker-only companion handoff snapshots/);
   assert.match(roleGrants, /private turn replay function privilege matrix mismatch/);
-  assert.match(roleGrants, /\('ailearn_api', 'ailearn_read_companion_turn_handoff_snapshot_v1\(uuid\)'\)/);
+  assert.match(roleGrants, /\('astella_api', 'astella_read_companion_turn_handoff_snapshot_v1\(uuid\)'\)/);
 });

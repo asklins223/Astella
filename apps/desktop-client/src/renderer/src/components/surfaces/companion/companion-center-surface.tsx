@@ -14,7 +14,7 @@ import { CompanionOverviewPage } from "./companion-overview-page";
 import { CompanionPersonaPage } from "./companion-persona-page";
 import { useCompanionTactile } from "./use-companion-tactile";
 import { discoverySourceTarget } from "./companion-discovery-targets";
-import type { CompanionDiscoveryEntryV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { CompanionDiscoveryEntryV1 } from "@astella/shared/desktop-ipc-contracts";
 
 const PAGE_ICONS = { overview: HeartHandshake, dialogue: MessageCircle, diary: NotebookPen, memory: Library, discovery: BookOpen, activity: Sparkles, persona: CircleUserRound };
 

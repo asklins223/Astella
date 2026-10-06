@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getCompanionAgentTool, proposedLearningActionPayloadV1Schema } from "@ailearn/shared";
+import { getCompanionAgentTool, proposedLearningActionPayloadV1Schema } from "@astella/shared";
 import { describeAgentProposal } from "../companion-proposal-copy.ts";
 
 /**

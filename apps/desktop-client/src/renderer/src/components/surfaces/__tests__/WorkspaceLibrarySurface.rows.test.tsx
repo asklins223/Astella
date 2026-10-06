@@ -71,13 +71,13 @@ function installApi(items: Array<Record<string, unknown>>, nextPageItems: Array<
     objective,
     room: { getProjection: vi.fn(async () => ok({ primaryFocus: { state: "empty" } })) },
   };
-  Object.defineProperty(window, "ailearn", { value: api, configurable: true });
+  Object.defineProperty(window, "astella", { value: api, configurable: true });
   return api;
 }
 
 afterEach(() => {
   cleanup();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   retargetObjectiveLibraryView("ws-1");
   vi.restoreAllMocks();
 });

@@ -79,7 +79,7 @@ CREATE INDEX IF NOT EXISTS companion_daily_summaries_live_idx
 --
 -- 恢复时不触发：恢复走的是 UPDATE deleted_at → NULL，而这条守卫只拦
 -- `NEW.deleted_at IS NULL AND OLD.deleted_at IS NOT NULL`（即"复活"）。
-CREATE OR REPLACE FUNCTION public.ailearn_guard_daily_summary_republish()
+CREATE OR REPLACE FUNCTION public.astella_guard_daily_summary_republish()
 RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = pg_catalog, public
@@ -99,11 +99,11 @@ $$;
 
 CREATE TRIGGER companion_daily_summaries_no_republish
   BEFORE UPDATE ON public.companion_daily_summaries
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_guard_daily_summary_republish();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_guard_daily_summary_republish();
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_guard_daily_summary_republish() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_guard_daily_summary_republish() FROM PUBLIC;
 --> statement-breakpoint
 
 -- 撤权遮蔽的**数据级**触发器（40 §11.1 第 6 行 / A13）。
@@ -125,7 +125,7 @@ REVOKE ALL ON FUNCTION public.ailearn_guard_daily_summary_republish() FROM PUBLI
 -- §11.1 的原话给了两个选项，逐句遮蔽是前者，「无法安全拆分时整篇不可读」
 -- 是后者——我们只能诚实地选后者，并在 `delete_reason` 上记明是
 -- `revoked_source` 而不是用户主动删除（两者在界面上的措辞不同）。
-CREATE OR REPLACE FUNCTION public.ailearn_mask_diaries_for_revoked_source()
+CREATE OR REPLACE FUNCTION public.astella_mask_diaries_for_revoked_source()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -175,13 +175,13 @@ $$;
 DROP TRIGGER IF EXISTS companion_diary_mask_on_note_delete ON public.notes;
 CREATE TRIGGER companion_diary_mask_on_note_delete
   AFTER UPDATE OF deleted_at ON public.notes
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_mask_diaries_for_revoked_source();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_mask_diaries_for_revoked_source();
 
 DROP TRIGGER IF EXISTS companion_diary_mask_on_source_delete ON public.sources;
 CREATE TRIGGER companion_diary_mask_on_source_delete
   AFTER UPDATE OF status ON public.sources
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_mask_diaries_for_revoked_source();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_mask_diaries_for_revoked_source();
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_mask_diaries_for_revoked_source() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.astella_mask_diaries_for_revoked_source() FROM PUBLIC;

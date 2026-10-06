@@ -10,12 +10,12 @@
  * 绝不产 canonical/schedule。
  */
 
-import { sha256Hex } from "@ailearn/shared/content-hash";
-import type { RelationEdgeKindV1 } from "@ailearn/shared";
+import { sha256Hex } from "@astella/shared/content-hash";
+import type { RelationEdgeKindV1 } from "@astella/shared";
 import type {
   CanonicalAnswerV2,
   ObjectiveRelationV2,
-} from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
 
 export interface StructuredTargetInput {
   keyPointId: string;

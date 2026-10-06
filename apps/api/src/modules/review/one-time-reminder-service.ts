@@ -15,13 +15,13 @@
  *    提醒"，所以关闭只有一个显式入口；完成那一轮活动后由谁来关，归 W5-4 刀二
  *    （它要接结算那条链，而那条链此刻有并行会话在途）。
  */
-import { REVIEW_DIMENSION_VALUES_V2 } from "@ailearn/shared/review-dimension-v2";
+import { REVIEW_DIMENSION_VALUES_V2 } from "@astella/shared/review-dimension-v2";
 import { and, eq } from "drizzle-orm";
-import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
+import { reviewSchedules } from "@astella/shared/db-schema/evidence";
 import type { ApiTransaction } from "../../db/client.ts";
 import { ensurePendingReviewScheduleV2 } from "./review-schedule-boundary.ts";
 import { visibleNotesCondition } from "../note/visibility.ts";
-import { notes } from "@ailearn/shared/db-schema/note";
+import { notes } from "@astella/shared/db-schema/note";
 
 /** 关闭单次提醒时写进 `reason_code` 的那一档；也是"这一条是被处理掉的"的唯一标记。 */
 export const ONE_TIME_REMINDER_ACKNOWLEDGED_REASON = "user_acknowledged_one_time";

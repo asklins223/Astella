@@ -45,7 +45,7 @@ import {
   DESKTOP_IPC_CONTRACT_VERSION,
   type GatewayResultV1,
   type RequestMetaV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import type { DesktopGateway } from "../desktop-gateway";
 import {
   MemoryNoteDocCacheStore,
@@ -266,13 +266,13 @@ realNoteModule.setNoteDocDeps({
   registerM1DesktopIpc({
     gateway,
     noteDocCache,
-    env: { AILEARN_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
+    env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
     resolveWindow: () => fakeWindow,
     getWindowState: () => ({ state: "visible", revision: 1 }),
     setTitlebarTheme: () => true,
   });
 
-  const event = { sender: {}, senderFrame: { url: "ailearn://renderer/" } };
+  const event = { sender: {}, senderFrame: { url: "astella://renderer/" } };
   await handler(DESKTOP_IPC_CHANNELS.authGetState)(event, { meta });
   return {
     docStateRequests,

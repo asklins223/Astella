@@ -26,7 +26,7 @@
  * 语句劈成两半，而 `$$ … $$` 里的分号更是到处都是（roles.sql 满篇都是 DO 块）。
  *
  * 用法（由 dev-disposable-db.sh 调用，不要手工用）：
- *   node scripts/psql-lite.mjs -h HOST -p 5432 -U ailearn -d DB -v k=v -f -
+ *   node scripts/psql-lite.mjs -h HOST -p 5432 -U astella -d DB -v k=v -f -
  *   node scripts/psql-lite.mjs ... -c "SELECT 1"
  */
 import { readFileSync } from "node:fs";
@@ -172,7 +172,7 @@ async function main() {
   const client = new Client({
     host: opts.host ?? process.env.DISPOSABLE_DB_HOST ?? "127.0.0.1",
     port: opts.port ?? Number(process.env.DISPOSABLE_DB_PORT ?? 5432),
-    user: opts.user ?? process.env.POSTGRES_USER ?? "ailearn",
+    user: opts.user ?? process.env.POSTGRES_USER ?? "astella",
     password: process.env.PGPASSWORD ?? process.env.POSTGRES_PASSWORD ?? "",
     database: opts.database,
   });

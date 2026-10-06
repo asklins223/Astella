@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { CompanionGuidanceVoiceProfileV1 } from "@ailearn/shared/companion-voice-contracts";
+import type { CompanionGuidanceVoiceProfileV1 } from "@astella/shared/companion-voice-contracts";
 import type { TtsEngineConfig } from "./tts-config.ts";
 
 /** Guidance always uses the configured default Qwen voice, independently of dialogue preferences. */

@@ -29,9 +29,9 @@ export type ResultState =
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Lightbulb, Pause, Play, RotateCcw } from "lucide-react";
-import { ArtifactPayload, LearningDraftPayload, LearningRendererDraftState, LearningTaskPublic, StructuredPartAnswerV1, StructuredPartPublicV1 } from "@ailearn/shared/learning-run-contracts";
-import { GetLearningRunResultResponseV2, LearningRunAllowedActionV2, LearningRunPublicSnapshotV2, LearningRunTargetRevealV2 } from "@ailearn/shared/learning-run-v2-contracts";
-import { DesktopLearningRunActionRequestV2, DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import { ArtifactPayload, LearningDraftPayload, LearningRendererDraftState, LearningTaskPublic, StructuredPartAnswerV1, StructuredPartPublicV1 } from "@astella/shared/learning-run-contracts";
+import { GetLearningRunResultResponseV2, LearningRunAllowedActionV2, LearningRunPublicSnapshotV2, LearningRunTargetRevealV2 } from "@astella/shared/learning-run-v2-contracts";
+import { DesktopLearningRunActionRequestV2, DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
 import { createRequestMeta, RendererGatewayError, unwrapGatewayResult } from "../../../app/desktop-client";
 import { formatObjectiveDay } from "./objective-state-copy.ts";
 import { learningRunFeedback } from "./objective-quest-presentation.ts";
@@ -506,16 +506,16 @@ export async function releaseRunThroughMainV1(input: {
   readonly runId: string;
   readonly route: DesktopRouteV1;
 }): Promise<DesktopRouteV1 | null> {
-  if (!window.ailearn) return null;
+  if (!window.astella) return null;
   try {
-    const resolveResponse = await window.ailearn.navigation.resolve({
+    const resolveResponse = await window.astella.navigation.resolve({
       meta: createRequestMeta(),
       route: input.route,
       learningRunId: input.runId,
     });
     const resolved = unwrapGatewayResult(resolveResponse);
     if (resolved.current.scope !== "workspace") return null;
-    const goResponse = await window.ailearn.navigation.go({
+    const goResponse = await window.astella.navigation.go({
       meta: createRequestMeta(resolved.current.workspaceEpoch),
       route: resolved.current.route,
       entryKind: "user",

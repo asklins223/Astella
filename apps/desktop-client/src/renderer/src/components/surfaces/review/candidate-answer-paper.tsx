@@ -1,4 +1,4 @@
-import type { DesktopCandidateRevealV2 } from "@ailearn/shared/card-generation-desktop-contracts";
+import type { DesktopCandidateRevealV2 } from "@astella/shared/card-generation-desktop-contracts";
 import { revealCooldownHours } from "./candidate-review-model";
 
 export function AnswerBlock({ answer }: { readonly answer: DesktopCandidateRevealV2["canonicalAnswer"] }) {

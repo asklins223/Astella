@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildDesktopCapabilityProjection, type WorkspaceAiConsentFacts } from "../capability-projection.ts";
-import { actionCapabilityValues } from "@ailearn/shared/desktop-ipc-contracts";
+import { actionCapabilityValues } from "@astella/shared/desktop-ipc-contracts";
 
 const originalRun = process.env.LEARNING_RUN_ENABLED;
 const originalCard = process.env.CARD_GENERATION_V2_ENABLED;

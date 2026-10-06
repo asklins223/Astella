@@ -260,7 +260,7 @@ export async function commitMemoryOrganization(
   backlog: number,
 ): Promise<boolean> {
   const rows = await tx.execute<{ committed: boolean }>(sql`
-    SELECT public.ailearn_commit_memory_organization(
+    SELECT public.astella_commit_memory_organization(
       ${scope.workspaceId}::uuid, ${scope.userId}::uuid, ${holder},
       ${surface}, ${backlog}
     ) AS committed

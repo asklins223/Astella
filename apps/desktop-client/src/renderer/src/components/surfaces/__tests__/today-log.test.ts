@@ -14,7 +14,7 @@ import {
   todayLogTruncationNote,
   todaySpan,
 } from "../library/today-log.ts";
-import type { ActivityAnomalyV1, ActivityEventV1, TodayActivityV1 } from "@ailearn/shared/activity-surface-contracts";
+import type { ActivityAnomalyV1, ActivityEventV1, TodayActivityV1 } from "@astella/shared/activity-surface-contracts";
 
 function anomaly(overrides: Partial<ActivityAnomalyV1> = {}): ActivityAnomalyV1 {
   return {

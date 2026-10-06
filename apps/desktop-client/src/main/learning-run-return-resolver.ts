@@ -2,13 +2,13 @@ import { z } from "zod";
 import {
   desktopRouteSchema,
   type DesktopRouteV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import {
   learningRunReturnContractV2Schema,
   pendingReturnMarkerV2Schema,
   type LearningRunReturnContractV2,
   type PendingReturnMarkerV2,
-} from "@ailearn/shared/learning-run-v2-contracts";
+} from "@astella/shared/learning-run-v2-contracts";
 import type { PendingReturnMarkerStore } from "./pending-return-marker-store";
 
 export const learningRunReturnResolutionV1Schema = z.discriminatedUnion("kind", [

@@ -45,7 +45,7 @@ function installApi(summary: unknown, options: { fail?: boolean } = {}) {
     if (options.fail) throw new Error("投影读不到");
     return ok(projection(summary));
   });
-  (window as unknown as { ailearn: unknown }).ailearn = {
+  (window as unknown as { astella: unknown }).astella = {
     auth: { getState: vi.fn(async () => ok({ status: "authenticated", workspace: { workspaceId: "w-1" }, workspaceEpoch: 3 })) },
     room: { getProjection },
   };
@@ -54,7 +54,7 @@ function installApi(summary: unknown, options: { fail?: boolean } = {}) {
 
 afterEach(() => {
   cleanup();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   useRoomStore.setState({ activeRunId: null, activeObjectiveId: null, surface: null });
 });
 

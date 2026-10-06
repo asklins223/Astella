@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, type RefObject } from "react";
 import { ArrowLeft, Check, ChevronDown, Layers3, Search, Sparkles, X } from "lucide-react";
-import type { ObjectiveCardGroupV2 } from "@ailearn/shared/objective-card-groups-v2";
-import type { ObjectiveListItemV3 } from "@ailearn/shared/learning-objective-surface-contracts";
+import type { ObjectiveCardGroupV2 } from "@astella/shared/objective-card-groups-v2";
+import type { ObjectiveListItemV3 } from "@astella/shared/learning-objective-surface-contracts";
 import { useCardObjectSpring, useCardVisibleArrival } from "../../motion/card-object-spring";
 import { CardPackObject, CardPackLearningCard, CardPackCardSpot } from "./card-pack-object";
 import { cardStrategyPresentation } from "../review/card-strategy-presentation";

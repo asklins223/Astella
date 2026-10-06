@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AgentAttentionObjectV1 } from "@ailearn/shared/agent-contracts";
+import type { AgentAttentionObjectV1 } from "@astella/shared/agent-contracts";
 import type { ReadContext } from "./companion-dialogue-store.ts";
 
 const refs = z.object({ context: z.object({ noteId: z.string().uuid().optional(), noteVersionId: z.string().uuid().optional(),

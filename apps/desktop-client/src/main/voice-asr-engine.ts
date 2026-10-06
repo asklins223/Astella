@@ -30,7 +30,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   VOICE_ASR_MODEL_FILES,
-} from '@ailearn/shared/voice-asr-model-contracts'
+} from '@astella/shared/voice-asr-model-contracts'
 import { voiceAsrModelDirectory } from '../shared/voice-asr-model-path'
 
 /** 一句说完之后隔多久把整个识别引擎交还内存（与渲染层 worker 时代同值）。 */
@@ -142,7 +142,7 @@ export class VoiceAsrEngine {
         this.paths.hostPath,
         [this.paths.engineDir, this.paths.modelPath, this.paths.tokensPath],
         {
-          serviceName: 'ailearn-voice-asr',
+          serviceName: 'astella-voice-asr',
           // 引擎产物在 renderer 的 public 树里，路径由主进程推出来再交给子进程；
           // 子进程不读任何环境变量，也不碰网络。
           stdio: 'inherit',

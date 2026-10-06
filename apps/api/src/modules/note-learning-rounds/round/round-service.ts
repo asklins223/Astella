@@ -17,11 +17,11 @@
 import {
   ROUND_HISTORY_MASKED_QUESTION_V1,
   type NoteLearningRoundHistoryMaskedItemV1,
-} from "@ailearn/shared/note-learning-round-contracts";
+} from "@astella/shared/note-learning-round-contracts";
 import { and, desc, eq, gt, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ApiTransaction } from "../../../db/client.ts";
-import { DomainError } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
 import {
   noteLearningRoundArtifacts,
   noteLearningRounds,
@@ -29,9 +29,9 @@ import {
   noteLearningRoundTeachings,
   type NoteLearningRoundRow,
   type NoteLearningRoundTeachingRow,
-} from "@ailearn/shared/db-schema/note-learning-rounds";
-import { learningRunEvents, learningRuns } from "@ailearn/shared/db-schema/learning-runs";
-import { noteVersions, notes } from "@ailearn/shared/db-schema/note";
+} from "@astella/shared/db-schema/note-learning-rounds";
+import { learningRunEvents, learningRuns } from "@astella/shared/db-schema/learning-runs";
+import { noteVersions, notes } from "@astella/shared/db-schema/note";
 import { visibleNotesCondition } from "../../note/visibility.ts";
 import {
   appendRoundPlanRevisionRequestV1Schema,
@@ -43,8 +43,8 @@ import {
   type RoundTeachingArtifactRefV1,
   type RoundTeachingKindV1,
   type RoundTeachingV1,
-} from "@ailearn/shared/note-learning-round-contracts";
-import { noteReflectionTeachingSnapshotV1Schema, type NoteReflectionTeachingSnapshotV1 } from "@ailearn/shared/note-learning-reflection-contracts";
+} from "@astella/shared/note-learning-round-contracts";
+import { noteReflectionTeachingSnapshotV1Schema, type NoteReflectionTeachingSnapshotV1 } from "@astella/shared/note-learning-reflection-contracts";
 import {
   applyRoundAction,
   RoundTransitionError,
@@ -58,7 +58,7 @@ import {
   ROUND_ARTIFACT_KIND_V1,
   ROUND_ARTIFACT_MAX_CHARS_V1,
   type RoundArtifactSourceV1,
-} from "@ailearn/shared/note-dynamic-artifact/round-artifact";
+} from "@astella/shared/note-dynamic-artifact/round-artifact";
 import { recordArtifactFailureV1, type ArtifactFailureReasonV1, type ArtifactFailureStageV1 } from "./artifact-failure.ts";
 
 export class RoundServiceError extends DomainError {

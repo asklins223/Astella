@@ -3,7 +3,7 @@
  *
  * 这一份只回答"现在要写什么"，**不判规则**：为什么只能复核一次、争议期间该怎么处置
  * 那次观察、两种更正差在哪、结束要不要落排除——那些在
- * `@ailearn/shared/assessment-dispute-rules-v2`。理由与 `objective-review-holds.ts`
+ * `@astella/shared/assessment-dispute-rules-v2`。理由与 `objective-review-holds.ts`
  * 同一条：执法点要少，判据要能被逐条单测；规则写在服务里就只能在起库的集成测试里验。
  *
  * 四条业务约束在这里被真正执行（不是"已设计"）：
@@ -31,7 +31,7 @@ import {
   learningArtifacts,
   learningObjectiveOriginsV2,
   learningRuns,
-} from "@ailearn/shared/db-schema";
+} from "@astella/shared/db-schema";
 import {
   decideDisputedObservationV2,
   decideDisputeCloseV2,
@@ -41,7 +41,7 @@ import {
   type AssessmentDisputeKindV2,
   type AssessmentDisputeRecheckOutcomeV2,
   type AssessmentDisputeViewV2,
-} from "@ailearn/shared/assessment-dispute-rules-v2";
+} from "@astella/shared/assessment-dispute-rules-v2";
 import { holdObjectiveFromReviewV2 } from "../../review/objective-review-holds.ts";
 import type { ApiTransaction } from "../../../db/client.ts";
 

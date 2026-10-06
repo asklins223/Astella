@@ -43,7 +43,7 @@ const check = (name: string, ok: boolean, detail: unknown = ''): void => {
 
 /** 只跑一条 SQL，并把输出原样带回来当读数（本剧本的每一步都可回退：收尾会把那篇的轮次删干净）。 */
 const sql = (statement: string): string => {
-  const out = execFileSync('docker', ['exec', 'ailearn-dev-postgres-1', 'psql', '-U', 'ailearn', '-d', 'ailearn', '-tAc', statement], {
+  const out = execFileSync('docker', ['exec', 'astella-dev-postgres-1', 'psql', '-U', 'astella', '-d', 'astella', '-tAc', statement], {
     encoding: 'utf8',
   })
   return out.trim()
@@ -58,7 +58,7 @@ const assertLiteral = (value: string, what: string): string => {
 const NOTE_HINT = assertLiteral(process.env.PROBE_NOTE_HINT as string, 'PROBE_NOTE_HINT')
 const STALE_TEXT = '这一句是另一端改过的那一版'
 
-const userDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-39-conflict-'))
+const userDataDir = await mkdtemp(resolve(tmpdir(), 'astella-39-conflict-'))
 const app = await electron.launch({
   args: ['.', '--lang=zh-CN', `--user-data-dir=${userDataDir}`],
   cwd: appRoot,

@@ -1,4 +1,4 @@
-import { segmentsToBlocks, type ParsedBlock, type ParsedSegment } from "@ailearn/shared/markdown-parser";
+import { segmentsToBlocks, type ParsedBlock, type ParsedSegment } from "@astella/shared/markdown-parser";
 
 /** Source offsets keep raw Markdown; rich note nodes already supply block markers. */
 export function sourceNoteBlocks(

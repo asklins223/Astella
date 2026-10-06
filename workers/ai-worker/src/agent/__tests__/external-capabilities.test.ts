@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { normalizeWorkspaceAIPolicy } from "@ailearn/agent-host";
+import { normalizeWorkspaceAIPolicy } from "@astella/agent-host";
 import { executeExternalCapability, requireUserDocumentUrl, type ExternalCapabilityDependencies } from "../external-capabilities.ts";
 
 const scope = { workspaceId: "11111111-1111-4111-8111-111111111111", userId: "22222222-2222-4222-8222-222222222222" };

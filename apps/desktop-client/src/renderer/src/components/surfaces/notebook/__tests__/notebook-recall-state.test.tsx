@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { noteDetailV1Schema } from "@ailearn/shared/note-projection-contracts";
-import { noteRecallRecordV1Schema, type NoteRecallRecordV1 } from "@ailearn/shared/note-recall-contracts";
+import { noteDetailV1Schema } from "@astella/shared/note-projection-contracts";
+import { noteRecallRecordV1Schema, type NoteRecallRecordV1 } from "@astella/shared/note-recall-contracts";
 import { useNotebookRecallState } from "../use-notebook-recall-state";
 
 const noteId = "11111111-4111-4111-8111-111111111111";
@@ -22,7 +22,7 @@ const page = (items: NoteRecallRecordV1[]) => ok({ version: 1, items, nextCursor
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
 function install(input: { list?: ReturnType<typeof vi.fn>; start?: ReturnType<typeof vi.fn>; act?: ReturnType<typeof vi.fn> } = {}) {
   const api = { list: vi.fn(async () => page([])), start: vi.fn(async () => ok(record())), act: vi.fn(async () => ok(record())), ...input };
-  Object.defineProperty(window, "ailearn", { configurable: true, value: { noteRecall: api } });
+  Object.defineProperty(window, "astella", { configurable: true, value: { noteRecall: api } });
   return api;
 }
 const epochRef = { current: undefined };
@@ -56,10 +56,10 @@ it("后台保存别的问题只加入历史，同一题的回执也不会新开�
   const view = renderHook(() => useNotebookRecallState({ note, epochRef })); await act(async () => {});
   act(() => view.result.current.open(record(), "history"));
   const unrelated = record("555555555555");
-  act(() => window.dispatchEvent(new CustomEvent("ailearn:note-recall-saved", { detail: { noteId, record: unrelated } })));
+  act(() => window.dispatchEvent(new CustomEvent("astella:note-recall-saved", { detail: { noteId, record: unrelated } })));
   expect(view.result.current.active?.recallId).toBe(record().recallId); expect(view.result.current.presentation).toBe("history");
   const revealed = record("333333333333", { state: "revealed", answer: "利息加入本金。", revealedAt: date });
-  act(() => window.dispatchEvent(new CustomEvent("ailearn:note-recall-saved", { detail: { noteId, record: revealed } })));
+  act(() => window.dispatchEvent(new CustomEvent("astella:note-recall-saved", { detail: { noteId, record: revealed } })));
   expect(view.result.current.active?.answer).toBe("利息加入本金。"); expect(view.result.current.visit).toBe(1);
 });
 
@@ -88,7 +88,7 @@ it("历史读取失败不偷偷创建题目；重试成功后恢复已有题，�
   expect(view.result.current.active).toBeNull(); expect(api.start).not.toHaveBeenCalled();
   await act(async () => { await view.result.current.start(); });
   expect(view.result.current.active?.recallId).toBe(record().recallId); expect(api.start).not.toHaveBeenCalled();
-  Object.defineProperty(window, "ailearn", { configurable: true, value: {} });
+  Object.defineProperty(window, "astella", { configurable: true, value: {} });
   await act(async () => { await view.result.current.act({ kind: "reveal" }); });
   expect(view.result.current.error).toContain("可以重试"); expect(view.result.current.active?.answer).toBeUndefined();
 });
@@ -101,14 +101,14 @@ it("往返正文和换题保留各自的关键词，只有已报告的真实回�
   act(() => view.result.current.open(record()));
   expect(view.result.current.reflection).toBe("本金、上一轮利息");
   const revealed = record("333333333333", { state: "revealed", answer: "利息加入本金。", revealedAt: date });
-  act(() => window.dispatchEvent(new CustomEvent("ailearn:note-recall-saved", { detail: { noteId, record: revealed } })));
+  act(() => window.dispatchEvent(new CustomEvent("astella:note-recall-saved", { detail: { noteId, record: revealed } })));
   expect(view.result.current.reflection).toBe("本金、上一轮利息");
   api.act.mockRejectedValueOnce(new Error("断线"));
   await act(async () => { await view.result.current.act({ kind: "self_report", value: "remembered", reflection: view.result.current.reflection }); });
   act(() => { view.result.current.close(); view.result.current.open(record()); });
   expect(view.result.current.reflection).toBe("本金、上一轮利息");
   const reported = record("333333333333", { state: "reported", selfReport: "remembered", reflection: "已存的关键词", reportedAt: date });
-  act(() => window.dispatchEvent(new CustomEvent("ailearn:note-recall-saved", { detail: { noteId, record: reported } })));
+  act(() => window.dispatchEvent(new CustomEvent("astella:note-recall-saved", { detail: { noteId, record: reported } })));
   act(() => { view.result.current.close(); view.result.current.open(record()); });
   expect(view.result.current.active?.state).toBe("reported"); expect(view.result.current.reflection).toBe("已存的关键词");
   act(() => view.result.current.open(record("444444444444")));

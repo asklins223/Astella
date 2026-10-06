@@ -5,7 +5,7 @@
  * 一个被 264 个方法引用的类型放在一个 6379 行文件的中段，读的人几乎不可能一眼看到。
  * 错误类型是**整个传输层与每一个命名空间共用的词汇**，自己一个文件是对的。
  */
-import type { GatewayErrorCode } from "@ailearn/shared/desktop-ipc-contracts";
+import type { GatewayErrorCode } from "@astella/shared/desktop-ipc-contracts";
 
 export class DesktopGatewayFailure extends Error {
   readonly code: GatewayErrorCode;

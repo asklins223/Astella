@@ -1,4 +1,4 @@
--- AI Worker 延迟优化方案 5：为 ailearn_claim_jobs 增加队列优先级。
+-- AI Worker 延迟优化方案 5：为 astella_claim_jobs 增加队列优先级。
 --
 -- 用户实时等待的 evaluate_validation 优先于后台 align_evidence 任务，
 -- 避免批量入队的 align_evidence job 堵塞用户验证请求。
@@ -12,7 +12,7 @@
 --
 -- 仅修改 ORDER BY，函数签名和 SECURITY DEFINER 配置保持不变。
 
-CREATE OR REPLACE FUNCTION public.ailearn_claim_jobs(
+CREATE OR REPLACE FUNCTION public.astella_claim_jobs(
   p_limit integer,
   p_max_attempts integer
 )
@@ -85,5 +85,5 @@ AS $function$
 $function$;
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_claim_jobs(integer, integer) IS
+COMMENT ON FUNCTION public.astella_claim_jobs(integer, integer) IS
   'SEC-01 controlled cross-workspace Worker claim path with job-type priority; RLS remains disabled in expand phase';

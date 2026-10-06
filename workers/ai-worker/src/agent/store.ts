@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createAgentStore, type AgentAdvanceStore, type AgentStorePorts } from "@ailearn/agent-host";
+import { createAgentStore, type AgentAdvanceStore, type AgentStorePorts } from "@astella/agent-host";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
 
 // ports 明确用 db.ts 导出的真实事务类型：invoke 回调里的 tx 就是

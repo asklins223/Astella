@@ -37,7 +37,7 @@ function installApi() {
     },
     search: { global: vi.fn(async (): Promise<unknown> => ok({ items: [], total: 0 })) },
   };
-  window.ailearn = api as unknown as typeof window.ailearn;
+  window.astella = api as unknown as typeof window.astella;
   return api;
 }
 const cards = () => [...document.querySelectorAll(".source-sheet strong")].map(node => node.textContent);
@@ -52,7 +52,7 @@ beforeEach(() => {
     sourceIndexTab: "all", activeSourceId: null, activeNoteRef: null, returnTarget: null, pageReadableView: null,
     noteReturnTo: "library", motionMode: "off", reducedMotion: false }));
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); Reflect.deleteProperty(window, "ailearn"); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); Reflect.deleteProperty(window, "astella"); });
 
 describe("来源资料架的连续操作", () => {
   it("清空后丢弃迟到的正文检索，不重新缩窄资料架", async () => {

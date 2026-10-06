@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { afterEach } from "node:test";
 import { resolveVisionReader, visionReaderAvailableFromConfig } from "../governance.ts";
-import { resetPlatformConfigCache, setPlatformConfig } from "@ailearn/shared/platform-config-node";
+import { resetPlatformConfigCache, setPlatformConfig } from "@astella/shared/platform-config-node";
 
 function gov(over: {
   providerName?: string;

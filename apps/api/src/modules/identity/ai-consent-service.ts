@@ -11,13 +11,13 @@
  */
 
 import { count, desc, eq } from "drizzle-orm";
-import { aiAuditLog, userAiSettings } from "@ailearn/shared/db-schema";
+import { aiAuditLog, userAiSettings } from "@astella/shared/db-schema";
 import { withActorTransaction, withWorkspaceTransaction } from "../../db/client.ts";
-import { users } from "@ailearn/shared/db-schema";
+import { users } from "@astella/shared/db-schema";
 // "系统账号能不能用某个能力"那套判据是纯函数，且与 identity 其余部分共用，
 // 所以从 shared 取而不是从 ./service.ts 取——**那会造出一个新的环**
 // （service.ts 从本文件 re-export，本文件再从 service.ts 取）。
-import { resolveSystemProviderForCapability } from "@ailearn/shared/task-router";
+import { resolveSystemProviderForCapability } from "@astella/shared/task-router";
 
 function systemUsesExternalAI(): boolean {
   return (
@@ -103,7 +103,7 @@ export async function updateAIDataPolicy(
  * N-011: 查询 AI 审计日志（分页）。
  *
  * `ai_audit_log` 在 0257 里是 `ENABLE + FORCE ROW LEVEL SECURITY`，所以这两句读
- * **必须带工作区上下文**：裸 `db` 在 `ailearn_api`（NOBYPASSRLS，生产形状）下恒 0 行，
+ * **必须带工作区上下文**：裸 `db` 在 `astella_api`（NOBYPASSRLS，生产形状）下恒 0 行，
  * rows 与 count 双双为空——而设置页写的是"每次外发都留下可追溯的记录，供你回看"
  * （doc 34 L3，与 L2 同一颗雷：dev 的 API 角色绕过 RLS，所以本地永远是绿的）。
  */

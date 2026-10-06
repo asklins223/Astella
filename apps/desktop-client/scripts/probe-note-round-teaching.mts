@@ -41,7 +41,7 @@ if (/['";]/.test(NOTE_HINT)) {
 }
 
 const sql = (statement: string): string => execFileSync(
-  'docker', ['exec', 'ailearn-dev-postgres-1', 'psql', '-U', 'ailearn', '-d', 'ailearn', '-tAc', statement],
+  'docker', ['exec', 'astella-dev-postgres-1', 'psql', '-U', 'astella', '-d', 'astella', '-tAc', statement],
   { encoding: 'utf8' },
 ).trim()
 
@@ -51,7 +51,7 @@ const check = (name: string, ok: boolean, detail: unknown = ''): void => {
   results.push({ name, ok, detail })
 }
 
-const userDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-w46-probe-'))
+const userDataDir = await mkdtemp(resolve(tmpdir(), 'astella-w46-probe-'))
 const app = await electron.launch({
   args: ['.', '--lang=zh-CN', `--user-data-dir=${userDataDir}`],
   cwd: appRoot,

@@ -1,15 +1,15 @@
 /**
  * P5 §9 固定测试：companion action proposal RLS。
- * - FORCE RLS：ailearn_worker（非 superuser）无 context 时对
+ * - FORCE RLS：astella_worker（非 superuser）无 context 时对
  *   companion_action_proposals 零行；
  * - context 正确时仅见自己 workspace/user 的行；
- * - ailearn（superuser）无 context 可见全部（RLS 不拦截 superuser）。
+ * - astella（superuser）无 context 可见全部（RLS 不拦截 superuser）。
  */
 
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 // worker 连接必须与 API 连接指向同一个库：此前硬编码 dev 库，跑在专用测试库时

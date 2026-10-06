@@ -11,7 +11,7 @@
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_expire_pending_voice_artifacts(
+CREATE OR REPLACE FUNCTION public.astella_expire_pending_voice_artifacts(
   p_limit integer DEFAULT 200
 )
 RETURNS integer
@@ -36,7 +36,7 @@ $function$;
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_purge_old_ai_audit_log(
+CREATE OR REPLACE FUNCTION public.astella_purge_old_ai_audit_log(
   p_retention_days integer DEFAULT 90,
   p_batch integer DEFAULT 1000
 )
@@ -61,7 +61,7 @@ $function$;
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_purge_expired_proactive_deliveries(
+CREATE OR REPLACE FUNCTION public.astella_purge_expired_proactive_deliveries(
   p_batch integer DEFAULT 1000
 )
 RETURNS integer

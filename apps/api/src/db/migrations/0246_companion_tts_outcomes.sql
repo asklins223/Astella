@@ -43,14 +43,14 @@ DROP POLICY IF EXISTS companion_tts_outcomes_workspace_isolation
 CREATE POLICY companion_tts_outcomes_workspace_isolation
   ON public.companion_tts_outcomes FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
     )
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR (
       workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
       AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -61,4 +61,4 @@ CREATE POLICY companion_tts_outcomes_workspace_isolation
 -- **不给 worker 授权**：`roles.sql` 里 api 是整库 blanket 授权、worker 是一份份显式
 -- 白名单 + 权限矩阵断言，多给一份 worker 权限就要多改两处清单——而这张表现在
 -- 没有任何 worker 侧读者。将来要做主动质量报表时再一起加（GRANT + 读集 + 矩阵）。
-GRANT SELECT, INSERT ON public.companion_tts_outcomes TO ailearn_api;
+GRANT SELECT, INSERT ON public.companion_tts_outcomes TO astella_api;

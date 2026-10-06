@@ -86,8 +86,8 @@ import {
   type SessionContextV1,
   type WorkspaceAiSettingsV1,
   type WorkspaceSummaryV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
-import type { DesktopAiAuditItemV1, DesktopAiAuditPageV1 } from "@ailearn/shared/desktop-surface-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
+import type { DesktopAiAuditItemV1, DesktopAiAuditPageV1 } from "@astella/shared/desktop-surface-contracts";
 import { formatObjectiveDateTime } from "../run/objective-state-copy.ts";
 import type { MotionMode } from "../../../app/room-machine";
 import {
@@ -107,7 +107,7 @@ import {
 } from "../../DirectoryRail";
 import { useHomeV2 } from "../../home-v2/HomeV2Experience";
 import { SettingsBook, SETTINGS_SECTIONS, type SettingsSectionId } from "./settings-book";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { HudPicker, HudSegmented } from "../../hud/HudControls";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
@@ -457,17 +457,17 @@ export function SettingsSurface() {
       const meta = () => createRequestMeta(current.workspaceEpoch);
       const [workspaceResult, capabilityResult, aiResult] = await Promise.allSettled([
         (async () => {
-          const response = await window.ailearn.workspace.list({ meta: meta() });
+          const response = await window.astella.workspace.list({ meta: meta() });
           if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
           return unwrapGatewayResult(response).workspaces;
         })(),
         (async () => {
-          const response = await window.ailearn.capabilities.get({ meta: meta() });
+          const response = await window.astella.capabilities.get({ meta: meta() });
           if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
           return unwrapGatewayResult(response);
         })(),
         (async () => {
-          const response = await window.ailearn.workspace.getAiSettings({ meta: meta() });
+          const response = await window.astella.workspace.getAiSettings({ meta: meta() });
           if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
           return unwrapGatewayResult(response);
         })(),
@@ -506,12 +506,12 @@ export function SettingsSurface() {
   const reloadAfterPolicyWrite = useCallback(async () => {
     const [capabilityResult, aiResult] = await Promise.allSettled([
       (async () => {
-        const response = await window.ailearn.capabilities.get({ meta: createRequestMeta(epochRef.current) });
+        const response = await window.astella.capabilities.get({ meta: createRequestMeta(epochRef.current) });
         if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
         return unwrapGatewayResult(response);
       })(),
       (async () => {
-        const response = await window.ailearn.workspace.getAiSettings({ meta: createRequestMeta(epochRef.current) });
+        const response = await window.astella.workspace.getAiSettings({ meta: createRequestMeta(epochRef.current) });
         if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
         return unwrapGatewayResult(response);
       })(),
@@ -540,9 +540,9 @@ export function SettingsSurface() {
       try {
         const meta = () => createRequestMeta(epochRef.current);
         const [sources, notes, objectives] = await Promise.all([
-          window.ailearn.source.list({ meta: meta(), limit: 1 }),
-          window.ailearn.note.list({ meta: meta(), limit: 1 }),
-          window.ailearn.objective.list({ meta: meta(), limit: 1 }),
+          window.astella.source.list({ meta: meta(), limit: 1 }),
+          window.astella.note.list({ meta: meta(), limit: 1 }),
+          window.astella.objective.list({ meta: meta(), limit: 1 }),
         ]);
         if (!active) return;
         setInventory({
@@ -579,7 +579,7 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      const response = await window.ailearn.workspace.switch({
+      const response = await window.astella.workspace.switch({
         meta: createRequestMeta(epochRef.current),
         workspaceId: workspace.workspaceId,
       });
@@ -615,7 +615,7 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      const response = await window.ailearn.auth.joinWorkspace({
+      const response = await window.astella.auth.joinWorkspace({
         meta: createRequestMeta(epochRef.current),
         inviteToken,
       });
@@ -644,7 +644,7 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      const response = await window.ailearn.workspace.updateAiDataPolicy({
+      const response = await window.astella.workspace.updateAiDataPolicy({
         meta: createRequestMeta(epochRef.current),
         policy: { ...aiSettings.dataPolicy, ...patch },
       });
@@ -674,7 +674,7 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      const response = await window.ailearn.note.exportMarkdown({ meta: createRequestMeta(epochRef.current) });
+      const response = await window.astella.note.exportMarkdown({ meta: createRequestMeta(epochRef.current) });
       const result = unwrapGatewayResult(response);
       if (result.canceled) {
         setNotice("已取消导出，没有写入任何文件。");
@@ -700,7 +700,7 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      const response = await window.ailearn.workspace.export({ meta: createRequestMeta(epochRef.current) });
+      const response = await window.astella.workspace.export({ meta: createRequestMeta(epochRef.current) });
       const result = unwrapGatewayResult(response);
       setNotice(result.saved
         ? `已导出到 ${result.filePath}（${formatBytes(result.bytes)}）。`
@@ -718,7 +718,7 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      const response = await window.ailearn.workspace.updateAiConsent({
+      const response = await window.astella.workspace.updateAiConsent({
         meta: createRequestMeta(epochRef.current),
         consentVersion: AI_CONSENT_VERSION,
       });
@@ -741,7 +741,7 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      const response = await window.ailearn.auth.updateProfile({
+      const response = await window.astella.auth.updateProfile({
         meta: createRequestMeta(epochRef.current),
         displayName: displayName.trim() || null,
       });
@@ -770,7 +770,7 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      const response = await window.ailearn.auth.uploadAvatar({
+      const response = await window.astella.auth.uploadAvatar({
         meta: createRequestMeta(epochRef.current),
         request: {
           version: 1,
@@ -798,7 +798,7 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      const response = await window.ailearn.auth.updateProfile({
+      const response = await window.astella.auth.updateProfile({
         meta: createRequestMeta(epochRef.current),
         avatarUrl: null,
       });
@@ -826,7 +826,7 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      unwrapGatewayResult(await window.ailearn.auth.changePassword({
+      unwrapGatewayResult(await window.astella.auth.changePassword({
         meta: createRequestMeta(epochRef.current),
         commandId: crypto.randomUUID(),
         currentPassword: passwordForm.current,
@@ -863,13 +863,13 @@ export function SettingsSurface() {
     setFailureNotice(null);
     setInviteFailure(null);
     try {
-      const response = await window.ailearn.invites.create({
+      const response = await window.astella.invites.create({
         meta: createRequestMeta(epochRef.current),
         role: inviteRole,
         expiresInHours: inviteExpiry === "none" ? undefined : Number(inviteExpiry),
       });
       setCreatedInvite(unwrapGatewayResult(response));
-      const listResponse = await window.ailearn.invites.list({ meta: createRequestMeta(epochRef.current) });
+      const listResponse = await window.astella.invites.list({ meta: createRequestMeta(epochRef.current) });
       setInvites(unwrapGatewayResult(listResponse));
     } catch (error) {
       setInviteFailure(gatewayErrorMessage(error));
@@ -884,11 +884,11 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      unwrapGatewayResult(await window.ailearn.invites.revoke({
+      unwrapGatewayResult(await window.astella.invites.revoke({
         meta: createRequestMeta(epochRef.current),
         inviteId,
       }));
-      const listResponse = await window.ailearn.invites.list({ meta: createRequestMeta(epochRef.current) });
+      const listResponse = await window.astella.invites.list({ meta: createRequestMeta(epochRef.current) });
       setInvites(unwrapGatewayResult(listResponse));
       setNotice("邀请已撤销。");
     } catch (error) {
@@ -917,7 +917,7 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      unwrapGatewayResult(await window.ailearn.workspace.transferOwnership({
+      unwrapGatewayResult(await window.astella.workspace.transferOwnership({
         meta: createRequestMeta(epochRef.current),
         workspaceId: currentWorkspace?.workspaceId ?? "",
         toUserId: member.userId,
@@ -947,11 +947,11 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      unwrapGatewayResult(await window.ailearn.members.remove({
+      unwrapGatewayResult(await window.astella.members.remove({
         meta: createRequestMeta(epochRef.current),
         userId,
       }));
-      const listResponse = await window.ailearn.members.list({ meta: createRequestMeta(epochRef.current) });
+      const listResponse = await window.astella.members.list({ meta: createRequestMeta(epochRef.current) });
       setMembers(unwrapGatewayResult(listResponse));
       setNotice("成员已移除，其在当前空间的会话立即失效。");
     } catch (error) {
@@ -972,7 +972,7 @@ export function SettingsSurface() {
   const loadDissolvePreview = async (workspaceId: string) => {
     setDissolvePreview({ workspaceId, phase: "loading" });
     try {
-      const result = unwrapGatewayResult(await window.ailearn.workspace.dissolvePreview({
+      const result = unwrapGatewayResult(await window.astella.workspace.dissolvePreview({
         meta: createRequestMeta(epochRef.current),
         workspaceId,
       }));
@@ -988,7 +988,7 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      const result = unwrapGatewayResult(await window.ailearn.workspace.dissolve({
+      const result = unwrapGatewayResult(await window.astella.workspace.dissolve({
         meta: createRequestMeta(epochRef.current),
         workspaceId: workspace.workspaceId,
       }));
@@ -1014,7 +1014,7 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      unwrapGatewayResult(await window.ailearn.auth.leaveWorkspace({
+      unwrapGatewayResult(await window.astella.auth.leaveWorkspace({
         meta: createRequestMeta(epochRef.current),
         workspaceId: workspace.workspaceId,
       }));
@@ -1041,7 +1041,7 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      const response = await window.ailearn.workspace.rename({
+      const response = await window.astella.workspace.rename({
         meta: createRequestMeta(epochRef.current),
         workspaceId: renamableWorkspace.workspaceId,
         name,
@@ -1069,7 +1069,7 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      const response = await window.ailearn.search.drift({ meta: createRequestMeta(epochRef.current) });
+      const response = await window.astella.search.drift({ meta: createRequestMeta(epochRef.current) });
       setDrift(unwrapGatewayResult(response));
     } catch (error) {
       setFailureNotice(gatewayErrorMessage(error));
@@ -1084,7 +1084,7 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      const response = await window.ailearn.search.reindex({ meta: createRequestMeta(epochRef.current) });
+      const response = await window.astella.search.reindex({ meta: createRequestMeta(epochRef.current) });
       setReindexResult(unwrapGatewayResult(response));
       setNotice("搜索索引已重建。");
     } catch (error) {
@@ -1099,11 +1099,11 @@ export function SettingsSurface() {
    * 改昵称的同时点这一行会被静默丢弃（控件没有 disabled 状态，也没有反馈）。
    */
   const loadAuditPage = async (offset: number) => {
-    if (!window.ailearn) return;
+    if (!window.astella) return;
     setAuditBusy(true);
     setAuditFailure(null);
     try {
-      const response = await window.ailearn.workspace.getAiAuditLog({
+      const response = await window.astella.workspace.getAiAuditLog({
         meta: createRequestMeta(epochRef.current),
         limit: AUDIT_PAGE_SIZE,
         offset,
@@ -1179,7 +1179,7 @@ export function SettingsSurface() {
     void (async () => {
       try {
         const profileResult = unwrapGatewayResult(
-          await window.ailearn.auth.getProfile({ meta: meta() }),
+          await window.astella.auth.getProfile({ meta: meta() }),
         );
         if (!active) return;
         setProfile(profileResult);
@@ -1192,7 +1192,7 @@ export function SettingsSurface() {
     if (isOwner) {
       void (async () => {
         try {
-          const result = unwrapGatewayResult(await window.ailearn.invites.list({ meta: meta() }));
+          const result = unwrapGatewayResult(await window.astella.invites.list({ meta: meta() }));
           if (active) setInvites(result);
         } catch (error) {
           if (active) setInvitesFailure(gatewayErrorMessage(error));
@@ -1202,7 +1202,7 @@ export function SettingsSurface() {
       })();
       void (async () => {
         try {
-          const result = unwrapGatewayResult(await window.ailearn.members.list({ meta: meta() }));
+          const result = unwrapGatewayResult(await window.astella.members.list({ meta: meta() }));
           if (active) setMembers(result);
         } catch (error) {
           if (active) setMembersFailure(gatewayErrorMessage(error));
@@ -1227,7 +1227,7 @@ export function SettingsSurface() {
     let active = true;
     void (async () => {
       try {
-        const response = await window.ailearn.auth.getAvatar({
+        const response = await window.astella.auth.getAvatar({
           meta: createRequestMeta(epochRef.current),
           request: { version: 1, objectKey: avatarObjectKey },
         });

@@ -5,7 +5,7 @@ import type {
   ChatMessage,
   ChatOptions,
   ChatResult,
-} from "@ailearn/shared";
+} from "@astella/shared";
 
 // ─── v0.6: Provider Usage Tracking (计划 §6.6, §10.5) ───────────────────
 
@@ -105,16 +105,16 @@ import "./providers/openai-compatible.ts";
 import "./providers/siliconflow.ts";
 import "./providers/opencode-go.ts";
 import { createCapabilityProvider } from "./provider-factory.ts";
-import type { ProviderRuntimeConfig as SharedRuntimeConfig } from "@ailearn/shared";
-import { resolveSystemPlatform } from "@ailearn/shared/platform-config-node";
-import type { PlatformOptions } from "@ailearn/shared";
+import type { ProviderRuntimeConfig as SharedRuntimeConfig } from "@astella/shared";
+import { resolveSystemPlatform } from "@astella/shared/platform-config-node";
+import type { PlatformOptions } from "@astella/shared";
 
 export interface AIProviderRuntimeConfig {
   apiKey?: string | null;
   baseUrl?: string | null;
   model?: string | null;
   /** 模型能力档案（2026-10-06 配置重设计）：上下文/输出/识图/推理档位。 */
-  modelProfile?: import("@ailearn/shared").ModelProfile;
+  modelProfile?: import("@astella/shared").ModelProfile;
   /** 平台级网关怪癖（disableMaxTokens / workspace / extraHeaders）。 */
   options?: PlatformOptions;
 }

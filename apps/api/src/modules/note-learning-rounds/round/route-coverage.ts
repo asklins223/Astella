@@ -42,9 +42,9 @@ import type { ApiTransaction } from "../../../db/client.ts";
 import {
   noteLearningRoundPlanRevisions,
   noteLearningRounds,
-} from "@ailearn/shared/db-schema/note-learning-rounds";
-import { notes } from "@ailearn/shared/db-schema/note";
-import { roundPlanV1Schema, roundTeachingContentV1Schema } from "@ailearn/shared/note-learning-round-contracts";
+} from "@astella/shared/db-schema/note-learning-rounds";
+import { notes } from "@astella/shared/db-schema/note";
+import { roundPlanV1Schema, roundTeachingContentV1Schema } from "@astella/shared/note-learning-round-contracts";
 import {
   decideNoteRouteQuestionV1,
   noteRouteQuestionIdForConflictV1,
@@ -54,7 +54,7 @@ import {
   type NoteRouteCoverageV1,
   type NoteRouteExposureFactsV1,
   type NoteRouteQuestionV1,
-} from "@ailearn/shared/note-route-coverage-v2";
+} from "@astella/shared/note-route-coverage-v2";
 import { noteVisibleSqlText as noteVisibleSqlTextForRawSql, visibleNotesCondition } from "../../note/visibility.ts";
 import { RoundServiceError, type RoundScopeV1 } from "./round-service.ts";
 

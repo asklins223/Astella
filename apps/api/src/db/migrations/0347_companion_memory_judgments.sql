@@ -95,7 +95,7 @@ CREATE INDEX assistant_memory_items_source_event_ids_idx
 -- 判断只属于本人所在空间（§4.5.4：「按 (workspace_id, user_id) 私有隔离」）。
 -- 上面的 CHECK 已经挡住 scope='global'；这里再挡一次跨空间携带，
 -- 与全局记忆扇出函数的行为对齐。
-CREATE OR REPLACE FUNCTION public.ailearn_block_judgment_global_fanout()
+CREATE OR REPLACE FUNCTION public.astella_block_judgment_global_fanout()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -111,4 +111,4 @@ $$;
 
 CREATE TRIGGER assistant_memory_judgment_scope_guard
   BEFORE INSERT OR UPDATE ON public.assistant_memory_items
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_block_judgment_global_fanout();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_block_judgment_global_fanout();

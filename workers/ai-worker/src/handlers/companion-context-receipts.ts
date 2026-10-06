@@ -1,6 +1,6 @@
-import { summarizeContextAssemblyReceipt, type AgentContextReceipt } from "@ailearn/agent-core";
-import type { ContextAssemblyReceiptV1 } from "@ailearn/agent-core";
-import type { ContextPressureReceiptV1 } from "@ailearn/shared/context-budget-contracts";
+import { summarizeContextAssemblyReceipt, type AgentContextReceipt } from "@astella/agent-core";
+import type { ContextAssemblyReceiptV1 } from "@astella/agent-core";
+import type { ContextPressureReceiptV1 } from "@astella/shared/context-budget-contracts";
 import { toContextPressureReceipt, type ContextBudgetGateOptions } from "../lib/context-governor.ts";
 
 /**

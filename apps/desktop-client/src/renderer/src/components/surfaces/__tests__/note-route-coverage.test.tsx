@@ -7,7 +7,7 @@
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { noteRouteCoverageV1Schema, type NoteRouteCoverageV1 } from "@ailearn/shared/note-route-coverage-v2";
+import { noteRouteCoverageV1Schema, type NoteRouteCoverageV1 } from "@astella/shared/note-route-coverage-v2";
 import { NoteRouteCoverage } from "../notebook/note-route-coverage.tsx";
 
 const NOTE = "44444444-4444-4444-8444-444444444444";

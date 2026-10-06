@@ -9,9 +9,9 @@ import {
 
 const encodedSecret = Buffer.alloc(32, 7).toString("base64url");
 const env = {
-  AILEARN_DESKTOP_PAIRING_KEY_ID: "dev-key-1",
-  AILEARN_DESKTOP_PAIRING_SECRET: encodedSecret,
-  AILEARN_DOMAIN_SCHEMA_REVISION: "domain-v2-test",
+  ASTELLA_DESKTOP_PAIRING_KEY_ID: "dev-key-1",
+  ASTELLA_DESKTOP_PAIRING_SECRET: encodedSecret,
+  ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test",
 } satisfies NodeJS.ProcessEnv;
 
 const request = {
@@ -24,7 +24,7 @@ const request = {
 test("desktop trust config requires a base64url secret with at least 32 bytes", () => {
   assert.deepEqual(readDesktopTrustConfig({}), { ok: false, reason: "missing" });
   assert.deepEqual(
-    readDesktopTrustConfig({ ...env, AILEARN_DESKTOP_PAIRING_SECRET: "not base64!" }),
+    readDesktopTrustConfig({ ...env, ASTELLA_DESKTOP_PAIRING_SECRET: "not base64!" }),
     { ok: false, reason: "invalid" },
   );
   const parsed = readDesktopTrustConfig(env);
@@ -38,8 +38,8 @@ test("bind host is loopback unless container wildcard is explicit", () => {
   assert.equal(
     resolveApiBindHost({
       API_BIND_ADDRESS: "0.0.0.0",
-      AILEARN_CONTAINER_MODE: "true",
-      AILEARN_ALLOW_CONTAINER_WILDCARD: "true",
+      ASTELLA_CONTAINER_MODE: "true",
+      ASTELLA_ALLOW_CONTAINER_WILDCARD: "true",
     }),
     "0.0.0.0",
   );
@@ -51,14 +51,14 @@ test("trust response signs the exact nonce text and carries no credential", () =
   if (!parsed.ok) return;
   const response = createDesktopTrustChallengeResponse(request, parsed.config, "instance-1");
   assert.equal(response.nonce, request.nonce);
-  assert.equal(response.serviceId, "ailearn-api");
+  assert.equal(response.serviceId, "astella-api");
   assert.equal(response.signature.length, 64);
   assert.equal(
     trustSignatureMessage(response),
     [
-      "ailearn-local-api-trust-v1",
+      "astella-local-api-trust-v1",
       request.nonce,
-      "ailearn-api",
+      "astella-api",
       "desktop-ipc-v1",
       "domain-v2-test",
       "dev-key-1",

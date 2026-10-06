@@ -1,7 +1,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 
-export const SESSION_COOKIE_NAME = "ailearn_session";
-export const CSRF_COOKIE_NAME = "ailearn_csrf";
+export const SESSION_COOKIE_NAME = "astella_session";
+export const CSRF_COOKIE_NAME = "astella_csrf";
 export const CSRF_HEADER_NAME = "x-csrf-token";
 
 export type AuthCredential = {

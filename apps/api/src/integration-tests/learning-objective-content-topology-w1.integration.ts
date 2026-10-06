@@ -10,11 +10,11 @@
  *  6. 同一 objective revision + note version 重复绑定被唯一索引拒绝。
  *
  * 环境：`DATABASE_URL_API_RLS` **必填**——必须指向一个**非 superuser** 的角色
- * （dev 的 ailearn 是 superuser：无条件绕过 RLS，即使 FORCE RLS 也不生效，于是隔离
- * 断言全部假通过）。一次性库里那份 `DATABASE_URL_API`（ailearn_api）就是这种角色。
+ * （dev 的 astella 是 superuser：无条件绕过 RLS，即使 FORCE RLS 也不生效，于是隔离
+ * 断言全部假通过）。一次性库里那份 `DATABASE_URL_API`（astella_api）就是这种角色。
  * 无 DB fail closed。
  *
- * 2026-09-25：以前这里缺变量会静默落到一个写死的开发库串（`ailearn_api@localhost`），
+ * 2026-09-25：以前这里缺变量会静默落到一个写死的开发库串（`astella_api@localhost`），
  * 于是本机跑这套用例时其实是在**真实 dev 库**上验隔离——而那正是最不该被悄悄碰到的库。
  * 现在缺变量当场喊（`testDatabaseUrl`）。
  */
@@ -22,7 +22,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API_RLS");
 
@@ -30,7 +30,7 @@ const CONN = testDatabaseUrl("DATABASE_URL_API_RLS");
  * 把这一发自己种的 origin 行**真的**删掉，并在同一个 workspace 上下文里回读证明删干净了。
  *
  * 原来三处 `finally` 写的是 `DELETE … WHERE workspace_id = ?` 后面接一个 `.catch(() => {})`。
- * 这张表是 FORCE RLS、连接又是 NOBYPASSRLS 的 `ailearn_api`：不带 `app.workspace_id` 的事务里
+ * 这张表是 FORCE RLS、连接又是 NOBYPASSRLS 的 `astella_api`：不带 `app.workspace_id` 的事务里
  * USING 那一半就匹配 0 行 ⇒ 删不掉任何东西，而 `.catch` 把错误也一起咽了——**看起来很正常**。
  * 实测这份文件跑一遍在库里留 3 行孤儿（跑前 26、跑后 29，`workspace_id` 在 `workspaces` 里不存在）。
  * 这也是它一直没人敢跑的一半原因：跑一次脏一次。

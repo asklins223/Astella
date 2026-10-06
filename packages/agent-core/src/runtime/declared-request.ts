@@ -1,7 +1,7 @@
-import { AgentRole, type AgentTurnRequest, type AgentTurnResult } from "@ailearn/shared";
-import { AGENT_GOAL_DELIVERY_CAPABILITY, type AgentOperationV1 } from "@ailearn/shared/agent-contracts";
-import type { AgentDirectRequestV1 } from "@ailearn/shared/agent-request-contracts";
-import { getAgentCapability } from "@ailearn/shared/agent-capability-catalog";
+import { AgentRole, type AgentTurnRequest, type AgentTurnResult } from "@astella/shared";
+import { AGENT_GOAL_DELIVERY_CAPABILITY, type AgentOperationV1 } from "@astella/shared/agent-contracts";
+import type { AgentDirectRequestV1 } from "@astella/shared/agent-request-contracts";
+import { getAgentCapability } from "@astella/shared/agent-capability-catalog";
 import { projectAgentGoalEvidence } from "./goal-delivery.ts";
 
 /** A user's button already selected the action. Use the same checkpoint/tool/

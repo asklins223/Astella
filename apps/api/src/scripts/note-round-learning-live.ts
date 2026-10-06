@@ -13,15 +13,15 @@ import { noteLearningRoundRoutes } from "../modules/note-learning-rounds/routes.
 import { resolveTeachingModelConfig } from "../modules/note-learning-rounds/teaching/teaching-llm.ts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 import { createRunV2 } from "../modules/learning-runs/run-service.ts";
-import { roundTeachingViewV1Schema } from "@ailearn/shared/note-learning-round-contracts";
+import { roundTeachingViewV1Schema } from "@astella/shared/note-learning-round-contracts";
 
 assert.equal(process.env.NOTE_ROUND_LIVE, "1", "set NOTE_ROUND_LIVE=1 to opt into a real model call");
 const adminUrl = process.env.DATABASE_URL_MIGRATOR;
 const apiUrl = process.env.DATABASE_URL_API;
 assert.ok(adminUrl && apiUrl, "explicit migrator and restricted API database URLs are required");
 const adminDb = new URL(adminUrl); const apiDb = new URL(apiUrl);
-assert.match(adminDb.pathname, /^\/ailearn_note39_[a-zA-Z0-9_]+$/, "only the dedicated disposable test database is allowed");
-assert.equal(apiDb.pathname, adminDb.pathname); assert.equal(apiDb.username, "ailearn_api");
+assert.match(adminDb.pathname, /^\/astella_note39_[a-zA-Z0-9_]+$/, "only the dedicated disposable test database is allowed");
+assert.equal(apiDb.pathname, adminDb.pathname); assert.equal(apiDb.username, "astella_api");
 const config = resolveTeachingModelConfig(); assert.ok(config, "real teaching model must be configured");
 const admin = postgres(adminUrl, { max: 2 });
 const app = Fastify({ logger: false });

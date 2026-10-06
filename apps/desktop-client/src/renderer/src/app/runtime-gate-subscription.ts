@@ -1,11 +1,11 @@
 import type {
-  AILearnDesktopApiM2,
+  AstellaDesktopApiM2,
   GatewayEventV1,
   RequestMetaV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import { createRequestMeta, unwrapGatewayResult } from "./desktop-client";
 
-type RuntimeSubscriptionApi = Pick<AILearnDesktopApiM2, "subscriptions">;
+type RuntimeSubscriptionApi = Pick<AstellaDesktopApiM2, "subscriptions">;
 
 export type RequiredRuntimeSubscription = {
   readonly subscriptionId: string;

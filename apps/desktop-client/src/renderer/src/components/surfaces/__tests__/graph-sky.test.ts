@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   UnderstandingEdgeProjectionV3,
   UnderstandingNodeProjectionV3,
-} from "@ailearn/shared/note-deepening-contracts";
+} from "@astella/shared/note-deepening-contracts";
 import {
   graphEdgeKindLabel,
   graphNodeLabel,

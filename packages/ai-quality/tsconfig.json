@@ -16,8 +16,8 @@
     "lib": ["ES2022"],
     "types": ["node"],
     "paths": {
-      "@ailearn/shared": ["../../shared/src/index.ts"],
-      "@ailearn/shared/*": ["../../shared/src/*"]
+      "@astella/shared": ["../../shared/src/index.ts"],
+      "@astella/shared/*": ["../../shared/src/*"]
     }
   },
   "include": ["src/**/*.ts"],

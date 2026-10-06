@@ -8,7 +8,7 @@
  * companion_voice_artifacts pending 超期转 expired（§7.5）。
  *
  * 相关表均 RLS ENABLE+FORCE（workspace_id+user_id 隔离），API 连接
- * （ailearn_api，NOBYPASSRLS）裸查询会被策略拦成 0 行；因此清理统一经
+ * （astella_api，NOBYPASSRLS）裸查询会被策略拦成 0 行；因此清理统一经
  * 0098 迁移建立的 SECURITY DEFINER 函数执行（migrator owner BYPASSRLS，
  * API 仅 EXECUTE）。由 server.ts 启动定时调用（与 purgeSoftDeletedNotes
  * 同模式：启动先跑一次，之后每 6 小时；每类分批限流避免长事务）。
@@ -107,7 +107,7 @@ export async function purgeExpiredCompanionAudit(
 ): Promise<number> {
   return runBatchLoop(limit, GEN_BATCH_MAX_ROUNDS, async () => {
     const rows = await db.execute(sql`
-      SELECT public.ailearn_purge_companion_audit_ttl(
+      SELECT public.astella_purge_companion_audit_ttl(
         ${retentionDays}, ${limit}
       ) AS purged
     `);
@@ -124,7 +124,7 @@ export async function purgeExpiredInvitationLedger(
 ): Promise<number> {
   return runBatchLoop(limit, GEN_BATCH_MAX_ROUNDS, async () => {
     const rows = await db.execute(sql`
-      SELECT public.ailearn_purge_invitation_ledger_ttl(
+      SELECT public.astella_purge_invitation_ledger_ttl(
         ${retentionDays}, ${limit}
       ) AS purged
     `);
@@ -140,7 +140,7 @@ export async function purgeExpiredCompanionStreamEvents(
 ): Promise<number> {
   return runBatchLoop(limit, GEN_BATCH_MAX_ROUNDS, async () => {
     const rows = await db.execute(sql`
-      SELECT public.ailearn_purge_companion_stream_events_ttl(${limit}) AS purged
+      SELECT public.astella_purge_companion_stream_events_ttl(${limit}) AS purged
     `);
     return parseCount(rows);
   });
@@ -154,14 +154,14 @@ export async function purgeExpiredCompanionStreamEvents(
 export async function expirePendingVoiceArtifacts(
   limit = VOICE_ARTIFACT_BATCH,
 ): Promise<number> {
-  if (!(await functionExists("ailearn_expire_pending_voice_artifacts"))) {
-    logger.warn("ailearn_expire_pending_voice_artifacts not present — voice artifact expiry skipped");
+  if (!(await functionExists("astella_expire_pending_voice_artifacts"))) {
+    logger.warn("astella_expire_pending_voice_artifacts not present — voice artifact expiry skipped");
     return 0;
   }
   let total = 0;
   for (let round = 0; round < VOICE_ARTIFACT_MAX_BATCH_ROUNDS; round++) {
     const rows = await db.execute(sql`
-      SELECT public.ailearn_expire_pending_voice_artifacts(${limit}) AS purged
+      SELECT public.astella_expire_pending_voice_artifacts(${limit}) AS purged
     `);
     const purged = parseCount(rows);
     total += purged;
@@ -174,7 +174,7 @@ export async function expirePendingVoiceArtifacts(
  * W5：ai_audit_log 保留策略 — 删除超过 retention 天的行（纯 append-only 审计日志
  * 不得无界增长）。分批循环直到某批返回 < batch（已清空）或达到轮次上限，避免长事务。
  *
- * 依赖迁移：`ailearn_purge_old_ai_audit_log(retention_days int, batch int)`
+ * 依赖迁移：`astella_purge_old_ai_audit_log(retention_days int, batch int)`
  * SECURITY DEFINER 函数（migrator owner BYPASSRLS，删 ai_audit_log 的
  * out-of-retention 行，返回删除行数）。函数未落地时存在性检查兜底跳过。
  */
@@ -182,14 +182,14 @@ export async function purgeOldAiAuditLog(
   retentionDays = AI_AUDIT_TTL_DAYS,
   batch = AI_AUDIT_BATCH,
 ): Promise<number> {
-  if (!(await functionExists("ailearn_purge_old_ai_audit_log"))) {
-    logger.warn("ailearn_purge_old_ai_audit_log not present — ai_audit_log retention skipped");
+  if (!(await functionExists("astella_purge_old_ai_audit_log"))) {
+    logger.warn("astella_purge_old_ai_audit_log not present — ai_audit_log retention skipped");
     return 0;
   }
   let total = 0;
   for (let round = 0; round < AI_AUDIT_MAX_BATCH_ROUNDS; round++) {
     const rows = await db.execute(sql`
-      SELECT public.ailearn_purge_old_ai_audit_log(
+      SELECT public.astella_purge_old_ai_audit_log(
         ${retentionDays}, ${batch}
       ) AS purged
     `);
@@ -204,21 +204,21 @@ export async function purgeOldAiAuditLog(
  * WN-4：companion_proactive_deliveries 清理 — 删除 expires_at < now() 的超期行
  * （pending/expired 等终端行目前只增不删）。分批循环避免长事务。
  *
- * 依赖迁移：`ailearn_purge_expired_proactive_deliveries(batch int)`
+ * 依赖迁移：`astella_purge_expired_proactive_deliveries(batch int)`
  * SECURITY DEFINER 函数（删除 companion_proactive_deliveries 中
  * expires_at < now() 的行，返回删除行数）。函数未落地时存在性检查兜底跳过。
  */
 export async function purgeExpiredProactiveDeliveries(
   batch = PROACTIVE_BATCH,
 ): Promise<number> {
-  if (!(await functionExists("ailearn_purge_expired_proactive_deliveries"))) {
-    logger.warn("ailearn_purge_expired_proactive_deliveries not present — proactive delivery cleanup skipped");
+  if (!(await functionExists("astella_purge_expired_proactive_deliveries"))) {
+    logger.warn("astella_purge_expired_proactive_deliveries not present — proactive delivery cleanup skipped");
     return 0;
   }
   let total = 0;
   for (let round = 0; round < PROACTIVE_MAX_BATCH_ROUNDS; round++) {
     const rows = await db.execute(sql`
-      SELECT public.ailearn_purge_expired_proactive_deliveries(${batch}) AS purged
+      SELECT public.astella_purge_expired_proactive_deliveries(${batch}) AS purged
     `);
     const deleted = parseCount(rows);
     total += deleted;

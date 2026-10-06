@@ -24,4 +24,4 @@ BEGIN
   RETURN NEW;
 END; $$ LANGUAGE plpgsql;
 
-GRANT SELECT, INSERT ON public.note_annotations TO ailearn_worker;
+GRANT SELECT, INSERT ON public.note_annotations TO astella_worker;

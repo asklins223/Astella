@@ -1,9 +1,9 @@
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import type {
 CompanionActivityTimelineV1,
 CompanionDailySummaryV1,
 CompanionHistoryPageV1,
-} from "@ailearn/shared/companion-memory-desktop-contracts";
+} from "@astella/shared/companion-memory-desktop-contracts";
 import { ArrowRight,BookOpen,MessageCircle,Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import { plainCompanionBubbleText } from "../../companion/companion-markdown";

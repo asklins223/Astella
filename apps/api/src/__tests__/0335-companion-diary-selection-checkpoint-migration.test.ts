@@ -24,14 +24,14 @@ test("0335 keeps diary selection checkpoints private, scoped, and versioned", ()
   assert.match(migration, /FOREIGN KEY \(job_id, workspace_id\)/);
   assert.match(migration, /ENABLE ROW LEVEL SECURITY/);
   assert.match(migration, /FORCE ROW LEVEL SECURITY/);
-  assert.match(migration, /TO ailearn_worker/);
-  assert.match(migration, /REVOKE ALL PRIVILEGES[\s\S]*FROM PUBLIC, ailearn_api/);
-  assert.doesNotMatch(migration, /GRANT SELECT[\s\S]*TO ailearn_api/);
+  assert.match(migration, /TO astella_worker/);
+  assert.match(migration, /REVOKE ALL PRIVILEGES[\s\S]*FROM PUBLIC, astella_api/);
+  assert.doesNotMatch(migration, /GRANT SELECT[\s\S]*TO astella_api/);
 });
 
 test("worker-only diary checkpoints stay private after role bootstrap", () => {
   assert.match(roleGrants, /'companion_diary_generation_checkpoints'/);
-  assert.match(roleGrants, /REVOKE ALL PRIVILEGES ON TABLE public\.companion_diary_generation_checkpoints FROM ailearn_api/);
+  assert.match(roleGrants, /REVOKE ALL PRIVILEGES ON TABLE public\.companion_diary_generation_checkpoints FROM astella_api/);
   assert.match(roleGrants, /API unexpectedly has access to worker-only diary checkpoints/);
   assert.match(roleGrants, /\('companion_diary_generation_checkpoints', true, true, true, true\)/);
 });

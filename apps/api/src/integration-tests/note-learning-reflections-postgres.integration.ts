@@ -5,7 +5,7 @@ import postgres from "postgres";
 import Fastify from "fastify";
 import sensible from "@fastify/sensible";
 import { sql } from "drizzle-orm";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { seedV2Fixture, seedObjectiveNoteEvidence, type V2FixtureSeeded } from "./helpers/v2-card-fixture.ts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 import { noteLearningRoundRoutes } from "../modules/note-learning-rounds/routes.ts";

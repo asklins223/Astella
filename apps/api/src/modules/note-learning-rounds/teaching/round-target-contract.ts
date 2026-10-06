@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { knowledgeFormV2Schema } from "@ailearn/shared/card-generation-v2-contracts";
-import { taskIntentSchema } from "@ailearn/shared/learning-run-contracts";
+import { knowledgeFormV2Schema } from "@astella/shared/card-generation-v2-contracts";
+import { taskIntentSchema } from "@astella/shared/learning-run-contracts";
 
 /** Server-private proposal. A separate grounding check must approve every unit before persistence. */
 export const roundTargetDraftSchema = z.strictObject({

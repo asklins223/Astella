@@ -6,14 +6,14 @@
 --
 -- 原因是 `NEW` 是一个记录变量，对它的字段赋值在 plpgsql 里只改这份局部副本；
 -- 要让修改落到行上必须 `RETURN NEW`。而这里还叠了另一件事：`workspace_epoch`
--- 自己也走 `ailearn_bump_epoch_on_workspace_change` 的分支判断——`NEW.workspace_epoch`
+-- 自己也走 `astella_bump_epoch_on_workspace_change` 的分支判断——`NEW.workspace_epoch`
 -- 与 `OLD` 不同时会再抬一次，于是"改个名字 +2"。
 --
--- 改成 `AFTER UPDATE` + 复用唯一的抬 epoch 实现（`ailearn_bump_workspace_epoch`）：
+-- 改成 `AFTER UPDATE` + 复用唯一的抬 epoch 实现（`astella_bump_workspace_epoch`）：
 -- 与成员表那条触发器同形状，只有一条抬 epoch 的路径，也就没有"两次 +1"的可能。
 -- 顺序是安全的：AFTER 触发器跑在同一条语句的事务里，读到的是刚写下的行。
 
-CREATE OR REPLACE FUNCTION public.ailearn_bump_epoch_on_workspace_change()
+CREATE OR REPLACE FUNCTION public.astella_bump_epoch_on_workspace_change()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -25,7 +25,7 @@ BEGIN
   IF NEW.name IS DISTINCT FROM OLD.name
      OR NEW.owner_id IS DISTINCT FROM OLD.owner_id
      OR NEW.workspace_type IS DISTINCT FROM OLD.workspace_type THEN
-    PERFORM public.ailearn_bump_workspace_epoch(NEW.id);
+    PERFORM public.astella_bump_workspace_epoch(NEW.id);
   END IF;
   RETURN NULL;
 END;
@@ -36,7 +36,7 @@ $function$;
 DROP TRIGGER IF EXISTS workspaces_epoch_bump ON public.workspaces;
 CREATE TRIGGER workspaces_epoch_bump
   AFTER UPDATE ON public.workspaces
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_bump_epoch_on_workspace_change();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_bump_epoch_on_workspace_change();
 
 --> statement-breakpoint
 

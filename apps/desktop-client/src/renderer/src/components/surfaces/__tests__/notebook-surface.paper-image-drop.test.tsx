@@ -116,7 +116,7 @@ function stubGateway(mode: "live-preview" | "preview") {
       })),
     },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode } });
   return { uploads };
 }

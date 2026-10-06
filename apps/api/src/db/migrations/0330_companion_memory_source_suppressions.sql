@@ -20,18 +20,18 @@ ALTER TABLE public.assistant_memory_source_suppressions FORCE ROW LEVEL SECURITY
 CREATE POLICY assistant_memory_source_suppressions_user_isolation
   ON public.assistant_memory_source_suppressions FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   );
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT ON public.assistant_memory_source_suppressions TO ailearn_api;
-GRANT SELECT, INSERT ON public.assistant_memory_source_suppressions TO ailearn_worker;
+GRANT SELECT, INSERT ON public.assistant_memory_source_suppressions TO astella_api;
+GRANT SELECT, INSERT ON public.assistant_memory_source_suppressions TO astella_worker;
 
 --> statement-breakpoint
 
@@ -48,7 +48,7 @@ ON CONFLICT (user_id, kind, source_event_id) DO NOTHING;
 
 -- 成员离开空间时，先写抑制墓碑，再软删除本空间记忆；该 SECURITY DEFINER
 -- 函数仍是跨用户清理的唯一入口。锁格式与应用/worker 共用。
-CREATE OR REPLACE FUNCTION public.ailearn_retire_workspace_memories_on_departure(
+CREATE OR REPLACE FUNCTION public.astella_retire_workspace_memories_on_departure(
   p_workspace_id uuid,
   p_user_id uuid
 )
@@ -93,11 +93,11 @@ $function$;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_retire_workspace_memories_on_departure(uuid, uuid) IS
+COMMENT ON FUNCTION public.astella_retire_workspace_memories_on_departure(uuid, uuid) IS
   '成员退出/被移出时软删除该空间记忆并抑制其来源的再次自动抽取；global 记忆不动。SECURITY DEFINER 用于跨用户清理。';
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_retire_workspace_memories_on_departure(uuid, uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_retire_workspace_memories_on_departure(uuid, uuid) TO ailearn_api;
-GRANT EXECUTE ON FUNCTION public.ailearn_retire_workspace_memories_on_departure(uuid, uuid) TO ailearn_migrator;
+REVOKE ALL ON FUNCTION public.astella_retire_workspace_memories_on_departure(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_retire_workspace_memories_on_departure(uuid, uuid) TO astella_api;
+GRANT EXECUTE ON FUNCTION public.astella_retire_workspace_memories_on_departure(uuid, uuid) TO astella_migrator;

@@ -21,7 +21,7 @@ import {
   markdownToBlocks,
   extractTitleFromBlocks,
   type ParsedBlock,
-} from "@ailearn/shared/markdown-parser";
+} from "@astella/shared/markdown-parser";
 
 // file-validation.ts — 上传校验
 import { validateImageMagicBytes } from "../lib/file-validation.ts";

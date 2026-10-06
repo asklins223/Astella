@@ -66,7 +66,7 @@ const MUTATIONS: readonly Mutation[] = [
     name: "M2 §6.1 示意声明可被模型顶替",
     file: `${SHARED_ARTIFACT}/round-artifact-render.ts`,
     edits: [{
-      old: `    + \`<p class="ailearn-art__notice">\${escapeArtifactTextV1(ARTIFACT_ILLUSTRATION_NOTICE_V1)}</p>\``,
+      old: `    + \`<p class="astella-art__notice">\${escapeArtifactTextV1(ARTIFACT_ILLUSTRATION_NOTICE_V1)}</p>\``,
       new: "    + ``",
     }],
     expect: ["§6.1：服务端无条件加示意声明，模型写的那一句替代不了它"],
@@ -130,8 +130,8 @@ const MUTATIONS: readonly Mutation[] = [
     name: "M9 §6.3 文字等价表达被拿掉",
     file: `${SHARED_ARTIFACT}/round-artifact-render.ts`,
     edits: [{
-      old: '    + `<ol class="ailearn-art__list">${list.join("")}</ol>`',
-      new: '    + `<ol class="ailearn-art__list"></ol>`',
+      old: '    + `<ol class="astella-art__list">${list.join("")}</ol>`',
+      new: '    + `<ol class="astella-art__list"></ol>`',
     }],
     expect: ["§6.3 文字等价：每一步的讲解", "渲染器产出的标记确实是播放器查询的那一套"],
   },
@@ -139,8 +139,8 @@ const MUTATIONS: readonly Mutation[] = [
     name: "M10 §6.3 快照绑定那一行被拿掉",
     file: `${SHARED_ARTIFACT}/round-artifact-render.ts`,
     edits: [{
-      old: '    + `<p class="ailearn-art__meta">${escapeArtifactTextV1(buildMetaLineV1(input.snapshotHash, input.generatorRef))}</p>`',
-      new: '    + `<p class="ailearn-art__meta"></p>`',
+      old: '    + `<p class="astella-art__meta">${escapeArtifactTextV1(buildMetaLineV1(input.snapshotHash, input.generatorRef))}</p>`',
+      new: '    + `<p class="astella-art__meta"></p>`',
     }],
     expect: ["§6.3 绑定：画面上写明按哪一版材料、用哪一版生成器做的"],
   },
@@ -190,8 +190,8 @@ const MUTATIONS: readonly Mutation[] = [
     name: "M16 确定性被破坏（产物里写进时间戳）",
     file: `${SHARED_ARTIFACT}/round-artifact-render.ts`,
     edits: [{
-      old: '    + `<p class="ailearn-art__meta">',
-      new: '    + `<p class="ailearn-art__meta">${Date.now()} ',
+      old: '    + `<p class="astella-art__meta">',
+      new: '    + `<p class="astella-art__meta">${Date.now()} ',
     }],
     expect: ["确定性：同一份分镜渲染两次逐字节相同"],
   },

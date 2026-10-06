@@ -50,7 +50,7 @@ function installApi(seed = seedUpdate()) {
   presence = vi.fn(async () => ({ ok: true, data: { shared: true } }));
   syncUpdate = vi.fn(async () => ({ ok: true, data: { via: "stream", revision: null, savedAt: "2026-09-22T00:00:00.000Z" } }));
   state = vi.fn(async () => ({ ok: true, data: { update: seed, revision: 3, backfilled: false, shareScope: "shared" } }));
-  (window as unknown as { ailearn: unknown }).ailearn = {
+  (window as unknown as { astella: unknown }).astella = {
     subscriptions: {
       subscribe,
       unsubscribe,
@@ -169,13 +169,13 @@ describe("渲染进程那份文档", () => {
 
   it("主进程拒收那一次时要喊出来，不许读成「这台机器什么都没改」", async () => {
     installApi();
-    // 装完之后再把那一个口换掉：钩子是在要交的那一刻从 `window.ailearn` 上取的，
+    // 装完之后再把那一个口换掉：钩子是在要交的那一刻从 `window.astella` 上取的，
     // 只改外面那个变量改不动已经装上去的那一份。
     const refused = vi.fn(async () => ({
       ok: false as const,
       error: { code: "invalid_request" as const, safeMessageKey: "error.invalid_request", retry: "never" as const },
     }));
-    ((window as unknown as { ailearn: { note: { doc: { syncUpdate: unknown } } } }).ailearn.note.doc).syncUpdate = refused;
+    ((window as unknown as { astella: { note: { doc: { syncUpdate: unknown } } } }).astella.note.doc).syncUpdate = refused;
     const { result } = renderHook(() => useNoteDocLiveView(NOTE_ID, true, () => undefined));
     await settle();
     act(() => {

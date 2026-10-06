@@ -17,7 +17,7 @@
  *     旧版记录点开是搁架，当前版点开是就地展开。
  */
 import { useState } from "react";
-import type { NoteAnnotationTaskV1, NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
+import type { NoteAnnotationTaskV1, NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 
 /** 复核的那一批：版本与 ids 三样都要记（见文件头第 1 条）。 */
 export type AnnotationVerificationV1 = {

@@ -15,7 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Pool } from "pg";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = process.env.DATABASE_URL_API ?? process.env.DATABASE_URL;
 
@@ -100,7 +100,7 @@ test("0088：关键索引与唯一约束存在", async () => {
   }
 });
 
-test("0088：FORCE RLS 生效——ailearn_worker 无 session context 时查询零行", async () => {
+test("0088：FORCE RLS 生效——astella_worker 无 session context 时查询零行", async () => {
   // 结构断言（pg_catalog 不受 RLS 影响）
   const pool = mustConnect();
   try {
@@ -114,8 +114,8 @@ test("0088：FORCE RLS 生效——ailearn_worker 无 session context 时查询�
     await pool.end();
   }
 
-  // 行为断言：ailearn（superuser/BYPASSRLS）无法验证 FORCE RLS，必须用
-  // ailearn_worker（非 superuser、非 BYPASSRLS，0088 已 grant SELECT）。
+  // 行为断言：astella（superuser/BYPASSRLS）无法验证 FORCE RLS，必须用
+  // astella_worker（非 superuser、非 BYPASSRLS，0088 已 grant SELECT）。
   const worker = new Pool({
     // 允许通过 DATABASE_URL_WORKER 覆盖（默认 dev 拓扑），避免硬编码连接串。
     connectionString: testDatabaseUrl("DATABASE_URL_WORKER"),
@@ -124,7 +124,7 @@ test("0088：FORCE RLS 生效——ailearn_worker 无 session context 时查询�
     const { rows } = await worker.query(
       `SELECT count(*)::int AS n FROM public.companion_conversations`,
     );
-    assert.equal(rows[0].n, 0, "ailearn_worker 无 session context 必须零行（FORCE RLS 兜底）");
+    assert.equal(rows[0].n, 0, "astella_worker 无 session context 必须零行（FORCE RLS 兜底）");
   } finally {
     await worker.end();
   }

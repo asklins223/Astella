@@ -20,10 +20,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
-import * as schema from "@ailearn/shared/db-schema";
+import * as schema from "@astella/shared/db-schema";
 import { sql as query } from "drizzle-orm";
-import { createAgentAdvanceStore, createAgentStore, type AgentStorePorts } from "@ailearn/agent-host";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { createAgentAdvanceStore, createAgentStore, type AgentStorePorts } from "@astella/agent-host";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { closeDatabase, type WorkerTransaction } from "../db.ts";
 import { invokeNoteCapability } from "../agent/note-capabilities.ts";
 

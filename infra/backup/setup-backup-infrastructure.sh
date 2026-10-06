@@ -17,16 +17,16 @@
 # 用法：
 #   ./setup-backup-infrastructure.sh \
 #     --s3-endpoint http://minio:9000 \
-#     --s3-bucket ailearn-backups \
+#     --s3-bucket astella-backups \
 #     --s3-access-key XXX --s3-secret-key YYY \
-#     --key-dir /etc/ailearn
+#     --key-dir /etc/astella
 #
 # 仅生成密钥（不创建 bucket）：
-#   ./setup-backup-infrastructure.sh --keys-only --key-dir /etc/ailearn
+#   ./setup-backup-infrastructure.sh --keys-only --key-dir /etc/astella
 #
 # 仅创建 bucket（已有密钥）：
 #   ./setup-backup-infrastructure.sh --bucket-only \
-#     --s3-endpoint http://minio:9000 --s3-bucket ailearn-backups \
+#     --s3-endpoint http://minio:9000 --s3-bucket astella-backups \
 #     --s3-access-key XXX --s3-secret-key YYY
 #
 # 退出码：
@@ -39,7 +39,7 @@ set -euo pipefail
 
 KEYS_ONLY=false
 BUCKET_ONLY=false
-KEY_DIR="/etc/ailearn"
+KEY_DIR="/etc/astella"
 S3_ENDPOINT=""
 S3_BUCKET=""
 S3_ACCESS_KEY=""
@@ -55,7 +55,7 @@ usage() {
   --bucket-only          仅创建 S3 bucket
 
 必需参数（密钥生成）:
-  --key-dir PATH         密钥存储目录（默认 /etc/ailearn）
+  --key-dir PATH         密钥存储目录（默认 /etc/astella）
   --key-name NAME        密钥名称前缀（默认 backup-age）
 
 必需参数（bucket 创建）:
@@ -255,29 +255,29 @@ create_bucket() {
 
   elif [[ "$s3_client" == "mc" ]]; then
     # MinIO mc 客户端
-    mc alias set ailearn-backup "$S3_ENDPOINT" "$S3_ACCESS_KEY" "$S3_SECRET_KEY"
+    mc alias set astella-backup "$S3_ENDPOINT" "$S3_ACCESS_KEY" "$S3_SECRET_KEY"
 
     # 检查 bucket 是否已存在
-    if mc ls "ailearn-backup/$S3_BUCKET" 2>/dev/null; then
+    if mc ls "astella-backup/$S3_BUCKET" 2>/dev/null; then
       log "  - bucket 已存在，跳过创建"
     else
       log "  创建 bucket..."
-      mc mb "ailearn-backup/$S3_BUCKET"
+      mc mb "astella-backup/$S3_BUCKET"
       log "  ✓ bucket 已创建"
     fi
 
     # 设置匿名访问为 none
-    mc anonymous set none "ailearn-backup/$S3_BUCKET" 2>/dev/null || true
+    mc anonymous set none "astella-backup/$S3_BUCKET" 2>/dev/null || true
 
     # 启用版本控制
     log "  启用版本控制..."
-    mc version enable "ailearn-backup/$S3_BUCKET" 2>/dev/null || log "  ⚠ 无法启用版本控制"
+    mc version enable "astella-backup/$S3_BUCKET" 2>/dev/null || log "  ⚠ 无法启用版本控制"
 
     # 验证写入权限
     log "  验证写入权限..."
     echo "setup-verify-$(date -u +%s)" | \
-      mc pipe "ailearn-backup/$S3_BUCKET/.setup-verify"
-    mc rm "ailearn-backup/$S3_BUCKET/.setup-verify"
+      mc pipe "astella-backup/$S3_BUCKET/.setup-verify"
+    mc rm "astella-backup/$S3_BUCKET/.setup-verify"
     log "  ✓ 写入权限验证通过"
   fi
 

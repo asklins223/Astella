@@ -21,7 +21,7 @@
 -- RLS（0075/0077 风格）：outbox 事件属 user-private-in-workspace（§12.1 正式
 -- outcome/attempt/schedule 归属域），使用 workspace_id + user_id 双条件 policy；
 -- 任一 context 缺失（NULLIF(...) IS NULL）即 fail closed。
--- GRANT：ailearn_api 读写 + 序列 usage；ailearn_worker 只读（投影消费）+ 序列 usage。
+-- GRANT：astella_api 读写 + 序列 usage；astella_worker 只读（投影消费）+ 序列 usage。
 --
 -- 幂等：CREATE SEQUENCE/TABLE/INDEX 用 IF NOT EXISTS，policy 用 DROP POLICY
 -- IF EXISTS + CREATE POLICY，GRANT 按角色存在性；fresh / upgrade / repeat /
@@ -100,16 +100,16 @@ CREATE POLICY learning_outbox_events_workspace_user_isolation
 
 -- ════════════════════════════════════════════════════════════════════════
 -- least-privilege GRANT（0071/0075 模式：按角色存在性授权）
--- ailearn_api：读写 + 序列 usage；ailearn_worker：SELECT + 标记消费（UPDATE processed_at）+ 序列 usage。
+-- astella_api：读写 + 序列 usage；astella_worker：SELECT + 标记消费（UPDATE processed_at）+ 序列 usage。
 -- ════════════════════════════════════════════════════════════════════════
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_outbox_events TO ailearn_api;
-    GRANT USAGE ON SEQUENCE public.learning_outbox_events_seq TO ailearn_api;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_outbox_events TO astella_api;
+    GRANT USAGE ON SEQUENCE public.learning_outbox_events_seq TO astella_api;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
-    GRANT SELECT, UPDATE ON public.learning_outbox_events TO ailearn_worker;
-    GRANT USAGE ON SEQUENCE public.learning_outbox_events_seq TO ailearn_worker;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
+    GRANT SELECT, UPDATE ON public.learning_outbox_events TO astella_worker;
+    GRANT USAGE ON SEQUENCE public.learning_outbox_events_seq TO astella_worker;
   END IF;
 END $$;

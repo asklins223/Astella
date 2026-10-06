@@ -72,7 +72,7 @@ function installApi(options: {
     },
     learningRun: { list: vi.fn(async () => ok({ items: [], total: 0 })) },
   };
-  Object.defineProperty(window, "ailearn", { value: api, configurable: true });
+  Object.defineProperty(window, "astella", { value: api, configurable: true });
   return api;
 }
 

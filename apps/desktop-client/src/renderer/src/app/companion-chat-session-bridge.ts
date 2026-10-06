@@ -1,7 +1,7 @@
 import { useRoomStore } from "./room-store";
 import type { HudPageId } from "../components/hud/hud-pages";
-import type { MainPageContextInputV2, PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
-import { companionPageRouteV2, SETTINGS_SECTION_IDS_V2 } from "@ailearn/shared/companion-bridge-contracts";
+import type { MainPageContextInputV2, PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
+import { companionPageRouteV2, SETTINGS_SECTION_IDS_V2 } from "@astella/shared/companion-bridge-contracts";
 
 export function bridgePageContext(input: {
   hudPage: HudPageId;

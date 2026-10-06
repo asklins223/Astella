@@ -21,13 +21,13 @@ import { randomUUID } from "node:crypto";
 import {
   deterministicGroundingPrecheck,
   deterministicPedagogyPrecheck,
-} from "@ailearn/shared/card-generation-v2-pipeline";
+} from "@astella/shared/card-generation-v2-pipeline";
 import type {
   LearningCardCandidateRevisionV2,
-} from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
 import {
   computeCandidateRevisionHashV2,
-} from "@ailearn/shared/card-generation-v2-hashing";
+} from "@astella/shared/card-generation-v2-hashing";
 
 // ─── Mock helpers ────────────────────────────────────────────────────────
 

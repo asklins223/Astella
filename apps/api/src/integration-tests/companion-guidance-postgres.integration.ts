@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { sql as drizzleSql } from "drizzle-orm";
-import { COMPANION_GUIDE_VERSION } from "@ailearn/shared/companion-shell-contracts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { COMPANION_GUIDE_VERSION } from "@astella/shared/companion-shell-contracts";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { getCompanionOverview, transitionOnboarding } from "../modules/companion-shell/service.ts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 

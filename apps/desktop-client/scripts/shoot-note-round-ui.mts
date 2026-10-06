@@ -24,18 +24,18 @@ const installedElectron = resolve(appRoot, 'node_modules/electron/dist/Electron.
 const workspaceElectron = resolve(appRoot, '../desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron')
 const executablePath = existsSync(installedElectron) ? installedElectron : workspaceElectron
 const NOTE_HINT = process.env.PROBE_NOTE_HINT ?? ''
-const outDir = process.env.SHOT_DIR ?? resolve(homedir(), 'Downloads', 'ailearn-ui-shots')
+const outDir = process.env.SHOT_DIR ?? resolve(homedir(), 'Downloads', 'astella-ui-shots')
 if (!process.env.OWNER_EMAIL || !process.env.OWNER_PASSWORD || NOTE_HINT.length === 0) {
   throw new Error('需要 OWNER_EMAIL / OWNER_PASSWORD / PROBE_NOTE_HINT')
 }
 mkdirSync(outDir, { recursive: true })
 
 const sql = (statement: string): string => execFileSync(
-  'docker', ['exec', 'ailearn-dev-postgres-1', 'psql', '-U', 'ailearn', '-d', 'ailearn', '-tAc', statement],
+  'docker', ['exec', 'astella-dev-postgres-1', 'psql', '-U', 'astella', '-d', 'astella', '-tAc', statement],
   { encoding: 'utf8' },
 ).trim()
 
-const userDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-shoot-'))
+const userDataDir = await mkdtemp(resolve(tmpdir(), 'astella-shoot-'))
 const app = await electron.launch({
   args: ['.', '--lang=zh-CN', `--user-data-dir=${userDataDir}`],
   cwd: appRoot,

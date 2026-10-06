@@ -3,8 +3,8 @@ import {
   companionRunListV1Schema,
   type CompanionRunListQueryV1,
   type CompanionRunListV1,
-} from "@ailearn/shared";
-import { companionTurnRuns } from "@ailearn/shared/db-schema";
+} from "@astella/shared";
+import { companionTurnRuns } from "@astella/shared/db-schema";
 import type { ApiTransaction } from "../../db/client.ts";
 import type { CompanionRunDoctorScope } from "./run-doctor.ts";
 

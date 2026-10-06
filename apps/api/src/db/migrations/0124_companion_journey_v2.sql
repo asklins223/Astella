@@ -110,11 +110,11 @@ DROP POLICY IF EXISTS companion_account_invitations_user_isolation
 CREATE POLICY companion_account_invitations_user_isolation
   ON public.companion_account_invitations AS PERMISSIVE FOR ALL
   USING (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   )
   WITH CHECK (
-    CURRENT_USER = 'ailearn_worker'
+    CURRENT_USER = 'astella_worker'
     OR user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   );
 
@@ -138,14 +138,14 @@ BEGIN
       CREATE POLICY %I_workspace_user_isolation
         ON public.%I AS PERMISSIVE FOR ALL
         USING (
-          CURRENT_USER = 'ailearn_worker'
+          CURRENT_USER = 'astella_worker'
           OR (
             workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
             AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
           )
         )
         WITH CHECK (
-          CURRENT_USER = 'ailearn_worker'
+          CURRENT_USER = 'astella_worker'
           OR (
             workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
             AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -157,9 +157,9 @@ END $$;
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_account_invitations TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_journeys TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_journey_pending_events TO ailearn_api;
-GRANT SELECT ON public.companion_account_invitations TO ailearn_worker;
-GRANT SELECT ON public.companion_journeys TO ailearn_worker;
-GRANT SELECT ON public.companion_journey_pending_events TO ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_account_invitations TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_journeys TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_journey_pending_events TO astella_api;
+GRANT SELECT ON public.companion_account_invitations TO astella_worker;
+GRANT SELECT ON public.companion_journeys TO astella_worker;
+GRANT SELECT ON public.companion_journey_pending_events TO astella_worker;

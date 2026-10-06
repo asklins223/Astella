@@ -19,7 +19,7 @@
  *
  * Environment variables:
  *   SEC02_TEST_DATABASE_URL — connection string for the test database
- *   (must connect as ailearn_migrator or ailearn_api role)
+ *   (must connect as astella_migrator or astella_api role)
  */
 
 import assert from "node:assert/strict";

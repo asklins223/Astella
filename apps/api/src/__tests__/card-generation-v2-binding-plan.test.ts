@@ -16,10 +16,10 @@ import { describe, it, beforeEach } from "node:test";
 import { randomUUID } from "node:crypto";
 import {
   assembleCandidateEvidenceBindingPlanV2,
-} from "@ailearn/shared/card-generation-v2-pipeline";
+} from "@astella/shared/card-generation-v2-pipeline";
 import { CardGenerationV2ServiceError } from "../modules/card-generation-v2/helpers.ts";
-import type { GroundingCriticReportV2 } from "@ailearn/shared/card-quality-v2-contracts";
-import type { LearningCardCandidateRevisionV2, CanonicalAnswerV2 } from "@ailearn/shared/card-generation-v2-contracts";
+import type { GroundingCriticReportV2 } from "@astella/shared/card-quality-v2-contracts";
+import type { LearningCardCandidateRevisionV2, CanonicalAnswerV2 } from "@astella/shared/card-generation-v2-contracts";
 
 const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const SOURCE_SNAPSHOT_ID = "00000000-0000-4000-8000-000000000002";
@@ -27,7 +27,7 @@ const EVIDENCE_SNAPSHOT = "00000000-0000-4000-8000-000000000010";
 
 let candidate: LearningCardCandidateRevisionV2;
 let grounding: GroundingCriticReportV2;
-let manifest: { workspaceId: string; sourceSnapshotId: string; evidence: import("@ailearn/card-generation").SealedEvidenceEntryV2[] };
+let manifest: { workspaceId: string; sourceSnapshotId: string; evidence: import("@astella/card-generation").SealedEvidenceEntryV2[] };
 let eligibility: Array<{ evidenceSnapshotId: string; eligibilityEpoch: number; status: string; stateHash: string }>;
 
 beforeEach(() => {

@@ -13,7 +13,7 @@
  * ## 1. 渲染进程没有 HTML 注入点
  *
  * **口径已随 D4 第二稿更新（2026-09-25，W4-1）**：动态讲解最终选的是"整份 HTML ＋ 脚本、
- * 跑在 `ailearn-app://artifact` 的不透明沙箱 frame 里"（D4 §0 那张决定表），**不是**
+ * 跑在 `astella-app://artifact` 的不透明沙箱 frame 里"（D4 §0 那张决定表），**不是**
  * 第一稿的"允许集合解析重建"。所以这条守卫今天守的是另一件事，但仍然要守：
  *
  *   - 产物**不许**进渲染进程的文档树。渲染进程持有 preload 桥与用户全部可见数据，
@@ -139,7 +139,7 @@ describe("渲染进程没有 HTML 注入点（D4 §5.1）", () => {
 
     expect(
       violations.map((entry) => `${entry.file}: ${entry.hits.join(", ")}`),
-      "渲染进程出现了 HTML 注入点。动态讲解的产物只许走 ailearn-app://artifact 那个隔离 frame，"
+      "渲染进程出现了 HTML 注入点。动态讲解的产物只许走 astella-app://artifact 那个隔离 frame，"
         + "不许把产物内容（或任何字符串）当 HTML 插进渲染进程；确需 DOMParser 请登记进 ALLOWED 名单。",
     ).toEqual([]);
   });

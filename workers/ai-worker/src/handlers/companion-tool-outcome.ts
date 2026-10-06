@@ -6,8 +6,8 @@ import {
   CompanionToolNotExecutedError,
   CompanionToolUnavailableError,
 } from "./companion-tool-result.ts";
-import type { CompanionToolReportedStatus } from "@ailearn/shared";
-import { isVisionGatedCompanionTool } from "@ailearn/shared";
+import type { CompanionToolReportedStatus } from "@astella/shared";
+import { isVisionGatedCompanionTool } from "@astella/shared";
 
 export {
   CompanionToolBlockedError,

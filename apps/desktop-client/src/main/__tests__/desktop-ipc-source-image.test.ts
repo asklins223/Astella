@@ -19,8 +19,8 @@ import {
   DESKTOP_IPC_CONTRACT_VERSION,
   type GatewayResultV1,
   type RequestMetaV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
-import { sourceImageGetResultV1Schema } from "@ailearn/shared/source-image-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
+import { sourceImageGetResultV1Schema } from "@astella/shared/source-image-contracts";
 import type { DesktopGateway } from "../desktop-gateway";
 
 type InvokeHandler = (
@@ -110,13 +110,13 @@ describe("source image desktop IPC", () => {
 
     registerM1DesktopIpc({
       gateway,
-      env: { AILEARN_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
+      env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
       resolveWindow: () => ({} as never),
       getWindowState: () => ({ state: "visible", revision: 1 }),
       setTitlebarTheme: () => true,
     });
 
-    const event = { sender: {}, senderFrame: { url: "ailearn://renderer/" } };
+    const event = { sender: {}, senderFrame: { url: "astella://renderer/" } };
     await requiredHandler(DESKTOP_IPC_CHANNELS.authGetState)(event, { meta });
     const scopedMeta = { ...meta, workspaceEpoch: 9 };
 
@@ -147,7 +147,7 @@ describe("source image desktop IPC", () => {
     // 未经声明的额外字段同样被拒（strictObject）。
     const extraKey = await requiredHandler(DESKTOP_IPC_CHANNELS.sourceImageGet)(event, {
       meta: scopedMeta,
-      request: { ...imageRequest, absolutePath: "/data/ailearn" },
+      request: { ...imageRequest, absolutePath: "/data/astella" },
     });
     expect(extraKey).toMatchObject({ ok: false, error: { code: "invalid_request" } });
     expect(sourceStubs.getSourceImage).toHaveBeenCalledTimes(1);

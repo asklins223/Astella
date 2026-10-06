@@ -22,9 +22,9 @@ import { z } from "zod";
 import { parseBody } from "../../lib/validate.ts";
 import { requireSession } from "../identity/middleware.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
-import { understandingChangeSets } from "@ailearn/shared/db-schema/understanding-projection";
+import { understandingChangeSets } from "@astella/shared/db-schema/understanding-projection";
 import { createUnderstandingRoutePlan } from "./route-plan-service.ts";
-import { understandingRoutePlanRequestV1Schema } from "@ailearn/shared";
+import { understandingRoutePlanRequestV1Schema } from "@astella/shared";
 import { parseCheckpointToken, watermarkBehind } from "./projection-checkpoint.ts";
 import {
   latestProjectionWatermark,

@@ -22,7 +22,7 @@ import {
   personalDecisionsETagSuffixV2,
   relationEdgeIsDecidableV2,
 } from "../personal-relation-decision-service.ts";
-import type { PersonalRelationDecisionV2 } from "@ailearn/shared/personal-relation-decision-rules-v2";
+import type { PersonalRelationDecisionV2 } from "@astella/shared/personal-relation-decision-rules-v2";
 
 type Edge = { edgeId: string; kind: string; from: { id: string }; to: { id: string } };
 type Snap = { edges: Edge[]; topologyRevision: string };

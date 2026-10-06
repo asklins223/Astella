@@ -15,8 +15,8 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
-import { ASSISTANT_DELIVERY_KIND_VALUES } from "@ailearn/shared";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { ASSISTANT_DELIVERY_KIND_VALUES } from "@astella/shared";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 const sql = postgres(CONN, { max: 1 });

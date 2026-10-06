@@ -17,7 +17,7 @@
 -- SECURITY DEFINER 的理由与 L38 同源：策略按 (workspace,user) 收窄，而这件事的发起者是 owner、
 -- 处理对象包含其他成员的行；同时逐表动态 DELETE 需要跨租户守卫，只能由函数内部按参数判范围。
 
-CREATE OR REPLACE FUNCTION public.ailearn_dissolve_workspace(
+CREATE OR REPLACE FUNCTION public.astella_dissolve_workspace(
   p_workspace_id uuid,
   p_actor_user_id uuid
 )
@@ -74,7 +74,7 @@ BEGIN
     WHERE workspace_id = p_workspace_id AND left_at IS NULL
   LOOP
     v_retired_memories := v_retired_memories
-      + public.ailearn_retire_workspace_memories_on_departure(p_workspace_id, v_member.user_id);
+      + public.astella_retire_workspace_memories_on_departure(p_workspace_id, v_member.user_id);
 
     -- 先把"个人空间里已经有同一件事"的那一份丢掉，再改指针。
     -- 为什么必须先丢：伴星的 global 记忆是**按空间扇出**的——同一条记忆带着完全相同的
@@ -196,11 +196,11 @@ $function$;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_dissolve_workspace(uuid, uuid) IS
+COMMENT ON FUNCTION public.astella_dissolve_workspace(uuid, uuid) IS
   '解散一个协作空间：收成员的空间侧记忆、把属于人的记忆改指回个人空间、写审计 tombstone、逐表清空（清单来自 catalog）、删空间行。个人空间与 actor 非 owner 一律 RAISE。返回逐表删除计数。';
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_dissolve_workspace(uuid, uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_dissolve_workspace(uuid, uuid) TO ailearn_api;
-GRANT EXECUTE ON FUNCTION public.ailearn_dissolve_workspace(uuid, uuid) TO ailearn_migrator;
+REVOKE ALL ON FUNCTION public.astella_dissolve_workspace(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_dissolve_workspace(uuid, uuid) TO astella_api;
+GRANT EXECUTE ON FUNCTION public.astella_dissolve_workspace(uuid, uuid) TO astella_migrator;

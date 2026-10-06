@@ -21,7 +21,7 @@
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_companion_daily_summaries()
+CREATE OR REPLACE FUNCTION public.astella_enqueue_companion_daily_summaries()
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -134,9 +134,9 @@ $function$;
 -- 否则调度侧会静默不产 job（与 0235 那次修的是同一类问题）。
 DO $$
 BEGIN
-  IF NOT has_function_privilege('ailearn_worker',
-        'public.ailearn_enqueue_companion_daily_summaries()', 'EXECUTE') THEN
-    RAISE EXCEPTION 'ailearn_worker 失去 ailearn_enqueue_companion_daily_summaries 的 EXECUTE 权限';
+  IF NOT has_function_privilege('astella_worker',
+        'public.astella_enqueue_companion_daily_summaries()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'astella_worker 失去 astella_enqueue_companion_daily_summaries 的 EXECUTE 权限';
   END IF;
 END
 $$;

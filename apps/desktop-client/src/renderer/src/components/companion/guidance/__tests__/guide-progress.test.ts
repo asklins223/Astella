@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from "vitest";
-import { COMPANION_GUIDE_VERSION, type CompanionOnboardingStateV1 } from "@ailearn/shared/companion-shell-contracts";
+import { COMPANION_GUIDE_VERSION, type CompanionOnboardingStateV1 } from "@astella/shared/companion-shell-contracts";
 import { GuideProgressClient, guideProgressKey, resumableGuide, type GuideIdentity } from "../guide-progress";
 const identity: GuideIdentity = { workspaceId: "11111111-1111-4111-8111-111111111111", workspaceEpoch: 2, userId: "22222222-2222-4222-8222-222222222222", deploymentRef: "deployment-a", name: "同名", role: "owner", isPersonal: false };
 const ok = (data: unknown) => ({ version: 1, ok: true, data, requestId: "test", correlationId: "test", schemaRevision: "test" });
@@ -16,7 +16,7 @@ beforeEach(() => {
     if (request.action === "pause" && remote.activeRun) remote.activeRun.runStatus = "paused";
     return ok({ state: remote });
   });
-  Object.defineProperty(window, "ailearn", { configurable: true, value: { companion: { account: {
+  Object.defineProperty(window, "astella", { configurable: true, value: { companion: { account: {
     getState: vi.fn(async () => ok({ account: { revision: 0, epoch: 0, globalEnabled: true, diaryEnabled: true }, onboardingStates: remote ? [remote] : [] })),
     transitionOnboarding: transition,
   } } } });

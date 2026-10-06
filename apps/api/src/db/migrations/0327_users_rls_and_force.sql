@@ -4,8 +4,8 @@
 --
 -- 2026-09-29 审计发现：`users` 是**唯一一张既有身份数据、又完全没有 RLS 的表**。
 -- 它存 `email` 与 `password_hash`，而 `infra/postgres/roles.sql:257` 给
--- `ailearn_api` 的是无差别授权
---   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ailearn_api
+-- `astella_api` 的是无差别授权
+--   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO astella_api
 --
 -- 更糟的是**现有安全网结构性地看不见它**：
 -- `schema-isolation-gate-postgres` 那道"零容忍"棘轮（`BASELINE_WITHOUT_RLS = []`）
@@ -13,7 +13,7 @@
 -- workspace_id 列**的表。`users` 用的是 `id`，于是它对那道断言恒不可见。
 --
 -- 不是理论问题。`apps/api/src/integration-tests/users-rls-postgres.integration.ts`
--- 在本迁移**之前**实跑的结果（受限角色 ailearn_api，事务内设好上下文）：
+-- 在本迁移**之前**实跑的结果（受限角色 astella_api，事务内设好上下文）：
 --   - alice（workspace A）**读到了** bob（workspace B）的 email 与 password_hash
 --   - alice 能**裸 SELECT users** 把整表拉出来
 --   - alice 能 **UPDATE** bob 的 password_hash
@@ -26,9 +26,9 @@
 -- 没有事务，所以 `app.workspace_id` / `app.user_id` 都没设。任何"必须有 app.user_id"
 -- 的策略都会让它返回 0 行——**所有人都登不进来**。
 --
--- 所以登录这一条走 SECURITY DEFINER 函数 `ailearn_find_user_by_email`：
+-- 所以登录这一条走 SECURITY DEFINER 函数 `astella_find_user_by_email`：
 -- 这是"刻意的、有名字的、窄口径的"跨用户读路径，与 `jobs` 表那套
--- `ailearn_claim_job` / `ailearn_renew_job_lease` 是同一个既有模式
+-- `astella_claim_job` / `astella_renew_job_lease` 是同一个既有模式
 -- （见 0018 / 0022 迁移）。它只按 email 查一行，**不回写**。
 --
 -- 其余读路径都带上下文，逐条核过（`grep` 结果）：
@@ -46,7 +46,7 @@
 
 -- ─── 1. 登录用的窄口径 SECURITY DEFINER 读函数 ────────────────────────
 
-CREATE OR REPLACE FUNCTION public.ailearn_find_user_by_email(p_email text)
+CREATE OR REPLACE FUNCTION public.astella_find_user_by_email(p_email text)
 RETURNS TABLE (
   id uuid,
   email text,
@@ -72,13 +72,13 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.ailearn_find_user_by_email(text) IS
+COMMENT ON FUNCTION public.astella_find_user_by_email(text) IS
   '登录按 email 查用户。刻意 SECURITY DEFINER：登录发生在会话建立之前，'
   'app.user_id / app.workspace_id 都还没设，RLS 上下文不存在。'
   '只读一行、只读这一列集，不提供任何写能力。';
 
-REVOKE ALL ON FUNCTION public.ailearn_find_user_by_email(text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_find_user_by_email(text) TO ailearn_api, ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_find_user_by_email(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_find_user_by_email(text) TO astella_api, astella_worker;
 
 -- 2.3 需要的"这个人是不是我的同空间成员"判定。
 --
@@ -91,7 +91,7 @@ GRANT EXECUTE ON FUNCTION public.ailearn_find_user_by_email(text) TO ailearn_api
 --
 -- 函数由迁移角色（表属主 + BYPASSRLS）创建，SECURITY DEFINER 下不受 RLS 约束。
 -- `STABLE` 很重要：同一条语句里所有行传的参数相同，PG 只会算一次。
-CREATE OR REPLACE FUNCTION public.ailearn_user_in_workspace(p_user_id uuid, p_workspace_id uuid)
+CREATE OR REPLACE FUNCTION public.astella_user_in_workspace(p_user_id uuid, p_workspace_id uuid)
 RETURNS boolean
 LANGUAGE sql
 STABLE
@@ -108,12 +108,12 @@ AS $$
      );
 $$;
 
-COMMENT ON FUNCTION public.ailearn_user_in_workspace(uuid, uuid) IS
+COMMENT ON FUNCTION public.astella_user_in_workspace(uuid, uuid) IS
   '判某人是否是给定空间的活跃成员。SECURITY DEFINER 是必需的：'
   'workspace_members 自己有 RLS，策略里的裸子查询会被它收窄成"只看自己"。';
 
-REVOKE ALL ON FUNCTION public.ailearn_user_in_workspace(uuid, uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_user_in_workspace(uuid, uuid) TO ailearn_api, ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_user_in_workspace(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_user_in_workspace(uuid, uuid) TO astella_api, astella_worker;
 
 -- ─── 2. users 的 RLS ─────────────────────────────────────────────────
 
@@ -130,7 +130,7 @@ ALTER TABLE public.users FORCE ROW LEVEL SECURITY;
 --
 --     根因是 `users` **没有 workspace_id 列**——它不是"按空间分区的表"，
 --     而是一张"按人"的表。空间隔离在这里的表达方式只能是
---     PERMISSIVE 策略里的 `ailearn_user_in_workspace(...)`（2.3），
+--     PERMISSIVE 策略里的 `astella_user_in_workspace(...)`（2.3），
 --     套一层 workspace 语义的 RESTRICTIVE 守卫在概念上就是错的。
 --
 --     不设守卫也不会漏：RLS 开了之后默认拒绝，列出的 4 条 PERMISSIVE
@@ -139,7 +139,7 @@ ALTER TABLE public.users FORCE ROW LEVEL SECURITY;
 -- 2.2 读自己
 DROP POLICY IF EXISTS sec02_users_self_read ON public.users;
 CREATE POLICY sec02_users_self_read ON public.users
-  AS PERMISSIVE FOR SELECT TO ailearn_api, ailearn_worker
+  AS PERMISSIVE FOR SELECT TO astella_api, astella_worker
   USING (id = NULLIF(current_setting('app.user_id', true), '')::uuid);
 
 -- 2.3 读同空间的其他成员。
@@ -148,9 +148,9 @@ CREATE POLICY sec02_users_self_read ON public.users
 --     只按 user_id 判会把同空间的其他成员也挡掉。
 DROP POLICY IF EXISTS sec02_users_workspace_member_read ON public.users;
 CREATE POLICY sec02_users_workspace_member_read ON public.users
-  AS PERMISSIVE FOR SELECT TO ailearn_api, ailearn_worker
+  AS PERMISSIVE FOR SELECT TO astella_api, astella_worker
   USING (
-    public.ailearn_user_in_workspace(
+    public.astella_user_in_workspace(
       public.users.id,
       NULLIF(current_setting('app.workspace_id', true), '')::uuid
     )
@@ -160,14 +160,14 @@ CREATE POLICY sec02_users_workspace_member_read ON public.users
 --     邀请开通同理。WITH CHECK 保证"只能插入 id 等于自己的行"。
 DROP POLICY IF EXISTS sec02_users_self_insert ON public.users;
 CREATE POLICY sec02_users_self_insert ON public.users
-  AS PERMISSIVE FOR INSERT TO ailearn_api, ailearn_worker
+  AS PERMISSIVE FOR INSERT TO astella_api, astella_worker
   WITH CHECK (id = NULLIF(current_setting('app.user_id', true), '')::uuid);
 
 -- 2.5 写自己（改资料 / 换头像 / 改密码）。不给 DELETE——删用户走工作区解散，
 --     那是系统级动作，不在业务角色的策略面里。
 DROP POLICY IF EXISTS sec02_users_self_update ON public.users;
 CREATE POLICY sec02_users_self_update ON public.users
-  AS PERMISSIVE FOR UPDATE TO ailearn_api, ailearn_worker
+  AS PERMISSIVE FOR UPDATE TO astella_api, astella_worker
   USING (id = NULLIF(current_setting('app.user_id', true), '')::uuid)
   WITH CHECK (id = NULLIF(current_setting('app.user_id', true), '')::uuid);
 

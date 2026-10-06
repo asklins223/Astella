@@ -1,4 +1,4 @@
-import type { AgentTurnRequest, AgentTurnResult, ChatMessage } from "@ailearn/shared";
+import type { AgentTurnRequest, AgentTurnResult, ChatMessage } from "@astella/shared";
 import type { AIProvider } from "../lib/ai-provider.ts";
 import { runWithAbortBudget } from "../lib/handler-timeout.ts";
 import { logger } from "../lib/logger.ts";

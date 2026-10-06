@@ -1,5 +1,5 @@
-import type { RoundNextStepV1 } from "@ailearn/shared/note-learning-round-contracts";
-import type { TaskIntentV1 } from "@ailearn/shared/learning-run-contracts";
+import type { RoundNextStepV1 } from "@astella/shared/note-learning-round-contracts";
+import type { TaskIntentV1 } from "@astella/shared/learning-run-contracts";
 
 /** The server's signed next step is the only automatic learning route. */
 export type NoteLearningScene = "question" | "paused" | "teaching" | "practice" | "result" | "unavailable";

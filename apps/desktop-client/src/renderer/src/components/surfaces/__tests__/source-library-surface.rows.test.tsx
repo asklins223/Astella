@@ -47,13 +47,13 @@ function installApi() {
           : { items: [SOURCE("s-1", "记忆研究综述", 2), SOURCE("s-2", "间隔重复论文", 0)], total: 2, nextCursor: null },      )),
     },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return gateway;
 }
 
 afterEach(() => {
   cleanup();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
 });
 
 describe("来源目录的行", () => {

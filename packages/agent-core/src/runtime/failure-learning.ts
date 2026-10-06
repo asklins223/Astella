@@ -1,4 +1,4 @@
-import type { AgentOperationStatusV1, AgentRunStatusV1 } from "@ailearn/shared/agent-contracts";
+import type { AgentOperationStatusV1, AgentRunStatusV1 } from "@astella/shared/agent-contracts";
 
 /**
  * 方案 44 §6.2：失败运行也能贡献可核对经验——但**不能凭一次失败把能力永久判死**。

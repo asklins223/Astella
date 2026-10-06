@@ -2,7 +2,7 @@ import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import { createAssetResponsePlan, mimeTypeForPath } from './asset-response'
-import { VOICE_ASR_MODEL_ROUTE_PREFIX } from '@ailearn/shared/voice-asr-model-contracts'
+import { VOICE_ASR_MODEL_ROUTE_PREFIX } from '@astella/shared/voice-asr-model-contracts'
 import type { VoiceAsrModelStore } from './voice-asr-model-store'
 
 /**
@@ -17,7 +17,7 @@ import type { VoiceAsrModelStore } from './voice-asr-model-store'
  *  2. **Range 与 HEAD 与普通静态资源同一套语义。** 共用 `createAssetResponsePlan`，
  *     否则一个大文件被 Range 请求时会走成另一种行为，而那条路只在这里被用到。
  *  3. **不发 CORS 头。** 这条路由只在**与页面同源**时用得上（打包后页面在
- *     `ailearn-app://bundle`，模型挂在同一 host 的 `/device/asr/`；开发时由 Vite
+ *     `astella-app://bundle`，模型挂在同一 host 的 `/device/asr/`；开发时由 Vite
  *     开发服务器在同一 origin 提供）。开发模式曾经打算让页面跨源读它，实测那种
  *     自定义 scheme 根本不做 CORS 放行，`fetch` 直接 `TypeError: Failed to fetch`
  *     ——于是改成同源。**同源是这里唯一成立的前提**，不发 ACAO 就是让"跨源读本机文件"
@@ -38,12 +38,12 @@ function plainText(status: number, message: string, method: string, extraHeaders
  * 模型在**页面所在 origin** 下的挂载点。
  *
  * 两种形态都**同源**，这是整条链路成立的前提：
- *  - 打包后页面在 `ailearn-app://bundle/index.html` → `ailearn-app://bundle/device/asr/`，
+ *  - 打包后页面在 `astella-app://bundle/index.html` → `astella-app://bundle/device/asr/`，
  *    由主进程的 app scheme 路由提供；
  *  - 开发时页面在 `http://localhost:5173/`，而 `developmentUrl` 也是它
  *    → `http://localhost:5173/device/asr/`，由 Vite 开发服务器提供。
  *
- * ⚠️ **不要**改写成 `new URL(pageUrl).origin` 当基底。`ailearn-app` 是 Electron 注册出来的
+ * ⚠️ **不要**改写成 `new URL(pageUrl).origin` 当基底。`astella-app` 是 Electron 注册出来的
  * 标准 scheme，Node 的 URL 实现不知道这件事，于是它的 `origin` 是 `"null"`——
  * 拼出来是 `Invalid URL`，而且**只在打包形态犯**（开发形态的 origin 恰好是对的）。
  * 所以基底一律是完整页面 URL。

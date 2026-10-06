@@ -8,18 +8,18 @@
  * - TTL 未到且世代一致 → **不动**（防误杀：正常等待确认的 run 必须保持 active）；
  * - 终结副作用齐全：proposal expired、工具调用 expired、run failed/ACTION_EXPIRED、
  *   补写 action.expired 事件且 seq 与 conversation 计数一致；
- * - 以受限角色 ailearn_worker 调用（只有它能 EXECUTE；这是 worker tick 的真实身份）。
+ * - 以受限角色 astella_worker 调用（只有它能 EXECUTE；这是 worker tick 的真实身份）。
  */
 
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
-// 夹具（seed/清理/断言）走 migrator：它拥有这些表且 BYPASSRLS，而 ailearn_api 按
+// 夹具（seed/清理/断言）走 migrator：它拥有这些表且 BYPASSRLS，而 astella_api 按
 // 最小权限并不具备 companion_agent_tool_calls 的 DELETE——不应为了测试放宽生产授权。
-// 被测函数则显式以 ailearn_worker 身份调用，那才是 worker tick 的真实身份。
+// 被测函数则显式以 astella_worker 身份调用，那才是 worker tick 的真实身份。
 const CONN = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 const WORKER_CONN = testDatabaseUrl("DATABASE_URL_WORKER");
 
@@ -129,7 +129,7 @@ async function seedWaitingConfirmation(
 }
 
 async function sweep(): Promise<number> {
-  const rows = await workerSql`SELECT public.ailearn_reclaim_stale_companion_proposals() AS reclaimed`;
+  const rows = await workerSql`SELECT public.astella_reclaim_stale_companion_proposals() AS reclaimed`;
   return Number(rows[0]?.reclaimed ?? 0);
 }
 

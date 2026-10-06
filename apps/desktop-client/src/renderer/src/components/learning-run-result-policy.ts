@@ -2,7 +2,7 @@ import type {
   GetLearningRunResultResponseV2,
   LearningRunPublicSnapshotV2,
   LearningRunResultV2,
-} from "@ailearn/shared/learning-run-v2-contracts";
+} from "@astella/shared/learning-run-v2-contracts";
 
 export type LearningRunRequestFence = {
   readonly runId: string;

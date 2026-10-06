@@ -8,9 +8,9 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { eq, and } from "drizzle-orm";
-import { findPrivatePayloadLeaks } from "@ailearn/shared";
-import { learningObjectivesV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { findPrivatePayloadLeaks } from "@astella/shared";
+import { learningObjectivesV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 
 

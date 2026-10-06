@@ -23,11 +23,11 @@
  */
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
-import { learningRuns } from "@ailearn/shared/db-schema/learning-runs";
+import { learningRuns } from "@astella/shared/db-schema/learning-runs";
 import {
   learningObjectivesV2,
   learningObjectiveRevisionsV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/card-generation-v2";
 import { visibleObjectivesCondition } from "../note/visibility.ts";
 import type { HomeRunCandidateInputV2 } from "./home-suggestion-service.ts";
 

@@ -417,4 +417,4 @@ export function companionSegmentId(
 // 必须剥离（stripVoiceExpressionTags）；段级情感由 extractVoiceEmotion
 // 解析（最后一个控制类标签 → emotion，供 live2d 协同，见 15 方案待办）。
 // 2026-08-13（引擎兼容）：实现位于 packages/shared/voice-expression-tags
-// （api edge 分支净化也需使用），调用方直接从 @ailearn/shared/voice-expression-tags 导入。
+// （api edge 分支净化也需使用），调用方直接从 @astella/shared/voice-expression-tags 导入。

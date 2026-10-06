@@ -19,7 +19,7 @@
 -- 使用 workspace_id + user_id 双条件 policy；learning_exposure_dependency_ledger 为
 -- workspace 级共享边（无 user_id 列，救火 2 修复），使用 workspace_id 单条件。
 -- 任一 context 缺失（NULLIF(...) IS NULL）即 fail closed。
--- GRANT：ailearn_api 两表读写；ailearn_worker 仅学习过程表最小权限
+-- GRANT：astella_api 两表读写；astella_worker 仅学习过程表最小权限
 -- （SELECT/INSERT/UPDATE，无 DELETE，删除语义由 redaction/status 表达）。
 --
 -- 幂等：CREATE TABLE/INDEX 用 IF NOT EXISTS，policy 用 DROP POLICY IF EXISTS +
@@ -143,17 +143,17 @@ CREATE POLICY learning_exposure_dependency_ledger_workspace_isolation
 
 -- ════════════════════════════════════════════════════════════════════════
 -- least-privilege GRANT（0071/0075 模式：按角色存在性授权）
--- ailearn_api：两表读写；ailearn_worker：学习过程表最小权限
+-- astella_api：两表读写；astella_worker：学习过程表最小权限
 -- （SELECT/INSERT/UPDATE，无 DELETE）。
 -- ════════════════════════════════════════════════════════════════════════
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_unit_exposure TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_exposure_dependency_ledger TO ailearn_api;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_unit_exposure TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_exposure_dependency_ledger TO astella_api;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
-    GRANT SELECT, INSERT, UPDATE ON public.learning_unit_exposure TO ailearn_worker;
-    GRANT SELECT, INSERT, UPDATE ON public.learning_exposure_dependency_ledger TO ailearn_worker;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
+    GRANT SELECT, INSERT, UPDATE ON public.learning_unit_exposure TO astella_worker;
+    GRANT SELECT, INSERT, UPDATE ON public.learning_exposure_dependency_ledger TO astella_worker;
   END IF;
 END $$;

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { guidanceVoiceProfile } from "../guidance-voice-profile.ts";
 import type { TtsEngineConfig } from "../tts-config.ts";
-import { companionGuidanceVoiceProfileV1Schema } from "@ailearn/shared/companion-voice-contracts";
+import { companionGuidanceVoiceProfileV1Schema } from "@astella/shared/companion-voice-contracts";
 
 const config: TtsEngineConfig = { engine: "qwen", qwen: { workspaceId: "private-provider-workspace",
   model: "qwen-audio-3.1-tts-flash", voice: "longhua_v3.1", format: "mp3", sampleRate: 22050, instruction: "温柔自然" },

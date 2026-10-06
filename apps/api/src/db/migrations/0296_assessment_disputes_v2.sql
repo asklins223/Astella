@@ -29,7 +29,7 @@
 --
 -- 隔离：§14.4「每个人的作答……为个人数据」——RLS 按 (workspace_id, user_id)；
 -- 另一位成员读不到这条记录，也不被它影响。沿用 0116 那份 policy 的形状，包括
--- `CURRENT_USER = 'ailearn_worker'` 那一支（worker 侧的结算要读"这次判定有没有活争议"）。
+-- `CURRENT_USER = 'astella_worker'` 那一支（worker 侧的结算要读"这次判定有没有活争议"）。
 
 CREATE TABLE public.assessment_disputes_v2 (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -154,19 +154,19 @@ BEGIN
       DROP POLICY IF EXISTS %I_workspace_user_isolation ON public.%I
     $p$, t, t);
     -- 与 0116 同一形状：worker 侧要读"这次判定有没有活争议"（判据二的入参），
-    -- 所以保留 `CURRENT_USER = 'ailearn_worker'` 那一支；API 侧一律按会话身份。
+    -- 所以保留 `CURRENT_USER = 'astella_worker'` 那一支；API 侧一律按会话身份。
     EXECUTE format($p$
       CREATE POLICY %I_workspace_user_isolation
         ON public.%I AS PERMISSIVE FOR ALL
         USING (
-          CURRENT_USER = 'ailearn_worker'
+          CURRENT_USER = 'astella_worker'
           OR (
             workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
             AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
           )
         )
         WITH CHECK (
-          CURRENT_USER = 'ailearn_worker'
+          CURRENT_USER = 'astella_worker'
           OR (
             workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
             AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -178,7 +178,7 @@ END $$;
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.assessment_disputes_v2 TO ailearn_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.assessment_corrections_v2 TO ailearn_api;
-GRANT ALL ON public.assessment_disputes_v2 TO ailearn_migrator;
-GRANT ALL ON public.assessment_corrections_v2 TO ailearn_migrator;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.assessment_disputes_v2 TO astella_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.assessment_corrections_v2 TO astella_api;
+GRANT ALL ON public.assessment_disputes_v2 TO astella_migrator;
+GRANT ALL ON public.assessment_corrections_v2 TO astella_migrator;

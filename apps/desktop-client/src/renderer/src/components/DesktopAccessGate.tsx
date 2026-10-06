@@ -37,10 +37,10 @@ import {
   UserPlus,
 } from "lucide-react";
 import type {
-  AILearnDesktopApiM2,
+  AstellaDesktopApiM2,
   RuntimeSnapshotV1,
   WorkspaceSummaryV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import {
   decideBootstrapGatewayFailure,
   decideRuntimeGate,
@@ -98,7 +98,7 @@ import {
 
 gsap.registerPlugin(useGSAP, CustomEase);
 
-const gateSurfaceEase = CustomEase.create("ailearn-gate-surface", "0.16,1,0.3,1");
+const gateSurfaceEase = CustomEase.create("astella-gate-surface", "0.16,1,0.3,1");
 
 type RetryAction = "bootstrap" | "connect" | "reload" | null;
 
@@ -155,8 +155,8 @@ const GATE_STAGES = {
  */
 const BOOTSTRAP_DEADLINE_MS = 12_000;
 
-function desktopApi(): AILearnDesktopApiM2 | null {
-  const value = (window as unknown as { ailearn?: AILearnDesktopApiM2 }).ailearn;
+function desktopApi(): AstellaDesktopApiM2 | null {
+  const value = (window as unknown as { astella?: AstellaDesktopApiM2 }).astella;
   if (!value || typeof value !== "object") return null;
   if (
     typeof value.runtime?.getSnapshot !== "function"
@@ -227,10 +227,10 @@ type LampFrameCaptureController = {
   timing: () => { duration: number; labels: Record<string, number> };
 };
 
-const lampFrameCaptureStorageKey = "ailearn:auth-lamp-frame-capture";
+const lampFrameCaptureStorageKey = "astella:auth-lamp-frame-capture";
 
-function lampFrameCaptureWindow(): Window & { __ailearnAuthLampCapture?: LampFrameCaptureController } {
-  return window as Window & { __ailearnAuthLampCapture?: LampFrameCaptureController };
+function lampFrameCaptureWindow(): Window & { __astellaAuthLampCapture?: LampFrameCaptureController } {
+  return window as Window & { __astellaAuthLampCapture?: LampFrameCaptureController };
 }
 
 function isLampFrameCaptureEnabled(): boolean {
@@ -239,8 +239,8 @@ function isLampFrameCaptureEnabled(): boolean {
 
 function clearLampFrameCapture(controller?: LampFrameCaptureController | null): void {
   const captureWindow = lampFrameCaptureWindow();
-  if (!controller || captureWindow.__ailearnAuthLampCapture === controller) {
-    delete captureWindow.__ailearnAuthLampCapture;
+  if (!controller || captureWindow.__astellaAuthLampCapture === controller) {
+    delete captureWindow.__astellaAuthLampCapture;
   }
 }
 
@@ -469,7 +469,7 @@ function AuthLampControl({
         finish: () => timeline.play(),
         timing: () => ({ duration: timeline.duration(), labels: { ...timeline.labels } }),
       };
-      lampFrameCaptureWindow().__ailearnAuthLampCapture = captureController;
+      lampFrameCaptureWindow().__astellaAuthLampCapture = captureController;
     }
   });
 
@@ -936,7 +936,7 @@ export function DesktopAccessGate({
 
   useEffect(() => subscribeGateInvalidation((code) => invalidateReadyGate(code)), [invalidateReadyGate]);
 
-  const connectOnce = useCallback(async (api: AILearnDesktopApiM2) => {
+  const connectOnce = useCallback(async (api: AstellaDesktopApiM2) => {
     if (!connectionFlightRef.current) {
       const flight = api.runtime
         .retryApiConnection({ meta: createRequestMeta() })

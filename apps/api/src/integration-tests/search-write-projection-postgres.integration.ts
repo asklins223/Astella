@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { and, eq } from "drizzle-orm";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
-import { searchDocuments } from "@ailearn/shared/db-schema/search";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
+import { searchDocuments } from "@astella/shared/db-schema/search";
 import { seedV2Fixture, seedObjectiveNoteEvidence } from "./helpers/v2-card-fixture.ts";
 
 const admin = postgres(testDatabaseUrl("DATABASE_URL_TEST_ADMIN"), { max: 1 });

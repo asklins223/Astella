@@ -44,7 +44,7 @@ const check = (name: string, ok: boolean, detail: unknown = ''): void => {
 const noteHint = process.env.PROBE_NOTE_HINT ?? 'IndexTTS 2.5 让声音跨越语言 - 哔哩哔哩222'
 const proxy = await startFaultProxy({ port: 4099, upstreamOrigin: 'http://127.0.0.1:4000' })
 readings.faultProxyOrigin = proxy.origin
-const userDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-w44-fault-'))
+const userDataDir = await mkdtemp(resolve(tmpdir(), 'astella-w44-fault-'))
 const app = await electron.launch({
   args: ['.', '--lang=zh-CN', `--user-data-dir=${userDataDir}`],
   cwd: appRoot,

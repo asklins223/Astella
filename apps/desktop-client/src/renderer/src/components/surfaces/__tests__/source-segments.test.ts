@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DesktopSourceSegment } from "@ailearn/shared/desktop-surface-contracts";
+import type { DesktopSourceSegment } from "@astella/shared/desktop-surface-contracts";
 import {
   describeStructure,
   excerpt,

@@ -3,15 +3,15 @@ import { applyNoteDocUpdate, loadNoteDoc, persistNoteDoc } from "./document-stat
 import { visibleNotesCondition, type NoteShareScope } from "./visibility.ts";
 import { deriveNoteTitle, noteDocBlocksFromRows, projectFragmentBlocks, setNoteTitle, writeFragmentBlocks, type NoteDocBlock } from "./doc-fragment.ts";
 import { type ApiTransaction } from "../../db/client.ts";
-import { notes, noteVersions, noteBlocks, noteImageAssets } from "@ailearn/shared/db-schema/note";
-import { searchDocuments } from "@ailearn/shared/db-schema/search";
-import { learningCardsV2, learningObjectivesV2 } from "@ailearn/shared/db-schema/card-generation-v2";
+import { notes, noteVersions, noteBlocks, noteImageAssets } from "@astella/shared/db-schema/note";
+import { searchDocuments } from "@astella/shared/db-schema/search";
+import { learningCardsV2, learningObjectivesV2 } from "@astella/shared/db-schema/card-generation-v2";
 import { computeContentHash } from "./content-hash.ts";
 import { upsertSearchDocument, type NoteSearchDocument } from "./search-projection.ts";
 import { refreshNoteObjectiveSearchProjections } from "../learning-objectives/search-projection.ts";
 import { noteShelfStatesByNoteId } from "./shelf-state.ts";
 import { logger } from "../../lib/logger.ts";
-import { DomainError } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
 
 /**
  * PERF-10: Chunked select helper for large IN arrays.

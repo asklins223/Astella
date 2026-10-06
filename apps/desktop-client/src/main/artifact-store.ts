@@ -19,7 +19,7 @@ import { resolve } from "node:path";
 import { isArtifactId } from "../shared/artifact-frame";
 import { assembleArtifactDocument } from "./artifact-surface";
 import { DesktopGatewayFailure } from "./desktop-gateway-failure";
-import type { GatewayErrorCode } from "@ailearn/shared/desktop-ipc-contracts";
+import type { GatewayErrorCode } from "@astella/shared/desktop-ipc-contracts";
 
 export interface ArtifactStoreDeps {
   /** Electron 的 `app.getPath("userData")`；落点与 `index.ts` 读侧同一个目录（测试里是临时目录）。 */

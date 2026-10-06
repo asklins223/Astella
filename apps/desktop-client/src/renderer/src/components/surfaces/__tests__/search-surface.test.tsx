@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { GatewayResultV1, SessionContextV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import type { DesktopSearchItem } from "@ailearn/shared/desktop-surface-contracts";
+import type { GatewayResultV1, SessionContextV1 } from "@astella/shared/desktop-ipc-contracts";
+import type { DesktopSearchItem } from "@astella/shared/desktop-surface-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../../../app/room-store.ts";
 import { SearchSurface } from "../study/search-surface.tsx";
@@ -134,7 +134,7 @@ function installApi(options: {
           })),
     },
   };
-  Object.defineProperty(window, "ailearn", { configurable: true, value: api });
+  Object.defineProperty(window, "astella", { configurable: true, value: api });
   return { api, searchCalls };
 }
 
@@ -149,7 +149,7 @@ beforeEach(() => {
 afterEach(() => {
   useRoomStore.setState({ searchResume: null });
   cleanup();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   Reflect.deleteProperty(Element.prototype, "scrollTo");
   Reflect.deleteProperty(Element.prototype, "scrollIntoView");
   // The room store is a module singleton shared by every test file in a worker.

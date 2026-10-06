@@ -2,8 +2,8 @@
  * shared formula renderer. Raw HTML stays text; incomplete streamed marks stay
  * visible. The character-driven speech bubble keeps a plain-text projection. */
 import type { ReactNode } from "react";
-import { parseInlineMarkdown, parseMarkdownTable, type NoteDocInlineSegment } from "@ailearn/shared/note-doc-schema";
-import { isWebLinkUrl } from "@ailearn/shared/desktop-ipc-contracts";
+import { parseInlineMarkdown, parseMarkdownTable, type NoteDocInlineSegment } from "@astella/shared/note-doc-schema";
+import { isWebLinkUrl } from "@astella/shared/desktop-ipc-contracts";
 import { openExternalLink } from "../../app/external-link";
 import { ReadableMath } from "../content/readable-math";
 

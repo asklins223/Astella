@@ -63,7 +63,7 @@ export function useCompanionPolls(deps: CompanionPollDeps): void {
         // not-ok 都先 publishGateInvalidation 再 throw——`unsupported_contract`
         // （主进程/合同还没签发这两个新通道时）会把整个工作区视图打回首页默认
         // 态，catch 兜不住这个副作用。这里只读 result.ok，失败静默跳过。
-        const result = await window.ailearn.companion.chat.listAgentRoutes({
+        const result = await window.astella.companion.chat.listAgentRoutes({
           meta: createRequestMeta(epoch),
           request: {
             version: 1,
@@ -110,7 +110,7 @@ export function useCompanionPolls(deps: CompanionPollDeps): void {
       try {
         const epoch = await requireWorkspaceEpoch();
         // 同上：补白轮询不走 unwrapGatewayResult，避免 not-ok 触发门禁全量重置。
-        const result = await window.ailearn.companion.chat.listRunNodes({
+        const result = await window.astella.companion.chat.listRunNodes({
           meta: createRequestMeta(epoch),
           request: { version: 1, conversationId: conversation.id },
         });

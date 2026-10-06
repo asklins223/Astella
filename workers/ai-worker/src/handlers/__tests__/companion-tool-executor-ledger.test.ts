@@ -21,8 +21,8 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { COMPANION_AGENT_TOOL_DEFINITIONS } from "@ailearn/shared/companion-agent-registry";
-import { COMPANION_PROPOSAL_EXECUTED_TOOLS } from "@ailearn/shared/companion-agent-contracts";
+import { COMPANION_AGENT_TOOL_DEFINITIONS } from "@astella/shared/companion-agent-registry";
+import { COMPANION_PROPOSAL_EXECUTED_TOOLS } from "@astella/shared/companion-agent-contracts";
 
 /**
  * 2026-09-30（B2）：执行体**不再只在 runtime 那一个文件里**。

@@ -1,6 +1,6 @@
-import { companionPersonaPatchFromContent,companionPersonaPatchFromPresetSwitch,type CompanionPersonaPresetV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
-import { personaFromDefaultPreset, planPersonaSwitch, type SwitchableField } from "@ailearn/shared/pet-persona-merge";
-import type { GatewayResultV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import { companionPersonaPatchFromContent,companionPersonaPatchFromPresetSwitch,type CompanionPersonaPresetV1 } from "@astella/shared/companion-memory-desktop-contracts";
+import { personaFromDefaultPreset, planPersonaSwitch, type SwitchableField } from "@astella/shared/pet-persona-merge";
+import type { GatewayResultV1 } from "@astella/shared/desktop-ipc-contracts";
 import { useEffect,useRef,useState } from "react";
 import { useCompanionChat } from "../../../app/companion-chat-session";
 import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
@@ -13,9 +13,9 @@ type PersonaChange = { name?: string; activeness?: "quiet" | "moderate" | "activ
 
 export function CompanionPersonaPage(props: { refreshKey: number; onSettings: () => void }) {
   const chat = useCompanionChat();
-  const persona = useCompanionResource(meta => window.ailearn.companion.persona.get({ meta }), [props.refreshKey]);
-  const versions = useCompanionResource(meta => window.ailearn.companion.persona.versions({ meta }), [props.refreshKey]);
-  const pending = useCompanionResource(meta => window.ailearn.companion.persona.pending({ meta }), [props.refreshKey]);
+  const persona = useCompanionResource(meta => window.astella.companion.persona.get({ meta }), [props.refreshKey]);
+  const versions = useCompanionResource(meta => window.astella.companion.persona.versions({ meta }), [props.refreshKey]);
+  const pending = useCompanionResource(meta => window.astella.companion.persona.pending({ meta }), [props.refreshKey]);
   const [busy, setBusy] = useState<string | null>(null);
   const lock = useRef(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +49,7 @@ export function CompanionPersonaPage(props: { refreshKey: number; onSettings: ()
   const patch = (changes: PersonaChange, key: string) => {
     if (!value || !effective) return Promise.resolve(false);
     const request = companionPersonaPatchFromContent(effective, value.profileRevision, changes);
-    return write(key, () => window.ailearn.companion.persona.patch({ meta: persona.meta(), request }));
+    return write(key, () => window.astella.companion.persona.patch({ meta: persona.meta(), request }));
   };
 
   // ── 换人格：先把"会被换掉的是什么"摊开，再让用户自己勾 ──────────────────
@@ -70,7 +70,7 @@ export function CompanionPersonaPage(props: { refreshKey: number; onSettings: ()
     const kept = (switchPlan?.options.length ?? 0) - overwrite.length;
     void write(
       "preset",
-      () => window.ailearn.companion.persona.patch({ meta: persona.meta(), request }),
+      () => window.astella.companion.persona.patch({ meta: persona.meta(), request }),
       // 明说"换之前的样子存在哪一版"：这是让人敢点的前提。
       () => [`已换成「${switchTarget.name}」。`, kept > 0 ? `保留了 ${kept} 项你们的改动。` : "", `切换前是第 ${previous} 版，可在下方版本记录里恢复。`]
         .filter(Boolean)
@@ -91,8 +91,8 @@ export function CompanionPersonaPage(props: { refreshKey: number; onSettings: ()
     onActiveness={activeness => void patch({ activeness }, "activeness")}
     onBoundary={key => { const boundaries = effective?.boundaries; if (boundaries) void patch({ boundaries: { ...boundaries, [key]: !boundaries[key] } }, "boundary"); }}
     onRename={name => patch({ name }, "name")}
-    onReset={() => { if (value) void write("reset", () => window.ailearn.companion.persona.reset({ meta: persona.meta(), revision: value.profileRevision })); }}
-    onRestore={revision => { if (value) void write("restore", () => window.ailearn.companion.persona.restore({ meta: persona.meta(), revision, currentRevision: value.profileRevision })); }}
-    onActivatePending={() => { if (pendingValue?.pending) void write("activate-pending", () => window.ailearn.companion.persona.activate({ meta: persona.meta(), revision: pendingValue.currentRevision }), result => `已生效，现在使用第 ${(result as { profileRevision: number }).profileRevision} 版。`); }}
+    onReset={() => { if (value) void write("reset", () => window.astella.companion.persona.reset({ meta: persona.meta(), revision: value.profileRevision })); }}
+    onRestore={revision => { if (value) void write("restore", () => window.astella.companion.persona.restore({ meta: persona.meta(), revision, currentRevision: value.profileRevision })); }}
+    onActivatePending={() => { if (pendingValue?.pending) void write("activate-pending", () => window.astella.companion.persona.activate({ meta: persona.meta(), revision: pendingValue.currentRevision }), result => `已生效，现在使用第 ${(result as { profileRevision: number }).profileRevision} 版。`); }}
     onRetryPending={() => void pending.reload()} onReloadVersions={() => void versions.reload()} onRetry={() => void reload()} />;
 }

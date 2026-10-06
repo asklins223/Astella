@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { NoteAnnotationMark } from "../note-annotation-mark";
 import { AnnotationDeleteControl } from "../annotation-delete-control";
-import type { NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
+import type { NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 
 const ANNOTATION: NoteAnnotationV1 = {
   annotationId: "a-1",

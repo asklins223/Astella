@@ -1,9 +1,9 @@
 /**
  * IPC 通道覆盖对账（doc 34 L1）。
  *
- * 为什么需要这一份而不是再多写几个用例：`ailearn.v1.note.doc.syncTitle` 曾经
+ * 为什么需要这一份而不是再多写几个用例：`astella.v1.note.doc.syncTitle` 曾经
  * **契约、preload 转发、网关实现三样齐备，唯独主进程没有 `installHandler`**，
- * 于是渲染层那一句 `window.ailearn.note.doc.syncTitle(...)` 直接 reject，
+ * 于是渲染层那一句 `window.astella.note.doc.syncTitle(...)` 直接 reject，
  * 界面上只剩"重命名未确认"那句兜底话。而它当时的"消费者"是一个 `vi.fn()` 替身——
  * 替身不会去找 handler，所以测试是绿的。
  *
@@ -56,7 +56,7 @@ import {
   DESKTOP_IPC_CONTRACT_VERSION,
   type GatewayResultV1,
   type RequestMetaV1,
-} from "@ailearn/shared/desktop-ipc-contracts";
+} from "@astella/shared/desktop-ipc-contracts";
 import type { DesktopGateway } from "../desktop-gateway";
 import { MemoryNoteDocCacheStore } from "../note-doc-cache-store.ts";
 import { registerAuthStub } from "./ns-auth-stubs";
@@ -192,12 +192,12 @@ async function register(gateway: DesktopGateway = stubGateway()) {
   registerM1DesktopIpc({
     gateway,
     noteDocCache: new MemoryNoteDocCacheStore(),
-    env: { AILEARN_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
+    env: { ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" },
     resolveWindow: () => fakeWindow,
     getWindowState: () => ({ state: "visible", revision: 1 }),
     setTitlebarTheme: () => true,
   });
-  const event = { sender: {}, senderFrame: { url: "ailearn://renderer/" } };
+  const event = { sender: {}, senderFrame: { url: "astella://renderer/" } };
   // 先读一次状态，把主进程的 activeWorkspaceEpoch 立起来（与笔记协同那份集测同一口径）。
   await electronMock.handlers.get(DESKTOP_IPC_CHANNELS.authGetState)!(event, { meta });
   return { event, gateway };

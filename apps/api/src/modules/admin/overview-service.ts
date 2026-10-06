@@ -117,7 +117,7 @@ export async function readOverview(configPath: string, configExists: boolean): P
 
   return {
     service: {
-      name: "ailearn-api",
+      name: "astella-api",
       version: release.version ?? "dev",
       nodeEnv: process.env.NODE_ENV ?? "development",
       pid: process.pid,

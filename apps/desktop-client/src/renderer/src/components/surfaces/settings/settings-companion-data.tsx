@@ -1,5 +1,5 @@
-import type { CompanionExportKindV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
-import type { RequestMetaV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { CompanionExportKindV1 } from "@astella/shared/companion-memory-desktop-contracts";
+import type { RequestMetaV1 } from "@astella/shared/desktop-ipc-contracts";
 import { Download,Trash2 } from "lucide-react";
 import { useEffect,useRef,useState } from "react";
 import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
@@ -36,18 +36,18 @@ export function SettingsCompanionData(props: { meta: () => RequestMetaV1; onRead
     finally { lock.current = false; setBusy(null); }
   };
   const exportData = (kind: CompanionExportKindV1) => void run(`export-${kind}`, async () => {
-    const result = unwrapGatewayResult(await window.ailearn.companion.data.export({ meta: props.meta(), kind }));
+    const result = unwrapGatewayResult(await window.astella.companion.data.export({ meta: props.meta(), kind }));
     setNotice(result.canceled ? "已取消导出。" : `已保存 ${result.fileName ?? "导出文件"}（${result.bytes.toLocaleString()} 字节）。`);
   });
   const clear = (kind: ClearKind) => void run(kind, async () => {
     if (kind === "memory") {
-      const result = unwrapGatewayResult(await window.ailearn.companion.memory.clear({ meta: props.meta() }));
+      const result = unwrapGatewayResult(await window.astella.companion.memory.clear({ meta: props.meta() }));
       setNotice(`已将 ${result.deletedCount} 条记忆移入回收区，可在 30 天内恢复。`);
     } else if (kind === "history") {
-      const result = unwrapGatewayResult(await window.ailearn.companion.history.clear({ meta: props.meta() }));
+      const result = unwrapGatewayResult(await window.astella.companion.history.clear({ meta: props.meta() }));
       setNotice(`已清除 ${result.deletedMessages} 条消息、${result.deletedConversations} 段对话；动态收件箱已重新建立。`);
     } else {
-      const result = unwrapGatewayResult(await window.ailearn.companion.data.deleteAudit({ meta: props.meta() }));
+      const result = unwrapGatewayResult(await window.astella.companion.data.deleteAudit({ meta: props.meta() }));
       setNotice(`已删除 ${result.deletedAudit} 条操作记录和 ${result.deletedLedger} 条邀请记录。`);
     }
     setConfirm(null); publishCompanionRecordsChanged();
@@ -62,7 +62,7 @@ export function SettingsCompanionData(props: { meta: () => RequestMetaV1; onRead
     {error ? <SettingsInlineState title="这次操作没有完成" detail={error} tone="error" /> : null}
     {notice ? <p className="settings-companion-notice" role="status">{notice}</p> : null}
     <div className="settings-companion-privacy"><div><strong>AI 数据同意</strong><p>外发内容的授权与审计在账号的 AI 数据同意页统一管理。</p></div><button type="button" className="button" onClick={() => useRoomStore.getState().setSettingsSection("data")}>查看数据同意</button></div>
-    <section className="settings-companion-chapter"><header><h3>导出副本</h3><p>副本保存在本机的「下载 / 理解书房 / 伴星」，每次导出会保存为新文件。</p></header><div className="settings-companion-exports">{EXPORTS.map(item => <button type="button" key={item.kind} disabled={busy !== null} onClick={() => exportData(item.kind)}><Download size={18} aria-hidden="true" /><span><strong>导出{item.title}</strong><small>{item.detail}</small></span></button>)}</div></section>
+    <section className="settings-companion-chapter"><header><h3>导出副本</h3><p>副本保存在本机的「下载 / Astella / 伴星」，每次导出会保存为新文件。</p></header><div className="settings-companion-exports">{EXPORTS.map(item => <button type="button" key={item.kind} disabled={busy !== null} onClick={() => exportData(item.kind)}><Download size={18} aria-hidden="true" /><span><strong>导出{item.title}</strong><small>{item.detail}</small></span></button>)}</div></section>
     <section className="settings-companion-chapter settings-companion-danger"><header><h3>清除数据</h3><p>先核对每项的范围：记忆可在 30 天内恢复，对话与操作记录永久清除。</p></header>{CLEAR_ACTIONS.map(item => <div key={item.kind} className="settings-companion-clear"><div><Trash2 size={16} aria-hidden="true" /><span><strong>{item.title}</strong><small>{item.detail}</small></span><button ref={element => { openRefs.current[item.kind] = element; }} type="button" className="danger-quiet" disabled={busy !== null} aria-expanded={confirm === item.kind} onClick={() => setConfirm(confirm === item.kind ? null : item.kind)}>{confirm === item.kind ? "取消" : "清除"}</button></div>{confirm === item.kind ? <div className="settings-companion-confirm" role="group" aria-label={`确认${item.title}`}><p>{item.detail} {item.kind === "memory" ? "可在记忆页的回收区恢复。" : "这项操作不可恢复。"}</p><button type="button" className="button danger" disabled={busy !== null} onClick={() => clear(item.kind)}>{busy === item.kind ? "正在清除…" : `确认${item.title}`}</button></div> : null}</div>)}</section>
   </div>;
 }

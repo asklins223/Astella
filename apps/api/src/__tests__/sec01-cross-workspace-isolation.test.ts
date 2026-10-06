@@ -5,7 +5,7 @@
  *   1. 用 `withWorkspaceTransaction` 的服务必须传 workspaceId；有写操作的服务必须
  *      走事务、接受 executor 参数、或委托给 createJob；
  *   2. `assertWorkspaceTransactionContextCompatible` 拒绝嵌套上下文变更（真单测）；
- *   3. worker 走 `ailearn_claim_jobs` / `ailearn_renew_job_lease` 受控函数而非裸 SQL。
+ *   3. worker 走 `astella_claim_jobs` / `astella_renew_job_lease` 受控函数而非裸 SQL。
  *
  * 原先还有三组「文件里出现过 workspaceId 字样就算隔离」的断言（含一组按
  * `.findMany(` 计数、而导出服务根本不用 findMany 因此恒成立的），已删除——它们
@@ -153,19 +153,19 @@ describe("SEC-01: 连接池复用上下文不泄漏", () => {
 describe("SEC-01: Worker 使用受控函数访问跨 workspace 数据", () => {
   const WORKER_DIR = join(import.meta.dirname, "..", "..", "..", "..", "workers", "ai-worker", "src");
 
-  it("Worker queue 使用 ailearn_claim_jobs 函数", () => {
+  it("Worker queue 使用 astella_claim_jobs 函数", () => {
     const queueContent = readFileContent(join(WORKER_DIR, "queue.ts"));
     assert.ok(
-      queueContent.includes("ailearn_claim_jobs") || queueContent.includes("claim_jobs"),
-      "Worker queue 应使用 ailearn_claim_jobs 函数领取任务",
+      queueContent.includes("astella_claim_jobs") || queueContent.includes("claim_jobs"),
+      "Worker queue 应使用 astella_claim_jobs 函数领取任务",
     );
   });
 
-  it("Worker job-lease 使用 ailearn_renew_job_lease 函数", () => {
+  it("Worker job-lease 使用 astella_renew_job_lease 函数", () => {
     const leaseContent = readFileContent(join(WORKER_DIR, "lib", "job-lease.ts"));
     assert.ok(
-      leaseContent.includes("ailearn_renew_job_lease") || leaseContent.includes("renew_job_lease"),
-      "Worker job-lease 应使用 ailearn_renew_job_lease 函数续租",
+      leaseContent.includes("astella_renew_job_lease") || leaseContent.includes("renew_job_lease"),
+      "Worker job-lease 应使用 astella_renew_job_lease 函数续租",
     );
   });
 });

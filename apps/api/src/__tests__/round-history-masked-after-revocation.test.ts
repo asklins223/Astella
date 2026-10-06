@@ -24,7 +24,7 @@ import { resolve } from "node:path";
 import {
   ROUND_HISTORY_MASKED_QUESTION_V1,
   noteLearningRoundHistoryPageV1Schema,
-} from "@ailearn/shared/note-learning-round-contracts";
+} from "@astella/shared/note-learning-round-contracts";
 
 const REPO_ROOT = resolve(import.meta.dirname, "..", "..", "..", "..");
 const SERVICE = readFileSync(

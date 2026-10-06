@@ -49,7 +49,7 @@ jobs:
   # 合成一个 job 之后"忘了给某个包装依赖"只会在一处犯。
   #
   # `deps` 是**这个包的 tsconfig 会真的拉进同一个 program 的那些包**。
-  # 本仓的 `@ailearn/*` 全是 `file:` 依赖，npm 把它们做成符号链接（跟着源码走），
+  # 本仓的 `@astella/*` 全是 `file:` 依赖，npm 把它们做成符号链接（跟着源码走），
   # 但 tsc 读的是被引包自己的 `node_modules` 来解析 `zod` / `drizzle-orm`——
   # 所以被引包必须自己装过，这是 npm workspace 提升掩盖掉的那一层。
   packages:

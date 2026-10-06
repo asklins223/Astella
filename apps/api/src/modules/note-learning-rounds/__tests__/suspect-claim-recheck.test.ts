@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { roundSuspectClaimV1Schema } from "@ailearn/shared/note-learning-round-contracts";
+import { roundSuspectClaimV1Schema } from "@astella/shared/note-learning-round-contracts";
 import type { RoundTargetDraft } from "../teaching/round-target-contract.ts";
 import { classifySuspectClaimEditV1, constrainTargetToSuspectRechecksV1 } from "../suspect-claim-recheck.ts";
 

@@ -2,7 +2,7 @@
 
 [中文](../zh/operations.md) · English
 
-What this page covers: how 理解引擎 is actually run and shipped today — the responsibility of each of the three compose files, which environment variables are required versus optional in production, the two version lines and the desktop packaging and release chain, the Alpha environment's checks and backup/restore flow, what monitoring and alerting really deliver, and the security boundary an operator can rely on plus the gaps that remain. Every port, variable name, make target, volume name and alert name was read out of `docker-compose*.yml`, the `Makefile`, `scripts/alpha-env-setup.sh`, `infra/**`, `.github/workflows/**` and `apps/desktop-client/electron-builder.yml`; the merged project name and volume names were verified with `docker compose config`. This page lists names and purposes only — never credential values.
+What this page covers: how Astella is actually run and shipped today — the responsibility of each of the three compose files, which environment variables are required versus optional in production, the two version lines and the desktop packaging and release chain, the Alpha environment's checks and backup/restore flow, what monitoring and alerting really deliver, and the security boundary an operator can rely on plus the gaps that remain. Every port, variable name, make target, volume name and alert name was read out of `docker-compose*.yml`, the `Makefile`, `scripts/alpha-env-setup.sh`, `infra/**`, `.github/workflows/**` and `apps/desktop-client/electron-builder.yml`; the merged project name and volume names were verified with `docker compose config`. This page lists names and purposes only — never credential values.
 
 - [The three compose files](#the-three-compose-files)
 - [Environment variable groups](#environment-variable-groups)
@@ -19,17 +19,17 @@ What this page covers: how 理解引擎 is actually run and shipped today — th
 
 | File | Top-level `name:` | Role | Driven by |
 | --- | --- | --- | --- |
-| `docker-compose.dev.yml` | `ailearn-dev` | Local development: `target: dev` images, source bind mounts with hot reload, hard-coded local-only credentials, `seed-demo` behind the `seed` profile, every published port loopback-only, `docker.sock` mounted for `/admin`, companion capability flags on by default | `COMPOSE := docker compose -p ailearn-dev -f docker-compose.dev.yml` in the `Makefile`, i.e. `make up` / `storage` / `seed-demo` / `rebuild` / `config` / `logs` / `down` / `reset-db` / `shell-*` / `desktop-client-up` |
-| `docker-compose.yml` | `ailearn` | Production shape: `target: prod` images plus `user: node`, no source mounts, three `:?`-required database URLs, one-shot role bootstrap and migration services, capability flags fail-closed, `AUTH_RATE_LIMIT_STORE` defaults to `postgres`, edge-tts **publishes no port** | No make target is wired to it (deliberately, as the README states). Used manually or by the Alpha flow |
-| `docker-compose.alpha.yml` | `ailearn-alpha` | An **overlay — it cannot be used alone**: adds a `restore-postgres` network alias to `postgres` and four services (`prometheus`, `alertmanager`, `alpha-ops-sidecar`, `backup-runner`) plus the `prometheus_data`, `alertmanager_data`, `backup_keys` and `backup_manifests` volumes | `scripts/alpha-env-setup.sh`, as `docker compose -f docker-compose.yml -f docker-compose.alpha.yml --profile storage` |
+| `docker-compose.dev.yml` | `astella-dev` | Local development: `target: dev` images, source bind mounts with hot reload, hard-coded local-only credentials, `seed-demo` behind the `seed` profile, every published port loopback-only, `docker.sock` mounted for `/admin`, companion capability flags on by default | `COMPOSE := docker compose -p astella-dev -f docker-compose.dev.yml` in the `Makefile`, i.e. `make up` / `storage` / `seed-demo` / `rebuild` / `config` / `logs` / `down` / `reset-db` / `shell-*` / `desktop-client-up` |
+| `docker-compose.yml` | `astella` | Production shape: `target: prod` images plus `user: node`, no source mounts, three `:?`-required database URLs, one-shot role bootstrap and migration services, capability flags fail-closed, `AUTH_RATE_LIMIT_STORE` defaults to `postgres`, edge-tts **publishes no port** | No make target is wired to it (deliberately, as the README states). Used manually or by the Alpha flow |
+| `docker-compose.alpha.yml` | `astella-alpha` | An **overlay — it cannot be used alone**: adds a `restore-postgres` network alias to `postgres` and four services (`prometheus`, `alertmanager`, `alpha-ops-sidecar`, `backup-runner`) plus the `prometheus_data`, `alertmanager_data`, `backup_keys` and `backup_manifests` volumes | `scripts/alpha-env-setup.sh`, as `docker compose -f docker-compose.yml -f docker-compose.alpha.yml --profile storage` |
 
-> **Note:** When files are layered, the last top-level `name:` wins, so the whole Alpha chain runs under project `ailearn-alpha` and its volumes become `ailearn-alpha_postgres_data`, `ailearn-alpha_minio_data`, `ailearn-alpha_prometheus_data`, and so on (verified with `docker compose -f docker-compose.yml -f docker-compose.alpha.yml --profile storage config`). Running `docker-compose.yml` alone gives the `ailearn_` prefix. The header of `docker-compose.dev.yml` explicitly says **not** to layer it onto `docker-compose.yml`.
+> **Note:** When files are layered, the last top-level `name:` wins, so the whole Alpha chain runs under project `astella-alpha` and its volumes become `astella-alpha_postgres_data`, `astella-alpha_minio_data`, `astella-alpha_prometheus_data`, and so on (verified with `docker compose -f docker-compose.yml -f docker-compose.alpha.yml --profile storage config`). Running `docker-compose.yml` alone gives the `astella_` prefix. The header of `docker-compose.dev.yml` explicitly says **not** to layer it onto `docker-compose.yml`.
 
 The one-shot service chain in `docker-compose.yml` (`restart: "no"`, idempotent, must run on every deployment path):
 
 | Service | Order | What it does |
 | --- | --- | --- |
-| `role-bootstrap` | before migrations | Runs `infra/postgres/apply-roles.sh`: creates/rotates `ailearn_migrator`, `ailearn_api`, `ailearn_worker`, and transfers ownership of legacy objects to the migrator |
+| `role-bootstrap` | before migrations | Runs `infra/postgres/apply-roles.sh`: creates/rotates `astella_migrator`, `astella_api`, `astella_worker`, and transfers ownership of legacy objects to the migrator |
 | `migrate` | after role-bootstrap | `npm run db:migrate`, reading only `DATABASE_URL_MIGRATOR` |
 | `role-grants` | after migrate | Runs `apply-roles.sh` again with `REQUIRE_RLS_DISABLED=true` to grant privileges on objects the migration just created |
 | `seed-owner` | `seed` profile, explicit `run --rm` | `npm run db:seed`. Fail-closed on the production path: missing `OWNER_EMAIL` or `OWNER_PASSWORD` throws, `OWNER_PASSWORD` shorter than 12 characters throws, and `SEED_DEMO_DATA=true` under `NODE_ENV=production` refuses outright |
@@ -64,7 +64,7 @@ Required means compose interpolated it as `${VAR:?…}`: a missing value aborts 
 | First account | `OWNER_EMAIL`, `OWNER_PASSWORD` (≥12 characters), `OWNER_WORKSPACE` | read only by an explicit `seed-owner` run | use `make seed-demo`; these three are not read |
 | Network and origins | `CORS_ORIGIN`, `TRUST_PROXY`, `API_PORT`, `API_BIND_ADDRESS`, `POSTGRES_BIND_ADDRESS` | optional, defaults in compose | same |
 | Session and secrets | `AUTH_COOKIE_SECURE`, `AUTH_SURFACE_MANIFEST_SECRET`, `AUTH_RATE_LIMIT_STORE`, `AUTH_RATE_LIMIT_WINDOW_MS`, `AUTH_RATE_LIMIT_MAX_ATTEMPTS`, `LEARNING_DRAFT_ENC_KEY`, `PROJECTION_CHECKPOINT_SECRET` | optional, but each has a fail-closed consequence (table below) | same |
-| Desktop pairing and contracts | `AILEARN_DESKTOP_PAIRING_KEY_ID`, `AILEARN_DESKTOP_PAIRING_SECRET`, `AILEARN_DOMAIN_SCHEMA_REVISION`, `DESKTOP_API_ORIGIN`, `DESKTOP_DEPLOYMENT_CONFIG_REVISION` | optional | dev falls back to a fixed dev key id and revision |
+| Desktop pairing and contracts | `ASTELLA_DESKTOP_PAIRING_KEY_ID`, `ASTELLA_DESKTOP_PAIRING_SECRET`, `ASTELLA_DOMAIN_SCHEMA_REVISION`, `DESKTOP_API_ORIGIN`, `DESKTOP_DEPLOYMENT_CONFIG_REVISION` | optional | dev falls back to a fixed dev key id and revision |
 | Operations panel | `ADMIN_PANEL_TOKEN`, `ADMIN_PANEL_PATH`, `ADMIN_LOG_BUFFER_SIZE`, `ADMIN_DOCKER_SOCKET` | optional: empty means `/admin` is never registered | dev ships a default token and mounts the socket |
 | Model credentials | `DASHSCOPE_API_KEY`, `OPENAI_COMPAT_API_KEY`, `SILICONFLOW_API_KEY`, `BIGMODEL_API_KEY`, `TOKENRHYTHM_API_KEY`, `OPENCODE_GO_API_KEY`, `ASSESSMENT_CRITIC_URL` / `_KEY` / `_MODEL`, `AI_PLATFORMS_CONFIG` | optional; unset providers follow the fail-closed branch | same |
 | Runtime tuning | `LOG_LEVEL`, `WORKER_DRAIN_TIMEOUT_MS`, `WORKER_MODEL_TIMEOUT_MS`, `WORKER_PROVIDER_TIMEOUT_MS`, `WORKER_TIMEOUT_PARSE_SOURCE_MS`, `V3_ALLOW_DETERMINISTIC_PROVIDERS`, `AI_ALLOW_DOCKER_DESKTOP_SYNTHETIC_DNS`, `AI_REQUIRE_CONFIGURED_PROVIDER`, `EDGE_TTS_BASE_URL`, `EDGE_TTS_PORT`, `EDGE_TTS_MAX_CONCURRENCY`, `QWEN_TTS_MAX_CONCURRENCY`, `TOPOLOGY_SNAPSHOT_CACHE_MS`, `V2_EVIDENCE_*` / `V2_LEASE_RENEWAL_INTERVAL_MS` / `V2_PIPELINE_BUDGET_MS` / `V2_SOURCE_CONTENT_MAX_CHARS`, `V2_E2E_DEBUG_ERRORS` | optional; most only affect the worker | `V2_E2E_DEBUG_ERRORS` defaults to 1 in dev |
@@ -130,9 +130,9 @@ The electron-builder configuration is `apps/desktop-client/electron-builder.yml`
 
 Several choices here are intentional:
 
-- **`nsis.oneClick: true`** (changed from `false` on 2026-10-04). A wizard-style installer has a `PageEx custom` directory-picking page; in `/S` silent mode NSIS skips drawing it while MultiUser still needs an explicit decision, so the installer waits forever — on CI that shows up as the install step timing out, indistinguishable from "the installer is broken". The price is that users can no longer choose the directory; it now installs to `%LOCALAPPDATA%\Programs\理解引擎`. `requestedExecutionLevel: asInvoker` is also explicit, so no elevation.
-- **`artifactName: ailearn-${version}-${os}-${arch}.${ext}` is deliberately ASCII.** The product name 理解引擎 only affects the display name after installation (`productName`), whereas release asset names are written into `latest.yml` / `latest-mac.yml` and parsed by the client; GitHub asset URLs, NSIS differential downloads and Squirrel.Mac all have edge cases with non-ASCII file names. `desktop-release.yml` checks precisely those four names: `ailearn-<version>-win-x64.exe`, its `.blockmap`, `-mac-<arch>.zip` and `.dmg`.
-- **The update source is GitHub Releases, not this project's API.** `publish: provider github / owner asklins223 / repo ai-learning-system`; `apps/desktop-client/src/main/desktop-update.ts` repeats the same owner/repo constants so the "open the download page" link can be computed without loading the packaging config — **change the repository address and you must change both places**. Checks go to `api.github.com` and downloads to GitHub's CDN, so `apps/api` is not on the update path at all: update bandwidth does not land on your own server, and an outage of the API cannot block updates.
+- **`nsis.oneClick: true`** (changed from `false` on 2026-10-04). A wizard-style installer has a `PageEx custom` directory-picking page; in `/S` silent mode NSIS skips drawing it while MultiUser still needs an explicit decision, so the installer waits forever — on CI that shows up as the install step timing out, indistinguishable from "the installer is broken". The price is that users can no longer choose the directory; it now installs to `%LOCALAPPDATA%\Programs\Astella` (since 2026-10-06 the package name is the ASCII `Astella`; the Chinese display name 拾星笔记 is only used for the Start Menu entry and "Apps & features"). `requestedExecutionLevel: asInvoker` is also explicit, so no elevation.
+- **`artifactName: astella-${version}-${os}-${arch}.${ext}` hardcodes the prefix.** `productName` is now the ASCII `Astella` too, but the artifact name deliberately does not read `${productName}`: release asset names land in `latest.yml` / `latest-mac.yml` and get parsed by the client, so however the display name changes later, the file names already published in update metadata must not drift. GitHub asset URLs, NSIS differential downloads and Squirrel.Mac also all have edge cases with non-ASCII file names. `desktop-release.yml` checks precisely those four names: `astella-<version>-win-x64.exe`, its `.blockmap`, `-mac-<arch>.zip` and `.dmg`.
+- **The update source is GitHub Releases, not this project's API.** `publish: provider github / owner asklins223 / repo Astella`; `apps/desktop-client/src/main/desktop-update.ts` repeats the same owner/repo constants so the "open the download page" link can be computed without loading the packaging config — **change the repository address and you must change both places**. Checks go to `api.github.com` and downloads to GitHub's CDN, so `apps/api` is not on the update path at all: update bandwidth does not land on your own server, and an outage of the API cannot block updates.
 - **No code signing is configured.** The repository holds no Windows certificate and no Apple certificate / notarization credentials, so artifacts are unsigned: macOS requires right-click → Open on first launch, Windows shows SmartScreen, and **the macOS auto-update install is refused by Squirrel.Mac** (it verifies that both `.app` versions are signed by the same developer, so an unsigned build downloads and then fails to install). The yml deliberately does not set `identity: null` / `notarize: false` — those would actively disable signing and notarization — and adds `hardenedRuntime: true`, a hard prerequisite for notarization. Once the secrets exist, signing and notarization happen automatically with no config change. `desktop-package.yml` sets `CSC_IDENTITY_AUTO_DISCOVERY=false` only to skip searching the keychain.
 
 The release pipeline `.github/workflows/desktop-release.yml` publishes a Release only on `push` of a `desktop-v*` tag. The `resolve` job first compares the tag version with `release/desktop-version.json` and stops on mismatch (otherwise you get a Release titled one thing containing another). `build` reuses `desktop-package.yml` via `workflow_call` to build both platforms in parallel. Then `release` (gated by `if: from_tag == 'true'`): download the `desktop-*` artifacts → assert both platforms produced the same version and that all four files are non-empty → **require `latest.yml`** (hard failure if missing: Windows would never learn about a new version) while a missing `latest-mac.yml` only raises `::warning::` → create the Release with `softprops/action-gh-release@v2` and `draft: true`, uploading every asset → flip it public with `gh api --method PATCH … -F draft=false`. Draft-then-publish exists for the updater's sake: publishing while uploading can let it read a half-written `latest.yml` or a half-uploaded installer. A manual `workflow_dispatch` run never publishes.
@@ -145,9 +145,9 @@ Alpha is a single-host compose environment that adds monitoring and backup infra
 | --- | --- | --- |
 | `make alpha-up` | `alpha-env-setup.sh up` | Start `postgres minio alpha-ops-sidecar` → wait for `pg_isready` → run the one-shots `minio-init`, `role-bootstrap`, `migrate`, `role-grants` in order (each is removed, re-created and `docker wait`-ed every time) → start `api worker prometheus alertmanager` → `wait_http` on the API `/ready`, worker `/metrics`, Prometheus `/-/healthy`, Alertmanager `/-/healthy` → print status |
 | `make alpha-backup` | `… backup` | Runs `infra/backup/backup.sh` inside the `backup-runner` container |
-| `make alpha-restore-verify` | `… restore-verify` | First `DROP DATABASE IF EXISTS ailearn_restore_verify WITH (FORCE)` + `CREATE DATABASE` on `postgres`, then runs `infra/backup/rc-restore-verify.sh` |
+| `make alpha-restore-verify` | `… restore-verify` | First `DROP DATABASE IF EXISTS astella_restore_verify WITH (FORCE)` + `CREATE DATABASE` on `postgres`, then runs `infra/backup/rc-restore-verify.sh` |
 | `make alpha-status` | `… status` | `docker compose ps`, the endpoint list, and `curl :9090/api/v1/alerts` plus `/api/v1/targets` (needs `jq`) |
-| `make alpha-metrics` | `… metrics` | The first 20 `^ailearn_` lines from `curl :4000/metrics`, plus one PromQL query for `ailearn_job_queue_depth` |
+| `make alpha-metrics` | `… metrics` | The first 20 `^astella_` lines from `curl :4000/metrics`, plus one PromQL query for `astella_job_queue_depth` |
 | `make alpha-down` | `… down` | `docker compose down --remove-orphans` |
 
 The script accepts 8 subcommands, and **`init` and `freshness` have no make targets** (nor does any other step outside the wrapped six), so those must be called directly:
@@ -163,9 +163,9 @@ Where the backup infrastructure keeps its state (names only):
 
 | Thing | Location |
 | --- | --- |
-| age public key (encrypt backups) and private key (decrypt restores) | Named volume `ailearn-alpha_backup_keys`, mounted at `backup-runner:/etc/ailearn` |
-| Manifests and RC reports | Named volume `ailearn-alpha_backup_manifests`, mounted at `backup-runner:/var/lib/ailearn/manifests`; `alpha-ops-sidecar` mounts the same volume read-only |
-| The backup objects themselves | The S3-compatible bucket `BACKUP_BUCKET` (default `ailearn-backups`) on MinIO, whose data lives in `ailearn-alpha_minio_data` |
+| age public key (encrypt backups) and private key (decrypt restores) | Named volume `astella-alpha_backup_keys`, mounted at `backup-runner:/etc/astella` |
+| Manifests and RC reports | Named volume `astella-alpha_backup_manifests`, mounted at `backup-runner:/var/lib/astella/manifests`; `alpha-ops-sidecar` mounts the same volume read-only |
+| The backup objects themselves | The S3-compatible bucket `BACKUP_BUCKET` (default `astella-backups`) on MinIO, whose data lives in `astella-alpha_minio_data` |
 
 The migration number is read **dynamically**: both `backup` and `restore-verify` take the `tag` of the last `entries[]` element in `apps/api/src/db/migrations/meta/_journal.json` with a one-line `node -e` (currently 388 entries, last one `0391_summary_verified_revision_backfill`). This used to be hard-coded to `0039` and went stale.
 
@@ -173,14 +173,14 @@ The migration number is read **dynamically**: both `backup` and `restore-verify`
 
 ## Observability
 
-Per `infra/prometheus/prometheus.yml`: `scrape_interval` and `evaluation_interval` are both 15s, external labels are `monitor: ailearn-alpha` / `environment: alpha`, rules load from `alerts.yml`, and the Alertmanager static target is `alertmanager:9093`. Prometheus starts with `--storage.tsdb.retention.time=30d` and `--web.enable-lifecycle`.
+Per `infra/prometheus/prometheus.yml`: `scrape_interval` and `evaluation_interval` are both 15s, external labels are `monitor: astella-alpha` / `environment: alpha`, rules load from `alerts.yml`, and the Alertmanager static target is `alertmanager:9093`. Prometheus starts with `--storage.tsdb.retention.time=30d` and `--web.enable-lifecycle`.
 
 | Job | Scrape target | Path | Port |
 | --- | --- | --- | --- |
 | `prometheus` | `localhost:9090` | default | 9090 |
-| `ailearn-api` | `api:4000` | `/metrics` | 4000 |
-| `ailearn-worker` | `worker:9100` | `/metrics` | 9100 (relabel pins `instance` to `worker`) |
-| `ailearn-backup` | `alpha-ops-sidecar:8080` | `/metrics` | 8080, reachable only inside the overlay network — no host port |
+| `astella-api` | `api:4000` | `/metrics` | 4000 |
+| `astella-worker` | `worker:9100` | `/metrics` | 9100 (relabel pins `instance` to `worker`) |
+| `astella-backup` | `alpha-ops-sidecar:8080` | `/metrics` | 8080, reachable only inside the overlay network — no host port |
 | `alertmanager` | `alertmanager:9093` | default | 9093 |
 | `postgres` (commented out) | `postgres-exporter:9187` | — | not enabled |
 
@@ -188,13 +188,13 @@ The rule file `infra/prometheus/alerts.yml` holds **7 groups and 21 alerts** (13
 
 | Group | Alerts |
 | --- | --- |
-| `ailearn_http_health` | `AILearnAPIDown`, `AILearnWorkerDown`, `AILearnHighHTTP5xxRate`, `AILearnHighHTTPLatency` |
-| `ailearn_job_health` | `AILearnJobQueueBacklog`, `AILearnStalePendingJob`, `AILearnHighJobDeadRate`, `AILearnJobLeaseLost` |
-| `ailearn_provider_health` | `AILearnHighProviderErrorRate`, `AILearnProviderHighLatency`, `AILearnProviderSchemaFailure`, `AILearnProviderQuotaExceeded` |
-| `ailearn_database_health` | `AILearnHighTransactionFailureRate`, `AILearnHighRLSDenialRate`, `AILearnBackupStale` |
-| `ailearn_funnel_monitoring` | `AILearnLowInviteConsumptionRate`, `AILearnLowCardGenerationSuccessRate` |
-| `ailearn_release_info` | `AILearnReleaseDeployed`, `AILearnReleaseRolledBack` |
-| `ailearn_search_consistency` | `AILearnSearchIndexDrift`, `AILearnHighSearchDriftRatio` |
+| `astella_http_health` | `AstellaAPIDown`, `AstellaWorkerDown`, `AstellaHighHTTP5xxRate`, `AstellaHighHTTPLatency` |
+| `astella_job_health` | `AstellaJobQueueBacklog`, `AstellaStalePendingJob`, `AstellaHighJobDeadRate`, `AstellaJobLeaseLost` |
+| `astella_provider_health` | `AstellaHighProviderErrorRate`, `AstellaProviderHighLatency`, `AstellaProviderSchemaFailure`, `AstellaProviderQuotaExceeded` |
+| `astella_database_health` | `AstellaHighTransactionFailureRate`, `AstellaHighRLSDenialRate`, `AstellaBackupStale` |
+| `astella_funnel_monitoring` | `AstellaLowInviteConsumptionRate`, `AstellaLowCardGenerationSuccessRate` |
+| `astella_release_info` | `AstellaReleaseDeployed`, `AstellaReleaseRolledBack` |
+| `astella_search_consistency` | `AstellaSearchIndexDrift`, `AstellaHighSearchDriftRatio` |
 
 There is exactly one notification path: `infra/prometheus/alertmanager.yml` defines a single receiver, `log-receiver`, whose `webhook_configs.url` is `http://alpha-ops-sidecar:8080/alerts`, and the sidecar's only action is `print("[alpha-ops] alertmanager webhook " + <json>)` to its own stdout. **In other words, no paging, Slack or PagerDuty is configured; seeing an alert means reading container logs or the Prometheus UI.** Routing parameters: `group_by: [alertname, service]`, `group_wait` 30s (10s for critical), `group_interval` 5m, `repeat_interval` 4h (1h for critical), `resolve_timeout` 5m, plus one inhibit rule that suppresses a warning when the critical of the same alert is firing. The `slack_configs` block in that file is a commented-out example.
 
@@ -202,12 +202,12 @@ Metric families worth graphing (by declaration site): `apps/api/src/lib/metrics.
 
 | Question | Metrics |
 | --- | --- |
-| Is the API alive, and what is the traffic | `ailearn_readiness_status`, `ailearn_http_requests_total`, `ailearn_http_errors_5xx_total`, `ailearn_http_request_duration_seconds`, `ailearn_sse_active_streams` |
-| Is the queue stuck | `ailearn_job_queue_depth{status="pending"}`, `ailearn_job_oldest_pending_age_seconds`, `ailearn_job_terminal_total`, `ailearn_job_lease_lost_total`, `ailearn_job_non_retryable_dead_total` |
-| Model calls and quota | `ailearn_provider_calls_total`, `ailearn_provider_call_duration_seconds`, `ailearn_provider_call_tokens_total`, `ailearn_ai_circuit_open_total`, `ailearn_ai_circuit_observer_healthy` |
-| Tenant isolation and database health | `ailearn_db_rls_denied_total`, `ailearn_db_transaction_failures_total`, `ailearn_db_pool_active_connections`, `ailearn_db_migration_version` |
-| Is the learning loop advancing | `ailearn_learning_run_processing_outbox_depth`, `ailearn_learning_run_processing_outbox_oldest_pending_age_seconds`, `ailearn_learning_run_critic_fail_closed_total`, `ailearn_funnel_events_total` |
-| Is a backup actually usable | `ailearn_backup_verified_manifests_total`, `ailearn_backup_manifest_scan_errors`, `ailearn_db_last_successful_backup_timestamp` (the last one is **absent** until a deep RC verification succeeds) |
+| Is the API alive, and what is the traffic | `astella_readiness_status`, `astella_http_requests_total`, `astella_http_errors_5xx_total`, `astella_http_request_duration_seconds`, `astella_sse_active_streams` |
+| Is the queue stuck | `astella_job_queue_depth{status="pending"}`, `astella_job_oldest_pending_age_seconds`, `astella_job_terminal_total`, `astella_job_lease_lost_total`, `astella_job_non_retryable_dead_total` |
+| Model calls and quota | `astella_provider_calls_total`, `astella_provider_call_duration_seconds`, `astella_provider_call_tokens_total`, `astella_ai_circuit_open_total`, `astella_ai_circuit_observer_healthy` |
+| Tenant isolation and database health | `astella_db_rls_denied_total`, `astella_db_transaction_failures_total`, `astella_db_pool_active_connections`, `astella_db_migration_version` |
+| Is the learning loop advancing | `astella_learning_run_processing_outbox_depth`, `astella_learning_run_processing_outbox_oldest_pending_age_seconds`, `astella_learning_run_critic_fail_closed_total`, `astella_funnel_events_total` |
+| Is a backup actually usable | `astella_backup_verified_manifests_total`, `astella_backup_manifest_scan_errors`, `astella_db_last_successful_backup_timestamp` (the last one is **absent** until a deep RC verification succeeds) |
 
 Logging: pino reads its level from `LOG_LEVEL`, default `info` (`trace`/`debug`/`info`/`warn`/`error`/`fatal`), and attaches `pino-pretty` outside production when not in a test context. The real sink is still stdout, collected by the container runtime. **A separate bounded in-process ring feeds the `/admin` log page**: `apps/api/src/lib/log-buffer.ts` hooks pino's `hooks.logMethod` and captures **before** serialisation, so `scope` / `runId` / `workspaceId` survive. It is two independent rings — application logs default to 500 entries (`ADMIN_LOG_BUFFER_SIZE`, capped at 5000) and request/access logs are fixed at 300. This buffer is **not an audit log**: it is cleared on restart, never written to disk, not searchable, not exported. Cross-restart tracing still goes through stdout and the audit tables.
 
@@ -222,23 +222,23 @@ The scripts live in `infra/backup/` and run inside the `backup-runner` container
 | `rotate.sh` | Keep the 14 most recent daily and 4 weekly backups; **only deletes backups with `verificationStatus=verified`**, everything unverified is retained |
 | `restore.sh` | Download → decrypt with the age private key → restore into the target database. The target must pass the safety allowlist; pointing at a production host or database name is refused |
 | `rc-restore-verify.sh` | End-to-end proof: create a backup → restore into the isolated database (in the Alpha flow the target host is the network alias `restore-postgres`) → compare the migration tail and core-table row counts → re-check the role posture with `infra/postgres/roles.sql` → write the RC report |
-| `freshness-check.sh` | Scan the manifest directory for the most recent `verificationStatus=verified` backup and exit non-zero past the threshold (default 24 hours), which is what fires `AILearnBackupStale` |
-| `alpha-backup-cron.sh` + `alpha-cron-setup.sh` | The 12-hour schedule: `backup.sh` → `rotate.sh` → `freshness-check.sh`, logging to `/var/log/ailearn/backup-cron.log`. **Neither script is wired to a make target or compose**; the crontab has to be installed on the host explicitly |
+| `freshness-check.sh` | Scan the manifest directory for the most recent `verificationStatus=verified` backup and exit non-zero past the threshold (default 24 hours), which is what fires `AstellaBackupStale` |
+| `alpha-backup-cron.sh` + `alpha-cron-setup.sh` | The 12-hour schedule: `backup.sh` → `rotate.sh` → `freshness-check.sh`, logging to `/var/log/astella/backup-cron.log`. **Neither script is wired to a make target or compose**; the crontab has to be installed on the host explicitly |
 | `backup-scripts.test.sh` | Tests for this shell group itself (manifest shape, rotation policy, restore allowlist refusal, `manifest.schema.json` validation). Run manually with `bash infra/backup/backup-scripts.test.sh`; **no automated chain calls it** |
 
-Two operations must not be conflated: `make alpha-backup` only produces an encrypted backup plus a manifest; `make alpha-restore-verify` is the evidence that the backup can actually be restored, and `AILearnBackupStale` reads the timestamp of the most recent **deep-verified** backup. Backing up without ever verifying leaves the metric absent, so that alert **can never fire** — it will not tell you "everything is fine".
+Two operations must not be conflated: `make alpha-backup` only produces an encrypted backup plus a manifest; `make alpha-restore-verify` is the evidence that the backup can actually be restored, and `AstellaBackupStale` reads the timestamp of the most recent **deep-verified** backup. Backing up without ever verifying leaves the metric absent, so that alert **can never fire** — it will not tell you "everything is fine".
 
 ## Database: volume protection and role posture
 
-The development data volume is kept outside the Compose lifecycle on purpose: `docker-compose.dev.yml` declares `dev_postgres_data` as `external: true` with the fixed name `ailearn-dev_dev_postgres_data`, and `make up` depends on `ensure-db-volume`, which creates it with the labels `com.ailearn.protected=true` and `com.ailearn.purpose=postgres-data` when absent. Consequently `make down`, deleting containers and even `docker compose down -v` **cannot remove it**. Wiping it has exactly one confirmed path:
+The development data volume is kept outside the Compose lifecycle on purpose: `docker-compose.dev.yml` declares `dev_postgres_data` as `external: true` with the fixed name `astella-dev_dev_postgres_data`, and `make up` depends on `ensure-db-volume`, which creates it with the labels `com.astella.protected=true` and `com.astella.purpose=postgres-data` when absent. Consequently `make down`, deleting containers and even `docker compose down -v` **cannot remove it**. Wiping it has exactly one confirmed path:
 
 ```bash
 make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB   # any other value prints a cancellation and exits 2, changing nothing
 ```
 
-Take a backup first. For integration tests that need isolation, use a disposable database (`make disposable-db` / `bash scripts/dev-disposable-db.sh`); that script only drops and creates names matching `ailearn_*` and never `ailearn` itself. Production and Alpha use **ordinary named volumes** (`ailearn_postgres_data` / `ailearn-alpha_postgres_data`) with no external protection, and no Makefile target manages them.
+Take a backup first. For integration tests that need isolation, use a disposable database (`make disposable-db` / `bash scripts/dev-disposable-db.sh`); that script only drops and creates names matching `astella_*` and never `astella` itself. Production and Alpha use **ordinary named volumes** (`astella_postgres_data` / `astella-alpha_postgres_data`) with no external protection, and no Makefile target manages them.
 
-Role and isolation posture (full treatment in [API and data](./api-and-data.md)): the three application roles are created by `infra/postgres/apply-roles.sh` with `roles.sql`, all `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`. `ailearn_migrator` has `BYPASSRLS` and owns tables, sequences, views and types (migrations need DDL); `ailearn_api` and `ailearn_worker` are `NOBYPASSRLS` with no DDL privileges. Business requests set `app.workspace_id` / `app.user_id` transaction-locally and FORCE RLS narrows visibility; boundary actions that do not yet know the workspace (login, token resolution, workspace listing, redeeming an invite) go through the actor transaction. The current holes in this contract are registered as a ratchet by `schema-isolation-gate-postgres.integration.ts`: **89** tables have a `workspace_id` column but no foreign key to `workspaces` (that list may only shrink), and the "RLS not enabled" baseline **is empty and must stay empty** since migration 0257. Dev, CI and production now all use the restricted-role shape — a superuser bypasses RLS and turns isolation assertions into false passes.
+Role and isolation posture (full treatment in [API and data](./api-and-data.md)): the three application roles are created by `infra/postgres/apply-roles.sh` with `roles.sql`, all `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`. `astella_migrator` has `BYPASSRLS` and owns tables, sequences, views and types (migrations need DDL); `astella_api` and `astella_worker` are `NOBYPASSRLS` with no DDL privileges. Business requests set `app.workspace_id` / `app.user_id` transaction-locally and FORCE RLS narrows visibility; boundary actions that do not yet know the workspace (login, token resolution, workspace listing, redeeming an invite) go through the actor transaction. The current holes in this contract are registered as a ratchet by `schema-isolation-gate-postgres.integration.ts`: **89** tables have a `workspace_id` column but no foreign key to `workspaces` (that list may only shrink), and the "RLS not enabled" baseline **is empty and must stay empty** since migration 0257. Dev, CI and production now all use the restricted-role shape — a superuser bypasses RLS and turns isolation assertions into false passes.
 
 ## Security posture for operators
 
@@ -263,7 +263,7 @@ What is **not** done yet, as the repository stands:
 
 Each of these was confirmed during the checks above rather than inferred:
 
-1. **Five alerts in `infra/prometheus/alerts.yml` can never fire.** `AILearnHighProviderErrorRate`, `AILearnProviderSchemaFailure` and `AILearnProviderQuotaExceeded` depend on `ailearn_provider_errors_total`; `AILearnSearchIndexDrift` and `AILearnHighSearchDriftRatio` depend on `ailearn_search_drift_total` / `ailearn_search_documents_total`. None of these families has a **producer** anywhere in `apps/api`, `workers/ai-worker` or `packages` (a repository-wide grep finds them only in `alerts.yml`, a comment in `prometheus.yml` and an archived audit document). Nothing validates the rule file beyond Prometheus itself loading it.
+1. **Five alerts in `infra/prometheus/alerts.yml` can never fire.** `AstellaHighProviderErrorRate`, `AstellaProviderSchemaFailure` and `AstellaProviderQuotaExceeded` depend on `astella_provider_errors_total`; `AstellaSearchIndexDrift` and `AstellaHighSearchDriftRatio` depend on `astella_search_drift_total` / `astella_search_documents_total`. None of these families has a **producer** anywhere in `apps/api`, `workers/ai-worker` or `packages` (a repository-wide grep finds them only in `alerts.yml`, a comment in `prometheus.yml` and an archived audit document). Nothing validates the rule file beyond Prometheus itself loading it.
 2. **There is no alert sink.** `log-receiver` only POSTs to the sidecar, which prints to stdout. With no Slack / PagerDuty / email receiver configured, "an alert fired" requires someone to actively read logs or open the Prometheus UI.
 3. **`verify-alerts-syntax.mjs` is unwired**: it would validate rule shapes and duplicate alert names and report which of 15 required metrics are not referenced, but it appears in no `verify`, `release-check`, workflow or package script. Similarly unwired are `verify-shared-exports.mjs` (which exists specifically for the "file present but not listed in `exports`, so typecheck is green and the runtime throws `ERR_PACKAGE_PATH_NOT_EXPORTED`" case), `coverage-baseline-save.mjs`, `capture-image-digests.mjs` and `.github/ci/ai-platforms.mock.json`. None is called by any make target, workflow or package script.
 4. **The image digest chain is broken.** `release-manifest-generate.mjs` supports `--images` to read the output of `capture-image-digests.mjs`, but neither `make release-manifest` nor `make release-check` passes it, so RC manifest image fields take the placeholder branch. CI no longer builds or scans production images either, so nothing in the repository records a pullable digest.
@@ -281,7 +281,9 @@ Each of these was confirmed during the checks above rather than inferred:
 - [Development](./development.md)
 - [Desktop client](./desktop-client.md)
 - [API and data](./api-and-data.md)
-- [AI and companion](./ai-and-companion.md)
+- [Models and the worker pipeline](./ai-and-companion.md)
+- [Unified agent runtime (technical)](./agent-runtime.md)
+- [Companion experience (product design)](./companion-experience.md)
 - [Testing and quality](./testing-and-quality.md)
 - [FAQ and troubleshooting](./faq-and-troubleshooting.md)
 - Repository root: [README](../../../README.md), [AGENTS.md](../../../AGENTS.md), [third-party notices](../../../THIRD_PARTY_NOTICES.md)

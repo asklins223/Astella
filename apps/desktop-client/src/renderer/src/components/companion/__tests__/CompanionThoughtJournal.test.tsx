@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { CompanionChatListThoughtsResultV1, CompanionThoughtV1 } from "@ailearn/shared/companion-chat-desktop-contracts";
+import type { CompanionChatListThoughtsResultV1, CompanionThoughtV1 } from "@astella/shared/companion-chat-desktop-contracts";
 import { CompanionThoughtJournal } from "../CompanionThoughtJournal";
 
 const state = vi.hoisted(() => ({ scope: 1 }));
@@ -23,7 +23,7 @@ function deferred<T>() {
 }
 beforeEach(() => {
   state.scope = 1; vi.clearAllMocks();
-  Object.defineProperty(window, "ailearn", { configurable: true, value: { companion: { chat: { listThoughts, openThought, send } } } });
+  Object.defineProperty(window, "astella", { configurable: true, value: { companion: { chat: { listThoughts, openThought, send } } } });
 });
 afterEach(cleanup);
 

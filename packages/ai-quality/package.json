@@ -1,5 +1,5 @@
 {
-  "name": "@ailearn/ai-quality",
+  "name": "@astella/ai-quality",
   "version": "0.5.0",
   "private": true,
   "type": "module",
@@ -18,7 +18,7 @@
     "pr-gate": "node --import tsx src/cli/pr-gate.ts"
   },
   "dependencies": {
-    "@ailearn/shared": "file:../shared",
+    "@astella/shared": "file:../shared",
     "zod": "^3.23.8"
   },
   "devDependencies": {

@@ -14,7 +14,7 @@ import { z } from "zod";
 import { parseBody } from "../../../lib/validate.ts";
 import { requireSession } from "../../identity/middleware.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../../db/client.ts";
-import { assistantDeliveryAckV2Schema } from "@ailearn/shared";
+import { assistantDeliveryAckV2Schema } from "@astella/shared";
 import { ackDelivery, claimDisplayLease, DeliveryServiceError } from "./delivery-service.ts";
 import { isCompanionJourneyV2Enabled } from "../../../config/learning-companion-flags.ts";
 

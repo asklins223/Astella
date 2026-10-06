@@ -18,7 +18,7 @@
 #   ./scripts/alpha-env-setup.sh down       # 停止 Alpha 环境
 #
 # 环境变量：
-#   MINIO_ROOT_USER     — MinIO 管理员用户名（默认 ailearn）
+#   MINIO_ROOT_USER     — MinIO 管理员用户名（默认 astella）
 #   MINIO_ROOT_PASSWORD — MinIO 管理员密码（必须设置）
 #   POSTGRES_PASSWORD   — PostgreSQL 管理员密码（必须设置）
 #   MIGRATOR_PASSWORD   — migrator 角色密码（必须设置）
@@ -27,7 +27,7 @@
 #   DATABASE_URL_MIGRATOR — 迁移角色连接串（必须设置，密码需 URL 编码）
 #   DATABASE_URL_API      — API 角色连接串（必须设置，密码需 URL 编码）
 #   DATABASE_URL_WORKER   — Worker 角色连接串（必须设置，密码需 URL 编码）
-#   BACKUP_BUCKET       — 备份 bucket 名称（默认 ailearn-backups）
+#   BACKUP_BUCKET       — 备份 bucket 名称（默认 astella-backups）
 
 set -euo pipefail
 
@@ -48,8 +48,8 @@ COMPOSE=(
   -f "$REPO_ROOT/docker-compose.alpha.yml"
   --profile storage
 )
-BACKUP_BUCKET="${BACKUP_BUCKET:-ailearn-backups}"
-RESTORE_DB="ailearn_restore_verify"
+BACKUP_BUCKET="${BACKUP_BUCKET:-astella-backups}"
+RESTORE_DB="astella_restore_verify"
 
 # ─── 颜色输出 ──────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -82,9 +82,9 @@ check_env() {
     err "  export MIGRATOR_PASSWORD=your-secret"
     err "  export API_PASSWORD=your-secret"
     err "  export WORKER_PASSWORD=your-secret"
-    err "  export DATABASE_URL_MIGRATOR=postgres://ailearn_migrator:...@postgres:5432/ailearn"
-    err "  export DATABASE_URL_API=postgres://ailearn_api:...@postgres:5432/ailearn"
-    err "  export DATABASE_URL_WORKER=postgres://ailearn_worker:...@postgres:5432/ailearn"
+    err "  export DATABASE_URL_MIGRATOR=postgres://astella_migrator:...@postgres:5432/astella"
+    err "  export DATABASE_URL_API=postgres://astella_api:...@postgres:5432/astella"
+    err "  export DATABASE_URL_WORKER=postgres://astella_worker:...@postgres:5432/astella"
     exit 1
   fi
 }
@@ -144,7 +144,7 @@ cmd_up() {
   # Wait for PostgreSQL
   log "等待 PostgreSQL 就绪..."
   for i in $(seq 1 30); do
-    if "${COMPOSE[@]}" exec -T postgres pg_isready -U "${POSTGRES_USER:-ailearn}" >/dev/null 2>&1; then
+    if "${COMPOSE[@]}" exec -T postgres pg_isready -U "${POSTGRES_USER:-astella}" >/dev/null 2>&1; then
       log "PostgreSQL 就绪"
       break
     fi
@@ -184,13 +184,13 @@ cmd_init() {
     /scripts/setup-backup-infrastructure.sh \
       --s3-endpoint http://minio:9000 \
       --s3-bucket "$BACKUP_BUCKET" \
-      --s3-access-key "${MINIO_ROOT_USER:-ailearn}" \
+      --s3-access-key "${MINIO_ROOT_USER:-astella}" \
       --s3-secret-key "$MINIO_ROOT_PASSWORD" \
-      --key-dir /etc/ailearn
+      --key-dir /etc/astella
 
   log "备份基础设施初始化完成"
-  log "  age 公钥: backup-runner:/etc/ailearn/backup-age.pub"
-  log "  age 私钥: backup-runner:/etc/ailearn/backup-age.key（安全存储）"
+  log "  age 公钥: backup-runner:/etc/astella/backup-age.pub"
+  log "  age 私钥: backup-runner:/etc/astella/backup-age.key（安全存储）"
   log "  S3 bucket: minio:$BACKUP_BUCKET"
 }
 
@@ -209,17 +209,17 @@ cmd_backup() {
   "${COMPOSE[@]}" run --rm backup-runner \
     /scripts/backup.sh \
       --pg-host postgres \
-      --pg-user "${POSTGRES_USER:-ailearn}" \
-      --pg-db "${POSTGRES_DB:-ailearn}" \
+      --pg-user "${POSTGRES_USER:-astella}" \
+      --pg-db "${POSTGRES_DB:-astella}" \
       --release "${SOURCE_RELEASE:-0.5.0-alpha}" \
       --commit "$commit" \
       --migration "${SOURCE_MIGRATION:-${migration_tag:-unknown}}" \
-      --age-key /etc/ailearn/backup-age.pub \
+      --age-key /etc/astella/backup-age.pub \
       --s3-endpoint http://minio:9000 \
       --s3-bucket "$BACKUP_BUCKET" \
-      --s3-access-key "${MINIO_ROOT_USER:-ailearn}" \
+      --s3-access-key "${MINIO_ROOT_USER:-astella}" \
       --s3-secret-key "$MINIO_ROOT_PASSWORD" \
-      --manifest-dir /var/lib/ailearn/manifests
+      --manifest-dir /var/lib/astella/manifests
 
   log "备份完成"
 }
@@ -238,29 +238,29 @@ cmd_restore_verify() {
 
   # This command only replaces the named isolated verification database.
   "${COMPOSE[@]}" exec -T postgres psql \
-    -U "${POSTGRES_USER:-ailearn}" -d postgres -v ON_ERROR_STOP=1 \
+    -U "${POSTGRES_USER:-astella}" -d postgres -v ON_ERROR_STOP=1 \
     -c "DROP DATABASE IF EXISTS ${RESTORE_DB} WITH (FORCE)" \
     -c "CREATE DATABASE ${RESTORE_DB}"
 
   "${COMPOSE[@]}" run --rm backup-runner \
     /scripts/rc-restore-verify.sh \
       --source-host postgres \
-      --source-user "${POSTGRES_USER:-ailearn}" \
-      --source-db "${POSTGRES_DB:-ailearn}" \
+      --source-user "${POSTGRES_USER:-astella}" \
+      --source-db "${POSTGRES_DB:-astella}" \
       --target-host restore-postgres \
-      --target-user "${POSTGRES_USER:-ailearn}" \
+      --target-user "${POSTGRES_USER:-astella}" \
       --target-db "$RESTORE_DB" \
       --release "${SOURCE_RELEASE:-0.5.0-alpha}" \
       --commit "$commit" \
       --migration "${SOURCE_MIGRATION:-${migration_tag:-unknown}}" \
       --s3-endpoint http://minio:9000 \
       --s3-bucket "$BACKUP_BUCKET" \
-      --s3-access-key "${MINIO_ROOT_USER:-ailearn}" \
+      --s3-access-key "${MINIO_ROOT_USER:-astella}" \
       --s3-secret-key "$MINIO_ROOT_PASSWORD" \
-      --age-key /etc/ailearn/backup-age.key \
-      --manifest-dir /var/lib/ailearn/manifests \
-      --report-dir /var/lib/ailearn/manifests/rc-reports \
-      --role-script /opt/ailearn/roles.sql \
+      --age-key /etc/astella/backup-age.key \
+      --manifest-dir /var/lib/astella/manifests \
+      --report-dir /var/lib/astella/manifests/rc-reports \
+      --role-script /opt/astella/roles.sql \
       --force
 
   log "恢复验证完成"
@@ -273,7 +273,7 @@ cmd_freshness() {
 
   "${COMPOSE[@]}" run --rm backup-runner \
     /scripts/freshness-check.sh \
-      --manifest-dir /var/lib/ailearn/manifests \
+      --manifest-dir /var/lib/astella/manifests \
       --max-age-hours 24
 }
 
@@ -308,13 +308,13 @@ cmd_status() {
 cmd_metrics() {
   log "API 指标摘要："
   curl -sf http://localhost:4000/metrics 2>/dev/null | \
-    grep -E "^ailearn_" | head -20 || \
+    grep -E "^astella_" | head -20 || \
     echo "  (API 未就绪)"
 
   echo ""
   log "Worker 指标摘要："
   # Worker metrics are on internal network, use Prometheus query
-  curl -sf "http://localhost:9090/api/v1/query?query=ailearn_job_queue_depth" 2>/dev/null | \
+  curl -sf "http://localhost:9090/api/v1/query?query=astella_job_queue_depth" 2>/dev/null | \
     jq '.data.result' 2>/dev/null || \
     echo "  (Prometheus 未就绪)"
 }

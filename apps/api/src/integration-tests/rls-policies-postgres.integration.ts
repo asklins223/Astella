@@ -79,7 +79,7 @@ function requireDatabaseUrl(name: string): string {
 
 async function assertConnectionIdentity(
   sql: Sql,
-  expectedRole: "ailearn_migrator" | "ailearn_api" | "ailearn_worker",
+  expectedRole: "astella_migrator" | "astella_api" | "astella_worker",
 ): Promise<{
   databaseName: string;
   databaseOid: string;
@@ -117,7 +117,7 @@ async function assertConnectionIdentity(
       AND database.datname = pg_catalog.current_database()
   `;
   assert.equal(identity?.current_user, expectedRole);
-  assert.equal(identity?.bypass_rls, expectedRole === "ailearn_migrator");
+  assert.equal(identity?.bypass_rls, expectedRole === "astella_migrator");
   assert.ok(identity?.database_name);
   assert.ok(identity?.database_oid);
   assert.ok(identity?.server_address);
@@ -202,9 +202,9 @@ test("installs fail-closed SEC-01 policies without making this an HTTP or M1 gat
 
   try {
     const [migratorIdentity, apiIdentity, workerIdentity] = await Promise.all([
-      assertConnectionIdentity(migrator, "ailearn_migrator"),
-      assertConnectionIdentity(api, "ailearn_api"),
-      assertConnectionIdentity(worker, "ailearn_worker"),
+      assertConnectionIdentity(migrator, "astella_migrator"),
+      assertConnectionIdentity(api, "astella_api"),
+      assertConnectionIdentity(worker, "astella_worker"),
     ]);
     const databaseFingerprint = ({ backendPid: _backendPid, ...identity }: typeof migratorIdentity) => (
       identity
@@ -348,11 +348,11 @@ test("installs fail-closed SEC-01 policies without making this an HTTP or M1 gat
       const runtimeAccess = findPolicy(tableName, `sec01_v1_${tableName}_runtime_access`);
       assert.equal(runtimeAccess.permissive, "PERMISSIVE");
       assert.equal(runtimeAccess.command, "ALL");
-      assert.match(runtimeAccess.using_expression ?? "", /ailearn_api/);
+      assert.match(runtimeAccess.using_expression ?? "", /astella_api/);
       if (API_ONLY_WORKSPACE_TABLES.has(tableName)) {
-        assert.doesNotMatch(runtimeAccess.using_expression ?? "", /ailearn_worker/);
+        assert.doesNotMatch(runtimeAccess.using_expression ?? "", /astella_worker/);
       } else {
-        assert.match(runtimeAccess.using_expression ?? "", /ailearn_worker/);
+        assert.match(runtimeAccess.using_expression ?? "", /astella_worker/);
       }
     }
 
@@ -398,10 +398,10 @@ test("installs fail-closed SEC-01 policies without making this an HTTP or M1 gat
       assert.equal(policy.permissive, expected.permissive);
       const expression = `${policy.using_expression ?? ""} ${policy.check_expression ?? ""}`;
       if (expected.permissive === "PERMISSIVE" && policyName.includes("worker")) {
-        assert.match(expression, /ailearn_worker/);
+        assert.match(expression, /astella_worker/);
       }
       if (expected.permissive === "PERMISSIVE" && policyName.includes("api_")) {
-        assert.match(expression, /ailearn_api/);
+        assert.match(expression, /astella_api/);
       }
       if (policyName.includes("insert_actor_guard")) {
         assert.match(expression, /requested_by/);
@@ -437,7 +437,7 @@ test("installs fail-closed SEC-01 policies without making this an HTTP or M1 gat
     //
     // 因此这里断言的是**两种模式都必须成立的 fail-closed 不变量**，而不是"必须已启用"：
     //   - forced 必须与 enabled 完全一致：任何「enabled 但未 forced」的表都会让表属主
-    //     (ailearn_migrator) 静默豁免策略，等于 fail-open —— 这才是真正要拦的状态；
+    //     (astella_migrator) 静默豁免策略，等于 fail-open —— 这才是真正要拦的状态；
     //   - 策略目录齐全由上一条断言保证（策略已安装、可审阅）。
     // 未来若前向迁移重新 ENABLE + FORCE，本断言同样成立。
     const enabledNow = rlsState.filter((s) => s.enabled).map((s) => String(s.table_name)).sort();
@@ -461,21 +461,21 @@ test("installs fail-closed SEC-01 policies without making this an HTTP or M1 gat
         )::integer AS secure_count,
         count(*) FILTER (
           WHERE pg_catalog.has_function_privilege(
-            'ailearn_worker', procedure.oid, 'EXECUTE'
+            'astella_worker', procedure.oid, 'EXECUTE'
           )
         )::integer AS worker_execute_count,
         count(*) FILTER (
           WHERE pg_catalog.has_function_privilege(
-            'ailearn_api', procedure.oid, 'EXECUTE'
+            'astella_api', procedure.oid, 'EXECUTE'
           )
         )::integer AS api_execute_count
       FROM pg_catalog.pg_proc AS procedure
       WHERE procedure.oid IN (
-        'public.ailearn_claim_jobs(integer,integer,integer)'::regprocedure,
-        'public.ailearn_reap_stale_jobs(integer,integer)'::regprocedure,
-        'public.ailearn_renew_job_lease(uuid,uuid,text)'::regprocedure,
-        'public.ailearn_finish_job(uuid,uuid,text)'::regprocedure,
-        'public.ailearn_fail_job(uuid,uuid,text,text,integer)'::regprocedure
+        'public.astella_claim_jobs(integer,integer,integer)'::regprocedure,
+        'public.astella_reap_stale_jobs(integer,integer)'::regprocedure,
+        'public.astella_renew_job_lease(uuid,uuid,text)'::regprocedure,
+        'public.astella_finish_job(uuid,uuid,text)'::regprocedure,
+        'public.astella_fail_job(uuid,uuid,text,text,integer)'::regprocedure
       )
     `;
     assert.deepEqual(queueFunctions, {
@@ -814,7 +814,7 @@ test("installs fail-closed SEC-01 policies without making this an HTTP or M1 gat
     // 0228：签名变为 (limit, background_limit, max_attempts)；两个 fixture job 都是
     // maintenance 类，后台名额给满 2 才能同时认领。
     const claimed = await worker<{ id: string }[]>`
-      SELECT id FROM public.ailearn_claim_jobs(2, 2, 3)
+      SELECT id FROM public.astella_claim_jobs(2, 2, 3)
       WHERE id IN (${jobA}, ${jobB})
       ORDER BY id
     `;

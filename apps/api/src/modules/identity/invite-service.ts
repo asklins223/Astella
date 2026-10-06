@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull, or, gte, desc, sql, inArray } from "drizzle-orm";
-import { DomainError } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
 import {
   withWorkspaceTransaction,
   withActorTransaction,
@@ -14,15 +14,15 @@ import {
   workspaceMembers,
   users,
   workspaces,
-} from "@ailearn/shared/db-schema/identity";
-import { sessions } from "@ailearn/shared/db-schema/session";
-import { onboardingStates, userAiSettings } from "@ailearn/shared/db-schema/identity";
-import { notes, sources } from "@ailearn/shared/db-schema/note";
-import { evidenceSnapshotsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/identity";
+import { sessions } from "@astella/shared/db-schema/session";
+import { onboardingStates, userAiSettings } from "@astella/shared/db-schema/identity";
+import { notes, sources } from "@astella/shared/db-schema/note";
+import { evidenceSnapshotsV2 } from "@astella/shared/db-schema/card-generation-v2";
 import {
   learningCardsV2,
   learningObjectiveOriginsV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
+} from "@astella/shared/db-schema/card-generation-v2";
 import {
   generateInvitationToken,
   createInvitationTokenStorage,
@@ -31,7 +31,7 @@ import {
 } from "./invitation-token.ts";
 import { issueSession } from "../identity/session-service.ts";
 import { canonicalizeEmail, hashPassword, type SessionContext } from "./service.ts";
-import { resolveSystemProviderForCapability } from "@ailearn/shared/task-router";
+import { resolveSystemProviderForCapability } from "@astella/shared/task-router";
 // OPS-01: Funnel 指标（ADR-0006 §2）
 import { recordFunnelEvent } from "../../lib/metrics.ts";
 import { clampLimit } from "../../lib/pagination-utils.ts";

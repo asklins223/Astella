@@ -22,7 +22,7 @@ import {
   acknowledgeOneTimeReminderV2Schema,
   requestOneTimeReminderResultV2Schema,
   requestOneTimeReminderV2Schema,
-} from "@ailearn/shared/review-reminder-contracts";
+} from "@astella/shared/review-reminder-contracts";
 
 // apps/api/src/modules/review → 上溯五级才是仓库根（review→modules→src→api→apps→root）。
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..", "..", "..");

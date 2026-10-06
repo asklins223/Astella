@@ -1,16 +1,16 @@
-import { DomainError } from "@ailearn/shared";
+import { DomainError } from "@astella/shared";
 import { and, eq, gte, lte, or, isNull, sql, inArray } from "drizzle-orm";
 import { withWorkspaceTransaction, SYSTEM_USER_ID, type ApiTransaction } from "../../db/client.ts";
-import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
-import { validationAssistanceExposures } from "@ailearn/shared/db-schema/validation-v2";
+import { reviewSchedules } from "@astella/shared/db-schema/evidence";
+import { validationAssistanceExposures } from "@astella/shared/db-schema/validation-v2";
 import {
   learningObjectivesV2,
   learningObjectiveRevisionsV2,
   learningCardsV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { ReviewStatus, reviewQueueV2Schema, type ReviewQueueV2 } from "@ailearn/shared";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { ReviewStatus, reviewQueueV2Schema, type ReviewQueueV2 } from "@astella/shared";
 import { decodeCursor, encodeCursor } from "../../lib/pagination.ts";
-import { reviewScheduleTargetsConsumableCardPredicate } from "@ailearn/shared/review-consumable-target";
+import { reviewScheduleTargetsConsumableCardPredicate } from "@astella/shared/review-consumable-target";
 import { loadMissingFrozenRubricUnits } from "./frozen-evidence.ts";
 import { clampLimit } from "../../lib/pagination-utils.ts";
 

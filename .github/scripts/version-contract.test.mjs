@@ -41,7 +41,7 @@ function writeJson(path, value) {
 }
 
 function createFixture(copyVersion = "0.4.0") {
-  const root = mkdtempSync(join(tmpdir(), "ailearn-version-contract-"));
+  const root = mkdtempSync(join(tmpdir(), "astella-version-contract-"));
   temporaryRoots.push(root);
   mkdirSync(join(root, "release"), { recursive: true });
   writeJson(join(root, "release/version.json"), { version: "0.5.0" });

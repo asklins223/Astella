@@ -83,7 +83,7 @@ export async function transcribeRecording(args: TranscribeArgs): Promise<VoiceTr
   // 只认「两个文件都在」。下到一半（`downloading`）与下载失败（`error`）都不是"能用"——
   // 界面要把这两种情况分别领到"继续下"和"重试"，而不是笼统一句"没装好"。
   if (model.status !== "ready") throw new AsrModelMissingError();
-  const result = await window.ailearn.companion.voice.transcribe({
+  const result = await window.astella.companion.voice.transcribe({
     meta: TRANSCRIBE_META(),
     request: {
       sampleRate: args.sampleRate,

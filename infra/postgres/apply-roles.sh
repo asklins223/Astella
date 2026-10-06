@@ -33,7 +33,7 @@ while :; do
     --set=api_password="$API_PASSWORD" \
     --set=worker_password="$WORKER_PASSWORD" \
     --set=require_rls_disabled="$REQUIRE_RLS_DISABLED" \
-    --file=/opt/ailearn/roles.sql
+    --file=/opt/astella/roles.sql
   then
     exit 0
   else

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import { ValidationSurface } from "../run/validation-surface";
 
@@ -40,7 +40,7 @@ function gateway() {
       go: vi.fn(async ({ route }: { route: DesktopRouteV1 }) => navigation(route)),
     },
   };
-  window.ailearn = api as unknown as typeof window.ailearn;
+  window.astella = api as unknown as typeof window.astella;
   return api;
 }
 

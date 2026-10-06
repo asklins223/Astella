@@ -1,5 +1,5 @@
 {
-  "name": "@ailearn/agent-core",
+  "name": "@astella/agent-core",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,6 +8,6 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test src/**/__tests__/*.test.ts"
   },
-  "dependencies": { "@ailearn/shared": "file:../shared" },
+  "dependencies": { "@astella/shared": "file:../shared" },
   "devDependencies": { "tsx": "^4.20.5", "typescript": "^5.9.3", "@types/node": "^24.0.0" }
 }

@@ -422,8 +422,8 @@ for (const { key, path } of buildPaths) {
 function makeImageSection(imageDigests) {
   const imageNames = ["api", "worker"];
   const defaultRepositories = {
-    api: "ghcr.io/asklins223/ailearn/api",
-    worker: "ghcr.io/asklins223/ailearn/worker",
+    api: "ghcr.io/asklins223/astella/api",
+    worker: "ghcr.io/asklins223/astella/worker",
   };
   const images = {};
 

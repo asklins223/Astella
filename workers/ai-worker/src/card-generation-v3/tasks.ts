@@ -3,7 +3,7 @@
  *
  * 两次语义调用的那两次：`card_generate_v3`（选目标＋出候选草稿，一次）与
  * `card_content_check_v3`（批量内容检查，一次）。合同在
- * `@ailearn/shared/card-generation-v3-contracts`；本模块只做三件事：
+ * `@astella/shared/card-generation-v3-contracts`；本模块只做三件事：
  *
  *   1. **提示词组装**（纯函数）：把服务端准备好的输入（快照正文块、可用依据 id、
  *      已有目标、用户请求、预算上限）拼成要求按合同 JSON 回答的提示。
@@ -34,11 +34,11 @@ import {
   type CardGenerateV3CandidateDraft,
   type CardGenerateV3DraftOutput,
   type CardGenerateV3Output,
-} from "@ailearn/shared/card-generation-v3-contracts";
+} from "@astella/shared/card-generation-v3-contracts";
 import type {
   CardHintPairV2,
   LearningCardCandidateRevisionV2,
-} from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/card-generation-v2-contracts";
 // 词表的**那一份数组**（不是类型）：提示词里必须把合法取值逐字列出来，而列第二份就会和
 // 合同分叉——2026-09-27 第一发真模型栽的正是这一格。
 import {
@@ -46,14 +46,14 @@ import {
   extractAnswerText,
   runDeterministicGroundingContract,
   type AssemblerEvidenceManifest,
-} from "@ailearn/shared/card-generation-v2-pipeline";
+} from "@astella/shared/card-generation-v2-pipeline";
 import type {
   AiAttemptToken,
   AiTaskBudget,
   AiTaskContext,
   AiTaskDefinition,
   AiStepResult,
-} from "@ailearn/shared/ai-task-kernel";
+} from "@astella/shared/ai-task-kernel";
 import type {
   CardContentCheckV3TaskOutput,
   CardGenerateV3DroppedCandidate,
@@ -149,7 +149,7 @@ function contractSheetV3(node: unknown, path: string, out: string[], depth = 0):
     shape?: Record<string, unknown>; element?: unknown; options?: readonly string[];
   };
   // 这里**只能**按 `_def.typeName` 分派：`instanceof z.ZodObject` 在跨包时恒为假
-  // （合同在 `@ailearn/shared` 里用另一份 zod 实例构造），第一次试就输出了空表——
+  // （合同在 `@astella/shared` 里用另一份 zod 实例构造），第一次试就输出了空表——
   // 空表比缺这一格更坏，因为它看起来像"已经说清楚了"。
   // 注意只在这里读类型名；"这一格必填吗"仍然用 `safeParse(undefined)` 判，不读内部标记。
   switch (n._def?.typeName) {

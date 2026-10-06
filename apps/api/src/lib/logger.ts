@@ -1,5 +1,5 @@
 import pino from "pino";
-import { safeErrorSerializer } from "@ailearn/shared";
+import { safeErrorSerializer } from "@astella/shared";
 import { createLogCaptureHook } from "./log-buffer.ts";
 
 const usePrettyTransport =

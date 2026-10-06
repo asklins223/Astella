@@ -1,4 +1,4 @@
-import type { NoteOverviewV1 } from "@ailearn/shared/note-overview-contracts";
+import type { NoteOverviewV1 } from "@astella/shared/note-overview-contracts";
 import { plainCompanionBubbleText } from "../../companion/companion-markdown";
 
 /** Reshape stored prose, without adding conclusions or assigning invented source locations. */

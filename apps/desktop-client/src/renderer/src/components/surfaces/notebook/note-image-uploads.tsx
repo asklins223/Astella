@@ -4,7 +4,7 @@ import {
   NOTE_IMAGE_UPLOAD_MAX_BYTES,
   NOTE_IMAGE_UPLOAD_MIME_TYPES,
   noteImageUploadFailureMessage,
-} from "@ailearn/shared/note-image-upload-contracts";
+} from "@astella/shared/note-image-upload-contracts";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
 import { readFileAsBase64 } from "../../../app/read-file-base64.ts";
 import type { NoteMarkdownEditorHandle } from "./note-markdown-editor.tsx";
@@ -149,7 +149,7 @@ export function useNoteImageUploads(options: UseNoteImageUploadsOptions): NoteIm
     const noteId = latestRef.current.noteId;
     try {
       if (!noteId) throw new Error("no_note");
-      const api = typeof window === "undefined" ? undefined : window.ailearn;
+      const api = typeof window === "undefined" ? undefined : window.astella;
       if (!api) throw new Error("no_api");
       const bytesBase64 = await readFileAsBase64(task.file);
       const result = unwrapGatewayResult(await api.note.uploadImage({

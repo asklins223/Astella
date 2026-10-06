@@ -4,9 +4,9 @@ import {
   db,
   type WorkerWorkspaceTransactionContext,
 } from "./db.ts";
-import { safeErrorMessage } from "@ailearn/shared";
+import { safeErrorMessage } from "@astella/shared";
 
-// A2（计划 §2.2）：常量唯一来源收敛到 SQL（ailearn_fail_job / ailearn_reap_stale_jobs）。
+// A2（计划 §2.2）：常量唯一来源收敛到 SQL（astella_fail_job / astella_reap_stale_jobs）。
 // MAX_ATTEMPTS 仍被应用层使用（死信强制收敛与 claim/reap 调用），其值必须与
 // SQL 默认 max_attempts 一致（retry-strategy-contract.test.ts 会断言）。
 export const MAX_ATTEMPTS = 3;
@@ -126,7 +126,7 @@ export async function claimJobs(
   // 后台 job 拿不到超过该名额的位置（交互车道保留，见 lib/worker-concurrency.ts）。
   const rows = await executor.execute<ClaimedJobRow>(sql`
     SELECT id, type, payload, workspace_id, requested_by, attempts, lease_token, resource_class
-    FROM public.ailearn_claim_jobs(${limits.interactiveLimit}, ${limits.backgroundLimit}, ${maxAttempts})
+    FROM public.astella_claim_jobs(${limits.interactiveLimit}, ${limits.backgroundLimit}, ${maxAttempts})
   `);
   return rows.map(mapClaimedJobRow);
 }
@@ -145,7 +145,7 @@ export async function reapStaleJobs(
 ): Promise<ReapedJobs> {
   const rows = await executor.execute<ReapedJobRow>(sql`
     SELECT id, status
-    FROM public.ailearn_reap_stale_jobs(${leaseTimeoutMs}, ${maxAttempts})
+    FROM public.astella_reap_stale_jobs(${leaseTimeoutMs}, ${maxAttempts})
   `);
   return {
     total: rows.length,
@@ -171,7 +171,7 @@ export function createClaimedJobUpdate(
   };
 }
 
-/** Raw row type returned by ailearn_fail_job (migration 0064+). */
+/** Raw row type returned by astella_fail_job (migration 0064+). */
 type FailJobRawRow = {
   status: string;
   attempts: number;
@@ -184,7 +184,7 @@ type FailJobRawRow = {
 
 /**
  * SEC-01: Production queue updater that delegates to the SECURITY DEFINER
- * functions `ailearn_finish_job` and `ailearn_fail_job` (migration 0022/0064).
+ * functions `astella_finish_job` and `astella_fail_job` (migration 0022/0064).
  *
  * A2（计划 §2.2）：失败路径直接消费 SQL 返回的重试参数（status/attempts/backoff_ms），
  * 应用层不再自行计算。这消除了常量双源问题。
@@ -197,7 +197,7 @@ export function createSqlFunctionQueueJobUpdater(
   return async ({ fence, values }) => {
     if (values.status === "succeeded") {
       const rows = await executor.execute<{ ok: boolean }>(sql`
-        SELECT ailearn_finish_job(
+        SELECT astella_finish_job(
           ${fence.id},
           ${fence.workspaceId},
           ${fence.leaseToken}
@@ -212,12 +212,12 @@ export function createSqlFunctionQueueJobUpdater(
     }
 
     // "failed" is used by markUnknownJobFailed and must transition to dead
-    // immediately.  Pass max_attempts=1 so ailearn_fail_job forces the dead
+    // immediately.  Pass max_attempts=1 so astella_fail_job forces the dead
     // state regardless of the job's current attempt count.
     const maxAttempts = values.status === "failed" ? 1 : MAX_ATTEMPTS;
     const rows = await executor.execute<FailJobRawRow>(sql`
       SELECT status, attempts, backoff_ms, is_dead, scheduled_at, last_error, finished_at
-      FROM ailearn_fail_job(
+      FROM astella_fail_job(
         ${fence.id},
         ${fence.workspaceId},
         ${fence.leaseToken},
@@ -282,7 +282,7 @@ export async function markJobSucceeded(
 }
 
 /**
- * A2（计划 §2.2）：重试参数由 SQL 函数 ailearn_fail_job 计算，应用层直接消费返回值。
+ * A2（计划 §2.2）：重试参数由 SQL 函数 astella_fail_job 计算，应用层直接消费返回值。
  *
  * 修改前（已废弃）：应用层自行计算 nextAttempts/isDead/backoffMs/status/scheduledAt，
  * SQL 函数内部重新计算相同值，两者必须手动保持同步。
@@ -317,7 +317,7 @@ export async function markJobFailed(
  * would only waste time and inflate error metrics.
  *
  * A2: 重试参数由 SQL 函数计算。values.status="failed" 触发 max_attempts=1，
- * 使 ailearn_fail_job 强制 dead 状态。应用层消费 SQL 返回值。
+ * 使 astella_fail_job 强制 dead 状态。应用层消费 SQL 返回值。
  *
  */
 export async function markJobDead(

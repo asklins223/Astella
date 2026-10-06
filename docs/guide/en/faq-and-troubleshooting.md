@@ -2,7 +2,7 @@
 
 [中文](../zh/faq-and-troubleshooting.md) · English
 
-What this covers: the failures you actually hit when running 理解引擎 locally, written as symptom → cause → fix. Every answer here was checked against the compose files, the Makefile and the source in this repo, so it names the step that matters rather than general advice.
+What this covers: the failures you actually hit when running Astella locally, written as symptom → cause → fix. Every answer here was checked against the compose files, the Makefile and the source in this repo, so it names the step that matters rather than general advice.
 
 - [Login and accounts](#login-and-accounts)
 - [Ports and local services](#ports-and-local-services)
@@ -19,9 +19,9 @@ What this covers: the failures you actually hit when running 理解引擎 locall
 
 ### Cannot log in → the demo account was never created → `make seed-demo`
 
-**Symptom:** `owner@ailearn.local` / `ailearn_owner` is rejected in the desktop app, or the API answers 401 `invalid credentials`.
+**Symptom:** `owner@astella.local` / `astella_owner` is rejected in the desktop app, or the API answers 401 `invalid credentials`.
 
-**Cause:** The dev stack creates no accounts on startup. The `seed-demo` service sits behind the `seed` profile and only runs when invoked: `make seed-demo` maps to `docker compose -p ailearn-dev -f docker-compose.dev.yml --profile seed run --rm seed-demo`, and that container sets `SEED_DEMO_DATA=true`, which is what lets `apps/api/src/db/seed.ts` fall back to the built-in demo credentials.
+**Cause:** The dev stack creates no accounts on startup. The `seed-demo` service sits behind the `seed` profile and only runs when invoked: `make seed-demo` maps to `docker compose -p astella-dev -f docker-compose.dev.yml --profile seed run --rm seed-demo`, and that container sets `SEED_DEMO_DATA=true`, which is what lets `apps/api/src/db/seed.ts` fall back to the built-in demo credentials.
 
 **Fix:** Run `make seed-demo` after the stack is up. If the account already exists the script just prints `Owner already exists` and exits, so it is safe to repeat. These credentials are **development only**; production never seeds a demo account.
 
@@ -70,11 +70,11 @@ It does not set `SEED_DEMO_DATA` and runs with `NODE_ENV=production`, where `see
 **Fix:**
 
 ```bash
-docker compose -f docker-compose.dev.yml logs migrate role-bootstrap
+docker compose -f docker-compose.dev.yml logs migrate role-bootstrap role-grants
 docker compose -f docker-compose.dev.yml ps            # one-shot services should sit at Exited(0)
 ```
 
-`make up` removes last round's one-shot containers, recreates them and then `docker wait`s on `role-bootstrap` and `migrate` (plus `minio-init` in storage mode), so normally you never trigger migrations by hand. The production dependency chain differs: `api` waits for healthy `postgres` plus a successfully exited `role-grants`, and `role-grants` in turn waits for `migrate`. In the dev file the equivalent one-shot is called `role-bootstrap`. Leftover exited containers can be cleared with `make clean-init`.
+`make up` removes last round's one-shot containers, recreates them and then `docker wait`s on `role-bootstrap`, `migrate` and `role-grants` (plus `minio-init` in storage mode), so normally you never trigger migrations by hand. Both compose files now run the same chain: `role-bootstrap` (creates the roles — it must come first because migrations `GRANT EXECUTE` to them) → `migrate` → `role-grants` (re-runs `apply-roles.sh` so grants land on objects the migrations created), and `api` / `worker` gate on `role-grants` exiting successfully. Without that last step a first boot on a fresh volume leaves the api with no SELECT on any business table: `/ready` answers `business schema is incomplete` and the container stays unhealthy — which is exactly what used to happen, repaired only by running `make up` a second time. `.github/scripts/compose-init-order.test.mjs` now holds that line. Leftover exited containers can be cleared with `make clean-init`.
 
 ## Companion voice
 
@@ -131,7 +131,7 @@ Keys are not entered through the UI: both local and production inject them from 
 2. **What the platform actually resolved to.** The provider health probe must run **inside the worker container**:
 
    ```bash
-   docker exec -i -w /app ailearn-dev-worker-1 \
+   docker exec -i -w /app astella-dev-worker-1 \
      node --import tsx --eval "$(cat scripts/companion-provider-health.mjs)"
    ```
 
@@ -162,19 +162,19 @@ Keys are not entered through the UI: both local and production inject them from 
 
 **Symptom:** Worry that `make down` or `docker compose down -v` wipes study records — or the reverse, wanting a clean slate and not being able to get one.
 
-**Cause:** The dev database uses a fixed volume, `ailearn-dev_dev_postgres_data`, declared `external: true` in compose and created by `make up` (the `ensure-db-volume` step) with protective labels. `make down`, removing containers, and `docker compose down -v` all leave it untouched. The only deletion path is the confirmed reset:
+**Cause:** The dev database uses a fixed volume, `astella-dev_dev_postgres_data`, declared `external: true` in compose and created by `make up` (the `ensure-db-volume` step) with protective labels. `make down`, removing containers, and `docker compose down -v` all leave it untouched. The only deletion path is the confirmed reset:
 
 ```bash
 make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB
 ```
 
-If `CONFIRM_RESET_DB` is not exactly `DELETE_DEV_DB`, the command prints a cancellation note and exits with code 2 without changing anything; if the volume is already gone it says so. MinIO keeps its data in a separate volume, `dev_minio_data`, with the bucket name from `S3_BUCKET` (dev default `ailearn-workspaces`).
+If `CONFIRM_RESET_DB` is not exactly `DELETE_DEV_DB`, the command prints a cancellation note and exits with code 2 without changing anything; if the volume is already gone it says so. MinIO keeps its data in a separate volume, `dev_minio_data`, with the bucket name from `S3_BUCKET` (dev default `astella-workspaces`).
 
 | What | Where | Notes |
 | --- | --- | --- |
-| Business data | Docker volume `ailearn-dev_dev_postgres_data` | External; back it up before any reset |
-| Uploaded images and attachments | Volume `dev_minio_data`, bucket `ailearn-workspaces` | `make storage` starts MinIO and `minio-init` |
-| On-device speech recognition model | `<userData>/voice-models/` (relocatable via `AILEARN_VOICE_ASR_DIR`) | Roughly 228 MB, **not in the installer**; the user downloads it in Settings |
+| Business data | Docker volume `astella-dev_dev_postgres_data` | External; back it up before any reset |
+| Uploaded images and attachments | Volume `dev_minio_data`, bucket `astella-workspaces` | `make storage` starts MinIO and `minio-init` |
+| On-device speech recognition model | `<userData>/voice-models/` (relocatable via `ASTELLA_VOICE_ASR_DIR`) | Roughly 228 MB, **not in the installer**; the user downloads it in Settings |
 | Desktop session credentials | Encrypted on disk by the main process via Electron `safeStorage` | Keychain on macOS, DPAPI on Windows, libsecret on Linux; when the platform offers no encryption backend it fails closed, writes nothing, and the login stays session-only |
 
 ## Tests that will not run
@@ -189,10 +189,10 @@ If `CONFIRM_RESET_DB` is not exactly `DELETE_DEV_DB`, the command prints a cance
 
 ```bash
 make test-postgres          # iterates every test:*:postgres in apps/api and workers/ai-worker
-make disposable-db DISPOSABLE_DB=ailearn_scratch
+make disposable-db DISPOSABLE_DB=astella_scratch
 ```
 
-`test-postgres` needs a real but throwaway Postgres. `make disposable-db` builds a fresh database, runs all migrations and re-applies role grants against it, then discards it — because suites such as `rls-policies`, the worker queue and projection pagination assert "the only rows here are my fixtures". On the shared dev database they fail spuriously because of leftover rows, and they also write and delete data, so they never belonged there. The dev compose Postgres container must be running first. The script accepts only database names matching `ailearn_*` that are neither `ailearn` nor `postgres`, which is what makes it safe to keep in the repo.
+`test-postgres` needs a real but throwaway Postgres. `make disposable-db` builds a fresh database, runs all migrations and re-applies role grants against it, then discards it — because suites such as `rls-policies`, the worker queue and projection pagination assert "the only rows here are my fixtures". On the shared dev database they fail spuriously because of leftover rows, and they also write and delete data, so they never belonged there. The dev compose Postgres container must be running first. The script accepts only database names matching `astella_*` that are neither `astella` nor `postgres`, which is what makes it safe to keep in the repo.
 
 A second trap: beyond the `DATABASE_URL_*` group these suites each read a dedicated variable (`RLS_TEST_*`, `QUEUE_TEST_*`, `RATE_LIMIT_TEST_DATABASE_URL`, `CONTENT_HASH_TEST_DATABASE_URL`, `SEC02_TEST_DATABASE_URL`, `NOTE_VERSION_RESTORE_TEST_DATABASE_URL`). Missing one is an **explicit throw**, not a silent skip, so the whole file goes red while reading environment variables and not a single case runs. `make test-postgres` injects all of them; when running a suite by hand, pass them yourself — the disposable-db script prints a copyable assignment list at the end.
 
@@ -201,9 +201,9 @@ A second trap: beyond the `DATABASE_URL_*` group these suites each read a dedica
 These are not misconfigurations on your side. They are the current state as recorded in code and documents; the files are the authority.
 
 - **Desktop client 0.1.0 is unreleased** and the server stack is at 0.5.0; the two version lines move separately (`release/version.json`, `release/desktop-version.json`).
-- **There is no `LICENSE` file at the repo root**, so licensing is not yet declared. Third-party components, models and assets are inventoried in [THIRD_PARTY_NOTICES.md](../../../THIRD_PARTY_NOTICES.md).
+- **The licence is MIT** ([LICENSE](../../../LICENSE)), but third-party and asset permissions must be read separately in [THIRD_PARTY_NOTICES.md](../../../THIRD_PARTY_NOTICES.md) — the companion model's redistribution limits are not granted by the code licence.
 - **Since 2026-10-06 CI no longer builds or scans production images.** The production image and a real HTTPS deployment are only verified manually and locally.
-- **Plan 43 (companion guidance and space arrival) and plan 44 (context governance and compaction) are neither implemented nor window-accepted.** Plan 44's §8 acceptance has no real-model, real-database or window evidence at all, and migrations 0382–0389 have never run against a real database. Plan 42 was accepted for its 2026-10-05 round, but its §14.6 records that there is no same-load p95 or long-term trial proof, that unknown stream usage is not counted as zero, and that closing the loop does not establish long-term effect. See the [plan index](../../plans/learning-companion/README.md).
+- **Companion guidance is implemented** (the island button, seven topics, and a local demo that creates no business facts), but the brand-new-account walk and post-consent speech have never been run in a real window; **system-wide context governance and compaction** has its code path connected, with not one acceptance criterion evidenced by a real model, a real database or a real window.
 - **The old "insertion sort stability" test card still exposes its answer summary** in the list and detail views before answering, and the detail view offers no recoverable delete or archive action. The records were not rewritten behind the product ([full QA, 2026-10-05](../../testing/full-qa-2026-10-05-final.md)).
 - **The real macOS update replacement is still unverified** with a Developer ID signature (such a package cannot be produced locally), and the Windows NSIS path is likewise untested.
 - **No human listening test, and no cross-day, concurrent or production performance validation.** What exists is a local memory snapshot, which does not substitute for a soak test.
@@ -219,6 +219,8 @@ These are not misconfigurations on your side. They are the current state as reco
 - [Development](./development.md)
 - [Desktop client](./desktop-client.md)
 - [API and data](./api-and-data.md)
-- [AI and companion](./ai-and-companion.md)
+- [Models and the worker pipeline](./ai-and-companion.md)
+- [Unified agent runtime (technical)](./agent-runtime.md)
+- [Companion experience (product design)](./companion-experience.md)
 - [Testing and quality](./testing-and-quality.md)
 - [Operations](./operations.md)

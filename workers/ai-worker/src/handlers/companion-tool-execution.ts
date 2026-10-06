@@ -30,11 +30,11 @@ import {
   isVisionGatedCompanionTool,
   companionPageLabelV2,
   type CompanionAgentToolDefinitionV1,
-} from "@ailearn/shared";
-import { stableStringify, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+} from "@astella/shared";
+import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
 import { applyAssistantPersonaEdit, applyAssistantPersonaEdits } from "./companion-persona-self-edit.ts";
-import type { SwitchableField } from "@ailearn/shared/pet-persona-merge";
+import type { SwitchableField } from "@astella/shared/pet-persona-merge";
 
 /**
  * 用户原话存进 `suggestion_pause.reasonCodes` 时能带的最大字数。
@@ -53,7 +53,7 @@ import { getObjectBytes } from "../lib/object-storage.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { noteSearchTerms, parsePageContext, stripProviderControlTokens } from "./companion-dialogue-content.ts";
 import { readPastConversationMessages, searchPastConversationSummaries } from "./companion-summary-retrieval.ts";
-import { listAgentLongGoals, listAgentMethods } from "@ailearn/agent-host";
+import { listAgentLongGoals, listAgentMethods } from "@astella/agent-host";
 import {
   ageLabel,
   readLearningStats,
@@ -982,9 +982,9 @@ export async function executeDirectTool(
        * 这里切到 80，留 9 字余量：前缀将来若变长，也不会再悄悄越界。
        */
       const reason = String(args.reason).slice(0, PAUSE_REASON_MAX_CHARS);
-      const { userCompanionAccountState } = await import("@ailearn/shared/db-schema/companion");
+      const { userCompanionAccountState } = await import("@astella/shared/db-schema/companion");
       const { eq, sql: rawSql } = await import("drizzle-orm");
-      const { localDateIn } = await import("@ailearn/shared/companion-proactive-quota");
+      const { localDateIn } = await import("@astella/shared/companion-proactive-quota");
       const now = new Date();
       // 时区：账号设置里没单独存这一列，所以按环境给的账号时区算。
       // 拿不到就退回 UTC（见 localDateIn 的注释：算错一天的代价是"少催一次"）。

@@ -68,14 +68,14 @@ BEGIN
       CREATE POLICY %I_workspace_user_isolation
         ON public.%I AS PERMISSIVE FOR ALL
         USING (
-          CURRENT_USER = 'ailearn_worker'
+          CURRENT_USER = 'astella_worker'
           OR (
             workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
             AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
           )
         )
         WITH CHECK (
-          CURRENT_USER = 'ailearn_worker'
+          CURRENT_USER = 'astella_worker'
           OR (
             workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
             AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -87,5 +87,5 @@ END $$;
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_sandbox_namespaces TO ailearn_api;
-GRANT SELECT ON public.companion_sandbox_namespaces TO ailearn_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_sandbox_namespaces TO astella_api;
+GRANT SELECT ON public.companion_sandbox_namespaces TO astella_worker;

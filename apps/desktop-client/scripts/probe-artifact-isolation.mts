@@ -24,7 +24,7 @@ import {
  *   npm run build
  *   node --experimental-strip-types scripts/probe-artifact-isolation.mts
  *
- * 它自己写夹具产物、自己起 Electron（`AILEARN_ISOLATION_PROBE=1` 下主进程会把两道闸的
+ * 它自己写夹具产物、自己起 Electron（`ASTELLA_ISOLATION_PROBE=1` 下主进程会把两道闸的
  * 计数挂到 globalThis 上），跑完打印一张表，任意一条不过就退出码 1。
  */
 const appRoot = resolve(import.meta.dirname, '..')
@@ -33,7 +33,7 @@ const workspaceElectron = resolve(appRoot, '../desktop/node_modules/electron/dis
 const executablePath = existsSync(installedElectron) ? installedElectron : workspaceElectron
 
 const artifactId = randomUUID()
-const userDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-artifact-probe-'))
+const userDataDir = await mkdtemp(resolve(tmpdir(), 'astella-artifact-probe-'))
 await mkdir(resolve(userDataDir, 'artifacts'), { recursive: true })
 await writeFile(resolve(userDataDir, 'artifacts', `${artifactId}.html`), fixtureArtifact(), 'utf8')
 
@@ -57,15 +57,15 @@ const electronApp = await electron.launch({
   args: ['.', '--lang=zh-CN', `--user-data-dir=${userDataDir}`],
   cwd: appRoot,
   executablePath,
-  env: { ...process.env, AILEARN_ISOLATION_PROBE: '1' }
+  env: { ...process.env, ASTELLA_ISOLATION_PROBE: '1' }
 })
 
 const readCounters = async (): Promise<{ blockedRequests: number; blockedNavigations: number }> =>
   electronApp.evaluate(() => {
-    const counters = (globalThis as Record<string, unknown>).__ailearnIsolationProbe as
+    const counters = (globalThis as Record<string, unknown>).__astellaIsolationProbe as
       | { blockedRequests: number; blockedNavigations: number }
       | undefined
-    if (!counters) throw new Error('主进程没有挂上隔离探针计数（AILEARN_ISOLATION_PROBE 没生效？）')
+    if (!counters) throw new Error('主进程没有挂上隔离探针计数（ASTELLA_ISOLATION_PROBE 没生效？）')
     return counters
   })
 
@@ -84,7 +84,7 @@ try {
       hostViolations.push({ directive: event.violatedDirective, blockedURI: event.blockedURI })
     })
     window.addEventListener('message', (event) => {
-      const frame = document.getElementById('ailearn-artifact-probe-frame')
+      const frame = document.getElementById('astella-artifact-probe-frame')
       if (!(frame instanceof HTMLIFrameElement)) return
       if (event.source !== frame.contentWindow) {
         received.push({ rejected: true, phase: (event.data as { phase?: string })?.phase })
@@ -96,7 +96,7 @@ try {
 
   await page.evaluate(({ sandbox, url }) => {
     const frame = document.createElement('iframe')
-    frame.id = 'ailearn-artifact-probe-frame'
+    frame.id = 'astella-artifact-probe-frame'
     frame.setAttribute('sandbox', sandbox)
     frame.style.cssText = 'position:absolute;left:200px;top:200px;width:480px;height:320px'
     frame.src = url
@@ -105,17 +105,17 @@ try {
 
   const frame = await (async () => {
     for (let attempt = 0; attempt < 100; attempt += 1) {
-      const candidate = page.frames().find((entry) => entry.url().startsWith('ailearn-app://artifact/'))
+      const candidate = page.frames().find((entry) => entry.url().startsWith('astella-app://artifact/'))
       if (candidate) return candidate
       await page.waitForTimeout(100)
     }
-    throw new Error('产物 frame 一直没出现（子 frame 的首次加载被拒了？看 __ailearnIsolationProbe.blockedNavigations）')
+    throw new Error('产物 frame 一直没出现（子 frame 的首次加载被拒了？看 __astellaIsolationProbe.blockedNavigations）')
   })()
 
   // N0：负对照——合法产物必须原样跑通，并把 ready 报到宿主。
   const fixtureState = await frame.evaluate(() => ({
     stepCount: (window as unknown as { __artifact?: { stepCount?: number } }).__artifact?.stepCount ?? 0,
-    hasRoot: Boolean(document.getElementById('ailearn-artifact-root'))
+    hasRoot: Boolean(document.getElementById('astella-artifact-root'))
   }))
   check('N0 合法产物加载', fixtureState.stepCount === 3 && fixtureState.hasRoot, fixtureState)
 
@@ -184,8 +184,8 @@ try {
 
   // T2a：preload 桥不许出现在产物 frame 里。
   const bridges = await frame.evaluate(() => [
-    typeof (window as unknown as { ailearnDesktop?: unknown }).ailearnDesktop,
-    typeof (window as unknown as { ailearn?: unknown }).ailearn
+    typeof (window as unknown as { astellaDesktop?: unknown }).astellaDesktop,
+    typeof (window as unknown as { astella?: unknown }).astella
   ])
   check('T2a 产物 frame 里没有 IPC 桥', bridges[0] === 'undefined' && bridges[1] === 'undefined', bridges)
 
@@ -306,7 +306,7 @@ try {
   // §5.1：静态分镜——关掉动效后步数不许少。
   const motionSent = await page.evaluate(
     (message) => {
-      const frameElement = document.getElementById('ailearn-artifact-probe-frame')
+      const frameElement = document.getElementById('astella-artifact-probe-frame')
       if (!(frameElement instanceof HTMLIFrameElement) || !frameElement.contentWindow) return false
       frameElement.contentWindow.postMessage(message, '*')
       return true
@@ -315,7 +315,7 @@ try {
   )
   await page.waitForTimeout(400)
   const storyboard = await frame.evaluate(() => ({
-    panes: document.querySelectorAll('#ailearn-artifact-root [data-artifact-step]').length,
+    panes: document.querySelectorAll('#astella-artifact-root [data-artifact-step]').length,
     stepCount: (window as unknown as { __artifact?: { stepCount?: number } }).__artifact?.stepCount ?? 0
   }))
   check(
@@ -345,7 +345,7 @@ try {
   const beforeArtifactHop = await readCounters()
   await frame.evaluate(() => {
     try {
-      window.location.href = 'ailearn-app://artifact/11111111-2222-4333-8444-555555555555'
+      window.location.href = 'astella-app://artifact/11111111-2222-4333-8444-555555555555'
     } catch {
       /* 被拦下就是被拦下 */
     }
@@ -358,7 +358,7 @@ try {
   }
   check(
     'T4b 产物自导航到另一个产物 id 被拒（闸自己作主的那一发）',
-    frame.url().startsWith('ailearn-app://artifact/') &&
+    frame.url().startsWith('astella-app://artifact/') &&
       !frame.url().includes('11111111-2222-4333-8444-555555555555') &&
       afterArtifactHop.frameNavigateEvents > beforeArtifactHop.frameNavigateEvents &&
       afterArtifactHop.blockedNavigations > beforeArtifactHop.blockedNavigations,
@@ -391,7 +391,7 @@ try {
   const beforeBundle = await readCounters()
   await frame.evaluate(() => {
     try {
-      window.location.href = 'ailearn-app://bundle/index.html'
+      window.location.href = 'astella-app://bundle/index.html'
     } catch {
       /* 同上 */
     }
@@ -406,7 +406,7 @@ try {
   readings.gateCountersAtExit = afterBundle
   check(
     'T1b 产物没能把自己导航到主页面 origin',
-    !frame.url().startsWith('ailearn-app://bundle'),
+    !frame.url().startsWith('astella-app://bundle'),
     readings.bundleNavigation
   )
 } finally {
@@ -427,7 +427,7 @@ if (failed.length > 0) process.exitCode = 1
  */
 function fixtureArtifact(): string {
   return `<h1>Pareto 前沿</h1>
-<div id="ailearn-probe-figure">第 1 步</div>
+<div id="astella-probe-figure">第 1 步</div>
 <div id="probe-overlay"></div>
 <script>
 window.__artifactViolations = [];
@@ -437,7 +437,7 @@ document.addEventListener('securitypolicyviolation', function (event) {
 window.__artifact = {
   stepCount: 3,
   render: function (step) {
-    var root = document.getElementById('ailearn-artifact-root');
+    var root = document.getElementById('astella-artifact-root');
     if (!root) return;
     var panes = root.querySelectorAll('[data-artifact-step]');
     if (panes.length > 0) return;

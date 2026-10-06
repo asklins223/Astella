@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { createNoteReflectionV1Schema, deleteNoteReflectionV1Schema, noteReflectionPageV1Schema, noteReflectionQueryV1Schema,
-  noteReflectionV1Schema, updateNoteReflectionV1Schema } from "@ailearn/shared/note-learning-reflection-contracts";
+  noteReflectionV1Schema, updateNoteReflectionV1Schema } from "@astella/shared/note-learning-reflection-contracts";
 import { changeNoteReflection, createNoteReflection, listNoteReflections } from "./reflection-service.ts";
 import { RoundServiceError } from "./round/round-service.ts";
 

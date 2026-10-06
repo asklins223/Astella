@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
-import * as schema from "@ailearn/shared/db-schema";
+import * as schema from "@astella/shared/db-schema";
 // 稳定 P0-4（2026-09-15 审计）：事务内 workspace/user 上下文（UUID 校验、
 // 嵌套兼容性断言、set_config 回读校验、AsyncLocalStorage）的唯一实现已下沉到
 // packages/shared/src/workspace-transaction.ts，与 API 共用——此前两侧各有一份
@@ -10,10 +10,10 @@ import {
   registerActiveTransactionReader,
   type ActiveWorkspaceTransaction,
   type WorkspaceScopeContext,
-} from "@ailearn/shared/workspace-transaction";
+} from "@astella/shared/workspace-transaction";
 import { parseQueueConcurrency } from "./lib/worker-concurrency.ts";
 
-const DEFAULT_DATABASE_URL = "postgres://ailearn:ailearn_dev@postgres:5432/ailearn";
+const DEFAULT_DATABASE_URL = "postgres://astella:astella_dev@postgres:5432/astella";
 
 export function resolveWorkerDatabaseUrl(env: NodeJS.ProcessEnv = process.env): string {
   const roleUrl = env.DATABASE_URL_WORKER?.trim();
@@ -41,7 +41,7 @@ const poolMax = Math.max(15, Math.min(64, workerConcurrency * 4));
 /**
  * 语句超时（稳定 P0-5，2026-09-15 审计）：此前 worker 池没有任何
  * statement_timeout（实测 `SHOW statement_timeout` = 0）。终态转换
- * （ailearn_finish_job / ailearn_fail_job）走的是普通 `await`、没有 signal，
+ * （astella_finish_job / astella_fail_job）走的是普通 `await`、没有 signal，
  * 一条挂起的语句会让该 job 的 promise 永不 settle → `inflight` 槽不释放 →
  * `available <= 0` → worker 永久停止 claim，而 /metrics 仍返回 200、编排器
  * 不会重启。给出确定上界（默认 60s，须小于 120s 租约，使语句先报错再由
@@ -105,7 +105,7 @@ const queryClient = postgres(connectionString, {
     idle_in_transaction_session_timeout: resolveWorkerIdleInTransactionTimeoutMs(),
     // 2026-10-03：与 API 侧同一动机——worker 的池此前在观测里和 API 挤在
     // 同一个"全库连接数"里。专属 application_name 让两个进程的池饱和度可以分开看。
-    application_name: "ailearn_worker",
+    application_name: "astella_worker",
   },
 });
 export const db = drizzle(queryClient, { schema });
@@ -173,7 +173,7 @@ export function currentWorkerWorkspaceTransaction(): unknown {
 }
 
 // W3-2 的 provider 层闸门（D5 §5.2 第二件的收口）：把这份作用域读者登记给
-// 公共 HTTP 出口（`@ailearn/shared/public-json-http`），模型/转写/向量请求从此
+// 公共 HTTP 出口（`@astella/shared/public-json-http`），模型/转写/向量请求从此
 // 在出口处统一拒绝"落在工作区事务里"的调用——不再依赖每个出网相位各自探针。
 registerActiveTransactionReader({
   label: "ai-worker",

@@ -2,7 +2,7 @@
  * 0116 LearningRun V1 数据底座迁移的静态验证（无 DB，读 SQL + journal）。
  *
  * 覆盖：journal 注册、17 张表创建、RLS workspace+user 双条件覆盖全部表、
- * 权限契约（private 三表 ailearn_api 无 SELECT、draft 对 worker REVOKE ALL）、
+ * 权限契约（private 三表 astella_api 无 SELECT、draft 对 worker REVOKE ALL）、
  * §16.2 唯一约束（envelope commitId/canonicalEventId、practice(runId,scope)）、
  * §12.3 artifact 单 locked 约束与 locked 不可变 CHECK。
  */
@@ -76,10 +76,10 @@ test("0116 RLS 覆盖全部 17 张表（ENABLE + FORCE + workspace_user_isolatio
   assert.match(rlsBlock ?? "", /workspace_user_isolation/);
   assert.match(rlsBlock ?? "", /app\.workspace_id/);
   assert.match(rlsBlock ?? "", /app\.user_id/);
-  assert.match(rlsBlock ?? "", /CURRENT_USER = 'ailearn_worker'/);
+  assert.match(rlsBlock ?? "", /CURRENT_USER = 'astella_worker'/);
 });
 
-test("private 三表：ailearn_api 无 SELECT/UPDATE/DELETE，仅 INSERT；worker 可读写", () => {
+test("private 三表：astella_api 无 SELECT/UPDATE/DELETE，仅 INSERT；worker 可读写", () => {
   for (const table of [
     "learning_task_private_solutions",
     "learning_task_safety_reports",
@@ -87,24 +87,24 @@ test("private 三表：ailearn_api 无 SELECT/UPDATE/DELETE，仅 INSERT；worke
   ]) {
     assert.match(
       migration,
-      new RegExp(`REVOKE SELECT, UPDATE, DELETE ON public\\.${table} FROM ailearn_api`),
+      new RegExp(`REVOKE SELECT, UPDATE, DELETE ON public\\.${table} FROM astella_api`),
       `api must not read ${table}`,
     );
     assert.match(
       migration,
-      new RegExp(`GRANT INSERT ON public\\.${table} TO ailearn_api`),
+      new RegExp(`GRANT INSERT ON public\\.${table} TO astella_api`),
       `api may insert ${table}`,
     );
     assert.match(
       migration,
-      new RegExp(`GRANT SELECT, INSERT, UPDATE ON public\\.${table} TO ailearn_worker`),
+      new RegExp(`GRANT SELECT, INSERT, UPDATE ON public\\.${table} TO astella_worker`),
       `worker may read/write ${table}`,
     );
   }
 });
 
 test("draft 对 worker 显式 REVOKE ALL（§12.7 服务端草稿不可被读取）", () => {
-  assert.match(migration, /REVOKE ALL ON public\.learning_task_drafts FROM ailearn_worker/);
+  assert.match(migration, /REVOKE ALL ON public\.learning_task_drafts FROM astella_worker/);
 });
 
 test("§16.2 唯一约束：canonical envelope(commitId) 与 canonicalEventId 唯一", () => {

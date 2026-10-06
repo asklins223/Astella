@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { GatewayResultV1, RequestMetaV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { GatewayResultV1, RequestMetaV1 } from "@astella/shared/desktop-ipc-contracts";
 import { setCurrentWorkspaceEpoch } from "../desktop-client.ts";
 import { subscribeGateInvalidation } from "../gate-invalidation.ts";
 import {
@@ -24,7 +24,7 @@ const invalidations: string[] = [];
 subscribeGateInvalidation((code) => { invalidations.push(code); });
 
 afterEach(() => {
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   invalidations.length = 0;
   clearAccountSignOutNotice();
 });
@@ -57,7 +57,7 @@ function stubLogout(
   implementation: (input: { meta: RequestMetaV1 }) => Promise<GatewayResultV1<SignOutPayload>>,
 ) {
   const logout = vi.fn(implementation);
-  Object.defineProperty(window, "ailearn", { configurable: true, value: { auth: { logout } } });
+  Object.defineProperty(window, "astella", { configurable: true, value: { auth: { logout } } });
   return logout;
 }
 

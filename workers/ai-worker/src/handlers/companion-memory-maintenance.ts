@@ -1,7 +1,7 @@
 /**
  * 桌宠记忆衰减维护 tick（22-real-desktop-pet-memory-context-prd-tdd.md §10.6）。
  *
- * 通过 SECURITY DEFINER 函数 ailearn_run_companion_memory_maintenance() 执行，
+ * 通过 SECURITY DEFINER 函数 astella_run_companion_memory_maintenance() 执行，
  * 避免 Worker 受 RLS 限制无法跨用户扫描。默认每日一次。
  *
  * 多副本守卫：一次维护是否已完成由数据库中的日期键原子记录，不能只依赖进程内
@@ -22,7 +22,7 @@ const MAINTENANCE_INTERVAL_MS = 24 * 60 * 60 * 1000;
  *
  * 这两个查询原先**完全没有节流**——上面那次每日维护有 `lastMaintenanceAt`，
  * 它们没有，而同目录所有兄弟调度器都有（30s ~ 60min）。于是 DB 一旦报错
- * （这次是 0345/0346 漏授 `ailearn_worker`，`42501 permission denied`），
+ * （这次是 0345/0346 漏授 `astella_worker`，`42501 permission denied`），
  * 失败就被 catch 成一条 WARN，下一 tick 再来一次，永不停止。
  *
  * 而 worker 的 tick 退避是坏的：`index.ts` 在 `claimJobs` 成功后无条件
@@ -48,7 +48,7 @@ export async function tickCompanionMemoryMaintenance(): Promise<void> {
   if (now - lastMaintenanceAt >= MAINTENANCE_INTERVAL_MS) {
     try {
       const rows = await db.execute<{ maintained: number }>(sql`
-        SELECT public.ailearn_run_companion_memory_maintenance() AS maintained
+        SELECT public.astella_run_companion_memory_maintenance() AS maintained
       `);
       lastMaintenanceAt = now;
       const maintained = Number((Array.isArray(rows) ? rows : [])[0]?.maintained ?? 0);
@@ -79,7 +79,7 @@ export async function tickCompanionMemoryMaintenance(): Promise<void> {
   // 失败不影响衰减：清理是兜底，不是业务路径。
   try {
     const purged = await db.execute<{ purged: number }>(sql`
-      SELECT public.ailearn_purge_expired_companion_memory() AS purged
+      SELECT public.astella_purge_expired_companion_memory() AS purged
     `);
     const count = Number((Array.isArray(purged) ? purged : [])[0]?.purged ?? 0);
     if (count > 0) logger.info({ purged: count }, "expired companion memory recycled rows purged");
@@ -94,7 +94,7 @@ export async function tickCompanionMemoryMaintenance(): Promise<void> {
   // 它是**淘汰**而不是拒绝移入——拒绝会让归档满了之后连删记忆都做不到。
   try {
     const evicted = await db.execute<{ evicted: number }>(sql`
-      SELECT public.ailearn_enforce_companion_memory_retention() AS evicted
+      SELECT public.astella_enforce_companion_memory_retention() AS evicted
     `);
     const count = Number((Array.isArray(evicted) ? evicted : [])[0]?.evicted ?? 0);
     if (count > 0) logger.info({ evicted: count }, "archived companion memory retention sweep evicted rows");

@@ -19,8 +19,8 @@
  * 不包含「顺手改写」，review 的人能一眼看出行为没变。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { NoteOverviewTaskV1, NoteOverviewV1 } from "@ailearn/shared/note-overview-contracts";
-import type { NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
+import type { NoteOverviewTaskV1, NoteOverviewV1 } from "@astella/shared/note-overview-contracts";
+import type { NoteDetailV1 } from "@astella/shared/note-projection-contracts";
 import { createRequestMeta, unwrapGatewayResult, gatewayErrorMessage } from "../../../app/desktop-client";
 import { prepareNotebookTaskNotification } from "./notebook-task-notifications";
 
@@ -47,7 +47,7 @@ export function useNotebookOverview(input: {
 
   const loadNoteOverviews = useCallback(async (before?: string) => {
     if (!note) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteOverview) {
       setOverviewError("速看记录暂不可用");
       return;
@@ -75,7 +75,7 @@ export function useNotebookOverview(input: {
 
   const loadLatestNoteOverviewTask = useCallback(async () => {
     if (!note?.currentVersionId) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteOverview) return;
     const request = ++overviewTaskRequestRef.current;
     setOverviewTaskError(null);
@@ -97,7 +97,7 @@ export function useNotebookOverview(input: {
   const startNoteOverviewTask = useCallback(async (hasUnsavedChanges: boolean) => {
     if (!note || !note.currentVersionId || hasUnsavedChanges || startingRef.current
       || overviewTask?.status === "queued" || overviewTask?.status === "running") return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteOverview) {
       setOverviewTaskError("速看任务暂不可用");
       return;
@@ -135,7 +135,7 @@ export function useNotebookOverview(input: {
     if (!note || !overviewTask || overviewTask.noteId !== note.noteId
       || overviewTask.noteVersionId !== note.currentVersionId
       || (overviewTask.status !== "queued" && overviewTask.status !== "running")) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteOverview) return;
     let cancelled = false;
     let timer: number | undefined;

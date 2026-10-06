@@ -7,14 +7,14 @@ import './load-capture-env.mjs'
 
 const appRoot = resolve(import.meta.dirname, '..')
 const reviewRoot = resolve(appRoot, '../../.impeccable/review')
-const lampFrameCaptureStorageKey = 'ailearn:auth-lamp-frame-capture'
+const lampFrameCaptureStorageKey = 'astella:auth-lamp-frame-capture'
 await mkdir(reviewRoot, { recursive: true })
 
 const errors = []
 const installedElectron = resolve(appRoot, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron')
 const workspaceElectron = resolve(appRoot, '../desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron')
 const executablePath = existsSync(installedElectron) ? installedElectron : workspaceElectron
-const userDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-room-review-'))
+const userDataDir = await mkdtemp(resolve(tmpdir(), 'astella-room-review-'))
 const electronApp = await electron.launch({ args: ['.', '--lang=zh-CN', `--user-data-dir=${userDataDir}`], cwd: appRoot, executablePath })
 const captureOwnerCredentialsAvailable = Boolean(process.env.OWNER_EMAIL?.trim() && process.env.OWNER_PASSWORD)
 const captureAuthMode = captureOwnerCredentialsAvailable ? 'owner' : 'anonymous'
@@ -354,8 +354,8 @@ async function captureLampTransition(window, {
       hasSyntheticLightLayers: Boolean(
         gate?.querySelector('.desktop-access-gate__theme-veil, .desktop-access-gate__lamp-pool, .desktop-access-gate__scene-shade'),
       ),
-      hasFrameCaptureController: typeof window.__ailearnAuthLampCapture?.seek === 'function',
-      hasAmbientFrameCaptureController: typeof window.__ailearnAuthAmbientCapture?.seek === 'function',
+      hasFrameCaptureController: typeof window.__astellaAuthLampCapture?.seek === 'function',
+      hasAmbientFrameCaptureController: typeof window.__astellaAuthAmbientCapture?.seek === 'function',
     }
   })
 
@@ -375,7 +375,7 @@ async function captureLampTransition(window, {
     throw new Error(`${label} did not enter ${firstPhase}: ${JSON.stringify(await readTransition())}`)
   })
   await window.waitForFunction(
-    () => typeof window.__ailearnAuthAmbientCapture?.seek === 'function',
+    () => typeof window.__astellaAuthAmbientCapture?.seek === 'function',
     undefined,
     { timeout: 8_000 },
   ).catch(async () => {
@@ -393,7 +393,7 @@ async function captureLampTransition(window, {
   }
 
   const timing = await window.evaluate(() => {
-    const controller = window.__ailearnAuthLampCapture
+    const controller = window.__astellaAuthLampCapture
     if (!controller) throw new Error('Lamp frame capture controller is unavailable')
     return controller.timing()
   })
@@ -424,8 +424,8 @@ async function captureLampTransition(window, {
   try {
     for (const [name, time] of samplePlan) {
       await window.evaluate((nextTime) => {
-        const lampController = window.__ailearnAuthLampCapture
-        const ambientController = window.__ailearnAuthAmbientCapture
+        const lampController = window.__astellaAuthLampCapture
+        const ambientController = window.__astellaAuthAmbientCapture
         if (!lampController || !ambientController) throw new Error('Lamp effect frame capture controllers are unavailable')
         lampController.seek(nextTime)
         ambientController.seek(nextTime)
@@ -441,8 +441,8 @@ async function captureLampTransition(window, {
     }
   } finally {
     await window.evaluate((storageKey) => {
-      const lampController = window.__ailearnAuthLampCapture
-      const ambientController = window.__ailearnAuthAmbientCapture
+      const lampController = window.__astellaAuthLampCapture
+      const ambientController = window.__astellaAuthAmbientCapture
       window.localStorage.removeItem(storageKey)
       lampController?.finish()
       ambientController?.finish()
@@ -804,10 +804,10 @@ async function enterOwnerRoomThroughGate(window) {
 
   const session = await window.evaluate(async () => {
     const opaqueId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-    const response = await window.ailearn.auth.getState({
+    const response = await window.astella.auth.getState({
       meta: {
         version: 1,
-        contractVersion: window.ailearn.contract.contractVersion,
+        contractVersion: window.astella.contract.contractVersion,
         requestId: opaqueId('capture-session-request'),
         correlationId: opaqueId('capture-session-correlation'),
         clientStartedAt: new Date().toISOString(),

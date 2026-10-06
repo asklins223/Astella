@@ -11,7 +11,7 @@
  *
  * 运行：
  *   set -a; source .env; set +a
- *   DATABASE_URL_API="postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn" \
+ *   DATABASE_URL_API="postgres://astella:astella_dev@127.0.0.1:5432/astella" \
  *     node --import tsx --test --test-concurrency=1 \
  *     src/integration-tests/learning-runs-demonstrated-postgres.integration.ts
  */
@@ -21,7 +21,7 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { createLearningRunForTest, seedV2Fixture } from "./helpers/v2-card-fixture.ts";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL_API ??= CONN;

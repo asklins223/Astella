@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as Y from "yjs";
 import { yXmlFragmentToProsemirrorJSON } from "y-prosemirror";
-import { noteDocSchemaSpec, type NoteDocBlockSpec } from "@ailearn/shared/note-doc-schema";
+import { noteDocSchemaSpec, type NoteDocBlockSpec } from "@astella/shared/note-doc-schema";
 import {
   NOTE_DOC_FRAGMENT_KEY,
   emptyFragmentNoteDoc,

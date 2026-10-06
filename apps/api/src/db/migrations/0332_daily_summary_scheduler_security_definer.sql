@@ -5,7 +5,7 @@
 -- It also lost the timezone-boundary cast from 0251. Explicitly cast DATE to
 -- timestamp before AT TIME ZONE so Postgres interprets local midnight, not UTC
 -- midnight converted into the requested timezone.
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_companion_daily_summaries()
+CREATE OR REPLACE FUNCTION public.astella_enqueue_companion_daily_summaries()
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -113,15 +113,15 @@ BEGIN
 END
 $$;
 
-ALTER FUNCTION public.ailearn_enqueue_companion_daily_summaries()
-  OWNER TO ailearn_migrator;
-ALTER FUNCTION public.ailearn_enqueue_companion_daily_summaries()
+ALTER FUNCTION public.astella_enqueue_companion_daily_summaries()
+  OWNER TO astella_migrator;
+ALTER FUNCTION public.astella_enqueue_companion_daily_summaries()
   SECURITY DEFINER;
-ALTER FUNCTION public.ailearn_enqueue_companion_daily_summaries()
+ALTER FUNCTION public.astella_enqueue_companion_daily_summaries()
   SET search_path = pg_catalog, public;
-GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_companion_daily_summaries()
-  TO ailearn_worker;
+GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_daily_summaries()
+  TO astella_worker;
 
 -- The 0329 lookback overload has no current caller and enables an obsolete
 -- multi-day backfill path, so remove it with the contract change.
-DROP FUNCTION IF EXISTS public.ailearn_enqueue_companion_daily_summaries(integer);
+DROP FUNCTION IF EXISTS public.astella_enqueue_companion_daily_summaries(integer);

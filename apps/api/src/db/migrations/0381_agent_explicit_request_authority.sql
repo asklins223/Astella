@@ -1,7 +1,7 @@
 -- A manual page request is explicitly authorized for its frozen capability.
 -- Companion off/read-only controls autonomous actions, not existing page buttons.
 -- Epoch revocation, tenant/member/input checks and cancellation still apply.
-CREATE FUNCTION public.ailearn_agent_run_authorized(p_run uuid) RETURNS boolean
+CREATE FUNCTION public.astella_agent_run_authorized(p_run uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.agent_runs r JOIN public.user_companion_account_state a ON a.id=r.identity_id
@@ -12,10 +12,10 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public AS $$
       AND (r.direct_request IS NOT NULL OR (a.global_enabled AND a.agent_settings->>'permissionLevel'<>'read_only'))
   );
 $$;
-REVOKE ALL ON FUNCTION public.ailearn_agent_run_authorized(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_agent_run_authorized(uuid) TO ailearn_worker;
+REVOKE ALL ON FUNCTION public.astella_agent_run_authorized(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_agent_run_authorized(uuid) TO astella_worker;
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION public.ailearn_agent_job_current(p_job uuid,p_workspace uuid,p_user uuid,p_lock boolean DEFAULT false) RETURNS boolean
+CREATE OR REPLACE FUNCTION public.astella_agent_job_current(p_job uuid,p_workspace uuid,p_user uuid,p_lock boolean DEFAULT false) RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
 DECLARE allowed boolean;
 BEGIN
@@ -27,7 +27,7 @@ BEGIN
   SELECT true INTO allowed FROM public.agent_operations o JOIN public.agent_runs r ON r.id=o.run_id
     JOIN public.user_companion_account_state a ON a.id=r.identity_id AND a.user_id=r.user_id
     WHERE o.job_id=p_job AND o.workspace_id=p_workspace AND o.user_id=p_user AND o.revision=r.revision
-    AND r.status IN ('queued','running','waiting','paused') AND public.ailearn_agent_run_authorized(r.id)
+    AND r.status IN ('queued','running','waiting','paused') AND public.astella_agent_run_authorized(r.id)
     AND o.status IN ('accepted','running','outcome_unknown')
     AND EXISTS(SELECT 1 FROM public.workspace_members m WHERE m.workspace_id=p_workspace AND m.user_id=p_user AND m.left_at IS NULL)
     AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(r.inputs) i WHERE NOT EXISTS(
@@ -37,7 +37,7 @@ BEGIN
   RETURN coalesce(allowed,false);
 END $$;
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION public.ailearn_agent_card_job_current(p_outbox uuid,p_workspace uuid,p_lock boolean DEFAULT false) RETURNS boolean
+CREATE OR REPLACE FUNCTION public.astella_agent_card_job_current(p_outbox uuid,p_workspace uuid,p_lock boolean DEFAULT false) RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
 DECLARE allowed boolean; parent_run uuid; card_run uuid;
 BEGIN
@@ -58,7 +58,7 @@ BEGIN
     WHERE o.card_generation_outbox_id=p_outbox AND o.workspace_id=p_workspace AND cr.workspace_id=p_workspace
       AND o.user_id=cr.user_id AND b.workspace_id=p_workspace AND o.revision=r.revision
       -- paused 保留：已接受的这发让它做完，但父目标不因此推进新步骤。
-      AND r.status IN ('queued','running','waiting','paused') AND public.ailearn_agent_run_authorized(r.id)
+      AND r.status IN ('queued','running','waiting','paused') AND public.astella_agent_run_authorized(r.id)
       AND o.status IN ('accepted','running','outcome_unknown')
       AND EXISTS(SELECT 1 FROM public.workspace_members m
         WHERE m.workspace_id=p_workspace AND m.user_id=cr.user_id AND m.left_at IS NULL)
@@ -71,7 +71,7 @@ BEGIN
   RETURN coalesce(allowed,false);
 END $$;
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION public.ailearn_enqueue_agent_recovery() RETURNS integer
+CREATE OR REPLACE FUNCTION public.astella_enqueue_agent_recovery() RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog,public AS $$
 DECLARE inserted integer;
 BEGIN

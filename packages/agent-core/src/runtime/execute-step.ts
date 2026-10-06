@@ -1,4 +1,4 @@
-import type { AgentTurnRequest, AgentTurnResult } from "@ailearn/shared";
+import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 
 export interface AgentStepPorts<TCheckpoint, TResult> {
   signal?: AbortSignal;

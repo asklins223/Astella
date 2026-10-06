@@ -2,8 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { WorkerTransaction } from "../../db.ts";
-import { getDefaultPersonaPreset } from "@ailearn/shared/pet-persona-presets";
-import { personaFromDefaultPreset } from "@ailearn/shared/pet-persona-merge";
+import { getDefaultPersonaPreset } from "@astella/shared/pet-persona-presets";
+import { personaFromDefaultPreset } from "@astella/shared/pet-persona-merge";
 import { applyAssistantPersonaEdit } from "../companion-persona-self-edit.ts";
 
 const userId = "00000000-0000-4000-8000-000000000001";

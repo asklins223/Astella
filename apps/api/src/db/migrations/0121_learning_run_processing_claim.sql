@@ -1,7 +1,7 @@
 -- 0121: learning_run_processing_outbox 的跨 workspace claim 函数。
 --
--- 背景（与 0109 同模式）：RLS 只放行 ailearn_worker（跨 workspace 豁免）或
--- app.workspace_id/user_id 上下文；ailearn_api 无法跨 workspace claim。
+-- 背景（与 0109 同模式）：RLS 只放行 astella_worker（跨 workspace 豁免）或
+-- app.workspace_id/user_id 上下文；astella_api 无法跨 workspace claim。
 -- 消费方是 API（run-processing-tick），因此提供 SECURITY DEFINER 函数
 -- （migrator owner BYPASSRLS，函数内绕过 RLS；API 仅 EXECUTE）。
 -- 函数只返回 scoped 标识符 + 租约字段，不返回作答内容（0117 payload CHECK
@@ -9,7 +9,7 @@
 
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION public.ailearn_claim_run_processing(
+CREATE OR REPLACE FUNCTION public.astella_claim_run_processing(
   p_worker_id text,
   p_lease_ms integer,
   p_max integer DEFAULT 50,
@@ -72,14 +72,14 @@ $function$;
 
 --> statement-breakpoint
 
-GRANT EXECUTE ON FUNCTION public.ailearn_claim_run_processing(text, integer, integer, timestamptz) TO ailearn_api;
-REVOKE ALL ON FUNCTION public.ailearn_claim_run_processing(text, integer, integer, timestamptz) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_claim_run_processing(text, integer, integer, timestamptz) TO astella_api;
+REVOKE ALL ON FUNCTION public.astella_claim_run_processing(text, integer, integer, timestamptz) FROM PUBLIC;
 
 --> statement-breakpoint
 
 -- 失败释放：清租约 + 写 last_error（attempts 已在 claim 时递增），
 -- 使命令立即可被重试（否则要等租约过期）。
-CREATE OR REPLACE FUNCTION public.ailearn_release_run_processing(
+CREATE OR REPLACE FUNCTION public.astella_release_run_processing(
   p_outbox_id uuid,
   p_worker_id text,
   p_error text,
@@ -103,13 +103,13 @@ $function$;
 
 --> statement-breakpoint
 
-GRANT EXECUTE ON FUNCTION public.ailearn_release_run_processing(uuid, text, text, timestamptz) TO ailearn_api;
-REVOKE ALL ON FUNCTION public.ailearn_release_run_processing(uuid, text, text, timestamptz) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_release_run_processing(uuid, text, text, timestamptz) TO astella_api;
+REVOKE ALL ON FUNCTION public.astella_release_run_processing(uuid, text, text, timestamptz) FROM PUBLIC;
 
 --> statement-breakpoint
 
 -- 成功标记：processed_at 置位（SECURITY DEFINER，跨 workspace）。
-CREATE OR REPLACE FUNCTION public.ailearn_mark_run_processing_processed(
+CREATE OR REPLACE FUNCTION public.astella_mark_run_processing_processed(
   p_outbox_id uuid,
   p_now timestamptz DEFAULT now()
 )
@@ -128,5 +128,5 @@ $function$;
 
 --> statement-breakpoint
 
-GRANT EXECUTE ON FUNCTION public.ailearn_mark_run_processing_processed(uuid, timestamptz) TO ailearn_api;
-REVOKE ALL ON FUNCTION public.ailearn_mark_run_processing_processed(uuid, timestamptz) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_mark_run_processing_processed(uuid, timestamptz) TO astella_api;
+REVOKE ALL ON FUNCTION public.astella_mark_run_processing_processed(uuid, timestamptz) FROM PUBLIC;

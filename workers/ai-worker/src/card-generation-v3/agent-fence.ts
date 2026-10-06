@@ -1,7 +1,7 @@
 /** 只绑定初始 outbox；锁顺序为 parent → card run → outbox。 */
 import { sql } from "drizzle-orm";
-import { AgentStoreError, queryRows, type AgentSqlExecutor } from "@ailearn/agent-host";
-import type { AgentScopeV1 } from "@ailearn/shared/agent-contracts";
+import { AgentStoreError, queryRows, type AgentSqlExecutor } from "@astella/agent-host";
+import type { AgentScopeV1 } from "@astella/shared/agent-contracts";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
 import { CardGenerationProviderError } from "../card-generation-v2/governed-provider.ts";
 import {
@@ -33,7 +33,7 @@ export function resolveAgentCardExecution(job: PendingOutboxJob): Promise<AgentC
     const rows = await withWorkerWorkspaceTransaction(
       { workspaceId: job.workspaceId, userId: null },
       tx => queryRows<{ operation_id: string; agent_run_id: string; revision: number; user_id: string }>(tx,
-        sql`SELECT * FROM ailearn_agent_card_execution_binding(${job.id},${job.workspaceId})`),
+        sql`SELECT * FROM astella_agent_card_execution_binding(${job.id},${job.workspaceId})`),
       { isolated: true },
     );
     const row = rows[0];
@@ -51,7 +51,7 @@ export async function agentCardJobCurrent(
   tx: AgentSqlExecutor, job: PendingOutboxJob, lock: boolean,
 ): Promise<boolean> {
   const [row] = await queryRows<{ current: boolean }>(tx,
-    sql`SELECT ailearn_agent_card_job_current(${job.id},${job.workspaceId},${lock}) AS current`);
+    sql`SELECT astella_agent_card_job_current(${job.id},${job.workspaceId},${lock}) AS current`);
   return row?.current === true;
 }
 

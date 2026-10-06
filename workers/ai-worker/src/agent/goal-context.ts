@@ -1,7 +1,7 @@
-import { createAgentAdvanceStore, projectRun, requireAgentLongGoal, type AgentRunRow } from "@ailearn/agent-host";
-import { assembleAgentContext, budgetAgentContextRecords, projectAgentGoalEvidence, type AgentContextSource } from "@ailearn/agent-core";
-import { resolveAgentGoalExecutionManifest } from "@ailearn/shared/agent-capabilities";
-import { COMPANION_CHARACTER_IDENTITY_V1, COMPANION_DEFAULT_VOICE_V1, COMPANION_IDENTITY_BOUNDARY_V2, AgentRole, type AgentTurnRequest } from "@ailearn/shared";
+import { createAgentAdvanceStore, projectRun, requireAgentLongGoal, type AgentRunRow } from "@astella/agent-host";
+import { assembleAgentContext, budgetAgentContextRecords, projectAgentGoalEvidence, type AgentContextSource } from "@astella/agent-core";
+import { resolveAgentGoalExecutionManifest } from "@astella/shared/agent-capabilities";
+import { COMPANION_CHARACTER_IDENTITY_V1, COMPANION_DEFAULT_VOICE_V1, COMPANION_IDENTITY_BOUNDARY_V2, AgentRole, type AgentTurnRequest } from "@astella/shared";
 import { buildCompanionPersonaData, sanitizePersonaField } from "../handlers/companion-identity-context.ts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { loadAgentLearningContext } from "./learning-context.ts";

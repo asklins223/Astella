@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import type { ReflectionSourceV1 } from "@ailearn/shared/note-learning-reflection-contracts";
+import type { ReflectionSourceV1 } from "@astella/shared/note-learning-reflection-contracts";
 
 export class PendingReflectionAppendError extends Error {}
 

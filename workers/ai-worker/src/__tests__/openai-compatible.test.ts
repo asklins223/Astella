@@ -1,13 +1,13 @@
 /**
  * 共享 OpenAI 端点解析函数测试
  *
- * 覆盖 resolveOpenAIChatCompletionsUrl（@ailearn/shared/ai-endpoints）——
+ * 覆盖 resolveOpenAIChatCompletionsUrl（@astella/shared/ai-endpoints）——
  * worker 的 OpenAICompatibleProvider 与 DashScope preset 都使用它。
  */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { resolveOpenAIChatCompletionsUrl } from "@ailearn/shared/ai-endpoints";
+import { resolveOpenAIChatCompletionsUrl } from "@astella/shared/ai-endpoints";
 
 // ─── resolveOpenAIChatCompletionsUrl ─────────────────────────────────────
 

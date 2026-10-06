@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   objectivePersonalStateV3Schema,
   type LearningObjectivePrimaryActionV3,
-} from "@ailearn/shared/learning-objective-surface-contracts";
+} from "@astella/shared/learning-objective-surface-contracts";
 import {
   formatObjectiveDateTime,
   formatObjectiveState,

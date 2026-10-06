@@ -15,15 +15,15 @@ import type {
   CompanionContentBlockV1,
   CompanionMessageV1,
   CompanionPageContextV1,
-} from "@ailearn/shared/companion-conversation-contracts";
+} from "@astella/shared/companion-conversation-contracts";
 import type {
   CompanionAgentRouteEventV1,
   CompanionChatConversationV1,
   CompanionChatProposalGetResultV1,
-} from "@ailearn/shared/companion-chat-desktop-contracts";
-import type { DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import type { MainPageContextInputV2, PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
-import { companionPageRouteV2, SETTINGS_SECTION_IDS_V2 } from "@ailearn/shared/companion-bridge-contracts";
+} from "@astella/shared/companion-chat-desktop-contracts";
+import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
+import type { MainPageContextInputV2, PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
+import { companionPageRouteV2, SETTINGS_SECTION_IDS_V2 } from "@astella/shared/companion-bridge-contracts";
 import { useRoomStore } from "./room-store";
 import type { HudPageId } from "../components/hud/hud-pages";
 import { createRequestMeta, gatewayErrorMessage, requireWorkspaceEpoch, unwrapGatewayResult, RendererGatewayError } from "./desktop-client";
@@ -404,7 +404,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     const timer = window.setTimeout(() => {
       void requireWorkspaceEpoch().then((epoch) => {
         if (cancelled) return;
-        return window.ailearn.companion.bridge.setContext({
+        return window.astella.companion.bridge.setContext({
           meta: createRequestMeta(epoch),
           page: brokerPageContext,
         });
@@ -416,7 +416,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     };
   }, [brokerPageContext, workspaceScopeRevision]);
   useEffect(() => () => {
-    void requireWorkspaceEpoch().then((epoch) => window.ailearn.companion.bridge.clearContext({
+    void requireWorkspaceEpoch().then((epoch) => window.astella.companion.bridge.clearContext({
       meta: createRequestMeta(epoch),
     })).catch(() => undefined);
   }, []);
@@ -444,11 +444,11 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
 
   const resolveTurnContext = useCallback(async (epoch: number): Promise<CompanionPageContextV1 | null> => {
     if (hudPage !== "assessment" || !activeRunId) return pageContext;
-    const context = unwrapGatewayResult(await window.ailearn.companion.learningRun.getContext({
+    const context = unwrapGatewayResult(await window.astella.companion.learningRun.getContext({
       meta: createRequestMeta(epoch),
       runId: activeRunId,
     }));
-    const grant = unwrapGatewayResult(await window.ailearn.companion.learningRun.createContextGrant({
+    const grant = unwrapGatewayResult(await window.astella.companion.learningRun.createContextGrant({
       meta: createRequestMeta(epoch),
       runId: activeRunId,
       request: {
@@ -649,10 +649,10 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       onOpenChat: () => setMode("conversation"),
     });
     const openConversation = () => setMode("conversation");
-    window.addEventListener("ailearn:companion-open", openConversation);
+    window.addEventListener("astella:companion-open", openConversation);
     return () => {
       unsubscribeFeed();
-      window.removeEventListener("ailearn:companion-open", openConversation);
+      window.removeEventListener("astella:companion-open", openConversation);
     };
   }, []);
 
@@ -661,7 +661,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     if (existing) return existing;
     const scopeRevision = useRoomStore.getState().workspaceScopeRevision;
     const epoch = await requireWorkspaceEpoch();
-    const ensured = unwrapGatewayResult(await window.ailearn.companion.chat.ensureConversation({
+    const ensured = unwrapGatewayResult(await window.astella.companion.chat.ensureConversation({
       meta: createRequestMeta(epoch),
       request: { version: 1 },
     }));
@@ -675,7 +675,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
 
   const refreshMessages = useCallback(async (conversationId: string, epoch: number) => {
     const scopeRevision = useRoomStore.getState().workspaceScopeRevision;
-    const result = unwrapGatewayResult(await window.ailearn.companion.chat.listMessages({
+    const result = unwrapGatewayResult(await window.astella.companion.chat.listMessages({
       meta: createRequestMeta(epoch),
       request: { version: 1, conversationId, limit: 50 },
     }));
@@ -719,7 +719,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     setHistoryOlderError(null);
     try {
       const epoch = await requireWorkspaceEpoch();
-      const result = await window.ailearn.companion.chat.listMessages({
+      const result = await window.astella.companion.chat.listMessages({
         meta: createRequestMeta(epoch),
         request: { version: 1, conversationId: conversation.id, limit: 20, beforeSeq },
       });
@@ -769,7 +769,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       if (historyRevisionRef.current !== revision || useRoomStore.getState().workspaceScopeRevision !== scopeRevision) return null;
       const epoch = await requireWorkspaceEpoch();
       if (historyRevisionRef.current !== revision || useRoomStore.getState().workspaceScopeRevision !== scopeRevision) return null;
-      const result = await window.ailearn.companion.chat.listMessages({
+      const result = await window.astella.companion.chat.listMessages({
         meta: createRequestMeta(epoch),
         request: { version: 1, conversationId: conversation.id, limit: 100, beforeSeq },
       });
@@ -797,7 +797,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     epoch: number,
   ): Promise<number | null> => {
     try {
-      const result = unwrapGatewayResult(await window.ailearn.companion.chat.listRunNodes({
+      const result = unwrapGatewayResult(await window.astella.companion.chat.listRunNodes({
         meta: createRequestMeta(epoch),
         request: { version: 1, conversationId },
       }));
@@ -850,7 +850,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     for (const id of ids) {
       try {
         const epoch = await requireWorkspaceEpoch();
-        const snapshot = unwrapGatewayResult(await window.ailearn.companion.chat.getProposal({
+        const snapshot = unwrapGatewayResult(await window.astella.companion.chat.getProposal({
           meta: createRequestMeta(epoch),
           request: { version: 1, proposalId: id },
         }));
@@ -912,7 +912,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     epoch: number,
     runId: string,
   ): Promise<CompanionReplyWaitOutcome | null> => {
-    const result = unwrapGatewayResult(await window.ailearn.companion.chat.listRunNodes({
+    const result = unwrapGatewayResult(await window.astella.companion.chat.listRunNodes({
       meta: createRequestMeta(epoch),
       request: { version: 1, conversationId },
     }));
@@ -935,7 +935,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
    * 变成终态；失败也无所谓——下一轮发送的 supersedesGeneration 仍能接替它。
    */
   const cancelRunInBackground = useCallback((runId: string, runGeneration: number, runEpoch: number): void => {
-    void window.ailearn.companion.chat.cancelRun({
+    void window.astella.companion.chat.cancelRun({
       meta: createRequestMeta(runEpoch),
       request: { version: 1, runId, generation: runGeneration },
     }).catch(() => undefined);
@@ -1033,7 +1033,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     /** 订阅建立后迟迟没有任何帧：通知调用方把兜底赛道提速（**不要**退订）。 */
     onIdle?: () => void;
   }): { promise: Promise<CompanionReplyStreamOutcome>; cancel: () => void } => {
-    const subscriptions = window.ailearn?.subscriptions;
+    const subscriptions = window.astella?.subscriptions;
     if (!subscriptions) {
       return { promise: Promise.resolve({ kind: "unavailable" }), cancel: () => undefined };
     }
@@ -1163,7 +1163,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
             if (proposal && typeof proposal.id === "string") {
               const proposalId = proposal.id;
               setProposalStates((current) => ({ ...current, [proposalId]: { phase: "loading" } }));
-              void window.ailearn.companion.chat.getProposal({
+              void window.astella.companion.chat.getProposal({
                 meta: createRequestMeta(args.epoch),
                 request: { version: 1, proposalId },
               }).then((response) => {
@@ -1205,10 +1205,10 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
             }
           }
           if (streamed.eventType === "proactive.delivery" || streamed.eventType === "proactive.delivery.updated") {
-            window.dispatchEvent(new CustomEvent("ailearn:companion-activity-changed"));
+            window.dispatchEvent(new CustomEvent("astella:companion-activity-changed"));
           }
           if (streamed.eventType === "voice.segment.ready") {
-            window.dispatchEvent(new CustomEvent("ailearn:companion-voice-segment-ready", {
+            window.dispatchEvent(new CustomEvent("astella:companion-voice-segment-ready", {
               detail: {
                 conversationId: args.conversationId,
                 runId: streamed.runId,
@@ -1400,7 +1400,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       // 用户只会看到"发出去没反应"（静默失败）。这里发送前先问一次工作区 AI 设置，
       // 未签署就直接由伴星引导去签署——不建会话、不消耗一轮 job。
       const consentGate = companionConsentGate(
-        unwrapGatewayResult(await window.ailearn.workspace.getAiSettings({ meta: createRequestMeta(epoch) })),
+        unwrapGatewayResult(await window.astella.workspace.getAiSettings({ meta: createRequestMeta(epoch) })),
       );
       if (generation !== sendGenerationRef.current) return false;
       if (consentGate === "consent_required") {
@@ -1490,7 +1490,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         let releaseSubmit: () => void = () => undefined;
         submitGateRef.current = new Promise<void>((resolve) => { releaseSubmit = resolve; });
         try {
-          const sent = unwrapGatewayResult(await window.ailearn.companion.chat.sendTurn({
+          const sent = unwrapGatewayResult(await window.astella.companion.chat.sendTurn({
             meta: createRequestMeta(epoch),
             request: {
               version: 1,
@@ -1688,7 +1688,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     setCancelling(true);
     try {
       const epoch = await requireWorkspaceEpoch();
-      unwrapGatewayResult(await window.ailearn.companion.chat.cancelRun({
+      unwrapGatewayResult(await window.astella.companion.chat.cancelRun({
         meta: createRequestMeta(epoch), request: { version: 1, runId: active.runId, generation: active.generation },
       }));
       if (stoppedGeneration !== sendGenerationRef.current) return true;
@@ -1720,8 +1720,8 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         setAutoSendRequestId(current => current === id ? null : current);
       }
     };
-    window.addEventListener("ailearn:note-explanation-stop", onStop);
-    return () => window.removeEventListener("ailearn:note-explanation-stop", onStop);
+    window.addEventListener("astella:note-explanation-stop", onStop);
+    return () => window.removeEventListener("astella:note-explanation-stop", onStop);
   }, [cancel]);
 
   const dismissStopNotice = useCallback(() => setStopNotice(null), []);
@@ -1750,7 +1750,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     setProposalStates((current) => ({ ...current, [proposalId]: { ...state, deciding: decision } }));
     try {
       const epoch = await requireWorkspaceEpoch();
-      const result = unwrapGatewayResult(await window.ailearn.companion.chat.decideProposal({
+      const result = unwrapGatewayResult(await window.astella.companion.chat.decideProposal({
         meta: createRequestMeta(epoch),
         request: {
           version: 1,
@@ -1802,11 +1802,11 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
 
   const goToRoute = useCallback(async (route: DesktopRouteV1) => {
     const scopeRevision = useRoomStore.getState().workspaceScopeRevision;
-    const resolveResponse = await window.ailearn.navigation.resolve({ meta: createRequestMeta(), route });
+    const resolveResponse = await window.astella.navigation.resolve({ meta: createRequestMeta(), route });
     const resolved = unwrapGatewayResult(resolveResponse);
     if (resolved.current.scope !== "workspace") throw new Error("navigation did not resolve to the current workspace");
     if (useRoomStore.getState().workspaceScopeRevision !== scopeRevision) throw new Error("工作空间已切换，请在当前空间重新操作。");
-    unwrapGatewayResult(await window.ailearn.navigation.go({
+    unwrapGatewayResult(await window.astella.navigation.go({
       meta: createRequestMeta(resolved.current.workspaceEpoch),
       route: resolved.current.route,
       entryKind: "user",

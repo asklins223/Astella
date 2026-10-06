@@ -21,8 +21,8 @@
 -- 4) device-local hide：不写持久表；runtime-fence 仅保留 user/device
 --    session/surface epoch/TTL（ephemeral，任务 02-3），本迁移只以注释
 --    确认，不新增任何 device-local 持久表。
--- 5) GRANT 按角色存在性（0071 模式）：ailearn_api 全部新表读写；
---    ailearn_worker 仅学习过程表最小权限（SELECT/INSERT/UPDATE，无
+-- 5) GRANT 按角色存在性（0071 模式）：astella_api 全部新表读写；
+--    astella_worker 仅学习过程表最小权限（SELECT/INSERT/UPDATE，无
 --    DELETE，删除语义由 redaction/status 表达），account-scoped Companion
 --    状态表一律不授权。
 --
@@ -212,28 +212,28 @@ CREATE POLICY user_learning_preferences_user_isolation
 
 -- ════════════════════════════════════════════════════════════════════════
 -- least-privilege GRANT（0071 模式：按角色存在性授权，幂等可重跑）
--- ailearn_api：全部新表读写；ailearn_worker：仅学习过程表最小权限
+-- astella_api：全部新表读写；astella_worker：仅学习过程表最小权限
 -- （SELECT/INSERT/UPDATE，无 DELETE；删除语义由 redaction/status 表达），
 -- account-scoped Companion 状态表不授权。
 -- ════════════════════════════════════════════════════════════════════════
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_api') THEN
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_sessions TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_episodes TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_session_probes TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_response_artifacts TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_assessment_reports TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_companion_onboarding TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_companion_account_state TO ailearn_api;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_learning_preferences TO ailearn_api;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_api') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_sessions TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_episodes TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_session_probes TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_response_artifacts TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.learning_assessment_reports TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_companion_onboarding TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_companion_account_state TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_learning_preferences TO astella_api;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ailearn_worker') THEN
-    GRANT SELECT, INSERT, UPDATE ON public.learning_sessions TO ailearn_worker;
-    GRANT SELECT, INSERT, UPDATE ON public.learning_episodes TO ailearn_worker;
-    GRANT SELECT, INSERT, UPDATE ON public.learning_session_probes TO ailearn_worker;
-    GRANT SELECT, INSERT, UPDATE ON public.learning_response_artifacts TO ailearn_worker;
-    GRANT SELECT, INSERT, UPDATE ON public.learning_assessment_reports TO ailearn_worker;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'astella_worker') THEN
+    GRANT SELECT, INSERT, UPDATE ON public.learning_sessions TO astella_worker;
+    GRANT SELECT, INSERT, UPDATE ON public.learning_episodes TO astella_worker;
+    GRANT SELECT, INSERT, UPDATE ON public.learning_session_probes TO astella_worker;
+    GRANT SELECT, INSERT, UPDATE ON public.learning_response_artifacts TO astella_worker;
+    GRANT SELECT, INSERT, UPDATE ON public.learning_assessment_reports TO astella_worker;
     -- 有意不 GRANT：user_companion_onboarding / user_companion_account_state /
     -- user_learning_preferences 对 worker 一律不可见。
   END IF;

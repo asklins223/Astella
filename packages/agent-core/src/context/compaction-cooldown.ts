@@ -1,4 +1,4 @@
-import type { ContextPressureReasonV1 } from "@ailearn/shared/context-budget-contracts";
+import type { ContextPressureReasonV1 } from "@astella/shared/context-budget-contracts";
 
 /**
  * 方案 44 §5.4 后半：失败冷却与无进展状态。

@@ -23,14 +23,14 @@
  */
 
 import { createHash } from "node:crypto";
-import { classifyCompanionReplyEmotion, type CharacterCueEmotionV1 } from "@ailearn/shared";
+import { classifyCompanionReplyEmotion, type CharacterCueEmotionV1 } from "@astella/shared";
 import { purifyVoiceText } from "./tts-segments.ts";
 import {
   extractVoiceEmotion,
   stripUnknownVoiceExpressionTags,
   VOICE_EMOTION_TAGS,
   VOICE_RICH_TAGS,
-} from "@ailearn/shared/voice-expression-tags";
+} from "@astella/shared/voice-expression-tags";
 import { TTS_MAX_SEGMENT_CHARS } from "./tts-segments.ts";
 
 /** 段内是否已含已知标签（控制类或富语言类）的快速测试（用于叠加判定）。 */

@@ -68,9 +68,9 @@ CREATE INDEX IF NOT EXISTS assistant_memory_items_global_key_user_idx
 -- （用户在某处改了内容，其余副本跟着更新——由调用方决定是 UPDATE 还是 INSERT）。
 --
 -- SECURITY DEFINER：要写"该用户的其他空间"，而调用方的事务上下文停在某一个空间上。
--- 只授给 `ailearn_worker`（记忆抽取）与 `ailearn_migrator`（维护）——API 角色拿不到
+-- 只授给 `astella_worker`（记忆抽取）与 `astella_migrator`（维护）——API 角色拿不到
 -- EXECUTE，所以没有任何 HTTP 入口能触发跨空间写。
-CREATE OR REPLACE FUNCTION public.ailearn_fanout_global_companion_memory(
+CREATE OR REPLACE FUNCTION public.astella_fanout_global_companion_memory(
   p_source_id uuid
 )
 RETURNS integer
@@ -133,14 +133,14 @@ $function$;
 
 --> statement-breakpoint
 
-COMMENT ON FUNCTION public.ailearn_fanout_global_companion_memory(uuid) IS
-  '把一条 scope=global 的记忆铺到该用户所有活跃空间（0267）。只授 ailearn_worker/ailearn_migrator，API 角色无 EXECUTE。';
+COMMENT ON FUNCTION public.astella_fanout_global_companion_memory(uuid) IS
+  '把一条 scope=global 的记忆铺到该用户所有活跃空间（0267）。只授 astella_worker/astella_migrator，API 角色无 EXECUTE。';
 
 --> statement-breakpoint
 
-REVOKE ALL ON FUNCTION public.ailearn_fanout_global_companion_memory(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ailearn_fanout_global_companion_memory(uuid) TO ailearn_worker;
-GRANT EXECUTE ON FUNCTION public.ailearn_fanout_global_companion_memory(uuid) TO ailearn_migrator;
+REVOKE ALL ON FUNCTION public.astella_fanout_global_companion_memory(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.astella_fanout_global_companion_memory(uuid) TO astella_worker;
+GRANT EXECUTE ON FUNCTION public.astella_fanout_global_companion_memory(uuid) TO astella_migrator;
 
 --> statement-breakpoint
 
@@ -148,7 +148,7 @@ GRANT EXECUTE ON FUNCTION public.ailearn_fanout_global_companion_memory(uuid) TO
 --
 -- 用户后来加入一个新空间，之前攒下的 global 记忆要跟过去——否则"跨空间同步"只在
 -- 写入那一刻成立，之后加入的空间永远是空的。
-CREATE OR REPLACE FUNCTION public.ailearn_backfill_global_memories_on_join()
+CREATE OR REPLACE FUNCTION public.astella_backfill_global_memories_on_join()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -171,7 +171,7 @@ BEGIN
        AND m.workspace_id <> NEW.workspace_id
      ORDER BY m.global_key, m.updated_at DESC
   LOOP
-    PERFORM public.ailearn_fanout_global_companion_memory(src.id);
+    PERFORM public.astella_fanout_global_companion_memory(src.id);
   END LOOP;
 
   RETURN NEW;
@@ -185,7 +185,7 @@ $function$;
 DROP TRIGGER IF EXISTS workspace_members_backfill_global_memories ON public.workspace_members;
 CREATE TRIGGER workspace_members_backfill_global_memories
   AFTER INSERT ON public.workspace_members
-  FOR EACH ROW EXECUTE FUNCTION public.ailearn_backfill_global_memories_on_join();
+  FOR EACH ROW EXECUTE FUNCTION public.astella_backfill_global_memories_on_join();
 
 --> statement-breakpoint
 
@@ -195,7 +195,7 @@ CREATE TRIGGER workspace_members_backfill_global_memories_rejoin
   AFTER UPDATE OF left_at ON public.workspace_members
   FOR EACH ROW
   WHEN (OLD.left_at IS NOT NULL AND NEW.left_at IS NULL)
-  EXECUTE FUNCTION public.ailearn_backfill_global_memories_on_join();
+  EXECUTE FUNCTION public.astella_backfill_global_memories_on_join();
 
 --> statement-breakpoint
 
@@ -210,7 +210,7 @@ BEGIN
     RAISE EXCEPTION 'assistant_memory_items.global_key 没有加上';
   END IF;
   IF NOT EXISTS (
-    SELECT 1 FROM pg_proc WHERE proname = 'ailearn_fanout_global_companion_memory'
+    SELECT 1 FROM pg_proc WHERE proname = 'astella_fanout_global_companion_memory'
   ) THEN
     RAISE EXCEPTION '铺开函数没有建立';
   END IF;

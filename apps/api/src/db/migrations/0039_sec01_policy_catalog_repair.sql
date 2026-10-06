@@ -96,8 +96,8 @@ CREATE POLICY "sec01_v1_workspaces_runtime_access"
   AS PERMISSIVE
   FOR ALL
   TO PUBLIC
-  USING (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'))
-  WITH CHECK (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'));
+  USING (CURRENT_USER IN ('astella_api', 'astella_worker'))
+  WITH CHECK (CURRENT_USER IN ('astella_api', 'astella_worker'));
 --> statement-breakpoint
 
 -- Uniform workspace-owned rows. Identity/membership and benchmark tables are
@@ -130,8 +130,8 @@ BEGIN
     runtime_role_predicate := CASE
       WHEN table_name IN (
         'workspace_members', 'invite_codes', 'benchmark_reports', 'benchmark_labels'
-      ) THEN 'CURRENT_USER = ''ailearn_api'''
-      ELSE 'CURRENT_USER IN (''ailearn_api'', ''ailearn_worker'')'
+      ) THEN 'CURRENT_USER = ''astella_api'''
+      ELSE 'CURRENT_USER IN (''astella_api'', ''astella_worker'')'
     END;
 
     EXECUTE pg_catalog.format(
@@ -217,8 +217,8 @@ BEGIN
     );
     EXECUTE pg_catalog.format(
       'CREATE POLICY %I ON public.%I AS PERMISSIVE FOR ALL TO PUBLIC '
-      || 'USING (CURRENT_USER IN (''ailearn_api'', ''ailearn_worker'')) '
-      || 'WITH CHECK (CURRENT_USER IN (''ailearn_api'', ''ailearn_worker''))',
+      || 'USING (CURRENT_USER IN (''astella_api'', ''astella_worker'')) '
+      || 'WITH CHECK (CURRENT_USER IN (''astella_api'', ''astella_worker''))',
       access_name,
       table_name
     );
@@ -263,8 +263,8 @@ CREATE POLICY "sec01_v1_validation_questions_api_access"
   AS PERMISSIVE
   FOR ALL
   TO PUBLIC
-  USING (CURRENT_USER = 'ailearn_api')
-  WITH CHECK (CURRENT_USER = 'ailearn_api');
+  USING (CURRENT_USER = 'astella_api')
+  WITH CHECK (CURRENT_USER = 'astella_api');
 --> statement-breakpoint
 
 -- Validation feedback artifacts add an actor guard; other artifact types are
@@ -308,8 +308,8 @@ CREATE POLICY "sec01_v1_ai_artifacts_runtime_access"
   AS PERMISSIVE
   FOR ALL
   TO PUBLIC
-  USING (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'))
-  WITH CHECK (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'));
+  USING (CURRENT_USER IN ('astella_api', 'astella_worker'))
+  WITH CHECK (CURRENT_USER IN ('astella_api', 'astella_worker'));
 --> statement-breakpoint
 
 -- Audit log: tenant and insert-actor guards, owner read, API/Worker append.
@@ -346,7 +346,7 @@ CREATE POLICY "sec01_v1_ai_audit_api_owner_read"
   FOR SELECT
   TO PUBLIC
   USING (
-    CURRENT_USER = 'ailearn_api'
+    CURRENT_USER = 'astella_api'
     AND "workspace_id" = NULLIF(pg_catalog.current_setting('app.workspace_id', true), '')::uuid
     AND EXISTS (
       SELECT 1
@@ -364,7 +364,7 @@ CREATE POLICY "sec01_v1_ai_audit_runtime_insert"
   AS PERMISSIVE
   FOR INSERT
   TO PUBLIC
-  WITH CHECK (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'));
+  WITH CHECK (CURRENT_USER IN ('astella_api', 'astella_worker'));
 --> statement-breakpoint
 
 -- Jobs retain command-specific admission and actor guards.
@@ -409,28 +409,28 @@ CREATE POLICY "sec01_v1_jobs_worker_update_actor_guard"
 DROP POLICY IF EXISTS "sec01_v1_jobs_api_workspace_select_policy" ON public."jobs";
 CREATE POLICY "sec01_v1_jobs_api_workspace_select_policy"
   ON public."jobs" AS PERMISSIVE FOR SELECT TO PUBLIC
-  USING (CURRENT_USER = 'ailearn_api');
+  USING (CURRENT_USER = 'astella_api');
 
 DROP POLICY IF EXISTS "sec01_v1_jobs_api_workspace_insert_actor_policy" ON public."jobs";
 CREATE POLICY "sec01_v1_jobs_api_workspace_insert_actor_policy"
   ON public."jobs" AS PERMISSIVE FOR INSERT TO PUBLIC
-  WITH CHECK (CURRENT_USER = 'ailearn_api');
+  WITH CHECK (CURRENT_USER = 'astella_api');
 
 DROP POLICY IF EXISTS "sec01_v1_jobs_api_workspace_delete_policy" ON public."jobs";
 CREATE POLICY "sec01_v1_jobs_api_workspace_delete_policy"
   ON public."jobs" AS PERMISSIVE FOR DELETE TO PUBLIC
-  USING (CURRENT_USER = 'ailearn_api');
+  USING (CURRENT_USER = 'astella_api');
 
 DROP POLICY IF EXISTS "sec01_v1_jobs_worker_workspace_select_policy" ON public."jobs";
 CREATE POLICY "sec01_v1_jobs_worker_workspace_select_policy"
   ON public."jobs" AS PERMISSIVE FOR SELECT TO PUBLIC
-  USING (CURRENT_USER = 'ailearn_worker');
+  USING (CURRENT_USER = 'astella_worker');
 
 DROP POLICY IF EXISTS "sec01_v1_jobs_worker_workspace_update_policy" ON public."jobs";
 CREATE POLICY "sec01_v1_jobs_worker_workspace_update_policy"
   ON public."jobs" AS PERMISSIVE FOR UPDATE TO PUBLIC
-  USING (CURRENT_USER = 'ailearn_worker')
-  WITH CHECK (CURRENT_USER = 'ailearn_worker');
+  USING (CURRENT_USER = 'astella_worker')
+  WITH CHECK (CURRENT_USER = 'astella_worker');
 --> statement-breakpoint
 
 -- review_attempts uses the same tenant + actor + role admission pattern as
@@ -470,8 +470,8 @@ CREATE POLICY "sec01_v1_review_attempts_runtime_access"
   AS PERMISSIVE
   FOR ALL
   TO PUBLIC
-  USING (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'))
-  WITH CHECK (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'));
+  USING (CURRENT_USER IN ('astella_api', 'astella_worker'))
+  WITH CHECK (CURRENT_USER IN ('astella_api', 'astella_worker'));
 --> statement-breakpoint
 
 -- SEC-02 invite and onboarding policies are part of the catalog damaged by
@@ -497,8 +497,8 @@ CREATE POLICY "sec02_v1_invite_codes_runtime_access"
   AS PERMISSIVE
   FOR ALL
   TO PUBLIC
-  USING (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'))
-  WITH CHECK (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'));
+  USING (CURRENT_USER IN ('astella_api', 'astella_worker'))
+  WITH CHECK (CURRENT_USER IN ('astella_api', 'astella_worker'));
 
 DROP POLICY IF EXISTS "sec02_v1_onboarding_states_tenant_guard"
   ON public."onboarding_states";
@@ -535,8 +535,8 @@ CREATE POLICY "sec02_v1_onboarding_states_runtime_access"
   AS PERMISSIVE
   FOR ALL
   TO PUBLIC
-  USING (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'))
-  WITH CHECK (CURRENT_USER IN ('ailearn_api', 'ailearn_worker'));
+  USING (CURRENT_USER IN ('astella_api', 'astella_worker'))
+  WITH CHECK (CURRENT_USER IN ('astella_api', 'astella_worker'));
 --> statement-breakpoint
 
 -- Verify the exact known catalog shape. Unknown policies outside the explicit

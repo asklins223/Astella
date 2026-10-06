@@ -1,4 +1,4 @@
-import type { LearningRunAllowedActionV2, LearningRunPublicV1 } from "@ailearn/shared";
+import type { LearningRunAllowedActionV2, LearningRunPublicV1 } from "@astella/shared";
 
 /**
  * retry_assessment 可重新入队的 assessment 状态：tick 的失败路径把它收尾为

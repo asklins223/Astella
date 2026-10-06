@@ -17,16 +17,16 @@
     "rootDir": "../..",
     "outDir": "dist",
     "paths": {
-      "@ailearn/agent-core": ["../../packages/agent-core/src/index.ts"],
-      "@ailearn/agent-host": ["../../packages/agent-host/src/index.ts"],
+      "@astella/agent-core": ["../../packages/agent-core/src/index.ts"],
+      "@astella/agent-host": ["../../packages/agent-host/src/index.ts"],
       // 方案 44 §8.5：对照脚本要复用 ai-quality 的汇总与拒绝判据（同一份，不另写一套）。
       // 与上面几条同一个理由——指到实时源码，别对着安装期快照编。
-      "@ailearn/ai-quality": ["../../packages/ai-quality/src/index.ts"],
+      "@astella/ai-quality": ["../../packages/ai-quality/src/index.ts"],
       // 2026-10-04（J）：run 事件的唯一实现在制卡领域包。指到**实时源码**而不是
       // node_modules 的安装期快照——与上面 shared 那条同一个分叉（改动对 typecheck
       // 与 tsx 运行都要看得见），少这一条，worker 仍会对着旧快照编事件写入。
-      "@ailearn/card-generation": ["../../packages/card-generation/src/index.ts"],
-      "@ailearn/shared": [
+      "@astella/card-generation": ["../../packages/card-generation/src/index.ts"],
+      "@astella/shared": [
         "../../packages/shared/src/index.ts"
       ],
       // 2026-09-29（P2-3）：contracts/ 下的合同先试。
@@ -34,7 +34,7 @@
       // 所以把 contracts/ 放在前面，搬过的那批走它，其余仍走下面那条平铺映射。
       // 少这一条，tsx 运行时会退回 node_modules 的安装期快照（合同改了不生效），
       // 而 typecheck 还报绿——`shared-source-resolution` 守的就是这个分叉。
-      "@ailearn/shared/*": [
+      "@astella/shared/*": [
         "../../packages/shared/src/contracts/*.ts",
         "../../packages/shared/src/*.ts",
         "../../packages/shared/src/*/index.ts"

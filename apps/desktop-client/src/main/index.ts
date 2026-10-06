@@ -18,7 +18,7 @@ import { CompanionGuidanceAudioCache } from './companion-guidance-audio-cache'
 import { primeUpdateStateFromCache } from './desktop-update'
 import { voiceAsrModelDirectory } from '../shared/voice-asr-model-path'
 import { createVoiceAsrModelResponder } from './voice-asr-model-route'
-import { VOICE_ASR_MODEL_ROUTE_PREFIX } from '@ailearn/shared/voice-asr-model-contracts'
+import { VOICE_ASR_MODEL_ROUTE_PREFIX } from '@astella/shared/voice-asr-model-contracts'
 import { ARTIFACT_HOST, isArtifactFrameUrl, isArtifactId } from '../shared/artifact-frame'
 import {
   artifactDocumentContentSecurityPolicy,
@@ -34,7 +34,7 @@ import {
   WINDOW_STATE_CHANNEL,
   WINDOW_STATE_SNAPSHOT_CHANNEL,
   resolveWindowState,
-  type AILearnWindowState,
+  type AstellaWindowState,
   type WindowStateSnapshot,
   TITLE_BAR_THEME_CHANNEL,
 } from '../shared/window-state'
@@ -52,7 +52,7 @@ import { guardProcessOutputStreams } from './output-stream-guard'
 // 现场与理由见 output-stream-guard.ts。
 guardProcessOutputStreams(process.stdout, process.stderr)
 
-const APP_SCHEME = 'ailearn-app'
+const APP_SCHEME = 'astella-app'
 const APP_HOST = 'bundle'
 const APP_URL = `${APP_SCHEME}://${APP_HOST}/index.html`
 
@@ -60,9 +60,9 @@ const APP_URL = `${APP_SCHEME}://${APP_HOST}/index.html`
 // environment (CI containers, sandboxed agent shells): every child process then
 // dies with "sandbox initialization failed: Operation not permitted" until the
 // GPU process gives up and the app exits with "GPU process isn't usable". This
-// mirrors the capture scripts' opt-in `AILEARN_CAPTURE_NO_SANDBOX`, so an
+// mirrors the capture scripts' opt-in `ASTELLA_CAPTURE_NO_SANDBOX`, so an
 // ordinary local run keeps Electron's sandbox in place.
-if (process.env.AILEARN_ELECTRON_NO_SANDBOX === '1') {
+if (process.env.ASTELLA_ELECTRON_NO_SANDBOX === '1') {
   app.commandLine.appendSwitch('no-sandbox')
 }
 
@@ -121,7 +121,7 @@ function artifactSourcePath(artifactId: string): string {
 }
 
 /**
- * `ailearn-app://artifact/<id>`：交给渲染进程读的是**组装好的那一份文档**
+ * `astella-app://artifact/<id>`：交给渲染进程读的是**组装好的那一份文档**
  * （我们的模板 + 产物），配额在这里做第二道校验，超量整份拒绝（D4 §6）。
  */
 async function artifactDocumentResponse(requestUrl: URL, method: string): Promise<Response> {
@@ -364,7 +364,7 @@ function isAllowedRendererRequest(target: string): boolean {
  * 两道闸的计数（D4 §7.2 的"阳性对照先证明计数会动"）。
  *
  * 计数本身是产品路径的一部分（零成本），但**只有隔离探针读得到**：见下面那处
- * `AILEARN_ISOLATION_PROBE=1` 的挂载——默认关着，也没有任何 IPC 通道碰它。
+ * `ASTELLA_ISOLATION_PROBE=1` 的挂载——默认关着，也没有任何 IPC 通道碰它。
  */
 const isolationGateCounters = {
   blockedRequests: 0,
@@ -378,8 +378,8 @@ const isolationGateCounters = {
   frameNavigateEvents: 0
 }
 
-if (process.env.AILEARN_ISOLATION_PROBE === '1') {
-  ;(globalThis as Record<string, unknown>).__ailearnIsolationProbe = isolationGateCounters
+if (process.env.ASTELLA_ISOLATION_PROBE === '1') {
+  ;(globalThis as Record<string, unknown>).__astellaIsolationProbe = isolationGateCounters
 }
 
 function registerRendererSecurityPolicy(): void {
@@ -468,7 +468,7 @@ function hardenWebContents(contents: WebContents): void {
    *
    * 只有一种放行：**宿主发起、且 frame 还在首次加载**、目标是我们自己的产物 origin。
    * 产物自己发起的任何导航（`location.href=…`、`top.location=…`）都在这里被拒——
-   * 包括把自己导航到 `ailearn-app://bundle`（那一份文档带着 preload 桥，是探针要打的一发）。
+   * 包括把自己导航到 `astella-app://bundle`（那一份文档带着 preload 桥，是探针要打的一发）。
    *
    * 判断依据取"发起者是不是这个 frame 自己"＋"这个 frame 当前还在不在初始文档"，
    * 而不是"目标在不在允许集合"：后者放不住"从产物 origin 导航到主页面 origin"。
@@ -527,9 +527,9 @@ function registerWindowIpc(): void {
 }
 
 const windowStateRevisions = new WeakMap<BrowserWindow, number>()
-const publishedWindowStates = new WeakMap<BrowserWindow, AILearnWindowState>()
+const publishedWindowStates = new WeakMap<BrowserWindow, AstellaWindowState>()
 
-function currentWindowState(window: BrowserWindow): AILearnWindowState {
+function currentWindowState(window: BrowserWindow): AstellaWindowState {
   return resolveWindowState({
     minimized: window.isMinimized(),
     visible: window.isVisible()
@@ -717,7 +717,7 @@ function reportStartupFailure(error: unknown): void {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error)
   // stderr：Electron 在 Windows 上会把主进程的 console.error 转发到父进程的 stderr，
   // CI 那边 `Start-Process -RedirectStandardError` 收得到。
-  console.error('[ailearn] 启动失败：', message)
+  console.error('[astella] 启动失败：', message)
   // userData 下留一份：用户报障时可以直接拿到，不依赖他截得到终端。
   try {
     const logPath = join(app.getPath('userData'), 'startup-failure.log')

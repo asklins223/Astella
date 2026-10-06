@@ -1,7 +1,7 @@
 -- 0289 —— 轮次族三把「只追加」守卫加一条级联豁免（39d 登记的 P0 回归；F 台账 F43）。
 --
 -- 症状（2026-09-26 实测，改前）：解散一个真的学习过笔记的空间必然失败——
---   SELECT public.ailearn_dissolve_workspace(ws, owner)
+--   SELECT public.astella_dissolve_workspace(ws, owner)
 --   → ERROR: note_learning_round_artifacts is append-only: DELETE is not allowed
 --            (round 8db5c0aa-…, artifact 526eb2f0-…)   [code P0001]
 -- 同一条路还覆盖"删用户／数据保留请求"（39 §10.3 末段明写删除要继续按既有规则走）。

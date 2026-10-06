@@ -101,5 +101,5 @@ END $$;
 
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.personal_relation_decisions_v2 TO ailearn_api;
-GRANT ALL ON public.personal_relation_decisions_v2 TO ailearn_migrator;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.personal_relation_decisions_v2 TO astella_api;
+GRANT ALL ON public.personal_relation_decisions_v2 TO astella_migrator;

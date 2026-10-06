@@ -103,27 +103,27 @@ describe("Migration 0135 — FK RESTRICT on learning_runs.key_point_id", () => {
 describe("Migration 0135 — Private rubric column hardening (§22.1)", () => {
   const sql = readMigration();
 
-  it("revokes full SELECT from ailearn_api on learning_objective_revisions_v2", () => {
+  it("revokes full SELECT from astella_api on learning_objective_revisions_v2", () => {
     assert.ok(
-      sql.includes("REVOKE SELECT ON public.learning_objective_revisions_v2 FROM ailearn_api"),
+      sql.includes("REVOKE SELECT ON public.learning_objective_revisions_v2 FROM astella_api"),
       "must revoke full SELECT from API role",
     );
   });
 
-  it("grants column-level SELECT to ailearn_api (public columns only)", () => {
+  it("grants column-level SELECT to astella_api (public columns only)", () => {
     assert.ok(
       sql.includes("GRANT SELECT (") &&
         sql.includes("objective_statement") &&
         sql.includes("public_summary") &&
         !sql.includes("canonical_answer") || sql.includes("canonical_answer") &&
-          sql.includes("TO ailearn_api"),
+          sql.includes("TO astella_api"),
       "must grant column-level SELECT for public columns only",
     );
   });
 
   it("does NOT grant API access to canonical_answer column", () => {
     // The column-level GRANT should not include canonical_answer
-    const grantMatch = sql.match(/GRANT SELECT \(([^)]+)\) ON public\.learning_objective_revisions_v2 TO ailearn_api/);
+    const grantMatch = sql.match(/GRANT SELECT \(([^)]+)\) ON public\.learning_objective_revisions_v2 TO astella_api/);
     assert.ok(grantMatch, "must have column-level GRANT");
     const columns = grantMatch![1];
     assert.ok(
@@ -187,52 +187,52 @@ describe("Migration 0135 — New V2 tables", () => {
 describe("Migration 0135 — P3: learning_target_snapshots_v2 column-level GRANT hardening", () => {
   const sql = readMigration();
 
-  it("grants full access to ailearn_worker on learning_target_snapshots_v2", () => {
+  it("grants full access to astella_worker on learning_target_snapshots_v2", () => {
     assert.ok(
       sql.includes("GRANT SELECT, INSERT, UPDATE, DELETE ON") &&
         sql.includes("public.learning_target_snapshots_v2") &&
-        sql.includes("TO ailearn_worker"),
-      "must grant full access to ailearn_worker",
+        sql.includes("TO astella_worker"),
+      "must grant full access to astella_worker",
     );
   });
 
-  it("does NOT grant blanket SELECT on learning_target_snapshots_v2 to ailearn_api", () => {
-    // The broad GRANT should NOT include learning_target_snapshots_v2 for ailearn_api
-    const broadGrantMatch = sql.match(/GRANT SELECT, INSERT, UPDATE, DELETE ON\s+([^TO]+)TO ailearn_api, ailearn_worker/);
+  it("does NOT grant blanket SELECT on learning_target_snapshots_v2 to astella_api", () => {
+    // The broad GRANT should NOT include learning_target_snapshots_v2 for astella_api
+    const broadGrantMatch = sql.match(/GRANT SELECT, INSERT, UPDATE, DELETE ON\s+([^TO]+)TO astella_api, astella_worker/);
     if (broadGrantMatch) {
       const tables = broadGrantMatch![1];
       assert.ok(
         !tables.includes("learning_target_snapshots_v2"),
-        "learning_target_snapshots_v2 must NOT be in the broad GRANT to ailearn_api",
+        "learning_target_snapshots_v2 must NOT be in the broad GRANT to astella_api",
       );
     }
   });
 
-  it("grants column-level SELECT to ailearn_api excluding private columns", () => {
+  it("grants column-level SELECT to astella_api excluding private columns", () => {
     // Find the column-level SELECT GRANT for learning_target_snapshots_v2
-    const grantMatch = sql.match(/GRANT SELECT \(([^)]+)\) ON public\.learning_target_snapshots_v2 TO ailearn_api/);
-    assert.ok(grantMatch, "must have column-level SELECT GRANT for ailearn_api");
+    const grantMatch = sql.match(/GRANT SELECT \(([^)]+)\) ON public\.learning_target_snapshots_v2 TO astella_api/);
+    assert.ok(grantMatch, "must have column-level SELECT GRANT for astella_api");
     const columns = grantMatch![1];
     assert.ok(
       !columns.includes("canonical_answer"),
-      "P3: canonical_answer must NOT be in ailearn_api SELECT GRANT",
+      "P3: canonical_answer must NOT be in astella_api SELECT GRANT",
     );
     assert.ok(
       !columns.includes("scoring_rubric"),
-      "P3: scoring_rubric must NOT be in ailearn_api SELECT GRANT",
+      "P3: scoring_rubric must NOT be in astella_api SELECT GRANT",
     );
     assert.ok(
       !columns.includes("evidence_bindings"),
-      "P3: evidence_bindings must NOT be in ailearn_api SELECT GRANT",
+      "P3: evidence_bindings must NOT be in astella_api SELECT GRANT",
     );
     // Public columns that SHOULD be granted
     assert.ok(columns.includes("snapshot_id"), "snapshot_id should be in SELECT GRANT");
     assert.ok(columns.includes("target_revision_hash"), "target_revision_hash should be in SELECT GRANT");
   });
 
-  it("grants INSERT with all columns to ailearn_api (API creates snapshots)", () => {
-    const insertMatch = sql.match(/GRANT INSERT \(([^)]+)\) ON public\.learning_target_snapshots_v2 TO ailearn_api/);
-    assert.ok(insertMatch, "must have column-level INSERT GRANT for ailearn_api");
+  it("grants INSERT with all columns to astella_api (API creates snapshots)", () => {
+    const insertMatch = sql.match(/GRANT INSERT \(([^)]+)\) ON public\.learning_target_snapshots_v2 TO astella_api/);
+    assert.ok(insertMatch, "must have column-level INSERT GRANT for astella_api");
     const columns = insertMatch![1];
     assert.ok(
       columns.includes("canonical_answer"),
@@ -244,17 +244,17 @@ describe("Migration 0135 — P3: learning_target_snapshots_v2 column-level GRANT
     );
   });
 
-  it("grants UPDATE excluding private columns to ailearn_api", () => {
-    const updateMatch = sql.match(/GRANT UPDATE \(([^)]+)\) ON public\.learning_target_snapshots_v2 TO ailearn_api/);
-    assert.ok(updateMatch, "must have column-level UPDATE GRANT for ailearn_api");
+  it("grants UPDATE excluding private columns to astella_api", () => {
+    const updateMatch = sql.match(/GRANT UPDATE \(([^)]+)\) ON public\.learning_target_snapshots_v2 TO astella_api/);
+    assert.ok(updateMatch, "must have column-level UPDATE GRANT for astella_api");
     const columns = updateMatch![1];
     assert.ok(
       !columns.includes("canonical_answer"),
-      "P3: canonical_answer must NOT be in ailearn_api UPDATE GRANT",
+      "P3: canonical_answer must NOT be in astella_api UPDATE GRANT",
     );
     assert.ok(
       !columns.includes("scoring_rubric"),
-      "P3: scoring_rubric must NOT be in ailearn_api UPDATE GRANT",
+      "P3: scoring_rubric must NOT be in astella_api UPDATE GRANT",
     );
   });
 });

@@ -17,18 +17,18 @@
  * 判、不由这里重写；唯一性交给 0300 那条部分唯一索引。
  */
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { personalObjectiveBindingsV2 } from "@ailearn/shared/db-schema/personal-objective-bindings";
+import { personalObjectiveBindingsV2 } from "@astella/shared/db-schema/personal-objective-bindings";
 import {
   learningObjectiveOriginsV2,
   learningObjectiveRevisionsV2,
   learningObjectivesV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import { notes, noteVersions } from "@ailearn/shared/db-schema/note";
+} from "@astella/shared/db-schema/card-generation-v2";
+import { notes, noteVersions } from "@astella/shared/db-schema/note";
 import {
   bindingLinkEvidenceV2,
   decideBindingLinkV2,
   type BindingLinkCandidateV2,
-} from "@ailearn/shared/personal-binding-link-rules-v2";
+} from "@astella/shared/personal-binding-link-rules-v2";
 import { visibleNotesCondition, visibleObjectivesCondition } from "../note/visibility.ts";
 import type { ApiTransaction } from "../../db/client.ts";
 
@@ -212,7 +212,7 @@ export class BindingLinkRefusedV2 extends Error {
 /**
  * 这一条本人绑定可以关联的候选：**同篇同版**上的公共目标。
  *
- * 为什么不按指纹找：见 `@ailearn/shared/personal-binding-link-rules-v2` 的头注——
+ * 为什么不按指纹找：见 `@astella/shared/personal-binding-link-rules-v2` 的头注——
  * `semanticTargetFingerprint` 的输入含 `objectiveId`，而本人绑定建立那一刻**没有**
  * `objectiveId`，所以"指纹相等"在数据面上不可能成立。能当"同一批材料"用的只有
  * `(noteId, noteVersionId)`，它来自 `learning_objective_origins_v2` 那条公共血缘。

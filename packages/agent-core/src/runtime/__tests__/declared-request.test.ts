@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentOperationV1 } from "@ailearn/shared/agent-contracts";
+import type { AgentOperationV1 } from "@astella/shared/agent-contracts";
 import { declaredAgentRequestStep } from "../declared-request.ts";
 
 const input: Parameters<typeof declaredAgentRequestStep>[0] = {

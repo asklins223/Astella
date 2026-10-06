@@ -4,9 +4,9 @@ import { afterEach, expect, it } from "vitest";
 import { ReadingBlock } from "../notebook-reading-block";
 import { noteReadingText } from "../note-reading-text";
 import { useNotebookSelection } from "../use-notebook-selection";
-import { noteBlockRenderedTextV1, noteBlocksToPmNodes, pmNodesToNoteBlocks } from "@ailearn/shared/note-doc-schema";
-import { noteAnchorMatchesV1 } from "@ailearn/shared/note-annotation-contracts";
-import type { NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
+import { noteBlockRenderedTextV1, noteBlocksToPmNodes, pmNodesToNoteBlocks } from "@astella/shared/note-doc-schema";
+import { noteAnchorMatchesV1 } from "@astella/shared/note-annotation-contracts";
+import type { NoteDetailV1 } from "@astella/shared/note-projection-contracts";
 
 afterEach(() => { cleanup(); window.getSelection()?.removeAllRanges(); });
 

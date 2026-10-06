@@ -35,7 +35,7 @@ import {
   supplementAssessmentDisputeCommandV2Schema,
   submitDisputeSupplementResultV2Schema,
   assessmentDisputeEnvelopeV2Schema,
-} from "@ailearn/shared/assessment-dispute-rules-v2";
+} from "@astella/shared/assessment-dispute-rules-v2";
 import type { GatewayTransport } from "./desktop-gateway-transport";
 
 export async function closeAssessmentDispute(t: GatewayTransport, 

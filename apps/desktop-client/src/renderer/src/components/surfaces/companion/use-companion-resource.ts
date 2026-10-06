@@ -1,4 +1,4 @@
-import type { GatewayResultV1,RequestMetaV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { GatewayResultV1,RequestMetaV1 } from "@astella/shared/desktop-ipc-contracts";
 import { useCallback,useEffect } from "react";
 import { createRequestMeta } from "../../../app/desktop-client";
 import { useRoomStore } from "../../../app/room-store";
@@ -20,7 +20,7 @@ export function useCompanionRecordsRefresh(reload: () => Promise<void>) {
   useEffect(() => {
     const refresh = () => { void reload(); };
     window.addEventListener(COMPANION_RECORDS_CHANGED, refresh);
-    window.addEventListener("ailearn:companion-activity-changed", refresh);
-    return () => { window.removeEventListener(COMPANION_RECORDS_CHANGED, refresh); window.removeEventListener("ailearn:companion-activity-changed", refresh); };
+    window.addEventListener("astella:companion-activity-changed", refresh);
+    return () => { window.removeEventListener(COMPANION_RECORDS_CHANGED, refresh); window.removeEventListener("astella:companion-activity-changed", refresh); };
   }, [reload]);
 }

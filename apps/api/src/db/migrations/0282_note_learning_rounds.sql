@@ -26,9 +26,9 @@
 --     `apps/api/src/modules/note/content-hash.ts:25-28`），另有 10～40 位的历史/夹具值；
 --     判据要拦住的是"没有哈希"，不是"不是 sha256"。写成 8～128 就是把这两件事分开。
 --  5. **RLS**（§6.5）：ENABLE + FORCE，谓词是纯 `(workspace_id, user_id)` GUC 匹配。
---     **这里没有 `CURRENT_USER = 'ailearn_worker'` 那一条旁路**（learning_runs 有），
+--     **这里没有 `CURRENT_USER = 'astella_worker'` 那一条旁路**（learning_runs 有），
 --     因为 D1 §6.5 写死了"轮次与学习线都不给 worker 开跨租户读"；连带也不给
---     `ailearn_worker` 任何 GRANT——今天它没有读需求，将来有需求要走一次独立决定。
+--     `astella_worker` 任何 GRANT——今天它没有读需求，将来有需求要走一次独立决定。
 --  6. **不建空行**（§6.6）：这张表没有默认行、也没有"每篇笔记一条"的唯一约束；
 --     服务侧第一次产生轮次时才建（与 39 §8.5 同取向）。
 --  7. **轮次不存聚合结论**（§6.7）：表上**没有**任何"当前掌握度/亮度/百分比/未解决缺口"
@@ -125,8 +125,8 @@ CREATE POLICY nlr_workspace_user_isolation ON public.note_learning_rounds
 -- 权限写在迁移里（0275 那一课：`roles.sql` 按 ALL TABLES 授，只覆盖建表在它之前的库；
 -- 增量迁移不补 GRANT，症状是运行期 permission denied）。
 -- worker 一侧**故意一句都不给**。
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.note_learning_rounds TO ailearn_api;
-GRANT ALL PRIVILEGES ON public.note_learning_rounds TO ailearn_migrator;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.note_learning_rounds TO astella_api;
+GRANT ALL PRIVILEGES ON public.note_learning_rounds TO astella_migrator;
 
 --> statement-breakpoint
 

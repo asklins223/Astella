@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { learningRunPublicSnapshotV2Schema } from "@ailearn/shared/learning-run-v2-contracts";
+import { learningRunPublicSnapshotV2Schema } from "@astella/shared/learning-run-v2-contracts";
 import { LearningRunSurface } from "../run/learning-run-surface.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
 
@@ -90,7 +90,7 @@ const CHOICE = {
 function stubGateway() {
   const submits: unknown[] = [];
   const ok = <T,>(data: T) => ({ ok: true as const, workspaceEpoch: 1, data });
-  window.ailearn = {
+  window.astella = {
     contract: { enabledRoutes: ["learningRun.get", "learningRun.submit"] },
     auth: {
       getState: vi.fn(async () => ok({
@@ -119,7 +119,7 @@ function stubGateway() {
       onEvent: vi.fn(() => () => undefined),
       unsubscribe: vi.fn(async () => ok(null)),
     },
-  } as unknown as typeof window.ailearn;
+  } as unknown as typeof window.astella;
   return { submits };
 }
 

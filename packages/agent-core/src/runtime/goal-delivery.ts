@@ -1,6 +1,6 @@
-import type { AgentTurnRequest } from "@ailearn/shared";
+import type { AgentTurnRequest } from "@astella/shared";
 import { AGENT_GOAL_DELIVERY_CAPABILITY, agentGoalDeliveryV1Schema,
-  type AgentGoalDeliveryV1, type AgentOperationV1 } from "@ailearn/shared/agent-contracts";
+  type AgentGoalDeliveryV1, type AgentOperationV1 } from "@astella/shared/agent-contracts";
 
 const record = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;

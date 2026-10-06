@@ -9,9 +9,9 @@ import type { Plugin } from 'vite'
 
 import { sharedAlias } from './shared-alias.ts'
 import { voiceAsrModelDirectory } from './src/shared/voice-asr-model-path.ts'
-// ⚠️ 走**源码相对路径**而不是 `@ailearn/shared/…`：本文件由 Node 直接加载，
+// ⚠️ 走**源码相对路径**而不是 `@astella/shared/…`：本文件由 Node 直接加载，
 // 还没有 vite 的 alias（`sharedAlias` 只作用于被打包的那三份），而
-// `node_modules/@ailearn/shared` 是 pnpm 的安装期快照——它还不知道新增的那条
+// `node_modules/@astella/shared` 是 pnpm 的安装期快照——它还不知道新增的那条
 // exports，子路径 import 会直接 `ERR_PACKAGE_PATH_NOT_EXPORTED`。
 import {
   VOICE_ASR_MODEL_FILES,
@@ -38,8 +38,8 @@ loadDotenv({
  *
  * ## 为什么不能靠打包后那条 app scheme 路由
  *
- * 打包后页面在 `ailearn-app://bundle`，模型挂在同一 host 的 `/device/asr/`，同源，能读。
- * 开发时页面在 `http://localhost:5173`，从那里 fetch `ailearn-app://bundle/...` 实测
+ * 打包后页面在 `astella-app://bundle`，模型挂在同一 host 的 `/device/asr/`，同源，能读。
+ * 开发时页面在 `http://localhost:5173`，从那里 fetch `astella-app://bundle/...` 实测
  * **直接 `TypeError: Failed to fetch`**——那种自定义 scheme 不做 CORS 放行，而给
  * `connect-src` 放开它又会波及整套 app scheme 的开发资源（字体、Live2D、wasm 全部
  * 都是从那里跨源取的）。所以开发模式让开发服务器在**自己的 origin** 上提供这两个文件：
@@ -50,7 +50,7 @@ loadDotenv({
 function voiceAsrModelDevAssets(): Plugin {
   const directory = voiceAsrModelDirectory()
   return {
-    name: 'ailearn:voice-asr-model-assets',
+    name: 'astella:voice-asr-model-assets',
     configureServer(server) {
       server.middlewares.use((request, response, next) => {
         const path = (request.url ?? '').split('?')[0]
@@ -92,7 +92,7 @@ function voiceAsrModelDevAssets(): Plugin {
 }
 
 /**
- * `@ailearn/shared` 的实时源码别名定义在 `shared-alias.ts`，与 `vitest.config.ts`
+ * `@astella/shared` 的实时源码别名定义在 `shared-alias.ts`，与 `vitest.config.ts`
  * 共用同一份（两边解析的不是同一个文件，就有一边在测一份快照）。
  */
 export default defineConfig({

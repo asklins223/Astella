@@ -58,7 +58,7 @@ async function seed(): Promise<Fixture> {
 
 /** postgres.js 的查询结果是 Result 包装的；断言标量时要先取第一行第一列。 */
 async function fenceOk(runId: string, version: number): Promise<boolean> {
-  const [row] = await sql`SELECT public.ailearn_assert_handoff_snapshot_fence(${runId}, ${version}) AS ok`;
+  const [row] = await sql`SELECT public.astella_assert_handoff_snapshot_fence(${runId}, ${version}) AS ok`;
   return Boolean(row!.ok);
 }
 
@@ -136,7 +136,7 @@ test("0389：快照推进到下一版；run 结束后的迟到结果写不进去
         FROM companion_turn_runs r
        WHERE s.run_id = ${ids.runId} AND r.id = s.run_id
          AND r.status IN ('accepted','running','waiting_for_confirmation')
-         AND public.ailearn_assert_handoff_snapshot_fence(${ids.runId}, s.snapshot_version)
+         AND public.astella_assert_handoff_snapshot_fence(${ids.runId}, s.snapshot_version)
       RETURNING s.snapshot_version`;
 
     const first = await bump();

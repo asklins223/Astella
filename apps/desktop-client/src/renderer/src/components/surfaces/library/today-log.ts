@@ -14,7 +14,7 @@ import type {
   ActivityEventV1,
   ActivityTargetV1,
   TodayActivityV1,
-} from "@ailearn/shared/activity-surface-contracts";
+} from "@astella/shared/activity-surface-contracts";
 
 /** 每类事件的展示文案：kind 标签 + 动词前缀。 */
 const KIND_LABELS: Readonly<Record<ActivityEventV1["kind"], string>> = {

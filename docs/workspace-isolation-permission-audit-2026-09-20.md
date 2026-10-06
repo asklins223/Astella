@@ -113,7 +113,7 @@
 | 中 | 邀请允许 `role='owner'` 且 UI 提供"所有者"选项（**有意设计**，可邀请 co-owner）；叠加导出即意味着任一 co-owner 能拿走全空间数据 | `invite-service.ts:74`、`identity/routes.ts:445`、`settings-surface.tsx:1413` |
 | 中 | 多张表按 workspace 而非 (workspace,user) 隔离但表内有 actor 列：`note_image_assets(created_by)`、`card_generation_runs_v2(user_id)`、`learning_target_snapshots_v2(user_id)`；`/uploads/*` 读与 `POST /v2/cards/:id/reveal` 未拦角色 → 多 owner 空间可互改对方内容 | `0039`、`upload/routes.ts:230`、`card-generation-v2/routes.ts:536` |
 | 低 | 服务端无 `workspaceEpoch` 概念（只有硬编码 `1`）→ 无法做"某空间全端强制下线" | `capability-projection.ts:104-107` |
-| 低 | 33 张表 RLS enabled 但未 FORCE（表属主 `ailearn_migrator` 有 `rolbypassrls`），与 `rls-policies-postgres.integration.ts:384-390` 自称的不变量不一致 | 同上 |
+| 低 | 33 张表 RLS enabled 但未 FORCE（表属主 `astella_migrator` 有 `rolbypassrls`），与 `rls-policies-postgres.integration.ts:384-390` 自称的不变量不一致 | 同上 |
 
 ### 1.4 多人同时编辑同一篇笔记
 
@@ -386,8 +386,8 @@ dev 库实测 855 空间 / 856 用户（一人一空间）。真实协作后一�
    变成红。
 2. **`review_schedules` 的 `actor_guard` 与"系统级到期行"互斥**。策略是 RESTRICTIVE 的
    `user_id = app.user_id`，`user_id IS NULL` 的行在 RLS 下对所有人不可见。所以到期投影必须
-   按人展开成行；否则生产静默消失，而 dev 因为连的是 `ailearn`（superuser + BYPASSRLS）永远
-   测不出来。验证只能用 `SET LOCAL ROLE ailearn_api`，并且要带一条**正向对照**（自己的行读得到
+   按人展开成行；否则生产静默消失，而 dev 因为连的是 `astella`（superuser + BYPASSRLS）永远
+   测不出来。验证只能用 `SET LOCAL ROLE astella_api`，并且要带一条**正向对照**（自己的行读得到
    =1），否则"读到 0"分不清是被策略挡住还是策略根本不存在——0027 的批量 DISABLE 能同时骗过
    两条负向断言。
 3. **改已应用的迁移文件 = 让它在已应用库上重跑**。`migrate.ts` 以 `sha256(文件内容)` 判断是否
@@ -430,7 +430,7 @@ dev 库实测 855 空间 / 856 用户（一人一空间）。真实协作后一�
 **另一个空间**的发言喂出来的。这正是审查开头问题 1 问的"数据混淆"，之前只能靠读代码判断，
 现在有数了。
 
-调度器同批修掉的另一条：`ailearn_enqueue_companion_daily_summaries`（`0198` 里的）在判断
+调度器同批修掉的另一条：`astella_enqueue_companion_daily_summaries`（`0198` 里的）在判断
 "昨天有没有动静"之前先 `ORDER BY wm.joined_at ASC LIMIT 1` 代替用户挑了一个空间。造 3 个空间
 （1 个已退出、2 个在用）实测：旧写法命中 **1** 个空间、新写法命中 **2** 个 (user, space) 对。
 所以加入 3 个空间的人，每日小结永远只围绕最早加入的那一个。

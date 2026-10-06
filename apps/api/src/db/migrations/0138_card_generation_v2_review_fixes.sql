@@ -2,7 +2,7 @@
 -- ---------------------------------------------------------------------------
 -- 依据：docs/evidence/learning-companion/20-learning-card-v2-implementation-review.md
 -- 修复项：
---   1) 0135 全部 16 个 RLS 策略补 ailearn_worker 豁免（0116 模式）——
+--   1) 0135 全部 16 个 RLS 策略补 astella_worker 豁免（0116 模式）——
 --      worker 以 NOBYPASSRLS 且不设 app.user_id（部分路径连 app.workspace_id
 --      也不设，如 outbox claim）直查 V2 表，缺豁免会被策略拦截为 0 行；
 --   2) card_content_capability_state（§18.1 epoch 单一权威）；
@@ -26,105 +26,105 @@
 
 --> statement-breakpoint
 
--- ─── 1. RLS ailearn_worker 豁免（0135 策略修正） ─────────────────────────
+-- ─── 1. RLS astella_worker 豁免（0135 策略修正） ─────────────────────────
 -- workspace-only 策略补 worker 豁免；workspace+user 策略同样补 worker 豁免。
 -- （worker 连接不设 app.user_id，双条件策略会把它挡成 0 行。）
 
 --> statement-breakpoint
 
 ALTER POLICY cg_v2_ws_isolation ON card_generation_runs_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
 --> statement-breakpoint
 
 ALTER POLICY cgp_v2_ws_isolation ON card_generation_plans_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
 --> statement-breakpoint
 
 ALTER POLICY cgc_v2_ws_isolation ON card_generation_candidates_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
 --> statement-breakpoint
 
 ALTER POLICY cge_v2_ws_isolation ON card_generation_events_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
 --> statement-breakpoint
 
 ALTER POLICY cgro_v2_ws_isolation ON card_generation_run_outbox_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
 --> statement-breakpoint
 
 ALTER POLICY car_v2_ws_isolation ON card_activation_receipts_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
 --> statement-breakpoint
 
 ALTER POLICY cebp_v2_ws_isolation ON candidate_evidence_binding_plans_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
 --> statement-breakpoint
 
 ALTER POLICY ees_v2_ws_isolation ON evidence_eligibility_states_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
 --> statement-breakpoint
 
 ALTER POLICY lo_v2_ws_isolation ON learning_objectives_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
 --> statement-breakpoint
 
 ALTER POLICY lo_v2_rev_ws_isolation ON learning_objective_revisions_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
 --> statement-breakpoint
 
 ALTER POLICY lc_v2_ws_isolation ON learning_cards_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
 --> statement-breakpoint
 
 ALTER POLICY lc_v2_pub_ws_isolation ON learning_card_publication_revisions_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
 --> statement-breakpoint
 
 ALTER POLICY lts_v2_ws_isolation ON learning_target_snapshots_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
 --> statement-breakpoint
 
 ALTER POLICY ltsa_v2_ws_isolation ON legacy_target_snapshot_attachments_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
 --> statement-breakpoint
 
 ALTER POLICY ce_v2_ws_isolation ON card_exposure_ledger_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR ((workspace_id = (current_setting('app.workspace_id', true))::uuid) AND (user_id = (current_setting('app.user_id', true))::uuid)))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR ((workspace_id = (current_setting('app.workspace_id', true))::uuid) AND (user_id = (current_setting('app.user_id', true))::uuid)));
+  USING (CURRENT_USER = 'astella_worker' OR ((workspace_id = (current_setting('app.workspace_id', true))::uuid) AND (user_id = (current_setting('app.user_id', true))::uuid)))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR ((workspace_id = (current_setting('app.workspace_id', true))::uuid) AND (user_id = (current_setting('app.user_id', true))::uuid)));
 
 --> statement-breakpoint
 
 ALTER POLICY ivr_v2_ws_isolation ON initial_validation_reminders_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR ((workspace_id = (current_setting('app.workspace_id', true))::uuid) AND (user_id = (current_setting('app.user_id', true))::uuid)))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR ((workspace_id = (current_setting('app.workspace_id', true))::uuid) AND (user_id = (current_setting('app.user_id', true))::uuid)));
+  USING (CURRENT_USER = 'astella_worker' OR ((workspace_id = (current_setting('app.workspace_id', true))::uuid) AND (user_id = (current_setting('app.user_id', true))::uuid)))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR ((workspace_id = (current_setting('app.workspace_id', true))::uuid) AND (user_id = (current_setting('app.user_id', true))::uuid)));
 
 --> statement-breakpoint
 
@@ -142,10 +142,10 @@ CREATE TABLE IF NOT EXISTS public.card_content_capability_state (
 ALTER TABLE public.card_content_capability_state ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY ccs_v2_ws_isolation ON public.card_content_capability_state
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
-GRANT SELECT, INSERT, UPDATE ON public.card_content_capability_state TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT, UPDATE ON public.card_content_capability_state TO astella_api, astella_worker;
 
 --> statement-breakpoint
 
@@ -164,10 +164,10 @@ CREATE TABLE IF NOT EXISTS public.card_generation_semantic_specs_v2 (
 ALTER TABLE public.card_generation_semantic_specs_v2 ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY cgss_v2_ws_isolation ON public.card_generation_semantic_specs_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
-GRANT SELECT, INSERT ON public.card_generation_semantic_specs_v2 TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT ON public.card_generation_semantic_specs_v2 TO astella_api, astella_worker;
 
 CREATE TABLE IF NOT EXISTS public.card_generation_input_snapshots_v2 (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -184,10 +184,10 @@ CREATE TABLE IF NOT EXISTS public.card_generation_input_snapshots_v2 (
 ALTER TABLE public.card_generation_input_snapshots_v2 ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY cgis_v2_ws_isolation ON public.card_generation_input_snapshots_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
-GRANT SELECT, INSERT ON public.card_generation_input_snapshots_v2 TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT ON public.card_generation_input_snapshots_v2 TO astella_api, astella_worker;
 
 --> statement-breakpoint
 
@@ -233,10 +233,10 @@ CREATE TABLE IF NOT EXISTS public.evidence_snapshots_v2 (
 ALTER TABLE public.evidence_snapshots_v2 ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY es_v2_ws_isolation ON public.evidence_snapshots_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
-GRANT SELECT, INSERT ON public.evidence_snapshots_v2 TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT ON public.evidence_snapshots_v2 TO astella_api, astella_worker;
 
 CREATE TRIGGER es_v2_no_update BEFORE UPDATE ON public.evidence_snapshots_v2
   FOR EACH ROW EXECUTE FUNCTION public.prevent_immutable_v2_row_mutation();
@@ -257,10 +257,10 @@ CREATE TABLE IF NOT EXISTS public.evidence_redactions_v2 (
 ALTER TABLE public.evidence_redactions_v2 ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY er_v2_ws_isolation ON public.evidence_redactions_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
-GRANT SELECT, INSERT ON public.evidence_redactions_v2 TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT ON public.evidence_redactions_v2 TO astella_api, astella_worker;
 
 CREATE TABLE IF NOT EXISTS public.semantic_support_reports_v2 (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -279,10 +279,10 @@ CREATE TABLE IF NOT EXISTS public.semantic_support_reports_v2 (
 ALTER TABLE public.semantic_support_reports_v2 ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY ssr_v2_ws_isolation ON public.semantic_support_reports_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
-GRANT SELECT, INSERT ON public.semantic_support_reports_v2 TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT ON public.semantic_support_reports_v2 TO astella_api, astella_worker;
 
 CREATE TRIGGER ssr_v2_no_update BEFORE UPDATE ON public.semantic_support_reports_v2
   FOR EACH ROW EXECUTE FUNCTION public.prevent_immutable_v2_row_mutation();
@@ -311,10 +311,10 @@ CREATE TABLE IF NOT EXISTS public.learning_objective_evidence_bindings_v2 (
 ALTER TABLE public.learning_objective_evidence_bindings_v2 ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY loeb_v2_ws_isolation ON public.learning_objective_evidence_bindings_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
-GRANT SELECT, INSERT ON public.learning_objective_evidence_bindings_v2 TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT ON public.learning_objective_evidence_bindings_v2 TO astella_api, astella_worker;
 
 CREATE INDEX es_v2_ws_snapshot_idx ON public.evidence_snapshots_v2 (workspace_id, evidence_snapshot_id);
 
@@ -348,12 +348,12 @@ CREATE TABLE IF NOT EXISTS public.learning_objective_equivalence_reports_v2 (
 ALTER TABLE public.learning_objective_equivalence_reports_v2 ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY loer_v2_ws_isolation ON public.learning_objective_equivalence_reports_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
 -- 等价报告为 server-private：API 只读、worker 读写
-GRANT SELECT ON public.learning_objective_equivalence_reports_v2 TO ailearn_api;
-GRANT SELECT, INSERT ON public.learning_objective_equivalence_reports_v2 TO ailearn_worker;
+GRANT SELECT ON public.learning_objective_equivalence_reports_v2 TO astella_api;
+GRANT SELECT, INSERT ON public.learning_objective_equivalence_reports_v2 TO astella_worker;
 
 CREATE INDEX loer_v2_ws_report_idx ON public.learning_objective_equivalence_reports_v2 (workspace_id, report_id);
 
@@ -381,11 +381,11 @@ CREATE TABLE IF NOT EXISTS public.learning_objective_revision_equivalence_v2 (
 ALTER TABLE public.learning_objective_revision_equivalence_v2 ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY lore_v2_ws_isolation ON public.learning_objective_revision_equivalence_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
-GRANT SELECT ON public.learning_objective_revision_equivalence_v2 TO ailearn_api;
-GRANT SELECT, INSERT ON public.learning_objective_revision_equivalence_v2 TO ailearn_worker;
+GRANT SELECT ON public.learning_objective_revision_equivalence_v2 TO astella_api;
+GRANT SELECT, INSERT ON public.learning_objective_revision_equivalence_v2 TO astella_worker;
 
 --> statement-breakpoint
 
@@ -405,12 +405,12 @@ CREATE TABLE IF NOT EXISTS public.learning_objective_private_contracts_v2 (
 
 ALTER TABLE public.learning_objective_private_contracts_v2 ENABLE ROW LEVEL SECURITY;
 
--- server-private：ailearn_api 无任何访问（§22.1）
+-- server-private：astella_api 无任何访问（§22.1）
 CREATE POLICY lopc_v2_ws_isolation ON public.learning_objective_private_contracts_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
-GRANT SELECT, INSERT ON public.learning_objective_private_contracts_v2 TO ailearn_worker;
+GRANT SELECT, INSERT ON public.learning_objective_private_contracts_v2 TO astella_worker;
 
 CREATE TABLE IF NOT EXISTS public.learning_objective_lineage_v2 (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -426,10 +426,10 @@ CREATE TABLE IF NOT EXISTS public.learning_objective_lineage_v2 (
 ALTER TABLE public.learning_objective_lineage_v2 ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY lol_v2_ws_isolation ON public.learning_objective_lineage_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
-GRANT SELECT, INSERT ON public.learning_objective_lineage_v2 TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT ON public.learning_objective_lineage_v2 TO astella_api, astella_worker;
 
 CREATE INDEX lol_v2_pred_idx ON public.learning_objective_lineage_v2 (workspace_id, predecessor_revision_id);
 CREATE INDEX lol_v2_succ_idx ON public.learning_objective_lineage_v2 (workspace_id, successor_revision_id);
@@ -459,10 +459,10 @@ CREATE TABLE IF NOT EXISTS public.learning_exposures_v2 (
 ALTER TABLE public.learning_exposures_v2 ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY lex_v2_ws_isolation ON public.learning_exposures_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR ((workspace_id = (current_setting('app.workspace_id', true))::uuid) AND (user_id = (current_setting('app.user_id', true))::uuid)))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR ((workspace_id = (current_setting('app.workspace_id', true))::uuid) AND (user_id = (current_setting('app.user_id', true))::uuid)));
+  USING (CURRENT_USER = 'astella_worker' OR ((workspace_id = (current_setting('app.workspace_id', true))::uuid) AND (user_id = (current_setting('app.user_id', true))::uuid)))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR ((workspace_id = (current_setting('app.workspace_id', true))::uuid) AND (user_id = (current_setting('app.user_id', true))::uuid)));
 
-GRANT SELECT, INSERT ON public.learning_exposures_v2 TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT ON public.learning_exposures_v2 TO astella_api, astella_worker;
 
 CREATE INDEX lex_v2_obj_idx ON public.learning_exposures_v2 (workspace_id, user_id, objective_id, exposed_at DESC, id);
 
@@ -492,10 +492,10 @@ CREATE TABLE IF NOT EXISTS public.card_candidate_quality_reports_v2 (
 ALTER TABLE public.card_candidate_quality_reports_v2 ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY ccqr_v2_ws_isolation ON public.card_candidate_quality_reports_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
-GRANT SELECT, INSERT ON public.card_candidate_quality_reports_v2 TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT ON public.card_candidate_quality_reports_v2 TO astella_api, astella_worker;
 
 CREATE INDEX ccqr_v2_rev_idx ON public.card_candidate_quality_reports_v2 (workspace_id, candidate_revision_id);
 
@@ -518,10 +518,10 @@ CREATE TABLE IF NOT EXISTS public.card_candidate_lineage_v2 (
 ALTER TABLE public.card_candidate_lineage_v2 ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY ccl_v2_ws_isolation ON public.card_candidate_lineage_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
-GRANT SELECT, INSERT ON public.card_candidate_lineage_v2 TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT ON public.card_candidate_lineage_v2 TO astella_api, astella_worker;
 
 CREATE INDEX ccl_v2_parent_idx ON public.card_candidate_lineage_v2 (workspace_id, parent_revision_id);
 CREATE INDEX ccl_v2_child_idx ON public.card_candidate_lineage_v2 (workspace_id, child_revision_id);
@@ -540,10 +540,10 @@ CREATE TABLE IF NOT EXISTS public.card_candidate_feedback_v2 (
 ALTER TABLE public.card_candidate_feedback_v2 ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY ccf_v2_ws_isolation ON public.card_candidate_feedback_v2
-  USING (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
-  WITH CHECK (CURRENT_USER = 'ailearn_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
+  USING (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid))
+  WITH CHECK (CURRENT_USER = 'astella_worker' OR (workspace_id = (current_setting('app.workspace_id', true))::uuid));
 
-GRANT SELECT, INSERT ON public.card_candidate_feedback_v2 TO ailearn_api, ailearn_worker;
+GRANT SELECT, INSERT ON public.card_candidate_feedback_v2 TO astella_api, astella_worker;
 
 CREATE INDEX ccf_v2_run_idx ON public.card_candidate_feedback_v2 (workspace_id, run_id);
 

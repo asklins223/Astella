@@ -3,8 +3,8 @@
  *
  * 这一份产出的是**放进桌面模板里的那份内容**，不是整份文档：模板
  * （`apps/desktop-client/src/main/artifact-template.ts`）把内容注入
- * `#ailearn-artifact-root` 的 `<!--__AILEARN_ARTIFACT__-->`，并给
- * `.ailearn-artifact-pane` 提供分屏框与 `::before` 的「第 N 步」（按
+ * `#astella-artifact-root` 的 `<!--__ASTELLA_ARTIFACT__-->`，并给
+ * `.astella-artifact-pane` 提供分屏框与 `::before` 的「第 N 步」（按
  * `data-artifact-step-display` 打印）。所以这里只产出若干 section：解释一屏、
  * 例子一屏（有才出）、计划步骤逐条一屏。
  *
@@ -72,12 +72,12 @@ export function escapeArtifactTextV1(text: string): string {
     .replaceAll("'", "&#39;");
 }
 
-/** 分屏框的边框与「第 N 步」由模板的 `.ailearn-artifact-pane` 管；框内文字没有第二处样式，在这里内联。 */
+/** 分屏框的边框与「第 N 步」由模板的 `.astella-artifact-pane` 管；框内文字没有第二处样式，在这里内联。 */
 const PANE_TITLE_STYLE = "margin:0 0 6px;font-size:14px;line-height:1.5;font-weight:600";
 const PANE_BODY_STYLE = "margin:0;white-space:pre-wrap;overflow-wrap:anywhere";
 
 function paneV1(stepIndex: number, title: string, body: string): string {
-  return `<section class="ailearn-artifact-pane" data-artifact-step="${stepIndex}" data-artifact-step-display="${stepIndex + 1}">`
+  return `<section class="astella-artifact-pane" data-artifact-step="${stepIndex}" data-artifact-step-display="${stepIndex + 1}">`
     + `<h2 style="${PANE_TITLE_STYLE}">${escapeArtifactTextV1(title)}</h2>`
     + `<p style="${PANE_BODY_STYLE}">${escapeArtifactTextV1(body)}</p>`
     + "</section>";

@@ -26,7 +26,7 @@ import {
 import type {
   UnderstandingEdgeProjectionV3,
   UnderstandingNodeProjectionV3,
-} from "@ailearn/shared/note-deepening-contracts";
+} from "@astella/shared/note-deepening-contracts";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
 import { useRoomStore } from "../../../app/room-store";
 import { NoteOverviewLayer, NoteLocalLayer, NoteRecordLayer } from "./graph-note-pages";
@@ -35,7 +35,7 @@ import { useStarMapMotion } from "./use-star-map-motion";
 import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { useSurfaceProjection } from "../notebook/surface-data.tsx";
 import {
   edgeEndpointKey,
@@ -318,7 +318,7 @@ export function GraphSurface() {
   } = useGraphControls(compactLayout);
   const { data, loading, failure, reload, refreshing, refreshFailure } = useSurfaceProjection(
     async ({ workspaceEpoch }) => {
-      const response = await window.ailearn.understanding.getTopology({ meta: createRequestMeta(workspaceEpoch) });
+      const response = await window.astella.understanding.getTopology({ meta: createRequestMeta(workspaceEpoch) });
       return unwrapGatewayResult(response);
     },
     [],
@@ -347,7 +347,7 @@ export function GraphSurface() {
     // 乐观：先把它改过去。失败时回滚并**说出来**——静默回滚等于用户白按了一次。
     setRelationStamps((current) => ({ ...current, [edge.edgeId]: decision }));
     try {
-      await unwrapGatewayResult(await window.ailearn.understanding.setRelationDecision({
+      await unwrapGatewayResult(await window.astella.understanding.setRelationDecision({
         meta: createRequestMeta(epochRef.current),
         fromObjectiveId: edge.from.id,
         toObjectiveId: edge.to.id,
@@ -450,7 +450,7 @@ export function GraphSurface() {
       // 失败落在 deepeningFailure 里，而那一格的错误分支又只在 pathNoteId 时才画
       // ——于是没人看得见，只是白白多一次往返。
       if (!pathNoteId || layer === "overview") return null;
-      const response = await window.ailearn.understanding.getNoteDeepening({
+      const response = await window.astella.understanding.getNoteDeepening({
         meta: createRequestMeta(workspaceEpoch),
         noteId: pathNoteId,
       });

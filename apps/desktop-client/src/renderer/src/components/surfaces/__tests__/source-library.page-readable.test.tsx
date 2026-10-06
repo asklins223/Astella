@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SourceLibrarySurface } from "../source/source-library-surface.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /**
  * 「来源库」这一屏登记给伴星读的是什么（39d W2-7）。
@@ -50,7 +50,7 @@ function installApi(listed: { items: ReturnType<typeof source>[]; total: number 
       )),
     },
   };
-  window.ailearn = gateway as unknown as typeof window.ailearn;
+  window.astella = gateway as unknown as typeof window.astella;
   return gateway;
 }
 
@@ -65,7 +65,7 @@ function rowTitles(): (string | null)[] {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   useRoomStore.setState(state => ({ pageReadableView: null, sourceIndexTab: "all", workspaceScopeRevision: state.workspaceScopeRevision + 1 }));
 });
 
@@ -137,7 +137,7 @@ describe("来源库：她读到的与屏幕上的是同一份", () => {
     const pending: ((value: unknown) => void)[] = [];
     let released = false;
     const listed = ok({ items: [source("s-1", "记忆研究综述", "ready", 0)], total: 1, nextCursor: null });
-    window.ailearn = {
+    window.astella = {
       contract: { enabledRoutes: ["source.library"] },
       auth: {
         getState: vi.fn(async () => ok({ status: "authenticated", workspace: { workspaceId: "w-1" } })),
@@ -153,7 +153,7 @@ describe("来源库：她读到的与屏幕上的是同一份", () => {
           });
         }),
       },
-    } as unknown as typeof window.ailearn;
+    } as unknown as typeof window.astella;
     const { unmount } = render(<SourceLibrarySurface />);
     await waitFor(() => expect(screen.getByText("正在读取来源库")).not.toBeNull());
     expect(publishedView()).toBeNull();

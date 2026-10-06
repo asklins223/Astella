@@ -6,21 +6,21 @@
 # 为什么需要它：RLS 策略目录（rls-policies-postgres）、worker 队列
 # （queue-postgres）、投影分页（projection-pagination）等用例，断言里含
 # "claim 到的恰好是这两条 job""库里没有别的 active queue"这类前提。在共享的
-# 开发库（ailearn）上跑会因为历史残留行而**假失败**；反过来它们又会写入和删除
+# 开发库（astella）上跑会因为历史残留行而**假失败**；反过来它们又会写入和删除
 # 数据，本来也不该在开发库上跑。CI 是每次起一个空的 postgres 服务来解决这个
 # 问题的，本地没有等价物——这个脚本就是那个等价物。
 #
 # 用法：
-#   bash scripts/dev-disposable-db.sh                    # 默认 ailearn_rls_test
-#   bash scripts/dev-disposable-db.sh ailearn_scratch
-#   make disposable-db DISPOSABLE_DB=ailearn_scratch
+#   bash scripts/dev-disposable-db.sh                    # 默认 astella_rls_test
+#   bash scripts/dev-disposable-db.sh astella_scratch
+#   make disposable-db DISPOSABLE_DB=astella_scratch
 #
 # 前置：开发 compose 的 postgres 容器在跑（`make up` 或 `make storage` 之后）。
 # 连接串默认打 127.0.0.1:${DISPOSABLE_DB_PORT:-5432}（compose 的宿主端口映射），
 # 可用 DISPOSABLE_DB_HOST / DISPOSABLE_DB_PORT 覆盖。
 #
-# 安全性（这是把删除操作放进仓库的前提）：目标库名必须匹配 ailearn_* 且
-# **不等于** ailearn / postgres，否则直接拒绝执行——开发库不会被误删。
+# 安全性（这是把删除操作放进仓库的前提）：目标库名必须匹配 astella_* 且
+# **不等于** astella / postgres，否则直接拒绝执行——开发库不会被误删。
 #
 # 跑完会打印可直接复制的集成测试环境变量。示例（apps/api 下）：
 #   RLS_TEST_MIGRATOR_DATABASE_URL=... \
@@ -41,18 +41,18 @@ ARG_DB_NAME="${1:-}"
 REQUESTED_HOST="${DISPOSABLE_DB_HOST:-}"
 REQUESTED_PORT="${DISPOSABLE_DB_PORT:-}"
 
-DB_NAME="${ARG_DB_NAME:-ailearn_rls_test}"
-COMPOSE=(docker compose -p ailearn-dev -f docker-compose.dev.yml)
+DB_NAME="${ARG_DB_NAME:-astella_rls_test}"
+COMPOSE=(docker compose -p astella-dev -f docker-compose.dev.yml)
 
 # ── 安全护栏：只允许删/建一次性库 ────────────────────────────────────────
 case "$DB_NAME" in
-  ailearn|postgres|template0|template1|"")
+  astella|postgres|template0|template1|"")
     echo "refusing to use protected database '$DB_NAME' as a disposable database" >&2
     exit 2
     ;;
 esac
-if ! printf '%s' "$DB_NAME" | grep -Eq '^ailearn_[A-Za-z0-9_]+$'; then
-  echo "disposable database name must match ^ailearn_[A-Za-z0-9_]+\$ (got '$DB_NAME')" >&2
+if ! printf '%s' "$DB_NAME" | grep -Eq '^astella_[A-Za-z0-9_]+$'; then
+  echo "disposable database name must match ^astella_[A-Za-z0-9_]+\$ (got '$DB_NAME')" >&2
   exit 2
 fi
 
@@ -153,9 +153,9 @@ printf '    %s\n' "$(printf '%s\n' "$migrate_output" | tail -n 1)"
 echo "==> applying role grants (post-migration) + RLS completeness check"
 apply_roles "$DB_NAME" true
 
-MIGRATOR_URL="postgres://ailearn_migrator:$MIGRATOR_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME"
-API_URL="postgres://ailearn_api:$API_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME"
-WORKER_URL="postgres://ailearn_worker:$WORKER_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME"
+MIGRATOR_URL="postgres://astella_migrator:$MIGRATOR_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME"
+API_URL="postgres://astella_api:$API_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME"
+WORKER_URL="postgres://astella_worker:$WORKER_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME"
 
 cat <<EOF
 

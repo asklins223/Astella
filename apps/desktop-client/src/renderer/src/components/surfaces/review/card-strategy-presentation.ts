@@ -1,4 +1,4 @@
-import type { CardStrategyV2 } from "@ailearn/shared/card-generation-v2-contracts";
+import type { CardStrategyV2 } from "@astella/shared/card-generation-v2-contracts";
 
 /** 卡型是思考策略；选择、口述等是做题时可用的作答方式。 */
 export const cardStrategyPresentation: Record<CardStrategyV2, { label: string; cue: string; symbol: string }> = {

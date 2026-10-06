@@ -134,6 +134,6 @@ manifest 许可门禁（`commercialReleaseAllowed`）控制，不需要服务端
 3. **测试/调试开关**：只出现在测试命令或 `.env.test`，不进 `docker-compose.dev.yml`。
 4. **Provider 配置**：统一走 `AI_PLATFORMS_CONFIG`，不要再为每个 provider 拆散开关。
 5. **伴星集成测试**：需要干净库，用
-   `bash scripts/dev-disposable-db.sh ailearn_companion_it` +
-   `make test-companion-integration-postgres COMPANION_HOME_TEST_DB=ailearn_companion_it`
+   `bash scripts/dev-disposable-db.sh astella_companion_it` +
+   `make test-companion-integration-postgres COMPANION_HOME_TEST_DB=astella_companion_it`
    （17 个套件；共享开发库会因历史残留行假失败）。

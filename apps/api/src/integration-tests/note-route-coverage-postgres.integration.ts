@@ -24,7 +24,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { noteRouteCoverageV1Schema } from "@ailearn/shared/note-route-coverage-v2";
+import { noteRouteCoverageV1Schema } from "@astella/shared/note-route-coverage-v2";
 
 const fixtureUrl = process.env.DATABASE_URL_MIGRATOR ?? process.env.DATABASE_URL;
 if (!fixtureUrl || !process.env.DATABASE_URL_API) {

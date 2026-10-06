@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { seedV2Fixture } from "./helpers/v2-card-fixture.ts";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
@@ -176,7 +176,7 @@ test("worker moves are attributed to the companion and API callers cannot impers
       await tx`SELECT set_config('app.workspace_id', ${scope.workspaceId}, true)`;
       await tx`SELECT set_config('app.user_id', ${scope.userId}, true)`;
       const rows = await tx`
-        SELECT public.ailearn_move_companion_memory_budget_tier_v1(
+        SELECT public.astella_move_companion_memory_budget_tier_v1(
           ${scope.workspaceId}::uuid, ${scope.userId}::uuid, ${item.memoryItemId}::uuid,
           'resident', 'companion', NULL::uuid
         ) AS result
@@ -211,7 +211,7 @@ test("worker moves are attributed to the companion and API callers cannot impers
         await tx`SELECT set_config('app.workspace_id', ${scope.workspaceId}, true)`;
         await tx`SELECT set_config('app.user_id', ${scope.userId}, true)`;
         return tx`
-          SELECT public.ailearn_move_companion_memory_budget_tier_v1(
+          SELECT public.astella_move_companion_memory_budget_tier_v1(
             ${scope.workspaceId}::uuid, ${scope.userId}::uuid, ${item.memoryItemId}::uuid,
             'active', 'user', ${scope.userId}::uuid
           )
@@ -226,7 +226,7 @@ test("worker moves are attributed to the companion and API callers cannot impers
         await tx`SELECT set_config('app.workspace_id', ${scope.workspaceId}, true)`;
         await tx`SELECT set_config('app.user_id', ${scope.userId}, true)`;
         return tx`
-          SELECT public.ailearn_move_companion_memory_budget_tier_v1(
+          SELECT public.astella_move_companion_memory_budget_tier_v1(
             ${scope.workspaceId}::uuid, ${scope.userId}::uuid, ${item.memoryItemId}::uuid,
             'active', 'companion', NULL::uuid
           )

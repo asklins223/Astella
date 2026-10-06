@@ -4,7 +4,7 @@ import {
   withWorkerWorkspaceTransaction,
   type WorkerTransaction,
 } from "../db.ts";
-import * as schema from "@ailearn/shared/db-schema";
+import * as schema from "@astella/shared/db-schema";
 
 export interface JobLeaseContext {
   id: string;
@@ -47,7 +47,7 @@ export function withJobTransaction<T>(
  * the window where cancellation fires while the lease lookup is in flight.
  */
 async function assertAgentJobCurrent(tx: WorkerTransaction, job: JobLeaseContext, lock: boolean) {
-  const rows = await tx.execute<{ ok: boolean }>(sql`SELECT ailearn_agent_job_current(
+  const rows = await tx.execute<{ ok: boolean }>(sql`SELECT astella_agent_job_current(
     ${job.id},${job.workspaceId},${job.requestedBy},${lock}) AS ok`);
   if (rows[0]?.ok !== true) throw new JobLeaseLostError(job.id, "inactive");
 }
@@ -113,7 +113,7 @@ export async function lockJobLease(
   // outer job-status update, and ensures the Worker never needs blanket UPDATE
   // on jobs after RLS enforce.
   const renewRows = await tx.execute<{ ok: boolean }>(sql`
-    SELECT ailearn_renew_job_lease(
+    SELECT astella_renew_job_lease(
       ${job.id},
       ${job.workspaceId},
       ${job.leaseToken}

@@ -1,4 +1,4 @@
-import type { RoundNextStepV1 } from "@ailearn/shared/note-learning-round-contracts";
+import type { RoundNextStepV1 } from "@astella/shared/note-learning-round-contracts";
 import type { NoteRoundPracticeObservation } from "../../learning-runs/run-service.ts";
 
 type Observation = Pick<NoteRoundPracticeObservation,

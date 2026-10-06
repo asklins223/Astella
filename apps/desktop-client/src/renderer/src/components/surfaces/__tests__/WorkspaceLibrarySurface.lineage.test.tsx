@@ -2,7 +2,7 @@
 
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { learningObjectiveSurfaceV3Schema } from "@ailearn/shared/learning-objective-surface-contracts";
+import { learningObjectiveSurfaceV3Schema } from "@astella/shared/learning-objective-surface-contracts";
 import { ObjectiveDetailSurface } from "../library/WorkspaceLibrarySurface.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
 
@@ -79,7 +79,7 @@ function detail(
 }
 
 function installApi(objective: unknown) {
-  Object.defineProperty(window, "ailearn", {
+  Object.defineProperty(window, "astella", {
     value: {
       auth: { getState: vi.fn(async () => ok({ status: "authenticated", workspace: { workspaceId: "ws-1", name: "W" }, workspaceEpoch: 1 })) },
       objective: {
@@ -95,7 +95,7 @@ function installApi(objective: unknown) {
 
 afterEach(() => {
   cleanup();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   useRoomStore.setState({ activeObjectiveId: null, activeRunId: null, surface: null });
   vi.restoreAllMocks();
 });

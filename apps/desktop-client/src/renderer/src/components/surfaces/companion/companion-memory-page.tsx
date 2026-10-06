@@ -1,4 +1,4 @@
-import type { CompanionMemoryKindV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { CompanionMemoryKindV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { Archive,Map,RotateCcw } from "lucide-react";
 import { Activity,useEffect,useRef,useState } from "react";
 import { CompanionMethodsPage } from "./companion-methods-page";
@@ -34,7 +34,7 @@ export function CompanionMemoryPage(props: MemoryPageProps) {
 function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusConsumed, cooperation, onViewMemory }: MemoryPageProps & { cooperation: boolean; onViewMemory: () => void }) {
   const [anchorId, setAnchorId] = useState(requestedMemoryId);
   const resource = useCompanionResource(async meta => {
-    const result = await window.ailearn.companion.memory.list({ meta, query: { includeCandidates: true, includeArchived: true, ...(anchorId ? { focusMemoryId: anchorId } : {}) } });
+    const result = await window.astella.companion.memory.list({ meta, query: { includeCandidates: true, includeArchived: true, ...(anchorId ? { focusMemoryId: anchorId } : {}) } });
     return result.ok ? { ...result, data: { ...result.data, focusId: anchorId } } : result;
   }, [refreshKey, anchorId]);
   useCompanionRecordsRefresh(resource.reload);
@@ -64,7 +64,7 @@ function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusCons
   const items = resource.section?.ok ? resource.section.value.items : [];
   const selected = items.find(item => item.memoryItemId === selectedId) ?? null;
   const selectionRef = useRef(selectedId); selectionRef.current = selectedId;
-  const revisions = useCompanionResource(meta => window.ailearn.companion.memory.revisions({ meta, memoryId: selectedId! }), [selectedId, selected?.revision, refreshKey], selectedId !== null);
+  const revisions = useCompanionResource(meta => window.astella.companion.memory.revisions({ meta, memoryId: selectedId! }), [selectedId, selected?.revision, refreshKey], selectedId !== null);
   useEffect(() => {
     if (!requestedMemoryId) return;
     setAnchorId(requestedMemoryId);
@@ -91,7 +91,7 @@ function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusCons
     if (!selected) return;
     const item = selected;
     void write(action, async () => {
-      unwrapGatewayResult(await window.ailearn.companion.memory[action]({ meta: resource.meta(), memoryId: item.memoryItemId }));
+      unwrapGatewayResult(await window.astella.companion.memory[action]({ meta: resource.meta(), memoryId: item.memoryItemId }));
       setConfirmDelete(false); setConfirmErase(false);
       if (action === "remove") { setLastDeleted({ id: item.memoryItemId, content: item.content }); setNotice("已移入回收区，30 天内可撤回删除。"); }
       else if (action === "erase") setNotice("这条记忆及其版本已彻底清除。");
@@ -105,7 +105,7 @@ function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusCons
   const create = () => void write("create", async () => {
     const content = createContent.trim();
     if (!content) return;
-    const created = unwrapGatewayResult(await window.ailearn.companion.memory.create({ meta: resource.meta(),
+    const created = unwrapGatewayResult(await window.astella.companion.memory.create({ meta: resource.meta(),
       request: { kind: createKind, content, scope: createKind === "preference" ? createScope : "workspace", appliesWhen: createAppliesWhen.trim() || null } }));
     setSelectedId(created.memoryItemId); setCreateContent(""); setCreateAppliesWhen(""); setCreateScope("workspace"); setCreateOpen(false);
     setQuery(""); setKind(cooperation && created.kind === "preference" ? "preference" : "all"); setFilter("all");
@@ -118,7 +118,7 @@ function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusCons
     const item = selected, base = correctionBase;
     const content = correctionContent.trim(), appliesWhen = correctionAppliesWhen.trim() || null;
     void write("correct", async () => {
-      const corrected = unwrapGatewayResult(await window.ailearn.companion.memory.correct({ meta: resource.meta(), memoryId: item.memoryItemId,
+      const corrected = unwrapGatewayResult(await window.astella.companion.memory.correct({ meta: resource.meta(), memoryId: item.memoryItemId,
         request: { content, appliesWhen, expectedRevision: base.revision } }));
       if (selectionRef.current === item.memoryItemId) {
         setCorrectionOpen(false);
@@ -134,7 +134,7 @@ function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusCons
   if (mapOpen) return <CompanionMemoryMap refreshKey={refreshKey} memories={items} onBack={() => setMapOpen(false)} onMemory={openMemory} />;
   return <>
     <div className="cc-page-tools cc-memory-page-tools"><div className="cc-actions"><button type="button" className="cc-link" onClick={() => setMapOpen(true)}><Map size={15} aria-hidden="true" />关联星图</button><button type="button" className="cc-link" onClick={() => setMaintenanceOpen(true)}><Archive size={15} aria-hidden="true" />整理与回收</button></div></div>
-    {lastDeleted ? <div className="cc-undo" role="status"><span>已删除：{lastDeleted.content}</span><button type="button" className="cc-link" disabled={busy !== null} onClick={() => void write("undo", async () => { unwrapGatewayResult(await window.ailearn.companion.memory.restoreDeleted({ meta: resource.meta(), memoryId: lastDeleted.id })); openMemory(lastDeleted.id); setLastDeleted(null); setNotice("这条记忆已恢复。"); await resource.reload({ silent: true }); })}><RotateCcw size={14} />撤回删除</button></div> : null}
+    {lastDeleted ? <div className="cc-undo" role="status"><span>已删除：{lastDeleted.content}</span><button type="button" className="cc-link" disabled={busy !== null} onClick={() => void write("undo", async () => { unwrapGatewayResult(await window.astella.companion.memory.restoreDeleted({ meta: resource.meta(), memoryId: lastDeleted.id })); openMemory(lastDeleted.id); setLastDeleted(null); setNotice("这条记忆已恢复。"); await resource.reload({ silent: true }); })}><RotateCcw size={14} />撤回删除</button></div> : null}
     <MemoryPanel section={resource.section} items={items} focus={selected} revisions={selectedId && revisions.section?.ok && revisions.section.value.memoryItemId === selectedId ? revisions.section.value.items : null} revisionsError={selectedId && revisions.section && !revisions.section.ok && !revisions.loading ? revisions.section.message : null} onRetryRevisions={() => void revisions.reload()}
       query={query} kind={kind} pinFilter={filter} busy={busy} error={error} notice={notice} confirmDelete={confirmDelete} confirmErase={confirmErase}
       createOpen={createOpen} createContent={createContent} createKind={createKind} correctionOpen={correctionOpen} correctionContent={correctionContent} cooperation={cooperation}
@@ -145,6 +145,6 @@ function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusCons
       onCreateOpen={open => { setCreateOpen(open); setError(null); setNotice(null); }} onCreateContent={setCreateContent} onCreateKind={value => { setCreateKind(value); if (value !== "preference") setCreateScope("workspace"); }}
       onCorrectionOpen={open => { if (open && selected) { setCorrectionContent(selected.content); setCorrectionAppliesWhen(selected.appliesWhen ?? ""); setCorrectionBase({ id: selected.memoryItemId, revision: selected.revision }); } setCorrectionOpen(open); }} onCorrectionContent={setCorrectionContent}
       onCreate={create} onCorrect={correct}
-      onSummarize={() => void write("summarize", async () => { unwrapGatewayResult(await window.ailearn.companion.memory.summarizeRecent({ meta: resource.meta() })); setNotice("已开始整理近期对话；整理后的记忆会更新到这里。"); })} onRetry={() => void resource.reload()} />
+      onSummarize={() => void write("summarize", async () => { unwrapGatewayResult(await window.astella.companion.memory.summarizeRecent({ meta: resource.meta() })); setNotice("已开始整理近期对话；整理后的记忆会更新到这里。"); })} onRetry={() => void resource.reload()} />
   </>;
 }

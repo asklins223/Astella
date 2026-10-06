@@ -1,8 +1,8 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { agentLongGoalRefV1Schema, agentRunListCursorV1Schema, type AgentScopeV1 } from "@ailearn/shared/agent-contracts";
-import { agentLongGoalsQueryV1Schema, agentLongGoalsV1Schema, type AgentLongGoalsQueryV1 } from "@ailearn/shared/agent-long-goal-contracts";
-import { sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { agentLongGoalRefV1Schema, agentRunListCursorV1Schema, type AgentScopeV1 } from "@astella/shared/agent-contracts";
+import { agentLongGoalsQueryV1Schema, agentLongGoalsV1Schema, type AgentLongGoalsQueryV1 } from "@astella/shared/agent-long-goal-contracts";
+import { sha256Utf8V1 } from "@astella/shared/content-hash";
 import { AgentStoreError, queryRows, type AgentSqlExecutor } from "./store.ts";
 
 const validGoal = sql`kind='goal' AND user_confirmed AND deleted_at IS NULL

@@ -22,8 +22,8 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
-import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { noteVisibleSqlText } from "@astella/shared/note-visibility";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL ??= CONN;

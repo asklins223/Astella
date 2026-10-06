@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import {
   classifyThrownAsStepFailure,
   runAiTask,
@@ -8,7 +8,7 @@ import {
   type AiTaskContext,
   type AiTaskDefinition,
   type AiTaskReceipt,
-} from "@ailearn/shared/ai-task-kernel";
+} from "@astella/shared/ai-task-kernel";
 import { currentWorkerWorkspaceTransaction } from "../db.ts";
 import { HandlerTimeoutError } from "../lib/handler-timeout.ts";
 import { JobLeaseLostError, isJobLeaseActive, type JobLeaseContext } from "../lib/job-lease.ts";

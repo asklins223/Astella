@@ -20,7 +20,7 @@
 - **检查命令**（从仓库根，dev 环境）：
   ```bash
   # run/outbox/候选状态
-  DATABASE_URL_WORKER="postgres://ailearn_worker:ailearn_dev@localhost:5432/ailearn" \
+  DATABASE_URL_WORKER="postgres://astella_worker:astella_dev@localhost:5432/astella" \
     node --import ./workers/ai-worker/node_modules/tsx/dist/loader.mjs --test --test-concurrency=1 \
     workers/ai-worker/src/integration-tests/card-generation-v2-e2e-subset.integration.ts
   ```

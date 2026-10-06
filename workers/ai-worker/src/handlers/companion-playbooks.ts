@@ -19,8 +19,8 @@
  * 两条路径都经过 host 的「可采用」围栏：停用、依据失效、暂定的方法既不进目录，
  * 也读不出正文。
  */
-import { listAgentMethods, readAgentMethod, upsertAgentMethodCandidate, type AgentSqlExecutor } from "@ailearn/agent-host";
-import type { AgentMethodV1, AgentMethodEvidenceV1, AgentMethodEpistemicStatusV1 } from "@ailearn/shared/agent-growth-contracts";
+import { listAgentMethods, readAgentMethod, upsertAgentMethodCandidate, type AgentSqlExecutor } from "@astella/agent-host";
+import type { AgentMethodV1, AgentMethodEvidenceV1, AgentMethodEpistemicStatusV1 } from "@astella/shared/agent-growth-contracts";
 
 export interface PlaybookScope { workspaceId: string; userId: string }
 /** 目录条目：只有标题、触发条件、ID 与版本。**正文不在这条类型里**——这是刻意的。 */

@@ -22,9 +22,9 @@ import {
   COMPANION_IDENTITY_BOUNDARY_V2,
   COMPANION_PERSONA_V7_PROMPT_ID,
   COMPANION_PERSONA_V7_SHA256,
-} from "@ailearn/shared";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
-import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+} from "@astella/shared";
+import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import type { CompanionContextHandoffSnapshotV1 } from "../handlers/companion-dialogue-content.ts";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
@@ -57,7 +57,7 @@ const { seedFormalAnswerRun } = await import("./helpers/formal-answer-fixture.ts
  * 断言用的读一律落在**这一轮的作用域**里。
  *
  * `companion_messages`／`companion_turn_runs`／`learning_exposures_v2` 三条策略在受限角色下
- * （本文件的 `CONN` 优先取 `DATABASE_URL_API`＝`ailearn_api`，`rolbypassrls=false`）要求
+ * （本文件的 `CONN` 优先取 `DATABASE_URL_API`＝`astella_api`，`rolbypassrls=false`）要求
  * `app.workspace_id` **与** `app.user_id` 两个 GUC 同时成立，而裸 `sql` 读两个都不设 ⇒
  * 返回**空集而不是报错**——于是「她念了答案却没记账」和「这条连接根本读不到」在断言里长得
  * 一模一样（2026-09-25 干净一次性库实测：同一份文件、只换连接角色，超户 9／9、受限 6／9，

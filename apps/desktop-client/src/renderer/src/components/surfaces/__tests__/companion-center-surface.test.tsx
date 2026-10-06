@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { GatewayResultV1, SessionContextV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { GatewayResultV1, SessionContextV1 } from "@astella/shared/desktop-ipc-contracts";
 import type {
   CompanionActivityDeliveryV1,
   CompanionActivityTimelineV1,
@@ -15,8 +15,8 @@ import type {
   CompanionPersonaV1,
   CompanionPersonaProfileV1,
   CompanionPersonaVersionListV1,
-} from "@ailearn/shared/companion-memory-desktop-contracts";
-import type { CompanionOverview } from "@ailearn/shared/companion-shell-contracts";
+} from "@astella/shared/companion-memory-desktop-contracts";
+import type { CompanionOverview } from "@astella/shared/companion-shell-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CompanionChatProvider,
@@ -26,7 +26,7 @@ import {
 import { useRoomStore } from "../../../app/room-store.ts";
 import { CompanionCenterSurface } from "../companion/companion-center-surface.tsx";
 import { RendererGatewayError } from "../../../app/desktop-client.ts";
-import { accountPreferenceRejectionMessage } from "@ailearn/shared/companion-memory-scope";
+import { accountPreferenceRejectionMessage } from "@astella/shared/companion-memory-scope";
 
 /**
  * 伴星中心与伴星叠加层是**兄弟节点**：一个在任务面里，一个挂在 App 外壳。
@@ -286,14 +286,14 @@ function installApi() {
       },
       memory: {
         starMap: vi.fn(async () => ok(starMap())),
-        list: vi.fn(async (_input: Parameters<Window["ailearn"]["companion"]["memory"]["list"]>[0]) => ok({ version: 2, items: [memoryItem()] })),
+        list: vi.fn(async (_input: Parameters<Window["astella"]["companion"]["memory"]["list"]>[0]) => ok({ version: 2, items: [memoryItem()] })),
         revisions: vi.fn(async (input: { readonly memoryId: string }) => ok({
           version: 1 as const,
           memoryItemId: input.memoryId,
           items: [],
         })),
-        create: vi.fn(async (_input: Parameters<Window["ailearn"]["companion"]["memory"]["create"]>[0]): Promise<GatewayResultV1<CompanionMemoryItemV1>> => ok(memoryItem())),
-        correct: vi.fn(async (_input: Parameters<Window["ailearn"]["companion"]["memory"]["correct"]>[0]) => ok({ ...memoryItem(), revision: 2 })),
+        create: vi.fn(async (_input: Parameters<Window["astella"]["companion"]["memory"]["create"]>[0]): Promise<GatewayResultV1<CompanionMemoryItemV1>> => ok(memoryItem())),
+        correct: vi.fn(async (_input: Parameters<Window["astella"]["companion"]["memory"]["correct"]>[0]) => ok({ ...memoryItem(), revision: 2 })),
         archive: vi.fn(async () => ok({ ...memoryItem(), archived: true })),
         restore: vi.fn(async () => ok(memoryItem())),
         confirm: vi.fn(async () => ok(memoryItem())),
@@ -363,7 +363,7 @@ function installApi() {
       unsubscribe: vi.fn(async () => ok({ version: 1, ok: true })),
     },
   };
-  Object.defineProperty(window, "ailearn", { configurable: true, value: api });
+  Object.defineProperty(window, "astella", { configurable: true, value: api });
   return api;
 }
 
@@ -410,7 +410,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  Reflect.deleteProperty(window, "ailearn");
+  Reflect.deleteProperty(window, "astella");
   Reflect.deleteProperty(window, "matchMedia");
   Reflect.deleteProperty(window, "ResizeObserver");
   Reflect.deleteProperty(HTMLCanvasElement.prototype, "getContext");
@@ -716,7 +716,7 @@ describe("重构后的伴星中心", () => {
     fireEvent.change(screen.getByLabelText("纠正后的记忆内容"), { target: { value: "先让我举例，再补充解释" } });
     fireEvent.change(screen.getByLabelText("修订后的适用条件"), { target: { value: "轻松讨论时" } });
     api.companion.memory.list.mockResolvedValue(ok({ version: 2, items: [{ ...memoryItem(), revision: 2, content: "后台保存的另一条解释习惯" }] }));
-    fireEvent(window, new Event("ailearn:companion-records-changed"));
+    fireEvent(window, new Event("astella:companion-records-changed"));
     await screen.findByRole("button", { name: /后台保存的另一条解释习惯/ });
     api.companion.memory.correct.mockRejectedValue(new Error("revision conflict"));
     fireEvent.click(screen.getByRole("button", { name: "保存修订" }));

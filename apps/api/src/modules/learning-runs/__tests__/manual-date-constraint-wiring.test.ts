@@ -2,7 +2,7 @@
  * W7-8 刀二：结算那四个写入点**真的过了**手动日期约束（39 §9.1「在手动日期约束仍有效时，
  * 自动策略不能悄悄把提醒提前」）。
  *
- * 判据本身在 `@ailearn/shared/review-manual-date-constraint-v2`（纯函数，单测在那份文件
+ * 判据本身在 `@astella/shared/review-manual-date-constraint-v2`（纯函数，单测在那份文件
  * 里）。这一组钉的是**接线**——判据再对，四个写入点没接就等于没做。
  *
  * 三格，每格带正对照：

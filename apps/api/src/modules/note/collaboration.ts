@@ -5,7 +5,7 @@ import type { FastifyInstance } from "fastify";
 import websocket from "@fastify/websocket";
 import type { WebSocket as WsSocket, RawData } from "ws";
 import { and, eq } from "drizzle-orm";
-import { noteBlocks, noteDocumentStates, notes } from "@ailearn/shared/db-schema/note";
+import { noteBlocks, noteDocumentStates, notes } from "@astella/shared/db-schema/note";
 import { logger } from "../../lib/logger.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { decodeToken } from "../identity/session-service.ts";
@@ -149,9 +149,9 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
 
     // 这一句读必须**带上下文**：`notes` 在 0257 里是 `ENABLE + FORCE ROW LEVEL SECURITY`，
     // 它的 RESTRICTIVE 租户守卫是 `workspace_id = NULLIF(current_setting('app.workspace_id'),'')::uuid`
-    // ——没有"没设上下文就放行"那一支。用裸 `db` 读，在 `ailearn_api`（NOBYPASSRLS，
+    // ——没有"没设上下文就放行"那一支。用裸 `db` 读，在 `astella_api`（NOBYPASSRLS，
     // CI 与生产形状）下恒 0 行，每一篇都抛 `note_not_found`，整条实时协同连不上；
-    // dev 因为 compose 把 API 指到 BYPASSRLS 的 `ailearn` 角色而完全看不出来（doc 34 L2/L37）。
+    // dev 因为 compose 把 API 指到 BYPASSRLS 的 `astella` 角色而完全看不出来（doc 34 L2/L37）。
     const note = await withWorkspaceTransaction(
       scopeOfSession(session),
       (tx) => tx.query.notes.findFirst({

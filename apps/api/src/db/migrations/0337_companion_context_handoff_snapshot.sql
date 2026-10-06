@@ -28,7 +28,7 @@ ALTER TABLE public.companion_context_handoff_snapshots ENABLE ROW LEVEL SECURITY
 ALTER TABLE public.companion_context_handoff_snapshots FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY companion_context_handoff_snapshots_worker_scope
-  ON public.companion_context_handoff_snapshots FOR ALL TO ailearn_worker
+  ON public.companion_context_handoff_snapshots FOR ALL TO astella_worker
   USING (
     workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid
     AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
@@ -38,6 +38,6 @@ CREATE POLICY companion_context_handoff_snapshots_worker_scope
     AND user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
   );
 
-REVOKE ALL PRIVILEGES ON public.companion_context_handoff_snapshots FROM PUBLIC, ailearn_api;
-GRANT SELECT, INSERT ON public.companion_context_handoff_snapshots TO ailearn_worker;
-GRANT ALL PRIVILEGES ON public.companion_context_handoff_snapshots TO ailearn_migrator;
+REVOKE ALL PRIVILEGES ON public.companion_context_handoff_snapshots FROM PUBLIC, astella_api;
+GRANT SELECT, INSERT ON public.companion_context_handoff_snapshots TO astella_worker;
+GRANT ALL PRIVILEGES ON public.companion_context_handoff_snapshots TO astella_migrator;

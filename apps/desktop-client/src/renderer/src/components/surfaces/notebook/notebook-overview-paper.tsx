@@ -1,6 +1,6 @@
 import type { ReactElement, Ref } from "react";
-import type { NoteOverviewV1 } from "@ailearn/shared/note-overview-contracts";
-import type { NoteLearningArtifactTaskV1, NoteLearningArtifactV1 } from "@ailearn/shared/note-learning-artifact-contracts";
+import type { NoteOverviewV1 } from "@astella/shared/note-overview-contracts";
+import type { NoteLearningArtifactTaskV1, NoteLearningArtifactV1 } from "@astella/shared/note-learning-artifact-contracts";
 import { renderCompanionMarkdown } from "../../companion/companion-markdown";
 import { overviewReading, pointLead } from "./overview-reading";
 

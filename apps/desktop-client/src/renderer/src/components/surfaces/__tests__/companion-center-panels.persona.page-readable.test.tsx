@@ -6,9 +6,9 @@ import { PersonaPanel } from "../companion/companion-center-panels.tsx";
 import {
   companionPersonaV1Schema,
   type CompanionMemoryItemV1,
-} from "@ailearn/shared/companion-memory-desktop-contracts";
+} from "@astella/shared/companion-memory-desktop-contracts";
 import { useRoomStore } from "../../../app/room-store.ts";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
 /**
  * 伴星中心「人格」「数据与隐私」两块登记给伴星读的是什么（39d W2-7 的最后两块）。

@@ -1,12 +1,12 @@
 /**
  * 测试代码里**不许**再出现写死的开发库串（39d §19 那条待办的守卫那一半）。
  *
- * 病是这么来的（2026-09-25 实测）：一批集成测试把 `process.env.DATABASE_URL ?? "postgres://…@localhost:5432/ailearn"`
+ * 病是这么来的（2026-09-25 实测）：一批集成测试把 `process.env.DATABASE_URL ?? "postgres://…@localhost:5432/astella"`
  * 当成方便，于是**在本机跑测试时夹具悄悄写进了开发者真实的 dev 库**（那一轮多出 12 个
  * fixture 用户／10 个 workspace，事后数出来的）。CI 里看不出来——那条链上变量总是设好的，
  * 所以这个洞只在"人手动跑"时现形，而那恰恰是最常发生的一种跑法。
  *
- * 现在统一走 `@ailearn/shared/integration-test-db-env` 的 `testDatabaseUrl()`：变量缺了
+ * 现在统一走 `@astella/shared/integration-test-db-env` 的 `testDatabaseUrl()`：变量缺了
  * 当场喊，并告诉人怎么起一次性库。这道守卫把"不许再长回来"钉死——扫到一处就红。
  *
  * **扫描范围**：测试面（`src/integration-tests`、`src/__tests__`、`*.test.ts`）与
@@ -22,7 +22,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
-import { HARDCODED_DEV_DATABASE_URL_PATTERN } from "@ailearn/shared/integration-test-db-env";
+import { HARDCODED_DEV_DATABASE_URL_PATTERN } from "@astella/shared/integration-test-db-env";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 const SCAN_ROOTS = ["apps", "workers", "packages"];
@@ -57,7 +57,7 @@ function sourceFiles(root: string, out: string[] = []): string[] {
 /**
  * 返回这份源码里**代码行**中命中写死开发库串的行号。
  *
- * 为什么要剥注释：本仓库的运行说明里到处写着 `DATABASE_URL=postgres://ailearn_dev@127.0.0.1:5432/ailearn`
+ * 为什么要剥注释：本仓库的运行说明里到处写着 `DATABASE_URL=postgres://astella_dev@127.0.0.1:5432/astella`
  * 这类示例（那是正确的用法），把它们算违例会让这道守卫从第一天起就红成一片。
  */
 export function hardcodedDevDbUrlLines(source: string): number[] {
@@ -92,36 +92,36 @@ describe("测试代码里没有写死的开发库串", () => {
     assert.deepEqual(
       violations.map((entry) => `${entry.file}: ${entry.lines.join(", ")}`),
       [],
-      "测试代码里又出现了写死的开发库串。请改用 testDatabaseUrl()（@ailearn/shared/integration-test-db-env）："
+      "测试代码里又出现了写死的开发库串。请改用 testDatabaseUrl()（@astella/shared/integration-test-db-env）："
         + "变量缺了就喊，绝不静默落到某个开发库。",
     );
   });
 
   it("正对照：检测形状会响；负对照：注释里的示例不响", () => {
     assert.deepEqual(
-      hardcodedDevDbUrlLines('const CONN = process.env.DATABASE_URL ?? "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";'),
+      hardcodedDevDbUrlLines('const CONN = process.env.DATABASE_URL ?? "postgres://astella:astella_dev@localhost:5432/astella";'),
       [1],
     );
     assert.deepEqual(
-      hardcodedDevDbUrlLines('process.env.DATABASE_URL_WORKER ??= "postgres://ailearn_worker:ailearn_dev@127.0.0.1:5432/ailearn";'),
+      hardcodedDevDbUrlLines('process.env.DATABASE_URL_WORKER ??= "postgres://astella_worker:astella_dev@127.0.0.1:5432/astella";'),
       [1],
     );
     // 负对照——注释里的运行示例（本仓库到处都是）不算违例。
     assert.deepEqual(
-      hardcodedDevDbUrlLines(' * 运行：DATABASE_URL="postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn" \\'),
+      hardcodedDevDbUrlLines(' * 运行：DATABASE_URL="postgres://astella:astella_dev@127.0.0.1:5432/astella" \\'),
       [],
     );
     assert.deepEqual(
-      hardcodedDevDbUrlLines('// DATABASE_URL=postgres://ailearn:ailearn_dev@localhost:5432/ailearn'),
+      hardcodedDevDbUrlLines('// DATABASE_URL=postgres://astella:astella_dev@localhost:5432/astella'),
       [],
     );
     // 负对照——指向别处（compose 服务名、别的库名）的串不是这一条要抓的东西。
     assert.deepEqual(
-      hardcodedDevDbUrlLines('const url = "postgres://ailearn:ailearn_dev@postgres:5432/ailearn";'),
+      hardcodedDevDbUrlLines('const url = "postgres://astella:astella_dev@postgres:5432/astella";'),
       [],
     );
     assert.deepEqual(
-      hardcodedDevDbUrlLines('const url = "postgres://ailearn:ailearn_dev@localhost:5432/some_other_db";'),
+      hardcodedDevDbUrlLines('const url = "postgres://astella:astella_dev@localhost:5432/some_other_db";'),
       [],
     );
   });

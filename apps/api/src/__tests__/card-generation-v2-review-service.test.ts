@@ -24,8 +24,8 @@ import {
   cardGenerationRunsV2,
   cardGenerationPlansV2,
   cardGenerationCandidatesV2,
-} from "@ailearn/shared/db-schema/card-generation-v2";
-import type { CandidateActionCommandV2, CandidateActionV2 } from "@ailearn/shared/card-generation-v2-contracts";
+} from "@astella/shared/db-schema/card-generation-v2";
+import type { CandidateActionCommandV2, CandidateActionV2 } from "@astella/shared/card-generation-v2-contracts";
 
 const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const USER_ID = "00000000-0000-4000-8000-000000000002";
