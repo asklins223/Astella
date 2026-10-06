@@ -846,17 +846,53 @@ jobs:
 
           # 自动更新的那半条命：electron-updater 被 Vite 拆成懒加载 chunk，
           # 它不在包里 = 没有自动更新。
+          #
+          # **按内容验，不按路径名验。** 这里此前写死了 `^/out/main/main-*.js$`，
+          # 而实际布局是 `out/main/chunks/main-<hash>.js`（2026-10-06 CI 实测，
+          # macOS 那条报「asar 里找不到 electron-updater 的懒加载 chunk」——
+          # 拆开看 chunk 就在包里、566KB、里面确实引用了 electron-updater 两次，
+          # 只是目录多了一层）。按名字验的代价是**打包布局一变就静默失配**，
+          # 而症状看起来像"自动更新没打进包"，不像"检查过期了"。
+          #
+          # 现在：先在 `out/main/**` 里找 `main-*.js` 形状的候选（容得下多一层目录），
+          # 再把候选逐个解出来确认里面真的有 electron-updater。
+          # 这比原来更强——原检查只验名字，名字对了而内容是别的也照样放行。
           asar="$app/Contents/Resources/app.asar"
           test -s "$asar" || { echo "::error::bundle 里没有 app.asar" >&2; exit 1; }
           npx --yes asar list "$asar" > /tmp/ailearn-asar-list.txt 2>/dev/null || true
           grep -q '^/out/main/index.js$' /tmp/ailearn-asar-list.txt || {
             echo "::error::asar 里没有 out/main/index.js" >&2; exit 1; }
-          updater_chunk="$(grep -c '^/out/main/main-.*\.js$' /tmp/ailearn-asar-list.txt || true)"
-          if [ "$updater_chunk" -lt 1 ]; then
-            echo "::error::asar 里找不到 electron-updater 的懒加载 chunk（out/main/main-*.js）" >&2
+          # 注意：这一步没有声明 `shell:`，macOS runner 上跑的是 `/bin/bash` —— 那是
+          # **bash 3.2**，没有 `mapfile`。所以候选清单用 `while read` 攒，
+          # 不用 bash 4 的内建。
+          updater_candidates=()
+          while IFS= read -r entry; do
+            [ -n "$entry" ] && updater_candidates+=("$entry")
+          done < <(grep -E '^/out/main/(.*/)?main-.*\.js$' /tmp/ailearn-asar-list.txt || true)
+          if [ "${#updater_candidates[@]}" -lt 1 ]; then
+            echo "::error::asar 里找不到任何懒加载 chunk（out/main/**/main-*.js）" >&2
+            grep '^/out/main/' /tmp/ailearn-asar-list.txt >&2 || true
             exit 1
           fi
-          echo "electron-updater chunk 已随包分发：${updater_chunk} 个"
+          # 提取用 `@electron/asar` 的 API，不用 `asar extract-file` CLI：
+          # 后者把文件**写到当前目录**、stdout 一个字节都不给（2026-10-06 实测，
+          # 重定向出来是 0 字节），于是"验内容"会永远验不到东西。
+          # 库的 API 直接把 Buffer 返回来，写 stdout 即可。同族用法见
+          # `scripts/smoke-packaged.mjs` 的 `extractFile`。
+          updater_chunk=0
+          for candidate in "${updater_candidates[@]}"; do
+            node -e 'const { extractFile } = require("@electron/asar"); process.stdout.write(extractFile(process.argv[1], process.argv[2]))' \
+              "$asar" "${candidate#/}" > "$RUNNER_TEMP/ailearn-chunk.js" 2>/dev/null || continue
+            if grep -q 'electron-updater' "$RUNNER_TEMP/ailearn-chunk.js"; then
+              updater_chunk=$((updater_chunk + 1))
+              echo "electron-updater chunk: ${candidate}"
+            fi
+          done
+          if [ "$updater_chunk" -lt 1 ]; then
+            echo "::error::包里的懒加载 chunk 没有一个引用 electron-updater —— 自动更新不会工作" >&2
+            exit 1
+          fi
+          echo "electron-updater chunk 已随包分发：${updater_chunk} 个（候选 ${#updater_candidates[@]} 个）"
 
           echo '--- 3/4 启动 bundle ---'
           "$app/Contents/MacOS/理解引擎" > "$RUNNER_TEMP/ailearn-launch.log" 2>&1 &
