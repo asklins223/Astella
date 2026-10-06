@@ -10,7 +10,26 @@
  * 3. 同一个 phase 不重复推：渲染层的通知是按"phase 变了"触发的，
  *    重复推同一个 phase 会让用户收到两条一模一样的提示。
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * 这份用例测的是 **macOS 那条更新路径**（Squirrel.Mac 的签名闸）。
+ *
+ * `detectMacosUnsigned()` 第一句就是 `if (process.platform !== 'darwin' ...) return false`，
+ * 而下面三条用例（未签名标记 / ad-hoc 也算装不上 / 未签名拒绝自动安装）量的正是
+ * 那条分支为真时的行为。**不钉住平台，这套断言就只在 macOS 机器上成立**：
+ * 2026-10-06 CI（ubuntu-latest）实测红三条，报的是
+ * `expected null to be 'macosUnsigned'` 与 `expected 'idle' to be 'failed'`
+ * ——本机 macOS 上跑同一份代码全绿，于是它长期是一条"只有换机器才会现形"的假绿。
+ *
+ * 钉的是**被测判据看到的环境**，不是把产品代码改成跨平台：`codesign` 探针本来
+ * 就只有 macOS 有，让 Linux 也去 spawn 它只会造出一个永远问不出结果的调用点。
+ */
+const realPlatform = process.platform;
+Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+afterAll(() => {
+  Object.defineProperty(process, "platform", { value: realPlatform, configurable: true });
+});
 
 const updater = {
   handlers: new Map<string, (payload?: unknown) => void>(),

@@ -65,8 +65,19 @@ describe('runtime asset containment', () => {
     const runtimeFiles = listFiles(runtimeRoot).map((file) => relative(runtimeRoot, file).split(sep).join('/'))
     expect(runtimeFiles).toContain('posters/home-v2/lighthouse/lighthouse-day-poster-v1.png')
     expect(runtimeFiles).toContain('posters/home-v2/lighthouse/lighthouse-night-poster-v1.png')
-    expect(runtimeFiles).toContain('layers/home-v2/lighthouse/lighthouse-day-d0-v1.png')
-    expect(runtimeFiles.filter((file) => file.startsWith('layers/home-v2/lighthouse/'))).toHaveLength(39)
+    // 这里**不再**要求 `layers/home-v2/lighthouse/*`（39 张）存在。
+    //
+    // 那 39 张分层图是**故意不入库**的：`.gitignore` 里那条写明了理由——`RoomStage`
+    // 目前只用单张 poster 打底，分层只在 `manifest.json` 里登记、还没有运行时消费点，
+    // 所以 10MB 留在本地。而这条用例要求它们出现在构建产物里，于是它在**干净 clone
+    // 上必然红**、在开发者本机必然绿（工作树里躺着那 39 张）。
+    //
+    // 2026-10-06 CI 实测：ubuntu runner 上红在这里（`expected [ 'PROVENANCE.md', …(30) ]`
+    // `to include 'layers/home-v2/lighthouse/lighthouse-day-…'`）。这正是「本地过、CI 不过」
+    // 里最阴的一种——不是代码不同，是本地比 CI 多了一份**明确决定不入库**的素材。
+    //
+    // 底板那两条（上面）才是这条用例说的「room plate stays」：它们是入库的、
+    // 也是 `RoomStage` 真的渲染的那张。分层有没有，与「旧书房不回来」无关。
 
     for (const retired of [
       'posters/room-day.webp',

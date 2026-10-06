@@ -1211,7 +1211,18 @@ it("录音放不出来：给出这一句的失败读数，不把选择改掉", a
 
 it("没读到偏好：不画音色列表，也不把默认值演成用户的选择", async () => {
   await openVoiceSection({ voiceUnavailable: true });
-  expect(screen.getByText("未读到")).toBeTruthy();
+  // 钉的是**声音那一行**，不是全屏随便哪个「未读到」。
+  //
+  // 此前这里是 `screen.getByText("未读到")`——全屏查询，而作答方式那一行在
+  // `answerModeRead`（`!answer.loading`）为真时渲染同一个词。两个后果：
+  //   · 它在标签还没落地时偶发红（实测全量跑里出现过两次，报"Unable to find"）；
+  //   · 更糟的是它**可能在只测到作答方式那一行时为真**——这条用例名义上量的是
+  //     "声音偏好读不到时怎么说"，实际测到的却是别人。
+  // 所以这里既等到它、又限定到它所属的那一行。
+  const engineRow = (await screen.findByText("用哪套声音合成")).closest(".settings-row");
+  expect(engineRow).not.toBeNull();
+  await waitFor(() =>
+    expect(engineRow!.querySelector(".settings-row__control .tag")?.textContent).toBe("未读到"));
   expect(screen.queryByText("试听")).toBeNull();
 });
 
