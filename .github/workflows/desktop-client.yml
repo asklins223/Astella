@@ -132,27 +132,45 @@ jobs:
       - name: Create unpacked application
         working-directory: apps/desktop-client
         run: npx electron-builder --dir
+      # 可执行文件叫什么是 `electron-builder.yml` 的 `productName` 决定的，**不在这里写死**。
+      #
+      # 2026-10-06：这三步此前找的是 `AI Learn`——产品早就改名成「理解引擎」了，
+      # 而这三条 locate 一直被上游的红挡着（v1/v2 那两条 job 从未成功过），
+      # 所以从没人发现它已经对不上。写死名字的代价就是**改名时静默坏掉**，
+      # 而症状（"找不到打包产物"）看起来像打包坏了，不像改名漏改。
+      - name: Resolve packaged executable name
+        shell: bash
+        run: |
+          product_name="$(node -e '
+            const s = require("fs").readFileSync("apps/desktop-client/electron-builder.yml", "utf8");
+            const m = s.match(/^productName:[ \t]*(.+)$/m);
+            if (!m) { throw new Error("electron-builder.yml 里没有 productName"); }
+            process.stdout.write(m[1].trim());
+          ')"
+          test -n "$product_name"
+          echo "PRODUCT_NAME=$product_name" >> "$GITHUB_ENV"
+          echo "打包出来的可执行文件名 = $product_name"
       - name: Locate Linux package
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          app_bin="$(find apps/desktop-client/release/linux-unpacked -maxdepth 1 -type f -executable -name 'AI Learn*' -print -quit)"
-          test -n "$app_bin"
+          app_bin="$(find apps/desktop-client/release/linux-unpacked -maxdepth 1 -type f -executable -name "${PRODUCT_NAME}*" -print -quit)"
+          test -n "$app_bin" || { echo >&2 "没找到可执行文件 ${PRODUCT_NAME}（linux-unpacked 里有什么：）"; ls -la apps/desktop-client/release/linux-unpacked | head -20; exit 1; }
           app_bin="$(realpath "$app_bin")"
           echo "AILEARN_PACKAGED_APP=$app_bin" >> "$GITHUB_ENV"
       - name: Locate Windows package
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $app = Get-ChildItem -Path apps/desktop-client/release/win-unpacked -Filter "AI Learn.exe" -Recurse | Select-Object -First 1
-          if ($null -eq $app) { throw "Packaged AI Learn.exe not found" }
+          $app = Get-ChildItem -Path apps/desktop-client/release/win-unpacked -Filter "$env:PRODUCT_NAME.exe" -Recurse | Select-Object -First 1
+          if ($null -eq $app) { throw "Packaged $env:PRODUCT_NAME.exe not found" }
           "AILEARN_PACKAGED_APP=$($app.FullName)" >> $env:GITHUB_ENV
       - name: Locate macOS package
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          app_bin="$(find apps/desktop-client/release -path '*/Contents/MacOS/AI Learn' -type f -print -quit)"
-          test -n "$app_bin"
+          app_bin="$(find apps/desktop-client/release -path "*/Contents/MacOS/${PRODUCT_NAME}" -type f -print -quit)"
+          test -n "$app_bin" || { echo >&2 "没找到可执行文件 ${PRODUCT_NAME}（release 下有什么：）"; find apps/desktop-client/release -maxdepth 4 -name MacOS -type d; exit 1; }
           app_bin="$(realpath "$app_bin")"
           echo "AILEARN_PACKAGED_APP=$app_bin" >> "$GITHUB_ENV"
       - name: Verify packaged boundary and asset containment
