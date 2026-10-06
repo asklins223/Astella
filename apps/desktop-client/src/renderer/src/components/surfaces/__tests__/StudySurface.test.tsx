@@ -674,7 +674,19 @@ describe("all-spaces scope", () => {
     fireEvent.click(screen.getByRole("tab", { name: "学过的每一轮" }));
     await screen.findByRole("button", { name: "看更早的几轮" });
     fireEvent.click(screen.getByRole("button", { name: "看更早的几轮" }));
-    await screen.findByRole("button", { name: "正在取更早的…" });
+    // **同步**断言那颗忙碌态按钮，不去轮询它。
+    //
+    // 翻页那一发在这里是挂着的（下面 `release` 才放行），所以「正在取更早的…」从点击
+    // 起就一直挂着，直到用例自己放行——它不是一个转瞬即逝的一帧。既然如此，`find*`
+    // 的轮询窗在这里没有意义：它只是把「点下去之后有没有立刻进入忙碌态」这件事，
+    // 交给机器当时有多闲。
+    //
+    // 2026-10-06 实测：原写法在全量并行时以约 1/50 的概率变红（单独连跑 8 次中 1 次，
+    // 全量 `make verify` 里也偶发过一次），报的正是找不到那颗按钮。**根因没能定位**——
+    // 插入探针后单文件连跑 45 次不再复现。本条改的是断言方式，不是产品行为：
+    // `fireEvent` 自带 act 包裹，点击返回时这次提交已经落地，同步读得到。
+    // 变异自证过它仍然守着行为：把 `loadOlder` 改成永远静默早退，它照样变红。
+    expect(screen.getByRole("button", { name: "正在取更早的…" })).toBeTruthy();
     view.unmount();
     render(<StudySurface />);
     await screen.findByRole("button", { name: "看更早的几轮" });

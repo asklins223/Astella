@@ -137,6 +137,88 @@ export interface ConversationSummaryReadRow extends Record<string, unknown> {
   coverage_source_hash: string | null;
 }
 
+/** 摘要接续链的父节点（44 §5.1）。id + revision 是提交前的比较基准。 */
+export interface ParentSummaryRow extends Record<string, unknown> {
+  id: string;
+  revision: number;
+  summary: unknown;
+  coverage_from_seq: string | null;
+  coverage_through_seq: string | null;
+}
+
+/** 接续链上的一个节点（44 §5.2）。 */
+export interface SummaryChainNode extends Record<string, unknown> {
+  id: string;
+  revision: number;
+  parent_summary_id: string | null;
+  summary: unknown;
+  coverage_from_seq: string | null;
+  coverage_through_seq: string | null;
+  coverage_source_hash: string | null;
+  /** 1 = 链头（覆盖最靠后），数字越大越早。 */
+  depth: number;
+}
+
+export interface SummaryChainView {
+  /** 覆盖最靠后、且完全早于可见尾部的那一份。 */
+  head: SummaryChainNode | null;
+  depth: number;
+  /**
+   * 沿接续链真正覆盖到的最早 seq。
+   *
+   * 不能拿 `head.coverage_from_seq` 当它——那只描述这一份自己读过的区间。链上任何
+   * 一段断掉（比如某次压缩输出不合规被跳过），真实覆盖都比它晚。
+   */
+  effectiveCoverageFromSeq: string | null;
+  effectiveCoverageThroughSeq: string | null;
+  /** 链上没盖住的区间；非空表示更早的那段确实读不到。 */
+  gaps: { fromSeq: string; throughSeq: string }[];
+}
+
+/**
+ * 纯函数：把一条接续链（链头在前）折叠成「真正覆盖到哪里、哪里有洞」。
+ *
+ * 单独抽出来是为了能脱离数据库验收（44 §8.2 的「两个会话的同号 seq/桶不碰撞」、
+ * 「撤权后父子摘要同步失效」都要先有这条纯判定）。
+ *
+ * 洞的判定：子节点的 coverage_from 比父节点的 coverage_through 大 1 以上时，中间
+ * 那一段没有任何摘要覆盖。压缩跳过一次就是这种形状。
+ */
+export function summarizeSummaryChain(nodes: readonly SummaryChainNode[]): SummaryChainView {
+  const head = nodes.find((node) => node.depth === 1) ?? null;
+  if (!head) {
+    return {
+      head: null, depth: 0, effectiveCoverageFromSeq: null,
+      effectiveCoverageThroughSeq: null, gaps: [],
+    };
+  }
+  const ordered = [...nodes].sort((a, b) => a.depth - b.depth);
+  const gaps: { fromSeq: string; throughSeq: string }[] = [];
+  let effectiveFrom: string | null = head.coverage_from_seq;
+  const effectiveThrough = head.coverage_through_seq;
+  for (let index = 1; index < ordered.length; index += 1) {
+    const child = ordered[index - 1]!;
+    const parent = ordered[index]!;
+    if (!child.coverage_from_seq || !parent.coverage_through_seq || !parent.coverage_from_seq) continue;
+    // 洞在「父覆盖到的末尾」与「子开始覆盖」之间：子往回跳的那一段没人读过。
+    const holeFrom = BigInt(parent.coverage_through_seq) + 1n;
+    const holeThrough = BigInt(child.coverage_from_seq) - 1n;
+    if (holeFrom <= holeThrough) {
+      gaps.push({ fromSeq: holeFrom.toString(), throughSeq: holeThrough.toString() });
+    }
+    if (effectiveFrom === null || BigInt(parent.coverage_from_seq) < BigInt(effectiveFrom)) {
+      effectiveFrom = parent.coverage_from_seq;
+    }
+  }
+  return {
+    head,
+    depth: ordered.length,
+    effectiveCoverageFromSeq: effectiveFrom,
+    effectiveCoverageThroughSeq: effectiveThrough,
+    gaps,
+  };
+}
+
 export interface CompanionHistoryRow extends Record<string, unknown> {
   id: string;
   seq: string;
@@ -261,6 +343,121 @@ export async function persistCompanionContextHandoffSnapshot(args: {
   );
 }
 
+/**
+ * 读取**接续链**：链头是覆盖最靠后且完全早于可见尾部的那一份，再沿
+ * `parent_summary_id` 回溯更早的节点。
+ *
+ * 为什么不能只取最新一份（44 §5.2）：压缩是分次发生的，只读最新一份就等于把更早
+ * 的覆盖索引丢掉——会话看起来「有摘要」，实际上中间那段没人读过。回溯之后调用方
+ * 才知道真实覆盖到哪里、哪里有洞。
+ *
+ * `MAX_CHAIN_DEPTH` 是硬上限：接续链理论上可以很长，但一次读取最多回溯这么多层，
+ * 剩下的更早内容按「需要时再检索」处理，不在每次调用里无限回溯。
+ */
+export const MAX_SUMMARY_CHAIN_DEPTH = 32;
+
+export async function readConversationSummaryChain(
+  tx: WorkerTransaction,
+  conversationId: string,
+  historyStartSeq: string,
+): Promise<SummaryChainView> {
+  const rows = await tx.execute<SummaryChainNode>(sql`
+    WITH RECURSIVE chain AS (
+      (
+      SELECT s.id, s.revision, s.parent_summary_id, s.summary,
+             s.coverage_from_seq::text AS coverage_from_seq,
+             s.coverage_through_seq::text AS coverage_through_seq,
+             s.coverage_source_hash,
+             1 AS depth
+      FROM conversation_summaries s
+      JOIN companion_conversations c
+        ON c.id = s.conversation_id AND c.workspace_id = s.workspace_id AND c.user_id = s.user_id
+      WHERE s.conversation_id = ${conversationId}
+        AND s.status IN ('candidate', 'confirmed')
+        AND s.coverage_from_seq IS NOT NULL
+        AND s.coverage_through_seq IS NOT NULL
+        AND s.coverage_source_hash IS NOT NULL
+        AND s.coverage_through_seq < ${historyStartSeq}::bigint
+        -- 方案 44 §3.3：读取侧也检查当前有效性。消息被改写或删除后，会话的
+        -- context_revision 会前进，而这份摘要记下的是**它被验证时**的取值——对不上
+        -- 就说明它盖住的那一段已经变了，不能再用它那句「更早那段对话」把已经不存在的
+        -- 内容重新说一遍。没记修订号的旧行按未验证处理，排除。
+        AND s.verified_context_revision = c.context_revision
+      ORDER BY s.coverage_through_seq DESC, s.updated_at DESC
+      LIMIT 1
+      )
+      UNION ALL
+      (
+      SELECT p.id, p.revision, p.parent_summary_id, p.summary,
+             p.coverage_from_seq::text AS coverage_from_seq,
+             p.coverage_through_seq::text AS coverage_through_seq,
+             p.coverage_source_hash,
+             c.depth + 1
+      FROM conversation_summaries p
+      JOIN chain c ON p.id = c.parent_summary_id
+      JOIN companion_conversations conv
+        ON conv.id = p.conversation_id AND conv.workspace_id = p.workspace_id AND conv.user_id = p.user_id
+      WHERE c.depth < ${MAX_SUMMARY_CHAIN_DEPTH}
+        AND p.status IN ('candidate', 'confirmed')
+        -- 传递来源也要有效：不只检查直接父摘要（44 §3.3）。任一祖先失效，整条链就
+        -- 不成立——链头那份摘要已经把祖先的内容写进自己了。
+          AND p.verified_context_revision = conv.context_revision
+      )
+    )
+    SELECT * FROM chain ORDER BY depth
+  `);
+  return summarizeSummaryChain(rows);
+}
+
+/**
+ * 把这一轮的折叠轨迹并进交接快照，推进到下一个版本（方案 44 §5.3）。
+ *
+ * **带围栏**：run 必须仍在进行中，且版本号正好是读到的那一版——迟到结果不许覆盖，
+ * 版本对不上也不动。`modelMessages` 保持折叠前的完整上下文，恢复时多给上下文更安全；
+ * 变的只是多出 `compactions`，让审计能回答「实际发出去的是什么」。
+ *
+ * 返回 false 表示没写进去（run 已结束或已被别人推进），**不是**失败：快照仍可用，
+ * 只是这一折没进轨迹。
+ */
+export async function recordCompanionContextCompactions(args: {
+  workspaceId: string;
+  userId: string;
+  runId: string;
+  snapshot: CompanionContextHandoffSnapshotV1;
+  sha256: string;
+  compactions: readonly NonNullable<CompanionContextHandoffSnapshotV1["compactions"]>[number][];
+}): Promise<boolean> {
+  if (args.compactions.length === 0) return false;
+  const next: CompanionContextHandoffSnapshotV1 = {
+    ...args.snapshot,
+    compactions: [...(args.snapshot.compactions ?? []), ...args.compactions],
+  };
+  const nextSha256 = sha256Utf8V1(canonicalJsonV1(next));
+  return withWorkerWorkspaceTransaction(
+    { workspaceId: args.workspaceId, userId: args.userId },
+    async (tx) => {
+      const updated = await tx.execute(sql`
+        UPDATE companion_context_handoff_snapshots s
+           SET snapshot = ${JSON.stringify(next)}::jsonb,
+               snapshot_sha256 = ${nextSha256},
+               snapshot_version = s.snapshot_version + 1,
+               created_at = now()
+         FROM companion_turn_runs r
+         WHERE s.run_id = ${args.runId}
+           AND s.workspace_id = ${args.workspaceId} AND s.user_id = ${args.userId}
+           AND r.id = s.run_id
+           AND r.status IN ('accepted', 'running', 'waiting_for_confirmation')
+           AND public.ailearn_assert_handoff_snapshot_fence(${args.runId}, s.snapshot_version)
+        RETURNING s.snapshot_sha256
+      `);
+      if (updated[0]) return true;
+      logger.warn({ runId: args.runId, compactions: args.compactions.length },
+        "handoff snapshot compaction trace skipped: run ended or snapshot already advanced");
+      return false;
+    },
+  );
+}
+
 /** Read only a content-verified summary wholly before the native history tail. */
 export async function readConversationSummary(
   tx: WorkerTransaction,
@@ -278,6 +475,34 @@ export async function readConversationSummary(
       AND coverage_source_hash IS NOT NULL
       AND coverage_through_seq < ${historyStartSeq}::bigint
     ORDER BY coverage_through_seq DESC NULLS LAST, updated_at DESC
+    LIMIT 1
+  `);
+  return rows[0] ?? null;
+}
+
+/**
+ * 当前生效的摘要链头（44 §5.1／§5.3）。
+ *
+ * 返回的是**覆盖最靠后**的那一份，也就是下一次压缩要接在它后面的父节点。它必须
+ * 带上 id 与 revision：提交前要拿它做父版本比较，迟到的结果才不能覆盖新指针。
+ *
+ * 取 coverage_through_seq 最大的一行是对的——接续链上越晚的节点覆盖得越靠后，更早
+ * 的节点经 parent_summary_id 仍然可达。但**读取端不能**因此假设「最新一份就代表
+ * 全部更早历史」：那正是局部摘要挤掉更早覆盖索引的地方（44 §5.2）。
+ */
+export async function readParentSummary(
+  tx: WorkerTransaction,
+  conversationId: string,
+): Promise<ParentSummaryRow | null> {
+  const rows = await tx.execute<ParentSummaryRow>(sql`
+    SELECT id, revision, summary,
+           coverage_from_seq::text AS coverage_from_seq,
+           coverage_through_seq::text AS coverage_through_seq
+    FROM conversation_summaries
+    WHERE conversation_id = ${conversationId}
+      AND status IN ('candidate', 'confirmed')
+      AND coverage_through_seq IS NOT NULL
+    ORDER BY coverage_through_seq DESC, updated_at DESC
     LIMIT 1
   `);
   return rows[0] ?? null;

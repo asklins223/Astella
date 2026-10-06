@@ -11,7 +11,7 @@
  *  - **服务端日志里一条 TTS 错误都没有。**
  *
  * 零服务端错误 + 客户端每次都失败，只有一个解释：请求**根本没发出去**。
- * 音频图（AudioContext + 环境床）只在第一次 `pointerdown`/`keydown` 时建一次，
+ * 音频图（AudioContext）只在第一次 `pointerdown`/`keydown` 时建一次，
  * 那一次失败后 `graphRef` 永远是 null，而两条合成路第一行就
  * `if (!speakApi || !graph) throw` —— 于是一个请求都发不出去。
  *
@@ -52,7 +52,7 @@ test("合成路按需建图：一次解锁失败不该让整轮会话没有声�
   // ensureGraph 必须真的会在缺图时建，而不是只读。
   const body = source.slice(source.indexOf("const ensureGraph"), source.indexOf("const synthesizeVoice"));
   expect(body).toMatch(/if \(existing\) return existing/);
-  expect(body).toMatch(/buildAmbientGraph\(\)/);
+  expect(body).toMatch(/buildAudioGraph\(\)/);
   expect(body).toMatch(/graphRef\.current = built/);
 });
 

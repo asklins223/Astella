@@ -40,7 +40,12 @@ const CAPABILITY_FLAGS = {
     COMPANION_DAILY_SUMMARY_V1: { dev: true, prod: true },
   },
   worker: {
-    CARD_GENERATION_V2_LLM: { dev: true, prod: false },
+    // 2026-10-06：这里此前还挂着 `CARD_GENERATION_V2_LLM`，而它已经退役——
+    // 旧四阶段链拆掉之后全仓没有读取者了，两个 compose 文件也都改成了
+    // `CARD_GENERATION_V3_PROVIDER`（39d W7-7 刀二）。守卫没跟上，
+    // 于是它开始要求一条"必须存在"的死开关：真配置是对的，它反而一直报红。
+    // 判据的价值来自它与代码同向，所以换开关时这张表要跟着换。
+    CARD_GENERATION_V3_PROVIDER: { dev: "deterministic", prod: "deterministic" },
     COMPANION_DIALOGUE_V1_ENABLED: { dev: true, prod: true },
     COMPANION_VOICE_DIALOGUE_V1_ENABLED: { dev: true, prod: false },
     COMPANION_MEMORY_EXTRACTOR_V1: { dev: true, prod: true },
@@ -52,7 +57,7 @@ const CAPABILITY_FLAGS = {
 };
 
 /** 属于本契约管辖的开关键名；用于抓出多余的（死）能力开关。 */
-const GOVERNABLE_KEY = /^(?:COMPANION_[A-Z0-9_]+|CARD_GENERATION_V2[A-Z0-9_]*|LEARNING_RUN_ENABLED)$/;
+const GOVERNABLE_KEY = /^(?:COMPANION_[A-Z0-9_]+|CARD_GENERATION_V[23][A-Z0-9_]*|LEARNING_RUN_ENABLED)$/;
 
 const FILES = [
   { file: "docker-compose.dev.yml", profile: "dev" },

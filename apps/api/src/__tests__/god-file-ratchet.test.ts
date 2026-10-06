@@ -123,6 +123,14 @@ const BASELINE: Readonly<Record<string, number>> = {
   //
   // 动因：方案 42 给 `FetchUrlDependencies` 补了三段文档注释，把这个已 1878 行的
   // 文件推到 1912 行，触发「清单不增」。棘轮不接受调大基线，所以拆。
+  //
+  // 2026-10-05（方案 44 §3.3）：装配回执与预算读数移入新建的
+  // `workers/ai-worker/src/handlers/companion-context-receipts.ts`（84 行），
+  // companion-agent-runtime 1541 → 1499、companion-dialogue 1512 → 1495；
+  // 两者都**不在**基线里（是新增就超阈值的），所以这里只留记录、不加条目。
+  // 判据同样是**域**：装配回执回答「这一轮实际装进了什么」，编排文件回答
+  // 「这一轮怎么读进来」「这些步怎么走」——回执横跨两者，留在任一编排文件里
+  // 都只会让它多背一份职责。
 };
 
 test("神文件清单不增（新增一个超阈值的文件，或把现有的再堆大，都红）", () => {

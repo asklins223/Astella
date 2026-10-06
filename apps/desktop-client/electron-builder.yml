@@ -57,6 +57,13 @@ mac:
   #     CSC_IDENTITY_AUTO_DISCOVERY=false 省掉翻证书库的功夫）；
   #   - 配上了 → 自动签名 + 自动公证，macOS 自动更新随之可用，无需改任何配置。
   # 目前仓库尚未配置这些 secret，所以产物仍是未签名的。
+  #
+  # hardenedRuntime（2026-10-06 补，对齐 word-tts-desktop 那套能装上的配置）：
+  # **公证的硬性前提**。electron-builder 的 notarize 在 hardenedRuntime 关闭时
+  # 不成立——也就是"证书配好了、公证却过不去"，产物照样未签名，于是 macOS 更新
+  # 仍然停在「下载得到、装不上」。这一行平时看不出差别（有证书那天才显形），
+  # 但缺了它，装上证书也不会让更新变得可用，所以显式写出来。
+  hardenedRuntime: true
 
 win:
   target:

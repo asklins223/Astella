@@ -11,6 +11,6 @@ export function uncoveredFacets(
   rubricResults: readonly { readonly facet: string; readonly verdict: string }[],
 ): string[] {
   return [...new Set(
-    rubricResults.filter((item) => item.verdict !== "covered").map((item) => item.facet),
+    rubricResults.filter((item) => ["partial", "missing", "contradicted"].includes(item.verdict)).map((item) => item.facet),
   )];
 }

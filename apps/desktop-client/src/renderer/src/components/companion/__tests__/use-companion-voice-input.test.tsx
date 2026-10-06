@@ -72,10 +72,26 @@ describe("separate voice preview lifecycle", () => {
     // 它会把那次 await 冲掉，正好停在"起录还没落定"的那一刻。
     await act(async () => { result.current.toggle(); result.current.toggle(); });
     expect(recorder.start).toHaveBeenCalledOnce();
+    expect(result.current.phase).toBe("starting");
     await act(async () => started());
     expect(result.current.phase).toBe("listening");
     act(() => result.current.cancel());
     expect(result.current.phase).toBe("idle");
+  });
+
+  it("cancels a pending permission request and stops the recorder if permission arrives later", async () => {
+    let started!: () => void;
+    recorder.start.mockImplementationOnce(() => new Promise<void>(resolve => { started = resolve; }));
+    const onTranscript = vi.fn();
+    const { result } = renderHook(() => useCompanionVoiceInput({ onTranscript }));
+    await act(async () => result.current.toggle());
+    expect(result.current.phase).toBe("starting");
+    act(() => result.current.cancel());
+    await act(async () => started());
+    expect(result.current.phase).toBe("idle");
+    expect(recorder.stop).toHaveBeenCalled();
+    expect(onTranscript).not.toHaveBeenCalled();
+    expect(isCompanionMicrophoneActive()).toBe(false);
   });
 
   /**

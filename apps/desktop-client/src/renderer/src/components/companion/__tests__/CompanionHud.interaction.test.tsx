@@ -149,6 +149,67 @@ describe("production companion interaction", () => {
     fireEvent.click(screen.getByRole("button", { name: "气泡轻聊" }));
     expect((screen.getByRole("textbox", { name: "给 小鲸 的消息" }) as HTMLTextAreaElement).value).toBe("文字草稿");
   });
+  /**
+   * 2026-10-06 窗口实测：认出「Yeah.」之后，再点一次「语音输入」既不录音、也只把
+   * 上一句原样摆出来。此前 `toggleVoice` 写着 `if (!voiceDraft) voice.toggle()`，
+   * 于是有草稿就永远开不了新的一句。
+   *
+   * 锁两件事：**再点一次要真的开始录**；**录音期间不摆旧字**（否则两句话并排，
+   * 看着像同一句没换）。
+   */
+  it("点第二次语音输入会真的开录，录音期间不摆上一句的识别结果", async () => {
+    state.chat = interactionSession({ send: vi.fn(async () => true) });
+    render(<Harness voiceEnabled />);
+    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
+    expect(voiceToggle).toHaveBeenCalledTimes(1);
+    await act(async () => (state.voiceOptions as CompanionVoiceInputOptions).onTranscript({ text: "Yeah." }));
+    const voice = screen.getByRole("region", { name: "语音气泡" });
+    expect((within(voice).getByRole("textbox", { name: "识别后的语音文字" }) as HTMLTextAreaElement).value).toBe("Yeah.");
+
+    // 关掉气泡，再点一次语音输入 → 必须开录（第二次），而不是再摆一遍。
+    fireEvent.click(within(voice).getByRole("button", { name: "关闭语音气泡" }));
+    expect(screen.queryByRole("region", { name: "语音气泡" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
+    expect(voiceToggle).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * 2026-10-06 窗口实测反馈：用户伸手去点气泡里的「结束录音」，路上点中了旁边的麦克风，
+   * 录音停了、气泡也被收走，于是"点不到结束录音"。麦克风按钮只该管**开始／停止录音**，
+   * 关气泡是「关闭语音气泡」「这次不发」的活。
+   */
+  it("录音中再点麦克风是「停止」，气泡留在原地等着识别结果", async () => {
+    state.chat = interactionSession({ send: vi.fn(async () => true) });
+    render(<Harness voiceEnabled />);
+    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
+    expect(voiceToggle).toHaveBeenCalledTimes(1);
+
+    // 相位回到 idle（气泡里的「结束录音」也是同一个 toggle），再点麦克风：开始**新**的一句。
+    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
+    expect(voiceToggle).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("region", { name: "语音气泡" })).toBeTruthy();
+    expect(voiceCancel).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 同一格问题的另一半：「这次不发」以前只关气泡，识别出来的那句还留着，于是
+   * 下一次开录又被它挡住。一个写着"这次不发"的按钮就得真的把这一句丢掉。
+   */
+  it("「这次不发」把识别结果一起丢掉，下一次才是干净的一次", async () => {
+    state.chat = interactionSession({ send: vi.fn(async () => true) });
+    render(<Harness voiceEnabled />);
+    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
+    await act(async () => (state.voiceOptions as CompanionVoiceInputOptions).onTranscript({ text: "不想要的一句" }));
+    const voice = screen.getByRole("region", { name: "语音气泡" });
+    await act(async () => fireEvent.click(within(voice).getByRole("button", { name: "这次不发" })));
+    expect(screen.queryByRole("region", { name: "语音气泡" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
+    expect(voiceToggle).toHaveBeenCalledTimes(2);
+    const again = screen.getByRole("region", { name: "语音气泡" });
+    expect(within(again).queryByRole("textbox", { name: "识别后的语音文字" })).toBeNull();
+  });
+
   it("lets reply text expire independently of a pending confirmation and static focus", () => {
     const dismissLiveReply = vi.fn();
     state.chat = interactionSession({ mode: "closed", liveReply: { messageId: "one", text: "回复内容", hasActionBlocks: true, proposalIds: ["proposal"] },

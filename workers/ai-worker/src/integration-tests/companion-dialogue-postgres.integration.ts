@@ -138,6 +138,11 @@ async function seedDialogueRun(
                VALUES (${olderTextId}, ${cid}, ${ws}, ${uid}, 'user', 2, 'text',
                        ${tx.json([{ type: "text", text: "上一轮的旧文本" }])}, ${"1".repeat(64)})`;
     }
+    // 账号状态行：生产里由 turn-service 在建 run 之前幂等建（2026-10-06 补的 fail-closed 修复）。
+    // 这里照着建，否则这条夹具就绕过了生产路径——而 worker 的预留语句是 INNER JOIN
+    // user_companion_account_state，缺行 ⇒ AGENT_BUDGET_EXCEEDED。
+    await tx`INSERT INTO user_companion_account_state (user_id) VALUES (${uid})
+             ON CONFLICT (user_id) DO NOTHING`;
     await tx`INSERT INTO companion_turn_runs
              (id, conversation_id, workspace_id, user_id, user_message_id, generation, status,
               idempotency_key_hash, request_body_hash, job_id)

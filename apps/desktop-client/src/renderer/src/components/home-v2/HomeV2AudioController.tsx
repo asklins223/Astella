@@ -6,7 +6,7 @@ import {
   unwrapGatewayResult,
 } from "../../app/desktop-client";
 import { useHomeProjectionInvalidation } from "../../app/home-projection";
-import { shouldRunHomeV2Ambient } from "./home-v2";
+import { shouldPlayHomeV2Feedback } from "./home-v2";
 import { setHomeV2VoiceLevel } from "../../app/companion-voice-level";
 import {
   isCompanionMicrophoneActive, isCompanionNotificationSpeechActive,
@@ -38,25 +38,16 @@ export type HomeV2VoiceRequest = {
  * Frozen audio tuning for the cottage.
  *
  * Every deliberate sound must sit inside the band a laptop or desktop speaker can
- * actually reproduce. The first revision of this file used a 165 Hz rumble for
- * the wind and a 92 Hz sine for footsteps: both are below the useful output of
- * ordinary speakers, which made two of the four planned sounds inaudible in
- * practice. `HOME_V2_AUDIBLE_FLOOR_HZ` is the regression floor, and the tuning
- * table below is asserted against it by tests.
+ * actually reproduce. The first revision of this file used a 92 Hz sine for the
+ * footstep body, below the useful output of ordinary speakers, which made the
+ * step inaudible in practice. Keep every new cue inside the mid band.
+ *
+ * 这里没有任何常驻音源。上一版首页挂着一层噪声环境床（带通 520 Hz、增益 0.03、
+ * 叠 0.07 Hz 阵风）：指针第一次解锁就开始响，待到离开房间才停——阅读应用底下
+ * 一层不会自己结束的底噪是噪音，不是氛围。2026-10-06 用户裁决删掉它，声音只跟
+ * 着事情发生。
  */
-export const HOME_V2_AUDIBLE_FLOOR_HZ = 220;
-
 export const HOME_V2_AUDIO_TUNING = Object.freeze({
-  ambient: Object.freeze({
-    bandHz: 520,
-    bandQ: 0.55,
-    lowpassHz: 1_900,
-    gain: 0.03,
-    gustHz: 0.07,
-    gustDepth: 0.28,
-    fadeSeconds: 0.7,
-    seconds: 3,
-  }),
   page: Object.freeze({ highpassHz: 650, gain: 0.032, seconds: 0.11 }),
   footstep: Object.freeze({
     tapHz: 1_150,
@@ -87,9 +78,6 @@ export const HOME_V2_AUDIO_TUNING = Object.freeze({
 
 type HomeV2AudioGraph = {
   readonly context: AudioContext;
-  readonly ambientGain: GainNode;
-  readonly noise: AudioBufferSourceNode;
-  readonly gust: OscillatorNode;
 };
 
 type VoicePlayback = {
@@ -109,37 +97,13 @@ function whiteNoise(context: AudioContext, seconds: number): AudioBuffer {
 }
 
 /**
- * Wind is a wide band of moving air, not a sub-bass rumble: band-passed noise in
- * the low-mid band with a very slow gust on top.
+ * 音频图现在只有一条通道：一个 AudioContext。
+ *
+ * 这里**不启动任何节点**。瞬态音和台词都由事件现场合成，建图本身必须安静——
+ * 一个"建好就一直响"的图正是上一版环境床的形状，`home-audio-idle` 钉住这条。
  */
-function buildAmbientGraph(): HomeV2AudioGraph {
-  const tuning = HOME_V2_AUDIO_TUNING.ambient;
-  const context = new AudioContext();
-  const noise = context.createBufferSource();
-  const band = context.createBiquadFilter();
-  const air = context.createBiquadFilter();
-  const ambientGain = context.createGain();
-  const gust = context.createOscillator();
-  const gustDepth = context.createGain();
-
-  noise.buffer = whiteNoise(context, tuning.seconds);
-  noise.loop = true;
-  band.type = "bandpass";
-  band.frequency.value = tuning.bandHz;
-  band.Q.value = tuning.bandQ;
-  air.type = "lowpass";
-  air.frequency.value = tuning.lowpassHz;
-  ambientGain.gain.value = 0;
-
-  gust.type = "sine";
-  gust.frequency.value = tuning.gustHz;
-  gustDepth.gain.value = tuning.gain * tuning.gustDepth;
-
-  noise.connect(band).connect(air).connect(ambientGain).connect(context.destination);
-  gust.connect(gustDepth).connect(ambientGain.gain);
-  noise.start();
-  gust.start();
-  return { context, ambientGain, noise, gust };
+function buildAudioGraph(): HomeV2AudioGraph {
+  return { context: new AudioContext() };
 }
 
 function decayEnvelope(
@@ -269,9 +233,10 @@ function decodeBase64Audio(context: AudioContext, base64: string): Promise<Audio
 
 /**
  * Audio is created only inside a trusted user gesture and stays silent in tasks.
- * It is also the single owner of companion voice playback, so the ambient bed,
- * the interface transients and speech share one context, one mute gate and one
- * amplitude channel for the Live2D mouth.
+ * It is also the single owner of companion voice playback, so the interface
+ * transients and speech share one context, one mute gate and one amplitude
+ * channel for the Live2D mouth. Nothing plays on its own: every cue is built at
+ * the moment something happens.
  */
 export function HomeV2AudioController() {
   const [unlocked, setUnlocked] = useState(false);
@@ -336,7 +301,7 @@ export function HomeV2AudioController() {
   /**
    * 播一段已经解码好的语音，按帧回报进度。
    *
-   * 这是全应用唯一的语音播放出口：环境音、界面音效、伴星台词都走同一个
+   * 这是全应用唯一的语音播放出口：界面音效、伴星台词都走同一个
    * AudioContext 和同一条振幅通道。喊停永远由 stopVoicePlayback 统一处理，
    * 所以 cue 与对话台词天然互斥——谁抢到谁播，被抢的那个立刻拿到 resolve。
    */
@@ -397,14 +362,14 @@ export function HomeV2AudioController() {
       timer = null;
       if (disposed) return;
       try {
-        const graph = graphRef.current ?? buildAmbientGraph();
+        const graph = graphRef.current ?? buildAudioGraph();
         graphRef.current = graph;
         if (interacted) {
           void graph.context.resume().catch(() => undefined);
           setUnlocked(true);
         } else {
-          // Warm the device and noise buffers before the first click; keep
-          // playback locked until a real user gesture has arrived.
+          // Warm the audio device before the first click; keep playback locked
+          // until a real user gesture has arrived.
           void graph.context.suspend().catch(() => undefined);
         }
       } catch (err) {
@@ -446,13 +411,16 @@ export function HomeV2AudioController() {
       window.removeEventListener("keydown", unlock, true);
       const graph = graphRef.current;
       graphRef.current = null;
-      graph?.gust.stop();
-      graph?.noise.stop();
       void graph?.context.close().catch(() => undefined);
     };
   }, []);
 
-  const audible = shouldRunHomeV2Ambient({
+  /**
+   * 房间里**自己**发声的那一路：翻页、脚步、魔法这类瞬态音，和伴星的主动提示音。
+   * 它们不是用户要的回答，所以进了任务页就收声——用户在读东西时，房间不该替他
+   * 制造动静。
+   */
+  const audible = shouldPlayHomeV2Feedback({
     unlocked,
     masterMuted,
     surfaceOpen: Boolean(surface),
@@ -462,11 +430,11 @@ export function HomeV2AudioController() {
 
   /**
    * 用户主动发起的对话语音走独立闸门：同样的解锁/静音/可见性条件，但**不含**
-   * `surfaceOpen`。任务页静音是为了不让环境音打扰专注；而用户点一下亲口问出来的
+   * `surfaceOpen`。任务页静音是为了不打扰专注；而用户点一下亲口问出来的
    * 回复是他主动要的反馈，不是"主动输出"——这与 §2026-09-16 裁决 3 里"按页静音只
    * 抑制主动输出、不阻断用户主动触发的互动"是同一条线。
    */
-  const userInitiatedAudible = shouldRunHomeV2Ambient({
+  const userInitiatedAudible = shouldPlayHomeV2Feedback({
     unlocked,
     masterMuted,
     surfaceOpen: false,
@@ -494,7 +462,7 @@ export function HomeV2AudioController() {
   const ensureGraph = useCallback((): HomeV2AudioGraph => {
     const existing = graphRef.current;
     if (existing) return existing;
-    const built = buildAmbientGraph();
+    const built = buildAudioGraph();
     graphRef.current = built;
     void built.context.resume().catch(() => undefined);
     setUnlocked(true);
@@ -605,12 +573,16 @@ export function HomeV2AudioController() {
     stopVoicePlayback();
   }), [stopVoicePlayback]);
 
+  /**
+   * 通道开关：不被允许发声时整个 AudioContext 挂起，正在念的立刻停。
+   *
+   * 这里以前还负责把环境床的增益 ramp 上去——那一层删掉之后，这一段只剩"该不该
+   * 有声音"。`audible` 不再参与：房间自己那点动静由各自的入口现查 `audibleRef`，
+   * 不需要在这里改任何运行期参数。
+   */
   useEffect(() => {
     const graph = graphRef.current;
     if (!graph) return;
-    const now = graph.context.currentTime;
-    graph.ambientGain.gain.cancelScheduledValues(now);
-    if (!audible) graph.ambientGain.gain.setValueAtTime(0, now);
     if (!userInitiatedAudible) {
       voiceRequestGenerationRef.current += 1;
       stopCompanionNotificationSpeech();
@@ -618,21 +590,8 @@ export function HomeV2AudioController() {
       void graph.context.suspend().catch(() => undefined);
       return;
     }
-    void graph.context.resume()
-      .then(() => {
-        if (graphRef.current !== graph) return;
-        const resumedAt = graph.context.currentTime;
-        graph.ambientGain.gain.cancelScheduledValues(resumedAt);
-        graph.ambientGain.gain.setValueAtTime(0, resumedAt);
-        if (audibleRef.current) {
-          graph.ambientGain.gain.linearRampToValueAtTime(
-            HOME_V2_AUDIO_TUNING.ambient.gain,
-            resumedAt + HOME_V2_AUDIO_TUNING.ambient.fadeSeconds,
-          );
-        }
-      })
-      .catch(() => undefined);
-  }, [audible, stopVoicePlayback, userInitiatedAudible]);
+    void graph.context.resume().catch(() => undefined);
+  }, [stopVoicePlayback, userInitiatedAudible]);
 
   useEffect(() => {
     const play = (event: Event) => {

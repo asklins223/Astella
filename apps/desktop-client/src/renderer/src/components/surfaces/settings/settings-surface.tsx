@@ -1280,13 +1280,13 @@ export function SettingsSurface() {
               <div className="settings-field">
                 <label className="settings-field__label" htmlFor="settings-password-current">当前密码</label>
                 <div className="hud-field">
-                  <input id="settings-password-current" type="password" value={passwordForm.current} autoComplete="current-password" disabled={profileBusy !== null} onChange={(event) => setPasswordForm((form) => ({ ...form, current: event.currentTarget.value }))} />
+                  <input id="settings-password-current" type="password" value={passwordForm.current} autoComplete="current-password" disabled={profileBusy !== null} onChange={(event) => { const current = event.currentTarget.value; setPasswordForm((form) => ({ ...form, current })); }} />
                 </div>
               </div>
               <div className="settings-field">
                 <label className="settings-field__label" htmlFor="settings-password-next">新密码</label>
                 <div className="hud-field">
-                  <input id="settings-password-next" type="password" value={passwordForm.next} placeholder="至少 8 位" autoComplete="new-password" disabled={profileBusy !== null} onChange={(event) => setPasswordForm((form) => ({ ...form, next: event.currentTarget.value }))} />
+                  <input id="settings-password-next" type="password" value={passwordForm.next} placeholder="至少 8 位" autoComplete="new-password" disabled={profileBusy !== null} onChange={(event) => { const next = event.currentTarget.value; setPasswordForm((form) => ({ ...form, next })); }} />
                 </div>
               </div>
               <div className="settings-field">
@@ -1298,7 +1298,7 @@ export function SettingsSurface() {
                     value={passwordForm.confirm}
                     autoComplete="new-password"
                     disabled={profileBusy !== null}
-                    onChange={(event) => setPasswordForm((form) => ({ ...form, confirm: event.currentTarget.value }))}
+                    onChange={(event) => { const confirm = event.currentTarget.value; setPasswordForm((form) => ({ ...form, confirm })); }}
                     onKeyDown={(event) => {
                       if (event.key !== "Enter") return;
                       event.preventDefault();

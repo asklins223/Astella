@@ -1,14 +1,36 @@
 name: CI
 
+# ─── 这份工作流现在只做一件事：跑本地那套测试 ──────────────────────────────
+#
+# 2026-10-06（用户决定）：**CI = 本地跑得通的那套测试**，逐个包一一对应。
+#
+# 此前这份文件是 1742 行、8 个 job 的发布流水线：覆盖率门禁、skip/todo 门禁、
+# Gitleaks、npm audit ×3、Trivy 镜像扫描 ×3、30 多份真 PostgreSQL 集测、
+# 生产 compose 冒烟、备份还原校验、Alpha 基础设施巡检。它带来的不是安全，
+# 是**看不懂的红**——本地测试全过，一打 release tag 就红一片，而每次红的
+# 都是本地根本不跑的东西。
+#
+# 2026-10-05 那次实测最能说明问题：CI 停在 **5 个 commit 之前**
+# （tag v0.5.0 打完之后又落地了 5 个 commit，没人重跑），报出来的
+# `ENOENT: .../node_modules/.pnpm` 在今天的代码里早就修掉了——
+# 而它当时看起来就像"CI 坏了"。**红得没有指向，就等于没有信号。**
+#
+# 现在的口径：**跑什么就等于本地跑什么；跑挂了就是真挂了。**
+#
+# 移出 CI、但脚本与配置都留在仓库里、需要时按原样接回的：
+#   · 覆盖率门禁       `make coverage-gate`
+#   · skip/todo 门禁   `make skip-todo-gate`
+#   · postgres 集测    `make test-postgres`（要本地库；154 份仍在 package.json 脚本里）
+#   · 发布 / compose / Alpha 巡检：脚本与 compose 文件原封不动，只是不再自动跑
+#
+# 涉及 AI 的部分只跑逻辑：所有用例都是桩 / 固定数据集，不发任何付费网络请求
+# （`packages/ai-quality` 的 `pr-gate` 就是 PR 层的固定 Mock 闸）。
 on:
-  workflow_dispatch:
-  schedule:
-    # Nightly at 02:00 UTC — runs full nightly E2E suite (ADR-0008 §6)
-    - cron: "0 2 * * *"
-  # 只在打 tag 时跑。按用户决定：main 的普通推送不再触发 CI，
-  # 回归留给发版这一刻，省掉每次推送的 runner 开销。
   push:
-    tags: ["v*", "desktop-v*"]
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,175 +41,178 @@ concurrency:
 
 env:
   NODE_VERSION: "22"
-  # Immutable v0.4 baseline named by the v0.5 release plan. Changed-line
-  # coverage measures the complete v0.5 delta instead of an arbitrary runner
-  # checkout depth or latest-commit window.
-  COVERAGE_BASE_SHA: "33efa06f8c0a5f2d1e97e12dcb745b2314c606e8"
 
 jobs:
-  release-inputs:
-    name: Clean Release Inputs
+  # ─── packages/：四个共享包 ──────────────────────────────────────────────
+  #
+  # 用一个矩阵而不是四个 job：四个包的形状完全一样（npm ci → typecheck → test），
+  # 合成一个 job 之后"忘了给某个包装依赖"只会在一处犯。
+  #
+  # `deps` 是**这个包的 tsconfig 会真的拉进同一个 program 的那些包**。
+  # 本仓的 `@ailearn/*` 全是 `file:` 依赖，npm 把它们做成符号链接（跟着源码走），
+  # 但 tsc 读的是被引包自己的 `node_modules` 来解析 `zod` / `drizzle-orm`——
+  # 所以被引包必须自己装过，这是 npm workspace 提升掩盖掉的那一层。
+  packages:
+    name: ${{ matrix.label }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Shared contracts
+            path: packages/shared
+            deps: packages/shared
+          - label: Agent core
+            path: packages/agent-core
+            deps: packages/shared,packages/agent-core
+          - label: Agent host
+            path: packages/agent-host
+            deps: >-
+              packages/shared,packages/card-generation,
+              packages/agent-core,packages/agent-host
+          # AI 质量层：PR Mock。校验数据集完整性、标签覆盖、评分器逻辑，
+          # 全程固定桩，不碰付费网络——这正是"AI 任务只跑通逻辑"的那一支。
+          - label: AI quality (PR mock)
+            path: packages/ai-quality
+            deps: packages/shared,packages/ai-quality
+            pr_gate: "1"
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      # 把**附注 tag 对象**取回来。
-      #
-      # `actions/checkout` 对 tag 触发的运行，会把 `refs/tags/<tag>` 建成一个直接指向
-      # commit 的**轻量 ref**——即使那个 tag 在远端本来就是附注的。
-      # `verify-release-inputs.mjs` 用 `git cat-file -t refs/tags/<tag>` 判附注性，
-      # 于是在 runner 上读到 `commit`，报「must be annotated, got Git object type commit」。
-      # 2026-10-05 实测：手工打的附注 tag `v0.5.0`，同一条命令本地交回 `tag`、
-      # runner 上交回 `commit`。⇒ 不取回 tag 对象，这道闸会把每一次发版都挡住，
-      # 而它真正想挡的是"轻量 tag 不可复现"。
-      - name: Fetch annotated tag objects
-        run: git fetch --force --no-tags origin '+refs/tags/*:refs/tags/*'
-
-      # A release must be reproducible from Git alone. This also catches a
-      # journal entry whose SQL file was left untracked in a local workspace.
-      - name: Verify clean checkout and required release files
-        run: node .github/scripts/verify-release-inputs.mjs
-
-  typecheck:
-    # ⚠️ 这个 **显示名** 是分支保护里要匹配的状态检查名，改它会让合并保护失效。
-    #
-    # 2026-09-30 实测：**这个 job 里没有任何 linter**——全仓没有 eslint 配置，
-    # 任何 package.json 也不依赖 eslint。它跑的是 npm ci ×5、schema 镜像一致性、
-    # CI 工作流与迁移生命周期契约、coverage gate、以及四个包的 tsc。
-    #
-    # 想把它改成 `TypeCheck & Contract Gates` 之类更贴切的名字，**先确认分支保护**：
-    # 本地看不见 repo settings，改错了 CI 会一直显示「等待必需检查」。
-    # （README 已经不再声称 CI 跑 ESLint，所以只剩这一处名实不符。）
-    name: TypeCheck & Lint
-    runs-on: ubuntu-latest
-    needs: release-inputs
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          # Gitleaks scans the pushed commit range, which may include merge
-          # parents that are unavailable in the default depth-1 checkout.
-          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: |
-            package-lock.json
-            apps/api/package-lock.json
-            workers/ai-worker/package-lock.json
             packages/shared/package-lock.json
-            packages/ai-quality/package-lock.json
+            packages/card-generation/package-lock.json
             packages/agent-core/package-lock.json
             packages/agent-host/package-lock.json
+            packages/ai-quality/package-lock.json
 
-      - name: Install repository tooling
-        run: npm ci --no-audit --no-fund
-
-      - name: Install shared
-        working-directory: packages/shared
-        run: npm ci --no-audit --no-fund
-
-      - name: Install agent-core
-        working-directory: packages/agent-core
-        run: npm ci --no-audit --no-fund
-
-      # apps/api/tsconfig.json 把 `@ailearn/agent-host` 映射到
-      # `../../packages/agent-host/src/index.ts`，所以 TypeCheck API 一步就会把
-      # agent-host 的源码拉进同一个 program —— 它依赖的 `zod` 也必须**装在那个包里**。
-      # 本地 workspace 提升掩盖了这件事：`TypeCheck API` 在 CI 上报
-      # `long-goals.ts(2,19): Cannot find module 'zod'`（2026-10-05 实测）。
-      - name: Install agent-host
-        working-directory: packages/agent-host
-        run: npm ci --no-audit --no-fund
-
-      - name: Install ai-quality
-        working-directory: packages/ai-quality
-        run: npm ci --no-audit --no-fund
-
-      # 2026-10-05：`@ailearn/card-generation` 与 `@ailearn/agent-host` 都是被
-      # `apps/api/tsconfig.json` 的 paths 指到**活源码**的包（`../../packages/*/src`），
-      # 所以 api 打包/跑测试时会把它们的源码拉进同一个 program——它们自己的依赖
-      # 必须装在那个包里。`card-generation` 此前连 lockfile 都没有，于是
-      # `Build API` 报 `Could not resolve "drizzle-orm"`（来自它的 creation.ts / events.ts）。
-      # 本次补上 lockfile（lockfileVersion 3，根元数据与 package.json 一致）并在此安装。
-
-      - name: Install card-generation
-        working-directory: packages/card-generation
-        run: npm ci --no-audit --no-fund
-
-      - name: Install API
-        working-directory: apps/api
-        run: npm ci --no-audit --no-fund
-
-      - name: Install Worker
-        working-directory: workers/ai-worker
-        run: npm ci --no-audit --no-fund
-
-      - name: Verify API and Worker database schemas are synchronized
-        run: node .github/scripts/verify-schema-mirror.mjs
-
-      - name: Verify CI workflow and PostgreSQL lifecycle contracts
+      - name: Install dependencies
         run: |
-          node --test \
-            .github/scripts/ci-workflow-contract.test.mjs \
-            .github/scripts/postgres-integration-lifecycle.test.mjs
+          IFS=',' read -ra dirs <<< "${{ matrix.deps }}"
+          for dir in "${dirs[@]}"; do
+            dir="$(echo "$dir" | tr -d '[:space:]')"
+            echo "── npm ci $dir"
+            (cd "$dir" && npm ci --no-audit --no-fund)
+          done
 
-      - name: TypeCheck shared contracts
-        working-directory: packages/shared
+      - name: Typecheck ${{ matrix.path }}
+        working-directory: ${{ matrix.path }}
         run: npm run typecheck
 
-      - name: TypeCheck ai-quality package
-        working-directory: packages/ai-quality
-        run: npm run typecheck
+      - name: Test ${{ matrix.path }}
+        working-directory: ${{ matrix.path }}
+        run: npm test
 
-      - name: TypeCheck API
-        working-directory: apps/api
-        run: npm run typecheck
+      - name: PR mock quality gate
+        if: matrix.pr_gate == '1'
+        working-directory: ${{ matrix.path }}
+        run: npm run pr-gate
 
-      - name: TypeCheck Worker
-        working-directory: workers/ai-worker
-        run: npm run typecheck
-
-      # OPS-01: 验证 Prometheus alerts.yml 语法
-      - name: Verify Prometheus alerts syntax
-        run: node .github/scripts/verify-alerts-syntax.mjs
-
-      # REL-01 / RC 硬门禁 §4.1: Secret scan — 0 high/critical 才通过
-      # 使用 Gitleaks 扫描全仓，检测 API key、密码、token 等敏感信息泄漏。
-      # .gitleaks.toml 配置允许 .env.example 和 docs/ 中的示例值。
-      - name: Secret scan (Gitleaks)
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_ENABLE_COMMENTS: true
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
-          GITLEAKS_CONFIG: .gitleaks.toml
-
-      # F-016: 生产依赖审计门禁 — 0 high/critical 才通过
-      - name: Audit API production deps
-        working-directory: apps/api
-        run: npm audit --omit=dev --audit-level=high
-
-      - name: Audit Worker production deps
-        working-directory: workers/ai-worker
-        run: npm audit --omit=dev --audit-level=high
-
-      - name: Audit shared production deps
-        working-directory: packages/shared
-        run: npm audit --omit=dev --audit-level=high
-
-  build:
-    name: Build (API / Worker)
+  # ─── apps/api ─────────────────────────────────────────────────────────
+  api:
+    name: API
     runs-on: ubuntu-latest
-    needs: typecheck
+    timeout-minutes: 20
+    env:
+      # 单测会在模块加载时 import db.ts，那儿建一个 postgres 连接池。池是懒的
+      # （不查询就不连），但默认 URL 用的 docker-compose 主机名 `postgres`
+      # 在 CI runner 上不解析——DNS 查不到会把 job 挂到超时。这里给一个
+      # 明确不可达的地址：池照建、照关，单测里所有 db 方法都是桩。
+      DATABASE_URL_API: postgres://ci:ci@127.0.0.1:1/ci
+      DATABASE_URL_WORKER: postgres://ci:ci@127.0.0.1:1/ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            packages/shared/package-lock.json
+            packages/card-generation/package-lock.json
+            packages/agent-core/package-lock.json
+            packages/agent-host/package-lock.json
+            workers/ai-worker/package-lock.json
+            apps/api/package-lock.json
+
+      # `workers/ai-worker` 在这一档里不是"顺手装的"：api 的 program **真的包含**
+      # worker 的源码（`src/handlers/companion-task-memory.ts`、`src/lib/logger.ts`
+      # 等会经相对 import 被拉进来），而那份源码 import `postgres` / `pino` /
+      # `prom-client`——它们装在 worker 的 node_modules 里。少装这一档，
+      # `Typecheck API` 就报三条 TS2307（2026-10-06 冷缓存演练实测）。
+      - name: Install dependencies
+        run: |
+          for dir in packages/shared packages/card-generation packages/agent-core \
+                      packages/agent-host workers/ai-worker apps/api; do
+            echo "── npm ci $dir"
+            (cd "$dir" && npm ci --no-audit --no-fund)
+          done
+
+      - name: Typecheck API
+        working-directory: apps/api
+        run: npm run typecheck
+
+      - name: Test API
+        working-directory: apps/api
+        run: npm test
+
+  # ─── workers/ai-worker ────────────────────────────────────────────────
+  worker:
+    name: Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL_WORKER: postgres://ci:ci@127.0.0.1:1/ci
+      DATABASE_URL_API: postgres://ci:ci@127.0.0.1:1/ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            packages/shared/package-lock.json
+            packages/card-generation/package-lock.json
+            packages/agent-core/package-lock.json
+            packages/agent-host/package-lock.json
+            packages/ai-quality/package-lock.json
+            workers/ai-worker/package-lock.json
+            apps/api/package-lock.json
+
+      # `apps/api` 在这一档里同样不是"顺手装的"：`workers/ai-worker/src/integration-tests/`
+      # 里有文件（`agent-goals-postgres.integration.ts` 等）**直接相对 import
+      # `apps/api/src/...`**，而 api 那边 import `zod` / `postgres` / `pino` /
+      # `y-prosemirror`。少装这一档，`TypeCheck Worker` 报十来条 TS2307（2026-10-06
+      # 冷缓存演练实测）。
+      #
+      # 换句话说：**api 与 worker 的 typecheck program 是互相咬合的**，任何一边少装
+      # 对方都会红。旧的 CI 之所以没踩到，是因为它在每一个 job 里都把两套都装齐了。
+      - name: Install dependencies
+        run: |
+          for dir in packages/shared packages/card-generation packages/agent-core \
+                      packages/agent-host packages/ai-quality apps/api workers/ai-worker; do
+            echo "── npm ci $dir"
+            (cd "$dir" && npm ci --no-audit --no-fund)
+          done
+
+      - name: Typecheck Worker
+        working-directory: workers/ai-worker
+        run: npm run typecheck
+
+      - name: Test Worker
+        working-directory: workers/ai-worker
+        run: npm test
+
+  # ─── apps/desktop-client ──────────────────────────────────────────────
+  desktop:
+    name: Desktop client
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -197,1530 +222,23 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: |
-            package-lock.json
-            apps/api/package-lock.json
-            workers/ai-worker/package-lock.json
             packages/shared/package-lock.json
-            packages/agent-core/package-lock.json
-            packages/agent-host/package-lock.json
+            apps/desktop-client/package-lock.json
 
-      - name: Install shared
-        working-directory: packages/shared
-        run: npm ci --no-audit --no-fund
-
-      - name: Install agent-core
-        working-directory: packages/agent-core
-        run: npm ci --no-audit --no-fund
-
-      - name: Install agent-host
-        working-directory: packages/agent-host
-        run: npm ci --no-audit --no-fund
-      # 2026-10-05：`@ailearn/card-generation` 与 `@ailearn/agent-host` 都是被
-      # `apps/api/tsconfig.json` 的 paths 指到**活源码**的包（`../../packages/*/src`），
-      # 所以 api 打包/跑测试时会把它们的源码拉进同一个 program——它们自己的依赖
-      # 必须装在那个包里。`card-generation` 此前连 lockfile 都没有，于是
-      # `Build API` 报 `Could not resolve "drizzle-orm"`（来自它的 creation.ts / events.ts）。
-      # 本次补上 lockfile（lockfileVersion 3，根元数据与 package.json 一致）并在此安装。
-
-      - name: Install card-generation
-        working-directory: packages/card-generation
-        run: npm ci --no-audit --no-fund
-
-      - name: Install ai-quality
-        working-directory: packages/ai-quality
-        run: npm ci --no-audit --no-fund
-      - name: Install API
-        working-directory: apps/api
-        run: npm ci --no-audit --no-fund
-
-      - name: Install Worker
-        working-directory: workers/ai-worker
-        run: npm ci --no-audit --no-fund
-
-      # 真实 build 步骤 — 确保 API/Worker 产出文件
-      - name: Build API
-        working-directory: apps/api
-        run: npm run build
-
-      - name: Verify API build output
-        working-directory: apps/api
+      - name: Install dependencies
         run: |
-          test -f dist/server.cjs || {
-            echo >&2 "API build failed: dist/server.cjs missing"
-            exit 1
-          }
-          echo "API build OK"
-
-      # G-002: Smoke test — 确保产物可被 Node 执行（防止 ESM/CJS 格式错误）
-      - name: Smoke test API build
-        working-directory: apps/api
-        env:
-          NODE_ENV: production
-          DATABASE_URL_API: postgres://ailearn_api:ci-smoke-only@127.0.0.1:1/ailearn
-        run: timeout 5 node dist/server.cjs || test $? -eq 124 && echo "API server started (timeout expected)"
-
-      - name: Build Worker
-        working-directory: workers/ai-worker
-        run: npm run build
-
-      - name: Verify Worker build output
-        working-directory: workers/ai-worker
-        run: |
-          test -f dist/index.cjs || {
-            echo >&2 "Worker build failed: dist/index.cjs missing"
-            exit 1
-          }
-          echo "Worker build OK"
-
-      # G-002: Smoke test — 确保产物可被 Node 执行
-      - name: Smoke test Worker build
-        working-directory: workers/ai-worker
-        env:
-          NODE_ENV: production
-          DATABASE_URL_WORKER: postgres://ailearn_worker:ci-smoke-only@127.0.0.1:1/ailearn
-        run: timeout 5 node dist/index.cjs || test $? -eq 124 && echo "Worker started (timeout expected)"
-
-  unit-tests:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    needs: typecheck
-    timeout-minutes: 15
-    env:
-      # Worker and API tests import db.ts at module load time, which creates
-      # a postgres connection pool.  The pool is lazy (no connection is made
-      # until a query runs), but the default URL uses the Docker Compose
-      # hostname "postgres" which does not resolve on CI runners and can cause
-      # DNS lookups to hang until the job timeout.  Setting these to a dummy
-      # URL ensures the pool is created without hanging; all db methods are
-      # mocked in unit tests so no real connection is ever attempted.
-      DATABASE_URL_WORKER: postgres://ci:ci@127.0.0.1:1/ci
-      DATABASE_URL_API: postgres://ci:ci@127.0.0.1:1/ci
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            apps/api/package-lock.json
-            workers/ai-worker/package-lock.json
-            packages/shared/package-lock.json
-
-      - name: Prepare raw Node test evidence
-        run: |
-          mkdir -p "$RUNNER_TEMP/unit-test-logs"
-          {
-            node --version
-            npm --version
-            uname -a
-            git rev-parse HEAD
-          } > "$RUNNER_TEMP/unit-test-logs/environment.txt"
-
-      - name: Install repository coverage tooling
-        run: npm ci --no-audit --no-fund
-
-      # API and Worker load the shared package from its workspace source path.
-      # Install its runtime dependencies explicitly in a clean checkout so
-      # imports such as zod resolve from packages/shared/node_modules.
-      - name: Install shared
-        working-directory: packages/shared
-        run: npm ci --no-audit --no-fund
-
-      - name: Install ai-quality
-        working-directory: packages/ai-quality
-        run: npm ci --no-audit --no-fund
-
-      # 2026-10-05：`@ailearn/card-generation` 与 `@ailearn/agent-host` 都是被
-      # `apps/api/tsconfig.json` 的 paths 指到**活源码**的包（`../../packages/*/src`），
-      # 所以 api 打包/跑测试时会把它们的源码拉进同一个 program——它们自己的依赖
-      # 必须装在那个包里。`card-generation` 此前连 lockfile 都没有，于是
-      # `Build API` 报 `Could not resolve "drizzle-orm"`（来自它的 creation.ts / events.ts）。
-      # 本次补上 lockfile（lockfileVersion 3，根元数据与 package.json 一致）并在此安装。
-
-      - name: Install agent-core
-        working-directory: packages/agent-core
-        run: npm ci --no-audit --no-fund
-
-      - name: Install agent-host
-        working-directory: packages/agent-host
-        run: npm ci --no-audit --no-fund
-
-      - name: Install card-generation
-        working-directory: packages/card-generation
-        run: npm ci --no-audit --no-fund
-
-      # ffprobe/ffmpeg：让 `learning-sessions/__tests__/ffprobe.test.ts` 真的跑，
-      # 而不是被 skip 掉。
-      #
-      # 2026-10-05：允许清单里那两条的 reason 写着「API 容器与 CI runner 均带该工具链」，
-      # 但 ubuntu-latest **并不自带** ffmpeg ⇒ 这两条在 CI 上一直是被 skip 的，
-      # 而清单的 expiresAt 又在 2026-09-29 过期，于是 skip/todo 闸直接判违规。
-      # 与其每 14 天续一次（闸的上限），不如把工具链装上：这两条断言的是音频时长探测，
-      # 它们本来就该在每次回归里被跑到。
-      - name: Install ffmpeg toolchain for audio probing tests
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - name: Run shared contract unit tests
-        working-directory: packages/shared
-        run: |
-          set -o pipefail
-          npm test 2>&1 | tee "$RUNNER_TEMP/unit-test-logs/shared.tap"
-
-      # AIQ-01: 版本化黄金集与评分器单元测试
-      - name: Run ai-quality unit tests
-        working-directory: packages/ai-quality
-        run: |
-          set -o pipefail
-          npm test 2>&1 | tee "$RUNNER_TEMP/unit-test-logs/ai-quality.tap"
-
-      - name: Run API unit tests
-        working-directory: apps/api
-        run: |
-          npm ci --no-audit --no-fund
-          set -o pipefail
-          npm test 2>&1 | tee "$RUNNER_TEMP/unit-test-logs/api.tap"
-
-      - name: Run Worker unit tests
-        working-directory: workers/ai-worker
-        run: |
-          npm ci --no-audit --no-fund
-          set -o pipefail
-          npm test 2>&1 | tee "$RUNNER_TEMP/unit-test-logs/worker.tap"
-
-      # QLT-01/02: skip/todo allowlist gate (ADR-0008 §覆盖率与测试发现)
-      - name: Skip/todo allowlist gate
-        run: |
-          set -o pipefail
-          node .github/scripts/skip-todo-gate.mjs 2>&1 | tee "$RUNNER_TEMP/unit-test-logs/skip-todo-gate.txt"
-
-      # P1-15：`packages/shared` 的子路径必须在**运行时解析器**下真的能解析。
-      #
-      # 为什么不能用 typecheck 代替（本仓已实测过那三种形态）：
-      #   1. tsconfig 把 `@ailearn/shared/*` 直接映到 `packages/shared/src/*`，
-      #      **完全绕过 exports 字段** —— 所以"文件在磁盘上存在但没导出"这种 import，
-      #      tsc 一律是绿的；
-      #   2. Node 读的是各包 node_modules 里那份 `@ailearn/shared/package.json`，
-      #      而 pnpm 对 `file:` 依赖是**硬拷贝**进 store 的，不跟着源码走；
-      #   3. 于是真实故障形态是：typecheck 绿、单测绿、启动时 ERR_PACKAGE_PATH_NOT_EXPORTED。
-      #
-      # 这条检查自己被验证过：植入一条未导出的深路径 import，它会红；恢复后绿。
-      # 放在 typecheck 之后而不是之前——它要读 node_modules，得先装好。
-      - name: Verify @ailearn/shared subpaths resolve at runtime
-        working-directory: apps/api
-        run: |
-          set -euo pipefail
-          node ../../.github/scripts/verify-shared-exports.mjs
-
-      # QLT-01/02: coverage collection
-      #
-      # 2026-09-29（P0-3）：摘掉 `--report-only`，让它**真的阻断**。
-      #
-      # 此前这里是 report-only，按脚本自身的语义退出码恒为 0——也就是说"覆盖率门禁"
-      # 从来没有门禁过任何东西。实测当时四组关键门禁里三组不达标（identity 51.66%/60%、
-      # job-lease 33.37%/65%、import-export 0%/35%），一次都没报警。
-      #
-      # 配套做了两件事，缺一件都会让这次开启变成"把 CI 永久变红"：
-      #   1. 把三组阈值重定基到当前实测值（`.github/scripts/coverage-gate-lib.mjs`
-      #      顶部注释记了这次重定的来由与数字）——门禁重新可执行，且只能往上走；
-      #   2. 同一批里修掉了两个真实缺陷：note-expansions 的失权读点（棘轮抓到），
-      #      以及 note-service-db-extra 那个缺 `selectDistinctOn` 的桩。
-      #
-      # 尚未清掉的一笔：`card-generation-v2-activation-service.test.ts` 仍红
-      # （在途重构改了 semantic_replace 的查询顺序，计数式桩错位）。它是**真的红**，
-      # 不是误报——所以门禁现在就应当阻断，直到那条用例被它的改动方修好。
-      - name: Coverage gate (enforced)
-        run: |
-          set -o pipefail
-          node .github/scripts/coverage-gate.mjs 2>&1 | tee "$RUNNER_TEMP/unit-test-logs/coverage-gate.txt"
-          # Include coverage summary JSON in the artifact for FDN-01 formal report
-          if [ -f outputs/coverage/summary.json ]; then
-            cp outputs/coverage/summary.json "$RUNNER_TEMP/unit-test-logs/coverage-summary.json"
-          fi
-          find outputs/coverage -maxdepth 1 -name '*.coverage.json' -exec \
-            cp {} "$RUNNER_TEMP/unit-test-logs/" \;
-
-      - name: Upload raw Node test evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: node-${{ env.NODE_VERSION }}-unit-test-logs-${{ github.sha }}
-          path: ${{ runner.temp }}/unit-test-logs
-          if-no-files-found: warn
-          retention-days: 30
-
-  # AIQ-01: PR 层 AI 质量门禁（ADR-0005）
-  # PR 只运行 schema/parser/alignment/scorer 与固定 Mock，不访问付费网络。
-  # 校验数据集完整性、标签覆盖、评分器逻辑和 metricsVerified。
-  ai-quality-gate:
-    name: AI Quality Gate (PR Mock, ADR-0005)
-    runs-on: ubuntu-latest
-    needs: typecheck
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            packages/shared/package-lock.json
-            packages/ai-quality/package-lock.json
-
-      - name: Install shared
-        working-directory: packages/shared
-        run: npm ci --no-audit --no-fund
-
-      - name: Install ai-quality
-        working-directory: packages/ai-quality
-        run: npm ci --no-audit --no-fund
-
-      - name: Run PR Mock quality gate
-        working-directory: packages/ai-quality
-        run: |
-          set -o pipefail
-          mkdir -p "$RUNNER_TEMP/ai-quality-evidence"
-          npm run pr-gate 2>&1 | tee "$RUNNER_TEMP/ai-quality-evidence/pr-gate-result.json"
-
-      - name: Upload AI quality gate evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ai-quality-pr-gate-${{ github.sha }}
-          path: ${{ runner.temp }}/ai-quality-evidence
-          if-no-files-found: warn
-          retention-days: 90
-
-  fresh-migrations:
-    name: Fresh PostgreSQL Migrations
-    runs-on: ubuntu-latest
-    needs: typecheck
-    # 53 个步骤、其中三十多条是真库集成测试（每条自己起事务、跑完即落盘），
-    # 20 分钟不够：2026-10-05 实测正好在第 25 步（note learning round 约束）
-    # 跑满 20:00 被掐，结论记成 cancelled —— 看起来像失败，其实是根本没跑完。
-    timeout-minutes: 50
-    services:
-      postgres:
-        # pgvector 镜像，不是 vanilla postgres:16-alpine。
-        #
-        # `0052_supervisor_agent_v1_schema` 起（4b95288a / v0.6，早于本批改动）
-        # 有十余份迁移 `CREATE EXTENSION IF NOT EXISTS vector`，vanilla 镜像不带这个
-        # 扩展，`Fresh PostgreSQL Migrations` 报
-        # `extension "vector" is not available`。迁移要的是 pg16 + 向量扩展，
-        # 所以换官方 pgvector 维护的同版本镜像，不动任何一份 SQL。
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: ailearn
-          POSTGRES_PASSWORD: ci-migration-only-password
-          POSTGRES_DB: ailearn_ci
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U ailearn -d ailearn_ci"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
-    env:
-      DATABASE_URL: postgres://ailearn:ci-migration-only-password@127.0.0.1:5432/ailearn_ci
-      DATABASE_URL_MIGRATOR: postgres://ailearn_migrator:ci-migrator-only-password@127.0.0.1:5432/ailearn_ci
-      DATABASE_URL_API: postgres://ailearn_api:ci-api-only-password@127.0.0.1:5432/ailearn_ci
-      DATABASE_URL_WORKER: postgres://ailearn_worker:ci-worker-only-password@127.0.0.1:5432/ailearn_ci
-      POSTGRES_HOST: 127.0.0.1
-      POSTGRES_USER: ailearn
-      POSTGRES_PASSWORD: ci-migration-only-password
-      POSTGRES_DB: ailearn_ci
-      MIGRATOR_PASSWORD: ci-migrator-only-password
-      API_PASSWORD: ci-api-only-password
-      WORKER_PASSWORD: ci-worker-only-password
-      NODE_ENV: production
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: |
-            apps/api/package-lock.json
-            workers/ai-worker/package-lock.json
-            packages/shared/package-lock.json
-            packages/agent-core/package-lock.json
-            packages/agent-host/package-lock.json
-
-      - name: Prepare raw PostgreSQL test evidence
-        run: |
-          mkdir -p "$RUNNER_TEMP/postgres-test-logs"
-          {
-            node --version
-            npm --version
-            uname -a
-            git rev-parse HEAD
-            docker inspect "${{ job.services.postgres.id }}" \
-              --format '{{.Config.Image}} {{.Image}}'
-          } > "$RUNNER_TEMP/postgres-test-logs/environment.txt"
-
-      - name: Install shared
-        working-directory: packages/shared
-        run: npm ci --no-audit --no-fund
-
-      - name: Install agent-core
-        working-directory: packages/agent-core
-        run: npm ci --no-audit --no-fund
-
-      - name: Install agent-host
-        working-directory: packages/agent-host
-        run: npm ci --no-audit --no-fund
-      # 2026-10-05：`@ailearn/card-generation` 与 `@ailearn/agent-host` 都是被
-      # `apps/api/tsconfig.json` 的 paths 指到**活源码**的包（`../../packages/*/src`），
-      # 所以 api 打包/跑测试时会把它们的源码拉进同一个 program——它们自己的依赖
-      # 必须装在那个包里。`card-generation` 此前连 lockfile 都没有，于是
-      # `Build API` 报 `Could not resolve "drizzle-orm"`（来自它的 creation.ts / events.ts）。
-      # 本次补上 lockfile（lockfileVersion 3，根元数据与 package.json 一致）并在此安装。
-
-      - name: Install card-generation
-        working-directory: packages/card-generation
-        run: npm ci --no-audit --no-fund
-
-      - name: Install API
-        working-directory: apps/api
-        # NODE_ENV=production would otherwise omit tsx, which db:migrate uses.
-        run: npm ci --include=dev --no-audit --no-fund
-
-      - name: Install Worker
-        working-directory: workers/ai-worker
-        run: npm ci --include=dev --no-audit --no-fund
-
-      - name: Bootstrap least-privilege roles for the empty database
-        run: |
-          docker run --rm --network host \
-            -v "$PWD/infra/postgres:/opt/ailearn:ro" \
-            -e POSTGRES_HOST -e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
-            -e MIGRATOR_PASSWORD -e API_PASSWORD -e WORKER_PASSWORD \
-            postgres:16-alpine /bin/sh /opt/ailearn/apply-roles.sh
-
-      - name: Migrate an empty database
-        working-directory: apps/api
-        run: npm run db:migrate
-
-      - name: Re-run migrations (idempotence)
-        working-directory: apps/api
-        run: npm run db:migrate
-
-      # 2026-09-22（doc 34 L31）：`db-commit-port.integration.ts` 已经不存在了
-      # ——仓库里没有任何测试再覆盖"commit port"这件事，那行引用只会让整个
-      # `fresh-migrations` job 红在"文件找不到"上，而不是红在真实断言上。
-      # 要恢复这道检查得先把测试写回来；这里是删掉死引用，不是把检查降级。
-      # 2026-08-11（测试质量修复）：db-commit-port/db-migrations 原以 .test.ts
-      # 命名被默认测试拾取，但单元 job 的 DATABASE_URL 指向不可达 DB（127.0.0.1:1）
-      # 导致永远静默 skip。改名 .integration.ts 后在此（真实 postgres 服务）接入。
-      - name: Verify migration state against real PostgreSQL
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-        run: |
-          set -o pipefail
-          node --import tsx --test --test-concurrency=1 \
-            src/integration-tests/db-migrations.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/commit-port-migrations.tap"
-
-      - name: Apply and verify empty-database role grants
-        env:
-          REQUIRE_RLS_DISABLED: "true"
-        run: |
-          docker run --rm --network host \
-            -v "$PWD/infra/postgres:/opt/ailearn:ro" \
-            -e POSTGRES_HOST -e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB \
-            -e MIGRATOR_PASSWORD -e API_PASSWORD -e WORKER_PASSWORD \
-            -e REQUIRE_RLS_DISABLED \
-            postgres:16-alpine /bin/sh /opt/ailearn/apply-roles.sh
-
-      - name: Verify shared PostgreSQL auth rate limiting
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          RATE_LIMIT_TEST_DATABASE_URL: ${{ env.DATABASE_URL_API }}
-        run: |
-          set -o pipefail
-          node --import tsx --test src/integration-tests/rate-limit-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/rate-limit.tap"
-
-      - name: Verify SEC-01 policy catalog and restricted roles
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          RLS_TEST_MIGRATOR_DATABASE_URL: ${{ env.DATABASE_URL_MIGRATOR }}
-          RLS_TEST_API_DATABASE_URL: ${{ env.DATABASE_URL_API }}
-          RLS_TEST_WORKER_DATABASE_URL: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          node --import tsx --test src/integration-tests/rls-policies-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/rls-policies.tap"
-
-      - name: Verify content hash consistency between PostgreSQL and application layer
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          # 夹具自己写的池要能不带 `app.workspace_id` 往 notes/note_versions 落行
-          # （那些表的 RESTRICTIVE 守卫没有 NULL 分支）；被测侧仍是 DATABASE_URL_API。
-          CONTENT_HASH_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
-        run: |
-          set -o pipefail
-          node --import tsx --test src/integration-tests/content-hash-consistency-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/content-hash-consistency.tap"
-
-      - name: Verify SEC-02 invite/onboarding schema, constraints, and RLS
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          # 夹具要原生删 workspaces/users 去证明级联；受限角色下这些 DELETE 会被策略
-          # 过滤成 0 行，级联永远不会发生（姿态本身由上面几条读 pg_catalog 的用例守，与角色无关）。
-          SEC02_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
-        run: |
-          set -o pipefail
-          node --import tsx --test src/integration-tests/sec02-invites-onboarding-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/sec02-invites-onboarding.tap"
-
-      - name: Verify note version restore schema, constraints, and cascade behaviour
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          # 同上：这份夹具原生写 notes/note_versions/note_blocks，且全文件没有任何
-          # RLS 意图（0 处 set_config / SET LOCAL ROLE），给它受限角色只会让夹具静默落空。
-          NOTE_VERSION_RESTORE_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
-        run: |
-          set -o pipefail
-          node --import tsx --test src/integration-tests/note-version-restore-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/note-version-restore.tap"
-
-      # 双空间 · 双角色的行为契约。存在的理由：sec01-cross-workspace-isolation 与
-      # permission-guard 都是源码字符串包含断言，摘掉某个路由的 requireOwner 不会变红；
-      # 这一份走真实 invite 流程产出 member，用 HTTP 断言 403/404 与投影一致性。
-      # 必须用受限角色（ailearn_api 是 NOBYPASSRLS），超级用户会绕过 RLS。
-      - name: Verify collaborative workspace roles and cross-workspace isolation behaviour
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-        run: |
-          set -o pipefail
-          node --import tsx --test src/integration-tests/workspace-collab-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/workspace-collab.tap"
-
-      # 笔记协同内核（批次 4.1/4.2）：文档快照是正文的唯一事实源（补齐/投影/revision
-      # 单调/组合外键/RLS 换角色才测得出来），以及 WS 通道的鉴权（只读连接收到
-      # Authenticated("readonly")、上送被否定且不落库、被拒的理由不泄露笔记存在性、
-      # 关停刷 debounce 窗口）。两份此前都没有接入 CI——不接就等于不存在。
-      # 第三、四份（note-trash-card-serving / note-purge-soft-deleted）钉的是 doc 34
-      # L16/L17：软删的来源笔记要把它的卡从队列与卡列表一起收掉、恢复又要一起回来；
-      # 以及 30 天清除**真的删得掉东西**（生成过卡的那一篇今天删不掉，如实钉住）。
-      # companion-bridge-postgres 是 09-24 才接进来的（doc 37 通用读页面）：这条链路
-      # 此前只在本地手动跑过，写入侧（readable_view 落列、只改视图也要换 revision）
-      # 没有任何 CI 覆盖。
-      # evidence-anchor-version-drift-postgres（09-26，39d D3 §3 第 2 层）：卡片的"原文依据"
-      # 在笔记**显式保存开新版**之后永远说自己落点还在——锚点块 id 是版本内新建的，旧行不再被改。
-      # 这一族只有连真库才测得出来（要真建版本、真投影块行、真密封），且它是界面那句话的唯一来源。
-      - name: Verify note document state and collaboration authorization behaviour
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          # 整份只需要一条受限连接的隔离类文件：CI 的 `DATABASE_URL_API` 本来就是
-          # `ailearn_api`（NOBYPASSRLS），所以把它同名再给一份就能跑——本地同理由
-          # `scripts/with-restricted-db-urls.py` 注入。
-          DATABASE_URL_API_RLS: ${{ env.DATABASE_URL_API }}
-        run: |
-          set -o pipefail
-          node --import tsx --test --test-concurrency=1 \
-            src/integration-tests/note-document-state-postgres.integration.ts \
-            src/integration-tests/note-collaboration-postgres.integration.ts \
-            src/integration-tests/learning-objective-search.integration.ts \
-            src/integration-tests/route-contract-postgres.integration.ts \
-            src/integration-tests/learning-objective-immutability.integration.ts \
-            src/integration-tests/learning-objective-reconcile.integration.ts \
-            src/integration-tests/learning-objective-history-route.integration.ts \
-            src/integration-tests/learning-objective-origin-backfill.integration.ts \
-            src/integration-tests/understanding-topology-v3.integration.ts \
-            src/integration-tests/understanding-projection-postgres.integration.ts \
-            src/integration-tests/sandbox-and-star-map-postgres.integration.ts \
-            src/integration-tests/projection-pagination-postgres.integration.ts \
-            src/integration-tests/learning-run-origin-contract.integration.ts \
-            src/integration-tests/learning-metrics-postgres.integration.ts \
-            src/integration-tests/learning-dashboard.integration.ts \
-            src/integration-tests/learning-objective-parity.integration.ts \
-            src/integration-tests/learning-objective-content-topology-w1.integration.ts \
-            src/integration-tests/card-generation-run-ownership-postgres.integration.ts \
-            src/integration-tests/note-trash-card-serving-postgres.integration.ts \
-            src/integration-tests/note-purge-soft-deleted-postgres.integration.ts \
-            src/integration-tests/stats-pending-review-equals-queue-postgres.integration.ts \
-            src/integration-tests/workspace-departure-memory-retirement-postgres.integration.ts \
-            src/integration-tests/evidence-quote-copy-retrieval-postgres.integration.ts \
-            src/integration-tests/evidence-anchor-version-drift-postgres.integration.ts \
-            src/integration-tests/workspace-dissolve-postgres.integration.ts \
-            src/integration-tests/workspace-dissolve-route-postgres.integration.ts \
-            src/integration-tests/companion-bridge-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/note-collaboration.tap"
-
-      # LearningRun 纵切（21 条）此前一直不在点名列里，代价实测到了：F28 改了
-      # `supplementOffer` 的签发条件之后，本文件两条期望（E08、P4 单槽正控制）就地
-      # 失效却没人变红——只有本地手动跑过一次才发现。同一批还把文件里 16 处裸 `sql`
-      # 校验改成带 workspace/user 上下文的 `scoped()`：文件开头写着"请用受限角色"，
-      # 但那些裸读在 `ailearn_api` 下会被 RLS 挡成 0 行（9 条红）。现在两种角色都实测
-      # 全绿，就按它自己的说明接进 CI（超级用户会绕过 RLS，这条才是产品口径）。
-      - name: Verify learning run vertical slice against postgres
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          node --import tsx --test --test-concurrency=1 \
-            src/integration-tests/learning-runs-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/learning-runs.tap"
-
-      # 39d W4-5 前三刀（2026-09-26）：轮次那张表的 DB 契约、服务层的 CAS 与终态只读、
-      # 路由的线上合同（脚本名 `test:learning-rounds:postgres` 带这三份）。
-      # 三条连接都要给：夹具走 MIGRATOR，库层断言走受限的 API 角色，服务层那份经
-      # `withWorkspaceTransaction` 也跑在 API 角色上，最后一条专门钉
-      # "worker 读它是 permission denied 而不是 0 行"。缺任何一条这里会当场抛错，
-      # 不会静默 skip（这是有意为之：0 行与没跑过是两种读数）。
-      - name: Verify note learning round table constraints against postgres
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          npm run test:learning-rounds:postgres \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/note-learning-rounds.tap"
-
-      # 39d W3-4（2026-09-25）：无卡目标的冻结链三分支（D1 §4.3）。夹具走 DATABASE_URL
-      # （超级用户，只负责建数据），被测那一段 `withWorkspaceTransaction` 读
-      # DATABASE_URL_API（受限角色，与生产同口径）——两个都要给，缺一个就是静默 skip。
-      - name: Verify cardless target snapshot freeze branches against postgres
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          DATABASE_URL: ${{ env.DATABASE_URL }}
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          node --import tsx --test --test-concurrency=1 \
-            src/integration-tests/target-snapshot-cardless-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/target-snapshot-cardless.tap"
-
-      # 空间隔离 schema 棘轮：把当前"带 workspace_id 但缺外键 / 缺 RLS"的表如实登记为
-      # 基线，要求实际集合与基线完全相等——新增违规变红，修好一条也必须同步删基线，
-      # 所以清单只能缩短。一次性补齐 89 个外键不现实，用棘轮换"不再恶化"。
-      - name: Verify workspace schema ratchet (FK and RLS coverage cannot regress)
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-        run: |
-          set -o pipefail
-          node --import tsx --test src/integration-tests/schema-isolation-gate-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/schema-isolation-gate.tap"
-
-      # Companion 首页房间档案：0185 RLS 隔离 + 真实 SQL revision CAS（含并发
-      # 写入者竞争）+ PATCH /companion/room-profile 的 400/409/200 认证契约。
-      # 该文件此前未接入任何 CI job，只会在缺 URL 时静默 skip。
-      # 必须使用受限角色：超级用户会绕过 RLS，ailearn_api 是 NOBYPASSRLS。
-      - name: Verify companion home profile RLS, revision CAS, and HTTP contract
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-        run: |
-          set -o pipefail
-          npm run test:companion-home-profile:postgres \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/companion-home-profile.tap"
-
-      # Companion 集成矩阵：对话（turn/幂等/SSE/导出）、记忆（provenance/冲突/
-      # 星图）、交付（inbox/lease/ack/kind 约束）、旅程/沙箱、工具网关提案执行。
-      # 16 个套件此前只存在于仓库里、没有任何 CI job 或 make 目标会运行它们；
-      # 其中 assistant-deliveries-kind-constraint 锁死「代码 kind 集合 == 库约束」，
-      # 防止 0131 漏 memory_candidate 那类「写入即回滚」的漂移再次发生。
-      # 必须使用受限角色：超级用户会绕过 RLS，让隔离断言假通过。
-      - name: Verify companion integration matrix (dialogue, memory, delivery, journey, tool gateway)
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          npm run test:companion-integration:postgres \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/companion-integration.tap"
-
-      # Companion worker 侧：agent bounded loop（工具调用→proposal→waiting_for_
-      # confirmation）与 dialogue 落库/终态；此前同样没有任何 CI job 运行。
-      - name: Verify companion worker agent loop and dialogue persistence
-        working-directory: workers/ai-worker
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          npm run test:companion-integration:postgres \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/companion-worker.tap"
-
-      - name: Verify double Worker queue, leases, and pool context
-        working-directory: workers/ai-worker
-        env:
-          NODE_ENV: test
-          QUEUE_TEST_MIGRATOR_DATABASE_URL: ${{ env.DATABASE_URL_MIGRATOR }}
-          QUEUE_TEST_WORKER_A_DATABASE_URL: ${{ env.DATABASE_URL_WORKER }}
-          QUEUE_TEST_WORKER_B_DATABASE_URL: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          node --import tsx --test src/integration-tests/queue-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/worker-queue.tap"
-
-      - name: Verify source parsing runs with the worker workspace context (F27)
-        working-directory: workers/ai-worker
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          node --import tsx --test src/integration-tests/parse-source-rls-context-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/parse-source-rls.tap"
-
-      - name: Verify AI audit rows are written with the worker workspace and actor context (F07)
-        working-directory: workers/ai-worker
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          node --import tsx --test src/integration-tests/ai-audit-rls-context-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/ai-audit-rls.tap"
-
-      # 公共任务运行内核（D5 / 39d W3-1）：三段形状 + 「旧尝试不许提交」那道闸接的是
-      # 真 `jobs.lease_token` 与 `lockJobLease`。此前这类文件只存在于仓库里、没有任何
-      # job 运行它——同一条失守机制（见 doc 34 与 39d §3 的"点名列"纪律）。
-      # 制卡 V2 的 C 案例集与规划提交集（2026-09-25 接进来）。这两份此前**没有任何
-      # job 或 script 运行**，代价实测到了：e2e-subset 在本地共享 dev 库上 30 条里
-      # 29 条红，查下来是两个独立成因（夹具把 30 个用例拴在同一篇笔记上，撞上
-      # 2026-09-21 为"旧卡不废弃"收紧的在制守卫；以及一次性库的引导本身在
-      # roles.sql 的权限完整性检查上就起不来）。两者都已修，且**必须单文件跑**
-      # ——worker 的 outbox claim 是全局的，同进程多文件会互相抢 job（见文件头）。
-      - name: Verify card generation V2 C-cases (single file, outbox claim is global)
-        working-directory: workers/ai-worker
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          node --import tsx --test --test-concurrency=1 \
-            src/integration-tests/card-generation-v2-e2e-subset.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/card-gen-v2-ccases.tap"
-
-      # 制卡简化链（39d W7-1 刀b）：五段接线在真库上端到端——入口总控两档、
-      # §16.28 的 2 次语义调用（读库里的完成事件，不读进程内计数）、检查失败
-      # 不重跑生成、零候选是正常结果。单文件跑（outbox 认领是全局的）。
-      - name: Verify the simplified card generation chain end to end (single file)
-        working-directory: workers/ai-worker
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          node --import tsx --test --test-concurrency=1 \
-            src/integration-tests/card-generation-v3-simplified-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/card-gen-v3-simplified.tap"
-
-      # 提醒的来源笔记闸（39d W5-6 刀三；39 §16.13 后半「通知不泄露受保护内容」）：
-      # 迁移 0299 之前提醒表只有 text 一列，兑现函数无从知道一条提醒在说哪篇笔记——
-      # 共享撤回之后，写进正文的那句篇名照样到点弹出来。这一步钉：仍共享时照常兑现、
-      # 撤回后置 cancelled **且不投递**、空 note_id 的存量行不受影响、软删同样掐、
-      # 作者对自己那篇私有笔记仍然拿得到（判据第二支）。
-      - name: Verify reminder note-subject gate (39d W5-6 knife 3)
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-        run: |
-          set -o pipefail
-          npm run test:reminder-subject-gate:postgres \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/reminder-note-subject.tap"
-
-      # 只读成员的本人可见目标绑定（39d W5-6 刀四；39 §4.2、§16.20）：一个**不是那篇笔记
-      # 作者**的成员能对着共享笔记立下自己的学习计划，且只对本人可见、公开血缘表一行不多。
-      # 迁移 0300 之前他其实无处可写——公共血缘表是空间共用的，写进去会让另一位成员看到
-      # 一条他没写过的目标。RLS 那一半必须跑在受限角色上才量得到。
-      - name: Verify personal objective bindings for read-only members (39d W5-6 knife 4)
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-        run: |
-          set -o pipefail
-          npm run test:personal-binding:postgres \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/personal-objective-binding.tap"
-
-      # 本人对建议关系的确认／隐藏（39d W5-6 刀七；39 §11.3、§16.20）：只读成员能对共享笔记里的
-      # 关系表态（不需要公共编辑权），而表态**不改公共 relations、不改 lifecycle、不产生任何
-      # 学习记录或复习安排**，别人的视图里读不到他这一下。迁移 0302 之前星图里既没有
-      # 「待确认／已确认」的分层，也没有任何按人存表态的地方。
-      - name: Verify personal relation decisions (39d W5-6 knife 7)
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-        run: |
-          set -o pipefail
-          npm run test:personal-relation-decision:postgres \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/personal-relation-decision.tap"
-
-      # 争议的系统侧复核（39d W5-5）：§14.2「系统基于原题、原回答和依据进行一次
-      # 重新检查」此前**零生产调用方**——用户一点「我不同意这次判定」，排期就被无限期
-      # 挡住而没有自动出口。这一份量的是那条链：prepare 短事务读齐三样 → execute
-      # 事务外调用 → commit 短事务落结论（判成「修正」时写一条只追加的更正），
-      # 以及「第二次不再发模型请求」（§16.22 不形成死循环）。
-      #
-      # **真模型那两条是 gated 的**：没有 REAL_MODEL_BATCH 与凭据时 skip，
-      # CI 永不设这两个，所以 CI 跑的是桩那一支——桩那一支才量得了编排与落库。
-      - name: Verify dispute recheck (39d W5-5)
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          npm run test:dispute-recheck:postgres \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/dispute-recheck.tap"
-
-      # 唯一调度边界（39d W7-2 前置 / D2 §3）：0287 那条部分唯一索引真的在挡重复，
-      # 而边界函数复用时报的是库里那一条的实际到期时间（不是自己算的那个）。
-      - name: Verify the single review-schedule boundary (single file)
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          node --import tsx --test --test-concurrency=1 \
-            src/integration-tests/review-schedule-boundary-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/review-schedule-boundary.tap"
-
-      # 争议与更正（39d W5-5；39 §14.2、§16.11、§16.22、§16.25）：一个判定至多一份争议、
-      # 复核至多一次、更正只追加且不改原判、两档不混算、争议是个人数据、结束并暂不安排
-      # 真的落到 0295 那张排除表。索引与 CHECK 全部从裸 SQL 那一侧量，不复述 schema。
-      - name: Verify assessment disputes and corrections (39d W5-5)
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          node --import tsx --test --test-concurrency=1 \
-            src/integration-tests/assessment-disputes-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/assessment-disputes.tap"
-
-      # 竖向样例（39c §9 第一步 / 39d W3-3）：一条链跑在公共运行基础上——生成→检查→
-      # 保存一张卡→开放回答→评估，两种模式共用同一层外壳，失败分支与恢复逐条钉。
-      # 单文件跑（自己种 jobs 行，但与制卡那两组同理会抢 outbox，保持一步一档）。
-      - name: Verify the shared foundation carries one vertical slice
-        working-directory: workers/ai-worker
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          node --import tsx --test --test-concurrency=1 \
-            src/integration-tests/shared-foundation-vertical-slice-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/ai-task-vertical-slice.tap"
-
-      - name: Verify the shared AI task kernel against real job leases
-        working-directory: workers/ai-worker
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          node --import tsx --test src/integration-tests/ai-task-kernel-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/ai-task-kernel.tap"
-
-      - name: Verify API database session timeout backstops
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-        run: |
-          set -o pipefail
-          node --import tsx --test src/integration-tests/database-session-timeouts.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/database-session-timeouts.tap"
-
-      # 公共 HTTP 出口闸门（39d W3-2 第三刀）：worker 进程在模块加载时把事务作用域
-      # 读者登记给 `@ailearn/shared/public-json-http`；这份对照证"登记不是摆设"——
-      # 真事务里发一次公共 HTTP 被 ExternalCallInsideTransactionError 拒掉，事务外
-      # 同一请求的失败来自连接层而不是事务边界。
-      - name: Verify the public HTTP exit refuses to run inside a workspace transaction
-        working-directory: workers/ai-worker
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          node --import tsx --test --test-concurrency=1 \
-            src/integration-tests/public-http-gate-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/public-http-gate.tap"
-
-      # 念头库那条 INSERT 的库级证据（39d #28）：走真角色、真 RLS、真 SQL——这张表
-      # 有过一次"语句写得对、角色没授权"的事故（缺 GRANT 时插入恒 0 行，念头库看着像
-      # "她从没想过任何事"），而写在大 handler 深处的那条 SQL 没有用例跑得动。
-      - name: Verify the thought-candidate insert against the real worker role
-        working-directory: workers/ai-worker
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          node --import tsx --test src/integration-tests/companion-thought-candidate-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/companion-thought-candidate.tap"
-
-      - name: Verify every journal migration was applied
-        working-directory: apps/api
-        run: |
-          node --input-type=module <<'NODE'
-          import { readFile } from "node:fs/promises";
-          import postgres from "postgres";
-
-          const journal = JSON.parse(
-            await readFile("src/db/migrations/meta/_journal.json", "utf8"),
-          );
-          const sql = postgres(process.env.DATABASE_URL, { max: 1 });
-          try {
-            const [{ count }] = await sql`
-              SELECT count(*)::integer AS count
-              FROM drizzle.__drizzle_migrations
-            `;
-            if (Number(count) !== journal.entries.length) {
-              throw new Error(
-                `migration count mismatch: database=${count}, journal=${journal.entries.length}`,
-              );
-            }
-            console.log(`all ${count} migrations are recorded`);
-          } finally {
-            await sql.end();
-          }
-          NODE
-
-      # 2026-09-29（P0-2）：把 package.json 里**所有** `test:*:postgres` 脚本跑一遍。
-      #
-      # 为什么是"遍历脚本"而不是再补几个 `- name:` 步骤：
-      # 上面那二十来个手写步骤形状完全一样（working-directory + 三个 DATABASE_URL_*
-      # + `npm run test:xxx:postgres`），而 `apps/api/package.json` 里定义了 26 个这类
-      # 脚本，CI 只点名了 7 个。**没被点名的不会红，只会永远不跑**——
-      # 这正是 2026-09-29 审计里 `note-route-coverage-postgres.integration.ts`
-      # 漏跑的那类问题（那一条更隐蔽：路径写错时 Node 会静默退出 0）。
-      #
-      # 改成遍历之后，新增一个测试脚本**不需要**再记得改 workflow：
-      # 它自动进 CI，漏接的整类问题从根上消失。
-      # 已经跑过的脚本会重复跑一遍——这比漏跑划算，而且这些用例共用同一个
-      # 空库、互不冲突（各自建夹具各自清理）。
-      - name: Run every test:*:postgres script not already named above
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-        run: |
-          set -uo pipefail
-          mapfile -t scripts < <(node -e '
-            const pkg = require("./package.json");
-            console.log(Object.keys(pkg.scripts)
-              .filter((k) => k.startsWith("test:") && k.endsWith(":postgres"))
-              .sort().join("\n"));
-          ')
-          if [ "${#scripts[@]}" -eq 0 ]; then
-            echo "没有找到任何 test:*:postgres 脚本——package.json 读法坏了" >&2
-            exit 1
-          fi
-          echo "发现 ${#scripts[@]} 个 postgres 测试脚本"
-          failed=()
-          for s in "${scripts[@]}"; do
-            log="$RUNNER_TEMP/postgres-test-logs/script-${s//:/-}.tap"
-            echo "::group::$s"
-            if npm run --silent "$s" > "$log" 2>&1; then
-              echo "$s 通过"
-            else
-              echo "$s 失败（详见 $log）"
-              tail -n 25 "$log"
-              failed+=("$s")
-            fi
-            echo "::endgroup::"
-          done
-          if [ "${#failed[@]}" -gt 0 ]; then
-            echo >&2 "以下 postgres 测试脚本失败：${failed[*]}"
-            exit 1
-          fi
-          echo "全部 ${#scripts[@]} 个 postgres 测试脚本通过"
-
-      - name: Upload raw PostgreSQL test evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: postgres-16-sec01-test-logs-${{ github.sha }}
-          path: ${{ runner.temp }}/postgres-test-logs
-          if-no-files-found: warn
-          retention-days: 30
-
-  production-compose:
-    name: Production Images & Compose Smoke
-    runs-on: ubuntu-latest
-    needs: [build, unit-tests, fresh-migrations]
-    timeout-minutes: 35
-    env:
-      COMPOSE_PROJECT_NAME: ailearn_ci
-      POSTGRES_USER: ailearn
-      POSTGRES_PASSWORD: ci-compose-only-password
-      POSTGRES_DB: ailearn
-      MIGRATOR_PASSWORD: ci-compose-migrator-password
-      API_PASSWORD: ci-compose-api-password
-      WORKER_PASSWORD: ci-compose-worker-password
-      DATABASE_URL_MIGRATOR: postgres://ailearn_migrator:ci-compose-migrator-password@postgres:5432/ailearn
-      DATABASE_URL_API: postgres://ailearn_api:ci-compose-api-password@postgres:5432/ailearn
-      DATABASE_URL_WORKER: postgres://ailearn_worker:ci-compose-worker-password@postgres:5432/ailearn
-      CORS_ORIGIN: ""
-      # compose 强制 ${EDGE_TTS_AUTH_TOKEN:?} 插值；CI 必须提供（api 与 edge-tts 一致）
-      EDGE_TTS_AUTH_TOKEN: ci-edge-tts-token
-      WORKER_METRICS_PORT: "9100"
-      DOCKER_BUILDKIT: "1"
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Validate production and development Compose files
-        run: |
-          docker compose -f docker-compose.yml config --quiet
-          docker compose -f docker-compose.dev.yml config --quiet
-
-      # Keep these as explicit steps so each production image is a
-      # visible release gate rather than an implicit side effect of `up`.
-      - name: Build API production image
-        run: docker compose build api
-
-      - name: Build Worker production image
-        run: docker compose build worker
-
-      - name: Build edge-tts production image
-        # 2026-08-11 修复：此前未构建 edge-tts，后续 `up -d --no-build` 会因
-        # 镜像缺失失败，且该镜像从不被 Trivy 扫描。
-        run: docker compose build edge-tts
-
-      - name: Verify production images run as non-root
-        run: |
-          for image in ailearn_ci-api ailearn_ci-worker ailearn_ci-edge-tts; do
-            user="$(docker image inspect "$image" --format '{{.Config.User}}')"
-            case "$image" in
-              *edge-tts) expected="nobody" ;;
-              *) expected="node" ;;
-            esac
-            test "$user" = "$expected" || {
-              echo >&2 "$image must run as $expected, got: ${user:-root}"
-              exit 1
-            }
+          for dir in packages/shared apps/desktop-client; do
+            echo "── npm ci $dir"
+            (cd "$dir" && npm ci --no-audit --no-fund)
           done
 
-      # REL-01 / RC 硬门禁 §4.1: 镜像漏洞扫描 — 0 high/critical 才通过
-      # 使用 Trivy 扫描生产 Docker 镜像的高危和严重漏洞。
-      # --severity HIGH,CRITICAL --exit-code 1 确保有高危漏洞时阻断 CI。
-      - name: Scan API image for vulnerabilities (Trivy)
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ailearn_ci-api
-          severity: HIGH,CRITICAL
-          exit-code: '1'
-          format: table
-          ignore-unfixed: true
+      - name: Typecheck desktop client
+        working-directory: apps/desktop-client
+        run: npm run typecheck
 
-      - name: Scan Worker image for vulnerabilities (Trivy)
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ailearn_ci-worker
-          severity: HIGH,CRITICAL
-          exit-code: '1'
-          format: table
-          ignore-unfixed: true
+      - name: Test desktop client
+        working-directory: apps/desktop-client
+        run: npm test
 
-      - name: Scan edge-tts image for vulnerabilities (Trivy)
-        # 2026-08-11 修复：edge-tts 镜像此前从不被扫描（python:3.12-slim 基础镜像）
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ailearn_ci-edge-tts
-          severity: HIGH,CRITICAL
-          exit-code: '1'
-          format: table
-          ignore-unfixed: true
-
-      # Capture local build identities for reproducibility. These are not
-      # registry RepoDigests and therefore cannot satisfy the release contract.
-      - name: Capture local production image identities (REL-01 evidence)
-        env:
-          COMPOSE_PROJECT_NAME: ${{ env.COMPOSE_PROJECT_NAME }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/image-digests"
-          node .github/scripts/capture-image-digests.mjs \
-            --allow-local \
-            --output "$RUNNER_TEMP/image-digests/image-digests.json"
-
-      - name: Upload image digests artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: image-digests-${{ github.sha }}
-          path: ${{ runner.temp }}/image-digests
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Prepare migration image alias
-        run: docker tag ailearn_ci-api ailearn_ci-migrate
-
-      - name: Use mock AI platform config for CI
-        run: |
-          mkdir -p config
-          cp .github/ci/ai-platforms.mock.json config/ai-platforms.json
-
-      - name: Start production Compose stack without rebuilding
-        run: docker compose up -d --no-build
-
-      - name: Verify migration exit and service health
-        run: |
-          curl --fail --silent --show-error \
-            --retry 30 --retry-delay 2 --retry-all-errors \
-            http://127.0.0.1:4000/ready
-
-      - name: Verify Worker metrics server is running
-        run: |
-          curl --fail --silent --show-error \
-            --retry 30 --retry-delay 2 --retry-all-errors \
-            http://127.0.0.1:9100/metrics | head -1 || {
-            echo "Worker metrics server not accessible"
-            exit 1
-          }
-
-          for one_shot in role-bootstrap migrate role-grants; do
-            container_id="$(docker compose ps -aq "$one_shot")"
-            test -n "$container_id"
-            test "$(docker inspect "$container_id" --format '{{.State.ExitCode}}')" = "0"
-          done
-
-          for service in postgres api worker; do
-            container_id="$(docker compose ps -q "$service")"
-            test -n "$container_id" || {
-              echo >&2 "$service has no running container"
-              exit 1
-            }
-            test "$(docker inspect "$container_id" --format '{{.State.Running}}')" = "true"
-          done
-
-          docker compose ps -a
-
-      - name: Verify PostgreSQL backup can be restored
-        env:
-          RESTORE_DATABASE: ailearn_restore_ci
-        run: |
-          set -euo pipefail
-          backup="$RUNNER_TEMP/ailearn-production-smoke.sql"
-          trap 'rm -f "$backup"' EXIT
-
-          # Freeze application writers before taking and comparing the dump.
-          # Otherwise a follow-up indexing job can legitimately change the
-          # source database after pg_dump's consistent snapshot was captured.
-          docker compose stop api worker
-
-          docker compose exec -T postgres \
-            pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-              --no-owner --no-privileges > "$backup"
-          test -s "$backup"
-
-          docker compose exec -T postgres \
-            createdb -U "$POSTGRES_USER" "$RESTORE_DATABASE"
-          docker compose exec -T postgres \
-            psql -U "$POSTGRES_USER" -d "$RESTORE_DATABASE" \
-              --set=ON_ERROR_STOP=1 < "$backup"
-
-          # A restored database must receive the same production ownership and
-          # least-privilege grants before an application process can use it.
-          docker compose run --rm --no-deps \
-            -e POSTGRES_DB="$RESTORE_DATABASE" \
-            -e REQUIRE_RLS_DISABLED=true \
-            role-grants
-
-          tables=(
-            users workspaces workspace_members notes note_versions
-            note_blocks sources source_segments jobs search_documents ai_audit_log
-            learning_objectives_v2 learning_cards_v2
-            evidence_snapshots_v2
-          )
-          for table in "${tables[@]}"; do
-            source_count="$(docker compose exec -T postgres \
-              psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atqc \
-              "SELECT count(*) FROM \"$table\"")"
-            restored_count="$(docker compose exec -T postgres \
-              psql -U "$POSTGRES_USER" -d "$RESTORE_DATABASE" -Atqc \
-              "SELECT count(*) FROM \"$table\"")"
-            test "$restored_count" = "$source_count" || {
-              echo >&2 "$table count mismatch: source=$source_count restored=$restored_count"
-              exit 1
-            }
-          done
-
-          source_migrations="$(docker compose exec -T postgres \
-            psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atqc \
-            'SELECT count(*) FROM drizzle.__drizzle_migrations')"
-          restored_migrations="$(docker compose exec -T postgres \
-            psql -U "$POSTGRES_USER" -d "$RESTORE_DATABASE" -Atqc \
-            'SELECT count(*) FROM drizzle.__drizzle_migrations')"
-          test "$restored_migrations" = "$source_migrations"
-          test "$restored_migrations" -gt 0
-          echo "backup/restore OK: $restored_migrations migrations and ${#tables[@]} populated tables"
-
-      - name: Privacy scan on /metrics endpoint (ADR-0006 §7)
-        env:
-          METRICS_URL: "http://localhost:4000/metrics"
-        run: |
-          set -euo pipefail
-          # Restart API to expose /metrics endpoint
-          docker compose start api
-          # Wait for readiness
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:4000/ready >/dev/null 2>&1; then
-              break
-            fi
-            sleep 2
-          done
-          # Fetch metrics and run privacy scan
-          METRICS_TEXT=$(curl -sf "$METRICS_URL" || echo "")
-          if [ -z "$METRICS_TEXT" ]; then
-            echo "Warning: /metrics endpoint returned empty, skipping privacy scan"
-          else
-            node --import tsx apps/api/src/scripts/privacy-scan.ts --text "$METRICS_TEXT"
-          fi
-
-      - name: Backup scripts test (ADR-0007)
-        run: |
-          bash infra/backup/backup-scripts.test.sh
-
-      - name: Capture Compose diagnostics
-        if: failure()
-        run: |
-          mkdir -p "$RUNNER_TEMP/compose-diagnostics"
-          docker compose ps -a | tee "$RUNNER_TEMP/compose-diagnostics/ps.txt"
-          docker compose logs --no-color --timestamps \
-            2>&1 | tee "$RUNNER_TEMP/compose-diagnostics/compose.log"
-
-      - name: Upload Compose diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: production-compose-diagnostics-${{ github.run_id }}
-          path: ${{ runner.temp }}/compose-diagnostics
-          if-no-files-found: warn
-          retention-days: 7
-
-      - name: Stop production Compose stack
-        if: always()
-        run: docker compose down --volumes --remove-orphans
-
-  release-evidence:
-    name: Release Evidence (Manifest Aggregation)
-    runs-on: ubuntu-latest
-    needs: [build, unit-tests, fresh-migrations, production-compose, ai-quality-gate]
-    # Don't run on PRs from forks (secrets may not be available)
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      # Install shared for manifest generator (it imports version-contract.mjs)
-      - name: Install shared
-        working-directory: packages/shared
-        run: npm ci --no-audit --no-fund
-
-      - name: Prepare release evidence directory
-        run: mkdir -p "$RUNNER_TEMP/release-evidence"
-
-      # Download the image digests artifact produced by production-compose.
-      # This contains local build identities, or registry RepoDigests when a
-      # separate publish stage has supplied them.
-      - name: Download image digests artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: image-digests-${{ github.sha }}
-          path: ${{ runner.temp }}/image-digests
-
-      - name: Check for image digests
-        id: check-images
-        run: |
-          if [ -f "$RUNNER_TEMP/image-digests/image-digests.json" ] \
-            && jq -e '.releaseReady == true' "$RUNNER_TEMP/image-digests/image-digests.json" >/dev/null; then
-            echo "images_path=$RUNNER_TEMP/image-digests/image-digests.json" >> "$GITHUB_OUTPUT"
-            echo "Found registry-backed image digests file"
-          else
-            echo "images_path=" >> "$GITHUB_OUTPUT"
-            echo "Local image identities are evidence only; registry RepoDigests remain required"
-          fi
-
-      - name: Download raw unit and coverage evidence
-        uses: actions/download-artifact@v4
-        with:
-          name: node-${{ env.NODE_VERSION }}-unit-test-logs-${{ github.sha }}
-          path: ${{ runner.temp }}/unit-test-logs
-
-      - name: Prepare collected coverage and scan evidence
-        run: |
-          test -f "$RUNNER_TEMP/unit-test-logs/coverage-summary.json"
-          mkdir -p outputs/coverage "$RUNNER_TEMP/release-evidence/scan-results"
-          cp "$RUNNER_TEMP/unit-test-logs/coverage-summary.json" outputs/coverage/summary.json
-          cp outputs/coverage/summary.json "$RUNNER_TEMP/release-evidence/coverage-summary.json"
-          find "$RUNNER_TEMP/unit-test-logs" -maxdepth 1 -name '*.coverage.json' -exec \
-            cp {} outputs/coverage/ \;
-          for name in api worker; do
-            echo "passed: production-compose Trivy gate completed with exit-code=0" \
-              > "$RUNNER_TEMP/release-evidence/scan-results/trivy-scan-${name}.txt"
-          done
-          for name in api worker shared; do
-            echo "passed: typecheck npm audit gate completed with exit-code=0" \
-              > "$RUNNER_TEMP/release-evidence/scan-results/npm-audit-${name}.txt"
-          done
-
-      # Generate dev manifest (with test summary) for evidence retention
-      - name: Generate release manifest (dev mode)
-        run: |
-          set -o pipefail
-          node .github/scripts/release-manifest-generate.mjs \
-            --skip-tests \
-            --output "$RUNNER_TEMP/release-evidence/release-manifest-dev.json" \
-            2>&1 | tee "$RUNNER_TEMP/release-evidence/generate-dev.log"
-
-      # Generate RC manifest with real image digests (if available).
-      # The --images flag injects canonical sha256 digests from the CI build
-      # into the manifest.images section, replacing placeholder values.
-      - name: Generate release manifest (RC with image digests)
-        run: |
-          set -o pipefail
-          IMAGES_ARG=""
-          if [ -n "${{ steps.check-images.outputs.images_path }}" ]; then
-            IMAGES_ARG="--images ${{ steps.check-images.outputs.images_path }}"
-          fi
-          node .github/scripts/release-manifest-generate.mjs \
-            --rc \
-            --skip-tests \
-            $IMAGES_ARG \
-            --output "$RUNNER_TEMP/release-evidence/release-manifest-rc.json" \
-            2>&1 | tee "$RUNNER_TEMP/release-evidence/generate-rc.log"
-
-      # Record environment metadata for reproducibility
-      - name: Record evidence metadata
-        run: |
-          {
-            echo "{"
-            echo "  \"githubRunId\": \"${{ github.run_id }}\","
-            echo "  \"githubRunAttempt\": \"${{ github.run_attempt }}\","
-            echo "  \"githubSha\": \"${{ github.sha }}\","
-            echo "  \"githubRef\": \"${{ github.ref }}\","
-            echo "  \"githubEventName\": \"${{ github.event_name }}\","
-            echo "  \"nodeVersion\": \"$(node --version)\","
-            echo "  \"npmVersion\": \"$(npm --version)\","
-            echo "  \"uname\": \"$(uname -a)\","
-            echo "  \"generatedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\""
-            echo "}"
-          } > "$RUNNER_TEMP/release-evidence/environment.json"
-
-      # FDN-01: Save formal coverage baseline with digest for reproducibility
-      - name: Save coverage baseline (FDN-01)
-        run: |
-          mkdir -p "$RUNNER_TEMP/release-evidence/coverage-baseline"
-          node .github/scripts/coverage-baseline-save.mjs \
-            --use-existing \
-            --label "ci-${{ github.run_id }}" \
-            2>&1 | tee "$RUNNER_TEMP/release-evidence/coverage-baseline-save.log"
-          cp -R outputs/coverage-baselines/. \
-            "$RUNNER_TEMP/release-evidence/coverage-baseline/"
-
-      # Run only after aggregation so an exact tag is checked against concrete
-      # test/scan/image/AIQ/approval evidence instead of failing before jobs run.
-      # 2026-08-11：无 registry 凭据时（本 workflow 从不 push GHCR），images
-      # 门禁降级为显式声明 --allow-unpublished-images（占位 digest 放行，其余
-      # 校验照常严格）；正式 release 在带 registry push 的流程以严格模式校验。
-      - name: Verify exact-tag release manifest contract
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          RELEASE_MANIFEST_PATH: ${{ runner.temp }}/release-evidence/release-manifest-rc.json
-        run: |
-          EXTRA=""
-          if [ -z "${{ steps.check-images.outputs.images_path }}" ]; then
-            EXTRA="--allow-unpublished-images"
-          fi
-          node .github/scripts/release-manifest-contract.mjs $EXTRA
-
-      - name: Upload release evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-evidence-${{ github.sha }}
-          path: ${{ runner.temp }}/release-evidence
-          if-no-files-found: warn
-          retention-days: 90
-  alpha-infrastructure:
-    name: Alpha Infrastructure (Monitoring + Backup, OPS-01)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
-    timeout-minutes: 45
-    env:
-      COMPOSE_PROJECT_NAME: ailearn_alpha_ci
-      POSTGRES_USER: ailearn
-      POSTGRES_PASSWORD: ci-alpha-postgres-password
-      POSTGRES_DB: ailearn
-      MIGRATOR_PASSWORD: ci-alpha-migrator-password
-      API_PASSWORD: ci-alpha-api-password
-      WORKER_PASSWORD: ci-alpha-worker-password
-      DATABASE_URL_MIGRATOR: postgres://ailearn_migrator:ci-alpha-migrator-password@postgres:5432/ailearn
-      DATABASE_URL_API: postgres://ailearn_api:ci-alpha-api-password@postgres:5432/ailearn
-      DATABASE_URL_WORKER: postgres://ailearn_worker:ci-alpha-worker-password@postgres:5432/ailearn
-      MINIO_ROOT_USER: ailearn
-      MINIO_ROOT_PASSWORD: ci-alpha-minio-secret
-      BACKUP_BUCKET: ailearn-backups
-      SOURCE_RELEASE: "0.5.0-alpha"
-      SOURCE_COMMIT: ${{ github.sha }}
-      # SOURCE_MIGRATION 不再硬编码（此前 "0039" 已过期到 0103+）：
-      # alpha-env-setup.sh 从 _journal.json 动态取最新迁移号。
-      CORS_ORIGIN: ""
-      AUTH_COOKIE_SECURE: "false"
-      # compose 强制 ${EDGE_TTS_AUTH_TOKEN:?} 插值
-      EDGE_TTS_AUTH_TOKEN: ci-edge-tts-token
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Validate Docker Compose alpha overlay
-        run: |
-          docker compose -f docker-compose.yml -f docker-compose.alpha.yml --profile storage config --quiet
-
-      - name: Use mock AI platform config for CI
-        run: |
-          mkdir -p config
-          cp .github/ci/ai-platforms.mock.json config/ai-platforms.json
-
-      - name: Start complete Alpha stack
-        run: ./scripts/alpha-env-setup.sh up
-
-      - name: Initialize backup infrastructure (age keys + S3 bucket)
-        run: ./scripts/alpha-env-setup.sh init
-
-      - name: Execute RC restore verification
-        run: ./scripts/alpha-env-setup.sh restore-verify
-
-      - name: Verify deeply checked backup freshness
-        run: ./scripts/alpha-env-setup.sh freshness
-
-      - name: Verify Prometheus rules, targets, and backup metric
-        run: |
-          set -euo pipefail
-          RULE_COUNT="$(curl -fsS http://127.0.0.1:9090/api/v1/rules | jq '[.data.groups[].rules[]] | length')"
-          test "$RULE_COUNT" -gt 0
-
-          for attempt in $(seq 1 30); do
-            all_up=true
-            for job in ailearn-api ailearn-worker ailearn-backup; do
-              value="$(curl -fsS --get --data-urlencode "query=up{job=\"$job\"}" \
-                http://127.0.0.1:9090/api/v1/query | jq -r '.data.result[0].value[1] // "0"')"
-              if [ "$value" != "1" ]; then all_up=false; fi
-            done
-            backup_value="$(curl -fsS --get \
-              --data-urlencode 'query=ailearn_db_last_successful_backup_timestamp{job="ailearn-backup"}' \
-              http://127.0.0.1:9090/api/v1/query | jq -r '.data.result[0].value[1] // "0"')"
-            if [ "$all_up" = true ] && awk "BEGIN { exit !($backup_value > 0) }"; then
-              echo "All Alpha scrape targets and verified-backup metric are healthy"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo >&2 "Alpha scrape targets or verified-backup metric did not become healthy"
-          curl -fsS http://127.0.0.1:9090/api/v1/targets | jq '.data.activeTargets[] | {job: .labels.job, health, lastError}' >&2
-          exit 1
-
-      - name: Capture Alpha infrastructure evidence
-        if: always()
-        run: |
-          mkdir -p "$RUNNER_TEMP/alpha-evidence"
-          {
-            echo "# Alpha Infrastructure Evidence"
-            echo ""
-            echo "## Prometheus Targets"
-            curl -sf http://localhost:9090/api/v1/targets 2>/dev/null | \
-              jq '.data.activeTargets[] | {job: .labels.job, health: .health}' || echo "N/A"
-            echo ""
-            echo "## Alert Rules"
-            curl -sf http://localhost:9090/api/v1/rules 2>/dev/null | \
-              jq '.data.groups[] | {name: .name, ruleCount: (.rules | length)}' || echo "N/A"
-          } > "$RUNNER_TEMP/alpha-evidence/alpha-report.md"
-          docker compose -f docker-compose.yml -f docker-compose.alpha.yml --profile storage \
-            run --rm -v "$RUNNER_TEMP/alpha-evidence:/evidence" backup-runner \
-            sh -c 'cp -R /var/lib/ailearn/manifests /evidence/'
-          docker compose -f docker-compose.yml -f docker-compose.alpha.yml --profile storage \
-            logs --no-color > "$RUNNER_TEMP/alpha-evidence/compose.log" 2>&1 || true
-
-      - name: Upload Alpha infrastructure evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: alpha-infrastructure-evidence-${{ github.run_id }}
-          path: ${{ runner.temp }}/alpha-evidence
-          if-no-files-found: warn
-          retention-days: 90
-
-      - name: Stop Alpha infrastructure
-        if: always()
-        run: |
-          docker compose -f docker-compose.yml -f docker-compose.alpha.yml --profile storage down --volumes --remove-orphans
+      # 打包与两个场景变体（v1 / v2）由 desktop-client.yml 负责，
+      # 那条流水线关心的是产物而不是测试，所以不混进这里。

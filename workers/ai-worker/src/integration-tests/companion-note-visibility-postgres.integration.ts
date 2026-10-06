@@ -43,12 +43,27 @@ const ownerPrivateVersion = randomUUID();
 const ownerSharedNote = randomUUID();
 const ownerSharedVersion = randomUUID();
 
+// 成员先单独落库、**并提交**，再进主事务。
+//
+// `users` 的插入策略 `sec02_users_self_insert` 是 `WITH CHECK (id = app.user_id)`：
+// 一条 INSERT 里写两行时，第二行的 id 不等于当前事务的 `app.user_id`，整条语句被回滚
+// 并抛 42501。`workers/ai-worker/src/integration-tests/helpers/formal-answer-fixture.ts`
+// 里那份同形状的夹具修法一致，都是对齐生产的注册路径（0327 §2.4，actor 就是新用户本人）：
+// 她自己开一个事务、把 `app.user_id` 设成自己，"她自己插自己"。
+//
+// 顺序不能反：`workspace_members.user_id` 上有 FK 到 `users(id)`
+// （`workspace_members_user_id_users_fk`），主事务要往里写她的成员行。
+await sql.begin(async (tx) => {
+  await tx`SELECT set_config('app.user_id', ${memberId}, true)`;
+  await tx`INSERT INTO users (id, email, password_hash, role) VALUES
+    (${memberId}, ${`vis-member-${tag}@x.test`}, 'h', 'member')`;
+});
+
 await sql.begin(async (tx) => {
   await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
   await tx`SELECT set_config('app.user_id', ${ownerId}, true)`;
   await tx`INSERT INTO users (id, email, password_hash, role) VALUES
-    (${ownerId}, ${`vis-owner-${tag}@x.test`}, 'h', 'owner'),
-    (${memberId}, ${`vis-member-${tag}@x.test`}, 'h', 'member')`;
+    (${ownerId}, ${`vis-owner-${tag}@x.test`}, 'h', 'owner')`;
   await tx`INSERT INTO workspaces (id, name, owner_id, workspace_type) VALUES
     (${workspaceId}, ${`vis-${tag}`}, ${ownerId}, 'collaborative')`;
   await tx`INSERT INTO workspace_members (workspace_id, user_id, role) VALUES

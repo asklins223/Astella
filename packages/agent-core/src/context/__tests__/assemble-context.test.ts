@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   assembleAgentContext, composeAgentContext, budgetAgentContextRecords, AgentContextError,
+  summarizeContextAssemblyReceipt,
   type AgentContextSource,
 } from "../assemble-context.ts";
 
@@ -84,4 +85,53 @@ test("record admission applies byte, token and count limits atomically without t
   assert.equal(result.tokens, 201);
   assert.equal(result.omittedCount, 3);
   assert.throws(() => budgetAgentContextRecords(["bad"], { measure: () => ({ characters: 1, bytes: -1, tokens: 1 }) }), /invalid_plan/);
+});
+
+// ─── 44 §3.3：装配回执要能查，且不含内容 ──────────────────────────────────
+
+test("44 §3.3：budget_omitted 不再只进日志——回执记下被挤掉的条目与字符", () => {
+  const omittedId = "summary";
+  const receipts = composeAgentContext({ maxCharacters: 60, sources: [
+    { id: omittedId, authority: "data" },
+    { id: "policy", authority: "policy", required: true },
+    { id: "current", authority: "data", required: true },
+  ] }, new Map([
+    [omittedId, data("旧任务".repeat(20))],
+    ["policy", { content: "Follow the current user request.", scope: { kind: "policy" } }],
+    ["current", data("今天聊晚饭")],
+  ]), scope).receipts;
+
+  const receipt = summarizeContextAssemblyReceipt({ receipts, maxCharacters: 60 })!;
+  assert.equal(receipt.maxCharacters, 60);
+  assert.equal(receipt.omittedCount, 1, "被挤掉的条目必须可数");
+  assert.deepEqual(receipt.omitted.map((entry) => entry.id), [omittedId]);
+  assert.ok(receipt.omittedCharacters > 0, "丢掉多少字符本身就是要查的量");
+  assert.equal(receipt.included.length, 2);
+  // 回执只记 id、状态与字符数——内容不进这一列。
+  assert.equal(JSON.stringify(receipt).includes("今天聊晚饭"), false);
+});
+
+test("44 §3.3：条目很多时有界，超出后仍保全部计数", () => {
+  const sources = Array.from({ length: 60 }, (_, index) => ({
+    id: `source-${index}`,
+    authority: "data" as const,
+    maxCharacters: 4,
+  }));
+  const receipts = sources.map((source, index) => ({
+    id: source.id,
+    authority: source.authority,
+    characters: 10,
+    status: (index % 2 === 0 ? "included" : "budget_omitted") as "included" | "budget_omitted",
+  }));
+  const receipt = summarizeContextAssemblyReceipt({ receipts, maxCharacters: 100 }, 10)!;
+  assert.equal(receipt.included.length, 10);
+  assert.equal(receipt.omitted.length, 10);
+  // 截断的是清单，不是计数：漏掉多少条仍然准确。
+  assert.equal(receipt.omittedCount, 30);
+  assert.equal(receipt.omittedCharacters, 300);
+});
+
+test("44 §3.3：没有回执时不产出空壳行", () => {
+  assert.equal(summarizeContextAssemblyReceipt({ receipts: undefined, maxCharacters: 80_000 }), undefined);
+  assert.equal(summarizeContextAssemblyReceipt({ receipts: [], maxCharacters: 80_000 }), undefined);
 });

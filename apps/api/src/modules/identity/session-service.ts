@@ -397,22 +397,33 @@ export async function cleanupExpiredSessions(): Promise<number> {
  * 2026-08-11（安全加固）：修改密码——验证旧密码后更新 bcrypt 哈希，
  * 并在同一事务内撤销该用户**全部** session（改密后强制全端重新登录）。
  * 返回 false 表示旧密码错误（不区分其他原因，避免枚举）。
+ *
+ * 读、核、写必须同在一个 **actor 事务**里：`users` 启用了 RLS，而
+ * `sec02_users_self_read` 要求 `id = app.user_id`。裸 `db.query.users.findFirst`
+ * 不在任何事务里，受限角色（`ailearn_api`，NOBYPASSRLS）下这条 SELECT
+ * **恒为 0 行**——于是无论旧密码填什么都会走到 `!user` 这一支，接口回
+ * 403 `invalid_password`，表现成"当前密码不正确"，改密永远失败。这跟
+ * `loginWithPassword` 必须走 `ailearn_find_user_by_email` 是同一件事的两面：
+ * 都是"没有 `app.user_id` 就看不见自己那一行"。
+ *
+ * 放进同一个事务也就顺带关掉了"核对通过之后、写回之前密码被别处改掉"的窗口；
+ * bcrypt 只在旧密码核对通过后才算新哈希，猜错的人不会替我们多做一次哈希。
  */
 export async function changePassword(
   userId: string,
   currentPassword: string,
   newPassword: string,
 ): Promise<boolean> {
-  const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
-  if (!user || !(await verifyPassword(currentPassword, user.passwordHash))) return false;
-  const newHash = await hashPassword(newPassword);
-  // 撤销"这个人的全部会话"是改密的语义本身，所以 actor 就是这个人，
-  // 不带 sessionToken——`sec01_v1_sessions_actor_*` 的空令牌分支允许按 user_id 批量删。
-  await withActorTransaction({ userId }, async (tx) => {
+  return withActorTransaction({ userId }, async (tx) => {
+    const user = await tx.query.users.findFirst({ where: eq(users.id, userId) });
+    if (!user || !(await verifyPassword(currentPassword, user.passwordHash))) return false;
+    const newHash = await hashPassword(newPassword);
     await tx.update(users).set({ passwordHash: newHash, updatedAt: new Date() }).where(eq(users.id, userId));
+    // 撤销"这个人的全部会话"是改密的语义本身，所以 actor 就是这个人，
+    // 不带 sessionToken——`sec01_v1_sessions_actor_*` 的空令牌分支允许按 user_id 批量删。
     await tx.delete(sessions).where(eq(sessions.userId, userId));
+    return true;
   });
-  return true;
 }
 
 /**

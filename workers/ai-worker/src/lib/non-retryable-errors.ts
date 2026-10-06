@@ -14,6 +14,7 @@
  */
 
 import { AIConsentRequiredError, AIDataPolicyDeniedError, AIProviderNotConfiguredError } from "./governance.ts";
+import { AIContextOverflowError } from "./context-governor.ts";
 // 稳定 P1（2026-09-15 审计）：作业 payload 与类型不符是确定性失败。
 import { JobPayloadContractError } from "@ailearn/shared/job-payload-contracts";
 
@@ -198,6 +199,11 @@ export function isNonRetryableError(error: unknown): boolean {
   // Agent 预算耗尽同理：run 级预算跨重投累计，重试不可能恢复。
   if (error instanceof CompanionAgentBudgetExceededError) return true;
   if (error instanceof CompanionContextChangedError) return true;
+
+  // 方案 44 §5.4：完整请求装不下本路由的硬输入上限，且本轮没有可用的压缩路径。
+  // 重投同一个请求只会再撞一次同一条上限——纯调度浪费，还让用户多等几轮。
+  // 直接 dead，让「这次真的装不下」立刻可见，而不是伪装成一次可重试的故障。
+  if (error instanceof AIContextOverflowError) return true;
 
   // 记忆抽取输出不合规同理：内部已重试过一次采样，重投不会给出更好的输出。
   if (error instanceof MemoryExtractOutputError) return true;

@@ -1,3 +1,4 @@
+import { recordTurnCompactionTrace } from "./companion-compaction-trace.ts";
 /**
  * 上下文的**交接快照与历史收边**（40 §4.7.2）。
  *
@@ -90,6 +91,32 @@ export interface CompanionContextHandoffSnapshotV1 {
   /** Only sources actually admitted to the prompt, with their immutable version. */
   memorySourceVersions?: AgentMemoryContextSourceV1[];
   modelMessages: ChatMessage[];
+  /**
+   * 这一轮发生过的折叠（方案 44 §3.3／§5.3）。
+   *
+   * `modelMessages` 保持**折叠前**的完整上下文：恢复时多给上下文永远比少给安全。
+   * 变的是多出这份轨迹——没有它，审计无从回答「实际发出去的是什么」：哪一段被折了、
+   * 哪份摘要顶替的、那次判定是过了触发线还是被拒绝。只记区间与水位，不记正文。
+   */
+  compactions?: CompactionTraceV1[];
+}
+
+export interface CompactionTraceV1 {
+  foldedFromSeq: string;
+  foldedThroughSeq: string;
+  foldedMessageCount: number;
+  /** 顶替它的那份摘要的来源哈希：覆盖本身也要能被核对。 */
+  summarySourceSha256: string;
+  /** 折叠之后回放里剩下的最早 seq；null 表示尾部被折空。 */
+  remainingFromSeq: string | null;
+  /** 摘要在折叠边界之外还没盖住的更早区间。 */
+  uncoveredBeforeSeq: string | null;
+  modelId: string | null;
+  inputTokens: number | null;
+  triggerTokens: number | null;
+  hardInputTokens: number | null;
+  reason: string | null;
+  at: string;
 }
 
 export interface CompanionContextHandoffInputV1 {
@@ -306,4 +333,39 @@ export function boundCompanionRecentHistory(
     out.push({ ...message, text });
   }
   return out.reverse();
+}
+
+/**
+ * 折叠轨迹收集器。
+ *
+ * 它就是一个可变数组 + 一个快照构造器：折叠发生时往里追加，回合结束时把整份轨迹
+ * 写进**下一版**交接快照。放在这里而不是 runtime，是为了让 runtime 只管「折了」，
+ * 不管「记在哪」——两件事的失败后果不一样。
+ */
+export interface CompactionTraceRecorder {
+  /** 折了一次就记一次。 */
+  record(trace: CompactionTraceV1): void;
+  /**
+   * 回合结束时把轨迹并进交接快照的下一版。
+   *
+   * 「记」与「落」放在同一个对象里，是因为围栏与「不阻塞交付」这两条规则只有一个主人：
+   * 分开放时，赶流程最容易漏掉的恰好是 skip 时该返回 false 而不是抛。
+   *
+   * 返回 false 表示没写进去（run 已结束或快照已被别人推进）——**不是**失败，
+   * 快照仍然可用，只是这一折没进轨迹。
+   */
+  commit(target: {
+    workspaceId: string; userId: string; runId: string;
+    snapshot: CompanionContextHandoffSnapshotV1; sha256: string;
+  }): Promise<boolean>;
+}
+
+export function createCompactionTraceRecorder(): CompactionTraceRecorder {
+  const collected: CompactionTraceV1[] = [];
+  return {
+    record: (trace) => { collected.push(trace); },
+    commit: (target) => recordTurnCompactionTrace({
+      ...target, traces: collected,
+    }),
+  };
 }

@@ -137,10 +137,18 @@ function domainErrorCode(status: number, body: unknown, path: string): GatewayEr
   const teachingCode = NOTE_TEACHING_DOMAIN_CODES[token];
   if (teachingCode?.status === status) return teachingCode.code;
   if (status === 413 && token === "note_too_long") return "note_artifact_too_long";
-  // 403 上只认这一个 token：登录那一族的字符串是**路由内**的约定
+  // 403 上只认这两个 token：登录那一族的字符串是**路由内**的约定
   // （`not_found` 在邀请那条路上意思是"邀请码无效"，在取图上意思是"文件没了"）。
   // 把它们放到 403 上一起认，就会把一次取图失败说成邀请码问题。
-  if (status === 403) return token === CONSENT_REQUIRED_TOKEN ? "ai_consent_required" : null;
+  //
+  // `invalid_password` 是 `/auth/change-password` 独有的 token（全仓只有那一处产出它）。
+  // 不认它，改密失败就被并进 `forbidden`，界面说的是"当前工作区或账号没有执行这个
+  // 动作的权限"——把人送去查权限，而他要做的只是重新输一遍当前密码。与
+  // `ai_consent_required` 同一条判据：这句话的下一步动作和"没权限"不是一件事。
+  if (status === 403) {
+    if (token === CONSENT_REQUIRED_TOKEN) return "ai_consent_required";
+    return token === "invalid_password" ? "invalid_credentials" : null;
+  }
   if (status !== 400 && status !== 404 && status !== 409 && status !== 410) return null;
   return NOTE_DOMAIN_ERROR_CODES[token] ?? AUTH_DOMAIN_ERROR_CODES[token] ?? null;
 }
@@ -534,7 +542,7 @@ readonly companionAccountSessionId = randomUUID();
   const domainCode = domainErrorCode(status, body, path);
   if (domainCode) return new DesktopGatewayFailure(domainCode, "never", options);
   if (status === 401) return new DesktopGatewayFailure(unauthorizedCode ?? (this.token ? "reauth_required" : "auth_required"), "user_action", options);
-  // 403 上只有白名单里那一种 token 会被翻成专用码，其余一律还是 `forbidden`。
+  // 403 上只有白名单里那几种 token 会被翻成专用码，其余一律还是 `forbidden`。
   if (status === 403) return new DesktopGatewayFailure("forbidden", "never", options);
   if (status === 404) return new DesktopGatewayFailure("not_found", "never", options);
   if (status === 409) return new DesktopGatewayFailure("conflict", "never", options);

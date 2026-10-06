@@ -9,3 +9,4 @@ export * from "./methods.ts";
 export * from "./ai-governance-policy.ts";
 export * from "./context-sources.ts";
 export {listAgentLongGoals,requireAgentLongGoal} from "./long-goals.ts";
+export * from "./compaction-state.ts";

@@ -26,11 +26,17 @@ test("只有未 covered 的 facet 算缺口，且同一个 facet 不重复出现
   ]), ["explain", "apply"]);
 });
 
-test("partial 与 not_assessable 都算没说到——只有 covered 才算说清", () => {
+test("partial 是实际缺口；not_assessable 不证明用户没说到", () => {
   assert.deepEqual(
     uncoveredFacets([item("boundary", "partial"), item("procedure", "not_assessable")]).sort(),
-    ["boundary", "procedure"],
+    ["boundary"],
   );
+});
+
+test("题面前提不明导致整轮无法评估时，不能要求用户补回忆或关联", () => {
+  assert.deepEqual(uncoveredFacets([
+    item("recall", "not_assessable"), item("relate", "not_assessable"),
+  ]), []);
 });
 
 test("没有判定时不推断任何缺口", () => {

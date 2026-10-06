@@ -1029,3 +1029,101 @@ test("0247 TTS 播放结局上报：分阶段、幂等、与合成行共存", as
     await cleanup();
   }
 });
+
+/**
+ * P0 回归：从没碰过伴星设置的用户，**第一句话**能不能真的问出来。
+ *
+ * 断链的形状：建 run 侧 `getCompanionAccountEpoch` 对无行返回 0（不要求这一行存在），
+ * 而 worker 的 provider 调用闸门 `reserveCompanionProviderCall` 是 INNER JOIN
+ * `user_companion_account_state`（缺行 ⇒ UPDATE 命中 0 行 ⇒ 抛
+ * `AGENT_BUDGET_EXCEEDED`）。这一行以前只有用户主动改设置才产生，
+ * `CompanionPresence` 挂载时只 GET 不建行——于是新用户永远没有它。
+ *
+ * 修法是 fail-closed 的：闸门不动，改成**建 run 的那条路径上幂等建行**。
+ * 所以这里必须走真的 `createCompanionTurn`（不是直插 run 的夹具），
+ * 并断言建出来的取值等于「默认开启」——写 false 会把「用户还没表达关闭意图」
+ * 误记成「用户关闭了伴星」，比原缺陷更糟。
+ */
+test("P0：全新账号第一句话建 run 前补出账号状态行，取值是默认开启，且与 worker 的 INNER JOIN 闸门对得上", async () => {
+  const { workspaceId, userId, conversationId, cleanup } = await seedConversation();
+  const readAccountRow = async () => {
+    const rows = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+      return tx`SELECT revision, epoch, global_enabled, diary_enabled, diary_enabled_since,
+                       intervention_level, agent_settings
+                FROM user_companion_account_state WHERE user_id = ${userId}`;
+    });
+    return rows[0];
+  };
+  try {
+    // 前置：seedConversation 只种 users/workspaces/conversation，从不碰账号状态行。
+    assert.equal(await readAccountRow(), undefined, "前提：新账号还没有伴星账号状态行");
+
+    const created = await createCompanionTurn({
+      workspaceId, userId, conversationId,
+      idempotencyKey: randomUUID(),
+      body: turnBody(randomUUID()),
+    });
+    assert.equal(created.statusCode, 202);
+
+    const row = await readAccountRow();
+    assert.ok(row, "建 run 之后账号状态行必须存在（worker 闸门 INNER JOIN 的前提）");
+    assert.equal(row.global_enabled, true, "默认开启：没设置过 ≠ 用户关闭了伴星");
+    assert.equal(Number(row.epoch), 0, "没 global off 过，世代恒 0");
+    // revision 0 而非 updateCompanionAccountState 首写的 1：GET /me/companion 在无行时
+    // 返回 emptyAccountState()（revision 0），客户端缓存的 base revision 就是 0。
+    // 写 1 会让用户第一次改设置撞 409——那是把一个 P0 换成另一个 P0。
+    assert.equal(Number(row.revision), 0, "客户端可见的 base revision 必须仍是 0");
+    assert.equal(row.diary_enabled, true);
+    assert.ok(row.diary_enabled_since, "日记素材起点必须非空（0333 调度要求），否则该账号永远进不了日记");
+    assert.equal(row.intervention_level, "moderate");
+    assert.equal((row.agent_settings as { permissionLevel?: string }).permissionLevel, "guided");
+
+    // 真正的判据：worker 闸门的 INNER JOIN 必须命中这一行。
+    const runRows = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+      const runs = await tx`SELECT id, job_id, account_epoch FROM companion_turn_runs
+                          WHERE conversation_id = ${conversationId}`;
+      // 直接跑 reserveCompanionProviderCall 的原句（generation/accountEpoch 用这一轮真实的），
+      // 判据是它命中几行：缺账号状态行时它命中 0 行 → worker 抛 AGENT_BUDGET_EXCEEDED。
+      const gate = await tx`UPDATE companion_turn_runs r
+                            SET model_call_count = model_call_count + 1, updated_at = now()
+                            FROM user_companion_account_state a
+                            WHERE r.id = ${runs[0].id}
+                              AND r.workspace_id = ${workspaceId}
+                              AND r.user_id = ${userId}
+                              AND EXISTS (SELECT 1 FROM jobs j WHERE j.id = ${runs[0].job_id}
+                                AND j.type = 'companion_agent' AND j.payload->>'runId' = r.id::text)
+                              AND r.account_epoch = ${runs[0].account_epoch} AND r.generation = 1
+                              AND r.status IN ('accepted','running','waiting_for_confirmation')
+                              AND a.user_id = r.user_id AND a.global_enabled AND a.epoch = r.account_epoch
+                              AND r.model_call_count < 64
+                            RETURNING r.model_call_count`;
+      return { runs, gate };
+    });
+    assert.equal(Number(runRows.runs[0].account_epoch), 0, "run 冻结的世代与新建行一致，否则闸门当场作废这一轮");
+    assert.equal(runRows.gate.length, 1, "worker 的 provider 调用闸门必须命中（回归前命中 0 行 → 第一句话必然预算失败）");
+    // 幂等 + 不覆盖既有行：第二轮不能把用户已经改过的状态打回默认。
+    const closed = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+      return tx`UPDATE user_companion_account_state
+                SET global_enabled = false, epoch = epoch + 1
+                WHERE user_id = ${userId} RETURNING epoch`;
+    });
+    assert.ok(Number(closed[0].epoch) >= 1, "前提：已 global off，世代已推进");
+    await createCompanionTurn({
+      workspaceId, userId, conversationId,
+      idempotencyKey: randomUUID(),
+      // supersede 第一轮：active run 规则会拒并发 turn，这里要的是第二轮也走同一条建 run 路径。
+      body: { ...turnBody(randomUUID()), supersedesGeneration: 1 },
+    });
+    const afterSecondTurn = await readAccountRow();
+    assert.equal(afterSecondTurn.global_enabled, false, "已关闭的账号不能被下一轮对话重新打开（ON CONFLICT DO NOTHING）");
+    assert.equal(Number(afterSecondTurn.epoch), Number(closed[0].epoch), "世代不能被建行路径重置");
+  } finally {
+    await cleanup();
+  }
+});

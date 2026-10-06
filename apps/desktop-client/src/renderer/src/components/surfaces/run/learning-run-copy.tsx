@@ -306,7 +306,7 @@ export function formatClock(seconds: number): string {
 
 export function facetText(facets: readonly string[], empty: string): string {
   if (facets.length === 0) return empty;
-  return facets.map((facet) => facetLabels[facet] ?? facet).join("、");
+  return [...new Set(facets.map((facet) => facetLabels[facet] ?? facet))].join("、");
 }
 
 export function scheduleImpactText(
@@ -326,7 +326,7 @@ export function scheduleImpactText(
   if (impact.reasonCode === "facet_only" && rubricResults.length > 0) {
     const covered = rubricResults.filter((item) => item.verdict === "covered");
     const gaps = [...new Set(rubricResults
-      .filter((item) => item.verdict !== "covered")
+      .filter((item) => ["partial", "missing", "contradicted"].includes(item.verdict))
       .map((item) => facetLabels[item.facet] ?? item.facet))];
     if (gaps.length > 0) {
       return `本次没有改变复习安排：${rubricResults.length} 个要点里证明了 ${covered.length} 个，还差 ${gaps.join("、")}；这几处补齐了才会推进排程。`;

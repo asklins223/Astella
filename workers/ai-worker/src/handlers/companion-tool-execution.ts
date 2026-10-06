@@ -52,6 +52,8 @@ import {
 import { getObjectBytes } from "../lib/object-storage.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { noteSearchTerms, parsePageContext, stripProviderControlTokens } from "./companion-dialogue-content.ts";
+import { readPastConversationMessages, searchPastConversationSummaries } from "./companion-summary-retrieval.ts";
+import { listAgentLongGoals, listAgentMethods } from "@ailearn/agent-host";
 import {
   ageLabel,
   readLearningStats,
@@ -151,8 +153,95 @@ export async function executeReadTool(
       );
       return currentPageToolResult(row);
     }
+    // 跨会话找回（方案 44 §3.2／§8.3）。两步：给 conversationId 就取回那一段原文，
+    // 只给 query 就在别的会话里检索。两个分支共用一次事务与同一套范围校验。
+    case "companion_recall_past_conversation": {
+      const conversationId = typeof args.conversationId === "string" ? args.conversationId : null;
+      const fromSeq = typeof args.fromSeq === "number" ? args.fromSeq : null;
+      const query = String(args.query ?? "").trim().slice(0, 120);
+      if (conversationId && fromSeq === null) {
+        // 只给会话 id 不给起点，就退回复检索：拿 id 去猜内容正是这个工具禁止的做法。
+        return {
+          value: { hits: [], error: "取回原文必须同时给出 conversationId 与 fromSeq（来自上一步的覆盖区间）。" },
+          safeSummary: "取回原文缺少起始序号，已改为按关键词检索",
+        };
+      }
+      return await withWorkerWorkspaceTransaction(
+        { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+        async (tx) => {
+          if (conversationId && fromSeq !== null) {
+            const excerpt = await readPastConversationMessages(
+              tx,
+              { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+              { conversationId, fromSeq: String(fromSeq) },
+            );
+            return {
+              value: { ...excerpt },
+              safeSummary: excerpt.messages.length > 0
+                ? `已取回 ${excerpt.messages.length} 条更早会话的原文`
+                : "那一段没有可取回的消息",
+            };
+          }
+          const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };
+          const hits = await searchPastConversationSummaries(
+            tx, scope, { query, excludeConversationId: event.read.conversationId ?? null },
+          );
+          // 44 §3.2：跨会话连续性由「可检索历史、有效记忆、方法与目标快照」**共同**
+          // 提供。只给会话摘要等于漏掉另两条——上次定下的做法（方法）与正在进行的目标，
+          // 恰恰是用户最容易「你怎么又忘了」的那两样。两边都已经是本人范围的窄口读取，
+          // 这里只是把它们摆到同一个结果里，而不是再造一条检索通道。
+          const [methods, goals] = await Promise.all([
+            listAgentMethods(tx as never, scope, true).catch(() => []),
+            listAgentLongGoals(tx as never, scope, { query }).catch(() => ({ version: 1 as const, items: [], nextCursor: null })),
+          ]);
+          return {
+            value: {
+              hits,
+              // 方法目录只给标题与触发条件：正文按 id+revision 另行展开（companion_read_playbook）。
+              methods: methods.map((method) => ({
+                methodId: method.methodId,
+                revision: method.revision,
+                title: method.title,
+                appliesWhen: method.appliesWhen,
+              })),
+              goals: goals.items.map((goal) => ({
+                memoryId: goal.ref.memoryId,
+                revision: goal.ref.revision,
+                content: goal.content.slice(0, 200),
+                appliesWhen: goal.appliesWhen,
+                taskCount: goal.taskCount,
+              })),
+            },
+            safeSummary: hits.length + methods.length + goals.items.length > 0
+              ? `找到 ${hits.length} 段更早的对话、${methods.length} 条做法、${goals.items.length} 个长期目标`
+              : "更早的记录里没有找到相关内容",
+          };
+        },
+      );
+    }
     case "companion_read_history": {
       const limit = typeof args.limit === "number" ? Math.min(20, Math.max(1, args.limit)) : 10;
+      const fromSeq = typeof args.fromSeq === "number" ? args.fromSeq : null;
+      // 取回入口（44 §5.5）：带 fromSeq 就是去读**这一轮没读到的**那一段原文。
+      // 范围校验落在会话与本人上——这条路径读的是真实历史，不是上下文里的转述。
+      if (fromSeq !== null) {
+        return await withWorkerWorkspaceTransaction(
+          { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+          async (tx) => {
+            const excerpt = await readPastConversationMessages(
+              tx,
+              { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+              { conversationId: event.read.conversationId, fromSeq: String(fromSeq), limit },
+            );
+            return {
+              value: { ...excerpt },
+              safeSummary: excerpt.messages.length > 0
+                ? `已取回第 ${excerpt.fromSeq} 条起的 ${excerpt.messages.length} 条原文`
+                : "那一段没有可取回的消息",
+            };
+          },
+        );
+      }
       const history = event.read.recentMessages.slice(-limit).map((message) => ({
         role: message.role,
         text: message.text.slice(0, 1_000),

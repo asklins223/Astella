@@ -172,3 +172,67 @@ export function budgetAgentContextRecords<T>(records: readonly T[], budget: Agen
   }
   return { items, omittedCount: records.length - items.length, characters, bytes, tokens };
 }
+
+/** 落库用的装配回执：条目 id、状态与字符数，**不含任何内容**。 */
+export interface ContextAssemblyReceiptV1 {
+  version: 1;
+  /** 本轮 composeAgentContext 的最大字符预算。 */
+  maxCharacters: number;
+  characters: number;
+  included: Array<{ id: string; characters: number }>;
+  omitted: Array<{ id: string; characters: number }>;
+  empty: string[];
+  /**
+   * 被预算挤掉的条目总数与字符数。
+   *
+   * 这是「这轮她没看到什么」的唯一可查口径（44 §3.3）。此前 `budget_omitted` 只进
+   * 日志，于是「窗口放大后触发变少」与「预算从来没接上」在数据上无法区分。
+   */
+  omittedCount: number;
+  omittedCharacters: number;
+}
+
+/**
+ * 把 composeAgentContext 的逐条回执折叠成一份可落库的、有界的快照。
+ *
+ * 上限是必要的：条目数由各领域的 plan 决定，直接落库会让 run 行随上下文规模膨胀。
+ * 超限时保留**被挤掉的**条目（它们才是要查的东西），纳入清单只记数量——
+ * 「她看到了什么」是正常的，而「她没看到什么」是异常。
+ */
+export function summarizeContextAssemblyReceipt(
+  input: {
+    receipts: readonly AgentContextReceipt[] | undefined;
+    /** 本轮 plan 的 maxCharacters；回执里要如实记下它是按多少容量做的取舍。 */
+    maxCharacters: number;
+  },
+  maxEntries = 40,
+): ContextAssemblyReceiptV1 | undefined {
+  const { receipts } = input;
+  if (!receipts || receipts.length === 0) return undefined;
+  const included: ContextAssemblyReceiptV1["included"] = [];
+  const omitted: ContextAssemblyReceiptV1["omitted"] = [];
+  const empty: string[] = [];
+  let characters = 0;
+  let omittedCharacters = 0;
+  for (const receipt of receipts) {
+    if (receipt.status === "included") {
+      characters += receipt.characters;
+      if (included.length < maxEntries) included.push({ id: receipt.id, characters: receipt.characters });
+    } else if (receipt.status === "budget_omitted") {
+      omittedCharacters += receipt.characters;
+      if (omitted.length < maxEntries) omitted.push({ id: receipt.id, characters: receipt.characters });
+    } else if (empty.length < maxEntries) {
+      empty.push(receipt.id);
+    }
+  }
+  return {
+    version: 1,
+    maxCharacters: input.maxCharacters,
+    characters,
+    included,
+    omitted,
+    empty,
+    omittedCount: receipts.filter((receipt) => receipt.status === "budget_omitted").length,
+    omittedCharacters,
+  };
+}

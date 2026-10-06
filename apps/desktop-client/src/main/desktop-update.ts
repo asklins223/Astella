@@ -122,7 +122,12 @@ function updateFailureMessage(error: unknown, action: Exclude<UpdateOperation, n
   if (/rate limit|\b429\b/i.test(detail)) return 'GitHub 的查询次数用完了，请稍后再检查。'
   if (/ENOSPC|no space left/i.test(detail)) return '设备可用空间不足，请腾出空间后重试。'
   if (/ERR_INTERNET_DISCONNECTED|ENOTFOUND|EAI_AGAIN|ECONN|ETIMEDOUT|network|timeout/i.test(detail)) return '暂时无法连接更新服务，请检查网络后重试。'
-  if (/sha512|checksum|signature|code sign/i.test(detail)) return '安装包校验未通过，请重新下载或到下载页获取安装包。'
+  // 签名类失败说的是**这台电脑上的书房本身**，不是刚下下来的那份包：让用户
+  // 「重新下载」是让他把同一件事再失败一遍。分开说，他才知道自己该去下载页手动装。
+  if (/signature|code sign|not signed|signed with|sbvalidate|SecStatic/i.test(detail)) {
+    return 'macOS 不允许替换安装没有开发者签名的书房。到下载页手动下载安装包，或换用正式签名的版本。'
+  }
+  if (/sha512|checksum/i.test(detail)) return '安装包校验未通过，请重新下载或到下载页获取安装包。'
   if (/\b404\b|release.*not found|no published versions/i.test(detail)) return '更新服务暂时没有可用的发布版本，请稍后再检查。'
   return action === 'check' ? '暂时没拿到新版本信息，请稍后再检查。' : action === 'download' ? '这次下载没有完成，可以稍后重试。' : '这次安装没有完成，请到下载页手动安装。'
 }
@@ -184,7 +189,16 @@ function detectMacosUnsigned(): boolean {
   }
   const probe = spawnSync('codesign', ['-dv', bundle], { encoding: 'utf8' })
   const detail = `${probe.stdout ?? ''}${probe.stderr ?? ''}`
-  macosUnsigned = probe.status !== 0 || /not signed|unsigned/i.test(detail)
+  /**
+   * `adhoc` 与「完全没签」一起算装不上（2026-10-06 真窗口实测）。
+   *
+   * Squirrel.Mac 装新版本时要比对**新旧两个 .app 的签名身份**；ad-hoc 签名
+   * （`Signature=adhoc`，本地打包、自签的那种）没有 Developer ID，
+   * 替换必然被系统拒绝。此前这条只认 `not signed|unsigned`，于是本地 ad-hoc 包
+   * 会被判成"可以装"：用户点完「重启并安装」，书房重启了、版本纹丝不动，
+   * 最后只留下一句"安装包校验未通过"——而包本身是对的，错的是它**根本不该走到这一步**。
+   */
+  macosUnsigned = probe.status !== 0 || /not signed|unsigned|adhoc/i.test(detail)
   return macosUnsigned
 }
 

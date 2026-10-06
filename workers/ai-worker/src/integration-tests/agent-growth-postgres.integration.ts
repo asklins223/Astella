@@ -1056,9 +1056,14 @@ test("晚到整理不能覆盖用户已经掌控的方法", async () => {
     evidence: [{ memoryId: source.memoryId, memoryRevision: source.revision }],
     epistemicStatus: "supported", author: "maintenance",
   });
-  assert.equal(late, null, "后台整理覆盖了用户自己改写过的方法");
+  // 44 §6.4 改过的口径：撞上用户控制的方法**并存**一份候选，而不是静默丢弃。
+  // 真正的判据是下面那三条——用户写下的内容一个字都不能被改。
+  // （原断言是 `null`，那正是「候选悄无声息消失、与『没有依据』分不开」的旧行为。）
+  assert.equal(late?.outcome, "coexisting", "撞上用户控制的方法应并存一份候选，而不是什么都不写");
+  assert.notEqual(late?.playbookId, methodId, "并存的那一份必须是另一行，不能是用户掌控的那条");
 
   const afterLate = await methodStore.get(scope, methodId);
+  assert.equal(afterLate.version, revised.version, "用户掌控的那条不该被顶版本");
   assert.equal(afterLate.title, "读书先看目录和序言", "后台整理覆盖了用户写下的内容");
   assert.deepEqual(afterLate.steps, ["先看目录", "再看序言"], "后台整理覆盖了用户写下的步骤");
   assert.equal(afterLate.changeReason, "我习惯先看序言。", "后台整理覆盖了用户留下的理由");

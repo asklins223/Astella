@@ -295,6 +295,9 @@ export class MockProvider implements AIProvider {
       reservedOutputTokens,
       maxInputTokens: contextWindowTokens - reservedOutputTokens,
       maxOutputTokens: 4096,
+      // 方案 44 §4.1：mock 的 maxInputTokens 同样是「窗口 − 最大输出」的派生值，
+      // 不是供应商独立声明的输入硬限制。
+      outputLimitEnforced: true,
       // R3: fingerprint includes visionModelId to capture vision-only config drift.
 fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
     };

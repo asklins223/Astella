@@ -316,6 +316,27 @@ export const DESKTOP_API_SERVICE_ID = "ailearn-api" as const;
  */
 export const LEARNING_ROOM_ASSET_BASE_PATH = "/assets/learning-room/v1" as const;
 
+/**
+ * 本机识别的一次解码请求/回执（2026-10-06）。
+ *
+ * `pcmBase64` 是 **16 kHz 单声道 Int16 小端 PCM 的 base64**，不是 Float32Array：
+ * 这段字节要过 contextBridge 与 `ipcRenderer.invoke` 两道序列化，裸 TypedArray 在两边的
+ * 支持面不同（structured clone 认、contextBridge 的老行为不保证），而 base64 字符串
+ * 在这两处都是普通值——和笔记正文走 IPC 是同一个形状。渲染层已经在录制时降采样到
+ * 16 kHz（`voice-recorder.ts` 的 `TARGET_SAMPLE_RATE`），这里不再做重采样。
+ */
+export const companionVoiceTranscribeRequestV1Schema = z.strictObject({
+  sampleRate: z.number().int().min(8_000).max(48_000),
+  pcmBase64: z.string().min(2).max(16 * 1024 * 1024),
+});
+export type CompanionVoiceTranscribeRequestV1 = z.infer<typeof companionVoiceTranscribeRequestV1Schema>;
+
+export const companionVoiceTranscribeResultV1Schema = z.strictObject({
+  /** 本机引擎认出来的文字；确实听不清时是空串，不由这一层编内容。 */
+  text: z.string().max(20_000),
+});
+export type CompanionVoiceTranscribeResultV1 = z.infer<typeof companionVoiceTranscribeResultV1Schema>;
+
 export const DESKTOP_IPC_CHANNELS = {
   contractGetSnapshot: "ailearn.v1.contract.getSnapshot",
   runtimeGetSnapshot: "ailearn.v1.runtime.getSnapshot",
@@ -385,6 +406,17 @@ export const DESKTOP_IPC_CHANNELS = {
   companionVoiceAsrModelDownload: "ailearn.v1.companion.voice.asrModel.download",
   companionVoiceAsrModelCancel: "ailearn.v1.companion.voice.asrModel.cancel",
   companionVoiceAsrModelRemove: "ailearn.v1.companion.voice.asrModel.remove",
+  /**
+   * 本机识别（2026-10-06）：把渲染层录到的一段 16 kHz PCM 交给**主进程侧的本地引擎**，
+   * 换回文字。同样是设备级通道，不要求工作区纪元。
+   *
+   * 为什么解码不在渲染进程的 worker 里：随包的 sherpa-onnx 是 emscripten 的 Node 构建
+   * （工厂里无条件 `require("path")`，运行时还有 NODERAWFS「只认 Node」的硬拒绝），
+   * 而窗口是 `sandbox: true` + `nodeIntegration: false`——worker 里 `require` 不存在，
+   * 引擎一初始化就抛 `require is not defined`。引擎搬到 utilityProcess 后，录音仍然
+   * 只在渲染层采集，音频经这一条本机 IPC 进主进程，不出机器。
+   */
+  companionVoiceTranscribe: "ailearn.v1.companion.voice.transcribe",
   companionAccountGetState: "ailearn.v1.companion.account.getState",
   companionAccountPatchState: "ailearn.v1.companion.account.patchState",
   companionOnboardingTransition: "ailearn.v1.companion.onboarding.transition",
@@ -1041,6 +1073,14 @@ export const gatewayErrorCodeValues = [
    * （`apps/api/src/modules/identity/ai-consent-gate.ts`），网关按 token 翻成这个码。
    */
   "ai_consent_required",
+  /**
+   * 本机识别引擎起不来（子进程崩了 / 引擎文件读不到 / 模型没装好）。
+   *
+   * 不并进 `safe_internal_error`：那一句说的是"学习服务出了点问题"，而这件的真相
+   * 是**服务端根本没参与**——音频没离开这台电脑，出问题的是本机那份引擎。
+   * 用户能做的下一步也不同（去设置里重装模型 / 稍后再试），所以单独立一格。
+   */
+  "voice_engine_unavailable",
   "feature_disabled",
   "not_found",
   "validation",
@@ -2507,6 +2547,15 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
         cancel(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof voiceAsrModelSnapshotV1Schema>>>;
         remove(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof voiceAsrModelSnapshotV1Schema>>>;
       };
+      /**
+       * 本机识别（2026-10-06）：录音在渲染层采集，**解码在主进程的 Node 子进程**里做
+       * （随包的引擎是 Node 构建，沙箱渲染进程的 worker 起不来）。音频只走这一条
+       * 本机 IPC，不出设备；服务端不参与。
+       */
+      transcribe(input: {
+        meta: RequestMetaV1;
+        request: CompanionVoiceTranscribeRequestV1;
+      }): Promise<GatewayResultV1<CompanionVoiceTranscribeResultV1>>;
     };
     /**
      * 聊天发送链路（2026-09-18 接线）：建/复用 dialogue → 发 turn → 轮询

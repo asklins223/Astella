@@ -104,6 +104,19 @@ export default defineConfig({
       // from the workspace at runtime.
       externalizeDeps: false,
       rollupOptions: {
+        // 两个入口（2026-10-06）：`voice-asr-host` 是本机识别引擎的宿主脚本，由
+        // `utilityProcess.fork` **单独**拉起——随包的引擎是 emscripten 的 Node 构建
+        // （工厂里无条件 `require("path")`），而渲染窗口是 `sandbox: true`、worker 里
+        // 连 `require` 都没有，它只能在 Node 上下文里跑。`fork` 接的是**文件路径**、
+        // 不是函数，所以它必须是一个独立的可执行文件，这里给它第二个入口。
+        //
+        // `index` 那一行不要省：给了 `input` 就是**接管**默认入口，省掉默认项主进程
+        // 根本不会启动。
+        input: {
+          index: resolve(__dirname, 'src/main/index.ts'),
+          'voice-asr-host': resolve(__dirname, 'src/main/voice-asr-host.ts'),
+        },
+
         // `ws` 的两个可选原生加速依赖（笔记协同通道带进来的）。它们**故意不装**：
         // 没有它们 ws 会退到纯 JS 实现，行为一致。但 Vite 的依赖打包会给解析不到的
         // 可选 peer 生成一句**模块顶层**的 throw（out/main/index.js 里

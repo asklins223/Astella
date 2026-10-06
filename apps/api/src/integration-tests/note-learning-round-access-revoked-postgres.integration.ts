@@ -35,9 +35,13 @@ const rounds = await import("../modules/note-learning-rounds/round/round-service
 const { seedNotesOnlyWorkspace } = await import("./helpers/pure-v2-workspace-fixture.ts");
 
 const HASH = "a".repeat(64);
+// 正文形状照 `roundTeachingContentV1Schema`（`{explanation}`），块序号 1 起
+// （`sourceBlockOrdinals: z.number().int().min(1)`）。
+// 此前这里写的是 `{version, blocks}`——那是**快照块**的形状，不是教学产物正文的；
+// 读侧 `toTeachingContract` 用 strictObject 一解析就抛 ZodError，于是
+// `findReusableTeaching` 在正控制那一发当场炸掉（2026-10-06 实测）。
 const TEACHING_CONTENT = {
-  version: 1 as const,
-  blocks: [{ kind: "paragraph" as const, text: "索引不总是更快，因为回表也有代价。" }],
+  explanation: "索引不总是更快，因为回表也有代价。",
 };
 
 let seeded: NotesOnlyWorkspaceFixture | null = null;
@@ -47,7 +51,10 @@ let authorId = "";
 let memberId = "";
 let noteId = "";
 let noteVersionId = "";
-let roundId = "";
+/** 作者自己那一轮：撤回共享不影响它（证明闸只针对失权的那一方）。 */
+let authorRoundId = "";
+/** 失权的那一轮——轮次是**本人对自己那一篇**的学习记录，所以这一轮属于成员。 */
+let memberRoundId = "";
 let teachingId = "";
 let artifactId = "";
 
@@ -75,31 +82,54 @@ before(async () => {
 
   // 轮次、讲解、动态产物都走**生产写路径**建，不手插：手插会造出产品写不出来的形状，
   // 那样测出来的"读得到"并不能证明这条路真的通。
-  const created = await withWorkspaceTransaction(author(), (tx) => rounds.createRound(tx, author(), {
+  //
+  // **两轮分属两人**，这不是为了凑数：轮次表带 `user_id`，未完成名额按
+  // (workspace, user, note) 唯一——轮次是**本人对自己那一篇的学习记录**，
+  // 共享笔记上的成员开的是自己那一轮（路由侧 `getNoteWithVersion` 判得了可见性，
+  // `createRound` 用 `scope.userId` 落 `user_id`）。
+  //
+  // 此前这份夹具只建了作者那一轮、然后让成员去读它，于是正控制永远不成立
+  // （`readRound` 按 `user_id = scope.userId` 过滤），后面那条"撤回后六样全读不到"
+  // 就成了**空断言**：它为真的唯一原因是"本来就一样都读不到"。
+  // 2026-10-06 实测：正控制与"重新共享后恢复可读"两条红，正控制一红，
+  // 那条空断言就没人拦了——而这正是本文件自己开头警告的假绿。
+  const budget = { maxModelCalls: 6, maxWallClockSeconds: 600, maxTasks: 4 };
+  authorRoundId = (await withWorkspaceTransaction(author(), (tx) => rounds.createRound(tx, author(), {
     noteId,
     noteVersionId,
     sourceContentHash: HASH,
     evidenceSnapshotIds: [],
     drivingQuestion: "判断为什么有索引，查询仍然可能慢",
     drivingQuestionSource: "suggested",
-    budgets: { maxModelCalls: 6, maxWallClockSeconds: 600, maxTasks: 4 },
-  }));
-  roundId = created.roundId;
+    budgets: budget,
+  }))).roundId;
 
+  memberRoundId = (await withWorkspaceTransaction(member(), (tx) => rounds.createRound(tx, member(), {
+    noteId,
+    noteVersionId,
+    sourceContentHash: HASH,
+    evidenceSnapshotIds: [],
+    drivingQuestion: "我该按什么顺序把回表这件事弄明白",
+    drivingQuestionSource: "user_authored",
+    budgets: budget,
+  }))).roundId;
+
+  // 讲解与动态产物属于**成员那一轮**——冻结快照要挂在会失权的那个人名下，
+  // 才能量到"撤回之后旧快照不再是通道"。
   const artifact = randomUUID();
   const teaching = randomUUID();
   await fixtureSql.begin(async (tx) => {
     await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
-    await tx`SELECT set_config('app.user_id', ${authorId}, true)`;
+    await tx`SELECT set_config('app.user_id', ${memberId}, true)`;
     await tx`INSERT INTO note_learning_round_artifacts
         (id, workspace_id, user_id, round_id, kind, html, snapshot_hash)
-      VALUES (${artifact}, ${workspaceId}, ${authorId}, ${roundId}, 'dynamic_explanation',
+      VALUES (${artifact}, ${workspaceId}, ${memberId}, ${memberRoundId}, 'dynamic_explanation',
         ${'<html><body>索引不总是更快，因为回表也有代价。</body></html>'}, ${HASH})`;
     await tx`INSERT INTO note_learning_round_teachings
         (id, workspace_id, user_id, round_id, ordinal, kind, content, source_block_ordinals,
          personal_source_snapshots, snapshot_hash, driving_question_revision, artifact_id)
-      VALUES (${teaching}, ${workspaceId}, ${authorId}, ${roundId}, 1, 'explanation',
-        ${tx.json(TEACHING_CONTENT)}, ${`{0}`}::int[], ${tx.json([])}, ${HASH}, 1, ${artifact})`;
+      VALUES (${teaching}, ${workspaceId}, ${memberId}, ${memberRoundId}, 1, 'explanation',
+        ${tx.json(TEACHING_CONTENT)}, ${`{1}`}::int[], ${tx.json([])}, ${HASH}, 1, ${artifact})`;
   });
   teachingId = teaching;
   artifactId = artifact;
@@ -107,10 +137,23 @@ before(async () => {
 
 after(async () => {
   // 顺序要紧：先子表（产物/讲解）后轮次，否则 FK 自己撞。
-  if (roundId) {
-    await fixtureSql`DELETE FROM note_learning_round_teachings WHERE round_id = ${roundId}`;
-    await fixtureSql`DELETE FROM note_learning_round_artifacts WHERE round_id = ${roundId}`;
-    await fixtureSql`DELETE FROM note_learning_rounds WHERE id = ${roundId}`;
+  //
+  // 讲解表是只追加的（0284 的 BEFORE UPDATE OR DELETE 触发器，**超级用户也拦**），
+  // 所以删除必须走它自己留的绕行口子 `app.allow_history_mutation`——和
+  // note-learning-round-teaching-postgres 的 `wipeRounds` 同一形状。此前这里用
+  // 裸 `fixtureSql` 直接删，于是 `after` 抛
+  // `note_learning_round_teachings is append-only: DELETE is not allowed`，
+  // 整个文件红在夹具清理上，测试用例一条都没跑到（2026-10-05 CI 实测）。
+  const roundIds = [memberRoundId, authorRoundId].filter(Boolean);
+  if (roundIds.length > 0) {
+    await fixtureSql.begin(async (tx) => {
+      await tx`SELECT set_config('app.allow_history_mutation', 'on', true)`;
+      for (const id of roundIds) {
+        await tx`DELETE FROM note_learning_round_teachings WHERE round_id = ${id}`;
+        await tx`DELETE FROM note_learning_round_artifacts WHERE round_id = ${id}`;
+        await tx`DELETE FROM note_learning_rounds WHERE id = ${id}`;
+      }
+    });
   }
   if (memberId) {
     await fixtureSql`DELETE FROM workspace_members WHERE user_id = ${memberId}`;
@@ -121,18 +164,18 @@ after(async () => {
   await closeDatabase();
 });
 
-/** 共享期间，那位成员读得到的四样东西。 */
+/** 共享期间，那位成员读得到的六样东西（都是**他自己那一轮**）。 */
 async function readAllAsMember() {
   return withWorkspaceTransaction(member(), async (tx) => ({
-    round: await rounds.readRound(tx, member(), roundId),
+    round: await rounds.readRound(tx, member(), memberRoundId),
     openRound: await rounds.readOpenRound(tx, member(), noteId),
     reusable: await rounds.findReusableTeaching(tx, member(), {
-      roundId,
+      roundId: memberRoundId,
       kind: "explanation",
       drivingQuestionRevision: 1,
       snapshotHash: HASH,
     }),
-    list: await rounds.listTeachings(tx, member(), roundId),
+    list: await rounds.listTeachings(tx, member(), memberRoundId),
     artifactRef: await rounds.readTeachingArtifactRef(tx, member(), teachingId),
     html: await rounds.readRoundArtifactHtml(tx, member(), artifactId),
   }));
@@ -161,11 +204,11 @@ test("作者撤回共享之后，六样全部读不到（§16.13 失权后不能
 
 test("作者自己始终读得到：撤回的是共享，不是那篇笔记", async () => {
   const asAuthor = await withWorkspaceTransaction(author(), async (tx) => ({
-    round: await rounds.readRound(tx, author(), roundId),
-    html: await rounds.readRoundArtifactHtml(tx, author(), artifactId),
+    round: await rounds.readRound(tx, author(), authorRoundId),
+    openRound: await rounds.readOpenRound(tx, author(), noteId),
   }));
   assert.ok(asAuthor.round, "作者是 created_by，可见性判据的第二支应当放行");
-  assert.ok(asAuthor.html?.includes("回表"));
+  assert.ok(asAuthor.openRound, "作者自己那一轮不该被共享状态影响");
 });
 
 test("重新共享之后恢复可读（判据是逐次判的，不是写死的拒绝）", async () => {

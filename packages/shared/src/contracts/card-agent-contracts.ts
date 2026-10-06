@@ -82,6 +82,24 @@ export const providerCapabilitySchema = z.object({
   reservedOutputTokens: z.number().int().positive(),
   maxInputTokens: z.number().int().positive(),
   maxOutputTokens: z.number().int().positive(),
+  /**
+   * 方案 44 §4.1：供应商**独立**声明的输入硬上限。
+   *
+   * 现役 provider 的 `maxInputTokens` 大多由「窗口 − 最大输出」派生，它与
+   * `contextWindowTokens - outputReservation` 描述的是同一个约束——当成两个互不相关
+   * 的数字重复扣减会把可用输入压到远低于实际。派生值**不要**填这里；只有上游文档
+   * 单独给出「输入不得超过 N」时才填，预算解析据此把 I 当作独立约束。
+   */
+  inputHardLimitTokens: z.number().int().positive().optional(),
+  /**
+   * 方案 44 §4.1：本次路由是否真的把输出上限下发给上游。
+   *
+   * 平台的 `disableMaxTokens` 就是 false 的那种情况。此时请求里的 `maxTokens`
+   * **不代表**实际会执行的上限，预算解析必须改用已知默认或保守预留——否则一次
+   * 「请求 2000 输出」的调用会被误算成只有 2000 输出预留，于是把可用输入估得
+   * 过大，最后把一个必然被上游拒的请求发出去。缺省视为 true（历史 provider 行为）。
+   */
+  outputLimitEnforced: z.boolean().optional(),
   /** 能力指纹（provider + model + tool mode + 版本的 hash） */
   fingerprint: z.string().min(1),
 }).strict();

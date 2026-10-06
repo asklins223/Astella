@@ -5,7 +5,7 @@ import type { AgentMethodV1 } from "@ailearn/shared/agent-growth-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import { CompanionMethodsPage } from "../companion/companion-methods-page";
 
-const method:AgentMethodV1={version:1,methodId:"11111111-1111-4111-8111-111111111111",revision:2,title:"先解释再练习",appliesWhen:"学习新材料时",steps:["**先看新材料**，不要复用旧答案。"],exceptions:["当下的要求优先"],evidence:[],capabilities:[],state:"candidate",epistemicStatus:"tentative",userControlled:false,availability:"pending",author:"user",changeReason:null,sourceRunId:null,sourceRunRevision:null,consultedCount:0,helpfulCount:0,unhelpfulCount:0,lastConsultedAt:null,createdAt:"2026-10-04T10:00:00.000Z",updatedAt:"2026-10-04T10:00:00.000Z"};
+const method:AgentMethodV1={version:1,methodId:"11111111-1111-4111-8111-111111111111",revision:2,title:"先解释再练习",appliesWhen:"学习新材料时",steps:["**先看新材料**，不要复用旧答案。"],exceptions:["当下的要求优先"],evidence:[],evidenceIndependentCount:0,capabilities:[],state:"candidate",epistemicStatus:"tentative",userControlled:false,availability:"pending",author:"user",changeReason:null,sourceRunId:null,sourceRunRevision:null,offeredCount:0,adoptedCount:0,consultedCount:0,helpfulCount:0,unhelpfulCount:0,lastConsultedAt:null,createdAt:"2026-10-04T10:00:00.000Z",updatedAt:"2026-10-04T10:00:00.000Z"};
 const ok=<T,>(data:T)=>({version:1,ok:true,data,requestId:"methods",correlationId:"methods",schemaRevision:"desktop-ipc-v1"});
 let items:AgentMethodV1[],agent:{listMethods:ReturnType<typeof vi.fn>;controlMethod:ReturnType<typeof vi.fn>;getMethodHistory:ReturnType<typeof vi.fn>;getMethodUses:ReturnType<typeof vi.fn>;reviseMethod:ReturnType<typeof vi.fn>};
 beforeEach(()=>{

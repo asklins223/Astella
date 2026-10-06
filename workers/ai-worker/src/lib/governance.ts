@@ -20,6 +20,9 @@ import { db, withWorkerWorkspaceTransaction } from "../db.ts";
 import * as schema from "@ailearn/shared/db-schema";
 import { logger } from "./logger.ts";
 import { recordProviderCall, type ProviderCallKind, type ProviderCallOutcome } from "./metrics.ts";
+import { measureAgentTurnRequest, measureChatRequest, type ContextTokenCountingPorts } from "@ailearn/agent-core";
+import type { ContextRequestMeasurementV1 } from "@ailearn/shared/context-budget-contracts";
+import { governContextPressure, type ContextBudgetGateOptions } from "./context-governor.ts";
 
 /**
  * Stable, privacy-safe governance error used by the job projection layer.
@@ -517,9 +520,10 @@ export function createGovernedProvider(
   context: Pick<AIGovernanceContext, "consentOk" | "policy">,
   workspaceId: string,
   audit?: GovernedProviderAuditContext,
+  contextGate?: ContextBudgetGateOptions,
 ): import("./ai-provider.ts").AIProvider {
   const known = governedWrappers.get(provider);
-  if (known && equivalentGovernance(known, context, workspaceId, audit)) return provider;
+  if (known && equivalentGovernance(known, context, workspaceId, audit) && !contextGate) return provider;
   if (known) provider = known.raw as typeof provider;
   const recordCall = createCallRecorder({
     providerId: provider.id,
@@ -528,6 +532,25 @@ export function createGovernedProvider(
     workspaceId,
     audit,
   });
+  /**
+   * 方案 44 §4.3：治理包装器是**所有**外发模型的唯一边界，因此完整请求预算检查
+   * 就接在这里，而不是散落在各 handler 的入口。
+   *
+   * 覆盖首步、每个工具回合、补取材料、后台继续、重试与备用模型切换——这些路径
+   * 全部经过这三个方法。检查在真实发送之前进行，必要时拒绝（44 §5.4）。
+   */
+  const checkContextPressure = (method: string, input: {
+    requestedOutputTokens: number | null;
+    measure: (ports: ContextTokenCountingPorts) => Promise<ContextRequestMeasurementV1>;
+  }): Promise<void> => {
+    void method;
+    return governContextPressure({
+      provider,
+      operation: audit?.operation ?? method,
+      requestedOutputTokens: input.requestedOutputTokens,
+      measure: input.measure,
+    }, contextGate).then(() => undefined);
+  };
   const governed: import("./ai-provider.ts").AIProvider = {
     ...provider,
     chatCompletion: async (messages, options, signal) => {
@@ -537,6 +560,10 @@ export function createGovernedProvider(
         data = governedPayload(context, workspaceId, provider.id, { messages });
         signal?.throwIfAborted();
         await audit?.reserveCall?.();
+        await checkContextPressure("chat_completion", {
+          requestedOutputTokens: options.maxTokens ?? null,
+          measure: (ports) => measureChatRequest(data.messages as typeof messages, options, ports),
+        });
       } catch (err) {
         recordCall("chat_completion", "chat", startedAt, {
           status: "blocked",
@@ -571,6 +598,10 @@ export function createGovernedProvider(
         data = governedPayload(context, workspaceId, provider.id, { messages });
         signal?.throwIfAborted();
         await audit?.reserveCall?.();
+        await checkContextPressure("chat_completion_stream", {
+          requestedOutputTokens: options.maxTokens ?? null,
+          measure: (ports) => measureChatRequest(data.messages as typeof messages, options, ports),
+        });
       } catch (err) {
         recordCall("chat_completion_stream", "stream", startedAt, {
           status: "blocked",
@@ -608,6 +639,12 @@ export function createGovernedProvider(
         data = governedPayload(context, workspaceId, provider.id, { request });
         signal?.throwIfAborted();
         await audit?.reserveCall?.();
+        // 工具循环的**每一个回合**都从这里出去：工具结果回来后请求被重新计量，
+        // 而不是只在对话入口查一次（44 §4.3）。
+        await checkContextPressure("execute_agent_turn", {
+          requestedOutputTokens: (data.request as typeof request).maxTokens ?? null,
+          measure: (ports) => measureAgentTurnRequest(data.request as typeof request, ports),
+        });
       } catch (err) {
         recordCall("execute_agent_turn", "agent_turn", startedAt, {
           status: "blocked",

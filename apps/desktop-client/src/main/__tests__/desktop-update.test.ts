@@ -50,9 +50,15 @@ vi.mock("node:fs", () => ({
   writeFileSync: vi.fn(),
 }));
 
+const codesign = vi.hoisted(() => ({
+  status: 1,
+  stdout: "",
+  stderr: "code object is not signed at all",
+}));
 vi.mock("node:child_process", () => ({
   // codesign 问不出来 = 当作未签名，正好把 macOS 那条分支走通。
-  spawnSync: () => ({ status: 1, stdout: "", stderr: "code object is not signed at all" }),
+  // 每条用例可以把它改成 ad-hoc 签名 / Developer ID 签名，验那条判据本身。
+  spawnSync: () => ({ status: codesign.status, stdout: codesign.stdout, stderr: codesign.stderr }),
 }));
 
 vi.mock("electron-updater", () => ({ autoUpdater: updater }));
@@ -60,6 +66,11 @@ vi.mock("electron-updater", () => ({ autoUpdater: updater }));
 const send = vi.fn();
 beforeEach(async () => {
   vi.resetModules();
+  // codesign 探针是共享替身：复位成"没签"，否则上一条用例把它改成
+  // Developer ID，会顺着模块单例漏进这一条。
+  codesign.status = 1;
+  codesign.stdout = "";
+  codesign.stderr = "code object is not signed at all";
   updater.handlers.clear();
   updater.checkForUpdates.mockReset().mockResolvedValue(null);
   updater.downloadUpdate.mockReset().mockResolvedValue(undefined);
@@ -158,6 +169,38 @@ describe("更新状态机", () => {
     expect(state.installBlockedReason).toBe("macosUnsigned");
   });
 
+  /**
+   * 2026-10-06 真窗口实测：本地 ad-hoc 签名的包被判成"可以装"，用户点完「重启并安装」
+   * 书房重启了、版本纹丝不动，最后只留一句"安装包校验未通过"。Squirrel.Mac 替换安装
+   * 比对的是新旧两个 .app 的签名身份，ad-hoc 没有 Developer ID，根本装不上——
+   * 所以它要和「完全没签」一起进这道闸，而不是等它在最后一步失败。
+   */
+  it("ad-hoc 签名也算装不上：不能把用户放到注定失败的安装那一步", async () => {
+    codesign.status = 0;
+    codesign.stdout = "Executable=/tmp/书房.app/Contents/MacOS/书房\nCodeDirectory v=20400 flags=0x2(adhoc)\nSignature=adhoc\n";
+    codesign.stderr = "";
+    const { checkForUpdates } = await import("../desktop-update");
+    updater.checkForUpdates.mockImplementation(async () => {
+      updater.emit("update-available", { version: "0.2.0" });
+      return { updateInfo: { version: "0.2.0" } };
+    });
+    const state = await checkForUpdates({ userInitiated: true });
+    expect(state.installBlockedReason).toBe("macosUnsigned");
+  });
+
+  it("正式签名的包不挡路：没有这条闸", async () => {
+    codesign.status = 0;
+    codesign.stdout = "Authority=Developer ID Application: Someone (TEAMID)\nSignature=Developer ID Application: Someone (TEAMID)\n";
+    codesign.stderr = "";
+    const { checkForUpdates } = await import("../desktop-update");
+    updater.checkForUpdates.mockImplementation(async () => {
+      updater.emit("update-available", { version: "0.2.0" });
+      return { updateInfo: { version: "0.2.0" } };
+    });
+    const state = await checkForUpdates({ userInitiated: true });
+    expect(state.installBlockedReason).toBeNull();
+  });
+
   it("同一个 phase 不重复推——通知是按 phase 变化触发的", async () => {
     const { checkForUpdates } = await import("../desktop-update");
     send.mockClear();
@@ -191,3 +234,23 @@ describe("更新状态机", () => {
     expect(state.total).toBe(209_715_200);
   });
 });
+
+
+  /**
+   * 签名失败说的是**这台电脑上的书房**，不是刚下下来的那份包。说成"重新下载"，
+   * 用户只会把同一件事再失败一遍（2026-10-06 真窗口实测：ad-hoc 包点完安装，
+   * 书房重启、版本没变，只留下一句"安装包校验未通过"）。
+   */
+  it("签名类安装失败指向下载页，而不是让用户重新下载", async () => {
+    codesign.status = 0;
+    codesign.stdout = "Authority=Developer ID Application: Someone (TEAMID)\n";
+    codesign.stderr = "";
+    const { installUpdate } = await import("../desktop-update");
+    updater.quitAndInstall.mockImplementation(() => {
+      throw new Error("Code signature validation failed for the new version");
+    });
+    const state = await installUpdate();
+    expect(state.phase).toBe("failed");
+    expect(state.message).toContain("下载页");
+    expect(state.message).not.toContain("重新下载");
+  });

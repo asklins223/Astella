@@ -205,6 +205,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
    * （渲染期赋值，定时器真正触发时必然已就绪）。
    */
   const autoEndedRef = useRef(false);
+  const activityLeaseFlushRef = useRef<(() => Promise<void>) | null>(null);
   const dispatchActionRef = useRef<((action: LearningRunAllowedActionV2, bypassConfirmation?: boolean) => Promise<void>) | null>(null);
   const autoEndRun = useCallback(() => {
     if (autoEndedRef.current) return;
@@ -665,43 +666,40 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
 
     let active = true;
     let activeWindowStartedAtMs: number | null = null;
-    let sending = false;
+    let sending: Promise<void> | null = null;
     const pendingWindows: ActivityLeaseWindow[] = [];
 
-    const drain = async () => {
-      if (sending || pendingWindows.length === 0 || !window.ailearn) return;
-      const next = pendingWindows[0];
-      sending = true;
-      let sent = false;
-      try {
-        const response = await window.ailearn.learningRun.recordActivityLease({
-          meta: createRequestMeta(epochRef.current),
-          runId,
-          request: {
-            version: 2,
-            snapshotId: activeSnapshot.snapshotId,
-            runRevision: activeSnapshot.runRevision,
-            runtimeEpoch: activeSnapshot.runtimeEpoch,
-            startedAt: next.startedAt,
-            endedAt: next.endedAt,
-          },
-        });
-        if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
-        unwrapGatewayResult(response);
-        sent = true;
-      } catch {
-        // Activity accounting is best-effort. Keep the exact segment so the
-        // next eligible tick can retry it without inventing elapsed time.
-      } finally {
-        sending = false;
-      }
-      if (sent && pendingWindows[0] === next) {
-        pendingWindows.shift();
-        // Re-read the server snapshot so the sheet shows the authoritative
-        // activeSecondsUsed value rather than deriving elapsed time locally.
-        if (active) requestSnapshotRefresh();
-        void drain();
-      }
+    const drain = (): Promise<void> => {
+      if (sending) return sending;
+      if (pendingWindows.length === 0 || !window.ailearn) return Promise.resolve();
+      sending = (async () => {
+        while (pendingWindows.length && window.ailearn) {
+          const next = pendingWindows[0];
+          try {
+            const response = await window.ailearn.learningRun.recordActivityLease({
+              meta: createRequestMeta(epochRef.current),
+              runId,
+              request: {
+                version: 2,
+                snapshotId: activeSnapshot.snapshotId,
+                runRevision: activeSnapshot.runRevision,
+                runtimeEpoch: activeSnapshot.runtimeEpoch,
+                startedAt: next.startedAt,
+                endedAt: next.endedAt,
+              },
+            });
+            if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+            unwrapGatewayResult(response);
+          } catch {
+            // Keep the exact segment for the next eligible tick. An accounting
+            // failure must not prevent the user from submitting their answer.
+            break;
+          }
+          if (pendingWindows[0] === next) pendingWindows.shift();
+          if (active) requestSnapshotRefresh();
+        }
+      })().finally(() => { sending = null; });
+      return sending;
     };
 
     const enqueueWindow = (startedAtMs: number, endedAtMs: number) => {
@@ -717,6 +715,14 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
       activeWindowStartedAtMs = null;
       enqueueWindow(startedAtMs, Date.now());
     };
+    const flushBeforeCommand = async () => {
+      flushActiveWindow();
+      await drain();
+      if (active && document.visibilityState === "visible" && document.hasFocus()) {
+        activeWindowStartedAtMs ??= Date.now();
+      }
+    };
+    activityLeaseFlushRef.current = flushBeforeCommand;
 
     const syncEligibility = () => {
       const eligible = isActivityLeaseEligible({
@@ -749,6 +755,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
 
     return () => {
       active = false;
+      if (activityLeaseFlushRef.current === flushBeforeCommand) activityLeaseFlushRef.current = null;
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("focus", syncEligibility);
@@ -978,6 +985,8 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
     setSubmitting(true);
     setFailure(null);
     try {
+      await activityLeaseFlushRef.current?.();
+      if (!isLearningRunRequestCurrent(requestToken, runRequestFenceRef.current)) return;
       const response = await window.ailearn.learningRun.submit({
         meta: createRequestMeta(epochRef.current),
         commandId: createCommandId("submit"),
@@ -1043,6 +1052,8 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
     const requestToken = captureLearningRunRequest(runRequestFenceRef.current);
     setActionBusy(true);
     try {
+      await activityLeaseFlushRef.current?.();
+      if (!isLearningRunRequestCurrent(requestToken, runRequestFenceRef.current)) return;
       const response = await window.ailearn.learningRun.action({
         meta: createRequestMeta(epochRef.current),
         commandId: createCommandId("action"),

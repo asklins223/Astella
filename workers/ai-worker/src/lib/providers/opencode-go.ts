@@ -778,6 +778,9 @@ export class OpenCodeGoProvider implements AIProvider {
       reservedOutputTokens,
       maxInputTokens: contextWindowTokens - reservedOutputTokens,
       maxOutputTokens: this.maxOutputTokens,
+      // maxInputTokens 是「窗口 − 最大输出」的派生值，不是供应商独立声明的输入
+      // 硬限制——不填 inputHardLimitTokens，预算解析只按 C − O 表达它。
+      outputLimitEnforced: !(this.platformOptions?.disableMaxTokens ?? false),
       fingerprint: `${this.id}:${this.modelId}:${this.visionModelId}:native_tools`,
     };
   }

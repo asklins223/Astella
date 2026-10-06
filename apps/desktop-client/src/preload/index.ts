@@ -226,15 +226,21 @@ const desktopApi: AILearnDesktopApiM2 = {
       /**
        * 本地识别模型（2026-10）：模型不进安装包，用户自己在设置里下。
        *
-       * 这一族**只管模型在不在本机**，不碰音频——识别在渲染进程的 worker 里就地
-       * 发生。主进程手里只有一份磁盘上的字节，没有别的。
+       * 这一族**只管模型在不在本机**，不碰音频。识别本身走下面的 `transcribe`：
+       * 录音在渲染层采集，解码在主进程的 Node 子进程里做（随包的引擎是 Node 构建，
+       * 沙箱渲染进程的 worker 里连 `require` 都没有）。两种说法在 2026-10-06 统一成这一段。
        */
       asrModel: {
         getState: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceAsrModelState, input),
         download: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceAsrModelDownload, input),
         cancel: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceAsrModelCancel, input),
         remove: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceAsrModelRemove, input)
-      }
+      },
+      /**
+       * 本机识别（2026-10-06）：把 16 kHz 单声道 PCM（base64 的 Int16 小端）交给本机
+       * 引擎换回文字。音频只走这一条本机 IPC，**不出这台设备**。
+       */
+      transcribe: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceTranscribe, input)
     },
     // 聊天发送链路（2026-09-18）：建/复用 dialogue → 发 turn → 轮询消息。
     chat: {

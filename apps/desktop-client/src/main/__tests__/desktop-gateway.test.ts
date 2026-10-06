@@ -2098,6 +2098,38 @@ describe("DesktopGateway", () => {
       await expect(ns_companion.speakCompanionVoice(gateway.gatewayTransport, request, "request-empty-body"))
         .rejects.toMatchObject({ code: "forbidden" });
     });
+
+    /**
+     * 2026-10-06（全流程走查）：改密失败原来被并进 `forbidden`，界面说的是"当前工作区
+     * 或账号没有执行这个动作的权限"——把人送去查权限，而他要做的只是重输当前密码。
+     * `/auth/change-password` 的 403 带 `error: "invalid_password"`，网关按 token 翻成
+     * `invalid_credentials`；界面那句"当前密码不正确"才有机会出现。
+     */
+    it("改密的 403 invalid_password 说成凭据问题，不是没权限", async () => {
+      const changeBody = { value: JSON.stringify({ error: "invalid_password", message: "当前密码不正确" }) };
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        if (url.endsWith("/health")) return healthResponse();
+        return new Response(changeBody.value, {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      });
+
+      const gateway = new DesktopGateway(environment());
+      await gateway.connect();
+      const failure = await ns_auth
+        .changePassword(gateway.gatewayTransport, gateway.companionBridge, "wrong-current", "New-Password-20261006!", "request-change-password-403")
+        .catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(DesktopGatewayFailure);
+      expect(failure).toMatchObject({ code: "invalid_credentials", retry: "never", httpStatus: 403 } satisfies Partial<DesktopGatewayFailure>);
+
+      // 对照：同一个 403 上别的 token 仍只是 `forbidden`（白名单不是"读到了就信"）。
+      changeBody.value = JSON.stringify({ error: "forbidden" });
+      await expect(ns_auth.changePassword(gateway.gatewayTransport, gateway.companionBridge, "wrong-current", "New-Password-20261006!", "request-change-password-forbidden"))
+        .rejects.toMatchObject({ code: "forbidden" });
+    });
   });
 
   describe("companion learning-run context bridge", () => {

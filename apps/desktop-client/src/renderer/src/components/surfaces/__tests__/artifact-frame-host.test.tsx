@@ -68,6 +68,50 @@ describe("ArtifactFrameHost", () => {
     expect(screen.queryByText(/没能跑起来/)).toBeNull();
   });
 
+  /**
+   * 2026-10-06（全流程走查）：动效档位是随时可切的，而 frame 原先只在 ready 那一次
+   * 收到指令——已经开着的演示停在旧档上：切到"关闭动效"后 frame 的
+   * `data-artifact-motion` 仍是 `full`，自动播放照跑。这条钉住"切档要再发一次"。
+   */
+  it("动效档位在运行中改变要再发一次指令，frame 才会跟着停", () => {
+    const frameWindow = { postMessage: vi.fn() };
+    const { container, rerender } = render(
+      <ArtifactFrameHost artifactId={ARTIFACT_ID} motion="full" isTrustedFrameSource={trusted} />,
+    );
+    const iframe = container.querySelector("iframe");
+    expect(iframe).toBeTruthy();
+    // jsdom 的 iframe 没有 contentWindow：这里给一个可观察的站位（生产打的是真窗口）。
+    Object.defineProperty(iframe!, "contentWindow", { value: frameWindow, configurable: true });
+
+    act(() => {
+      window.dispatchEvent(frameMessage("ready", { stepCount: 3 }));
+    });
+    expect(frameWindow.postMessage).toHaveBeenCalledTimes(1);
+    expect(frameWindow.postMessage.mock.calls[0][0]).toMatchObject({
+      channel: "ailearn:artifact-frame",
+      direction: "host->frame",
+      command: "motion",
+      motion: "full",
+    });
+    // targetOrigin 只能是 '*'：frame 是不透明 origin，具名 origin 会被静默丢掉
+    // （2026-10-06 真窗口实测：换成产物 origin 后 frame 一发没收到）。
+    expect(frameWindow.postMessage.mock.calls[0][1]).toBe("*");
+
+    rerender(<ArtifactFrameHost artifactId={ARTIFACT_ID} motion="reduced" isTrustedFrameSource={trusted} />);
+    expect(frameWindow.postMessage).toHaveBeenCalledTimes(2);
+    expect(frameWindow.postMessage.mock.calls[1][0]).toMatchObject({
+      channel: "ailearn:artifact-frame",
+      direction: "host->frame",
+      command: "motion",
+      motion: "reduced",
+    });
+    expect(frameWindow.postMessage.mock.calls[1][1]).toBe("*");
+
+    // 同一档位重复渲染不再打扰 frame（指令是状态，不是每次渲染的副作用）。
+    rerender(<ArtifactFrameHost artifactId={ARTIFACT_ID} motion="reduced" isTrustedFrameSource={trusted} />);
+    expect(frameWindow.postMessage).toHaveBeenCalledTimes(2);
+  });
+
   it("来源不可信的消息（数据再合法）不收；来源可信但数据不合法也不收", () => {
     render(<ArtifactFrameHost artifactId={ARTIFACT_ID} isTrustedFrameSource={trusted} />);
     act(() => {

@@ -1321,10 +1321,12 @@ export function CompanionHud({
             ) : null}
             {interaction.voiceOpen ? (
               <section className="companion-hud__panel companion-hud__voice" aria-label="语音气泡" onPointerMove={interaction.voiceActivity} onKeyDown={interaction.voiceActivity} onWheel={interaction.voiceActivity} onFocus={interaction.voiceActivity}>
-                <header><strong><Mic size={17} />{voice.phase === "listening" ? "我在听，说完停一下" : voice.phase === "transcribing" ? "正在辨认你说的话…" : "听听你想说的"}</strong><button type="button" onClick={interaction.closeVoice} aria-label="关闭语音气泡"><X size={16} /></button></header>
+                <header><strong><Mic size={17} />{voice.phase === "starting" ? "正在准备麦克风…" : voice.phase === "listening" ? "我在听，说完停一下" : voice.phase === "transcribing" ? "正在辨认你说的话…" : "听听你想说的"}</strong><button type="button" onClick={interaction.closeVoice} aria-label="关闭语音气泡"><X size={16} /></button></header>
+                {voice.phase === "starting" ? <p role="status"><Loader2 className="companion-hud__spin" size={18} />如果系统询问麦克风权限，请先允许；也可以取消这次录音。</p> : null}
                 {voice.phase === "listening" ? <div className="companion-hud__voice-wave" aria-label="正在录音"><i /><i /><i /><i /><i /><i /><i /></div> : null}
                 {voice.phase === "transcribing" ? <p role="status"><Loader2 className="companion-hud__spin" size={18} />识别完成后，你可以修改再发送。</p> : null}
-                {interaction.voiceDraft ? <textarea aria-label="识别后的语音文字" value={interaction.voiceDraft.text} onChange={event => interaction.setVoiceDraftText(event.target.value)} placeholder="识别后的文字…" /> : null}
+                {/* 录音期间不摆上一句：旧字与新录音并排会让人以为"识别结果没换"。 */}
+                {interaction.voiceDraft && voice.phase === "idle" ? <textarea aria-label="识别后的语音文字" value={interaction.voiceDraft.text} onChange={event => interaction.setVoiceDraftText(event.target.value)} placeholder="识别后的文字…" /> : null}
                 {voice.note && !voice.modelMissing ? <p className="companion-hud__output-note" role="status">{voice.note}</p> : null}
                 {/**
                  * 没装模型时，「开始录音」按钮是不该有的：它按下去只会被挡住。
@@ -1335,7 +1337,7 @@ export function CompanionHud({
                   <button type="button" className="button" onClick={openVoiceModelSettings}>去设置里下载</button>
                 </p> : null}
                 <footer>
-                  <button type="button" className="text-action" onClick={interaction.closeVoice}>这次不发</button>
+                  <button type="button" className="text-action" onClick={interaction.discardVoice}>这次不发</button>
                   {voice.phase === "listening" ? <button type="button" className="button primary" onClick={voice.toggle}><Square size={13} />结束录音</button> : voice.phase === "idle" && interaction.voiceDraft ? <button type="button" className="button primary" disabled={!interaction.voiceDraft.text.trim() || chat.phase === "sending"} onClick={() => {
                     const draft = interaction.voiceDraft; if (!draft) return;
                     interaction.closeVoice();
@@ -1420,7 +1422,7 @@ export function CompanionHud({
         </div>, document.body)}
       {chat.mode !== "history" ? <nav className="companion-hud__controls" aria-label={`${chat.companionName} 身边的交互`}>
         <button type="button" data-active={chat.mode === "conversation" || undefined} onPointerDown={playButtonBounce} onClick={() => { interaction.closeVoice(); setSettingsOpen(false); chat.setMode(chat.mode === "conversation" ? "closed" : "conversation"); }} title="气泡轻聊" aria-label="气泡轻聊"><MessageCircle size={18} aria-hidden="true" /></button>
-        {voiceEnabled ? <button ref={micRef} type="button" data-active={interaction.voiceOpen || undefined} data-voice-phase={voice.phase} data-unsupported={!voice.supported || undefined} onPointerDown={playButtonBounce} onClick={() => { setSettingsOpen(false); toggleVoice(); }} disabled={chat.phase === "sending"} title="语音输入" aria-label="语音输入">{voice.phase === "transcribing" ? <Loader2 className="companion-hud__spin" size={18} aria-hidden="true" /> : <Mic size={18} aria-hidden="true" />}</button> : null}
+        {voiceEnabled ? <button ref={micRef} type="button" data-active={interaction.voiceOpen || undefined} data-voice-phase={voice.phase} data-unsupported={!voice.supported || undefined} onPointerDown={playButtonBounce} onClick={() => { setSettingsOpen(false); toggleVoice(); }} disabled={chat.phase === "sending" || voice.phase === "transcribing"} title={voice.phase === "transcribing" ? "正在辨认…" : "语音输入"} aria-label="语音输入">{voice.phase === "transcribing" ? <Loader2 className="companion-hud__spin" size={18} aria-hidden="true" /> : <Mic size={18} aria-hidden="true" />}</button> : null}
         <button type="button" onPointerDown={playButtonBounce} onClick={() => { interaction.closeVoice(); setSettingsOpen(false); chat.setMode("history"); }} title="对话手记" aria-label="对话手记"><History size={18} aria-hidden="true" /></button>
         <button ref={moreControlRef} type="button" data-active={chat.mode === "actions" || settingsOpen || undefined} onPointerDown={playButtonBounce} onClick={() => { interaction.closeVoice(); chat.setMode(chat.mode === "actions" ? "closed" : "actions"); }} title="设置与快捷操作" aria-label="设置与快捷操作"><Settings2 size={18} aria-hidden="true" /></button>
       </nav> : null}

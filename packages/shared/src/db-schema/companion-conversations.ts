@@ -44,6 +44,13 @@ export const companionConversations = pgTable(
     status: text("status").$type<"active" | "archived">().notNull().default("active"),
     nextMessageSeq: bigint("next_message_seq", { mode: "number" }).notNull().default(1),
     nextEventSeq: bigint("next_event_seq", { mode: "number" }).notNull().default(1),
+    /**
+     * 会话消息内容修订号（方案 44 §3.3）。
+     *
+     * companion_messages 上的 UPDATE/DELETE 会把它 +1；追加不动。一份摘要记下它被验证
+     * 时的取值，读取时对不上就作废——这样「读侧也检查当前有效性」不需要每轮重算整段哈希。
+     */
+    contextRevision: bigint("context_revision", { mode: "number" }).notNull().default(1),
     nextGeneration: integer("next_generation").notNull().default(1),
     summaryText: text("summary_text"),
     summaryVersion: integer("summary_version").notNull().default(0),
@@ -163,6 +170,19 @@ export const companionTurnRuns = pgTable(
     agentElapsedMs: integer("agent_elapsed_ms").notNull().default(0),
     waitingProposalId: uuid("waiting_proposal_id"),
     providerCapabilityFingerprint: text("provider_capability_fingerprint"),
+    /**
+     * 这次装配**实际**纳入/排除了哪些条目（44 §3.3）。
+     *
+     * `composeAgentContext` 早已产出逐条回执，但此前只进日志——于是 `budget_omitted`
+     * 无处可查，「她这轮没看到什么」只能翻日志。只记条目 id、状态与字符数，不记内容。
+     */
+    contextAssemblyReceipt: jsonb("context_assembly_receipt"),
+    /**
+     * 完整请求的预算读数与判定（44 §4）。
+     *
+     * 「窗口放大后触发变少」与「预算从来没接上」在日志里长得一样；落库之后才分得开。
+     */
+    contextPressure: jsonb("context_pressure"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

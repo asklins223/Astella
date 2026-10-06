@@ -51,7 +51,7 @@ export function SettingsCompanionVoice(props: { onReadable: (value: SettingsRead
       { label: "伴星大小", value: percentLine(scale) },
       { label: "识别模型大小", value: VOICE_ASR_MODEL_SIZE_LINE },
     ],
-    filters: [{ label: "伴星与环境音", value: masterMuted ? "已关闭" : "已开启" }, { label: "书桌上的形象", value: WINDOW_LIVE2D_MODEL_REGISTRY[model].displayName }],
+    filters: [{ label: "伴星声音", value: masterMuted ? "已关闭" : "已开启" }, { label: "书桌上的形象", value: WINDOW_LIVE2D_MODEL_REGISTRY[model].displayName }],
     items: [
       { label: "默认作答方式", state: answerMode ? ANSWER_MODE_OPTIONS.find(option => option[0] === answerMode.preference)?.[1] : pendingReadLine(!answer.loading) },
       { label: "用哪套声音合成", state: voice.voicePreference ? TTS_ENGINE_OPTIONS.find(option => option[0] === voice.voicePreference?.engine)?.[1] : pendingReadLine(voice.voicePreferenceRead) },
@@ -70,7 +70,7 @@ export function SettingsCompanionVoice(props: { onReadable: (value: SettingsRead
       <SettingRow title="书桌上的形象" detail="只改变显示的角色模型，人格和记忆仍然保留。"><HudSegmented label="书桌上的形象" value={model} options={models} onChange={setModel} compact /></SettingRow>
       <div className="settings-companion-size"><b>伴星大小</b><HudSlider label="伴星大小" value={scale} min={MIN_COMPANION_SCALE} max={MAX_COMPANION_SCALE} step={0.05} onChange={setScale} format={percentLine} hint="位置可以在书桌和页面里拖动调整。" /></div>
       <SettingRow title="让伴星回到默认位置" detail="拖到边缘或挡住纸面时，恢复默认座位与 100% 大小。"><button type="button" className="button" disabled={placementOwner === "semantic" && scale === DEFAULT_COMPANION_SCALE} onClick={() => { resetPosition(); setScale(DEFAULT_COMPANION_SCALE); }}>恢复位置与大小</button></SettingRow>
-      <SettingRow title="伴星与环境音" detail="本机总静音，同时控制环境音和伴星语音。"><HudSwitch checked={!masterMuted} onChange={next => setMasterMuted(!next)} label="伴星与环境音" /></SettingRow>
+      <SettingRow title="伴星声音" detail="本机总静音，同时管界面提示音和伴星语音。"><HudSwitch checked={!masterMuted} onChange={next => setMasterMuted(!next)} label="伴星声音" /></SettingRow>
     </section>
     <section className="settings-companion-chapter"><header><h3>对话与朗读</h3><p>默认作答方式和音色在账号的设备间共享。</p></header>
       <SettingsAnswerModeRow answerMode={answerMode} answerModeRead={!answer.loading} answerModeSaving={answerSaving} changeAnswerMode={changeAnswer} />

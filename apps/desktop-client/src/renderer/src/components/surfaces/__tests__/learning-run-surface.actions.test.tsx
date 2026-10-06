@@ -146,7 +146,7 @@ function stubGateway(base = snapshot(), draft: unknown = null) {
       getResult: vi.fn(async () => ok({ kind: "not_ready" })),
       revealTarget: vi.fn(async () => ok({})),
       getReturnContract: vi.fn(async () => ok(null)),
-      recordActivityLease: vi.fn(async () => ok({ activeSecondsUsed: 12, runRevision: 1 })),
+      recordActivityLease: vi.fn(async (_input: { request: { startedAt: string; endedAt: string } }) => ok({ activeSecondsUsed: 12, runRevision: 1 })),
     },
     subscriptions: {
       subscribe: vi.fn(async () => ok({ subscriptionId: "sub-1" })),
@@ -216,6 +216,7 @@ async function confirmHintDowngrade() {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   useRoomStore.setState({ activeRunId: null, activeObjectiveId: null, surface: null, returnTarget: null });
 });
 
@@ -444,6 +445,40 @@ describe("LearningRunSurface · 动作区", () => {
 });
 
 describe("LearningRunSurface · 九类作答", () => {
+  it("提交短作答前先保存最后一段专注时间，等待租约返回后才提交", async () => {
+    let now = 1_800_000_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const { gateway } = renderInteraction({ kind: "text_response", maxChars: 400 });
+    const textarea = await screen.findByRole("textbox", { name: "用自己的话回答" });
+    let finishLease!: () => void;
+    gateway.learningRun.recordActivityLease.mockImplementationOnce(() => new Promise(resolve => {
+      finishLease = () => resolve({ ok: true, workspaceEpoch: 1, data: { activeSecondsUsed: 23, runRevision: 1 } });
+    }));
+    now += 11_000;
+    fireEvent.change(textarea, { target: { value: "先确认阶段，再说明不能换序的原因。" } });
+    fireEvent.click(await submitButton());
+    await waitFor(() => expect(gateway.learningRun.recordActivityLease).toHaveBeenCalledTimes(1));
+    expect(gateway.learningRun.recordActivityLease.mock.calls[0]?.[0]).toMatchObject({ request: {
+      startedAt: new Date(now - 11_000).toISOString(), endedAt: new Date(now).toISOString(),
+    } });
+    expect(gateway.learningRun.submit).not.toHaveBeenCalled();
+    await act(async () => finishLease());
+    await waitFor(() => expect(gateway.learningRun.submit).toHaveBeenCalledTimes(1));
+  });
+
+  it("专注时间上报失败仍允许提交回答", async () => {
+    let now = 1_800_000_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const { gateway } = renderInteraction({ kind: "text_response", maxChars: 400 });
+    const textarea = await screen.findByRole("textbox", { name: "用自己的话回答" });
+    gateway.learningRun.recordActivityLease.mockRejectedValueOnce(new Error("temporarily offline"));
+    now += 3_000;
+    fireEvent.change(textarea, { target: { value: "先核对阶段。" } });
+    fireEvent.click(await submitButton());
+    await waitFor(() => expect(gateway.learningRun.submit).toHaveBeenCalledTimes(1));
+    expect(gateway.learningRun.recordActivityLease).toHaveBeenCalled();
+  });
+
   it("文本题能输入并提交，草稿状态贴近编辑区", async () => {
     const { gateway } = renderInteraction({ kind: "text_response", maxChars: 400 });
     const textarea = await screen.findByRole("textbox", { name: "用自己的话回答" });

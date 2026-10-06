@@ -2647,6 +2647,69 @@
       "when": 1791000059021,
       "tag": "0381_agent_explicit_request_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 378,
+      "version": "7",
+      "when": 1791000060021,
+      "tag": "0382_summary_coverage_chain",
+      "breakpoints": true
+    },
+    {
+      "idx": 379,
+      "version": "7",
+      "when": 1791000061021,
+      "tag": "0383_context_assembly_receipt",
+      "breakpoints": true
+    },
+    {
+      "idx": 380,
+      "version": "7",
+      "when": 1791000062021,
+      "tag": "0384_summary_context_revision",
+      "breakpoints": true
+    },
+    {
+      "idx": 381,
+      "version": "7",
+      "when": 1791000063021,
+      "tag": "0385_context_compaction_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 382,
+      "version": "7",
+      "when": 1791000064021,
+      "tag": "0386_method_use_stage",
+      "breakpoints": true
+    },
+    {
+      "idx": 383,
+      "version": "7",
+      "when": 1791000065021,
+      "tag": "0387_method_evidence_origins",
+      "breakpoints": true
+    },
+    {
+      "idx": 384,
+      "version": "7",
+      "when": 1791000066021,
+      "tag": "0388_summary_derived_memory",
+      "breakpoints": true
+    },
+    {
+      "idx": 385,
+      "version": "7",
+      "when": 1791000067021,
+      "tag": "0389_handoff_snapshot_compaction_trace",
+      "breakpoints": true
+    },
+    {
+      "idx": 386,
+      "version": "7",
+      "when": 1791261127514,
+      "tag": "0390_workspace_fk_backfill",
+      "breakpoints": true
     }
   ]
 }

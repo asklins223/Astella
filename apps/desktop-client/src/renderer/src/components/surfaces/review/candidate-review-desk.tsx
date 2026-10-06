@@ -107,7 +107,7 @@ export function CandidateReviewDesk({ session }: { readonly session: CardGenerat
               每次都抢焦点只会让人以为每点一下就结束了。 */}
           <button type="button" className="button candidate-keep" ref={motion.decisionRef} disabled={locked} aria-label="保留（等着保存到卡组）" onClick={() => void onReview(card, "keep")}><Check size={18} aria-hidden="true" />{busyAction === `${card.candidateId}:keep` ? "正在保留…" : "保留这张"}</button>
         </> : null}
-        {reviewOpen && undoCard ? <button ref={undoRef} type="button" className="button" disabled={locked} aria-label="撤销决定" title={undoCard.objective.publicSummary} onClick={() => void onReview(undoCard, "undo")}><RotateCcw size={16} aria-hidden="true" /><span className="candidate-desk__label">{busyAction === `${undoCard.candidateId}:undo` ? "正在撤销…" : undoCard === card ? "撤销决定" : "撤销上一张"}</span><span className="candidate-desk__short-label">{busyAction === `${undoCard.candidateId}:undo` ? "撤销中…" : "撤销"}</span></button> : null}
+        {reviewOpen && undoCard ? <button ref={undoRef} type="button" className="button" disabled={locked} aria-label="撤销决定" title="撤销这张卡的保留或不保留决定" onClick={() => void onReview(undoCard, "undo")}><RotateCcw size={16} aria-hidden="true" /><span className="candidate-desk__label">{busyAction === `${undoCard.candidateId}:undo` ? "正在撤销…" : undoCard === card ? "撤销决定" : "撤销上一张"}</span><span className="candidate-desk__short-label">{busyAction === `${undoCard.candidateId}:undo` ? "撤销中…" : "撤销"}</span></button> : null}
         {run?.recovery && card ? <CardGenerationRecoveryActions session={session} /> : null}
       </div>
     </footer>

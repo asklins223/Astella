@@ -6,6 +6,7 @@ import sensible from "@fastify/sensible";
 import postgres from "postgres";
 import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 import { authRoutes } from "../modules/identity/routes.ts";
+import { hashPassword } from "../modules/identity/credentials.ts";
 import { issueSession, revokeSession } from "../modules/identity/session-service.ts";
 import { closeDatabase } from "../db/client.ts";
 
@@ -68,4 +69,54 @@ test("个人空间与协作空间的所有者都可以改名，成员不能改�
   assert.deepEqual(preview.json().counts,{notes:0,sources:0,cards:0,schedules:0});
   const memberPreview = await app.inject({method:"GET",url:`/workspaces/${shared}/dissolve-preview`,headers:{authorization:`Bearer ${memberToken}`}});
   assert.equal(memberPreview.statusCode,403,memberPreview.body);
+});
+/**
+ * 2026-10-06（全流程走查）：改密在受限角色下**从来没能成功过一次**。
+ *
+ * `changePassword` 原先用裸 `db.query.users.findFirst` 读本人那一行，而 `users` 的
+ * `sec02_users_self_read` 要求 `id = app.user_id`——不在事务里就没有这个设置，
+ * 于是查询恒为 0 行，任何旧密码都被判成"当前密码不正确"（403 invalid_password）。
+ * 超户跑本地库看不见（rolbypassrls），所以这条只在受限角色下才可能红，正是本文件。
+ *
+ * 断言分三层，缺一层就会放过半个 bug：
+ *   1. 错的旧密码仍然 403，且哈希没被动过（否则"能改"会掩盖"核对失效"）；
+ *   2. 对的旧密码返回 204，并且全部会话被撤销（改密的语义本身）；
+ *   3. 新密码能登录、旧密码不能（哈希真的换了，不是只回了个 204）。
+ */
+test("受限角色可以用真实旧密码改密：核对旧哈希、写入新哈希并撤销全部会话", async () => {
+  const previous = "Old-Password-20261005!";
+  const next = "New-Password-20261006!";
+  const email = `settings-owner-${owner}@ailearn.test`;
+  await admin`UPDATE users SET password_hash = ${await hashPassword(previous)} WHERE id = ${owner}`;
+
+  const denied = await app.inject({
+    method: "POST",
+    url: "/auth/change-password",
+    headers: headers(),
+    payload: { currentPassword: "not-the-current-password", newPassword: next },
+  });
+  assert.equal(denied.statusCode, 403, denied.body);
+  assert.equal(denied.json().error, "invalid_password");
+  const untouched = await app.inject({ method: "POST", url: "/auth/login", payload: { email, password: previous } });
+  assert.equal(untouched.statusCode, 200, untouched.body);
+
+  const changed = await app.inject({
+    method: "POST",
+    url: "/auth/change-password",
+    headers: headers(),
+    payload: { currentPassword: previous, newPassword: next },
+  });
+  assert.equal(changed.statusCode, 204, changed.body);
+
+  const after = await app.inject({ method: "GET", url: "/auth/me", headers: headers() });
+  assert.equal(after.statusCode, 401, after.body);
+  const [{ count }] = await admin`SELECT count(*)::int AS count FROM sessions WHERE user_id = ${owner}`;
+  assert.equal(count, 0);
+
+  const loginNext = await app.inject({ method: "POST", url: "/auth/login", payload: { email, password: next } });
+  assert.equal(loginNext.statusCode, 200, loginNext.body);
+  const loginPrevious = await app.inject({ method: "POST", url: "/auth/login", payload: { email, password: previous } });
+  assert.equal(loginPrevious.statusCode, 401, loginPrevious.body);
+
+  ownerToken = loginNext.json().token as string;
 });

@@ -20,14 +20,20 @@ import { test } from "node:test";
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..");
 /** 集成测试可能住在哪些包（递归找 `*.integration.ts`）。 */
 const SCAN_ROOTS = ["apps", "workers", "packages"];
-/** 能真正执行它们的地方。文档里的提及不算注册。 */
+/**
+ * 能真正执行它们的地方。文档里的提及不算注册。
+ *
+ * 2026-10-06：`.github/workflows/main-ci.yml` 移出这张表。CI 已经不再跑
+ * postgres 集测（见 main-ci.yml 顶部决定），把它留在这儿会让"工作流里还写着
+ * 那个文件名"继续被当成注册面——于是集测被移出 CI 之后，台账还在说它们有人跑，
+ * 实际已经变成暗文件。注册面必须是**真的会执行**的地方。
+ */
 const SURFACES = [
   "package.json",
   "apps/api/package.json",
   "apps/desktop-client/package.json",
   "packages/shared/package.json",
   "workers/ai-worker/package.json",
-  ".github/workflows/main-ci.yml",
 ];
 const SURFACE_DIRS = ["scripts"];
 
@@ -36,12 +42,13 @@ const SURFACE_DIRS = ["scripts"];
  * 这条清单是**待办**，不是永久豁免：每接进一份点名单就该短一行。
  * 2026-09-27 短两行：`card-generation-v2-live-progress-postgres` 与
  * `card-generation-v2-llm-natural-activation` 随四阶段链一起删除（判据对象没了）。
+ * 2026-10-06 清空：CI 不再是注册面（postgres 集测整体退出 CI，改由 `make
+ * test-postgres` / `npm run test:*:postgres` 在本地跑），原先只被工作流点名的
+ * 21 份 api 集测与 7 份 worker 集测已全部接进 package.json 脚本；
+ * `card-generation-v2-domain-events.integration.ts` 在 worker 那侧的同名文件
+ * 已随重构删除，但 apps/api 这侧同名的那份还在，于是也一并接进了脚本。
  */
-const DARK_FILES_AWAITING_REGISTRATION = new Set([
-  "card-generation-v2-domain-events.integration.ts",
-  "card-generation-v2-c-cases.integration.ts",
-  "card-generation-v2-redaction-quota.integration.ts",
-]);
+const DARK_FILES_AWAITING_REGISTRATION = new Set<string>();
 
 function integrationFiles(): string[] {
   const out: string[] = [];

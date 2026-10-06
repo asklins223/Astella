@@ -26,7 +26,7 @@ DEV_PROFILES := --profile storage
 	ensure-db-volume disposable-db \
 	shell-api shell-worker version-check verify release-check \
 	coverage-gate skip-todo-gate release-manifest \
-	test-companion-home-profile-postgres \
+	test-postgres test-companion-home-profile-postgres \
 	alpha-up alpha-down alpha-backup alpha-restore-verify alpha-status alpha-metrics \
 	desktop-client-install desktop-client-dev desktop-client-build desktop-client-dist \
 	desktop-client-dist-arm64 desktop-client-dist-linux desktop-client-dist-win \
@@ -129,17 +129,33 @@ version-check:
 # `make verify` 名义上"验证"覆盖率，实际上一条线低都过得去。
 # 与 CI 里 P0-3 已经改成的形态保持一致：要么两条路都卡，要么都不卡，
 # 不能一条卡一条不卡。
+# ─── 本地基线 ────────────────────────────────────────────────────────────
+#
+# **这里跑什么，CI 就跑什么，反过来也一样。** 两者由
+# `.github/scripts/ci-workflow-contract.test.mjs` 钉住：少接一个包就红。
+#
+# 2026-10-06 之前这个目标末尾还挂着 `skip-todo-gate.mjs` 与
+# `coverage-gate.mjs`，而 CI 里另有十条本地根本不跑的链（真库集测、Gitleaks、
+# npm audit、镜像扫描、compose 冒烟、Alpha 巡检）。于是"本地全绿"与
+# "CI 一片红"可以同时成立，而且红的全是没人跑过的东西——那是噪声，不是信号。
+#
+# 两个门禁脚本都还在，需要时按下面两个独立目标显式调用；它们不再是这条基线
+# 的一部分，所以 CI 也不再要求它们过。
 verify: version-check
 	node --test .github/scripts/version-contract.test.mjs .github/scripts/release-manifest-contract.test.mjs .github/scripts/coverage-gate-lib.test.mjs .github/scripts/ci-workflow-contract.test.mjs .github/scripts/postgres-integration-lifecycle.test.mjs
 	node .github/scripts/verify-schema-mirror.mjs
 	node .github/scripts/verify-companion-capability-config.mjs
 	cd packages/shared && npm run typecheck && npm test
+	# 2026-10-05（方案 44）：agent-core 与 agent-host 此前**不在**验证目标里——
+	# 而上下文预算解析、完整请求计量、压缩冷却与失败学习全在 agent-core，
+	# 方法的版本/来源/采用记录全在 agent-host。它们各自有测试，只是没人跑。
+	cd packages/agent-core && npm run typecheck && npm test
+	cd packages/agent-host && npm run typecheck && npm test
+	# pr-gate 是 AI 质量层的 **PR Mock** 闸：固定数据集、固定桩，不访问付费网络。
 	cd packages/ai-quality && npm run typecheck && npm test && npm run pr-gate
 	cd apps/api && npm run typecheck && npm test
 	cd apps/desktop-client && npm run typecheck && npm test
 	cd workers/ai-worker && npm run typecheck && npm test
-	node .github/scripts/skip-todo-gate.mjs
-	node .github/scripts/coverage-gate.mjs
 
 # Coverage gate with threshold enforcement (blocks release-check, not PRs).
 coverage-gate:
@@ -163,6 +179,66 @@ release-check:
 	node .github/scripts/coverage-gate.mjs
 	node .github/scripts/release-manifest-generate.mjs
 	node .github/scripts/release-manifest-contract.mjs
+
+# ─── 真实 PostgreSQL 集成测试（不进 CI） ─────────────────────────────────
+#
+# 2026-10-06：这些套件整体退出 CI。理由是 CI 不该跑本地基线之外的东西——
+# 退出前它们在 CI 上是 12 条真红（`note-learning-round-access-revoked` 撞上
+# 0284 的 append-only 触发器那一族），而本地没人跑，于是"CI 坏了"这个结论
+# 既对又没用。**退出 CI 不等于放弃它们**：文件、脚本、夹具全部原样保留，
+# 需要时用这个目标跑。
+#
+# 前置：本地库已就绪（`make up`），且已迁移（`make migrate` 或容器内 migrate）。
+# **必须在干净的一次性库上跑**——用例含"库里只有自己的夹具"类断言，共享开发库
+# 会假失败：
+#   bash scripts/dev-disposable-db.sh ailearn_it
+#   make test-postgres COMPANION_HOME_TEST_DB=ailearn_it
+#
+# 显式给**受限角色**：超级用户会绕过 RLS，隔离断言会变成假通过。
+# 连接参数沿用 COMPANION_HOME_TEST_* 那组变量。
+IT_HOST ?= $(COMPANION_HOME_TEST_HOST)
+IT_PORT ?= $(COMPANION_HOME_TEST_PORT)
+IT_DB ?= $(COMPANION_HOME_TEST_DB)
+IT_MIGRATOR_PASSWORD ?= $(COMPANION_HOME_TEST_MIGRATOR_PASSWORD)
+IT_API_PASSWORD ?= $(COMPANION_HOME_TEST_API_PASSWORD)
+IT_WORKER_PASSWORD ?= $(COMPANION_HOME_TEST_API_PASSWORD)
+IT_SUPERUSER_URL = postgres://ailearn:$(POSTGRES_PASSWORD)@$(IT_HOST):$(IT_PORT)/$(IT_DB)
+IT_MIGRATOR_URL = postgres://ailearn_migrator:$(IT_MIGRATOR_PASSWORD)@$(IT_HOST):$(IT_PORT)/$(IT_DB)
+IT_API_URL = postgres://ailearn_api:$(IT_API_PASSWORD)@$(IT_HOST):$(IT_PORT)/$(IT_DB)
+IT_WORKER_URL = postgres://ailearn_worker:$(IT_WORKER_PASSWORD)@$(IT_HOST):$(IT_PORT)/$(IT_DB)
+
+# 每个用例读的名字**不只** DATABASE_URL_* 那一组：RLS、队列、内容哈希、
+# SEC-02 邀请、版本恢复、限流各自读一个专用变量，缺了就直接
+# `throw new Error('… is required')`——那条是**显式拒绝**，不是静默 skip，
+# 所以少给一个就是"整份文件红在读环境变量上"，用例一条都没跑。
+# 下面这一组是 2026-10-06 实测补齐的（漏了 RLS_TEST_* 那两个别名时，
+# users-rls 与 rls-policies 两份直接抛错）。
+test-postgres:
+	@for pkg in apps/api workers/ai-worker; do \
+		echo "════════ $$pkg ════════"; \
+		scripts=$$(cd $$pkg && node -e 'const p=require("./package.json");console.log(Object.keys(p.scripts).filter(k=>k.startsWith("test:")&&k.endsWith(":postgres")).sort().join("\n"))'); \
+		for s in $$scripts; do \
+			echo "── $$s"; \
+			(cd $$pkg && NODE_ENV=test \
+				DATABASE_URL="$(IT_SUPERUSER_URL)" \
+				DATABASE_URL_MIGRATOR="$(IT_MIGRATOR_URL)" \
+				DATABASE_URL_API="$(IT_API_URL)" \
+				DATABASE_URL_WORKER="$(IT_WORKER_URL)" \
+				DATABASE_URL_API_RLS="$(IT_API_URL)" \
+				DATABASE_URL_TEST_ADMIN="$(IT_SUPERUSER_URL)" \
+				RLS_TEST_MIGRATOR_DATABASE_URL="$(IT_MIGRATOR_URL)" \
+				RLS_TEST_API_DATABASE_URL="$(IT_API_URL)" \
+				RLS_TEST_WORKER_DATABASE_URL="$(IT_WORKER_URL)" \
+				QUEUE_TEST_MIGRATOR_DATABASE_URL="$(IT_MIGRATOR_URL)" \
+				QUEUE_TEST_WORKER_A_DATABASE_URL="$(IT_WORKER_URL)" \
+				QUEUE_TEST_WORKER_B_DATABASE_URL="$(IT_WORKER_URL)" \
+				RATE_LIMIT_TEST_DATABASE_URL="$(IT_API_URL)" \
+				CONTENT_HASH_TEST_DATABASE_URL="$(IT_SUPERUSER_URL)" \
+				SEC02_TEST_DATABASE_URL="$(IT_SUPERUSER_URL)" \
+				NOTE_VERSION_RESTORE_TEST_DATABASE_URL="$(IT_SUPERUSER_URL)" \
+				npm run --silent $$s) || exit 1; \
+		done; \
+	done
 
 shell-api:
 	$(COMPOSE) exec api sh

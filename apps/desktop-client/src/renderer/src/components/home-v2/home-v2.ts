@@ -26,7 +26,14 @@ export function homeV2CameraCss(preset: HomeV2CameraPreset) {
   } as const;
 }
 
-export function shouldRunHomeV2Ambient(input: {
+/**
+ * 房间里该不该有声音。
+ *
+ * 首页曾经有一层常驻的环境音床，这条闸门是为它写的；2026-10-06 那层删掉之后，
+ * 它管的是房间自己发出的瞬态音（翻页、脚步、魔法）和伴星的主动提示音。名字
+ * 跟着职责走，别再叫 ambient——`home-audio-idle` 钉住的是"没有常驻音源"。
+ */
+export function shouldPlayHomeV2Feedback(input: {
   readonly unlocked: boolean;
   readonly masterMuted: boolean;
   readonly surfaceOpen: boolean;

@@ -171,6 +171,7 @@ function installApi(options: {
         return ok({ version: 1 as const, left: true as const });
       }),
       getProfile: vi.fn(async () => ok({ version: 1 as const, displayName: "读者", avatarUrl: null })),
+      changePassword: vi.fn(async () => ok({ changed: true as const, sessionsRevoked: true as const })),
       logout: vi.fn(async (input: unknown): Promise<GatewayResultV1<{ loggedOut: true; serverRevoked: boolean }>> => {
         calls.push({ method: "logout", input });
         return ok({ loggedOut: true as const, serverRevoked: true });
@@ -389,6 +390,27 @@ afterEach(() => {
     live2dStatus: "loading",
   });
   vi.restoreAllMocks();
+});
+
+it("密码连续输入在事件结束后仍保留三项内容，并提交最新值", async () => {
+  const { api } = installApi();
+  render(<SettingsSurface />);
+  await screen.findByDisplayValue("读者");
+  fireEvent.click(screen.getByText("修改密码", { selector: "b" }));
+  const current = screen.getByLabelText<HTMLInputElement>("当前密码");
+  const next = screen.getByLabelText<HTMLInputElement>("新密码");
+  const confirm = screen.getByLabelText<HTMLInputElement>("确认新密码");
+  // 合并更新会延后调用 functional updater；此时 SyntheticEvent.currentTarget 已清空。
+  act(() => {
+    fireEvent.change(current, { target: { value: "current-test-value" } });
+    fireEvent.change(next, { target: { value: "next-test-value" } });
+    fireEvent.change(confirm, { target: { value: "next-test-value" } });
+  });
+  expect([current.value, next.value, confirm.value]).toEqual(["current-test-value", "next-test-value", "next-test-value"]);
+  fireEvent.click(screen.getByRole("button", { name: "修改密码" }));
+  await waitFor(() => expect(api.auth.changePassword).toHaveBeenCalledWith(expect.objectContaining({
+    currentPassword: "current-test-value", newPassword: "next-test-value",
+  })));
 });
 
 it("缺少识别模型的入口直接打开声音与显示，并滚动与聚焦模型卡", async () => {
@@ -817,7 +839,7 @@ describe("the sound switch", () => {
     await screen.findByText("理解空间", { selector: ".space-identity h3" });
     openSection("伴星设置");
 
-    const sound = await screen.findByRole("switch", { name: "伴星与环境音" });
+    const sound = await screen.findByRole("switch", { name: "伴星声音" });
     expect(sound.getAttribute("aria-checked")).toBe("true");
 
     fireEvent.click(sound);

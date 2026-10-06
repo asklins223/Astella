@@ -33,6 +33,8 @@ import {
   type CompanionContextHandoffInputV1,
   type CompanionRecentHistoryMessage,
 } from "./companion-context-handoff.ts";
+import { resolveFactSpans } from "./companion-fact-spans.ts";
+import { logger } from "../lib/logger.ts";
 export {
   boundCompanionRecentHistory,
   buildCompanionContextHandoffSnapshotV1,
@@ -1151,4 +1153,31 @@ export function parsePageContext(value: unknown): Record<string, unknown> | null
   const context = (parsed as { context?: unknown }).context ?? parsed;
   if (!context || typeof context !== "object" || Array.isArray(context)) return null;
   return context as Record<string, unknown>;
+}
+
+/**
+ * 方案 44 §3.3 之外的既有收尾口径：把 provider 返回的原文定成**下游唯一看到的文本**。
+ *
+ * 三步有先后依赖，任何换序都会让「已下发的前缀」与「校验后的全文」分叉：
+ *   1. 剥掉某些 provider 会套上的 JSON 信封——不剥的话落库的是信封、TTS 读的是信封；
+ *   2. 渲染引用占位符——必须在**任何下游之前**，包括校验、流式对账、落库、TTS；
+ *   3. 目录之外的键：丢掉那半句、正文照留，但必须留痕（静默丢弃会让
+ *      「她怎么少说了一句」无法复盘，见日记那条策略）。
+ *
+ * 单独成模块是因为顺序本身就是契约：留在编排文件里，改动时更容易只搬其中一步。
+ */
+export function finalizeCompanionReplyText(args: {
+  text: string;
+  factSpans?: Record<string, string> | null;
+  runId: string;
+}): { text: string; dropped: string[] } {
+  const unwrapped = unwrapCompanionJsonEnvelope(args.text);
+  const resolved = resolveFactSpans(unwrapped, args.factSpans ?? {});
+  if (resolved.dropped.length > 0) {
+    logger.warn(
+      { runId: args.runId, dropped: resolved.dropped.length, excerpt: resolved.dropped.join(" / ").slice(0, 160) },
+      "companion reply referenced fact spans outside this turn's catalog",
+    );
+  }
+  return { text: resolved.text, dropped: resolved.dropped };
 }

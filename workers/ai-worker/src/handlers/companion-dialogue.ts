@@ -39,9 +39,7 @@ import { ProviderRequestError } from "../lib/provider-request-error.ts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { loadHereAndNow, renderHereAndNow } from "./companion-here-and-now.ts";
 import { loadThisTurnFacts } from "./companion-this-turn-facts.ts";
-import { resolveFactSpans } from "./companion-fact-spans.ts";
 import { renderConversationSummary } from "./companion-summarizer.ts";
-import { createProvider, withThinkingDisabled } from "../lib/ai-provider.ts";
 import {
   CompanionStreamStoppedError,
   createCompanionStreamDelivery,
@@ -49,10 +47,13 @@ import {
 } from "./companion-dialogue-stream.ts";
 import {
   AIConsentRequiredError,
-  createGovernedProvider,
   resolveAIGovernanceContext,
-  resolveProviderForTask,
 } from "../lib/governance.ts";
+import { createCompanionContextReceipts } from "./companion-context-receipts.ts";
+import { createCompactionTraceRecorder } from "./companion-context-handoff.ts";
+import { resolveCompanionTurnProviders } from "./companion-turn-providers.ts";
+import { createCompactionCooldownPorts } from "./companion-compaction-cooldown.ts";
+import { foldReplayUnderSummaryCoverage, replayToMessages } from "./companion-compaction.ts";
 import {
   COMPANION_PERSONA_V7_PROMPT_ID,
   COMPANION_PERSONA_V7_SHA256,
@@ -81,12 +82,12 @@ import {
   buildFinalCuePayload,
   buildCompanionPersonaMessages,
   validateCompanionOutput,
-  unwrapCompanionJsonEnvelope,
   textOfCompanionBlocks,
   parsePageContext,
   GROUNDED_TUTOR_COMPANION_PROMPT,
   boundCompanionRecentHistory,
   buildCompanionContextHandoffSnapshotV1,
+  finalizeCompanionReplyText,
   renderCompanionContextHandoff,
   REPLAY_WINDOW_MESSAGES,
 } from "./companion-dialogue-content.ts";
@@ -104,7 +105,7 @@ import {
   isCompanionVoiceDialogueEnabled,
   isCompanionMemoryContextEnabled,
   enqueueCompanionMemoryJobs,
-  readConversationSummary,
+  readConversationSummaryChain,
   readCompanionHistoryRows,
   countCompanionHistoryMessages,
   companionHistoryText,
@@ -333,6 +334,11 @@ export async function runCompanionDialogue(
   if (!runId) throw new Error("companion_agent payload 缺 runId");
   if (ctx.signal.aborted) throw new Error("companion_agent aborted");
 
+  // 折叠所需的两个事实：回放尾部每条消息的来源 seq，以及当前摘要覆盖到哪一段
+  // （44 §5.2）。它们只在读事务里成立，因此提到外面给压缩用。
+  let replayTailSeqs: Array<string | null> = [];
+  let replaySummaryCoverage: { fromSeq: string | null; throughSeq: string | null; sourceSha256: string | null } | null = null;
+
   // ── 阶段 1：读（RLS 事务） ────────────────────────────────────────────
   let read: ReadContext | null = null;
   try {
@@ -398,6 +404,7 @@ export async function runCompanionDialogue(
             text: companionHistoryText(m),
           }));
         const visibleRecent = boundCompanionRecentHistory(recentWithSeq);
+        replayTailSeqs = visibleRecent.map((message) => message.seq ?? null);
         const recentMessages = visibleRecent.map(({ role, text }) => ({ role, text }));
         const historyStartSeq = visibleRecent[0]?.seq ?? currentUserSeq;
         const totalHistoryMessages = await countCompanionHistoryMessages(tx, run.conversation_id, currentUserSeq);
@@ -532,15 +539,26 @@ export async function runCompanionDialogue(
           // 以为这块一直没触发，而它其实是每次都超时。
           logger.warn({ runId: run.id, ms: thisTurnFacts.ms }, "companion turn facts dropped over budget");
         }
-        // 更早那段对话（历史回放只带真正进入 prompt 的尾部）。只取水位完整且
-        // 严格早于可见尾部的摘要；不猜旧摘要边界，也不为它单开一次往返。
-        const summaryRow = await readConversationSummary(tx, run.conversation_id, historyStartSeq);
+        // 更早那段对话（历史回放只带真正进入 prompt 的尾部）。读**接续链**而不是只读
+        // 最新一份（44 §5.2）：压缩分次发生，只取最新一份会把更早的覆盖索引丢掉——
+        // 会话看起来「有摘要」，实际中间那段没人读过。不猜旧摘要边界，也不为它单开往返。
+        const summaryChain = await readConversationSummaryChain(tx, run.conversation_id, historyStartSeq);
+        const summaryRow = summaryChain.head;
+        replaySummaryCoverage = summaryRow
+          ? {
+            fromSeq: summaryRow.coverage_from_seq,
+            throughSeq: summaryRow.coverage_through_seq,
+            sourceSha256: summaryRow.coverage_source_hash,
+          }
+          : null;
         const conversationSummary = renderConversationSummary(summaryRow?.summary, {
           coverageVerified: Boolean(
             summaryRow?.coverage_from_seq
             && summaryRow.coverage_through_seq
             && summaryRow.coverage_source_hash,
           ),
+          // 链上有洞就如实告诉她：谈那部分之前要先按线索取回原文（44 §5.5）。
+          coverageGaps: summaryChain.gaps,
         });
         const toolCallRows = await tx.execute<{
           receipt_id: string; tool_call_id: string; name: string; status: string;
@@ -680,46 +698,17 @@ export async function runCompanionDialogue(
     );
     throw new AIConsentRequiredError();
   }
-  const textRes = resolveProviderForTask(govCtx, "companion_agent");
-  const provider = createGovernedProvider(
-    // 交互对话关思考：整段取回语义下思考 token 全算进用户等待（见 withThinkingDisabled）。
-    createProvider(textRes.providerName, withThinkingDisabled(textRes.providerConfig)),
-    govCtx,
-    ctx.workspaceId,
-    // AI P0-8（2026-09-15 审计）：接上 ai_audit_log 的唯一写入口 logAICall——
-    // 此前全仓零生产调用，而 DEFAULT_AI_DATA_POLICY.auditLogging 默认为 true，
-    // 等于审计/成本记录完全空转。只写元数据，不写内容。
-    { userId: read.userId, operation: "companion_agent", jobId: ctx.id, reserveCall: () => reserveCompanionProviderCall({ ctx, read }), dataCategories: ["user_answer", "note_content"] },
-  );
-  // 思考档备用 provider（2026-09-19 退化回复闸）：主链路关思考时，网关/模型退化
-  // 窗口会把答案缩成一两个词且自我复制进历史。agent loop 检测到退化答案时用它
-  // 原样重跑一次取更长者（见 runCompanionAgentLoop 的退化回复闸）。
-  const thinkingProvider = createGovernedProvider(
-    createProvider(textRes.providerName, textRes.providerConfig),
-    govCtx,
-    ctx.workspaceId,
-    { userId: read.userId, operation: "companion_agent", jobId: ctx.id, reserveCall: () => reserveCompanionProviderCall({ ctx, read }), dataCategories: ["user_answer", "note_content"] },
-  );
-  /**
-   * 跨模型兜底 provider（方案 29 §9.6 / B8）。
-   *
-   * 同档思考重试治不了 provider 侧的退化：实测主模型 tokenrhythm/qwen3.8-flash
-   * 会高频返回"一词 + finish=stop"的半截话（近 3 小时 21/32 条不足 6 字，且没有
-   * maxTokens 截断日志），连着两次都退化时重跑同样会退化。所以兜底必须换**模型**，
-   * 最好连 provider 一起换。未配置 companion_fallback 时为 null，loop 跳过这一级。
-   */
-  const fallbackProvider = govCtx.companionFallbackProviderName
-    && govCtx.companionFallbackProviderConfig
-    ? createGovernedProvider(
-      createProvider(
-        govCtx.companionFallbackProviderName,
-        govCtx.companionFallbackProviderConfig,
-      ),
-      govCtx,
-      ctx.workspaceId,
-      { userId: read.userId, operation: "companion_agent_fallback", jobId: ctx.id, reserveCall: () => reserveCompanionProviderCall({ ctx, read }), dataCategories: ["user_answer", "note_content"] },
-    )
-    : undefined;
+  const contextReceipts = createCompanionContextReceipts();
+  // 折叠轨迹收集器：loop 里折了就记，回合结束时并进交接快照的下一版（44 §3.3）。
+  const compactionTrace = createCompactionTraceRecorder();
+  // 三个 provider 槽（主链路 / 思考档重试 / 跨模型兜底）各自的理由见 companion-turn-providers。
+  const { provider, thinkingProvider, fallbackProvider } = resolveCompanionTurnProviders({
+    governance: govCtx,
+    ctx,
+    read,
+    contextGate: contextReceipts.pressureGate,
+    reserveCall: () => reserveCompanionProviderCall({ ctx, read }),
+  });
 
   // 40 §4.6.6：resident 正文常驻，active 只注入有预算的目录（非 grounded_tutor）。
   const emptyMemoryContext = (): ContextAssemblyResult => ({
@@ -791,12 +780,11 @@ export async function runCompanionDialogue(
     ...handoffInput,
     modelMessages: [],
   });
-  const admittedSources = new Set<string>();
   const messages = buildCompanionPersonaMessages({
     scope: { workspaceId: ctx.workspaceId, userId: read.userId },
     methodCatalog: read.groundedTutorContext ? "" : renderPlaybookCatalog(read.playbookCatalog),
     contextReceipt: receipts => {
-      for (const source of receipts) if (source.status === "included") admittedSources.add(source.id);
+      contextReceipts.recordAssembly(receipts);
       logger.info({ runId: read.runId, sources: receipts }, "agent context budget receipt");
     },
     userText: read.userText,
@@ -812,10 +800,11 @@ export async function runCompanionDialogue(
     continuationData: renderCompanionContextHandoff(handoffDraft),
     petProfile: read.petProfile,
   });
-  const residentSources = admittedSources.has("resident_memory") ? memoryContext.memorySourceVersions?.resident ?? [] : [];
-  const directorySources = admittedSources.has("memory_directory") ? memoryContext.memorySourceVersions?.directory ?? [] : [];
-  handoffInput.memoryRefs = admittedSources.has("resident_memory") ? memoryContext.memoryRefs : [];
-  handoffInput.memoryDirectory = admittedSources.has("memory_directory") ? memoryContext.memoryDirectory : [];
+  const admitted = contextReceipts.admittedSources();
+  const residentSources = admitted.has("resident_memory") ? memoryContext.memorySourceVersions?.resident ?? [] : [];
+  const directorySources = admitted.has("memory_directory") ? memoryContext.memorySourceVersions?.directory ?? [] : [];
+  handoffInput.memoryRefs = admitted.has("resident_memory") ? memoryContext.memoryRefs : [];
+  handoffInput.memoryDirectory = admitted.has("memory_directory") ? memoryContext.memoryDirectory : [];
   handoffInput.memorySourceVersions = [...residentSources, ...directorySources];
   const proposedHandoffSnapshot = buildCompanionContextHandoffSnapshotV1({
     ...handoffInput,
@@ -1035,6 +1024,30 @@ export async function runCompanionDialogue(
       // 关着的时候读图工具既不下发也不会执行，她看不见就不会答应去看。
       toolConstraints: { visionEnabled: govCtx.policy.sendImageContent === true },
       baseMessages: committedMessages,
+      contextReceipts,
+      // 只有组装回放的这一层知道每条尾部消息的来源 seq 与摘要覆盖到哪（44 §5.2）。
+      // 折叠是无损的：折掉的每条都被一份校验过的摘要盖住，原文仍在库里按 seq 可读回。
+      replayFold: (messages) => {
+        const tail = replayTailSeqs.flatMap((seq, index) => (
+          seq && messages[index] ? [{ message: messages[index]!, seq }] : []
+        ));
+        if (tail.length === 0) return null;
+        const folded = foldReplayUnderSummaryCoverage({
+          system: [], tail, trailing: messages.slice(tail.length), coverage: replaySummaryCoverage,
+        });
+        return folded.receipt
+          ? { messages: replayToMessages(folded.replay), receipt: folded.receipt }
+          : null;
+      },
+      // 失败冷却跨轮次生效：同一份失败输入不会每轮都白折一次（44 §5.4）。
+      compactionTrace,
+      compactionCooldown: createCompactionCooldownPorts({
+        workspaceId: ctx.workspaceId,
+        userId: read.userId,
+        conversationId: read.conversationId,
+        sourceHash: () => replaySummaryCoverage?.sourceSha256 ?? null,
+        latestPressure: () => contextReceipts.latestPressure(),
+      }),
       expiresAt,
       continuationProposalId,
       onProviderDelta: (delta) => streamingDelivery.onRawDelta(delta),
@@ -1074,7 +1087,16 @@ export async function runCompanionDialogue(
     });
     throw err;
   }
+  // 折叠轨迹并进交接快照（44 §3.3）。位置要紧：必须紧跟 loop、在任何分支之前——
+  // 围栏允许 waiting_for_confirmation 时写（那一步同样可能折过），而这个分支自己会
+  // 提前 return；放在分支之后，提议确认那一步折掉的内容就永远进不了审计。
+
+  await compactionTrace.commit({
+    workspaceId: ctx.workspaceId, userId: read.userId, runId: read.runId,
+    snapshot: committedHandoff.snapshot, sha256: committedHandoff.sha256,
+  });
   if (agentResult.status === "waiting_for_confirmation") {
+    
     // 等用户确认：本轮不写 assistant.final（终态消息由确认后的续跑产出）。
     // 但**必须把已下发的稳定前缀落库关门**（④-b）：带工具的一步现在也会流式，
     // 这一步可能正是提议确认的那一步，开场白已经发给客户端——不 finish 的话
@@ -1090,22 +1112,12 @@ export async function runCompanionDialogue(
     }
     return;
   }
-  // 上游解包（2026-09-18）：个别轮次 provider 会把回复包成 JSON 信封，
-  // TTS 朗读文本与校验/落库文本都必须用剥离后的版本。
-  ttsRawText = unwrapCompanionJsonEnvelope(agentResult.text);
-  // P2（39d W2-5）：占位符在**任何下游之前**渲染——校验、流式对账、落库、TTS 看的是
-  // 同一份渲染后的文本。放在校验之后会让"已下发的前缀（已渲染）"与"校验后的全文
-  // （还带标记）"必然分叉，判成 stream_full_text_diverged 并整轮失败。
-  const spanResolved = resolveFactSpans(ttsRawText, read.factSpans?.values ?? {});
-  if (spanResolved.dropped.length > 0) {
-    // 目录之外的键：丢掉那半句、正文照留，但必须留痕——静默丢弃会让
-    // "她怎么少说了一句"无法复盘（日记那条策略）。
-    logger.warn(
-      { runId: read.runId, dropped: spanResolved.dropped.length, excerpt: spanResolved.dropped.join(" / ").slice(0, 160) },
-      "companion reply referenced fact spans outside this turn's catalog",
-    );
-  }
-  ttsRawText = spanResolved.text;
+  // 定成下游唯一看到的文本（剥信封 → 渲染占位符 → 目录外的键留痕；三步顺序是契约，
+  // 理由见 finalizeCompanionReplyText）。
+  const finalized = finalizeCompanionReplyText({
+    text: agentResult.text, factSpans: read.factSpans?.values ?? null, runId: read.runId,
+  });
+  ttsRawText = finalized.text;
 
   // 信任边界：流式期间每个 flush 前都已跑过增量校验（长度/泄露），这里收尾；
   // 校验失败在此终结：已投递的稳定前缀仍在（它是最终文本的前缀），run 按失败收尾。

@@ -75,10 +75,10 @@ describe("room navigation guard", () => {
 describe("workspace boundary reset", () => {
   /**
    * 边界只清"与某个工作区或某次会话绑定"的状态。本机偏好全部保留——这是
-   * 2026-09-17 修正后的规则：之前连 `themeMode` / `ambientRequested` / 伴星摆放
+   * 2026-09-17 修正后的规则：之前连 `themeMode` / 总静音 / 伴星摆放
    * 一起清，结果是读者显式选过的主题被 `applyTimeTheme` 在下一个 tick 覆盖回
    * 按时间自动、拖好的伴星位置跳回默认，而设置页对读者的承诺是"本机偏好保存在
-   * 这台设备上"。这三项都跟工作区无关：房间是同一个房间，伴星是同一个伴星。
+   * 这台设备上"。这些项都跟工作区无关：房间是同一个房间，伴星是同一个伴星。
    */
   it("clears workspace-scoped activity without discarding desktop preferences", () => {
     const previousScopeRevision = useRoomStore.getState().workspaceScopeRevision;
@@ -97,7 +97,6 @@ describe("workspace boundary reset", () => {
       activeCardGenerationRunId: "generation-1",
       activeNoteRef: { noteId: "note-1", noteVersionId: "note-version-1" },
       activeReviewTarget: { scheduleId: "schedule-1", objectiveId: "objective-1" },
-      ambientRequested: true,
       onboardingOpen: true,
       companionMoment: "confirm",
       pendingHomeCompletion: { id: "learning-result:run-1:snapshot-1:demonstrated" },
@@ -116,7 +115,6 @@ describe("workspace boundary reset", () => {
       themeMode: "manual",
       motionMode: "lite",
       masterMuted: false,
-      ambientRequested: true,
       companionPlacementOwner: "user",
       companionUserAnchor: { x: 0.31, y: 0.42 },
       // 工作区/会话状态：回到默认。
@@ -143,7 +141,7 @@ describe("workspace boundary reset", () => {
     useRoomStore.getState().applyTimeTheme("day");
     expect(useRoomStore.getState().theme).toBe("night");
 
-    useRoomStore.setState({ ambientRequested: false, companionPlacementOwner: "semantic", companionUserAnchor: null, themeMode: "system", theme: "day" });
+    useRoomStore.setState({ companionPlacementOwner: "semantic", companionUserAnchor: null, themeMode: "system", theme: "day" });
   });
 });
 
@@ -481,11 +479,11 @@ describe("页面级存在感控制（2026-09-16 裁决 3）", () => {
     expect(state.companionTemporarilyHidden).toBe(false);
   });
 
-  it("切工作区不会清掉本机偏好（主题模式 / 环境音 / 伴星摆放）", () => {
+  it("切工作区不会清掉本机偏好（主题模式 / 总静音 / 伴星摆放）", () => {
     // 读者的显式主题选择：themeMode 一旦被打回 system，applyTimeTheme 就会在
     // 下一个时钟 tick 把 theme 覆盖回按时间自动，等于悄悄取消这次选择。
     useRoomStore.getState().setTheme("night");
-    useRoomStore.getState().toggleAmbient();
+    useRoomStore.getState().setMasterMuted(true);
     useRoomStore.getState().setCompanionUserPlacement({ x: 0.42, y: 0.61 });
     useRoomStore.getState().setCompanionScale(1.2);
 
@@ -494,13 +492,14 @@ describe("页面级存在感控制（2026-09-16 裁决 3）", () => {
     const state = useRoomStore.getState();
     expect(state.theme).toBe("night");
     expect(state.themeMode).toBe("manual");
-    expect(state.ambientRequested).toBe(true);
+    expect(state.masterMuted).toBe(true);
     expect(state.companionScale).toBe(1.2);
     expect(state.companionPlacementOwner).toBe("user");
     expect(state.companionUserAnchor).toEqual({ x: 0.42, y: 0.61 });
     // …and the clock can no longer overwrite the reader's pick.
     useRoomStore.getState().applyTimeTheme("day");
     expect(useRoomStore.getState().theme).toBe("night");
+    useRoomStore.getState().setMasterMuted(false);
   });
 
   it("主题颜色与主题模式一起写盘，重启后不会被时钟改写", () => {

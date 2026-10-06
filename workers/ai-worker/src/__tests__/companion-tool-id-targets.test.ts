@@ -66,6 +66,10 @@ const PARAM_TARGETS: Readonly<Record<string, Readonly<Record<string, IdTarget>>>
   companion_defer_review: { scheduleId: { table: "review_schedules", column: "id" } },
   companion_schedule_reminder: { noteId: { table: "notes", column: "id" } },
   companion_cancel_reminder: { reminderId: { table: "companion_reminders", column: "id" } },
+  // 跨会话找回（方案 44 §3.2／§8.3）：指向会话主键，**不是**任何消息的 id。
+  // 登记在这里本身就是一次复核——它提醒读者 seq 是会话内的局部序号，
+  // 只给 seq 会读到另一个会话的同号消息。
+  companion_recall_past_conversation: { conversationId: { table: "companion_conversations", column: "id" } },
   companion_read_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },
   companion_forget_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },
   companion_move_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },

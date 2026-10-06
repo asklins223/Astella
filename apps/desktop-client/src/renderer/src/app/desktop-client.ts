@@ -147,6 +147,13 @@ export function gatewayErrorMessage(error: unknown): string {
       return "这条学习内容已经不存在或不再对当前账号可见。";
     case "feature_disabled":
       return "这项学习能力当前未在本环境启用。";
+    /**
+     * 本机识别引擎（2026-10-06）。这句必须说清**服务端没参与**：录音没有离开这台
+     * 电脑，出问题的是本机那份引擎。说成"学习服务内部出了点问题"会让人去查网络、
+     * 换设备，而真正的下一步是重装识别模型或再试一次。
+     */
+    case "voice_engine_unavailable":
+      return "本机识别引擎没能启动，这句话没有识别出来。录音没有离开这台电脑；可以在设置里重新下载语音识别模型，或稍后再试一次。";
     case "memory_global_kind_rejected":
       return accountPreferenceRejectionMessage("kind_not_preference");
     case "memory_global_content_bound":
@@ -178,6 +185,12 @@ export function gatewayErrorMessage(error: unknown): string {
       return "你已经加入了可参与的工作区数量上限，无法再加入新的协作空间。";
     case "already_member":
       return "你的账号已经在这个协作空间里了，无需重复加入。";
+    // 网关把 /auth/change-password 的 403 `invalid_password` 翻成这个码。
+    // 没有它就会落到 `forbidden` 那句"没有执行这个动作的权限"：改密失败被说成权限
+    // 问题，用户去翻权限，而真正要做的只是把当前密码重输一遍。（登录那道门
+    // `desktop-gate.ts` 有自己的"邮箱或密码不正确"，不复用这一句。）
+    case "invalid_credentials":
+      return "当前密码不正确，请重新输入。";
     default:
       return "学习服务没有完成这次请求，请稍后重试。";
   }

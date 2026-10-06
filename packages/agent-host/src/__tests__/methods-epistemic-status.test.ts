@@ -9,10 +9,11 @@
  * 照着做下去没有任何一处会报错。所以下面每条断言都从**真实形状的行**出发。
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { PgDialect } from "drizzle-orm/pg-core";
 
-import { listAgentMethods, projectAgentMethod, readAgentMethod, type AgentMethodRow } from "../methods.ts";
+import { listAgentMethods, projectAgentMethod, readAgentMethod, recordAgentMethodOffered, type AgentMethodRow } from "../methods.ts";
 import type { AgentSqlExecutor } from "../store.ts";
 
 const SCOPE = { workspaceId: "11111111-1111-4111-8111-111111111111", userId: "22222222-2222-4222-8222-222222222222" };
@@ -93,4 +94,83 @@ test("读前核对：active 但依据有争议的方法，按当前版本也读�
   const supported = fakeTx([row()]);
   const method = await readAgentMethod(supported.tx, SCOPE, METHOD_ID, 3);
   assert.equal(method?.epistemicStatus, "supported", "依据精确的方法读出来却没有认识状态");
+});
+
+// ─── 方案 44 §6.3：三个阶段各自计数，阅读次数不能冒充采用 ──────────────────
+
+test("44 §6.3：目录被提供不进 consultedCount——它只说明她看见过", async () => {
+  const { tx, queries } = fakeTx([]);
+  await recordAgentMethodOffered(tx, SCOPE, {
+    methods: [{ methodId: METHOD_ID, revision: 3 }],
+    kind: "agent_goal", contextId: "run-1", contextRevision: 2, sourceKey: "goal:run-1:2",
+  });
+  assert.equal(queries.length, 1);
+  assert.match(queries[0]!, /companion_method_uses/);
+  // 写进去的阶段必须是 offered；写成 read 就等于把「看见过」记成「读过」。
+  assert.match(queries[0]!, /stage/);
+});
+
+test("44 §6.3：统计按阶段分开，consulted 只算读过正文的那些", () => {
+  const source = readFileSync(new URL("../methods.ts", import.meta.url), "utf8");
+  assert.match(source, /FILTER \(WHERE stage='offered'\) AS offered_count/);
+  assert.match(source, /FILTER \(WHERE stage IN \('read','adopted'\)\) AS consulted_count/);
+  assert.match(source, /FILTER \(WHERE stage='adopted'\) AS adopted_count/);
+  // 旧的 count(*) 口径会把 offer 也当成阅读，正是 §6.3 点名禁止的那件事。
+  assert.ok(!/count\(\*\) AS consulted_count/.test(source),
+    "退回 count(*) 会让「目录被提供」冒充「被阅读」");
+});
+
+test("44 §6.3：只有读过或采用过的使用记录才收得到质量评价", () => {
+  const migration = readFileSync(
+    new URL("../../../../apps/api/src/db/migrations/0386_method_use_stage.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(migration, /CHECK \(feedback IS NULL OR stage IN \('read', 'adopted'\)\)/,
+    "没读过正文的人判不了这条做法好不好");
+  assert.match(migration, /CHECK \(stage IN \('offered', 'read', 'adopted'\)\)/);
+  // 存量行都是阅读记录，默认值必须保持它们的语义不变。
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS stage text NOT NULL DEFAULT 'read'/);
+});
+
+test("44 §6.4：保存完整派生关系，只把**计数**按来源归并", () => {
+  const source = readFileSync(new URL("../methods.ts", import.meta.url), "utf8");
+  assert.match(source, /groupAgentMethodEvidenceOrigins\(/);
+  assert.match(source, /reconcileEvidenceEpistemicStatus\(/);
+  // 「这条记忆派生自哪次运行」只有库知道，归并前必须查出来。
+  assert.match(source, /source_run_id/);
+  // evidence 保完整——折掉记忆引用会让用户遗忘/纠正的传播路径断掉。
+  assert.match(source, /const evidence = parsed;/);
+  // 归并结果单独存，供计数用。
+  assert.match(source, /evidence_origins/);
+  assert.match(source, /\$\{epistemicStatus\},\$\{input\.author\}/);
+});
+
+test("44 §6.4：证据传播仍按 memoryId 找到派生方法——不能把记忆引用折掉", () => {
+  const migration = readFileSync(
+    new URL("../../../../apps/api/src/db/migrations/0374_agent_growth_methods.sql", import.meta.url),
+    "utf8",
+  );
+  // 用户遗忘或纠正一条记忆时，靠这个匹配把派生方法标成需要重新核对。
+  assert.match(migration, /evidence @> jsonb_build_array\(jsonb_build_object\('memoryId'/);
+  const source = readFileSync(new URL("../methods.ts", import.meta.url), "utf8");
+  // 写进库的必须是完整引用；折成「只留最具体的一条」会让上面那条匹配失效。
+  assert.ok(!/const evidence = grouping\.refs/.test(source),
+    "把 evidence 折成归并结果 = 用户遗忘不再传递到派生经验");
+});
+
+test("44 §6.4：没有归并回执的旧行退回上界，不把支持数凭空算小", () => {
+  const source = readFileSync(new URL("../methods.ts", import.meta.url), "utf8");
+  assert.match(source, /function readEvidenceIndependentCount/);
+  assert.match(source, /return row\.evidence\?\.length \?\? 0/);
+});
+
+test("44 §2：步骤与例外来自这次真实运行，不是能力目录", () => {
+  const source = readFileSync(new URL("../methods.ts", import.meta.url), "utf8");
+  assert.match(source, /planMethodStepsFromRun\(/);
+  assert.match(source, /const stepPlan = planMethodStepsFromRun/);
+  // 写进库的必须是这次运行的提炼结果。
+  assert.match(source, /JSON\.stringify\(stepPlan\.steps\)/);
+  assert.match(source, /JSON\.stringify\(\[\.\.\.stepPlan\.exceptions/);
+  // 一次都没走通就不硬凑一条做法。
+  assert.match(source, /if \(!stepPlan\.contributes\) throw new AgentStoreError\(422,"method_source_empty"/);
 });

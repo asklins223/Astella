@@ -25,8 +25,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
 import {
-  ARTIFACT_FRAME_ORIGIN,
   ARTIFACT_FRAME_SANDBOX,
+  ARTIFACT_FRAME_TARGET_ORIGIN,
   artifactFrameMotionMessage,
   artifactFrameUrl,
   isArtifactId,
@@ -76,8 +76,9 @@ export interface ArtifactFrameHostProps {
   /** 产物 id（uuid；协议 handler 只认 uuid，非法 id 在这里就地说明而不是 404）。 */
   readonly artifactId: string;
   /**
-   * 动效档位。给了就在 ready 之后把 `motion` 指令发给 frame（`reduced` 让模板
-   * 铺静态分镜）；不给则由 frame 自己的 `prefers-reduced-motion` 决定。
+   * 动效档位。给了就在 frame 进入 live 之后发 `motion` 指令，**并且在这一档改变时
+   * 再发一次**（`reduced` 让模板铺静态分镜、关掉自动播放）；不给则由 frame 自己的
+   * `prefers-reduced-motion` 决定。
    */
   readonly motion?: "full" | "reduced";
   /** 降级时的等价内容（文字等价／静态分镜）。由调用方提供；没有就只如实说明。 */
@@ -155,13 +156,6 @@ export function ArtifactFrameHost({
     }
     if (event.phase === "ready") {
       setPhase({ kind: "live", stepCount: event.stepCount ?? null });
-      if (motion) {
-        // targetOrigin 必须是产物 origin：消息只能落到这个 origin 的 frame 里。
-        iframeRef.current?.contentWindow?.postMessage(
-          artifactFrameMotionMessage(motion),
-          ARTIFACT_FRAME_ORIGIN,
-        );
-      }
       return;
     }
     if (event.phase === "error") {
@@ -212,6 +206,24 @@ export function ArtifactFrameHost({
       document.removeEventListener("visibilitychange", resetHeartbeatAllowance);
     };
   }, [phase.kind, attempt, watchdogMs]);
+
+  /**
+   * 动效档位是**随时可切**的（书房里那颗"完整／轻量／关闭"按钮），而 frame 收指令
+   * 的地方原先只有 ready 那一处——切档之后打开的演示是对的，**已经开着的**那份
+   * 却停在旧档上：2026-10-06 窗口实测，切到"关闭动效"后 frame 的
+   * `data-artifact-motion` 仍是 `full`、自动播放照跑。放在 effect 里也顺带覆盖
+   * 重建那条路（重建 = waiting → ready → live），新 frame 会再收到一次当前档位。
+   */
+  useEffect(() => {
+    if (!motion || phase.kind !== "live") return;
+    // targetOrigin 只能是 '*'：frame 是不透明 origin（`allow-scripts`，没有
+    // `allow-same-origin`），具名 origin 的消息会被浏览器静默丢掉。理由与实测见
+    // `ARTIFACT_FRAME_TARGET_ORIGIN`。
+    iframeRef.current?.contentWindow?.postMessage(
+      artifactFrameMotionMessage(motion),
+      ARTIFACT_FRAME_TARGET_ORIGIN,
+    );
+  }, [motion, phase.kind]);
 
   if (phase.kind === "degraded") {
     return (

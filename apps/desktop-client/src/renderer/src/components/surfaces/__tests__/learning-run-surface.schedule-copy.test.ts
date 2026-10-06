@@ -17,7 +17,7 @@
  * 断言强度反而更高：原来只能看**值**，现在能看 `scheduleImpactText` 真正**返回的那句话**。
  */
 import { describe, expect, it } from "vitest";
-import { scheduleImpactText, scheduleReasonLabels } from "../run/learning-run-copy.tsx";
+import { facetText, scheduleImpactText, scheduleReasonLabels } from "../run/learning-run-copy.tsx";
 
 /** 合同里 `kind: "none"` 那一支的 reasonCode 全集（来自 @ailearn/shared）。 */
 const CONTRACT_REASON_CODES = [
@@ -46,6 +46,22 @@ const screenTextFor = (reasonCode: string) =>
   } as Parameters<typeof scheduleImpactText>[0]);
 
 describe("scheduleImpact 的逐档文案", () => {
+  it("同一能力的多条证据只显示一次能力名称", () => {
+    expect(facetText(["recall", "recall", "boundary"], "暂无")).toBe("回忆、边界");
+  });
+
+  it("无法判定和未知的要点不被显示为需要补齐的能力", () => {
+    const text = scheduleImpactText({ kind: "none", reasonCode: "facet_only" }, [
+      { facet: "recall", verdict: "covered" },
+      { facet: "boundary", verdict: "not_assessable" },
+      { facet: "procedure", verdict: "unknown" },
+      { facet: "relate", verdict: "partial" },
+    ]);
+    expect(text).toContain("还差 关联");
+    expect(text).not.toContain("边界");
+    expect(text).not.toContain("过程");
+  });
+
   it("合同里每一档 reasonCode 都有一句人话，不许落到兜底", () => {
     const missing = CONTRACT_REASON_CODES.filter((code) => !(code in scheduleReasonLabels));
     expect(missing, `这些档会走 \`?? impact.reasonCode\` 的兜底，把内部词念给用户：${missing.join(", ")}`).toEqual([]);

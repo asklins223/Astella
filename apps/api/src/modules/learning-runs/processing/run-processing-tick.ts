@@ -1,4 +1,5 @@
 import { practiceTrailEventOutbox } from "@ailearn/shared/db-schema/learning-runs";
+import { uncoveredFacets } from "../run-result-facets.ts";
 import {
   appendRunEvent,
   classifyFailClosedReason,
@@ -919,14 +920,13 @@ async function processCommitCommand(
   const rubricFacets = (Array.isArray(assessment.rubricResults)
     ? (assessment.rubricResults as Array<{ facet?: string; verdict?: string }>)
     : []);
-  const coveredFacets = rubricFacets
+  const coveredFacets = [...new Set(rubricFacets
     .filter((item) => item.verdict === "covered")
     .map((item) => item.facet)
-    .filter((facet): facet is string => typeof facet === "string" && facet.length > 0);
-  const gapFacets = rubricFacets
-    .filter((item) => item.verdict !== "covered")
-    .map((item) => item.facet)
-    .filter((facet): facet is string => typeof facet === "string" && facet.length > 0);
+    .filter((facet): facet is string => typeof facet === "string" && facet.length > 0))];
+  const gapFacets = uncoveredFacets(rubricFacets
+    .filter((item): item is { facet: string; verdict: string } =>
+      typeof item.facet === "string" && item.facet.length > 0 && typeof item.verdict === "string"));
 
   const result: LearningRunResultV1 = isDemonstrated
     ? {

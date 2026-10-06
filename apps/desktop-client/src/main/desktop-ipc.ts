@@ -117,6 +117,8 @@ import {
   recordLearningRunActivityLeaseOutputV2Schema,
   desktopSubmitTaskArtifactV2Schema,
   desktopNoteSaveRequestV1Schema,
+  companionVoiceTranscribeRequestV1Schema,
+  companionVoiceTranscribeResultV1Schema,
   commandIdSchema,
   emailSchema,
   gatewayErrorSchema,
@@ -379,6 +381,7 @@ import {
 export type { NoteDocCacheStore };
 import { ensureArtifactStored } from "./artifact-store";
 import { VoiceAsrModelStore } from "./voice-asr-model-store";
+import { registerVoiceAsrChannels } from "./desktop-ipc-voice-asr";
 import { voiceAsrModelMountUrl } from "./voice-asr-model-route";
 import { voiceAsrModelSnapshotV1Schema } from "@ailearn/shared/voice-asr-model-contracts";
 import type { WindowStateSnapshot } from "../shared/window-state";
@@ -1749,44 +1752,15 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     return { focused: true as const };
   }, undefined, focusOutputSchema);
 
-  /**
-   * 本地语音识别模型的四条设备级通道。
-   *
-   * **不要求工作区纪元**：模型在这台机器上，不在某个空间里。用户在设置页第一次
-   * 点「下载」时可能还没登录任何空间，用 `assertEpoch` 会把这一次正当操作判成
-   * `stale_workspace`，界面上只剩一句看不懂的失败。
-   *
-   * `mountUrl` 交的是**页面所在那个 origin** 下的保留前缀（算法见
-   * `voiceAsrModelMountUrl`）：打包后由 app scheme 路由提供，开发时由开发服务器提供，
-   * 两种形态都同源。
-   */
-  const voiceAsrModelMountUrlFor = (window: BrowserWindow): string => {
-    try {
-      return voiceAsrModelMountUrl(window.webContents.getURL(), process.env.ELECTRON_RENDERER_URL);
-    } catch {
-      throw new DesktopGatewayFailure("configuration_error", "never");
-    }
-  };
-  for (const [channelName, run] of [
-    [DESKTOP_IPC_CHANNELS.companionVoiceAsrModelState, null],
-    [DESKTOP_IPC_CHANNELS.companionVoiceAsrModelDownload, "startDownload"],
-    [DESKTOP_IPC_CHANNELS.companionVoiceAsrModelCancel, "cancel"],
-    [DESKTOP_IPC_CHANNELS.companionVoiceAsrModelRemove, "remove"],
-  ] as const) {
-    channel(channelName, runtimeInputSchema, async (_event, window, input) => {
-      assertEpochBoundaryExempt(input.meta, activeWorkspaceEpoch);
-      const store = options.voiceAsrModelStore;
-      if (!store) throw new DesktopGatewayFailure("configuration_error", "never");
-      // 下载是长任务：发起即返回，进度靠再去读状态拿。把 239 MB 的等待压在
-      // 一次 invoke 里，用户切走设置页就会把它一起带走。
-      if (run) await store[run]();
-      return voiceAsrModelSnapshotV1Schema.parse({
-        version: 1,
-        mountUrl: voiceAsrModelMountUrlFor(window),
-        ...(await store.state()),
-      });
-    }, voiceAsrModelSnapshotV1Schema);
-  }
+  // 语音与本地识别模型这五条设备级通道（含本机识别的解码入口）连同它们的 schema
+  // 一起搬进了 `desktop-ipc-voice-asr.ts`：它们同族（设备级、不要求工作区纪元、
+  // 不过网关），而这一族的最后一条会把本文件重新推过 2000 行软线。
+  registerVoiceAsrChannels({
+    channel,
+    assertEpochBoundaryExempt,
+    activeWorkspaceEpoch: () => activeWorkspaceEpoch,
+    voiceAsrModelStore: options.voiceAsrModelStore,
+  });
 
   installHandler(DESKTOP_IPC_CHANNELS.clipboardReadLinks, runtimeInputSchema, options, () => {
     // 外部复制的链接只在这里过一遍：剪贴板原文截断后提取候选地址，

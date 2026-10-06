@@ -43,12 +43,33 @@ export async function seedFormalAnswerRun(
   const canonicalAnswer = overrides.canonicalAnswer ?? "给 created_at 建索引，因为它的选择性高";
   const publicSummary = overrides.publicSummary ?? "索引的选择性";
 
+  // 第二位成员先单独落库、**并提交**，再进主事务。
+  //
+  // 为什么必须拆开：`users` 的插入策略 `sec02_users_self_insert` 是
+  // `WITH CHECK (id = app.user_id)`。一条 INSERT 里写两行时，第二行的 id 不等于
+  // 当前事务的 `app.user_id`，整条语句被回滚并抛 42501
+  // （`new row violates row-level security policy for table "users"`）。
+  // 夹具早先一次插两个 user，只有走超户 `DATABASE_URL` 的那支集测
+  // （`companion-answer-exposure-postgres`）能过；给受限 `DATABASE_URL_API` 的
+  // `companion-dialogue-postgres` 必然三条假红。
+  //
+  // 形状对齐生产的注册路径（0327 §2.4：actor 就是新用户本人）：她自己开一个事务，
+  // 把 `app.user_id` 设成自己，"她自己插自己"。
+  //
+  // 顺序也不能反：`workspace_members.user_id` 上有 FK 到 `users(id)`
+  // （`workspace_members_user_id_users_fk`），主事务要往里写她的成员行，
+  // 她必须已经提交可见。
+  await sql.begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${otherUserId}, true)`;
+    await tx`INSERT INTO users (id, email, password_hash, role) VALUES
+      (${otherUserId}, ${`fa-other-${tag}@x.test`}, 'h', 'member')`;
+  });
+
   await sql.begin(async (tx) => {
     await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
     await tx`SELECT set_config('app.user_id', ${userId}, true)`;
     await tx`INSERT INTO users (id, email, password_hash, role) VALUES
-      (${userId}, ${`fa-owner-${tag}@x.test`}, 'h', 'owner'),
-      (${otherUserId}, ${`fa-other-${tag}@x.test`}, 'h', 'member')`;
+      (${userId}, ${`fa-owner-${tag}@x.test`}, 'h', 'owner')`;
     await tx`INSERT INTO workspaces (id, name, owner_id, workspace_type) VALUES
       (${workspaceId}, ${`fa-${tag}`}, ${userId}, 'collaborative')`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role) VALUES

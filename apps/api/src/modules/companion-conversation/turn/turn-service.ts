@@ -25,7 +25,7 @@ import {
   type CreateCompanionTurnRequestV1,
 } from "@ailearn/shared";
 import { resolveAuthSurfaceManifestSecret } from "../../../companion-contracts/auth-surface.ts";
-import { getCompanionAccountEpoch } from "./companion-account-epoch.ts";
+import { ensureCompanionAccountState, getCompanionAccountEpoch } from "./companion-account-epoch.ts";
 import { reclaimExpiredCompanionProposals, invalidateSupersededRunProposals } from "./companion-proposal-expiry.ts";
 import {
   contextRevisionForCompanionLearningRun,
@@ -535,6 +535,17 @@ export async function createCompanionTurn(args: {
     // L11：run 创建时冻结当前账号世代（user_companion_account_state.epoch）。
     // worker 产出的事件与该 run 后续的 cancel/action 事件都携带此 epoch，
     // 客户端据此拒绝 global off 之前的迟到事件。
+    //
+    // 建 run 前先幂等补齐账号状态行：worker 的 provider 调用闸门
+    // （reserveCompanionProviderCall）用 INNER JOIN 要求这一行存在，而
+    // getCompanionAccountEpoch 对无行返回 0、**不要求它存在**——于是
+    // 「API 允许 epoch=0 建 run，worker 却要求该行存在」，从没碰过伴星设置的
+    // 用户第一句话必然 AGENT_BUDGET_EXCEEDED。
+    //
+    // 与 run 同一事务：回滚不留孤儿行；行是账号级（表无 workspace 列），
+    // 换空间/跨空间共用同一行，不需要也别在别处重复建。取值与 fail-closed
+    // 取舍见 companion-account-epoch.ts 的 ensureCompanionAccountState。
+    await ensureCompanionAccountState(tx, args.userId);
     const accountEpoch = await getCompanionAccountEpoch(tx, args.userId);
     const job = await createJob({
       workspaceId: args.workspaceId,

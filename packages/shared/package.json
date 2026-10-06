@@ -31,6 +31,11 @@
       "import": "./src/ai-task-kernel.ts",
       "default": "./src/ai-task-kernel.ts"
     },
+    "./context-budget-contracts": {
+      "types": "./src/contracts/context-budget-contracts.ts",
+      "import": "./src/contracts/context-budget-contracts.ts",
+      "default": "./src/contracts/context-budget-contracts.ts"
+    },
     "./assessment-dispute-rules-v2": {
       "types": "./src/assessment-dispute-rules-v2.ts",
       "import": "./src/assessment-dispute-rules-v2.ts",

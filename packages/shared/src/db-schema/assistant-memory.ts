@@ -183,6 +183,15 @@ export const companionProceduralPlaybooks = pgTable(
     exceptions: jsonb("exceptions").notNull().default(sql`'[]'::jsonb`),
     /** 证据：从哪些记忆/事件归纳出来的。遗忘/修订会经触发器把它降级为 disputed。 */
     evidence: jsonb("evidence").notNull().default(sql`'[]'::jsonb`),
+    /**
+     * 依据的来源归并回执（方案 44 §6.4）。
+     *
+     * 与 `evidence` **分开存**：`evidence` 保完整的派生关系（引用一条不少），
+     * 因为 `ailearn_propagate_playbook_evidence_change` 要按 memoryId 找派生方法，
+     * 用户遗忘或纠正一条记忆时必须能传递到这里。「同源只算一条」说的是**计数**，
+     * 不是把派生关系删掉。这里记 `{independentCount, mergedCount, origins}`。
+     */
+    evidenceOrigins: jsonb("evidence_origins").$type<Record<string, unknown>>(),
     version: integer("version").notNull().default(1),
     epistemicStatus: text("epistemic_status").notNull().default("tentative"),
     author: text("author").notNull().default("companion"),
@@ -216,6 +225,11 @@ export const companionMethodUses = pgTable("companion_method_uses", {
   workspaceId: uuid("workspace_id").notNull(), userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   methodRevision: integer("method_revision").notNull(), contextKind: text("context_kind").notNull(),
   contextId: uuid("context_id").notNull(), contextRevision: integer("context_revision").notNull(), sourceKey: text("source_key").notNull(),
+  /**
+   * 这次记录处在哪一步（方案 44 §6.3）：`offered`（目录被提供）／`read`（正文被阅读）／
+   * `adopted`（被实际采用）。三者不能互相顶替——阅读次数不是采用，采用也不是质量。
+   */
+  stage: text("stage").$type<"offered" | "read" | "adopted">().notNull().default("read"),
   feedback: text("feedback"), comment: text("comment"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(), feedbackAt: timestamp("feedback_at", { withTimezone: true }),
 }, t => ({ sourceUnique: uniqueIndex("companion_method_uses_source_unique").on(t.workspaceId,t.userId,t.methodId,t.methodRevision,t.sourceKey) }));

@@ -8,7 +8,8 @@
     "./ai-governance-policy": "./src/ai-governance-policy.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test --test-concurrency=1 $(find src -name '*.test.ts' | sort)"
   },
   "dependencies": {
     "@ailearn/agent-core": "file:../agent-core",

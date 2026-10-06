@@ -26,7 +26,7 @@ import {
  * 而一句「识别失败」没有。
  */
 
-export type CompanionVoicePhase = "idle" | "listening" | "transcribing";
+export type CompanionVoicePhase = "idle" | "starting" | "listening" | "transcribing";
 
 export interface CompanionVoiceTranscript {
   readonly text: string;
@@ -161,6 +161,9 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
     // 「正在起录」这道闸先落下：下面第一件事就是一次 await，不先占住的话，
     // 连点两下「开始录音」会开两个麦克风。
     startingRef.current = true;
+    phaseRef.current = "starting";
+    setPhase("starting");
+    setNote(null);
     const operation = ++operationRef.current;
     let modelChecked = false;
     try {
@@ -215,7 +218,13 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
       setPhase("idle");
       showNote(modelChecked ? "麦克风不可用或未授权" : "暂时读不到本机语音状态，请稍后再试");
     } finally {
-      if (operation === operationRef.current) startingRef.current = false;
+      if (operation === operationRef.current) {
+        startingRef.current = false;
+        if (phaseRef.current === "starting") {
+          phaseRef.current = "idle";
+          setPhase("idle");
+        }
+      }
     }
   }, [emitLevel, options, showNote]);
 

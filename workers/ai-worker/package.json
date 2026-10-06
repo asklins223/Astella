@@ -18,7 +18,12 @@
     "test:objective-reuse:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/objective-reuse-lookup-postgres.integration.ts",
     "test:parse-source-rls:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/parse-source-rls-context-postgres.integration.ts",
     "test:ai-audit-rls:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/ai-audit-rls-context-postgres.integration.ts",
-    "test:cross-module-drill:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/cross-module-same-process-drill.postgres.integration.ts"
+    "test:cross-module-drill:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/cross-module-same-process-drill.postgres.integration.ts",
+    "test:plan44-cooldown:postgres": "node --import tsx --test --test-concurrency=1 --test-force-exit src/integration-tests/plan44-compaction-cooldown-postgres.integration.ts",
+    "test:card-generation-v2-lifecycle:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/card-generation-v2-e2e-subset.integration.ts src/integration-tests/card-generation-v2-c-cases.integration.ts src/integration-tests/card-generation-v2-redaction-quota.integration.ts",
+    "test:ai-task-kernel:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/ai-task-kernel-postgres.integration.ts",
+    "test:public-http-gate:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/public-http-gate-postgres.integration.ts",
+    "test:shared-foundation-vertical-slice:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/shared-foundation-vertical-slice-postgres.integration.ts"
   },
   "dependencies": {
     "@ailearn/shared": "file:../../packages/shared",
@@ -32,7 +37,8 @@
     "undici": "^7.29.0",
     "zod": "^3.23.8",
     "@ailearn/agent-core": "file:../../packages/agent-core",
-    "@ailearn/agent-host": "file:../../packages/agent-host"
+    "@ailearn/agent-host": "file:../../packages/agent-host",
+    "@ailearn/ai-quality": "file:../../packages/ai-quality"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",

@@ -37,6 +37,7 @@ import { validationAssistanceExposures } from "@ailearn/shared/db-schema/validat
 import { companionSandboxNamespaces } from "@ailearn/shared/db-schema/companion-sandbox";
 import { understandingProjectionCheckpoints } from "@ailearn/shared/db-schema/understanding-projection";
 import type { GetLearningRunResultResponseV2, LearningRunOriginV2, LearningRunPublicSnapshotV2, LearningRunPublicV1, LearningRunSubmittedAnswerV2, LearningRunResultAssessmentV2, LearningRunTargetPublicV2, LearningRunTargetRevealV2, LearningRunReturnContractV2, LearningRunResultV2, LearningRunReturnContractV1, LearningRunReturnTargetV2, SchedulingAuthorizationV1, SubmitTaskArtifactV1 } from "@ailearn/shared";
+import { uncoveredFacets } from "./run-result-facets.ts";
 import { getLearningRunResultResponseV2Schema, learningRunOriginV2Schema, learningRunPublicSnapshotV2Schema, artifactPayloadSchema, learningRunResultAssessmentV2Schema, learningRunResultSchema, learningRunResultV2Schema, learningRunPhaseV2Schema, learningRunReturnContractSchema, learningRunReturnContractV2Schema, learningRunReturnTargetV2Schema, learningRunTargetPublicV2Schema, learningRunTargetRevealV2Schema } from "@ailearn/shared";
 import { learningRunOutcomeSchema, taskIntentSchema } from "@ailearn/shared/learning-run-contracts";
 import type { RoundNextStepV1, RoundPracticeV1 } from "@ailearn/shared/note-learning-round-contracts";
@@ -1108,7 +1109,10 @@ function projectLearningRunResultV2(
     originV2: context.originV2,
     outcome: parsed.data.outcome,
     demonstratedFacets: parsed.data.demonstratedFacets,
-    gapFacets: parsed.data.gapFacets,
+    // 练习缺口以本次逐项判定为准；无法评估不等于用户能力缺失。
+    gapFacets: parsed.data.outcome === "practice_completed" && assessment?.rubricResults.length
+      ? uncoveredFacets(assessment.rubricResults)
+      : parsed.data.gapFacets,
     scheduleImpact: parsed.data.scheduleImpact,
     returnTargetV2: context.returnTargetV2,
     ...(parsed.data.projection ? { projection: parsed.data.projection } : {}),

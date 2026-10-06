@@ -19,33 +19,38 @@ let suspend: Mock<() => Promise<void>>;
 let resume: Mock<() => Promise<void>>;
 let close: Mock<() => Promise<void>>;
 let listeners: MockInstance<typeof window.addEventListener>;
+/** 每个被 start() 的节点；空数组 = 这一轮没有任何音源自己跑起来。 */
+let started: string[];
 
 beforeEach(() => {
   construct = vi.fn();
   suspend = vi.fn(async () => undefined);
   resume = vi.fn(async () => undefined);
   close = vi.fn(async () => undefined);
+  started = [];
   listeners = vi.spyOn(window, "addEventListener");
   vi.stubGlobal("requestIdleCallback", vi.fn((callback: () => void) => { warm = callback; return 1; }));
   vi.stubGlobal("cancelIdleCallback", vi.fn());
-  const node = () => ({
-    connect() { return this; }, start: vi.fn(), stop: vi.fn(),
+  const node = (kind: string) => ({
+    connect() { return this; },
+    start: vi.fn(() => { started.push(kind); }),
+    stop: vi.fn(),
     gain: { value: 0, cancelScheduledValues: vi.fn(), setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() },
     frequency: { value: 0 }, Q: { value: 0 },
   });
   vi.stubGlobal("AudioContext", class {
     sampleRate = 16;
     currentTime = 0;
-    destination = node();
+    destination = node("destination");
     suspend = suspend;
     resume = resume;
     close = close;
     constructor() { construct(); }
     createBuffer() { return { getChannelData: () => new Float32Array(16) }; }
-    createBufferSource = node;
-    createBiquadFilter = node;
-    createGain = node;
-    createOscillator = node;
+    createBufferSource = () => node("bufferSource");
+    createBiquadFilter = () => node("biquadFilter");
+    createGain = () => node("gain");
+    createOscillator = () => node("oscillator");
   });
   useRoomStore.setState({ masterMuted: false, surface: null, windowState: "visible" });
 });
@@ -91,4 +96,34 @@ it("untrusted events cannot unlock sound and unmount cancels unfinished warmup",
   expect(window.cancelIdleCallback).toHaveBeenCalledWith(1);
   warm();
   expect(construct).not.toHaveBeenCalled();
+});
+
+/**
+ * 没有任何音源自己跑起来——包括解锁之后。
+ *
+ * 上一版首页有一层噪声环境床：建图时就把 `noise` 和 `gust` 两个节点 `start()` 了，
+ * 第一次可信点击再把增益 ramp 到 0.03，于是"打开 app 之后一直有底噪"，用户只
+ * 能用总静音把伴星语音一起关掉才舒服。2026-10-06 那一层删掉了。
+ *
+ * 这条守的是**形状**而不是某一行代码：任何人重新往建图里塞一个 `start()`，
+ * 这里就会红。
+ */
+it("unlocking the room starts no source node at all", async () => {
+  render(<HomeV2AudioController />);
+  await act(async () => { warm(); });
+  expect(started).toEqual([]);
+  await act(async () => { interact(); });
+  expect(audible()).toBe(true);
+  expect(resume).toHaveBeenCalled();
+  expect(started).toEqual([]);
+});
+
+it("【自证】判据认得出「建图时就把床启动起来」这个真实退化", async () => {
+  render(<HomeV2AudioController />);
+  await act(async () => { warm(); });
+  // 把删掉之前那一版的退化形状手动跑一遍：上面那条守的不是"没有这行代码"，
+  // 而是"没有任何节点被 start"——只有真的能看见 start，判据才算数。
+  const source = new AudioContext().createBufferSource();
+  source.start();
+  expect(started).toEqual(["bufferSource"]);
 });

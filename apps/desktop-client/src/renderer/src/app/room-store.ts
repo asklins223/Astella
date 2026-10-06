@@ -25,7 +25,7 @@ import {
 } from "../components/companion/window-live2d-contract";
 
 export type ThemeMode = "system" | "manual";
-export type CompanionMoment = "idle" | "lamp" | "ambient" | "confirm" | "encourage";
+export type CompanionMoment = "idle" | "lamp" | "confirm" | "encourage";
 export type CompanionPosition = { readonly x: number; readonly y: number };
 export type CompanionNormalizedAnchor = { readonly x: number; readonly y: number };
 export type CompanionPlacementOwner = "semantic" | "user";
@@ -210,7 +210,6 @@ type RoomStore = {
   /** 当前登录的账号；门禁还没读到会话时为 null，此时按钮不冒充知道是谁。 */
   accountIdentity: AccountIdentity | null;
   accountAvatar: AccountAvatar | null;
-  ambientRequested: boolean;
   masterMuted: boolean;
   onboardingSeen: boolean;
   onboardingOpen: boolean;
@@ -329,7 +328,6 @@ type RoomStore = {
   setSpaceIdentity: (identity: SpaceIdentity | null) => void;
   setAccountIdentity: (identity: AccountIdentity | null) => void;
   setAccountAvatar: (avatar: AccountAvatar | null) => void;
-  toggleAmbient: () => void;
   toggleMasterMuted: () => void;
   /** 显式设置总静音，供设置页的受控开关使用（不再靠双重否定反推）。 */
   setMasterMuted: (muted: boolean) => void;
@@ -394,7 +392,6 @@ export const useRoomStore = create<RoomStore>()(
       spaceIdentity: null,
       accountIdentity: null,
       accountAvatar: null,
-      ambientRequested: false,
       masterMuted: false,
       onboardingSeen: false,
       companionGuideOpen: false,
@@ -596,12 +593,6 @@ export const useRoomStore = create<RoomStore>()(
       setSpaceIdentity: (spaceIdentity) => set({ spaceIdentity }),
       setAccountIdentity: (accountIdentity) => set({ accountIdentity }),
       setAccountAvatar: (accountAvatar) => set({ accountAvatar }),
-      toggleAmbient: () =>
-        set((state) => ({
-          ambientRequested: !state.ambientRequested,
-          masterMuted: state.ambientRequested ? state.masterMuted : false,
-          companionMoment: "ambient",
-        })),
       toggleMasterMuted: () => set((state) => ({ masterMuted: !state.masterMuted })),
       setMasterMuted: (masterMuted) => set({ masterMuted }),
       openOnboarding: () => set({ onboardingOpen: true }),

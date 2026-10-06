@@ -77,11 +77,11 @@ const MEMORY_NOT_STARTED = {
   detail: "聊聊近况，或手动添加一件希望她记住的事。",
 } as const;
 
-const MEMORY_AUTHOR_LABEL = { user: "用户修订", extractor: "从对话里提取", companion: "她自己的判断", maintenance: "后台整理" } as const;
+const MEMORY_AUTHOR_LABEL = { user: "用户修订", extractor: "提取整理", companion: "她自己的判断", maintenance: "后台整理" } as const;
 
 const MEMORY_EPISTEMIC_LABEL = { supported: "有据", tentative: "待核对", disputed: "有争议", superseded: "已被替代" } as const;
 
-const MEMORY_SOURCE_LABEL = { user_stated: "用户自述", model_inferred: "模型推断", confirmed: "用户确认", summary: "对话整理" } as const;
+const MEMORY_SOURCE_LABEL = { user_stated: "用户自述", model_inferred: "模型推断", confirmed: "用户确认", summary: "摘要整理" } as const;
 
 const MEMORY_SPEAKER_LABEL: Record<"user" | "assistant" | "companion", string> = {
   user: "用户原话",

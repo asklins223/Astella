@@ -3,7 +3,7 @@ import {
   HOME_V2_CAMERA_PRESETS,
   homeV2CameraCss,
   homeV2CameraDuration,
-  shouldRunHomeV2Ambient,
+  shouldPlayHomeV2Feedback,
 } from "../home-v2.ts";
 
 describe("home V2 finite room camera", () => {
@@ -65,13 +65,13 @@ describe("home V2 finite room camera", () => {
   });
 });
 
-describe("home V2 ambience gate", () => {
+describe("home V2 sound gate", () => {
   it("runs only after a user gesture in a visible, unmuted idle room", () => {
     const ready = { unlocked: true, masterMuted: false, surfaceOpen: false, windowVisible: true };
-    expect(shouldRunHomeV2Ambient(ready)).toBe(true);
-    expect(shouldRunHomeV2Ambient({ ...ready, unlocked: false })).toBe(false);
-    expect(shouldRunHomeV2Ambient({ ...ready, masterMuted: true })).toBe(false);
-    expect(shouldRunHomeV2Ambient({ ...ready, surfaceOpen: true })).toBe(false);
-    expect(shouldRunHomeV2Ambient({ ...ready, windowVisible: false })).toBe(false);
+    expect(shouldPlayHomeV2Feedback(ready)).toBe(true);
+    expect(shouldPlayHomeV2Feedback({ ...ready, unlocked: false })).toBe(false);
+    expect(shouldPlayHomeV2Feedback({ ...ready, masterMuted: true })).toBe(false);
+    expect(shouldPlayHomeV2Feedback({ ...ready, surfaceOpen: true })).toBe(false);
+    expect(shouldPlayHomeV2Feedback({ ...ready, windowVisible: false })).toBe(false);
   });
 });

@@ -144,3 +144,19 @@ export function parseArtifactFrameEvent(data: unknown): ArtifactFrameEvent | nul
 export function artifactFrameMotionMessage(motion: 'full' | 'reduced'): ArtifactFrameCommandMessage {
   return { channel: ARTIFACT_FRAME_CHANNEL, direction: 'host->frame', command: 'motion', motion }
 }
+
+/**
+ * 宿主的 `postMessage` 只认这一个 targetOrigin：`'*'`。
+ *
+ * 为什么不是 `ARTIFACT_FRAME_ORIGIN`：frame 带的是 `ARTIFACT_FRAME_SANDBOX`
+ * （只有 `allow-scripts`）——它的文档 origin 是**不透明**的，而不透明 origin 永远
+ * 不等于任何具名 origin。于是 `postMessage(msg, ARTIFACT_FRAME_ORIGIN)` 会被浏览器
+ * **静默丢掉**：宿主以为指令发出去了，frame 一发没收到。2026-10-06 真窗口实测：
+ * 同一条 `motion` 指令用产物 origin 发，frame 的 `data-artifact-motion` 一直是
+ * `full`、自动播放照跑；换成 `'*'` 立刻变 `reduced` 并停掉播放。
+ *
+ * 这条通道只有"动效档位"一个非敏感指令（没有正文、没有凭据、没有 DOM 指令），
+ * 而 frame 那侧仍按 channel + direction 白名单判据收信；宿主这侧的收信判据也照旧
+ * 要求 `event.source === frame.contentWindow`。所以放开 targetOrigin 不等于放开通道。
+ */
+export const ARTIFACT_FRAME_TARGET_ORIGIN = '*' as const

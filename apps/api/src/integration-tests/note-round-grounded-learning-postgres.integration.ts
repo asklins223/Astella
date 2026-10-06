@@ -268,7 +268,14 @@ test("fresh saved note → default question and plan → grounded explanation �
     assert.equal(schedulesAfterSettlement.length, 1, "changed evidence creates no successor schedule");
     assert.equal(schedulesAfterSettlement[0].status, "pending", "changed evidence does not consume the in-flight schedule");
   } finally {
-    await admin`DELETE FROM review_schedules WHERE id=${impactedScheduleId}`;
+    // 一次**按 workspace 清**，不是只删 `impactedScheduleId`：
+    // 那一条是笔记订阅建的那行；而上面那次无卡练习 run 结算完成后，`learning_runs`
+    // 那条路径**自己也建了一行后继复习**（实测 pending / generation=1，subject 指向
+    // 本轮那个目标）。只删订阅那一行，这行就漏进下一个用例——本文件里下一条
+    // `suspect factual claim …` 断言的是「这个 workspace 一行复习都没有」，
+    // 于是被前一条的残留判红（2026-10-06 实测）。夹具 workspace 本来就是本文件
+    // `before` 里现种、`after` 里整个删掉的，整块清掉才是它的真实生命周期。
+    await admin`DELETE FROM review_schedules WHERE workspace_id=${fixture.workspaceId}`;
     await admin`UPDATE notes SET current_version_id=${fixture.versionIds[0]} WHERE id=${fixture.noteIds[0]}`;
     await close(round);
   }
@@ -400,8 +407,16 @@ test("suspect factual claim stays visible while only the independently safe unit
     assert.equal(objectives.length, 1);
     assert.deepEqual(objectives[0].canonical_answer.items.map((item: { unitId: string }) => item.unitId), ["safe-unit-2"]);
     assert.deepEqual(objectives[0].scoring_rubric.units.map((item: { rubricUnitId: string }) => item.rubricUnitId), ["safe-unit-2"]);
-    const schedules = await admin`SELECT 1 FROM review_schedules WHERE workspace_id=${fixture.workspaceId}`;
-    assert.equal(schedules.length, 0);
+    // 按**这一轮绑定的目标**问，而不是"整个 workspace 有没有复习行"。
+    // 原写法是 workspace 全量计数，于是本文件里任何一条用例留下的残留都能把它判红
+    // ——断言变成了测执行顺序，而不是测"可疑主张没有被排进复习"这件事本身。
+    const schedules = await admin`
+      SELECT 1 FROM review_schedules AS schedule
+      WHERE schedule.workspace_id=${fixture.workspaceId}
+        AND schedule.subject_id IN (
+          SELECT binding.objective_id FROM note_learning_round_targets AS binding
+          WHERE binding.round_id=${round.roundId})`;
+    assert.equal(schedules.length, 0, "可疑主张不该被排进复习队列");
     const reread = await call("GET", `/v2/note-learning-rounds/${round.roundId}/teaching`);
     assert.equal(reread.json().teaching.content.suspectClaims?.[0]?.reason, "这条主张看起来省略了可能改变结论的条件，值得再核对。");
   } finally { suspectClaim = false; await close(round); }
@@ -812,19 +827,48 @@ test("failed calls exhaust the round budget even with no successful teaching", a
 
 test("revised question appends a new plan and stale plan edits do not rewrite history", async () => {
   const round = await open();
-  const revised = await call("POST", `/v2/note-learning-rounds/${round.roundId}/driving-question`, {
-    expectedRevision: round.revision, drivingQuestion: "主动提取和重读有什么区别？", drivingQuestionSource: "user_rewritten",
-  });
-  assert.equal(revised.statusCode, 200, revised.body);
-  const plan = await call("GET", `/v2/note-learning-rounds/${round.roundId}/plans`);
-  assert.equal(plan.json().plans.length, 2);
-  assert.notEqual(plan.json().plans[0].plan.steps.at(-1).text, plan.json().plans[1].plan.steps.at(-1).text);
-  const stale = await call("POST", `/v2/note-learning-rounds/${round.roundId}/plans`, {
-    expectedRevision: round.revision, plan: plan.json().plans[0].plan, reason: "旧窗口操作",
-  });
-  assert.equal(stale.statusCode, 409); assert.equal(stale.json().error, "stale_revision");
-  assert.equal((await call("GET", `/v2/note-learning-rounds/${round.roundId}/plans`)).json().plans.length, 2);
-  await close(revised.json().round);
+  let closedRound = false;
+  try {
+    const before = await call("GET", `/v2/note-learning-rounds/${round.roundId}/plans`);
+    const original = before.json().plans[0];
+    const revised = await call("POST", `/v2/note-learning-rounds/${round.roundId}/driving-question`, {
+      expectedRevision: round.revision, drivingQuestion: "主动提取和重读有什么区别？", drivingQuestionSource: "user_rewritten",
+    });
+    assert.equal(revised.statusCode, 200, revised.body);
+    const plan = await call("GET", `/v2/note-learning-rounds/${round.roundId}/plans`);
+    assert.equal(plan.json().plans.length, 2, "改写本轮问题只**追加**一版计划，不就地改写");
+    // 旧的那一版逐字不动——这是「追加不是改写」真正要钉的东西。
+    //
+    // 此前这里断言的是「新旧两版最后一步文案不同」。那条已经**过期**：
+    // `buildRoundReadingPlan` 在 2026-10 那次重写后刻意不再复述问题句（收尾那一步
+    // 是固定文案「用一个具体例子检验理解…」），而阅读步骤只按**问题点名了哪几个
+    // 小节**变化。夹具只有一个小节「间隔重复」，改写后的问题没点到别的小节，
+    // 于是两版计划**本就该逐字相同**——断言文案不同，量到的是重构前的旧行为。
+    assert.deepEqual(plan.json().plans[0], original, "旧计划那一版原样留着，没被就地改写");
+    assert.equal(plan.json().plans[1].planOrdinal, 2, "新计划是追加出来的第二版");
+    const stale = await call("POST", `/v2/note-learning-rounds/${round.roundId}/plans`, {
+      expectedRevision: round.revision, plan: original.plan, reason: "旧窗口操作",
+    });
+    assert.equal(stale.statusCode, 409); assert.equal(stale.json().error, "stale_revision");
+    assert.equal((await call("GET", `/v2/note-learning-rounds/${round.roundId}/plans`)).json().plans.length, 2);
+    await close(revised.json().round);
+    closedRound = true;
+  } finally {
+    // 中途失败也要把轮次收掉：留下一个 open 轮次，下一条 `open()` 只会拿到
+    // 409 round_already_open，于是**一条真失败伪装成下一条失败**（2026-10-06 实测）。
+    //
+    // 但收尾**不能把真正的失败盖掉**：上面已经正常收过的那一次，这里再 PATCH 就是
+    // 409 stale_revision。所以已经关着的轮次不当失败——只有"既没收到 200、
+    // 轮次也还开着"才是真的收不掉。
+    if (!closedRound) {
+      const res = await call("PATCH", `/v2/note-learning-rounds/${round.roundId}`, {
+        expectedRevision: round.revision, action: { kind: "close", outcome: "partial" },
+      });
+      if (res.statusCode !== 200 && res.json()?.round?.phase !== "closed") {
+        assert.equal(res.statusCode, 200, res.body);
+      }
+    }
+  }
 });
 
 

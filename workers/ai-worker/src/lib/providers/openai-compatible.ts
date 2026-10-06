@@ -778,6 +778,13 @@ export class OpenAICompatibleProvider implements AIProvider {
       reservedOutputTokens,
       maxInputTokens: contextWindowTokens - reservedOutputTokens,
       maxOutputTokens,
+      // 方案 44 §4.1：maxInputTokens 是「窗口 − 最大输出」的派生值，**不是**供应商
+      // 独立声明的输入硬限制，因此不填 inputHardLimitTokens。预算解析据此只按
+      // C − O 表达这一条约束，不会把同一个约束扣两遍。
+      // maxTokensStrategy="always"（DashScope）或平台未开 disableMaxTokens 时，
+      // 请求里的 maxTokens 确实下发到上游；两者皆否则预算必须改用保守输出预留。
+      outputLimitEnforced: this.maxTokensStrategy === "always"
+        || !(this.platformOptions?.disableMaxTokens ?? false),
       // R3: fingerprint includes visionModelId to capture vision-only config drift.
 fingerprint: `${this.id}:${this.modelId}:${this.visionModelId}:native_tools`,
     };

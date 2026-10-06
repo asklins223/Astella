@@ -43,17 +43,46 @@ process.env.COMPANION_DIALOGUE_V1_ENABLED = "true";
 
 const sql = postgres(CONN, { max: 2 });
 
+/**
+ * §6c 那段**测试专用 DDL**（建一个"只让第一次发布失败"的触发器）走这一条连接。
+ *
+ * `ailearn_api` 在 `public` 上**没有 CREATE**——实测
+ * `has_schema_privilege('ailearn_api','public','CREATE') = false`
+ * （`ailearn_worker` 同样为 false，只有 migrator 为 true）。所以那段
+ * `CREATE SEQUENCE / FUNCTION / TRIGGER` 在受限角色下必然 42501
+ * `permission denied for schema public`。
+ *
+ * **这不是 RLS，补 GUC 也补不了**：它是模式级权限，与策略无关。同族其它集测
+ * （`companion-memory-handlers-postgres` 等）用的是同一个做法——夹具/DDL 走 migrator
+ * 超户连接，被测读写走自己的受限连接。
+ *
+ * 本文件其余部分**一律**仍用 `CONN`（`ailearn_api`），所以 RLS 那一层照旧是真的
+ * 被量到，而不是被一条超户连接绕过去。
+ */
+const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 1 });
+
+/** §6c 那条断 `companion_diary_generation_checkpoints` 的读，见 `readInScope` 的注释。 */
+const worker = postgres(testDatabaseUrl("DATABASE_URL_WORKER"), { max: 1 });
+
 let workspaceId = "";
 let userId = "";
 
 const scope = () => ({ workspaceId, userId });
 
-/** 断言用的读一律落在**这一轮的作用域**里：裸读在受限角色下返回空集而不是报错。 */
+/**
+ * 断言用的读一律落在**这一轮的作用域**里：裸读在受限角色下返回空集而不是报错。
+ *
+ * `client` 只在**那张表本身只对某个角色开放**时才需要换：§6c 断的
+ * `companion_diary_generation_checkpoints` 只有 `ailearn_worker` 的策略与授权
+ * （`ailearn_api` 连 SELECT 都没有，那是设计如此——检查点是 worker 私有的）。
+ * 其余一律走默认的 `DATABASE_URL_API`，所以 RLS 那一层照旧是真的被量到。
+ */
 async function readInScope<T>(
   s: { workspaceId: string; userId: string },
   fn: (tx: postgres.TransactionSql) => Promise<T>,
+  client: postgres.Sql = sql,
 ): Promise<T> {
-  return sql.begin(async (tx) => {
+  return client.begin(async (tx) => {
     await tx`SELECT set_config('app.workspace_id', ${s.workspaceId}, true)`;
     await tx`SELECT set_config('app.user_id', ${s.userId}, true)`;
     return fn(tx as never);
@@ -64,6 +93,20 @@ before(async () => {
   workspaceId = randomUUID();
   userId = randomUUID();
   await sql.begin(async (tx) => {
+    // 这一段**从头到尾没设过 `app.user_id`** ⇒ 下面每一条 INSERT 都撞 42501，
+    // 报错落在**第一条**上，于是 13 条一起红成 `hookFailed`：
+    //  ① `users`：`sec02_users_self_insert` 的 WITH CHECK 是
+    //     `id = NULLIF(current_setting('app.user_id', true), '')::uuid`（0327 §2.4），
+    //     GUC 为 NULL ⇒ `id = NULL` 为假 ⇒ `new row violates row-level security policy`；
+    //  ② `user_companion_account_state`：`user_id = app.user_id`（ALL），同样要这个 GUC——
+    //     它是**第二条**会红的，只是被 ① 挡在后面，看不见。
+    //
+    // `app.workspace_id` 一并设上：`workspaces` / `workspace_members` 的 tenant guard
+    // 在 GUC 为 NULL 时走"无租户"那一支、**也会过**，但那意味着这个夹具靠一个
+    // NULL 分支侥幸通过。设上之后它们走的是正常那一支（`id = app.workspace_id` /
+    // `workspace_id = app.workspace_id`），与 `after` hook 逐字一致。
+    await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+    await tx`SELECT set_config('app.user_id', ${userId}, true)`;
     await tx`INSERT INTO users (id, email, password_hash, role)
       VALUES (${userId}, ${`drill-${userId.slice(0, 8)}@example.test`}, 'h', 'owner')`;
     // `workspace_type` 与 `workspace_epoch` 都是 NOT NULL 且**无默认值**。
@@ -91,6 +134,8 @@ after(async () => {
     await tx`DELETE FROM users WHERE id = ${userId}`;
   });
   await sql.end({ timeout: 5 });
+  await admin.end({ timeout: 5 });
+  await worker.end({ timeout: 5 });
   const { closeDatabase } = await import("../db.ts");
   await closeDatabase();
 });
@@ -266,6 +311,8 @@ test("§4 · 伴星对话在**这个进程**里跑出声，并落到曝光账（
   const userMessageId = randomUUID();
   const pageContextId = randomUUID();
   const runId = randomUUID();
+  const jobId = randomUUID();
+  const leaseToken = `drill-lease-${randomUUID()}`;
 
   try {
     // 她**不在作答屏**（interactionState=idle）——§16.21 那一族最贵的一次误判方向：
@@ -283,6 +330,26 @@ test("§4 · 伴星对话在**这个进程**里跑出声，并落到曝光账（
                 idempotency_key_hash, request_body_hash)
                VALUES (${runId}, ${cid}, ${ws}, ${uid}, ${userMessageId}, 1, 'accepted',
                        ${"a".repeat(64)}, ${"b".repeat(64)})`;
+      // 一条**已持有租约**的 running 任务：对话的写面（`companion-dialogue-store.ts`
+      // 的 `lockJobLease`）会核对 `jobs` 行的 status 与 leaseToken，少任一样它就在
+      // 第一笔业务事务上抛 `job … no longer owns its lease`，整轮静默停在"没有出声"。
+      //
+      // §6／§6c 早就为同一件事手种了这样一行，本条漏了——而它没被发现的唯一原因是
+      // `before` hook 先红了：**夹具缺陷会互相遮挡**，修好一个才露出下一个。
+      await tx`INSERT INTO jobs (id, type, workspace_id, payload, status, attempts, lease_token, requested_by, started_at)
+               VALUES (${jobId}, 'companion_agent', ${ws}, ${tx.json({ runId })},
+                       'running', 1, ${leaseToken}, ${uid}, now())`;
+      // 预算闸（`reserveCompanionProviderCall`）那条 UPDATE 的 WHERE 里有
+      // `EXISTS (SELECT 1 FROM user_companion_account_state a WHERE … a.global_enabled AND a.epoch = r.account_epoch)`。
+      // 夹具只种了会话／消息／run／job，**没种这一行** ⇒ EXISTS 为假 ⇒ 整轮在第一次
+      // 模型调用前就抛 `provider budget exhausted or turn obsolete`，而症状（"预算用完"）
+      // 离病因（少种一行）隔了三层。
+      //
+      // `epoch` 两边都取缺省 0（`companion_turn_runs.account_epoch` 与
+      // `user_companion_account_state.epoch` 的 column_default 都是 0），所以不必显式对齐。
+      await tx`INSERT INTO user_companion_account_state (user_id, global_enabled)
+               VALUES (${uid}, true)
+               ON CONFLICT (user_id) DO UPDATE SET global_enabled = true`;
       // **刻意不插 `assistant_page_contexts`** —— 这一条第一版插了一行，于是对话在
       // 第二步被 `internal_token_leak` 拦下。根因不在判据：mock 的 `companion_read_context`
       // 那一档会把工具结果**原样回显**进正文，而工具结果里带着页面上下文的裸 uuid；
@@ -326,11 +393,11 @@ test("§4 · 伴星对话在**这个进程**里跑出声，并落到曝光账（
     let thrown: { message: string } | null = null;
     try {
       await runCompanionDialogue({
-        id: randomUUID(),
+        id: jobId,
         payload: { runId },
         workspaceId: ws,
         requestedBy: uid,
-        leaseToken: "drill-lease",
+        leaseToken,
         signal: new AbortController().signal,
       });
     } catch (error) {
@@ -362,6 +429,7 @@ test("§4 · 伴星对话在**这个进程**里跑出声，并落到曝光账（
       await tx`DELETE FROM companion_turn_runs WHERE workspace_id = ${ws} AND conversation_id = ${cid}`;
       await tx`DELETE FROM companion_messages WHERE workspace_id = ${ws} AND conversation_id = ${cid}`;
       await tx`DELETE FROM companion_conversations WHERE workspace_id = ${ws} AND id = ${cid}`;
+      await tx`DELETE FROM jobs WHERE id = ${jobId}`;
     }).catch(() => undefined);
     await fixture.cleanup().catch(() => undefined);
   }
@@ -523,19 +591,22 @@ test("§6c · 选材与成稿检查点：发布写入失败后复用两步产物
 
   // Fail only the first final diary-row write. nextval is non-transactional,
   // so the handler's failure row can still be written and the next attempt succeeds.
-  await sql.unsafe(`DROP TRIGGER IF EXISTS ${testTrigger} ON public.companion_daily_summaries`);
-  await sql.unsafe(`DROP FUNCTION IF EXISTS ${testFunction}()`);
-  await sql.unsafe(`DROP SEQUENCE IF EXISTS ${testSequence}`);
-  await sql.unsafe(`CREATE SEQUENCE ${testSequence} START WITH 1`);
-  await sql.unsafe(`GRANT USAGE, SELECT ON SEQUENCE ${testSequence} TO ailearn_worker`);
-  await sql.unsafe(`CREATE FUNCTION ${testFunction}() RETURNS trigger LANGUAGE plpgsql AS $$
+  //
+  // 走 `admin`（migrator 超户）而不是 `sql`（`ailearn_api`）：后者在 `public` 上没有
+  // CREATE，这段 DDL 必然 `permission denied for schema public`。
+  await admin.unsafe(`DROP TRIGGER IF EXISTS ${testTrigger} ON public.companion_daily_summaries`);
+  await admin.unsafe(`DROP FUNCTION IF EXISTS ${testFunction}()`);
+  await admin.unsafe(`DROP SEQUENCE IF EXISTS ${testSequence}`);
+  await admin.unsafe(`CREATE SEQUENCE ${testSequence} START WITH 1`);
+  await admin.unsafe(`GRANT USAGE, SELECT ON SEQUENCE ${testSequence} TO ailearn_worker`);
+  await admin.unsafe(`CREATE FUNCTION ${testFunction}() RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
       IF NEW.date = '2026-09-21' AND nextval('${testSequence}') = 1 THEN
         RAISE EXCEPTION 'test-only: first diary publish fails';
       END IF;
       RETURN NEW;
     END $$`);
-  await sql.unsafe(`CREATE TRIGGER ${testTrigger} BEFORE INSERT OR UPDATE ON public.companion_daily_summaries
+  await admin.unsafe(`CREATE TRIGGER ${testTrigger} BEFORE INSERT OR UPDATE ON public.companion_daily_summaries
     FOR EACH ROW EXECUTE FUNCTION ${testFunction}()`);
 
   const job = {
@@ -560,16 +631,16 @@ test("§6c · 选材与成稿检查点：发布写入失败后复用两步产物
     firstFailure = messages.join(" ← ");
   }
 
-  await sql.unsafe(`DROP TRIGGER IF EXISTS ${testTrigger} ON public.companion_daily_summaries`);
-  await sql.unsafe(`DROP FUNCTION IF EXISTS ${testFunction}()`);
-  await sql.unsafe(`DROP SEQUENCE IF EXISTS ${testSequence}`);
+  await admin.unsafe(`DROP TRIGGER IF EXISTS ${testTrigger} ON public.companion_daily_summaries`);
+  await admin.unsafe(`DROP FUNCTION IF EXISTS ${testFunction}()`);
+  await admin.unsafe(`DROP SEQUENCE IF EXISTS ${testSequence}`);
 
   assert.match(firstFailure ?? "", /test-only: first diary publish fails/);
   const beforeResume = await readInScope(scope(), (tx) => tx`
     SELECT task_id, created_at::text AS created_at
     FROM companion_diary_generation_checkpoints
     WHERE job_id = ${jobId}
-    ORDER BY task_id`);
+    ORDER BY task_id`, worker);
   assert.deepEqual(beforeResume.map((row) => row.task_id), ["companion_diary_draft", "companion_diary_selection"]);
 
   await runCompanionDailySummary(job);
@@ -585,7 +656,7 @@ test("§6c · 选材与成稿检查点：发布写入失败后复用两步产物
     SELECT task_id, created_at::text AS created_at
     FROM companion_diary_generation_checkpoints
     WHERE job_id = ${jobId}
-    ORDER BY task_id`);
+    ORDER BY task_id`, worker);
   assert.deepEqual(afterResume, beforeResume,
     "重试改写了检查点时间，说明至少有一阶段重新调用了模型而非复用已保存产物");
 });

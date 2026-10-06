@@ -315,6 +315,26 @@ $$;
 
 -- Persona history is an immutable account-scoped audit trail. Runtime roles may
 -- append versions, but neither API nor worker may rewrite or remove old versions.
+-- 方案 44 §5.4 的压缩冷却状态（0385）。
+--
+-- 为什么要在这里再写一遍：上面那句 `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public
+-- FROM ailearn_api, ailearn_worker` 是在**迁移之后**跑的，它会把各条迁移里逐表写的
+-- GRANT 一并抹掉——本文件下面每个 DO 块都在补这个漏。0385 的迁移里写了
+-- `GRANT … TO ailearn_worker`，但没在这里补，于是真库上 worker 访问该表直接
+-- `permission denied for table agent_context_compaction_state`（实测），
+-- 而压缩冷却与无进展状态——整条 §5.4 的记忆——就此静默失效。
+DO $$
+BEGIN
+  IF to_regclass('public.agent_context_compaction_state') IS NOT NULL THEN
+    -- 不动 ailearn_api：下面那道「API privilege matrix」守卫要求它对每一张
+    -- 未列入例外的表都有 SELECT/INSERT/UPDATE/DELETE 且没有 TRUNCATE/REFERENCES/TRIGGER。
+    -- 这里只补 worker——它在上面那句 `REVOKE ALL … FROM ailearn_api, ailearn_worker`
+    -- 之后没有任何兜底。
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.agent_context_compaction_state TO ailearn_worker;
+  END IF;
+END
+$$;
+
 DO $$
 BEGIN
   IF to_regclass('public.companion_persona_profile_versions') IS NOT NULL THEN
@@ -1605,6 +1625,12 @@ BEGIN
       ('agent_operations', true, true, true, false),
       ('agent_run_steps', true, true, true, false),
       ('agent_run_events', true, true, true, false),
+      -- 0385（方案 44 §5.4）：压缩失败的冷却与无进展状态。worker 是唯一读点，
+      -- 四列都给（含 DELETE：按会话清历史时那份状态必须一起消失）。
+      -- **必须同时列在这里**：上面那个 DO 块只补了 GRANT，而这张「期望矩阵」
+      -- 才是判对错的那一半——缺了这一行，实际权限 true 对期望 false，
+      -- worker 授权矩阵直接报 mismatch（2026-10-06 实测）。
+      ('agent_context_compaction_state', true, true, true, true),
       ('assistant_memory_budget_events', true, true, false, false),
       ('assistant_memory_source_suppressions', true, true, false, false),
       ('assistant_memory_embeddings', true, true, true, true),

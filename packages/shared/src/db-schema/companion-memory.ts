@@ -191,7 +191,37 @@ export const conversationSummaries = pgTable(
     coverageFromSeq: bigint("coverage_from_seq", { mode: "number" }),
     coverageThroughSeq: bigint("coverage_through_seq", { mode: "number" }),
     coverageSourceHash: text("coverage_source_hash"),
-    status: text("status").notNull().default("candidate"), // candidate | confirmed | rejected | pending | processing
+    /**
+     * 方案 44 §5.2：这份摘要接续的是哪一份。
+     *
+     * 此前没有这一列，于是每份摘要都默认代表「全部更早历史」——实际上它只代表
+     * 自己读过的那一段。沿 parent 链回溯才能知道某次调用到底覆盖到多早；只取
+     * 最新一份局部摘要会把更早的覆盖索引挤掉。
+     */
+    parentSummaryId: uuid("parent_summary_id"),
+    /** 同一来源键上的版本号；提交前用它做父版本比较（44 §5.3）。 */
+    revision: integer("revision").notNull().default(1),
+    /** 结构化覆盖清单：跨来源 span、未覆盖区间与原文取回入口（44 §3.3／§5.5）。 */
+    coverageManifest: jsonb("coverage_manifest").$type<Record<string, unknown>>(),
+    /** 压缩策略版本；策略变了旧幂等键不可复用（44 §5.3）。 */
+    compactionPolicyVersion: text("compaction_policy_version"),
+    /**
+     * 摘要被验证时，会话的内容修订号（44 §3.3）。
+     *
+     * 读取侧对不上就当这份摘要失效：消息被改写或删除之后，旧摘要不该再用它那句
+     * 「更早那段对话」把已经不存在的内容重新说一遍。追加消息不动修订号，所以正常
+     * 追加不会让已有摘要失效。
+     */
+    verifiedContextRevision: bigint("verified_context_revision", { mode: "number" }),
+    /**
+     * 这份摘要派生出的那条记忆（方案 44 §3.3）。
+     *
+     * 方向原本是单向的「摘要 → 记忆」（`source_event_id`），没有反向引用，于是用户
+     * 遗忘那条记忆之后摘要仍每轮注入同样的内容——遗忘被一句一句 undo 掉了。
+     * 这条反向引用加上 0388 的触发器补上那一侧。
+     */
+    derivedMemoryId: uuid("derived_memory_id"),
+    status: text("status").notNull().default("candidate"), // candidate | confirmed | rejected | stale | pending | processing
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -201,6 +231,16 @@ export const conversationSummaries = pgTable(
     ),
     statusIdx: index("conversation_summaries_status_idx").on(
       t.workspaceId, t.userId, t.status, t.createdAt,
+    ),
+    parentIdx: index("conversation_summaries_parent_idx").on(
+      t.workspaceId, t.userId, t.conversationId, t.parentSummaryId,
+    ),
+    manifestIdx: index("conversation_summaries_manifest_idx").on(
+      t.workspaceId, t.userId, t.conversationId,
+    ),
+    derivedMemoryIdx: index("conversation_summaries_derived_memory_idx").on(t.derivedMemoryId),
+    verifiedIdx: index("conversation_summaries_verified_idx").on(
+      t.workspaceId, t.userId, t.conversationId, t.coverageThroughSeq,
     ),
   }),
 );

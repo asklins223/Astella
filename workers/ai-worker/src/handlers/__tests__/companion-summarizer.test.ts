@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   buildSummarizerSnapshot,
   buildSummarizerMessages,
+  buildSummaryCoverageManifest,
+  resolveSummarizerInputTokens,
   CONVERSATION_SUMMARY_MAX_CHARS,
   conversationSummaryOutputSchema,
   renderConversationSummary,
@@ -11,7 +13,7 @@ import {
 import { summarizerJobKey } from "../companion-dialogue-store.ts";
 
 test("summarizer messages: 包含系统提示与对话正文", () => {
-  const messages = buildSummarizerMessages("用户：你好\n桌宠：你好呀");
+  const messages = buildSummarizerMessages({ conversationText: "用户：你好\n桌宠：你好呀" });
   assert.equal(messages.length, 2);
   assert.match(messages[0].content, /会话摘要器/);
   assert.match(messages[1].content, /你好呀/);
@@ -33,7 +35,7 @@ test("summarizer schema: 合法摘要通过，缺字段拒绝", () => {
 });
 
 test("summarizer prompt: 要求只输出 JSON（json_object 模式配套）", () => {
-  const messages = buildSummarizerMessages("用户：你好");
+  const messages = buildSummarizerMessages({ conversationText: "用户：你好" });
   assert.match(messages[0].content, /只输出 JSON/);
 });
 
@@ -45,7 +47,7 @@ test("summarizer prompt: 要求只输出 JSON（json_object 模式配套）", ()
 // 这条断言把"提示词必须逐字写出 schema 的每个键"钉住，防止再出现
 // "schema 要求了一个提示词从来没说过的形状"。
 test("summarizer prompt: 逐字写出 schema 的每个键名（中文标签不算合同）", () => {
-  const systemPrompt = buildSummarizerMessages("用户：你好")[0].content;
+  const systemPrompt = buildSummarizerMessages({ conversationText: "用户：你好" })[0].content;
   const keys = Object.keys(conversationSummaryOutputSchema.shape);
   assert.equal(keys.length, 7);
   for (const key of keys) {
@@ -70,7 +72,7 @@ test("summarizer schema: 中文键（模型实际回的形状）不通过", () =
 // 12 000 字）。会话是往上长的，摘要要的正是"最近这一段聊了什么"。
 test("summarizer 输入窗口: 超预算时保留结尾，不是开头", () => {
   const long = `用户：最早的一句\n${"填充内容。".repeat(SUMMARIZER_INPUT_CHARS)}\n桌宠：最新的一句`;
-  const userTurn = buildSummarizerMessages(long)[1].content;
+  const userTurn = buildSummarizerMessages({ conversationText: long })[1].content;
   assert.ok(userTurn.endsWith("桌宠：最新的一句"), "尾巴必须在");
   assert.ok(!userTurn.includes("最早的一句"), "超预算时开头可以让位");
 });
@@ -172,4 +174,86 @@ test("summarizer 解析链: fence 包裹的摘要 JSON 可容错解析", () => {
   const raw = '```json\n{"title":"测试","topics":[],"userGoals":[],"keyEvents":[],"userPreferences":[],"followUps":[],"emotionalState":"neutral"}\n```';
   const parsed = conversationSummaryOutputSchema.parse(parseMemoryExtractJson(raw));
   assert.equal(parsed.title, "测试");
+});
+
+// ─── 方案 44 §5：可靠压缩（覆盖、接续、分块、提交围栏） ──────────────────
+
+test("44 §5.1：装不下的整条消息进 uncovered，不切半后仍宣称已覆盖", () => {
+  const rows = [
+    { id: "m-1", seq: "1", role: "user", contentSha256: "a".repeat(64), blocks: [{ type: "text", text: "很长的第一句".repeat(50) }] },
+    { id: "m-2", seq: "2", role: "assistant", contentSha256: "b".repeat(64), blocks: [{ type: "text", text: "短的第二句" }] },
+  ];
+  const snapshot = buildSummarizerSnapshot(rows, 40, "conv-1");
+  assert.equal(snapshot.coverageFromSeq, "2");
+  assert.equal(snapshot.transcript, "桌宠：短的第二句");
+  assert.equal(snapshot.uncovered.length, 1);
+  assert.equal(snapshot.uncovered[0].fromSeq, 1);
+  assert.equal(snapshot.uncovered[0].sourceKind, "companion_message");
+  // 来源键带会话，两段会话的同号 seq 不会互相冒充（44 §3.3）。
+  assert.ok(snapshot.uncovered[0].sourceId.startsWith("conv-1:"));
+});
+
+test("44 §5.1：覆盖清单带上取回入口，未覆盖区间不丢", () => {
+  const snapshot = buildSummarizerSnapshot([
+    { id: "m-1", seq: "1", role: "user", contentSha256: "a".repeat(64), blocks: [{ type: "text", text: "先问" }] },
+    { id: "m-2", seq: "2", role: "assistant", contentSha256: "b".repeat(64), blocks: [{ type: "text", text: "后答" }] },
+  ], 100, "conv-1");
+  const manifest = buildSummaryCoverageManifest({ conversationId: "conv-1", snapshot, parentCoverageFromSeq: null });
+  assert.equal(manifest.spans.length, 1);
+  assert.equal(manifest.spans[0].fromSeq, 1);
+  assert.equal(manifest.spans[0].throughSeq, 2);
+  assert.equal(manifest.retrieval[0].locator, "messages:1..2");
+  assert.deepEqual(manifest.uncovered, []);
+});
+
+test("44 §5.1：接上父摘要后覆盖起点前移到父摘要的起点", () => {
+  const snapshot = buildSummarizerSnapshot([
+    { id: "m-9", seq: "9", role: "user", contentSha256: "c".repeat(64), blocks: [{ type: "text", text: "新的" }] },
+  ], 100, "conv-1");
+  const manifest = buildSummaryCoverageManifest({
+    conversationId: "conv-1",
+    snapshot,
+    parentCoverageFromSeq: "3",
+  });
+  assert.equal(manifest.spans[0].fromSeq, 3, "新摘要接在父摘要上，覆盖应从父摘要起点算起");
+  assert.equal(manifest.spans[0].throughSeq, 9);
+});
+
+test("44 §5.1：父摘要作为递增输入进入提示词，而不是默认从头覆盖", () => {
+  const withParent = buildSummarizerMessages({
+    conversationText: "用户：新的一段",
+    parent: {
+      id: "s-1",
+      revision: 2,
+      summary: { title: "上一段在讲浮力" },
+      coverageFromSeq: "1",
+      coverageThroughSeq: "8",
+    },
+  });
+  assert.match(withParent[0].content, /<previous_summary>/);
+  assert.match(withParent[0].content, /上一段在讲浮力/);
+  assert.match(withParent[0].content, /接在它上面/);
+  const withoutParent = buildSummarizerMessages({ conversationText: "用户：新的一段" });
+  assert.ok(!withoutParent[0].content.includes("<previous_summary>"));
+});
+
+test("44 §5.2：摘要输入预算取自摘要模型的实际能力，不是固定字符数", () => {
+  const small = resolveSummarizerInputTokens({ contextWindowTokens: 8_000, maxOutputTokens: 4_096 });
+  const large = resolveSummarizerInputTokens({ contextWindowTokens: 1_000_000, maxOutputTokens: 131_072 });
+  assert.ok(small < large, "小窗口摘要模型必须拿到更小的输入预算");
+  assert.ok(small <= SUMMARIZER_INPUT_CHARS, "字符上限仍然只是地板之上的封顶");
+  assert.equal(resolveSummarizerInputTokens(null), Math.floor(SUMMARIZER_INPUT_CHARS / 2));
+});
+
+test("44 §5.2：分块预算变小后覆盖区间随之收窄，而不是仍然宣称读到全部", () => {
+  const rows = [
+    { id: "m-1", seq: "1", role: "user", contentSha256: "a".repeat(64), blocks: [{ type: "text", text: "甲".repeat(40) }] },
+    { id: "m-2", seq: "2", role: "assistant", contentSha256: "b".repeat(64), blocks: [{ type: "text", text: "乙".repeat(40) }] },
+    { id: "m-3", seq: "3", role: "user", contentSha256: "c".repeat(64), blocks: [{ type: "text", text: "丙".repeat(40) }] },
+  ];
+  const wide = buildSummarizerSnapshot(rows, 500, "conv-1");
+  const narrow = buildSummarizerSnapshot(rows, 50, "conv-1");
+  assert.equal(wide.coverageFromSeq, "1");
+  assert.equal(narrow.coverageFromSeq, "3");
+  assert.equal(narrow.uncovered.length, 2, "更早的两条这次没读，必须如实记下来");
 });

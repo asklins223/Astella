@@ -1,11 +1,12 @@
 /** note job 与制卡 outbox 共用上下文及每次 provider 调用的父目标预算。 */
 import { sql } from "drizzle-orm";
-import { AgentStoreError, queryRows, type AgentSqlExecutor } from "@ailearn/agent-host";
+import { AgentStoreError, listAgentMethods, queryRows, recordAgentMethodOffered, type AgentSqlExecutor } from "@ailearn/agent-host";
 import type { AgentScopeV1 } from "@ailearn/shared/agent-contracts";
 import { composeAgentContext, type AgentContextSource } from "@ailearn/agent-core";
 import { sanitizePersonaField } from "../handlers/companion-identity-context.ts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { loadAgentLearningContext } from "./learning-context.ts";
+import { renderMethodCatalogBlock, selectRelevantMethods } from "./relevant-methods.ts";
 
 /** 绑定成立时的目标身份：收费、围栏与提示里的当前目标都取自这里。 */
 export interface AgentExecutionBinding {
@@ -41,6 +42,8 @@ function generationInstructions(input: {
   goal: string | null;
   persona: { name: string; speakingStyle: string } | null;
   preferences: ReadonlyArray<{ content: string; appliesWhen?: string | null }>;
+  /** 方案 44 §6.1：与这次任务相关的做法**目录**（正文仍按 id+revision 另行展开）。 */
+  methodCatalog: string;
 }): string {
   // JSON escapes prevent free-form style/preference/goal fields from closing
   // their data envelope. The exact text still survives JSON decoding.
@@ -53,11 +56,15 @@ function generationInstructions(input: {
     ["preferences", { scope: scopedData, content: input.preferences.length
       ? `<approved_preferences>${data(input.preferences.map(({ content, appliesWhen }) => ({ content, appliesWhen })))}</approved_preferences>` : "" }],
     ["current_goal", { scope: scopedData, content: input.goal ? `<current_goal>${data(input.goal)}</current_goal>` : "" }],
+    ["methods", { scope: scopedData, content: input.methodCatalog }],
   ]);
   return composeAgentContext({ maxCharacters: 64000, sources: [
     { id: "policy", authority: "policy", required: true },
     { id: "persona", authority: "data", priority: 10, maxCharacters: 4000 },
     { id: "preferences", authority: "data", priority: 20, maxCharacters: 5000 },
+    // 相关经验排在当前目标之后：目标决定**做什么**，做法只在她已经知道要做什么之后
+    // 才有意义（§6.1「冻结材料、领域合同和相关合作/生成经验」）。
+    { id: "methods", authority: "data", priority: 15, maxCharacters: 4000 },
     { id: "current_goal", authority: "data", required: Boolean(input.goal), maxCharacters: 50000 },
   ] }, sources, input.scope).systemPrompt;
 }
@@ -70,8 +77,26 @@ export async function loadAgentExecutionContext(
   const context = await withWorkerWorkspaceTransaction(scope, async (tx) => {
     const binding = await ports.bind(tx);
     const learning = await loadAgentLearningContext(tx, scope);
+    // 方案 44 §6.1：专业任务也读同一套经验体系。只取现役（active + supported +
+    // 来源仍然有效）的方法——候选、暂定与已停用的不参与，跨不过这条线。
+    const methods = binding
+      ? await listAgentMethods(tx, scope, true).catch(() => [])
+      : [];
+    // 判出相关之后**立刻记一次「目录被提供」**（§6.3）：她看见过这条做法，但这不等于
+    // 她读过正文、更不等于采用。三个阶段各自有计数，不会互相冒充。
+    const relevant = selectRelevantMethods(methods, binding?.goal ?? "");
+    if (binding && relevant.length > 0) {
+      await recordAgentMethodOffered(tx, scope, {
+        methods: relevant.map(method => ({ methodId: method.methodId, revision: method.revision })),
+        kind: "agent_goal",
+        contextId: binding.runId,
+        contextRevision: binding.revision,
+        sourceKey: `goal:${binding.runId}:${binding.revision}`,
+      }).catch(() => {});
+    }
     return {
       binding,
+      methods,
       preferences: learning.preferences,
       persona: learning.persona ? {
         name: sanitizePersonaField(learning.persona.name, 100),
@@ -87,6 +112,10 @@ export async function loadAgentExecutionContext(
       goal: context.binding?.goal ?? null,
       persona: context.persona,
       preferences: context.preferences,
+      // 判不出相关就给空块：宁可这次没有经验可用，也不要塞一条不相干的做法。
+      methodCatalog: renderMethodCatalogBlock(
+        selectRelevantMethods(context.methods, context.binding?.goal ?? ""),
+      ),
     }),
     async reserveModelCall() {
       // 历史未绑定作业不借用任意目标额度；当前页面按钮也有自己的父目标。

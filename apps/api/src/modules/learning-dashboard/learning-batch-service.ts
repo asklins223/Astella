@@ -143,7 +143,7 @@ function describeWhyV2(lastConsumedAt: Date | null, held: boolean): string {
   if (held) return "你说过先不安排它，所以这一批里没有它。";
   if (!lastConsumedAt) return "新学的内容，先提示你、不会自动排进复习。";
   const days = Math.floor((Date.now() - lastConsumedAt.getTime()) / 86_400_000);
-  if (days <= 0) return "昨天刚看过，今天再回访一次。";
+  if (days <= 0) return "最近看过，可以再回访一次。";
   if (days < 21) return `${days} 天前看过，现在回访一次。`;
   return `${days} 天没有回访了，抽一道看看还记不记得。`;
 }

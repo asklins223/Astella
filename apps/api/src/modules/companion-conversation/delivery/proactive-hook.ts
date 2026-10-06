@@ -71,6 +71,7 @@ export async function flushDeferredProactiveMemoryCandidates(
       await upsertMemory(tx, scope, {
         kind: "learning_context",
         content: generated.learningContext,
+        sourceType: "summary",
         sourceEventId: `run.completed:${defer.runId}`,
         candidate: true,
       }, defer.now);

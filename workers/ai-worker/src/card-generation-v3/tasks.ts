@@ -260,6 +260,7 @@ export function buildCardGenerateV3Prompt(input: CardGenerateV3TaskInput): strin
     // 默认；把两个方向都说清楚：能独立成题的一句就该出一张，整篇都提不出点才 no_cards。
     "正文里每一句能独立成题的事实、机制或对比都值得制卡；只有整篇都提不出一个值得记的点，才返回 no_cards_recommended（那是正常结果，不是失败）。",
     "题面、答案和判分点要逐项对应。题面要求的每一件事都必须在答案中出现；如同时问公式与单位，答案不能只写公式。只问原文能够支持的内容。",
+    "objectiveStatement 和 publicSummary 会在用户尚未查看答案时公开显示。它们只说明要掌握的主题或能力，不得写出本题的答案、步骤顺序、公式结果、对应关系或关键因果。具体答案放入 answerParts；不能在公开目标后用冒号或括号列出答案要点。",
     "在原文支持时，为候选附上 practiceItem 可执行练习：事实/定义/因果/边界可用判断或单选，流程用排序，关系/比较可用配对。判断陈述和正确值必须有原文支持；单选的所有选项（含干扰项）都要能追溯给出的依据，不能为了凑数编造。给不出可靠练习时省略 practiceItem。",
     "practiceItem 中选项的 unitId、配对 leftId/rightId 是练习内部的唯一局部编号（如 opt-1），正确项和顺序必须引用这些编号。练习依据仍只允许给出的 evidenceSnapshotId。",
     "题面、答案、解释和提示面向学习者，用原文内容说明知识；不要在这些文字里写块 id、依据 UUID 或内部字段名。依据身份只放在 evidenceSnapshotIds。",
@@ -355,7 +356,7 @@ export function createCardGenerateV3Task(
     resourceClass: "card_foreground",
     budget,
     completion: { kind: "structured_parsed" },
-    usageContext: { modelId: deps.provider.modelId, promptVersion: "card-generate-v3", resourceClass: "card_foreground" },
+    usageContext: { modelId: deps.provider.modelId, promptVersion: "card-generate-v3.1", resourceClass: "card_foreground" },
     prepare: deps.prepare,
     execute: async (input, env): Promise<AiStepResult<CardGenerateV3TaskOutput>> => {
       const completion = await deps.provider.complete({
@@ -451,6 +452,7 @@ export function buildCardContentCheckV3Prompt(input: CardContentCheckV3TaskInput
       return [
         `### 候选 ${objectiveLocalId}`,
         `目标主张：${candidate.objective.objectiveStatement}`,
+        `公开摘要：${candidate.objective.publicSummary}`,
         `解释：${candidate.objective.learningSupport.explanation}`,
         `答案：${extractAnswerText(candidate.objective.canonicalAnswer)}`,
         `题面：${candidate.presentation.front.cue} / ${candidate.presentation.front.prompt}`,
@@ -468,6 +470,7 @@ export function buildCardContentCheckV3Prompt(input: CardContentCheckV3TaskInput
     '- "rewrite"：内容方向可以但需要改写（说明改什么）；',
     '- "insufficient"：依据不足或存在实质疑点——不得作为标准答案。',
     "先逐项核对题面要求与答案：即使已有答案全都正确，只要漏答题面明确要求的一项，也要判 rewrite，并指出具体缺项（例如同时问公式和单位却只答公式）。不能把解释中的内容当作答案里已经写出。",
+    "同时核对题面、目标主张和公开摘要：三者会在用户查看参考答案之前显示。若题面或摘要已经给出本题需要回忆的答案、步骤顺序、公式结果、对应关系或关键因果，判 rewrite；摘要改为简短主题，把答案留在答案字段。若目标主张本身已经完整泄题，当前改写不能改变目标主张，判 insufficient 并说明应重新生成目标。不能因为答案正确就允许正面提前泄题。",
     "对算法、代码与公式结论，必须对照给出的原文逐步代入最小边界输入，检查等式、区间长度和分支前提是否能同时成立。不要因为答案出现了原文关键词就判正确；例如 floor((right-left)/2)=0 需要核对实际区间长度，不能把不可能成立的条件当作有效示例。数值、边界或推导错误必须判 rewrite，并写明正确计算及具体改法；没有充分依据可纠正时判 insufficient。",
     "核对实际题型与题面：cloze 要有可填的空缺，sequence 要要求重建步骤顺序，compare 要明确比较对象，boundary 要判断条件/适用边界，application 要给出可应用的情境，why 要问原因。只有普通回忆问句却标成其他题型时判 rewrite，具体说明怎样调整题面；不要仅凭标签认为合格。",
     "有可执行练习时，独立核对练习题、正确项和原文一致，选项/配对/排序引用完整，且练习确实检验这个目标；存在错误或无依据的选项时判 rewrite，不以正文答案正确代替练习检查。没有 practiceItem 时不能宣称已有可执行练习。",
@@ -634,7 +637,7 @@ export function createCardContentCheckV3Task(
     resourceClass: "card_foreground",
     budget,
     completion: { kind: "structured_parsed" },
-    usageContext: { modelId: deps.provider.modelId, promptVersion: "card-check-v3", resourceClass: "card_foreground" },
+    usageContext: { modelId: deps.provider.modelId, promptVersion: "card-check-v3.2", resourceClass: "card_foreground" },
     prepare: deps.prepare,
     execute: async (input, env): Promise<AiStepResult<CardContentCheckV3TaskOutput>> => {
       const completion = await deps.provider.complete({
@@ -748,6 +751,7 @@ export function buildCardCandidateRewriteV3Prompt(
     "你是学习卡改写助手。下面这张候选卡被内容检查判为「需要改写」。",
     "请只针对列出的问题改这一张，不要换题型、不要扩目标、不要引用没给出的依据。",
     "保留原文条件、范围、单位的原义；不要把使用时的情境条件改成对象的固有性质，不增加原文没有要求的限制。改写问法不要求改写已经准确的答案。",
+    "publicSummary 和 front 会在查看答案之前显示：改成只介绍主题或提出问题，不能在公开摘要、题面或线索中给出答案、步骤顺序、结果或关键因果。答案放在 answerParts；目标身份与原目标主张保持不变。",
     "只输出 JSON，根对象只有 rewrites 数组，数组恰好包含这一张卡的完整内容。不要输出 Markdown 或服务端草稿/身份/哈希。",
     `这一张的 objectiveLocalId 必须为 ${JSON.stringify(candidate.planObjectiveLocalId)}；题型保持 ${candidate.presentation.strategy}。`,
     "字段合同与首次生成共用同一份内容形状：",
@@ -783,7 +787,7 @@ export function createCardCandidateRewriteV3Task(
     resourceClass: "card_foreground",
     budget,
     completion: { kind: "structured_parsed" },
-    usageContext: { modelId: deps.provider.modelId, promptVersion: "card-rewrite-v3", resourceClass: "card_foreground" },
+    usageContext: { modelId: deps.provider.modelId, promptVersion: "card-rewrite-v3.1", resourceClass: "card_foreground" },
     prepare: deps.prepare,
     execute: async (input, env): Promise<AiStepResult<CardCandidateRewriteV3TaskOutput>> => {
       const completion = await deps.provider.complete({

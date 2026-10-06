@@ -262,6 +262,10 @@ export async function updateRunMeta(
     turnInterpretation?: AgentTurnInterpretationV1;
     budgetSnapshot?: CompanionAgentBudgetSnapshotV1;
     providerCapabilityFingerprint?: string;
+    /** 这次装配实际纳入/排除了哪些条目（44 §3.3）。只记 id、状态与字符数。 */
+    contextAssemblyReceipt?: unknown;
+    /** 完整请求的预算读数与判定（44 §4）。 */
+    contextPressure?: unknown;
     stepCount?: number;
     toolCallCount?: number;
     elapsedMsDelta?: number;
@@ -275,6 +279,8 @@ export async function updateRunMeta(
     patch.turnInterpretation === undefined ? null : sql`turn_interpretation = ${JSON.stringify(agentTurnInterpretationV1Schema.parse(patch.turnInterpretation))}::jsonb`,
     patch.budgetSnapshot === undefined ? null : sql`budget_snapshot = ${JSON.stringify(patch.budgetSnapshot)}`,
     patch.providerCapabilityFingerprint === undefined ? null : sql`provider_capability_fingerprint = ${patch.providerCapabilityFingerprint}`,
+    patch.contextAssemblyReceipt === undefined ? null : sql`context_assembly_receipt = ${JSON.stringify(patch.contextAssemblyReceipt)}::jsonb`,
+    patch.contextPressure === undefined ? null : sql`context_pressure = ${JSON.stringify(patch.contextPressure)}::jsonb`,
     patch.stepCount === undefined ? null : sql`step_count = ${patch.stepCount}`,
     patch.toolCallCount === undefined ? null : sql`tool_call_count = ${patch.toolCallCount}`,
     // 累加而非覆盖：同一次 run 跨确认续跑共享 120s 执行预算（见 readRunMeta）。

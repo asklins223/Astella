@@ -56,3 +56,14 @@ export type {
   PRGateResult,
   QualityConfigFingerprint,
 } from "./types.ts";
+
+// 方案 44 §8.5：有/无相关经验的同批对照（含「样本撑不住就不下结论」的判据）
+export {
+  summarizeExperienceComparison,
+  DEFAULT_EXPERIENCE_COMPARISON_POLICY,
+  REQUIRED_SCENARIOS,
+} from "./experience-comparison.ts";
+export type {
+  ExperienceComparisonSampleV1, ExperienceComparisonReportV1, ExperienceComparisonPolicyV1,
+  ExperienceArmSummaryV1, ExperienceArmV1, ExperienceObservationV1, ExperienceClaimOutcomeV1,
+} from "./experience-comparison.ts";
