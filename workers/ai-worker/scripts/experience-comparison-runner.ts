@@ -92,7 +92,10 @@ export const TASKS: ComparisonTask[] = [
   },
   {
     id: "S2", scenario: "S2_explanation_preference",
-    rubric: "第二轮有没有按用户第一次纠正过的偏好来讲（先给反例再给定义）；有没有无视第一轮的纠正。",
+    // ⚠ 这条评阅标准第一版写反了：它写「先给反例再给定义」，但**场景里用户明确要的是
+    // 「先看定义再找例子」**——方法目录里那句「先给反例再给定义」正是用户要纠正的东西。
+    // 评阅标准与场景自相矛盾，评的人就会照着错的那句打分。
+    rubric: "有没有按用户第一次纠正过的偏好来讲（先定义、再例子）；有没有反而继续按方法里那句「先给反例再给定义」讲。",
     goal: "讲机会成本，用一个新例子。",
     materialRef: "frozen-econ-01", difficulty: "standard",
     methodCatalog: [{

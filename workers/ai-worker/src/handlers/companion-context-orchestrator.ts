@@ -18,6 +18,7 @@ import {
   retrieveResidentCompanionMemories,
   type CompanionMemoryDirectoryEntry,
 } from "./companion-memory-vector.ts";
+import { recordAgentMethodOffered } from "@ailearn/agent-host";
 import { retrievePlaybookCatalog, type PlaybookCatalogEntry } from "./companion-playbooks.ts";
 import {
   companionMemoryRetrievalModeTotal,
@@ -194,6 +195,27 @@ export async function assembleCompanionContext(
   const playbooks = input.playbooksDisabled
     ? []
     : await retrievePlaybookCatalog(tx, scope);
+  // 方案 44 §6.3：目录**被提供**要记一次，且只记一次。
+  //
+  // 这条以前只在 agent-goal 那条路记（`agent/execution-context.ts`），伴星对话这条路
+  // **每轮都把目录渲染进 prompt 却一条都不记**——于是 §6.3 的三阶段漏斗在主要路径上
+  // 缺了第一级：`offered` 恒为 0，看起来像「从来没提供过」，实际是**没人在这个调用点记**。
+  //
+  // 纯函数（`renderPlaybookCatalog` / `selectRelevantMethods`）都有单测，缺的正是
+  // 「调用面接线」——所以判据要落在**这张表有没有行**上，不是函数返回值对不对。
+  //
+  // 去重口径与 agent-goal 那条一致（`sourceKey` 带上下文版本）：同一次提供只留一行，
+  // 重复装配不会重复计数。这里用 runId + 目录内容摘要——同一轮重新装配目录不变，
+  // 换一轮 runId 变，正好是「提供了一次」的粒度。
+  if (playbooks.length > 0) {
+    await recordAgentMethodOffered(tx as never, scope, {
+      methods: playbooks.map(entry => ({ methodId: entry.playbookId, revision: entry.version })),
+      kind: "conversation",
+      contextId: input.runId,
+      contextRevision: 1,
+      sourceKey: `conversation:${input.runId}:offered`,
+    }).catch(() => {});
+  }
   // §4.5.10/§4.6.9：整理结论「至多一段」，不自动成为对外消息，
   // 只作为带来源的后台产物出现在下一轮上下文里。
   const organizationSurface = input.playbooksDisabled ? null : await readOrganizationSurface(tx as never, scope);

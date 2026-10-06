@@ -382,6 +382,12 @@ export async function readConversationSummaryChain(
         -- context_revision 会前进，而这份摘要记下的是**它被验证时**的取值——对不上
         -- 就说明它盖住的那一段已经变了，不能再用它那句「更早那段对话」把已经不存在的
         -- 内容重新说一遍。没记修订号的旧行按未验证处理，排除。
+        --
+        -- 但「没记修订号」有两种：一种是**真的没法验证**（会话改过，无从判断摘要写在
+        -- 改写之前还是之后），另一种是**能验证而当时没回填**（0384 只加了列，没回填既有
+        -- 行；而 context_revision 默认是 1、只在消息被改写/删除时才 +1，所以停在 1 的
+        -- 会话等于从未改写过，那些摘要其实可证明仍然有效）。
+        -- 后者由迁移 0391 回填掉，所以这里的 NULL 现在只剩前一种。
         AND s.verified_context_revision = c.context_revision
       ORDER BY s.coverage_through_seq DESC, s.updated_at DESC
       LIMIT 1
