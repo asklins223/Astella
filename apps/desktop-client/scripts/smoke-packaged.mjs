@@ -114,6 +114,17 @@ function normalizeArchiveEntry(entry) {
   return entry.replaceAll('\\', '/').replace(/^\/+/, '')
 }
 
+/**
+ * 把规范化后的归档条目（`/` 分隔、无前导斜杠）转成 `@electron/asar` 认的查询路径。
+ *
+ * 那个库的 `searchNodeFromDirectory` 用 `p.split(path.sep)` 逐级往下走，
+ * 所以查询路径必须用**本平台的分隔符**，且不能有前导分隔符（会先切出一个空目录名）。
+ * 详见调用点那段注释：这三个平台各错过一次。
+ */
+function archiveLookupPath(normalizedEntry) {
+  return normalizedEntry.split('/').join(sep)
+}
+
 function collectManifestAssetPaths(value, assets = new Set()) {
   if (typeof value === 'string' && /\.(?:avif|m4a|mp4|png|svg|vtt|webp)$/i.test(value)) {
     assets.add(value)
@@ -161,17 +172,19 @@ async function inspectPackagedArtifact(executable) {
     throw new Error('Renderer out manifest is not byte-identical to the runtime source manifest')
   }
 
-  // 归档里的条目名**按归档自己的写法**留着，别只留规范化后的那一份。
+  // 归档条目的**分隔符**与**前导斜杠**都不能假定。
   //
-  // 2026-10-06 CI 实测：Windows 上 `listPackage` 报出来的条目是反斜杠
-  // （`out\renderer\assets\...`），规范化之后能匹配上、于是上面那道存在性检查通过，
-  // 但紧接着 `extractFile(asarPath, 'out/renderer/assets/...')` 用的是正斜杠，
-  // 它在归档原始表里查不到，抛
-  // `"out/renderer/assets/learning-room/v1/manifest.json" was not found in this archive`。
-  // 也就是"检查说在、提取说不在"——同一个文件两种写法。
+  // 2026-10-06 CI 实测，同一处代码在三个平台上各错一次：
+  //   · Windows：`listPackage` 报出来的条目是反斜杠（`out\renderer\assets\...`），
+  //     而脚本传的是正斜杠 —— `extractFile` 内部用 `path.sep` 切分目录
+  //     （`@electron/asar/lib/filesystem.js` 的 `searchNodeFromDirectory`），
+  //     于是整个 `out/renderer/...` 被当成**一个**目录名，报
+  //     `"out/renderer/assets/learning-room/v1/manifest.json" was not found in this archive`。
+  //   · macOS / Linux：`listPackage` 的条目**带前导 `/`**，原样传回去之后
+  //     `split(path.sep)` 先切出一个空串，同样找不到。
   //
-  // 所以提取时用归档自己报出来的那个字符串：分隔符是打包平台的实现细节，
-  // 不该由这份脚本假定。
+  // 所以：先规范化成 `/` 分隔、去掉前导斜杠（那正是归档里的层级起点），
+  // 再按**本平台的分隔符**拼出查询路径。规范化那份继续用来做集合判断。
   const rawArchiveEntries = listPackage(asarPath)
   const archiveEntries = rawArchiveEntries.map(normalizeArchiveEntry)
   const archiveEntrySet = new Set(archiveEntries)
@@ -179,7 +192,7 @@ async function inspectPackagedArtifact(executable) {
   if (manifestEntryIndex < 0) {
     throw new Error(`Packaged manifest is missing from app.asar: ${packagedManifestEntry}`)
   }
-  const packagedManifest = extractFile(asarPath, rawArchiveEntries[manifestEntryIndex])
+  const packagedManifest = extractFile(asarPath, archiveLookupPath(archiveEntries[manifestEntryIndex]))
   if (!runtimeManifest.equals(packagedManifest)) {
     throw new Error('Packaged manifest is not byte-identical to the runtime source and fresh renderer out manifests')
   }
