@@ -154,10 +154,17 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          app_bin="$(find apps/desktop-client/release/linux-unpacked -maxdepth 1 -type f -executable -name "${PRODUCT_NAME}*" -print -quit)"
-          test -n "$app_bin" || { echo >&2 "没找到可执行文件 ${PRODUCT_NAME}（linux-unpacked 里有什么：）"; ls -la apps/desktop-client/release/linux-unpacked | head -20; exit 1; }
+          # Linux 上可执行文件**不叫 productName**：electron-builder 用的是
+          # package.json 的 `name`（实测产出 `ailearn-desktop-client`），
+          # 而 Windows/macOS 用的是「理解引擎」。既然这条规则与产品名无关，
+          # 就别按名字找——按**排除 Electron 自带的那些**来找：顶层可执行的
+          # 文件里，去掉沙箱、crashpad 与所有 .so，剩下的就是应用本体。
+          app_bin="$(find apps/desktop-client/release/linux-unpacked -maxdepth 1 -type f -executable \
+            ! -name 'chrome-sandbox' ! -name 'chrome_crashpad_handler' ! -name '*.so*' -print -quit)"
+          test -n "$app_bin" || { echo >&2 "没找到应用本体（linux-unpacked 里有什么：）"; ls -la apps/desktop-client/release/linux-unpacked | head -24; exit 1; }
           app_bin="$(realpath "$app_bin")"
           echo "AILEARN_PACKAGED_APP=$app_bin" >> "$GITHUB_ENV"
+          echo "Linux 应用本体 = $app_bin"
       - name: Locate Windows package
         if: runner.os == 'Windows'
         shell: pwsh

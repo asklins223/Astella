@@ -161,12 +161,25 @@ async function inspectPackagedArtifact(executable) {
     throw new Error('Renderer out manifest is not byte-identical to the runtime source manifest')
   }
 
-  const archiveEntries = listPackage(asarPath).map(normalizeArchiveEntry)
+  // 归档里的条目名**按归档自己的写法**留着，别只留规范化后的那一份。
+  //
+  // 2026-10-06 CI 实测：Windows 上 `listPackage` 报出来的条目是反斜杠
+  // （`out\renderer\assets\...`），规范化之后能匹配上、于是上面那道存在性检查通过，
+  // 但紧接着 `extractFile(asarPath, 'out/renderer/assets/...')` 用的是正斜杠，
+  // 它在归档原始表里查不到，抛
+  // `"out/renderer/assets/learning-room/v1/manifest.json" was not found in this archive`。
+  // 也就是"检查说在、提取说不在"——同一个文件两种写法。
+  //
+  // 所以提取时用归档自己报出来的那个字符串：分隔符是打包平台的实现细节，
+  // 不该由这份脚本假定。
+  const rawArchiveEntries = listPackage(asarPath)
+  const archiveEntries = rawArchiveEntries.map(normalizeArchiveEntry)
   const archiveEntrySet = new Set(archiveEntries)
-  if (!archiveEntrySet.has(packagedManifestEntry)) {
+  const manifestEntryIndex = archiveEntries.indexOf(packagedManifestEntry)
+  if (manifestEntryIndex < 0) {
     throw new Error(`Packaged manifest is missing from app.asar: ${packagedManifestEntry}`)
   }
-  const packagedManifest = extractFile(asarPath, packagedManifestEntry)
+  const packagedManifest = extractFile(asarPath, rawArchiveEntries[manifestEntryIndex])
   if (!runtimeManifest.equals(packagedManifest)) {
     throw new Error('Packaged manifest is not byte-identical to the runtime source and fresh renderer out manifests')
   }
