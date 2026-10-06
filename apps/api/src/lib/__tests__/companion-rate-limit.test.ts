@@ -64,10 +64,17 @@ describe("companionRateLimit：固定窗口语义", () => {
 
   it("同一 key 上不同 windowMs 各自独立判定（分钟桶与小时桶共用 key 名但窗口不同）", async () => {
     const bucket = key("two-windows");
-    // 分钟桶先打满
-    (await companionRateLimit({ key: bucket, limit: 2, windowMs: 1 })).allowed;
-    await companionRateLimit({ key: bucket, limit: 2, windowMs: 1 });
-    assert.equal((await companionRateLimit({ key: bucket, limit: 2, windowMs: 1 })).allowed, false);
+    // 分钟桶先打满。
+    //
+    // **窗口必须是真正的分钟量级，不能写成 `windowMs: 1`**：那是在赌"三次调用都在
+    // 1 毫秒内跑完"。`MemoryRateLimitStore.increment` 判的是 `now >= current.resetAt`，
+    // 1ms 窗口下只要两次 await 之间过了 1 毫秒（CI runner 一忙就会），窗口就重置、
+    // 计数回到 1，第三次于是**又被放行**——用例偶发红在
+    // `expected true !== false` 上（2026-10-06 CI 实测）。
+    // 这条量的是"同一个 key 复用于不同限额时不会凭空放行"的语义，与窗口有多短无关。
+    (await companionRateLimit({ key: bucket, limit: 2, windowMs: 60_000 })).allowed;
+    await companionRateLimit({ key: bucket, limit: 2, windowMs: 60_000 });
+    assert.equal((await companionRateLimit({ key: bucket, limit: 2, windowMs: 60_000 })).allowed, false);
     // 小时桶窗口更长：同一 bucket 记录的 windowStart 仍在，因此同样受限——
     // 这锁住「同一 key 复用于不同限额时不会凭空放行」的语义（调用方必须使用不同 key）。
     const hourBucket = await companionRateLimit({ key: bucket, limit: 100, windowMs: 3_600_000 });
