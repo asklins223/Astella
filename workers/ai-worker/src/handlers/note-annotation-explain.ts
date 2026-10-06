@@ -91,9 +91,9 @@ export async function runNoteAnnotationExplain(job: JobPayload): Promise<void> {
   ];
   const generationParameters = {
     temperature: 0.25,
-    maxTokens: 700,
+    // 2026-10-06 起跟随平台配置开思考；思考 token 计入 maxTokens，预算相应上调。
+    maxTokens: 2_600,
     responseFormat: "json_object" as const,
-    disableThinking: true,
   };
   const inputSnapshotHash = noteLearningSnapshotHash({
     taskVersion: 1,

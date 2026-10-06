@@ -7,7 +7,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createProvider, withThinkingDisabled, type AIProviderRuntimeConfig } from "../lib/ai-provider.ts";
+import { createProvider, type AIProviderRuntimeConfig } from "../lib/ai-provider.ts";
 import { MockProvider } from "../lib/providers/mock.ts";
 
 // ─── createProvider ──────────────────────────────────────────────────────
@@ -70,10 +70,10 @@ test("createProvider: openai_compatible 使用完整显式配置", () => {
     apiKey: "config-key",
     baseUrl: "https://config.example.com/v1",
     model: "config-model",
-    visionModel: "config-vision",
   });
   assert.equal(provider.modelId, "config-model");
-  assert.equal(provider.visionModelId, "config-vision");
+  // 2026-10-06 配置重设计：识图由模型档案 vision + 路由决定，visionModelId 即模型本身。
+  assert.equal(provider.visionModelId, "config-model");
 });
 
 test("createProvider: openai_compatible 完整配置返回 provider 实例", () => {
@@ -114,37 +114,4 @@ test("createProvider: 返回的 provider 有 id/modelId/promptVersion 属性", (
   assert.equal(typeof provider.id, "string");
   assert.equal(typeof provider.modelId, "string");
   assert.equal(typeof provider.promptVersion, "string");
-});
-
-// ─── withThinkingDisabled ────────────────────────────────────────────────
-// 交互链路（伴星对话/念头）用它在整段取回语义下砍掉思考 token 的等待；
-// provider 各实现读 platformOptions.disableThinking 后发 enable_thinking=false。
-
-test("withThinkingDisabled: 置 disableThinking 且保留其他平台选项", () => {
-  const input: AIProviderRuntimeConfig = {
-    apiKey: "key",
-    baseUrl: "https://example.com/v1",
-    model: "qwen3.8-flash",
-    options: { enableThinking: true, disableMaxTokens: true, contextWindowTokens: 1_000_000 },
-  };
-  const output = withThinkingDisabled(input);
-  assert.equal(output.options?.disableThinking, true);
-  assert.equal(output.options?.disableMaxTokens, true);
-  assert.equal(output.options?.contextWindowTokens, 1_000_000);
-  assert.equal(output.model, "qwen3.8-flash");
-  assert.equal(output.baseUrl, "https://example.com/v1");
-});
-
-test("withThinkingDisabled: 不改写入参（治理上下文共享同一份配置）", () => {
-  const input: AIProviderRuntimeConfig = { apiKey: "key", options: { enableThinking: true } };
-  const output = withThinkingDisabled(input);
-  assert.notEqual(output, input);
-  assert.equal(input.options?.disableThinking, undefined);
-  assert.equal(input.options?.enableThinking, true);
-});
-
-test("withThinkingDisabled: 无 options 时也能构造出关闭配置", () => {
-  const output = withThinkingDisabled({ apiKey: "key" });
-  assert.equal(output.options?.disableThinking, true);
-  assert.equal(output.apiKey, "key");
 });

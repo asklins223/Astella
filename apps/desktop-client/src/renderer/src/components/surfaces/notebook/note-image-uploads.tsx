@@ -6,6 +6,7 @@ import {
   noteImageUploadFailureMessage,
 } from "@ailearn/shared/note-image-upload-contracts";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
+import { readFileAsBase64 } from "../../../app/read-file-base64.ts";
 import type { NoteMarkdownEditorHandle } from "./note-markdown-editor.tsx";
 
 /**
@@ -46,20 +47,6 @@ type UploadTask = {
   readonly placeholder: string;
   cleanupTimer: ReturnType<typeof setTimeout> | null;
 };
-
-/** 把一段 base64 之外的 `data:` 前缀剥掉：合同里要的是纯 base64。 */
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("read_failed"));
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
-      const comma = result.indexOf(",");
-      resolve(comma >= 0 ? result.slice(comma + 1) : result);
-    };
-    reader.readAsDataURL(file);
-  });
-}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

@@ -44,7 +44,7 @@ import {
   resolveAIGovernanceContext,
   resolveProviderForTask,
 } from "../lib/governance.ts";
-import { createProvider, withThinkingDisabled } from "../lib/ai-provider.ts";
+import { createProvider } from "../lib/ai-provider.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import {
   containsCompanionInternalToken,
@@ -1013,12 +1013,14 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
   // ── 阶段 2：候选念头（确定性规则打底，不足 3 条再让模型补） ───────────
   // 授权/治理上下文两处调用完全一样，合并成一个工厂：consent 不通过时抛错走
   // 各自的 catch，而不是静默跳过（静默跳过 = 上面那条 warn 日志也不会出现）。
+  // 2026-10-06 起跟随平台配置开思考（用户决定：质量优先），token 预算已按
+  // 思考预留上调。
   const thoughtProvider = async () => {
     const govCtx = await resolveAIGovernanceContext(job.workspaceId, userId);
     if (!govCtx.consentOk) throw new Error("ai_consent_denied");
     const textRes = resolveProviderForTask(govCtx, "companion_agent");
     return createGovernedProvider(
-      createProvider(textRes.providerName, withThinkingDisabled(textRes.providerConfig)),
+      createProvider(textRes.providerName, textRes.providerConfig),
       govCtx,
       job.workspaceId,
       { userId, operation: "companion_thought", jobId: job.id, dataCategories: ["user_answer"] },
@@ -1042,7 +1044,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
       const allowedNumbersSource = `${thoughtMaterial.facts ?? ""}
 到期复习 ${thoughtMaterial.readyReviews}；12 小时内到期 ${thoughtMaterial.dueSoonReviews}；连续学习 ${thoughtMaterial.streakDays}；熟悉度 ${thoughtMaterial.familiarity.toFixed(2)}`;
       const messages = [{ role: "user" as const, content: prompt }];
-      const generationParameters = { temperature: 0.9, maxTokens: 500, responseFormat: "json_object" as const };
+      const generationParameters = { temperature: 0.9, maxTokens: 2_000, responseFormat: "json_object" as const };
       const provider = await thoughtProvider();
       const inputSnapshotHash = sha256Utf8V1(stableStringify({
         taskVersion: 2,
@@ -1187,7 +1189,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
         recentlySaid: thoughtMaterial.recentlySaid,
       });
       const messages = [{ role: "user" as const, content: prompt }];
-      const generationParameters = { temperature: 0.9, maxTokens: 400, responseFormat: "json_object" as const };
+      const generationParameters = { temperature: 0.9, maxTokens: 2_000, responseFormat: "json_object" as const };
       const provider = await thoughtProvider();
       const inputSnapshotHash = sha256Utf8V1(stableStringify({
         taskVersion: 2,

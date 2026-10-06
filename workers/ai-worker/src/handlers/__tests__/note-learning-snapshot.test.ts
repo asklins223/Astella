@@ -5,7 +5,7 @@ import { noteLearningSnapshotHash } from "../note-learning-snapshot.ts";
 const snapshot = {
   taskVersion: 1, noteVersionId: "note-version", heading: "小节", selectedText: "框选的原句",
   modelId: "model-a", promptVersion: "prompt-v1",
-  generationParameters: { temperature: 0.25, maxTokens: 700, responseFormat: "json_object" as const, disableThinking: true },
+  generationParameters: { temperature: 0.25, maxTokens: 2_600, responseFormat: "json_object" as const },
   messages: [{ role: "user" as const, content: "解释这段原句" }],
 };
 
@@ -15,7 +15,7 @@ test(`${task}的实际小数采样参数能生成稳定快照，不会在调用�
   const hash = noteLearningSnapshotHash(input);
   assert.match(hash, /^[a-f0-9]{64}$/);
   assert.equal(noteLearningSnapshotHash({ ...input, generationParameters: {
-    disableThinking: true, responseFormat: "json_object", maxTokens: 700, temperature,
+    responseFormat: "json_object", maxTokens: 2_600, temperature,
   } }), hash);
   for (const changed of [
     { ...input, selectedText: "另一句" }, { ...input, modelId: "model-b" },

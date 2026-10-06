@@ -866,35 +866,72 @@
 .hud-surface .notebook-hud .notebook-round-recap__practices { margin: 10px 0; padding-left: 22px; line-height: 1.8; }
 .hud-surface .notebook-hud .notebook-round-recap details { margin: 12px 0; padding: 10px 12px; border-radius: 13px 17px 12px 15px; background: var(--hud-cream); }
 .hud-surface .notebook-hud .notebook-round-recap details p { line-height: 1.8; overflow-wrap: anywhere; }
-.hud-surface .notebook-hud .notebook-round-recap summary,
-.hud-surface .notebook-hud .notebook-review-options summary { cursor: pointer; font-weight: 700; }
+.hud-surface .notebook-hud .notebook-round-recap summary { cursor: pointer; font-weight: 700; }
+
+/* ── 页脚的两处折页：以前的讲解与练习 / 以后怎么复习（可选）───────────────
+   两处此前露着浏览器默认的黑色三角（一大一小），在同一页里既不接 `.round-flap`
+   的纸角，也不接本页其它折页的绿字——像一块没被接住的样式。现在两处共用一枚与
+   标题同色的三角：收起指右、翻开转向下；焦点环跟着键盘走。
+
+   「以后怎么复习」这只盒子此前铺的是一层黄油底，是满页纸色里唯一一块发黄的大
+   方块，还套着一只虚线纸盒（框套框）。它要和上面那张核心路线册页读成同一种纸：
+   底色回到纸色，厚边与柔影跟册页对齐；盒里的两个选择改成平整的同一种排法。 */
+.hud-surface .notebook-hud .notebook-legacy-footprint > summary,
+.hud-surface .notebook-hud .notebook-review-options > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  color: var(--hud-green);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+.hud-surface .notebook-hud .notebook-legacy-footprint > summary::-webkit-details-marker,
+.hud-surface .notebook-hud .notebook-review-options > summary::-webkit-details-marker { display: none; }
+.hud-surface .notebook-hud .notebook-legacy-footprint > summary::before,
+.hud-surface .notebook-hud .notebook-review-options > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 6px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.hud-surface .notebook-hud .notebook-legacy-footprint[open] > summary::before,
+.hud-surface .notebook-hud .notebook-review-options[open] > summary::before { transform: rotate(90deg); }
+.hud-surface .notebook-hud .notebook-legacy-footprint > summary:focus-visible,
+.hud-surface .notebook-hud .notebook-review-options > summary:focus-visible { outline: 3px solid var(--hud-green); outline-offset: 3px; border-radius: 9px; }
+@media (hover: hover) and (pointer: fine) {
+  .hud-surface .notebook-hud .notebook-legacy-footprint > summary:hover,
+  .hud-surface .notebook-hud .notebook-review-options > summary:hover { text-decoration: underline; text-underline-offset: 3px; }
+}
 .hud-surface .notebook-hud .notebook-review-options {
   margin: 18px 0 6px;
   padding: 12px 16px;
-  border: 2px solid var(--hud-cream);
-  border-radius: 17px 20px 14px 19px;
-  background: color-mix(in srgb, var(--hud-butter) 20%, var(--hud-paper-light));
+  border: 3px solid var(--hud-cream);
+  border-radius: 19px 15px 22px 16px;
+  background: var(--hud-paper-light);
   box-shadow: var(--hud-shadow-small);
 }
 .hud-surface .notebook-hud .notebook-review-options[open] { padding-bottom: 16px; }
 .hud-surface .notebook-hud .notebook-review-options > .notebook-note { margin-top: 10px; }
-.hud-surface .notebook-hud .notebook-review-options [data-note-subscription] { border-top: 0; padding-top: 0; }
-.hud-surface .notebook-hud .notebook-review-options .notebook-objective__hold { margin-top: 14px; }
-/* 「持续回访这一篇」与上面那个「个人目标 hold」是**并列的两个选择**，不是主次。
-   `hud-surface.css` 已经用 `__hold` 的虚线小纸盒给了两者同档的框；这一格此前只剩
-   一条被撤掉的上边框，于是读作"个人目标的下一步"，而不是"再选一条"。 */
-.hud-surface .notebook-hud .notebook-objective__source {
+/* 「持续回访这一篇」与「个人目标的去留」是**并列的两个选择**，不是主次：两格
+   同一种排法（一行说明、一颗按钮、一行后果），第二格用一条虚线跟第一格分开。
+   此前只有 `__source` 套着虚线小盒、`__hold` 那格的盒在 da4ce9bf 里被删掉，
+   一个套盒一个裸着，于是读成"个人目标的下一步"而不是"再选一条"。 */
+.hud-surface .notebook-hud .notebook-objective__source,
+.hud-surface .notebook-hud .notebook-objective__hold {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
   width: 100%;
-  margin-top: 14px;
-  padding: 9px 12px;
-  border: 1px dashed var(--hud-line);
-  border-radius: 13px;
-  background: var(--hud-paper-light);
 }
+.hud-surface .notebook-hud .notebook-objective__source { margin-top: 12px; }
+.hud-surface .notebook-hud .notebook-objective__hold { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--hud-line); }
 
 /* A note practice is a short receipt inside the journey, not the card result ceremony. */
 .hud-surface .note-run-receipt {
@@ -1137,8 +1174,6 @@
   cursor: pointer;
 }
 
-.hud-surface .notebook-hud .notebook-legacy-footprint > summary { color: var(--hud-green); font-size: 13px; font-weight: 800; cursor: pointer; }
-
 .hud-surface .notebook-hud .notebook-legacy-footprint { margin-top: 20px; padding-top: 18px; border-top: 1px dashed var(--hud-line); }
 
 .hud-surface .notebook-hud .notebook-legacy-footprint > p { margin: 10px 0; }
@@ -1320,4 +1355,8 @@
 .hud-surface .notebook-hud .notebook-meta-action svg { opacity: .8; }
 @media (prefers-reduced-motion: reduce) {
   .hud-surface .notebook-hud .notebook-meta-action { transition: none; }
+}
+.desktop-app:is([data-motion-mode="lite"], [data-motion-mode="off"]) :is(.notebook-legacy-footprint, .notebook-review-options) > summary::before { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .hud-surface .notebook-hud :is(.notebook-legacy-footprint, .notebook-review-options) > summary::before { transition: none; }
 }

@@ -106,29 +106,13 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      # PostgreSQL connection for backup/restore
-      PG_HOST: postgres
-      PG_PORT: 5432
-      PG_USER: ${POSTGRES_USER:-ailearn}
-      PG_DB: ${POSTGRES_DB:-ailearn}
+      # infra/backup/*.sh 只从环境读这四项；PG_* / S3_* / SOURCE_* / KEY_DIR /
+      # MANIFEST_DIR 等其余参数全部由 scripts/alpha-env-setup.sh 以 CLI 参数传入
+      # （脚本里对应变量会被参数解析覆盖，环境值不会生效，所以不在这里声明）。
       PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-      # MinIO/S3 connection for encrypted backup upload
-      # Uses dev defaults — production must override via .env
-      S3_ENDPOINT: http://minio:9000
-      S3_BUCKET: ${BACKUP_BUCKET:-ailearn-backups}
-      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-ailearn}
-      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-ailearn_dev_secret}
-      # Release metadata
-      SOURCE_RELEASE: ${SOURCE_RELEASE:-0.5.0-alpha}
-      SOURCE_COMMIT: ${SOURCE_COMMIT:-unknown}
-      SOURCE_MIGRATION: ${SOURCE_MIGRATION:-0039}
       MIGRATOR_PASSWORD: ${MIGRATOR_PASSWORD:?Set MIGRATOR_PASSWORD in .env}
       API_PASSWORD: ${API_PASSWORD:?Set API_PASSWORD in .env}
       WORKER_PASSWORD: ${WORKER_PASSWORD:?Set WORKER_PASSWORD in .env}
-      # age key directory (mounted volume for key persistence)
-      KEY_DIR: /etc/ailearn
-      # Manifest directory (mounted volume for manifest persistence)
-      MANIFEST_DIR: /var/lib/ailearn/manifests
     volumes:
       - backup_keys:/etc/ailearn
       - backup_manifests:/var/lib/ailearn/manifests

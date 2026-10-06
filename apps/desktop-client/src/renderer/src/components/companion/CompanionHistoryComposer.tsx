@@ -1,15 +1,30 @@
 import { useLayoutEffect, useRef } from "react";
-import { Loader2, Mic, Plus, Send, Square } from "lucide-react";
+import { Loader2, Mic, MousePointerClick, Plus, Send, Square } from "lucide-react";
 import type { CompanionVoiceInput } from "./use-companion-voice-input";
 import { isCompanionComposition, shouldSendCompanionOnEnter } from "./companion-composer-key";
+import { NOTE_IMAGE_UPLOAD_MIME_TYPES } from "@ailearn/shared/note-image-upload-contracts";
+import {
+  CompanionComposerImageChip,
+  CompanionComposerImageStatus,
+  type CompanionComposerImage,
+} from "./companion-composer-image";
 
-/** The Demo's two-row paper composer, connected to the shared production draft. */
-export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, voiceEnabled, companionName, sending, stopping, onStop, onVoiceToggle, onPageActions }: {
+/**
+ * The Demo's two-row paper composer, connected to the shared production draft.
+ *
+ * 2026-10-06 输入框传图：「＋」现在就是"传一张图给她"（隐藏的 file input 触发），
+ * 页面快捷操作换到它右边的独立图标——原来那个 ＋ 是快捷操作的占位符，
+ * 而用户对输入框上 ＋ 的心智模型一直是"加附件"。
+ */
+export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, voiceEnabled, companionName, sending, stopping, onStop, onVoiceToggle, onPageActions, image, imageUploading, imageError, onPickImage, onRemoveImage }: {
   input: string; onInputChange: (value: string) => void; onSend: () => Promise<void>;
   voice: CompanionVoiceInput; voiceEnabled: boolean; companionName: string; sending: boolean; stopping: boolean;
   onStop: () => void; onVoiceToggle: () => void; onPageActions: () => void;
+  image: CompanionComposerImage | null; imageUploading: boolean; imageError: string | null;
+  onPickImage: (file: File) => void; onRemoveImage: () => void;
 }) {
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   useLayoutEffect(() => {
     const field = composerRef.current;
     if (!field) return;
@@ -31,6 +46,7 @@ export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, 
     };
   }, [input]);
   return <form className="companion-history__composer" onSubmit={event => { event.preventDefault(); void onSend(); }}>
+    {image ? <CompanionComposerImageChip image={image} onRemove={onRemoveImage} /> : null}
     <textarea ref={composerRef} rows={1} value={input} onChange={event => onInputChange(event.currentTarget.value)}
       placeholder="想聊哪一句，或只是想说说话…" aria-label={`继续问 ${companionName}`}
       onKeyDown={event => {
@@ -38,8 +54,15 @@ export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, 
         if (event.key === "Escape") { event.preventDefault(); event.currentTarget.blur(); return; }
         if (shouldSendCompanionOnEnter(event)) { event.preventDefault(); void onSend(); }
       }} />
+    <CompanionComposerImageStatus uploading={imageUploading} error={imageError} />
     <div className="companion-history__compose-tools">
-      <button type="button" className="companion-history__tool" onClick={onPageActions} aria-label="当前页面快捷操作" title="当前页面快捷操作"><Plus size={21} /></button>
+      <input ref={imageInputRef} type="file" accept={NOTE_IMAGE_UPLOAD_MIME_TYPES.join(",")} className="companion-compose-image__input"
+        onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) onPickImage(file); }} />
+      <button type="button" className="companion-history__tool" disabled={imageUploading}
+        onClick={() => imageInputRef.current?.click()} aria-label="传一张图给伴星" title="传一张图给她">
+        {imageUploading ? <Loader2 className="companion-hud__spin" size={20} /> : <Plus size={21} />}
+      </button>
+      <button type="button" className="companion-history__tool" onClick={onPageActions} aria-label="当前页面快捷操作" title="当前页面快捷操作"><MousePointerClick size={19} /></button>
       {voiceEnabled ? <button type="button" className="companion-history__tool" onClick={onVoiceToggle}
         disabled={voice.phase === "transcribing" || sending} data-active={voice.phase !== "idle" || undefined}
         title={voice.supported ? "语音输入" : "当前设备没有可用的麦克风"}
@@ -50,7 +73,7 @@ export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, 
       {sending ? <button type="button" className="button companion-history__composer-stop" disabled={stopping} onClick={onStop} aria-label="停止这一轮">
         {stopping ? <Loader2 className="companion-hud__spin" size={16} /> : <Square size={14} />}停止
       </button> : null}
-      <button className="button primary" type="submit" disabled={!input.trim() || voice.phase === "transcribing"} aria-label={sending ? "发送并接替当前回复" : "发送"}><span>发送</span><Send size={20} /></button>
+      <button className="button primary" type="submit" disabled={!input.trim() || voice.phase === "transcribing" || imageUploading} aria-label={sending ? "发送并接替当前回复" : "发送"}><span>发送</span><Send size={20} /></button>
     </div>
   </form>;
 }

@@ -37,7 +37,8 @@ import {
   textOfCompanionBlocks,
   unwrapCompanionJsonEnvelope,
 } from "../companion-dialogue-content.ts";
-import { isGroundedTutorRequestedPageContext, pickCompanionFailureFallbackLine } from "../companion-dialogue.ts";
+import { isGroundedTutorRequestedPageContext } from "../companion-dialogue.ts";
+import { pickCompanionFailureFallbackLine } from "../companion-dialogue-failure-retention.ts";
 
 test("grounded tutor：LearningRun 页面必须请求受限模式", () => {
   assert.equal(isGroundedTutorRequestedPageContext({

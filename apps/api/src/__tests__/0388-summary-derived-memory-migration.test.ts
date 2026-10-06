@@ -66,27 +66,33 @@ test("0388 的 status 取值集合是从事实凑出来的，不是猜的", () =
     new URL("../../../../workers/ai-worker/src/handlers/companion-summarizer.ts", import.meta.url),
     "utf8",
   );
+  const store = readFileSync(
+    new URL("../../../../workers/ai-worker/src/handlers/companion-dialogue-store.ts", import.meta.url),
+    "utf8",
+  );
   const allowed = new Set(["candidate", "confirmed", "rejected", "stale"]);
 
   // 写入侧：只看 conversation_summaries 那条 INSERT —— 同一个文件里还有记忆的 INSERT，
   // 它的 'pending' 是 embedding_status，不是这里的 status（第一版正则太宽，误报过一次）。
-  const summaryInsert = summarizer.slice(
-    summarizer.indexOf("INSERT INTO conversation_summaries"),
-    summarizer.indexOf("ON CONFLICT (workspace_id, user_id, conversation_id, source_run_id)"),
-  );
-  assert.ok(summaryInsert.length > 0, "没找到摘要的 INSERT");
-  const written = [...summaryInsert.matchAll(/,\s*'([a-z_]+)',\s*now\(\),\s*now\(\)\)/g)].map(m => m[1]!);
+  // 这条 INSERT 目前住在 `upsertCommittedSummary`（44 §5.3 把两条围栏合进一条语句），
+  // 但守卫认的是**事实**不是位置：两个候选文件里谁持有它就读谁，两处都没有才红。
+  const summaryInsert = [summarizer, store]
+    .map((source) => source.slice(
+      source.indexOf("INSERT INTO conversation_summaries"),
+      source.indexOf("ON CONFLICT (workspace_id, user_id, conversation_id, source_run_id)"),
+    ))
+    .find((slice) => slice.length > 0 && slice.indexOf("INSERT INTO") === 0);
+  assert.ok(summaryInsert, "没找到摘要的 INSERT（companion-summarizer / companion-dialogue-store 都没有）");
+  // 写入的 status 永远是这一列三元组的第一个（`status, created_at, updated_at`
+  // → `'<值>', now(), now()`）：INSERT…VALUES 与 INSERT…SELECT 两种写法都是这个尾巴。
+  const written = [...summaryInsert!.matchAll(/,\s*'([a-z_]+)',\s*now\(\),\s*now\(\)/g)].map(m => m[1]!);
   assert.deepEqual(written, ["candidate"], `摘要 INSERT 的 status 应只有 candidate，实际：${written.join("/")}`);
   for (const value of written) assert.ok(allowed.has(value), `写入侧出现集合外的 status：${value}`);
 
   // 读取侧：读路径认领的状态必须在集合内——漏一个，那份摘要会**静默**不可见。
-  const chain = readFileSync(
-    new URL("../../../../workers/ai-worker/src/handlers/companion-dialogue-store.ts", import.meta.url),
-    "utf8",
-  );
   // 只看**摘要表**的 s./p. 前缀：同一文件里还有 turn run 的状态过滤
   // （cancelled_run.status IN ('cancelled','superseded')），那是另一张表的另一件事。
-  for (const match of chain.matchAll(/\b[sp]\.status IN \(([^)]*)\)/g)) {
+  for (const match of store.matchAll(/\b[sp]\.status IN \(([^)]*)\)/g)) {
     for (const value of match[1]!.matchAll(/'([a-z_]+)'/g)) {
       assert.ok(allowed.has(value[1]!), `读取认领了集合外的 status：${value[1]}`);
     }

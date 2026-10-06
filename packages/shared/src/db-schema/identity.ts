@@ -89,7 +89,8 @@ export const userAiSettings = pgTable("user_ai_settings", {
   consentVersion: text("consent_version"),
   consentAt: timestamp("consent_at", { withTimezone: true }),
   dataPolicy: jsonb("data_policy").$type<UserAiDataPolicy>().notNull()
-    .default({ sendToExternal: false, sendImageContent: false, piiDetection: true, auditLogging: true }),
+    // 2026-10-06（用户决定）：图片外发默认打开（同意/外发仍是第一道门）。
+    .default({ sendToExternal: false, sendImageContent: true, piiDetection: true, auditLogging: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

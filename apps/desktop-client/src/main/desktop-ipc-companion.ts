@@ -485,6 +485,10 @@ const companionChatSendTurnInputSchema = z.strictObject({
   ...m1InputBase,
   request: companionChatSendTurnRequestV1Schema,
 });
+const companionImageUploadInputSchema = z.strictObject({
+  ...m1InputBase,
+  request: noteImageUploadRequestV1Schema,
+});
 const companionChatListMessagesInputSchema = z.strictObject({
   ...m1InputBase,
   request: companionChatListMessagesRequestV1Schema,
@@ -775,6 +779,14 @@ channel(DESKTOP_IPC_CHANNELS.companionHomeGetProjection, runtimeInputSchema, asy
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_companion.sendCompanionTurn(gateway.gatewayTransport, input.request, input.meta.requestId);
   }, companionChatSendTurnResultV1Schema);
+
+  // 对话图片上传（2026-10-06 输入框传图）：与其余伴星通道同一路由门控；
+  // 服务端负责 magic bytes/尺寸/像素数防线，这里只过同一份合同。
+  channel(DESKTOP_IPC_CHANNELS.companionImageUpload, companionImageUploadInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.uploadCompanionImage(gateway.gatewayTransport, input.request, input.meta.requestId);
+  }, noteImageUploadResultV1Schema);
 
   channel(DESKTOP_IPC_CHANNELS.companionChatListMessages, companionChatListMessagesInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");

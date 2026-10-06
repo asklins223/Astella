@@ -498,6 +498,8 @@ export const DESKTOP_IPC_CHANNELS = {
   companionChatEnsureConversation: "ailearn.v1.companion.chat.ensureConversation",
   companionChatSendTurn: "ailearn.v1.companion.chat.sendTurn",
   companionChatListMessages: "ailearn.v1.companion.chat.listMessages",
+  // 对话图片上传（2026-10-06 输入框传图）：与笔记图片同一份 request/result 合同。
+  companionImageUpload: "ailearn.v1.companion.image.upload",
   // 提案确认 + agent 导航 route 轮询（2026-09-18 补接线）。
   companionChatProposalGet: "ailearn.v1.companion.chat.proposal.get",
   companionChatProposalDecide: "ailearn.v1.companion.chat.proposal.decide",
@@ -2557,6 +2559,15 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
         request: CompanionVoiceTranscribeRequestV1;
       }): Promise<GatewayResultV1<CompanionVoiceTranscribeResultV1>>;
     };
+    /**
+     * 对话图片上传（2026-10-06 输入框传图）：与笔记图片同一条上传管线、同一份
+     * request/result 合同，但不挂笔记——图随下一轮 turn 的 blocks 走，
+     * 服务端在创建 turn 时按 url 解析成图片资产。
+     */
+    uploadImage(input: {
+      meta: RequestMetaV1;
+      request: import("./note-image-upload-contracts.ts").NoteImageUploadRequestV1;
+    }): Promise<GatewayResultV1<z.infer<typeof noteImageUploadResultV1Schema>>>;
     /**
      * 聊天发送链路（2026-09-18 接线）：建/复用 dialogue → 发 turn → 轮询
      * messages 拿回复。此前桌面端只有只读的对话历史。

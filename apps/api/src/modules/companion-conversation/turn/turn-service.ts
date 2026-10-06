@@ -10,7 +10,7 @@
 
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { companionLeakGateVersionV1 } from "@ailearn/shared/companion-leak-gates";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../../db/client.ts";
 import { withWorkspaceTransaction } from "../../../db/client.ts";
 import { createJob } from "../../job/service.ts";
@@ -24,6 +24,8 @@ import {
   type CompanionPublicErrorCodeV1,
   type CreateCompanionTurnRequestV1,
 } from "@ailearn/shared";
+import { noteImageAssets } from "@ailearn/shared/db-schema/note";
+import { sourceImageObjectKeyFromUrl, sourceImageUrlFromObjectKey } from "@ailearn/shared/source-image-contracts";
 import { resolveAuthSurfaceManifestSecret } from "../../../companion-contracts/auth-surface.ts";
 import { ensureCompanionAccountState, getCompanionAccountEpoch } from "./companion-account-epoch.ts";
 import { reclaimExpiredCompanionProposals, invalidateSupersededRunProposals } from "./companion-proposal-expiry.ts";
@@ -245,8 +247,43 @@ function eventRow(
   `);
 }
 
-export async function createCompanionTurn(args: {
-  workspaceId: string;
+/**
+ * 把本轮用户上传的图片块解析成权威资产（2026-10-06 输入框传图）。
+ *
+ * 客户端只知道上传回执给的站内 url；服务端按 url → object_key →
+ * `note_image_assets` 解析，并把 assetId 写回块里——她读图
+ *（`companion_read_image` 的 assetId）与消息渲染用的是同一个 id。
+ * 跨空间、未登记、已删除的图一律 400：绝不落一条"看起来有图但谁都认不出"的消息。
+ */
+async function resolveTurnImageBlocks(
+  tx: ApiTransaction,
+  workspaceId: string,
+  blocks: CreateCompanionTurnRequestV1["blocks"],
+): Promise<CreateCompanionTurnRequestV1["blocks"]> {
+  if (!blocks.some((block) => block.type === "image")) return blocks;
+  return Promise.all(blocks.map(async (block) => {
+    if (block.type !== "image") return block;
+    const objectKey = sourceImageObjectKeyFromUrl(block.url);
+    if (!objectKey) {
+      throw new CompanionConversationError("INVALID_REQUEST", 400, "attached image url is not a site-internal upload");
+    }
+    const asset = await tx.query.noteImageAssets.findFirst({
+      where: and(
+        eq(noteImageAssets.workspaceId, workspaceId),
+        eq(noteImageAssets.objectKey, objectKey),
+        eq(noteImageAssets.status, "ready"),
+        isNull(noteImageAssets.deletedAt),
+      ),
+    });
+    if (!asset) {
+      throw new CompanionConversationError("INVALID_REQUEST", 400, "attached image was not found in this workspace");
+    }
+    // url 也归一成库里的权威形状（对象键大小写/后缀以登记行为准）。
+    return { ...block, url: sourceImageUrlFromObjectKey(asset.objectKey), assetId: asset.id };
+  }));
+}
+
+export async function createCompanionTurn(args: {  workspaceId: string;
   userId: string;
   conversationId: string;
   idempotencyKey: string;
@@ -463,6 +500,9 @@ export async function createCompanionTurn(args: {
       { workspaceId: args.workspaceId, userId: args.userId },
     );
 
+    // 用户随这一轮附的图（2026-10-06 输入框传图）：解析成权威资产再落库。
+    const blocks = await resolveTurnImageBlocks(tx, args.workspaceId, request.blocks);
+
     // 分配 seq/generation（原子自增）：UPDATE ... RETURNING 返回的是递增后的值，
     // 当前 turn 的 generation 应为递增前的旧值（首个 turn = 1）。
     const counters = await tx
@@ -483,7 +523,7 @@ export async function createCompanionTurn(args: {
     const generation = next.nextGeneration - 1;
 
     // 插入 user message
-    const contentSha256 = sha256Utf8V1(canonicalJsonV1(request.blocks));
+    const contentSha256 = sha256Utf8V1(canonicalJsonV1(blocks));
     const userMessage = await tx
       .insert(companionMessages)
       .values({
@@ -494,7 +534,7 @@ export async function createCompanionTurn(args: {
         seq: messageSeq,
         role: "user",
         kind: request.inputKind === "voice_transcript" ? "voice_transcript" : "text",
-        blocks: request.blocks as never,
+        blocks: blocks as never,
         runId: null,
         clientMessageId: request.clientMessageId,
         contentSha256,

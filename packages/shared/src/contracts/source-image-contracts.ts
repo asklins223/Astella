@@ -25,9 +25,15 @@ export const SOURCE_IMAGE_MAX_BYTES = 5_000_000;
  */
 export const SOURCE_IMAGE_UPLOAD_PREFIX = "/api/uploads/";
 
-/** 与 API 下载路由接受的对象键形状一致：{workspaceId}/{notes|sources}/{ownerId}/{uuid}.{ext}。 */
-const SOURCE_IMAGE_OBJECT_KEY_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(?:notes|sources)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:png|jpg|jpeg|gif|webp)$/;
+/**
+ * 与 API 下载路由接受的对象键形状一致：
+ *   - {workspaceId}/{notes|sources}/{ownerId}/{uuid}.{ext}
+ *   - {workspaceId}/companion/{uuid}.{ext}   ← 伴星对话里用户上传的图（2026-10-06）
+ */
+const UUID_SEGMENT = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const SOURCE_IMAGE_OBJECT_KEY_PATTERN = new RegExp(
+  `^${UUID_SEGMENT}/(?:(?:notes|sources)/${UUID_SEGMENT}/${UUID_SEGMENT}|companion/${UUID_SEGMENT})\\.(?:png|jpg|jpeg|gif|webp)$`,
+);
 
 /** worker 只按这四种 content-type 落盘（见 `EXT_FROM_MIME`），据此收窄通道。 */
 export const SOURCE_IMAGE_MIME_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;

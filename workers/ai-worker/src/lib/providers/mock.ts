@@ -12,7 +12,7 @@ import type {
   ChatOptions,
   ChatResult,
   CapabilityImpl,
-  PlatformOptions,
+  ModelProfile,
 } from "@ailearn/shared";
 import { registerFactory } from "../provider-factory.ts";
 
@@ -50,11 +50,11 @@ export class MockProvider implements AIProvider {
   modelId = "mock-v1";
   visionModelId = "mock-vision-v1";
   promptVersion = "v2-mock";
-  /** 配置文件 options（含 contextWindowTokens），从 config/ai-platforms.json 传入。 */
-  private readonly platformOptions: PlatformOptions | undefined;
+  /** 模型档案（2026-10-06）：mock 只消费 contextWindowTokens（测试用）。 */
+  private readonly modelProfile: ModelProfile | undefined;
 
-  constructor(options?: { platformOptions?: PlatformOptions }) {
-    this.platformOptions = options?.platformOptions;
+  constructor(options?: { modelProfile?: ModelProfile }) {
+    this.modelProfile = options?.modelProfile;
   }
 
   /**
@@ -282,8 +282,8 @@ export class MockProvider implements AIProvider {
    * MOCK_CONTEXT_WINDOW_TOKENS env var.
    */
   getCapabilities(): ProviderCapability {
-    // 迁移遗漏修复：config/ai-platforms.json 的 options.contextWindowTokens 优先于 env。
-    const contextWindowTokens = this.platformOptions?.contextWindowTokens
+    // 迁移遗漏修复：模型档案的 contextWindowTokens 优先于 env。
+    const contextWindowTokens = this.modelProfile?.contextWindowTokens
       ?? (Number(process.env.MOCK_CONTEXT_WINDOW_TOKENS) || DEFAULT_CONTEXT_WINDOW_TOKENS);
     const reservedOutputTokens = 4096;
     return {
@@ -454,21 +454,21 @@ function estimateTokenCount(text: string): number {
 // Mock provider supports all capabilities for development and testing.
 
 registerFactory("mock", "text_generation", (config) => {
-  return new MockProvider({ platformOptions: config.options }) as unknown as CapabilityImpl;
+  return new MockProvider({ modelProfile: config.modelProfile }) as unknown as CapabilityImpl;
 });
 
 registerFactory("mock", "vision", (config) => {
-  return new MockProvider({ platformOptions: config.options }) as unknown as CapabilityImpl;
+  return new MockProvider({ modelProfile: config.modelProfile }) as unknown as CapabilityImpl;
 });
 
 registerFactory("mock", "agent_turn", (config) => {
-  return new MockProvider({ platformOptions: config.options }) as unknown as CapabilityImpl;
+  return new MockProvider({ modelProfile: config.modelProfile }) as unknown as CapabilityImpl;
 });
 
 registerFactory("mock", "embedding", (config) => {
-  return new MockProvider({ platformOptions: config.options }) as unknown as CapabilityImpl;
+  return new MockProvider({ modelProfile: config.modelProfile }) as unknown as CapabilityImpl;
 });
 
 registerFactory("mock", "rerank", (config) => {
-  return new MockProvider({ platformOptions: config.options }) as unknown as CapabilityImpl;
+  return new MockProvider({ modelProfile: config.modelProfile }) as unknown as CapabilityImpl;
 });

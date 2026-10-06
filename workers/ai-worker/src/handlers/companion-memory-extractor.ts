@@ -16,7 +16,7 @@ import { sql } from "drizzle-orm";
 import { readJobPayloadString, resolveCompanionMemoryTemporalMetadata } from "@ailearn/shared";
 import { stableStringify, sha256Utf8V1 } from "@ailearn/shared/content-hash";
 import { logger } from "../lib/logger.ts";
-import { createProvider, withThinkingDisabled } from "../lib/ai-provider.ts";
+import { createProvider } from "../lib/ai-provider.ts";
 import {
   AIConsentRequiredError,
   createGovernedProvider,
@@ -403,13 +403,13 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
   const govCtx = await resolveAIGovernanceContext(job.workspaceId, userId);
   if (!govCtx.consentOk) throw new AIConsentRequiredError();
   const textRes = resolveProviderForTask(govCtx, "companion_agent");
-  // 思考必须关掉：这是一次 `responseFormat:"json_object"` + `maxTokens:800` 的整段取回，
-  // 思考 token 也算在 800 里——吃满之后 `content` 直接为空，JSON 解析失败，
-  // provider 内部重试 × job 重试跑满就把 job 判死（实机 2026-09-22：dead 里
-  // `MEMORY_EXTRACT_OUTPUT_INVALID` 与 `provider_http_400` 各占一条，
-  // 与 §9.71 摘要器"建表以来 0 行"是同一根因，当时只修了摘要器那一个调用点）。
+  // 2026-10-06 起跟随平台配置开思考（用户决定：质量优先）。思考 token 也计入
+  // maxTokens——此前 maxTokens=800 的整段取回里思考会吃满预算，`content` 直接为空、
+  // JSON 解析失败，provider 内部重试 × job 重试跑满就把 job 判死（实机 2026-09-22：
+  // dead 里 `MEMORY_EXTRACT_OUTPUT_INVALID` 与 `provider_http_400` 各占一条，与 §9.71
+  // 摘要器"建表以来 0 行"是同一根因）。现在预算提到 3000 给思考留出空间。
   const provider = createGovernedProvider(
-    createProvider(textRes.providerName, withThinkingDisabled(textRes.providerConfig)),
+    createProvider(textRes.providerName, textRes.providerConfig),
     govCtx,
     job.workspaceId,
     // AI P0-8（2026-09-15 审计）：接上 ai_audit_log 的唯一写入口（此前零调用）。
@@ -535,7 +535,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
   // 现在两条失败路径都必须抛：采样已在本函数内重试过一次，重投不会更好，
   // 所以判不可重试、直接 dead，让 `jobs.last_error` 说真话。
   type ExtractOutput = z.infer<typeof memoryExtractOutputSchema>;
-  const generationParameters = { temperature: 0.2, maxTokens: 800, responseFormat: "json_object" as const };
+  const generationParameters = { temperature: 0.2, maxTokens: 3_000, responseFormat: "json_object" as const };
   const inputSnapshotHash = sha256Utf8V1(stableStringify({
     taskVersion: 1,
     runId,

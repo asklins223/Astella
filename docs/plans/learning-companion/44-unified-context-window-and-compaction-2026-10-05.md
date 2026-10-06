@@ -364,15 +364,21 @@ P >= T 时尝试有界压缩；压缩后重新装配并测量。保留当前已�
 已验证：各包单测与 `npm run typecheck` 均为绿（**具体数字以每次交付时的实跑为准**，
 不写在这里免得过期；阶段 1 刚落地时的数字是 agent-core 83 / ai-worker 1287 / apps/api 2676）。
 
-**这条链路只做到「判定与拒绝」。** 触发压缩的端口目前没有任何调用方注册，因此线上行为是
-「超触发线仍照常发送并留下 `over_trigger_line` 回执」——这是有意的：没有压缩能力时静默删内容
-比不删更糟。窗口内没有任何一次真实模型接续样本，压缩质量未验收。
+**这条链路只做到「判定与拒绝」。** 触发压缩的端口在 2026-10-06 已注册（`companion-context-receipts.ts`
+的 `compactionAvailable` → `companion-dialogue.ts` → `companion-compaction.ts`），但当时折叠**折不到东西**：
+摘要链的读锚点要求 `coverage_through_seq < historyStartSeq`，与回放尾部的 seq 结构性不相交，于是
+`foldReplayUnderSummaryCoverage` 恒返回 null。更糟的是那时 `folded == null` 会原样抛出
+`AIContextCompactionRequiredError`，而它不在不可重试名单里——触发线以上、硬上限以下的请求会变成
+可重试失败。**2026-10-06 已修**：读锚点放开（覆盖可伸进回放窗口），折不动时消耗额度后原样重发并由闸
+记 `over_trigger_line`／`compaction_budget_spent` 回执，冷却记录接上真实读数。窗口内仍没有真实模型
+接续样本，压缩语义质量未验收。
 
-### 阶段 2：可靠压缩 —— 只做了摘要链，未做调用前压缩
+### 阶段 2：可靠压缩 —— 摘要链 + 调用前压缩（2026-10-06 补齐）
 
 已落地（[摘要器](../../../workers/ai-worker/src/handlers/companion-summarizer.ts)、
 [0382 迁移](../../../apps/api/src/db/migrations/0382_summary_coverage_chain.sql)、
-[摘要读取](../../../workers/ai-worker/src/handlers/companion-dialogue-store.ts)）：
+[摘要读取](../../../workers/ai-worker/src/handlers/companion-dialogue-store.ts)、
+[压缩执行](../../../workers/ai-worker/src/handlers/companion-compaction.ts)）：
 
 - **父摘要作为递增输入**：新摘要接到上一份摘要上，并明确要求保留仍有效的约束与纠正
   （§5.1）。此前每份摘要都默认代表「全部更早历史」，实际只代表自己读过的那一段。
@@ -383,6 +389,15 @@ P >= T 时尝试有界压缩；压缩后重新装配并测量。保留当前已�
   覆盖起点在接上父摘要后前移到父摘要起点。
 - **分块预算取自实际能力**：摘要输入预算由摘要模型自己的能力快照解析，不再固定
   12,000 字符；分块数有上限（§5.2／§5.4）。
+- **摘要与回放从同一实际保留边界派生**（§5.2，2026-10-06）：读侧不再要求「摘要必须
+  完全早于可见尾部」，覆盖伸进回放窗口时照折、由摘要代表；折不动时不硬失败，消耗额度后
+  原样重发并留 `over_trigger_line` 回执。冷却读数取**重发之后**的计量。
+- **提交的成功判据**：提交语句带 `RETURNING`，0 行即作废，不再把「指针没动」记成
+  `summarizer completed`；提交事务取 `FOR UPDATE`（FOR SHARE 之间不冲突，父围栏此前有竞态）；
+  同区间同哈希同策略版本不重复提交（手动路径 `source_run_id` 为 NULL，唯一索引 NULLS DISTINCT
+  挡不住重复点击，会插出链分叉）。实库证据：`npm run test:plan44-summary-commit:postgres`。
+- **计量合同的种类口径**：`unmeasured` 记种类不记份数（它限 12 条），13 张图／13 个
+  reasoning 句柄不再撑破合同——成本仍按每个 part 的地板价累加。
 
 ### 窗口验证：前两轮我归因错了两次，第三次找到了真因
 
@@ -767,5 +782,16 @@ typecheck 立刻报 `',' expected`。这条已经记过一次了，还是踩了�
   0383 仍只有文本断言。
 - `adopted` 阶段仍无写入方（有意，见上）；压缩执行仍只在伴星 agent loop（持续目标那路
   按现状不能照搬，理由见上）。
+- 2026-10-06 复核四条「测试全绿但线上不成立」的缺陷并修掉：折叠恒不可达、`unmeasured`
+  13 条即崩、冷却有读无写、提交把没推进报成成功。验证：`agent-core` 122 条、`ai-worker`
+  1361 条单测与六个包的 `npm run typecheck` 全绿；实库上 `test:plan44:postgres`（2）、
+  `test:plan44-coverage:postgres`（5）、`test:plan44-sql:postgres`（5）、
+  `test:plan44-summary-commit:postgres`（5，本轮新增）、
+  `test:plan44-cooldown:postgres` 与 dialogue／recovery 两个套件（16）通过——跑在
+  `scripts/dev-disposable-db.sh` 起的一次性库上，不写开发库。
+  **仍未取得**：真实模型接续样本、小窗口路由下的实测触发、`record` 冷却的跨轮次窗口观察。
+  另有两处已知未修，属于设计取舍：`context-governor` 的计数端口在生产里仍无人注入
+  （P 恒为启发式估算），以及 `apps/api` 侧的专业模型调用不经过这道闸（boundary guard
+  的判据看不见它们）。
 
 

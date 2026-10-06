@@ -121,14 +121,19 @@ export type AccountIdentity = {
   readonly displayName: string | null;
 };
 /**
- * 头像字节。它只能靠主进程的字节通道取回，而那是**点开小框时**才发生的请求，
- * 所以这里连邮箱一起存：按钮只有在字节属于当前账号时才用它，换过账号之后宁可
+ * 头像字节。折叠态那颗常驻印章与账户小框都读它，而字节只能靠主进程的字节通道
+ * 取回，所以这里连邮箱一起存：只有字节属于当前账号时才用它，换过账号之后宁可
  * 落回首字母印章，也不会把上一个账号的脸留在屏幕上。
+ *
+ * `src` 为空串不是"还没取到"，而是问过之后得到的答复——这个账号没有头像。
+ * 两份答复各有各的落点，缺了它每次挂载都要再问一遍。
  */
 export type AccountAvatar = {
   readonly email: string;
   readonly src: string;
 };
+/** 「确认过没有头像」的那份记录，见 `AccountAvatar`。 */
+export const NO_AVATAR_SRC = "";
 export type CompanionCenterTarget = {
   readonly tab: "overview" | "memory" | "dialogue" | "activity" | "diary" | "discovery" | "persona" | "data";
   readonly focusMemoryId?: string;

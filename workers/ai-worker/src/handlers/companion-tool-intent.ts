@@ -16,7 +16,15 @@ import type { AIProvider } from "../lib/ai-provider.ts";
 
 const TASK_ID = "companion_tool_intent";
 const TASK_VERSION = 2;
-const DEFAULT_STEP_TIMEOUT_MS = 8_000;
+/**
+ * 分类步骤的单次预算（2026-10-06 起 30s）。
+ *
+ * 原来 8s 是"关思考 + 小输入"的延迟预算；全链路开思考后，思考 token 让同类
+ * 整段取回从 7.6s 涨到 36s（摘要器实测），8s 会让分类**每轮必超时**，
+ * 退化成 uncertain 之后工具面被收紧——那正是这条链最贵的失败形态。
+ * 调用方传进来的 stepTimeoutMs 仍会再夹一次（见 interpretCompanionTurn）。
+ */
+export const COMPANION_TOOL_INTENT_TIMEOUT_MS = 30_000;
 
 export interface CompanionToolIntentTaskContext {
   job: JobLeaseContext;
@@ -91,7 +99,7 @@ export async function interpretCompanionTurn(
   const unknown = () => resolveAgentTurnInterpretation(null, binding);
   const requestMessages = toolIntentMessages(messages, taskContext);
   if (!requestMessages) return unknown();
-  const requestedStepTimeoutMs = taskContext.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
+  const requestedStepTimeoutMs = taskContext.stepTimeoutMs ?? COMPANION_TOOL_INTENT_TIMEOUT_MS;
   if (requestedStepTimeoutMs <= 0) return unknown();
 
   const inputSnapshotHash = sha256Utf8V1(canonicalJsonV1({
@@ -101,7 +109,7 @@ export async function interpretCompanionTurn(
     promptVersion: provider.promptVersion,
     messages: requestMessages,
   }));
-  const stepTimeoutMs = Math.min(requestedStepTimeoutMs, DEFAULT_STEP_TIMEOUT_MS);
+  const stepTimeoutMs = Math.min(requestedStepTimeoutMs, COMPANION_TOOL_INTENT_TIMEOUT_MS);
   const definition: AiTaskDefinition<{ messages: ChatMessage[] }, AgentTurnInterpretationV1> = {
     id: TASK_ID,
     version: TASK_VERSION,
@@ -134,10 +142,11 @@ export async function interpretCompanionTurn(
     },
     execute: async (input, env) => {
       const answer = await provider.chatCompletion(input.messages, {
-        maxTokens: 650,
+        // 2000 = 思考预留 + 分类 JSON（输出本身只有一两百 token，但思考 token
+        // 也计入 maxTokens）。
+        maxTokens: 2_000,
         temperature: 0,
         responseFormat: "json_object",
-        disableThinking: true,
       }, env.signal);
       let parsed: unknown;
       try {

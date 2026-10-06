@@ -46,7 +46,7 @@ const CHECK_TIMEOUT_MS = 30_000
  * 打包配置读进运行时。**改仓库地址时两处要一起改。**
  */
 const PUBLISH_OWNER = 'asklins223'
-const PUBLISH_REPO = 'ai-learning-system'
+const PUBLISH_REPO = 'Astella'
 const DESKTOP_TAG_PREFIX = 'desktop-v'
 
 /**

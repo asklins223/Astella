@@ -5,24 +5,27 @@
       "apiKey": "${OPENAI_COMPAT_API_KEY}",
       "baseUrl": "https://cn.morbuke.com/v1",
       "options": {
-        "disableThinking": true,
         "disableMaxTokens": true
       }
     },
     "qwen": {
       "type": "dashscope",
       "apiKey": "${DASHSCOPE_API_KEY}",
-      "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "options": {
-        "enableThinking": false
-      }
+      "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1"
     },
     "bigmodel": {
       "type": "openai_compatible",
       "apiKey": "${BIGMODEL_API_KEY}",
       "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
+      "models": {
+        "GLM-4.1V-Thinking-Flash": {
+          "contextWindowTokens": 65536,
+          "maxOutputTokens": 16384,
+          "vision": true,
+          "reasoning": { "levels": ["none", "high"], "default": "high" }
+        }
+      },
       "options": {
-        "enableThinking": true,
         "disableMaxTokens": true
       }
     },
@@ -35,8 +38,13 @@
       "type": "openai_compatible",
       "apiKey": "${SILICONFLOW_API_KEY}",
       "baseUrl": "https://api.siliconflow.cn/v1",
+      "models": {
+        "THUDM/GLM-4-9B-0414": {
+          "vision": false,
+          "reasoning": { "levels": ["none"], "default": "none" }
+        }
+      },
       "options": {
-        "disableThinking": true,
         "disableMaxTokens": true
       }
     },
@@ -44,18 +52,38 @@
       "type": "openai_compatible",
       "apiKey": "${TOKENRHYTHM_API_KEY}",
       "baseUrl": "https://tokenrhythm.studio/v1",
-      "options": {
-        "enableThinking": true,
-        "contextWindowTokens": 1000000,
-        "maxOutputTokens": 131072
+      "models": {
+        "qwen3.8-flash": {
+          "contextWindowTokens": 1000000,
+          "maxOutputTokens": 131072,
+          "vision": false,
+          "reasoning": { "levels": ["none", "high"], "default": "high" }
+        }
       }
     },
     "opencode-go": {
       "type": "opencode_go",
       "apiKey": "${OPENCODE_GO_API_KEY}",
       "baseUrl": "https://opencode.ai/zen/go/v1",
-      "options": {
-        "enableThinking": true
+      "models": {
+        "deepseek-v4.1-flash": {
+          "contextWindowTokens": 1000000,
+          "maxOutputTokens": 131072,
+          "vision": true,
+          "reasoning": {
+            "levels": ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+            "default": "high"
+          }
+        },
+        "muse-spark-1.3-contributor": {
+          "contextWindowTokens": 1048576,
+          "maxOutputTokens": 131072,
+          "vision": false,
+          "reasoning": {
+            "levels": ["minimal", "low", "medium", "high", "xhigh"],
+            "default": "high"
+          }
+        }
       }
     },
     "mock": {
@@ -64,8 +92,8 @@
   },
   "capabilities": {
     "agent_turn": {
-      "platform": "tokenrhythm",
-      "model": "qwen3.8-flash"
+      "platform": "opencode-go",
+      "model": "deepseek-v4.1-flash"
     },
     "text_generation": {
       "platform": "siliconflow-chat",

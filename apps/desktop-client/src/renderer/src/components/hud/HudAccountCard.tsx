@@ -1,16 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowRight, LogOut, UserRound } from "lucide-react";
-import { useRoomStore, type AccountIdentity } from "../../app/room-store";
+import { NO_AVATAR_SRC, useRoomStore, type AccountIdentity } from "../../app/room-store";
 import { createRequestMeta, unwrapGatewayResult } from "../../app/desktop-client";
 import { signOutCurrentAccount } from "../../app/account-signout";
 import { HudBubbleConfirmation, HudBubbleHeader } from "./HudBubbleParts";
 import { useTactileSurface } from "../motion/use-tactile-surface";
-
-/**
- * 头像没上传过时也要把「已经问过了」这件事记下来，否则每次点开小框都要再问一遍。
- * 空串就是那个记录：它表示确认过没有头像，而不是还没问过。
- */
-const NO_AVATAR = "";
 
 /**
  * 药丸上的账户按钮与气泡读取同一枚首字印章。
@@ -24,8 +18,53 @@ export function accountAvatarSrcFor(
   identity: AccountIdentity | null,
   avatar: { readonly email: string; readonly src: string } | null,
 ): string | null {
-  if (!identity || !avatar || avatar.email !== identity.email || avatar.src === NO_AVATAR) return null;
+  if (!identity || !avatar || avatar.email !== identity.email || avatar.src === NO_AVATAR_SRC) return null;
   return avatar.src;
+}
+
+/**
+ * 这张脸的唯一来源。折叠态那颗常驻印章与账户小框读同一份，所以「取头像」这件事
+ * 从卡片里提出来：谁先挂载谁来取，取到就发布给房间 store，另一个直接读。
+ * （2026-10-06 印章换成头像之前，只有点开小框才会取字节，常驻的那颗只有图标。）
+ */
+export function useAccountAvatar(): string | null {
+  const identity = useRoomStore((state) => state.accountIdentity);
+  const avatar = useRoomStore((state) => state.accountAvatar);
+  const setAccountAvatar = useRoomStore((state) => state.setAccountAvatar);
+
+  /**
+   * 每个邮箱只问一次：取到（含"确认没有头像"）就记在 store 里，同一个邮箱不再发
+   * 请求——常驻印章是长期挂载的那一个，`avatar?.email` 这层判断就是它的节流。
+   * 取不回时本次不记账，下次挂载再试。
+   */
+  useEffect(() => {
+    if (!identity || avatar?.email === identity.email) return undefined;
+    const email = identity.email;
+    let active = true;
+    void (async () => {
+      try {
+        const profile = unwrapGatewayResult(
+          await window.ailearn.auth.getProfile({ meta: createRequestMeta() }),
+        );
+        if (!profile.avatarUrl) {
+          if (active) setAccountAvatar({ email, src: NO_AVATAR_SRC });
+          return;
+        }
+        const bytes = unwrapGatewayResult(await window.ailearn.auth.getAvatar({
+          meta: createRequestMeta(),
+          request: { version: 1, objectKey: profile.avatarUrl.replace("/api/uploads/", "") },
+        }));
+        if (active) {
+          setAccountAvatar({ email, src: `data:${bytes.mimeType};base64,${bytes.imageBase64}` });
+        }
+      } catch {
+        // 头像取不回不是故障：落回首字母印章，本次不记账，下次挂载再试。
+      }
+    })();
+    return () => { active = false; };
+  }, [avatar?.email, identity, setAccountAvatar]);
+
+  return accountAvatarSrcFor(identity, avatar);
 }
 
 /**
@@ -42,8 +81,7 @@ export function HudAccountCard({ onOpenAccount, onClose }: {
   const leavingRef = useRef(false);
   const returningFocus = useRef(false);
   const identity = useRoomStore((state) => state.accountIdentity);
-  const avatar = useRoomStore((state) => state.accountAvatar);
-  const setAccountAvatar = useRoomStore((state) => state.setAccountAvatar);
+  const src = useAccountAvatar();
   const [armed, setArmed] = useState(false);
   const [leaving, setLeaving] = useState(false);
   useTactileSurface(rootRef, armed ? "confirm" : "account");
@@ -56,37 +94,6 @@ export function HudAccountCard({ onOpenAccount, onClose }: {
     rootRef.current?.focus({ preventScroll: true });
   }, []);
 
-  /**
-   * 头像字节只在点开小框时取，取到后发布给房间 store：药丸常驻，不该为一张照片
-   * 每次挂载都发三个请求，而按钮与卡片必须显示同一张脸。
-   */
-  useEffect(() => {
-    if (!identity || avatar?.email === identity.email) return undefined;
-    const email = identity.email;
-    let active = true;
-    void (async () => {
-      try {
-        const profile = unwrapGatewayResult(
-          await window.ailearn.auth.getProfile({ meta: createRequestMeta() }),
-        );
-        if (!profile.avatarUrl) {
-          if (active) setAccountAvatar({ email, src: NO_AVATAR });
-          return;
-        }
-        const bytes = unwrapGatewayResult(await window.ailearn.auth.getAvatar({
-          meta: createRequestMeta(),
-          request: { version: 1, objectKey: profile.avatarUrl.replace("/api/uploads/", "") },
-        }));
-        if (active) {
-          setAccountAvatar({ email, src: `data:${bytes.mimeType};base64,${bytes.imageBase64}` });
-        }
-      } catch {
-        // 头像取不回不是故障：落回首字母印章，本次不记账，下次点开再试。
-      }
-    })();
-    return () => { active = false; };
-  }, [avatar?.email, identity, setAccountAvatar]);
-
   const signOut = async () => {
     if (leavingRef.current) return;
     leavingRef.current = true;
@@ -95,7 +102,6 @@ export function HudAccountCard({ onOpenAccount, onClose }: {
     await signOutCurrentAccount();
   };
 
-  const src = accountAvatarSrcFor(identity, avatar);
   const displayName = identity?.displayName?.trim();
 
   return (

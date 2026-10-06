@@ -5,7 +5,7 @@ import { AIContextCompactionRequiredError } from "../../lib/context-governor.ts"
 import type { AIGovernanceContext } from "../../lib/governance.ts";
 
 /**
- * 方案 44 §4.3：三个 provider 槽都必须经过 `createGovernedProvider`——
+ * 方案 44 §4.3：两个 provider 槽都必须经过 `createGovernedProvider`——
  * 上下文预算闸、同意、外发政策、PII 与审计都挂在那个边界上。
  *
  * 用 mock provider 走真实工厂：这里要验的是「闸装没装上」，不是「模型答得好不好」。
@@ -50,7 +50,7 @@ test("44 §4.3：主 provider 挂着上下文闸——超触发线时要求先�
   assert.deepEqual(seen, ["send"]);
 });
 
-test("44 §4.3：三个槽都是治理包装过的（都实现了闸所依赖的 executeAgentTurn）", () => {
+test("44 §4.3：两个槽都是治理包装过的（都实现了闸所依赖的 executeAgentTurn）", () => {
   const resolved = resolveCompanionTurnProviders({
     governance: governance({
       companionFallbackProviderName: "mock",
@@ -61,7 +61,6 @@ test("44 §4.3：三个槽都是治理包装过的（都实现了闸所依赖的
     reserveCall: async () => {},
   });
   assert.ok(resolved.provider.getCapabilities, "能力快照要能穿透包装器（读私有 provider 配置）");
-  assert.ok(resolved.thinkingProvider.executeAgentTurn);
   assert.ok(resolved.fallbackProvider?.executeAgentTurn, "配了兜底槽就必须真的建出来");
   assert.equal(resolved.textProvider.providerName, "mock");
 });

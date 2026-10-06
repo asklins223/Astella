@@ -57,10 +57,16 @@ test("normalizeWorkspaceAIPolicy: 全部字段覆盖时返回覆盖值", () => {
   assert.deepEqual(result, input);
 });
 
-test("normalizeWorkspaceAIPolicy: sendImageContent 缺省时回退默认值 false", () => {
+/**
+ * 2026-10-06（用户决定）：「允许发送图片内容」默认打开。第一道门仍是同意
+ * （sendToExternal），这一项只决定签过之后图片这一路是否也放行，所以缺省
+ * 取默认值 true 是有意为之，不是漏配。显式写 false 必须照样保住。
+ */
+test("normalizeWorkspaceAIPolicy: sendImageContent 缺省时回退默认值 true", () => {
   const result = normalizeWorkspaceAIPolicy({ sendToExternal: true });
   assert.equal(result.sendImageContent, DEFAULT_AI_DATA_POLICY.sendImageContent);
-  assert.equal(DEFAULT_AI_DATA_POLICY.sendImageContent, false);
+  assert.equal(DEFAULT_AI_DATA_POLICY.sendImageContent, true);
+  assert.equal(normalizeWorkspaceAIPolicy({ sendImageContent: false }).sendImageContent, false);
 });
 
 test("normalizeWorkspaceAIPolicy: 非 boolean 字段回退默认值", () => {

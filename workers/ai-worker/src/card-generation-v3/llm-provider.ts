@@ -18,8 +18,10 @@
  *   底层 HTTP 才真被中止。
  *
  * 采样取值与 V2 同方向：结构化 JSON 任务用 `responseFormat: "json_object"`、
- * `disableThinking: true`（V2 的实机记录：thinking 模型长 reasoning 会撑到单调用超时
- * 或 content 偶发为空），温度取 0——这一版要的是可复算，不是方差。
+ * 温度取 0——这一版要的是可复算，不是方差。2026-10-06 起跟随平台配置开思考
+ * （用户决定）；V2 的实机记录提醒这有代价：thinking 模型长 reasoning 会撑长
+ * 单调用（或 content 偶发为空），所以 maxTokens 提到 10000，且真机是否在
+ * step 预算（120s）内跑完需要实测确认。
  */
 import type { ChatMessage, ChatOptions, ChatResult } from "@ailearn/shared";
 import type { AIProvider } from "../lib/ai-provider.ts";
@@ -53,16 +55,15 @@ function chatCompletionPort<TInput>(
   const options: ChatOptions = {
     temperature: 0,
     responseFormat: "json_object",
-    disableThinking: true,
     // 第四发真模型的现场：合同已经逐层说清了，报错换成 `Unterminated string in JSON at
     // position 13488` 且**没有任何 zod 路径**——那是输出被 `max_tokens` 截断，不是模型乱写。
     // 整张合同表现场 40 行，一批 4 张卡每题还带 canonicalAnswer/rubric/relations，
-    // 平台默认那一档装不下。
+    // 平台默认那一档装不下。2026-10-06 开思考后思考 token 也计入，预算再抬一档。
     // **今天只能这样判**：`ChatResult` 只有 `{content, usage}`，没有 `finishReason`，
     // 所以端口分不清"被截断"与"模型给了段坏 JSON"（两者今天都会归 `output_shape` 并判
     // 不可重试——分类上不出错，但归因会误导人）。要分开得先给 ChatResult 加 finishReason，
     // 那是 provider 层的事，登记为欠口，不在这里靠猜 completionTokens 造假判据。
-    maxTokens: 8000,
+    maxTokens: 10_000,
   };
   return {
     modelId: transport.modelId,

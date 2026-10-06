@@ -14,15 +14,16 @@
 
 import type { Capability } from "./provider-capabilities.ts";
 import { resolveDashScopeTextEndpoint } from "./ai-endpoints.ts";
-import type { PlatformOptions } from "./platform-config.ts";
+import type { ModelProfile, PlatformOptions } from "./platform-config.ts";
 
-/** 运行时配置（API Key、Base URL、模型等） */
+/** 运行时配置（API Key、Base URL、模型与模型能力档案等） */
 export interface ProviderRuntimeConfig {
   apiKey?: string | null;
   baseUrl?: string | null;
   model?: string | null;
-  visionModel?: string | null;
-  /** Provider-specific options from config file (disableThinking, etc.) */
+  /** 该模型的能力档案（2026-10-06 配置重设计）：上下文/输出/识图/推理档位。 */
+  modelProfile?: ModelProfile;
+  /** 平台级网关怪癖（disableMaxTokens / workspace / extraHeaders）。 */
   options?: PlatformOptions;
 }
 

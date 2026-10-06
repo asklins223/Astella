@@ -20,6 +20,7 @@
     "test:ai-audit-rls:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/ai-audit-rls-context-postgres.integration.ts",
     "test:cross-module-drill:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/cross-module-same-process-drill.postgres.integration.ts",
     "test:plan44-cooldown:postgres": "node --import tsx --test --test-concurrency=1 --test-force-exit src/integration-tests/plan44-compaction-cooldown-postgres.integration.ts",
+    "test:plan44-summary-commit:postgres": "node --import tsx --test --test-concurrency=1 --test-force-exit src/integration-tests/plan44-summary-commit-fencing-postgres.integration.ts",
     "test:card-generation-v2-lifecycle:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/card-generation-v2-e2e-subset.integration.ts src/integration-tests/card-generation-v2-c-cases.integration.ts src/integration-tests/card-generation-v2-redaction-quota.integration.ts",
     "test:ai-task-kernel:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/ai-task-kernel-postgres.integration.ts",
     "test:public-http-gate:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/public-http-gate-postgres.integration.ts",

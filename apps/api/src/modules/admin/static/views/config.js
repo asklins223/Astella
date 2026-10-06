@@ -43,8 +43,8 @@ function snapshotToDraft(snapshot) {
       apiKeyMode: platform.apiKey.mode,
       options: platform.options,
       model: platform.model,
-      visionModel: platform.visionModel,
-      embeddingModel: platform.embeddingModel,
+      // 模型档案（2026-10-06 配置重设计）：只展示，不编辑；保存时原样保留。
+      models: platform.models,
       usedByCapabilities: platform.usedByCapabilities,
       original: {
         baseUrl: platform.baseUrl ?? "",
@@ -56,8 +56,6 @@ function snapshotToDraft(snapshot) {
       label: capability.label ?? null,
       platform: capability.platform,
       model: capability.model,
-      visionModel: capability.visionModel,
-      embeddingModel: capability.embeddingModel,
       resolvable: capability.resolvable,
       problem: capability.problem,
       original: { platform: capability.platform, model: capability.model },
@@ -85,8 +83,6 @@ function draftToPatch(current) {
   const capabilities = {};
   for (const [name, capability] of Object.entries(current.capabilities)) {
     const mapping = { platform: capability.platform, model: capability.model };
-    if (capability.visionModel) mapping.visionModel = capability.visionModel;
-    if (capability.embeddingModel) mapping.embeddingModel = capability.embeddingModel;
     const changed = capability.platform !== capability.original.platform
       || capability.model !== capability.original.model;
     if (changed) capabilities[name] = mapping;
@@ -282,6 +278,17 @@ async function loadConfig(ctx) {
         ? el("div", { class: "dim", style: "font-size:11.5px;margin-top:12px" },
             `provider 选项（不在面板编辑）：${JSON.stringify(platform.options)}`)
         : null,
+      platform.models
+        ? el("div", { class: "dim", style: "font-size:11.5px;margin-top:12px" },
+            `模型档案（不在面板编辑）：${Object.entries(platform.models).map(([model, profile]) => {
+              const bits = [];
+              if (profile?.contextWindowTokens) bits.push(`窗口 ${profile.contextWindowTokens}`);
+              if (profile?.maxOutputTokens) bits.push(`输出 ${profile.maxOutputTokens}`);
+              if (profile?.vision) bits.push("识图");
+              if (profile?.reasoning?.default) bits.push(`推理默认 ${profile.reasoning.default}`);
+              return bits.length > 0 ? `${model}（${bits.join(" · ")}）` : model;
+            }).join("；")}`)
+        : null,
     );
   }
 
@@ -333,8 +340,6 @@ async function loadConfig(ctx) {
               el("td", {},
                 el("span", { text: capability.label ?? name }),
                 capability.label ? el("div", { class: "dim", style: "font-size:11px" }, codeTag(name)) : null,
-                capability.visionModel ? el("div", { class: "dim", style: "font-size:11px", text: `视觉模型 ${capability.visionModel}（不改动）` }) : null,
-                capability.embeddingModel ? el("div", { class: "dim", style: "font-size:11px", text: `嵌入模型 ${capability.embeddingModel}（不改动）` }) : null,
               ),
               el("td", { style: "min-width:170px" }, selectEl),
               el("td", { style: "min-width:220px" }, modelInput),
@@ -387,6 +392,7 @@ async function exportConfig(snapshot) {
           type: p.type,
           ...(p.apiKey.mode === "env-ref" ? { apiKey: `\${${p.apiKey.envVar}}` } : {}),
           ...(p.baseUrl ? { baseUrl: p.baseUrl } : {}),
+          ...(p.models ? { models: p.models } : {}),
           ...(p.options ? { options: p.options } : {}),
         },
       ]),
@@ -395,8 +401,6 @@ async function exportConfig(snapshot) {
       (snapshot.capabilities ?? []).map((c) => [c.capability, {
         platform: c.platform,
         model: c.model,
-        ...(c.visionModel ? { visionModel: c.visionModel } : {}),
-        ...(c.embeddingModel ? { embeddingModel: c.embeddingModel } : {}),
       }]),
     ),
     ...(snapshot.tts ? { tts: snapshot.tts } : {}),

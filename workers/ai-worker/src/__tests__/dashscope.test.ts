@@ -15,7 +15,9 @@ test("createProvider: dashscope 使用默认 preset 配置", () => {
   const provider = createProvider("dashscope", { apiKey: "test-key" });
   assert.equal(provider.id, "dashscope");
   assert.equal(provider.modelId, "qwen-plus");
-  assert.equal(provider.visionModelId, "qwen3-vl-plus");
+  // 2026-10-06 配置重设计：平台级 visionModel 已移除——识图走模型档案的
+  // vision 声明 + 识图路由（capabilities.vision 指向专门的 VL 模型）。
+  assert.equal(provider.visionModelId, "qwen-plus");
   assert.equal(provider.promptVersion, "v6-dashscope");
   assert.equal(typeof provider.chatCompletion, "function");
   assert.equal(typeof provider.executeAgentTurn, "function");

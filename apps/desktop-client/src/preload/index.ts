@@ -243,6 +243,8 @@ const desktopApi: AILearnDesktopApiM2 = {
       transcribe: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceTranscribe, input)
     },
     // 聊天发送链路（2026-09-18）：建/复用 dialogue → 发 turn → 轮询消息。
+    // 对话图片上传（2026-10-06 输入框传图）与它们同族：图随下一轮 turn 的 blocks 走。
+    uploadImage: (input) => invoke(DESKTOP_IPC_CHANNELS.companionImageUpload, input),
     chat: {
       ensureConversation: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatEnsureConversation, input),
       sendTurn: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatSendTurn, input),

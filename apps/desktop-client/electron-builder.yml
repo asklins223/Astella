@@ -1,8 +1,13 @@
-appId: com.asklins.ailearn
-# 产品名 2026-10-04 定为「理解引擎」，这是**装完之后**用户看到的名字：
-# 应用包名、窗口标题、开始菜单项、Dock 图标旁的标题都取自它。
-productName: 理解引擎
-copyright: Copyright © 2026 理解引擎
+appId: com.asklins.astella
+# 产品名 2026-10-06 定为 **Astella**（中文名 拾星笔记），此前叫「理解引擎」。
+# 这一层是"身份"：应用包名、可执行文件名、安装目录、产物文件名都取自它，
+# 全部用 ASCII，避免 GitHub 资产 URL、NSIS 差分下载与 Squirrel.Mac 在中文
+# 文件名上的边角问题。用户看到的名字另说——
+#   - macOS Dock / 关于面板：mac.extendInfo.CFBundleDisplayName
+#   - Windows 开始菜单与"应用和功能"：nsis.shortcutName / uninstallDisplayName
+#   - 窗口标题与界面文案：渲染层自己的品牌名
+productName: Astella
+copyright: Copyright © 2026 Astella
 
 # electron-updater 的更新源。客户端直连 GitHub Releases：
 # 检查走 api.github.com，下载走 GitHub 的 CDN——**不经过 apps/api**，
@@ -12,7 +17,7 @@ copyright: Copyright © 2026 理解引擎
 publish:
   provider: github
   owner: asklins223
-  repo: ai-learning-system
+  repo: Astella
 
 directories:
   output: release
@@ -43,8 +48,14 @@ mac:
     - zip
   # 伴星语音输入要用麦克风。macOS 少了这条描述，系统弹窗根本不会出现，
   # TCC 直接把 getUserMedia 判拒 —— 只放开主进程的权限闸是不够的。
+  #
+  # CFBundleDisplayName 是 Dock 与"关于本应用"里显示的那行字：包名保持 ASCII 的
+  # Astella（安装路径、可执行文件名、更新包都按它走），显示名用中文。
+  # 换 appId 会让 macOS 把它当成一个新应用，麦克风授权要重新点一次——这是
+  # 改名的一次性代价，TCC 的授权记录挂在 bundle id 上，没有绕开的办法。
   extendInfo:
-    NSMicrophoneUsageDescription: 理解引擎 需要用麦克风把你的话转给伴星。
+    CFBundleDisplayName: 拾星笔记
+    NSMicrophoneUsageDescription: 拾星笔记 需要用麦克风把你的话转给伴星。
   # 签名**不写死**在这里，由环境变量决定——这是 macOS 自动更新能不能用的分水岭：
   # Squirrel.Mac 会校验「新旧两个 .app 的代码签名是否同一开发者」，未签名的应用
   # 会被拒（下载成功、安装失败）。Windows 的 NSIS 路线没有这个约束，未签名可用。
@@ -93,14 +104,16 @@ nsis:
   #
   # oneClick 模式没有那一页，/S 静默安装可靠（消费级 Electron 应用的通行做法：
   # VS Code / Slack / Notion 都是一键装）。同时省掉一次提权交互。
-  # 代价：用户不能再自己挑安装目录，改为装到 %LOCALAPPDATA%\Programs\理解引擎。
+  # 代价：用户不能再自己挑安装目录，改为装到 %LOCALAPPDATA%\Programs\Astella。
   oneClick: true
   # 装完留一个开始菜单入口和桌面快捷方式。
   createDesktopShortcut: true
   createStartMenuShortcut: true
   # 未签名的安装包被 SmartScreen 拦下时，"更多信息 → 仍要运行"这条路要能走通，
-  # 前提是用户知道去哪找。
-  shortcutName: 理解引擎
+  # 前提是用户知道去哪找。快捷方式与"应用和功能"里的条目都用中文显示名，
+  # 而安装目录与 exe 是 ASCII 的 Astella——两条各管一头。
+  shortcutName: 拾星笔记
+  uninstallDisplayName: 拾星笔记
 
 # 图标在 apps/desktop-client/build/（electron-builder 的 buildResources 默认目录）：
   # icon.icns 给 macOS，icon.ico 给 Windows，icon.png 是 1024×1024 的母版。
@@ -108,10 +121,10 @@ nsis:
   # 就是为它们存在的（原先路径写错成 apps/desktop/，一直没生效）。
   # 要换图标：改这三份即可，配置本身不用动。
 #
-# 产物名刻意用 ASCII 的 `ailearn`，**不用** ${productName}：
-#   - 产品名「理解引擎」只影响装完之后的显示名，与文件名无关；
+# 产物名前缀用 ASCII 的 `astella`，而且**写死**而不是取 ${productName}：
 #   - Release 资产名会直接进 latest.yml / latest-mac.yml 被客户端解析，
 #     而 GitHub 资产 URL、Windows 的 NSIS 差分下载、macOS 的 ShipIt 都对
-#     非 ASCII 文件名有各种边角问题（编码、URL 百分号转义）。
-#   - 两者各取所需：显示名中文，文件名 ASCII。
-artifactName: ailearn-${version}-${os}-${arch}.${ext}
+#     非 ASCII 文件名有各种边角问题（编码、URL 百分号转义）；
+#   - 显示名（拾星笔记）与包名（Astella）是两件事，写死前缀以后不管显示名
+#     怎么调，已经发出去的更新元数据里的文件名都不会跟着漂。
+artifactName: astella-${version}-${os}-${arch}.${ext}

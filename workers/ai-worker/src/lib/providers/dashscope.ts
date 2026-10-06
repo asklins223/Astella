@@ -41,13 +41,16 @@ function createDashScopeProvider(config: ProviderRuntimeConfig): OpenAICompatibl
   const apiKey = config.apiKey;
   if (!apiKey) return null;
   const model = config.model ?? "qwen-plus";
-  const visionModel = config.visionModel ?? "qwen3-vl-plus";
   const embeddingModel = (config as ProviderRuntimeConfig & { embeddingModel?: string | null }).embeddingModel
     ?? "text-embedding-v1";
   const basePath = (config.baseUrl ?? DEFAULT_BASE_PATH).replace(/\/$/, "");
 
   const workspace = config.options?.workspace;
-  const enableThinking = config.options?.enableThinking ?? false;
+  // 2026-10-06 配置重设计：思考档位由模型档案驱动。dashscope 的 chat 端点只有
+  // 开/关（enable_thinking）：档案 default === "none" → 关；其余 → 开；未声明 → 关
+  //（保持该平台的旧缺省语义）。
+  const reasoning = config.modelProfile?.reasoning;
+  const enableThinking = reasoning ? reasoning.default !== "none" : false;
   const extraRequestParams: Record<string, unknown> = enableThinking ? {} : { enable_thinking: false };
   const extraHeaders: Record<string, string> | undefined = workspace
     ? { "X-DashScope-WorkSpace": workspace }
@@ -57,7 +60,6 @@ function createDashScopeProvider(config: ProviderRuntimeConfig): OpenAICompatibl
     apiKey,
     baseUrl: basePath,
     model,
-    visionModel,
     embeddingModel,
     resolveEndpoint: resolveDashScopeEndpoint,
     resolveEmbeddingEndpoint: resolveDashScopeEmbeddingEndpoint,
@@ -66,7 +68,7 @@ function createDashScopeProvider(config: ProviderRuntimeConfig): OpenAICompatibl
     maxTokensStrategy: "always",
     providerId: "dashscope",
     promptVersionOverride: "v6-dashscope",
-    // Pass through any remaining platform options (e.g., contextWindowTokens).
+    ...(config.modelProfile ? { modelProfile: config.modelProfile } : {}),
     ...(config.options ? { platformOptions: config.options } : {}),
   });
 }

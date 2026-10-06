@@ -403,7 +403,7 @@ test("fail-open §4.9：一个字都没下发时落兜底话术，界面不得�
   const { workspaceId, userId } = await seedBase();
   const seeded = await seedDialogueRun(workspaceId, userId, { runStatus: "failed" });
   try {
-    const { persistFailedPartial } = await import("../handlers/companion-dialogue.ts");
+    const { persistFailedPartial } = await import("../handlers/companion-dialogue-failure-retention.ts");
     const wrote = await persistFailedPartial({
       workspaceId,
       userId,
@@ -443,7 +443,7 @@ test("fail-open §4.9：已有半句可保留时优先保留原文，不覆盖�
   const { workspaceId, userId } = await seedBase();
   const seeded = await seedDialogueRun(workspaceId, userId, { runStatus: "failed" });
   try {
-    const { persistFailedPartial } = await import("../handlers/companion-dialogue.ts");
+    const { persistFailedPartial } = await import("../handlers/companion-dialogue-failure-retention.ts");
     const partial = "我先把这道题的思路说清楚，然后再给你举一个例子";
     await persistFailedPartial({
       workspaceId, userId, conversationId: seeded.cid, runId: seeded.runId, deliveredText: partial,

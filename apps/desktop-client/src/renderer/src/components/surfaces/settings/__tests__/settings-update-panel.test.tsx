@@ -74,12 +74,12 @@ describe("设置页「客户端更新」", () => {
     renderGroup({
       phase: "available", availableVersion: "0.2.0",
       installBlockedReason: "macosUnsigned",
-      releaseUrl: "https://github.com/asklins223/ai-learning-system/releases/tag/desktop-v0.2.0",
+      releaseUrl: "https://github.com/asklins223/Astella/releases/tag/desktop-v0.2.0",
     });
     expect(screen.getByText(/没有代码签名/)).toBeTruthy();
     // 曾经 releaseUrl 永远是 null，这条链接点了没反应——它是那段提示唯一的出路。
     const link = screen.getByRole("link", { name: "下载页" });
-    expect(link.getAttribute("href")).toBe("https://github.com/asklins223/ai-learning-system/releases/tag/desktop-v0.2.0");
+    expect(link.getAttribute("href")).toBe("https://github.com/asklins223/Astella/releases/tag/desktop-v0.2.0");
     // 未签名挡的是"自动替换应用"，**不是**下载：dmg 照样下得下来，只是要手动装。
     expect(screen.getByRole("button", { name: /下载更新/ })).toBeTruthy();
   });

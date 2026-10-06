@@ -159,7 +159,7 @@ export interface CompanionStreamDelivery {
    * 已经下发的可见文本本体。
    *
    * 失败收尾要用它留档：一轮失败之后，用户看到过的那半句必须留在历史里
-   * （见 `companion-dialogue.ts` 的 `persistFailedPartial`），而"看到过多少"
+   * （见 `companion-dialogue-failure-retention.ts` 的 `persistFailedPartial`），而"看到过多少"
    * 只有交付管线自己知道。
    */
   deliveredText(): string;

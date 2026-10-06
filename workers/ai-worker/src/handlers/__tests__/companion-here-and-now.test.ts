@@ -27,6 +27,7 @@ function snapshot(overrides: Partial<HereAndNowSnapshot> = {}): HereAndNowSnapsh
     nextReminder: null,
     noteReference: null,
     imagesReadable: false,
+    imagesUnreadableReason: "policy_off",
     currentPage: null,
     livePageView: null,
     learningStats: null,
@@ -127,6 +128,7 @@ test("点名的笔记上有没结束的轮次：给出轮数与 runId，并指�
 test("有图就先把图数交给她：看不了时禁止承诺，能看时指向 companion_read_image", () => {
   const denied = renderHereAndNow(snapshot({
     imagesReadable: false,
+    imagesUnreadableReason: "policy_off",
     noteReference: { title: "IndexTTS 2.5", found: true, noteId: "a7aa823c-f2cf-4b3d-bda1-37a6eca14bce", ageLabel: "3 天前", imageCount: 6, opening: null, openRuns: [], nearest: null },
   }));
   assert.ok(denied?.includes("6 张图"));
@@ -134,6 +136,16 @@ test("有图就先把图数交给她：看不了时禁止承诺，能看时指�
   assert.ok(denied?.includes("允许发送图片内容"), "拒绝也要给得出路，否则用户只会听到一句「看不了」");
   assert.ok(denied?.includes("正文没有图片标记不代表没有图"), "要挡住她由正文推「没有图」的那步推理");
   assert.ok(denied?.includes("不要说「我看看这张图」"));
+
+  // 政策开着但**没有可用的看图模型**：同样是看不了，但不要把用户支使去拧一个
+  // 拧了也没用的开关（2026-10-06 识图路由：这条与工具下发面同源）。
+  const noReader = renderHereAndNow(snapshot({
+    imagesReadable: false,
+    imagesUnreadableReason: "no_reader",
+    noteReference: { title: "IndexTTS 2.5", found: true, noteId: "a7aa823c-f2cf-4b3d-bda1-37a6eca14bce", ageLabel: "3 天前", imageCount: 6, opening: null, openRuns: [], nearest: null },
+  }));
+  assert.ok(noReader?.includes("没有能看图的模型"));
+  assert.ok(!noReader?.includes("允许发送图片内容"), "没有可用模型时别指点用户去拧开关");
 
   const readable = renderHereAndNow(snapshot({
     imagesReadable: true,

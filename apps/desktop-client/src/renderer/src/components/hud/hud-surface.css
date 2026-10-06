@@ -3315,3 +3315,37 @@
     border-width: 1.5px;
   }
 }
+
+/* ── 折叠印章就是这张脸（2026-10-06）────────────────────────────────────────
+   折叠态那颗常驻印章从 Orbit 图标换成账号头像：有头像用头像，照片坐进原来的
+   深色圆环里；没有就落回与账户槽位、设置页同一套首字母印章。展开态一个字没动
+   ——同一位置仍是双箭头的收起按钮，换的是 TSX 里的内容。
+
+   尺寸跟着槽位走：印章 38px（紧凑态 21px），脸 30px / 17px，留下的正是账户
+   槽位那圈同宽的内衬。选择器必须带 `.room-control`（同本文件
+   `.room-control-account__*` 的理由）：hud-pages.css 里那条
+   `.hud-surface .room-control span` 特异度是 (0,2,1)，少这一档印章会被撑成
+   36px 填满整个按钮。 */
+.hud-surface .room-control .room-control-trigger__photo {
+  display: block;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.hud-surface .room-control .room-control-trigger__seal {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  background: #52644f;
+  color: #fff8e8;
+  font: 700 14px/1 "Noto Serif SC Variable", "Songti SC", serif;
+}
+
+@media (max-width: 760px) {
+  .hud-surface .room-control .room-control-trigger__photo { width: 17px; height: 17px; }
+  .hud-surface .room-control .room-control-trigger__seal { width: 17px; height: 17px; font-size: 9px; }
+}

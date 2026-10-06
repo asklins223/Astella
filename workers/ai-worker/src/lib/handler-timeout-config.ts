@@ -33,14 +33,16 @@ const DEFAULT_TIMEOUTS: Record<string, number> = {
   // 2026-09-15 审计（设计 P1-13）：此前只覆盖 parse_source + companion_agent，
   // 其余 4 种 job 落到 GLOBAL_DEFAULT_MS(90s)。HEAD 的同名映射覆盖了它那个时代的
   // **全部** job 类型——job 类型换代后映射没跟上，属覆盖率回归。补齐现在的 6 种。
-  // 单次 LLM 调用 + 确定性落库，与 HEAD 的 companion_dialogue(60s) 同级。
-  companion_memory_extract: 60_000,
-  companion_summarizer: 60_000,
+  // 单次 LLM 调用 + 确定性落库。2026-10-06 全链路开思考后，单次取回从 7.6s 涨到
+  // 36s（实测）——60s 装不下"慢调用 + 一次重试"，放宽到租约上限，让单次 provider
+  // 调用拿到完整的 75s 预算。
+  companion_memory_extract: MAX_ALLOWED_TIMEOUT_MS,
+  companion_summarizer: MAX_ALLOWED_TIMEOUT_MS,
   // 桌宠日记正文由模型写（2026-09-21 从确定性模板改过来），一次 job 最多两次采样。
-  // 实测（dev，ai_audit_log.duration_ms，10 次成功调用）：5.3–20.2s，典型 8–14s。
-  // 90s = provider 预算 75s/次，够装下四次"最慢那次"，所以重采样不会被本地 abort 掐死；
-  // 30s（旧值）则会让第一次调用就被切——那是纯模板时代的数。
-  companion_daily_summary: 90_000,
+  // 实测（dev，ai_audit_log.duration_ms，10 次成功调用，关思考）：5.3–20.2s，典型 8–14s。
+  // 2026-10-06 开思考后单次采样变长，90s 装不下两次采样；放宽到租约上限
+  //（job 内部还有 100s 总预算兜着）。
+  companion_daily_summary: MAX_ALLOWED_TIMEOUT_MS,
   // 最重的一个：最多 200 次 embed + 每行 2 条写语句（BATCH_LIMIT=200）。
   // 取 clamp 上限（LEASE_TIMEOUT_MS - 10s），是 lease 约束下能给的唯一选择。
   companion_memory_embedding_rebuild: 110_000,
@@ -48,7 +50,9 @@ const DEFAULT_TIMEOUTS: Record<string, number> = {
   companion_thought: 110_000,
   // 独立笔记速看最多 6 个文本分段；3 组模型调用和一次带租约的持久化。
   note_overview_generate: 100_000,
-  note_annotation_explain: 60_000,
+  // 2026-10-06 开思考后单次取回变长（实测同类 7.6s → 36s），60s 只剩 45s
+  // 单调用预算，慢一点的解释会被本地 abort 掐掉；90s 让单调用拿满 75s。
+  note_annotation_explain: 90_000,
   note_dynamic_artifact_generate: MAX_ALLOWED_TIMEOUT_MS,
   note_expansion_generate: 100_000,
 };

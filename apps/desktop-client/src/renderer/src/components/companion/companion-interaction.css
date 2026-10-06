@@ -313,3 +313,25 @@
 @media (prefers-reduced-motion: reduce) {
   .companion-hud--floating *, .companion-history, .companion-history *, .companion-hud__edge-panel, .companion-hud__edge-panel *, .companion-hud__controls > button::before { animation: none !important; transition: none !important; }
 }
+
+/* ── 输入框传图（2026-10-06）：隐藏的文件选择、待发送附件条与上传状态 ──
+   气泡与抽屉两个 composer 共用同一份样式（类名全局生效，两处引用同一处定义）。 */
+.companion-compose-image__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.companion-compose-image { display: flex; align-items: center; gap: 9px; margin: 2px 2px 8px; padding: 7px 9px; border: 1px solid #eae5d5; border-radius: 12px; background: #fffdf6; }
+.companion-compose-image img { width: 40px; height: 40px; border-radius: 9px; object-fit: cover; }
+.companion-compose-image__placeholder { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: #f1ecdd; color: #a29783; }
+.companion-compose-image__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #6f6656; font-size: 12px; }
+.companion-compose-image > button { display: grid; place-items: center; width: 24px; height: 24px; min-height: 24px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #a29783; cursor: pointer; }
+.companion-compose-image > button:hover { background: #f3eee0; color: #6f6656; }
+.companion-compose-image__status { display: flex; align-items: center; gap: 6px; margin: 0 2px 6px; color: #8d927b; font-size: 11px; }
+.companion-compose-image__status[data-error="true"] { color: #b0623f; }

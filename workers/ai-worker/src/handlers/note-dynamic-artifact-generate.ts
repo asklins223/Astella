@@ -110,7 +110,7 @@ function jsonArtifactProvider(provider: ReturnType<typeof createGovernedProvider
       await context.reserveModelCall();
       const result = await provider.chatCompletion(
         [{ role: "system", content: context.instructions }, { role: "user", content: buildDynamicArtifactPrompt(input) }],
-        { temperature: 0.4, maxTokens: ARTIFACT_COMPLETION_TOKENS_V1, responseFormat: "json_object", disableThinking: true },
+        { temperature: 0.4, maxTokens: ARTIFACT_COMPLETION_TOKENS_V1, responseFormat: "json_object" },
         step.signal,
       );
       let parsed: unknown;

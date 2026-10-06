@@ -93,6 +93,17 @@ interface RawCost {
   segments: string[];
 }
 
+/**
+ * 记下「这一类载荷没法精确计量」。
+ *
+ * `unmeasured` 记的是**种类**，不是份数（合同限 12 条）：一份请求里 13 张图仍然是
+ * 「含图片」这一种，按 part 累加会把它撑破合同，让一个本来装得下的请求直接报错。
+ * 份数不丢——成本按每个 part 的地板价累加进 `multimodal`。
+ */
+function markUnmeasured(raw: RawCost, kind: string): void {
+  if (!raw.unmeasured.includes(kind)) raw.unmeasured.push(kind);
+}
+
 /** 把一条消息的 content 拆成「可直接计数的文本段」与「不透明载荷」。 */
 function readContent(content: AgentTurnRequest["messages"][number]["content"] | ChatMessage["content"], raw: RawCost): void {
   if (typeof content === "string") {
@@ -103,7 +114,7 @@ function readContent(content: AgentTurnRequest["messages"][number]["content"] | 
     if (part.type === "text") raw.segments.push(part.text);
     else {
       raw.multimodal += IMAGE_TOKEN_FLOOR;
-      raw.unmeasured.push("image");
+      markUnmeasured(raw, "image");
     }
   }
 }
@@ -135,7 +146,7 @@ function readAgentTurnRequest(request: AgentTurnRequest): RawCost {
       void handle;
       raw.messages += 1;
       raw.multimodal += REASONING_HANDLE_TOKEN_FLOOR;
-      raw.unmeasured.push("reasoning_handle");
+      markUnmeasured(raw, "reasoning_handle");
     }
   }
   readTools(request.tools, raw);

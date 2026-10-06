@@ -312,7 +312,7 @@ test("auditLogging policy disables writes without changing attribution", async (
 
 test("workspace policy normalization preserves explicit false values", () => {
   assert.deepEqual(
-    normalizeWorkspaceAIPolicy({ sendToExternal: true, piiDetection: false, auditLogging: false }),
+    normalizeWorkspaceAIPolicy({ sendToExternal: true, sendImageContent: false, piiDetection: false, auditLogging: false }),
     { sendToExternal: true, sendImageContent: false, piiDetection: false, auditLogging: false },
   );
   assert.deepEqual(normalizeWorkspaceAIPolicy({ auditLogging: false }), {

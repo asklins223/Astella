@@ -26,6 +26,7 @@ import type {
   ChatOptions,
   ChatResult,
   CapabilityImpl,
+  ModelProfile,
   ProviderRuntimeConfig,
   PlatformOptions,
 } from "@ailearn/shared";
@@ -33,6 +34,7 @@ import { registerFactory } from "../provider-factory.ts";
 import { ProviderRequestError } from "../provider-request-error.ts";
 import { AgentOutputError } from "../non-retryable-errors.ts";
 import { DEFAULT_CONTEXT_WINDOW_TOKENS } from "../provider-constants.ts";
+import { profileFingerprint } from "./profile-fingerprint.ts";
 
 /** R1: Unified abort error helper. */
 function abortError(signal: AbortSignal, phase: string): Error {
@@ -81,6 +83,11 @@ export class OpenAICompatibleProvider implements AIProvider {
   readonly id: string;
   readonly promptVersion: string;
   readonly modelId: string;
+  /**
+   * 2026-10-06 配置重设计：识图不再由平台级 visionModel 提供。
+   * 谁能看图由模型档案 `vision` 声明 + 识图路由决定（governance 的 resolveVisionReader）；
+   * 这个字段保留为"本 provider 的模型 id"，调用方显式传 `model` 时仍以它为准。
+   */
   readonly visionModelId: string;
   readonly embeddingModelId: string;
   /**
@@ -98,6 +105,23 @@ export class OpenAICompatibleProvider implements AIProvider {
   private readonly maxTokensStrategy: "always" | "env-gated";
   /** Platform config options (from config file, overrides env vars). */
   private readonly platformOptions: PlatformOptions | undefined;
+  /** 模型能力档案（上下文/输出/识图/推理档位，2026-10-06）。 */
+  private readonly modelProfile: ModelProfile | undefined;
+
+  /**
+   * 思考字段（模型档案驱动，2026-10-06 配置重设计）。
+   *
+   * chat/completions 的混合思考模型只有开/关（`enable_thinking`）：
+   * 档案里 `reasoning.default === "none"` → 关；其余档位 → 开；未声明 reasoning
+   * 的模型不下发该字段（用网关默认）。每次调用自带的 `disableThinking`
+   * （离线评测等需要确定性/低延迟的调用）优先级最高。
+   */
+  private thinkingField(perCallDisable: boolean): Record<string, unknown> {
+    const reasoning = this.modelProfile?.reasoning;
+    if (perCallDisable || reasoning?.default === "none") return { enable_thinking: false };
+    if (reasoning) return { enable_thinking: true };
+    return {};
+  }
 
   /**
    * R2: TextGenerationCapability — generic chat completion.
@@ -171,12 +195,7 @@ export class OpenAICompatibleProvider implements AIProvider {
             tool_choice: options.toolChoice ?? "auto",
           }
         : {}),
-      ...((options.disableThinking
-        || this.platformOptions?.disableThinking)
-        ? { enable_thinking: false }
-        : this.platformOptions?.enableThinking
-          ? { enable_thinking: true }
-          : {}),
+      ...this.thinkingField(options.disableThinking ?? false),
       ...this.extraRequestParams,
     };
     if (shouldSetMaxTokens) body.max_tokens = maxTokens;
@@ -402,7 +421,6 @@ export class OpenAICompatibleProvider implements AIProvider {
     apiKey: string;
     baseUrl: string;
     model: string;
-    visionModel?: string;
     embeddingModel?: string;
     request?: PublicJsonRequester;
     streamRequest?: PublicStreamingRequester;
@@ -416,10 +434,12 @@ export class OpenAICompatibleProvider implements AIProvider {
     promptVersionOverride?: string;
     /** Platform config options (from config/ai-platforms.json). */
     platformOptions?: PlatformOptions;
+    /** 模型能力档案（2026-10-06）：思考档位/上下文/输出上限在这里。 */
+    modelProfile?: ModelProfile;
   }) {
     this.apiKey = options.apiKey;
     this.modelId = options.model;
-    this.visionModelId = options.visionModel ?? options.model;
+    this.visionModelId = options.model;
     this.embeddingModelId = options.embeddingModel ?? options.model;
     // R1: Use resolveEndpoint if provided (e.g., DashScope URL rewriting)
     const resolveFn = options.resolveEndpoint ?? resolveOpenAIChatCompletionsUrl;
@@ -433,6 +453,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     this.extraHeaders = options.extraHeaders;
     this.maxTokensStrategy = options.maxTokensStrategy ?? "env-gated";
     this.platformOptions = options.platformOptions;
+    this.modelProfile = options.modelProfile;
     this.id = options.providerId ?? "openai_compatible";
     this.promptVersion = options.promptVersionOverride ?? "v6-openai-compatible";
   }
@@ -502,18 +523,9 @@ export class OpenAICompatibleProvider implements AIProvider {
       ...(responseFormat === "text"
         ? {}
         : { response_format: { type: "json_object" as const } }),
-      // Platform config options control thinking mode:
-      //   disableThinking: explicitly disable (enable_thinking: false)
-      //   enableThinking:  explicitly enable  (enable_thinking: true)
-      //   neither:          use model/API default (no field)
-      // 2026-08-12+（15a 新反馈）：call 的 disableThinking 参数优先级最高
-      //（companion 日常对话用它显式关闭思考模式，换首 token 速度）。
-      ...((disableThinking
-        || this.platformOptions?.disableThinking)
-        ? { enable_thinking: false }
-        : this.platformOptions?.enableThinking
-          ? { enable_thinking: true }
-          : {}),
+      // 思考字段由模型档案驱动（见 thinkingField）；此处的 disableThinking
+      // 参数供离线评测/调试显式关闭，优先级最高。
+      ...this.thinkingField(disableThinking),
       // R1: DashScope preset overrides (e.g., enable_thinking: false)
       ...this.extraRequestParams,
     };
@@ -609,15 +621,8 @@ export class OpenAICompatibleProvider implements AIProvider {
       messages,
       temperature: clampTemperature(request.temperature),
       stream: false,
-      // Platform config options control thinking mode:
-      //   disableThinking: explicitly disable (enable_thinking: false)
-      //   enableThinking:  explicitly enable  (enable_thinking: true)
-      //   neither:          use model/API default (no field)
-      ...((this.platformOptions?.disableThinking ?? false)
-        ? { enable_thinking: false }
-        : this.platformOptions?.enableThinking
-          ? { enable_thinking: true }
-          : {}),
+      // 思考字段由模型档案驱动（见 thinkingField）；agent turn 无 per-call 关闭通道。
+      ...this.thinkingField(false),
       // R1: DashScope preset overrides (e.g., enable_thinking: false)
       ...this.extraRequestParams,
     };
@@ -757,17 +762,16 @@ export class OpenAICompatibleProvider implements AIProvider {
   /**
    * 返回 OpenAI-compatible Provider 能力快照（计划 §8.2）。
    *
-   * Context window and output limits are configured through PlatformOptions.
+   * 窗口/输出数字来自**模型档案**（2026-10-06 配置重设计），未声明时用 provider
+   * 内置缺省（解析侧会告警提醒补声明）。
    */
   getCapabilities(): ProviderCapability {
-    const contextWindowTokens = this.platformOptions?.contextWindowTokens
+    const contextWindowTokens = this.modelProfile?.contextWindowTokens
       ?? DEFAULT_CONTEXT_WINDOW_TOKENS;
-    // 输出预算：允许平台配置覆盖。默认 16384——这是对 openai_compatible 模型实际输出能力的
-    // 校准值（实测 deepseek-v4-flash-0731 在 max_tokens=32768 时输出过 15442 token 后自停；
+    // 输出预算默认 16384——这是对 openai_compatible 模型实际输出能力的校准值
+    // （实测 deepseek-v4-flash-0731 在 max_tokens=32768 时输出过 15442 token 后自停；
     // 而 provider 在「不传 max_tokens」时的默认上限仅为 8192，会截断大输出）。
-    // 使 ContextPacker.getMaxOutputTokens() = min(maxOutputTokens, reserved) = 16384，
-    // 避免 request.maxTokens=4096 或 8192 与真实输出上限不符、导致 agent turn 被截断。
-    const maxOutputTokens = this.platformOptions?.maxOutputTokens ?? 16384;
+    const maxOutputTokens = this.modelProfile?.maxOutputTokens ?? 16384;
     const reservedOutputTokens = maxOutputTokens;
     return {
       providerId: this.id,
@@ -785,8 +789,8 @@ export class OpenAICompatibleProvider implements AIProvider {
       // 请求里的 maxTokens 确实下发到上游；两者皆否则预算必须改用保守输出预留。
       outputLimitEnforced: this.maxTokensStrategy === "always"
         || !(this.platformOptions?.disableMaxTokens ?? false),
-      // R3: fingerprint includes visionModelId to capture vision-only config drift.
-fingerprint: `${this.id}:${this.modelId}:${this.visionModelId}:native_tools`,
+      // 2026-10-06：指纹带上模型档案——窗口/输出/推理档位变了，预算缓存必须失效。
+      fingerprint: `${this.id}:${this.modelId}:native_tools:${profileFingerprint(this.modelProfile)}`,
     };
   }
 }
@@ -800,7 +804,7 @@ function resolveOpenAICompatConfig(config: ProviderRuntimeConfig): {
   apiKey: string;
   baseUrl: string;
   model: string;
-  visionModel?: string;
+  modelProfile?: ModelProfile;
   platformOptions?: PlatformOptions;
 } | null {
   const apiKey = config.apiKey;
@@ -811,7 +815,7 @@ function resolveOpenAICompatConfig(config: ProviderRuntimeConfig): {
     apiKey,
     baseUrl,
     model,
-    ...(config.visionModel ? { visionModel: config.visionModel } : {}),
+    ...(config.modelProfile ? { modelProfile: config.modelProfile } : {}),
     ...(config.options ? { platformOptions: config.options } : {}),
   };
 }

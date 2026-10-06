@@ -171,7 +171,7 @@ async function runModelProbe(
     apiKey: platform.apiKey,
     baseUrl: platform.baseUrl,
     model: platform.model,
-    visionModel: platform.visionModel,
+    modelProfile: platform.modelProfile,
     options: platform.options,
   });
   if (!provider.executeAgentTurn) throw new Error("Configured provider does not implement executeAgentTurn");
@@ -291,14 +291,14 @@ async function runRuntimeFallbackSmoke(
     apiKey: primaryPlatform.apiKey,
     baseUrl: primaryPlatform.baseUrl,
     model: primaryPlatform.model,
-    visionModel: primaryPlatform.visionModel,
+    modelProfile: primaryPlatform.modelProfile,
     options: primaryPlatform.options,
   });
   const fallback = createProvider(fallbackPlatform.type, {
     apiKey: fallbackPlatform.apiKey,
     baseUrl: fallbackPlatform.baseUrl,
     model: fallbackPlatform.model,
-    visionModel: fallbackPlatform.visionModel,
+    modelProfile: fallbackPlatform.modelProfile,
     options: fallbackPlatform.options,
   });
   if (!primary.executeAgentTurn || !fallback.executeAgentTurn) {

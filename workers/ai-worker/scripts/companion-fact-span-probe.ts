@@ -84,7 +84,7 @@ async function runRealModelProbe(): Promise<number> {
     apiKey: platform.apiKey,
     baseUrl: platform.baseUrl,
     model: platform.model,
-    visionModel: platform.visionModel,
+    modelProfile: platform.modelProfile,
     options: platform.options,
   });
   if (!provider.executeAgentTurn) throw new Error("Configured provider does not implement executeAgentTurn");

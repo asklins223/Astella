@@ -21,7 +21,7 @@ import { sql } from "drizzle-orm";
 import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
 import { reviewScheduleTargetsConsumableCardPredicate } from "@ailearn/shared/review-consumable-target";
 import type { WorkerTransaction } from "../db.ts";
-import { normalizeWorkspaceAIPolicy } from "../lib/governance.ts";
+import { normalizeWorkspaceAIPolicy, visionReaderAvailableFromConfig } from "../lib/governance.ts";
 import { noteSearchTerms, parsePageContext } from "./companion-dialogue-content.ts";
 import { askableFactSpanKeys, loadFactSpans } from "./companion-fact-spans.ts";
 import { readLivePageView, type LivePageView } from "./companion-live-view.ts";
@@ -148,8 +148,10 @@ export interface HereAndNowSnapshot {
      */
     nearest: { title: string; score: number } | null;
   } | null;
-  /** 图片外发政策是否开着（决定"有图但看不了"这句话怎么说）。 */
+  /** 图片现在能不能看（政策开着 **且** 有可用的看图模型——与工具下发面同源）。 */
   imagesReadable: boolean;
+  /** 看不了时的原因（措辞用）：政策没开 / 没有可用的看图模型；能看时为 null。 */
+  imagesUnreadableReason: "policy_off" | "no_reader" | null;
   /**
    * 这一轮**可以报**的读数目录（P2，39d W2-5）：`{ key → 值 }` ＋ 送进 prompt 的块。
    *
@@ -540,13 +542,20 @@ export async function loadHereAndNow(
   // **工具下发面**同源，否则会出现"告诉她看不了、却又把读图工具给她"或反过来。
   // 同源指同一个判定函数（`normalizeWorkspaceAIPolicy`）跑在同一张表的同一行上——
   // 读法不同（这里在既有读事务里一条 SELECT，那边从治理上下文取），口径相同。
+  // 2026-10-06 起还要与识图路由同源：政策开着但**没有可用的看图模型**时，
+  // 读图工具同样不下发（见 resolveVisionReader），措辞必须跟着分开。
   const policyRows = await tx.execute<{ data_policy: unknown }>(sql`
     SELECT data_policy FROM user_ai_settings WHERE user_id = ${scope.userId} LIMIT 1
   `);
-  const imagesReadable = normalizeWorkspaceAIPolicy(
+  const imagePolicyEnabled = normalizeWorkspaceAIPolicy(
     // 没有这一行=没同意过，`normalizeWorkspaceAIPolicy` 自己会回落到 fail-closed 默认。
     policyRows[0]?.data_policy as Parameters<typeof normalizeWorkspaceAIPolicy>[0],
   ).sendImageContent === true;
+  const imagesReaderAvailable = visionReaderAvailableFromConfig();
+  const imagesReadable = imagePolicyEnabled && imagesReaderAvailable;
+  const imagesUnreadableReason: HereAndNowSnapshot["imagesUnreadableReason"] = imagesReadable
+    ? null
+    : (imagePolicyEnabled ? "no_reader" : "policy_off");
 
   // P2（39d W2-5）：这一轮她**可以报**的读数目录（没问就没有键）。
   // 读的触发条件是"问数的两种形态之一"：`asksForLearningStats`（口语问法）或
@@ -623,6 +632,7 @@ export async function loadHereAndNow(
         })
       : null,
     imagesReadable,
+    imagesUnreadableReason,
     learningStats,
     factSpans: factSpans ? { values: factSpans.values, block: factSpans.block as string } : null,
     boundaryFacts,
@@ -848,9 +858,13 @@ export function renderHereAndNow(snapshot: HereAndNowSnapshot): string | null {
     if (ref.found && ref.imageCount > 0) {
       lines.push(snapshot.imagesReadable
         ? `这篇另有 ${ref.imageCount} 张图，图不在正文里。要看图里写了什么就调用 companion_read_image。`
-        : `这篇另有 ${ref.imageCount} 张图，图不在正文里（正文没有图片标记不代表没有图）。`
-          + "图片外发没开启，这些图你看不了：照实说看不了，并告诉用户设置里有个「允许发送图片内容」的开关。"
-          + "不要说「我看看这张图」，也不要凭标题猜图里有什么。");
+        : snapshot.imagesUnreadableReason === "no_reader"
+          ? `这篇另有 ${ref.imageCount} 张图，图不在正文里（正文没有图片标记不代表没有图）。`
+            + "现在没有能看图的模型，这些图你看不了：照实说看不了，不要说「我看看这张图」，"
+            + "也不要凭标题猜图里有什么。"
+          : `这篇另有 ${ref.imageCount} 张图，图不在正文里（正文没有图片标记不代表没有图）。`
+            + "图片外发没开启，这些图你看不了：照实说看不了，并告诉用户设置里有个「允许发送图片内容」的开关。"
+            + "不要说「我看看这张图」，也不要凭标题猜图里有什么。");
     }
   }
   if (lines.length <= 1) return null;

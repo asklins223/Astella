@@ -113,8 +113,9 @@ export interface AIProviderRuntimeConfig {
   apiKey?: string | null;
   baseUrl?: string | null;
   model?: string | null;
-  visionModel?: string | null;
-  /** Provider-specific options from config file (disableThinking, etc.) */
+  /** 模型能力档案（2026-10-06 配置重设计）：上下文/输出/识图/推理档位。 */
+  modelProfile?: import("@ailearn/shared").ModelProfile;
+  /** 平台级网关怪癖（disableMaxTokens / workspace / extraHeaders）。 */
   options?: PlatformOptions;
 }
 
@@ -153,25 +154,6 @@ export function createProvider(
     throw new Error(`provider ${id} is not configured for agent_turn`);
   }
   return impl as unknown as AIProvider;
-}
-
-/**
- * 交互链路低延迟变体：返回一份显式关闭思考模式的 provider 配置。
- *
- * 平台配置里的 `enableThinking`（如 tokenrhythm）是给后台任务的质量档位；
- * 伴星对话与念头生成是**用户等待中**的交互，而这两条链路都是整段取回
- * （非流式）：等待时间 = 思考 token + 正文，思考全算进首字延迟。各 provider
- * 实现都优先读 `platformOptions.disableThinking`（openai-compatible /
- * opencode-go 发 `enable_thinking: false`；dashscope 缺省即关闭）。
- *
- * 返回新对象、不改写入参：上游 `resolveProviderForTask` 返回的是治理上下文
- * 里的共享配置，就地改写会波及同一 job 的 embedding 等其他能力。
- */
-export function withThinkingDisabled(config: AIProviderRuntimeConfig): AIProviderRuntimeConfig {
-  return {
-    ...config,
-    options: { ...(config.options ?? {}), disableThinking: true },
-  };
 }
 
 /**
@@ -219,7 +201,7 @@ export async function resolveProviderSelection(
         apiKey: platform.apiKey,
         baseUrl: platform.baseUrl,
         model: platform.model,
-        visionModel: platform.visionModel,
+        modelProfile: platform.modelProfile,
         options: platform.options,
       },
     };
@@ -265,7 +247,7 @@ export async function createEmbeddingProvider(
       apiKey: cachedGovCtx.embeddingProviderConfig.apiKey,
       baseUrl: cachedGovCtx.embeddingProviderConfig.baseUrl,
       model: cachedGovCtx.embeddingProviderConfig.model,
-      visionModel: cachedGovCtx.embeddingProviderConfig.visionModel,
+      modelProfile: cachedGovCtx.embeddingProviderConfig.modelProfile,
       ...(cachedGovCtx.embeddingProviderConfig.options ? { options: cachedGovCtx.embeddingProviderConfig.options } : {}),
     } as SharedRuntimeConfig);
     if (impl) {

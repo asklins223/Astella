@@ -183,16 +183,16 @@ test("factory: createProvider 产出实例，能力快照按平台配置生效",
   assert.equal(typeof provider.executeAgentTurn, "function");
   const capabilities = provider.getCapabilities?.();
   assert.ok(capabilities, "缺少能力快照");
-  // 契约：平台显式覆写优先，缺省用各 provider 的默认值
-  // （当前 tokenrhythm/qwen3.8-flash：1,000,000 上下文 / 131,072 输出）。
-  // 换模型（上下文/输出上限不同）时必须能在平台 options 里改对。
-  if (platform?.options?.contextWindowTokens !== undefined) {
-    assert.equal(capabilities.contextWindowTokens, platform.options.contextWindowTokens);
+  // 契约：模型档案显式声明优先，缺省用各 provider 的默认值
+  // （2026-10-06 配置重设计后，窗口/输出上限挂在 models.<model> 上）。
+  const declaredProfile = platform?.modelProfile;
+  if (declaredProfile?.contextWindowTokens !== undefined) {
+    assert.equal(capabilities.contextWindowTokens, declaredProfile.contextWindowTokens);
   } else {
     assert.ok(capabilities.contextWindowTokens > 0, "能力快照缺少上下文窗口");
   }
-  if (platform?.options?.maxOutputTokens !== undefined) {
-    assert.equal(capabilities.maxOutputTokens, platform.options.maxOutputTokens);
+  if (declaredProfile?.maxOutputTokens !== undefined) {
+    assert.equal(capabilities.maxOutputTokens, declaredProfile.maxOutputTokens);
   } else {
     assert.ok((capabilities.maxOutputTokens ?? 0) > 0, "能力快照缺少输出上限");
   }

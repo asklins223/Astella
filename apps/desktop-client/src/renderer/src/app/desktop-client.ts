@@ -54,6 +54,13 @@ export class RendererGatewayError extends Error {
   readonly code: GatewayErrorV1["code"];
   readonly retry: GatewayErrorV1["retry"];
   readonly retryAfter?: string;
+  /**
+   * main 侧原样投影过来的 4xx（合同里只在 400–499 时带）。
+   *
+   * 上传那一类调用要按状态码给用户能行动的文案（413 太大 / 415 格式不支持 /
+   * 429 太频繁），只留 `code` 就全部塌成"暂时不可用"。
+   */
+  readonly httpStatus?: number;
 
   constructor(error: GatewayErrorV1) {
     super(error.safeMessageKey);
@@ -61,6 +68,7 @@ export class RendererGatewayError extends Error {
     this.code = error.code;
     this.retry = error.retry;
     this.retryAfter = error.retryAfter;
+    this.httpStatus = error.httpStatus;
   }
 }
 

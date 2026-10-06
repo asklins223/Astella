@@ -56,9 +56,9 @@ export interface ChatOptions {
   maxTokens?: number;
   model?: string;
   responseFormat?: "json_object" | "text";
-  /** 2026-08-12+（15a 新反馈）：显式关闭 provider 思考模式（如 DeepSeek
-   *  系模型的 enable_thinking）。优先级高于平台配置/env——companion 日常
-   *  对话用它换取首 token 速度（陪伴聊天快比准重要）。 */
+  /** 显式关闭 provider 思考模式（如 DeepSeek 系模型的 enable_thinking），
+   *  优先级高于平台配置/env。2026-10-06 起伴星链路统一跟随平台配置开启思考，
+   *  生产 handler 不再传它；保留给离线评测与需要确定性/低延迟的调试调用。 */
   disableThinking?: boolean;
   /**
    * native tools 定义（2026-09-19 ④-b）。

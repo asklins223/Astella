@@ -60,7 +60,8 @@ test("44 §5.4：闸拦下 → 折一次 → 重发；被折掉的消息真的�
           : null;
       },
       hasAttempt: () => attemptAvailable,
-      onCompacted: () => { attemptAvailable = false; folded.push("folded"); },
+      consumeAttempt: () => { attemptAvailable = false; },
+      onCompacted: () => { folded.push("folded"); },
     });
 
     const request: AgentTurnRequest = {
@@ -114,6 +115,7 @@ test("44 §5.4：压缩额度用尽后不再折，第二次仍超线就带着有
         };
       },
       hasAttempt: () => attemptAvailable,
+      consumeAttempt: () => { attemptAvailable = false; },
       onCompacted: () => { attemptAvailable = false; },
     });
 
@@ -129,6 +131,46 @@ test("44 §5.4：压缩额度用尽后不再折，第二次仍超线就带着有
     });
     assert.equal(folds, 0, "没有额度就不折");
     assert.deepEqual(sizes, [2], "超触发线但未超硬上限 → 原样发出，闸记 over_trigger_line");
+  } finally {
+    if (previous === undefined) delete process.env.MOCK_CONTEXT_WINDOW_TOKENS;
+    else process.env.MOCK_CONTEXT_WINDOW_TOKENS = previous;
+  }
+});
+
+test("44 §5.4：闸要求压缩但没有可折内容时不失败——消耗额度后原样发出，闸记「额度已用尽」", async () => {
+  const previous = process.env.MOCK_CONTEXT_WINDOW_TOKENS;
+  process.env.MOCK_CONTEXT_WINDOW_TOKENS = "20000";
+  try {
+    let attemptAvailable = true;
+    const decisions: string[] = [];
+    const governed = createGovernedProvider(
+      createProvider("mock", {}),
+      governance, workspaceId,
+      { userId, operation: "companion_agent" },
+      {
+        compactionAvailable: () => attemptAvailable,
+        onDecision: (receipt) => { decisions.push(`${receipt.decision.outcome}:${receipt.decision.reason}`); },
+      },
+    );
+    const send = boundedStepSender({
+      // 折不动：覆盖区间与回放尾部不相交（这正是现状——读侧锚点保证的形态）。
+      fold: () => null,
+      hasAttempt: () => attemptAvailable,
+      consumeAttempt: () => { attemptAvailable = false; },
+      onCompacted: () => { throw new Error("折不动不该走到这里"); },
+    });
+    const request: AgentTurnRequest = {
+      role: "companion_agent", systemPrompt: "短。",
+      messages: [{ role: "user", content: longContent }, { role: "user", content: "现在这个问题" }],
+      tools: [], toolChoice: "auto", maxTokens: 1_000, temperature: 0.4,
+    };
+    const sent: number[] = [];
+    await send(request, async (foldedRequest) => {
+      sent.push(foldedRequest.messages.length);
+      return governed.executeAgentTurn!(foldedRequest, AbortSignal.timeout(30_000));
+    });
+    assert.deepEqual(sent, [2, 2], "发一次 → 被拦 → 原样重发一次");
+    assert.deepEqual(decisions, ["compact:over_trigger_line", "send:compaction_budget_spent"]);
   } finally {
     if (previous === undefined) delete process.env.MOCK_CONTEXT_WINDOW_TOKENS;
     else process.env.MOCK_CONTEXT_WINDOW_TOKENS = previous;

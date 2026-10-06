@@ -3,6 +3,7 @@ import {
   type CompactionStateKey,
 } from "@ailearn/agent-host";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
+import { logger } from "../lib/logger.ts";
 import type { CompactionCooldownPorts } from "./companion-compaction.ts";
 import type { ContextPressureReceiptV1 } from "@ailearn/shared/context-budget-contracts";
 
@@ -62,20 +63,32 @@ export function createCompactionCooldownPorts(context: CompactionCooldownContext
         retryAfterMs: decision.retryAfterMs,
       };
     },
-    async record({ inputTokens, at }) {
+    async record({ at }) {
       const key = keyFor();
       if (!key) return;
-      await withWorkerWorkspaceTransaction(
-        { workspaceId: context.workspaceId, userId: context.userId },
-        async (tx) => {
-          await recordCompactionAttemptState(
-            tx as WorkerTransaction,
-            { workspaceId: context.workspaceId, userId: context.userId },
-            key,
-            { inputTokens, reason: "over_trigger_line", at },
-          );
-        },
-      );
+      // 读数是**重发之后**的：最多能取到的时候就是重发刚过闸那一刻。
+      // 没有读数（闸没跑过）时不动状态——宁可少记一笔，也不能拿一个猜的数字
+      // 去判「有没有进展」（那会直接把冷却推成 no_progress）。
+      const pressure = context.latestPressure();
+      if (!pressure) return;
+      // 记一笔是**观察**，不是交付：写不进去只留日志，不把异常抛回调用方——
+      // 调用点是在 finally 里，抛出去会顶掉这一轮真正的结果（44 §6.4／40c 同理）。
+      try {
+        await withWorkerWorkspaceTransaction(
+          { workspaceId: context.workspaceId, userId: context.userId },
+          async (tx) => {
+            await recordCompactionAttemptState(
+              tx as WorkerTransaction,
+              { workspaceId: context.workspaceId, userId: context.userId },
+              key,
+              { inputTokens: pressure.inputTokens, reason: pressure.reason, at },
+            );
+          },
+        );
+      } catch (error) {
+        logger.warn({ error, conversationId: context.conversationId },
+          "compaction cooldown record failed; this turn keeps its own result");
+      }
     },
   };
 }

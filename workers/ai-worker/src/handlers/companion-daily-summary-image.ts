@@ -6,7 +6,7 @@ import { z } from "zod";
 import { logger } from "../lib/logger.ts";
 import { currentWorkerWorkspaceTransaction } from "../db.ts";
 import { createProvider } from "../lib/ai-provider.ts";
-import { createGovernedProvider, resolveProviderForTask, type AIGovernanceContext } from "../lib/governance.ts";
+import { createGovernedProvider, resolveVisionReader, type AIGovernanceContext } from "../lib/governance.ts";
 import { getObjectBytes } from "../lib/object-storage.ts";
 import { isJobLeaseActive } from "../lib/job-lease.ts";
 import { runAiTask, type AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
@@ -77,9 +77,12 @@ export async function describeDiaryImage(input: {
   try {
     const remainingMs = input.deadlineAt - Date.now();
     if (remainingMs <= 0) return { material: input.material, callsUsed: 0 };
-    const visionRes = resolveProviderForTask(input.govCtx, "analyze_image");
+    // 2026-10-06 识图路由：主模型能看就用主模型，否则用专门的识图模型；
+    // 都没有就不读（与工具面同一条决策树，见 resolveVisionReader）。
+    const reader = resolveVisionReader(input.govCtx);
+    if (!reader) return { material: input.material, callsUsed: 0 };
     const provider = createGovernedProvider(
-      createProvider(visionRes.providerName, visionRes.providerConfig),
+      createProvider(reader.providerName, reader.providerConfig),
       input.govCtx,
       input.job.workspaceId,
       // 报上 `image_content`：审计里那条外发记录要说清发的是哪类内容（F19），

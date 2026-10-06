@@ -3,13 +3,13 @@ import { CompanionGuidanceStage } from "../companion/guidance/CompanionGuidanceS
 import { GUIDE_OPEN_EVENT, GUIDE_PRACTICE_EVENT, GUIDE_TOPICS, type GuideTopicId } from "../companion/guidance/guide-definitions";
 import { SpaceArrival } from "./SpaceArrival";
 import { useEffect, useId, useRef, useState } from "react";
-import { ChevronsRight, Compass, Gauge, House, Moon, Orbit, Settings2, Sun, Volume2, VolumeX } from "lucide-react";
+import { ChevronsRight, Compass, Gauge, House, Moon, Settings2, Sun, Volume2, VolumeX } from "lucide-react";
 import { useRoomStore } from "../../app/room-store";
 import { hasActionableUpdate, useUpdateStatus } from "../../app/update-status";
 import { spaceRoleLabel } from "../../app/space-identity";
 import { publishGateInvalidation } from "../../app/gate-invalidation";
 import { resolveSceneMotionMode } from "../../scene/scene-motion";
-import { accountAvatarSrcFor, accountInitial } from "./HudAccountCard";
+import { accountInitial, useAccountAvatar } from "./HudAccountCard";
 import { HudControlPopover } from "./HudControlPopover";
 import type { HudMenuKind } from "./use-hud-popover-motion";
 import { useTactileSurface } from "../motion/use-tactile-surface";
@@ -62,7 +62,8 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
   const spaceIdentity = useRoomStore((state) => state.spaceIdentity);
   /** 账户槽位与设置页读同一个来源：门禁每次读到已验证会话都发布，与小空间胶囊同一时机。 */
   const account = useRoomStore((state) => state.accountIdentity);
-  const avatarSrc = accountAvatarSrcFor(account, useRoomStore((state) => state.accountAvatar));
+  /** 这条脸现在有两处要读：展开后的账户槽位，与折叠态的常驻印章。 */
+  const avatarSrc = useAccountAvatar();
   const onboardingOpen = useRoomStore((state) => state.onboardingOpen);
   const motionMode = resolveSceneMotionMode(motionModeRaw, useRoomStore((state) => state.reducedMotion));
   const [expanded, setExpanded] = useState(false);
@@ -391,7 +392,10 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
         </button>
         {/* 触发印章常驻药丸最右端的原位置：折叠时它是唯一的圆点，展开后
             留在原地变为收起控制（图标换成指向收拢方向的双箭头），再点一下
-            即缩回——折叠入口就是「原位置那颗印章」，不新增槽位。 */}
+            即缩回——折叠入口就是「原位置那颗印章」，不新增槽位。
+            折叠态那颗印章里坐的是**这张脸**（2026-10-06）：有头像用头像，没有就
+            落回与账户槽位、设置页同一套首字母印章。展开后位置不变、内容回到收起
+            按钮，所以「再点一下缩回」的手感与以前逐帧一致。 */}
         <button
           ref={triggerRef}
           type="button"
@@ -404,7 +408,9 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
         >
           {isExpanded
             ? <ChevronsRight key="collapse" className="room-control-icon-swap" aria-hidden="true" />
-            : <Orbit key="orbit" aria-hidden="true" />}
+            : avatarSrc
+            ? <img className="room-control-trigger__photo" src={avatarSrc} alt="" aria-hidden="true" />
+            : <span className="room-control-trigger__seal" aria-hidden="true">{accountInitial(account)}</span>}
           <i className={`room-control-trigger__status room-control-trigger__status--${motionMode}`} aria-hidden="true" />
         </button>
       </div>

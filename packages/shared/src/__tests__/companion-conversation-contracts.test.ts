@@ -680,7 +680,7 @@ test("proposalDecisionResponseV1Schema：route 接受 §18 V2 导航 kind（lens
   );
 });
 
-test("划选投喂：turn 请求可携带 selection（user_selected），仍强制单 text block", () => {
+test("划选投喂：turn 请求可携带 selection（user_selected），首个块仍是 text", () => {
   const ok = createCompanionTurnRequestV1Schema.safeParse({
     version: 1,
     clientMessageId: UUID,
@@ -710,6 +710,45 @@ test("划选投喂：turn 请求可携带 selection（user_selected），仍强�
     selection: { text: "一段话", sharing: "page_registered" },
   });
   assert.equal(wrongSharing.success, false);
+});
+
+test("输入框传图：一轮可以带一张用户自己传的图，形状与顺序都收窄", () => {
+  const image = {
+    type: "image",
+    url: `/api/uploads/${UUID}/companion/${UUID}.png`,
+    label: "截屏 2026-10-06",
+  };
+  const turn = (blocks: unknown[], inputKind: "text" | "voice_transcript" = "text") => ({
+    version: 1,
+    clientMessageId: UUID,
+    inputKind,
+    blocks,
+    ...(inputKind === "voice_transcript" ? { voiceArtifactId: UUID } : {}),
+    sourceSurface: "pet",
+  });
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(
+    turn([{ type: "text", text: "这张图里画的是什么" }, image]),
+  ).success, true);
+  // 首个块必须是 text：图不能排在文字前面（注意力分类、标题、事实读取都以文字为准）。
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(
+    turn([image, { type: "text", text: "看图" }]),
+  ).success, false);
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turn([image])).success, false);
+  // 至多一张，第二块只认 image。
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(
+    turn([{ type: "text", text: "两张" }, image, image]),
+  ).success, false);
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(
+    turn([{ type: "text", text: "问题" }, { type: "quote", label: "原文", text: "一段话" }]),
+  ).success, false);
+  // 语音这一轮没有传图的入口（麦克风路径不带附件）。
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(
+    turn([{ type: "text", text: "刚说的" }, image], "voice_transcript"),
+  ).success, false);
+  // 站外地址不认：显示用的 url 只能指向站内图片通道。
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(
+    turn([{ type: "text", text: "看图" }, { ...image, url: "https://example.com/a.png" }]),
+  ).success, false);
 });
 
 test("nav 块：她带我去哪儿，落在消息里而不是消息外面", () => {

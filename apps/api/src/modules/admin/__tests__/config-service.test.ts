@@ -37,7 +37,13 @@ after(() => {
 
 const VALID = {
   platforms: {
-    demo: { type: "openai_compatible", apiKey: "${DEMO_KEY}", baseUrl: "https://example.invalid/v1" },
+    demo: {
+      type: "openai_compatible",
+      apiKey: "${DEMO_KEY}",
+      baseUrl: "https://example.invalid/v1",
+      // 严格声明制（2026-10-06）：capabilities 引用的模型必须声明能力档案。
+      models: { "demo-model": { contextWindowTokens: 128_000, maxOutputTokens: 8_192 } },
+    },
     local: { type: "mock" },
   },
   capabilities: {
@@ -78,7 +84,7 @@ test("校验：缺 platforms / capabilities / model 都阻断；未知能力与�
 
   const unknownCapability = validateConfig({
     ...VALID,
-    capabilities: { ...VALID.capabilities, totally_made_up: { platform: "demo", model: "m" } },
+    capabilities: { ...VALID.capabilities, totally_made_up: { platform: "demo", model: "demo-model" } },
   });
   assert.equal(unknownCapability.some((i) => i.blocking), false, "未知能力不该阻断写回");
   assert.ok(unknownCapability.some((i) => !i.blocking && i.path.includes("totally_made_up")));
@@ -89,6 +95,61 @@ test("校验：缺 platforms / capabilities / model 都阻断；未知能力与�
   });
   assert.equal(unknownType.some((i) => i.blocking), false, "provider-registry 可能已支持它");
   assert.ok(unknownType.some((i) => !i.blocking && i.path.includes("type")));
+});
+
+/* ── 模型档案与严格声明制（2026-10-06 配置重设计）──────────────────────── */
+
+test("校验：capabilities 引用未声明的模型是阻断项（严格声明制）", () => {
+  const issues = validateConfig({
+    ...VALID,
+    capabilities: { agent_turn: { platform: "demo", model: "ghost-model" } },
+  });
+  const blocking = issues.filter((i) => i.blocking);
+  assert.equal(blocking.length, 1);
+  assert.ok(blocking[0].message.includes("未在 platforms.demo.models 中声明"));
+});
+
+test("校验：平台级旧字段（enableThinking / contextWindowTokens 等）阻断——不能再被静默忽略", () => {
+  const legacy = validateConfig({
+    platforms: {
+      demo: {
+        ...VALID.platforms.demo,
+        options: { disableThinking: true, contextWindowTokens: 128_000 },
+      },
+    },
+    capabilities: VALID.capabilities,
+  });
+  assert.ok(legacy.some((i) => i.blocking && i.path.endsWith("options.disableThinking")));
+  assert.ok(legacy.some((i) => i.blocking && i.path.endsWith("options.contextWindowTokens")));
+});
+
+test("校验：模型档案的档位取值与 default∈levels 都是阻断项", () => {
+  const badLevel = validateConfig({
+    platforms: {
+      demo: { ...VALID.platforms.demo, models: { "demo-model": { reasoning: { levels: ["none", "ultra"], default: "none" } } } },
+    },
+    capabilities: VALID.capabilities,
+  });
+  assert.ok(badLevel.some((i) => i.blocking && i.path.includes("reasoning.levels")));
+
+  const badDefault = validateConfig({
+    platforms: {
+      demo: { ...VALID.platforms.demo, models: { "demo-model": { reasoning: { levels: ["none"], default: "high" } } } },
+    },
+    capabilities: VALID.capabilities,
+  });
+  assert.ok(badDefault.some((i) => i.blocking && i.path.includes("reasoning.default")));
+});
+
+test("校验：识图映射的模型声明 vision:false 只提示（运行时按没有可用看图模型处理）", () => {
+  const issues = validateConfig({
+    platforms: {
+      vis: { type: "openai_compatible", apiKey: "${K}", baseUrl: "https://x.invalid", models: { vlm: { vision: false } } },
+    },
+    capabilities: { vision: { platform: "vis", model: "vlm" } },
+  });
+  assert.deepEqual(issues.filter((i) => i.blocking), []);
+  assert.ok(issues.some((i) => !i.blocking && i.message.includes("vision:false")));
 });
 
 test("读取：密钥只回「引用了哪个变量 / 是否已注入」，明文永不出现在结果里", async () => {
@@ -183,7 +244,8 @@ test("合并：补丁只改 baseUrl，明文密钥与 options 原样保留（不
         type: "openai_compatible",
         apiKey: "sk-literal-stays-on-disk",
         baseUrl: "https://old.invalid/v1",
-        options: { disableThinking: true },
+        models: { m: {} },
+        options: { disableMaxTokens: true },
       },
     },
     capabilities: { agent_turn: { platform: "lit", model: "m" } },
@@ -195,7 +257,7 @@ test("合并：补丁只改 baseUrl，明文密钥与 options 原样保留（不
   const onDisk = JSON.parse(await readFile(resolveConfigPath(), "utf8"));
   assert.equal(onDisk.platforms.lit.baseUrl, "https://new.invalid/v1");
   assert.equal(onDisk.platforms.lit.apiKey, "sk-literal-stays-on-disk", "面板看不见的密钥必须留在磁盘上");
-  assert.deepEqual(onDisk.platforms.lit.options, { disableThinking: true });
+  assert.deepEqual(onDisk.platforms.lit.options, { disableMaxTokens: true });
   // 回应里也不含明文密钥。
   assert.equal(JSON.stringify(result.snapshot).includes("sk-literal-stays-on-disk"), false);
 });

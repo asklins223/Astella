@@ -21,7 +21,8 @@ function Journal() {
   const anchor = useRef<HTMLDivElement>(null);
   return <CompanionHistoryDrawer open motionMode="off" input="还没有发送的草稿" onInputChange={vi.fn()} onSend={vi.fn()}
     onVoiceToggle={vi.fn()} voice={{ phase: "idle", supported: false, subscribeLevel: () => () => undefined } as never}
-    voiceEnabled={false} anchorRef={anchor} side="left" onBack={vi.fn()} onClose={vi.fn()} />;
+    voiceEnabled={false} anchorRef={anchor} side="left" onBack={vi.fn()} onClose={vi.fn()}
+    image={null} imageUploading={false} imageError={null} onPickImage={vi.fn()} onRemoveImage={vi.fn()} />;
 }
 beforeEach(() => {
   vi.useFakeTimers(); state.chat = interactionSession();

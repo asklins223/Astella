@@ -14,11 +14,11 @@
  *   job/会话，满足上游「每个会话一个稳定 session」的路由与 prompt cache 要求。
  * - 客户端必须自报 user agent，不能使用通用 SDK/HTTP 库名。
  * - muse-spark-1.3-contributor 是 reasoning 模型，`reasoning.effort` 只接受
- *   minimal/low/medium/high/xhigh/max（**不接受 none**）。平台的
- *   `disableThinking` 映射为 `minimal`（能关到的最低档），`enableThinking`
- *   映射为 `high`；两者都未配置时不下发该字段，用网关默认（high）。
- *   各模型支持档位不同（deepseek 支持 none、gpt-5.6-luna 不支持 minimal），
- *   因此平台可用 `options.reasoningEffort` 显式指定，显式值优先。
+ *   minimal/low/medium/high/xhigh/max（**不接受 none**）。2026-10-06 配置重设计后，
+ *   推理档位由**模型档案**声明（`platforms.X.models.<model>.reasoning`）：
+ *   `default` 就是每次请求下发的档位；每次调用显式关思考（离线评测）时取该模型
+ *   声明档位里"最接近关"的一档（有的模型不接受 none）。各模型支持范围不同
+ *   （deepseek 支持 none、gpt-5.6-luna 不支持 minimal），声明即真相。
  */
 
 import { randomUUID } from "node:crypto";
@@ -29,10 +29,12 @@ import type {
   ChatMessage,
   ChatOptions,
   ChatResult,
+  ModelProfile,
   PlatformOptions,
   ProviderCapability,
   ProviderRuntimeConfig,
   ProviderUsage,
+  ReasoningEffort,
 } from "@ailearn/shared";
 import { resolveOpenAIResponsesUrl } from "@ailearn/shared/ai-endpoints";
 import {
@@ -45,6 +47,7 @@ import type { AIProvider } from "../ai-provider.ts";
 import { registerFactory } from "../provider-factory.ts";
 import { ProviderRequestError } from "../provider-request-error.ts";
 import { AgentOutputError } from "../non-retryable-errors.ts";
+import { profileFingerprint } from "./profile-fingerprint.ts";
 
 /** OpenCode Go 默认端点（Responses API 根路径）。 */
 const DEFAULT_BASE_PATH = "https://opencode.ai/zen/go/v1";
@@ -430,53 +433,58 @@ export class OpenCodeGoProvider implements AIProvider {
   private readonly request: PublicJsonRequester;
   private readonly streamRequest: PublicStreamingRequester;
   private readonly platformOptions: PlatformOptions | undefined;
-  /** 平台覆盖的最大输出 token（默认模型的 128K）。 */
+  /** 模型能力档案（2026-10-06 配置重设计）。 */
+  private readonly modelProfile: ModelProfile | undefined;
+  /** 模型档案覆盖的最大输出 token（缺省用内置的 131K）。 */
   private readonly maxOutputTokens: number;
 
   constructor(options: {
     apiKey: string;
     baseUrl: string;
     model: string;
-    visionModel?: string;
     request?: PublicJsonRequester;
     streamRequest?: PublicStreamingRequester;
     /** 显式会话 ID（默认每个实例生成一个 UUID）。 */
     sessionId?: string;
     platformOptions?: PlatformOptions;
+    /** 模型能力档案（2026-10-06）：推理档位/上下文/输出上限在这里。 */
+    modelProfile?: ModelProfile;
   }) {
     this.apiKey = options.apiKey;
     this.modelId = options.model;
-    this.visionModelId = options.visionModel ?? options.model;
+    this.visionModelId = options.model;
     this.endpoint = resolveOpenCodeGoEndpoint(options.baseUrl);
     this.sessionId = options.sessionId ?? randomUUID();
     this.request = options.request ?? postJsonToPublicEndpoint;
     this.streamRequest = options.streamRequest ?? postSseToPublicEndpoint;
     this.platformOptions = options.platformOptions;
-    this.maxOutputTokens = options.platformOptions?.maxOutputTokens
+    this.modelProfile = options.modelProfile;
+    this.maxOutputTokens = options.modelProfile?.maxOutputTokens
       ?? OPENCODE_GO_MAX_OUTPUT_TOKENS;
   }
 
+  /** 档位高低语义顺序（用于给"显式关思考"挑最接近关的一档）。 */
+  private static readonly EFFORT_ORDER: ReasoningEffort[] = [
+    "none", "minimal", "low", "medium", "high", "xhigh", "max",
+  ];
+
   /**
-   * reasoning 档位。
+   * reasoning 档位（模型档案驱动，2026-10-06 配置重设计）。
    *
-   * 各模型支持范围不同（muse-spark 不支持 none、gpt-5.6-luna 不支持 minimal），
-   * 因此平台显式配置的 reasoningEffort 优先于本函数的启发式映射——只有平台
-   * 配置知道目标模型接受哪些档位。
-   *
-   * 缺省回退语义：disableThinking → minimal（该模型能关到的最低档），
-   * enableThinking → high，都不设则不下发该字段用网关默认。
+   * - 档案声明了 `reasoning` → 每次请求下发 `default`；
+   * - 每次调用显式关思考（离线评测等）→ 取该模型声明档位里"最接近关"的一档
+   *   （不支持 none 的模型落到它自己的最低档）；未声明档位时用网关缺省的 minimal；
+   * - 未声明 `reasoning` → 不下发该字段，用网关默认。
    */
   private reasoningField(perCallDisableThinking: boolean): Record<string, unknown> {
-    const explicit = this.platformOptions?.reasoningEffort;
-    if (explicit) {
-      return { reasoning: { effort: explicit } };
+    const reasoning = this.modelProfile?.reasoning;
+    if (perCallDisableThinking) {
+      if (!reasoning) return { reasoning: { effort: "minimal" } };
+      const off = OpenCodeGoProvider.EFFORT_ORDER.find((level) => reasoning.levels.includes(level));
+      // levels 非空由配置校验保证；防御性兜底给最低档即可。
+      return { reasoning: { effort: off ?? "minimal" } };
     }
-    if (perCallDisableThinking || (this.platformOptions?.disableThinking ?? false)) {
-      return { reasoning: { effort: "minimal" } };
-    }
-    if (this.platformOptions?.enableThinking) {
-      return { reasoning: { effort: "high" } };
-    }
+    if (reasoning) return { reasoning: { effort: reasoning.default } };
     return {};
   }
 
@@ -762,11 +770,11 @@ export class OpenCodeGoProvider implements AIProvider {
   }
 
   /**
-   * 能力快照：muse-spark-1.3-contributor = 1,048,576 上下文 / 131,072 输出，
-   * 可被平台配置的 contextWindowTokens / maxOutputTokens 覆盖。
+   * 能力快照：窗口/输出上限来自**模型档案**（2026-10-06 配置重设计），
+   * 未声明时用内置缺省（muse-spark 基线：1,048,576 / 131,072）。
    */
   getCapabilities(): ProviderCapability {
-    const contextWindowTokens = this.platformOptions?.contextWindowTokens
+    const contextWindowTokens = this.modelProfile?.contextWindowTokens
       ?? OPENCODE_GO_CONTEXT_WINDOW_TOKENS;
     const reservedOutputTokens = this.maxOutputTokens;
     return {
@@ -781,7 +789,7 @@ export class OpenCodeGoProvider implements AIProvider {
       // maxInputTokens 是「窗口 − 最大输出」的派生值，不是供应商独立声明的输入
       // 硬限制——不填 inputHardLimitTokens，预算解析只按 C − O 表达它。
       outputLimitEnforced: !(this.platformOptions?.disableMaxTokens ?? false),
-      fingerprint: `${this.id}:${this.modelId}:${this.visionModelId}:native_tools`,
+      fingerprint: `${this.id}:${this.modelId}:native_tools:${profileFingerprint(this.modelProfile)}`,
     };
   }
 }
@@ -809,7 +817,7 @@ function createOpenCodeGoProvider(config: ProviderRuntimeConfig): OpenCodeGoProv
     apiKey,
     baseUrl,
     model,
-    ...(config.visionModel ? { visionModel: config.visionModel } : {}),
+    ...(config.modelProfile ? { modelProfile: config.modelProfile } : {}),
     ...(config.options ? { platformOptions: config.options } : {}),
   });
 }

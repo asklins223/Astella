@@ -14,12 +14,20 @@
  * ⚠️ JSX 与那三个 `settings-field` / `settings-block__*` 类名是逐字搬的。`id="settings-display-name"`
  * 也要保留——它是 `<label htmlFor>` 的目标，改了就断了一条无障碍关联。
  *
+ * 头像自 2026-10-06 起先过取景框（`avatar-crop-dialog.tsx`）再上传：`onUploadAvatar`
+ * 收到的已经是裁剪产物，返回上传结果——取景框要等它落定，网慢时那段时间里不能
+ * 让人觉得"点了没反应"（对话框留在原地显示「正在上传…」）。
+ *
  * 判据见 `AGENTS.md` §工程结构与分层：单函数超过 400 行或 hook 超过 25 个就是信号。
  */
-import type { ChangeEvent, KeyboardEvent, ReactElement } from "react";
+import { useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 import type { AuthProfileResultV1 } from "@ailearn/shared";
 import { ImageUp } from "lucide-react";
 import { SettingRow } from "./settings-primitives.tsx";
+import { AvatarCropDialog } from "./avatar-crop-dialog.tsx";
+
+/** 上传结果：失败时 `message` 是给人看的一句话，取景框就地显示它。 */
+export type AvatarUploadOutcome = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 export function SettingsAccountPanel(props: {
   readonly profile: AuthProfileResultV1 | null;
@@ -28,7 +36,7 @@ export function SettingsAccountPanel(props: {
   readonly busy: string | null;
   readonly onDisplayNameChange: (value: string) => void;
   readonly onSaveDisplayName: () => Promise<void>;
-  readonly onUploadAvatar: (file: File) => Promise<void>;
+  readonly onUploadAvatar: (file: File) => Promise<AvatarUploadOutcome>;
   readonly onClearAvatar: () => Promise<void>;
 }): ReactElement {
   const { profile, displayName, busy } = props;
@@ -36,6 +44,16 @@ export function SettingsAccountPanel(props: {
   const saveDisplayName = props.onSaveDisplayName;
   const uploadAvatar = props.onUploadAvatar;
   const clearAvatar = props.onClearAvatar;
+  /**
+   * 选中的文件先进取景框，确认才上传；取消或关闭把焦点还给"更换…"那颗文件输入，
+   * 键盘用户不会掉回页面开头。
+   */
+  const [pendingAvatar, setPendingAvatar] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const closeCropper = (restoreFocus: boolean) => {
+    setPendingAvatar(null);
+    if (restoreFocus) fileInputRef.current?.focus();
+  };
   return (
 <div className="settings-block">
   <div className="settings-block__head">
@@ -71,11 +89,12 @@ export function SettingsAccountPanel(props: {
     </div>
   </div>
   <div className="settings-rows">
-    <SettingRow title="头像" detail="PNG / JPG / WebP / GIF，最大 2MB；上传后立即生效。">
+    <SettingRow title="头像" detail="PNG / JPG / WebP / GIF；选好后拖动、缩放取景，圆环里就是最终的头像。">
       <label className="button" data-disabled={props.busy !== null || !profile ? "true" : undefined} aria-disabled={props.busy !== null || !profile}>
         <ImageUp size={13} aria-hidden="true" />
         {props.busy === "avatar" ? "上传中…" : "更换…"}
         <input
+          ref={fileInputRef}
           className="settings-file-input"
           type="file"
           accept="image/png,image/jpeg,image/webp,image/gif"
@@ -83,7 +102,7 @@ export function SettingsAccountPanel(props: {
           onChange={(event) => {
             const file = event.currentTarget.files?.[0];
             event.currentTarget.value = "";
-            if (file) void uploadAvatar(file);
+            if (file) setPendingAvatar(file);
           }}
         />
       </label>
@@ -94,6 +113,22 @@ export function SettingsAccountPanel(props: {
       ) : null}
     </SettingRow>
   </div>
+  {pendingAvatar ? (
+    <AvatarCropDialog
+      file={pendingAvatar}
+      onCancel={() => closeCropper(true)}
+      onConfirm={async (cropped) => {
+        const outcome = await uploadAvatar(cropped);
+        // 成功了才收框（按钮随即被禁用，焦点不还给它）；失败把原因抛回去，
+        // 取景框留在原地显示，裁剪结果不丢，可以直接再试。
+        if (outcome.ok) {
+          closeCropper(false);
+          return;
+        }
+        throw new Error(outcome.message);
+      }}
+    />
+  ) : null}
 </div>
   );
 }

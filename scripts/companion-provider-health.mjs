@@ -22,14 +22,15 @@
 
 const WORKSPACE_ID = process.env.PROBE_WORKSPACE_ID ?? "97550966-adf4-47fa-8d91-f83eae9ebfc0";
 const USER_ID = process.env.PROBE_USER_ID ?? "f6c4a80e-e668-4be7-a7b3-e8ad9311079a";
-const CALL_TIMEOUT_MS = 30_000;
-// 交互链路真正用的是"关思考 + 整段取回"这一档（withThinkingDisabled），
-// 开着思考测出来的健康度与用户无关。
+// 开着思考的一档整段取回要几十秒（实测摘要器 36s），30s 会把真调用掐成"失败"。
+const CALL_TIMEOUT_MS = 90_000;
+// 交互链路 2026-10-06 起跟随平台配置**开思考**，探针必须用同一档，
+// 测出来的健康度才与用户相关。
 const PROBE_PROMPT = "用一句完整的话说说，今天想陪我学点什么好？";
 const AGENT_TURNS = Number(process.env.PROBE_ROUNDS ?? 3);
 
 const { resolveAIGovernanceContext, resolveProviderForTask } = await import("./src/lib/governance.ts");
-const { createProvider, withThinkingDisabled } = await import("./src/lib/ai-provider.ts");
+const { createProvider } = await import("./src/lib/ai-provider.ts");
 const { createGovernedProvider } = await import("./src/lib/governance.ts");
 const { looksTruncatedReply } = await import("./src/handlers/companion-dialogue-content.ts");
 
@@ -83,16 +84,17 @@ const plainMessages = [
 ];
 const textOptions = {
   responseFormat: "text",
-  maxTokens: 200,
+  // 思考 token 也计入 maxTokens：预算太小会让正文被思考吃空，探针就会把
+  // "预算不够"误报成"模型退化"。
+  maxTokens: 600,
   temperature: 0.9,
-  disableThinking: true,
 };
 
 const agentVerdicts = [];
 // 与生产同构：createProvider 之后必须再过一层治理包装器，否则探针报的"健康"
 // 是裸端点的健康，而真实链路每一步都要过这道门（门的形状变了探针也不会知道）。
 const agentProvider = createGovernedProvider(
-  createProvider(textSlot.providerName, withThinkingDisabled(textSlot.providerConfig)),
+  createProvider(textSlot.providerName, textSlot.providerConfig),
   gov, WORKSPACE_ID, { userId: USER_ID, operation: "provider_health_probe" },
 );
 for (let round = 1; round <= AGENT_TURNS; round += 1) {

@@ -1130,6 +1130,23 @@ export function renderCompanionUserTurn(userText: string, pageContext: unknown):
     : currentQuestion;
 }
 
+/**
+ * 用户这一轮自己附了图（2026-10-06 输入框传图）：把 assetId 明确交给她。
+ *
+ * 图不在她能"读正文"的那条路上；不给这一句，她会按图名与上下文猜图里有什么——
+ * 那正是这里最不能接受的一类编造。读图走 `companion_read_image`（assetId 原样传），
+ * 用谁的眼睛由识图路由决定（主模型能看就用主模型，否则用识图模型）。
+ */
+export function renderUserAttachedImagesLine(
+  images: readonly { assetId: string; label: string }[],
+): string | null {
+  if (images.length === 0) return null;
+  const list = images.map((image) => `assetId=${image.assetId}（${image.label}）`).join("；");
+  return `用户这一轮自己发了 ${images.length} 张图：${list}。`
+    + "要看图里写了什么就调用 companion_read_image 并把 assetId 原样传进去；"
+    + "没看过就说没看，不要凭图名或上下文猜图里的内容。";
+}
+
 function companionSelectionText(value: unknown): string | null {
   try {
     const parsed = typeof value === "string" ? JSON.parse(value) as unknown : value;

@@ -98,6 +98,16 @@ export type NoteImageUploadResult =
   | { ok: true; body: NoteImageUploadBody }
   | { ok: false; reason: NoteImageUploadFailure };
 
+/**
+ * POST /uploads/companion-images 失败原因：与笔记图片同一套校验，
+ * 只少一个 `note_not_found`（这条路径没有笔记校验这一关）。
+ */
+export type CompanionImageUploadFailure = Exclude<NoteImageUploadFailure, "note_not_found">;
+
+export type CompanionImageUploadResult =
+  | { ok: true; body: NoteImageUploadBody }
+  | { ok: false; reason: CompanionImageUploadFailure };
+
 /** POST /uploads/avatars 成功响应体。 */
 export interface AvatarUploadBody {
   url: string;
@@ -267,6 +277,107 @@ export async function uploadNoteImage(
 }
 
 /**
+ * 伴星对话图片上传（2026-10-06 输入框传图）：POST /uploads/companion-images。
+ *
+ * 与笔记图片共用同一套文件校验与 `note_image_assets` 登记，唯一区别是
+ * **不挂在任何笔记下**（`uploaded_for_note_id = NULL`，该列本就可空）——
+ * 对话里的图不属于笔记，也不该在笔记被删时被连带 404。
+ * 对象键 `{workspaceId}/companion/{uuid}.{ext}`，下载路由按同一形状放行。
+ *
+ * 不含 `note_not_found` 失败原因——这条路径没有笔记校验这一关。
+ */
+export async function uploadCompanionImage(
+  scope: WorkspaceTransactionContext,
+  input: { file: UploadFileHandle },
+): Promise<CompanionImageUploadResult> {
+  const { file } = input;
+
+  if (!ALLOWED_IMAGE_TYPES.includes(file.mimetype as typeof ALLOWED_IMAGE_TYPES[number])) {
+    return { ok: false, reason: "unsupported_type" };
+  }
+
+  let buffer;
+  try {
+    buffer = await file.toBuffer();
+  } catch (err) {
+    if (fileTooLargeError(err)) {
+      return { ok: false, reason: "file_read_too_large" };
+    }
+    throw err;
+  }
+
+  if (!validateImageMagicBytes(buffer, file.mimetype)) {
+    return { ok: false, reason: "content_type_mismatch" };
+  }
+  if (buffer.length > MAX_IMAGE_SIZE) {
+    return { ok: false, reason: "too_large" };
+  }
+  const dimensions = readImageDimensions(buffer, file.mimetype);
+  if (!dimensions) {
+    return { ok: false, reason: "dimensions_undecodable" };
+  }
+  if (dimensions.width * dimensions.height > 40_000_000) {
+    return { ok: false, reason: "pixel_count_exceeded" };
+  }
+
+  const ext = extFromMimeType(file.mimetype);
+  const objectKey = `${scope.workspaceId}/companion/${randomUUID()}.${ext}`;
+
+  try {
+    await uploadObject(objectKey, buffer, file.mimetype);
+  } catch (err) {
+    logger.error({ err, objectKey }, "failed to upload companion image to storage");
+    return { ok: false, reason: "storage_upload_failed" };
+  }
+
+  let asset: typeof noteImageAssets.$inferSelect;
+  try {
+    asset = await withWorkspaceTransaction(
+      { workspaceId: scope.workspaceId, userId: scope.userId },
+      async (tx) => {
+        const [registered] = await tx
+          .insert(noteImageAssets)
+          .values({
+            workspaceId: scope.workspaceId,
+            uploadedForNoteId: null,
+            objectKey,
+            sha256: createHash("sha256").update(buffer).digest("hex"),
+            mimeType: file.mimetype,
+            byteSize: buffer.length,
+            width: dimensions.width,
+            height: dimensions.height,
+            status: "ready",
+            createdBy: scope.userId,
+          })
+          .returning();
+        if (!registered) throw new Error("companion image asset insert returned no row");
+        return registered;
+      },
+    );
+  } catch (err) {
+    await deleteObject(objectKey).catch((cleanupError) => {
+      logger.error({ err: cleanupError, objectKey }, "failed to clean up companion image after asset persistence failure");
+    });
+    logger.error({ err, objectKey }, "failed to persist companion image asset");
+    return { ok: false, reason: "asset_persist_failed" };
+  }
+
+  return {
+    ok: true,
+    body: {
+      assetId: asset.id,
+      url: `/api/uploads/${objectKey}`,
+      objectKey,
+      size: buffer.length,
+      mimeType: file.mimetype,
+      sha256: asset.sha256,
+      width: dimensions.width,
+      height: dimensions.height,
+    },
+  };
+}
+
+/**
  * 用户头像上传：校验文件后写入对象存储，事务内行锁读改写 users.avatarUrl，
  * 并在成功后异步回收旧头像对象（仅限本人名下）。
  */
@@ -421,8 +532,12 @@ export async function downloadUploadObject(
   } else {
     // Note/source image path: {workspaceId}/notes/{noteId}/{uuid}.{ext}
     //   or: {workspaceId}/sources/{sourceId}/{uuid}.{ext}
+    //   or: {workspaceId}/companion/{uuid}.{ext}（伴星对话里用户上传的图，2026-10-06）
     const parts = path.split("/");
-    if (parts.length < 4 || (parts[1] !== "notes" && parts[1] !== "sources")) {
+    const kind = parts[1];
+    const isCompanionImage = kind === "companion";
+    if ((kind !== "notes" && kind !== "sources" && !isCompanionImage)
+      || (isCompanionImage ? parts.length < 3 : parts.length < 4)) {
       return { ok: false, reason: "not_found" };
     }
     const pathWorkspaceId = parts[0];

@@ -62,7 +62,8 @@ services:
       - ailearn_net
 
   # One-shot bucket bootstrap (profile: storage).  `make storage` waits
-  # for it to exit and removes the container immediately afterwards.
+  # for it to exit; stale containers are removed at the start of the next
+  # `up`/`storage` run (or manually via `make clean-init`).
   minio-init:
     image: minio/mc:RELEASE.2024-11-21T17-21-54Z
     profiles: ["storage"]
@@ -103,8 +104,9 @@ services:
     networks:
       - ailearn_net
 
-  # One-shot (restart: "no"): runs on every `make dev` to apply pending
-  # migrations, then is auto-removed by `make clean-init`.
+  # One-shot (restart: "no"): re-created at the start of every `make up` to
+  # apply pending migrations (stale init containers are removed by the next
+  # `up`/`storage` run or via `make clean-init`).
   migrate:
     build:
       context: .
@@ -224,15 +226,12 @@ services:
       SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
       BIGMODEL_API_KEY: ${BIGMODEL_API_KEY:-}
       TOKENRHYTHM_API_KEY: ${TOKENRHYTHM_API_KEY:-}
-      # 2026-09-18：capabilities.agent_turn（card_generation 经 task-router 映射到它）
-      # 已从 opencode-go 切到 **tokenrhythm**（opencode-go 套餐用量耗尽，实测 HTTP 429）。
-      # 学习卡生成四阶段与离线评测脚本都走这个 capability，因此 TOKENRHYTHM_API_KEY
-      # 是当前生成链路的必需项。换 provider 时必须同步这一行与 config/ai-platforms.json。
-      #
-      # 2026-09-17：opencode-go 的 key 此前未在 compose 透传（同类事故参见
-      # docker-compose.yml 的 Assessment Critic 注释——compose 只传显式列出的变量），
-      # 容器内解析为空 → 平台不可用 → 回退 mock → CARD_GENERATION_V2_LLM=true 时
-      # fail-closed，学习卡生成永远失败。保留该 key 以便切回时无需再改 compose。
+      # capabilities.agent_turn 当前走 opencode-go（deepseek-v4.1-flash），以
+      # config/ai-platforms.json 为准；tokenrhythm（qwen3.8-flash）为备用。
+      # 两个平台的 key 都必须透传——compose 只传显式列出的变量：2026-09-17 就因
+      # 漏传 OPENCODE_GO_API_KEY 导致容器内解析为空 → 平台不可用 → 学习卡生成
+      # fail-closed（与 Assessment Critic 同类事故）。切 provider 时同步改这里与
+      # config/ai-platforms.json。
       OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:-}
       # 方案 16：LearningRun 独立 Assessment Critic（OpenAI-compatible；未配置 fail closed）。
       ASSESSMENT_CRITIC_URL: ${ASSESSMENT_CRITIC_URL:-}
@@ -253,7 +252,6 @@ services:
       COMPANION_JOURNEY_V2: ${COMPANION_JOURNEY_V2:-true}
       COMPANION_BRIDGE_V2: ${COMPANION_BRIDGE_V2:-true}
       # 方案 20：V2 价值优先生成（dev 默认开启）。
-      # CARD_GENERATION_V2_LLM 只由 worker 读取，因此只声明在 worker 服务。
       CARD_GENERATION_V2_ENABLED: ${CARD_GENERATION_V2_ENABLED:-true}
       # 方案 16 伴星/记忆/总结/画像/主动个性化（dev 默认开启）。
       # COMPANION_MEMORY_EXTRACTOR_V1 只由 worker 读取，因此只声明在 worker 服务。
@@ -322,15 +320,12 @@ services:
       SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
       BIGMODEL_API_KEY: ${BIGMODEL_API_KEY:-}
       TOKENRHYTHM_API_KEY: ${TOKENRHYTHM_API_KEY:-}
-      # 2026-09-18：capabilities.agent_turn（card_generation 经 task-router 映射到它）
-      # 已从 opencode-go 切到 **tokenrhythm**（opencode-go 套餐用量耗尽，实测 HTTP 429）。
-      # 学习卡生成四阶段与离线评测脚本都走这个 capability，因此 TOKENRHYTHM_API_KEY
-      # 是当前生成链路的必需项。换 provider 时必须同步这一行与 config/ai-platforms.json。
-      #
-      # 2026-09-17：opencode-go 的 key 此前未在 compose 透传（同类事故参见
-      # docker-compose.yml 的 Assessment Critic 注释——compose 只传显式列出的变量），
-      # 容器内解析为空 → 平台不可用 → 回退 mock → CARD_GENERATION_V2_LLM=true 时
-      # fail-closed，学习卡生成永远失败。保留该 key 以便切回时无需再改 compose。
+      # capabilities.agent_turn 当前走 opencode-go（deepseek-v4.1-flash），以
+      # config/ai-platforms.json 为准；tokenrhythm（qwen3.8-flash）为备用。
+      # 两个平台的 key 都必须透传——compose 只传显式列出的变量：2026-09-17 就因
+      # 漏传 OPENCODE_GO_API_KEY 导致容器内解析为空 → 平台不可用 → 学习卡生成
+      # fail-closed（与 Assessment Critic 同类事故）。切 provider 时同步改这里与
+      # config/ai-platforms.json。
       OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:-}
       AI_ALLOW_DOCKER_DESKTOP_SYNTHETIC_DNS: ${AI_ALLOW_DOCKER_DESKTOP_SYNTHETIC_DNS:-true}
       # Keep worker-side execution authorization aligned with the API
@@ -350,7 +345,6 @@ services:
       COMPANION_SUMMARIZER_V1: ${COMPANION_SUMMARIZER_V1:-true}
       COMPANION_DAILY_SUMMARY_V1: ${COMPANION_DAILY_SUMMARY_V1:-true}
       COMPANION_THOUGHTS_V1: ${COMPANION_THOUGHTS_V1:-true}
-      # 方案 16/20 trusted Commit 评估（dev 默认开启）。
       # Source image upload: MinIO/S3 storage for embedded images
       STORAGE_ENDPOINT: http://minio:9000
       S3_BUCKET: ${S3_BUCKET:-ailearn-workspaces}

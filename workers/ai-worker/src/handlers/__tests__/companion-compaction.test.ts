@@ -99,6 +99,47 @@ test("44 §5.2：摘要起点之前还有一段没人代表时如实记下来", 
   assert.equal(folded.receipt?.uncoveredBeforeSeq, "1", "别让「有摘要」冒充「全读过」");
 });
 
+test("44 §5.2：覆盖伸进回放窗口时折得动——折的是被摘要盖住的那段前缀", () => {
+  const folded = foldReplayUnderSummaryCoverage({
+    system: [],
+    tail: [
+      { message: msg("第五句"), seq: "5" },
+      { message: turn("第六句"), seq: "6" },
+      { message: msg("第七句"), seq: "7" },
+      { message: turn("第八句"), seq: "8" },
+      { message: msg("第九句"), seq: "9" },
+    ],
+    trailing: [msg("现在这个问题")],
+    // 摘要盖 1..8：5..8 由它代表，9 与当前请求原样保留。
+    coverage: coverage("8", "1"),
+  });
+  assert.ok(folded.receipt);
+  assert.equal(folded.receipt.foldedFromSeq, "5");
+  assert.equal(folded.receipt.foldedThroughSeq, "8");
+  assert.equal(folded.receipt.foldedMessageCount, 4);
+  assert.equal(folded.receipt.remainingFromSeq, "9");
+  assert.equal(folded.receipt.uncoveredBeforeSeq, null, "折的这一段全在覆盖区间内");
+  const sent = replayToMessages(folded.replay);
+  assert.deepEqual(sent.map(m => (typeof m.content === "string" ? m.content : "")), ["第九句", "现在这个问题"]);
+});
+
+test("44 §5.4：覆盖完全早于回放窗口时折不动——不拿一段没盖住这里的摘要顶替原文", () => {
+  const folded = foldReplayUnderSummaryCoverage({
+    system: [],
+    tail: [
+      { message: msg("第五句"), seq: "5" },
+      { message: msg("第六句"), seq: "6" },
+    ],
+    trailing: [msg("现在这个问题")],
+    coverage: coverage("2", "1"),
+  });
+  assert.equal(folded.receipt, null);
+  assert.deepEqual(
+    replayToMessages(folded.replay).map(m => (typeof m.content === "string" ? m.content : "")),
+    ["第五句", "第六句", "现在这个问题"],
+  );
+});
+
 function pressureError(): AIContextCompactionRequiredError {
   return new AIContextCompactionRequiredError({
     providerId: "p", modelId: "m", operation: "companion_agent",
@@ -125,7 +166,8 @@ test("44 §5.4：被闸拦下时折一次再重发，且只发两次", async () 
       } satisfies CompactionFoldReceipt,
     }),
     hasAttempt: () => available,
-    onCompacted: () => { available = false; },
+    consumeAttempt: () => { available = false; },
+    onCompacted: () => {},
   }, [msg("旧的1"), msg("旧的2"), msg("当前问题")]);
   assert.equal(result, 2);
   assert.equal(attempts, 2, "至多一次：发 → 折 → 重发");
@@ -138,18 +180,64 @@ test("44 §5.4：额度已经用尽时不再折，原样把真实限制交回", 
     send: () => { attempts += 1; throw pressureError(); },
     compact: () => null,
     hasAttempt: () => false,
+    consumeAttempt: () => {},
   }, [msg("x")]), AIContextCompactionRequiredError);
   assert.equal(attempts, 1, "没有额度就不折，也不重发");
 });
 
-test("44 §5.4：折不动（有摘要但没东西可折）时不静默降级，原样抛出", async () => {
+test("44 §5.4：折不动时消耗额度、原样重发，交给闸按 over_trigger_line 放行", async () => {
   let attempts = 0;
-  await assert.rejects(withBoundedContextCompaction({
-    send: () => { attempts += 1; throw pressureError(); },
+  let consumed = 0;
+  const sentSizes: number[] = [];
+  const recorded: Date[] = [];
+  const result = await withBoundedContextCompaction<number>({
+    send: (messages) => {
+      attempts += 1;
+      sentSizes.push(messages.length);
+      if (attempts === 1) throw pressureError();
+      return Promise.resolve(attempts);
+    },
     compact: () => null,
+    hasAttempt: () => consumed === 0,
+    consumeAttempt: () => { consumed += 1; },
+    cooldown: {
+      decide: () => Promise.resolve({ allowed: true, reason: "first_attempt", retryAfterMs: null }),
+      record: ({ at }) => { recorded.push(at); return Promise.resolve(); },
+    },
+  }, [msg("x")]);
+  assert.equal(result, 2, "重发一次就交回，不再把「压不动」当成这一轮的失败");
+  assert.deepEqual(sentSizes, [1, 1], "原样重发，不静默删内容");
+  assert.equal(consumed, 1, "重发前必须消耗额度，否则闸会再拦一次");
+  assert.equal(recorded.length, 1, "折不动也要记一笔，否则永远停在 first_attempt");
+});
+
+test("44 §5.4：折完先消耗额度再重发，最后用重发后的读数记一笔", async () => {
+  const order: string[] = [];
+  let attempts = 0;
+  const result = await withBoundedContextCompaction<number>({
+    send: () => {
+      order.push("send");
+      attempts += 1;
+      if (attempts === 1) throw pressureError();
+      return Promise.resolve(attempts);
+    },
+    compact: () => ({
+      messages: [msg("当前")],
+      receipt: {
+        foldedFromSeq: "1", foldedThroughSeq: "2", foldedMessageCount: 2,
+        summarySourceSha256: "a".repeat(64), remainingFromSeq: null, uncoveredBeforeSeq: null,
+      } satisfies CompactionFoldReceipt,
+    }),
     hasAttempt: () => true,
-  }, [msg("x")]), AIContextCompactionRequiredError);
-  assert.equal(attempts, 1);
+    consumeAttempt: () => { order.push("consume"); },
+    onCompacted: () => { order.push("onCompacted"); },
+    cooldown: {
+      decide: () => Promise.resolve({ allowed: true, reason: "first_attempt", retryAfterMs: null }),
+      record: () => { order.push("record"); return Promise.resolve(); },
+    },
+  }, [msg("旧1"), msg("当前")]);
+  assert.equal(result, 2);
+  assert.deepEqual(order, ["send", "consume", "onCompacted", "send", "record"]);
 });
 
 test("44 §5.4：不是压力问题的异常照原样抛出，不被当成压缩机会", async () => {
@@ -157,6 +245,7 @@ test("44 §5.4：不是压力问题的异常照原样抛出，不被当成压缩
     send: () => Promise.reject(new Error("provider 500")),
     compact: () => null,
     hasAttempt: () => true,
+    consumeAttempt: () => {},
   }, []), /provider 500/);
 });
 
@@ -185,7 +274,8 @@ test("boundedStepSender 把折叠后的请求交给发送函数，systemPrompt �
       } satisfies CompactionFoldReceipt,
     }),
     hasAttempt: () => attempt === 0,
-    onCompacted: () => { attempt += 1; },
+    consumeAttempt: () => { attempt += 1; },
+    onCompacted: () => {},
   });
   const request: AgentTurnRequest = {
     role: "companion_agent", systemPrompt: "协议保持不变",
@@ -208,6 +298,8 @@ test("boundedStepSender 把折叠后的请求交给发送函数，systemPrompt �
 
 test("44 §5.4：冷却期内不再折，同一个失败输入不会每轮重触发", async () => {
   let folded = 0;
+  let consumed = 0;
+  let recorded = 0;
   const send = boundedStepSender({
     fold: () => {
       folded += 1;
@@ -220,8 +312,12 @@ test("44 §5.4：冷却期内不再折，同一个失败输入不会每轮重触
       };
     },
     hasAttempt: () => true,
+    consumeAttempt: () => { consumed += 1; },
     onCompacted: () => {},
-    cooldown: { decide: () => Promise.resolve({ allowed: false, reason: "within_cooldown", retryAfterMs: 30_000 }), record: () => Promise.resolve() },
+    cooldown: {
+      decide: () => Promise.resolve({ allowed: false, reason: "within_cooldown", retryAfterMs: 30_000 }),
+      record: () => { recorded += 1; return Promise.resolve(); },
+    },
   });
   const sizes: number[] = [];
   const turnResult = { content: "好", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null };
@@ -233,6 +329,8 @@ test("44 §5.4：冷却期内不再折，同一个失败输入不会每轮重触
   });
   assert.equal(folded, 0, "冷却期内不折");
   assert.deepEqual(sizes, [3, 3], "照原样重发，让闸按 over_trigger_line 处理");
+  assert.equal(consumed, 1, "冷却期内也要先消耗额度再重发");
+  assert.equal(recorded, 1, "放行这一轮同样记一笔，无进展才会累积到停手");
 });
 
 test("44 §5.4：没有冷却端口时行为不变（不把新约束偷偷塞进旧路径）", async () => {
@@ -249,6 +347,7 @@ test("44 §5.4：没有冷却端口时行为不变（不把新约束偷偷塞进
       };
     },
     hasAttempt: () => true,
+    consumeAttempt: () => {},
     onCompacted: () => {},
   });
   const sizes: number[] = [];

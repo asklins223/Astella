@@ -47,7 +47,7 @@ import {
   AIDataPolicyDeniedError,
   createGovernedProvider,
   resolveAIGovernanceContext,
-  resolveProviderForTask,
+  resolveVisionReader,
 } from "../lib/governance.ts";
 import { getObjectBytes } from "../lib/object-storage.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
@@ -88,6 +88,7 @@ import { runWorkerAiTask } from "./worker-ai-task.ts";
 import {
   CompanionToolError,
   CompanionToolBlockedError,
+  CompanionToolUnavailableError,
   type AgentToolExecutionResult,
 } from "./companion-tool-result.ts";
 import { executeCompanionMemoryTool } from "./companion-memory-tools.ts";
@@ -556,9 +557,14 @@ export async function executeReadTool(
         ? args.question.trim().slice(0, 200)
         : "图里写了什么、画了什么";
       const govCtx = await resolveAIGovernanceContext(event.ctx.workspaceId, event.read.userId);
-      const visionRes = resolveProviderForTask(govCtx, "analyze_image");
+      // 2026-10-06 识图路由：主模型声明能看图就用主模型，否则用专门的识图模型；
+      // 都没有就不看（绝不回落给看不见的模型）。
+      const reader = resolveVisionReader(govCtx);
+      if (!reader) {
+        throw new CompanionToolUnavailableError("现在没有能看图的模型，这张图我看不了。");
+      }
       const visionProvider = createGovernedProvider(
-        createProvider(visionRes.providerName, visionRes.providerConfig),
+        createProvider(reader.providerName, reader.providerConfig),
         // 出网治理门在这里是**真的**门：多模态消息会被认成 image_content，政策
         // 半路被改（这一轮开始时还开着、执行图的时候关了）也会在这一步被拦下。
         govCtx,

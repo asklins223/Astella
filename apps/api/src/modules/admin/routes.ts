@@ -103,6 +103,7 @@ const STATIC_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  ".png": "image/png",
 };
 
 /**
@@ -127,6 +128,7 @@ const STATIC_FILES: Array<{ path: string; file: string; type: string }> = [
   { path: "/views/config.js", file: "views/config.js", type: STATIC_TYPES[".js"] },
   { path: "/views/infra.js", file: "views/infra.js", type: STATIC_TYPES[".js"] },
   { path: "/styles.css", file: "styles.css", type: STATIC_TYPES[".css"] },
+  { path: "/assets/astella-mark-v1.png", file: "assets/astella-mark-v1.png", type: STATIC_TYPES[".png"] },
 ];
 
 /**

@@ -1,9 +1,10 @@
 /**
  * 图片上传与下载路由。
  *
- * - POST /uploads/images   — 笔记图片上传（需 noteId，校验归属）
- * - POST /uploads/avatars  — 用户头像上传
- * - GET  /uploads/*        — 图片下载（租户/用户隔离校验）
+ * - POST /uploads/images           — 笔记图片上传（需 noteId，校验归属）
+ * - POST /uploads/companion-images — 伴星对话图片上传（不挂笔记，2026-10-06）
+ * - POST /uploads/avatars          — 用户头像上传
+ * - GET  /uploads/*                — 图片下载（租户/用户隔离校验）
  *
  * 业务/存储逻辑见 ./upload-service.ts；本文件只保留 HTTP 关注点（路由注册、
  * preHandler 链、multipart 解析、限流 429 与状态码/响应头映射）。
@@ -22,6 +23,7 @@ import {
   MAX_AVATAR_SIZE,
   fileTooLargeError,
   uploadNoteImage,
+  uploadCompanionImage,
   uploadAvatar,
   downloadUploadObject,
 } from "./upload-service.ts";
@@ -145,6 +147,62 @@ export async function uploadRoutes(
       case "note_not_found":
         drainMultipartFile(file);
         return reply.code(404).send({ error: "note not found in current workspace" });
+      case "unsupported_type":
+        drainMultipartFile(file);
+        return reply.code(415).send({ error: "unsupported file type" });
+      case "file_read_too_large":
+        drainMultipartFile(file);
+        return reply.code(413).send({ error: "file too large (max 10MB)", code: "FST_REQ_FILE_TOO_LARGE" });
+      case "content_type_mismatch":
+        return reply.code(415).send({ error: "file content does not match declared type" });
+      case "too_large":
+        return reply.code(413).send({ error: "file too large (max 10MB)" });
+      case "dimensions_undecodable":
+        return reply.code(415).send({ error: "image dimensions could not be decoded" });
+      case "pixel_count_exceeded":
+        return reply.code(413).send({ error: "image pixel count exceeds 40 megapixels" });
+      case "storage_upload_failed":
+        return reply.code(503).send({ error: "failed to upload image" });
+      case "asset_persist_failed":
+        return reply.code(503).send({ error: "failed to register uploaded image" });
+    }
+  });
+
+  // ─── POST /uploads/companion-images — 伴星对话图片上传（2026-10-06）──
+  // 与笔记图片同一套校验、限流与排空处理；区别是不需要 noteId——对话里的
+  // 图不挂在笔记下（uploaded_for_note_id = NULL）。
+  app.post("/uploads/companion-images", { preHandler: [requireOwner] }, async (req, reply) => {
+    const imageDecision = await imageLimiter.consume(`upload:image:user:${req.session.userId}`);
+    if (!imageDecision.allowed) {
+      reply.header("Retry-After", retryAfterSeconds(imageDecision.resetAt));
+      return reply.code(429).send({ error: "rate_limited", message: "上传过于频繁，请稍后重试" });
+    }
+
+    const credential = getRequestCredential(req);
+    if (credential?.source === "cookie" && !hasValidCookieCsrf(req.method, req.headers)) {
+      return reply.code(403).send({ error: "csrf token required" });
+    }
+
+    if (!isStorageConfigured()) {
+      return reply.code(503).send({ error: "object storage is not configured" });
+    }
+
+    let file;
+    try {
+      file = await req.file({ limits: { fileSize: MAX_IMAGE_SIZE } });
+    } catch (err) {
+      if (fileTooLargeError(err)) {
+        return reply.code(413).send({ error: "file too large (max 10MB)", code: "FST_REQ_FILE_TOO_LARGE" });
+      }
+      throw err;
+    }
+    if (!file) return reply.code(400).send({ error: "no file provided" });
+
+    const outcome = await uploadCompanionImage(scopeOfSession(req.session), { file });
+    if (outcome.ok) {
+      return reply.code(201).send(outcome.body);
+    }
+    switch (outcome.reason) {
       case "unsupported_type":
         drainMultipartFile(file);
         return reply.code(415).send({ error: "unsupported file type" });

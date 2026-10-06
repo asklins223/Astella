@@ -169,7 +169,103 @@ export interface PublicJsonResponse {
  * 调用也走这里。装在这一层，一处覆盖两个进程的全部模型 HTTP 调用；
  * 按 host 分键，所以一个上游挂掉不会连坐同进程里其它上游。
  */
-import { sharedAiCircuitBreaker, type CircuitBreaker } from "./circuit-breaker.ts";
+import { CircuitOpenError, sharedAiCircuitBreaker, type CircuitBreaker } from "./circuit-breaker.ts";
+
+// ─── 全局出网重试（2026-10-06）────────────────────────────────────────────
+//
+// 用户决定：模型/平台不可用时**重试几次后报失败**。重试装在这一层（两个进程
+// 的全部模型调用共用的唯一 HTTP 出口），判定只看"这一次请求发生了什么"：
+//   - 抛错（DNS/连接被拒/TLS/连接超时/socket 重置）→ 可重试；
+//   - 响应 429 / 500 / 502 / 503 / 504 → 可重试（响应体原样交给调用方前重试）；
+//   - 4xx（除 429）是请求本身的问题，重试无意义 → 不重试；
+//   - 调用方 abort、熔断拒绝（CircuitOpenError）、整体响应超时（挂起）→ 不重试。
+// 重试耗尽后，最后一次的响应/异常**原样**交给调用方——错误分类与用户可见的
+// 失败表达保持由上层负责，这一层只多花几次机会，不改变语义。
+
+/** 总尝试次数（含首次）。 */
+const EGRESS_RETRY_ATTEMPTS = 3;
+/** 相邻尝试间的退避（最后一次失败后使用数组末项）。 */
+const EGRESS_RETRY_BACKOFF_MS: readonly number[] = [300, 900];
+
+/** 可重试的上游状态：限流与 5xx/网关错。 */
+export function isRetryableEgressStatus(status: number): boolean {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+/**
+ * 整体响应超时（TCP 已连但响应迟迟不返回/不推流）。**不重试**：
+ * 它已经烧掉了调用方几乎全部预算，再试一次等于把等待翻倍。
+ * 连接阶段的超时（10s 快速失败）是另一回事，那种可重试。
+ */
+export class EgressTotalTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EgressTotalTimeoutError";
+  }
+}
+
+/** 这些异常重试没有意义：调用方已经不要结果了，或熔断正在要求快速失败。 */
+export function isRetryUnsafeError(error: unknown): boolean {
+  if (error instanceof CircuitOpenError || error instanceof EgressTotalTimeoutError) return true;
+  if (error instanceof Error) {
+    if (error.name === "AbortError") return true;
+    if ((error as { code?: string }).code === "ABORT_ERR") return true;
+  }
+  return false;
+}
+
+/** abort 时可提前结束的等待。abort 后下一次尝试会立刻因中止而失败并停止重试。 */
+export function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = (): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+  });
+}
+
+export interface EgressRetryOptions {
+  /** 总尝试次数（含首次）。缺省 3。 */
+  attempts?: number;
+  /** 注入的等待实现（测试用）。 */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+function backoffFor(attemptIndex: number): number {
+  return EGRESS_RETRY_BACKOFF_MS[Math.min(attemptIndex, EGRESS_RETRY_BACKOFF_MS.length - 1)]!;
+}
+
+/**
+ * 有界重试的执行骨架（纯函数，HTTP 层与测试共用）。
+ *
+ * `shouldRetry` 可以异步（SSE 用它先把可重试状态的错误体读掉再重试）。
+ * 最后一次尝试的结果**永远不再问 shouldRetry**：耗尽即原样交出。
+ */
+export async function runWithEgressRetry<T>(
+  attempt: () => Promise<T>,
+  shouldRetry: (result: T) => boolean | Promise<boolean>,
+  options: EgressRetryOptions = {},
+): Promise<T> {
+  const attempts = Math.max(1, options.attempts ?? EGRESS_RETRY_ATTEMPTS);
+  const sleep = options.sleep ?? ((ms: number) => sleepWithSignal(ms));
+  for (let attemptIndex = 0; ; attemptIndex += 1) {
+    const last = attemptIndex >= attempts - 1;
+    let result: T;
+    try {
+      result = await attempt();
+    } catch (error) {
+      if (last || isRetryUnsafeError(error)) throw error;
+      await sleep(backoffFor(attemptIndex));
+      continue;
+    }
+    if (last || !(await shouldRetry(result))) return result;
+    await sleep(backoffFor(attemptIndex));
+  }
+}
 
 /** Preserve gateway HTTP failures even when the gateway sends an HTML error page. */
 export function decodePublicJsonResponse(
@@ -235,89 +331,102 @@ export const postJsonToPublicEndpoint: PublicJsonRequester = async (
   });
   if (parsed.protocol !== "https:") throw new Error("AI endpoints must use HTTPS");
   if (parsed.username || parsed.password) throw new Error("AI endpoint URL credentials are not allowed");
-  const pinned = await resolvePublicAddress(parsed.hostname);
   const encodedBody = Buffer.from(JSON.stringify(body));
-  const options: RequestOptions = {
-    method: "POST",
-    family: pinned.family,
-    lookup: pinnedLookup(pinned),
-    signal,
-    headers: {
-      ...headers,
-      "Content-Type": "application/json",
-      "Content-Length": String(encodedBody.length),
-      "Accept-Encoding": "identity",
-    },
-  };
-  if (!isIP(parsed.hostname)) {
-    (options as RequestOptions & { servername: string }).servername = parsed.hostname;
-  }
 
-  // P0-14 熔断门卫：open 状态下直接抛，**一个字节都不发**。
-  // 放在 DNS 解析之前是有意的：解析本身也是一次往返，而熔断要省的正是这段。
-  sharedAiCircuitBreaker.assertCanAttempt(parsed.host);
+  const attemptOnce = async (): Promise<PublicJsonResponse> => {
+    // 每次尝试都重新解析并固定地址：重试时 DNS 可能已恢复或换到健康地址。
+    const pinned = await resolvePublicAddress(parsed.hostname);
+    const options: RequestOptions = {
+      method: "POST",
+      family: pinned.family,
+      lookup: pinnedLookup(pinned),
+      signal,
+      headers: {
+        ...headers,
+        "Content-Type": "application/json",
+        "Content-Length": String(encodedBody.length),
+        "Accept-Encoding": "identity",
+      },
+    };
+    if (!isIP(parsed.hostname)) {
+      (options as RequestOptions & { servername: string }).servername = parsed.hostname;
+    }
 
-  return new Promise((resolve, reject) => {
-    const request = httpsRequest(parsed, options, (response) => {
-      response.once("error", (error) => {
-        clearTimeout(totalTimer);
-        sharedAiCircuitBreaker.recordFailure(parsed.host);
-        reject(error);
+    // P0-14 熔断门卫：open 状态下直接抛，**一个字节都不发**。
+    // 放在 DNS 解析之前是有意的：解析本身也是一次往返，而熔断要省的正是这段。
+    // （2026-10-06：熔断拒绝属"别再试了"信号，重试层不会重试它。）
+    sharedAiCircuitBreaker.assertCanAttempt(parsed.host);
+
+    return new Promise<PublicJsonResponse>((resolve, reject) => {
+      const request = httpsRequest(parsed, options, (response) => {
+        response.once("error", (error) => {
+          clearTimeout(totalTimer);
+          sharedAiCircuitBreaker.recordFailure(parsed.host);
+          reject(error);
+        });
+        const chunks: Buffer[] = [];
+        let bytes = 0;
+        response.on("data", (chunk: Buffer | string) => {
+          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          bytes += buffer.length;
+          if (bytes > MAX_RESPONSE_BYTES) {
+            response.destroy(new Error(`AI endpoint response exceeded ${MAX_RESPONSE_BYTES} bytes`));
+            return;
+          }
+          chunks.push(buffer);
+        });
+        response.once("end", () => {
+          clearTimeout(totalTimer);
+          const raw = Buffer.concat(chunks).toString("utf8");
+          try {
+            resolve(decodePublicJsonResponse(
+              parsed.host, response.statusCode ?? 0, response.statusMessage ?? "", raw,
+            ));
+          } catch (error) {
+            reject(error);
+          }
+        });
       });
-      const chunks: Buffer[] = [];
-      let bytes = 0;
-      response.on("data", (chunk: Buffer | string) => {
-        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        bytes += buffer.length;
-        if (bytes > MAX_RESPONSE_BYTES) {
-          response.destroy(new Error(`AI endpoint response exceeded ${MAX_RESPONSE_BYTES} bytes`));
+      // A hung TCP/TLS connect (blocked container egress, required proxy, or a
+      // fake-IP VPN resolver handing out 198.18.x.x) would otherwise silently
+      // burn the caller's entire provider budget and read as a model timeout.
+      // Fail fast with a pointed, distinguishable error instead.
+      const connectTimer = setTimeout(() => {
+        request.destroy(new Error(
+          `AI endpoint TCP/TLS connection could not be established within ${CONNECT_TIMEOUT_MS}ms — check container network egress/proxy, or a fake-IP VPN DNS resolver (198.18.x.x)`,
+        ));
+      }, CONNECT_TIMEOUT_MS);
+      // 2026-08-12：整体响应超时（connect + 响应体读取）——provider 半挂时
+      // 不再无限挂起；触发后 destroy 走 request error 路径清理两个 timer。
+      const totalTimer = setTimeout(() => {
+        request.destroy(new EgressTotalTimeoutError(
+          `AI endpoint request exceeded total timeout ${TOTAL_RESPONSE_TIMEOUT_MS}ms (connect + response body)`,
+        ));
+      }, TOTAL_RESPONSE_TIMEOUT_MS);
+      request.on("socket", (socket) => {
+        if (!socket.connecting) {
+          clearTimeout(connectTimer);
           return;
         }
-        chunks.push(buffer);
+        socket.once("secureConnect", () => clearTimeout(connectTimer));
       });
-      response.once("end", () => {
-        clearTimeout(totalTimer);
-        const raw = Buffer.concat(chunks).toString("utf8");
-        try {
-          resolve(decodePublicJsonResponse(
-            parsed.host, response.statusCode ?? 0, response.statusMessage ?? "", raw,
-          ));
-        } catch (error) {
-          reject(error);
-        }
-      });
-    });
-    // A hung TCP/TLS connect (blocked container egress, required proxy, or a
-    // fake-IP VPN resolver handing out 198.18.x.x) would otherwise silently
-    // burn the caller's entire provider budget and read as a model timeout.
-    // Fail fast with a pointed, distinguishable error instead.
-    const connectTimer = setTimeout(() => {
-      request.destroy(new Error(
-        `AI endpoint TCP/TLS connection could not be established within ${CONNECT_TIMEOUT_MS}ms — check container network egress/proxy, or a fake-IP VPN DNS resolver (198.18.x.x)`,
-      ));
-    }, CONNECT_TIMEOUT_MS);
-    // 2026-08-12：整体响应超时（connect + 响应体读取）——provider 半挂时
-    // 不再无限挂起；触发后 destroy 走 request error 路径清理两个 timer。
-    const totalTimer = setTimeout(() => {
-      request.destroy(new Error(
-        `AI endpoint request exceeded total timeout ${TOTAL_RESPONSE_TIMEOUT_MS}ms (connect + response body)`,
-      ));
-    }, TOTAL_RESPONSE_TIMEOUT_MS);
-    request.on("socket", (socket) => {
-      if (!socket.connecting) {
+      request.once("response", () => clearTimeout(connectTimer));
+      request.once("error", (error) => {
         clearTimeout(connectTimer);
-        return;
-      }
-      socket.once("secureConnect", () => clearTimeout(connectTimer));
+        clearTimeout(totalTimer);
+        reject(error);
+      });
+      request.end(encodedBody);
     });
-    request.once("response", () => clearTimeout(connectTimer));
-    request.once("error", (error) => {
-      clearTimeout(connectTimer);
-      clearTimeout(totalTimer);
-      reject(error);
-    });
-    request.end(encodedBody);
-  });
+  };
+
+  // 2026-10-06：全局出网重试（见文件顶部说明）。响应 429/5xx 与网络抛错重试，
+  // 熔断拒绝/调用方 abort/整体超时不重试。
+  return runWithEgressRetry(
+    attemptOnce,
+    (response) => isRetryableEgressStatus(response.status),
+    { sleep: (ms) => sleepWithSignal(ms, signal) },
+  );
 };
 
 /**
@@ -351,82 +460,107 @@ export const postSseToPublicEndpoint: PublicStreamingRequester = async (
   });
   if (parsed.protocol !== "https:") throw new Error("AI endpoints must use HTTPS");
   if (parsed.username || parsed.password) throw new Error("AI endpoint URL credentials are not allowed");
-  const pinned = await resolvePublicAddress(parsed.hostname);
   const encodedBody = Buffer.from(JSON.stringify(body));
-  const options: RequestOptions = {
-    method: "POST",
-    family: pinned.family,
-    lookup: pinnedLookup(pinned),
-    signal,
-    headers: {
-      ...headers,
-      "Content-Type": "application/json",
-      "Content-Length": String(encodedBody.length),
-      "Accept-Encoding": "identity",
-    },
-  };
-  if (!isIP(parsed.hostname)) {
-    (options as RequestOptions & { servername: string }).servername = parsed.hostname;
-  }
 
-  return new Promise((resolve, reject) => {
-    const request = httpsRequest(parsed, options, (response) => {
-      clearTimeout(connectTimer);
-      resolve({
-        status: response.statusCode ?? 0,
-        statusText: response.statusMessage ?? "",
-        body: response,
-        cancel: () => {
-          clearTimeout(totalTimer);
-          response.destroy();
-        },
-      });
-    });
-    const connectTimer = setTimeout(() => {
-      request.destroy(new Error(
-        `AI endpoint TCP/TLS connection could not be established within ${CONNECT_TIMEOUT_MS}ms — check container network egress/proxy, or a fake-IP VPN DNS resolver (198.18.x.x)`,
-      ));
-    }, CONNECT_TIMEOUT_MS);
-    // 2026-08-12+（15a 根因修复）：流式通道补整体响应超时（此前只有
-    // connect 超时）。非流式 postJsonToPublicEndpoint 有 TOTAL_RESPONSE_TIMEOUT_MS
-    // 兜底，流式漏了——"TCP 已连但 HTTP 响应头永不返回"时 Promise 永不
-    // settle，worker 无限卡在 provider 调用 → run 永久 running → 前端永久
-    // "伴星正在想"（且无 failed 事件）。totalTimer 在 resolve（响应头到达）
-    // 后保留，同时覆盖"响应头到了但 body 永不推流"的挂起：触发 destroy →
-    // error → reject → 调用方（chatCompletionStream）抛错 → 标记 run failed。
-    // 2026-08-16（性能专项）：健康流正常结束或 cancel() 时清理 totalTimer 防
-    // 泄漏；且每收到一个数据分片就重置该计时器（body-stall 语义），使
-    // 合法长流（总时长 > TOTAL_RESPONSE_TIMEOUT_MS）不会被残留定时器误杀。
-    let totalTimer: ReturnType<typeof setTimeout> | undefined;
-    const rearmTotalTimer = (): void => {
-      clearTimeout(totalTimer);
-      totalTimer = setTimeout(() => {
-        request.destroy(new Error(
-          `AI endpoint SSE request exceeded total timeout ${TOTAL_RESPONSE_TIMEOUT_MS}ms (connect + response body)`,
-        ));
-      }, TOTAL_RESPONSE_TIMEOUT_MS);
+  const attemptOnce = async (): Promise<PublicStreamingResponse> => {
+    const pinned = await resolvePublicAddress(parsed.hostname);
+    const options: RequestOptions = {
+      method: "POST",
+      family: pinned.family,
+      lookup: pinnedLookup(pinned),
+      signal,
+      headers: {
+        ...headers,
+        "Content-Type": "application/json",
+        "Content-Length": String(encodedBody.length),
+        "Accept-Encoding": "identity",
+      },
     };
-    rearmTotalTimer();
-    request.on("socket", (socket) => {
-      if (!socket.connecting) {
+    if (!isIP(parsed.hostname)) {
+      (options as RequestOptions & { servername: string }).servername = parsed.hostname;
+    }
+
+    return new Promise<PublicStreamingResponse>((resolve, reject) => {
+      const request = httpsRequest(parsed, options, (response) => {
         clearTimeout(connectTimer);
-        return;
+        resolve({
+          status: response.statusCode ?? 0,
+          statusText: response.statusMessage ?? "",
+          body: response,
+          cancel: () => {
+            clearTimeout(totalTimer);
+            response.destroy();
+          },
+        });
+      });
+      const connectTimer = setTimeout(() => {
+        request.destroy(new Error(
+          `AI endpoint TCP/TLS connection could not be established within ${CONNECT_TIMEOUT_MS}ms — check container network egress/proxy, or a fake-IP VPN DNS resolver (198.18.x.x)`,
+        ));
+      }, CONNECT_TIMEOUT_MS);
+      // 2026-08-12+（15a 根因修复）：流式通道补整体响应超时（此前只有
+      // connect 超时）。非流式 postJsonToPublicEndpoint 有 TOTAL_RESPONSE_TIMEOUT_MS
+      // 兜底，流式漏了——"TCP 已连但 HTTP 响应头永不返回"时 Promise 永不
+      // settle，worker 无限卡在 provider 调用 → run 永久 running → 前端永久
+      // "伴星正在想"（且无 failed 事件）。totalTimer 在 resolve（响应头到达）
+      // 后保留，同时覆盖"响应头到了但 body 永不推流"的挂起：触发 destroy →
+      // error → reject → 调用方（chatCompletionStream）抛错 → 标记 run failed。
+      // 2026-08-16（性能专项）：健康流正常结束或 cancel() 时清理 totalTimer 防
+      // 泄漏；且每收到一个数据分片就重置该计时器（body-stall 语义），使
+      // 合法长流（总时长 > TOTAL_RESPONSE_TIMEOUT_MS）不会被残留定时器误杀。
+      let totalTimer: ReturnType<typeof setTimeout> | undefined;
+      const rearmTotalTimer = (): void => {
+        clearTimeout(totalTimer);
+        totalTimer = setTimeout(() => {
+          request.destroy(new EgressTotalTimeoutError(
+            `AI endpoint SSE request exceeded total timeout ${TOTAL_RESPONSE_TIMEOUT_MS}ms (connect + response body)`,
+          ));
+        }, TOTAL_RESPONSE_TIMEOUT_MS);
+      };
+      rearmTotalTimer();
+      request.on("socket", (socket) => {
+        if (!socket.connecting) {
+          clearTimeout(connectTimer);
+          return;
+        }
+        socket.once("secureConnect", () => clearTimeout(connectTimer));
+      });
+      request.once("response", (response) => {
+        clearTimeout(connectTimer);
+        // 正常收尾与显式取消都清掉残留定时器，避免每连接泄漏一个 300s 定时器。
+        response.once("end", () => clearTimeout(totalTimer));
+        response.once("close", () => clearTimeout(totalTimer));
+        // body-stall：每次有分片可读说明流仍在推进，重置整体超时。
+        onSseBodyProgress(response, rearmTotalTimer);
+      });
+      request.once("error", (error) => {
+        clearTimeout(connectTimer);
+        clearTimeout(totalTimer);
+        reject(error);
+      });
+      request.end(encodedBody);
+    });
+  };
+
+  // 2026-10-06 全局出网重试：建立连接前的网络错直接重试；可重试状态码（429/5xx）
+  // 先把这个错误响应体读掉（错误体很小；超过 64KB 放弃读取直接关连接）再重试。
+  // 响应一旦交给调用方（正文可能已被消费）就不再重试——见文件顶部的判定说明。
+  return runWithEgressRetry(
+    attemptOnce,
+    async (response) => {
+      if (!isRetryableEgressStatus(response.status)) return false;
+      try {
+        let bytes = 0;
+        for await (const chunk of response.body) {
+          bytes += chunk.byteLength;
+          if (bytes > 64 * 1024) break;
+        }
+      } catch {
+        // 读错误体失败不影响重试。
       }
-      socket.once("secureConnect", () => clearTimeout(connectTimer));
-    });
-    request.once("response", (response) => {
-      clearTimeout(connectTimer);
-      // 正常收尾与显式取消都清掉残留定时器，避免每连接泄漏一个 300s 定时器。
-      response.once("end", () => clearTimeout(totalTimer));
-      response.once("close", () => clearTimeout(totalTimer));
-      // body-stall：每次有分片可读说明流仍在推进，重置整体超时。
-      onSseBodyProgress(response, rearmTotalTimer);
-    });
-    request.once("error", (error) => {
-      clearTimeout(connectTimer);
-      clearTimeout(totalTimer);
-      reject(error);
-    });
-    request.end(encodedBody);
-  });
+      response.cancel();
+      return true;
+    },
+    { sleep: (ms) => sleepWithSignal(ms, signal) },
+  );
 };

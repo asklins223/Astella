@@ -57,6 +57,12 @@ import {  CompanionAgentRoutesListRequestV1,
   companionChatSendTurnResultV1Schema,
   companionRunNodesListResultV1Schema,
 } from "@ailearn/shared/companion-chat-desktop-contracts";
+import {
+  NOTE_IMAGE_UPLOAD_MAX_BYTES,
+  noteImageUploadResultV1Schema,
+  type NoteImageUploadRequestV1,
+  type NoteImageUploadResultV1,
+} from "@ailearn/shared/note-image-upload-contracts";
 import {  CompanionGroundedTutorGrantV1,
   CompanionLearningContextV1,
   CompanionLearningRunContextV1,
@@ -1070,6 +1076,76 @@ export async function sendCompanionTurn(t: GatewayTransport,
       requestId,
     );
     const parsed = companionChatSendTurnResultV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+/**
+ * 对话图片上传（2026-10-06 输入框传图）：与笔记图片同一条上传管线、
+ * 同一份 request/result 合同，区别只是服务端端点不要求 noteId。
+ */
+export async function uploadCompanionImage(t: GatewayTransport, 
+    request: NoteImageUploadRequestV1,
+    requestId?: string,
+  ): Promise<NoteImageUploadResultV1> {
+    await t.ensureConnected(requestId);
+    const configuration = t.configuration;
+    if (!configuration) throw new DesktopGatewayFailure("configuration_error", "user_action");
+
+    const bytes = Buffer.from(request.bytesBase64, "base64");
+    if (bytes.byteLength === 0 || bytes.byteLength > NOTE_IMAGE_UPLOAD_MAX_BYTES) {
+      throw new DesktopGatewayFailure("validation", "user_action");
+    }
+
+    const form = new FormData();
+    form.set("file", new Blob([bytes], { type: request.mimeType }), request.fileName);
+
+    const headers = new Headers();
+    if (t.token) headers.set("Authorization", `Bearer ${t.token}`);
+    const controller = requestId ? new AbortController() : undefined;
+    if (requestId && controller) t.activeRequests.set(requestId, controller);
+    let response: Response;
+    try {
+      response = await fetch(new URL("/uploads/companion-images", `${configuration.config.apiOrigin}/`), {
+        method: "POST",
+        headers,
+        body: form,
+        signal: controller?.signal,
+        redirect: "manual",
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new DesktopGatewayFailure("cancelled", "never", { localEffect: "request_cancelled" });
+      }
+      t.connection = { version: 1, kind: "api_unavailable" };
+      throw new DesktopGatewayFailure("api_unavailable", "safe_retry");
+    } finally {
+      if (requestId && controller && t.activeRequests.get(requestId) === controller) t.activeRequests.delete(requestId);
+    }
+    if (response.status >= 300 && response.status < 400 && response.status !== 304) {
+      t.connection = { version: 1, kind: "api_untrusted", reason: "wrong_service" };
+      throw new DesktopGatewayFailure("api_untrusted", "user_action");
+    }
+    let body: unknown = null;
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+    if (!response.ok && response.status === 401 && t.tokenIsRestored) {
+      await t.discardStoredCredential();
+    }
+    if (!response.ok) throw t.mapResponseError(response.status, response.headers, undefined, body);
+
+    const payload = (body ?? {}) as Record<string, unknown>;
+    const parsed = noteImageUploadResultV1Schema.safeParse({
+      version: 1,
+      url: payload.url,
+      byteLength: payload.size,
+      mimeType: payload.mimeType,
+      width: payload.width,
+      height: payload.height,
+    });
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }

@@ -124,6 +124,8 @@ function auditItem(overrides: Partial<DesktopAiAuditItemV1> = {}): DesktopAiAudi
 function installApi(options: {
   readonly account?: CompanionAccountStateV1;
   readonly role?: "owner" | "member";
+  /** 档案里的头像地址；`null`（缺省）= 这个账号没有头像。 */
+  readonly avatarUrl?: string | null;
   /** 让解散预览失败——界面必须说"数不出来"，不能拿 0 冒充"这里什么都没有"。 */
   dissolvePreviewRejects?: boolean;
   /** true = 那个协作空间的当前用户是 owner（解散入口只该在这种行上出现）。 */
@@ -170,7 +172,8 @@ function installApi(options: {
         calls.push({ method: "auth.leaveWorkspace", input });
         return ok({ version: 1 as const, left: true as const });
       }),
-      getProfile: vi.fn(async () => ok({ version: 1 as const, displayName: "读者", avatarUrl: null })),
+      getProfile: vi.fn(async () => ok({ version: 1 as const, displayName: "读者", avatarUrl: options.avatarUrl ?? null })),
+      getAvatar: vi.fn(async () => ok({ version: 1 as const, mimeType: "image/png", imageBase64: "RkFLRQ==" })),
       changePassword: vi.fn(async () => ok({ changed: true as const, sessionsRevoked: true as const })),
       logout: vi.fn(async (input: unknown): Promise<GatewayResultV1<{ loggedOut: true; serverRevoked: boolean }>> => {
         calls.push({ method: "logout", input });
@@ -388,6 +391,8 @@ afterEach(() => {
     settingsAttention: null,
     masterMuted: false,
     live2dStatus: "loading",
+    // 这一页现在会把读到的头像字节喂给顶栏那颗常驻印章（房间 store 是模块单例）。
+    accountAvatar: null,
   });
   vi.restoreAllMocks();
 });
@@ -1064,6 +1069,40 @@ describe("设置页的退出登录", () => {
     await waitFor(() => expect(api.auth.logout).toHaveBeenCalledOnce());
 
     expect(peekAccountSignOutNotice()).toContain("没能通知学习服务撤销");
+  });
+});
+
+/**
+ * 换头像、清头像都发生在这一页，而顶栏那颗折叠印章是常驻的、不会因为回到房间就
+ * 重新挂载——它读的是房间 store 里那份字节。这一页读到档案时不喂过去，人改完头像
+ * 回到房间看到的还是旧的那张脸，直到重启应用。
+ */
+describe("设置页把读到的头像喂给顶栏", () => {
+  it("有头像：取回的字节落进房间 store", async () => {
+    const { api } = installApi({ avatarUrl: "/api/uploads/avatars/reader.png" });
+    render(<SettingsSurface />);
+    await screen.findByText("理解空间", { selector: ".space-identity h3" });
+
+    await waitFor(() => expect(useRoomStore.getState().accountAvatar).toEqual({
+      email: "reader@example.com",
+      src: "data:image/png;base64,RkFLRQ==",
+    }));
+    expect(api.auth.getAvatar).toHaveBeenCalledWith(expect.objectContaining({
+      request: { version: 1, objectKey: "avatars/reader.png" },
+    }));
+  });
+
+  it("没有头像：记下「确认没有」这一句，折叠印章才知道该落回首字母", async () => {
+    const { api } = installApi();
+    render(<SettingsSurface />);
+    await screen.findByText("理解空间", { selector: ".space-identity h3" });
+
+    await waitFor(() => expect(useRoomStore.getState().accountAvatar).toEqual({
+      email: "reader@example.com",
+      src: "",
+    }));
+    // 这一条不带地址，就不该去字节通道白跑一趟。
+    expect(api.auth.getAvatar).not.toHaveBeenCalled();
   });
 });
 

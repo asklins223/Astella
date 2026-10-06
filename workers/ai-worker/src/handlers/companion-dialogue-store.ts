@@ -344,12 +344,18 @@ export async function persistCompanionContextHandoffSnapshot(args: {
 }
 
 /**
- * 读取**接续链**：链头是覆盖最靠后且完全早于可见尾部的那一份，再沿
- * `parent_summary_id` 回溯更早的节点。
+ * 读取**接续链**：链头是覆盖最靠后的那一份已校验摘要，再沿 `parent_summary_id` 回溯
+ * 更早的节点。
  *
  * 为什么不能只取最新一份（44 §5.2）：压缩是分次发生的，只读最新一份就等于把更早
  * 的覆盖索引丢掉——会话看起来「有摘要」，实际上中间那段没人读过。回溯之后调用方
  * 才知道真实覆盖到哪里、哪里有洞。
+ *
+ * 链头**不按「必须早于当前可见尾部」取**（44 §5.2「摘要与回放从同一实际保留边界
+ * 派生」）。曾经的写法加了这个锚点，于是注入的摘要与回放窗口在 seq 上一定不相交，
+ * 折叠永远折不到东西——而折叠恰恰要靠「覆盖伸进回放」才成立。改成以链的实际覆盖
+ * 为准：覆盖伸进窗口时，那段照折，由摘要代表；没伸进来时什么都不折，两种都由调用方
+ * 按真实边界算。真正要守的是**有效性**（下面的修订号条件）与覆盖边界本身。
  *
  * `MAX_CHAIN_DEPTH` 是硬上限：接续链理论上可以很长，但一次读取最多回溯这么多层，
  * 剩下的更早内容按「需要时再检索」处理，不在每次调用里无限回溯。
@@ -359,7 +365,6 @@ export const MAX_SUMMARY_CHAIN_DEPTH = 32;
 export async function readConversationSummaryChain(
   tx: WorkerTransaction,
   conversationId: string,
-  historyStartSeq: string,
 ): Promise<SummaryChainView> {
   const rows = await tx.execute<SummaryChainNode>(sql`
     WITH RECURSIVE chain AS (
@@ -377,7 +382,6 @@ export async function readConversationSummaryChain(
         AND s.coverage_from_seq IS NOT NULL
         AND s.coverage_through_seq IS NOT NULL
         AND s.coverage_source_hash IS NOT NULL
-        AND s.coverage_through_seq < ${historyStartSeq}::bigint
         -- 方案 44 §3.3：读取侧也检查当前有效性。消息被改写或删除后，会话的
         -- context_revision 会前进，而这份摘要记下的是**它被验证时**的取值——对不上
         -- 就说明它盖住的那一段已经变了，不能再用它那句「更早那段对话」把已经不存在的
@@ -496,6 +500,81 @@ export async function readConversationSummary(
  * 的节点经 parent_summary_id 仍然可达。但**读取端不能**因此假设「最新一份就代表
  * 全部更早历史」：那正是局部摘要挤掉更早覆盖索引的地方（44 §5.2）。
  */
+export interface CommittedSummaryUpsert {
+  workspaceId: string;
+  userId: string;
+  conversationId: string;
+  summary: unknown;
+  sourceRunId: string | null;
+  coverageFromSeq: string;
+  coverageThroughSeq: string;
+  sourceHash: string;
+  parentSummaryId: string | null;
+  coverageManifest: unknown;
+  policyVersion: string;
+  verifiedContextRevision: string;
+}
+
+/**
+ * 提交一份摘要（44 §3.3／§5.3）。返回写入行 id；返回 null 表示**什么都没提交**。
+ *
+ * 两条围栏合在这一条语句里：
+ *
+ *   1. `NOT EXISTS`：同一段区间（同哈希、同策略版本）已经有一份有效的了，就不再提交
+ *      ——「相同区间重复触发只能产生同一次提交」。手动「整理近期对话」尤其需要它：
+ *      那条路的 sourceRunId 是 NULL，而唯一索引对 NULL 是 NULLS DISTINCT，冲突目标
+ *      根本不会触发，连点两次就会插出两份同区间的摘要（链分叉，读到的那支之外的
+ *      另一支谁也看不见）。
+ *   2. `ON CONFLICT … WHERE`：同一来源键重入时，只有父版本仍是预期的那个才允许推进
+ *      revision，迟到的旧结果不许覆盖新指针。
+ *
+ * 调用方必须按**行数**判成败：返回 null 时指针没动，不能记成功。此前不看返回行数，
+ * 「摘要卡住」在数据上长得跟「一切正常」一样。
+ */
+export async function upsertCommittedSummary(
+  tx: WorkerTransaction,
+  input: CommittedSummaryUpsert,
+): Promise<string | null> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    INSERT INTO conversation_summaries
+      (workspace_id, user_id, conversation_id, summary, source_run_id,
+       coverage_from_seq, coverage_through_seq, coverage_source_hash,
+       parent_summary_id, revision, coverage_manifest, compaction_policy_version,
+       verified_context_revision, status, created_at, updated_at)
+    SELECT ${input.workspaceId}::uuid, ${input.userId}::uuid, ${input.conversationId}::uuid,
+           ${JSON.stringify(input.summary)}::jsonb, ${input.sourceRunId}::uuid,
+           ${input.coverageFromSeq}::bigint, ${input.coverageThroughSeq}::bigint,
+           ${input.sourceHash}::text,
+           ${input.parentSummaryId}::uuid, 1, ${JSON.stringify(input.coverageManifest)}::jsonb,
+           ${input.policyVersion}::text,
+           ${input.verifiedContextRevision}::bigint, 'candidate', now(), now()
+    WHERE NOT EXISTS (
+      SELECT 1 FROM conversation_summaries x
+      WHERE x.workspace_id = ${input.workspaceId} AND x.user_id = ${input.userId}
+        AND x.conversation_id = ${input.conversationId}
+        AND x.status IN ('candidate', 'confirmed')
+        AND x.coverage_from_seq = ${input.coverageFromSeq}::bigint
+        AND x.coverage_through_seq = ${input.coverageThroughSeq}::bigint
+        AND x.coverage_source_hash = ${input.sourceHash}::text
+        AND x.compaction_policy_version = ${input.policyVersion}::text
+    )
+    ON CONFLICT (workspace_id, user_id, conversation_id, source_run_id)
+    DO UPDATE SET summary = EXCLUDED.summary,
+                  coverage_from_seq = EXCLUDED.coverage_from_seq,
+                  coverage_through_seq = EXCLUDED.coverage_through_seq,
+                  coverage_source_hash = EXCLUDED.coverage_source_hash,
+                  parent_summary_id = EXCLUDED.parent_summary_id,
+                  revision = conversation_summaries.revision + 1,
+                  coverage_manifest = EXCLUDED.coverage_manifest,
+                  compaction_policy_version = EXCLUDED.compaction_policy_version,
+                  verified_context_revision = EXCLUDED.verified_context_revision,
+                  updated_at = now()
+    WHERE conversation_summaries.parent_summary_id IS NOT DISTINCT FROM EXCLUDED.parent_summary_id
+    RETURNING id
+  `);
+  return rows[0]?.id ?? null;
+}
+
 export async function readParentSummary(
   tx: WorkerTransaction,
   conversationId: string,

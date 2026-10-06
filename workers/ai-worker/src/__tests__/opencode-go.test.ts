@@ -243,50 +243,69 @@ test("chatCompletion: multimodal user content 映射为 input_text/input_image",
   }]);
 });
 
-test("chatCompletion: disableThinking 映射 reasoning.effort=minimal（muse-spark 不支持 none）", async () => {
+test("chatCompletion: 模型档案 reasoning.default → reasoning.effort", async () => {
   const { request, calls } = recordingRequester(ok(completionResponse()));
-  const provider = makeProvider({ request });
-  await provider.chatCompletion([{ role: "user", content: "hi" }], { disableThinking: true });
-  assert.deepEqual(calls[0].body.reasoning, { effort: "minimal" });
-});
-
-test("chatCompletion: enableThinking=true 映射 reasoning.effort=high", async () => {
-  const { request, calls } = recordingRequester(ok(completionResponse()));
-  const provider = makeProvider({ request, platformOptions: { enableThinking: true } });
+  const provider = makeProvider({
+    request,
+    modelProfile: { reasoning: { levels: ["minimal", "low", "medium", "high", "xhigh"], default: "high" } },
+  });
   await provider.chatCompletion([{ role: "user", content: "hi" }], {});
   assert.deepEqual(calls[0].body.reasoning, { effort: "high" });
 });
 
-test("chatCompletion: 未配置 thinking 开关时不下发 reasoning（用网关默认）", async () => {
+test("chatCompletion: 档案 default=none 显式关闭思考（deepseek 系支持 none）", async () => {
+  const { request, calls } = recordingRequester(ok(completionResponse()));
+  const provider = makeProvider({
+    request,
+    modelProfile: { reasoning: { levels: ["none", "low", "high", "max"], default: "none" } },
+  });
+  await provider.chatCompletion([{ role: "user", content: "hi" }], {});
+  assert.deepEqual(calls[0].body.reasoning, { effort: "none" });
+});
+
+test("chatCompletion: 未声明 reasoning 时不下发档位（用网关默认）", async () => {
   const { request, calls } = recordingRequester(ok(completionResponse()));
   const provider = makeProvider({ request });
   await provider.chatCompletion([{ role: "user", content: "hi" }], {});
   assert.equal(calls[0].body.reasoning, undefined);
 });
 
-test("chatCompletion: 平台 reasoningEffort=none 显式关闭思考（deepseek 系）", async () => {
-  const { request, calls } = recordingRequester(ok(completionResponse()));
-  const provider = makeProvider({ request, platformOptions: { reasoningEffort: "none" } });
-  await provider.chatCompletion([{ role: "user", content: "hi" }], {});
-  assert.deepEqual(calls[0].body.reasoning, { effort: "none" });
-});
-
-test("chatCompletion: 显式 reasoningEffort 优先于 disableThinking/enableThinking", async () => {
+test("chatCompletion: 显式关思考取声明档位里最接近关的一档（muse-spark 不支持 none）", async () => {
   const { request, calls } = recordingRequester(ok(completionResponse()));
   const provider = makeProvider({
     request,
-    platformOptions: { reasoningEffort: "none", disableThinking: true, enableThinking: true },
+    modelProfile: { reasoning: { levels: ["minimal", "low", "medium", "high", "xhigh"], default: "high" } },
+  });
+  await provider.chatCompletion([{ role: "user", content: "hi" }], { disableThinking: true });
+  assert.deepEqual(calls[0].body.reasoning, { effort: "minimal" });
+});
+
+test("chatCompletion: 模型支持 none 时显式关思考直接发 none", async () => {
+  const { request, calls } = recordingRequester(ok(completionResponse()));
+  const provider = makeProvider({
+    request,
+    modelProfile: { reasoning: { levels: ["none", "low", "high", "max"], default: "high" } },
   });
   await provider.chatCompletion([{ role: "user", content: "hi" }], { disableThinking: true });
   assert.deepEqual(calls[0].body.reasoning, { effort: "none" });
 });
 
-test("executeAgentTurn: 平台 reasoningEffort 同样作用于工具调用请求", async () => {
+test("chatCompletion: 无档案时显式关思考回退 minimal", async () => {
+  const { request, calls } = recordingRequester(ok(completionResponse()));
+  const provider = makeProvider({ request });
+  await provider.chatCompletion([{ role: "user", content: "hi" }], { disableThinking: true });
+  assert.deepEqual(calls[0].body.reasoning, { effort: "minimal" });
+});
+
+test("executeAgentTurn: 档案档位同样作用于工具调用请求", async () => {
   const { request, calls } = recordingRequester(ok(completionResponse({
     output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "ok" }] }],
     usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
   })));
-  const provider = makeProvider({ request, platformOptions: { reasoningEffort: "none" } });
+  const provider = makeProvider({
+    request,
+    modelProfile: { reasoning: { levels: ["none", "low", "high", "max"], default: "none" } },
+  });
   await provider.executeAgentTurn(agentTurnRequest());
   assert.deepEqual(calls[0].body.reasoning, { effort: "none" });
 });
@@ -722,7 +741,7 @@ test("executeAgentTurn: assistant 无 reasoning 句柄时不注入 reasoning ite
 
 // ─── 能力快照 ────────────────────────────────────────────────────────────
 
-test("getCapabilities: muse-spark-1.3-contributor 为 1M 上下文 / 128K 输出", () => {
+test("getCapabilities: 未声明档案时用内置缺省（muse-spark 基线 1M / 128K）", () => {
   const provider = makeProvider();
   const capabilities = provider.getCapabilities();
   assert.equal(capabilities.providerId, "opencode_go");
@@ -733,17 +752,17 @@ test("getCapabilities: muse-spark-1.3-contributor 为 1M 上下文 / 128K 输出
   assert.equal(capabilities.modelId, "muse-spark-1.3-contributor");
 });
 
-test("getCapabilities: 平台配置可覆盖上下文与输出上限", () => {
-  const provider = makeProvider({ platformOptions: { contextWindowTokens: 200_000, maxOutputTokens: 16_384 } });
+test("getCapabilities: 模型档案覆盖上下文与输出上限", () => {
+  const provider = makeProvider({ modelProfile: { contextWindowTokens: 200_000, maxOutputTokens: 16_384 } });
   const capabilities = provider.getCapabilities();
   assert.equal(capabilities.contextWindowTokens, 200_000);
   assert.equal(capabilities.maxOutputTokens, 16_384);
   assert.equal(capabilities.maxInputTokens, 200_000 - 16_384);
 });
 
-test("max_output_tokens 受平台 maxOutputTokens 上限约束", async () => {
+test("max_output_tokens 受模型档案 maxOutputTokens 上限约束", async () => {
   const { request, calls } = recordingRequester(ok(completionResponse()));
-  const provider = makeProvider({ request, platformOptions: { maxOutputTokens: 2_000 } });
+  const provider = makeProvider({ request, modelProfile: { maxOutputTokens: 2_000 } });
   await provider.chatCompletion([{ role: "user", content: "hi" }], { maxTokens: 5_000 });
   assert.equal(calls[0].body.max_output_tokens, 2_000);
 });

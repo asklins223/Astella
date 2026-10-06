@@ -427,21 +427,14 @@
   transition: color 160ms var(--gate-ease-out);
 }
 
-.desktop-access-gate__brand-seal {
-  display: grid;
+.desktop-access-gate__brand-mark {
   width: 34px;
   height: 34px;
-  place-items: center;
   flex: 0 0 auto;
-  border: 1px solid var(--gate-line-strong);
-  border-radius: 11px 14px 10px 13px;
-  background: rgba(255, 252, 244, 0.74);
-  font-family: "Noto Serif SC Variable", "Songti SC", serif;
-  font-size: 17px;
-  font-weight: 760;
-  line-height: 1;
-  box-shadow: 0 5px 12px rgba(70, 47, 29, 0.13);
-  transition: color 160ms var(--gate-ease-out), border-color 160ms var(--gate-ease-out), background-color 160ms var(--gate-ease-out), box-shadow 160ms var(--gate-ease-out);
+  object-fit: contain;
+  /* 图自带圆角，投影按 alpha 轮廓投出去，不再套一层方框。 */
+  filter: drop-shadow(0 5px 12px rgba(70, 47, 29, 0.16));
+  transition: filter 160ms var(--gate-ease-out);
 }
 
 .desktop-access-gate__brand-name {
@@ -940,10 +933,8 @@
   scrollbar-color: rgba(255, 235, 213, 0.5) rgba(57, 31, 20, 0.3);
 }
 
-.desktop-access-gate[data-gate-visual-theme="dusk"] .desktop-access-gate__brand-seal {
-  border-color: rgba(65, 32, 20, 0.48);
-  background: rgba(255, 244, 229, 0.78);
-  box-shadow: 0 5px 13px rgba(76, 37, 20, 0.17), inset 0 1px 0 rgba(255, 255, 255, 0.58);
+.desktop-access-gate[data-gate-visual-theme="dusk"] .desktop-access-gate__brand-mark {
+  filter: drop-shadow(0 5px 13px rgba(76, 37, 20, 0.22));
 }
 
 .desktop-access-gate[data-gate-visual-theme="dusk"] .desktop-access-gate__heading h1,
@@ -1017,9 +1008,8 @@
   scrollbar-color: rgba(240, 223, 200, 0.38) rgba(12, 9, 8, 0.32);
 }
 
-.desktop-access-gate[data-gate-visual-theme="night"] .desktop-access-gate__brand-seal {
-  background: rgba(24, 20, 18, 0.45);
-  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.24);
+.desktop-access-gate[data-gate-visual-theme="night"] .desktop-access-gate__brand-mark {
+  filter: drop-shadow(0 5px 14px rgba(0, 0, 0, 0.34));
 }
 
 .desktop-access-gate[data-gate-visual-theme="night"] .desktop-access-gate__notice-mark {
@@ -1228,10 +1218,9 @@
     padding: 0;
   }
 
-  .desktop-access-gate__brand-seal {
+  .desktop-access-gate__brand-mark {
     width: 31px;
     height: 31px;
-    font-size: 15px;
   }
 
   .desktop-access-gate__brand-name { font-size: 15px; }

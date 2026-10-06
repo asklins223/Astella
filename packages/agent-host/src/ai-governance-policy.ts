@@ -20,7 +20,11 @@ export interface WorkspaceAIPolicy {
 
 export const DEFAULT_AI_DATA_POLICY: WorkspaceAIPolicy = {
   sendToExternal: false,
-  sendImageContent: false,
+  // 2026-10-06（用户决定）：图片外发默认**打开**。真正的第一道门仍是同意
+  //（sendToExternal / consentOk）——没签同意时任何外发都出不去；这一项只决定
+  // 签过同意之后"图片这一路"是否也放行。识图（伴星看笔记图、用户上传的图）
+  // 因此开箱可用，用户想收回就在设置里关。
+  sendImageContent: true,
   piiDetection: true,
   auditLogging: true,
 };

@@ -735,9 +735,15 @@ function GateFrame({
         onLampCue={handleLampCue}
       />
       <section className="desktop-access-gate__panel" aria-labelledby="desktop-gate-title" aria-describedby="desktop-gate-detail">
-        <div className="desktop-access-gate__brand" aria-label="理解引擎">
-          <span className="desktop-access-gate__brand-seal" aria-hidden="true">理</span>
-          <span className="desktop-access-gate__brand-name">理解引擎</span>
+        <div className="desktop-access-gate__brand" aria-label="拾星笔记">
+          <img
+            className="desktop-access-gate__brand-mark"
+            src="/assets/brand/astella-mark-v1.png"
+            alt=""
+            width={34}
+            height={34}
+          />
+          <span className="desktop-access-gate__brand-name">拾星笔记</span>
           <span className="desktop-access-gate__brand-dot" aria-hidden="true" />
         </div>
         <div className="desktop-access-gate__heading">

@@ -324,7 +324,7 @@ test("真实模型慢调用期间不持业务事务与行锁（W3-2，需 REAL_M
     apiKey: platform.apiKey,
     baseUrl: platform.baseUrl,
     model: platform.model,
-    visionModel: platform.visionModel,
+    modelProfile: platform.modelProfile,
     options: platform.options,
   });
   assert.ok(provider.executeAgentTurn, "配置的 provider 没有 executeAgentTurn");

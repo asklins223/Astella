@@ -171,6 +171,11 @@ export interface CompanionChatSendInput {
    * `selection`（sharing=user_selected），worker 以 <selection_data> 注入 prompt。
    */
   readonly selection?: { readonly text: string } | null;
+  /**
+   * 用户这一轮自己传的图（2026-10-06 输入框传图）：上传回执给的站内地址，
+   * 作为第二个内容块随 turn 上抛；服务端按 url 解析成资产并写回权威 assetId。
+   */
+  readonly image?: { readonly url: string; readonly label: string } | null;
 }
 
 export type CompanionProposalUiState =
@@ -1445,7 +1450,10 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         seq: Number.MAX_SAFE_INTEGER,
         role: "user",
         kind: voiceArtifactId ? "voice_transcript" : "text",
-        blocks: [{ type: "text", text }],
+        blocks: [
+          { type: "text", text },
+          ...(input.image ? [{ type: "image" as const, url: input.image.url, label: input.image.label }] : []),
+        ],
         ...(input.selection?.text ? { selection: { text: input.selection.text, sharing: "user_selected" as const } } : {}),
         runId: null,
         clientMessageId,
@@ -1462,7 +1470,10 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         version: 1 as const,
         clientMessageId,
         inputKind: voiceArtifactId ? ("voice_transcript" as const) : ("text" as const),
-        blocks: [{ type: "text" as const, text }],
+        blocks: [
+          { type: "text" as const, text },
+          ...(input.image ? [{ type: "image" as const, url: input.image.url, label: input.image.label }] : []),
+        ],
         ...(voiceArtifactId ? { voiceArtifactId } : {}),
         sourceSurface: "pet" as const,
         ...(turnContext ? { context: turnContext } : {}),

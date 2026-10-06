@@ -644,3 +644,64 @@ companion-agent-runtime 1534 → 1473、companion-dialogue 1523 → 1488。
 - 跨会话找回已覆盖会话摘要、方法目录与持续目标。**记忆**（`assistant_memory_items`）走的是
   另一条既有通道 `companion_recall_memory`，两者尚未合成一条统一的找回入口。
 - 跨来源事件/经历索引、摘要待补取区间与原文取回入口的闭合回路（§5.5 后半）。
+
+## 2026-10-06 复核：四条「测试全绿但线上不成立」的缺陷
+
+复核方式是**先复现、再改**，每条都落到具体行。四条都不是类型检查或单测能挡住的
+（改动后单测与 typecheck 依然全绿，所以判据只能落在「真实链路上成不成立」）。
+
+### ① 折叠恒不可达，且不可折时硬失败
+
+- 折叠判据 `seq <= coverage.throughSeq` 用的是读侧锚定 `coverage_through_seq < historyStartSeq`
+  给出来的边界，而回放尾部的 seq 全部 `>= historyStartSeq`。两者**结构性不相交**，
+  `foldedSeqs` 恒空、`receipt` 恒 null。
+- 连带两处：`folded == null` 时原样抛出（触发线以上、硬上限以下本该继续发送，见 §5.4）；
+  冷却拒绝分支重发前不消耗额度，闸必然再拦一次，而那次抛出在 try 之外。
+- 修法（用户口径：触发线以上发送，且本轮一并改装配边界）：读侧不再要求摘要完全早于
+  可见尾部——覆盖伸进回放窗口时，那段由摘要代表、可以折；折不动时消耗额度后原样重发，
+  闸按 `over_trigger_line` / `compaction_budget_spent` 放行并落回执。
+
+### ② `unmeasured` 按份 push，13 条即崩
+
+- 合同 `.max(12)`，push 却是每 part 一条；生产路径真的 `Schema.parse`。13 张图或
+  13 个 reasoning 句柄 → ZodError → 这一轮按可重试内部错误挂掉，而它本来装得下。
+- 修法：按**种类**去重（该字段的语义就是「哪类载荷无法精确计量」）。成本不丢——
+  `raw.multimodal` 仍按每个 part 的地板价累加。
+
+### ③ 冷却有读无写
+
+- `record()` 实现完整（真写 `agent_context_compaction_state`），但
+  `withBoundedContextCompaction` 只调 `decide()`，全仓没有 `record()` 调用点 →
+  表恒空 → 判定恒 `first_attempt`。
+- 修法：折前消耗额度、折后（含折不动）记一笔；`record` 的读数由端口自己从最近一次
+  压力判定取——**重发之后**的计量才是「有没有进展」的依据，让调用方传数字就会有人在
+  折前取值，于是每次都记「没变小」。
+
+### ④ 摘要提交把「没推进」报成成功
+
+- CAS 的 `WHERE` 条件对，但 `tx.execute` 的行数被丢，`return true` 无条件执行——
+  指针没动也记 `summarizer completed` 与成功指标。
+- `FOR SHARE` 之间不冲突，两个并发提交能同时通过父围栏（清理路径用的是 `FOR UPDATE`，
+  所以改成 `FOR UPDATE` 不引入新的冲突类型）。
+- 手动路径 `source_run_id` 为 NULL，而唯一索引是 NULLS DISTINCT，冲突目标根本不触发
+  → 连点两次插出两份同区间摘要，接续链分叉、读到的那支之外谁也看不见。
+- 修法：提交语句抽到 `upsertCommittedSummary`，一条语句带两条围栏（同区间不重复提交、
+  父版本比较），带 `RETURNING` 并**按行数**判成败；锁改 `FOR UPDATE`；反向引用改成认
+  刚提交的那一行 id（原来按 `source_run_id IS NOT DISTINCT FROM` 匹配，NULL 会把手动
+  路径写过的每一行都指向同一条记忆）。
+
+### 与前文结论的关系
+
+前面「为什么早期没有把压缩接进交互回路」那段仍然成立，但边界要说清：折的是
+**这一次请求**（`applyCompactedMessages` 只换请求对象），run 的交接快照仍是折叠前的形态，
+崩溃恢复只会拿到更多上下文。持续目标与专业生成那两条路**仍未接**，理由不变。
+
+证据：`test:plan44-summary-commit:postgres`（本轮新增，5 条，实库）、
+`test:plan44:postgres`（2）、`test:plan44-coverage:postgres`（5）、
+`test:plan44-sql:postgres`（5）、`test:plan44-cooldown:postgres`、
+`companion-dialogue-postgres` + `companion-runtime-recovery-postgres`（16）；
+单测 agent-core 122 / ai-worker 1361；六个包 `npm run typecheck` 全绿。
+以上实库运行都跑在 `scripts/dev-disposable-db.sh` 起的一次性库上，不写开发库 `ailearn`。
+
+仍未取得：真实模型接续样本（折完语义是否没丢）、小窗口路由下的实测触发、
+冷却跨轮次的窗口观察。

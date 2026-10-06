@@ -5,9 +5,10 @@
 已一并改掉）。
 
 - 图标母版：`app-icon.png`，1024 × 1024，RGBA。
-- 形象：薄荷蓝背景上的小书灵——奶油白身体、深蓝眼睛、头顶一枚星形触角，
-  抱着薄荷色笔记本，坐落在摊开的书上，身后是半透明的披风／星环。
-- 来源：用户 2026-10-04 直接提供的图，**未经裁切或重绘**。
+- 形象：宝蓝夜空里，短发女孩握着笔在蓝色笔记本上写字，旁边一枚眨眼的黄色星星。
+- 来源：用户 2026-10-06 提供的图标包（APPLORE 导出），母版取其中 iOS/AppStore 的
+  满幅 1024 图，**未经裁切或重绘**。同一包里 macOS 那版带留白和投影，直接拿来用
+  会让 Dock 里的图标小一圈，所以只取满幅版，圆角仍由下面的统一流程处理。
 
 ## 从母版派生的三份产物
 
@@ -27,8 +28,8 @@
 ## 圆角与透明
 
 母版是**整幅满铺 + 22.37% 圆角 + 四角透明**。macOS 与 Windows 都不会替应用图标
-自己裁圆角，圆角属于图标本身；用户给的原图四角是白底，所以统一转成透明，
-让 Dock、任务栏、开始菜单里都是同一枚圆角方形。
+自己裁圆角，圆角属于图标本身；提供的图是方形的（四角带着画面内容），所以统一用
+上面那段脚本把四角转成透明，让 Dock、任务栏、开始菜单里都是同一枚圆角方形。
 
 ## 换图标时
 
@@ -47,9 +48,10 @@ out.save("apps/desktop-client/build/icon.png")
 PY
 
 # 2) icns（macOS 原生工具）
-cd apps/desktop-client/build && rm -rf icon.iconset && mkdir icon.iconset
-#   按上文表格的尺寸导出到 icon.iconset/ 后：
-iconutil -c icns icon.iconset -o icon.icns
+#    目录名必须以 .iconset 结尾，否则 iconutil 直接报 "Invalid Iconset"
+rm -rf /tmp/brand.iconset && mkdir /tmp/brand.iconset
+#   按上文表格的尺寸导出到 /tmp/brand.iconset/ 后：
+iconutil -c icns /tmp/brand.iconset -o apps/desktop-client/build/icon.icns
 
 # 3) ico（Windows）
 python3 -c "

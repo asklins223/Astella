@@ -1,7 +1,7 @@
 // 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject, type PointerEvent as ReactPointerEvent, type UIEvent as ReactUIEvent } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, History, Loader2, MessageCircle, Mic, Plus, Quote, RotateCcw, Send, Settings2, Sparkles, Square, X, type LucideIcon } from "lucide-react";
+import { ChevronLeft, History, Loader2, MessageCircle, Mic, MousePointerClick, Plus, Quote, RotateCcw, Send, Settings2, Sparkles, Square, X, type LucideIcon } from "lucide-react";
 import type { CompanionAccountPatch, CompanionAccountStateV1 } from "@ailearn/shared/companion-shell-contracts";
 import { WINDOW_LIVE2D_MODEL_REGISTRY, type WindowLive2DModelId } from "./window-live2d-contract";
 import type { CompanionAgentPermissionLevel } from "@ailearn/shared/companion-agent-contracts";
@@ -21,6 +21,12 @@ import { createCompanionBubbleFollow, type CompanionBubbleFollow } from "./compa
 import { plainCompanionBubbleText } from "./companion-markdown";
 import { beginNoteReplySaveAttempt, isReadyNoteReplyForSave, resolveNoteReplySaveTarget } from "./note-reply-save";
 import { CompanionHistoryDrawer } from "./CompanionHistoryDrawer";
+import {
+  CompanionComposerImageChip,
+  CompanionComposerImageStatus,
+  useCompanionImageAttachment,
+} from "./companion-composer-image";
+import { NOTE_IMAGE_UPLOAD_MIME_TYPES } from "@ailearn/shared/note-image-upload-contracts";
 import { visibleTurnFailure } from "./companion-hud-state";
 import { shouldSendCompanionOnEnter } from "./companion-composer-key";
 import { useCompanionInteraction } from "./use-companion-interaction";
@@ -161,6 +167,13 @@ export function CompanionHud({
     return () => window.removeEventListener(COMPANION_GOAL_JOURNAL_OPEN, open);
   }, [goals.scope, goals.refresh, chat.setMode, interaction.closeVoice]);
   const { input, setInput, voice } = interaction;
+  /**
+   * 输入框传图（2026-10-06）：气泡与抽屉两个 composer 共用同一份待发送附件。
+   * 状态住在这里是因为抽屉是 HUD 的子面板（onSend 也回调到这里），
+   * 两处各持一份会出现"在抽屉里选的图，回到气泡发不出去"。
+   */
+  const imageAttachment = useCompanionImageAttachment();
+  const imageInputRef = useRef<HTMLInputElement>(null);
   /** 回合结束后只发布一次的稳定摘要（方案 §3 无障碍）：流式文本不再是持续 live region。 */
   const [turnSummary, setTurnSummary] = useState("");
   const [proposalNotice, setProposalNotice] = useState("");
@@ -875,10 +888,15 @@ export function CompanionHud({
       const selection = chat.feedSelection ?? chat.feedNoteAnchor?.anchor.excerpt;
       const sent = await chat.send({
         text,
+        // 输入框传图（2026-10-06）：附件随这一轮走；发送成功才清掉，
+        // 失败时留在输入框边——用户点一次重试就够。
+        ...(imageAttachment.image
+          ? { image: { url: imageAttachment.image.url, label: imageAttachment.image.label } }
+          : {}),
         ...(chat.feedNoteAnchor ? { noteAnchor: chat.feedNoteAnchor } : {}),
         ...(selection ? { selection: { text: selection } } : {}),
       });
-      if (sent) chat.dismissFeedSelection();
+      if (sent) { chat.dismissFeedSelection(); imageAttachment.clear(); }
       else if (sendId === preparingSendIdRef.current) {
         noteReplySaveAttemptRef.current = null;
         if (!fromVoice && (sourceConversationId === null || sourceConversationId === conversationIdRef.current)) setInput((current) => current || text);
@@ -891,7 +909,7 @@ export function CompanionHud({
     } finally {
       if (sendId === preparingSendIdRef.current) setPreparingSend(false);
     }
-  }, [chat, input]);
+  }, [chat, input, imageAttachment]);
 
   useEffect(() => {
     const requestId = chat.autoSendRequestId;
@@ -1256,7 +1274,8 @@ export function CompanionHud({
                   </blockquote>
                 ) : null}
 
-
+                {imageAttachment.image ? <CompanionComposerImageChip image={imageAttachment.image} onRemove={imageAttachment.clear} /> : null}
+                <CompanionComposerImageStatus uploading={imageAttachment.uploading} error={imageAttachment.error} />
 
                 <form
                   data-sending={chat.phase === "sending" || undefined}
@@ -1283,7 +1302,14 @@ export function CompanionHud({
                     disabled={voice.phase === "transcribing"}
                   />
                   <div className="companion-hud__compose-tools">
-                  <button type="button" className="companion-hud__compose-action" onClick={() => chat.setMode("actions")} aria-label="当前页面快捷操作" title="当前页面快捷操作"><Plus size={20} /></button>
+                  <input ref={imageInputRef} type="file" accept={NOTE_IMAGE_UPLOAD_MIME_TYPES.join(",")} className="companion-compose-image__input"
+                    onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void imageAttachment.pick(file); }} />
+                  {/* 「＋」= 传一张图给她（2026-10-06）；页面快捷操作挪到右边独立图标。 */}
+                  <button type="button" className="companion-hud__compose-action" disabled={imageAttachment.uploading}
+                    onClick={() => imageInputRef.current?.click()} aria-label="传一张图给伴星" title="传一张图给她">
+                    {imageAttachment.uploading ? <Loader2 className="companion-hud__spin" size={18} /> : <Plus size={20} />}
+                  </button>
+                  <button type="button" className="companion-hud__compose-action" onClick={() => chat.setMode("actions")} aria-label="当前页面快捷操作" title="当前页面快捷操作"><MousePointerClick size={19} /></button>
                   <span>Enter 发送</span>
                   {/*
               方案 §2：生成期间「停止」常驻原位（不再把发送按钮整个换掉——位置不跳，
@@ -1307,7 +1333,7 @@ export function CompanionHud({
                   ) : null}
                   <button
                     type="submit"
-                    disabled={!input.trim() || voice.phase === "transcribing"}
+                    disabled={!input.trim() || voice.phase === "transcribing" || imageAttachment.uploading}
                     title={chat.phase === "sending" ? "发送并接替当前回复" : "发送"}
                     aria-label={chat.phase === "sending" ? "发送并接替当前回复" : "发送"}
                   ><Send size={17} /></button>
@@ -1456,6 +1482,11 @@ export function CompanionHud({
         onInputChange={setInput}
         onSend={() => sendText()}
         onVoiceToggle={toggleVoice}
+        image={imageAttachment.image}
+        imageUploading={imageAttachment.uploading}
+        imageError={imageAttachment.error}
+        onPickImage={(file) => { void imageAttachment.pick(file); }}
+        onRemoveImage={imageAttachment.clear}
         anchorRef={hudRef}
         side={side}
         onBack={() => {

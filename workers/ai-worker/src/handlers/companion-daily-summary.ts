@@ -37,7 +37,7 @@ import { toTextArrayLiteral } from "@ailearn/shared/pg-text-array";
 import { logger } from "../lib/logger.ts";
 import { assertJobLease, isJobLeaseActive, lockJobLease, withJobTransaction } from "../lib/job-lease.ts";
 import { currentWorkerWorkspaceTransaction } from "../db.ts";
-import { createProvider, withThinkingDisabled } from "../lib/ai-provider.ts";
+import { createProvider } from "../lib/ai-provider.ts";
 import {
   AIConsentRequiredError,
   AIDataPolicyDeniedError,
@@ -225,7 +225,8 @@ async function collectFacts(tx: WorkerTransaction, scope: DayScope): Promise<Dai
 /**
  * 她的人格。
  *
- * 取值收窄的口径与对话链路一致（`companion-dialogue.ts:303-338`）：库里可能是
+ * 取值收窄的口径与对话链路一致（`companion-dialogue.ts` 的 `isPetBoundaryObject`
+ * 与 `ACTIVENESS_VALUES`）：库里可能是
  * null / 数组 / 任意对象，不认识的当"没设置"，绝不原样透进 prompt。
  * 白名单直接用共享契约，不再抄第三份。
  *
@@ -846,7 +847,7 @@ async function selectDiaryMoment(input: {
       try {
         const result = await provider.chatCompletion(
           messages,
-          { temperature: 0.2, maxTokens: 600, responseFormat: "json_object" },
+          { temperature: 0.2, maxTokens: 2_000, responseFormat: "json_object" },
           env.signal,
         );
         const parsed = companionDiarySelectionSchema.safeParse(parseMemoryExtractJson(result.content));
@@ -1190,8 +1191,10 @@ export async function runCompanionDailySummary(job: JobPayload): Promise<void> {
     const govCtx = await resolveAIGovernanceContext(job.workspaceId, userId);
     if (!govCtx.consentOk) throw new AIConsentRequiredError();
     const textRes = resolveProviderForTask(govCtx, "companion_agent");
+    // 2026-10-06 起跟随平台配置开思考（用户决定：质量优先），两处取回的 token
+    // 预算已按思考预留上调。
     const provider = createGovernedProvider(
-      createProvider(textRes.providerName, withThinkingDisabled(textRes.providerConfig)),
+      createProvider(textRes.providerName, textRes.providerConfig),
       govCtx,
       job.workspaceId,
       { userId, operation: "companion_daily_diary", jobId: job.id, dataCategories: ["note_content"] },

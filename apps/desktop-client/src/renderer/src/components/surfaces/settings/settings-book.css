@@ -313,3 +313,51 @@
 @media (prefers-reduced-motion: reduce) {
   .hud-surface .settings-hud *, .hud-surface .settings-hud *::before, .hud-surface .settings-hud *::after { animation: none !important; transition: none !important; }
 }
+
+/* ── 头像取景框（avatar-crop-dialog.tsx）────────────────────────────────
+   挂在 body 顶层的 portal 上，所以这组选择器不带 `.settings-hud` 前缀；
+   portal 根元素自己带 `hud-surface` 类，`.button` 那些通用件照常接手。
+   根元素写成 `.hud-surface.avatar-crop-backdrop`：`.hud-surface` 母本给了
+   width/height/min-width 与 overflow，这里必须压过它，弹层才不会变成一块棋盘。 */
+.hud-surface.avatar-crop-backdrop { position: fixed; z-index: 60; inset: 0; display: grid; place-items: center; width: auto; height: auto; min-width: 0; min-height: 0; padding: 24px; overflow: auto; background: rgba(39, 33, 27, .55); animation: avatar-crop-scrim 180ms ease-out both; }
+.avatar-crop { width: min(400px, 100%); max-height: calc(100vh - 48px); overflow: auto; padding: 22px 22px 18px; color: #49634d; border: 3px solid #fffdf0; border-radius: 30px 34px 29px 33px; background: #f5f7e7; box-shadow: 0 6px 0 #cbd8b7, 0 20px 50px rgba(26, 58, 36, .22); font-family: "Noto Sans SC Variable", "PingFang SC", sans-serif; animation: avatar-crop-card 220ms cubic-bezier(.23, 1, .32, 1) both; }
+.avatar-crop h2 { margin: 0; color: #4e6a55; font-size: 18px; font-weight: 800; }
+.avatar-crop h2:focus-visible { outline: none; }
+.avatar-crop__note { margin: 7px 0 0; color: #687a60; font-size: 12px; line-height: 1.7; }
+.avatar-crop__gif { margin: 9px 0 0; color: #8a8f5f; font-size: 11px; line-height: 1.6; }
+
+/* 取景框是正方形——几何（含导出）都建立在这条上，别改成非等比尺寸。
+   宽度的三重限制：常规 300、窄窗不溢出、低窗不留出卡片外。 */
+.avatar-crop__stage { position: relative; width: clamp(190px, min(300px, calc(100vh - 340px)), 300px); max-width: 100%; aspect-ratio: 1; margin: 14px auto 0; overflow: hidden; border-radius: 25px; background: #333f36; box-shadow: inset 0 0 30px rgba(18, 26, 20, .55); }
+.avatar-crop__canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.avatar-crop__canvas:active { cursor: grabbing; }
+.avatar-crop__canvas:focus-visible { outline: 3px solid #60a084; outline-offset: -3px; }
+/* 圆孔是那张脸最后被看见的形状：遮罩之外压暗，边缘留一圈奶白，和印章的描边同一档。 */
+.avatar-crop__mask { position: absolute; inset: 0; border: 3px solid #fffdf0; border-radius: 50%; box-shadow: 0 0 0 9999px rgba(31, 40, 33, .62); pointer-events: none; }
+.avatar-crop__preparing { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: #e8efdd; font-size: 12px; }
+/* 上传是一段看得见的时间：圆孔连整块取景框一起压暗，转一个加载圈——网慢时
+   「点了、在走」必须看得见，而不是只剩一个变灰的按钮。 */
+.avatar-crop__busy { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 9px; background: rgba(38, 49, 41, .58); color: #f3f8ea; font-size: 12px; font-weight: 700; letter-spacing: .06em; }
+.avatar-crop__spin { animation: hud-spin 1100ms linear infinite; }
+.avatar-crop__error { margin: 10px 0 0; color: #a26044; font-size: 12px; line-height: 1.6; }
+
+.avatar-crop__controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 12px; margin-top: 14px; }
+.avatar-crop__controls .button { min-height: 34px; padding: 0 11px; font-size: 11px; }
+.avatar-crop__zoom { display: flex; flex: 1 1 150px; min-width: 150px; align-items: center; gap: 8px; color: #7f9683; }
+.avatar-crop__zoom input[type="range"] { flex: 1; min-width: 0; height: 22px; margin: 0; appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer; }
+.avatar-crop__zoom input[type="range"]::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; background: #dbe5ce; box-shadow: inset 0 1px 2px rgba(60, 86, 64, .18); }
+.avatar-crop__zoom input[type="range"]::-webkit-slider-thumb { width: 18px; height: 18px; margin-top: -6px; border: 3px solid #fffdf0; border-radius: 50%; background: #7fae94; box-shadow: 0 2px 0 #b6cbaa; appearance: none; -webkit-appearance: none; }
+.avatar-crop__zoom input[type="range"]:focus-visible { outline: 3px solid #60a084; outline-offset: 3px; border-radius: 999px; }
+
+.avatar-crop__actions { margin-top: 16px; }
+.avatar-crop .button:disabled { opacity: .55; cursor: default; }
+
+@keyframes avatar-crop-scrim { from { opacity: 0; } to { opacity: 1; } }
+@keyframes avatar-crop-card { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
+.avatar-crop-backdrop[data-motion="off"],
+.avatar-crop-backdrop[data-motion="off"] *,
+.avatar-crop-backdrop[data-motion="off"] *::before,
+.avatar-crop-backdrop[data-motion="off"] *::after { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .avatar-crop-backdrop *, .avatar-crop-backdrop *::before, .avatar-crop-backdrop *::after { animation: none !important; transition: none !important; }
+}

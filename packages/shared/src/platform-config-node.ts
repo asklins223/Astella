@@ -36,6 +36,9 @@ const unresolvedEnvRefs = new Set<string>();
 /** 已就"capability 未在配置文件中映射"告警过的能力，避免每次解析都刷日志。 */
 const warnedUnmappedCapabilities = new Set<string>();
 
+/** 已就"模型未声明能力档案"告警过的 (platform, model)，避免每次解析都刷日志。 */
+const warnedUndeclaredModels = new Set<string>();
+
 /**
  * Interpolate ${ENV_VAR} references in a string.
  * Returns the env var value if the reference exists, otherwise returns
@@ -182,14 +185,30 @@ export function resolveSystemPlatform(cap: Capability): ResolvedPlatform | null 
         }
       }
 
+      // 2026-10-06 严格声明制（写侧由面板校验拦截）：手写文件绕过时用 provider
+      // 缺省值，但每个 (平台, 模型) 只提醒一次——上下文/输出猜错会表现成预算
+      // 误算或上游 400，识图按不可用处理（不存在"默认能看图"）。mock 平台豁免
+      //（开发替身没有真实能力可声明）。
+      const modelProfile = platform.models?.[capMapping.model];
+      if (!modelProfile && platform.type.toLowerCase() !== "mock") {
+        const key = `${capMapping.platform}/${capMapping.model}`;
+        if (!warnedUndeclaredModels.has(key)) {
+          warnedUndeclaredModels.add(key);
+          console.warn(
+            `[ai-platforms] capability "${cap}" 引用的模型 "${capMapping.model}" 未在 `
+            + `platforms.${capMapping.platform}.models 中声明能力（上下文/输出/识图/推理）；`
+            + "将使用 provider 缺省值。请在配置中补声明。",
+          );
+        }
+      }
+
       return {
         type: platform.type,
         platformId: capMapping.platform,
         apiKey: platform.apiKey,
         baseUrl: platform.baseUrl,
         model: capMapping.model,
-        visionModel: capMapping.visionModel ?? platform.visionModel,
-        embeddingModel: capMapping.embeddingModel ?? platform.embeddingModel,
+        modelProfile,
         options: platform.options,
       };
     }

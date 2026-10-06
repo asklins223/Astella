@@ -37,7 +37,7 @@ import {
 import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
 
 
-import { interpretCompanionTurn } from "./companion-tool-intent.ts";
+import { COMPANION_TOOL_INTENT_TIMEOUT_MS, interpretCompanionTurn } from "./companion-tool-intent.ts";
 import { companionAttentionObjects } from "./companion-attention.ts";
 import { composeAgentContext } from "@ailearn/agent-core";
 import { COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS, type CompanionContextReceipts } from "./companion-context-receipts.ts";
@@ -188,19 +188,11 @@ export async function runCompanionAgentLoop(args: {
   read: ReadContext;
   provider: AIProvider;
   /**
-   * 思考档 provider（2026-09-19 退化回复闸）。交互链路的主 provider 关思考省首字
-   * 延迟（withThinkingDisabled），但网关/模型退化窗口里会出现"一词答案 + finish=stop"
-   * 的退化回复，且它会进历史被后续轮次模仿（一词回复自我复制）。给出思考档备用
-   * provider 后，退化答案会被原样重跑一次取更长者；不给则跳过该闸。
-   */
-  thinkingProvider?: AIProvider;
-  /**
    * 跨模型兜底 provider（方案 29 §9.6）。
    *
-   * 与 `thinkingProvider` 的区别是**换模型**而不是换思考档：主模型
-   * （tokenrhythm/qwen3.8-flash）的退化窗口里，同一个模型再问一遍仍会退化，
-   * 实测四条连续轮次落库 `现在是`(3)/`今天`(2)/`最近`(2)/`你`(1)。
-   * 未配置时退化阶梯只剩思考档那一级。
+   * 主模型（tokenrhythm/qwen3.8-flash）的退化窗口里，同一个模型再问一遍仍会
+   * 退化——实测四条连续轮次落库 `现在是`(3)/`今天`(2)/`最近`(2)/`你`(1)；
+   * 唯一有效的是**换模型**。未配置时退化闸整个跳过。
    */
   fallbackProvider?: AIProvider;
   /**
@@ -314,7 +306,7 @@ export async function runCompanionAgentLoop(args: {
       runId: args.read.runId,
       userId: args.read.userId,
       permissionLevel: meta.permissionLevel,
-      stepTimeoutMs: Math.min(8_000, deadlineAt - Date.now()),
+      stepTimeoutMs: Math.min(COMPANION_TOOL_INTENT_TIMEOUT_MS, deadlineAt - Date.now()),
       currentActiveTransaction: currentWorkerWorkspaceTransaction,
       verifyAttempt: (attempt) => isJobLeaseActive({ ...args.ctx, leaseToken: attempt.leaseToken }),
     });
@@ -369,9 +361,11 @@ export async function runCompanionAgentLoop(args: {
   const sendWithBoundedCompaction = boundedStepSender({
     fold: args.replayFold,
     hasAttempt: () => args.contextReceipts?.hasCompactionAttempt() ?? false,
+    // 额度在每次重发之前消耗（companion-compaction.ts 的两条重发路径都会调）；
+    // 折成功与折不动都算用掉本轮那一次，闸随后按 over_trigger_line 放行。
+    consumeAttempt: () => args.contextReceipts?.consumeCompactionAttempt(),
     ...(args.compactionCooldown ? { cooldown: args.compactionCooldown } : {}),
     onCompacted: (receipt) => {
-      args.contextReceipts?.consumeCompactionAttempt();
       const pressure = args.contextReceipts?.latestPressure() ?? null;
       args.compactionTrace?.record({
         ...receipt,
@@ -828,7 +822,7 @@ export async function runCompanionAgentLoop(args: {
     }
     let calls = result.toolCalls ?? [];
     // 退化回复闸（2026-09-20 重写）：正文短得不正常、**这一步一个字都没真正下发**、
-    // 模型也没要调工具——用思考档 provider 原样重跑这一步一次，取更长者。
+    // 模型也没要调工具——换**另一个模型**把这一步重跑一次，取更长者。
     //
     // 此前它形同虚设，两个原因：
     //   1. 判据 `!stepEmitted` 在流式路径恒不成立（吐过字就置位），实机连续四轮
@@ -837,9 +831,7 @@ export async function runCompanionAgentLoop(args: {
     //   2. `currentUserPromptLen >= 8` 把"哈哈"这类短输入整个排除，而那正是坍缩最
     //      严重的地方。去掉它——反正每轮至多重跑一次，最坏成本一次调用。
     // 重跑若带回工具调用则弃用（那是要走工具循环的信号，不是能直接落库的正文）。
-    const canRepair =
-      (typeof args.thinkingProvider?.executeAgentTurn === "function"
-        || typeof args.fallbackProvider?.executeAgentTurn === "function");
+    const canRepair = typeof args.fallbackProvider?.executeAgentTurn === "function";
     if (
       canRepair
       && !degenerateRetried
@@ -850,12 +842,10 @@ export async function runCompanionAgentLoop(args: {
       && replyIsTruncated(result.content)
     ) {
       degenerateRetried = true;
-      // 阶梯每一级都用同一条线判"还是半截话吗"，字数线按用户配置的活跃度取。
-      // 降级阶梯（方案 29 §9.6）：先同模型开思考重跑一次，仍退化就换**另一个模型/provider**。
-      // 只靠思考档治不了 provider 侧退化——实测主模型退化窗口里连着两次都吐半截话，
-      // 这时唯一有效的是换一个模型，而不是把同一个模型再问一遍。
+      // 每一级都用同一条线判"还是半截话吗"，字数线按用户配置的活跃度取。
+      // 降级阶梯（方案 29 §9.6）：只换**另一个模型/provider**——实测主模型退化窗口里
+      // 同模型重跑同样会退化（连着两次都吐半截话），唯一有效的是换一个模型。
       const repairLadder: Array<{ label: string; provider: AIProvider }> = [];
-      if (args.thinkingProvider) repairLadder.push({ label: "thinking", provider: args.thinkingProvider });
       if (args.fallbackProvider) repairLadder.push({ label: "fallback-model", provider: args.fallbackProvider });
       logger.warn(
         {

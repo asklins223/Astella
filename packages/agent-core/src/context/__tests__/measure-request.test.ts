@@ -75,6 +75,23 @@ test("不透明 reasoning 句柄按地板计价而不是零", async () => {
   assert.ok(measured.unmeasured.includes("reasoning_handle"));
 });
 
+test("44 §4.2：unmeasured 记种类不记份数——13 张图不撑破合同，成本仍按份计", async () => {
+  const images = Array.from({ length: 13 }, (_, index) => ({
+    type: "image_url" as const, image_url: { url: `https://example.test/${index}.png` },
+  }));
+  const measured = await measureAgentTurnRequest(request({
+    messages: [{ role: "user", content: [{ type: "text", text: "看这些图" }, ...images] }],
+  }));
+  assert.deepEqual(measured.unmeasured, ["image"]);
+  assert.ok(measured.parts.multimodal >= IMAGE_TOKEN_FLOOR * 13);
+  const handles = Array.from({ length: 13 }, (_, index) => ({ id: `rs_${index}`, encrypted_content: "opaque" }));
+  const reasons = await measureAgentTurnRequest(request({
+    messages: [{ role: "assistant", content: "好", reasoning: handles }],
+  }));
+  assert.deepEqual(reasons.unmeasured, ["reasoning_handle"]);
+  assert.ok(reasons.parts.multimodal >= REASONING_HANDLE_TOKEN_FLOOR * 13);
+});
+
 test("注入 tokenizer 后走精确口径，且不给估算误差余量", async () => {
   const measured = await measureAgentTurnRequest(request({ systemPrompt: "你是一个学习书房里的伴星。" }), {
     countTokens: (text) => text.length,

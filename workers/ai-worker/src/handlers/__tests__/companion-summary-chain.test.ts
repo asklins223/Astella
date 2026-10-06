@@ -157,11 +157,19 @@ test("44 §3.3：读取侧检查当前有效性（会话内容修订号），而
 test("44 §3.3：写入侧在同一事务里记录并复核修订号", async () => {
   const { readFileSync } = await import("node:fs");
   const { fileURLToPath } = await import("node:url");
-  const source = readFileSync(
+  const summarizer = readFileSync(
     fileURLToPath(new URL("../companion-summarizer.ts", import.meta.url)),
     "utf8",
   );
-  assert.match(source, /verified_context_revision/);
-  // 读来源到提交之间若有人改写消息，这份覆盖已经不成立（FOR SHARE 让核对与提交同事务）。
-  assert.match(source, /commitRevision !== contextRevision/);
+  const store = readFileSync(
+    fileURLToPath(new URL("../companion-dialogue-store.ts", import.meta.url)),
+    "utf8",
+  );
+  // 读来源到提交之间若有人改写消息，这份覆盖已经不成立。锁是 FOR UPDATE：
+  // FOR SHARE 之间不冲突，两个并发提交会同时通过父围栏（见 store 的注释）。
+  assert.match(summarizer, /commitRevision !== contextRevision/);
+  assert.match(summarizer, /FOR UPDATE/);
+  // 复核过的那个值就是写进去的那个：SQL 在 store 的 upsertCommittedSummary 里。
+  assert.match(summarizer, /verifiedContextRevision: commitRevision/);
+  assert.match(store, /verified_context_revision/);
 });

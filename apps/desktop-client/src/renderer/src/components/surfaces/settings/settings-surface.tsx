@@ -1,7 +1,7 @@
 import { Activity, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SettingRow, SettingsInlineState, type SettingsReadable } from "./settings-primitives.tsx";
 import { SettingsCompanionPanel } from "./settings-companion-panel";
-import { SettingsAccountPanel } from "./settings-account-panel.tsx";
+import { SettingsAccountPanel, type AvatarUploadOutcome } from "./settings-account-panel.tsx";
 import { SettingsExportGroup } from "./settings-export-group.tsx";
 import { SettingsUpdateGroup, UpdateBadge } from "./settings-update-panel.tsx";
 import { useUpdateStatus } from "../../../app/update-status";
@@ -91,6 +91,7 @@ import type { DesktopAiAuditItemV1, DesktopAiAuditPageV1 } from "@ailearn/shared
 import { formatObjectiveDateTime } from "../run/objective-state-copy.ts";
 import type { MotionMode } from "../../../app/room-machine";
 import {
+  NO_AVATAR_SRC,
   useRoomStore,
   type Live2dStatus,
 } from "../../../app/room-store";
@@ -758,9 +759,13 @@ export function SettingsSurface() {
     }
   };
 
-  /** 上传头像：main 以 multipart 送 /uploads/avatars，服务端同时持久化 avatarUrl。 */
-  const uploadAvatar = async (file: File) => {
-    if (profileBusy) return;
+  /**
+   * 上传头像：main 以 multipart 送 /uploads/avatars，服务端同时持久化 avatarUrl。
+   * 结果回给取景框等（`AvatarUploadOutcome`）——它在人点下「使用这张」之后还开着，
+   * 要等这一步落定：成功才收框，失败就地显示原因。提示条照旧记一份，取消后也算数。
+   */
+  const uploadAvatar = async (file: File): Promise<AvatarUploadOutcome> => {
+    if (profileBusy) return { ok: false, message: "还有一项账户操作正在进行，请稍后再试。" };
     setProfileBusy("avatar");
     setNotice(null);
     setFailureNotice(null);
@@ -777,8 +782,11 @@ export function SettingsSurface() {
       const result = unwrapGatewayResult(response);
       setProfile((current) => ({ version: 1, displayName: current?.displayName ?? null, avatarUrl: result.url }));
       setNotice("头像已更新。");
+      return { ok: true };
     } catch (error) {
-      setFailureNotice(gatewayErrorMessage(error));
+      const message = gatewayErrorMessage(error);
+      setFailureNotice(message);
+      return { ok: false, message };
     } finally {
       setProfileBusy(null);
     }
@@ -1231,6 +1239,21 @@ export function SettingsSurface() {
     })();
     return () => { active = false; };
   }, [avatarObjectKey]);
+  /**
+   * 换头像、清头像都发生在这页，而顶栏那颗折叠印章是常驻的、不会重新挂载——它读的
+   * 是房间 store 里那份字节，这里不喂，回到房间还是旧的那张脸。喂的时机有讲究：
+   * `profile` 还是 null（档案还没读回来）时什么都不写，否则会把一次「还没问过」
+   * 错记成「确认没有头像」，那颗印章就再也等不到照片了。
+   */
+  useEffect(() => {
+    const email = session?.user?.email;
+    if (!profile || !email) return;
+    if (profile.avatarUrl && !avatarSrc) return; // 有头像，等字节取回来再写
+    const src = avatarSrc ?? NO_AVATAR_SRC;
+    const current = useRoomStore.getState().accountAvatar;
+    if (current?.email === email && current.src === src) return;
+    useRoomStore.getState().setAccountAvatar({ email, src });
+  }, [avatarSrc, profile, session?.user?.email]);
   /** 先调整个人资料，再查看空间名册；两者各自占满行宽。 */
   const accountPanel = (): SettingsPanel => ({
     title: "账户与空间",

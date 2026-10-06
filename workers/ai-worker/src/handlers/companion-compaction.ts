@@ -167,8 +167,14 @@ export function replayToMessages(replay: ReplayFoldResult): ReplayMessage[] {
 export interface CompactionCooldownPorts {
   /** 折之前问一次该不该折。allowed=false 时照常发，只是不再折。 */
   decide(): Promise<{ allowed: boolean; reason: string; retryAfterMs: number | null }>;
-  /** 折完记一笔（输入 token 用来判断有没有进展）。 */
-  record(input: { inputTokens: number; at: Date }): Promise<void>;
+  /**
+   * 折完记一笔（输入 token 用来判断有没有进展）。
+   *
+   * 读数是**重发之后**的：真正决定有没有进展的是折完还剩多少，而不是折之前有多少。
+   * 用折前的数字记，等于每次都记「没变小」。所以不给调用方一个数字让它猜——
+   * 端口自己从最近一次压力判定里取（那是重发真正发生过的读数）。
+   */
+  record(input: { at: Date }): Promise<void>;
 }
 
 export interface BoundedCompactionInput<T> {
@@ -181,8 +187,15 @@ export interface BoundedCompactionInput<T> {
    * 也因此必然是同一份。
    */
   compact: () => { messages: ReplayMessage[]; receipt: CompactionFoldReceipt } | null;
-  /** 本轮是否还有压缩额度。重发前必须已经消耗掉，否则闸会再要求一次压缩。 */
+  /** 本轮是否还有压缩额度。 */
   hasAttempt: () => boolean;
+  /**
+   * 消耗掉本轮额度。**任何一次重发之前都必须先调它**：闸的 `compactionAvailable`
+   * 读的是同一个额度，不消耗就重发，闸会再拦一次；那一次抛出已经在
+   * `withBoundedContextCompaction` 的 try 之外，会直接逃逸——而它不在不可重试名单里
+   * （`non-retryable-errors.ts` 只认硬上限那种），于是重投再撞一次，白烧几轮。
+   */
+  consumeAttempt: () => void;
   /** 记下这一折（§5.5：折叠也要有回执，不是静默发生）。 */
   onCompacted?: (receipt: CompactionFoldReceipt) => void;
   /**
@@ -197,8 +210,15 @@ export interface BoundedCompactionInput<T> {
  *
  * 至多一次（§5.4）：发 → 折 → 重发，就这三步。重发前调用方会消耗掉压缩额度，
  * 于是闸在仍然高于触发线时选择「带着有效上下文继续」并留 `over_trigger_line` 回执，
- * 而不是把同一个请求再压一遍。真的连硬上限都装不下时，重发照旧抛
- * `AIContextOverflowError`——那种情况必须让用户看见真实限制。
+ * 而不是把同一个请求再压一遍。
+ *
+ * ## 压不动不是失败（§5.4 后半）
+ *
+ * 「折不动」与「冷却期没过」都不该让这一轮挂掉：触发线是治理线，不是硬拒绝线。
+ * 两种情况都是**消耗额度、原样重发**，由闸按 `over_trigger_line` 放行并落回执；
+ * 真正的硬拒绝仍然由闸在 `P > B_hard` 时给出（`AIContextOverflowError`）。
+ * 每次尝试（折过没折过都算）都记一笔冷却——不记就永远停在 `first_attempt`，
+ * 「同一失败输入不每轮重触发」也就没有依据。
  */
 export async function withBoundedContextCompaction<T>(
   input: BoundedCompactionInput<T>,
@@ -211,11 +231,22 @@ export async function withBoundedContextCompaction<T>(
     if (!input.hasAttempt()) throw error;
     // 冷却先问一句：同一份失败输入刚折过就再折，等于每轮白烧一次而情况不变。
     const verdict = input.cooldown ? await input.cooldown.decide() : null;
-    if (verdict && !verdict.allowed) return input.send(initialMessages);
-    const folded = input.compact();
-    if (!folded) throw error;
+    const folded = verdict && !verdict.allowed ? null : input.compact();
+    if (!folded) {
+      input.consumeAttempt();
+      try {
+        return await input.send(initialMessages);
+      } finally {
+        await input.cooldown?.record({ at: new Date() });
+      }
+    }
+    input.consumeAttempt();
     input.onCompacted?.(folded.receipt);
-    return input.send(folded.messages);
+    try {
+      return await input.send(folded.messages);
+    } finally {
+      await input.cooldown?.record({ at: new Date() });
+    }
   }
 }
 
@@ -248,6 +279,7 @@ export interface FoldedReplay {
 export function boundedStepSender(input: {
   fold?: (messages: readonly ReplayMessage[]) => FoldedReplay | null;
   hasAttempt: () => boolean;
+  consumeAttempt: () => void;
   onCompacted: (receipt: CompactionFoldReceipt) => void;
   cooldown?: CompactionCooldownPorts;
 }) {
@@ -258,6 +290,7 @@ export function boundedStepSender(input: {
     send: (messages) => send(applyCompactedMessages(request, messages)),
     compact: () => input.fold?.(request.messages) ?? null,
     hasAttempt: input.hasAttempt,
+    consumeAttempt: input.consumeAttempt,
     onCompacted: input.onCompacted,
     ...(input.cooldown ? { cooldown: input.cooldown } : {}),
   }, request.messages);

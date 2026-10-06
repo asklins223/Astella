@@ -75,6 +75,23 @@ const KNOWN_PLATFORM_TYPES = [
   "opencode_go",
 ] as const;
 
+/**
+ * 平台 options 里**已迁到模型档案**的旧字段（2026-10-06 配置重设计）。
+ *
+ * 这些字段现在没有任何读取方——留着会被静默忽略。面板的立场是"改了但没生效比
+ * 不做更糟"，所以它们在这里是**阻断级**问题，提示写到 models.<model> 去。
+ */
+const LEGACY_PLATFORM_OPTION_KEYS = [
+  "enableThinking",
+  "disableThinking",
+  "reasoningEffort",
+  "contextWindowTokens",
+  "maxOutputTokens",
+] as const;
+
+/** 推理档位的合法取值（与 shared 的 ReasoningEffort 同集合）。 */
+const REASONING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+
 export function resolveConfigPath(raw: string | undefined = process.env.AI_PLATFORMS_CONFIG): string {
   return resolve(raw && raw.trim().length > 0 ? raw.trim() : DEFAULT_CONFIG_PATH);
 }
@@ -97,11 +114,11 @@ export interface PlatformView {
   /**
    * 平台级的模型字段（契约里的可选项）。面板不编辑它们，但**保存时必须原样
    * 带回去**：编辑器按快照重建整个配置文件，快照里没有的字段会在一次保存后
-   * 被静默删掉——那是"改 baseUrl 顺手弄丢 visionModel"的事故形态。
+   * 被静默删掉——那是"改 baseUrl 顺手弄丢 model"的事故形态。
    */
   model: string | null;
-  visionModel: string | null;
-  embeddingModel: string | null;
+  /** 模型档案（2026-10-06 配置重设计）：模型 → 能力声明。面板只展示，不编辑。 */
+  models: Record<string, unknown> | null;
   /** 该平台被哪些能力引用（面板上直接看出「删了会打断谁」）。 */
   usedByCapabilities: string[];
 }
@@ -110,8 +127,6 @@ export interface CapabilityView {
   capability: string;
   platform: string;
   model: string;
-  visionModel: string | null;
-  embeddingModel: string | null;
   /** 该映射现在能不能真的用（平台存在 + key 已注入）。 */
   resolvable: boolean;
   problem: string | null;
@@ -205,6 +220,73 @@ export function validateConfig(raw: unknown): ConfigIssue[] {
       if (definition.baseUrl !== undefined && typeof definition.baseUrl !== "string") {
         issues.push({ path: `platforms.${id}.baseUrl`, message: "baseUrl 必须是字符串", blocking: true });
       }
+      // 旧字段拦截（2026-10-06）：模型属性已迁到 platforms.<id>.models。<model>。
+      const options = definition.options as Record<string, unknown> | undefined;
+      if (options && typeof options === "object" && !Array.isArray(options)) {
+        for (const key of LEGACY_PLATFORM_OPTION_KEYS) {
+          if (key in options) {
+            issues.push({
+              path: `platforms.${id}.options.${key}`,
+              message: `"${key}" 已迁移到模型档案（platforms.${id}.models.<model>.…），平台级写法不再生效`,
+              blocking: true,
+            });
+          }
+        }
+      }
+      // 模型档案的形状校验。
+      const models = definition.models as Record<string, unknown> | undefined;
+      if (models !== undefined && (typeof models !== "object" || models === null || Array.isArray(models))) {
+        issues.push({ path: `platforms.${id}.models`, message: "models 必须是对象（模型名 → 能力档案）", blocking: true });
+      } else if (models) {
+        for (const [model, rawProfile] of Object.entries(models)) {
+          const profile = rawProfile as Record<string, unknown> | null;
+          if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
+            issues.push({ path: `platforms.${id}.models.${model}`, message: "模型档案必须是对象", blocking: true });
+            continue;
+          }
+          for (const numeric of ["contextWindowTokens", "maxOutputTokens"] as const) {
+            const value = profile[numeric];
+            if (value !== undefined && (!Number.isSafeInteger(value) || (value as number) <= 0)) {
+              issues.push({ path: `platforms.${id}.models.${model}.${numeric}`, message: "必须是正整数", blocking: true });
+            }
+          }
+          if (profile.vision !== undefined && typeof profile.vision !== "boolean") {
+            issues.push({ path: `platforms.${id}.models.${model}.vision`, message: "vision 必须是布尔值", blocking: true });
+          }
+          const reasoning = profile.reasoning as Record<string, unknown> | undefined;
+          if (reasoning !== undefined) {
+            if (!reasoning || typeof reasoning !== "object" || Array.isArray(reasoning)) {
+              issues.push({ path: `platforms.${id}.models.${model}.reasoning`, message: "reasoning 必须是对象（levels + default）", blocking: true });
+            } else {
+              const levels = Array.isArray(reasoning.levels) ? reasoning.levels : [];
+              const levelsValid = levels.length > 0
+                && levels.every((level) => typeof level === "string"
+                  && (REASONING_LEVELS as readonly string[]).includes(level));
+              if (!levelsValid) {
+                issues.push({
+                  path: `platforms.${id}.models.${model}.reasoning.levels`,
+                  message: `levels 必须是非空数组，取值限于 ${REASONING_LEVELS.join("/")}`,
+                  blocking: true,
+                });
+              }
+              const dflt = reasoning.default;
+              if (typeof dflt !== "string" || !(REASONING_LEVELS as readonly string[]).includes(dflt)) {
+                issues.push({
+                  path: `platforms.${id}.models.${model}.reasoning.default`,
+                  message: `default 必须是合法档位（${REASONING_LEVELS.join("/")}）`,
+                  blocking: true,
+                });
+              } else if (levelsValid && !levels.includes(dflt)) {
+                issues.push({
+                  path: `platforms.${id}.models.${model}.reasoning.default`,
+                  message: `default "${dflt}" 不在该模型的 levels 里——设成模型不支持的档位上游会直接 400`,
+                  blocking: true,
+                });
+              }
+            }
+          }
+        }
+      }
     }
   }
 
@@ -243,6 +325,35 @@ export function validateConfig(raw: unknown): ConfigIssue[] {
     }
     if (typeof mapping.model !== "string" || mapping.model.trim().length === 0) {
       issues.push({ path: `capabilities.${capability}.model`, message: "缺少 model", blocking: true });
+      continue;
+    }
+    // 严格声明制（2026-10-06）：引用的模型必须在平台 models 里声明能力。上下文窗口
+    // 与输出上限猜错会表现成预算误算或上游 400，不如写配置时就拦住。豁免两类：
+    // mock（开发替身没有真实能力可声明），以及未知平台类型（面板不知道它的模型语义，
+    // 它已经有一条非阻断的"未知 type"提示）。
+    const platformDefinition = platforms && typeof platforms === "object"
+      ? (platforms as Record<string, PlatformDefinition>)[platform]
+      : undefined;
+    const platformType = String(platformDefinition?.type ?? "").trim().toLowerCase();
+    if (platformDefinition && platformType !== "" && platformType !== "mock"
+      && (KNOWN_PLATFORM_TYPES as readonly string[]).includes(platformType)) {
+      const declared = Boolean(
+        platformDefinition.models
+        && Object.prototype.hasOwnProperty.call(platformDefinition.models, mapping.model),
+      );
+      if (!declared) {
+        issues.push({
+          path: `capabilities.${capability}.model`,
+          message: `模型 "${mapping.model}" 未在 platforms.${platform}.models 中声明能力（上下文/输出/识图/推理档位）`,
+          blocking: true,
+        });
+      } else if (capability === "vision" && platformDefinition.models![mapping.model]?.vision === false) {
+        issues.push({
+          path: `capabilities.${capability}`,
+          message: `识图映射的模型 "${mapping.model}" 被自己声明为 vision:false——识图会按"没有可用的看图模型"处理`,
+          blocking: false,
+        });
+      }
     }
   }
 
@@ -352,8 +463,9 @@ export async function readConfigSnapshot(): Promise<ConfigSnapshot> {
       ? (definition.options as Record<string, unknown>)
       : null,
     model: typeof definition.model === "string" ? definition.model : null,
-    visionModel: typeof definition.visionModel === "string" ? definition.visionModel : null,
-    embeddingModel: typeof definition.embeddingModel === "string" ? definition.embeddingModel : null,
+    models: definition.models && typeof definition.models === "object"
+      ? (definition.models as Record<string, unknown>)
+      : null,
     usedByCapabilities: [],
   }));
 
@@ -372,8 +484,6 @@ export async function readConfigSnapshot(): Promise<ConfigSnapshot> {
       capability,
       platform: platformId,
       model: mapping?.model ?? "",
-      visionModel: mapping?.visionModel ?? null,
-      embeddingModel: mapping?.embeddingModel ?? null,
       // 与 platform-config-node 的 §2.3 缺 key 判定同口径：返回 null 即回退 mock。
       resolvable: Boolean(platform) && keyUsable,
       problem: problem ?? (keyUsable ? null : "平台 key 不可用，该能力会回退 mock"),

@@ -16,7 +16,15 @@
  *       "type": "dashscope",               // protocol implementation
  *       "apiKey": "${DASHSCOPE_API_KEY}",  // env var interpolation
  *       "baseUrl": "https://...",
- *       "options": { ... }                 // provider-specific options
+ *       "models": {                        // 模型档案（能力挂在模型上）
+ *         "qwen-plus": {
+ *           "contextWindowTokens": 131072,
+ *           "maxOutputTokens": 8192,
+ *           "vision": false,
+ *           "reasoning": { "levels": ["none", "high"], "default": "high" }
+ *         }
+ *       },
+ *       "options": { ... }                 // 仅网关怪癖（disableMaxTokens 等）
  *     },
  *     ...
  *   },
@@ -27,6 +35,10 @@
  *     "embedding":       { "platform": "free",   "model": "bge-m3" }
  *   }
  * }
+ *
+ * 2026-10-06 起：capabilities 引用的模型应在对应平台的 `models` 里声明能力
+ *（上下文/输出/识图/推理档位）——面板校验会拦截未声明的引用；手写文件绕过时
+ * 使用 provider 缺省值并告警一次。
  *
  * Supported platform types: mock, dashscope, openai_compatible, siliconflow,
  * opencode_go (OpenAI Responses API).
@@ -54,30 +66,47 @@ export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "
 
 /** Provider-specific options (passed through to the provider constructor). */
 export interface PlatformOptions {
-  /** Disable thinking/reasoning mode (e.g., for deepseek-v4, qwen3). */
-  disableThinking?: boolean;
-  /** Disable max_tokens field in API requests. */
+  /** Disable max_tokens field in API requests（网关怪癖，如 tokenrhythm/siliconflow-chat）. */
   disableMaxTokens?: boolean;
-  /** Enable thinking mode (DashScope opt-in, default off). */
-  enableThinking?: boolean;
-  /**
-   * 显式指定 Responses API 的 reasoning 档位（`reasoning.effort`）。
-   *
-   * 设置后优先于 disableThinking/enableThinking：档位是否被目标模型接受只有
-   * 平台配置知道，因此显式值就是最终值。缺省时回退到旧语义
-   * （disableThinking → minimal、enableThinking → high、都不设 → 交给网关默认）。
-   *
-   * @see ReasoningEffort 各模型支持范围差异
-   */
-  reasoningEffort?: ReasoningEffort;
   /** DashScope workspace ID (sent as X-DashScope-WorkSpace header). */
   workspace?: string;
-  /** Override context window tokens. */
-  contextWindowTokens?: number;
-  /** Override max output tokens for agent turns (bounds request.max_tokens). */
-  maxOutputTokens?: number;
   /** Extra request headers. */
   extraHeaders?: Record<string, string>;
+}
+
+/**
+ * 模型的思考/推理配置（2026-10-06 模型档案重设计）。
+ *
+ * 档位是**模型**的属性：各模型支持范围不同，设成不支持的值上游直接 400
+ *（实测于 OpenCode Go：muse-spark 不接受 none、gpt-5.6-luna 不接受 minimal、
+ * deepseek 全档可用）。因此这里声明该模型接受的 `levels` 与默认下发的 `default`。
+ */
+export interface ModelReasoningProfile {
+  /** 该模型接受的全部档位（顺序不重要，判定按档位高低语义）。 */
+  levels: ReasoningEffort[];
+  /** 默认下发的档位；必须 ∈ levels（配置校验会拦）。 */
+  default: ReasoningEffort;
+}
+
+/**
+ * 模型档案：挂在平台下的模型能力声明（2026-10-06 配置重设计）。
+ *
+ * 上下文窗口 / 输出上限 / 能否识图 / 推理档位都是**模型**的属性，不是平台的——
+ * 同一平台上换模型时这些值全都变（旧设计把它们写在平台 options 里，靠注释提醒
+ * "换模型时必须同步改"，那是设计错了）。平台级 `options` 只保留网关怪癖。
+ *
+ * 缺省语义：数值缺省用 provider 内置默认（并在解析时告警提醒补声明）；
+ * `vision` 缺省 false——不存在"默认能看图"，识图路由必须显式声明。
+ */
+export interface ModelProfile {
+  /** 上下文窗口（token）。 */
+  contextWindowTokens?: number;
+  /** 输出上限（token）。 */
+  maxOutputTokens?: number;
+  /** 能否读图（接受图片输入）。缺省 false。 */
+  vision?: boolean;
+  /** 思考/推理配置；缺省 = 不下发任何思考字段（用网关默认）。 */
+  reasoning?: ModelReasoningProfile;
 }
 
 /** A platform definition from the config file. */
@@ -90,11 +119,12 @@ export interface PlatformDefinition {
   baseUrl?: string;
   /** Default model for this platform. */
   model?: string;
-  /** Default vision model. */
-  visionModel?: string;
-  /** Default embedding model. */
-  embeddingModel?: string;
-  /** Provider-specific options. */
+  /**
+   * 模型档案（2026-10-06）：capabilities 里引用的模型应当在这里声明能力。
+   * 未声明的模型会使用 provider 缺省值，并在解析时告警一次。
+   */
+  models?: Record<string, ModelProfile>;
+  /** Provider-specific options（仅网关怪癖；模型属性见 models） */
   options?: PlatformOptions;
 }
 
@@ -104,10 +134,6 @@ export interface CapabilityMapping {
   platform: string;
   /** Model to use for this capability. */
   model: string;
-  /** Optional vision model override (for vision capability). */
-  visionModel?: string;
-  /** Optional embedding model override (for embedding capability). */
-  embeddingModel?: string;
 }
 
 /**
@@ -174,10 +200,11 @@ export interface ResolvedPlatform {
   baseUrl?: string;
   /** Model for this capability. */
   model: string;
-  /** Vision model (if specified). */
-  visionModel?: string;
-  /** Embedding model (if specified). */
-  embeddingModel?: string;
-  /** Platform options (thinking mode etc.). */
+  /**
+   * 该模型的能力档案（2026-10-06）。未声明时为 undefined，
+   * provider 用内置缺省并在解析时告警。
+   */
+  modelProfile?: ModelProfile;
+  /** Platform options（仅网关怪癖：disableMaxTokens / workspace / extraHeaders）. */
   options?: PlatformOptions;
 }

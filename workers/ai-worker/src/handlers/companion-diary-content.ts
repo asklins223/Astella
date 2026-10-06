@@ -823,10 +823,10 @@ export function groundedDiaryDigest(material: DiaryMaterial): string {
  * 篇幅**由 prompt 按人格分档**（几段），不由这个数控制：maxTokens 是天花板不是目标。
  * 实测教训（2026-09-21 第一次真跑）：按活跃度给 quiet 只留 240 时，qwen3.8-flash
  * 连续 9 次返回空正文（3 次 job 重试 × provider 内部 3 次空输出重试），
- * 因为预算全花在思考 token 上——所以这里给一个够用的统一上限，
- * 并和另外两条伴星链路一样显式关闭思考模式。改成多段 + JSON 块之后又抬高了一次。
+ * 因为预算全花在思考 token 上——所以这里给一个够用的统一上限。改成多段 + JSON 块
+ * 之后又抬高一次；2026-10-06 全链路开思考后再抬高一次，把思考 token 一并装下。
  */
-export const DIARY_MAX_TOKENS = 1_400;
+export const DIARY_MAX_TOKENS = 3_500;
 
 /**
  * 日记 prompt。

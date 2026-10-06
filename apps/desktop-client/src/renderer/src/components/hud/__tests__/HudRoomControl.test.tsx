@@ -159,7 +159,7 @@ describe("顶栏灵动岛的折叠结构", () => {
  * 现在它报得出账号，点开是一个与学习空间同款的窄框。
  */
 
-function stubAccountGateway() {
+function stubAccountGateway(options: { readonly avatarUrl?: string | null } = {}) {
   const envelope = <T,>(data: T) => ({
     version: 1 as const,
     ok: true as const,
@@ -168,12 +168,13 @@ function stubAccountGateway() {
     correlationId: "c",
     schemaRevision: "desktop-ipc-v1",
   });
+  const avatarUrl = options.avatarUrl ?? null;
   Object.defineProperty(window, "ailearn", {
     configurable: true,
     value: {
       auth: {
-        getProfile: async () => envelope({ version: 1, displayName: null, avatarUrl: null }),
-        getAvatar: async () => envelope({ version: 1, mimeType: "image/png", imageBase64: "" }),
+        getProfile: async () => envelope({ version: 1, displayName: null, avatarUrl }),
+        getAvatar: async () => envelope({ version: 1, mimeType: "image/png", imageBase64: "RkFLRQ==" }),
         logout: async () => envelope({ loggedOut: true as const, serverRevoked: true as const }),
       },
     },
@@ -353,5 +354,66 @@ describe("再点同一个槽位收起它的卡", () => {
     fireEvent.click(screen.getByRole("button", { name: /^当前学习空间/ }));
 
     expect(document.querySelectorAll(".room-control-menu")).toHaveLength(0);
+  });
+});
+
+/**
+ * 折叠印章就是这张脸（2026-10-06）：折叠态那颗常驻印章里的 Orbit 图标换成账号
+ * 头像，「点击展开岛、同一位置再点缩回」一个字没动。这三条钉住换脸的三个瞬间：
+ * 取回头像之前是首字母印章、取回之后是照片、展开时让位给收起按钮。
+ */
+describe("折叠印章里的这张脸", () => {
+  afterEach(() => {
+    cleanup();
+    Reflect.deleteProperty(window, "ailearn");
+    useRoomStore.setState({ accountIdentity: null, accountAvatar: null });
+  });
+
+  function renderPill() {
+    render(<div className="hud-surface"><HudRoomControl /></div>);
+    return document.querySelector(".room-control-trigger") as HTMLElement;
+  }
+
+  it("有头像时折叠态坐的是照片，字节走取头像那条通道", async () => {
+    stubAccountGateway({ avatarUrl: "/api/uploads/avatars/a.png" });
+    useRoomStore.getState().setAccountIdentity({ email: "asklins@example.com", displayName: "Asklins" });
+    const trigger = renderPill();
+
+    await waitFor(() => expect(trigger.querySelector(".room-control-trigger__photo")).toBeTruthy());
+    const face = trigger.querySelector<HTMLImageElement>(".room-control-trigger__photo")!;
+    expect(face.getAttribute("src")).toBe(`data:image/png;base64,RkFLRQ==`);
+    // 脸本身是装饰：谁在登录由账户槽位的 aria-label 说，印章只负责好看。
+    expect(face.getAttribute("aria-hidden")).toBe("true");
+    expect(trigger.querySelector(".room-control-trigger__seal")).toBeNull();
+  });
+
+  it("展开后同一位置回到收起按钮，收起又立刻是那张脸", async () => {
+    stubAccountGateway({ avatarUrl: "/api/uploads/avatars/a.png" });
+    useRoomStore.getState().setAccountIdentity({ email: "asklins@example.com", displayName: "Asklins" });
+    const trigger = renderPill();
+    await waitFor(() => expect(trigger.querySelector(".room-control-trigger__photo")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "展开学习空间控制" }));
+
+    expect(trigger.querySelector(".room-control-trigger__photo")).toBeNull();
+    expect(trigger.querySelector("svg")).toBeTruthy();
+    expect(trigger.getAttribute("aria-label")).toBe("收起学习空间控制");
+
+    fireEvent.click(screen.getByRole("button", { name: "收起学习空间控制" }));
+
+    // 收起不重取字节：同一份 memo 直接读，所以没有第二次请求、也不会先闪一下印章。
+    expect(trigger.querySelector(".room-control-trigger__photo")).toBeTruthy();
+    expect(trigger.getAttribute("aria-label")).toBe("展开学习空间控制");
+  });
+
+  it("没有头像就落回首字母印章，不冒充有脸", async () => {
+    stubAccountGateway();
+    useRoomStore.getState().setAccountIdentity({ email: "asklins@example.com", displayName: "Asklins" });
+    const trigger = renderPill();
+
+    // 空串是一次真实回答（「确认过没有头像」），不是还没问过。
+    await waitFor(() => expect(useRoomStore.getState().accountAvatar?.src).toBe(""));
+    expect(trigger.querySelector(".room-control-trigger__seal")?.textContent).toBe("A");
+    expect(trigger.querySelector(".room-control-trigger__photo")).toBeNull();
   });
 });

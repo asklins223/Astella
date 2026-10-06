@@ -167,6 +167,46 @@ export function resolveProviderForTask(
 }
 
 /**
+ * 识图路由（2026-10-06 配置重设计）：这次识图该用谁的眼睛。
+ *
+ * 顺序（**声明即真相**，不做运行时能力探测）：
+ *   1. 当前对话模型声明 `vision: true` → 用它（主模型自己看）；
+ *   2. 否则 `capabilities.vision` 有映射、且它的模型没被声明显式 `vision: false`
+ *      → 用专门的识图模型；
+ *   3. 都没有 → null：调用方明确失败/不下发读图工具，**绝不**回落给看不见的模型。
+ */
+export function resolveVisionReader(gov: Pick<
+  AIGovernanceContext,
+  "providerName" | "providerConfig" | "visionProviderName" | "visionProviderConfig"
+>): { providerName: string; providerConfig: AIGovernanceContext["providerConfig"]; source: "main" | "dedicated" } | null {
+  if (gov.providerConfig.modelProfile?.vision === true) {
+    return { providerName: gov.providerName, providerConfig: gov.providerConfig, source: "main" };
+  }
+  if (
+    gov.visionProviderName
+    && gov.visionProviderConfig
+    && gov.visionProviderConfig.modelProfile?.vision !== false
+  ) {
+    return { providerName: gov.visionProviderName, providerConfig: gov.visionProviderConfig, source: "dedicated" };
+  }
+  return null;
+}
+
+/**
+ * 配置层面"现在有没有能看图的模型"（不需要治理上下文：agent_turn 与 vision
+ * 两个槽都只由 config/ai-platforms.json 决定）。
+ *
+ * here-and-now 用它把"这篇有 N 张图，看不了"的措辞与**工具下发面**对齐——
+ * 两边不同源时会出现"告诉她看不了、却又把读图工具给她"或反过来。
+ */
+export function visionReaderAvailableFromConfig(): boolean {
+  const agent = resolveSystemPlatform("agent_turn");
+  if (agent?.modelProfile?.vision === true) return true;
+  const vision = resolveSystemPlatform("vision");
+  return Boolean(vision && vision.modelProfile?.vision !== false);
+}
+
+/**
  * 读某个账号的 AI 设置（同意签署记录 + 数据外发政策）。0237 之后这是**唯一**
  * 的同意来源；`workspaces` 上那几列已随迁移删除。
  *
@@ -191,6 +231,25 @@ export async function getAccountAIPolicy(workspaceId: string, userId: string | n
   return settings ? normalizeWorkspaceAIPolicy(settings.dataPolicy) : createDefaultAIPolicy();
 }
 
+/**
+ * ResolvedPlatform → 运行时 provider 配置（2026-10-06 配置重设计）。
+ *
+ * 每个槽的配置形状一样：apiKey / baseUrl / model + 模型档案 + 平台怪癖。
+ * 收成一个函数，避免五个槽各抄一份时漏掉新字段——`visionModel` 时代就是
+ * 五份手抄各自漂移的。
+ */
+function runtimeConfigFromResolved(
+  resolved: import("@ailearn/shared").ResolvedPlatform,
+): import("./ai-provider.ts").AIProviderRuntimeConfig {
+  return {
+    apiKey: resolved.apiKey,
+    baseUrl: resolved.baseUrl,
+    model: resolved.model,
+    modelProfile: resolved.modelProfile,
+    options: resolved.options,
+  };
+}
+
 export async function resolveAIGovernanceContext(
   workspaceId: string,
   userId: string | null,
@@ -208,13 +267,7 @@ export async function resolveAIGovernanceContext(
   const agentPlatform = resolveSystemPlatform("agent_turn");
   if (agentPlatform) {
     providerName = agentPlatform.type;
-    providerConfig = {
-      apiKey: agentPlatform.apiKey,
-      baseUrl: agentPlatform.baseUrl,
-      model: agentPlatform.model,
-      visionModel: agentPlatform.visionModel,
-      options: agentPlatform.options,
-    };
+    providerConfig = runtimeConfigFromResolved(agentPlatform);
   } else {
     providerName = "mock";
     // §2.3 mock 静默回退告警：系统平台未配置（apiKey 缺失/含未解析 ${VAR}）。
@@ -250,13 +303,7 @@ export async function resolveAIGovernanceContext(
   const visionPlatform = resolveSystemPlatform("vision");
   if (visionPlatform) {
     visionProviderName = visionPlatform.type;
-    visionProviderConfig = {
-      apiKey: visionPlatform.apiKey,
-      baseUrl: visionPlatform.baseUrl,
-      model: visionPlatform.model,
-      visionModel: visionPlatform.visionModel,
-      options: visionPlatform.options,
-    };
+    visionProviderConfig = runtimeConfigFromResolved(visionPlatform);
   }
 
   // text_generation — 独立系统级轻量文本平台（未配置时回退到主 provider）
@@ -265,12 +312,7 @@ export async function resolveAIGovernanceContext(
   const textPlatform = resolveSystemPlatform("text_generation");
   if (textPlatform) {
     textProviderName = textPlatform.type;
-    textProviderConfig = {
-      apiKey: textPlatform.apiKey,
-      baseUrl: textPlatform.baseUrl,
-      model: textPlatform.model,
-      options: textPlatform.options,
-    };
+    textProviderConfig = runtimeConfigFromResolved(textPlatform);
   }
 
   // companion_fallback — 伴星退化时的跨模型兜底（方案 29 §9.6）。
@@ -280,12 +322,7 @@ export async function resolveAIGovernanceContext(
   const fallbackPlatform = resolveSystemPlatform("companion_fallback");
   if (fallbackPlatform) {
     companionFallbackProviderName = fallbackPlatform.type;
-    companionFallbackProviderConfig = {
-      apiKey: fallbackPlatform.apiKey,
-      baseUrl: fallbackPlatform.baseUrl,
-      model: fallbackPlatform.model,
-      options: fallbackPlatform.options,
-    };
+    companionFallbackProviderConfig = runtimeConfigFromResolved(fallbackPlatform);
   }
 
   // embedding — 独立系统级嵌入平台（未配置时回退到主 provider）
@@ -294,12 +331,7 @@ export async function resolveAIGovernanceContext(
   const embeddingPlatform = resolveSystemPlatform("embedding");
   if (embeddingPlatform) {
     embeddingProviderName = embeddingPlatform.type;
-    embeddingProviderConfig = {
-      apiKey: embeddingPlatform.apiKey,
-      baseUrl: embeddingPlatform.baseUrl,
-      model: embeddingPlatform.model,
-      options: embeddingPlatform.options,
-    };
+    embeddingProviderConfig = runtimeConfigFromResolved(embeddingPlatform);
   }
 
   let policy: WorkspaceAIPolicy = createDefaultAIPolicy();

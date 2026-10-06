@@ -336,23 +336,25 @@ test("0256 的例外比抽取器更严，方向必须是这样", () => {
   assert.equal(window.test(content) && quantity.test(content), true, "SQL 侧应当更严");
 });
 
-// ─── 产 JSON 的伴星调用一律关思考（§9.71 那根因的自动兜底）────────────────────
-// 摘要器当年"建表以来 0 行"的三个根因里，最难自己浮出来的就是这个：思考 token 吃满
-// maxTokens 之后 content 为空，JSON 解析失败，job 一路重试到 dead。修了摘要器、
-// 日记、念头，抽取器漏了整整一天（实机 2026-09-22：dead 里 OUTPUT_INVALID 与
-// provider_http_400 各一条）。这条不测行为，测的是"下一个新增的取回调用别再漏"。
-test("每个用 json_object 取回的伴星 handler 都必须关思考", () => {
-  const dir = new URL(".", import.meta.url);
+// ─── 伴星链路统一开思考（2026-10-06 用户决定取代旧守卫）──────────────────────
+// 旧守卫（2026-09-22）要求每个用 json_object 取回的伴星 handler 都关思考——那是
+// "思考 token 吃满 maxTokens → content 为空 → JSON 解析失败"这根因的兜底（摘要器
+// 当年"建表以来 0 行"、抽取器 dead 各一条，见 §9.71）。2026-10-06 用户决定全链路
+// 开思考，风险改由**预算**承担（各调用点的 maxTokens 已含思考预留）。守卫随之反向：
+// 新调用点不该再悄悄把思考关回去；真要有例外，这条会把它摆到台面上。
+test("伴星 handler 不再关思考：思考预留由各自的 maxTokens 承担", () => {
+  // 扫的是 handlers 目录本体（`..`），不是 __tests__ ——旧版本用的 `.` 会把自己
+  // 所在的测试目录当扫描面，`.test.` 过滤又把里面的文件全排除，等于空转。
+  const dir = new URL("..", import.meta.url);
   const offenders = readdirSync(dir)
     .filter((name) => name.startsWith("companion-") && name.endsWith(".ts") && !name.includes(".test."))
     .filter((name) => {
       const text = readFileSync(new URL(name, dir), "utf8");
-      // 关思考有两条都被实现读到的路径：包 provider 的 withThinkingDisabled，
-      // 以及每次调用自带的 disableThinking（provider 拿不来当参数的 handler 只能走这条）。
-      const disabled = text.includes("withThinkingDisabled(") || text.includes("disableThinking: true");
-      return text.includes('responseFormat: "json_object"') && !disabled;
+      // 两条历史路径都算：包 provider 的 withThinkingDisabled、每次调用自带的
+      // disableThinking（provider 拿不来当参数的 handler 只能走这条）。
+      return text.includes("withThinkingDisabled(") || text.includes("disableThinking: true");
     });
-  assert.deepEqual(offenders, [], `这些 handler 产 JSON 却没关思考：${offenders.join(", ")}`);
+  assert.deepEqual(offenders, [], `这些 handler 又关回了思考：${offenders.join(", ")}`);
 });
 
 // ─── 跨空间记忆的判据（2026-09-22 裁决 + 收紧）──────────────────────────

@@ -103,6 +103,14 @@ export const companionImageBlockV1Schema = z.object({
   label: z.string().min(1).max(80),
   /** 无障碍替代文字；缺省时渲染层回落到 label。 */
   alt: z.string().min(1).max(120).optional(),
+  /**
+   * 用户这一轮自己传的图（2026-10-06 输入框传图）。
+   *
+   * 指向 `note_image_assets` 行；由**服务端**在创建 turn 时按 url 解析并写入
+   *（客户端给的值一律被服务端结果覆盖）。她读图时 `companion_read_image` 的
+   * assetId 与这里是同一个 id。她摆出来的图（服务端拼 url 的展示块）没有该字段。
+   */
+  assetId: z.string().uuid().optional(),
 }).strict();
 
 export const companionContentBlockV1Schema = z.discriminatedUnion("type", [
@@ -400,7 +408,11 @@ export const createCompanionTurnRequestV1Schema = z.object({
   version: z.literal(1),
   clientMessageId: z.string().uuid(),
   inputKind: z.enum(["text", "voice_transcript"]),
-  blocks: z.array(companionContentBlockV1Schema).length(1),
+  /**
+   * 首个块必须是 text；可选的第二个块是**用户自己传的图**（2026-10-06 输入框传图）。
+   * 图片仍要有一条文字（哪怕很短）——注意力分类、标题、事实读取都以文字为准。
+   */
+  blocks: z.array(companionContentBlockV1Schema).min(1).max(2),
   voiceArtifactId: z.string().uuid().optional(),
   sourceSurface: z.enum(["pet", "main"]),
   supersedesGeneration: z.number().int().positive().optional(),
@@ -423,9 +435,15 @@ export const createCompanionTurnRequestV1Schema = z.object({
     version: z.number().int().min(1),
   }).optional(),
 }).strict().superRefine((value, ctx) => {
-  const textOnly = value.blocks[0]?.type === "text";
-  if (!textOnly) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks"], message: "v1 turn input must be one text block" });
+  const [first, second] = value.blocks;
+  if (first?.type !== "text") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks"], message: "v1 turn input must start with one text block" });
+  }
+  if (second && second.type !== "image") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks", 1], message: "the only optional block is a user-attached image" });
+  }
+  if (second && value.inputKind === "voice_transcript") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks", 1], message: "voice transcript turn carries no image block" });
   }
   if ((value.inputKind === "voice_transcript") !== (value.voiceArtifactId !== undefined)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["voiceArtifactId"], message: "required iff voice_transcript" });

@@ -48,6 +48,7 @@ import {
 import {
   AIConsentRequiredError,
   resolveAIGovernanceContext,
+  resolveVisionReader,
 } from "../lib/governance.ts";
 import { createCompanionContextReceipts } from "./companion-context-receipts.ts";
 import { createCompactionTraceRecorder } from "./companion-context-handoff.ts";
@@ -89,6 +90,7 @@ import {
   buildCompanionContextHandoffSnapshotV1,
   finalizeCompanionReplyText,
   renderCompanionContextHandoff,
+  renderUserAttachedImagesLine,
   REPLAY_WINDOW_MESSAGES,
 } from "./companion-dialogue-content.ts";
 import {
@@ -116,117 +118,12 @@ import {
 import {
   writeBatchedDeltas,
 } from "./companion-dialogue-deltas.ts";
+import {
+  COMPANION_CANCELLED_MIN_CHARS,
+  persistFailedPartial,
+} from "./companion-dialogue-failure-retention.ts";
 
 const groundedTutorPromptSha256 = computeGroundedTutorPromptSha256(GROUNDED_TUTOR_COMPANION_PROMPT);
-
-/**
- * 用户"停止"后至少留下多少字才算值得留档（2026-09-19）。
- *
- * 与"太短不念"同一口径：一两句寒暄都没说完就停下（如"好"、"嗯我"），
- * 留在历史里是噪音而不是记录。可调，集中在这里改。
- */
-const COMPANION_CANCELLED_MIN_CHARS = 12;
-
-/**
- * 一轮**失败**之后，把她已经下发给客户端的部分留档（2026-09-19）。
- *
- * 与"用户按停止"那条留档对称：取消路径早就留了 `kind='cancelled'` 的部分记录，
- * 而失败路径此前只写 `error` 事件、**不写消息**——于是气泡里她已经说过的那半句，
- * 在收尾的一瞬间从对话历史里彻底消失（用户看到的是"内容没了"，历史里连这条都查不到）。
- *
- * 三条护栏：
- * - 只在 run 的真实终态是 `failed` 时落（`assistant_message_id IS NULL` 同时保证幂等：
- *   同一个 run 的重试/多次失败收尾不会插出第二条）；用户取消走 `cancelled` 路径，
- *   supersede 走新回合，都不在这里落。
- * - 太短不落（与取消同一个阈值）——碎片是噪音，不是记录。
- * - 不写 `assistant.final` / `character.cue`:事件侧由 `error` 收尾，一个回合出现两个
- *   "结束"会让客户端状态机打架。
- *
- * 落的是**已下发的可见前缀**（`deliveredText`），也就是用户真的看到过的那段字。
- */
-/**
- * 失败兜底话术（方案 29 §4.9：fail-open，绝不空白）。
- *
- * 抱怨 #4「经常性的出现输出不了东西了」的直接来源：任何一道校验判失败时，
- * 旧实现只写一条 `error` 事件就 throw，而 `persistFailedPartial` 在"一个字都没
- * 下发"时**直接放弃落消息**——于是界面上什么都没有，像她突然不理人。
- *
- * 三条轮换（按 runId 确定性取，同一轮重投不会换话，也不会连着两轮一模一样）。
- * 口径：只承认"这句没成"并邀请重试，**不编造任何内容、不虚构已完成的事**，
- * 也不暴露 provider / prompt / 错误码。
- */
-const COMPANION_FAILURE_FALLBACK_LINES = [
-  "诶，这句我没组织好，你再跟我说一次？",
-  "刚刚那句话卡住了，我没听清，你再说一遍嘛。",
-  "我走神了一下下，这条没答上来，你重新问我一次？",
-] as const;
-
-/** 按 runId 确定性挑一句（同一 run 重投得到同一句，避免话术来回跳）。 */
-export function pickCompanionFailureFallbackLine(runId: string): string {
-  let hash = 0;
-  for (const ch of runId) hash = (hash * 31 + ch.charCodeAt(0)) % 1_000_003;
-  return COMPANION_FAILURE_FALLBACK_LINES[hash % COMPANION_FAILURE_FALLBACK_LINES.length];
-}
-
-export async function persistFailedPartial(args: {
-  workspaceId: string;
-  userId: string;
-  conversationId: string;
-  runId: string;
-  deliveredText: string;
-}): Promise<boolean> {
-  // fail-open：已经说出来的半句优先保留；连半句都没有时，落一句诚实的兜底话，
-  // 而不是让用户面对空白（旧实现在这里 `return false`，界面什么都不显示）。
-  const delivered = args.deliveredText.trim();
-  const text = delivered.length >= COMPANION_CANCELLED_MIN_CHARS
-    ? delivered
-    : pickCompanionFailureFallbackLine(args.runId);
-  const blocks = [{ type: "text" as const, text, emotion: resolveReplyToneEmotion(text) }];
-  const contentSha256 = sha256Utf8V1(canonicalJsonV1(blocks));
-  const messageId = randomUUID();
-  try {
-    return await withWorkerWorkspaceTransaction(
-      { workspaceId: args.workspaceId, userId: args.userId },
-      async (tx) => {
-        // 先锁住"这一轮确实失败了、且还没留过档"。用 SELECT ... FOR UPDATE 而不是
-        // 先写 assistant_message_id：那是指向 companion_messages 的**立即**外键，
-        // 消息行还没插进去就回填，整笔事务会被 FK 打回（取消路径踩过这个坑）。
-        const claimed = await tx.execute<{ id: string }>(sql`
-          SELECT id FROM companion_turn_runs
-          WHERE id = ${args.runId} AND status = 'failed' AND assistant_message_id IS NULL
-          FOR UPDATE
-        `);
-        if (!claimed[0]) return false;
-        const counters = await tx.execute<{ next_message_seq: string }>(sql`
-          UPDATE companion_conversations
-          SET next_message_seq = next_message_seq + 1, last_message_at = now()
-          WHERE id = ${args.conversationId}
-          RETURNING next_message_seq
-        `);
-        const seqRow = counters[0];
-        if (!seqRow) return false;
-        await tx.execute(sql`
-          INSERT INTO companion_messages
-            (id, workspace_id, user_id, conversation_id, seq, role, kind, blocks, run_id, content_sha256)
-          VALUES (${messageId}, ${args.workspaceId}, ${args.userId},
-                  ${args.conversationId}, ${Number(seqRow.next_message_seq) - 1},
-                  'assistant', 'error',
-                  ${JSON.stringify(blocks)}, ${args.runId}, ${contentSha256})
-        `);
-        await tx.execute(sql`
-          UPDATE companion_turn_runs
-          SET assistant_message_id = ${messageId}, updated_at = now()
-          WHERE id = ${args.runId}
-        `);
-        return true;
-      },
-    );
-  } catch (err) {
-    // 留档是"别把用户看过的字弄丢"的补救，不是主链路：它失败不该盖掉真正的失败原因。
-    logger.warn({ runId: args.runId, err }, "companion failed-partial retention skipped");
-    return false;
-  }
-}
 
 /** 活跃度三档白名单（与 `PetProfileActiveness` 同源）。 */
 const ACTIVENESS_VALUES = new Set<string>(["quiet", "moderate", "active"]);
@@ -389,6 +286,20 @@ export async function runCompanionDialogue(
           ORDER BY seq DESC LIMIT 1
         `);
         const userText = userRows[0] ? textOfCompanionBlocks(userRows[0].blocks) : "";
+        // 这一轮用户附的图（2026-10-06 输入框传图）：assetId 由 API 在创建 turn 时
+        // 按上传回执解析并写回块里；这里的读取与 companion_read_image 共用同一个 id。
+        // 至多两张：消息契约允许一张，多出来的（历史遗留）不阻断对话。
+        const userImageAttachments = (Array.isArray(userRows[0]?.blocks)
+          ? (userRows[0]!.blocks as Array<Record<string, unknown>>)
+          : [])
+          .filter((block) => block.type === "image" && typeof block.assetId === "string")
+          .slice(0, 2)
+          .map((block) => ({
+            assetId: String(block.assetId),
+            label: typeof block.label === "string" && block.label.trim().length > 0
+              ? block.label.trim().slice(0, 80)
+              : "用户发来的图片",
+          }));
         const currentUserSeq = userRows[0]?.seq ?? "0";
         // 先在 SQL 排除非对话与失败消息，再按模型真实采用的字符预算裁尾；摘要水位
         // 必须从这份相同的可见尾部计算，不能让 system 注记占掉最近消息名额。
@@ -524,7 +435,10 @@ export async function runCompanionDialogue(
           pageContext: run.page_context,
           userText,
         });
-        const hereAndNow = renderHereAndNow(snapshot);
+        const hereAndNow = [
+          renderHereAndNow(snapshot),
+          renderUserAttachedImagesLine(userImageAttachments),
+        ].filter((line): line is string => Boolean(line)).join("\n") || null;
         // 实体先行解析（39d W2-3）：这句话指到的对象先查出来。同一事务、不新开连接；
         // 没有指称时它一次查询都不发（`extractTurnReferences` 返回空就直接 null）。
         const thisTurnFacts = await loadThisTurnFacts(tx, {
@@ -542,11 +456,16 @@ export async function runCompanionDialogue(
         // 更早那段对话（历史回放只带真正进入 prompt 的尾部）。读**接续链**而不是只读
         // 最新一份（44 §5.2）：压缩分次发生，只取最新一份会把更早的覆盖索引丢掉——
         // 会话看起来「有摘要」，实际中间那段没人读过。不猜旧摘要边界，也不为它单开往返。
-        const summaryChain = await readConversationSummaryChain(tx, run.conversation_id, historyStartSeq);
+        //
+        // 链头**不要求早于可见尾部**（44 §5.2「摘要与回放从同一实际保留边界派生」）：
+        // 覆盖伸进回放窗口时，那段由摘要代表、可以折；没伸进来时折不动，也不该硬折。
+        // 覆盖起点取**链的**有效起点而不是链头自己那一段的——链头只盖了最近一块，
+        // 拿它当「摘要盖到多早」会让回执把更早的覆盖误报成「没人代表」。
+        const summaryChain = await readConversationSummaryChain(tx, run.conversation_id);
         const summaryRow = summaryChain.head;
         replaySummaryCoverage = summaryRow
           ? {
-            fromSeq: summaryRow.coverage_from_seq,
+            fromSeq: summaryChain.effectiveCoverageFromSeq ?? summaryRow.coverage_from_seq,
             throughSeq: summaryRow.coverage_through_seq,
             sourceSha256: summaryRow.coverage_source_hash,
           }
@@ -701,8 +620,8 @@ export async function runCompanionDialogue(
   const contextReceipts = createCompanionContextReceipts();
   // 折叠轨迹收集器：loop 里折了就记，回合结束时并进交接快照的下一版（44 §3.3）。
   const compactionTrace = createCompactionTraceRecorder();
-  // 三个 provider 槽（主链路 / 思考档重试 / 跨模型兜底）各自的理由见 companion-turn-providers。
-  const { provider, thinkingProvider, fallbackProvider } = resolveCompanionTurnProviders({
+  // 两个 provider 槽（主链路 / 跨模型兜底）各自的理由见 companion-turn-providers。
+  const { provider, fallbackProvider } = resolveCompanionTurnProviders({
     governance: govCtx,
     ctx,
     read,
@@ -1016,13 +935,15 @@ export async function runCompanionDialogue(
       ctx,
       read,
       provider,
-      thinkingProvider,
       fallbackProvider,
       // 活跃度决定退化闸的字数线（方案 29 §9.17）：不传就等于忽略用户的设置。
       activeness: read.petProfile?.activeness ?? null,
-      // 图片能不能出境是**账号级政策**，不是她这一轮可以自己争取的东西：
-      // 关着的时候读图工具既不下发也不会执行，她看不见就不会答应去看。
-      toolConstraints: { visionEnabled: govCtx.policy.sendImageContent === true },
+      // 图片能不能出境是**账号级政策**，不是她这一轮可以自己争取的东西：政策关着、
+      // 或当前没有可用的看图模型（resolveVisionReader 为 null）时，读图工具既不下发
+      // 也不会执行，她看不见就不会答应去看。
+      toolConstraints: {
+        visionEnabled: govCtx.policy.sendImageContent === true && resolveVisionReader(govCtx) !== null,
+      },
       baseMessages: committedMessages,
       contextReceipts,
       // 只有组装回放的这一层知道每条尾部消息的来源 seq 与摘要覆盖到哪（44 §5.2）。

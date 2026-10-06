@@ -21,7 +21,18 @@ test("44 §5.4：没有压力读数时既不判定也不写状态（不凭空造
   // 还没有真实调用发生过 → 判定为「没记录过」，允许尝试；写状态则什么都不做。
   assert.equal((await ports.decide()).allowed, true);
   assert.equal((await ports.decide()).reason, "not_recorded");
-  await ports.record({ inputTokens: 1_000, at: new Date() });
+  await ports.record({ at: new Date() });
+});
+
+test("44 §5.4：记录用的是重发之后的读数，不是调用方猜的数字", async () => {
+  const source = readFileSync(
+    new URL("../companion-compaction-cooldown.ts", import.meta.url),
+    "utf8",
+  );
+  // 「有没有进展」按重发之后还剩多少判；让调用方传一个数字进来，就会有人在折前取值，
+  // 于是每次都记「没变小」，冷却被推成 no_progress。
+  assert.match(source, /inputTokens: pressure\.inputTokens/);
+  assert.doesNotMatch(source, /record\(\{ inputTokens/);
 });
 
 test("44 §5.4：键由会话、来源版本与模型路由共同构成", async () => {

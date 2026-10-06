@@ -14,7 +14,7 @@ import { sql } from "drizzle-orm";
 import { stableStringify, sha256Utf8V1 } from "@ailearn/shared/content-hash";
 import { logger } from "../lib/logger.ts";
 import { readJobPayloadString } from "@ailearn/shared";
-import { createProvider, withThinkingDisabled } from "../lib/ai-provider.ts";
+import { createProvider } from "../lib/ai-provider.ts";
 import {
   AIConsentRequiredError,
   createGovernedProvider,
@@ -37,7 +37,10 @@ import {
 } from "./companion-dialogue-content.ts";
 import type { JobPayload } from "./index.ts";
 import { runWorkerAiTask } from "./worker-ai-task.ts";
-import { companionHistoryText, readCompanionHistoryRows, readParentSummary, type CompanionHistoryRow } from "./companion-dialogue-store.ts";
+import {
+  companionHistoryText, readCompanionHistoryRows, readParentSummary, upsertCommittedSummary,
+  type CompanionHistoryRow,
+} from "./companion-dialogue-store.ts";
 
 class SummarizerOutputError extends Error {
   constructor() {
@@ -84,8 +87,13 @@ export const COMPACTION_POLICY_VERSION = "companion-summary-v2";
 /** 单次压缩计划最多读多少个分段（44 §5.4：分块计划也有总调用上限）。 */
 export const MAX_SUMMARIZER_CHUNKS = 4;
 
-/** 本次摘要请求声明的输出上限（44 §4.1 的 O）。 */
-export const SUMMARIZER_OUTPUT_TOKENS = 1_000;
+/**
+ * 本次摘要请求声明的输出上限（44 §4.1 的 O）。
+ *
+ * 2026-10-06 起含思考预留：思考 token 计入 maxTokens，1000 会在思考上被吃满
+ * （实测 completion=998 时 JSON 从句子中间被切断）；关着思考时同一份输入约 375。
+ */
+export const SUMMARIZER_OUTPUT_TOKENS = 3_000;
 
 export interface SummarizerSnapshotMessage {
   id: string;
@@ -407,13 +415,14 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
   const govCtx = await resolveAIGovernanceContext(job.workspaceId, userId);
   if (!govCtx.consentOk) throw new AIConsentRequiredError();
   const textRes = resolveProviderForTask(govCtx, "companion_agent");
-  // 2026-09-22 实测：开着思考时这一步 completion=998 token（= maxTokens 1000），
-  // JSON 从句子中间被切断，`parseMemoryExtractJson` 三层兜底全都解不出——
-  // 那 37 条 "invalid output" 的 SyntaxError 就是这个，而不是模型不听话。
-  // 关掉思考之后同一份输入 completion=375、7.6 秒返回且解析通过（开着是 36 秒）。
-  // 伴星的非流式调用一律关思考，这里此前是唯一漏掉的一处。
+  // 2026-10-06 起跟随平台配置开思考（用户决定：质量优先）。思考 token 也计入
+  // maxTokens——2026-09-22 实测开着思考时这一步 completion=998 token（= maxTokens 1000），
+  // JSON 从句子中间被切断，`parseMemoryExtractJson` 三层兜底全都解不出（那 37 条
+  // "invalid output" 的 SyntaxError 就是这个，而不是模型不听话）；关掉思考之后同一份
+  // 输入 completion=375、7.6 秒返回（开着是 36 秒）。因此输出预算已提
+  // 到 SUMMARIZER_OUTPUT_TOKENS=3000 给思考留出空间，而不是靠关思考绕开。
   const provider = createGovernedProvider(
-    createProvider(textRes.providerName, withThinkingDisabled(textRes.providerConfig)),
+    createProvider(textRes.providerName, textRes.providerConfig),
     govCtx,
     job.workspaceId,
     // AI P0-8（2026-09-15 审计）：接上 ai_audit_log 的唯一写入口（此前零调用）。
@@ -503,6 +512,9 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
     logger.info({ jobId: job.id, conversationId }, "summarizer skipped: empty conversation");
     return;
   }
+  // 边界在这里定下来：下面的提交事务在回调里跑，TS 不会把属性收窄带进去。
+  const coverageFromSeq = snapshot.coverageFromSeq;
+  const coverageThroughSeq = snapshot.coverageThroughSeq;
 
   const messages = buildSummarizerMessages({
     conversationText: snapshot.transcript,
@@ -582,16 +594,21 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
     await lockJobLease(tx, job);
     // 清理连续历史时会先锁 conversation 行，再删除摘要与消息。提交也先锁同一行，
     // 这样并发清理要么先完成、令下面的核对失败，要么等摘要提交后连摘要一起删除。
+    //
+    // 锁用 FOR UPDATE 而不是 FOR SHARE（44 §5.3）：FOR SHARE 之间**不冲突**，
+    // 两个并发提交能同时拿到它、同时读到同一个链头、同时通过下面的父围栏，
+    // 于是同一段历史会提交出两份互为兄弟的摘要。父围栏要真的没有竞态，
+    // 就必须让「读链头 → 插入」这一段串行化。
     const conversation = await tx.execute<{ id: string }>(sql`
       SELECT id FROM companion_conversations
       WHERE id = ${conversationId} AND workspace_id = ${job.workspaceId} AND user_id = ${userId}
-      FOR SHARE
+      FOR UPDATE
     `);
     if (!conversation[0]) return false;
 
     const currentSourceRows = await readCompanionHistoryRows(tx, conversationId, {
-      fromSeq: snapshot.coverageFromSeq!,
-      beforeSeq: (BigInt(snapshot.coverageThroughSeq!) + 1n).toString(),
+      fromSeq: coverageFromSeq,
+      beforeSeq: (BigInt(coverageThroughSeq) + 1n).toString(),
       limit: chunkChars,
     });
     const currentSnapshot = buildSummarizerSnapshot(currentSourceRows.map((row) => ({
@@ -603,8 +620,8 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
       pageContext: row.page_context,
     })), chunkChars, conversationId);
     if (
-      currentSnapshot.coverageFromSeq !== snapshot.coverageFromSeq
-      || currentSnapshot.coverageThroughSeq !== snapshot.coverageThroughSeq
+      currentSnapshot.coverageFromSeq !== coverageFromSeq
+      || currentSnapshot.coverageThroughSeq !== coverageThroughSeq
       || currentSnapshot.sourceHash !== snapshot.sourceHash
     ) {
       logger.info({ jobId: job.id, conversationId }, "summarizer skipped: source range changed before commit");
@@ -651,33 +668,29 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
       parentCoverageFromSeq: parent?.coverageFromSeq ?? null,
     });
 
-    // conversation_summaries 写入（唯一约束兜底）+ 父版本比较。
-    // 同一来源键重入时，只有父版本仍是预期的那个才允许推进 revision——否则两个
-    // 并发摘要会互相覆盖，并且覆盖范围会被悄悄拉回旧的一段（44 §5.3）。
-    await tx.execute(sql`
-      INSERT INTO conversation_summaries
-        (workspace_id, user_id, conversation_id, summary, source_run_id,
-         coverage_from_seq, coverage_through_seq, coverage_source_hash,
-         parent_summary_id, revision, coverage_manifest, compaction_policy_version,
-         verified_context_revision, status, created_at, updated_at)
-      VALUES
-        (${job.workspaceId}, ${userId}, ${conversationId}, ${JSON.stringify(summary)}, ${sourceRunId},
-         ${snapshot.coverageFromSeq}::bigint, ${snapshot.coverageThroughSeq}::bigint, ${snapshot.sourceHash},
-         ${expectedParentId}::uuid, 1, ${JSON.stringify(coverageManifest)}::jsonb, ${COMPACTION_POLICY_VERSION},
-         ${commitRevision}::bigint, 'candidate', now(), now())
-      ON CONFLICT (workspace_id, user_id, conversation_id, source_run_id)
-      DO UPDATE SET summary = EXCLUDED.summary,
-                    coverage_from_seq = EXCLUDED.coverage_from_seq,
-                    coverage_through_seq = EXCLUDED.coverage_through_seq,
-                    coverage_source_hash = EXCLUDED.coverage_source_hash,
-                    parent_summary_id = EXCLUDED.parent_summary_id,
-                    revision = conversation_summaries.revision + 1,
-                    coverage_manifest = EXCLUDED.coverage_manifest,
-                    compaction_policy_version = EXCLUDED.compaction_policy_version,
-                    verified_context_revision = EXCLUDED.verified_context_revision,
-                    updated_at = now()
-      WHERE conversation_summaries.parent_summary_id IS NOT DISTINCT FROM EXCLUDED.parent_summary_id
-    `);
+    // 提交的围栏（同区间不重复提交、父版本比较）都在这一条语句里，见 store 的注释。
+    // 返回 null = 什么都没提交（这一区间已有有效的一份，或链头已经动了）——**不能记成功**。
+    const committedSummaryId = await upsertCommittedSummary(tx, {
+      workspaceId: job.workspaceId,
+      userId,
+      conversationId,
+      summary,
+      sourceRunId,
+      coverageFromSeq,
+      coverageThroughSeq,
+      sourceHash: snapshot.sourceHash,
+      parentSummaryId: expectedParentId,
+      coverageManifest,
+      policyVersion: COMPACTION_POLICY_VERSION,
+      verifiedContextRevision: commitRevision,
+    });
+    if (!committedSummaryId) {
+      logger.info(
+        { jobId: job.id, conversationId, sourceRunId, expectedParentId },
+        "summarizer skipped: this range is already committed, or the chain moved while the model call was in flight",
+      );
+      return false;
+    }
 
     // 生成 episodic 候选记忆。§9.4：写入端即限制 ≤200 字，确保读取注入时不需截断。
     const episodicContent = (summary.title + "：" + summary.keyEvents.slice(0, 3).join("；")).slice(0, 200);
@@ -697,6 +710,10 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
     // 反向引用（方案 44 §3.3）：记下这份摘要派生出哪条记忆。
     // 没有它，用户遗忘那条记忆之后这份摘要仍会每轮注入同样的内容——遗忘被 undo 掉了。
     // 0388 的触发器靠这一列把失效传递回来（把摘要置为 `stale`，读取侧立刻不再注入）。
+    //
+    // 认的是**刚提交的那一行**（`upsertCommittedSummary` 返回的 id），不是「这个会话里
+    // sourceRunId 相同的行」：手动整理的 sourceRunId 是 NULL，按它匹配会把手动路径写过的
+    // 每一行都指向同一条记忆。
     await tx.execute(sql`
       UPDATE conversation_summaries
          SET derived_memory_id = (
@@ -706,9 +723,8 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
               AND deleted_at IS NULL
             ORDER BY created_at DESC LIMIT 1
          ), updated_at = now()
-       WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId}
-         AND conversation_id = ${conversationId}
-         AND source_run_id IS NOT DISTINCT FROM ${sourceRunId}::uuid
+       WHERE id = ${committedSummaryId}::uuid
+         AND workspace_id = ${job.workspaceId} AND user_id = ${userId}
     `);
     return true;
   });
