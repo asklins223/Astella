@@ -2710,6 +2710,13 @@
       "when": 1791261127514,
       "tag": "0390_workspace_fk_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 387,
+      "version": "7",
+      "when": 1791269350527,
+      "tag": "0391_summary_verified_revision_backfill",
+      "breakpoints": true
     }
   ]
 }

@@ -62,6 +62,62 @@ async function addMessage(ids: Ids, seq: number, content: string): Promise<void>
             ${createHash("sha256").update(content).digest("hex")})`;
 }
 
+test("0391：0384 之前写下的摘要不会因为没记修订号而永远读不到", async () => {
+  // 这条缺陷是 2026-10-06 在真窗口里发现的：问伴星「我们之前聊过什么」，
+  // 而库里所有既有摘要的 verified_context_revision 都是 NULL，
+  // `NULL = context_revision` 恒为 NULL（不是 true），于是**0384 之前写的每一份摘要
+  // 都再也读不到了**——包括在它自己那个会话里。
+  //
+  // 单测与真库测试都没抓到它，因为夹具都是**新建**摘要（走写入侧会带上修订号），
+  // 没有一条走「0384 之前就存在的摘要」。所以这里**故意手工造一条 legacy 行**。
+  await seed();
+  const conversationId = randomUUID();
+  const legacySummaryId = randomUUID();
+  const currentSummaryId = randomUUID();
+  await sql`INSERT INTO companion_conversations
+    (id, workspace_id, user_id, title, title_source, kind, status, context_revision)
+    VALUES (${conversationId}, ${workspaceId}, ${userId}, 't', 'placeholder', 'dialogue', 'active', 1)`;
+  const insert = (id: string, revision: number | null) => sql`INSERT INTO conversation_summaries
+    (id, workspace_id, user_id, conversation_id, summary, coverage_from_seq, coverage_through_seq,
+     coverage_source_hash, verified_context_revision)
+    VALUES (${id}, ${workspaceId}, ${userId}, ${conversationId}, '"s"'::jsonb, 1, 9,
+            ${"b".repeat(64)}, ${revision})`;
+  // 停在修订号 1 = 消息从未被改写或删除 → 这些摘要**可证明**仍然有效。
+  await insert(legacySummaryId, null);
+  await insert(currentSummaryId, 1);
+
+  const readable = () => sql`
+    SELECT s.id FROM conversation_summaries s
+    JOIN companion_conversations c ON c.id = s.conversation_id
+    WHERE s.conversation_id = ${conversationId}
+      AND s.verified_context_revision = c.context_revision`;
+  assert.equal((await readable()).length, 1, "回填前只有自带修订号的那条读得到");
+
+  // 迁移 0391 的语句（同一口径：只救可证明的那部分）。
+  await sql`UPDATE conversation_summaries s SET verified_context_revision = c.context_revision
+            FROM companion_conversations c
+            WHERE s.conversation_id = c.id AND s.verified_context_revision IS NULL
+              AND c.context_revision = 1 AND s.conversation_id = ${conversationId}`;
+
+  const after = await readable();
+  assert.equal(after.length, 2, "回填后两条都读得到——legacy 行不再被静默丢掉");
+
+  // 反例：会话被改写过（修订号 > 1）时**不回填**——无法判断摘要写在改写之前还是之后。
+  await sql`UPDATE companion_conversations SET context_revision = 2 WHERE id = ${conversationId}`;
+  await sql`UPDATE conversation_summaries SET verified_context_revision = NULL WHERE id = ${currentSummaryId}`;
+  await sql`UPDATE conversation_summaries s SET verified_context_revision = c.context_revision
+            FROM companion_conversations c
+            WHERE s.conversation_id = c.id AND s.verified_context_revision IS NULL
+              AND c.context_revision = 1 AND s.conversation_id = ${conversationId}`;
+  const stillNull = await sql`SELECT count(*)::int AS n FROM conversation_summaries
+                              WHERE conversation_id = ${conversationId}
+                                AND verified_context_revision IS NULL`;
+  assert.equal(stillNull[0]!.n, 1, "修订号 > 1 的不回填——宁可少读，不可错读");
+
+  await sql`DELETE FROM conversation_summaries WHERE conversation_id = ${conversationId}`.catch(() => {});
+  await sql`DELETE FROM companion_conversations WHERE id = ${conversationId}`.catch(() => {});
+});
+
 after(async () => { await sql.end({ timeout: 5 }).catch(() => {}); });
 
 test("0384：新消息不推进修订号；改写或删除才推进——否则每来一条消息就废掉所有摘要", async () => {
