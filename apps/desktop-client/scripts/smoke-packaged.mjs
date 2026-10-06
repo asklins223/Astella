@@ -305,13 +305,55 @@ const memberCredentialsAvailable = Boolean(process.env.MEMBER_EMAIL?.trim() && p
 const smokeRole = ownerCredentialsAvailable ? 'owner' : memberCredentialsAvailable ? 'member' : 'anonymous'
 const learningRunResponseLossOperations = smokeRole === 'member' ? ['draft', 'action', 'submit'] : []
 const learningRunResponseLossExpected = learningRunResponseLossOperations.length > 0
+
+/**
+ * 启动打包应用时要**摘掉**的环境变量。
+ *
+ * `ELECTRON_RUN_AS_NODE` 让 Electron 二进制退化成纯 Node：它不再建窗口，还会把
+ * `--user-data-dir` 当成 Node 的未知选项直接拒掉。表现是 Playwright 抛
+ * `Process failed to launch!`——看起来像打包坏了或应用起不来，实际是**父进程的
+ * 一个环境变量**改变了子进程的性质。
+ *
+ * 2026-10-06 本地实测：这个变量在某些编辑器终端 / 工具链里是默认带上的，
+ * 而 `smokeAppEnv` 是 `...process.env` 整份透传，于是它一路漏进被测应用。
+ * `NODE_OPTIONS` 同理：注入的 `--require` 之类会作用到应用的主进程。
+ */
+const stripFromAppEnv = ['ELECTRON_RUN_AS_NODE', 'NODE_OPTIONS']
+const baseAppEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !stripFromAppEnv.includes(key)),
+)
 const smokeAppEnv = {
-  ...process.env,
+  ...baseAppEnv,
   AILEARN_PACKAGED_EVIDENCE: '1',
   // CI runners do not own the local API stack or test credentials. Point the
   // portable smoke at a closed loopback port so every supported package proves
   // the real fail-closed DesktopAccessGate instead of merely staying alive.
-  ...(portableOfflineOnly ? { DESKTOP_API_ORIGIN: 'http://127.0.0.1:9' } : {}),
+  //
+  // **但只给端口不够**：主进程的 `readConfiguration` 要求
+  // `AILEARN_DOMAIN_SCHEMA_REVISION`，而 http（回环）模式还额外要配对 key/secret
+  // （`src/main/desktop-gateway.ts`）。少了任何一样，`connect()` 连试都不试就返回
+  // `configuration_error`（reason `pairing_secret_missing`）——于是这条冒烟**没有在测
+  // 它自己声称测的东西**：它想验"传输层失败也照样 fail closed"，实际验到的是
+  // "这个包根本没配置"。
+  //
+  // 2026-10-06 CI 实测：三个平台都报
+  // `{"health":{"code":"configuration_error"},"room":{"code":"stale_workspace"}}`，
+  // 而下面 `runPortableOfflineSmoke` 期待的是 `api_unavailable` / `network_timeout`
+  // / `invoke_failed` 那一族。补上这一组之后，应用会真的去连那个关闭的端口，
+  // 失败才落在传输层——那正是这道闸存在的意义。
+  //
+  // 值本身是**夹具**，不是机密：只为了让配置校验过得去（`readPairingSecret`
+  // 要求 base64url、≥32 字节且可往返）。同族写法见
+  // `scripts/capture-home-v2-lighthouse.mjs` 的 fixture 三件套。
+  ...(portableOfflineOnly
+    ? {
+        DESKTOP_API_ORIGIN: 'http://127.0.0.1:9',
+        AILEARN_DOMAIN_SCHEMA_REVISION: 'portable-smoke-domain-v1',
+        AILEARN_DESKTOP_PAIRING_KEY_ID: 'portable-smoke-key',
+        AILEARN_DESKTOP_PAIRING_SECRET: Buffer.alloc(32, 23).toString('base64url'),
+        DESKTOP_DEPLOYMENT_CONFIG_REVISION: 'portable-smoke-v1',
+      }
+    : {}),
   ...(learningRunResponseLossExpected ? { AILEARN_PACKAGED_LEARNING_RUN_RESPONSE_LOSS: learningRunResponseLossOperations.join(',') } : {}),
 }
 const ownerJourney = {
@@ -478,12 +520,38 @@ async function runPortableOfflineSmoke() {
     packagedTransportProbe(currentWindow, 'health'),
     packagedTransportProbe(currentWindow, 'room'),
   ])
-  const unavailableCodes = ['api_unavailable', 'network_timeout', 'invoke_failed']
+  // 两格问的是**不同**的问题，所以判据也不同。
+  //
+  // `health` 与工作区无关：它必须**真的走到传输层**再失败，否则这道闸测的就不是
+  // "网络不可达时也 fail closed"。这一格保持严格。
+  const transportFailureCodes = ['api_unavailable', 'network_timeout', 'invoke_failed']
+  //
+  // `room` 是**工作区相关**的调用，而离线冒烟从来没有登录过：`createRequestMeta()`
+  // 只在 `currentWorkspaceEpoch > 0` 时才带 `workspaceEpoch`，而主进程的
+  // `assertEpoch` 对工作区相关的通道要求这一格必须等于当前纪元
+  // （`src/main/desktop-ipc.ts`）。于是本机**根本没有活动工作区**时，它在碰网络
+  // **之前**就被拒掉，返回 `stale_workspace`。
+  //
+  // 2026-10-06 CI 实测：三个平台都报
+  // `{"health":{"code":"api_unavailable"},"room":{"code":"stale_workspace"}}`——
+  // 补上最小部署配置之后 `health` 这一格已经对了，`room` 这一格则**在离线模式下
+  // 结构上不可能**返回传输层错误（要走到传输层就得先有一个活动工作区，而那需要
+  // 后端与凭据，CI 两样都没有）。此前它被要求必须是 `api_unavailable`，于是这条
+  // 冒烟从建立起就不可能绿——这也解释了它为什么一直没被发现。
+  //
+  // 所以这一格接受两类**都算 fail closed** 的结局：传输层失败，或工作区边界拒绝。
+  // 它真正要证明的是"这个包不会凭空造出一份投影"，这两类都证明了。
+  const workspaceScopedFailClosedCodes = [
+    ...transportFailureCodes,
+    'stale_workspace',
+    'auth_required',
+    'reauth_required',
+  ]
   if (
     health.ok
-    || !unavailableCodes.includes(health.code)
+    || !transportFailureCodes.includes(health.code)
     || room.ok
-    || !unavailableCodes.includes(room.code)
+    || !workspaceScopedFailClosedCodes.includes(room.code)
   ) {
     throw new Error(`Portable package did not fail closed at the API boundary: ${JSON.stringify({ health, room })}`)
   }
