@@ -236,6 +236,19 @@ jobs:
         working-directory: apps/desktop-client
         run: npm run typecheck
 
+      # **先构建再测**：`scripts/runtime-asset-containment.test.mjs` 里那几条量的是
+      # "最终打包进去的是什么"——`out/renderer/assets` 下的房间层、Live2D 运行时、
+      # 任务场景原图是否与源一致，以及已退役的旧素材有没有混进去。它们读的是构建
+      # 产物，所以没有 `out/` 就没有可量的东西。
+      #
+      # 2026-10-06 实测：少了这一步，`Test desktop client` 在干净 runner 上红 3 条
+      # （`expected [] to include 'assets/companion/live2d-v3/whale/…'` 之类）。
+      # 本地一直没红，是因为工作树里躺着上一次构建留下的 `out/`——**本地的"绿"
+      # 依赖一个不在版本控制里的产物目录**，这正是「本地过、CI 不过」最阴的一种。
+      - name: Build desktop client
+        working-directory: apps/desktop-client
+        run: npm run build
+
       - name: Test desktop client
         working-directory: apps/desktop-client
         run: npm test
