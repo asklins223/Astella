@@ -472,11 +472,26 @@ describe("LearningRunSurface · 九类作答", () => {
     const { gateway } = renderInteraction({ kind: "text_response", maxChars: 400 });
     const textarea = await screen.findByRole("textbox", { name: "用自己的话回答" });
     gateway.learningRun.recordActivityLease.mockRejectedValueOnce(new Error("temporarily offline"));
-    now += 3_000;
+
+    // 先**确定性地**把那一发上报造出来，再点提交。
+    //
+    // 组件监听 window 的 focus 并据此重算资格（`syncEligibility`）：第一次让它起算，
+    // 把钟推过一个上报周期（`ACTIVITY_LEASE_INTERVAL_MS`），第二次它就结算并发起上报。
+    // 这条路径不依赖"挂载那一刻恰好跑过一次 syncEligibility"——那个时机在 effect
+    // 重跑时会丢（`activeWindowStartedAtMs` 是 effect 内的局部量），
+    // 2026-10-06 CI 全量并行时正是这么偶发红的
+    // （`expected "vi.fn()" to be called at least once`）。
+    //
+    // 而这条断言是**场景前提**：它证明"上报确实失败过一次"。前提不成立时，
+    // 后面那句"仍然允许提交"就没有被真正验到，却照样是绿的。
+    act(() => { window.dispatchEvent(new Event("focus")); });
+    now += 15_000;
+    act(() => { window.dispatchEvent(new Event("focus")); });
+    await waitFor(() => expect(gateway.learningRun.recordActivityLease).toHaveBeenCalled());
+
     fireEvent.change(textarea, { target: { value: "先核对阶段。" } });
     fireEvent.click(await submitButton());
     await waitFor(() => expect(gateway.learningRun.submit).toHaveBeenCalledTimes(1));
-    expect(gateway.learningRun.recordActivityLease).toHaveBeenCalled();
   });
 
   it("文本题能输入并提交，草稿状态贴近编辑区", async () => {
