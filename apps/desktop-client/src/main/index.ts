@@ -43,6 +43,7 @@ import {
   HOME_WINDOW_MINIMUM_SIZE
 } from '../shared/window-geometry'
 import { registerM1DesktopIpc } from './desktop-ipc'
+import { desktopDeploymentEnvironment } from './desktop-deployment'
 import { FilePendingReturnMarkerStore } from './pending-return-marker-store'
 import { FileNoteDocCacheStore } from './note-doc-cache-store'
 import { guardProcessOutputStreams } from './output-stream-guard'
@@ -758,6 +759,7 @@ app.whenReady()
   traceBoot('renderer-security-policy-registered')
   registerWindowIpc()
   registerM1DesktopIpc({
+    env: desktopDeploymentEnvironment(process.env, app.isPackaged ? join(process.resourcesPath, 'deployment.json') : undefined),
     resolveWindow: windowFor,
     getWindowState: windowStateSnapshot,
     setTitlebarTheme: (window, theme) => {

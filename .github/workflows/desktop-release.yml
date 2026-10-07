@@ -122,9 +122,14 @@ jobs:
       mac_arch: ${{ inputs.mac_arch || 'arm64' }}
     secrets: inherit
 
+  quality:
+    name: Verify packaged desktop quality
+    needs: resolve
+    uses: ./.github/workflows/desktop-client.yml
+
   release:
     name: Publish release
-    needs: [resolve, build]
+    needs: [resolve, build, quality]
     # 只有带 tag 的那次才发 Release。手动触发的是"打个包看看"，不该改写公开的发布页。
     if: needs.resolve.outputs.from_tag == 'true'
     runs-on: ubuntu-latest
@@ -180,7 +185,8 @@ jobs:
             exit 1
           fi
           if [ ! -s "$latest_mac" ]; then
-            echo "::warning::缺少 ${latest_mac}：macOS 自动更新将无法发现新版本（该端目前也需要签名才能安装更新）。"
+            echo "::error::缺少 ${latest_mac}：发布资产不完整。" >&2
+            exit 1
           else
             echo "ok  ${latest_mac}"
           fi

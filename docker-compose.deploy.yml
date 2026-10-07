@@ -1,0 +1,29 @@
+# Image digests are written by CI into deployment-images.env, without secrets.
+services:
+  api:
+    image: ${API_IMAGE:?CI must provide API_IMAGE}
+    environment:
+      TRUST_PROXY: '1'
+  migrate:
+    image: ${API_IMAGE:?CI must provide API_IMAGE}
+  seed-owner:
+    image: ${API_IMAGE:?CI must provide API_IMAGE}
+  worker:
+    image: ${WORKER_IMAGE:?CI must provide WORKER_IMAGE}
+  edge-tts:
+    image: ${EDGE_TTS_IMAGE:?CI must provide EDGE_TTS_IMAGE}
+  nginx:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports: ['80:80', '443:443']
+    volumes:
+      - ./infra/deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/lib/astella/acme:/var/www/certbot:ro
+    networks: [astella_net]
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O /dev/null http://api:4000/ready']
+      interval: 5s
+      timeout: 5s
+      retries: 12

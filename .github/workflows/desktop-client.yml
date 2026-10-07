@@ -1,10 +1,9 @@
 name: Desktop client
 
 on:
+  workflow_call:
   workflow_dispatch:
-  # 同 ci.yml：只在打 tag 时跑，main 的普通推送不再触发。
-  push:
-    tags: ["desktop-v*", "v*"]
+  # Desktop release calls this quality check once for its exact tag.
 
 permissions:
   contents: read

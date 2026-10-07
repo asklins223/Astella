@@ -46,12 +46,22 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 env:
   NODE_VERSION: "22"
 
 jobs:
+  deploy:
+    name: Deploy server on release tags
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    needs: [packages, api, worker, desktop, backup-scripts]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/server-deploy.yml
+    secrets: inherit
+
   # ─── packages/：四个共享包 ──────────────────────────────────────────────
   #
   # 用一个矩阵而不是四个 job：四个包的形状完全一样（npm ci → typecheck → test），

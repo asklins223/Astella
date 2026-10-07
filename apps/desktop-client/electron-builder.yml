@@ -34,6 +34,9 @@ files:
   - package.json
 
 asar: true
+extraResources:
+  - from: build/deployment.json
+    to: deployment.json
 compression: maximum
 
 # `electron-builder.yml` 只回答"一个 target 长什么样"：出 nsis 安装包还是 dmg。

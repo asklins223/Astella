@@ -2,6 +2,7 @@ import { loadEnvFile } from "node:process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { ResolvedPlatform } from "@astella/shared/platform-config";
+import type { Capability } from "@astella/shared";
 import { postJsonToPublicEndpoint, postSseToPublicEndpoint, type PublicJsonRequester,
   type PublicStreamingRequester } from "@astella/shared/public-json-http";
 import { OpenCodeGoProvider } from "../lib/providers/opencode-go.ts";
@@ -23,7 +24,7 @@ const num = (v:unknown):number|null => typeof v==="number" && Number.isFinite(v)
 export type WireReceipt = {model:unknown;effort:unknown;enableThinking:unknown;outputLimit:unknown;
   inputTokens:number|null;outputTokens:number|null;reasoningTokens:number|null;elapsedMs:number;transport:string};
 
-export function platform(capability:string):ResolvedPlatform {
+export function platform(capability:Capability):ResolvedPlatform {
   const resolved=resolveSystemPlatform(capability);
   if(!resolved?.apiKey || resolved.type==="mock") throw new Error(`Real ${capability} route is missing`);
   return resolved;

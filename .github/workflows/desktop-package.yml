@@ -68,6 +68,8 @@ env:
   # 出包用的渲染层变体，与 desktop-client.yml 的 package-smoke 保持一致：
   # 装出来的包要跟质量闸验过的是同一份界面。
   VITE_HOME_SCENE_VARIANT: v2
+  DESKTOP_API_ORIGIN: ${{ secrets.DESKTOP_API_ORIGIN }}
+  ASTELLA_DOMAIN_SCHEMA_REVISION: ${{ secrets.ASTELLA_DOMAIN_SCHEMA_REVISION }}
 
 jobs:
   windows:
@@ -133,6 +135,7 @@ jobs:
             echo "Windows code signing: 未配置，产物将未签名"
           fi
       - name: Build and package Windows installer
+        # Write public HTTPS defaults before packaging; no API keys enter the app.
         working-directory: apps/desktop-client
         # ⚠️ `--publish never` 是必需的，不是可选优化。
         # electron-builder 在 CI 里默认按 `onTagOrDraft` 发布：runner 上 `CI=true`，
@@ -142,7 +145,9 @@ jobs:
         # 资产传完再公开），这里只需要产物，所以明确让它别碰发布。
         # `--publish never` 不影响 `latest.yml` 的生成：那份清单挂在
         # `event.isWriteUpdateInfo` 上，与是否真的上传无关。
-        run: npm run package:win:x64 -- --publish never
+        run: |
+          node ../../.github/scripts/desktop-deployment.mjs
+          npm run package:win:x64 -- --publish never
       - name: Verify installer lifecycle (install → launch)
         shell: pwsh
         working-directory: apps/desktop-client
@@ -800,7 +805,9 @@ jobs:
       - name: Build and package macOS installers
         working-directory: apps/desktop-client
         # 同 Windows 那一节：CI + tag checkout 会让 electron-builder 自行尝试发布。
-        run: npm run package:mac:${{ inputs.mac_arch || 'arm64' }} -- --publish never
+        run: |
+          node ../../.github/scripts/desktop-deployment.mjs
+          npm run package:mac:${{ inputs.mac_arch || 'arm64' }} -- --publish never
       - name: Verify macOS deliverables (zip → app bundle → launch)
         working-directory: apps/desktop-client
         env:

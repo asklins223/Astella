@@ -5,6 +5,7 @@
 **/.git
 **/.gitignore
 **/.env
+**/.env.*
 **/.env.local
 **/.env.*.local
 **/*.md
@@ -57,4 +58,4 @@
 # 目录的悬空 import；生产 typecheck 侧同样需要显式排除它（tsc 的 exclude 挡不住
 # 被 import 拉进来的文件）。两处一起排除，两边才对齐。
 apps/api/src/scripts/note-round-learning-live.ts
-
+workers/ai-worker/src/live-tests

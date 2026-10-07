@@ -1,0 +1,130 @@
+name: Server deploy
+
+# Called only after the existing CI jobs pass for a v* tag.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-production
+  cancel-in-progress: false
+
+jobs:
+  images:
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      api: ${{ steps.api.outputs.digest }}
+      worker: ${{ steps.worker.outputs.digest }}
+      edge_tts: ${{ steps.edge_tts.outputs.digest }}
+      image_prefix: ${{ steps.names.outputs.prefix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Validate release tag and source version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node .github/scripts/version-contract.mjs --check
+          node --input-type=module -e 'import {parseReleaseTag} from "./.github/scripts/version-contract.mjs"; import fs from "node:fs"; const tag=parseReleaseTag(process.env.RELEASE_TAG); if (!tag || tag.version !== JSON.parse(fs.readFileSync("release/version.json")).version) process.exit(1);'
+      - name: Test deployment scripts
+        run: |
+          python3 infra/deploy/__tests__/bundle.test.py
+          shellcheck infra/deploy/*.sh
+      - name: Resolve lowercase image names
+        id: names
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "prefix=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build API production image
+        id: api
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          target: prod
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.names.outputs.prefix }}-api:sha-${{ github.sha }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      - name: Build worker production image
+        id: worker
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: workers/ai-worker/Dockerfile
+          target: prod
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.names.outputs.prefix }}-worker:sha-${{ github.sha }}
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
+      - name: Build TTS image
+        id: edge_tts
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docker/edge-tts/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.names.outputs.prefix }}-edge-tts:sha-${{ github.sha }}
+          cache-from: type=gha,scope=edge-tts
+          cache-to: type=gha,mode=max,scope=edge-tts
+
+  deploy:
+    needs: images
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Write image digests
+        env:
+          PREFIX: ${{ needs.images.outputs.image_prefix }}
+          API_DIGEST: ${{ needs.images.outputs.api }}
+          WORKER_DIGEST: ${{ needs.images.outputs.worker }}
+          TTS_DIGEST: ${{ needs.images.outputs.edge_tts }}
+        run: |
+          printf 'API_IMAGE=%s-api@%s\nWORKER_IMAGE=%s-worker@%s\nEDGE_TTS_IMAGE=%s-edge-tts@%s\n' \
+            "$PREFIX" "$API_DIGEST" "$PREFIX" "$WORKER_DIGEST" "$PREFIX" "$TTS_DIGEST" > deployment-images.env
+      - name: Deploy exact commit over verified SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
+          task_ssh_dir="$(mktemp -d)"
+          trap 'rm -rf "$task_ssh_dir"' EXIT
+          chmod 700 "$task_ssh_dir"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$task_ssh_dir/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$task_ssh_dir/known_hosts"
+          chmod 600 "$task_ssh_dir/key" "$task_ssh_dir/known_hosts"
+          { printf '%s\n' "$GHCR_TOKEN";
+            tar -czf - docker-compose.yml docker-compose.deploy.yml deployment-images.env config infra/postgres infra/deploy/nginx.conf;
+          } | ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 \
+            -o UserKnownHostsFile="$task_ssh_dir/known_hosts" -i "$task_ssh_dir/key" \
+            -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" "deploy $GITHUB_SHA"

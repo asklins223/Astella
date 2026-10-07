@@ -253,11 +253,13 @@ make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB   # 值不对就打印取消信息�
 
 **目前还没做的事**，按现在仓库状态：
 
-- 没有 TLS 终结配置：仓库里找不到 nginx / Caddy / Traefik / 证书相关定义，生产栈只发 HTTP，HTTPS 归部署方的外部代理。
+- TLS 终结由 `docker-compose.deploy.yml` 的 Nginx 提供，IP 证书与续期见 [部署说明](./deployment.md)。单独使用基础生产 Compose 时仍需要 TLS 代理。
 - 没有密钥管理器：PostgreSQL 与 MinIO 凭据通过环境变量注入，`docker inspect` 可见（`docker-compose.yml` 末尾的 SEC-18 备注明写这一点，并提醒"只加 `secrets:` 配置而不改应用代码不会生效"）。
 - 没有代码签名与公证（见上文），macOS 自动更新因此不可用。
 - 没有邮件自助找回密码：`apps/api/src/modules/identity/routes.ts` 只有 `POST /auth/change-password`（验证旧密码并撤销全部会话）和 `POST /auth/recovered-users/:userId/reset-password`（需 `requireSession + requireOwner`，给被恢复的用户初始化口令）。忘记密码只能请工作区 Owner 处理。
 - 没有自动扩缩容方案：三份 compose 都是单机编排（`restart: unless-stopped`），`AUTH_RATE_LIMIT_STORE=postgres` 只是让限流在多副本下不失真，不代表仓库提供了扩缩容链路。
+
+Tag 自动部署、私有配置、IP HTTPS 和迁移回退流程见 [部署说明](./deployment.md)。服务端 tag 现在通过 CI 构建并推送 GHCR 镜像，以 digest 部署；`docker-compose.deploy.yml` 提供 Nginx TLS 终结配置。
 
 ## 已知的运维缺口
 
@@ -266,10 +268,10 @@ make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB   # 值不对就打印取消信息�
 1. **`infra/prometheus/alerts.yml` 里 5 条告警永远不会触发**：`AstellaHighProviderErrorRate`、`AstellaProviderSchemaFailure`、`AstellaProviderQuotaExceeded` 依赖 `astella_provider_errors_total`，`AstellaSearchIndexDrift` 与 `AstellaHighSearchDriftRatio` 依赖 `astella_search_drift_total` / `astella_search_documents_total`——这四个指标族在 `apps/api`、`workers/ai-worker`、`packages` 的源码里**没有任何生产者**（全仓 grep 只在 `alerts.yml`、`prometheus.yml` 注释和归档审计文档里出现）。规则文件本身没被 `--web.enable-lifecycle` 之外的任何检查校验过。
 2. **没有告警出口**：`log-receiver` 只把告警 POST 给 sidecar 打印到 stdout。没有 Slack / PagerDuty / 邮件 receiver，因此"告警响了"这件事本身需要有人主动去看日志或 Prometheus UI。
 3. **`verify-alerts-syntax.mjs` 没接线**：它本来会校验规则形状与重复告警名，并提示 15 个必需指标里有哪些没被 `alerts.yml` 引用，但它不在 `verify`、`release-check`、任何工作流或包脚本里。同样未接线的还有 `verify-shared-exports.mjs`（专防"文件存在但 `exports` 没登记、typecheck 绿而运行时 `ERR_PACKAGE_PATH_NOT_EXPORTED`"这一类）、`coverage-baseline-save.mjs`、`capture-image-digests.mjs`、`.github/ci/ai-platforms.mock.json`。
-4. **镜像 digest 链路是断的**：`release-manifest-generate.mjs` 支持 `--images` 读取 `capture-image-digests.mjs` 的产物，但 `make release-manifest` 与 `make release-check` 都没传这个参数，所以 RC manifest 的镜像字段走占位符分支。CI 也不再构建或扫描生产镜像，仓库里没有任何地方保存可拉取的 digest。
+4. **镜像 digest 链路是断的**：`release-manifest-generate.mjs` 支持 `--images` 读取 `capture-image-digests.mjs` 的产物，但 `make release-manifest` 与 `make release-check` 都没传这个参数，所以 RC manifest 的镜像字段走占位符分支。新 tag 部署流程会构建 GHCR 镜像并以 digest 部署；旧 RC manifest 工具仍未接入这些 digest，镜像扫描仍未接入。
 5. **迁移生命周期没有自动验证**：全新库迁移、重复迁移、旧版本升级迁移这三类曾属于 CI，现在只能靠 `make up` / `make alpha-up` 的一次式 `migrate` 顺带覆盖，`test:db-integrity:postgres`（含 `db-migrations.integration.ts`）需要显式在一次性库上跑。
 6. **备份调度要手工安装**：`alpha-cron-setup.sh` 与 `alpha-backup-cron.sh` 不在 make/compose 链路上，`rotate.sh` 也没有目标；`make alpha-backup` 是单次动作，不做保留轮换。第一次搭 Alpha 时 `init` 与 `freshness` 两步只能直接调脚本。
-7. **`.env.example` 与 compose 的必填项不同步**：`EDGE_TTS_AUTH_TOKEN` 在 dev 与 prod 两份文件里都是 `:?` 必填，但在模板里是**注释掉的一行**。照 README 做 `cp .env.example .env` 之后，`make up` 会在校验变量这一步失败，要手动取消注释并填值。
+7. **环境模板仍需填真实必填项**：`EDGE_TTS_AUTH_TOKEN` 已在 `.env.example` 中显式列出，复制模板后需要填值；数据库密码、角色 URL 和存储密码也不能留空。
 8. **`scripts/alpha-env-setup.sh` 的文件头声称 Alpha 包含 "PostgreSQL + API + Worker + Web + MinIO"**：生产 compose 里没有 `web` 服务，也没有任何 Web 容器（`apps/web` 已整包移除）。按这份头去排查会找不到目标。
 9. **dev 栈的容器不是非 root**：`docker-compose.dev.yml` 不给 `api`、`worker`、`postgres`、`minio`、`migrate`、`seed-demo` 设 `user:` 或 `security_opt`，而 `api` 容器还挂了 `/var/run/docker.sock`（等价宿主机 root）。这是本机开发换取热重载与面板能力的取舍，**不要把 dev 文件当生产模板**；`no-new-privileges` 只在 `edge-tts` 与叠加层的四个服务上成立。
 10. **`docker.sock` 挂载与 `/admin` 的容器操作能力没有单独的审计视图**：面板可以 start/stop/restart 容器，这条能力只由 `ADMIN_PANEL_TOKEN` 一个闸守住。

@@ -253,6 +253,9 @@ services:
       # EDGE_TTS_AUTH_TOKEN 那种"缺了就不能跑"的必需项）。
       # 生成：openssl rand -hex 32
       ADMIN_PANEL_TOKEN: ${ADMIN_PANEL_TOKEN:-}
+      ADMIN_PANEL_PATH: ${ADMIN_PANEL_PATH:-/admin}
+      LEARNING_DRAFT_ENC_KEY: ${LEARNING_DRAFT_ENC_KEY:-}
+      PROJECTION_CHECKPOINT_SECRET: ${PROJECTION_CHECKPOINT_SECRET:-}
       # provider 解析与 mock 回退护栏都在 worker（governance.ts 读
       # AI_REQUIRE_CONFIGURED_PROVIDER）；api 只需要 key 与平台配置路径。
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
