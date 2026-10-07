@@ -67,6 +67,25 @@ export const companionVoiceSpeakSegmentRequestV2Schema = z.strictObject({
 });
 export type CompanionVoiceSpeakSegmentRequestV2 = z.infer<typeof companionVoiceSpeakSegmentRequestV2Schema>;
 
+/** 本机原声按回复身份保留，分段不单独占用消息额度，回听不产生合成请求。 */
+export const COMPANION_MESSAGE_AUDIO_LIMIT = 100;
+export const companionCachedVoiceListRequestV1Schema = z.strictObject({
+  runIds: z.array(z.string().uuid()).max(COMPANION_MESSAGE_AUDIO_LIMIT),
+});
+export const companionCachedVoiceListResultV1Schema = z.strictObject({
+  version: z.literal(1),
+  items: z.array(z.strictObject({
+    runId: z.string().uuid(),
+    ordinals: z.array(z.number().int().min(1).max(200)).min(1).max(200),
+  })).max(COMPANION_MESSAGE_AUDIO_LIMIT),
+});
+export const companionCachedVoiceReadRequestV1Schema = z.strictObject({
+  runId: z.string().uuid(),
+  ordinal: z.number().int().min(1).max(200),
+});
+export type CompanionCachedVoiceListResultV1 = z.infer<typeof companionCachedVoiceListResultV1Schema>;
+export type CompanionCachedVoiceReadRequestV1 = z.infer<typeof companionCachedVoiceReadRequestV1Schema>;
+
 /**
  * 一段音频在客户端那一侧的结局（0247）。
  *

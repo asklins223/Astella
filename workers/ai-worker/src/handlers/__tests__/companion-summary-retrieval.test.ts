@@ -153,3 +153,20 @@ test("44 §3.3：跨会话检索按会话内容修订号过滤，不只认 statu
   assert.match(text, /JOIN companion_conversations/);
   assert.match(text, /c\.user_id = s\.user_id/);
 });
+
+test("旧会话的长消息完整取回，尾部纠正与服务器时间不能被静默丢掉", async () => {
+  const text = "🫧前文\r\n".repeat(1800) + "最后纠正：报告只是写完，还没有交。";
+  const excerpt = await readPastConversationMessages(stubExecutor([
+    {seq:"1",role:"user",blocks:[{type:"text",text}],created_at:"2026-10-05T03:14:00Z"},
+    {seq:"2",role:"assistant",blocks:[{type:"text",text:"嗯"}],created_at:"2026-10-05T03:14:05Z"},
+  ]), scope, {conversationId:"conv-old",fromSeq:"1"});
+  assert.equal(excerpt.messages[0]?.text, text);
+  assert.equal(excerpt.messages[0]?.createdAt, "2026-10-05T03:14:00.000Z");
+  assert.equal(excerpt.throughSeq, "1", "后续消息留到下一页，而非截断首条消息正文");
+  assert.equal(excerpt.truncated, true);
+  const next = await readPastConversationMessages(stubExecutor([
+    {seq:"2",role:"assistant",blocks:[{type:"text",text:"嗯"}],created_at:"2026-10-05T03:14:05Z"},
+  ]), scope, {conversationId:"conv-old",fromSeq:"2"});
+  assert.equal(next.messages[0]?.text, "嗯");
+  assert.equal(next.truncated, false);
+});

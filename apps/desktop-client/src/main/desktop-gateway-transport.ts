@@ -1,3 +1,5 @@
+import { resolveObjectResponse, verifyDownloadedObject } from "./desktop-object-transfers";
+import { OBJECT_TRANSFER_MAX_BYTES } from "@astella/shared/object-transfer-contracts";
 /**
  * 网关的**传输层**：`DesktopGateway` 发请求所依赖的那一小块状态。
  *
@@ -47,6 +49,7 @@ import {
 import { DesktopGatewayFailure } from "./desktop-gateway-failure";
 import type { SessionCredentialStore } from "./desktop-gateway-credentials";
 import type { CompanionVoiceAudioCache, VoiceAudioProfile } from "./companion-voice-audio-cache";
+import type { CompanionMessageAudioCache } from "./companion-message-audio-cache";
 import type { RoomProjectionV1 } from "@astella/shared/room-projection-contracts";
 import type { LearningDashboardV2 } from "@astella/shared/learning-objective-surface-contracts";
 import type {
@@ -323,6 +326,7 @@ export class GatewayTransport {
       readonly guidanceAudioCache: CompanionVoiceAudioCache | null = null,
       /** 念想那一句的本机音频桶；与带路分目录，翻手记不顶掉带路的缓存。 */
       readonly thoughtAudioCache: CompanionVoiceAudioCache | null = null,
+      readonly messageAudioCache: CompanionMessageAudioCache | null = null,
     ) {
       this.configuration = configuration;
       this.configurationError = configurationError;
@@ -615,6 +619,7 @@ readonly companionAccountSessionId = randomUUID();
   if (!configuration) throw new DesktopGatewayFailure("configuration_error", "user_action");
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
+  headers.set("X-Astella-Object-Transfer-Accept", "1");
   if (init.body !== undefined) headers.set("Content-Type", "application/json");
   if (authenticated && this.token) headers.set("Authorization", `Bearer ${this.token}`);
   let response: Response;
@@ -628,17 +633,23 @@ readonly companionAccountSessionId = randomUUID();
       redirect: "manual",
     });
   } catch (error) {
+    if (requestId && controller && this.activeRequests.get(requestId) === controller) this.activeRequests.delete(requestId);
     if (error instanceof Error && error.name === "AbortError") {
       throw new DesktopGatewayFailure("cancelled", "never", { localEffect: "request_cancelled" });
     }
     this.connection = { version: 1, kind: "api_unavailable" };
     throw new DesktopGatewayFailure("api_unavailable", "safe_retry");
-  } finally {
-    if (requestId && controller && this.activeRequests.get(requestId) === controller) this.activeRequests.delete(requestId);
   }
+  try {
   if (response.status >= 300 && response.status < 400 && response.status !== 304) {
     this.connection = { version: 1, kind: "api_untrusted", reason: "wrong_service" };
     throw new DesktopGatewayFailure("api_untrusted", "user_action");
+  }
+  if (response.ok && response.headers.get("X-Astella-Object-Transfer") === "1") {
+    const resolved = await resolveObjectResponse(this, response, OBJECT_TRANSFER_MAX_BYTES, controller?.signal);
+    const bytes = await this.readBytesWithinCap(resolved.response, OBJECT_TRANSFER_MAX_BYTES);
+    verifyDownloadedObject(bytes, resolved.descriptor);
+    return { status: resolved.response.status, body: JSON.parse(new TextDecoder().decode(bytes)) as unknown, headers: resolved.response.headers };
   }
   let body: unknown = null;
   if (response.status !== 204) {
@@ -658,6 +669,9 @@ readonly companionAccountSessionId = randomUUID();
   if (!response.ok && mapErrors) throw this.mapResponseError(response.status, response.headers, unauthorizedCode, body, path);
   if (!response.ok && !allowHttpErrors) throw new DesktopGatewayFailure("api_unavailable", "safe_retry", { httpStatus: response.status });
   return { status: response.status, body, headers: response.headers };
+  } finally {
+    if (requestId && controller && this.activeRequests.get(requestId) === controller) this.activeRequests.delete(requestId);
+  }
 }
   async requestBinaryBytes(
   path: string,
@@ -669,12 +683,13 @@ readonly companionAccountSessionId = randomUUID();
   if (!configuration) throw new DesktopGatewayFailure("configuration_error", "user_action");
   const headers = new Headers(init.headers);
   headers.set("Accept", policy.accept);
+  headers.set("X-Astella-Object-Transfer-Accept", "1");
   if (init.body !== undefined) headers.set("Content-Type", "application/json");
   if (this.token) headers.set("Authorization", `Bearer ${this.token}`);
   const controller = requestId ? new AbortController() : undefined;
   if (requestId && controller) this.activeRequests.set(requestId, controller);
   try {
-    const response = await fetch(new URL(path, `${configuration.config.apiOrigin}/`), {
+    let response = await fetch(new URL(path, `${configuration.config.apiOrigin}/`), {
       ...init,
       headers,
       signal: controller?.signal,
@@ -691,6 +706,8 @@ readonly companionAccountSessionId = randomUUID();
       const errorBody = response.status === 403 ? await this.errorBodyForDomainCode(response) : undefined;
       throw this.mapResponseError(response.status, response.headers, undefined, errorBody, path);
     }
+    const resolved = await resolveObjectResponse(this, response, policy.maxBytes, controller?.signal);
+    response = resolved.response;
     const contentType = response.headers.get("content-type")?.trim().toLowerCase() ?? "";
     if (!contentType.startsWith(policy.contentTypePrefix)) {
       // 服务端失败体（JSON error）永远不进入 renderer。
@@ -702,9 +719,11 @@ readonly companionAccountSessionId = randomUUID();
       await this.discardResponseBody(response);
       throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     }
+    const bytes = await this.readBytesWithinCap(response, policy.maxBytes);
+    verifyDownloadedObject(bytes, resolved.descriptor);
     return {
       status: response.status,
-      bytes: await this.readBytesWithinCap(response, policy.maxBytes),
+      bytes,
       contentType,
       headers: response.headers,
     };
@@ -746,11 +765,12 @@ readonly companionAccountSessionId = randomUUID();
   if (!configuration) throw new DesktopGatewayFailure("configuration_error", "user_action");
   const headers = new Headers();
   headers.set("Accept", policy.accept);
+  headers.set("X-Astella-Object-Transfer-Accept", "1");
   if (this.token) headers.set("Authorization", `Bearer ${this.token}`);
   const controller = requestId ? new AbortController() : undefined;
   if (requestId && controller) this.activeRequests.set(requestId, controller);
   try {
-    const response = await fetch(new URL(path, `${configuration.config.apiOrigin}/`), {
+    let response = await fetch(new URL(path, `${configuration.config.apiOrigin}/`), {
       method: "GET",
       headers,
       signal: controller?.signal,
@@ -766,6 +786,8 @@ readonly companionAccountSessionId = randomUUID();
       const errorBody = response.status === 403 ? await this.errorBodyForDomainCode(response) : undefined;
       throw this.mapResponseError(response.status, response.headers, undefined, errorBody, path);
     }
+    const resolved = await resolveObjectResponse(this, response, policy.maxBytes, controller?.signal);
+    response = resolved.response;
     const contentType = response.headers.get("content-type")?.trim().toLowerCase() ?? "";
     if (!contentType.startsWith(policy.contentTypePrefix)) {
       // 服务端回了 JSON（多半是错误体），正文不是 Markdown：宁可不写那个文件。
@@ -777,9 +799,11 @@ readonly companionAccountSessionId = randomUUID();
       await this.discardResponseBody(response);
       throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     }
+    const bytes = await this.readBytesWithinCap(response, policy.maxBytes);
+    verifyDownloadedObject(bytes, resolved.descriptor);
     return {
       status: response.status,
-      text: new TextDecoder().decode(await this.readBytesWithinCap(response, policy.maxBytes)),
+      text: new TextDecoder().decode(bytes),
       contentType,
       headers: response.headers,
     };

@@ -3,6 +3,7 @@ import type { CompanionHistoryItemV1 } from "@astella/shared/companion-memory-de
 import { useLayoutEffect,useMemo,useRef } from "react";
 import { plainCompanionBubbleText,renderCompanionMarkdown } from "../../companion/companion-markdown";
 import { CompanionMessageRichBlocks,CompanionQuoteBlock,messageDayKey,messageDayLabel } from "../../companion/CompanionChatRecord";
+import { CompanionMessageAudioButton } from "../../companion/CompanionMessageAudioButton";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { formatRelative } from "../notebook/surface-data";
@@ -112,7 +113,7 @@ export function DialoguePanel(props: DialoguePanelProps) {
           const text = item.blocks.filter(block => block.type === "text").map(block => block.type === "text" ? block.text : "").join("\n\n");
           const day = messageDayKey(item.createdAt); const previous = props.items[index - 1];
           const discovery = props.discoveryFor?.(item);
-          return <div key={item.messageId}>{!previous || messageDayKey(previous.createdAt) !== day ? <div className="cc-thread__day"><time>{messageDayLabel(day)}</time></div> : null}<article tabIndex={-1} data-role={item.role} data-kind={item.kind} id={`companion-message-${item.messageId}`}><header><strong>{item.role === "assistant" ? props.companionName ?? "伴星" : dialogueRoleLabel(item.role)}</strong><span className="cc-thread__meta"><time>{formatRelative(item.createdAt)}</time>{discovery ? <DiscoveryKeepAction {...discovery} /> : null}</span></header>
+          return <div key={item.messageId}>{!previous || messageDayKey(previous.createdAt) !== day ? <div className="cc-thread__day"><time>{messageDayLabel(day)}</time></div> : null}<article tabIndex={-1} data-role={item.role} data-kind={item.kind} id={`companion-message-${item.messageId}`}><header><strong>{item.role === "assistant" ? props.companionName ?? "伴星" : dialogueRoleLabel(item.role)}</strong><span className="cc-thread__meta">{item.role === "assistant" ? <CompanionMessageAudioButton runId={item.runId} /> : null}<time>{formatRelative(item.createdAt)}</time>{discovery ? <DiscoveryKeepAction {...discovery} /> : null}</span></header>
             {item.selection ? <CompanionQuoteBlock block={{ type: "quote", label: "引用的原文", text: item.selection.text }} /> : null}
             <div className="cc-prose">{text ? renderCompanionMarkdown(text) : !item.blocks.length ? <p>{DIALOGUE_NO_BODY}</p> : null}</div>
             <CompanionMessageRichBlocks blocks={item.blocks} />

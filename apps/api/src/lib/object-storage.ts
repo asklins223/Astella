@@ -7,6 +7,7 @@
 import {
   S3Client,
   PutObjectCommand,
+  CopyObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
   HeadObjectCommand,
@@ -14,10 +15,13 @@ import {
   NoSuchKey,
 } from "@aws-sdk/client-s3";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { objectTransferDownloadSchema, type ObjectTransferDownload } from "@astella/shared/object-transfer-contracts";
 import { logger } from "./logger.ts";
 import {
   resolveStorageBucket as resolveStorageBucketShared,
-  resolveStorageCredentials as resolveStorageCredentialsShared,
+  resolveStorageConfig,
+  isRemoteStorage,
   isStorageConfigured as isStorageConfiguredShared,
   resolveStorageRequestTimeoutMs as resolveStorageRequestTimeoutMsShared,
   type StorageEnv,
@@ -35,17 +39,6 @@ import {
  * S3 客户端仍由本文件构造——`@aws-sdk/client-s3` 不是 shared 的依赖，不该被拖进去。
  */
 const env = (): StorageEnv => process.env;
-
-function storageCredentials(): { accessKeyId: string; secretAccessKey: string } {
-  const resolved = resolveStorageCredentialsShared(env());
-  if (!resolved) {
-    throw new Error(
-      "Missing storage credentials: MINIO_ACCESS_KEY/MINIO_SECRET_KEY "
-      + "(or MINIO_ROOT_USER/MINIO_ROOT_PASSWORD)",
-    );
-  }
-  return resolved;
-}
 
 /**
  * 存储是否已配置（readiness 探针用：据此决定上传端点是否可用）。
@@ -91,14 +84,16 @@ function getClient(): S3Client {
   if (clientInitError) throw clientInitError;
 
   try {
-    const endpoint = process.env.STORAGE_ENDPOINT ?? "http://minio:9000";
-    const region = process.env.S3_REGION ?? "us-east-1";
-    const { accessKeyId, secretAccessKey } = storageCredentials();
+    const config = resolveStorageConfig(env());
+    if (!config) throw new Error("Object storage configuration is incomplete");
+    const { endpoint, region, accessKeyId, secretAccessKey } = config;
     client = new S3Client({
       endpoint,
       region,
       credentials: { accessKeyId, secretAccessKey },
       forcePathStyle: true,
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
       requestHandler: new NodeHttpHandler({
         connectionTimeout: 10_000,
         requestTimeout: storageRequestTimeoutMs(),
@@ -250,4 +245,53 @@ export async function deleteObject(objectKey: string): Promise<void> {
   });
   await getClient().send(command);
   logger.debug({ objectKey }, "object deleted from storage");
+}
+
+
+export function usesRemoteStorage(): boolean { return isRemoteStorage(process.env); }
+
+export function storageTransferOrigins(): string[] {
+  if (!usesRemoteStorage()) return [];
+  const endpoint = process.env.STORAGE_PUBLIC_ENDPOINT?.trim() || process.env.STORAGE_ENDPOINT?.trim();
+  if (!endpoint || new URL(endpoint).protocol !== "https:") throw new Error("Remote transfers require an HTTPS storage endpoint");
+  return [new URL(endpoint).origin];
+}
+
+function publicClient(): S3Client {
+  const config = resolveStorageConfig(env());
+  if (!config) throw new Error("Object storage configuration is incomplete");
+  return new S3Client({ endpoint: storageTransferOrigins()[0], region: config.region,
+    credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+    forcePathStyle: true, requestChecksumCalculation: "WHEN_REQUIRED", responseChecksumValidation: "WHEN_REQUIRED" });
+}
+
+export async function signObjectUpload(key: string, mimeType: string, byteLength: number): Promise<string> {
+  const signer = publicClient();
+  try { return await getSignedUrl(signer, new PutObjectCommand({ Bucket: getBucket(), Key: key,
+    ContentType: mimeType, ContentLength: byteLength }), { expiresIn: 900, signableHeaders: new Set(["content-type", "content-length"]) }); }
+  finally { signer.destroy(); }
+}
+
+export async function signObjectDownload(key: string, contentType: string, byteLength: number,
+  sha256?: string): Promise<ObjectTransferDownload> {
+  const signer = publicClient();
+  try {
+    const url = await getSignedUrl(signer, new GetObjectCommand({ Bucket: getBucket(), Key: key,
+      ResponseContentType: contentType }), { expiresIn: 300 });
+    return objectTransferDownloadSchema.parse({ version: 1, kind: "object_download", url, contentType,
+      byteLength, ...(sha256 ? { sha256 } : {}), expiresAt: new Date(Date.now() + 300_000).toISOString() });
+  } finally { signer.destroy(); }
+}
+
+/** Copy to an unsigned final key: replaying the staging PUT cannot alter a committed asset. */
+export async function persistObject(key: string, bytes: Buffer, mimeType: string, staging?: { key: string; etag: string }): Promise<void> {
+  if (!staging) { await uploadObject(key, bytes, mimeType); return; }
+  await getClient().send(new CopyObjectCommand({ Bucket: getBucket(), Key: key,
+    CopySource: `${getBucket()}/${staging.key.split("/").map(encodeURIComponent).join("/")}`,
+    CopySourceIfMatch: staging.etag,
+    ContentType: mimeType, MetadataDirective: "REPLACE" }));
+}
+
+export async function uploadObjectFile(key: string, body: import("node:fs").ReadStream, contentType: string, contentLength: number): Promise<void> {
+  await getClient().send(new PutObjectCommand({ Bucket: getBucket(), Key: key, Body: body, ContentType: contentType, ContentLength: contentLength }));
 }

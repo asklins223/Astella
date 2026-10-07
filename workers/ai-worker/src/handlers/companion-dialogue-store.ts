@@ -81,7 +81,8 @@ export interface ReadContext {
   proposals?: CompanionContextHandoffSnapshotV1["proposals"];
   groundedTutorContext: import("./companion-dialogue-content.ts").GroundedTutorContext | null;
   userText: string;
-  recentMessages: { role: "user" | "assistant"; text: string }[];
+  recentMessages: import("./companion-context-handoff.ts").CompanionRecentHistoryMessage[];
+  conversationClock?: import("./companion-conversation-evidence.ts").CompanionConversationClock;
   residentMemories: { kind: string; content: string; epistemicStatus?: string | null }[];
   memoryDirectory: CompanionMemoryDirectoryEntry[];
   /** §4.6.10 手册目录：只有标题与触发条件；正文由 companion_read_playbook 按 id 展开。 */
@@ -226,6 +227,7 @@ export interface CompanionHistoryRow extends Record<string, unknown> {
   blocks: unknown;
   content_sha256: string;
   page_context: unknown;
+  created_at: string;
 }
 
 // A cancelled/superseded request is no longer waiting for an answer. Its user
@@ -252,6 +254,7 @@ export async function readCompanionHistoryRows(
 ): Promise<CompanionHistoryRow[]> {
   const rows = await tx.execute<CompanionHistoryRow>(sql`
     SELECT m.id, m.seq::text AS seq, m.role, m.blocks, m.content_sha256,
+           to_char(m.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
            (SELECT jsonb_build_object('selection', coalesce(r.page_context->'selection', r.page_context->'context'->'selection'))
             FROM companion_turn_runs r
             WHERE r.user_message_id = m.id AND m.role = 'user'

@@ -82,6 +82,7 @@ import {
   type TaskQueueRow,
 } from "./companion-read-tools.ts";
 import { partitionPersonaPatch } from "./companion-step-plan.ts";
+import { conversationInstant } from "./companion-conversation-evidence.ts";
 import { runWorkerAiTask } from "./worker-ai-task.ts";
 
 /** 工具报错与结果类型已搬到 `companion-tool-result.ts`（先搬状态、再搬方法，见那里）。 */
@@ -198,6 +199,8 @@ export async function executeReadTool(
           return {
             value: {
               hits,
+              searchScope: { kind: "other_conversations", excludedConversationId: event.read.conversationId,
+                coverage: "indexed_summaries_methods_and_goals" },
               // 方法目录只给标题与触发条件：正文按 id+revision 另行展开（companion_read_playbook）。
               methods: methods.map((method) => ({
                 methodId: method.methodId,
@@ -244,10 +247,16 @@ export async function executeReadTool(
         );
       }
       const history = event.read.recentMessages.slice(-limit).map((message) => ({
+        seq: message.seq ?? null,
         role: message.role,
-        text: message.text.slice(0, 1_000),
+        text: message.text,
+        createdAt: conversationInstant(message.createdAt),
       }));
-      return { value: { messages: history }, safeSummary: `已读取 ${history.length} 条对话历史` };
+      return { value: { messages: history,
+        source: { kind: "current_conversation_tail", conversationId: event.read.conversationId,
+          timestampMeaning: "message_creation_not_narrated_event", observedAt: event.read.conversationClock?.observedAt ?? null,
+          timezone: event.read.conversationClock?.timezone ?? null },
+      }, safeSummary: `已读取 ${history.length} 条对话历史` };
     }
         case "companion_read_memory":
     case "companion_recall_memory":

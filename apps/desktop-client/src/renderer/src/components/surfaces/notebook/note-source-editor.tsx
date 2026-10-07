@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { ChangeSet, Compartment, EditorState, StateEffect, StateField, Text, type Range } from "@codemirror/state";
-import { Decoration, EditorView, drawSelection, keymap, lineNumbers, type DecorationSet } from "@codemirror/view";
+import { Decoration, EditorView, drawSelection, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, type DecorationSet } from "@codemirror/view";
 import { defaultKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
-import { bracketMatching, defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { search, searchKeymap, openSearchPanel } from "@codemirror/search";
+import { bracketMatching, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
+import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from "@codemirror/search";
+import { Code2, Hash, Search, WrapText } from "lucide-react";
 import type { NoteMarkdownEditorHandle } from "./note-markdown-editor";
 import { noteSourceOffset, noteSourcePosition, noteSourceBlocks } from "./note-source-structure";
 import { placementsByBlock, type AnnotationPlacement } from "./note-annotation-placement";
@@ -40,9 +42,12 @@ export function NoteSourceEditor(props: {
   const viewRef = useRef<EditorView | null>(null);
   const readOnly = useRef(new Compartment());
   const gutter = useRef(new Compartment());
+  const wrapping = useRef(new Compartment());
   const latest = useRef(props);
   latest.current = props;
   const [numbered, setNumbered] = useState(true);
+  const [wrapped, setWrapped] = useState(true);
+  const [position, setPosition] = useState({ line: 1, column: 1, lines: 1, selected: 0 });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -68,8 +73,9 @@ export function NoteSourceEditor(props: {
     };
     const view = new EditorView({ parent: root.current, state: EditorState.create({
       doc: props.editor.getMarkdown() ?? "",
-      extensions: [markdown(), syntaxHighlighting(defaultHighlightStyle), bracketMatching(), drawSelection(),
-        search({ top: true }), EditorView.lineWrapping,
+      extensions: [markdown(), syntaxHighlighting(sourceHighlightStyle), bracketMatching(), drawSelection(),
+        highlightActiveLine(), highlightActiveLineGutter(), highlightSelectionMatches(),
+        search({ top: true }), wrapping.current.of(EditorView.lineWrapping),
         EditorState.phrases.of({
           Find: "查找", Replace: "替换", next: "下一处", previous: "上一处", all: "选择全部",
           "match case": "区分大小写", regexp: "正则表达式", "by word": "完整词语",
@@ -117,9 +123,16 @@ export function NoteSourceEditor(props: {
         }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !fromDocument) write(update.state.doc.toString(), update.startState.doc.toString(), update.changes);
+          if (update.docChanged || update.selectionSet) updatePosition(update.state);
         }),
       ],
     }) });
+    function updatePosition(state: EditorState) {
+      const selection = state.selection.main;
+      const line = state.doc.lineAt(selection.head);
+      setPosition({ line: line.number, column: selection.head - line.from + 1, lines: state.doc.lines, selected: selection.to - selection.from });
+    }
+    updatePosition(view.state);
     function sync() {
       // An IME owns its composition until it commits; a remote update must not cut it short.
       if (view.compositionStarted || fromSource) return;
@@ -187,6 +200,7 @@ export function NoteSourceEditor(props: {
 
   useEffect(() => { viewRef.current?.dispatch({ effects: readOnly.current.reconfigure(EditorState.readOnly.of(props.disabled)) }); }, [props.disabled]);
   useEffect(() => { viewRef.current?.dispatch({ effects: gutter.current.reconfigure(numbered ? lineNumbers() : []) }); }, [numbered]);
+  useEffect(() => { viewRef.current?.dispatch({ effects: wrapping.current.reconfigure(wrapped ? EditorView.lineWrapping : []) }); }, [wrapped]);
   // 批注集合进 StateField；装饰依赖集合和 doc，两者变化都会重算位置。
   const placements = props.annotationPlacements;
   useEffect(() => {
@@ -195,13 +209,36 @@ export function NoteSourceEditor(props: {
 
   return <div className="note-source-editor">
     <div className="note-source-editor__tools">
-      <button type="button" className="text-action" aria-pressed={numbered} onClick={() => setNumbered((value) => !value)}>行号</button>
-      <button type="button" className="text-action" onClick={() => { if (viewRef.current) openSearchPanel(viewRef.current); }}>查找 / 替换</button>
+      <span className="note-source-editor__label"><Code2 size={16} aria-hidden="true" />Markdown<span className="note-source-editor__caret">{position.line} 行 · {position.column} 列</span></span>
+      <div className="note-source-editor__actions">
+        <button type="button" aria-pressed={numbered} onClick={() => setNumbered((value) => !value)}><Hash size={15} aria-hidden="true" />行号</button>
+        <button type="button" aria-pressed={wrapped} onClick={() => setWrapped((value) => !value)}><WrapText size={15} aria-hidden="true" />自动换行</button>
+        <button type="button" title="查找 / 替换（⌘F / Ctrl+F）" onClick={() => { if (viewRef.current) openSearchPanel(viewRef.current); }}><Search size={15} aria-hidden="true" />查找 / 替换</button>
+      </div>
     </div>
     <div className="note-source-editor__input" ref={root} />
-    {error ? <p className="small" role="alert">{error}</p> : null}
+    <div className="note-source-editor__status">
+      <span>第 {position.line} 行 · 第 {position.column} 列{position.selected ? ` · 已选 ${position.selected.toLocaleString()} 字符` : ""}</span>
+      <span>{position.lines.toLocaleString()} 行{props.disabled ? " · 只读" : ""}</span>
+    </div>
+    {error ? <p className="note-source-editor__error" role="alert">{error}</p> : null}
   </div>;
 }
+
+const sourceHighlightStyle = HighlightStyle.define([
+  { tag: tags.heading, color: "#3e6b50", fontWeight: "750" },
+  { tag: tags.processingInstruction, color: "#9d8061" },
+  { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: tags.strong, fontWeight: "750" },
+  { tag: tags.strikethrough, textDecoration: "line-through" },
+  { tag: [tags.link, tags.url], color: "#4f7897" },
+  { tag: tags.monospace, color: "#92583c" },
+  { tag: [tags.tagName, tags.typeName, tags.keyword], color: "#76649b" },
+  { tag: [tags.attributeName, tags.propertyName], color: "#4f7897" },
+  { tag: tags.string, color: "#5b7a47" },
+  { tag: [tags.number, tags.bool], color: "#ac7540" },
+  { tag: [tags.comment, tags.meta], color: "#8a907d" },
+]);
 
 /**
  * 批注落位放在 state 里：它一变就触发一次重算，而它本身不该进 undo 历史。

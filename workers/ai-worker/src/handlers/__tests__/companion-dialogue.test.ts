@@ -1147,6 +1147,7 @@ test("兜底话术不编造内容、不暴露内部信息", () => {
     assert.doesNotMatch(line, /provider|prompt|token|error|失败代码|INTERNAL/i);
     // 不宣称已完成任何事（persona 的"不虚构已完成"约束在兜底话术上同样成立）。
     assert.doesNotMatch(line, /已经帮你|我查到了|已保存|打开了|完成了/);
+    assert.doesNotMatch(line, /没听清|走神|再说一遍|重新问/,"后台失败不能虚构感官经历或把重试责任推给用户");
     // 净化后仍是可朗读的自然文本（走的是同一套 validate/sanitize）。
     const verdict = validateCompanionOutput(line);
     assert.equal(verdict.ok, true, `兜底句应能通过输出校验: ${line}`);

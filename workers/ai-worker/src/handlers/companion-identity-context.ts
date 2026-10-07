@@ -121,7 +121,7 @@ export function buildCompanionPersonaData(profile: CompanionPersonaContextProfil
         `说话风格：${persona.speakingStyle}`,
         ...renderPersonaBehaviour(persona),
         ...(persona.examples.length > 0
-          ? [`示例回复：`, ...persona.examples.map((e) => `- ${e}`)]
+          ? [`表达风格示例（没有附对应用户问题，不代表当前对话目的、已经发生的经历或已接受的建议）：`, ...persona.examples.map((e) => `- ${e}`)]
           : []),
         "</persona_data>",
       ]

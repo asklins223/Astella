@@ -1,3 +1,4 @@
+import { noteMarkdownTree, noteMarkdownText } from "@astella/shared/note-markdown";
 import type { ReactNode } from "react";
 import { noteAnchorBlockRangeV1, type NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 import { parseInlineMarkdown, type NoteDocInlineSegment } from "@astella/shared/note-doc-schema";
@@ -78,11 +79,7 @@ export function noteInlineAtoms(content: string): NoteInlineAtom[] {
 
 /** 这一屏真正显示出来的那几个字。概念句的高亮区间按它算，与渲染同源。 */
 export function noteInlineDisplayText(content: string): string {
-  return noteInlineAtoms(content).map((atom) => {
-    if (atom.kind === "break") return "\n";
-    if (atom.kind === "image") return "";
-    return atom.text;
-  }).join("");
+  return noteMarkdownText(noteMarkdownTree(content));
 }
 
 /** 这一块里画得出来的图片有几张（整篇画廊要按正文顺序编号）。 */
@@ -92,19 +89,27 @@ export function noteInlineImageCount(content: string): number {
 
 /** 这一块里的行内图片，按正文顺序。整篇画廊要拿它编号，渲染要拿它画，同一份来源。 */
 export function noteInlineImages(content: string): { readonly src: string; readonly alt: string }[] {
-  return noteInlineAtoms(content).flatMap((atom) => (atom.kind === "image" ? [{ src: atom.src, alt: atom.alt }] : []));
+  const images: { src: string; alt: string }[] = [];
+  const walk = (node: ReturnType<typeof noteMarkdownTree> | import("@astella/shared/note-markdown").NoteMarkdownNode) => {
+    if (node.type !== "element" && node.type !== "root") return;
+    if (node.type === "element" && node.tagName === "img") images.push({ src: String(node.properties.src ?? ""), alt: String(node.properties.alt ?? "") });
+    node.children.forEach(walk);
+  };
+  walk(noteMarkdownTree(content));
+  return images;
 }
 
 /**
  * 站内地址（`/api/uploads/...`）在渲染层画不出来：origin 是 `astella-app://`，
  * 相对路径会落到应用包内。所以和块级图片走同一条路——带会话令牌取字节，换成 blob。
  */
-function InlineImage({
+export function InlineImage({
   src,
   alt,
   workspaceEpoch,
   galleryIndex,
   onOpenGallery,
+  linked = false,
 }: {
   readonly src: string;
   readonly alt: string;
@@ -112,10 +117,13 @@ function InlineImage({
   /** 这一张在整篇图片画廊里的序号；不传就是这一篇没有画廊，点了只放大这一张。 */
   readonly galleryIndex?: number;
   readonly onOpenGallery?: (index: number) => void;
+  /** A linked badge follows its destination instead of opening the image viewer. */
+  readonly linked?: boolean;
 }) {
   const { state, retry } = useSourceImage(src, workspaceEpoch);
-  if (state.status === "loading") return <span className="small">正在载入图片…</span>;
-  if (state.status === "unavailable") return <span className="small">这张图片没能取回：{alt || src}</span>;
+  if (state.status === "loading") return <span className="small" data-note-decoration="true">正在载入图片…</span>;
+  if (state.status === "unavailable") return <span className="small" data-note-decoration="true">{src && !/^(?:[a-z][a-z\d+.-]*:|\/api\/uploads\/)/i.test(src) ? `缺少图片附件：${alt || src}（原文使用相对路径）` : `这张图片没能取回：${alt || src}`}</span>;
+  if (linked) return <img src={state.src} alt={alt} loading="lazy" />;
   if (galleryIndex === undefined || !onOpenGallery) {
     return <ZoomableReadingImage src={state.src} alt={alt} retryable={state.status === "ready"} onRetry={retry} />;
   }
@@ -154,7 +162,7 @@ export function isHorizontalRule(text: string): boolean {
  * `galleryStart` 是这一块第一张行内图片在整篇画廊里的序号；不传即这一篇没有画廊。
  * `lineClass` 给每一行套一个 `<span>`（列表项要逐行带记号），此时不再插 `<br>`。
  */
-type NoteInlineRenderOptions = {
+export type NoteInlineRenderOptions = {
     readonly mark?: readonly [number, number] | null;
     readonly workspaceEpoch?: number;
     readonly galleryStart?: number;
@@ -193,7 +201,7 @@ function annotationRanges(options: NoteInlineRenderOptions) {
 export function renderNotePlainText(content: string, options: NoteInlineRenderOptions = {}): ReactNode {
   const offset = options.textOffset ?? 0;
   return renderTextAtom({ kind: "text", text: content, start: offset, end: offset + content.length },
-    "plain", options.mark ?? null, options.mark ?? [0, 0], annotationRanges(options), options.onOpenAnnotation, options.openAnnotationId, explanationRanges(options));
+    "plain", options.mark ?? null, options.mark ?? [0, 0], annotationRanges(options), options.onOpenAnnotation, options.openAnnotationId, explanationRanges(options), options.onDeleteAnnotation);
 }
 
 export function renderNoteInline(

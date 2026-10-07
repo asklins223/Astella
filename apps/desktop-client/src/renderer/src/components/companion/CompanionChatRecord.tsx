@@ -15,6 +15,7 @@ import { openExternalLink } from "../../app/external-link";
 import { copyText } from "../../app/clipboard";
 import { companionMessageCopyText } from "./companion-message-copy";
 import { journalProposalNeedsAttention } from "./companion-journal-model";
+import { CompanionMessageAudioButton } from "./CompanionMessageAudioButton";
 
 /**
  * 「聊天记录」子级页面（2026-09-19，微信式）。
@@ -302,7 +303,7 @@ export function CompanionChatRecordArticle({
     onDecide={decision => { void chat.decideProposal(id, decision); }} onRetry={() => chat.retryProposal(id)} />);
   return (
     <article className={richBlocks.length > 0 ? "companion-record__turn companion-record__rich-turn" : "companion-record__turn"} data-message-id={message.id} data-role={message.role} data-kind={message.kind} data-cancelled={message.kind === "cancelled" || undefined}>
-      <header><span className="companion-record__author"><i className="companion-record__avatar" aria-hidden="true">{message.role === "user" ? <UserRound size={15} /> : <Sparkles size={15} />}</i><strong>{message.role === "user" ? "你" : chat.companionName}{message.kind === "voice_transcript" ? " · 语音" : ""}</strong></span><time>{messageTime(message.createdAt)}</time></header>
+      <header><span className="companion-record__author"><i className="companion-record__avatar" aria-hidden="true">{message.role === "user" ? <UserRound size={15} /> : <Sparkles size={15} />}</i><strong>{message.role === "user" ? "你" : chat.companionName}{message.kind === "voice_transcript" ? " · 语音" : ""}</strong></span><span className="companion-record__meta">{message.role === "assistant" ? <CompanionMessageAudioButton runId={message.runId} /> : null}<time>{messageTime(message.createdAt)}</time></span></header>
       {selection ? <details className="companion-record__selection"><summary><Quote size={14} aria-hidden="true" /><span>引用的原文</span><q>{selection.text.slice(0, 96)}</q></summary><CompanionQuoteBlock block={{ type: "quote", label: "当时选中的原文", text: selection.text }} /></details> : null}
       {/* 正文从 §4.8 起保留 markdown，由这里排版（抽屉与记录页共用本组件）。 */}
       <div className="companion-record__body">{renderCompanionMarkdown(companionMessageText({ ...message, blocks: message.blocks.filter(block => block.type === "text") }))}</div>

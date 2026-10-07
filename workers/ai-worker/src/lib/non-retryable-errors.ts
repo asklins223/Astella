@@ -104,6 +104,11 @@ export class CompanionKnowledgeReviewError extends Error {
   }
 }
 
+export class CompanionDialogueReviewError extends Error {
+  readonly code = "COMPANION_DIALOGUE_REVIEW_INVALID" as const;
+  constructor() { super("companion dialogue review returned an invalid removal plan"); this.name="CompanionDialogueReviewError"; }
+}
+
 /**
  * Companion Agent 预算耗尽（步数/工具调用数/执行时间）。
  *
@@ -205,6 +210,7 @@ export function isNonRetryableError(error: unknown): boolean {
   // 重投只会空转。必须直接标记 dead，交给用户重新生成。
   if (error instanceof AgentOutputError) return true;
   if (error instanceof CompanionKnowledgeReviewError) return true;
+  if (error instanceof CompanionDialogueReviewError) return true;
 
   // Agent 预算耗尽同理：run 级预算跨重投累计，重试不可能恢复。
   if (error instanceof CompanionAgentBudgetExceededError) return true;

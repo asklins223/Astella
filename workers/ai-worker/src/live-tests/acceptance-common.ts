@@ -18,22 +18,43 @@ process.env.AI_ALLOW_DOCKER_DESKTOP_SYNTHETIC_DNS ??= "true";
 if (process.env.REAL_MODEL_BATCH !== "1") throw new Error("Live acceptance requires REAL_MODEL_BATCH=1");
 export const outputDir = `${root}outputs/audits/2026-10-07-live`;
 mkdirSync(outputDir, { recursive:true });
-export const { resolveSystemPlatform } = await import("@astella/shared/platform-config-node");
+export const { resolveSystemPlatform, loadPlatformConfig } = await import("@astella/shared/platform-config-node");
 
 const obj = (v:unknown):Record<string,unknown> => v && typeof v==="object" && !Array.isArray(v) ? v as Record<string,unknown> : {};
 const num = (v:unknown):number|null => typeof v==="number" && Number.isFinite(v) ? v : null;
 export type WireReceipt = {model:unknown;effort:unknown;enableThinking:unknown;outputLimit:unknown;temperature:number|null;instructionHash:string;
   inputTokens:number|null;outputTokens:number|null;reasoningTokens:number|null;elapsedMs:number;transport:string;errorKind?:string};
 
-export function platform(capability:Capability):ResolvedPlatform {
+export function platform(capability:Capability, declaredModelOverride?: string):ResolvedPlatform {
   const resolved=resolveSystemPlatform(capability);
   if(!resolved?.apiKey || resolved.type==="mock") throw new Error(`Real ${capability} route is missing`);
+  if(declaredModelOverride) {
+    const profile=loadPlatformConfig()?.platforms[resolved.platformId]?.models?.[declaredModelOverride];
+    if(!profile)throw new Error("Only a declared model on the same configured platform can be compared");
+    return {...resolved,model:declaredModelOverride,modelProfile:profile};
+  }
   return resolved;
 }
 
 export function observedProvider(p:ResolvedPlatform, sessionId:string, receipts:WireReceipt[],
-  onInstructions?: (instructions:string)=>void):AIProvider {
+  onInstructions?: (instructions:string)=>void,
+  mapInstructions?: (instructions:string)=>string,
+  experiment?: { casualEffort?: "low" },
+  onSyntheticRequestBody?: (body:unknown)=>void):AIProvider {
+  // Explicit experiment control only. Capture the exact body actually sent.
+  const experimentalBody = (body: unknown): unknown => {
+    if (!mapInstructions && !experiment?.casualEffort) return body;
+    const b = obj(body);
+    return { ...b,
+      ...(mapInstructions && typeof b.instructions === "string" ? { instructions: mapInstructions(b.instructions) } : {}),
+      ...(mapInstructions && Array.isArray(b.messages) ? { messages: b.messages.map(m => obj(m).role === "system"
+        && typeof obj(m).content === "string" ? { ...obj(m), content: mapInstructions(String(obj(m).content)) } : m) } : {}),
+      ...(experiment?.casualEffort && b.temperature === 0.9 && obj(b.reasoning).effort === "none"
+        ? { reasoning: { ...obj(b.reasoning), effort: experiment.casualEffort } } : {}),
+    };
+  };
   const capture=(body:unknown,transport:string):WireReceipt=>{
+    onSyntheticRequestBody?.(body);
     const b=obj(body);
     const instructions=typeof b.instructions==="string"?b.instructions:
       Array.isArray(b.messages)?b.messages.filter(m=>obj(m).role==="system").map(m=>String(obj(m).content??"")).join("\n\n"):"";
@@ -46,6 +67,7 @@ export function observedProvider(p:ResolvedPlatform, sessionId:string, receipts:
     receipts.push(receipt);return receipt;
   };
   const request:PublicJsonRequester=async(url,headers,body,signal)=>{
+    body = experimentalBody(body);
     const receipt=capture(body,"json"), started=Date.now();
     try {
       const response=await postJsonToPublicEndpoint(url,headers,body,signal);
@@ -62,9 +84,28 @@ export function observedProvider(p:ResolvedPlatform, sessionId:string, receipts:
     } finally {receipt.elapsedMs=Date.now()-started;}
   };
   const streamRequest:PublicStreamingRequester=async(url,headers,body,signal)=>{
+    body = experimentalBody(body);
     const receipt=capture(body,"sse"), started=Date.now();
     const response=await postSseToPublicEndpoint(url,headers,body,signal);
-    return {...response,body:(async function*(){try{for await(const chunk of response.body)yield chunk;}
+    return {...response,body:(async function*(){
+      const decoder=new TextDecoder();let buffer="";
+      const inspect=(line:string)=>{
+        if(!line.startsWith("data:"))return;
+        try {
+          const event=obj(JSON.parse(line.slice(5).trim()));
+          const usage=obj(obj(event.response).usage??event.usage);
+          if(Object.keys(usage).length){
+            receipt.inputTokens=num(usage.input_tokens??usage.prompt_tokens);
+            receipt.outputTokens=num(usage.output_tokens??usage.completion_tokens);
+            receipt.reasoningTokens=num(obj(usage.output_tokens_details??usage.completion_tokens_details).reasoning_tokens);
+          }
+        } catch { /* not a usage event; never retain generated reasoning or text */ }
+      };
+      try{for await(const chunk of response.body){
+        buffer+=decoder.decode(chunk,{stream:true});
+        let newline:number;while((newline=buffer.indexOf("\n"))>=0){inspect(buffer.slice(0,newline));buffer=buffer.slice(newline+1);}
+        yield chunk;
+      } inspect(buffer+decoder.decode());}
       finally{receipt.elapsedMs=Date.now()-started;}})()};
   };
   const config={apiKey:p.apiKey!,baseUrl:p.baseUrl!,model:p.model,modelProfile:p.modelProfile,request,streamRequest};

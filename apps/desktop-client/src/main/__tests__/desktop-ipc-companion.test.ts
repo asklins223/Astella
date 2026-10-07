@@ -203,6 +203,9 @@ describe("companion home desktop IPC", () => {
     const getRoomProfile = vi.fn().mockResolvedValue(roomProfile);
     const patchRoomProfile = vi.fn().mockResolvedValue(roomProfile);
     const speakVoice = vi.fn().mockResolvedValue(voiceResult);
+    const audioRunId = "00000000-0000-4000-8000-000000000901";
+    const listCachedVoice = companionStub("listCachedCompanionVoice", vi.fn().mockResolvedValue({ version: 1, items: [{ runId: audioRunId, ordinals: [1, 2] }] }));
+    const readCachedVoice = companionStub("readCachedCompanionVoice", vi.fn().mockResolvedValue(voiceResult));
     const getAccountOverview = vi.fn().mockResolvedValue(accountOverview);
     const patchAccountState = vi.fn().mockResolvedValue(accountState);
     const getCompanionLearningRunContext = vi.fn().mockResolvedValue(learningRunContext);
@@ -272,6 +275,27 @@ describe("companion home desktop IPC", () => {
     );
     expect(voiceSpeakResult).toMatchObject({ ok: true, data: voiceResult, workspaceEpoch: 9 });
     expect(speakVoice.mock.calls[0].slice(1)).toEqual([voiceRequest, meta.requestId]);
+
+    expect(await requiredHandler(DESKTOP_IPC_CHANNELS.companionVoiceCachedList)(event, {
+      meta: scopedMeta, request: { runIds: [audioRunId] },
+    })).toMatchObject({ ok: true, data: { items: [{ runId: audioRunId, ordinals: [1, 2] }] }, workspaceEpoch: 9 });
+    expect(await requiredHandler(DESKTOP_IPC_CHANNELS.companionVoiceCachedRead)(event, {
+      meta: scopedMeta, request: { runId: audioRunId, ordinal: 1 },
+    })).toMatchObject({ ok: true, data: voiceResult });
+    expect(listCachedVoice).toHaveBeenCalledOnce();
+    expect(readCachedVoice).toHaveBeenCalledOnce();
+    for (const request of [{ runId: "../../audio", ordinal: 1 }, { runId: audioRunId, ordinal: 0 },
+      { runId: audioRunId, ordinal: 1, file: "/private/recording.mp3" }]) {
+      expect(await requiredHandler(DESKTOP_IPC_CHANNELS.companionVoiceCachedRead)(event, { meta: scopedMeta, request }))
+        .toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    }
+    expect(await requiredHandler(DESKTOP_IPC_CHANNELS.companionVoiceCachedList)(event, {
+      meta: scopedMeta, request: { runIds: Array(101).fill(audioRunId) },
+    })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    expect(await requiredHandler(DESKTOP_IPC_CHANNELS.companionVoiceCachedRead)(event, {
+      meta: { ...scopedMeta, workspaceEpoch: 8 }, request: { runId: audioRunId, ordinal: 1 },
+    })).toMatchObject({ ok: false, error: { code: "stale_workspace" } });
+    expect(readCachedVoice).toHaveBeenCalledOnce();
 
     // 非法/超限文本必须在 main 边界被拒绝，绝不进入 gateway。
     for (const invalidText of ["", "   ", "字".repeat(121)]) {

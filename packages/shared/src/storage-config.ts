@@ -40,6 +40,11 @@ export type ResolvedStorageConfig = {
   readonly requestTimeoutMs: number;
 };
 
+/** Deployment explicitly selects remote storage; NODE_ENV alone also describes local containers. */
+export function isRemoteStorage(env: StorageEnv): boolean {
+  return env.STORAGE_MODE?.trim() === "remote";
+}
+
 const DEFAULT_ENDPOINT = "http://minio:9000";
 const DEFAULT_REGION = "us-east-1";
 const DEFAULT_BUCKET = "astella-workspaces";
@@ -60,6 +65,11 @@ function trimmed(env: StorageEnv, name: string): string | undefined {
 export function resolveStorageCredentials(
   env: StorageEnv,
 ): { accessKeyId: string; secretAccessKey: string } | null {
+  if (isRemoteStorage(env)) {
+    const accessKeyId = trimmed(env, "STORAGE_ACCESS_KEY_ID");
+    const secretAccessKey = trimmed(env, "STORAGE_SECRET_ACCESS_KEY");
+    return accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : null;
+  }
   // ⚠️ 两条凭证必须来自**同一套**，不能一半独立一半 root。
   //
   // 2026-09-29：下沉过程中被测试逮到——原来的 api 与 worker 两份实现里，
@@ -88,15 +98,13 @@ export function resolveStorageCredentials(
 }
 
 /**
- * 是否已配置：独立凭证与 root 凭证**任一齐全**即算已配置。
- *
- * 与 `resolveStorageCredentials` 是同一条规则的两面——改一处就要同时看另一处。
+ * 是否已配置与构造客户端使用同一份配置；远程模式还要求显式端点和桶名。
  */
 export function isStorageConfigured(env: StorageEnv): boolean {
   // **不是**另写一份判断，而是直接问上面那个函数。
   // 两面各写一次正是这条规则分叉的根源——判据的对象是"是否已配置"这一条契约，
   // 不是"两个表达式恰好相等"。
-  return resolveStorageCredentials(env) !== null;
+  return resolveStorageConfig(env) !== null;
 }
 
 /** 对象存储的桶名；未设置时回退到两个进程共用的默认值。 */
@@ -108,6 +116,7 @@ export function resolveStorageBucket(env: StorageEnv): string {
 export function resolveStorageConfig(env: StorageEnv): ResolvedStorageConfig | null {
   const credentials = resolveStorageCredentials(env);
   if (!credentials) return null;
+  if (isRemoteStorage(env) && (!trimmed(env, "STORAGE_ENDPOINT") || !trimmed(env, "S3_BUCKET"))) return null;
   return {
     endpoint: trimmed(env, "STORAGE_ENDPOINT") ?? DEFAULT_ENDPOINT,
     region: trimmed(env, "S3_REGION") ?? DEFAULT_REGION,

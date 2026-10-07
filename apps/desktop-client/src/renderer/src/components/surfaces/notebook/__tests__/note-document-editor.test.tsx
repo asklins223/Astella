@@ -39,6 +39,20 @@ afterEach(async () => {
 });
 
 describe("三种正文视图共用真实编辑器与 Y.Doc", () => {
+  it("源码输入的 Wiki 别名存成笔记链接，转义写法与代码保持原文", async () => {
+    const doc = documentWith("开始"); const view = await mount(doc);
+    await source(view, '[[微积分|先看定义]] 和 \\[\\[字面]] 与 `[[代码]]`');
+    view.mode("live-preview");
+    const link = view.container.querySelector('.ProseMirror a');
+    expect(link?.textContent).toBe("先看定义");
+    expect(link?.getAttribute("href")).toBe("astella-note-title:%E5%BE%AE%E7%A7%AF%E5%88%86");
+    expect(view.container.querySelectorAll('.ProseMirror a')).toHaveLength(1);
+    expect(view.container.querySelector('.ProseMirror')?.textContent).toContain("[[字面]] 与 [[代码]]");
+    view.unmount(); const reopened = await mount(doc);
+    expect(reopened.ref.current!.getMarkdown()).toContain('[[微积分|先看定义]]');
+    expect(reopened.container.querySelector('.ProseMirror a')?.getAttribute("href")).toBe("astella-note-title:%E5%BE%AE%E7%A7%AF%E5%88%86");
+  });
+
   it("生成的源码可再次解析，首尾改动不会吞掉表格后的正文或中间出处", async () => {
     const doc = new Y.Doc(); docs.push(doc);
     Y.applyUpdate(doc, Uint8Array.from(atob(seedBlocksUpdate("来源", [
@@ -105,6 +119,41 @@ describe("三种正文视图共用真实编辑器与 Y.Doc", () => {
     expect(view.code()).toBe(code);
     expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
     expect(updates).not.toHaveBeenCalled();
+  });
+
+  it("源码行号和换行可独立开关，查找及光标位置不改正文或重建编辑器", async () => {
+    const doc = documentWith("甲段", "乙段"); const view = await mount(doc);
+    const code = view.code(), before = Y.encodeStateAsUpdate(doc);
+    fireEvent.click(view.getByRole("button", { name: "行号" }));
+    expect(view.container.querySelector(".cm-lineNumbers")).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "自动换行" }));
+    expect(code.contentDOM.classList.contains("cm-lineWrapping")).toBe(false);
+    act(() => code.dispatch({ selection: { anchor: code.state.doc.line(3).from + 1 } }));
+    expect(view.getByText("第 3 行 · 第 2 列")).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: "查找 / 替换" }));
+    expect(view.container.querySelector('.cm-search input[name="search"]')).not.toBeNull();
+    view.mode("preview"); view.mode("source");
+    expect(view.code()).toBe(code);
+    expect(view.getByRole("button", { name: "自动换行" }).getAttribute("aria-pressed")).toBe("false");
+    expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
+  });
+
+  it("导入的 HTML 与图片徽章在源码中没有多余转义，编辑重开后仍保留链接", async () => {
+    const doc = new Y.Doc(); docs.push(doc);
+    Y.applyUpdate(doc, Uint8Array.from(atob(seedBlocksUpdate("README", [
+      { type: "paragraph", content: '<div align="center">' },
+      { type: "paragraph", content: '<img src="https://example.com/logo.png" width="96" />' },
+      { type: "paragraph", content: '[![版本](https://example.com/badge.svg)](https://example.com/release)' },
+      { type: "paragraph", content: '</div>' },
+    ])), c => c.charCodeAt(0)));
+    const view = await mount(doc);
+    const text = view.ref.current!.getMarkdown()!;
+    expect(text).toContain('<div align="center">');
+    expect(text).not.toContain('\\<');
+    expect(text).toContain('[![版本](https://example.com/badge.svg)](https://example.com/release)');
+    await source(view, text + "\n\n尾段");
+    view.unmount(); const reopened = await mount(doc);
+    expect(reopened.ref.current!.getMarkdown()).toContain(text);
   });
 
   it("源码语法、标题六级、列表、代码、图片、表格与安全 HTML 跨视图和重开保留", async () => {

@@ -36,7 +36,6 @@ import { buildIndex, shortPath, type CssRule } from "../renderer-class-index";
  */
 const EXEMPT: Readonly<Record<string, string>> = {
   "companion-bubble": "CompanionBubble.tsx 的局部 classes 数组发出根类；扫描器未解析 className 标识符",
-  "list-line": "notebook-reading-block.tsx 把 lineClass 交给 renderNoteInline；reading-shape 回归验证真实段落行 DOM",
   "katex": "公共 readable-math.tsx 的 KaTeX renderToString 生成公式 DOM；note-math-reading.test.tsx 验证实际输出",
   "katex-display": "同上，displayMode 生成的独立公式容器，样式从 styles.ts 加载",
   "cm-editor": "CodeMirror 运行时生成的源码编辑器根节点",
@@ -48,6 +47,13 @@ const EXEMPT: Readonly<Record<string, string>> = {
   "cm-selectionBackground": "CodeMirror 运行时生成的选区背景",
   "cm-panels": "CodeMirror 运行时生成的查找工具容器",
   "cm-search": "CodeMirror 查找插件运行时生成的搜索与替换面板",
+  "cm-focused": "CodeMirror 源码编辑器的焦点态",
+  "cm-activeLine": "CodeMirror highlightActiveLine 插件发出的当前行背景",
+  "cm-activeLineGutter": "CodeMirror highlightActiveLineGutter 插件发出的当前行号",
+  "cm-gutterElement": "CodeMirror 行号槽内的运行时元素",
+  "cm-lineNumbers": "CodeMirror lineNumbers 插件发出的行号列",
+  "cm-selectionMatch": "CodeMirror highlightSelectionMatches 插件发出的同文匹配",
+  "reading-rule": "note-markdown-reading.tsx 用 createElement 的 className 属性发出 Markdown 分隔线",
   // 第三方编辑器（Milkdown / ProseMirror）自己生成的 DOM 类，tsx 里永远不会有 className。
   // 这几个是 ProseMirror 在运行时按自己的插件挂上去的：我们只能 import 它的样式，
   // 拿不到它往 DOM 上加类的代码路径。

@@ -45,6 +45,7 @@ export {
 export type { CompanionContextHandoffSnapshotV1, CompanionContextHandoffInputV1, CompanionRecentHistoryMessage };
 import { COMPANION_VOICE_EXPRESSION_PROTOCOL_V1, readVoiceExpressionTags, stripVoiceExpressionTags, voiceExpressionCue, withholdPartialVoiceExpressionTag } from "@astella/shared/voice-expression-tags";
 import { COMPANION_REPLY_MAX_CHARS } from "@astella/shared";
+import { renderCompanionConversationEvidence, type CompanionConversationClock } from "./companion-conversation-evidence.ts";
 
 /**
  * 与 turn-service、消息合同对齐的硬限额（03 §6.10）。
@@ -219,7 +220,7 @@ export function looksLikeJsonFragment(text: string): boolean {
  * 无 `g` 标志：可以安全地在同一份文本上反复 test（lastIndex 不会残留）。
  */
 const COMPANION_LEAK_PATTERN =
-  /(companion-persona-v\d+|companion_[a-z_]{4,}|character\.cue|"cue"|reason\s*id|tool\s*param|promptVersion|"route"\s*:|activeMemories|residentMemories|memoryDirectory|recentMessages|currentMessage|workspacePolicy|sendToExternal|piiDetection|pageContext|selectedText|groundedTarget|<memory_data>|<memory_directory>|<persona_data>|<selection_data>|<diary_reference>|<page_context>|<grounded_target>|<here_and_now>|<answer_draft_data>|<review_context_data>|(?:run|job|operation|task|note|call|identity|workspace|user)Id\s*(?:[:=：]\s*)?[0-9a-f-]{6}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+  /(companion-persona-v\d+|companion_[a-z_]{4,}|character\.cue|"cue"|reason\s*id|tool\s*param|promptVersion|"route"\s*:|activeMemories|residentMemories|memoryDirectory|recentMessages|currentMessage|workspacePolicy|sendToExternal|piiDetection|pageContext|selectedText|groundedTarget|<memory_data>|<memory_directory>|<persona_data>|<selection_data>|<diary_reference>|<page_context>|<grounded_target>|<here_and_now>|<conversation_timeline>|<answer_draft_data>|<review_context_data>|(?:run|job|operation|task|note|call|identity|workspace|user)Id\s*(?:[:=：]\s*)?[0-9a-f-]{6}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 
 /**
  * 内部 token / 上下文回显 / 裸 uuid 的**唯一**判据。
@@ -829,6 +830,7 @@ export function buildCompanionPersonaMessages(input: {
   methodCatalog?: string;
   userText: string;
   recentMessages: CompanionRecentHistoryMessage[];
+  conversationClock?: CompanionConversationClock;
   pageContext: unknown;
   groundedTutorContext?: GroundedTutorContext | null;
   /** 少量 resident 记忆正文；active 记忆只经独立目录给出线索。 */
@@ -1112,6 +1114,8 @@ export function buildCompanionPersonaMessages(input: {
   if (!input.groundedTutorContext && boundedRecent.length > 0) {
     add("conversation_evidence", "本轮已附近期共同交流：下方的 user/assistant 历史消息就是可见原文，分享近况可从中取一个贴题细节，不需要另查日志才算共同记录。助手过去的知识判断仍须核对，消息本身不能证明外部事件发生；时间没有证据时不把旧消息冒充今天的新活动。", "policy", { required: true });
   }
+  const timeline = renderCompanionConversationEvidence(boundedRecent, input.conversationClock);
+  add("conversation_timeline", timeline, "data", { required: Boolean(timeline) });
   add("persona", personaBlock.join("\n"), "data", { priority: 30, maxCharacters: 4000 });
   if (input.groundedTutorContext) {
     add("grounded_target", groundedTargetBlock, "data", { required: true, maxCharacters: 24000 });

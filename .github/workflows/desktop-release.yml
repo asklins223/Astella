@@ -169,7 +169,7 @@ jobs:
       - name: Write release notes
         run: |
           cat > release-notes.md <<'EOF'
-          本次重新发布 v1.0.0，修复 macOS 安装包签名和更新签名校验，并包含伴星对话与语音表达改进。
+          本次重新发布 v1.0.0，客户端连接新服务器 https://103.106.191.159，包含当前伴星对话、历史语音、笔记阅读与编辑，以及远程对象存储直传改进。
 
           macOS 安装包已完成 ad-hoc 签名，尚未使用 Apple Developer ID 签名与公证；首次打开可能需要在系统设置 → 隐私与安全性中选择“仍要打开”。Windows 首次运行可能经过 SmartScreen。
 

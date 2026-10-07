@@ -1,3 +1,4 @@
+import { OBJECT_TRANSFER_HEADER } from "@astella/shared/object-transfer-contracts";
 /**
  * 图片上传与下载路由。
  *
@@ -300,7 +301,8 @@ export async function uploadRoutes(
     const outcome = await downloadUploadObject(
       scopeOfSession(req.session),
       path,
-      { ifNoneMatch: req.headers["if-none-match"] },
+      { direct: req.headers["x-astella-object-transfer-accept"] === "1",
+        ifNoneMatch: req.headers["if-none-match"] },
     );
     if (!outcome.ok) {
       if (outcome.reason === "not_found") {
@@ -316,6 +318,7 @@ export async function uploadRoutes(
     }
 
     // Set response headers
+    if (outcome.download) return reply.header(OBJECT_TRANSFER_HEADER, "1").header("Cache-Control", "no-store").send(outcome.download);
     reply.header("Content-Type", outcome.contentType);
     reply.header("Cache-Control", `private, max-age=${outcome.maxAge}`);
     reply.header("X-Content-Type-Options", "nosniff");

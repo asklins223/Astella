@@ -1,3 +1,4 @@
+import { uploadRemoteObject } from "./desktop-object-transfers";
 /**
  * 笔记正文的本机会话缓存（2026-09-30 随 `noteDocLocalSession` 一起搬成模块级）。
  *
@@ -1433,6 +1434,15 @@ export async function uploadNoteImage(t: GatewayTransport,
       throw new DesktopGatewayFailure("validation", "user_action");
     }
 
+    const remote = await uploadRemoteObject(t, { purpose: "note_image", fileName: request.fileName,
+      mimeType: request.mimeType, noteId, }, bytes, requestId);
+    if (remote) {
+      const payload = (remote.body ?? {}) as Record<string, unknown>;
+      const parsed = noteImageUploadResultV1Schema.safeParse({ version: 1, url: payload.url, byteLength: payload.size,
+        mimeType: payload.mimeType, width: payload.width, height: payload.height });
+      if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+      return parsed.data;
+    }
     const form = new FormData();
     form.set("noteId", noteId);
     form.set("file", new Blob([bytes], { type: request.mimeType }), request.fileName);

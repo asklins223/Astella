@@ -391,6 +391,7 @@ type WindowResolver = (contents: WebContents, sourceUrl: string) => BrowserWindo
 export type DesktopIpcRegistrationOptions = {
   readonly guidanceAudioCache?: import("./companion-voice-audio-cache").CompanionVoiceAudioCache;
   readonly thoughtAudioCache?: import("./companion-voice-audio-cache").CompanionVoiceAudioCache;
+  readonly messageAudioCache?: import("./companion-message-audio-cache").CompanionMessageAudioCache;
   readonly resolveWindow: WindowResolver;
   readonly getWindowState: (window: BrowserWindow) => WindowStateSnapshot;
   readonly setTitlebarTheme: (window: BrowserWindow, theme: "day" | "night") => boolean;
@@ -705,6 +706,7 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     credentials: options.credentials ?? createSessionCredentialStore(),
     guidanceAudioCache: options.guidanceAudioCache,
     thoughtAudioCache: options.thoughtAudioCache,
+    messageAudioCache: options.messageAudioCache,
   });
   const env = options.env ?? process.env;
   const contract = contractSnapshot(gateway, env);

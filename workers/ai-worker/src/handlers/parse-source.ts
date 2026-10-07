@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpRequest, type IncomingMessage, type RequestOptions } from "node:http";
@@ -15,7 +16,7 @@ import { safeErrorMessage, SourceStatus } from "@astella/shared";
 // 稳定 P1（2026-09-15 审计）：parse_source payload 的精确契约 + fail-closed 读取器
 // （与 API 生产端 source/service.ts 同源），替代此前的 `as string | undefined` 弱读。
 import { readParseSourceJobPayload } from "@astella/shared/job-payload-contracts";
-import { isStorageConfigured, uploadSourceImage } from "../lib/object-storage.ts";
+import { isStorageConfigured, uploadSourceImage, getObjectBytes } from "../lib/object-storage.ts";
 import {
   parseContent,
   segmentsToBlocks,
@@ -1111,6 +1112,15 @@ export async function runParseSource(job: JobPayload) {
       throw new Error("source metadata.url must be a string");
     }
     let rawContent = metadata.rawContent ?? "";
+    if (typeof metadata.storageObjectKey === "string") {
+      const key = metadata.storageObjectKey;
+      if (!key.startsWith(`${job.workspaceId}/files/`) || key.includes("..") || key.includes("\\")) throw new Error("invalid source object reference");
+      const bytes = await getObjectBytes(key, 900_000);
+      if (bytes.length !== metadata.storageByteLength || createHash("sha256").update(bytes).digest("hex") !== metadata.storageSha256)
+        throw new Error("stored source integrity mismatch");
+      rawContent = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    }
+
     const url = metadata.url ?? processingSource.origin ?? "";
 
     // R-014: 如果标记了 fetchUrlContent，执行 HTTP 抓取

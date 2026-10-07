@@ -63,7 +63,7 @@ import {
 } from "@astella/shared";
 import { PET_PERSONA_PRESET_VERSION } from "@astella/shared/pet-persona-presets";
 import { runCompanionAgentLoop } from "./companion-agent-runtime.ts";
-import { AgentOutputError, CompanionAgentBudgetExceededError, CompanionContextChangedError, CompanionKnowledgeReviewError } from "../lib/non-retryable-errors.ts";
+import { AgentOutputError, CompanionAgentBudgetExceededError, CompanionContextChangedError, CompanionKnowledgeReviewError, CompanionDialogueReviewError } from "../lib/non-retryable-errors.ts";
 import { AIContextOverflowError } from "../lib/context-governor.ts";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
 import type { AgentMemoryContextSourceV1 } from "@astella/shared/agent-contracts";
@@ -264,8 +264,10 @@ export async function runCompanionDialogue(
           userId: run.user_id,
         });
         const formalAnswerInProgress = formalAnswerTarget !== null;
-        const userRows = await tx.execute<{ blocks: unknown; seq: string }>(sql`
-          SELECT blocks, seq::text AS seq FROM companion_messages
+        const userRows = await tx.execute<{ blocks: unknown; seq: string; created_at: string }>(sql`
+          SELECT blocks, seq::text AS seq,
+                 to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at
+          FROM companion_messages
           WHERE conversation_id = ${run.conversation_id}
             AND id = ${run.user_message_id}
           ORDER BY seq DESC LIMIT 1
@@ -298,10 +300,11 @@ export async function runCompanionDialogue(
             seq: m.seq,
             role: m.role as "user" | "assistant",
             text: companionHistoryText(m),
+            createdAt: m.created_at,
           }));
         const visibleRecent = boundCompanionRecentHistory(recentWithSeq);
         replayTailSeqs = visibleRecent.map((message) => message.seq ?? null);
-        const recentMessages = visibleRecent.map(({ role, text }) => ({ role, text }));
+        const recentMessages = visibleRecent;
         const historyStartSeq = visibleRecent[0]?.seq ?? currentUserSeq;
         const totalHistoryMessages = await countCompanionHistoryMessages(tx, run.conversation_id, currentUserSeq);
         const clippedMessageCount = Number(
@@ -528,6 +531,10 @@ export async function runCompanionDialogue(
           groundedTutorContext,
           userText,
           recentMessages,
+          conversationClock: snapshot.observedAt && snapshot.timezone ? {
+            observedAt: snapshot.observedAt, timezone: snapshot.timezone,
+            currentMessageCreatedAt: userRows[0]?.created_at ?? null,
+          } : undefined,
           residentMemories,
           memoryDirectory: [],
           // 手册目录与整理结论在 assembleCompanionContext 阶段填；
@@ -673,6 +680,7 @@ export async function runCompanionDialogue(
     },
     userText: read.userText,
     recentMessages: read.recentMessages,
+    conversationClock: read.conversationClock,
     pageContext: read.pageContext,
     groundedTutorContext: read.groundedTutorContext,
     residentMemories: read.residentMemories,
@@ -956,7 +964,7 @@ export async function runCompanionDialogue(
     // 重投不会让"泄露"消失。已下发的部分必然是最终文本的前缀，客户端按 error 收尾。
     const streamStopped = err instanceof CompanionStreamStoppedError;
     const outputIncomplete = err instanceof AgentOutputError && err.code === "output_truncated";
-    const reviewInvalid = err instanceof CompanionKnowledgeReviewError;
+    const reviewInvalid = err instanceof CompanionKnowledgeReviewError || err instanceof CompanionDialogueReviewError;
     const providerRejected = err instanceof ProviderRequestError;
     const rateLimited = providerRejected && err.status === 429;
     await markCompanionRunFailed(
@@ -970,7 +978,7 @@ export async function runCompanionDialogue(
           ? `companion stream stopped: ${streamingDelivery.failureReason() ?? "delivery pipeline"}`.slice(0, 240)
           : rateLimited ? "模型服务暂时繁忙，请稍后重试；已经完成的操作仍保留。"
             : providerRejected ? "模型服务暂时无法完成这次请求，已经完成的操作仍保留。"
-              : reviewInvalid ? "这次解释没能完成核对，尚未发布；可以重新发送。" : "companion agent execution failed",
+              : reviewInvalid ? "这次回复没能完成核对，尚未发布；可以重新发送。" : "companion agent execution failed",
       reviewInvalid ? "output" : streamStopped ? "delivery" : budgetExceeded || outputIncomplete || contextChanged ? "execution" : "transport",
     );
     // 她已经说出来的那半句不能随失败一起消失（2026-09-19）。
@@ -980,6 +988,7 @@ export async function runCompanionDialogue(
       conversationId: read.conversationId,
       runId: read.runId,
       deliveredText: streamingDelivery.deliveredText(),
+      ...(reviewInvalid?{failureText:"这次回复没能完成核对，尚未发布。"}:{}),
     });
     throw err;
   }

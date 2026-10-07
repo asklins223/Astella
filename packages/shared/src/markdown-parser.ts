@@ -1,3 +1,4 @@
+import { noteMarkdownSyntax } from "./note-markdown.ts";
 /**
  * Markdown / 文本分段解析器。
  * Source 的 parse_source job 和 /import/markdown API 共用此模块。
@@ -140,155 +141,16 @@ function splitByDoubleNewline(content: string, _sourceType: string): ParsedSegme
  * 保留代码块完整性（不拆分 ``` 包裹的内容）。
  */
 function parseMarkdown(content: string): ParsedSegment[] {
-  const segments: ParsedSegment[] = [];
-  const lines = content.split("\n");
-  // 用数组累积行，flush/收尾时才 join 一次，避免长文档逐行字符串
-  // `+=` 造成 O(n²) 的不可变字符串重建。
-  let currentLines: string[] = [];
-  const currentText = (): string =>
-    currentLines.length === 0 ? "" : currentLines.join("\n") + "\n";
-  let currentType: ParsedSegment["segmentType"] = "paragraph";
-  let charStart = 0;
-  let currentOffset = 0;
-
-  function flush() {
-    // G-008: 调整 charStart 以跳过前导空白，确保 content.slice(charStart, charEnd) === text
-    const text = currentText();
-    const trimmedStart = text.trimStart();
-    const trimmed = trimmedStart.trimEnd();
-    if (trimmed) {
-      const leadingWs = text.length - trimmedStart.length;
-      segments.push({
-        text: trimmed,
-        segmentType: currentType,
-        charStart: charStart + leadingWs,
-        charEnd: charStart + leadingWs + trimmed.length,
-      });
-    }
-    currentLines = [];
-    currentType = "paragraph";
-  }
-
-  let inCodeBlock = false;
-  let codeBlockLines: string[] = [];
-  let codeBlockStartOffset = 0;
-
-  for (const line of lines) {
-    // 代码块开始/结束
-    if (line.trim().startsWith("```")) {
-      if (inCodeBlock) {
-        // 代码块结束
-        codeBlockLines.push(line);
-        const codeBlockContent = codeBlockLines.join("\n") + "\n";
-        const trimmedStart = codeBlockContent.trimStart();
-        const text = trimmedStart.trimEnd();
-        const leadingWhitespace = codeBlockContent.length - trimmedStart.length;
-        segments.push({
-          text,
-          segmentType: "code",
-          charStart: codeBlockStartOffset + leadingWhitespace,
-          charEnd: codeBlockStartOffset + leadingWhitespace + text.length,
-        });
-        codeBlockLines = [];
-        inCodeBlock = false;
-      } else {
-        // 先 flush 当前段落
-        flush();
-        inCodeBlock = true;
-        codeBlockStartOffset = currentOffset;
-        codeBlockLines = [line];
-      }
-      currentOffset += line.length + 1; // +1 for \n
-      charStart = currentOffset;
-      continue;
-    }
-
-    if (inCodeBlock) {
-      codeBlockLines.push(line);
-      currentOffset += line.length + 1;
-      continue;
-    }
-
-    // 标题行
-    if (/^#{1,6}\s/.test(line)) {
-      flush();
-      currentLines = [line];
-      currentType = "heading";
-      charStart = currentOffset;
-      currentOffset += line.length + 1;
-      flush();
-      continue;
-    }
-
-    // 图片行（独立行，![alt](url) 格式）
-    if (/^!\[[^\]]*\]\([^)]+\)\s*$/.test(line)) {
-      flush();
-      currentLines = [line];
-      currentType = "image";
-      charStart = currentOffset;
-      currentOffset += line.length + 1;
-      flush();
-      continue;
-    }
-
-    // 引用行
-    if (/^>\s?/.test(line)) {
-      if (currentType !== "quote") {
-        flush();
-        currentType = "quote";
-        charStart = currentOffset;
-      }
-      currentLines.push(line);
-      currentOffset += line.length + 1;
-      continue;
-    }
-
-    // 列表行
-    if (/^[-*+]\s/.test(line) || /^\d+\.\s/.test(line)) {
-      if (currentType !== "list") {
-        flush();
-        currentType = "list";
-        charStart = currentOffset;
-      }
-      currentLines.push(line);
-      currentOffset += line.length + 1;
-      continue;
-    }
-
-    // 空行 → 段落分隔
-    if (line.trim() === "") {
-      flush();
-      // G-008: Account for line content length (not just \n) to keep offsets correct
-      currentOffset += line.length + 1;
-      charStart = currentOffset;
-      continue;
-    }
-
-    // 普通段落
-    if (currentType !== "paragraph") {
-      flush();
-      currentType = "paragraph";
-      charStart = currentOffset;
-    }
-    currentLines.push(line);
-    currentOffset += line.length + 1;
-  }
-
-  // flush 最后一段
-  if (inCodeBlock && codeBlockLines.length > 0 && codeBlockLines.join("\n").trim()) {
-    const codeBlockContent = codeBlockLines.join("\n") + "\n";
-    const trimmedStart = codeBlockContent.trimStart();
-    const text = trimmedStart.trimEnd();
-    const leadingWhitespace = codeBlockContent.length - trimmedStart.length;
-    segments.push({
-      text,
-      segmentType: "code",
-      charStart: codeBlockStartOffset + leadingWhitespace,
-      charEnd: codeBlockStartOffset + leadingWhitespace + text.length,
-    });
-  } else {
-    flush();
-  }
-
-  return segments;
+  return noteMarkdownSyntax(content).children.flatMap(node => {
+    const from = node.position?.start.offset ?? 0;
+    const to = node.position?.end.offset ?? content.length;
+    const raw = content.slice(from, to);
+    const text = raw.trim();
+    if (!text) return [];
+    const charStart = from + raw.length - raw.trimStart().length;
+    const image = node.type === "paragraph" && node.children.length === 1 && node.children[0]?.type === "image";
+    const segmentType: ParsedSegment["segmentType"] = node.type === "heading" ? "heading" : node.type === "code" ? "code"
+      : node.type === "list" ? "list" : node.type === "blockquote" ? "quote" : image ? "image" : "paragraph";
+    return [{ text, segmentType, charStart, charEnd: charStart + text.length }];
+  });
 }

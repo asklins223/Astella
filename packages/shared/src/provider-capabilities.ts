@@ -56,9 +56,10 @@ export interface ChatOptions {
   maxTokens?: number;
   model?: string;
   responseFormat?: "json_object" | "text";
-  /** 显式关闭 provider 思考模式（如 DeepSeek 系模型的 enable_thinking），
-   *  优先级高于平台配置/env。2026-10-06 起伴星链路统一跟随平台配置开启思考，
-   *  生产 handler 不再传它；保留给离线评测与需要确定性/低延迟的调试调用。 */
+  /** 请求关闭 provider 思考模式，优先于档案默认档。
+   * 生产伴星在纯闲聊时使用；其他轮次跟随模型档案默认档。
+   * Responses 模型若未声明 none，只能降到声明的最低档，不能据此宣称已关闭。
+   * 真实档位与消耗需看 provider 请求及返回用量。 */
   disableThinking?: boolean;
   /**
    * native tools 定义（2026-09-19 ④-b）。

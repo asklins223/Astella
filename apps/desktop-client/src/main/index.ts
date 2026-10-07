@@ -15,6 +15,7 @@ import { Readable } from 'node:stream'
 import { createAssetResponsePlan, mimeTypeForPath } from './asset-response'
 import { VoiceAsrModelStore, voiceAsrModelSources } from './voice-asr-model-store'
 import { CompanionVoiceAudioCache } from './companion-voice-audio-cache'
+import { CompanionMessageAudioCache } from './companion-message-audio-cache'
 import { primeUpdateStateFromCache } from './desktop-update'
 import { voiceAsrModelDirectory } from '../shared/voice-asr-model-path'
 import { createVoiceAsrModelResponder } from './voice-asr-model-route'
@@ -312,7 +313,7 @@ function rendererContentSecurityPolicy(): string {
     "default-src 'self'",
     `script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'${devScriptSources}`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    "img-src 'self' data: blob: https: http:",
     // 设置里的音色试听放的是本渲染进程自己用 Blob 造出来的一段 mp3。blob: 不引入
     // 任何外部地址，且这条策略的 img-src / connect-src / worker-src 本来就允许它；
     // 只放开 media-src 是因为 <audio> 只认这一条（实测：不放开时 src 设上了但
@@ -787,6 +788,9 @@ app.whenReady()
     ),
     thoughtAudioCache: new CompanionVoiceAudioCache(
       resolve(app.getPath('userData'), 'companion-thought-audio')
+    ),
+    messageAudioCache: new CompanionMessageAudioCache(
+      resolve(app.getPath('userData'), 'companion-message-audio')
     ),
     // 刀五：动态产物往这儿写。传函数不在注册期求值，与读侧 `artifactSourcePath`
     // （上面那个）共用同一个 `app.getPath('userData')` 来源，落点必然一致。

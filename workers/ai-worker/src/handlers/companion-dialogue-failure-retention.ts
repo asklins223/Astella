@@ -29,13 +29,13 @@ export const COMPANION_CANCELLED_MIN_CHARS = 12;
  * 下发"时**直接放弃落消息**——于是界面上什么都没有，像她突然不理人。
  *
  * 三条轮换（按 runId 确定性取，同一轮重投不会换话，也不会连着两轮一模一样）。
- * 口径：只承认"这句没成"并邀请重试，**不编造任何内容、不虚构已完成的事**，
+ * 口径：只承认"这次回复没成"，**不编造感官、分心或已完成的事**，
  * 也不暴露 provider / prompt / 错误码。
  */
 const COMPANION_FAILURE_FALLBACK_LINES = [
-  "诶，这句我没组织好，你再跟我说一次？",
-  "刚刚那句话卡住了，我没听清，你再说一遍嘛。",
-  "我走神了一下下，这条没答上来，你重新问我一次？",
+  "这次回复没能完成。",
+  "这条回复暂时没能完成。",
+  "这次回复中断了。",
 ] as const;
 
 /** 按 runId 确定性挑一句（同一 run 重投得到同一句，避免话术来回跳）。 */
@@ -68,13 +68,15 @@ export async function persistFailedPartial(args: {
   conversationId: string;
   runId: string;
   deliveredText: string;
+  /** Known failure stages can describe the failure without inventing a cause. */
+  failureText?: string;
 }): Promise<boolean> {
   // fail-open：已经说出来的半句优先保留；连半句都没有时，落一句诚实的兜底话，
   // 而不是让用户面对空白（旧实现在这里 `return false`，界面什么都不显示）。
   const delivered = args.deliveredText.trim();
   const text = delivered.length >= COMPANION_CANCELLED_MIN_CHARS
     ? delivered
-    : pickCompanionFailureFallbackLine(args.runId);
+    : args.failureText?.trim() || pickCompanionFailureFallbackLine(args.runId);
   const blocks = [{ type: "text" as const, text, emotion: "neutral" as const }];
   const contentSha256 = sha256Utf8V1(canonicalJsonV1(blocks));
   const messageId = randomUUID();

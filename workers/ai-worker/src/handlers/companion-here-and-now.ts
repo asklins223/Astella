@@ -82,6 +82,9 @@ export function visibleCompanionDueReviewCondition() {
 }
 
 export interface HereAndNowSnapshot {
+  /** Database transaction clock and the same effective timezone as localTime. */
+  observedAt?: string;
+  timezone?: string;
   /** 用户本地钟面时间，如 `2026-09-20 18:12`。 */
   localTime: string;
   /** 中文星期，如 `周六`。 */
@@ -212,6 +215,15 @@ const LEARNING_STATS_ASK_TEST = new RegExp(LEARNING_STATS_ASK_PATTERNS.join("|")
 
 export function asksForLearningStats(text: string | undefined): boolean {
   return typeof text === "string" && LEARNING_STATS_ASK_TEST.test(text);
+}
+
+/** Assistance consequences are always eligible, not a request for study statistics.
+ * Streaks have their own reader; only these keys consume readLearningStats.
+ */
+export function needsCompanionLearningStats(text: string | undefined): boolean {
+  return asksForLearningStats(text) || askableFactSpanKeys(text).some(key =>
+    key === "today_minutes" || key === "week_minutes" || key === "due_count"
+    || key === "card_count" || key === "note_count");
 }
 
 /**
@@ -390,8 +402,10 @@ export async function loadHereAndNow(
   // 时钟与账号：单条 SELECT 常量查询，永远返回一行（账号行缺失时走回落时区）。
   // 别名不能叫 `hour`/`date`——它们是 Postgres 保留字，裸用会 "syntax error at or near"
   // （实机把整条 read 阶段打挂，job 连败三次）。
-  const clock = (await tx.execute<{ local_time: string; weekday: number; hour_of_day: number }>(sql`
+  const clock = (await tx.execute<{ local_time: string; weekday: number; hour_of_day: number; observed_at: string; timezone: string }>(sql`
     SELECT
+      to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') observed_at,
+      ${tzSubquery(scope.userId)} timezone,
       to_char(now() AT TIME ZONE ${tzSubquery(scope.userId)}, 'YYYY-MM-DD HH24:MI') local_time,
       EXTRACT(DOW FROM now() AT TIME ZONE ${tzSubquery(scope.userId)})::int weekday,
       EXTRACT(HOUR FROM now() AT TIME ZONE ${tzSubquery(scope.userId)})::int hour_of_day
@@ -558,13 +572,13 @@ export async function loadHereAndNow(
     : (imagePolicyEnabled ? "no_reader" : "policy_off");
 
   // P2（39d W2-5）：这一轮她**可以报**的读数目录（没问就没有键）。
-  // 读的触发条件是"问数的两种形态之一"：`asksForLearningStats`（口语问法）或
-  // `askableFactSpanKeys`（逐键的疑问词＋量词）——后者更细，必须并进来，否则
+  // 统计读取只由真实问法或消费统计的目录键触发；恒定作答影响键不参与。
+  // `askableFactSpanKeys` 的逐键疑问词＋量词更细，必须并进来，否则
   // "我笔记有几篇"这种会被判成"要报数"却一次查询都不发、目录空着。
   const factSpanKeys = askableFactSpanKeys(scope.userText);
   // 用户这一轮问到学习数据，就在她开口之前把真值算好（见 HereAndNowSnapshot.learningStats）。
   // 没问到就一次查询都不发——这条支路的开销必须是"问了才付"。
-  const learningStats = (asksForLearningStats(scope.userText) || factSpanKeys.length > 0)
+  const learningStats = needsCompanionLearningStats(scope.userText)
     ? await readLearningStats(tx, scope)
     : null;
   const factSpans = await loadFactSpans(tx, scope, factSpanKeys, learningStats);
@@ -584,6 +598,8 @@ export async function loadHereAndNow(
   const livePageView = await readLivePageView(tx, scope);
 
   return {
+    observedAt: clock?.observed_at,
+    timezone: clock?.timezone,
     localTime: clock?.local_time ?? "",
     weekday: weekdayLabel(clock?.weekday ?? 1),
     partOfDay: partOfDay(Number(clock?.hour_of_day ?? 12)),

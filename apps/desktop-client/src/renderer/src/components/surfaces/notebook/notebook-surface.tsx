@@ -1,3 +1,4 @@
+import { noteHtmlAlignments } from "./note-html-alignment";
 import { publishCompanionRecordsChanged } from "../../companion/companion-events";
 import { NoteReflectionShelf } from "./note-reflection-shelf.tsx";
 import { noteLearningScene, notePracticeResultCopy, roundTrackNextV1, roundTrackV1 } from "./note-learning-flow.ts";
@@ -2080,6 +2081,7 @@ const noteDocLive = useNoteDocLiveView(
     [readSourceBlocks, objective],
   );
   const allBlocks = readSourceBlocks;
+  const htmlAlignments = useMemo(() => noteHtmlAlignments(readSourceBlocks), [readSourceBlocks]);
   // §16.16 的第二半：这篇有小节时才多给几颗"从结构里另选"的起步句（用全部块，
   // 不用阅读窗口那一段——结构是整篇的事实，不是当前滚到哪一屏）。
   const structureQuestions = useMemo(
@@ -3559,6 +3561,7 @@ const noteDocLive = useNoteDocLiveView(
           <ReadingBlock
             key={block.ordinal}
             block={block}
+            alignment={htmlAlignments.get(block.ordinal)}
             annotations={currentNoteAnnotations}
             companionExplanations={noteCompanionExplanations.filter(item => !item.dismissed && item.phase !== "saved"
               && item.target.anchor.noteVersionId === note.currentVersionId && noteAnchorMatchesV1(readSourceBlocks, item.target.anchor))}

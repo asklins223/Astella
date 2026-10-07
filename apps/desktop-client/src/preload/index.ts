@@ -219,6 +219,8 @@ const desktopApi: AstellaDesktopApiM2 = {
       patchProfile: (input) => invoke(DESKTOP_IPC_CHANNELS.companionRoomPatchProfile, input)
     },
     voice: {
+      cachedList: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceCachedList, input),
+      cachedRead: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceCachedRead, input),
       speak: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceSpeak, input),
       speakSegment: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceSpeakSegment, input),
       // 一段音频播没播成（0247）：只有渲染进程知道，所以由它回报。

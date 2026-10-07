@@ -65,6 +65,11 @@
 [data-role="user"] .companion-record__author strong { color: #937253; }
 [data-role="user"] .companion-record__avatar { background: #ebdac5; color: #9e7957; }
 .companion-record__turn time { flex: none; font-variant-numeric: tabular-nums; }
+.companion-record__meta { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.companion-message-audio { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.companion-message-audio .companion-message-audio__button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 8px; border: 1px solid var(--hud-line); border-radius: 10px; background: color-mix(in srgb, var(--hud-mint) 20%, transparent); color: var(--hud-soft); font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.companion-message-audio .companion-message-audio__button[aria-pressed="true"] { color: var(--hud-ink); background: color-mix(in srgb, var(--hud-mint) 40%, transparent); }
+.companion-message-audio__error { max-width: 240px; font-size: 11px; line-height: 1.5; color: var(--hud-soft); }
 .companion-record__body { min-width: 0; line-height: 1.85; }
 .companion-record__body > p { margin: 0 0 11px; }
 .companion-record__body > p:last-child { margin-bottom: 0; }

@@ -37,3 +37,34 @@ REAL_MODEL_BATCH=1 LIVE_QUALITY_CURRENT_ONLY=1 LIVE_QUALITY_REVIEW=1 LIVE_QUALIT
 这里的接话操作方可以是编码 agent，不应把它标成真实人类用户。夹具直接构造读取阶段上下文，不是完整 HTTP/UI 端到端测试。当前版本接入 `reserveCompanionProviderCall`，并保存实际出网 instructions 与哈希；只保存本夹具的合成材料，不记录凭据、请求头或 HTTP 错误正文。2026-10-07 的五场普通输入测试共 32 轮，含修复失败实录，见 `outputs/audits/2026-10-07-live/natural-dialogue-report.md`。前三场尚未接计数端口，应按 wire 回执检查请求数；`natural-dialogue-normal.json` 是早期夹具终态状态错误，不计为产品质量样本。
 
 `voice-expression-probe.ts` 使用真实人格、首步请求与流式执行器生成安慰、祝贺、解释和轻笑四个合成样本，记录原始标记、干净正文和请求回执到 `voice-expression.json`。它不读取账号历史，不额外调用情绪分类器。标签出现率不能代表全部多轮对话；听感与真人验收记录见 `../handlers/__tests__/voice-expression-experience-qa.md`。
+
+### 2026-10-07 研究驱动复验
+
+研究依据、源码版本和采用/撤回的判断见 [companion-research.md](companion-research.md)。`natural-dialogue-probe.ts` 现在沿生产历史查询和读取时钟构造元数据。可用 `LIVE_NATURAL_SEED=research-*.json` 在本次审计目录中提供带真实数据库发送时间的合成旧记录，种子不是评阅答案。`LIVE_RESEARCH_BASELINE=1` 关闭时间元数据并恢复旧示例标签；`LIVE_RESEARCH_CANDIDATE=1` 仅用于复现未通过的文案候选，不能作为发布配置。两者不能同时使用。实际默认不读取或修改这些实验文本。
+
+研究复验的其余测试开关：`LIVE_CASUAL_EFFORT=low` 只在支持该档的同平台模型上，将闲聊 none 请求改为 low；分类器不改。`LIVE_NO_VOICE_EXAMPLES=1` 仅移除语音协议的两行格式示例，其他语音控制与参数不改。`LIVE_PAIRED_EXAMPLES=1` 添加话题独立的成对示例，未通过默认采用验证。`LIVE_MODEL_ID` 仅允许对当前已配置平台中已声明档案的其他模型做测试。开关互斥，不改正式路由；wire 收据记录实际发送字段，SSE 只取返回用量，不保存明文思考。所有实验结果单列，不能用成功交付宣称自然度通过。
+
+用途与阶段的后续实现、两项默认关闭的实验开关和核对重放入口见 [dialogue-frame-experiment.md](dialogue-frame-experiment.md)。它区分来源绑定、模型语义判断与真实交付；结构测试通过不代表普通聊天自然度通过。
+
+### 方案 46：固定前缀对照与独立评阅材料
+
+`dialogue-cases.ts` 定义 10 个设计话题、20 个话题隔离的后续验收组。`dialogueGenerationFixture` 只给生成入口原生历史、当前话语与固定意图，不提供评阅判据和目标答案。隔离组需要 `LIVE_DIALOGUE_SPLIT=heldout LIVE_DIALOGUE_HELDOUT_RELEASE=1` 才能调用；设计时不查看隔离组的生成结果。材料是合成的，不冒充真实用户研究。
+
+```sh
+REAL_MODEL_BATCH=1 LIVE_DIALOGUE_MATRIX_SUFFIX=design-v1 LIVE_DIALOGUE_REPEATS=2 LIVE_DIALOGUE_MAX_CALLS=80 node --import tsx src/live-tests/dialogue-matrix.ts
+REAL_MODEL_BATCH=1 LIVE_DIALOGUE_ABLATION_SUFFIX=examples-v1 node --import tsx src/live-tests/dialogue-persona-ablation.ts
+REAL_MODEL_BATCH=1 LIVE_DIALOGUE_ABLATION_KIND=identity LIVE_DIALOGUE_ABLATION_SUFFIX=identity-v1 node --import tsx src/live-tests/dialogue-persona-ablation.ts
+node --import tsx src/live-tests/dialogue-export-review.ts design-v1
+```
+
+产物后缀必须显式给出，已存在时拒绝覆盖；上面后缀是本轮已经用过的示例，复验应选新的后缀。矩阵最大 80 次真实调用，示例移除对照最大 20 次，无自动质量重试或额外模型评委。固定前缀中保持普通分享和真正求助，不给所有用户输入附“别建议/别反问”。当前默认候选是同平台已声明的 Muse，可由 `LIVE_DIALOGUE_CANDIDATE_MODEL` 指定该平台其他已声明模型；不修改正式路由。
+
+矩阵复用生产人格装配、闲聊首步构造和流式执行器，但背景是明确标记的合成来源，意图固定；它不经过 HTTP/数据库或真实分类，不能声称是生产读取的完整请求。完整装配与相关装配保持原生消息、人格、权限、参数相同，仅去掉声明的无关来源；跨模型最低思考档不同，比较的是可用配置综合表现。示例移除试验只改账号 examples，其余条件相同。
+
+`LIVE_DIALOGUE_ABLATION_KIND=identity` 是后续能力诊断：无示例现役人格与简洁身份各两次，最多 20 次调用。必需身份/宿主/权限/声音合同与原生历史、参数保持相同，但角色底座、账号人格与非必要前言同时改变，不能作为单变量原因或直接上线候选。
+
+请求级快照与出网 payload 的白名单快照分别保存，保留分数温度的稳定 JSON 哈希、实际思考字段、工具 schema、额度和用量；不含请求头、凭据与生成的隐藏推理。非白名单字段记录省略数量，存在私有推理回放时拒绝保存该快照。连续聊天脚本也开始记录这些出网快照，工具后续轮不能保存时明确标出省略，不影响真实调用。
+
+`dialogue-export-review` 完全离线，生成随机排序的匿名回复与空白多维评阅表；模型、条件、等待和哈希仅在独立 mapping 文件中。未独立填写的表保持 unrated，不能算盲评通过。第一版矩阵的 `firstTextMs` 是首个非空 provider 文本增量，可能仅为语音标签；不能算首个有效正文或 UI 等待。入口随后增加了 `firstVisibleTextMs` 单列投影时刻，旧记录不补造该数值。
+
+本阶段 120 次真实调用、采用判断、embedding 截断修复和验证边界见 [实施记录](dialogue-design-implementation-2026-10-07.md)。

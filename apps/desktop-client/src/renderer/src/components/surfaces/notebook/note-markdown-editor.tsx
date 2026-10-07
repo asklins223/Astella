@@ -24,7 +24,7 @@ import {
 import { gfm, tableSchema } from "@milkdown/kit/preset/gfm";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import { clipboard } from "@milkdown/kit/plugin/clipboard";
-import { $prose, callCommand, insert, replaceAll } from "@milkdown/kit/utils";
+import { $prose, $remark, callCommand, insert, replaceAll } from "@milkdown/kit/utils";
 import { keymap } from "@milkdown/kit/prose/keymap";
 import { Plugin, PluginKey, Selection } from "@milkdown/kit/prose/state";
 import { Decoration, DecorationSet } from "@milkdown/kit/prose/view";
@@ -43,6 +43,7 @@ import {
   imageSchema,
 } from "@milkdown/kit/preset/commonmark";
 import { sourceImageObjectKeyFromUrl } from "@astella/shared/source-image-contracts";
+import { noteLinkTarget, noteWikiLinks } from "@astella/shared/note-markdown";
 import { loadSourceImageBlobUrl } from "../source/source-image.ts";
 import { LightboxViewer } from "../source/image-viewer.tsx";
 
@@ -80,7 +81,7 @@ export type NoteMarkdownEditorHandle = {
   readonly toggleBlockquote: () => void;
   readonly toggleBulletList: () => void;
   readonly toggleOrderedList: () => void;
-  readonly toggleLink: (href: string) => void;
+  readonly toggleLink: (href: string, label?: string) => void;
   readonly insertCodeBlock: () => void;
   readonly insertHr: () => void;
   readonly applySource: (markdown: string) => boolean;
@@ -107,6 +108,40 @@ const withNoteDocAttrs = (schemaObject: { extendSchema: (handler: never) => unkn
     const definition = factory(ctx) as { attrs?: Record<string, unknown> };
     return { ...definition, attrs: { ...definition.attrs, ...NOTE_DOC_ATTRS } };
   }) as never);
+
+const linkedImageSchema = imageSchema.extendSchema(previous => ctx => {
+  const definition = previous(ctx);
+  return { ...definition, attrs: { ...definition.attrs, ...NOTE_DOC_ATTRS, linkHref: { default: null } },
+    toMarkdown: { ...definition.toMarkdown, runner: (state, node) => {
+      const href = node.attrs.linkHref as string | null;
+      if (href) state.openNode("link", undefined, { url: href, title: null });
+      definition.toMarkdown.runner(state, node);
+      if (href) state.closeNode();
+    } },
+  };
+});
+
+const noteLinkSchema = linkSchema.extendSchema(previous => ctx => {
+  const definition = previous(ctx);
+  return { ...definition, toDOM: (mark, inline) => noteLinkTarget(String(mark.attrs.href))
+    ? ["a", { href: mark.attrs.href, title: mark.attrs.title }, 0]
+    : definition.toDOM!(mark, inline) };
+});
+
+/** Yjs stores marks on text only. Retain a linked image's destination on the image atom. */
+function linkedImagePlugin() {
+  return $prose(() => new Plugin({
+    key: new PluginKey("NOTE_LINKED_IMAGES"),
+    appendTransaction: (_transactions, _before, state) => {
+      let tr = state.tr;
+      state.doc.descendants((node, pos) => {
+        const link = node.type.name === "image" ? node.marks.find(mark => mark.type.name === "link") : undefined;
+        if (link) tr = tr.setNodeMarkup(pos, undefined, { ...node.attrs, linkHref: link.attrs.href }, node.marks.filter(mark => mark !== link));
+      });
+      return tr.docChanged ? tr : null;
+    },
+  }));
+}
 
 type Props = {
   /** 正文的共享文档片段。编辑器直接写它，不再持有一份文本拷贝。 */
@@ -499,6 +534,8 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
     })
     .use(commonmark)
     .use(gfm)
+    .use($remark("note-wiki-links", () => noteWikiLinks))
+    .use(noteLinkSchema)
     // 块属性要在那七个节点类型上都声明，否则编辑器一次写入就把它们删掉。
     .use(withNoteDocAttrs(paragraphSchema) as never)
     .use(withNoteDocAttrs(headingSchema) as never)
@@ -506,7 +543,7 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
     .use(withNoteDocAttrs(blockquoteSchema) as never)
     .use(withNoteDocAttrs(bulletListSchema) as never)
     .use(withNoteDocAttrs(orderedListSchema) as never)
-    .use(withNoteDocAttrs(imageSchema) as never)
+    .use(linkedImageSchema)
     .use(withNoteDocAttrs(tableSchema) as never)
     // 正文与这份文档之间由 ySyncPlugin 双向同步：编辑器打字就是文档的操作，
     // 界面不再经手"整篇正文"。
@@ -523,6 +560,7 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
     .use(listener)
     .use(clipboard)
     .use(imageUploadPlugin(onImagePasteRef))
+    .use(linkedImagePlugin())
     .use(imageNodeViewPlugin(onImageZoomRef))
     .use(caretBlockPlugin(onCaretBlockRef))
     .use(codeBlockTabPlugin())
@@ -642,12 +680,12 @@ function MilkdownControls({
       toggleBlockquote: () => run(command(wrapInBlockquoteCommand.key)),
       toggleBulletList: () => run(command(wrapInBulletListCommand.key)),
       toggleOrderedList: () => run(command(wrapInOrderedListCommand.key)),
-      toggleLink: (href) => run((editor) => editor.action((ctx) => {
+      toggleLink: (href, label = href) => run((editor) => editor.action((ctx) => {
         const view = ctx.get(editorViewCtx);
         const { from, to } = view.state.selection;
         const tr = view.state.tr;
-        if (from === to) tr.insertText(href, from);
-        tr.addMark(from, from === to ? from + href.length : to, linkSchema.type(ctx).create({ href }));
+        if (from === to) tr.insertText(label, from);
+        tr.addMark(from, from === to ? from + label.length : to, linkSchema.type(ctx).create({ href }));
         view.dispatch(tr.scrollIntoView());
         view.focus();
       })),

@@ -38,9 +38,9 @@ class RecoveryProvider extends MockProvider {
       }] };
     } else if (prompt.includes("会话摘要器")) {
       output = { title: "依次讨论两段不同原文", topics: ["间隔重复", "检索练习"] };
-    } else if (options.maxTokens === 500) {
+    } else if (prompt.includes('"thoughts"')) {
       output = { thoughts: [{ text: "窗边安静下来了，想歇会儿就陪你坐着。", urgency: 85, topic: "休息" }] };
-    } else if (options.maxTokens === 400) {
+    } else if (prompt.includes('"variants"')) {
       output = { variants: ["窗边安静下来了，想歇会儿就陪你坐着。"] };
     } else {
       throw new Error("unexpected recovery provider request");

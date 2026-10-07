@@ -1,3 +1,4 @@
+import { NoteMarkdownReading } from "./note-markdown-reading";
 /**
  * 笔记「阅读」这一侧的展示层：从阅读块到块内文到图片，外加两个纯函数。
  *
@@ -10,8 +11,7 @@
  * 先搬走「搬得动且搬完行为不变」的部分，剩下的主体再按功能域切。
  */
 
-import { Clock3, History, Link2, LoaderCircle, MessageCircle, PencilLine, RefreshCw, Sparkles, X } from "lucide-react";
-import { Fragment } from "react";
+import { LoaderCircle, MessageCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import type { NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
 import type {
@@ -21,10 +21,6 @@ import type {
 } from "@astella/shared/note-annotation-contracts";
 import { noteAnchorBlockRangeV1 } from "@astella/shared/note-annotation-contracts";
 import type { NoteLearningArtifactTaskV1 } from "@astella/shared/note-learning-artifact-contracts";
-import { noteBlockText } from "./surface-data.tsx";
-import { isHorizontalRule, noteInlineDisplayText, noteInlineImages, renderNoteInline, renderNotePlainText } from "./note-reading-inline.tsx";
-import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
-import { parseMarkdownTable } from "@astella/shared/note-doc-schema";
 import { parseImageBlock } from "./surface-data.tsx";
 import { useSourceImage } from "../source/source-image.ts";
 import { ZoomableReadingImage } from "../source/image-viewer.tsx";
@@ -44,6 +40,7 @@ import { noteExplanationBusy, noteExplanationLabel, type NoteCompanionExplanatio
 
 export function ReadingBlock(props: {
   readonly block: NoteBlockProjectionV1;
+  readonly alignment?: "left" | "center" | "right";
   readonly annotations?: readonly NoteAnnotationV1[];
   readonly companionExplanations?: readonly NoteCompanionExplanation[];
   readonly onOpenCompanionExplanation?: (item: NoteCompanionExplanation) => void;
@@ -75,6 +72,7 @@ export function ReadingBlock(props: {
   return (
     <div
       className="reading-block"
+      style={props.alignment ? { textAlign: props.alignment } : undefined}
       data-block-ordinal={props.block.ordinal}
       {...(props.focused ? { "data-block-focused": "true" } : {})}
     >
@@ -174,7 +172,7 @@ export function ReadingBlockContent({
     readonly close: () => void;
   };
 }) {
-  if (block.type === "image") {
+  if (block.type === "image" && !block.content.trimStart().startsWith("[![")) {
     // 图片块要先取字节再画图，所以由自己的组件承载状态：hook 不能排在这一串
     // 按块类型分叉的早返回之后。
     return <ReadingImage block={block} workspaceEpoch={workspaceEpoch} gallery={gallery} />;
@@ -191,46 +189,7 @@ export function ReadingBlockContent({
     galleryStart: gallery?.start,
     onOpenGallery: gallery?.openAt,
   };
-  if (block.type === "heading") return <h3 className="serif">{renderNoteInline(block.content, inline)}</h3>;
-  if (block.type === "code") {
-    // 代码块里的换行与星号都是内容，不是语法：`pre` 自己保空白，不走行内解析。
-    return <pre className="code-block"><code>{renderNotePlainText(noteBlockText(block.content), inline)}</code></pre>;
-  }
-  if (block.type === "list") {
-    // 每一项占一行、带自己的记号：以前整块列表压成一行，第二项开始根本看不出是列表。
-    return <p className="list-block">{renderNoteInline(block.content, { ...inline, lineClass: "list-line" })}</p>;
-  }
-  if (block.type === "quote") return <p className="quote">{renderNoteInline(block.content, inline)}</p>;
-  // Tables have no block type; a paragraph of pipe rows renders as one.
-  const table = parseMarkdownTable(noteBlockText(block.content));
-  if (table) {
-    // 第二行是**语法**不是内容（`| --- | --- |` 那一条分隔行），跟着画就多出一整行减号。
-    const [header, separators, ...rows] = table;
-    const alignments = (separators ?? []).map(separator => separator.endsWith(":")
-      ? (separator.startsWith(":") ? "center" as const : "right" as const) : "left" as const);
-    let offset = 0;
-    const cell = (value: string, key: string) => {
-      const textOffset = offset;
-      offset += noteBlockRenderedTextV1("paragraph", value).length;
-      return <span key={key}>{renderNoteInline(value, { ...inline, textOffset })}</span>;
-    };
-    return (
-      <table className="md-table">
-        <thead>
-          <tr>{header?.map((value, index) => <th scope="col" key={index} style={{ textAlign: alignments[index] }}>{cell(value, `h${index}`)}</th>)}</tr>
-        </thead>
-        <tbody>
-          {rows.map((row, rowIndex) => (
-            <tr key={rowIndex}>{row.map((value, cellIndex) => <td key={cellIndex} style={{ textAlign: alignments[cellIndex] }}>{cell(value, `c${rowIndex}-${cellIndex}`)}</td>)}</tr>
-          ))}
-        </tbody>
-      </table>
-    );
-  }
-  // 编辑器把 `---` 画成一条线，投影回来它是一个内容为 `---` 的段落；不认出来就是
-  // 纸面上凭空多出三个减号。
-  if (isHorizontalRule(noteInlineDisplayText(block.content))) return <hr className="reading-rule" />;
-  return <p>{renderNoteInline(block.content, inline)}</p>;
+  return <NoteMarkdownReading type={block.type} content={block.content} options={inline} />;
 }
 
 /**
@@ -277,6 +236,6 @@ export function ReadingImage({
       />
     );
   }
-  if (state.status === "loading") return <p className="small notebook-note">正在载入图片…</p>;
-  return <p className="small notebook-note">这张图片没能取回：{alt}</p>;
+  if (state.status === "loading") return <p className="small notebook-note" data-note-decoration="true">正在载入图片…</p>;
+  return <p className="small notebook-note" data-note-decoration="true">这张图片没能取回：{alt}</p>;
 }

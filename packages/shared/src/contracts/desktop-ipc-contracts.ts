@@ -139,6 +139,7 @@ import {
 import {
   companionVoicePlaybackOutcomeResultV1Schema,
   companionVoiceSpeakResultV1Schema,
+  companionCachedVoiceListResultV1Schema,
   type CompanionVoiceSpeakRequestV1,
   type CompanionVoiceSpeakSegmentRequestV2,
 } from "./companion-voice-contracts.ts";
@@ -399,6 +400,8 @@ export const DESKTOP_IPC_CHANNELS = {
   companionRoomPatchProfile: "astella.v1.companion.room.patchProfile",
   companionVoiceSpeak: "astella.v1.companion.voice.speak",
   companionVoiceSpeakSegment: "astella.v1.companion.voice.speakSegment",
+  companionVoiceCachedList: "astella.v1.companion.voice.cachedList",
+  companionVoiceCachedRead: "astella.v1.companion.voice.cachedRead",
   companionVoicePlaybackOutcome: "astella.v1.companion.voice.playbackOutcome",
   // 本地语音识别模型的四条：读状态 / 开始下载 / 中止 / 移除。
   // **它们是设备级的**：模型在这台机器上，不在谁的名下，所以这四条不要求工作区纪元。
@@ -2520,6 +2523,14 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
       }): Promise<GatewayResultV1<z.infer<typeof companionRoomProfileV1Schema>>>;
     };
     readonly voice: {
+      cachedList(input: {
+        meta: RequestMetaV1;
+        request: { runIds: string[] };
+      }): Promise<GatewayResultV1<z.infer<typeof companionCachedVoiceListResultV1Schema>>>;
+      cachedRead(input: {
+        meta: RequestMetaV1;
+        request: import("./companion-voice-contracts.ts").CompanionCachedVoiceReadRequestV1;
+      }): Promise<GatewayResultV1<z.infer<typeof companionVoiceSpeakResultV1Schema> | null>>;
       speak(input: {
         meta: RequestMetaV1;
         request: CompanionVoiceSpeakRequestV1;

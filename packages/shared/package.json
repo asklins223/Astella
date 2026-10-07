@@ -434,6 +434,7 @@
       "import": "./src/note-doc-conformance.ts",
       "default": "./src/note-doc-conformance.ts"
     },
+    "./note-markdown": "./src/note-markdown.ts",
     "./note-doc-schema": {
       "types": "./src/note-doc-schema.ts",
       "import": "./src/note-doc-schema.ts",
@@ -692,10 +693,22 @@
       "types": "./src/contracts/agent-request-contracts.ts",
       "import": "./src/contracts/agent-request-contracts.ts",
       "default": "./src/contracts/agent-request-contracts.ts"
+    },
+    "./object-transfer-contracts": {
+      "types": "./src/contracts/object-transfer-contracts.ts",
+      "import": "./src/contracts/object-transfer-contracts.ts",
+      "default": "./src/contracts/object-transfer-contracts.ts"
     }
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
+    "rehype-raw": "^7.0.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
+    "unified": "^11.0.5",
     "zod": "^3.23.8"
   },
   "scripts": {
@@ -703,6 +716,8 @@
     "test": "node --import tsx --test --test-concurrency=1 $(find src -name '*.test.ts' | sort)"
   },
   "devDependencies": {
+    "@types/hast": "3.0.5",
+    "@types/mdast": "4.0.4",
     "@types/node": "^22.10.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"

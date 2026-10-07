@@ -1,4 +1,4 @@
-import type { CompanionTurnThinkingInput } from "./companion-turn-thinking.ts";
+import { companionDialogueNeedsGrounding, type CompanionTurnThinkingInput } from "./companion-turn-thinking.ts";
 
 /** A generation instruction, not a claim that facts have been independently verified. */
 export const COMPANION_KNOWLEDGE_REVIEW_V1 = [
@@ -17,7 +17,7 @@ export function companionResponseStrategy(attention: CompanionTurnThinkingInput)
   guidance: string;
 } {
   if (attention?.intent === "conversation" && attention.toolUse === "none") {
-    return { mode: "casual", temperature: 0.9, guidance: "" };
+    return { mode: "casual", temperature: companionDialogueNeedsGrounding(attention) ? 0.3 : 0.9, guidance: "" };
   }
   if (attention?.intent === "task" || attention?.intent === "task_control"
       || attention?.intent === "conversation") {

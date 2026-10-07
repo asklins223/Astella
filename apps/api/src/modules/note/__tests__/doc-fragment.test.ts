@@ -3,6 +3,7 @@ import test from "node:test";
 import * as Y from "yjs";
 import { yXmlFragmentToProsemirrorJSON } from "y-prosemirror";
 import { noteDocSchemaSpec, type NoteDocBlockSpec } from "@astella/shared/note-doc-schema";
+import { markdownToBlocks } from "@astella/shared/markdown-parser";
 import {
   NOTE_DOC_FRAGMENT_KEY,
   emptyFragmentNoteDoc,
@@ -36,6 +37,9 @@ const BLOCKS: NoteDocBlockSpec[] = [
   // 读侧的 `IMAGE_LINE` 按这个式子解析，写成裸地址等于让阅读页画不出图。
   { type: "image", content: "![示意图](/api/uploads/abc.png)" },
 ];
+// The row projection stores plain bullet item text; the parser now consumes the
+// Markdown marker rather than leaving a literal hyphen in the item's text node.
+const PROJECTED_BLOCKS = BLOCKS.map(block => block.type === "list" ? { ...block, content: "甲\n乙" } : block);
 
 const REF = { sourceId: "11111111-1111-4111-8111-111111111111", segmentId: "seg-2" };
 
@@ -53,6 +57,18 @@ function replicaOf(source: Y.Doc): Y.Doc {
 const blocksOf = (doc: Y.Doc) => projectFragmentBlocks(doc);
 const contentOf = (blocks: readonly { content: string }[]) => blocks.map((block) => block.content);
 
+test("HTML、链接徽章、Mermaid 语言与嵌套任务经真实 CRDT 快照保留", () => {
+  const doc = emptyFragmentNoteDoc();
+  const source = '<div align="center">\n\n[![版本][badge]](https://example.com/release)\n\n</div>\n\n- [x] 主项\n  - 子项\n\n```mermaid\nflowchart LR\nA --> B\n```\n\n[badge]: https://example.com/version.svg';
+  writeFragmentBlocks(doc, markdownToBlocks(source));
+  const copy = replicaOf(doc), blocks = blocksOf(copy);
+  assert.equal(blocks[0]!.content, '<div align="center">');
+  assert.equal(blocks[1]!.content, '[![版本](https://example.com/version.svg)](https://example.com/release)');
+  assert.equal(blocks[3]!.content, '- [x] 主项\n  - 子项');
+  assert.equal(blocks[4]!.content, '```mermaid\nflowchart LR\nA --> B\n```');
+  copy.destroy(); doc.destroy();
+});
+
 test("六种块写得进 fragment、也投影得回 note_blocks 的行形状", () => {
   const doc = emptyFragmentNoteDoc();
   writeFragmentBlocks(doc, BLOCKS);
@@ -60,7 +76,7 @@ test("六种块写得进 fragment、也投影得回 note_blocks 的行形状", (
   assert.equal(projected.length, BLOCKS.length);
   assert.deepEqual(
     projected.map((block) => ({ type: block.type, content: block.content })),
-    BLOCKS.map((block) => ({ type: block.type, content: block.content })),
+    PROJECTED_BLOCKS.map((block) => ({ type: block.type, content: block.content })),
   );
   // ordinal 由数组下标给出：fragment 里绝不另存一份，否则它和顺序迟早打架。
   assert.deepEqual(projected.map((block) => block.ordinal), [0, 1, 2, 3, 4, 5]);
@@ -79,7 +95,7 @@ test("证据链的两个属性在**每一种**块上都留得住", () => {
   // 没在 schema 里声明的属性会被丢掉（实测：给 paragraph 传 sourceRef 之后投影回来
   // 只剩 {"type":"paragraph","content":[…]}）。段落是"来源转笔记"最常见的产出，
   // 所以这一条按六种块各来一遍，而不是只测图片那种。
-  for (const block of BLOCKS) {
+  for (const block of PROJECTED_BLOCKS) {
     const doc = emptyFragmentNoteDoc();
     writeFragmentBlocks(doc, [{ ...block, sourceRef: REF, imageAssetId: "asset-7" }]);
     const [projected] = blocksOf(doc);
@@ -124,7 +140,7 @@ test("整篇重写不复制块，未改动的块保持同一个节点", () => {
     "这一段两个人同时在改",
     "小标题",
     "line one\nline two",
-    "- 甲\n- 乙",
+    "甲\n乙",
     "引用一句（改了）",
     "尾部新增的一段",
   ]);

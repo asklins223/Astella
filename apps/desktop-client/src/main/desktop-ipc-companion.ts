@@ -237,6 +237,9 @@ import {
   companionVoiceSpeakRequestV1Schema,
   companionVoiceSpeakResultV1Schema,
   companionVoiceSpeakSegmentRequestV2Schema,
+  companionCachedVoiceListRequestV1Schema,
+  companionCachedVoiceListResultV1Schema,
+  companionCachedVoiceReadRequestV1Schema,
   companionVoicePlaybackOutcomeRequestV1Schema,
   companionVoicePlaybackOutcomeResultV1Schema,
 } from "@astella/shared/companion-voice-contracts";
@@ -769,6 +772,22 @@ channel(DESKTOP_IPC_CHANNELS.companionHomeGetProjection, runtimeInputSchema, asy
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_companion.speakCompanionVoiceSegment(gateway.gatewayTransport, input.request, input.meta.requestId);
   }, companionVoiceSpeakResultV1Schema);
+
+  channel(DESKTOP_IPC_CHANNELS.companionVoiceCachedList, z.strictObject({
+    meta: requestMetaSchema, request: companionCachedVoiceListRequestV1Schema,
+  }), async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.listCachedCompanionVoice(gateway.gatewayTransport, input.request.runIds);
+  }, companionCachedVoiceListResultV1Schema);
+
+  channel(DESKTOP_IPC_CHANNELS.companionVoiceCachedRead, z.strictObject({
+    meta: requestMetaSchema, request: companionCachedVoiceReadRequestV1Schema,
+  }), async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.readCachedCompanionVoice(gateway.gatewayTransport, input.request);
+  }, companionVoiceSpeakResultV1Schema.nullable());
 
   // 一段音频播没播成（0247）：与合成同一路由门控。渲染层是 fire-and-forget，
   // 这条链路失败只会变成"少一行统计"，不会打断朗读。

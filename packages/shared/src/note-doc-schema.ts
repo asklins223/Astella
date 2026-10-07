@@ -1,3 +1,4 @@
+import { noteBlockMarkdown, noteMarkdownTree, noteMarkdownText, noteMarkdownSyntax, type NoteMarkdownSyntaxNode } from "./note-markdown.ts";
 /**
  * 笔记正文的 ProseMirror schema 定义与块形状转换（CRDT 批次 B）。
  *
@@ -34,7 +35,6 @@ export const NOTE_BLOCK_NODE_NAMES = {
   image: "image",
 } as const;
 
-const LIST_ITEM_SEPARATOR = "\n";
 
 /**
  * 每个块节点都带的属性。
@@ -82,17 +82,19 @@ export const noteDocSchemaSpec = {
     doc: { content: "block+" },
     paragraph: { content: "inline*", group: "block", attrs: blockAttrs },
     heading: { content: "inline*", group: "block", attrs: { level: { default: 2 }, ...blockAttrs } },
-    code_block: { content: "text*", group: "block", code: true, attrs: blockAttrs },
+    code_block: { content: "text*", group: "block", code: true, attrs: { language: { default: "" }, ...blockAttrs } },
     blockquote: { content: "block+", group: "block", attrs: blockAttrs },
     bullet_list: { content: "list_item+", group: "block", attrs: blockAttrs },
     ordered_list: { content: "list_item+", group: "block", attrs: { order: { default: 1 }, ...blockAttrs } },
-    list_item: { content: "paragraph+", attrs: { label: { default: "•" }, listType: { default: "bullet" }, spread: { default: false }, checked: { default: null } } },
+    list_item: { content: "paragraph block*", attrs: { label: { default: "•" }, listType: { default: "bullet" }, spread: { default: false }, checked: { default: null } } },
     table: { content: "table_header_row table_row+", group: "block", attrs: blockAttrs },
     table_header_row: { content: "table_header*" },
     table_row: { content: "table_cell*" },
     table_header: { content: "paragraph", isolating: true, attrs: { colspan: { default: 1 }, rowspan: { default: 1 }, colwidth: { default: null }, alignment: { default: "left" } } },
     table_cell: { content: "paragraph", isolating: true, attrs: { colspan: { default: 1 }, rowspan: { default: 1 }, colwidth: { default: null }, alignment: { default: "left" } } },
-    image: { inline: true, group: "inline", attrs: { src: { default: "" }, alt: { default: "" }, ...blockAttrs } },
+    image: { inline: true, group: "inline", attrs: { src: { default: "" }, alt: { default: "" }, linkHref: { default: null }, ...blockAttrs } },
+    // Milkdown renders HTML atoms as literal source. The reader applies its own allowlist.
+    html: { atom: true, inline: true, group: "inline", attrs: { value: { default: "" } } },
     hr: { group: "block" },
     // `inline: true` 不是装饰：prosemirror-model 判行内只看 `!(spec.inline || name=="text")`，
     // **组名不参与**。少写它，`hardbreak` 就是个块类型，段落那句 `inline*` 当场报
@@ -211,38 +213,9 @@ export function parseMarkdownTable(content: string): readonly (readonly string[]
  * lets the API verify anchors against the same visible source the reader selected.
  */
 export function noteBlockRenderedTextV1(type: string, content: string): string {
-  const value = content
-    .replace(/<br\s*\/?\s*>/gi, "\n")
-    .replace(/<\/?(?:h[1-6]|p|strong|em|ul|ol|li|blockquote|code|pre)\b[^>]*>/gi, "")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&#39;/gi, "'")
-    .replace(/&quot;/gi, '"');
-
   if (type === "image") return "";
-  if (type === "code") return value;
+  return noteMarkdownText(noteMarkdownTree(noteBlockMarkdown(type, content)));
 
-  const visibleInline = (text: string): string => parseInlineMarkdown(text)
-    .map((segment) => {
-      if (segment.kind === "image") return "";
-      if (segment.kind === "code" || segment.kind === "math") return segment.text.replace(/\n/g, "");
-      return segment.text.replace(/\\([!\"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/g, "$1");
-    })
-    .join("");
-
-  if (type === "paragraph") {
-    const table = parseMarkdownTable(value);
-    if (table) return [table[0] ?? [], ...table.slice(2)].flat().map(visibleInline).join("");
-    const flattened = visibleInline(value).replace(/\n/g, "");
-    if (/^(?:\*{3,}|-{3,}|_{3,})$/.test(flattened.trim())) return "";
-    return flattened;
-  }
-
-  // The reader renders list/quote/heading line breaks as `<br>` or sibling spans;
-  // Range.toString() concatenates their text nodes without adding a newline.
-  return visibleInline(value).replace(/\n/g, "");
 }
 
 const MARK_BY_SEGMENT: Partial<Record<NoteDocInlineSegment["kind"], string>> = {
@@ -288,16 +261,6 @@ function inlineContent(content: string, mode: "markdown" | "raw" = "markdown"): 
   return nodes;
 }
 
-const IMAGE_LINE = /^!\[([^\]]*)\]\(([^)\s]+)\)$/;
-
-function parseImageLine(content: string): { src: string; alt: string } {
-  const match = IMAGE_LINE.exec(content.trim());
-  if (match) return { alt: match[1] ?? "", src: match[2] ?? "" };
-  // 认不出 Markdown 语法的图片行（Web 端老数据可能只存了地址）：整串当地址，
-  // 说明留空——地址猜错的代价是图裂，把地址当说明写进去的代价是永远修不好。
-  return { src: content.trim(), alt: "" };
-}
-
 /**
  * 一个块的正文 → 放进 PM 节点里的行内容（空块不给 content，PM 要的是"没有子节点"）。
  *
@@ -308,10 +271,12 @@ function parseImageLine(content: string): { src: string; alt: string } {
 function collectInline(node: PmJson | undefined): string {
   if (!node) return "";
   if (node.type === "hardbreak") return "\n";
+  if (node.type === "html") return String(node.attrs?.value ?? "");
   if (node.type === "image") {
     const alt = String(node.attrs?.alt ?? "");
     const src = String(node.attrs?.src ?? "");
-    return alt ? `![${alt}](${src})` : `![](${src})`;
+    const image = alt ? `![${alt}](${src})` : `![](${src})`;
+    return node.attrs?.linkHref ? `[${image}](${String(node.attrs.linkHref)})` : applyMarks(image, node.marks ?? []);
   }
   if (typeof node.text === "string") return applyMarks(node.text, node.marks ?? []);
   return (node.content ?? []).map(collectInline).join("");
@@ -343,6 +308,22 @@ function attrOf(node: PmJson): { sourceRef: NoteDocBlockSpec["sourceRef"]; image
     sourceRef: (node.attrs?.sourceRef as NoteDocBlockSpec["sourceRef"]) ?? null,
     imageAssetId: (node.attrs?.imageAssetId as string | null) ?? null,
   };
+}
+
+function fencedCode(value: string, language: string): string {
+  const fence = "`".repeat(Math.max(3, ...Array.from(value.matchAll(/`+/g), match => match[0].length + 1)));
+  return `${fence}${language}\n${value}\n${fence}`;
+}
+
+function listToMarkdown(node: PmJson, nested = false): string {
+  const complex = nested || (node.content ?? []).some(item => item.attrs?.checked != null || (item.content ?? []).some(child => child.type.endsWith("_list")));
+  return (node.content ?? []).map((item, index) => {
+    const prefix = node.type === "ordered_list" ? `${Number(node.attrs?.order ?? 1) + index}. ` : complex ? "- " : "";
+    const checked = item.attrs?.checked == null ? "" : item.attrs.checked ? "[x] " : "[ ] ";
+    const parts = (item.content ?? []).map(child => child.type.endsWith("_list")
+      ? listToMarkdown(child, true).split("\n").map(line => `  ${line}`).join("\n") : collectInline(child));
+    return prefix + checked + parts.join("\n");
+  }).join("\n");
 }
 
 const CELLS: Record<string, true> = { table_cell: true, table_header: true };
@@ -392,21 +373,19 @@ export function pmNodesToNoteBlocks(nodes: readonly PmJson[]): NoteDocBlockSpec[
     const extras = { ...(sourceRef ? { sourceRef } : {}), ...(imageAssetId ? { imageAssetId } : {}) };
     switch (node.type) {
       case "heading":
-        return { type: "heading", content: collectInline(node), ...extras };
+        return { type: "heading", content: Number(node.attrs?.level ?? 2) === 2 ? collectInline(node) : `${"#".repeat(Number(node.attrs?.level ?? 2))} ${collectInline(node)}`, ...extras };
       case "code_block":
-        return { type: "code", content: collectInline(node), ...extras };
+        return { type: "code", content: node.attrs?.language
+          ? fencedCode(collectInline(node), String(node.attrs.language)) : collectInline(node), ...extras };
       case "blockquote":
-        return { type: "quote", content: (node.content ?? []).map(collectInline).join("\n"), ...extras };
+        return { type: "quote", content: (node.content ?? []).some(child => child.type !== "paragraph")
+          ? pmNodesToNoteBlocks(node.content ?? []).map(block => noteBlockMarkdown(block.type, block.content)).join("\n\n").split("\n").map(line => `> ${line}`).join("\n")
+          : (node.content ?? []).map(collectInline).join("\n"), ...extras };
       case "bullet_list":
       case "ordered_list":
         return {
           type: "list",
-          content: (node.content ?? [])
-            .map((item, index) => {
-              const text = (item.content ?? []).map(collectInline).join("\n");
-              return node.type === "ordered_list" ? `${Number(node.attrs?.order ?? 1) + index}. ${text}` : text;
-            })
-            .join(LIST_ITEM_SEPARATOR),
+          content: listToMarkdown(node),
           ...extras,
         };
       case "image": {
@@ -448,55 +427,67 @@ export function pmNodesToNoteBlocks(nodes: readonly PmJson[]): NoteDocBlockSpec[
  * 所以这里解析，`pmNodesToNoteBlocks` 那侧再序列化回去，两边共用同一个行内解析器。
  */
 export function noteBlocksToPmNodes(blocks: readonly NoteDocBlockSpec[]): PmJson[] {
-  return blocks.map((block) => {
-    const attrs = { sourceRef: block.sourceRef ?? null, imageAssetId: block.imageAssetId ?? null };
-    switch (block.type) {
-      case "heading":
-        return { type: "heading", attrs: { level: 2, ...attrs }, content: inlineContent(block.content) };
-      case "code":
-        // 代码块里的星号是代码，不是粗体：整段一个字都不动地当一个文本节点放进去。
-        return { type: "code_block", attrs, content: inlineContent(block.content, "raw") };
-      case "quote":
-        return { type: "blockquote", attrs, content: [{ type: "paragraph", content: inlineContent(block.content) }] };
-      case "list": {
-        const lines = block.content.split(LIST_ITEM_SEPARATOR);
-        const ordered = lines.every(line => /^\s*\d+[.)]\s+/.test(line));
-        return {
-          type: ordered ? "ordered_list" : "bullet_list",
-          attrs: ordered ? { ...attrs, order: Number.parseInt(lines[0]!.trim(), 10) } : attrs,
-          content: lines.map((line, index) => ({ type: "list_item",
-            ...(ordered ? { attrs: { label: `${Number.parseInt(lines[0]!.trim(), 10) + index}.`, listType: "ordered", spread: false } } : {}),
-            content: [{ type: "paragraph", content: inlineContent(ordered ? line.replace(/^\s*\d+[.)]\s+/, "") : line) }] })),
-        };
-      }
-      case "image": {
-        // 图片块的 content 就是它的 Markdown（`![说明](地址)`），与公共行内解析器
-        // 存的约定一致；地址与说明从 Markdown 里取，因为 PM 的 image 节点是属性不是文本。
-        // 写出去的形状是 `paragraph > image`——编辑器里图片只有这一个位置（它是行内节点），
-        // 规格把图片挂在 `inline` 组上，顶层放不下。投影那一侧再把"整段一张图"认回 `image`。
-        const parsed = parseImageLine(block.content);
-        return {
-          type: "paragraph",
-          attrs,
-          content: [{ type: "image", attrs: { src: parsed.src, alt: parsed.alt } }],
-        };
-      }
-      default: {
-        const table = block.type === "paragraph" ? parseMarkdownTable(block.content) : null;
-        if (table && table.length > 2) {
-          const [header, separators, ...rows] = table;
-          const alignments = (separators ?? []).map(separator => separator.endsWith(":")
-            ? (separator.startsWith(":") ? "center" : "right") : "left");
-          const row = (cells: readonly string[], isHeader: boolean): PmJson => ({
-            type: isHeader ? "table_header_row" : "table_row",
-            content: cells.map((value, index) => ({ type: isHeader ? "table_header" : "table_cell",
-              attrs: { alignment: alignments[index] ?? "left" },
-              content: [{ type: "paragraph", content: inlineContent(value) }] })),
-          });
-          return { type: "table", attrs, content: [row(header ?? [], true), ...rows.map(cells => row(cells, false))] };
-        }
-        return { type: "paragraph", attrs, content: inlineContent(block.content) };
-      }
+  const references = new Map<string, { url: string; title?: string | null }>();
+  const definitions: string[] = [];
+  const documentSource = blocks.map(block => noteBlockMarkdown(block.type, block.content)).join("\n\n");
+  for (const node of noteMarkdownSyntax(documentSource).children) {
+    if (node.type === "definition") {
+      references.set(node.identifier.toLowerCase(), node);
+      definitions.push(documentSource.slice(node.position?.start.offset, node.position?.end.offset));
     }
+  }
+  return blocks.map(block => {
+    const source = noteBlockMarkdown(block.type, block.content);
+    // Reference syntax is recognized only when its definition is in the same parse.
+    const tree = noteMarkdownSyntax(`${source}\n\n${definitions.join("\n")}`);
+    const parsed = tree.children.filter(node => (node.position?.start.offset ?? 0) < source.length).map(node => syntaxToPm(node, source, references));
+    // Every persisted block retains its ordinal and provenance. Multiple paragraphs
+    // in an older block are represented as line breaks, rather than shifting anchors.
+    let node = parsed.length === 1 ? parsed[0]! : { type: "paragraph", content: inlineContent(block.content) };
+    if (block.type === "image" && !node.content?.some(child => child.type === "image")) {
+      node = { type: "paragraph", content: [{ type: "image", attrs: { src: block.content.trim(), alt: "" } }] };
+    }
+    return { ...node, attrs: { ...node.attrs, sourceRef: block.sourceRef ?? null, imageAssetId: block.imageAssetId ?? null } };
   });
+}
+
+function syntaxToPm(node: NoteMarkdownSyntaxNode, source: string, references: Map<string, { url: string; title?: string | null }>, marks: PmJsonMark[] = []): PmJson {
+  const raw = () => source.slice(node.position?.start.offset ?? 0, node.position?.end.offset ?? source.length);
+  const inline = (children: readonly NoteMarkdownSyntaxNode[], inherited: PmJsonMark[] = marks): PmJson[] => children.flatMap(child => {
+    if (child.type === "text") return child.value.split("\n").flatMap((line, index) => [
+      ...(index ? [{ type: "hardbreak" }] : []), ...(line ? [{ type: "text", text: line, ...(inherited.length ? { marks: inherited } : {}) }] : []),
+    ]);
+    if (child.type === "strong" || child.type === "emphasis" || child.type === "delete" || child.type === "link") {
+      const mark: PmJsonMark = child.type === "link" ? { type: "link", attrs: { href: child.url, title: child.title } }
+        : { type: child.type === "delete" ? "strike_through" : child.type };
+      return inline(child.children as NoteMarkdownSyntaxNode[], [...inherited, mark]);
+    }
+    if (child.type === "inlineCode") return [{ type: "text", text: child.value, marks: [...inherited, { type: "inlineCode" }] }];
+    if (child.type === "image") return [{ type: "image", attrs: { src: child.url, alt: child.alt ?? "", title: child.title, linkHref: inherited.find(mark => mark.type === "link")?.attrs?.href ?? null } }];
+    if (child.type === "html") return [{ type: "html", attrs: { value: child.value } }];
+    if (child.type === "linkReference" || child.type === "imageReference") {
+      const destination = references.get(child.identifier.toLowerCase());
+      if (destination) return child.type === "imageReference"
+        ? [{ type: "image", attrs: { src: destination.url, alt: child.alt ?? "", title: destination.title, linkHref: inherited.find(mark => mark.type === "link")?.attrs?.href ?? null } }]
+        : inline(child.children as NoteMarkdownSyntaxNode[], [...inherited, { type: "link", attrs: { href: destination.url, title: destination.title } }]);
+    }
+    if (child.type === "break") return [{ type: "hardbreak" }];
+    const text = source.slice(child.position?.start.offset ?? 0, child.position?.end.offset ?? source.length);
+    return text ? [{ type: "text", text, ...(inherited.length ? { marks: inherited } : {}) }] : [];
+  });
+  switch (node.type) {
+    case "heading": return { type: "heading", attrs: { level: node.depth }, content: inline(node.children as NoteMarkdownSyntaxNode[]) };
+    case "paragraph": return { type: "paragraph", content: inline(node.children as NoteMarkdownSyntaxNode[]) };
+    case "code": return { type: "code_block", attrs: { language: node.lang ?? "" }, content: node.value ? [textNode(node.value)] : undefined };
+    case "blockquote": return { type: "blockquote", content: node.children.map(child => syntaxToPm(child, source, references)) };
+    case "list": return { type: node.ordered ? "ordered_list" : "bullet_list", attrs: node.ordered ? { order: node.start ?? 1 } : {},
+      content: node.children.map((item, index) => ({ type: "list_item", attrs: { label: node.ordered ? `${(node.start ?? 1) + index}.` : "•", listType: node.ordered ? "ordered" : "bullet", spread: item.spread ?? false, checked: item.checked ?? null },
+        content: item.children.map(child => syntaxToPm(child, source, references)) })) };
+    case "table": return { type: "table", content: node.children.map((row, index) => ({ type: index === 0 ? "table_header_row" : "table_row",
+      content: row.children.map((cell, column) => ({ type: index === 0 ? "table_header" : "table_cell", attrs: { alignment: node.align?.[column] ?? "left" },
+        content: [{ type: "paragraph", content: inline(cell.children as NoteMarkdownSyntaxNode[]) }] })) })) };
+    case "thematicBreak": return { type: "hr" };
+    case "html": return { type: "paragraph", content: [{ type: "html", attrs: { value: node.value } }] };
+    default: return { type: "paragraph", content: raw() ? [textNode(raw())] : undefined };
+  }
 }

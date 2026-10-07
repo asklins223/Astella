@@ -15,6 +15,37 @@ import type { PublicJsonRequester, PublicJsonResponse } from "@astella/shared/pu
 
 const messages = [{ role: "user" as const, content: "ping" }];
 
+test("embedding 出网保留长输入的末尾纠正，不静默只取前 1500 字", async () => {
+  let sent: Record<string, unknown> = {};
+  let observedSignal: AbortSignal | undefined;
+  const provider = new OpenAICompatibleProvider({ apiKey: "test-key", baseUrl: "https://api.example.com/v1",
+    model: "chat", embeddingModel: "embedding", request: async (_url, _headers, body, signal) => {
+      sent = body as Record<string, unknown>; observedSignal = signal;
+      return { status: 200, statusText: "OK", body: { data: [{ embedding: [0.1, 0.2] }] } };
+    } });
+  const text = "旧背景\n".repeat(500) + "末尾纠正：改完的是封面，正文尚未修改。🙂";
+  const signal = new AbortController().signal;
+  assert.deepEqual(await provider.embed(text, signal), [0.1, 0.2]);
+  assert.equal((sent.input as string[])[0]?.length, text.length);
+  assert.ok((sent.input as string[])[0] === text, "完整输入必须逐字保留");
+  assert.equal(sent.model, "embedding");
+  assert.equal(observedSignal, signal);
+});
+
+test("embedding 上游拒绝长输入时返回现有降级标记，不改成成功的前缀向量", async () => {
+  const sent: Record<string, unknown>[] = [];
+  const provider = new OpenAICompatibleProvider({ apiKey: "test-key", baseUrl: "https://api.example.com/v1",
+    model: "embedding", request: async (_url, _headers, body) => {
+      sent.push(body as Record<string, unknown>);
+      return { status: 400, statusText: "Bad Request", body: { error: { code: "input_too_long" } } };
+    } });
+  const text = "长输入".repeat(2000) + "末尾信息";
+  assert.equal(await provider.embed(text), null);
+  assert.equal(sent.length, 1);
+  assert.equal((sent[0]?.input as string[])[0]?.length, text.length);
+  assert.ok((sent[0]?.input as string[])[0] === text, "拒绝前仍应发送完整输入");
+});
+
 test("跨模型请求在HTTP出口按目标模型输出上限夹取，不沿用主模型的大预算", async () => {
   const sent: Record<string,unknown>[]=[];
   const provider=new OpenAICompatibleProvider({apiKey:"test-key",baseUrl:"https://api.example.com/v1",

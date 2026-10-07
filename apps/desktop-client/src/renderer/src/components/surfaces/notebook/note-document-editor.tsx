@@ -30,7 +30,7 @@ export function NoteDocumentEditor({ mode, ref, ...props }: ComponentProps<typeo
       toggleBlockquote: () => inSource() ? sourceRef.current!.toggleLinePrefix("> ", /^> /) : editor.toggleBlockquote(),
       toggleBulletList: () => inSource() ? sourceRef.current!.toggleLinePrefix("- ", /^(?:[-+*]|\d+\.) /) : editor.toggleBulletList(),
       toggleOrderedList: () => inSource() ? sourceRef.current!.toggleLinePrefix("1. ", /^(?:[-+*]|\d+\.) /) : editor.toggleOrderedList(),
-      toggleLink: (href) => inSource() ? wrap("[", `](${href})`, href) : editor.toggleLink(href),
+      toggleLink: (href, label = href) => inSource() ? wrap("[", `](${href})`, label.replace(/[\[\]]/g, "\\$&")) : editor.toggleLink(href, label),
       insertCodeBlock: () => inSource() ? wrap("```\n", "\n```") : editor.insertCodeBlock(),
       insertHr: () => inSource() ? wrap("\n---\n") : editor.insertHr(),
       getPosition: () => inSource() ? sourceRef.current!.getPosition() : editor.getPosition(),

@@ -2,6 +2,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { extractQueryKeywords } from "./companion-memory-vector.ts";
 import { companionHistoryText } from "./companion-dialogue-store.ts";
 import { toTextArrayLiteral } from "@astella/shared/pg-text-array";
+import { conversationInstant } from "./companion-conversation-evidence.ts";
 
 /**
  * 方案 44 §3.2／§8.3：跨会话找回。
@@ -25,10 +26,7 @@ export const MAX_PAST_CONVERSATION_HITS = 5;
 /** 取回原文时一次最多读多少条消息。 */
 export const MAX_PAST_CONVERSATION_MESSAGES = 20;
 
-/** 单条消息进模型的字符上限（与 read_history 的 1,000 对齐）。 */
-export const PAST_MESSAGE_MAX_CHARS = 1_000;
-
-/** 取回原文一次最多返回多少字符。 */
+/** Soft page budget: a single message is always complete, even if larger. */
 export const PAST_MESSAGES_MAX_CHARS = 6_000;
 
 export interface PastConversationScope {
@@ -54,6 +52,7 @@ export interface PastConversationMessage {
   seq: string;
   role: "user" | "assistant";
   text: string;
+  createdAt: string | null;
 }
 
 export interface PastConversationExcerpt {
@@ -189,6 +188,7 @@ export async function readPastConversationMessages(
     -- 写法对齐 readCompanionHistoryRows（companion-dialogue-store）：子查询取该轮次的
     -- selection，没有对应轮次时就是 null——不猜，也不从别处拼。
     SELECT m.id, m.seq::text AS seq, m.role, m.blocks,
+           to_char(m.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
            (SELECT jsonb_build_object('selection', coalesce(r.page_context->'selection', r.page_context->'context'->'selection'))
               FROM companion_turn_runs r
              WHERE r.user_message_id = m.id AND m.role = 'user'
@@ -216,12 +216,13 @@ export async function readPastConversationMessages(
       role: row.role === "assistant" ? "assistant" : "user",
       blocks: row.blocks,
       page_context: row.page_context,
-    }).slice(0, PAST_MESSAGE_MAX_CHARS);
+    });
     if (messages.length > 0 && chars + text.length > PAST_MESSAGES_MAX_CHARS) {
       truncated = true;
       break;
     }
-    messages.push({ seq: String(row.seq), role: row.role === "assistant" ? "assistant" : "user", text });
+    messages.push({ seq: String(row.seq), role: row.role === "assistant" ? "assistant" : "user", text,
+      createdAt: conversationInstant(row.created_at) });
     chars += text.length;
   }
   // 多取一行就是用来判「还有没有」的：取到了 limit+1 说明被上限挡住。

@@ -3,6 +3,7 @@ import type { NoteDocLocalSession } from "./desktop-gateway-ns-note";
 const noteDocLocalSessions = new Map<string, NoteDocLocalSession>();
 import * as ns_note from "./desktop-gateway-ns-note";
 import type { CompanionVoiceAudioCache } from "./companion-voice-audio-cache";
+import type { CompanionMessageAudioCache } from "./companion-message-audio-cache";
 import { noteAnnotationPageV1Schema, noteAnnotationWriteResultV1Schema, createNoteAnnotationTaskV1Schema, noteAnnotationLatestTaskQueryV1Schema, noteAnnotationLatestTaskV1Schema, noteAnnotationTaskV1Schema, type NoteAnnotationCommandV1 } from "@astella/shared/note-annotation-contracts";
 import {
   createNoteOverviewTaskV1Schema,
@@ -659,6 +660,7 @@ export class DesktopGateway {
       credentials?: SessionCredentialStore | null;
       guidanceAudioCache?: CompanionVoiceAudioCache;
       thoughtAudioCache?: CompanionVoiceAudioCache;
+      messageAudioCache?: CompanionMessageAudioCache;
       /**
        * 协同传输的实现。默认用真的 Hocuspocus provider；测试里换成假的，才能断言
        * "该不该建这条连接"（门控）与"帧怎么转发"，而不是去连一个真服务端。
@@ -699,6 +701,7 @@ export class DesktopGateway {
       trust,
       options.guidanceAudioCache ?? null,
       options.thoughtAudioCache ?? null,
+      options.messageAudioCache ?? null,
     );
     this.bridge = new CompanionBridge(this.transport);
   }

@@ -16,7 +16,7 @@ import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
-const ADMIN_URL = testDatabaseUrl("DATABASE_URL");
+const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 
 const admin = postgres(ADMIN_URL, { max: 2 });

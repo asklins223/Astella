@@ -18,6 +18,7 @@ import type { CompanionNotificationAudio } from "../companion/companion-notifica
 import {
   isCompanionSpeechActive,
   setCompanionVoiceHost,
+  CompanionCachedAudioError,
   stopCompanionSpeech,
 } from "../../app/companion-voice-playback";
 import {
@@ -27,6 +28,7 @@ import {
 import type {
   CompanionVoicePlaybackOutcomeRequestV1,
   CompanionVoiceSpeakSegmentRequestV2,
+  CompanionCachedVoiceReadRequestV1,
 } from "@astella/shared/companion-voice-contracts";
 
 type HomeV2SoundKind = "page" | "footstep" | "magic" | "success";
@@ -492,7 +494,22 @@ export function HomeV2AudioController() {
       meta: createRequestMeta(workspaceEpochRef.current ?? undefined),
       request,
     });
-    return decodeBase64Audio(graph.context, unwrapGatewayResult(response).audioBase64);
+    const result = unwrapGatewayResult(response);
+    window.dispatchEvent(new Event("astella:companion-audio-cache-changed"));
+    return decodeBase64Audio(graph.context, result.audioBase64);
+  }, [ensureGraph]);
+
+  const readCachedVoiceSegment = useCallback(async (request: CompanionCachedVoiceReadRequestV1): Promise<AudioBuffer> => {
+    const readApi = window.astella?.companion?.voice?.cachedRead;
+    if (!readApi) throw new CompanionCachedAudioError("本机音频读取通道还没准备好。");
+    const graph = ensureGraph();
+    const epoch = workspaceEpochRef.current;
+    const result = unwrapGatewayResult(await readApi({ meta: createRequestMeta(epoch ?? undefined), request }));
+    if (workspaceEpochRef.current !== epoch) throw new Error("学习空间已切换。");
+    if (!result) throw new CompanionCachedAudioError("这条消息的本机音频已清理或损坏。");
+    const buffer = await decodeBase64Audio(graph.context, result.audioBase64);
+    if (workspaceEpochRef.current !== epoch) throw new Error("学习空间已切换。");
+    return buffer;
   }, [ensureGraph]);
 
   const synthesizeNotification = useCallback(async (text: string, clip?: CompanionNotificationAudio, purpose: NotificationVoicePurpose = "notification"): Promise<AudioBuffer> => {
@@ -551,13 +568,14 @@ export function HomeV2AudioController() {
       audible: () => userInitiatedAudibleRef.current && !isCompanionReplyBlockedByMicrophone(),
       synthesize: synthesizeVoice,
       synthesizeSegment: synthesizeVoiceSegment,
+      readCachedSegment: readCachedVoiceSegment,
       play: playVoiceBuffer,
       progress: voiceProgress,
       stop: stopVoicePlayback,
       reportSegmentOutcome,
     });
     return () => setCompanionVoiceHost(null);
-  }, [playVoiceBuffer, stopVoicePlayback, synthesizeVoice, synthesizeVoiceSegment, reportSegmentOutcome, voiceProgress]);
+  }, [playVoiceBuffer, stopVoicePlayback, synthesizeVoice, synthesizeVoiceSegment, readCachedVoiceSegment, reportSegmentOutcome, voiceProgress]);
 
   useEffect(() => {
     setCompanionNotificationVoiceHost({

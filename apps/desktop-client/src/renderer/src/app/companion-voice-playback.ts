@@ -3,6 +3,7 @@ import { stopCompanionNotificationSpeech } from "../components/companion/compani
 import type {
   CompanionVoicePlaybackOutcomeRequestV1,
   CompanionVoiceSpeakSegmentRequestV2,
+  CompanionCachedVoiceReadRequestV1,
 } from "@astella/shared/companion-voice-contracts";
 import type { CharacterCuePayloadV1 } from "@astella/shared/companion-conversation-contracts";
 import {
@@ -32,6 +33,8 @@ export interface CompanionVoiceHost {
   readonly synthesize: (text: string) => Promise<AudioBuffer>;
   /** Agent 正文通过服务端签发的片段引用合成；renderer 不提交正文。 */
   readonly synthesizeSegment: (ref: CompanionVoiceSpeakSegmentRequestV2) => Promise<AudioBuffer>;
+  /** 历史回放只读本机录音，通过同一音频宿主解码和播放。 */
+  readonly readCachedSegment?: (ref: CompanionCachedVoiceReadRequestV1) => Promise<AudioBuffer>;
   /**
    * 播放到结束；期间按播放进度回调 0..1（调用方会自行节流）。播完 resolve，
    * 被 stop() 打断时也 resolve——打断由 generation 判定，不靠异常。
@@ -176,8 +179,8 @@ function emit(progress: CompanionSpeechProgress): void {
 }
 
 export function setCompanionVoiceHost(next: CompanionVoiceHost | null): void {
+  if (host !== next) { stopCompanionSpeech(); stopCompanionNotificationSpeech(); }
   host = next;
-  if (!next) { stopCompanionSpeech(); stopCompanionNotificationSpeech(); }
 }
 
 export function subscribeCompanionSpeech(listener: (progress: CompanionSpeechProgress) => void): () => void {
@@ -202,6 +205,47 @@ export function stopCompanionSpeech(): void {
  */
 export function isCompanionSpeechActive(): boolean {
   return activePlanId !== null;
+}
+
+export class CompanionCachedAudioError extends Error {}
+
+/** 当时生成的分段原声。连续切换、停止和宿主关闭都沿同一 generation 失效。 */
+export function playCachedCompanionMessage(runId: string, ordinals: readonly number[]): { planId: string; stop: () => void } {
+  const activeHost = host;
+  if (!activeHost?.audible()) throw new CompanionCachedAudioError("请先开启声音，结束录音后再播放。");
+  const read = activeHost.readCachedSegment;
+  if (!read || ordinals.length === 0) throw new CompanionCachedAudioError("这条消息的本机音频已不可用。");
+  stopCompanionNotificationSpeech();
+  stopCompanionSpeech();
+  const planId = `cached-speech-${sequence += 1}`;
+  const runGeneration = generation;
+  setActiveSpeechPlan(planId);
+  const current = () => generation === runGeneration && host === activeHost && activeHost.audible();
+  void (async () => {
+    try {
+      const ordered = [...new Set(ordinals)].sort((a, b) => a - b);
+      for (let index = 0; index < ordered.length; index++) {
+        if (!current()) return;
+        const buffer = await withDeadline(read({ runId, ordinal: ordered[index] }), COMPANION_SPEECH_FIRST_AUDIO_DEADLINE_MS);
+        if (!current()) return;
+        emit({ planId, phase: "speaking", segmentIndex: index, segmentCount: ordered.length, visibleChars: 0 });
+        await withDeadline(activeHost.play(buffer, () => undefined),
+          (Number.isFinite(buffer.duration) ? buffer.duration : 0) * 1000 + COMPANION_SPEECH_PLAY_STALL_MS);
+        if (!current()) return;
+      }
+      setActiveSpeechPlan(null);
+      emit({ planId, phase: "finished", segmentIndex: ordinals.length - 1, segmentCount: ordinals.length, visibleChars: 0 });
+    } catch (error) {
+      if (generation !== runGeneration) return;
+      activeHost.stop();
+      setActiveSpeechPlan(null);
+      emit({ planId, phase: "failed", segmentIndex: -1, segmentCount: ordinals.length, visibleChars: 0,
+        failure: error instanceof CompanionCachedAudioError ? error.message : "本机音频暂时无法播放，请重试。" });
+    } finally {
+      if (activePlanId === planId) stopCompanionSpeech();
+    }
+  })();
+  return { planId, stop: () => { if (activePlanId === planId) stopCompanionSpeech(); } };
 }
 
 interface SpeechRun {

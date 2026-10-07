@@ -8,16 +8,17 @@ test -s "$env_file"
 test -s /etc/letsencrypt/live/astella-ip/fullchain.pem
 compose=(docker compose --project-name astella --project-directory "$release"
   --env-file "$env_file" --env-file "$release/deployment-images.env"
-  -f "$release/docker-compose.yml" -f "$release/docker-compose.deploy.yml" --profile storage)
+  -f "$release/docker-compose.yml" -f "$release/docker-compose.deploy.yml")
 previous="$(readlink -f /opt/astella/current 2>/dev/null || true)"
 rollback() {
   result=$?
   if (( result != 0 )) && [[ -n "$previous" && "$previous" != "$release" ]]; then
     echo 'Deployment failed; restarting the previous application images. Database backup is retained.' >&2
-    docker compose --project-name astella --project-directory "$previous" \
+    previous_compose=(docker compose --project-name astella --project-directory "$previous" \
       --env-file "$env_file" --env-file "$previous/deployment-images.env" \
-      -f "$previous/docker-compose.yml" -f "$previous/docker-compose.deploy.yml" --profile storage \
-      up -d --no-build --pull never --no-deps api worker nginx || true
+      -f "$previous/docker-compose.yml" -f "$previous/docker-compose.deploy.yml")
+    "${previous_compose[@]}" up -d --no-build --pull never --no-deps --wait --wait-timeout 180 api worker nginx || true
+    "${previous_compose[@]}" exec -T nginx nginx -s reload || true
   fi
   exit "$result"
 }
@@ -27,11 +28,8 @@ trap rollback EXIT
 # The forced SSH receiver always uses the registry path.
 if [[ ${2:-} != --local-images ]]; then
   "${compose[@]}" pull --quiet postgres role-bootstrap role-grants api migrate worker edge-tts nginx
-  # Storage images use fixed RELEASE tags. Preserve a verified copy transferred
-  # during migration when the registry no longer serves that published release.
-  "${compose[@]}" pull --quiet --policy missing minio minio-init
 fi
-"${compose[@]}" up -d --no-build --pull never --wait --wait-timeout 120 postgres minio edge-tts
+"${compose[@]}" up -d --no-build --pull never --wait --wait-timeout 120 postgres edge-tts
 
 # A logical backup precedes every migration, including the first empty database.
 mkdir -p /opt/astella/backups
@@ -41,10 +39,14 @@ backup="/opt/astella/backups/$(date -u +%Y%m%dT%H%M%S)-$(basename "$release").du
 "${compose[@]}" exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$backup"
 test -s "$backup"
 "${compose[@]}" stop api worker
-for service in role-bootstrap minio-init migrate role-grants; do
+for service in role-bootstrap migrate role-grants; do
   "${compose[@]}" run --rm --no-deps "$service"
 done
 "${compose[@]}" up -d --no-build --pull never --no-deps --wait --wait-timeout 180 api worker nginx
+# Nginx resolves the API container address when loading its configuration.
+# A recreated API may receive another address even if Nginx itself is unchanged.
+"${compose[@]}" exec -T nginx nginx -t
+"${compose[@]}" exec -T nginx nginx -s reload
 curl --fail --silent --show-error --max-time 15 http://127.0.0.1:4000/ready >/dev/null
 public_host="$(cat /etc/astella/public-host)"
 curl --fail --silent --show-error --max-time 15 "https://$public_host/ready" >/dev/null

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   asksForBoundaryChange,
   asksForLearningStats,
+  needsCompanionLearningStats,
   extractNoteTitleReference,
   noteOpeningExcerpt,
   renderHereAndNow,
@@ -275,6 +276,14 @@ test("asksForLearningStats：只认明确在要学习数据的说法", () => {
   ]) {
     assert.equal(asksForLearningStats(text), false, `不该误判：${text}`);
   }
+});
+
+test("恒定的作答影响目录键不代表每一句闲聊都在问学习统计", () => {
+  for (const text of [undefined, "小鱼", "终于弄完了，累死", "报告啊，我自己看着都嫌废话多",
+    "明天才交呢，我先玩会儿", "刚点了蛋炒饭", "你今天有啥有意思的事啊", "我连续学了几天？"])
+    assert.equal(needsCompanionLearningStats(text), false, `不该预取学习统计：${text}`);
+  for (const text of ["我笔记有几篇？", "最近的学习进度怎么样？", "有几张卡到期？", "我今天学了多久？"])
+    assert.equal(needsCompanionLearningStats(text), true, `必须仍能提供统计：${text}`);
 });
 
 test("问到学习数据时：环境块只给指路，数值由 <fact_spans> 渲染（一处一个来源）", () => {

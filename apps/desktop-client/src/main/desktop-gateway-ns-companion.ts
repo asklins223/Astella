@@ -1,3 +1,4 @@
+import { resolveObjectResponse, uploadRemoteObject } from "./desktop-object-transfers";
 /**
  * 网关的「伴星」那一族 —— **2026-09-30 从 `DesktopGateway` 类搬出**。
  *
@@ -19,6 +20,8 @@ const companionActivityTimelineWireSchema = z.strictObject({
 
 import { createHash } from "node:crypto";
 import type { VoiceAudioProfile } from "./companion-voice-audio-cache";
+import type { MessageAudioScope } from "./companion-message-audio-cache";
+import type { CompanionCachedVoiceListResultV1, CompanionCachedVoiceReadRequestV1 } from "@astella/shared/companion-voice-contracts";
 import { assistantDeliveryV2Schema } from "@astella/shared/companion-bridge-contracts";
 import { z } from "zod";
 import { projectCompanionDelivery } from "./desktop-gateway-companion-bridge";
@@ -235,6 +238,7 @@ export async function cancelCompanionChatRun(t: GatewayTransport,
 
 export async function clearCompanionHistory(t: GatewayTransport, requestId?: string): Promise<CompanionHistoryClearResultV1> {
     await t.ensureConnected(requestId);
+    const scope = messageAudioScope(t);
     const result = await t.request(
       "/companion/history",
       { method: "DELETE" },
@@ -244,6 +248,7 @@ export async function clearCompanionHistory(t: GatewayTransport, requestId?: str
     );
     const parsed = companionHistoryClearResultV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    if (scope) await t.messageAudioCache?.clear(scope);
     return parsed.data;
   }
 
@@ -803,6 +808,7 @@ export async function openCompanionExport(t: GatewayTransport,
       : kind === "memory" ? "/companion/memory/export"
         : "/me/companion/audit/export";
     const headers = new Headers({ Accept: kind === "all" ? "application/x-ndjson" : "application/json" });
+    headers.set("X-Astella-Object-Transfer-Accept", "1");
     if (t.token) headers.set("Authorization", `Bearer ${t.token}`);
     let response: Response;
     try {
@@ -819,6 +825,7 @@ export async function openCompanionExport(t: GatewayTransport,
       throw new DesktopGatewayFailure("api_untrusted", "user_action");
     }
     if (!response.ok) throw t.mapResponseError(response.status, response.headers);
+    response = (await resolveObjectResponse(t, response, 256 * 1024 * 1024)).response;
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
     const expected = kind === "all" ? "application/x-ndjson" : "application/json";
     if (!contentType.startsWith(expected) || !response.body) {
@@ -1099,6 +1106,15 @@ export async function uploadCompanionImage(t: GatewayTransport,
       throw new DesktopGatewayFailure("validation", "user_action");
     }
 
+    const remote = await uploadRemoteObject(t, { purpose: "companion_image", fileName: request.fileName,
+      mimeType: request.mimeType, }, bytes, requestId);
+    if (remote) {
+      const payload = (remote.body ?? {}) as Record<string, unknown>;
+      const parsed = noteImageUploadResultV1Schema.safeParse({ version: 1, url: payload.url, byteLength: payload.size,
+        mimeType: payload.mimeType, width: payload.width, height: payload.height });
+      if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+      return parsed.data;
+    }
     const form = new FormData();
     form.set("file", new Blob([bytes], { type: request.mimeType }), request.fileName);
 
@@ -1287,6 +1303,10 @@ export async function speakCompanionVoiceSegment(t: GatewayTransport,
     requestId?: string,
   ): Promise<CompanionVoiceSpeakResultV1> {
     await t.ensureConnected(requestId);
+    const scope = messageAudioScope(t);
+    const token = t.token;
+    const epoch = t.currentSession?.workspaceEpoch;
+    const capture = scope ? t.messageAudioCache?.beginCapture(scope, request.runId) : null;
     const result = await t.requestAudioBytes(
       "/voice/tts",
       { method: "POST", body: JSON.stringify(request) },
@@ -1297,11 +1317,44 @@ export async function speakCompanionVoiceSegment(t: GatewayTransport,
       mimeType: "audio/mpeg",
       audioBase64: Buffer.from(result.bytes).toString("base64"),
       byteLength: result.bytes.byteLength,
-      voice: COMPANION_VOICE_SPEAK_VOICE,
+      voice: result.headers.get("X-Astella-Tts-Voice") ?? COMPANION_VOICE_SPEAK_VOICE,
     });
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    const current = () => sameMessageAudioScope(t, scope) && t.token === token && t.currentSession?.workspaceEpoch === epoch;
+    if (!current()) throw new DesktopGatewayFailure("cancelled", "never");
+    if (scope && capture) {
+      // 合成的原字节先落盘；磁盘故障独立降级，当前回复仍能正常出声。
+      await t.messageAudioCache?.save(scope, request, parsed.data, capture, current).catch(() => undefined);
+    }
+    if (!current()) throw new DesktopGatewayFailure("cancelled", "never");
     return parsed.data;
   }
+
+function messageAudioScope(t: GatewayTransport): MessageAudioScope | null {
+  const session = t.currentSession, deployment = t.configuration?.config.apiOrigin;
+  return session?.status === "authenticated" && session.workspace && deployment && t.token
+    ? { deployment, userId: session.user.userId, workspaceId: session.workspace.workspaceId } : null;
+}
+function sameMessageAudioScope(t: GatewayTransport, scope: MessageAudioScope | null) {
+  const now = messageAudioScope(t);
+  return JSON.stringify(now) === JSON.stringify(scope);
+}
+
+/** 回放只读本机文件，不连接 API、不重新合成、不产生新的历史消息。 */
+export async function listCachedCompanionVoice(t: GatewayTransport, runIds: string[]): Promise<CompanionCachedVoiceListResultV1> {
+  const scope = messageAudioScope(t), epoch = t.currentSession?.workspaceEpoch;
+  if (!scope) throw new DesktopGatewayFailure("auth_required", "user_action");
+  const result = await t.messageAudioCache?.list(scope, runIds) ?? { version: 1 as const, items: [] };
+  if (!sameMessageAudioScope(t, scope) || t.currentSession?.workspaceEpoch !== epoch) throw new DesktopGatewayFailure("cancelled", "never");
+  return result;
+}
+export async function readCachedCompanionVoice(t: GatewayTransport, request: CompanionCachedVoiceReadRequestV1): Promise<CompanionVoiceSpeakResultV1 | null> {
+  const scope = messageAudioScope(t), epoch = t.currentSession?.workspaceEpoch;
+  if (!scope) throw new DesktopGatewayFailure("auth_required", "user_action");
+  const result = await t.messageAudioCache?.read(scope, request.runId, request.ordinal) ?? null;
+  if (!sameMessageAudioScope(t, scope) || t.currentSession?.workspaceEpoch !== epoch) throw new DesktopGatewayFailure("cancelled", "never");
+  return result;
+}
 
 /**
  * 从 30 天回收区恢复（40 §11「删除可撤回」）。

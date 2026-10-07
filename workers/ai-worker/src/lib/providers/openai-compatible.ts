@@ -477,7 +477,10 @@ export class OpenAICompatibleProvider implements AIProvider {
         { Accept: "application/json", Authorization: `Bearer ${this.apiKey}`, ...this.extraHeaders },
         {
           model: this.embeddingModelId,
-          input: [text.slice(0, 1500)],
+          // A vector for a silently shortened prefix is not a vector for the
+          // caller's text. Preserve it; rejected input uses the existing null
+          // result so callers can fall back to lexical/sequential retrieval.
+          input: [text],
           encoding_format: "float",
         },
         signal,

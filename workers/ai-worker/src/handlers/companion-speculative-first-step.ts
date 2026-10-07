@@ -82,8 +82,10 @@ export function shouldKeepSpeculativeFirstStep(attention: Pick<AgentTurnInterpre
   readonly subjects?: readonly unknown[];
   readonly ambiguities?: readonly unknown[];
   readonly pendingOfferIndexes?: readonly number[];
+  readonly dialogueFrame?: AgentTurnInterpretationV1["dialogueFrame"];
 }): boolean {
   return attention.intent === "conversation"
+    && !attention.dialogueFrame
     && attention.toolUse === "none"
     && (attention.subjects?.length ?? 0) === 0
     && (attention.ambiguities?.length ?? 0) === 0

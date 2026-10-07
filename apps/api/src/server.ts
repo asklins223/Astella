@@ -1,3 +1,5 @@
+import { objectExportHook } from "./modules/storage/exports.ts";
+import { objectTransferRoutes } from "./modules/storage/routes.ts";
 import { agentRoutes } from "./modules/agent/routes.ts";
 import { agentMethodRoutes } from "./modules/agent/method-routes.ts";
 import { sql } from "drizzle-orm";
@@ -333,6 +335,7 @@ async function main() {
 
   // 2026-08-11（性能专项）：响应压缩——graph/export/messages/notes 等 JSON 大响应
   // 文本压缩率 >80%，显著降低带宽与传输时间（TLS 场景下压缩收益仍明显）。
+  app.addHook("onSend", objectExportHook);
   await app.register(compress, { global: true });
 
   // 图片上传：multipart/form-data 解析插件
@@ -390,6 +393,7 @@ async function main() {
   await app.register(importRoutes);
   await app.register(searchRoutes);
   await app.register(exportRoutes);
+  await app.register(objectTransferRoutes);
   await app.register(auditRoutes);
   await app.register(statsRoutes);
   await app.register(activityRoutes);

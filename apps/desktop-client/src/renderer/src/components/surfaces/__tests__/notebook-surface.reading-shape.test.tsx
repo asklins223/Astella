@@ -461,11 +461,11 @@ describe("阅读页画的是编辑器里那一份", () => {
     expect(link.getAttribute("href")).toBe("https://example.com/a");
   });
 
-  it("非网页协议的链接不画成能点的，照原文留成字", async () => {
+  it("执行协议被移除，链接文字仍可阅读", async () => {
     const { body } = await show([block("paragraph", "[坑](javascript:alert(1))")]);
     const paragraph = body().querySelector("p")!;
     expect(paragraph.querySelector("a")).toBeNull();
-    expect(paragraph.textContent).toBe("[坑](javascript:alert(1))");
+    expect(paragraph.textContent).toBe("坑");
   });
 
   it("段落里的图片画出来，并且进的是整篇那一副画廊", async () => {
@@ -492,16 +492,16 @@ describe("阅读页画的是编辑器里那一份", () => {
 
   it("列表一项一行、各带记号", async () => {
     const { body } = await show([block("list", "第一点\n第二点\n第三点")]);
-    const lines = body().querySelectorAll("p.list-block .list-line");
+    const lines = body().querySelectorAll("ul > li");
     expect(lines).toHaveLength(3);
     expect([...lines].map((line) => line.textContent)).toEqual(["第一点", "第二点", "第三点"]);
   });
 
   it("引用多行仍是多行，并带编辑器那道左竖线", async () => {
     const { body } = await show([block("quote", "第一行\n第二行")]);
-    const quote = body().querySelector("p.quote")!;
+    const quote = body().querySelector("blockquote")!;
     expect(quote.querySelectorAll("br")).toHaveLength(1);
-    expect(quote.className).toContain("quote");
+    expect(quote.textContent).toBe("第一行第二行");
   });
 
   it("表格单元里也走行内解析，且转义过的竖线不另起一列", async () => {
@@ -524,9 +524,9 @@ describe("阅读页画的是编辑器里那一份", () => {
     expect(body().querySelector("p")!.textContent).toBe("干杯~-bilibili");
   });
 
-  it("老版本存的 HTML 块塌缩成正文，不露标签", async () => {
+  it("老版本存的 HTML 标题保留语义级别，不露标签", async () => {
     const { body } = await show([block("heading", "<h1>欧姆定律</h1>")]);
-    const heading = body().querySelector("h3")!;
+    const heading = body().querySelector("h1")!;
     expect(heading.textContent).toBe("欧姆定律");
   });
 
