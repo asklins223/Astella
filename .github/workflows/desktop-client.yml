@@ -130,7 +130,7 @@ jobs:
         run: npm run build
       - name: Create unpacked application
         working-directory: apps/desktop-client
-        run: npx electron-builder --dir
+        run: npx electron-builder --config electron-builder.config.cjs --dir
       # 可执行文件叫什么是 `electron-builder.yml` 的 `productName` 决定的，**不在这里写死**。
       #
       # 2026-10-06：这三步此前找的是 `AI Learn`——产品名早就换过一轮（那之后叫

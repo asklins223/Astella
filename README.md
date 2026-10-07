@@ -356,7 +356,7 @@ CI（`.github/workflows/main-ci.yml`）现在跑的是与本地基线一一对�
 | 服务端栈 | `1.0.0` | `release/version.json`，由 `.github/scripts/version-contract.mjs` 同步到 api／worker／shared 的 `package.json` | `v*` |
 | 桌面客户端 | `1.0.0` | `release/version.json` | `v*` |
 
-桌面端产物由 `desktop-release.yml` 发布到 GitHub Releases（先 Draft、资产传完再公开）。客户端更新器**直连 GitHub Releases，不经过自家 API**：macOS `dmg` + `zip`、Windows NSIS、Linux AppImage，产物名固定 ASCII 前缀 `astella-`。仓库目前没有配置代码签名与公证，macOS 自动更新在拿到证书前不可用。
+桌面端产物由 `desktop-release.yml` 发布到 GitHub Releases（先 Draft、资产传完再公开）。客户端更新器**直连 GitHub Releases，不经过自家 API**：macOS `dmg` + `zip`、Windows NSIS、Linux AppImage，产物名固定 ASCII 前缀 `astella-`。未配置 Apple 证书时，macOS 使用完整 ad-hoc 签名和稳定的跨版本更新要求；首次打开仍可能需要在系统隐私与安全中允许。
 
 ## 常见问题
 

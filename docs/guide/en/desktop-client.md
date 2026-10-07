@@ -162,7 +162,7 @@ The `oneClick` comment records the cost honestly: the assisted installer has a n
 
 The update source is GitHub Releases, direct (`publish: provider github, owner asklins223, repo Astella`; implementation `src/main/desktop-update.ts`): the check goes to `api.github.com` and the download to GitHub's CDN, **never through `apps/api`** — so your own API being down does not block updates, and update bandwidth does not land on your own servers.
 
-> Signing and notarization are not written into the yml and are driven entirely by environment variables; that is the watershed for macOS auto-update, because Squirrel.Mac verifies that the old and new `.app` are signed by the same developer, and an unsigned build downloads fine but never installs. The repository has no `MAC_CSC_LINK` / `APPLE_ID` secrets configured today, so **current artifacts are unsigned**; the Windows NSIS path is unaffected.
+> Without an Apple certificate, macOS uses complete ad-hoc signing and a stable designated requirement for cross-version updates; users may still need to allow first launch in Privacy & Security. Configuring Developer ID enables developer signing and notarization.
 
 ## Tests and source guards
 

@@ -12,19 +12,7 @@
  */
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-/**
- * 这份用例测的是 **macOS 那条更新路径**（Squirrel.Mac 的签名闸）。
- *
- * `detectMacosUnsigned()` 第一句就是 `if (process.platform !== 'darwin' ...) return false`，
- * 而下面三条用例（未签名标记 / ad-hoc 也算装不上 / 未签名拒绝自动安装）量的正是
- * 那条分支为真时的行为。**不钉住平台，这套断言就只在 macOS 机器上成立**：
- * 2026-10-06 CI（ubuntu-latest）实测红三条，报的是
- * `expected null to be 'macosUnsigned'` 与 `expected 'idle' to be 'failed'`
- * ——本机 macOS 上跑同一份代码全绿，于是它长期是一条"只有换机器才会现形"的假绿。
- *
- * 钉的是**被测判据看到的环境**，不是把产品代码改成跨平台：`codesign` 探针本来
- * 就只有 macOS 有，让 Linux 也去 spawn 它只会造出一个永远问不出结果的调用点。
- */
+/** Keep macOS signature checks active on Linux CI as well. */
 const realPlatform = process.platform;
 Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
 afterAll(() => {
@@ -73,11 +61,17 @@ const codesign = vi.hoisted(() => ({
   status: 1,
   stdout: "",
   stderr: "code object is not signed at all",
+  verifyStatus: 0,
+  requirement: 'designated => identifier "com.asklins.astella"',
 }));
 vi.mock("node:child_process", () => ({
   // codesign 问不出来 = 当作未签名，正好把 macOS 那条分支走通。
   // 每条用例可以把它改成 ad-hoc 签名 / Developer ID 签名，验那条判据本身。
-  spawnSync: () => ({ status: codesign.status, stdout: codesign.stdout, stderr: codesign.stderr }),
+  spawnSync: (_command: string, args: string[]) => args.includes('--verify')
+    ? { status: codesign.verifyStatus, stdout: '', stderr: '' }
+    : args.includes('--requirements')
+      ? { status: 0, stdout: codesign.requirement, stderr: '' }
+      : { status: codesign.status, stdout: codesign.stdout, stderr: codesign.stderr },
 }));
 
 vi.mock("electron-updater", () => ({ autoUpdater: updater }));
@@ -88,6 +82,8 @@ beforeEach(async () => {
   // codesign 探针是共享替身：复位成"没签"，否则上一条用例把它改成
   // Developer ID，会顺着模块单例漏进这一条。
   codesign.status = 1;
+  codesign.verifyStatus = 0;
+  codesign.requirement = 'designated => identifier "com.asklins.astella"';
   codesign.stdout = "";
   codesign.stderr = "code object is not signed at all";
   updater.handlers.clear();
@@ -188,23 +184,35 @@ describe("更新状态机", () => {
     expect(state.installBlockedReason).toBe("macosUnsigned");
   });
 
-  /**
-   * 2026-10-06 真窗口实测：本地 ad-hoc 签名的包被判成"可以装"，用户点完「重启并安装」
-   * 书房重启了、版本纹丝不动，最后只留一句"安装包校验未通过"。Squirrel.Mac 替换安装
-   * 比对的是新旧两个 .app 的签名身份，ad-hoc 没有 Developer ID，根本装不上——
-   * 所以它要和「完全没签」一起进这道闸，而不是等它在最后一步失败。
-   */
-  it("ad-hoc 签名也算装不上：不能把用户放到注定失败的安装那一步", async () => {
+  it("完整且跨版本稳定的 ad-hoc 签名可以自动安装", async () => {
     codesign.status = 0;
-    codesign.stdout = "Executable=/tmp/书房.app/Contents/MacOS/书房\nCodeDirectory v=20400 flags=0x2(adhoc)\nSignature=adhoc\n";
+    codesign.stdout = "Identifier=com.asklins.astella\nSignature=adhoc\n";
     codesign.stderr = "";
-    const { checkForUpdates } = await import("../desktop-update");
+    const { checkForUpdates, installUpdate } = await import("../desktop-update");
     updater.checkForUpdates.mockImplementation(async () => {
       updater.emit("update-available", { version: "0.2.0" });
       return { updateInfo: { version: "0.2.0" } };
     });
     const state = await checkForUpdates({ userInitiated: true });
-    expect(state.installBlockedReason).toBe("macosUnsigned");
+    expect(state.installBlockedReason).toBeNull();
+    await installUpdate();
+    expect(updater.quitAndInstall).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { name: '包体损坏', verifyStatus: 1, requirement: 'designated => identifier "com.asklins.astella"' },
+    { name: '签名绑定一次构建的 CDHash', verifyStatus: 0, requirement: 'designated => cdhash H"123456"' },
+    { name: '签名属于其他应用', verifyStatus: 0, requirement: 'designated => identifier "other.app"' },
+  ])("拒绝不能验证下一版的签名：$name", async ({ verifyStatus, requirement }) => {
+    codesign.status = 0;
+    codesign.stdout = "Identifier=com.asklins.astella\nSignature=adhoc\n";
+    codesign.stderr = "";
+    codesign.verifyStatus = verifyStatus;
+    codesign.requirement = requirement;
+    const { installUpdate } = await import("../desktop-update");
+    const state = await installUpdate();
+    expect(state.phase).toBe('failed');
+    expect(updater.quitAndInstall).not.toHaveBeenCalled();
   });
 
   it("正式签名的包不挡路：没有这条闸", async () => {
@@ -235,7 +243,7 @@ describe("更新状态机", () => {
     const { installUpdate } = await import("../desktop-update");
     const state = await installUpdate();
     expect(state.phase).toBe("failed");
-    expect(state.message).toContain("没有代码签名");
+    expect(state.message).toContain("更新签名无效");
     expect(updater.quitAndInstall).not.toHaveBeenCalled();
   });
 

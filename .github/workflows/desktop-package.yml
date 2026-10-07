@@ -10,10 +10,9 @@ name: Desktop package
 # 手动跑（不带版本号）时用 release/version.json 里的版本；被 desktop-release.yml
 # 以 v* tag 调用时，用 tag 里的版本。
 #
-# 也没有代码签名：仓库尚未配置 Windows 证书与 Apple 证书/notarization 凭据。
-# 产物是**未签名**的——macOS 首次打开要右键 → 打开，Windows 会弹 SmartScreen，
-# 且 macOS 的自动更新安装会被 Squirrel.Mac 拒（见 apps/desktop-client/src/main/desktop-update.ts）。
-# 配好 secret 后本文件无需改动即可自动签名。
+# 无 Apple 证书时生成完整 ad-hoc 签名，并使用跨版本稳定的 designated requirement。
+# macOS 首次打开仍可能需要在隐私与安全中允许；有证书时使用 Developer ID 和公证。
+# Windows 未配置证书时由 NSIS 分发未签名包。
 
 on:
   workflow_dispatch:
@@ -791,7 +790,7 @@ jobs:
             echo "macOS code signing: 已启用"
           else
             echo "CSC_IDENTITY_AUTO_DISCOVERY=true" >> "$GITHUB_ENV"
-            echo "macOS code signing: 未配置，产物将未签名（macOS 自动更新安装将不可用）"
+            echo "macOS code signing: 使用完整 ad-hoc 签名和跨版本稳定的更新要求；首次打开仍需用户在隐私与安全中允许"
           fi
           # 公证凭据存在才会真的去跑 notarize；缺了就让 electron-builder 自行跳过。
           if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
@@ -806,6 +805,7 @@ jobs:
         working-directory: apps/desktop-client
         # 同 Windows 那一节：CI + tag checkout 会让 electron-builder 自行尝试发布。
         run: |
+          node scripts/check-macos-update-signature.cjs
           node ../../.github/scripts/desktop-deployment.mjs
           npm run package:mac:${{ inputs.mac_arch || 'arm64' }} -- --publish never
       - name: Verify macOS deliverables (zip → app bundle → launch)
@@ -839,6 +839,7 @@ jobs:
             echo "::error::zip 里的 .app 没有可执行文件" >&2; exit 1; }
           test -s "$zipped_app/Contents/Info.plist" || { echo "::error::zip 里的 .app 没有 Info.plist" >&2; exit 1; }
           test -s "$zipped_app/Contents/Resources/app.asar" || { echo "::error::zip 里的 .app 没有 app.asar" >&2; exit 1; }
+          node scripts/macos-signature.cjs "$zipped_app"
           rm -rf "$zip_dir"
 
           echo '--- 2/4 挂载 dmg 并核对 bundle ---'
@@ -850,6 +851,7 @@ jobs:
           app="$(find "$mount_dir" -maxdepth 2 -name '*.app' -type d | head -1)"
           test -n "$app" && test -d "$app" || { echo "::error::dmg 里找不到 .app" >&2; exit 1; }
           echo "bundle: $app"
+          node scripts/macos-signature.cjs "$app"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist"
           test -s "$app/Contents/Resources/icon.icns" || { echo "::error::bundle 里没有 icon.icns" >&2; exit 1; }

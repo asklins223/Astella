@@ -14,14 +14,11 @@
  *    前者只是"这次没问到"，后者才是"更新坏了"——对用户是两种完全不同的处境，
  *    渲染层也要能说出两句不同的话。
  *
- * ## macOS 未签名
+ * ## macOS 安装签名
  *
- * Squirrel.Mac（`electron-updater` 在 macOS 上的实现）会校验新旧两个 .app 的代码
- * 签名是否同一开发者，**未签名的应用下载得到、装不上**。仓库目前没有 Apple 证书，
- * 所以 macOS 的自动安装现在走不通。与其让用户点完"重启安装"再看到一个没头没尾的
- * 失败，不如在状态里如实标出 `installBlockedReason`，让界面提前说明。
- *
- * Windows 的 NSIS 路线没有这个约束，未签名可用。
+ * Developer ID 与跨版本稳定的 ad-hoc 签名均可进入更新流程。没有证书时，
+ * 构建脚本签完整包体并固定主应用的 designated requirement；下载后的首次
+ * 打开仍可能需要用户在系统隐私与安全中允许。运行时拦截损坏或不稳定的签名。
  */
 
 import { app, BrowserWindow } from 'electron'
@@ -52,7 +49,7 @@ const DESKTOP_TAG_PREFIX = 'v'
 /**
  * 对应版本的 Release 页。
  *
- * macOS 未签名时安装不了，界面要给出"去下载页手动装"的路——那条链接必须真的有
+ * macOS 更新签名无效时安装不了，界面要给出"去下载页手动装"的路——那条链接必须真的有
  * href，不能是个点了没反应的 `<a>`。按 tag 规则（v<version>）拼，
  * 与 `.github/scripts/desktop-version.mjs` 的 DESKTOP_TAG_PREFIX 是同一套约定。
  */
@@ -97,7 +94,7 @@ interface PersistedCheck {
 
 let currentState: UpdateStateV1 | null = null
 let autoUpdater: import('electron-updater').AppUpdater | null = null
-let macosUnsigned: boolean | null = null
+let macosUpdateBlocked: boolean | null = null
 
 /**
  * 当前正在做的是哪一步。
@@ -125,7 +122,7 @@ function updateFailureMessage(error: unknown, action: Exclude<UpdateOperation, n
   // 签名类失败说的是**这台电脑上的书房本身**，不是刚下下来的那份包：让用户
   // 「重新下载」是让他把同一件事再失败一遍。分开说，他才知道自己该去下载页手动装。
   if (/signature|code sign|not signed|signed with|sbvalidate|SecStatic/i.test(detail)) {
-    return 'macOS 不允许替换安装没有开发者签名的书房。到下载页手动下载安装包，或换用正式签名的版本。'
+    return 'macOS 更新签名校验未通过。请到下载页手动安装已修复的版本。'
   }
   if (/sha512|checksum/i.test(detail)) return '安装包校验未通过，请重新下载或到下载页获取安装包。'
   if (/\b404\b|release.*not found|no published versions/i.test(detail)) return '更新服务暂时没有可用的发布版本，请稍后再检查。'
@@ -169,37 +166,28 @@ export function getUpdateState(): UpdateStateV1 {
   return currentState ?? initialState()
 }
 
-/**
- * 判断 macOS 当前这份 app 到底签没签。
- *
- * 用 `codesign -dv` 真问一次系统，而不是猜：它对未签名的 bundle 返回非零并在
- * stderr 里写 "code object is not signed at all"。只在 macOS 且已打包时问——
- * 开发模式下 `electron .` 跑的是未签名的 Electron，结果没有参考意义。
- */
-function detectMacosUnsigned(): boolean {
+/** Verify integrity and the identity that ShipIt will apply to the next build. */
+function detectMacosUpdateBlocked(): boolean {
   if (process.platform !== 'darwin' || !app.isPackaged) return false
-  if (macosUnsigned !== null) return macosUnsigned
-
-  // app.getAppPath() 在打包后是 `<Bundle>.app/Contents/Resources/app.asar`，
-  // 往上三层才是真正的 .app —— codesign 只认 bundle。
+  if (macosUpdateBlocked !== null) return macosUpdateBlocked
   const bundle = join(app.getAppPath(), '..', '..', '..')
-  if (!existsSync(bundle)) {
-    macosUnsigned = false
-    return macosUnsigned
-  }
-  const probe = spawnSync('codesign', ['-dv', bundle], { encoding: 'utf8' })
+  const run = (args: string[]) => spawnSync('/usr/bin/codesign', args, { encoding: 'utf8', timeout: 15_000 })
+  macosUpdateBlocked = true
+  if (!existsSync(bundle) || run(['--verify', '--deep', '--strict', bundle]).status !== 0) return true
+  const probe = run(['--display', '--verbose=4', bundle])
   const detail = `${probe.stdout ?? ''}${probe.stderr ?? ''}`
-  /**
-   * `adhoc` 与「完全没签」一起算装不上（2026-10-06 真窗口实测）。
-   *
-   * Squirrel.Mac 装新版本时要比对**新旧两个 .app 的签名身份**；ad-hoc 签名
-   * （`Signature=adhoc`，本地打包、自签的那种）没有 Developer ID，
-   * 替换必然被系统拒绝。此前这条只认 `not signed|unsigned`，于是本地 ad-hoc 包
-   * 会被判成"可以装"：用户点完「重启并安装」，书房重启了、版本纹丝不动，
-   * 最后只留下一句"安装包校验未通过"——而包本身是对的，错的是它**根本不该走到这一步**。
-   */
-  macosUnsigned = probe.status !== 0 || /not signed|unsigned|adhoc/i.test(detail)
-  return macosUnsigned
+  if (probe.status !== 0) return true
+  if (/Authority=Developer ID Application:/.test(detail)) {
+    macosUpdateBlocked = false
+    return false
+  }
+  if (!/Signature=adhoc/.test(detail) || !detail.includes('Identifier=com.asklins.astella\n')) return true
+  const requirements = run(['--display', '--requirements', '-', bundle])
+  const requirementText = `${requirements.stdout ?? ''}${requirements.stderr ?? ''}`
+  const designated = requirementText.split(/\r?\n/).find(line => /^(# )?designated => /.test(line))
+  if (requirements.status !== 0 || designated?.replace(/^# /, '') !== 'designated => identifier "com.asklins.astella"') return true
+  macosUpdateBlocked = run(['--verify', '--deep', '--strict', '-R', '=identifier "com.asklins.astella"', bundle]).status !== 0
+  return macosUpdateBlocked
 }
 
 function loadPersistedCheck(): PersistedCheck | null {
@@ -284,7 +272,7 @@ async function loadAutoUpdater(): Promise<import('electron-updater').AppUpdater 
           // macOS 未签名那条提示里的「下载页」靠这个字段；没有它那条链接点不动。
           releaseUrl: releasePageUrl(info.version),
           message: null,
-          installBlockedReason: detectMacosUnsigned() ? 'macosUnsigned' : null,
+          installBlockedReason: detectMacosUpdateBlocked() ? 'macosUnsigned' : null,
         }),
       )
     })
@@ -402,9 +390,9 @@ export async function installUpdate(): Promise<UpdateStateV1> {
   const updater = await loadAutoUpdater()
   if (!updater) return failed('更新模块加载失败。')
 
-  if (detectMacosUnsigned()) {
-    // 与其让 Squirrel 抛一个签名错误，不如提前把话说清楚。
-    return failed('这份 macOS 安装包没有代码签名，系统不允许自动替换应用。请到下载页手动安装。')
+  if (detectMacosUpdateBlocked()) {
+    // 损坏或绑定旧构建内容的签名无法验证下一版。
+    return failed('这份 macOS 安装包的更新签名无效。请到下载页手动安装已修复的版本。')
   }
 
   operation = 'install'
@@ -427,7 +415,7 @@ export function primeUpdateStateFromCache(): void {
 /**
  * 只给测试用：清掉模块级的三个单例。
  *
- * `currentState` / `autoUpdater` / `macosUnsigned` 是这个模块的私有状态，
+ * `currentState` / `autoUpdater` / `macosUpdateBlocked` 是这个模块的私有状态，
  * 而 `electron-updater` 只在第一次调用时加载——测试之间不复位的话，第二条用例
  * 会拿到上一条留下的 autoUpdater，整个文件只能跑第一条。
  * 生产代码路径里没有任何地方调用它。
@@ -435,6 +423,6 @@ export function primeUpdateStateFromCache(): void {
 export function resetUpdateModuleForTests(): void {
   currentState = null
   autoUpdater = null
-  macosUnsigned = null
+  macosUpdateBlocked = null
   operation = null
 }

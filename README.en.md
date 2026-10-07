@@ -354,7 +354,7 @@ Server and desktop share one product version:
 | Server stack | `1.0.0` | `release/version.json`, synced by `.github/scripts/version-contract.mjs` into api / worker / shared `package.json` | `v*` |
 | Desktop client | `1.0.0` | `release/version.json` | `v*` |
 
-`desktop-release.yml` publishes to GitHub Releases (draft first, flipped public once assets finish uploading). The client updater talks **straight to GitHub Releases, never through our own API**: macOS `dmg` + `zip`, Windows NSIS, Linux AppImage, artifact names pinned to the ASCII prefix `astella-`. No code signing or notarisation is configured yet, so macOS automatic updates are unusable until certificates exist.
+`desktop-release.yml` publishes to GitHub Releases (draft first, flipped public once assets finish uploading). The client updater talks **straight to GitHub Releases, never through our own API**: macOS `dmg` + `zip`, Windows NSIS, Linux AppImage, artifact names pinned to the ASCII prefix `astella-`. Without an Apple certificate, macOS uses complete ad-hoc signing with a stable update requirement; users may still need to allow first launch in Privacy & Security.
 
 ## FAQ
 

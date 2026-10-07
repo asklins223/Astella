@@ -2,7 +2,7 @@
 
 推送统一的 `v<版本>` tag 同时触发两端发布，版本唯一来源为 `release/version.json`。
 
-桌面端：Windows x64 与 macOS 构建安装包，同时验证桌面质量与打包启动；全部成功并检查更新清单后才公开 GitHub Release。单独手动运行 Desktop package 仍可取得测试安装包。当前未配置签名证书，macOS 自动安装更新仍需签名；Windows 覆盖安装分支仍未在无头 runner 上验证。
+桌面端：Windows x64 与 macOS 构建安装包，同时验证桌面质量与打包启动；全部成功并检查更新清单后才公开 GitHub Release。单独手动运行 Desktop package 仍可取得测试安装包。没有 Apple 证书时使用完整 ad-hoc 签名和稳定的跨版本更新要求，macOS 首次打开仍可能需要在隐私与安全中允许；Windows 覆盖安装分支仍未在无头 runner 上验证。
 
 服务端：现有 CI 的测试全部成功后调用 Server deploy，构建 Linux amd64 的 API、Worker 和 TTS 镜像推送 GHCR，以 digest 记录镜像，再通过 SSH 部署该 tag 的确切提交。版本必须与 `release/version.json` 一致，使用 `.github/scripts/version-contract.mjs --write` 同步版本副本。部署串行执行，不打断正在迁移的任务。重新部署可在 GitHub 重跑该 tag 的 CI。
 
@@ -25,3 +25,9 @@ GitHub 的 `production` Environment 只允许 `v*` tag，存放 `DEPLOY_HOST`、
 IP 证书通过 Certbot 的 shortlived profile 签发，约六天有效。服务器安装 `infra/deploy/renew-certificate.sh`，每八小时运行一次并重载 Nginx。通过 `certbot renew --dry-run` 验证续期；80 与 443 必须在云安全组中开放。
 
 当前旧 CentOS 7 主机可以用于这一轮部署验证，但该系统已经停止维护。正式长期运营应迁移到仍受支持的 Linux，并使用当前 Docker Engine；迁移前备份数据库、MinIO、环境文件和证书，不能只拷贝应用代码。
+
+## macOS 无证书构建
+
+打包使用 `electron-builder.config.cjs`，在 ZIP 和 DMG 创建之前完成签名。有 Developer ID 时保留证书签名；没有时先由 electron-builder 签完整嵌套包体，再把主应用指定要求固定为 `identifier "com.asklins.astella"`。这是 [word-tts-desktop 构建流程](https://github.com/asklins223/word-tts-desktop/blob/main/build_electron.sh) 使用的更新方式。`scripts/check-macos-update-signature.cjs` 用两份内容不同的真实二进制验证跨版本要求，并确认篡改签名后的资源会失败；最终 ZIP 与 DMG 中的应用都必须通过签名检查。
+
+签名完整性、跨版本要求和系统首次启动许可是不同的检查。ad-hoc 不提供 Apple 开发者认证，也不会消除首次打开的用户确认。`v1.0.0` 原始安装包发布时跳过了重签名；这次流程修复不会自动改变已发布资产。从旧损坏包升级到修复包需要手动安装一次；真实更新替换的结果单独记录，不能用 `codesign` 通过代替。

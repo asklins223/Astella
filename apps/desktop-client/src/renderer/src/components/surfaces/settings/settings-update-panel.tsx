@@ -31,9 +31,7 @@
  *                这不是"更新坏了"，语气应该平，给一个"再试一次"就够了。
  * - `failed`　　　更新**真的坏了**（校验不过、装不上）。这时候才该用 error 语气。
  *
- * 另有一件要提前说的事：macOS 上未签名的包，Squirrel.Mac 不允许自动替换应用
- * （它校验新旧两个 .app 的代码签名是否同一开发者）。主进程会把这个事实带过来，
- * 这里提前说明，而不是让用户点完「重启安装」再撞上一个没头没尾的失败。
+ * macOS 上损坏或不稳定的更新签名会由主进程标记，提供手动安装入口。
  */
 import type { ReactElement } from "react";
 import { CalendarClock, Download, HardDrive, RefreshCw, Sparkles } from "lucide-react";
@@ -186,7 +184,7 @@ export function SettingsUpdateGroup(props: {
 
         {blocked ? (
           <p className="settings-note" role="status">
-            这份 macOS 安装包没有代码签名，系统不允许书房自己替换自己。到
+            这份 macOS 安装包的更新签名无效。到
             <a
               href={state.releaseUrl ?? undefined}
               onClick={(event) => {

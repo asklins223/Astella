@@ -126,7 +126,7 @@ electron-builder 的配置在 `apps/desktop-client/electron-builder.yml`，目�
 - **`nsis.oneClick: true`**（2026-10-04 由 `false` 改）。原因是向导式安装器有一个 `PageEx custom` 的选目录页，`/S` 静默模式下 NSIS 跳过绘制但 MultiUser 仍需一次显式决策，安装器就一直等着——CI 上表现为安装 step 挂到超时，症状和"安装器坏了"一模一样。代价是用户不再能自己挑安装目录，改装到 `%LOCALAPPDATA%\Programs\Astella`（2026-10-06 起包名是 ASCII 的 Astella，开始菜单与"应用和功能"里的条目才用中文显示名 拾星笔记）。`requestedExecutionLevel: asInvoker` 也写明，不提权。
 - **`artifactName: astella-${version}-${os}-${arch}.${ext}` 写死前缀**。`productName` 现在也是 ASCII 的 Astella，但产物名不取 `${productName}`：Release 资产名会进 `latest.yml` / `latest-mac.yml` 被客户端解析，显示名以后再怎么调，已发出去的更新元数据里的文件名都不该跟着漂；GitHub 资产 URL、NSIS 差分下载与 Squirrel.Mac 对非 ASCII 文件名也都有边角问题。`desktop-release.yml` 里核对的正是 `astella-<version>-win-x64.exe`、`.blockmap`、`-mac-<arch>.zip`、`.dmg` 这四个名字。
 - **更新源是 GitHub Releases，不是本项目 API**。`publish: provider github / owner asklins223 / repo Astella`；`apps/desktop-client/src/main/desktop-update.ts` 里重复了同一组 owner/repo 常量用于拼"去下载页"的链接——**改仓库地址时两处要一起改**。检查走 `api.github.com`，下载走 GitHub CDN，`apps/api` 完全不在这条链路上，因此更新带宽不落在自家服务器上，也不会因为自家 API 挂了而更新不了。
-- **没有配置代码签名**。仓库里没有 Windows 证书与 Apple 证书 / notarization 凭据，产物是未签名的：macOS 首次打开要右键 → 打开，Windows 会弹 SmartScreen，且 **macOS 的自动更新安装会被 Squirrel.Mac 拒**（它校验新旧 `.app` 的签名是否同一开发者，未签名即下载成功、安装失败）。yml 里刻意不设 `identity: null` / `notarize: false`（那两条等于主动关掉签名与公证），并补了 `hardenedRuntime: true`（公证的硬性前提）——将来配好 secret 就自动签名 + 自动公证，无需改配置。`desktop-package.yml` 里设 `CSC_IDENTITY_AUTO_DISCOVERY=false` 只为省掉翻证书库的功夫。
+- **没有配置 Apple 证书与公证凭据。** `electron-builder.config.cjs` 在无证书时使用完整 ad-hoc 签名；`scripts/macos-signature.cjs` 把主应用的 designated requirement 固定为 `identifier "com.asklins.astella"` 并检查包体完整性，使下一版能够满足旧版更新要求。macOS 首次打开或更新后仍可能需要在系统隐私与安全中允许；这种签名不提供 Apple 开发者身份认证。已有 Developer ID 签名保持不变，可继续公证。流水线检查最终 ZIP 和 DMG 内应用的签名。Windows 无证书时仍可能出现 SmartScreen 提示。
 
 发布流水线 `.github/workflows/desktop-release.yml` 只在 `push` tag `v*` 上发 Release，`resolve` job 先把 tag 版本与 `release/version.json` 对比（不一致直接停，否则会产出"标题写 A、包是 B"的 Release），再由 `build` job 以 `workflow_call` 复用 `desktop-package.yml` 并行打两端，最后 `release` job（`if: from_tag == 'true'`）：下载 `desktop-*` 工件 → 断言两端版本一致且四个文件非空 → **必须存在 `latest.yml`**（缺了直接失败，Windows 拿不到版本信息）、**必须存在 `latest-mac.yml`**（缺失直接失败） → 用 `softprops/action-gh-release@v2` 以 `draft: true` 建 Release 并上传全部资产 → 再用 `gh api --method PATCH … -F draft=false` 翻成公开。先 Draft 后公开是为了更新器：边传边公开可能让它读到一个只传了一半的 `latest.yml` 或半成品安装包。手动 `workflow_dispatch` 触发的那次**不发** Release。
 
@@ -248,7 +248,7 @@ make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB   # 值不对就打印取消信息�
 
 - TLS 终结由 `docker-compose.deploy.yml` 的 Nginx 提供，IP 证书与续期见 [部署说明](./deployment.md)。单独使用基础生产 Compose 时仍需要 TLS 代理。
 - 没有密钥管理器：PostgreSQL 与 MinIO 凭据通过环境变量注入，`docker inspect` 可见（`docker-compose.yml` 末尾的 SEC-18 备注明写这一点，并提醒"只加 `secrets:` 配置而不改应用代码不会生效"）。
-- 没有代码签名与公证（见上文），macOS 自动更新因此不可用。
+- macOS ad-hoc 包仍需用户确认首次启动；真实 ShipIt 替换安装需要单独验收。
 - 没有邮件自助找回密码：`apps/api/src/modules/identity/routes.ts` 只有 `POST /auth/change-password`（验证旧密码并撤销全部会话）和 `POST /auth/recovered-users/:userId/reset-password`（需 `requireSession + requireOwner`，给被恢复的用户初始化口令）。忘记密码只能请工作区 Owner 处理。
 - 没有自动扩缩容方案：三份 compose 都是单机编排（`restart: unless-stopped`），`AUTH_RATE_LIMIT_STORE=postgres` 只是让限流在多副本下不失真，不代表仓库提供了扩缩容链路。
 

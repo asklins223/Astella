@@ -76,7 +76,7 @@ describe("设置页「客户端更新」", () => {
       installBlockedReason: "macosUnsigned",
       releaseUrl: "https://github.com/asklins223/Astella/releases/tag/v0.2.0",
     });
-    expect(screen.getByText(/没有代码签名/)).toBeTruthy();
+    expect(screen.getByText(/更新签名无效/)).toBeTruthy();
     // 曾经 releaseUrl 永远是 null，这条链接点了没反应——它是那段提示唯一的出路。
     const link = screen.getByRole("link", { name: "下载页" });
     expect(link.getAttribute("href")).toBe("https://github.com/asklins223/Astella/releases/tag/v0.2.0");

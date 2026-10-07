@@ -59,24 +59,9 @@ mac:
   extendInfo:
     CFBundleDisplayName: 拾星笔记
     NSMicrophoneUsageDescription: 拾星笔记 需要用麦克风把你的话转给伴星。
-  # 签名**不写死**在这里，由环境变量决定——这是 macOS 自动更新能不能用的分水岭：
-  # Squirrel.Mac 会校验「新旧两个 .app 的代码签名是否同一开发者」，未签名的应用
-  # 会被拒（下载成功、安装失败）。Windows 的 NSIS 路线没有这个约束，未签名可用。
-  #
-  # 所以这里刻意不设 `identity: null` / `notarize: false`：那两条等于**主动关掉**
-  # electron-builder 的签名与公证（schema 里 notarize 的语义是「是否禁用公证」）。
-  # 保持默认即可自动适配两种情况：
-  #   - 仓库没配 MAC_CSC_LINK / APPLE_ID 等 secret → 找不到证书，electron-builder
-  #     自行跳过签名，产物未签名（desktop-package.yml 会设
-  #     CSC_IDENTITY_AUTO_DISCOVERY=false 省掉翻证书库的功夫）；
-  #   - 配上了 → 自动签名 + 自动公证，macOS 自动更新随之可用，无需改任何配置。
-  # 目前仓库尚未配置这些 secret，所以产物仍是未签名的。
-  #
-  # hardenedRuntime（2026-10-06 补，对齐 word-tts-desktop 那套能装上的配置）：
-  # **公证的硬性前提**。electron-builder 的 notarize 在 hardenedRuntime 关闭时
-  # 不成立——也就是"证书配好了、公证却过不去"，产物照样未签名，于是 macOS 更新
-  # 仍然停在「下载得到、装不上」。这一行平时看不出差别（有证书那天才显形），
-  # 但缺了它，装上证书也不会让更新变得可用，所以显式写出来。
+  # electron-builder.config.cjs 在没有 Developer ID 时选择 ad-hoc 签名并
+  # 关闭该模式的 hardened runtime；afterSign 设置稳定的跨版本更新要求。
+  # 有 Developer ID 时使用下方 hardened runtime，可继续进行 Apple 公证。
   hardenedRuntime: true
 
 win:

@@ -162,7 +162,7 @@ CRDT 与 WebSocket 都在主进程：`src/main/note-doc-transport.ts` 用 `Hocus
 
 更新源是 GitHub Releases 直连（`publish: provider github, owner asklins223, repo Astella`，实现 `src/main/desktop-update.ts`），检查走 `api.github.com`、下载走 GitHub CDN，**不经过 `apps/api`**：自家 API 挂了不影响更新，更新带宽也不落在自家服务器上。
 
-> 签名与公证不写在 yml 里，全部由环境变量决定，这是 macOS 自动更新能不能用的分水岭：Squirrel.Mac 会校验新旧两个 `.app` 的签名是否同一开发者，未签名应用下载成功也装不上。目前仓库没有配 `MAC_CSC_LINK` / `APPLE_ID` 一类 secret，所以**当前产物是未签名的**，Windows 走 NSIS 不受影响。
+> macOS 无 Apple 证书时使用完整 ad-hoc 签名与稳定的 designated requirement，供跨版本更新校验；首次打开仍可能需要用户在隐私与安全中允许。配置 Developer ID 后改用开发者签名与公证。
 
 ## 测试与源码守卫
 
