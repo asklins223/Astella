@@ -110,7 +110,7 @@ test("超触发线但未超硬上限时按有效上下文继续发送（触发�
   const governed = createGovernedProvider(provider, { consentOk: true, policy }, workspaceId, undefined, {
     onDecision: (receipt) => receipts.push({ outcome: receipt.decision.outcome, inputTokens: receipt.measurement.inputTokens }),
   });
-  await governed.chatCompletion([{ role: "user", content: "问题".repeat(7_000) }], { maxTokens: 1_000 });
+  await governed.chatCompletion([{ role: "user", content: "问题".repeat(2_200) }], { maxTokens: 1_000 });
   assert.equal(sent.chat, 1);
   assert.equal(receipts.length, 1);
   assert.equal(receipts[0]!.outcome, "send");
@@ -129,7 +129,7 @@ test("压缩端口可用且超触发线时要求先做一次有界压缩，而�
   // 压缩要求由工作上下文所有者接手：捕获 → 有界压缩 → 重新装配 → 重发。
   // 本层不代劳，也不把它混进「装不下」的终态。
   await assert.rejects(
-    () => governed.chatCompletion([{ role: "user", content: "问题".repeat(7_000) }], { maxTokens: 1_000 }),
+    () => governed.chatCompletion([{ role: "user", content: "问题".repeat(2_200) }], { maxTokens: 1_000 }),
     AIContextCompactionRequiredError,
   );
   assert.deepEqual(outcomes, ["compact"]);

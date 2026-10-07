@@ -17,7 +17,7 @@
 
 [中文](README.md) · [English](README.en.md) · [手册 docs/guide](docs/guide/)
 
-当前版本：`v0.5.0`（服务端栈；桌面端是另一条版本线，见 `release/desktop-version.json`）
+当前版本：`v0.5.1`（服务端栈；桌面端是另一条版本线，见 `release/desktop-version.json`）
 
 </div>
 

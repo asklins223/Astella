@@ -30,7 +30,9 @@ const governance: AIGovernanceContext = {
   policy: { sendToExternal: true, sendImageContent: true, piiDetection: false, auditLogging: false },
 };
 
-const longContent = "问题".repeat(6_400);
+// The complete serialized request is now counted, including escaped JSON.
+// Keep this fixture above the compaction trigger and below the hard limit.
+const longContent = "问题".repeat(2_400);
 
 test("44 §5.4：闸拦下 → 折一次 → 重发；被折掉的消息真的没有再发出去", async () => {
   const previous = process.env.MOCK_CONTEXT_WINDOW_TOKENS;
