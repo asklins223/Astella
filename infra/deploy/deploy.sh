@@ -26,7 +26,10 @@ trap rollback EXIT
 # Root-only local preflight can use images transferred with docker save/load.
 # The forced SSH receiver always uses the registry path.
 if [[ ${2:-} != --local-images ]]; then
-  "${compose[@]}" pull --quiet postgres role-bootstrap role-grants minio minio-init api migrate worker edge-tts nginx
+  "${compose[@]}" pull --quiet postgres role-bootstrap role-grants api migrate worker edge-tts nginx
+  # Storage images use fixed RELEASE tags. Preserve a verified copy transferred
+  # during migration when the registry no longer serves that published release.
+  "${compose[@]}" pull --quiet --policy missing minio minio-init
 fi
 "${compose[@]}" up -d --no-build --pull never --wait --wait-timeout 120 postgres minio edge-tts
 

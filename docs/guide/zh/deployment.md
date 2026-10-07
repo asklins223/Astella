@@ -24,7 +24,11 @@ GitHub 的 `production` Environment 只允许 `v*` tag，存放 `DEPLOY_HOST`、
 
 IP 证书通过 Certbot 的 shortlived profile 签发，约六天有效。服务器安装 `infra/deploy/renew-certificate.sh`，每八小时运行一次并重载 Nginx。通过 `certbot renew --dry-run` 验证续期；80 与 443 必须在云安全组中开放。
 
-当前旧 CentOS 7 主机可以用于这一轮部署验证，但该系统已经停止维护。正式长期运营应迁移到仍受支持的 Linux，并使用当前 Docker Engine；迁移前备份数据库、MinIO、环境文件和证书，不能只拷贝应用代码。
+正式长期运营应使用仍受支持的 Linux 和 Docker Engine。CentOS 7、Ubuntu 16.04 等旧系统只用于迁移验证；迁移应用不等于更新宿主系统。
+
+更换服务器时，先准备运行环境和新地址的 HTTPS，再优雅停止旧 API、Worker 与 MinIO 的写入，保存最终数据库 dump、MinIO 文件和受限环境文件。数据库恢复后核对各表行数，文件迁移后核对校验值；新端登录和空间访问通过后，才切换 GitHub `production` 的主机、端口、部署密钥与主机密钥。固定版本的 MinIO 镜像可从旧端迁移并核对镜像 ID，后续部署只在本地缺少该版本时拉取；应用镜像仍按 CI 指定的 digest 拉取。
+
+客户端安装包携带公开的 API 地址。服务器切换后更新 `DESKTOP_API_ORIGIN` 并重新打包；过渡期可以让旧地址通过验证证书的 HTTPS 代理转发到新端，旧 Worker 保持停止，避免两端分别处理任务。确认用户换用新包之后，再停用旧主机。
 
 ## macOS 无证书构建
 
