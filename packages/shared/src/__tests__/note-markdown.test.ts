@@ -44,6 +44,10 @@ test("Wiki 链接只识别正文，别名、中文标题和稳定 ID 均可解�
   assert.equal(noteMarkdownText(escaped), '[[字面]] 先看定义 [[代码]]');
   const projected = pmNodesToNoteBlocks(noteBlocksToPmNodes(markdownToBlocks('[[微积分|先看定义]]')));
   assert.equal(projected[0]!.content, '[先看定义](astella-note-title:%E5%BE%AE%E7%A7%AF%E5%88%86)');
+  const literal = pmNodesToNoteBlocks(noteBlocksToPmNodes(markdownToBlocks('\\[\\[字面]] [[微积分]] `[[代码]]`')));
+  const restored = noteMarkdownTree(literal[0]!.content);
+  assert.equal((JSON.stringify(restored).match(/astella-note-title:/g) ?? []).length, 1);
+  assert.equal(noteMarkdownText(restored), '[[字面]] 微积分 [[代码]]');
 });
 
 test("链接徽章和 HTML 经服务端结构存储往返仍可渲染", () => {

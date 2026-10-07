@@ -290,8 +290,10 @@ function collectInline(node: PmJson | undefined): string {
  * 下一次解析就换意思了。
  */
 function applyMarks(text: string, marks: readonly PmJsonMark[]): string {
-  let value = text;
   const names = new Set(marks.map((mark) => mark.type));
+  // Wiki syntax has already become a link mark during parsing. Literal brackets
+  // must stay escaped when text atoms are projected back into Markdown.
+  let value = names.has("inlineCode") ? text : text.replace(/\[\[/g, "\\[\\[");
   if (names.has("inlineCode")) value = `\`${value}\``;
   if (names.has("strike_through")) value = `~~${value}~~`;
   if (names.has("strong")) value = `**${value}**`;

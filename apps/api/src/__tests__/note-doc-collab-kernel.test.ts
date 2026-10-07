@@ -237,7 +237,8 @@ describe("三条写路共用一个文档形状", () => {
 
     const after = projectFragmentBlocks(doc);
     assert.equal(after.length, 4, `改三块的正文把块数改成了 ${after.length}`);
-    assert.deepEqual(contents(doc), ["- 甲\n- 乙\n- 丙", "引用改过了", "第一行\n第二行改过了\n新加的一行", untouched]);
+    assert.deepEqual(contents(doc), ["甲\n乙\n丙", "引用改过了", "第一行\n第二行改过了\n新加的一行", untouched]);
+    assert.equal(after[0]?.type, "list", "正文投影省略圆点，但列表块类型必须保留");
     // 退回整篇差分那一条路的正向对照：投影与文档必须还闭合，否则下一次落盘会写出另一套行。
     assert.deepEqual(contents(docFromSnapshot(snapshotOf(doc))), contents(doc));
     doc.destroy();

@@ -140,7 +140,7 @@ test("预算小到装不下前缀时也至少读一个字，位置永远前进",
   }
 });
 
-test("渲染走现役块合同：行内标记被拆掉，代码块保持原样，段落标记不假装处理过", () => {
+test("渲染走现役块合同：语法标记不进入可见文本，代码块保持原样", () => {
   const d = draft([
     { type: "heading", content: "## 能量从哪来" },
     { type: "paragraph", content: "有 **粗体** 和 [链接](https://a.test)" },
@@ -149,11 +149,11 @@ test("渲染走现役块合同：行内标记被拆掉，代码块保持原样�
     { type: "list", content: "- 甲\n- 乙" },
   ]);
   const body = paginateExpansionDraft(d, START, BUDGET).body;
-  assert.match(body, /第 1 段 · heading】\n## 能量从哪来/);
+  assert.match(body, /第 1 段 · heading】\n能量从哪来/);
   assert.match(body, /第 2 段 · paragraph】\n有 粗体 和 链接/);
   assert.match(body, /第一行\n\*\*第二行\*\*/, "代码块里的 ** 是内容，不能被当成标记吃掉");
-  assert.match(body, /第 4 段 · quote】\n> 引用一句话/);
-  assert.match(body, /第 5 段 · list】\n- 甲- 乙/, "换行在渲染里被去掉，与笔记正文读取同一口径");
+  assert.match(body, /第 4 段 · quote】\n引用一句话/);
+  assert.match(body, /第 5 段 · list】\n甲乙/, "列表标记与换行不占 DOM 文本坐标，与笔记正文读取同一口径");
   assert.equal(expansionDraftBlockText({ type: "paragraph", content: "---" }), "", "分隔线渲染成空，段序号仍然保留");
   const { bodies } = readAll(d, 1);   // 极端预算下走完全篇仍不丢字
   assert.equal(textOf(bodies).replace(/\s+/g, ""),

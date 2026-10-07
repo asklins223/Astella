@@ -1,5 +1,5 @@
 import type { CompanionAgentLoopArgs } from "../contracts/companion-agent-loop.ts";
-import { executeTurn } from "@astella/agent-core";
+import { executeTurn, composeAgentContext } from "@astella/agent-core";
 import {
   auditHash,
   boundedToolCallIdentity,
@@ -36,13 +36,12 @@ import {
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
 
-
 import { COMPANION_TOOL_INTENT_TIMEOUT_MS, interpretCompanionTurn } from "./companion-tool-intent.ts";
 import { companionAttentionObjects } from "./companion-attention.ts";
 import { companionTurnThinking } from "./companion-turn-thinking.ts";
 import { companionResponseStrategy, shouldReviewCompanionExplanation, companionExplanationReviewEnabled } from "./companion-response-strategy.ts";
 import { companionDialogueFrameEnabled, companionDialoguePurposePolicy } from "./companion-dialogue-frame.ts";
-import {shouldReviewCompanionDialogue,buildCompanionDialogueReview,applyCompanionDialogueReview} from "./companion-dialogue-review.ts";
+import {shouldReviewCompanionDialogue,reviewCompanionDialogue} from "./companion-dialogue-review.ts";
 import { reviewCompanionExplanation } from "./companion-knowledge-review.ts";
 import { buildCasualFirstStepRequest, shouldKeepSpeculativeFirstStep } from "./companion-speculative-first-step.ts";
 import {
@@ -50,7 +49,6 @@ import {
   joinVisibleSegmentsDeduped,
   VISIBLE_SEGMENT_SEPARATOR,
 } from "./companion-visible-segments.ts";
-import { composeAgentContext } from "@astella/agent-core";
 import { COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS } from "./companion-context-receipts.ts";
 import { boundedStepSender } from "./companion-compaction.ts";
 import { renderPendingOffersAsRecords } from "./companion-context-handoff.ts";
@@ -61,7 +59,7 @@ import {
   resolveCompanionAgentBudget,
   resolveProviderCallTimeout,
 } from "../lib/handler-timeout-config.ts";
-import { AgentOutputError, CompanionAgentBudgetExceededError, CompanionDialogueReviewError } from "../lib/non-retryable-errors.ts";
+import { AgentOutputError, CompanionAgentBudgetExceededError } from "../lib/non-retryable-errors.ts";
 import { ProviderRequestError } from "../lib/provider-request-error.ts";
 import { currentWorkerWorkspaceTransaction, withWorkerWorkspaceTransaction } from "../db.ts";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
@@ -98,9 +96,6 @@ export {
 } from "./companion-tool-outcome.ts";
 
 type AgentMessage = AgentTurnRequest["messages"][number];
-
-
-
 
 export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promise<CompanionAgentLoopResult> {
   if (typeof args.provider.executeAgentTurn !== "function") {
@@ -894,33 +889,12 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       });
       calls = [];
     }
-    if (needsDialogueReview && typeof result.content === "string" && result.content.trim() && calls.length === 0
-      && result.finishReason !== "length" && !stepEmitted && attention.dialogueFrame) {
-      const draft=result.content;
-      const revision=buildCompanionDialogueReview(stepRequest,draft,attention.dialogueFrame);
-      try {
-        // The encoded review payload has no replay seq mapping. Applying the
-        // dialogue tail's positional fold here could delete the entire payload
-        // as if it were one old message. Keep it whole; the same pressure,
-        // one-attempt budget and hard overflow rejection still apply.
-        const sendReview=boundedStepSender({
-          hasAttempt:()=>args.contextReceipts?.hasCompactionAttempt()??false,
-          consumeAttempt:()=>args.contextReceipts?.consumeCompactionAttempt(),
-          onCompacted:()=>undefined,
-          ...(args.compactionCooldown?{cooldown:args.compactionCooldown}:{}),
-        });
-        const reviewed=await sendReview(revision,folded=>runModelStepTask(stepProvider,folded,args.ctx.signal,
-          signal=>stepProvider.executeAgentTurn!(folded,signal)));
-        if(reviewed.finishReason !== "stop"||reviewed.toolCalls.length)throw new CompanionDialogueReviewError();
-        const plan=applyCompanionDialogueReview(reviewed.content??"",draft);
-        logger.info({runId:args.read.runId,droppedSpans:plan.drops.map(drop=>({spanId:drop.spanId,issue:drop.issue}))},
-          "companion dialogue removal plan applied before publication");
-        result={...reviewed,content:plan.answer};
-      } catch(error) {
-        await finishStep(event,stepId,"failed",undefined,error instanceof CompanionDialogueReviewError ? error.code : "PROVIDER_UNAVAILABLE");
-        throw error;
-      }
-    }
+    result = await reviewCompanionDialogue({
+      request: stepRequest, result, frame: attention.dialogueFrame, args, event, stepId,
+      eligible: needsDialogueReview && !stepEmitted && calls.length === 0,
+      execute: folded => runModelStepTask(stepProvider, folded, args.ctx.signal,
+        signal => stepProvider.executeAgentTurn!(folded, signal)),
+    });
     if (result.finishReason === "length") {
       // A capped response is incomplete even if it contains a tool call. Do not
       // dispatch more actions or publish it as a successful final answer.
