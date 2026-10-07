@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "node --import tsx src/server.ts",
-    "build": "esbuild src/server.ts --bundle --platform=node --format=cjs --outfile=dist/server.cjs",
+    "build": "esbuild src/server.ts --bundle --platform=node --format=cjs --outfile=dist/server.cjs && node scripts/copy-admin-assets.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test --test-concurrency=8 $(find src -name '*.test.ts' | sort)",
     "test:learning-runs:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/learning-runs-postgres.integration.ts src/integration-tests/learning-runs-structured-postgres.integration.ts src/integration-tests/learning-runs-demonstrated-postgres.integration.ts",

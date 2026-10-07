@@ -55,6 +55,7 @@ COPY packages/card-generation /app/packages/card-generation
 COPY apps/api/package.json ./package.json
 COPY apps/api/tsconfig.json ./tsconfig.json
 COPY apps/api/tsconfig.prod.json ./tsconfig.prod.json
+COPY apps/api/scripts/copy-admin-assets.mjs ./scripts/copy-admin-assets.mjs
 # 2026-09-29（P1-21）：下面 RUN 里的门禁改用 tsconfig.prod.json（只 include 生产源码）。
 # 此前用 tsconfig.json，include 是 `src/**/*.ts` 含测试——一个测试文件的类型错误
 # 会打挂生产镜像构建，而测试代码既不发布、也不进 dist/server.cjs（esbuild 只从
