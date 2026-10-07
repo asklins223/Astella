@@ -11,7 +11,10 @@ export async function objectTransferProfile(t: GatewayTransport): Promise<Profil
   const identity = `${t.configuration?.config.apiOrigin}:${t.workspaceEpoch}:${t.token}`;
   const previous = profiles.get(t);
   if (previous?.identity === identity && Date.now() - previous.at < 60_000) return previous.profile;
-  const profile = t.request("/storage/transfers/config", { method: "GET" }, true, true).then(result => {
+  const profile = t.request("/storage/transfers/config", { method: "GET" }, true, false, undefined, undefined, true).then(result => {
+    // During a staged rollout, an older verified API still accepts the established upload routes.
+    if (result.status === 404) return { version: 1 as const, mode: "local" as const, origins: [] };
+    if (result.status !== 200) throw t.mapResponseError(result.status, result.headers, undefined, result.body, "/storage/transfers/config");
     const parsed = objectTransferConfigurationSchema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;

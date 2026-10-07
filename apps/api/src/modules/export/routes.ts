@@ -4,6 +4,7 @@ import { exportWorkspace, exportNoteMarkdown } from "./service.ts";
 import { uuidParamSchema } from "../../lib/pagination.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { recordWorkspaceAudit } from "../audit/service.ts";
+import { getObject, usesRemoteStorage } from "../../lib/object-storage.ts";
 
 export async function exportRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireSession);
@@ -34,6 +35,17 @@ export async function exportRoutes(app: FastifyInstance) {
         return payload;
       },
     );
+    // Preserve the original-source content in a standalone JSON archive even when the source file lives in S3.
+    if (usesRemoteStorage()) {
+      for (const source of data.sources ?? []) {
+        const metadata = source.metadata as Record<string, unknown> | null;
+        const key = metadata?.storageObjectKey;
+        if (typeof key !== "string") continue;
+        if (!key.startsWith(`${req.session.workspaceId}/files/`) || key.includes("..")) throw new Error("invalid export source object reference");
+        const object = await getObject(key);
+        source.metadata = { ...metadata, rawContent: object.body.toString("utf8") };
+      }
+    }
     reply.header("Content-Type", "application/json");
     reply.header("Content-Disposition", `attachment; filename="workspace-export-${new Date().toISOString().slice(0, 10)}.json"`);
     return data;

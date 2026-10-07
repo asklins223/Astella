@@ -8,7 +8,7 @@ const profile = { version: 1, mode: "remote", origins: ["https://objects.example
 function transport() {
   return { token: "private-api-session", workspaceEpoch: 1, configuration: { config: { apiOrigin: "https://api.example.test" } },
     activeRequests: new Map(), request: vi.fn(async (path: string) => {
-      if (path === "/storage/transfers/config") return { body: profile };
+      if (path === "/storage/transfers/config") return { status: 200, body: profile };
       if (path === "/storage/transfers") return { body: { version: 1, transferId: "11111111-1111-4111-8111-111111111111",
         url: "https://objects.example.test/staging?signature=test", method: "PUT", headers: { "Content-Type": "image/png" }, expiresAt: new Date(Date.now() + 60_000).toISOString() } };
       return { body: { url: "/api/uploads/committed-image" } };
@@ -27,6 +27,13 @@ describe("direct object transfers", () => {
     const t = transport(); vi.mocked(t.request).mockResolvedValue({ body: { ...profile, mode: "local", origins: [] }, status: 200, headers: new Headers() });
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
     expect(await uploadRemoteObject(t, { purpose: "avatar", fileName: "test.png", mimeType: "image/png" }, Buffer.from("image"))).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it("keeps file upload available while a verified older API lacks the storage profile route", async () => {
+    const t = transport();
+    vi.mocked(t.request).mockResolvedValue({ status: 404, body: { message: "Route not found" }, headers: new Headers() });
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    expect(await uploadRemoteObject(t, { purpose: "source_text", fileName: "README.md", mimeType: "text/markdown", source: { type: "markdown", title: "README" } }, Buffer.from("# README"))).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
   it("rejects an unexpected destination and truncated or corrupt object download", async () => {
