@@ -100,6 +100,24 @@ describe("CI workflow contract", () => {
     }
   });
 
+  it("仓库级脚本闸在本地与 CI 两边都在（缺一边就是假绿）", () => {
+    const code = codeLines(workflow);
+    // 这些不是"某个包的 typecheck+test"，上面那个矩阵对账看不见它们。
+    // 备份脚本自测就是例子：53 条断言长期只有文档提到，没有任何目标跑它。
+    const repoLevelGates = [
+      { name: "备份脚本自测", path: "infra/backup/backup-scripts.test.sh" },
+    ];
+    for (const gate of repoLevelGates) {
+      const inMakefile = makefile.includes(gate.path);
+      const inCi = code.includes(gate.path);
+      assert.equal(
+        inMakefile && inCi, true,
+        `${gate.name} 必须两边都跑：make verify=${inMakefile} 工作流=${inCi}。`
+        + "只加本地会攒出「本地测过、CI 从没测过」，只加 CI 就是当初那种反向假绿。",
+      );
+    }
+  });
+
   it("工作流没有跑任何 make verify 不跑的门禁", () => {
     const code = codeLines(workflow);
     for (const gate of GATES_THAT_LEFT_CI) {

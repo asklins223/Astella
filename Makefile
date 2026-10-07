@@ -1,3 +1,10 @@
+# docker compose 自己会读 .env，make 不会——于是同一个口令有两个真相源：
+# 用 `make up` 起的库按 .env 走，而 `make test-postgres` 拼 IT_* 连接串时
+# POSTGRES_PASSWORD 是空的，集测直接报 `password authentication failed`
+# （2026-10-06 实测）。这里把 .env 读进来；下面那些 `?=` 默认值退成兜底，
+# 命令行 `make VAR=x` 仍然优先。
+-include .env
+
 COMPOSE := docker compose -p astella-dev -f docker-compose.dev.yml
 DEV_DB_VOLUME := astella-dev_dev_postgres_data
 .DEFAULT_GOAL := up
@@ -145,6 +152,10 @@ verify: version-check
 	node --test .github/scripts/version-contract.test.mjs .github/scripts/release-manifest-contract.test.mjs .github/scripts/coverage-gate-lib.test.mjs .github/scripts/ci-workflow-contract.test.mjs .github/scripts/postgres-integration-lifecycle.test.mjs .github/scripts/compose-init-order.test.mjs
 	node .github/scripts/verify-schema-mirror.mjs
 	node .github/scripts/verify-companion-capability-config.mjs
+	# 备份/恢复那组 shell 脚本的自测（53 条断言：卷名、mc 别名、禁用库名清单、
+	# 校验值命令）。它以前**只有文档提到、没有任何验证目标跑它**——和当初
+	# agent-core / agent-host "有测试但不在目标里" 是同一类。只依赖 bash + mktemp。
+	bash infra/backup/backup-scripts.test.sh
 	cd packages/shared && npm run typecheck && npm test
 	# 2026-10-05（方案 44）：agent-core 与 agent-host 此前**不在**验证目标里——
 	# 而上下文预算解析、完整请求计量、压缩冷却与失败学习全在 agent-core，
