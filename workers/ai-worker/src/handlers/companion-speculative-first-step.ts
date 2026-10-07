@@ -29,6 +29,7 @@ import type { AgentTurnInterpretationV1 } from "@astella/shared/agent-contracts"
 import { composeAgentContext } from "@astella/agent-core";
 import { COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS } from "./companion-context-receipts.ts";
 import { companionStepRuntimePolicy } from "./companion-step-plan.ts";
+import { companionResponseStrategy } from "./companion-response-strategy.ts";
 
 /**
  * "闲聊假设"的第一步：不给工具、不开思考、提示词里**没有注意力块**（那时还没有
@@ -66,7 +67,7 @@ export function buildCasualFirstStepRequest(args: {
     tools: [],
     disableThinking: true,
     maxTokens: args.maxTokens,
-    temperature: 0.9,
+    temperature: companionResponseStrategy({ intent: "conversation", toolUse: "none" }).temperature,
   };
 }
 

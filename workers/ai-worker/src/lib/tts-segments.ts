@@ -128,6 +128,8 @@ export function splitCommittedDisplaySegments(
     readonly maxSegments?: number;
     /** 目标段长；超过它且句内没有句末标点时，在逗号级停顿处先切一段（§14.11 ④）。 */
     readonly targetSegmentChars?: number;
+    /** Model-authored changes in delivery; no sentence should inherit a later sentence's expression. */
+    readonly expressionBoundaries?: readonly number[];
   },
 ): { readonly segments: CompanionDisplaySegment[]; readonly next: CompanionDisplaySegmentState } {
   const maxSegmentChars = opts?.maxSegmentChars ?? TTS_MAX_SEGMENT_CHARS;
@@ -168,6 +170,8 @@ export function splitCommittedDisplaySegments(
         break;
       }
     }
+    const expressionEnd = opts?.expressionBoundaries?.find(end => end > cursor && end <= hardEnd);
+    if (expressionEnd !== undefined && (boundary < 0 || expressionEnd < boundary)) boundary = expressionEnd;
 
     if (boundary > cursor) {
       // 句末标点**离得太远**（超过目标段长）而句内有逗号级停顿：先切在逗号上
@@ -414,7 +418,7 @@ export function companionSegmentId(
 
 // ─── 15b 二期：情感与富语言标签（阿里百炼 Qwen-Audio-TTS） ───────────────
 // 双文本管线：LLM 输出可嵌入标签（仅 qwen 朗读文本保留），展示/入库文本
-// 必须剥离（stripVoiceExpressionTags）；段级情感由 extractVoiceEmotion
-// 解析（最后一个控制类标签 → emotion，供 live2d 协同，见 15 方案待办）。
+// 必须剥离（stripVoiceExpressionTags）；模型表达通过 companion-voice-expression
+// 映射到已提交正文的区间，分段播放 cue 与合成标记同源（方案 45）。
 // 2026-08-13（引擎兼容）：实现位于 packages/shared/voice-expression-tags
 // （api edge 分支净化也需使用），调用方直接从 @astella/shared/voice-expression-tags 导入。

@@ -6,6 +6,7 @@ import { buildAgentTurnMessages } from "../lib/providers/json-response.ts";
 import { createCompanionEnvelopeDecoder } from "./companion-dialogue-envelope.ts";
 import { CompanionStreamStoppedError } from "./companion-dialogue-stream.ts";
 import { ProviderRequestError } from "../lib/provider-request-error.ts";
+import { stripVoiceExpressionTags, withholdPartialVoiceExpressionTag } from "@astella/shared/voice-expression-tags";
 
 /** A different response transport cannot repair an account or rate rejection. */
 export function canRetryCompanionStream(error: unknown, state: { emitted: boolean; now: number; deadline: number }): boolean {
@@ -87,6 +88,9 @@ export async function runStreamingAgentStep(args: {
    * 未放行时 `deliveredChars()===0`，交付管线自动走既有的整段补写 delta 分支。
    */
   holdUntilChars?: number;
+  /** Retain the entire result until the caller's semantic guards pass. This
+   * defers delivery, never clips or stops upstream generation. */
+  deferPublication?: boolean;
   /** 本步**真正下发**了第一个字符时回调（不是"模型吐了字"，见 holdUntilChars）。 */
   onTextEmitted?: () => void;
   /**
@@ -149,7 +153,7 @@ export async function runStreamingAgentStep(args: {
 
   /** 把一段文本交给交付管线。这里是"第一个字符真的下发了"的唯一现场。 */
   const deliver = (text: string): void => {
-    if (text.length === 0) return;
+    if (text.length === 0 || args.deferPublication) return;
     if (pendingSeparator.length > 0) {
       text = pendingSeparator + text;
       pendingSeparator = "";
@@ -187,7 +191,7 @@ export async function runStreamingAgentStep(args: {
    */
   const releaseHeld = (): void => {
     if (released || !gateOpen || discarded || stopped) return;
-    if (held.length < holdUntilChars) return;
+    if (stripVoiceExpressionTags(withholdPartialVoiceExpressionTag(held)).length < holdUntilChars) return;
     released = true;
     const text = held;
     held = "";

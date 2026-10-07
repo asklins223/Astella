@@ -56,7 +56,6 @@ export * from "./capability-bundle.ts";
 // convenient without importing any server-only dependency.
 export * from "./contracts/desktop-ipc-contracts.ts";
 export * from "./contracts/companion-character-contracts.ts";
-export * from "./companion-emotion-classifier.ts";
 export * from "./contracts/companion-conversation-contracts.ts";
 export * from "./contracts/companion-agent-contracts.ts";
 export * from "./contracts/companion-run-diagnostics.ts";

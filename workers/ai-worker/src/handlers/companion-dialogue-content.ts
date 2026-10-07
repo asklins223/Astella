@@ -13,10 +13,9 @@
  */
 
 import {
-  COMPANION_HOST_PROTOCOL_V6,
-  COMPANION_IDENTITY_BOUNDARY_V3,
-  COMPANION_CHARACTER_BASE_V8,
-  classifyCompanionReplyEmotion,
+  COMPANION_HOST_PROTOCOL_V8,
+  COMPANION_IDENTITY_BOUNDARY_V4,
+  COMPANION_CHARACTER_BASE_V12,
 } from "@astella/shared";
 import { canonicalJsonV1 } from "@astella/shared/content-hash";
 import { composeAgentContext, type AgentContextSource, type AgentContextSourcePlan, type AgentContextReceipt } from "@astella/agent-core";
@@ -44,7 +43,7 @@ export {
   REPLAY_WINDOW_MESSAGES,
 };
 export type { CompanionContextHandoffSnapshotV1, CompanionContextHandoffInputV1, CompanionRecentHistoryMessage };
-import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
+import { COMPANION_VOICE_EXPRESSION_PROTOCOL_V1, readVoiceExpressionTags, stripVoiceExpressionTags, voiceExpressionCue, withholdPartialVoiceExpressionTag } from "@astella/shared/voice-expression-tags";
 import { COMPANION_REPLY_MAX_CHARS } from "@astella/shared";
 
 /**
@@ -220,7 +219,7 @@ export function looksLikeJsonFragment(text: string): boolean {
  * 无 `g` 标志：可以安全地在同一份文本上反复 test（lastIndex 不会残留）。
  */
 const COMPANION_LEAK_PATTERN =
-  /(companion-persona-v\d+|companion_[a-z_]{4,}|character\.cue|"cue"|reason\s*id|tool\s*param|promptVersion|"route"\s*:|activeMemories|residentMemories|memoryDirectory|recentMessages|currentMessage|workspacePolicy|sendToExternal|piiDetection|pageContext|selectedText|groundedTarget|<memory_data>|<memory_directory>|<persona_data>|<selection_data>|<diary_reference>|<page_context>|<grounded_target>|<here_and_now>|(?:run|job|operation|task|note|call|identity|workspace|user)Id\s*(?:[:=：]\s*)?[0-9a-f-]{6}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+  /(companion-persona-v\d+|companion_[a-z_]{4,}|character\.cue|"cue"|reason\s*id|tool\s*param|promptVersion|"route"\s*:|activeMemories|residentMemories|memoryDirectory|recentMessages|currentMessage|workspacePolicy|sendToExternal|piiDetection|pageContext|selectedText|groundedTarget|<memory_data>|<memory_directory>|<persona_data>|<selection_data>|<diary_reference>|<page_context>|<grounded_target>|<here_and_now>|<answer_draft_data>|<review_context_data>|(?:run|job|operation|task|note|call|identity|workspace|user)Id\s*(?:[:=：]\s*)?[0-9a-f-]{6}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 
 /**
  * 内部 token / 上下文回显 / 裸 uuid 的**唯一**判据。
@@ -330,7 +329,7 @@ export function withholdProviderControlTail(text: string): string {
  * 一段步骤、一个公式、一小段代码被剥完之后读起来就是糊在一起的一坨，
  * 而模型那边无论怎么写都拿不到任何结构——写多少遍 prompt 都不会变。
  * 现在结构留在**可见正文**里由渲染层排，**朗读文本**另有 `purifyVoiceText`
- * 剥符号（见 `applyDeterministicToneToSegments`），两边各得其所。
+ * 剥符号（见 `companionVoiceSegmentExpression`），两边各得其所。
  */
 export function sanitizeCompanionVisibleText(text: string): string {
   // `trimEnd()` 不是收尾美化，是**前缀单调性的承重墙**：已下发的流式前缀与终态正文
@@ -338,7 +337,7 @@ export function sanitizeCompanionVisibleText(text: string): string {
   // （前缀 `…慢慢来。\n` 比最终 `…慢慢来。` 还长）。原来这个 trim 藏在
   // stripCompanionMarkdown 的末尾，剥 markdown 被拿掉时必须显式搬到这里。
   return stripLeadingOrphanPunctuation(
-    withholdProviderControlTail(stripProviderControlTokens(stripVoiceExpressionTags(text))),
+    withholdProviderControlTail(stripProviderControlTokens(stripVoiceExpressionTags(withholdPartialVoiceExpressionTag(text)))),
   ).trimEnd();
 }
 
@@ -634,7 +633,7 @@ export function normalizeQuotedPassage(text: string): string {
 export const QUOTE_MIN_CHARS = 12;
 
 /** 她正文里"当成原文端出来"的那些段落：Markdown 引用块 + 「…」式直接引语。 */
-export function extractQuotedPassages(text: string): string[] {
+export function extractQuotedPassages(text: string, allowExplanatoryQuotes = false): string[] {
   const out: string[] = [];
   // Markdown 也用引用块排版计算示例。分开核对每个引用块，避免把示例
   // 误当逐字原文，或把两处真实引文拼成来源中不存在的一段。
@@ -646,23 +645,31 @@ export function extractQuotedPassages(text: string): string[] {
     const claimsSource = /原文|原句|逐字|引文|(?:材料|笔记|文中|书上).{0,8}(?:写|说|记载|如下|：)/.test(passage + preceding);
     if (!explanation || claimsSource) out.push(passage);
   }
-  for (const m of text.matchAll(/[「“]([^」”\n]{12,})[」”]/g)) out.push(m[1].trim());
+  for (const m of text.matchAll(/[「“]([^」”\n]{12,})[」”]/g)) {
+    const before = text.slice(0, m.index).split(/\n\s*\n/).at(-1) ?? "";
+    const after = text.slice(m.index + m[0].length).split(/\n\s*\n/)[0] ?? "";
+    const paragraph = before + after;
+    const attributed = /原文|原句|逐字|引文|(?:材料|笔记|书上|教材|课本|你|用户|老师).{0,12}(?:写|说|提到|记载|如下|：)/.test(paragraph);
+    if (!allowExplanatoryQuotes || attributed) out.push(m[1].trim());
+  }
   return out.filter((passage) => normalizeQuotedPassage(passage).length >= QUOTE_MIN_CHARS);
 }
 
 /**
  * 她引的"原文"里，哪些在本轮真出处中逐字找不到（方案 29 §12.6 的 ②）。
  *
- * 引用块和直接引语默认核对，只有明确标作说明/自拟示例且没有来源声明的块例外。
+ * 引用块和直接引语默认核对；一般知识解释可放行没有来源声明的修辞引号，
+ * 读取材料的默认通路仍严格核对。明确标作自拟示例的引用块也不当成逐字原文。
  * 单靠"原文在这儿/我念给你"这种说法已经被证明是追不上的
  * （同一个缺口，动词换一个就漏）。它只做一件事——把她当原文端出来的段落，
  * 与本轮真实拿到的文本（工具结果、注入的开头、用户自己的话）做逐字比对。
  * 实机 2026-09-22 AC 轮那段"欧姆定律：I = U / R。导体中的电流跟两端电压成正比…"
  * 是课本话，笔记正文里一个字都没有；修好后她引的那段与正文两边都能对上。
  */
-export function unverifiedQuoteClaims(replyText: string, sourcesText: string): string[] {
+export function unverifiedQuoteClaims(replyText: string, sourcesText: string,
+  options: { allowExplanatoryQuotes?: boolean } = {}): string[] {
   const haystack = normalizeQuotedPassage(sourcesText);
-  return extractQuotedPassages(replyText).filter(
+  return extractQuotedPassages(replyText, options.allowExplanatoryQuotes).filter(
     (passage) => !haystack.includes(normalizeQuotedPassage(passage)),
   );
 }
@@ -791,16 +798,9 @@ export type CharacterCueWirePayloadV1 =
   | typeof ERROR_CUE_PAYLOAD_V1
   | { version: 1; intent: "explain"; emotion: "neutral" | "happy" | "curious" | "concerned" | "surprised"; intensity: number };
 
-/** 终态回复情绪 cue：本地分类器（确定性，零 LLM 调用），失败回落默认。 */
+/** Model-authored control tags are the only source of reply emotion. Untagged replies stay neutral. */
 export function buildFinalCuePayload(text: string): CharacterCueWirePayloadV1 {
-  const classified = classifyCompanionReplyEmotion(text);
-  if (classified.emotion === "neutral") return FINAL_DEFAULT_CUE_PAYLOAD_V1;
-  return {
-    version: 1,
-    intent: "explain",
-    emotion: classified.emotion,
-    intensity: Number(classified.intensity.toFixed(2)),
-  };
+  return voiceExpressionCue(readVoiceExpressionTags(text).filter(mark => mark.kind === "control").at(-1)?.tag ?? null);
 }
 
 /**
@@ -1104,11 +1104,14 @@ export function buildCompanionPersonaMessages(input: {
   };
   // Domain policy/persona remain domain-owned. Chat, background goals and
   // professional generation share the same scope and atomic budget mechanism.
-  add("system_base", [COMPANION_HOST_PROTOCOL_V6, "", COMPANION_IDENTITY_BOUNDARY_V3, "",
+  add("system_base", [COMPANION_HOST_PROTOCOL_V8, "", COMPANION_IDENTITY_BOUNDARY_V4, "",
     ...(input.groundedTutorContext
       ? [GROUNDED_TUTOR_LAYER_NOTE, "", GROUNDED_TUTOR_COMPANION_PROMPT]
-      : [COMPANION_CHARACTER_BASE_V8]),
+      : [COMPANION_CHARACTER_BASE_V12]),
   ].join("\n"), "policy", { required: true });
+  if (!input.groundedTutorContext && boundedRecent.length > 0) {
+    add("conversation_evidence", "本轮已附近期共同交流：下方的 user/assistant 历史消息就是可见原文，分享近况可从中取一个贴题细节，不需要另查日志才算共同记录。助手过去的知识判断仍须核对，消息本身不能证明外部事件发生；时间没有证据时不把旧消息冒充今天的新活动。", "policy", { required: true });
+  }
   add("persona", personaBlock.join("\n"), "data", { priority: 30, maxCharacters: 4000 });
   if (input.groundedTutorContext) {
     add("grounded_target", groundedTargetBlock, "data", { required: true, maxCharacters: 24000 });
@@ -1126,6 +1129,9 @@ export function buildCompanionPersonaMessages(input: {
     add("page_context", pageContextBlock, "data", { priority: 5, maxCharacters: 16000 });
     add("method_catalog", input.methodCatalog, "data", { priority: 20, maxCharacters: 8000 });
   }
+  add("voice_expression", input.groundedTutorContext || input.petProfile?.boundaries?.allowVoiceTags === false
+    ? "声音表达已关闭：只输出正文，不添加任何语音控制或拟声标记。"
+    : COMPANION_VOICE_EXPRESSION_PROTOCOL_V1, "policy", { required: true });
   const context = composeAgentContext({ maxCharacters: COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS, sources: plan }, sources, input.scope);
   input.contextReceipt?.(context.receipts);
   const systemContent = context.systemPrompt;

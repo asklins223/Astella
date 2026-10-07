@@ -11,7 +11,7 @@ import { CenterFeedback,CenterSection,SectionState } from "./companion-center-pr
 const BOUNDARY_ITEMS = [
   ["allowPlayful", "玩笑", "允许伴星在日常交流里开玩笑"],
   ["allowNudgeLearning", "学习提醒", "允许伴星在合适时机提醒复习"],
-  ["allowVoiceTags", "语气标签", "允许回复携带表演语气"],
+  ["allowVoiceTags", "声音表达", "让语气随对话变化，并在合适时轻笑或叹息"],
 ] as const;
 
 type PersonaPendingProps = {

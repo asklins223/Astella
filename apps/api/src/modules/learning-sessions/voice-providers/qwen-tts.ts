@@ -18,6 +18,7 @@
 import WebSocket from "ws";
 import { randomUUID } from "node:crypto";
 import { DomainError } from "@astella/shared";
+import { prepareQwenVoiceExpressionText } from "@astella/shared/voice-expression-tags";
 
 export interface QwenTtsOptions {
   /** 业务空间 ID（北京地域 WS URL 前缀，如 llm-55ujpy2wafojbdp8） */
@@ -438,6 +439,8 @@ export async function qwenTtsSynthesizeStream(
     throw new QwenTtsError("INVALID_ARGUMENT", "TTS 文本为空（fail closed）");
   }
   const model = options.model ?? DEFAULT_MODEL;
+  const spokenText = prepareQwenVoiceExpressionText(text, model);
+  if (spokenText.trim() === "") throw new QwenTtsError("INVALID_ARGUMENT", "TTS 文本净化后为空");
   const format = options.format ?? DEFAULT_FORMAT;
   const sampleRate = options.sampleRate ?? DEFAULT_SAMPLE_RATE;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -594,7 +597,9 @@ export async function qwenTtsSynthesizeStream(
           textSent = true;
           sendJson({
             header: { action: "continue-task", task_id: taskId, streaming: "duplex" },
-            payload: { input: { text } },
+            // One complete segment per task implements single-input/streaming-output synthesis.
+            // `duplex` is the API's required header even in this single-input mode.
+            payload: { input: { text: spokenText } },
           });
         }
         // 发完文本后立即 finish-task（单段场景）

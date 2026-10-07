@@ -4,7 +4,7 @@
  * ## 它坏在哪
  *
  * `buildCompanionPersonaMessages` 原来按 `groundedTutorContext` 分两支：
- * 普通陪伴走 `COMPANION_HOST_PROTOCOL_V6` + `COMPANION_IDENTITY_BOUNDARY_V3`，
+ * 普通陪伴走 `COMPANION_HOST_PROTOCOL_V6` + `COMPANION_IDENTITY_BOUNDARY_V4`，
  * 而答题那一屏把这两段**整段换成** `GROUNDED_TUTOR_COMPANION_PROMPT`。
  *
  * 换掉之后，那一屏上她身上剩下的是：「只根据 claim 回答」「不要输出 mastery」，
@@ -29,9 +29,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  COMPANION_HOST_PROTOCOL_V6,
-  COMPANION_IDENTITY_BOUNDARY_V3,
-  COMPANION_CHARACTER_BASE_V8,
+  COMPANION_HOST_PROTOCOL_V8,
+  COMPANION_IDENTITY_BOUNDARY_V4,
+  COMPANION_CHARACTER_BASE_V12,
 } from "@astella/shared";
 import {
   buildCompanionPersonaMessages,
@@ -68,9 +68,9 @@ function everydaySystem(): string {
 
 test("答题那一屏**仍然带着固定协议与身份边界**，一字不差", () => {
   const system = groundedSystem();
-  assert.ok(system.includes(COMPANION_HOST_PROTOCOL_V6),
+  assert.ok(system.includes(COMPANION_HOST_PROTOCOL_V8),
     "固定协议在 grounded tutor 那一屏不见了：任务提示词顶替了宿主协议（A77）");
-  assert.ok(system.includes(COMPANION_IDENTITY_BOUNDARY_V3),
+  assert.ok(system.includes(COMPANION_IDENTITY_BOUNDARY_V4),
     "身份边界不见了：那一屏上她可以开始编造'我今天看见过'这类亲身经历");
   // 点名最容易在某一屏被漏掉的那几条，而不是笼统地断言"协议在"。
   for (const [what, pattern] of [
@@ -109,9 +109,9 @@ test("任务提示词仍然只做**任务专属**的事（正控制：它没有�
   assert.ok(grounded.includes("<grounded_target>"), "证据块不见了");
   // 角色底座仍然只属于日常陪伴那一支：答题那一屏有它自己的作答约束，
   // 把 few-shot 聊天示范一起塞进去会把"陪聊"的语气带进作答页。
-  assert.ok(!grounded.includes(COMPANION_CHARACTER_BASE_V8),
+  assert.ok(!grounded.includes(COMPANION_CHARACTER_BASE_V12),
     "答题那一屏带上了日常角色底座：这不是本次要修的东西，改它要有单独的证据");
-  assert.ok(everydaySystem().includes(COMPANION_CHARACTER_BASE_V8),
+  assert.ok(everydaySystem().includes(COMPANION_CHARACTER_BASE_V12),
     "日常陪伴那一支反而没有角色底座了：两支的装配被写串了");
   assert.ok(!everydaySystem().includes(GROUNDED_TUTOR_COMPANION_PROMPT),
     "日常陪伴那一屏混进了答题提示词");
@@ -132,8 +132,8 @@ test("【变异自证】把装配改回旧的「替换」形状，上面三条�
     "</grounded_target>",
   ].join("\n");
   assert.notEqual(replaced, groundedSystem(), "变异造不出差异：拼出来的形状和实际装配一样");
-  assert.ok(!replaced.includes(COMPANION_HOST_PROTOCOL_V6), "自证样本没造好：替换形状应当不含固定协议");
-  assert.ok(!replaced.includes(COMPANION_IDENTITY_BOUNDARY_V3), "自证样本没造好：替换形状应当不含身份边界");
+  assert.ok(!replaced.includes(COMPANION_HOST_PROTOCOL_V8), "自证样本没造好：替换形状应当不含固定协议");
+  assert.ok(!replaced.includes(COMPANION_IDENTITY_BOUNDARY_V4), "自证样本没造好：替换形状应当不含身份边界");
   // 层序判据同样对它敏感。
   assert.ok(
     replaced.indexOf("不要复述、转述、续写或回显") === -1

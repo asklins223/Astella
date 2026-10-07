@@ -57,13 +57,13 @@ import { resolveCompanionTurnProviders } from "./companion-turn-providers.ts";
 import { createCompactionCooldownPorts } from "./companion-compaction-cooldown.ts";
 import { foldReplayUnderSummaryCoverage, replayToMessages } from "./companion-compaction.ts";
 import {
-  COMPANION_PERSONA_V8_PROMPT_ID,
-  COMPANION_PERSONA_V7_SHA256,
+  COMPANION_PERSONA_V13_PROMPT_ID,
+  COMPANION_PERSONA_V13_SHA256,
   type ChatMessage,
 } from "@astella/shared";
 import { PET_PERSONA_PRESET_VERSION } from "@astella/shared/pet-persona-presets";
 import { runCompanionAgentLoop } from "./companion-agent-runtime.ts";
-import { AgentOutputError, CompanionAgentBudgetExceededError, CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
+import { AgentOutputError, CompanionAgentBudgetExceededError, CompanionContextChangedError, CompanionKnowledgeReviewError } from "../lib/non-retryable-errors.ts";
 import { AIContextOverflowError } from "../lib/context-governor.ts";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
 import type { AgentMemoryContextSourceV1 } from "@astella/shared/agent-contracts";
@@ -72,7 +72,7 @@ import {
   splitCommittedDisplaySegments,
   type CompanionDisplaySegmentState,
 } from "../lib/tts-segments.ts";
-import { applyDeterministicToneToSegments, resolveReplyToneEmotion } from "../lib/companion-tone.ts";
+import { companionVoiceExpressionBoundaries, companionVoiceSegmentExpression, projectCompanionVoiceExpression } from "./companion-voice-expression.ts";
 import {
   assembleCompanionContext,
   recordCompanionMemoryContextExposure,
@@ -815,6 +815,7 @@ export async function runCompanionDialogue(
   let voiceSegmentState: CompanionDisplaySegmentState = { cursor: 0, sentCount: 0 };
   let voiceSegmentsEnabled = isCompanionVoiceDialogueEnabled();
   let voiceSegmentsWritten = false;
+  const voiceExpressionEnabled = !read.groundedTutorContext && read.petProfile?.boundaries?.allowVoiceTags !== false;
   const voiceDeliveryDecision = decideCompanionVoiceDelivery({
     voiceDialogueEnabled: voiceSegmentsEnabled,
     formalAnswerInProgress: read.formalAnswerInProgress,
@@ -823,26 +824,45 @@ export async function runCompanionDialogue(
     // 这一句是这条门唯一的可查痕迹：没有它，"她今天怎么不念了"只能靠猜。
     logger.info({ runId: read.runId }, "正式作答中：这一轮伴星回复只出文字，不切句也不送合成");
   }
-  const emitVisibleVoiceSegments = async (visibleText: string, isFinal: boolean): Promise<void> => {
+  const emitVisibleVoiceSegments = async (visibleText: string, isFinal: boolean, modelText: string): Promise<void> => {
     // 不是"藏掉播放"：直接不发段事件，于是正文也不会被送去外部合成服务。
     // 上面那句 `voiceSegmentsEnabled` 是另一件事——它是"这一段写失败之后本回合别再试"，
     // 可以在一轮中途被关掉，而正式作答是整轮都不念。
     if (!voiceSegmentsEnabled) return;
     if (voiceDeliveryDecision !== "delivered") return;
-    const split = splitCommittedDisplaySegments(visibleText, voiceSegmentState, isFinal);
+    const expression = projectCompanionVoiceExpression(modelText, read.factSpans?.values ?? {});
+    const expressionEnabled = voiceExpressionEnabled;
+    if (isFinal) logger.info({ runId: read.runId, expressionEnabled,
+      expressionProtocol: "companion-voice-expression-v1",
+      controlTags: expression.marks.filter(mark => mark.kind === "control").map(mark => mark.tag).slice(0, 64),
+      richTagCount: expression.marks.filter(mark => mark.kind === "rich").length,
+      displayAligned: expression.displayText.startsWith(visibleText),
+    }, "companion voice expression finalized");
+    const split = splitCommittedDisplaySegments(visibleText, voiceSegmentState, isFinal, {
+      // Leave room for a control tag and positioned rich sounds in the 160-character contract.
+      maxSegmentChars: expressionEnabled ? 112 : 160,
+      expressionBoundaries: expressionEnabled ? companionVoiceExpressionBoundaries(expression) : [],
+    });
     voiceSegmentState = split.next;
     if (split.segments.length === 0) return;
-    const emotion = resolveReplyToneEmotion(visibleText);
-    const cue = buildFinalCuePayload(visibleText);
-    const toned = applyDeterministicToneToSegments(
-      split.segments.map((segment) => ({
+    const segments = split.segments.flatMap((segment) => {
+      const synthesis = companionVoiceSegmentExpression(expression, segment, expressionEnabled);
+      if (!synthesis.text) return [];
+      const synthesisText = synthesis.text;
+      const synthesisTextSha256 = synthesis.textSha256;
+      return [{
+        version: 2 as const,
+        segmentId: companionSegmentId(read.runId, read.generation, segment.ordinal, synthesisTextSha256),
         ordinal: segment.ordinal,
-        text: segment.displayText,
-        textSha256: sha256Utf8V1(segment.displayText),
-      })),
-      emotion,
-      read.petProfile?.boundaries?.allowVoiceTags !== false,
-    );
+        displayText: segment.displayText,
+        displayStart: segment.displayStart,
+        displayEnd: segment.displayEnd,
+        synthesisText,
+        synthesisTextSha256,
+        cue: synthesis.cue,
+      }];
+    });
+    if (segments.length === 0) return;
     try {
       const written = await emitCompanionTtsSegments({
         job: ctx,
@@ -854,22 +874,7 @@ export async function runCompanionDialogue(
         conversationId: read.conversationId,
         expiresAt,
         notifyCompanionEvent,
-        segments: split.segments.map((segment, index) => {
-          const synthesis = toned[index];
-          const synthesisText = synthesis?.text ?? segment.displayText;
-          const synthesisTextSha256 = synthesis?.textSha256 ?? sha256Utf8V1(synthesisText);
-          return {
-            version: 2 as const,
-            segmentId: companionSegmentId(read.runId, read.generation, segment.ordinal, synthesisTextSha256),
-            ordinal: segment.ordinal,
-            displayText: segment.displayText,
-            displayStart: segment.displayStart,
-            displayEnd: segment.displayEnd,
-            synthesisText,
-            synthesisTextSha256,
-            cue,
-          };
-        }),
+        segments,
       });
       if (!written) voiceSegmentsEnabled = false;
       else voiceSegmentsWritten = true;
@@ -892,7 +897,7 @@ export async function runCompanionDialogue(
     // 流式下发的每一段都要经过目录渲染，否则用户会先看到 `{{f:today_minutes}}`。
     factSpanValues: read.factSpans?.values ?? {},
     notifyCompanionEvent,
-    onVisibleCommitted: async (_committed, visibleText) => emitVisibleVoiceSegments(visibleText, false),
+    onVisibleCommitted: async (_committed, visibleText, modelText) => emitVisibleVoiceSegments(visibleText, false, modelText),
   });
   let assistantText: string;
   let ttsRawText: string | null = null;
@@ -951,21 +956,22 @@ export async function runCompanionDialogue(
     // 重投不会让"泄露"消失。已下发的部分必然是最终文本的前缀，客户端按 error 收尾。
     const streamStopped = err instanceof CompanionStreamStoppedError;
     const outputIncomplete = err instanceof AgentOutputError && err.code === "output_truncated";
+    const reviewInvalid = err instanceof CompanionKnowledgeReviewError;
     const providerRejected = err instanceof ProviderRequestError;
     const rateLimited = providerRejected && err.status === 429;
     await markCompanionRunFailed(
       read,
       ctx.workspaceId,
       contextChanged ? err.code : budgetExceeded || outputIncomplete ? "AGENT_BUDGET_EXCEEDED" : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
-      !budgetExceeded && !outputIncomplete && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
+      !budgetExceeded && !outputIncomplete && !streamStopped && !reviewInvalid && !(providerRejected && [401,402,403].includes(err.status)),
       contextChanged ? err.message : contextOverflow ? "这次需要带入的内容太多，没法一次读完；可以按段继续。" : outputIncomplete ? "这次答复达到长度上限，已说出的内容保留；可以接着分段讲。" : budgetExceeded
         ? "companion agent budget exceeded"
         : streamStopped
           ? `companion stream stopped: ${streamingDelivery.failureReason() ?? "delivery pipeline"}`.slice(0, 240)
           : rateLimited ? "模型服务暂时繁忙，请稍后重试；已经完成的操作仍保留。"
             : providerRejected ? "模型服务暂时无法完成这次请求，已经完成的操作仍保留。"
-              : "companion agent execution failed",
-      streamStopped ? "delivery" : budgetExceeded || outputIncomplete || contextChanged ? "execution" : "transport",
+              : reviewInvalid ? "这次解释没能完成核对，尚未发布；可以重新发送。" : "companion agent execution failed",
+      reviewInvalid ? "output" : streamStopped ? "delivery" : budgetExceeded || outputIncomplete || contextChanged ? "execution" : "transport",
     );
     // 她已经说出来的那半句不能随失败一起消失（2026-09-19）。
     await persistFailedPartial({
@@ -998,7 +1004,7 @@ export async function runCompanionDialogue(
         "companion stream flush failed on a waiting-for-confirmation turn",
       );
     } else {
-      await emitVisibleVoiceSegments(flushed.text, true);
+      await emitVisibleVoiceSegments(flushed.text, true, streamingDelivery.modelText());
     }
     return;
   }
@@ -1087,7 +1093,7 @@ export async function runCompanionDialogue(
         true, err instanceof CompanionContextChangedError ? err.message : "companion delta write failed", "delivery");
       throw err;
     }
-  } else if (!(await streamingDelivery.writeTail(assistantText))) {
+  } else if (!(await streamingDelivery.writeTail(assistantText, ttsRawText))) {
     // 已下发内容与终态文本必须逐字对齐（appendFrom 的基准就是下发长度）。
     await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", false, "delta_stream_diverged", "delivery");
     await persistFailedPartial({
@@ -1100,15 +1106,17 @@ export async function runCompanionDialogue(
     throw new Error("companion streamed text diverged from validated text");
   }
   // 强制刷新最后一个未闭合句。已经在增量阶段发出的区间由 cursor 保证不会重复。
-  await emitVisibleVoiceSegments(assistantText, true);
+  await emitVisibleVoiceSegments(assistantText, true, ttsRawText);
 
   // ── 阶段 3c：终态事务（message + final + run succeeded） ──
   // 15b：TTS 段已在 delta 过程（流式）或 validate 后（非流式）逐个下发完毕，
   // 终态事务不再携带 segments——事件布局变为 final @ eventStart、cue @ +1、
   // character.cue @ +1。
   const assistantMessageId = randomUUID();
-  // 情绪接表情（2026-09-18）：语气层分类结果随消息落库，渲染层据此驱动 Live2D。
-  const replyEmotion = resolveReplyToneEmotion(assistantText);
+  // Historical emotion comes from the same model-authored expression as speech, never text keywords.
+  const finalCue = !voiceExpressionEnabled
+    ? buildFinalCuePayload("") : buildFinalCuePayload(ttsRawText);
+  const replyEmotion = finalCue.emotion;
   // 工具带出的跳转块跟在正文之后（方案 29 §4.8）。正文仍是**第一个块**：
   // 按 `blocks[0].text` 取正文的老读法（含下一轮装配 prompt）不受影响，
   // 而 `textOfCompanionBlocks` 只认 text/code/citation，nav 不会污染模型上下文。
@@ -1240,7 +1248,7 @@ export async function runCompanionDialogue(
           accountEpoch: read.accountEpoch,
           seq: eventStart + 1,
           type: "character.cue",
-          payload: { cue: buildFinalCuePayload(assistantText) },
+          payload: { cue: finalCue },
           expiresAt,
         });
 
@@ -1260,8 +1268,8 @@ export async function runCompanionDialogue(
               waiting_proposal_id = NULL,
               provider_id = ${provider.id},
               model_id = ${provider.modelId},
-              prompt_version = ${read.groundedTutorContext ? GROUNDED_TUTOR_PROMPT_ID : COMPANION_PERSONA_V8_PROMPT_ID},
-              prompt_hash = ${read.groundedTutorContext ? groundedTutorPromptSha256 : COMPANION_PERSONA_V7_SHA256},
+              prompt_version = ${read.groundedTutorContext ? GROUNDED_TUTOR_PROMPT_ID : COMPANION_PERSONA_V13_PROMPT_ID},
+              prompt_hash = ${read.groundedTutorContext ? groundedTutorPromptSha256 : COMPANION_PERSONA_V13_SHA256},
               finished_at = now()
           WHERE id = ${read.runId}
             AND status IN ('accepted', 'running')

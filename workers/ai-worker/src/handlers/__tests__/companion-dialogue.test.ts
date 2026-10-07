@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { applyDeterministicToneToSegments } from "../../lib/companion-tone.ts";
+import { companionVoiceSegmentExpression, projectCompanionVoiceExpression } from "../companion-voice-expression.ts";
 import {
   COMPANION_HOST_PROTOCOL_V5,
-  COMPANION_IDENTITY_BOUNDARY_V3,
-  COMPANION_PERSONA_V8,
-  COMPANION_PERSONA_V8_PROMPT_ID,
+  COMPANION_IDENTITY_BOUNDARY_V4,
+  COMPANION_PERSONA_V13,
+  COMPANION_PERSONA_V13_PROMPT_ID,
   type ChatMessage,
 } from "@astella/shared";
 import {
@@ -162,17 +162,17 @@ test("T0：回合编码是原生多轮（历史是真 messages，上下文是 sy
   assert.equal(messages[0].role, "system");
   // persona 正文必须原样在最前；其后允许追加安全护栏（2026-09-19 起多了
   // 反回显护栏——实机出现过模型把输入上下文整段复述成回复）。
-  assert.ok(String(messages[0].content).startsWith(COMPANION_PERSONA_V8),
-    "现役 v8 prompt（含宿主协议与角色底座）必须是 system 消息的第一段");
-  assert.ok(String(messages[0].content).includes(COMPANION_IDENTITY_BOUNDARY_V3),
+  assert.ok(String(messages[0].content).startsWith(COMPANION_PERSONA_V13),
+    "现役 v11 prompt（含宿主协议与角色底座）必须是 system 消息的第一段");
+  assert.ok(String(messages[0].content).includes(COMPANION_IDENTITY_BOUNDARY_V4),
     "固定身份边界必须进入实际装配的对话 prompt");
   assert.ok(
-    String(messages[0].content).indexOf(COMPANION_IDENTITY_BOUNDARY_V3)
+    String(messages[0].content).indexOf(COMPANION_IDENTITY_BOUNDARY_V4)
       < String(messages[0].content).indexOf("<persona_data>"),
     "身份事实不能被账号可编辑风格覆盖",
   );
   assert.match(String(messages[0].content), /不要复述、转述、续写或回显/);
-  assert.match(String(messages[0].content), /对“详细理解什么是 X”这类问题，解释 X 本身即可/);
+  assert.match(String(messages[0].content), /详细解释要展开必要的概念、条件和推理/);
   assert.match(String(messages[0].content), /外部事件、读取与操作以本轮可见记录或实际回执为依据/);
   // 历史不再是"JSON 里的 recentMessages 数组"，而是**真正的轮次**。
   assert.deepEqual(messages.slice(1, 3), [
@@ -201,7 +201,7 @@ test("方法目录、人格和固定协议进入同一 system 消息，当前提
     petProfile: { name: "小伴星", speakingStyle: "简洁温暖", personalityTags: [], examples: [] },
   });
   assert.equal(messages.filter(message => message.role === "system").length, 1);
-  assert.ok(String(messages[0].content).includes(COMPANION_IDENTITY_BOUNDARY_V3));
+  assert.ok(String(messages[0].content).includes(COMPANION_IDENTITY_BOUNDARY_V4));
   assert.match(String(messages[0].content), /小伴星/);
   assert.match(String(messages[0].content), /<method_catalog>先读新材料/);
   assert.deepEqual(messages.at(-1), { role: "user", content: "今天只是想聊晚饭。" });
@@ -487,8 +487,8 @@ test("textOfCompanionBlocks：只取 text block", () => {
   assert.equal(textOfCompanionBlocks("not-array"), "");
 });
 
-test("buildFinalCuePayload：happy 回复产出 explain/happy + clamp 强度", () => {
-  const cue = buildFinalCuePayload("恭喜你！这次复习通过啦～");
+test("buildFinalCuePayload：模型语气产出有界 cue", () => {
+  const cue = buildFinalCuePayload("[excited]恭喜你！这次复习通过啦～");
   assert.equal(cue.intent, "explain");
   assert.equal(cue.emotion, "happy");
   assert.ok(cue.intensity > 0.3 && cue.intensity <= 0.9);
@@ -508,7 +508,24 @@ test("buildFinalCuePayload：确定性常量（thinking/error）不被误改", (
 });
 
 test("prompt id 常量与 shared 一致", () => {
-  assert.equal(COMPANION_PERSONA_V8_PROMPT_ID, "companion-persona-v8");
+  assert.equal(COMPANION_PERSONA_V13_PROMPT_ID, "companion-persona-v13");
+});
+
+test("发布前解释草稿的数据边界不能泄露到正文", () => {
+  for (const tag of ["answer_draft_data", "review_context_data"]) {
+    assert.deepEqual(validateCompanionOutput(`<${tag}>待审文字</${tag}>`),
+      {ok:false,reason:"internal_token_leak"});
+  }
+});
+
+test("现役自述 prompt 不预填冷知识，用户自己提到的知识仍完整进入上下文", () => {
+  const empty = buildCompanionPersonaMessages({ userText: "今天有什么有趣的事？", recentMessages: [], pageContext: null });
+  assert.doesNotMatch(String(empty[0].content), /章鱼/);
+  const supplied = buildCompanionPersonaMessages({ userText: "接着讲章鱼。", pageContext: null,
+    recentMessages: [{ role: "user", text: "刚才读到章鱼有三颗心脏，这挺有意思。" }] });
+  assert.deepEqual(supplied[1], { role: "user", content: "刚才读到章鱼有三颗心脏，这挺有意思。" });
+  assert.match(String(supplied[0].content),/user\/assistant 历史消息就是可见原文/);
+  assert.doesNotMatch(String(empty[0].content),/本轮已附近期共同交流/);
 });
 
 test("§4.8：markdown 留在可见正文里，交给渲染层排版", () => {
@@ -531,18 +548,15 @@ test("§4.8：markdown 留在可见正文里，交给渲染层排版", () => {
 
 test("§4.8：朗读文本走 speakable 投影，星号与代码块不会被念出来", () => {
   const source = "**先关燃气**，公式是 `I=U/R`。\n\n```ts\nconst a = 1;\n```\n";
-  const segments = [{
-    ordinal: 1,
-    text: source,
-    textSha256: createHash("sha256").update(source, "utf8").digest("hex"),
-  }];
-  const toned = applyDeterministicToneToSegments(segments, "neutral");
-  assert.ok(!toned[0].text.includes("**"), "加粗标记不进朗读文本");
-  assert.ok(!toned[0].text.includes("```"), "代码块不进朗读文本");
-  assert.ok(!toned[0].text.includes("`"), "行内代码标记不进朗读文本");
-  assert.ok(toned[0].text.includes("先关燃气"), "正文内容保留");
+  const expression = projectCompanionVoiceExpression(source);
+  const toned = companionVoiceSegmentExpression(expression, { ordinal: 1, displayText: expression.displayText,
+    displayStart: 0, displayEnd: expression.displayText.length });
+  assert.ok(!toned.text.includes("**"), "加粗标记不进朗读文本");
+  assert.ok(!toned.text.includes("```"), "代码块不进朗读文本");
+  assert.ok(!toned.text.includes("`"), "行内代码标记不进朗读文本");
+  assert.ok(toned.text.includes("先关燃气"), "正文内容保留");
   // 可见正文与朗读文本自此**分叉**，这正是双文本管线的目的。
-  assert.ok(toned[0].text !== source);
+  assert.ok(toned.text !== source);
 });
 
 test('JSON 信封：unwrapCompanionJsonEnvelope 剥离 {"response": …} 形状（2026-09-18 上游修复）', () => {
@@ -1207,6 +1221,17 @@ test("引文核对：不同引用块独立匹配，不能用示例放行另一�
   const second = "公式为 I=U/R，单位采用伏特、欧姆与安培。";
   assert.deepEqual(unverifiedQuoteClaims(`> ${first}\n\n解释一会儿。\n\n> ${second}`, `${first}\n${second}`), []);
   assert.equal(unverifiedQuoteClaims("> 示例：设电压12伏，电阻4欧姆，电流3安培。\n\n> 电流永远不受电阻影响，原文明确这样写。", first).length, 1);
+});
+
+test("一般知识解释的修辞引号不是逐字引文，真实来源声明仍必须核对", () => {
+  const options={allowExplanatoryQuotes:true};
+  assert.deepEqual(unverifiedQuoteClaims("限速的不是「杯子内部一直缓慢地传递热量」，而是表面向环境散热。","",options),[]);
+  assert.equal(unverifiedQuoteClaims("笔记原文说：「杯子内部一直缓慢地传递热量」。","",options).length,1);
+  assert.equal(unverifiedQuoteClaims("老师说：「杯子内部一直缓慢地传递热量」。","",options).length,1);
+  assert.equal(unverifiedQuoteClaims("「杯子内部一直缓慢地传递热量」是教材原文。","",options).length,1);
+  assert.equal(unverifiedQuoteClaims("> 杯子内部一直缓慢地传递热量。","",options).length,1);
+  assert.equal(unverifiedQuoteClaims("限速的不是「杯子内部一直缓慢地传递热量」。","").length,1,
+    "读取材料的默认通路仍逐字核对");
 });
 
 test("服务端注进回放的那句降级说明，不会从她嘴里说出来", () => {

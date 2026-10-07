@@ -1,5 +1,5 @@
 import { buildCompanionPersonaData, resolveCompanionPersonaContext, type CompanionPersonaContextProfile } from "./companion-identity-context.ts";
-import { COMPANION_IDENTITY_BOUNDARY_V3 } from "@astella/shared";
+import { COMPANION_IDENTITY_BOUNDARY_V4 } from "@astella/shared";
 /**
  * 念头（thought）生成器——念头管线切片①②③（2026-09-18 落地）。
  *
@@ -607,7 +607,7 @@ export function buildThoughtCandidatePrompt(material: ThoughtMaterial, llmGap: n
   return [
     `你是学习桌宠${material.petName ? `「${material.petName}」` : ""}。基于事实生成 ${llmGap} 条"主动开口的念头"候选——就是你没被问、但想主动说一句的话。`,
     ...buildCompanionPersonaData(material.petProfile),
-    COMPANION_IDENTITY_BOUNDARY_V3,
+    COMPANION_IDENTITY_BOUNDARY_V4,
     material.facts ? `你知道的当下：\n${material.facts}` : "",
     `关系数据：到期复习 ${material.readyReviews} 条；12 小时内将要到期 ${material.dueSoonReviews} 条；连续学习 ${material.streakDays} 天；熟悉度 ${material.familiarity.toFixed(2)}（0 刚认识，1 很熟）。`,
     `风格允许：玩趣=${material.allowPlayful ? "可以" : "不要"}；催学习=${material.allowNudgeLearning ? "可以" : "不要"}。`,
@@ -634,12 +634,12 @@ export function buildExpressionPrompt(args: {
   const lines = [
     `你是学习桌宠${args.petName ? `「${args.petName}」` : ""}。基于下面这条"念头"写一句主动开口的话。`,
     ...buildCompanionPersonaData(args.petProfile ?? resolveCompanionPersonaContext(null)),
-    COMPANION_IDENTITY_BOUNDARY_V3,
+    COMPANION_IDENTITY_BOUNDARY_V4,
     `念头：${args.thoughtText}`,
     args.facts ? `你知道的当下（可以据此措辞，但不要照念数字）：\n${args.facts}` : "",
     `关系熟悉度：${args.familiarity.toFixed(2)}（0 刚认识，1 很熟）。刚认识就自来熟比机械更假——熟悉度低就写得克制、短。`,
     `风格允许：玩趣=${args.allowPlayful ? "可以" : "不要"}；催学习=${args.allowNudgeLearning ? "可以" : "不要"}。`,
-    ...(args.catchphrase ? [`口头禅（可自然融入，不强求）：${args.catchphrase}`] : []),
+    ...(args.catchphrase ? [`口头禅（当前话题有呼应时才用，不作结尾签名，不宣告未发生的活动）：${args.catchphrase}`] : []),
     ...(args.groundingNames.length > 0 ? [`这句话必须提到：${args.groundingNames.join("、")}（不许提别的事物名）。`] : []),
     ...(args.recentlySaid.length > 0 ? [`最近说过的话（不要重复、不要换着花样说同一句）：\n- ${args.recentlySaid.slice(0, 5).join("\n- ")}`] : []),
     "要求：≤80 字，一句自然中文，不出现 ID/系统词/引号外的格式。返回 JSON：{\"variants\":[\"…\",\"…\",\"…\"]}，给出 3 个候选。",

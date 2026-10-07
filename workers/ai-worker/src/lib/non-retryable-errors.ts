@@ -95,6 +95,15 @@ export class AgentOutputError extends Error {
   }
 }
 
+/** Malformed private review output cannot be published or replayed as a draft. */
+export class CompanionKnowledgeReviewError extends Error {
+  readonly code = "COMPANION_KNOWLEDGE_REVIEW_INVALID" as const;
+  constructor(readonly reason: "json" | "schema" | "quotation" | "completion" = "completion") {
+    super("companion knowledge review returned an invalid report");
+    this.name = "CompanionKnowledgeReviewError";
+  }
+}
+
 /**
  * Companion Agent 预算耗尽（步数/工具调用数/执行时间）。
  *
@@ -195,6 +204,7 @@ export function isNonRetryableError(error: unknown): boolean {
   // 输出协议错误（截断/参数损坏）是确定性失败：重试不会改变输出预算，
   // 重投只会空转。必须直接标记 dead，交给用户重新生成。
   if (error instanceof AgentOutputError) return true;
+  if (error instanceof CompanionKnowledgeReviewError) return true;
 
   // Agent 预算耗尽同理：run 级预算跨重投累计，重试不可能恢复。
   if (error instanceof CompanionAgentBudgetExceededError) return true;

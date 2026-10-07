@@ -12,7 +12,6 @@ import { sql } from "drizzle-orm";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { logger } from "../lib/logger.ts";
-import { resolveReplyToneEmotion } from "../lib/companion-tone.ts";
 
 /**
  * 用户"停止"后至少留下多少字才算值得留档（2026-09-19）。
@@ -76,7 +75,7 @@ export async function persistFailedPartial(args: {
   const text = delivered.length >= COMPANION_CANCELLED_MIN_CHARS
     ? delivered
     : pickCompanionFailureFallbackLine(args.runId);
-  const blocks = [{ type: "text" as const, text, emotion: resolveReplyToneEmotion(text) }];
+  const blocks = [{ type: "text" as const, text, emotion: "neutral" as const }];
   const contentSha256 = sha256Utf8V1(canonicalJsonV1(blocks));
   const messageId = randomUUID();
   try {

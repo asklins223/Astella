@@ -76,7 +76,7 @@ export function renderPersonaBehaviour(persona: {
   }
   const catchphrase = persona.boundaries?.catchphrase;
   if (typeof catchphrase === "string" && catchphrase.trim().length > 0) {
-    lines.push(`你的口头禅是「${catchphrase.trim().slice(0, 30)}」，偶尔自然带出，别每句都说。`);
+    lines.push(`你的口头禅是「${catchphrase.trim().slice(0, 30)}」。当前话题有呼应时才自然用，不把它当结尾签名，也不拿它宣告没有实际发生的活动；用户专门询问或要求说这句话时可以回应。`);
   }
   return lines;
 }

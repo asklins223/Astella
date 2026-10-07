@@ -26,6 +26,7 @@ import {
 import { resolveFactSpans, withholdPartialFactSpanTail, type FactSpanValues } from "./companion-fact-spans.ts";
 import type { ReadContext } from "./companion-dialogue-store.ts";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
+import { stripVoiceExpressionTags, withholdPartialVoiceExpressionTag } from "@astella/shared/voice-expression-tags";
 
 /** 行内标记：出现在哪里都可能被后续文本配对改写。 */
 const INLINE_UNSTABLE_CHARS = "*_~`[]()";
@@ -76,10 +77,9 @@ export function stableVisibleCut(raw: string): number {
   return lineStart;
 }
 
-/** 信封守卫：原文以 `{`/`[` 开头时不做流式下发，整段交给全文校验/解包兜底。 */
+/** 信封守卫：JSON 对象/数组开头整段交给解包；声音标记可直接流式投影。 */
 function looksLikeEnvelopeHead(raw: string): boolean {
-  const head = raw.trimStart()[0];
-  return head === "{" || head === "[";
+  return /^\s*(?:\{|\[\s*[{["\d-])/.test(raw);
 }
 
 /**
@@ -103,7 +103,7 @@ export class CompanionStreamStoppedError extends Error {
  * 下一拍再看到它变成数字。
  */
 export function companionVisibleText(raw: string, factSpanValues?: FactSpanValues): string {
-  const trimmed = raw.trimStart();
+  const trimmed = stripVoiceExpressionTags(withholdPartialVoiceExpressionTag(raw.trimStart()));
   const cut = stableVisibleCut(trimmed);
   const sanitized = sanitizeCompanionVisibleText(trimmed.slice(0, cut));
   if (!factSpanValues) return sanitized;
@@ -152,7 +152,7 @@ export interface CompanionStreamDelivery {
    * 剥掉、信封守卫整段兜底等）。差值走同一条 delta 管线，保证
    * "delta 拼接 == 终态 assistant 文本"。
    */
-  writeTail(fullText: string): Promise<boolean>;
+  writeTail(fullText: string, modelText?: string): Promise<boolean>;
   /** 已经下发的可见字符数（测试/诊断）。 */
   deliveredChars(): number;
   /**
@@ -163,6 +163,8 @@ export interface CompanionStreamDelivery {
    * 只有交付管线自己知道。
    */
   deliveredText(): string;
+  /** Released model text, including expression; speculative or discarded text never enters here. */
+  modelText(): string;
   /** 终止原因（校验失败时非空）。 */
   failureReason(): string | null;
 }
@@ -187,7 +189,7 @@ interface CompanionDeliveryArgs {
    * 可见 delta 已经通过 fence 并落库后的通知。语音分段在这里消费真实提交前缀，
    * 从而保证每个 voice.segment.ready 永远排在对应 assistant.delta 之后。
    */
-  onVisibleCommitted?: (committedText: string, fullVisibleText: string) => Promise<void>;
+  onVisibleCommitted?: (committedText: string, fullVisibleText: string, modelText: string) => Promise<void>;
 }
 
 /**
@@ -308,7 +310,7 @@ export function createCompanionStreamDelivery(args: CompanionDeliveryArgs): Comp
       : await writeDeltas(toWrite);
     if (ok) {
       delivered += toWrite;
-      await args.onVisibleCommitted?.(toWrite, delivered);
+      await args.onVisibleCommitted?.(toWrite, delivered, raw);
     }
     return ok;
   }
@@ -345,9 +347,12 @@ export function createCompanionStreamDelivery(args: CompanionDeliveryArgs): Comp
       return { ok: true, text: delivered };
     },
 
-    async writeTail(fullText: string): Promise<boolean> {
+    async writeTail(fullText: string, modelText?: string): Promise<boolean> {
       if (failure) return false;
       if (!fullText.startsWith(delivered)) return false;
+      // Buffered/repaired final steps may not have entered onRawDelta. Carry
+      // their expression before the committed callback starts synthesis.
+      if (modelText !== undefined) raw = modelText;
       const ok = await flushVisible(fullText, true);
       return ok && delivered === fullText;
     },
@@ -358,6 +363,9 @@ export function createCompanionStreamDelivery(args: CompanionDeliveryArgs): Comp
 
     deliveredText(): string {
       return delivered;
+    },
+    modelText(): string {
+      return raw;
     },
 
     failureReason(): string | null {

@@ -85,6 +85,21 @@ test("闲聊可以直接回复；无效结构化输出不会假装判断成功",
   assert.equal((await interpretCompanionTurn(invalid, [{ role: "user", content: "那篇的图呢？" }], taskContext())).toolUse, "uncertain");
 });
 
+test("普通称呼的分类协议不预填对象索引，不把缺少业务身份当作查询失败",async()=>{
+  let instruction="";
+  const model={...provider(()=>false),chatCompletion:async(messages:Parameters<AIProvider["chatCompletion"]>[0])=>{
+    instruction=String(messages[0]!.content);
+    return {content:JSON.stringify(proposal(false)),usage:{}};
+  }} as AIProvider;
+  const result=await interpretCompanionTurn(model,[{role:"user",content:"小鱼"}],taskContext());
+  assert.match(instruction,/称呼伴星、随口招呼/);
+  assert.match(instruction,/不因为话题名词或昵称没对应 object 就制造歧义/);
+  assert.doesNotMatch(instruction,/"objectIndex":0|"goalObjectIndex":0/);
+  assert.deepEqual(result.subjects,[]);
+  assert.deepEqual(result.ambiguities,[]);
+  assert.equal(result.toolUse,"none");
+});
+
 const WINDOW: Parameters<typeof companionClassifierRecent>[0] = [
   { role: "system", content: "系统块不占索引" },
   { role: "user", content: "m0" },
@@ -122,7 +137,7 @@ test("待收的账只认宿主给过的索引，越界的直接丢", async () =>
   const result = await interpretCompanionTurn(model, WINDOW, taskContext());
   assert.deepEqual(result.pendingOfferIndexes, [5], "99 不存在，重复的 5 只算一次");
   assert.match(sent, /"index":5/, "模型必须真的看见它被允许引用的那个编号");
-  assert.match(contract, /"pendingOfferIndexes":\[0\]/,
+  assert.match(contract, /"pendingOfferIndexes":\[\]/,
     "字段没写进输出合同就会被 strict 解析判成非法输出，整轮解释退化成 uncertain");
   assert.match(contract, /只引用 recent 给过的 index/, "不发明身份——这条和 objects 用的是同一套约束");
 });

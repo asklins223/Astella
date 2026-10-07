@@ -86,7 +86,6 @@ const FORBIDDEN_EXACT: ReadonlySet<string> = new Set([
   "packages/shared/src/companion-leak-gates.ts",
   "packages/shared/src/companion-memory-job-payload.ts",
   "packages/shared/src/companion-memory-temporal.ts",
-  "packages/shared/src/companion-emotion-classifier.ts",
 ]);
 
 /** 领域写入口的目录：表结构与后端模块。 */
@@ -309,7 +308,7 @@ test("③ 人格、目录与文风仍住在领域侧，且真的被领域侧装�
   // 反向断言的价值：防止有人"顺手清理"把人格搬进 shared 根部、让公共层自带角色常量。
   // 上面两条守的是"不许进公共层"，这一条守的是"还在原地"——搬走了就等于 ① ② 一起失效。
   const persona = await import(pathToFileURL(join(ROOT, "packages/shared/src/companion-persona.ts")).href) as Record<string, unknown>;
-  for (const name of ["COMPANION_HOST_PROTOCOL_V6", "COMPANION_IDENTITY_BOUNDARY_V2", "COMPANION_CHARACTER_BASE_V7"]) {
+  for (const name of ["COMPANION_HOST_PROTOCOL_V8", "COMPANION_IDENTITY_BOUNDARY_V4", "COMPANION_CHARACTER_BASE_V12"]) {
     assert.equal(typeof persona[name], "string",
       `companion-persona.ts 不再导出 ${name}：人格被搬走了或者被删了。`
       + "这一条红的时候，① ② 两条的「还成立」已经没有意义了——它们守的公共层已经空了。");
@@ -321,6 +320,10 @@ test("③ 人格、目录与文风仍住在领域侧，且真的被领域侧装�
   // 公共层一次都不许提到这些名字。判的是**标识符**，不是"文本里出现了几个词"。
   const { files } = publicLayerClosure(PUBLIC_LAYER_ENTRY);
   const personaConstantNames = [
+    "COMPANION_HOST_PROTOCOL_V8",
+    "COMPANION_IDENTITY_BOUNDARY_V4",
+    "COMPANION_CHARACTER_BASE_V12",
+    "COMPANION_PERSONA_V13",
     "COMPANION_HOST_PROTOCOL_V6",
     "COMPANION_IDENTITY_BOUNDARY_V2",
     "COMPANION_CHARACTER_BASE_V7",
@@ -354,7 +357,7 @@ test("③ 人格、目录与文风仍住在领域侧，且真的被领域侧装�
 });
 
 const PERSONA_CONSTANT_REFERENCE =
-  /\bCOMPANION_(?:HOST_PROTOCOL|IDENTITY_BOUNDARY|CHARACTER_BASE|PERSONA|VOICE_STYLE_LINES)_V\d\b/;
+  /\bCOMPANION_(?:HOST_PROTOCOL|IDENTITY_BOUNDARY|CHARACTER_BASE|PERSONA|VOICE_STYLE_LINES)_V\d+\b/;
 
 /**
  * 谁把人格常量接进了自己的装配。
@@ -418,14 +421,17 @@ test("【正样本 B】临时造的违规文件被判违规，合法的同形文
   try {
     const violating = join(fixtureDir, "public-layer-with-persona.ts");
     writeFileSync(violating, [
-      'import { COMPANION_HOST_PROTOCOL_V6 } from "../packages/shared/src/companion-persona.ts";',
+      'import { COMPANION_CHARACTER_BASE_V12 } from "../packages/shared/src/companion-persona.ts";',
       'import { companionTurnRuns } from "../packages/shared/src/db-schema/companion-conversations.ts";',
       'import { resolveAllCompanionAgentTools } from "@astella/shared/companion-agent-registry";',
-      "export const companionPersonaProtocol = COMPANION_HOST_PROTOCOL_V6;",
+      "export const companionPersonaProtocol = COMPANION_CHARACTER_BASE_V12;",
       "export const diaryRows = companionTurnRuns;",
       "export const toolSurface = resolveAllCompanionAgentTools;",
       "",
     ].join("\n"), "utf8");
+
+    assert.ok(PERSONA_CONSTANT_REFERENCE.test(readFileSync(violating, "utf8")),
+      "人格引用扫描漏掉了两位数版本，会把只装配新角色底座的模块误判为没有装配");
 
     const violations = findForbiddenImports(violating);
     assert.equal(violations.length, 3,

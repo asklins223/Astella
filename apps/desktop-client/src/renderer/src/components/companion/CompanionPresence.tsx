@@ -64,6 +64,7 @@ import { HOME_FEATURE_ICONS } from "../home-v2/home-feature-icons";
 import { getHomeFeature, type HomeFeatureId } from "../home-v2/home-feature-registry";
 import { SurfaceDataState } from "../surfaces/notebook/surface-data.tsx";
 import type { Live2DEmotionEvent } from "./live2d-emotion";
+import { useCompanionSpeechExpression } from "./use-companion-speech-expression";
 
 gsap.registerPlugin(useGSAP);
 
@@ -345,6 +346,7 @@ export function CompanionPresence() {
     pushCharacterMoment("space_arrived");
   }, [arrival?.id, guideOpen, assessmentMode, companionTemporarilyHidden, companionAccountDisabled, mode, pushCharacterMoment]);
   const presencePaused = presenceHidden || homeV2ModalOpen || externalModalOpen || windowState !== "visible";
+  const speechExpression = useCompanionSpeechExpression(workspaceScopeRevision, presencePaused || assessmentMode || masterMuted);
   presencePausedRef.current = presencePaused;
 
   useEffect(() => {
@@ -1437,6 +1439,8 @@ export function CompanionPresence() {
     ? { emotion: "happy", intensity: 0.9 }
     : touchKind === "body"
       ? { emotion: "curious", intensity: 0.65 }
+      : speechExpression
+        ? speechExpression
       : chatEmotion
         ? { emotion: chatEmotion.emotion, intensity: chatEmotion.intensity, at: chatEmotion.at }
         : presentedCompanionMoment === "lamp" || presentedCompanionMoment === "confirm" || presentedCompanionMoment === "encourage"

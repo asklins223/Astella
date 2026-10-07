@@ -1,12 +1,43 @@
 // 15b 二期：情感与富语言标签工具（shared 层，worker 与 api 共用）。
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { COMPANION_HOST_PROTOCOL_V7, COMPANION_PERSONA_V11, COMPANION_PERSONA_V11_SHA256 } from "../companion-persona.ts";
 import {
   VOICE_EMOTION_TAGS,
   VOICE_RICH_TAGS,
   stripVoiceExpressionTags,
   extractVoiceEmotion,
+  readVoiceExpressionTags, voiceExpressionCue, prepareQwenVoiceExpressionText, withholdPartialVoiceExpressionTag,
 } from "../voice-expression-tags.ts";
+
+test("current host protocol admits scoped speech metadata and has a reproducible audit hash", () => {
+  assert.match(COMPANION_HOST_PROTOCOL_V7, /本轮声音表达协议明确允许/);
+  assert.equal(createHash("sha256").update(COMPANION_PERSONA_V11).digest("hex"), COMPANION_PERSONA_V11_SHA256);
+});
+
+test("expression protocol parses controls/rich positions and rejects made-up moods", () => {
+  assert.deepEqual(readVoiceExpressionTags("[empathetic]好。[giggles]嗯。[neutral]再见。[happy]"), [
+    { start: 0, end: 12, tag: "empathetic", kind: "control" },
+    { start: 14, end: 23, tag: "giggles", kind: "rich" },
+    { start: 25, end: 34, tag: "neutral", kind: "control" },
+  ]);
+  assert.equal(voiceExpressionCue("empathetic").emotion, "concerned");
+  assert.equal(voiceExpressionCue("neutral").emotion, "neutral");
+  assert.equal(withholdPartialVoiceExpressionTag("你好。[empa"), "你好。");
+  assert.equal(withholdPartialVoiceExpressionTag("[重要]内容"), "[重要]内容");
+});
+
+test("provider capability removes reset/unknown tags while preserving supported expression", () => {
+  const input = "[excited]好！[giggles]嗯。[neutral]再见。[happy]";
+  assert.equal(prepareQwenVoiceExpressionText(input, "qwen-audio-3.1-tts-flash"), "[excited]好！[giggles]嗯。再见。");
+  assert.equal(prepareQwenVoiceExpressionText(input, "other-tts"), "好！嗯。再见。");
+});
+
+test("tags quoted in code never become a character expression", () => {
+  assert.equal(readVoiceExpressionTags("`[excited]` 是示例，```text\n[amazed]数据\n```[serious]讲解").length, 1);
+  assert.equal(readVoiceExpressionTags("```text\n[excited]还没结束").length, 0);
+});
 
 test("标签剥离：白名单标签全部剥离（含大小写与带空格标签）", () => {
   const input =

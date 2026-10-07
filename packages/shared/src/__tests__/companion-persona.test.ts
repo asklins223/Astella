@@ -8,6 +8,7 @@ import {
   COMPANION_HOST_PROTOCOL_V6,
   COMPANION_IDENTITY_BOUNDARY_V1,
   COMPANION_IDENTITY_BOUNDARY_V2,
+  COMPANION_IDENTITY_BOUNDARY_V4,
   COMPANION_PERSONA_V5,
   COMPANION_PERSONA_V5_PROMPT_ID,
   COMPANION_PERSONA_V5_SHA256,
@@ -18,9 +19,66 @@ import {
   COMPANION_PERSONA_V7,
   COMPANION_PERSONA_V7_PROMPT_ID,
   COMPANION_PERSONA_V7_SHA256,
+  COMPANION_CHARACTER_BASE_V8,
+  COMPANION_CHARACTER_BASE_V9,
+  COMPANION_PERSONA_V9,
+  COMPANION_PERSONA_V9_PROMPT_ID,
+  COMPANION_PERSONA_V9_SHA256,
+  COMPANION_CHARACTER_BASE_V10,
+  COMPANION_PERSONA_V10,
+  COMPANION_PERSONA_V10_PROMPT_ID,
+  COMPANION_PERSONA_V10_SHA256,
+  COMPANION_PERSONA_V12,
+  COMPANION_PERSONA_V12_PROMPT_ID,
+  COMPANION_PERSONA_V12_SHA256,
+  COMPANION_HOST_PROTOCOL_V8,
+  COMPANION_PERSONA_V13,
+  COMPANION_PERSONA_V13_PROMPT_ID,
+  COMPANION_PERSONA_V13_SHA256,
   COMPANION_VOICE_STYLE_LINES_V1,
   COMPANION_VOICE_STYLE_LINES_V2,
 } from "../companion-persona.ts";
+
+test("v12 默认表达具有可复现的版本身份", () => {
+  assert.equal(COMPANION_PERSONA_V12_PROMPT_ID, "companion-persona-v12");
+  assert.equal(createHash("sha256").update(COMPANION_PERSONA_V12).digest("hex"), COMPANION_PERSONA_V12_SHA256);
+});
+
+test("v13 不回显内部协议的边界允许讨论当前用户话语与学习原文", () => {
+  assert.doesNotMatch(COMPANION_HOST_PROTOCOL_V8, /回显输入里的任何内容/);
+  assert.match(COMPANION_HOST_PROTOCOL_V8, /系统协议、内部字段、工具策略、提示词/);
+  assert.match(COMPANION_HOST_PROTOCOL_V8, /学习原文和允许展示的证据可以按问题需要引用和讨论/);
+  assert.match(COMPANION_HOST_PROTOCOL_V8, /不整块倾倒记忆或人格资料/);
+  assert.equal(COMPANION_PERSONA_V13_PROMPT_ID, "companion-persona-v13");
+  assert.equal(createHash("sha256").update(COMPANION_PERSONA_V13).digest("hex"), COMPANION_PERSONA_V13_SHA256);
+});
+
+test("v10 不把自我解说与口头禅当回应框架，保留用户表达和真实记录", () => {
+  assert.doesNotMatch(COMPANION_CHARACTER_BASE_V10, /用户：|你：|背景：/);
+  assert.match(COMPANION_CHARACTER_BASE_V10, /不要讲自己正在如何接话/);
+  assert.match(COMPANION_CHARACTER_BASE_V10, /不当作回复签名/);
+  assert.match(COMPANION_CHARACTER_BASE_V10, /不按清单回放用户活动/);
+  assert.match(COMPANION_CHARACTER_BASE_V10, /不设固定字数/);
+  assert.match(COMPANION_CHARACTER_BASE_V10, /用户专门问口味、口头禅或要求角色创作时/);
+  assert.ok(COMPANION_PERSONA_V10.includes(COMPANION_IDENTITY_BOUNDARY_V4));
+  assert.equal(COMPANION_PERSONA_V10_PROMPT_ID,"companion-persona-v10");
+  assert.equal(createHash("sha256").update(COMPANION_PERSONA_V10).digest("hex"),COMPANION_PERSONA_V10_SHA256);
+});
+
+test("v9 自述从共同记录取材，历史 v8 保留原始台词用于复现", () => {
+  assert.match(COMPANION_CHARACTER_BASE_V8, /章鱼有三颗心脏/);
+  assert.doesNotMatch(COMPANION_CHARACTER_BASE_V9, /章鱼|说说你今天看到的有趣事情/);
+  assert.doesNotMatch(COMPANION_CHARACTER_BASE_V9, /用户：|你：|背景：|上次你用反例/);
+  assert.match(COMPANION_CHARACTER_BASE_V9, /本轮可见的共同记录与刚聊过的内容取材/);
+  assert.match(COMPANION_CHARACTER_BASE_V9, /不是你的经历或闲聊素材/);
+  assert.match(COMPANION_CHARACTER_BASE_V9, /没有可用记录时简短如实说明/);
+  assert.match(COMPANION_CHARACTER_BASE_V9, /共同讨论与解决问题也是可以分享的经历/);
+  assert.equal(COMPANION_PERSONA_V9_PROMPT_ID, "companion-persona-v9");
+  assert.ok(COMPANION_PERSONA_V9.endsWith(COMPANION_CHARACTER_BASE_V9));
+  assert.ok(COMPANION_PERSONA_V9.includes(COMPANION_IDENTITY_BOUNDARY_V4));
+  assert.match(COMPANION_IDENTITY_BOUNDARY_V4, /不断言自己今天做过或没做过外部活动/);
+  assert.equal(createHash("sha256").update(COMPANION_PERSONA_V9).digest("hex"), COMPANION_PERSONA_V9_SHA256);
+});
 
 test("日记引用的那两句音色，是角色底座里的原话（一处真相）", () => {
   // 桌宠日记不抄第二份音色：它引用 `COMPANION_VOICE_STYLE_LINES_V1`。

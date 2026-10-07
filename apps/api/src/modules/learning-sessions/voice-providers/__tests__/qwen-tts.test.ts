@@ -9,7 +9,7 @@
 // qwen-tts-user-queue.test.ts 共用同一份替身，避免协议改动时两处漂移）。
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { qwenTtsSynthesizeStream, QwenTtsError } from "../qwen-tts.ts";
+import { qwenTtsSynthesizeStream, QwenTtsError, type QwenTtsOptions } from "../qwen-tts.ts";
 import {
   MockWebSocket,
   QWEN_TEST_BASE_OPTS,
@@ -24,7 +24,7 @@ const BASE_OPTS = QWEN_TEST_BASE_OPTS;
 
 function startTask(
   text: string,
-  opts: typeof BASE_OPTS = BASE_OPTS,
+  opts: QwenTtsOptions = BASE_OPTS,
 ): Promise<{ ws: MockWebSocket; result: Promise<Awaited<ReturnType<typeof qwenTtsSynthesizeStream>>> }> {
   return launchQwenTask(() => qwenTtsSynthesizeStream(text, opts));
 }
@@ -142,6 +142,23 @@ test("qwen TTS 连接复用全套（串行场景）", async () => {
   resetState();
   await scenarioCancel();
   resetState(); // 清掉 IDLE 连接的 60s 空闲 timer，避免挂住事件循环
+});
+
+test("expression is sent once with complete input; unsupported models and host reset never speak tags", async () => {
+  resetState();
+  const task = await startTask("[empathetic]辛苦了。[giggles]歇一会儿。[neutral]晚安。[happy]");
+  serveTaskBody(task.ws);
+  await pump((await task.result).stream);
+  assert.equal(task.ws.continueTaskText(), "[empathetic]辛苦了。[giggles]歇一会儿。晚安。");
+  assert.equal(task.ws.sentActions().filter(action => action === "continue-task").length, 1);
+  const run = task.ws.sent[0] as { header: { streaming: string } };
+  assert.equal(run.header.streaming, "duplex", "protocol requires duplex even for complete single input");
+  resetState();
+  const unsupported = await startTask("[excited]你好。[laughing]继续。", { ...BASE_OPTS, model: "unsupported-model" });
+  serveTaskBody(unsupported.ws);
+  await pump((await unsupported.result).stream);
+  assert.equal(unsupported.ws.continueTaskText(), "你好。继续。");
+  resetState();
 });
 
 test("建连期间的取消关闭 socket；已开始音频的取消和意外断连均不能成为正常 EOF",async()=>{

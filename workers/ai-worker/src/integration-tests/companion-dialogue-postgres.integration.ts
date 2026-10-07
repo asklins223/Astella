@@ -19,9 +19,9 @@ import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { sql as drizzleSql } from "drizzle-orm";
 import {
-  COMPANION_IDENTITY_BOUNDARY_V2,
-  COMPANION_PERSONA_V7_PROMPT_ID,
-  COMPANION_PERSONA_V7_SHA256,
+  COMPANION_IDENTITY_BOUNDARY_V4,
+  COMPANION_PERSONA_V13_PROMPT_ID,
+  COMPANION_PERSONA_V13_SHA256,
 } from "@astella/shared";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
@@ -45,6 +45,13 @@ after(async () => {
 });
 
 const { runCompanionDialogue } = await import("../handlers/companion-dialogue.ts");
+// These cases script executeAgentTurn and check DB finalization. The generic
+// mock chat stream does not execute those scripts. Streaming/first-step reuse
+// is covered separately by companion-speculative-loop-postgres.integration.ts.
+const { MockProvider } = await import("../lib/providers/mock.ts");
+const mockStreamDescriptor = Object.getOwnPropertyDescriptor(MockProvider.prototype, "chatCompletionStream")!;
+Object.defineProperty(MockProvider.prototype, "chatCompletionStream", { ...mockStreamDescriptor, value: undefined });
+after(() => Object.defineProperty(MockProvider.prototype, "chatCompletionStream", mockStreamDescriptor));
 const {
   persistCompanionContextHandoffSnapshot,
   markCompanionRunFailed,
@@ -258,8 +265,8 @@ test("P2 §5.2：accepted run → assistant message + status/delta/final 事件 
     assert.ok(rows.run.assistant_message_id, "assistant_message_id 已写");
     assert.ok(Number(rows.run.last_event_seq) >= 3, "last_event_seq 已推进");
     assert.equal(rows.run.provider_id, "mock", "mock provider 显式记录");
-    assert.equal(rows.run.prompt_version, COMPANION_PERSONA_V7_PROMPT_ID, "现役提示词版本已写入回合记录");
-    assert.equal(rows.run.prompt_hash, COMPANION_PERSONA_V7_SHA256, "现役提示词哈希已写入回合记录");
+    assert.equal(rows.run.prompt_version, COMPANION_PERSONA_V13_PROMPT_ID, "现役提示词版本已写入回合记录");
+    assert.equal(rows.run.prompt_hash, COMPANION_PERSONA_V13_SHA256, "现役提示词哈希已写入回合记录");
     assert.equal(rows.assistant.length, 1, "恰好一条 assistant message");
     assert.equal(rows.assistant[0].run_id, s.runId, "assistant message 绑定本 run");
     const types = rows.events.map((e) => e.type);
@@ -294,7 +301,7 @@ test("P2 §5.2：accepted run → assistant message + status/delta/final 事件 
     assert.ok(typeof systemContent === "string", "伴星 system 消息以文本形式保存在交接快照中");
     assert.match(systemContent, /记录可能出错或过时/, "持久化交接快照保留实际发送的身份边界");
     assert.ok(
-      systemContent.includes(COMPANION_IDENTITY_BOUNDARY_V2),
+      systemContent.includes(COMPANION_IDENTITY_BOUNDARY_V4),
       "交接快照中完整保留身份边界，而不只保存静态 prompt hash",
     );
     assert.equal(

@@ -293,6 +293,24 @@ const STREAM_STEP_REQUEST: AgentTurnRequest = {
   temperature: 0.9,
 };
 
+test("发布前保留完整复核结果：长流不吐字，也不剪掉末尾", async () => {
+  const deltas = ["第一段解释。".repeat(900), "第二段解释。".repeat(900), "关键条件在全文末尾。"];
+  const { provider, state } = streamingStubProvider(deltas);
+  const seen: string[] = [];
+  let emitted = false;
+  const result = await runStreamingAgentStep({
+    provider, stepRequest: STREAM_STEP_REQUEST, ctxSignal: new AbortController().signal,
+    timeoutMs: 5_000, holdUntilChars: 12, separatorBefore: "\n\n", deferPublication: true,
+    onTextEmitted: () => { emitted = true; },
+    onProviderDelta: async text => { seen.push(text); return true; },
+  });
+  assert.equal(result.content, deltas.join(""));
+  assert.deepEqual(seen, []);
+  assert.equal(emitted, false);
+  assert.equal(state.emitted, deltas.length);
+  assert.equal(state.aborted, false);
+});
+
 /**
  * 放行闸（2026-10-07 投机执行）：分类器定论之前，投机那一步一个字都不能漏出去。
  * 两道闸各管一件事——gate 管"分类器同意了吗"，holdUntilChars 管"这段字值不值得发"。
@@ -553,6 +571,18 @@ test("坍缩闸：整步未达阈值时一个字都不下发，onTextEmitted 不
   assert.equal(emitted, false, "stepEmitted 必须保持 false，退化闸才有重跑的机会");
   // 但正文本身不能丢——它由调用方经整段补写路径交付。
   assert.equal(result.content, "嘿嘿嘿");
+});
+
+test("声音标记不计入正文放行阈值，半句加标签仍然可修复", async () => {
+  const { provider } = streamingStubProvider(["[em", "pathetic][giggles]", "嗯"]);
+  const seen: string[] = [];
+  let emitted = false;
+  const result = await runStreamingAgentStep({ provider, stepRequest: STREAM_STEP_REQUEST,
+    ctxSignal: new AbortController().signal, timeoutMs: 5000, holdUntilChars: 12,
+    onTextEmitted: () => { emitted = true; }, onProviderDelta: async delta => { seen.push(delta); return true; } });
+  assert.deepEqual(seen, []);
+  assert.equal(emitted, false);
+  assert.equal(result.content, "[empathetic][giggles]嗯");
 });
 
 test("坍缩闸：跨过阈值时把攒住的文本一次性按序放行，之后直通", async () => {

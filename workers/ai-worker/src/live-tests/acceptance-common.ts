@@ -1,4 +1,5 @@
 import { loadEnvFile } from "node:process";
+import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { ResolvedPlatform } from "@astella/shared/platform-config";
@@ -21,7 +22,7 @@ export const { resolveSystemPlatform } = await import("@astella/shared/platform-
 
 const obj = (v:unknown):Record<string,unknown> => v && typeof v==="object" && !Array.isArray(v) ? v as Record<string,unknown> : {};
 const num = (v:unknown):number|null => typeof v==="number" && Number.isFinite(v) ? v : null;
-export type WireReceipt = {model:unknown;effort:unknown;enableThinking:unknown;outputLimit:unknown;
+export type WireReceipt = {model:unknown;effort:unknown;enableThinking:unknown;outputLimit:unknown;temperature:number|null;instructionHash:string;
   inputTokens:number|null;outputTokens:number|null;reasoningTokens:number|null;elapsedMs:number;transport:string;errorKind?:string};
 
 export function platform(capability:Capability):ResolvedPlatform {
@@ -30,12 +31,17 @@ export function platform(capability:Capability):ResolvedPlatform {
   return resolved;
 }
 
-export function observedProvider(p:ResolvedPlatform, sessionId:string, receipts:WireReceipt[]):AIProvider {
+export function observedProvider(p:ResolvedPlatform, sessionId:string, receipts:WireReceipt[],
+  onInstructions?: (instructions:string)=>void):AIProvider {
   const capture=(body:unknown,transport:string):WireReceipt=>{
     const b=obj(body);
+    const instructions=typeof b.instructions==="string"?b.instructions:
+      Array.isArray(b.messages)?b.messages.filter(m=>obj(m).role==="system").map(m=>String(obj(m).content??"")).join("\n\n"):"";
+    onInstructions?.(instructions);
     const receipt={model:b.model,effort:obj(b.reasoning).effort??b.reasoning_effort??null,
+      instructionHash:createHash("sha256").update(instructions).digest("hex"),
       enableThinking:b.enable_thinking??obj(b.thinking).type??null,
-      outputLimit:b.max_output_tokens??b.max_tokens??null,inputTokens:null,outputTokens:null,reasoningTokens:null,
+      outputLimit:b.max_output_tokens??b.max_tokens??null,temperature:num(b.temperature),inputTokens:null,outputTokens:null,reasoningTokens:null,
       elapsedMs:0,transport} as WireReceipt;
     receipts.push(receipt);return receipt;
   };
