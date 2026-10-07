@@ -41,7 +41,7 @@ import { COMPANION_TOOL_INTENT_TIMEOUT_MS, interpretCompanionTurn } from "./comp
 import { companionAttentionObjects } from "./companion-attention.ts";
 import { companionTurnThinking } from "./companion-turn-thinking.ts";
 import { companionResponseStrategy, shouldReviewCompanionExplanation, companionExplanationReviewEnabled } from "./companion-response-strategy.ts";
-import { reviewCompanionExplanation } from "./companion-explanation-review.ts";
+import { reviewCompanionExplanation } from "./companion-knowledge-review.ts";
 import { buildCasualFirstStepRequest, shouldKeepSpeculativeFirstStep } from "./companion-speculative-first-step.ts";
 import {
   findDuplicateSegment,
