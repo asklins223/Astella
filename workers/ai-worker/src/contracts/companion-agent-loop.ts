@@ -1,9 +1,9 @@
 import type { AgentTurnRequest, ChatMessage, CompanionAgentToolExecutionConstraints } from "@astella/shared";
 import type { AIProvider } from "../lib/ai-provider.ts";
-import type { CompanionDialogueHandlerContext, ReadContext } from "./companion-dialogue-store.ts";
-import type { CompanionContextReceipts } from "./companion-context-receipts.ts";
-import type { FoldedReplay, CompactionCooldownPorts } from "./companion-compaction.ts";
-import type { CompactionTraceRecorder } from "./companion-context-handoff.ts";
+import type { CompanionDialogueHandlerContext, ReadContext } from "../handlers/companion-dialogue-store.ts";
+import type { CompanionContextReceipts } from "../handlers/companion-context-receipts.ts";
+import type { FoldedReplay, CompactionCooldownPorts } from "../handlers/companion-compaction.ts";
+import type { CompactionTraceRecorder } from "../handlers/companion-context-handoff.ts";
 type AgentMessage = AgentTurnRequest["messages"][number];
 
 /** Inputs shared by the dialogue handler and the agent loop. */

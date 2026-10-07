@@ -1,4 +1,4 @@
-import type { CompanionAgentLoopArgs } from "./companion-agent-loop-contract.ts";
+import type { CompanionAgentLoopArgs } from "../contracts/companion-agent-loop.ts";
 import { executeTurn } from "@astella/agent-core";
 import {
   auditHash,

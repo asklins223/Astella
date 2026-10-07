@@ -23,7 +23,11 @@ rollback() {
 }
 trap rollback EXIT
 "${compose[@]}" config --quiet
-"${compose[@]}" pull --quiet postgres role-bootstrap role-grants minio minio-init api migrate worker edge-tts nginx
+# Root-only local preflight can use images transferred with docker save/load.
+# The forced SSH receiver always uses the registry path.
+if [[ ${2:-} != --local-images ]]; then
+  "${compose[@]}" pull --quiet postgres role-bootstrap role-grants minio minio-init api migrate worker edge-tts nginx
+fi
 "${compose[@]}" up -d --no-build --pull never --wait --wait-timeout 120 postgres minio edge-tts
 
 # A logical backup precedes every migration, including the first empty database.
