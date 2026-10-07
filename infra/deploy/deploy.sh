@@ -2,7 +2,7 @@
 set -euo pipefail
 umask 077
 release="${1:?release directory required}"
-[[ "$release" =~ ^/opt/astella/releases/[0-9a-f]{40}$ ]] || exit 1
+[[ "$release" =~ ^/opt/astella/releases/[0-9a-f]{40}(-[0-9a-f]{12})?$ ]] || exit 1
 env_file=/etc/astella/production.env
 test -s "$env_file"
 test -s /etc/letsencrypt/live/astella-ip/fullchain.pem

@@ -11,22 +11,25 @@ exec 9>/opt/astella/deploy.lock
 flock -n 9 || { echo 'Another deployment is running' >&2; exit 1; }
 
 # The workflow token expires after the job. Never retain registry credentials.
+IFS= read -r registry_user
+[[ "$registry_user" =~ ^[a-zA-Z0-9_-]+$ ]] || exit 1
 IFS= read -r registry_token
 test -n "$registry_token"
 export DOCKER_CONFIG
 DOCKER_CONFIG="$(mktemp -d)"
 bundle="$(mktemp -d /opt/astella/releases/.incoming.XXXXXX)"
 trap 'rm -rf "$DOCKER_CONFIG" "$bundle"' EXIT
-printf '%s' "$registry_token" | docker login ghcr.io --username github --password-stdin >/dev/null 2>&1
+printf '%s' "$registry_token" | docker login ghcr.io --username "$registry_user" --password-stdin >/dev/null 2>&1
 unset registry_token
 python /usr/local/lib/astella/extract-bundle.py "$bundle"
 test -s "$bundle/deployment-images.env"
 test -s "$bundle/docker-compose.deploy.yml"
-release="/opt/astella/releases/$commit"
+image_set="$(sha256sum "$bundle/deployment-images.env" | cut -c1-12)"
+release="/opt/astella/releases/$commit-$image_set"
 # Preserve an existing release, including an active release being retried.
 if [[ -e "$release" ]]; then
   cmp "$bundle/deployment-images.env" "$release/deployment-images.env" >/dev/null || {
-    echo 'An existing commit cannot be replaced with different image digests' >&2; exit 1;
+    echo 'An existing image set cannot be replaced' >&2; exit 1;
   }
 else
   mv "$bundle" "$release"

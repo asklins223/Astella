@@ -59,6 +59,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.names.outputs.prefix }}-api:sha-${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
       - name: Build worker production image
@@ -71,6 +72,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.names.outputs.prefix }}-worker:sha-${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           cache-from: type=gha,scope=worker
           cache-to: type=gha,mode=max,scope=worker
       - name: Build TTS image
@@ -82,6 +84,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.names.outputs.prefix }}-edge-tts:sha-${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           cache-from: type=gha,scope=edge-tts
           cache-to: type=gha,mode=max,scope=edge-tts
 
@@ -114,6 +117,7 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
         run: |
           set -euo pipefail
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
@@ -123,7 +127,7 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KEY" > "$task_ssh_dir/key"
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$task_ssh_dir/known_hosts"
           chmod 600 "$task_ssh_dir/key" "$task_ssh_dir/known_hosts"
-          { printf '%s\n' "$GHCR_TOKEN";
+          { printf '%s\n%s\n' "$GHCR_USER" "$GHCR_TOKEN";
             tar -czf - docker-compose.yml docker-compose.deploy.yml deployment-images.env config infra/postgres infra/deploy/nginx.conf;
           } | ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 \
             -o UserKnownHostsFile="$task_ssh_dir/known_hosts" -i "$task_ssh_dir/key" \
