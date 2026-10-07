@@ -47,13 +47,13 @@ const CHECK_TIMEOUT_MS = 30_000
  */
 const PUBLISH_OWNER = 'asklins223'
 const PUBLISH_REPO = 'Astella'
-const DESKTOP_TAG_PREFIX = 'desktop-v'
+const DESKTOP_TAG_PREFIX = 'v'
 
 /**
  * 对应版本的 Release 页。
  *
  * macOS 未签名时安装不了，界面要给出"去下载页手动装"的路——那条链接必须真的有
- * href，不能是个点了没反应的 `<a>`。按 tag 规则（desktop-v<version>）拼，
+ * href，不能是个点了没反应的 `<a>`。按 tag 规则（v<version>）拼，
  * 与 `.github/scripts/desktop-version.mjs` 的 DESKTOP_TAG_PREFIX 是同一套约定。
  */
 /**

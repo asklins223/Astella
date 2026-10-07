@@ -17,7 +17,7 @@
 | [API 与数据](./zh/api-and-data.md) | 模块与路由清单、会话与 CSRF 与限流、RLS 与三角色、迁移与作业队列、SSE、运维面板 | 改后端与数据 |
 | [模型与 Worker 链路](./zh/ai-and-companion.md) | Worker 与作业类型、模型档案配置（`config/ai-platforms.json`）、provider 协议、思考与识图、证据封缄、语音、质量层 | 改模型链路 |
 | [测试与质量](./zh/testing-and-quality.md) | 各包怎么跑测试、真库集成测试的分界、源码守卫各守什么、CI 实际跑什么与不跑什么 | 提交前 |
-| [运行与发布](./zh/operations.md) | 三份 compose 的职责、变量分组、两条版本线与桌面端发布、Alpha 巡检与备份恢复、监控告警口径 | 要部署或发版 |
+| [运行与发布](./zh/operations.md) | 三份 compose 的职责、变量分组、统一版本与桌面端发布、Alpha 巡检与备份恢复、监控告警口径 | 要部署或发版 |
 | [常见问题与排障](./zh/faq-and-troubleshooting.md) | 现象 → 原因 → 处理，覆盖登录、端口、语音、迁移、限流、模型调用、星图空、测试跑不动 | 卡住了 |
 
 英文对应：[overview](./en/overview.md) · [architecture](./en/architecture.md) · [development](./en/development.md) · [desktop-client](./en/desktop-client.md) · [agent-runtime](./en/agent-runtime.md) · [companion-experience](./en/companion-experience.md) · [api-and-data](./en/api-and-data.md) · [ai-and-companion](./en/ai-and-companion.md) · [testing-and-quality](./en/testing-and-quality.md) · [operations](./en/operations.md) · [faq-and-troubleshooting](./en/faq-and-troubleshooting.md)

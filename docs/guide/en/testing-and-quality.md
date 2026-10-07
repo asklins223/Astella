@@ -224,9 +224,9 @@ Four workflows. `node-version` always comes from a repository-level `env.NODE_VE
 | Workflow | File | Triggers | Jobs |
 | --- | --- | --- | --- |
 | CI | `.github/workflows/main-ci.yml` | `push` to `main`, `push` tags `v*`, `pull_request`, `workflow_dispatch` | `packages` (matrix), `api`, `worker`, `desktop` |
-| Desktop client | `.github/workflows/desktop-client.yml` | `workflow_dispatch`, `push` tags `desktop-v*` and `v*` | `shared-contracts`, `variant-quality` (v1/v2 matrix), `package-smoke` (matrix) |
+| Desktop client | `.github/workflows/desktop-client.yml` | `workflow_dispatch`, `workflow_call` (called by unified tag releases) | `shared-contracts`, `variant-quality` (v1/v2 matrix), `package-smoke` (matrix) |
 | Desktop package | `.github/workflows/desktop-package.yml` | `workflow_dispatch`, called via `workflow_call` | `windows`, `macos`, `summary` |
-| Desktop release | `.github/workflows/desktop-release.yml` | `push` tags `desktop-v*`, `workflow_dispatch` | `resolve`, `build` (reuses desktop-package), `release` |
+| Desktop release | `.github/workflows/desktop-release.yml` | `push` tags `v*`, `workflow_dispatch` | `resolve`, `build` (reuses desktop-package), `quality`, `release` |
 
 The rule is stated in the header of `main-ci.yml`: **CI = exactly what the local tests run**, package by package. The `packages` matrix has four labels — Shared contracts, Agent core, Agent host, AI quality (PR mock). Each entry runs `npm ci` in the packages listed in its `deps`, then `npm run typecheck` and `npm test`; the AI quality entry adds `npm run pr-gate`. The `api` and `worker` jobs set `DATABASE_URL_API` / `DATABASE_URL_WORKER` to a deliberately **unreachable** `postgres://ci:ci@127.0.0.1:1/ci`: unit tests import `db.ts` at module load, which builds a lazy pool, and the compose hostname `postgres` does not resolve on a runner — a failed DNS lookup would hang the job until timeout. The `desktop` job **builds before testing**, because `scripts/runtime-asset-containment.test.mjs` measures what ended up under `out/renderer/assets`; without `out/` there is nothing to measure (measured 2026-10-06: without this step three cases fail on a clean runner while local stays green, because the working tree still contains `out/` from an earlier build).
 

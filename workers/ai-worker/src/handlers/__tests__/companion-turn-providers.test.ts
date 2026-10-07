@@ -118,7 +118,7 @@ test("闸把这次请求判成必须压缩时，主 provider 抛的是压缩要�
   });
   await assert.rejects(
     () => provider.executeAgentTurn!({
-      role: "companion_agent", systemPrompt: "旧".repeat(20), messages: [{ role: "user", content: "问题".repeat(6_400) }],
+      role: "companion_agent", systemPrompt: "旧".repeat(20), messages: [{ role: "user", content: "问题".repeat(2_200) }],
       tools: [], maxTokens: 1_000, temperature: 0.4,
     }).catch((error: unknown) => {
       if (error instanceof AIContextCompactionRequiredError) throw error;

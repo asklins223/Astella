@@ -6,8 +6,8 @@
 
 面向个人学习的 AI 原生知识系统。从一份真正想弄懂的材料出发，把它写成笔记、在笔记里按需理解与回想、需要时制卡与长期复习；出处、练习证据与下一步始终可追溯。桌面端是一间有 Live2D 伴星坐着的纸上书房。
 
-[![服务端栈 0.5.0](https://img.shields.io/badge/%E6%9C%8D%E5%8A%A1%E7%AB%AF%E6%A0%88-0.5.0-blue)](release/version.json)
-[![桌面端 0.1.0](https://img.shields.io/badge/%E6%A1%8C%E9%9D%A2%E7%AB%AF-0.1.0-blue)](release/desktop-version.json)
+[![服务端栈 1.0.0](https://img.shields.io/badge/%E6%9C%8D%E5%8A%A1%E7%AB%AF%E6%A0%88-1.0.0-blue)](release/version.json)
+[![桌面端 1.0.0](https://img.shields.io/badge/%E6%A1%8C%E9%9D%A2%E7%AB%AF-1.0.0-blue)](release/version.json)
 [![Electron 43](https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Fastify 5](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
@@ -17,7 +17,7 @@
 
 [中文](README.md) · [English](README.en.md) · [手册 docs/guide](docs/guide/)
 
-当前版本：`v0.5.1`（服务端栈；桌面端是另一条版本线，见 `release/desktop-version.json`）
+当前版本：`v1.0.0`（服务端与桌面客户端共用）
 
 </div>
 
@@ -226,7 +226,7 @@ make seed-demo
 
 ```text
 邮箱：owner@astella.local
-密码：astella_owner
+密码：<set-a-private-owner-password>
 ```
 
 仅用于本机开发：`SEED_DEMO_DATA` 在生产模式下直接失败，生产环境的 Owner 由发布流程的 `seed-owner` 一次性容器创建。
@@ -349,12 +349,12 @@ CI（`.github/workflows/main-ci.yml`）现在跑的是与本地基线一一对�
 
 ## 版本与发布
 
-两条版本线，互不牵制：
+服务端与桌面客户端共用一个产品版本：
 
 | 线 | 当前 | 载体 | 标签 |
 | --- | --- | --- | --- |
-| 服务端栈 | `0.5.0` | `release/version.json`，由 `.github/scripts/version-contract.mjs` 同步到 api／worker／shared 的 `package.json` | `v*` |
-| 桌面客户端 | `0.1.0` | `release/desktop-version.json` | `desktop-v*` |
+| 服务端栈 | `1.0.0` | `release/version.json`，由 `.github/scripts/version-contract.mjs` 同步到 api／worker／shared 的 `package.json` | `v*` |
+| 桌面客户端 | `1.0.0` | `release/version.json` | `v*` |
 
 桌面端产物由 `desktop-release.yml` 发布到 GitHub Releases（先 Draft、资产传完再公开）。客户端更新器**直连 GitHub Releases，不经过自家 API**：macOS `dmg` + `zip`、Windows NSIS、Linux AppImage，产物名固定 ASCII 前缀 `astella-`。仓库目前没有配置代码签名与公证，macOS 自动更新在拿到证书前不可用。
 

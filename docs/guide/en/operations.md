@@ -6,7 +6,7 @@ What this page covers: how Astella is actually run and shipped today — the res
 
 - [The three compose files](#the-three-compose-files)
 - [Environment variable groups](#environment-variable-groups)
-- [Two version lines and the release chain](#two-version-lines-and-the-release-chain)
+- [Unified version and release chain](#unified-version-and-release-chain)
 - [The Alpha environment](#the-alpha-environment)
 - [Observability](#observability)
 - [Backup and restore](#backup-and-restore)
@@ -107,18 +107,11 @@ Capability flags are checked by `.github/scripts/verify-companion-capability-con
 | `COMPANION_THOUGHTS_V1` | `true` | `true` | worker only |
 | `CARD_GENERATION_V3_PROVIDER` | `deterministic` | `deterministic` | worker only |
 
-## Two version lines and the release chain
+## Unified version and release chain
 
-This repository carries two version lines that never touch each other.
+The server and desktop share `release/version.json` (currently `1.0.0`) and the same `v<version>` tag. After editing that file, run `node .github/scripts/version-contract.mjs --write` to synchronize API, Worker, Shared and Desktop package metadata and lockfiles; `--check` verifies consistency. Desktop packaging uses `desktop-version.mjs` to invoke that same contract. Pushing `v1.0.0` triggers server CI and deployment alongside desktop quality checks and installer publishing. A version mismatch stops the release.
 
-| Line | Single source | Sync script | Tag shape | Contract test |
-| --- | --- | --- | --- | --- |
-| Server | `release/version.json` (currently `0.5.0`) | `.github/scripts/version-contract.mjs --check` / `--write`, covering the three package roots `apps/api`, `workers/ai-worker`, `packages/shared` | `v*`, e.g. `v0.5.0` (`X.Y.Z`; release candidates as `v0.5.0-rc.1`) | `version-contract.test.mjs` |
-| Desktop | `release/desktop-version.json` (currently `0.1.0`) | `.github/scripts/desktop-version.mjs --check` / `--set` / `--tag`, syncing into `apps/desktop-client/package.json` and its lockfile | `desktop-v*` | the script's own validation plus the `resolve` job in `desktop-release.yml` |
-
-The rationale is written in the script header: both ends share one repository but move at different cadences, so merging them would force the desktop version to jump on every server patch, while using `v*` for both would make the server contract treat the other side's tags as version conflicts. `desktop-v1.0.0` matches neither `version-contract.mjs`'s tag pattern (it parses to `null`) nor `main-ci.yml`'s `push.tags: ["v*"]`, so the two lines are physically disjoint.
-
-Make targets: `make version-check` only checks the server line; `make release-manifest` produces the machine-readable manifest from `release-manifest-generate.mjs`; `make release-check` runs `verify-release-inputs.mjs` → `make verify` → `coverage-gate.mjs` → `release-manifest-generate.mjs` → `release-manifest-contract.mjs`. On an exact release tag the last step fails closed unless `RELEASE_MANIFEST_PATH` points at a complete CI/release JSON artifact.
+Make targets: `make version-check` checks both server and desktop versions; `make release-manifest` produces the machine-readable manifest from `release-manifest-generate.mjs`; `make release-check` runs `verify-release-inputs.mjs` → `make verify` → `coverage-gate.mjs` → `release-manifest-generate.mjs` → `release-manifest-contract.mjs`. On an exact release tag the last step fails closed unless `RELEASE_MANIFEST_PATH` points at a complete CI/release JSON artifact.
 
 The electron-builder configuration is `apps/desktop-client/electron-builder.yml`, with these targets:
 
@@ -135,7 +128,7 @@ Several choices here are intentional:
 - **The update source is GitHub Releases, not this project's API.** `publish: provider github / owner asklins223 / repo Astella`; `apps/desktop-client/src/main/desktop-update.ts` repeats the same owner/repo constants so the "open the download page" link can be computed without loading the packaging config — **change the repository address and you must change both places**. Checks go to `api.github.com` and downloads to GitHub's CDN, so `apps/api` is not on the update path at all: update bandwidth does not land on your own server, and an outage of the API cannot block updates.
 - **No code signing is configured.** The repository holds no Windows certificate and no Apple certificate / notarization credentials, so artifacts are unsigned: macOS requires right-click → Open on first launch, Windows shows SmartScreen, and **the macOS auto-update install is refused by Squirrel.Mac** (it verifies that both `.app` versions are signed by the same developer, so an unsigned build downloads and then fails to install). The yml deliberately does not set `identity: null` / `notarize: false` — those would actively disable signing and notarization — and adds `hardenedRuntime: true`, a hard prerequisite for notarization. Once the secrets exist, signing and notarization happen automatically with no config change. `desktop-package.yml` sets `CSC_IDENTITY_AUTO_DISCOVERY=false` only to skip searching the keychain.
 
-The release pipeline `.github/workflows/desktop-release.yml` publishes a Release only on `push` of a `desktop-v*` tag. The `resolve` job first compares the tag version with `release/desktop-version.json` and stops on mismatch (otherwise you get a Release titled one thing containing another). `build` reuses `desktop-package.yml` via `workflow_call` to build both platforms in parallel. Then `release` (gated by `if: from_tag == 'true'`): download the `desktop-*` artifacts → assert both platforms produced the same version and that all four files are non-empty → **require `latest.yml`** (hard failure if missing: Windows would never learn about a new version) while a missing `latest-mac.yml` only raises `::warning::` → create the Release with `softprops/action-gh-release@v2` and `draft: true`, uploading every asset → flip it public with `gh api --method PATCH … -F draft=false`. Draft-then-publish exists for the updater's sake: publishing while uploading can let it read a half-written `latest.yml` or a half-uploaded installer. A manual `workflow_dispatch` run never publishes.
+The release pipeline `.github/workflows/desktop-release.yml` publishes a Release only on `push` of a `v*` tag. The `resolve` job first compares the tag version with `release/version.json` and stops on mismatch (otherwise you get a Release titled one thing containing another). `build` reuses `desktop-package.yml` via `workflow_call` to build both platforms in parallel. Then `release` (gated by `if: from_tag == 'true'`): download the `desktop-*` artifacts → assert both platforms produced the same version and that all four files are non-empty → **require `latest.yml`** (hard failure if missing: Windows would never learn about a new version) and **require `latest-mac.yml`** (hard failure if missing) → create the Release with `softprops/action-gh-release@v2` and `draft: true`, uploading every asset → flip it public with `gh api --method PATCH … -F draft=false`. Draft-then-publish exists for the updater's sake: publishing while uploading can let it read a half-written `latest.yml` or a half-uploaded installer. A manual `workflow_dispatch` run never publishes.
 
 ## The Alpha environment
 

@@ -110,6 +110,18 @@ async function remountNextModel(): Promise<void> {
   expect(onStatus).toHaveBeenLastCalledWith("ready");
 }
 
+it("updates the speaking mouth on active frames and resumes it after a real pause", () => {
+  driver.setVoiceLevel(.8);
+  fixture.write.mockClear(); fixture.update();
+  expect(fixture.write.mock.calls.filter(([parameter]) => parameter === "ParamMouthOpenY").at(-1)?.[1]).toBe(.8);
+  driver.setPaused(true);
+  fixture.write.mockClear(); driver.setVoiceLevel(.6); fixture.update();
+  expect(fixture.write).not.toHaveBeenCalled();
+  driver.setPaused(false); fixture.update();
+  expect(ticker.start).toHaveBeenCalled();
+  expect(fixture.write.mock.calls.filter(([parameter]) => parameter === "ParamMouthOpenY").at(-1)?.[1]).toBe(.6);
+});
+
 function animateDrawables() {
   Object.assign(fixture.boxes[0], { x: 80, y: 100, width: 800, height: 900 });
   fixture.boxes.push({ x: 10, y: 70, width: 150, height: 200 });

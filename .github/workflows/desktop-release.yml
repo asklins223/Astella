@@ -1,45 +1,17 @@
 name: Desktop release
 
-# ============================================================================
-# 桌面端发版：desktop-v* tag → 两端并行打包 → 汇总 → 建 Draft Release → 公开
-# ============================================================================
-#
-# ## 为什么 tag 叫 `desktop-v*` 而不是 `v*`
-#
-# 这个仓库把客户端和服务端放在一个 git 仓库里，但两条版本线的节奏不同：
-# 服务端按 `release/version.json` 发 `v0.5.0`，桌面端按 `release/desktop-version.json`
-# 发 `desktop-v0.1.0`。如果两端都用 `v*` 前缀，`inspectExactReleaseTags` 会把对方的
-# tag 当成版本冲突，而 `ci.yml` 的 `push.tags: ["v*"]` 也会被桌面端的每次发版拽起来
-# （后端那套 typecheck + E2E + 基础设施，与装一个客户端包毫无关系）。
-#
-# `desktop-v*` 两边都不匹配，所以：
-#   - 服务端版本契约看不见它（`parseReleaseTag('desktop-v1.0.0')` 返回 null）；
-#   - ci.yml 不会被它触发（tag 不是以 `v` 开头）。
-#
-# 代价是多打七个字，但换来"看一眼 tag 就知道是哪一端在发版"，以及两条线互不干扰。
-#
-# ## 为什么先建 Draft 再公开
-#
-# 更新器读的是 Release 里的资产。如果边传边公开，更新器可能在只传了一半的时候
-# 就看到这条 Release——然后去下一个还没传完的 `latest.yml`，或者去下一个还没传完的
-# 安装包。所以：**全部资产传完并校验过，才把 draft 翻成 published**。
-#
-# ## 版本从哪来
-#
-# 唯一来源是 `release/desktop-version.json`，构建前由
-# `.github/scripts/desktop-version.mjs` 同步到 `apps/desktop-client/package.json`
-# 与其 lockfile——electron-builder 的 `${version}` 取自 package.json，
-# 产物名 `astella-<version>-win-x64.exe` 里的版本号就是这么来的。
-# tag 必须与它一致，否则两端产物与 Release 标题会各说各话。
+# 与服务端共用 release/version.json 和 v<version> tag。
+# Windows 与 macOS 安装包、桌面质量检查全部成功后先上传 Draft，再公开 Release。
+# 资产上传完成前不公开，避免更新器读到未上传完整的安装包或更新清单。
 
 on:
   push:
     tags:
-      - "desktop-v*"
+      - "v*"
   workflow_dispatch:
     inputs:
       version:
-        description: 版本号（留空则用 tag / release/desktop-version.json）
+        description: 版本号（留空则用 tag / release/version.json）
         type: string
         default: ""
       mac_arch:
@@ -91,10 +63,10 @@ jobs:
             is_tag="true"
             if [ -z "$requested" ]; then requested="$tag_version"; fi
             # tag 与唯一来源不一致时直接停：继续下去只会得到一个"标题写 v1.2.0、
-            # 产物里却是 0.1.0"的 Release，而更新器读到的是后者。
-            source_version="$(node -e "console.log(require('./release/desktop-version.json').version)")"
+            # 产物里却是另一个版本"的 Release，而更新器读到的是后者。
+            source_version="$(node -e "console.log(require('./release/version.json').version)")"
             if [ "$tag_version" != "$source_version" ]; then
-              echo "::error::tag ${{ github.ref_name }} 指向 $tag_version，但 release/desktop-version.json 是 $source_version。请先改版本号再打 tag。" >&2
+              echo "::error::tag ${{ github.ref_name }} 指向 $tag_version，但 release/version.json 是 $source_version。请先改版本号再打 tag。" >&2
               exit 1
             fi
           fi
@@ -102,10 +74,10 @@ jobs:
           if [ -n "$requested" ]; then
             node .github/scripts/desktop-version.mjs --set "$requested"
           fi
-          version="$(node -e "console.log(require('./release/desktop-version.json').version)")"
+          version="$(node -e "console.log(require('./release/version.json').version)")"
           node .github/scripts/desktop-version.mjs --check
 
-          tag="desktop-v${version}"
+          tag="v${version}"
           if [ "${{ github.ref_type }}" = "tag" ]; then tag="${{ github.ref_name }}"; fi
 
           echo "version=${version}" >> "$GITHUB_OUTPUT"

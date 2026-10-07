@@ -64,6 +64,7 @@ import {
 import { PET_PERSONA_PRESET_VERSION } from "@astella/shared/pet-persona-presets";
 import { runCompanionAgentLoop } from "./companion-agent-runtime.ts";
 import { AgentOutputError, CompanionAgentBudgetExceededError, CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
+import { AIContextOverflowError } from "../lib/context-governor.ts";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
 import type { AgentMemoryContextSourceV1 } from "@astella/shared/agent-contracts";
 import {
@@ -943,7 +944,8 @@ export async function runCompanionDialogue(
   } catch (err) {
     // 预算耗尽（步数/工具数/执行时间）是确定性失败：标记 recoverable=false，
     // 队列侧同时按不可重试处理，避免空转重投（见 isNonRetryableError）。
-    const budgetExceeded = err instanceof CompanionAgentBudgetExceededError;
+    const contextOverflow = err instanceof AIContextOverflowError;
+    const budgetExceeded = err instanceof CompanionAgentBudgetExceededError || contextOverflow;
     const contextChanged = err instanceof CompanionContextChangedError;
     // 交付管线主动叫停（增量校验命中泄露/超限、fence 失联）：同样不可重试——
     // 重投不会让"泄露"消失。已下发的部分必然是最终文本的前缀，客户端按 error 收尾。
@@ -956,7 +958,7 @@ export async function runCompanionDialogue(
       ctx.workspaceId,
       contextChanged ? err.code : budgetExceeded || outputIncomplete ? "AGENT_BUDGET_EXCEEDED" : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
       !budgetExceeded && !outputIncomplete && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
-      contextChanged ? err.message : outputIncomplete ? "这次答复达到长度上限，已说出的内容保留；可以接着分段讲。" : budgetExceeded
+      contextChanged ? err.message : contextOverflow ? "这次需要带入的内容太多，没法一次读完；可以按段继续。" : outputIncomplete ? "这次答复达到长度上限，已说出的内容保留；可以接着分段讲。" : budgetExceeded
         ? "companion agent budget exceeded"
         : streamStopped
           ? `companion stream stopped: ${streamingDelivery.failureReason() ?? "delivery pipeline"}`.slice(0, 240)

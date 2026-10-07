@@ -13,7 +13,7 @@
 - [AI 的工作到底跑在哪一侧](#ai-的工作到底跑在哪一侧)
 - [桌面客户端的边界](#桌面客户端的边界)
 - [认证与授权拓扑](#认证与授权拓扑)
-- [两条版本线](#两条版本线)
+- [统一版本](#统一版本)
 - [架构决策与代价](#架构决策与代价)
 - [想改 X，先看哪里](#想改-x先看哪里)
 
@@ -199,14 +199,9 @@ sequenceDiagram
 
 **AI 外发同意（账号级）。** `modules/identity/ai-consent-gate.ts`：判据是 `user_ai_settings` 里 `consentAt && consentVersion` 同时存在。`requireAiConsent` 作为 preHandler 挡在合成/转写之前，403 + `ai_consent_required`；worker 侧的 `lib/governance.ts` 管文本外发。同意是账号级、不是空间级——签了在所有空间都算，没签在所有空间都发不出去。作业失败时 `classifyJobFailureReason`（`modules/job/service.ts:88`）把持久化的隐私安全错误码翻成 `ai_consent_required`，让界面能说"去签署同意"而不是"失败了"。
 
-## 两条版本线
+## 统一版本
 
-| 线 | 唯一手工来源 | 同步到 | 由谁检查 |
-| --- | --- | --- | --- |
-| 服务端栈 `0.5.0` | `release/version.json` | `apps/api`、`workers/ai-worker`、`packages/shared` 的 `package.json` 与 `package-lock.json`（顶层 + `packages[""]`），以及 README 里**恰好一条**版本标记 | `make version-check` → `node .github/scripts/version-contract.mjs --check`（`--write` 写入），它是 `make verify` 的前置依赖 |
-| 桌面端 `0.1.0` | `release/desktop-version.json` | `apps/desktop-client/package.json` 与其 lockfile | `.github/scripts/desktop-version.mjs --check / --set`，由 `desktop-package.yml` 在打包前跑 |
-
-两条线故意不合并：tag 命名空间隔开（服务端 `v0.5.0`，桌面端 `desktop-v1.0.0`），`version-contract.mjs` 的 tag 正则认不出带前缀的那个，桌面端发版因此不会拽起整套后端 CI，反之亦然。代价就是要记两次，且 `packages/agent-core`、`agent-host`、`card-generation`（各自 0.1.0）与 `ai-quality`（0.5.0）都**不在**任何一条合同的覆盖范围里。
+服务端与桌面客户端的唯一手工来源是 `release/version.json`，当前为 `1.0.0`。`version-contract.mjs --write` 同步 `apps/api`、`workers/ai-worker`、`packages/shared`、`apps/desktop-client` 的 package.json、lockfile 与 README 版本标记；`make version-check` 检查一致性。桌面打包脚本使用同一契约。统一的 `v1.0.0` tag 同时触发服务端测试与部署、桌面测试与安装包发布。内部的 agent-core、agent-host、card-generation、ai-quality 包仍保留各自内部版本。
 
 ## 架构决策与代价
 
@@ -229,7 +224,7 @@ sequenceDiagram
 | 改作答判定与复习排期 | `apps/api/src/modules/learning-runs/processing/run-processing-tick.ts` 与 `run-processing-assessment.ts`、`apps/api/src/server.ts:523-551`（接线与节奏） |
 | 换模型平台或改能力映射 | `config/ai-platforms.json`、`docker-compose.dev.yml` 里 api 与 worker **两边都要透传**同一批 key（2026-09-17 漏传 `OPENCODE_GO_API_KEY` 就是这条）、`workers/ai-worker/src/lib/providers/` |
 | 改健康检查语义 | `apps/api/src/server.ts:125`（`/health`）与 `:244`（`/ready`）、`workers/ai-worker/src/lib/metrics.ts:348`、`docker-compose.dev.yml` 的两段 `healthcheck` |
-| 改版本号 | `release/version.json` 或 `release/desktop-version.json`，然后跑 `node .github/scripts/version-contract.mjs --write` / `node .github/scripts/desktop-version.mjs --set <ver>` |
+| 改版本号 | `release/version.json`，然后跑 `node .github/scripts/version-contract.mjs --write` / `node .github/scripts/desktop-version.mjs --set <ver>` |
 
 ## 相关分册
 

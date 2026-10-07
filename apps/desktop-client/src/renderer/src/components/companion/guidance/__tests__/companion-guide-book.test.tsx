@@ -4,12 +4,22 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useRoomStore } from "../../../../app/room-store";
 import { CompanionGuideBook } from "../CompanionGuideBook";
 import { CompanionGuidanceStage } from "../CompanionGuidanceStage";
+import { hasForeignModal } from "../../companion-modal-ownership";
 import type { CompanionGuideController } from "../use-companion-guide";
 const runFeature = vi.fn();
 vi.mock("../../../home-v2/HomeV2Experience", () => ({ useHomeV2: () => ({ runFeature }) }));
 const guide = () => ({ account: null, identity: { name: "共享书房", role: "member", isPersonal: false }, session: { topic: "welcome", index: 1, scope: "account" }, invitation: null, contents: { status: "ready", total: 0, notes: [] }, consent: "granted", consentLoading: false, consentSaving: false, consentError: null, signConsent: vi.fn(), retryConsent: vi.fn(), openConsentSettings: vi.fn(), start: vi.fn(), skip: vi.fn(), pause: vi.fn(), next: vi.fn(), end: vi.fn(), resume: null, reloadContents: vi.fn(), pending: false, revision: 0 }) as CompanionGuideController;
 beforeEach(() => { runFeature.mockReset(); useRoomStore.setState({ windowState: "visible", surface: null, destination: "room", motionMode: "off", reducedMotion: false, masterMuted: true, hudPage: "home", spaceIdentity: { name: "共享书房", role: "member", isPersonal: false } }); vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} }); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it("keeps the companion running during its own film while still recognizing unrelated modals", () => {
+  render(<CompanionGuidanceStage guide={guide()} />);
+  expect(screen.getByRole("dialog").getAttribute("aria-modal")).toBe("true");
+  expect(hasForeignModal(document)).toBe(false);
+  const foreign = document.createElement("div"); foreign.setAttribute("role", "dialog"); foreign.setAttribute("aria-modal", "true");
+  document.body.append(foreign);
+  expect(hasForeignModal(document)).toBe(true);
+  foreign.remove();
+});
 it("offers a complete first walk before the individual topics and closes the directory when started", () => {
   const controller = guide(), close = vi.fn(); controller.session = null;
   render(<CompanionGuideBook guide={controller} onClose={close} />);

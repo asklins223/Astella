@@ -7,8 +7,8 @@ name: Desktop package
 # 启动的包看看"，不该被一串还没跑通的门禁挡住。两边刻意不互相 depends_on——
 # 质量闸挂了照样能出包，只是那个包别拿去发版。
 #
-# 手动跑（不带版本号）时用 release/desktop-version.json 里的版本；被 desktop-release.yml
-# 以 desktop-v* tag 调用时，用 tag 里的版本。
+# 手动跑（不带版本号）时用 release/version.json 里的版本；被 desktop-release.yml
+# 以 v* tag 调用时，用 tag 里的版本。
 #
 # 也没有代码签名：仓库尚未配置 Windows 证书与 Apple 证书/notarization 凭据。
 # 产物是**未签名**的——macOS 首次打开要右键 → 打开，Windows 会弹 SmartScreen，
@@ -26,7 +26,7 @@ on:
           - arm64
           - x64
       version:
-        description: 版本号（留空则用 release/desktop-version.json）
+        description: 版本号（留空则用 release/version.json）
         type: string
         default: ""
   workflow_call:
@@ -42,7 +42,7 @@ on:
         type: string
         default: arm64
       version:
-        description: 版本号（留空则用 release/desktop-version.json）
+        description: 版本号（留空则用 release/version.json）
         type: string
         default: ""
     outputs:
@@ -109,8 +109,8 @@ jobs:
             node .github/scripts/desktop-version.mjs --set "${{ inputs.version }}"
           fi
           node .github/scripts/desktop-version.mjs --check
-          echo "version=$(node -e "console.log(require('./release/desktop-version.json').version)")" >> "$GITHUB_OUTPUT"
-          echo "Windows build version: $(node -e "console.log(require('./release/desktop-version.json').version)")"
+          echo "version=$(node -e "console.log(require('./release/version.json').version)")" >> "$GITHUB_OUTPUT"
+          echo "Windows build version: $(node -e "console.log(require('./release/version.json').version)")"
       - name: Configure Windows signing
         # shell 必须显式声明：windows runner 默认是 pwsh，而下面这段是 bash
         # （`set -euo pipefail` / `[ -n … ]` / `$GITHUB_ENV`）。macOS runner 默认就是
@@ -776,8 +776,8 @@ jobs:
             node .github/scripts/desktop-version.mjs --set "${{ inputs.version }}"
           fi
           node .github/scripts/desktop-version.mjs --check
-          echo "version=$(node -e "console.log(require('./release/desktop-version.json').version)")" >> "$GITHUB_OUTPUT"
-          echo "macOS build version: $(node -e "console.log(require('./release/desktop-version.json').version)")"
+          echo "version=$(node -e "console.log(require('./release/version.json').version)")" >> "$GITHUB_OUTPUT"
+          echo "macOS build version: $(node -e "console.log(require('./release/version.json').version)")"
       - name: Configure macOS signing and notarization
         # 同 Windows 那一节：secret 缺失时不能把空串写进 CSC_LINK，否则
         # electron-builder 会拿空前缀当证书路径，报一条完全指不到根因的

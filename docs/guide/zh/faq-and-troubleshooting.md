@@ -19,7 +19,7 @@
 
 ### 无法登录 → 演示账号从未创建 → `make seed-demo`
 
-**现象：** 桌面端用 `owner@astella.local` / `astella_owner` 登不进去，或 API 直接回 401 `invalid credentials`。
+**现象：** 桌面端用 `owner@astella.local` / `<set-a-private-owner-password>` 登不进去，或 API 直接回 401 `invalid credentials`。
 
 **原因：** 开发栈启动时不建任何账号。`seed-demo` 服务在 `seed` profile 下，只有显式运行才创建。Makefile 的 `seed-demo` 目标是 `docker compose -p astella-dev -f docker-compose.dev.yml --profile seed run --rm seed-demo`；该容器带 `SEED_DEMO_DATA=true`，`apps/api/src/db/seed.ts` 才允许用内置的演示邮箱与密码。
 
@@ -202,7 +202,7 @@ make disposable-db DISPOSABLE_DB=astella_scratch
 
 以下不是"你没配好"，而是当前代码与文档如实记录的状态。出处以文件为准。
 
-- **桌面客户端 0.1.0 尚未发布**，服务端栈记 0.5.0；两条版本线不同步（`release/version.json`、`release/desktop-version.json`）。
+- **服务端与桌面端共用 `v1.0.0`**，版本来源为 `release/version.json`；安装包是否发布以 GitHub Release 与流水线结果为准。
 - **许可是 MIT**（[LICENSE](../../../LICENSE)），但第三方与素材许可要单独看 [THIRD_PARTY_NOTICES.md](../../../THIRD_PARTY_NOTICES.md)——伴星模型的再分发限制不随代码授权。
 - **2026-10-06 起 CI 不再构建与扫描生产镜像**，生产镜像与真实 HTTPS 部署链路只在本地手动验证过。
 - **伴星带路已经实现**（岛内按钮 + 7 个主题 + 本机演示不产生业务事实），但新账号的全程走查与签署同意后的语音还没在真实窗口跑过；**全系统上下文治理与压缩**代码链路已接通，验收判据还没有一条来自真实模型、真实库或真实窗口。

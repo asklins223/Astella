@@ -17,6 +17,7 @@ export const PACKAGE_ROOTS = [
   "apps/api",
   "workers/ai-worker",
   "packages/shared",
+  "apps/desktop-client",
 ];
 
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;

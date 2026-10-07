@@ -6,8 +6,8 @@
 
 An AI-native knowledge system for self-directed learning. Start from material you actually want to understand, turn it into notes, understand and recall on demand inside the same note, and opt into learning cards and long-term review when it's worth it. Sources, practice evidence and the next step stay traceable. The desktop app is a paper study room with a Live2D companion sitting beside you.
 
-[![server stack 0.5.0](https://img.shields.io/badge/server_stack-0.5.0-blue)](release/version.json)
-[![desktop 0.1.0](https://img.shields.io/badge/desktop-0.1.0-blue)](release/desktop-version.json)
+[![server stack 1.0.0](https://img.shields.io/badge/server_stack-1.0.0-blue)](release/version.json)
+[![desktop 1.0.0](https://img.shields.io/badge/desktop-1.0.0-blue)](release/version.json)
 [![Electron 43](https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Fastify 5](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
@@ -224,7 +224,7 @@ make seed-demo
 
 ```text
 email:    owner@astella.local
-password: astella_owner
+password: <set-a-private-owner-password>
 ```
 
 Development only: `SEED_DEMO_DATA` fails closed under `NODE_ENV=production`, where the owner account is created by the `seed-owner` one-shot during release.
@@ -347,12 +347,12 @@ See [Models and the worker pipeline](docs/guide/en/ai-and-companion.md).
 
 ## Versions and releases
 
-Two version lines, deliberately independent:
+Server and desktop share one product version:
 
 | Line | Current | Held in | Tag |
 | --- | --- | --- | --- |
-| Server stack | `0.5.0` | `release/version.json`, synced by `.github/scripts/version-contract.mjs` into api / worker / shared `package.json` | `v*` |
-| Desktop client | `0.1.0` | `release/desktop-version.json` | `desktop-v*` |
+| Server stack | `1.0.0` | `release/version.json`, synced by `.github/scripts/version-contract.mjs` into api / worker / shared `package.json` | `v*` |
+| Desktop client | `1.0.0` | `release/version.json` | `v*` |
 
 `desktop-release.yml` publishes to GitHub Releases (draft first, flipped public once assets finish uploading). The client updater talks **straight to GitHub Releases, never through our own API**: macOS `dmg` + `zip`, Windows NSIS, Linux AppImage, artifact names pinned to the ASCII prefix `astella-`. No code signing or notarisation is configured yet, so macOS automatic updates are unusable until certificates exist.
 

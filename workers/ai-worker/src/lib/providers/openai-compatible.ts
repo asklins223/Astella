@@ -35,6 +35,7 @@ import { ProviderRequestError } from "../provider-request-error.ts";
 import { AgentOutputError } from "../non-retryable-errors.ts";
 import { DEFAULT_CONTEXT_WINDOW_TOKENS } from "../provider-constants.ts";
 import { profileFingerprint } from "./profile-fingerprint.ts";
+import { countModelTextTokens } from "../model-tokenizers.ts";
 
 /** R1: Unified abort error helper. */
 function abortError(signal: AbortSignal, phase: string): Error {
@@ -794,6 +795,10 @@ export class OpenAICompatibleProvider implements AIProvider {
       // 2026-10-06：指纹带上模型档案——窗口/输出/推理档位变了，预算缓存必须失效。
       fingerprint: `${this.id}:${this.modelId}:native_tools:${profileFingerprint(this.modelProfile)}`,
     };
+  }
+
+  countTextTokens(text: string): Promise<number | null> {
+    return countModelTextTokens(this.modelId, text);
   }
 }
 

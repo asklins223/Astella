@@ -590,11 +590,12 @@ export function createGovernedProvider(
       try {
         data = governedPayload(context, workspaceId, provider.id, { messages });
         signal?.throwIfAborted();
-        await audit?.reserveCall?.();
         await checkContextPressure("chat_completion", {
           requestedOutputTokens: options.maxTokens ?? null,
           measure: (ports) => measureChatRequest(data.messages as typeof messages, options, ports),
         });
+        signal?.throwIfAborted();
+        await audit?.reserveCall?.();
       } catch (err) {
         recordCall("chat_completion", "chat", startedAt, {
           status: "blocked",
@@ -628,11 +629,12 @@ export function createGovernedProvider(
       try {
         data = governedPayload(context, workspaceId, provider.id, { messages });
         signal?.throwIfAborted();
-        await audit?.reserveCall?.();
         await checkContextPressure("chat_completion_stream", {
           requestedOutputTokens: options.maxTokens ?? null,
           measure: (ports) => measureChatRequest(data.messages as typeof messages, options, ports),
         });
+        signal?.throwIfAborted();
+        await audit?.reserveCall?.();
       } catch (err) {
         recordCall("chat_completion_stream", "stream", startedAt, {
           status: "blocked",
@@ -669,13 +671,14 @@ export function createGovernedProvider(
       try {
         data = governedPayload(context, workspaceId, provider.id, { request });
         signal?.throwIfAborted();
-        await audit?.reserveCall?.();
         // 工具循环的**每一个回合**都从这里出去：工具结果回来后请求被重新计量，
         // 而不是只在对话入口查一次（44 §4.3）。
         await checkContextPressure("execute_agent_turn", {
           requestedOutputTokens: (data.request as typeof request).maxTokens ?? null,
           measure: (ports) => measureAgentTurnRequest(data.request as typeof request, ports),
         });
+        signal?.throwIfAborted();
+        await audit?.reserveCall?.();
       } catch (err) {
         recordCall("execute_agent_turn", "agent_turn", startedAt, {
           status: "blocked",

@@ -224,9 +224,9 @@ make test-postgres COMPANION_HOME_TEST_DB=astella_it
 | 工作流 | 文件 | 触发 | jobs |
 | --- | --- | --- | --- |
 | CI | `.github/workflows/main-ci.yml` | `push` 到 `main`、`push` tags `v*`、`pull_request`、`workflow_dispatch` | `packages`（矩阵）、`api`、`worker`、`desktop` |
-| Desktop client | `.github/workflows/desktop-client.yml` | `workflow_dispatch`、`push` tags `desktop-v*` 与 `v*` | `shared-contracts`、`variant-quality`（矩阵 v1/v2）、`package-smoke`（矩阵） |
+| Desktop client | `.github/workflows/desktop-client.yml` | `workflow_dispatch`、`workflow_call`（由统一 tag 发布调用） | `shared-contracts`、`variant-quality`（矩阵 v1/v2）、`package-smoke`（矩阵） |
 | Desktop package | `.github/workflows/desktop-package.yml` | `workflow_dispatch`、被 `workflow_call` 调用 | `windows`、`macos`、`summary` |
-| Desktop release | `.github/workflows/desktop-release.yml` | `push` tags `desktop-v*`、`workflow_dispatch` | `resolve`、`build`（复用 desktop-package）、`release` |
+| Desktop release | `.github/workflows/desktop-release.yml` | `push` tags `v*`、`workflow_dispatch` | `resolve`、`build`（复用 desktop-package）、`quality`、`release` |
 
 `main-ci.yml` 的口径写在文件头：**CI = 本地跑得通的那套测试**，逐个包一一对应。`packages` 矩阵的四个 label 是 Shared contracts、Agent core、Agent host、AI quality (PR mock)；每个条目按 `deps` 列出的包逐个 `npm ci`，再 `npm run typecheck` 与 `npm test`，AI quality 那条多跑一步 `npm run pr-gate`。`api` 与 `worker` 两个 job 给 `DATABASE_URL_API`/`DATABASE_URL_WORKER` 填了一个**明确不可达**的 `postgres://ci:ci@127.0.0.1:1/ci`：单测在模块加载时会 import `db.ts` 建连接池，池是懒的，但 compose 主机名 `postgres` 在 runner 上不解析，DNS 查不到会把 job 挂到超时。`desktop` job **先 `npm run build` 再 `npm test`**——`scripts/runtime-asset-containment.test.mjs` 量的是 `out/renderer/assets` 下的最终打包内容，没有 `out/` 就没有可量的东西（2026-10-06 实测少了这一步会在干净 runner 上红 3 条，而本地一直不红是因为工作树里躺着上次构建的 `out/`）。
 

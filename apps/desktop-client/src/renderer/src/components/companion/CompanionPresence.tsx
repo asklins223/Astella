@@ -364,7 +364,7 @@ export function CompanionPresence() {
       subtree: true,
       childList: true,
       attributes: true,
-      attributeFilter: ["open", "aria-modal"],
+      attributeFilter: ["open", "role", "aria-modal", "data-companion-owned"],
     });
     return () => observer.disconnect();
   }, []);

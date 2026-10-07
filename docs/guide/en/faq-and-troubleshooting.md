@@ -19,7 +19,7 @@ What this covers: the failures you actually hit when running Astella locally, wr
 
 ### Cannot log in → the demo account was never created → `make seed-demo`
 
-**Symptom:** `owner@astella.local` / `astella_owner` is rejected in the desktop app, or the API answers 401 `invalid credentials`.
+**Symptom:** `owner@astella.local` / `<set-a-private-owner-password>` is rejected in the desktop app, or the API answers 401 `invalid credentials`.
 
 **Cause:** The dev stack creates no accounts on startup. The `seed-demo` service sits behind the `seed` profile and only runs when invoked: `make seed-demo` maps to `docker compose -p astella-dev -f docker-compose.dev.yml --profile seed run --rm seed-demo`, and that container sets `SEED_DEMO_DATA=true`, which is what lets `apps/api/src/db/seed.ts` fall back to the built-in demo credentials.
 
@@ -200,7 +200,7 @@ A second trap: beyond the `DATABASE_URL_*` group these suites each read a dedica
 
 These are not misconfigurations on your side. They are the current state as recorded in code and documents; the files are the authority.
 
-- **Desktop client 0.1.0 is unreleased** and the server stack is at 0.5.0; the two version lines move separately (`release/version.json`, `release/desktop-version.json`).
+- **Server and desktop share `v1.0.0`**, maintained in `release/version.json`; check the GitHub Release and workflow results for installer availability.
 - **The licence is MIT** ([LICENSE](../../../LICENSE)), but third-party and asset permissions must be read separately in [THIRD_PARTY_NOTICES.md](../../../THIRD_PARTY_NOTICES.md) — the companion model's redistribution limits are not granted by the code licence.
 - **Since 2026-10-06 CI no longer builds or scans production images.** The production image and a real HTTPS deployment are only verified manually and locally.
 - **Companion guidance is implemented** (the island button, seven topics, and a local demo that creates no business facts), but the brand-new-account walk and post-consent speech have never been run in a real window; **system-wide context governance and compaction** has its code path connected, with not one acceptance criterion evidenced by a real model, a real database or a real window.

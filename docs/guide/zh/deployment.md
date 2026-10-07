@@ -1,8 +1,10 @@
 # Tag 发布与服务器部署
 
-桌面端推送 `desktop-v<版本>`：Windows x64 与 macOS 构建安装包，同时验证桌面质量与打包启动；全部成功并检查更新清单后才公开 GitHub Release。单独手动运行 Desktop package 仍可取得测试安装包。当前未配置签名证书，macOS 自动安装更新仍需签名；Windows 覆盖安装分支仍未在无头 runner 上验证。
+推送统一的 `v<版本>` tag 同时触发两端发布，版本唯一来源为 `release/version.json`。
 
-服务端推送 `v<版本>`：现有 CI 的测试全部成功后调用 Server deploy，构建 Linux amd64 的 API、Worker 和 TTS 镜像推送 GHCR，以 digest 记录镜像，再通过 SSH 部署该 tag 的确切提交。版本必须与 `release/version.json` 一致，使用 `.github/scripts/version-contract.mjs --write` 同步版本副本。部署串行执行，不打断正在迁移的任务。重新部署可在 GitHub 重跑该 tag 的 CI。
+桌面端：Windows x64 与 macOS 构建安装包，同时验证桌面质量与打包启动；全部成功并检查更新清单后才公开 GitHub Release。单独手动运行 Desktop package 仍可取得测试安装包。当前未配置签名证书，macOS 自动安装更新仍需签名；Windows 覆盖安装分支仍未在无头 runner 上验证。
+
+服务端：现有 CI 的测试全部成功后调用 Server deploy，构建 Linux amd64 的 API、Worker 和 TTS 镜像推送 GHCR，以 digest 记录镜像，再通过 SSH 部署该 tag 的确切提交。版本必须与 `release/version.json` 一致，使用 `.github/scripts/version-contract.mjs --write` 同步版本副本。部署串行执行，不打断正在迁移的任务。重新部署可在 GitHub 重跑该 tag 的 CI。
 
 ## 私有配置
 

@@ -2,11 +2,11 @@
 
 中文 · [English](../en/operations.md)
 
-这篇讲什么：拾星笔记现在怎么被跑起来与发出去——三份 compose 文件各自的职责、生产环境必填与可选的变量分组、两条版本线与桌面端的打包发布链、Alpha 环境的巡检与备份恢复、监控与告警的真实口径，以及面向运维者的安全边界与仍然存在的缺口。所有端口、变量名、任务名、卷名和告警名都从 `docker-compose*.yml`、`Makefile`、`scripts/alpha-env-setup.sh`、`infra/**`、`.github/workflows/**` 与 `apps/desktop-client/electron-builder.yml` 当场核对；叠加后的项目名与卷名用 `docker compose config` 验证过。这份文档只写名字与用途，不写任何凭据值。
+这篇讲什么：拾星笔记现在怎么被跑起来与发出去——三份 compose 文件各自的职责、生产环境必填与可选的变量分组、统一版本与桌面端的打包发布链、Alpha 环境的巡检与备份恢复、监控与告警的真实口径，以及面向运维者的安全边界与仍然存在的缺口。所有端口、变量名、任务名、卷名和告警名都从 `docker-compose*.yml`、`Makefile`、`scripts/alpha-env-setup.sh`、`infra/**`、`.github/workflows/**` 与 `apps/desktop-client/electron-builder.yml` 当场核对；叠加后的项目名与卷名用 `docker compose config` 验证过。这份文档只写名字与用途，不写任何凭据值。
 
 - [三份 Compose 文件](#三份-compose-文件)
 - [环境变量分组](#环境变量分组)
-- [两条版本线与打包发布](#两条版本线与打包发布)
+- [统一版本与打包发布](#统一版本与打包发布)
 - [Alpha 环境](#alpha-环境)
 - [可观测性](#可观测性)
 - [备份与恢复](#备份与恢复)
@@ -107,18 +107,11 @@
 | `COMPANION_THOUGHTS_V1` | `true` | `true` | 仅 worker |
 | `CARD_GENERATION_V3_PROVIDER` | `deterministic` | `deterministic` | 仅 worker |
 
-## 两条版本线与打包发布
+## 统一版本与打包发布
 
-这个仓库有两条互不干扰的版本线。
+服务端与桌面客户端共用 `release/version.json`（当前 `1.0.0`）和 `v<版本>` tag。修改此文件后运行 `node .github/scripts/version-contract.mjs --write`，同步 API、Worker、Shared、Desktop 四个包及 lockfile；`--check` 检查一致性。桌面打包也通过 `desktop-version.mjs` 调用同一契约。推送 `v1.0.0` 同时触发服务端 CI 与部署、桌面质量检查与安装包发布，版本不一致时停止。
 
-| 版本线 | 唯一来源 | 同步脚本 | tag 形态 | 契约测试 |
-| --- | --- | --- | --- | --- |
-| 服务端 | `release/version.json`（当前 `0.5.0`） | `.github/scripts/version-contract.mjs --check` / `--write`，覆盖 `apps/api`、`workers/ai-worker`、`packages/shared` 三个包根 | `v*`，形如 `v0.5.0`（`X.Y.Z`，预发布用 `v0.5.0-rc.1`） | `version-contract.test.mjs` |
-| 桌面端 | `release/desktop-version.json`（当前 `0.1.0`） | `.github/scripts/desktop-version.mjs --check` / `--set` / `--tag`，同步到 `apps/desktop-client/package.json` 与其 lockfile | `desktop-v*` | `desktop-version.mjs` 的自身校验 + `desktop-release.yml` 的 resolve job |
-
-分开的理由写在脚本头里：两端同仓但节奏不同，硬合成一条会让每发一个服务端补丁都逼桌面端跳版本；都用 `v*` 又会让服务端契约把对方的 tag 当版本冲突。`desktop-v1.0.0` 既不匹配 `version-contract.mjs` 的 tag 正则（解析为 `null`），也不匹配 `main-ci.yml` 的 `push.tags: ["v*"]`，所以两条线物理上不相交。
-
-`make` 侧的相关目标：`make version-check` 只查服务端版本一致性；`make release-manifest` 生成 `release-manifest-generate.mjs` 的机器可读清单；`make release-check` 依次跑 `verify-release-inputs.mjs` → `make verify` → `coverage-gate.mjs` → `release-manifest-generate.mjs` → `release-manifest-contract.mjs`。在精确的 release tag 上，最后一步除非用 `RELEASE_MANIFEST_PATH` 指到一份完整的 CI/release JSON，否则 fail-closed。
+`make` 侧的相关目标：`make version-check` 检查服务端与客户端版本一致性；`make release-manifest` 生成 `release-manifest-generate.mjs` 的机器可读清单；`make release-check` 依次跑 `verify-release-inputs.mjs` → `make verify` → `coverage-gate.mjs` → `release-manifest-generate.mjs` → `release-manifest-contract.mjs`。在精确的 release tag 上，最后一步除非用 `RELEASE_MANIFEST_PATH` 指到一份完整的 CI/release JSON，否则 fail-closed。
 
 electron-builder 的配置在 `apps/desktop-client/electron-builder.yml`，目标是：
 
@@ -135,7 +128,7 @@ electron-builder 的配置在 `apps/desktop-client/electron-builder.yml`，目�
 - **更新源是 GitHub Releases，不是本项目 API**。`publish: provider github / owner asklins223 / repo Astella`；`apps/desktop-client/src/main/desktop-update.ts` 里重复了同一组 owner/repo 常量用于拼"去下载页"的链接——**改仓库地址时两处要一起改**。检查走 `api.github.com`，下载走 GitHub CDN，`apps/api` 完全不在这条链路上，因此更新带宽不落在自家服务器上，也不会因为自家 API 挂了而更新不了。
 - **没有配置代码签名**。仓库里没有 Windows 证书与 Apple 证书 / notarization 凭据，产物是未签名的：macOS 首次打开要右键 → 打开，Windows 会弹 SmartScreen，且 **macOS 的自动更新安装会被 Squirrel.Mac 拒**（它校验新旧 `.app` 的签名是否同一开发者，未签名即下载成功、安装失败）。yml 里刻意不设 `identity: null` / `notarize: false`（那两条等于主动关掉签名与公证），并补了 `hardenedRuntime: true`（公证的硬性前提）——将来配好 secret 就自动签名 + 自动公证，无需改配置。`desktop-package.yml` 里设 `CSC_IDENTITY_AUTO_DISCOVERY=false` 只为省掉翻证书库的功夫。
 
-发布流水线 `.github/workflows/desktop-release.yml` 只在 `push` tag `desktop-v*` 上发 Release，`resolve` job 先把 tag 版本与 `release/desktop-version.json` 对比（不一致直接停，否则会产出"标题写 A、包是 B"的 Release），再由 `build` job 以 `workflow_call` 复用 `desktop-package.yml` 并行打两端，最后 `release` job（`if: from_tag == 'true'`）：下载 `desktop-*` 工件 → 断言两端版本一致且四个文件非空 → **必须存在 `latest.yml`**（缺了直接失败，Windows 拿不到版本信息）、`latest-mac.yml` 缺失只 `::warning::` → 用 `softprops/action-gh-release@v2` 以 `draft: true` 建 Release 并上传全部资产 → 再用 `gh api --method PATCH … -F draft=false` 翻成公开。先 Draft 后公开是为了更新器：边传边公开可能让它读到一个只传了一半的 `latest.yml` 或半成品安装包。手动 `workflow_dispatch` 触发的那次**不发** Release。
+发布流水线 `.github/workflows/desktop-release.yml` 只在 `push` tag `v*` 上发 Release，`resolve` job 先把 tag 版本与 `release/version.json` 对比（不一致直接停，否则会产出"标题写 A、包是 B"的 Release），再由 `build` job 以 `workflow_call` 复用 `desktop-package.yml` 并行打两端，最后 `release` job（`if: from_tag == 'true'`）：下载 `desktop-*` 工件 → 断言两端版本一致且四个文件非空 → **必须存在 `latest.yml`**（缺了直接失败，Windows 拿不到版本信息）、**必须存在 `latest-mac.yml`**（缺失直接失败） → 用 `softprops/action-gh-release@v2` 以 `draft: true` 建 Release 并上传全部资产 → 再用 `gh api --method PATCH … -F draft=false` 翻成公开。先 Draft 后公开是为了更新器：边传边公开可能让它读到一个只传了一半的 `latest.yml` 或半成品安装包。手动 `workflow_dispatch` 触发的那次**不发** Release。
 
 ## Alpha 环境
 

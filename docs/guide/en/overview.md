@@ -99,7 +99,7 @@ AI consent is attached to the **account**, fully separate from workspaces: once 
 ## Current state and boundaries
 
 - **The project is not released.** The version numbers below are records inside the repo, not published artifacts.
-- **Two version lines.** The server stack is `0.5.0` (`release/version.json`); the desktop client is `0.1.0` (`release/desktop-version.json`). They advance separately — do not read either as "the product version".
+- **Unified version.** The server and desktop share `release/version.json` and the `v1.0.0` tag; one push triggers both release chains.
 - **Licensing is not yet declared.** There is no `LICENSE` file at the repo root. [PRODUCT.md](../../../PRODUCT.md) states MIT as a brand commitment, but until that file lands, treat the project as undeclared rather than licensed. Third-party components, models and assets are inventoried in [THIRD_PARTY_NOTICES.md](../../../THIRD_PARTY_NOTICES.md), including redistribution limits for the companion character model.
 - **CI no longer builds or scans production images** (since 2026-10-06 CI runs the same tests as the local `make verify` baseline). Verifying a production image is a manual local step.
 - **Study room artwork is still marked `reviewOnly / IN_REVIEW`** and must not be presented as production assets before licensing and release acceptance are done.

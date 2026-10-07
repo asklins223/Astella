@@ -184,7 +184,7 @@ describe("更新状态机", () => {
     expect(state.phase).toBe("available");
     expect(state.availableVersion).toBe("0.2.0");
     // macOS 未签名那条提示里的「下载页」靠它；缺了这个链接点了没反应。
-    expect(state.releaseUrl).toBe("https://github.com/asklins223/Astella/releases/tag/desktop-v0.2.0");
+    expect(state.releaseUrl).toBe("https://github.com/asklins223/Astella/releases/tag/v0.2.0");
     expect(state.installBlockedReason).toBe("macosUnsigned");
   });
 

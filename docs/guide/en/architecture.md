@@ -13,7 +13,7 @@ What this covers: which processes make up this codebase today, every hop a reque
 - [Where the AI work actually runs](#where-the-ai-work-actually-runs)
 - [The desktop client boundary](#the-desktop-client-boundary)
 - [Authentication and authorization topology](#authentication-and-authorization-topology)
-- [Two version lines](#two-version-lines)
+- [Unified version](#unified-version)
 - [Decisions and what they cost](#decisions-and-what-they-cost)
 - [Changing X, look at Y](#changing-x-look-at-y)
 
@@ -199,14 +199,9 @@ Three identities that never mix.
 
 **AI external-send consent (account level).** `modules/identity/ai-consent-gate.ts`: the test is `consentAt && consentVersion` on `user_ai_settings`. `requireAiConsent` runs as a preHandler before synthesis or transcription, returning 403 + `ai_consent_required`; text outbound is governed by `lib/governance.ts` in worker. Consent belongs to the account, not the workspace — signed once means signed everywhere, unsigned blocks everywhere. On job failure `classifyJobFailureReason` (`modules/job/service.ts:88`) maps the persisted privacy-safe code to `ai_consent_required` so the UI can say "go sign the consent" instead of "it failed".
 
-## Two version lines
+## Unified version
 
-| Line | Single hand-edited source | Synced into | Enforced by |
-| --- | --- | --- | --- |
-| Server stack `0.5.0` | `release/version.json` | `apps/api`, `workers/ai-worker`, `packages/shared`: `package.json` and `package-lock.json` (top level and `packages[""]`), plus **exactly one** version marker in README | `make version-check` → `node .github/scripts/version-contract.mjs --check` (`--write` to sync); it is a prerequisite of `make verify` |
-| Desktop `0.1.0` | `release/desktop-version.json` | `apps/desktop-client/package.json` and its lockfile | `.github/scripts/desktop-version.mjs --check / --set`, run by `desktop-package.yml` before packaging |
-
-Keeping them apart is intentional: the tag namespaces are disjoint (server `v0.5.0`, desktop `desktop-v1.0.0`), the regex in `version-contract.mjs` returns `null` for the prefixed tag, so a desktop release never drags the backend CI along and vice versa. The cost is that you version twice, and that `packages/agent-core`, `agent-host`, `card-generation` (each 0.1.0) and `ai-quality` (0.5.0) are **outside** either contract's coverage.
+The single manually maintained source for server and desktop is `release/version.json`, currently `1.0.0`. `version-contract.mjs --write` synchronizes package metadata and lockfiles for `apps/api`, `workers/ai-worker`, `packages/shared` and `apps/desktop-client`, plus the README version marker; `make version-check` verifies consistency. Desktop packaging uses the same contract. The unified `v1.0.0` tag triggers server tests and deployment alongside desktop tests and installer publication. Internal agent-core, agent-host, card-generation and ai-quality packages retain their internal versions.
 
 ## Decisions and what they cost
 
@@ -229,7 +224,7 @@ Keeping them apart is intentional: the tag namespaces are disjoint (server `v0.5
 | Answer assessment and review scheduling | `apps/api/src/modules/learning-runs/processing/run-processing-tick.ts` and `run-processing-assessment.ts`, `apps/api/src/server.ts:523-551` (wiring and cadence) |
 | Switching a model platform or capability mapping | `config/ai-platforms.json`, and the same key list must be passed through **both** api and worker in `docker-compose.dev.yml` (2026-09-17: `OPENCODE_GO_API_KEY` was missing there and card generation failed closed), `workers/ai-worker/src/lib/providers/` |
 | Health-check semantics | `apps/api/src/server.ts:125` (`/health`) and `:244` (`/ready`), `workers/ai-worker/src/lib/metrics.ts:348`, the two `healthcheck` blocks in `docker-compose.dev.yml` |
-| Bumping a version | `release/version.json` or `release/desktop-version.json`, then `node .github/scripts/version-contract.mjs --write` / `node .github/scripts/desktop-version.mjs --set <ver>` |
+| Bumping a version | `release/version.json`, then `node .github/scripts/version-contract.mjs --write` / `node .github/scripts/desktop-version.mjs --set <ver>` |
 
 ## Related chapters
 

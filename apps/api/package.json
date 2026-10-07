@@ -1,6 +1,6 @@
 {
   "name": "@astella/api",
-  "version": "0.5.1",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "src/server.ts",

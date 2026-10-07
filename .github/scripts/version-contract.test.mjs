@@ -28,7 +28,7 @@ const temporaryRoots = [];
  * 契约被破坏，只是"期望值没人跟着改"。所以下面改成按根数量推导，并把"应当覆盖哪些根"
  * 单独钉住。
  */
-const REQUIRED_PACKAGE_ROOTS = ["apps/api", "workers/ai-worker", "packages/shared"];
+const REQUIRED_PACKAGE_ROOTS = ["apps/api", "workers/ai-worker", "packages/shared", "apps/desktop-client"];
 
 afterEach(() => {
   while (temporaryRoots.length > 0) {
@@ -69,15 +69,15 @@ function createFixture(copyVersion = "0.4.0") {
 describe("version contract", () => {
   it("accepts the canonical repository copies", () => {
     const version = loadVersionSource(REPOSITORY_ROOT);
-    assert.equal(version, "0.5.0");
+    assert.equal(version, "1.0.0");
     assert.deepEqual(inspectVersionCopies(REPOSITORY_ROOT, version), []);
   });
 
   /**
    * 这一条是"哪些包必须被版本契约覆盖"的**显式契约**。
    *
-   * 包被删除或新增时，这里必须有人做一次判断：新包要不要纳入？（`apps/desktop-client`
-   * 就刻意不在内——它有自己的版本线 0.1.0。）漏掉这一步时，本测试会直接指出预期与实际
+   * 服务端与桌面客户端共用产品版本；新增或删除包时需要确认是否纳入。
+   * 漏掉这一步时，本测试会直接指出预期与实际
    * 的差集，而不是让 `make verify` 以一个看不懂的计数错误红着。
    */
   it("covers exactly the packages that share the release version", () => {

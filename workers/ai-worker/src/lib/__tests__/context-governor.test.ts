@@ -117,6 +117,17 @@ test("超触发线但未超硬上限时按有效上下文继续发送（触发�
   assert.ok(receipts[0]!.inputTokens > 0);
 });
 
+test("预算闸拒绝请求时不预扣模型调用名额", async () => {
+  const {provider,sent}=makeProvider(capability({contextWindowTokens:20000,maxOutputTokens:1000,
+    maxInputTokens:19000,reservedOutputTokens:1000}));
+  let reserved=0;
+  const governed=createGovernedProvider(provider,{consentOk:true,policy},workspaceId,
+    {userId:"00000000-0000-0000-0000-000000000001",operation:"test",reserveCall:async()=>{reserved++;}});
+  await assert.rejects(governed.chatCompletion([{role:"user",content:" q".repeat(20000)}],{maxTokens:1000}),AIContextOverflowError);
+  assert.equal(reserved,0);
+  assert.equal(sent.chat,0);
+});
+
 test("压缩端口可用且超触发线时要求先做一次有界压缩，而不是判失败", async () => {
   const outcomes: string[] = [];
   const { provider, sent } = makeProvider(capability({
@@ -129,7 +140,7 @@ test("压缩端口可用且超触发线时要求先做一次有界压缩，而�
   // 压缩要求由工作上下文所有者接手：捕获 → 有界压缩 → 重新装配 → 重发。
   // 本层不代劳，也不把它混进「装不下」的终态。
   await assert.rejects(
-    () => governed.chatCompletion([{ role: "user", content: "问题".repeat(2_200) }], { maxTokens: 1_000 }),
+    () => governed.chatCompletion([{ role: "user", content: "问题".repeat(7_000) }], { maxTokens: 1_000 }),
     AIContextCompactionRequiredError,
   );
   assert.deepEqual(outcomes, ["compact"]);

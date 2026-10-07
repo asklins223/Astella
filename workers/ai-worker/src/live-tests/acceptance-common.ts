@@ -22,7 +22,7 @@ export const { resolveSystemPlatform } = await import("@astella/shared/platform-
 const obj = (v:unknown):Record<string,unknown> => v && typeof v==="object" && !Array.isArray(v) ? v as Record<string,unknown> : {};
 const num = (v:unknown):number|null => typeof v==="number" && Number.isFinite(v) ? v : null;
 export type WireReceipt = {model:unknown;effort:unknown;enableThinking:unknown;outputLimit:unknown;
-  inputTokens:number|null;outputTokens:number|null;reasoningTokens:number|null;elapsedMs:number;transport:string};
+  inputTokens:number|null;outputTokens:number|null;reasoningTokens:number|null;elapsedMs:number;transport:string;errorKind?:string};
 
 export function platform(capability:Capability):ResolvedPlatform {
   const resolved=resolveSystemPlatform(capability);
@@ -43,6 +43,11 @@ export function observedProvider(p:ResolvedPlatform, sessionId:string, receipts:
     const receipt=capture(body,"json"), started=Date.now();
     try {
       const response=await postJsonToPublicEndpoint(url,headers,body,signal);
+      if(response.status>=400){
+        const error=obj(obj(response.body).error);
+        const message=String(error.message??obj(response.body).message??"").toLowerCase();
+        receipt.errorKind=/context|input.*token|token.*limit/.test(message)?"context_limit":/body|payload|entity|size/.test(message)?"request_size":"other";
+      }
       const usage=obj(obj(response.body).usage);
       receipt.inputTokens=num(usage.input_tokens??usage.prompt_tokens);
       receipt.outputTokens=num(usage.output_tokens??usage.completion_tokens);
