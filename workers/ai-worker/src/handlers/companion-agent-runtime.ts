@@ -41,7 +41,7 @@ import { COMPANION_TOOL_INTENT_TIMEOUT_MS, interpretCompanionTurn } from "./comp
 import { companionAttentionObjects } from "./companion-attention.ts";
 import { companionTurnThinking } from "./companion-turn-thinking.ts";
 import { companionResponseStrategy, shouldReviewCompanionExplanation, companionExplanationReviewEnabled } from "./companion-response-strategy.ts";
-import { buildCompanionKnowledgeReview, parseCompanionKnowledgeReview } from "./companion-knowledge-review.ts";
+import { reviewCompanionExplanation } from "./companion-explanation-review.ts";
 import { buildCasualFirstStepRequest, shouldKeepSpeculativeFirstStep } from "./companion-speculative-first-step.ts";
 import {
   findDuplicateSegment,
@@ -59,7 +59,7 @@ import {
   resolveCompanionAgentBudget,
   resolveProviderCallTimeout,
 } from "../lib/handler-timeout-config.ts";
-import { AgentOutputError, CompanionAgentBudgetExceededError, CompanionKnowledgeReviewError } from "../lib/non-retryable-errors.ts";
+import { AgentOutputError, CompanionAgentBudgetExceededError } from "../lib/non-retryable-errors.ts";
 import { ProviderRequestError } from "../lib/provider-request-error.ts";
 import { currentWorkerWorkspaceTransaction, withWorkerWorkspaceTransaction } from "../db.ts";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
@@ -878,46 +878,14 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     // the same review path; a repaired draft cannot bypass it.
     if (needsExplanationReview && !stepEmitted && !result.toolCalls?.length
         && result.finishReason !== "length" && result.content?.trim()) {
-      try {
-        const draft = result.content;
-        const revision = buildCompanionKnowledgeReview(stepRequest, draft, {
-          voiceExpressionEnabled: !args.read.groundedTutorContext && args.read.petProfile?.boundaries?.allowVoiceTags !== false,
-        });
-        stepRequest = revision;
-        const reviewTimeout = Math.min(resolveProviderCallTimeout("companion_agent"), deadlineAt - Date.now());
-        if (reviewTimeout <= 0) {
-          throw new CompanionAgentBudgetExceededError("companion explanation review deadline exceeded");
-        }
-        await emitCompanionAssistantStatus({
-          workspaceId: args.ctx.workspaceId, read: args.read, expiresAt: args.expiresAt,
-          status: "thinking", safeLabel: "正在核对解释…",
-        });
-        logger.info({ runId: args.read.runId, stepCount }, "companion explanation review started before publication");
-        const reviewed = await sendWithBoundedCompaction(revision, folded =>
+      result = await reviewCompanionExplanation({
+        event, stepId, request: stepRequest, draft: result.content, stepCount, deadlineAt,
+        updateRequest: revision => { stepRequest = revision; },
+        execute: (revision, reviewTimeout) => sendWithBoundedCompaction(revision, folded =>
           runModelStepTask(stepProvider, folded, args.ctx.signal,
-            signal => stepProvider.executeAgentTurn!(folded, signal), reviewTimeout));
-        // The buffered agent API preserves finishReason, usage and checkpoint
-        // identity. No private JSON ever enters the visible stream decoder.
-        if (reviewed.finishReason === "length") {
-          throw new AgentOutputError("output_truncated", "companion knowledge review reached its output ceiling");
-        }
-        if (reviewed.finishReason !== "stop" || reviewed.toolCalls.length > 0) {
-          throw new CompanionKnowledgeReviewError();
-        }
-        const report = parseCompanionKnowledgeReview(reviewed.content ?? "", draft);
-        result = { ...reviewed, content: report.answer };
-        calls = [];
-        logger.info({ runId: args.read.runId, stepCount, corrections: report.corrections.length,
-          issueKinds: [...new Set(report.corrections.map(c => c.issue))] },
-          "companion explanation review completed; answer awaits publication guards");
-      } catch (error) {
-        const deadlineExceeded = Date.now() >= deadlineAt || args.ctx.signal.aborted;
-        await finishStep(event, stepId, "failed", undefined,
-          deadlineExceeded ? "AGENT_DEADLINE_EXCEEDED"
-            : error instanceof CompanionKnowledgeReviewError ? error.code
-              : error instanceof AgentOutputError ? "AGENT_BUDGET_EXCEEDED" : "PROVIDER_UNAVAILABLE");
-        throw error;
-      }
+            signal => stepProvider.executeAgentTurn!(folded, signal), reviewTimeout)),
+      });
+      calls = [];
     }
     if (result.finishReason === "length") {
       // A capped response is incomplete even if it contains a tool call. Do not
