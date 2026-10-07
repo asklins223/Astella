@@ -4,6 +4,9 @@ services:
     image: ${API_IMAGE:?CI must provide API_IMAGE}
     environment:
       TRUST_PROXY: '1'
+      # The production panel manages only its own Compose project. Keep the
+      # socket private and let the non-root API user access its owning group.
+      ADMIN_DOCKER_SOCKET: /var/run/docker.sock
       STORAGE_MODE: remote
       STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:?Set production object storage endpoint}
       STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-https://cn-nb1.rains3.com}
@@ -11,6 +14,10 @@ services:
       STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY:?Set production storage secret key}
       S3_BUCKET: ${S3_BUCKET:-astella}
       S3_REGION: ${S3_REGION:-us-east-1}
+    group_add:
+      - '${ADMIN_DOCKER_GID:-0}'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
   migrate:
     image: ${API_IMAGE:?CI must provide API_IMAGE}
   seed-owner:

@@ -19,7 +19,7 @@
  *     绝不接受调用方传来的容器 id。
  *   - **留痕**：每个动作写一条服务日志（跨租户操作不进 workspace 审计表）。
  *   - **默认关闭**：`ADMIN_DOCKER_SOCKET` 未设置就整个视图显示"未接入"，
- *     生产 compose 默认不挂 socket（见 .env.example 的说明）。
+ *     基础 compose 不挂 socket；dev 与正式部署 overlay 显式挂载并启用。
  *
  * ## 数据库与对象存储
  *
@@ -36,7 +36,7 @@ import { isStorageConfigured, probeStorageBucket } from "../../lib/object-storag
 
 /* ── Docker over unix socket ───────────────────────────────────────────── */
 
-/** 未设置 = 容器视图未接入（默认如此；dev compose 显式挂载）。 */
+/** 未设置 = 容器视图未接入；dev 与正式部署 overlay 显式挂载。 */
 function socketPath(): string | null {
   const raw = process.env.ADMIN_DOCKER_SOCKET?.trim();
   return raw && raw.length > 0 ? raw : null;

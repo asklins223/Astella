@@ -235,7 +235,7 @@ services:
       ADMIN_PANEL_TOKEN: ${ADMIN_PANEL_TOKEN:-astella-dev-admin-panel-token}
       # 运维面板的「基础设施」页：挂 Docker socket 后可以看容器状态、拉日志、
       # 做 start/stop/restart。socket 等价于宿主机 root 权限，所以只在**本机
-      # 开发栈**默认打开；生产 compose 不设这一项，面板会显示"未接入"。
+      # 开发栈**默认打开；正式部署由 deploy overlay 挂载并启用。
       ADMIN_DOCKER_SOCKET: ${ADMIN_DOCKER_SOCKET:-/var/run/docker.sock}
       # 面板挂载前缀（混淆扫描噪声，不是鉴权——真正的边界是 ADMIN_PANEL_TOKEN）。
       # dev 给一个固定随机串便于本机访问；换掉它即可得到自己的路径。

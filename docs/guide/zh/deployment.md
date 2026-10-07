@@ -22,6 +22,10 @@ GitHub 的 `production` Environment 只允许 `v*` tag，存放 `DEPLOY_HOST`、
 
 首次部署后显式运行 `seed-owner`，使用服务器环境里的 Owner 账号，不自动创建演示账号。运行部署命令和排障日志时不要打印密码或完整环境文件。
 
+正式部署的运维面板已接入 Docker：`docker-compose.deploy.yml` 将宿主机 `/var/run/docker.sock` 挂给 API，并设置 `ADMIN_DOCKER_SOCKET`。将 `stat -c '%g' /var/run/docker.sock` 的结果写为服务器环境文件里的 `ADMIN_DOCKER_GID`（默认 `0`），API 继续以 `node` 用户运行，通过附加组访问 socket。只重建 API 即可应用这项配置，随后重载 Nginx，以更新其记录的 API 容器地址。
+
+面板可读取本 Compose 项目的容器状态、日志、CPU 与内存，并执行启动、停止和重启；所有接口仍需运维令牌，目标服务须属于 API 自己的 Compose 项目。Docker socket 的权限等同于宿主机管理权限，因此只挂给 API，不开放 Docker TCP 端口，也不要公开或复用面板令牌。这里的项目范围检查限制面板操作，并不将原始 socket 变为受限 Docker 凭证。
+
 IP 证书通过 Certbot 的 shortlived profile 签发，约六天有效。服务器安装 `infra/deploy/renew-certificate.sh`，每八小时运行一次并重载 Nginx。通过 `certbot renew --dry-run` 验证续期；80 与 443 必须在云安全组中开放。
 
 正式长期运营应使用仍受支持的 Linux 和 Docker Engine。CentOS 7、Ubuntu 16.04 等旧系统只用于迁移验证；迁移应用不等于更新宿主系统。
