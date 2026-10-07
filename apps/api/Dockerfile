@@ -22,12 +22,19 @@ RUN node -e 'const fs=require("node:fs"); const pkg=JSON.parse(fs.readFileSync("
 RUN npm config set registry https://registry.npmmirror.com \
  && npm ci --install-links --no-audit --no-fund
 
+FROM base AS shared-deps
+COPY packages/shared/package.json packages/shared/package-lock.json ./
+RUN npm config set registry https://registry.npmmirror.com \
+ && npm ci --no-audit --no-fund \
+ && rm -rf node_modules/zod node_modules/drizzle-orm
+
 FROM base AS dev
 ENV NODE_ENV=development \
     NODE_OPTIONS=--preserve-symlinks \
     PATH=/app/node_modules/.bin:$PATH
 COPY --from=deps /app/node_modules /app/node_modules
 COPY packages/shared /app/packages/shared
+COPY --from=shared-deps /app/node_modules /app/packages/shared/node_modules
 COPY packages/agent-core /app/packages/agent-core
 COPY packages/agent-host /app/packages/agent-host
 COPY packages/card-generation /app/packages/card-generation
@@ -49,6 +56,7 @@ FROM base AS prod
 ENV NODE_ENV=production
 COPY --from=deps /app/node_modules /app/node_modules
 COPY packages/shared /app/packages/shared
+COPY --from=shared-deps /app/node_modules /app/packages/shared/node_modules
 COPY packages/agent-core /app/packages/agent-core
 COPY packages/agent-host /app/packages/agent-host
 COPY packages/card-generation /app/packages/card-generation
