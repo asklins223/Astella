@@ -64,9 +64,9 @@ export function CompanionActivityPage(props: { refreshKey: number; onMemory: (id
       setOverrides(current => ({ ...current, [updated.deliveryId]: updated }));
     });
   };
-  return <ActivityPanel section={journey.section ?? { ok: false, message: journey.failure ?? "正在读取旅程" }}
-    learningContextSection={learning.section ?? { ok: false, message: learning.failure ?? "正在读取学习状态" }}
-    deliverySection={activity.section ?? { ok: false, message: activity.failure ?? "正在读取动态" }}
+  return <ActivityPanel section={journey.section ?? { ok: false, message: journey.failure ?? "正在加载旅程" }}
+    learningContextSection={learning.section ?? { ok: false, message: learning.failure ?? "正在加载学习状态" }}
+    deliverySection={activity.section ?? { ok: false, message: activity.failure ?? "正在加载动态" }}
     deliveries={items} journeyLoading={journey.loading && !journey.section} learningLoading={learning.loading && !learning.section} deliveryLoading={activity.loading && !activity.section}
     busy={busy} error={error} onStart={start} onAction={act} onPresent={present} onDelivery={deliver}
     onResumeLearning={id => { const room = useRoomStore.getState(); room.setActiveRunId(id); room.invoke("validate"); }}

@@ -6,6 +6,7 @@ import { useRoomStore } from "../../../app/room-store";
 import { useCompanionNotifications } from "../companion-notifications";
 import { SETTINGS_ATTENTION_VOICE_MODEL } from "../open-voice-model-settings";
 import { isCompanionMicrophoneActive } from "../companion-notification-voice";
+import { COMPANION_VAD_TUNING } from "../companion-voice-vad";
 
 /**
  * 录音器在这里是一台**手摇的**：测试自己推帧、推电平，VAD 与分段才有确定的时间轴。
@@ -18,6 +19,7 @@ const recorder = vi.hoisted(() => ({
     onFrame?: (chunk: Float32Array, inputSampleRate: number) => void;
     onLevel?: (level: number) => void;
     onLimit?: () => void;
+    onError?: () => void;
   },
 }));
 const transcribe = vi.hoisted(() => vi.fn());
@@ -66,6 +68,7 @@ function tick(level: number) {
   });
 }
 const say = (level: number, ticks: number) => { for (let index = 0; index < ticks; index += 1) tick(level); };
+const endSilence = () => say(0.001, Math.ceil(COMPANION_VAD_TUNING.turnEndSilenceMs / 50));
 /**
  * 冲掉排队中的识别与收尾。
  *
@@ -160,7 +163,7 @@ describe("语音对话会话", () => {
     await flush();
 
     say(0.3, 11);
-    say(0.001, 17); // 950ms 切段，1350ms 收尾
+    endSilence();
     await flush();
 
     expect(onTurn).toHaveBeenCalledWith("今天学到这里");
@@ -179,7 +182,7 @@ describe("语音对话会话", () => {
     await flush();
 
     say(0.3, 11);
-    say(0.001, 17);
+    endSilence();
     // 收尾那一刻：相位先进 closing（界面要写「在想这一句」，不能还写着"我在听"）。
     expect(result.current.phase).toBe("closing");
     expect(onTurn).not.toHaveBeenCalled();
@@ -213,7 +216,7 @@ describe("语音对话会话", () => {
     expect(pending).toHaveLength(1);
 
     say(0.3, 11);
-    say(0.001, 17); // 切第二段，随后判定这一轮说完
+    endSilence();
     await flush();
     // 队列被第一段占着：第二段还在排队，这一轮的收尾也只能等。
     expect(pending).toHaveLength(1);
@@ -232,8 +235,7 @@ describe("语音对话会话", () => {
     expect(result.current.phase).toBe("open");
   });
 
-  /** 退出对话按"我说完了"理解：已经说出口的那一句仍然算数。 */
-  it("再点一次麦克风是结束对话，这一句照样发出去", async () => {
+  it("结束立即关麦，不会把未发送的半句偷偷发出去", async () => {
     transcribe.mockResolvedValue({ route: "local", text: "先这样" });
     const onTurn = vi.fn();
     const { result } = renderHook(() => useCompanionVoiceInput({ onTurn }));
@@ -246,7 +248,7 @@ describe("语音对话会话", () => {
     act(() => { result.current.toggle(); });
     await flush();
 
-    expect(onTurn).toHaveBeenCalledWith("先这样");
+    expect(onTurn).not.toHaveBeenCalled();
     expect(result.current.phase).toBe("idle");
     expect(isCompanionMicrophoneActive()).toBe(false);
   });
@@ -271,13 +273,7 @@ describe("语音对话会话", () => {
     expect(onTurn).not.toHaveBeenCalled();
   });
 
-  /**
-   * 她正在念回复，我开口打断。
-   *
-   * 说话期间麦克风**不攒音频**（回声消除压不干净她自己的声音，攒进去就会把她自己的
-   * 话当成我说的），但电平一直在看：连续越过一个明显更高的门槛才算真插话。
-   */
-  it("她说话时我开口，会让她闭嘴并开始收我说的", async () => {
+  it("回复期间连大音量回声也不自我打断，明确插话后才收新的话", async () => {
     transcribe.mockResolvedValueOnce({ route: "local", text: "打断一下" })
       .mockResolvedValue({ route: "local", text: "" });
     const { result } = renderHook(() => useCompanionVoiceInput({ onTurn: vi.fn() }));
@@ -291,11 +287,15 @@ describe("语音对话会话", () => {
     expect(playback.stops).toBe(0);
     expect(transcribe).not.toHaveBeenCalled();
 
-    say(0.3, 6); // 连续越过插话门槛
+    say(0.3, 30);
+    expect(playback.stops).toBe(0);
+    expect(transcribe).not.toHaveBeenCalled();
+    act(() => { result.current.interrupt(); });
     expect(playback.stops).toBe(1);
     expect(result.current.phase).toBe("open");
 
-    say(0.3, 12); // 攒够一句的人声
+    say(0.001, 6); // 丢弃扬声器尾声
+    say(0.3, 12);
     say(0.001, 9);
     await flush();
     expect(transcribe).toHaveBeenCalled();
@@ -314,6 +314,7 @@ describe("语音对话会话", () => {
     expect(transcribe).not.toHaveBeenCalled();
 
     act(() => { playback.active = false; for (const listener of playback.listeners) listener(); });
+    say(0.001, 6);
     say(0.3, 11);
     say(0.001, 9);
     await flush();
@@ -321,7 +322,7 @@ describe("语音对话会话", () => {
   });
 
   /** 到上限不是"悄悄把麦克风关掉"：气泡停在「我在听」而设备早灭了，是最难解释的坏。 */
-  it("会话到时长上限时收尾这一轮再退出", async () => {
+  it("设备收音被终止时退出，不把未确认的半句话发出去", async () => {
     transcribe.mockResolvedValue({ route: "local", text: "最后一段" });
     const onSessionEnd = vi.fn();
     const onTurn = vi.fn();
@@ -333,7 +334,7 @@ describe("语音对话会话", () => {
     act(() => { recorder.options?.onLimit?.(); });
     await flush();
 
-    expect(onTurn).toHaveBeenCalledWith("最后一段");
+    expect(onTurn).not.toHaveBeenCalled();
     expect(onSessionEnd).toHaveBeenCalled();
     expect(result.current.phase).toBe("idle");
     expect(isCompanionMicrophoneActive()).toBe(false);
@@ -372,18 +373,94 @@ describe("语音对话会话", () => {
     expect(isCompanionMicrophoneActive()).toBe(false);
   });
 
-  /** 起录还在 await 里时连点两下，只该有一个麦克风被占住。 */
-  it("起录没落定之前连点两次，也只开一个麦克风", async () => {
+  it("起录期间再点结束，迟到的授权不会重新开会话", async () => {
     let started!: () => void;
     recorder.start.mockImplementationOnce(() => new Promise<void>(resolve => { started = resolve; }));
     const { result } = renderHook(() => useCompanionVoiceInput({ onTurn: vi.fn() }));
-    await act(async () => { result.current.toggle(); result.current.toggle(); });
-    expect(recorder.start).toHaveBeenCalledOnce();
+    await act(async () => { result.current.toggle(); });
     expect(result.current.phase).toBe("starting");
+    act(() => { result.current.toggle(); });
+    expect(result.current.phase).toBe("idle");
+    expect(isCompanionMicrophoneActive()).toBe(false);
     await act(async () => { started(); });
     await flush();
-    expect(result.current.phase).toBe("open");
-    act(() => { result.current.cancel(); });
     expect(result.current.phase).toBe("idle");
+    expect(recorder.stop).toHaveBeenCalled();
+  });
+
+  it("等待真实发送回执时不会采集回声或再次自动发送，回执后恢复", async () => {
+    let finish!: () => void;
+    const onTurn = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+    transcribe.mockResolvedValue({ route: "local", text: "第一句" });
+    const { result } = renderHook(() => useCompanionVoiceInput({ onTurn }));
+    await act(async () => { result.current.toggle(); });
+    say(0.3, 11); endSilence(); await flush();
+    expect(result.current.activity).toBe("waiting");
+    expect(result.current.lastTurn).toBe("第一句");
+    say(0.3, 30); endSilence(); await flush();
+    expect(onTurn).toHaveBeenCalledOnce();
+    expect(transcribe).toHaveBeenCalledOnce();
+    await act(async () => { finish(); }); await flush();
+    expect(result.current.activity).toBe("listening");
+    say(0.3, 11); endSilence(); await flush();
+    expect(onTurn).toHaveBeenCalledTimes(2);
+  });
+
+  it("暂停关闭硬件并丢弃在途半句，恢复后从新一句开始", async () => {
+    let finish!: (value: { route: "local"; text: string }) => void;
+    transcribe.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }))
+      .mockResolvedValue({ route: "local", text: "恢复后这一句" });
+    const onTurn = vi.fn();
+    const { result } = renderHook(() => useCompanionVoiceInput({ onTurn }));
+    await act(async () => { result.current.toggle(); });
+    say(0.3, 11); say(0.001, 9); await flush();
+    act(() => { result.current.pause(); });
+    expect(result.current.activity).toBe("paused");
+    expect(isCompanionMicrophoneActive()).toBe(false);
+    act(() => { finish({ route: "local", text: "暂停前的迟到结果" }); }); await flush();
+    expect(onTurn).not.toHaveBeenCalled();
+    await act(async () => { result.current.resume(); });
+    expect(result.current.activity).toBe("listening");
+    expect(isCompanionMicrophoneActive()).toBe(true);
+    say(0.3, 11); endSilence(); await flush();
+    expect(onTurn).toHaveBeenCalledWith("恢复后这一句");
+  });
+
+  it("一段识别失败不会把残缺的指令送给伴星", async () => {
+    transcribe.mockResolvedValueOnce({ route: "local", text: "删除" }).mockRejectedValue(new Error("引擎断开"));
+    const onTurn = vi.fn();
+    const { result } = renderHook(() => useCompanionVoiceInput({ onTurn }));
+    await act(async () => { result.current.toggle(); });
+    say(0.3, 11); say(0.001, 9); await flush();
+    say(0.3, 11); endSilence(); await flush();
+    expect(onTurn).not.toHaveBeenCalled();
+    expect(result.current.note).toContain("没听完整");
+    expect(result.current.activity).toBe("listening");
+  });
+
+  it("短词仍可用说好了主动送出，自动发送的杂响门槛不接管手动意图", async () => {
+    transcribe.mockResolvedValue({ route: "local", text: "好的" });
+    const onTurn = vi.fn();
+    const { result } = renderHook(() => useCompanionVoiceInput({ onTurn }));
+    await act(async () => { result.current.toggle(); });
+    say(0.3, 4); say(0.001, 3);
+    act(() => { result.current.sendNow(); }); await flush();
+    expect(onTurn).toHaveBeenCalledWith("好的");
+  });
+  it("手动说好了会发送这一句，结束与卸载都不发迟到结果", async () => {
+    transcribe.mockResolvedValue({ route: "local", text: "短一点的回答" });
+    const onTurn = vi.fn();
+    const { result, unmount } = renderHook(() => useCompanionVoiceInput({ onTurn }));
+    await act(async () => { result.current.toggle(); });
+    say(0.3, 11);
+    act(() => { result.current.sendNow(); }); await flush();
+    expect(onTurn).toHaveBeenCalledWith("短一点的回答");
+    let finish!: (value: { route: "local"; text: string }) => void;
+    transcribe.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    say(0.3, 11); endSilence(); await flush();
+    unmount();
+    act(() => { finish({ route: "local", text: "卸载后的迟到结果" }); }); await flush();
+    expect(onTurn).toHaveBeenCalledOnce();
+    expect(isCompanionMicrophoneActive()).toBe(false);
   });
 });

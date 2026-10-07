@@ -187,6 +187,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   const serveStatic = (filename: string, contentType: string) => async (_request: unknown, reply: {
     type: (value: string) => { send: (body: string | Buffer) => unknown };
   }) => {
+    // Binary assets must stay binary: UTF-8 decoding corrupts the brand PNG.
+    if (!contentType.startsWith("text/") && !contentType.startsWith("image/svg")) {
+      return reply.type(contentType).send(await readFile(join(STATIC_ROOT, filename)));
+    }
     const raw = await readFile(join(STATIC_ROOT, filename), "utf8");
     // 首页里的资源地址与前端请求前缀都由这里注入：面板整体可以搬家，
     // 静态文件不用跟着改。

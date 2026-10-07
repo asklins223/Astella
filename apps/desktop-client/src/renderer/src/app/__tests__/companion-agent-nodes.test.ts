@@ -175,21 +175,31 @@ describe("companion run traces (历史过程留痕)", () => {
  * 而它曾经固定是「在听…」——她明明在查东西。
  */
 describe("companionTurnProcessLine 的过程文案映射", () => {
-  it("话刚收到、什么都没发生过：在听", () => {
-    expect(companionTurnProcessLine([])).toBe("在听…");
+  it("收到文字消息后等待回复，不冒充正在拾音或思考", () => {
+    expect(companionTurnProcessLine([])).toBe("正在准备回复…");
   });
 
-  it("本轮开过思考档：她在想（工具跑完之后仍然成立）", () => {
+  it("工具完成后进入回复阶段，不被之前的思考节点覆盖", () => {
     const nodes = fold([
       { eventType: "assistant.status", payload: { status: "thinking", safeLabel: "她在想…" } },
       tool("succeeded", { name: "companion_read_current_page" }),
     ]);
-    expect(companionTurnProcessLine(nodes)).toBe("她在想…");
+    expect(companionTurnProcessLine(nodes)).toBe("正在组织回复…");
   });
 
-  it("没开思考但跑过工具：说她正在组织，而不是还在听", () => {
+  it("工具运行失败也不宣称已看完材料", () => {
+    expect(companionTurnProcessLine(fold([tool("failed")]))).toBe("正在组织回复…");
+  });
+
+  it("没开思考但跑过工具：进入回复阶段", () => {
     const nodes = fold([tool("succeeded", { name: "companion_read_note" })]);
-    expect(companionTurnProcessLine(nodes)).toBe("她看完了，正在组织怎么说。");
+    expect(companionTurnProcessLine(nodes)).toBe("正在组织回复…");
+  });
+
+  it("当前活动、待确认与结果不明分别保留真实状态", () => {
+    const thinking = fold([{ eventType: "assistant.status", payload: { status: "thinking", safeLabel: "正在思考…" } }]);
+    expect(companionTurnProcessLine(thinking)).toBe("正在思考…");
+    expect(companionTurnProcessLine(fold([tool("waiting_confirmation")]))).toBe("等你确认这项操作");
+    expect(companionTurnProcessLine(fold([tool("outcome_unknown")]))).toBe("操作结果待核对…");
   });
 });
-

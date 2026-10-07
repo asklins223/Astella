@@ -22,7 +22,13 @@
           "contextWindowTokens": 65536,
           "maxOutputTokens": 16384,
           "vision": true,
-          "reasoning": { "levels": ["none", "high"], "default": "high" }
+          "reasoning": {
+            "levels": [
+              "none",
+              "high"
+            ],
+            "default": "high"
+          }
         }
       },
       "options": {
@@ -41,11 +47,18 @@
       "models": {
         "THUDM/GLM-4-9B-0414": {
           "vision": false,
-          "reasoning": { "levels": ["none"], "default": "none" }
+          "reasoning": {
+            "levels": [
+              "none"
+            ],
+            "default": "none"
+          },
+          "contextWindowTokens": 32768,
+          "maxOutputTokens": 8192
         }
       },
       "options": {
-        "disableMaxTokens": true
+        "disableMaxTokens": false
       }
     },
     "tokenrhythm": {
@@ -57,7 +70,13 @@
           "contextWindowTokens": 1000000,
           "maxOutputTokens": 131072,
           "vision": false,
-          "reasoning": { "levels": ["none", "high"], "default": "high" }
+          "reasoning": {
+            "levels": [
+              "none",
+              "high"
+            ],
+            "default": "high"
+          }
         }
       }
     },
@@ -71,7 +90,15 @@
           "maxOutputTokens": 131072,
           "vision": true,
           "reasoning": {
-            "levels": ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+            "levels": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
             "default": "high"
           }
         },
@@ -80,7 +107,13 @@
           "maxOutputTokens": 131072,
           "vision": false,
           "reasoning": {
-            "levels": ["minimal", "low", "medium", "high", "xhigh"],
+            "levels": [
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh"
+            ],
             "default": "high"
           }
         }

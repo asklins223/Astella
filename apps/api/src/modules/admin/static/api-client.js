@@ -2,8 +2,8 @@
    运维面板 · 数据层
    ------------------------------------------------------------
    两部分：
-   1. api() —— Bearer 鉴权的 JSON 请求。令牌只在模块作用域（内存），
-      刷新页面即失效，不落 localStorage。
+   1. api() —— Bearer 鉴权的 JSON 请求。已验证的令牌保存在本标签页的
+      sessionStorage，刷新后重新验证再恢复；锁定/失效时清除，不落 localStorage。
    2. openEventStream() —— 用 fetch + ReadableStream 消费 SSE。
       不用 EventSource：它不能带 Authorization 头，令牌只能塞 query
       string，那会把它留在访问日志与浏览器历史里。
@@ -14,6 +14,7 @@
  * 面板整体挂在 `ADMIN_PANEL_PATH` 下，前端不写死 /admin/api，搬家不用改代码。
  */
 const API_BASE = new URL("./api", import.meta.url).pathname;
+const SESSION_KEY = `astella:admin-session:${API_BASE}`;
 
 let token = null;
 
@@ -23,6 +24,25 @@ export function setToken(value) {
 
 export function hasToken() {
   return Boolean(token);
+}
+
+/** Reading a remembered credential does not authenticate it; startup must verify it. */
+export function readSessionToken() {
+  try { return globalThis.sessionStorage.getItem(SESSION_KEY)?.trim() || null; }
+  catch { return null; /* Storage may be disabled; ordinary sign-in still works. */ }
+}
+
+/** Called only after the deployment accepts the credential. */
+export function rememberSessionToken() {
+  if (!token) return;
+  try { globalThis.sessionStorage.setItem(SESSION_KEY, token); }
+  catch { /* Keep the current in-memory session usable when storage is unavailable. */ }
+}
+
+export function forgetSessionToken() {
+  token = null;
+  try { globalThis.sessionStorage.removeItem(SESSION_KEY); }
+  catch { /* A storage failure must not prevent locking the current page. */ }
 }
 
 export class ApiError extends Error {

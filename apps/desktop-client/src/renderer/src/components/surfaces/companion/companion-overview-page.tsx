@@ -27,7 +27,7 @@ export function CompanionOverviewPage({ refreshKey, onGo, onDiary }: { refreshKe
     chat.setCompanionName(name);
     publishCompanionDisplayName(name);
   }, [resource.data?.persona, chat.setCompanionName]);
-  if (!resource.data) return <SectionState message={resource.failure ? "近况暂时读不到" : "正在翻开陪伴手册…"} detail={resource.failure ?? undefined} onRetry={resource.failure ? () => void resource.reload() : undefined} />;
+  if (!resource.data) return <SectionState loading={resource.loading} message={resource.failure ? "近况暂时读不到" : "正在加载伴星近况…"} detail={resource.failure ?? undefined} onRetry={resource.failure ? () => void resource.reload() : undefined} />;
   const { diary, history, activity } = resource.data;
   return <CompanionCenterOverview companionName={chat.companionName} diary={diary} history={history} activity={activity} onContinue={() => chat.setMode("conversation")} onGo={target => target === "diary" ? onDiary(diary.ok ? diary.value.date : null) : onGo(target)} />;
 }

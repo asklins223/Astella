@@ -10,7 +10,9 @@ import { shouldPlayHomeV2Feedback } from "./home-v2";
 import { setHomeV2VoiceLevel } from "../../app/companion-voice-level";
 import {
   isCompanionMicrophoneActive, isCompanionNotificationSpeechActive,
-  setCompanionNotificationVoiceHost, stopCompanionNotificationSpeech, subscribeCompanionAudioPriority,
+  isCompanionReplyBlockedByMicrophone,
+  setCompanionNotificationVoiceHost, stopCompanionNotificationSpeech, subscribeCompanionAudioPriority, isPausedCompanionGuidanceSpeech,
+  type NotificationVoicePurpose,
 } from "../companion/companion-notification-voice";
 import type { CompanionNotificationAudio } from "../companion/companion-notifications";
 import {
@@ -309,13 +311,14 @@ export function HomeV2AudioController() {
     buffer: AudioBuffer,
     onProgress: (fraction: number) => void,
     allowed: () => boolean = () => true,
+    offset = 0,
   ): Promise<void> => {
     const graph = graphRef.current;
-    if (!graph || !userInitiatedAudibleRef.current || isCompanionMicrophoneActive() || !allowed()) {
+    if (!graph || !userInitiatedAudibleRef.current || isCompanionReplyBlockedByMicrophone() || !allowed()) {
       return;
     }
     await graph.context.resume();
-    if (graphRef.current !== graph || !userInitiatedAudibleRef.current || isCompanionMicrophoneActive() || !allowed()) return;
+    if (graphRef.current !== graph || !userInitiatedAudibleRef.current || isCompanionReplyBlockedByMicrophone() || !allowed()) return;
     stopVoicePlayback();
     return new Promise<void>((resolve) => {
       const source = graph.context.createBufferSource();
@@ -326,7 +329,7 @@ export function HomeV2AudioController() {
       source.buffer = buffer;
       source.connect(analyser).connect(graph.context.destination);
       const samples = new Float32Array(analyser.fftSize);
-      const startedAt = graph.context.currentTime;
+      const startedAt = graph.context.currentTime - offset;
       activePlaybackRef.current = { context: graph.context, startedAt, duration: buffer.duration };
       let previousMeterAt = performance.now();
       const playback: VoicePlayback = { source, analyser, samples, frame: 0, settle: () => resolve() };
@@ -348,7 +351,7 @@ export function HomeV2AudioController() {
         stopVoicePlayback(false);
       };
       voiceRef.current = playback;
-      source.start();
+      if (offset > 0) source.start(0, offset); else source.start();
     });
   }, [stopVoicePlayback]);
 
@@ -492,7 +495,7 @@ export function HomeV2AudioController() {
     return decodeBase64Audio(graph.context, unwrapGatewayResult(response).audioBase64);
   }, [ensureGraph]);
 
-  const synthesizeNotification = useCallback(async (text: string, clip?: CompanionNotificationAudio, purpose: "notification" | "guidance" = "notification"): Promise<AudioBuffer> => {
+  const synthesizeNotification = useCallback(async (text: string, clip?: CompanionNotificationAudio, purpose: NotificationVoicePurpose = "notification"): Promise<AudioBuffer> => {
     const graph = ensureGraph();
     if (clip) {
       const cached = notificationAudioCache.current.get(clip);
@@ -545,7 +548,7 @@ export function HomeV2AudioController() {
   // 全应用因此只有一个 AudioContext 和一条嘴型通道。
   useEffect(() => {
     setCompanionVoiceHost({
-      audible: () => userInitiatedAudibleRef.current && !isCompanionMicrophoneActive(),
+      audible: () => userInitiatedAudibleRef.current && !isCompanionReplyBlockedByMicrophone(),
       synthesize: synthesizeVoice,
       synthesizeSegment: synthesizeVoiceSegment,
       play: playVoiceBuffer,
@@ -560,17 +563,19 @@ export function HomeV2AudioController() {
     setCompanionNotificationVoiceHost({
       available: () => userInitiatedAudibleRef.current && !isCompanionSpeechActive() && !isCompanionMicrophoneActive(),
       synthesize: synthesizeNotification,
-      play: (buffer, allowed) => playVoiceBuffer(buffer, () => undefined, allowed),
+      play: (buffer, allowed, offset) => playVoiceBuffer(buffer, () => undefined, allowed, offset),
+      progress: voiceProgress,
       stop: stopVoicePlayback,
     });
     return () => setCompanionNotificationVoiceHost(null);
-  }, [playVoiceBuffer, stopVoicePlayback, synthesizeNotification]);
+  }, [playVoiceBuffer, stopVoicePlayback, synthesizeNotification, voiceProgress]);
 
   useEffect(() => subscribeCompanionAudioPriority(() => {
     if (!isCompanionMicrophoneActive()) return;
     // Recording also invalidates a touch/cue request that has not finished decoding.
     voiceRequestGenerationRef.current++;
-    stopVoicePlayback();
+    // 会话开麦可以保留正在念的回复，但手边念想等背景声音必须让路。
+    if (isCompanionReplyBlockedByMicrophone() || !isCompanionSpeechActive()) stopVoicePlayback();
   }), [stopVoicePlayback]);
 
   /**
@@ -585,7 +590,7 @@ export function HomeV2AudioController() {
     if (!graph) return;
     if (!userInitiatedAudible) {
       voiceRequestGenerationRef.current += 1;
-      stopCompanionNotificationSpeech();
+      if (useRoomStore.getState().windowState === "visible" || !isPausedCompanionGuidanceSpeech()) stopCompanionNotificationSpeech();
       stopVoicePlayback();
       void graph.context.suspend().catch(() => undefined);
       return;
@@ -632,7 +637,8 @@ export function HomeV2AudioController() {
       if (!speakApi) return;
       void speakApi.call(window.astella.companion.voice, {
         meta: createRequestMeta(workspaceEpochRef.current ?? undefined),
-        request: { version: 1, text },
+        // thought：这一句会留在本机，手记里回读同一句时不再重新合成。
+        request: { version: 1, text, purpose: "thought" },
       })
         .then(async (response) => {
           if (requestGeneration !== voiceRequestGenerationRef.current) return;

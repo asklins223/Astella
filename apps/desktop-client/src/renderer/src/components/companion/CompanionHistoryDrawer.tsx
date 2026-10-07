@@ -174,7 +174,7 @@ export function CompanionHistoryDrawer({
 
   // 记录视图全量池的三态：加载中 / 失败可重试 / 未就绪。杜绝「null 永远转圈」。
   const poolStateBlock = allLoading && allMessages == null
-    ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />正在载入全部记录…</p>
+    ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />正在加载完整对话记录…</p>
     : allError
       ? (
         <p className="companion-history__system">
@@ -411,8 +411,8 @@ export function CompanionHistoryDrawer({
             </div>)}
           </section> : !recordOpen ? (
             <>
-              {chat.phase === "loading" ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />正在读取对话…</p> : null}
-              {chat.historyLoadingOlder ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />加载更早的消息…</p> : null}
+              {chat.phase === "loading" ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />正在加载对话记录…</p> : null}
+              {chat.historyLoadingOlder ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />正在加载更早的对话…</p> : null}
               {chat.historyOlderError ? <p className="companion-history__system" role="status">{chat.historyOlderError}<button type="button" className="companion-record__retry" onClick={() => { prevScrollHeightRef.current = listRef.current?.scrollHeight ?? null; void chat.loadOlderMessages(); }}>重试加载</button></p> : null}
               {!chat.messages.length && chat.phase !== "loading" ? <div className="companion-journal__empty"><MessageCircle size={38} aria-hidden="true" /><strong>从一句话开始</strong><p>想说的、想问的，都可以写在下面。</p></div> : null}
               {chat.messages.map((message, index) => {
@@ -441,7 +441,7 @@ export function CompanionHistoryDrawer({
                 if (!draft.text.trim() && !choices.length) return null;
                 return (
                   <article className="companion-record__turn" data-role="assistant" data-live="true">
-                    <header><span className="companion-record__author"><i className="companion-record__avatar" aria-hidden="true"><Sparkles size={15} /></i><strong>{chat.companionName}</strong></span><time>正在说…</time></header>
+                    <header><span className="companion-record__author"><i className="companion-record__avatar" aria-hidden="true"><Sparkles size={15} /></i><strong>{chat.companionName}</strong></span><time>正在回复…</time></header>
                     <div className="companion-record__body">{renderCompanionMarkdown(smoothedDraftText)}</div>
                     {choices.length ? <div className="companion-record__decisions">{choices.map(id => <CompanionProposalChoice key={id} proposalId={id}
                       state={chat.proposalStates[id]} context="history"
@@ -460,12 +460,12 @@ export function CompanionHistoryDrawer({
                   </article>
                 );
               })()}
-              {chat.phase === "sending" && !chat.draft?.text.trim() ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />{chat.companionName} 正在回话…</p> : null}
+              {chat.phase === "sending" && !chat.draft?.text.trim() ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />{chat.companionName} 正在回复…</p> : null}
             </>
           ) : (
             /* ── 聊天记录视图：只负责「找」。选中搜索命中或日期后回到上面的对话时间线定位 ── */
             <>
-              {chat.phase === "loading" ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />正在读取对话…</p> : null}
+              {chat.phase === "loading" ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />正在加载对话记录…</p> : null}
               {(() => {
                 const keyword = searchInput.trim();
                 if (!keyword) {

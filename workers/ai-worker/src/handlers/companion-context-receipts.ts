@@ -72,7 +72,12 @@ export function createCompanionContextReceipts(): CompanionContextReceipts {
     latestPressure: () => pressure,
     pressureGate: {
       compactionAvailable: () => compactionAttemptAvailable,
-      onDecision: (receipt) => { pressure = toContextPressureReceipt(receipt); },
+      onDecision: (receipt) => {
+        // Classification runs concurrently with speculative generation. Its
+        // small JSON budget must not replace the answer request's pressure.
+        if (receipt.operation === "companion_agent:chat_completion") return;
+        pressure = toContextPressureReceipt(receipt);
+      },
     },
     recordAssembly(receipts) {
       assembly = receipts;

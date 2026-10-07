@@ -33,7 +33,7 @@ function dialogueRoleLabel(role: CompanionHistoryItemV1["role"]): string {
 }
 
 function dialogueResultLine(props: DialoguePanelProps): string {
-  const line = props.searching ? (props.appliedQuery ?? props.query).trim() ? "正在搜索对话" : "正在读取对话"
+  const line = props.searching ? (props.appliedQuery ?? props.query).trim() ? "正在搜索对话" : "正在加载对话"
     : (props.appliedQuery ?? props.query).trim() ? `找到 ${props.items.length} 条对话` : "";
   return line && props.appliedQuery ? `${line} · “${props.appliedQuery}”` : line;
 
@@ -75,7 +75,7 @@ export function DialoguePanel(props: DialoguePanelProps) {
   const dialogueReadableView = useMemo<PageReadableV1 | null>(() => {
     // 这一格只有一行清单和几句状态字，**没有本地二次筛选**：`props.items` 就是
     // 服务端按关键词回给这一屏的那一批，屏上露出的也就是它（与记忆那一格不同）。
-    if (props.initialLoading) return { pageId: "companion", title: HUD_PAGES.companion.title, statusLine: "正在读取对话" };
+    if (props.initialLoading) return { pageId: "companion", title: HUD_PAGES.companion.title, statusLine: "正在加载对话" };
     if (!props.section.ok) {
       return {
         pageId: "companion",
@@ -106,8 +106,8 @@ export function DialoguePanel(props: DialoguePanelProps) {
     <CenterFeedback error={props.error} />
     {dialogueResultLine(props) ? <p className="cc-result" aria-live="polite">{dialogueResultLine(props)}</p> : null}
     <div ref={threadRef} className="cc-thread" aria-label="连续对话记录" onScroll={event => { const element = event.currentTarget; nearEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight < 64; }}>
-      {props.initialLoading ? <SectionState message="正在读取对话" /> : !props.section.ok ? <SectionState message={DIALOGUE_UNAVAILABLE} detail={props.section.message} onRetry={props.onRetry} /> : <>
-        {props.cursor ? <button type="button" className="cc-thread__earlier cc-link" disabled={props.loadingMore} onClick={props.onLoadMore}>{props.loadingMore ? "正在读取更早记录…" : "加载更早记录"}</button> : null}
+      {props.initialLoading ? <SectionState loading message="正在加载对话" /> : !props.section.ok ? <SectionState message={DIALOGUE_UNAVAILABLE} detail={props.section.message} onRetry={props.onRetry} /> : <>
+        {props.cursor ? <button type="button" className="cc-thread__earlier cc-link" disabled={props.loadingMore} onClick={props.onLoadMore}>{props.loadingMore ? "正在加载更早记录…" : "更早的对话"}</button> : null}
         {!props.items.length ? <SectionState message={dialogueEmpty(props).message} detail={dialogueEmpty(props).detail} /> : props.items.map((item, index) => {
           const text = item.blocks.filter(block => block.type === "text").map(block => block.type === "text" ? block.text : "").join("\n\n");
           const day = messageDayKey(item.createdAt); const previous = props.items[index - 1];

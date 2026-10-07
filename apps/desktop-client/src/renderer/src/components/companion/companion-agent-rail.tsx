@@ -103,12 +103,12 @@ function progressText(
 ): string {
   // 步数只在拿到**本 run** 的摘要时才说。`assistant.status` 一轮只发一次，客户端数不出
   // 步数——与其猜一个数字，不如先只说工具次数，摘要到了再补上步数。
-  const steps = progress ? `${progress.stepCount}/${progress.maxSteps} 步` : null;
-  const tools = progress ? `${toolCalls}/${progress.maxToolCalls} 次工具` : `${toolCalls} 次工具`;
+  const steps = progress ? `${progress.stepCount} 步` : null;
+  const tools = `${toolCalls} 项操作`;
   if (hasUnknownOutcome) return steps ? `结果待核对 · ${steps} · ${tools}` : `结果待核对 · ${tools}`;
   // 失败必须被**读**出来，不能只靠边框变红（`companion-hud.css:599`）：矮窗口下
   // （方案 35 F4）。用词跟记录里那句「这一轮没能说完」同一口径。
-  if (turnState === "failed") return steps ? `没说完 · ${steps} · ${tools}` : `没说完 · ${tools}`;
+  if (turnState === "failed") return steps ? `回复未完成 · ${steps} · ${tools}` : `回复未完成 · ${tools}`;
   if (turnState === "stopped") return steps ? `已停止 · ${steps} · ${tools}` : `已停止 · ${tools}`;
   return steps ? `${steps} · ${tools}` : tools;
 }
@@ -176,7 +176,7 @@ export function CompanionAgentRail({
       aria-label={`${companionName} 正在做的事`}
     >
       <header className="companion-hud__rail-heading">
-        <strong><Wrench size={13} aria-hidden="true" />工具过程</strong>
+        <strong><Wrench size={13} aria-hidden="true" />做事经过</strong>
         <button type="button" className="text-action" aria-expanded={expanded} onClick={() => { onActivity?.(); setExpanded(value => !value); }}>
           {expanded ? "收起过程" : "查看过程"}
         </button>

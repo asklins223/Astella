@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  COMPANION_BARGE_IN_INITIAL_STATE,
   COMPANION_VAD_INITIAL_STATE,
   COMPANION_VAD_TUNING,
-  companionBargeInStep,
   companionVadStep,
   type CompanionVadState,
   type CompanionVadVerdict,
@@ -121,36 +119,5 @@ describe("companionVadStep 两级判定", () => {
     feed(0.001, 10);
     expect(cutAt).toBe(300); // 150 + 150
     expect(endAt).toBe(400); // 150 + 250
-  });
-});
-
-describe("companionBargeInStep", () => {
-  it("电平不够就不算插话", () => {
-    let state = COMPANION_BARGE_IN_INITIAL_STATE;
-    for (let at = 0; at < 1000; at += TICK_MS) {
-      const step = companionBargeInStep(state, { level: 0.06, at });
-      state = step.state;
-      expect(step.triggered).toBe(false);
-    }
-  });
-
-  /** 回声消除压不干净它自己的声音：越过一下不算，要连续够久才算"真有人插话"。 */
-  it("插话要连续越阈够久才算", () => {
-    const first = companionBargeInStep(COMPANION_BARGE_IN_INITIAL_STATE, { level: 0.3, at: 0 });
-    expect(first.triggered).toBe(false);
-    const holding = companionBargeInStep(first.state, { level: 0.3, at: 100 });
-    expect(holding.triggered).toBe(false);
-    const step = companionBargeInStep(holding.state, { level: 0.3, at: 200 });
-    expect(step.triggered).toBe(true);
-    expect(step.state.sinceAt).toBeNull();
-  });
-
-  it("断一下就从新开始数", () => {
-    const first = companionBargeInStep(COMPANION_BARGE_IN_INITIAL_STATE, { level: 0.3, at: 0 });
-    const broke = companionBargeInStep(first.state, { level: 0.01, at: 100 });
-    expect(broke.state.sinceAt).toBeNull();
-    const again = companionBargeInStep(broke.state, { level: 0.3, at: 150 });
-    expect(again.state.sinceAt).toBe(150);
-    expect(again.triggered).toBe(false);
   });
 });

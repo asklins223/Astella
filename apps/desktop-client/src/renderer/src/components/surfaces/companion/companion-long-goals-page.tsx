@@ -75,7 +75,7 @@ export function CompanionLongGoalsPage({ refreshKey, onMemory }: { refreshKey: n
       openCompanionGoalJournal(run.runId, scope);
     });
   };
-  if (!resource.section) return <SectionState message={resource.failure ? "长期目标暂时读不到" : "正在翻找长期目标…"} detail={resource.failure ?? undefined} onRetry={resource.failure ? () => void resource.reload() : undefined} />;
+  if (!resource.section) return <SectionState loading={resource.loading} message={resource.failure ? "长期目标暂时读不到" : "正在加载长期目标…"} detail={resource.failure ?? undefined} onRetry={resource.failure ? () => void resource.reload() : undefined} />;
   if (!resource.section.ok) return <SectionState message="长期目标暂时读不到" detail={resource.section.message} onRetry={() => void resource.reload()} />;
   const visible = items.filter(item => `${item.content} ${item.appliesWhen ?? ""}`.includes(query.trim()));
   return <section className="cc-long-goals" aria-label="长期目标">
@@ -85,7 +85,7 @@ export function CompanionLongGoalsPage({ refreshKey, onMemory }: { refreshKey: n
     {creating ? <form className="cc-form cc-long-goal-create" onSubmit={event => { event.preventDefault(); create(); }}>
       <label>想慢慢达到什么<textarea value={content} maxLength={companionMemoryContentMaxLength} disabled={busy} onChange={event => setContent(event.currentTarget.value)} placeholder="比如：从基础开始学会分析电路" /></label>
       <label>适用的情境（可选）<input value={condition} maxLength={200} disabled={busy} onChange={event => setCondition(event.currentTarget.value)} placeholder="比如：这段时间学习物理时" /></label>
-      <button type="submit" className="cc-button is-primary" disabled={busy || !content.trim()}>{busy ? "正在留下…" : "确认留下"}</button>
+      <button type="submit" className="cc-button is-primary" disabled={busy || !content.trim()}>{busy ? "正在保存目标…" : "确认留下"}</button>
     </form> : null}
     <div className={`cc-long-goals-workspace${selected ? " has-selection" : ""}`}>
       <div className="cc-long-goals-index" aria-label="目标清单">
@@ -106,7 +106,7 @@ export function CompanionLongGoalsPage({ refreshKey, onMemory }: { refreshKey: n
             onChange={setNoteId} /></label>
           {notes.section?.ok && notes.section.value.nextCursor ? <button type="button" className="cc-link" disabled={busy || notes.loading} onClick={() => { setNoteId(""); setNoteCursor(notes.section?.ok ? notes.section.value.nextCursor ?? undefined : undefined); }}>更早的笔记</button> : noteCursor ? <button type="button" className="cc-link" disabled={busy} onClick={() => { setNoteId(""); setNoteCursor(undefined); }}>回到近期笔记</button> : null}
           {notes.section && !notes.section.ok ? <SectionState message="笔记暂时读不到" detail={notes.section.message} onRetry={() => void notes.reload()} /> : null}
-          <button type="submit" className="cc-button is-primary" disabled={busy || !task.trim()}>{busy ? "正在交代…" : "这次交给伴星"}</button>
+          <button type="submit" className="cc-button is-primary" disabled={busy || !task.trim()}>{busy ? "正在提交任务…" : "这次交给伴星"}</button>
         </form>
         <details className="cc-details"><summary>沿这个目标做过的事 · {selected.taskCount}</summary>
           <p className="cc-muted">每次任务保留当时的要求与成果，你可以在手记里查看、调整和接续。</p>

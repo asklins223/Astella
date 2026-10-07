@@ -25,7 +25,7 @@ vi.mock("../use-companion-voice-input", async importOriginal => {
   return { ...actual, useCompanionVoiceInput: (options: CompanionVoiceInputOptions) => {
     state.voiceOptions = options;
     // toggle 就是"进入／退出对话"：退出时通知会话结束，但不碰 cancel（那是"丢掉这一轮"）。
-    return { phase: state.voice.phase, caption: state.voice.caption, note: null, noteRevision: 0, supported: true,
+    return { activity: state.voice.phase === "open" ? state.voice.caption ? "capturing" : "listening" : state.voice.phase === "closing" ? "transcribing" : state.voice.phase, lastTurn: null, pause: vi.fn(), resume: vi.fn(), interrupt: vi.fn(), sendNow: vi.fn(), phase: state.voice.phase, caption: state.voice.caption, note: null, noteRevision: 0, supported: true,
       toggle: () => {
         voiceToggle();
         const next = state.voice.phase === "idle" ? "open" : "idle";
@@ -187,8 +187,8 @@ describe("production companion interaction", () => {
     expect((screen.getByRole("textbox", { name: "给 小鲸 的消息" }) as HTMLTextAreaElement).value).toBe("文字草稿");
   });
 
-  /** 退出对话按"我说完了"理解，不是"把我说的丢掉"——那件事是 X 的。 */
-  it("会话开着时再点麦克风是结束对话，不是丢掉这一句", () => {
+  /** 退出是停止收音，发送有独立的「说好了」操作。 */
+  it("会话开着时再点麦克风立即结束，不发送未完成的这一句", () => {
     state.chat = interactionSession({ send: vi.fn(async () => true) });
     render(<Harness voiceEnabled />);
     fireEvent.click(screen.getByRole("button", { name: "开始语音对话" }));

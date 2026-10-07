@@ -141,7 +141,11 @@ export function table(headers, rows, { numericColumns = [], className = "" } = {
 
 /* ── 应用绘制的确认框（替代原生 confirm）───────────────── */
 
+let activeDialogClose = null;
+export function dismissDialog() { activeDialogClose?.(false); }
+
 export function confirmDialog({ title, body, confirmLabel = "确定", tone = "primary" }) {
+  dismissDialog();
   return new Promise((resolve) => {
     const modal = document.querySelector("#modal");
     const titleNode = document.querySelector("#modal-title");
@@ -151,11 +155,22 @@ export function confirmDialog({ title, body, confirmLabel = "确定", tone = "pr
     bodyNode.textContent = body;
     confirm.className = `btn btn--${tone}`;
     confirm.textContent = confirmLabel;
+    const returnFocus = document.activeElement;
+    const shell = document.querySelector("#shell");
+    shell.inert = true;
+    const releaseFocus = trapFocus(modal);
+    let closed = false;
 
     function close(result) {
+      if (closed) return;
+      closed = true;
+      activeDialogClose = null;
       modal.hidden = true;
+      shell.inert = shell.hidden;
+      releaseFocus();
       confirm.removeEventListener("click", onConfirm);
       document.removeEventListener("keydown", onKey);
+      if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
       resolve(result);
     }
     function onConfirm() { close(true); }
@@ -164,6 +179,7 @@ export function confirmDialog({ title, body, confirmLabel = "确定", tone = "pr
     }
 
     confirm.addEventListener("click", onConfirm);
+    activeDialogClose = close;
     // 只有 scrim 与取消键带 data-close；确认键**不能**带——否则它会先被
     // 这条"一律视为取消"的处理器 resolve(false)，再轮到 onConfirm 时 promise
     // 已经定死了，表现就是"点确定没反应"。
@@ -172,7 +188,7 @@ export function confirmDialog({ title, body, confirmLabel = "确定", tone = "pr
     });
     document.addEventListener("keydown", onKey);
     modal.hidden = false;
-    confirm.focus();
+    document.querySelector("#modal-cancel").focus();
   });
 }
 
@@ -193,14 +209,110 @@ export function toast(message, tone = "ok") {
 /* ── 数字提亮 ──────────────────────────────────────────── */
 
 /** 跨刷新时给变化过的读数一次提亮。 */
+const previousStats = new Map();
+export function resetStats() { previousStats.clear(); }
 export function tickStats(root) {
   root.querySelectorAll("[data-stat-id]").forEach((node) => {
-    const previous = node.dataset.lastValue;
+    const previous = previousStats.get(node.dataset.statId);
     if (previous !== undefined && previous !== node.textContent) {
       node.classList.remove("is-tick");
       void node.offsetWidth; // 强制重排，让动画可以重播
       node.classList.add("is-tick");
     }
-    node.dataset.lastValue = node.textContent;
+    previousStats.set(node.dataset.statId, node.textContent);
   });
+}
+
+/** The switch and system preference apply to CSS and JavaScript motion together. */
+export function reducedMotion() {
+  return document.body.dataset.motion === "off" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** A retargetable, critically damped spring. Keeps velocity on rapid reversals. */
+export function springSelection(surface) {
+  let frame = 0;
+  let lastTime = 0;
+  let initialized = false;
+  const current = { x: 0, y: 0, width: 0, height: 0 };
+  const target = { ...current };
+  const velocity = { ...current };
+  function paint() {
+    surface.style.transform = `translate(${current.x}px, ${current.y}px)`;
+    surface.style.width = `${current.width}px`;
+    surface.style.height = `${current.height}px`;
+  }
+  function step(time) {
+    const dt = Math.min((time - lastTime) / 1000 || 1 / 60, 1 / 30);
+    lastTime = time;
+    let settled = true;
+    for (const key of Object.keys(current)) {
+      velocity[key] += (420 * (target[key] - current[key]) - 41 * velocity[key]) * dt;
+      current[key] += velocity[key] * dt;
+      if (Math.abs(target[key] - current[key]) > 0.1 || Math.abs(velocity[key]) > 0.1) settled = false;
+    }
+    paint();
+    if (!settled && !reducedMotion()) frame = requestAnimationFrame(step);
+    else { Object.assign(current, target); Object.keys(velocity).forEach((key) => velocity[key] = 0); paint(); frame = 0; }
+  }
+  return (item) => {
+    if (!item) return;
+    Object.assign(target, { x: item.offsetLeft, y: item.offsetTop, width: item.offsetWidth, height: item.offsetHeight });
+    if (!initialized || reducedMotion()) {
+      cancelAnimationFrame(frame); frame = 0;
+      Object.assign(current, target); Object.keys(velocity).forEach((key) => velocity[key] = 0);
+      paint(); initialized = true;
+    } else if (!frame) { lastTime = performance.now(); frame = requestAnimationFrame(step); }
+  };
+}
+
+export function trapFocus(root) {
+  function onKey(event) {
+    if (event.key !== "Tab" || root.hidden) return;
+    const nodes = [...root.querySelectorAll("button, input, select, textarea, a[href], [tabindex='0']")].filter((node) => !node.disabled && node.getClientRects().length);
+    const first = nodes[0]; const last = nodes[nodes.length - 1];
+    if (!first) return;
+    if (event.shiftKey && (document.activeElement === first || !root.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
+  document.addEventListener("keydown", onKey);
+  return () => document.removeEventListener("keydown", onKey);
+}
+
+export function reveal(root, refresh = false) {
+  if (reducedMotion()) return;
+  root.animate([{ opacity: 0.35, transform: refresh ? "none" : "translateY(10px)" }, { opacity: 1, transform: "none" }], {
+    duration: refresh ? 180 : 360, easing: "cubic-bezier(.2,.8,.2,1)",
+  });
+}
+
+/** Tab semantics and roving keyboard focus for every master/detail selector. */
+export function bindTabList(list, detail, prefix) {
+  const tabs = () => [...list.querySelectorAll("[role='tab']")].filter((tab) => !tab.hidden);
+  detail.id = `${prefix}-panel`;
+  detail.setAttribute("role", "tabpanel");
+  function sync() {
+    tabs().forEach((tab, index) => {
+      const selected = tab.getAttribute("aria-pressed") === "true";
+      tab.id ||= `${prefix}-tab-${index}`;
+      tab.setAttribute("aria-selected", String(selected));
+      tab.setAttribute("aria-controls", detail.id);
+      tab.tabIndex = selected ? 0 : -1;
+      if (selected) detail.setAttribute("aria-labelledby", tab.id);
+    });
+  }
+  list.addEventListener("keydown", (event) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const visible = tabs(); if (!visible.length) return;
+    event.preventDefault();
+    let index = visible.indexOf(document.activeElement);
+    if (event.key === "Home") index = 0;
+    else if (event.key === "End") index = visible.length - 1;
+    else index = (index + (event.key === "ArrowDown" ? 1 : -1) + visible.length) % visible.length;
+    visible[index].click(); visible[index].focus();
+  });
+  // Lists can update in place (container polling), so observe their actual selection.
+  const observer = new MutationObserver(sync);
+  observer.observe(list, { subtree: true, childList: true, attributes: true, attributeFilter: ["aria-pressed", "hidden"] });
+  sync();
+  return () => observer.disconnect();
 }

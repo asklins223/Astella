@@ -56,11 +56,11 @@ export function CompanionProposalChoice({
       <section
         className="companion-choice-card companion-choice-card--loading"
         data-context={context}
-        aria-label="正在读取需要你选择的建议"
+        aria-label="正在加载操作详情"
         aria-busy="true"
       >
         <Loader2 className="companion-choice-card__spinner" size={16} aria-hidden="true" />
-        <span>正在准备选项…</span>
+        <span>正在加载操作详情…</span>
       </section>
     );
   }
@@ -114,7 +114,7 @@ export function CompanionProposalChoice({
             disabled={Boolean(deciding)}
             onClick={() => onDecide("reject")}
           >
-            {deciding === "reject" ? "正在处理…" : "暂不执行"}
+            {deciding === "reject" ? "正在跳过…" : "暂不执行"}
           </button>
           <button
             type="button"

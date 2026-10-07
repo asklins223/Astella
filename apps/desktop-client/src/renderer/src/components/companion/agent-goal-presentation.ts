@@ -4,12 +4,12 @@ import { useRoomStore } from "../../app/room-store";
 import { plainCompanionBubbleText } from "./companion-markdown";
 
 export const goalStatusText: Record<AgentRunV1["status"], string> = {
-  queued: "接下来了", running: "正在整理", waiting: "正在生成", paused: "先放一放",
-  completed: "做好了", failed: "还差一点", cancelled: "已经停下",
+  queued: "等待开始", running: "进行中", waiting: "等待生成结果", paused: "已暂停",
+  completed: "已完成", failed: "未完成", cancelled: "已停止",
 };
 export const operationStatusText: Record<AgentRunV1["operations"][number]["status"], string> = {
   accepted: "等待生成", running: "正在生成", succeeded: "已做好", failed: "这次没做成",
-  cancelled: "已停止", outcome_unknown: "正在核对结果",
+  cancelled: "已停止", outcome_unknown: "结果待核对",
 };
 export function artifactLabel(artifact: AgentArtifactRefV1, run?: AgentRunV1) {
   const label = { note_overview: "速看", note_dynamic_artifact: "互动演示", note_expansion: "拓展草稿", card_candidates: "待审核学习卡" }[artifact.kind];
@@ -39,11 +39,11 @@ export function goalHeadline(run: AgentRunV1) {
   if (run.status === "paused") return "等你想继续的时候";
   if (run.status === "cancelled") return "这件事先停在这里";
   if (run.artifacts.length) return "已经有成果了";
-  return run.status === "waiting" ? "我在把它整理出来" : "这件事交给我了";
+  return run.status === "waiting" ? "正在等待生成结果" : run.status === "queued" ? "这件事已接下" : "这件事正在进行";
 }
 export function goalNextHint(run: AgentRunV1) {
+  if (run.operations.some(operation => operation.status === "outcome_unknown")) return "暂时无法确认操作结果，先查看完整记录，避免重复生成。";
   if (run.modelCalls >= run.maxModelCalls && run.status !== "completed") return "这次处理额度已用完，成果保留。可以重新交代一个更小的目标。";
-  if (run.operations.some(operation => operation.status === "outcome_unknown")) return "结果还在核对，先不重复生成。";
   if (run.status === "failed") return "可以调整要求再继续，已经做好的内容会保留。";
   if (run.status === "paused") return "不再推进新步骤，已经启动的生成会收回结果。";
   if (run.status === "cancelled") return "未完成的生成已停止，之前的成果仍能打开。";

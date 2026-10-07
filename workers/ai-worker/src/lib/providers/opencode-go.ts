@@ -48,6 +48,7 @@ import { registerFactory } from "../provider-factory.ts";
 import { ProviderRequestError } from "../provider-request-error.ts";
 import { AgentOutputError } from "../non-retryable-errors.ts";
 import { profileFingerprint } from "./profile-fingerprint.ts";
+import { countModelTextTokens, DEEPSEEK_TOKENIZER_REVISION } from "../model-tokenizers.ts";
 
 /** OpenCode Go 默认端点（Responses API 根路径）。 */
 const DEFAULT_BASE_PATH = "https://opencode.ai/zen/go/v1";
@@ -799,8 +800,12 @@ export class OpenCodeGoProvider implements AIProvider {
       // maxInputTokens 是「窗口 − 最大输出」的派生值，不是供应商独立声明的输入
       // 硬限制——不填 inputHardLimitTokens，预算解析只按 C − O 表达它。
       outputLimitEnforced: !(this.platformOptions?.disableMaxTokens ?? false),
-      fingerprint: `${this.id}:${this.modelId}:native_tools:${profileFingerprint(this.modelProfile)}`,
+      fingerprint: `${this.id}:${this.modelId}:native_tools:${profileFingerprint(this.modelProfile)}:${this.modelId === "deepseek-v4.1-flash" ? DEEPSEEK_TOKENIZER_REVISION : "byte-bound"}`,
     };
+  }
+
+  countTextTokens(text: string): Promise<number | null> {
+    return countModelTextTokens(this.modelId, text);
   }
 }
 
@@ -827,6 +832,7 @@ function createOpenCodeGoProvider(config: ProviderRuntimeConfig): OpenCodeGoProv
     apiKey,
     baseUrl,
     model,
+    ...(config.sessionId ? { sessionId: config.sessionId } : {}),
     ...(config.modelProfile ? { modelProfile: config.modelProfile } : {}),
     ...(config.options ? { platformOptions: config.options } : {}),
   });

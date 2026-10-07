@@ -14,7 +14,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { createAssetResponsePlan, mimeTypeForPath } from './asset-response'
 import { VoiceAsrModelStore, voiceAsrModelSources } from './voice-asr-model-store'
-import { CompanionGuidanceAudioCache } from './companion-guidance-audio-cache'
+import { CompanionVoiceAudioCache } from './companion-voice-audio-cache'
 import { primeUpdateStateFromCache } from './desktop-update'
 import { voiceAsrModelDirectory } from '../shared/voice-asr-model-path'
 import { createVoiceAsrModelResponder } from './voice-asr-model-route'
@@ -779,8 +779,12 @@ app.whenReady()
     noteDocCache: new FileNoteDocCacheStore(
       resolve(app.getPath('userData'), 'note-doc-cache.json')
     ),
-    guidanceAudioCache: new CompanionGuidanceAudioCache(
+    guidanceAudioCache: new CompanionVoiceAudioCache(
+      // 目录名不改：这台电脑上已经攒下的带路音频要继续命中，换名字等于让所有人重合成一遍。
       resolve(app.getPath('userData'), 'companion-guidance-audio')
+    ),
+    thoughtAudioCache: new CompanionVoiceAudioCache(
+      resolve(app.getPath('userData'), 'companion-thought-audio')
     ),
     // 刀五：动态产物往这儿写。传函数不在注册期求值，与读侧 `artifactSourcePath`
     // （上面那个）共用同一个 `app.getPath('userData')` 来源，落点必然一致。

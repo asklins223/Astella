@@ -1,3 +1,4 @@
+import { resolveCompanionPersonaContext } from "./companion-identity-context.ts";
 import { reserveCompanionProviderCall } from "./companion-agent-events.ts";
 import { renderPlaybookCatalog } from "./companion-playbooks.ts";
 /**
@@ -56,15 +57,13 @@ import { resolveCompanionTurnProviders } from "./companion-turn-providers.ts";
 import { createCompactionCooldownPorts } from "./companion-compaction-cooldown.ts";
 import { foldReplayUnderSummaryCoverage, replayToMessages } from "./companion-compaction.ts";
 import {
-  COMPANION_PERSONA_V7_PROMPT_ID,
+  COMPANION_PERSONA_V8_PROMPT_ID,
   COMPANION_PERSONA_V7_SHA256,
   type ChatMessage,
-  type PetPersonaPresetBoundaries,
-  type PetProfileActiveness,
 } from "@astella/shared";
-import { PET_PERSONA_PRESET_VERSION, resolveCompanionPersonaProfile } from "@astella/shared/pet-persona-presets";
+import { PET_PERSONA_PRESET_VERSION } from "@astella/shared/pet-persona-presets";
 import { runCompanionAgentLoop } from "./companion-agent-runtime.ts";
-import { CompanionAgentBudgetExceededError, CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
+import { AgentOutputError, CompanionAgentBudgetExceededError, CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
 import type { AgentMemoryContextSourceV1 } from "@astella/shared/agent-contracts";
 import {
@@ -125,22 +124,7 @@ import {
 
 const groundedTutorPromptSha256 = computeGroundedTutorPromptSha256(GROUNDED_TUTOR_COMPANION_PROMPT);
 
-/** 活跃度三档白名单（与 `PetProfileActiveness` 同源）。 */
-const ACTIVENESS_VALUES = new Set<string>(["quiet", "moderate", "active"]);
 
-/**
- * boundaries 是 jsonb，库里可能是 null / 数组 / 任意对象。只认"纯对象且键值合法"
- * 的形状，其余一律当没设置——这个对象会被渲染进 system prompt，不能原样透传。
- */
-function isPetBoundaryObject(value: unknown): value is PetPersonaPresetBoundaries {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  const boolKeys = ["allowPlayful", "allowNudgeLearning", "allowVoiceTags"];
-  const known = new Set([...boolKeys, "catchphrase"]);
-  if (!Object.keys(record).every((key) => known.has(key))) return false;
-  if (!boolKeys.every((key) => record[key] === undefined || typeof record[key] === "boolean")) return false;
-  return record.catchphrase === undefined || record.catchphrase === null || typeof record.catchphrase === "string";
-}
 
 /** LearningRun 是正式学习页，缺证据时必须 fail closed。 */
 export function isGroundedTutorRequestedPageContext(
@@ -400,27 +384,7 @@ export async function runCompanionDialogue(
         // 此前这里给 null，于是她的性格来自通用角色底座——"没选人格也能正常聊天"，
         // 而选不选人格对第一句话毫无影响（用户 2026-10-05 的决定）。
         // 注意这不动版本记账：persona_profile_revision 仍然是 0，档案行仍然是空的。
-        const effectivePersona = resolveCompanionPersonaProfile(petProfileRow);
-        const petProfile = {
-          name: String(effectivePersona.name ?? "伴星"),
-          speakingStyle: String(effectivePersona.speakingStyle ?? ""),
-          personalityTags: Array.isArray(effectivePersona.personalityTags)
-            ? effectivePersona.personalityTags.map(String)
-            : [],
-          examples: Array.isArray(effectivePersona.examples)
-            ? (effectivePersona.examples as Array<{ text?: unknown }>)
-                .map((e) => ({ text: String(e.text ?? "") }))
-                .filter((e) => e.text.length > 0)
-            : [],
-          // 活跃度与边界进对话链路（方案 29 §3.3，抱怨 #2）。取值按契约白名单
-          // 收窄，不认识的写 null——宁可当"没设置"也不要把她导向一个不存在的档。
-          activeness: ACTIVENESS_VALUES.has(String(effectivePersona.activeness ?? ""))
-            ? (effectivePersona.activeness as PetProfileActiveness)
-            : null,
-          boundaries: isPetBoundaryObject(effectivePersona.boundaries)
-            ? effectivePersona.boundaries
-            : null,
-        };
+        const petProfile = resolveCompanionPersonaContext(petProfileRow);
         const groundedTutorContext = await readGroundedTutorContext(
           tx,
           run.page_context,
@@ -818,8 +782,8 @@ export async function runCompanionDialogue(
         seq: statusSeq,
         type: "assistant.status",
         // 这一刻还不知道这一轮开不开思考（判据要等本轮的注意力解释跑完），
-        // 所以只说"在听"。真开了思考，运行时会在判定之后补一条 thinking。
-        payload: { status: "waiting", safeLabel: "在听你说…" },
+        // 所以只显示等待回复。真开了思考，运行时会在判定之后补一条 thinking。
+        payload: { status: "waiting", safeLabel: "正在准备回复…" },
         expiresAt,
       });
       // §5.2 确定性来源：thinking → think/curious/0.35（与 status 同事务原子下发）。
@@ -984,21 +948,22 @@ export async function runCompanionDialogue(
     // 交付管线主动叫停（增量校验命中泄露/超限、fence 失联）：同样不可重试——
     // 重投不会让"泄露"消失。已下发的部分必然是最终文本的前缀，客户端按 error 收尾。
     const streamStopped = err instanceof CompanionStreamStoppedError;
+    const outputIncomplete = err instanceof AgentOutputError && err.code === "output_truncated";
     const providerRejected = err instanceof ProviderRequestError;
     const rateLimited = providerRejected && err.status === 429;
     await markCompanionRunFailed(
       read,
       ctx.workspaceId,
-      contextChanged ? err.code : budgetExceeded ? "AGENT_BUDGET_EXCEEDED" : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
-      !budgetExceeded && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
-      contextChanged ? err.message : budgetExceeded
+      contextChanged ? err.code : budgetExceeded || outputIncomplete ? "AGENT_BUDGET_EXCEEDED" : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
+      !budgetExceeded && !outputIncomplete && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
+      contextChanged ? err.message : outputIncomplete ? "这次答复达到长度上限，已说出的内容保留；可以接着分段讲。" : budgetExceeded
         ? "companion agent budget exceeded"
         : streamStopped
           ? `companion stream stopped: ${streamingDelivery.failureReason() ?? "delivery pipeline"}`.slice(0, 240)
           : rateLimited ? "模型服务暂时繁忙，请稍后重试；已经完成的操作仍保留。"
             : providerRejected ? "模型服务暂时无法完成这次请求，已经完成的操作仍保留。"
               : "companion agent execution failed",
-      streamStopped ? "delivery" : budgetExceeded || contextChanged ? "execution" : "transport",
+      streamStopped ? "delivery" : budgetExceeded || outputIncomplete || contextChanged ? "execution" : "transport",
     );
     // 她已经说出来的那半句不能随失败一起消失（2026-09-19）。
     await persistFailedPartial({
@@ -1293,7 +1258,7 @@ export async function runCompanionDialogue(
               waiting_proposal_id = NULL,
               provider_id = ${provider.id},
               model_id = ${provider.modelId},
-              prompt_version = ${read.groundedTutorContext ? GROUNDED_TUTOR_PROMPT_ID : COMPANION_PERSONA_V7_PROMPT_ID},
+              prompt_version = ${read.groundedTutorContext ? GROUNDED_TUTOR_PROMPT_ID : COMPANION_PERSONA_V8_PROMPT_ID},
               prompt_hash = ${read.groundedTutorContext ? groundedTutorPromptSha256 : COMPANION_PERSONA_V7_SHA256},
               finished_at = now()
           WHERE id = ${read.runId}

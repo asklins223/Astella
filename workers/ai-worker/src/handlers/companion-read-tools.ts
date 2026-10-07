@@ -40,7 +40,7 @@ export interface AgentEventContext {
   constraints: CompanionAgentToolExecutionConstraints;
 }
 
-/** 读出来的笔记正文进模型上下文的硬上限（工具输出另有 maxOutputChars 闸门）。 */
+/** 每页正文预算；超长块用块内游标续读，不丢弃余下正文。 */
 export const NOTE_READ_MAX_CHARS = 3_000;
 
 export interface ReadPageBlock {
@@ -54,6 +54,8 @@ export interface ReadPage {
   readonly endOrdinal: number | null;
   /** 单块超预算被切了文本（这一页在块中间结束）。 */
   readonly blockTextTruncated: boolean;
+  /** 非 null 时仍在 endOrdinal 内，续读须同时带回块序号与此 offset。 */
+  readonly nextStartOffset: number | null;
 }
 
 /**
@@ -61,32 +63,41 @@ export interface ReadPage {
  *
  * 装到预算为止就停；**至少装一块**——单块超预算时切那一块的文本并标
  * `blockTextTruncated`，否则一篇"只有一段超长正文"的笔记永远一页都读不出来。
- * 续读从 endOrdinal+1 继续（被切掉的那一段块内文本不回读，输出里如实标出）。
+ * 超长首块在块内分页；正文不添加省略号，游标描述未读边界。
  */
-export function paginateReadBlocks(blocks: readonly ReadPageBlock[], maxChars: number): ReadPage {
+export function paginateReadBlocks(blocks: readonly ReadPageBlock[], maxChars: number, startOffset = 0): ReadPage {
+  if (!Number.isSafeInteger(maxChars) || maxChars < 2 || !Number.isSafeInteger(startOffset) || startOffset < 0) {
+    throw new Error("invalid read page budget or offset");
+  }
   const parts: string[] = [];
   let used = 0;
   let endOrdinal: number | null = null;
   let blockTextTruncated = false;
-  for (const block of blocks) {
+  let nextStartOffset: number | null = null;
+  for (const [index, block] of blocks.entries()) {
+    const offset = index === 0 ? startOffset : 0;
+    if (offset > block.content.length) throw new Error("read page offset exceeds block length");
+    const remaining = block.content.slice(offset);
     const separator = parts.length > 0 ? "\n\n" : "";
     const room = maxChars - used - separator.length;
     if (room <= 0 && parts.length > 0) break;
     // 整块装不下且**不是本页第一块** → 留给下一页。只有第一块才允许切：
     // 否则每块都被切成半句拼进本页，用户读到的是被碎块化的正文。
-    if (block.content.length > room && parts.length > 0) break;
-    const text = block.content.length > room
-      ? block.content.slice(0, Math.max(room - 1, 0)) + "…"
-      : block.content;
+    if (remaining.length > room && parts.length > 0) break;
+    let take = Math.min(remaining.length, room);
+    // UTF-16 offset agrees with JS/string contracts, but never splits a surrogate pair.
+    if (take < remaining.length && /[\uD800-\uDBFF]/.test(remaining.charAt(take - 1))) take--;
+    const text = remaining.slice(0, take);
     parts.push(separator + text);
     used += separator.length + text.length;
     endOrdinal = block.ordinal;
-    if (text.length < block.content.length) {
+    if (text.length < remaining.length) {
       blockTextTruncated = true;
+      nextStartOffset = offset + text.length;
       break;
     }
   }
-  return { body: parts.join(""), endOrdinal, blockTextTruncated };
+  return { body: parts.join(""), endOrdinal, blockTextTruncated, nextStartOffset };
 }
 
 /** 来源没解析好时的那句照实说明（39b C5："来源没有解析或无权限时明确说明"）。 */
@@ -124,7 +135,7 @@ export interface ReadPageSqlExecutor {
  */
 export async function loadNoteReadPage(
   tx: ReadPageSqlExecutor,
-  input: { workspaceId: string; userId: string; noteId: string; noteVersionId?: string; startOrdinal: number; maxChars: number },
+  input: { workspaceId: string; userId: string; noteId: string; noteVersionId?: string; startOrdinal: number; startOffset?: number; maxChars: number },
 ): Promise<{
   title: string; versionId: string; ageMinutes: number;
   totalBlocks: number;
@@ -132,6 +143,7 @@ export async function loadNoteReadPage(
   page: ReadPage;
   truncated: boolean;
   nextStartOrdinal: number | null;
+  nextStartOffset: number | null;
 } | null> {
   const heads = await tx.execute(sql`
     SELECT n.title,
@@ -175,9 +187,10 @@ export async function loadNoteReadPage(
   const page = paginateReadBlocks(
     (blocks as { ordinal: string; content: string }[]).map((row) => ({ ordinal: Number(row.ordinal), content: row.content })),
     input.maxChars,
+    input.startOffset,
   );
   const totalBlocks = Number((totals[0] as { total?: string } | undefined)?.total ?? 0);
-  const nextStartOrdinal = page.endOrdinal !== null && page.endOrdinal < totalBlocks
+  const nextStartOrdinal = page.nextStartOffset !== null ? page.endOrdinal : page.endOrdinal !== null && page.endOrdinal < totalBlocks
     ? page.endOrdinal + 1
     : null;
   return {
@@ -190,19 +203,21 @@ export async function loadNoteReadPage(
     page,
     truncated: nextStartOrdinal !== null || page.blockTextTruncated,
     nextStartOrdinal,
+    nextStartOffset: page.nextStartOffset,
   };
 }
 
 /** 来源读取的数据装载半（39d W6-2）：未就绪时返回 status、不给段。 */
 export async function loadSourceReadPage(
   tx: Parameters<Parameters<typeof withWorkerWorkspaceTransaction>[1]>[0],
-  input: { workspaceId: string; sourceId: string; startOrdinal: number; maxChars: number },
+  input: { workspaceId: string; sourceId: string; startOrdinal: number; startOffset?: number; maxChars: number },
 ): Promise<{
   title: string; status: string; origin: string | null;
   totalSegments: number;
   page: ReadPage | null;
   truncated: boolean;
   nextStartOrdinal: number | null;
+  nextStartOffset: number | null;
 } | null> {
   const heads = await tx.execute<{ title: string; status: string; origin: string | null }>(sql`
     SELECT s.title, s.status::text AS status, s.origin
@@ -214,7 +229,7 @@ export async function loadSourceReadPage(
   const head = heads[0];
   if (!head) return null;
   if (head.status !== "ready") {
-    return { title: head.title, status: head.status, origin: head.origin, totalSegments: 0, page: null, truncated: false, nextStartOrdinal: null };
+    return { title: head.title, status: head.status, origin: head.origin, totalSegments: 0, page: null, truncated: false, nextStartOrdinal: null, nextStartOffset: null };
   }
   const segments = await tx.execute<{ ordinal: string; text: string }>(sql`
     SELECT sg.ordinal::text AS ordinal, sg.text
@@ -232,9 +247,10 @@ export async function loadSourceReadPage(
   const page = paginateReadBlocks(
     segments.map((row) => ({ ordinal: Number(row.ordinal), content: row.text })),
     input.maxChars,
+    input.startOffset,
   );
   const totalSegments = Number(totals[0]?.total ?? 0);
-  const nextStartOrdinal = page.endOrdinal !== null && page.endOrdinal < totalSegments
+  const nextStartOrdinal = page.nextStartOffset !== null ? page.endOrdinal : page.endOrdinal !== null && page.endOrdinal < totalSegments
     ? page.endOrdinal + 1
     : null;
   return {
@@ -245,6 +261,7 @@ export async function loadSourceReadPage(
     page,
     truncated: nextStartOrdinal !== null || page.blockTextTruncated,
     nextStartOrdinal,
+    nextStartOffset: page.nextStartOffset,
   };
 }
 

@@ -36,7 +36,7 @@ it("hides the previous workspace immediately and ignores a response arriving aft
   await waitFor(()=>expect(agent.listMethods.mock.calls.length).toBeGreaterThan(1));
   agent.listMethods.mockResolvedValue(ok({version:1,items:[]}));
   act(()=>useRoomStore.setState({workspaceScopeRevision:3}));
-  await screen.findByText("让好用的做法慢慢留下来");
+  await screen.findByText("还没有保存合作方法");
   await act(async()=>finish(ok({version:1,items:[method]})));
   expect(screen.queryByRole("button",{name:/先解释再练习/})).toBeNull();
 });

@@ -36,22 +36,12 @@ export const COMPANION_VAD_INITIAL_STATE: CompanionVadState = Object.freeze({
 export const COMPANION_VAD_TUNING = Object.freeze({
   /** 判定"在说话"的振幅阈值，与录音器的 RMS 同一量纲（0..1）。 */
   threshold: 0.045,
-  /**
-   * 伴星正在说话时用的更高阈值（barge-in）。
-   *
-   * 网页的回声消除能把扬声器里播出去的它自己的声音压掉大半，但压不干净；残留的
-   * 那点电平低于 `threshold`。所以"它说话时听到我"要一个明显更高的门槛，
-   * 否则它每说完一句都会被自己最后的回声打断，而且那段回声还会被当成用户说的话识别出去。
-   */
-  bargeThreshold: 0.09,
   /** 人声累计到这么久，切段与收尾才武装。 */
-  minSpeechMs: 500,
+  minSpeechMs: 250,
   /** 连续静音这么久切一段去识别（字幕推进的节奏）。 */
   cutSilenceMs: 450,
   /** 连续静音这么久判定这一轮说完。 */
-  turnEndSilenceMs: 850,
-  /** 它说话时，电平连续越过 `bargeThreshold` 这么久才算真的插话。 */
-  bargeHoldMs: 180,
+  turnEndSilenceMs: 1400,
 });
 
 export type CompanionVadVerdict = "listening" | "cut" | "end";
@@ -97,38 +87,4 @@ export function companionVadStep(state: CompanionVadState, input: CompanionVadIn
     return { state: { ...next, segmentSpeechMs: 0 }, verdict: "cut" };
   }
   return { state: next, verdict: "listening" };
-}
-
-/** barge-in 的计数状态：越阈电平连续了多久。 */
-export interface CompanionBargeInState {
-  readonly sinceAt: number | null;
-}
-
-export const COMPANION_BARGE_IN_INITIAL_STATE: CompanionBargeInState = Object.freeze({
-  sinceAt: null,
-});
-
-export interface CompanionBargeInStep {
-  readonly state: CompanionBargeInState;
-  readonly triggered: boolean;
-}
-
-/**
- * 「它在说，我开口了没有」。
- *
- * 只看电平**不够**：回声消除的残留是一条持续的背景，越阈一小下可能是它自己的爆破音。
- * 所以要的是"连续"越过 `bargeThreshold` 那么久——一声咳嗽和一次真插话在这一层分开。
- */
-export function companionBargeInStep(
-  state: CompanionBargeInState,
-  input: { readonly level: number; readonly at: number; readonly threshold?: number; readonly holdMs?: number },
-): CompanionBargeInStep {
-  const threshold = input.threshold ?? COMPANION_VAD_TUNING.bargeThreshold;
-  const holdMs = input.holdMs ?? COMPANION_VAD_TUNING.bargeHoldMs;
-  if (input.level < threshold) return { state: COMPANION_BARGE_IN_INITIAL_STATE, triggered: false };
-  if (state.sinceAt === null) return { state: { sinceAt: input.at }, triggered: false };
-  if (input.at - state.sinceAt >= holdMs) {
-    return { state: COMPANION_BARGE_IN_INITIAL_STATE, triggered: true };
-  }
-  return { state, triggered: false };
 }

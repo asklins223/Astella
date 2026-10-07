@@ -103,6 +103,8 @@
 .hud-surface .cc-state > strong { font: 750 17px/1.6 var(--cc-serif); }
 .hud-surface .cc-state p { margin-top: 8px; color: var(--cc-muted); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
 .hud-surface .cc-state button { margin-top: 12px; }
+.hud-surface .cc-state[data-loading] { padding: 14px 2px; border-radius: 0; background: transparent; }
+.hud-surface .cc-state[data-loading] > strong { display: flex; align-items: center; gap: 9px; color: var(--cc-muted); font: 600 14px/1.7 var(--cc-serif); }
 .hud-surface .cc-feedback { padding: 11px 16px; margin: 8px 0; border: 1px solid #d2e7b6; border-radius: 19px; background: #eaf3d9; font-size: 12px; overflow-wrap: anywhere; }
 .hud-surface .cc-feedback.is-error { border-color: #c47b58; background: #f4e7dc; color: #8d4833; }
 .hud-surface .cc-toolbar { display: flex; align-items: center; gap: 12px; min-width: 0; }

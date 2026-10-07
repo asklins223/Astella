@@ -38,7 +38,7 @@ test("44 §4：压力闸回执在真正发生判定后才进 run meta", () => {
   // 还没发过任何请求：两列都不该被写出来（空壳行只会让人以为「判过但没问题」）。
   assert.deepEqual(receipts.runMetaPatch(), {});
 
-  receipts.pressureGate.onDecision!({
+  const measured: Parameters<NonNullable<typeof receipts.pressureGate.onDecision>>[0] = {
     providerId: "openai_compatible",
     modelId: "qwen3.8-flash",
     operation: "companion_agent",
@@ -76,7 +76,8 @@ test("44 §4：压力闸回执在真正发生判定后才进 run meta", () => {
       targetTokens: 596_313,
       detail: null,
     },
-  });
+  };
+  receipts.pressureGate.onDecision!(measured);
 
   const patch = receipts.runMetaPatch();
   assert.ok(patch.contextPressure);
@@ -85,6 +86,12 @@ test("44 §4：压力闸回执在真正发生判定后才进 run meta", () => {
   assert.equal(patch.contextPressure.outcome, "send");
   // 只有装配回执、没有判定时，判定那列不出现。
   assert.equal(patch.contextAssemblyReceipt, undefined);
+
+  // A delayed classifier must not overwrite the answer's already measured request.
+  receipts.pressureGate.onDecision!({
+    ...measured,modelId:"classifier",operation:"companion_agent:chat_completion",
+  });
+  assert.equal(receipts.runMetaPatch().contextPressure?.modelId, "qwen3.8-flash");
 });
 
 test("落库的那一份不含任何请求内容", () => {

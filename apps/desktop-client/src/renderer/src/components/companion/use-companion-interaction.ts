@@ -3,33 +3,38 @@ import type { CompanionChatSession } from "../../app/companion-chat-session";
 import { useRoomStore } from "../../app/room-store";
 import { useCompanionVoiceInput } from "./use-companion-voice-input";
 import { useCompanionTransient } from "./use-companion-transient";
+import { stopCompanionSpeech } from "../../app/companion-voice-playback";
 
-/**
- * 伴星这一面的临时状态：输入框、菜单、出错条，以及**语音对话会话**。
- *
- * 语音从 2026-10-07 起不再是"认一句、摆进气泡等你点发送"，而是按住一次麦克风
- * 就一直开着、说完一轮直接进对话。所以这里没有 `voiceDraft` 这种东西了：
- * 会话交出来的文本是一轮**已经说出口的话**，界面没有编辑它的位置，只有把它发出去。
- */
+/** 输入草稿与语音会话各有状态；真实发送回执通过 HUD 绑定，等待和失败不会静默丢掉。 */
 export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled: boolean, obscured = false) {
   const input = useRoomStore(state => state.companionComposerDraft);
   const setInput = useRoomStore(state => state.setCompanionComposerDraft);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [voiceSession, setVoiceSession] = useState(0);
-  const [voiceTurn, setVoiceTurn] = useState<{ readonly text: string; readonly revision: number } | null>(null);
-  const turnRevisionRef = useRef(0);
+  const sendVoiceRef = useRef<(text: string) => Promise<boolean | void>>(async () => false);
+  const interruptVoiceRef = useRef<() => void>(() => undefined);
   const namespaceRef = useRef(chat.conversationId);
   const voice = useCompanionVoiceInput({
-    // 「她正在回答」不该挡住开口：打断一句正在说的回复、接着问下一句，正是对话要的样子。
-    // 发送这条路上服务端会用新的 generation 接替旧轮（见 CompanionHud 的 sendText 注释）。
     disabled: !voiceEnabled,
+    replyPending: chat.phase === "sending",
     onModelMissing: () => { setVoiceOpen(false); },
-    onTurn: (text) => {
-      turnRevisionRef.current += 1;
-      setVoiceTurn({ text, revision: turnRevisionRef.current });
-    },
+    onTurn: text => sendVoiceRef.current(text),
+    onInterrupt: () => interruptVoiceRef.current(),
     onSessionEnd: () => { setVoiceOpen(false); },
   });
+  useEffect(() => {
+    if (obscured && (voice.phase === "open" || voice.phase === "starting" || voice.phase === "closing")) voice.pause();
+  }, [obscured, voice.phase, voice.pause]);
+  useEffect(() => {
+    if (!voiceOpen) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      stopCompanionSpeech(); voice.cancel(); setVoiceOpen(false);
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [voiceOpen, voice.cancel]);
   useEffect(() => {
     if (namespaceRef.current === chat.conversationId) return;
     const wasBound = namespaceRef.current !== null;
@@ -54,25 +59,16 @@ export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled
   return {
     input, setInput, voice,
     voiceOpen: voiceOpen && (voiceLife.visible || voice.phase !== "idle"),
-    /** 一轮说完的话；HUD 按 `revision` 一次一发进对话，发过不再发。 */
-    voiceTurn,
-    consumeVoiceTurn: (turn: { readonly text: string; readonly revision: number }) => {
-      setVoiceTurn(current => current?.revision === turn.revision ? null : current);
-    },
-    closeVoice: () => { voice.cancel(); setVoiceOpen(false); },
-    /**
-     * 麦克风按钮的意思变成**进入／退出对话**。
-     *
-     * 退出时那一句仍然算数（`voice.toggle` 会把已识别的这轮发出去再收麦克风）——
-     * 用户按下的是"我说完了"，不是"把我刚才说的丢掉"。真的想丢掉是 X 那件事
-     * （`closeVoice`：不收麦克风也不发）。
-     */
+    sendVoiceRef, interruptVoiceRef,
+    closeVoice: () => { if (voice.phase !== "idle") stopCompanionSpeech(); voice.cancel(); setVoiceOpen(false); },
+    // 结束和 X 都立即交还麦克风，不以退出操作代替发送。
     toggleVoice: () => {
       chat.setMode("closed");
       if (voice.phase === "idle") {
         setVoiceSession(value => value + 1);
         setVoiceOpen(true);
       }
+      else stopCompanionSpeech();
       voice.toggle();
     },
     inputActivity: inputLife.activity,

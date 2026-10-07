@@ -24,6 +24,24 @@ function bubble(goals = controller()) {
   return <CompanionGoalBubble anchorRef={{ current: null }} motionMode="off" blocked={false} open selectedId="run" goals={goals}
     onOpen={vi.fn()} onClose={vi.fn()} onSelect={vi.fn()} onDetails={vi.fn()} onChat={vi.fn()} />;
 }
+it("初次加载和读取失败不显示空任务邀请，已读取的成果在刷新期间保留", () => {
+  const goals = controller();
+  const view = render(bubble({ ...goals, items: [], loading: true }));
+  expect(screen.getByRole("region", { name: "伴星手边的事" }).getAttribute("aria-busy")).toBe("true");
+  expect(screen.queryByRole("button", { name: "说说要做什么" })).toBeNull();
+  view.rerender(bubble({ ...goals, items: [], error: "网络连接中断" }));
+  expect(screen.getByText("任务记录没有加载成功")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "说说要做什么" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "重新读取" }));
+  expect(goals.refresh).toHaveBeenCalledOnce();
+  view.rerender(bubble({ ...goals, loading: true }));
+  expect(screen.getByRole("button", { name: "速看" })).toBeTruthy();
+});
+it("手记读取失败不被当成还没有任务", () => {
+  render(<CompanionGoalJournal goals={{ ...controller(), items: [], error: "连接中断" }} targetId={null} onChat={vi.fn()} onArtifactOpen={vi.fn()} />);
+  expect(screen.queryByText(/还没有交给我的任务/)).toBeNull();
+  expect(screen.getByRole("alert").textContent).toContain("连接中断");
+});
 it("keeps detailed Markdown in the journal and exposes only the latest compatible result in the bubble", () => {
   const view = render(bubble());
   expect(screen.queryByText("速看已做好")).toBeNull();

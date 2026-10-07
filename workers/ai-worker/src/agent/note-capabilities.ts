@@ -11,7 +11,7 @@ export async function invokeNoteCapability(store: AgentWorkerAdvanceStore, call:
   const manifest = noteAgentCapabilityManifest.find(m => m.definition.name === call.name);
   if (!manifest) throw new AgentStoreError(400, "unknown_capability", "当前没有这项能力。");
   const input = manifest.argumentSchema.parse(call.arguments) as {
-    noteId: string; noteVersionId: string; startOrdinal?: number;
+    noteId: string; noteVersionId: string; startOrdinal?: number; startOffset?: number;
     taskId?: string; startCandidateOrdinal?: number; startBlockOrdinal?: number; startBlockOffset?: number;
     draftsUpdatedAt?: string;
   };
@@ -30,12 +30,12 @@ export async function invokeNoteCapability(store: AgentWorkerAdvanceStore, call:
       // 也不假装自己是一整条 WorkerTransaction。
       const page = await loadNoteReadPage({ execute: query => queryRows(tx, query) }, {
         ...store.scope, noteId: ref.noteId, noteVersionId: ref.noteVersionId,
-        startOrdinal: input.startOrdinal ?? 1, maxChars: 3000,
+        startOrdinal: input.startOrdinal ?? 1, startOffset: input.startOffset ?? 0, maxChars: 3000,
       });
       if (!page) throw new AgentStoreError(404, "note_not_found", "这版笔记现在读不到。");
       return { kind: "note" as const, value: {
         status: "succeeded", title: page.title, noteId: ref.noteId, noteVersionId: page.versionId,
-        totalBlocks: page.totalBlocks, truncated: page.truncated, nextStartOrdinal: page.nextStartOrdinal,
+        totalBlocks: page.totalBlocks, truncated: page.truncated, nextStartOrdinal: page.nextStartOrdinal, nextStartOffset: page.nextStartOffset ?? 0,
         imageCount: page.imageTotal, body: page.page.body,
       } };
     }

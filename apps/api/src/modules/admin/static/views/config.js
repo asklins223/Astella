@@ -13,11 +13,11 @@
    ============================================================ */
 
 import { api } from "../api-client.js";
-import { el, section, codeTag, badge, toast } from "../ui.js";
+import { el, bindTabList, section, codeTag, badge, toast } from "../ui.js";
 
 export const view = {
-  title: "模型配置",
-  lede: "每种功能由哪家模型服务、哪个模型来回答。密钥不经过浏览器——这里只看它引用了哪个环境变量、有没有配好。",
+  title: "模型配置", eyebrow: "MODEL CONNECTIONS",
+  lede: "管理模型服务与能力映射，让每次调用都有清晰的去向。",
   load: loadConfig,
 };
 
@@ -25,6 +25,7 @@ export const view = {
  *  草稿不因切视图而丢）；锁定清空（app.js 调用 resetDraft）。 */
 let draft = null;
 let dirty = false;
+let lastSelectedPlatform = null;
 
 /** 锁定/换令牌时清掉草稿：它属于上一个会话的上下文。 */
 export function resetDraft() {
@@ -103,6 +104,7 @@ async function loadConfig(ctx) {
     api("/config"),
     api("/overview").catch(() => null),
   ]);
+  if (!ctx.isActive()) return el("div");
   const writable = snapshot.writable && snapshot.exists;
 
   // 外部（另一个标签页/手工编辑）变更后，旧草稿不再对应磁盘现状：
@@ -206,7 +208,7 @@ async function loadConfig(ctx) {
   const platformIds = Object.keys(draft.platforms);
   const list = el("div", { class: "list", role: "tablist", "aria-label": "模型服务商" });
   const detail = el("div", { class: "detail" });
-  let selected = 0;
+  let selected = Math.max(0, platformIds.indexOf(lastSelectedPlatform));
 
   const rowNodes = platformIds.map((id, index) => {
     const row = el("button", {
@@ -224,9 +226,19 @@ async function loadConfig(ctx) {
     return row;
   });
   list.append(...rowNodes);
+  ctx.onCleanup(bindTabList(list, detail, "platforms"));
+  const search = el("input", { class: "field__input list-search", type: "search", placeholder: "筛选模型服务商…", "aria-label": "筛选模型服务商" });
+  const noMatch = el("p", { class: "empty", text: "没有匹配的服务商", hidden: true });
+  search.addEventListener("input", () => {
+    const needle = search.value.trim().toLowerCase();
+    rowNodes.forEach((node, i) => node.hidden = !platformIds[i].toLowerCase().includes(needle));
+    noMatch.hidden = rowNodes.some((node) => !node.hidden);
+  });
+  const navigator = el("div", { class: "navigator" }, search, list, noMatch);
 
   function select(index) {
     selected = index;
+    lastSelectedPlatform = platformIds[index];
     rowNodes.forEach((node, i) => node.setAttribute("aria-pressed", String(i === index)));
     paintPlatform(platformIds[index]);
   }
@@ -237,19 +249,19 @@ async function loadConfig(ctx) {
 
     const baseUrlInput = el("input", {
       class: "field__input field__input--mono", type: "text", spellcheck: "false",
-      value: platform.baseUrl, placeholder: "https://…",
+      id: "platform-base-url", value: platform.baseUrl, placeholder: "https://…",
       disabled: !writable,
       oninput: (event) => { platform.baseUrl = event.target.value; markDirty(); },
     });
     const apiKeyInput = el("input", {
       class: "field__input field__input--mono", type: "text", spellcheck: "false",
-      value: platform.apiKey,
+      id: "platform-key-source", value: platform.apiKey,
       placeholder: platform.apiKeyLocked ? "（写死在文件里，不显示也不改动）" : "${ENV_VAR}",
       disabled: !writable || platform.apiKeyLocked,
       oninput: (event) => { platform.apiKey = event.target.value; markDirty(); },
     });
 
-    detail.replaceChildren(
+    detail.replaceChildren(...[
       el("div", { class: "detail__head" },
         el("div", {},
           el("div", { class: "detail__title", text: id }),
@@ -262,14 +274,14 @@ async function loadConfig(ctx) {
       ),
       el("div", { class: "cfg-item u-mt-14" },
         el("div", { class: "field" },
-          el("label", { class: "field__label", text: "接口地址" }),
+          el("label", { class: "field__label", for: "platform-base-url", text: "接口地址" }),
           baseUrlInput,
           platform.apiKeyLocked
             ? el("div", { class: "field__note", text: "该平台密钥以明文写在文件里；面板不读它，保存时也不会碰它。" })
             : null,
         ),
         el("div", { class: "field" },
-          el("label", { class: "field__label", text: "密钥来源" }),
+          el("label", { class: "field__label", for: "platform-key-source", text: "密钥来源" }),
           apiKeyInput,
           el("div", { class: "field__note", text: platform.apiKeyLocked ? "要换成环境变量引用，先在文件里手动替换一次。" : "留空表示不需要密钥；写 ${VAR} 表示从环境变量读取。" }),
         ),
@@ -289,13 +301,13 @@ async function loadConfig(ctx) {
               return bits.length > 0 ? `${model}（${bits.join(" · ")}）` : model;
             }).join("；")}`)
         : null,
-    );
+    ].filter(Boolean));
   }
 
   if (platformIds.length > 0) {
     wrap.append(section("模型服务商", writable ? "选中后编辑 · 保存常驻页头" : `只读 · 要改：编辑 ${snapshot.path}`,
-      el("div", { class: "split" }, list, detail)));
-    select(0);
+      el("div", { class: "split" }, navigator, detail)));
+    select(selected);
   } else {
     wrap.append(section("模型服务商", "0 个", el("div", { class: "empty" },
       el("strong", { text: "配置里没有任何平台" }),
@@ -305,7 +317,7 @@ async function loadConfig(ctx) {
   /* ── 能力 → 模型 ── */
   const capabilityNames = Object.keys(draft.capabilities);
   wrap.append(section("每种功能用哪个模型", writable ? "编辑后点保存" : `只读 · 要改：编辑 ${snapshot.path}`,
-    el("div", { class: "table" },
+    el("div", { class: "table table__scroll" },
       el("table", {},
         el("thead", {}, el("tr", {},
           el("th", { text: "功能" }),
@@ -317,7 +329,7 @@ async function loadConfig(ctx) {
           ...capabilityNames.map((name) => {
             const capability = draft.capabilities[name];
             const selectEl = el("select", {
-              class: "field__input",
+              class: "field__input", "aria-label": `${capability.label ?? name}的服务商`,
               disabled: !writable,
               onchange: (event) => { capability.platform = event.target.value; markDirty(); },
             }, ...platformIds.map((id) => {
@@ -332,10 +344,11 @@ async function loadConfig(ctx) {
             }
             const modelInput = el("input", {
               class: "field__input field__input--mono", type: "text", spellcheck: "false",
-              value: capability.model, placeholder: "model id",
+              "aria-label": `${capability.label ?? name}的模型`, value: capability.model, placeholder: "model id",
               disabled: !writable,
               oninput: (event) => { capability.model = event.target.value; markDirty(); },
             });
+            const blockingIssue = snapshot.issues.find((issue) => issue.blocking && issue.path?.startsWith(`capabilities.${name}`));
             return el("tr", {},
               el("td", {},
                 el("span", { text: capability.label ?? name }),
@@ -344,8 +357,8 @@ async function loadConfig(ctx) {
               el("td", { style: "min-width:170px" }, selectEl),
               el("td", { style: "min-width:220px" }, modelInput),
               el("td", {},
-                badge(capability.resolvable ? "当前可用" : "会用兜底", capability.resolvable ? "ok" : "warn"),
-                capability.problem ? el("div", { class: "dim", style: "font-size:11px;margin-top:4px", text: capability.problem }) : null,
+                badge(blockingIssue ? "配置待修复" : capability.resolvable ? "映射已解析" : "使用兜底", blockingIssue ? "bad" : capability.resolvable ? "ok" : "warn"),
+                (blockingIssue || capability.problem) ? el("div", { class: "dim", style: "font-size:11px;margin-top:4px", text: blockingIssue?.message ?? capability.problem }) : null,
               ),
             );
           }),

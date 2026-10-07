@@ -1,19 +1,7 @@
-/* ============================================================
-   运维控制台 · 应用编排（工作台）
-   ------------------------------------------------------------
-   结构：token 闸 → 左栏常驻层 → 主列（sticky 页头带 + 页面内容）。
-
-   三条不变量：
-   1. **令牌只在内存**（模块作用域），刷新页面即失效；锁定 = 关流 + 清内存态。
-   2. **左栏是仪表**：导航项带实时徽标（队列积压 / 配置问题 / 待办），
-      栏底常驻现场速览——不翻页也知道哪里有事。
-   3. **实时与轮询分工**：日志/访问日志走 SSE；左栏徽标 20 秒轻轮询；
-      当前视图 45 秒自刷新（配置是编辑器、日志有实时流，两者除外）。
-   ============================================================ */
-
-import { setToken, hasToken, api, ApiError, openEventStream } from "./api-client.js";
-import { el, tickStats } from "./ui.js";
-import { formatDuration, formatNumber } from "./format.js";
+/** Control center: tab-scoped session recovery, scoped asynchronous views, live observations. */
+import { setToken, hasToken, readSessionToken, rememberSessionToken, forgetSessionToken, api, ApiError, openEventStream } from "./api-client.js";
+import { el, icon, ICONS, tickStats, resetStats, reducedMotion, springSelection, trapFocus, reveal, dismissDialog } from "./ui.js";
+import { formatDuration } from "./format.js";
 import { view as overviewView } from "./views/overview.js";
 import { view as queuesView } from "./views/queues.js";
 import { view as logsView } from "./views/logs.js";
@@ -21,371 +9,340 @@ import { view as metricsView } from "./views/metrics.js";
 import { view as infraView } from "./views/infra.js";
 import { view as configView, resetDraft as resetConfigDraft } from "./views/config.js";
 
-const VIEWS = {
-  overview: overviewView,
-  queues: queuesView,
-  logs: logsView,
-  metrics: metricsView,
-  infra: infraView,
-  config: configView,
+const VIEWS = { overview: overviewView, queues: queuesView, logs: logsView, metrics: metricsView, infra: infraView, config: configView };
+const SEARCH = {
+  overview: "系统健康 运行状态 待办 总览 overview",
+  queues: "任务 队列 失败 重试 死信 jobs queues",
+  logs: "日志 实时 报错 请求 logs",
+  metrics: "指标 耗时 性能 曲线 metrics",
+  infra: "基础设施 容器 数据库 存储 重启 docker infra",
+  config: "模型 配置 密钥 AI config",
 };
-
-let currentView = "overview";
-let stream = null;
-let railTimer = null;
-let viewCleanups = [];
-let liveState = { state: "idle", text: "就绪" };
-
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-
-/* ── 实时流（应用日志 + 访问日志共用一条连接）──────────── */
-
+const isUnlocked = () => hasToken() && !$("#shell").hidden;
+let currentView = "overview";
+let revision = 0;
+let session = 0;
+let stream = null;
+let railTimer = null;
+let gateAnimation = null;
+let viewCleanups = [];
+let liveState = "idle";
+let refreshing = false;
 const logSubscribers = new Set();
 const requestSubscribers = new Set();
+const moveSelection = springSelection($("#nav-selection"));
 
+function paintLiveBadge() {
+  const badge = $("#nav-live");
+  badge.hidden = liveState === "idle";
+  badge.className = `rail__badge rail__badge--${liveState === "live" ? "live" : "warn"}`;
+  badge.textContent = liveState === "live" ? "实时" : "重连";
+  $("#connection").dataset.state = liveState;
+  $("#connection-label").textContent = liveState === "live" ? "实时连接" : liveState === "busy" ? "正在重连" : "连接未建立";
+}
 function startStream() {
   stream?.close();
   stream = openEventStream({
-    onLog(entry) {
-      for (const subscriber of logSubscribers) subscriber(entry);
-    },
-    onRequest(entry) {
-      for (const subscriber of requestSubscribers) subscriber(entry);
-    },
-    onState(stateName) {
-      if (stateName === "connected") liveState = { state: "live", text: "实时" };
-      else if (stateName === "reconnecting") liveState = { state: "busy", text: "重连中" };
-      else if (stateName === "unauthorized") {
-        lockGate("令牌已失效，请重新输入。");
-        return;
-      } else {
-        liveState = { state: "idle", text: "就绪" };
-      }
+    onLog(entry) { for (const callback of logSubscribers) callback(entry); },
+    onRequest(entry) { for (const callback of requestSubscribers) callback(entry); },
+    onState(state) {
+      if (state === "unauthorized") { lockGate("令牌已失效，请重新输入。"); return; }
+      liveState = state === "connected" ? "live" : state === "reconnecting" ? "busy" : "idle";
       paintLiveBadge();
     },
   });
 }
-
-function paintLiveBadge() {
-  const badge = $("#nav-live");
-  if (!badge) return;
-  if (liveState.state === "live") {
-    badge.hidden = false;
-    badge.className = "rail__badge rail__badge--live";
-    badge.replaceChildren(el("i", { "aria-hidden": "true" }), el("span", { text: "实时" }));
-  } else if (liveState.state === "busy") {
-    badge.hidden = false;
-    badge.className = "rail__badge rail__badge--warn";
-    badge.textContent = "重连中";
-  } else {
-    badge.hidden = true;
-  }
-}
-
-/* ── 左栏徽标与现场速览（20 秒轻轮询）─────────────────── */
-
 function setNavBadge(id, text, tone = "") {
   const badge = $("#" + id);
-  if (!badge) return;
-  if (!text) {
-    badge.hidden = true;
-    return;
-  }
-  badge.hidden = false;
+  badge.hidden = !text;
   badge.className = `rail__badge${tone ? ` rail__badge--${tone}` : ""}`;
   badge.textContent = text;
 }
-
-function setFact(id, value) {
-  const node = $("#" + id);
-  if (node) node.textContent = value;
-}
-
 async function refreshRailState() {
-  if (!hasToken()) return;
+  if (!isUnlocked()) return;
+  const activeSession = session;
   const [todo, queues, config, infra] = await Promise.all([
-    api("/todo").catch(() => null),
-    api("/queues").catch(() => null),
-    api("/config").catch(() => null),
-    api("/infra").catch(() => null),
+    api("/todo").catch(() => null), api("/queues").catch(() => null),
+    api("/config").catch(() => null), api("/infra").catch(() => null),
   ]);
-
-  // 队列：死信优先（红），否则显示等待中的数量（橙）。
+  if (activeSession !== session || !hasToken()) return;
   const dead = queues?.totals?.deadTotal ?? 0;
   const pending = queues?.totals?.pending ?? 0;
-  setNavBadge("nav-badge-queues",
-    dead > 0 ? String(dead) : pending > 0 ? String(pending) : "",
-    dead > 0 ? "alert" : "warn");
-
-  // 配置：阻断问题 + 未注入密钥，都是"功能不可用"级别的信号。
-  const configIssues = (config?.issues?.filter((issue) => issue.blocking).length ?? 0)
-    + (config?.unresolvedEnvRefs?.length ?? 0);
+  setNavBadge("nav-badge-queues", dead > 0 ? String(dead) : pending > 0 ? String(pending) : "", dead > 0 ? "alert" : "warn");
+  const configIssues = (config?.issues?.filter((issue) => issue.blocking).length ?? 0) + (config?.unresolvedEnvRefs?.length ?? 0);
   setNavBadge("nav-badge-config", configIssues > 0 ? String(configIssues) : "", "warn");
-
-  // 基础设施：不健康的容器（不健康 = 红；重启中/暂停 = 橙）。一次性任务
-  // 退出码 0 在服务端已经算成 ok，不会误报。
-  if (infra?.docker?.available) {
-    const bad = infra.docker.containers.filter((c) => c.tone === "bad").length;
-    const warn = infra.docker.containers.filter((c) => c.tone === "warn").length;
-    setNavBadge("nav-badge-infra", bad > 0 ? String(bad) : warn > 0 ? String(warn) : "", bad > 0 ? "alert" : "warn");
-  } else {
-    setNavBadge("nav-badge-infra", "", "");
-  }
-
-  // 总览：待办里的 block + warn。
+  const containers = infra?.docker?.available ? infra.docker.containers : [];
+  const bad = containers.filter((c) => c.tone === "bad").length;
+  const warn = containers.filter((c) => c.tone === "warn").length;
+  setNavBadge("nav-badge-infra", bad > 0 ? String(bad) : warn > 0 ? String(warn) : "", bad > 0 ? "alert" : "warn");
   const blocking = todo?.counts?.block ?? 0;
   const urgent = blocking + (todo?.counts?.warn ?? 0);
   setNavBadge("nav-badge-overview", urgent > 0 ? String(urgent) : "", blocking > 0 ? "alert" : "warn");
-
-  if (queues) {
-    setFact("fact-users", formatNumber(queues.counts.usersTotal));
-    setFact("fact-spaces", formatNumber(queues.counts.workspacesTotal));
-    setFact("fact-notes", formatNumber(queues.counts.notesActive));
-    setFact("fact-runs", formatNumber(queues.counts.runsTotal));
-  }
+}
+function cleanupView() {
+  for (const cleanup of viewCleanups.splice(0)) { try { cleanup(); } catch { /* A failed teardown must not trap navigation. */ } }
+}
+function viewContext(version, head) {
+  const active = () => version === revision && hasToken();
+  return {
+    switchView: (...args) => active() ? switchView(...args) : undefined,
+    reload: () => active() ? refreshCurrent() : undefined,
+    isActive: active,
+    onLogEvent(callback) {
+      if (!active()) return () => {};
+      logSubscribers.add(callback);
+      return () => logSubscribers.delete(callback);
+    },
+    onRequestEvent(callback) {
+      if (!active()) return () => {};
+      requestSubscribers.add(callback);
+      return () => requestSubscribers.delete(callback);
+    },
+    onCleanup(fn) { if (active()) viewCleanups.push(fn); else fn(); },
+    setHeadExtra(...nodes) {
+      if (!active()) return;
+      const slot = $("#head-extra", head);
+      const flat = nodes.flat().filter(Boolean);
+      slot.replaceChildren(...flat);
+      slot.hidden = flat.length === 0;
+    },
+    setHeadActions(...nodes) { if (active()) $("#head-actions").replaceChildren(...nodes.flat().filter(Boolean)); },
+    updateChrome(overview) {
+      if (!active() || !overview?.service) return;
+      const mode = overview.service.nodeEnv === "production" ? "正式环境" : "开发环境";
+      $("#rail-env").textContent = mode;
+      const release = overview.release ?? {};
+      $("#rail-release").textContent = `${release.version ?? "dev"} · 已运行 ${formatDuration(overview.service.uptimeSeconds)}`;
+    },
+    refreshRail: () => { if (active()) void refreshRailState(); },
+  };
 }
 
-/* ── 视图上下文 ────────────────────────────────────────── */
-
-const ctx = {
-  switchView,
-  reload: () => refreshCurrent(),
-  onLogEvent(callback) {
-    logSubscribers.add(callback);
-    return () => logSubscribers.delete(callback);
-  },
-  onRequestEvent(callback) {
-    requestSubscribers.add(callback);
-    return () => requestSubscribers.delete(callback);
-  },
-  onCleanup(fn) {
-    viewCleanups.push(fn);
-  },
-  /** 往页头带里追加内容（总览的状态句放这里，滚动时仍可见）。 */
-  setHeadExtra(...nodes) {
-    const slot = $("#head-extra");
-    if (!slot) return;
-    const flat = nodes.flat().filter(Boolean);
-    slot.replaceChildren(...flat);
-    slot.hidden = flat.length === 0;
-  },
-  /** 页头带右侧的动作（保存/放弃这类要常驻可点）。 */
-  setHeadActions(...nodes) {
-    const slot = $("#head-actions");
-    if (!slot) return;
-    slot.replaceChildren(...nodes.flat().filter(Boolean));
-  },
-  updateChrome(overview) {
-    const env = $("#rail-env");
-    if (env && overview?.service) {
-      const mode = overview.service.nodeEnv === "production" ? "正式环境" : "开发环境";
-      env.textContent = `${mode} · 运行 ${formatDuration(overview.service.uptimeSeconds)}`;
-    }
-    const release = $("#rail-release");
-    if (release && overview?.release) {
-      const version = overview.release.version ?? "dev";
-      const commit = (overview.release.commit ?? "").slice(0, 7);
-      release.textContent = commit ? `${version} · ${commit}` : version;
-    }
-  },
-  /** 视图做完了动作（重试/清理/保存）后通知左栏刷新徽标。 */
-  refreshRail: () => { void refreshRailState(); },
-};
-
-/* ── 视图路由 ──────────────────────────────────────────── */
-
-async function switchView(name, { force = false } = {}) {
-  if (!VIEWS[name]) return;
-  if (name === currentView && !force) return;
-
-  for (const cleanup of viewCleanups.splice(0)) {
-    try {
-      cleanup();
-    } catch {
-      /* 清理失败不阻断切换 */
-    }
-  }
-
+async function switchView(name, { force = false, preserve = false, focus = false } = {}) {
+  if (!isUnlocked() || !VIEWS[name]) return;
+  if (name === currentView && !force) { if (focus) $("#content").focus({ preventScroll: true }); return; }
+  cleanupView();
+  const version = ++revision;
   currentView = name;
-
+  const content = $("#content");
+  const previousScroll = window.scrollY;
+  const meta = VIEWS[name];
+  $("#location-title").textContent = meta.title;
+  $("#head-actions").replaceChildren();
   $$(".rail__item").forEach((item) => {
     const active = item.dataset.view === name;
     item.classList.toggle("is-active", active);
-    item.setAttribute("aria-current", active ? "page" : "false");
+    if (active) item.setAttribute("aria-current", "page"); else item.removeAttribute("aria-current");
   });
-
-  const meta = VIEWS[name];
-  const content = $("#content");
+  const activeItem = $(".rail__item.is-active");
+  activeItem.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+  moveSelection(activeItem);
   const head = el("div", { class: "page-head" },
     el("div", { class: "page-head__inner" },
-      el("div", { class: "page-head__row" },
-        el("div", {},
-          el("h1", { class: "page-head__title", text: meta.title }),
-          el("p", { class: "page-head__lede", text: meta.lede }),
-        ),
-        el("div", { class: "page-head__actions", id: "head-actions" }),
-      ),
+      el("span", { class: "eyebrow", text: meta.eyebrow ?? "ASTELLA CONTROL CENTER" }),
+      el("h1", { class: "page-head__title", text: meta.title }),
+      el("p", { class: "page-head__lede", text: meta.lede }),
       el("div", { id: "head-extra", hidden: true }),
     ),
   );
   const body = el("div", { class: "page-body" });
-  content.replaceChildren(el("div", { class: `view${meta.fill ? " view--fill" : ""}` }, head, body));
-
-  body.append(el("div", { class: "figures" },
-    ...Array.from({ length: 4 }, () => el("div", { class: "figure" }, el("div", { class: "skeleton", style: "height:52px" }))),
-  ));
-
-  try {
-    const rendered = await meta.load(ctx);
-    if (currentView !== name) return; // 加载期间用户已切走
-    body.replaceChildren(rendered);
-    tickStats(body);
+  const view = el("div", { class: `view view--${name}${meta.fill ? " view--fill" : ""}` }, head, body);
+  if (!preserve) {
+    content.replaceChildren(view);
+    body.append(el("div", { class: "loading-state", role: "status", "aria-label": "正在加载" },
+      el("div", { class: "skeleton skeleton--hero" }),
+      el("div", { class: "figures" }, ...Array.from({ length: 4 }, () => el("div", { class: "skeleton" }))),
+    ));
     window.scrollTo(0, 0);
-  } catch (error) {
-    if (error instanceof ApiError && error.code === "unauthorized") {
-      lockGate("令牌无效，或该部署未启用运维面板。");
-      return;
-    }
-    body.replaceChildren(
-      el("div", { class: "empty" },
-        el("strong", { text: "载入失败" }),
-        el("span", { class: "mono", text: error.message }),
-      ),
-    );
   }
-}
-
-/** 重载当前视图（保留滚动位置）。 */
-async function refreshCurrent() {
-  const scrollTop = window.scrollY;
-  await switchView(currentView, { force: true });
-  window.scrollTo(0, scrollTop);
-  void refreshRailState();
-}
-
-/* ── 闸与启动 ──────────────────────────────────────────── */
-
-function lockGate(message) {
-  setToken(null);
-  stream?.close();
-  stream = null;
-  liveState = { state: "idle", text: "就绪" };
-  resetConfigDraft();
-  for (const cleanup of viewCleanups.splice(0)) {
-    try { cleanup(); } catch { /* 无碍 */ }
-  }
-  paintLiveBadge();
-
-  const gate = $("#gate");
-  const shell = $("#shell");
-  shell.hidden = true;
-  gate.hidden = false;
-  gate.dataset.state = "locked";
-  gate.style.removeProperty("animation");
-  if (message) {
-    const error = $("#gate-error");
-    error.textContent = message;
-    error.hidden = false;
-  }
-}
-
-async function unlockGate(candidate) {
-  setToken(candidate);
+  content.setAttribute("aria-busy", "true");
   try {
-    // 先打一次真请求再揭幕：这样「令牌错了」发生在闸还开着的时候，
-    // 用户不会先看到面板骨架再被弹回来。
-    await api("/overview");
-  } catch {
-    setToken(null);
-    return false;
-  }
-  const gate = $("#gate");
-  const shell = $("#shell");
-  gate.dataset.state = "unlocked";
-  shell.hidden = false;
-  $("#gate-error").hidden = true;
-
-  startStream();
-  void refreshRailState();
+    const rendered = await meta.load(viewContext(version, head));
+    if (version !== revision || !hasToken()) return;
+    body.replaceChildren(rendered);
+    if (preserve) content.replaceChildren(view);
+    tickStats(body);
+    reveal(body, preserve);
+    $("#last-updated").textContent = `${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })} 更新`;
+    window.scrollTo(0, preserve ? previousScroll : 0);
+    if (focus) content.focus({ preventScroll: true });
+  } catch (error) {
+    if (version !== revision || !hasToken()) return;
+    if (error instanceof ApiError && error.code === "unauthorized") { lockGate("令牌无效，请重新输入。"); return; }
+    if (preserve) content.replaceChildren(view);
+    body.replaceChildren(el("div", { class: "load-error", role: "alert" }, icon(ICONS.alert, { size: 30 }),
+      el("h2", { text: "暂时无法读取这个页面" }), el("p", { text: error.message }),
+      el("button", { class: "btn btn--primary", type: "button", text: "重新加载", onclick: () => refreshCurrent() })));
+  } finally { if (version === revision) content.removeAttribute("aria-busy"); }
+}
+async function refreshCurrent() {
+  if (refreshing || !isUnlocked()) return;
+  refreshing = true;
+  $("#refresh").classList.add("is-busy");
+  try { await switchView(currentView, { force: true, preserve: true }); void refreshRailState(); }
+  finally { refreshing = false; $("#refresh").classList.remove("is-busy"); }
+}
+function lockGate(message) {
+  ++session; ++revision;
+  forgetSessionToken();
+  dismissDialog();
   clearInterval(railTimer);
-  railTimer = setInterval(refreshRailState, 20_000);
-
-  await switchView("overview", { force: true });
-
-  setTimeout(() => {
-    gate.hidden = true;
-  }, 260);
-  return true;
+  gateAnimation?.cancel();
+  closeCommand(false);
+  stream?.close(); stream = null;
+  liveState = "idle";
+  resetConfigDraft(); resetStats(); cleanupView();
+  logSubscribers.clear(); requestSubscribers.clear();
+  $("#content").replaceChildren();
+  $("#head-actions").replaceChildren();
+  $("#shell").hidden = true; $("#shell").inert = true;
+  const gate = $("#gate");
+  gate.hidden = false; gate.inert = false; gate.dataset.state = "locked";
+  $("#gate-form").hidden = false; $("#gate-resume").hidden = true;
+  $("#gate-retry").hidden = true;
+  $("#gate-error").textContent = message ?? "";
+  $("#gate-error").hidden = !message;
+  $("#gate-token").value = "";
+  $("#gate-token").focus();
+  paintLiveBadge();
 }
-
-function bindEvents() {
-  $("#gate-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const input = $("#gate-token");
-    const submit = $("#gate-submit");
-    const error = $("#gate-error");
-    const candidate = input.value.trim();
-    if (!candidate) return;
-
-    submit.disabled = true;
-    error.hidden = true;
-    const ok = await unlockGate(candidate);
-    submit.disabled = false;
-    if (ok) {
-      input.value = "";
-    } else {
-      error.textContent = "令牌不正确，或该部署未启用运维面板。";
-      error.hidden = false;
-      input.select();
+async function unlockGate(candidate) {
+  const attempt = ++session;
+  setToken(candidate);
+  let overview;
+  try { overview = await api("/overview"); }
+  catch (error) {
+    if (attempt === session) {
+      setToken(null);
+      if (error instanceof ApiError && error.code === "unauthorized") forgetSessionToken();
     }
-  });
-
-  $$(".rail__item").forEach((item) => {
-    item.addEventListener("click", () => switchView(item.dataset.view));
-  });
-
-  $("#refresh").addEventListener("click", async () => {
-    const button = $("#refresh");
-    button.classList.add("is-busy");
-    await refreshCurrent();
-    button.classList.remove("is-busy");
-  });
-
-  $("#lock").addEventListener("click", () => lockGate(null));
-
-  // 键盘：数字键快速切换视图，顺序与导航一致。
-  document.addEventListener("keydown", (event) => {
-    const target = event.target;
-    if (target instanceof Element && target.matches("input, select, textarea")) return;
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
-    if ($("#shell").hidden) return;
-    if (!$("#modal").hidden) return;
-    const views = Object.keys(VIEWS);
-    const index = Number(event.key) - 1;
-    if (index >= 0 && index < views.length) switchView(views[index]);
-  });
-
-  // 左栏时钟
-  const clock = $("#clock");
-  const tickClock = () => {
-    if (clock) clock.textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-  };
-  tickClock();
-  setInterval(tickClock, 1000);
-
-  // 当前视图的温和自刷新：只覆盖"数字会变"的三页；配置是编辑器、
-  // 日志有实时流，都不该被定时重建。
-  setInterval(() => {
-    if (document.hidden) return;
-    if ($("#shell").hidden) return;
-    if (!$("#modal").hidden) return;
-    if (!["overview", "queues", "metrics"].includes(currentView)) return;
-    void refreshCurrent();
-  }, 45_000);
+    throw error;
+  }
+  if (attempt !== session) return;
+  rememberSessionToken();
+  const gate = $("#gate");
+  $("#shell").hidden = false; $("#shell").inert = false;
+  $("#gate-error").hidden = true;
+  gate.inert = true;
+  gateAnimation?.cancel();
+  if (reducedMotion()) gate.hidden = true;
+  else {
+    gateAnimation = gate.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 240, easing: "ease-out", fill: "forwards" });
+    gateAnimation.finished.then(() => { if (attempt === session) gate.hidden = true; }).catch(() => {});
+  }
+  startStream(); void refreshRailState();
+  clearInterval(railTimer); railTimer = setInterval(refreshRailState, 20_000);
+  await switchView("overview", { force: true, focus: true });
+  if (attempt === session) viewContext(revision, $("#content")).updateChrome(overview);
 }
 
-/* ── 启动 ──────────────────────────────────────────────── */
+async function restoreLogin() {
+  const saved = readSessionToken();
+  if (!saved) return;
+  $("#gate-form").hidden = true; $("#gate-resume").hidden = false;
+  $("#gate-error").hidden = true;
+  try { await unlockGate(saved); }
+  catch (failure) {
+    $("#gate-form").hidden = false; $("#gate-resume").hidden = true;
+    const expired = failure instanceof ApiError && failure.code === "unauthorized";
+    $("#gate-error").textContent = expired ? "登录状态已失效，请重新输入运维令牌。" : "暂时无法连接服务，可以重试恢复登录。";
+    $("#gate-error").hidden = false;
+    $("#gate-retry").hidden = expired;
+    if (expired) $("#gate-token").focus();
+  }
+}
 
-bindEvents();
+let commandReturnFocus = null;
+let releaseCommandFocus = null;
+let commandItems = [];
+let commandIndex = 0;
+function selectCommand(index) {
+  commandIndex = index;
+  $$(".command__item").forEach((item, i) => item.setAttribute("aria-selected", String(i === index)));
+  const item = commandItems[index];
+  if (item) $("#command-input").setAttribute("aria-activedescendant", `command-${item}`);
+  else $("#command-input").removeAttribute("aria-activedescendant");
+}
+function renderCommand() {
+  const query = $("#command-input").value.trim().toLowerCase();
+  commandItems = Object.keys(VIEWS).filter((name) => SEARCH[name].includes(query));
+  $("#command-results").replaceChildren(...commandItems.map((name, index) =>
+    el("button", { class: "command__item", id: `command-${name}`, role: "option", type: "button", tabindex: "-1", "aria-selected": index === 0 ? "true" : "false", onclick: () => { closeCommand(false); void switchView(name, { focus: true }); } },
+      el("span", { class: "command__icon" }, icon(ICONS[name === "infra" ? "layers" : name])),
+      el("span", {}, el("strong", { text: VIEWS[name].title }), el("span", { class: "command__detail", text: VIEWS[name].lede })),
+      el("kbd", { text: String(Object.keys(VIEWS).indexOf(name) + 1) }),
+    )));
+  if (!commandItems.length) $("#command-results").append(el("div", { class: "empty", text: "没有匹配的页面，试试“日志”或“模型”。" }));
+  selectCommand(0);
+}
+function openCommand() {
+  if (!isUnlocked() || !$("#modal").hidden) return;
+  commandReturnFocus = document.activeElement;
+  $("#command").hidden = false; $("#shell").inert = true;
+  $("#command-input").value = ""; renderCommand();
+  releaseCommandFocus = trapFocus($("#command"));
+  $("#command-input").focus();
+}
+function closeCommand(restore = true) {
+  $("#command").hidden = true; releaseCommandFocus?.(); releaseCommandFocus = null;
+  $("#shell").inert = !hasToken();
+  if (restore && commandReturnFocus?.isConnected) commandReturnFocus.focus();
+}
+$("#gate-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const input = $("#gate-token"); const submit = $("#gate-submit"); const error = $("#gate-error");
+  const candidate = input.value.trim(); if (!candidate) return;
+  $("#gate-retry").hidden = true;
+  submit.disabled = true; submit.firstElementChild.textContent = "正在连接…"; error.hidden = true;
+  try { await unlockGate(candidate); input.value = ""; }
+  catch (failure) {
+    error.textContent = failure instanceof ApiError && failure.code === "unauthorized" ? "令牌不正确，请检查部署配置后重试。" : "无法连接服务，请检查网络后重试。";
+    error.hidden = false; input.select();
+  } finally { submit.disabled = false; submit.firstElementChild.textContent = "解锁面板"; }
+});
+$$(".rail__item").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.view)));
+$("#refresh").addEventListener("click", refreshCurrent);
+$("#lock").addEventListener("click", () => lockGate(null));
+$("#gate-retry").addEventListener("click", restoreLogin);
+$("#open-command").addEventListener("click", openCommand);
+$("#command-close").addEventListener("click", () => closeCommand());
+$("#command-scrim").addEventListener("click", () => closeCommand());
+$("#command-input").addEventListener("input", renderCommand);
+$("#motion-toggle").addEventListener("click", () => {
+  const modes = ["system", "full", "off"];
+  document.body.dataset.motion = modes[(modes.indexOf(document.body.dataset.motion) + 1) % modes.length];
+  $("#motion-label").textContent = `动效 · ${{ system: "跟随系统", full: "开启", off: "关闭" }[document.body.dataset.motion]}`;
+  settleMotion();
+  moveSelection($(".rail__item.is-active"));
+});
+function settleMotion() {
+  if (!reducedMotion()) return;
+  for (const animation of document.getAnimations()) {
+    try { animation.finish(); } catch { animation.cancel(); }
+  }
+}
+window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", settleMotion);
+document.addEventListener("keydown", (event) => {
+  if (!isUnlocked() || !$("#modal").hidden) return;
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); $("#command").hidden ? openCommand() : closeCommand(); return; }
+  if (!$("#command").hidden) {
+    if (event.key === "Escape") { event.preventDefault(); closeCommand(); }
+    if (["ArrowDown", "ArrowUp"].includes(event.key) && commandItems.length) { event.preventDefault(); selectCommand((commandIndex + (event.key === "ArrowDown" ? 1 : -1) + commandItems.length) % commandItems.length); }
+    if (event.key === "Enter" && commandItems[commandIndex]) { event.preventDefault(); const name = commandItems[commandIndex]; closeCommand(false); void switchView(name, { focus: true }); }
+    return;
+  }
+  if (event.target instanceof Element && event.target.closest("input, select, textarea, [contenteditable='true']")) return;
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  const name = Object.keys(VIEWS)[Number(event.key) - 1];
+  if (name) { event.preventDefault(); void switchView(name, { focus: true }); }
+});
+new ResizeObserver(() => { if (isUnlocked()) moveSelection($(".rail__item.is-active")); }).observe($(".rail__nav"));
+setInterval(() => {
+  if (document.hidden || !isUnlocked() || !$("#modal").hidden || !$("#command").hidden) return;
+  if (document.activeElement?.closest("input, select, textarea, [contenteditable='true']")) return;
+  if (["overview", "queues", "metrics"].includes(currentView)) void refreshCurrent();
+}, 45_000);
 paintLiveBadge();
+void restoreLogin();

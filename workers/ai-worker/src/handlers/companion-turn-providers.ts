@@ -32,7 +32,7 @@ export function resolveCompanionTurnProviders(input: {
   governance: AIGovernanceContext;
   ctx: CompanionDialogueHandlerContext;
   read: ReadContext;
-  /** 上下文预算闸；只有主 provider 带，兜底槽不带（它只跑退化重试）。 */
+  /** 主链与兜底共用回执/压缩端口，每次按实际目标模型重新计量。 */
   contextGate: ContextBudgetGateOptions;
   reserveCall: GovernedProviderAuditContext["reserveCall"];
 }): CompanionTurnProviders {
@@ -48,16 +48,16 @@ export function resolveCompanionTurnProviders(input: {
   return {
     textProvider,
     provider: createGovernedProvider(
-      createProvider(textProvider.providerName, textProvider.providerConfig),
+      createProvider(textProvider.providerName, { ...textProvider.providerConfig, sessionId: read.conversationId }),
       governance, ctx.workspaceId, audit("companion_agent"), contextGate,
     ),
     fallbackProvider: governance.companionFallbackProviderName && governance.companionFallbackProviderConfig
       ? createGovernedProvider(
         createProvider(
           governance.companionFallbackProviderName,
-          governance.companionFallbackProviderConfig,
+          { ...governance.companionFallbackProviderConfig, sessionId: read.conversationId },
         ),
-        governance, ctx.workspaceId, audit("companion_agent_fallback"),
+        governance, ctx.workspaceId, audit("companion_agent_fallback"), contextGate,
       )
       : undefined,
   };

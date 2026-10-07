@@ -18,6 +18,8 @@ import type { ModelProfile, PlatformOptions } from "./platform-config.ts";
 
 /** 运行时配置（API Key、Base URL、模型与模型能力档案等） */
 export interface ProviderRuntimeConfig {
+  /** Stable host conversation identity, passed through to session-aware gateways. */
+  sessionId?: string;
   apiKey?: string | null;
   baseUrl?: string | null;
   model?: string | null;

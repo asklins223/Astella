@@ -46,8 +46,7 @@ import {
 } from "@astella/shared/companion-voice-contracts";
 import { DesktopGatewayFailure } from "./desktop-gateway-failure";
 import type { SessionCredentialStore } from "./desktop-gateway-credentials";
-import type { CompanionGuidanceAudioCache } from "./companion-guidance-audio-cache";
-import type { CompanionGuidanceVoiceProfileV1 } from "@astella/shared/companion-voice-contracts";
+import type { CompanionVoiceAudioCache, VoiceAudioProfile } from "./companion-voice-audio-cache";
 import type { RoomProjectionV1 } from "@astella/shared/room-projection-contracts";
 import type { LearningDashboardV2 } from "@astella/shared/learning-objective-surface-contracts";
 import type {
@@ -321,7 +320,9 @@ export class GatewayTransport {
       credentials: SessionCredentialStore | null,
       connection: ApiConnectionStateV1,
       trust: LocalApiTrustV1,
-      readonly guidanceAudioCache: CompanionGuidanceAudioCache | null = null,
+      readonly guidanceAudioCache: CompanionVoiceAudioCache | null = null,
+      /** 念想那一句的本机音频桶；与带路分目录，翻手记不顶掉带路的缓存。 */
+      readonly thoughtAudioCache: CompanionVoiceAudioCache | null = null,
     ) {
       this.configuration = configuration;
       this.configurationError = configurationError;
@@ -332,7 +333,9 @@ export class GatewayTransport {
 
   // ── 状态 ────────────────────────────────────────────────────────
     readonly activeRequests = new Map<string, AbortController>();
-    guidanceVoiceProfile: { key: string; at: number; value: Promise<CompanionGuidanceVoiceProfileV1> } | null = null;
+    guidanceVoiceProfile: { key: string; at: number; value: Promise<VoiceAudioProfile> } | null = null;
+    /** 念想缓存的音色身份来自账号设置，与带路的默认档不是一回事，所以各记一份。 */
+    thoughtVoiceProfile: { key: string; at: number; value: Promise<VoiceAudioProfile> } | null = null;
   // ── 连接与凭据（2026-09-30 第四刀） ────────────────────────────────
   //
   // `ensureConnected` 被全类 **198 个方法**调用——它是整个网关的入口门，

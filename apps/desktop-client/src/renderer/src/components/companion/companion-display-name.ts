@@ -6,7 +6,7 @@ import type { CompanionPersonaV1 } from "@astella/shared/companion-memory-deskto
  * 账号人格档案里的 `profile.name` 存的是用户起的名字（本机实测是「爱吃白饭的大肥鱼」），
  * 而伴星身边那十几处文字以前把 **Live2D 模型名** "Mao" 写死在字符串里：
  * 换了形态、改了名字，界面上每一句仍然叫她 Mao，包括消息署名、输入框标题、
- * 三颗按钮的 aria-label 和「正在来到书桌边」那条加载语。
+ * 三颗按钮的 aria-label 和「加载形象」那条加载语。
  *
  * 推导顺序与伴星中心 `companion-center-surface.tsx:718` 那一条同源；那一处应当改成
  * 调用本函数（一行改动，那个文件并行会话在改，所以先留作移交）。在那之前，

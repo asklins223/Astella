@@ -150,7 +150,13 @@ export function VoiceTeachbackEditor({
       const availability = await probeMicrophone();
       if (operation !== operationRef.current) return;
       setMic(availability);
-      if (availability.state !== "ready") return;
+      /**
+       * 「还没有权限」不是一道闸。`enumerateDevices()` 分不出「从来没问过」和「已经点了拒绝」
+       * （两种都是 label 全空），拦在这里等于把系统那次提问的机会一起没收 —— 首次授权
+       * 因此永远弹不出来，界面只剩一句让人去翻系统设置的死路话。
+       * 真正没有退路的是另外两种：这个窗口没有录音 API，或这台机器一个输入设备都没有。
+       */
+      if (availability.state === "no-api" || availability.state === "no-device") return;
       const recorder = new CompanionVoiceRecorder();
       stopCompanionSpeech();
       releaseMicrophoneRef.current = holdCompanionMicrophone();
@@ -160,10 +166,13 @@ export function VoiceTeachbackEditor({
         if (operation !== operationRef.current) return;
         releaseMicrophoneRef.current?.(); releaseMicrophoneRef.current = null;
         const name = error instanceof DOMException ? error.name : "UnknownError";
-        setMic({ state: "start-failed", errorName: name });
+        // 被系统或用户拒绝时回到 `no-permission` 那句话：它给的是出路，不是一个异常名。
+        setMic(name === "NotAllowedError" ? { state: "no-permission" } : { state: "start-failed", errorName: name });
         return;
       }
       if (operation !== operationRef.current) { void recorder.stop().catch(() => undefined); return; }
+      // 麦都开起来了，就别再挂着探测那句「还没有权限」：它说的只是探测那一刻。
+      setMic({ state: "ready" });
       recorderRef.current = recorder;
       setSeconds(0);
       setPhase("recording");

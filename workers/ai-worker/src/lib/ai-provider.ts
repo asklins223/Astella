@@ -93,6 +93,8 @@ export interface AIProvider {
   // ── Supervisor Agent v1（计划 §8.1） ──
   executeAgentTurn?(request: AgentTurnRequest, signal?: AbortSignal): Promise<AgentTurnResult>;
   getCapabilities?(): ProviderCapability;
+  /** Local tokenizer for this model; null means no verified tokenizer exists. */
+  countTextTokens?(text: string): Promise<number | null>;
 
   // ── Embedding (optional) ──
   embed?(text: string, signal?: AbortSignal): Promise<number[] | null>;
@@ -110,6 +112,7 @@ import { resolveSystemPlatform } from "@astella/shared/platform-config-node";
 import type { PlatformOptions } from "@astella/shared";
 
 export interface AIProviderRuntimeConfig {
+  sessionId?: string;
   apiKey?: string | null;
   baseUrl?: string | null;
   model?: string | null;

@@ -219,6 +219,8 @@ type RoomStore = {
   onboardingSeen: boolean;
   onboardingOpen: boolean;
   companionGuideOpen: boolean;
+  /** 引导影片临时使用右下角座位；不写入用户的角色摆位偏好。 */
+  companionGuideFilm: boolean;
   companionMoment: CompanionMoment;
   pendingHomeCompletion: PendingHomeCompletion | null;
   activeHomeCompletion: ActiveHomeCompletion | null;
@@ -339,6 +341,7 @@ type RoomStore = {
   openOnboarding: () => void;
   finishOnboarding: () => void;
   setCompanionGuideOpen: (open: boolean) => void;
+  setCompanionGuideFilm: (active: boolean) => void;
   setCompanionMoment: (moment: CompanionMoment) => void;
   queueHomeCompletion: (id: string) => void;
   beginPendingHomeCompletion: (id: string) => void;
@@ -400,6 +403,7 @@ export const useRoomStore = create<RoomStore>()(
       masterMuted: false,
       onboardingSeen: false,
       companionGuideOpen: false,
+      companionGuideFilm: false,
       onboardingOpen: false,
       companionMoment: "idle",
       pendingHomeCompletion: null,
@@ -603,6 +607,7 @@ export const useRoomStore = create<RoomStore>()(
       openOnboarding: () => set({ onboardingOpen: true }),
       finishOnboarding: () => set({ onboardingOpen: false, onboardingSeen: true }),
       setCompanionGuideOpen: (companionGuideOpen) => set({ companionGuideOpen }),
+      setCompanionGuideFilm: (companionGuideFilm) => set({ companionGuideFilm }),
       setCompanionMoment: (companionMoment) => set({ companionMoment }),
       queueHomeCompletion: (id) => {
         const normalizedId = id.trim();

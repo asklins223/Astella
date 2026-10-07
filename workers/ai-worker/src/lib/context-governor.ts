@@ -135,7 +135,7 @@ export interface ContextBudgetGateOptions {
 }
 
 export interface ContextPressureRequest {
-  provider: Pick<AIProvider, "id" | "modelId" | "getCapabilities">;
+  provider: Pick<AIProvider, "id" | "modelId" | "getCapabilities" | "countTextTokens">;
   operation: string;
   /** 本次请求声明的输出上限（agent turn 的 maxTokens / chat 的 maxTokens）。 */
   requestedOutputTokens?: number | null;
@@ -182,7 +182,9 @@ export async function governContextPressure(
     inputHardLimitTokens: capability?.inputHardLimitTokens ?? null,
   });
 
-  const measurement = await request.measure({});
+  const measurement = await request.measure(request.provider.countTextTokens
+    ? { countTokens: text => request.provider.countTextTokens!(text) }
+    : {});
 
   const decision = evaluateContextPressure({
     budget,

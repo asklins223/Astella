@@ -27,19 +27,20 @@
     "test:shared-foundation-vertical-slice:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/shared-foundation-vertical-slice-postgres.integration.ts"
   },
   "dependencies": {
-    "@astella/shared": "file:../../packages/shared",
+    "@astella/agent-core": "file:../../packages/agent-core",
+    "@astella/agent-host": "file:../../packages/agent-host",
+    "@astella/ai-quality": "file:../../packages/ai-quality",
     "@astella/card-generation": "file:../../packages/card-generation",
+    "@astella/shared": "file:../../packages/shared",
     "@aws-sdk/client-s3": "^3.1090.0",
+    "@huggingface/tokenizers": "0.2.0",
     "@smithy/node-http-handler": "^4.9.9",
     "drizzle-orm": "^0.45.2",
     "pino": "^9.5.0",
     "postgres": "^3.4.5",
     "prom-client": "^15.1.0",
     "undici": "^7.29.0",
-    "zod": "^3.23.8",
-    "@astella/agent-core": "file:../../packages/agent-core",
-    "@astella/agent-host": "file:../../packages/agent-host",
-    "@astella/ai-quality": "file:../../packages/ai-quality"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",

@@ -1,8 +1,8 @@
-import { RefreshCw,Search,X } from "lucide-react";
+import { Hourglass,RefreshCw,Search,X } from "lucide-react";
 import type { ReactNode } from "react";
 
-export function SectionState({ message, detail, onRetry }: { readonly message: string; readonly detail?: string; readonly onRetry?: () => void }) {
-  return <div className="cc-state" role="status"><strong>{message}</strong>{detail ? <p>{detail}</p> : null}{onRetry ? <button type="button" className="cc-link" onClick={onRetry}><RefreshCw size={14} aria-hidden="true" />重新读取</button> : null}</div>;
+export function SectionState({ message, detail, onRetry, loading = false }: { readonly message: string; readonly detail?: string; readonly onRetry?: () => void; readonly loading?: boolean }) {
+  return <div className="cc-state" data-loading={loading || undefined} role="status" aria-busy={loading}><strong>{loading ? <Hourglass size={16} aria-hidden="true" /> : null}{message}</strong>{detail ? <p>{detail}</p> : null}{onRetry && !loading ? <button type="button" className="cc-link" onClick={onRetry}><RefreshCw size={14} aria-hidden="true" />重新读取</button> : null}</div>;
 }
 export function CenterFeedback({ error, notice }: { readonly error?: string | null; readonly notice?: string | null }) {
   return <>{error ? <p className="cc-feedback is-error" role="alert">{error}</p> : null}{notice ? <p className="cc-feedback" role="status">{notice}</p> : null}</>;

@@ -239,6 +239,13 @@ export function companionStepRuntimePolicy(input: {
   attentionIntent: string;
 }): string {
   const { toolCount, stepBudget, finalAnswerOnly, attentionIntent } = input;
+  if (toolCount === 0 && attentionIntent === "conversation") {
+    return [
+      "本轮只回应用户此刻的话题。共同记录帮助理解，不续办或汇报旧任务、笔记与学习进度。",
+      "这一轮没有工具；实际读取、保存与操作只按已有回执说，不用承诺代替动作。",
+      "按当前人格自然接话，讲完就可以停；不要解释接话策略，也不必附一个邀请。",
+    ].join("\n");
+  }
   const toolDefinitions = { length: toolCount };
   return [
     // 技能层不再参与选择，也就没有"本轮你是XX助手"的角色切换——

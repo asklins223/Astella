@@ -133,7 +133,7 @@ describe("伴星中心 · 日记：只说那一刻屏幕上写着的", () => {
     expect(view.notice).toBe(
       `${state.querySelector("strong")?.textContent}：${state.querySelector("p")?.textContent}`,
     );
-    expect(view.notice).toContain("她试了几次没写出来");
+    expect(view.notice).toContain("日记生成服务暂时不可用");
   });
 
   it("整格读不到：只发状态与原因", () => {
@@ -142,10 +142,10 @@ describe("伴星中心 · 日记：只说那一刻屏幕上写着的", () => {
     expect(view.statusLine).toBe(document.querySelector(".cc-state strong")?.textContent);
     expect(view.items).toBeUndefined();
     expect(view.filters).toBeUndefined();
-    expect(view.notice).toBe("日记当前不可用：伴星数据暂时不可用");
+    expect(view.notice).toBe("日记没有加载成功：伴星数据暂时不可用");
   });
 
-  it("第一次读取没回来：说的是「正在读取日记」，不发任何一天的内容", () => {
+  it("第一次读取没回来：说的是「正在加载日记」，不发任何一天的内容", () => {
     renderPanel({ section: null, loading: true, failure: null });
     const view = publishedView()!;
     expect(view.statusLine).toBe(document.querySelector(".cc-state strong")?.textContent);

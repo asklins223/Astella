@@ -39,6 +39,7 @@ export interface CompanionVoiceRecorderOptions {
    * 交回调用方走正常的收尾路径，这段录音才还会被送去识别。
    */
   readonly onLimit?: () => void;
+  readonly onError?: () => void;
   /** 上限时长；常驻会话要的是"这一轮别说太久"，不是"会话只能一分钟"。 */
   readonly maxDurationMs?: number;
 }
@@ -121,6 +122,7 @@ export class CompanionVoiceRecorder {
   private worklet: AudioWorkletNode | null = null;
   private scriptNode: ScriptProcessorNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
+  private silentOutput: GainNode | null = null;
   private chunks: Float32Array[] = [];
   private totalFrames = 0;
   private startedAt = 0;
@@ -131,11 +133,14 @@ export class CompanionVoiceRecorder {
   private readonly limitListener: (() => void) | null = null;
   private readonly maxDurationMs: number;
   private limitFired = false;
+  private cancelled = false;
+  private readonly errorListener: (() => void) | null;
 
   constructor(options?: CompanionVoiceRecorderOptions) {
     this.levelListener = options?.onLevel ?? null;
     this.frameListener = options?.onFrame ?? null;
     this.limitListener = options?.onLimit ?? null;
+    this.errorListener = options?.onError ?? null;
     this.maxDurationMs = options?.maxDurationMs ?? MAX_DURATION_MS;
   }
 
@@ -161,79 +166,104 @@ export class CompanionVoiceRecorder {
 
   async start(): Promise<void> {
     if (this.recording) return;
-    this.stream = await navigator.mediaDevices.getUserMedia({
+    const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
-    this.context = new AudioContext();
-    await this.context.resume();
-    this.contextSampleRate = this.context.sampleRate;
-    this.source = this.context.createMediaStreamSource(this.stream);
-    this.chunks = [];
-    this.totalFrames = 0;
-    this.startedAt = Date.now();
-    this.limitFired = false;
-    let lastLevelAt = 0;
-    const levelListener = this.levelListener;
-    const frameListener = this.frameListener;
-    const onChunk = (chunk: Float32Array) => {
-      if (!this.recording) return;
-      const copy = chunk.slice(0);
-      if (frameListener) {
-        // 流模式：这片音频归调用方（分段缓冲）持有，这里一片不留。
-        frameListener(copy, this.contextSampleRate);
-      } else {
-        this.chunks.push(copy);
-        this.totalFrames += copy.length;
-      }
-      const now = Date.now();
-      if (levelListener && now - lastLevelAt >= LEVEL_INTERVAL_MS) {
-        lastLevelAt = now;
-        levelListener(companionVoiceLevel(copy));
-      }
-      // 到上限：交回调用方收尾（它会 `stop()` 并把这段送去识别），不自己悄悄停掉。
-      if (now - this.startedAt >= this.maxDurationMs && !this.limitFired) {
-        this.limitFired = true;
-        this.limitListener?.();
-      }
+    // 权限弹窗还开着时也能取消；迟到的授权只负责交还设备。
+    if (this.cancelled) { for (const track of stream.getTracks()) track.stop(); return; }
+    this.stream = stream;
+    for (const track of stream.getAudioTracks()) track.onended = () => {
+      if (this.recording) { void this.stop(); this.errorListener?.(); }
     };
     try {
-      const workletUrl = URL.createObjectURL(new Blob([WORKLET_SOURCE], { type: "application/javascript" }));
+      this.context = new AudioContext();
+      await this.context.resume();
+      if (this.cancelled) return;
+      this.contextSampleRate = this.context.sampleRate;
+      this.source = this.context.createMediaStreamSource(this.stream);
+      this.chunks = [];
+      this.totalFrames = 0;
+      this.startedAt = Date.now();
+      this.limitFired = false;
+      let lastLevelAt = 0;
+      let levelSquares = 0;
+      let levelFrames = 0;
+      const levelListener = this.levelListener;
+      const frameListener = this.frameListener;
+      const onChunk = (chunk: Float32Array) => {
+        if (!this.recording) return;
+        const copy = chunk.slice(0);
+        if (frameListener) {
+          // 流模式：这片音频归调用方（分段缓冲）持有，这里一片不留。
+          frameListener(copy, this.contextSampleRate);
+        } else {
+          this.chunks.push(copy);
+          this.totalFrames += copy.length;
+        }
+        const now = Date.now();
+        for (const sample of copy) levelSquares += sample * sample;
+        levelFrames += copy.length;
+        if (levelListener && now - lastLevelAt >= LEVEL_INTERVAL_MS) {
+          lastLevelAt = now;
+          levelListener(Math.sqrt(levelSquares / Math.max(1, levelFrames)));
+          levelSquares = 0; levelFrames = 0;
+        }
+        // 到上限：交回调用方收尾（它会 `stop()` 并把这段送去识别），不自己悄悄停掉。
+        if (now - this.startedAt >= this.maxDurationMs && !this.limitFired) {
+          this.limitFired = true;
+          this.limitListener?.();
+        }
+      };
       try {
-        await this.context.audioWorklet.addModule(workletUrl);
-        this.worklet = new AudioWorkletNode(this.context, "companion-tap");
-        this.worklet.port.onmessage = (event) => onChunk(event.data as Float32Array);
-        this.source.connect(this.worklet);
-        // 麦克风不进扬声器：目的地不连，仅采集。
-      } finally {
-        URL.revokeObjectURL(workletUrl);
+        const workletUrl = URL.createObjectURL(new Blob([WORKLET_SOURCE], { type: "application/javascript" }));
+        try {
+          await this.context.audioWorklet.addModule(workletUrl);
+          if (this.cancelled) return;
+          this.worklet = new AudioWorkletNode(this.context, "companion-tap");
+          this.worklet.port.onmessage = (event) => onChunk(event.data as Float32Array);
+          this.source.connect(this.worklet);
+          // 保持处理图被声卡拉取，但麦克风输出始终为零。
+          this.silentOutput = this.context.createGain();
+          this.silentOutput.gain.value = 0;
+          this.worklet.connect(this.silentOutput).connect(this.context.destination);
+        } finally {
+          URL.revokeObjectURL(workletUrl);
+        }
+      } catch {
+        if (this.cancelled) return;
+        // ScriptProcessor 兜底（已弃用但行为一致，防极端环境）。
+        this.scriptNode = this.context.createScriptProcessor(4096, 1, 1);
+        this.scriptNode.onaudioprocess = (event) => onChunk(event.inputBuffer.getChannelData(0));
+        this.source.connect(this.scriptNode);
+        this.scriptNode.connect(this.context.destination);
       }
-    } catch {
-      // ScriptProcessor 兜底（已弃用但行为一致，防极端环境）。
-      this.scriptNode = this.context.createScriptProcessor(4096, 1, 1);
-      this.scriptNode.onaudioprocess = (event) => onChunk(event.inputBuffer.getChannelData(0));
-      this.source.connect(this.scriptNode);
-      this.scriptNode.connect(this.context.destination);
+      this.recording = true;
+    } catch (error) {
+      await this.stop();
+      throw error;
     }
-    this.recording = true;
   }
 
   async stop(): Promise<VoiceRecording | null> {
-    if (!this.recording) return null;
+    this.cancelled = true;
+    const wasRecording = this.recording;
     this.recording = false;
     try { this.worklet?.disconnect(); } catch { /* already gone */ }
     try { this.scriptNode?.disconnect(); } catch { /* already gone */ }
     try { this.source?.disconnect(); } catch { /* already gone */ }
-    for (const track of this.stream?.getTracks() ?? []) track.stop();
+    try { this.silentOutput?.disconnect(); } catch { /* already gone */ }
+    for (const track of this.stream?.getTracks() ?? []) { track.onended = null; track.stop(); }
     const sampleRate = this.contextSampleRate;
     await this.context?.close().catch(() => undefined);
     this.worklet = null;
     this.scriptNode = null;
     this.source = null;
+    this.silentOutput = null;
     this.stream = null;
     this.context = null;
     const durationMs = Date.now() - this.startedAt;
     // 流模式下 `totalFrames` 一直是 0：音频早就一帧帧交出去了，这里只是把麦克风还掉。
-    if (this.totalFrames < (sampleRate * 200) / 1000) return null;
+    if (!wasRecording || this.totalFrames < (sampleRate * 200) / 1000) { this.chunks = []; this.totalFrames = 0; return null; }
     const merged = new Float32Array(this.totalFrames);
     let offset = 0;
     for (const chunk of this.chunks) {

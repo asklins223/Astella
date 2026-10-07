@@ -78,7 +78,7 @@ export function CompanionPersonaPage(props: { refreshKey: number; onSettings: ()
     ).then((ok) => { if (ok) setSwitchTarget(null); });
   };
 
-  if (!persona.section) return <SectionState message={persona.loading ? "正在读取人格档案" : "人格档案当前不可用"} detail={persona.failure ?? undefined} onRetry={() => void reload()} />;
+  if (!persona.section) return <SectionState loading={persona.loading} message={persona.loading ? "正在加载人格档案" : "人格档案当前不可用"} detail={persona.failure ?? undefined} onRetry={() => void reload()} />;
   return <PersonaPanel section={persona.section} persona={value}
     versions={versions.section?.ok ? versions.section.value.versions : null}
     versionsError={versions.section && !versions.section.ok ? versions.section.message : versions.failure}

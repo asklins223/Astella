@@ -239,7 +239,7 @@ describe("伴星回答保存回笔记", () => {
     progressNoteExplanation(item.id, "");
     chatState.current = session({ mode: "closed", phase: "sending", feedNoteIntent: null, feedNoteAnchor: { noteId: NOTE_ID, anchor: NOTE_ANCHOR } });
     renderHud();
-    expect(screen.getByText("正在处理")).toBeTruthy();
+    expect(document.querySelector(".companion-hud__reply-heading strong")?.textContent).toBe("伴星");
     expect(screen.getByText("伴星正在解释").closest(".companion-hud__output")).toBeTruthy();
     expect(screen.getByRole("button", { name: `查看原句解释：${NOTE_ANCHOR.excerpt}` })).toBeTruthy();
     expect(screen.queryByText("这次选文")).toBeNull();

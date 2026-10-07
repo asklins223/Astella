@@ -2,18 +2,26 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { CompanionGuidanceAudioCache, type GuidanceAudioScope } from "../companion-guidance-audio-cache";
+import { CompanionVoiceAudioCache, type VoiceAudioScope } from "../companion-voice-audio-cache";
 import { DesktopGateway } from "../desktop-gateway";
 import { speakCompanionVoice } from "../desktop-gateway-ns-companion";
 import type { CompanionGuidanceVoiceProfileV1, CompanionVoiceSpeakResultV1 } from "@astella/shared/companion-voice-contracts";
 
 let directory: string;
-const scope: GuidanceAudioScope = { deployment: "http://127.0.0.1:4000", userId: "00000000-0000-4000-8000-000000000001" };
+let thoughtDirectory: string;
+const scope: VoiceAudioScope = { deployment: "http://127.0.0.1:4000", userId: "00000000-0000-4000-8000-000000000001" };
 const profile: CompanionGuidanceVoiceProfileV1 = { version: 1, profileId: "a".repeat(64), voice: "longhua_v3.1" };
 const audio: CompanionVoiceSpeakResultV1 = { version: 1, mimeType: "audio/mpeg", voice: profile.voice, audioBase64: "SUQzBA==", byteLength: 4 };
 const text = "我陪你从书房开始，接着找到笔记。";
-beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), "guidance-audio-")); });
-afterEach(async () => { vi.restoreAllMocks(); await rm(directory, { recursive: true, force: true }); });
+beforeEach(async () => {
+  directory = await mkdtemp(join(tmpdir(), "guidance-audio-"));
+  thoughtDirectory = await mkdtemp(join(tmpdir(), "thought-audio-"));
+});
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await rm(directory, { recursive: true, force: true });
+  await rm(thoughtDirectory, { recursive: true, force: true });
+});
 async function clipFiles() {
   const folder = join(directory, (await readdir(directory))[0]);
   return (await readdir(folder)).filter(name => name.endsWith(".mp3")).map(name => join(folder, name));
@@ -21,17 +29,17 @@ async function clipFiles() {
 
 it("stores real MP3 bytes and reuses them across process instances", async () => {
   const synthesize = vi.fn(async () => audio);
-  await new CompanionGuidanceAudioCache(directory).resolve(scope, text, profile, synthesize);
+  await new CompanionVoiceAudioCache(directory).resolve(scope, text, profile, synthesize);
   const [file] = await clipFiles();
   expect(await readFile(file)).toEqual(Buffer.from(audio.audioBase64, "base64"));
   if (process.platform !== "win32") expect((await stat(file)).mode & 0o777).toBe(0o600);
-  const reopened = new CompanionGuidanceAudioCache(directory);
+  const reopened = new CompanionVoiceAudioCache(directory);
   expect(await reopened.resolve(scope, text, profile, synthesize)).toEqual(audio);
   expect(synthesize).toHaveBeenCalledOnce();
 });
 
 it("separates accounts and deployments and regenerates changed narration or Qwen configuration", async () => {
-  const cache = new CompanionGuidanceAudioCache(directory), synthesize = vi.fn(async () => audio);
+  const cache = new CompanionVoiceAudioCache(directory), synthesize = vi.fn(async () => audio);
   await cache.resolve(scope, text, profile, synthesize);
   await cache.resolve(scope, text + "再看一句。", profile, synthesize);
   await cache.resolve(scope, text, { ...profile, profileId: "b".repeat(64) }, synthesize);
@@ -42,7 +50,7 @@ it("separates accounts and deployments and regenerates changed narration or Qwen
 });
 
 it("repairs a damaged recording instead of repeatedly playing corrupt local bytes", async () => {
-  const cache = new CompanionGuidanceAudioCache(directory), synthesize = vi.fn(async () => audio);
+  const cache = new CompanionVoiceAudioCache(directory), synthesize = vi.fn(async () => audio);
   await cache.resolve(scope, text, profile, synthesize);
   const [file] = await clipFiles();
   await writeFile(file, Buffer.from("oops"));
@@ -55,15 +63,15 @@ it("repairs a damaged recording instead of repeatedly playing corrupt local byte
 });
 
 it("coalesces simultaneous requests and keeps speech working if the directory is unwritable", async () => {
-  const cache = new CompanionGuidanceAudioCache(directory), synthesize = vi.fn(async () => audio);
+  const cache = new CompanionVoiceAudioCache(directory), synthesize = vi.fn(async () => audio);
   expect(await Promise.all([cache.resolve(scope, text, profile, synthesize), cache.resolve(scope, text, profile, synthesize)])).toEqual([audio, audio]);
   expect(synthesize).toHaveBeenCalledOnce();
   const blocked = join(directory, "a-file"); await writeFile(blocked, "file");
-  expect(await new CompanionGuidanceAudioCache(blocked).resolve(scope, text, profile, synthesize)).toEqual(audio);
+  expect(await new CompanionVoiceAudioCache(blocked).resolve(scope, text, profile, synthesize)).toEqual(audio);
 });
 
 it("retries Qwen after an Edge fallback and never retains failed synthesis", async () => {
-  const cache = new CompanionGuidanceAudioCache(directory);
+  const cache = new CompanionVoiceAudioCache(directory);
   const synthesize = vi.fn().mockRejectedValueOnce(new Error("offline"))
     .mockResolvedValueOnce({ ...audio, voice: "zh-CN-XiaoxiaoNeural" }).mockResolvedValue(audio);
   await expect(cache.resolve(scope, text, profile, synthesize)).rejects.toThrow("offline");
@@ -74,7 +82,7 @@ it("retries Qwen after an Edge fallback and never retains failed synthesis", asy
 });
 
 it("bounds local recordings while retaining the newly generated chapter", async () => {
-  const cache = new CompanionGuidanceAudioCache(directory), synthesize = vi.fn(async () => audio);
+  const cache = new CompanionVoiceAudioCache(directory), synthesize = vi.fn(async () => audio);
   for (let i = 0; i < 65; i++) await cache.resolve(scope, `${text}${i}`, profile, synthesize);
   expect(await clipFiles()).toHaveLength(64);
   await cache.resolve(scope, `${text}64`, profile, synthesize);
@@ -84,7 +92,10 @@ it("bounds local recordings while retaining the newly generated chapter", async 
 function transport() {
   const gateway = new DesktopGateway({ DESKTOP_API_ORIGIN: scope.deployment,
     ASTELLA_DESKTOP_PAIRING_KEY_ID: "desktop-key-1", ASTELLA_DESKTOP_PAIRING_SECRET: Buffer.alloc(32, 9).toString("base64url"),
-    ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" }, { guidanceAudioCache: new CompanionGuidanceAudioCache(directory) });
+    ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" }, {
+      guidanceAudioCache: new CompanionVoiceAudioCache(directory),
+      thoughtAudioCache: new CompanionVoiceAudioCache(thoughtDirectory),
+    });
   const t = gateway.gatewayTransport;
   t.connection = { version: 1, kind: "ready", schemaRevision: "domain-v2-test" };
   t.credentialRestored = true; t.token = "test-voice-token";
@@ -119,8 +130,7 @@ it("the real gateway reuses guidance files after restart while ordinary notifica
   expect(tts).toHaveBeenCalledTimes(4);
 });
 
-it("an account change drops a late synthesis before it can be cached or played", async () => {
-  let release: ((value: Response) => void) | undefined;
+it("an account change drops a late synthesis before it can be cached or played", async () => {  let release: ((value: Response) => void) | undefined;
   vi.spyOn(globalThis, "fetch").mockImplementation(async input => {
     if (new URL(String(input)).pathname === "/voice/guidance-profile") return new Response(JSON.stringify(profile));
     return new Promise<Response>(resolve => { release = resolve; });
@@ -133,4 +143,56 @@ it("an account change drops a late synthesis before it can be cached or played",
   release!(new Response(Buffer.from(audio.audioBase64, "base64"), { headers: { "Content-Type": "audio/mpeg", "X-Astella-Tts-Voice": profile.voice } }));
   await rejected;
   expect(await readdir(directory)).toEqual([]);
+});
+
+it("keeps her own sentence on this machine in the voice she actually used, and never pays for it twice", async () => {
+  let spoken = "longhua_v3.1";
+  const bodies: string[] = [];
+  const tts = vi.fn(() => new Response(Buffer.from(audio.audioBase64, "base64"), {
+    headers: { "Content-Type": "audio/mpeg", "X-Astella-Tts-Voice": spoken } }));
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/voice/preference") return new Response(JSON.stringify({ version: 1, engine: "qwen", voice: spoken, explicit: true, updatedAt: null }));
+    if (path === "/voice/tts") { bodies.push(String(init?.body)); return tts(); }
+    throw new Error(`unexpected ${path}`);
+  });
+  const request = { version: 1 as const, purpose: "thought" as const, text };
+
+  await speakCompanionVoice(transport(), request);
+  // 念想是她亲口的那一句：正文用什么音色，这一句就用什么音色，不另起一身。
+  expect(JSON.parse(bodies[0])).toEqual({ text, voice: "zh-CN-XiaoxiaoNeural", purpose: "thought" });
+
+  // 重启（换一条 transport，memo 也随之清空）再听同一句：一次合成都该省下来。
+  const reopened = transport();
+  await speakCompanionVoice(reopened, request);
+  await speakCompanionVoice(reopened, request);
+  expect(tts).toHaveBeenCalledOnce();
+  expect((await readdir(thoughtDirectory)).length).toBe(1);
+  // 两个桶各自落盘：在手记里翻旧念想不该把带路那几句的合成成果顶掉。
+  expect(await readdir(directory)).toEqual([]);
+
+  // 用户换了音色，旧的那一身不能继续冒充她——身份进缓存 key，所以要重新合成一条。
+  spoken = "longanlingxi_v3.1";
+  reopened.thoughtVoiceProfile!.at -= 60_001;
+  expect((await speakCompanionVoice(reopened, request)).voice).toBe(spoken);
+  expect(tts).toHaveBeenCalledTimes(2);
+});
+
+it("an edge fallback still plays a thought but is not kept as her recording", async () => {
+  const bodies: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/voice/preference") return new Response(JSON.stringify({ version: 1, engine: "qwen", voice: "longhua_v3.1", explicit: true, updatedAt: null }));
+    if (path === "/voice/tts") {
+      bodies.push(String(init?.body));
+      // qwen 挂了，服务端兜底成 edge 并如实回报用上的音色。
+      return new Response(Buffer.from(audio.audioBase64, "base64"), { headers: { "Content-Type": "audio/mpeg", "X-Astella-Tts-Voice": "zh-CN-XiaoxiaoNeural" } });
+    }
+    throw new Error(`unexpected ${path}`);
+  });
+  const request = { version: 1 as const, purpose: "thought" as const, text };
+  expect((await speakCompanionVoice(transport(), request)).voice).toBe("zh-CN-XiaoxiaoNeural");
+  expect(await readdir(thoughtDirectory)).toEqual([]);
+  await speakCompanionVoice(transport(), request);
+  expect(bodies).toHaveLength(2);
 });

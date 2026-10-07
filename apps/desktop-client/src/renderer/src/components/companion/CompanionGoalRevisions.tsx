@@ -50,7 +50,7 @@ export function CompanionGoalRevisions({ run, scope, onArtifactOpen }: {
         {item.error ? <p className="companion-goal-error">{item.error}</p> : null}
       </details>)}
       {page?.unrecordedRevisions.length ? <p className="companion-goal-journal__intro">第 {page.unrecordedRevisions.join("、")} 次要求没有保存完整记录，已有成果仍保留在这件事里。</p> : null}
-      {loading ? <p role="status">正在翻找之前的记录…</p> : null}
+      {loading ? <p role="status">正在加载之前的要求与交付…</p> : null}
       {error ? <p className="companion-goal-error" role="alert">{error}<button type="button" onClick={() => void read(page?.nextBeforeRevision ?? undefined)}>重新读取</button></p> : null}
       {page?.nextBeforeRevision ? <button type="button" className="companion-goal-journal__back" disabled={loading} onClick={() => void read(page.nextBeforeRevision!)}>再翻一些更早的要求</button> : null}
       {page && page.currentRevision === 1 ? <p>这件事还没有改过要求。</p> : null}

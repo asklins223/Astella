@@ -96,7 +96,8 @@ export function areaChart({
     preserveAspectRatio: "none",
     class: "chart__svg",
     role: "img",
-    "aria-label": `${label}：${valueText}`,
+    tabindex: "0",
+    "aria-label": `${label}：${valueText}。方向键查看各时间点。`,
   });
 
   const defs = svg("defs");
@@ -236,6 +237,21 @@ export function areaChart({
   chartSvg.addEventListener("pointerleave", () => {
     paintCursor(null);
     onHover?.(null);
+  });
+
+  let keyboardIndex = lastIndex;
+  chartSvg.addEventListener("focus", () => { paintCursor(keyboardIndex); onHover?.(keyboardIndex); });
+  chartSvg.addEventListener("blur", () => { paintCursor(null); onHover?.(null); });
+  chartSvg.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") { paintCursor(null); onHover?.(null); return; }
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const available = values.map((value, index) => typeof value === "number" && Number.isFinite(value) ? index : null).filter((index) => index !== null);
+    const position = available.indexOf(keyboardIndex);
+    keyboardIndex = event.key === "Home" ? available[0] : event.key === "End" ? available.at(-1)
+      : available[Math.max(0, Math.min(available.length - 1, position + (event.key === "ArrowLeft" ? -1 : 1)))];
+    paintCursor(keyboardIndex); onHover?.(keyboardIndex);
+    chartSvg.setAttribute("aria-label", `${label}：${formatByUnit(values[keyboardIndex], unit)}${times?.[keyboardIndex] ? `，${clockOf(times[keyboardIndex])}` : ""}`);
   });
 
   figure.dataset.points = String(stats.count);

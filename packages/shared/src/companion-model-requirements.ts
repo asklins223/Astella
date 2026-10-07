@@ -69,10 +69,10 @@ export type ModelRequirementEnforcement = (typeof MODEL_REQUIREMENT_ENFORCEMENTS
  */
 export const MODEL_REQUIREMENT_SOURCE_VERSIONS = [
   "COMPANION_HOST_PROTOCOL_V6",
-  "COMPANION_IDENTITY_BOUNDARY_V2",
-  "COMPANION_CHARACTER_BASE_V7",
+  "COMPANION_IDENTITY_BOUNDARY_V3",
+  "COMPANION_CHARACTER_BASE_V8",
   "COMPANION_VOICE_STYLE_LINES_V2",
-  "COMPANION_PERSONA_V7_PROMPT_ID",
+  "COMPANION_PERSONA_V8_PROMPT_ID",
   "COMPANION_LEAK_GATES_V1",
   "COMPANION_AGENT_CONTRACT_VERSION",
   "COMPANION_HARD_MAX_CHARS",
@@ -144,11 +144,11 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
       "身份与认知边界：区分亲历、用户自述、推测与作品中的想象；没有亲历与读取回执时"
       + "不声称今天看见/查过；记录不足时不靠奉承与亲密话术补填身份。",
     appliesTo: DIALOGUE_AND_FRIENDS,
-    sourceVersion: "COMPANION_IDENTITY_BOUNDARY_V2",
+    sourceVersion: "COMPANION_IDENTITY_BOUNDARY_V3",
     enforcedBy: "prompt",
     evidence: {
       file: "packages/shared/src/companion-persona.ts",
-      export: "COMPANION_IDENTITY_BOUNDARY_V2",
+      export: "COMPANION_IDENTITY_BOUNDARY_V3",
       resolve: "module",
       note: "v2 是 A/B 之后加的「没有亲身见闻不自称经历」那一段；v1 保留作历史基线。",
     },
@@ -159,11 +159,11 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
       "默认角色表达：篇幅跟随问题与用户要求、不套模板、拒绝时不追问。它是**可被账号表达"
       + "整体替换**的那一层，所以合同只约束「怎么说话」，不碰输出形状与安全边界。",
     appliesTo: DIALOGUE_AND_FRIENDS,
-    sourceVersion: "COMPANION_CHARACTER_BASE_V7",
+    sourceVersion: "COMPANION_CHARACTER_BASE_V8",
     enforcedBy: "prompt",
     evidence: {
       file: "packages/shared/src/companion-persona.ts",
-      export: "COMPANION_CHARACTER_BASE_V7",
+      export: "COMPANION_CHARACTER_BASE_V8",
       resolve: "module",
       note: "v7 在 v6 上加的是「讲透就停」的收尾形状，替代 v6 那句无约束的「内容讲清」。",
     },
@@ -190,7 +190,7 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
       "装配版本身份：一次调用要能说出自己用的是哪一版固定协议/默认表达/账号 revision，"
       + "否则 40b §5.3「已发生调用可按合法保留的版本复现装配」无从谈起。",
     appliesTo: DIALOGUE_AND_FRIENDS,
-    sourceVersion: "COMPANION_PERSONA_V7_PROMPT_ID",
+    sourceVersion: "COMPANION_PERSONA_V8_PROMPT_ID",
     enforcedBy: "db_constraint",
     evidence: {
       file: "packages/shared/src/db-schema/companion-conversations.ts",

@@ -434,20 +434,19 @@ export async function executeReadTool(
           noteId,
           ...(noteVersionId ? { noteVersionId } : {}),
           startOrdinal,
+          startOffset: typeof args.startOffset === "number" ? args.startOffset : 0,
           maxChars: NOTE_READ_MAX_CHARS,
         }),
       );
       if (!note) throw new CompanionToolError("这个空间里没有这篇笔记");
       const page = note.page;
-      const { truncated, nextStartOrdinal } = note;
+      const { truncated, nextStartOrdinal, nextStartOffset } = note;
       // 原文由服务端带出，不让模型转抄：她复述一遍就成了"引用"，而用户没法知道
       // 哪几个字是她改写的。这一块就是她读到的那几行，标题与时间跟着走。
       const quoted = page.body.slice(0, 1_200);
       return {
         value: {
-          // 分页元数据排在 body **之前**：工具结果整包会被 maxOutputChars(4000)
-          // 截尾，而 body 上限 3000 字——nextStartOrdinal 是续读的唯一出路，
-          // 被截掉她就会把"这一页"当成"全文"。
+          // 游标与版本跟正文一起返回；块内续读不跳过尚未读取的内容。
           imageCount: note.imageTotal,
           ...(note.imageIds.length > 0 ? { imageAssetIds: note.imageIds } : {}),
           // 有图却看不了时，先把"正文里没有图片标记 ≠ 这篇没有图"讲明（她读的是
@@ -468,7 +467,7 @@ export async function executeReadTool(
           ...(page.endOrdinal !== null ? { endOrdinal: page.endOrdinal } : {}),
           totalBlocks: note.totalBlocks,
           truncated,
-          ...(nextStartOrdinal !== null ? { nextStartOrdinal } : {}),
+          ...(nextStartOrdinal !== null ? { nextStartOrdinal, nextStartOffset: nextStartOffset ?? 0 } : {}),
           ...(page.blockTextTruncated ? { blockTextTruncated: true } : {}),
           body: page.body,
         },
@@ -496,6 +495,7 @@ export async function executeReadTool(
           workspaceId: event.ctx.workspaceId,
           sourceId,
           startOrdinal,
+          startOffset: typeof args.startOffset === "number" ? args.startOffset : 0,
           maxChars: NOTE_READ_MAX_CHARS,
         }),
       );
@@ -511,18 +511,18 @@ export async function executeReadTool(
         };
       }
       const page = source.page;
-      const { truncated, nextStartOrdinal } = source;
+      const { truncated, nextStartOrdinal, nextStartOffset } = source;
       const quoted = page.body.slice(0, 1_200);
       return {
         value: {
-          // 同 read_note：分页元数据在 body 之前，maxOutputChars 截尾不吞续读指针。
+          // 与正文一起返回完整续读位置。
           title: source.title,
           ...(source.origin ? { origin: source.origin } : {}),
           startOrdinal,
           ...(page.endOrdinal !== null ? { endOrdinal: page.endOrdinal } : {}),
           totalBlocks: source.totalSegments,
           truncated,
-          ...(nextStartOrdinal !== null ? { nextStartOrdinal } : {}),
+          ...(nextStartOrdinal !== null ? { nextStartOrdinal, nextStartOffset: nextStartOffset ?? 0 } : {}),
           ...(page.blockTextTruncated ? { blockTextTruncated: true } : {}),
           body: page.body,
         },

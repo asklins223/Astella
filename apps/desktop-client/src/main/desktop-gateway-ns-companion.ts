@@ -17,6 +17,8 @@ const companionActivityTimelineWireSchema = z.strictObject({
   serverTime: z.string().datetime({ offset: true }),
 });
 
+import { createHash } from "node:crypto";
+import type { VoiceAudioProfile } from "./companion-voice-audio-cache";
 import { assistantDeliveryV2Schema } from "@astella/shared/companion-bridge-contracts";
 import { z } from "zod";
 import { projectCompanionDelivery } from "./desktop-gateway-companion-bridge";
@@ -1178,7 +1180,7 @@ export async function setCompanionVoicePreference(t: GatewayTransport,
     return parsed.data;
   }
 
-export async function speakCompanionVoice(t: GatewayTransport, 
+export async function speakCompanionVoice(t: GatewayTransport,
     request: CompanionVoiceSpeakRequestV1,
     requestId?: string,
   ): Promise<CompanionVoiceSpeakResultV1> {
@@ -1205,24 +1207,19 @@ export async function speakCompanionVoice(t: GatewayTransport,
     };
     const session = t.currentSession;
     const deployment = t.configuration?.config.apiOrigin;
-    if (request.purpose !== "guidance" || !t.guidanceAudioCache || !deployment || session?.status !== "authenticated") return synthesize();
+    // 两个会留在本机的桶：带路那几句是写死的引导，念想是她自己说过的话。
+    // 除此之外（普通通知、正文）都是一次性的，落盘只会攒下一堆没人再听的字节。
+    const bucket = request.purpose === "guidance" ? "guidance" : request.purpose === "thought" ? "thought" : null;
+    const cache = bucket === "guidance" ? t.guidanceAudioCache : bucket === "thought" ? t.thoughtAudioCache : null;
+    if (!bucket || !cache || !deployment || session?.status !== "authenticated") return synthesize();
     const userId = session.user.userId, token = t.token;
     const isCurrent = () => t.currentSession?.status === "authenticated" && t.currentSession.user.userId === userId && t.token === token;
-    const profileKey = `${deployment}:${userId}:${t.transportEpoch}`;
-    if (t.guidanceVoiceProfile?.key !== profileKey || Date.now() - t.guidanceVoiceProfile.at >= 60_000) {
-      const value = (async () => {
-        await t.ensureConnected(requestId);
-        const response = await t.request("/voice/guidance-profile", { method: "GET" }, true, true, requestId);
-        const parsed = companionGuidanceVoiceProfileV1Schema.safeParse(response.body);
-        if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-        return parsed.data;
-      })();
-      t.guidanceVoiceProfile = { key: profileKey, at: Date.now(), value };
-      void value.catch(() => { if (t.guidanceVoiceProfile?.value === value) t.guidanceVoiceProfile = null; });
-    }
-    const profile = await t.guidanceVoiceProfile.value;
+    const profile = await resolveCachedVoiceProfile(t, bucket, requestId);
+    // 拿不到音色身份就不冒这份缓存：这一句照样念，只是这一次不留在本机。
+    // 缓存的本职是省成本，一次设置页的抖动不该演成"她没声音"。
+    if (!profile) return synthesize();
     if (!isCurrent()) throw new DesktopGatewayFailure("cancelled", "never");
-    const audio = await t.guidanceAudioCache.resolve({ deployment, userId }, request.text, profile, async () => {
+    const audio = await cache.resolve({ deployment, userId }, request.text, profile, async () => {
       const result = await synthesize();
       if (!isCurrent()) throw new DesktopGatewayFailure("cancelled", "never");
       return result;
@@ -1230,6 +1227,60 @@ export async function speakCompanionVoice(t: GatewayTransport,
     if (!isCurrent()) throw new DesktopGatewayFailure("cancelled", "never");
     return audio;
   }
+
+/**
+ * 本机音频缓存用的音色身份（60 秒内同一趟只读一次）。
+ *
+ * 带路取服务端审核过的默认档；念想跟着**这个账号存着的那一身**走——她与正文是同一个声音，
+ * 用户在设置里换了音色，本机那些旧音频就该整体作废，所以身份进缓存 key，
+ * 而不是只拿文本当 key、然后把旧声音一直当命中。
+ *
+ * 读失败返回 `null`，由调用方退回"这次不缓存"：身份读不到时最坏的代价是多一次合成，
+ * 而不是伴星忽然安静。
+ */
+async function resolveCachedVoiceProfile(
+  t: GatewayTransport,
+  bucket: "guidance" | "thought",
+  requestId?: string,
+): Promise<VoiceAudioProfile | null> {
+  const session = t.currentSession;
+  const deployment = t.configuration?.config.apiOrigin;
+  if (session?.status !== "authenticated" || !deployment) return null;
+  const userId = session.user.userId, token = t.token;
+  const profileKey = `${deployment}:${userId}:${t.transportEpoch}`;
+  const memo = () => bucket === "guidance" ? t.guidanceVoiceProfile : t.thoughtVoiceProfile;
+  const remember = (value: { key: string; at: number; value: Promise<VoiceAudioProfile> } | null) => {
+    if (bucket === "guidance") t.guidanceVoiceProfile = value;
+    else t.thoughtVoiceProfile = value;
+  };
+  const cached = memo();
+  if (cached?.key === profileKey && Date.now() - cached.at < 60_000) {
+    const profile = await cached.value.catch(() => null);
+    // 上次读失败不是永久结论：这一趟重新发一次。
+    if (profile !== null) return profile;
+  }
+  const value = (async (): Promise<VoiceAudioProfile> => {
+    if (bucket === "thought") {
+      const preference = await getCompanionVoicePreference(t, requestId);
+      // 身份只进哈希：engine 与 voice 合起来才是"她这一身"，单看音色名会漏掉引擎换了。
+      return {
+        profileId: createHash("sha256").update(JSON.stringify([1, preference.engine, preference.voice])).digest("hex"),
+        voice: preference.voice,
+      };
+    }
+    await t.ensureConnected(requestId);
+    const response = await t.request("/voice/guidance-profile", { method: "GET" }, true, true, requestId);
+    const parsed = companionGuidanceVoiceProfileV1Schema.safeParse(response.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  })();
+  remember({ key: profileKey, at: Date.now(), value });
+  void value.catch(() => { if (memo()?.value === value) remember(null); });
+  const profile = await value.catch(() => null);
+  if (profile === null) return null;
+  if (t.currentSession?.status !== "authenticated" || t.currentSession.user.userId !== userId || t.token !== token) return null;
+  return profile;
+}
 
 export async function speakCompanionVoiceSegment(t: GatewayTransport, 
     request: CompanionVoiceSpeakSegmentRequestV2,

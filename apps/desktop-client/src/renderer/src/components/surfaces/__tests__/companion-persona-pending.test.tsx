@@ -149,7 +149,7 @@ function publishedView(): PageReadableV1 | null {
 
 function activateButton(): HTMLButtonElement | null {
   return [...document.querySelectorAll<HTMLButtonElement>(".cc-persona button")]
-    .find((button) => button.textContent === "现在生效" || button.textContent === "正在生效…") ?? null;
+    .find((button) => button.textContent === "现在生效" || button.textContent === "正在应用这一版…") ?? null;
 }
 
 afterEach(() => {
@@ -182,7 +182,7 @@ describe("40 §4.8.4 · 人格「待生效版本」在伴星中心看得见", ()
 
   it("忙碌时不许重复点", () => {
     renderPanel({ pending: pending(), busy: "activate-pending" });
-    expect(activateButton()?.textContent).toBe("正在生效…");
+    expect(activateButton()?.textContent).toBe("正在应用这一版…");
     expect(activateButton()?.disabled).toBe(true);
   });
 

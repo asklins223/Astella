@@ -127,9 +127,9 @@ function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusCons
       await resource.reload({ silent: true });
     });
   };
-  if (!resource.section) return <SectionState message={resource.failure ? "记忆暂时读不到" : "正在读取记忆…"} detail={resource.failure ?? undefined} onRetry={resource.failure ? () => void resource.reload() : undefined} />;
+  if (!resource.section) return <SectionState loading={resource.loading} message={resource.failure ? "记忆暂时读不到" : "正在加载记忆…"} detail={resource.failure ?? undefined} onRetry={resource.failure ? () => void resource.reload() : undefined} />;
   const pendingFocus = requestedMemoryId ?? anchorId;
-  if (pendingFocus && resource.section.ok && resource.section.value.focusId !== pendingFocus) return <SectionState message="正在定位这条记忆…" />;
+  if (pendingFocus && resource.section.ok && resource.section.value.focusId !== pendingFocus) return <SectionState loading message="正在定位这条记忆…" />;
   if (maintenanceOpen) return <CompanionMemoryMaintenance refreshKey={refreshKey} onBack={() => setMaintenanceOpen(false)} onRestore={id => { openMemory(id); setLastDeleted(null); setNotice("这条记忆已恢复。"); void resource.reload({ silent: true }); }} />;
   if (mapOpen) return <CompanionMemoryMap refreshKey={refreshKey} memories={items} onBack={() => setMapOpen(false)} onMemory={openMemory} />;
   return <>

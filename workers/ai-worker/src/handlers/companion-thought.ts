@@ -1,3 +1,5 @@
+import { buildCompanionPersonaData, resolveCompanionPersonaContext, type CompanionPersonaContextProfile } from "./companion-identity-context.ts";
+import { COMPANION_IDENTITY_BOUNDARY_V3 } from "@astella/shared";
 /**
  * 念头（thought）生成器——念头管线切片①②③（2026-09-18 落地）。
  *
@@ -95,6 +97,7 @@ export interface ThoughtMaterial {
   readonly daysSinceLastLearning: number | null;
   readonly familiarity: number;
   readonly petName: string | null;
+  readonly petProfile?: CompanionPersonaContextProfile;
   readonly allowNudgeLearning: boolean;
   readonly allowPlayful: boolean;
   readonly catchphrase: string | null;
@@ -600,9 +603,24 @@ export function finalizeThoughtExpression(
   return selectThoughtExpression([text], grounding);
 }
 
+export function buildThoughtCandidatePrompt(material: ThoughtMaterial, llmGap: number): string {
+  return [
+    `你是学习桌宠${material.petName ? `「${material.petName}」` : ""}。基于事实生成 ${llmGap} 条"主动开口的念头"候选——就是你没被问、但想主动说一句的话。`,
+    ...buildCompanionPersonaData(material.petProfile),
+    COMPANION_IDENTITY_BOUNDARY_V3,
+    material.facts ? `你知道的当下：\n${material.facts}` : "",
+    `关系数据：到期复习 ${material.readyReviews} 条；12 小时内将要到期 ${material.dueSoonReviews} 条；连续学习 ${material.streakDays} 天；熟悉度 ${material.familiarity.toFixed(2)}（0 刚认识，1 很熟）。`,
+    `风格允许：玩趣=${material.allowPlayful ? "可以" : "不要"}；催学习=${material.allowNudgeLearning ? "可以" : "不要"}。`,
+    "不要为了说话而编造事实，也不要把上面任何一条数字原样念出来。",
+    ...(material.recentlySaid.length > 0 ? [`最近说过（不要重复、不要换着花样说同一句）：\n- ${material.recentlySaid.slice(0, 5).join("\n- ")}`] : []),
+    "要求：每条 ≤80 字、中文、不出现 ID/系统词。返回 JSON：{\"thoughts\":[{\"text\":\"…\",\"urgency\":0-100,\"topic\":\"…\"}]}",
+  ].filter(Boolean).join("\n");
+}
+
 /** 表达 prompt（切片③）：persona + 关系状态 + 当下事实 + 最近说过的话一起进。 */
 export function buildExpressionPrompt(args: {
   petName: string | null;
+  petProfile?: CompanionPersonaContextProfile;
   familiarity: number;
   allowPlayful: boolean;
   allowNudgeLearning: boolean;
@@ -615,6 +633,8 @@ export function buildExpressionPrompt(args: {
 }): string {
   const lines = [
     `你是学习桌宠${args.petName ? `「${args.petName}」` : ""}。基于下面这条"念头"写一句主动开口的话。`,
+    ...buildCompanionPersonaData(args.petProfile ?? resolveCompanionPersonaContext(null)),
+    COMPANION_IDENTITY_BOUNDARY_V3,
     `念头：${args.thoughtText}`,
     args.facts ? `你知道的当下（可以据此措辞，但不要照念数字）：\n${args.facts}` : "",
     `关系熟悉度：${args.familiarity.toFixed(2)}（0 刚认识，1 很熟）。刚认识就自来熟比机械更假——熟悉度低就写得克制、短。`,
@@ -660,11 +680,7 @@ interface MaterialRow extends Record<string, unknown> {
   soon_titles: string[] | null;
   familiarity: number;
   persona_profile_revision: number;
-  speaking_style: string | null;
-  personality_tags: string[] | null;
-  boundaries: Record<string, unknown> | null;
-  catchphrase: string | null;
-  pet_name: string | null;
+  persona_profile: unknown;
   days_since_last_learning: number | null;
   ms_since_last_cue: number | null;
 }
@@ -738,16 +754,8 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
           WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId} LIMIT 1) AS familiarity,
         (SELECT COALESCE(revision, 0) FROM companion_persona_profiles
           WHERE user_id = ${userId} LIMIT 1) AS persona_profile_revision,
-        (SELECT profile->>'speakingStyle' FROM companion_persona_profiles
-          WHERE user_id = ${userId} LIMIT 1) AS speaking_style,
-        (SELECT profile->'personalityTags' FROM companion_persona_profiles
-          WHERE user_id = ${userId} LIMIT 1) AS personality_tags,
-        (SELECT profile->'boundaries' FROM companion_persona_profiles
-          WHERE user_id = ${userId} LIMIT 1) AS boundaries,
-        (SELECT profile->'boundaries'->>'catchphrase' FROM companion_persona_profiles
-          WHERE user_id = ${userId} LIMIT 1) AS catchphrase,
-        (SELECT profile->>'name' FROM companion_persona_profiles
-          WHERE user_id = ${userId} LIMIT 1) AS pet_name,
+        (SELECT profile FROM companion_persona_profiles
+          WHERE user_id = ${userId} LIMIT 1) AS persona_profile,
         (SELECT extract(day FROM now() - max(created_at))::int FROM learning_runs
           WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId}) AS days_since_last_learning,
         -- 上一次例行主动开口距今多少毫秒。delivered 与 spent 都算（spent = 用户点开过，
@@ -908,7 +916,8 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
     // 两处各写一遍就会出现"她说连续 3 天、气泡说连续 4 天"。
     const streakDays = await readStreakDays(tx, { workspaceId: job.workspaceId, userId });
 
-    const boundaries = (row.boundaries ?? {}) as Record<string, unknown>;
+    const petProfile = resolveCompanionPersonaContext(row.persona_profile);
+    const boundaries = petProfile.boundaries ?? {};
     const quietHours = accountRows[0]?.quiet_hours as CompanionQuietHours | null;
     // 没有账号行时按 moderate 处理：未知不等于"最多"，也不等于"静音"。
     const rawLevel = accountRows[0]?.intervention_level;
@@ -934,10 +943,11 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
       personaProfileRevision: Number(row.persona_profile_revision ?? 0),
       personaExamplesRevision: Number(row.persona_profile_revision ?? 0),
       defaultExpressionVersion: String(PET_PERSONA_PRESET_VERSION),
-      petName: row.pet_name ?? null,
+      petName: petProfile.name,
+      petProfile,
       allowNudgeLearning: boundaries.allowNudgeLearning !== false,
       allowPlayful: boundaries.allowPlayful !== false,
-      catchphrase: typeof row.catchphrase === "string" ? row.catchphrase : null,
+      catchphrase: boundaries.catchphrase ?? null,
       msSinceLastRoutineCue: row.ms_since_last_cue == null ? null : Number(row.ms_since_last_cue),
       recentlySaid: (Array.isArray(recentSaidRows) ? recentSaidRows : [])
         .map((entry) => String(entry.text ?? ""))
@@ -1013,8 +1023,8 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
   // ── 阶段 2：候选念头（确定性规则打底，不足 3 条再让模型补） ───────────
   // 授权/治理上下文两处调用完全一样，合并成一个工厂：consent 不通过时抛错走
   // 各自的 catch，而不是静默跳过（静默跳过 = 上面那条 warn 日志也不会出现）。
-  // 2026-10-06 起跟随平台配置开思考（用户决定：质量优先），token 预算已按
-  // 思考预留上调。
+  // 主动念头只从已核对素材中挑选并表达，使用关闭思考的短JSON请求，
+  // 避免高档推理挤占输出预算。交互轮的提问与任务仍由按轮策略决定。
   const thoughtProvider = async () => {
     const govCtx = await resolveAIGovernanceContext(job.workspaceId, userId);
     if (!govCtx.consentOk) throw new Error("ai_consent_denied");
@@ -1031,20 +1041,12 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
   const llmGap = candidates.length < 3 ? 3 - candidates.length : 0;
   if (llmGap > 0) {
     try {
-      const prompt = [
-        `你是学习桌宠${thoughtMaterial.petName ? `「${thoughtMaterial.petName}」` : ""}。基于事实生成 ${llmGap} 条"主动开口的念头"候选——就是你没被问、但想主动说一句的话。`,
-        thoughtMaterial.facts ? `你知道的当下：\n${thoughtMaterial.facts}` : "",
-        `关系数据：到期复习 ${thoughtMaterial.readyReviews} 条；12 小时内将要到期 ${thoughtMaterial.dueSoonReviews} 条；连续学习 ${thoughtMaterial.streakDays} 天；熟悉度 ${thoughtMaterial.familiarity.toFixed(2)}（0 刚认识，1 很熟）。`,
-        `风格允许：玩趣=${thoughtMaterial.allowPlayful ? "可以" : "不要"}；催学习=${thoughtMaterial.allowNudgeLearning ? "可以" : "不要"}。`,
-        "不要为了说话而编造事实，也不要把上面任何一条数字原样念出来。",
-        ...(thoughtMaterial.recentlySaid.length > 0 ? [`最近说过（不要重复、不要换着花样说同一句）：\n- ${thoughtMaterial.recentlySaid.slice(0, 5).join("\n- ")}`] : []),
-        "要求：每条 ≤80 字、中文、不出现 ID/系统词。返回 JSON：{\"thoughts\":[{\"text\":\"…\",\"urgency\":0-100,\"topic\":\"…\"}]}",
-      ].filter(Boolean).join("\n");
+      const prompt = buildThoughtCandidatePrompt(thoughtMaterial, llmGap);
       // 只有**服务端真的交给模型**的那些数可以出现在念头里。
       const allowedNumbersSource = `${thoughtMaterial.facts ?? ""}
 到期复习 ${thoughtMaterial.readyReviews}；12 小时内到期 ${thoughtMaterial.dueSoonReviews}；连续学习 ${thoughtMaterial.streakDays}；熟悉度 ${thoughtMaterial.familiarity.toFixed(2)}`;
       const messages = [{ role: "user" as const, content: prompt }];
-      const generationParameters = { temperature: 0.9, maxTokens: 2_000, responseFormat: "json_object" as const };
+      const generationParameters = { temperature: 0.9, maxTokens: 2_000, disableThinking: true, responseFormat: "json_object" as const };
       const provider = await thoughtProvider();
       const inputSnapshotHash = sha256Utf8V1(stableStringify({
         taskVersion: 2,
@@ -1179,6 +1181,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
     try {
       const prompt = buildExpressionPrompt({
         petName: thoughtMaterial.petName,
+        petProfile: thoughtMaterial.petProfile,
         familiarity: thoughtMaterial.familiarity,
         allowPlayful: thoughtMaterial.allowPlayful,
         allowNudgeLearning: thoughtMaterial.allowNudgeLearning,
@@ -1189,7 +1192,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
         recentlySaid: thoughtMaterial.recentlySaid,
       });
       const messages = [{ role: "user" as const, content: prompt }];
-      const generationParameters = { temperature: 0.9, maxTokens: 2_000, responseFormat: "json_object" as const };
+      const generationParameters = { temperature: 0.9, maxTokens: 2_000, disableThinking: true, responseFormat: "json_object" as const };
       const provider = await thoughtProvider();
       const inputSnapshotHash = sha256Utf8V1(stableStringify({
         taskVersion: 2,

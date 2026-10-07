@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DesktopNoteListItem } from "@astella/shared/desktop-surface-contracts";
 import type { CompanionAccountStateV1 } from "@astella/shared/companion-shell-contracts";
+import { AI_CONSENT_VERSION } from "@astella/shared/desktop-ipc-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { companionConsentGate, SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
 import { useRoomStore } from "../../../app/room-store";
@@ -30,6 +31,14 @@ export function useCompanionGuide(decorative = false) {
   const offer = (scope: GuideScope | null) => { invitationRef.current = scope; setInvitation(scope); };
   /** 同意状态：没读出来之前带路不出声也不发合成——"最坏撞一次"实测是撞三四次。 */
   const [consent, setConsent] = useState<"unknown" | "required" | "granted">("unknown");
+  const consentRef = useRef(consent);
+  const [consentLoading, setConsentLoading] = useState(false);
+  const [consentSaving, setConsentSaving] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
+  const consentRead = useRef(0);
+  const consentWrite = useRef(false);
+  const pendingStart = useRef<{ scope: GuideScope; action: "resume" | "advance" | "replay"; stepId: string; topicId: GuideTopicId } | null>(null);
+  const updateConsent = (value: typeof consent) => { consentRef.current = value; setConsent(value); };
   const [contents, setContents] = useState<GuideContents>({ status: "loading", total: null, notes: [] });
   const refresh = () => setRevision(value => value + 1);
   const save = useCallback((scope: GuideScope, action: Parameters<GuideProgressClient["transition"]>[1]) => {
@@ -55,34 +64,90 @@ export function useCompanionGuide(decorative = false) {
       if (currentGeneration === generation.current) setContents({ status: "error", total: null, notes: [], failure: gatewayErrorMessage(error) });
     }
   }, []);
-  /**
-   * 带路出声前的同意预读。读不到不拦：服务端那道门仍然生效，失败侧的说明仍然给。
-   * 预读的意义不是替服务端做决定，而是别让整个带路每一步都去撞同一记 403。
-   */
+  /** 协议先于整个带看。读失败留在协议纸页；过期账号或请求的回执不接管当前状态。 */
   const readConsent = useCallback(async () => {
-    const adapter = client.current; if (!adapter) return false;
+    const adapter = client.current; if (!adapter) return null;
+    const currentGeneration = generation.current, request = ++consentRead.current;
+    const current = () => currentGeneration === generation.current && adapter === client.current && request === consentRead.current;
+    setConsentLoading(true); setConsentError(null);
     try {
       const settings = unwrapGatewayResult(await window.astella.workspace.getAiSettings({ meta: createRequestMeta(adapter.identity.workspaceEpoch) }));
+      if (!current()) return null;
       const needed = companionConsentGate(settings) === "consent_required";
-      setConsent(needed ? "required" : "granted"); return needed;
-    // 读不到时留在 unknown（不出声也不撞门），而不是当成"已同意"。
-    } catch { setConsent("unknown"); return false; }
+      updateConsent(needed ? "required" : "granted"); return needed;
+    } catch (error) {
+      if (current()) { updateConsent("unknown"); setConsentError(gatewayErrorMessage(error)); }
+      return null;
+    } finally { if (current()) setConsentLoading(false); }
   }, []);
   const start = useCallback((topic: GuideTopicId, resume = false) => {
     const adapter = client.current;
+    if (!adapter || consentWrite.current) return;
     const scope: GuideScope = topic === "space" ? "space" : "account";
     const definition = GUIDE_TOPICS.find(item => item.id === topic)!;
     const stored = adapter?.states[scope];
     const canResume = adapter && resumableGuide(stored ?? null, adapter.identity);
-    const stepId = resume && canResume ? stored!.activeRun!.stepId : definition.steps[0];
-    const index = Math.max(0, definition.steps.indexOf(stepId as typeof definition.steps[number]));
+    const storedStep = resume && canResume ? stored!.activeRun!.stepId : definition.steps[0];
+    const index = Math.max(0, definition.steps.indexOf(storedStep as typeof definition.steps[number]));
+    const stepId = definition.steps[index];
     const fromInvite = invitationRef.current === scope && stored?.activeRun?.entryMode === "first_run";
     sessionRef.current = { topic, index, scope };
-    setSession({ topic, index, scope }); offer(null);
-    void readConsent();
+    setSession(sessionRef.current); offer(null);
+    updateConsent("unknown");
+    const selected = sessionRef.current;
     if (adapter) useCompanionNotifications.getState().remove(`guide:invite:${adapter.identity.userId}:${adapter.identity.workspaceId}`);
-    save(scope, { action: resume && canResume ? "resume" : fromInvite ? "advance" : "replay", stepId, topicId: topic });
+    const entry = { scope, action: resume && canResume ? "resume" as const : fromInvite ? "advance" as const : "replay" as const, stepId, topicId: topic };
+    pendingStart.current = entry;
+    void readConsent().then(needed => {
+      if (sessionRef.current !== selected || adapter !== client.current) return;
+      if (needed === null) return;
+      pendingStart.current = null;
+      save(scope, { ...entry, stepId: needed ? "voice" : stepId });
+    });
   }, [save, readConsent]);
+  /** 核对期间暂停不覆盖原来读到的章节；新的一趟仍停在协议前置位置。 */
+  const checkpoint = useCallback((active: GuideSession) => {
+    const entry = pendingStart.current;
+    const topic = GUIDE_TOPICS.find(item => item.id === active.topic)!;
+    const stepId = consentRef.current === "required" || consentRef.current === "unknown" && entry?.action !== "resume" ? "voice" : topic.steps[active.index];
+    if (entry) save(entry.scope, { ...entry, stepId });
+    pendingStart.current = null;
+    return stepId;
+  }, [save]);
+  const enterTour = useCallback(() => {
+    const active = sessionRef.current;
+    if (!active || consentRef.current !== "granted") return;
+    const topic = GUIDE_TOPICS.find(item => item.id === active.topic)!;
+    save(active.scope, { action: "advance", stepId: topic.steps[active.index], topicId: active.topic });
+  }, [save]);
+  const retryConsent = useCallback(async () => {
+    if (consentWrite.current) return;
+    if (await readConsent() === false) enterTour();
+  }, [readConsent, enterTour]);
+  const signConsent = useCallback(async () => {
+    const adapter = client.current;
+    if (!adapter || consentWrite.current || consentRef.current !== "required") return;
+    const currentGeneration = generation.current;
+    consentWrite.current = true; setConsentSaving(true); setConsentError(null);
+    // 取消仍在路上的预读，避免它用签署前的快照覆盖成功回执。
+    ++consentRead.current;
+    try {
+      const response = await window.astella.workspace.updateAiConsent({
+        meta: createRequestMeta(adapter.identity.workspaceEpoch), consentVersion: AI_CONSENT_VERSION,
+      });
+      if (currentGeneration !== generation.current || adapter !== client.current) return;
+      const settings = unwrapGatewayResult(response);
+      if (settings.consentVersion !== AI_CONSENT_VERSION) throw new Error("暂时没有确认签署结果，请重试。");
+      if (response.workspaceEpoch) adapter.followEpoch(response.workspaceEpoch);
+      updateConsent("granted"); enterTour();
+    } catch (error) {
+      if (currentGeneration === generation.current && adapter === client.current) setConsentError(gatewayErrorMessage(error));
+    } finally {
+      if (currentGeneration === generation.current && adapter === client.current) {
+        consentWrite.current = false; setConsentSaving(false); setConsentLoading(false);
+      }
+    }
+  }, [enterTour]);
   /** 从设置页回来（没被重挂的那种）就把同意重新读一次，第一站才知道能不能放行。 */
   useEffect(() => {
     const unsub = useRoomStore.subscribe((state, prev) => {
@@ -97,8 +162,11 @@ export function useCompanionGuide(decorative = false) {
     room.invoke("open-settings");
   }, []);
   useEffect(() => {
+    sessionRef.current = null; setSession(null); offer(null); setAccount(null); updateConsent("unknown");
+    setConsentError(null); setConsentLoading(false); setConsentSaving(false); consentWrite.current = false;
+    client.current = null;
+    pendingStart.current = null;
     if (!verifiedGuideIdentity(identity) || !window.astella) return;
-    setSession(null); offer(null); setAccount(null); setConsent("unknown");
     const adapter = new GuideProgressClient(identity); client.current = adapter;
     const currentGeneration = ++generation.current;
     let inviteId: string | null = null;
@@ -108,11 +176,11 @@ export function useCompanionGuide(decorative = false) {
       setAccount(overview?.account ?? null);
       refresh();
       const account = adapter.states.account;
-      // 第一站就是「开声音」。没开就走下去、之后又回来（含整棵重挂）时，服务端还记着
-      // 停在 voice——那就不需要任何"交接"：重新站回这一站即可，也不该再写一次服务器。
-      if (!decorative && account?.offerStatus !== "consumed" && account?.activeRun?.stepId === "voice" && account.activeRun.entryMode === "first_run") {
+      // voice 是已持久化的协议前置位置。重挂后继续阅读，已签署时直接进入书房第一站。
+      if (!decorative && account?.offerStatus !== "consumed" && account?.activeRun?.stepId === "voice" && account.activeRun.runStatus === "in_progress" && account.activeRun.entryMode === "first_run") {
         sessionRef.current = { topic: "welcome", index: 0, scope: "account" };
-        setSession(sessionRef.current); offer(null); void readConsent();
+        setSession(sessionRef.current); offer(null);
+        void readConsent().then(needed => { if (needed === false) enterTour(); });
         return;
       }
       const legacy = overview?.onboardingStates.some(state => state.onboardingVersion !== "companion-guide-v1" && state.offerStatus !== "not_offered");
@@ -147,8 +215,7 @@ export function useCompanionGuide(decorative = false) {
       generation.current++;
       const active = sessionRef.current;
       if (active) {
-        const topic = GUIDE_TOPICS.find(item => item.id === active.topic)!;
-        void adapter.transition(active.scope, { action: "pause", stepId: topic.steps[active.index] }).catch(() => {});
+        void adapter.transition(active.scope, { action: "pause", stepId: checkpoint(active) }).catch(() => {});
       }
       if (inviteId) useCompanionNotifications.getState().remove(inviteId);
       useRoomStore.getState().setCompanionGuideOpen(false);
@@ -156,18 +223,19 @@ export function useCompanionGuide(decorative = false) {
   // `workspaceEpoch` 不在依赖里：它只是请求边界，门禁每重核一次会话就换一个号。
   // 把它当身份变化，会让整段初始化在离开设置页那种时刻重跑，正在走的带路被清空、
   // 载入结果又被下一次的 generation 判掉，谁都接不回来（2026-10-07 真窗口插桩看到的就是这个）。
-  }, [identity?.userId, identity?.deploymentRef, identity?.workspaceId, decorative, reloadContents, save, start]);
+  }, [identity?.userId, identity?.deploymentRef, identity?.workspaceId, decorative, reloadContents, save, start, readConsent, enterTour, checkpoint]);
   useEffect(() => {
     if (client.current && identity?.workspaceEpoch) client.current.followEpoch(identity.workspaceEpoch);
   }, [identity?.workspaceEpoch]);
   const pause = useCallback(() => {
+    if (consentWrite.current) return;
     const current = sessionRef.current;
     if (!current) return;
-    const topic = GUIDE_TOPICS.find(item => item.id === current.topic)!;
-    save(current.scope, { action: "pause", stepId: topic.steps[current.index] });
+    save(current.scope, { action: "pause", stepId: checkpoint(current) });
     sessionRef.current = null; setSession(null);
-  }, [save]);
+  }, [save, checkpoint]);
   const next = useCallback((direction: number) => {
+    if (consentRef.current !== "granted") return;
     const current = sessionRef.current; if (!current) return;
     const topic = GUIDE_TOPICS.find(item => item.id === current.topic)!;
     const index = current.index + direction;
@@ -181,15 +249,18 @@ export function useCompanionGuide(decorative = false) {
     }
     if (index < 0) return;
     sessionRef.current = { ...current, index };
-    setSession({ ...current, index }); save(current.scope, { action: "advance", stepId: topic.steps[index], topicId: current.topic });
+    setSession(sessionRef.current); save(current.scope, { action: "advance", stepId: topic.steps[index], topicId: current.topic });
   }, [save]);
   const end = useCallback(() => {
+    if (consentRef.current !== "granted") return;
     const current = sessionRef.current; if (!current) return;
-    save(current.scope, { action: "complete" }); sessionRef.current = null; setSession(null);
+    save(current.scope, { action: "complete" });
+    if (current.topic === "welcome" && client.current?.states.space?.offerStatus !== "consumed") save("space", { action: "complete" });
+    sessionRef.current = null; setSession(null);
   }, [save]);
   const resumeState = client.current && (["space", "account"] as const).map(scope => ({ scope, state: client.current!.states[scope] }))
     .find(item => resumableGuide(item.state, client.current!.identity));
   const resume = resumeState ? { topic: resumeState.scope === "space" ? "space" as const : resumeState.state!.activeRun!.topicId ?? topicForStep(resumeState.state!.activeRun!.stepId), step: GUIDE_STEPS[resumeState.state!.activeRun!.stepId as keyof typeof GUIDE_STEPS]?.title ?? "继续带看" } : null;
-  return { identity, account, session, invitation, contents, consent, openConsentSettings, start, skip, pause, next, end, resume, reloadContents, pending: client.current?.pending ?? false, revision };
+  return { identity, account, session, invitation, contents, consent, consentLoading, consentSaving, consentError, signConsent, retryConsent, openConsentSettings, start, skip, pause, next, end, resume, reloadContents, pending: client.current?.pending ?? false, revision };
 }
 export type CompanionGuideController = ReturnType<typeof useCompanionGuide>;

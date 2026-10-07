@@ -134,17 +134,16 @@ test("回放窗口是**20**，且摘要器必须让开它（两处各写一个 2
   assert.equal(bounded[bounded.length - 1]?.seq, `m-${REPLAY_WINDOW_MESSAGES * 2 - 1}`);
 });
 
-test("被折叠掉的助手残句会连同它前面那句提问一起丢掉", () => {
-  // 只剩半句的助手回答对下一轮是纯噪声：用户问了、她没答上，
-  // 留着会让她看起来像是无视了问题。
+test("短回复与前面的用户问题都保持原样", () => {
+  // 短句可能是有效确认，不能仅凭长度判断失败。
   const bounded = boundCompanionRecentHistory([
     msg("user", "这一段是什么意思", "m-1"),
     msg("assistant", "嗯", "m-2"),
     msg("user", "那我换一个问法", "m-3"),
   ]);
   const texts = bounded.map((m) => m.text);
-  assert.ok(!texts.includes("嗯"), "被折叠的助手残句还留着");
-  assert.ok(!texts.includes("这一段是什么意思"), "它前面那句提问也被留下了");
+  assert.ok(texts.includes("嗯"));
+  assert.ok(texts.includes("这一段是什么意思"));
   assert.ok(texts.includes("那我换一个问法"));
 });
 

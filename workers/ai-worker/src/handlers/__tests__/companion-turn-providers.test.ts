@@ -3,6 +3,27 @@ import { test } from "node:test";
 import { resolveCompanionTurnProviders } from "../companion-turn-providers.ts";
 import { AIContextCompactionRequiredError } from "../../lib/context-governor.ts";
 import type { AIGovernanceContext } from "../../lib/governance.ts";
+import { registerFactory } from "../../lib/provider-factory.ts";
+import { MockProvider } from "../../lib/providers/mock.ts";
+
+test("主链与兜底工厂都拿到真实对话身份，同会话跨轮保持稳定", () => {
+  const sessions: Array<string | undefined> = [];
+  registerFactory("mock", "agent_turn", config => {
+    sessions.push(config.sessionId);
+    return new MockProvider();
+  });
+  try {
+    for (const conversationId of ["conversation-one","conversation-one","conversation-two"]) {
+      resolveCompanionTurnProviders({governance:governance({companionFallbackProviderName:"mock",
+        companionFallbackProviderConfig:{}}), ctx, read:{...read,conversationId},
+        contextGate:{compactionAvailable:()=>false},reserveCall:async()=>{}});
+    }
+    assert.deepEqual(sessions, ["conversation-one","conversation-one","conversation-one",
+      "conversation-one","conversation-two","conversation-two"]);
+  } finally {
+    registerFactory("mock", "agent_turn", () => new MockProvider());
+  }
+});
 
 /**
  * 方案 44 §4.3：两个 provider 槽都必须经过 `createGovernedProvider`——
@@ -27,8 +48,15 @@ const governance = (over: Partial<AIGovernanceContext> = {}): AIGovernanceContex
   ...over,
 });
 
-const ctx = { workspaceId: "00000000-0000-0000-0000-000000000001", id: "job-1" } as never;
-const read = { userId: "00000000-0000-0000-0000-000000000002" } as never;
+const ctx = { workspaceId: "00000000-0000-0000-0000-000000000001", id: "job-1",
+  requestedBy:"00000000-0000-0000-0000-000000000002",payload:{},leaseToken:"test",signal:new AbortController().signal };
+const read = { userId: "00000000-0000-0000-0000-000000000002", runId:"run-1",conversationId:"conversation-1",
+  userMessageId:"message-1",generation:1,accountEpoch:0,runStatus:"running",formalAnswerInProgress:false,
+  formalAnswerTarget:null,livePageView:null,pageContext:null,groundedTutorContext:null,userText:"你好",
+  recentMessages:[],residentMemories:[],memoryDirectory:[],playbookCatalog:[],organizationSurface:null,
+  memoryRefs:[],hereAndNow:null,thisTurnFacts:null,factSpans:null,conversationSummary:null,
+  personaProfileRevision:0,personaExamplesRevision:0,defaultExpressionVersion:"test",petProfile:null,
+  nextMessageSeq:1,nextEventSeq:1 };
 
 test("44 §4.3：主 provider 挂着上下文闸——超触发线时要求先压", async () => {
   const seen: string[] = [];

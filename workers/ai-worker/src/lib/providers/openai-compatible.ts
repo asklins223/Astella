@@ -55,16 +55,15 @@ function abortError(signal: AbortSignal, phase: string): Error {
  * 直接**省略字段**，让 provider 用自身默认值，而不是把垃圾值发出去。
  */
 const MAX_REQUEST_TEMPERATURE = 2;
-const MAX_REQUEST_MAX_TOKENS = 65_536;
 
 function clampTemperature(value: number | undefined): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
   return Math.min(MAX_REQUEST_TEMPERATURE, Math.max(0, value));
 }
 
-function clampMaxTokens(value: number | undefined): number | undefined {
+function clampMaxTokens(value: number | undefined, ceiling: number): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined;
-  return Math.min(MAX_REQUEST_MAX_TOKENS, Math.floor(value));
+  return Math.min(ceiling, Math.floor(value));
 }
 
 async function readStreamingBodyText(body: AsyncIterable<Uint8Array>): Promise<string> {
@@ -123,6 +122,10 @@ export class OpenAICompatibleProvider implements AIProvider {
     return {};
   }
 
+  private outputTokenLimit(value: number | undefined): number | undefined {
+    return clampMaxTokens(value, this.modelProfile?.maxOutputTokens ?? 16_384);
+  }
+
   /**
    * R2: TextGenerationCapability — generic chat completion.
    *
@@ -168,7 +171,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     onDelta: (deltaText: string) => void,
   ): Promise<{ content: string; toolCalls: AgentTurnResult["toolCalls"]; finishReason: string }> {
     if (signal?.aborted) throw abortError(signal, "before request");
-    const maxTokens = options.maxTokens ?? 4096;
+    const maxTokens = this.outputTokenLimit(options.maxTokens ?? 4096);
     const temperature = options.temperature ?? 0.2;
     const model = options.model ?? this.modelId;
     const disableMaxTokens = this.platformOptions?.disableMaxTokens ?? false;
@@ -195,8 +198,8 @@ export class OpenAICompatibleProvider implements AIProvider {
             tool_choice: options.toolChoice ?? "auto",
           }
         : {}),
-      ...this.thinkingField(options.disableThinking ?? false),
       ...this.extraRequestParams,
+      ...this.thinkingField(options.disableThinking ?? false),
     };
     if (shouldSetMaxTokens) body.max_tokens = maxTokens;
     const headers: Record<string, string> = {
@@ -525,12 +528,11 @@ export class OpenAICompatibleProvider implements AIProvider {
         : { response_format: { type: "json_object" as const } }),
       // 思考字段由模型档案驱动（见 thinkingField）；此处的 disableThinking
       // 参数供离线评测/调试显式关闭，优先级最高。
-      ...this.thinkingField(disableThinking),
-      // R1: DashScope preset overrides (e.g., enable_thinking: false)
       ...this.extraRequestParams,
+      ...this.thinkingField(disableThinking),
     };
     if (shouldSetMaxTokens) {
-      body.max_tokens = maxTokens;
+      body.max_tokens = this.outputTokenLimit(maxTokens);
     }
     // R1: Merge extra headers (e.g., X-DashScope-WorkSpace)
     const headers: Record<string, string> = {
@@ -623,9 +625,8 @@ export class OpenAICompatibleProvider implements AIProvider {
       stream: false,
       // 思考字段由模型档案驱动（见 thinkingField）；这一轮要不要关由调用方随请求带来
       // （伴星闲聊轮关、提问/任务轮开），档案本身说的仍是"这个模型能思考到哪几档"。
-      ...this.thinkingField(request.disableThinking ?? false),
-      // R1: DashScope preset overrides (e.g., enable_thinking: false)
       ...this.extraRequestParams,
+      ...this.thinkingField(request.disableThinking ?? false),
     };
 
     // R1: maxTokensStrategy controls max_tokens
@@ -633,7 +634,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     const shouldSetMaxTokens = this.maxTokensStrategy === "always" || !disableMaxTokens;
     if (shouldSetMaxTokens) {
       // AI P2 #25：出口夹取；非法/缺失即省略字段（用 provider 默认），不发垃圾值。
-      const maxTokens = clampMaxTokens(request.maxTokens);
+      const maxTokens = this.outputTokenLimit(request.maxTokens);
       if (maxTokens !== undefined) requestBody.max_tokens = maxTokens;
     }
 

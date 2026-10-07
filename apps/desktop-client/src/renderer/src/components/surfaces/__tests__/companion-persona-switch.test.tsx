@@ -162,7 +162,7 @@ describe("换人格之前的那一问", () => {
   it("保存中：勾选与按钮都锁住", () => {
     renderPanel({ switchTarget: WORM, switchOptions: OPTIONS, overwrite: [], busy: "preset" });
     expect(boxes().every((box) => box.disabled)).toBe(true);
-    expect(confirmButton().textContent).toContain("正在换");
+    expect(confirmButton().textContent).toContain("正在切换人格");
   });
 
   it("取消把控制权还给页面，不产生任何写入", () => {

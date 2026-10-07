@@ -29,7 +29,7 @@ describe("CompanionAgentRail", () => {
       render(<CompanionAgentRail nodes={TOOL_NODES} progress={null} turnState="done" companionName="大肥鱼" />);
       expect(screen.getByRole("status", { name: "大肥鱼 正在做的事" })).toBeTruthy();
       act(() => { vi.advanceTimersByTime(500); });
-      expect(screen.getByText("1 次工具")).toBeTruthy();
+      expect(screen.getByText("1 项操作")).toBeTruthy();
       // 曾经这里有个 5.4s 的 `expired`：整条轨道自己消失，与气泡何时走无关。
       act(() => { vi.advanceTimersByTime(30_000); });
       expect(screen.getByRole("status", { name: "大肥鱼 正在做的事" })).toBeTruthy();
@@ -59,7 +59,7 @@ describe("CompanionAgentRail", () => {
       />,
     );
     const rail = screen.getByRole("status", { name: "大肥鱼 正在做的事" });
-    expect(rail.textContent).toContain("没说完");
+    expect(rail.textContent).toContain("回复未完成");
   });
 
   it("结果不明时，紧凑摘要也保留待核对提醒", () => {

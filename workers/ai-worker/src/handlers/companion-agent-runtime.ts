@@ -57,7 +57,7 @@ import {
   resolveCompanionAgentBudget,
   resolveProviderCallTimeout,
 } from "../lib/handler-timeout-config.ts";
-import { CompanionAgentBudgetExceededError } from "../lib/non-retryable-errors.ts";
+import { AgentOutputError, CompanionAgentBudgetExceededError } from "../lib/non-retryable-errors.ts";
 import { ProviderRequestError } from "../lib/provider-request-error.ts";
 import { currentWorkerWorkspaceTransaction, withWorkerWorkspaceTransaction } from "../db.ts";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
@@ -80,6 +80,7 @@ import {
 } from "./companion-eager-dispatch-config.ts";
 import { eagerCommitRecheck, type StreamToolCallSlot } from "./companion-eager-dispatch.ts";
 import { canRetryCompanionStream, runStreamingAgentStep } from "./companion-agent-streaming-step.ts";
+import { CompanionStreamStoppedError } from "./companion-dialogue-stream.ts";
 export { runStreamingAgentStep };
 export {
   classifyCompanionToolFailure,
@@ -352,7 +353,7 @@ export async function runCompanionAgentLoop(args: {
   if (!turnThinking.disableThinking) {
     await emitCompanionAssistantStatus({
       workspaceId: args.ctx.workspaceId, read: args.read, expiresAt: args.expiresAt,
-      status: "thinking", safeLabel: "她在想…",
+      status: "thinking", safeLabel: "正在思考…",
     });
   }
   // 压力触发的一次有界压缩（44 §5.4）：折的是**这一次请求**的回放尾部，不是工作
@@ -490,10 +491,9 @@ export async function runCompanionAgentLoop(args: {
     });
     /**
      * 第一步可能已经有现成的：投机的闲聊版（见上面的 speculative）。
-     * 保留条件是"分类器确认本轮解释为空"，所以这一版请求与真跑一遍逐字一致，
-     * 只是**省掉了那次串行往返**。
+     * 分类器确认没有需要改写历史或补入注意力对象的内容，才复用这版闲聊请求。
      */
-    const prefetched = prefetchedFirstStep !== null && stepCount === resumedStepCount ? prefetchedFirstStep : null;
+    const prefetched = prefetchedFirstStep !== null && stepCount === resumedStepCount + 1 ? prefetchedFirstStep : null;
     if (prefetched) prefetchedFirstStep = null;
     const stepRequest: AgentTurnRequest = prefetched?.request ?? {
       role: AgentRole.COMPANION_AGENT,
@@ -666,9 +666,13 @@ export async function runCompanionAgentLoop(args: {
         // 明确动作请求的工具步先整段取回：只有拿到 tool_calls 后才能知道
         // 开场白是否属于最终回复。流式先吐「办好了」再调工具，会造成复读或假完成。
         && (finalAnswerOnly || (stepRequest.toolChoice !== "required"
-          && stepProvider.chatCompletionStreamToolCalls === true));
+          && (stepRequest.tools.length === 0 || stepProvider.chatCompletionStreamToolCalls === true)));
 
-      if (canStreamThisStep) {
+      if (prefetched) {
+        // The speculative stream has already completed (and may have delivered
+        // text). Consume it before choosing any provider transport.
+        result = prefetched.result;
+      } else if (canStreamThisStep) {
         // 每一步都走真实流式：增量实时交给交付管线（净化 + 校验 + 落库 + SSE 下发）。
         // 分段符与最终正文的拼接口径必须一致（非首段 "\n\n"），否则已下发前缀
         // 与最终正文会分叉——见 joinVisibleSegmentsDeduped。
@@ -740,9 +744,7 @@ export async function runCompanionAgentLoop(args: {
             Math.min(providerCallTimeout, Math.max(1, deadlineAt - Date.now())),
           );
         try {
-          // 投机那一步已经把完整结果拿回来了（分类器确认本轮解释为空才算数）：
-          // 它的字一个都没"下发"过，走下面既有的补发路径进正文。
-          result = prefetched ? prefetched.result : await attemptStream();
+          result = await attemptStream();
         } catch (error) {
           if (!canRetryStream(error)) throw error;
           // 传**错误对象**而不是 message 字符串：序列化器（safeErrorSerializer）
@@ -883,12 +885,14 @@ export async function runCompanionAgentLoop(args: {
         if (!replyIsTruncated(String(result.content ?? ""))) break;
         try {
           const retryTimeoutMs = Math.min(resolveProviderCallTimeout("companion_agent"), Math.max(1, deadlineAt - Date.now()));
+          const retryRequest = { ...stepRequest,
+            maxTokens: Math.min(stepRequest.maxTokens, companionStepOutputCeiling(rung.provider)) };
           const retryResult = await runWithAbortBudget(
             (signal) => runModelStepTask(
               rung.provider,
-              stepRequest,
+              retryRequest,
               signal,
-              (taskSignal) => rung.provider.executeAgentTurn!(stepRequest, taskSignal),
+              (taskSignal) => rung.provider.executeAgentTurn!(retryRequest, taskSignal),
               retryTimeoutMs,
             ),
             args.ctx.signal,
@@ -916,6 +920,21 @@ export async function runCompanionAgentLoop(args: {
           );
         }
       }
+    }
+    if (result.finishReason === "length") {
+      // A capped response is incomplete even if it contains a tool call. Do not
+      // dispatch more actions or publish it as a successful final answer.
+      const prefix = typeof result.content === "string" ? result.content : "";
+      if (!stepEmitted && prefix.length > 0 && args.onProviderDelta) {
+        const separator = visibleSegmentDelivered.some(Boolean) ? VISIBLE_SEGMENT_SEPARATOR : "";
+        if (!(await args.onProviderDelta(separator + prefix))) {
+          throw new CompanionStreamStoppedError("companion incomplete output delivery stopped");
+        }
+      }
+      await finishStep(event, stepId, "failed", sha256Utf8V1(prefix), "AGENT_BUDGET_EXCEEDED");
+      await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
+        ...args.contextReceipts?.runMetaPatch() });
+      throw new AgentOutputError("output_truncated", "companion answer reached its output ceiling");
     }
     if (finalAnswerOnly && calls.length > 0) {
       // 终答步的工具面是收起的（见上面 finalAnswerOnly 的注释），provider 仍然回
@@ -1061,7 +1080,8 @@ export async function runCompanionAgentLoop(args: {
                 + "不要说已经做过，也不要只说你要去做。）",
       }));
       await finishStep(event, stepId, "succeeded", sha256Utf8V1(said));
-      await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
+      await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
+        ...args.contextReceipts?.runMetaPatch() });
       logger.warn(
         {
           runId: args.read.runId,
@@ -1131,17 +1151,9 @@ export async function runCompanionAgentLoop(args: {
           "companion agent repeated an earlier segment in the visible reply",
         );
       }
-      // S6（2026-09-19）：maxTokens 截断此前**无人知晓**——下游只有 20k 字符硬限额
-      // 兜底，用户拿到"半截话"而日志里没有任何痕迹。这里让截断可见：整段路径的
-      // AgentTurnResult 带 finishReason，命中 "length" 即说明这一步被砍断了。
-      if (result.finishReason === "length") {
-        logger.warn(
-          { runId: args.read.runId, stepCount, chars: text.length, maxTokens: stepRequest.maxTokens },
-          "companion agent step truncated by maxTokens",
-        );
-      }
       await finishStep(event, stepId, "succeeded", sha256Utf8V1(text));
-      await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
+      await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
+        ...args.contextReceipts?.runMetaPatch() });
       return { kind: "settled", result: { status: "completed", text, blocks: richBlocks, memoryRefs: [] } };
     }
     if (calls.length > COMPANION_AGENT_MAX_TOOL_CALLS_PER_STEP) {
@@ -1313,7 +1325,7 @@ export async function runCompanionAgentLoop(args: {
               ok: true,
               summary: record.safeSummary ?? "工具已完成",
               ...(record.resultRef ? { resultRef: record.resultRef } : {}),
-            }).slice(0, definition.maxOutputChars),
+            }),
           });
         } else {
           const safeSummary = record.safeSummary ?? "检测到重复工具调用，已阻止重放";
@@ -1324,7 +1336,7 @@ export async function runCompanionAgentLoop(args: {
               ok: false,
               status: record.status,
               error: safeSummary,
-            }).slice(0, definition.maxOutputChars),
+            }),
           });
         }
         continue;
@@ -1382,7 +1394,7 @@ export async function runCompanionAgentLoop(args: {
             ok: false,
             status: unavailable.modelStatus,
             error: unavailable.safeSummary,
-          }).slice(0, definition.maxOutputChars),
+          }),
         });
         continue;
       }
@@ -1418,7 +1430,8 @@ export async function runCompanionAgentLoop(args: {
       }
       if (run.kind === "waiting") {
         await finishStep(event, stepId, "waiting");
-        await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(), status: "waiting_for_confirmation", waitingProposalId: run.proposalId });
+        await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
+          ...args.contextReceipts?.runMetaPatch(), status: "waiting_for_confirmation", waitingProposalId: run.proposalId });
         return { kind: "settled", result: { status: "waiting_for_confirmation", proposalId: run.proposalId, memoryRefs: [] } };
       }
       const execution = run.execution;
@@ -1452,7 +1465,10 @@ export async function runCompanionAgentLoop(args: {
       messages.push({
         role: "tool",
         toolCallId: call.id,
-        content: JSON.stringify({ ok: true, data: execution.value, summary: execution.safeSummary }).slice(0, definition.maxOutputChars),
+        // Read tools budget and paginate their data before serialization. Cutting
+        // an encoded envelope corrupts escapes/cursors; the next complete request
+        // is governed by its actual token budget instead.
+        content: JSON.stringify({ ok: true, data: execution.value, summary: execution.safeSummary }),
       });
     }
     await finishStep(event, stepId, "succeeded", auditHash(messages.slice(-calls.length)));

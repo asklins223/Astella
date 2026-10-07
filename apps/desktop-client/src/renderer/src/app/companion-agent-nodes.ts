@@ -86,24 +86,14 @@ export function nodeLabel(node: CompanionAgentNode): string {
   return node.label;
 }
 
-/**
- * 「此刻她在做什么」那一句**兜底**文案——只在没有正在跑的过程节点时用（`nodeLabel`
- * 覆盖的是有活动节点的那些时刻）。判据全部来自服务端真的发过的东西，一句都不猜：
- *
- * | 这一轮已经发生过 | 说 |
- * | --- | --- |
- * | 什么都没发生（话刚收到，分类器还在跑） | 在听… |
- * | 服务端发过 `thinking`（本轮确实开了思考档） | 她在想… |
- * | 跑过工具、结果已落定，她正在把它组织成话 | 她看完了，正在组织怎么说。 |
- *
- * 第三行是这次补的：工具节点落定之后它不再是"活动节点"，整段就掉回第一行，
- * 于是她明明在查东西、气泡上却一直写着「在听…」。而"她在想"只在服务端
- * 真开了思考档时才会出现——等待不等于思考，这条从 2026-10-07 起就守住了。
- */
+/** 当前节点优先。工具结束只说明进入回复阶段，不推断已读完材料或成功执行。 */
 export function companionTurnProcessLine(nodes: readonly CompanionAgentNode[]): string {
-  if (nodes.some((node) => node.kind === "thinking")) return "她在想…";
-  if (nodes.some((node) => node.kind === "tool")) return "她看完了，正在组织怎么说。";
-  return "在听…";
+  const latest = nodes[nodes.length - 1];
+  if (latest?.state === "running") return nodeLabel(latest);
+  if (latest?.state === "outcome_unknown") return "操作结果待核对…";
+  if (latest?.state === "waiting_confirmation") return "等你确认这项操作";
+  if (nodes.some((node) => node.kind === "tool")) return "正在组织回复…";
+  return "正在准备回复…";
 }
 
 const TOOL_STATE: Record<string, CompanionAgentNodeState> = {

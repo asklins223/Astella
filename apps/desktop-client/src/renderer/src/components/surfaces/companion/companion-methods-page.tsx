@@ -70,7 +70,7 @@ export function CompanionMethodsPage({refreshKey,requestedId,onFocusConsumed}:{r
       if(useRoomStore.getState().workspaceScopeRevision===scope) setDraft(null);
     },"修订已保存，旧版本和来源保留。");
   };
-  if(!resource.section) return <SectionState message={resource.failure ? "方法暂时读不到" : "正在翻找我们的方法…"} detail={resource.failure ?? undefined} onRetry={resource.failure ? ()=>void resource.reload() : undefined} />;
+  if(!resource.section) return <SectionState loading={resource.loading} message={resource.failure ? "方法暂时读不到" : "正在加载合作方法…"} detail={resource.failure ?? undefined} onRetry={resource.failure ? ()=>void resource.reload() : undefined} />;
   if(!resource.section.ok) return <SectionState message="方法暂时读不到" detail={resource.section.message} onRetry={()=>void resource.reload()} />;
   const visible=items.filter(method=>`${method.title} ${method.appliesWhen}`.toLowerCase().includes(query.trim().toLowerCase()));
   const editing=draft?.methodId===selectedId ? draft : null;
@@ -82,7 +82,7 @@ export function CompanionMethodsPage({refreshKey,requestedId,onFocusConsumed}:{r
       <div className="cc-methods-index" aria-label="方法清单">
         {visible.length ? visible.map(method=><button key={method.methodId} type="button" aria-pressed={method.methodId===selectedId} disabled={busy} onClick={()=>{setSelectedId(method.methodId);setError(null);setNotice(null);}}>
           <small>{stateLabels[method.availability]} · 第 {method.revision} 版</small><strong>{method.title}</strong><span>{method.appliesWhen}</span>
-        </button>) : <SectionState message={query ? "还没找到这条方法" : "让好用的做法慢慢留下来"} detail={query ? "试试其他关键词。" : "任务做好后，可以在我们的对话手记里，把这次合作留成方法。整理出的候选也会在这里等待你确认。"} />}
+        </button>) : <SectionState message={query ? "还没找到这条方法" : "还没有保存合作方法"} detail={query ? "试试其他关键词。" : "任务做好后，可以在我们的对话手记里，把这次合作留成方法。整理出的候选也会在这里等待你确认。"} />}
       </div>
       {selected ? <article className="cc-method-detail" aria-label="方法详情">
         <header><span className="cc-kicker">这个书房的合作方法</span><span className="cc-badge">{stateLabels[selected.availability]}</span></header>
@@ -108,11 +108,11 @@ export function CompanionMethodsPage({refreshKey,requestedId,onFocusConsumed}:{r
         <details className="cc-details"><summary>来源与旧版本</summary>
           <p>依据 {selected.evidence.length} 条真实来源整理。第 {selected.revision} 版，更新于 {new Date(selected.updatedAt).toLocaleDateString("zh-CN")}。</p>
           <ul>{selected.evidence.map((ref,index)=><li key={index}>{ref.memoryId ? `已保存记忆 · 第 ${ref.memoryRevision ?? "待核对"} 版` : ref.runId ? `已经完成的合作 · 第 ${ref.runRevision ?? "待核对"} 次要求` : "已记录的事件"}{ref.note ? `：${ref.note}` : ""}</li>)}</ul>
-          {history.loading ? <p>正在读取旧版本…</p> : history.section?.ok && history.section.value.methodId===selectedId ? history.section.value.items.map(item=><details key={item.revision}><summary>第 {item.revision} 版 · {item.title}</summary><p>{item.appliesWhen}</p><ol>{item.steps.map((step,index)=><li key={index}>{renderCompanionMarkdown(step)}</li>)}</ol><p>{item.changeReason}</p></details>) : <SectionState message="旧版本暂时读不到" onRetry={()=>void history.reload()} />}
+          {history.loading ? <p>正在加载旧版本…</p> : history.section?.ok && history.section.value.methodId===selectedId ? history.section.value.items.map(item=><details key={item.revision}><summary>第 {item.revision} 版 · {item.title}</summary><p>{item.appliesWhen}</p><ol>{item.steps.map((step,index)=><li key={index}>{renderCompanionMarkdown(step)}</li>)}</ol><p>{item.changeReason}</p></details>) : <SectionState message="旧版本暂时读不到" onRetry={()=>void history.reload()} />}
         </details>
         <details className="cc-details"><summary>后续合作与反馈 · 本版查阅 {selected.consultedCount} 次</summary>
           <p>查阅表示伴星读取过这条方法；好不好用，由真实合作和你的反馈核对。</p>
-          {uses.loading ? <p>正在读取使用记录…</p> : uses.section?.ok && uses.section.value.methodId===selectedId ? uses.section.value.items.length ? uses.section.value.items.map(use=><div className="cc-method-use" key={use.useId}>
+          {uses.loading ? <p>正在加载使用记录…</p> : uses.section?.ok && uses.section.value.methodId===selectedId ? uses.section.value.items.length ? uses.section.value.items.map(use=><div className="cc-method-use" key={use.useId}>
             <span>{use.contextKind==="agent_goal" ? "任务中查阅" : "对话中查阅"} · 第 {use.methodRevision} 版 · {new Date(use.createdAt).toLocaleDateString("zh-CN")}</span>
             <div className="cc-actions">{(["helpful","unhelpful"] as const).map(feedback=><button type="button" className="cc-link" key={feedback} disabled={busy} aria-pressed={use.feedback===feedback} onClick={()=>void write(async()=>unwrapGatewayResult(await window.astella.agent.feedbackMethod({meta:resource.meta(),useId:use.useId,request:{feedback}})),"这次合作的反馈已留下。")}>{feedback==="helpful" ? "这次有帮助" : "这次不合适"}</button>)}</div>
           </div>) : <p>还没有后续使用记录。</p> : <SectionState message="使用记录暂时读不到" onRetry={()=>void uses.reload()} />}

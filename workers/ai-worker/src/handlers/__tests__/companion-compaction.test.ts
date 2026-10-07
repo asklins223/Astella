@@ -21,7 +21,7 @@ import { AIContextCompactionRequiredError, type ContextGateReceipt } from "../..
 const msg = (text: string) => ({ role: "user" as const, content: text });
 const turn = (text: string): AgentTurnRequest["messages"][number] => ({ role: "assistant", content: text });
 
-const coverage = (throughSeq: string, fromSeq: string | null = "3", hash: string | null = "a".repeat(64)) => ({
+const coverage = (throughSeq: string, fromSeq: string | null = "1", hash: string | null = "a".repeat(64)) => ({
   fromSeq, throughSeq, sourceSha256: hash,
 });
 
@@ -35,7 +35,7 @@ test("44 §5.2：只折被校验过的摘要盖住的那一段，其余原样保
       { message: turn("第四句"), seq: "4" },
     ],
     trailing: [msg("现在这个问题")],
-    coverage: coverage("3"),
+    coverage: coverage("3", "1"),
   });
   assert.ok(folded.receipt);
   assert.equal(folded.receipt.foldedMessageCount, 3);
@@ -95,8 +95,9 @@ test("44 §5.2：摘要起点之前还有一段没人代表时如实记下来", 
     // 摘要只盖 3..4，1..2 谁都没代表。
     coverage: coverage("4", "3"),
   });
-  assert.equal(folded.receipt?.foldedFromSeq, "1");
-  assert.equal(folded.receipt?.uncoveredBeforeSeq, "1", "别让「有摘要」冒充「全读过」");
+  assert.equal(folded.receipt?.foldedFromSeq, "3");
+  assert.equal(folded.receipt?.uncoveredBeforeSeq, "1");
+  assert.deepEqual(replayToMessages(folded.replay).map(m => m.content), ["最早", "第二"]);
 });
 
 test("44 §5.2：覆盖伸进回放窗口时折得动——折的是被摘要盖住的那段前缀", () => {

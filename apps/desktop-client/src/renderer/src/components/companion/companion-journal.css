@@ -149,14 +149,20 @@
 .companion-thought-journal__entries header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; color: #a0a08a; font-size: 10px; }
 .companion-thought-journal__entries header small { font-size: 10px; color: #aaa18b; }
 .companion-thought-journal__entries .companion-record__body { color: #6b775e; font-size: 14px; }
-.companion-thought-journal__reply, .companion-thought-journal__more { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; min-height: 32px; margin-top: 7px; padding: 4px 0; border: 0; background: transparent; color: #8ea07d; font-size: 11px; cursor: pointer; }
+.companion-thought-journal__actions { display: flex; align-items: center; gap: 14px; }
+.companion-thought-journal__reply, .companion-thought-journal__speak, .companion-thought-journal__more { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; min-height: 32px; margin-top: 7px; padding: 4px 0; border: 0; background: transparent; color: #8ea07d; font-size: 11px; cursor: pointer; }
+/* 正在念与念不成都用同一条文字级的变化说明，不加第二种控件、不换底色。 */
+.companion-thought-journal__speak[data-speaking] { color: #52704a; }
+.companion-thought-journal__speak[data-phase="failed"],
+.companion-thought-journal__speak[data-phase="consent_required"],
+.companion-thought-journal__speak[data-phase="silent"] { color: #925e46; }
 .companion-thought-journal__more { margin-left: 27px; text-decoration: underline; text-underline-offset: 4px; }
 .companion-history .companion-goal-journal h3 { font-family: "Noto Sans SC Variable", sans-serif; color: #5d6e52; font-size: 20px; }
 .companion-history .companion-goal-journal__index button { border-radius: 12px; padding: 17px 9px; }
 .companion-history__list [data-flash="true"] { animation: companion-history-flash 1.6s ease-out; }
 @media (hover: hover) and (pointer: fine) {
   .companion-history__tabs .text-action:hover { background: #e9eddf; }
-  .companion-record__actions .text-action:hover, .companion-thought-journal__reply:hover { color: #627c58; }
+  .companion-record__actions .text-action:hover, .companion-thought-journal__reply:hover, .companion-thought-journal__speak:hover { color: #627c58; }
   .companion-history .companion-goal-journal__index button:hover { background: #f4f6ec; }
 }
 @container companion-journal (max-width: 620px) {

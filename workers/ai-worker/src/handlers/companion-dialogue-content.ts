@@ -14,8 +14,8 @@
 
 import {
   COMPANION_HOST_PROTOCOL_V6,
-  COMPANION_IDENTITY_BOUNDARY_V2,
-  COMPANION_CHARACTER_BASE_V7,
+  COMPANION_IDENTITY_BOUNDARY_V3,
+  COMPANION_CHARACTER_BASE_V8,
   classifyCompanionReplyEmotion,
 } from "@astella/shared";
 import { canonicalJsonV1 } from "@astella/shared/content-hash";
@@ -36,6 +36,7 @@ import {
 } from "./companion-context-handoff.ts";
 import { resolveFactSpans } from "./companion-fact-spans.ts";
 import { logger } from "../lib/logger.ts";
+import { COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS } from "./companion-context-receipts.ts";
 export {
   boundCompanionRecentHistory,
   buildCompanionContextHandoffSnapshotV1,
@@ -1103,10 +1104,10 @@ export function buildCompanionPersonaMessages(input: {
   };
   // Domain policy/persona remain domain-owned. Chat, background goals and
   // professional generation share the same scope and atomic budget mechanism.
-  add("system_base", [COMPANION_HOST_PROTOCOL_V6, "", COMPANION_IDENTITY_BOUNDARY_V2, "",
+  add("system_base", [COMPANION_HOST_PROTOCOL_V6, "", COMPANION_IDENTITY_BOUNDARY_V3, "",
     ...(input.groundedTutorContext
       ? [GROUNDED_TUTOR_LAYER_NOTE, "", GROUNDED_TUTOR_COMPANION_PROMPT]
-      : [COMPANION_CHARACTER_BASE_V7]),
+      : [COMPANION_CHARACTER_BASE_V8]),
   ].join("\n"), "policy", { required: true });
   add("persona", personaBlock.join("\n"), "data", { priority: 30, maxCharacters: 4000 });
   if (input.groundedTutorContext) {
@@ -1125,7 +1126,7 @@ export function buildCompanionPersonaMessages(input: {
     add("page_context", pageContextBlock, "data", { priority: 5, maxCharacters: 16000 });
     add("method_catalog", input.methodCatalog, "data", { priority: 20, maxCharacters: 8000 });
   }
-  const context = composeAgentContext({ maxCharacters: 80000, sources: plan }, sources, input.scope);
+  const context = composeAgentContext({ maxCharacters: COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS, sources: plan }, sources, input.scope);
   input.contextReceipt?.(context.receipts);
   const systemContent = context.systemPrompt;
   // 单放在 system 数据区时，模型会看见选区，却仍把最后的「这段话」当成没有
@@ -1142,7 +1143,7 @@ export function buildCompanionPersonaMessages(input: {
 /** Keep a selection attached to its own question, including when replaying history. */
 export function renderCompanionUserTurn(userText: string, pageContext: unknown): string {
   const selectionText = companionSelectionText(pageContext);
-  const currentQuestion = userText.slice(0, 4_000);
+  const currentQuestion = userText;
   const oneSentenceRequested = /(?:一句话|一句就好|一句即可|只(?:用|要|给|说)一?句)/.test(currentQuestion);
   return selectionText
     ? [

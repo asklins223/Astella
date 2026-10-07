@@ -106,7 +106,7 @@ export interface ReadContext {
   factSpans: { values: Record<string, string>; block: string } | null;
   /**
    * `<conversation_summary>` 数据块（方案 29 §11 C1），null = 这个会话还没有摘要。
- * 历史回放只带经过消息数与字符预算后的可见尾部，更早的那段对话靠这一块对她可见。
+   * 历史回放带完整的近期消息，更早的对话由摘要与原文补读承接。
    */
   conversationSummary: string | null;
   /** Account persona revision fixed before the first provider call in this run. */

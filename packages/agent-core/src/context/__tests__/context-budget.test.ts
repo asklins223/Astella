@@ -145,8 +145,15 @@ test("超硬上限且压缩装不下时拒绝，并给出可行动的真实限�
     capability: capability({ contextWindowTokens: 10_000, maxOutputTokens: 1_000, maxInputTokens: 9_000, reservedOutputTokens: 1_000 }),
     requestedOutputTokens: 1_000, outputLimitEnforced: true, overheadTokens: 0,
   });
-  const decision = evaluateContextPressure({ budget, inputTokens: 9_500, compactionAvailable: true });
+  const decision = evaluateContextPressure({ budget, inputTokens: 9_500, compactionAvailable: false });
   assert.equal(decision.outcome, "reject");
   assert.equal(decision.reason, "over_hard_limit");
   assert.match(decision.detail ?? "", /9000/);
+});
+
+test("超硬上限但有摘要压缩路径时先压缩，耗尽后仍超限才拒绝", () => {
+  const budget = resolveContextBudget({ capability: capability(), requestedOutputTokens: 1000 });
+  const inputTokens = budget.hardInputTokens + 10000;
+  assert.equal(evaluateContextPressure({ budget, inputTokens, compactionAvailable: true }).outcome, "compact");
+  assert.equal(evaluateContextPressure({ budget, inputTokens, compactionAvailable: false }).outcome, "reject");
 });

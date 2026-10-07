@@ -36,9 +36,6 @@ import type { CompanionMemoryDirectoryEntry } from "./companion-memory-vector.ts
  */
 export const REPLAY_WINDOW_MESSAGES = 20;
 
-const RECENT_MESSAGE_MAX_CHARS = 12_000;
-const RECENT_HISTORY_BUDGET_CHARS = 24_000;
-const HISTORY_ASSISTANT_MIN_CHARS = 4;
 
 export interface CompanionRecentHistoryMessage {
   role: "user" | "assistant";
@@ -307,32 +304,13 @@ export function renderCompanionContextHandoff(snapshot: CompanionContextHandoffS
   ].join("\n");
 }
 
-/** Apply the exact message-count and character rules used by prompt assembly. */
+/** Keep complete recent messages. Earlier messages belong to the summary/readback
+ * path; token pressure is handled by the complete-request governor. A short
+ * answer such as「好。」is valid history, not evidence that its user turn failed. */
 export function boundCompanionRecentHistory(
   messages: readonly CompanionRecentHistoryMessage[],
 ): CompanionRecentHistoryMessage[] {
-  const recent = messages.slice(-REPLAY_WINDOW_MESSAGES);
-  const out: CompanionRecentHistoryMessage[] = [];
-  let used = 0;
-  /** A collapsed assistant answer also removes the preceding user prompt. */
-  let dropNextUser = false;
-  for (let i = recent.length - 1; i >= 0; i -= 1) {
-    const message = recent[i];
-    const text = message.text.slice(0, RECENT_MESSAGE_MAX_CHARS);
-    if (text.trim().length === 0) continue;
-    if (message.role === "assistant" && text.trim().length < HISTORY_ASSISTANT_MIN_CHARS) {
-      dropNextUser = true;
-      continue;
-    }
-    if (message.role === "user" && dropNextUser) {
-      dropNextUser = false;
-      continue;
-    }
-    if (used + text.length > RECENT_HISTORY_BUDGET_CHARS) break;
-    used += text.length;
-    out.push({ ...message, text });
-  }
-  return out.reverse();
+  return messages.slice(-REPLAY_WINDOW_MESSAGES).filter(message => message.text.trim().length > 0);
 }
 
 /**

@@ -22,9 +22,11 @@ const request = (over: Partial<AgentTurnRequest> = {}): AgentTurnRequest => ({
 test("空内容的估算口径为 0，不给零内容加地板", () => {
   assert.equal(estimateTextTokens(""), 0);
   assert.ok(estimateTextTokens("中文") > 0);
-  // 中文按 1 token/字符向上取整；英文按 1/3 字符留出向上余量。
-  assert.equal(estimateTextTokens("中文"), 2);
-  assert.equal(estimateTextTokens("abcdef"), 2);
+  // 没有已验证的tokenizer时使用字节上界，不把语言平均值当作安全保证。
+  assert.equal(estimateTextTokens("中文"), 6);
+  assert.equal(estimateTextTokens("abcdef"), 6);
+  assert.ok(estimateTextTokens(" q".repeat(20000)) >= 20000,
+    "真实模型把每个ASCII分隔词计成一枚token，旧 chars/3 规则会漏拦");
 });
 
 test("system 很短但工具 schema 很大时也能计量到治理压力", async () => {

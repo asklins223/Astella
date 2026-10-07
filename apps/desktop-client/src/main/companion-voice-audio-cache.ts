@@ -5,11 +5,23 @@ import { z } from "zod";
 import {
   COMPANION_VOICE_MAX_AUDIO_BYTES,
   companionVoiceSpeakResultV1Schema,
-  type CompanionGuidanceVoiceProfileV1,
   type CompanionVoiceSpeakResultV1,
 } from "@astella/shared/companion-voice-contracts";
 
-export type GuidanceAudioScope = { deployment: string; userId: string };
+/**
+ * 她念过的固定句子，音频留在**用户自己这台电脑**上。
+ *
+ * 原来这类缓存只有「带路」一条（`companion-guidance-audio`）；念想出声之后同一份
+ * 逻辑要装两个桶，于是按桶各给一个目录（见 `index.ts`）：各自 64 条的额度互不挤占，
+ * 在手记里翻旧念想不会把带路那几句的合成成果顶掉。
+ *
+ * 磁盘上只有哈希：文件名里没有账号名也没有原文，`[deployment, userId]` 与
+ * `[音色身份, 文本]` 都进哈希，所以换音色自然是换一条缓存，而不是"听起来变了个声"。
+ */
+
+export type VoiceAudioScope = { deployment: string; userId: string };
+/** 音色身份：guidance 取服务端审核过的默认档，thought 取这个账号存着的那一身。 */
+export type VoiceAudioProfile = { profileId: string; voice: string };
 const hash = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
 const metadataSchema = z.strictObject({
   version: z.literal(1), voice: z.string().min(1).max(64),
@@ -19,11 +31,11 @@ const metadataSchema = z.strictObject({
 const CLIP_LIMIT = 64;
 
 /** Main owns actual MP3 files; neither account names nor narration text appear in filenames. */
-export class CompanionGuidanceAudioCache {
+export class CompanionVoiceAudioCache {
   private readonly pending = new Map<string, Promise<CompanionVoiceSpeakResultV1>>();
   constructor(private readonly directory: string) {}
 
-  async resolve(scope: GuidanceAudioScope, text: string, profile: CompanionGuidanceVoiceProfileV1,
+  async resolve(scope: VoiceAudioScope, text: string, profile: VoiceAudioProfile,
     synthesize: () => Promise<CompanionVoiceSpeakResultV1>): Promise<CompanionVoiceSpeakResultV1> {
     const folder = join(this.directory, hash(JSON.stringify([scope.deployment, scope.userId])));
     const key = hash(JSON.stringify([1, profile.profileId, text.trim()]));

@@ -7,7 +7,7 @@
    ============================================================ */
 
 import { api } from "../api-client.js";
-import { formatCount } from "../format.js";
+import { formatCount, formatBytes, formatLatency, formatRateValue } from "../format.js";
 import { el, confirmDialog, toast } from "../ui.js";
 import { areaChart } from "../charts.js";
 
@@ -44,9 +44,15 @@ export function seriesValues(points, key) {
  * 一条时序曲线（供总览/指标共用）。
  * 标题与"当前值"由调用方排版——这里只负责图和悬停读数。
  */
-export function seriesChart({ points, key, color, unit, tall = false, onHover = null }) {
+export function seriesChart({ points, key, label = key, color, unit, tall = false, onHover = null }) {
+  const values = seriesValues(points, key);
+  const last = values.filter((value) => value !== null).at(-1) ?? null;
+  const valueText = unit === "duration" ? formatLatency(last) : unit === "bytes" ? formatBytes(last)
+    : unit === "rate" ? `${formatRateValue(last)} 次/分` : formatCount(last);
   return areaChart({
-    values: seriesValues(points, key),
+    values,
+    label,
+    valueText,
     times: points.map((point) => point.t ?? null),
     color,
     unit,
@@ -67,22 +73,24 @@ export function seriesChart({ points, key, color, unit, tall = false, onHover = 
  *
  * @returns 是否真的执行了（用于调用方决定要不要刷新）
  */
-export async function performJobAction({ jobType, label, action, count }) {
+export async function performJobAction({ jobType, label, action, count, onPending }) {
   const isPurge = action === "purge";
+  const limit = Math.max(1, Math.min(500, Math.floor(count)));
   const ok = await confirmDialog({
     title: isPurge ? "清理这些任务？" : "重试这些任务？",
     body: isPurge
-      ? `「${label}」中的 ${formatCount(count)} 条将被永久删除，不可恢复。它们的失败原因也会一并消失。`
-      : `「${label}」中的 ${formatCount(count)} 条会被重新排队，每个都会再次调用模型服务（产生新的调用费用）。`,
+      ? `按任务类型处理「${label}」中最多 ${formatCount(limit)} 条死信，将永久删除且不可恢复，失败原因也会消失。这个操作覆盖该类型的所有失败原因。`
+      : `按任务类型处理「${label}」中最多 ${formatCount(limit)} 条失败任务，重新排队后会再次调用模型服务，产生新的费用。这个操作覆盖该类型的所有失败原因。`,
     confirmLabel: isPurge ? "永久删除" : "重新排队",
     tone: isPurge ? "danger" : "primary",
   });
   if (!ok) return false;
+  onPending?.();
 
   try {
     const result = await api("/jobs/actions", {
       method: "POST",
-      body: JSON.stringify({ jobType, action }),
+      body: JSON.stringify({ jobType, action, limit }),
     });
     toast(`${isPurge ? "已清理" : "已重新排队"} ${formatCount(result.affected)} 条`);
     return true;

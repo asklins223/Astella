@@ -14,15 +14,15 @@ import { DiscoveryKeepAction, DiscoveryKeepFeedback, type DiscoveryKeepProps, ty
 import { diaryDiscoveryParagraphs } from "./companion-discovery-targets";
 
 const DIARY_FAILURE_DETAIL: Record<CompanionDailyFailureReasonV1 | "unknown", string> = {
-  consent_required: "日记要由她来写，而「允许发送到外部模型服务」没有开启。开启后从第二天开始写。",
-  model_unavailable: "她试了几次没写出来，明天会再试。",
-  diary_output_invalid: "她写回来的东西还是在报数，不像日记，没有收下来。",
-  unknown: "不会用推测内容填充这一天。",
+  consent_required: "尚未同意使用外部 AI 服务，日记没有开始生成。同意后将从下一天开始生成。",
+  model_unavailable: "日记生成服务暂时不可用，这一天没有生成日记。",
+  diary_output_invalid: "这次生成的日记未符合保存要求，没有保存。",
+  unknown: "这一天的日记没有生成成功。",
 };
 
-const DIARY_LOADING = "正在读取日记";
+const DIARY_LOADING = "正在加载日记…";
 
-const DIARY_UNAVAILABLE = "日记当前不可用";
+const DIARY_UNAVAILABLE = "日记没有加载成功";
 
 const DIARY_DAY_FAILED = "这一天她没能写下来";
 
@@ -159,7 +159,7 @@ export function DiaryPanel(props: {
       {props.date !== null ? <button type="button" className="cc-link" disabled={props.busy} onClick={() => props.onDate(null)}>最新一篇</button> : null}
     </div>
     <CenterFeedback notice={props.notice ?? null} />
-    {!daily ? <SectionState message={props.loading ? DIARY_LOADING : DIARY_UNAVAILABLE} detail={props.section && !props.section.ok ? props.section.message : props.failure ?? undefined} onRetry={props.loading ? undefined : props.onRetry} /> : daily.status === "generated" ? <>
+    {!daily ? <SectionState loading={props.loading} message={props.loading ? DIARY_LOADING : DIARY_UNAVAILABLE} detail={props.section && !props.section.ok ? props.section.message : props.failure ?? undefined} onRetry={props.loading ? undefined : props.onRetry} /> : daily.status === "generated" ? <>
       {daily.hidden ? <div className="cc-diary-hidden" role="status">这一篇已隐藏，内容仍然保留。<button type="button" className="cc-link" disabled={props.busy} onClick={props.onUnhideDiary}>取消隐藏</button></div> : null}
       <article className="cc-diary-sheet">
         <header><span className="cc-kicker">每日手记</span><h3>{diaryDayLabel(anchor)}</h3><small>{daily.generatedAt ? `生成于 ${formatDate(daily.generatedAt)}` : "生成时间未提供"}</small></header>

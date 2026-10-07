@@ -284,7 +284,7 @@ function streamingStubProvider(deltas: string[], toolCalls?: unknown[]): {
   return { provider, state };
 }
 
-const STREAM_STEP_REQUEST = {
+const STREAM_STEP_REQUEST: AgentTurnRequest = {
   role: "companion_agent",
   systemPrompt: "测试 system",
   messages: [{ role: "user" as const, content: "打个招呼" }],
@@ -301,6 +301,14 @@ test("放行闸：定论前不下发，同意时把已生成的部分一次放�
   const deltas = ["在忙", "啥呢", "——刚", "把熵讲完"];
   const { provider } = streamingStubProvider(deltas);
   const seen: string[] = [];
+  let markGenerated: () => void = () => {};
+  const generated = new Promise<void>(resolve => { markGenerated = resolve; });
+  const stream = provider.chatCompletionStream!;
+  provider.chatCompletionStream = async (...args) => {
+    const result = await stream(...args);
+    markGenerated();
+    return result;
+  };
   let settleGate: (allowed: boolean) => void = () => {};
   const gate = new Promise<boolean>((resolve) => { settleGate = resolve; });
   const running = runStreamingAgentStep({
@@ -312,12 +320,31 @@ test("放行闸：定论前不下发，同意时把已生成的部分一次放�
     releaseGate: () => gate,
   });
   // 闸还关着：provider 已经在吐字了，交付管线一个字符都不该看到。
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await generated;
   assert.deepEqual(seen, [], "放行闸没关住，字漏到交付管线了");
   settleGate(true);
   const result = await running;
   assert.equal(seen.join(""), "在忙啥呢——刚把熵讲完");
   assert.equal(result.content, "在忙啥呢——刚把熵讲完");
+});
+
+test("快速流式生成结束后仍等待分类；取消后晚到的放行不能再吐字", async () => {
+  const seen: string[] = [];
+  let settleGate: (allowed: boolean) => void = () => {};
+  const gate = new Promise<boolean>(resolve => { settleGate = resolve; });
+  const ctx = new AbortController();
+  const provider: AIProvider = new MockProvider();
+  provider.chatCompletionStream = async (_messages, _options, _signal, onDelta) => {
+    onDelta("这一段必须等分类同意才能出现。");
+    return {content:"这一段必须等分类同意才能出现。"};
+  };
+  const flight = runStreamingAgentStep({provider,stepRequest:STREAM_STEP_REQUEST,
+    ctxSignal:ctx.signal,timeoutMs:5000,onProviderDelta:async text=>{seen.push(text);return true;},releaseGate:()=>gate});
+  ctx.abort();
+  await assert.rejects(flight);
+  settleGate(true);
+  await Promise.resolve();
+  assert.deepEqual(seen, []);
 });
 
 test("放行闸判否：整版作废，一个字都没下发", async () => {

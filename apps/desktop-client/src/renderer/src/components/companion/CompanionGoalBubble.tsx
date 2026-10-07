@@ -20,6 +20,8 @@ export function CompanionGoalBubble({ anchorRef, motionMode, blocked, open, sele
   const index = selected ? goals.items.indexOf(selected) : 0;
   const artifacts = selected ? latestGoalArtifacts(selected) : [];
   const activeCount = goals.items.filter(agentGoalActive).length;
+  const initialLoading = !selected && goals.loading;
+  const initialError = !selected && Boolean(goals.error);
   const { side } = useCompanionFloatingPlacement(anchorRef, floatingRef, headRef, visible, 310);
   useEffect(() => { setAdjusting(false); setMoreResults(false); }, [selected?.runId, visible]);
   // Keep the opened task selected when it finishes while another task is active.
@@ -48,11 +50,11 @@ export function CompanionGoalBubble({ anchorRef, motionMode, blocked, open, sele
     {createPortal(<div ref={floatingRef} className="companion-hud--floating companion-goal-float" data-companion-owned="true" data-motion={motionMode}
       data-side={side} data-blocked={!visible || undefined}>
       <div ref={headRef} className="companion-hud__head">
-        {visible ? <section className="companion-hud__output companion-goal-bubble" aria-label="伴星手边的事">
+        {visible ? <section className="companion-hud__output companion-goal-bubble" aria-label="伴星手边的事" aria-busy={initialLoading}>
           <header className="companion-goal-bubble__header"><span>{selected ? goalStatusText[selected.status] : "交给我的事"}</span>
             <button type="button" aria-label="收起任务气泡" onClick={close}><X size={16} /></button></header>
           <div className="companion-goal-bubble__body">
-            <h2 ref={titleRef} tabIndex={-1}>{selected ? goalHeadline(selected) : "把一件事交给我"}</h2>
+            <h2 ref={titleRef} tabIndex={-1}>{selected ? goalHeadline(selected) : initialLoading ? "正在加载任务…" : initialError ? "任务记录没有加载成功" : "把一件事交给我"}</h2>
             {selected ? <>
               <p className="companion-goal-bubble__intent" title={selected.goal}>{goalTitle(selected)}</p>
               {selected.artifacts.length ? <div className="companion-goal-bubble__results" aria-label="做好的成果">
@@ -64,8 +66,8 @@ export function CompanionGoalBubble({ anchorRef, motionMode, blocked, open, sele
               </div> : null}
               <p className="companion-goal-bubble__hint" role="status">{goalNextHint(selected)}</p>
               {adjusting ? <CompanionGoalControls run={selected} goals={goals} onNewGoal={onChat} /> : null}
-            </> : <><p className="companion-goal-bubble__hint">{goals.loading ? "正在看看手边的事…" : "打开一篇笔记，告诉我想整理什么。接下来你可以继续聊天。"}</p>
-              <button type="button" className="companion-goal-primary" onClick={onChat}>说说要做什么</button></>}
+            </> : !initialLoading && !initialError ? <><p className="companion-goal-bubble__hint">告诉我想做什么，例如整理笔记、解释问题，或准备学习卡。</p>
+              <button type="button" className="companion-goal-primary" onClick={onChat}>说说要做什么</button></> : null}
             {goals.error ? <p className="companion-goal-error" role="alert">{goals.error}<button type="button" onClick={() => void goals.refresh()}>重新读取</button></p> : null}
           </div>
           <footer className="companion-goal-bubble__footer">

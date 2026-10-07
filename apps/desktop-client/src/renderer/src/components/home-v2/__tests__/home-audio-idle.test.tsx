@@ -4,14 +4,15 @@ import { afterEach, beforeEach, expect, it, vi, type Mock, type MockInstance } f
 
 vi.mock("../../../app/home-projection", () => ({ useHomeProjectionInvalidation: () => ({ workspaceEpoch: 1 }) }));
 vi.mock("../../../app/companion-voice-playback", () => ({
-  isCompanionSpeechActive: () => false,
+  isCompanionSpeechActive: vi.fn(() => false),
   setCompanionVoiceHost: vi.fn(),
   stopCompanionSpeech: vi.fn(),
 }));
 
 import { HomeV2AudioController } from "../HomeV2AudioController";
-import { setCompanionVoiceHost } from "../../../app/companion-voice-playback";
+import { isCompanionSpeechActive, setCompanionVoiceHost } from "../../../app/companion-voice-playback";
 import { useRoomStore } from "../../../app/room-store";
+import { holdCompanionMicrophone } from "../../companion/companion-notification-voice";
 
 let warm: () => void;
 let construct: Mock<() => void>;
@@ -23,6 +24,7 @@ let listeners: MockInstance<typeof window.addEventListener>;
 let started: string[];
 
 beforeEach(() => {
+  vi.mocked(isCompanionSpeechActive).mockReturnValue(false);
   construct = vi.fn();
   suspend = vi.fn(async () => undefined);
   resume = vi.fn(async () => undefined);
@@ -33,6 +35,7 @@ beforeEach(() => {
   vi.stubGlobal("cancelIdleCallback", vi.fn());
   const node = (kind: string) => ({
     connect() { return this; },
+    disconnect: vi.fn(),
     start: vi.fn(() => { started.push(kind); }),
     stop: vi.fn(),
     gain: { value: 0, cancelScheduledValues: vi.fn(), setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() },
@@ -50,6 +53,7 @@ beforeEach(() => {
     createBufferSource = () => node("bufferSource");
     createBiquadFilter = () => node("biquadFilter");
     createGain = () => node("gain");
+    createAnalyser = () => ({ ...node("analyser"), fftSize: 32, getFloatTimeDomainData: vi.fn() });
     createOscillator = () => node("oscillator");
   });
   useRoomStore.setState({ masterMuted: false, surface: null, windowState: "visible" });
@@ -76,6 +80,31 @@ it("constructs the graph in idle time, stays silent before a gesture, and reuses
   expect(audible()).toBe(true);
   view.unmount();
   expect(close).toHaveBeenCalledTimes(1);
+});
+
+it("实时会话开麦后回复仍能真正启动音源，单段录音仍会挡住并打断播放", async () => {
+  const view = render(<HomeV2AudioController />);
+  await act(async () => { warm(); interact(); });
+  const voiceHost = vi.mocked(setCompanionVoiceHost).mock.calls.at(-1)![0]!;
+  let finished = false;
+  const playing = voiceHost.play({ duration: 1 } as AudioBuffer, () => undefined).then(() => { finished = true; });
+  await act(async () => { await Promise.resolve(); });
+  expect(started).toEqual(["bufferSource"]);
+  vi.mocked(isCompanionSpeechActive).mockReturnValue(true);
+  const releaseConversation = holdCompanionMicrophone("conversation");
+  expect(audible()).toBe(true);
+  await Promise.resolve();
+  expect(finished).toBe(false);
+  const releaseRecording = holdCompanionMicrophone();
+  expect(audible()).toBe(false);
+  await playing;
+  await voiceHost.play({ duration: 1 } as AudioBuffer, () => undefined);
+  expect(started).toHaveLength(1);
+  releaseConversation();
+  expect(audible()).toBe(false);
+  releaseRecording();
+  expect(audible()).toBe(true);
+  view.unmount();
 });
 
 it("an early click never creates AudioContext in the input handler", async () => {

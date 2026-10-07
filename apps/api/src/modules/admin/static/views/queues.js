@@ -12,12 +12,12 @@
 
 import { api } from "../api-client.js";
 import { formatAgo, formatCount, formatDateTime, formatDuration, formatShortDateTime } from "../format.js";
-import { el, section, table, emptyState, badge } from "../ui.js";
+import { el, bindTabList, section, table, emptyState, badge } from "../ui.js";
 import { performJobAction } from "./shared.js";
 
 export const view = {
-  title: "任务与队列",
-  lede: "服务在后台替用户做的事。左边按积压排序列出每类任务——点一行，看这一类为什么堵、失败在哪一步。",
+  title: "任务与队列", eyebrow: "BACKGROUND WORK",
+  lede: "先定位积压，再查看失败原因与处理动作。",
   load: loadQueues,
 };
 
@@ -51,6 +51,7 @@ async function loadQueues(ctx) {
     api("/queues"),
     api("/audit?limit=40").catch(() => ({ entries: [] })),
   ]);
+  if (!ctx.isActive()) return el("div");
   const t = data.totals;
   const rows = [...(data.byType ?? [])].sort((a, b) => weightOf(b) - weightOf(a));
   const groups = data.failureGroups ?? [];
@@ -62,12 +63,12 @@ async function loadQueues(ctx) {
       hint: t.pending === 0 ? "队列是空的" : "排在后台等着执行",
       tone: t.pending > 20 ? "warn" : "", id: "q-pending",
     }),
-    figure("正在做", formatCount(t.running), { hint: "此刻正在后台跑的任务", id: "q-running" }),
+    figure("执行中", formatCount(t.running), { hint: "此刻正在后台跑的任务", id: "q-running" }),
     figure("最近失败", formatCount(t.failedRecent), {
       hint: "24 小时内失败过的任务",
       tone: t.failedRecent > 0 ? "warn" : "ok", id: "q-failed",
     }),
-    figure("彻底停了", formatCount(t.deadTotal), {
+    figure("死信任务", formatCount(t.deadTotal), {
       hint: "重试用尽、需要人工看一眼",
       tone: t.deadTotal > 0 ? "bad" : "ok", id: "q-dead",
     }),
@@ -122,6 +123,16 @@ async function loadQueues(ctx) {
     return node;
   });
   list.append(...rowNodes);
+  ctx.onCleanup(bindTabList(list, detail, "queues"));
+  const search = el("input", { class: "field__input list-search", type: "search", placeholder: "筛选任务类型…", "aria-label": "筛选任务类型" });
+  const noMatch = el("p", { class: "empty", text: "没有匹配的任务类型", hidden: true });
+  const navigator = el("div", { class: "navigator" }, search, list, noMatch);
+  split.prepend(navigator);
+  search.addEventListener("input", () => {
+    const needle = search.value.trim().toLowerCase();
+    rowNodes.forEach((node, i) => node.hidden = !`${rows[i].label} ${rows[i].jobType}`.toLowerCase().includes(needle));
+    noMatch.hidden = rowNodes.some((node) => !node.hidden);
+  });
 
   function select(index) {
     selected = index;
@@ -146,12 +157,29 @@ async function loadQueues(ctx) {
       ),
       el("div", { class: "detail__stats" },
         stat("等待", formatCount(row.pending)),
-        stat("在做", formatCount(row.running)),
+        stat("执行中", formatCount(row.running)),
         stat("失败", formatCount(row.failedRecent), row.failedRecent > 0 ? "bad" : ""),
-        stat("停了", formatCount(row.deadTotal), row.deadTotal > 0 ? "bad" : ""),
+        stat("死信", formatCount(row.deadTotal), row.deadTotal > 0 ? "bad" : ""),
         stat("最久等待", row.oldestPendingSeconds > 0 ? formatDuration(row.oldestPendingSeconds) : "—", row.oldestPendingSeconds > 900 ? "warn" : ""),
       ),
     );
+
+    const actions = el("div", { class: "queue-actions" });
+    for (const [action, count, label] of [["retry", row.failedRecent, "重试失败任务"], ["purge", row.deadTotal, "清理死信"]]) {
+      if (count <= 0) continue;
+      const button = el("button", { class: `btn btn--sm${action === "purge" ? " btn--danger" : ""}`, type: "button", text: `${label} · ${formatCount(Math.min(count, 500))}`,
+        onclick: async () => {
+          if (button.dataset.busy === "true") return;
+          button.dataset.busy = "true";
+          try {
+            const done = await performJobAction({ jobType: row.jobType, label: row.label, action, count, onPending: () => button.disabled = true });
+            if (done) await ctx.reload();
+          } finally { button.disabled = false; delete button.dataset.busy; }
+        },
+      });
+      actions.append(button);
+    }
+    if (actions.childElementCount) node.append(actions);
 
     if (rowGroups.length === 0) {
       node.append(el("div", { class: "u-mt-14" },
@@ -258,28 +286,11 @@ function buildGroupRow(group, ctx) {
   ));
 
   const toggle = el("button", {
-    class: "link-btn link-btn--quiet", type: "button", text: "样例",
+    class: "link-btn link-btn--quiet", type: "button", text: "样例", "aria-expanded": "false",
     onclick: () => {
       detailRow.hidden = !detailRow.hidden;
+      toggle.setAttribute("aria-expanded", String(!detailRow.hidden));
       toggle.textContent = detailRow.hidden ? "样例" : "收起";
-    },
-  });
-
-  const action = el("button", {
-    class: `link-btn${group.status === "dead" ? " link-btn--danger" : ""}`,
-    type: "button",
-    text: group.status === "dead" ? "清理" : "重试",
-    title: group.status === "dead"
-      ? `永久删除这 ${group.count} 条`
-      : `重新排队这 ${group.count} 条（会再次调用模型）`,
-    onclick: async () => {
-      const done = await performJobAction({
-        jobType: group.jobType,
-        label: `${group.label}（${group.summary}）`,
-        action: group.status === "dead" ? "purge" : "retry",
-        count: group.count,
-      });
-      if (done) await ctx.reload();
     },
   });
 
@@ -289,7 +300,7 @@ function buildGroupRow(group, ctx) {
     el("td", { class: "num", text: formatCount(group.count) }),
     el("td", { class: "dim", title: formatDateTime(group.lastSeen), text: formatAgo(group.lastSeen) }),
     el("td", { class: "num" },
-      el("div", { class: "row", style: "gap:12px;justify-content:flex-end" }, toggle, action),
+      el("div", { class: "row", style: "gap:12px;justify-content:flex-end" }, toggle),
     ),
   );
 

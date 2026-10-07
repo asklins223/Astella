@@ -179,7 +179,7 @@
 /* 拾音中：按钮本身脉动一圈，别只靠那条随电平伸缩的细环——说话小声时它几乎看不见。
    对话模式下麦克风是常驻的，`open` 就是"正在听"这一整个状态。 */
 @media (prefers-reduced-motion: no-preference) {
-  .companion-hud__controls > button[data-voice-phase="open"] {
+  .companion-hud__controls > button[data-voice-phase="capturing"] {
     animation: companion-hud-mic-pulse 1.6s ease-in-out infinite;
   }
 }

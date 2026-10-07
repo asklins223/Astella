@@ -217,8 +217,8 @@ export function evaluateContextPressure(input: ContextPressureInput): ContextPre
   if (input.inputTokens <= budget.triggerTokens) {
     return contextPressureDecisionV1Schema.parse({ ...base, outcome: "send", reason: "within_budget", detail: null });
   }
-  if (input.inputTokens > budget.hardInputTokens) {
-    // 超过硬上限且压缩装不下它：无论如何都要拒绝，不能把超限请求发出去。
+  if (input.inputTokens > budget.hardInputTokens && input.compactionAvailable !== true) {
+    // 没有压缩额度时才拒绝；有额度则先要求压缩，重测仍超限再拒绝。
     return contextPressureDecisionV1Schema.parse({
       ...base,
       outcome: "reject",

@@ -529,8 +529,8 @@ describe("重构后的伴星中心", () => {
     const api = installApi();
     api.companion.history.list.mockImplementation(async input => ok({ version: 1, items: [historyItem()], nextCursor: input.query?.before ? null : "older-page" }));
     useRoomStore.setState({ companionCenterTarget: { tab: "dialogue" } }); renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("button", { name: "加载更早记录" }));
-    await waitFor(() => expect(screen.queryByRole("button", { name: "加载更早记录" })).toBeNull());
+    fireEvent.click(await screen.findByRole("button", { name: "更早的对话" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "更早的对话" })).toBeNull());
     expect(api.companion.history.list.mock.calls.at(-1)?.[0].query?.before).toBe("older-page");
   });
 
@@ -785,7 +785,7 @@ describe("重构后的伴星中心", () => {
 
   it("日记读取失败时日期导航仍可使用", async () => {
     installApi(); renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "日记" }));
-    expect(await screen.findByText("日记当前不可用")).toBeTruthy();
+    expect(await screen.findByText("日记没有加载成功")).toBeTruthy();
     expect(screen.getByRole("button", { name: "前一天" })).toBeTruthy();
   });
 

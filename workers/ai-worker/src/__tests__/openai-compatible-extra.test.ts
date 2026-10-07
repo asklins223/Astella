@@ -15,6 +15,44 @@ import type { PublicJsonRequester, PublicJsonResponse } from "@astella/shared/pu
 
 const messages = [{ role: "user" as const, content: "ping" }];
 
+test("跨模型请求在HTTP出口按目标模型输出上限夹取，不沿用主模型的大预算", async () => {
+  const sent: Record<string,unknown>[]=[];
+  const provider=new OpenAICompatibleProvider({apiKey:"test-key",baseUrl:"https://api.example.com/v1",
+    model:"small-fallback",modelProfile:{contextWindowTokens:32768,maxOutputTokens:8192},
+    streamRequest:async (_url,_headers,body)=>{
+      sent.push(body as Record<string,unknown>);
+      return {status:200,statusText:"OK",cancel:()=>{},body:(async function*(){
+        yield new TextEncoder().encode('data: {"choices":[{"delta":{"content":"完整答复。"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+      })()};
+    },
+    request:async (_url,_headers,body)=>{sent.push(body as Record<string,unknown>);return {status:200,statusText:"OK",
+      body:{choices:[{message:{content:"完整答复。"},finish_reason:"stop"}]}};}});
+  await provider.chatCompletion(messages,{maxTokens:131072,responseFormat:"text"});
+  await provider.executeAgentTurn({role:"companion_agent",systemPrompt:"答复。",messages,tools:[],maxTokens:131072,temperature:0.2});
+  await provider.chatCompletionStream(messages,{maxTokens:131072,responseFormat:"text"},undefined,()=>{});
+  assert.deepEqual(sent.map(body=>body.max_tokens),[8192,8192,8192]);
+});
+
+test("已声明的大输出模型不被固定65536护栏缩小", async () => {
+  let sent:Record<string,unknown>={};
+  const provider=new OpenAICompatibleProvider({apiKey:"test-key",baseUrl:"https://api.example.com/v1",
+    model:"large",modelProfile:{contextWindowTokens:1000000,maxOutputTokens:131072},
+    request:async (_url,_headers,body)=>{sent=body as Record<string,unknown>;return {status:200,statusText:"OK",
+      body:{choices:[{message:{content:"完整答复。"},finish_reason:"stop"}]}};}});
+  await provider.executeAgentTurn({role:"companion_agent",systemPrompt:"答复。",messages,tools:[],maxTokens:131072,temperature:0.2});
+  assert.equal(sent.max_tokens,131072);
+});
+
+test("按轮关闭思考的参数优先于旧网关额外参数", async () => {
+  let sent:Record<string,unknown>={};
+  const provider=new OpenAICompatibleProvider({apiKey:"test-key",baseUrl:"https://api.example.com/v1",model:"hybrid",
+    modelProfile:{reasoning:{levels:["none","high"],default:"high"}},extraRequestParams:{enable_thinking:true},
+    request:async(_url,_headers,body)=>{sent=body as Record<string,unknown>;return {status:200,statusText:"OK",
+      body:{choices:[{message:{content:"你好。"},finish_reason:"stop"}]}};}});
+  await provider.chatCompletion(messages,{responseFormat:"text",disableThinking:true});
+  assert.equal(sent.enable_thinking,false);
+});
+
 function mockRequester(response: PublicJsonResponse): PublicJsonRequester {
   return async () => response;
 }

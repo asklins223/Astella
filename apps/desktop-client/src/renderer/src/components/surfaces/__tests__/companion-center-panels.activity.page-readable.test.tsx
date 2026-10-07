@@ -217,7 +217,7 @@ describe("伴星中心 · 动态：三段各说各的，折叠里的不算露出
       section: { ok: true, value: bootstrap({ journey: journey() }) },
       deliveries: [delivery(1, "旧投递", "delivered"), delivery(2, "旧历史", "acted")],
     });
-    expect(publishedView()!.items?.map(item => item.label)).toEqual(["正在读取学习状态", "正在读取动态", "正在读取旅程"]);
+    expect(publishedView()!.items?.map(item => item.label)).toEqual(["正在加载学习状态", "正在加载动态", "正在加载旅程"]);
     expect(publishedView()!.notice).toBeUndefined();
   });
 

@@ -29,7 +29,7 @@ describe("notification paper interactions", () => {
     setCompanionNotificationVoiceHost({ available: () => true, synthesize, play: vi.fn(), stop: vi.fn() });
     render(<CompanionNotificationCenter {...props} replyBusy />);
     act(() => notifyCompanion(notice({ audio: { text: "下载模型" }, actions: [{ id: "go", label: "去下载", kind: "navigate", run }] }))); await flush();
-    expect(screen.getByText("伴星正在回复，本条安静送达")).toBeTruthy(); expect(synthesize).not.toHaveBeenCalled();
+    expect(screen.getByText("伴星正在回复，这条通知仅显示文字")).toBeTruthy(); expect(synthesize).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "去下载" })); await flush(); expect(run).toHaveBeenCalledOnce();
   });
   it("delivers a queued completion after reply idle with a short pause", async () => {

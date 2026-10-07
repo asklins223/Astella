@@ -16,6 +16,10 @@
  * 刻意不调用 `getUserMedia()` 做探测：那会真的开启麦克风（系统出现橙色指示灯），
  * 用一个隐私副作用去换取一个提示，不划算。真正的启动失败仍由录音侧兜底，
  * 届时 `reason` 用 `start-failed` 补上。
+ *
+ * 也正因为不开麦，`no-permission` 说的只是**探测这一刻**没有权限：macOS 上「从来没问过」
+ * 与「已经点了拒绝」长得一模一样。所以它是一句提示，不是一道闸 —— 调用方要让它继续去
+ * 调 `getUserMedia()`，那才是系统唯一会提问的地方（见 `run-voice-input.tsx` 的起录路径）。
  */
 
 export type MicrophoneAvailability =
@@ -31,7 +35,7 @@ export function microphoneAvailabilityCopy(availability: MicrophoneAvailability)
     case "ready": return "";
     case "no-api": return "这个窗口不支持录音，请改用文本作答。";
     case "no-device": return "这台设备上没有检测到麦克风，插好或换一台之后再试；也可以直接用文本作答。";
-    case "no-permission": return "还没有拿到麦克风权限。在系统设置的隐私 → 麦克风里允许本应用，或点浏览器地址栏的相机/麦克风图标授权。";
+    case "no-permission": return "还没有拿到麦克风权限。点「开始说」会向系统要一次授权；要是已经拒过，去系统设置的 隐私与安全性 → 麦克风 放行本应用。";
     case "start-failed": return `麦克风打不开（${availability.errorName}）。可以先用文本作答，稍后再试。`;
   }
 }

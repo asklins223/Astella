@@ -13,7 +13,7 @@ export const SCENE_BEATS = {
 } as const;
 
 /** One sheet stays on stage for the entire story; CSS carries it between chapters. */
-export function GuidanceScene({ step, guide, phase, onPhase }: { step: GuideStep; guide: CompanionGuideController; phase: number; onPhase: (phase: number) => void }) {
+export function GuidanceScene({ step, guide, phase, onPhase, controls = true }: { step: GuideStep; guide: CompanionGuideController; phase: number; onPhase: (phase: number) => void; controls?: boolean }) {
   const kind = step.demo;
   const identity = guide.identity;
   const room = kind === "room" && step.id !== "settings";
@@ -46,6 +46,6 @@ export function GuidanceScene({ step, guide, phase, onPhase }: { step: GuideStep
     <span className="guidance-scene__pencil" aria-hidden={kind !== "note" || phase !== 2}><i />同一个问题，接着往下读</span>
     <div className="guidance-scene__bookmark" data-guide-object="true" aria-hidden={kind !== "return"}><Compass size={28} /><b>随时回来找我</b></div>
     <div className="guidance-scene__settings" data-guide-object="true" aria-hidden={step.id !== "settings"}><span><Moon size={36} /><b>日与夜</b></span><span><Volume2 size={36} /><b>声音</b></span><span><Gauge size={36} /><b>动效</b></span><span><UserRound size={36} /><b>个人偏好</b></span></div>
-    <div className="guidance-scene__beats" role="group" aria-label="本段演示">{SCENE_BEATS[kind].map((caption, beat) => <button key={caption} type="button" aria-label={`演示画面 ${beat + 1}：${caption}`} aria-pressed={phase === beat} onClick={() => onPhase(beat)}><span>{String(beat + 1).padStart(2, "0")}</span>{caption}</button>)}</div>
+    {controls ? <div className="guidance-scene__beats" role="group" aria-label="本段演示">{SCENE_BEATS[kind].map((caption, beat) => <button key={caption} type="button" aria-label={`演示画面 ${beat + 1}：${caption}`} aria-pressed={phase === beat} onClick={() => onPhase(beat)}><span>{String(beat + 1).padStart(2, "0")}</span>{caption}</button>)}</div> : null}
   </div>;
 }

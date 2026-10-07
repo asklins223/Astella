@@ -389,7 +389,8 @@ import type { WindowStateSnapshot } from "../shared/window-state";
 type WindowResolver = (contents: WebContents, sourceUrl: string) => BrowserWindow | null;
 
 export type DesktopIpcRegistrationOptions = {
-  readonly guidanceAudioCache?: import("./companion-guidance-audio-cache").CompanionGuidanceAudioCache;
+  readonly guidanceAudioCache?: import("./companion-voice-audio-cache").CompanionVoiceAudioCache;
+  readonly thoughtAudioCache?: import("./companion-voice-audio-cache").CompanionVoiceAudioCache;
   readonly resolveWindow: WindowResolver;
   readonly getWindowState: (window: BrowserWindow) => WindowStateSnapshot;
   readonly setTitlebarTheme: (window: BrowserWindow, theme: "day" | "night") => boolean;
@@ -703,6 +704,7 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
   const gateway = options.gateway ?? new DesktopGateway(options.env, {
     credentials: options.credentials ?? createSessionCredentialStore(),
     guidanceAudioCache: options.guidanceAudioCache,
+    thoughtAudioCache: options.thoughtAudioCache,
   });
   const env = options.env ?? process.env;
   const contract = contractSnapshot(gateway, env);

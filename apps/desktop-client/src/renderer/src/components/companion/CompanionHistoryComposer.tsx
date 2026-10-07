@@ -26,6 +26,12 @@ export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, 
 }) {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const voiceStatus = voice.phase === "starting" ? "正在开启麦克风…"
+    : voice.phase === "closing" ? "正在识别语音…"
+      : voice.phase === "paused" ? "收音已暂停"
+        : voice.activity === "waiting" ? "正在等待伴星回复…"
+          : voice.activity === "speaking" ? "伴星正在说话"
+            : "正在听你说话，停顿后自动发送";
   useLayoutEffect(() => {
     const field = composerRef.current;
     if (!field) return;
@@ -63,10 +69,7 @@ export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, 
      * 不然用户在完整的一面里对着麦克风说话，看见的只有一个转圈的图标。
      */}
     {voiceEnabled && voice.phase !== "idle" ? <p className="companion-history__voice-live" role="status" aria-live="polite">
-      {voice.caption?.text
-        || (voice.phase === "starting" ? "正在准备麦克风…"
-          : voice.phase === "closing" ? "在想这一句…"
-            : "我在听，说完就发给她")}
+      {voice.caption?.text || voiceStatus}
     </p> : null}
     <div className="companion-history__compose-tools">
       <input ref={imageInputRef} type="file" accept={NOTE_IMAGE_UPLOAD_MIME_TYPES.join(",")} className="companion-compose-image__input"

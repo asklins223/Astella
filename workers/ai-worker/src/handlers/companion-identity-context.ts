@@ -1,8 +1,26 @@
+import { resolveCompanionPersonaProfile } from "@astella/shared/pet-persona-presets";
+import { companionPersonaProfileV1Schema } from "@astella/shared";
+
 /** Shared persona data only; callers choose the execution or conversation policy. */
 export interface CompanionPersonaContextProfile {
   name: string; speakingStyle: string; personalityTags: string[]; examples: { text: string }[];
   activeness?: "quiet" | "moderate" | "active" | null;
   boundaries?: { allowPlayful?: boolean; allowNudgeLearning?: boolean; allowVoiceTags?: boolean; catchphrase?: string | null } | null;
+}
+
+const personaContentSchema = companionPersonaProfileV1Schema.pick({
+  name: true, speakingStyle: true, personalityTags: true, examples: true,
+  activeness: true, boundaries: true,
+}).strip();
+
+/** Both interactive and proactive chains resolve the same account profile or
+ * system default before producing prompts. */
+type ResolvedPersonaContext = CompanionPersonaContextProfile
+  & Required<Pick<CompanionPersonaContextProfile, "activeness" | "boundaries">>;
+
+export function resolveCompanionPersonaContext(profile: unknown): ResolvedPersonaContext {
+  const parsed = personaContentSchema.safeParse(profile);
+  return parsed.success ? parsed.data : resolveCompanionPersonaProfile(null);
 }
 
 export const PERSONA_SAFETY_GUARD = [
@@ -48,7 +66,7 @@ export function renderPersonaBehaviour(persona: {
   if (persona.activeness === "quiet") {
     lines.push("用户把你设为「安静」：回复偏短、不主动开新话题、不追问，接住对方说的就够了。");
   } else if (persona.activeness === "active") {
-    lines.push("用户把你设为「活跃」：可以多聊两句，回答完主动抛一个跟当前话题连着的小问题或提议；用户限定篇幅或只要答案时，按他这轮的要求收住，不补充解释或追问。");
+    lines.push("用户把你设为「活跃」：愿意参与、有自己的反应，贴着当前话题多聊两句；有具体理由时才提问题或建议，接住一句话也可以自然结束，不必每轮留下邀请。用户限定篇幅或只要答案时，按这轮要求收住，不补充解释或追问。");
   }
   if (persona.boundaries?.allowPlayful === false) {
     lines.push("用户关掉了「俏皮」：收起调侃和卖萌，平稳直接地说，语气词也别堆。");
@@ -68,9 +86,9 @@ export function buildCompanionPersonaData(profile: CompanionPersonaContextProfil
   const persona = profile
     ? {
         name: sanitizePersonaField(profile.name, 60),
-        speakingStyle: sanitizePersonaField(profile.speakingStyle, 500),
+        speakingStyle: sanitizePersonaField(profile.speakingStyle, 1000),
         personalityTags: profile.personalityTags
-          .slice(0, 8)
+          .slice(0, 10)
           .map((tag) => sanitizePersonaField(tag, 20))
           .filter((tag) => tag.length > 0),
         examples: profile.examples

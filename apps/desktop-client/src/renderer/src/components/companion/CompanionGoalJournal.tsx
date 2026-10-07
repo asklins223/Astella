@@ -35,8 +35,8 @@ export function CompanionGoalJournal({ goals, targetId, onChat, onArtifactOpen }
     {goals.items.length ? <ol className="companion-goal-journal__index">{goals.items.map(item => <li key={item.runId}><button type="button" onClick={() => setSelectedId(item.runId)}>
       <span><small data-state={item.status}>{goalStatusText[item.status]} · {new Date(item.updatedAt).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })}</small><strong>{goalTitle(item)}</strong>
         {item.artifacts.length ? <em>{item.artifacts.length} 份成果已保留</em> : null}</span><ChevronRight size={17} />
-    </button></li>)}</ol> : <p>{goals.loading ? "正在读取…" : "还没有交给我的任务。打开一篇笔记，告诉我想怎样理解它。"}</p>}
-    {goals.nextCursor ? <button type="button" className="companion-goal-journal__back" disabled={goals.moreLoading} onClick={() => void goals.loadMore()}>{goals.moreLoading ? "正在翻找…" : goals.moreError ? "重试读取更早的事" : "再翻一些更早的事"}</button> : null}
+    </button></li>)}</ol> : goals.loading ? <p role="status">正在加载任务记录…</p> : !goals.error ? <p>还没有交给我的任务。可以在轻聊里告诉我想做什么。</p> : null}
+    {goals.nextCursor ? <button type="button" className="companion-goal-journal__back" disabled={goals.moreLoading} onClick={() => void goals.loadMore()}>{goals.moreLoading ? "正在加载更早的任务…" : goals.moreError ? "重试加载更早的任务" : "更早的任务"}</button> : null}
     {goals.moreError ? <p className="companion-goal-error" role="alert">{goals.moreError}</p> : null}
     {goals.error ? <p className="companion-goal-error" role="alert">{goals.error}<button type="button" onClick={() => void (selectedId ? goals.ensure(selectedId) : goals.refresh())}>重新读取</button></p> : null}
   </section>;

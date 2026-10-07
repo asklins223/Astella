@@ -56,10 +56,16 @@ export function companionClassifierRecent(messages: readonly ChatMessage[]): Arr
   return space.slice(start).map((message, offset) => ({
     index: start + offset,
     role: message.role,
-    content: typeof message.content === "string"
-      ? message.content.slice(0, 500)
-      : message.content.filter((part) => part.type === "text").map((part) => part.text).join(" ").slice(0, 500),
+    content: classifierExcerpt(typeof message.content === "string"
+      ? message.content
+      : message.content.filter((part) => part.type === "text").map((part) => part.text).join(" ")),
   }));
+}
+
+function classifierExcerpt(text: string): string {
+  // The classifier must see both the subject and the closing invitation. This
+  // marked excerpt is only for classification; generation retains full history.
+  return text.length <= 1_000 ? text : `${text.slice(0, 250)}\n[中间内容省略]\n${text.slice(-750)}`;
 }
 
 /** 解释只能指向它真的看见过的那些 assistant 消息。 */

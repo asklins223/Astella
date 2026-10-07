@@ -17,9 +17,22 @@ export const COMPANION_VOICE_SPEAK_VOICE = "zh-CN-XiaoxiaoNeural" as const;
 
 export const companionVoiceSpeakRequestV1Schema = z.strictObject({
   version: z.literal(1),
+  /**
+   * 单次请求的上限，不是"能念多长"的上限。它同时是渲染层分段器每段的大小
+   * （`COMPANION_SPEECH_MAX_SEGMENT_CHARS` 就取这个常量），一条长念想是被切成
+   * 几句念出来的，不是被截断的；这里卡住的只是"一次 `POST /voice/tts` 该回多少字节、
+   * 该在多久内回"——512KB 音频硬顶与通知声道的合成截止都挂在单次请求上。
+   */
   text: z.string().trim().min(1).max(COMPANION_VOICE_MAX_TEXT_LENGTH),
-  /** Guidance uses the default Qwen voice; ordinary notifications use Edge. */
-  purpose: z.enum(["notification", "guidance"]).optional(),
+  /**
+   * Guidance uses the default Qwen voice; ordinary notifications use Edge.
+   *
+   * `thought` 是她已经说过或正要说的这一句：音色与正文同一身（账号存着什么就是什么），
+   * 但服务端会回报实际用上的音色，客户端据此把这一句的音频留在**用户自己电脑上**，
+   * 同一个人、同一个音色、同一句话就只合成一次——房间里的主动气泡第一次说出这句时
+   * 即入缓存，手记里回读同一句直接命中，不再多一次开销。
+   */
+  purpose: z.enum(["notification", "guidance", "thought"]).optional(),
 });
 export type CompanionVoiceSpeakRequestV1 = z.infer<typeof companionVoiceSpeakRequestV1Schema>;
 

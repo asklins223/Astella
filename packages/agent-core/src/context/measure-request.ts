@@ -22,7 +22,7 @@ import {
  */
 
 /** 计量口径版本。provider 序列化规则变化后旧锚点必须失效（44 §4.2）。 */
-export const CONTEXT_MEASUREMENT_VERSION = "v1";
+export const CONTEXT_MEASUREMENT_VERSION = "v2-tokenizer-byte-bound";
 
 /** 单张图片的保守 token 地板。没有它时未知成本会被静默记成 0。 */
 export const IMAGE_TOKEN_FLOOR = 1_500;
@@ -37,32 +37,13 @@ const TOOL_SCHEMA_ENVELOPE_TOKENS = 8;
 /** 精确计数路径不回加误差余量。 */
 const EXACT_ERROR_MARGIN = 0;
 
-/**
- * CJK 与非 CJK 的保守比例。
- *
- * 现役路由（qwen3.8-flash / muse-spark / GLM / bge 系列）里中文占绝大多数。
- * 对中文按 1 token/字符（多数分词器实际略低于 1，这里向上取整保证不低估）；
- * 对非 CJK 按 1 token / 3 字符——真实值接近 1/4，取 1/3 留出约 25% 的向上余量。
- * 比例只是估算依据：provider 返回的真实 usage 用于校准，不是用于当 tokenizer 用。
- */
-const CJK_TOKENS_PER_CHAR = 1;
-const OTHER_CHARS_PER_TOKEN = 3;
-
-/** 保守估算一段文本的 token 数。空串返回 0（不按 1 收，避免给零内容加地板）。 */
+const utf8 = new TextEncoder();
+/** No tokenizer: use a UTF-8 byte bound, including compatibility decomposition.
+ * The old chars/3 rule underestimated ASCII-separated tokens even after its
+ * 12% margin. Known tokenizers bypass this conservative fallback entirely. */
 export function estimateTextTokens(text: string): number {
   if (!text) return 0;
-  let cjk = 0;
-  for (const char of text) {
-    const code = char.codePointAt(0)!;
-    // CJK 统一表意文字扩展 A、全角标点与假名；其余按非 CJK 计。
-    if ((code >= 0x3040 && code <= 0x30ff)
-      || (code >= 0x3400 && code <= 0x9fff)
-      || (code >= 0xf900 && code <= 0xfaff)
-      || (code >= 0xff00 && code <= 0xffef)
-      || (code >= 0x20000 && code <= 0x2ebef)) cjk += 1;
-  }
-  const other = text.length - cjk;
-  return cjk * CJK_TOKENS_PER_CHAR + Math.ceil(other / OTHER_CHARS_PER_TOKEN);
+  return Math.max(utf8.encode(text).length, utf8.encode(text.normalize("NFKD")).length);
 }
 
 export interface ContextTokenCountingPorts {

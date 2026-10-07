@@ -1,3 +1,4 @@
+import { AiConsentTerms } from "../../ai-consent-terms";
 import { Activity, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SettingRow, SettingsInlineState, type SettingsReadable } from "./settings-primitives.tsx";
 import { SettingsCompanionPanel } from "./settings-companion-panel";
@@ -1776,6 +1777,8 @@ export function SettingsSurface() {
             />
           ) : null}
           <p className="settings-notice-paper">使用外部 AI 时，完成任务所需的笔记、回答或图片可能发送到模型服务。下面的同意和外发策略跟着你的账号走；切换学习空间时沿用。</p>
+
+          <details className="settings-disclosure"><summary><span><b>阅读《AI 使用协议》</b><small>当前版本 · {AI_CONSENT_VERSION}</small></span></summary><AiConsentTerms /></details>
 
           <section
             ref={consentGroupRef}

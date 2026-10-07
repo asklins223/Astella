@@ -8,7 +8,10 @@ const mock = vi.hoisted(() => ({ ready: vi.fn(), probe: vi.fn(), start: vi.fn(),
 vi.mock("../../../companion/voice-recorder", () => ({ CompanionVoiceRecorder: class { start = mock.start; stop = mock.stop; } }));
 vi.mock("../../../companion/local-speech-recognition", () => ({ isLocalAsrReady: mock.ready, transcribeRecording: mock.transcribe, isAsrModelMissing: () => false }));
 vi.mock("../../../companion/voice-model-notifications", () => ({ guideVoiceModelDownload: mock.guide }));
-vi.mock("../../../voice-capability", () => ({ probeMicrophone: mock.probe, microphoneAvailabilityCopy: () => "麦克风未准备好" }));
+vi.mock("../../../voice-capability", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../voice-capability")>()),
+  probeMicrophone: mock.probe,
+}));
 
 const mount = (onChange = vi.fn()) => render(<VoiceTeachbackEditor maxSeconds={60} value={{ confirmedTranscript: "" }} onChange={onChange} onBusyChange={vi.fn()} />);
 beforeEach(() => {
@@ -46,6 +49,28 @@ describe("voice teachback model guidance", () => {
     mount(); await act(async () => {});
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "开始说" })));
     expect(mock.guide).toHaveBeenCalledOnce(); expect(mock.start).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 探测分不清「从来没问过」和「已经拒过」，所以它不能当地闸：
+   * 拦下 `getUserMedia()` 就等于把系统那次提问一起没收，首次授权永远弹不出来。
+   */
+  it("still opens the microphone when the probe only says permission is missing", async () => {
+    mock.probe.mockResolvedValue({ state: "no-permission" });
+    mount();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "开始说" })));
+    expect(mock.start).toHaveBeenCalledOnce();
+    expect(isCompanionMicrophoneActive()).toBe(true);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("answers a rejected prompt with the way out, not with an exception name", async () => {
+    mock.probe.mockResolvedValue({ state: "no-permission" });
+    mock.start.mockRejectedValueOnce(new DOMException("denied", "NotAllowedError"));
+    mount();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "开始说" })));
+    expect(screen.getByRole("alert").textContent).toContain("隐私与安全性");
+    expect(isCompanionMicrophoneActive()).toBe(false);
   });
 
   it("ignores a missing model receipt after the editor was left", async () => {

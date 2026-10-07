@@ -1,7 +1,7 @@
 // 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject, type PointerEvent as ReactPointerEvent, type UIEvent as ReactUIEvent } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, History, Loader2, MessageCircle, Mic, MicOff, Plus, Quote, RotateCcw, Send, Settings2, Sparkles, Square, X, type LucideIcon } from "lucide-react";
+import { ChevronLeft, History, Loader2, MessageCircle, Mic, Plus, Quote, RotateCcw, Send, Settings2, Sparkles, Square, X, type LucideIcon } from "lucide-react";
 import type { CompanionAccountPatch, CompanionAccountStateV1 } from "@astella/shared/companion-shell-contracts";
 import { WINDOW_LIVE2D_MODEL_REGISTRY, type WindowLive2DModelId } from "./window-live2d-contract";
 import type { CompanionAgentPermissionLevel } from "@astella/shared/companion-agent-contracts";
@@ -29,6 +29,7 @@ import {
 import { NOTE_IMAGE_UPLOAD_MIME_TYPES } from "@astella/shared/note-image-upload-contracts";
 import { visibleTurnFailure } from "./companion-hud-state";
 import { shouldSendCompanionOnEnter } from "./companion-composer-key";
+import { CompanionVoiceConversation } from "./CompanionVoiceConversation";
 import { useCompanionInteraction } from "./use-companion-interaction";
 import { useCompanionFloatingPlacement } from "./use-companion-floating-placement";
 import { useCompanionPaperPlacement } from "./use-companion-paper-placement";
@@ -920,20 +921,7 @@ export function CompanionHud({
     if (chat.phase === "sending") setPreparingSend(false);
   }, [chat.phase]);
 
-  /**
-   * 语音对话：一轮说完直接进对话，中间不再有"看一眼文字、再点一次发送"（2026-10-07）。
-   *
-   * 去重按 `revision` 而不是按文本——同一个字说过两遍是真的会发生的（用户重说一遍），
-   * 那种时候两轮都得发。
-   */
-  const voiceTurnSentRef = useRef<number | null>(null);
-  useEffect(() => {
-    const turn = interaction.voiceTurn;
-    if (!turn || voiceTurnSentRef.current === turn.revision) return;
-    voiceTurnSentRef.current = turn.revision;
-    interaction.consumeVoiceTurn(turn);
-    void sendText(turn.text, true).catch(() => undefined);
-  }, [interaction, sendText]);
+  interaction.sendVoiceRef.current = text => sendText(text, true);
 
   /** 停止：**先在本地静音**（方案 §6 第 2 点），再走服务端取消——用户要的是"现在闭嘴"。 */
   const stopTurn = useCallback(() => {
@@ -943,6 +931,7 @@ export function CompanionHud({
     noteReplySaveAttemptRef.current = null;
     void chat.cancel();
   }, [chat]);
+  interaction.interruptVoiceRef.current = stopTurn;
 
   // `plainCompanionBubbleText` 是十来趟正则扫全文。它以前裸在渲染体里：伴星每到一个
   // token、阅读钟每走一拍都重跑一遍，而输入文字其实只在块到达时才变。按原文 memo 之后，
@@ -992,7 +981,7 @@ export function CompanionHud({
   /** 朗读降级说明随回复收起；拾音提示只属于独立语音气泡。 */
   const outputNotice = speechNotice;
   const slot: { readonly tone: "reply" | "process" | "stopped" | "note"; readonly text: string } | null =
-    preparingSend && chat.phase !== "sending" ? { tone: "process", text: "正在准备这轮对话…" }
+    preparingSend && chat.phase !== "sending" ? { tone: "process", text: "正在发送消息…" }
       : replySlotText ? { tone: "reply", text: replySlotText }
       : chat.stopNotice ? { tone: "stopped", text: frozenText || chat.stopNotice }
         : interruptedSlotText && interaction.errorVisible ? { tone: "stopped", text: interruptedSlotText }
@@ -1200,7 +1189,7 @@ export function CompanionHud({
                 onWheel={noteReplyActivity}
                 onFocus={noteReplyActivity}
               >
-                <header className="companion-hud__reply-heading"><strong><Sparkles size={15} />{outputTone === "reply" ? chat.companionName : outputTone === "process" ? "正在处理" : "这轮对话"}</strong>{chat.liveReply ? <button type="button" onClick={chat.dismissLiveReply} aria-label="收起伴星回复"><X size={16} /></button> : null}</header>
+                <header className="companion-hud__reply-heading"><strong><Sparkles size={15} />{outputTone === "reply" || outputTone === "process" ? chat.companionName : "这轮对话"}</strong>{chat.liveReply ? <button type="button" onClick={chat.dismissLiveReply} aria-label="收起伴星回复"><X size={16} /></button> : null}</header>
                 {activeNoteExplanation ? <CompanionNoteExplanationContext item={activeNoteExplanation} /> : null}
                 <span className="companion-hud__presence-dot" ref={presenceRef} aria-hidden="true" />
                 {/* 长回复的正文在它自己里面滚，新字钉在视野里（见上面的跟随 effect）。 */}
@@ -1267,7 +1256,7 @@ export function CompanionHud({
                     }}
                     placeholder={chat.feedSelection
                       ? "关于这段内容，想问她什么？"
-                      : "想聊哪一句？就在这里说…"}
+                      : "想聊什么，或有什么想交给我？"}
                     aria-label={`给 ${chat.companionName} 的消息`}
                     // 生成中也允许继续打字：发送这条路服务端本来就支持 supersede（新消息接替
                     // 正在跑的那一轮），把输入框锁死只会让用户以为"她没停我不能说话"。
@@ -1317,35 +1306,9 @@ export function CompanionHud({
                 {turnFailure ? <p className="companion-hud__note companion-hud__note--error" role="status">{turnFailure}</p> : null}
               </section>
             ) : null}
-            {interaction.voiceOpen ? (
-              <section className="companion-hud__panel companion-hud__voice" aria-label="语音对话" onPointerMove={interaction.voiceActivity} onKeyDown={interaction.voiceActivity} onWheel={interaction.voiceActivity} onFocus={interaction.voiceActivity}>
-                <header><strong><Mic size={17} />{voice.phase === "starting" ? "正在准备麦克风…" : voice.phase === "closing" ? "在想这一句…" : voice.phase === "open" ? "我在听，说完就发给她" : "语音对话没在运行"}</strong><button type="button" onClick={interaction.closeVoice} aria-label="关掉语音对话"><X size={16} /></button></header>
-                {voice.phase === "starting" ? <p role="status"><Loader2 className="companion-hud__spin" size={18} />如果系统询问麦克风权限，请先允许；也可以取消这次录音。</p> : null}
-                {/**
-                 * 字幕是**只读的一行**，不是输入框（2026-10-07）。
-                 *
-                 * 旧的形状是"转成文字 → 你改 → 点发送"，那一次点击在对话里是纯粹的损失：
-                 * 说出去的话已经说出去了，停下来编辑就等于打断自己。现在字一段段长出来，
-                 * 停顿够了整轮直接进对话。说要改口的办法是接着说一句「不对，我是说……」，
-                 * 她本来就在听。
-                 */}
-                {voice.caption ? <p className="companion-hud__voice-caption" role="status" aria-live="polite">{voice.caption.text || "…"}</p> : null}
-                {voice.phase === "open" && !voice.caption ? <div className="companion-hud__voice-wave" aria-label="正在听你说话"><i /><i /><i /><i /><i /><i /><i /></div> : null}
-                {voice.phase === "closing" ? <p className="companion-hud__voice-sending" role="status"><Loader2 className="companion-hud__spin" size={18} />最后一段还在辨认，解完就发出去。</p> : null}
-                {voice.note && !voice.modelMissing ? <p className="companion-hud__output-note" role="status">{voice.note}</p> : null}
-                {/**
-                 * 没装模型时，「开始录音」按钮是不该有的：它按下去只会被挡住。
-                 * 换成一句有出处的说明和一个真能走通的下一步。
-                 */}
-                {voice.modelMissing ? <p className="companion-hud__voice-missing" role="status">
-                  语音识别模型是可选的附加功能，装在这台设备上，录音不会离开它。
-                  <button type="button" className="button" onClick={openVoiceModelSettings}>去设置里下载</button>
-                </p> : null}
-                <footer>
-                  {voice.phase === "idle" && !voice.modelMissing ? <button type="button" className="button primary" onClick={voice.toggle}><Mic size={16} />开始对话</button> : <button type="button" className="text-action" onClick={voice.toggle}><MicOff size={14} />结束对话</button>}
-                </footer>
-              </section>
-            ) : null}
+            {interaction.voiceOpen ? <CompanionVoiceConversation voice={voice} onClose={interaction.closeVoice}
+              onText={() => { interaction.closeVoice(); chat.setMode("conversation"); }} onActivity={interaction.voiceActivity}
+              onModelSettings={openVoiceModelSettings} failure={turnFailure} /> : null}
             {chat.mode === "actions" ? (
               <section className="companion-hud__panel companion-hud__more" aria-label="伴星更多功能" onPointerMove={interaction.menuActivity} onWheel={interaction.menuActivity} onKeyDown={interaction.menuActivity} onFocus={interaction.menuActivity}>
                 <header>
@@ -1422,7 +1385,7 @@ export function CompanionHud({
         </div>, document.body)}
       {chat.mode !== "history" ? <nav className="companion-hud__controls" aria-label={`${chat.companionName} 身边的交互`}>
         <button type="button" data-active={chat.mode === "conversation" || undefined} onPointerDown={playButtonBounce} onClick={() => { interaction.closeVoice(); setSettingsOpen(false); chat.setMode(chat.mode === "conversation" ? "closed" : "conversation"); }} title="气泡轻聊" aria-label="气泡轻聊"><MessageCircle size={18} aria-hidden="true" /></button>
-        {voiceEnabled ? <button ref={micRef} type="button" data-active={interaction.voiceOpen || undefined} data-voice-phase={voice.phase} data-unsupported={!voice.supported || undefined} onPointerDown={playButtonBounce} onClick={() => { setSettingsOpen(false); toggleVoice(); }} disabled={!voice.supported} title={voice.phase === "open" ? "语音对话进行中，点这里结束" : voice.phase === "closing" ? "正在把这一句发给她" : voice.phase === "starting" ? "正在准备麦克风" : "开始语音对话"} aria-label={voice.phase === "idle" ? "开始语音对话" : "结束语音对话"}>{voice.phase === "closing" ? <Loader2 className="companion-hud__spin" size={18} aria-hidden="true" /> : <Mic size={18} aria-hidden="true" />}</button> : null}
+        {voiceEnabled ? <button ref={micRef} type="button" data-active={interaction.voiceOpen || undefined} data-voice-phase={voice.activity} data-unsupported={!voice.supported || undefined} onPointerDown={playButtonBounce} onClick={() => { setSettingsOpen(false); toggleVoice(); }} disabled={!voice.supported} title={voice.phase === "idle" ? "开始语音对话" : "结束语音对话（未发送的内容会丢弃）"} aria-label={voice.phase === "idle" ? "开始语音对话" : "结束语音对话"}>{voice.phase === "closing" ? <Loader2 className="companion-hud__spin" size={18} aria-hidden="true" /> : <Mic size={18} aria-hidden="true" />}</button> : null}
         <button type="button" onPointerDown={playButtonBounce} onClick={() => { interaction.closeVoice(); setSettingsOpen(false); chat.setMode("history"); }} title="对话手记" aria-label="对话手记"><History size={18} aria-hidden="true" /></button>
         <button ref={moreControlRef} type="button" data-active={chat.mode === "actions" || settingsOpen || undefined} onPointerDown={playButtonBounce} onClick={() => { interaction.closeVoice(); chat.setMode(chat.mode === "actions" ? "closed" : "actions"); }} title="设置与快捷操作" aria-label="设置与快捷操作"><Settings2 size={18} aria-hidden="true" /></button>
       </nav> : null}

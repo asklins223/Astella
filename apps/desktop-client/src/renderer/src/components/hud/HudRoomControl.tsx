@@ -1,6 +1,6 @@
 import { useCompanionGuide } from "../companion/guidance/use-companion-guide";
 import { CompanionGuidanceStage } from "../companion/guidance/CompanionGuidanceStage";
-import { GUIDE_OPEN_EVENT, GUIDE_PRACTICE_EVENT, GUIDE_TOPICS, type GuideTopicId } from "../companion/guidance/guide-definitions";
+import { GUIDE_OPEN_EVENT, GUIDE_TOPICS, type GuideTopicId } from "../companion/guidance/guide-definitions";
 import { SpaceArrival } from "./SpaceArrival";
 import { useEffect, useId, useRef, useState } from "react";
 import { ChevronsRight, Compass, Gauge, House, Moon, Settings2, Sun, Volume2, VolumeX } from "lucide-react";
@@ -236,8 +236,7 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
    * 卡其实同一条毛病。关卡时岛保持展开：岛是岛的开关，卡是卡的开关，两件事各管一次点击。
    */
   const openSpaceMenu = () => {
-    if (spaceRef.current?.dataset.companionGuideTarget) window.dispatchEvent(new CustomEvent(GUIDE_PRACTICE_EVENT));
-    else guide.pause();
+    guide.pause();
     setSpaceNotice(null);
     setMenuKind(current => current === "space" ? null : "space");
     setExpanded(true);

@@ -91,7 +91,7 @@
 .companion-hud--floating[data-head-dock="left"] :is(.companion-hud__output, .companion-hud__composer) { transform-origin: 100% 50%; }
 .companion-hud--floating[data-head-dock="right"] :is(.companion-hud__output, .companion-hud__composer) { transform-origin: 0 50%; }
 .companion-hud--floating[data-head-dock="below"] :is(.companion-hud__output, .companion-hud__composer) { transform-origin: 50% 0; }
-.companion-hud--floating .companion-hud__voice { background: #e4edd7; }
+.companion-hud--floating .companion-hud__voice { background: #f5f2df; }
 .companion-hud__reply-heading,
 .companion-hud--floating .companion-hud__panel > header,
 .companion-hud__paper > header {
@@ -181,24 +181,6 @@
   resize: none;
   outline: none;
 }
-/* 语音对话的字幕：跟着说出来的话一行行长出来。只读、不编辑、不等你点发送（2026-10-07）。
-   左缘那道细线是"这是你说的话"与"这是她写的东西"之间唯一的分隔——不再套一层框。 */
-.companion-hud__voice-caption {
-  margin: 9px 0 0;
-  padding: 2px 0 2px 11px;
-  border-left: 2px solid #9fb887;
-  min-height: 26px;
-  color: var(--hud-ink);
-  font: 14px/1.8 "Noto Sans SC Variable", sans-serif;
-}
-.companion-hud__voice-sending {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 0 0;
-  color: var(--companion-muted);
-  font: 12px/1.6 "Noto Sans SC Variable", sans-serif;
-}
 .companion-hud--floating .companion-hud__composer { padding: 8px 12px 10px; border-radius: 22px 28px 20px 25px; }
 .companion-hud--floating .companion-hud__composer textarea { min-height: 40px; max-height: 112px; padding: 4px 0; font-size: 13px; line-height: 1.75; }
 .companion-hud--floating textarea::placeholder { color: #75624e; opacity: 1; }
@@ -280,15 +262,25 @@
 .companion-record__citation { margin: 10px 0; color: var(--hud-green); font-size: 13px; }
 .companion-record__code { max-width: 100%; margin: 10px 0; padding: 12px; overflow: auto; color: var(--hud-ink); background: #efe3bd; border-radius: 14px 18px 16px 13px; font: 12px/1.7 ui-monospace, monospace; }
 .companion-hud__voice > p { display: flex; gap: 8px; line-height: 1.7; }
-/* 本机没装识别模型时的那一格（2026-10）。它替代的是「开始录音」那颗按钮，
-   所以用与它同一种"被按住不放"的语气，只是把出路摆出来。 */
-.companion-hud__voice > .companion-hud__voice-missing { flex-direction: column; align-items: flex-start; gap: 9px; margin: 0; padding: 12px 14px; border: 1px dashed #9fb887; border-radius: 16px 19px 15px 18px; background: #f0f4e2; color: #5c6f4f; font-size: clamp(11px, .82vw, 12.5px); font-weight: 500; }
-.companion-hud__voice > .companion-hud__voice-missing .button { min-height: 32px; padding: 0 14px; font-size: 12px; }
 .companion-hud__voice > footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 10px; }
-.companion-hud__voice-wave { display: flex; height: 64px; align-items: center; justify-content: center; gap: 5px; }
-.companion-hud__voice-wave i { width: 4px; height: 26px; border-radius: 4px; background: #3d6445; animation: companion-interaction-wave 550ms ease-in-out infinite alternate; }
-.companion-hud__voice-wave i:nth-child(2n) { animation-delay: -200ms; height: 38px; }
-.companion-hud__voice-wave i:nth-child(3n) { animation-delay: -350ms; height: 16px; }
+.companion-voice-status { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.companion-voice-status > div:last-child { min-width: 0; }
+.companion-voice-status p { margin: 0 0 3px; color: #314c37; font-size: 15px; font-weight: 700; line-height: 1.5; }
+.companion-voice-status span { display: block; color: #6b715d; font-size: 12px; line-height: 1.65; }
+.companion-voice-meter { --input-level: 0; display: flex; flex: 0 0 46px; width: 46px; height: 46px; align-items: center; justify-content: center; gap: 3px; color: #58764c; border-radius: 50%; background: #dfe8ce; }
+.companion-voice-meter i { display: block; width: 3px; height: calc(5px + var(--input-level) * 16px); border-radius: 3px; background: currentColor; }
+.companion-voice-meter i:nth-child(2n) { height: calc(7px + var(--input-level) * 24px); }
+.companion-voice-meter i:nth-child(3) { height: calc(9px + var(--input-level) * 28px); }
+.companion-hud__voice[data-activity="paused"] .companion-voice-meter { color: #897c64; background: #eae3d2; }
+.companion-hud__voice[data-activity="speaking"] .companion-voice-meter { color: #476a79; background: #dce8e9; }
+.companion-voice-transcript { padding: 8px 0 8px 11px; border-left: 2px solid #a7ba8e; }
+.companion-voice-transcript small { color: #768068; font-size: 10px; }
+.companion-voice-transcript p { margin: 3px 0 0; max-height: 108px; overflow: auto; overflow-wrap: anywhere; color: var(--hud-ink); font-size: 13px; line-height: 1.75; }
+.companion-voice-transcript[data-sent] { border-left-color: #c9c8aa; }
+.companion-hud__voice > .companion-voice-note { display: block; margin: 7px 0; color: #805c37; font-size: 12px; }
+.companion-hud__voice > footer { flex-wrap: wrap; justify-content: flex-start; gap: 4px 10px; border-top: 1px solid #dcdcc6; padding-top: 8px; }
+.companion-hud__voice > footer .text-action { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; font-size: 12px; }
+.companion-hud__voice > footer button:active { transform: scale(.97); }
 /* 44px input target; only the inner 34px circle occupies visual space. */
 .desktop-app .companion-presence .companion-hud__controls { left: -4px; right: auto; top: 57%; gap: 1px; }
 /* Home and task controls share the projected visible body + props boundary. */
@@ -327,7 +319,6 @@
 @keyframes companion-interaction-pop { 0% { opacity: 0; transform: translateY(42px) scale(.78) rotate(-3deg); } 52% { opacity: 1; transform: translateY(-7px) scale(1.07) rotate(1.1deg); } 78% { transform: translateY(3px) scale(.985) rotate(-.35deg); } to { opacity: 1; transform: none; } }
 @keyframes companion-interaction-leave { to { opacity: 0; transform: translateY(22px) scale(.86) rotate(2deg); } }
 @keyframes companion-interaction-book { from { opacity: 0; transform: translateY(56px) scale(.88) rotate(-2deg); } 65% { opacity: 1; transform: translateY(-6px) scale(1.015) rotate(.4deg); } to { opacity: 1; transform: none; } }
-@keyframes companion-interaction-wave { from { transform: scaleY(.55); } to { transform: scaleY(1.8); } }
 .companion-hud--floating[data-motion="lite"] .companion-hud__output,
 .companion-hud--floating[data-motion="lite"] .companion-hud__panel,
 .companion-hud--floating[data-motion="lite"] .companion-hud__paper,

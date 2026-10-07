@@ -37,11 +37,11 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   // 分页续读（39d W6-2 / 39b C5）：正文按块分页，`startOrdinal` 是续读的起点
   // （上一页返回的 nextStartOrdinal）。不再"截前 3000 字假装读过"——返回体带
   // 块序号、总块数与下一页起点，读不到结尾时按它续，不谎称已读全文。
-  tool("companion_read_note", "读出一篇笔记的正文内容（按块分页，一次约三千字）。要引用、总结或核对用户写过什么时必须先读，不要凭标题猜内容。页面上下文若带 noteVersionId，就必须原样传入以读取用户眼前这一版；正文没读完时（truncated=true）用返回的 nextStartOrdinal 续读，不要假装已经读过全文。", "read", false, z.object({ noteId: uuid, noteVersionId: uuid.optional().describe("页面上下文给出的固定笔记版本；读取用户正在看的旧版本时必须传入"), startOrdinal: z.number().int().min(1).optional().describe("从第几个正文块开始读（续读时传上一页的 nextStartOrdinal）") }).strict(), { label: "正在读那篇笔记" }),
+  tool("companion_read_note", "读出一篇笔记的正文内容（按块分页，一次约三千字）。要引用、总结或核对用户写过什么时必须先读，不要凭标题猜内容。页面上下文若带 noteVersionId，就必须原样传入以读取用户眼前这一版；正文没读完时（truncated=true）同时传回 nextStartOrdinal 与 nextStartOffset（作为 startOrdinal、startOffset）续读，不要假装已经读过全文。", "read", false, z.object({ noteId: uuid, noteVersionId: uuid.optional().describe("页面上下文给出的固定笔记版本；读取用户正在看的旧版本时必须传入"), startOrdinal: z.number().int().min(1).optional().describe("续读时传上一页 nextStartOrdinal，并把 version 作为 noteVersionId 保持同版"), startOffset: z.number().int().nonnegative().optional().describe("块内位置；续读时传 nextStartOffset，缺省0") }).strict(), { label: "正在读那篇笔记" }),
   // 来源正文读取（39d W6-2 / 39b C5："当前工具表没有来源正文读取工具"）：
   // 分页形状与 read_note 相同；来源没解析好（draft/processing/failed）时如实说明，
   // 不假装读过。凭据面不受影响——这不是页面读取，是材料读取，走材料可见性。
-  tool("companion_read_source", "读一份来源（原始材料）的解析正文（按段分页，一次约三千字）。用户引用的是来源原文、或要对照笔记与来源时先读它；没解析好（还在处理/失败/已归档）会照实说明，此时不要假装读过。正文没读完时用返回的 nextStartOrdinal 续读。", "read", false, z.object({ sourceId: uuid, startOrdinal: z.number().int().min(1).optional().describe("从第几段开始读（续读时传上一页的 nextStartOrdinal）") }).strict(), { label: "正在读来源正文" }),
+  tool("companion_read_source", "读一份来源（原始材料）的解析正文（按段分页，一次约三千字）。用户引用的是来源原文、或要对照笔记与来源时先读它；没解析好（还在处理/失败/已归档）会照实说明，此时不要假装读过。正文没读完时同时传回 nextStartOrdinal 与 nextStartOffset（作为 startOrdinal、startOffset）续读。", "read", false, z.object({ sourceId: uuid, startOrdinal: z.number().int().min(1).optional().describe("续读时传上一页 nextStartOrdinal"), startOffset: z.number().int().nonnegative().optional().describe("段内位置；续读时传 nextStartOffset，缺省0") }).strict(), { label: "正在读来源正文" }),
   tool("companion_open_note", "跳到用户的一篇笔记（在应用里打开它）。", "read", false, z.object({ noteId: uuid }).strict(), { label: "正在打开那篇笔记" }),
   // 页面词表由 `COMPANION_PAGE_DESTINATIONS_V2`（companion-bridge-contracts）一处定义：
   // 枚举、中文页名、用户的口语别名都从同一张表生成，桌面端有落点的页面才进得了这里。

@@ -22,7 +22,7 @@ export function CompanionDiscoveryPage(props: { refreshKey: number; onSource: (e
     catch (cause) { setError(gatewayErrorMessage(cause)); return false; }
     finally { lock.current = false; setBusy(null); }
   };
-  if (!book.section) return <SectionState message={book.loading ? "正在读取发现簿" : "发现簿暂时读不到"} detail={book.failure ?? undefined} onRetry={() => void book.reload()} />;
+  if (!book.section) return <SectionState loading={book.loading} message={book.loading ? "正在加载发现簿" : "发现簿暂时读不到"} detail={book.failure ?? undefined} onRetry={() => void book.reload()} />;
   return <DiscoveryPanel section={book.section} busy={busy} error={error} notice={notice} onRetry={() => void book.reload()} onSource={props.onSource} onBrowse={props.onBrowse}
     onUncollect={entry => { void write(entry.entryId, async () => unwrapGatewayResult(await window.astella.companion.memory.discovery.uncollect({ meta: book.meta(), request: { kind: entry.kind, source: entry.source, sourceId: entry.sourceId } })), "已取消收藏，原始回答和日记仍然保留。"); }}
     onAnnotate={(entry, annotation) => write(entry.entryId, async () => unwrapGatewayResult(await window.astella.companion.memory.discovery.annotate({ meta: book.meta(), request: { entryId: entry.entryId, annotation } })), "批注已保存。")} />;

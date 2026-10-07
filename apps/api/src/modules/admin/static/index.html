@@ -3,138 +3,76 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>拾星笔记 · 运维管理面板</title>
-    <!-- 品牌图与面板外壳同域、同一套注册路由（见 routes.ts 的 STATIC_FILES），
-         所以这里给真实文件而不是 data: 占位——标签页上那枚图标现在认得出是谁。 -->
+    <meta name="color-scheme" content="light" />
+    <title>拾星笔记 · 控制中心</title>
     <link rel="icon" href="__BASE__/assets/astella-mark-v1.png" type="image/png" />
     <link rel="stylesheet" href="__BASE__/styles.css" />
   </head>
-  <body>
-    <!-- 启动闸：没有令牌就停在解锁层，连一次数据请求都不发。 -->
+  <body data-motion="system">
     <div class="gate" id="gate" data-state="locked">
+      <div class="gate__welcome" aria-hidden="true">
+        <div class="gate__visual"><div class="glass-orbit"></div><img src="__BASE__/assets/astella-mark-v1.png" alt="" /></div>
+        <span class="eyebrow">ASTELLA CONTROL CENTER</span>
+        <h2>让一切，<br />尽在掌握。</h2>
+        <p>从运行状态到每一次模型调用，<br />一个安静、清晰的工作空间。</p>
+      </div>
       <form class="gate__card" id="gate-form" autocomplete="off">
-        <div class="gate__mark" aria-hidden="true">
-          <img class="seal seal--lg" src="__BASE__/assets/astella-mark-v1.png" alt="" width="36" height="36" />
-          <span>拾星笔记</span><em>运维管理面板</em>
-        </div>
-        <h1 class="gate__title">拾星笔记运维管理面板</h1>
-        <p class="gate__hint">
-          这个面板能读取跨空间的队列、审计与配置状态。请输入部署时设置的
-          <code>ADMIN_PANEL_TOKEN</code>。
-        </p>
+        <div class="gate__mark"><img class="seal seal--lg" src="__BASE__/assets/astella-mark-v1.png" alt="" width="44" height="44" /><span>拾星笔记<span class="gate__brand-sub">运维管理面板</span></span></div>
+        <h1 class="gate__title">进入控制中心</h1>
+        <p class="gate__hint">使用部署的运维令牌，查看服务并管理后台任务。</p>
         <div class="field">
           <label class="field__label" for="gate-token">运维令牌</label>
-          <input
-            class="field__input field__input--mono"
-            id="gate-token"
-            type="password"
-            name="token"
-            spellcheck="false"
-            placeholder="••••••••••••••••"
-            required
-          />
+          <input class="field__input field__input--mono" id="gate-token" type="password" name="token" spellcheck="false" placeholder="输入 ADMIN_PANEL_TOKEN" required />
         </div>
         <p class="gate__error" id="gate-error" role="alert" hidden></p>
-        <button class="btn btn--primary btn--block u-mt-14" type="submit" id="gate-submit">
-          <span>进入</span>
-        </button>
-        <p class="gate__foot">
-          令牌只保存在本标签页内存中，关闭页面即失效；不会写入 localStorage。
-        </p>
+        <button class="btn btn--block" type="button" id="gate-retry" hidden>重试恢复登录</button>
+        <button class="btn btn--primary btn--block" type="submit" id="gate-submit"><span>解锁面板</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5" /></svg></button>
+        <p class="gate__foot"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8 12l3 3 5-6" /></svg>本标签页会记住登录状态，刷新后自动恢复；锁定时清除。</p>
       </form>
-    </div>
-
-    <!-- 工作台：左栏是常驻层（导航带实时状态 + 现场速览 + 全局动作），
-         主列只承载当前工作。 -->
-    <div class="shell" id="shell" hidden>
-      <aside class="rail">
-        <div class="rail__brand">
-          <img class="seal seal--sm" src="__BASE__/assets/astella-mark-v1.png" alt="" width="28" height="28" />
-          <span class="rail__wordmark">拾星笔记</span>
-          <span class="rail__wordmark-sub">运维管理面板</span>
-        </div>
-
-        <nav class="rail__nav" aria-label="面板视图">
-          <button class="rail__item is-active" type="button" data-view="overview">
-            <svg class="rail__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l7.2 4.15v8.7L12 20.5l-7.2-4.15v-8.7z"/><path d="M12 9.5v5"/></svg>
-            <span class="rail__label">总览</span>
-            <span class="rail__badge" id="nav-badge-overview" hidden></span>
-          </button>
-          <button class="rail__item" type="button" data-view="queues">
-            <svg class="rail__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h16v4H4zM4 14h16v4H4z"/><path d="M7.5 8.5h.01M7.5 16h.01"/></svg>
-            <span class="rail__label">任务与队列</span>
-            <span class="rail__badge" id="nav-badge-queues" hidden></span>
-          </button>
-          <button class="rail__item" type="button" data-view="logs">
-            <svg class="rail__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14M5 10.5h9M5 15.5h14M5 20h7"/><path d="M17.5 9.5l2.5 2.5-2.5 2.5"/></svg>
-            <span class="rail__label">日志</span>
-            <span class="rail__badge rail__badge--live" id="nav-live" hidden><i aria-hidden="true"></i>实时</span>
-          </button>
-          <button class="rail__item" type="button" data-view="metrics">
-            <svg class="rail__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h3.4l2.2-6 3.2 12 2.6-8 1.8 4h4.8"/></svg>
-            <span class="rail__label">指标</span>
-            <span class="rail__badge" id="nav-badge-metrics" hidden></span>
-          </button>
-          <button class="rail__item" type="button" data-view="infra">
-            <svg class="rail__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l8 4-8 4-8-4z"/><path d="M4.5 12.5L12 16l7.5-3.5"/><path d="M4.5 16.5L12 20l7.5-3.5"/></svg>
-            <span class="rail__label">基础设施</span>
-            <span class="rail__badge" id="nav-badge-infra" hidden></span>
-          </button>
-          <button class="rail__item" type="button" data-view="config">
-            <svg class="rail__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"/><path d="M9.5 5v4M15 10v4M11 15v4"/></svg>
-            <span class="rail__label">模型配置</span>
-            <span class="rail__badge" id="nav-badge-config" hidden></span>
-          </button>
-        </nav>
-
-        <div class="rail__foot">
-          <div class="rail__section">现场速览</div>
-          <dl class="rail__facts" id="rail-facts">
-            <div><dt>用户</dt><dd id="fact-users">—</dd></div>
-            <div><dt>空间</dt><dd id="fact-spaces">—</dd></div>
-            <div><dt>笔记</dt><dd id="fact-notes">—</dd></div>
-            <div><dt>运行</dt><dd id="fact-runs">—</dd></div>
-          </dl>
-          <div class="rail__meta" id="rail-env">—</div>
-          <div class="rail__meta rail__meta--dim" id="rail-release"></div>
-          <div class="rail__actions">
-            <span class="rail__clock" id="clock" aria-hidden="true"></span>
-            <button class="rail__btn" id="refresh" type="button" title="刷新当前视图">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M20 12a8 8 0 1 1-2.34-5.66" />
-                <path d="M20 4v4h-4" />
-              </svg>
-              <span class="sr-only">刷新</span>
-            </button>
-            <button class="rail__btn" id="lock" type="button" title="锁定面板">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M7 10V8a5 5 0 0 1 10 0v2" />
-                <rect x="6" y="10" width="12" height="9" rx="1.5" />
-              </svg>
-              <span class="sr-only">锁定</span>
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      <main class="work" id="content" tabindex="-1"></main>
-    </div>
-
-    <!-- 应用绘制的确认框（不用原生 confirm） -->
-    <div class="modal" id="modal" hidden>
-      <div class="modal__scrim" data-close="1"></div>
-      <div class="modal__card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <h2 class="modal__title" id="modal-title"></h2>
-        <p class="modal__body" id="modal-body"></p>
-        <div class="modal__actions">
-          <button class="btn" type="button" data-close="1" id="modal-cancel">取消</button>
-          <button class="btn btn--primary" type="button" id="modal-confirm">确定</button>
-        </div>
+      <div class="gate__card gate__resume" id="gate-resume" role="status" hidden>
+        <div class="gate__mark"><img class="seal seal--lg" src="__BASE__/assets/astella-mark-v1.png" alt="" width="44" height="44" /><span>拾星笔记<span class="gate__brand-sub">运维管理面板</span></span></div>
+        <h1 class="gate__title">正在恢复登录</h1>
+        <p class="gate__hint">正在确认本标签页的登录状态…</p>
       </div>
     </div>
 
-    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="shell" id="shell" hidden inert>
+      <a class="skip-link" href="#content">跳到页面内容</a>
+      <aside class="rail">
+        <div class="rail__brand">
+          <img class="seal seal--sm" src="__BASE__/assets/astella-mark-v1.png" alt="" width="38" height="38" />
+          <div><span class="rail__wordmark">拾星笔记</span><span class="rail__wordmark-sub">控制中心</span></div>
+        </div>
+        <button class="rail__search" id="open-command" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><span>快速前往</span><kbd>⌘ K</kbd></button>
+        <nav class="rail__nav" aria-label="面板视图">
+          <div class="rail__selection" id="nav-selection" aria-hidden="true"></div>
+          <span class="rail__section">监测</span>
+          <button class="rail__item is-active" type="button" data-view="overview" aria-current="page"><svg class="rail__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg><span class="rail__label">总览</span><span class="rail__badge" id="nav-badge-overview" hidden></span></button>
+          <button class="rail__item" type="button" data-view="queues"><svg class="rail__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v6H4zM4 15h16v5H4zM7.5 8h.01M7.5 17.5h.01M11 8h6M11 17.5h6"/></svg><span class="rail__label">任务与队列</span><span class="rail__badge" id="nav-badge-queues" hidden></span></button>
+          <button class="rail__item" type="button" data-view="logs"><svg class="rail__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14M5 10h9M5 15h14M5 20h9M17 9l3 3-3 3"/></svg><span class="rail__label">日志</span><span class="rail__badge rail__badge--live" id="nav-live" hidden>实时</span></button>
+          <button class="rail__item" type="button" data-view="metrics"><svg class="rail__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span class="rail__label">指标</span><span class="rail__badge" id="nav-badge-metrics" hidden></span></button>
+          <span class="rail__section rail__section--spaced">管理</span>
+          <button class="rail__item" type="button" data-view="infra"><svg class="rail__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5zM3 13l9 5 9-5M3 18l9 5 9-5"/></svg><span class="rail__label">基础设施</span><span class="rail__badge" id="nav-badge-infra" hidden></span></button>
+          <button class="rail__item" type="button" data-view="config"><svg class="rail__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6"/></svg><span class="rail__label">模型配置</span><span class="rail__badge" id="nav-badge-config" hidden></span></button>
+        </nav>
+        <div class="rail__foot">
+          <div class="rail__deployment"><span class="rail__deployment-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H4zM8 21h8M12 16v5"/></svg></span><div><div class="rail__meta" id="rail-env">正在连接部署</div><div class="rail__meta rail__meta--dim" id="rail-release">—</div></div></div>
+          <button class="rail__motion" id="motion-toggle" type="button" title="切换动效偏好"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 3-8 11h6l-1 7 9-12h-6z"/></svg><span id="motion-label">动效 · 跟随系统</span></button>
+          <span class="rail__hint">按 1–6 切页 · ⌘ K 快速前往</span>
+        </div>
+      </aside>
+      <div class="workspace">
+        <header class="topbar">
+          <div class="topbar__location"><span>控制中心</span><span aria-hidden="true">/</span><strong id="location-title">总览</strong></div>
+          <div class="topbar__tools"><span class="connection" id="connection" data-state="idle"><i aria-hidden="true"></i><span id="connection-label">正在连接</span></span><span class="topbar__updated" id="last-updated"></span><div class="page-head__actions" id="head-actions"></div><button class="rail__btn" id="refresh" type="button" title="刷新当前视图" aria-label="刷新"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg></button><button class="rail__btn" id="lock" type="button" title="锁定面板" aria-label="锁定"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V8a5 5 0 0 1 10 0v2"/><rect x="6" y="10" width="12" height="10" rx="3"/></svg></button></div>
+        </header>
+        <main class="work" id="content" tabindex="-1"></main>
+      </div>
+    </div>
 
+    <div class="modal" id="modal" hidden><div class="modal__scrim" data-close="1"></div><div class="modal__card" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal__symbol" aria-hidden="true">!</div><h2 class="modal__title" id="modal-title"></h2><p class="modal__body" id="modal-body"></p><div class="modal__actions"><button class="btn" type="button" data-close="1" id="modal-cancel">取消</button><button class="btn btn--primary" type="button" id="modal-confirm">确定</button></div></div></div>
+    <div class="command" id="command" hidden><div class="modal__scrim" id="command-scrim"></div><div class="command__card" role="dialog" aria-modal="true" aria-label="快速前往"><div class="command__search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input id="command-input" type="search" placeholder="前往页面、查日志、处理队列…" autocomplete="off" role="combobox" aria-label="搜索页面" aria-expanded="true" aria-controls="command-results" /><button class="command__close" id="command-close" type="button" aria-label="关闭快捷跳转">esc</button></div><div class="command__results" id="command-results" role="listbox" aria-label="页面"></div><div class="command__foot"><span>↑ ↓ 选择</span><span>↵ 前往</span></div></div></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="__BASE__/app.js" type="module"></script>
   </body>
 </html>

@@ -28,7 +28,7 @@ function deliverActivityCue(cue: CompanionHomeProjectionV1["proactiveCue"], scop
   notifyCompanion({
     id: `activity:${scope}:${cue.revision}`, kind: reminder ? "reminder" : "help", scope,
     source: reminder ? "约好的提醒" : "书房消息", title: reminder ? "到你约好的时间了" : "伴星捎来一条消息", body: cue.text,
-    audio: { text: cue.text.slice(0, 120) }, snoozable: true,
+    audio: { text: cue.text }, snoozable: true,
     onShown: () => reportActivity(scope, cue.revision, "displayed"),
     onDismiss: () => reportActivity(scope, cue.revision, "dismissed"),
     actions: [{ id: "ok", label: "知道了", kind: "confirm", run: () => reportActivity(scope, cue.revision, "acted") },

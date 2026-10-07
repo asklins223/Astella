@@ -73,7 +73,7 @@ const PERSONA_VERSION_AUTHOR_LABEL: Record<CompanionPersonaPendingRevisionV1["au
 
 const PERSONA_NO_PENDING = "现在没有排队的人格版本。";
 
-const PERSONA_PENDING_LOADING = "正在读取待生效版本…";
+const PERSONA_PENDING_LOADING = "正在加载待生效版本…";
 
 /** 这一项是谁写的 —— 屏上要能看见「她改的」，否则"她能自己改"只是后台的事。 */
 function OriginBadge({ origin }: { readonly origin: string }) {
@@ -127,7 +127,7 @@ function PersonaSwitchSheet(props: {
     <div className="cc-switch-sheet__actions">
       <button type="button" onClick={props.onCancel} disabled={props.busy}>取消</button>
       <button type="button" className="button primary" onClick={props.onConfirm} disabled={props.busy}>
-        {props.busy ? "正在换…" : props.options.length === 0 ? `换成「${props.target.name}」` : `就这样换（保留 ${kept} 项）`}
+        {props.busy ? "正在切换人格…" : props.options.length === 0 ? `换成「${props.target.name}」` : `就这样换（保留 ${kept} 项）`}
       </button>
     </div>
   </div>;
@@ -217,11 +217,11 @@ export function PersonaPanel(props: PersonaPanelProps) {
       {props.pendingError ? <SectionState message="待生效版本暂时读不到" detail={props.pendingError} onRetry={props.onRetryPending} />
         : !props.pending ? <p className="cc-muted" role="status">{PERSONA_PENDING_LOADING}</p>
         : props.pending.pending === null ? <p className="cc-muted">{PERSONA_NO_PENDING}</p>
-        : <article className="cc-persona-pending"><div><strong>第 {props.pending.pending.revision} 版 · {props.pending.pending.profile?.name ?? "回到默认表达"}</strong><small>{PERSONA_VERSION_AUTHOR_LABEL[props.pending.pending.author]} · {formatDate(props.pending.pending.stagedAt)}</small><p>{props.pending.pending.profile?.speakingStyle ?? "这一版会恢复默认人格表达。"}</p><span className="cc-tag">{props.pending.pending.effectiveWhen}</span></div><button type="button" className="button primary" disabled={props.busy !== null} onClick={props.onActivatePending}>{props.busy === "activate-pending" ? "正在生效…" : "现在生效"}</button></article>}
+        : <article className="cc-persona-pending"><div><strong>第 {props.pending.pending.revision} 版 · {props.pending.pending.profile?.name ?? "回到默认表达"}</strong><small>{PERSONA_VERSION_AUTHOR_LABEL[props.pending.pending.author]} · {formatDate(props.pending.pending.stagedAt)}</small><p>{props.pending.pending.profile?.speakingStyle ?? "这一版会恢复默认人格表达。"}</p><span className="cc-tag">{props.pending.pending.effectiveWhen}</span></div><button type="button" className="button primary" disabled={props.busy !== null} onClick={props.onActivatePending}>{props.busy === "activate-pending" ? "正在应用这一版…" : "现在生效"}</button></article>}
     </CenterSection>
     <details className="cc-persona-history"><summary>人格版本记录{props.versions ? ` · ${props.versions.length} 版` : ""}</summary>
       <p className="cc-muted">恢复旧版会留下新版本。各个书房累积的熟悉度会保留。</p>
-      {props.versionsError ? <SectionState message="版本记录暂时无法读取" detail={props.versionsError} onRetry={props.onReloadVersions} /> : !props.versions ? <p role="status">正在读取版本记录…</p> : props.versions.length === 0 ? <p>还没有人格版本记录。</p> : <div id={olderVersionsId}>{props.versions.map(versionCard)}</div>}
+      {props.versionsError ? <SectionState message="版本记录暂时无法读取" detail={props.versionsError} onRetry={props.onReloadVersions} /> : !props.versions ? <p role="status">正在加载版本记录…</p> : props.versions.length === 0 ? <p>还没有人格版本记录。</p> : <div id={olderVersionsId}>{props.versions.map(versionCard)}</div>}
     </details>
     <div className="cc-page-note"><span>回到当前发布的默认人格，同样会留下版本记录。</span><button type="button" className="cc-link" disabled={!props.persona.profile || props.busy !== null} onClick={props.onReset}>恢复系统默认人格</button></div>
   </div>;

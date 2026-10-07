@@ -575,10 +575,9 @@ export function createGovernedProvider(
     requestedOutputTokens: number | null;
     measure: (ports: ContextTokenCountingPorts) => Promise<ContextRequestMeasurementV1>;
   }): Promise<void> => {
-    void method;
     return governContextPressure({
       provider,
-      operation: audit?.operation ?? method,
+      operation: audit?.operation ? `${audit.operation}:${method}` : method,
       requestedOutputTokens: input.requestedOutputTokens,
       measure: input.measure,
     }, contextGate).then(() => undefined);
@@ -739,6 +738,9 @@ export function createGovernedProvider(
   // configuration (for example contextWindowTokens).
   if (provider.getCapabilities) {
     governed.getCapabilities = provider.getCapabilities.bind(provider);
+  }
+  if (provider.countTextTokens) {
+    governed.countTextTokens = provider.countTextTokens.bind(provider);
   }
   governedWrappers.set(governed, { raw: provider, workspaceId, consentOk: context.consentOk, policy: JSON.stringify(context.policy), audit });
   return governed;

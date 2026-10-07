@@ -107,6 +107,8 @@ function agentTurnConfig() {
       apiKey: platform.apiKey,
       baseUrl: platform.baseUrl ?? "",
       model: platform.model,
+      ...(platform.modelProfile ? { modelProfile: platform.modelProfile } : {}),
+      sessionId: "platform-live-acceptance-2026-10-07",
       ...(platform.options ? { options: platform.options } : {}),
     },
   };

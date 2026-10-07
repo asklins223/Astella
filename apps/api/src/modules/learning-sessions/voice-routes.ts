@@ -74,7 +74,7 @@ const ttsBodySchema = z.object({
   text: z.string().min(1).max(2000),
   /** 朗读只允许已审核的固定 voice；扩展需新增 profile mapping。 */
   voice: z.literal("zh-CN-XiaoxiaoNeural").optional(),
-  purpose: z.enum(["notification", "guidance"]).optional(),
+  purpose: z.enum(["notification", "guidance", "thought"]).optional(),
 });
 
 const COMPANION_ASR_MODEL = "FunAudioLLM/SenseVoiceSmall";
@@ -554,6 +554,15 @@ userId: session.userId,
     // 净化校验（拒绝 SSML/URL/
     // 隐藏提示/非法 voice profile；DEFAULT_VOICE_PROFILE 通过 allowlist）。
     assertSafeTtsInput(body.text, DEFAULT_VOICE_PROFILE);
+    // thought = 她已经说过/正要说的那一句念想。音色与不带 purpose 的正文完全同一身
+    // （账号存着什么就是什么），唯一区别是这一路要把实际用上的音色回报给客户端：
+    // 客户端把它按音色身份缓在自己电脑上，换了音色就该重新合成，不换就再也不来。
+    const persistentAudio = body.purpose === "guidance" || body.purpose === "thought";
+    const selection: ResolvedTtsSelection = body.purpose === "notification"
+      ? { engine: "edge", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenVoice: "", explicit: true }
+      : body.purpose === "guidance"
+        ? { ...resolveTtsSelection(null, loadTtsEngineConfig()), engine: "qwen" }
+        : await resolveSelectionForSynthesis(req.session!, req.log);
     try {
       // 2026-09-19 语音链路改造：普通朗读也走「qwen WS 优先 + edge 兜底」——
       // 此前硬编码 edge 容器 HTTP（实测每段 2.3–2.5s），桌面伴星的语音完全
@@ -567,18 +576,15 @@ userId: session.userId,
         // 任何 `withWorkspaceTransaction` 里，所以这里应当恒为 undefined——恒真正是
         // 它该有的样子：它防的是将来有人把合成搬进某个事务。
         scope: { workspaceId: req.session!.workspaceId, userId: req.session!.userId, currentActiveTransaction: currentApiWorkspaceTransaction },
-        selection: body.purpose === "notification"
-          ? { engine: "edge", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenVoice: "", explicit: true }
-          : body.purpose === "guidance"
-            ? { ...resolveTtsSelection(null, loadTtsEngineConfig()), engine: "qwen" }
-            : await resolveSelectionForSynthesis(req.session!, req.log),
+        selection,
         onQwenFallback: (error) => req.log.warn({ err: error }, "qwen tts failed; falling back to edge-tts"),
       });
+      // 兜底成 edge 的那一次照旧报 edge：客户端据此决定这份音频值不值得留在本机。
+      const spokenVoice = result.engine === "qwen" ? selection.qwenVoice : selection.edgeVoice;
       return reply
         .type(result.contentType)
         .header("Cache-Control", "no-store")
-        .headers(body.purpose === "guidance" ? { "X-Astella-Tts-Voice": result.engine === "qwen"
-          ? loadTtsEngineConfig().qwen.voice : loadTtsEngineConfig().edge.voice } : {})
+        .headers(persistentAudio && spokenVoice ? { "X-Astella-Tts-Voice": spokenVoice } : {})
         .send(Buffer.from(result.audio));
     } catch (err) {
       if (err instanceof EdgeTtsError) {

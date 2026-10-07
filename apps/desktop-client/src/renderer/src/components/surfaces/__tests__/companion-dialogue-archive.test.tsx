@@ -81,7 +81,7 @@ it("searches and returns to the latest records while leaving the conversation dr
 it("collecting an older record keeps loaded history and its reading position instead of reloading the first page", async () => {
   list.mockImplementation(async ({ query }) => ok({ version: 1, items: [query.before ? record(OLDER, "更早的原话。") : record(LATEST, "最新的原话。")], nextCursor: query.before ? null : "older" }));
   openArchive();
-  fireEvent.click(await screen.findByRole("button", { name: "加载更早记录" }));
+  fireEvent.click(await screen.findByRole("button", { name: "更早的对话" }));
   await screen.findByText("更早的原话。");
   const thread = document.querySelector<HTMLDivElement>(".cc-thread")!;
   thread.scrollTop = 37;

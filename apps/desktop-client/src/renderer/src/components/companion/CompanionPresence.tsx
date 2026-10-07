@@ -313,7 +313,11 @@ export function CompanionPresence() {
     ? companionUserAnchor
     : COMPANION_HOME_ANCHORS[companionHomeZone];
   const hudPage = useRoomStore((state) => state.hudPage);
-  const companionPolicy = HUD_PAGES[hudPage].companion;
+  const guideFilm = useRoomStore(state => state.companionGuideFilm);
+  const companionPolicy = guideFilm ? { ...HUD_PAGES[hudPage].companion,
+    mode: "ambient" as const, seat: "right" as const, framing: "full" as const,
+    interaction: "none" as const, proactive: "silent" as const, draggable: false,
+  } : HUD_PAGES[hudPage].companion;
   const homeMode = companionPolicy.mode === "home";
   const sceneKey = surface ?? "room";
   const assessmentMode = companionPolicy.mode === "assessment";
@@ -720,8 +724,7 @@ export function CompanionPresence() {
         })) return;
       }
       const revealAt = prioritizedCue.priority === "ordinary" ? 3.2 : 1.05;
-      // 到点的**提醒**是用户亲口要过的东西（0238），不是她随口一提：气泡要停得久，
-      // 而且必须念出口——只在头顶闪 7.4 秒的闹钟等于没有闹钟。
+      // 到点的**提醒**是用户亲口要过的东西（0238），不是她随口一提：气泡要停得久。
       const isCommitment = prioritizedCue.origin === "reminder";
       const hideAt = prioritizedCue.priority === "ordinary"
         ? (prioritizedCue.thoughtId || isCommitment ? 30 : 7.4)
@@ -743,9 +746,11 @@ export function CompanionPresence() {
         setHomeCueThoughtId(prioritizedCue.thoughtId);
         // 主动开口不只是长出一个气泡：她得先有个"咦，你看这边"的动作。
         pushCharacterMoment("reminder");
-        if (prioritizedCue.priority !== "ordinary" || isCommitment) {
-          speakHomeV2Cue(prioritizedCue.text);
-        }
+        // 念想也要念出口（2026-10-07 用户决定）。这条生命周期只喂 `origin === "thought"`
+        // 的投递，到点的提醒走通知中心自己的 `audio`（`use-companion-notification-sources.ts`），
+        // 所以这里不会把同一句话念两遍。出声仍旧只在房间里生效：任务页、总静音、
+        // 窗口不可见时被 `audible` 闸挡下，气泡照旧。
+        speakHomeV2Cue(prioritizedCue.text);
         window.dispatchEvent(new CustomEvent("astella:home-v2-sound", { detail: { kind: "footstep" } }));
         if (prioritizedCue.priority === "ordinary") {
           try {
@@ -841,7 +846,7 @@ export function CompanionPresence() {
       // the seat and no surface list may shadow it here. Task pages are fixed,
       // fixed seats: nothing here reads user drag state.
       const seat = companionPolicy.seat;
-      const seatKey = `${surface ?? "room"}:${hudPage}`;
+      const seatKey = guideFilm ? "guide-film" : `${surface ?? "room"}:${hudPage}`;
       // Pages that declare no seat (wide formal pages) fade the resident out
       // instead of pinning it to a side.
       if (seat === "none") {
@@ -972,7 +977,7 @@ export function CompanionPresence() {
       window.cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [clampVisibleCompanion, companionPolicy.seat, companionPosition.x, companionPosition.y, homeMode, hudPage, projectCompanionIntoCamera, surface, targetWorldAnchor]);
+  }, [clampVisibleCompanion, companionPolicy.seat, companionPosition.x, companionPosition.y, homeMode, hudPage, projectCompanionIntoCamera, surface, targetWorldAnchor, guideFilm]);
 
   useGSAP(() => {
     if (!homeMode) return;
@@ -1534,6 +1539,7 @@ export function CompanionPresence() {
       data-companion-model-id={companionModelId}
       data-engaged={engaged || undefined}
       data-task-surface-quiet={taskSurfaceQuiet || undefined}
+      data-guide-film={guideFilm || undefined}
       data-presence-paused={presencePaused || undefined}
       data-external-modal={externalModalOpen || undefined}
       data-home-modal={homeV2ModalOpen || undefined}
@@ -1616,7 +1622,7 @@ export function CompanionPresence() {
             />
           </div>
           {status === "loading" && !presenceHidden ? (
-            <span className="companion-loading-state" role="status">{companionName} 正在来到书桌边…</span>
+            <span className="companion-loading-state" role="status">正在加载{companionName}的形象…</span>
           ) : null}
           {/* 脚边那张名牌（2026-10-02 用户裁决）不再出现：日常页原来把她形态名与
               「伴星」写成一枚深色药丸贴在角色右下角，页面本来就靠角色本身说明她在，
@@ -1699,8 +1705,8 @@ export function CompanionPresence() {
         <div className="companion-unavailable-notice">
           <SurfaceDataState
             kind="error"
-            message="伴星暂时不可用"
-            detail="学习功能不受影响。可以重新加载 Live2D，或先收起这张提示。"
+            message="伴星形象没有加载成功"
+            detail="可以重试加载形象，聊天和学习仍可继续。"
             onRetry={() => {
               setUnavailableNoticeDismissed(false);
               setStatus("loading");
@@ -1711,7 +1717,7 @@ export function CompanionPresence() {
               type="button"
               className="button"
               onClick={() => setUnavailableNoticeDismissed(true)}
-              aria-label="关闭伴星不可用提示"
+              aria-label="关闭形象加载失败提示"
             >
               <X size={13} aria-hidden="true" />知道了
             </button>

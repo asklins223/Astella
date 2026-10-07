@@ -17,8 +17,8 @@ import { formatAgo, formatMs, formatTime } from "../format.js";
 import { el, emptyState, ICONS, icon } from "../ui.js";
 
 export const view = {
-  title: "日志",
-  lede: "左边按级别筛选（数字是当前窗口里的条数），右边是实时流。内存里只保留最近一批，重启即清空——完整日志仍在容器里。",
+  title: "日志", eyebrow: "LIVE OBSERVATIONS",
+  lede: "实时追踪应用与请求，快速筛出值得关注的事件。",
   fill: true,
   load: loadLogs,
 };
@@ -111,7 +111,7 @@ async function loadLogs(ctx) {
 
   /* ── 右侧：工具栏 + 流 ── */
   const modeTabs = el("div", { class: "seg", role: "group", "aria-label": "日志流" });
-  const searchInput = el("input", { class: "field__input", type: "search", style: "flex:1;min-width:180px" });
+  const searchInput = el("input", { class: "field__input", type: "search", "aria-label": "搜索日志", style: "flex:1;min-width:180px" });
   const countNote = el("span", { class: "term__count" });
   const pauseButton = el("button", { class: "btn btn--sm", type: "button" });
 
@@ -156,6 +156,7 @@ async function loadLogs(ctx) {
   }
 
   function paintPauseButton() {
+    pauseButton.setAttribute("aria-pressed", String(state.paused));
     pauseButton.replaceChildren(
       icon(state.paused ? ICONS.play : ICONS.pause, { size: 12 }),
       el("span", { text: state.paused ? "继续" : "暂停" }),
@@ -165,6 +166,7 @@ async function loadLogs(ctx) {
     state.paused = !state.paused;
     paintPauseButton();
     if (!state.paused) render();
+    else countNote.textContent = `已暂停 · 缓冲 ${appEntries.length}/${appCapacity}`;
   });
   paintPauseButton();
 
@@ -274,9 +276,10 @@ async function loadLogs(ctx) {
 
   /* ── 初始数据 + 实时 ── */
   const [initialLogs, initialRequests] = await Promise.all([
-    api("/logs?level=trace&limit=200"),
+    api("/logs?level=trace&limit=500"),
     api("/logs/requests?limit=150"),
   ]);
+  if (!ctx.isActive()) return el("div");
   appEntries = initialLogs.entries ?? [];
   appCapacity = initialLogs.capacity ?? 500;
   requests = initialRequests.entries ?? [];
@@ -289,6 +292,8 @@ async function loadLogs(ctx) {
 
   const atTop = () => body.scrollTop < 40;
   function appendLiveLog(entry) {
+    if (appEntries.some((item) => item.seq === entry.seq)) return;
+    const previousHeight = body.scrollHeight;
     appEntries = [entry, ...appEntries].slice(0, 500);
     // 暂停的语义是"画面冻住"：只更新左栏计数，不重绘流本身。
     // （此前 paused 分支也会 render()，新日志照常插到顶部——暂停形同虚设。）
@@ -309,7 +314,9 @@ async function loadLogs(ctx) {
     const keep = atTop();
     if (first && first.classList.contains("empty")) render();
     else body.prepend(logRow(entry, { isNew: true }));
-    if (!keep) body.scrollTop += 34;
+    const retained = new Set(appEntries.map((item) => String(item.seq)));
+    body.querySelectorAll("[data-seq]").forEach((node) => { if (!retained.has(node.dataset.seq)) node.remove(); });
+    if (!keep) body.scrollTop += body.scrollHeight - previousHeight;
   }
 
   let requestRerenderPending = false;

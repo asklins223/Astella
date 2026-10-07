@@ -101,6 +101,7 @@ export async function runStreamingAgentStep(args: {
    */
   releaseGate?: () => Promise<boolean>;
 }): Promise<AgentTurnResult> {
+  args.ctxSignal.throwIfAborted();
   const controller = new AbortController();
   const onCtxAbort = (): void => controller.abort();
   args.ctxSignal.addEventListener("abort", onCtxAbort, { once: true });
@@ -203,8 +204,8 @@ export async function runStreamingAgentStep(args: {
     deliver(text);
   };
 
-  if (args.releaseGate) {
-    void args.releaseGate().then((allowed) => {
+  const gateSettled = args.releaseGate
+    ? args.releaseGate().then((allowed) => {
       if (discarded || stopped) return;
       if (!allowed) {
         // 整版作废：此刻一个字都没下发，重跑不需要撤回任何东西。
@@ -219,8 +220,7 @@ export async function runStreamingAgentStep(args: {
       discarded = true;
       stopped = true;
       controller.abort();
-    });
-  }
+    }) : Promise.resolve();
 
   const feedDecoder = (text: string): void => {
     for (const chunk of envelopeDecoder.push(text)) {
@@ -264,11 +264,13 @@ export async function runStreamingAgentStep(args: {
 
   try {
     const { content, toolCalls, finishReason } = await runWithAbortBudget(
-      (signal) => args.provider.chatCompletionStream!(
+      async (signal) => {
+        const result = await args.provider.chatCompletionStream!(
         messages,
         {
           maxTokens: args.stepRequest.maxTokens,
           temperature: args.stepRequest.temperature,
+          disableThinking: args.stepRequest.disableThinking,
           // 2026-09-19 ④ 修复：终答步明确要**自然文本**，不再强制 json_object。
           //
           // 曾经强制 JSON 是因为"用户消息是一整份 JSON 文档"，模型于是用文档回文档；
@@ -298,7 +300,13 @@ export async function runStreamingAgentStep(args: {
           if (stopped || delta.length === 0) return;
           consume(delta);
         },
-      ),
+        );
+        // A fast provider may finish before classification. Keep this step alive
+        // until the gate has released/discarded its held text, under the same
+        // abort/deadline budget, then drain delivery before returning its result.
+        await gateSettled;
+        return result;
+      },
       controller.signal,
       args.timeoutMs,
     );
@@ -323,6 +331,8 @@ export async function runStreamingAgentStep(args: {
     if (stopped && !(error instanceof CompanionStreamStoppedError)) {
       throw new CompanionStreamStoppedError("companion stream stopped by delivery pipeline");
     }
+    stopped = true;
+    controller.abort();
     throw error;
   } finally {
     args.ctxSignal.removeEventListener("abort", onCtxAbort);

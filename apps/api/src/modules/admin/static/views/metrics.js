@@ -20,8 +20,8 @@ import { SERIES_COLORS, seriesChart } from "./shared.js";
 import { summarize } from "../charts.js";
 
 export const view = {
-  title: "指标",
-  lede: "左边是此刻的读数（滚动时保持可见），右边是曲线。耗时按直方图插值估算，看趋势足够，精确告警仍以原始指标为准。",
+  title: "指标", eyebrow: "PERFORMANCE",
+  lede: "从此刻的读数，到过去半小时的性能走势。",
   load: loadMetrics,
 };
 
@@ -57,6 +57,7 @@ async function loadMetrics(ctx) {
     api("/metrics"),
     api("/metrics/series").catch(() => ({ points: [], series: [], spanMs: 0 })),
   ]);
+  if (!ctx.isActive()) return el("div");
   const wrap = el("div", {});
   const allPoints = series.points ?? [];
   const last = allPoints.length ? allPoints[allPoints.length - 1] : null;
@@ -155,7 +156,7 @@ async function loadMetrics(ctx) {
       );
       const figureEl = seriesChart({
         points,
-        key: meta.key,
+        key: meta.key, label: meta.label,
         color: SERIES_COLORS[meta.key],
         unit: meta.unit,
         tall: true,

@@ -147,9 +147,11 @@ export const companionHomeProjectionV1Schema = z.strictObject({
     /** 念头管线切片④：cue 源自 assistant_thoughts 时携带，气泡可点开主动开场。 */
     thoughtId: z.string().uuid().optional(),
     /**
-     * 这条主动提示是谁：到点的**提醒**必须和随口一提的念头区分开——
-     * 用户是明确要求过它的，气泡要停得更久、也要念出口；
+     * 这条主动提示是谁：到点的**提醒**要和随口一提的念头区分开——
+     * 用户是明确要求过它的，气泡要停得更久，而且走通知中心那条会出声的通道；
      * 两者共用 7.4 秒的普通气泡就等于把闹钟当成便签。
+     * 念想同样念出口（2026-10-07 用户决定），只是走伴星身边的主动提示音：
+     * 进了任务页、总静音或窗口不可见时她不出声，气泡照旧。
      */
     origin: z.enum(["thought", "reminder", "system"]).default("system"),
   }).nullable(),

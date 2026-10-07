@@ -40,7 +40,7 @@ const expansionReadArgs = noteArgs.extend({
   draftsUpdatedAt: z.string().max(64).optional(),
 });
 export const noteAgentCapabilityManifest = [
-  manifest("note_read", "按冻结版本读取一篇实际可见的笔记，获取可核对正文。输入必须来自目标的材料引用；长文返回有界正文与覆盖信息，可用 nextStartOrdinal 继续读。", "read", noteArgs.extend({ startOrdinal: z.number().int().positive().optional() }), { label: "读取笔记", methodStep: "先读取新材料的正文，明确内容与边界。" }),
+  manifest("note_read", "按冻结版本读取一篇实际可见的笔记，获取可核对正文。输入必须来自目标的材料引用；长文返回有界正文与覆盖信息，同时用 nextStartOrdinal 与 nextStartOffset 作为 startOrdinal、startOffset 继续读。", "read", noteArgs.extend({ startOrdinal: z.number().int().positive().optional(), startOffset: z.number().int().nonnegative().optional() }), { label: "读取笔记", methodStep: "先读取新材料的正文，明确内容与边界。" }),
   manifest("note_overview_generate", "生成这版笔记的速看。返回 accepted、稳定 operationId 与 execution 引用；后台返回真实产物后才算完成。不要重复提交同一个产物。", "reversible_low", noteArgs, { label: "整理速看", methodStep: "根据当前材料整理速看，核对真实保存的内容。", discovery: "把一篇笔记的重点整理清楚，留着随时回看。" }),
   manifest("note_dynamic_artifact_generate", "为这版笔记生成互动讲解演示。返回 accepted、稳定 operationId 与 execution 引用；后台核对产物后才能交付。材料过长或不适合会返回真实失败，不虚构演示。", "reversible_low", noteArgs, { label: "准备互动演示", methodStep: "按当前材料制作互动演示，等待并核对真实结果。", discovery: "用可操作的演示讲清概念，材料和想观察的变化先一起确定。" }),
   manifest("note_expansion_generate", "基于这版笔记生成一批可挑选的知识拓展草稿，用于把一个概念往前追。accepted 只代表已接受，不是完成；后台保存真实草稿后才算完成，产物是等用户自己挑选的草稿，不会变成新笔记，也不会自动制卡。用户没有明确要看别的方向就不要顺手启动。", "reversible_low", noteArgs, { label: "准备拓展草稿", methodStep: "沿当前目标准备拓展草稿，保留来源，交给用户选择。", discovery: "沿一个概念往外探索，保留来源，先给你可选择的草稿。" }),

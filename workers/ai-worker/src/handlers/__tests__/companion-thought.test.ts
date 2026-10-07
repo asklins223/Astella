@@ -6,6 +6,7 @@ import { containsCompanionInternalToken } from "../companion-dialogue-content.ts
 import {
   buildDeterministicThoughts,
   buildExpressionPrompt,
+  buildThoughtCandidatePrompt,
   cosineSimilarity,
   evaluateRoutineCueTiming,
   finalizeThoughtExpression,
@@ -19,6 +20,27 @@ import {
   validateThoughtExpression,
   type ThoughtMaterial,
 } from "../companion-thought.ts";
+import { resolveCompanionPersonaContext } from "../companion-identity-context.ts";
+
+test("主动念头候选与表达使用同一份完整人格，没有账号档案也有系统默认", () => {
+  const custom = resolveCompanionPersonaContext({ name: "墨墨", speakingStyle: "安静、直白，偶尔干巴巴地幽默",
+    personalityTags: ["慢热", "爱画画"], examples: [{text:"嗯，这一笔我喜欢。"}],
+    activeness: "quiet", boundaries: {allowPlayful:true,allowNudgeLearning:false,allowVoiceTags:false} });
+  const material = baseMaterial({ petProfile: custom, petName: custom.name });
+  const candidatePrompt = buildThoughtCandidatePrompt(material, 2);
+  const expressionPrompt = buildExpressionPrompt({ ...material, facts:null,
+    thoughtText:"刚才那张草图还有一处留白",groundingNames:[],recentlySaid:[] });
+  for (const prompt of [candidatePrompt, expressionPrompt]) {
+    assert.ok(prompt.includes(custom.speakingStyle));
+    assert.ok(prompt.includes("慢热、爱画画"));
+    assert.ok(prompt.includes("嗯，这一笔我喜欢。"));
+    assert.ok(prompt.includes("用户关掉了「学习提醒」"));
+    assert.ok(prompt.includes("<persona_data>"));
+  }
+  const defaultPersona = resolveCompanionPersonaContext(null);
+  assert.equal(defaultPersona.name, "爱吃白饭的大肥鱼");
+  assert.ok(buildThoughtCandidatePrompt(baseMaterial({petProfile:defaultPersona}),1).includes(defaultPersona.speakingStyle));
+});
 
 function baseMaterial(overrides: Partial<ThoughtMaterial> = {}): ThoughtMaterial {
   return {

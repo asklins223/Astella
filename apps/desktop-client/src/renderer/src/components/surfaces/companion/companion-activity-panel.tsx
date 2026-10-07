@@ -113,13 +113,13 @@ export function ActivityPanel(props: ActivityPanelProps) {
     const push = (label: string, state: string) => {
       if (rows.length < 12) rows.push({ label, state });
     };
-    if (props.learningLoading) push("正在读取学习状态", ACTIVITY_SECTIONS.learning);
+    if (props.learningLoading) push("正在加载学习状态", ACTIVITY_SECTIONS.learning);
     else if (!props.learningContextSection.ok) push(ACTIVITY_LINES.learningUnavailable, ACTIVITY_SECTIONS.learning);
     else if (resumeCandidate) push(resumeCandidate.title, ACTIVITY_SECTIONS.learning);
     else if (startCandidate) push(startCandidate.title, ACTIVITY_SECTIONS.learning);
     else push(ACTIVITY_LINES.learningNothing.message, ACTIVITY_SECTIONS.learning);
 
-    if (props.deliveryLoading) push("正在读取动态", ACTIVITY_SECTIONS.feed);
+    if (props.deliveryLoading) push("正在加载动态", ACTIVITY_SECTIONS.feed);
     else if (!props.deliverySection.ok) push(ACTIVITY_LINES.feedUnavailable, ACTIVITY_SECTIONS.feed);
     else if (props.deliveries.length === 0) push(ACTIVITY_LINES.feedEmpty.message, ACTIVITY_SECTIONS.feed);
     else {
@@ -127,7 +127,7 @@ export function ActivityPanel(props: ActivityPanelProps) {
       [...proposals, ...messages, ...(historyOpen ? resolved : [])].forEach((item) => push(item.label, ACTIVITY_SECTIONS.feed));
     }
 
-    if (props.journeyLoading) push("正在读取旅程", ACTIVITY_SECTIONS.journey);
+    if (props.journeyLoading) push("正在加载旅程", ACTIVITY_SECTIONS.journey);
     else if (!journeyState) push(ACTIVITY_LINES.journeyUnavailable, ACTIVITY_SECTIONS.journey);
     else if (journeyState.journey) push(journeyCardTitle(journeyState.journey), ACTIVITY_SECTIONS.journey);
     else if (journeyState.invitation.status === "offered" || journeyState.invitation.status === "deferred") push(ACTIVITY_LINES.journeyInvite.title, ACTIVITY_SECTIONS.journey);
@@ -153,7 +153,7 @@ export function ActivityPanel(props: ActivityPanelProps) {
     <CenterFeedback error={props.error} />
     <section className="cc-learning-continuation" aria-label="学习衔接">
       <span className="cc-kicker">继续学习</span>
-      {props.learningLoading ? <p role="status">正在读取学习状态</p> : !props.learningContextSection.ok
+      {props.learningLoading ? <p role="status">正在加载学习状态</p> : !props.learningContextSection.ok
         ? <SectionState message={ACTIVITY_LINES.learningUnavailable} detail={props.learningContextSection.message} onRetry={props.onRetry} />
         : resumeCandidate ? <div><span><strong>{resumeCandidate.title}</strong><p>{resumeCandidate.targetSummary}</p><small>{resumeCandidate.impactSummary}</small></span><button type="button" className="button primary" onClick={() => props.onResumeLearning(resumeCandidate.runId)}>{RESUME_RUN_ACTION_LABEL}</button></div>
         : startCandidate ? <div><span><strong>{startCandidate.title}</strong><p>{startCandidate.targetSummary}</p><small>{startCandidate.impactSummary}</small></span><button type="button" onClick={() => props.onOpenObjective(startCandidate.objectiveId)}>查看目标</button></div>
@@ -161,7 +161,7 @@ export function ActivityPanel(props: ActivityPanelProps) {
     </section>
     <div className="cc-activity-columns">
       <section className="cc-timeline" aria-label="主动投递与状态更新"><h3>最近动态</h3>
-        {props.deliveryLoading ? <SectionState message="正在读取动态" /> : !props.deliverySection.ok ? <SectionState message={ACTIVITY_LINES.feedUnavailable} detail={props.deliverySection.message} onRetry={props.onRetry} />
+        {props.deliveryLoading ? <SectionState loading message="正在加载动态" /> : !props.deliverySection.ok ? <SectionState message={ACTIVITY_LINES.feedUnavailable} detail={props.deliverySection.message} onRetry={props.onRetry} />
           : !props.deliveries.length ? <SectionState message={ACTIVITY_LINES.feedEmpty.message} detail={ACTIVITY_LINES.feedEmpty.detail} />
           : <>{proposals.length ? <div className="cc-timeline-group"><h4>待选择 · {proposals.length}</h4>{proposals.map(renderDelivery)}</div> : null}
             {messages.length ? <div className="cc-timeline-group"><h4>留给你的消息 · {messages.length}</h4>{messages.map(renderDelivery)}</div> : null}
@@ -169,7 +169,7 @@ export function ActivityPanel(props: ActivityPanelProps) {
             {resolved.length ? <details className="cc-timeline-history" open={historyOpen} onToggle={event => setHistoryOpen(event.currentTarget.open)}><summary>{resolvedGroupLabel(resolved.length)}</summary>{resolved.map(renderDelivery)}</details> : null}</>}
       </section>
       <aside className="cc-journey" aria-label="伴星旅程"><Sparkles size={20} aria-hidden="true" /><h3>伴星旅程</h3><p className="cc-muted">跟随这个书房的真实学习进度。</p>
-        {props.journeyLoading ? <p role="status">正在读取旅程</p> : !journeyState ? <SectionState message={ACTIVITY_LINES.journeyUnavailable} detail={!props.section.ok ? props.section.message : undefined} onRetry={props.onRetry} /> : <>
+        {props.journeyLoading ? <p role="status">正在加载旅程</p> : !journeyState ? <SectionState message={ACTIVITY_LINES.journeyUnavailable} detail={!props.section.ok ? props.section.message : undefined} onRetry={props.onRetry} /> : <>
           {!journeyState.journey && ["offered", "deferred"].includes(journeyState.invitation.status) ? <div><strong>{ACTIVITY_LINES.journeyInvite.title}</strong><p>{ACTIVITY_LINES.journeyInvite.summary}</p><button type="button" className="button primary" disabled={props.busy} onClick={() => props.onStart("start_journey")}>开始旅程</button></div> : null}
           {!journeyState.journey && journeyState.invitation.status === "skipped" ? <div><strong>{ACTIVITY_LINES.journeySkipped.title}</strong><p>{ACTIVITY_LINES.journeySkipped.summary}</p><button type="button" disabled={props.busy} onClick={() => props.onStart("replay")}>重新邀请</button></div> : null}
           {!journeyState.journey && journeyState.invitation.status === "accepted" ? <div><p>{ACTIVITY_LINES.journeyNone.message}</p><button type="button" disabled={props.busy} onClick={() => props.onStart("replay")}>重新开始旅程</button></div> : null}

@@ -2,7 +2,7 @@ import { noteReflectionPageV1Schema, noteReflectionWriteResultV1Schema, type Not
 import type { NoteDocLocalSession } from "./desktop-gateway-ns-note";
 const noteDocLocalSessions = new Map<string, NoteDocLocalSession>();
 import * as ns_note from "./desktop-gateway-ns-note";
-import type { CompanionGuidanceAudioCache } from "./companion-guidance-audio-cache";
+import type { CompanionVoiceAudioCache } from "./companion-voice-audio-cache";
 import { noteAnnotationPageV1Schema, noteAnnotationWriteResultV1Schema, createNoteAnnotationTaskV1Schema, noteAnnotationLatestTaskQueryV1Schema, noteAnnotationLatestTaskV1Schema, noteAnnotationTaskV1Schema, type NoteAnnotationCommandV1 } from "@astella/shared/note-annotation-contracts";
 import {
   createNoteOverviewTaskV1Schema,
@@ -657,7 +657,8 @@ export class DesktopGateway {
     private readonly env: NodeJS.ProcessEnv = process.env,
     options: {
       credentials?: SessionCredentialStore | null;
-      guidanceAudioCache?: CompanionGuidanceAudioCache;
+      guidanceAudioCache?: CompanionVoiceAudioCache;
+      thoughtAudioCache?: CompanionVoiceAudioCache;
       /**
        * 协同传输的实现。默认用真的 Hocuspocus provider；测试里换成假的，才能断言
        * "该不该建这条连接"（门控）与"帧怎么转发"，而不是去连一个真服务端。
@@ -697,6 +698,7 @@ export class DesktopGateway {
       connection,
       trust,
       options.guidanceAudioCache ?? null,
+      options.thoughtAudioCache ?? null,
     );
     this.bridge = new CompanionBridge(this.transport);
   }

@@ -97,15 +97,19 @@ export function foldReplayUnderSummaryCoverage(
 ): { replay: ReplayFoldResult; receipt: CompactionFoldReceipt | null } {
   const { system, tail, trailing, coverage } = input;
   const through = coverage?.throughSeq ?? null;
+  const from = coverage?.fromSeq ?? null;
   const sourceSha256 = coverage?.sourceSha256 ?? null;
   const keep = (): { replay: ReplayFoldResult; receipt: null } => ({
     replay: { system: [...system], tail: tail.map(entry => entry.message), trailing: [...trailing] },
     receipt: null,
   });
-  if (!through || !sourceSha256 || tail.length === 0) return keep();
+  if (!from || !through || !sourceSha256 || tail.length === 0) return keep();
   let boundary: bigint;
+  let beginning: bigint;
   try {
     boundary = BigInt(through);
+    beginning = BigInt(from);
+    if (beginning < 1n || beginning > boundary) return keep();
   } catch {
     return keep();
   }
@@ -116,7 +120,8 @@ export function foldReplayUnderSummaryCoverage(
     let covered = false;
     if (entry.seq) {
       try {
-        covered = BigInt(entry.seq) <= boundary;
+        const seq = BigInt(entry.seq);
+        covered = seq >= beginning && seq <= boundary;
       } catch {
         covered = false;
       }
@@ -129,9 +134,9 @@ export function foldReplayUnderSummaryCoverage(
   const coverageFrom = coverage?.fromSeq ?? null;
   let uncoveredBefore: string | null = null;
   try {
-    // 摘要起点之前还有一段没被任何摘要盖住：折完之后那段的代表只能是原文，
-    // 而原文已经被折掉了——如实记下来，别让「有摘要」冒充「全读过」。
-    if (coverageFrom && BigInt(foldedSeqs[0]!) < BigInt(coverageFrom) - 1n) uncoveredBefore = foldedSeqs[0]!;
+    // 未覆盖的前缀仍保留原文；记录它，便于说明压缩为什么没有折掉全部历史。
+    const firstUncovered = tail.find(entry => entry.seq && BigInt(entry.seq) < beginning);
+    if (coverageFrom && firstUncovered) uncoveredBefore = firstUncovered.seq;
   } catch {
     uncoveredBefore = null;
   }

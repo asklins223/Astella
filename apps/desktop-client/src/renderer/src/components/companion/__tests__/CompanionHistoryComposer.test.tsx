@@ -5,7 +5,7 @@ import { CompanionHistoryComposer } from "../CompanionHistoryComposer";
 import type { CompanionVoiceInput } from "../use-companion-voice-input";
 
 const voice: CompanionVoiceInput = {
-  phase: "idle", note: null, noteRevision: 0, supported: true,
+  phase: "idle", activity: "idle", lastTurn: null, pause: () => {}, resume: () => {}, interrupt: () => {}, sendNow: () => {}, note: null, noteRevision: 0, supported: true,
   toggle: () => {}, cancel: () => {}, dismissNote: () => {}, subscribeLevel: () => () => {},
   modelMissing: false, caption: null,
 };
@@ -93,7 +93,7 @@ it("shows the pending attachment and keeps send off until the upload has an answ
  */
 it("把实时字幕摆在手记这一面，跟着说话进度长", () => {
   const view = render(<CompanionHistoryComposer {...props} voice={{ ...voice, phase: "open" }} />);
-  expect(screen.getByRole("status").textContent).toContain("我在听，说完就发给她");
+  expect(screen.getByRole("status").textContent).toContain("正在听你说话，停顿后自动发送");
   view.rerender(<CompanionHistoryComposer {...props}
     voice={{ ...voice, phase: "open", caption: { text: "这一段我没看懂", sending: false } }} />);
   expect(screen.getByRole("status").textContent).toBe("这一段我没看懂");

@@ -4,9 +4,9 @@ import { createHash } from "node:crypto";
 import { applyDeterministicToneToSegments } from "../../lib/companion-tone.ts";
 import {
   COMPANION_HOST_PROTOCOL_V5,
-  COMPANION_IDENTITY_BOUNDARY_V2,
-  COMPANION_PERSONA_V7,
-  COMPANION_PERSONA_V7_PROMPT_ID,
+  COMPANION_IDENTITY_BOUNDARY_V3,
+  COMPANION_PERSONA_V8,
+  COMPANION_PERSONA_V8_PROMPT_ID,
   type ChatMessage,
 } from "@astella/shared";
 import {
@@ -63,16 +63,16 @@ test("摘要裁剪水位复用 prompt 的可见尾部选择规则", () => {
     { seq: "3", role: "user", text: "哈哈" },
     { seq: "4", role: "assistant", text: "嗯" },
   ]);
-  assert.deepEqual(paired.map((message) => message.seq), ["1", "2"],
-    "退化的 assistant 回合与它对应的问题都不进入 prompt 水位");
+  assert.deepEqual(paired.map((message) => message.seq), ["1", "2", "3", "4"],
+    "完整保留有效短回合与用户原话");
 
   const budgeted = boundCompanionRecentHistory([
     { seq: "1", role: "user", text: "旧消息".repeat(4_000) },
     { seq: "2", role: "user", text: "中间消息".repeat(3_000) },
     { seq: "3", role: "user", text: "新消息".repeat(4_000) },
   ]);
-  assert.deepEqual(budgeted.map((message) => message.seq), ["2", "3"],
-    "24k 字符预算丢弃超预算的更早消息，并保留实际进入 prompt 的尾部");
+  assert.deepEqual(budgeted.map((message) => message.seq), ["1", "2", "3"],
+    "完整近期消息交给 token 预算治理");
 
   const windowed = boundCompanionRecentHistory(Array.from({ length: 21 }, (_, index) => ({
     seq: String(index + 1),
@@ -162,18 +162,18 @@ test("T0：回合编码是原生多轮（历史是真 messages，上下文是 sy
   assert.equal(messages[0].role, "system");
   // persona 正文必须原样在最前；其后允许追加安全护栏（2026-09-19 起多了
   // 反回显护栏——实机出现过模型把输入上下文整段复述成回复）。
-  assert.ok(String(messages[0].content).startsWith(COMPANION_PERSONA_V7),
-    "现役 v7 prompt（含宿主协议与角色底座）必须是 system 消息的第一段");
-  assert.ok(String(messages[0].content).includes(COMPANION_IDENTITY_BOUNDARY_V2),
+  assert.ok(String(messages[0].content).startsWith(COMPANION_PERSONA_V8),
+    "现役 v8 prompt（含宿主协议与角色底座）必须是 system 消息的第一段");
+  assert.ok(String(messages[0].content).includes(COMPANION_IDENTITY_BOUNDARY_V3),
     "固定身份边界必须进入实际装配的对话 prompt");
   assert.ok(
-    String(messages[0].content).indexOf(COMPANION_IDENTITY_BOUNDARY_V2)
+    String(messages[0].content).indexOf(COMPANION_IDENTITY_BOUNDARY_V3)
       < String(messages[0].content).indexOf("<persona_data>"),
     "身份事实不能被账号可编辑风格覆盖",
   );
   assert.match(String(messages[0].content), /不要复述、转述、续写或回显/);
   assert.match(String(messages[0].content), /对“详细理解什么是 X”这类问题，解释 X 本身即可/);
-  assert.match(String(messages[0].content), /没有亲身见闻或实际读取回执时/);
+  assert.match(String(messages[0].content), /外部事件、读取与操作以本轮可见记录或实际回执为依据/);
   // 历史不再是"JSON 里的 recentMessages 数组"，而是**真正的轮次**。
   assert.deepEqual(messages.slice(1, 3), [
     { role: "user", content: "昨天学了光合作用" },
@@ -201,7 +201,7 @@ test("方法目录、人格和固定协议进入同一 system 消息，当前提
     petProfile: { name: "小伴星", speakingStyle: "简洁温暖", personalityTags: [], examples: [] },
   });
   assert.equal(messages.filter(message => message.role === "system").length, 1);
-  assert.ok(String(messages[0].content).includes(COMPANION_IDENTITY_BOUNDARY_V2));
+  assert.ok(String(messages[0].content).includes(COMPANION_IDENTITY_BOUNDARY_V3));
   assert.match(String(messages[0].content), /小伴星/);
   assert.match(String(messages[0].content), /<method_catalog>先读新材料/);
   assert.deepEqual(messages.at(-1), { role: "user", content: "今天只是想聊晚饭。" });
@@ -304,7 +304,7 @@ test("active 目录只含有界元数据，并提示相关时按 ID 与版本展
     "目录文本和其中的时间不能变成用户可见输出或数字来源");
 });
 
-test("persona 输入边界：整段历史 ≤24k 字符（从最新消息向前累计）", () => {
+test("persona 历史：完整的最近20条交给请求预算治理", () => {
   const many = Array.from({ length: 20 }, (_, i) => ({
     role: "user" as const,
     text: `m${i}-` + "x".repeat(4_000),
@@ -317,8 +317,8 @@ test("persona 输入边界：整段历史 ≤24k 字符（从最新消息向前�
   // 去掉 system 与末尾的当前问句，剩下的是历史轮次。
   const history = messages.slice(1, -1);
   const totalChars = history.reduce((sum, m) => sum + String(m.content).length, 0);
-  assert.ok(totalChars <= 24_000, `historyChars=${totalChars}`);
-  assert.ok(history.length < 20, "预算不足时必须丢弃更早的历史");
+  assert.equal(totalChars, many.reduce((sum, m) => sum + m.text.length, 0));
+  assert.equal(history.length, 20);
   // 保留的是最近的消息（尾部），不是最早的消息。
   assert.match(String(history.at(-1)?.content), /^m19-/);
 });
@@ -370,7 +370,7 @@ test("petProfile 是数据不是指令：边界标记 + 注入文本不可伪造
   assert.ok(!styleLine.includes("</persona_data>"), "字段不能带出闭合标记");
 });
 
-test("persona 输入边界：recent ≤20 条、单条 12k、当前问句 4k 截断", () => {
+test("persona 输入边界：recent ≤20条，当前合法问句不截断", () => {
   const many = Array.from({ length: 30 }, (_, i) => ({
     role: "user" as const,
     text: `m${i}`,
@@ -382,7 +382,7 @@ test("persona 输入边界：recent ≤20 条、单条 12k、当前问句 4k 截
   });
   // system + 20 条历史 + 当前问句
   assert.equal(messages.length, 1 + 20 + 1);
-  assert.equal(String(messages.at(-1)?.content).length, 4_000);
+  assert.equal(String(messages.at(-1)?.content).length, 5_000);
   // 记忆/上下文不再截断（截断的残缺上下文会产生误导；6bf2ac3）：
   // pageContext 以完整 canonical JSON 注入 system 数据块。
   assert.match(String(messages[0].content), /y{3000}/);
@@ -508,7 +508,7 @@ test("buildFinalCuePayload：确定性常量（thinking/error）不被误改", (
 });
 
 test("prompt id 常量与 shared 一致", () => {
-  assert.equal(COMPANION_PERSONA_V7_PROMPT_ID, "companion-persona-v7");
+  assert.equal(COMPANION_PERSONA_V8_PROMPT_ID, "companion-persona-v8");
 });
 
 test("§4.8：markdown 留在可见正文里，交给渲染层排版", () => {
@@ -796,7 +796,7 @@ test("环境快照原文不得被当成正文回显出去", () => {
   if (!verdict.ok) assert.equal(verdict.reason, "internal_token_leak");
 });
 
-test("退化 assistant 轮连同它回答的那个用户问句一起剔除", () => {
+test("不能按回答长度剔除历史或删掉它的用户问句", () => {
   const messages = buildCompanionPersonaMessages({
     userText: "最近写了啥",
     recentMessages: [
@@ -808,10 +808,9 @@ test("退化 assistant 轮连同它回答的那个用户问句一起剔除", () 
     pageContext: null,
   });
   const bodies = messages.slice(1, -1).map((m) => String(m.content));
-  // 退化的答案被剔除；**它回答的那句提问也必须一起剔除**——否则历史里留下一个
-  // 没被回答的问题，模型会去补答它（实机回归：问「哈哈」答「有25个到期该复习啦」）。
-  assert.ok(!bodies.includes("今天"), "1–3 字的 assistant 前科必须被剔除");
-  assert.ok(!bodies.includes("我今天学了多久"), "被剔除答案所回答的提问必须一起剔除");
+  // 当前意图与收尾记录控制旧任务；长度不能证明消息是否有效。
+  assert.ok(bodies.includes("今天"));
+  assert.ok(bodies.includes("我今天学了多久"));
   // 正常长度的 assistant 轮及其提问原样保留。
   assert.ok(bodies.some((b) => b.startsWith("嗯嗯，我在听呢")), "正常轮次不得被牵连");
   assert.ok(bodies.includes("我随便说说"), "正常轮次的提问必须保留");
@@ -1073,7 +1072,8 @@ test("活跃度 active 与 quiet 必须产出不同的行为指令，而不是�
   const quiet = systemOf(personaProfile({ activeness: "quiet" }));
   assert.match(active, /把你设为「活跃」/);
   assert.match(active, /限定篇幅或只要答案时.*不补充解释或追问/);
-  assert.match(active, /主动抛一个跟当前话题连着的小问题或提议/);
+  assert.match(active, /有具体理由时才提问题或建议/);
+  assert.match(active, /不必每轮留下邀请/);
   assert.match(quiet, /把你设为「安静」/);
   assert.match(quiet, /不主动开新话题、不追问/);
   assert.ok(!quiet.includes("把你设为「活跃」"));

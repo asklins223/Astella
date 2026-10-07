@@ -21,16 +21,17 @@
 
 import { api } from "../api-client.js";
 import { formatAgo, formatBytes, formatCount, formatDateTime, formatDuration } from "../format.js";
-import { el, section, table, emptyState, badge, confirmDialog, toast } from "../ui.js";
+import { el, bindTabList, section, table, emptyState, badge, confirmDialog, toast } from "../ui.js";
 
 export const view = {
-  title: "基础设施",
-  lede: "这套栈的容器、数据库与对象存储。选中一个容器可以看日志、做启动/停止/重启——只作用于本 compose 项目里的服务。",
+  title: "基础设施", eyebrow: "INFRASTRUCTURE",
+  lede: "检查服务与资源，从容器状态一路追到日志。",
   load: loadInfra,
 };
 
 const POLL_MS = 8000;
 const FOLLOW_MS = 5000;
+let lastSelectedService = null;
 const LEVEL_TOKEN = /\b(FATAL|ERROR|WARN|INFO|DEBUG|TRACE)\b/;
 
 function statusText(container) {
@@ -89,6 +90,7 @@ function logLine(text) {
 
 async function loadInfra(ctx) {
   const data = await api("/infra");
+  if (!ctx.isActive()) return el("div");
   const wrap = el("div", {});
 
   const timers = { poll: null, follow: null };
@@ -108,6 +110,7 @@ async function loadInfra(ctx) {
     const list = el("div", { class: "list", role: "tablist", "aria-label": "容器" });
     const detail = el("div", { class: "detail" });
     split.append(list, detail);
+    ctx.onCleanup(bindTabList(list, detail, "containers"));
     wrap.append(section("容器", `${data.docker.containers.length} 个 · 项目 ${data.docker.project}`,
       el("div", { class: "dim", style: "font-size:11.5px;margin-bottom:12px" },
         "只列出并操作本 compose 项目里的服务；启停/重启都会留下服务日志。"),
@@ -115,7 +118,8 @@ async function loadInfra(ctx) {
 
     let containers = data.docker.containers;
     // 默认选中"最需要看"的那个：第一个不健康的；都健康就选面板自己。
-    let selected = containers.findIndex((c) => c.tone !== "ok");
+    let selected = containers.findIndex((c) => c.service === lastSelectedService);
+    if (selected < 0) selected = containers.findIndex((c) => c.tone === "bad" || c.tone === "warn");
     if (selected < 0) selected = containers.findIndex((c) => c.isSelf);
     if (selected < 0) selected = 0;
 
@@ -169,7 +173,7 @@ async function loadInfra(ctx) {
         detail.replaceChildren(el("div", { class: "empty" }, el("strong", { text: "没有可展示的容器" })));
         return;
       }
-      actionsRow.replaceChildren(
+      actionsRow.replaceChildren(...[
         el("button", {
           class: "btn btn--sm", type: "button", text: "启动",
           disabled: container.state === "running",
@@ -186,7 +190,7 @@ async function loadInfra(ctx) {
           onclick: () => void runAction(container, "restart"),
         }),
         container.isSelf ? el("span", { class: "badge badge--warn", text: "面板自身" }) : null,
-      );
+      ].filter(Boolean));
       paintInfo(container);
 
       metersPainted = false;
@@ -217,7 +221,10 @@ async function loadInfra(ctx) {
     }
 
     let metersPainted = false;
+    let statsRevision = 0;
+    let logsRevision = 0;
     async function fetchStats(container, { silent = false } = {}) {
+      const requestId = ++statsRevision;
       // 首次加载给占位；轮询时保持旧值（每 8 秒闪一次"…"比暂时读旧值更糟）。
       if (!metersPainted || !silent) {
         metersBox.replaceChildren(miniFigure("CPU", "…"), miniFigure("内存", "…"));
@@ -229,6 +236,7 @@ async function loadInfra(ctx) {
       }
       try {
         const stats = await api(`/infra/containers/${encodeURIComponent(container.service)}/stats`);
+        if (!ctx.isActive() || requestId !== statsRevision || containers[selected]?.service !== container.service) return;
         const uptime = uptimeSeconds(container);
         const cpu = stats.cpuPercent;
         const memRatio = stats.memoryBytes !== null && stats.memoryLimitBytes
@@ -253,6 +261,7 @@ async function loadInfra(ctx) {
         );
         metersPainted = true;
       } catch {
+        if (!ctx.isActive() || requestId !== statsRevision || containers[selected]?.service !== container.service) return;
         if (!metersPainted) metersBox.replaceChildren(miniFigure("资源用量", "读取失败", { hint: "下一次轮询会重试" }));
       }
     }
@@ -291,6 +300,8 @@ async function loadInfra(ctx) {
     function select(index) {
       if (index < 0 || index >= containers.length) return;
       selected = index;
+      lastSelectedService = containers[index].service;
+      metersPainted = false;
       paintList();
       paintDetail();
       stopFollow();
@@ -302,8 +313,10 @@ async function loadInfra(ctx) {
     async function refresh({ full = false } = {}) {
       try {
         const next = await api("/infra");
-        if (!next.docker.available) return;
+        if (!ctx.isActive() || !next.docker.available) return;
+        const service = containers[selected]?.service;
         containers = next.docker.containers;
+        selected = Math.max(0, containers.findIndex((container) => container.service === service));
         paintList();
         const container = containers[selected];
         if (!container) return;
@@ -342,8 +355,12 @@ async function loadInfra(ctx) {
     async function fetchLogs() {
       const container = containers[selected];
       if (!container) return;
+      const requestId = ++logsRevision;
+      if (logView.dataset.service !== container.service) { logView.replaceChildren(el("div", { class: "skeleton" })); logView.dataset.service = container.service; }
+      logNote.textContent = `${container.service} · 读取中`;
       try {
         const result = await api(`/infra/containers/${encodeURIComponent(container.service)}/logs?tail=200`);
+        if (!ctx.isActive() || requestId !== logsRevision || containers[selected]?.service !== container.service) return;
         logView.replaceChildren(
           ...(result.lines.length > 0
             ? result.lines.map(logLine)
@@ -354,6 +371,7 @@ async function loadInfra(ctx) {
         logNote.textContent = `${container.service} · 最近 ${result.lines.length} 行${result.truncated ? "（已截断）" : ""}${followBox.checked ? " · 跟随中" : ""}`;
         logView.scrollTop = logView.scrollHeight;
       } catch (error) {
+        if (!ctx.isActive() || requestId !== logsRevision || containers[selected]?.service !== container.service) return;
         logView.replaceChildren(el("div", { class: "empty", style: "padding:20px 14px" },
           el("strong", { text: "读取失败" }), error.message));
         logNote.textContent = "";

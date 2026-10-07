@@ -181,6 +181,9 @@ test("集成：外壳公开（否则浏览器看不到登录框），数据接�
         `${path} 是外壳，必须能在没有令牌时加载`,
       );
     }
+    const brand = await app.inject({ method: "GET", url: "/admin/assets/astella-mark-v1.png" });
+    assert.deepEqual([...brand.rawPayload.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10],
+      "品牌 PNG 必须按二进制送出，不能被 UTF-8 解码破坏");
 
     // 写接口同样受保护——只读外壳不代表写接口裸奔。
     assert.equal(
