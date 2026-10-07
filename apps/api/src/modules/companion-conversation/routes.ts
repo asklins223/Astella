@@ -1,3 +1,6 @@
+import { spoolObjectExport, sendObjectDescriptor, usesRemoteStorage } from "../storage/exports.ts";
+import { createReadStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireSession } from "../identity/middleware.ts";
 import { parseBody } from "../../lib/validate.ts";
@@ -620,6 +623,22 @@ export async function companionExportRoutes(app: FastifyInstance) {
     { preHandler: [requireSession] },
     async (req, reply) => {
       if (!(await rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:export`, COMPANION_RATE_LIMITS.exportPerHour.limit, COMPANION_RATE_LIMITS.exportPerHour.windowMs))) return;
+
+      if (usesRemoteStorage()) {
+        const result = await spoolObjectExport(scopeOfSession(req.session), "application/x-ndjson",
+          write => exportCompanionDataStream(scopeOfSession(req.session), write),
+          async (result, descriptor, path) => {
+            if (!result.ok) return;
+            if (req.headers["x-astella-object-transfer-accept"] === "1") { sendObjectDescriptor(reply, descriptor); return; }
+            reply.hijack();
+            reply.raw.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store",
+              "Content-Disposition": 'attachment; filename="companion-export-v1.ndjson"' });
+            await pipeline(createReadStream(path), reply.raw);
+          });
+        if (!result.ok) return reply.code(result.statusCode).send({ version: 1, error: result.code, message: result.message,
+          recoverable: false, requestId: req.id });
+        return reply;
+      }
       // PERF（round-5）：改为流式导出——每一行 NDJSON 产生后立即写出到 socket，
       // 不再把整份输出（最多 6×50k 行）累积进内存数组。错误（如 active turn 409）
       // 都发生在首行 manifest 写出之前，此时尚未 hijack/发响应头，可按原契约返回

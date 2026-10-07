@@ -4,12 +4,31 @@ services:
     image: ${API_IMAGE:?CI must provide API_IMAGE}
     environment:
       TRUST_PROXY: '1'
+      STORAGE_MODE: remote
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:?Set production object storage endpoint}
+      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-https://cn-nb1.rains3.com}
+      STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID:?Set production storage access key}
+      STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY:?Set production storage secret key}
+      S3_BUCKET: ${S3_BUCKET:-astella}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      MINIO_ROOT_USER: ''
+      MINIO_ROOT_PASSWORD: ''
   migrate:
     image: ${API_IMAGE:?CI must provide API_IMAGE}
   seed-owner:
     image: ${API_IMAGE:?CI must provide API_IMAGE}
   worker:
     image: ${WORKER_IMAGE:?CI must provide WORKER_IMAGE}
+    environment:
+      STORAGE_MODE: remote
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:?Set production object storage endpoint}
+      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-https://cn-nb1.rains3.com}
+      STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID:?Set production storage access key}
+      STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY:?Set production storage secret key}
+      S3_BUCKET: ${S3_BUCKET:-astella}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      MINIO_ROOT_USER: ''
+      MINIO_ROOT_PASSWORD: ''
   edge-tts:
     image: ${EDGE_TTS_IMAGE:?CI must provide EDGE_TTS_IMAGE}
   nginx:

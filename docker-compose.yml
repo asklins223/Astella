@@ -283,6 +283,11 @@ services:
       EDGE_TTS_BASE_URL: ${EDGE_TTS_BASE_URL:-http://edge-tts:8080}
       EDGE_TTS_AUTH_TOKEN: ${EDGE_TTS_AUTH_TOKEN:?Set EDGE_TTS_AUTH_TOKEN in .env（edge-tts 与 api 必须一致）}
       # Image upload: MinIO/S3 storage endpoint
+      STORAGE_MODE: ${STORAGE_MODE:-local}
+      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-}
+      STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID:-}
+      STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
       STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-astella-workspaces}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
@@ -366,6 +371,11 @@ services:
       COMPANION_DAILY_SUMMARY_V1: ${COMPANION_DAILY_SUMMARY_V1:-true}
       COMPANION_THOUGHTS_V1: ${COMPANION_THOUGHTS_V1:-true}
       # Source image upload: MinIO/S3 storage for embedded images
+      STORAGE_MODE: ${STORAGE_MODE:-local}
+      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-}
+      STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID:-}
+      STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
       STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-astella-workspaces}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}

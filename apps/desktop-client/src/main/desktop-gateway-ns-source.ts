@@ -1,3 +1,4 @@
+import { uploadRemoteObject } from "./desktop-object-transfers";
 /**
  * 网关的「来源」那一族方法 —— **2026-09-30 从 `DesktopGateway` 类搬出**。
  *
@@ -122,7 +123,10 @@ export async function createSource(t: GatewayTransport,
     requestId?: string,
   ): Promise<DesktopSourceCreateResultV1> {
     await t.ensureConnected(requestId);
-    const result = await t.request(
+    const remote = request.content ? await uploadRemoteObject(t, { purpose: "source_text",
+      fileName: `${request.title?.slice(0, 180) || "source"}.txt`, mimeType: request.type === "markdown" ? "text/markdown" : "text/plain",
+      source: { type: request.type, title: request.title, url: request.url, force: request.force } }, Buffer.from(request.content), requestId) : null;
+    const result = remote ?? await t.request(
       "/sources",
       { method: "POST", body: JSON.stringify(request) },
       true,

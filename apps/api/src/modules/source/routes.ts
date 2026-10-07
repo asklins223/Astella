@@ -1,3 +1,5 @@
+import { createHash, randomUUID } from "node:crypto";
+import { usesRemoteStorage, uploadObject, deleteObject } from "../../lib/object-storage.ts";
 import type { FastifyInstance } from "fastify";
 import { requireSession, requireOwner } from "../identity/middleware.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
@@ -27,15 +29,20 @@ export async function sourceRoutes(app: FastifyInstance) {
   // RBAC: 仅 owner 可创建来源
   app.post("/sources", { preHandler: [requireOwner] }, async (req) => {
     const body = parseBody(app, sourceCreateSchema, req.body);
-    return withWorkspaceTransaction(
-      scopeOfSession(req.session),
-      (transaction) => createSource(
-        transaction,
-        req.session.workspaceId,
-        req.session.userId,
-        body,
-      ),
-    );
+    let storedFile: { objectKey: string; sha256: string; byteLength: number; fileName: string } | undefined;
+    if (usesRemoteStorage() && body.content) {
+      const bytes = Buffer.from(body.content);
+      if (bytes.length > 900_000) throw app.httpErrors.payloadTooLarge("source file too large");
+      const objectKey = `${req.session.workspaceId}/files/${req.session.userId}/${randomUUID()}.txt`;
+      await uploadObject(objectKey, bytes, body.type === "markdown" ? "text/markdown" : "text/plain");
+      storedFile = { objectKey, sha256: createHash("sha256").update(bytes).digest("hex"), byteLength: bytes.length, fileName: `${body.title?.slice(0, 180) || "source"}.txt` };
+    }
+    try {
+      const result = await withWorkspaceTransaction(scopeOfSession(req.session), transaction => createSource(
+        transaction, req.session.workspaceId, req.session.userId, body, storedFile));
+      if (storedFile && result?.duplicateOf) await deleteObject(storedFile.objectKey).catch(() => undefined);
+      return result;
+    } catch (error) { if (storedFile) await deleteObject(storedFile.objectKey).catch(() => undefined); throw error; }
   });
 
   // POST /sources/:id/reparse — 重新解析一条来源。

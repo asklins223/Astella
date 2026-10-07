@@ -1,3 +1,4 @@
+import { resolveObjectResponse, uploadRemoteObject } from "./desktop-object-transfers";
 /**
  * 网关的「伴星」那一族 —— **2026-09-30 从 `DesktopGateway` 类搬出**。
  *
@@ -803,6 +804,7 @@ export async function openCompanionExport(t: GatewayTransport,
       : kind === "memory" ? "/companion/memory/export"
         : "/me/companion/audit/export";
     const headers = new Headers({ Accept: kind === "all" ? "application/x-ndjson" : "application/json" });
+    headers.set("X-Astella-Object-Transfer-Accept", "1");
     if (t.token) headers.set("Authorization", `Bearer ${t.token}`);
     let response: Response;
     try {
@@ -819,6 +821,7 @@ export async function openCompanionExport(t: GatewayTransport,
       throw new DesktopGatewayFailure("api_untrusted", "user_action");
     }
     if (!response.ok) throw t.mapResponseError(response.status, response.headers);
+    response = (await resolveObjectResponse(t, response, 256 * 1024 * 1024)).response;
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
     const expected = kind === "all" ? "application/x-ndjson" : "application/json";
     if (!contentType.startsWith(expected) || !response.body) {
@@ -1099,6 +1102,15 @@ export async function uploadCompanionImage(t: GatewayTransport,
       throw new DesktopGatewayFailure("validation", "user_action");
     }
 
+    const remote = await uploadRemoteObject(t, { purpose: "companion_image", fileName: request.fileName,
+      mimeType: request.mimeType, }, bytes, requestId);
+    if (remote) {
+      const payload = (remote.body ?? {}) as Record<string, unknown>;
+      const parsed = noteImageUploadResultV1Schema.safeParse({ version: 1, url: payload.url, byteLength: payload.size,
+        mimeType: payload.mimeType, width: payload.width, height: payload.height });
+      if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+      return parsed.data;
+    }
     const form = new FormData();
     form.set("file", new Blob([bytes], { type: request.mimeType }), request.fileName);
 

@@ -240,6 +240,9 @@ BEGIN
     ALTER FUNCTION public.astella_purge_tutor_nonces_ttl(integer, integer)
       OWNER TO astella_migrator;
   END IF;
+  IF to_regprocedure('public.astella_purge_expired_object_transfers()') IS NOT NULL THEN
+    ALTER FUNCTION public.astella_purge_expired_object_transfers() OWNER TO astella_migrator;
+  END IF;
   -- 0171/0172：方案 22 桌宠日记/记忆维护 SECURITY DEFINER 函数，owner 收敛到
   -- astella_migrator（BYPASSRLS 语义依赖；search_path 需对齐 pg_catalog, public）。
   IF to_regprocedure('public.astella_enqueue_companion_daily_summaries()') IS NOT NULL THEN
@@ -1063,6 +1066,11 @@ BEGIN
       TO astella_api;
   END IF;
 
+  IF to_regprocedure('public.astella_purge_expired_object_transfers()') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_purge_expired_object_transfers() FROM PUBLIC, astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_purge_expired_object_transfers() TO astella_api;
+  END IF;
+
   -- API 侧独占的 SECURITY DEFINER 函数（跨租户批处理 / TTL 清理 / journey 查询）。
   -- 同样必须镜像：REVOKE ALL ON ALL FUNCTIONS 会清掉迁移里的 GRANT EXECUTE，
   -- 而缺一个就整条功能 permission denied（此前依次暴露为：记忆去重 similarity、
@@ -1812,7 +1820,8 @@ BEGIN
       to_regprocedure('public.astella_close_companion_memory_delivery(uuid,uuid,uuid,text)'),
       to_regprocedure('public.astella_purge_companion_audit_ttl(integer,integer)'),
       to_regprocedure('public.astella_purge_invitation_ledger_ttl(integer,integer)'),
-      to_regprocedure('public.astella_purge_tutor_nonces_ttl(integer,integer)')
+      to_regprocedure('public.astella_purge_tutor_nonces_ttl(integer,integer)'),
+      to_regprocedure('public.astella_purge_expired_object_transfers()')
     )
       AND (
         NOT p.prosecdef
@@ -1938,6 +1947,7 @@ BEGIN
       to_regprocedure('public.astella_purge_invitation_ledger_ttl(integer,integer)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.astella_purge_tutor_nonces_ttl(integer,integer)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_purge_expired_object_transfers()')
     -- 0327（P0-4，`users` 表 RLS）：登录查询与"同空间成员"判据。
     -- 前者是登录路径（会话建立之前，没有 RLS 上下文），后者被 users 的策略
     -- 2.3 调用——**必须** SECURITY DEFINER，否则策略里的裸子查询会被
@@ -2090,6 +2100,7 @@ BEGIN
       ('astella_api', 'astella_purge_companion_audit_ttl(integer,integer)'),
       ('astella_api', 'astella_purge_invitation_ledger_ttl(integer,integer)'),
       ('astella_api', 'astella_purge_tutor_nonces_ttl(integer,integer)'),
+      ('astella_api', 'astella_purge_expired_object_transfers()'),
       ('astella_api', 'astella_find_user_by_email(text)'),
       ('astella_api', 'astella_user_in_workspace(uuid,uuid)'),
       ('astella_api', 'astella_read_companion_turn_handoff_snapshot_v1(uuid)'),

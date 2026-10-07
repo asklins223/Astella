@@ -510,7 +510,7 @@ export async function readStorageView(): Promise<StorageView> {
   const endpoint = process.env.STORAGE_ENDPOINT?.trim() || process.env.S3_ENDPOINT?.trim() || null;
   const bucket = process.env.S3_BUCKET?.trim() || null;
   if (!isStorageConfigured()) {
-    return { configured: false, endpoint, bucket, reachable: false, latencyMs: null, error: "未配置存储凭证（MINIO_ACCESS_KEY / MINIO_SECRET_KEY）" };
+    return { configured: false, endpoint, bucket, reachable: false, latencyMs: null, error: "对象存储配置不完整" };
   }
   const started = Date.now();
   try {

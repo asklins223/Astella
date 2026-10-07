@@ -4,12 +4,25 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  isRemoteStorage,
   isStorageConfigured,
   resolveStorageBucket,
   resolveStorageConfig,
   resolveStorageCredentials,
   resolveStorageRequestTimeoutMs,
 } from "../storage-config.ts";
+
+test("remote storage never falls back to local MinIO credentials", () => {
+  const local = { MINIO_ROOT_USER: "local", MINIO_ROOT_PASSWORD: "local-secret" };
+  assert.equal(isRemoteStorage({ NODE_ENV: "production", ...local }), false);
+  assert.equal(resolveStorageConfig({ STORAGE_MODE: "remote", ...local }), null);
+  const remote = { STORAGE_MODE: "remote", STORAGE_ENDPOINT: "https://objects.example.test", S3_BUCKET: "online",
+    STORAGE_ACCESS_KEY_ID: "remote", STORAGE_SECRET_ACCESS_KEY: "remote-secret", ...local };
+  assert.equal(resolveStorageConfig(remote)?.accessKeyId, "remote");
+  assert.equal(resolveStorageConfig({ ...remote, STORAGE_ACCESS_KEY_ID: "" }), null);
+  assert.equal(resolveStorageConfig({ ...remote, STORAGE_ENDPOINT: "" }), null);
+  assert.equal(resolveStorageConfig({ ...remote, STORAGE_MODE: "local", STORAGE_ENDPOINT: "http://minio:9000" })?.accessKeyId, "local");
+});
 
 /**
  * P2-16：对象存储配置的**判定**下沉到 `packages/shared`，api 与 worker 共用。
@@ -194,8 +207,8 @@ test("【结构】isStorageConfigured 必须复用凭证解析，不另写一份
   assert.ok(body, "自证：判据必须先认得出 isStorageConfigured 这个函数");
   const inner = body[1]!;
   assert.ok(
-    /resolveStorageCredentials\(env\)/.test(inner),
-    "isStorageConfigured 必须直接问 resolveStorageCredentials；"
+    /resolveStorageConfig\(env\)/.test(inner),
+    "isStorageConfigured 必须直接问 resolveStorageConfig；"
     + "另写一份判断就是当初那条规则分叉的起点（成对 vs 逐个变量回退），"
     + "而它在行为上常常测不出来。",
   );
@@ -204,4 +217,12 @@ test("【结构】isStorageConfigured 必须复用凭证解析，不另写一份
     "isStorageConfigured 里不该再直接读 MINIO_* 变量——环境变量名只能出现在解析函数里，"
     + "否则「哪套凭证优先」这件事就又有了第二个落点。",
   );
+});
+
+
+test("remote readiness requires credentials, endpoint and bucket; never falls back to local", () => {
+  const remote = { STORAGE_MODE: "remote", STORAGE_ACCESS_KEY_ID: "test-key", STORAGE_SECRET_ACCESS_KEY: "test-secret" };
+  assert.equal(isStorageConfigured(remote), false);
+  assert.equal(isStorageConfigured({ ...remote, STORAGE_ENDPOINT: "https://storage.example.test" }), false);
+  assert.equal(isStorageConfigured({ ...remote, STORAGE_ENDPOINT: "https://storage.example.test", S3_BUCKET: "test" }), true);
 });

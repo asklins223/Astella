@@ -285,6 +285,7 @@ services:
       PROJECTION_CHECKPOINT_SECRET: ${PROJECTION_CHECKPOINT_SECRET:-}
       # Image upload: MinIO/S3 storage endpoint and credentials.
       # Must match the dev minio service's MINIO_ROOT_USER/PASSWORD below.
+      STORAGE_MODE: local
       STORAGE_ENDPOINT: http://minio:9000
       S3_BUCKET: ${S3_BUCKET:-astella-workspaces}
       MINIO_ROOT_USER: astella
@@ -365,6 +366,7 @@ services:
       COMPANION_DAILY_SUMMARY_V1: ${COMPANION_DAILY_SUMMARY_V1:-true}
       COMPANION_THOUGHTS_V1: ${COMPANION_THOUGHTS_V1:-true}
       # Source image upload: MinIO/S3 storage for embedded images
+      STORAGE_MODE: local
       STORAGE_ENDPOINT: http://minio:9000
       S3_BUCKET: ${S3_BUCKET:-astella-workspaces}
       MINIO_ROOT_USER: astella

@@ -692,6 +692,11 @@
       "types": "./src/contracts/agent-request-contracts.ts",
       "import": "./src/contracts/agent-request-contracts.ts",
       "default": "./src/contracts/agent-request-contracts.ts"
+    },
+    "./object-transfer-contracts": {
+      "types": "./src/contracts/object-transfer-contracts.ts",
+      "import": "./src/contracts/object-transfer-contracts.ts",
+      "default": "./src/contracts/object-transfer-contracts.ts"
     }
   },
   "dependencies": {
