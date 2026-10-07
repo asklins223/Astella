@@ -21,7 +21,7 @@
 | --- | --- | --- | --- |
 | `docker-compose.dev.yml` | `astella-dev` | 本机开发栈：`target: dev` 镜像、源码 bind mount 热重载、写死的本机凭据、`seed-demo` 在 `seed` profile 下、全部端口只发回环、挂了 `docker.sock` 给 `/admin`、伴星能力开关默认打开 | `Makefile` 的 `COMPOSE := docker compose -p astella-dev -f docker-compose.dev.yml`，即 `make up` / `storage` / `seed-demo` / `rebuild` / `config` / `logs` / `down` / `reset-db` / `shell-*` / `desktop-client-up` |
 | `docker-compose.yml` | `astella` | 生产形态：`target: prod` 镜像 + `user: node`、无源码挂载、三条 `:?` 必填的数据库 URL、角色引导与迁移的一次式服务、能力开关 fail-closed、`AUTH_RATE_LIMIT_STORE` 默认 `postgres`、edge-tts **不发端口** | 没有 Makefile 目标接它（有意如此，见 README）。手动验证或 Alpha 流程使用 |
-| `docker-compose.alpha.yml` | `astella-alpha` | **叠加层（overlay），不能单独使用**：给 `postgres` 加一个 `restore-postgres` 网络别名，新增 `prometheus`、`alertmanager`、`alpha-ops-sidecar`、`backup-runner` 四个服务与 `prometheus_data`、`alertmanager_data`、`backup_keys`、`backup_manifests` 四个卷 | `scripts/alpha-env-setup.sh`，形如 `docker compose -f docker-compose.yml -f docker-compose.alpha.yml --profile storage` |
+| `docker-compose.alpha.yml` | `astella-alpha` | **叠加层（overlay），不能单独使用**：给 `postgres` 加一个 `restore-postgres` 网络别名，新增本地 `minio`／`minio-init`、监控与备份服务及对应卷，覆盖 API／Worker 为本地存储模式 | `scripts/alpha-env-setup.sh`，形如 `docker compose -f docker-compose.yml -f docker-compose.alpha.yml --profile storage` |
 
 > **说明：** 叠加时顶层 `name:` 取后一份文件，所以整条 Alpha 链的项目名是 `astella-alpha`，卷也跟着变成 `astella-alpha_postgres_data`、`astella-alpha_minio_data`、`astella-alpha_prometheus_data` 等（`docker compose -f docker-compose.yml -f docker-compose.alpha.yml --profile storage config` 实测）。只跑 `docker-compose.yml` 时前缀是 `astella_`。`docker-compose.dev.yml` 文件头明确写着**不要**把它叠在 `docker-compose.yml` 上。
 
@@ -60,7 +60,7 @@
 | 数据库角色口令 | `POSTGRES_PASSWORD`、`MIGRATOR_PASSWORD`、`API_PASSWORD`、`WORKER_PASSWORD` | `:?` 必填 | dev 文件写死本机值，不读 `.env` |
 | 应用连接串 | `DATABASE_URL_MIGRATOR`、`DATABASE_URL_API`、`DATABASE_URL_WORKER` | `:?` 必填（分别给 `migrate`、`api`、`worker`） | dev 文件写死，且 `_API`/`_WORKER` 也指受限角色 |
 | 语音共享令牌 | `EDGE_TTS_AUTH_TOKEN` | `:?` 必填，且必须与 edge-tts 容器一致 | `:?` 必填——**dev 唯一真正要填的一项** |
-| 对象存储 | `MINIO_ROOT_USER`、`MINIO_ROOT_PASSWORD`、`S3_BUCKET`、`S3_REGION`、`STORAGE_ENDPOINT`、`MINIO_ACCESS_KEY`、`MINIO_SECRET_KEY`、`STORAGE_REQUEST_TIMEOUT_MS` | 可选；`minio` 服务在 `storage` profile 下，两个根凭据缺一即自行退出而不是回退默认值 | dev 写死本机值 |
+| 对象存储 | `STORAGE_MODE`、`STORAGE_ENDPOINT`、`STORAGE_PUBLIC_ENDPOINT`、`STORAGE_ACCESS_KEY_ID`、`STORAGE_SECRET_ACCESS_KEY`、`S3_BUCKET`、`S3_REGION` | 正式部署固定 `remote`，端点和密钥必填；没有 MinIO 服务或卷。Alpha 单独提供本地 MinIO | dev 固定 `local`，使用本机 MinIO |
 | 首个账号 | `OWNER_EMAIL`、`OWNER_PASSWORD`（≥12 位）、`OWNER_WORKSPACE` | 只在显式 `seed-owner` 时读 | 用 `make seed-demo`，不读这三项 |
 | 网络与来源 | `CORS_ORIGIN`、`TRUST_PROXY`、`API_PORT`、`API_BIND_ADDRESS`、`POSTGRES_BIND_ADDRESS` | 可选，默认见 compose | 同左 |
 | 会话与安全 | `AUTH_COOKIE_SECURE`、`AUTH_SURFACE_MANIFEST_SECRET`、`AUTH_RATE_LIMIT_STORE`、`AUTH_RATE_LIMIT_WINDOW_MS`、`AUTH_RATE_LIMIT_MAX_ATTEMPTS`、`LEARNING_DRAFT_ENC_KEY`、`PROJECTION_CHECKPOINT_SECRET` | 可选但有 fail-closed 后果，见下表 | 同左 |
@@ -247,7 +247,7 @@ make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB   # 值不对就打印取消信息�
 **目前还没做的事**，按现在仓库状态：
 
 - TLS 终结由 `docker-compose.deploy.yml` 的 Nginx 提供，IP 证书与续期见 [部署说明](./deployment.md)。单独使用基础生产 Compose 时仍需要 TLS 代理。
-- 没有密钥管理器：PostgreSQL 与 MinIO 凭据通过环境变量注入，`docker inspect` 可见（`docker-compose.yml` 末尾的 SEC-18 备注明写这一点，并提醒"只加 `secrets:` 配置而不改应用代码不会生效"）。
+- 没有密钥管理器：PostgreSQL 与对象存储凭据通过环境变量注入，`docker inspect` 可见（`docker-compose.yml` 末尾的 SEC-18 备注明写这一点，并提醒"只加 `secrets:` 配置而不改应用代码不会生效"）。
 - macOS ad-hoc 包仍需用户确认首次启动；真实 ShipIt 替换安装需要单独验收。
 - 没有邮件自助找回密码：`apps/api/src/modules/identity/routes.ts` 只有 `POST /auth/change-password`（验证旧密码并撤销全部会话）和 `POST /auth/recovered-users/:userId/reset-password`（需 `requireSession + requireOwner`，给被恢复的用户初始化口令）。忘记密码只能请工作区 Owner 处理。
 - 没有自动扩缩容方案：三份 compose 都是单机编排（`restart: unless-stopped`），`AUTH_RATE_LIMIT_STORE=postgres` 只是让限流在多副本下不失真，不代表仓库提供了扩缩容链路。

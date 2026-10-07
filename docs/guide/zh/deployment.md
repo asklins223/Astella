@@ -52,7 +52,7 @@ Worker 解析文本来源时读取远程原文并验证 SHA-256。工作区 JSON
 
 本地 `docker-compose.dev.yml` 固定 `STORAGE_MODE=local`、`http://minio:9000`，继续使用本地 MinIO；本地客户端 `local_loopback` 直接沿原容器上传链路。Alpha 的 MinIO 服务与应用本地存储配置只定义在 `docker-compose.alpha.yml`，正式部署不加载该文件。不要把生产远程配置覆盖到本地 `.env`。
 
-线上已完成远程切换并核对旧桶为空，旧 MinIO 容器、初始化容器、`astella_minio_data` 卷及 MinIO/MC 镜像均已清理，生产环境文件也移除了 `MINIO_*` 变量。后续部署及回退只使用远程对象存储，不再创建本机对象卷。
+当前生产服务器已完成远程切换并核对旧桶为空，旧 MinIO 容器、初始化容器、`astella_minio_data` 卷及 MinIO/MC 镜像均已清理，生产环境文件也移除了 `MINIO_*` 变量。后续部署及回退只使用远程对象存储，不再创建本机对象卷。
 
 真实存储集测独立运行 `npm --prefix apps/api run test:object-storage:s3`，不混入不需要外部存储的 `make test-postgres`。先准备迁移完成且授权已补齐的可丢弃 `astella_storage_it_*` 数据库，分别设置受限角色的 `DATABASE_URL_API`、`DATABASE_URL_WORKER` 与管理员的 `DATABASE_URL_TEST_ADMIN`，再在受限环境文件中提供远程存储配置。集测只创建模拟内容并清理对应对象前缀；结束后删除该临时数据库。不要使用生产数据库或提交环境文件。
 
