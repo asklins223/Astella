@@ -52,6 +52,8 @@ Worker 解析文本来源时读取远程原文并验证 SHA-256。工作区 JSON
 
 本地 `docker-compose.dev.yml` 固定 `STORAGE_MODE=local`、`http://minio:9000`，继续使用本地 `.env` 的 MinIO 配置；本地客户端 `local_loopback` 直接沿原容器上传链路。不要把生产远程配置覆盖到本地 `.env`。线上切换前先停止写入、核对旧桶对象并迁移，再保存数据库与环境文件备份；切换失败时一并恢复旧环境及应用镜像，旧 MinIO volume 暂不删除。
 
+真实存储集测独立运行 `npm --prefix apps/api run test:object-storage:s3`，不混入不需要外部存储的 `make test-postgres`。先准备迁移完成且授权已补齐的可丢弃 `astella_storage_it_*` 数据库，分别设置受限角色的 `DATABASE_URL_API`、`DATABASE_URL_WORKER` 与管理员的 `DATABASE_URL_TEST_ADMIN`，再在受限环境文件中提供远程存储配置。集测只创建模拟内容并清理对应对象前缀；结束后删除该临时数据库。不要使用生产数据库或提交环境文件。
+
 ## macOS 无证书构建
 
 打包使用 `electron-builder.config.cjs`，在 ZIP 和 DMG 创建之前完成签名。有 Developer ID 时保留证书签名；没有时先由 electron-builder 签完整嵌套包体，再把主应用指定要求固定为 `identifier "com.asklins.astella"`。这是 [word-tts-desktop 构建流程](https://github.com/asklins223/word-tts-desktop/blob/main/build_electron.sh) 使用的更新方式。`scripts/check-macos-update-signature.cjs` 用两份内容不同的真实二进制验证跨版本要求，并确认篡改签名后的资源会失败；最终 ZIP 与 DMG 中的应用都必须通过签名检查。

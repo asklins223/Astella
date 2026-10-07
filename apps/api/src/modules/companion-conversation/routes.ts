@@ -1,3 +1,4 @@
+// Storage owns the bounded spool and signed export contract shared by export domains.
 import { spoolObjectExport, sendObjectDescriptor, usesRemoteStorage } from "../storage/exports.ts";
 import { createReadStream } from "node:fs";
 import { pipeline } from "node:stream/promises";

@@ -10,7 +10,9 @@ import { storageTransferOrigins, usesRemoteStorage, signObjectUpload, getObject,
 import { uploadNoteImage, uploadCompanionImage, uploadAvatar } from "../upload/upload-service.ts";
 import { createSource } from "../source/service.ts";
 import { sourceCreateSchema } from "../source/schema.ts";
-import { importMarkdownSchema } from "../import/routes.ts";
+// Share the import payload contract with the established Markdown import domain.
+import { importMarkdownSchema } from "../import/schema.ts";
+import { visibleNotesCondition } from "../note/visibility.ts";
 import { prepareMarkdownImport, importMarkdownNotes, finalizeMarkdownImport } from "../import/markdown-import-service.ts";
 import { RateLimiter, createRateLimitStoreFromEnv } from "../../lib/rate-limit-store.ts";
 
@@ -103,7 +105,7 @@ export async function objectTransferRoutes(app: FastifyInstance): Promise<void> 
     const expiresAt = new Date(Date.now() + 900_000);
     await withWorkspaceTransaction(scope, async tx => {
       if (request.purpose === "note_image") {
-        const note = await tx.query.notes.findFirst({ columns: { id: true }, where: and(eq(notes.id, request.noteId!), eq(notes.workspaceId, scope.workspaceId), isNull(notes.deletedAt)) });
+        const note = await tx.query.notes.findFirst({ columns: { id: true }, where: and(eq(notes.id, request.noteId!), eq(notes.workspaceId, scope.workspaceId), visibleNotesCondition(scope.userId), isNull(notes.deletedAt)) });
         if (!note) throw Object.assign(new Error("note not found"), { statusCode: 404 });
       }
       await tx.execute(sql`INSERT INTO object_transfers(id,workspace_id,user_id,purpose,staging_key,request_json,expires_at)

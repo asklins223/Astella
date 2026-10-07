@@ -11,7 +11,10 @@ import { objectTransferDownloadSchema } from "@astella/shared/object-transfer-co
 import { resolveStorageConfig } from "@astella/shared/storage-config";
 
 assert.equal(process.env.STORAGE_MODE, "remote", "this test requires explicit remote storage mode");
-const database = postgres(process.env.DATABASE_URL_TEST_ADMIN!, { max: 2 });
+const databaseUrl = process.env.DATABASE_URL_TEST_ADMIN;
+assert.ok(databaseUrl, "a dedicated integration admin database URL is required");
+assert.match(new URL(databaseUrl).pathname, /^\/astella_storage_it_[a-z0-9_]+$/, "use a disposable astella_storage_it_* database");
+const database = postgres(databaseUrl, { max: 2 });
 const { objectTransferRoutes } = await import("../modules/storage/routes.ts");
 const { objectExportHook } = await import("../modules/storage/exports.ts");
 const { uploadRoutes } = await import("../modules/upload/routes.ts");
@@ -103,6 +106,15 @@ test("private remote storage: direct source upload, worker parse, note images, r
   assert.equal(createdNote.statusCode, 200, createdNote.statusCode >= 300 ? createdNote.body : "");
   const noteId = createdNote.json<{ note: { id: string } }>().note.id;
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j0j0AAAAASUVORK5CYII=", "base64");
+  // An owner cannot obtain a signed upload for another user's private note in the same workspace.
+  await database`UPDATE notes SET created_by=${fixtures[1]!.userId},share_scope='private' WHERE id=${noteId}`;
+  try {
+    const hidden = await app.inject({ method: "POST", url: "/storage/transfers", headers: headers(), payload: {
+      purpose: "note_image", fileName: "private.png", mimeType: "image/png", byteLength: png.length,
+      sha256: createHash("sha256").update(png).digest("hex"), noteId,
+    } });
+    assert.equal(hidden.statusCode, 404, "private note must be invisible before issuing an upload URL");
+  } finally { await database`UPDATE notes SET created_by=${fixture.userId} WHERE id=${noteId}`; }
   const imageGrant = await prepare("note_image", png, { noteId });
   await put(imageGrant, png);
   const confirmed = await app.inject({ method: "POST", url: `/storage/transfers/${imageGrant.transferId}/complete`, headers: headers() });

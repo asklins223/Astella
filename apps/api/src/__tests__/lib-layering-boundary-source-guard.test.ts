@@ -124,6 +124,7 @@ const CROSS_MODULE_BASELINE: ReadonlySet<string> = new Set([
   "modules/identity/ai-consent-gate.ts",
   "modules/identity/ai-consent-service.ts", // 账号级 AI 边界供伴星记忆提交校验，不能各域另造一份设置。
   "modules/identity/middleware.ts",
+  "modules/storage/exports.ts", // Common signed export/spool contract used by companion and workspace export routes.
   "modules/identity/service.ts",
   "modules/job/service.ts",
   "modules/learning-objectives/action-resolver.ts",
