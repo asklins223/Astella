@@ -169,9 +169,11 @@ jobs:
       - name: Write release notes
         run: |
           cat > release-notes.md <<'EOF'
-          **安装包未签名**：macOS 首次打开请右键 → 打开；Windows 首次运行会经过 SmartScreen。
-          macOS 的**自动更新安装**需要代码签名，当前尚未配置证书——请手动下载 dmg 安装。
-          Windows 的自动更新不受此限制。
+          本次重新发布 v1.0.0，修复 macOS 安装包签名和更新签名校验，并包含伴星对话与语音表达改进。
+
+          macOS 安装包已完成 ad-hoc 签名，尚未使用 Apple Developer ID 签名与公证；首次打开可能需要在系统设置 → 隐私与安全性中选择“仍要打开”。Windows 首次运行可能经过 SmartScreen。
+
+          已安装旧版 v1.0.0 的用户请重新下载安装包并替换原应用；版本号相同，客户端不会将这次重发识别为新版本。
 
           更新走 GitHub Releases 直连下载，不经过本项目服务器。
           EOF
@@ -181,7 +183,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.resolve.outputs.tag }}
-          name: 拾星笔记 ${{ needs.resolve.outputs.tag }}
+          name: Astella ${{ needs.resolve.outputs.tag }}
           # 变更清单交给 GitHub 自己按 tag 区间生成（比在 runner 上手搓 git log
           # 可靠：runner 里只有浅检出，父提交常常不在本地）。
           generate_release_notes: true
