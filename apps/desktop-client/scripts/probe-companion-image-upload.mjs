@@ -54,6 +54,44 @@ await page.waitForFunction(
   undefined, { timeout: 60_000 },
 )
 
+// ── 0. 窗口里可能挂着别的账号（这台 dev 上跑过别的探针）：先退干净 ──────
+const currentEmail = async () => page.evaluate(async () => {
+  const meta = {
+    version: 1, contractVersion: 'desktop-ipc-v1',
+    requestId: crypto.randomUUID(), correlationId: crypto.randomUUID(), clientStartedAt: new Date().toISOString(),
+  }
+  const response = await window.astella.auth.getState({ meta })
+  const data = response?.ok ? response.data : null
+  return data?.account?.email ?? data?.user?.email ?? null
+}).catch(() => null)
+
+if (await page.locator('.hud-rail').count()) {
+  const signedIn = await currentEmail()
+  if (signedIn && signedIn !== probeEmail) {
+    info(`窗口里挂着 ${signedIn}，先退出登录再用自己的探测账号`)
+    await page.evaluate(async () => {
+      const meta = {
+        version: 1, contractVersion: 'desktop-ipc-v1',
+        requestId: crypto.randomUUID(), correlationId: crypto.randomUUID(), clientStartedAt: new Date().toISOString(),
+      }
+      await window.astella.auth.logout({ meta })
+    }).catch((e) => bad(`退出登录失败：${String(e).slice(0, 80)}`))
+    await page.waitForSelector('.desktop-access-gate', { timeout: 30_000 })
+  } else if (signedIn === probeEmail) {
+    ok(`会话就是探测账号 ${probeEmail}`)
+  } else if (!signedIn) {
+    bad('读不到当前登录账号，停在这里：不拿别人的账号改策略、发消息')
+    await finish(1)
+  }
+}
+if (await page.locator('.hud-rail').count()) {
+  const still = await currentEmail()
+  if (still && still !== probeEmail) {
+    bad(`窗口仍挂在 ${still}（不是探测账号），停在这里`)
+    await finish(1)
+  }
+}
+
 // ── 1. 进系统 ───────────────────────────────────────────────────────────
 if (await page.locator('.desktop-access-gate').count()) {
   if (!(await page.getByRole('button', { name: /创建账号/ }).count())) {
@@ -84,9 +122,14 @@ await page.waitForTimeout(3500)
 await shot('01-in-room')
 
 // ── 2. 签 AI 同意 + 打开外发与图片这两道闸 ────────────────────────────
-const settingsChip = page.locator('.hud-rail button[data-label="设置"]')
-await settingsChip.click({ force: true })
-await page.waitForSelector('.settings-hud', { timeout: 20_000 })
+const openSettings = async () => {
+  await page.locator('.hud-rail button[data-label="设置"]').click({ force: true }).catch(() => {})
+  if (await page.locator('.settings-hud').count()) return
+  info('rail 上点设置没开页面，改点「打开设置中心」')
+  await page.getByRole('button', { name: '打开设置中心' }).click({ timeout: 10_000 }).catch(() => {})
+  await page.waitForSelector('.settings-hud', { timeout: 20_000 })
+}
+await openSettings()
 await page.locator('.settings-menu button', { hasText: 'AI 数据同意' }).first().click()
 await page.waitForTimeout(1500)
 
@@ -94,19 +137,26 @@ const switchState = async (name) => page.getByRole('switch', { name }).getAttrib
 const ensureSwitchOn = async (name) => {
   const before = await switchState(name).catch(() => null)
   if (before === null) { bad(`设置页里没有「${name}」这个开关`); return { before, after: null } }
-  if (before !== 'true') {
+  let after = before
+  // 刚签完同意时这一排在重挂，第一下点击可能落在旧节点上：读到没变就再点一次。
+  for (let attempt = 0; attempt < 3 && after !== 'true'; attempt += 1) {
     await page.getByRole('switch', { name }).click()
-    await page.waitForTimeout(1200)
+    await page.waitForTimeout(1500 + attempt * 1000)
+    after = await switchState(name)
   }
-  const after = await switchState(name)
   return { before, after }
 }
 
+await page.waitForSelector('[role="switch"]', { timeout: 20_000 })
 const consentText = await page.evaluate(() => document.querySelector('.settings-hud')?.innerText ?? '')
 if (!/已签署/.test(consentText)) {
-  await page.getByRole('button', { name: '签署', exact: true }).click()
-  await page.waitForTimeout(2500)
-  ok('已签署 AI 使用同意')
+  const sign = page.getByRole('button', { name: '签署', exact: true })
+  if (await sign.count()) {
+    await sign.click()
+    await page.waitForTimeout(2500)
+    await page.waitForSelector('[role="switch"]', { timeout: 20_000 })
+    ok('已签署 AI 使用同意')
+  } else info('这一页没有签署按钮（可能已签或政策由空间统一给），按已签继续')
 } else info('同意已签（上一轮就签过）')
 const external = await ensureSwitchOn('允许发送到外部模型服务')
 const images = await ensureSwitchOn('允许发送图片内容')
@@ -155,9 +205,12 @@ const imagePath = await makeTestImage()
 
 /** 气泡里的输入框（含那条隐藏 file input）可能已收起，需要时重新打开。 */
 const openBubbleComposer = async () => {
-  if (await page.locator('.companion-compose-image__input').count()) return
+  if (await page.locator('textarea[aria-label^="给"]').count()) return
+  // 抽屉也可能开着并占着同一批选择器：先收干净再开气泡。
+  await page.keyboard.press('Escape').catch(() => {})
+  await page.waitForTimeout(600)
   await page.getByRole('button', { name: '气泡轻聊' }).click({ force: true }).catch(() => {})
-  await page.waitForSelector('.companion-compose-image__input', { timeout: 15_000 })
+  await page.waitForSelector('textarea[aria-label^="给"]', { timeout: 20_000 })
 }
 
 // 先按真路径试一次：点「＋」应当把系统文件框叫起来（Playwright 拦到 chooser 即算通）。
@@ -176,7 +229,20 @@ if (chooserHandle && chooserHandle !== 'timeout') {
   await openBubbleComposer()
   await page.locator('.companion-compose-image__input').setInputFiles(imagePath)
 }
-await page.waitForSelector('.companion-compose-image', { timeout: 25_000 })
+const chipAppeared = await page.waitForSelector('.companion-compose-image', { timeout: 25_000 })
+  .then(() => true).catch(() => false)
+if (!chipAppeared) {
+  const why = await page.evaluate(() => ({
+    status: document.querySelector('.companion-compose-image__status')?.textContent?.trim() ?? null,
+    account: document.querySelector('[title*="@"]')?.getAttribute('title') ?? null,
+    hud: Boolean(document.querySelector('.companion-hud')),
+    bubbleOpen: Boolean(document.querySelector('textarea')),
+    notice: (document.querySelector('[class*="notice"], [class*="failure"]')?.textContent ?? '').trim().slice(0, 120),
+  }))
+  bad(`附件条没出现：${JSON.stringify(why)}`)
+  await shot('04b-no-chip')
+  await finish(1)
+}
 // 缩略图必须真的取回字节：blob URL + naturalWidth>0 才算，"正在载入图片"/破图不算通过。
 const chipReady = await page.waitForFunction(() => {
   const chip = document.querySelector('.companion-compose-image')
@@ -208,7 +274,10 @@ const replied = await page.waitForFunction(() => {
 }, undefined, { timeout: 180_000 }).then(() => true).catch(() => false)
 await page.waitForTimeout(2500)
 const bubble = await page.evaluate(() => document.querySelector('.companion-hud__papers')?.innerText?.trim().slice(0, 600) ?? null)
-notes.push(`${replied ? '✓' : '✗'} 气泡里的回复：${bubble ? bubble.slice(0, 240) : '（空）'}`)
+// 气泡只承载**她的回复**（CompanionReplyPapers 读 chat.richReply.blocks），
+// 用户那张图按设计不进气泡——所以这里判的是"她这一轮有没有在气泡里说话"。
+if (bubble && bubble.length > 4) ok(`气泡里她的回复：${bubble.slice(0, 200)}`)
+else info(`气泡纸面没有正文（等待结果=${replied ? "命中" : "超时"}；用户图按设计不进气泡，正文以手记/伴星中心为准）`)
 await shot('05-reply-bubble')
 
 /** 一条图片消息在某处是否真的画出来了：站内 blob 图 + naturalWidth。 */
@@ -250,19 +319,28 @@ info(`切到「全部对话」后：${JSON.stringify(journalAll)}`)
 await page.getByRole('button', { name: '关闭' }).click().catch(() => {})
 await page.waitForTimeout(800)
 
-await page.locator('.hud-rail button[data-label="伴星"]').click({ force: true })
-await page.waitForTimeout(3000)
-const center = await page.evaluate(() => ({
-  classes: [...new Set([...document.querySelectorAll('[class*="cc-"], [class*="companion-center"]')].map((el) => el.className.split(' ')[0]))].slice(0, 12),
-  tabs: [...document.querySelectorAll('button')].map((b) => (b.getAttribute('aria-label') ?? b.textContent ?? '').trim()).filter((t) => /对话|手记|记录|共同/.test(t)).slice(0, 12),
-}))
-info(`伴星中心入口：${JSON.stringify(center)}`)
-for (const tab of ['对话', '共同记录', '全部对话']) {
-  const button = page.getByRole('button', { name: tab, exact: true }).first()
-  if (await button.count()) { await button.click().catch(() => {}); await page.waitForTimeout(2500); break }
+for (let attempt = 0; attempt < 2; attempt += 1) {
+  await page.locator('.hud-rail button[data-label="伴星"]').click({ force: true })
+  await page.waitForTimeout(3000)
+  if (await page.locator('.cc-house-main').count()) break
+  info('没进伴星中心，再点一次 rail 上的「伴星」')
 }
-const centerImages = await imageRender()
+// 伴星中心是「房间 + 坐垫页签」那一套：页签在 .cc-room-tabs 里，直接点同名按钮最稳。
+const roomTab = async (label) => {
+  const tab = page.locator('.cc-room-tabs button', { hasText: label }).first()
+  if (await tab.count()) { await tab.click({ force: true }).catch(() => {}); await page.waitForTimeout(4000); return true }
+  return false
+}
+const openedDialogue = await roomTab('对话')
+info(`伴星中心「对话」页签：${openedDialogue ? '已点开' : '没找到同名页签'}`)
+let centerImages = await imageRender()
+if (!centerImages.length) {
+  await roomTab('查看对话记录')
+  centerImages = await imageRender()
+}
+const centerText = await page.evaluate(() => document.querySelector('.cc-house-main, main')?.innerText?.replace(/\s+/g, ' ').slice(0, 200) ?? null)
 notes.push(`${centerImages.some((f) => f.natural > 0) ? '✓' : '✗'} 伴星中心的对话里的图片渲染：${JSON.stringify(centerImages)}`)
+info(`伴星中心当前页文字：${centerText}`)
 await shot('07-companion-center')
 
 await finish(0)

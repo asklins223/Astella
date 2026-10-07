@@ -24,6 +24,7 @@ import {
   type SubscriptionTopicM2,
 } from "@astella/shared/desktop-ipc-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { clearAccountSignOutNotice } from "../../app/account-signout.ts";
 import { publishGateInvalidation } from "../../app/gate-invalidation.ts";
 import { useRoomStore } from "../../app/room-store.ts";
 import { DesktopAccessGate } from "../DesktopAccessGate.tsx";
@@ -85,6 +86,20 @@ function session(workspaceEpoch: number, workspaceId = WORKSPACE_ID): SessionCon
   });
 }
 
+/** 会话还在，但服务端要求重新验证身份——门禁停在「请再次输入密码」那一屏。 */
+function reauthSession(): SessionContextV1 {
+  return sessionContextSchema.parse({
+    version: 1,
+    status: "reauth_required",
+    user: { userId: USER_ID, email: "owner@example.com", displayName: "Owner" },
+    workspace: null,
+    membership: null,
+    capabilities: null,
+    workspaceEpoch: 1,
+    credentialPersistence: "memory",
+  });
+}
+
 function ok<T>(data: T, workspaceEpoch?: number): GatewayResultV1<T> {
   return {
     version: 1,
@@ -127,12 +142,13 @@ type Harness = {
   readonly getState: ReturnType<typeof vi.fn>;
   readonly getSnapshot: ReturnType<typeof vi.fn>;
   readonly retryConnection: ReturnType<typeof vi.fn>;
+  readonly logout: ReturnType<typeof vi.fn>;
   readonly setSession: (next: SessionContextV1) => void;
   readonly emitRuntime: (event: GatewayEventV1) => void;
 };
 
-function installApi(options: { hangSession?: boolean } = {}): Harness {
-  let currentSession = session(1);
+function installApi(options: { hangSession?: boolean; initialSession?: SessionContextV1 } = {}): Harness {
+  let currentSession = options.initialSession ?? session(1);
   const listeners = new Map<string, (event: GatewayEventV1) => void>();
   const topics = new Map<string, SubscriptionTopicM2["kind"]>();
   let subscriptionSeq = 0;
@@ -144,6 +160,7 @@ function installApi(options: { hangSession?: boolean } = {}): Harness {
   ));
   const getSnapshot = vi.fn(async () => ok(runtimeSnapshot));
   const retryConnection = vi.fn(async () => ok(runtimeSnapshot.apiConnection, 1));
+  const logout = vi.fn(async () => ok({ loggedOut: true as const, serverRevoked: true as const }));
 
   const api = {
     contract,
@@ -155,6 +172,7 @@ function installApi(options: { hangSession?: boolean } = {}): Harness {
       register: vi.fn(),
       reauthenticate: vi.fn(),
       joinWorkspace: vi.fn(),
+      logout,
     },
     workspace: { list: vi.fn(), switch: vi.fn() },
     subscriptions: {
@@ -176,6 +194,7 @@ function installApi(options: { hangSession?: boolean } = {}): Harness {
     getState,
     getSnapshot,
     retryConnection,
+    logout,
     setSession: (next) => { currentSession = next; },
     emitRuntime: (event) => {
       for (const [subscriptionId, listener] of [...listeners]) {
@@ -380,5 +399,57 @@ describe("DesktopAccessGate 的失效判据（F01）", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * 「请再次输入密码」那一屏唯一的输入就是密码。想不起来时没有第二条路可走，整扇
+ * 门就锁死了——而这一屏恰恰是自动登录恢复出来的会话最常落到的地方。
+ */
+describe("DesktopAccessGate 重认证那一屏的出口", () => {
+  beforeEach(() => {
+    // 退出的结论停在模块里（见 app/account-signout.ts），用例之间不能互相带话。
+    clearAccountSignOutNotice();
+  });
+
+  async function renderReauthGate() {
+    render(
+      <DesktopAccessGate>
+        <button type="button" data-testid="room-focus">学习页面</button>
+      </DesktopAccessGate>,
+    );
+    await screen.findByRole("heading", { name: "请再次输入密码" });
+    return screen.getByRole("button", { name: "想不起来密码？退出并重新登录" });
+  }
+
+  it("密码想不起来时，这一屏给出一条退出并重新登录的路", async () => {
+    const harness = installApi({ initialSession: reauthSession() });
+    const exit = await renderReauthGate();
+    expect(exit).toBeTruthy();
+    expect(screen.queryByTestId("room-focus")).toBeNull();
+  });
+
+  it("退出后回到登录页，邮箱预填成刚离开的那个账号", async () => {
+    const harness = installApi({ initialSession: reauthSession() });
+    const exit = await renderReauthGate();
+
+    fireEvent.click(exit);
+
+    await screen.findByRole("button", { name: "登录" });
+    expect(harness.logout).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("heading", { name: "请再次输入密码" })).toBeNull();
+    expect((screen.getByLabelText("邮箱") as HTMLInputElement).value).toBe("owner@example.com");
+    // 本机干净退出：登录页本身就是答案，不该再多挂一句。
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("撤销没送达时，退出结论跟着带到登录页", async () => {
+    const harness = installApi({ initialSession: reauthSession() });
+    const exit = await renderReauthGate();
+    harness.logout.mockResolvedValueOnce(ok({ loggedOut: true as const, serverRevoked: false as const }));
+
+    fireEvent.click(exit);
+
+    await screen.findByText("这台设备已经退出登录。这次的登录状态没能通知学习服务撤销，它会在学习服务那边留到自动过期。");
   });
 });

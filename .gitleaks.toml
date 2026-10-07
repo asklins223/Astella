@@ -1,11 +1,11 @@
-# Gitleaks configuration for AI Learning System
+# Gitleaks configuration for Astella
 # REL-01 / RC 硬门禁 §4.1: Secret scan
 #
 # This config extends the default rules and adds allowlist patterns for
 # development examples, documentation, and test fixtures that contain
 # non-sensitive placeholder values.
 
-title = "AI Learning System - Gitleaks Config"
+title = "Astella - Gitleaks Config"
 
 [extend]
 # Extend the default Gitleaks rules

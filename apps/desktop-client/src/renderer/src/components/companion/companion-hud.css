@@ -176,9 +176,10 @@
   opacity: .52;
 }
 
-/* 拾音中：按钮本身脉动一圈，别只靠那条随电平伸缩的细环——说话小声时它几乎看不见。 */
+/* 拾音中：按钮本身脉动一圈，别只靠那条随电平伸缩的细环——说话小声时它几乎看不见。
+   对话模式下麦克风是常驻的，`open` 就是"正在听"这一整个状态。 */
 @media (prefers-reduced-motion: no-preference) {
-  .companion-hud__controls > button[data-voice-phase="listening"] {
+  .companion-hud__controls > button[data-voice-phase="open"] {
     animation: companion-hud-mic-pulse 1.6s ease-in-out infinite;
   }
 }
@@ -992,7 +993,7 @@
   to { opacity: 1; }
 }
 
-/* ── 方案 §3 收尾：边缘设置面板 / SR 状态区 / 显示全文 / 双按钮表单 ─────────── */
+/* ── 方案 §3 收尾：边缘设置面板 / SR 状态区 / 双按钮表单 ─────────── */
 
 /* 读屏专用：视觉隐藏、可聚焦可达（不 display:none——role=status 需要留在树上）。 */
 .companion-hud__sr-status {
@@ -1099,18 +1100,8 @@
   animation: none;
 }
 
-/* 流式气泡里的「显示全文」（方案 §3）：与「停止」同族的胶囊小钮，落在左下角
-   （停止在右下角），互不重叠。选择器带气泡的理由与「停止」相同（压住 `font: inherit`）。 */
-
-@media (hover: hover) and (pointer: fine) {
-  .companion-hud__output-reveal:hover {
-    border-color: var(--companion-peach-strong);
-    background: #fffdf5;
-  }
-}
-
-/* 生成期的两颗胶囊（「停止」在右下、「显示全文」在左下）浮在正文之上、贴着气泡底边。
-   正文按跟随滚动钉在底部时，最新一行正好落在它们底下——生成期把气泡下内边距撑到装得下
+/* 生成期那颗「停止」胶囊（右下角）浮在正文之上、贴着气泡底边。
+   正文按跟随滚动钉在底部时，最新一行正好落在它底下——生成期把气泡下内边距撑到装得下
    胶囊（8px 落差 + 22px 胶囊高 ≈ 30px，取 34px 留一点余量），胶囊落进留白带，最后一行
    不再被盖住（2026-09-20 跟随滚动补）。静止的长回复没有胶囊，不留这条空档。
    这段留白会被 `CompanionHud.tsx` 量进 chrome，所以行高对齐（整行）自动把它算进去。 */

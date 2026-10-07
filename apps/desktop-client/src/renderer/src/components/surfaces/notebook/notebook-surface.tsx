@@ -32,7 +32,7 @@ import type {
   RoundTeachingViewV1,
 } from "@astella/shared/note-learning-round-contracts";
 import { useRoomStore } from "../../../app/room-store";
-import { SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-consent-gate";
+import { SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
 import { SpaceShareButton, noteShareScopeLabel } from "../../space-share-control";
 import type { NoteShareScopeV1 } from "@astella/shared/note-share-contracts";
 import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
@@ -2220,7 +2220,7 @@ const noteDocLive = useNoteDocLiveView(
   };
   const openAiConsentSettings = (): void => {
     setSettingsAttention(SETTINGS_ATTENTION_AI_CONSENT);
-    setSettingsSection("data");
+    setSettingsSection(SETTINGS_SECTION_AI_CONSENT);
     invoke("open-settings");
   };
   /**

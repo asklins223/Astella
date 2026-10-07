@@ -21,6 +21,7 @@ import {
   boundCompanionRecentHistory,
   buildCompanionContextHandoffSnapshotV1,
   renderCompanionContextHandoff,
+  renderPendingOffersAsRecords,
   type CompanionContextHandoffInputV1,
   type CompanionRecentHistoryMessage,
 } from "../companion-context-handoff.ts";
@@ -157,4 +158,50 @@ test("【自证】判据认得出「留下的是最早那批」这个真实退�
   assert.notEqual(bounded[bounded.length - 1]?.text, "第 0 条");
   assert.ok(bounded.some((m) => m.text === "第 39 条"), "最近那条必须留着");
   assert.ok(!bounded.some((m) => m.text === "第 0 条"), "最早那条应当已被丢掉");
+});
+
+test("按索引降级她自己的收尾：问句和陈述式的等待句都算，没点到的不动", () => {
+  const history = [
+    { role: "assistant", content: "熵衡量的是一杯墨水能散成多少种摆法。\n\n想接着问生命凭什么维持有序，还是先拿冰箱当例子再捋一遍？" },
+    { role: "user", content: "在干嘛呢" },
+    // 记账的句子多是这种陈述句——只认问号的那一版实测等于没做（66.7% vs 基线 63.5%）。
+    { role: "assistant", content: "趴着呢。想接着问冰箱那个例子我随时接。" },
+    { role: "user", content: "大肥鱼" },
+    { role: "assistant", content: "在呢。\n\n我这边先摸会儿鱼，到点就去吃饭。" },
+  ];
+  const rendered = renderPendingOffersAsRecords(history, [0, 2]);
+  assert.equal(rendered[0]?.content,
+    "熵衡量的是一杯墨水能散成多少种摆法。\n\n（这句说完就算过去了。）");
+  assert.equal(rendered[2]?.content, "（这句说完就算过去了。）",
+    "陈述式的等待句一样降级——判据是解释给的索引，不是标点");
+  assert.equal(rendered[4]?.content, history[4]!.content, "没被点到的消息一个字不改");
+  assert.equal(rendered[1]?.content, "在干嘛呢", "用户消息永不被改写");
+});
+
+test("降级只动末段、可重复应用，并保住正文之外的字段", () => {
+  const once = renderPendingOffersAsRecords([{ role: "assistant", content: "第一段。\n\n末尾问句？" }], [0]);
+  assert.equal(once[0]?.content, "第一段。\n\n（这句说完就算过去了。）");
+  assert.deepEqual(renderPendingOffersAsRecords(once, [0]), once, "渲染两次必须是同一个结果（已经换过的不再套第二层）");
+  assert.equal(
+    renderPendingOffersAsRecords([{ role: "assistant", content: "上一段里也有一个？\n\n末尾是陈述。" }], [0])[0]?.content,
+    "上一段里也有一个？\n\n（这句说完就算过去了。）",
+    "只改最后那一段，正文里原有的问句不动",
+  );
+  assert.equal(
+    renderPendingOffersAsRecords([{ role: "assistant", content: "随便一句？" }], [])[0]?.content,
+    "随便一句？", "本轮没有待收的账时完全不介入");
+
+  // 运行时那一份消息还带着工具调用与思考句柄：改写只能动正文。
+  const carried = renderPendingOffersAsRecords([{
+    role: "assistant", content: "要不要接着讲？",
+    toolCalls: [{ id: "c1", name: "companion_read_note", arguments: {} }],
+    reasoning: [{ handle: "h1" }],
+  }], [0])[0] as Record<string, unknown>;
+  assert.equal(carried.content, "（这句说完就算过去了。）");
+  assert.deepEqual(carried.toolCalls, [{ id: "c1", name: "companion_read_note", arguments: {} }], "工具调用不能被改写抹掉");
+  assert.deepEqual(carried.reasoning, [{ handle: "h1" }], "思考句柄不能被改写抹掉");
+
+  const parts = [{ role: "assistant", content: [{ type: "text", text: "带着图的一条？" }] }];
+  assert.equal(renderPendingOffersAsRecords(parts, [0])[0]?.content, parts[0]!.content,
+    "非字符串正文不动——邀请只出现在纯文本回复里");
 });

@@ -6,6 +6,7 @@ import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-cl
 import { useRoomStore } from "../../../app/room-store";
 import { publishCompanionRecordsChanged } from "../../companion/companion-events";
 import { SettingsInlineState,type SettingsReadable } from "./settings-primitives";
+import { SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
 
 const EXPORTS = [
   { kind: "all", title: "全部伴星数据", detail: "记忆、对话、人格与操作记录的副本" },
@@ -61,7 +62,7 @@ export function SettingsCompanionData(props: { meta: () => RequestMetaV1; onRead
   return <div className="settings-companion-data" onKeyDown={event => { if (event.key === "Escape" && confirm && busy === null) { event.preventDefault(); event.stopPropagation(); setConfirm(null); } }}>
     {error ? <SettingsInlineState title="这次操作没有完成" detail={error} tone="error" /> : null}
     {notice ? <p className="settings-companion-notice" role="status">{notice}</p> : null}
-    <div className="settings-companion-privacy"><div><strong>AI 数据同意</strong><p>外发内容的授权与审计在账号的 AI 数据同意页统一管理。</p></div><button type="button" className="button" onClick={() => useRoomStore.getState().setSettingsSection("data")}>查看数据同意</button></div>
+    <div className="settings-companion-privacy"><div><strong>AI 数据同意</strong><p>外发内容的授权与审计在账号的 AI 数据同意页统一管理。</p></div><button type="button" className="button" onClick={() => useRoomStore.getState().setSettingsSection(SETTINGS_SECTION_AI_CONSENT)}>查看数据同意</button></div>
     <section className="settings-companion-chapter"><header><h3>导出副本</h3><p>副本保存在本机的「下载 / Astella / 伴星」，每次导出会保存为新文件。</p></header><div className="settings-companion-exports">{EXPORTS.map(item => <button type="button" key={item.kind} disabled={busy !== null} onClick={() => exportData(item.kind)}><Download size={18} aria-hidden="true" /><span><strong>导出{item.title}</strong><small>{item.detail}</small></span></button>)}</div></section>
     <section className="settings-companion-chapter settings-companion-danger"><header><h3>清除数据</h3><p>先核对每项的范围：记忆可在 30 天内恢复，对话与操作记录永久清除。</p></header>{CLEAR_ACTIONS.map(item => <div key={item.kind} className="settings-companion-clear"><div><Trash2 size={16} aria-hidden="true" /><span><strong>{item.title}</strong><small>{item.detail}</small></span><button ref={element => { openRefs.current[item.kind] = element; }} type="button" className="danger-quiet" disabled={busy !== null} aria-expanded={confirm === item.kind} onClick={() => setConfirm(confirm === item.kind ? null : item.kind)}>{confirm === item.kind ? "取消" : "清除"}</button></div>{confirm === item.kind ? <div className="settings-companion-confirm" role="group" aria-label={`确认${item.title}`}><p>{item.detail} {item.kind === "memory" ? "可在记忆页的回收区恢复。" : "这项操作不可恢复。"}</p><button type="button" className="button danger" disabled={busy !== null} onClick={() => clear(item.kind)}>{busy === item.kind ? "正在清除…" : `确认${item.title}`}</button></div> : null}</div>)}</section>
   </div>;

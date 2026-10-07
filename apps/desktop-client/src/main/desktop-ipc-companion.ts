@@ -738,7 +738,17 @@ channel(DESKTOP_IPC_CHANNELS.companionHomeGetProjection, runtimeInputSchema, asy
       setCompanionLifecycleDisabledEpoch(0);
       void startCompanionLifecycle(getActiveWorkspaceEpoch());
     } else stopCompanionLifecycle();
-    emit("runtime", { kind: "snapshot_invalidated", scope: "runtime" }, getActiveWorkspaceEpoch());
+    /**
+     * 只有「她整个开没开」这一档改的是**房间读得到**的东西——两条常连接、收件箱投递、
+     * 主动念头都在这个失效的作用域里。其余全是账号级偏好（助理权限档位、静默时段、
+     * 语音开关、日记开关……），渲染层听 `astella:companion-account-changed` 自己重读账号就够了。
+     *
+     * 以前这里无条件广播：输入框旁边按一下档位，就要付一次门禁 bootstrap 复核
+     * 加一次书房大读，用户体感就是「切一下设置整间房子重刷」。
+     */
+    if (input.request.globalEnabled !== undefined) {
+      emit("runtime", { kind: "snapshot_invalidated", scope: "runtime" }, getActiveWorkspaceEpoch());
+    }
     return account;
   }, companionAccountStateV1Schema);
 

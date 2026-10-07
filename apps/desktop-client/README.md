@@ -1,4 +1,4 @@
-# AI Learn desktop client
+# Astella desktop client（拾星笔记 桌面端）
 
 This directory is the new Electron-only client. It is independent from the legacy
 web and desktop applications.

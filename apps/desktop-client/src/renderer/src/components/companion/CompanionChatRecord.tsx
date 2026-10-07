@@ -68,7 +68,9 @@ export function shouldShowRunTrace(trace: CompanionRunTrace): boolean {
 export function stopSummary(trace: CompanionRunTrace | null): string {
   if (!trace) return "";
   const parts: string[] = [];
-  if (trace.summary.stepCount > 0) parts.push(`思考 ${trace.summary.stepCount} 步`);
+  // 「走了 N 步」是 run 的步数，不是模型的思考档——本轮开不开思考由服务端
+  // 的 `assistant.status` 说，这里再叫"思考 N 步"就会两头对不上。
+  if (trace.summary.stepCount > 0) parts.push(`走了 ${trace.summary.stepCount} 步`);
   if (trace.summary.toolCallCount > 0) parts.push(`调用 ${trace.summary.toolCallCount} 次工具`);
   return parts.length > 0 ? ` · ${parts.join(" · ")}` : "";
 }
@@ -103,9 +105,11 @@ export function highlightText(text: string, keyword: string): ReactNode {
 function NavBlockLine({
   block,
   chat,
+  onNavigated,
 }: {
   readonly block: Extract<CompanionContentBlockV1, { type: "nav" }>;
   readonly chat: CompanionChatSession;
+  readonly onNavigated?: () => void;
 }) {
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -118,7 +122,11 @@ function NavBlockLine({
       <button type="button" disabled={busy} onClick={() => {
         setBusy(true);
         setFailure(null);
-        void chat.goToRoute(target).catch((error) => setFailure(gatewayErrorMessage(error))).finally(() => setBusy(false));
+        void chat.goToRoute(target)
+          // 人已经送到了，那张递过来的纸签就该跟着退场；跳不成才留在原地报错。
+          .then(() => onNavigated?.())
+          .catch((error) => setFailure(gatewayErrorMessage(error)))
+          .finally(() => setBusy(false));
       }}>
         <CornerDownRight size={12} />
         {block.label}
@@ -214,16 +222,18 @@ export function CompanionQuoteBlock({
 export function CompanionMessageRichBlocks({
   blocks,
   chat,
+  onNavNavigated,
 }: {
   readonly blocks: readonly CompanionContentBlockV1[];
   readonly chat?: CompanionChatSession;
+  readonly onNavNavigated?: () => void;
 }) {
   return <>
     {blocks.filter((block) => block.type === "nav" || block.type === "quote"
       || block.type === "diagram" || block.type === "card" || block.type === "image" || block.type === "citation" || block.type === "code")
       .map((block, index) => (
         block.type === "nav"
-          ? chat ? <NavBlockLine key={`nav-${index}`} block={block} chat={chat} /> : <p className="companion-record__nav companion-record__nav--plain" key={`nav-${index}`}><span>{block.label}</span></p>
+          ? chat ? <NavBlockLine key={`nav-${index}`} block={block} chat={chat} onNavigated={onNavNavigated} /> : <p className="companion-record__nav companion-record__nav--plain" key={`nav-${index}`}><span>{block.label}</span></p>
           : block.type === "quote"
             ? <CompanionQuoteBlock key={`quote-${index}`} block={block} />
             : block.type === "diagram"

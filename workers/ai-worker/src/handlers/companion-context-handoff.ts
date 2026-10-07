@@ -336,6 +336,62 @@ export function boundCompanionRecentHistory(
 }
 
 /**
+ * 降级时替换上去的那一句。
+ *
+ * 形状是量出来的，不是拍的：把那句邀请**原样包一层**「（当时我提过：…）」实测零效果
+ * （严格判据 31/70 vs 基线 35/70，p=0.61）——字还留在原地，她就照着那些字继续等。
+ * 换成一句**中性陈述**才压得下来。留出集（6 个未参与调参的真实轮次，各 10 发，判据=同一句里
+ * 既提到学习内容又发出续办邀请）11/60 vs 原样 25/60，p=0.009，六个场景没有一个变差。
+ * 取中性说明这一形，不替她编一句她没说过的话。
+ */
+export const PAST_OFFER_NOTE = "（这句说完就算过去了。）";
+
+/**
+ * 把回放里**指定那几条**她自己消息的收尾换成一句中性说明，不再是一笔待收的账（2026-10-07）。
+ *
+ * 实机：用户闲聊时她连着四轮把上一次问答拉回来（「正等你说要不要接着往下捋——结果你先来问我」）。
+ * 根因不是题目上下文被注入，也不是意图分类判错（那几轮 `intent=conversation` 是对的），而是
+ * **她自己结尾那句邀请在历史里永生**：用户不接、换话题，在系统里都不是事件，于是她下一轮把
+ * 自己的话读回来当一笔没结清的账。主会话 29 条回复里 23 条以钩子收尾（79%），这些钩子被用户
+ * 接受的次数是 **0**。
+ *
+ * "哪一条还挂着没被回的账"由每轮已经在跑的注意力解释给出（`pendingOfferIndexes`）——它同时
+ * 看得见她的上一条和用户的这一句；这里只按索引改形态。索引来自模型而不是词表或标点：
+ * 只认问号的那一版实测等于没做，因为记账的句子多是陈述句（「就等你丢个词进来」「想接着问冰箱我随时接」）。
+ *
+ * 只作用于**喂给模型的那一份**：DB 原文、审计用的 `historyTail`、`companion_read_history`
+ * 取回的正文都保持原样。她仍然记得自己说过什么，只是那不再是一笔待收的账。
+ *
+ * 泛型按 `{role, content}` 这条**要发出去的形状**收：调用方那侧还带着 toolCalls、reasoning
+ * 句柄这些字段，换成 `{role,text}` 的历史形状就会在改写时把它们抹掉。
+ */
+export function renderPendingOffersAsRecords<T extends { role: string; content: unknown }>(
+  messages: readonly T[],
+  offerIndexes: readonly number[],
+): T[] {
+  if (offerIndexes.length === 0) return messages.slice();
+  const targets = new Set(offerIndexes);
+  return messages.map((message, index) => {
+    if (!targets.has(index) || message.role !== "assistant") return message;
+    // 非字符串正文（带图的 parts）不改：这条链上的收尾邀请只会出现在纯文本回复里。
+    if (typeof message.content !== "string") return message;
+    const replaced = replaceTrailingOfferParagraph(message.content);
+    return replaced === message.content ? message : { ...message, content: replaced };
+  });
+}
+
+/** 把一段回复的最后一个非空段落换成那句中性说明；没有尾巴或已经换过就原样返回。 */
+function replaceTrailingOfferParagraph(text: string): string {
+  const paragraphs = text.split("\n\n");
+  let last = paragraphs.length - 1;
+  while (last >= 0 && paragraphs[last]!.trim().length === 0) last -= 1;
+  if (last < 0) return text;
+  if (paragraphs[last]!.trim() === PAST_OFFER_NOTE) return text;
+  paragraphs[last] = PAST_OFFER_NOTE;
+  return paragraphs.join("\n\n");
+}
+
+/**
  * 折叠轨迹收集器。
  *
  * 它就是一个可变数组 + 一个快照构造器：折叠发生时往里追加，回合结束时把整份轨迹

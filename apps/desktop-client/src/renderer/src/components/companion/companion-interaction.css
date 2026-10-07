@@ -162,12 +162,10 @@
 .companion-hud__reply-foot { display: flex; align-items: center; justify-content: space-between; gap: 7px; margin-top: 6px; font-size: 11px; color: var(--hud-soft); }
 .companion-hud__reply-foot .text-action { display: inline-flex; gap: 4px; align-items: center; min-height: 36px; padding: 3px 0; background: transparent; border: 0; font-size: 11px; color: inherit; }
 .companion-hud__reply-foot svg { transform: rotate(180deg); }
-.companion-hud--floating .companion-hud__output-stop,
-.companion-hud--floating .companion-hud__output-reveal { position: static; display: inline-flex; align-items: center; gap: 5px; min-height: 32px; margin: 5px 0 0; font-size: 11px; }
+.companion-hud--floating .companion-hud__output-stop { position: static; display: inline-flex; align-items: center; gap: 5px; min-height: 32px; margin: 5px 0 0; font-size: 11px; }
 .companion-hud--floating .companion-hud__composer form { display: block; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .companion-hud--floating .companion-hud__composer form:focus-within { outline: none; box-shadow: none; }
-.companion-hud--floating .companion-hud__composer textarea,
-.companion-hud__voice textarea {
+.companion-hud--floating .companion-hud__composer textarea {
   display: block;
   width: 100%;
   height: auto;
@@ -183,6 +181,24 @@
   resize: none;
   outline: none;
 }
+/* 语音对话的字幕：跟着说出来的话一行行长出来。只读、不编辑、不等你点发送（2026-10-07）。
+   左缘那道细线是"这是你说的话"与"这是她写的东西"之间唯一的分隔——不再套一层框。 */
+.companion-hud__voice-caption {
+  margin: 9px 0 0;
+  padding: 2px 0 2px 11px;
+  border-left: 2px solid #9fb887;
+  min-height: 26px;
+  color: var(--hud-ink);
+  font: 14px/1.8 "Noto Sans SC Variable", sans-serif;
+}
+.companion-hud__voice-sending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  color: var(--companion-muted);
+  font: 12px/1.6 "Noto Sans SC Variable", sans-serif;
+}
 .companion-hud--floating .companion-hud__composer { padding: 8px 12px 10px; border-radius: 22px 28px 20px 25px; }
 .companion-hud--floating .companion-hud__composer textarea { min-height: 40px; max-height: 112px; padding: 4px 0; font-size: 13px; line-height: 1.75; }
 .companion-hud--floating textarea::placeholder { color: #75624e; opacity: 1; }
@@ -190,6 +206,22 @@
 .companion-hud__compose-tools > span { color: var(--hud-soft); font-size: 11px; }
 .companion-hud__compose-tools > button { display: grid; place-items: center; width: 38px; height: 38px; min-height: 38px; padding: 0; color: var(--hud-ink); border: 0; border-radius: 50%; background: transparent; box-shadow: none; }
 .companion-hud__compose-action { flex: none; }
+/* 助理权限就地档：与同行其它图标钮同一种材质，弹层开着时那颗按下去的样子要留得住。
+   三档各有各的形状（只看不改 / 先问一句 / 直接去做），按钮上就是当前那一档的图标。 */
+.companion-permission__trigger[aria-expanded="true"] { background: #e3d2a4; }
+.companion-permission__menu { position: fixed; z-index: 260; display: flex; flex-direction: column; gap: 2px; padding: 12px; border: 3px solid var(--hud-paper-light); border-radius: 17px 23px 15px 20px; background: #fff9eb; box-shadow: 0 14px 30px rgba(55,36,23,.24); color: var(--hud-ink); font: 500 12px/1.6 "Noto Sans SC Variable", "PingFang SC", system-ui, sans-serif; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #b69b77 transparent; }
+.companion-permission__lead { margin: 0 2px 6px; color: var(--hud-soft); font-size: 11px; }
+.companion-permission__menu button { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 10px; padding: 9px 26px 9px 10px; border: 0; border-radius: 12px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.companion-permission__menu button > svg { margin-top: 2px; color: #6f8062; }
+.companion-permission__menu button > span { display: flex; flex-direction: column; gap: 2px; }
+.companion-permission__menu button:hover:not(:disabled) { background: #f3ead2; }
+.companion-permission__menu button strong { font-size: 12.5px; font-weight: 700; }
+.companion-permission__menu button small { color: #7d8873; font-size: 11px; line-height: 1.5; }
+.companion-permission__menu button[data-current] { background: #e5ecd8; }
+.companion-permission__menu button[data-current] > svg { color: #3f6b4c; }
+.companion-permission__menu button[data-current]::after { position: absolute; top: 12px; right: 11px; content: ""; width: 8px; height: 8px; border-radius: 50%; background: #4f7d55; }
+.companion-permission__menu button:disabled { opacity: .55; cursor: default; }
+.companion-permission__error { margin: 6px 2px 0; color: #813f2c; font-size: 11px; }
 .companion-hud__compose-tools > button[type="submit"] { margin-left: auto; width: 40px; height: 40px; border: 2px solid #af522c; background: var(--hud-peach); box-shadow: 0 6px 14px rgba(122,58,30,.26); }
 .companion-hud--floating .companion-hud__composer blockquote { display: flex; align-items: center; gap: 7px; margin: 5px 0; padding: 6px 6px 6px 10px; max-height: 116px; overflow: hidden; border: 0; border-radius: 11px 15px 10px 13px; background: #efe3bd; font-size: 12px; }
 /* 引用条排成一行：引号图标与文本在左，「移除引用」钉在右侧。长引用在文本自己
@@ -224,6 +256,10 @@
 .companion-hud__paper > footer { flex: none; }
 .companion-hud--floating[data-side="left"] .companion-hud__paper { transform-origin: 100% 85%; }
 .companion-hud--floating[data-side="right"] .companion-hud__paper { transform-origin: 0 85%; }
+/* 「去这一页」是递到眼前的一张纸，不是页面角落里的一条通知。星图、搜索这类满幅
+   页面里，贴着伴星的侧廊会压到页面自己的标题栏上；引用与图片要贴着正文读，仍留在侧廊。 */
+.companion-hud__nav-papers { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, calc(100vw - 56px)); display: flex; flex-direction: column; gap: 15px; pointer-events: auto; }
+.companion-hud--floating .companion-hud__nav-papers .companion-hud__paper { max-height: calc(100dvh - 96px); transform-origin: 50% 88%; }
 .companion-hud__paper[data-kind="quote"],
 .companion-hud__paper[data-kind="citation"] { background: #f2e6bd; }
 .companion-hud__paper[data-kind="diagram"] { background: #e5ecd8; }

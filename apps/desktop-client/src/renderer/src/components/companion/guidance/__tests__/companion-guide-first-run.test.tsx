@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import type { CompanionOnboardingStateV1 } from "@astella/shared/companion-shell-contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useRoomStore } from "../../../../app/room-store";
+import { SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../../app/companion-consent-gate";
 import { notifyCompanion } from "../../companion-notifications";
 import { useCompanionGuide, type CompanionGuideController } from "../use-companion-guide";
 
@@ -46,6 +47,7 @@ function serve(state: CompanionOnboardingStateV1, request: Request): CompanionOn
 }
 
 let signed = false;
+let aiReads = 0;
 /** @param rows 服务端已有的认识进度；缺哪一格就还没被邀请过。 */
 function installApi(rows: Partial<Record<"account" | "space", CompanionOnboardingStateV1>> = {}) {
   const transitions: { scope: string; action: string; stepId?: string }[] = [];
@@ -63,14 +65,14 @@ function installApi(rows: Partial<Record<"account" | "space", CompanionOnboardin
       },
     } },
     note: { list: async () => ({ ok: true, data: { total: 0, items: [] } }) },
-    workspace: { getAiSettings: async () => ({ ok: true, data: { requiresConsent: true, consentVersion: signed ? "ai-consent-v1" : null,
-      dataPolicy: { sendToExternal: true, sendImageContent: false, piiDetection: true, auditLogging: true } } }) },
+    workspace: { getAiSettings: async () => { aiReads += 1; return { ok: true, data: { requiresConsent: true, consentVersion: signed ? "ai-consent-v1" : null,
+      dataPolicy: { sendToExternal: true, sendImageContent: false, piiDetection: true, auditLogging: true } } }; } },
   });
   return transitions;
 }
 
 beforeEach(() => {
-  localStorage.clear(); signed = false;
+  localStorage.clear(); signed = false; aiReads = 0;
   useRoomStore.setState({ spaceIdentity: identity, surface: null, destination: "room", masterMuted: true, hudPage: "home" });
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); latest = undefined; mockNotify.mockReset(); });
@@ -80,8 +82,8 @@ it("walks a brand-new account into the tour instead of leaving an invitation to 
   render(<Probe />);
   await waitFor(() => expect(latest?.session?.topic).toBe("welcome"));
   await waitFor(() => expect(transitions).toEqual([
-    { scope: "account", action: "start", stepId: "room" },
-    { scope: "account", action: "advance", stepId: "room" },
+    { scope: "account", action: "start", stepId: "voice" },
+    { scope: "account", action: "advance", stepId: "voice" },
   ]));
   expect(mockNotify).not.toHaveBeenCalled();
   expect(latest?.invitation).toBeNull();
@@ -91,20 +93,43 @@ it("holds the voice and names the missing consent instead of knocking on the gat
   installApi();
   render(<Probe />);
   await waitFor(() => expect(latest?.session?.topic).toBe("welcome"));
-  await waitFor(() => expect(latest?.consentNeeded).toBe(true));
+  await waitFor(() => expect(latest?.consent).toBe("required"));
 });
 
-it("takes the signed consent as the cue to take the same chapter back up", async () => {
+
+it("leaves a walk in progress alone when the gate re-verifies the session", async () => {
   const transitions = installApi();
   render(<Probe />);
-  await waitFor(() => expect(latest?.consentNeeded).toBe(true));
-  latest!.openConsentSettings();
-  latest!.pause();
-  await waitFor(() => expect(useRoomStore.getState().surface).toBe("settings"));
-  signed = true;
-  useRoomStore.setState({ surface: null });
-  await waitFor(() => expect(transitions).toContainEqual({ scope: "account", action: "resume", stepId: "room" }));
-  expect(latest?.consentNeeded).toBe(false);
+  await waitFor(() => expect(latest?.consent).toBe("required"));
+  latest!.next(1);
+  await waitFor(() => expect(latest?.session?.index).toBe(1));
+  const writes = transitions.length;
+  // 门禁重核会话只换纪元。它不是"用户离开了带路"，一次重跑都不该发生。
+  act(() => useRoomStore.setState({ spaceIdentity: { ...identity, workspaceEpoch: 4 } }));
+  await new Promise(resolve => setTimeout(resolve, 30));
+  expect(latest?.session).toMatchObject({ topic: "welcome", index: 1 });
+  expect(transitions).toHaveLength(writes);
+});
+
+it("stands back on the first station after a remount while the voice is still off", async () => {
+  const stuck = serve(fresh("account"), { scope: "account", action: "start", stepId: "voice", topicId: "welcome" });
+  const transitions = installApi({ account: stuck });
+  const writes = transitions.length;
+  render(<Probe />);
+  await waitFor(() => expect(latest?.session).toMatchObject({ topic: "welcome", index: 0 }));
+  expect(latest?.consent).toBe("required");
+  // 站回来是本地的事：服务端早就记着停在 voice，不该再为它写一笔。
+  expect(transitions).toHaveLength(writes);
+});
+
+it("does not start a second invitation while the first walk is still open", async () => {
+  const walking = serve(fresh("account"), { scope: "account", action: "start", stepId: "room", topicId: "welcome" });
+  const transitions = installApi({ account: walking });
+  render(<Probe />);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  expect(transitions).toEqual([]);
+  expect(mockNotify).not.toHaveBeenCalled();
+  expect(latest?.session).toBeNull();
 });
 
 it("still lets an account that knows the system decide whether to be shown a new space", async () => {

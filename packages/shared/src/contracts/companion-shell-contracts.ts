@@ -54,7 +54,7 @@ export const CompanionOnboardingRunStatusSchema = z.enum([
 ]);
 export const COMPANION_GUIDE_VERSION = "companion-guide-v1";
 export const COMPANION_GUIDE_TOPIC_IDS = ["welcome", "space", "sources", "reading", "agent", "review", "settings"] as const;
-export const COMPANION_GUIDE_STEP_IDS = ["room", "notes", "reading", "agent", "return", "space", "sources", "review", "settings"] as const;
+export const COMPANION_GUIDE_STEP_IDS = ["voice", "room", "notes", "reading", "agent", "return", "space", "sources", "review", "settings"] as const;
 export const companionGuideScopeSchema = z.enum(["account", "space"]);
 export type CompanionOnboardingRunStatus = z.infer<
   typeof CompanionOnboardingRunStatusSchema

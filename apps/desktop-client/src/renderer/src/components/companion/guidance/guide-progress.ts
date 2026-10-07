@@ -51,11 +51,14 @@ function optimisticTransition(state: CompanionOnboardingStateV1 | null, scope: G
 
 /** One serial CAS lane per verified identity. Local pending reading positions never become learning facts. */
 export class GuideProgressClient {
-  readonly identity: GuideIdentity;
+  private ident: GuideIdentity;
+  get identity(): GuideIdentity { return this.ident; }
+  /** 会话重核只换纪元：带路这一趟不该因此重开，但写请求必须带上最新的纪元。 */
+  followEpoch(workspaceEpoch: number) { this.ident = { ...this.ident, workspaceEpoch }; }
   states: Record<GuideScope, CompanionOnboardingStateV1 | null> = { account: null, space: null };
   pending = false;
   private queue: Promise<unknown> = Promise.resolve();
-  constructor(identity: GuideIdentity) { this.identity = identity; }
+  constructor(identity: GuideIdentity) { this.ident = identity; }
   private async send(scope: GuideScope, request: OnboardingTransitionRequest) {
     const result = unwrapGatewayResult(await window.astella.companion.account.transitionOnboarding({
       meta: createRequestMeta(this.identity.workspaceEpoch), version: COMPANION_GUIDE_VERSION, request: { ...request, scope },

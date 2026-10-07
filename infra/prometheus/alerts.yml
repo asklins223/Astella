@@ -31,7 +31,7 @@ groups:
           severity: critical
           team: platform
         annotations:
-          summary: "AI Learn API 服务不可用"
+          summary: "Astella API 服务不可用"
           description: "API readiness 状态为 0，服务可能已停止或崩溃。"
           runbook: "docs/operations.md#alerts"
 
@@ -44,7 +44,7 @@ groups:
           severity: critical
           team: platform
         annotations:
-          summary: "AI Learn Worker 服务不可用"
+          summary: "Astella Worker 服务不可用"
           description: "Prometheus 无法抓取 Worker 指标端点。"
           runbook: "docs/operations.md#alerts"
 

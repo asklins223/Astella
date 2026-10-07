@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useRoomStore } from "../../../../app/room-store";
 import { CompanionGuideBook } from "../CompanionGuideBook";
@@ -7,7 +7,7 @@ import { CompanionGuidanceStage } from "../CompanionGuidanceStage";
 import type { CompanionGuideController } from "../use-companion-guide";
 const runFeature = vi.fn();
 vi.mock("../../../home-v2/HomeV2Experience", () => ({ useHomeV2: () => ({ runFeature }) }));
-const guide = () => ({ account: null, identity: { name: "共享书房", role: "member", isPersonal: false }, session: { topic: "welcome", index: 1, scope: "account" }, invitation: null, contents: { status: "ready", total: 0, notes: [] }, consentNeeded: false, openConsentSettings: vi.fn(), start: vi.fn(), skip: vi.fn(), pause: vi.fn(), next: vi.fn(), end: vi.fn(), resume: null, reloadContents: vi.fn(), pending: false, revision: 0 }) as CompanionGuideController;
+const guide = () => ({ account: null, identity: { name: "共享书房", role: "member", isPersonal: false }, session: { topic: "welcome", index: 2, scope: "account" }, invitation: null, contents: { status: "ready", total: 0, notes: [] }, consent: "granted", openConsentSettings: vi.fn(), start: vi.fn(), skip: vi.fn(), pause: vi.fn(), next: vi.fn(), end: vi.fn(), resume: null, reloadContents: vi.fn(), pending: false, revision: 0 }) as CompanionGuideController;
 beforeEach(() => { runFeature.mockReset(); useRoomStore.setState({ surface: null, destination: "room", motionMode: "off", reducedMotion: false, masterMuted: true, hudPage: "home", spaceIdentity: { name: "共享书房", role: "member", isPersonal: false } }); vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} }); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it("offers a complete first walk before the individual topics and closes the directory when started", () => {
@@ -25,8 +25,8 @@ it("presents the entire route and a complete static scene when motion is Off", (
   const { container } = render(<CompanionGuidanceStage guide={controller} />);
   expect(container.querySelector(".guidance-stage")).toBeNull();
   expect(document.body.querySelector('.guidance-scene[data-phase="2"]')).toBeTruthy();
-  expect(screen.getByRole("navigation", { name: "连续带路路线" }).querySelectorAll("li")).toHaveLength(5);
-  expect(screen.getByRole("button", { name: "第 2 站：找到笔记" }).getAttribute("aria-current")).toBe("step");
+  expect(screen.getByRole("navigation", { name: "连续带路路线" }).querySelectorAll("li")).toHaveLength(6);
+  expect(screen.getByRole("button", { name: "第 3 站：找到笔记" }).getAttribute("aria-current")).toBe("step");
   expect(screen.queryByRole("dialog")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /演示画面 1/ }));
   expect(document.body.querySelector('.guidance-scene[data-phase="0"]')).toBeTruthy();
@@ -47,24 +47,34 @@ it("carries the same sheet from the note to its explanation, including a quick r
   const controller = guide();
   const { rerender } = render(<CompanionGuidanceStage guide={controller} />);
   const paper = document.body.querySelector(".guidance-scene__folio");
-  controller.session = { topic: "welcome", index: 2, scope: "account" };
+  controller.session = { topic: "welcome", index: 3, scope: "account" };
   rerender(<CompanionGuidanceStage guide={controller} />);
   expect(document.body.querySelector(".guidance-scene__folio")).toBe(paper);
   expect(screen.getByRole("button", { name: "演示：选中这句请伴星解释" })).toBeTruthy();
-  controller.session = { topic: "welcome", index: 1, scope: "account" };
+  controller.session = { topic: "welcome", index: 2, scope: "account" };
   rerender(<CompanionGuidanceStage guide={controller} />);
   expect(document.body.querySelector(".guidance-scene__folio")).toBe(paper);
   expect(controller.pause).not.toHaveBeenCalled();
 });
 it("names the missing consent step instead of knocking on the same gate every chapter", () => {
   const controller = guide();
-  controller.consentNeeded = true;
+  controller.consent = "required";
   useRoomStore.setState({ masterMuted: false });
   render(<CompanionGuidanceStage guide={controller} />);
   expect(screen.getByText(/还差一步：签署 AI 使用同意/)).toBeTruthy();
   expect(screen.queryByText("正在准备讲解…")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "去设置同意" }));
   expect(controller.openConsentSettings).toHaveBeenCalledOnce();
+});
+it("holds the first station shut until the companion is allowed to speak", () => {
+  const controller = guide();
+  controller.session = { topic: "welcome", index: 0, scope: "account" };
+  controller.consent = "required";
+  render(<CompanionGuidanceStage guide={controller} />);
+  const next = screen.getByRole("button", { name: /先去设置里开启/ }) as HTMLButtonElement;
+  expect(next.disabled).toBe(true);
+  expect(screen.queryByRole("button", { name: "先去实际试试" })).toBeNull();
+  expect(screen.getByText("开了声音我就念给你听")).toBeTruthy();
 });
 it("keeps pause, completion and real conversation separate", () => {
   const controller = guide();

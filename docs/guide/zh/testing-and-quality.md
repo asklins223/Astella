@@ -41,7 +41,7 @@
 
 ## 一条命令：`make verify`
 
-`make verify` 是本地基线，也是 CI 的口径。它依赖 `version-check`，实际执行顺序如下（逐行取自 `Makefile:144` 起）：
+`make verify` 是本地基线，也是 CI 的口径。它依赖 `version-check`，实际执行顺序如下（逐行取自 `Makefile` 的 `verify:` 目标；写目标名不写行号，免得下次插一行就对不上）：
 
 ```bash
 node .github/scripts/version-contract.mjs --check           # 前置：版本契约
@@ -50,9 +50,11 @@ node --test \
   .github/scripts/release-manifest-contract.test.mjs \
   .github/scripts/coverage-gate-lib.test.mjs \
   .github/scripts/ci-workflow-contract.test.mjs \
-  .github/scripts/postgres-integration-lifecycle.test.mjs   # 5 份仓库级合同测试
+  .github/scripts/postgres-integration-lifecycle.test.mjs \
+  .github/scripts/compose-init-order.test.mjs              # 6 份仓库级合同测试
 node .github/scripts/verify-schema-mirror.mjs               # 2 道 verify 闸门
 node .github/scripts/verify-companion-capability-config.mjs
+bash infra/backup/backup-scripts.test.sh                  # 备份/恢复 shell 组自测
 cd packages/shared     && npm run typecheck && npm test
 cd packages/agent-core && npm run typecheck && npm test
 cd packages/agent-host && npm run typecheck && npm test

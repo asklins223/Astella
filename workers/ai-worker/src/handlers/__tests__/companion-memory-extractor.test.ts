@@ -336,25 +336,44 @@ test("0256 的例外比抽取器更严，方向必须是这样", () => {
   assert.equal(window.test(content) && quantity.test(content), true, "SQL 侧应当更严");
 });
 
-// ─── 伴星链路统一开思考（2026-10-06 用户决定取代旧守卫）──────────────────────
-// 旧守卫（2026-09-22）要求每个用 json_object 取回的伴星 handler 都关思考——那是
-// "思考 token 吃满 maxTokens → content 为空 → JSON 解析失败"这根因的兜底（摘要器
-// 当年"建表以来 0 行"、抽取器 dead 各一条，见 §9.71）。2026-10-06 用户决定全链路
-// 开思考，风险改由**预算**承担（各调用点的 maxTokens 已含思考预留）。守卫随之反向：
-// 新调用点不该再悄悄把思考关回去；真要有例外，这条会把它摆到台面上。
-test("伴星 handler 不再关思考：思考预留由各自的 maxTokens 承担", () => {
+// ─── 伴星思考档的归属（2026-10-06 第二次改判，取代「全链路常开最高档」）──────
+// 判据现在是**本轮意图**：闲聊轮关、提问/任务/解释轮按档案开高档（见
+// `companion-turn-thinking`）。因此"谁可以关思考"要守住的是两条：
+//   1. 后台 handler（摘要、抽取、念头、日记、制卡…）不在关键路径上，**一律不关**，
+//      思考预留由各自的 maxTokens 承担——这条与上一版守卫同源；
+//   2. 对话链路要关只能通过 `companionTurnThinking`（或每一轮都要跑的分类器），
+//      不许在某个调用点上悄悄写死一个 `disableThinking: true`。
+const thinkingSanctioned = new Set([
+  // 判据本体：全链路只有这一处可以说"这一轮关"。
+  "companion-turn-thinking.ts",
+  // 分类器自己在每一轮的关键路径上：它开高档，闲聊轮就先白等十几秒。
+  "companion-tool-intent.ts",
+  // 投机的"闲聊版第一步"（2026-10-07）：它按定义就是不开思考的那一版，且只有
+  // 分类器确认本轮解释为空时结果才会被保留（见 shouldKeepSpeculativeFirstStep）。
+  "companion-speculative-first-step.ts",
+]);
+
+test("伴星 handler 不自己关思考：对话按本轮意图、后台常开", () => {
   // 扫的是 handlers 目录本体（`..`），不是 __tests__ ——旧版本用的 `.` 会把自己
   // 所在的测试目录当扫描面，`.test.` 过滤又把里面的文件全排除，等于空转。
   const dir = new URL("..", import.meta.url);
   const offenders = readdirSync(dir)
     .filter((name) => name.startsWith("companion-") && name.endsWith(".ts") && !name.includes(".test."))
+    .filter((name) => !thinkingSanctioned.has(name))
     .filter((name) => {
       const text = readFileSync(new URL(name, dir), "utf8");
-      // 两条历史路径都算：包 provider 的 withThinkingDisabled、每次调用自带的
-      // disableThinking（provider 拿不来当参数的 handler 只能走这条）。
+      // 两条历史路径都算：包 provider 的 withThinkingDisabled、每次调用写死的
+      // disableThinking: true（走策略函数算出来的布尔值不在此列）。
       return text.includes("withThinkingDisabled(") || text.includes("disableThinking: true");
     });
-  assert.deepEqual(offenders, [], `这些 handler 又关回了思考：${offenders.join(", ")}`);
+  assert.deepEqual(offenders, [], `这些 handler 绕开本轮意图判据把思考关死了：${offenders.join(", ")}`);
+
+  // 正向：对话主链路确实经过策略函数，而不是各自决定。
+  const runtime = readFileSync(new URL("companion-agent-runtime.ts", dir), "utf8");
+  assert.match(runtime, /companionTurnThinking\(attention\)/,
+    "Agent 运行时不再经过 companionTurnThinking，闲聊/提问两档就会散成各处硬编码");
+  assert.match(runtime, /disableThinking: turnThinking\.disableThinking/,
+    "本轮的思考档没有下发到 stepRequest");
 });
 
 // ─── 跨空间记忆的判据（2026-09-22 裁决 + 收紧）──────────────────────────

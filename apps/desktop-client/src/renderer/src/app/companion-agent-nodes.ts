@@ -51,8 +51,8 @@ export type CompanionAgentNodeState =
   | "not_executed"
   | "unavailable";
 
-/** 节点类型只影响图标：思考气泡 / 扳手 / 星形 / 按工具名映射。 */
-export type CompanionAgentNodeKind = "thinking" | "acting" | "tool";
+/** 节点类型只影响图标：等待 / 思考气泡 / 扳手 / 星形 / 按工具名映射。 */
+export type CompanionAgentNodeKind = "waiting" | "thinking" | "acting" | "tool";
 
 export interface CompanionAgentNode {
   /** 幂等键：工具用 `tool:${toolCallId}`，状态用递增序号。 */
@@ -84,6 +84,26 @@ export const TOOL_LABELS = COMPANION_AGENT_TOOL_LABELS;
 export function nodeLabel(node: CompanionAgentNode): string {
   if (node.kind === "tool" && node.toolName) return TOOL_LABELS[node.toolName] ?? "正在处理…";
   return node.label;
+}
+
+/**
+ * 「此刻她在做什么」那一句**兜底**文案——只在没有正在跑的过程节点时用（`nodeLabel`
+ * 覆盖的是有活动节点的那些时刻）。判据全部来自服务端真的发过的东西，一句都不猜：
+ *
+ * | 这一轮已经发生过 | 说 |
+ * | --- | --- |
+ * | 什么都没发生（话刚收到，分类器还在跑） | 在听… |
+ * | 服务端发过 `thinking`（本轮确实开了思考档） | 她在想… |
+ * | 跑过工具、结果已落定，她正在把它组织成话 | 她看完了，正在组织怎么说。 |
+ *
+ * 第三行是这次补的：工具节点落定之后它不再是"活动节点"，整段就掉回第一行，
+ * 于是她明明在查东西、气泡上却一直写着「在听…」。而"她在想"只在服务端
+ * 真开了思考档时才会出现——等待不等于思考，这条从 2026-10-07 起就守住了。
+ */
+export function companionTurnProcessLine(nodes: readonly CompanionAgentNode[]): string {
+  if (nodes.some((node) => node.kind === "thinking")) return "她在想…";
+  if (nodes.some((node) => node.kind === "tool")) return "她看完了，正在组织怎么说。";
+  return "在听…";
 }
 
 const TOOL_STATE: Record<string, CompanionAgentNodeState> = {
@@ -126,10 +146,11 @@ export function appendCompanionAgentNode(
 function appendStatusNode(nodes: CompanionAgentNodes, payload: unknown): CompanionAgentNodes {
   const value = payload as { status?: unknown; safeLabel?: unknown };
   if (typeof value?.safeLabel !== "string" || value.safeLabel.length === 0) return nodes;
-  const kind: CompanionAgentNodeKind = value.status === "acting" ? "acting" : "thinking";
+  const kind: CompanionAgentNodeKind = value.status === "acting" ? "acting"
+    : value.status === "waiting" ? "waiting" : "thinking";
   const last = nodes[nodes.length - 1];
   // 同一 status 连续到达（thinking/acting 之间反复）只在末行改文案与图标，不新增行。
-  if (last && (last.kind === "thinking" || last.kind === "acting")) {
+  if (last && (last.kind === "waiting" || last.kind === "thinking" || last.kind === "acting")) {
     if (last.label === value.safeLabel && last.kind === kind) return nodes;
     return [...nodes.slice(0, -1), { ...last, kind, label: value.safeLabel }];
   }

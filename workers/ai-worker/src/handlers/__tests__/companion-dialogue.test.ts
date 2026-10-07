@@ -25,6 +25,7 @@ import {
   companionOutputRejectionReason,
   containsCompanionInternalToken,
   extractQuotedPassages,
+  finalizeCompanionReplyText,
   normalizeQuotedPassage,
   unverifiedQuoteClaims,
   keepRecomputedBlocks,
@@ -1206,4 +1207,20 @@ test("引文核对：不同引用块独立匹配，不能用示例放行另一�
   const second = "公式为 I=U/R，单位采用伏特、欧姆与安培。";
   assert.deepEqual(unverifiedQuoteClaims(`> ${first}\n\n解释一会儿。\n\n> ${second}`, `${first}\n${second}`), []);
   assert.equal(unverifiedQuoteClaims("> 示例：设电压12伏，电阻4欧姆，电流3安培。\n\n> 电流永远不受电阻影响，原文明确这样写。", first).length, 1);
+});
+
+test("服务端注进回放的那句降级说明，不会从她嘴里说出来", () => {
+  // 实测 60 发里有 3 发把 PAST_OFFER_NOTE 原样复述进回复；那是脚手架，不是她的话。
+  const note = "（这句说完就算过去了。）";
+  const echoed = finalizeCompanionReplyText({
+    text: `趴着呢，刚把熵讲完。\n\n${note} 你要是有事就说。`,
+    runId: "run-echo-test",
+  });
+  assert.ok(!echoed.text.includes(note), `脚手架漏进了回复：${echoed.text}`);
+  assert.match(echoed.text, /趴着呢，刚把熵讲完。/);
+  assert.match(echoed.text, /你要是有事就说。/, "她真正说的话不能被一起剥掉");
+  assert.equal(finalizeCompanionReplyText({ text: note, runId: "run-echo-2" }).text, "",
+    "整条只剩脚手架时交空串，由下游的空回复路径如实报错，不硬凑一句");
+  const clean = finalizeCompanionReplyText({ text: "正常的一句话。", runId: "run-echo-3" });
+  assert.equal(clean.text, "正常的一句话。", "没带脚手架的回复不该被动过");
 });

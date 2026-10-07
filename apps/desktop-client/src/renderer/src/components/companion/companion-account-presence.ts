@@ -2,6 +2,7 @@ import type {
   CompanionAccountPatch,
   CompanionAccountStateV1,
 } from "@astella/shared/companion-shell-contracts";
+import type { CompanionAgentPermissionLevel } from "@astella/shared/companion-agent-contracts";
 import { PROACTIVE_CADENCE_MS } from "@astella/shared/companion-proactive-policy";
 
 /**
@@ -61,6 +62,16 @@ export const COMPANION_AGENT_PERMISSION_OPTIONS = [
   ["guided", "分步确认"],
   ["full", "自动执行"],
 ] as const;
+
+/**
+ * 每一档的人话边界。设置页那一行和输入框旁边的就地弹层共用这一份——
+ * 同一个开关在两处给出两种说法，用户就不知道该信哪一句了。
+ */
+export const COMPANION_AGENT_PERMISSION_DETAIL: Record<CompanionAgentPermissionLevel, string> = {
+  read_only: "只读取和查询，执行改动前需要你调整权限。",
+  guided: "每次产生改动前先征求你的确认。",
+  full: "跳转、设置与填充可以自动执行；不可恢复的操作仍会确认。",
+};
 
 /** 默认静默时段：夜间 22:00 → 次日 07:00，与设置中心的口径一致。 */
 export const DEFAULT_QUIET_HOURS = Object.freeze({

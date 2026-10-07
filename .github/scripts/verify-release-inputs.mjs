@@ -53,9 +53,14 @@ const requiredManifestFields = [
   "approvals",
 ];
 
-const ciWorkflow = readFileSync(".github/workflows/main-ci.yml", "utf8");
-if (!/\bnode\s+\.github\/scripts\/release-manifest-contract\.mjs\b/.test(ciWorkflow)) {
-  fail("CI must invoke the exact-tag release manifest verifier");
+// 这条以前盯的是 main-ci.yml，可那份工作流**从来没有**这一步（HEAD 上 grep
+// 也是 0 处），于是 `make release-check` 的第一道闸永远红，而真正跑契约的地方
+// 没人盯。契约现在挂在 `make release-check` 里，就按它来断言；
+// 将来把发布链搬进 CI，改这条断言跟着改，别再让它指着一个不存在的位置。
+const makefile = readFileSync("Makefile", "utf8");
+const releaseCheckRecipe = /^release-check:\n((?:\t.*\n?)+)/m.exec(makefile)?.[1] ?? "";
+if (!/\bnode\s+\.github\/scripts\/release-manifest-contract\.mjs\b/.test(releaseCheckRecipe)) {
+  fail("make release-check must invoke the exact-tag release manifest verifier");
 }
 
 function fail(message) {

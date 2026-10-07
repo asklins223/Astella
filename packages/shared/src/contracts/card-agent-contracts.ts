@@ -211,6 +211,14 @@ export const agentTurnRequestSchema = z.object({
   temperature: z.number().min(0).max(2).default(0.3),
   /** 使用的模型（可覆盖默认） */
   model: z.string().optional(),
+  /**
+   * 这一轮显式关思考（伴星闲聊轮，2026-10-06 用户决定）。
+   *
+   * 判据不在 provider 里：模型档案说的仍是「这个模型能思考、默认档是哪一级」，
+   * 而这一轮要不要用那份高档由调用方按意图决定。provider 收到 true 时按档案
+   * 取**能关到的最低档**（声明了 `none` 就是真关），没声明 none 的模型退到最低档。
+   */
+  disableThinking: z.boolean().optional(),
 }).strict();
 export type AgentTurnRequest = z.infer<typeof agentTurnRequestSchema>;
 

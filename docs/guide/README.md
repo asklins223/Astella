@@ -43,7 +43,7 @@
 
 ## 名称与标识
 
-产品名 2026-10-06 定为 **Astella**，中文名 **拾星笔记**（第三次定名：`AI Learn` → 理解引擎 → Astella／拾星笔记）。两层不要混：包名、可执行文件、安装目录与产物名用 ASCII 的 `Astella`（`appId: com.asklins.astella`），窗口标题、Dock 与开始菜单显示「拾星笔记」。同日第二轮改名把内部标识也全局换过：npm scope `@astella/`、preload 桥 `window.astella`、IPC 通道 `astella.v1.`、环境变量 `ASTELLA_*`、自定义协议 `astella-app://`、Docker 项目名与派生容器/卷名。**只剩存储与时序标识仍叫 `astella`**：Postgres 库名／角色／函数、MinIO 桶 `astella-workspaces`、Prometheus 指标名 `astella_*`。细节见 [assets/brand/README.md](../../assets/brand/README.md) 与 [运维分册](./zh/operations.md)。
+产品名 2026-10-06 定为 **Astella**，中文名 **拾星笔记**（第三次定名：`AI Learn` → 理解引擎 → Astella／拾星笔记）。两层不要混：包名、可执行文件、安装目录与产物名用 ASCII 的 `Astella`（`appId: com.asklins.astella`），窗口标题、Dock 与开始菜单显示「拾星笔记」。同日又做了两轮：第二轮换内部标识（npm scope `@astella/`、preload 桥 `window.astella`、IPC 通道 `astella.v1.`、环境变量 `ASTELLA_*`、自定义协议 `astella-app://`、Docker 项目名与派生容器/卷名、桌面包名），第三轮换存储层名字（Postgres 库名／角色／函数、MinIO 桶、Prometheus 指标名），dev 库删卷重建验过。**全仓只剩两个串仍写着 `ailearn`**：`ailearn-hash-canonical-v2` 与 `ailearn:invitation-token-hint:v1`，它们是逐字进摘要的域前缀，换它等于作废全部存量哈希。细节见 [assets/brand/README.md](../../assets/brand/README.md) 与 [运维分册](./zh/operations.md)。
 
 ## 图片
 

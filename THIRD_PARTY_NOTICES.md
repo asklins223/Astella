@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-本应用（AI Learn desktop client）包含以下第三方组件的源码、二进制或素材。
+本应用（Astella 桌面客户端，中文显示名「拾星笔记」）包含以下第三方组件的源码、二进制或素材。
 许可证全文见各条目链接；模型/素材的再分发与商用限制见
 `apps/desktop-client/src/renderer/public/assets/companion/live2d-v3/whale/manifest.json`。
 伴星现在只发布这一个角色模型（大肥鱼），其余形态与资产已删除。

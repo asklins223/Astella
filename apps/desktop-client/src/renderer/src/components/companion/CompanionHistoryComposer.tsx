@@ -8,6 +8,7 @@ import {
   CompanionComposerImageStatus,
   type CompanionComposerImage,
 } from "./companion-composer-image";
+import { CompanionAgentPermissionMenu } from "./companion-agent-permission";
 
 /**
  * The Demo's two-row paper composer, connected to the shared production draft.
@@ -55,6 +56,18 @@ export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, 
         if (shouldSendCompanionOnEnter(event)) { event.preventDefault(); void onSend(); }
       }} />
     <CompanionComposerImageStatus uploading={imageUploading} error={imageError} />
+    {/**
+     * 手记里说话时，这一行就是"我刚才说到哪儿了"。
+     *
+     * 抽屉开着的时候 HUD 那层的语音气泡是被遮住的，所以字幕必须在这一面自己长出来——
+     * 不然用户在完整的一面里对着麦克风说话，看见的只有一个转圈的图标。
+     */}
+    {voiceEnabled && voice.phase !== "idle" ? <p className="companion-history__voice-live" role="status" aria-live="polite">
+      {voice.caption?.text
+        || (voice.phase === "starting" ? "正在准备麦克风…"
+          : voice.phase === "closing" ? "在想这一句…"
+            : "我在听，说完就发给她")}
+    </p> : null}
     <div className="companion-history__compose-tools">
       <input ref={imageInputRef} type="file" accept={NOTE_IMAGE_UPLOAD_MIME_TYPES.join(",")} className="companion-compose-image__input"
         onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) onPickImage(file); }} />
@@ -63,17 +76,18 @@ export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, 
         {imageUploading ? <Loader2 className="companion-hud__spin" size={20} /> : <Plus size={21} />}
       </button>
       <button type="button" className="companion-history__tool" onClick={onPageActions} aria-label="当前页面快捷操作" title="当前页面快捷操作"><MousePointerClick size={19} /></button>
+      <CompanionAgentPermissionMenu buttonClassName="companion-history__tool" />
       {voiceEnabled ? <button type="button" className="companion-history__tool" onClick={onVoiceToggle}
-        disabled={voice.phase === "transcribing" || sending} data-active={voice.phase !== "idle" || undefined}
-        title={voice.supported ? "语音输入" : "当前设备没有可用的麦克风"}
-        aria-label={voice.supported ? (sending ? "正在回复中——停止当前回复后可说话" : "语音输入") : "当前设备没有可用的麦克风"}>
-        {voice.phase === "transcribing" ? <Loader2 className="companion-hud__spin" size={20} /> : <Mic size={21} />}
+        disabled={voice.phase === "starting" || !voice.supported} data-active={voice.phase !== "idle" || undefined}
+        title={voice.supported ? (voice.phase === "idle" ? "开始语音对话" : "结束语音对话") : "当前设备没有可用的麦克风"}
+        aria-label={voice.supported ? (voice.phase === "idle" ? "开始语音对话" : "结束语音对话") : "当前设备没有可用的麦克风"}>
+        {voice.phase === "closing" ? <Loader2 className="companion-hud__spin" size={20} /> : <Mic size={21} />}
       </button> : null}
       <span>Enter 发送 · Shift + Enter 换行</span>
       {sending ? <button type="button" className="button companion-history__composer-stop" disabled={stopping} onClick={onStop} aria-label="停止这一轮">
         {stopping ? <Loader2 className="companion-hud__spin" size={16} /> : <Square size={14} />}停止
       </button> : null}
-      <button className="button primary" type="submit" disabled={!input.trim() || voice.phase === "transcribing" || imageUploading} aria-label={sending ? "发送并接替当前回复" : "发送"}><span>发送</span><Send size={20} /></button>
+      <button className="button primary" type="submit" disabled={!input.trim() || voice.phase === "closing" || imageUploading} aria-label={sending ? "发送并接替当前回复" : "发送"}><span>发送</span><Send size={20} /></button>
     </div>
   </form>;
 }

@@ -8,6 +8,7 @@
 
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
@@ -34,11 +35,11 @@ test("P5 §6.6/§6.7：action proposal FORCE RLS（worker 无 context 零行，s
 });
 
 test("P5 §6.6/§6.7：worker 有 context 时只读自己 workspace/user 的行", async () => {
-  const ws = "55555555-5555-4555-8555-555555555555";
-  const uid = "66666666-6666-4666-8666-666666666666";
-  const cid = "77777777-7777-4777-8777-777777777777";
-  const msgId = "88888888-8888-4888-8888-888888888888";
-  const pid = "99999999-9999-4999-8999-999999999999";
+  const ws = randomUUID();
+  const uid = randomUUID();
+  const cid = randomUUID();
+  const msgId = randomUUID();
+  const pid = randomUUID();
   await sql.begin(async (tx) => {
     await tx`SELECT set_config('app.workspace_id', ${ws}, true)`;
     await tx`SELECT set_config('app.user_id', ${uid}, true)`;

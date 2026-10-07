@@ -58,9 +58,21 @@ export type CompanionConversationV1 = z.infer<typeof companionConversationV1Sche
  * 三种，它必须**引用**这里的定义而不是再抄一份——抄的那份会在
  * "图片 url 只收站内 /api/uploads/"这类校验规则变化时悄悄落后。
  */
+/**
+ * 她一次回复能有多长（2026-10-07）。
+ *
+ * 这**不是**"陪聊一句话的长度"，而是 agent 一轮可以交付的上限：长解释、读图后的
+ * 长转述、带路里的多段话都要落在这一条消息里。旧值 20_000 与 worker 的输出预算
+ * 是两处各写一遍的数，模型档案已经声明到 10 万级输出，两万字就成了新的硬截断。
+ *
+ * 输入侧另有其限（`COMPANION_P2_LIMITS.serverHardMaxChars`，用户消息 20_000），
+ * 两者不是一回事，别再合并。
+ */
+export const COMPANION_REPLY_MAX_CHARS = 200_000;
+
 export const companionTextBlockV1Schema = z.object({
   type: z.literal("text"),
-  text: z.string().min(1).max(20_000),
+  text: z.string().min(1).max(COMPANION_REPLY_MAX_CHARS),
   // 语气层情绪（2026-09-18）：worker 确定性语气分类的落库形态，
   // 渲染层据此驱动 Live2D 表情。可选，历史消息没有该字段。
   emotion: characterCueEmotionV1Schema.optional(),
@@ -1013,7 +1025,13 @@ export const companionStreamEventV1Schema = z.discriminatedUnion("type", [
     clientMessageId: z.string().uuid(), userMessageId: z.string().uuid(), status: z.literal("accepted"),
   }).strict() }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("assistant.status"), payload: z.object({
-    status: z.enum(["thinking", "acting"]), safeLabel: z.string().min(1).max(240),
+    /**
+     * `waiting` = 这一轮还在路上，**没有**任何"她在想"的承诺（2026-10-07）。
+     *
+     * 伴星按本轮意图决定开不开思考，闲聊轮不开——所以"发送中"不等于"在思考"。
+     * 只有真的开了思考档，worker 才会补发一条 `thinking`。
+     */
+    status: z.enum(["waiting", "thinking", "acting"]), safeLabel: z.string().min(1).max(240),
   }).strict() }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("agent.tool"), payload: z.object({
     tool: companionAgentToolEventV1Schema,

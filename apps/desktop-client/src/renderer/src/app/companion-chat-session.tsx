@@ -29,7 +29,7 @@ import type { HudPageId } from "../components/hud/hud-pages";
 import { createRequestMeta, gatewayErrorMessage, requireWorkspaceEpoch, unwrapGatewayResult, RendererGatewayError } from "./desktop-client";
 import {
   COMPANION_CONSENT_REQUIRED_LINE,
-  SETTINGS_ATTENTION_AI_CONSENT,
+  SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT,
   companionConsentGate,
   isCompanionConsentFailure,
 } from "./companion-consent-gate";
@@ -208,6 +208,15 @@ export interface CompanionChatSession {
   readonly liveReply: CompanionChatLiveReply | null;
   /** 本轮图片、引用等结果；文字气泡退场后仍停在伴星身旁。 */
   readonly richReply: CompanionChatRichReply | null;
+  /**
+   * 已经**替用户跳过**的落点（`JSON.stringify(DesktopRouteV1)`）。
+   *
+   * 预授权那一档下，同一个落点会同时以两种形态出现：nav chip 立刻执行跳转，
+   * 回合结束时消息里的 nav 块又递来一张「可以接着看这里」。页都已经到了，
+   * 再让用户按一次「前往」就是把自动执行说成没执行——纸签侧按这份名单不再出示。
+   * 只记成功的：跳失败的落点还要靠那张纸签留一条能重试的路。
+   */
+  readonly autoNavigatedRoutes: ReadonlySet<string>;
   /** 流式生成中的草稿（未生成完的回复）；liveReply 落地后清空。 */
   readonly draft: CompanionChatDraft | null;
   /**
@@ -488,6 +497,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   const historyAllRef = useRef<{ scopeRevision: number; revision: number; items: CompanionMessageV1[] } | null>(null);
   const manuallyNavigatedKindsRef = useRef<Set<string>>(new Set());
   const autoExecutedRef = useRef<Set<string>>(new Set());
+  const [autoNavigatedRoutes, setAutoNavigatedRoutes] = useState<ReadonlySet<string>>(() => new Set());
   const [liveReply, setLiveReply] = useState<CompanionChatLiveReply | null>(null);
   const [richReply, setRichReply] = useState<CompanionChatRichReply | null>(null);
   const [draft, setDraft] = useState<CompanionChatDraft | null>(null);
@@ -598,6 +608,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     setHistoryRevision(historyRevisionRef.current);
     manuallyNavigatedKindsRef.current.clear();
     autoExecutedRef.current.clear();
+    setAutoNavigatedRoutes(new Set());
     setLiveReply(null);
     setRichReply(null);
     setDraft(null);
@@ -1359,7 +1370,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     setPhase("ready");
     const store = useRoomStore.getState();
     store.setSettingsAttention(SETTINGS_ATTENTION_AI_CONSENT);
-    store.setSettingsSection("data");
+    store.setSettingsSection(SETTINGS_SECTION_AI_CONSENT);
     store.invoke("open-settings");
   }, []);
 
@@ -1840,9 +1851,11 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     // 抽屉里就是"这条已经办完了"和"这条还在等处理"自相矛盾。失败保留（用户还能
     // 手动点）。只执行最后一个（一回合连开两页时以最终落点为准），但全部移除。
     const executedIds = new Set(pending.map((chip) => chip.id));
-    void goToRoute(pending[pending.length - 1].route!)
+    const landed = pending[pending.length - 1].route!;
+    void goToRoute(landed)
       .then(() => {
         setNavChips((current) => current.filter((chip) => !executedIds.has(chip.id)));
+        setAutoNavigatedRoutes((current) => new Set(current).add(JSON.stringify(landed)));
       })
       .catch(() => undefined);
   }, [navChips, goToRoute]);
@@ -1868,6 +1881,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     fetchAllMessages,
     liveReply,
     richReply,
+    autoNavigatedRoutes,
     draft,
     interrupted,
     nodes,
@@ -1933,6 +1947,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     mode,
     liveReply,
     richReply,
+    autoNavigatedRoutes,
     navChips,
     nodes,
     phase,

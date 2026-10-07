@@ -40,7 +40,7 @@ async function seedNote(content: string): Promise<string> {
       VALUES (${USER_ID}, ${`de-${USER_ID}@example.invalid`}, 'unused')
       ON CONFLICT (id) DO NOTHING`;
     await tx`INSERT INTO workspaces (id, owner_id, name)
-      VALUES (${WORKSPACE_ID}, ${USER_ID}, 'domain-events', 'v1', now(), ${USER_ID})
+      VALUES (${WORKSPACE_ID}, ${USER_ID}, 'domain-events')
       ON CONFLICT (id) DO NOTHING`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
       VALUES (${WORKSPACE_ID}, ${USER_ID}, 'owner') ON CONFLICT DO NOTHING`;

@@ -8,6 +8,7 @@
 
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
@@ -53,13 +54,13 @@ test("action proposal 表/索引与 turn router 字段存在", async () => {
 });
 
 test("0092：proposals 单一 pending（同 conversation 第二条 pending 冲突）", async () => {
-  const ws = "11111111-1111-4111-8111-111111111111";
-  const uid = "22222222-2222-4222-8222-222222222222";
-  const cid = "33333333-3333-4333-8333-333333333333";
-  const msgId = "44444444-4444-4444-8444-444444444445";
-  const p1 = "44444444-4444-4444-8444-444444444444";
-  const p2 = "44444444-4444-4444-8444-444444444446";
-  const msg2 = "44444444-4444-4444-8444-444444444447";
+  const ws = randomUUID();
+  const uid = randomUUID();
+  const cid = randomUUID();
+  const msgId = randomUUID();
+  const p1 = randomUUID();
+  const p2 = randomUUID();
+  const msg2 = randomUUID();
   await sql.begin(async (tx) => {
     await tx`SELECT set_config('app.workspace_id', ${ws}, true)`;
     await tx`SELECT set_config('app.user_id', ${uid}, true)`;

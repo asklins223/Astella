@@ -27,6 +27,7 @@ import type { CompanionMemoryDirectoryEntry } from "./companion-memory-vector.ts
 import {
   boundCompanionRecentHistory,
   buildCompanionContextHandoffSnapshotV1,
+  PAST_OFFER_NOTE,
   renderCompanionContextHandoff,
   REPLAY_WINDOW_MESSAGES,
   type CompanionContextHandoffSnapshotV1,
@@ -43,11 +44,37 @@ export {
 };
 export type { CompanionContextHandoffSnapshotV1, CompanionContextHandoffInputV1, CompanionRecentHistoryMessage };
 import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
+import { COMPANION_REPLY_MAX_CHARS } from "@astella/shared";
 
-/** 与 turn-service 对齐的硬限额（03 §6.10）。 */
-export const COMPANION_HARD_MAX_CHARS = 20_000;
+/**
+ * 与 turn-service、消息合同对齐的硬限额（03 §6.10）。
+ *
+ * 数字**不在这份文件里**：它引用消息合同里的 `COMPANION_REPLY_MAX_CHARS`，
+ * 这样「她能写多长」「落库收多长」「渲染读多长」是同一个声明，不会再出现
+ * 一处抬了、另一处还留在两万字把话砍断。
+ */
+export const COMPANION_HARD_MAX_CHARS = COMPANION_REPLY_MAX_CHARS;
 /** §5.2 assistant.delta 单块上限（code unit）。 */
 export const DELTA_MAX_CODE_UNITS = 2_000;
+
+/** 没声明模型档案时（mock、手改的旧配置）一步能要的输出上限。 */
+export const COMPANION_STEP_OUTPUT_FALLBACK_TOKENS = 8_000;
+
+/**
+ * 伴星一步能说多少 = **模型档案声明的输出上限**（2026-10-07 用户决定：这是 agent，
+ * 不是单轮 chat，不许留一个会把话砍断的小常数）。
+ *
+ * provider 自己还会按档案再夹一次，所以这里传声明值等价于"要多少给多少，模型收口"；
+ * 只有拿不到声明（mock / 未声明档案）时才落到 fallback。
+ */
+export function companionStepOutputCeiling(provider: {
+  getCapabilities?: () => { maxOutputTokens?: number };
+} | null | undefined): number {
+  const declared = provider?.getCapabilities?.()?.maxOutputTokens;
+  return typeof declared === "number" && Number.isFinite(declared) && declared > 0
+    ? declared
+    : COMPANION_STEP_OUTPUT_FALLBACK_TOKENS;
+}
 
 /** 信封允许的正文键，按优先级排列。 */
 const JSON_ENVELOPE_TEXT_KEYS = ["response", "text", "content", "message", "blocks", "reply", "answer"] as const;
@@ -1189,7 +1216,12 @@ export function finalizeCompanionReplyText(args: {
   runId: string;
 }): { text: string; dropped: string[] } {
   const unwrapped = unwrapCompanionJsonEnvelope(args.text);
-  const resolved = resolveFactSpans(unwrapped, args.factSpans ?? {});
+  // 服务端注进回放的脚手架不是她的话：实测 60 发里有 3 发会把那句降级说明原样说出来。
+  // 常量与注入方共用同一个声明，改哪一侧另一侧就编译不过，不会各自漂移。
+  const stripped = unwrapped.replaceAll(PAST_OFFER_NOTE, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  const resolved = resolveFactSpans(stripped, args.factSpans ?? {});
   if (resolved.dropped.length > 0) {
     logger.warn(
       { runId: args.runId, dropped: resolved.dropped.length, excerpt: resolved.dropped.join(" / ").slice(0, 160) },

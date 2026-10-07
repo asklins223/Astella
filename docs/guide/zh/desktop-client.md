@@ -140,7 +140,7 @@ CRDT 与 WebSocket 都在主进程：`src/main/note-doc-transport.ts` 用 `Hocus
 | AI 数据同意 | 同意开关、数据策略、外发记录 | `settings-data-boundary-group.tsx` |
 | 数据与维护 | 空间导出、导出清单、能力芯片、更新面板 | `settings-export-group.tsx`、`settings-companion-status.tsx`、`settings-update-panel.tsx` |
 
-伴星那章的读写全在 `use-companion-account-settings.ts`，`patch()` 一次一条设置；助理权限的文案解释了三档差别（只读要改权限才动手 / 每次改动先确认 / 跳转与填充可自动执行但不可恢复操作仍确认），页面上就按这段写。目录下方还有一个「重新认识书房」按钮（`settings-book.tsx` 的 `onReplayIntro`），每章的说明文字与配色 tone 也都在 `SETTINGS_SECTIONS` 一处定义，图标取自 `lucide-react`。
+伴星那章的读写全在 `use-companion-account-settings.ts`，`patch()` 一次一条设置；助理权限的文案解释了三档差别（只读要改权限才动手 / 每次改动先确认 / 跳转与填充可自动执行但不可恢复操作仍确认），页面上就按这段写。这同一份说明取自 `companion-account-presence.ts` 的 `COMPANION_AGENT_PERMISSION_DETAIL`：伴星的两个输入框（气泡与对话手记）工具行里各有一颗就地档位按钮（`companion-agent-permission.tsx`），当场改完当场生效，并广播给设置页，不出现两处各说一套。目录下方还有一个「重新认识书房」按钮（`settings-book.tsx` 的 `onReplayIntro`），每章的说明文字与配色 tone 也都在 `SETTINGS_SECTIONS` 一处定义，图标取自 `lucide-react`。
 
 ## 动效与可访问性
 

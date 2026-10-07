@@ -310,6 +310,35 @@ test("executeAgentTurn: 档案档位同样作用于工具调用请求", async ()
   assert.deepEqual(calls[0].body.reasoning, { effort: "none" });
 });
 
+/**
+ * 2026-10-06 真窗口实测：开着思考发 `tool_choice: "required"`，deepseek-v4.1-flash
+ * 直接 400「Thinking mode does not support this tool_choice」——带图那一轮必然要她
+ * 调 `companion_read_image`，正好撞上，整轮失败。思考档与强制工具调用在这端互斥，
+ * 所以降级成 auto；关掉思考时才允许真的强制。
+ */
+test("executeAgentTurn: 开着思考时 required 降级为 auto，关着思考才保留 required", async () => {
+  const thinkingOn = recordingRequester(ok(completionResponse({
+    output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "ok" }] }],
+  })));
+  const onProvider = makeProvider({
+    request: thinkingOn.request,
+    modelProfile: { reasoning: { levels: ["none", "high"], default: "high" } },
+  });
+  await onProvider.executeAgentTurn(agentTurnRequest({ toolChoice: "required" }));
+  assert.deepEqual(thinkingOn.calls[0].body.reasoning, { effort: "high" });
+  assert.equal(thinkingOn.calls[0].body.tool_choice, "auto");
+
+  const thinkingOff = recordingRequester(ok(completionResponse({
+    output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "ok" }] }],
+  })));
+  const offProvider = makeProvider({
+    request: thinkingOff.request,
+    modelProfile: { reasoning: { levels: ["none", "high"], default: "none" } },
+  });
+  await offProvider.executeAgentTurn(agentTurnRequest({ toolChoice: "required" }));
+  assert.equal(thinkingOff.calls[0].body.tool_choice, "required");
+});
+
 test("chatCompletion: disableMaxTokens 时不带 max_output_tokens", async () => {
   const { request, calls } = recordingRequester(ok(completionResponse()));
   const provider = makeProvider({ request, platformOptions: { disableMaxTokens: true } });

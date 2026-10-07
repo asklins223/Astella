@@ -132,6 +132,12 @@ const BASELINE: Readonly<Record<string, number>> = {
   // 「这一轮怎么读进来」「这些步怎么走」——回执横跨两者，留在任一编排文件里
   // 都只会让它多背一份职责。
   //
+  // 2026-10-07（输出预算改按档案声明）：多步正文的分段拼接与复读观测移入新建的
+  // `workers/ai-worker/src/handlers/companion-visible-segments.ts`（90 行），
+  // companion-agent-runtime 1504 → 1411。同样**不在**基线里（它一直贴着阈值）。
+  // 判据是**域**：分段拼接只管"各步说过的话怎么拼成最终正文、什么段该丢"，
+  // 与"这一轮怎么读进来、这些步怎么走"没有耦合，零外部依赖。
+  //
   // 2026-10-06（输入框传图）：失败留档与兜底话术移入新建的
   // `workers/ai-worker/src/handlers/companion-dialogue-failure-retention.ts`（124 行），
   // companion-dialogue 1525 → 1420。它同样**不在**基线里（HEAD 时 1499 行，贴着阈值，

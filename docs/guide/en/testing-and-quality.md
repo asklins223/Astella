@@ -41,7 +41,7 @@ The desktop config does not set a global `environment`; each test file declares 
 
 ## One command: `make verify`
 
-`make verify` is the local baseline and also the CI contract. It depends on `version-check` and then runs, line by line from `Makefile:144`:
+`make verify` is the local baseline and also the CI contract. It depends on `version-check` and then runs, line by line from the `verify:` target in `Makefile` (named by target, not line number, so inserting a line cannot make it drift):
 
 ```bash
 node .github/scripts/version-contract.mjs --check           # prerequisite: version contract
@@ -50,9 +50,11 @@ node --test \
   .github/scripts/release-manifest-contract.test.mjs \
   .github/scripts/coverage-gate-lib.test.mjs \
   .github/scripts/ci-workflow-contract.test.mjs \
-  .github/scripts/postgres-integration-lifecycle.test.mjs   # 5 repository-level contract tests
+  .github/scripts/postgres-integration-lifecycle.test.mjs \
+  .github/scripts/compose-init-order.test.mjs              # 6 repository-level contract tests
 node .github/scripts/verify-schema-mirror.mjs               # 2 verify-* gates
 node .github/scripts/verify-companion-capability-config.mjs
+bash infra/backup/backup-scripts.test.sh                  # backup/restore shell self-tests
 cd packages/shared     && npm run typecheck && npm test
 cd packages/agent-core && npm run typecheck && npm test
 cd packages/agent-host && npm run typecheck && npm test

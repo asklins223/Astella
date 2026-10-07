@@ -7,7 +7,7 @@ import type { CompanionVoiceInput } from "../use-companion-voice-input";
 const voice: CompanionVoiceInput = {
   phase: "idle", note: null, noteRevision: 0, supported: true,
   toggle: () => {}, cancel: () => {}, dismissNote: () => {}, subscribeLevel: () => () => {},
-  modelMissing: false,
+  modelMissing: false, caption: null,
 };
 const props = {
   input: "", onInputChange: vi.fn(), onSend: vi.fn(async () => {}), voice,
@@ -85,4 +85,27 @@ it("shows the pending attachment and keeps send off until the upload has an answ
 
   view.rerender(<CompanionHistoryComposer {...props} imageError="图片超过 5MB，请压缩后重试" />);
   expect(screen.getByRole("status").textContent).toContain("图片超过 5MB");
+});
+
+/**
+ * 抽屉开着的时候 HUD 那层的语音气泡是被遮住的（`obscured`），所以手记这一面
+ * 必须自己把字幕长出来——否则用户在一整面对话里对着麦克风说话，眼前只有一个转圈的图标。
+ */
+it("把实时字幕摆在手记这一面，跟着说话进度长", () => {
+  const view = render(<CompanionHistoryComposer {...props} voice={{ ...voice, phase: "open" }} />);
+  expect(screen.getByRole("status").textContent).toContain("我在听，说完就发给她");
+  view.rerender(<CompanionHistoryComposer {...props}
+    voice={{ ...voice, phase: "open", caption: { text: "这一段我没看懂", sending: false } }} />);
+  expect(screen.getByRole("status").textContent).toBe("这一段我没看懂");
+  view.rerender(<CompanionHistoryComposer {...props}
+    voice={{ ...voice, phase: "closing", caption: { text: "这一段我没看懂", sending: true } }} />);
+  expect(screen.getByRole("status").textContent).toBe("这一段我没看懂");
+});
+
+/** 麦克风按钮在这一面也是**进入／退出对话**：会话正开着时它写的是"结束"。 */
+it("会话进行中，麦克风按钮的意思改成结束语音对话", () => {
+  const view = render(<CompanionHistoryComposer {...props} voice={{ ...voice, phase: "open" }} />);
+  expect(screen.getByRole("button", { name: "结束语音对话" })).toBeTruthy();
+  view.rerender(<CompanionHistoryComposer {...props} />);
+  expect(screen.getByRole("button", { name: "开始语音对话" })).toBeTruthy();
 });

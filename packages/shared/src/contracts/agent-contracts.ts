@@ -32,6 +32,13 @@ export const agentTurnInterpretationProposalV1Schema = z.object({
   goalObjectIndex: z.number().int().nonnegative().optional(),
   candidateOperations: z.array(z.string().min(1).max(100)).max(6),
   ambiguities: z.array(z.string().max(200)).max(6),
+  /**
+   * 伴星自己消息里**用户这一句没有接**的收尾邀请，按宿主给出的候选索引回填。
+   *
+   * 它是"哪一条"，不是"哪几个字"：由看得见她的上一条与用户这一句的那次解释来判断，
+   * 下游只负责把那条消息的收尾改成记录形态。默认空 = 本轮没有待收的账。
+   */
+  pendingOfferIndexes: z.array(z.number().int().nonnegative()).max(8).default([]),
 }).strict();
 export const agentTurnInterpretationV1Schema = agentTurnInterpretationProposalV1Schema.omit({ subjects: true, goalObjectIndex: true }).extend({
   version: z.literal(1), requestHash: z.string().regex(/^[a-f0-9]{64}$/),

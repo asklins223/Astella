@@ -3,6 +3,7 @@ import {
   appendCompanionAgentNode,
   buildCompanionRunTraces,
   companionRunTraceExpired,
+  companionTurnProcessLine,
   countAgentToolCalls,
   visibleAgentNodes,
   type CompanionAgentNodes,
@@ -51,6 +52,22 @@ describe("companion agent node stream", () => {
     ]);
     expect(nodes).toHaveLength(1);
     expect(nodes[0]).toMatchObject({ kind: "acting", label: "我去翻一下你的笔记" });
+  });
+
+  /**
+   * 2026-10-07：伴星按本轮意图决定开不开思考，所以"发送中"不再是"她在想"。
+   * 服务端在 provider 调用前只发 `waiting`，真开了思考档才补发 `thinking`——
+   * 两种必须落成不同 kind，界面才不会拿等待当思考。
+   */
+  it("keeps waiting and thinking as different states", () => {
+    const waiting = fold([{ eventType: "assistant.status", payload: { status: "waiting", safeLabel: "在听你说…" } }]);
+    expect(waiting[0]).toMatchObject({ kind: "waiting", label: "在听你说…" });
+    const thenThinking = fold([
+      { eventType: "assistant.status", payload: { status: "waiting", safeLabel: "在听你说…" } },
+      { eventType: "assistant.status", payload: { status: "thinking", safeLabel: "她在想…" } },
+    ]);
+    expect(thenThinking).toHaveLength(1);
+    expect(thenThinking[0]).toMatchObject({ kind: "thinking", label: "她在想…" });
   });
 
   it("maps protocol states onto the rail visuals while preserving unknown outcomes", () => {
@@ -150,3 +167,29 @@ describe("companion run traces (历史过程留痕)", () => {
     expect(companionRunTraceExpired(chitchat[0])).toBe(false);
   });
 });
+
+/**
+ * 「此刻她在做什么」的兜底映射（2026-10-07）。
+ * 实机事件表形状：waiting → thinking → tool(requested/executing/succeeded 挤在 40ms 内)
+ * → 3.6s 后才出第一个字。工具节点落定后它不再是活动节点，那一整段过去只能靠这句兜底，
+ * 而它曾经固定是「在听…」——她明明在查东西。
+ */
+describe("companionTurnProcessLine 的过程文案映射", () => {
+  it("话刚收到、什么都没发生过：在听", () => {
+    expect(companionTurnProcessLine([])).toBe("在听…");
+  });
+
+  it("本轮开过思考档：她在想（工具跑完之后仍然成立）", () => {
+    const nodes = fold([
+      { eventType: "assistant.status", payload: { status: "thinking", safeLabel: "她在想…" } },
+      tool("succeeded", { name: "companion_read_current_page" }),
+    ]);
+    expect(companionTurnProcessLine(nodes)).toBe("她在想…");
+  });
+
+  it("没开思考但跑过工具：说她正在组织，而不是还在听", () => {
+    const nodes = fold([tool("succeeded", { name: "companion_read_note" })]);
+    expect(companionTurnProcessLine(nodes)).toBe("她看完了，正在组织怎么说。");
+  });
+});
+

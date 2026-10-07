@@ -77,6 +77,7 @@ function session(overrides: Partial<CompanionChatSession> = {}): CompanionChatSe
     richReply: null,
     draft: null,
     interrupted: null,
+    autoNavigatedRoutes: new Set<string>(),
     nodes: [],
     runTraces: [],
     feedSelection: null,
@@ -471,7 +472,7 @@ describe("伴星回答保存回笔记", () => {
     expect(screen.queryByRole("article", { name: /笔记关联|这次选文/ })).toBeNull();
   });
 
-  it.each(["收起回复", "换一处选文"])("保存迟到时，%s不会被旧回执重新打开或清掉", async (action) => {
+  it.each(["收起气泡", "换一处选文"])("保存迟到时，%s不会被旧回执重新打开或清掉", async (action) => {
     const receipt = await writeAnnotation({});
     writeAnnotation.mockClear();
     let finishSave!: () => void;

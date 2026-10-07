@@ -620,6 +620,67 @@ export async function insertStreamEvent(
   `);
 }
 
+/**
+ * 补发一条本轮的过程状态（`assistant.status`）。
+ *
+ * 为什么要有"补发"：这一轮**开不开思考**要等注意力解释跑完才知道（判据在
+ * `companion-turn-thinking`），而 provider 调用前那条状态早就发出去了。开着的轮次
+ * 在这里补一条 `thinking`，没开的就不补——界面上因此可以只说真话：
+ * 看到「她在想」时，模型确实在思考档上。
+ *
+ * 返回 false = run 已经不是这一代了（被 cancel/supersede），调用方不必管：
+ * 少一条状态不影响正文。
+ */
+export async function emitCompanionAssistantStatus(args: {
+  workspaceId: string;
+  read: ReadContext;
+  expiresAt: string;
+  status: "waiting" | "thinking" | "acting";
+  safeLabel: string;
+}): Promise<boolean> {
+  const { workspaceId, read, expiresAt, status, safeLabel } = args;
+  try {
+    return await withWorkerWorkspaceTransaction({ workspaceId, userId: read.userId }, async (tx) => {
+      const alive = await tx.execute<{ id: string }>(sql`
+        UPDATE companion_turn_runs
+        SET updated_at = now()
+        WHERE id = ${read.runId} AND status IN ('accepted', 'running')
+          AND generation = ${read.generation}
+        RETURNING id
+      `);
+      if (!alive[0]) return false;
+      const counters = await tx.execute<{ next_event_seq: string }>(sql`
+        UPDATE companion_conversations
+        SET next_event_seq = next_event_seq + 1
+        WHERE id = ${read.conversationId}
+        RETURNING next_event_seq
+      `);
+      const seq = Number(counters[0].next_event_seq) - 1;
+      await insertStreamEvent(tx, {
+        conversationId: read.conversationId,
+        workspaceId,
+        userId: read.userId,
+        runId: read.runId,
+        generation: read.generation,
+        accountEpoch: read.accountEpoch,
+        seq,
+        type: "assistant.status",
+        payload: { status, safeLabel },
+        expiresAt,
+      });
+      await tx.execute(sql`
+        SELECT pg_notify('astella_companion_events_v1',
+                         ${JSON.stringify({ conversationId: read.conversationId, maxSeq: seq + 1 })})
+      `);
+      return true;
+    });
+  } catch (err) {
+    // 状态是"让她别显得卡住"的辅助，不该把正文带崩。
+    logger.warn({ runId: read.runId, err, status }, "companion assistant status emit skipped");
+    return false;
+  }
+}
+
 export interface CompanionTtsSegmentEvent {
   version: 2;
   segmentId: string;

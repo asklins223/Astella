@@ -224,7 +224,7 @@ Alpha 是一套用 compose 起在单机上的"带监控与备份基础设施"的
 | `rc-restore-verify.sh` | 端到端验证：新建一份备份 → 恢复到隔离库（Alpha 流程里目标主机写的是网络别名 `restore-postgres`）→ 比对迁移末端与核心表行数 → 用 `infra/postgres/roles.sql` 复核角色姿态 → 产出 RC 报告 |
 | `freshness-check.sh` | 扫描 manifest 目录，找最近一次 `verificationStatus=verified` 的备份，超过阈值（默认 24 小时）就以非零码退出，`AstellaBackupStale` 因此亮起 |
 | `alpha-backup-cron.sh` + `alpha-cron-setup.sh` | 每 12 小时的调度：`backup.sh` → `rotate.sh` → `freshness-check.sh`，日志到 `/var/log/astella/backup-cron.log`。**这两个脚本没有被 make 目标或 compose 接线**，需要在宿主机上显式安装 crontab |
-| `backup-scripts.test.sh` | 这组 shell 脚本自身的测试（manifest 形状、rotate 保留策略、restore 的 allowlist 拒绝、`manifest.schema.json` 校验）。`bash infra/backup/backup-scripts.test.sh` 手动跑，**没有任何自动链路调用它** |
+| `backup-scripts.test.sh` | 这组 shell 脚本自身的测试（manifest 形状、rotate 保留策略、restore 的 allowlist 拒绝、`manifest.schema.json` 校验）。以前只能 `bash infra/backup/backup-scripts.test.sh` 手动跑、没有任何自动链路调用它；2026-10-07 起它同时挂在 `make verify` 与 `main-ci.yml` 的 `Backup scripts` job 上，两边缺一侧就会被 `ci-workflow-contract` 判红 |
 
 运维上必须区分两件事：`make alpha-backup` 只是产出一份加密备份与 manifest；`make alpha-restore-verify` 才是"这份备份真能恢复出来"的证据，而 `AstellaBackupStale` 看的是**已通过深度校验**的最近时间戳。只跑备份不跑恢复校验，这条告警会因为指标根本不出现而**永不触发**——它不会替你说"没问题"。
 

@@ -77,6 +77,7 @@ function ActiveGuidanceStage({ guide, topicId, index }: { guide: CompanionGuideC
   useEffect(() => {
     if (initialPage.current.surface !== surface || initialPage.current.destination !== destination) {
       // A guided visit keeps its position. An unrelated route yields to the user's new intent.
+      // 被同意门送去设置页不算"用户的新意图"：那趟来回必须停在同一站。
       if (!practiceRef.current) guide.pause();
       initialPage.current = { surface, destination };
     }
@@ -127,6 +128,7 @@ function ActiveGuidanceStage({ guide, topicId, index }: { guide: CompanionGuideC
   const advance = (direction = 1) => { setPractice(false); guide.next(direction); };
   const finish = () => { guide.next(1); if (step.feature && guideFeatureAvailable(step)) runFeature(step.feature); };
   const visit = () => {
+    if (step.gated === "consent") { guide.openConsentSettings(); return; }
     if (!guideFeatureAvailable(step)) return;
     if (welcome && last) { finish(); return; }
     setPractice(true);
@@ -137,10 +139,12 @@ function ActiveGuidanceStage({ guide, topicId, index }: { guide: CompanionGuideC
     guide.pause();
     feedSelectionToCompanion({ source: "selection", text: `伴星带路：${topic.title} / ${step.title}\n刚才的讲解：${step.detail}\n当前空间：${guide.identity?.name ?? "当前书房"}。预制演示是教学示例，未创建真实笔记、任务或学习记录。` });
   };
+  // 第一站的放行条件就是同意本身：没开，「接着」按不动，指路那颗也只做一件事——送他去设置。
+  const blocked = step.gated === "consent" && guide.consent !== "granted";
   const narration = practicing ? step.practice : step.id === "space" ? guide.identity?.role === "member"
     ? "我们到了。这里的共享内容可以阅读，你的回想与学习记录属于自己。先看看这里有什么，再挑一篇开始。"
     : "我们到了。门牌上是当前空间，材料都按这间书房收好。先看看这里的笔记，再挑一个想学的开始。" : step.cue;
-  const nextLabel = last ? welcome ? "开始我的学习" : "完成这段带路" : `接着，${GUIDE_JOURNEY_LABELS[topic.steps[index + 1]]}`;
+  const nextLabel = blocked ? "先去设置里开启，再回来" : last ? welcome ? "开始我的学习" : "完成这段带路" : `接着，${GUIDE_JOURNEY_LABELS[topic.steps[index + 1]]}`;
   const fallbackAnchor = Boolean(anchor?.element.closest(".guidance-stage"));
   return createPortal(<div ref={root} className="guidance-stage" role="region" aria-labelledby="guidance-stage-title" data-motion={mode} data-step={step.id} data-view={practicing ? "practice" : "tour"}>
     <div ref={wash} className="guidance-stage__wash" aria-hidden="true" />
@@ -150,9 +154,9 @@ function ActiveGuidanceStage({ guide, topicId, index }: { guide: CompanionGuideC
     <header className="guidance-stage__heading"><span>{String(index + 1).padStart(2, "0")}<i />{practicing ? "入口已打开 · 可以实际试试" : welcome ? "跟着同一个问题，接着往下走" : "在书房里，边看边听"}</span><h2 ref={heading} tabIndex={-1} id="guidance-stage-title">{welcome ? WELCOME_TITLES[step.id] ?? step.title : step.title}</h2></header>
     <div className="guidance-stage__story" aria-hidden={practicing || undefined} inert={practicing || undefined}><GuidanceScene step={step} guide={guide} phase={phase} onPhase={beat => { timeline.current?.kill(); setPhase(beat); }} /></div>
     {anchor ? <><svg className="guidance-stage__route" aria-hidden="true" width="100%" height="100%"><defs><marker id="guidance-route-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6" fill="none" stroke="currentColor" strokeWidth="1.5" /></marker></defs><path ref={route} fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="3 6" markerEnd="url(#guidance-route-arrow)" /></svg><div className="companion-guide-anchor" aria-hidden="true" style={{ left: anchor.left, top: anchor.top, width: anchor.width, height: anchor.height }} /><div ref={pointer} className="guidance-stage__pointer"><span><i>{index + 1}</i>{fallbackAnchor ? "从这个按钮打开真实入口" : step.target}</span><button type="button" onClick={visit}>{step.action ?? "带我去这里"}<ArrowRight size={13} /></button></div></> : null}
-    <GuidanceNarration text={narration} speechId={speechId} replay={replay} voiceOff={guide.account?.voiceOff === true} consentNeeded={guide.consentNeeded} chapter={`伴星带路 · ${index + 1} / ${topic.steps.length}`} anchor={anchor} onAsk={ask} onConsent={guide.openConsentSettings} onCompanionBounds={arrange} />
+    <GuidanceNarration text={narration} speechId={speechId} replay={replay} voiceOff={guide.account?.voiceOff === true} consent={guide.consent} chapter={`伴星带路 · ${index + 1} / ${topic.steps.length}`} anchor={anchor} onAsk={ask} onConsent={guide.openConsentSettings} onCompanionBounds={arrange} />
     <footer className="guidance-stage__controls">
-      <div className="guidance-stage__navigation"><button type="button" aria-label="上一步" disabled={index === 0} onClick={() => advance(-1)}><ArrowLeft size={17} /></button><button type="button" aria-label="重播本段" onClick={() => { setPractice(false); setReplay(value => value + 1); }}><RotateCcw size={16} /></button><div className="guidance-stage__next-cue"><small>{practicing ? "位置留在这里，试过后继续" : last ? "认识了入口，就可以开始了" : "下一站"}</small><b>{last ? "换成你想学的内容" : GUIDE_JOURNEY_LABELS[topic.steps[index + 1]]}</b></div>{!practicing && !(welcome && last) ? <button type="button" className="guidance-stage__visit" disabled={!guideFeatureAvailable(step)} onClick={visit}>先去实际试试<ArrowRight size={14} /></button> : null}<button type="button" className="guidance-stage__next" onClick={last && welcome ? finish : () => advance()}>{nextLabel}<ArrowRight size={16} /></button></div>
+      <div className="guidance-stage__navigation"><button type="button" aria-label="上一步" disabled={index === 0} onClick={() => advance(-1)}><ArrowLeft size={17} /></button><button type="button" aria-label="重播本段" onClick={() => { setPractice(false); setReplay(value => value + 1); }}><RotateCcw size={16} /></button><div className="guidance-stage__next-cue"><small>{blocked ? "开了声音我就念给你听" : practicing ? "位置留在这里，试过后继续" : last ? "认识了入口，就可以开始了" : "下一站"}</small><b>{last ? "换成你想学的内容" : GUIDE_JOURNEY_LABELS[topic.steps[index + 1]]}</b></div>{!practicing && !step.gated && !(welcome && last) ? <button type="button" className="guidance-stage__visit" disabled={!guideFeatureAvailable(step)} onClick={visit}>先去实际试试<ArrowRight size={14} /></button> : null}<button type="button" className="guidance-stage__next" disabled={blocked} onClick={last && welcome ? finish : () => advance()}>{nextLabel}<ArrowRight size={16} /></button></div>
       <div className="guidance-stage__leaving"><button type="button" onClick={guide.pause}><Pause size={12} />稍后继续</button><button type="button" onClick={guide.end}><X size={12} />结束带看</button><small>{guide.pending ? "位置先保存在本机" : "随时按 Esc 暂停，之后从右上角继续"}</small></div>
     </footer>
   </div>, document.body);

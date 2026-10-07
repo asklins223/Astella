@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AIProvider } from "../../lib/ai-provider.ts";
-import { interpretCompanionTurn } from "../companion-tool-intent.ts";
+import {
+  companionClassifierRecent,
+  companionOfferCandidates,
+  interpretCompanionTurn,
+} from "../companion-tool-intent.ts";
 
 function taskContext(signal = new AbortController().signal) {
   return {
@@ -79,6 +83,48 @@ test("闲聊可以直接回复；无效结构化输出不会假装判断成功",
   assert.equal((await interpretCompanionTurn(direct, [{ role: "user", content: "你是谁？" }], taskContext())).toolUse, "none");
   const invalid = { ...direct, chatCompletion: async () => ({ content: "{}", usage: {} }) } as AIProvider;
   assert.equal((await interpretCompanionTurn(invalid, [{ role: "user", content: "那篇的图呢？" }], taskContext())).toolUse, "uncertain");
+});
+
+const WINDOW: Parameters<typeof companionClassifierRecent>[0] = [
+  { role: "system", content: "系统块不占索引" },
+  { role: "user", content: "m0" },
+  { role: "assistant", content: "m1" },
+  { role: "user", content: "m2" },
+  { role: "assistant", content: "m3" },
+  { role: "user", content: "m4" },
+  { role: "assistant", content: "m5" },
+  { role: "user", content: "m6" },
+];
+
+test("分类器窗口的索引按「去掉 system 之后」给，与运行时 messages 同一个空间", () => {
+  const recent = companionClassifierRecent(WINDOW);
+  assert.deepEqual(recent.map((item) => item.index), [2, 3, 4, 5, 6],
+    "窗口是最近 5 条，且 system 不参与编号——索引要是另一套，接线迟早对不上");
+  assert.deepEqual(recent.map((item) => item.content), ["m2", "m3", "m4", "m5", "m6"]);
+  assert.deepEqual(companionOfferCandidates(WINDOW), [3, 5],
+    "只有她的消息能被指为待收的账；用户当前那句不是");
+});
+
+test("待收的账只认宿主给过的索引，越界的直接丢", async () => {
+  let sent = "";
+  let contract = "";
+  const model = {
+    ...provider(() => false),
+    chatCompletion: async (messages: Parameters<AIProvider["chatCompletion"]>[0]) => {
+      sent = String(messages.at(-1)?.content ?? "");
+      contract = String(messages[0]?.content ?? "");
+      return {
+        content: JSON.stringify({ ...proposal(false), pendingOfferIndexes: [5, 99, 5] }),
+        usage: {},
+      };
+    },
+  } as AIProvider;
+  const result = await interpretCompanionTurn(model, WINDOW, taskContext());
+  assert.deepEqual(result.pendingOfferIndexes, [5], "99 不存在，重复的 5 只算一次");
+  assert.match(sent, /"index":5/, "模型必须真的看见它被允许引用的那个编号");
+  assert.match(contract, /"pendingOfferIndexes":\[0\]/,
+    "字段没写进输出合同就会被 strict 解析判成非法输出，整轮解释退化成 uncertain");
+  assert.match(contract, /只引用 recent 给过的 index/, "不发明身份——这条和 objects 用的是同一套约束");
 });
 
 test("租约在模型调用前失效时不发请求，并把失效交给任务运行时", async () => {

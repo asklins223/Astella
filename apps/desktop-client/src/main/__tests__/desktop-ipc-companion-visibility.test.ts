@@ -212,6 +212,19 @@ async function setup(options: { fakeTimers?: boolean; disabledCompanion?: boolea
         ? { ...overview, account: { ...overview.account, globalEnabled: false } }
         : overview
     )),
+    /**
+     * 写账号设置：返回**状态形状**（patch 里的 `agentPermissionLevel` 不是状态字段，
+     * 直接 spread 进账号会撞上 strict schema）。
+     */
+    patchCompanionAccountState: companionStubs.patchCompanionAccountState = vi.fn(
+      async (_gateway: unknown, request: { revision: number; globalEnabled?: boolean; agentPermissionLevel?: "read_only" | "guided" | "full" }) => ({
+        ...overview.account,
+        globalEnabled: request.globalEnabled ?? !options.disabledCompanion,
+        agentSettings: request.agentPermissionLevel
+          ? { version: 1 as const, permissionLevel: request.agentPermissionLevel }
+          : overview.account.agentSettings,
+      }),
+    ),
     renewCompanionRuntimeFence: renewFence,
     watchCompanionAccountEvents: async (epoch: number) => {
       accountEpochCalls.push(epoch);
@@ -378,4 +391,33 @@ describe("伴星常连接跟随窗口可见性（M16）", () => {
 
     expect(s.invalidations(), "同一个空间纪元重复读会话不该再报一次失效").toBe(0);
   });
+
+  /**
+   * 账号级偏好按下去不该让整间房子重取一次快照。
+   *
+   * `snapshot_invalidated` 在渲染层是两条大读：门禁的 bootstrap 复核 + 书房投影重取。
+   * 以前写任何一条账号设置都无条件广播，于是输入框旁边换一个助理权限档位，
+   * 用户看到的就是"全局重刷"。只有「她整个开没开」真的改到房间读得到的东西
+   * （两条常连接、收件箱投递、主动念头），才值这一次广播。
+   */
+  it("写账号偏好不广播快照失效，只有开关伴星才广播", async () => {
+    const s = await setup();
+    await settle();
+    const before = s.invalidations();
+
+    const permission = await s.call(DESKTOP_IPC_CHANNELS.companionAccountPatchState, {
+      meta: { ...meta, workspaceEpoch: 9 },
+      request: { revision: 3, agentPermissionLevel: "full" },
+    });
+    expect(permission).toMatchObject({ ok: true, data: { agentSettings: { permissionLevel: "full" } } });
+    await settle();
+    expect(s.invalidations(), "换档位没有改到房间读得到的东西").toBe(before);
+
+    const enabled = await s.call(DESKTOP_IPC_CHANNELS.companionAccountPatchState, {
+      meta: { ...meta, workspaceEpoch: 9 },
+      request: { revision: 4, globalEnabled: true },
+    });
+    expect(enabled.ok).toBe(true);
+    await settle();
+    expect(s.invalidations(), "开关伴星要重取一次：常连接与主动念头都跟着它变").toBeGreaterThan(before);  });
 });

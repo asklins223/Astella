@@ -3,7 +3,7 @@ import { ArrowUpRight,BookOpen } from "lucide-react";
 import { Activity,useEffect,useRef,useState,type ReactNode } from "react";
 import { useRoomStore } from "../../../app/room-store";
 import { SETTINGS_ATTENTION_VOICE_MODEL } from "../../companion/open-voice-model-settings";
-import { COMPANION_AGENT_PERMISSION_OPTIONS,COMPANION_INTERVENTION_OPTIONS,COMPANION_PRESENCE_OPTIONS,companionInterventionHint,quietHoursPatch,quietHoursWithBoundary } from "../../companion/companion-account-presence";
+import { COMPANION_AGENT_PERMISSION_DETAIL,COMPANION_AGENT_PERMISSION_OPTIONS,COMPANION_INTERVENTION_OPTIONS,COMPANION_PRESENCE_OPTIONS,companionInterventionHint,quietHoursPatch,quietHoursWithBoundary } from "../../companion/companion-account-presence";
 import { HudSegmented,HudSwitch } from "../../hud/HudControls";
 import { SettingsCompanionData } from "./settings-companion-data";
 import { CompanionTimePicker } from "./settings-companion-time";
@@ -13,11 +13,6 @@ import { useCompanionAccountSettings } from "./use-companion-account-settings";
 
 const CHAPTERS = [["rules", "陪伴规则"], ["voice", "声音与显示"], ["data", "伴星数据"]] as const;
 type Chapter = (typeof CHAPTERS)[number][0];
-const permissionDetail = {
-  read_only: "只读取和查询，执行改动前需要你调整权限。",
-  guided: "每次产生改动前先征求你的确认。",
-  full: "跳转、设置与填充可以自动执行；不可恢复的操作仍会确认。",
-};
 
 function QuietHoursEditor(props: { value: NonNullable<CompanionAccountPatch["quietHours"]>; busy: boolean; onSave: (value: NonNullable<CompanionAccountPatch["quietHours"]>) => Promise<boolean> }) {
   const [start, setStart] = useState(props.value.startLocal);
@@ -92,7 +87,7 @@ export function SettingsCompanionPanel(props: { onReadable: (value: SettingsRead
           {quiet ? <QuietHoursEditor value={quiet} busy={busy} onSave={value => patch({ quietHours: value })} /> : null}
         </section>
         <section className="settings-companion-chapter"><header><h3>她可以做什么</h3><p>执行动作的权限与表达边界分别管理。</p></header>
-          <SettingRow title="助理权限" detail={permissionDetail[account.agentSettings?.permissionLevel ?? "guided"]}><HudSegmented label="助理权限档位" value={account.agentSettings?.permissionLevel ?? "guided"} options={permissionOptions} compact disabled={busy} onChange={value => void patch({ agentPermissionLevel: value })} /></SettingRow>
+          <SettingRow title="助理权限" detail={COMPANION_AGENT_PERMISSION_DETAIL[account.agentSettings?.permissionLevel ?? "guided"]}><HudSegmented label="助理权限档位" value={account.agentSettings?.permissionLevel ?? "guided"} options={permissionOptions} compact disabled={busy} onChange={value => void patch({ agentPermissionLevel: value })} /></SettingRow>
           <SettingRow title="自动生成日记" detail="暂停期间不收集日记素材；重新开启后从开启时起积累。"><HudSwitch label="自动生成日记" checked={account.diaryEnabled} disabled={busy} onChange={next => void patch({ diaryEnabled: next })} /></SettingRow>
           <p className="settings-companion-note">说话风格、名字和表达分量，在伴星中心的「人格」页调整。</p>
         </section>

@@ -39,10 +39,17 @@ import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 
 import { COMPANION_TOOL_INTENT_TIMEOUT_MS, interpretCompanionTurn } from "./companion-tool-intent.ts";
 import { companionAttentionObjects } from "./companion-attention.ts";
+import { companionTurnThinking } from "./companion-turn-thinking.ts";
+import { buildCasualFirstStepRequest, shouldKeepSpeculativeFirstStep } from "./companion-speculative-first-step.ts";
+import {
+  findDuplicateSegment,
+  joinVisibleSegmentsDeduped,
+  VISIBLE_SEGMENT_SEPARATOR,
+} from "./companion-visible-segments.ts";
 import { composeAgentContext } from "@astella/agent-core";
 import { COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS, type CompanionContextReceipts } from "./companion-context-receipts.ts";
 import { boundedStepSender, type FoldedReplay, type CompactionCooldownPorts } from "./companion-compaction.ts";
-import type { CompactionTraceRecorder } from "./companion-context-handoff.ts";
+import { renderPendingOffersAsRecords, type CompactionTraceRecorder } from "./companion-context-handoff.ts";
 import { runCompanionAgentModelStep } from "./companion-agent-task.ts";
 import { logger } from "../lib/logger.ts";
 import { runWithAbortBudget } from "../lib/handler-timeout.ts";
@@ -58,9 +65,10 @@ import { isJobLeaseActive } from "../lib/job-lease.ts";
 import type { AIProvider } from "../lib/ai-provider.ts";
 import type { CompanionDialogueHandlerContext, ReadContext } from "./companion-dialogue-store.ts";
 import {
+  emitCompanionAssistantStatus,
   recoverCompanionRunFailureSpanBestEffort,
 } from "./companion-dialogue-store.ts";
-import { looksTruncatedReply, looksLikeUnfulfilledActionNarration, unverifiedNumericClaims, unverifiedQuoteClaims, claimsLookupThatNeverRan, claimsNothingDueAgainstFacts, keepRecomputedBlocks } from "./companion-dialogue-content.ts";
+import { looksTruncatedReply, looksLikeUnfulfilledActionNarration, unverifiedNumericClaims, unverifiedQuoteClaims, claimsLookupThatNeverRan, claimsNothingDueAgainstFacts, keepRecomputedBlocks, companionStepOutputCeiling } from "./companion-dialogue-content.ts";
 import { unavailableCompanionToolSummary } from "./companion-tool-outcome.ts";
 import { companionToolFailureFaces } from "./companion-tool-failure-faces.ts";
 import { runCompanionToolExecution } from "./companion-tool-execution-run.ts";
@@ -89,99 +97,6 @@ type AgentMessage = AgentTurnRequest["messages"][number];
 
 
 
-
-/**
- * 多步可见正文的分段符（2026-09-19 ④-b）。
- *
- * 它与流式下发的 `separatorBefore` 必须是**同一个字符串**：交付管线累积的原文
- * 与最终正文逐字节同形，`reconcileStreamedText` 的"最终正文以已下发内容开头"
- * 才不需要任何放宽。改这里就要同时改 runStreamingAgentStep 的调用点，别只改一处。
- */
-const VISIBLE_SEGMENT_SEPARATOR = "\n\n";
-
-/**
- * 分段拼接（2026-09-19 ④-b）。
- *
- * 判据是 `segment.length > 0` 而**不是**"trim 后非空"：分段符与分段内容是**先发后判**
- * 的（跑完那一步才知道它有没有吐字），所以只要这一步吐出过字符，它的分段符就已经
- * 在下发原文里了——这里必须同口径保留，否则"下发原文"与"最终正文"在分段边界上错位，
- * `writeTail` 的 `fullText.startsWith(delivered)` 会失败，整轮被判
- * `stream_full_text_diverged`。
- *
- * 同理**不对分段做 trim**：trim 掉的字符在流式侧是发出去过的，两侧必须共用同一段原文，
- * 净化统一在出口（validateCompanionOutput / 交付管线的 sanitize）做。
- */
-/**
- * 分段拼接（去重版，2026-09-19 E 内容质量；④-b 的拼接不变量全部继承）。
- *
- * ④-b 原始口径（现在由去重版继续保证）：
- * - 判据是 `segment.length > 0` 而**不是**"trim 后非空"：分段符与分段内容是
- *   **先发后判**的（跑完那一步才知道它有没有吐字），所以只要这一步吐出过字符，
- *   它的分段符就已经在下发原文里了——这里必须同口径保留，否则"下发原文"与
- *   "最终正文"在分段边界上错位，`writeTail` 的 `fullText.startsWith(delivered)`
- *   会失败，整轮被判 `stream_full_text_diverged`。
- * - 同理**不对分段做 trim**：trim 掉的字符在流式侧是发出去过的，两侧必须共用
- *   同一段原文，净化统一在出口（validateCompanionOutput / 交付管线的 sanitize）做。
- *
- * 在此之上做两件事，都只动**从未流式下发过**的分段：
- * 1. 丢重复：与前面某个保留分段 trim 后完全相同的那一条（模型复读：工具步说完结论、
- *    终答步原样再说一遍）。
- * 2. 丢"夹在已下发段前面的未下发段"：这种段从没出现在下发原文里，却会排在已下发的
- *    内容前面——最终正文就不再以下发原文开头，`writeTail` 判
- *    `stream_full_text_diverged`，整轮失败。实机 2026-09-22 场景 T 就是这个形状：
- *    第 1 步"嗯嗯，记住了喵"被 hold 攒住没发出去 → 被 steer 掉 → 第 3 步真的调了工具
- *    并说出"好了，这次是真的设上了"，边界**其实改成功了**，run 却因为分叉被判 failed。
- *    末尾那条不丢：它是 writeTail 正要补发的尾巴。
- *
- * 已下发过的分段一律保留——它已经在客户端草稿里，删掉等于与最终正文分叉。
- */
-export function joinVisibleSegmentsDeduped(
-  segments: readonly string[],
-  delivered: readonly boolean[],
-): { text: string; dropped: string[] } {
-  const lastDelivered = delivered.lastIndexOf(true);
-  const kept: string[] = [];
-  const keptKeys = new Set<string>();
-  const dropped: string[] = [];
-  for (let index = 0; index < segments.length; index += 1) {
-    const segment = segments[index];
-    if (segment.length === 0) continue;
-    if (!delivered[index] && index < lastDelivered) {
-      dropped.push(segment);
-      continue;
-    }
-    const key = segment.trim();
-    if (key.length >= 8 && keptKeys.has(key) && !delivered[index]) {
-      dropped.push(segment);
-      continue;
-    }
-    if (key.length >= 8) keptKeys.add(key);
-    kept.push(segment);
-  }
-  return { text: kept.join(VISIBLE_SEGMENT_SEPARATOR), dropped };
-}
-
-/**
- * 找出与前面某个分段完全重复的分段（④-b 的观测项）。
- *
- * "分段拼接"让模型的复读行为第一次变得**肉眼可见**：实机 C 轮里工具步已经说完
- * `复习入口已经准备好啦，点一下「前往」就能过去。要不要先喝口水再开始？`，终答步
- * 又原样说了一遍——拼起来就是同一句 34 字出现两次。system prompt 已要求"不要在
- * 最后一步原样复述"，但小模型不一定听；这里只做**可观测**（日志），不改行为，
- * 因为已下发的分段无法撤回（撤回等于与最终正文分叉）。
- *
- * 阈值 8 字：短句（"好的""嗯嗯"）重复是正常口语，不算问题。
- */
-function findDuplicateSegment(segments: readonly string[]): string | null {
-  const seen = new Set<string>();
-  for (const segment of segments) {
-    const key = segment.trim();
-    if (key.length < 8) continue;
-    if (seen.has(key)) return key;
-    seen.add(key);
-  }
-  return null;
-}
 
 export async function runCompanionAgentLoop(args: {
   ctx: CompanionDialogueHandlerContext;
@@ -297,19 +212,91 @@ export async function runCompanionAgentLoop(args: {
   // Latest-turn attention is independent of durable goals and historical actions.
   const attentionRequestHash = sha256Utf8V1(args.read.userText);
   const availableDefinitions = resolveAllCompanionAgentTools(meta.permissionLevel, event.constraints);
-  const attention = meta.turnInterpretation?.requestHash === attentionRequestHash ? meta.turnInterpretation
-    : await interpretCompanionTurn(args.provider, args.baseMessages, {
-      requestHash: attentionRequestHash,
-      objects: companionAttentionObjects(args.read, meta.relatedGoals),
-      capabilities: availableDefinitions.map(definition => definition.name),
-      job: args.ctx,
-      runId: args.read.runId,
-      userId: args.read.userId,
+  const cachedInterpretation = meta.turnInterpretation?.requestHash === attentionRequestHash ? meta.turnInterpretation : null;
+  /**
+   * 分类器**不等**——它和"闲聊版第一步"并行跑（2026-10-07 用户决定：首字延迟里
+   * 最大的一块就是这次串行往返，实测 1.9–2.4s，而且不产出任何可见内容）。
+   */
+  const attentionPromise = cachedInterpretation ?? interpretCompanionTurn(args.provider, args.baseMessages, {
+    requestHash: attentionRequestHash,
+    objects: companionAttentionObjects(args.read, meta.relatedGoals),
+    capabilities: availableDefinitions.map(definition => definition.name),
+    job: args.ctx,
+    runId: args.read.runId,
+    userId: args.read.userId,
+    permissionLevel: meta.permissionLevel,
+    stepTimeoutMs: Math.min(COMPANION_TOOL_INTENT_TIMEOUT_MS, deadlineAt - Date.now()),
+    currentActiveTransaction: currentWorkerWorkspaceTransaction,
+    verifyAttempt: (attempt) => isJobLeaseActive({ ...args.ctx, leaseToken: attempt.leaseToken }),
+  });
+
+  let messages = args.baseMessages
+    .filter((message) => message.role !== "system")
+    .map((message) => ({ role: message.role, content: message.content } as AgentMessage));
+  const currentRequest = [...messages].reverse().find((message) => message.role === "user");
+  if (!currentRequest) throw new Error("companion turn is missing its current user request");
+
+  /**
+   * 投机的一步（2026-10-07）：分类器还在路上时，先把"闲聊版第一步"**流式**发出去。
+   * 判据与请求形状见 `companion-speculative-first-step`；放行闸在交付管线那一侧
+   * （`runStreamingAgentStep` 的 `releaseGate`）：分类器同意之前一个字都不下发，
+   * 不同意就整版作废（抛 Discarded，不欠用户任何东西），等待与从前一致。
+   *
+   * 为什么仍走流式而不是缓冲：缓冲要等整段生成完才交付，实测首字 4s，比原来还慢；
+   * 流式 + 攒住才是"分类器落地的瞬间就把已经生成的部分吐出去"。
+   */
+  const speculativeRequest = cachedInterpretation === null
+    && typeof args.provider.chatCompletionStream === "function"
+    && args.onProviderDelta
+    ? buildCasualFirstStepRequest({
+      turnPolicy: typeof args.baseMessages[0]?.content === "string" ? args.baseMessages[0].content : "",
       permissionLevel: meta.permissionLevel,
-      stepTimeoutMs: Math.min(COMPANION_TOOL_INTENT_TIMEOUT_MS, deadlineAt - Date.now()),
-      currentActiveTransaction: currentWorkerWorkspaceTransaction,
-      verifyAttempt: (attempt) => isJobLeaseActive({ ...args.ctx, leaseToken: attempt.leaseToken }),
-    });
+      stepBudget: budget.maxSteps,
+      messages,
+      maxTokens: companionStepOutputCeiling(args.provider),
+    })
+    : null;
+  /** 投机那一步真的发过字没有——保留时它就是这一步的 `stepEmitted`。 */
+  let speculativeEmitted = false;
+  const speculativeFlight = speculativeRequest
+    ? runStreamingAgentStep({
+      provider: args.provider,
+      stepRequest: speculativeRequest,
+      ctxSignal: args.ctx.signal,
+      timeoutMs: Math.min(resolveProviderCallTimeout("companion_agent"), Math.max(1, deadlineAt - Date.now())),
+      onProviderDelta: args.onProviderDelta!,
+      // 第一步之前没有任何段下发过，分段符为空（与真实第一步同口径）。
+      separatorBefore: "",
+      holdUntilChars: stepHoldChars({ userAskedForAction: false }),
+      onTextEmitted: () => { speculativeEmitted = true; },
+      releaseGate: () => Promise.resolve(attentionPromise).then(shouldKeepSpeculativeFirstStep),
+    })
+    : null;
+  // 作废是这条飞地的正常出口之一：先接住，免得没人处理的 rejection 冒出来。
+  speculativeFlight?.catch(() => undefined);
+  const attention = await attentionPromise;
+  /**
+   * 把她自己那些"用户这句没接的收尾"降级成记录（判据与实测见 `renderPendingOffersAsRecords`）。
+   *
+   * 索引空间就是这里的 `messages`：分类器那侧按"去掉 system 之后"的位置编号，这一份也是，
+   * 所以中间不需要换算——换算一次就是两套编号，迟早对不上。
+   *
+   * 位置在投机那步**之后**是故意的：投机的请求早已按未改写的消息发出去了，只有
+   * `shouldKeepSpeculativeFirstStep` 保证"有待收的账就整版作废"，两者才不会各说一套。
+   * 交接快照里存的仍是改写前的基线；重试时同一份 `turn_interpretation` 已落库，
+   * 降级按同样的索引重放一次，输出逐字一致。
+   */
+  messages = renderPendingOffersAsRecords(messages, attention.pendingOfferIndexes);
+  let prefetchedFirstStep: { request: AgentTurnRequest; result: AgentTurnResult; emitted: boolean } | null = null;
+  if (speculativeFlight && speculativeRequest && shouldKeepSpeculativeFirstStep(attention)) {
+    try {
+      prefetchedFirstStep = { request: speculativeRequest, result: await speculativeFlight, emitted: speculativeEmitted };
+      logger.info({ runId: args.read.runId, ms: Date.now() - handlerStartedAtMs },
+        "speculative casual first step kept; answering without waiting for the classifier round-trip");
+    } catch (err) {
+      logger.warn({ runId: args.read.runId, err }, "speculative casual first step failed; falling back to the normal path");
+    }
+  }
   const toolIntent = attention.toolUse === "none" ? false : attention.toolUse === "uncertain" ? null : true;
   const userRequiresTool = companionStepRequiresTool(toolIntent);
   const userAskedForAction = attention.toolUse === "act";
@@ -351,11 +338,23 @@ export async function runCompanionAgentLoop(args: {
     ...args.contextReceipts?.runMetaPatch(),
   });
 
-  let messages = args.baseMessages
-    .filter((message) => message.role !== "system")
-    .map((message) => ({ role: message.role, content: message.content } as AgentMessage));
-  const currentRequest = [...messages].reverse().find((message) => message.role === "user");
-  if (!currentRequest) throw new Error("companion turn is missing its current user request");
+  /**
+   * 这一轮开不开思考（判据与理由见 `companion-turn-thinking`）：**整轮定一次**，
+   * 不在每个 step 重算——闲聊轮的每一步都该是同一档，否则工具回来看一眼又变慢。
+   */
+  const turnThinking = companionTurnThinking(attention);
+  // 延迟异常时先查这一格：这一轮到底开没开思考、按什么判的。
+  logger.info({ runId: args.read.runId, disableThinking: turnThinking.disableThinking, basis: turnThinking.basis },
+    "companion turn thinking mode decided");
+  // 只有真的开了思考档才补发 `thinking`：provider 调用前那条是 `waiting`（那时还
+  // 不知道）。闲聊轮因此不会顶着「她在想」的名字等两秒——那句话说的是模型档位，
+  // 不是"她在等你"。
+  if (!turnThinking.disableThinking) {
+    await emitCompanionAssistantStatus({
+      workspaceId: args.ctx.workspaceId, read: args.read, expiresAt: args.expiresAt,
+      status: "thinking", safeLabel: "她在想…",
+    });
+  }
   // 压力触发的一次有界压缩（44 §5.4）：折的是**这一次请求**的回放尾部，不是工作
   // 上下文——run 的交接快照仍是折叠前的形态，崩溃恢复只会拿到更多上下文。
   const sendWithBoundedCompaction = boundedStepSender({
@@ -489,7 +488,14 @@ export async function runCompanionAgentLoop(args: {
       finalAnswerOnly,
       attentionIntent: attention.intent,
     });
-    const stepRequest: AgentTurnRequest = {
+    /**
+     * 第一步可能已经有现成的：投机的闲聊版（见上面的 speculative）。
+     * 保留条件是"分类器确认本轮解释为空"，所以这一版请求与真跑一遍逐字一致，
+     * 只是**省掉了那次串行往返**。
+     */
+    const prefetched = prefetchedFirstStep !== null && stepCount === resumedStepCount ? prefetchedFirstStep : null;
+    if (prefetched) prefetchedFirstStep = null;
+    const stepRequest: AgentTurnRequest = prefetched?.request ?? {
       role: AgentRole.COMPANION_AGENT,
       systemPrompt: composeAgentContext({ maxCharacters: COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS, sources: [
         { id: "turn", authority: "policy", required: true },
@@ -504,15 +510,18 @@ export async function runCompanionAgentLoop(args: {
       messages,
       tools: toolsOfferedThisStep,
       toolChoice: toolChoiceThisStep,
-      // maxTokens / temperature 分步（2026-09-19 内容质量 B+C；同日深夜修正预算）：
-      // qwen3.8-flash 是**思考型模型**（tokenrhythm enableThinking=true）——reasoning
-      // 也计入 completion 预算。700 的工具步预算会被思考整段吃光：流式路径只有
-      // reasoning_content 帧、零正文 delta（stream_empty → 全量降级缓冲），缓冲路径
-      // 正文被砍成一两个词（20:00-20:29 实测"Agent"/"我是"）。预算提到 2000/4000，
-      // 给思考留出空间；截断重试（finishReason=length 翻倍重试）作为兜底继续生效。
-      // - 工具步 0.4：这一步是**决策**（调不调工具、抽什么参数），要稳；
-      //   终答是表达，保持 0.9。
-      maxTokens: finalAnswerOnly ? 4_000 : 2_000,
+      disableThinking: turnThinking.disableThinking,
+      /**
+       * 这一步能说多少，**只由模型档案声明的输出上限**决定（2026-10-07 用户决定：
+       * 这是 agent，不是单轮 chat，代码里不许留一个会把话砍断的小数）。
+       *
+       * 旧值 2000/4000 是 2026-09-19 为「思考吃满预算」抬上来的，本质仍是拍脑袋的数：
+       * 它同时是终答的天花板，长解释、读图后的长转述、带路里的多段话都会说到一半停。
+       * provider 自己会按 `maxOutputTokens` 夹一次（见 opencode-go / openai-compatible），
+       * 所以这里传档案声明的值就是"要多少给多少，模型自己收口"。
+       * 未声明档案的 provider（mock、旧配置）走 `COMPANION_STEP_OUTPUT_FALLBACK_TOKENS`。
+       */
+      maxTokens: companionStepOutputCeiling(args.provider),
       temperature: finalAnswerOnly ? 0.9 : 0.4,
     };
     const stepId = await persistStep(event, stepCount, auditHash(stepRequest));
@@ -535,6 +544,9 @@ export async function runCompanionAgentLoop(args: {
     }
     /** 本步是否已经下发过文本（重试判据，每步重置）。 */
     let stepEmitted = false;
+    // 投机那一步的字可能已经流出去了：`stepEmitted` 必须照实带过来，
+    // 否则重试安全性与坍缩闸都会以为这一步没发过字（那两个判据都以它为准）。
+    if (prefetched) stepEmitted = prefetched.emitted;
     const runModelStepTask = (
       provider: AIProvider,
       request: AgentTurnRequest,
@@ -728,7 +740,9 @@ export async function runCompanionAgentLoop(args: {
             Math.min(providerCallTimeout, Math.max(1, deadlineAt - Date.now())),
           );
         try {
-          result = await attemptStream();
+          // 投机那一步已经把完整结果拿回来了（分类器确认本轮解释为空才算数）：
+          // 它的字一个都没"下发"过，走下面既有的补发路径进正文。
+          result = prefetched ? prefetched.result : await attemptStream();
         } catch (error) {
           if (!canRetryStream(error)) throw error;
           // 传**错误对象**而不是 message 字符串：序列化器（safeErrorSerializer）
@@ -789,35 +803,42 @@ export async function runCompanionAgentLoop(args: {
       );
       throw error;
     }
-    // B 兜底（2026-09-19 内容质量）：这一步被 maxTokens 砍断、且**一个字都没下发
-    // 过**时，翻倍预算原样重试一次——半截话不该是用户拿到的最终答复。已下发的
-    // （流式成功，stepEmitted=true）无法撤回，只能留痕（下方 finishReason 日志）。
-    // 注意：persistStep 记录的 auditHash 是首次请求的；重试只改 maxTokens、不改
-    // prompt 内容，差异靠这条日志与 finishReason 留痕追溯。
+    // B 兜底（2026-09-19 内容质量）：这一步被输出预算砍断、且**一个字都没下发过**时
+    // 重试一次——半截话不该是用户拿到的最终答复。已下发的（流式成功，stepEmitted=true）
+    // 无法撤回，只能留痕（下方 finishReason 日志）。
+    // 2026-10-07：预算已经改成"按模型档案声明"，所以不再"翻倍"（翻倍是对着一个小常数
+    // 想出来的办法）；只有这一步确实低于当前可用天花板时才抬到天花板重来，已经在天花板
+    // 上就没有可长的空间，只留痕。
     if (result.finishReason === "length" && !stepEmitted && Date.now() < deadlineAt) {
-      const retryMaxTokens = Math.min(stepRequest.maxTokens * 2, 4_000);
-      logger.warn(
-        { runId: args.read.runId, stepCount, maxTokens: stepRequest.maxTokens, retryMaxTokens },
-        "companion agent step truncated by maxTokens; retrying once with doubled budget",
-      );
-      try {
-        const retryRequest = { ...stepRequest, maxTokens: retryMaxTokens };
-        result = await runWithAbortBudget(
-          (signal) => runModelStepTask(
-            stepProvider,
-            retryRequest,
-            signal,
-            (taskSignal) => stepProvider.executeAgentTurn!(retryRequest, taskSignal),
-            Math.min(resolveProviderCallTimeout("companion_agent"), Math.max(1, deadlineAt - Date.now())),
-          ),
-          args.ctx.signal,
-          Math.min(resolveProviderCallTimeout("companion_agent"), Math.max(1, deadlineAt - Date.now())),
-        );
-      } catch (retryError) {
+      const ceiling = companionStepOutputCeiling(stepProvider);
+      if (ceiling > stepRequest.maxTokens) {
+        const retryMaxTokens = ceiling;
         logger.warn(
-          { err: retryError, stepCount },
-          "companion agent truncation retry failed; keeping the truncated result",
+          { runId: args.read.runId, stepCount, maxTokens: stepRequest.maxTokens, retryMaxTokens },
+          "companion agent step truncated by maxTokens; retrying once at the declared ceiling",
         );
+        try {
+          const retryRequest = { ...stepRequest, maxTokens: retryMaxTokens };
+          result = await runWithAbortBudget(
+            (signal) => runModelStepTask(
+              stepProvider,
+              retryRequest,
+              signal,
+              (taskSignal) => stepProvider.executeAgentTurn!(retryRequest, taskSignal),
+              Math.min(resolveProviderCallTimeout("companion_agent"), Math.max(1, deadlineAt - Date.now())),
+            ),
+            args.ctx.signal,
+            Math.min(resolveProviderCallTimeout("companion_agent"), Math.max(1, deadlineAt - Date.now())),
+          );
+        } catch (retryError) {
+          logger.warn(
+            { err: retryError, stepCount },
+            "companion agent truncation retry failed; keeping the truncated result",
+          );
+        }
+      } else {
+        logger.warn({ runId: args.read.runId, stepCount, maxTokens: stepRequest.maxTokens },
+          "companion agent step hit the model's own output ceiling; nothing left to grow into");
       }
     }
     let calls = result.toolCalls ?? [];

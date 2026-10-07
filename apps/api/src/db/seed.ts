@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
-import { db } from "./client.ts";
+import { eq, sql } from "drizzle-orm";
+import { db, withActorTransaction } from "./client.ts";
 import { users, workspaces, workspaceMembers } from "@astella/shared/db-schema/identity";
 
 const DEMO_OWNER_EMAIL = "owner@astella.local";
@@ -62,49 +63,59 @@ async function main() {
 
   const { demoSeed, ownerEmail, ownerPassword, workspaceName, displayName, avatarUrl } = resolveSeedConfig();
 
-  const existing = await db.query.users.findFirst({
-    where: (u, { eq }) => eq(u.email, ownerEmail),
-  });
-
-  if (existing) {
+  // 存在性检查不能走裸 `db.query.users`：api 连接角色是 NOBYPASSRLS 的，
+  // 没有 `app.user_id` 上下文时它**看不见任何别人的行**，这个检查会永远返回空，
+  // 于是第二次 seed 会拿唯一索引去撞。`astella_find_user_by_email` 是注册/邀请
+  // 那条路本来就用的 SECURITY DEFINER 查找。
+  const found = await db.execute<{ id: string }>(
+    sql`select id from astella_find_user_by_email(${ownerEmail})`,
+  );
+  if (found.length > 0) {
     console.log(`Owner already exists: ${ownerEmail}`);
     return;
   }
 
-  const [owner] = await db
-    .insert(users)
-    .values({
-      email: ownerEmail,
-      passwordHash: hashPassword(ownerPassword),
+  const ownerId = randomUUID();
+  // 写入包在 actor 事务里：`sec02_users_self_insert` 只放行
+  // `app.user_id` 等于新行 id 的插入，而 actor 上下文允许"还没有空间"
+  // ——那正是 workspaces / workspace_members 守卫让开的分支（迁移 0257）。
+  await withActorTransaction({ userId: ownerId, workspaceId: null }, async (tx) => {
+    const [owner] = await tx
+      .insert(users)
+      .values({
+        id: ownerId,
+        email: ownerEmail,
+        passwordHash: hashPassword(ownerPassword),
+        role: "owner",
+        ...(displayName ? { displayName } : {}),
+        ...(avatarUrl ? { avatarUrl } : {}),
+      })
+      .returning();
+
+    const [ws] = await tx
+      .insert(workspaces)
+      .values({
+        ownerId: owner.id,
+        name: workspaceName,
+        workspaceType: "personal",
+      })
+      .returning();
+
+    await tx.insert(workspaceMembers).values({
+      workspaceId: ws.id,
+      userId: owner.id,
       role: "owner",
-      ...(displayName ? { displayName } : {}),
-      ...(avatarUrl ? { avatarUrl } : {}),
-    })
-    .returning();
+    });
 
-  const [ws] = await db
-    .insert(workspaces)
-    .values({
-      ownerId: owner.id,
-      name: workspaceName,
-      workspaceType: "personal",
-    })
-    .returning();
+    // PROFILE-01: 设置用户的 personal_workspace_id
+    await tx
+      .update(users)
+      .set({ personalWorkspaceId: ws.id })
+      .where(eq(users.id, owner.id));
 
-  await db.insert(workspaceMembers).values({
-    workspaceId: ws.id,
-    userId: owner.id,
-    role: "owner",
+    console.log(`Seeded ${demoSeed ? "demo " : ""}owner: ${ownerEmail}`);
+    console.log(`Workspace: ${workspaceName} (${ws.id})`);
   });
-
-  // PROFILE-01: 设置用户的 personal_workspace_id
-  await db
-    .update(users)
-    .set({ personalWorkspaceId: ws.id })
-    .where(eq(users.id, owner.id));
-
-  console.log(`Seeded ${demoSeed ? "demo " : ""}owner: ${ownerEmail}`);
-  console.log(`Workspace: ${workspaceName} (${ws.id})`);
 }
 
 main()

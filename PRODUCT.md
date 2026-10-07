@@ -124,10 +124,12 @@ Electron 43 + electron-vite 5 + Vite 7 + React 19 + TypeScript（独立桌面客
   `window.astella` / `window.astellaDesktop`、IPC 通道前缀 `astella.v1.`、环境变量
   `ASTELLA_*`、自定义协议 `astella-app://`、桌面包名 `astella-desktop-client`（决定
   userData 目录名）、Docker 项目名与派生容器/卷名都跟着换了。
-- **仍叫 `astella` 的只剩存储与时序标识**：Postgres 库名／角色／函数（`astella`、
-  `astella_api|worker|migrator`、`astella_*` 函数）、MinIO 桶 `astella-workspaces`、
-  Prometheus 指标名 `astella_*`。改这些是数据迁移而不是改名，边界见
-  `docs/guide/zh/operations.md`。
+- **全仓只剩两个串还写着 `ailearn`**，而且它们不是名字，是摘要的输入：
+  `ailearn-hash-canonical-v2`（`hash-canonical-v2.ts` 的域前缀，逐字进每一个 hash）与
+  `ailearn:invitation-token-hint:v1`（邀请 hint 的域前缀，hint 存在库里）。换它们等于
+  作废全部存量摘要与已发出邀请的查找，所以两处各自带注释留在原地。
+  存储层名字（Postgres 库/角色/函数、MinIO 桶、指标名）在 2026-10-06 第三轮已经
+  一并换成 `astella*`，dev 库是重建验过的。
 - **品牌标识**：Astella 图标（宝蓝夜空里写字的女孩与那枚星星）+ "拾星笔记" + 橙色圆点，
   字用衬线体（Noto Serif SC / Songti SC）。图标母版与派生产物见 `assets/brand/README.md`
 - **语言**：界面语言为简体中文（`lang="zh-CN"`）

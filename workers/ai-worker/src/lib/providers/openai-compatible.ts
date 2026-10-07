@@ -621,8 +621,9 @@ export class OpenAICompatibleProvider implements AIProvider {
       messages,
       temperature: clampTemperature(request.temperature),
       stream: false,
-      // 思考字段由模型档案驱动（见 thinkingField）；agent turn 无 per-call 关闭通道。
-      ...this.thinkingField(false),
+      // 思考字段由模型档案驱动（见 thinkingField）；这一轮要不要关由调用方随请求带来
+      // （伴星闲聊轮关、提问/任务轮开），档案本身说的仍是"这个模型能思考到哪几档"。
+      ...this.thinkingField(request.disableThinking ?? false),
       // R1: DashScope preset overrides (e.g., enable_thinking: false)
       ...this.extraRequestParams,
     };

@@ -817,7 +817,9 @@ export async function runCompanionDialogue(
         accountEpoch: read.accountEpoch,
         seq: statusSeq,
         type: "assistant.status",
-        payload: { status: "thinking", safeLabel: "思考中" },
+        // 这一刻还不知道这一轮开不开思考（判据要等本轮的注意力解释跑完），
+        // 所以只说"在听"。真开了思考，运行时会在判定之后补一条 thinking。
+        payload: { status: "waiting", safeLabel: "在听你说…" },
         expiresAt,
       });
       // §5.2 确定性来源：thinking → think/curious/0.35（与 status 同事务原子下发）。

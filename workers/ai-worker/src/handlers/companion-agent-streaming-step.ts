@@ -43,6 +43,20 @@ export function canRetryCompanionStream(error: unknown, state: { emitted: boolea
  * 导出仅为可测：不依赖 DB，provider/onProviderDelta 全部可注入（见
  * companion-agent-runtime.test.ts 的流式中止用例）。
  */
+/**
+ * 投机的那一步被判定作废（2026-10-07）。
+ *
+ * 它**不是**失败：一个字都没下发，也不欠用户任何东西。调用方（伴星运行时）抓住它
+ * 之后按原路径重跑这一步即可。单独一个类是为了不和"交付管线叫停"
+ * （`CompanionStreamStoppedError`）混在一起——那一类要按失败收尾。
+ */
+export class CompanionSpeculativeStepDiscardedError extends Error {
+  constructor() {
+    super("companion speculative step discarded before any release");
+    this.name = "CompanionSpeculativeStepDiscardedError";
+  }
+}
+
 export async function runStreamingAgentStep(args: {
   provider: AIProvider;
   stepRequest: AgentTurnRequest;
@@ -75,6 +89,17 @@ export async function runStreamingAgentStep(args: {
   holdUntilChars?: number;
   /** 本步**真正下发**了第一个字符时回调（不是"模型吐了字"，见 holdUntilChars）。 */
   onTextEmitted?: () => void;
+  /**
+   * 首次下发之前的**放行闸**（2026-10-07 投机执行）。
+   *
+   * 分类器还在路上时，投机的第一步已经在生成了；`releaseGate` 就是"等分类器定论"：
+   * 返回 true → 此刻已攒住的文本立刻放行，后面照常边说边流；返回 false → 这一步整版
+   * 作废（一个字都没发出去，抛 `CompanionSpeculativeStepDiscardedError`）。
+   *
+   * 与 `holdUntilChars` 是**两道独立的闸**，都要满足才放行：前者管"分类器同意了吗"，
+   * 后者管"这段字够不够长、值不值得发"。
+   */
+  releaseGate?: () => Promise<boolean>;
 }): Promise<AgentTurnResult> {
   const controller = new AbortController();
   const onCtxAbort = (): void => controller.abort();
@@ -113,21 +138,17 @@ export async function runStreamingAgentStep(args: {
   const envelopeDecoder = createCompanionEnvelopeDecoder();
   /** 分段符只随本段第一个文本增量走；该段没有文本就整个不发。 */
   let pendingSeparator = args.separatorBefore ?? "";
-  /** 阈值未达之前攒着的文本；一旦放行即清空并转为直通。 */
+  /** 放行之前攒着的文本；一旦放行即清空并转为直通。 */
   let held = "";
-  let released = (args.holdUntilChars ?? 0) <= 0;
+  const holdUntilChars = args.holdUntilChars ?? 0;
+  /** 放行闸（投机执行）：不传 `releaseGate` 就当作一开始就开着，行为与从前逐字相同。 */
+  let gateOpen = args.releaseGate === undefined;
+  let discarded = false;
+  let released = holdUntilChars <= 0 && gateOpen;
 
-  const emit = (text: string): void => {
+  /** 把一段文本交给交付管线。这里是"第一个字符真的下发了"的唯一现场。 */
+  const deliver = (text: string): void => {
     if (text.length === 0) return;
-    if (!released) {
-      held += text;
-      if (held.length < (args.holdUntilChars ?? 0)) return;
-      // 分隔符必须在**真正放行**的那一帧前面，且只加一次。
-      text = pendingSeparator + held;
-      pendingSeparator = "";
-      held = "";
-      released = true;
-    }
     if (pendingSeparator.length > 0) {
       text = pendingSeparator + text;
       pendingSeparator = "";
@@ -157,6 +178,49 @@ export async function runStreamingAgentStep(args: {
       controller.abort();
     });
   };
+
+  /**
+   * 两道闸各管一件事，**都要满足**才放行：
+   * `gateOpen` = 分类器定论且同意这一版；`held.length >= holdUntilChars` = 这段字
+   * 长到值得发（坍缩闸的可达性靠它）。
+   */
+  const releaseHeld = (): void => {
+    if (released || !gateOpen || discarded || stopped) return;
+    if (held.length < holdUntilChars) return;
+    released = true;
+    const text = held;
+    held = "";
+    deliver(text);
+  };
+
+  const emit = (text: string): void => {
+    if (text.length === 0 || discarded) return;
+    if (!released) {
+      held += text;
+      releaseHeld();
+      return;
+    }
+    deliver(text);
+  };
+
+  if (args.releaseGate) {
+    void args.releaseGate().then((allowed) => {
+      if (discarded || stopped) return;
+      if (!allowed) {
+        // 整版作废：此刻一个字都没下发，重跑不需要撤回任何东西。
+        discarded = true;
+        stopped = true;
+        controller.abort();
+        return;
+      }
+      gateOpen = true;
+      releaseHeld();
+    }).catch(() => {
+      discarded = true;
+      stopped = true;
+      controller.abort();
+    });
+  }
 
   const feedDecoder = (text: string): void => {
     for (const chunk of envelopeDecoder.push(text)) {
@@ -239,6 +303,7 @@ export async function runStreamingAgentStep(args: {
       args.timeoutMs,
     );
     await flushChain.catch(() => undefined);
+    if (discarded) throw new CompanionSpeculativeStepDiscardedError();
     if (stopped) throw new CompanionStreamStoppedError("companion stream stopped by delivery pipeline");
     // 纯文本模式下 provider 累积的 content 就是正文。但如果这一轮走了信封解码
     // （头部嗅探判定为信封），解码结果就是**唯一事实来源**——它同时是已下发的
@@ -254,6 +319,7 @@ export async function runStreamingAgentStep(args: {
     };
   } catch (error) {
     await flushChain.catch(() => undefined);
+    if (discarded) throw new CompanionSpeculativeStepDiscardedError();
     if (stopped && !(error instanceof CompanionStreamStoppedError)) {
       throw new CompanionStreamStoppedError("companion stream stopped by delivery pipeline");
     }

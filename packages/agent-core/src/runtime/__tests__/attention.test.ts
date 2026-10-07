@@ -40,3 +40,16 @@ test("omitting a goal index cannot hide unresolved task control or revision", ()
     assert.ok(result.ambiguities.length > 0);
   }
 });
+test("待收的账只能指向宿主真的给出去过的那几条消息", () => {
+  const result = resolveAgentTurnInterpretation({ ...task, intent: "conversation", toolUse: "none",
+    goalRelation: "unrelated", pendingOfferIndexes: [3, 9, 3] },
+  { ...input, offerCandidates: [0, 1, 2, 3, 4] });
+  assert.deepEqual(result.pendingOfferIndexes, [3],
+    "越界索引被丢掉，重复索引合并——解释不能发明一条不存在的历史");
+});
+test("宿主没有交出候选时一律不认（接线前的默认必须是「什么都不改」）", () => {
+  const without = resolveAgentTurnInterpretation({ ...task, pendingOfferIndexes: [1] }, input);
+  assert.deepEqual(without.pendingOfferIndexes, []);
+  const empty = resolveAgentTurnInterpretation(task, input);
+  assert.deepEqual(empty.pendingOfferIndexes, [], "模型没给这个字段时默认没有待收的账");
+});

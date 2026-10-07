@@ -14,7 +14,7 @@ import {
   reconcileStreamedText,
   stableVisibleCut,
 } from "../companion-dialogue-stream.ts";
-import { sanitizeCompanionVisibleText } from "../companion-dialogue-content.ts";
+import { COMPANION_HARD_MAX_CHARS, sanitizeCompanionVisibleText } from "../companion-dialogue-content.ts";
 import type { ReadContext } from "../companion-dialogue-store.ts";
 
 /** 只用到 runId/generation/conversationId 等字段；注入写入口后不碰数据库。 */
@@ -116,7 +116,9 @@ describe("projectCompanionVisible", () => {
     assert.equal(previous, "今天一起学点东西。");
   });
 
-  it("长度超限 → rejected（增量校验先于任何对外写入）", () => {    const projection = projectCompanionVisible("甲".repeat(20_001));
+  it("长度超限 → rejected（增量校验先于任何对外写入）", () => {
+    // 按合同里的声明值来，不再抄一个会落后的字面数（2026-10-07 回复上限抬到 200k）。
+    const projection = projectCompanionVisible("甲".repeat(COMPANION_HARD_MAX_CHARS + 1));
     assert.deepEqual(projection, { kind: "rejected", reason: "output_too_long" });
   });
 

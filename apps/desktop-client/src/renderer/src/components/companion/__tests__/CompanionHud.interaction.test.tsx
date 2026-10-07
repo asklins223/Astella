@@ -3,11 +3,17 @@ import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanionChatSession } from "../../../app/companion-chat-session";
-import type { CompanionVoiceInputOptions } from "../use-companion-voice-input";
+import type { CompanionVoiceCaption, CompanionVoiceInputOptions, CompanionVoicePhase } from "../use-companion-voice-input";
 import { CompanionHud } from "../CompanionHud";
 import { interactionProposal, interactionSession, interactionSettings } from "./companion-interaction-fixtures";
 
-const state = vi.hoisted(() => ({ chat: null as unknown, voiceOptions: null as unknown, refresh: (() => {}) as () => void }));
+const state = vi.hoisted(() => ({
+  chat: null as unknown,
+  voiceOptions: null as unknown,
+  /** 手摇的会话状态：测试自己把相位与字幕摆上去，看界面跟不跟。 */
+  voice: { phase: "idle", caption: null } as { phase: CompanionVoicePhase; caption: CompanionVoiceCaption | null },
+  refresh: (() => {}) as () => void,
+}));
 const voiceToggle = vi.hoisted(() => vi.fn());
 const voiceCancel = vi.hoisted(() => vi.fn());
 vi.mock("../../../app/companion-chat-session", async importOriginal => {
@@ -18,8 +24,22 @@ vi.mock("../use-companion-voice-input", async importOriginal => {
   const actual = await importOriginal<typeof import("../use-companion-voice-input")>();
   return { ...actual, useCompanionVoiceInput: (options: CompanionVoiceInputOptions) => {
     state.voiceOptions = options;
-    return { phase: "idle", note: null, noteRevision: 0, supported: true, toggle: voiceToggle, cancel: voiceCancel,
-      dismissNote: vi.fn(), subscribeLevel: () => () => undefined };
+    // toggle 就是"进入／退出对话"：退出时通知会话结束，但不碰 cancel（那是"丢掉这一轮"）。
+    return { phase: state.voice.phase, caption: state.voice.caption, note: null, noteRevision: 0, supported: true,
+      toggle: () => {
+        voiceToggle();
+        const next = state.voice.phase === "idle" ? "open" : "idle";
+        state.voice = { phase: next, caption: next === "idle" ? null : state.voice.caption };
+        if (next === "idle") options.onSessionEnd?.();
+        state.refresh();
+      },
+      cancel: () => {
+        voiceCancel();
+        state.voice = { phase: "idle", caption: null };
+        options.onSessionEnd?.();
+        state.refresh();
+      },
+      dismissNote: vi.fn(), subscribeLevel: () => () => undefined, modelMissing: false };
   } };
 });
 vi.mock("../../../app/companion-voice-playback", async importOriginal => {
@@ -42,6 +62,7 @@ function Harness({ voiceEnabled = false, blocked = false }: { voiceEnabled?: boo
   </div></div>;
 }
 const patch = (values: Partial<CompanionChatSession>) => act(() => { state.chat = { ...(state.chat as CompanionChatSession), ...values }; state.refresh(); });
+const setVoice = (values: Partial<{ phase: CompanionVoicePhase; caption: CompanionVoiceCaption | null }>) => act(() => { state.voice = { ...state.voice, ...values }; state.refresh(); });
 const advance = (ms: number) => act(() => vi.advanceTimersByTime(ms));
 
 beforeEach(() => {
@@ -51,6 +72,7 @@ beforeEach(() => {
   Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
   Object.defineProperty(Element.prototype, "getAnimations", { configurable: true, value: () => [] });
   state.chat = interactionSession();
+  state.voice = { phase: "idle", caption: null };
   voiceToggle.mockClear(); voiceCancel.mockClear();
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
@@ -133,83 +155,106 @@ describe("production companion interaction", () => {
     expect(screen.getByText("没有等你确认的事情")).toBeTruthy();
     expect(document.querySelector(".companion-history__pending")).toBeNull();
   });
-  it("keeps speech input separate, waits for explicit send, and preserves a text draft", async () => {
+  /**
+   * 2026-10-07：语音从"转成文字等你点发送"改成**说完直接进对话**。
+   *
+   * 那一次点击在对话里是纯粹的损失——话已经说出口了。所以这一格锁的是"界面上
+   * 根本没有可编辑的东西和发送按钮"，而不是旧契约里"改完再发"。打字的草稿不受影响。
+   */
+  it("说完一轮直接进对话：字幕只读，没有任何东西要点", async () => {
     const send = vi.fn(async () => true);
     state.chat = interactionSession({ send });
     render(<Harness voiceEnabled />);
     fireEvent.change(screen.getByRole("textbox", { name: "给 小鲸 的消息" }), { target: { value: "文字草稿" } });
-    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
-    await act(async () => (state.voiceOptions as CompanionVoiceInputOptions).onTranscript({ text: "真实识别的文字" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始语音对话" }));
+    setVoice({ caption: { text: "真实识别的文字", sending: false } });
     expect(send).not.toHaveBeenCalled();
-    const voice = screen.getByRole("region", { name: "语音气泡" });
-    fireEvent.change(within(voice).getByRole("textbox", { name: "识别后的语音文字" }), { target: { value: "修改后的文字" } });
-    await act(async () => fireEvent.click(within(voice).getByRole("button", { name: "发送" })));
-    expect(send).toHaveBeenCalledWith({ text: "修改后的文字" });
-    expect(screen.queryByRole("region", { name: "语音气泡" })).toBeNull();
+
+    const voice = screen.getByRole("region", { name: "语音对话" });
+    expect(within(voice).queryByRole("textbox")).toBeNull();
+    expect(within(voice).queryByRole("button", { name: "发送" })).toBeNull();
+    expect(within(voice).getByText("真实识别的文字")).toBeTruthy();
+
+    await act(async () => { (state.voiceOptions as CompanionVoiceInputOptions).onTurn("真实识别的文字"); });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith({ text: "真实识别的文字" });
+
+    // 一轮只发一次：会话还在开着、界面一直在重渲。
+    setVoice({ caption: null });
+    expect(send).toHaveBeenCalledTimes(1);
+
     fireEvent.click(screen.getByRole("button", { name: "气泡轻聊" }));
     expect((screen.getByRole("textbox", { name: "给 小鲸 的消息" }) as HTMLTextAreaElement).value).toBe("文字草稿");
   });
-  /**
-   * 2026-10-06 窗口实测：认出「Yeah.」之后，再点一次「语音输入」既不录音、也只把
-   * 上一句原样摆出来。此前 `toggleVoice` 写着 `if (!voiceDraft) voice.toggle()`，
-   * 于是有草稿就永远开不了新的一句。
-   *
-   * 锁两件事：**再点一次要真的开始录**；**录音期间不摆旧字**（否则两句话并排，
-   * 看着像同一句没换）。
-   */
-  it("点第二次语音输入会真的开录，录音期间不摆上一句的识别结果", async () => {
+
+  /** 退出对话按"我说完了"理解，不是"把我说的丢掉"——那件事是 X 的。 */
+  it("会话开着时再点麦克风是结束对话，不是丢掉这一句", () => {
     state.chat = interactionSession({ send: vi.fn(async () => true) });
     render(<Harness voiceEnabled />);
-    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始语音对话" }));
     expect(voiceToggle).toHaveBeenCalledTimes(1);
-    await act(async () => (state.voiceOptions as CompanionVoiceInputOptions).onTranscript({ text: "Yeah." }));
-    const voice = screen.getByRole("region", { name: "语音气泡" });
-    expect((within(voice).getByRole("textbox", { name: "识别后的语音文字" }) as HTMLTextAreaElement).value).toBe("Yeah.");
+    setVoice({ caption: { text: "说到一半", sending: false } });
+    expect(screen.getByRole("region", { name: "语音对话" })).toBeTruthy();
 
-    // 关掉气泡，再点一次语音输入 → 必须开录（第二次），而不是再摆一遍。
-    fireEvent.click(within(voice).getByRole("button", { name: "关闭语音气泡" }));
-    expect(screen.queryByRole("region", { name: "语音气泡" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
+    fireEvent.click(screen.getByRole("button", { name: "结束语音对话" }));
     expect(voiceToggle).toHaveBeenCalledTimes(2);
-  });
-
-  /**
-   * 2026-10-06 窗口实测反馈：用户伸手去点气泡里的「结束录音」，路上点中了旁边的麦克风，
-   * 录音停了、气泡也被收走，于是"点不到结束录音"。麦克风按钮只该管**开始／停止录音**，
-   * 关气泡是「关闭语音气泡」「这次不发」的活。
-   */
-  it("录音中再点麦克风是「停止」，气泡留在原地等着识别结果", async () => {
-    state.chat = interactionSession({ send: vi.fn(async () => true) });
-    render(<Harness voiceEnabled />);
-    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
-    expect(voiceToggle).toHaveBeenCalledTimes(1);
-
-    // 相位回到 idle（气泡里的「结束录音」也是同一个 toggle），再点麦克风：开始**新**的一句。
-    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
-    expect(voiceToggle).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole("region", { name: "语音气泡" })).toBeTruthy();
     expect(voiceCancel).not.toHaveBeenCalled();
+    expect(screen.queryByRole("region", { name: "语音对话" })).toBeNull();
   });
 
   /**
-   * 同一格问题的另一半：「这次不发」以前只关气泡，识别出来的那句还留着，于是
-   * 下一次开录又被它挡住。一个写着"这次不发"的按钮就得真的把这一句丢掉。
+   * X 那一路是明确丢掉：连同这一轮已认出的字一起清掉。
+   *
+   * 旧的「这次不发」只关气泡、把识别结果留在状态里，于是下一次开录又把上一句摆出来
+   * （2026-10-06 窗口实测）。常驻会话更不能有这个残留——它会跟着进下一次。
    */
-  it("「这次不发」把识别结果一起丢掉，下一次才是干净的一次", async () => {
-    state.chat = interactionSession({ send: vi.fn(async () => true) });
+  it("X 关掉语音对话把这一轮丢掉，下一次是干净的一次", async () => {
+    const send = vi.fn(async () => true);
+    state.chat = interactionSession({ send });
     render(<Harness voiceEnabled />);
-    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
-    await act(async () => (state.voiceOptions as CompanionVoiceInputOptions).onTranscript({ text: "不想要的一句" }));
-    const voice = screen.getByRole("region", { name: "语音气泡" });
-    await act(async () => fireEvent.click(within(voice).getByRole("button", { name: "这次不发" })));
-    expect(screen.queryByRole("region", { name: "语音气泡" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "开始语音对话" }));
+    setVoice({ caption: { text: "不想要的一句", sending: false } });
+    fireEvent.click(within(screen.getByRole("region", { name: "语音对话" })).getByRole("button", { name: "关掉语音对话" }));
+    expect(voiceCancel).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("region", { name: "语音对话" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始语音对话" }));
     expect(voiceToggle).toHaveBeenCalledTimes(2);
-    const again = screen.getByRole("region", { name: "语音气泡" });
-    expect(within(again).queryByRole("textbox", { name: "识别后的语音文字" })).toBeNull();
+    const again = screen.getByRole("region", { name: "语音对话" });
+    expect(within(again).queryByText("不想要的一句")).toBeNull();
+    await act(async () => { (state.voiceOptions as CompanionVoiceInputOptions).onTurn("这一轮的下一句"); });
+    expect(send).toHaveBeenCalledWith({ text: "这一轮的下一句" });
   });
 
+  /**
+   * 她正在回答，我也能开口。
+   *
+   * 旧的麦克风按钮在 `phase === "sending"` 时是禁用的——那是"一句一句按"时代的合理
+   * 保护。对话模式要的正相反：打断一句正在说的回复接着问下一句，而发送这条路上
+   * 服务端会用新的 generation 接替旧轮。
+   */
+  it("她正在回答时麦克风仍然可以按，用来打断并接着问", () => {
+    state.chat = interactionSession({ phase: "sending" });
+    render(<Harness voiceEnabled />);
+    const mic = screen.getByRole<HTMLButtonElement>("button", { name: "开始语音对话" });
+    expect(mic.disabled).toBe(false);
+    fireEvent.click(mic);
+    expect(voiceToggle).toHaveBeenCalledOnce();
+    expect(screen.getByRole("region", { name: "语音对话" })).toBeTruthy();
+  });
+
+  /** 换会话 = 这一面不再生效：语音对话收掉，但打字的草稿是另一件事，留着。 */
+  it("preserves the shared text draft and cancels voice on a real conversation change", () => {
+    render(<Harness voiceEnabled />);
+    fireEvent.change(screen.getByRole("textbox", { name: "给 小鲸 的消息" }), { target: { value: "旧空间的草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "开始语音对话" }));
+    setVoice({ caption: { text: "旧语音", sending: false } });
+    expect(screen.getByRole("region", { name: "语音对话" })).toBeTruthy();
+    patch({ conversationId: "new-conversation", mode: "conversation" });
+    expect(voiceCancel).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("region", { name: "语音对话" })).toBeNull();
+    expect((screen.getByRole("textbox", { name: "给 小鲸 的消息" }) as HTMLTextAreaElement).value).toBe("旧空间的草稿");
+  });
   it("lets reply text expire independently of a pending confirmation and static focus", () => {
     const dismissLiveReply = vi.fn();
     state.chat = interactionSession({ mode: "closed", liveReply: { messageId: "one", text: "回复内容", hasActionBlocks: true, proposalIds: ["proposal"] },
@@ -222,16 +267,6 @@ describe("production companion interaction", () => {
     expect(dismissLiveReply).toHaveBeenCalled();
     expect(screen.getByRole("article", { name: "等你确认" })).toBeTruthy();
     expect((state.chat as CompanionChatSession).decideProposal).not.toHaveBeenCalled();
-  });
-  it("preserves the shared text draft and cancels voice on a real conversation change", async () => {
-    render(<Harness voiceEnabled />);
-    fireEvent.change(screen.getByRole("textbox", { name: "给 小鲸 的消息" }), { target: { value: "旧空间的草稿" } });
-    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
-    await act(async () => (state.voiceOptions as CompanionVoiceInputOptions).onTranscript({ text: "旧语音" }));
-    expect(screen.getByRole("textbox", { name: "识别后的语音文字" })).toBeTruthy();
-    patch({ conversationId: "new-conversation", mode: "conversation" });
-    expect(screen.queryByRole("textbox", { name: "识别后的语音文字" })).toBeNull();
-    expect((screen.getByRole("textbox", { name: "给 小鲸 的消息" }) as HTMLTextAreaElement).value).toBe("旧空间的草稿");
   });
   it("preserves a draft written before the first conversation finishes loading", () => {
     state.chat = interactionSession({ conversationId: null });

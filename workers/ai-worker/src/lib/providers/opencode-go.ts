@@ -699,12 +699,13 @@ export class OpenCodeGoProvider implements AIProvider {
     const model = request.model ?? this.modelId;
     const { instructions, input } = buildAgentTurnInput(request.systemPrompt, request.messages);
     const hasTools = request.tools.length > 0;
+    const reasoning = this.reasoningField(request.disableThinking ?? false);
     const body: Record<string, unknown> = {
       model,
       input,
       temperature: request.temperature,
       ...(instructions ? { instructions } : {}),
-      ...this.reasoningField(false),
+      ...reasoning,
     };
     if (!(this.platformOptions?.disableMaxTokens ?? false)) {
       body.max_output_tokens = Math.min(request.maxTokens, this.maxOutputTokens);
@@ -716,7 +717,16 @@ export class OpenCodeGoProvider implements AIProvider {
         description: tool.description,
         parameters: tool.parameters,
       }));
-      body.tool_choice = request.toolChoice ?? "auto";
+      /**
+       * 思考档与「必须调工具」在这一端是**互斥**的：开着思考发 `tool_choice: "required"`
+       * 会被直接 400「Thinking mode does not support this tool_choice」（2026-10-06
+       * 真窗口实测，带图那一轮必然要她调 `companion_read_image`，正好撞上）。
+       * 降级成 `auto`：工具照旧在她面前，本轮的 here-and-now 也点名了该调哪个，
+       * 比让整轮失败诚实。
+       */
+      const effort = (reasoning as { reasoning?: { effort?: string } }).reasoning?.effort;
+      const forcedWithThinkingOn = request.toolChoice === "required" && effort !== undefined && effort !== "none";
+      body.tool_choice = forcedWithThinkingOn ? "auto" : request.toolChoice ?? "auto";
     }
     // 无工具轮不再强制 json_object（根因二 2026-09-19，与 openai-compatible 同步）：
     // executeAgentTurn 的无工具轮是伴星自然文本终答，强制 JSON 是 json_envelope_leak

@@ -7,6 +7,7 @@ import {
   CalendarClock,
   Check,
   CircleDashed,
+  Ear,
   FileText,
   History,
   Layers,
@@ -78,6 +79,9 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
 };
 
 function nodeIcon(node: CompanionAgentNode): LucideIcon {
+  // 等待 ≠ 思考：本轮没开思考档时服务端只会发 `waiting`，
+  // 这里也就不会给她挂一本"正在想"的书。
+  if (node.kind === "waiting") return Ear;
   if (node.kind === "acting") return Wrench;
   if (node.kind === "thinking") return BookOpen;
   return (node.toolName ? TOOL_ICONS[node.toolName] : undefined) ?? Wrench;

@@ -97,7 +97,7 @@ import {
 } from "../../../app/room-store";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { signOutCurrentAccount } from "../../../app/account-signout";
-import { SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-consent-gate";
+import { SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
 import { publishGateInvalidation } from "../../../app/gate-invalidation";
 import {
   DIRECTORY_RAIL_MODE_EVENT,
@@ -430,7 +430,7 @@ export function SettingsSurface() {
    * 返回清理函数会把刚设好的计时器立刻取消，高亮就永远摘不掉了。
    */
   useEffect(() => {
-    if (settingsAttention !== SETTINGS_ATTENTION_AI_CONSENT || section !== "data") return;
+    if (settingsAttention !== SETTINGS_ATTENTION_AI_CONSENT || section !== SETTINGS_SECTION_AI_CONSENT) return;
     setSettingsAttention(null);
     setConsentAttention(true);
     consentGroupRef.current?.scrollIntoView({ block: "center", behavior: reducedMotion || motionMode !== "full" ? "auto" : "smooth" });

@@ -25,6 +25,7 @@ import {
   LockKeyhole,
   LoaderCircle,
   LogIn,
+  LogOut,
   Mail,
   MoonStar,
   RefreshCw,
@@ -60,6 +61,7 @@ import {
 import {
   clearAccountSignOutNotice,
   peekAccountSignOutNotice,
+  signOutCurrentAccount,
 } from "../app/account-signout";
 import {
   subscribeGateInvalidation,
@@ -768,6 +770,8 @@ export function DesktopAccessGate({
   const [view, setView] = useState<GateView>(initialView);
   const [refreshRevision, setRefreshRevision] = useState(0);
   const [formBusy, setFormBusy] = useState(false);
+  /** 重认证那一屏的「退出并重新登录」在飞；与 formBusy 分开，因为两件事的按钮文案不同。 */
+  const [signingOut, setSigningOut] = useState(false);
   const [formFailure, setFormFailure] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -1404,7 +1408,7 @@ export function DesktopAccessGate({
   const handleReauthenticate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const api = desktopApi();
-    if (!api || view.phase !== "reauth") return;
+    if (!api || view.phase !== "reauth" || signingOut) return;
     if (!password) {
       setFormFailure("请输入当前密码。");
       return;
@@ -1429,6 +1433,30 @@ export function DesktopAccessGate({
     } finally {
       setFormBusy(false);
     }
+  };
+
+  /**
+   * 重认证那一屏的出口。密码想不起来时，这一屏是唯一的一条路，而它走不通——
+   * 所以把人送回登录页，让他换账号登录或注册新账号。
+   *
+   * 为什么不能只靠 `signOutCurrentAccount()` 里那条失效广播：`invalidateReadyGate`
+   * 只对 ready 视图生效，这一屏停在 reauth，广播到这里就断了，会话已经拆掉而画面
+   * 还留在原处。所以视图要在这里自己换，退出结论也要在这里带到登录页上。
+   */
+  const handleReauthSignOut = async () => {
+    const api = desktopApi();
+    if (!api || view.phase !== "reauth" || signingOut) return;
+    // 登录页把邮箱预填成刚离开的那个账号：这条路只是离开这台设备上的登录，
+    // 不该让人再把自己是谁输一遍。
+    const previousEmail = view.session?.user?.email ?? "";
+    setSigningOut(true);
+    setFormFailure(null);
+    // 这个方法自己消化所有失败结局（换成一句人话留给登录页），不会抛。
+    await signOutCurrentAccount();
+    setSigningOut(false);
+    setPassword("");
+    setEmail(previousEmail);
+    setView({ phase: "auth", mode: "login", serviceNotice: peekAccountSignOutNotice() ?? undefined });
   };
 
   if (view.phase === "ready") {
@@ -1660,11 +1688,22 @@ export function DesktopAccessGate({
             <ShieldCheck size={16} aria-hidden="true" />
             <span>确认通过后，会继续打开你的学习空间。</span>
           </p>
-          <button className="desktop-access-gate__primary" type="submit" data-busy={formBusy} disabled={formBusy}>
+          <button className="desktop-access-gate__primary" type="submit" data-busy={formBusy} disabled={formBusy || signingOut}>
             {formBusy
               ? <LoaderCircle className="desktop-access-gate__button-spinner" size={17} aria-hidden="true" />
               : <KeyRound size={17} aria-hidden="true" />}
             {formBusy ? "正在确认…" : "确认并继续"}
+          </button>
+          <button
+            className="desktop-access-gate__text-action desktop-access-gate__text-action--quiet"
+            type="button"
+            disabled={formBusy || signingOut}
+            onClick={() => void handleReauthSignOut()}
+          >
+            {signingOut
+              ? <LoaderCircle className="desktop-access-gate__button-spinner" size={15} aria-hidden="true" />
+              : <LogOut size={15} aria-hidden="true" />}
+            {signingOut ? "正在退出…" : "想不起来密码？退出并重新登录"}
           </button>
         </form>
       </GateFrame>

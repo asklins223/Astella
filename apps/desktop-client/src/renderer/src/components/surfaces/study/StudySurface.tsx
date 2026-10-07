@@ -4,7 +4,7 @@ import type { ActivityTargetV1, TodayActivityV1 } from "@astella/shared/activity
 import type { AllWorkspacesStatsOverviewV1 } from "@astella/shared/stats-overview-contracts";
 import type { NoteLearningRoundPersonalHistoryItemV1 } from "@astella/shared/note-learning-round-contracts";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
-import { SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-consent-gate";
+import { SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
 import { useRoomStore } from "../../../app/room-store";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
 import { HudPage } from "../../hud/HudPage";
@@ -177,7 +177,7 @@ export function StudySurface() {
   const recoverAnomaly = (recovery: TodayAnomalyGroup["recovery"]) => {
     if (recovery !== "ai_consent") return;
     setSettingsAttention(SETTINGS_ATTENTION_AI_CONSENT);
-    setSettingsSection("data");
+    setSettingsSection(SETTINGS_SECTION_AI_CONSENT);
     invoke("open-settings", { returnTo });
   };
 

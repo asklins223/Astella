@@ -16,6 +16,14 @@ import type { WorkspaceAiSettingsV1 } from "@astella/shared/desktop-ipc-contract
 export const SETTINGS_ATTENTION_AI_CONSENT = "ai-consent";
 
 /**
+ * 同意卡所在的分区。
+ *
+ * 跳转侧与高亮侧读同一个名字：分区键写错时页面照样打开、卡也在，只是那一下闪动不再出现——
+ * 「查看 AI 设置」按下去像没反应，而读代码的人两处都看不出错了。
+ */
+export const SETTINGS_SECTION_AI_CONSENT = "data";
+
+/**
  * 缺同意时伴星说的固定台词（共用同一份文字，念不念由同意状态决定）。
  *
  * 2026-09-22 起 `/voice/tts` 也挂上了同意门（doc 34 L13），而目录里两套合成引擎都在本机之外

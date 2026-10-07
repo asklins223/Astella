@@ -10,11 +10,13 @@
 | 包名／身份 | `Astella`（ASCII） | `productName`、bundle 与 exe 名、`%LOCALAPPDATA%\Programs\Astella`、产物名 `astella-<version>-…`、`appId: com.asklins.astella` |
 | 显示名 | `拾星笔记` | `CFBundleDisplayName`、`nsis.shortcutName` 与 `uninstallDisplayName`、窗口标题、登录页与 /admin 面板的文案 |
 
-2026-10-06 的第二轮改名把**内部标识也一起换掉了**：npm scope `@astella/`、preload 桥
+2026-10-06 的第二轮改名把**内部标识一起换掉了**：npm scope `@astella/`、preload 桥
 `window.astella` / `window.astellaDesktop`、IPC 通道前缀 `astella.v1.`、环境变量
 `ASTELLA_*`、自定义协议 `astella-app://`、Docker 项目名与派生的容器/卷名。
-**仍保留 `astella` 的只有存储与时序标识**：Postgres 库名／角色／函数、MinIO 桶
-`astella-workspaces`、Prometheus 指标名 `astella_*`——改它们是数据迁移，不是改名。
+第三轮把存储层名字（Postgres 库名／角色／函数、MinIO 桶、Prometheus 指标名）也换成了
+`astella*`，dev 库是删卷重建验过的。**全仓只剩两个串仍写着 `ailearn`**：
+`ailearn-hash-canonical-v2` 与 `ailearn:invitation-token-hint:v1`——它们是逐字进摘要的
+域前缀，换它等于作废全部存量哈希与已发出邀请的 hint 查找，所以不参与改名。
 
 Electron 的 userData 目录取的是 package.json 的 `name`（现在是
 `astella-desktop-client`），**不跟 productName 走**：换显示名不动数据，换包名才会搬。

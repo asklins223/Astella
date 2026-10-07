@@ -39,9 +39,13 @@ import {
   CompanionToolError as RuntimeCompanionToolError,
   CompanionToolNotExecutedError as RuntimeCompanionToolNotExecutedError,
   CompanionToolUnavailableError as RuntimeCompanionToolUnavailableError,
-  joinVisibleSegmentsDeduped,
 } from "../companion-agent-runtime.ts";
-import { canRetryCompanionStream, runStreamingAgentStep } from "../companion-agent-streaming-step.ts";
+import { joinVisibleSegmentsDeduped } from "../companion-visible-segments.ts";
+import {
+  canRetryCompanionStream,
+  CompanionSpeculativeStepDiscardedError,
+  runStreamingAgentStep,
+} from "../companion-agent-streaming-step.ts";
 import { classifyCompanionToolFailure } from "../companion-tool-outcome.ts";
 import { CompanionToolUnavailableError } from "../companion-tool-result.ts";
 import {
@@ -288,6 +292,68 @@ const STREAM_STEP_REQUEST = {
   maxTokens: 700,
   temperature: 0.9,
 };
+
+/**
+ * 放行闸（2026-10-07 投机执行）：分类器定论之前，投机那一步一个字都不能漏出去。
+ * 两道闸各管一件事——gate 管"分类器同意了吗"，holdUntilChars 管"这段字值不值得发"。
+ */
+test("放行闸：定论前不下发，同意时把已生成的部分一次放出", async () => {
+  const deltas = ["在忙", "啥呢", "——刚", "把熵讲完"];
+  const { provider } = streamingStubProvider(deltas);
+  const seen: string[] = [];
+  let settleGate: (allowed: boolean) => void = () => {};
+  const gate = new Promise<boolean>((resolve) => { settleGate = resolve; });
+  const running = runStreamingAgentStep({
+    provider,
+    stepRequest: STREAM_STEP_REQUEST as never,
+    ctxSignal: new AbortController().signal,
+    timeoutMs: 5_000,
+    onProviderDelta: async (text: string) => { seen.push(text); return true; },
+    releaseGate: () => gate,
+  });
+  // 闸还关着：provider 已经在吐字了，交付管线一个字符都不该看到。
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(seen, [], "放行闸没关住，字漏到交付管线了");
+  settleGate(true);
+  const result = await running;
+  assert.equal(seen.join(""), "在忙啥呢——刚把熵讲完");
+  assert.equal(result.content, "在忙啥呢——刚把熵讲完");
+});
+
+test("放行闸判否：整版作废，一个字都没下发", async () => {
+  // 流得比闸的判定慢，才看得出"作废时确实没漏字"：判否之后必须中断在途请求。
+  const provider = {
+    id: "stub", modelId: "stub-model", visionModelId: "stub-model", promptVersion: "test",
+    chatCompletion: async () => { throw new Error("not used"); },
+    executeAgentTurn: async () => { throw new Error("not used"); },
+    chatCompletionStream: async (
+      _messages: unknown, _options: unknown, signal: AbortSignal | undefined,
+      onDelta: (delta: string) => void,
+    ) => {
+      let aborted = false;
+      signal?.addEventListener("abort", () => { aborted = true; }, { once: true });
+      for (const delta of ["这句", "不该", "被看见", "第三段", "第四段"]) {
+        if (aborted) throw new Error("AI request aborted during stream");
+        onDelta(delta);
+        await new Promise((resolve) => setTimeout(resolve, 8));
+      }
+      if (aborted) throw new Error("AI request aborted during stream");
+      return { content: "这句不该被看见第三段第四段" };
+    },
+  } as unknown as AIProvider;
+  const seen: string[] = [];
+  const running = runStreamingAgentStep({
+    provider,
+    stepRequest: STREAM_STEP_REQUEST as never,
+    ctxSignal: new AbortController().signal,
+    timeoutMs: 5_000,
+    onProviderDelta: async (text: string) => { seen.push(text); return true; },
+    // 一判就是"不同意"：攒住的整版作废，在途请求也要中断掉。
+    releaseGate: async () => false,
+  });
+  await assert.rejects(running, CompanionSpeculativeStepDiscardedError);
+  assert.deepEqual(seen, [], "作废的一版不该留下任何已下发内容");
+});
 
 test("流式单步：JSON 信封被剥掉，交付管线只看到正文增量，返回完整原文", async () => {
   // json_object 模式下模型吐的是 {"reply": "…"}；流式的可见内容必须是**正文**，

@@ -17,6 +17,8 @@
 
 [中文](README.md) · [English](README.en.md) · [手册 docs/guide](docs/guide/)
 
+当前版本：`v0.5.0`（服务端栈；桌面端是另一条版本线，见 `release/desktop-version.json`）
+
 </div>
 
 ![首页书房：房间物件、今日复习纸签与常驻伴星](docs/guide/assets/home-room.jpg)

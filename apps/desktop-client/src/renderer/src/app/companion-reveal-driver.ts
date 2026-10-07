@@ -78,8 +78,6 @@ export interface CompanionRevealDriver {
   noteAudioStopped(): void;
   /** 这一轮不会再长了（`assistant.final` 已到）。 */
   noteTurnFinal(): void;
-  /** 用户直接要看全文（点气泡）。 */
-  finish(): void;
   /** 订阅"这一轮念完了"；返回解除函数。 */
   onComplete(listener: () => void): () => void;
   /** 阅读钟心跳：没有音频在说话时按阅读节奏推进。 */
@@ -112,15 +110,6 @@ export function createCompanionRevealDriver(
   let arrivedAt: number | null = null;
   let turnFinal = false;
   let completed = false;
-  /**
-   * 用户点过「显示全文」（2026-09-22 用户报"点了没用"）。
-   *
-   * 以前它只是"把当前已到货的字一次性露出来"——而按钮出现在**流式期间**，那一刻
-   * 到货的往往只有半句，点完看着像没反应；更要命的是点完之后下一拍到货的新字又回到
-   * "等音频"，于是气泡停在那半句上不动。现在它是一次**本轮的承诺**：点了以后，
-   * 到多少露多少，不再等音频。换轮 `reset()` 清掉。
-   */
-  let revealAll = false;
 
   const commit = (value: number): void => {
     const next = Math.min(arrived, Math.max(0, Math.floor(value)));
@@ -154,12 +143,6 @@ export function createCompanionRevealDriver(
    */
   const tick = (): void => {
     const at = now();
-    if (revealAll) {
-      // 用户已经点了「显示全文」：音频不再是门控，到多少露多少。
-      commit(arrived);
-      completeIfDone();
-      return;
-    }
     if (audioLive(at)) {
       // 位置刚更新过：音频是唯一权威。钟挂起，等它真停了再从头起算（不回退计数）。
       clockStartedAt = null;
@@ -207,7 +190,6 @@ export function createCompanionRevealDriver(
       arrivedAt = null;
       turnFinal = false;
       completed = false;
-      revealAll = false;
       options.onReveal?.(revealed);
     },
     noteArrived(chars: number): void {
@@ -216,8 +198,6 @@ export function createCompanionRevealDriver(
       // 但那不会让已经显现的字收回去——显示端按**当前**文本切片，天然不会露出多余的尾巴。
       if (next > arrived) arrived = next;
       if (arrivedAt === null) arrivedAt = now();
-      // 点过「显示全文」之后：到多少露多少，不再等音频。
-      if (revealAll) commit(arrived);
       completeIfDone();
     },
     noteSession(mode: CompanionRevealSessionMode): void {
@@ -248,12 +228,6 @@ export function createCompanionRevealDriver(
     },
     noteTurnFinal(): void {
       turnFinal = true;
-      completeIfDone();
-    },
-    finish(): void {
-      // 「显示全文」= 本轮不再等音频（见 revealAll 的注释）。
-      revealAll = true;
-      commit(arrived);
       completeIfDone();
     },
     onComplete(listener: () => void): () => void {

@@ -460,7 +460,7 @@ export function CompanionHistoryDrawer({
                   </article>
                 );
               })()}
-              {chat.phase === "sending" && !chat.draft?.text.trim() ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />{chat.companionName} 正在结合当前页面想一想…</p> : null}
+              {chat.phase === "sending" && !chat.draft?.text.trim() ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />{chat.companionName} 正在回话…</p> : null}
             </>
           ) : (
             /* ── 聊天记录视图：只负责「找」。选中搜索命中或日期后回到上面的对话时间线定位 ── */

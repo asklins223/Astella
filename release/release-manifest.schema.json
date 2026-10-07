@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/asklins223/ai-learning-system/main/release/release-manifest.schema.json",
-  "title": "AI Learning System release manifest",
+  "title": "Astella release manifest",
   "description": "Machine-readable post-tag CI/release artifact for one release candidate or final release. The artifact stays untracked; relational and release-gate checks are enforced by release-check.",
   "type": "object",
   "additionalProperties": false,

@@ -1,13 +1,14 @@
 /**
- * 伴星语音录制器（2026-09-18 接线）。
+ * 伴星语音录制器（2026-09-18 接线；2026-10-07 增加常驻会话的流模式）。
  *
- * getUserMedia 采集麦克风 → AudioWorklet 收 Float32 帧 → 渲染层内降采样到
- * 16kHz 单声道。stop 时产出：
- * - `samples`：16kHz Float32（交给本地 SenseVoice worker，可转移）；
- * - `wav`：PCM16 WAV 字节（云兜底上传用，服务端 magic-byte 校验认 RIFF/WAVE）。
+ * getUserMedia 采集麦克风 → AudioWorklet 收 Float32 帧 → 交给消费方。
  *
- * Worklet 用内联 blob 模块，避免为 30 行处理函数新增打包资产；addModule 失败
- * （极端环境）回落 ScriptProcessorNode，行为一致。
+ * 两种用法共用一个采集器：
+ * - **一次一段**（`run-voice-input` 那种按一句）：不传 `onFrame`，帧攒在内部，
+ *   `stop()` 返回整段 16kHz 音频与 WAV。
+ * - **常驻对话**（伴星这套）：传 `onFrame`，每一帧**立刻**交出去，内部一片不留。
+ *   切段与降采样归 `CompanionVoiceSegmenter`。这里必须真的不留——一条开着十分钟的
+ *   麦克风流按 48kHz Float32 攒着就是 180MB，而它只是要被切成一句一句送走的。
  */
 
 export interface VoiceRecording {
@@ -24,7 +25,13 @@ export interface CompanionVoiceRecorderOptions {
    */
   readonly onLevel?: (level: number) => void;
   /**
-   * 录到 `MAX_DURATION_MS` 上限时通知调用方，**不由录音器自己停**。
+   * 每一帧原始麦克风数据（未经降采样，采样率见 `inputSampleRate`）。
+   *
+   * 传了它就等于进入**流模式**：帧立刻外发、内部不再攒，`stop()` 只负责交还麦克风。
+   */
+  readonly onFrame?: (chunk: Float32Array, inputSampleRate: number) => void;
+  /**
+   * 录到 `maxDurationMs` 上限时通知调用方，**不由录音器自己停**。
    *
    * 以前这一句是 `void this.stop()`：返回值没人接，于是调用方（`use-companion-voice-input`）
    * 一直停在 `listening`——气泡写着「我在听」、按钮还在脉动，麦克风灯其实已经灭了，
@@ -32,6 +39,8 @@ export interface CompanionVoiceRecorderOptions {
    * 交回调用方走正常的收尾路径，这段录音才还会被送去识别。
    */
   readonly onLimit?: () => void;
+  /** 上限时长；常驻会话要的是"这一轮别说太久"，不是"会话只能一分钟"。 */
+  readonly maxDurationMs?: number;
 }
 
 const TARGET_SAMPLE_RATE = 16000;
@@ -57,7 +66,7 @@ class CompanionTapProcessor extends AudioWorkletProcessor {
 registerProcessor("companion-tap", CompanionTapProcessor);
 `;
 
-function downsampleTo16k(input: Float32Array, inputRate: number): Float32Array {
+export function downsampleTo16k(input: Float32Array, inputRate: number): Float32Array {
   if (inputRate === TARGET_SAMPLE_RATE) return input;
   const ratio = inputRate / TARGET_SAMPLE_RATE;
   const outputLength = Math.floor(input.length / ratio);
@@ -116,13 +125,18 @@ export class CompanionVoiceRecorder {
   private totalFrames = 0;
   private startedAt = 0;
   private recording = false;
+  private contextSampleRate = TARGET_SAMPLE_RATE;
   private readonly levelListener: ((level: number) => void) | null = null;
+  private readonly frameListener: ((chunk: Float32Array, inputSampleRate: number) => void) | null = null;
   private readonly limitListener: (() => void) | null = null;
+  private readonly maxDurationMs: number;
   private limitFired = false;
 
   constructor(options?: CompanionVoiceRecorderOptions) {
     this.levelListener = options?.onLevel ?? null;
+    this.frameListener = options?.onFrame ?? null;
     this.limitListener = options?.onLimit ?? null;
+    this.maxDurationMs = options?.maxDurationMs ?? MAX_DURATION_MS;
   }
 
   static isSupported(): boolean {
@@ -135,6 +149,16 @@ export class CompanionVoiceRecorder {
     return this.recording;
   }
 
+  /** 流模式为真：帧外发、内部不攒。 */
+  get streaming(): boolean {
+    return this.frameListener !== null;
+  }
+
+  /** 麦克风的实际采样率（一般是声卡的 48kHz），降采样由拿到帧的一方做。 */
+  get inputSampleRate(): number {
+    return this.contextSampleRate;
+  }
+
   async start(): Promise<void> {
     if (this.recording) return;
     this.stream = await navigator.mediaDevices.getUserMedia({
@@ -142,6 +166,7 @@ export class CompanionVoiceRecorder {
     });
     this.context = new AudioContext();
     await this.context.resume();
+    this.contextSampleRate = this.context.sampleRate;
     this.source = this.context.createMediaStreamSource(this.stream);
     this.chunks = [];
     this.totalFrames = 0;
@@ -149,18 +174,24 @@ export class CompanionVoiceRecorder {
     this.limitFired = false;
     let lastLevelAt = 0;
     const levelListener = this.levelListener;
+    const frameListener = this.frameListener;
     const onChunk = (chunk: Float32Array) => {
       if (!this.recording) return;
       const copy = chunk.slice(0);
-      this.chunks.push(copy);
-      this.totalFrames += copy.length;
+      if (frameListener) {
+        // 流模式：这片音频归调用方（分段缓冲）持有，这里一片不留。
+        frameListener(copy, this.contextSampleRate);
+      } else {
+        this.chunks.push(copy);
+        this.totalFrames += copy.length;
+      }
       const now = Date.now();
       if (levelListener && now - lastLevelAt >= LEVEL_INTERVAL_MS) {
         lastLevelAt = now;
         levelListener(companionVoiceLevel(copy));
       }
       // 到上限：交回调用方收尾（它会 `stop()` 并把这段送去识别），不自己悄悄停掉。
-      if (now - this.startedAt >= MAX_DURATION_MS && !this.limitFired) {
+      if (now - this.startedAt >= this.maxDurationMs && !this.limitFired) {
         this.limitFired = true;
         this.limitListener?.();
       }
@@ -193,7 +224,7 @@ export class CompanionVoiceRecorder {
     try { this.scriptNode?.disconnect(); } catch { /* already gone */ }
     try { this.source?.disconnect(); } catch { /* already gone */ }
     for (const track of this.stream?.getTracks() ?? []) track.stop();
-    const sampleRate = this.context?.sampleRate ?? 48000;
+    const sampleRate = this.contextSampleRate;
     await this.context?.close().catch(() => undefined);
     this.worklet = null;
     this.scriptNode = null;
@@ -201,7 +232,8 @@ export class CompanionVoiceRecorder {
     this.stream = null;
     this.context = null;
     const durationMs = Date.now() - this.startedAt;
-    if (this.totalFrames < (sampleRate * 200) / 1000) return null; // 短于 200ms 视为误触
+    // 流模式下 `totalFrames` 一直是 0：音频早就一帧帧交出去了，这里只是把麦克风还掉。
+    if (this.totalFrames < (sampleRate * 200) / 1000) return null;
     const merged = new Float32Array(this.totalFrames);
     let offset = 0;
     for (const chunk of this.chunks) {

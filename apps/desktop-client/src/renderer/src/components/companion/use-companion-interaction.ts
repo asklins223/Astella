@@ -1,24 +1,34 @@
 import { useEffect, useRef, useState } from "react";
 import type { CompanionChatSession } from "../../app/companion-chat-session";
 import { useRoomStore } from "../../app/room-store";
-import { useCompanionVoiceInput, type CompanionVoiceTranscript } from "./use-companion-voice-input";
+import { useCompanionVoiceInput } from "./use-companion-voice-input";
 import { useCompanionTransient } from "./use-companion-transient";
 
+/**
+ * 伴星这一面的临时状态：输入框、菜单、出错条，以及**语音对话会话**。
+ *
+ * 语音从 2026-10-07 起不再是"认一句、摆进气泡等你点发送"，而是按住一次麦克风
+ * 就一直开着、说完一轮直接进对话。所以这里没有 `voiceDraft` 这种东西了：
+ * 会话交出来的文本是一轮**已经说出口的话**，界面没有编辑它的位置，只有把它发出去。
+ */
 export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled: boolean, obscured = false) {
   const input = useRoomStore(state => state.companionComposerDraft);
   const setInput = useRoomStore(state => state.setCompanionComposerDraft);
   const [voiceOpen, setVoiceOpen] = useState(false);
-  const [voiceDraft, setVoiceDraft] = useState<CompanionVoiceTranscript | null>(null);
-  const [voiceRevision, setVoiceRevision] = useState(0);
+  const [voiceSession, setVoiceSession] = useState(0);
+  const [voiceTurn, setVoiceTurn] = useState<{ readonly text: string; readonly revision: number } | null>(null);
+  const turnRevisionRef = useRef(0);
   const namespaceRef = useRef(chat.conversationId);
   const voice = useCompanionVoiceInput({
-    disabled: chat.phase === "sending" || !voiceEnabled,
-    onModelMissing: () => { setVoiceOpen(false); setVoiceDraft(null); },
-    onTranscript: ({ text }) => {
-      setVoiceDraft({ text });
-      setVoiceRevision(value => value + 1);
-      setVoiceOpen(true);
+    // 「她正在回答」不该挡住开口：打断一句正在说的回复、接着问下一句，正是对话要的样子。
+    // 发送这条路上服务端会用新的 generation 接替旧轮（见 CompanionHud 的 sendText 注释）。
+    disabled: !voiceEnabled,
+    onModelMissing: () => { setVoiceOpen(false); },
+    onTurn: (text) => {
+      turnRevisionRef.current += 1;
+      setVoiceTurn({ text, revision: turnRevisionRef.current });
     },
+    onSessionEnd: () => { setVoiceOpen(false); },
   });
   useEffect(() => {
     if (namespaceRef.current === chat.conversationId) return;
@@ -26,12 +36,12 @@ export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled
     namespaceRef.current = chat.conversationId;
     if (!wasBound) return;
     setVoiceOpen(false);
-    setVoiceDraft(null);
     voice.cancel();
   }, [chat.conversationId, voice.cancel]);
   const inputLife = useCompanionTransient(chat.mode === "conversation" ? `${chat.conversationId}:input` : null, 90_000, obscured);
   const menuLife = useCompanionTransient(chat.mode === "actions" ? `${chat.conversationId}:menu` : null, 90_000, obscured);
-  const voiceLife = useCompanionTransient(voiceOpen ? `voice:${voiceRevision}` : null, 90_000, obscured || voice.phase !== "idle");
+  // 会话开着的时候不按"闲置 90 秒"收：人在说话，气泡不该自己走掉。
+  const voiceLife = useCompanionTransient(voiceOpen && voiceSession > 0 ? `voice:${voiceSession}` : null, 90_000, obscured || voice.phase !== "idle");
   useEffect(() => { if (chat.mode === "conversation" && !inputLife.visible) chat.setMode("closed"); }, [chat.mode, chat.setMode, inputLife.visible]);
   useEffect(() => { if (chat.mode === "actions" && !menuLife.visible) chat.setMode("closed"); }, [chat.mode, chat.setMode, menuLife.visible]);
   useEffect(() => { if (voiceOpen && !voiceLife.visible) setVoiceOpen(false); }, [voiceOpen, voiceLife.visible]);
@@ -42,44 +52,27 @@ export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled
     ? `${chat.conversationId}:${chat.nodes.map(node => `${node.key}:${node.state}`).join("|")}:${chat.phase === "sending" ? "running" : "done"}` : null;
   const toolLife = useCompanionTransient(toolKey, 8_000, obscured || chat.phase === "sending");
   return {
-    input, setInput, voice, voiceOpen: voiceOpen && voiceLife.visible, voiceDraft,
-    setVoiceDraftText: (text: string) => setVoiceDraft(draft => draft ? { ...draft, text } : draft),
-    consumeVoiceDraft: (sentDraft: CompanionVoiceTranscript) => { setVoiceDraft(current => current === sentDraft ? null : current); },
+    input, setInput, voice,
+    voiceOpen: voiceOpen && (voiceLife.visible || voice.phase !== "idle"),
+    /** 一轮说完的话；HUD 按 `revision` 一次一发进对话，发过不再发。 */
+    voiceTurn,
+    consumeVoiceTurn: (turn: { readonly text: string; readonly revision: number }) => {
+      setVoiceTurn(current => current?.revision === turn.revision ? null : current);
+    },
     closeVoice: () => { voice.cancel(); setVoiceOpen(false); },
     /**
-     * 「这次不发」= 连同上一句的识别结果一起丢掉。
+     * 麦克风按钮的意思变成**进入／退出对话**。
      *
-     * 以前它只关气泡：识别出来的字留在状态里，于是下一次点语音输入又把那一句原样
-     * 摆出来（2026-10-06 窗口实测：用户连点两次都得不到一次新的录音）。一个按钮的
-     * 字面意思就是"这句不算数"，留着它等于让用户没法把不想要的那句清掉。
-     */
-    discardVoice: () => { voice.cancel(); setVoiceOpen(false); setVoiceDraft(null); },
-    /**
-     * 麦克风按钮只有一种意思：**开始／停止录音**。
-     *
-     * 它以前在气泡开着时把气泡整个收走（`voice.cancel()` + 关面板）。2026-10-06
-     * 窗口实测反馈正是这个形状：用户伸手去点气泡里的「结束录音」，路上点中旁边的
-     * 麦克风——录音停了，气泡也没了，于是「点不到结束录音」。关气泡是**关闭语音气泡**
-     * 与「这次不发」两件事，不该由麦克风按钮顺手做掉。
-     *
-     * `voice.toggle()` 自己分相位：`listening` → 收尾送去识别，`idle` → 开录，
-     * `starting`/`transcribing` → 不动。
+     * 退出时那一句仍然算数（`voice.toggle` 会把已识别的这轮发出去再收麦克风）——
+     * 用户按下的是"我说完了"，不是"把我刚才说的丢掉"。真的想丢掉是 X 那件事
+     * （`closeVoice`：不收麦克风也不发）。
      */
     toggleVoice: () => {
       chat.setMode("closed");
-      setVoiceOpen(true);
-      setVoiceRevision(value => value + 1);
-      /**
-       * **有草稿也照样开录**（2026-10-06 修正）。
-       *
-       * 此前这里写着 `if (!voiceDraft) voice.toggle()`：一旦认出一句，之后每次点
-       * 「语音输入」都只把旧字再摆一遍、不录音。按钮叫"语音输入"，按下去不录音，
-       * 用户只会以为坏了——而且除了把那句发出去或换会话，没有别的路能开始新的一句。
-       *
-       * 旧草稿**先留在状态里**：新一句认出来才替换它，中途按「这次不发」则是明确
-       * 丢掉（`discardVoice`）。录音期间面板只显示录音界面，不摆旧字
-       * （CompanionHud 里按 phase 收），免得两次的话并排看着像同一句。
-       */
+      if (voice.phase === "idle") {
+        setVoiceSession(value => value + 1);
+        setVoiceOpen(true);
+      }
       voice.toggle();
     },
     inputActivity: inputLife.activity,

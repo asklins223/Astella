@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { agentGoalCapabilityManifest } from "@astella/shared/agent-capabilities";
-import { companionConsentGate, SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-consent-gate";
+import { companionConsentGate, SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
 import { useRoomStore } from "../../../app/room-store";
 import { useCompanionResource } from "./use-companion-resource";
 
@@ -16,7 +16,7 @@ export function CompanionCapabilityGuide({ onContinue, onOpenChange }: { onConti
   const sendingDisabled = policy?.dataPolicy.sendToExternal === false;
   const openSettings = () => {
     const room = useRoomStore.getState();
-    room.setSettingsSection("ai");
+    room.setSettingsSection(SETTINGS_SECTION_AI_CONSENT);
     if (consentNeeded) room.setSettingsAttention(SETTINGS_ATTENTION_AI_CONSENT);
     room.invoke("open-settings");
   };

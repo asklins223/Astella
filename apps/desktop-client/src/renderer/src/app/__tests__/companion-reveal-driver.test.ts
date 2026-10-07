@@ -119,26 +119,6 @@ describe("companion-reveal-driver", () => {
     expect(driver.revealed).toBe(COMPANION_REVEAL_LEAD_CHARS + 10);
   });
 
-  // 2026-09-22 用户报"显示全文无效"：按钮出现在**流式期间**，点的那一刻到货的
-  // 往往只有半句，而点完之后新到的字又回到"等音频"，气泡就停在那半句上。
-  // 现在它是本轮的承诺：点了以后到多少露多少。
-  it("「显示全文」是本轮的承诺：点完之后到多少露多少，不再等音频", () => {
-    const { driver, advance } = harness();
-    driver.noteSession("voice");
-    driver.noteArrived(30);
-    driver.noteAudioPosition(5);
-    expect(driver.revealed).toBe(5 + COMPANION_REVEAL_LEAD_CHARS);   // 平时由音频门控
-    driver.finish();                                                 // 用户点了「显示全文」
-    expect(driver.revealed).toBe(30);
-    driver.noteArrived(60);                                          // 之后到的字照样立刻露
-    expect(driver.revealed).toBe(60);
-    advance(10_000);
-    driver.tick();
-    expect(driver.revealed).toBe(60);
-    driver.reset();                                                  // 换轮：承诺清零
-    expect(driver.revealed).toBe(0);
-  });
-
   it("音频真的没了（被停/念完）：阅读钟把剩下的字走完", () => {
     const { driver, advance } = harness();
     driver.noteSession("voice");
@@ -148,8 +128,6 @@ describe("companion-reveal-driver", () => {
     advance(600);
     driver.tick();
     expect(driver.revealed).toBe(100 + COMPANION_REVEAL_LEAD_CHARS + 10);   // 钟从停的那一刻起算，按 60ms/字
-    driver.finish();
-    expect(driver.revealed).toBe(400);        // 用户点开全文：立刻到底
   });
 
   it("音频失败/被停：立刻交回阅读钟", () => {
@@ -210,15 +188,6 @@ describe("companion-reveal-driver", () => {
     driver.noteAudioFinished();
     expect(driver.revealed).toBe(64);
     expect(completions).toBe(1);
-  });
-
-  it("用户点气泡看全文：finish 立刻补满", () => {
-    const { driver } = harness();
-    driver.noteSession("voice");
-    driver.noteArrived(50);
-    driver.noteTurnFinal();
-    driver.finish();
-    expect(driver.revealed).toBe(50);
   });
 
   it("空回复（没有正文）在 final 时立刻收尾，不留下一个不收的气泡", () => {

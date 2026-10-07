@@ -39,23 +39,48 @@ export interface CompanionToolIntentTaskContext {
   capabilities?: readonly string[];
 }
 
+/**
+ * 分类器看得见的那几条历史消息。
+ *
+ * `index` 一律按**去掉 system 之后**的位置给——那正是运行时 `messages` 的索引空间，
+ * 所以解释给出的索引可以原样交给 `renderPendingOffersAsRecords`，中间不需要再换算一次
+ * （换算过一次就等于两套编号，迟早对不上）。
+ */
+export const CLASSIFIER_RECENT_MESSAGES = 5;
+
+export function companionClassifierRecent(messages: readonly ChatMessage[]): Array<{
+  index: number; role: string; content: string;
+}> {
+  const space = messages.filter((message) => message.role !== "system");
+  const start = Math.max(0, space.length - CLASSIFIER_RECENT_MESSAGES);
+  return space.slice(start).map((message, offset) => ({
+    index: start + offset,
+    role: message.role,
+    content: typeof message.content === "string"
+      ? message.content.slice(0, 500)
+      : message.content.filter((part) => part.type === "text").map((part) => part.text).join(" ").slice(0, 500),
+  }));
+}
+
+/** 解释只能指向它真的看见过的那些 assistant 消息。 */
+export function companionOfferCandidates(messages: readonly ChatMessage[]): number[] {
+  return companionClassifierRecent(messages)
+    .filter((item) => item.role === "assistant")
+    .map((item) => item.index);
+}
+
 function toolIntentMessages(messages: readonly ChatMessage[], taskContext: CompanionToolIntentTaskContext): ChatMessage[] | null {
   const latest = [...messages].reverse().find((message) => message.role === "user");
   if (!latest) return null;
   const current = typeof latest.content === "string"
     ? latest.content
     : latest.content.filter((part) => part.type === "text").map((part) => part.text).join(" ");
-  const recent = messages.filter((message) => message.role !== "system").slice(-5).map((message) => ({
-    role: message.role,
-    content: typeof message.content === "string"
-      ? message.content.slice(0, 500)
-      : message.content.filter((part) => part.type === "text").map((part) => part.text).join(" ").slice(0, 500),
-  }));
+  const recent = companionClassifierRecent(messages);
   return [
     {
       role: "system",
       content: [
-        '你解释用户本轮的注意力，只输出 JSON：{"intent":"conversation|question|task|task_control|mixed","toolUse":"none|read|act|uncertain","subjects":[{"description":"讨论对象","objectIndex":0}],"goalRelation":"unrelated|new|continue|revise|control|discuss|unclear","goalObjectIndex":0,"candidateOperations":["真实能力名"],"ambiguities":[]}。枚举选一个值；无真实索引时省略 index 字段。',
+        '你解释用户本轮的注意力，只输出 JSON：{"intent":"conversation|question|task|task_control|mixed","toolUse":"none|read|act|uncertain","subjects":[{"description":"讨论对象","objectIndex":0}],"goalRelation":"unrelated|new|continue|revise|control|discuss|unclear","goalObjectIndex":0,"candidateOperations":["真实能力名"],"ambiguities":[],"pendingOfferIndexes":[0]}。枚举选一个值；无真实索引时省略 index 字段。',
         "objects 是宿主提供的真实对象，索引从0开始；不发明身份。目标引用只可指向agent_run。candidateOperations只从capabilities选择，是候选而非执行授权。没有对象、代词未消解或修改范围不明，记入ambiguities；只读查询可用于核对，不能猜测执行写入。",
         "当用户要查看自己的文章、笔记、图片、引用、卡片或实时信息，或要求导航、设置和执行动作时，必须先用工具；口语化、简称、代词和间接表达也一样。",
         "用户需要实际计算或核对数值、公式代入时也需要工具；只解释数学概念或聊感受可直接回答。",
@@ -64,6 +89,7 @@ function toolIntentMessages(messages: readonly ChatMessage[], taskContext: Compa
         "一般知识问答、闲聊、自我介绍以及询问操作方法可以直接回答。此前助手说过已找到或已展示，不等于本轮真的查询过。",
         "只以 current 这句话判断当前意图；recent 仅帮助理解指代。上一件任务继续在后台跑，不代表用户现在仍要做它；换到家常、寒暄或一句好，不继承旧执行指令。混合请求中有明确新任务时仍可需要工具。",
         "记录此刻讨论对象、与后台目标的关系及尚未解开的歧义。闲聊intent=conversation、toolUse=none、goalRelation=unrelated；一般解释question/none；读取自己的资料read；明确保存、生成、导航或控制act。操作参数由后续模型核对，旧任务不会因闲聊被修改。",
+        "pendingOfferIndexes：recent 里某条 assistant 消息**结尾留着一个用户这句话没有接的邀请、提议或等待**（例如「要不要接着往下讲」「我随时接」「就等你说下一步」「还需要我展开吗」），就把那条消息的 index 放进去；陈述句和问句都算，判据是「它还在等她回应」。窗口里**每一条**这样的消息都要列出来，不要只报最近那一条。用户接了、照做了，或她已经明说不用回应（「先放着」「不催你」「不想管也行」），就不放。只引用 recent 给过的 index，没有就返回空数组。",
       ].join("\n"),
     },
     { role: "user", content: JSON.stringify({ current, recent, objects: taskContext.objects ?? [], capabilities: taskContext.capabilities ?? [] }) },
@@ -95,7 +121,8 @@ export async function interpretCompanionTurn(
   const latest = [...messages].reverse().find(message => message.role === "user");
   const current = typeof latest?.content === "string" ? latest.content : JSON.stringify(latest?.content ?? "");
   const binding = { requestHash: taskContext.requestHash ?? sha256Utf8V1(current),
-    objects: taskContext.objects ?? [], capabilities: taskContext.capabilities ?? [] };
+    objects: taskContext.objects ?? [], capabilities: taskContext.capabilities ?? [],
+    offerCandidates: companionOfferCandidates(messages) };
   const unknown = () => resolveAgentTurnInterpretation(null, binding);
   const requestMessages = toolIntentMessages(messages, taskContext);
   if (!requestMessages) return unknown();
@@ -142,11 +169,13 @@ export async function interpretCompanionTurn(
     },
     execute: async (input, env) => {
       const answer = await provider.chatCompletion(input.messages, {
-        // 2000 = 思考预留 + 分类 JSON（输出本身只有一两百 token，但思考 token
-        // 也计入 maxTokens）。
-        maxTokens: 2_000,
+        // 900：这一格输出只有一两百 token 的分类 JSON。2026-10-06 之前为了容纳
+        // 思考把它提到 2000，但**这一轮开不开思考正是由这一步决定的**——分类器
+        // 自己开高档，闲聊轮就先白等十几秒（它在每一轮的关键路径上）。
+        maxTokens: 900,
         temperature: 0,
         responseFormat: "json_object",
+        disableThinking: true,
       }, env.signal);
       let parsed: unknown;
       try {
