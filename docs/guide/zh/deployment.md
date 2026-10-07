@@ -16,9 +16,9 @@ GitHub 的 `production` Environment 只允许 `v*` tag，存放 `DEPLOY_HOST`、
 
 ## 单机部署生命周期
 
-生产 Compose 使用 `docker-compose.yml` 加 `docker-compose.deploy.yml`，以固定项目名 `astella` 保留 PostgreSQL 与 MinIO volumes。数据库、对象存储、Worker 指标只在内部网络或回环地址；Nginx 对外提供 443，80 仅提供 ACME challenge；外部 `/metrics` 返回 404。SSE 与 WebSocket 通过代理，认证 Cookie 保持 Secure。
+生产 Compose 使用 `docker-compose.yml` 加 `docker-compose.deploy.yml`，以固定项目名 `astella` 保留 PostgreSQL volume；线上资源存放在私有 S3 兼容对象存储，生产配置不含 MinIO 服务或数据卷。本地开发及 Alpha 验证各自保留 MinIO。数据库、Worker 指标只在内部网络或回环地址；Nginx 对外提供 443，80 仅提供 ACME challenge；外部 `/metrics` 返回 404。SSE 与 WebSocket 通过代理，认证 Cookie 保持 Secure。
 
-每次部署先拉取镜像、检查配置和基础服务，再在 `/opt/astella/backups` 保存迁移前的数据库 dump。API 与 Worker 优雅停机后执行角色引导、桶初始化、数据库迁移及权限补授，随后验证 API、Worker、Nginx 与公网 HTTPS readiness，最后更新 `/opt/astella/current`。失败时尝试重新启动上一版应用镜像；**数据库迁移不会自动撤销**，需要依据迁移兼容性决定是否从备份恢复。备份位于同机，不能代替异机备份，删除服务器或磁盘会同时失去数据和这些 dump。
+每次部署先拉取镜像、检查配置和基础服务，再在 `/opt/astella/backups` 保存迁移前的数据库 dump。API 与 Worker 优雅停机后执行角色引导、数据库迁移及权限补授，随后验证 API、Worker、Nginx 与公网 HTTPS readiness，最后更新 `/opt/astella/current`。失败时尝试重新启动上一版应用镜像；**数据库迁移不会自动撤销**，需要依据迁移兼容性决定是否从备份恢复。备份位于同机，不能代替异机备份，删除服务器或磁盘会同时失去数据和这些 dump。
 
 首次部署后显式运行 `seed-owner`，使用服务器环境里的 Owner 账号，不自动创建演示账号。运行部署命令和排障日志时不要打印密码或完整环境文件。
 
@@ -26,9 +26,35 @@ IP 证书通过 Certbot 的 shortlived profile 签发，约六天有效。服务
 
 正式长期运营应使用仍受支持的 Linux 和 Docker Engine。CentOS 7、Ubuntu 16.04 等旧系统只用于迁移验证；迁移应用不等于更新宿主系统。
 
-更换服务器时，先准备运行环境和新地址的 HTTPS，再优雅停止旧 API、Worker 与 MinIO 的写入，保存最终数据库 dump、MinIO 文件和受限环境文件。数据库恢复后核对各表行数，文件迁移后核对校验值；新端登录和空间访问通过后，才切换 GitHub `production` 的主机、端口、部署密钥与主机密钥。固定版本的 MinIO 镜像可从旧端迁移并核对镜像 ID，后续部署只在本地缺少该版本时拉取；应用镜像仍按 CI 指定的 digest 拉取。
+更换服务器时，先准备运行环境和新地址的 HTTPS，再优雅停止旧 API 与 Worker 的写入，保存最终数据库 dump 和受限环境文件，并确认对象存储仍可访问。数据库恢复后核对各表行数；新端登录、空间访问及对象上传下载通过后，才切换 GitHub `production` 的主机、端口、部署密钥与主机密钥。对象仍保存在远程桶，无需迁移 MinIO 容器或本机对象卷；应用镜像按 CI 指定的 digest 拉取。
 
 客户端安装包携带公开的 API 地址。服务器切换后更新 `DESKTOP_API_ORIGIN` 并重新打包；过渡期可以让旧地址通过验证证书的 HTTPS 代理转发到新端，旧 Worker 保持停止，避免两端分别处理任务。确认用户换用新包之后，再停用旧主机。
+
+## 线上对象存储与本地隔离
+
+`docker-compose.deploy.yml` 明确选择 `STORAGE_MODE=remote`，API 与 Worker 使用同一套远程配置，不启动 MinIO，也不回退本地凭据。以下配置只写入服务器 `/etc/astella/production.env`，不要写入仓库或客户端：
+
+```dotenv
+STORAGE_MODE=remote
+STORAGE_ENDPOINT=https://cn-nb1.rains3.com
+STORAGE_PUBLIC_ENDPOINT=https://cn-nb1.rains3.com
+S3_REGION=us-east-1
+S3_BUCKET=astella
+STORAGE_ACCESS_KEY_ID=<服务端访问密钥>
+STORAGE_SECRET_ACCESS_KEY=<服务端私有密钥>
+```
+
+桶保持私有；为 `temporary/` 前缀设置一天后过期的生命周期规则。长期资源位于空间／用户前缀，导出与未完成上传位于 `temporary/`。更换提供商时同步修改两个 endpoint 和客户端可用的 HTTPS 源；密钥可限制在目标桶及读、写、复制、删除、列举权限。生命周期管理可用单独的管理员凭据。
+
+新版桌面端通过 `/storage/transfers/config` 取得模式与允许的源，向 API 申请限时签名 PUT，上传后调用完成接口。API 校验原文与图片，再复制到不可被旧 PUT 覆盖的最终对象。下载与导出先校验会话和资源权限，再发短期签名 GET；对象请求不携带 API token 或 Cookie。旧客户端仍可通过 API 转发上传与下载，但这部分流量仍占服务器带宽；重新打包并更新客户端后才能获得直传节省。
+
+Worker 解析文本来源时读取远程原文并验证 SHA-256。工作区 JSON 导出会带回来源原文；导出对象最多 256 MiB，上传遵循原有各类资源上限。数据库、对象存储与下载到本机的副本承担不同职责，备份必须同时覆盖数据库和长期对象。
+
+本地 `docker-compose.dev.yml` 固定 `STORAGE_MODE=local`、`http://minio:9000`，继续使用本地 MinIO；本地客户端 `local_loopback` 直接沿原容器上传链路。Alpha 的 MinIO 服务与应用本地存储配置只定义在 `docker-compose.alpha.yml`，正式部署不加载该文件。不要把生产远程配置覆盖到本地 `.env`。
+
+当前生产服务器已完成远程切换并核对旧桶为空，旧 MinIO 容器、初始化容器、`astella_minio_data` 卷及 MinIO/MC 镜像均已清理，生产环境文件也移除了 `MINIO_*` 变量。后续部署及回退只使用远程对象存储，不再创建本机对象卷。
+
+真实存储集测独立运行 `npm --prefix apps/api run test:object-storage:s3`，不混入不需要外部存储的 `make test-postgres`。先准备迁移完成且授权已补齐的可丢弃 `astella_storage_it_*` 数据库，分别设置受限角色的 `DATABASE_URL_API`、`DATABASE_URL_WORKER` 与管理员的 `DATABASE_URL_TEST_ADMIN`，再在受限环境文件中提供远程存储配置。集测只创建模拟内容并清理对应对象前缀；结束后删除该临时数据库。不要使用生产数据库或提交环境文件。
 
 ## macOS 无证书构建
 

@@ -211,6 +211,7 @@ export async function createSource(
   workspaceId: string,
   userId: string,
   input: SourceCreateInput,
+  storedFile?: { objectKey: string; sha256: string; byteLength: number; fileName: string },
 ) {
   // 如果未传 type，前端检测为初步值；Worker 会再次检测并修正
   const detectedType = input.type ?? detectSourceType(input.content ?? "", input.url);
@@ -218,9 +219,14 @@ export async function createSource(
   const title = input.title?.trim() || deriveSourceTitle({ url: input.url, content: input.content });
 
   const metadata: Record<string, unknown> = { ...input.metadata };
+  // These fields are server-authorized object references, never client-selected keys.
+  for (const key of ["storageObjectKey", "storageSha256", "storageByteLength", "originalFileName"]) delete metadata[key];
+  if (storedFile) delete metadata.rawContent;
+  if (storedFile) Object.assign(metadata, { storageObjectKey: storedFile.objectKey, storageSha256: storedFile.sha256,
+    storageByteLength: storedFile.byteLength, originalFileName: storedFile.fileName });
   // 关键：原代码用 input.type（必填）判断，改成 optional 后必须用 detectedType。
   const isUrlWithoutContent = detectedType === "url" && !input.content?.trim();
-  if (input.content) metadata.rawContent = input.content;
+  if (input.content && !storedFile) metadata.rawContent = input.content;
   if (input.url) metadata.url = input.url;
   // 标记 type 来源，供 Worker 判断是否可修正
   metadata.typeSource = input.type ? "manual" : "auto";

@@ -66,6 +66,8 @@ function getClient(): S3Client {
       region,
       credentials: { accessKeyId, secretAccessKey },
       forcePathStyle: true,
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
       requestHandler: new NodeHttpHandler({
         connectionTimeout: 10_000,
         requestTimeout: resolveStorageRequestTimeoutMs(env()),

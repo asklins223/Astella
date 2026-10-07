@@ -81,3 +81,5 @@ export * from "./companion-memory-temporal.ts";
 export * from "./contracts/job-payload-contracts.ts";
 
 export type * from "./content-hash.ts";
+
+export * from "./contracts/object-transfer-contracts.ts";

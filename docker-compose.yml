@@ -69,61 +69,6 @@ services:
     networks:
       - astella_net
 
-  # Optional object storage: started by the alpha flow, which always passes the
-  # `storage` profile. The wrapper deliberately exits when credentials are empty
-  # instead of falling back to MinIO defaults.
-  minio:
-    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
-    profiles: ["storage"]
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    entrypoint: ["/bin/sh", "-ec"]
-    command:
-      - |
-        test -n "$${MINIO_ROOT_USER:-}" || { echo >&2 'MINIO_ROOT_USER is required'; exit 1; }
-        test -n "$${MINIO_ROOT_PASSWORD:-}" || { echo >&2 'MINIO_ROOT_PASSWORD is required'; exit 1; }
-        exec minio server /data --console-address ':9001'
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
-    ports:
-      - "${MINIO_BIND_ADDRESS:-127.0.0.1}:${MINIO_PORT:-9000}:9000"
-      - "${MINIO_BIND_ADDRESS:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9001}:9001"
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    networks:
-      - astella_net
-
-  # One-shot bucket bootstrap (profile: storage).  The alpha flow removes and
-  # re-runs it on every start, then waits for it to exit (run_one_shot).
-  minio-init:
-    image: minio/mc:RELEASE.2024-11-21T17-21-54Z
-    profiles: ["storage"]
-    depends_on:
-      minio:
-        condition: service_healthy
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
-      S3_BUCKET: ${S3_BUCKET:-astella-workspaces}
-    entrypoint: ["/bin/sh", "-ec"]
-    command:
-      - |
-        test -n "$${MINIO_ROOT_USER:-}" || { echo >&2 'MINIO_ROOT_USER is required'; exit 1; }
-        test -n "$${MINIO_ROOT_PASSWORD:-}" || { echo >&2 'MINIO_ROOT_PASSWORD is required'; exit 1; }
-        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
-        mc mb -p "local/$${S3_BUCKET}" || true
-        mc anonymous set none "local/$${S3_BUCKET}"
-        echo 'minio init done'
-    networks:
-      - astella_net
-
   # Migrations are automatic, but account seeding is intentionally separate.
   # One-shot (restart: "no"): the alpha flow removes and re-runs it on every
   # start to apply pending migrations, then waits for it to exit.
@@ -282,11 +227,14 @@ services:
       # 语音：SiliconFlow ASR（外部 API）+ edge-tts TTS（Docker 容器）
       EDGE_TTS_BASE_URL: ${EDGE_TTS_BASE_URL:-http://edge-tts:8080}
       EDGE_TTS_AUTH_TOKEN: ${EDGE_TTS_AUTH_TOKEN:?Set EDGE_TTS_AUTH_TOKEN in .env（edge-tts 与 api 必须一致）}
-      # Image upload: MinIO/S3 storage endpoint
-      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-http://minio:9000}
-      S3_BUCKET: ${S3_BUCKET:-astella-workspaces}
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
+      # Private remote object storage for uploaded resources and exports
+      STORAGE_MODE: remote
+      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-}
+      STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID:-}
+      STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-}
+      S3_BUCKET: ${S3_BUCKET:-astella}
     ports:
       - "${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-4000}:4000"
     healthcheck:
@@ -365,11 +313,14 @@ services:
       COMPANION_SUMMARIZER_V1: ${COMPANION_SUMMARIZER_V1:-true}
       COMPANION_DAILY_SUMMARY_V1: ${COMPANION_DAILY_SUMMARY_V1:-true}
       COMPANION_THOUGHTS_V1: ${COMPANION_THOUGHTS_V1:-true}
-      # Source image upload: MinIO/S3 storage for embedded images
-      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-http://minio:9000}
-      S3_BUCKET: ${S3_BUCKET:-astella-workspaces}
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
+      # Private remote object storage shared with the API
+      STORAGE_MODE: remote
+      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-}
+      STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID:-}
+      STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-}
+      S3_BUCKET: ${S3_BUCKET:-astella}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WORKER_METRICS_PORT: ${WORKER_METRICS_PORT:-9100}
       # 优雅关停 drain 预算（ms）。值与 workers/ai-worker/src/index.ts:695 的
@@ -417,13 +368,12 @@ services:
     networks:
       - astella_net
 
-# SEC-18 备注：PostgreSQL / MinIO 凭据目前经环境变量注入，`docker inspect` 可见。
+# SEC-18 备注：PostgreSQL / 对象存储凭据目前经环境变量注入，`docker inspect` 可见。
 # 单机部署风险可接受；迁到共享主机时应改用 Docker Secrets，并同步让应用代码支持
 # 从 /run/secrets/<name> 读取——只加 secrets: 配置而不改代码不会生效。
 
 volumes:
   postgres_data:
-  minio_data:
 
 networks:
   astella_net:

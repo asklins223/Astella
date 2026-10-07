@@ -1,3 +1,4 @@
+import { uploadRemoteObject } from "./desktop-object-transfers";
 import { randomUUID } from "node:crypto";
 /**
  * 网关的「登录与账号」那一族里**已解锁**的部分 —— 2026-09-30 从 `DesktopGateway` 类搬出。
@@ -141,6 +142,14 @@ export async function uploadAvatar(t: GatewayTransport,
     const bytes = Buffer.from(request.bytesBase64, "base64");
     if (bytes.byteLength === 0 || bytes.byteLength > AVATAR_MAX_BYTES) {
       throw new DesktopGatewayFailure("validation", "user_action");
+    }
+    const remote = await uploadRemoteObject(t, { purpose: "avatar", fileName: request.fileName,
+      mimeType: request.mimeType, }, bytes, requestId);
+    if (remote) {
+      const payload = (remote.body ?? {}) as Record<string, unknown>;
+      const parsed = avatarUploadResultV1Schema.safeParse({ version: 1, url: payload.url, objectKey: payload.objectKey });
+      if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+      return parsed.data;
     }
     const form = new FormData();
     form.set("file", new Blob([bytes], { type: request.mimeType }), request.fileName);

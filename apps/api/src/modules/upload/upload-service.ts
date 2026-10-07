@@ -1,3 +1,4 @@
+import type { ObjectTransferDownload } from "@astella/shared/object-transfer-contracts";
 /**
  * 上传业务/存储服务。
  *
@@ -21,7 +22,9 @@ import { noteImageAssets, notes } from "@astella/shared/db-schema/note";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import { users } from "@astella/shared/db-schema/identity";
 import {
-  uploadObject,
+  persistObject,
+  usesRemoteStorage,
+  signObjectDownload,
   getObject,
   headObject,
   deleteObject,
@@ -134,7 +137,7 @@ export type AvatarUploadResult =
 /** GET /uploads/* 结果：304/200（含响应头取值）或错误原因。 */
 export type UploadDownloadResult =
   | { ok: true; notModified: true; maxAge: number; etag: string | undefined }
-  | { ok: true; notModified: false; body: Buffer; contentType: string; maxAge: number; etag: string }
+  | { ok: true; notModified: false; body: Buffer; download?: ObjectTransferDownload; contentType: string; maxAge: number; etag: string }
   | { ok: false; reason: "not_found" | "storage_unavailable" };
 
 /**
@@ -143,7 +146,7 @@ export type UploadDownloadResult =
  */
 export async function uploadNoteImage(
   scope: WorkspaceTransactionContext,
-  input: { noteId: string; file: UploadFileHandle },
+  input: { noteId: string; file: UploadFileHandle; staging?: { key: string; etag: string } },
 ): Promise<NoteImageUploadResult> {
   const { noteId, file } = input;
 
@@ -216,7 +219,7 @@ export async function uploadNoteImage(
   const objectKey = `${scope.workspaceId}/notes/${noteId}/${randomUUID()}.${ext}`;
 
   try {
-    await uploadObject(objectKey, buffer, file.mimetype);
+    await persistObject(objectKey, buffer, file.mimetype, input.staging);
   } catch (err) {
     logger.error({ err, objectKey }, "failed to upload image to storage");
     return { ok: false, reason: "storage_upload_failed" };
@@ -288,7 +291,7 @@ export async function uploadNoteImage(
  */
 export async function uploadCompanionImage(
   scope: WorkspaceTransactionContext,
-  input: { file: UploadFileHandle },
+  input: { file: UploadFileHandle; staging?: { key: string; etag: string } },
 ): Promise<CompanionImageUploadResult> {
   const { file } = input;
 
@@ -324,7 +327,7 @@ export async function uploadCompanionImage(
   const objectKey = `${scope.workspaceId}/companion/${randomUUID()}.${ext}`;
 
   try {
-    await uploadObject(objectKey, buffer, file.mimetype);
+    await persistObject(objectKey, buffer, file.mimetype, input.staging);
   } catch (err) {
     logger.error({ err, objectKey }, "failed to upload companion image to storage");
     return { ok: false, reason: "storage_upload_failed" };
@@ -383,7 +386,7 @@ export async function uploadCompanionImage(
  */
 export async function uploadAvatar(
   scope: WorkspaceTransactionContext,
-  input: { file: UploadFileHandle },
+  input: { file: UploadFileHandle; staging?: { key: string; etag: string } },
 ): Promise<AvatarUploadResult> {
   const file = input.file;
 
@@ -435,7 +438,7 @@ export async function uploadAvatar(
   const objectKey = `avatars/${scope.userId}/${randomUUID()}.${ext}`;
 
   try {
-    await uploadObject(objectKey, buffer, file.mimetype);
+    await persistObject(objectKey, buffer, file.mimetype, input.staging);
   } catch (err) {
     logger.error({ err, objectKey }, "failed to upload avatar to storage");
     return { ok: false, reason: "storage_upload_failed" };
@@ -512,7 +515,7 @@ export async function uploadAvatar(
 export async function downloadUploadObject(
   scope: WorkspaceTransactionContext,
   path: string,
-  request: { ifNoneMatch?: string },
+  request: { ifNoneMatch?: string; direct?: boolean },
 ): Promise<UploadDownloadResult> {
   // SEC-21 修复：拒绝包含路径遍历字符的请求，防止跨 workspace 文件访问
   if (path.includes("..") || path.includes("\\")) {
@@ -566,6 +569,7 @@ export async function downloadUploadObject(
           ),
         });
         if (!row) return { row: null, noteExists: false as const };
+        if (isCompanionImage && row.createdBy !== scope.userId) return { row: null, noteExists: false as const };
         if (parts[1] !== "notes") return { row, noteExists: true };
         // 笔记物理删除后 uploadedForNoteId 已置 NULL；软删除需显式排除
         if (!row.uploadedForNoteId) return { row, noteExists: false as const };
@@ -614,6 +618,20 @@ export async function downloadUploadObject(
     if (headResult.etag && requestedETags.includes(headResult.etag)) {
       const isAvatarHead = path.startsWith("avatars/");
       return { ok: true, notModified: true, maxAge: isAvatarHead ? 604800 : 86400, etag: headResult.etag };
+    }
+  }
+
+  if (usesRemoteStorage() && request.direct) {
+    try {
+      const head = await headObject(path);
+      if (!head) return { ok: false, reason: "not_found" };
+      const contentType = head.contentType ?? "application/octet-stream";
+      const download = await signObjectDownload(path, contentType, head.contentLength ?? 0);
+      return { ok: true, notModified: false, body: Buffer.alloc(0), download, contentType,
+        maxAge: path.startsWith("avatars/") ? 604800 : 86400, etag: head.etag ?? "" };
+    } catch (err) {
+      logger.error({ err, path }, "signing object download failed");
+      return { ok: false, reason: "storage_unavailable" };
     }
   }
 
