@@ -14,10 +14,11 @@ rollback() {
   result=$?
   if (( result != 0 )) && [[ -n "$previous" && "$previous" != "$release" ]]; then
     echo 'Deployment failed; restarting the previous application images. Database backup is retained.' >&2
-    docker compose --project-name astella --project-directory "$previous" \
+    previous_compose=(docker compose --project-name astella --project-directory "$previous" \
       --env-file "$env_file" --env-file "$previous/deployment-images.env" \
-      -f "$previous/docker-compose.yml" -f "$previous/docker-compose.deploy.yml" --profile storage \
-      up -d --no-build --pull never --no-deps api worker nginx || true
+      -f "$previous/docker-compose.yml" -f "$previous/docker-compose.deploy.yml")
+    "${previous_compose[@]}" up -d --no-build --pull never --no-deps --wait --wait-timeout 180 api worker nginx || true
+    "${previous_compose[@]}" exec -T nginx nginx -s reload || true
   fi
   exit "$result"
 }
@@ -42,6 +43,10 @@ for service in role-bootstrap migrate role-grants; do
   "${compose[@]}" run --rm --no-deps "$service"
 done
 "${compose[@]}" up -d --no-build --pull never --no-deps --wait --wait-timeout 180 api worker nginx
+# Nginx resolves the API container address when loading its configuration.
+# A recreated API may receive another address even if Nginx itself is unchanged.
+"${compose[@]}" exec -T nginx nginx -t
+"${compose[@]}" exec -T nginx nginx -s reload
 curl --fail --silent --show-error --max-time 15 http://127.0.0.1:4000/ready >/dev/null
 public_host="$(cat /etc/astella/public-host)"
 curl --fail --silent --show-error --max-time 15 "https://$public_host/ready" >/dev/null
