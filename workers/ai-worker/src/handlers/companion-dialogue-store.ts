@@ -906,7 +906,7 @@ async function readGroundedTutorContextForLearningRun(
   }));
   try {
     const evidence = materializeGroundedTutorEvidence(rowsWithExpected);
-    return evidence.length > 0 ? { claim: claim.slice(0, 800), evidence } : null;
+    return evidence.length > 0 ? { claim, evidence } : null;
   } catch {
     return null;
   }

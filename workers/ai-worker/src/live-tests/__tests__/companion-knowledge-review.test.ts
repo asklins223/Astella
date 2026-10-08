@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { COMPANION_HOST_PROTOCOL_V8, COMPANION_IDENTITY_BOUNDARY_V4 } from "@astella/shared";
-import { buildCasualFirstStepRequest } from "../companion-speculative-first-step.ts";
-import { buildCompanionKnowledgeReview, parseCompanionKnowledgeReview, companionDraftSpans } from "../companion-knowledge-review.ts";
-import { CompanionKnowledgeReviewError, isNonRetryableError } from "../../lib/non-retryable-errors.ts";
+import { buildCasualFirstStepRequest } from "../../handlers/companion-speculative-first-step.ts";
+import { buildCompanionKnowledgeReview, parseCompanionKnowledgeReview, companionDraftSpans } from "../diagnostics/companion-knowledge-review.ts";
+import { CompanionKnowledgeReviewError } from "../diagnostics/companion-review-errors.ts";
 
 test("审校保留完整草稿、上下文和输出额度，数据无法关闭边界或开放工具", () => {
   const request = buildCasualFirstStepRequest({turnPolicy:"账号风格与当下材料。",permissionLevel:"read_only",
@@ -72,7 +72,6 @@ test("无效私有报告不能降级成草稿或被队列重投；错误不含�
   for (const raw of invalid) {
     assert.throws(()=>parseCompanionKnowledgeReview(raw,"原句。"),error=>{
       assert.ok(error instanceof CompanionKnowledgeReviewError);
-      assert.equal(isNonRetryableError(error),true);
       assert.equal(error.message,"companion knowledge review returned an invalid report");
       return true;
     });

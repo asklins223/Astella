@@ -1,4 +1,16 @@
 import type { AIPlatformConfig, ResolvedPlatform } from "@astella/shared/platform-config";
+import type { AgentTurnRequest } from "@astella/shared";
+
+/** A frozen evaluation condition, never a production automatic-mode override. */
+export function dialogueCandidateThinking(route: ResolvedPlatform, request: AgentTurnRequest,
+  intent: "conversation" | "question", effort?: string): { route: ResolvedPlatform; request: AgentTurnRequest } {
+  const level = effort === undefined ? undefined : route.modelProfile?.reasoning?.levels.find(level => level === effort);
+  if (effort !== undefined && !level) throw new Error("Candidate casual effort must be declared");
+  if (intent !== "conversation" || !level) return { route, request };
+  return { route: { ...route, modelProfile: { ...route.modelProfile,
+    reasoning: { ...route.modelProfile!.reasoning!, default: level } } },
+    request: { ...request, disableThinking: level === "none" } };
+}
 
 /** Explicit test selection only. Never mutates capability routing or config. */
 export function resolveDialogueCandidate(config: AIPlatformConfig | null, platformId: string,

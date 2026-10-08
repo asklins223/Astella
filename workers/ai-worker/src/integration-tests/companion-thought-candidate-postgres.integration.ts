@@ -12,7 +12,7 @@
  * 就因为我手写的 `urgency: 0.4` 撞在 `urgency integer` 上（真错是 `invalid input syntax for
  * type integer`）——照类型表猜形状会猜错，从生产函数拿就不会。
  *
- * 角色纪律（doc 34 L37/L43）：夹具写走超级用户 `DATABASE_URL`，被测那一发走
+ * 角色纪律（doc 34 L37/L43）：夹具写走迁移角色 `DATABASE_URL_MIGRATOR`，被测那一发走
  * `withWorkerWorkspaceTransaction`（= `astella_worker`，dev 里 NOBYPASSRLS）。
  * 注意这张表的 RLS 策略对 `astella_worker` **一律放行**（见第二支用例里的原文），
  * 所以这一份文件是"写得进、读得回"的证据，**不是**空间隔离的证据。
@@ -26,7 +26,7 @@ import { companionLeakGateVersionV1 } from "@astella/shared/companion-leak-gates
 import type { ThoughtMaterial } from "../handlers/companion-thought.ts";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
-const ADMIN_CONN = testDatabaseUrl("DATABASE_URL");
+const ADMIN_CONN = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 // 必须在 import `../db.ts` **之前**设好：连接串在那个模块加载时求值。
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 

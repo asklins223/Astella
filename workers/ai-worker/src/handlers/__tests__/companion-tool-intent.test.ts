@@ -5,6 +5,7 @@ import {
   companionClassifierRecent,
   companionOfferCandidates,
   interpretCompanionTurn,
+  type CompanionToolIntentReceipt,
 } from "../companion-tool-intent.ts";
 
 function taskContext(signal = new AbortController().signal) {
@@ -26,6 +27,11 @@ function taskContext(signal = new AbortController().signal) {
 
 const proposal = (action: boolean) => ({ intent: action ? "task" : "conversation", toolUse: action ? "act" : "none",
   subjects: [], goalRelation: action ? "new" : "unrelated", candidateOperations: [], ambiguities: [] });
+
+test("自动思考分类保留历史中部纠正，不只读首尾摘要", () => {
+  const content = "原话开头。" + "旧背景".repeat(400) + "这项提醒已经取消，当前只聊天。" + "后续描述".repeat(400) + "原话结束。";
+  assert.equal(companionClassifierRecent([{ role: "user", content }])[0]?.content, content);
+});
 
 function provider(decide: (input: string) => boolean): AIProvider {
   return {
@@ -175,4 +181,109 @@ test("整轮预算耗尽时不再启动分类模型调用", async () => {
     stepTimeoutMs: 0,
   })).toolUse, "uncertain", "读数用尽时按未知处理，后续工具策略仍 fail closed");
   assert.equal(calls, 0);
+});
+
+test("退休用途开关不能扩大分类输入、输出额度或重启来源生成", async () => {
+  let calls = 0;
+  const model = { ...provider(() => false), chatCompletion: async (
+    messages: Parameters<AIProvider["chatCompletion"]>[0], options: Parameters<AIProvider["chatCompletion"]>[1],
+  ) => {
+    calls++;
+    const input = JSON.parse(String(messages.at(-1)?.content));
+    assert.deepEqual(Object.keys(input).sort(), ["capabilities", "current", "objects", "recent"]);
+    assert.doesNotMatch(String(messages[0]?.content), /dialogueFrame|userRecords/);
+    assert.equal(options?.maxTokens, 900);
+    assert.equal(options?.disableThinking, true);
+    return { content: JSON.stringify(proposal(false)), usage: {} };
+  } } as AIProvider;
+  const legacyCaller = { ...taskContext(), dialogueFrameEnabled: true };
+  const result = await interpretCompanionTurn(model, [{ role: "user", content: "我还没交呢" }], legacyCaller);
+  assert.equal(calls, 1);
+  assert.equal(result.intent, "conversation");
+  assert.equal("dialogueFrame" in result, false);
+});
+
+test("模型有效返回 uncertain 与调用失败在观测中分别记录", async () => {
+  const receipts: CompanionToolIntentReceipt[] = [];
+  const model = { ...provider(() => false), chatCompletion: async () => ({
+    content: JSON.stringify({ ...proposal(true), toolUse: "uncertain" }), usage: {},
+  }) } as AIProvider;
+  const result = await interpretCompanionTurn(model, [{ role: "user", content: "把那个打开" }], {
+    ...taskContext(), onReceipt: receipt => receipts.push(receipt),
+  });
+  assert.equal(result.status, "uncertain");
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0]?.outcome, "committed");
+  assert.equal(receipts[0]?.failureClass, null);
+  assert.equal(receipts[0]?.interpretationStatus, "uncertain");
+});
+
+for (const [label, failureClass, answer] of [
+  ["非 JSON", "output_shape", "private-provider-prose"],
+  ["错误合同", "output_shape", '{"private":"private-provider-prose"}'],
+  ["传输异常", "transport", null],
+] as const) {
+  test(`${label}只记录类别与耗时，不重试或泄露对话和上游错误正文`, async () => {
+    const receipts: CompanionToolIntentReceipt[] = [];
+    let calls = 0;
+    const model = { ...provider(() => false), chatCompletion: async () => {
+      calls++;
+      if (answer === null) throw new Error("private-provider-prose");
+      return { content: answer, usage: {} };
+    } } as AIProvider;
+    const result = await interpretCompanionTurn(model, [{ role: "user", content: "private-user-prose" }], {
+      ...taskContext(), onReceipt: receipt => receipts.push(receipt),
+    });
+    assert.equal(calls, 1);
+    assert.equal(result.toolUse, "uncertain");
+    assert.equal(receipts.length, 1);
+    assert.equal(receipts[0]?.failureClass, failureClass);
+    assert.equal(receipts[0]?.interpretationStatus, null);
+    assert.equal(receipts[0]?.modelCalls, 1);
+    assert.ok(receipts[0]!.elapsedMs >= 0);
+    assert.deepEqual(Object.keys(receipts[0]!).sort(),
+      ["elapsedMs", "failureClass", "interpretationStatus", "modelCalls", "outcome"]);
+    assert.doesNotMatch(JSON.stringify(receipts), /private-provider-prose|private-user-prose/);
+  });
+}
+
+test("分类超时取消在途调用，保留不确定状态且明确记录 timeout", async () => {
+  const receipts: CompanionToolIntentReceipt[] = [];
+  let calls = 0;
+  let providerSignal: AbortSignal | undefined;
+  const model = { ...provider(() => false), chatCompletion: async (_messages, _options, signal) => {
+    calls++;
+    providerSignal = signal;
+    return new Promise<never>((_resolve, reject) => signal?.addEventListener("abort", () => {
+      reject(new Error("private-provider-prose"));
+    }, { once: true }));
+  } } as AIProvider;
+  const result = await interpretCompanionTurn(model, [{ role: "user", content: "打开那篇笔记" }], {
+    ...taskContext(), stepTimeoutMs: 20, onReceipt: receipt => receipts.push(receipt),
+  });
+  assert.equal(calls, 1);
+  assert.equal(providerSignal?.aborted, true);
+  assert.equal(result.toolUse, "uncertain");
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0]?.failureClass, "timeout");
+  assert.equal(receipts[0]?.interpretationStatus, null);
+});
+
+test("用户取消与超时分别记录，不因为取消重发分类请求", async () => {
+  const controller = new AbortController();
+  const receipts: CompanionToolIntentReceipt[] = [];
+  let calls = 0;
+  const model = { ...provider(() => false), chatCompletion: async () => {
+    calls++;
+    controller.abort();
+    throw new Error("private-provider-prose");
+  } } as AIProvider;
+  const result = await interpretCompanionTurn(model, [{ role: "user", content: "算了，先停" }], {
+    ...taskContext(controller.signal), onReceipt: receipt => receipts.push(receipt),
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.toolUse, "uncertain");
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0]?.outcome, "cancelled");
+  assert.equal(receipts[0]?.failureClass, "cancelled");
 });

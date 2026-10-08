@@ -69,7 +69,6 @@ function createFixture(copyVersion = "0.4.0") {
 describe("version contract", () => {
   it("accepts the canonical repository copies", () => {
     const version = loadVersionSource(REPOSITORY_ROOT);
-    assert.equal(version, "1.0.0");
     assert.deepEqual(inspectVersionCopies(REPOSITORY_ROOT, version), []);
   });
 

@@ -89,20 +89,48 @@ function normalizeForOverlap(text: string): string {
 
 /** 两段文本的**最长连续重合**长度（归一化后按字符计）。 */
 export function longestOverlap(haystack: string, needle: string): number {
-  const a = normalizeForOverlap(haystack).slice(0, 1_200);
-  const b = normalizeForOverlap(needle).slice(0, 1_200);
-  if (a.length === 0 || b.length === 0) return 0;
-  let best = 0;
-  // 上一行的匹配长度滚动数组：每格是"a 的前 i 个 与 b 的前 j 个 的公共后缀长度"。
-  let previous = new Array<number>(b.length + 1).fill(0);
-  for (let i = 1; i <= a.length; i += 1) {
-    const current = new Array<number>(b.length + 1).fill(0);
-    for (let j = 1; j <= b.length; j += 1) {
-      if (a[i - 1] !== b[j - 1]) continue;
-      current[j] = previous[j - 1] + 1;
-      if (current[j] > best) best = current[j];
+  const a = normalizeForOverlap(haystack), b = normalizeForOverlap(needle);
+  if (!a.length || !b.length) return 0;
+  // 较短文本建后缀自动机，再扫描另一段。完整比较是线性的，不用截取
+  // 前缀来限制旧 O(n*m) 算法的开销。字符计量沿用 UTF-16。
+  const source = a.length < b.length ? a : b, target = a.length < b.length ? b : a;
+  type State = { length: number; link: number; next: Map<string, number> };
+  const states: State[] = [{ length: 0, link: -1, next: new Map() }];
+  let last = 0;
+  for (let i = 0; i < source.length; i++) {
+    const char = source[i]!;
+    const current = states.length;
+    states.push({ length: states[last]!.length + 1, link: 0, next: new Map() });
+    let p = last;
+    while (p >= 0 && !states[p]!.next.has(char)) {
+      states[p]!.next.set(char, current);
+      p = states[p]!.link;
     }
-    previous = current;
+    if (p >= 0) {
+      const q = states[p]!.next.get(char)!;
+      if (states[p]!.length + 1 === states[q]!.length) states[current]!.link = q;
+      else {
+        const clone = states.length;
+        states.push({ length: states[p]!.length + 1, link: states[q]!.link, next: new Map(states[q]!.next) });
+        while (p >= 0 && states[p]!.next.get(char) === q) {
+          states[p]!.next.set(char, clone);
+          p = states[p]!.link;
+        }
+        states[q]!.link = states[current]!.link = clone;
+      }
+    }
+    last = current;
+  }
+  let state = 0, length = 0, best = 0;
+  for (let i = 0; i < target.length; i++) {
+    const char = target[i]!;
+    while (state > 0 && !states[state]!.next.has(char)) {
+      state = states[state]!.link;
+      length = states[state]!.length;
+    }
+    const next = states[state]!.next.get(char);
+    if (next === undefined) { state = 0; length = 0; }
+    else { state = next; length++; best = Math.max(best, length); }
   }
   return best;
 }

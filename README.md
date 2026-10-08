@@ -17,7 +17,7 @@
 
 [中文](README.md) · [English](README.en.md) · [手册 docs/guide](docs/guide/)
 
-当前版本：`v1.0.0`（服务端与桌面客户端共用）
+当前版本：`v1.0.1`（服务端与桌面客户端共用）
 
 </div>
 

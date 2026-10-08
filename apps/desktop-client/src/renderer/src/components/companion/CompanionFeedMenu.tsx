@@ -6,7 +6,7 @@ import { copyText } from "../../app/clipboard";
 import {
   COMPANION_FEED_MAX_CHARS,
   feedSelectionToCompanion,
-  truncateFeedText,
+  normalizeFeedText,
 } from "./companion-feed";
 
 function canFeed(): boolean {
@@ -54,7 +54,7 @@ export function CompanionFeedMenu() {
       setCopyError(false);
       const x = Math.max(8, Math.min(event.clientX, window.innerWidth - 330));
       const y = Math.max(8, Math.min(event.clientY, window.innerHeight - 110));
-      setMenu({ x, y, text: truncateFeedText(text), fullText: text, selectedChars: text.length });
+      setMenu({ x, y, text: normalizeFeedText(text), fullText: text, selectedChars: text.length });
     };
     // capture 阶段关菜单；菜单自身内部的按下用 stopPropagation 拦住。
     const onPointerDown = (event: PointerEvent) => {
@@ -97,7 +97,7 @@ export function CompanionFeedMenu() {
       const text = event.dataTransfer?.getData("text/plain") ?? "";
       if (text.trim().length === 0) return;
       event.preventDefault();
-      feedSelectionToCompanion({ text: truncateFeedText(text), source: "drop" });
+      feedSelectionToCompanion({ text: normalizeFeedText(text), source: "drop" });
     };
     window.addEventListener("dragover", onDragOver);
     window.addEventListener("drop", onDrop);
@@ -127,11 +127,9 @@ export function CompanionFeedMenu() {
       >
         <Send size={13} aria-hidden="true" />
         <span>丢给伴星</span>
-        {/* 计数按"选了多少"说，不按"切完之后多少"说：截断是这条链真正会发生的事
-            （`truncateFeedText` 在显示之前就跑了），以前用户永远只看到 2000/2000。 */}
         <span className="companion-feed-menu__count">
           {menu.selectedChars > COMPANION_FEED_MAX_CHARS
-            ? `已选 ${menu.selectedChars} 字，只送前 ${COMPANION_FEED_MAX_CHARS} 字`
+            ? `已选 ${menu.selectedChars} 字，超过 ${COMPANION_FEED_MAX_CHARS} 字，请分段选择`
             : `${menu.selectedChars}/${COMPANION_FEED_MAX_CHARS}`}
         </span>
       </button>

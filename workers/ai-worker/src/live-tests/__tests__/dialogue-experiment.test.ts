@@ -1,10 +1,28 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { dialogueCases, dialogueGenerationFixture } from "../dialogue-cases.ts";
-import { buildDialogueExperimentRequest, buildDialogueIdentityDiagnostic, dialogueMatrixSchedule, snapshotDialogueRequest, snapshotDialogueWireBody } from "../dialogue-experiment.ts";
+import { buildDialogueExperimentRequest, buildDialogueIdentityDiagnostic, buildDialogueThinkingDiagnostic, dialogueMatrixSchedule, snapshotDialogueRequest, snapshotDialogueWireBody } from "../dialogue-experiment.ts";
 import { buildDialogueReviewPacket } from "../dialogue-review-packet.ts";
-import { resolveDialogueCandidate } from "../dialogue-candidate.ts";
+import { resolveDialogueCandidate, dialogueCandidateThinking } from "../dialogue-candidate.ts";
 import type { AIPlatformConfig } from "@astella/shared/platform-config";
+
+test("冻结候选的闲聊档只改闲聊配置，求助、原文与原档案保持完整", () => {
+  const route = resolveDialogueCandidate({ platforms: { p: { type: "opencode_go", apiKey: "fixture",
+    baseUrl: "https://example.com", models: { m: { contextWindowTokens: 10000, maxOutputTokens: 8000,
+      reasoning: { levels: ["none", "low", "medium"], default: "medium" } } } } }, capabilities: {} }, "p", "m");
+  const original = structuredClone(route);
+  for (const id of ["resume", "practice-help"]) {
+    const fixture = dialogueGenerationFixture(dialogueCases.find(c => c.id === id)!);
+    const { request } = buildDialogueExperimentRequest(fixture, "full", 8000);
+    const configured = dialogueCandidateThinking(route, request, fixture.intent, "low");
+    assert.deepEqual(configured.request.messages, request.messages);
+    assert.deepEqual({ ...configured.request, disableThinking: request.disableThinking }, request);
+    assert.equal(configured.route.modelProfile!.reasoning!.default, id === "resume" ? "low" : "medium");
+    assert.equal(configured.request.disableThinking, false);
+    assert.deepEqual(route, original);
+    assert.throws(() => dialogueCandidateThinking(route, request, fixture.intent, "high"), /declared/);
+  }
+});
 
 test("跨平台候选只用已配置且已声明的模型，不改变正式路由", () => {
   const config: AIPlatformConfig = { platforms: { candidate: { type: "openai_compatible", apiKey: "test-key",
@@ -81,6 +99,31 @@ test("简洁身份只作多变量诊断，保留原生消息、参数及必需�
   }
 });
 
+test("思考对照只改开关，明确求助继续保留原配置", () => {
+  for (const id of ["resume", "practice-help"]) {
+    const fixture = dialogueGenerationFixture(dialogueCases.find(c => c.id === id)!);
+    const a = buildDialogueThinkingDiagnostic(fixture, 131072, "automatic");
+    const b = buildDialogueThinkingDiagnostic(fixture, 131072, "enabled");
+    assert.deepEqual({ ...a.request, disableThinking: false }, b.request);
+    assert.equal(b.request.disableThinking, false);
+    assert.equal(a.request.disableThinking, id === "resume");
+    assert.equal(a.provenance.originalHistoryHash, b.provenance.originalHistoryHash);
+    assert.match(b.provenance.note, /actual effort/);
+  }
+});
+
+test("语境示例只替换无语境样例，不改变原生消息、人格其他字段和参数", () => {
+  const fixture = dialogueGenerationFixture(dialogueCases.find(c => c.id === "resume")!);
+  const a = buildDialogueExperimentRequest(fixture, "relevant", 128000);
+  const b = buildDialogueExperimentRequest(fixture, "relevant", 128000, "contextual");
+  assert.deepEqual({ ...a.request, systemPrompt: "" }, { ...b.request, systemPrompt: "" });
+  assert.match(b.request.systemPrompt, /情境：|快捷键|表格导入/);
+  assert.match(b.request.systemPrompt, /爱吃白饭/);
+  assert.match(b.request.systemPrompt, /不是事实或待复述的台词/);
+  for (const criterion of dialogueCases.find(c => c.id === "resume")!.criteria)
+    assert.ok(!b.request.systemPrompt.includes(criterion));
+});
+
 test("请求快照固定完整文本与哈希，拒绝保存隐藏推理回放句柄", () => {
   const { request } = buildDialogueExperimentRequest(dialogueGenerationFixture(dialogueCases[0]!), "full", 131072);
   const saved = snapshotDialogueRequest(request);
@@ -96,6 +139,9 @@ test("请求快照固定完整文本与哈希，拒绝保存隐藏推理回放�
   assert.equal(wire.omittedFieldCount, 2);
   assert.doesNotMatch(JSON.stringify(wire), /secret|authorization|apiKey/);
   assert.throws(() => snapshotDialogueWireBody({ input: [{ type: "reasoning", encrypted_content: "opaque" }] }), /reasoning/);
+  const stream = snapshotDialogueWireBody({ model: "m", stream: true, stream_options: { include_usage: true } });
+  assert.equal(stream.complete, true);
+  assert.deepEqual(stream.body.stream_options, { include_usage: true });
 });
 
 test("配对顺序轮换、重复可追踪，无重复案例和超额采样", () => {

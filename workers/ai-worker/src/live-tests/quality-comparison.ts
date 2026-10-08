@@ -4,9 +4,9 @@ import { AgentRole, COMPANION_CHARACTER_BASE_V8, COMPANION_CHARACTER_BASE_V12,
   COMPANION_IDENTITY_BOUNDARY_V3, COMPANION_IDENTITY_BOUNDARY_V4 } from "@astella/shared";
 import { buildCompanionPersonaMessages } from "../handlers/companion-dialogue-content.ts";
 import { resolveCompanionPersonaContext } from "../handlers/companion-identity-context.ts";
-import { companionResponseStrategy, shouldReviewCompanionExplanation } from "../handlers/companion-response-strategy.ts";
-import { buildCompanionKnowledgeReview, parseCompanionKnowledgeReview } from "../handlers/companion-knowledge-review.ts";
-import { CompanionKnowledgeReviewError } from "../lib/non-retryable-errors.ts";
+import { companionResponseStrategy, isCompanionExplanation } from "../handlers/companion-response-strategy.ts";
+import { buildCompanionKnowledgeReview, parseCompanionKnowledgeReview } from "./diagnostics/companion-knowledge-review.ts";
+import { CompanionKnowledgeReviewError } from "./diagnostics/companion-review-errors.ts";
 import { companionStepRuntimePolicy } from "../handlers/companion-step-plan.ts";
 import { observedProvider, platform, save, safeFailure, type WireReceipt } from "./acceptance-common.ts";
 import { qualityCases, parseQualityVerdicts } from "./quality-cases.ts";
@@ -50,7 +50,7 @@ async function compare(fixture:typeof qualityCases[number]) {
         fixture.kind==="knowledge"?0.4:0.9,maxTokens:route.modelProfile?.maxOutputTokens??131072,
         disableThinking:intent==="conversation",responseFormat:"text"},AbortSignal.timeout(90000));
       if(variant==="current"&&process.env.LIVE_QUALITY_REVIEW==="1"
-          &&shouldReviewCompanionExplanation({intent},fixture.prompt,0)) {
+          &&isCompanionExplanation({intent},fixture.prompt,0)) {
         row.draftAnswer=reply.content;row.draftMs=Date.now()-started;
         const revision=buildCompanionKnowledgeReview({role:AgentRole.COMPANION_AGENT,systemPrompt:system,
           messages:messages.slice(1),tools:[],maxTokens:route.modelProfile?.maxOutputTokens??131072,

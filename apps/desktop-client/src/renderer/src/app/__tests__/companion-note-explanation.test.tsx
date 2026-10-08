@@ -57,6 +57,40 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); resetNoteExplanations(); vi.useRealTimers(); vi.restoreAllMocks(); Reflect.deleteProperty(window, "astella"); });
 
+it.each([
+  { via: "local", partial: "" },
+  { via: "local", partial: "本轮已经收到的一小段。" },
+  { via: "stream", partial: "" },
+  { via: "stream", partial: "本轮已经收到的一小段。" },
+])("普通对话经 $via 停止时，只保留本轮收到的内容（$partial）", async ({ via, partial }) => {
+  let sending!: Promise<boolean>;
+  act(() => { sending = chat.send({ text: "推导这个公式" }); });
+  await waitFor(() => expect(streamEvent).not.toBeNull());
+  if (partial) emit("assistant.delta", { appendFrom: 0, textDelta: partial });
+  if (via === "local") await act(async () => { expect(await chat.cancel()).toBe(true); });
+  else emit("turn.cancelled", { reason: "user" });
+  await act(async () => { await sending; });
+  expect(chat.phase).toBe("ready");
+  expect(chat.draft).toBeNull();
+  expect(chat.liveReply).toBeNull();
+  expect(chat.richReply).toBeNull();
+  expect(chat.interrupted).toEqual(partial ? { text: partial, message: "这一轮已停止。" } : null);
+  expect(chat.failure).toBeNull();
+  expect(chat.stopNotice).toBe("这一轮已停止。");
+  expect(api.noteAnnotation.write).not.toHaveBeenCalled();
+  expect(api.subscriptions.unsubscribe).toHaveBeenCalledOnce();
+});
+
+it("轮询先读到中止记录时保留正文，不冒充完整回复", async () => {
+  const text = "灯塔故事已经输出的一段。";
+  messages = [{ id: id(9), role: "assistant", runId: id(6), kind: "cancelled", blocks: [{ type: "text", text }] }];
+  await act(async () => { expect(await chat.send({ text: "讲这个故事" })).toBe(true); });
+  expect(chat.phase).toBe("ready");
+  expect(chat.liveReply).toBeNull();
+  expect(chat.interrupted).toEqual({ text, message: "这一轮已停止。" });
+  expect(chat.stopNotice).toBe("这一轮已停止。");
+});
+
 it("发送前置检查还没返回时立刻停止，不提交模型请求，不保存批注", async () => {
   const preflight = deferred<ReturnType<typeof ok<typeof session>>>();
   api.auth.getState.mockReturnValueOnce(preflight.promise);

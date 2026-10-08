@@ -141,23 +141,39 @@ describe("CompanionFeedMenu（划选投喂的右键浮层）", () => {
     off();
   });
 
-  it("计数按「用户选了多少」说，超上限时明说只送前一段", () => {
+  it("计数报告完整选区，超上限提示分段而不默默发送前缀", () => {
     const long = "字".repeat(COMPANION_FEED_MAX_CHARS + 500);
     selectText(long);
     render(<CompanionFeedMenu />);
     rightClick();
 
-    const count = screen.getByText(`已选 ${long.length} 字，只送前 ${COMPANION_FEED_MAX_CHARS} 字`);
+    const count = screen.getByText(`已选 ${long.length} 字，超过 ${COMPANION_FEED_MAX_CHARS} 字，请分段选择`);
     expect(count).toBeTruthy();
     // 反面对照：以前的写法只存截断后的文本，读数永远是"正好装满"。
     expect(screen.queryByText(`${COMPANION_FEED_MAX_CHARS}/${COMPANION_FEED_MAX_CHARS}`)).toBeNull();
   });
 
-  it("没超上限时计数是普通的 x/2000，不吓唬人", () => {
+  it("没超上限时计数显示实际长度与上限", () => {
     selectText("短句");
     render(<CompanionFeedMenu />);
     rightClick();
     expect(screen.getByText(`2/${COMPANION_FEED_MAX_CHARS}`)).toBeTruthy();
+  });
+
+  it("长划选和拖拽完整进入事件总线，尾部纠正与换行不丢", () => {
+    const fed: string[] = [];
+    const off = subscribeCompanionFeed({ onFeed: event => fed.push(event.text), onNoteIntent: () => {}, onOpenChat: () => {} });
+    const text = "原文🫧\n".repeat(650) + "最后更正：交付还未发生。";
+    selectText(text);
+    render(<CompanionFeedMenu />);
+    rightClick();
+    fireEvent.click(screen.getByRole("button", { name: /丢给伴星/ }));
+    expect(fed).toEqual([text]);
+    const event = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", { value: { types: ["text/plain"], getData: () => text } });
+    fireEvent(document.body, event);
+    expect(fed).toEqual([text, text]);
+    off();
   });
 
   it("Esc 能把浮层收掉（鼠标打开的东西也该有不碰鼠标就关掉的出口）", async () => {
@@ -203,7 +219,7 @@ describe("CompanionFeedMenu（划选投喂的右键浮层）", () => {
     off();
   });
 
-  it("右键浮层保留复制出口，复制完整选区而不是投喂用的截断文本", async () => {
+  it("右键浮层保留复制出口，超过发送边界仍复制完整选区", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     const selected = "内容".repeat(COMPANION_FEED_MAX_CHARS);

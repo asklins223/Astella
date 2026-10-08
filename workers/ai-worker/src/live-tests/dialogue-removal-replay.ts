@@ -1,8 +1,8 @@
 import {readFileSync} from "node:fs";
 import {randomUUID} from "node:crypto";
 import {AgentRole,type AgentTurnRequest} from "@astella/shared";
-import {agentDialogueFrameV1Schema} from "@astella/shared/agent-contracts";
-import {buildCompanionDialogueReview,applyCompanionDialogueReview} from "../handlers/companion-dialogue-review.ts";
+import {agentDialogueFrameV1Schema} from "./diagnostics/companion-dialogue-contracts.ts";
+import {buildCompanionDialogueReview,applyCompanionDialogueReview} from "./diagnostics/companion-dialogue-review.ts";
 import {observedProvider,platform,save,safeFailure,outputDir,type WireReceipt} from "./acceptance-common.ts";
 
 // Read-only diagnostic on unaltered recorded synthetic drafts. It supplies no

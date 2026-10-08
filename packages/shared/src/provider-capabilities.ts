@@ -44,6 +44,8 @@ export type Capability =
 /** Chat 消息格式（OpenAI 兼容） */
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
+  /** Original Responses assistant phase, when available. Never attached to user messages. */
+  phase?: "commentary" | "final_answer";
   content: string | Array<
     | { type: "text"; text: string }
     | { type: "image_url"; image_url: { url: string; detail?: "auto" | "low" | "high" } }

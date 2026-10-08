@@ -20,3 +20,12 @@ export class ProviderRequestError extends Error {
     this.code = `provider_http_${input.status}`;
   }
 }
+
+/** Terminal protocol status only; never includes an upstream error body. */
+export class ProviderStreamError extends Error {
+  constructor(readonly provider: string,
+    readonly code: "stream_incomplete" | "stream_failed" | "stream_empty" | "stream_too_large" | "stream_content_mismatch") {
+    super(`${provider} ${code === "stream_empty" ? "returned empty streaming output" : code.replaceAll("_", " ")}`);
+    this.name = "ProviderStreamError";
+  }
+}

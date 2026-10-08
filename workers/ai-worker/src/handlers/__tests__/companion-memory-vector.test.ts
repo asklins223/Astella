@@ -57,6 +57,18 @@ const ROW = {
   user_confirmed: true,
 };
 
+test("历史长记忆的常驻、搜索与按版本续读保留尾部撤销条件", async () => {
+  const content = "先前的偏好。".repeat(60) + "更正：只适用于上周，现在已取消。";
+  const row = { ...ROW, content, revision: 3, budget_tier: "active" };
+  const scope = { workspaceId: "w", userId: "u" };
+  const resident = await retrieveResidentCompanionMemories(fakeTx([row]), scope);
+  const search = await retrieveCompanionMemoriesKeyword(fakeTx([row]), scope, "偏好", 8);
+  const expanded = await readActiveCompanionMemoryById(fakeTx([row]), scope, null, ROW.id, 3);
+  assert.equal(resident[0]?.content, content);
+  assert.equal(search.items[0]?.content, content);
+  assert.equal(expanded?.content, content);
+});
+
 test("extractQueryKeywords 拉丁词整体保留、过滤单字母", () => {
   const keywords = extractQueryKeywords("light reaction 怎么理解？a I");
   assert.ok(keywords.includes("light"));

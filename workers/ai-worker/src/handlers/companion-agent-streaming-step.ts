@@ -6,11 +6,12 @@ import { buildAgentTurnMessages } from "../lib/providers/json-response.ts";
 import { createCompanionEnvelopeDecoder } from "./companion-dialogue-envelope.ts";
 import { CompanionStreamStoppedError } from "./companion-dialogue-stream.ts";
 import { ProviderRequestError } from "../lib/provider-request-error.ts";
+import { isNonRetryableError } from "../lib/non-retryable-errors.ts";
 import { stripVoiceExpressionTags, withholdPartialVoiceExpressionTag } from "@astella/shared/voice-expression-tags";
 
 /** A different response transport cannot repair an account or rate rejection. */
 export function canRetryCompanionStream(error: unknown, state: { emitted: boolean; now: number; deadline: number }): boolean {
-  return !state.emitted && state.now < state.deadline && !(error instanceof CompanionStreamStoppedError)
+  return !state.emitted && state.now < state.deadline && !isNonRetryableError(error) && !(error instanceof CompanionStreamStoppedError)
     && !(error instanceof ProviderRequestError && [401, 402, 403, 429].includes(error.status));
 }
 
@@ -267,7 +268,7 @@ export async function runStreamingAgentStep(args: {
   };
 
   try {
-    const { content, toolCalls, finishReason } = await runWithAbortBudget(
+    const { content, toolCalls, finishReason, phase } = await runWithAbortBudget(
       async (signal) => {
         const result = await args.provider.chatCompletionStream!(
         messages,
@@ -326,6 +327,7 @@ export async function runStreamingAgentStep(args: {
       content: decoded.length > 0 ? decoded : content,
       toolCalls: toolCalls ?? [],
       finishReason: finishReason ?? "stop",
+      ...(phase ? { phase } : {}),
       usage: null,
       providerRequestId: null,
     };

@@ -28,15 +28,19 @@ const userId = randomUUID();
 const workspaceId = randomUUID();
 
 after(async () => {
-  await sql`DELETE FROM users WHERE id = ${userId}`.catch(() => {});
+  await sql.begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+    await tx`DELETE FROM users WHERE id = ${userId}`;
+  }).catch(() => {});
   await sql.end({ timeout: 5 }).catch(() => {});
   await closeDatabase().catch(() => {});
 });
 
-await sql`
-  INSERT INTO users (id, email, password_hash, role)
-  VALUES (${userId}, ${`account-epoch-${userId.slice(0, 8)}@example.test`}, 'test-hash', 'owner')
-`;
+await sql.begin(async (tx) => {
+  await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+  await tx`INSERT INTO users (id, email, password_hash, role)
+    VALUES (${userId}, ${`account-epoch-${userId.slice(0, 8)}@example.test`}, 'test-hash', 'owner')`;
+});
 
 const readEpoch = () => withWorkspaceTransaction(
   { workspaceId, userId },

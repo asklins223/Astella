@@ -11,14 +11,10 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
-// 夹具连接要能不带 `app.workspace_id` 写 `user_companion_account_state`（受限角色下
-// 那一句直接 `new row violates row-level security policy`）。被测侧不受影响：
-// service 走 app 自己的池，`db/client.ts` 优先读 `DATABASE_URL_API`。
-const CONN = process.env.DATABASE_URL ?? process.env.DATABASE_URL_API;
-if (!CONN) {
-  throw new Error("DATABASE_URL 未配置——日记入队窗口集成测试要求真实 Postgres");
-}
+// 定时函数和跨账号夹具由迁移角色执行；不把生产 API 连接当成管理员连接。
+const CONN = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 
 const sql = postgres(CONN, { max: 2 });
 const userId = randomUUID();

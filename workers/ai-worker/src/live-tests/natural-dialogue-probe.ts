@@ -20,6 +20,9 @@ import { loadHereAndNow, renderHereAndNow } from "../handlers/companion-here-and
 import { REPLAY_WINDOW_MESSAGES } from "../handlers/companion-context-handoff.ts";
 import { COMPANION_VOICE_EXPRESSION_PROTOCOL_V1, readVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
 import { snapshotDialogueWireBody } from "./dialogue-experiment.ts";
+import { assertProductionProbeConfiguration } from "./production-preflight.ts";
+
+assertProductionProbeConfiguration(process.env);
 
 // Interactive user turns, chosen after reading the actual last reply. No model
 // simulates the user, supplies a target answer or asks for a constrained style.
@@ -30,7 +33,7 @@ const route=platform("agent_turn",modelOverride),petProfile=resolveCompanionPers
 const effort = process.env.LIVE_CASUAL_EFFORT;
 if (effort && (effort !== "low" || route.type !== "opencode_go"
   || !route.modelProfile?.reasoning?.levels.includes("low"))) throw new Error("Unsupported test effort");
-const f=await fixture(), wire:WireReceipt[]=[], results:Array<Record<string,unknown>>=[];
+const wire:WireReceipt[]=[], results:Array<Record<string,unknown>>=[];
 const baseline = process.env.LIVE_RESEARCH_BASELINE === "1";
 const candidate = process.env.LIVE_RESEARCH_CANDIDATE === "1";
 const pairedExamples = process.env.LIVE_PAIRED_EXAMPLES === "1";
@@ -53,6 +56,7 @@ if (!Array.isArray(seedHistory) || seedHistory.length > 18 || seedHistory.some(m
   !m || !["user", "assistant"].includes(m.role) || typeof m.text !== "string" || !conversationInstant(m.createdAt)))
   throw new Error("Invalid synthetic seed records");
 const initialSeq = seedHistory.length + 1;
+const f=await fixture();
 if (seedHistory.length) await f.mutate(async tx => {
   await tx`UPDATE companion_messages SET seq=${initialSeq} WHERE id=${f.messageId}`;
   await tx`UPDATE companion_conversations SET next_message_seq=${initialSeq+1} WHERE id=${f.conversationId}`;
@@ -70,8 +74,7 @@ const persist=()=>save(`natural-dialogue-${suffix}`,{route:route.model,conversat
   noVoiceExamplesExperiment: noVoiceExamples,
   pairedExamplesExperiment: pairedExamples,
   modelOverrideExperiment: modelOverride ?? null,
-  dialogueFrameExperiment: process.env.COMPANION_DIALOGUE_FRAME_V1 === "true",
-  dialogueReviewExperiment: process.env.COMPANION_DIALOGUE_REVIEW_V1 === "true",
+  productionReviewChain: "removed; diagnostic probes only",
   note:"Synthetic user, persistent test workspace and conversation; production history read/clock/loop/governance/delivery. Interactive follow-ups selected after reading the actual reply; no extra user-simulation model or answer references. ReadContext fixture bypasses full HTTP/turn-service. ok means delivery only.",results});
 console.log(JSON.stringify({ready:true,conversationId:f.conversationId}));
 const input=createInterface({input:process.stdin,crlfDelay:Infinity});

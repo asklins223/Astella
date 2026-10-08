@@ -15,6 +15,17 @@ import type { PublicJsonRequester, PublicJsonResponse } from "@astella/shared/pu
 
 const messages = [{ role: "user" as const, content: "ping" }];
 
+test("普通 chat 的长度截断不返回成功前缀，空正文也不按原额度重试", async () => {
+  for (const content of ["只有半截的图中文字", ""]) {
+    let calls = 0;
+    const provider = new OpenAICompatibleProvider({ apiKey: "test-key", baseUrl: "https://api.example.com/v1", model: "vision",
+      request: async () => { calls++; return { status: 200, statusText: "OK", body: { choices: [{ message: { content }, finish_reason: "length" }] } }; } });
+    await assert.rejects(() => provider.chatCompletion(messages, { maxTokens: 1500, responseFormat: "text" }),
+      (error: unknown) => error instanceof AgentOutputError && error.code === "output_truncated");
+    assert.equal(calls, 1);
+  }
+});
+
 test("embedding 出网保留长输入的末尾纠正，不静默只取前 1500 字", async () => {
   let sent: Record<string, unknown> = {};
   let observedSignal: AbortSignal | undefined;

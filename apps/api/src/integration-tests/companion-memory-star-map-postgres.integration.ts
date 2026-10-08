@@ -33,15 +33,27 @@ const scope = { workspaceId, userId };
 const email = `memory-star-map-${userId.slice(0, 8)}@example.test`;
 
 after(async () => {
-  await sql`DELETE FROM users WHERE id = ${userId}`.catch(() => {});
+  await sql.begin(async (tx) => {
+    await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+    await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+    await tx`DELETE FROM workspace_members WHERE workspace_id = ${workspaceId}`;
+    await tx`DELETE FROM workspaces WHERE id = ${workspaceId}`;
+    await tx`DELETE FROM users WHERE id = ${userId}`;
+  }).catch(() => {});
   await sql.end({ timeout: 5 }).catch(() => {});
   await closeDatabase().catch(() => {});
 });
 
-await sql`
-  INSERT INTO users (id, email, password_hash, role)
-  VALUES (${userId}, ${email}, 'test-hash', 'owner')
-`;
+await sql.begin(async (tx) => {
+  await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+  await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+  await tx`INSERT INTO users (id, email, password_hash, role)
+    VALUES (${userId}, ${email}, 'test-hash', 'owner')`;
+  await tx`INSERT INTO workspaces (id, name, owner_id)
+    VALUES (${workspaceId}, 'memory-star-map-test', ${userId})`;
+  await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
+    VALUES (${workspaceId}, ${userId}, 'owner')`;
+});
 
 const inTx = <T>(run: (tx: Parameters<Parameters<typeof withWorkspaceTransaction>[1]>[0]) => Promise<T>) =>
   withWorkspaceTransaction(scope, run);

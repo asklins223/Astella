@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { AgentRole } from "@astella/shared";
 import { buildCompanionPersonaMessages } from "../handlers/companion-dialogue-content.ts";
 import { resolveCompanionPersonaContext } from "../handlers/companion-identity-context.ts";
-import { buildCompanionKnowledgeReview, parseCompanionKnowledgeReview } from "../handlers/companion-knowledge-review.ts";
+import { buildCompanionKnowledgeReview, parseCompanionKnowledgeReview } from "./diagnostics/companion-knowledge-review.ts";
 import { platform, observedProvider, save, safeFailure, outputDir, type WireReceipt } from "./acceptance-common.ts";
 import { qualityCases } from "./quality-cases.ts";
 

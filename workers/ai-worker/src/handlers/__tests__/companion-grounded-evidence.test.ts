@@ -3,6 +3,15 @@ import { test } from "node:test";
 import { hashCanonicalV2 } from "@astella/shared/hash-canonical-v2";
 import { materializeGroundedTutorEvidence } from "../companion-grounded-evidence.ts";
 
+test("sealed evidence 校验后的长引文保留末尾适用条件", () => {
+  const quote = "证据正文".repeat(400) + "末尾条件：仅在恒温时适用。";
+  const result = materializeGroundedTutorEvidence([{ evidence_snapshot_id: "long-evidence",
+    evidence_snapshot_hash: "a".repeat(64), quote_hash: hashCanonicalV2("evidence-quote", { quote }),
+    block_content_hash: hashCanonicalV2("block", { content: quote }), start_offset: 0, end_offset: quote.length,
+    block_content: quote }]);
+  assert.ok(result[0] === quote, "校验过的证据不能再静默切掉尾部条件");
+});
+
 test("grounded tutor：只使用哈希校验通过的 sealed evidence 切片", () => {
   const blockContent = "start exact source quote end";
   const quote = "exact source quote";

@@ -17,8 +17,11 @@ import { describe, expect, it } from "vitest";
 import {
   COMPANION_FEED_MAX_CHARS,
   feedDiaryReferenceToCompanion,
+  feedSelectionToCompanion,
+  feedNoteIntentToCompanion,
   subscribeCompanionFeed,
   type CompanionFeedSelection,
+  type CompanionNoteIntent,
 } from "../companion-feed";
 
 function captureFeed(): { events: CompanionFeedSelection[]; opens: number } {
@@ -34,6 +37,29 @@ function captureFeed(): { events: CompanionFeedSelection[]; opens: number } {
 }
 
 describe("聊聊这篇的引用", () => {
+  it("笔记意图保留完整标题与回想问题，末尾限定不在事件中裁切", () => {
+    const noteTitle = "笔记标题".repeat(70) + "尾部限定";
+    const question = "问题背景".repeat(120) + "只问这里";
+    let received: CompanionNoteIntent | undefined;
+    const off = subscribeCompanionFeed({ onFeed: () => {}, onOpenChat: () => {},
+      onNoteIntent: intent => { received = intent; } });
+    feedNoteIntentToCompanion({ kind: "recall_hint", noteId: crypto.randomUUID(),
+      noteVersionId: crypto.randomUUID(), recallId: crypto.randomUUID(), noteTitle, question });
+    expect(received?.noteTitle).toBe(noteTitle);
+    expect(received?.question).toBe(question);
+    off();
+  });
+  it("事件发送与订阅都保留长原文和完整起始问题", () => {
+    const source = "来源。\r\n".repeat(600) + "尾部更正：未提交。";
+    const initialPrompt = "问题背景。".repeat(140) + "最后只询问完成与交付的区别。";
+    let received: CompanionFeedSelection | undefined;
+    const off = subscribeCompanionFeed({ onFeed: selection => { received = selection; },
+      onNoteIntent: () => {}, onOpenChat: () => {} });
+    feedSelectionToCompanion({ text: source, initialPrompt, source: "selection" });
+    expect(received?.text).toBe(source);
+    expect(received?.initialPrompt).toBe(initialPrompt);
+    off();
+  });
   it("只打开对话并附上引用，**不带** initialPrompt（所以不会自动发送）", () => {
     const captured = captureFeed();
     feedDiaryReferenceToCompanion({ date: "2026-10-01", version: 2 });

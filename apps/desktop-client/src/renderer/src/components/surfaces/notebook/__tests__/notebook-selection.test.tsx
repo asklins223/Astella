@@ -20,6 +20,20 @@ const note = noteDetailV1Schema.parse({ version: 1, noteId: id(1), workspaceId: 
   permissions: { canRead: true, canEdit: true, canSave: true, canShare: true } });
 afterEach(() => { cleanup(); window.getSelection()?.removeAllRanges(); vi.restoreAllMocks(); });
 
+it("长原文可完整交给伴星，批注锚点的独立长度合同不截聊天来源", () => {
+  const text = "原文。".repeat(800) + "尾部更正：这里只完成前置步骤。";
+  const longBlocks = [{ ordinal: 0, type: "paragraph" as const, content: text }];
+  const longNote = { ...note, currentVersion: { ...note.currentVersion, blocks: longBlocks } };
+  const body = render(<div><p data-block-ordinal={0}>{text}</p></div>);
+  const element = body.container.firstElementChild as HTMLDivElement;
+  const view = renderHook(() => useNotebookSelection({ note: longNote, blocks: longBlocks, bodyRef: { current: element }, active: true }));
+  const range = document.createRange();
+  range.selectNodeContents(element.firstElementChild!);
+  act(() => { window.getSelection()!.addRange(range); view.result.current.captureSelectedPassage(); });
+  expect(view.result.current.selectedPassage?.text).toBe(text);
+  expect(view.result.current.selectedPassage?.anchor).toBeNull();
+});
+
 it("渲染态跨段锚点保留起止段落与显示字符偏移，正文与富文本使用同一份原句", () => {
   const body = render(<div>{blocks.map(block => <p data-block-ordinal={block.ordinal} key={block.ordinal}>{renderNoteInline(block.content)}</p>)}</div>);
   const element = body.container.firstElementChild as HTMLDivElement;

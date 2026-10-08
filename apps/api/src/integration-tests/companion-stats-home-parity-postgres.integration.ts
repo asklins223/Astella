@@ -14,7 +14,7 @@
  * 判据桥的 `stats` 模式（`workers/ai-worker`，受限角色 `DATABASE_URL_WORKER`）——
  * 跨包 import 会把对方的依赖图拖进来，而口径对账要的恰恰是"各自包里的那一份"。
  *
- * 夹具写用 `DATABASE_URL`（超级用户）；这一支不写 RLS 断言（另见
+ * 夹具写用 `DATABASE_URL_MIGRATOR`（迁移角色）；这一支不写 RLS 断言（另见
  * `companion-turn-facts-postgres.integration.ts` 的角色纪律）。
  */
 import { after, before, test } from "node:test";
@@ -26,10 +26,7 @@ import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
-const CONN = process.env.DATABASE_URL;
-if (!CONN) {
-  throw new Error("伴星统计对账集测要求 DATABASE_URL（要造排程与卡）");
-}
+const CONN = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 const sql = postgres(CONN, { max: 3 });
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 

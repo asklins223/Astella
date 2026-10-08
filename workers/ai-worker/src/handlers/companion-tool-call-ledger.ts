@@ -574,7 +574,7 @@ export async function loadContinuation(
     {
       role: "tool",
       toolCallId: row.tool_call_id,
-      content: JSON.stringify(toolResult).slice(0, 4_000),
+      content: JSON.stringify(toolResult),
     },
   ];
 }

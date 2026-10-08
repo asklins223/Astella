@@ -17,12 +17,13 @@ import { CompanionAgentPermissionMenu } from "./companion-agent-permission";
  * 页面快捷操作换到它右边的独立图标——原来那个 ＋ 是快捷操作的占位符，
  * 而用户对输入框上 ＋ 的心智模型一直是"加附件"。
  */
-export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, voiceEnabled, companionName, sending, stopping, onStop, onVoiceToggle, onPageActions, image, imageUploading, imageError, onPickImage, onRemoveImage }: {
+export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, voiceEnabled, companionName, sending, stopping, onStop, onVoiceToggle, onPageActions, image, imageUploading, imageError, onPickImage, onRemoveImage, sendLimitNote }: {
   input: string; onInputChange: (value: string) => void; onSend: () => Promise<void>;
   voice: CompanionVoiceInput; voiceEnabled: boolean; companionName: string; sending: boolean; stopping: boolean;
   onStop: () => void; onVoiceToggle: () => void; onPageActions: () => void;
   image: CompanionComposerImage | null; imageUploading: boolean; imageError: string | null;
   onPickImage: (file: File) => void; onRemoveImage: () => void;
+  sendLimitNote?: string | null;
 }) {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -52,16 +53,17 @@ export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, 
       window.visualViewport?.removeEventListener("resize", resize);
     };
   }, [input]);
-  return <form className="companion-history__composer" onSubmit={event => { event.preventDefault(); void onSend(); }}>
+  return <form className="companion-history__composer" onSubmit={event => { event.preventDefault(); if (!sendLimitNote) void onSend(); }}>
     {image ? <CompanionComposerImageChip image={image} onRemove={onRemoveImage} /> : null}
     <textarea ref={composerRef} rows={1} value={input} onChange={event => onInputChange(event.currentTarget.value)}
       placeholder="想聊哪一句，或只是想说说话…" aria-label={`继续问 ${companionName}`}
       onKeyDown={event => {
         if (isCompanionComposition(event.nativeEvent)) return;
         if (event.key === "Escape") { event.preventDefault(); event.currentTarget.blur(); return; }
-        if (shouldSendCompanionOnEnter(event)) { event.preventDefault(); void onSend(); }
+        if (shouldSendCompanionOnEnter(event)) { event.preventDefault(); if (!sendLimitNote) void onSend(); }
       }} />
     <CompanionComposerImageStatus uploading={imageUploading} error={imageError} />
+    {sendLimitNote ? <p className="companion-history__voice-live" role="status">{sendLimitNote}</p> : null}
     {/**
      * 手记里说话时，这一行就是"我刚才说到哪儿了"。
      *
@@ -90,7 +92,7 @@ export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, 
       {sending ? <button type="button" className="button companion-history__composer-stop" disabled={stopping} onClick={onStop} aria-label="停止这一轮">
         {stopping ? <Loader2 className="companion-hud__spin" size={16} /> : <Square size={14} />}停止
       </button> : null}
-      <button className="button primary" type="submit" disabled={!input.trim() || voice.phase === "closing" || imageUploading} aria-label={sending ? "发送并接替当前回复" : "发送"}><span>发送</span><Send size={20} /></button>
+      <button className="button primary" type="submit" disabled={!input.trim() || Boolean(sendLimitNote) || voice.phase === "closing" || imageUploading} aria-label={sending ? "发送并接替当前回复" : "发送"}><span>发送</span><Send size={20} /></button>
     </div>
   </form>;
 }

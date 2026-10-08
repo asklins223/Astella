@@ -137,7 +137,7 @@ export async function executeCompanionMemoryTool(
     }
     case "companion_recall_memory": {
       // 默认避免重复本轮已注入项；管理已显示的记忆时显式 includeShown，取得其真实 ID、版本与容量层。
-      const query = String(args.query).trim().slice(0, 200);
+      const query = String(args.query).trim();
       const limit = typeof args.limit === "number" ? Math.min(8, Math.max(1, args.limit)) : 5;
       const includeShown = args.includeShown === true;
       const includeArchived = args.includeArchived === true;
@@ -215,10 +215,10 @@ export async function executeCompanionMemoryTool(
           return { retrieval, resident };
         },
       );
-      const alreadyShown = new Set([
-        ...event.read.residentMemories.map((memory) => memory.content),
-        ...event.read.memoryRefs.map((memory) => memory.content),
-      ]);
+      const alreadyShownIds = new Set(event.read.memoryRefs.map((memory) => memory.memoryId));
+      // Resident data carries its complete body; UI references carry only a
+      // preview, so their text cannot establish whether a record was shown.
+      const residentContents = new Set(event.read.residentMemories.map((memory) => memory.content));
       const keywords = extractQueryKeywords(query).map((keyword) => keyword.toLocaleLowerCase());
       const residentMatches = searchResult.resident.filter((item) =>
         keywords.some((keyword) => item.content.toLocaleLowerCase().includes(keyword)),
@@ -228,7 +228,7 @@ export async function executeCompanionMemoryTool(
         ...searchResult.retrieval.items,
       ];
       const memories = candidates
-        .filter((item) => includeShown || !alreadyShown.has(item.content))
+        .filter((item) => includeShown || (!alreadyShownIds.has(item.memoryId) && !residentContents.has(item.content)))
         .filter((item, index, all) => all.findIndex((candidate) => candidate.memoryId === item.memoryId) === index)
         .slice(0, limit)
         .map((item) => ({
@@ -237,7 +237,7 @@ export async function executeCompanionMemoryTool(
           // 于是"忘掉"永远失败——而失败原因是"找不到"，看起来像她记错了。
           memoryId: item.memoryId,
           kind: item.kind,
-          content: item.content.slice(0, 200),
+          content: item.content,
           userConfirmed: item.userConfirmed,
           budgetTier: item.budgetTier,
           revision: item.revision,
@@ -260,10 +260,10 @@ export async function executeCompanionMemoryTool(
     //   scope = 'workspace'（§4.5.5：不通过判断接口绕过跨空间限制）
     //   epistemic_status 由模型如实给，不是我们替它乐观
     case "companion_remember_judgment": {
-      const text = String(args.text).slice(0, 200);
+      const text = String(args.text);
       const epistemicStatus = String(args.epistemicStatus);
       const claimedIds = Array.isArray(args.sourceEventIds)
-        ? args.sourceEventIds.map((value) => String(value)).slice(0, 8)
+        ? args.sourceEventIds.map((value) => String(value))
         : [];
 
       // §4.5.5：「无来源的用户判断不能写成长期记录。」
@@ -339,11 +339,11 @@ export async function executeCompanionMemoryTool(
     case "companion_save_memory": {
       // 写入口径对齐 API memory-service.upsertMemory 的"用户明确陈述"路径：
       // user_stated/user_confirmed=true、candidate=false、embedding_status='pending'
-      // （embedding 流水线随后补向量）。≤200 字的截断在参数 schema 已做，这里防御性再截一次。
+      // （embedding 流水线随后补向量）。参数 schema 显式拒绝 >200 字，不再裁短后写入。
       // 与 API 的差异：不做 markMemoryConflictIfSimilar 相似冲突标记（v1 接受，冲突
       // 由记忆中心的冲突检查兜底）。
       const kind = String(args.kind);
-      const content = String(args.content).slice(0, 200);
+      const content = String(args.content);
       const sourceQuote = typeof args.sourceQuote === "string" ? args.sourceQuote : null;
       const appliesWhen = typeof args.appliesWhen === "string" ? args.appliesWhen : null;
       const validUntil = typeof args.validUntil === "string" ? args.validUntil : null;
@@ -379,7 +379,7 @@ export async function executeCompanionMemoryTool(
       // 保持同一 ID 和来源，由 DB revision trigger 追加旧版本，并用 expectedRevision 做 CAS。
       const memoryId = String(args.memoryId);
       const expectedRevision = Number(args.expectedRevision);
-      const content = String(args.content).slice(0, 200);
+      const content = String(args.content);
       const hasAppliesWhen = Object.hasOwn(args, "appliesWhen");
       const appliesWhen = typeof args.appliesWhen === "string" ? args.appliesWhen : null;
       const hasValidFrom = Object.hasOwn(args, "validFrom");

@@ -253,6 +253,14 @@ export function validateConfig(raw: unknown): ConfigIssue[] {
           if (profile.vision !== undefined && typeof profile.vision !== "boolean") {
             issues.push({ path: `platforms.${id}.models.${model}.vision`, message: "vision 必须是布尔值", blocking: true });
           }
+          if (profile.temperature !== undefined && (typeof profile.temperature !== "string"
+            || !["always", "reasoning_none_only", "unsupported"].includes(profile.temperature))) {
+            issues.push({ path: `platforms.${id}.models.${model}.temperature`,
+              message: "temperature 支持策略必须为 always / reasoning_none_only / unsupported", blocking: true });
+          }
+          if (profile.supportsAssistantPhase !== undefined && typeof profile.supportsAssistantPhase !== "boolean") {
+            issues.push({ path: `platforms.${id}.models.${model}.supportsAssistantPhase`, message: "必须是布尔值", blocking: true });
+          }
           const reasoning = profile.reasoning as Record<string, unknown> | undefined;
           if (reasoning !== undefined) {
             if (!reasoning || typeof reasoning !== "object" || Array.isArray(reasoning)) {

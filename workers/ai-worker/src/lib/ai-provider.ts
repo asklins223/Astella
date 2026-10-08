@@ -79,6 +79,7 @@ export interface AIProvider {
     toolCalls?: AgentTurnResult["toolCalls"];
     /** SSE 末尾的 finish_reason（缺省视作 stop；"length" 表示输出被截断）。 */
     finishReason?: string;
+    phase?: "commentary" | "final_answer";
   }>;
 
   /**

@@ -5,7 +5,7 @@
  * 排程、逐词 ILIKE 链、跨 5 张表），用桩 tx 测只能证明"我按我写的方式调用了自己"。
  * 这支用例自己造夹具、跑真 SQL。
  *
- * 角色纪律（doc 34 L37/L43）：**夹具写走超级用户（`DATABASE_URL`），被测读数走受限角色**
+ * 角色纪律（doc 34 L37/L43）：**夹具写走迁移角色（`DATABASE_URL_MIGRATOR`），被测读数走受限角色**
  * （`DATABASE_URL_WORKER`，dev 里 `astella_worker` 是 NOBYPASSRLS）。两条串混用会让
  * "读不到别人的私有笔记"这类断言变成假绿。
  *
@@ -19,7 +19,7 @@ import { randomUUID } from "node:crypto";
 import type { LivePageView } from "../handlers/companion-live-view.ts";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
-const ADMIN_CONN = testDatabaseUrl("DATABASE_URL");
+const ADMIN_CONN = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 // 必须在 import `../db.ts` **之前**设好：连接串在那个模块加载时求值（动态 import 见下）。
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 

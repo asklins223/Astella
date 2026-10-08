@@ -7,16 +7,16 @@
  * cosine similarity 最大 0.663）。真实改写对要等有真的 embedding 才能校准，
  * 那条限制在那段注释里，不在这里假装解决。
  *
- * 角色：夹具写用 `DATABASE_URL`（超级用户），判定走 worker 自己的事务
+ * 角色：夹具写用 `DATABASE_URL_MIGRATOR`（迁移角色），判定走 worker 自己的事务
  * （`DATABASE_URL_WORKER` = `astella_worker`）。
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
-const ADMIN = process.env.DATABASE_URL;
-if (!ADMIN) throw new Error("需要 DATABASE_URL（夹具建 user/workspace/memories）");
+const ADMIN = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 const sql = postgres(ADMIN, { max: 2 });
 
 const { withWorkerWorkspaceTransaction } = await import("../db.ts");
@@ -70,14 +70,17 @@ before(async () => {
 });
 
 after(async () => {
-  await sql`DELETE FROM assistant_memory_embeddings WHERE workspace_id = ${workspaceId}`;
-  await sql`DELETE FROM assistant_memory_items WHERE workspace_id = ${workspaceId}`;
-  await sql`DELETE FROM workspace_members WHERE workspace_id = ${workspaceId}`;
-  await sql`DELETE FROM workspaces WHERE id = ${workspaceId}`;
-  await sql`DELETE FROM users WHERE id = ${userId}`;
-  await sql.end();
-  const { closeDatabase } = await import("../db.ts");
-  await closeDatabase();
+  try {
+    await sql`DELETE FROM assistant_memory_embeddings WHERE workspace_id = ${workspaceId}`;
+    await sql`DELETE FROM assistant_memory_items WHERE workspace_id = ${workspaceId}`;
+    await sql`DELETE FROM workspace_members WHERE workspace_id = ${workspaceId}`;
+    await sql`DELETE FROM workspaces WHERE id = ${workspaceId}`;
+    await sql`DELETE FROM users WHERE id = ${userId}`;
+  } finally {
+    await sql.end({ timeout: 2 });
+    const { closeDatabase } = await import("../db.ts");
+    await closeDatabase();
+  }
 });
 
 async function dismissedAtOf(id: string): Promise<Date | null> {

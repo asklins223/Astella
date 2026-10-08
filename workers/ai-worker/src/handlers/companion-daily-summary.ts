@@ -157,6 +157,10 @@ interface DailyFacts {
 
 // ─── 素材 ────────────────────────────────────────────────────────────────
 
+function normalizeMaterialText(value: unknown): string {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
 function slice(value: unknown, max: number): string {
   return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 }
@@ -272,7 +276,7 @@ async function collectPersona(tx: WorkerTransaction, scope: DayScope): Promise<D
  * 关键是给"事"而不是给"数"：数量是旧实现被嫌弃的根因。学习量只给一个模糊的
  * 时长感（半小时/一个来小时），让她有措辞的依据，又不会把日记写成报表。
  */
-async function collectMaterial(tx: WorkerTransaction, scope: DayScope): Promise<DiaryMaterial> {
+export async function collectDiaryMaterial(tx: WorkerTransaction, scope: DayScope): Promise<DiaryMaterial> {
   const pieces: DiaryPiece[] = [];
   // 发生过的事有几件——`quietDay` 的判据。页面轨迹不进这个数。
   let events = 0;
@@ -281,7 +285,7 @@ async function collectMaterial(tx: WorkerTransaction, scope: DayScope): Promise<
     at_local: string; title: string; note_id: string; version_id: string | null; created_today: boolean;
   }>(sql`
     SELECT ${clockOf(scope, "GREATEST(created_at, updated_at)")} AS at_local,
-           left(title, 40) AS title,
+           title,
            id::text AS note_id,
            current_version_id::text AS version_id,
            (created_at >= ${dayStart(scope)} AND created_at < ${dayEnd(scope)}) AS created_today
@@ -302,7 +306,7 @@ async function collectMaterial(tx: WorkerTransaction, scope: DayScope): Promise<
   }
 
   const sourceRows = await tx.execute<{ at_local: string; title: string; source_id: string }>(sql`
-    SELECT ${clockOf(scope, "created_at")} AS at_local, left(title, 40) AS title, id::text AS source_id
+    SELECT ${clockOf(scope, "created_at")} AS at_local, title, id::text AS source_id
     FROM sources
     WHERE workspace_id = ${scope.workspaceId} AND created_by = ${scope.userId}
       AND created_at >= ${dayStart(scope)} AND created_at < ${dayEnd(scope)}
@@ -334,7 +338,7 @@ async function collectMaterial(tx: WorkerTransaction, scope: DayScope): Promise<
     LIMIT 5
   `);
   for (const row of Array.isArray(runRows) ? runRows : []) {
-    const what = slice(row.what, 60);
+    const what = normalizeMaterialText(row.what);
     if (!what) continue;
     pieces.push({
       text: `你坐下来学${row.phase === "completed" ? "完" : "了"}「${what}」`,
@@ -374,7 +378,7 @@ async function collectMaterial(tx: WorkerTransaction, scope: DayScope): Promise<
   }
 
   const reminderRows = await tx.execute<{ at_local: string; text: string; source_id: string }>(sql`
-    SELECT ${clockOf(scope, "fired_at")} AS at_local, left(text, 60) AS text, id::text AS source_id
+    SELECT ${clockOf(scope, "fired_at")} AS at_local, text, id::text AS source_id
     FROM companion_reminders
     WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
       AND status = 'fired'
@@ -390,7 +394,7 @@ async function collectMaterial(tx: WorkerTransaction, scope: DayScope): Promise<
   }
 
   const thoughtRows = await tx.execute<{ at_local: string; text: string; source_id: string }>(sql`
-    SELECT ${clockOf(scope, "delivered_at")} AS at_local, left(text, 60) AS text, id::text AS source_id
+    SELECT ${clockOf(scope, "delivered_at")} AS at_local, text, id::text AS source_id
     FROM assistant_thoughts
     WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
       AND status = 'delivered'
@@ -406,7 +410,7 @@ async function collectMaterial(tx: WorkerTransaction, scope: DayScope): Promise<
   }
 
   const memoryRows = await tx.execute<{ content: string; memory_id: string; source_version: string }>(sql`
-    SELECT left(content, 60) AS content, id::text AS memory_id, updated_at::text AS source_version
+    SELECT content, id::text AS memory_id, updated_at::text AS source_version
     FROM assistant_memory_items
     WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
       AND deleted_at IS NULL
@@ -439,7 +443,7 @@ async function collectMaterial(tx: WorkerTransaction, scope: DayScope): Promise<
         AND m.kind IN ('text', 'voice_transcript', 'proactive')
         AND m.created_at >= ${dayStart(scope)} AND m.created_at < ${dayEnd(scope)}
     )
-    SELECT at_local, role, left(text, 120) AS text,
+    SELECT at_local, role, text,
            id::text AS source_id, content_sha256 AS source_version
     FROM day
     WHERE recent_rank <= 12 AND length(trim(text)) > 0
@@ -563,7 +567,7 @@ async function collectMaterial(tx: WorkerTransaction, scope: DayScope): Promise<
       WHERE a.workspace_id = ${scope.workspaceId} AND a.status = 'ready' AND a.deleted_at IS NULL
     )
     SELECT object_key, width, height, note_title, note_id::text, position::text, mime_type, byte_size,
-           (SELECT left(b2.content, 48) FROM note_blocks b2
+           (SELECT b2.content FROM note_blocks b2
              WHERE b2.workspace_id = ${scope.workspaceId}
                AND b2.version_id = numbered.version_id
                AND b2.ordinal < numbered.ordinal
@@ -576,15 +580,14 @@ async function collectMaterial(tx: WorkerTransaction, scope: DayScope): Promise<
   `);
   for (const row of pickImagesPerNote(Array.isArray(imageRows) ? imageRows : [])) {
     const ref = `图${(imageRef += 1)}`;
-    const nearby = slice(row.nearby, 48);
+    const nearby = normalizeMaterialText(row.nearby);
     embeds.push({
       ref,
       kind: "image",
       url: sourceImageUrlFromObjectKey(row.object_key),
       noteId: row.note_id,
-      // 28 字：够放下一整句标题（实测那种「IndexTTS 2.5 让声音跨越语言 - 哔哩哔哩」
-      // 27 字），又不至于把她的图注（40 字）挤出 label 的 80 字上限之外。
-      noteTitle: slice(row.note_title, 28),
+      // Model source metadata stays complete; visible image labels have their own limit.
+      noteTitle: normalizeMaterialText(row.note_title),
       nth: Number(row.position ?? 1),
       nearby: nearby.length > 0 ? nearby : null,
       shape: imageShape(Number(row.width), Number(row.height)),
@@ -754,7 +757,7 @@ async function readCurrentDiarySelectionSnapshot(
   if (!currentStart || currentStart.valueOf() !== scope.diaryEnabledSince.valueOf()) return null;
   const currentScope = { ...scope, diaryEnabledSince: currentStart };
   const persona = await collectPersona(tx, currentScope);
-  const material = await collectMaterial(tx, currentScope);
+  const material = await collectDiaryMaterial(tx, currentScope);
   const candidates = buildDiaryCandidates(material);
   return {
     hash: diarySelectionInputHash({ scope: currentScope, persona, provider, govCtx, candidates }),
@@ -1173,7 +1176,7 @@ export async function runCompanionDailySummary(job: JobPayload): Promise<void> {
       scope,
       facts: await collectFacts(tx, scope),
       persona: await collectPersona(tx, scope),
-      material: await collectMaterial(tx, scope),
+      material: await collectDiaryMaterial(tx, scope),
     };
   });
   // A job queued before pause can be claimed afterward. Treat it as an inert,

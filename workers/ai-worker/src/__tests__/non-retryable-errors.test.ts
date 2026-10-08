@@ -7,7 +7,14 @@ import { test } from "node:test";
 import { isNonRetryableError, AgentOutputError, CompanionAgentBudgetExceededError, NoteDynamicArtifactAttemptExhaustedError } from "../lib/non-retryable-errors.ts";
 import { JobPayloadContractError } from "@astella/shared/job-payload-contracts";
 import { JobType } from "@astella/shared";
+import { AgentContextError } from "@astella/agent-core";
 import { safeErrorMessage } from "@astella/shared";
+
+test("上下文装配的额度、作用域和计划错误不会被整轮队列重复执行", () => {
+  for (const code of ["required_context_overflow", "scope_mismatch", "invalid_plan"] as const)
+    assert.equal(isNonRetryableError(new AgentContextError(code, "selection")), true);
+  assert.equal(isNonRetryableError(new Error("temporary context lookup failure")), false);
+});
 
 test("演示内核已耗尽预算时，队列不重跑整轮；其他普通超时仍沿各自策略重试", () => {
   assert.equal(isNonRetryableError(new NoteDynamicArtifactAttemptExhaustedError("timeout: step exceeded 35000ms")), true);
@@ -21,6 +28,10 @@ test("detects AgentOutputError (output_truncated) as non-retryable", () => {
     'agent output truncated at finish_reason="length" (toolCalls=1, malformed=1)',
   );
   assert.equal(isNonRetryableError(error), true);
+});
+
+test("原文引文纠正后仍不匹配时，队列不重复整轮生成", () => {
+  assert.equal(isNonRetryableError(new AgentOutputError("unverified_quote", "unverified source quote")), true);
 });
 
 test("detects CompanionAgentBudgetExceededError as non-retryable (预算跨重投累计)", () => {

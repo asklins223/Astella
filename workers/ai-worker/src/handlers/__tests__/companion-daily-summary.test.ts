@@ -219,9 +219,19 @@ test("diary candidate provenance lists only source rows represented in its bound
   }));
   const [candidate] = buildDiaryCandidates(material({ pieces }));
   assert.ok(candidate);
-  assert.equal(candidate.material.pieces.reduce((total, piece) => total + piece.text.length, 0), 1_600);
-  assert.equal(candidate.sourceIds.length, 4);
+  assert.equal(candidate.material.pieces.reduce((total, piece) => total + piece.text.length, 0), 1_500);
+  assert.ok(candidate.material.pieces.every(piece => piece.text.length === 500), "预算选择不能截掉某条来源的尾部");
+  assert.equal(candidate.sourceIds.length, 3);
   assert.deepEqual(candidate.sourceIds.sort(), candidate.material.pieces.map((piece) => piece.sourceId).sort());
+});
+
+test("日记候选的第一条长来源完整保留，末尾纠正参与初筛而非只保留前 500 字", () => {
+  const text = "共同记录".repeat(450) + "末尾纠正：作品还未提交，之前只是完成了草稿。";
+  const [candidate] = buildDiaryCandidates(material({ pieces: [{ text, group: "his", weight: 1, at: "10:10",
+    sourceId: "00000000-0000-4000-8000-000000000031", sourceType: "note", noteId: "long-note" }] }));
+  assert.ok(candidate);
+  assert.ok(candidate.material.pieces[0]?.text === text);
+  assert.equal(candidate.sourceIds.length, 1);
 });
 
 test("diary stage checkpoints reject a different user or workspace before touching storage", async () => {

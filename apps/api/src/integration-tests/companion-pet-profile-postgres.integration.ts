@@ -37,17 +37,26 @@ const otherWorkspaceId = randomUUID();
 const prefix = userA.slice(0, 8);
 
 after(async () => {
-  await sql`DELETE FROM users WHERE id IN (${userA}, ${userB})`.catch(() => {});
+  for (const id of [userA, userB]) {
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${id}, true)`;
+      await tx`DELETE FROM users WHERE id = ${id}`;
+    }).catch(() => {});
+  }
   await sql.end({ timeout: 5 }).catch(() => {});
   await closeDatabase().catch(() => {});
 });
 
-await sql`
-  INSERT INTO users (id, email, password_hash, role)
-  VALUES
-    (${userA}, ${`pet-a-${prefix}@example.test`}, 'test-hash', 'owner'),
-    (${userB}, ${`pet-b-${prefix}@example.test`}, 'test-hash', 'owner')
-`;
+for (const [id, email] of [
+  [userA, `pet-a-${prefix}@example.test`],
+  [userB, `pet-b-${prefix}@example.test`],
+]) {
+  await sql.begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${id}, true)`;
+    await tx`INSERT INTO users (id, email, password_hash, role)
+      VALUES (${id}, ${email}, 'test-hash', 'owner')`;
+  });
+}
 
 const baseInput = (overrides: Partial<PetProfileInput> = {}): PetProfileInput => ({
   revision: 0,
@@ -121,8 +130,10 @@ test("改人格不重置关系累积（familiarity / interactionCount）", async
     await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
     await tx`SELECT set_config('app.user_id', ${userA}, true)`;
     await tx`
-      UPDATE pet_profiles SET familiarity = 0.42, interaction_count = 17
-      WHERE workspace_id = ${workspaceId} AND user_id = ${userA}
+      INSERT INTO pet_profiles (workspace_id, user_id, familiarity, interaction_count)
+      VALUES (${workspaceId}, ${userA}, 0.42, 17)
+      ON CONFLICT (workspace_id, user_id)
+      DO UPDATE SET familiarity = EXCLUDED.familiarity, interaction_count = EXCLUDED.interaction_count
     `;
   });
 

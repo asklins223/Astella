@@ -29,6 +29,7 @@ import { sourceImageObjectKeyFromUrl, sourceImageUrlFromObjectKey } from "@astel
 import { resolveAuthSurfaceManifestSecret } from "../../../companion-contracts/auth-surface.ts";
 import { ensureCompanionAccountState, getCompanionAccountEpoch } from "./companion-account-epoch.ts";
 import { reclaimExpiredCompanionProposals, invalidateSupersededRunProposals } from "./companion-proposal-expiry.ts";
+import { retainCompanionCancelledPartial } from "./companion-cancelled-retention.ts";
 import {
   contextRevisionForCompanionLearningRun,
   isCompanionLearningRunTutorEligible,
@@ -431,6 +432,9 @@ export async function createCompanionTurn(args: {  workspaceId: string;
         .update(companionTurnRuns)
         .set({ status: "superseded", updatedAt: new Date() })
         .where(eq(companionTurnRuns.id, activeRun.id));
+      await retainCompanionCancelledPartial(tx, {
+        workspaceId: args.workspaceId, userId: args.userId, conversationId: args.conversationId, runId: activeRun.id,
+      });
       // 被取代的 run 可能停在 waiting_for_confirmation 并带一个可确认的 Agent
       // proposal。不作废它，用户之后点确认会通过 epoch/active 校验真正执行副作用，
       // 而 continuation 阶段因 run 已非 waiting 而放弃 → 动作生效却无人回填结果。

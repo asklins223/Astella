@@ -12,6 +12,13 @@ import { renderCompanionConversationEvidence } from "../handlers/companion-conve
 import type { DialogueGenerationFixture } from "./dialogue-cases.ts";
 
 export type DialogueContextCondition = "full" | "relevant";
+export const contextualExpressionSamples = [
+  "情境：只是在分享做完一件事的感受。用户：旧电脑上的快捷键总算都配好了，脑子有点木。伴星：这么多组合键来回折腾，配完了，脑子还没跟着下班。",
+  "情境：聊一个小意外，可以参与玩笑。用户：杯垫掉地上还弹了一下，最后落到另一张凳子底下。伴星：这块杯垫很有自己的去向，桌子留不住它。",
+  "情境：对方修正了误会。用户：我只是定了房间的配色，还没开始刷墙。伴星：对，是颜色定好了。我刚才把刷墙也一起算进去了。",
+  "情境：对方明确求办法。用户：表格导入老报错，怎么找到是哪一行的问题？伴星：先看报错有没有行号；没有的话，把数据分成两半分别导入，哪一半失败就继续分，能逐步缩到出问题的那几行。",
+  "情境：对方已收尾，不需要再承担新的回应。用户：就先这样。伴星：嗯，这段先停在这里。",
+];
 // Domain content hashes intentionally allow safe integers only. Provider
 // requests contain fractional temperatures, so hash their stable JSON instead.
 export const hashDialogueValue = (value: unknown): string => createHash("sha256")
@@ -30,10 +37,11 @@ const backgroundSources = {
 
 export function buildDialogueExperimentRequest(fixture: DialogueGenerationFixture,
   condition: DialogueContextCondition, maxTokens: number,
-  personaExamples: "current" | "absent" = "current") {
+  personaExamples: "current" | "absent" | "contextual" = "current") {
   const receipts: AgentContextReceipt[] = [];
   const persona = resolveCompanionPersonaContext(null);
-  const petProfile = personaExamples === "absent" ? { ...persona, examples: [] } : persona;
+  const petProfile = personaExamples === "absent" ? { ...persona, examples: [] }
+    : personaExamples === "contextual" ? { ...persona, examples: contextualExpressionSamples.map(text => ({ text })) } : persona;
   const messages = buildCompanionPersonaMessages({
     userText: fixture.userText, recentMessages: fixture.history, petProfile,
     pageContext: condition === "full" ? backgroundSources.pageContext : null,
@@ -84,6 +92,16 @@ export function buildDialogueIdentityDiagnostic(fixture: DialogueGenerationFixtu
   } };
 }
 
+/** Isolate the per-turn thinking switch; explicit help keeps its normal setting. */
+export function buildDialogueThinkingDiagnostic(fixture: DialogueGenerationFixture, maxTokens: number,
+  mode: "automatic" | "enabled") {
+  const built = buildDialogueExperimentRequest(fixture, "relevant", maxTokens);
+  return { ...built, request: { ...built.request, disableThinking: mode === "enabled" ? false : built.request.disableThinking },
+    provenance: { ...built.provenance, thinkingDiagnostic: mode,
+      note: "Same model, persona, native history, context, temperature and output contract; only per-turn disableThinking may differ. Explicit-help requests remain enabled in both conditions. No production setting changed; enabled does not prove the gateway's actual effort level.",
+    } };
+}
+
 /** Keep only replayable text/tool request data, never hidden reasoning handles. */
 export function snapshotDialogueRequest(request: AgentTurnRequest) {
   if (request.messages.some(message => message.reasoning?.length))
@@ -97,7 +115,7 @@ export function snapshotDialogueWireBody(body: unknown) {
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid wire body");
   const original = body as Record<string, unknown>;
   const keys = ["model", "instructions", "input", "messages", "tools", "tool_choice", "temperature",
-    "max_output_tokens", "max_tokens", "reasoning", "reasoning_effort", "enable_thinking", "thinking", "stream", "text", "response_format"];
+    "max_output_tokens", "max_tokens", "reasoning", "reasoning_effort", "enable_thinking", "thinking", "stream", "stream_options", "text", "response_format"];
   const payload = Object.fromEntries(keys.filter(key => key in original).map(key => [key, original[key]]));
   // Reasoning configuration is retained; generated replay items are not.
   if (Array.isArray(payload.input) && payload.input.some(item => item?.type === "reasoning"))

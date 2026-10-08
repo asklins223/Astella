@@ -34,17 +34,26 @@ const workspaceB = randomUUID();
 const prefix = userA.slice(0, 8);
 
 after(async () => {
-  await sql`DELETE FROM users WHERE id IN (${userA}, ${userB})`.catch(() => {});
+  for (const id of [userA, userB]) {
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${id}, true)`;
+      await tx`DELETE FROM users WHERE id = ${id}`;
+    }).catch(() => {});
+  }
   await sql.end({ timeout: 5 }).catch(() => {});
   await closeDatabase().catch(() => {});
 });
 
-await sql`
-  INSERT INTO users (id, email, password_hash, role)
-  VALUES
-    (${userA}, ${`audit-a-${prefix}@example.test`}, 'test-hash', 'owner'),
-    (${userB}, ${`audit-b-${prefix}@example.test`}, 'test-hash', 'owner')
-`;
+for (const [id, email] of [
+  [userA, `audit-a-${prefix}@example.test`],
+  [userB, `audit-b-${prefix}@example.test`],
+]) {
+  await sql.begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${id}, true)`;
+    await tx`INSERT INTO users (id, email, password_hash, role)
+      VALUES (${id}, ${email}, 'test-hash', 'owner')`;
+  });
+}
 
 async function seedLedger(userId: string, workspaceId: string, label: string): Promise<void> {
   await sql.begin(async (tx) => {

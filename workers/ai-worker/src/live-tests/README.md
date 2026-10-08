@@ -12,7 +12,7 @@ REAL_MODEL_BATCH=1 node --import tsx src/live-tests/voice-expression-probe.ts
 REAL_MODEL_BATCH=1 LIVE_QUALITY_CURRENT_ONLY=1 LIVE_QUALITY_REVIEW=1 LIVE_QUALITY_REPEATS=1 LIVE_QUALITY_SUFFIX=reviewed node --import tsx src/live-tests/quality-comparison.ts
 ```
 
-`context-probe` 默认检索 20K、128K、920K、1.03M 填充 token 附近的五个随机标记，输出上限 512。它特意直接探测平台容量，另行记录应用预算的判断；不能把平台接受的输入量当作应用在常规 131,072 输出预留下的可用输入量。设 `LIVE_CONTEXT_EXACT=1` 可比较接入后的本地 tokenizer，`LIVE_CONTEXT_UNITS=128000` 可缩小样本。超过声明窗口的探测是独立的合成验收，不绕过业务请求的预算闸。
+`context-probe` 默认检索 20K、128K、920K、1.03M 填充 token 附近的五个随机标记，输出上限 512。它特意直接探测平台容量，另行记录应用预算的判断；不能把平台接受的输入量当作应用在当前路由完整输出预留下的可用输入量。设 `LIVE_CONTEXT_EXACT=1` 可比较接入后的本地 tokenizer，`LIVE_CONTEXT_UNITS=128000` 可缩小样本。超过声明窗口的探测是独立的合成验收，不绕过业务请求的预算闸。
 
 `platform-probe` 覆盖主模型/专用模型两条识图路线、完整/裁剪图、兜底工具往返和思考开关。`quality-repeat` 复测漏读、知识方向与嵌入维度/相似度。图片由测试方生成，有确定答案；先在本机生成 `outputs/audits/2026-10-07-live/vision-full.png` 和 `vision-crop.png`。
 
@@ -28,7 +28,7 @@ REAL_MODEL_BATCH=1 LIVE_QUALITY_CURRENT_ONLY=1 LIVE_QUALITY_REVIEW=1 LIVE_QUALIT
 
 产物逐步写入 `outputs/audits/2026-10-07-live/`。其中 `runtime-harness-error.json` 是首次验收脚本使用错误方法名的排障记录，不能计为产品或模型失败；修正脚本后的 `runtime.json` 才是连续对话样本。成功的结构/传输断言不代表知识内容正确，保留原始回答供人工核对。
 
-发布前审校默认关闭。2026-10-07 的完整样本仍有漏判、修订中新断言与明显等待成本，未满足 40b §4.2/§4.4 的默认启用条件。仅在显式实验环境设置 `COMPANION_EXPLANATION_REVIEW_V1=true` 后，`runtime-probe.ts` 和生产循环才接管明确的无工具解释；最多额外一次模型调用，保持原总预算。它先输出 focus、带原文段落编号的 corrections 和最终 answer；程序从完整草稿恢复逐字证据，私有 JSON 不进入可见流。阶段失败或输出截断不发布草稿，无效协议不由队列自动重投。结构合法不等于事实通过；不得按模型自评自动扩大启用范围。
+2026-10-08 已从生产 Agent 循环移除用途/阶段额外生成与发布前审校分支。先前样本的漏判、新断言和等待成本未满足采用条件；三项旧 `COMPANION_*REVIEW_V1` / `COMPANION_DIALOGUE_FRAME_V1` 标志不再启用生产功能。`runtime-probe.ts` 与 `natural-dialogue-probe.ts` 会在创建夹具和调用模型前拒绝这些旧标志，避免把普通生产调用错记成实验审校。纯诊断代码与测试移到 `diagnostics/` 和本目录 `__tests__/`，原失败材料保留。
 
 `knowledge-review-probe.ts` 仅以旧失败回答作为草稿测试审校，不将评测参考事实送进生成；用 `LIVE_REVIEW_CASES` 选择案例、`LIVE_REVIEW_SUFFIX` 保存不同产物。不要覆盖旧失败样本来制造全绿结论。
 
@@ -44,7 +44,7 @@ REAL_MODEL_BATCH=1 LIVE_QUALITY_CURRENT_ONLY=1 LIVE_QUALITY_REVIEW=1 LIVE_QUALIT
 
 研究复验的其余测试开关：`LIVE_CASUAL_EFFORT=low` 只在支持该档的同平台模型上，将闲聊 none 请求改为 low；分类器不改。`LIVE_NO_VOICE_EXAMPLES=1` 仅移除语音协议的两行格式示例，其他语音控制与参数不改。`LIVE_PAIRED_EXAMPLES=1` 添加话题独立的成对示例，未通过默认采用验证。`LIVE_MODEL_ID` 仅允许对当前已配置平台中已声明档案的其他模型做测试。开关互斥，不改正式路由；wire 收据记录实际发送字段，SSE 只取返回用量，不保存明文思考。所有实验结果单列，不能用成功交付宣称自然度通过。
 
-用途与阶段的后续实现、两项默认关闭的实验开关和核对重放入口见 [dialogue-frame-experiment.md](dialogue-frame-experiment.md)。它区分来源绑定、模型语义判断与真实交付；结构测试通过不代表普通聊天自然度通过。
+用途与阶段的历史实验、失败和核对重放入口见 [dialogue-frame-experiment.md](dialogue-frame-experiment.md)；其旧生产开关已撤下。它区分来源绑定、模型语义判断与真实交付；结构测试通过不代表普通聊天自然度通过。
 
 ### 方案 46：固定前缀对照与独立评阅材料
 
@@ -68,3 +68,19 @@ node --import tsx src/live-tests/dialogue-export-review.ts design-v1
 `dialogue-export-review` 完全离线，生成随机排序的匿名回复与空白多维评阅表；模型、条件、等待和哈希仅在独立 mapping 文件中。未独立填写的表保持 unrated，不能算盲评通过。第一版矩阵的 `firstTextMs` 是首个非空 provider 文本增量，可能仅为语音标签；不能算首个有效正文或 UI 等待。入口随后增加了 `firstVisibleTextMs` 单列投影时刻，旧记录不补造该数值。
 
 本阶段 120 次真实调用、采用判断、embedding 截断修复和验证边界见 [实施记录](dialogue-design-implementation-2026-10-07.md)。
+
+后续增加已配置跨平台候选与单变量思考对照，48 次新调用及 Go 断流修复见 [后续记录](dialogue-model-screen-and-stream-fix-2026-10-07.md)。候选默认仍来自当前平台；显式 `LIVE_DIALOGUE_CANDIDATE_PLATFORM` 与 `LIVE_DIALOGUE_CANDIDATE_MODEL` 可选择已有平台下已声明的模型，只支持本诊断驱动实现的协议，不改 capability 路由。跨平台的协议、档位与输出额度差异属于配置综合比较。
+
+```sh
+REAL_MODEL_BATCH=1 LIVE_DIALOGUE_CANDIDATE_PLATFORM=tokenrhythm LIVE_DIALOGUE_CANDIDATE_MODEL=qwen3.8-flash LIVE_DIALOGUE_CASES=resume,duck,practice-help LIVE_DIALOGUE_REPEATS=1 LIVE_DIALOGUE_MAX_CALLS=12 LIVE_DIALOGUE_MATRIX_SUFFIX=qwen-screen-v2 node --import tsx src/live-tests/dialogue-matrix.ts
+REAL_MODEL_BATCH=1 LIVE_DIALOGUE_CANDIDATE_PLATFORM=tokenrhythm LIVE_DIALOGUE_CANDIDATE_MODEL=qwen3.8-flash LIVE_DIALOGUE_CASES=resume,piano,duck,song,practice-help LIVE_DIALOGUE_ABLATION_KIND=thinking LIVE_DIALOGUE_ABLATION_SUFFIX=qwen-thinking-v2 node --import tsx src/live-tests/dialogue-persona-ablation.ts
+```
+
+`thinking` 只对设计话题改普通聊天的思考开关，当前模型内比较、每条件两次、最多 20 次实际请求；显式求助两条件均保留开启。快照与返回用量区分请求字段和实际推理证据，不能将 chat/completions 的开关称为上游已生效的具体 high 档。失败前的正文只作收取现场，不当成成功答复或实际 UI 交付。
+
+
+### 2026-10-08 完整链路与采用结果
+
+[实施与验证记录](companion-integration-and-final-validation-2026-10-08.md) 覆盖来源尾部、长记忆与 embedding、断流后禁止重复生成、Responses 阶段、受限角色数据库回归、实际 HTTP/SSE 和当前仓库 Electron 窗口。Luna 的 20 个隔离话题四条件共 80 次对照已完成，发现无来源的时间/经历/当前状态断言，候选未采用；匿名评阅表仍是 unrated。试验档案已移除，不把失败候选列成待发布功能。DeepSeek Go 输出档案与 OpenCode 模型目录对齐为 384,000，思考模式省略无效温度；完整输出预留下的输入硬预算为 613,952 token。此次解锁后实际检查气泡/手记的超限输入保留、2499 字笔记选区送入模型、引用尾句展开与 SSE 保存一致性，发现并修复 selection 2400 字局部装配上限和确定性装配错误的重试。最终 Worker 单元 1484、实库 263、桌面相关 90、shared 合同 28 项及五包类型检查通过；这些结果不代表普通聊天自然度或等待稳定性已经通过。
+
+2026-10-08 后续还修复取消/接替回合的正文留档和 HUD 跨回合串文，取消事务只保存已提交增量，空正文不造消息，迟到完整生成不再补写。分类 v7 区分回复内创作 task/none 与项目数据操作；没有选区和来源读取的直接回复可使用非来源引号与引用排版；相邻人物对白不参与现实引用归属，真实引文与选区仍核对。引文一次纠正后仍不匹配则失败，不随额度耗尽降为成功。24 次分类控制单列；新增六次来源表达候选仍编造动作/感受而淘汰，表达诊断累计 406 次。实际连续拉链对话虽完成于约 2–3s，内容仍失败，不能把时延样本或结构回归当自然度通过。证据见上述实施记录。

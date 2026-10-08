@@ -24,36 +24,6 @@ export const agentAttentionObjectV1Schema = z.object({
   id: z.string().uuid(), revision: z.number().int().positive().optional(), versionId: z.string().uuid().optional(),
 }).strict();
 export type AgentAttentionObjectV1 = z.infer<typeof agentAttentionObjectV1Schema>;
-/** Dialogue interpretation is not execution authority. Facts remain literal user testimony. */
-export const agentDialoguePurposeV1Schema = z.enum([
-  "greeting", "sharing", "venting", "seeking_help", "correction", "preference", "factual_question", "other",
-]);
-const dialogueSourceProposal = z.object({
-  messageIndex: z.number().int().nonnegative(), quote: z.string().min(1).max(320).refine(value=>value.trim().length>0),
-}).strict();
-const dialogueSource = dialogueSourceProposal.extend({ sourceSha256: z.string().regex(/^[a-f0-9]{64}$/) });
-const dialogueStateFields = {
-  topic: z.string().trim().min(1).max(80),
-  aspect: z.enum(["progress", "timing", "preference", "decision", "other"]),
-  relation: z.enum(["statement", "correction"]),
-  relevance: z.enum(["foreground","background"]).optional(),
-  /** Interpretation of the cited testimony, not an independently verified event. */
-  progress: z.object({
-    work: z.enum(["not_started","in_progress","completed","unknown"]),
-    handoff: z.enum(["not_handed_off","handed_off","unknown"]),
-  }).strict().optional(),
-};
-export const agentDialogueFrameProposalV1Schema = z.object({
-  purpose: agentDialoguePurposeV1Schema,
-  evidence: dialogueSourceProposal,
-  userState: z.array(dialogueSourceProposal.extend(dialogueStateFields)).max(6),
-}).strict();
-export const agentDialogueFrameV1Schema = z.object({
-  purpose: agentDialoguePurposeV1Schema,
-  evidence: dialogueSource,
-  userState: z.array(dialogueSource.extend(dialogueStateFields)).max(6),
-}).strict();
-export type AgentDialogueFrameV1 = z.infer<typeof agentDialogueFrameV1Schema>;
 export const agentTurnInterpretationProposalV1Schema = z.object({
   intent: z.enum(["conversation", "question", "task", "task_control", "mixed"]),
   toolUse: z.enum(["none", "read", "act", "uncertain"]),
@@ -69,15 +39,16 @@ export const agentTurnInterpretationProposalV1Schema = z.object({
    * 下游只负责把那条消息的收尾改成记录形态。默认空 = 本轮没有待收的账。
    */
   pendingOfferIndexes: z.array(z.number().int().nonnegative()).max(8).default([]),
-  dialogueFrame: agentDialogueFrameProposalV1Schema.optional(),
 }).strict();
-export const agentTurnInterpretationV1Schema = agentTurnInterpretationProposalV1Schema.omit({ subjects: true, goalObjectIndex: true, dialogueFrame: true }).extend({
+export const agentTurnInterpretationV1Schema = agentTurnInterpretationProposalV1Schema.omit({ subjects: true, goalObjectIndex: true }).extend({
   version: z.literal(1), requestHash: z.string().regex(/^[a-f0-9]{64}$/),
   subjects: z.array(z.object({ description: z.string().max(120), reference: agentAttentionObjectV1Schema.nullable() }).strict()).max(6),
   goalReference: agentAttentionObjectV1Schema.nullable(),
   status: z.enum(["interpreted", "uncertain"]),
-  dialogueFrame: agentDialogueFrameV1Schema.optional(),
-}).strict();
+  // Existing experimental rows may carry this key. Discard it before any replay
+  // or cached interpretation can influence the active conversation.
+  dialogueFrame: z.unknown().optional(),
+}).strict().transform(({ dialogueFrame: _retired, ...current }) => current);
 export type AgentTurnInterpretationV1 = z.infer<typeof agentTurnInterpretationV1Schema>;
 
 export const AGENT_GOAL_DELIVERY_CAPABILITY = "agent_deliver_goal";

@@ -6,6 +6,9 @@ import { createCompanionContextReceipts } from "../handlers/companion-context-re
 import { buildCompanionPersonaMessages, finalizeCompanionReplyText, validateCompanionOutput } from "../handlers/companion-dialogue-content.ts";
 import { resolveCompanionPersonaContext } from "../handlers/companion-identity-context.ts";
 import { createCompanionStreamDelivery, reconcileStreamedText } from "../handlers/companion-dialogue-stream.ts";
+import { assertProductionProbeConfiguration } from "./production-preflight.ts";
+
+assertProductionProbeConfiguration(process.env);
 
 const history:Array<{role:"user"|"assistant";text:string}>=[];
 const route=platform("agent_turn"), wire:WireReceipt[]=[], results:Array<Record<string,unknown>>=[];
@@ -13,11 +16,11 @@ const petProfile=resolveCompanionPersonaContext(null);
 const suffix=process.env.LIVE_RUNTIME_SUFFIX??"";
 if(suffix&&!/^[a-z0-9-]{1,40}$/.test(suffix))throw new Error("Invalid runtime output suffix");
 const outputName=suffix?`runtime-${suffix}`:"runtime";
-const cases=process.env.LIVE_RUNTIME_EMPTY_SELF==="1"?["你今天看到什么有趣的事情了？不用反问我。"]:
-  process.env.LIVE_RUNTIME_KNOWLEDGE_ONLY==="1"?["讲讲为什么热咖啡会慢慢变凉，尤其是杯内液体怎么流动。把关键原因说清，不用出题或反问。"]:
-  ["嗨，今天不想学习。","就想歇会儿，不用问我问题。","嗯。",
-  "那你喜欢什么样的午饭？不用反问我。","换个话题，讲讲为什么热咖啡会慢慢变凉，不用出题。",
-  "你今天看到什么有趣的事情了？不用反问我。"];
+const cases=process.env.LIVE_RUNTIME_EMPTY_SELF==="1"?["你今天看到什么有趣的事情了？"]:
+  process.env.LIVE_RUNTIME_KNOWLEDGE_ONLY==="1"?["讲讲为什么热咖啡会慢慢变凉，尤其是杯内液体怎么流动。"]:
+  ["嗨，今天不想学习。","就想歇会儿。","嗯。",
+  "那你喜欢什么样的午饭？","换个话题，讲讲为什么热咖啡会慢慢变凉。",
+  "你今天看到什么有趣的事情了？"];
 try {
   for(const text of cases) {
     const f=await fixture();

@@ -14,6 +14,7 @@ import { CompanionRunTraceView } from "./CompanionRunTraceView";
 import { visibleTurnFailure } from "./companion-hud-state";
 import { CompanionProposalChoice } from "./CompanionProposalChoice";
 import { CompanionHistoryComposer } from "./CompanionHistoryComposer";
+import { companionComposerLimitNote } from "./companion-composer-limits";
 import type { CompanionComposerImage } from "./companion-composer-image";
 import { isCompanionComposition } from "./companion-composer-key";
 import { CompanionGoalJournal } from "./CompanionGoalJournal";
@@ -219,9 +220,10 @@ export function CompanionHistoryDrawer({
     return () => { app.inert = previouslyInert; };
   }, [mounted, open]);
 
+  const sendLimitNote = companionComposerLimitNote(input, chat.feedSelection ?? chat.feedNoteAnchor?.anchor.excerpt);
   const sendText = useCallback(async () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text || sendLimitNote) return;
     positionsRef.current.delete("all");
     setRecordOpen(false);
     setFilter("all");
@@ -229,7 +231,7 @@ export function CompanionHistoryDrawer({
     // 这一刻消息还没进 DOM，抢跑只会 pin 到一个旧高度上。
     stickToBottomRef.current = true;
     await onSend();
-  }, [onSend, input]);
+  }, [onSend, input, sendLimitNote]);
 
   /** 停止由调用方先静音（与交互台同一条路径）。 */
   const stopTurn = useCallback(() => {
@@ -511,7 +513,7 @@ export function CompanionHistoryDrawer({
       <div className="companion-history__compose-area">
         {chat.feedDiaryAnchor ? <div className="companion-history__quote" data-companion-feed="diary"><BookOpenText size={16} /><span>日记 {chat.feedDiaryAnchor.date}（第 {chat.feedDiaryAnchor.version} 版）——你接着说就行，我不替你发</span><button type="button" onClick={chat.dismissFeedSelection} aria-label="移除引用"><X size={16} /></button></div> : null}
         {chat.feedSelection ? <div className="companion-history__quote"><FileText size={16} /><span>{chat.feedSelection}</span><button type="button" onClick={chat.dismissFeedSelection} aria-label="移除引用"><X size={16} /></button></div> : null}
-        <CompanionHistoryComposer input={input} onInputChange={setInput} onSend={sendText} voice={voice} voiceEnabled={voiceEnabled} companionName={chat.companionName} sending={chat.phase === "sending"} stopping={stopping} onStop={stopTurn} onVoiceToggle={onVoiceToggle} onPageActions={() => chat.setMode("actions")} image={image} imageUploading={imageUploading} imageError={imageError} onPickImage={onPickImage} onRemoveImage={onRemoveImage} />
+        <CompanionHistoryComposer input={input} onInputChange={setInput} onSend={sendText} voice={voice} voiceEnabled={voiceEnabled} companionName={chat.companionName} sending={chat.phase === "sending"} stopping={stopping} onStop={stopTurn} onVoiceToggle={onVoiceToggle} onPageActions={() => chat.setMode("actions")} image={image} imageUploading={imageUploading} imageError={imageError} onPickImage={onPickImage} onRemoveImage={onRemoveImage} sendLimitNote={sendLimitNote} />
       </div>
       ) : null}
       {(() => {

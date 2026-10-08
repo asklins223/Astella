@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { dialogueCases, dialogueGenerationFixture } from "./dialogue-cases.ts";
 import { buildDialogueExperimentRequest, dialogueMatrixSchedule, snapshotDialogueRequest, snapshotDialogueWireBody } from "./dialogue-experiment.ts";
 import { observedProvider, platform, loadPlatformConfig, save, safeFailure, outputDir, type WireReceipt } from "./acceptance-common.ts";
-import { resolveDialogueCandidate } from "./dialogue-candidate.ts";
+import { resolveDialogueCandidate, dialogueCandidateThinking } from "./dialogue-candidate.ts";
 import { finalizeCompanionReplyText, validateCompanionOutput, sanitizeCompanionVisibleText } from "../handlers/companion-dialogue-content.ts";
 import { runStreamingAgentStep } from "../handlers/companion-agent-streaming-step.ts";
 
@@ -26,10 +26,13 @@ const candidateId = process.env.LIVE_DIALOGUE_CANDIDATE_MODEL ?? "muse-spark-1.3
 const candidatePlatform = process.env.LIVE_DIALOGUE_CANDIDATE_PLATFORM;
 const routes = { current: platform("agent_turn"), candidate: candidatePlatform
   ? resolveDialogueCandidate(loadPlatformConfig(), candidatePlatform, candidateId) : platform("agent_turn", candidateId) };
+const candidateCasualEffort = process.env.LIVE_DIALOGUE_CANDIDATE_CASUAL_EFFORT;
+if (candidateCasualEffort !== undefined && !routes.candidate.modelProfile?.reasoning?.levels.some(level => level === candidateCasualEffort))
+  throw new Error("Candidate casual effort must be declared before any provider call");
 if (routes.current.model === routes.candidate.model && routes.current.platformId === routes.candidate.platformId)
   throw new Error("Candidate must differ from current");
 const batchId = randomUUID(), results: Array<Record<string, unknown>> = [], wire: WireReceipt[] = [];
-const persist = () => save(outputName, { version: 1, batchId, split, maxCalls,
+const persist = () => save(outputName, { version: 1, batchId, split, maxCalls, candidateCasualEffort: candidateCasualEffort ?? null,
   routeProfiles: Object.fromEntries(Object.entries(routes).map(([id, r]) => [id,
     { platformId: r.platformId, model: r.model, profile: r.modelProfile, type: r.type }])),
   note: "Expression diagnostic only: production prompt builders, synthetic background, fixed interpretation, no reference answer or criteria sent to generator. Original and actual wire requests retained without credentials/reasoning. No HTTP, DB, tool execution or human acceptance claimed. Protocol, output limits and reasoning support may differ by configured platform/model; compare usable configurations, not an isolated model effect. Delivery validity is not conversational quality.",
@@ -39,10 +42,14 @@ persist();
 for (const item of schedule) {
   const fixture = dialogueGenerationFixture(cases.find(c => c.id === item.caseId)!);
   const [modelCondition, contextCondition] = item.condition.split("/") as [keyof typeof routes, "full" | "relevant"];
-  const route = routes[modelCondition];
-  const built = buildDialogueExperimentRequest(fixture, contextCondition, route.modelProfile?.maxOutputTokens ?? 8000);
+  const baseRoute = routes[modelCondition];
+  const built = buildDialogueExperimentRequest(fixture, contextCondition, baseRoute.modelProfile?.maxOutputTokens ?? 8000);
+  const configured = dialogueCandidateThinking(baseRoute, built.request, fixture.intent,
+    modelCondition === "candidate" ? candidateCasualEffort : undefined);
+  const route = configured.route;
+  built.request = configured.request;
   const requestSnapshot = snapshotDialogueRequest(built.request), wireSnapshots: ReturnType<typeof snapshotDialogueWireBody>[] = [];
-  const row: Record<string, unknown> = { ...item, model: route.model, requestSnapshot, provenance: built.provenance,
+  const row: Record<string, unknown> = { ...item, model: route.model, activeProfile: route.modelProfile, requestSnapshot, provenance: built.provenance,
     contextReceipts: built.receipts, wireSnapshots };
   results.push(row);
   const provider = observedProvider(route, `matrix-${batchId}-${item.caseId}-${item.repeat}-${item.condition}`, wire,
@@ -67,7 +74,9 @@ for (const item of schedule) {
     Object.assign(row, { rawAnswer: response.content, answer: validation.ok ? validation.text : answer, finishReason: response.finishReason,
       toolCallCount: response.toolCalls.length, structuralOk: validation.ok && response.finishReason === "stop"
         && response.toolCalls.length === 0, usage: response.usage ?? null });
-  } catch (error) { Object.assign(row, { structuralOk: false, error: safeFailure(error) }); }
+  } catch (error) { Object.assign(row, { structuralOk: false, error: safeFailure(error),
+    receivedText: streamedText, receivedVisibleText: sanitizeCompanionVisibleText(streamedText),
+    partialTextNote: "Executor callback text received before failure; not a published final answer or an HTTP/UI receipt." }); }
   Object.assign(row, { firstTextMs, firstVisibleTextMs,
     firstTextMeasurement: "First nonblank provider text delta; may be a voice tag. Visible projection time is separate. Neither includes HTTP/UI delivery gates.",
     elapsedMs: Date.now() - start, wire: wire.slice(before) });

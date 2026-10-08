@@ -23,6 +23,37 @@ const PROMPT = "某表有一百万行，甲列只有 3 个不同取值，乙列�
 const ANSWER = "应当选乙列建索引，因为该列的区分度极高";
 const SUMMARY = "索引的选择性";
 
+test("正文与答案在 1200 字后重合也必须计入暴露", () => {
+  const answer = "应当优先选择区分度足够高且经常查询的列";
+  assert.equal(assessAnswerExposure({ replyText: "甲".repeat(1500) + answer,
+    canonicalAnswer: "乙".repeat(1600) + answer, taskPrompt: null, publicSummary: null })?.kind, "answer_reveal");
+  assert.equal(longestOverlap("甲".repeat(1500) + answer, "乙".repeat(1600) + answer), answer.length);
+});
+
+test("完整长文本比较保留连续重合的判据，不能把分散字符凑成答案", () => {
+  assert.equal(longestOverlap("甲".repeat(30000) + "ABCDEFGH", "乙".repeat(25000) + "AxBxCxDxExFxGxH"), 1);
+  assert.equal(longestOverlap("甲".repeat(30000) + "ABCDEFGH", "乙".repeat(25000) + "abcdefgh"), 8);
+});
+
+test("连续重合与小文本穷举结果一致，包括重复子串和回退", () => {
+  let seed = 91;
+  const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed; };
+  const text = () => Array.from({ length: random() % 24 }, () => "abc甲乙"[random() % 5]).join("");
+  const reference = (a: string, b: string) => {
+    let best = 0;
+    for (let i = 0; i < a.length; i++) for (let j = 0; j < b.length; j++) {
+      let size = 0;
+      while (a[i + size] !== undefined && a[i + size] === b[j + size]) size++;
+      best = Math.max(best, size);
+    }
+    return best;
+  };
+  for (let i = 0; i < 100; i++) {
+    const a = text(), b = text();
+    assert.equal(longestOverlap(a, b), reference(a, b), `${a} / ${b}`);
+  }
+});
+
 test("逐字复述题面或答案 → answer_reveal；只碰到粗描述 → evidence_reveal；都不沾 → 不记", () => {
   const echoedPrompt = assessAnswerExposure({
     replyText: `题目说的是「${PROMPT}」，你自己套一下就知道了。`,

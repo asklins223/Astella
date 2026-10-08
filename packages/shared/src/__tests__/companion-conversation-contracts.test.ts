@@ -17,6 +17,8 @@ import {
   proposalDecisionResponseV1Schema,
   companionMenuCandidateIdV1Schema,
   COMPANION_P2_LIMITS,
+  COMPANION_SELECTION_MAX_CHARS,
+  companionSelectionV1Schema,
   type CompanionStreamEventV1,
 } from "../contracts/companion-conversation-contracts.ts";
 import { canonicalJsonV1, sha256Utf8V1, sha256Hex } from "../content-hash.ts";
@@ -26,6 +28,14 @@ const UUID2 = "223e4567-e89b-12d3-a456-426614174001";
 const HASH = "a".repeat(64);
 const TIME = "2026-08-10T00:00:00.000Z";
 const SHA256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+test("选区20,000字符边界完整接收，超限拒绝并保留原输入", () => {
+  const text = "字".repeat(COMPANION_SELECTION_MAX_CHARS - 5) + "尾部更正。";
+  const selection = { text, sharing: "user_selected" as const };
+  assert.deepEqual(companionSelectionV1Schema.parse(selection), selection);
+  assert.equal(companionSelectionV1Schema.safeParse({ ...selection, text: text + "多" }).success, false);
+  assert.equal(selection.text, text);
+});
 
 function baseEvent(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -697,7 +707,7 @@ test("划选投喂：turn 请求可携带 selection（user_selected），首个�
     inputKind: "text",
     blocks: [{ type: "text", text: "问题" }],
     sourceSurface: "pet",
-    selection: { text: "x".repeat(2001), sharing: "user_selected" },
+    selection: { text: "x".repeat(COMPANION_SELECTION_MAX_CHARS + 1), sharing: "user_selected" },
   });
   assert.equal(tooLong.success, false);
   // sharing 只认 user_selected

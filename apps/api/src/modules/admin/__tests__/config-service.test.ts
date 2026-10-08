@@ -52,6 +52,19 @@ const VALID = {
   },
 };
 
+test("模型采样策略允许合法声明，拒绝数组或未知策略冒充字符串", () => {
+  for (const temperature of ["always", "reasoning_none_only", "unsupported"]) {
+    const config = structuredClone(VALID);
+    Object.assign(config.platforms.demo.models["demo-model"], { temperature });
+    assert.deepEqual(validateConfig(config).filter(issue => issue.blocking), []);
+  }
+  for (const temperature of [true, ["always"], {}, "sometimes"]) {
+    const config = structuredClone(VALID);
+    Object.assign(config.platforms.demo.models["demo-model"], { temperature });
+    assert.ok(validateConfig(config).some(issue => issue.blocking && issue.path.endsWith("temperature")));
+  }
+});
+
 test("resolveConfigPath 走环境变量，缺省回落到 config/ai-platforms.json", () => {
   assert.equal(resolveConfigPath("/tmp/x.json"), "/tmp/x.json");
   assert.equal(resolveConfigPath(undefined).endsWith("config/ai-platforms.json"), true);

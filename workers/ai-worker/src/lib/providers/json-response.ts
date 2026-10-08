@@ -388,6 +388,7 @@ export function buildAgentTurnMessages(
     >;
     toolCallId?: string;
     toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
+    phase?: "commentary" | "final_answer";
   }>,
 ): Array<{
   role: "system" | "user" | "assistant" | "tool";
@@ -396,6 +397,7 @@ export function buildAgentTurnMessages(
     | { type: "image_url"; image_url: { url: string; detail?: "auto" | "low" | "high" } }
   >;
   tool_call_id?: string;
+  phase?: "commentary" | "final_answer";
   tool_calls?: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }>;
 }> {
   // Compatible transports do not all support consecutive system messages.
@@ -414,6 +416,7 @@ export function buildAgentTurnMessages(
     ...messages.slice(firstConversationMessage).map((m) => ({
       role: m.role,
       content: m.content,
+      ...(m.role === "assistant" && m.phase ? { phase: m.phase } : {}),
       ...(m.toolCallId ? { tool_call_id: m.toolCallId } : {}),
       ...(m.toolCalls ? {
         tool_calls: m.toolCalls.map((call) => ({

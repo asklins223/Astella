@@ -26,6 +26,9 @@ import {
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import type { CompanionContextHandoffSnapshotV1 } from "../handlers/companion-dialogue-content.ts";
+import { OpenCodeGoProvider } from "../lib/providers/opencode-go.ts";
+import { ProviderStreamError } from "../lib/provider-request-error.ts";
+import { AgentOutputError } from "../lib/non-retryable-errors.ts";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 // worker db.ts 读 DATABASE_URL，
@@ -216,6 +219,165 @@ function invokeRun(
     requestedBy: userId,
     leaseToken: "fixture-lease",
     signal: new AbortController().signal,
+  });
+}
+
+test("原文引文纠正后仍不匹配时发布失败，不保存成功答案或重投整轮", async () => {
+  const scope = await seedBase();
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText: "这里原句怎么说的？" });
+  const originalChat = MockProvider.prototype.chatCompletion;
+  const originalExecute = MockProvider.prototype.executeAgentTurn;
+  let calls = 0;
+  try {
+    await readInScope(scope, tx => tx`UPDATE companion_turn_runs SET page_context=${tx.json({ version: 1,
+      selection: { text: "胡克定律仅在弹性限度内适用，超过范围后不能继续套用。", sharing: "user_selected" } })}
+      WHERE id=${run.runId}`);
+    MockProvider.prototype.chatCompletion = async () => ({ content: JSON.stringify({ intent: "question", toolUse: "none",
+      subjects: [], goalRelation: "unrelated", candidateOperations: [], ambiguities: [], pendingOfferIndexes: [] }), usage: {} });
+    MockProvider.prototype.executeAgentTurn = async () => {
+      calls += 1;
+      return { content: "> 弹簧总是满足胡克定律，没有任何适用限制。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null };
+    };
+    await assert.rejects(invokeRun(scope.workspaceId, scope.userId, run),
+      (error: unknown) => error instanceof AgentOutputError && error.code === "unverified_quote");
+    assert.equal(calls, 2, "只允许一次引文纠正，不无限生成");
+    const [result] = await readInScope(scope, tx => tx`SELECT status, assistant_message_id FROM companion_turn_runs WHERE id=${run.runId}`);
+    assert.equal(result.status, "failed");
+    const history = await readInScope(scope, tx => tx`SELECT id, kind, blocks FROM companion_messages WHERE run_id=${run.runId} AND role='assistant'`);
+    assert.equal(history.length, 1);
+    assert.equal(history[0].id, result.assistant_message_id);
+    assert.equal(history[0].kind, "error", "错误引文不造成功答案；历史只保留诚实的失败说明");
+    assert.match(JSON.stringify(history[0].blocks), /引文.*原文/);
+    assert.doesNotMatch(JSON.stringify(history[0].blocks), /弹簧总是满足/);
+    const events = await readInScope(scope, tx => tx`SELECT type, payload FROM companion_stream_events WHERE run_id=${run.runId}`);
+    const failure = events.find(event => event.type === "error");
+    assert.equal(failure?.payload.recoverable, false);
+    assert.match(JSON.stringify(failure?.payload), /引文.*原文/);
+    assert.equal(events.some(event => event.type === "assistant.final"), false);
+    const steps = await readInScope(scope, tx => tx`SELECT status, error_code FROM companion_agent_steps WHERE run_id=${run.runId} ORDER BY step_no`);
+    assert.equal(steps.at(-1)?.status, "failed");
+    assert.equal(steps.at(-1)?.error_code, "UNVERIFIED_QUOTE");
+  } finally {
+    MockProvider.prototype.chatCompletion = originalChat;
+    MockProvider.prototype.executeAgentTurn = originalExecute;
+    await run.cleanup();
+  }
+});
+
+test("20,000 字选区通过真实 handler 装配，末尾原文进入提交的模型快照", async () => {
+  const previousWindow = process.env.MOCK_CONTEXT_WINDOW_TOKENS;
+  // Exercise the active 1M route's input size; the default 128K mock route has
+  // a different full-request budget and legitimately rejects this tool setup.
+  process.env.MOCK_CONTEXT_WINDOW_TOKENS = "1000000";
+  const scope = await seedBase();
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText: "最后那句改正了什么？" });
+  const tail = "末尾更正：只写了初稿，还没有提交。";
+  const selection = "段".repeat(20_000 - tail.length) + tail;
+  try {
+    await readInScope(scope, tx => tx`UPDATE companion_turn_runs SET page_context=${tx.json({ version: 1,
+      selection: { text: selection, sharing: "user_selected" } })} WHERE id=${run.runId}`);
+    await invokeRun(scope.workspaceId, scope.userId, run);
+    const [snapshot] = await withWorkerWorkspaceTransaction(scope, tx => tx.execute<{
+      snapshot: { modelMessages: Array<{ role: string; content: unknown }> };
+    }>(drizzleSql`SELECT snapshot FROM companion_context_handoff_snapshots WHERE run_id=${run.runId}`));
+    assert.ok(snapshot?.snapshot.modelMessages.some((m: { role: string; content: unknown }) =>
+      m.role === "user" && typeof m.content === "string" && m.content.includes(selection)));
+    const [result] = await readInScope(scope, tx => tx`SELECT status, model_call_count FROM companion_turn_runs WHERE id=${run.runId}`);
+    assert.equal(result.status, "succeeded");
+    assert.ok(Number(result.model_call_count) > 0);
+  } finally {
+    if (previousWindow === undefined) delete process.env.MOCK_CONTEXT_WINDOW_TOKENS;
+    else process.env.MOCK_CONTEXT_WINDOW_TOKENS = previousWindow;
+    await run.cleanup();
+  }
+});
+
+test("存量超大必要来源在调用模型前失败并发布终态，不让界面一直准备回复", async () => {
+  const scope = await seedBase();
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText: "读这一段。" });
+  try {
+    await readInScope(scope, tx => tx`UPDATE companion_turn_runs SET page_context=${tx.json({ version: 1,
+      selection: { text: "段".repeat(110_000), sharing: "user_selected" } })} WHERE id=${run.runId}`);
+    await assert.rejects(invokeRun(scope.workspaceId, scope.userId, run),
+      (error: unknown) => error instanceof Error && error.name === "AgentContextError");
+    const [result] = await readInScope(scope, tx => tx`SELECT status, error_code, model_call_count FROM companion_turn_runs WHERE id=${run.runId}`);
+    assert.equal(result.status, "failed");
+    assert.equal(result.error_code, "AGENT_BUDGET_EXCEEDED");
+    assert.equal(Number(result.model_call_count), 0);
+    const events = await readInScope(scope, tx => tx`SELECT type, payload FROM companion_stream_events WHERE run_id=${run.runId}`);
+    assert.ok(events.some(event => event.type === "character.cue"));
+    assert.ok(events.some(event => event.type === "error" && event.payload.recoverable === false));
+  } finally { await run.cleanup(); }
+});
+
+for (const mode of ["eof", "output-limit", "delayed-phase"] as const) {
+  test(`真实 handler / 受限数据库：Responses ${mode} 的流、消息与终态一致`, async () => {
+    const scope = await seedBase();
+    const s = await seedDialogueRun(scope.workspaceId, scope.userId,
+      { userText: "简历改完了，还没投出去，看得我眼睛疼。" });
+    const text = "改完简历这一关已经够费眼睛了，反复盯着那些句子和标点，字看久了都要长得一样。现在改完了，还没投出去，这两件事我分得清。";
+    let requests = 0;
+    const adapter = new OpenCodeGoProvider({ apiKey: "fixture", model: "fixture", baseUrl: "https://opencode.ai/zen/go/v1",
+      modelProfile: { contextWindowTokens: 262144, maxOutputTokens: 8000, vision: false,
+        supportsAssistantPhase: mode === "delayed-phase" },
+      streamRequest: async () => {
+        requests++;
+        return { status: 200, statusText: "OK", cancel: () => undefined,
+          body: (async function* () {
+            const encoder = new TextEncoder();
+            const data = (event: unknown) => encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
+            yield data({ type: "response.output_text.delta", output_index: 0,
+              delta: mode === "delayed-phase" ? "私有中间说明不应送达" : text });
+            // 让真实分类放行闸和受限角色的 delta 事务完成，再模拟终止事件/断流。
+            await new Promise(resolve => setTimeout(resolve, 100));
+            if (mode === "output-limit") yield data({ type: "response.incomplete", response: {
+              status: "incomplete", incomplete_details: { reason: "max_output_tokens" } } });
+            if (mode === "delayed-phase") yield data({ type: "response.completed", response: {
+              status: "completed", output: [
+                { type: "message", role: "assistant", phase: "commentary", content: [{ type: "output_text", text: "私有中间说明不应送达" }] },
+                { type: "message", role: "assistant", phase: "final_answer", content: [{ type: "output_text", text }] },
+              ] } });
+          })() };
+      } });
+    Object.defineProperty(MockProvider.prototype, "chatCompletionStream", { ...mockStreamDescriptor,
+      value: adapter.chatCompletionStream.bind(adapter) });
+    try {
+      if (mode === "delayed-phase") await invokeRun(scope.workspaceId, scope.userId, s);
+      else await assert.rejects(() => invokeRun(scope.workspaceId, scope.userId, s), (error: unknown) =>
+        mode === "eof" ? error instanceof ProviderStreamError && error.code === "stream_incomplete"
+          : error instanceof AgentOutputError && error.code === "output_truncated");
+      const actual = await readInScope(scope, async tx => ({
+        run: (await tx`SELECT status, error_code FROM companion_turn_runs WHERE id = ${s.runId}`)[0],
+        messages: await tx`SELECT kind, blocks FROM companion_messages WHERE run_id = ${s.runId} AND role = 'assistant'`,
+        events: await tx`SELECT type, payload FROM companion_stream_events WHERE run_id = ${s.runId} ORDER BY seq`,
+      }));
+      assert.equal(requests, 1, "输出截断和已送达前缀都不能触发重试");
+      const deltas = actual.events.filter(e => e.type === "assistant.delta").map(e => e.payload.textDelta).join("");
+      assert.equal(actual.messages.length, 1);
+      const savedText = actual.messages[0]!.blocks.filter((block: { type: string }) => block.type === "text")
+        .map((block: { text: string }) => block.text).join("");
+      assert.equal(savedText, text);
+      assert.equal(deltas, text);
+      assert.ok(!JSON.stringify(actual).includes("私有中间说明不应送达"));
+      if (mode === "delayed-phase") {
+        assert.equal(actual.run!.status, "succeeded");
+        assert.equal(actual.messages[0]!.kind, "text");
+        assert.ok(actual.events.some(e => e.type === "assistant.final"));
+      } else {
+        assert.equal(actual.run!.status, "failed");
+        assert.equal(actual.messages[0]!.kind, "error");
+        assert.ok(actual.events.some(e => e.type === "error"));
+        assert.ok(actual.events.every(e => e.type !== "assistant.final"));
+        if (mode === "output-limit") {
+          const error = actual.events.find(e => e.type === "error")!;
+          assert.equal(error.payload.recoverable, false);
+          assert.equal(actual.run!.error_code, "AGENT_BUDGET_EXCEEDED");
+        }
+      }
+    } finally {
+      Object.defineProperty(MockProvider.prototype, "chatCompletionStream", { ...mockStreamDescriptor, value: undefined });
+      await s.cleanup();
+    }
   });
 }
 
@@ -695,120 +857,4 @@ test("真实读取保留每条消息的时间和来源；重试不更新首次�
     assert.equal(retried.sha256, row.snapshot_sha256);
     assert.equal(retried.snapshot.modelMessages[0]!.content, system);
   } finally { await s.cleanup(); }
-});
-
-test("用途与用户状态沿真实解释、持久化和生成链传递，不增加第三次模型调用", async () => {
-  const {workspaceId,userId}=await seedBase();
-  const current="还没交呢，写完而已，明天再交。";
-  const s=await seedDialogueRun(workspaceId,userId,{userText:current});
-  const previousFlag=process.env.COMPANION_DIALOGUE_FRAME_V1;
-  const oldChat=MockProvider.prototype.chatCompletion;
-  const oldExecute=MockProvider.prototype.executeAgentTurn;
-  let classifications=0, generations=0;
-  process.env.COMPANION_DIALOGUE_FRAME_V1="true";
-  MockProvider.prototype.chatCompletion=async function(messages,options){
-    classifications++;
-    const source=JSON.parse(String(messages.at(-1)!.content));
-    assert.deepEqual(source.userRecords.map((x:{role:string})=>x.role),["user","user"]);
-    assert.equal(options.disableThinking,true);
-    return {content:JSON.stringify({intent:"conversation",toolUse:"none",subjects:[],goalRelation:"unrelated",
-      candidateOperations:[],ambiguities:[],dialogueFrame:{purpose:"correction",evidence:{messageIndex:2,quote:"还没交呢"},userState:[
-        {topic:"报告",aspect:"progress",relation:"statement",messageIndex:0,quote:"报告写完了"},
-        {topic:"报告",aspect:"progress",relation:"correction",messageIndex:2,quote:"还没交呢，写完而已"},
-        {topic:"报告",aspect:"timing",relation:"statement",messageIndex:2,quote:"明天再交"},
-      ]}}),usage:{promptTokens:10,completionTokens:10}};
-  };
-  MockProvider.prototype.executeAgentTurn=async function(request){
-    generations++;
-    assert.ok(request.systemPrompt.includes('"purpose":"correction"'));
-    assert.ok(request.systemPrompt.includes('"quote":"还没交呢，写完而已"'));
-    assert.ok(request.systemPrompt.includes('"quote":"明天再交"'));
-    assert.ok(!request.systemPrompt.includes('"quote":"报告写完了"'),"旧进展已由同一方面的最新说法替换");
-    assert.ok(request.systemPrompt.includes("这句在更新原先的认识"));
-    assert.equal(request.tools.length,0);
-    assert.equal(request.messages.at(-1)?.content,current);
-    return {content:"嗯，是我把写完当成了提交。",toolCalls:[],finishReason:"stop",usage:{},providerRequestId:"frame-test"};
-  };
-  try {
-    await readInScope({workspaceId,userId},async tx=>{
-      await tx`SET LOCAL app.allow_history_mutation='on'`;
-      await tx`UPDATE companion_messages SET seq=3 WHERE id=${s.userMessageId}`;
-      await tx`UPDATE companion_conversations SET next_message_seq=4 WHERE id=${s.cid}`;
-      for (const [i,role,text] of [[1,"user","报告写完了"],[2,"assistant","已经提交了"]] as const)
-        await tx`INSERT INTO companion_messages(id,conversation_id,workspace_id,user_id,role,seq,kind,blocks,content_sha256)
-          VALUES(${randomUUID()},${s.cid},${workspaceId},${userId},${role},${i},'text',
-            ${tx.json([{type:"text",text}])},${sha256Utf8V1(text)})`;
-    });
-    await runCompanionDialogue({id:s.jobId,workspaceId,requestedBy:userId,payload:{runId:s.runId},
-      leaseToken:"fixture-lease",signal:new AbortController().signal});
-    const [run]=await readInScope({workspaceId,userId},tx=>tx`SELECT status,turn_interpretation,model_call_count
-      FROM companion_turn_runs WHERE id=${s.runId}`);
-    assert.equal(run!.status,"succeeded");
-    assert.equal(classifications,1);
-    assert.equal(generations,1);
-    assert.equal(Number(run!.model_call_count),2);
-    const frame=run!.turn_interpretation.dialogueFrame;
-    assert.equal(frame.purpose,"correction");
-    assert.equal(frame.evidence.sourceSha256,sha256Utf8V1(current));
-    assert.equal(frame.userState.length,2);
-    const [answer]=await readInScope({workspaceId,userId},tx=>tx`SELECT blocks->0->>'text' text
-      FROM companion_messages WHERE conversation_id=${s.cid} AND role='assistant' ORDER BY seq DESC LIMIT 1`);
-    assert.equal(answer!.text,"嗯，是我把写完当成了提交。");
-  } finally {
-    MockProvider.prototype.chatCompletion=oldChat;
-    MockProvider.prototype.executeAgentTurn=oldExecute;
-    if(previousFlag===undefined)delete process.env.COMPANION_DIALOGUE_FRAME_V1;
-    else process.env.COMPANION_DIALOGUE_FRAME_V1=previousFlag;
-    await s.cleanup();
-  }
-});
-
-for(const accepted of [true,false])test(accepted
- ? "发布前范围核对不泄露原稿或JSON，第三次调用经过原预算与交付链"
- : "范围核对漏检段落时终止发布，不流出原稿且不回退成未经核对的答复",async()=>{
- const {workspaceId,userId}=await seedBase();
- const current="明天才交呢，我先玩会儿";
- const s=await seedDialogueRun(workspaceId,userId,{userText:current});
- const savedFrame=process.env.COMPANION_DIALOGUE_FRAME_V1,savedReview=process.env.COMPANION_DIALOGUE_REVIEW_V1;
- const oldChat=MockProvider.prototype.chatCompletion,oldExecute=MockProvider.prototype.executeAgentTurn;
- const oldStream=MockProvider.prototype.chatCompletionStream;
- process.env.COMPANION_DIALOGUE_FRAME_V1="true";process.env.COMPANION_DIALOGUE_REVIEW_V1="true";
- let chats=0,gens=0,reviews=0,streams=0;
- MockProvider.prototype.chatCompletion=async function(){chats++;return {content:JSON.stringify({intent:"conversation",toolUse:"none",
-  subjects:[],goalRelation:"unrelated",candidateOperations:[],ambiguities:[],dialogueFrame:{purpose:"sharing",evidence:{messageIndex:0,quote:current},
-    userState:[{topic:"报告交付",aspect:"timing",relation:"statement",messageIndex:0,quote:"明天才交",relevance:"foreground"}]}}),usage:{}};};
- MockProvider.prototype.chatCompletionStream=async function(){streams++;throw new Error("private draft must not stream");};
- MockProvider.prototype.executeAgentTurn=async function(request){
-  const review=request.systemPrompt.includes("内部结构化核对任务");
-  if(review){reviews++;assert.equal(request.messages.length,1);assert.ok(String(request.messages[0]!.content).includes("活儿已经交了"));}
-  else gens++;
-  return {content:review?JSON.stringify({verdicts:[{spanId:1,action:"drop",issue:"progress",reason:"用户说明天交"},
-   ...(accepted?[{spanId:3,action:"keep",reason:"回应用户自己选择的时间"}]:[])]}):"[neutral]活儿已经交了。\n\n明天的事明天再说。",
-    toolCalls:[],finishReason:"stop",usage:{},providerRequestId:"private-review-test"};
- };
- try {
-  const execute=()=>runCompanionDialogue({id:s.jobId,workspaceId,requestedBy:userId,payload:{runId:s.runId},leaseToken:"fixture-lease",signal:new AbortController().signal});
-  if(accepted)await execute();
-  else await assert.rejects(execute,{code:"COMPANION_DIALOGUE_REVIEW_INVALID"});
-  const [run]=await readInScope({workspaceId,userId},tx=>tx`SELECT status,model_call_count FROM companion_turn_runs WHERE id=${s.runId}`);
-  assert.equal(run!.status,accepted?"succeeded":"failed");assert.equal(Number(run!.model_call_count),3);
-  assert.equal(chats,1);assert.equal(gens,1);assert.equal(reviews,1);assert.equal(streams,0);
-  const [answer]=await readInScope({workspaceId,userId},tx=>tx`SELECT kind,blocks->0->>'text' text FROM companion_messages
-    WHERE conversation_id=${s.cid} AND role='assistant' ORDER BY seq DESC LIMIT 1`);
-  if(accepted)assert.equal(answer!.text,"明天的事明天再说。");
-  else {
-   assert.equal(answer!.kind,"error");
-   assert.equal(answer!.text,"这次回复没能完成核对，尚未发布。","失败状态不得伪装成未听清或未经核对的答复");
-  }
-  const deltas=await readInScope({workspaceId,userId},tx=>tx`SELECT payload FROM companion_stream_events WHERE conversation_id=${s.cid} AND type='assistant.delta'`);
-  if(accepted)assert.ok(deltas.length>0);
-  else assert.equal(deltas.length,0);
-  const serialized=JSON.stringify(deltas);assert.ok(!serialized.includes("已经交了"));assert.ok(!serialized.includes("spanId"));assert.ok(!serialized.includes("drops"));
- }finally{
-  MockProvider.prototype.chatCompletion=oldChat;MockProvider.prototype.executeAgentTurn=oldExecute;
-  MockProvider.prototype.chatCompletionStream=oldStream;
-  if(savedFrame===undefined)delete process.env.COMPANION_DIALOGUE_FRAME_V1;else process.env.COMPANION_DIALOGUE_FRAME_V1=savedFrame;
-  if(savedReview===undefined)delete process.env.COMPANION_DIALOGUE_REVIEW_V1;else process.env.COMPANION_DIALOGUE_REVIEW_V1=savedReview;
-  await s.cleanup();
- }
 });

@@ -255,7 +255,7 @@ export function CompanionMessageRichBlocks({
               : block.type === "card"
                 ? (
                     <figure className="companion-record__card" key={`card-${index}`}>
-                      <figcaption>{block.knowledgeForm ? `卡片 · ${block.knowledgeForm}` : "卡片"}</figcaption>
+                      <figcaption>{block.knowledgeForm ? `题面预览 · ${block.knowledgeForm}` : "题面预览"}</figcaption>
                       <p>{block.front}</p>
                       {block.summary ? <small>{block.summary}</small> : null}
                     </figure>

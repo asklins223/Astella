@@ -1,15 +1,10 @@
+/** Retired production experiment: offline diagnostic only. */
 import {z} from "zod";
-import {COMPANION_HOST_PROTOCOL_V8,COMPANION_IDENTITY_BOUNDARY_V4,type AgentTurnRequest,type AgentTurnResult} from "@astella/shared";
-import type {AgentDialogueFrameV1} from "@astella/shared/agent-contracts";
+import {COMPANION_HOST_PROTOCOL_V8,COMPANION_IDENTITY_BOUNDARY_V4,type AgentTurnRequest} from "@astella/shared";
+import type {AgentDialogueFrameV1} from "./companion-dialogue-contracts.ts";
 import {companionDraftSpans} from "./companion-knowledge-review.ts";
-import {CompanionDialogueReviewError} from "../lib/non-retryable-errors.ts";
+import {CompanionDialogueReviewError} from "./companion-review-errors.ts";
 import {stripVoiceExpressionTags} from "@astella/shared/voice-expression-tags";
-import type {CompanionAgentLoopArgs} from "../contracts/companion-agent-loop.ts";
-import {boundedStepSender} from "./companion-compaction.ts";
-import {logger} from "../lib/logger.ts";
-import {finishStep} from "./companion-agent-events.ts";
-import type {AgentEventContext} from "./companion-read-tools.ts";
-
 const verdictSchema = z.object({
   spanId: z.number().int().positive(),
   action: z.enum(["keep", "drop"]),
@@ -55,42 +50,4 @@ export function applyCompanionDialogueReview(text:string,draft:string) {
   const answer=spans.filter(span=>!ids.has(span.id)).map(span=>span.text).join("");
   if(!stripVoiceExpressionTags(answer).trim())throw new CompanionDialogueReviewError();
   return {answer,drops:parsed.data.verdicts.filter(verdict=>verdict.action === "drop")};
-}
-
-/** Execute review under the turn's existing pressure and attempt budget. */
-export async function reviewCompanionDialogue(input: {
-  request: AgentTurnRequest;
-  result: AgentTurnResult;
-  frame: AgentDialogueFrameV1 | undefined;
-  eligible: boolean;
-  event: AgentEventContext;
-  stepId: string;
-  args: CompanionAgentLoopArgs;
-  execute: (request: AgentTurnRequest) => Promise<AgentTurnResult>;
-}): Promise<AgentTurnResult> {
-  const draft = input.result.content;
-  if (!input.eligible || !input.frame || typeof draft !== "string" || !draft.trim()
-    || input.result.finishReason === "length") return input.result;
-  try {
-    const revision = buildCompanionDialogueReview(input.request, draft, input.frame);
-    // This encoded payload has no replay sequence mapping. A positional history
-    // fold could delete it whole; keep the same budget and overflow rejection.
-    const sendReview = boundedStepSender({
-      hasAttempt: () => input.args.contextReceipts?.hasCompactionAttempt() ?? false,
-      consumeAttempt: () => input.args.contextReceipts?.consumeCompactionAttempt(),
-      onCompacted: () => undefined,
-      ...(input.args.compactionCooldown ? { cooldown: input.args.compactionCooldown } : {}),
-    });
-    const reviewed = await sendReview(revision, input.execute);
-    if (reviewed.finishReason !== "stop" || reviewed.toolCalls.length) throw new CompanionDialogueReviewError();
-    const plan = applyCompanionDialogueReview(reviewed.content ?? "", draft);
-    logger.info({ runId: input.args.read.runId,
-      droppedSpans: plan.drops.map(drop => ({ spanId: drop.spanId, issue: drop.issue })) },
-    "companion dialogue removal plan applied before publication");
-    return { ...reviewed, content: plan.answer };
-  } catch (error) {
-    await finishStep(input.event, input.stepId, "failed", undefined,
-      error instanceof CompanionDialogueReviewError ? error.code : "PROVIDER_UNAVAILABLE");
-    throw error;
-  }
 }

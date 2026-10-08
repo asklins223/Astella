@@ -271,13 +271,22 @@ test("chatCompletionStream：忽略空 delta 与无法解析的 SSE 行", async 
 test("chatCompletionStream：网关无 [DONE] 且最后一行无换行时仍保留末尾 delta", async () => {
   await withFetchMock(async () => sseResponse([
     sseLine(JSON.stringify({ choices: [{ delta: { content: "前半" } }] })),
-    `data: ${JSON.stringify({ choices: [{ delta: { content: "后半" } }] })}`,
+    `data: ${JSON.stringify({ choices: [{ delta: { content: "后半" }, finish_reason: "stop" }] })}`,
   ]), async () => {
     const deltas: string[] = [];
     const result = await makeProvider(undefined, fetchStreamingRequester())
       .chatCompletionStream(CHAT_MESSAGES, {}, undefined, (d) => deltas.push(d));
     assert.equal(result.content, "前半后半");
     assert.deepEqual(deltas, ["前半", "后半"]);
+  });
+});
+
+test("chatCompletionStream：只有正文增量的断流不冒充完整成功", async () => {
+  await withFetchMock(async () => sseResponse(['data: {"choices":[{"delta":{"content":"只到半截"}}]}\n\n']), async () => {
+    const provider = makeProvider(undefined, fetchStreamingRequester());
+    await assert.rejects(() => provider.chatCompletionStream([{ role: "user", content: "问题" }],
+      { responseFormat: "text" }, undefined, () => undefined),
+      (error: unknown) => error instanceof Error && "code" in error && error.code === "stream_incomplete");
   });
 });
 

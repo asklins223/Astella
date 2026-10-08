@@ -6,6 +6,7 @@ import type { CompanionChatSession } from "../../../app/companion-chat-session";
 import type { CompanionVoiceCaption, CompanionVoiceInputOptions, CompanionVoicePhase } from "../use-companion-voice-input";
 import { CompanionHud } from "../CompanionHud";
 import { interactionProposal, interactionSession, interactionSettings } from "./companion-interaction-fixtures";
+import { COMPANION_SELECTION_MAX_CHARS, COMPANION_P2_LIMITS } from "@astella/shared/companion-conversation-contracts";
 
 const state = vi.hoisted(() => ({
   chat: null as unknown,
@@ -78,6 +79,80 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("production companion interaction", () => {
+  it("stopping a new turn before any output never freezes the preceding reply", async () => {
+    const previous = "上一轮聊的是早上的太阳。";
+    const cancel = vi.fn(async () => {
+      patch({ phase: "ready", draft: null, liveReply: null, interrupted: null, stopNotice: "这一轮已停止。" });
+      return true;
+    });
+    state.chat = interactionSession({ mode: "closed", cancel,
+      liveReply: { messageId: "previous", text: previous, hasActionBlocks: false, proposalIds: [] } });
+    render(<Harness />);
+    advance(1_000);
+    expect(document.querySelector(".companion-hud__output-body")?.textContent).toBe(previous);
+    patch({ phase: "sending", liveReply: null, draft: null, interrupted: null });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "停止这一轮" })));
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(document.querySelector(".companion-hud__output-body")?.textContent).toBe("这一轮已停止。");
+    expect(document.querySelector(".companion-hud__sr-status")?.textContent).toBe("已停止这一轮。");
+  });
+
+  it("stopping preserves only the current turn's received partial reply", async () => {
+    const previous = "上一轮聊的是早上的太阳。";
+    const partial = "波动方程的这个解还没推导完。";
+    const cancel = vi.fn(async () => {
+      patch({ phase: "ready", draft: null, liveReply: null,
+        interrupted: { text: partial, message: "这一轮已停止。" }, stopNotice: "这一轮已停止。" });
+      return true;
+    });
+    state.chat = interactionSession({ mode: "closed", cancel,
+      liveReply: { messageId: "previous", text: previous, hasActionBlocks: false, proposalIds: [] } });
+    render(<Harness />);
+    advance(1_000);
+    patch({ phase: "sending", liveReply: null, draft: { runId: "current", text: partial }, interrupted: null });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "停止这一轮" })));
+    expect(document.querySelector(".companion-hud__output-body")?.textContent).toBe(partial);
+    expect(document.querySelector(".companion-hud__sr-status")?.textContent).toBe(`${partial}（已停止）`);
+  });
+
+  it.each(["bubble", "journal"] as const)("%s keeps complete over-limit sources and blocks button/Enter until corrected", async view => {
+    const send = vi.fn(async () => true);
+    const selection = "字".repeat(COMPANION_SELECTION_MAX_CHARS) + "尾部更正";
+    state.chat = interactionSession({ send, feedSelection: selection });
+    render(<Harness />);
+    if (view === "journal") fireEvent.click(screen.getByRole("button", { name: "对话手记" }));
+    const field = screen.getByRole("textbox", { name: view === "bubble" ? "给 小鲸 的消息" : "继续问 小鲸" });
+    fireEvent.change(field, { target: { value: "请解释末尾" } });
+    expect(screen.getAllByRole("status").some(status => status.textContent?.includes("原文超过"))).toBe(true);
+    expect((screen.getByRole("button", { name: "发送" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    await act(async () => fireEvent.keyDown(field, { key: "Enter", keyCode: 13 }));
+    expect(send).not.toHaveBeenCalled();
+    expect((field as HTMLTextAreaElement).value).toBe("请解释末尾");
+    expect((state.chat as CompanionChatSession).feedSelection).toBe(selection);
+    const valid = selection.slice(0, COMPANION_SELECTION_MAX_CHARS - 10) + "已更正。";
+    patch({ feedSelection: valid });
+    await act(async () => fireEvent.keyDown(field, { key: "Enter", keyCode: 13 }));
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith({ text: "请解释末尾", selection: { text: valid } });
+  });
+
+  it.each(["bubble", "journal"] as const)("%s preserves an over-limit user question until edited", async view => {
+    const send = vi.fn(async () => true);
+    state.chat = interactionSession({ send });
+    render(<Harness />);
+    if (view === "journal") fireEvent.click(screen.getByRole("button", { name: "对话手记" }));
+    const field = screen.getByRole("textbox", { name: view === "bubble" ? "给 小鲸 的消息" : "继续问 小鲸" });
+    const text = "字".repeat(COMPANION_P2_LIMITS.serverHardMaxChars + 1);
+    fireEvent.change(field, { target: { value: text } });
+    expect(screen.getAllByRole("status").some(status => status.textContent?.includes("消息超过"))).toBe(true);
+    await act(async () => fireEvent.keyDown(field, { key: "Enter", keyCode: 13 }));
+    expect(send).not.toHaveBeenCalled();
+    expect((field as HTMLTextAreaElement).value).toBe(text);
+    fireEvent.change(field, { target: { value: "只解释最后这句" } });
+    await act(async () => fireEvent.keyDown(field, { key: "Enter", keyCode: 13 }));
+    expect(send).toHaveBeenCalledWith({ text: "只解释最后这句" });
+  });
   it.each(["bubble", "journal"] as const)("%s keeps IME candidate Enter and Shift+Enter local, then sends once on ordinary Enter", async view => {
     const send = vi.fn(async () => true);
     state.chat = interactionSession({ send });

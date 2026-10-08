@@ -298,6 +298,7 @@ async function loadConfig(ctx) {
               if (profile?.maxOutputTokens) bits.push(`输出 ${profile.maxOutputTokens}`);
               if (profile?.vision) bits.push("识图");
               if (profile?.reasoning?.default) bits.push(`推理默认 ${profile.reasoning.default}`);
+              if (profile?.temperature) bits.push(`温度参数 ${profile.temperature}`);
               return bits.length > 0 ? `${model}（${bits.join(" · ")}）` : model;
             }).join("；")}`)
         : null,

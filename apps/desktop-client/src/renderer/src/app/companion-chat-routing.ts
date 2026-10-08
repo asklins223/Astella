@@ -58,7 +58,6 @@ import {
   companionConsentGate,
   isCompanionConsentFailure,
 } from "./companion-consent-gate";
-import { subscribeCompanionFeed, truncateFeedText } from "../components/companion/companion-feed";
 import type { CompanionFeedNoteAnchor, CompanionNoteIntent } from "../components/companion/companion-feed";
 import {
   appendCompanionAgentNode,

@@ -567,6 +567,24 @@ test("Agent 确认续跑：reasoning 句柄落库并在续跑消息中回传（0
   }
 });
 
+test("Agent 确认续跑：长回执 JSON 保持合法并保留末尾纠正", async () => {
+  const { workspaceId, userId } = await seedBase();
+  const f = await seedAgentRun(workspaceId, userId, { userText: "确认这项操作" });
+  const summary = '包含引号"和换行\n的完整回执。'.repeat(300) + "末尾说明：只完成准备，没有执行发送。🙂";
+  try {
+    const proposalId = await seedConfirmedProposal(workspaceId, userId, f, "call_long_receipt", null);
+    await sql.begin(async tx => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true),set_config('app.user_id', ${userId}, true)`;
+      await tx`UPDATE companion_agent_tool_calls SET result_safe_summary=${summary} WHERE run_id=${f.runId}`;
+    });
+    const messages = await loadContinuation(continuationEvent(workspaceId, userId, f),
+      [{ role: "user", content: "确认这项操作" }], proposalId);
+    const tool = messages.find(message => message.role === "tool");
+    assert.ok(tool && typeof tool.content === "string");
+    assert.equal(JSON.parse(tool.content).summary, summary);
+  } finally { await f.cleanup(); }
+});
+
 test("Agent 确认续跑：历史行无句柄时不注入 reasoning 字段（0218 之前的数据）", async () => {
   const { workspaceId, userId } = await seedBase();
   const f = await seedAgentRun(workspaceId, userId, { userText: "看一下我的学习进度" });

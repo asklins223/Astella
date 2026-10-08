@@ -3,14 +3,15 @@
  *
  * 采集侧（右键菜单 / 窗口 drop）通过 window CustomEvent 把选中文本递给
  * CompanionPresence → 聊天抽屉；解耦为事件而不直接 import，避免菜单组件
- * 与伴星树互相依赖。文本上限 2000 字（与 turn 契约一致）。
+ * 与伴星树互相依赖。原文完整传递；长度校验由共享 turn 契约和输入区负责。
  */
 
 const COMPANION_FEED_EVENT = "astella:companion-feed";
 const COMPANION_OPEN_CHAT_EVENT = "astella:companion-open-chat";
 const COMPANION_NOTE_INTENT_EVENT = "astella:companion-note-intent";
 
-export const COMPANION_FEED_MAX_CHARS = 2_000;
+import { COMPANION_SELECTION_MAX_CHARS } from "@astella/shared/companion-conversation-contracts";
+export const COMPANION_FEED_MAX_CHARS = COMPANION_SELECTION_MAX_CHARS;
 
 export interface CompanionFeedNoteAnchor {
   readonly noteId: string;
@@ -60,7 +61,7 @@ export interface CompanionFeedSelection {
 export function feedSelectionToCompanion(selection: CompanionFeedSelection): string | null {
   const text = selection.text.trim();
   if (text.length === 0) return null;
-  const initialPrompt = selection.initialPrompt?.trim().slice(0, 500);
+  const initialPrompt = selection.initialPrompt?.trim();
   const noteId = z.string().uuid().safeParse(selection.noteAnchor?.noteId);
   const anchor = noteAnnotationAnchorV1Schema.safeParse(selection.noteAnchor?.anchor);
   const requestId = crypto.randomUUID();
@@ -73,7 +74,7 @@ export function feedSelectionToCompanion(selection: CompanionFeedSelection): str
   window.dispatchEvent(new CustomEvent<CompanionFeedSelection>(COMPANION_FEED_EVENT, {
     detail: {
       requestId,
-      text: text.slice(0, COMPANION_FEED_MAX_CHARS),
+      text,
       source: selection.source,
       ...(initialPrompt ? { initialPrompt } : {}),
       ...(target ? { noteAnchor: { ...target, ...(explanation ? { explanationId: explanation.id } : {}) } } : {}),
@@ -110,10 +111,10 @@ export function feedDiaryReferenceToCompanion(anchor: CompanionFeedDiaryAnchor):
 export function feedNoteIntentToCompanion(intent: CompanionNoteIntent): void {
   const noteId = z.string().uuid().safeParse(intent.noteId);
   const noteVersionId = z.string().uuid().safeParse(intent.noteVersionId);
-  const noteTitle = intent.noteTitle.trim().slice(0, 200);
+  const noteTitle = intent.noteTitle.trim();
   if (!noteId.success || !noteVersionId.success || !noteTitle) return;
   const recallId = intent.kind === "recall_hint" ? z.string().uuid().safeParse(intent.recallId) : null;
-  const question = intent.kind === "recall_hint" ? intent.question?.trim().slice(0, 500) : undefined;
+  const question = intent.kind === "recall_hint" ? intent.question?.trim() : undefined;
   if (intent.kind === "recall_hint" && (!recallId?.success || !question)) return;
   window.dispatchEvent(new CustomEvent<CompanionNoteIntent>(COMPANION_NOTE_INTENT_EVENT, {
     detail: {
@@ -128,8 +129,8 @@ export function feedNoteIntentToCompanion(intent: CompanionNoteIntent): void {
   window.dispatchEvent(new CustomEvent(COMPANION_OPEN_CHAT_EVENT));
 }
 
-export function truncateFeedText(text: string): string {
-  return text.trim().slice(0, COMPANION_FEED_MAX_CHARS);
+export function normalizeFeedText(text: string): string {
+  return text.trim();
 }
 
 /** 订阅投喂/开抽屉事件；返回退订函数。 */
@@ -148,7 +149,7 @@ export function subscribeCompanionFeed(handlers: {
         text: detail.text,
         source: detail.source === "drop" ? "drop" : "selection",
         ...(typeof detail.initialPrompt === "string" && detail.initialPrompt.trim().length > 0
-          ? { initialPrompt: detail.initialPrompt.trim().slice(0, 500) }
+          ? { initialPrompt: detail.initialPrompt.trim() }
           : {}),
         ...(detail.noteAnchor && z.string().uuid().safeParse(detail.noteAnchor.noteId).success
           && noteAnnotationAnchorV1Schema.safeParse(detail.noteAnchor.anchor).success
@@ -182,10 +183,10 @@ export function subscribeCompanionFeed(handlers: {
     if (!noteId.success || !noteVersionId.success
       || !["overview", "recall", "recall_hint", "expansion"].includes(detail?.kind ?? "")
       || typeof detail?.noteTitle !== "string") return;
-    const noteTitle = detail.noteTitle.trim().slice(0, 200);
+    const noteTitle = detail.noteTitle.trim();
     if (detail.kind === "recall_hint") {
       const recallId = z.string().uuid().safeParse(detail.recallId);
-      const question = typeof detail.question === "string" ? detail.question.trim().slice(0, 500) : "";
+      const question = typeof detail.question === "string" ? detail.question.trim() : "";
       if (!recallId.success || !question) return;
       handlers.onNoteIntent({
         ...(z.string().uuid().safeParse(detail.requestId).success ? { requestId: detail.requestId } : {}),

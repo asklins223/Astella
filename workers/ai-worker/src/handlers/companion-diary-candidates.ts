@@ -65,12 +65,16 @@ function buildCandidate(
   const pieces = uniquePieces(piecesInput).slice(0, MAX_CANDIDATE_PIECES);
   const textChars = pieces.reduce((total, piece) => total + piece.text.length, 0);
   if (pieces.length === 0 || textChars < 6) return null;
-  let remaining = MAX_CANDIDATE_TEXT_CHARS;
-  const boundedPieces = pieces.map((piece) => {
-    const text = piece.text.slice(0, Math.max(0, Math.min(500, remaining)));
-    remaining -= text.length;
-    return { ...piece, text };
-  }).filter((piece) => piece.text.length > 0);
+  // Select complete source records. The first may exceed the soft page budget;
+  // the full-request governor decides whether it fits the selected model.
+  let used = 0;
+  const boundedPieces: DiaryPiece[] = [];
+  for (const piece of pieces) {
+    if (!piece.text.trim()) continue;
+    if (boundedPieces.length > 0 && used + piece.text.length > MAX_CANDIDATE_TEXT_CHARS) continue;
+    boundedPieces.push({ ...piece });
+    used += piece.text.length;
+  }
   if (boundedPieces.length === 0) return null;
   const sourceIds = [...new Set(boundedPieces.map((piece) => sourceId(piece)!))].sort();
   const noteIds = [...new Set(boundedPieces.map((piece) => piece.noteId).filter((id): id is string => Boolean(id)))];

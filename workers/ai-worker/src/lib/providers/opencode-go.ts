@@ -45,9 +45,10 @@ import {
 } from "@astella/shared/public-json-http";
 import type { AIProvider } from "../ai-provider.ts";
 import { registerFactory } from "../provider-factory.ts";
-import { ProviderRequestError } from "../provider-request-error.ts";
+import { ProviderRequestError, ProviderStreamError } from "../provider-request-error.ts";
 import { AgentOutputError } from "../non-retryable-errors.ts";
 import { profileFingerprint } from "./profile-fingerprint.ts";
+import { modelTemperatureFields } from "./model-sampling.ts";
 import { countModelTextTokens, DEEPSEEK_TOKENIZER_REVISION } from "../model-tokenizers.ts";
 
 /** OpenCode Go 默认端点（Responses API 根路径）。 */
@@ -95,7 +96,7 @@ type ResponsesContentPart =
   | { type: "input_image"; image_url: string; detail?: ResponsesImageDetail };
 
 type ResponsesInputItem =
-  | { role: "user" | "assistant" | "system"; content: string | ResponsesContentPart[] }
+  | { role: "user" | "assistant" | "system"; content: string | ResponsesContentPart[]; phase?: "commentary" | "final_answer" }
   | { type: "function_call"; call_id: string; name: string; arguments: string }
   | { type: "function_call_output"; call_id: string; output: string }
   | ReasoningReplayItem;
@@ -143,7 +144,8 @@ function buildChatInput(messages: ChatMessage[]): {
       }
       continue;
     }
-    input.push({ role: message.role, content: toResponsesContent(message.content) });
+    input.push({ role: message.role, content: toResponsesContent(message.content),
+      ...(message.role === "assistant" && message.phase ? { phase: message.phase } : {}) });
   }
   const instructions = systemParts.filter((part) => part.trim()).join("\n\n");
   return { instructions: instructions || null, input };
@@ -190,7 +192,8 @@ function buildAgentTurnInput(
       ? message.content.trim().length > 0
       : message.content.length > 0;
     if (hasContent) {
-      input.push({ role: message.role, content: toResponsesContent(message.content) });
+      input.push({ role: message.role, content: toResponsesContent(message.content),
+        ...(message.role === "assistant" && message.phase ? { phase: message.phase } : {}) });
     }
     for (const call of message.toolCalls ?? []) {
       input.push({
@@ -208,6 +211,7 @@ function buildAgentTurnInput(
 
 interface ResponsesOutputItem {
   type?: unknown;
+  phase?: unknown;
   content?: unknown;
   name?: unknown;
   arguments?: unknown;
@@ -239,6 +243,22 @@ export function readResponsesText(body: unknown): string | null {
   }
   const text = parts.join("");
   return text.trim() ? text : null;
+}
+
+/** No-tool completion publishes the final answer, not intermediate commentary. */
+export function readResponsesFinalText(body: unknown): string | null {
+  const messages = readOutputItems(body).filter(item => item.type === "message");
+  const finals = messages.filter(item => item.phase === "final_answer");
+  return readResponsesText({ output: finals.length ? finals : messages.filter(item => item.phase !== "commentary") });
+}
+
+function responsesPhase(body: unknown, finalOnly = false): "commentary" | "final_answer" | undefined {
+  const messages = readOutputItems(body).filter(item => item.type === "message");
+  const finals = messages.filter(item => item.phase === "final_answer");
+  const selected = finalOnly ? (finals.length ? finals : messages.filter(item => item.phase !== "commentary")) : messages;
+  const phases = new Set(selected.map(item => item.phase));
+  const first = [...phases][0];
+  return phases.size === 1 && (first === "commentary" || first === "final_answer") ? first : undefined;
 }
 
 /**
@@ -317,7 +337,7 @@ export function parseResponsesAgentTurn(
   requestId: string | null;
 } {
   const record = asRecord(body);
-  const content = readResponsesText(body);
+  const content = hasTools ? readResponsesText(body) : readResponsesFinalText(body);
   const toolCalls: ParsedResponsesToolCall[] = [];
   for (const item of readOutputItems(body)) {
     if (item.type !== "function_call") continue;
@@ -517,16 +537,17 @@ export class OpenCodeGoProvider implements AIProvider {
     if (signal?.aborted) throw abortError(signal, "before request");
     const model = options.model ?? this.modelId;
     const { instructions, input } = buildChatInput(messages);
+    const reasoning = this.reasoningField(options.disableThinking ?? false);
     const body: Record<string, unknown> = {
       model,
       input,
-      temperature: options.temperature ?? 0.2,
+      ...modelTemperatureFields(this.modelProfile, options.temperature ?? 0.2, asRecord(reasoning.reasoning)?.effort),
       stream: false,
       ...(instructions ? { instructions } : {}),
       ...(options.responseFormat === "text"
         ? {}
         : { text: { format: { type: "json_object" as const } } }),
-      ...this.reasoningField(options.disableThinking ?? false),
+      ...reasoning,
     };
     if (!(this.platformOptions?.disableMaxTokens ?? false)) {
       body.max_output_tokens = Math.min(options.maxTokens ?? 4096, this.maxOutputTokens);
@@ -541,7 +562,12 @@ export class OpenCodeGoProvider implements AIProvider {
       });
     }
     this.throwIfResponseFailed(response.body, model);
-    const content = readResponsesText(response.body);
+    if (asRecord(response.body)?.status === "incomplete") {
+      if (asRecord(asRecord(response.body)?.incomplete_details)?.reason === "max_output_tokens")
+        throw new AgentOutputError("output_truncated", "chat response exhausted its output limit");
+      throw new ProviderStreamError(this.id, "stream_incomplete");
+    }
+    const content = readResponsesFinalText(response.body);
     if (content === null) {
       throw new Error(`${this.id} returned empty output (${model})`);
     }
@@ -562,20 +588,21 @@ export class OpenCodeGoProvider implements AIProvider {
     options: ChatOptions,
     signal: AbortSignal | undefined,
     onDelta: (deltaText: string) => void,
-  ): Promise<{ content: string }> {
+  ): Promise<{ content: string; finishReason: string; phase?: "commentary" | "final_answer" }> {
     if (signal?.aborted) throw abortError(signal, "before request");
     const model = options.model ?? this.modelId;
     const { instructions, input } = buildChatInput(messages);
+    const reasoning = this.reasoningField(options.disableThinking ?? false);
     const body: Record<string, unknown> = {
       model,
       input,
-      temperature: options.temperature ?? 0.2,
+      ...modelTemperatureFields(this.modelProfile, options.temperature ?? 0.2, asRecord(reasoning.reasoning)?.effort),
       stream: true,
       ...(instructions ? { instructions } : {}),
       ...(options.responseFormat === "text"
         ? {}
         : { text: { format: { type: "json_object" as const } } }),
-      ...this.reasoningField(options.disableThinking ?? false),
+      ...reasoning,
     };
     if (!(this.platformOptions?.disableMaxTokens ?? false)) {
       body.max_output_tokens = Math.min(options.maxTokens ?? 4096, this.maxOutputTokens);
@@ -600,12 +627,17 @@ export class OpenCodeGoProvider implements AIProvider {
     let buffer = "";
     let content = "";
     let responseBytes = 0;
-    let providerError: string | null = null;
+    let completed = false;
+    let providerError: Error | null = null;
+    let finalPhase: "commentary" | "final_answer" | undefined;
+    const itemPhases = new Map<number, unknown>();
+    let withheldUnknownPhase = false;
     /** 终止事件/断流后的统一收尾：先抛 provider 错误，再拒绝空输出。 */
     const settle = (): void => {
       response.cancel();
-      if (providerError) throw new Error(`${this.id} stream failed (${model}): ${providerError}`);
-      if (!content.trim()) throw new Error(`${this.id} returned empty streaming output (${model})`);
+      if (providerError) throw providerError;
+      if (!completed) throw new ProviderStreamError(this.id, "stream_incomplete");
+      if (!content.trim()) throw new ProviderStreamError(this.id, "stream_empty");
     };
     const consumeData = (data: string): boolean => {
       let parsed: Record<string, unknown>;
@@ -615,7 +647,18 @@ export class OpenCodeGoProvider implements AIProvider {
         return false; // 忽略无法解析的 SSE 行（部分网关会插入空行/注释）
       }
       switch (parsed.type) {
+        case "response.output_item.added":
+        case "response.output_item.done":
+          if (typeof parsed.output_index === "number" && asRecord(parsed.item)?.type === "message")
+            itemPhases.set(parsed.output_index, asRecord(parsed.item)?.phase);
+          return false;
         case "response.output_text.delta": {
+          const phase = itemPhases.get(typeof parsed.output_index === "number" ? parsed.output_index : 0);
+          if (phase === "commentary") return false;
+          if (this.modelProfile?.supportsAssistantPhase && phase !== "final_answer") {
+            withheldUnknownPhase = true;
+            return false;
+          }
           const delta = parsed.delta;
           if (typeof delta === "string" && delta.length > 0) {
             content += delta;
@@ -623,20 +666,32 @@ export class OpenCodeGoProvider implements AIProvider {
           }
           return false;
         }
-        case "response.completed":
-          return true;
-        case "response.failed":
-        case "response.incomplete": {
-          const error = asRecord(asRecord(parsed.response)?.error) ?? asRecord(parsed.error);
-          providerError = typeof error?.message === "string"
-            ? error.message.slice(0, 200)
-            : String(parsed.type);
+        case "response.completed": {
+          const terminal = asRecord(parsed.response);
+          if (terminal && Array.isArray(terminal.output)) {
+            const finalText = readResponsesFinalText(terminal);
+            if (this.modelProfile?.supportsAssistantPhase && withheldUnknownPhase && finalText?.startsWith(content)) {
+              const suffix = finalText.slice(content.length);
+              content = finalText;
+              if (suffix) onDelta(suffix);
+            }
+            if (finalText !== content) providerError = new ProviderStreamError(this.id, "stream_content_mismatch");
+            finalPhase = responsesPhase({ output: readOutputItems(terminal).filter(item => item.phase !== "commentary") });
+          }
+          else if (withheldUnknownPhase) providerError = new ProviderStreamError(this.id, "stream_incomplete");
+          completed = true;
           return true;
         }
+        case "response.incomplete": {
+          const reason = asRecord(asRecord(parsed.response)?.incomplete_details)?.reason;
+          providerError = reason === "max_output_tokens"
+            ? new AgentOutputError("output_truncated", "provider stream exhausted its output limit")
+            : new ProviderStreamError(this.id, "stream_incomplete");
+          return true;
+        }
+        case "response.failed":
         case "error": {
-          providerError = typeof parsed.message === "string"
-            ? parsed.message.slice(0, 200)
-            : "stream error";
+          providerError = new ProviderStreamError(this.id, "stream_failed");
           return true;
         }
         default:
@@ -652,7 +707,7 @@ export class OpenCodeGoProvider implements AIProvider {
         responseBytes += value.byteLength;
         if (responseBytes > 8 * 1024 * 1024) {
           response.cancel();
-          throw new Error(`${this.id} streaming response exceeded 8388608 bytes (${model})`);
+          throw new ProviderStreamError(this.id, "stream_too_large");
         }
         buffer += decoder.decode(value, { stream: true });
         // PERF: 用 consumed 游标扫描本 chunk 内完整行，仅在末尾一次性截取未处理尾部，
@@ -666,7 +721,7 @@ export class OpenCodeGoProvider implements AIProvider {
           if (!trimmed.startsWith("data:")) continue;
           if (consumeData(trimmed.slice(5).trim())) {
             settle();
-            return { content };
+            return { content, finishReason: "stop", ...(finalPhase ? { phase: finalPhase } : {}) };
           }
         }
         buffer = buffer.slice(consumed);
@@ -680,9 +735,10 @@ export class OpenCodeGoProvider implements AIProvider {
       signal?.removeEventListener("abort", abortListener);
     }
     if (signal?.aborted) throw abortError(signal, "after stream");
-    // 断流（无终止事件）时以已累积文本收尾，而不是丢弃整轮输出。
+    // Text deltas are not evidence of completion. The delivery layer retains
+    // any already-visible prefix as a failed partial reply, never a success.
     settle();
-    return { content };
+    return { content, finishReason: "stop", ...(finalPhase ? { phase: finalPhase } : {}) };
   }
 
   /**
@@ -704,7 +760,7 @@ export class OpenCodeGoProvider implements AIProvider {
     const body: Record<string, unknown> = {
       model,
       input,
-      temperature: request.temperature,
+      ...modelTemperatureFields(this.modelProfile, request.temperature, asRecord(reasoning.reasoning)?.effort),
       ...(instructions ? { instructions } : {}),
       ...reasoning,
     };
@@ -770,6 +826,7 @@ export class OpenCodeGoProvider implements AIProvider {
 
     return {
       content,
+      ...(responsesPhase(response.body, !hasTools) ? { phase: responsesPhase(response.body, !hasTools) } : {}),
       toolCalls: toolCalls.map((tc) => ({ id: tc.id, name: tc.name, arguments: tc.arguments })),
       finishReason,
       // 思考模式下部分模型（deepseek）要求下一轮把 reasoning 原样回传，

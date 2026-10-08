@@ -210,8 +210,9 @@ export const companionContentBlockV1Schema = z.discriminatedUnion("type", [
 export type CompanionContentBlockV1 = z.infer<typeof companionContentBlockV1Schema>;
 
 /** 用户随这一轮主动提供的原文快照，保存在 run.page_context.selection。 */
+export const COMPANION_SELECTION_MAX_CHARS = 20_000;
 export const companionSelectionV1Schema = z.strictObject({
-  text: z.string().min(1).max(2_000),
+  text: z.string().min(1).max(COMPANION_SELECTION_MAX_CHARS),
   sharing: z.literal("user_selected"),
 });
 export type CompanionSelectionV1 = z.infer<typeof companionSelectionV1Schema>;

@@ -25,7 +25,7 @@ import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 // 本机 dev 那个变量**是超户 astella**，于是"用超户建多空间"的意图落地成了"用 api 角色"，
 // 而铺开函数的 EXECUTE 只给了 `astella_worker`（0267:142）⇒ 换到 CI 的角色形状就是
 // `permission denied for function`。名字不等于角色，这一族已经踩过不止一次。）
-const ADMIN = testDatabaseUrl("DATABASE_URL");
+const ADMIN = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 const sql = postgres(ADMIN, { max: 2 });
 /** 生产里真正调这个函数的是 worker（`handlers/companion-memory-extractor.ts:534`），
  *  所以"能不能调"必须由 worker 池来验，不许由夹具池代跑。 */

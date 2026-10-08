@@ -353,12 +353,12 @@ export function buildExtractMessages(input: {
 }): Array<{ role: "system" | "user"; content: string }> {
   const recentText = input.recent
     .slice(-5)
-    .map((m) => `消息ID=${m.messageId ?? "不可用"}；发言者=${m.role}：${m.text.slice(0, 500)}`)
+    .map((m) => `消息ID=${m.messageId ?? "不可用"}；发言者=${m.role}：${m.text}`)
     .join("\n");
   const conversation = [
     ...(recentText ? [`最近上下文：\n${recentText}`] : []),
-    `消息ID=${input.userMessageId ?? "不可用"}；发言者=user：${input.userText.slice(0, 1000)}`,
-    `消息ID=${input.assistantMessageId ?? "不可用"}；发言者=assistant：${input.assistantText.slice(0, 1000)}`,
+    `消息ID=${input.userMessageId ?? "不可用"}；发言者=user：${input.userText}`,
+    `消息ID=${input.assistantMessageId ?? "不可用"}；发言者=assistant：${input.assistantText}`,
   ].join("\n\n");
   return [
     { role: "system" as const, content: EXTRACT_PROMPT },

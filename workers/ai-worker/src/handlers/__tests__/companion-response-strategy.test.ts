@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildCasualFirstStepRequest } from "../companion-speculative-first-step.ts";
-import { companionResponseStrategy, companionExplanationReviewEnabled, COMPANION_KNOWLEDGE_REVIEW_V1, shouldReviewCompanionExplanation } from "../companion-response-strategy.ts";
+import { companionResponseStrategy, COMPANION_KNOWLEDGE_REVIEW_V1, isCompanionExplanation } from "../companion-response-strategy.ts";
 import { companionTurnThinking } from "../companion-turn-thinking.ts";
 import { companionStepRuntimePolicy } from "../companion-step-plan.ts";
 
@@ -40,11 +40,11 @@ test("动作、控制与带读取的聊天保留工具执行档", () => {
 });
 
 test("发布前复核只接管明确要求解释的无工具提问，不增加闲聊或工具动作的往返", () => {
-  assert.equal(shouldReviewCompanionExplanation({intent:"question"},"为什么咖啡会凉？",0),true);
-  assert.equal(shouldReviewCompanionExplanation({intent:"question"},"Explain inertia",0),true);
-  assert.equal(shouldReviewCompanionExplanation({intent:"question"},"你今天看到什么？",0),false);
-  assert.equal(shouldReviewCompanionExplanation({intent:"conversation"},"今天不想学",0),false);
-  assert.equal(shouldReviewCompanionExplanation({intent:"task"},"详细整理笔记",1),false);
+  assert.equal(isCompanionExplanation({intent:"question"},"为什么咖啡会凉？",0),true);
+  assert.equal(isCompanionExplanation({intent:"question"},"Explain inertia",0),true);
+  assert.equal(isCompanionExplanation({intent:"question"},"你今天看到什么？",0),false);
+  assert.equal(isCompanionExplanation({intent:"conversation"},"今天不想学",0),false);
+  assert.equal(isCompanionExplanation({intent:"task"},"详细整理笔记",1),false);
 });
 
 test("没有工具的提问不注入执行手册，不暗示可以另查记录", () => {
@@ -54,20 +54,4 @@ test("没有工具的提问不注入执行手册，不暗示可以另查记录",
   assert.match(policy,/不把工具调用写成正文/);
   assert.match(policy,/材料不足时直接说明不足/);
   assert.doesNotMatch(policy,/companion_read_memory|outcome_unknown|后台交付/);
-});
-
-
-test("收益未达标的发布前自检默认关闭，只有明确实验开关才启用", () => {
-  const saved=process.env.COMPANION_EXPLANATION_REVIEW_V1;
-  try {
-    delete process.env.COMPANION_EXPLANATION_REVIEW_V1;
-    assert.equal(companionExplanationReviewEnabled(),false);
-    process.env.COMPANION_EXPLANATION_REVIEW_V1="false";
-    assert.equal(companionExplanationReviewEnabled(),false);
-    process.env.COMPANION_EXPLANATION_REVIEW_V1="true";
-    assert.equal(companionExplanationReviewEnabled(),true);
-  } finally {
-    if(saved===undefined)delete process.env.COMPANION_EXPLANATION_REVIEW_V1;
-    else process.env.COMPANION_EXPLANATION_REVIEW_V1=saved;
-  }
 });

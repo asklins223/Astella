@@ -9,7 +9,8 @@ import { postJsonToPublicEndpoint, postSseToPublicEndpoint, type PublicJsonReque
 import { OpenCodeGoProvider } from "../lib/providers/opencode-go.ts";
 import { OpenAICompatibleProvider } from "../lib/providers/openai-compatible.ts";
 import type { AIProvider } from "../lib/ai-provider.ts";
-import { ProviderRequestError } from "../lib/provider-request-error.ts";
+import { ProviderRequestError, ProviderStreamError } from "../lib/provider-request-error.ts";
+import { AgentOutputError } from "../lib/non-retryable-errors.ts";
 
 export const root = fileURLToPath(new URL("../../../../", import.meta.url));
 loadEnvFile(`${root}.env`);
@@ -23,7 +24,9 @@ export const { resolveSystemPlatform, loadPlatformConfig } = await import("@aste
 const obj = (v:unknown):Record<string,unknown> => v && typeof v==="object" && !Array.isArray(v) ? v as Record<string,unknown> : {};
 const num = (v:unknown):number|null => typeof v==="number" && Number.isFinite(v) ? v : null;
 export type WireReceipt = {model:unknown;effort:unknown;enableThinking:unknown;outputLimit:unknown;temperature:number|null;instructionHash:string;
-  inputTokens:number|null;outputTokens:number|null;reasoningTokens:number|null;elapsedMs:number;transport:string;errorKind?:string};
+  inputTokens:number|null;outputTokens:number|null;reasoningTokens:number|null;elapsedMs:number;transport:string;errorKind?:string;
+  completedTextHash?:string;streamedTextHash?:string;completedTextMatchesDeltas?:boolean;outputMessageCount?:number;
+  messagePhases?:Array<string|null>};
 
 export function platform(capability:Capability, declaredModelOverride?: string):ResolvedPlatform {
   const resolved=resolveSystemPlatform(capability);
@@ -86,20 +89,37 @@ export function observedProvider(p:ResolvedPlatform, sessionId:string, receipts:
   const streamRequest:PublicStreamingRequester=async(url,headers,body,signal)=>{
     body = experimentalBody(body);
     const receipt=capture(body,"sse"), started=Date.now();
-    const response=await postSseToPublicEndpoint(url,headers,body,signal);
+    let response: Awaited<ReturnType<typeof postSseToPublicEndpoint>>;
+    try {
+      response=await postSseToPublicEndpoint(url,headers,body,signal);
+    } catch (error) {
+      receipt.elapsedMs=Date.now()-started;
+      throw error;
+    }
     return {...response,body:(async function*(){
-      const decoder=new TextDecoder();let buffer="";
+      const decoder=new TextDecoder();let buffer="",streamedText="";
       const inspect=(line:string)=>{
         if(!line.startsWith("data:"))return;
         try {
           const event=obj(JSON.parse(line.slice(5).trim()));
+          if(event.type==="response.output_text.delta"&&typeof event.delta==="string")streamedText+=event.delta;
+          if(event.type==="response.completed"&&Array.isArray(obj(event.response).output)){
+            const messages=(obj(event.response).output as unknown[]).filter(item=>obj(item).type==="message");
+            const completedText=messages.flatMap(item=>Array.isArray(obj(item).content)?obj(item).content as unknown[]:[])
+              .filter(item=>obj(item).type==="output_text"&&typeof obj(item).text==="string").map(item=>String(obj(item).text)).join("");
+            receipt.outputMessageCount=messages.length;
+            receipt.messagePhases=messages.map(item=>['commentary','final_answer','analysis','final'].includes(String(obj(item).phase))?String(obj(item).phase):null);
+            receipt.completedTextHash=createHash("sha256").update(completedText).digest("hex");
+            receipt.streamedTextHash=createHash("sha256").update(streamedText).digest("hex");
+            receipt.completedTextMatchesDeltas=completedText===streamedText;
+          }
           const usage=obj(obj(event.response).usage??event.usage);
           if(Object.keys(usage).length){
             receipt.inputTokens=num(usage.input_tokens??usage.prompt_tokens);
             receipt.outputTokens=num(usage.output_tokens??usage.completion_tokens);
             receipt.reasoningTokens=num(obj(usage.output_tokens_details??usage.completion_tokens_details).reasoning_tokens);
           }
-        } catch { /* not a usage event; never retain generated reasoning or text */ }
+        } catch { /* no private reasoning retained; visible terminal text is hashed only */ }
       };
       try{for await(const chunk of response.body){
         buffer+=decoder.decode(chunk,{stream:true});
@@ -115,6 +135,8 @@ export function observedProvider(p:ResolvedPlatform, sessionId:string, receipts:
 
 export function safeFailure(error:unknown) {
   // Never persist arbitrary HTTP error bodies, request headers or credentials.
+  if (error instanceof ProviderStreamError || error instanceof AgentOutputError)
+    return { name:error.name, code:error.code };
   return error instanceof ProviderRequestError ? {name:error.name,status:error.status,
     providerCode:error.providerCode??null} : {name:error instanceof Error?error.name:"unknown"};
 }

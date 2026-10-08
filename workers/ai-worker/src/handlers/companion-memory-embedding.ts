@@ -101,7 +101,7 @@ export async function runCompanionMemoryEmbeddingRebuild(job: JobPayload): Promi
         taskVersion: 1,
         idempotencyKey: `memory-embedding:${job.id}:${row.id}`,
         inputSnapshotId: `${row.id}:embedding`,
-        text: row.content.slice(0, 1000),
+        text: row.content,
         modelId: provider.embeddingModelId,
         promptVersion: `${provider.id}:companion-memory-content-embedding-v1`,
         resourceClass: "maintenance",

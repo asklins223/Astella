@@ -63,8 +63,9 @@ import {
 } from "@astella/shared";
 import { PET_PERSONA_PRESET_VERSION } from "@astella/shared/pet-persona-presets";
 import { runCompanionAgentLoop } from "./companion-agent-runtime.ts";
-import { AgentOutputError, CompanionAgentBudgetExceededError, CompanionContextChangedError, CompanionKnowledgeReviewError, CompanionDialogueReviewError } from "../lib/non-retryable-errors.ts";
+import { AgentOutputError, CompanionAgentBudgetExceededError, CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
 import { AIContextOverflowError } from "../lib/context-governor.ts";
+import { AgentContextError } from "@astella/agent-core";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
 import type { AgentMemoryContextSourceV1 } from "@astella/shared/agent-contracts";
 import {
@@ -119,7 +120,6 @@ import {
   writeBatchedDeltas,
 } from "./companion-dialogue-deltas.ts";
 import {
-  COMPANION_CANCELLED_MIN_CHARS,
   persistFailedPartial,
 } from "./companion-dialogue-failure-retention.ts";
 
@@ -671,27 +671,39 @@ export async function runCompanionDialogue(
     ...handoffInput,
     modelMessages: [],
   });
-  const messages = buildCompanionPersonaMessages({
-    scope: { workspaceId: ctx.workspaceId, userId: read.userId },
-    methodCatalog: read.groundedTutorContext ? "" : renderPlaybookCatalog(read.playbookCatalog),
-    contextReceipt: receipts => {
-      contextReceipts.recordAssembly(receipts);
-      logger.info({ runId: read.runId, sources: receipts }, "agent context budget receipt");
-    },
-    userText: read.userText,
-    recentMessages: read.recentMessages,
-    conversationClock: read.conversationClock,
-    pageContext: read.pageContext,
-    groundedTutorContext: read.groundedTutorContext,
-    residentMemories: read.residentMemories,
-    memoryDirectory: read.memoryDirectory,
-    hereAndNow: read.hereAndNow,
-    thisTurnFacts: read.thisTurnFacts,
-    factSpans: read.factSpans?.block ?? null,
-    conversationSummary: read.conversationSummary,
-    continuationData: renderCompanionContextHandoff(handoffDraft),
-    petProfile: read.petProfile,
-  });
+  let messages: ReturnType<typeof buildCompanionPersonaMessages>;
+  try {
+    messages = buildCompanionPersonaMessages({
+      scope: { workspaceId: ctx.workspaceId, userId: read.userId },
+      methodCatalog: read.groundedTutorContext ? "" : renderPlaybookCatalog(read.playbookCatalog),
+      contextReceipt: receipts => {
+        contextReceipts.recordAssembly(receipts);
+        logger.info({ runId: read.runId, sources: receipts }, "agent context budget receipt");
+      },
+      userText: read.userText,
+      recentMessages: read.recentMessages,
+      conversationClock: read.conversationClock,
+      pageContext: read.pageContext,
+      groundedTutorContext: read.groundedTutorContext,
+      residentMemories: read.residentMemories,
+      memoryDirectory: read.memoryDirectory,
+      hereAndNow: read.hereAndNow,
+      thisTurnFacts: read.thisTurnFacts,
+      factSpans: read.factSpans?.block ?? null,
+      conversationSummary: read.conversationSummary,
+      continuationData: renderCompanionContextHandoff(handoffDraft),
+      petProfile: read.petProfile,
+    });
+  } catch (error) {
+    if (error instanceof AgentContextError) {
+      const overflow = error.code === "required_context_overflow";
+      await markCompanionRunFailed(read, ctx.workspaceId,
+        overflow ? "AGENT_BUDGET_EXCEEDED" : "INTERNAL_ERROR", false,
+        overflow ? "这次需要带入的内容太多，没法一次读完；可以按段继续。"
+          : "这一轮的引用范围或装配配置不完整，请重新发起。", "execution");
+    }
+    throw error;
+  }
   const admitted = contextReceipts.admittedSources();
   const residentSources = admitted.has("resident_memory") ? memoryContext.memorySourceVersions?.resident ?? [] : [];
   const directorySources = admitted.has("memory_directory") ? memoryContext.memorySourceVersions?.directory ?? [] : [];
@@ -964,22 +976,23 @@ export async function runCompanionDialogue(
     // 重投不会让"泄露"消失。已下发的部分必然是最终文本的前缀，客户端按 error 收尾。
     const streamStopped = err instanceof CompanionStreamStoppedError;
     const outputIncomplete = err instanceof AgentOutputError && err.code === "output_truncated";
-    const reviewInvalid = err instanceof CompanionKnowledgeReviewError || err instanceof CompanionDialogueReviewError;
+    const outputUnverified = err instanceof AgentOutputError && err.code === "unverified_quote";
+    const unverifiedQuoteFailureText = "这次引文与已读取的原文对不上，答复没有完成。";
     const providerRejected = err instanceof ProviderRequestError;
     const rateLimited = providerRejected && err.status === 429;
     await markCompanionRunFailed(
       read,
       ctx.workspaceId,
       contextChanged ? err.code : budgetExceeded || outputIncomplete ? "AGENT_BUDGET_EXCEEDED" : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
-      !budgetExceeded && !outputIncomplete && !streamStopped && !reviewInvalid && !(providerRejected && [401,402,403].includes(err.status)),
-      contextChanged ? err.message : contextOverflow ? "这次需要带入的内容太多，没法一次读完；可以按段继续。" : outputIncomplete ? "这次答复达到长度上限，已说出的内容保留；可以接着分段讲。" : budgetExceeded
+      !budgetExceeded && !outputIncomplete && !outputUnverified && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
+      contextChanged ? err.message : contextOverflow ? "这次需要带入的内容太多，没法一次读完；可以按段继续。" : outputUnverified ? unverifiedQuoteFailureText : outputIncomplete ? "这次答复达到长度上限，已说出的内容保留；可以接着分段讲。" : budgetExceeded
         ? "companion agent budget exceeded"
         : streamStopped
           ? `companion stream stopped: ${streamingDelivery.failureReason() ?? "delivery pipeline"}`.slice(0, 240)
           : rateLimited ? "模型服务暂时繁忙，请稍后重试；已经完成的操作仍保留。"
             : providerRejected ? "模型服务暂时无法完成这次请求，已经完成的操作仍保留。"
-              : reviewInvalid ? "这次回复没能完成核对，尚未发布；可以重新发送。" : "companion agent execution failed",
-      reviewInvalid ? "output" : streamStopped ? "delivery" : budgetExceeded || outputIncomplete || contextChanged ? "execution" : "transport",
+              : "companion agent execution failed",
+      streamStopped ? "delivery" : outputUnverified ? "output" : budgetExceeded || outputIncomplete || contextChanged ? "execution" : "transport",
     );
     // 她已经说出来的那半句不能随失败一起消失（2026-09-19）。
     await persistFailedPartial({
@@ -988,7 +1001,7 @@ export async function runCompanionDialogue(
       conversationId: read.conversationId,
       runId: read.runId,
       deliveredText: streamingDelivery.deliveredText(),
-      ...(reviewInvalid?{failureText:"这次回复没能完成核对，尚未发布。"}:{}),
+      failureText: outputUnverified ? unverifiedQuoteFailureText : undefined,
     });
     throw err;
   }
@@ -1148,56 +1161,8 @@ export async function runCompanionDialogue(
           RETURNING id
         `);
         if (!alive[0]) {
-          // fence 未命中：run 已不是 active（cancelled / superseded / 并发终态已收尾）。
-          //
-          // 用户按了"停止"时，气泡里**已经出现过**的字必须留下来——否则取消一发生，
-          // 这段内容就从历史里彻底消失（迟到的 assistant.final 被 fence 拒绝，而
-          // companion_messages 只在 final 时写入）。这里是全仓**唯一**写 assistant
-          // 消息的地方，对话与 agent 两条链路都汇到这里，所以补这一处即可覆盖两者。
-          //
-          // 落库判据用一条原子 UPDATE：只有 run 的真实终态是 'cancelled' 才留档。
-          //   - `superseded`（被用户的新提问顶掉）不落：那一轮由新回合接替，落碎片是噪音；
-          //   - 太短不落：1–2 字的碎片进历史是噪音，不是记录（阈值见常量）。
-          // 顺带回填 assistant_message_id，让"这条消息属于哪轮 run"在数据里成立。
-          if (assistantText.trim().length >= COMPANION_CANCELLED_MIN_CHARS) {
-            // 先锁住"确属取消、且还没留过档"的那一行。**不能**先回填
-            // `assistant_message_id`：它是指向 `companion_messages` 的立即外键，
-            // 消息行还没插就回填会被 FK 打回、整笔终态事务回滚——留档会一声不响地
-            // 从未发生过（实机库里 9 个 cancelled run、0 条 cancelled 消息）。
-            const cancelled = await tx.execute<{ id: string }>(sql`
-              SELECT id FROM companion_turn_runs
-              WHERE id = ${read.runId} AND status = 'cancelled' AND assistant_message_id IS NULL
-              FOR UPDATE
-            `);
-            if (cancelled[0]) {
-              const partialCounters = await tx.execute<{ next_message_seq: string }>(sql`
-                UPDATE companion_conversations
-                SET next_message_seq = next_message_seq + 1, last_message_at = now()
-                WHERE id = ${read.conversationId}
-                RETURNING next_message_seq
-              `);
-              const partialSeqRow = partialCounters[0];
-              if (partialSeqRow) {
-                // blocks 与 contentSha256 直接复用成功路径算好的那份：两条路径
-                // 必须是同一套散列口径，否则同一段文本在库里有两个 contentSha256。
-                // 不写 assistant.final / character.cue：run 已是终态，事件侧由 cancel
-                // 那条 turn.cancelled 收尾——一个回合出现两个"结束"会让客户端状态机打架。
-                await tx.execute(sql`
-                  INSERT INTO companion_messages
-                    (id, workspace_id, user_id, conversation_id, seq, role, kind, blocks, run_id, content_sha256)
-                  VALUES (${assistantMessageId}, ${ctx.workspaceId}, ${read.userId},
-                          ${read.conversationId}, ${Number(partialSeqRow.next_message_seq) - 1},
-                          'assistant', 'cancelled',
-                          ${JSON.stringify(blocks)}, ${read.runId}, ${contentSha256})
-                `);
-                await tx.execute(sql`
-                  UPDATE companion_turn_runs
-                  SET assistant_message_id = ${assistantMessageId}, updated_at = now()
-                  WHERE id = ${read.runId}
-                `);
-              }
-            }
-          }
+          // 取消/接替事务已经保存当时提交的增量。晚到的完整生成不得再写消息、
+          // 富块或 final：它可能包含用户停止后才生成的正文与动作。
           return;
         }
 

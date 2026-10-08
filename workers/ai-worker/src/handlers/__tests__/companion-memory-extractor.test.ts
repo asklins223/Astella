@@ -19,6 +19,16 @@ import {
 } from "@astella/shared";
 import type { WorkerTransaction } from "../../db.ts";
 
+test("记忆抽取保留长原话末尾的取消和期限，不把旧偏好前缀当成完整陈述", () => {
+  const userText = "以后要提醒我" + "背景".repeat(1000) + "末尾纠正：刚才的提醒不要记住了。";
+  const assistantText = "已接住这次纠正。" + "解释".repeat(1000) + "末尾确认：没有保存任何提醒。";
+  const old = "此前说法".repeat(500) + "旧原话最后的条件。";
+  const messages = buildExtractMessages({ userText, assistantText, recent: [{ role: "user", text: old }] });
+  assert.ok(messages[1]!.content.includes(userText));
+  assert.ok(messages[1]!.content.includes(assistantText));
+  assert.ok(messages[1]!.content.includes(old));
+});
+
 test("isVolatileStatisticMemory：拦『现在这一份』统计，不拦用户说过的带数字偏好", () => {
   // 实机被写进 learning_context 的那条（里面的 23 分钟本来就是编的）。
   assert.equal(isVolatileStatisticMemory("截至当前，用户本周累计学习时长为23分钟，拥有10张活跃卡片和9篇笔记。"), true);

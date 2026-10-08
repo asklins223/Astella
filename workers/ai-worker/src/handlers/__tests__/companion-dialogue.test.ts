@@ -29,6 +29,7 @@ import {
   normalizeQuotedPassage,
   unverifiedQuoteClaims,
   keepRecomputedBlocks,
+  renderCompanionUserTurn,
   boundCompanionRecentHistory,
   buildCompanionContextHandoffSnapshotV1,
   renderCompanionContextHandoff,
@@ -273,6 +274,23 @@ test("residentMemories 注入 system 的 <memory_data> 数据块", () => {
   // 2026-09-19 D：安全声明收拢进 OUTPUT_SAFETY_GUARD 的数据边界条目。
   assert.match(system, /<memory_data> 是用户的历史记忆/);
   assert.match(system, /<memory_data> 是用户的历史记忆/);
+});
+
+test("长存量常驻记忆的尾部纠正进入完整数据块，不再裁到200字", () => {
+  const content = "旧的蓝笔偏好。".repeat(70) + "最后更正：已经改用铅笔，蓝笔偏好不再适用。";
+  const messages = buildCompanionPersonaMessages({ userText: "用什么笔？", recentMessages: [], pageContext: null,
+    residentMemories: [{ kind: "preference", content }] });
+  assert.ok(String(messages[0].content).includes(content));
+});
+
+test("历史选区装配保留后半段原文，新选区的长度校验仍由输入合同负责", () => {
+  const tail = "尾部纠正：不能把入射角说成折射角。";
+  const selection = "原".repeat(20_000 - tail.length) + tail;
+  const pageContext = { selection: { text: selection } };
+  const current = renderCompanionUserTurn("最后这句是什么意思？", pageContext);
+  assert.ok(current.includes(selection));
+  const messages = buildCompanionPersonaMessages({ userText: "最后这句是什么意思？", recentMessages: [], pageContext });
+  assert.ok(String(messages.at(-1)?.content).includes(selection));
 });
 
 test("active 目录只含有界元数据，并提示相关时按 ID 与版本展开正文", () => {
@@ -1086,8 +1104,9 @@ test("活跃度 active 与 quiet 必须产出不同的行为指令，而不是�
   const quiet = systemOf(personaProfile({ activeness: "quiet" }));
   assert.match(active, /把你设为「活跃」/);
   assert.match(active, /限定篇幅或只要答案时.*不补充解释或追问/);
-  assert.match(active, /有具体理由时才提问题或建议/);
-  assert.match(active, /不必每轮留下邀请/);
+  assert.match(active, /活跃度只决定参与感/);
+  assert.match(active, /用户求办法时再给具体帮助/);
+  assert.match(active, /一句话也可以自然结束/);
   assert.match(quiet, /把你设为「安静」/);
   assert.match(quiet, /不主动开新话题、不追问/);
   assert.ok(!quiet.includes("把你设为「活跃」"));
@@ -1225,14 +1244,41 @@ test("引文核对：不同引用块独立匹配，不能用示例放行另一�
 });
 
 test("一般知识解释的修辞引号不是逐字引文，真实来源声明仍必须核对", () => {
-  const options={allowExplanatoryQuotes:true};
+  const options={allowUnattributedQuotes:true};
   assert.deepEqual(unverifiedQuoteClaims("限速的不是「杯子内部一直缓慢地传递热量」，而是表面向环境散热。","",options),[]);
   assert.equal(unverifiedQuoteClaims("笔记原文说：「杯子内部一直缓慢地传递热量」。","",options).length,1);
   assert.equal(unverifiedQuoteClaims("老师说：「杯子内部一直缓慢地传递热量」。","",options).length,1);
   assert.equal(unverifiedQuoteClaims("「杯子内部一直缓慢地传递热量」是教材原文。","",options).length,1);
-  assert.equal(unverifiedQuoteClaims("> 杯子内部一直缓慢地传递热量。","",options).length,1);
+  assert.deepEqual(unverifiedQuoteClaims("> 杯子内部一直缓慢地传递热量。","",options),[]);
+  assert.equal(unverifiedQuoteClaims("笔记原文如下：\n\n> 杯子内部一直缓慢地传递热量。","",options).length,1);
   assert.equal(unverifiedQuoteClaims("限速的不是「杯子内部一直缓慢地传递热量」。","").length,1,
     "读取材料的默认通路仍逐字核对");
+});
+
+test("直接创作的长对白不是现实引文，冒称用户或笔记原话仍核对", () => {
+  const options = { allowUnattributedQuotes: true };
+  const line = "灯塔守护人说：“等这阵风过去，我们再把灯点亮。”";
+  assert.deepEqual(unverifiedQuoteClaims(line, "", options), []);
+  assert.equal(unverifiedQuoteClaims("你昨天说：“等这阵风过去，我们再把灯点亮。”", "", options).length, 1);
+  assert.equal(unverifiedQuoteClaims("笔记原文写着：“等这阵风过去，我们再把灯点亮。”", "", options).length, 1);
+  assert.deepEqual(unverifiedQuoteClaims("> 等这阵风过去，我们再把灯点亮。", "", options), []);
+  assert.equal(unverifiedQuoteClaims(line, "").length, 1, "资料读取路径仍保留严格核对");
+});
+
+test("人物对白里的你不把同段下一句误认成真实用户原话", () => {
+  const line = "“你外婆从来不提他。”她母亲说，“我小时候问过一回，她没说话，第二天把我送去镇上念书了。后来我就没再问。”";
+  assert.deepEqual(unverifiedQuoteClaims(line, "", { allowUnattributedQuotes: true }), []);
+  assert.equal(unverifiedQuoteClaims("“先等等。”你昨天说过：“等这阵风过去，我们再把灯点亮。”", "",
+    { allowUnattributedQuotes: true }).length, 1, "引号外确实归给用户的原话仍核对");
+  assert.equal(unverifiedQuoteClaims(line, "").length, 1, "读取资料时仍核对长对白原文");
+});
+
+test("直接回复引用块放行排版，显式现实来源和读取资料仍核对", () => {
+  const fiction = "守灯人留下一张纸条：\n\n> 等这阵风过去，我们再把灯点亮。";
+  assert.deepEqual(unverifiedQuoteClaims(fiction, "", { allowUnattributedQuotes: true }), []);
+  assert.equal(unverifiedQuoteClaims(fiction, "").length, 1);
+  assert.equal(unverifiedQuoteClaims("你昨天说过：\n\n> 等这阵风过去，我们再把灯点亮。", "",
+    { allowUnattributedQuotes: true }).length, 1);
 });
 
 test("服务端注进回放的那句降级说明，不会从她嘴里说出来", () => {

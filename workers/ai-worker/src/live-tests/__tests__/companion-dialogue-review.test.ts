@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
-import {applyCompanionDialogueReview,shouldReviewCompanionDialogue} from "../companion-dialogue-review.ts";
-import {CompanionDialogueReviewError,isNonRetryableError} from "../../lib/non-retryable-errors.ts";
-import {companionDraftSpans} from "../companion-knowledge-review.ts";
+import {applyCompanionDialogueReview,shouldReviewCompanionDialogue} from "../diagnostics/companion-dialogue-review.ts";
+import {CompanionDialogueReviewError} from "../diagnostics/companion-review-errors.ts";
+import {companionDraftSpans} from "../diagnostics/companion-knowledge-review.ts";
 
 const plan=(draft:string,dropIds:number[]=[])=>JSON.stringify({verdicts:companionDraftSpans(draft)
  .filter(span=>span.text.trim()).map(span=>({spanId:span.id,action:dropIds.includes(span.id)?"drop":"keep",
@@ -24,7 +24,6 @@ test("错误索引、重复索引、删除空段或删除全部正文不能发�
  assert.throws(()=>applyCompanionDialogueReview(JSON.stringify({verdicts:[]}),draft),CompanionDialogueReviewError);
  assert.throws(()=>applyCompanionDialogueReview(JSON.stringify({verdicts:[{spanId:1,action:"keep",reason:"漏检另一段"}]}),draft),CompanionDialogueReviewError);
  assert.equal(applyCompanionDialogueReview(plan(draft),draft).answer,draft);
- assert.equal(isNonRetryableError(new CompanionDialogueReviewError()),true);
 });
 
 test("知识、任务、角色创作与关闭开关不增加对话范围核对调用",()=>{

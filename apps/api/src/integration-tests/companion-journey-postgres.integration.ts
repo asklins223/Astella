@@ -319,19 +319,20 @@ test("P6 RLS：跨 user 读 journey 被拒（app.user_id 上下文收口）", as
     // 另一个 user 以正确 workspace 上下文读该 journey → RLS 拒（0 行）。
     // 用 astella_api 角色连接（NOBYPASSRLS，owner 会绕过 RLS）。
     const apiSql = postgres(API_RLS_CONN, { max: 1 });
-    // 探针连接必须与套件主连接同库、且角色不绕过 RLS。否则下面的负向断言会因
-    // "探针连到别的库 → 谁都读不到"而假通过，或"角色是超级用户 → 谁都读得到"
-    // 而假失败。这里显式失败，避免隔离断言退化成静默无效。
-    const [probeIdentity] = await apiSql<{ db: string; bypass: boolean }[]>`
-      SELECT current_database() AS db,
-             COALESCE((SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user), false) AS bypass
-    `;
-    const [mainIdentity] = await sql<{ db: string }[]>`SELECT current_database() AS db`;
-    assert.equal(probeIdentity.db, mainIdentity.db, "RLS 探针必须与套件连接到同一个数据库");
-    assert.equal(probeIdentity.bypass, false, "RLS 探针角色不得 BYPASSRLS");
     const otherUser = randomUUID();
-    await sql`INSERT INTO users (id, email, password_hash, role) VALUES (${otherUser}, ${`jv-other-${otherUser.slice(0, 8)}@example.test`}, 'h', 'owner')`;
     try {
+      // 探针连接必须与套件主连接同库、且角色不绕过 RLS。否则下面的负向断言会因
+      // "探针连到别的库 → 谁都读不到"而假通过，或"角色是超级用户 → 谁都读得到"
+      // 而假失败。这里显式失败，避免隔离断言退化成静默无效。
+      const [probeIdentity] = await apiSql<{ db: string; bypass: boolean }[]>`
+        SELECT current_database() AS db,
+               COALESCE((SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user), false) AS bypass
+      `;
+      const [mainIdentity] = await sql<{ db: string }[]>`SELECT current_database() AS db`;
+      assert.equal(probeIdentity.db, mainIdentity.db, "RLS 探针必须与套件连接到同一个数据库");
+      assert.equal(probeIdentity.bypass, false, "RLS 探针角色不得 BYPASSRLS");
+      await scoped({ workspaceId: seeded.workspaceId, userId: otherUser }, (tx) =>
+        tx`INSERT INTO users (id, email, password_hash, role) VALUES (${otherUser}, ${`jv-other-${otherUser.slice(0, 8)}@example.test`}, 'h', 'owner')`);
       await apiSql.begin(async (tx) => {
         await tx`SELECT set_config('app.workspace_id', ${seeded.workspaceId}, true)`;
         await tx`SELECT set_config('app.user_id', ${otherUser}, true)`;
@@ -347,7 +348,8 @@ test("P6 RLS：跨 user 读 journey 被拒（app.user_id 上下文收口）", as
       });
     } finally {
       await apiSql.end({ timeout: 2 }).catch(() => {});
-      await sql`DELETE FROM users WHERE id = ${otherUser}`;
+      await scoped({ workspaceId: seeded.workspaceId, userId: otherUser }, (tx) =>
+        tx`DELETE FROM users WHERE id = ${otherUser}`);
     }
   } finally {
     await seeded.cleanup();

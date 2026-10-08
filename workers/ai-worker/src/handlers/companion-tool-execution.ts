@@ -51,7 +51,7 @@ import {
 } from "../lib/governance.ts";
 import { getObjectBytes } from "../lib/object-storage.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
-import { noteSearchTerms, parsePageContext, stripProviderControlTokens } from "./companion-dialogue-content.ts";
+import { companionStepOutputCeiling, noteSearchTerms, parsePageContext, stripProviderControlTokens } from "./companion-dialogue-content.ts";
 import { readPastConversationMessages, searchPastConversationSummaries } from "./companion-summary-retrieval.ts";
 import { listAgentLongGoals, listAgentMethods } from "@astella/agent-host";
 import {
@@ -318,9 +318,9 @@ export async function executeReadTool(
             card_id: string; objective_id: string; cue: string | null;
             prompt: string | null; summary: string | null; form: string | null;
           }>(sql`
-            SELECT c.card_id, c.objective_id, left(c.front->>'cue', 300) AS cue,
-                   left(c.front->>'prompt', 280) AS prompt,
-                   left(c.public_summary, 300) AS summary, c.knowledge_form AS form
+            SELECT c.card_id, c.objective_id, c.front->>'cue' AS cue,
+                   c.front->>'prompt' AS prompt,
+                   c.public_summary AS summary, c.knowledge_form AS form
             FROM learning_cards_v2 c
             -- 到期列表递过来的那个 id 是 review_schedules.subject_id，而它按方案 20
             -- §29.4 的别名规则**存的是 objectiveId**（subject_type 却叫 'card'）。
@@ -349,7 +349,7 @@ export async function executeReadTool(
           route,
           card: {
             cardId: card.card_id,
-            front: front.slice(0, 600),
+            front,
             summary: card.summary,
             knowledgeForm: card.form,
           },
@@ -365,7 +365,7 @@ export async function executeReadTool(
               // 而块里的 cardId 是客户端跳转的落点，合同只校验"是不是 uuid"，不会替我认错。
               cardId: card.card_id,
               front: front.slice(0, 600),
-              summary: card.summary,
+              summary: card.summary?.slice(0, 600) ?? null,
               knowledgeForm: card.form,
             }]
           : [],
@@ -597,7 +597,7 @@ export async function executeReadTool(
         + "流程/结构类图先说清是什么再逐项列出。看不清、被截掉、图上没有的一律直说看不清，"
         + "绝不猜、不用常识补、不编内容。直接说内容，不要开场白。";
       const generationParameters = {
-        maxTokens: 1_500,
+        maxTokens: companionStepOutputCeiling(visionProvider),
         temperature: 0.2,
         responseFormat: "text" as const,
         model: visionProvider.visionModelId,
@@ -679,7 +679,7 @@ export async function executeReadTool(
       return {
         value: {
           question,
-          description: description.slice(0, 3_000),
+          description,
           size: `${asset.width}×${asset.height}`,
           ...(asset.note_title ? { inNote: asset.note_title.slice(0, 40) } : {}),
         },

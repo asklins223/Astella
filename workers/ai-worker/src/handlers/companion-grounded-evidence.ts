@@ -55,7 +55,7 @@ export function materializeGroundedTutorEvidence(
     if (!normalized) {
       throw new Error(`empty grounded tutor evidence quote: ${row.evidence_snapshot_id}`);
     }
-    evidence.push(normalized.slice(0, 1_200));
+    evidence.push(normalized);
   }
   return evidence;
 }

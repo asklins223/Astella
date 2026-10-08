@@ -27,14 +27,20 @@ const workspaceId = randomUUID();
 const devicePrefix = `runtime-fence-${userId.slice(0, 8)}`;
 
 async function seedUser(): Promise<void> {
-  await sql`
+  await sql.begin(async tx => {
+    await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+    await tx`
     INSERT INTO users (id, email, password_hash, role)
     VALUES (${userId}, ${`${devicePrefix}@example.test`}, 'test-hash', 'owner')
   `;
+  });
 }
 
 async function cleanup(): Promise<void> {
-  await sql`DELETE FROM users WHERE id = ${userId}`;
+  await sql.begin(async tx => {
+    await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+    await tx`DELETE FROM users WHERE id = ${userId}`;
+  });
 }
 
 await seedUser();

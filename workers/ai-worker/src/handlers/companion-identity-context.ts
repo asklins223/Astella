@@ -34,7 +34,7 @@ export const PERSONA_SAFETY_GUARD = [
  * 用户可控字段进入 system prompt 前的净化：压平控制字符/换行、剥离尖括号
  * （防止伪造 `</persona_data>` 边界）、限长。返回空串表示该字段不可用。
  */
-export function sanitizePersonaField(value: unknown, maxChars: number): string {
+export function sanitizePersonaField(value: unknown, maxChars?: number): string {
   if (typeof value !== "string") return "";
   return value
     .replace(/[\u0000-\u001f\u007f]+/g, " ")
@@ -66,7 +66,7 @@ export function renderPersonaBehaviour(persona: {
   if (persona.activeness === "quiet") {
     lines.push("用户把你设为「安静」：回复偏短、不主动开新话题、不追问，接住对方说的就够了。");
   } else if (persona.activeness === "active") {
-    lines.push("用户把你设为「活跃」：愿意参与、有自己的反应，贴着当前话题多聊两句；有具体理由时才提问题或建议，接住一句话也可以自然结束，不必每轮留下邀请。用户限定篇幅或只要答案时，按这轮要求收住，不补充解释或追问。");
+    lines.push("用户把你设为「活跃」：愿意参与、有自己的反应，贴着当前话题多聊两句；好奇、看法和小玩笑都可以，接住一句话也可以自然结束。活跃度只决定参与感，不把分享变成帮用户安排事情；用户求办法时再给具体帮助。用户限定篇幅或只要答案时，按这轮要求收住，不补充解释或追问。");
   }
   if (persona.boundaries?.allowPlayful === false) {
     lines.push("用户关掉了「俏皮」：收起调侃和卖萌，平稳直接地说，语气词也别堆。");

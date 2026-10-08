@@ -634,8 +634,12 @@ export function normalizeQuotedPassage(text: string): string {
 export const QUOTE_MIN_CHARS = 12;
 
 /** 她正文里"当成原文端出来"的那些段落：Markdown 引用块 + 「…」式直接引语。 */
-export function extractQuotedPassages(text: string, allowExplanatoryQuotes = false): string[] {
+export function extractQuotedPassages(text: string, allowUnattributedQuotes = false): string[] {
   const out: string[] = [];
+  const sourceAttribution = /原文|原句|逐字|引文|(?:材料|笔记|文中|书上|教材|课本|你|用户|老师).{0,12}(?:写|说|提到|记载|如下|：)/;
+  // 相邻人物对白是被引用的内容，不是叙述者对现实来源的归属声明。
+  // 用换行隔开移除的引语，避免两侧词语重新拼成一条来源声明。
+  const withoutOtherQuotes = (part: string) => part.replace(/[「“][^」”\n]*[」”]/g, "\n");
   // Markdown 也用引用块排版计算示例。分开核对每个引用块，避免把示例
   // 误当逐字原文，或把两处真实引文拼成来源中不存在的一段。
   for (const match of text.matchAll(/(?:^[ \t]*>[^\n]*(?:\n|$))+/gm)) {
@@ -643,15 +647,16 @@ export function extractQuotedPassages(text: string, allowExplanatoryQuotes = fal
     const preceding = text.slice(0, match.index).trimEnd().split(/\n\s*\n/).at(-1) ?? "";
     const explanation = /^(?:(?:示例|举例)(?:检查|计算)?|注意|提醒|提示|说明|小结)[：:]/.test(passage.replace(/[*#]/g, "").trimStart())
       || /^[#*\s]*(?:示例|举例|例如|比如)(?:检查)?[：:*\s]*$/.test(preceding);
-    const claimsSource = /原文|原句|逐字|引文|(?:材料|笔记|文中|书上).{0,8}(?:写|说|记载|如下|：)/.test(passage + preceding);
-    if (!explanation || claimsSource) out.push(passage);
+    const claimsSource = /原文|原句|逐字|引文|(?:材料|笔记|文中|书上).{0,8}(?:写|说|记载|如下|：)/.test(passage)
+      || sourceAttribution.test(withoutOtherQuotes(preceding));
+    if (claimsSource || (!allowUnattributedQuotes && !explanation)) out.push(passage);
   }
   for (const m of text.matchAll(/[「“]([^」”\n]{12,})[」”]/g)) {
     const before = text.slice(0, m.index).split(/\n\s*\n/).at(-1) ?? "";
     const after = text.slice(m.index + m[0].length).split(/\n\s*\n/)[0] ?? "";
-    const paragraph = before + after;
-    const attributed = /原文|原句|逐字|引文|(?:材料|笔记|书上|教材|课本|你|用户|老师).{0,12}(?:写|说|提到|记载|如下|：)/.test(paragraph);
-    if (!allowExplanatoryQuotes || attributed) out.push(m[1].trim());
+    const paragraph = [before, after].map(withoutOtherQuotes).join("\n");
+    const attributed = sourceAttribution.test(paragraph);
+    if (!allowUnattributedQuotes || attributed) out.push(m[1].trim());
   }
   return out.filter((passage) => normalizeQuotedPassage(passage).length >= QUOTE_MIN_CHARS);
 }
@@ -659,7 +664,8 @@ export function extractQuotedPassages(text: string, allowExplanatoryQuotes = fal
 /**
  * 她引的"原文"里，哪些在本轮真出处中逐字找不到（方案 29 §12.6 的 ②）。
  *
- * 引用块和直接引语默认核对；一般知识解释可放行没有来源声明的修辞引号，
+ * 引用块和直接引语默认核对；不读取来源的直接回复可放行没有来源声明的引用排版，
+ * 包括解释里的修辞和创作里的人物对白。引号本身不能证明声称引用了真实来源。
  * 读取材料的默认通路仍严格核对。明确标作自拟示例的引用块也不当成逐字原文。
  * 单靠"原文在这儿/我念给你"这种说法已经被证明是追不上的
  * （同一个缺口，动词换一个就漏）。它只做一件事——把她当原文端出来的段落，
@@ -668,9 +674,9 @@ export function extractQuotedPassages(text: string, allowExplanatoryQuotes = fal
  * 是课本话，笔记正文里一个字都没有；修好后她引的那段与正文两边都能对上。
  */
 export function unverifiedQuoteClaims(replyText: string, sourcesText: string,
-  options: { allowExplanatoryQuotes?: boolean } = {}): string[] {
+  options: { allowUnattributedQuotes?: boolean } = {}): string[] {
   const haystack = normalizeQuotedPassage(sourcesText);
-  return extractQuotedPassages(replyText, options.allowExplanatoryQuotes).filter(
+  return extractQuotedPassages(replyText, options.allowUnattributedQuotes).filter(
     (passage) => !haystack.includes(normalizeQuotedPassage(passage)),
   );
 }
@@ -871,7 +877,6 @@ export function buildCompanionPersonaMessages(input: {
 }): import("@astella/shared").ChatMessage[] {
   // resident 正文与 active 目录各自有独立预算；这里仅作防御性截断。
   const MEMORY_MAX_COUNT = 30;
-  const MEMORY_CONTENT_MAX = 200;
   // §9.3：共用此选择器，使读取摘要时使用的历史水位与真正进入 prompt 的尾部一致。
   const boundedRecent = boundCompanionRecentHistory(input.recentMessages);
   let pageContext: string | null = null;
@@ -916,7 +921,7 @@ export function buildCompanionPersonaMessages(input: {
     .slice(0, MEMORY_MAX_COUNT)
     .map((m) => ({
       kind: sanitizePersonaField(m.kind, 64),
-      content: sanitizePersonaField(m.content, MEMORY_CONTENT_MAX),
+      content: sanitizePersonaField(m.content),
       epistemicStatus: sanitizePersonaField(m.epistemicStatus ?? "", 16),
     }))
     .filter((m) => m.kind.length > 0 && m.content.length > 0);
@@ -1125,10 +1130,12 @@ export function buildCompanionPersonaMessages(input: {
     add("this_turn_facts", input.thisTurnFacts, "data", { priority: 50, maxCharacters: 16000 });
     add("fact_spans", input.factSpans, "data", { priority: 50, maxCharacters: 8000 });
     add("summary", input.conversationSummary, "data", { priority: 10, maxCharacters: 16000 });
-    add("continuation", input.continuationData, "data", { required: Boolean(input.continuationData), maxCharacters: 24000 });
+    add("continuation", input.continuationData, "data", { required: Boolean(input.continuationData) });
     add("memory_directory", memoryDirectoryBlock, "data", { priority: 20, maxCharacters: 8000 });
     add("resident_memory", memoryDataBlock, "data", { priority: 20, maxCharacters: 8000 });
-    add("selection", selectionDataBlock, "data", { required: Boolean(selectionDataBlock), maxCharacters: 2400 });
+    // Selection length is validated at turn creation. Keep the complete source
+    // and let the full context budget decide whether the request fits.
+    add("selection", selectionDataBlock, "data", { required: Boolean(selectionDataBlock) });
     add("diary_reference", diaryReferenceBlock, "data", { priority: 40, maxCharacters: 1200 });
     add("page_context", pageContextBlock, "data", { priority: 5, maxCharacters: 16000 });
     add("method_catalog", input.methodCatalog, "data", { priority: 20, maxCharacters: 8000 });
@@ -1185,14 +1192,14 @@ export function renderUserAttachedImagesLine(
     + "没看过就说没看，不要凭图名或上下文猜图里的内容。";
 }
 
-function companionSelectionText(value: unknown): string | null {
+export function companionSelectionText(value: unknown): string | null {
   try {
     const parsed = typeof value === "string" ? JSON.parse(value) as unknown : value;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
     // In the page-context envelope selection is beside context, not inside it.
     const selection = (parsed as { selection?: { text?: unknown } }).selection
       ?? parsePageContext(parsed)?.selection as { text?: unknown } | undefined;
-    const text = typeof selection?.text === "string" ? selection.text.trim().slice(0, 2_000) : "";
+    const text = typeof selection?.text === "string" ? selection.text.trim() : "";
     return text || null;
   } catch {
     return null;

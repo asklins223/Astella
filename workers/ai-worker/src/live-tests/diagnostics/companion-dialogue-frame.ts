@@ -1,9 +1,5 @@
-import type { AgentDialogueFrameV1 } from "@astella/shared/agent-contracts";
-
-/** Kept experimental until ordinary multi-turn live evaluation proves a benefit. */
-export function companionDialogueFrameEnabled(): boolean {
-  return process.env.COMPANION_DIALOGUE_FRAME_V1 === "true";
-}
+/** Retired production experiment: offline diagnostic only. */
+import type { AgentDialogueFrameV1 } from "./companion-dialogue-contracts.ts";
 
 /** Source binding belongs to agent-core; this layer chooses how to participate. */
 export function companionDialoguePurposePolicy(frame?: AgentDialogueFrameV1): string {

@@ -27,6 +27,7 @@ import {
   useCompanionImageAttachment,
 } from "./companion-composer-image";
 import { NOTE_IMAGE_UPLOAD_MIME_TYPES } from "@astella/shared/note-image-upload-contracts";
+import { companionComposerLimitNote } from "./companion-composer-limits";
 import { visibleTurnFailure } from "./companion-hud-state";
 import { shouldSendCompanionOnEnter } from "./companion-composer-key";
 import { CompanionVoiceConversation } from "./CompanionVoiceConversation";
@@ -500,13 +501,6 @@ export function CompanionHud({
    * keyframes 会让半径从当前振幅瞬间弹到 1，那一下很显眼。
    */
   const [breath, setBreath] = useState<"rest" | "speaking" | "returning">("rest");
-  /**
-   * 停止时定格下来的那段文字。停止会清掉草稿，而定格要在草稿消失之后继续显示——
-   * 所以必须在它消失前把最后一份文本存下来（方案 §5 第 8 项、§6 展示）。
-   */
-  const [frozenText, setFrozenText] = useState("");
-  const lastOutputRef = useRef("");
-
 
   useEffect(() => voice.subscribeLevel((level) => {
     micRef.current?.style.setProperty("--voice-level", level.toFixed(3));
@@ -845,21 +839,12 @@ export function CompanionHud({
   // Input sizing precedes placement, so its first visible frame uses the final geometry.
   const { side, controlsSide } = useCompanionFloatingPlacement(hudRef, floatingRef, headRef, !floatingBlocked && !settingsOpen && !goalBubbleOpen && chat.mode !== "history");
 
-  /**
-   * 停止后气泡要定格住"她已经说出来的那几句"，可停止流程会把草稿清掉——所以在草稿
-   * 还在的时候把最后一份文本留一份副本。没有它，用户按下停止的瞬间那句话就从视野里
-   * 消失了（虽然服务端已经把它留进历史）。
-   */
-  useEffect(() => {
-    const text = chat.liveReply ? companionHudReplyText(chat.liveReply) : (chat.draft?.text ?? "");
-    if (text.trim().length > 0) lastOutputRef.current = text;
-  }, [chat.draft, chat.liveReply]);
-
+  // 会话层保留本轮的中止正文。不能缓存“最后一次非空输出”：新轮尚未输出时，
+  // 那份缓存仍属于上一轮，会把旧回复冒充本轮内容。
+  const stoppedText = plainCompanionBubbleText(activeNoteExplanation?.phase === "stopped"
+    ? activeNoteExplanation.text : chat.interrupted?.text ?? "");
   useEffect(() => {
     if (!chat.stopNotice) return;
-    const stoppedText = activeNoteExplanation?.phase === "stopped"
-      ? plainCompanionBubbleText(activeNoteExplanation.text) : lastOutputRef.current;
-    setFrozenText(stoppedText);
     // 稳定摘要（方案 §3 无障碍）：停止也是回合终态，发一次"已停止"收尾。
     setTurnSummary(stoppedText.trim().length > 0
       ? `${stoppedText.trim()}（已停止）`
@@ -867,11 +852,12 @@ export function CompanionHud({
     // 停止说明是"就地提示"，不是常驻状态；下一次发送也会把它清掉。
     const timer = window.setTimeout(() => chat.dismissStopNotice(), STOP_NOTICE_HOLD_MS);
     return () => window.clearTimeout(timer);
-  }, [chat.dismissStopNotice, chat.stopNotice, activeNoteExplanation?.id, activeNoteExplanation?.phase, activeNoteExplanation?.text]);
+  }, [chat.dismissStopNotice, chat.stopNotice, stoppedText]);
 
+  const sendLimitNote = companionComposerLimitNote(input, chat.feedSelection ?? chat.feedNoteAnchor?.anchor.excerpt);
   const sendText = useCallback(async (textOverride?: string, fromVoice = false) => {
     const text = (textOverride ?? input).trim();
-    if (!text) return;
+    if (!text || companionComposerLimitNote(text, chat.feedSelection ?? chat.feedNoteAnchor?.anchor.excerpt)) return false;
     if (!fromVoice) setInput("");
     const sourceConversationId = chat.conversationId;
     if (chat.mode === "conversation") chat.setMode("closed");
@@ -983,7 +969,7 @@ export function CompanionHud({
   const slot: { readonly tone: "reply" | "process" | "stopped" | "note"; readonly text: string } | null =
     preparingSend && chat.phase !== "sending" ? { tone: "process", text: "正在发送消息…" }
       : replySlotText ? { tone: "reply", text: replySlotText }
-      : chat.stopNotice ? { tone: "stopped", text: frozenText || chat.stopNotice }
+      : chat.stopNotice ? { tone: "stopped", text: stoppedText || chat.stopNotice }
         : interruptedSlotText && interaction.errorVisible ? { tone: "stopped", text: interruptedSlotText }
           : chat.phase === "error" && chat.failure && interaction.errorVisible ? { tone: "note", text: chat.feedNoteAnchor ? "这段解释还没生成，原文没有改动。" : chat.failure }
             : chat.phase === "sending" && activeNode ? { tone: "process", text: nodeLabel(activeNode) }
@@ -1234,6 +1220,7 @@ export function CompanionHud({
                     <button type="button" className="companion-hud__quote-remove" onClick={chat.dismissFeedSelection} aria-label="移除引用"><X size={14} /></button>
                   </blockquote>
                 ) : null}
+                {sendLimitNote ? <small role="status">{sendLimitNote}</small> : null}
 
                 {imageAttachment.image ? <CompanionComposerImageChip image={imageAttachment.image} onRemove={imageAttachment.clear} /> : null}
                 <CompanionComposerImageStatus uploading={imageAttachment.uploading} error={imageAttachment.error} />
@@ -1294,7 +1281,7 @@ export function CompanionHud({
                   ) : null}
                   <button
                     type="submit"
-                    disabled={!input.trim() || voice.phase === "closing" || imageAttachment.uploading}
+                    disabled={!input.trim() || Boolean(sendLimitNote) || voice.phase === "closing" || imageAttachment.uploading}
                     title={chat.phase === "sending" ? "发送并接替当前回复" : "发送"}
                     aria-label={chat.phase === "sending" ? "发送并接替当前回复" : "发送"}
                   ><Send size={17} /></button>

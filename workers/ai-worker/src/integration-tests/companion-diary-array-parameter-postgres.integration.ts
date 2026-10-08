@@ -81,10 +81,13 @@ function guardOf(sourceEventIds: string[]) {
 }
 
 async function readRow(workspaceId: string, userId: string, date: string) {
-  const rows = await sql`
-    SELECT status, source_event_ids, summary, selection_reason
+  const rows = await sql.begin(async (tx) => {
+    await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+    await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+    return tx`SELECT status, source_event_ids, summary, selection_reason
       FROM companion_daily_summaries
-     WHERE workspace_id = ${workspaceId} AND user_id = ${userId} AND date = ${date}`;
+      WHERE workspace_id = ${workspaceId} AND user_id = ${userId} AND date = ${date}`;
+  });
   return rows[0];
 }
 

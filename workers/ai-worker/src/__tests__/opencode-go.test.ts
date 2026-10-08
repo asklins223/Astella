@@ -14,6 +14,7 @@ import {
   parseResponsesAgentTurn,
   readResponsesReasoningHandles,
   readResponsesText,
+  readResponsesFinalText,
   readResponsesUsage,
   resolveOpenCodeGoEndpoint,
 } from "../lib/providers/opencode-go.ts";
@@ -25,7 +26,7 @@ import type {
 } from "@astella/shared/public-json-http";
 import type { AgentTurnRequest, ChatMessage } from "@astella/shared";
 import { AgentRole } from "@astella/shared";
-import { ProviderRequestError } from "../lib/provider-request-error.ts";
+import { ProviderRequestError, ProviderStreamError } from "../lib/provider-request-error.ts";
 import { AgentOutputError } from "../lib/non-retryable-errors.ts";
 
 interface CapturedRequest {
@@ -290,6 +291,26 @@ test("chatCompletion: 模型支持 none 时显式关思考直接发 none", async
   assert.deepEqual(calls[0].body.reasoning, { effort: "none" });
 });
 
+test("采样受限模型在 chat、stream、agent 三个出口开思考时都省略温度，关时保留", async () => {
+  const sent: Record<string, unknown>[] = [];
+  const provider = makeProvider({ modelProfile: { temperature: "reasoning_none_only",
+    reasoning: { levels: ["none", "medium"], default: "medium" } },
+    request: async (_url, _headers, body) => { sent.push(body as Record<string, unknown>);
+      return ok({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "完整答复" }] }] }); },
+    streamRequest: async (_url, _headers, body) => { sent.push(body as Record<string, unknown>);
+      return { status: 200, statusText: "OK", cancel: () => undefined, body: (async function* () {
+        yield new TextEncoder().encode('data: {"type":"response.output_text.delta","delta":"完整答复"}\n\ndata: {"type":"response.completed"}\n\n');
+      })() }; } });
+  for (const disableThinking of [false, true]) {
+    await provider.chatCompletion([{ role: "user", content: "问题" }], { disableThinking, temperature: 0.9, responseFormat: "text" });
+    await provider.chatCompletionStream([{ role: "user", content: "问题" }], { disableThinking, temperature: 0.9, responseFormat: "text" }, undefined, () => undefined);
+    await provider.executeAgentTurn({ role: "companion_agent", systemPrompt: "答复", messages: [{ role: "user", content: "问题" }],
+      tools: [], maxTokens: 8000, temperature: 0.9, disableThinking });
+  }
+  assert.ok(sent.slice(0, 3).every(body => !("temperature" in body)));
+  assert.ok(sent.slice(3).every(body => body.temperature === 0.9));
+});
+
 test("chatCompletion: 无档案时显式关思考回退 minimal", async () => {
   const { request, calls } = recordingRequester(ok(completionResponse()));
   const provider = makeProvider({ request });
@@ -385,6 +406,13 @@ test("chatCompletion: 2xx + status=failed 视为失败", async () => {
     () => provider.chatCompletion([{ role: "user", content: "hi" }], {}),
     /response failed .*upstream exploded/,
   );
+});
+
+test("普通 Responses chat 也拒绝 max_output_tokens 截断的正文", async () => {
+  const { request } = recordingRequester(ok({ status: "incomplete", incomplete_details: { reason: "max_output_tokens" },
+    output: [{ type: "message", content: [{ type: "output_text", text: "截断的识图结果" }] }] }));
+  await assert.rejects(() => makeProvider({ request }).chatCompletion([{ role: "user", content: "读图" }], { responseFormat: "text" }),
+    (error: unknown) => error instanceof AgentOutputError && error.code === "output_truncated");
 });
 
 // ─── executeAgentTurn ────────────────────────────────────────────────────
@@ -542,6 +570,55 @@ test("executeAgentTurn: 已 abort 的 signal 立即抛错且不发请求", async
 
 // ─── 流式 ────────────────────────────────────────────────────────────────
 
+test("Responses 最终正文排除中间 commentary，未声明 phase 的旧返回仍完整保留", () => {
+  const message = (text: string, phase?: string) => ({ type: "message", phase, content: [{ type: "output_text", text }] });
+  assert.equal(readResponsesFinalText({ output: [message("内部预备说明", "commentary"), message("最终正文", "final_answer")] }), "最终正文");
+  assert.equal(readResponsesFinalText({ output: [message("旧格式一"), message("旧格式二")] }), "旧格式一旧格式二");
+  assert.equal(readResponsesFinalText({ output: [message("只有中间消息", "commentary")] }), null);
+});
+
+test("流式发布 final_answer，commentary 原样回放时带原始 phase", async () => {
+  const { request, captured } = streamingRequester([
+    'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","phase":"commentary"}}\n\n',
+    'data: {"type":"response.output_text.delta","output_index":0,"delta":"预备说明"}\n\n',
+    'data: {"type":"response.output_item.added","output_index":1,"item":{"type":"message","phase":"final_answer"}}\n\n',
+    'data: {"type":"response.output_text.delta","output_index":1,"delta":"最终正文"}\n\n',
+    'data: {"type":"response.completed","response":{"status":"completed","output":[{"type":"message","phase":"commentary","content":[{"type":"output_text","text":"预备说明"}]},{"type":"message","phase":"final_answer","content":[{"type":"output_text","text":"最终正文"}]}]}}\n\n',
+  ]);
+  const provider = makeProvider({ streamRequest: request }), deltas: string[] = [];
+  const result = await provider.chatCompletionStream([{ role: "assistant", content: "前一条说明", phase: "commentary" },
+    { role: "user", content: "问题" }], { responseFormat: "text" }, undefined, text => deltas.push(text));
+  assert.deepEqual(deltas, ["最终正文"]);
+  assert.equal(result.content, "最终正文");
+  assert.equal(result.phase, "final_answer");
+  const inputs = captured[0]!.body.input as Array<{ role: string; phase?: string }>;
+  assert.equal(inputs[0]?.phase, "commentary");
+  assert.equal(inputs[1]?.phase, undefined);
+});
+
+test("完成事件的正文与已收到增量不一致时不能静默替换或宣布成功", async () => {
+  const { request } = streamingRequester([
+    'data: {"type":"response.output_text.delta","delta":"半截旧稿"}\n\n',
+    'data: {"type":"response.completed","response":{"output":[{"type":"message","phase":"final_answer","content":[{"type":"output_text","text":"另一份完整稿"}]}]}}\n\n',
+  ]);
+  await assert.rejects(() => makeProvider({ streamRequest: request }).chatCompletionStream([{ role: "user", content: "问题" }],
+    { responseFormat: "text" }, undefined, () => undefined),
+    (error: unknown) => error instanceof ProviderStreamError && error.code === "stream_content_mismatch");
+});
+
+test("声明阶段输出的模型不提前发布未知阶段，完成时只发布已确认最终正文", async () => {
+  const { request } = streamingRequester([
+    'data: {"type":"response.output_text.delta","output_index":0,"delta":"尚未分类的预备稿"}\n\n',
+    'data: {"type":"response.output_text.delta","output_index":1,"delta":"另一个最终稿"}\n\n',
+    'data: {"type":"response.completed","response":{"output":[{"type":"message","phase":"commentary","content":[{"type":"output_text","text":"尚未分类的预备稿"}]},{"type":"message","phase":"final_answer","content":[{"type":"output_text","text":"另一个最终稿"}]}]}}\n\n',
+  ]);
+  const deltas: string[] = [];
+  const result = await makeProvider({ streamRequest: request, modelProfile: { supportsAssistantPhase: true } }).chatCompletionStream(
+    [{ role: "user", content: "问题" }], { responseFormat: "text" }, undefined, text => deltas.push(text));
+  assert.deepEqual(deltas, ["另一个最终稿"]);
+  assert.equal(result.content, "另一个最终稿");
+});
+
 test("chatCompletionStream: 逐 delta 回调并累计全文（跨分片断行）", async () => {
   const sse = [
     "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_s\"}}\n\n",
@@ -578,7 +655,31 @@ test("chatCompletionStream: 终止事件后无换行也能收尾", async () => {
   assert.equal(result.content, "尾");
 });
 
-test("chatCompletionStream: response.failed 抛错", async () => {
+test("chatCompletionStream: 收到正文但缺完成事件，不能把断流当完整答复", async () => {
+  const { request } = streamingRequester([
+    'data: {"type":"response.output_text.delta","delta":"答复只到了半截"}\n\n',
+  ]);
+  const provider = makeProvider({ streamRequest: request }), deltas: string[] = [];
+  await assert.rejects(() => provider.chatCompletionStream(
+    [{ role: "user", content: "hi" }], { responseFormat: "text" }, undefined, delta => deltas.push(delta)),
+    (error: unknown) => error instanceof Error && "code" in error && error.code === "stream_incomplete");
+  assert.deepEqual(deltas, ["答复只到了半截"]);
+});
+
+test("chatCompletionStream: 输出额度耗尽，包括无末尾换行，使用不可重试的截断错误", async () => {
+  for (const ending of ["\n\n", ""]) {
+    const { request } = streamingRequester([
+      'data: {"type":"response.output_text.delta","delta":"半截答复"}\n\n',
+      'data: {"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}' + ending,
+    ]);
+    const provider = makeProvider({ streamRequest: request });
+    await assert.rejects(() => provider.chatCompletionStream(
+      [{ role: "user", content: "hi" }], { responseFormat: "text" }, undefined, () => undefined),
+      (error: unknown) => error instanceof AgentOutputError && error.code === "output_truncated");
+  }
+});
+
+test("chatCompletionStream: response.failed 记录固定状态，不带供应方错误正文", async () => {
   const { request } = streamingRequester([
     "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"message\":\"upstream 挂了\"}}}\n\n",
   ]);
@@ -587,7 +688,8 @@ test("chatCompletionStream: response.failed 抛错", async () => {
     () => provider.chatCompletionStream(
       [{ role: "user", content: "hi" }], { responseFormat: "text" }, undefined, () => undefined,
     ),
-    /upstream 挂了/,
+    (error: unknown) => error instanceof ProviderStreamError && error.code === "stream_failed"
+      && !error.message.includes("upstream 挂了"),
   );
 });
 

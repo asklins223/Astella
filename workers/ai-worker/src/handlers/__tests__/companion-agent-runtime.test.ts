@@ -61,6 +61,7 @@ import { NOTE_SEARCH_MAX_TERMS, noteSearchTerms } from "../companion-dialogue-co
 import { interpretCompanionTurn } from "../companion-tool-intent.ts";
 import { MockProvider } from "../../lib/providers/mock.ts";
 import { ProviderRequestError } from "../../lib/provider-request-error.ts";
+import { AgentOutputError } from "../../lib/non-retryable-errors.ts";
 import { CompanionStreamStoppedError } from "../companion-dialogue-stream.ts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
@@ -72,6 +73,7 @@ test("rate, account and authorization rejections do not repeat through a buffere
   assert.equal(canRetryCompanionStream(new Error("empty stream"),state),true);
   assert.equal(canRetryCompanionStream(new Error("socket closed"),{...state,emitted:true}),false);
   assert.equal(canRetryCompanionStream(new Error("socket closed"),{...state,now:100}),false);
+  assert.equal(canRetryCompanionStream(new AgentOutputError("output_truncated", "exhausted"),state),false);
 });
 
 function toolIntentTaskContext(signal = new AbortController().signal) {

@@ -35,7 +35,7 @@ import {
 } from "./companion-consent-gate";
 import {
   subscribeCompanionFeed,
-  truncateFeedText,
+  normalizeFeedText,
   type CompanionFeedDiaryAnchor,
 } from "../components/companion/companion-feed";
 import type { CompanionFeedNoteAnchor, CompanionNoteIntent } from "../components/companion/companion-feed";
@@ -95,7 +95,7 @@ const REPLY_STREAM_IDLE_MS = 10_000;
  */
 const REPLY_RUN_STATUS_EVERY_N_TICKS = 3;
 /** 停止后的统一说明（气泡与历史共用同一句，避免两处口径不一致）。 */
-const COMPANION_STOPPED_LINE = "已停止。之前说过的部分我留在记录里了。";
+const COMPANION_STOPPED_LINE = "这一轮已停止。";
 /** 抽屉里 agent route 提示的轮询节奏（常驻低频，不是回复关键路径）。 */
 const AGENT_ROUTE_POLL_INTERVAL_MS = 1_600;
 /**
@@ -136,7 +136,7 @@ export interface CompanionChatRichReply {
 export type CompanionReplyWaitOutcome =
   | { kind: "reply"; message: CompanionMessageV1 }
   | { kind: "failed"; code: string | null; message: string }
-  | { kind: "cancelled" }
+  | { kind: "cancelled"; text?: string }
   | { kind: "timeout" };
 
 /**
@@ -633,7 +633,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   useEffect(() => {
     const unsubscribeFeed = subscribeCompanionFeed({
       onFeed: (selection) => {
-        setFeedSelection(truncateFeedText(selection.text));
+        setFeedSelection(normalizeFeedText(selection.text));
         setFeedPrompt(selection.initialPrompt ?? null);
         setFeedNoteAnchor(selection.noteAnchor ?? null);
         setFeedDiaryAnchor(selection.diaryAnchor ?? null);
@@ -983,7 +983,9 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
           if (cancelled) return;
           const match = items.find((item) => item.role === "assistant" && item.runId === args.runId);
           if (match) {
-            resolve({ kind: "reply", message: match });
+            resolve(match.kind === "cancelled"
+              ? { kind: "cancelled", text: companionMessageText(match) }
+              : { kind: "reply", message: match });
             return;
           }
           // 消息还没出现：每 N 拍确认一次 run 是不是已经终态失败了（见 readRunTerminal）。
@@ -1565,10 +1567,15 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       } else if (claimed.kind === "cancelled") {
         if (explanation) interruptNoteExplanation(explanation.id, "stopped");
         // 用户按了停止——这不是错误，不写 failure、不提示"再试一次"。
-        // 已输出的部分由服务端以 kind='cancelled' 留档，而它是在取消**之后**才写入的，
-        // 不经过本次 SSE 订阅，所以必须重取一次消息才看得见。
+        // 取消事务把已提交增量以 kind='cancelled' 留档；它不发布 assistant.final，
+        // 所以重取历史。轮询先读到这条记录时也按中止处理，不能冒充完整回复。
+        const stoppedPartial = claimed.text ?? partial;
         draftRef.current = "";
         setDraft(null);
+        setLiveReply(null);
+        setRichReply(null);
+        setInterrupted(stoppedPartial.trim() ? { text: stoppedPartial, message: explanation
+          ? "已停止，未完成的内容没有写成批注。" : COMPANION_STOPPED_LINE } : null);
         setStopNotice(COMPANION_STOPPED_LINE);
         await refreshMessages(active.id, epoch).catch(() => null);
         setPhase("ready");
@@ -1664,8 +1671,8 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
    * 服务端取消 + 状态收尾。服务端是"202 首次取消 / 200 幂等"同形状，所以重复点
    * 停止是安全的；本地再挡一层只是为了不刷无谓请求。
    *
-   * 收尾时重取一次消息：worker 会把已输出的文本以 kind='cancelled' 落库，而那条
-   * 消息是在取消**之后**写入的，不经过当前订阅——不重取就看不到"保留"的效果。
+   * 收尾时重取一次消息：取消事务将已提交增量以 kind='cancelled' 留档，
+   * 不发布完整回复的 final 事件，历史通过重取读回。
    */
   const cancel = useCallback(async (): Promise<boolean> => {
     const active = activeTurnRef.current;

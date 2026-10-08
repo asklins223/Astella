@@ -59,7 +59,7 @@ export function useNotebookSelection(input: {
     if (note?.currentVersionId && canonical && text.length <= 2_000 && matching) {
       anchor = { noteVersionId: note.currentVersionId, ...bounds, ...canonical };
     }
-    setSelectedPassage({ text: text.slice(0, 2_000), blockOrdinal: ordinal, noteId: note?.noteId ?? "", anchor, range: range.cloneRange() });
+    setSelectedPassage({ text, blockOrdinal: ordinal, noteId: note?.noteId ?? "", anchor, range: range.cloneRange() });
   }, []);
   useEffect(() => {
     if (!input.active) { setSelectedPassage(null); return; }

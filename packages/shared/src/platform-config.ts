@@ -99,6 +99,10 @@ export interface ModelReasoningProfile {
  * `vision` 缺省 false——不存在"默认能看图"，识图路由必须显式声明。
  */
 export interface ModelProfile {
+  /** Temperature support in the selected model/protocol. Omit for legacy always-supported behavior. */
+  temperature?: "always" | "reasoning_none_only" | "unsupported";
+  /** Responses message phases may arrive after text deltas; hold unclassified text until final payload. */
+  supportsAssistantPhase?: boolean;
   /** 上下文窗口（token）。 */
   contextWindowTokens?: number;
   /** 输出上限（token）。 */

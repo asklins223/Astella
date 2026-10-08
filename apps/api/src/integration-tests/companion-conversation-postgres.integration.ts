@@ -158,12 +158,15 @@ test("P2 原子 turn create：user message + run + turn.accepted event + job + c
   const { workspaceId, userId, conversationId, cleanup } = await seedConversation();
   try {
     const clientMessageId = randomUUID();
+    const tail = "尾部更正：只完成了草稿。";
+    const selection = { text: "段".repeat(20_000 - tail.length) + tail, sharing: "user_selected" };
+    assert.equal(selection.text.length, 20_000);
     const result = await createCompanionTurn({
       workspaceId,
       userId,
       conversationId,
       idempotencyKey: randomUUID(),
-      body: turnBody(clientMessageId),
+      body: { ...turnBody(clientMessageId), selection },
     });
     assert.equal(result.statusCode, 202);
     const body = result.body as {
@@ -179,7 +182,7 @@ test("P2 原子 turn create：user message + run + turn.accepted event + job + c
       await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
       await tx`SELECT set_config('app.user_id', ${userId}, true)`;
       const message = await tx`SELECT seq, role, kind, blocks, client_message_id FROM companion_messages WHERE id = ${body.userMessageId}`;
-      const run = await tx`SELECT generation, status, idempotency_key_hash, job_id,
+      const run = await tx`SELECT generation, status, idempotency_key_hash, job_id, page_context,
                            leak_gate_version FROM companion_turn_runs WHERE id = ${body.runId}`;
       const event = await tx`SELECT seq, type, payload FROM companion_stream_events WHERE conversation_id = ${conversationId} AND seq = ${body.eventCursor}`;
       const conv = await tx`SELECT next_message_seq, next_event_seq, next_generation, title, title_source FROM companion_conversations WHERE id = ${conversationId}`;
@@ -193,6 +196,8 @@ test("P2 原子 turn create：user message + run + turn.accepted event + job + c
     assert.equal(rows.message[0].kind, "text");
     assert.equal(rows.message[0].client_message_id, clientMessageId);
     assert.equal(rows.run[0].status, "accepted");
+    assert.deepEqual(rows.run[0].page_context.selection, selection,
+      "20,000 字选区必须完整存进 worker 实际读取的 run，而不是接受后再裁切");
     // 生产者钉子（39d #28）：新起的一发必须带上它产出的那一版闸。
     // 上一版我把这条写在 `sql.begin` 回调里 `return` 的后面 ⇒ 是不可达的死代码，
     // 摘掉生产者它照样绿；这一次放在真会跑到的位置，并要求变异会红。
@@ -204,6 +209,7 @@ test("P2 原子 turn create：user message + run + turn.accepted event + job + c
     assert.equal(Number(rows.conv[0].next_generation), 2);
     assert.equal(rows.conv[0].title_source, "auto", "首条消息应生成 auto title");
     assert.equal(rows.job[0].type, "companion_agent");
+    assert.equal(rows.job[0].payload.runId, body.runId);
   } finally {
     await cleanup();
   }
@@ -343,6 +349,45 @@ test("P2 cancel：active run 202 取消 + turn.cancelled event；终态幂等 20
     await cleanup();
   }
 });
+
+for (const ending of ["cancel", "supersede"] as const) {
+  test(`P2 ${ending}：已提交正文原样留为中止记录，重放增量不重复，空洞不补猜`, async () => {
+    const { workspaceId, userId, conversationId, cleanup } = await seedConversation();
+    try {
+      const active = await seedActiveRun({ workspaceId, userId, conversationId });
+      const prefix = "灯塔🌊的灯还亮着。";
+      await sql.begin(async tx => {
+        await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true), set_config('app.user_id', ${userId}, true)`;
+        for (const [index, payload] of [
+          { appendFrom: 0, textDelta: "灯塔" },
+          { appendFrom: 2, textDelta: "🌊的灯还亮着。" },
+          { appendFrom: 0, textDelta: prefix },
+          { appendFrom: 999, textDelta: "不能把缺口后内容补进来。" },
+        ].entries()) {
+          await tx`INSERT INTO companion_stream_events
+            (conversation_id,seq,workspace_id,user_id,run_id,generation,account_epoch,type,payload,expires_at)
+            VALUES(${conversationId},${index + 1},${workspaceId},${userId},${active.runId},1,0,'assistant.delta',${tx.json(payload)},now()+interval '24 hours')`;
+        }
+        await tx`UPDATE companion_conversations SET next_event_seq=5 WHERE id=${conversationId}`;
+        await tx`UPDATE companion_turn_runs SET last_event_seq=4 WHERE id=${active.runId}`;
+      });
+      const stop = () => cancelCompanionRun({ workspaceId, userId, runId: active.runId,
+        body: { version: 1, generation: 1, reason: "user" } });
+      if (ending === "cancel") { await stop(); await stop(); }
+      else await createCompanionTurn({ workspaceId, userId, conversationId, idempotencyKey: randomUUID(),
+        body: { ...turnBody(randomUUID()), supersedesGeneration: 1 } });
+      const saved = await sql.begin(async tx => {
+        await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true), set_config('app.user_id', ${userId}, true)`;
+        return tx`SELECT m.id,m.kind,m.blocks,m.content_sha256,r.assistant_message_id
+          FROM companion_messages m JOIN companion_turn_runs r ON r.id=m.run_id WHERE r.id=${active.runId}`;
+      });
+      assert.equal(saved.length, 1);
+      assert.equal(saved[0].kind, "cancelled");
+      assert.deepEqual(saved[0].blocks, [{ type: "text", text: prefix }]);
+      assert.equal(saved[0].assistant_message_id, saved[0].id);
+    } finally { await cleanup(); }
+  });
+}
 
 test("P2 SSE：replay turn.accepted + after 推进 + INVALID_CURSOR/CURSOR_EXPIRED", async () => {
   const { workspaceId, userId, conversationId, cleanup } = await seedConversation();

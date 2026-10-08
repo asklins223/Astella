@@ -31,17 +31,26 @@ const workspaceId = randomUUID();
 const emailPrefix = `answer-mode-${userId.slice(0, 8)}`;
 
 async function seedUsers(): Promise<void> {
-  await sql`
-    INSERT INTO users (id, email, password_hash, role)
-    VALUES
-      (${userId}, ${`${emailPrefix}@example.test`}, 'test-hash', 'owner'),
-      (${otherUserId}, ${`${emailPrefix}-other@example.test`}, 'test-hash', 'owner')
-  `;
+  for (const [id, email] of [
+    [userId, `${emailPrefix}@example.test`],
+    [otherUserId, `${emailPrefix}-other@example.test`],
+  ]) {
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${id}, true)`;
+      await tx`INSERT INTO users (id, email, password_hash, role)
+        VALUES (${id}, ${email}, 'test-hash', 'owner')`;
+    });
+  }
 }
 
 
 after(async () => {
-  await sql`DELETE FROM users WHERE id IN (${userId}, ${otherUserId})`.catch(() => {});
+  for (const id of [userId, otherUserId]) {
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${id}, true)`;
+      await tx`DELETE FROM users WHERE id = ${id}`;
+    }).catch(() => {});
+  }
   await sql.end({ timeout: 5 }).catch(() => {});
   await closeDatabase().catch(() => {});
 });

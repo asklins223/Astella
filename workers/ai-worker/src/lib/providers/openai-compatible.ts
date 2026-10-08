@@ -31,10 +31,11 @@ import type {
   PlatformOptions,
 } from "@astella/shared";
 import { registerFactory } from "../provider-factory.ts";
-import { ProviderRequestError } from "../provider-request-error.ts";
+import { ProviderRequestError, ProviderStreamError } from "../provider-request-error.ts";
 import { AgentOutputError } from "../non-retryable-errors.ts";
 import { DEFAULT_CONTEXT_WINDOW_TOKENS } from "../provider-constants.ts";
 import { profileFingerprint } from "./profile-fingerprint.ts";
+import { modelTemperatureFields } from "./model-sampling.ts";
 import { countModelTextTokens } from "../model-tokenizers.ts";
 
 /** R1: Unified abort error helper. */
@@ -127,6 +128,17 @@ export class OpenAICompatibleProvider implements AIProvider {
     return clampMaxTokens(value, this.modelProfile?.maxOutputTokens ?? 16_384);
   }
 
+  private applyModelSampling(body: Record<string, unknown>): void {
+    const fields = modelTemperatureFields(this.modelProfile, typeof body.temperature === "number" ? body.temperature : undefined,
+      body.enable_thinking === false ? "none" : undefined);
+    if (!("temperature" in fields)) delete body.temperature;
+  }
+
+  private compatibleMessages<T extends { role: string; phase?: "commentary" | "final_answer" }>(messages: T[]): Array<Omit<T, "phase">> {
+    // phase is Responses metadata; Chat Completions does not accept it.
+    return messages.map(({ phase: _phase, ...message }) => message);
+  }
+
   /**
    * R2: TextGenerationCapability — generic chat completion.
    *
@@ -179,7 +191,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     const shouldSetMaxTokens = this.maxTokensStrategy === "always" || !disableMaxTokens;
     const body: Record<string, unknown> = {
       model,
-      messages,
+      messages: this.compatibleMessages(messages),
       temperature,
       stream: true,
       // Companion dialogue explicitly requests natural text. Keep the
@@ -202,6 +214,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       ...this.extraRequestParams,
       ...this.thinkingField(options.disableThinking ?? false),
     };
+    this.applyModelSampling(body);
     if (shouldSetMaxTokens) body.max_tokens = maxTokens;
     const headers: Record<string, string> = {
       Accept: "text/event-stream",
@@ -234,6 +247,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     let buffer = "";
     let content = "";
     let finishReason = "stop";
+    let sawTerminal = false;
     let responseBytes = 0;
     /** 分片到达的 native tool_calls（按 index 归并，见 consumeData）。 */
     // 累积与「够不够完整」交给已单测的纯类（stream-tool-call-accumulator.ts）。
@@ -279,6 +293,8 @@ export class OpenAICompatibleProvider implements AIProvider {
       toolCalls: AgentTurnResult["toolCalls"];
       finishReason: string;
     } => {
+      if (!sawTerminal) throw new ProviderStreamError(this.id, "stream_incomplete");
+      if (finishReason === "length") throw new AgentOutputError("output_truncated", "provider stream exhausted its output limit");
       // 流到这儿才轮到最后一个调用：只有现在，"不会再有分片"才真正成立。
       // 顺序判据靠的是"后面出现过更高的 index"，所以最后那一个必须在这里补放行，
       // 否则最常见的"只调一个工具"整轮都排不上提前派发。
@@ -307,7 +323,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       return error;
     };
     const consumeData = (data: string): boolean => {
-      if (data === "[DONE]") return true;
+      if (data === "[DONE]") { sawTerminal = true; return true; }
       try {
         const parsed = JSON.parse(data) as {
           choices?: Array<{
@@ -325,6 +341,7 @@ export class OpenAICompatibleProvider implements AIProvider {
         const choice = parsed.choices?.[0];
         if (choice && typeof choice.finish_reason === "string" && choice.finish_reason.length > 0) {
           finishReason = choice.finish_reason;
+          sawTerminal = true;
         }
         const delta = choice?.delta?.content;
         if (typeof delta === "string" && delta.length > 0) {
@@ -522,7 +539,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     const shouldSetMaxTokens = this.maxTokensStrategy === "always" || !disableMaxTokens;
     const body: Record<string, unknown> = {
       model,
-      messages,
+      messages: this.compatibleMessages(messages),
       temperature,
       stream: false,
       // Keep structured JSON as the default for structured callers, while
@@ -535,6 +552,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       ...this.extraRequestParams,
       ...this.thinkingField(disableThinking),
     };
+    this.applyModelSampling(body);
     if (shouldSetMaxTokens) {
       body.max_tokens = this.outputTokenLimit(maxTokens);
     }
@@ -572,6 +590,8 @@ export class OpenAICompatibleProvider implements AIProvider {
       }
       // R1: Post-body-read abort check
       if (signal?.aborted) throw abortError(signal, "after body read");
+      const finishReason = (response.body as { choices?: Array<{ finish_reason?: unknown }> })?.choices?.[0]?.finish_reason;
+      if (finishReason === "length") throw new AgentOutputError("output_truncated", "chat response exhausted its output limit");
       const candidate = readChatCompletionContent(response.body);
       if (typeof candidate === "string" && candidate.trim()) {
         content = candidate;
@@ -624,7 +644,7 @@ export class OpenAICompatibleProvider implements AIProvider {
 
     const requestBody: Record<string, unknown> = {
       model: request.model ?? this.modelId,
-      messages,
+      messages: this.compatibleMessages(messages),
       temperature: clampTemperature(request.temperature),
       stream: false,
       // 思考字段由模型档案驱动（见 thinkingField）；这一轮要不要关由调用方随请求带来
@@ -633,6 +653,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       ...this.thinkingField(request.disableThinking ?? false),
     };
 
+    this.applyModelSampling(requestBody);
     // R1: maxTokensStrategy controls max_tokens
     const disableMaxTokens = this.platformOptions?.disableMaxTokens ?? false;
     const shouldSetMaxTokens = this.maxTokensStrategy === "always" || !disableMaxTokens;

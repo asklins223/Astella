@@ -21,7 +21,8 @@ test("手记重读：从旧 run 恢复原文，普通消息/助手不串引用�
   const scope = { workspaceId: randomUUID(), userId: randomUUID() };
   const conversationId = randomUUID();
   const messageIds = Array.from({ length: 4 }, () => randomUUID());
-  const selection = { text: "第二段：间隔重复把复习排在快忘还没忘的时刻。", sharing: "user_selected" as const };
+  const selection = { text: "第二段：间隔重复把复习排在快忘还没忘的时刻。\n".repeat(150)
+    + "最后更正：这一段不是提醒安排，只是对记忆机制的说明。", sharing: "user_selected" as const };
   const question = "请用通俗易懂的话解释这段。";
   const scoped = <T>(operation: (tx: postgres.TransactionSql) => Promise<T>) => connection.begin(async (tx) => {
     await tx`SELECT set_config('app.workspace_id', ${scope.workspaceId}, true)`;

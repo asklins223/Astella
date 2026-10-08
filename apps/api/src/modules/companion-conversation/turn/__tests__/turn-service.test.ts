@@ -46,6 +46,13 @@ test("文本超硬限额 → INVALID_REQUEST 400", async () => {
   );
 });
 
+test("超限选区在写DB或入队前拒绝，不裁掉后半段再接受", async () => {
+  const selection = { text: "字".repeat(20_000) + "最后更正", sharing: "user_selected" };
+  await expectCode(createCompanionTurn({ workspaceId: randomUUID(), userId: randomUUID(),
+    conversationId: randomUUID(), idempotencyKey: randomUUID(), body: { ...validBody(), selection } }), "INVALID_REQUEST");
+  assert.ok(selection.text.endsWith("最后更正"));
+});
+
 test("非 UUID workspaceId → WorkspaceTransactionContextError（RLS context 校验）", async () => {
   await assert.rejects(
     createCompanionTurn({ workspaceId: "not-a-uuid", userId: randomUUID(), conversationId: randomUUID(), idempotencyKey: randomUUID(), body: validBody() }),

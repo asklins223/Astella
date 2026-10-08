@@ -12,5 +12,8 @@ export function profileFingerprint(profile: ModelProfile | undefined): string {
     profile?.maxOutputTokens ?? "d",
     profile?.vision ? "v" : "-",
     profile?.reasoning?.default ?? "d",
+    profile?.reasoning?.levels ? [...profile.reasoning.levels].sort().join(",") : "d",
+    profile?.temperature ?? "always",
+    profile?.supportsAssistantPhase ? "phase" : "legacy",
   ].join("/");
 }

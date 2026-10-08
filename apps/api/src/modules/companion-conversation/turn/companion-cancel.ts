@@ -16,6 +16,7 @@ import {
   CompanionConversationError,
 } from "./turn-service.ts";
 import { withWorkspaceTransaction } from "../../../db/client.ts";
+import { retainCompanionCancelledPartial } from "./companion-cancelled-retention.ts";
 import {
   cancelCompanionRunRequestV1Schema,
   cancelCompanionRunResponseV1Schema,
@@ -122,6 +123,10 @@ export async function cancelCompanionRun(args: {
           },
         };
       }
+
+      await retainCompanionCancelledPartial(tx, {
+        workspaceId: args.workspaceId, userId: args.userId, conversationId: run.conversationId, runId: run.id,
+      });
 
       // A cancelled Agent run must invalidate its frozen proposal and audit
       // row. A later confirm therefore cannot resurrect or execute the action.

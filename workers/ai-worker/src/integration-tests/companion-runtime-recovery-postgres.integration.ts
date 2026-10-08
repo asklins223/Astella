@@ -5,11 +5,12 @@ import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { sql } from "drizzle-orm";
 import type { ChatMessage, ChatOptions } from "@astella/shared";
+import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 delete process.env.AI_PLATFORMS_CONFIG;
 delete process.env.TOKENRHYTHM_API_KEY;
 process.env.NODE_ENV = "production";
-const admin = postgres(process.env.DATABASE_URL!, { max: 2 });
+const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 2 });
 const { closeDatabase, withWorkerWorkspaceTransaction } = await import("../db.ts");
 const { MockProvider } = await import("../lib/providers/mock.ts");
 const { registerFactory } = await import("../lib/provider-factory.ts");

@@ -14,12 +14,13 @@ import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { logger } from "../lib/logger.ts";
 
 /**
- * 用户"停止"后至少留下多少字才算值得留档（2026-09-19）。
+ * 失败回合的正文片段至少留下多少字才使用正文留档（2026-09-19）。
  *
  * 与"太短不念"同一口径：一两句寒暄都没说完就停下（如"好"、"嗯我"），
- * 留在历史里是噪音而不是记录。可调，集中在这里改。
+ * 更短的失败片段用诚实的失败说明代替。用户取消由 API 保存所有已提交正文，
+ * 不经过这个失败阈值。
  */
-export const COMPANION_CANCELLED_MIN_CHARS = 12;
+export const COMPANION_FAILED_PARTIAL_MIN_CHARS = 12;
 
 /**
  * 失败兜底话术（方案 29 §4.9：fail-open，绝不空白）。
@@ -56,7 +57,7 @@ export function pickCompanionFailureFallbackLine(runId: string): string {
  * - 只在 run 的真实终态是 `failed` 时落（`assistant_message_id IS NULL` 同时保证幂等：
  *   同一个 run 的重试/多次失败收尾不会插出第二条）；用户取消走 `cancelled` 路径，
  *   supersede 走新回合，都不在这里落。
- * - 太短不落（与取消同一个阈值）——碎片是噪音，不是记录。
+ * - 更短的失败片段或没有正文时落失败说明；取消留档没有这个阈值。
  * - 不写 `assistant.final` / `character.cue`:事件侧由 `error` 收尾，一个回合出现两个
  *   "结束"会让客户端状态机打架。
  *
@@ -74,7 +75,7 @@ export async function persistFailedPartial(args: {
   // fail-open：已经说出来的半句优先保留；连半句都没有时，落一句诚实的兜底话，
   // 而不是让用户面对空白（旧实现在这里 `return false`，界面什么都不显示）。
   const delivered = args.deliveredText.trim();
-  const text = delivered.length >= COMPANION_CANCELLED_MIN_CHARS
+  const text = delivered.length >= COMPANION_FAILED_PARTIAL_MIN_CHARS
     ? delivered
     : args.failureText?.trim() || pickCompanionFailureFallbackLine(args.runId);
   const blocks = [{ type: "text" as const, text, emotion: "neutral" as const }];

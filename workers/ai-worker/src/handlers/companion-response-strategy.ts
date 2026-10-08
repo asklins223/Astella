@@ -1,4 +1,4 @@
-import { companionDialogueNeedsGrounding, type CompanionTurnThinkingInput } from "./companion-turn-thinking.ts";
+import type { CompanionTurnThinkingInput } from "./companion-turn-thinking.ts";
 
 /** A generation instruction, not a claim that facts have been independently verified. */
 export const COMPANION_KNOWLEDGE_REVIEW_V1 = [
@@ -17,7 +17,7 @@ export function companionResponseStrategy(attention: CompanionTurnThinkingInput)
   guidance: string;
 } {
   if (attention?.intent === "conversation" && attention.toolUse === "none") {
-    return { mode: "casual", temperature: companionDialogueNeedsGrounding(attention) ? 0.3 : 0.9, guidance: "" };
+    return { mode: "casual", temperature: 0.9, guidance: "" };
   }
   if (attention?.intent === "task" || attention?.intent === "task_control"
       || attention?.intent === "conversation") {
@@ -28,15 +28,7 @@ export function companionResponseStrategy(attention: CompanionTurnThinkingInput)
   return { mode: "knowledge", temperature: 0.3, guidance: COMPANION_KNOWLEDGE_REVIEW_V1 };
 }
 
-/** A bounded consistency review for explicitly requested explanations. This is
- * a cost/latency gate, never an input or output truncation threshold. */
-export function companionExplanationReviewEnabled(): boolean {
-  // 40b §4.2: keep unproven self-review off by default. Live acceptance showed
-  // factual omissions and substantial latency despite valid private reports.
-  return process.env.COMPANION_EXPLANATION_REVIEW_V1 === "true";
-}
-
-export function shouldReviewCompanionExplanation(attention: CompanionTurnThinkingInput,
+export function isCompanionExplanation(attention: CompanionTurnThinkingInput,
   userText: string, offeredTools: number): boolean {
   return offeredTools === 0 && (attention?.intent === "question" || attention?.intent === "mixed")
     && /解释|讲讲|详细|为什么|原理|推导|讲清|理解|\b(?:explain|why|derive|detailed)\b/iu.test(userText);

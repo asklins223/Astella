@@ -109,7 +109,7 @@
 
 ## 统一版本与打包发布
 
-服务端与桌面客户端共用 `release/version.json`（当前 `1.0.0`）和 `v<版本>` tag。修改此文件后运行 `node .github/scripts/version-contract.mjs --write`，同步 API、Worker、Shared、Desktop 四个包及 lockfile；`--check` 检查一致性。桌面打包也通过 `desktop-version.mjs` 调用同一契约。推送 `v1.0.0` 同时触发服务端 CI 与部署、桌面质量检查与安装包发布，版本不一致时停止。
+服务端与桌面客户端共用 `release/version.json` 和 `v<版本>` tag。修改此文件后运行 `node .github/scripts/version-contract.mjs --write`，同步 API、Worker、Shared、Desktop 四个包及 lockfile；`--check` 检查一致性。桌面打包也通过 `desktop-version.mjs` 调用同一契约。推送版本 tag 同时触发服务端 CI 与部署、桌面质量检查与安装包发布，版本不一致时停止。
 
 `make` 侧的相关目标：`make version-check` 检查服务端与客户端版本一致性；`make release-manifest` 生成 `release-manifest-generate.mjs` 的机器可读清单；`make release-check` 依次跑 `verify-release-inputs.mjs` → `make verify` → `coverage-gate.mjs` → `release-manifest-generate.mjs` → `release-manifest-contract.mjs`。在精确的 release tag 上，最后一步除非用 `RELEASE_MANIFEST_PATH` 指到一份完整的 CI/release JSON，否则 fail-closed。
 

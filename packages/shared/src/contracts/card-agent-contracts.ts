@@ -196,6 +196,7 @@ export const agentTurnRequestSchema = z.object({
      * providerReasoningHandleSchema）。工具循环回放时原样带回给同一 provider。
      */
     reasoning: z.array(providerReasoningHandleSchema).max(4).optional(),
+    phase: z.enum(["commentary", "final_answer"]).optional(),
   })),
   /** 工具 schema（按 role allowlist） */
   tools: z.array(z.object({
@@ -229,6 +230,7 @@ export type AgentTurnRequest = z.infer<typeof agentTurnRequestSchema>;
 export const agentTurnResultSchema = z.object({
   /** 模型自由文本输出（可为 null） */
   content: z.string().nullable(),
+  phase: z.enum(["commentary", "final_answer"]).optional(),
   /** 模型请求执行的工具调用 */
   toolCalls: z.array(z.object({
     id: z.string().min(1),

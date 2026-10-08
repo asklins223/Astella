@@ -15,6 +15,7 @@
 
 import { AIConsentRequiredError, AIDataPolicyDeniedError, AIProviderNotConfiguredError } from "./governance.ts";
 import { AIContextOverflowError } from "./context-governor.ts";
+import { AgentContextError } from "@astella/agent-core";
 // 稳定 P1（2026-09-15 审计）：作业 payload 与类型不符是确定性失败。
 import { JobPayloadContractError } from "@astella/shared/job-payload-contracts";
 
@@ -81,32 +82,19 @@ const HTTP_401_403_CONTEXT =
  * - `output_truncated`：输出达到 token 上限被截断（finish_reason: "length"）。
  *   截断是确定性的：相同的输出预算下重试仍会截断，重投只会无限空转。
  * - `arguments_malformed`：工具调用 arguments 不是合法 JSON（不可静默降级）。
+ * - `unverified_quote`：引文纠正额度用完，终答仍与已读取原文不匹配。
  */
 export class AgentOutputError extends Error {
-  readonly code: "output_truncated" | "arguments_malformed";
+  readonly code: "output_truncated" | "arguments_malformed" | "unverified_quote";
 
   constructor(
-    code: "output_truncated" | "arguments_malformed",
+    code: "output_truncated" | "arguments_malformed" | "unverified_quote",
     message: string,
   ) {
     super(message);
     this.name = "AgentOutputError";
     this.code = code;
   }
-}
-
-/** Malformed private review output cannot be published or replayed as a draft. */
-export class CompanionKnowledgeReviewError extends Error {
-  readonly code = "COMPANION_KNOWLEDGE_REVIEW_INVALID" as const;
-  constructor(readonly reason: "json" | "schema" | "quotation" | "completion" = "completion") {
-    super("companion knowledge review returned an invalid report");
-    this.name = "CompanionKnowledgeReviewError";
-  }
-}
-
-export class CompanionDialogueReviewError extends Error {
-  readonly code = "COMPANION_DIALOGUE_REVIEW_INVALID" as const;
-  constructor() { super("companion dialogue review returned an invalid removal plan"); this.name="CompanionDialogueReviewError"; }
 }
 
 /**
@@ -209,8 +197,6 @@ export function isNonRetryableError(error: unknown): boolean {
   // 输出协议错误（截断/参数损坏）是确定性失败：重试不会改变输出预算，
   // 重投只会空转。必须直接标记 dead，交给用户重新生成。
   if (error instanceof AgentOutputError) return true;
-  if (error instanceof CompanionKnowledgeReviewError) return true;
-  if (error instanceof CompanionDialogueReviewError) return true;
 
   // Agent 预算耗尽同理：run 级预算跨重投累计，重试不可能恢复。
   if (error instanceof CompanionAgentBudgetExceededError) return true;
@@ -220,6 +206,9 @@ export function isNonRetryableError(error: unknown): boolean {
   // 重投同一个请求只会再撞一次同一条上限——纯调度浪费，还让用户多等几轮。
   // 直接 dead，让「这次真的装不下」立刻可见，而不是伪装成一次可重试的故障。
   if (error instanceof AIContextOverflowError) return true;
+  // Source admission and scope checks happen before generation. Replaying the
+  // same invalid plan/source cannot change its deterministic failure.
+  if (error instanceof AgentContextError) return true;
 
   // 记忆抽取输出不合规同理：内部已重试过一次采样，重投不会给出更好的输出。
   if (error instanceof MemoryExtractOutputError) return true;
