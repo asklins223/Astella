@@ -2,7 +2,7 @@
 
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useSourceImage } from "../source/source-image.ts";
+import { loadSourceImageBlobUrl, primeSourceImageBlobUrl, useSourceImage } from "../source/source-image.ts";
 
 /**
  * 这张测试守的是"站内图片怎么到了 `<img>` 上"。
@@ -66,6 +66,20 @@ afterEach(() => {
 });
 
 describe("useSourceImage", () => {
+  it("displays a confirmed upload from the original file without downloading it again", async () => {
+    const getImage = stubGetImage(() => { throw new Error("redundant download"); });
+    const key = objectKeyFor("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+    primeSourceImageBlobUrl(key, new Blob(["image"], { type: "image/png" }), 9);
+    expect(await loadSourceImageBlobUrl(key, 9)).toBe("blob:mock-5");
+    expect(getImage).not.toHaveBeenCalled();
+  });
+  it("does not reuse an image from a previous workspace epoch", async () => {
+    const getImage = stubGetImage(() => ({ ok: true, data: { mimeType: "image/png", imageBase64: "iVBORw0KGgo=" } }));
+    const key = objectKeyFor("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
+    primeSourceImageBlobUrl(key, new Blob(["image"], { type: "image/png" }), 9);
+    await loadSourceImageBlobUrl(key, 10);
+    expect(getImage).toHaveBeenCalledOnce();
+  });
   it("turns an in-app upload path into a blob URL through the main-process channel", async () => {
     const objectKey = objectKeyFor(imageIds.ready);
     const getImage = stubGetImage(() => ({

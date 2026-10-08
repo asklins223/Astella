@@ -17,16 +17,25 @@ import { withWorkspaceTransaction } from "../../db/client.ts";
  *
  * 同意存于按用户隔离的 `user_ai_settings`；读取必须设置当前用户上下文。
  */
-export async function hasExternalAiConsent(scope: { workspaceId: string; userId: string }): Promise<boolean> {
+async function readExternalAiSettings(scope: { workspaceId: string; userId: string }) {
   const row = await withWorkspaceTransaction(scope, (tx) => tx
     .select({
       consentAt: userAiSettings.consentAt,
       consentVersion: userAiSettings.consentVersion,
+      dataPolicy: userAiSettings.dataPolicy,
     })
     .from(userAiSettings)
     .where(eq(userAiSettings.userId, scope.userId))
     .limit(1));
-  return Boolean(row[0]?.consentAt && row[0]?.consentVersion);
+  return row[0] ?? null;
+}
+
+function consentSigned(settings: Awaited<ReturnType<typeof readExternalAiSettings>>): boolean {
+  return Boolean(settings?.consentAt && settings.consentVersion);
+}
+
+export async function hasExternalAiConsent(scope: { workspaceId: string; userId: string }): Promise<boolean> {
+  return consentSigned(await readExternalAiSettings(scope));
 }
 
 /**
@@ -39,7 +48,15 @@ export async function requireAiConsent(
   req: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
-  if (await hasExternalAiConsent(req.session)) return;
+  const settings = await readExternalAiSettings(req.session);
+  if (consentSigned(settings)) {
+    if (settings?.dataPolicy.sendToExternal === true) return;
+    await reply.code(403).send({
+      error: "ai_data_policy_denied",
+      message: "外部 AI 已关闭，请在 AI 数据同意页开启「允许发送到外部模型服务」后继续。",
+    });
+    return;
+  }
   // 403 + 一个可判定的错误码：桌面端据此说"先去设置里同意"，而不是"语音坏了"。
   await reply.code(403).send({
     error: "ai_consent_required",

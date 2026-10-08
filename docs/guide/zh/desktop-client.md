@@ -35,9 +35,9 @@
 | `npm run typecheck` | `tsc --noEmit -p tsconfig.node.json --composite false` 再 `-p tsconfig.web.json` |
 | `npm run dist` | typecheck → test → build → `electron-builder` |
 
-9222 那条调试端口不是可选项：[真实窗口取证](#真实窗口取证) 全靠它挂上去。`build` 前后各跑一次 `scripts/validate-room-layers.mjs`，前者校验 `src/renderer/public/assets/learning-room/v1/manifest.json` 里的图层声明，后者用同一份判据检查 `out/` 里的产物，缺层就出不了包。
+开发命令开放 9222 调试端口，[真实窗口取证](#真实窗口取证) 的 CDP 工具通过它附着；正式安装包不开放该端口。`build` 前后各跑一次 `scripts/validate-room-layers.mjs`，前者校验 `src/renderer/public/assets/learning-room/v1/manifest.json` 里的图层声明，后者用同一份判据检查 `out/` 里的产物，缺层就出不了包。
 
-主进程有**两个入口**（`electron.vite.config.ts:115`）：`index` 与 `voice-asr-host`。本机语音识别引擎是 emscripten 的 Node 构建、工厂里无条件 `require("path")`，而渲染窗口是 `sandbox: true`、worker 里连 `require` 都没有，于是它只能由 `utilityProcess.fork` 单独拉起；`fork` 接的是文件路径而不是函数，所以必须给它第二个入口。`index` 那一行不能省——给了 `input` 就是接管默认入口。同一处还把 `bufferutil` / `utf-8-validate` 标成 external 且故意不装：Vite 的依赖打包会给解析不到的可选 peer 生成一句**模块顶层**的 throw，那会在 Electron 启动时炸掉整个主进程，`ws` 自己的 try/catch 根本轮不到。
+主进程有**两个入口**（`electron.vite.config.ts`）：`index` 与 `voice-asr-host`。本机语音识别引擎是 emscripten 的 Node 构建、工厂里无条件 `require("path")`，而渲染窗口是 `sandbox: true`、worker 里连 `require` 都没有，于是它只能由 `utilityProcess.fork` 单独拉起；`fork` 接的是文件路径而不是函数，所以必须给它第二个入口。`index` 那一行不能省——给了 `input` 就是接管默认入口。同一处还把 `bufferutil` / `utf-8-validate` 标成 external 且故意不装：Vite 的依赖打包会给解析不到的可选 peer 生成一句**模块顶层**的 throw，那会在 Electron 启动时炸掉整个主进程，`ws` 自己的 try/catch 根本轮不到。
 
 渲染进程零 Node 能力。协同文档、图片上传、动态产物、剪贴板、Markdown 导出、识别模型字节，全部经 preload 桥由主进程代跑，这条边界是下面所有安全讨论的前提。
 
@@ -45,31 +45,31 @@
 
 | 项 | 值 | 出处 |
 | --- | --- | --- |
-| 窗口标题 | 拾星笔记 | `src/main/index.ts:587` |
+| 窗口标题 | 拾星笔记 | `src/main/index.ts` |
 | 初始内容尺寸 | 1440×810 | `src/shared/window-geometry.ts` |
 | 最小尺寸 | 1280×720 | 同上 |
-| 背景色 | `#211914`、`autoHideMenuBar: true` | `src/main/index.ts:585` |
+| 背景色 | `#211914`、`autoHideMenuBar: true` | `src/main/index.ts` |
 | 窗口装饰 | macOS `titleBarStyle: hiddenInset`；其余平台 `titleBarOverlay`，随主题重算 | `src/main/window-chrome.ts` |
-| 单实例 | `app.requestSingleInstanceLock()` | `src/main/index.ts:645` |
+| 单实例 | `app.requestSingleInstanceLock()` | `src/main/index.ts` |
 | 缩放 | ⌘ / Ctrl 与 `+` `-` `=` `0`，走离散档位表 | `src/main/window-zoom.ts` |
 
 `window-geometry.ts` 顶上那段注释值得读完：这里曾经有整套比例锁（`setAspectRatio` + `maximizable: false` + 16:9 容差断言），锁拆掉之后"不露边、底图不变形"改由渲染层的 cover 摆位承担（`.scene-reference-frame[data-scene-fit="cover"]`、`.room-backplate { object-fit: cover }`），**只剩尺寸下限**这一条还有原生窗口能保证——小于它，纸面正文与伴星座位会挤到一起。验收视口是 1440×810、原生最小 1280×720 与 125% / 150% / 200% 缩放。
 
-内容只从自定义协议 `astella-app` 进窗口，两个 host：`astella-app://bundle`（应用自身文档）与 `astella-app://artifact/<uuid>`（AI 生成的互动整页）。协议注册为 privileged / standard / secure / stream，只接 `GET` / `HEAD`，其余方法回 405 带 `Allow: GET, HEAD`，并读取 `Range` 头。产物落点是 `<userData>/artifacts/<artifactId>.html`，路径安全靠 `artifactId` 的形状（`src/shared/artifact-frame.ts` 只认 uuid）：没有 `..`、没有可写的分隔符，`resolve` 之后一定落在 `artifacts/` 里。响应头的 CSP 按主文档 / 产物 origin / 其余一律 `rejectAll` 三路分流，并且先删掉上游同名头（`src/main/index.ts:424`）；入口还有 `onBeforeRequest`（同文件:390）与 `will-navigate`（同文件:454）两道闸。
+内容只从自定义协议 `astella-app` 进窗口，两个 host：`astella-app://bundle`（应用自身文档）与 `astella-app://artifact/<uuid>`（AI 生成的互动整页）。协议注册为 privileged / standard / secure / stream，只接 `GET` / `HEAD`，其余方法回 405 带 `Allow: GET, HEAD`，并读取 `Range` 头。产物落点是 `<userData>/artifacts/<artifactId>.html`，路径安全靠 `artifactId` 的形状（`src/shared/artifact-frame.ts` 只认 uuid）：没有 `..`、没有可写的分隔符，`resolve` 之后一定落在 `artifacts/` 里。响应头的 CSP 按主文档 / 产物 origin / 其余一律 `rejectAll` 三路分流，并且先删掉上游同名头（`src/main/index.ts`）；入口还有 `onBeforeRequest`（同文件）与 `will-navigate`（同文件）两道闸。
 
-`webPreferences`：`sandbox: true`、`contextIsolation: true`、`nodeIntegration: false`、`webviewTag: false`、`devTools: !app.isPackaged`。preload 暴露两条冻结的桥 `window.astellaDesktop` 与 `window.astella`，包在 `if (process.isMainFrame)` 里（`src/preload/index.ts:553`）——Electron 的 preload 会注入**每一个** iframe，互动产物已通过 iframe 呈现，这道守卫禁止把 IPC 桥交给产物内容。CI 容器一类受限环境会额外 `appendSwitch('no-sandbox')`（`src/main/index.ts:66`），否则 Chromium 起不了自己的沙箱、每个子进程都以"sandbox initialization failed"死掉；本地正常跑不动沙箱开关。
+`webPreferences`：`sandbox: true`、`contextIsolation: true`、`nodeIntegration: false`、`webviewTag: false`、`devTools: !app.isPackaged`。preload 暴露两条冻结的桥 `window.astellaDesktop` 与 `window.astella`，包在 `if (process.isMainFrame)` 里（`src/preload/index.ts`）——Electron 的 preload 会注入**每一个** iframe，互动产物已通过 iframe 呈现，这道守卫禁止把 IPC 桥交给产物内容。CI 容器一类受限环境会额外 `appendSwitch('no-sandbox')`（`src/main/index.ts`），否则 Chromium 起不了自己的沙箱、每个子进程都以"sandbox initialization failed"死掉；本地正常跑不动沙箱开关。
 
 ## 没有路由器的导航
 
-房间状态是一个纯函数加一份 store。`src/renderer/src/app/room-machine.ts` 定义 `RoomIntent`（16 个取值）、`RoomDestination` / `ViewPresetId`（各 16 个）与 `resolveRoomIntent(intent) → { destination, viewPreset, surface }`；`room-store.ts`（771 行）持有 surface、theme、motionMode、returnTarget、`invoke(intent)` 与一个可注入的 `navigationGuard`。没有 URL、没有 history、没有路由表：切页就是改 store，`TaskSurface.tsx` 按 `surface` 挑组件，用 `key={renderedSurface}` 强制重挂载，进出场是 GSAP 时间线并带一个墙钟 deadline——快速往返或连续切换时，超时的动画直接收尾而不会把焦点压在正在退场的那层上（`aria-hidden` + `inert` 在 leaving 期间同时生效，同文件:316）。退场后焦点按 `data-focus-return` 落回原入口。
+房间状态是一个纯函数加一份 store。`src/renderer/src/app/room-machine.ts` 定义 `RoomIntent`、`RoomDestination` / `ViewPresetId`与 `resolveRoomIntent(intent) → { destination, viewPreset, surface }`；`room-store.ts`持有 surface、theme、motionMode、returnTarget、`invoke(intent)` 与一个可注入的 `navigationGuard`。没有 URL、没有 history、没有路由表：切页就是改 store，`TaskSurface.tsx` 按 `surface` 挑组件，用 `key={renderedSurface}` 强制重挂载，进出场是 GSAP 时间线并带一个墙钟 deadline——快速往返或连续切换时，超时的动画直接收尾而不会把焦点压在正在退场的那层上（`aria-hidden` + `inert` 在 leaving 期间同时生效，同文件:316）。退场后焦点按 `data-focus-return` 落回原入口。
 
 "HUD"不是第二个窗口。整个客户端只有一个 `BrowserWindow`；`.hud-surface` 与 `page-NN` 这套类名是与 `.impeccable` 视觉稿对齐的设计基底，由 `components/hud/use-hud-page.ts` 按当前 surface 把页面身份写成 `.desktop-app` 上的 `data-hud-page`，`src/main/__tests__/hud-substrate-guard.test.ts` 反过来校验修正层确实存在 `.hud-surface .c` 形状的选择器（少于 20 条就判守卫空转）。
 
-错误边界是两层：`App.tsx:205` 的 `<RenderErrorBoundary label="理解书房" shell>` 塌了给出重载，`TaskSurface.tsx:323` 的 `<RenderErrorBoundary label="这个页面">` 塌了只丢那张纸，书房、目录与伴星还在。
+错误边界是两层：`App.tsx` 的 `<RenderErrorBoundary label="理解书房" shell>` 塌了给出重载，`TaskSurface.tsx` 的 `<RenderErrorBoundary label="这个页面">` 塌了只丢那张纸，书房、目录与伴星还在。
 
 ### 一条完整的调用链
 
-页面上按下一次「学这篇笔记」，真实走的是这条路：按键或点击 → `room-store.invoke("open-notebook")` → `resolveRoomIntent` 得出 `{ destination, viewPreset, surface }` → `TaskSurface` 换 `key` 重挂 `NotebookSurface` → 组件调 `window.astellaDesktop` 上契约里的某个频道 → 主进程 handler 代发请求给 `apps/api` → 结果与错误码原路返回，动效收尾与服务器回执同时发生。这条链上没有 router，渲染层没有 `fetch`，也没有第二个窗口——想加一个动作，就沿它逐层改，对照表见 [架构](./architecture.md) 的"改哪儿"一节。
+页面上按下一次「学这篇笔记」，真实走的是这条路：按键或点击 → `room-store.invoke("open-notebook")` → `resolveRoomIntent` 得出 `{ destination, viewPreset, surface }` → `TaskSurface` 换 `key` 重挂 `NotebookSurface` → 组件调 `window.astella` 上的类型化业务方法 → 主进程 handler 代发请求给 `apps/api` → 结果与错误码原路返回，页面根据回执更新状态。这条链上没有 router，渲染层不直接发业务 HTTP，也没有第二个窗口——想加一个动作，就沿它逐层改，对照表见 [架构](./architecture.md) 的"改哪儿"一节。
 
 ![首页书房：纸面、目录栏与常驻伴星](../assets/home-room.jpg)
 
@@ -86,7 +86,7 @@
 | `graph` | 理解星图：漫游 / 列表双模、恒星与星座图层、关系逐条确认 | `components/surfaces/space/graph-surface.tsx`、`space/understanding-universe.tsx` |
 | `validate` | 理解练习 → 练习结果（页面 16 / 17；练的时候屏内说"这一轮 / 旅程"，闸门叫正式作答） | `components/surfaces/run/validation-surface.tsx`、`learning-run-copy.tsx` |
 | `open-card-generation` | 学习卡生成中 / 候选卡审核 | `components/CardGenerationSurface.tsx`、`components/surfaces/review/candidate-review-desk.tsx` |
-| `open-sources` | 来源库，标签 全部 / 处理中 / 失败 / 就绪 / 归档（`source/source-index.ts:12`） | `components/surfaces/source/source-library-surface.tsx` |
+| `open-sources` | 来源库，标签 全部 / 处理中 / 失败 / 就绪 / 归档（`source/source-index.ts`） | `components/surfaces/source/source-library-surface.tsx` |
 | `open-source` | 来源详情 | `components/surfaces/source/source-detail-surface.tsx` |
 | `open-notes` | 笔记库 | `components/surfaces/notebook/note-library-surface.tsx` |
 | `open-objectives` | 学习卡库 | `components/surfaces/library/WorkspaceLibrarySurface.tsx`（`ObjectiveLibrarySurface`） |
@@ -96,7 +96,7 @@
 
 ## 目录栏、右上岛与全局按键
 
-左侧 `components/DirectoryRail.tsx:42` 的 `DIRECTORY_ITEMS` 就是十项，`aria-label="学习空间目录"`：首页、来源、笔记、学习卡、星图、今日学习、复习、查找、伴星、设置；折叠态按钮文案是 展开目录 / 收起目录，行为模式 `auto | expanded | collapsed` 持久化在 `astella.directory-rail.mode.v1`。星图与来源 / 笔记 / 学习卡同组，因为它就是同一条链的拓扑视图；今日学习与复习是两张不同的页面，目录栏、首页与快捷键都可到达。
+左侧 `components/DirectoryRail.tsx` 的 `DIRECTORY_ITEMS` 就是十项，`aria-label="学习空间目录"`：首页、来源、笔记、学习卡、星图、今日学习、复习、查找、伴星、设置；折叠态按钮文案是 展开目录 / 收起目录，行为模式 `auto | expanded | collapsed` 持久化在 `astella.directory-rail.mode.v1`。星图与来源 / 笔记 / 学习卡同组，因为它就是同一条链的拓扑视图；今日学习与复习是两张不同的页面，目录栏、首页与快捷键都可到达。
 
 右上角岛 `components/hud/HudRoomControl.tsx`：空间胶囊（`aria-label="学习空间控制"`）、返回学习空间总览、日夜切换、总静音、动效模式循环（完整 / 轻量 / 关闭，带指示灯）、设置（有新版本时标题带版本号）、伴星带路、账户槽位（展开后是一张脸或首字母印章），再配一个收起 / 展开。左下角的返回书签在 `components/hud/HudPage.tsx`，`aria-label` 直接沿用传进来的 label——那本身就带「返回」，再加前缀读屏会念成"返回返回书房"（同文件:53 的记录）。
 
@@ -108,13 +108,13 @@
 
 | 项 | 值 |
 | --- | --- |
-| 已注册形态 | 只有 `whale`（大肥鱼），`DEFAULT_WINDOW_LIVE2D_MODEL_ID`（`window-live2d-contract.ts:396`） |
+| 已注册形态 | 只有 `whale`（大肥鱼），`DEFAULT_WINDOW_LIVE2D_MODEL_ID`（`window-live2d-contract.ts`） |
 | 模型 | `assets/companion/live2d-v3/whale/c_0120.model3.json`，30 个 `.exp3.json` 表情 |
 | 动作组 | `Idle` / `Bubble` / `Spray` / `Selfie` / `SelfieQuick` |
 | 呈现状态 | 11 个，来自 `packages/shared` 的 `characterPresentationStateV1Schema`：hidden、idle、invite、listen、think、analyze、speak、navigate、encourage、celebrate、uncertain |
 | 语义时刻 | 10 个：`task_started`、`working`、`tool_succeeded`、`tool_failed`、`awaiting_confirmation`、`reply_completed`、`space_arrived`、`reminder`、`celebration`、`run_failed`，每个落成一条动作 + 可选 overlay / costume（`WHALE_MOMENT_CUE`） |
 | 自发轮播 | 洗牌袋：首条延迟 4s，之后 7–15s 一条；表情停留 5s、动作 3.5s、overlay 默认 2.6s |
-| 状态 | `loading \| ready \| unavailable`；15s 装载超时判 `unavailable`（`WindowLive2D.tsx:164`），不可用时不占位、不报错刷屏 |
+| 状态 | `loading \| ready \| unavailable`；15s 装载超时判 `unavailable`（`WindowLive2D.tsx`），不可用时不占位、不报错刷屏 |
 | 口型 | TTS 逐帧振幅写 `ParamMouthOpenY`（该模型没有 `ParamA`） |
 
 时刻表只演**真实发生过**的事件：每条都由一帧 SSE 或一个气泡动作触发，不为了多点动画凭空演一遍。眼镜是 costume——`working` 戴上、`tool_succeeded` / `reply_completed` 摘掉，不然一副圆脸眼镜挂到下一轮对话；贴纸类（问号、吐魂、爱心）是 overlay，只写装饰可见性参数，因此能逐帧叠加也能脱下来，而发型类会永久改形象、桌道具类需要一张她没有的桌子，两类都没登记。伴星每一页都在，座位、取景与主动介入的配置集中在 `components/hud/hud-pages.ts`；同文件的 `HUD_PAGE_DESTINATIONS` 记着哪几屏她跳不过去（值为 `null`：`space`、四张笔记书签、学习卡详情、生成中、候选卡等），这份表就是"别承诺她做不到的跳转"的依据。
@@ -123,7 +123,7 @@
 
 ## 笔记：编辑、协同与四张书签
 
-编辑器是 Milkdown + CodeMirror 的所见即所得（`surfaces/notebook/note-markdown-editor.tsx`），正文三种模式 阅读 / 编辑 / 源码 由 `note-document-mode.ts` 的 `NoteBodyMode` 决定。一张册页四张书签互斥：`notebook-surface.tsx:755` 的 `leaf` 取 `reading` / `learning` / `history` / `expansion`，切过去之后原来读到哪儿还在屏上，不是重装一遍；对外发布的页面身份则是 `hud/hud-pages.ts` 里的四张——这篇笔记、笔记编辑（副标题写着"Markdown 所见即所得；可回去的版本按「保存」留下"）、学这篇笔记、学习记录。
+编辑器是 Milkdown + CodeMirror 的所见即所得（`surfaces/notebook/note-markdown-editor.tsx`），正文三种模式 阅读 / 编辑 / 源码 由 `note-document-mode.ts` 的 `NoteBodyMode` 决定。一张册页四张书签互斥：`notebook-surface.tsx` 的 `leaf` 取 `reading` / `learning` / `history` / `expansion`，切过去之后原来读到哪儿还在屏上，不是重装一遍；对外发布的页面身份则是 `hud/hud-pages.ts` 里的四张——这篇笔记、笔记编辑（副标题写着"Markdown 所见即所得；可回去的版本按「保存」留下"）、学这篇笔记、学习记录。
 
 CRDT 与 WebSocket 都在主进程：`src/main/note-doc-transport.ts` 用 `HocuspocusProvider`，一条连接只服务一篇笔记（v4 的文档名在协议首条消息里、服务端按文档逐条路由），本地缓存落在 `note-doc-cache-store.ts`，渲染进程通过 preload 桥读写。自动保存防抖，状态要等服务器回执才落定；版本是不可变的，回看与还原走 `version-history.tsx`，还原不销毁历史。批注锚在原稿区间上（`note-annotation-mark.tsx`、`note-annotation-placement.ts`），讲解纸贴在精确锚点旁；回想由 `notebook-recall-contract.ts` 控制提示、揭示与自评三档；速看有原文依据与覆盖范围；往外学的草稿逐篇确认后才成为新笔记与关系。AI 生成的整页 HTML/SVG 在隔离 frame 里跑（`surfaces/source/artifact-frame-host.tsx` 经 `astella-app://artifact/<uuid>`），使用独立 artifact origin 且不共享 preload 能力。图片上传在 `note-image-uploads.tsx`，Markdown 导出在主进程 `src/main/note-markdown-export.ts`，星图取数来自 `understanding.getTopology` 加关系判定。
 
@@ -158,9 +158,9 @@ Esc 先关闭当前浮层，再收工具，最后退出全屏，不直接跳首�
 
 ## 动效与可访问性
 
-转场用可打断的 GSAP 时间线，切换跟随最新意图：正在退场的那层既不接焦点也不接读屏，新页面提前进场时 deadline 到点直接落位。`nextMotionMode()` 是 full → lite → off 的循环（`room-machine.ts`），`prefers-reduced-motion` 命中时 store 的 `reducedMotion` 一票否决，连设置页的弹性手感预览也跟着退化成静态。`motionMode === "off"` 时 `TaskSurface` 走一条独立分支直接落位（同文件:172），`lite` 也是单独分支（:156）。键盘同理：焦点与功能不等动画——正在退场的那层被 `inert` 挡在 tab 序列之外，而新页面的入口在进场完成前就可以按。
+转场用可打断的 GSAP 时间线，切换跟随最新意图：正在退场的那层既不接焦点也不接读屏，新页面提前进场时 deadline 到点直接落位。`nextMotionMode()` 是 full → lite → off 的循环（`room-machine.ts`），`prefers-reduced-motion` 命中时 store 的 `reducedMotion` 一票否决，连设置页的弹性手感预览也跟着退化成静态。`motionMode === "off"` 时 `TaskSurface` 走一条独立分支直接落位（同文件），`lite` 也是单独分支（:156）。键盘同理：焦点与功能不等动画——正在退场的那层被 `inert` 挡在 tab 序列之外，而新页面的入口在进场完成前就可以按。
 
-首页背景是海报 + 视差图层，不是 3D 场景：`data-scene-renderer="poster-live2d"`（`App.tsx:187`、`components/RoomStage.tsx:247`），图层与海报由 `scripts/validate-room-layers.mjs` 对着 `public/assets/learning-room/v1/manifest.json` 校验，源与产物各查一次。没有自由相机、没有视差漫游，生活感全部由 Live2D 原地动作和短暂反馈承担——这是写进 [PRODUCT.md](../../../PRODUCT.md) 首页合同的约束。
+首页背景是海报 + 视差图层，不是 3D 场景：`data-scene-renderer="poster-live2d"`（`App.tsx`、`components/RoomStage.tsx`），图层与海报由 `scripts/validate-room-layers.mjs` 对着 `public/assets/learning-room/v1/manifest.json` 校验，源与产物各查一次。没有自由相机、没有视差漫游，生活感全部由 Live2D 原地动作和短暂反馈承担——这是写进 [PRODUCT.md](../../../PRODUCT.md) 首页合同的约束。
 
 ## 打包与自动更新
 
@@ -180,8 +180,6 @@ Esc 先关闭当前浮层，再收工具，最后退出全屏，不直接跳首�
 
 ## 测试与源码守卫
 
-`vitest.config.ts`：`testTimeout: 15_000`、`setupFiles: ['./vitest.setup.ts']`（放宽 `waitFor`），环境靠每个文件顶部的 `@vitest-environment jsdom` 声明——178 个 `.test.tsx` 里 177 个带，另有 172 个 `.test.ts`。守卫本身也写测试：`startup-failure-guard.test.ts` 盯主进程起不来的形状。
-
 `vitest.config.ts` 配置测试超时与 setup；DOM 测试在文件顶部声明 jsdom。部分素材包含测试读取 `out/`，干净检出先构建再测试。
 
 | 守卫 | 判据 |
@@ -196,9 +194,9 @@ Esc 先关闭当前浮层，再收工具，最后退出全屏，不直接跳首�
 | `*-copy-guard.test.ts` | 面向用户的文案改动要有记录 |
 | `docs-vite-vars-have-readers.test.ts` | 文档点名的构建期变量在 `src` 里必须真有人读；点名"不存在"的要在那一行明说不存在 |
 
-`docs-vite-vars-have-readers.test.ts` 守的正是本页最容易写错的一句：`VITE_HOME_SCENE_VARIANT` 全仓唯一命中是 `package.json` 里一条截图脚本给它赋值，`src` 里没有读取点，`HomeV2Provider` 在 `App.tsx:136` 无条件挂载。任何"首页由旗标切换、可回退 V1"的写法都是假话，而它会让人把"改门禁"当成安全决定。
+`docs-vite-vars-have-readers.test.ts` 守的正是本页最容易写错的一句：`VITE_HOME_SCENE_VARIANT` 全仓唯一命中是 `package.json` 里一条截图脚本给它赋值，`src` 里没有读取点，`HomeV2Provider` 在 `App.tsx` 无条件挂载。任何"首页由旗标切换、可回退 V1"的写法都是假话，而它会让人把"改门禁"当成安全决定。
 
-渲染侧的测试就近放在各域自己的 `__tests__/`（例如 `components/surfaces/__tests__/` 有 100 多个，覆盖 `notebook-surface.*` 的草稿恢复、迟到的草稿、打字回归、版本标签，以及每个会进目录的屏幕的 `*.page-readable.test.tsx`）；旁边还留着几份手写走查记录 `card-study-desk-qa.md`、`companion-center-experience-qa.md`、`search-experience-qa.md`、`star-map-experience-qa.md`、`today-study-experience-qa.md`——它们记的是当时在窗口里看到了什么，不能当作现在的验收结论。
+渲染侧的测试就近放在各域自己的 `__tests__/`（例如 `components/surfaces/__tests__/` 覆盖 `notebook-surface.*` 的草稿恢复、迟到的草稿、打字回归、版本标签，以及每个会进目录的屏幕的 `*.page-readable.test.tsx`）；旁边还留着几份手写走查记录 `card-study-desk-qa.md`、`companion-center-experience-qa.md`、`search-experience-qa.md`、`star-map-experience-qa.md`、`today-study-experience-qa.md`——它们记的是当时在窗口里看到了什么，不能当作现在的验收结论。
 
 ## 真实窗口取证
 
@@ -206,11 +204,11 @@ Esc 先关闭当前浮层，再收工具，最后退出全屏，不直接跳首�
 
 ## 容易踩的坑
 
-- **能力芯片说"未接入"不代表屏上没有。**`NATIVE_CAPABILITY_CHANNELS` 与 `transportNativeCapabilities()`（`src/main/desktop-gateway-transport.ts:202`、:216）只看频道名在不在 `DESKTOP_IPC_CHANNELS` 里，于是映射为 `null` 的 `filePicker`、`notifications`、`live2d` 一律报"未接入"——尽管通知与伴星都在屏幕上真实工作。要改显示就改这张表，别改界面文案。
+- **能力芯片说"未接入"不代表屏上没有。** `NATIVE_CAPABILITY_CHANNELS 与 `transportNativeCapabilities()`（`src/main/desktop-gateway-transport.ts`）只看频道名在不在 `DESKTOP_IPC_CHANNELS` 里，于是映射为 `null` 的 `filePicker`、`notifications`、`live2d` 一律报"未接入"——尽管通知与伴星都在屏幕上真实工作。要改显示就改这张表，别改界面文案。
 - **被删掉的东西不会回来。**Home V1（9 个 tile 那版）、魔法目录页、除 `whale` 之外的 Live2D 形态都是直接删除而非弃用；跟着旧方案或旧截图找它们的代码，找不到是正常的。
 - **three.js 只有一个用户。**`surfaces/review/candidate-card-scene.ts` 与 `candidate-card-geometry.ts`，只负责候选卡审核台的卡厚、受光与翻面。首页不是 3D，星图也不是（星图是自绘 canvas）。
 - **行数与 hook 数不是拆分红线。**`NotebookSurface` 早就过 2000 行，靠 `SIZE_DEBT` 台账合法存在；拆不拆看依赖与职责，不看指标。
-- **`sandbox` 与 `--no-sandbox` 是环境相关的。**受限容器里不加那条 switch 整个客户端起不来，本地加了反而丢掉沙箱；判断前先读 `src/main/index.ts:59` 的注释。
+- **`sandbox` 与 `--no-sandbox` 是环境相关的。**受限容器里不加那条 switch 整个客户端起不来，本地加了反而丢掉沙箱；判断前先读 `src/main/index.ts` 的注释。
 - **子 iframe 拿不到桥。**产物 iframe 由 `process.isMainFrame` 守住 preload；修改 frame 接线前确认这条边界。
 - **目录上的「学习卡」与代码里的 objective 是同一处。**`DIRECTORY_ITEMS` 的 `goals` 项指向 `open-objectives`，组件叫 `WorkspaceLibrarySurface` 里的 `ObjectiveLibrarySurface`；改这张屏的文案要三处一起对，别只改一处留下名字分裂。
 

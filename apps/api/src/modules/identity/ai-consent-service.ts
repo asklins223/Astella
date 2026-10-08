@@ -10,7 +10,7 @@
  * 这正是先立门面那一步换来的。
  */
 
-import { count, desc, eq } from "drizzle-orm";
+import { count, desc, eq, sql } from "drizzle-orm";
 import { aiAuditLog, userAiSettings } from "@astella/shared/db-schema";
 import { withActorTransaction, withWorkspaceTransaction } from "../../db/client.ts";
 import { users } from "@astella/shared/db-schema";
@@ -52,7 +52,8 @@ export async function getAIPrivacySettings(workspaceId: string, userId: string) 
 }
 
 /**
- * 签署本人的 AI 使用同意。0237 起不再要求 owner 身份，也不再影响同空间的其他人。
+ * 本人明确同意使用外部 AI：签署与开启外发在同一次写入中生效。
+ * 只开启总开关，保留已有的图片、个人信息检测与审计选择。
  */
 export async function updateAIConsent(
   workspaceId: string,
@@ -61,18 +62,18 @@ export async function updateAIConsent(
 ): Promise<void> {
   await withWorkspaceTransaction(
     { workspaceId, userId },
-    (transaction) => transaction
-      .insert(userAiSettings)
-      .values({
-        userId,
-        consentVersion,
-        consentAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: userAiSettings.userId,
-        set: { consentVersion, consentAt: new Date(), updatedAt: new Date() },
-      }),
+    async (transaction) => {
+      // 新账号先取列默认值；与签署写入同一事务，不暴露半完成状态。
+      await transaction.insert(userAiSettings).values({ userId }).onConflictDoNothing();
+      await transaction.update(userAiSettings)
+        .set({
+          consentVersion,
+          consentAt: new Date(),
+          dataPolicy: sql`jsonb_set(${userAiSettings.dataPolicy}, '{sendToExternal}', 'true'::jsonb)`,
+          updatedAt: new Date(),
+        })
+        .where(eq(userAiSettings.userId, userId));
+    },
   );
 }
 

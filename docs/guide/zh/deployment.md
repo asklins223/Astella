@@ -1,10 +1,12 @@
 # Tag 发布与服务器部署
 
+中文 · [English](../en/deployment.md)
+
 推送统一的 `v<版本>` tag 同时触发两端发布，版本唯一来源为 `release/version.json`。
 
 桌面端：Windows x64 与 macOS 构建安装包，同时验证桌面质量与打包启动；全部成功并检查更新清单后才公开 GitHub Release。单独手动运行 Desktop package 仍可取得测试安装包。没有 Apple 证书时使用完整 ad-hoc 签名和稳定的跨版本更新要求，macOS 首次打开仍可能需要在隐私与安全中允许；Windows 覆盖安装分支仍未在无头 runner 上验证。
 
-服务端：现有 CI 的测试全部成功后调用 Server deploy，构建 Linux amd64 的 API、Worker 和 TTS 镜像推送 GHCR，以 digest 记录镜像，再通过 SSH 部署该 tag 的确切提交。版本必须与 `release/version.json` 一致，使用 `.github/scripts/version-contract.mjs --write` 同步版本副本。部署串行执行，不打断正在迁移的任务。重新部署可在 GitHub 重跑该 tag 的 CI。
+服务端：现有 CI 的测试全部成功后调用 Server deploy，构建 Linux amd64 的 API、Worker 和 TTS 镜像推送 GHCR，以 digest 记录镜像，再通过 SSH 部署该 tag 的确切提交。版本必须与 `release/version.json` 一致；打 tag 前运行 `npm run release:prepare` 同步版本副本并预览发布说明，再运行 `npm run version:check`。部署串行执行，不打断正在迁移的任务。重新部署可在 GitHub 重跑该 tag 的 CI。
 
 ## 私有配置
 
@@ -40,15 +42,15 @@ IP 证书通过 Certbot 的 shortlived profile 签发，约六天有效。服务
 
 ```dotenv
 STORAGE_MODE=remote
-STORAGE_ENDPOINT=https://cn-nb1.rains3.com
-STORAGE_PUBLIC_ENDPOINT=https://cn-nb1.rains3.com
+STORAGE_ENDPOINT=https://s3.example.com
+STORAGE_PUBLIC_ENDPOINT=https://s3.example.com
 S3_REGION=us-east-1
 S3_BUCKET=astella
 STORAGE_ACCESS_KEY_ID=<服务端访问密钥>
 STORAGE_SECRET_ACCESS_KEY=<服务端私有密钥>
 ```
 
-桶保持私有；为 `temporary/` 前缀设置一天后过期的生命周期规则。长期资源位于空间／用户前缀，导出与未完成上传位于 `temporary/`。更换提供商时同步修改两个 endpoint 和客户端可用的 HTTPS 源；密钥可限制在目标桶及读、写、复制、删除、列举权限。生命周期管理可用单独的管理员凭据。
+将示例 endpoint 和 region 换成供应商实际值。桶保持私有；为 `temporary/` 前缀设置一天后过期的生命周期规则。长期资源位于空间／用户前缀，导出与未完成上传位于 `temporary/`。更换提供商时同步修改两个 endpoint 和客户端可用的 HTTPS 源；密钥可限制在目标桶及读、写、复制、删除、列举权限。生命周期管理可用单独的管理员凭据。
 
 新版桌面端通过 `/storage/transfers/config` 取得模式与允许的源，向 API 申请限时签名 PUT，上传后调用完成接口。API 校验原文与图片，再复制到不可被旧 PUT 覆盖的最终对象。下载与导出先校验会话和资源权限，再发短期签名 GET；对象请求不携带 API token 或 Cookie。旧客户端仍可通过 API 转发上传与下载，但这部分流量仍占服务器带宽；重新打包并更新客户端后才能获得直传节省。
 
@@ -56,12 +58,18 @@ Worker 解析文本来源时读取远程原文并验证 SHA-256。工作区 JSON
 
 本地 `docker-compose.dev.yml` 固定 `STORAGE_MODE=local`、`http://minio:9000`，继续使用本地 MinIO；本地客户端 `local_loopback` 直接沿原容器上传链路。Alpha 的 MinIO 服务与应用本地存储配置只定义在 `docker-compose.alpha.yml`，正式部署不加载该文件。不要把生产远程配置覆盖到本地 `.env`。
 
-当前生产服务器已完成远程切换并核对旧桶为空，旧 MinIO 容器、初始化容器、`astella_minio_data` 卷及 MinIO/MC 镜像均已清理，生产环境文件也移除了 `MINIO_*` 变量。后续部署及回退只使用远程对象存储，不再创建本机对象卷。
+从 MinIO 迁移到远程桶时，先迁移长期对象并核对数量、内容与上传下载，再检查旧桶是否仍有业务资源。确认备份、切换和回退路径之后，才清理旧 MinIO 服务、卷、镜像与环境变量。当前仓库的正式部署配置只使用远程对象存储；它不能证明某台服务器已经完成数据迁移或清理。
 
 真实存储集测独立运行 `npm --prefix apps/api run test:object-storage:s3`，不混入不需要外部存储的 `make test-postgres`。先准备迁移完成且授权已补齐的可丢弃 `astella_storage_it_*` 数据库，分别设置受限角色的 `DATABASE_URL_API`、`DATABASE_URL_WORKER` 与管理员的 `DATABASE_URL_TEST_ADMIN`，再在受限环境文件中提供远程存储配置。集测只创建模拟内容并清理对应对象前缀；结束后删除该临时数据库。不要使用生产数据库或提交环境文件。
 
 ## macOS 无证书构建
 
-打包使用 `electron-builder.config.cjs`，在 ZIP 和 DMG 创建之前完成签名。有 Developer ID 时保留证书签名；没有时先由 electron-builder 签完整嵌套包体，再把主应用指定要求固定为 `identifier "com.asklins.astella"`。这是 [word-tts-desktop 构建流程](https://github.com/asklins223/word-tts-desktop/blob/main/build_electron.sh) 使用的更新方式。`scripts/check-macos-update-signature.cjs` 用两份内容不同的真实二进制验证跨版本要求，并确认篡改签名后的资源会失败；最终 ZIP 与 DMG 中的应用都必须通过签名检查。
+打包使用 `electron-builder.config.cjs`，在 ZIP 和 DMG 创建之前完成签名。有 Developer ID 时保留证书签名；没有时先由 electron-builder 签完整嵌套包体，再把主应用指定要求固定为 `identifier "com.asklins.astella"`。`scripts/check-macos-update-signature.cjs` 用两份内容不同的真实二进制验证跨版本要求，并确认篡改签名后的资源会失败；最终 ZIP 与 DMG 中的应用都必须通过签名检查。
 
-签名完整性、跨版本要求和系统首次启动许可是不同的检查。ad-hoc 不提供 Apple 开发者认证，也不会消除首次打开的用户确认。`v1.0.0` 原始安装包发布时跳过了重签名；这次流程修复不会自动改变已发布资产。从旧损坏包升级到修复包需要手动安装一次；真实更新替换的结果单独记录，不能用 `codesign` 通过代替。
+签名完整性、跨版本要求和系统首次启动许可是不同的检查。ad-hoc 不提供 Apple 开发者认证，也不会消除首次打开的用户确认。流程修复不会自动改变历史已发布资产。旧包签名损坏时可能需要手动安装修复包；真实更新替换的结果应单独记录，不能用 `codesign` 通过代替。
+
+## 相关文档
+
+- [运行与发布](operations.md)：Compose 选择、版本流程、备份与监控。
+- [测试与质量](testing-and-quality.md)：发布门禁与实库／真实窗口的分工。
+- [开发环境](development.md)：本机配对与 MinIO 开发栈。

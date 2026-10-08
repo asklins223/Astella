@@ -2,7 +2,7 @@
 
 中文 · [English](../en/api-and-data.md)
 
-这篇讲什么：`apps/api` 这层 Fastify 5 服务的运行形态——入口、插件与钩子、启动与停机顺序；路由按域的组织方式；鉴权与多租户的契约细节；Drizzle schema 的单一来源、迁移执行者与三个数据库角色的权限边界；API 与 AI Worker 之间的作业投递与 outbox 不变量；SSE 与流式响应；配置项、观测端点与运维面板；以及 API 侧的测试入口。事实全部取自 `apps/api/src/**`、`infra/postgres/**`、`packages/shared/src/db-schema/**` 与两份 compose 文件，逐条可核对。端点怎么调、字段含义在共享契约里，本页不重复 DTO。
+本页说明 Fastify API 的启动与停机、模块路由、鉴权与多租户、迁移和数据库角色、作业投递、SSE、对象传输与运维面板。实现入口在 `apps/api/src/`，共享契约在 `packages/shared/src/`，数据库权限在 `infra/postgres/`；具体端点字段以契约和路由为准。
 
 - [运行形态与启动顺序](#运行形态与启动顺序)
 - [路由与模块清单](#路由与模块清单)
@@ -82,7 +82,7 @@
 - 限流存储由 `AUTH_RATE_LIMIT_STORE` 选择：默认 `postgres`（表 `auth_rate_limits`，跨副本一致），`memory` 只在显式设置时生效；写别的值直接抛错。开发栈显式设成 `memory` 并把上界放宽到 100，属 dev-only。
 - 口令用 `bcryptjs`，cost 10；查不到邮箱的登录也走一次 `DUMMY_PASSWORD_HASH` 比对，让响应时间不区分"账号存在吗"。哈希在主线程算，但都在开事务之前，避免占着连接池。
 - 会话令牌落库前做 SHA-256（`sessions.token` 存十六进制摘要），库泄了也不是一条可用凭据；解码走 `withActorTransaction`，成员行缺失或 `left_at` 非空当场删会话。滑动续期由 `nextSessionExpiry()` 决定：TTL 30 天、剩余不足一半才续、绝对上限 180 天。过期清理在启动时与每小时各跑一次（`cleanupExpiredSessions()`）。
-- 口令长度按流程不同：登录 `min 4`（只做形状校验，不是强度要求）、注册 `min 8`、改密新密码 `min 8`、Owner 为恢复账号重置 `min 12`，上界统一 200。
+- 口令长度按流程不同：登录 `min 4`（只做形状校验，不是强度要求）、注册 `min 8`、改密新密码 `min 8`、Owner 为恢复用户初始化未设置的密码 `min 12`，上界统一 200。
 - 归属判定只有一个谓词：`isWorkspaceOwner()`（`membershipRole === "owner"` 或 `workspaceOwnerId === userId`），`requireOwner`、`/v1/auth/capabilities` 与笔记投影共用它，避免"服务端允许写、界面判只读"。
 
 ## 多租户与行级安全
@@ -94,7 +94,7 @@
 - `adoptWorkspaceContext(tx, workspaceId)`：建空间那条路径在中途把租户抬到新空间，不改 actor。
 - 兜底在数据库里：策略是 RESTRICTIVE 的租户守卫，`app.*` 没生效时读到的是 **0 行**而不是别人的行，所以求值顺序万一不成立，后果是响亮的 401 / 空结果，不是静默跨租户泄漏。
 - Postgres 错误码 `42501`（RLS 拒绝）由全局 error handler 计入 `astella_db_rls_denied_total`——误拦因此可见。
-- 棘轮在集成测试里：`apps/api/src/integration-tests/schema-isolation-gate-postgres.integration.ts` 对真实库比对两份基线，要求**完全相等**。当前基线：缺 `workspaces` 外键的表 89 张（只能减，加就红），RLS 未启用的表 **0 张**（零容忍，任何新表忘 ENABLE 或有人再写批量 DISABLE 都立刻红），另有"启用了 RLS 但一条策略都没有"必须为 0 的检查。
+- 棘轮在集成测试里：`apps/api/src/integration-tests/schema-isolation-gate-postgres.integration.ts` 对真实库比对两份基线，要求**完全相等**。当前基线：缺 `workspaces` 外键的表按测试基线登记（更新时只能收紧，新增缺口会失败），RLS 未启用的表 **0 张**（零容忍，任何新表忘 ENABLE 或有人再写批量 DISABLE 都立刻红），另有"启用了 RLS 但一条策略都没有"必须为 0 的检查。
 
 ## 数据库、schema 与迁移
 
@@ -131,11 +131,11 @@
 
 `companion_edit_note` 的授权工具由 API `modules/note/companion-edit-dispatch.ts` 领取，`companion-edit-document.ts` 核对冻结原文与版本，再修改现有 Hocuspocus Y.Doc。写入沿既有保存、正文投影与搜索链路提交；Worker 读取实际保存回执。工具身份用于幂等，取消或原文变化时停止替换。它不是另一条裸 SQL 覆盖正文的接口。
 
-对象传输在 `modules/storage-transfer/`。远程客户端先请求 `/storage/transfers/config` 与限时签名上传地址，完成后由 API 校验并转存到最终对象；下载／导出先校验会话与可见性，再发短期签名 GET。主进程直传请求不携带 API token／Cookie。本机 local_loopback 继续使用原 API 上传路径；模式与集测见 [部署说明](deployment.md)。
+对象传输在 `modules/storage/`。远程客户端先请求 `/storage/transfers/config` 与限时签名上传地址，完成后由 API 校验并转存到最终对象；下载／导出先校验会话与可见性，再发短期签名 GET。主进程直传请求不携带 API token／Cookie。本机 local_loopback 继续使用原 API 上传路径；模式与集测见 [部署说明](deployment.md)。
 
 ## 作业投递与 outbox 不变量
 
-`modules/job/service.ts` 的 `createJob()` 是 API 通用入队口；Agent 宿主还有声明式能力与推进的入队端口，均须保持同一配额和幂等合同。通用入口：**只往 `jobs` 表插行**，不认领、不执行（认领函数的 `EXECUTE` 只给 worker，矩阵断言会拦住 API 拿到它）。同一条事务里先取 `pg_advisory_xact_lock(hashtextextended('job-quota:<workspaceId>', 0))`，再做：
+`modules/job/service.ts` 的 `createJob()` 是 API 通用入队口；Agent 宿主还有声明式能力与推进的入队端口，均须保持同一配额和幂等合同。该函数**只往 `jobs` 表插行**，不认领、不执行（认领函数的 `EXECUTE` 只给 worker，矩阵断言会拦住 API 拿到它）。同一条事务里先取 `pg_advisory_xact_lock(hashtextextended('job-quota:<workspaceId>', 0))`，再做：
 
 - **配额**：该空间 `pending` 作业数 ≥ `MAX_PENDING_JOBS_PER_WORKSPACE`（`@astella/shared`，值 50）时抛 `statusCode = 429`。锁保证了并发请求不能在 49 条时双双通过检查。
 - **幂等键**：命中同 key 直接返回既有 job；key 已绑到别的 type 或别的 `requestedBy` 视为调用错误。

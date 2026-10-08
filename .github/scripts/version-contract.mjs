@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 export const REPOSITORY_ROOT = resolve(dirname(SCRIPT_PATH), "../..");
 export const VERSION_SOURCE_PATH = "release/version.json";
+export const VERSION_README_PATHS = ["README.md", "README.en.md"];
 export const PACKAGE_ROOTS = [
   "apps/api",
   "workers/ai-worker",
@@ -24,6 +25,14 @@ const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const RELEASE_TAG_PATTERN =
   /^v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))(?:-(rc\.[1-9]\d*))?$/;
 const README_VERSION_MARKERS = [
+  {
+    name: "Repository version text",
+    pattern: /Repository version: `v([^`]+)`/g,
+    versionGroup: 1,
+    replace(readme, version) {
+      return readme.replace(this.pattern, `Repository version: \`v${version}\``);
+    },
+  },
   {
     name: "当前版本 text",
     pattern: /当前版本：`v([^`]+)`/g,
@@ -140,16 +149,18 @@ export function inspectVersionCopies(root = REPOSITORY_ROOT, version = loadVersi
     }
   }
 
-  try {
-    const readme = readFileSync(join(root, "README.md"), "utf8");
-    const markers = findReadmeVersionMarkers(readme);
-    if (markers.length !== 1) {
-      issues.push(`README.md must contain exactly one supported version marker, found ${markers.length}`);
-    } else if (markers[0].version !== version) {
-      issues.push(`README.md ${markers[0].marker.name} is ${JSON.stringify(markers[0].version)}, expected ${version}`);
+  for (const readmePath of VERSION_README_PATHS) {
+    try {
+      const readme = readFileSync(join(root, readmePath), "utf8");
+      const markers = findReadmeVersionMarkers(readme);
+      if (markers.length !== 1) {
+        issues.push(`${readmePath} must contain exactly one supported version marker, found ${markers.length}`);
+      } else if (markers[0].version !== version) {
+        issues.push(`${readmePath} ${markers[0].marker.name} is ${JSON.stringify(markers[0].version)}, expected ${version}`);
+      }
+    } catch (error) {
+      issues.push(`${readmePath} could not be read: ${error instanceof Error ? error.message : error}`);
     }
-  } catch (error) {
-    issues.push(`README.md could not be read: ${error instanceof Error ? error.message : error}`);
   }
 
   return issues;
@@ -182,16 +193,18 @@ export function syncVersionCopies(root = REPOSITORY_ROOT, version = loadVersionS
     }
   }
 
-  const readmePath = join(root, "README.md");
-  const readme = readFileSync(readmePath, "utf8");
-  const markers = findReadmeVersionMarkers(readme);
-  if (markers.length !== 1) {
-    throw new Error(`README.md must contain exactly one supported version marker before synchronization, found ${markers.length}`);
-  }
-  const nextReadme = markers[0].marker.replace(readme, version);
-  if (readme !== nextReadme) {
-    writeFileAtomically(readmePath, nextReadme);
-    changed.push("README.md");
+  for (const readmePath of VERSION_README_PATHS) {
+    const absolutePath = join(root, readmePath);
+    const readme = readFileSync(absolutePath, "utf8");
+    const markers = findReadmeVersionMarkers(readme);
+    if (markers.length !== 1) {
+      throw new Error(`${readmePath} must contain exactly one supported version marker before synchronization, found ${markers.length}`);
+    }
+    const nextReadme = markers[0].marker.replace(readme, version);
+    if (readme !== nextReadme) {
+      writeFileAtomically(absolutePath, nextReadme);
+      changed.push(readmePath);
+    }
   }
 
   return changed;

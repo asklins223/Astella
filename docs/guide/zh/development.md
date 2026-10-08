@@ -2,7 +2,7 @@
 
 中文 · [English](../en/development.md)
 
-这篇讲什么：从一次干净检出到一个能操作的真窗口，中间每一步跑的是什么、各命令的实际范围、哪些变量必须自己填。所有条目按 `Makefile`、`docker-compose.dev.yml`、各包的 `package.json` 与 Dockerfile 逐行核对过；本页只覆盖本机开发栈，生产镜像构建与 Alpha 环境在 [operations.md](operations.md)。
+本页给出从检出仓库到启动桌面窗口的步骤，说明各命令范围和所需变量。配置依据为 `Makefile`、`docker-compose.dev.yml`、包脚本与 Dockerfile；生产与 Alpha 见 [运行与发布](operations.md) 和 [服务器部署](deployment.md)。
 
 - [前置条件](#前置条件)
 - [从干净检出到能操作的窗口](#从干净检出到能操作的窗口)
@@ -22,8 +22,8 @@
 | --- | --- | --- |
 | Docker + Compose v2 | 整套依赖（postgres、minio、edge-tts、api、worker）都在 `docker-compose.dev.yml` 里；本机**不需要**装 PostgreSQL | `docker compose version` |
 | `make` | 所有开发入口都是 Make 目标，`make` 不带参数等于 `make up`（`.DEFAULT_GOAL := up`） | `make -v` |
-| Node 22 | 镜像基座是 `node:22.11.0-alpine3.20`（`apps/api/Dockerfile:4`、`workers/ai-worker/Dockerfile:3`），CI 用 `NODE_VERSION: "22"`（`.github/workflows/main-ci.yml:43`） | `node -v` |
-| 每个包各跑一次 `npm ci` | 九个包各有自己的 `package-lock.json`；`.astella/*` 是 `file:` 软链，但 `tsc` 要靠**被引包自己的** `node_modules` 解析 `zod` / `drizzle-orm` | `ls package-lock.json packages/*/package-lock.json apps/*/package-lock.json workers/*/package-lock.json` |
+| Node 22 | 镜像基座是 `node:22.11.0-alpine3.20`（`apps/api/Dockerfile:4`、`workers/ai-worker/Dockerfile:3`），CI 用 `NODE_VERSION: "22"`（`.github/workflows/main-ci.yml`） | `node -v` |
+| 每个包各跑一次 `npm ci` | 各包有独立的 `package-lock.json`；`.astella/*` 是 `file:` 软链，但 `tsc` 要靠**被引包自己的** `node_modules` 解析 `zod` / `drizzle-orm` | `ls package-lock.json packages/*/package-lock.json apps/*/package-lock.json workers/*/package-lock.json` |
 | `python3` | 一部分现场探针（`scripts/companion-inbox-sse-probe.py` 等）与 `edge-tts` 的服务脚本是 Python | `python3 -V` |
 
 依赖管理需注意：仓库根、`apps/*`、`packages/*`、`workers/*` 的 `package.json` **都没有 `engines` 字段**，也**没有 `.nvmrc`**。"Node 22" 这条约束只活在镜像标签和 CI 变量里，换 Node 版本不会有任何东西拦你——出问题也不会有一行提示。另外仓库里散落着六个 `pnpm-lock.yaml`（根 + api + desktop-client + shared + ai-quality + ai-worker），**没有一条命令读它们**：`Makefile`、两个 Dockerfile 和 CI 全部是 `npm ci`。把它们当作历史材料，不要基于它们推断依赖关系。
@@ -62,7 +62,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 
 `ASTELLA_DESKTOP_PAIRING_KEY_ID` 可用 `local-dev`，本机修订标识可用 `local-dev-v1`；两端需保持一致。远程 HTTPS 模式不使用本机配对密钥，仍需契约修订与合法证书，见 [部署说明](deployment.md)。
 
-要真跑模型还要按槽位填所需 key：`DASHSCOPE_API_KEY`、`OPENAI_COMPAT_API_KEY`、`OPENCODE_GO_API_KEY`、`SILICONFLOW_API_KEY`、`BIGMODEL_API_KEY`、`TOKENRHYTHM_API_KEY`。具体哪个平台服务哪种能力由 `config/ai-platforms.json` 决定，而 `docker-compose.dev.yml` 只透传**显式列出**的那几个变量——2026-09-17 那次事故就是 compose 漏了 `OPENCODE_GO_API_KEY`，容器内解析为空，制卡 fail closed。**加平台时必须同时改这个文件和两份 compose**（dev 里 api 与 worker 各有一份同样的列表）。`ASSESSMENT_CRITIC_URL` / `_KEY` / `_MODEL` 是另一组：未配置时 LearningRun 的开放回答评估走确定性路径而不是猜。
+要真跑模型还要按槽位填所需 key：`DASHSCOPE_API_KEY`、`OPENAI_COMPAT_API_KEY`、`OPENCODE_GO_API_KEY`、`SILICONFLOW_API_KEY`、`BIGMODEL_API_KEY`、`TOKENRHYTHM_API_KEY`。具体哪个平台服务哪种能力由 `config/ai-platforms.json` 决定，而 `docker-compose.dev.yml` 只透传**显式列出**的那几个变量。新增供应商时同时修改模型配置和所用 Compose 的环境透传，检查 API 与 Worker 两侧。`ASSESSMENT_CRITIC_URL` / `_KEY` / `_MODEL` 是另一组：未配置时 LearningRun 的开放回答评估走确定性路径而不是猜。
 
 其余变量（`COMPANION_*`、`LEARNING_RUN_ENABLED`、`CARD_GENERATION_*` 等）在 dev 里已经给了本机默认值，`make verify` 的 `.github/scripts/verify-companion-capability-config.mjs` 会检查 api 与 worker 声明的旗标是否成对，避免"API 收下的回合被 worker 当作功能关闭立刻拒掉"。
 
@@ -72,7 +72,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 make up
 ```
 
-按 `Makefile:40-56` 逐行看，它做四件事：
+`Makefile` 的 `up` 目标执行四步：
 
 1. `ensure-db-volume`：`docker volume inspect` 不到就创建一个带 `com.astella.protected=true` 标签的卷 `astella-dev_dev_postgres_data`。
 2. `compose rm -f role-bootstrap migrate role-grants minio-init`：清掉上一轮留下的已退出初始化容器。
@@ -89,7 +89,7 @@ make up
 make seed-demo
 ```
 
-`compose --profile seed run --rm seed-demo`，容器内跑 `npm run db:seed`，`SEED_DEMO_DATA=true`。`apps/api/src/db/seed.ts:6-7` 定义演示凭据：
+`compose --profile seed run --rm seed-demo`，容器内跑 `npm run db:seed`，`SEED_DEMO_DATA=true`。`apps/api/src/db/seed.ts` 定义演示凭据：
 
 ```text
 邮箱：owner@astella.local
@@ -98,7 +98,7 @@ make seed-demo
 
 `make seed-demo` 不传入 `.env` 中的 `OWNER_EMAIL`／`OWNER_PASSWORD`，默认创建上面的开发账号。已有同邮箱账号只跳过，不修改密码；如需自定义播种，使用 `docker compose -p astella-dev -f docker-compose.dev.yml --profile seed run --rm -e OWNER_EMAIL -e OWNER_PASSWORD seed-demo`，先在 shell 导出这两个值，密码至少 12 字符。
 
-**这对默认凭据只服务于本机开发**。`seed.ts:28-32` 里 `NODE_ENV=production && SEED_DEMO_DATA=true` 直接抛错，生产栈的 Owner 由 `OWNER_EMAIL` / `OWNER_PASSWORD` 显式给。
+**这对默认凭据只服务于本机开发**。`seed.ts` 里 `NODE_ENV=production && SEED_DEMO_DATA=true` 直接抛错，生产栈的 Owner 由 `OWNER_EMAIL` / `OWNER_PASSWORD` 显式给。
 
 ### 4. 装依赖并起窗口
 
@@ -107,17 +107,17 @@ make desktop-client-install   # cd apps/desktop-client && npm ci
 make desktop-client-dev       # cd apps/desktop-client && npm run dev
 ```
 
-`npm run dev` 展开是 `electron-vite dev --remoteDebuggingPort 9222`。这条命令要求 Docker 栈**已经在跑**：主进程默认打 `http://127.0.0.1:4000`（`desktop-gateway.ts` 的 `DEFAULT_API_ORIGIN`，可被 `DESKTOP_API_ORIGIN` 覆盖）。`electron.vite.config.ts:23-26` 会加载仓库根的 `.env`，注释明确写着这些值只交给**特权主进程**，不注入渲染层的 `import.meta.env`，也不经 preload 暴露。
+`npm run dev` 展开是 `electron-vite dev --remoteDebuggingPort 9222`。这条命令要求 Docker 栈**已经在跑**：主进程默认打 `http://127.0.0.1:4000`（`desktop-gateway.ts` 的 `DEFAULT_API_ORIGIN`，可被 `DESKTOP_API_ORIGIN` 覆盖）。`electron.vite.config.ts` 会加载仓库根的 `.env`，注释明确写着这些值只交给**特权主进程**，不注入渲染层的 `import.meta.env`，也不经 preload 暴露。
 
 ## /health 与 /ready 是两种断言
 
 | 端点 | 检查什么 | 失败意味着 |
 | --- | --- | --- |
-| `GET /health` | 进程活着、事件循环能应答 HTTP。`server.ts:125` 只返回 `{status:"ok",service:"api",timestamp}` | 进程本身有问题 |
+| `GET /health` | 进程活着、事件循环能应答 HTTP。`server.ts` 只返回 `{status:"ok",service:"api",timestamp}` | 进程本身有问题 |
 | `GET /ready` | `SELECT 1`；`information_schema.tables` 里九张核心表都在（`users`、`workspaces`、`notes`、`jobs`、`sessions`、`learning_runs`、`learning_run_private_contracts`、`learning_tasks`、`learning_task_variants`）；`drizzle.__drizzle_migrations` 的最大 `created_at` ≥ `MIN_READY_MIGRATION_CREATED_AT`（默认 `1786683800000`） | 库可达但 schema 不完整——没迁移，或迁移跑了一半 |
 | `GET /metrics` | Prometheus 文本格式 | 与存活/就绪无关 |
 
-`/ready` 是 compose 给 api 用的健康检查目标。**worker 侧不对称**：代码里 `/ready` 存在（`workers/ai-worker/src/lib/metrics.ts:364`，探针是 `db.execute(sql`SELECT 1`)`），但 `docker-compose.dev.yml:369` 的 healthcheck 打的还是 `/metrics`——DB 挂了而 worker 容器不会被判不健康。这是已知的形状差，别把"compose 显示 worker healthy"读成"worker 能干活"。
+`/ready` 是 compose 给 api 用的健康检查目标。**worker 侧不对称**：代码里 `/ready` 存在（`workers/ai-worker/src/lib/metrics.ts`，探针是 `db.execute(sql`SELECT 1`)`），但 `docker-compose.dev.yml` 的 healthcheck 打的还是 `/metrics`——DB 挂了而 worker 容器不会被判不健康。这是已知的形状差，别把"compose 显示 worker healthy"读成"worker 能干活"。
 
 ## 端口表
 
@@ -131,7 +131,7 @@ make desktop-client-dev       # cd apps/desktop-client && npm run dev
 | edge-tts | 8080 | `127.0.0.1:${EDGE_TTS_PORT:-8088}` | 硬编码回环 |
 | Electron 主进程 | — | `127.0.0.1:9222`（CDP） | 只给采集与探针脚本用 |
 
-`API_BIND_ADDRESS` 这条不是"想改成 `0.0.0.0` 就能改"：`resolveApiBindHost()`（`apps/api/src/modules/desktop-trust/routes.ts:62`）只允许字面量 `127.0.0.1`，或者同时满足 `ASTELLA_CONTAINER_MODE=true` **且** `ASTELLA_ALLOW_CONTAINER_WILDCARD=true` 时的 `0.0.0.0`，否则直接抛。dev compose 替容器把这两项都设好了，宿主机直跑 API 时改它只会得到一句 `API_BIND_ADDRESS must be literal 127.0.0.1…`。
+`API_BIND_ADDRESS` 这条不是"想改成 `0.0.0.0` 就能改"：`resolveApiBindHost()`（`apps/api/src/modules/desktop-trust/routes.ts`）只允许字面量 `127.0.0.1`，或者同时满足 `ASTELLA_CONTAINER_MODE=true` **且** `ASTELLA_ALLOW_CONTAINER_WILDCARD=true` 时的 `0.0.0.0`，否则直接抛。dev compose 替容器把这两项都设好了，宿主机直跑 API 时改它只会得到一句 `API_BIND_ADDRESS must be literal 127.0.0.1…`。
 
 edge-tts 有两套地址：Compose 内的 api 用 `http://edge-tts:8080`，在宿主机直接跑的 api 用 `http://127.0.0.1:8088`。两者的 `EDGE_TTS_AUTH_TOKEN` 必须是同一个，**不要把 Docker 服务名当作宿主 API 的地址**。
 
@@ -220,14 +220,14 @@ make disposable-db DISPOSABLE_DB=astella_it   # scripts/dev-disposable-db.sh，�
 | 页面来源 | Vite dev server，主进程从 `ELECTRON_RENDERER_URL` 读 origin | `astella-app://bundle/index.html`，由 `protocol.handle` 从包内目录服务 |
 | CSP | 给 dev origin 放开 `connect-src`（含它的 ws: 变体），`script-src` 额外允许 `'unsafe-inline'`（React refresh 的前导脚本） | 严格策略；artifact origin 另有一套 `default-src 'none'` |
 | 导航闸 | 只放行 dev server origin | 只放行 `astella-app://bundle`，且要求无用户名、无密码、无端口 |
-| DevTools | 可用（`webPreferences.devTools: !app.isPackaged`，`src/main/index.ts:595`） | 关闭 |
+| DevTools | 可用（`webPreferences.devTools: !app.isPackaged`，`src/main/index.ts`） | 关闭 |
 | CDP | `--remoteDebuggingPort 9222`，采集与探针脚本靠它附着 | 不开放 |
 | 语音模型 | dev server 在自己的 origin 上服务那两个文件（自定义 scheme 不做 CORS 放行，跨源 fetch 实测 `TypeError: Failed to fetch`） | `astella-app://bundle/device/asr/`，同源可读 |
 | 主进程重启 | `npm run dev` 不 watch main/preload，改主进程要重启命令；`npm run dev:watch-main`（`electron-vite dev -w`）才常驻重建 | 不适用 |
 
 `out/` 是 `electron-vite build` 的产物目录（被 `apps/desktop-client/.gitignore` 忽略）。`npm run dev` 用 Vite dev server 服务渲染层，但 `preview`、capture 脚本直接 `electron .` 时读的是 `package.json` 的 `main: ./out/main/index.js`——**`out/` 过期不会报错，只会给你一个旧窗口**。凡是"看着不像我改的"的截图结论，先确认这次有没有 `npm run build`。
 
-> **说明：** `VITE_HOME_SCENE_VARIANT` **不是**一个可用的运行旗标。它唯一的出现位置是 `package.json` 里 `capture:home-v2` 那条命令的赋值，源码没有读取点（`HomeV2Provider` 在 `renderer/src/App.tsx:136` 无条件挂载，`apps/desktop-client` 下也没有 `.env*` 文件）。这条由 `src/main/__tests__/docs-vite-vars-have-readers.test.ts` 守着：文档可以点名一个不存在的开关，但必须在那一行明说它不存在。想改首页构图就直接改组件，不要去找那个变量。
+> **说明：** `VITE_HOME_SCENE_VARIANT` **不是**一个可用的运行旗标。它唯一的出现位置是 `package.json` 里 `capture:home-v2` 那条命令的赋值，源码没有读取点（`HomeV2Provider` 在 `renderer/src/App.tsx` 无条件挂载，`apps/desktop-client` 下也没有 `.env*` 文件）。这条由 `src/main/__tests__/docs-vite-vars-have-readers.test.ts` 守着：文档可以点名一个不存在的开关，但必须在那一行明说它不存在。想改首页构图就直接改组件，不要去找那个变量。
 
 ## 跑起来之后建议读什么
 

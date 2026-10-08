@@ -6,9 +6,9 @@
  */
 import type { GatewayErrorCode } from "@astella/shared/desktop-ipc-contracts";
 
-/** 平台现在能不能把凭据加密落盘。 */
+/** 凭据存储的能力；实际加密是否可用在读写时确认，避免快照触发系统授权。 */
 export type SessionCredentialStore = {
-    /** Whether the platform can encrypt a credential at rest right now. */
+    /** False after encryption is found unavailable; reading this never prompts. */
     readonly available: boolean;
     /** Synchronous peek used by the runtime snapshot, before any adoption. */
     hasStored(): boolean;

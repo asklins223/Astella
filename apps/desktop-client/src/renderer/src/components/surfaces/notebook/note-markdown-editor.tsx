@@ -44,10 +44,10 @@ import {
   orderedListSchema,
   imageSchema,
 } from "@milkdown/kit/preset/commonmark";
-import { sourceImageObjectKeyFromUrl } from "@astella/shared/source-image-contracts";
 import { noteLinkTarget, noteWikiLinks } from "@astella/shared/note-markdown";
-import { loadSourceImageBlobUrl } from "../source/source-image.ts";
 import { LightboxViewer } from "../source/image-viewer.tsx";
+import { noteImageViewPlugin, noteImageUploadsKey } from "./note-image-node-view";
+import type { NoteImageUploadView } from "./note-image-uploads";
 
 /**
  * 笔记正文的所见即所得编辑器（Milkdown）。
@@ -76,6 +76,8 @@ export type NoteMarkdownEditorHandle = {
   readonly insertText: (text: string) => void;
   /** 就地替换图片地址，用于上传完成后把占位地址换成真地址。 */
   readonly replaceImageSrc: (oldSrc: string, newSrc: string) => void;
+  /** 删除指定地址的图片节点，不重置正文、选区和撤销历史。 */
+  readonly removeImageSrc: (src: string) => void;
   readonly toggleStrong: () => void;
   readonly toggleEmphasis: () => void;
   readonly toggleInlineCode: () => void;
@@ -158,6 +160,7 @@ type Props = {
   readonly disabled?: boolean;
   /** 图片粘贴/拖拽回调，上传由父组件负责。 */
   readonly onImagePaste?: (file: File) => void;
+  readonly imageUploads?: readonly NoteImageUploadView[];
   /**
    * 可编辑预览态的批注记号（41 §1.1「已有批注记号保留」/ §1.4「保留记号但不阻断输入」）。
    *
@@ -221,102 +224,6 @@ function imageUploadPlugin(onImagePaste: React.RefObject<((file: File) => void) 
         if (images.length === all.length) event.preventDefault();
         for (const file of images) onImagePaste.current?.(file);
         return images.length === all.length;
-      },
-    },
-  }));
-}
-
-/**
- * 图片节点视图。
- *
- * 正文里的图有两种地址，`<img>` 都画不出来：
- * - `/api/uploads/{objectKey}` 是站内对象，渲染层的 origin 是 `astella-app://`，
- *   这个相对路径会落到应用包内；这里按 objectKey 走共享的字节缓存换成 blob URL。
- * - `uploading:{id}` 是上传中的占位地址，交给 CSS 画成一块虚线格子（见
- *   `hud-surface.css` 的 `img[src^="uploading:"]`）。
- *
- * 节点视图只负责把 src 落成能加载的那个；节点属性本身仍归 ProseMirror 所有，
- * 所以上传完成后只改一次节点属性，DOM 会自己跟上。
- *
- * 点击图片交给 React 侧的灯箱放大（`image-viewer.tsx`，经 ref 回调，与
- * `onImagePaste` 同一个模式）。不拦默认行为：ProseMirror 照常把节点选中，灯箱
- * 关掉后这张图仍处于选中态，按 Delete 即可删除。
- */
-function imageNodeViewPlugin(
-  onImageZoom: React.RefObject<((src: string, alt: string) => void) | undefined>,
-) {
-  return $prose(() => new Plugin({
-    key: new PluginKey("NOTE_IMAGE_VIEW"),
-    props: {
-      nodeViews: {
-        image: ((initialNode) => {
-          const dom = document.createElement("img");
-          dom.setAttribute("draggable", "false");
-          dom.addEventListener("click", () => {
-            // `dom.src` 是解析后的绝对地址（blob: 或外链）；还在取字节的图没有
-            // src，点了也不会开出空灯箱。
-            if (dom.src) onImageZoom.current?.(dom.src, dom.alt);
-          });
-          let disposed = false;
-          let shown = "";
-          let retryTimer: ReturnType<typeof setTimeout> | null = null;
-
-          // 只有真的画得出来的图（blob / 外链）才提示可点；上传占位与取字节失败
-          // 的图不提示。
-          const markZoomable = (src: string) => {
-            dom.classList.toggle("note-image-zoomable", /^(https?:|blob:)/i.test(src));
-          };
-
-          const show = (src: string, alt: string, attempt = 0) => {
-            dom.alt = alt;
-            if (src === shown && attempt === 0) return;
-            shown = src;
-            dom.removeAttribute("src");
-            const objectKey = sourceImageObjectKeyFromUrl(src);
-            if (!objectKey) {
-              dom.classList.remove("note-image-unavailable");
-              if (src) dom.src = src;
-              markZoomable(src);
-              return;
-            }
-            void loadSourceImageBlobUrl(objectKey).then((blobUrl) => {
-              if (disposed || shown !== src) return;
-              if (blobUrl) {
-                dom.classList.remove("note-image-unavailable");
-                dom.src = blobUrl;
-                markZoomable(blobUrl);
-                return;
-              }
-              // 取字节失败多半是瞬时的（API 正在重启、网络抖动）：退避重试。
-              // 重试真正重取的前提是失败结果不驻留缓存（见 source-image.ts）。
-              dom.classList.add("note-image-unavailable");
-              markZoomable("");
-              if (attempt >= 2) return;
-              if (retryTimer) clearTimeout(retryTimer);
-              retryTimer = setTimeout(() => {
-                if (!disposed && shown === src) show(src, alt, attempt + 1);
-              }, 1200 * (attempt + 1));
-            });
-          };
-          const apply = (node: { readonly attrs: Record<string, unknown> }) => {
-            show(String(node.attrs.src ?? ""), String(node.attrs.alt ?? ""));
-          };
-          apply(initialNode);
-
-          return {
-            dom,
-            update: (next: { readonly type: { readonly name: string }; readonly attrs: Record<string, unknown> }) => {
-              if (next.type.name !== "image") return false;
-              apply(next);
-              return true;
-            },
-            ignoreMutation: () => true,
-            destroy: () => {
-              disposed = true;
-              if (retryTimer) clearTimeout(retryTimer);
-            },
-          };
-        }),
       },
     },
   }));
@@ -565,7 +472,7 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
     .use(clipboard)
     .use(imageUploadPlugin(onImagePasteRef))
     .use(linkedImagePlugin())
-    .use(imageNodeViewPlugin(onImageZoomRef))
+    .use(noteImageViewPlugin(onImageZoomRef))
     .use(caretBlockPlugin(onCaretBlockRef))
     .use(codeBlockTabPlugin())
     .use(placeholderPlugin())
@@ -617,14 +524,24 @@ function MilkdownControls({
   fragment,
   onReady,
   annotationPlacements,
+  imageUploads,
 }: {
   readonly handleRef: React.RefObject<NoteMarkdownEditorHandle | null>;
   readonly externalRef?: React.Ref<NoteMarkdownEditorHandle | null>;
   readonly fragment: Y.XmlFragment;
   readonly onReady?: (handle: NoteMarkdownEditorHandle | null) => void;
   readonly annotationPlacements?: readonly AnnotationPlacement[];
+  readonly imageUploads?: readonly NoteImageUploadView[];
 }) {
   const [loading, getInstance] = useInstance();
+
+  useEffect(() => {
+    if (loading) return;
+    withReadyEditor(getInstance(), editor => editor.action(ctx => {
+      const view = ctx.get(editorViewCtx);
+      view.dispatch(view.state.tr.setMeta(noteImageUploadsKey, imageUploads ?? []));
+    }), undefined);
+  }, [loading, getInstance, imageUploads]);
 
   /**
    * 把记号集合写进插件 state。
@@ -681,6 +598,16 @@ function MilkdownControls({
         state.doc.descendants((node, pos) => {
           if (node.type.name === "image" && node.attrs.src === oldSrc) {
             transaction = transaction.setNodeMarkup(pos, undefined, { ...node.attrs, src: newSrc, alt: "" });
+          }
+        });
+        if (transaction.docChanged) view.dispatch(transaction);
+      })),
+      removeImageSrc: (src) => run((editor) => editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const transaction = view.state.tr;
+        view.state.doc.descendants((node, pos) => {
+          if (node.type.name === "image" && node.attrs.src === src) {
+            transaction.delete(transaction.mapping.map(pos), transaction.mapping.map(pos + node.nodeSize));
           }
         });
         if (transaction.docChanged) view.dispatch(transaction);
@@ -764,6 +691,7 @@ export function NoteMarkdownEditor({
   onChange,
   disabled,
   onImagePaste,
+  imageUploads,
   onCaretBlock,
   annotationPlacements,
   aiRanges,
@@ -790,7 +718,7 @@ export function NoteMarkdownEditor({
           上一轮那份（症状是「记号画不出来」）。值进插件 state 之后，
           「批注变了」本身就是一次事务，装饰自动跟上。 */}
       <MilkdownControls handleRef={handleRef} externalRef={ref} fragment={fragment} onReady={onReady}
-        annotationPlacements={annotationPlacements} />
+        annotationPlacements={annotationPlacements} imageUploads={imageUploads} />
     </MilkdownProvider>
   );
 }

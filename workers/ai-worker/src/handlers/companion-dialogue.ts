@@ -48,6 +48,7 @@ import {
 } from "./companion-dialogue-stream.ts";
 import {
   AIConsentRequiredError,
+  AIDataPolicyDeniedError,
   resolveAIGovernanceContext,
   resolveVisionReader,
 } from "../lib/governance.ts";
@@ -589,6 +590,11 @@ export async function runCompanionDialogue(
     );
     throw new AIConsentRequiredError();
   }
+  if (govCtx.providerName !== "mock" && !govCtx.policy.sendToExternal) {
+    const reason = "请在 AI 数据同意页开启「允许发送到外部模型服务」后继续。";
+    await markCompanionRunFailed(read, ctx.workspaceId, "AI_DATA_POLICY_DENIED", false, reason, "state");
+    throw new AIDataPolicyDeniedError(reason);
+  }
   const contextReceipts = createCompanionContextReceipts();
   // 折叠轨迹收集器：loop 里折了就记，回合结束时并进交接快照的下一版（44 §3.3）。
   const compactionTrace = createCompactionTraceRecorder();
@@ -980,19 +986,20 @@ export async function runCompanionDialogue(
     const unverifiedQuoteFailureText = "这次引文与已读取的原文对不上，答复没有完成。";
     const providerRejected = err instanceof ProviderRequestError;
     const rateLimited = providerRejected && err.status === 429;
+    const policyDenied = err instanceof AIDataPolicyDeniedError;
     await markCompanionRunFailed(
       read,
       ctx.workspaceId,
-      contextChanged ? err.code : budgetExceeded || outputIncomplete ? "AGENT_BUDGET_EXCEEDED" : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
-      !budgetExceeded && !outputIncomplete && !outputUnverified && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
-      contextChanged ? err.message : contextOverflow ? "这次需要带入的内容太多，没法一次读完；可以按段继续。" : outputUnverified ? unverifiedQuoteFailureText : outputIncomplete ? "这次答复达到长度上限，已说出的内容保留；可以接着分段讲。" : budgetExceeded
+      contextChanged ? err.code : policyDenied ? "AI_DATA_POLICY_DENIED" : budgetExceeded || outputIncomplete ? "AGENT_BUDGET_EXCEEDED" : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
+      !policyDenied && !budgetExceeded && !outputIncomplete && !outputUnverified && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
+      contextChanged ? err.message : policyDenied ? "请在 AI 数据同意页开启「允许发送到外部模型服务」后继续。" : contextOverflow ? "这次需要带入的内容太多，没法一次读完；可以按段继续。" : outputUnverified ? unverifiedQuoteFailureText : outputIncomplete ? "这次答复达到长度上限，已说出的内容保留；可以接着分段讲。" : budgetExceeded
         ? "companion agent budget exceeded"
         : streamStopped
           ? `companion stream stopped: ${streamingDelivery.failureReason() ?? "delivery pipeline"}`.slice(0, 240)
           : rateLimited ? "模型服务暂时繁忙，请稍后重试；已经完成的操作仍保留。"
             : providerRejected ? "模型服务暂时无法完成这次请求，已经完成的操作仍保留。"
               : "companion agent execution failed",
-      streamStopped ? "delivery" : outputUnverified ? "output" : budgetExceeded || outputIncomplete || contextChanged ? "execution" : "transport",
+      policyDenied ? "state" : streamStopped ? "delivery" : outputUnverified ? "output" : budgetExceeded || outputIncomplete || contextChanged ? "execution" : "transport",
     );
     // 她已经说出来的那半句不能随失败一起消失（2026-09-19）。
     await persistFailedPartial({

@@ -100,6 +100,29 @@ it("holds the voice and names the missing consent instead of knocking on the gat
   await waitFor(() => expect(latest?.consent).toBe("required"));
 });
 
+it("holds the tour for a previously signed account whose external AI switch is off", async () => {
+  signed = true; installApi();
+  vi.mocked(window.astella.workspace.getAiSettings).mockResolvedValueOnce({ ok: true, data: {
+    ...aiSettings(), dataPolicy: { ...aiSettings().dataPolicy, sendToExternal: false },
+  } } as never);
+  render(<Probe />);
+  await waitFor(() => expect(latest?.consent).toBe("required"));
+  await act(() => latest!.signConsent());
+  expect(latest?.consent).toBe("granted");
+});
+
+it("does not start a silent tour if the signing receipt still has external AI disabled", async () => {
+  installApi();
+  updateConsent.mockResolvedValueOnce({ ok: true, data: { ...aiSettings(), consentVersion: AI_CONSENT_VERSION,
+    dataPolicy: { ...aiSettings().dataPolicy, sendToExternal: false },
+  } });
+  render(<Probe />);
+  await waitFor(() => expect(latest?.consent).toBe("required"));
+  await act(() => latest!.signConsent());
+  expect(latest?.consent).toBe("required");
+  expect(latest?.consentError).toContain("外部 AI 尚未开启");
+});
+
 
 it("leaves a walk in progress alone when the gate re-verifies the session", async () => {
   const transitions = installApi();

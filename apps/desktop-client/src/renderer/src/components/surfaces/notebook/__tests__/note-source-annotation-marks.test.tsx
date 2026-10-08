@@ -34,6 +34,7 @@ function stubEditor(initial: string) {
     focus: vi.fn(),
     insertText: vi.fn(),
     replaceImageSrc: vi.fn(),
+    removeImageSrc: vi.fn(),
     toggleStrong: vi.fn(),
     toggleEmphasis: vi.fn(),
     toggleInlineCode: vi.fn(),

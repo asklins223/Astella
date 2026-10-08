@@ -15,7 +15,7 @@
 
 [中文](README.md) · [English](README.en.md) · [使用与开发手册](docs/guide/README.md)
 
-当前版本：`v1.1.0`（仓库版本；服务端与桌面客户端共用）
+当前版本：`v1.1.1`（仓库版本；服务端与桌面客户端共用）
 
 </div>
 
@@ -177,8 +177,9 @@ release/                   统一版本与发布说明
 首次验证需按包安装依赖，再构建桌面产物：
 
 ```bash
+npm ci
 for dir in packages/shared packages/card-generation packages/agent-core packages/agent-host packages/ai-quality apps/api workers/ai-worker apps/desktop-client; do
-  (cd "$dir" && npm ci) || break
+  (cd "$dir" && npm ci) || exit 1
 done
 make desktop-client-build
 make verify

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { sourceImageObjectKeyFromUrl } from "@astella/shared/source-image-contracts";
-import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
+import { createRequestMeta, getCurrentWorkspaceEpoch, unwrapGatewayResult } from "../../../app/desktop-client";
+import { useRoomStore } from "../../../app/room-store";
+import { subscribeGateInvalidation } from "../../../app/gate-invalidation";
 
 /**
  * 一张图片在渲染层可能的归宿。
@@ -25,11 +27,40 @@ export type SourceImageState =
  * blob URL 的进程内缓存。
  *
  * 同一张图会在正文片段、笔记块、翻页回看时被反复渲染，按 objectKey 缓存使每次
- * 呈现最多只取一次字节。objectKey 自带 workspace 前缀且不可变，所以缓存无需按
- * 工作区失效。上限之外按最久未读淘汰，并回收被淘汰图片的 blob URL。
+ * 呈现最多只取一次字节。按部署、账号和工作区纪元隔离，门禁失效时清理；
+ * 上限之外按最久未读淘汰，并回收被淘汰图片的 blob URL。
  */
 const blobUrlCache = new Map<string, Promise<string | null>>();
 const MAX_CACHED_IMAGE_BLOBS = 64;
+
+function cacheKey(objectKey: string, workspaceEpoch?: number): string {
+  const scope = useRoomStore.getState().spaceIdentity;
+  return `${scope?.deploymentRef ?? ""}:${scope?.userId ?? ""}:${workspaceEpoch ?? getCurrentWorkspaceEpoch()}:${objectKey}`;
+}
+
+function clearSourceImageCache(): void {
+  for (const value of blobUrlCache.values()) void value.then(url => { if (url) URL.revokeObjectURL(url); });
+  blobUrlCache.clear();
+}
+subscribeGateInvalidation(clearSourceImageCache);
+
+/** 服务端确认保存了原图片之后直接显示本机文件，避免上传后立刻再下载一遍。 */
+export function primeSourceImageBlobUrl(objectKey: string, file: Blob, workspaceEpoch?: number): void {
+  const key = cacheKey(objectKey, workspaceEpoch);
+  const previous = blobUrlCache.get(key);
+  blobUrlCache.set(key, Promise.resolve(URL.createObjectURL(file)));
+  if (previous) void previous.then(url => { if (url) URL.revokeObjectURL(url); });
+  trimSourceImageCache();
+}
+
+function trimSourceImageCache(): void {
+  while (blobUrlCache.size > MAX_CACHED_IMAGE_BLOBS) {
+    const oldest = blobUrlCache.entries().next();
+    if (oldest.done) break;
+    blobUrlCache.delete(oldest.value[0]);
+    void oldest.value[1].then(url => { if (url) URL.revokeObjectURL(url); });
+  }
+}
 
 function base64ToBlob(base64: string, mimeType: string): Blob {
   const binary = atob(base64);
@@ -60,39 +91,32 @@ async function fetchSourceImageBlobUrl(objectKey: string, workspaceEpoch?: numbe
  * 画得出来。两处共用一个缓存，同一张图在一篇笔记里只取一次字节。
  */
 export function loadSourceImageBlobUrl(objectKey: string, workspaceEpoch?: number): Promise<string | null> {
-  const cached = blobUrlCache.get(objectKey);
+  const key = cacheKey(objectKey, workspaceEpoch);
+  const cached = blobUrlCache.get(key);
   if (cached) {
     // 命中即移到队尾，使淘汰永远落在最久没被读到的图上。
-    blobUrlCache.delete(objectKey);
-    blobUrlCache.set(objectKey, cached);
+    blobUrlCache.delete(key);
+    blobUrlCache.set(key, cached);
     return cached;
   }
 
   const pending = fetchSourceImageBlobUrl(objectKey, workspaceEpoch);
-  blobUrlCache.set(objectKey, pending);
+  blobUrlCache.set(key, pending);
   // 取不回的图不驻留缓存：失败往往是瞬时的（API 正在重启、网络抖动），
   // 缓存住 null 会把这张图冻死到 LRU 逐出为止——下一次渲染必须真的重取。
   void pending.then((url) => {
-    if (url === null && blobUrlCache.get(objectKey) === pending) blobUrlCache.delete(objectKey);
+    if (url === null && blobUrlCache.get(key) === pending) blobUrlCache.delete(key);
   });
-  while (blobUrlCache.size > MAX_CACHED_IMAGE_BLOBS) {
-    const oldest = blobUrlCache.entries().next();
-    if (oldest.done) break;
-    const [oldestKey, oldestValue] = oldest.value;
-    if (oldestKey === objectKey) break;
-    blobUrlCache.delete(oldestKey);
-    // 被淘汰的 blob URL 仍可能挂在当前这一屏的某个 `<img>` 上；那时它会加载失败
-    // 并触发 `invalidateSourceImage`，下一次渲染就重新取一份。
-    void oldestValue.then((url) => { if (url) URL.revokeObjectURL(url); });
-  }
+  trimSourceImageCache();
   return pending;
 }
 
 /** 丢掉一张图的缓存（图片加载失败时调用），让下一次渲染重新取。 */
-export function invalidateSourceImage(objectKey: string): void {
-  const cached = blobUrlCache.get(objectKey);
+export function invalidateSourceImage(objectKey: string, workspaceEpoch?: number): void {
+  const key = cacheKey(objectKey, workspaceEpoch);
+  const cached = blobUrlCache.get(key);
   if (!cached) return;
-  blobUrlCache.delete(objectKey);
+  blobUrlCache.delete(key);
   void cached.then((url) => { if (url) URL.revokeObjectURL(url); });
 }
 
@@ -143,7 +167,7 @@ export function useSourceImage(url: string, workspaceEpoch?: number): SourceImag
 
   const retry = () => {
     if (!objectKey || attempt > 0) return;
-    invalidateSourceImage(objectKey);
+    invalidateSourceImage(objectKey, workspaceEpoch);
     setAttempt((value) => value + 1);
   };
 

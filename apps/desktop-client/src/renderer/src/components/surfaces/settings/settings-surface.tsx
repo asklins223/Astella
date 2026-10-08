@@ -726,7 +726,7 @@ export function SettingsSurface() {
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       setAiSettings(unwrapGatewayResult(response));
       await reloadAfterPolicyWrite();
-      setNotice("AI 使用同意已签署，能力状态已刷新。");
+      setNotice("AI 使用同意已签署，外部 AI 已开启，能力状态已刷新。");
     } catch (error) {
       setFailureNotice(gatewayErrorMessage(error));
     } finally {
@@ -1804,7 +1804,7 @@ export function SettingsSurface() {
               {!signed ? (
                 <SettingRow
                   title="签署同意"
-                  detail={`用你的账号签署当前版本（${AI_CONSENT_VERSION}），签署后内容才允许离开本机。签署只对你自己生效，在同一部署切换空间时沿用这份同意。`}
+                  detail={`签署当前版本（${AI_CONSENT_VERSION}）并开启外部 AI。已有的图片、检测和审计选择保留；你可以随时关闭外发。同意只对你的账号生效，切换空间时沿用。`}
                 >
                   <button type="button" className="button primary" disabled={busy} onClick={() => void signConsent()}>
                     {aiSaving === "consent" ? "签署中…" : "签署"}

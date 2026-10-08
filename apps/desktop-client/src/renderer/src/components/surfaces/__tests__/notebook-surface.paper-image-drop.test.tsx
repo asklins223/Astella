@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NOTE_PAPER_IMAGE_DROP_ATTR } from "../../../app/source-intake.ts";
 import { noteDocResult } from "../../../test-support/note-doc-fixtures.ts";
@@ -165,8 +165,9 @@ describe("NotebookSurface · 纸面上的图片拖放", () => {
     fireEvent.drop(page!, { dataTransfer: pngTransfer() });
 
     // 正文里当场落下占位图，上传状态列点名这张文件。
-    expect(document.querySelector('.ProseMirror img[src^="uploading:"]')).toBeTruthy();
-    expect(screen.getByText("截屏.png")).toBeTruthy();
+    expect(document.querySelector('.ProseMirror .note-image-node[data-state="uploading"]')).toBeTruthy();
+    expect(document.querySelector('.ProseMirror img[src^="uploading:"]')).toBeNull();
+    expect(within(screen.getByRole("list", { name: "图片上传" })).getByText("截屏.png")).toBeTruthy();
     await vi.advanceTimersByTimeAsync(300);
 
     expect(uploads).toHaveLength(1);

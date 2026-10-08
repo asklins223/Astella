@@ -25,6 +25,8 @@ interface ElectronMock {
     exit: ReturnType<typeof vi.fn>;
     quit: ReturnType<typeof vi.fn>;
     getPath: ReturnType<typeof vi.fn>;
+    setPath: ReturnType<typeof vi.fn>;
+    setName: ReturnType<typeof vi.fn>;
     getVersion: ReturnType<typeof vi.fn>;
     whenReady: () => Promise<void>;
     requestSingleInstanceLock: () => boolean;
@@ -44,6 +46,8 @@ const electronMock: ElectronMock = {
     exit: vi.fn(),
     quit: vi.fn(),
     getPath: vi.fn(() => process.env.FAKE_USER_DATA ?? "/tmp/astella-startup-test"),
+    setPath: vi.fn(),
+    setName: vi.fn(),
     getVersion: vi.fn(() => "0.1.0"),
     isPackaged: true,
     // 模块顶层就会调用（取不到锁就 app.quit()）。返回 true 表示"拿到锁"，

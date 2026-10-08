@@ -31,6 +31,8 @@ import type { HudPageId } from "../components/hud/hud-pages";
 import { createRequestMeta, gatewayErrorMessage, requireWorkspaceEpoch, unwrapGatewayResult, RendererGatewayError } from "./desktop-client";
 import {
   COMPANION_CONSENT_REQUIRED_LINE,
+  COMPANION_EXTERNAL_DISABLED_LINE,
+  COMPANION_RUN_ERROR_AI_DATA_POLICY_DENIED,
   SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT,
   companionConsentGate,
   isCompanionConsentFailure,
@@ -1380,10 +1382,10 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
    * 不写 `failure`：这不是"出错了"，是一次需要用户动手的引导——红色报错和
    * 她说的话会互相打架。
    */
-  const guideToConsent = useCallback((): void => {
+  const guideToConsent = useCallback((externalDisabled = false): void => {
     setLiveReply({
       messageId: `consent-guidance:${crypto.randomUUID()}`,
-      text: COMPANION_CONSENT_REQUIRED_LINE,
+      text: externalDisabled ? COMPANION_EXTERNAL_DISABLED_LINE : COMPANION_CONSENT_REQUIRED_LINE,
       hasActionBlocks: false,
       proposalIds: [],
     });
@@ -1434,9 +1436,9 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         unwrapGatewayResult(await window.astella.workspace.getAiSettings({ meta: createRequestMeta(epoch) })),
       );
       if (generation !== sendGenerationRef.current) return false;
-      if (consentGate === "consent_required") {
+      if (consentGate !== null) {
         if (explanation) interruptNoteExplanation(explanation.id, "interrupted", "需要先在设置中允许 AI 读取内容，解释尚未开始。");
-        guideToConsent();
+        guideToConsent(consentGate === "external_disabled");
         return false;
       }
       const active = await ensureConversation();
@@ -1612,7 +1614,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         if (isCompanionConsentFailure(claimed.code)) {
           // 兜底：签署状态可能在发送前后变化（或发送前那次设置读取失败）。
           // 前置门禁已覆盖大多数情况，这里保证不会退回静默失败。
-          guideToConsent();
+          guideToConsent(claimed.code === COMPANION_RUN_ERROR_AI_DATA_POLICY_DENIED);
           return true;
         }
         if (partial.trim().length > 0) setInterrupted({ text: partial, message: claimed.message });

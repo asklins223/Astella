@@ -154,7 +154,20 @@ export async function getCapabilities(t: GatewayTransport, requestId?: string): 
       return cached.projection;
     }
     await t.ensureConnected(requestId);
+    const epoch = t.workspaceEpoch, token = t.token, generation = t.capabilityReadGeneration;
+    const pending = t.capabilityRead;
+    if (pending?.epoch === epoch && pending.token === token && pending.generation === generation) return pending.value;
+    const value = readCapabilities(t, epoch, token, generation, requestId);
+    t.capabilityRead = { epoch, token, generation, value };
+    try { return await value; }
+    finally { if (t.capabilityRead?.value === value) t.capabilityRead = null; }
+  }
+
+async function readCapabilities(t: GatewayTransport, epoch: number, token: string | null, generation: number, requestId?: string): Promise<CapabilityProjectionV1> {
     const result = await t.request("/v1/auth/capabilities", { method: "GET" }, true, true, requestId);
+    if (t.workspaceEpoch !== epoch || t.token !== token || t.capabilityReadGeneration !== generation) {
+      throw new DesktopGatewayFailure("stale_workspace", "resync_first");
+    }
     const parsed = capabilityProjectionSchema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     // 本机能力属于桌面壳，服务端只能给 fail-closed 占位；真正的值在这里覆盖，

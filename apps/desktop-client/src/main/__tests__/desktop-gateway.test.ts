@@ -2088,6 +2088,10 @@ describe("DesktopGateway", () => {
       // 所以这一条断的就是"服务端那句原文没有越界"。
       expect((failure as Error).message).toBe("ai_consent_required");
 
+      ttsBody.value = JSON.stringify({ error: "ai_data_policy_denied" });
+      await expect(ns_companion.speakCompanionVoice(gateway.gatewayTransport, request, "request-policy-403"))
+        .rejects.toMatchObject({ code: "ai_data_policy_denied", retry: "never" });
+
       // 对照 1：403 上没在名单里的 token 仍然只是 `forbidden`——专用码是白名单，不是"读到了就信"。
       ttsBody.value = JSON.stringify({ error: "TTS_FAILED" });
       await expect(ns_companion.speakCompanionVoice(gateway.gatewayTransport, request, "request-unknown-token"))
@@ -2346,6 +2350,58 @@ describe("account AI settings", () => {
     else await ns_workspace.updateAiDataPolicy(gateway.gatewayTransport, { ...AI_SETTINGS.dataPolicy, sendToExternal: true });
     expect((await ns_source.getCapabilities(gateway.gatewayTransport)).revision).toBe("enabled");
     expect(capabilityReads).toBe(2);
+  });
+
+  it("shares concurrent capability reads and discards a response from before a policy change", async () => {
+    let resolveResponse!: (value: Response) => void;
+    let reads = 0;
+    const pending = new Promise<Response>(resolve => { resolveResponse = resolve; });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (url.endsWith("/health")) return healthResponse();
+      reads += 1; return pending;
+    });
+    const gateway = new DesktopGateway(environment()); await gateway.connect();
+    const first = ns_source.getCapabilities(gateway.gatewayTransport);
+    const second = ns_source.getCapabilities(gateway.gatewayTransport);
+    const firstResult = expect(first).rejects.toMatchObject({ code: "stale_workspace" });
+    const secondResult = expect(second).rejects.toMatchObject({ code: "stale_workspace" });
+    await vi.waitFor(() => expect(reads).toBe(1));
+    gateway.gatewayTransport.forgetCapabilities();
+    resolveResponse(new Response("{}", { status: 200 }));
+    await Promise.all([firstResult, secondResult]);
+    expect(gateway.gatewayTransport.cachedCapabilities).toBeNull();
+  });
+
+  it("keeps cancellation attached until every parallel read in a request has settled", async () => {
+    let completeJson!: () => void;
+    let started = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (url.endsWith("/health")) return healthResponse();
+      started += 1;
+      if (url.endsWith("/parallel-json")) return new Promise<Response>(resolve => {
+        completeJson = () => resolve(new Response("{}", { status: 200 }));
+      });
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+      });
+    });
+    const gateway = new DesktopGateway(environment()); await gateway.connect();
+    const t = gateway.gatewayTransport;
+    const json = t.request("/parallel-json", { method: "GET" }, true, true, "parallel-read");
+    const image = t.requestBinaryBytes("/parallel-image", { method: "GET" }, {
+      accept: "image/*", contentTypePrefix: "image/", maxBytes: 1024,
+    }, "parallel-read");
+    const cancelled = expect(image).rejects.toMatchObject({ code: "cancelled" });
+    await vi.waitFor(() => expect(started).toBe(2));
+    completeJson(); await json;
+    expect(t.activeRequests.has("parallel-read")).toBe(true);
+    t.activeRequests.get("parallel-read")!.abort();
+    await cancelled;
+    expect(t.activeRequests.has("parallel-read")).toBe(false);
   });
 
   it("reports native capabilities from the desktop shell, not from the server's placeholder", async () => {

@@ -70,6 +70,7 @@ import {
 import { mediaAssetUrl, useLearningRoomManifest } from "../media/learning-room-manifest";
 import { sceneMotionDuration, type SceneMotionMode } from "../scene/scene-motion";
 import { useRoomStore } from "../app/room-store";
+import { setAuthenticatedSurfaceSession } from "../app/surface-session";
 import { HudFirstSpaceScene } from "./hud/HudFirstSpace";
 import { requestSpaceMenu, requestSpaceMenuRefresh } from "./hud/space-menu-events";
 /**
@@ -413,6 +414,10 @@ export function DesktopAccessGate({
   motionMode?: SceneMotionMode;
 }) {
   const [view, setView] = useState<GateView>(initialView);
+  useEffect(() => {
+    if (view.phase !== "ready") setAuthenticatedSurfaceSession(null);
+  }, [view.phase]);
+  useEffect(() => () => setAuthenticatedSurfaceSession(null), []);
   const [refreshRevision, setRefreshRevision] = useState(0);
   const [formBusy, setFormBusy] = useState(false);
   /** 重认证那一屏的「退出并重新登录」在飞；与 formBusy 分开，因为两件事的按钮文案不同。 */
@@ -530,6 +535,7 @@ export function DesktopAccessGate({
     silentReverifyRef.current = silent;
     setFormFailure(null);
     if (!silent) {
+      setAuthenticatedSurfaceSession(null);
       setView({
         phase: "loading",
         title: forceConnection ? "正在重新连接" : "正在刷新状态",
@@ -645,6 +651,7 @@ export function DesktopAccessGate({
         // 不可能把请求打到别的空间上；登出后视图不再是 ready，这里保持最后一次的
         // 值，而主进程届时已把 activeWorkspaceEpoch 归零 → 不匹配 → stale_workspace。
         setCurrentWorkspaceEpoch(next.session.workspaceEpoch);
+        setAuthenticatedSurfaceSession(next.session);
         // 顶栏空间胶囊的身份随同一次已验证会话发布：胶囊不自己发请求，也就不会
         // 出现「菜单说 A、胶囊说 B」。登出后视图不再是 ready，这里保留最后一次的
         // 值——届时药丸本身也不在屏幕上。

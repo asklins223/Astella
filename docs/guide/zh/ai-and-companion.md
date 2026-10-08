@@ -19,7 +19,7 @@
 - [制卡：领域包与 worker 链](#制卡领域包与-worker-链)
 - [ai-quality：离线质量层](#ai-quality离线质量层)
 - [语音](#语音合成在-api切句在-worker识别在桌面)
-- [伴星：人格、记忆、日记](#伴星人格记忆日记)
+- [伴星：人格、记忆、日记](#伴星这条链路的后端落点)
 - [探针与评测脚本](#探针与评测脚本)
 - [超时阶梯](#超时阶梯)
 
@@ -144,7 +144,7 @@
 三个反复踩的坑：
 
 1. **DashScope 是预设不是协议分支。** `providers/dashscope.ts` 造的还是 `OpenAICompatibleProvider`，只是带上 `resolveEndpoint`、`maxTokensStrategy: "always"`、`X-DashScope-WorkSpace` 头与 `enable_thinking` 预设；baseUrl 必须以 `/compatible-mode/v1` 结尾。
-2. **`opencode_go` 说 Responses API。** `muse-spark-*`、`grok-4.6`、`gpt-5.6-luna` 只在 `/responses` 提供，走 `/chat/completions` 稳定 500；当前 DeepSeek 槽位也使用 `/responses`；仅提供 chat/completions 的模型应另建 `openai_compatible` 平台，不能从模型名称猜协议。每个请求还要带稳定的 `x-opencode-session`，客户端也要自报非通用 SDK 的 user agent。
+2. **`opencode_go` 说 Responses API。** 当前 DeepSeek 槽位也使用 `/responses`；仅提供 chat/completions 的模型应另建 `openai_compatible` 平台，不能从模型名称猜协议。每个请求还要带稳定的 `x-opencode-session`，客户端也要自报非通用 SDK 的 user agent。
 3. **阿里云域名守卫。** `dashscope` 的 `validateBaseUrl` 只接受 `^dashscope(-[a-z0-9]+)?\.aliyuncs\.com$`，把 baseUrl 指去别的主机是配置错误而不是可选行为。
 
 `createCapabilityProvider()` 在工厂出口还会做一次形状校验：声明了 `vision` 却没实现 `analyzeImage()` 会变成明确的配置错误，而不是调用时才 `TypeError`。
@@ -185,7 +185,7 @@ chat/completions 的混合思考模型只有开/关，Responses API 有档位，
 
 保守估算的比例与地板：CJK 按 1 token/字符，非 CJK 按 1 token/3 字符；单张图片地板 `IMAGE_TOKEN_FLOOR = 1_500`；不透明 reasoning 句柄地板 `REASONING_HANDLE_TOKEN_FLOOR = 64`；每条消息封套 4、每个工具 schema 封套 8。估算路径给误差余量 `max(256, 12% × 体量)`（`heuristicTotal`），精确路径（provider 计数 / tokenizer）余量为 0。计数能力按运行时的 `finish()` 顺序回退：`providerCount → tokenizer → usage_anchor → heuristic`，量不动的载荷进 `unmeasured`，未知成本绝不记作零；口径版本 `CONTEXT_MEASUREMENT_VERSION = "v1"`，provider 序列化规则一变旧锚点就失效。
 
-预算那条线（`B_hard = max(0, min(C − O, I) − M)`，触发 0.80 / 目标 0.60，`M = 2_048`，窗口不可获知时兜底 128 000、输出预留 16 384）与它的判定顺序、压缩冷却参数、伴星的无损折叠，都在 [统一 Agent 运行时（技术）](./agent-runtime.md) 的上下文治理一节写全；这一层接到 `createGovernedProvider`——所有外发模型的唯一边界——因此它覆盖首步、每个工具回合、补取材料、后台继续、重试与备用模型切换，并且**在真实发送之前**计量完整送出的请求。职责只有判定与如实记录，它不删内容。
+预算那条线（`B_hard = max(0, min(C − O, I) − M)`，触发 0.80 / 目标 0.60，`M = 2_048`，窗口不可获知时兜底 128 000、输出预留 16 384）与它的判定顺序、压缩冷却参数、伴星按摘要覆盖范围折叠，都在 [统一 Agent 运行时（技术）](./agent-runtime.md) 的上下文治理一节写全；这一层接到 `createGovernedProvider`——所有外发模型的唯一边界——因此它覆盖首步、每个工具回合、补取材料、后台继续、重试与备用模型切换，并且**在真实发送之前**计量完整送出的请求。职责只有判定与如实记录，它不删内容。
 
 > **验证范围**：方案 44 已记录迁移、压缩提交、权限围栏的实库证据、真实模型对照与窗口样本。压缩后的语义接续、并发恢复和长期效果仍需按 [方案 44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md) §8／§11 核对，不能把历史的「从未跑过」沿用为现状。
 

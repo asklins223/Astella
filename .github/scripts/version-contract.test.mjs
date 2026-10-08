@@ -54,6 +54,7 @@ function createFixture(copyVersion = "0.4.0") {
     `[![Version](https://img.shields.io/badge/version-v${copyVersion}-blue.svg)](https://example.invalid)\n`,
     "utf8",
   );
+  writeFileSync(join(root, "README.en.md"), `Repository version: \`v${copyVersion}\`\n`, "utf8");
 
   for (const packageRoot of PACKAGE_ROOTS) {
     const directory = join(root, packageRoot);
@@ -132,16 +133,17 @@ describe("version contract", () => {
     const root = createFixture();
     const version = loadVersionSource(root);
     // 每个包根贡献 3 处漂移（package.json 的 version、lock 顶层 version、
-    // lock packages[""].version），README 再贡献 1 处。
-    const expectedIssues = REQUIRED_PACKAGE_ROOTS.length * 3 + 1;
-    // 每个包根会被改写 2 个文件（package.json + package-lock.json），README 1 个。
-    const expectedRewrites = REQUIRED_PACKAGE_ROOTS.length * 2 + 1;
+    // lock packages[""].version），中英文 README 各贡献 1 处。
+    const expectedIssues = REQUIRED_PACKAGE_ROOTS.length * 3 + 2;
+    // 每个包根会被改写 2 个文件（package.json + package-lock.json），README 2 个。
+    const expectedRewrites = REQUIRED_PACKAGE_ROOTS.length * 2 + 2;
     assert.equal(inspectVersionCopies(root, version).length, expectedIssues);
 
     const changed = syncVersionCopies(root, version);
     assert.equal(changed.length, expectedRewrites);
     assert.deepEqual(inspectVersionCopies(root, version), []);
     assert.match(readFileSync(join(root, "README.md"), "utf8"), /version-v0\.5\.0-blue/);
+    assert.match(readFileSync(join(root, "README.en.md"), "utf8"), /Repository version: `v0\.5\.0`/);
   });
 
   it("rejects prerelease or decorated manual version values", () => {

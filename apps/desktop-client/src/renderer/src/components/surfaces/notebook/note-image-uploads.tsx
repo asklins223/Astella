@@ -7,12 +7,14 @@ import {
 } from "@astella/shared/note-image-upload-contracts";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
 import { readFileAsBase64 } from "../../../app/read-file-base64.ts";
+import { sourceImageObjectKeyFromUrl } from "@astella/shared/source-image-contracts";
+import { primeSourceImageBlobUrl } from "../source/source-image";
 import type { NoteMarkdownEditorHandle } from "./note-markdown-editor.tsx";
 
 /**
  * 编辑器里粘贴/拖进来的图片，从文件到站内地址的那一段。
  *
- * Web 端那套交互照搬过来：先在正文里落一个 `![上传中…](uploading:{id})` 占位，
+ * 先在正文里落一个 `![上传中…](uploading:{id})`，节点视图将它显示为扫光占位，
  * 上传成功后**原位**换成服务端确认的 `/api/uploads/…`，失败留给用户重试或移除。
  * 差别只有一处——浏览器那边是渲染层直接 POST，能拿到字节进度；桌面端走 main 的
  * IPC，没有进度事件，所以这里不画进度条，只报状态。编造一个假的百分比不如不说。
@@ -122,6 +124,13 @@ export function useNoteImageUploads(options: UseNoteImageUploadsOptions): NoteIm
   }, [sync]);
 
   const dropPlaceholder = useCallback((task: UploadTask) => {
+    const editor = latestRef.current.editorRef.current;
+    if (editor) {
+      editor.removeImageSrc(`uploading:${task.id}`);
+      const updated = editor.getMarkdown();
+      if (updated !== null) latestRef.current.onContentChange(updated);
+      return;
+    }
     const current = editorMarkdown();
     const cleaned = current.replace(task.placeholder, "");
     if (cleaned === current) return;
@@ -163,11 +172,15 @@ export function useNoteImageUploads(options: UseNoteImageUploadsOptions): NoteIm
         },
       }));
       const editor = latestRef.current.editorRef.current;
+      const objectKey = sourceImageObjectKeyFromUrl(result.url);
+      if (objectKey && result.byteLength === task.file.size && result.mimeType === task.file.type) {
+        primeSourceImageBlobUrl(objectKey, task.file);
+      }
       editor?.replaceImageSrc(`uploading:${task.id}`, result.url);
       // 节点视图把属性变化落成 DOM，正文这边同步读回来，草稿才是真的改过了。
       const current = editor?.getMarkdown() ?? null;
       if (current === null || current.includes(`uploading:${task.id}`)) {
-        publish(editorMarkdown().replace(task.placeholder, result.url));
+        publish(editorMarkdown().replace(task.placeholder, `![](${result.url})`));
       } else {
         latestRef.current.onContentChange(current);
       }
@@ -292,8 +305,7 @@ const STATUS_LABEL: Record<NoteImageUploadStatus, string> = {
 };
 
 /**
- * 上传状态。它读书面语的 9px 小字，和纸面上的其它说明行同一档，所以放一小行
- * 列表就够——正文里那块虚线占位才是作者真正在看的东西。
+ * 正文原位的扫光占位承担等待反馈；这里保留文件信息、回执和失败后的重试操作。
  */
 export function NoteImageUploads({
   uploads,

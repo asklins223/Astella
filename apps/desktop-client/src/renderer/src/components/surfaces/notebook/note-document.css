@@ -147,6 +147,9 @@
 .note-ai-working::after {
   content: ""; position: absolute; inset: -5px -10px; z-index: 1;
   border-radius: 14px; pointer-events: none; mix-blend-mode: multiply;
+}
+.note-ai-working::after,
+.note-image-node__placeholder::before {
   background: linear-gradient(105deg, #cbdcde 0%, #e2d9e9 18%, #c5dade 34%, #fff9e8 46%, #fffdf4 50%, #b5d2d8 63%, #e2d9e9 80%, #cbdcde 100%);
   background-size: 250% 100%; background-position: 100% 0;
   animation: note-ai-paper-shimmer 1.8s linear infinite;
@@ -164,5 +167,6 @@
 .hud-surface .note-ai-working.note-annotation-source { box-shadow: none; }
 .note-ai-working :is(button, input, textarea, [contenteditable="true"]) { pointer-events: none; }
 @keyframes note-ai-paper-shimmer { from { background-position: 100% 0; } to { background-position: 0% 0; } }
-.desktop-app:is([data-motion-mode="off"], [data-motion-mode="lite"], [data-reduced-motion="true"]) .note-ai-working::after { animation: none; background: #d5e2e6; }
-@media (prefers-reduced-motion: reduce) { .note-ai-working::after { animation: none; background: #d5e2e6; } }
+.desktop-app:is([data-motion-mode="off"], [data-motion-mode="lite"], [data-reduced-motion="true"]) .note-ai-working::after,
+.desktop-app:is([data-motion-mode="off"], [data-motion-mode="lite"], [data-reduced-motion="true"]) .note-image-node__placeholder::before { animation: none; background: #d5e2e6; }
+@media (prefers-reduced-motion: reduce) { .note-ai-working::after, .note-image-node__placeholder::before { animation: none; background: #d5e2e6; } }

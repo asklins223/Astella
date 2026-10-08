@@ -73,7 +73,7 @@ export function useCompanionGuide(decorative = false) {
     try {
       const settings = unwrapGatewayResult(await window.astella.workspace.getAiSettings({ meta: createRequestMeta(adapter.identity.workspaceEpoch) }));
       if (!current()) return null;
-      const needed = companionConsentGate(settings) === "consent_required";
+      const needed = companionConsentGate(settings) !== null;
       updateConsent(needed ? "required" : "granted"); return needed;
     } catch (error) {
       if (current()) { updateConsent("unknown"); setConsentError(gatewayErrorMessage(error)); }
@@ -137,7 +137,12 @@ export function useCompanionGuide(decorative = false) {
       });
       if (currentGeneration !== generation.current || adapter !== client.current) return;
       const settings = unwrapGatewayResult(response);
-      if (settings.consentVersion !== AI_CONSENT_VERSION) throw new Error("暂时没有确认签署结果，请重试。");
+      if (settings.consentVersion !== AI_CONSENT_VERSION) {
+        setConsentError("暂时没有确认签署结果，请重试。"); return;
+      }
+      if (!settings.dataPolicy.sendToExternal) {
+        setConsentError("外部 AI 尚未开启，请重试或在 AI 数据同意页开启外发。"); return;
+      }
       if (response.workspaceEpoch) adapter.followEpoch(response.workspaceEpoch);
       updateConsent("granted"); enterTour();
     } catch (error) {

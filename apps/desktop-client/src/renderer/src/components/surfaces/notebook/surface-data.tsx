@@ -84,6 +84,7 @@ export function useSurfaceProjection<T>(
     loadedRef.current = null;
     setRefreshFailure(null);
     void load();
+    return () => { requestRef.current += 1; };
   }, [load]);
 
   useEffect(() => {

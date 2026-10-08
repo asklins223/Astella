@@ -149,6 +149,7 @@ function domainErrorCode(status: number, body: unknown, path: string): GatewayEr
   // `ai_consent_required` 同一条判据：这句话的下一步动作和"没权限"不是一件事。
   if (status === 403) {
     if (token === CONSENT_REQUIRED_TOKEN) return "ai_consent_required";
+    if (token === "ai_data_policy_denied") return "ai_data_policy_denied";
     return token === "invalid_password" ? "invalid_credentials" : null;
   }
   if (status !== 400 && status !== 404 && status !== 409 && status !== 410) return null;
@@ -337,6 +338,25 @@ export class GatewayTransport {
 
   // ── 状态 ────────────────────────────────────────────────────────
     readonly activeRequests = new Map<string, AbortController>();
+    private readonly requestUsers = new Map<AbortController, { count: number; owned: boolean }>();
+
+    private beginRequest(requestId?: string): AbortController | undefined {
+      if (!requestId) return undefined;
+      const previous = this.activeRequests.get(requestId);
+      const controller = previous ?? new AbortController();
+      if (!previous) this.activeRequests.set(requestId, controller);
+      const users = this.requestUsers.get(controller) ?? { count: 0, owned: !previous };
+      users.count += 1; this.requestUsers.set(controller, users);
+      return controller;
+    }
+
+    private finishRequest(requestId: string | undefined, controller: AbortController | undefined): void {
+      if (!requestId || !controller) return;
+      const users = this.requestUsers.get(controller);
+      if (!users || --users.count > 0) return;
+      this.requestUsers.delete(controller);
+      if (users.owned && this.activeRequests.get(requestId) === controller) this.activeRequests.delete(requestId);
+    }
     guidanceVoiceProfile: { key: string; at: number; value: Promise<VoiceAudioProfile> } | null = null;
     /** 念想缓存的音色身份来自账号设置，与带路的默认档不是一回事，所以各记一份。 */
     thoughtVoiceProfile: { key: string; at: number; value: Promise<VoiceAudioProfile> } | null = null;
@@ -499,6 +519,8 @@ export class GatewayTransport {
     workspaceEpoch = 1;
 
     cachedCapabilities: { atMs: number; epoch: number; projection: CapabilityProjectionV1 } | null = null;
+    capabilityReadGeneration = 0;
+    capabilityRead: { epoch: number; token: string | null; generation: number; value: Promise<CapabilityProjectionV1> } | null = null;
 
   // 2026-09-30 第七刀：`roomProjectionCache` 与上面那个 `cachedCapabilities` 是同一族——
   // **某个昂贵投影的缓存**，都跟着 `workspaceEpoch` 走（缓存要按纪元失效）。
@@ -514,6 +536,8 @@ export class GatewayTransport {
 
     forgetCapabilities(): void {
         this.cachedCapabilities = null;
+        this.capabilityReadGeneration += 1;
+        this.capabilityRead = null;
       }
 
     /** 本机能力投影。模块级实现（`transportNativeCapabilities`），这里只是把它挂进实例，
@@ -623,8 +647,7 @@ readonly companionAccountSessionId = randomUUID();
   if (init.body !== undefined) headers.set("Content-Type", "application/json");
   if (authenticated && this.token) headers.set("Authorization", `Bearer ${this.token}`);
   let response: Response;
-  const controller = requestId ? new AbortController() : undefined;
-  if (requestId && controller) this.activeRequests.set(requestId, controller);
+  const controller = this.beginRequest(requestId);
   try {
     response = await fetch(new URL(path, `${configuration.config.apiOrigin}/`), {
       ...init,
@@ -633,7 +656,7 @@ readonly companionAccountSessionId = randomUUID();
       redirect: "manual",
     });
   } catch (error) {
-    if (requestId && controller && this.activeRequests.get(requestId) === controller) this.activeRequests.delete(requestId);
+    this.finishRequest(requestId, controller);
     if (error instanceof Error && error.name === "AbortError") {
       throw new DesktopGatewayFailure("cancelled", "never", { localEffect: "request_cancelled" });
     }
@@ -670,7 +693,7 @@ readonly companionAccountSessionId = randomUUID();
   if (!response.ok && !allowHttpErrors) throw new DesktopGatewayFailure("api_unavailable", "safe_retry", { httpStatus: response.status });
   return { status: response.status, body, headers: response.headers };
   } finally {
-    if (requestId && controller && this.activeRequests.get(requestId) === controller) this.activeRequests.delete(requestId);
+    this.finishRequest(requestId, controller);
   }
 }
   async requestBinaryBytes(
@@ -686,8 +709,7 @@ readonly companionAccountSessionId = randomUUID();
   headers.set("X-Astella-Object-Transfer-Accept", "1");
   if (init.body !== undefined) headers.set("Content-Type", "application/json");
   if (this.token) headers.set("Authorization", `Bearer ${this.token}`);
-  const controller = requestId ? new AbortController() : undefined;
-  if (requestId && controller) this.activeRequests.set(requestId, controller);
+  const controller = this.beginRequest(requestId);
   try {
     let response = await fetch(new URL(path, `${configuration.config.apiOrigin}/`), {
       ...init,
@@ -735,7 +757,7 @@ readonly companionAccountSessionId = randomUUID();
     this.connection = { version: 1, kind: "api_unavailable" };
     throw new DesktopGatewayFailure("api_unavailable", "safe_retry");
   } finally {
-    if (requestId && controller && this.activeRequests.get(requestId) === controller) this.activeRequests.delete(requestId);
+    this.finishRequest(requestId, controller);
   }
 }
   requestAudioBytes(path: string, init: RequestInit, requestId?: string) {
@@ -767,8 +789,7 @@ readonly companionAccountSessionId = randomUUID();
   headers.set("Accept", policy.accept);
   headers.set("X-Astella-Object-Transfer-Accept", "1");
   if (this.token) headers.set("Authorization", `Bearer ${this.token}`);
-  const controller = requestId ? new AbortController() : undefined;
-  if (requestId && controller) this.activeRequests.set(requestId, controller);
+  const controller = this.beginRequest(requestId);
   try {
     let response = await fetch(new URL(path, `${configuration.config.apiOrigin}/`), {
       method: "GET",
@@ -815,7 +836,7 @@ readonly companionAccountSessionId = randomUUID();
     this.connection = { version: 1, kind: "api_unavailable" };
     throw new DesktopGatewayFailure("api_unavailable", "safe_retry");
   } finally {
-    if (requestId && controller && this.activeRequests.get(requestId) === controller) this.activeRequests.delete(requestId);
+    this.finishRequest(requestId, controller);
   }
 }
   idempotencyKey(operation: string, commandId: string): string {

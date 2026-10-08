@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   COMPANION_CONSENT_REQUIRED_LINE,
   COMPANION_RUN_ERROR_AI_CONSENT_REQUIRED,
+  COMPANION_RUN_ERROR_AI_DATA_POLICY_DENIED,
   companionConsentGate,
   isCompanionConsentFailure,
 } from "../companion-consent-gate.ts";
@@ -25,6 +26,10 @@ describe("companionConsentGate", () => {
   it("部署不要求签署（本机模型）→ 放行", () => {
     expect(companionConsentGate({ requiresConsent: false, consentVersion: null })).toBeNull();
   });
+  it("已经签署但外发关闭 → 指向外发开关，不能创建注定失败的回合", () => {
+    expect(companionConsentGate({ requiresConsent: true, consentVersion: "ai-consent-v1",
+      dataPolicy: { sendToExternal: false, sendImageContent: true, piiDetection: true, auditLogging: true } })).toBe("external_disabled");
+  });
 
   it("设置读不到（null）→ 不在渲染层替服务端做安全决策", () => {
     expect(companionConsentGate(null)).toBeNull();
@@ -34,6 +39,7 @@ describe("companionConsentGate", () => {
 describe("isCompanionConsentFailure", () => {
   it("只认 worker 写的那个错误码", () => {
     expect(isCompanionConsentFailure(COMPANION_RUN_ERROR_AI_CONSENT_REQUIRED)).toBe(true);
+    expect(isCompanionConsentFailure(COMPANION_RUN_ERROR_AI_DATA_POLICY_DENIED)).toBe(true);
     expect(isCompanionConsentFailure("INTERNAL_ERROR")).toBe(false);
     expect(isCompanionConsentFailure(undefined)).toBe(false);
     expect(isCompanionConsentFailure(42)).toBe(false);

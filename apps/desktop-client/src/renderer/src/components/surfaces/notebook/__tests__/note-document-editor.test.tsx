@@ -11,6 +11,8 @@ import { seedBlocksUpdate } from "../../../../test-support/note-doc-fixtures";
 import { noteOutline } from "../note-outline";
 import { noteSourceBlocks } from "../note-source-structure";
 import type { NoteAiRange } from "../../../companion/note-companion-editing";
+import type { NoteImageUploadView } from "../note-image-uploads";
+import * as sourceImages from "../../source/source-image";
 
 const docs: Y.Doc[] = [];
 function documentWith(...paragraphs: string[]) {
@@ -22,13 +24,14 @@ function documentWith(...paragraphs: string[]) {
 async function mount(doc: Y.Doc, mode: NoteBodyMode = "source", disabled = false, aiRanges: readonly NoteAiRange[] = []) {
   const ref = createRef<NoteMarkdownEditorHandle>();
   const onChange = vi.fn();
-  const props = { ref, fragment: doc.getXmlFragment("content"), initialMarkdown: "", onChange, disabled, aiRanges };
+  const props = { ref, fragment: doc.getXmlFragment("content"), initialMarkdown: "", onChange, disabled, aiRanges, imageUploads: [] as readonly NoteImageUploadView[] };
   let currentMode = mode;
   const view = render(<NoteDocumentEditor {...props} mode={currentMode} />);
   await waitFor(() => expect(ref.current?.getMarkdown()).not.toBeNull());
   await waitFor(() => expect(view.container.querySelector(".cm-content")).not.toBeNull());
   return { ...view, ref, onChange, mode: (next: NoteBodyMode, readonly = disabled) => { currentMode = next; view.rerender(<NoteDocumentEditor {...props} disabled={readonly} mode={next} />); },
     lock: (ranges: readonly NoteAiRange[]) => { props.aiRanges = ranges; view.rerender(<NoteDocumentEditor {...props} mode={currentMode} />); },
+    uploads: (uploads: readonly NoteImageUploadView[]) => { props.imageUploads = uploads; view.rerender(<NoteDocumentEditor {...props} mode={currentMode} />); },
     code: () => EditorView.findFromDOM(view.container.querySelector(".cm-content")!)!,
   };
 }
@@ -37,11 +40,88 @@ async function source(view: Awaited<ReturnType<typeof mount>>, text: string) {
 }
 afterEach(async () => {
   cleanup();
+  vi.restoreAllMocks();
   await new Promise(resolve => setTimeout(resolve, 0));
   docs.splice(0).forEach(doc => doc.destroy());
 });
 
 describe("三种正文视图共用真实编辑器与 Y.Doc", () => {
+  it("图片占位没有破图，失败和重试不改正文，图片加载完成后原位呈现", async () => {
+    vi.spyOn(sourceImages, "loadSourceImageBlobUrl").mockResolvedValue("blob:uploaded-image");
+    const doc = documentWith("前面的正文", "后面的正文");
+    const view = await mount(doc, "live-preview");
+    const upload: NoteImageUploadView = { id: "image-1", name: "学习截图.png", size: 1200, status: "uploading", error: null };
+    await act(async () => { view.ref.current!.focusPosition({ block: 0, offset: 6 }); view.ref.current!.insertText("![上传中…](uploading:image-1)"); view.uploads([upload]); });
+    const slot = view.container.querySelector<HTMLElement>(".note-image-node")!;
+    const image = slot.querySelector("img")!;
+    expect(slot.dataset.state).toBe("uploading");
+    expect(image.hasAttribute("src")).toBe(false);
+    expect(image.hidden).toBe(true);
+    expect(slot.textContent).toContain("学习截图.png");
+    fireEvent.click(slot);
+    expect(view.queryByRole("dialog")).toBeNull();
+
+    const before = Y.encodeStateAsUpdate(doc);
+    await act(async () => view.uploads([{ ...upload, status: "failed", error: "上传未成功" }]));
+    expect(slot.dataset.state).toBe("failed");
+    expect(slot.textContent).toContain("上传未成功，可重试");
+    await act(async () => view.uploads([{ ...upload, status: "queued" }]));
+    expect(slot.textContent).toContain("图片排队中…");
+    await act(async () => view.uploads([upload]));
+    expect(slot.dataset.state).toBe("uploading");
+    expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
+
+    const url = "/api/uploads/11111111-1111-4111-8111-111111111111/notes/33333333-3333-4333-8333-333333333333/11111111-1111-4111-8111-111111111111.png";
+    await act(async () => view.ref.current!.replaceImageSrc("uploading:image-1", url));
+    expect(view.container.querySelector(".note-image-node")).toBe(slot);
+    expect(slot.dataset.state).toBe("loading");
+    expect(sourceImages.loadSourceImageBlobUrl).toHaveBeenCalledWith(url.slice("/api/uploads/".length));
+    expect(image.getAttribute("src")).toBe("blob:uploaded-image");
+    expect(image.hidden).toBe(true);
+    fireEvent.load(image);
+    expect(slot.dataset.state).toBe("ready");
+    expect(image.hidden).toBe(false);
+    expect(slot.querySelector<HTMLElement>(".note-image-node__placeholder")!.hidden).toBe(true);
+    expect(view.ref.current!.getMarkdown()).toContain(`![](${url})`);
+    expect(view.ref.current!.getMarkdown()).toContain("后面的正文");
+    expect(view.ref.current!.getMarkdown()).not.toContain("学习截图.png");
+    view.mode("source"); view.mode("live-preview");
+    expect(view.container.querySelector(".note-image-node")).toBe(slot);
+    fireEvent.click(image);
+    expect(view.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("取图期间删除节点，迟到的图片不会重新出现在正文", async () => {
+    let complete!: (url: string | null) => void;
+    vi.spyOn(sourceImages, "loadSourceImageBlobUrl").mockReturnValue(new Promise(resolve => { complete = resolve; }));
+    const view = await mount(documentWith("保留正文"), "live-preview");
+    await act(async () => view.ref.current!.insertText("![图示](/api/uploads/11111111-1111-4111-8111-111111111111/notes/33333333-3333-4333-8333-333333333333/22222222-2222-4222-8222-222222222222.png)"));
+    expect(view.container.querySelector(".note-image-node")?.getAttribute("data-state")).toBe("loading");
+    await act(async () => view.ref.current!.setMarkdown("保留正文"));
+    await act(async () => complete("blob:late-image"));
+    expect(view.container.querySelector(".note-image-node")).toBeNull();
+    expect(view.ref.current!.getMarkdown()).toContain("保留正文");
+  });
+
+  it("移出失败图片只删除对应节点，正文和另一张占位保留，操作可以撤销", async () => {
+    const view = await mount(documentWith("保留正文"), "live-preview");
+    await act(async () => view.ref.current!.insertText("![上传中…](uploading:remove-me)\n\n![上传中…](uploading:keep-me)"));
+    expect(view.container.querySelectorAll(".note-image-node")).toHaveLength(2);
+    // Separate this author action from the earlier insertion in the undo stack.
+    await new Promise(resolve => setTimeout(resolve, 520));
+    await act(async () => view.ref.current!.removeImageSrc("uploading:remove-me"));
+    expect(view.container.querySelectorAll(".note-image-node")).toHaveLength(1);
+    expect(view.ref.current!.getMarkdown()).toContain("uploading:keep-me");
+    expect(view.ref.current!.getMarkdown()).toContain("保留正文");
+    expect(view.ref.current!.getMarkdown()).not.toContain("uploading:remove-me");
+    view.mode("source");
+    expect(view.code().state.doc.toString()).not.toContain("uploading:remove-me");
+    await act(async () => view.ref.current!.undo());
+    expect(view.ref.current!.getMarkdown()).toContain("uploading:remove-me");
+    expect(view.container.querySelector('.note-image-node')?.getAttribute("data-state")).toBe("unavailable");
+    expect(view.container.textContent).toContain("上传已中断，请重新插入");
+  });
+
   it("原生光标刚落下时按真实 DOM 位置读取，不等待编辑器的选区观察器", async () => {
     const view = await mount(documentWith("甲乙丙丁戊己"), "live-preview");
     view.ref.current!.focusPosition({ block: 0, offset: 0 });

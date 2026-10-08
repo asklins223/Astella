@@ -22,7 +22,7 @@ What this covers: from a clean checkout to a window you can actually operate —
 | --- | --- | --- |
 | Docker + Compose v2 | Everything the stack depends on (postgres, minio, edge-tts, api, worker) is in `docker-compose.dev.yml`; PostgreSQL does **not** need to be installed locally | `docker compose version` |
 | `make` | Every entry point is a Make target; bare `make` means `make up` (`.DEFAULT_GOAL := up`) | `make -v` |
-| Node 22 | Both service images are `node:22.11.0-alpine3.20` (`apps/api/Dockerfile:4`, `workers/ai-worker/Dockerfile:3`); CI pins `NODE_VERSION: "22"` (`.github/workflows/main-ci.yml:43`) | `node -v` |
+| Node 22 | Both service images are `node:22.11.0-alpine3.20` (`apps/api/Dockerfile:4`, `workers/ai-worker/Dockerfile:3`); CI pins `NODE_VERSION: "22"` (`.github/workflows/main-ci.yml`) | `node -v` |
 | `npm ci` once per package | Nine packages each carry their own `package-lock.json`; `@astella/*` are `file:` symlinks, but `tsc` resolves `zod` / `drizzle-orm` from the **imported package's own** `node_modules` | `ls package-lock.json packages/*/package-lock.json apps/*/package-lock.json workers/*/package-lock.json` |
 | `python3` | Several live probes (`scripts/companion-inbox-sse-probe.py` and friends) and the edge-tts service script are Python | `python3 -V` |
 
@@ -62,7 +62,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 
 For local development use a key id such as `local-dev` and revision such as `local-dev-v1`, matching both sides. Remote HTTPS does not use the local pairing secret but still needs a valid certificate and contract revision; see [Deployment](deployment.md).
 
-Real model calls need keys: `DASHSCOPE_API_KEY`, `OPENAI_COMPAT_API_KEY`, `OPENCODE_GO_API_KEY`, `SILICONFLOW_API_KEY`, `BIGMODEL_API_KEY`, `TOKENRHYTHM_API_KEY`. Which platform serves which capability is decided by `config/ai-platforms.json`, and `docker-compose.dev.yml` only passes through the variables **explicitly listed** there — on 2026-09-17 `OPENCODE_GO_API_KEY` was missing, resolved empty inside the container, and card generation failed closed. **When you add a platform you change that JSON plus both compose files**, and inside dev compose both api and worker carry their own copy of the list. `ASSESSMENT_CRITIC_URL` / `_KEY` / `_MODEL` are a separate group: unconfigured, open-ended answer assessment takes the deterministic path instead of guessing.
+Real model calls need keys: `DASHSCOPE_API_KEY`, `OPENAI_COMPAT_API_KEY`, `OPENCODE_GO_API_KEY`, `SILICONFLOW_API_KEY`, `BIGMODEL_API_KEY`, `TOKENRHYTHM_API_KEY`. Which platform serves which capability is decided by `config/ai-platforms.json`, and `docker-compose.dev.yml` only passes through the variables **explicitly listed** there. When adding a provider, update the model JSON and environment forwarding in the Compose files you use, checking both API and Worker. `ASSESSMENT_CRITIC_URL` / `_KEY` / `_MODEL` are a separate group: unconfigured, open-ended answer assessment takes the deterministic path instead of guessing.
 
 The remaining variables (`COMPANION_*`, `LEARNING_RUN_ENABLED`, `CARD_GENERATION_*`, …) already have local defaults in dev. `.github/scripts/verify-companion-capability-config.mjs`, run by `make verify`, checks that the flags declared by api and worker stay paired, so the API never accepts a turn the worker immediately rejects as disabled.
 
@@ -72,7 +72,7 @@ The remaining variables (`COMPANION_*`, `LEARNING_RUN_ENABLED`, `CARD_GENERATION
 make up
 ```
 
-Reading `Makefile:40-56` line by line, it does four things:
+The Makefile `up` target performs four steps:
 
 1. `ensure-db-volume`: if `docker volume inspect` fails, create `astella-dev_dev_postgres_data` labelled `com.astella.protected=true`.
 2. `compose rm -f role-bootstrap migrate role-grants minio-init`: clear last round's exited init containers.
@@ -89,7 +89,7 @@ Get step 4's semantics right, because it is where a green command lies. `docker 
 make seed-demo
 ```
 
-Runs `compose --profile seed run --rm seed-demo`, which executes `npm run db:seed` in the container with `SEED_DEMO_DATA=true`. `apps/api/src/db/seed.ts:6-7` defines the demo credentials:
+Runs `compose --profile seed run --rm seed-demo`, which executes `npm run db:seed` in the container with `SEED_DEMO_DATA=true`. `apps/api/src/db/seed.ts` defines the demo credentials:
 
 ```text
 email:    owner@astella.local
@@ -98,7 +98,7 @@ password: astella_owner
 
 `make seed-demo` does not forward `.env` values for `OWNER_EMAIL`/`OWNER_PASSWORD`. It creates the defaults above and skips an existing email without resetting its password. For custom seeding, export both values in the shell and use `docker compose -p astella-dev -f docker-compose.dev.yml --profile seed run --rm -e OWNER_EMAIL -e OWNER_PASSWORD seed-demo`; passwords must have at least 12 characters.
 
-**These default credentials are only for local development.** `seed.ts:28-32` throws when `NODE_ENV=production` and `SEED_DEMO_DATA=true` are combined; a production stack seeds its Owner from explicit `OWNER_EMAIL` / `OWNER_PASSWORD`.
+**These default credentials are only for local development.** `seed.ts` throws when `NODE_ENV=production` and `SEED_DEMO_DATA=true` are combined; a production stack seeds its Owner from explicit `OWNER_EMAIL` / `OWNER_PASSWORD`.
 
 ### 4. Install dependencies and open the window
 
@@ -107,17 +107,17 @@ make desktop-client-install   # cd apps/desktop-client && npm ci
 make desktop-client-dev       # cd apps/desktop-client && npm run dev
 ```
 
-`npm run dev` expands to `electron-vite dev --remoteDebuggingPort 9222`. It requires the Docker stack to be **already running**: the main process targets `http://127.0.0.1:4000` by default (`DEFAULT_API_ORIGIN` in `desktop-gateway.ts`, overridable with `DESKTOP_API_ORIGIN`). `electron.vite.config.ts:23-26` loads the repository-root `.env`, and its comment is explicit that these values go to the **privileged main process only** — they are not injected into the renderer's `import.meta.env` and not exposed through preload.
+`npm run dev` expands to `electron-vite dev --remoteDebuggingPort 9222`. It requires the Docker stack to be **already running**: the main process targets `http://127.0.0.1:4000` by default (`DEFAULT_API_ORIGIN` in `desktop-gateway.ts`, overridable with `DESKTOP_API_ORIGIN`). `electron.vite.config.ts` loads the repository-root `.env`, and its comment is explicit that these values go to the **privileged main process only** — they are not injected into the renderer's `import.meta.env` and not exposed through preload.
 
 ## /health and /ready assert different things
 
 | Endpoint | What it checks | What a failure means |
 | --- | --- | --- |
-| `GET /health` | the process is alive and the event loop can answer HTTP. `server.ts:125` returns only `{status:"ok",service:"api",timestamp}` | the process itself is broken |
+| `GET /health` | the process is alive and the event loop can answer HTTP. `server.ts` returns only `{status:"ok",service:"api",timestamp}` | the process itself is broken |
 | `GET /ready` | `SELECT 1`; the nine core tables present in `information_schema.tables` (`users`, `workspaces`, `notes`, `jobs`, `sessions`, `learning_runs`, `learning_run_private_contracts`, `learning_tasks`, `learning_task_variants`); and `max(created_at)` from `drizzle.__drizzle_migrations` ≥ `MIN_READY_MIGRATION_CREATED_AT` (default `1786683800000`) | the database is reachable but its schema is incomplete — migrations never ran, or ran half way |
 | `GET /metrics` | Prometheus text exposition | says nothing about liveness or readiness |
 
-`/ready` is what the compose healthcheck for api targets. **Worker is asymmetric**: `/ready` exists in code (`workers/ai-worker/src/lib/metrics.ts:364`, probing `db.execute(sql`SELECT 1`)`), but the healthcheck in `docker-compose.dev.yml:369` still polls `/metrics` — so a dead database will not mark the worker container unhealthy. Read "compose says worker is healthy" as "worker can serve metrics", nothing more.
+`/ready` is what the compose healthcheck for api targets. **Worker is asymmetric**: `/ready` exists in code (`workers/ai-worker/src/lib/metrics.ts`, probing `db.execute(sql`SELECT 1`)`), but the healthcheck in `docker-compose.dev.yml` still polls `/metrics` — so a dead database will not mark the worker container unhealthy. Read "compose says worker is healthy" as "worker can serve metrics", nothing more.
 
 ## Port table
 
@@ -131,7 +131,7 @@ make desktop-client-dev       # cd apps/desktop-client && npm run dev
 | edge-tts | 8080 | `127.0.0.1:${EDGE_TTS_PORT:-8088}` | hard-coded loopback |
 | Electron main | — | `127.0.0.1:9222` (CDP) | for capture and probe scripts only |
 
-`API_BIND_ADDRESS` is not "set it to `0.0.0.0` if you feel like it": `resolveApiBindHost()` (`apps/api/src/modules/desktop-trust/routes.ts:62`) accepts the literal `127.0.0.1`, or `0.0.0.0` only when **both** `ASTELLA_CONTAINER_MODE=true` **and** `ASTELLA_ALLOW_CONTAINER_WILDCARD=true`. dev compose sets both for the container; on the host you get `API_BIND_ADDRESS must be literal 127.0.0.1…`.
+`API_BIND_ADDRESS` is not "set it to `0.0.0.0` if you feel like it": `resolveApiBindHost()` (`apps/api/src/modules/desktop-trust/routes.ts`) accepts the literal `127.0.0.1`, or `0.0.0.0` only when **both** `ASTELLA_CONTAINER_MODE=true` **and** `ASTELLA_ALLOW_CONTAINER_WILDCARD=true`. dev compose sets both for the container; on the host you get `API_BIND_ADDRESS must be literal 127.0.0.1…`.
 
 edge-tts has two addresses on purpose: the api inside compose uses `http://edge-tts:8080`, an api running directly on the host uses `http://127.0.0.1:8088`. Both must carry the same `EDGE_TTS_AUTH_TOKEN`, and **do not point a host-run API at the Docker service name**.
 
@@ -220,14 +220,14 @@ make disposable-db DISPOSABLE_DB=astella_it   # scripts/dev-disposable-db.sh, gu
 | Page source | Vite dev server; main reads the origin from `ELECTRON_RENDERER_URL` | `astella-app://bundle/index.html`, served by `protocol.handle` from inside the package |
 | CSP | dev origin added to `connect-src` (plus its `ws:` variant) and `'unsafe-inline'` in `script-src` for the React refresh preamble | strict policy; the artifact origin gets its own `default-src 'none'` |
 | Navigation gate | dev server origin allowed | only `astella-app://bundle`, with no username, no password and no port |
-| DevTools | available (`webPreferences.devTools: !app.isPackaged`, `src/main/index.ts:595`) | disabled |
+| DevTools | available (`webPreferences.devTools: !app.isPackaged`, `src/main/index.ts`) | disabled |
 | CDP | `--remoteDebuggingPort 9222`, which is what capture and probe scripts attach to | not exposed |
 | Voice models | the dev server serves the two model files on its own origin (the custom scheme does not do CORS; a cross-origin fetch measured `TypeError: Failed to fetch`) | `astella-app://bundle/device/asr/`, same-origin read |
 | Main-process restart | `npm run dev` does not watch main/preload — restart the command after editing them; `npm run dev:watch-main` (`electron-vite dev -w`) keeps rebuilding them | not applicable |
 
 `out/` is the `electron-vite build` output directory (ignored by `apps/desktop-client/.gitignore`). `npm run dev` serves the renderer from the Vite dev server, but `preview` and the capture scripts run `electron .`, which loads `package.json`'s `main: ./out/main/index.js` — **a stale `out/` produces no error, it just shows you an old window**. Whenever a screenshot conclusion "doesn't look like what I changed", check whether a `npm run build` happened.
 
-> **Note:** `VITE_HOME_SCENE_VARIANT` is **not** a usable runtime flag. Its only occurrence in the repo is the assignment inside the `capture:home-v2` script in `package.json`; nothing in the source reads it (`HomeV2Provider` mounts unconditionally at `renderer/src/App.tsx:136`, and there are no `.env*` files under `apps/desktop-client`). The guard `src/main/__tests__/docs-vite-vars-have-readers.test.ts` exists for exactly this: documentation may name a flag that does not exist, but must say so on that same line. To change the home composition, change the component — don't go looking for that variable.
+> **Note:** `VITE_HOME_SCENE_VARIANT` is **not** a usable runtime flag. Its only occurrence in the repo is the assignment inside the `capture:home-v2` script in `package.json`; nothing in the source reads it (`HomeV2Provider` mounts unconditionally at `renderer/src/App.tsx`, and there are no `.env*` files under `apps/desktop-client`). The guard `src/main/__tests__/docs-vite-vars-have-readers.test.ts` exists for exactly this: documentation may name a flag that does not exist, but must say so on that same line. To change the home composition, change the component — don't go looking for that variable.
 
 ## What to read once it runs
 

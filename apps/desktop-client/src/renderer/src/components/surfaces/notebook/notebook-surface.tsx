@@ -1,3 +1,4 @@
+import { readNotebookProjection } from "./notebook-projection";
 import { useNotebookCompanionEditing } from "./use-notebook-companion-editing";
 import { beginNoteAiWork, endNoteAiWork, useNoteAiWork, resolveNoteAiRanges, type NoteAiRange } from "../../companion/note-companion-editing";
 import { noteHtmlAlignments } from "./note-html-alignment";
@@ -882,182 +883,12 @@ export function NotebookSurface() {
   const { data, loading, failure, reload } = useSurfaceProjection(async ({ workspaceEpoch }) => {
     const api = desktopApi();
     if (!api) throw new Error("桌面端 API 不可用，无法读取真实笔记。");
-    const projectionResponse = await api.room.getProjection({ meta: createRequestMeta(workspaceEpoch) });
-    if (projectionResponse.workspaceEpoch) epochRef.current = projectionResponse.workspaceEpoch;
-    const projection = unwrapGatewayResult(projectionResponse);
-    const focus = projection.primaryFocus.state === "data" ? projection.primaryFocus.data : null;
-    const primaryNote = focus?.objective.sources.primaryNote ?? null;
-    const noteId = activeNoteRef?.noteId ?? primaryNote?.noteId;
-    if (!noteId) {
-      throw new Error("这一篇笔记还没定下来是哪一篇，不能编辑，也不能生成学习卡。");
-    }
-    const noteResponse = await api.note.get({ meta: createRequestMeta(epochRef.current), noteId });
-    if (noteResponse.workspaceEpoch) epochRef.current = noteResponse.workspaceEpoch;
-    const note = unwrapGatewayResult(noteResponse);
-
-    const capabilityResponse = await api.capabilities.get({ meta: createRequestMeta(epochRef.current) });
-    if (capabilityResponse.workspaceEpoch) epochRef.current = capabilityResponse.workspaceEpoch;
-
-    let source: DesktopSourceDetail | null = null;
-    let sourceFailure: string | null = null;
-    if (note.sourceId) {
-      try {
-        const sourceResponse = await api.source.get({
-          meta: createRequestMeta(epochRef.current),
-          sourceId: note.sourceId,
-        });
-        if (sourceResponse.workspaceEpoch) epochRef.current = sourceResponse.workspaceEpoch;
-        source = unwrapGatewayResult(sourceResponse);
-      } catch (error) {
-        sourceFailure = gatewayErrorMessage(error);
-      }
-    }
-
-    // A note that has never been generated answers 404, which is an ordinary
-    // state: the page then simply has no previous run to respond to.
-    let latestGenerationRun: CardGenerationRunSnapshotV1 | null = null;
-    if ((api.contract.enabledRoutes ?? []).includes("note.cardGeneration")) {
-      try {
-        latestGenerationRun = unwrapGatewayResult(await api.note.cardGeneration.latestRun({
-          meta: createRequestMeta(epochRef.current),
-          noteId: note.noteId,
-        }));
-      } catch {
-        latestGenerationRun = null;
-      }
-    }
-
-    // 目标只供记录页的单项安排使用。笔记学习始终由 noteLearningRound.open 决定。
-    let noteObjective: NotebookProjection["noteObjective"] = null;
-    try {
-      const objectiveResponse = await api.objective.list({
-        meta: createRequestMeta(epochRef.current),
-        limit: 1,
-        lifecycle: "active",
-        noteId: note.noteId,
-      });
-      if (objectiveResponse.workspaceEpoch) epochRef.current = objectiveResponse.workspaceEpoch;
-      const item = unwrapGatewayResult(objectiveResponse).items[0] ?? null;
-      if (item) {
-        noteObjective = {
-          objectiveId: item.objectiveId,
-          publicSummary: item.publicSummary,
-          reviewHold: item.reviewHold ?? null,
-        };
-      }
-    } catch {
-      noteObjective = null;
-    }
-
-    // W7-3 刀六：这一篇的笔记订阅。**读不到也是 null**（老网关没这条路由 / 没订阅过 /
-    // 读取失败三件事在屏上是同一句话：这里没有那颗开关），和上面那些读同一纪律。
-    let noteSubscription: NotebookProjection["noteSubscription"] = null;
-    try {
-      const subResponse = await api.review.listNoteSubscriptions({ meta: createRequestMeta(epochRef.current) });
-      if (subResponse.workspaceEpoch) epochRef.current = subResponse.workspaceEpoch;
-      const found = unwrapGatewayResult(subResponse).items
-        .find((item) => item.subjectType === "note" && item.subjectId === note.noteId);
-      noteSubscription = found
-        ? { source: found.source, subjectType: found.subjectType, subjectId: found.subjectId, status: found.status, scopeNote: found.scopeNote, createdAt: found.createdAt, pausedAt: found.pausedAt }
-        : null;
-    } catch {
-      noteSubscription = null;
-    }
-
-    // 39d W4-3 第三刀：这一篇有没有未完成的那一轮。和上面那两读一样自己吞异常——
-    // 老网关没有这条路由时不能让笔记页变成错误页。
-    let openRound: NotebookProjection["openRound"] = null;
-    let openRoundContentMoved = false;
-    let openRoundNoteChangeImpact: ObjectiveNoteChangeImpactV1 | null = null;
-    try {
-      const roundResponse = await api.noteLearningRound.open({
-        meta: createRequestMeta(epochRef.current),
-        noteId: note.noteId,
-      });
-      if (roundResponse.workspaceEpoch) epochRef.current = roundResponse.workspaceEpoch;
-      // 回的是那一层信封：`contentMoved` 是读侧现算的派生格，渲染层不许自己比版本号。
-      const view = unwrapGatewayResult(roundResponse);
-      openRound = view?.round ?? null;
-      openRoundContentMoved = view?.contentMoved ?? false;
-      openRoundNoteChangeImpact = view?.noteChangeImpact ?? null;
-    } catch {
-      openRound = null;
-      openRoundContentMoved = false;
-      openRoundNoteChangeImpact = null;
-    }
-
-    // 教学产物那一读（W4-6 刀二）：只有真有一轮在进行中才有得读——没轮次就没有
-    // "这一轮讲了什么"。同样自己吞异常：读失败退成"还没讲过"，不是错误页。
-    let roundTeachingView: NotebookProjection["roundTeachingView"] = null;
-    let roundTeachingFailure: string | null = null;
-    if (openRound) {
-      try {
-        const teachingResponse = await api.noteLearningRound.teaching({
-          meta: createRequestMeta(epochRef.current),
-          roundId: openRound.roundId,
-        });
-        if (teachingResponse.workspaceEpoch) epochRef.current = teachingResponse.workspaceEpoch;
-        roundTeachingView = unwrapGatewayResult(teachingResponse);
-      } catch (error) {
-        roundTeachingView = null;
-        roundTeachingFailure = gatewayErrorMessage(error);
-      }
-    }
-
-    // 记录那一发与上面两读同一纪律：自己吞异常。它读的是历史，
-    // 读失败最多是这一块不出现，不许把整篇笔记换成错误页。
-    let roundHistory: NotebookProjection["roundHistory"] = null;
-    try {
-      const historyResponse = await api.noteLearningRound.history({
-        meta: createRequestMeta(epochRef.current),
-        noteId: note.noteId,
-      });
-      if (historyResponse.workspaceEpoch) epochRef.current = historyResponse.workspaceEpoch;
-      roundHistory = unwrapGatewayResult(historyResponse);
-    } catch {
-      roundHistory = null;
-    }
-
-    // 核心路线是旧学习记录的附加页，只在用户打开旧记录，或从旧轮次明确返回时读取。
-    // 新笔记首屏不需要为已经折叠的旧册页再多发一个请求。
-    let routeCoverage: NotebookProjection["routeCoverage"] = null;
-    let routeCoverageFailure: NotebookProjection["routeCoverageFailure"] = null;
-    const shouldReadLegacyRouteCoverage = Boolean(activeNoteRef?.learningRoundId)
-      || legacyRouteCoverageRequestedForNoteRef.current === note.noteId;
-    if (shouldReadLegacyRouteCoverage) {
-      try {
-        const routeResponse = await api.noteLearningRound.route({
-          meta: createRequestMeta(epochRef.current),
-          noteId: note.noteId,
-        });
-        if (routeResponse.workspaceEpoch) epochRef.current = routeResponse.workspaceEpoch;
-        routeCoverage = unwrapGatewayResult(routeResponse);
-      } catch (error) {
-        routeCoverageFailure = gatewayErrorMessage(error);
-      }
-    }
-
-    return {
-      note,
-      source,
-      sourceFailure,
-      openRound,
-      openRoundContentMoved,
-      openRoundNoteChangeImpact,
-      roundHistory,
-      routeCoverage,
-      routeCoverageFailure,
-      roundTeachingView,
-      roundTeachingFailure,
-      objective: focus && focus.objective.sources.primaryNote?.noteId === note.noteId
-        ? focus.objective
-        : null,
-      noteObjective,
-    noteSubscription,
-      capabilities: unwrapGatewayResult(capabilityResponse),
-      activeGeneration: projection.activeGenerationSummary,
-      latestGenerationRun,
-    } satisfies NotebookProjection;
+    epochRef.current = workspaceEpoch;
+    return readNotebookProjection({
+      api, workspaceEpoch, noteId: activeNoteRef?.noteId,
+      readLegacyRoute: Boolean(activeNoteRef?.learningRoundId),
+      legacyRouteRequestedFor: legacyRouteCoverageRequestedForNoteRef.current,
+    });
   }, [activeNoteRef?.noteId, activeNoteRef?.learningRoundId]);
 
   // The pill returns to whatever opened this note: the library, the
@@ -4164,6 +3995,7 @@ const noteDocLive = useNoteDocLiveView(
           onChange={applyContent}
           disabled={!editable || leaf !== "reading" || learningView !== "body"}
           onImagePaste={imageUploads.queueFile}
+          imageUploads={imageUploads.uploads}
           onCaretBlock={onCaretBlock}
           // 41 §1.4：两个编辑态都要保留批注记号。落位只收**当前版本上仍核得上**的
           // 那一批（`currentNoteAnnotations`）——核不上的留在旧版记录里，不挪位置。

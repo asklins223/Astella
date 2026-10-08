@@ -1114,6 +1114,20 @@ export class DesktopGateway {
 
   async getRoomProjection(requestId?: string): Promise<RoomProjectionV1> {
     await this.transport.ensureConnected(requestId);
+    const cached = this.transport.roomProjectionCache?.workspaceEpoch === this.transport.workspaceEpoch
+      ? this.transport.roomProjectionCache
+      : null;
+    const headers = cached ? { "If-None-Match": cached.etag } : undefined;
+    const dashboardRequest = this.transport.request(
+      "/v2/learning-dashboard",
+      { method: "GET", ...(headers ? { headers } : {}) },
+      true,
+      false,
+      requestId,
+      undefined,
+      true,
+    );
+    void dashboardRequest.catch(() => undefined);
     let capabilityProjection: CapabilityProjectionV1 | null = null;
     try {
       capabilityProjection = await ns_source.getCapabilities(this.gatewayTransport, requestId);
@@ -1134,19 +1148,7 @@ export class DesktopGateway {
         activeGenerationSummaryError = roomActiveGenerationErrorReason(error);
       }
     }
-    const cached = this.transport.roomProjectionCache?.workspaceEpoch === this.transport.workspaceEpoch
-      ? this.transport.roomProjectionCache
-      : null;
-    const headers = cached ? { "If-None-Match": cached.etag } : undefined;
-    const result = await this.transport.request(
-      "/v2/learning-dashboard",
-      { method: "GET", ...(headers ? { headers } : {}) },
-      true,
-      false,
-      requestId,
-      undefined,
-      true,
-    );
+    const result = await dashboardRequest;
     if (result.status === 304) {
       if (!cached) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
       // Dashboard content is unchanged, but capability and recovery reads are

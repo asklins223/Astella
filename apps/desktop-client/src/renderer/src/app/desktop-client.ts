@@ -113,6 +113,8 @@ export function gatewayErrorMessage(error: unknown): string {
     // 没签同意不是"没权限"：那句会让人去问管理员，而这是他自己一分钟能解的事（doc 34 L13）。
     case "ai_consent_required":
       return "还没签署 AI 使用同意，内容不会离开这台电脑。在设置页的「AI 数据同意」里签一下就恢复。";
+    case "ai_data_policy_denied":
+      return "外部 AI 已关闭。请在「AI 数据同意」中开启「允许发送到外部模型服务」后继续。";
     case "stale_workspace":
       return "工作区已经变化，请重新加载当前学习队列。";
     case "conflict":
@@ -235,6 +237,7 @@ const BLOCKED_GATEWAY_CODES = new Set([
   "auth_required",
   "reauth_required",
   "ai_consent_required",
+  "ai_data_policy_denied",
   "forbidden",
   "feature_disabled",
   "api_untrusted",

@@ -1078,6 +1078,7 @@ export const gatewayErrorCodeValues = [
    * （`apps/api/src/modules/identity/ai-consent-gate.ts`），网关按 token 翻成这个码。
    */
   "ai_consent_required",
+  "ai_data_policy_denied",
   /**
    * 本机识别引擎起不来（子进程崩了 / 引擎文件读不到 / 模型没装好）。
    *

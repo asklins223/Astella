@@ -8,36 +8,49 @@ import type { SessionCredentialStore } from "./desktop-gateway-credentials";
  * Persists the bearer token between launches, encrypted with Electron's
  * `safeStorage` (Keychain on macOS, DPAPI on Windows, libsecret on Linux).
  *
- * Fail-closed: when the platform cannot encrypt — Linux without a keyring is the
- * real case — `available` is false and nothing is ever written, so the session
- * stays memory-only rather than landing on disk in the clear.
+ * Availability is checked only when reading an existing credential or saving
+ * an explicitly remembered session. Even isEncryptionAvailable() can prompt on
+ * macOS, so constructing the store and taking runtime snapshots must not call it.
+ * Encryption failure keeps the session in memory; plaintext is never written.
  */
 export function createSessionCredentialStore(): SessionCredentialStore {
-  const filePath = resolve(app.getPath("userData"), "session-credential-v1.bin");
+  // The old macOS file belongs to the development Electron's Keychain key.
+  // It cannot be decrypted with the installed app's independent Astella key.
+  // Leave it for development; the installed app signs in once to create v2.
+  const filename = process.platform === "darwin" && app.isPackaged
+    ? "session-credential-packaged-v2.bin"
+    : "session-credential-v1.bin";
+  const filePath = resolve(app.getPath("userData"), filename);
   const temporaryPath = `${filePath}.tmp`;
 
-  let encryptionAvailable = false;
-  try {
-    encryptionAvailable = safeStorage.isEncryptionAvailable();
-  } catch {
-    encryptionAvailable = false;
+  let encryptionAvailable: boolean | undefined;
+  function checkEncryptionAvailable(): boolean {
+    if (encryptionAvailable !== undefined) return encryptionAvailable;
+    try {
+      encryptionAvailable = safeStorage.isEncryptionAvailable();
+    } catch {
+      encryptionAvailable = false;
+    }
+    return encryptionAvailable;
   }
 
   return {
-    available: encryptionAvailable,
+    get available(): boolean {
+      return encryptionAvailable !== false;
+    },
 
     hasStored(): boolean {
-      return encryptionAvailable && existsSync(filePath);
+      return encryptionAvailable !== false && existsSync(filePath);
     },
 
     async load(): Promise<string | null> {
-      if (!encryptionAvailable) return null;
       let encrypted: Buffer;
       try {
         encrypted = await readFile(filePath);
       } catch {
         return null;
       }
+      if (!checkEncryptionAvailable()) return null;
       try {
         const token = safeStorage.decryptString(encrypted);
         return token.trim() ? token : null;
@@ -50,7 +63,9 @@ export function createSessionCredentialStore(): SessionCredentialStore {
     },
 
     async save(token: string): Promise<void> {
-      if (!encryptionAvailable) return;
+      // Throw rather than report a successful save when no encrypted file was
+      // written; GatewayTransport then correctly keeps persistence in memory.
+      if (!checkEncryptionAvailable()) throw new Error("Session encryption unavailable");
       const encrypted = safeStorage.encryptString(token);
       await mkdir(dirname(filePath), { recursive: true });
       await writeFile(temporaryPath, encrypted, { mode: 0o600 });

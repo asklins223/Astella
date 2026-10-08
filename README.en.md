@@ -15,7 +15,7 @@ A desktop study room for personal learning. Turn material into notes, understand
 
 [中文](README.md) · [English](README.en.md) · [User and developer guide](docs/guide/README.md)
 
-Repository version: `v1.1.0` (shared by the server and desktop client)
+Repository version: `v1.1.1` (shared by the server and desktop client)
 
 </div>
 
@@ -177,8 +177,9 @@ Development PostgreSQL uses the external volume `astella-dev_dev_postgres_data`.
 For a first verification, install package dependencies and build the desktop output:
 
 ```bash
+npm ci
 for dir in packages/shared packages/card-generation packages/agent-core packages/agent-host packages/ai-quality apps/api workers/ai-worker apps/desktop-client; do
-  (cd "$dir" && npm ci) || break
+  (cd "$dir" && npm ci) || exit 1
 done
 make desktop-client-build
 make verify

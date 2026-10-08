@@ -158,6 +158,7 @@ const PERMANENT_VOICE_REJECTIONS = new Set([
   // 2026-09-23 起"没签同意"从 `forbidden` 里分了出来（专用码 `ai_consent_required`）；
   // 它同样永久，且**必须跟着进这张表**——否则那次拆分正好把"不再重试"这件事弄丢。
   "ai_consent_required",
+  "ai_data_policy_denied",
   "api_untrusted",
   "unsupported_contract",
 ]);

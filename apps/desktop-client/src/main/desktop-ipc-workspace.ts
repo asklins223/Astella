@@ -563,7 +563,7 @@ installHandler(DESKTOP_IPC_CHANNELS.workspaceList, runtimeInputSchema, options, 
     return workspace;
   }, (output) => safeWorkspaceEpoch(output), workspaceContextSchema);
 
-  // 设置页的「AI 数据同意」分区。写入是 Owner 专属（服务端 requireOwner 收口），
+  // 设置页的「AI 数据同意」分区。每个人保存自己的账号授权与外发选择，
   // 读回的是服务端当前状态，因此投影与界面不会各自维护一份同意状态。
   channel(DESKTOP_IPC_CHANNELS.workspaceAiSettingsGet, runtimeInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "settings.section");
