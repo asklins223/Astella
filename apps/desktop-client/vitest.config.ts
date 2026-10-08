@@ -31,10 +31,14 @@ function prosemirrorResolve() {
  * 或只跑那几个文件）全部通过。这种"随机的红"会让人误以为改动破坏了东西——
  * 本轮回归就为此多花了几轮排查时间。
  *
- * 这里把超时放宽到 15s：**它不隐藏逻辑失败**——真正卡死的用例照样会失败，只是晚 10 秒；
+ * 这里把超时放宽到 60s：**它不隐藏逻辑失败**——真正卡死的用例照样会失败，只是晚一些；
  * 它消除的只是"机器忙不过来"这类与代码无关的红灯。除此之外只有 `resolve.alias`
  * 是显式加进去的两条（见下面），测试环境本身仍由各文件顶部的
  * `@vitest-environment` 声明。
+ *
+ * 2026-10-08 再放宽（15s → 60s）：重渲染用例（阅读页对拍、编辑器跨视图往返）单跑
+ * 已要 10–11s，CI runner 上并行跑时越过 15s，v1.2.0 发布的首轮 CI 就因此红了 3 个
+ * 文件 17 条用例——全部是超时和它的后续连带（超时后 body 为空），与改动无关。
  */
 export default defineConfig({
   resolve: {
@@ -49,8 +53,8 @@ export default defineConfig({
   },
 
   test: {
-    testTimeout: 15_000,
-    hookTimeout: 15_000,
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
     /**
      * `waitFor` 的等待上限由 Testing Library 自己管（默认 1000ms），**不受**
      * `testTimeout` 影响——只调 vitest 超时，仍然会在机器忙时撞到它。
