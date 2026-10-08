@@ -4,202 +4,52 @@
 
 # Astella · 拾星笔记
 
-An AI-native knowledge system for self-directed learning. Start from material you actually want to understand, turn it into notes, understand and recall on demand inside the same note, and opt into learning cards and long-term review when it's worth it. Sources, practice evidence and the next step stay traceable. The desktop app is a paper study room with a Live2D companion sitting beside you.
+A desktop study room for personal learning. Turn material into notes, understand and recall it beside the original passage, and make cards for long-term review when needed. A Live2D companion can discuss what you are reading, find sources, create notes and edit the body at your request.
 
 [![Latest release](https://img.shields.io/github/v/release/asklins223/Astella)](https://github.com/asklins223/Astella/releases/latest)
 [![Electron 43](https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Fastify 5](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
 [![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![platforms macOS · Windows · Linux](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-lightgrey)](#quick-start)
 [![License MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-[中文](README.md) · [English](README.en.md) · [Guide docs/guide/en](docs/guide/en/overview.md)
+[中文](README.md) · [English](README.en.md) · [User and developer guide](docs/guide/README.md)
+
+Repository version: `v1.1.0` (shared by the server and desktop client)
 
 </div>
 
-![The home study room: room objects, a due-review slip and the companion](docs/guide/assets/home-room.jpg)
+![The home study room, review slip and companion](docs/guide/assets/home-room.jpg)
 
-> Not released yet; APIs and screens still move with each plan. Current state, confirmed capabilities and the things this project deliberately leaves out are in [PRODUCT.md](PRODUCT.md); visual and motion direction in [DESIGN.md](DESIGN.md).
+> Development and experience validation continue. Repository versions, release workflows and feature acceptance describe different states; downloadable assets are listed in [GitHub Releases](https://github.com/asklins223/Astella/releases). Product boundaries are in [PRODUCT.md](PRODUCT.md), and visual and interaction direction is in [DESIGN.md](DESIGN.md).
 
-## Table of contents
+## Learn from a note
 
-- [What problem it solves](#what-problem-it-solves)
-- [What you will see](#what-you-will-see)
-- [How it is put together](#how-it-is-put-together)
-- [Agent and the companion](#agent-and-the-companion)
-- [Quick start](#quick-start)
-- [Guide](#guide)
-- [Repository layout](#repository-layout)
-- [Everyday commands](#everyday-commands)
-- [Tests and CI](#tests-and-ci)
-- [Models, consent and data boundaries](#models-consent-and-data-boundaries)
-- [Versions and releases](#versions-and-releases)
-- [FAQ](#faq)
-- [Licensing and third-party material](#licensing-and-third-party-material)
-- [Where the project stands](#where-the-project-stands)
+A typical path is **capture material → write a note → use overview, recall or expansion → optionally make cards and review**. You can also discuss a topic with the companion and explicitly ask to save the discussion as a note.
 
-## What problem it solves
-
-The hard part of studying alone is **not knowing whether you actually understood it**. A file store keeps knowledge but never tells you how much of it is still trustworthy. Astella spreads that chain out onto paper you can operate:
-
-- **Grounded**: explanations, cards and annotations anchor back to the exact passage; sources stay read-only, notes are yours.
-- **Verifiable**: understanding practice (理解练习) tests comprehension by answering rather than by self-assessment, and every hint and every reveal along the way is kept.
-- **Resumable**: study records are kept per note version and against the original text, so a new version does not relocate old records, and the next step is visible.
-- **Optional long-term review**: learning cards and the due queue are a capability you choose, not a prerequisite for studying a note.
-
-The main line: **source → note → on demand in that same note — quick look (速看·读懂重点), recall (回想·想起一点), going further (往外学·发现关联), study records (学习记录) — and a selected sentence can be annotated (写批注), read back line by line (原句解读) or handed to the companion (发给伴星) → cards or long-term review when you decide**. These four bookmarks are independent; they are not forced into one round.
-
-## What you will see
-
-| Screen | What it carries |
+| Capability | What it does |
 | --- | --- |
-| Home study room | Fixed-camera room; desk, bookshelf, star window and rest corner hold real entries, companion seated alongside |
-| Source library | Capture and parsing state for text, Markdown, code and URL material |
-| Note pages | Three body modes — read (阅读) / edit (编辑) / source (源码); four bookmarks — quick look (速看), recall (回想), going further (往外学), study records (学习记录); results land back beside the passage you selected |
-| Learning cards and candidate review | Cards generated from a note with evidence seals, decided one by one: keep this one (保留这张), drop it (不保留), undo a decision (撤销决定), view the answer with its evidence (查看答案与证据); saving the kept batch (保存已保留的 N 张) puts them into the deck (卡组), and regenerate (重新生成学习卡) starts a fresh run |
-| Understanding practice and review queue | Understanding practice (理解练习), the practice result page (练习结果), due review and dispute correction |
-| Understanding star map | One roamable night sky holding real knowledge relations, read back per constellation and note |
-| Companion Center and conversation journal | Recent, conversations, diary, memory, discovery book, activity, persona; everyday talk goes through the short chat beside her |
-| Settings book | Account and spaces, members and invites, theme and motion, companion, AI data consent, data and maintenance |
+| Source library | Capture text, Markdown, code and URLs; inspect parsing state and source content |
+| Notes | Reading, editing and source views; autosaved working drafts and explicit saved versions; full-screen reading and editing, formulas, tables, Mermaid and links to library notes |
+| Study beside the text | Independent overview, recall, expansion and records; annotate a selection, request an explanation or send it to the companion; accept expansion drafts individually |
+| Companion authoring | Explicitly create an editable note with verified links to accessible library notes; insert, replace or delete text at the current cursor, selection or blocks |
+| Cards and practice | Generate candidates grounded in source evidence, review and accept them; understanding practice, results, due reviews and dispute correction |
+| Search and star map | Full-text lookup, source tracing, note relations and understanding state; return to related notes |
+| Dialogue and web citations | Short chat, on-device recognition and server-side speech; opt into account-level web search, then inspect and open sources through citation markers |
+| Continuing companionship | Conversation journal, diary, memory, persona, discovery bookmarks, reminders and cooperation methods; persona follows the account, concrete material and experiences stay scoped to the workspace |
+| Workspaces and settings | Personal and collaborative spaces, members, invitations, themes, motion, AI consent, export, updates and maintenance |
 
-![Sign-in paper: brand, a rainy desk, and the note that credentials are never read or sent by the companion](docs/guide/assets/login-gate.jpg)
+Study records retain the note version and passage used at the time. Generated results expose evidence or coverage. Recall self-ratings, formal answers and system assessment remain separate: practice alone does not prove mastery. Cards are optional, and note study entries have no fixed order.
 
-Directory rail, room-control island and global shortcuts (`Esc` home, `⌘/Ctrl+Enter` next step, `⌘K` search, `R` review, `G` star map) are documented in [Desktop client](docs/guide/en/desktop-client.md).
+Before editing, the companion synchronizes the local working draft and checks the version and original text. Affected paragraphs show progress and are temporarily locked; other paragraphs remain editable. Ordinary conversation and passage explanations do not automatically create notes or modify the body. Web search is off by default and still requires AI consent and egress permission. Exhausted search quota leaves the answer available with an honest indication that online verification failed.
 
-## How it is put together
+Screenshots show actual development windows with environment-specific titles and content; they do not establish acceptance of every state. See [Desktop client](docs/guide/en/desktop-client.md) and [Companion experience](docs/guide/en/companion-experience.md).
 
-The desktop app is a single window. The renderer has no Node access and no router library; everything goes through the main process to the local API. AI calls never happen on a request thread: the API only writes jobs, the worker claims them from PostgreSQL, and results and events come back onto the paper.
+## Quick start: local development
 
-```mermaid
-flowchart LR
-  subgraph client["Desktop client · Electron 43"]
-    R["Renderer React 19<br/>16 intents → 16 screens"]
-    M["Main process<br/>IPC contract / CRDT / artifacts / updater"]
-    R <--> M
-  end
-  subgraph local["Local Docker Compose"]
-    A["apps/api<br/>Fastify 5 · :4000"]
-    W["workers/ai-worker<br/>job consumer"]
-    P[("PostgreSQL 16<br/>migrator / api / worker roles")]
-    S["MinIO (optional)"]
-    T["edge-tts container"]
-  end
-  C["config/ai-platforms.json<br/>model profiles and capability slots"] --> W
-  M -->|HTTP + SSE + Cookie/CSRF| A
-  A -->|jobs / outbox| P
-  P -->|claim + lease| W
-  W -->|external model calls, gated by account consent| L["Model providers"]
-  W --> P
-  A --> T
-```
+Install Docker with Compose v2, Make and Node.js 22. Backend dependencies run in containers, while Electron runs on the host. Each package has its own npm lockfile.
 
-Three invariants worth knowing up front: **tenant isolation is held by `set_config` with read-back verification inside the transaction plus row-level security**; **every external model call passes the account-level consent gate**; **migrations run in one-shot containers — the API process never creates tables itself**. Details in [Architecture](docs/guide/en/architecture.md) and [API and data](docs/guide/en/api-and-data.md).
-
-## Agent and the companion
-
-This is the centre of gravity of the whole project, and the point where it diverges from "a note app with a chat box bolted on": **there is exactly one Agent execution mechanism, and the companion is the face that mechanism shows the user**. A capability started by a page button and a capability the companion chains together on its own share one turn kernel, one capability catalog, one governance regime and one kind of receipt.
-
-### One kernel, two entry points
-
-| Entry point | Who decides what to do | How it runs | What triggers it today |
-| --- | --- | --- | --- |
-| **Declarative request** | The button the user pressed has already picked the capability | No planning model is started; the capability is accepted and its receipt written in the same transaction | The four domain services: quick look, interactive explanation, going further, card generation |
-| **Goal advancement** | The companion, or a long-term goal, combines capabilities step by step | Kernel loop: assemble context → measure → send → execute tools → reduce receipts | "Hand it to the companion" in the bubble chat, the long-term goals page, the methods page |
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant U as User
-  participant C as Client · renderer + main
-  participant A as apps/api
-  participant D as PostgreSQL
-  participant W as ai-worker
-  participant P as Model
-  U->>C: say something / press a button
-  C->>A: astella.v1.* IPC → HTTP
-  A->>D: create run + write job (acceptance separated from execution)
-  W->>D: claim (120s lease, interactive slot)
-  W->>W: assemble context → measure the whole request → budget check
-  W->>P: send once it clears the governance gate
-  P-->>W: text deltas / tool calls
-  W->>D: store the response first, then run the capability (replay costs no more)
-  W->>D: event sequence +1 → pg_notify
-  D-->>A: LISTEN wake-up
-  A-->>C: SSE (turn.accepted / assistant.delta / agent.tool / action.proposed)
-  C-->>U: bubbles, task paper and the domain pages update together
-```
-
-The important trade-offs are written into the code instead of left to convention: `executeAgentStep` **saves the model response to the database before it runs any capability**, so a process that dies mid-step cannot pay twice on replay; every step commit takes the run row `FOR UPDATE` inside its transaction and checks the lease fence, so an expired worker gets a plain 409 and a stale result can never overwrite a newer one.
-
-### There is only one capability catalog
-
-`packages/shared/src/agent-capability-catalog.ts` is the single index: **56 capability declarations** (41 companion tools plus 15 goal / note / card / method / basic / external / delivery declarations), projected to 48 tools on the conversation surface and 10 on the goal surface, and a duplicate name throws on the spot; the JSON Schema each tool exposes to the model is derived from its zod schema, so "the shape the model sees" and "the shape the runtime validates" cannot drift apart.
-
-| Permission tier (visible in Settings) | Read | Reversible low-impact writes | Everything else | The 6 tools that must propose |
-| --- | --- | --- | --- | --- |
-| Read-only | allowed | blocked | blocked | propose, wait for confirmation |
-| Guided (default) | allowed | done directly | confirm first | propose, wait for confirmation |
-| Full | allowed | done directly | done directly | **still** propose, wait for confirmation |
-
-```mermaid
-sequenceDiagram
-  participant W as ai-worker
-  participant A as apps/api
-  participant U as User
-  W->>A: create the proposal (tool → waiting_confirmation, run → waiting_for_confirmation)
-  A-->>U: SSE action.proposed: goal, impact and the confirm button laid out directly
-  U->>A: POST /companion/proposals/:id/decision
-  A->>W: execute only if the decision came back approved
-  W-->>U: action.decision + the artifact lands on the appropriate piece of paper
-```
-
-### Context is a ledger, not an unlimited bag
-
-```mermaid
-flowchart LR
-  S["Source assembly<br/>required items overflow → throw"] --> M["Measure the whole request<br/>tool definitions · images · reasoning handles"]
-  M --> B{"Budget check<br/>B_hard = min(C−O, I) − M<br/>trigger 0.80 / target 0.60"}
-  B -->|within budget| SEND["Send as is"]
-  B -->|over the hard cap| REJ["Refuse, never degrade silently"]
-  B -->|at the trigger line| CMP["Compact"]
-  CMP --> FOLD["Companion: lossless coverage fold<br/>fold only whole messages a summary fully covers"]
-  FOLD --> R["Receipt: remainingFromSeq<br/>the model can call companion_read_history for the original text"]
-```
-
-Compaction does not cause amnesia: the folded range and every stretch it leaves uncovered are stored as receipts, and cooldowns and attempt counts persist per `(session, source hash, provider, model)`. **What is measured is the entire request about to be sent**; images count at a 1500-token floor, and kinds that cannot be measured go into `unmeasured` rather than being pretended to be 0.
-
-### State vocabulary, and failure is not disguised
-
-`run`: `queued → running → waiting | paused → completed | failed | cancelled`; `operation` has `outcome_unknown`, **which only an authoritative event may rewrite**. The product side keeps the same rule: when Live2D fails to load, the model is hidden and a dismissible note is left in its place — no placeholder blob stands in for her; a TTS failure never swallows the text; the bubble says "this one did not get done" instead of spinning; the guided walkthrough marks itself a teaching example and creates no real note, task or study record.
-
-### The companion as a product
-
-She appears in four places with non-overlapping duties — **this is the step where readers of this product most easily go wrong**:
-
-| Place | What it is for | What it is not for |
-| --- | --- | --- |
-| **Bubble chat (气泡轻聊)** | Talking, voice, editing a recognition draft until it is right, then sending | Carrying task state |
-| **What is on hand (手边的事, the task bubble)** | What a task is doing and what it still needs; change the requirement / park it / continue / stop; keep this collaboration as a method | The full record (it says "go to the journal for the full record") |
-| **Our conversation journal (我们的对话手记)** | All dialogue / her reflections / what you handed her / awaiting confirmation | Typing or sending here |
-| **Companion Center (伴星中心)** | Recent / conversations / diary / memory / discovery book / activity / persona: view, search, decide, correct, withdraw | Live replies and proposal decisions |
-
-A few product calls worth stating on their own: **persona and speaking style follow the account, while concrete material and shared history stay isolated per space**; **growth shows up as "one explanation fewer, a smoother handoff", never as experience points, relationship levels or usage counts**; **memory admission is picky** (confidence ≥ 0.7, a quote from the user's own words is mandatory, volatile facts are never recorded, a source that was rejected is not reused); **proactive intervention is governed by one deterministic policy shared by two processes**, so reminders you booked and completions that are waiting for you are not rate-limited, and a "at most N per day" quota control was removed; **moment animations play only on real events**, and lip sync is driven by decoded audio amplitude and layered separately from expressions.
-
-Written out in full here: [Unified Agent runtime (technical)](docs/guide/en/agent-runtime.md) and [The companion experience (product design)](docs/guide/en/companion-experience.md).
-
-## Quick start
-
-### Prerequisites
-
-| Requirement | Notes |
-| --- | --- |
-| Docker + Compose v2 | Database, API, worker and edge-tts all run in containers; no local PostgreSQL needed |
-| Make | Drives compose and the release flow |
-| Node.js 22 | Used by the desktop client and package scripts; images are pinned to `node:22.11.0-alpine3.20`, and the repo has no `.nvmrc` or `engines` field |
-| `npm ci` per package | Every package keeps its own lockfile; there is no workspace-root install |
-
-### 1. Configure and start the backend
+### 1. Configure
 
 ```bash
 git clone https://github.com/asklins223/Astella.git
@@ -207,178 +57,141 @@ cd Astella
 cp .env.example .env
 ```
 
-The dev stack ships its own database defaults. The one value you must set is `EDGE_TTS_AUTH_TOKEN` (commented out in `.env.example`; uncomment it — it has to match on both the edge-tts and API sides). Then:
+Fill these four values in `.env`. The API and desktop main process read the same local configuration:
+
+| Variable | Value |
+| --- | --- |
+| `EDGE_TTS_AUTH_TOKEN` | A random token shared by the API and edge-tts |
+| `ASTELLA_DESKTOP_PAIRING_KEY_ID` | A local identifier, such as `local-dev` |
+| `ASTELLA_DESKTOP_PAIRING_SECRET` | A random base64url key containing at least 32 decoded bytes |
+| `ASTELLA_DOMAIN_SCHEMA_REVISION` | A matching nonempty revision on both sides, such as `local-dev-v1` for local development |
+
+Generate a pairing key and put the output in the matching variable:
 
 ```bash
-make up
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
-`make up` removes last round's one-shot containers, builds the dev images (source mounted, hot reload on), creates the protected database volume, and waits for `role-bootstrap` and `migrate` (plus `minio-init` in storage mode). Migrations run on every start, not only the first.
+For external AI, supply credentials according to the capability mappings in [config/ai-platforms.json](config/ai-platforms.json), then sign AI consent inside the app. Both dialogue slots currently point to DeepSeek through OpenCode Go; search reuses the BigModel credential, while speech and embeddings have separate configuration. See [Development](docs/guide/en/development.md) and [Model pipeline](docs/guide/en/ai-and-companion.md).
 
-### 2. Create a local demo account
+### 2. Start the backend and development account
 
 ```bash
+make config
+make up
 make seed-demo
 ```
 
-```text
-email:    owner@astella.local
-password: <set-a-private-owner-password>
-```
-
-Development only: `SEED_DEMO_DATA` fails closed under `NODE_ENV=production`, where the owner account is created by the `seed-owner` one-shot during release.
-
-### 3. Start the desktop client
+`make up` builds hot-reload images, enables local MinIO and waits for role bootstrap, migrations, grants and storage initialization to exit. It does not inspect the container exit code printed by `docker wait`, so check readiness and initialization logs as well:
 
 ```bash
-make desktop-client-install   # first run: npm ci
-make desktop-client-dev       # electron-vite dev, exposes CDP port 9222
+curl -fsS http://127.0.0.1:4000/health
+curl -fsS http://127.0.0.1:4000/ready
+docker compose -p astella-dev -f docker-compose.dev.yml logs role-bootstrap migrate role-grants
 ```
 
-Sanity checks:
+`make seed-demo` creates **`owner@astella.local` / `astella_owner`** for local development. This target does not pass `.env` values for `OWNER_EMAIL` or `OWNER_PASSWORD` into the seed container; an existing account is neither re-seeded nor given a new password. Production uses an explicit `seed-owner` step.
+
+### 3. Start Electron
 
 ```bash
-curl -s http://127.0.0.1:4000/health   # liveness (deliberately does not touch the DB)
-curl -s http://127.0.0.1:4000/ready    # readiness (core tables + migration floor)
+make desktop-client-install
+make desktop-client-dev
 ```
 
-Host ports: API `4000`, PostgreSQL `5432`, MinIO `9000/9001`, worker metrics `9100`, edge-tts `8088` — all bound to loopback by default. Full walkthrough and hot-reload mechanics: [Development environment](docs/guide/en/development.md).
+The default API origin is `http://127.0.0.1:4000`; development opens CDP on port `9222`. Backend host ports bind to loopback by default: API `4000`, PostgreSQL `5432`, MinIO `9000/9001`, Worker metrics `9100`, edge-tts `8088`.
 
-## Guide
+Packaged HTTPS connections, tag deployments and remote object storage are documented in [Server deployment](docs/guide/en/deployment.md). Their connection and storage modes differ from local development.
 
-Detail is split by topic under [`docs/guide/`](docs/guide/), one English page per Chinese page:
+## Architecture and data boundaries
 
-| Page | What it covers |
+```mermaid
+flowchart LR
+  R["Electron renderer · React"] <--> M["Main process · IPC / documents / updates"]
+  M -->|"HTTP / SSE / WebSocket"| A["Fastify API"]
+  A <--> D[("PostgreSQL · domain data / jobs / outbox")]
+  D <--> W["AI Worker"]
+  C["Model profiles and capability slots"] --> W
+  W -->|"Consent and governance"| P["Model / search services"]
+  A --> T["TTS service"]
+  A <--> S["Object storage · local MinIO or remote S3"]
+  W <--> S
+```
+
+- **Desktop boundary:** one application window, no Node access in the renderer, and API credentials in the main process. Business calls use IPC; remote object transfers use signed URLs in the main process.
+- **Workspace isolation:** restricted API and Worker database roles, verified actor/workspace transaction context and database RLS. A separate container applies migrations.
+- **Account-level AI consent:** an Owner cannot sign for another member; switching workspace does not require another signature. Models are server-configured; there is no personal key or provider settings UI.
+- **Background execution:** the Worker consumes dialogue and generation jobs. The API also handles speech synthesis and learning-run outbox processing. Execution deadlines and crash-recovery leases are separate; running long jobs renew their lease.
+
+The shared Agent turn kernel lives in `packages/agent-core`, its persistence and governance host in `packages/agent-host`, and shared capability declarations are projected onto conversation and goal surfaces. Buttons submit capabilities directly; the companion can compose them to pursue a goal. Saved receipts determine whether results are complete. See [Agent runtime](docs/guide/en/agent-runtime.md) for permissions and recovery limits.
+
+Short chat handles dialogue; the task bubble tracks ongoing work. The conversation journal gathers history and pending decisions, and Companion Center lets you inspect conversations, diary, memory and persona. Its conversation tab has no send entry. Six learning actions still require proposal confirmation in full permission mode; read-only mode blocks writes.
+
+## Guide and repository
+
+| Topic | Document |
 | --- | --- |
-| [Overview](docs/guide/en/overview.md) | The problem, capabilities that exist today, runtime shape, permission model, deliberate non-goals |
-| [Architecture](docs/guide/en/architecture.md) | Processes and packages, the path of a request and of an AI turn, data groups, where to change what |
-| [Development](docs/guide/en/development.md) | Clean checkout to a running window, hot reload, ports, the database volume, daily commands |
-| [Desktop client](docs/guide/en/desktop-client.md) | Routerless page machine, rail and room island, Live2D companion, notes and CRDT, settings, source guards |
-| [Unified Agent runtime (technical)](docs/guide/en/agent-runtime.md) | The turn kernel, the capability catalog and tool surfaces, permission tiers and the proposal round trip, context governance, persistence and the state vocabulary, wired up today vs backend-only |
-| [The companion experience (product design)](docs/guide/en/companion-experience.md) | Why she is here, the split across the four entry points, the capability list, presence and silence, continuing identity, memory and diary, the growth loop, honest boundaries |
-| [API and data](docs/guide/en/api-and-data.md) | Modules and routes, sessions / CSRF / rate limits, RLS and the three roles, migrations and the job queue, SSE, admin panel |
-| [Models and the worker pipeline](docs/guide/en/ai-and-companion.md) | Worker and job types, model profile configuration, provider protocols and reasoning tiers, measurement and compaction, evidence sealing, voice, quality layer |
-| [Testing and quality](docs/guide/en/testing-and-quality.md) | How each package tests, the integration split, guards, what CI actually runs and no longer runs |
-| [Operations](docs/guide/en/operations.md) | The three compose files, variable groups, two version lines, Alpha and backup/restore, monitoring reality |
-| [FAQ and troubleshooting](docs/guide/en/faq-and-troubleshooting.md) | Symptom → cause → fix |
+| Features, learning paths and permissions | [Overview](docs/guide/en/overview.md) |
+| First run and development commands | [Development](docs/guide/en/development.md) |
+| Window, notes, full-screen mode and settings | [Desktop client](docs/guide/en/desktop-client.md) |
+| Execution, permissions and context | [Agent runtime](docs/guide/en/agent-runtime.md) |
+| Dialogue, voice, memory and cooperation | [Companion experience](docs/guide/en/companion-experience.md) |
+| Processes and packages | [Architecture](docs/guide/en/architecture.md) |
+| Routes, authentication, migrations and data | [API and data](docs/guide/en/api-and-data.md) |
+| Models, search, budgets and queues | [AI and Worker](docs/guide/en/ai-and-companion.md) |
+| Tests, guards and CI | [Testing and quality](docs/guide/en/testing-and-quality.md) |
+| Releases, backups and deployment | [Operations](docs/guide/en/operations.md) · [Server deployment](docs/guide/en/deployment.md) |
+| Troubleshooting | [FAQ](docs/guide/en/faq-and-troubleshooting.md) |
 
-Chinese original: [docs/guide/zh/](docs/guide/zh/overview.md)
-
-## Repository layout
+The [guide index](docs/guide/README.md) also links Chinese pages. Current plans and acceptance evidence are indexed in [docs/plans/learning-companion/README.md](docs/plans/learning-companion/README.md).
 
 ```text
-.
-├── apps/
-│   ├── api/                  # Fastify 5 API: auth, domain modules, Drizzle migrations
-│   └── desktop-client/       # Electron client (main / preload / renderer)
-├── workers/
-│   └── ai-worker/            # AI generation, source parsing, companion and background jobs
-├── packages/
-│   ├── shared/               # Contracts, Zod schemas, single DB schema source, security utils
-│   ├── agent-core/           # Turn execution, context assembly, budget and compaction (no DB/UI/provider imports)
-│   ├── agent-host/           # Database host ports and AI governance policy for that core
-│   ├── card-generation/      # Card domain service (runs, events, evidence seal)
-│   └── ai-quality/           # Versioned golden set and layered gates (PR gate)
-├── config/
-│   └── ai-platforms.json     # The only model and capability-slot configuration
-├── infra/
-│   ├── postgres/             # Roles, grants and init scripts (roles.sql is the grant authority)
-│   ├── prometheus/           # Scrape config and alert rules
-│   ├── backup/               # Encrypted backup and restore rehearsal
-│   └── minio/                # Object storage notes
-├── docs/
-│   ├── guide/                # This manual (zh default / en twin, assets captured from the live window)
-│   ├── plans/                # Plans; the live contract index is under learning-companion/
-│   └── testing/  ops/  implementation/
-├── .github/workflows/        # CI and desktop packaging / release
-├── docker-compose.dev.yml    # Local development (default, mounted sources + hot reload)
-├── docker-compose.yml        # Production image build and runtime
-├── docker-compose.alpha.yml  # Alpha overlay (monitoring, backups) — layer it on the file above
-├── Makefile                  # Everyday commands
-└── release/                  # Two version lines and the release manifest
+apps/api/                  API, domain modules and database migrations
+apps/desktop-client/       Electron main / preload / renderer
+workers/ai-worker/         Dialogue, generation, parsing and background jobs
+packages/shared/           Contracts, capability catalog and database schema
+packages/agent-core/       Turns, context, budgets and compaction policies
+packages/agent-host/       Database host, governance and persistence
+packages/card-generation/  Card-generation domain services
+packages/ai-quality/       Offline quality evaluation
+config/                    Models and capability-slot configuration
+infra/                     Database roles, deployment, monitoring and backups
+release/                   Unified version and release notes
 ```
 
-## Everyday commands
+## Commands and validation
 
-| Command | What it does |
+| Command | Purpose |
 | --- | --- |
-| `make up` | Start the dev environment (MinIO included, mounted sources, hot reload) |
-| `make seed-demo` | Create the local demo account |
-| `make logs` / `make down` | Follow logs / stop while keeping data |
-| `make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB` | Delete the dev database volume and restart, only with the explicit confirmation value |
-| `make rebuild` / `make config` / `make clean-init` | Rebuild without cache / validate config / remove exited init containers |
-| `make shell-api` / `make shell-worker` | Drop into a container |
-| `make desktop-client-dev` / `-dist` | Develop the client / build installers (`-dist-arm64` `-dist-win` `-dist-linux` `-dist-mac`) |
-| `make verify` | Full local gate: contract scripts plus typecheck and tests for seven packages |
-| `make test-postgres` / `make disposable-db` | Real-database integration suites / a throwaway test database |
-| `make release-check` / `make release-manifest` | Pre-release checks (coverage and skip/todo gates) / generate the release manifest |
-| `make alpha-up` / `-down` / `-backup` / `-restore-verify` / `-status` / `-metrics` | Alpha environment patrol, backup and restore |
+| `make up` / `make down` / `make logs` | Start development, stop while retaining the database, inspect logs |
+| `make rebuild` | Rebuild images without cache; follow with `make up` |
+| `make desktop-client-dev` / `make desktop-client-dist` | Development window / verify and package the host platform |
+| `make verify` | Version and repository contracts, configuration/schema guards, backup-script tests, typechecks and tests across seven packages |
+| `make disposable-db DISPOSABLE_DB=astella_it` | Recreate a disposable database; deletes an existing test database with that name |
+| `make test-postgres COMPANION_HOME_TEST_DB=astella_it` | Run real PostgreSQL integration suites explicitly |
+| `make coverage-gate` / `make skip-todo-gate` | Separate coverage and skip/todo gates |
+| `make release-check` | Release inputs, verify, coverage and release-manifest checks; excludes the skip/todo gate |
 
-The dev database is the fixed external volume `astella-dev_dev_postgres_data` (compose project `astella-dev`): neither `make down` nor `docker compose down -v` removes it — only the confirmed command above does. On a machine where the project name was changed, the old `astella-dev_dev_postgres_data` volume is not picked up automatically: check `docker volume ls` for where the data actually is before deciding to migrate or reinitialise.
+Development PostgreSQL uses the external volume `astella-dev_dev_postgres_data`. `make down` and Compose `down -v` retain it; `make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB` permanently deletes it and restarts the stack. This protection does not cover the MinIO volume. Back up the database and long-lived objects separately.
 
-## Tests and CI
-
-Install and test per package:
+For a first verification, install package dependencies and build the desktop output:
 
 ```bash
-(cd packages/shared && npm ci && npm run typecheck && npm test)
-(cd apps/api        && npm ci && npm run typecheck && npm test)
-(cd workers/ai-worker && npm ci && npm run typecheck && npm test)
-(cd apps/desktop-client && npm ci && npm run typecheck && npm test)
+for dir in packages/shared packages/card-generation packages/agent-core packages/agent-host packages/ai-quality apps/api workers/ai-worker apps/desktop-client; do
+  (cd "$dir" && npm ci) || break
+done
+make desktop-client-build
+make verify
 ```
 
-Two things that bite:
+Ordinary `npm test` does not discover `*.integration.ts`; real-model and S3 probes are separate. Use the desktop package's `npm run typecheck`, since the references-only root configuration is insufficient. See [Testing and quality](docs/guide/en/testing-and-quality.md) for CI, releases and window checks.
 
-- `*.integration.ts` files are not matched by `npm test`; they need a real PostgreSQL and run through `make test-postgres` (preferably after `make disposable-db`).
-- The desktop root `tsconfig.json` only holds project references, so a bare `tsc --noEmit` may check nothing; use `npm run typecheck`.
+## Versions, releases and licensing
 
-CI (`.github/workflows/main-ci.yml`) now runs the lean flow that mirrors the local baseline: a `packages` matrix (shared / agent-core / agent-host / ai-quality, the last one also running `pr-gate`), `api`, `worker`, and `desktop` (build before test). The coverage gate, skip/todo gate, full real-database migration suites, production image build and scanning, and the backup/restore drill left CI on 2026-10-06; the scripts are still in the repo and are run by `make verify` and `make release-check`. [Testing and quality](docs/guide/en/testing-and-quality.md) lists each gate and who now holds it.
+[release/version.json](release/version.json) is the only manually maintained source of product version and release notes. Edit `version` and `notes`, run `npm ci` at the root once, then `npm run release:prepare` to synchronize four product packages, lockfiles and the Chinese README version marker and preview release notes. Maintain the English README version text alongside it. An annotated `v<version>` tag triggers server CI/deployment and desktop releases.
 
-## Models, consent and data boundaries
+Desktop updates go directly to GitHub Releases. Packaging supports macOS, Windows and Linux; the current automated installer release covers macOS and Windows, while Linux can be packaged separately. macOS builds without an Apple certificate use ad-hoc signing and may need first-launch authorization. See [Server deployment](docs/guide/en/deployment.md) for credentials, migration rollback and object transfers.
 
-- **One place configures models**: `config/ai-platforms.json`. Platform entries describe gateway and protocol quirks; capability slots (`agent_turn`, `text_generation`, `companion_fallback`, `vision`, `embedding`, TTS) point at concrete models; API keys are `${ENV_VAR}` references whose values live only in `.env`.
-- **Declaration is truth**: context window, max output, vision support and reasoning levels are **model attributes**, written on `models`. An undeclared model falls back to provider defaults with one startup warning; a slot referencing an undeclared model is a blocking error in the admin panel. Nothing is probed at runtime.
-- **Consent is account-level**: external model calls are governed by the consent and data-egress policy the user signed, covering every space they can reach. The desktop client offers no per-user model or provider configuration screen.
-- **All calls go through the worker and the governance layer**: auditing records metadata only (`ai_audit_log` has a single writer), and timeouts are derived lease → handler → single provider call rather than hand-tuned.
-- Speech synthesis lives in the API (Qwen first, automatic degrade to edge-tts; a governance denial does not trigger degrade). On-device speech-recognition models are downloaded by the user in Settings and are not shipped inside the installer.
+Source code is licensed under [MIT](LICENSE). The bundled Live2D SDK, models and other assets have separate licenses and redistribution restrictions in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); brand assets are described in [assets/brand/README.md](assets/brand/README.md).
 
-See [Models and the worker pipeline](docs/guide/en/ai-and-companion.md).
-
-## Versions and releases
-
-Server and desktop share one product version. Maintain the version and update notes in [release/version.json](release/version.json), then run `npm run release:prepare` at the repository root to synchronize package versions and lockfiles and preview the GitHub release notes. Commit and push the corresponding annotated `v<version>` tag to publish; no workflow edits are needed.
-
-| Line | Held in | Tag |
-| --- | --- | --- |
-| Server stack | `release/version.json`, automatically synced into api / worker / shared `package.json` | `v*` |
-| Desktop client | The same `release/version.json`, automatically synced into desktop-client `package.json` | `v*` |
-
-`desktop-release.yml` publishes to GitHub Releases (draft first, flipped public once assets finish uploading). The client updater talks **straight to GitHub Releases, never through our own API**: macOS `dmg` + `zip`, Windows NSIS, Linux AppImage, artifact names pinned to the ASCII prefix `astella-`. Without an Apple certificate, macOS uses complete ad-hoc signing with a stable update requirement; users may still need to allow first launch in Privacy & Security.
-
-## FAQ
-
-- **Cannot log in**: run `make seed-demo` first in development. Production owners come from the `seed-owner` one-shot.
-- **No companion voice**: the engine is chosen in the `tts` section of `config/ai-platforms.json`; an API running directly on the host uses `http://127.0.0.1:8088`, an in-compose API uses `http://edge-tts:8080`, and both sides need the same `EDGE_TTS_AUTH_TOKEN` — never point the host API at a Docker service name.
-- **`/ready` returns 503 or migrations look unrun**: migrations are executed by a one-shot container, so read `docker compose -f docker-compose.dev.yml logs migrate role-bootstrap`.
-- **Locked out after failed logins**: check `AUTH_RATE_LIMIT_*`; dev counts in memory, production counts in PostgreSQL, and a successful login resets the email counter only, never the IP one.
-- **Model call fails**: protocol versus base URL (Responses and chat/completions models cannot share one platform entry), model id and quota, and whether the slot's model is declared at all.
-- **Port already in use**: `API_PORT` moves the API; the dev stack also uses host `5432`, `9000/9001`, `9100` and `8088`.
-- **Titles inside the screenshots**: `docs/guide/assets/` shows real content from a local development database. They are live captures, not mockups.
-
-More in [FAQ and troubleshooting](docs/guide/en/faq-and-troubleshooting.md).
-
-## Licensing and third-party material
-
-This project is licensed under the **MIT license**; the full text is in [LICENSE](LICENSE).
-
-Third-party and asset licensing for what ships in the bundle is recorded separately in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md): Yjs / Hocuspocus, PIXI and the Live2D Cubism SDK, redistribution limits on the companion model (handled fail-closed when the model manifest is missing, so nothing is packaged), and the on-device speech-recognition models. External reference projects and their licenses are listed in [reference-projects/learning-companion/README.md](reference-projects/learning-companion/README.md). The brand icon and the naming-layer decision are explained in [assets/brand/README.md](assets/brand/README.md).
-
-## Where the project stands
-
-Unreleased, and in a "runs, still being polished" state.
-
-- **Trustworthy today**: source capture and parsing, notes with immutable versions, understanding practice and the review queue, retrieval and the understanding star map, workspaces and members, account-level consent and egress records, card generation and candidate review, and the companion's conversation / memory / diary / persona plus on-device speech recognition.
-- **Still being closed**: the real-window experience of those on-demand study flows on the note paper; full visibility of context folding to the model; one complete verified execution of memory consolidation; the long-term effect of the growth loop (no same-workload p95 comparison, the adaptation sample is only 4×8 turns, and one semantic negative sample is kept on record); the companion's guided walkthrough end to end on a fresh account, and voice after consent has been signed; one leftover test card still has no delete or archive entry.
-- **Deliberately not done**: per-user model and provider configuration screens, a transparent always-on-top desktop pet window, free camera and parallax roaming, self-service password reset (there is no mail channel).
-
-The live index of design rulings and acceptance status is [docs/plans/learning-companion/README.md](docs/plans/learning-companion/README.md) — this manual records where things stand and does not hand out work. Collaboration and layering conventions live in [AGENTS.md](AGENTS.md). When documentation and code disagree, code and the real window win — then fix the docs.
+Ongoing validation includes long-dialogue naturalness and waiting stability, context continuity after compaction, cross-day memory and the long-term effects of cooperation methods, real microphone use and packaged updates. Implemented code, passing tests and long-term effectiveness require different evidence; current limits are kept with the relevant plans and validation records.
