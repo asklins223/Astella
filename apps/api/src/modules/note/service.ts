@@ -12,6 +12,7 @@ import { refreshNoteObjectiveSearchProjections } from "../learning-objectives/se
 import { noteShelfStatesByNoteId } from "./shelf-state.ts";
 import { logger } from "../../lib/logger.ts";
 import { DomainError } from "@astella/shared";
+import { createPrivateNoteRecords } from "@astella/agent-host";
 
 /**
  * PERF-10: Chunked select helper for large IN arrays.
@@ -277,51 +278,27 @@ async function createNoteTx(
   titleWasProvided: boolean,
   sanitizedBlocks: ReturnType<typeof stripUploadingPlaceholders>,
 ): Promise<typeof notes.$inferSelect> {
-  const [row] = await tx
-    .insert(notes)
-    .values({
-      workspaceId,
-      title,
-      titleSource: titleWasProvided ? "manual" : "auto",
-      createdBy: userId,
-      // 批次 4.5：从这里建的笔记一律是「仅自己可见」。共享是一个需要单独点的动作，
-      // 所以它不应该是任何创建路径的副产物。导入与来源转笔记不走这里——那两条路
-      // 在入口上已经明示"放进共享空间即可外发"，它们建的是 `shared`。
-      shareScope: "private",
-    })
-    .returning();
+  const blocksWithAssets = await resolveImageAssetIds(tx, workspaceId, sanitizedBlocks);
+  const initialBlocks: NoteDocBlock[] = blocksWithAssets.map((b) => ({
+    type: b.type, content: b.content, ...(b.imageAssetId ? { imageAssetId: b.imageAssetId } : {}),
+  }));
+  const saved = await createPrivateNoteRecords(tx, { workspaceId, userId }, {
+    title, titleSource: titleWasProvided ? "manual" : "auto", blocks: initialBlocks,
+  });
 
   // P6 Journey：note 里程碑（同事务原子；无 active Journey 零开销）。
   await hookJourneyEntityCreated(tx, { workspaceId, userId }, {
     eventType: "note.created",
-    entityId: row.id,
+    entityId: saved.noteId,
   });
 
-  const [version] = await tx
-    .insert(noteVersions)
-    .values({
-      noteId: row.id,
-      workspaceId,
-      versionNo: 1,
-      contentJson: { blocks: sanitizedBlocks },
-      contentHash: computeContentHash({ blocks: sanitizedBlocks }),
-      createdBy: userId,
-    })
-    .returning();
-
   if (sanitizedBlocks.length) {
-    const blocksWithAssets = await resolveImageAssetIds(tx, workspaceId, sanitizedBlocks);
-    const initialBlocks: NoteDocBlock[] = blocksWithAssets.map((b) => ({
-      type: b.type,
-      content: b.content,
-      ...(b.imageAssetId ? { imageAssetId: b.imageAssetId } : {}),
-    }));
     // 批次 4.1：新建笔记就是文档的第一次拥有，快照从第一行起就存在，
     // 之后所有读取都走快照而不是从关系表猜。
     await applyNoteDocUpdate(
       tx,
-      { workspaceId, noteId: row.id, userId },
-      version.id,
+      { workspaceId, noteId: saved.noteId, userId },
+      saved.noteVersionId,
       (noteDoc) => {
         setNoteTitle(noteDoc, title, titleWasProvided ? "manual" : "auto");
         writeFragmentBlocks(noteDoc, initialBlocks);
@@ -330,11 +307,8 @@ async function createNoteTx(
     );
   }
 
-  await tx
-    .update(notes)
-    .set({ currentVersionId: version.id, updatedAt: sql`now()` })
-    .where(eq(notes.id, row.id));
-
+  const row = await tx.query.notes.findFirst({ where: and(eq(notes.id, saved.noteId), eq(notes.workspaceId, workspaceId), visibleNotesCondition(userId)) });
+  if (!row) throw new Error("note creation receipt missing");
   return row;
 }
 

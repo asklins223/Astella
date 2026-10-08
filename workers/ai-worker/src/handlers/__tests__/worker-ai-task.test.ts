@@ -113,6 +113,28 @@ test("可修复输出错误按声明预算由内核重试一次", async () => {
   assert.deepEqual(retryIndices, [0, 1]);
 });
 
+test("正常首次生成与获准重试各自保留完整的调用时间", async t => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 0 });
+  let calls = 0;
+  try {
+    const output = runWorkerAiTask({ ...taskOptions(), timeoutMs: 1000, maxModelCalls: 2, maxAutoRetries: 1,
+      execute: async () => {
+        calls++;
+        await new Promise(resolve => setTimeout(resolve, 600));
+        return calls === 1 ? { ok: false, class: "output_shape", message: "invalid json" }
+          : { ok: true, output: "repaired" };
+      },
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(calls, 1);
+    t.mock.timers.tick(600);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(calls, 2);
+    t.mock.timers.tick(600);
+    assert.equal(await output, "repaired");
+  } finally { t.mock.timers.reset(); }
+});
+
 test("embedding 步骤经公共内核执行、传递取消信号并保留空向量结果", async () => {
   let leaseChecks = 0;
   let calls = 0;

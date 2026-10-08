@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import { noteAnnotationV1Schema } from "@astella/shared/note-annotation-contracts";
@@ -7,6 +7,7 @@ import type { NoteLearningArtifactV1 } from "@astella/shared/note-learning-artif
 import { NoteAnnotationMark } from "../note-annotation-mark";
 import { NoteAnnotationSidePage } from "../note-annotation-side-page";
 import { ReadingBlockContent } from "../notebook-reading-block";
+import { noteInlineDisplayText } from "../note-reading-inline";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const date = "2026-10-02T00:00:00.000Z";
@@ -22,7 +23,97 @@ const artifact: NoteLearningArtifactV1 = { artifactId: id(5), noteId: id(2), not
   title: "声音的参考样本", subject: "零样本配音", caution: "依据笔记原文", outline: [], versionState: "current", createdAt: date };
 const props = (): ComponentProps<typeof NoteAnnotationSidePage> => ({ annotation, task: null, artifactTasks: [], artifactStarting: false,
   onAsk: vi.fn(), onCreateArtifact: vi.fn(), onOpenArtifact: vi.fn(), onRetry: vi.fn(), onSettings: vi.fn() });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+function stubHover() {
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("(hover: hover)"), media: query }));
+}
+
+it("原句跨强调与公式：连续掠过片段和角标时只有一张预览，始终停在同一句尾", () => {
+  stubHover();
+  vi.useFakeTimers();
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(270);
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(120);
+  const content = "对**电压** $U$ 和**电流** $I$，就可以定义。";
+  const excerpt = noteInlineDisplayText(content);
+  const item = { ...annotation, explanation: "123213", anchor: { ...annotation.anchor, endOffset: excerpt.length, excerpt } };
+  const onOpen = vi.fn();
+  const view = render(<div className="notebook-desk__scroll"><div className="note-transcript">
+    <ReadingBlockContent block={{ ordinal: 1, type: "paragraph", content }} mark={null} annotations={[item]}
+      onOpenAnnotation={onOpen} onDeleteAnnotation={() => <button>删掉这条</button>} />
+  </div></div>);
+  const paper = view.container.firstElementChild!;
+  vi.spyOn(paper, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 100, 700, 400));
+  const marks = [...view.container.querySelectorAll<HTMLElement>("[data-note-annotation-id]")];
+  expect(marks.length).toBeGreaterThan(4);
+  marks.forEach((mark, i) => vi.spyOn(mark, "getClientRects").mockReturnValue([
+    new DOMRect(140 + i * 35, 180, mark.classList.contains("note-annotation-badge") ? 17 : 35, 20),
+  ] as unknown as DOMRectList));
+  let last: HTMLElement | null = null;
+  let position: string | undefined;
+  for (const mark of [...marks, ...marks.toReversed(), marks[0]!]) {
+    if (last) fireEvent.mouseLeave(last, { relatedTarget: mark });
+    fireEvent.mouseEnter(mark, { clientX: 700, clientY: 195 });
+    const previews = view.queryAllByRole("tooltip");
+    expect(previews).toHaveLength(1);
+    const preview = previews[0]!;
+    expect(within(preview).getByRole("button", { name: "删掉这条" })).toBeTruthy();
+    position ??= preview.getAttribute("style")!;
+    expect(preview.getAttribute("style")).toBe(position);
+    act(() => vi.advanceTimersByTime(80));
+    expect(view.queryAllByRole("tooltip")).toHaveLength(1);
+    last = mark;
+  }
+  fireEvent.mouseLeave(last!);
+  fireEvent.mouseEnter(view.getByRole("tooltip"));
+  act(() => vi.advanceTimersByTime(200));
+  expect(view.queryAllByRole("tooltip")).toHaveLength(1);
+  expect(onOpen).not.toHaveBeenCalled();
+  fireEvent.scroll(paper);
+  expect(view.queryByRole("tooltip")).toBeNull();
+});
+
+it("多行原句从不同鼠标位置进入或键盘聚焦时，预览使用固定行锚点", () => {
+  stubHover();
+  vi.useFakeTimers();
+  const view = render(<div className="notebook-desk__scroll"><NoteAnnotationMark annotation={annotation}>声音配音</NoteAnnotationMark></div>);
+  const paper = view.container.firstElementChild!;
+  const mark = view.getByRole("button");
+  vi.spyOn(paper, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 100, 700, 400));
+  vi.spyOn(mark, "getClientRects").mockReturnValue([
+    new DOMRect(140, 150, 300, 24), new DOMRect(140, 180, 120, 24),
+  ] as unknown as DOMRectList);
+  fireEvent.mouseEnter(mark, { clientX: 200, clientY: 160 });
+  const position = view.getByRole("tooltip").getAttribute("style");
+  fireEvent.mouseMove(mark, { clientX: 230, clientY: 192 });
+  expect(view.getByRole("tooltip").getAttribute("style")).toBe(position);
+  fireEvent.mouseLeave(mark);
+  act(() => vi.advanceTimersByTime(200));
+  fireEvent.mouseEnter(mark, { clientX: 230, clientY: 192 });
+  expect(view.getByRole("tooltip").getAttribute("style")).toBe(position);
+  fireEvent.keyDown(mark, { key: "Escape" });
+  fireEvent.focus(mark);
+  expect(view.getByRole("tooltip").getAttribute("style")).toBe(position);
+  expect(mark.getAttribute("aria-describedby")).toBe(view.getByRole("tooltip").id);
+});
+
+it("快速切换不同批注时立即替换旧预览，旧离开计时不会关掉新批注", () => {
+  stubHover();
+  vi.useFakeTimers();
+  const second = { ...annotation, annotationId: id(99), explanation: "另一条解释" };
+  const view = render(<><NoteAnnotationMark annotation={annotation}>声音配音</NoteAnnotationMark>
+    <NoteAnnotationMark annotation={second}>另一句</NoteAnnotationMark></>);
+  const [first, next] = view.getAllByRole("button");
+  fireEvent.mouseEnter(first!);
+  fireEvent.mouseLeave(first!);
+  fireEvent.focus(next!);
+  expect(view.queryAllByRole("tooltip")).toHaveLength(1);
+  expect(view.getByRole("tooltip").textContent).toContain("另一条解释");
+  act(() => vi.advanceTimersByTime(200));
+  expect(view.getByRole("tooltip").textContent).toContain("另一条解释");
+  fireEvent.keyDown(next!, { key: "Escape" });
+  expect(view.queryByRole("tooltip")).toBeNull();
+});
 
 it("同一句的多条批注只占句尾角标，每条可独立预览、键盘打开，不增加选区文字或正文行", () => {
   const annotations = [1, 2, 3, 4].map(n => ({ ...annotation, annotationId: id(n + 10), explanation: `第 ${n} 条解释` }));

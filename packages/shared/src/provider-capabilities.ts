@@ -54,7 +54,11 @@ export interface ChatMessage {
 
 /** Chat 调用选项 */
 export interface ChatOptions {
+  /** Streaming adapters for Responses must preserve native calls, results and
+   * opaque reasoning handles rather than reinterpret them as ordinary chat. */
+  nativeAgentRequest?: AgentTurnRequest;
   temperature?: number;
+  /** Fallback without a model profile; configured providers use its declared output ceiling. */
   maxTokens?: number;
   model?: string;
   responseFormat?: "json_object" | "text";

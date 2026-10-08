@@ -112,6 +112,26 @@ afterEach(() => {
 });
 
 describe("笔记正文的本机草稿", () => {
+  it("同版本 AI 保存回执立即更新阅读投影，不产生本地脏内容或提交回声", async () => {
+    const seed = seedUpdate("同版本笔记", ["原来的正文"]);
+    const { docApi } = stubNoteDocApi({ seedFor: () => seed });
+    render(<Probe noteId={NOTE_ID} />);
+    await settle();
+    const update = peerUpdate(seed, { text: "伴星刚保存的新内容" });
+    act(() => window.dispatchEvent(new CustomEvent("astella:note-ai-edited", { detail: {
+      kind: "edited_note", noteId: NOTE_ID, noteVersionId: OTHER_NOTE_ID, operation: "append",
+      summary: "已追加到笔记末尾", update,
+    } })));
+    expect(body()).toContain("伴星刚保存的新内容");
+    expect(live?.dirty).toBe(false);
+    await act(async () => { await live?.flush(); });
+    expect(docApi.syncUpdate).not.toHaveBeenCalled();
+    act(() => window.dispatchEvent(new CustomEvent("astella:note-ai-edited", { detail: {
+      kind: "edited_note", noteId: OTHER_NOTE_ID, noteVersionId: OTHER_NOTE_ID, operation: "append", summary: "已追加", update: peerUpdate(seed, { text: "另一篇的内容" }),
+    } })));
+    expect(body()).not.toContain("另一篇的内容");
+  });
+
   it("停笔才落盘：连着敲的两下只写一次，卸载那一次也写", async () => {
     vi.useFakeTimers();
     const seed = seedUpdate();

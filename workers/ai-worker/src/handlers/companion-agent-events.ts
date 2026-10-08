@@ -121,6 +121,7 @@ export interface AgentRunMeta {
   turnInterpretation?: AgentTurnInterpretationV1;
   relatedGoals?: AgentAttentionObjectV1[];
   permissionLevel: CompanionAgentPermissionLevel;
+  webSearchEnabled?: boolean;
   stepCount: number;
   /** 未完成的唯一模型步骤；可在 lease reclaim 后用检查点继续。 */
   runningStepNo: number | null;
@@ -190,6 +191,7 @@ export async function readRunMeta(args: {
         relatedGoals: (row?.related_goals ?? []).map(goal => ({ kind: "agent_run" as const, id: goal.id, revision: goal.revision })),
         permissionLevel: row?.permission_level
           ?? (settings.success ? settings.data.permissionLevel : DEFAULT_SETTINGS.permissionLevel),
+        webSearchEnabled: settings.success && settings.data.webSearchEnabled === true,
         stepCount: Number(row?.step_count ?? 0),
         runningStepNo: row?.running_step_no == null ? null : Number(row.running_step_no),
         toolCallCount: Number(row?.tool_call_count ?? 0),

@@ -171,8 +171,7 @@ export async function runNoteDynamicArtifactGenerate(job: JobPayload): Promise<v
     provider: jsonArtifactProvider(provider, job, await loadAgentGenerationContext(job)),
     modelId: provider.modelId,
     maxModelCalls: 2,
-    // 内核先结束，再留出安全核对与落库的时间；不要让共享内核的 210s
-    // 默认值越过 Worker 的 120s 租约，被外层杀掉后重新计费整轮。
+    // 内核先结束，再留出安全核对与落库的时间；运行中由 Worker 持续续租。
     maxDurationMs: resolveNoteDynamicArtifactBudget().loopDeadlineMs,
     input: {
       drivingQuestion,

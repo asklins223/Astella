@@ -20,6 +20,7 @@ import {
 } from "../modules/note/service.ts";
 import { computeContentHash } from "../modules/note/content-hash.ts";
 import { docFromSnapshot, readNoteTitle } from "../modules/note/doc-fragment.ts";
+import { PgDialect } from "drizzle-orm/pg-core";
 // ─
 
 /**
@@ -64,6 +65,7 @@ function createMockExecutor(config: MockConfig = {}): any {
   let selectIdx = 0;
   let notesFindFirstIdx = 0;
   let noteVersionsFindFirstIdx = 0;
+  let createdNote: { id: string; versionId: string } | undefined;
 
   const insertReturning = config.insertReturning ?? [];
   const selectResult = config.selectResult ?? [];
@@ -120,13 +122,17 @@ function createMockExecutor(config: MockConfig = {}): any {
     }),
     query: {
       notes: {
-        findFirst: async () => config.notesFindFirstQueue
-          ? notesFindFirstQueue[notesFindFirstIdx++]
-          : config.notesFindFirst,
+        findFirst: async () => {
+          const row = config.notesFindFirstQueue ? notesFindFirstQueue[notesFindFirstIdx++] : config.notesFindFirst;
+          return createdNote && row ? { ...row, id: createdNote.id, currentVersionId: createdNote.versionId } : row;
+        },
         findMany: async () => [],
       },
       noteVersions: {
-        findFirst: async () => noteVersionsFindFirstQueue[noteVersionsFindFirstIdx++],
+        findFirst: async () => {
+          const row = noteVersionsFindFirstQueue[noteVersionsFindFirstIdx++];
+          return createdNote && row ? { ...row, id: createdNote.versionId, noteId: createdNote.id } : row;
+        },
         findMany: async () => config.noteVersionsFindMany ?? [],
       },
       noteBlocks: {
@@ -158,7 +164,17 @@ function createMockExecutor(config: MockConfig = {}): any {
       }
       return fn(mock);
     },
-    execute: async () => [],
+    execute: async (query: Parameters<PgDialect["sqlToQuery"]>[0]) => {
+      const compiled = new PgDialect().sqlToQuery(query);
+      if (compiled.sql.includes("astella_create_private_note_v1")) {
+        createdNote = { id: String(compiled.params[2]), versionId: String(compiled.params[3]) };
+        mock._createdNote = createdNote;
+        return [];
+      }
+      if (createdNote && compiled.sql.includes("SELECT id,current_version_id FROM notes"))
+        return [{ id: createdNote.id, current_version_id: createdNote.versionId }];
+      return [];
+    },
   };
 
   return mock;
@@ -193,7 +209,8 @@ describe("note/service createNote", () => {
     });
 
     assert.ok(result);
-    assert.equal(result!.note.id, NOTE_ID);
+    assert.equal(result!.note.id, mock._createdNote.id);
+    assert.equal(result!.version.id, mock._createdNote.versionId);
     assert.equal(result!.note.title, "手动标题");
     const storedDoc = mock._insertCalls.find((call: { data: { state?: Uint8Array } }) => call.data.state)?.data.state;
     assert.ok(storedDoc, "创建的正文必须带着标题一起写入共享文档");

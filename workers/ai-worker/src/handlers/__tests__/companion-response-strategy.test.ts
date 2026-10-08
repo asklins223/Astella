@@ -4,6 +4,7 @@ import { buildCasualFirstStepRequest } from "../companion-speculative-first-step
 import { companionResponseStrategy, COMPANION_KNOWLEDGE_REVIEW_V1, isCompanionExplanation } from "../companion-response-strategy.ts";
 import { companionTurnThinking } from "../companion-turn-thinking.ts";
 import { companionStepRuntimePolicy } from "../companion-step-plan.ts";
+import { COMPANION_DIALOGUE_CONTINUATION_GOAL_V1 } from "../companion-conversation-policy.ts";
 
 test("解释、混合与分类失败使用稳定参数，内部检查不冒充独立验证", () => {
   for (const attention of [{ intent: "question", toolUse: "none" },
@@ -27,6 +28,16 @@ test("闲聊预生成和正式闲聊使用同一参数，不附知识检查清�
   assert.equal(request.temperature, strategy.temperature);
   assert.equal(request.disableThinking, true);
   assert.ok(!request.systemPrompt.includes(COMPANION_KNOWLEDGE_REVIEW_V1));
+  assert.ok(request.systemPrompt.includes(COMPANION_DIALOGUE_CONTINUATION_GOAL_V1));
+  const policy = companionStepRuntimePolicy({ permissionLevel: "read_only", toolCount: 0,
+    stepBudget: 3, finalAnswerOnly: false, attentionIntent: "conversation" });
+  assert.ok(request.systemPrompt.includes(policy));
+  assert.ok(policy.includes(COMPANION_DIALOGUE_CONTINUATION_GOAL_V1));
+  for (const input of [{ attentionIntent: "question", toolCount: 0 },
+    { attentionIntent: "conversation", toolCount: 1 }, { attentionIntent: "task", toolCount: 0 }]) {
+    assert.ok(!companionStepRuntimePolicy({ ...input, permissionLevel: "read_only", stepBudget: 3,
+      finalAnswerOnly: false }).includes(COMPANION_DIALOGUE_CONTINUATION_GOAL_V1));
+  }
 });
 
 test("动作、控制与带读取的聊天保留工具执行档", () => {

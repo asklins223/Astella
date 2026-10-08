@@ -430,7 +430,8 @@ test("keeps Worker queue claims, leases, reaping, and pool context atomic on Pos
 
       await migrator`
         UPDATE public.jobs
-        SET started_at = clock_timestamp() - interval '10 minutes'
+        SET started_at = clock_timestamp() - interval '10 minutes',
+            lease_renewed_at = clock_timestamp() - interval '10 minutes'
         WHERE id = ${jobId}
       `;
       const reaped = await queue.reapStaleJobs(executorB, 120_000, queue.MAX_ATTEMPTS);
@@ -546,7 +547,8 @@ test("keeps Worker queue claims, leases, reaping, and pool context atomic on Pos
         }
         await migrator`
           UPDATE public.jobs
-          SET started_at = clock_timestamp() - interval '10 minutes'
+          SET started_at = clock_timestamp() - interval '10 minutes',
+              lease_renewed_at = clock_timestamp() - interval '10 minutes'
           WHERE id = ANY(${migrator.array(pendingIds)}::uuid[])
             AND status = 'running'
         `;

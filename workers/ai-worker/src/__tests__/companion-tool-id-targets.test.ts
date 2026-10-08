@@ -45,6 +45,10 @@ const PARAM_TARGETS: Readonly<Record<string, Readonly<Record<string, IdTarget>>>
     noteId: { table: "notes", column: "id" },
     noteVersionId: { table: "note_versions", column: "id" },
   },
+  companion_edit_note: {
+    noteId: { table: "notes", column: "id" },
+    noteVersionId: { table: "note_versions", column: "id" },
+  },
   companion_read_source: { sourceId: { table: "sources", column: "id" } },
   companion_open_note: { noteId: { table: "notes", column: "id" } },
   companion_open_card: { cardId: { table: "learning_cards_v2", column: "card_id" } },

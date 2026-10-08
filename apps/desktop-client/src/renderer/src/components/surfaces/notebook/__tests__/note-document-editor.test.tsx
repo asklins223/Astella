@@ -10,6 +10,7 @@ import type { NoteBodyMode } from "../note-document-mode";
 import { seedBlocksUpdate } from "../../../../test-support/note-doc-fixtures";
 import { noteOutline } from "../note-outline";
 import { noteSourceBlocks } from "../note-source-structure";
+import type { NoteAiRange } from "../../../companion/note-companion-editing";
 
 const docs: Y.Doc[] = [];
 function documentWith(...paragraphs: string[]) {
@@ -18,14 +19,16 @@ function documentWith(...paragraphs: string[]) {
   docs.push(doc);
   return doc;
 }
-async function mount(doc: Y.Doc, mode: NoteBodyMode = "source", disabled = false) {
+async function mount(doc: Y.Doc, mode: NoteBodyMode = "source", disabled = false, aiRanges: readonly NoteAiRange[] = []) {
   const ref = createRef<NoteMarkdownEditorHandle>();
   const onChange = vi.fn();
-  const props = { ref, fragment: doc.getXmlFragment("content"), initialMarkdown: "", onChange, disabled };
-  const view = render(<NoteDocumentEditor {...props} mode={mode} />);
+  const props = { ref, fragment: doc.getXmlFragment("content"), initialMarkdown: "", onChange, disabled, aiRanges };
+  let currentMode = mode;
+  const view = render(<NoteDocumentEditor {...props} mode={currentMode} />);
   await waitFor(() => expect(ref.current?.getMarkdown()).not.toBeNull());
   await waitFor(() => expect(view.container.querySelector(".cm-content")).not.toBeNull());
-  return { ...view, ref, onChange, mode: (next: NoteBodyMode, readonly = disabled) => view.rerender(<NoteDocumentEditor {...props} disabled={readonly} mode={next} />),
+  return { ...view, ref, onChange, mode: (next: NoteBodyMode, readonly = disabled) => { currentMode = next; view.rerender(<NoteDocumentEditor {...props} disabled={readonly} mode={next} />); },
+    lock: (ranges: readonly NoteAiRange[]) => { props.aiRanges = ranges; view.rerender(<NoteDocumentEditor {...props} mode={currentMode} />); },
     code: () => EditorView.findFromDOM(view.container.querySelector(".cm-content")!)!,
   };
 }
@@ -39,6 +42,45 @@ afterEach(async () => {
 });
 
 describe("三种正文视图共用真实编辑器与 Y.Doc", () => {
+  it("原生光标刚落下时按真实 DOM 位置读取，不等待编辑器的选区观察器", async () => {
+    const view = await mount(documentWith("甲乙丙丁戊己"), "live-preview");
+    view.ref.current!.focusPosition({ block: 0, offset: 0 });
+    const text = view.container.querySelector('.ProseMirror p')!.firstChild!;
+    const range = document.createRange(); range.setStart(text, 4); range.collapse(true);
+    window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(range);
+    expect(view.ref.current!.getPosition()).toEqual({ block: 0, offset: 4 });
+  });
+
+  it("AI区域在富文本和源码同时锁定，其他段落继续输入，解除后立即可编辑", async () => {
+    const doc = documentWith("锁定段落", "自由段落");
+    const view = await mount(doc, "source", false, [{ startBlock: 0, endBlock: 0, expectedBlocks: ["锁定段落"], label: "伴星正在改这段" }]);
+    await waitFor(() => expect(view.container.querySelector('.ProseMirror .note-ai-working')?.getAttribute('contenteditable')).toBe('false'));
+    expect(view.container.querySelector('.cm-line.note-ai-working')).not.toBeNull();
+    const before = view.code().state.doc.toString();
+    await act(async () => view.code().dispatch({ changes: { from: 1, insert: "不能写入" } }));
+    expect(view.code().state.doc.toString()).toBe(before);
+    await act(async () => view.code().dispatch({ changes: { from: before.trimEnd().length, insert: "可以写入" } }));
+    expect(view.ref.current!.getMarkdown()).toContain("自由段落可以写入");
+    await act(async () => view.lock([]));
+    await act(async () => view.code().dispatch({ changes: { from: 1, insert: "已解锁" } }));
+    expect(view.ref.current!.getMarkdown()).toContain("锁已解锁定段落");
+    expect(view.container.querySelector('.ProseMirror .note-ai-working')).toBeNull();
+  });
+
+  it("整篇删除、源码替换和富文本工具栏不能绕过 AI 锁", async () => {
+    const doc = documentWith("锁定段落", "自由段落");
+    const view = await mount(doc, "live-preview", false, [{ startBlock: 0, endBlock: 0, label: "伴星正在改这段" }]);
+    const before = view.ref.current!.getMarkdown();
+    await act(async () => { view.ref.current!.focusPosition({ block: 0, offset: 2 }); view.ref.current!.toggleHeading(2); });
+    expect(view.ref.current!.getMarkdown()).toBe(before);
+    view.mode("source");
+    await source(view, "整篇替换");
+    expect(view.ref.current!.getMarkdown()).toBe(before);
+    await act(async () => view.lock([]));
+    await source(view, "整篇替换");
+    expect(view.ref.current!.getMarkdown()).toContain("整篇替换");
+  });
+
   it("源码输入的 Wiki 别名存成笔记链接，转义写法与代码保持原文", async () => {
     const doc = documentWith("开始"); const view = await mount(doc);
     await source(view, '[[微积分|先看定义]] 和 \\[\\[字面]] 与 `[[代码]]`');

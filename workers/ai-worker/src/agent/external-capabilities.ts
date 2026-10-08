@@ -5,6 +5,7 @@ import type { AgentScopeV1 } from "@astella/shared/agent-contracts";
 import { logAICall, resolveAIGovernanceContext } from "../lib/governance.ts";
 import { readAgentPublicDocument } from "./public-document.ts";
 import type { AgentWorkerAdvanceStore } from "./store.ts";
+import { executeWebSearch } from "./web-search.ts";
 
 /** Only URLs in actual user messages grant read access; model and retrieved text do not. */
 export function requireUserDocumentUrl(url: string, userTexts: readonly string[]): string {
@@ -28,6 +29,10 @@ export async function executeExternalCapability(scope: AgentScopeV1, call: { nam
   userTexts: readonly string[], signal: AbortSignal, deps: ExternalCapabilityDependencies = {}) {
   const entry = externalAgentCapabilityManifest.find(item => item.definition.name === call.name);
   if (!entry) throw new AgentStoreError(400, "unknown_capability", "当前没有这项能力。");
+  if (call.name === "agent_web_search") {
+    const search = entry.argumentSchema.parse(call.arguments) as Parameters<typeof executeWebSearch>[1];
+    return executeWebSearch(scope, search, signal);
+  }
   const input = entry.argumentSchema.parse(call.arguments) as { url: string };
   const url = requireUserDocumentUrl(input.url, userTexts);
   signal.throwIfAborted();

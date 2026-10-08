@@ -2,6 +2,10 @@
 
 这是显式启用的付费网络测试，不被常规单测入口自动运行。只使用合成检索材料、测试图与虚构对话；不取真实笔记、照片或私人记忆，不打印凭据与明文推理。
 
+`companion-note-generation-routing-probe.ts` 核对速看、拓展草稿与纯聊天请求的分类边界，使用合成当前笔记与旧能力拒绝回复。以 `REAL_MODEL_BATCH=1` 显式运行，输出 `note-generation-routing-20261008.json`；它仅测试分类，不创建任务或读取真实账号数据。真实窗口生成与保存回执另见 `docs/testing/companion-note-generation-routing-2026-10-08.md`。
+
+`companion-note-authoring-probe.ts` 使用 `astella_note_authoring_*` 一次性库、合成知识讨论和一篇相关笔记，走真实模型的搜索、阅读、创建笔记与最终流式交付。显式设置 `REAL_MODEL_BATCH=1` 及受限 API/worker 连接后运行；夹具自动清理，结果写入 `note-authoring-live-20261008.json`。这是生产工具循环与持久化/交付管线验证，不包括 HTTP 提交、队列派发或 Electron 操作；真实窗口与失败样本另见 `docs/testing/companion-note-authoring-2026-10-08.md`。
+
 从 `workers/ai-worker` 运行，必须设 `REAL_MODEL_BATCH=1`：
 
 ```sh
@@ -84,3 +88,30 @@ REAL_MODEL_BATCH=1 LIVE_DIALOGUE_CANDIDATE_PLATFORM=tokenrhythm LIVE_DIALOGUE_CA
 [实施与验证记录](companion-integration-and-final-validation-2026-10-08.md) 覆盖来源尾部、长记忆与 embedding、断流后禁止重复生成、Responses 阶段、受限角色数据库回归、实际 HTTP/SSE 和当前仓库 Electron 窗口。Luna 的 20 个隔离话题四条件共 80 次对照已完成，发现无来源的时间/经历/当前状态断言，候选未采用；匿名评阅表仍是 unrated。试验档案已移除，不把失败候选列成待发布功能。DeepSeek Go 输出档案与 OpenCode 模型目录对齐为 384,000，思考模式省略无效温度；完整输出预留下的输入硬预算为 613,952 token。此次解锁后实际检查气泡/手记的超限输入保留、2499 字笔记选区送入模型、引用尾句展开与 SSE 保存一致性，发现并修复 selection 2400 字局部装配上限和确定性装配错误的重试。最终 Worker 单元 1484、实库 263、桌面相关 90、shared 合同 28 项及五包类型检查通过；这些结果不代表普通聊天自然度或等待稳定性已经通过。
 
 2026-10-08 后续还修复取消/接替回合的正文留档和 HUD 跨回合串文，取消事务只保存已提交增量，空正文不造消息，迟到完整生成不再补写。分类 v7 区分回复内创作 task/none 与项目数据操作；没有选区和来源读取的直接回复可使用非来源引号与引用排版；相邻人物对白不参与现实引用归属，真实引文与选区仍核对。引文一次纠正后仍不匹配则失败，不随额度耗尽降为成功。24 次分类控制单列；新增六次来源表达候选仍编造动作/感受而淘汰，表达诊断累计 406 次。实际连续拉链对话虽完成于约 2–3s，内容仍失败，不能把时延样本或结构回归当自然度通过。证据见上述实施记录。
+
+
+2026-10-08 拟人化后续：[输入分层与新模型初筛](dialogue-layer-diagnostic-and-model-screen-2026-10-08.md)完成 18 条 bare/protocol/full 定位请求，以及 Seed 2.1 Pro、Qwen 3.8 Max 各 6 条完整上下文初筛，累计表达诊断 436 次。现役裸聊也失误，支持优先筛表达模型，但不是唯一根因证明。两候选仍编造过程、时序或经历，均未采用。新增诊断单测与相关实验测试 13 项及 worker 类型检查通过；本轮没有新数据库/HTTP/原生窗口聊天验收。用户随后指定固定 deepseek-v4.1-flash，不再换模型；该决定覆盖前述筛选方向，已完成候选只作历史证据。后续在现役模型上调整输入与接话，再进入新话题连续验收。
+
+
+固定 DeepSeek 后追加六条当前交流锚点对照，保留完整历史与参数，只重附当前交流原话；仍有编造细节、旧题牵回和安排休息，未进入生产。累计表达诊断 442 次；15 项相关测试与 worker 类型检查通过，所有本轮批次退出。详细口径见上面的分层诊断记录。
+
+随后[连续接话指导验证](dialogue-continuous-guidance-validation-2026-10-08.md)完成 32 条新话题连续对照及 24 条窄纠正组件对照，累计表达诊断 498 次。后续回放模型实际正文，用户话语无附加输出约束；两候选仍出现无请求安排与无依据事实/亲身经验，均未采用。自动思考与完整回放的出网检查通过，17 项相关测试及 worker 类型检查通过。此阶段是固定意图、固定用户脚本的离线轨迹诊断，没有新增 HTTP/原生窗口验收，正式配置保持原状。
+
+```sh
+REAL_MODEL_BATCH=1 LIVE_DIALOGUE_CONTINUOUS_SUFFIX=unique-run node --import tsx src/live-tests/dialogue-continuous-probe.ts
+REAL_MODEL_BATCH=1 LIVE_DIALOGUE_CORRECTION_SUFFIX=unique-run node --import tsx src/live-tests/dialogue-correction-probe.ts
+```
+
+这两个入口固定 DeepSeek，各有 32/24 次物理调用上限；不会覆盖既有证据，也不会将评阅判据送入模型。它们保留的是已失败候选的可复现诊断，不是正式功能开关。
+
+用户追问原因后，[原因定位记录](dialogue-cause-localization-2026-10-08.md)补齐同 DeepSeek 的 none/0.9、none/0.2、low、high 共 24 次对照，再去掉剩余身份做六次。无系统提示、无历史的简历/练琴仍复现分析/帮助与补编细节；上游返回模型标识一致，实际推理用量不同。定位到当前调用链的正文生成，模型权重与 Go 处理机制仍未分离，不能称唯一底层根因。累计表达诊断 528 次，17 项相关测试和 worker 类型检查通过；正式配置没有改变。本轮同时纠正“一有建议就失败”的过宽判据，保留贴题关心与接管安排的区别。
+
+```sh
+REAL_MODEL_BATCH=1 LIVE_DEEPSEEK_MODE_SUFFIX=unique-run node --import tsx src/live-tests/dialogue-deepseek-mode-probe.ts
+```
+
+快速追加的三组 Go Chat/Responses 对照和第二条既有网关两项同版 Flash 核对均复现帮助/解释倾向，正式模型与配置未变；累计可观测表达请求 536 次。结果追加在原因定位记录。源码发现公共 HTTP helper 在 observer 内侧有重试，此前“物理调用上限”应按可观测 requester 调用上限理解，不能保证底层 HTTP attempt 总数；原始证据保留，不以计数证明内容改善。
+
+用户问能否修改后，[生成目标修复尝试](dialogue-generation-goal-attempt-2026-10-08.md)完成通用目标对照十二次、手工交流动作三次及相同动作配 low 三次。仍有评价/心理归因/编造/安排，三候选均未采用；18 个可观测请求中 16 条完成、两条错误未完成。17 项相关测试与 worker 类型检查通过，正式配置未变，未为失败能力诊断扩建分类器。累计可观测表达请求 554 次，不代表自然度改善。
+
+用户随后接受当前效果并要求启用：[正式启用记录](companion-formal-activation-2026-10-08.md)确认最小续接目标已移入正式 `companion-casual-policy-v2`，普通/预生成共用；主/备用均配置 DeepSeek v4.1 Flash，API/worker 已重载且健康。176 项相关测试与四包类型检查通过，普通与预生成容器构造检查退出 0。用户决定覆盖前述“小幅目标不采用”处置，不把旧失败数据改称通过；其余实验仍仅用于诊断，不再继续试调。没有新增模型调用。

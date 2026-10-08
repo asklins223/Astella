@@ -1,0 +1,129 @@
+/* Controls keep their DOM position; display:contents puts the save tray after the scroll in the ordinary book. */
+.room-chrome { display: contents; }
+.room-chrome[hidden] { display: none; }
+.hud-surface .notebook-desk__chrome { display: contents; }
+.hud-surface .notebook-desk__scroll { order: 1; }
+.hud-surface .notebook-desk__save-tray { order: 2; }
+
+/* The sheet is the whole scene. No enlarged binding, window frame or room chrome. */
+.desktop-app.hud-surface[data-notebook-fullscreen] .task-surface--notebook {
+  --notebook-focus-seat: clamp(180px, 20vw, 280px);
+  --notebook-focus-tool-top: 20px;
+  --notebook-focus-page-top: calc(var(--notebook-focus-tool-top) + 58px);
+  background: #fffbef;
+}
+/* Windows/Linux keep native caption buttons over the client area. Folded tools live below that entire band. */
+.desktop-app.hud-surface[data-notebook-fullscreen]:is([data-platform="win32"], [data-platform="linux"]) .task-surface--notebook {
+  --notebook-focus-tool-top: max(20px, calc(env(titlebar-area-height, 40px) + 12px));
+}
+.desktop-app.hud-surface[data-notebook-fullscreen] .task-surface--notebook::after,
+.desktop-app.hud-surface[data-notebook-fullscreen] .notebook-page-title { display: none; }
+.desktop-app.hud-surface[data-notebook-fullscreen] .task-surface--notebook .content.notebook-space {
+  /* Override both the left and right measured seat contracts for this full-sheet presentation. */
+  inset: 0 !important; margin: 0; padding: 0; width: auto; max-width: none; transition: none; transform: none !important;
+}
+.desktop-app.hud-surface[data-notebook-fullscreen] :is(.hud-rail, .room-control, .return-home, .window-drag-region) { display: none; }
+.desktop-app.hud-surface[data-notebook-fullscreen] .notebook-workspace__state { border: 0; border-radius: 0; box-shadow: none; padding-top: 100px; }
+.hud-surface .notebook-desk[data-fullscreen] { padding: 0; gap: 0; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-volume {
+  margin: 0; padding: 0; border: 0; border-radius: 0; background: var(--hud-paper-light); box-shadow: none;
+}
+.hud-surface .notebook-desk[data-fullscreen] .notebook-volume::before,
+.hud-surface .notebook-desk[data-fullscreen] .notebook-volume::after { display: none; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__spread { border-radius: 0; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-volume__leaf { background: radial-gradient(ellipse at 100% 100%, #dbe9d652, transparent 35%); }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__scroll {
+  padding: 100px calc(var(--notebook-focus-seat) + 24px) 90px clamp(28px, 7vw, 112px);
+  scroll-padding-block: 88px 40px; scrollbar-gutter: stable;
+}
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__page {
+  width: min(100%, 88ch); min-height: calc(100dvh - 190px); margin-inline: auto; font-size: 18px;
+}
+.hud-surface .notebook-desk[data-fullscreen] :is(.note-transcript, .note-draft, .notebook-volume__article-head) {
+  max-width: none; font-size: 18px; line-height: 1.95;
+}
+.hud-surface .notebook-desk[data-fullscreen] .notebook-volume__article-head { padding-bottom: 26px; margin-bottom: 30px; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-volume__heading h2 { font-size: clamp(28px, 2.5vw, 38px); line-height: 1.5; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-volume__meta { display: none; }
+.hud-surface .notebook-desk[data-fullscreen] .note-draft .ProseMirror { min-height: calc(100dvh - 270px); }
+
+/* A small folded tab holds every routine control. Its opened page floats without changing the text measure. */
+.hud-surface .notebook-focus-ribbon {
+  position: absolute; z-index: 10; top: var(--notebook-focus-tool-top); right: 24px; display: flex; align-items: center; gap: 2px;
+  padding: 4px; border: 1px solid #dce5d0; border-radius: 17px; background: #f0f4e6f2;
+  box-shadow: 0 3px 0 #cad5bc80, 0 6px 18px #4054470d; backdrop-filter: blur(14px);
+}
+.hud-surface .notebook-focus-ribbon .text-action {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 36px;
+  padding: 6px 11px; border: 0; border-radius: 12px; color: #4b7158; font: 650 13px/1.5 "Noto Sans SC Variable", sans-serif; text-decoration: none;
+}
+.hud-surface .notebook-focus-ribbon__tools small { padding: 2px 6px; border-radius: 6px; color: #788b73; font-size: 10px; font-weight: 500; background: #e2ead7; }
+.hud-surface .notebook-focus-ribbon .notebook-focus-ribbon__exit { width: 36px; padding: 6px; border-left: 1px solid #dce5d0; border-radius: 0 12px 12px 0; }
+.hud-surface .notebook-focus-ribbon .notebook-focus-ribbon__back { width: 36px; padding: 6px; border-right: 1px solid #dce5d0; border-radius: 12px 0 0 12px; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__chrome {
+  display: flex; position: absolute; z-index: 8; top: var(--notebook-focus-page-top); right: calc(var(--notebook-focus-seat) + 18px); flex-direction: column;
+  width: min(410px, calc(100% - 48px)); max-height: calc(100dvh - var(--notebook-focus-page-top) - 24px); padding: 18px 16px 12px;
+  overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; color: var(--hud-ink);
+  border: 1px solid #d7e1c9; border-radius: 22px; background: #f9f8ecf5;
+  box-shadow: 0 4px 0 #c8d5b58c, 0 15px 40px #40544726; backdrop-filter: blur(20px); transform-origin: top right;
+}
+.hud-surface .notebook-focus-tools__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 6px 15px; }
+.hud-surface .notebook-focus-tools__head > span { font-size: 15px; font-weight: 750; }
+.hud-surface .notebook-focus-tools__head small { font-size: 11px; color: var(--hud-soft); }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-volume__bookmarks { position: static; display: flex; gap: 4px; padding: 0 0 14px; border-bottom: 1px solid var(--hud-line); }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-volume__bookmark { flex: 1; flex-direction: column; gap: 5px; min-width: 0; min-height: 58px; padding: 8px 4px; border: 0; border-radius: 13px; background: transparent; box-shadow: none; font-size: 12px; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-volume__bookmark span { text-align: center; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-volume__bookmark small { display: none; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-volume__bookmark[aria-pressed="true"] { background: #e0eccf; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__rack { display: flex; flex-direction: column; align-items: stretch; gap: 14px; padding: 16px 0; min-height: 0; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__modes { justify-content: space-between; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__mode-switch { flex: 1; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__utilities { flex-wrap: wrap; justify-content: space-between; margin: 0; gap: 10px; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-volume__tools { padding: 8px 0; }
+.hud-surface .notebook-desk[data-fullscreen] .editor-tools { gap: 5px; padding: 0; border: 0; }
+.hud-surface .notebook-desk[data-fullscreen] .editor-tools-legend { display: none; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__drawer-paper { position: static; width: 100%; margin-top: 8px; padding: 4px; border: 0; background: #eef1e1; box-shadow: none; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__drawer[open] { flex-basis: 100%; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__save-tray { order: 0; flex-wrap: wrap; gap: 12px; padding: 14px 4px 6px; border-radius: 0; background: transparent; }
+.hud-surface .notebook-focus-tools__hint { margin: 12px 4px 0; color: #89917c; font-size: 11px; line-height: 1.6; }
+.hud-surface .notebook-focus-save-error { position: absolute; z-index: 9; top: 18px; left: 24px; max-width: min(420px, calc(100% - 310px)); margin: 0; padding: 10px 14px; border-radius: 14px; color: #995e43; background: #fae8d5; font-size: 12px; line-height: 1.7; }
+.hud-surface .notebook-focus-save-error button { margin-left: 12px; font-size: inherit; }
+.hud-surface .notebook-desk[data-fullscreen] :is(.notebook-desk__index, .notebook-desk__side-page) { top: var(--notebook-focus-page-top); bottom: 22px; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__index { left: 24px; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__side-page { right: calc(var(--notebook-focus-seat) + 18px); width: min(380px, calc(100% - var(--notebook-focus-seat) - 42px)); }
+
+/* Source settings fold into their own page edge; the code remains the same retained CodeMirror view. */
+.hud-surface .note-source-editor__settings > summary { display: none; }
+.hud-surface .notebook-desk[data-fullscreen] .note-source-editor__settings { margin-bottom: 12px; }
+.hud-surface .notebook-desk[data-fullscreen] .note-source-editor__settings > summary { display: list-item; width: fit-content; padding: 5px 0; cursor: pointer; color: var(--hud-soft); font-size: 12px; }
+.hud-surface .notebook-desk[data-fullscreen] .note-source-editor__settings > summary:focus-visible { outline: 2px solid #71a883; outline-offset: 4px; }
+.hud-surface .notebook-desk[data-fullscreen][data-mode="source"] .notebook-desk__scroll { padding-top: 100px; }
+.hud-surface .notebook-desk[data-fullscreen] .note-source-editor { border: 0; border-radius: 0; background: transparent; }
+.hud-surface .notebook-desk[data-fullscreen] .note-source-editor:focus-within { box-shadow: none; }
+.hud-surface .notebook-desk[data-fullscreen] .note-source-editor__status { background: transparent; border: 0; padding-inline: 0; }
+.hud-surface .notebook-desk[data-fullscreen] .note-source-editor .cm-content { min-height: calc(100dvh - 280px); }
+
+/* Borrow a fixed, smaller seat without writing the user's home position or scale preference. */
+.desktop-app.hud-surface .companion-presence[data-notebook-fullscreen] .companion-scene-anchor { width: clamp(130px, 14vw, 205px); height: clamp(140px, 30vh, 250px); }
+.desktop-app.hud-surface .companion-presence[data-notebook-fullscreen] .companion-visual-shell { width: 100%; height: 100%; }
+.desktop-app.hud-surface .companion-presence[data-notebook-fullscreen][data-chat-mode="closed"] :is(.companion-hud__controls, .companion-goal-tab) { visibility: hidden; pointer-events: none; }
+
+@media (max-width: 900px) {
+  .desktop-app.hud-surface[data-notebook-fullscreen] .task-surface--notebook { --notebook-focus-seat: clamp(140px, 22vw, 190px); }
+  .hud-surface .notebook-desk[data-fullscreen] .notebook-desk__scroll { padding-inline: 24px calc(var(--notebook-focus-seat) + 16px); }
+  .hud-surface .notebook-desk[data-fullscreen] :is(.note-transcript, .note-draft) { font-size: 16px; }
+  .hud-surface .notebook-focus-ribbon__tools small { display: none; }
+  .hud-surface .notebook-desk[data-fullscreen] .notebook-desk__chrome { left: 24px; right: auto; width: min(410px, calc(100% - var(--notebook-focus-seat) - 40px)); }
+  .hud-surface .notebook-desk[data-fullscreen] .notebook-desk__side-page { left: 24px; right: auto; width: min(360px, calc(100% - 48px)); }
+}
+@media (max-height: 520px) {
+  .desktop-app.hud-surface[data-notebook-fullscreen] .task-surface--notebook { --notebook-focus-tool-top: 12px; --notebook-focus-page-top: calc(var(--notebook-focus-tool-top) + 50px); }
+  .hud-surface .notebook-focus-ribbon { right: 16px; }
+  .hud-surface .notebook-desk[data-fullscreen] .notebook-desk__chrome { max-height: calc(100dvh - var(--notebook-focus-page-top) - 16px); }
+  .hud-surface .notebook-desk[data-fullscreen] .notebook-desk__scroll { padding-top: 78px; }
+  .hud-surface .notebook-desk[data-fullscreen] :is(.notebook-desk__index, .notebook-desk__side-page) { bottom: 16px; }
+  .desktop-app.hud-surface .companion-presence[data-notebook-fullscreen] .companion-scene-anchor { width: clamp(110px, 16vw, 150px); height: min(155px, 38vh); }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .hud-surface :is(.notebook-focus-ribbon, .notebook-desk[data-fullscreen] .notebook-desk__chrome) { background: #f9f8ec; backdrop-filter: none; border-color: #b3c4a2; }
+}

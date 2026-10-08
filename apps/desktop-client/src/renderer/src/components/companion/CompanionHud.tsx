@@ -18,6 +18,7 @@ import { COMPANION_AGENT_PERMISSION_OPTIONS, COMPANION_INTERVENTION_OPTIONS, COM
 import { companionBubbleHoldMs, companionBubblePreviewText, companionBubbleText } from "./companion-bubble-reveal";
 import { openVoiceModelSettings as openVoiceModelSettingsAction } from "./open-voice-model-settings";
 import { createCompanionBubbleFollow, type CompanionBubbleFollow } from "./companion-bubble-follow";
+import { companionWebCitations, CompanionWebSources, WebCitationContext, WebCitationText } from "./companion-web-citations";
 import { plainCompanionBubbleText } from "./companion-markdown";
 import { beginNoteReplySaveAttempt, isReadyNoteReplyForSave, resolveNoteReplySaveTarget } from "./note-reply-save";
 import { CompanionHistoryDrawer } from "./CompanionHistoryDrawer";
@@ -723,6 +724,7 @@ export function CompanionHud({
     const holdPaused = (): boolean => {
       if (document.hidden || replyObscuredRef.current || performance.now() < replyActivityUntilRef.current) return true;
       if (speakingRef.current) return true;
+      if (document.activeElement?.closest(".companion-web-source")) return true;
       // **还没露完就不许收走**（2026-09-22 用户报"显示的时机只有那一会儿"）。
       // 停留计时原来只看"朗读中"，而文字是跟着音频位置走的：她一句话说完、下一段
       // 还没开口的那几秒里 `speaking` 是假，计时照走——气泡在正文只露了半句时就消失。
@@ -751,7 +753,7 @@ export function CompanionHud({
     reveal.noteTurnFinal();
     // 稳定摘要（方案 §3 无障碍）：回合终态只发布一次全文，读屏不再跟着逐字流
     // 反复朗读碎片。setState 同值时 React 直接跳过，天然去重。
-    setTurnSummary(total > 0 ? text : (chat.failure ?? "这一轮没有返回内容。"));
+    setTurnSummary(total > 0 ? plainCompanionBubbleText(text) : (chat.failure ?? "这一轮没有返回内容。"));
     setBubbleStage("visible");
     if (total <= 0) {
       window.clearInterval(holdTimer);
@@ -923,11 +925,12 @@ export function CompanionHud({
   // token、阅读钟每走一拍都重跑一遍，而输入文字其实只在块到达时才变。按原文 memo 之后，
   // 逐字显现（下面的 `companionBubbleText`）不再触发任何一次剥离。
   const replyText = useMemo(
-    () => (chat.liveReply ? plainCompanionBubbleText(companionHudReplyText(chat.liveReply)) : ""),
+    () => (chat.liveReply ? plainCompanionBubbleText(companionHudReplyText(chat.liveReply), true) : ""),
     [chat.liveReply],
   );
+  const webSources = useMemo(() => companionWebCitations(chat.liveReply?.webCitations ?? []), [chat.liveReply]);
   const draftText = useMemo(
-    () => plainCompanionBubbleText(chat.draft?.text ?? ""),
+    () => plainCompanionBubbleText(chat.draft?.text ?? "", true),
     [chat.draft?.text],
   );
   /**
@@ -1179,7 +1182,8 @@ export function CompanionHud({
                 {activeNoteExplanation ? <CompanionNoteExplanationContext item={activeNoteExplanation} /> : null}
                 <span className="companion-hud__presence-dot" ref={presenceRef} aria-hidden="true" />
                 {/* 长回复的正文在它自己里面滚，新字钉在视野里（见上面的跟随 effect）。 */}
-                <p className="companion-hud__output-body" ref={setBubbleBodyEl} onScroll={handleBubbleScroll}>{outputText}</p>
+                <p className="companion-hud__output-body" ref={setBubbleBodyEl} onScroll={handleBubbleScroll}><WebCitationContext.Provider value={webSources}><WebCitationText text={outputText} /></WebCitationContext.Provider></p>
+                {outputTone === "reply" ? <CompanionWebSources sources={webSources} /> : null}
                 {/* 视觉流式文本**不是**持续 live region（方案 §3 无障碍）：逐字更新会让读屏
               反复朗读碎片；回合终态的稳定摘要在下方 `companion-hud__sr-status` 发布。 */}
                 {/* 被打断的原因就在这里说清楚——以前它只出现在输入面板里，

@@ -3,6 +3,10 @@ import { createPortal } from "react-dom";
 import type { NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 import { plainCompanionBubbleText } from "../../companion/companion-markdown";
 
+// Markdown splits one sentence into several marks. Hand off the single preview
+// immediately, rather than letting each fragment leave a slip behind for 160ms.
+let activePreview: { id: string; dismiss: () => void } | null = null;
+
 /** The short preview stays inside the visible reading paper, separate from selection text. */
 export function NoteAnnotationMark(props: {
   readonly annotation: NoteAnnotationV1;
@@ -24,7 +28,6 @@ export function NoteAnnotationMark(props: {
   const overPreview = useRef(false);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pressPoint = useRef<{ x: number; y: number } | null>(null);
-  const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
   const [shown, setShown] = useState(false);
   const [position, setPosition] = useState<{ left: number; top: number; maxWidth: number } | null>(null);
   const tooltipId = useId();
@@ -33,13 +36,31 @@ export function NoteAnnotationMark(props: {
   const text = characters.length > 90 ? `${characters.slice(0, 90).join("")}…` : plain;
 
   const cancelLeave = () => { if (leaveTimer.current) clearTimeout(leaveTimer.current); leaveTimer.current = null; };
+  const dismiss = () => {
+    cancelLeave();
+    overPreview.current = false;
+    if (activePreview?.id === tooltipId) activePreview = null;
+    setShown(false);
+  };
+  const show = () => {
+    cancelLeave();
+    if (activePreview?.id === tooltipId) return;
+    activePreview?.dismiss();
+    activePreview = { id: tooltipId, dismiss };
+    overPreview.current = false;
+    setPosition(null);
+    setShown(true);
+  };
   const leave = () => {
     cancelLeave();
-    leaveTimer.current = setTimeout(() => { if (!overPreview.current && !preview.current?.contains(document.activeElement)) setShown(false); }, 160);
+    leaveTimer.current = setTimeout(() => { if (!overPreview.current && !preview.current?.contains(document.activeElement)) dismiss(); }, 160);
   };
-  useEffect(() => () => cancelLeave(), []);
+  useEffect(() => () => {
+    cancelLeave();
+    if (activePreview?.id === tooltipId) activePreview = null;
+  }, [tooltipId]);
 
-  useLayoutEffect(() => { if (props.open) setShown(false); }, [props.open]);
+  useLayoutEffect(() => { if (props.open) dismiss(); }, [props.open]);
 
   useLayoutEffect(() => {
     if (!shown || !marker.current || !preview.current) return;
@@ -47,35 +68,42 @@ export function NoteAnnotationMark(props: {
     const paper = scroll?.getBoundingClientRect() ?? new DOMRect(0, 0, window.innerWidth, window.innerHeight);
     const leftEdge = Math.max(12, paper.left + 8), rightEdge = Math.min(window.innerWidth - 12, paper.right - 8);
     const topEdge = Math.max(12, paper.top + 8), bottomEdge = Math.min(window.innerHeight - 12, paper.bottom - 8);
-    const rects = Array.from(marker.current.getClientRects()).filter(rect => rect.bottom > topEdge && rect.top < bottomEdge);
-    const point = pointer;
-    const anchor = rects.find(rect => point && point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom)
-      ?? rects[0] ?? marker.current.getBoundingClientRect();
+    // Every fragment of this annotation uses the same sentence-end badge. If it
+    // is outside the paper (a long, multi-block quote), use the first visible
+    // fragment instead. Neither choice depends on where the pointer entered.
+    const root = marker.current.closest(".note-transcript") ?? scroll ?? marker.current.parentElement;
+    const marks = Array.from(root?.querySelectorAll<HTMLElement>("[data-note-annotation-id]") ?? [])
+      .filter(node => node.dataset.noteAnnotationId === props.annotation.annotationId);
+    const visibleRects = (node: HTMLElement) => Array.from(node.getClientRects())
+      .filter(rect => rect.width > 0 && rect.height > 0 && rect.bottom > topEdge && rect.top < bottomEdge && rect.right > leftEdge && rect.left < rightEdge);
+    const anchor = marks.filter(node => node.classList.contains("note-annotation-badge")).flatMap(visibleRects)[0]
+      ?? marks.flatMap(visibleRects)[0] ?? visibleRects(marker.current)[0] ?? marker.current.getBoundingClientRect();
     const maxWidth = Math.max(0, rightEdge - leftEdge);
     preview.current.style.maxWidth = `${maxWidth}px`;
     const left = Math.max(leftEdge, Math.min(anchor.left, rightEdge - preview.current.offsetWidth));
     const below = anchor.bottom + 8;
     const top = Math.max(topEdge, Math.min(below + preview.current.offsetHeight <= bottomEdge ? below : anchor.top - preview.current.offsetHeight - 8, bottomEdge - preview.current.offsetHeight));
     setPosition({ left, top, maxWidth });
-    const dismiss = () => setShown(false);
     scroll?.addEventListener("scroll", dismiss, { passive: true });
     window.addEventListener("resize", dismiss);
-    return () => { scroll?.removeEventListener("scroll", dismiss); window.removeEventListener("resize", dismiss); };
-  }, [shown, pointer]);
+    window.addEventListener("blur", dismiss);
+    return () => { scroll?.removeEventListener("scroll", dismiss); window.removeEventListener("resize", dismiss); window.removeEventListener("blur", dismiss); };
+  }, [shown, props.annotation.annotationId]);
 
-  const open = () => { cancelLeave(); setShown(false); props.onOpen?.(props.annotation); };
+  const open = () => { dismiss(); props.onOpen?.(props.annotation); };
   return <>
     <span className={props.badge ? "note-annotation-badge" : "note-annotation-anchor"} ref={marker} role="button" tabIndex={0}
       aria-label={props.badge ? `批注 ${props.number} · ${props.annotation.sourceMessageId ? "伴星解释" : props.annotation.generationJobId ? "白话解释" : "自己的批注"}：${props.annotation.anchor.excerpt}` : `打开批注：${props.annotation.anchor.excerpt}`} aria-expanded={props.open ?? false}
       aria-describedby={shown && !props.open ? tooltipId : undefined}
       data-number={props.number}
-      onPointerDown={event => { pressPoint.current = { x: event.clientX, y: event.clientY }; setShown(false); }}
+      data-note-annotation-id={props.annotation.annotationId}
+      onPointerDown={event => { pressPoint.current = { x: event.clientX, y: event.clientY }; dismiss(); }}
       onMouseEnter={event => {
         cancelLeave();
         if (event.buttons || props.open || !window.matchMedia?.("(hover: hover) and (pointer: fine)").matches) return;
-        setPointer({ x: event.clientX, y: event.clientY }); setPosition(null); setShown(true);
+        show();
       }}
-      onMouseLeave={leave} onFocus={() => { cancelLeave(); if (!props.open) { setPointer(null); setPosition(null); setShown(true); } }} onBlur={leave}
+      onMouseLeave={leave} onFocus={() => { if (!props.open) show(); }} onBlur={leave}
       onClick={event => {
         const start = pressPoint.current;
         pressPoint.current = null;
@@ -86,7 +114,7 @@ export function NoteAnnotationMark(props: {
         event.preventDefault(); event.stopPropagation(); open();
       }}
       onKeyDown={event => {
-        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setShown(false); }
+        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); dismiss(); }
         else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); open(); }
       }}>{props.children}</span>
     {shown && !props.open ? createPortal(<div className="note-annotation-preview" role="tooltip" id={tooltipId} ref={preview}
@@ -96,7 +124,7 @@ export function NoteAnnotationMark(props: {
       onMouseEnter={() => { cancelLeave(); overPreview.current = true; }}
       onMouseLeave={() => { overPreview.current = false; leave(); }}
       onFocus={cancelLeave} onBlur={leave}
-      onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); marker.current?.focus({ preventScroll: true }); setShown(false); } }}
+      onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); marker.current?.focus({ preventScroll: true }); dismiss(); } }}
     ><p>{text}</p><small>{props.badge ? `批注 ${props.number} · 点击角标展开` : "点击原句，展开完整批注"}</small>{props.onDelete ? <div className="note-annotation-preview__actions">{props.onDelete}</div> : null}</div>, document.body) : null}
   </>;
 }

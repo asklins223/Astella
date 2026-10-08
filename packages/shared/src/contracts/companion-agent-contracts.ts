@@ -10,13 +10,15 @@
  */
 
 import { z } from "zod";
+import { companionEditedNoteV1Schema } from "./companion-note-authoring-contracts.ts";
+import { DEFAULT_AI_TASK_TIMEOUT_MS } from "../ai-execution-budgets.ts";
 
 export const COMPANION_AGENT_CONTRACT_VERSION = 1 as const;
 export const COMPANION_AGENT_MAX_STEPS = 8;
 export const COMPANION_AGENT_MAX_TOOL_CALLS_PER_STEP = 4;
 export const COMPANION_AGENT_MAX_TOOL_CALLS = 12;
 export const COMPANION_AGENT_MAX_MODEL_CALLS = 12;
-export const COMPANION_AGENT_DEADLINE_MS = 120_000;
+export const COMPANION_AGENT_DEADLINE_MS = DEFAULT_AI_TASK_TIMEOUT_MS;
 export const COMPANION_AGENT_TOOL_TIMEOUT_MS = 10_000;
 
 /**
@@ -43,6 +45,8 @@ export function isVisionGatedCompanionTool(toolName: string): boolean {
 export interface CompanionAgentToolExecutionConstraints {
   /** 用户是否允许把图片发给外部模型（`dataPolicy.sendImageContent`）。 */
   visionEnabled?: boolean;
+  /** Account opt-in plus current search-service availability. Missing means off. */
+  webSearchEnabled?: boolean;
 }
 
 export const companionAgentPermissionLevelSchema = z.enum([
@@ -137,7 +141,7 @@ export const companionAgentStepStatusSchema = z.enum([
 export type CompanionAgentStepStatus = z.infer<typeof companionAgentStepStatusSchema>;
 
 /**
- * 伴星 agent 的用户设置。只剩权限档。
+ * 伴星 agent 的账号设置：权限档与可选联网搜索。
  *
  * 这里曾有 `enabledSkillIds`（勾哪些技能）。技能层不再参与工具面的发现
  * （方案 29 §4.1：每轮全给、只按权限过滤），那个开关就变成**界面上能勾、
@@ -146,6 +150,7 @@ export type CompanionAgentStepStatus = z.infer<typeof companionAgentStepStatusSc
 export const companionAgentSettingsV1Schema = z.object({
   version: z.literal(COMPANION_AGENT_CONTRACT_VERSION),
   permissionLevel: companionAgentPermissionLevelSchema,
+  webSearchEnabled: z.boolean().optional(),
 }).strict();
 export type CompanionAgentSettingsV1 = z.infer<typeof companionAgentSettingsV1Schema>;
 
@@ -173,6 +178,8 @@ export const companionAgentToolEventV1Schema = z.object({
   safeLabel: z.string().min(1).max(240),
   proposalId: z.string().uuid().optional(),
   safeSummary: z.string().max(240).optional(),
+  noteEdit: companionEditedNoteV1Schema.optional(),
+  noteEditTarget: z.object({ noteId: z.string().uuid(), startBlock: z.number().int().nonnegative(), endBlock: z.number().int().nonnegative() }).strict().optional(),
   route: z.record(z.unknown()).optional(),
   /**
    * 客户端可直接执行（2026-09-19 对齐权限分级原设计）。
@@ -190,7 +197,8 @@ export const companionAgentBudgetSnapshotV1Schema = z.object({
   maxToolCallsPerStep: z.literal(COMPANION_AGENT_MAX_TOOL_CALLS_PER_STEP),
   maxToolCalls: z.literal(COMPANION_AGENT_MAX_TOOL_CALLS),
   maxModelCalls: z.literal(COMPANION_AGENT_MAX_MODEL_CALLS).optional(),
-  deadlineMs: z.literal(COMPANION_AGENT_DEADLINE_MS),
+  // Saved receipts describe the budget used then, including pre-renewal 120s runs.
+  deadlineMs: z.number().int().positive().max(24 * 60 * 60_000),
 }).strict();
 export type CompanionAgentBudgetSnapshotV1 = z.infer<
   typeof companionAgentBudgetSnapshotV1Schema

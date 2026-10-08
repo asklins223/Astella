@@ -18,7 +18,68 @@ const note = noteDetailV1Schema.parse({ version: 1, noteId: id(1), workspaceId: 
   currentVersionId: id(2), shareScope: "private", revision: id(2), snapshotAt: date,
   currentVersion: { versionId: id(2), noteId: id(1), versionNo: 1, contentHash: "a".repeat(32), createdAt: date, updatedAt: date, blocks },
   permissions: { canRead: true, canEdit: true, canSave: true, canShare: true } });
-afterEach(() => { cleanup(); window.getSelection()?.removeAllRanges(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); window.getSelection()?.removeAllRanges(); vi.restoreAllMocks(); vi.useRealTimers(); });
+
+function selectionFrames() {
+  vi.useFakeTimers();
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation(callback => window.setTimeout(() => callback(performance.now()), 1));
+  vi.spyOn(window, "cancelAnimationFrame").mockImplementation(id => window.clearTimeout(id));
+  return () => act(() => vi.advanceTimersByTime(2));
+}
+function pointer(target: Node, type: string) {
+  const event = new MouseEvent(type, { bubbles: true, button: 0 });
+  Object.defineProperties(event, { pointerId: { value: 7 }, isPrimary: { value: true } });
+  fireEvent(target, event);
+}
+
+it("拖选期间隐藏旧菜单，松开在正文外也只发布最后的选区；点菜单不丢原句", () => {
+  const settle = selectionFrames();
+  const body = render(<div><p data-block-ordinal={0}>{renderNoteInline(content)}</p></div>);
+  const element = body.container.firstElementChild as HTMLDivElement;
+  const hook = renderHook(() => useNotebookSelection({ note, blocks, bodyRef: { current: element }, active: true }));
+  const range = document.createRange(), first = element.querySelector("p")!.firstChild!, strong = element.querySelector("strong")!.firstChild!;
+  range.setStart(first, 0); range.setEnd(first, 2);
+  act(() => window.getSelection()!.addRange(range));
+  fireEvent(document, new Event("selectionchange")); settle();
+  expect(hook.result.current.selectedPassage?.text).toBe("利息");
+  pointer(first, "pointerdown");
+  expect(hook.result.current.selectedPassage).toBeNull();
+  range.setEnd(strong, 2);
+  fireEvent(document, new Event("selectionchange")); settle();
+  expect(hook.result.current.selectedPassage).toBeNull();
+  pointer(document, "pointerup"); settle();
+  expect(hook.result.current.selectedPassage?.text).toBe("利息加入本金");
+  const settled = hook.result.current.selectedPassage;
+  const menu = document.createElement("button"); menu.dataset.noteSelectionAction = "true"; document.body.append(menu);
+  pointer(menu, "pointerdown"); pointer(menu, "pointerup"); settle();
+  expect(hook.result.current.selectedPassage).toBe(settled);
+  fireEvent.keyDown(menu, { key: "ArrowRight", shiftKey: true }); settle();
+  expect(hook.result.current.selectedPassage).toBe(settled);
+  menu.remove();
+  expect(fireEvent.keyDown(element, { key: "Escape" })).toBe(false);
+  expect(hook.result.current.selectedPassage).toBeNull();
+});
+
+it("键盘扩选松键后接续，拖选被取消或窗口失焦后不留下卡住的选择状态", () => {
+  const settle = selectionFrames();
+  const body = render(<div><p data-block-ordinal={0}>{renderNoteInline(content)}</p></div>);
+  const element = body.container.firstElementChild as HTMLDivElement;
+  const hook = renderHook(() => useNotebookSelection({ note, blocks, bodyRef: { current: element }, active: true }));
+  const range = document.createRange(), first = element.querySelector("p")!.firstChild!;
+  range.setStart(first, 0); range.setEnd(first, 2);
+  act(() => window.getSelection()!.addRange(range));
+  fireEvent.keyDown(element, { key: "ArrowRight", shiftKey: true });
+  range.setEnd(first, 3); fireEvent(document, new Event("selectionchange")); settle();
+  expect(hook.result.current.selectedPassage).toBeNull();
+  fireEvent.keyUp(element, { key: "ArrowRight", shiftKey: true }); settle();
+  expect(hook.result.current.selectedPassage?.text).toBe("利息加");
+  pointer(first, "pointerdown"); pointer(document, "pointercancel"); settle();
+  expect(hook.result.current.selectedPassage).toBeNull();
+  pointer(first, "pointerdown"); fireEvent(window, new Event("blur")); settle();
+  expect(hook.result.current.selectedPassage).toBeNull();
+  pointer(first, "pointerdown"); pointer(document, "pointerup"); settle();
+  expect(hook.result.current.selectedPassage?.text).toBe("利息加");
+});
 
 it("长原文可完整交给伴星，批注锚点的独立长度合同不截聊天来源", () => {
   const text = "原文。".repeat(800) + "尾部更正：这里只完成前置步骤。";

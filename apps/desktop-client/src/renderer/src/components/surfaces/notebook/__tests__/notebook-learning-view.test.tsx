@@ -2,6 +2,7 @@
 import { createRef } from "react";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
+import { useRoomStore } from "../../../../app/room-store";
 import { useNotebookLearningView } from "../use-notebook-learning-view";
 
 afterEach(() => { cleanup(); document.body.innerHTML = ""; });
@@ -82,4 +83,28 @@ it("草稿与记录各自记位置，返回后不会互相借用滚动；换笔�
   view.scroller.scrollTop = 80; act(() => view.result.current.rememberReadingPosition());
   view.rerender({ ...view.initial, leaf: "expansion", inReading: false }); expect(view.scroller.scrollTop).toBe(210);
   view.rerender({ ...view.initial, noteId: "another" }); expect(view.scroller.scrollTop).toBe(0);
+});
+
+
+it.each([false, true])("库内跳转在卸载正文前记录位置，逐篇返回各自接回原处（主笔记入口：%s）", (primary) => {
+  const firstId = `note-${++noteSequence}`, secondId = `note-${++noteSequence}`, thirdId = `note-${++noteSequence}`;
+  const target = (noteId: string) => ({ noteId, noteVersionId: null, mode: "preview" as const });
+  useRoomStore.setState({ activeNoteRef: primary ? null : target(firstId) });
+  const view = fixture(firstId);
+  view.scroller.scrollTop = 350;
+  act(() => useRoomStore.getState().setActiveNoteRef(target(secondId)));
+  view.rerender({ ...view.initial, ready: false });
+  view.scroller.scrollTop = 0;
+  view.rerender({ ...view.initial, noteId: secondId, ready: true });
+  expect(view.scroller.scrollTop).toBe(0);
+  view.scroller.scrollTop = 120;
+  act(() => useRoomStore.getState().setActiveNoteRef(target(thirdId)));
+  view.rerender({ ...view.initial, noteId: thirdId, ready: true });
+  expect(view.scroller.scrollTop).toBe(0);
+  act(() => useRoomStore.getState().setActiveNoteRef(target(secondId)));
+  view.rerender({ ...view.initial, noteId: secondId, ready: true });
+  expect(view.scroller.scrollTop).toBe(120);
+  act(() => useRoomStore.getState().setActiveNoteRef(target(firstId)));
+  view.rerender(view.initial);
+  expect(view.scroller.scrollTop).toBe(350);
 });

@@ -4,6 +4,7 @@ export * from "./history.ts";
 export * from "./operation-receipt.ts";
 export * from "./operation-store.ts";
 export * from "./note-operation.ts";
+export * from "./note-creation.ts";
 export * from "./card-operation.ts";
 export * from "./methods.ts";
 export * from "./ai-governance-policy.ts";

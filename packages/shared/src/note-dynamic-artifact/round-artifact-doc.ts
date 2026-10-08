@@ -51,7 +51,8 @@ export interface ArtifactDocumentVerdictV1 {
  *
  * 逐条都写清**为什么**——将来有人想放宽某一条时，这里必须能回答"这条在防什么"：
  *
- *   - `http(s)://` 与协议相对 `//`：`connect-src 'none'` 下外链发不出去，但协议相对
+ *   - `http(s)://` 与协议相对 `//`：命名空间声明与 DOM 命名空间参数不是请求地址；
+ *     除这些明确位置的标准标识符外，`connect-src 'none'` 下外链发不出去，但协议相对
  *     地址还会让相对路径解析到别处，字体与图片的失败路径很难查。宁可一开始就没有。
  *   - `@import` / `<link>` / `<base>`：同上，且 `<base>` 能改掉相对路径的基准。
  *   - `<iframe>` / `<object>` / `<embed>`：子文档不在本 frame 的沙箱判据里。
@@ -109,6 +110,15 @@ const FORBIDDEN_DOCUMENT_PATTERNS_V1: ReadonlyArray<{
   { reason: "escape_hatch", pattern: /window\s*\.\s*open\s*\(/, label: "window.open" },
   { reason: "escape_hatch", pattern: /\blocation\s*[.=]/, label: "location" },
 ];
+
+/** Standard namespace identifiers do not load resources. Keep scan offsets intact. */
+function maskDocumentNamespacesV1(html: string): string {
+  const namespace = "http:\\/\\/www\\.w3\\.org\\/(?:2000\\/svg|1999\\/xlink|1998\\/Math\\/MathML|1999\\/xhtml)";
+  const declarations = new RegExp(`\\bxmlns(?::[\\w-]+)?\\s*=\\s*(["'])(${namespace})\\1`, "g");
+  const domArguments = new RegExp(`\\b(?:createElementNS|setAttributeNS)\\s*\\(\\s*(["'])(${namespace})\\1`, "g");
+  const mask = (whole: string, _quote: string, identifier: string) => whole.replace(identifier, " ".repeat(identifier.length));
+  return html.replace(declarations, mask).replace(domArguments, mask);
+}
 
 /** 截一段证据出来进留痕；这一段会进日志，所以先压长度、不留换行。 */
 function evidenceAroundV1(text: string, at: number, label: string): string {
@@ -172,8 +182,9 @@ export function checkArtifactDocumentV1(
   if (html.length > ARTIFACT_DOCUMENT_MAX_CHARS_V1) {
     return fail("too_large", `${html.length} 字符，超过 ${ARTIFACT_DOCUMENT_MAX_CHARS_V1}`);
   }
+  const referenceScan = maskDocumentNamespacesV1(html);
   for (const rule of FORBIDDEN_DOCUMENT_PATTERNS_V1) {
-    const match = rule.pattern.exec(html);
+    const match = rule.pattern.exec(referenceScan);
     if (match) return fail(rule.reason, evidenceAroundV1(html, match.index, rule.label));
   }
   if (!scriptTagsBalancedV1(html)) {

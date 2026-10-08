@@ -29,7 +29,7 @@ export function projectCompanionVoiceExpression(raw: string, facts?: FactSpanVal
     if (!displayText.startsWith(prefix)) continue;
     marks.push({ offset: prefix.length, tag: mark.tag, kind: mark.kind });
   }
-  const codeRanges = [...displayText.matchAll(/```[\s\S]*?(?:```|$)|`[^`\n]*(?:`|$)/g)]
+  const codeRanges = [...displayText.matchAll(/```[\s\S]*?(?:```|$)|`[^`\n]*(?:`|$)|\[\^web-[a-zA-Z0-9_-]+\]/g)]
     .map(match => ({ start: match.index!, end: match.index! + match[0].length }));
   return { displayText, marks, codeRanges };
 }

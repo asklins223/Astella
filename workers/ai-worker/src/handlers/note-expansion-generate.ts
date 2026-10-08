@@ -26,7 +26,6 @@ import { buildNoteExpansionPrompt, type NoteExpansionSourceBlock } from "./note-
 import type { JobPayload } from "./index.ts";
 
 const MAX_SOURCE_CHARS = 24_000;
-const MAX_PROVIDER_CALL_MS = 65_000;
 const visibleNoteCondition = sql.raw(noteVisibleSqlText(
   "notes",
   "NULLIF(current_setting('app.user_id', true), '')::uuid",
@@ -205,7 +204,7 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
     modelId: provider.modelId,
     promptVersion: `${provider.promptVersion}:note-expansion-draft-v2`,
     resourceClass: "interactive_ai",
-    timeoutMs: Math.min(resolveProviderCallTimeout("note_expansion_generate"), MAX_PROVIDER_CALL_MS),
+    timeoutMs: resolveProviderCallTimeout("note_expansion_generate"),
     isOutputShapeError: (error) => error instanceof NoteExpansionOutputError,
     execute: async (request, signal) => {
       // 每次真正调用模型前重新占一次目标预算：模型在事务外跑，目标可能已被

@@ -44,7 +44,12 @@ export function useNotebookLearningView(input: {
     readingMemory.set(scope, positions.current);
     if (readingMemory.size > 100) readingMemory.delete(readingMemory.keys().next().value!);
     scroller.addEventListener("scroll", rememberReadingPosition, { passive: true });
-    return () => scroller.removeEventListener("scroll", rememberReadingPosition);
+    // Capture before navigation renders the loading paper and releases this scroller.
+    const unsubscribe = useRoomStore.subscribe((next, previous) => {
+      if (next.workspaceScopeRevision === previous.workspaceScopeRevision && next.activeNoteRef?.noteId !== previous.activeNoteRef?.noteId
+        && (!previous.activeNoteRef || previous.activeNoteRef.noteId === input.noteId)) rememberReadingPosition();
+    });
+    return () => { unsubscribe(); scroller.removeEventListener("scroll", rememberReadingPosition); };
   }, [scope, input.noteId, input.scrollRef, rememberReadingPosition, ready]);
   const setLearningView = useCallback((next: NotebookLearningView) => {
     rememberReadingPosition();

@@ -288,7 +288,7 @@ test("任务版本必须上到 3：换的是合同，v2 留下的检查点与半
   assert.equal(DYNAMIC_ARTIFACT_TASK_VERSION, 3);
   assert.match(source, /DYNAMIC_ARTIFACT_TASK_VERSION = 3/,
     "改了合同却没改 taskVersion：v2 的检查点会被这一版当成同一发任务复用");
-  assert.equal(DYNAMIC_ARTIFACT_PROMPT_VERSION, "note-dynamic-artifact-v15");
+  assert.equal(DYNAMIC_ARTIFACT_PROMPT_VERSION, "note-dynamic-artifact-v16");
   assert.equal(DYNAMIC_ARTIFACT_TASK_ID, "note_dynamic_artifact_v1");
   assert.equal(DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1, "note_dynamic_artifact_v1@v3",
     "落库那一列记的还是旧版本：事后查不出这一份是按哪一版合同做的");
@@ -451,6 +451,20 @@ test("安全闸：任何外部资源引用都被拒（`http(s)://`、`<link>`、
     assert.equal(verdict.ok, false, `${label} 过闸了：文件头承诺了协议相对地址这条，判据表里就得真的有它`);
     assert.equal(reasonOf(verdict.verdict), "external_reference", `${label} 命中了别的判据：留痕里的类别错了`);
   }
+});
+
+test("安全闸：标准 SVG 命名空间可用于标记和 DOM API，但不能作为资源地址", () => {
+  for (const markup of [
+    '<svg xmlns="http://www.w3.org/2000/svg"><circle r="3" /></svg>',
+    "<script>document.createElementNS('http://www.w3.org/2000/svg', 'circle')</script>",
+    "<script>node.setAttributeNS('http://www.w3.org/1999/xlink', 'href', '#local')</script>",
+  ]) assert.equal(checkArtifactDocumentV1({ document: pageAround(markup) }).ok, true);
+  for (const markup of [
+    '<img src="http://www.w3.org/2000/svg">',
+    '<svg xmlns="http://www.w3.org/2000/svg"><image href="https://cdn.example/image.svg" /></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg/remote"></svg>',
+    "<script>document.createElementNS('http://www.w3.org/2000/svg/remote', 'circle')</script>",
+  ]) assert.equal(checkArtifactDocumentV1({ document: pageAround(markup) }).ok, false);
 });
 
 test("安全闸：任何逃逸口都被拒（网络、动态加载、存储、cookie、消息、跳出去、导航）", () => {
@@ -1107,6 +1121,11 @@ test("提示词：给内容与动态讲解目标，网页的创意与设计交�
   for (const removed of ["--lesson-", "220px", "900px", "100vh", "固定页面高度", "垂直居中", "内部滚动区", "步骤卡", "奶油纸", "硬约束", "保持静态"]) {
     assert.equal(prompt.includes(removed), false, `网页创作仍被模板要求约束：${removed}`);
   }
+  for (const unrelated of ["插入排序", "2a、2b、1c", "暂存值从取出到写回", "motionEnabled ? 1200 : 500"]) {
+    assert.equal(prompt.includes(unrelated), false, `无关主题仍带历史样本修补要求：${unrelated}`);
+  }
+  assert.ok(prompt.includes("对象的运动、形变、轨迹或关系变化"));
+  assert.ok(prompt.includes("window.setLessonMotion(motion)"));
 });
 
 test("提示词：完整材料与问题保留，保存与原文回查字段不决定网页结构", () => {

@@ -840,6 +840,16 @@ DO $$
 DECLARE
   fn record;
 BEGIN
+  IF to_regprocedure('public.astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid) FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid)
+      TO astella_migrator, astella_api, astella_worker;
+  END IF;
+  IF to_regprocedure('public.astella_note_creation_scope_current(uuid,uuid)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.astella_note_creation_scope_current(uuid,uuid) FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.astella_note_creation_scope_current(uuid,uuid)
+      TO astella_migrator,astella_api,astella_worker;
+  END IF;
   IF to_regprocedure('public.astella_claim_jobs(integer,integer,integer)') IS NOT NULL THEN
     REVOKE ALL ON FUNCTION public.astella_claim_jobs(integer, integer, integer)
       FROM PUBLIC, astella_api;
@@ -1286,6 +1296,9 @@ DO $$ DECLARE t text; BEGIN
     GRANT USAGE,SELECT ON SEQUENCE public.agent_run_events_seq_seq TO astella_worker;
   END IF;
   FOREACH t IN ARRAY ARRAY['astella_agent_scope_current(uuid,uuid)','astella_enqueue_agent_recovery()',
+    'astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid)',
+    'astella_pending_companion_note_edits_v1()',
+    'astella_note_creation_scope_current(uuid,uuid)',
     'astella_cancel_agent_operations(uuid,integer)','astella_agent_job_current(uuid,uuid,uuid,boolean)',
     'astella_agent_run_authorized(uuid)',
     'astella_agent_card_job_current(uuid,uuid,boolean)',
@@ -1299,6 +1312,9 @@ DO $$ DECLARE t text; BEGIN
       EXECUTE format('ALTER FUNCTION %s OWNER TO astella_migrator',to_regprocedure('public.' || t));
     END IF;
   END LOOP;
+  IF to_regprocedure('public.astella_pending_companion_note_edits_v1()') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_pending_companion_note_edits_v1() TO astella_api;
+  END IF;
   IF to_regprocedure('public.astella_enqueue_agent_recovery()') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.astella_agent_scope_current(uuid,uuid) TO astella_api,astella_worker;
     GRANT EXECUTE ON FUNCTION public.astella_enqueue_agent_recovery() TO astella_worker;
@@ -1839,6 +1855,8 @@ BEGIN
   JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public'
     AND has_function_privilege('astella_worker', p.oid, 'EXECUTE')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_note_creation_scope_current(uuid,uuid)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.astella_claim_jobs(integer,integer,integer)')
     AND p.oid IS DISTINCT FROM
@@ -1937,6 +1955,9 @@ BEGIN
   JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public'
     AND has_function_privilege('astella_api', p.oid, 'EXECUTE')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_pending_companion_note_edits_v1()')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_note_creation_scope_current(uuid,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_scope_current(uuid,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_cancel_agent_operations(uuid,integer)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_method_sources_current(uuid,uuid,uuid)')
@@ -2049,6 +2070,11 @@ BEGIN
       ('astella_worker', 'astella_agent_method_sources_current(uuid,uuid,uuid)'),
       ('astella_api', 'astella_agent_scope_current(uuid,uuid)'),
       ('astella_worker', 'astella_agent_scope_current(uuid,uuid)'),
+      ('astella_api', 'astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid)'),
+      ('astella_api', 'astella_pending_companion_note_edits_v1()'),
+      ('astella_worker', 'astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid)'),
+      ('astella_api', 'astella_note_creation_scope_current(uuid,uuid)'),
+      ('astella_worker', 'astella_note_creation_scope_current(uuid,uuid)'),
       ('astella_api', 'astella_cancel_agent_operations(uuid,integer)'),
       ('astella_worker', 'astella_cancel_agent_operations(uuid,integer)'),
       ('astella_worker', 'astella_enqueue_agent_recovery()'),

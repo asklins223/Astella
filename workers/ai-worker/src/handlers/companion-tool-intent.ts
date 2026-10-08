@@ -15,15 +15,16 @@ import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { currentWorkerWorkspaceTransaction } from "../db.ts";
 import { JobLeaseLostError, type JobLeaseContext } from "../lib/job-lease.ts";
 import type { AIProvider } from "../lib/ai-provider.ts";
+import { DEFAULT_AI_PROVIDER_TIMEOUT_MS, getCompanionAgentTool } from "@astella/shared";
 
 const TASK_ID = "companion_tool_intent";
-const TASK_VERSION = 7;
+const TASK_VERSION = 9;
 /**
- * 分类器关闭思考、单次调用且不自行重试。30s 是等待上限，不是正常延迟目标；
+ * 分类器关闭思考、单次调用且不自行重试。调用等待使用公共模型上限；
  * 超时仍保留 uncertain，不能据此把可能需要读取资料的请求当作闲聊。
  * 调用方的剩余整轮预算会进一步收紧这个上限。
  */
-export const COMPANION_TOOL_INTENT_TIMEOUT_MS = 30_000;
+export const COMPANION_TOOL_INTENT_TIMEOUT_MS = DEFAULT_AI_PROVIDER_TIMEOUT_MS;
 
 /** Only execution metadata may leave this step; no input, output or error prose. */
 export interface CompanionToolIntentReceipt {
@@ -90,13 +91,18 @@ function toolIntentMessages(messages: readonly ChatMessage[], taskContext: Compa
       role: "system",
       content: [
         '你解释用户本轮的注意力，只输出 JSON：{"intent":"conversation|question|task|task_control|mixed","toolUse":"none|read|act|uncertain","subjects":[],"goalRelation":"unrelated|new|continue|revise|control|discuss|unclear","candidateOperations":[],"ambiguities":[],"pendingOfferIndexes":[]}。枚举选一个值；有确实需要定位的讨论对象时才加 {"description":"讨论对象"}，只有 objects 中存在对应真实对象时才加 objectIndex；goalObjectIndex 同理，未指向真实目标时省略。',
-        "objects 是宿主提供的真实对象，索引从0开始；不发明身份。目标引用只可指向agent_run。candidateOperations只从capabilities选择，是候选而非执行授权。没有对象、代词未消解或修改范围不明，记入ambiguities；只读查询可用于核对，不能猜测执行写入。",
+        "objects 是宿主提供的当前页面对象及相关后台目标，索引从0开始；不发明身份。目标引用只可指向agent_run。capabilities 给出本轮工具的 name、description 与 riskClass；candidateOperations只填其中的name，是候选而非执行授权。没有对象、代词未消解或修改范围不明，记入ambiguities；只读查询可用于核对，不能猜测执行写入。",
         "当用户要查看自己的文章、笔记、图片、引用、卡片或实时信息，或要求导航、设置和执行动作时，必须先用工具；口语化、简称、代词和间接表达也一样。",
         "用户需要实际计算或核对数值、公式代入时也需要工具；只解释数学概念或聊感受可直接回答。",
+        "当 capabilities 含 agent_web_search 时，用户要联网查找公开资料、核实事实或查询最新信息，用question/read，并将agent_web_search记入候选；普通知识解释和闲聊仍可直接回答。未提供该能力时不要声称能联网。",
         "用户给出公开文档网址并要求阅读、核对或总结时需要工具；不能靠网址标题猜正文。",
         "用户明确要求记住、以后遵循、纠正或忘记一项偏好、目标或共同记录时，需要调用记忆工具核对并保存/修订/撤回。口头说记下了、延后自动整理或只在这轮照做不能代替持久动作。一次性的表达要求没有要求长期保存时可直接按本轮执行。",
         "一般知识问答、闲聊、自我介绍以及询问操作方法可以直接回答。此前助手说过已找到或已展示，不等于本轮真的查询过。",
         "区分直接写回复与操作项目数据：要求在回复里写故事、诗、对话、示例或文案草稿，是task/none，不需要工具，goalRelation=unrelated、candidateOperations为空。要求把它保存到笔记、生成学习卡、修改已有资料或读取指定来源，才需要相应工具；不要把纯文本创作中的‘写/生成’自动解释成数据库写入。",
+        "用户要求生成项目里的速看、互动演示、往外学/拓展笔记草稿或学习卡时，是生成真实产物的task/act、goalRelation=new；不要求用户再说‘保存’或指定保存位置。capabilities里提供agent_start_goal时，用它接下生成目标；专业生成工具在后台使用，不因它们没直接出现在聊天工具表里就认定能力缺失。用户明确只要在聊天里解释、概括或列方向时，才按直接文字回答或读取资料处理。历史助手说过能力没接上、不能保存，不是当前能力事实，以本轮capabilities为准。",
+        "用户明确要求在当前笔记光标后插入、补充到末尾、删除段落、替换选区、转换为表格或流程图时，是task/act，候选companion_edit_note，goalRelation=unrelated：这是直接修改正文，不需要agent_run目标引用，即使是重试上一轮编辑也不能标为continue而要求后台目标。当前页面唯一note/note_version就是编辑对象；光标和选区是它内部的位置，无需另找对象身份。它不新建笔记、不启动速看或互动演示目标。普通解释和原句解读不修改正文。",
+        "用户要求将刚讨论的知识点总结、整理或保存为一篇库内新笔记时，是task/act、goalRelation=new，候选companion_create_note；它不需要已有笔记作为起点。‘这个知识点’可由recent中的当前讨论定位，不因没有note对象就制造材料歧义。只问能不能做、操作方法或只要回复里的总结仍可直接回答；不要把普通知识问答自动保存。新笔记可检索并链接库内相关笔记，这是创建笔记的一部分，不等同于基于已有笔记生成拓展草稿。",
+        "当前页面有唯一note或note_version对象、用户说‘这篇笔记’或省略笔记名称请求速看/拓展时，可以用该对象的objectIndex定位材料；note_version已经包含真实笔记及版本。未指定其他材料时，不凭空要求笔记名、版本或保存位置，也不把当前笔记新生成的请求当成延续一个不存在的agent_run。用户明确指向别的材料或有多个可能对象时才核对指代。",
         "称呼伴星、随口招呼、情绪表达和角色口味是对话内容，不要求在 objects 中找到数据库身份。没有资料读取或操作目标时，不因为话题名词或昵称没对应 object 就制造歧义；普通招呼可用 conversation/none、subjects 空数组。只有会影响所问资料或操作目标的歧义才要求澄清。",
         "区分角色口味和真实经历：询问伴星喜欢什么可以是conversation/none；询问今天看到、经历、查到或做成了什么是在核对记录，应为question。recent里有可分享的真实共同交流时可以none；需要查更早记录时read。没有记录也不能把这种问题降成随口编故事的闲聊，更不能把人格示例当成实际经历。",
         "只以 current 这句话判断当前意图；recent 仅帮助理解指代。上一件任务继续在后台跑，不代表用户现在仍要做它；换到家常、寒暄或一句好，不继承旧执行指令。混合请求中有明确新任务时仍可需要工具。",
@@ -104,7 +110,11 @@ function toolIntentMessages(messages: readonly ChatMessage[], taskContext: Compa
         "pendingOfferIndexes：recent 里某条 assistant 消息**结尾留着一个用户这句话没有接的邀请、提议或等待**（例如「要不要接着往下讲」「我随时接」「就等你说下一步」「还需要我展开吗」），就把那条消息的 index 放进去；陈述句和问句都算，判据是「它还在等她回应」。窗口里**每一条**这样的消息都要列出来，不要只报最近那一条。用户接了、照做了，或她已经明说不用回应（「先放着」「不催你」「不想管也行」），就不放。只引用 recent 给过的 index，没有就返回空数组。",
       ].join("\n"),
     },
-    { role: "user", content: JSON.stringify({ current, recent, objects: taskContext.objects ?? [], capabilities: taskContext.capabilities ?? [] }) },
+    { role: "user", content: JSON.stringify({ current, recent, objects: taskContext.objects ?? [],
+      capabilities: (taskContext.capabilities ?? []).map(name => {
+        const definition = getCompanionAgentTool(name);
+        return definition ? { name, description: definition.description, riskClass: definition.riskClass } : { name };
+      }) }) },
   ];
 }
 

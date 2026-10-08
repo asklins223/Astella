@@ -560,7 +560,6 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       promptVersion: `${provider.promptVersion}:companion-memory-extract-v1`,
       resourceClass: "maintenance",
       timeoutMs: resolveProviderCallTimeout("companion_memory_extract"),
-      taskDeadlineMs: resolveProviderCallTimeout("companion_memory_extract"),
       maxModelCalls: 2,
       maxAutoRetries: 1,
       isOutputShapeError: (error) => error instanceof MemoryExtractOutputError,

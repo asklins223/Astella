@@ -22,7 +22,7 @@ test("the same capability schema supplies model bounds and rejects invalid or ex
 test("目标只获得真实材料可用的能力，缺材料仍可明确交付 needs_input", () => {
   const names = (entries: ReturnType<typeof resolveAgentGoalExecutionManifest>) => entries.map(entry => entry.definition.name);
   assert.deepEqual(names(resolveAgentGoalExecutionManifest({ notes: [], methods: [] })),
-    ["agent_calculate", "agent_read_public_document", "agent_deliver_goal"]);
+    ["agent_calculate", "agent_web_search", "agent_read_public_document", "agent_deliver_goal"]);
   const notes = [{ noteId: "11111111-1111-4111-8111-111111111111", noteVersionId: "22222222-2222-4222-8222-222222222222" }];
   const methods = [{ methodId: "33333333-3333-4333-8333-333333333333", revision: 2 }];
   const full = resolveAgentGoalExecutionManifest({ notes, methods });

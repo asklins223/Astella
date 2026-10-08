@@ -15,7 +15,8 @@
 .hud-surface .notebook-page-title { max-width: 330px; border-radius: 26px; }
 .hud-surface .notebook-page-title h1 { font: 800 23px/1.35 "Noto Sans SC Variable", sans-serif; letter-spacing: -.04em; }
 .hud-surface .notebook-page-title p { font-size: 12px; }
-.hud-surface .notebook-workspace, .hud-surface .note-library {
+/* Dialogs may be siblings of the workspace; they share its paper palette. */
+.hud-surface .notebook-workspace, .hud-surface .note-library, .hud-surface .notebook-dialog {
   --hud-paper-light: #fffbef; --hud-paper: #faf5e5; --hud-paper-deep: #f1ebd9;
   --hud-ink: #405447; --hud-soft: #768270; --hud-green: #527c61;
   --hud-mint: #d4e9c8; --hud-butter: #f7e8b7; --hud-sky: #d3e9e7;
@@ -194,12 +195,12 @@
 .hud-surface .notebook-workspace .notebook-round-history__uncertain { color: var(--hud-clay); font-size: 13px; }
 
 /* Scale is the interruptible touch spring's channel; hover uses translate. */
-.hud-surface :is(.notebook-desk, .note-library) :is(button, summary) { scale: var(--note-touch-scale, 1); }
+.hud-surface :is(.notebook-desk, .note-library, .notebook-dialog) :is(button, summary) { scale: var(--note-touch-scale, 1); }
 .hud-surface .notebook-desk button:disabled { cursor: default; }
 .hud-surface .notebook-desk :is(.button, .text-action):focus-visible { outline: 3px solid #71a883; outline-offset: 3px; }
 .hud-surface .notebook-desk :is(textarea, input, .note-annotation-anchor):focus-visible { outline: 2px solid #71a883; outline-offset: 3px; }
-.hud-surface .notebook-desk .button { border-radius: 16px; border: 1px solid #cbd7ba; box-shadow: 0 3px 0 #d2d8bc; }
-.hud-surface .notebook-desk .button.primary { background: #6b9a75; border-color: #618e6b; color: #fffcec; box-shadow: 0 3px 0 #4d785b; }
+.hud-surface :is(.notebook-desk, .notebook-dialog) .button { border-radius: 16px; border: 1px solid #cbd7ba; box-shadow: 0 3px 0 #d2d8bc; }
+.hud-surface :is(.notebook-desk, .notebook-dialog) .button.primary { background: #6b9a75; border-color: #618e6b; color: #fffcec; box-shadow: 0 3px 0 #4d785b; }
 @media (hover: hover) and (pointer: fine) {
   .hud-surface .notebook-volume__bookmark:hover { translate: 0 -2px; }
   .hud-surface .notebook-desk .text-action:hover:not(:disabled) { background-color: #e5edcf; }

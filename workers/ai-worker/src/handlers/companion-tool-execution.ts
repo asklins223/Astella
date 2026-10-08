@@ -2,6 +2,7 @@ import { reserveCompanionProviderCall } from "./companion-agent-events.ts";
 import { executeAgentGoalTool } from "../agent/companion-tools.ts";
 import { executeBasicCapability } from "../agent/basic-capabilities.ts";
 import { executeExternalCapability } from "../agent/external-capabilities.ts";
+import { executeWebSearch, webSearchCitationBlocks } from "../agent/web-search.ts";
 /**
  * 伴星 agent 的**工具执行**（2026-09-30 拆出，B2）。
  *
@@ -93,6 +94,8 @@ import {
   type AgentToolExecutionResult,
 } from "./companion-tool-result.ts";
 import { executeCompanionMemoryTool } from "./companion-memory-tools.ts";
+import { executeCompanionCreateNote } from "./companion-note-authoring.ts";
+import { executeCompanionNoteEdit } from "./companion-note-edit.ts";
 
 
 
@@ -109,11 +112,19 @@ export async function executeReadTool(
     throw new CompanionToolBlockedError(VISION_EGRESS_DENIED_MESSAGE);
   }
   switch (definition.name) {
+    case "agent_web_search": {
+      const value = await executeWebSearch({ workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+        args as Parameters<typeof executeWebSearch>[1], event.ctx.signal);
+      return { value, resultRef: JSON.stringify(value), blocks: webSearchCitationBlocks(value), safeSummary: value.status === "succeeded"
+        ? `搜索到 ${value.sources.length} 个网页`
+        : value.reason === "quota_exhausted" ? "搜索额度不足，已暂时停用联网搜索；继续回答，但无法联网核实"
+          : "本次联网搜索不可用；继续回答，但无法联网核实" };
+    }
     case "agent_read_public_document": {
       const userTexts = [event.read.userText, ...event.read.recentMessages.filter(message => message.role === "user").slice(-3).map(message => message.text)];
       const value = await executeExternalCapability({ workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         { name: definition.name, arguments: args }, userTexts, event.ctx.signal);
-      return { value, safeSummary: value.truncated ? "已读取公开文档的一部分，来源与覆盖范围已保留" : "已读取公开文档，来源与正文已核对" };
+      return { value, safeSummary: ("truncated" in value && value.truncated) ? "已读取公开文档的一部分，来源与覆盖范围已保留" : "已读取公开文档，来源与正文已核对" };
     }
     case "agent_calculate": {
       const result=executeBasicCapability({name:definition.name,arguments:args});
@@ -376,6 +387,7 @@ export async function executeReadTool(
       const query = String(args.query).trim().slice(0, 120);
       const limit = typeof args.limit === "number" ? Math.min(10, Math.max(1, args.limit)) : 5;
       const terms = noteSearchTerms(query);
+      const anyMatch = args.match === "any";
       if (terms.length === 0) {
         // 检索词被剥成空（模型只给了空格或纯标点）时**不能**放一个 `%%` 进去——
         // 那会命中库里所有笔记，然后被她当成"这些都相关"念出来。
@@ -407,8 +419,10 @@ export async function executeReadTool(
           ) b ON true
           WHERE n.workspace_id = ${event.ctx.workspaceId}
             AND n.deleted_at IS NULL
-            AND ${sql.join(termConditions, sql` AND `)}
-          ORDER BY n.updated_at DESC
+            AND (n.share_scope='shared' OR n.created_by=${event.read.userId})
+            AND (${sql.join(termConditions, anyMatch ? sql` OR ` : sql` AND `)})
+          ORDER BY (${sql.join(termConditions.map(condition => sql`CASE WHEN ${condition} THEN 1 ELSE 0 END`), sql` + `)}) DESC,
+            n.updated_at DESC,n.id
           LIMIT ${limit}
         `),
       );
@@ -421,7 +435,7 @@ export async function executeReadTool(
       return {
         value: { notes: notesFound },
         safeSummary: notesFound.length > 0
-          ? `找到 ${notesFound.length} 篇相关笔记`
+          ? `找到 ${notesFound.length} 篇${anyMatch ? "可核对的" : "相关"}笔记`
           : `没有找到与「${query.slice(0, 20)}」相关的笔记`,
       };
     }
@@ -480,6 +494,7 @@ export async function executeReadTool(
           ...(page.blockTextTruncated ? { blockTextTruncated: true } : {}),
           body: page.body,
         },
+        resultRef: JSON.stringify({ kind: "note_read", noteId, noteVersionId: note.versionId }),
         blocks: quoted.length > 0
           ? [{
               type: "quote" as const,
@@ -913,10 +928,17 @@ export async function executeDirectTool(
   event: AgentEventContext,
   definition: CompanionAgentToolDefinitionV1,
   args: Record<string, unknown>,
+  signal?: AbortSignal,
+  toolCallId?: string,
 ): Promise<AgentToolExecutionResult> {
   if (["agent_start_goal", "agent_revise_goal", "agent_control_goal"].includes(definition.name))
     return executeAgentGoalTool(event, definition.name, args);
   switch (definition.name) {
+    case "companion_create_note": return executeCompanionCreateNote(event, args, signal);
+    case "companion_edit_note": {
+      if (!toolCallId) throw new CompanionToolError("正文编辑缺少这轮的执行记录，请重新发送要求。");
+      return executeCompanionNoteEdit(event, toolCallId, signal);
+    }
     // 模型自改**表达层**（40 §4.8.4）。
     //
     // 与上面 set_activeness 走同一条账号级路径（companion_persona_profiles），

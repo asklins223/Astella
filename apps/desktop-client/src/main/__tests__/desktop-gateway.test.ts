@@ -435,6 +435,13 @@ describe("parseCompanionSseFrame（伴星 SSE 帧的过桥门槛）", () => {
     const huge = { type: "assistant.delta", payload: { appendFrom: 0, textDelta: "甲".repeat(20_000) } };
     expect(parseCompanionSseFrame(frame(huge))).toBeNull();
   });
+
+  it("真实正文保存回执允许传递受限的长 CRDT 更新，超出合同仍丢弃", () => {
+    const tool = { toolCallId: "edit-call", name: "companion_edit_note", toolVersion: "1.0.0", riskClass: "reversible_low", status: "succeeded", safeLabel: "已保存正文",
+      noteEdit: { kind: "edited_note", noteId: "11111111-1111-4111-8111-111111111111", noteVersionId: "22222222-2222-4222-8222-222222222222", operation: "append", summary: "已追加", update: "A".repeat(24_000) } };
+    expect(parseCompanionSseFrame(frame({ type: "agent.tool", payload: { tool } }))?.payload.tool).toEqual(tool);
+    expect(parseCompanionSseFrame(frame({ type: "agent.tool", payload: { tool: { ...tool, noteEdit: { ...tool.noteEdit, update: "A".repeat(3_000_001) } } } }))).toBeNull();
+  });
 });
 
 describe("伴星壳层 SSE 帧校验", () => {

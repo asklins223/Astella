@@ -4,7 +4,9 @@ import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { closeDatabase } from "../db.ts";
 import type { ReadContext } from "../handlers/companion-dialogue-store.ts";
 const url=testDatabaseUrl("DATABASE_URL_MIGRATOR");
-if(new URL(url).pathname!=="/astella_companion_live_20261007")throw new Error("Use the designated disposable live acceptance database");
+if(new URL(url).pathname!=="/astella_companion_live_20261007"
+  && !new URL(url).pathname.startsWith("/astella_note_authoring_"))
+  throw new Error("Use the designated disposable live acceptance database or an isolated note-authoring database");
 const admin=postgres(url,{max:2});
 export async function fixture() {
   const workspaceId = randomUUID(), userId = randomUUID(), runId = randomUUID();

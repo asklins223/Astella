@@ -330,8 +330,8 @@ export const validateCardGenerateV3Output = validateCardGenerateV3Drafts;
  */
 const V3_TASK_DEFAULT_BUDGET: AiTaskBudget = {
   maxModelCalls: 2,
-  stepTimeoutMs: 120_000,
-  taskDeadlineMs: 240_000,
+  stepTimeoutMs: DEFAULT_AI_PROVIDER_TIMEOUT_MS,
+  taskDeadlineMs: DEFAULT_AI_TASK_TIMEOUT_MS,
   maxAutoRetries: 1,
 };
 
@@ -856,3 +856,4 @@ export function createCardCandidateRewriteV3Task(
     },
   };
 }
+import { DEFAULT_AI_PROVIDER_TIMEOUT_MS, DEFAULT_AI_TASK_TIMEOUT_MS } from "@astella/shared";

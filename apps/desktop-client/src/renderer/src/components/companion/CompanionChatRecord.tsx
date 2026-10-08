@@ -10,6 +10,7 @@ import { CompanionProposalChoice } from "./CompanionProposalChoice";
 import { CompanionRunTraceView } from "./CompanionRunTraceView";
 import { ZoomableReadingImage } from "../surfaces/source/image-viewer.tsx";
 import { useSourceImage } from "../surfaces/source/source-image.ts";
+import { CompanionWebSources, companionWebCitations } from "./companion-web-citations";
 import { renderCompanionMarkdown } from "./companion-markdown";
 import { openExternalLink } from "../../app/external-link";
 import { copyText } from "../../app/clipboard";
@@ -229,8 +230,10 @@ export function CompanionMessageRichBlocks({
   readonly chat?: CompanionChatSession;
   readonly onNavNavigated?: () => void;
 }) {
+  const sources = companionWebCitations(blocks);
   return <>
-    {blocks.filter((block) => block.type === "nav" || block.type === "quote"
+    <CompanionWebSources sources={sources} />
+    {blocks.filter(block => !(block.type === "citation" && block.referenceId)).filter((block) => block.type === "nav" || block.type === "quote"
       || block.type === "diagram" || block.type === "card" || block.type === "image" || block.type === "citation" || block.type === "code")
       .map((block, index) => (
         block.type === "nav"
@@ -290,7 +293,8 @@ export function CompanionChatRecordArticle({
   const trace = message.role === "assistant"
     ? chat.runTraces.find((item) => item.summary.assistantMessageId === message.id) ?? null
     : null;
-  const references = richBlocks.filter(block => block.type === "quote" || block.type === "citation");
+  const sources = companionWebCitations(message.blocks);
+  const references = richBlocks.filter(block => block.type === "quote" || (block.type === "citation" && !block.referenceId));
   const results = richBlocks.filter(block => block.type !== "quote" && block.type !== "citation");
   const proposalIds = message.role === "assistant" ? [...new Set([
     ...message.blocks.flatMap(block => block.type === "action_ref" ? [block.proposalId] : []),
@@ -306,7 +310,8 @@ export function CompanionChatRecordArticle({
       <header><span className="companion-record__author"><i className="companion-record__avatar" aria-hidden="true">{message.role === "user" ? <UserRound size={15} /> : <Sparkles size={15} />}</i><strong>{message.role === "user" ? "你" : chat.companionName}{message.kind === "voice_transcript" ? " · 语音" : ""}</strong></span><span className="companion-record__meta">{message.role === "assistant" ? <CompanionMessageAudioButton runId={message.runId} /> : null}<time>{messageTime(message.createdAt)}</time></span></header>
       {selection ? <details className="companion-record__selection"><summary><Quote size={14} aria-hidden="true" /><span>引用的原文</span><q>{selection.text.slice(0, 96)}</q></summary><CompanionQuoteBlock block={{ type: "quote", label: "当时选中的原文", text: selection.text }} /></details> : null}
       {/* 正文从 §4.8 起保留 markdown，由这里排版（抽屉与记录页共用本组件）。 */}
-      <div className="companion-record__body">{renderCompanionMarkdown(companionMessageText({ ...message, blocks: message.blocks.filter(block => block.type === "text") }))}</div>
+      <div className="companion-record__body">{renderCompanionMarkdown(companionMessageText({ ...message, blocks: message.blocks.filter(block => block.type === "text") }), sources)}</div>
+      <CompanionWebSources sources={sources} />
       {results.length ? <div className="companion-record__results"><CompanionMessageRichBlocks blocks={results} chat={chat} /></div> : null}
       {message.kind === "cancelled" ? <p className="companion-record__stopped">你在这里停下了{stopSummary(trace)}</p> : null}
       {message.kind === "error" ? <p className="companion-record__stopped">这一轮没能说完{stopSummary(trace)}</p> : null}

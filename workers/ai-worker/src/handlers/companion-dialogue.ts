@@ -1144,7 +1144,9 @@ export async function runCompanionDialogue(
   // 而 `textOfCompanionBlocks` 只认 text/code/citation，nav 不会污染模型上下文。
   const blocks = [
     { type: "text", text: assistantText, emotion: replyEmotion },
-    ...agentResult.blocks.slice(0, 31),
+    // Preserve every search source before optional rich results; at most three searches yield 24 sources.
+    ...[...agentResult.blocks.filter(block => block.type === "citation" && block.referenceId),
+      ...agentResult.blocks.filter(block => !(block.type === "citation" && block.referenceId))].slice(0, 31),
   ];
   const contentSha256 = sha256Utf8V1(canonicalJsonV1(blocks));
   const textSha256 = sha256Utf8V1(assistantText);

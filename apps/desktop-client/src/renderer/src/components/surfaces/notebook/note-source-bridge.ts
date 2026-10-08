@@ -105,7 +105,13 @@ export function applyNoteSource(view: EditorView, parsed: ProseNode): boolean {
 export type NoteDocumentPosition = { readonly block: number; readonly offset: number };
 
 export function noteCaretPosition(view: EditorView): NoteDocumentPosition {
-  const position = view.state.selection.from;
+  let position = view.state.selection.from;
+  // Native selection moves before ProseMirror's selection observer runs. A
+  // pointer/key release must retain the location actually visible to the user.
+  const selection = view.dom.ownerDocument.getSelection();
+  if (selection?.isCollapsed && selection.anchorNode && view.dom.contains(selection.anchorNode)) {
+    try { position = view.posAtDOM(selection.anchorNode, selection.anchorOffset); } catch { /* Retain the last valid editor selection. */ }
+  }
   let start = 0;
   let block = 0;
   for (; block < view.state.doc.childCount - 1; block += 1) {

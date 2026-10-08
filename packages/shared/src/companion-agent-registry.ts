@@ -18,6 +18,7 @@ export function resolveAllCompanionAgentTools(
 ): CompanionAgentToolDefinitionV1[] {
   return COMPANION_AGENT_TOOL_DEFINITIONS.filter(definition =>
     (!isVisionGatedCompanionTool(definition.name) || constraints.visionEnabled === true)
+    && (definition.name !== "agent_web_search" || constraints.webSearchEnabled === true)
     && (permission !== "read_only" || definition.riskClass === "read"));
 }
 export function getCompanionAgentTool(toolName: string): CompanionAgentToolDefinitionV1 | null {

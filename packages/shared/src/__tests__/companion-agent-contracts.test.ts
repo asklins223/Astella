@@ -65,9 +65,9 @@ test("扁平工具面 fail closed：read_only 只剩读工具，未知档位不�
     "guided 必须比 read_only 多出写工具",
   );
   assert.deepEqual(
-    resolveAllCompanionAgentTools("full", { visionEnabled: true }).map((definition) => definition.name),
+    resolveAllCompanionAgentTools("full", { visionEnabled: true, webSearchEnabled: true }).map((definition) => definition.name),
     COMPANION_AGENT_TOOL_DEFINITIONS.map((definition) => definition.name),
-    "权限到顶 + 图片可外发时，full 档就是整个注册表",
+    "权限到顶 + 图片可外发 + 联网已开启时，full 档就是整个注册表",
   );
   assert.ok(
     !resolveAllCompanionAgentTools("full").map((d) => d.name).includes("companion_read_image"),

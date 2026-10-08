@@ -36,6 +36,7 @@ import { AgentOutputError } from "../non-retryable-errors.ts";
 import { DEFAULT_CONTEXT_WINDOW_TOKENS } from "../provider-constants.ts";
 import { profileFingerprint } from "./profile-fingerprint.ts";
 import { modelTemperatureFields } from "./model-sampling.ts";
+import { modelOutputTokenLimit } from "./model-output-budget.ts";
 import { countModelTextTokens } from "../model-tokenizers.ts";
 
 /** R1: Unified abort error helper. */
@@ -61,11 +62,6 @@ const MAX_REQUEST_TEMPERATURE = 2;
 function clampTemperature(value: number | undefined): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
   return Math.min(MAX_REQUEST_TEMPERATURE, Math.max(0, value));
-}
-
-function clampMaxTokens(value: number | undefined, ceiling: number): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined;
-  return Math.min(ceiling, Math.floor(value));
 }
 
 async function readStreamingBodyText(body: AsyncIterable<Uint8Array>): Promise<string> {
@@ -125,7 +121,11 @@ export class OpenAICompatibleProvider implements AIProvider {
   }
 
   private outputTokenLimit(value: number | undefined): number | undefined {
-    return clampMaxTokens(value, this.modelProfile?.maxOutputTokens ?? 16_384);
+    return this.resolveOutputTokenLimit(value);
+  }
+
+  resolveOutputTokenLimit(requested?: number): number | undefined {
+    return modelOutputTokenLimit(this.modelProfile, requested, 16_384);
   }
 
   private applyModelSampling(body: Record<string, unknown>): void {

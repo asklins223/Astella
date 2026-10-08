@@ -1,6 +1,7 @@
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import type { CompanionHistoryItemV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { useLayoutEffect,useMemo,useRef } from "react";
+import { companionWebCitations } from "../../companion/companion-web-citations";
 import { plainCompanionBubbleText,renderCompanionMarkdown } from "../../companion/companion-markdown";
 import { CompanionMessageRichBlocks,CompanionQuoteBlock,messageDayKey,messageDayLabel } from "../../companion/CompanionChatRecord";
 import { CompanionMessageAudioButton } from "../../companion/CompanionMessageAudioButton";
@@ -115,7 +116,7 @@ export function DialoguePanel(props: DialoguePanelProps) {
           const discovery = props.discoveryFor?.(item);
           return <div key={item.messageId}>{!previous || messageDayKey(previous.createdAt) !== day ? <div className="cc-thread__day"><time>{messageDayLabel(day)}</time></div> : null}<article tabIndex={-1} data-role={item.role} data-kind={item.kind} id={`companion-message-${item.messageId}`}><header><strong>{item.role === "assistant" ? props.companionName ?? "伴星" : dialogueRoleLabel(item.role)}</strong><span className="cc-thread__meta">{item.role === "assistant" ? <CompanionMessageAudioButton runId={item.runId} /> : null}<time>{formatRelative(item.createdAt)}</time>{discovery ? <DiscoveryKeepAction {...discovery} /> : null}</span></header>
             {item.selection ? <CompanionQuoteBlock block={{ type: "quote", label: "引用的原文", text: item.selection.text }} /> : null}
-            <div className="cc-prose">{text ? renderCompanionMarkdown(text) : !item.blocks.length ? <p>{DIALOGUE_NO_BODY}</p> : null}</div>
+            <div className="cc-prose">{text ? renderCompanionMarkdown(text, companionWebCitations(item.blocks)) : !item.blocks.length ? <p>{DIALOGUE_NO_BODY}</p> : null}</div>
             <CompanionMessageRichBlocks blocks={item.blocks} />
             {item.blocks.some(block => block.type === "action_ref") ? <small>这段记录附有操作提议，可在对话手记查看。</small> : null}
             {item.kind === "cancelled" ? <small>这是一条被你停止的未完成回复。</small> : item.kind === "error" ? <small>这一轮没有完成。</small> : null}

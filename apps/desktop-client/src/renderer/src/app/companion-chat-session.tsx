@@ -1,3 +1,5 @@
+import { prepareCompanionNotePaper, beginNoteAiWork, endNoteAiWork, resetNoteAiWork, noteEditRequestRanges } from "../components/companion/note-companion-editing";
+import { companionEditedNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
 import { useCompanionPolls } from "./companion-chat-session-polls";
 import { useCompanionPageContext } from "./companion-chat-session-page";
 import {
@@ -117,6 +119,7 @@ export interface CompanionChatLiveReply {
   readonly messageId: string;
   readonly text: string;
   readonly hasActionBlocks: boolean;
+  readonly webCitations?: readonly CompanionContentBlockV1[];
   readonly proposalIds: readonly string[];
 }
 
@@ -431,7 +434,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   }, []);
   /**
    * 当前页面上下文：让"她根据页面情况回复"成立。契约没有对应 pageKind 的页面
-   * （笔记/设置等）传 null，不发 context。
+   * （设置等）传 null，不发 context。
    */
   const pageContext = useMemo<CompanionPageContextV1 | null>(() => {
     if (hudPage === "today") return { pageKind: "today", sharing: "page_registered" };
@@ -445,7 +448,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         noteVersionId: feedNoteIntent.noteVersionId,
       };
     }
-    if (hudPage === "note-read" && activeNoteId) {
+    if ((hudPage === "note-read" || hudPage === "note-edit") && activeNoteId) {
       return { pageKind: "note", sharing: "page_registered", noteId: activeNoteId, ...(activeNoteVersionId ? { noteVersionId: activeNoteVersionId } : {}) };
     }
     return null;
@@ -584,6 +587,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   useEffect(() => {
     sendGenerationRef.current += 1;
     pendingSendRef.current = null;
+    resetNoteAiWork();
     activeTurnRef.current = null;
     replyWaitRef.current?.cancel();
     replyWaitRef.current = null;
@@ -823,6 +827,12 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   useEffect(() => {
     if (mode !== "history") return;
     let cancelled = false;
+    const generation = sendGenerationRef.current;
+    // 记录读取只拥有空闲时的加载状态。已有发送、或读取途中开始的新一轮，
+    // 都由发送链路收尾；晚到的记录快照不能把正在回复/真实失败改成就绪。
+    const startedIdle = pendingSendRef.current === null && activeTurnRef.current === null;
+    const canUpdatePhase = () => startedIdle && generation === sendGenerationRef.current
+      && pendingSendRef.current === null && activeTurnRef.current === null;
     setPhase((current) => (conversationRef.current ? current : "loading"));
     void (async () => {
       try {
@@ -830,9 +840,9 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         const active = await ensureConversation();
         if (cancelled) return;
         await refreshMessages(active.id, epoch);
-        if (!cancelled) setPhase("ready");
+        if (!cancelled && canUpdatePhase()) setPhase("ready");
       } catch (error) {
-        if (cancelled) return;
+        if (cancelled || !canUpdatePhase()) return;
         setFailure(gatewayErrorMessage(error));
         setPhase("error");
       }
@@ -1127,6 +1137,14 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
           // 直接折成 chip（抽屉轮询按同一 id 去重，两条来源不冲突），自动跳不再依赖
           // 抽屉开关。
           if (streamed.eventType === "agent.tool") {
+            const work = streamed.payload.tool as { name?: string; toolCallId?: string; status?: string; noteEditTarget?: { noteId: string; startBlock: number; endBlock: number }; noteEdit?: unknown } | undefined;
+            if (work?.name === "companion_edit_note") {
+              if (work.noteEditTarget && work.status === "executing") beginNoteAiWork(`turn:${args.generation}:tool:${work.toolCallId}`, work.noteEditTarget.noteId,
+                [{ ...work.noteEditTarget, label: "伴星正在调整这段" }]);
+              if (work.status && !["requested", "executing"].includes(work.status)) endNoteAiWork(`turn:${args.generation}:tool:${work.toolCallId}`);
+              const receipt = companionEditedNoteV1Schema.safeParse(work.noteEdit);
+              if (receipt.success) { endNoteAiWork(`turn:${args.generation}`); window.dispatchEvent(new CustomEvent("astella:note-ai-edited", { detail: receipt.data })); }
+            }
             const tool = streamed.payload.tool as
               | { name?: unknown; safeSummary?: unknown; route?: unknown; autoExecute?: unknown }
               | undefined;
@@ -1430,10 +1448,17 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       await submitGateRef.current;
       if (generation !== sendGenerationRef.current) return false;
       const previousTurn = activeTurnRef.current;
-      const turnContext = explanation ? {
+      let turnContext = explanation ? {
         pageKind: "note" as const, sharing: "page_registered" as const,
         noteId: explanation.target.noteId, noteVersionId: explanation.target.anchor.noteVersionId,
       } : await resolveTurnContext(epoch);
+      if (turnContext?.pageKind === "note") {
+        const paper = await prepareCompanionNotePaper(turnContext.noteId);
+        if (paper) {
+          turnContext = { ...turnContext, ...paper };
+          beginNoteAiWork(`turn:${generation}`, turnContext.noteId, noteEditRequestRanges(text, paper.editing));
+        }
+      }
       if (generation !== sendGenerationRef.current) return false;
       const voiceArtifactId = input.voiceArtifactId ?? null;
       const clientMessageId = crypto.randomUUID();
@@ -1620,10 +1645,11 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         setLiveReply({
           messageId: reply.id,
           text: companionMessageText(reply),
+          webCitations: reply.blocks.filter(block => block.type === "citation" && block.referenceId),
           hasActionBlocks: proposalIds.length > 0,
           proposalIds,
         });
-        const richBlocks = reply.blocks.filter((block) => block.type === "image" || block.type === "quote"
+        const richBlocks = reply.blocks.filter(block => !(block.type === "citation" && block.referenceId)).filter((block) => block.type === "image" || block.type === "quote"
           || block.type === "diagram" || block.type === "card" || block.type === "nav" || block.type === "citation" || block.type === "code");
         setRichReply(richBlocks.length > 0 ? { messageId: reply.id, blocks: richBlocks } : null);
       } else {
@@ -1652,6 +1678,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       setPhase("error");
       return false;
     } finally {
+      endNoteAiWork(`turn:${generation}`);
       if (pendingSendRef.current?.generation === generation) pendingSendRef.current = null;
     }
   }, [
@@ -1683,6 +1710,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     const stoppedGeneration = ++sendGenerationRef.current;
     replyWaitRef.current?.cancel();
     pendingSendRef.current = null;
+    resetNoteAiWork();
     activeTurnRef.current = null;
     if (explanationId) interruptNoteExplanation(explanationId, "stopped");
     setFeedNoteAnchor(null);

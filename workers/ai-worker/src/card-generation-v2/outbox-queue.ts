@@ -58,9 +58,8 @@ export interface PendingOutboxJob {
  * 路径则会持续续租。
  *
  * 2026-09-15（评审 M1）：租约窗口不再被当作"job 最长时长"的同义词——阶段级护栏
- * 由 `V2_PIPELINE_BUDGET_MS`（默认 20min，严格小于本窗口）承担：预算到期会
- * abort 在途 LLM 调用并把 job 终结为 failed（不重试），因此正常路径不可能撑满
- * 30min 租约窗口。
+ * 由 `V2_PIPELINE_BUDGET_MS`（默认 60min，执行中续租）承担：预算到期会
+ * abort 在途 LLM 调用并把 job 终结为 failed（不重试），合法长任务由心跳保持租约。
  */
 export const V2_OUTBOX_LEASE_TIMEOUT_MS = 30 * 60_000;
 
@@ -74,17 +73,17 @@ export const V2_OUTBOX_LEASE_TIMEOUT_MS = 30 * 60_000;
  * 为 failed（**不重试**——重试会把同样的钱再花一遍），run 落 needs_attention
  * 并带可解释原因。
  *
- * 默认 20min：足够覆盖正常 20 卡管道，同时严格小于 30min 租约窗口。
+ * 默认 60min：给多阶段生成与推理留出空间，租约由已有心跳持续续期。
  * 可经 V2_PIPELINE_BUDGET_MS 覆盖。
  */
 export const V2_PIPELINE_BUDGET_MS = (() => {
-  const raw = Number(process.env.V2_PIPELINE_BUDGET_MS ?? 20 * 60_000);
+  const raw = Number(process.env.V2_PIPELINE_BUDGET_MS ?? 60 * 60_000);
   if (Number.isFinite(raw) && raw > 0) return raw;
   logger.warn(
     { raw: process.env.V2_PIPELINE_BUDGET_MS },
-    "V2_PIPELINE_BUDGET_MS 非法，回退 20min",
+    "V2_PIPELINE_BUDGET_MS 非法，回退 60min",
   );
-  return 20 * 60_000;
+  return 60 * 60_000;
 })();
 
 /**

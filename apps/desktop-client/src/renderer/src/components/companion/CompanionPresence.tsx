@@ -53,6 +53,7 @@ import { CompanionBubble } from "./CompanionBubble";
 import { companionDisplayName, subscribeCompanionDisplayName } from "./companion-display-name";
 import { CompanionHud, type CompanionHudAction } from "./CompanionHud";
 import { useCompanionSeatBudget } from "./use-companion-seat-budget";
+import { useNotebookFullscreenActive } from "../surfaces/notebook/notebook-fullscreen-state";
 import { createCueDeliveryReporter, findCueDelivery } from "./companion-cue-delivery";
 import { useCompanionProactiveCue } from "./use-companion-proactive-cue";
 import { CompanionNotificationCenter } from "./CompanionNotificationCenter";
@@ -315,10 +316,11 @@ export function CompanionPresence() {
     : COMPANION_HOME_ANCHORS[companionHomeZone];
   const hudPage = useRoomStore((state) => state.hudPage);
   const guideFilm = useRoomStore(state => state.companionGuideFilm);
+  const notebookFullscreen = useNotebookFullscreenActive();
   const companionPolicy = guideFilm ? { ...HUD_PAGES[hudPage].companion,
     mode: "ambient" as const, seat: "right" as const, framing: "full" as const,
     interaction: "none" as const, proactive: "silent" as const, draggable: false,
-  } : HUD_PAGES[hudPage].companion;
+  } : notebookFullscreen ? { ...HUD_PAGES[hudPage].companion, seat: "right" as const, framing: "bust" as const, draggable: false } : HUD_PAGES[hudPage].companion;
   const homeMode = companionPolicy.mode === "home";
   const sceneKey = surface ?? "room";
   const assessmentMode = companionPolicy.mode === "assessment";
@@ -848,7 +850,7 @@ export function CompanionPresence() {
       // the seat and no surface list may shadow it here. Task pages are fixed,
       // fixed seats: nothing here reads user drag state.
       const seat = companionPolicy.seat;
-      const seatKey = guideFilm ? "guide-film" : `${surface ?? "room"}:${hudPage}`;
+      const seatKey = guideFilm ? "guide-film" : notebookFullscreen ? "notebook-fullscreen" : `${surface ?? "room"}:${hudPage}`;
       // Pages that declare no seat (wide formal pages) fade the resident out
       // instead of pinning it to a side.
       if (seat === "none") {
@@ -881,7 +883,7 @@ export function CompanionPresence() {
       // real page switch and therefore uses the same seat crossfade.
       const pageSwitched = (previous === null || previous.key !== seatKey)
         && !homeMode;
-      const canAnimate = distance > 3
+      const canAnimate = !notebookFullscreen && distance > 3
         && motionModeRef.current !== "off"
         && !presencePausedRef.current;
       if (distance <= 3) {
@@ -979,7 +981,7 @@ export function CompanionPresence() {
       window.cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [clampVisibleCompanion, companionPolicy.seat, companionPosition.x, companionPosition.y, homeMode, hudPage, projectCompanionIntoCamera, surface, targetWorldAnchor, guideFilm]);
+  }, [clampVisibleCompanion, companionPolicy.seat, companionPosition.x, companionPosition.y, homeMode, hudPage, projectCompanionIntoCamera, surface, targetWorldAnchor, guideFilm, notebookFullscreen]);
 
   useGSAP(() => {
     if (!homeMode) return;
@@ -1544,6 +1546,7 @@ export function CompanionPresence() {
       data-engaged={engaged || undefined}
       data-task-surface-quiet={taskSurfaceQuiet || undefined}
       data-guide-film={guideFilm || undefined}
+      data-notebook-fullscreen={notebookFullscreen || undefined}
       data-presence-paused={presencePaused || undefined}
       data-external-modal={externalModalOpen || undefined}
       data-home-modal={homeV2ModalOpen || undefined}

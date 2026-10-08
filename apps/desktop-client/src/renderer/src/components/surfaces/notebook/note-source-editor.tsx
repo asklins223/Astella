@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { ChangeSet, Compartment, EditorState, StateEffect, StateField, Text, type Range } from "@codemirror/state";
 import { Decoration, EditorView, drawSelection, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, type DecorationSet } from "@codemirror/view";
+import { useNotebookFullscreenActive } from "./notebook-fullscreen-state";
 import { defaultKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { bracketMatching, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
@@ -11,6 +12,8 @@ import type { NoteMarkdownEditorHandle } from "./note-markdown-editor";
 import { noteSourceOffset, noteSourcePosition, noteSourceBlocks } from "./note-source-structure";
 import { placementsByBlock, type AnnotationPlacement } from "./note-annotation-placement";
 import type { NoteDocumentPosition } from "./note-source-bridge";
+import type { NoteAiRange } from "../../companion/note-companion-editing";
+import { changesTouchLockedRange } from "./note-ai-lock";
 
 export type NoteSourceEditorHandle = {
   readonly insertText: (text: string) => void;
@@ -36,9 +39,13 @@ export function NoteSourceEditor(props: {
    * 往里写 `<!-- -->` 之类的东西等于把装饰混进 Markdown。点那一行仍打开同一张旁页。
    */
   readonly annotationPlacements?: readonly AnnotationPlacement[];
+  readonly aiRanges?: readonly NoteAiRange[];
   readonly onOpenAnnotation?: (annotationId: string) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const settingsRef = useRef<HTMLDetailsElement>(null);
+  const fullscreen = useNotebookFullscreenActive();
+  useLayoutEffect(() => { if (settingsRef.current) settingsRef.current.open = !fullscreen; }, [fullscreen]);
   const viewRef = useRef<EditorView | null>(null);
   const readOnly = useRef(new Compartment());
   const gutter = useRef(new Compartment());
@@ -85,6 +92,30 @@ export function NoteSourceEditor(props: {
         EditorView.contentAttributes.of({ "aria-label": "笔记 Markdown 源码", "aria-multiline": "true" }),
         readOnly.current.of(EditorState.readOnly.of(props.disabled)), gutter.current.of(lineNumbers()),
         annotationPlacementsField,
+        EditorState.transactionFilter.of(tr => {
+          if (!tr.docChanged || fromDocument) return tr;
+          const blocks = noteSourceBlocks(tr.startState.doc.toString());
+          let blocked = false;
+          tr.changes.iterChangedRanges((from, to) => {
+            for (const range of latest.current.aiRanges ?? []) {
+              const first = blocks[range.startBlock], last = blocks[range.endBlock];
+              if (first && last && changesTouchLockedRange(from, to, first.from - 1, last.to + 1)) blocked = true;
+            }
+          });
+          return blocked ? [] : tr;
+        }),
+        EditorView.decorations.compute(["doc", annotationPlacementsField], state => {
+          const blocks = noteSourceBlocks(state.doc.toString());
+          const decorations: Range<Decoration>[] = [];
+          const lines = new Map<number, string>();
+          for (const range of latest.current.aiRanges ?? []) for (let ordinal = range.startBlock; ordinal <= range.endBlock; ordinal++) {
+            const block = blocks[ordinal]; if (!block) continue;
+            const first = state.doc.lineAt(block.from).number, last = state.doc.lineAt(block.to).number;
+            for (let line = first; line <= last; line++) lines.set(state.doc.line(line).from, range.label);
+          }
+          for (const [from, label] of lines) decorations.push(Decoration.line({ attributes: { class: "note-ai-working", "data-ai-label": label, "aria-busy": "true" } }).range(from));
+          return Decoration.set(decorations, true);
+        }),
         // CM6 在**每次 view update** 时重算这条，所以「用户改源码 → 块下标变 →
         // 记号跟着挪」不需要任何 React 重渲染来驱动。
         EditorView.decorations.compute([annotationPlacementsField, "doc"], (state) =>
@@ -205,17 +236,20 @@ export function NoteSourceEditor(props: {
   const placements = props.annotationPlacements;
   useEffect(() => {
     viewRef.current?.dispatch({ effects: setAnnotationPlacements.of(placements ?? []) });
-  }, [placements]);
+  }, [placements, props.aiRanges]);
 
   return <div className="note-source-editor">
-    <div className="note-source-editor__tools">
-      <span className="note-source-editor__label"><Code2 size={16} aria-hidden="true" />Markdown<span className="note-source-editor__caret">{position.line} 行 · {position.column} 列</span></span>
-      <div className="note-source-editor__actions">
-        <button type="button" aria-pressed={numbered} onClick={() => setNumbered((value) => !value)}><Hash size={15} aria-hidden="true" />行号</button>
-        <button type="button" aria-pressed={wrapped} onClick={() => setWrapped((value) => !value)}><WrapText size={15} aria-hidden="true" />自动换行</button>
-        <button type="button" title="查找 / 替换（⌘F / Ctrl+F）" onClick={() => { if (viewRef.current) openSearchPanel(viewRef.current); }}><Search size={15} aria-hidden="true" />查找 / 替换</button>
+    <details className="note-source-editor__settings" ref={settingsRef}>
+      <summary>源码设置</summary>
+      <div className="note-source-editor__tools">
+        <span className="note-source-editor__label"><Code2 size={16} aria-hidden="true" />Markdown<span className="note-source-editor__caret">{position.line} 行 · {position.column} 列</span></span>
+        <div className="note-source-editor__actions">
+          <button type="button" aria-pressed={numbered} onClick={() => setNumbered((value) => !value)}><Hash size={15} aria-hidden="true" />行号</button>
+          <button type="button" aria-pressed={wrapped} onClick={() => setWrapped((value) => !value)}><WrapText size={15} aria-hidden="true" />自动换行</button>
+          <button type="button" title="查找 / 替换（⌘F / Ctrl+F）" onClick={() => { if (viewRef.current) openSearchPanel(viewRef.current); }}><Search size={15} aria-hidden="true" />查找 / 替换</button>
+        </div>
       </div>
-    </div>
+    </details>
     <div className="note-source-editor__input" ref={root} />
     <div className="note-source-editor__status">
       <span>第 {position.line} 行 · 第 {position.column} 列{position.selected ? ` · 已选 ${position.selected.toLocaleString()} 字符` : ""}</span>

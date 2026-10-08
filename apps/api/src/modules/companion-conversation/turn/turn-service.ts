@@ -97,7 +97,8 @@ function sanitizeContext(request: CreateCompanionTurnRequestV1): unknown {
     case "today":
       return { version: 1, context: { ...base }, ...withExtra({}) };
     case "note":
-      return { version: 1, context: { ...base, noteId: ctx.noteId, ...(ctx.noteVersionId ? { noteVersionId: ctx.noteVersionId } : {}) }, ...withExtra({}) };
+      return { version: 1, context: { ...base, noteId: ctx.noteId, ...(ctx.noteVersionId ? { noteVersionId: ctx.noteVersionId } : {}),
+        ...(ctx.editing ? { editing: ctx.editing } : {}) }, ...withExtra({}) };
     case "review":
       return { version: 1, context: { ...base, cardId: ctx.cardId ?? null, keyPointId: ctx.keyPointId ?? null }, ...withExtra({}) };
     case "card":

@@ -519,7 +519,14 @@ export function parseCompanionSseFrame(block: string): CompanionChatStreamEventV
   const payload = envelope.data.type === "voice.segment.ready"
     ? (({ synthesisText: _privateSynthesisText, ...rendererSafe }) => rendererSafe)(envelope.data.payload)
     : envelope.data.payload;
-  if (JSON.stringify(payload).length > COMPANION_CHAT_EVENT_MAX_PAYLOAD_BYTES) return null;
+  // A saved note receipt carries its bounded CRDT state so personal notes can
+  // refresh without a collaboration stream. The strict shared schema has
+  // already checked its identity, shape and 3MB update limit above.
+  const carriesNoteEdit = envelope.data.type === "agent.tool"
+    && envelope.data.payload.tool.name === "companion_edit_note"
+    && envelope.data.payload.tool.status === "succeeded"
+    && envelope.data.payload.tool.noteEdit !== undefined;
+  if (JSON.stringify(payload).length > (carriesNoteEdit ? 3_010_000 : COMPANION_CHAT_EVENT_MAX_PAYLOAD_BYTES)) return null;
   const parsed = companionChatStreamEventV1Schema.safeParse({
     seq: envelope.data.seq,
     runId: envelope.data.runId,

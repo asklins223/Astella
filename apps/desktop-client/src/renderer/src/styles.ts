@@ -90,6 +90,7 @@ import "./components/render-error-boundary.css";
 import "./components/companion/companion-root.css";
 import "./components/companion/companion-bubble.css";
 import "./components/companion/companion-chat-record.css";
+import "./components/companion/companion-web-citations.css";
 import "./components/companion/companion-hud.css";
 import "./components/companion/companion-feed.css";
 import "./components/companion/companion-proposal-choice.css";
@@ -97,6 +98,9 @@ import "./components/companion/companion-run-trace.css";
 import "./components/companion/companion-interaction.css";
 import "./components/companion/companion-goals.css";
 import "./components/companion/companion-journal.css";
+
+/* Fullscreen borrows both the paper and the companion seat after their ordinary layout rules. */
+import "./components/surfaces/notebook/notebook-fullscreen.css";
 
 /**
  * 本文件刻意不导出任何东西：它唯一的作用是「被 import 时按上面那张单子把 CSS 注入」。

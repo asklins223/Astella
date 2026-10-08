@@ -1,6 +1,6 @@
 {
   "name": "@astella/shared",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -682,6 +682,7 @@
       "default": "./src/workspace-transaction.ts"
     },
     "./agent-contracts": "./src/contracts/agent-contracts.ts",
+    "./companion-note-authoring-contracts": "./src/contracts/companion-note-authoring-contracts.ts",
     "./agent-capabilities": "./src/agent-capabilities.ts",
     "./agent-long-goal-contracts": "./src/contracts/agent-long-goal-contracts.ts",
     "./agent-capability-catalog": {

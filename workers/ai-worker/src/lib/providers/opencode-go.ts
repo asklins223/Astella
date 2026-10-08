@@ -49,6 +49,7 @@ import { ProviderRequestError, ProviderStreamError } from "../provider-request-e
 import { AgentOutputError } from "../non-retryable-errors.ts";
 import { profileFingerprint } from "./profile-fingerprint.ts";
 import { modelTemperatureFields } from "./model-sampling.ts";
+import { modelOutputTokenLimit } from "./model-output-budget.ts";
 import { countModelTextTokens, DEEPSEEK_TOKENIZER_REVISION } from "../model-tokenizers.ts";
 
 /** OpenCode Go 默认端点（Responses API 根路径）。 */
@@ -550,7 +551,7 @@ export class OpenCodeGoProvider implements AIProvider {
       ...reasoning,
     };
     if (!(this.platformOptions?.disableMaxTokens ?? false)) {
-      body.max_output_tokens = Math.min(options.maxTokens ?? 4096, this.maxOutputTokens);
+      body.max_output_tokens = this.resolveOutputTokenLimit(options.maxTokens ?? 4096);
     }
     const response = await this.request(this.endpoint, this.headers(false), body, signal);
     if (signal?.aborted) throw abortError(signal, "after response");
@@ -591,7 +592,9 @@ export class OpenCodeGoProvider implements AIProvider {
   ): Promise<{ content: string; finishReason: string; phase?: "commentary" | "final_answer" }> {
     if (signal?.aborted) throw abortError(signal, "before request");
     const model = options.model ?? this.modelId;
-    const { instructions, input } = buildChatInput(messages);
+    const { instructions, input } = options.nativeAgentRequest
+      ? buildAgentTurnInput(options.nativeAgentRequest.systemPrompt, options.nativeAgentRequest.messages)
+      : buildChatInput(messages);
     const reasoning = this.reasoningField(options.disableThinking ?? false);
     const body: Record<string, unknown> = {
       model,
@@ -605,7 +608,7 @@ export class OpenCodeGoProvider implements AIProvider {
       ...reasoning,
     };
     if (!(this.platformOptions?.disableMaxTokens ?? false)) {
-      body.max_output_tokens = Math.min(options.maxTokens ?? 4096, this.maxOutputTokens);
+      body.max_output_tokens = this.resolveOutputTokenLimit(options.maxTokens ?? 4096);
     }
     const response = await this.streamRequest(this.endpoint, this.headers(true), body, signal);
     if (signal?.aborted) {
@@ -765,7 +768,7 @@ export class OpenCodeGoProvider implements AIProvider {
       ...reasoning,
     };
     if (!(this.platformOptions?.disableMaxTokens ?? false)) {
-      body.max_output_tokens = Math.min(request.maxTokens, this.maxOutputTokens);
+      body.max_output_tokens = this.resolveOutputTokenLimit(request.maxTokens);
     }
     if (hasTools) {
       body.tools = request.tools.map((tool) => ({
@@ -859,6 +862,10 @@ export class OpenCodeGoProvider implements AIProvider {
       outputLimitEnforced: !(this.platformOptions?.disableMaxTokens ?? false),
       fingerprint: `${this.id}:${this.modelId}:native_tools:${profileFingerprint(this.modelProfile)}:${this.modelId === "deepseek-v4.1-flash" ? DEEPSEEK_TOKENIZER_REVISION : "byte-bound"}`,
     };
+  }
+
+  resolveOutputTokenLimit(requested?: number): number | undefined {
+    return modelOutputTokenLimit(this.modelProfile, requested, this.maxOutputTokens);
   }
 
   countTextTokens(text: string): Promise<number | null> {

@@ -17,6 +17,7 @@ import { CompanionHomeProjectionProvider } from "./app/companion-home-projection
 import { HomeCapabilityProjectionProvider } from "./app/home-capability-projection";
 import { DirectoryRail } from "./components/DirectoryRail";
 import { HudReturn } from "./components/hud/HudPage";
+import { useNotebookFullscreenActive } from "./components/surfaces/notebook/notebook-fullscreen-state";
 
 function isTypingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -63,6 +64,7 @@ function hasOpenModal(): boolean {
 // App publishes camera/transition attributes. Those phase-only commits need
 // not render the full room, its providers and the currently mounted paper.
 export const RoomExperience = memo(function RoomExperience() {
+  const notebookFullscreen = useNotebookFullscreenActive();
   const theme = useRoomStore((state) => state.theme);
   const surface = useRoomStore((state) => state.surface);
   const invoke = useRoomStore((state) => state.invoke);
@@ -91,6 +93,7 @@ export const RoomExperience = memo(function RoomExperience() {
         modalOpen: hasOpenModal(),
       })) return;
       if (event.key === "Escape") {
+        if (notebookFullscreen) return;
         if (document.querySelector('.companion-hud:not([data-mode="closed"])')) return;
         event.preventDefault();
         if (surface) invoke("home");
@@ -106,11 +109,11 @@ export const RoomExperience = memo(function RoomExperience() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [invoke, onboardingOpen, surface]);
+  }, [invoke, onboardingOpen, surface, notebookFullscreen]);
 
   const room = (
     <>
-      <a className="skip-link" href="#main-content" aria-hidden={onboardingOpen || undefined} inert={onboardingOpen || undefined}>跳到主要内容</a>
+      <a className="skip-link" href="#main-content" hidden={notebookFullscreen} aria-hidden={onboardingOpen || undefined} inert={onboardingOpen || undefined}>跳到主要内容</a>
       <div
         className="scene-stage"
         role="region"
@@ -120,11 +123,13 @@ export const RoomExperience = memo(function RoomExperience() {
       </div>
       <CompanionPresence />
       <CompanionFeedMenu />
-      <DirectoryRail />
-      <HudRoomControl />
-      {surface
-        ? <HudReturn label={returnTarget?.label ?? "返回学习空间"} onReturn={returnTarget?.run ?? (() => invoke("home"))} />
-        : null}
+      <div className="room-chrome" hidden={notebookFullscreen} inert={notebookFullscreen}>
+        <DirectoryRail />
+        <HudRoomControl />
+        {surface
+          ? <HudReturn label={returnTarget?.label ?? "返回学习空间"} onReturn={returnTarget?.run ?? (() => invoke("home"))} />
+          : null}
+      </div>
       <main id="main-content" inert={onboardingOpen || undefined}>
         <h1 className="sr-only">拾星书房</h1>
         <TaskSurface />
@@ -137,6 +142,7 @@ export const RoomExperience = memo(function RoomExperience() {
 });
 
 export function App() {
+  const notebookFullscreen = useNotebookFullscreenActive();
   const theme = useRoomStore((state) => state.theme);
   const motionPreference = useRoomStore((state) => state.motionMode);
   const reducedMotion = useRoomStore((state) => state.reducedMotion);
@@ -181,6 +187,7 @@ export function App() {
       data-theme={theme}
       data-platform={platform}
       data-surface-open={Boolean(surface)}
+      data-notebook-fullscreen={notebookFullscreen || undefined}
       data-onboarding-open={onboardingOpen}
       data-view-preset={viewPreset}
       data-scene-phase={scenePhase}

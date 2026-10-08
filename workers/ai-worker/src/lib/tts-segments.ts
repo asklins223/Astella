@@ -65,6 +65,7 @@ const MARKDOWN_EMPHASIS_PATTERN = /\*\*|__|~~/g;
 /** 净化可见文本：去掉代码块/行内代码、URL、markdown 语法后压缩空白。 */
 export function purifyVoiceText(text: string): string {
   return text
+    .replace(/\[\^web-[a-zA-Z0-9_-]+\]/g, "")
     .replace(MARKDOWN_BLOCK_PATTERN, " ")
     .replace(URL_PATTERN, " ")
     .replace(MARKDOWN_LINK_PATTERN, "$1")

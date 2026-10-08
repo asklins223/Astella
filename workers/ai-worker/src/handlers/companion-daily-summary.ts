@@ -48,7 +48,7 @@ import {
   resolveProviderForTask,
   type AIGovernanceContext,
 } from "../lib/governance.ts";
-import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
+import { resolveProviderCallTimeout, resolveCompanionAgentBudget } from "../lib/handler-timeout-config.ts";
 import { companionDiaryTotal } from "../lib/metrics.ts";
 import { DailyDiaryOutputError } from "../lib/non-retryable-errors.ts";
 import { parseMemoryExtractJson } from "./companion-memory-extractor.ts";
@@ -667,7 +667,6 @@ export async function collectDiaryMaterial(tx: WorkerTransaction, scope: DayScop
   };
 }
 
-const DIARY_TASK_TOTAL_BUDGET_MS = 100_000;
 const DIARY_TASK_MODEL_CALLS = 4;
 const DIARY_SELECTION_TASK_ID = "companion_diary_selection";
 const DIARY_SELECTION_TASK_VERSION = 1;
@@ -1189,7 +1188,7 @@ export async function runCompanionDailySummary(job: JobPayload): Promise<void> {
   if (!hasDiaryWorthyMaterial({ quietDay: material.quietDay, candidateCount: candidates.length })) return;
 
   let persistenceGuard: DiaryPersistenceGuard | undefined;
-  const deadlineAt = Date.now() + DIARY_TASK_TOTAL_BUDGET_MS;
+  const deadlineAt = Date.now() + resolveCompanionAgentBudget("companion_daily_summary").loopDeadlineMs;
   try {
     const govCtx = await resolveAIGovernanceContext(job.workspaceId, userId);
     if (!govCtx.consentOk) throw new AIConsentRequiredError();

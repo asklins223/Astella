@@ -99,7 +99,12 @@ export function companionBubblePreviewText(text: string, revealedChars: number):
   const full = text.trim();
   const visible = revealedChars >= full.length ? full : full.slice(0, Math.max(0, revealedChars));
   if (visible.length <= COMPANION_BUBBLE_MAX_CHARS) return visible;
-  return `…${visible.slice(-COMPANION_BUBBLE_MAX_CHARS)}`;
+  let start = visible.length - COMPANION_BUBBLE_MAX_CHARS;
+  // A moving preview must never expose half of a citation identity.
+  for (const match of visible.matchAll(/\[\^web-[a-zA-Z0-9_-]+\]/g)) {
+    if (match.index! < start && match.index! + match[0].length > start) start = match.index! + match[0].length;
+  }
+  return `…${visible.slice(start)}`;
 }
 
 /** 纯计时器的停留时长；与 `companionBubbleText` 搭配使用。 */

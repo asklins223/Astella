@@ -12,6 +12,8 @@ import { sql } from "drizzle-orm";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { logger } from "../lib/logger.ts";
+import type { CompanionContentBlockV1 } from "@astella/shared";
+import { companionCreatedNoteId, createdNoteToolResult, readCreatedNoteReceipt } from "./companion-note-authoring.ts";
 
 /**
  * 失败回合的正文片段至少留下多少字才使用正文留档（2026-09-19）。
@@ -78,8 +80,6 @@ export async function persistFailedPartial(args: {
   const text = delivered.length >= COMPANION_FAILED_PARTIAL_MIN_CHARS
     ? delivered
     : args.failureText?.trim() || pickCompanionFailureFallbackLine(args.runId);
-  const blocks = [{ type: "text" as const, text, emotion: "neutral" as const }];
-  const contentSha256 = sha256Utf8V1(canonicalJsonV1(blocks));
   const messageId = randomUUID();
   try {
     return await withWorkerWorkspaceTransaction(
@@ -94,6 +94,27 @@ export async function persistFailedPartial(args: {
           FOR UPDATE
         `);
         if (!claimed[0]) return false;
+        // A final model/transport failure cannot erase a successfully saved
+        // note's delivery path. Keep the turn failed and attach only receipts
+        // that still resolve to this actor's actual created document.
+        const blocks: CompanionContentBlockV1[] = [{ type: "text", text, emotion: "neutral" }];
+        const calls = await tx.execute<{ result_ref: string | null }>(sql`SELECT result_ref FROM companion_agent_tool_calls
+          WHERE run_id=${args.runId} AND workspace_id=${args.workspaceId} AND user_id=${args.userId}
+            AND name='companion_create_note' AND status='succeeded' ORDER BY created_at LIMIT 1`);
+        const receipt = readCreatedNoteReceipt(calls[0]?.result_ref ?? null);
+        if (receipt && receipt.noteId === companionCreatedNoteId(args.runId)) {
+          const visible = await tx.execute<{ id: string }>(sql`SELECT n.id FROM notes n JOIN note_versions v
+            ON v.note_id=n.id AND v.workspace_id=n.workspace_id AND v.id=${receipt.noteVersionId}
+            WHERE n.id=${receipt.noteId} AND n.workspace_id=${args.workspaceId} AND n.deleted_at IS NULL
+              AND (n.share_scope='shared' OR n.created_by=${args.userId})`);
+          if (visible[0]) {
+            const savedText = `笔记《${receipt.title}》已保存。这次回复中断了，可以先打开笔记继续阅读和编辑，无需重复生成。`;
+            blocks[0] = { type: "text", text: delivered.length >= COMPANION_FAILED_PARTIAL_MIN_CHARS
+              ? `${text}\n\n${savedText}` : savedText, emotion: "neutral" };
+            blocks.push(...(createdNoteToolResult(receipt).blocks ?? []));
+          }
+        }
+        const contentSha256 = sha256Utf8V1(canonicalJsonV1(blocks));
         const counters = await tx.execute<{ next_message_seq: string }>(sql`
           UPDATE companion_conversations
           SET next_message_seq = next_message_seq + 1, last_message_at = now()

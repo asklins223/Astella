@@ -94,6 +94,8 @@ export interface AIProvider {
   // ── Supervisor Agent v1（计划 §8.1） ──
   executeAgentTurn?(request: AgentTurnRequest, signal?: AbortSignal): Promise<AgentTurnResult>;
   getCapabilities?(): ProviderCapability;
+  /** Effective transport output ceiling, also used by the context governor. */
+  resolveOutputTokenLimit?(requested?: number): number | undefined;
   /** Local tokenizer for this model; null means no verified tokenizer exists. */
   countTextTokens?(text: string): Promise<number | null>;
 

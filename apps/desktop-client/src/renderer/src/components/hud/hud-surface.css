@@ -3101,6 +3101,11 @@
   gap: 0;
 }
 
+/* Reserve the native caption buttons at the right edge; read their current overlay width at every zoom. */
+.desktop-app.hud-surface:is([data-platform="win32"], [data-platform="linux"]) .room-control {
+  right: calc(var(--native-caption-width, 138px) + 12px);
+}
+
 /* 折叠 = 先淡出（110ms@0），再关门（320ms@80ms）。
    min-width:0 与 overflow 各挡一半的自动最小尺寸：槽位是 display:grid 的 flex
    item，默认 min-width:auto = 内容尺寸 = 那颗 18px 的 svg，只写 width:0 会卡在

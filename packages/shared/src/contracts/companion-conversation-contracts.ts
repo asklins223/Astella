@@ -10,6 +10,7 @@
  */
 
 import { z } from "zod";
+import { companionNoteEditingContextV1Schema } from "./companion-note-authoring-contracts.ts";
 import { allowedMainRouteV2Schema } from "./companion-bridge-contracts.ts";
 import {
   characterCueEmotionV1Schema,
@@ -135,6 +136,10 @@ export const companionContentBlockV1Schema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("citation"),
     label: z.string().min(1).max(200),
+    /** Stable identity supplied by the search executor, never by the model. */
+    referenceId: z.string().regex(/^web-[a-f0-9]{16}$/).optional(),
+    media: z.string().max(100).optional(),
+    publishDate: z.string().max(80).optional(),
     target: z.discriminatedUnion("kind", [
       z.object({
         kind: z.literal("external_https"),
@@ -355,6 +360,7 @@ export const companionPageContextV1Schema = z.discriminatedUnion("pageKind", [
     sharing: z.literal("page_registered"),
     noteId: z.string().uuid(),
     noteVersionId: z.string().uuid().optional(),
+    editing: companionNoteEditingContextV1Schema.optional(),
   }).strict(),
   z.object({
     pageKind: z.literal("today"),

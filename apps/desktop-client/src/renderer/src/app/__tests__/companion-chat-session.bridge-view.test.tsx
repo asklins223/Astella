@@ -7,6 +7,7 @@ import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts"
 import { CompanionChatProvider, useCompanionChat } from "../companion-chat-session.tsx";
 import { useRoomStore } from "../room-store.ts";
 import { feedNoteIntentToCompanion } from "../../components/companion/companion-feed.ts";
+import { registerCompanionNotePaper, useNoteAiWork } from "../../components/companion/note-companion-editing";
 
 /**
  * 页面可读视图 → bridge context 的那一段（doc 37 根因第 2 条）。
@@ -176,6 +177,32 @@ describe("可读视图跟着屏幕一起进 bridge context", () => {
       noteId,
       noteVersionId,
     });
+  });
+
+  it("编辑页保留光标，发送前保存当前正文，失败后立即解除局部锁定", async () => {
+    const noteId = "33333333-3333-4333-8333-333333333333";
+    const noteVersionId = "44444444-4444-4444-8444-444444444444";
+    useRoomStore.setState({ hudPage: "note-edit", activeNoteRef: { noteId, noteVersionId: null, mode: "live-preview" } });
+    let observedLocks = 0;
+    sendTurn.mockImplementation(async () => {
+      observedLocks = Object.keys(useNoteAiWork.getState().items).length;
+      return { version: 1, ok: false, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" }, requestId: "test", correlationId: "test", schemaRevision: "desktop-ipc-v1" };
+    });
+    const prepare = vi.fn(async () => ({ noteVersionId, editing: {
+      cursor: { block: 0, offset: 5, coordinate: "document" as const, expectedBlock: "这是保留下来的插入段落" },
+    } }));
+    const unregister = registerCompanionNotePaper({ noteId, prepare });
+    let chat: ReturnType<typeof useCompanionChat> | null = null;
+    function CaptureChat() { chat = useCompanionChat(); return null; }
+    render(<CompanionChatProvider><CaptureChat /></CompanionChatProvider>);
+    try {
+      await act(async () => { await chat!.send({ text: "在光标后插入一个例子" }); });
+      expect(prepare).toHaveBeenCalledOnce();
+      expect(sendTurn.mock.calls[0]?.[0].request.turn.context).toMatchObject({ pageKind: "note", noteId, noteVersionId,
+        editing: { cursor: { block: 0, offset: 5, coordinate: "document" } } });
+      expect(observedLocks).toBe(1);
+      expect(useNoteAiWork.getState().items).toEqual({});
+    } finally { unregister(); }
   });
 
   // 这里原有一条「凭证页不带上任何可读内容」——它的主语（`hudPage: "login"`）已随

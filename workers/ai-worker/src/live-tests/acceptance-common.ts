@@ -26,7 +26,7 @@ const num = (v:unknown):number|null => typeof v==="number" && Number.isFinite(v)
 export type WireReceipt = {model:unknown;effort:unknown;enableThinking:unknown;outputLimit:unknown;temperature:number|null;instructionHash:string;
   inputTokens:number|null;outputTokens:number|null;reasoningTokens:number|null;elapsedMs:number;transport:string;errorKind?:string;
   completedTextHash?:string;streamedTextHash?:string;completedTextMatchesDeltas?:boolean;outputMessageCount?:number;
-  messagePhases?:Array<string|null>};
+  messagePhases?:Array<string|null>;returnedModel?:string};
 
 export function platform(capability:Capability, declaredModelOverride?: string):ResolvedPlatform {
   const resolved=resolveSystemPlatform(capability);
@@ -80,6 +80,8 @@ export function observedProvider(p:ResolvedPlatform, sessionId:string, receipts:
         receipt.errorKind=/context|input.*token|token.*limit/.test(message)?"context_limit":/body|payload|entity|size/.test(message)?"request_size":"other";
       }
       const usage=obj(obj(response.body).usage);
+      const returnedModel=obj(response.body).model;
+      if(typeof returnedModel==="string"&&/^[A-Za-z0-9._/-]{1,120}$/.test(returnedModel))receipt.returnedModel=returnedModel;
       receipt.inputTokens=num(usage.input_tokens??usage.prompt_tokens);
       receipt.outputTokens=num(usage.output_tokens??usage.completion_tokens);
       receipt.reasoningTokens=num(obj(usage.output_tokens_details??usage.completion_tokens_details).reasoning_tokens);
@@ -102,6 +104,8 @@ export function observedProvider(p:ResolvedPlatform, sessionId:string, receipts:
         if(!line.startsWith("data:"))return;
         try {
           const event=obj(JSON.parse(line.slice(5).trim()));
+          const returnedModel=obj(event.response).model;
+          if(typeof returnedModel==="string"&&/^[A-Za-z0-9._/-]{1,120}$/.test(returnedModel))receipt.returnedModel=returnedModel;
           if(event.type==="response.output_text.delta"&&typeof event.delta==="string")streamedText+=event.delta;
           if(event.type==="response.completed"&&Array.isArray(obj(event.response).output)){
             const messages=(obj(event.response).output as unknown[]).filter(item=>obj(item).type==="message");

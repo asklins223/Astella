@@ -134,8 +134,8 @@
       "model": "THUDM/GLM-4-9B-0414"
     },
     "companion_fallback": {
-      "platform": "siliconflow-chat",
-      "model": "THUDM/GLM-4-9B-0414"
+      "platform": "opencode-go",
+      "model": "deepseek-v4.1-flash"
     },
     "vision": {
       "platform": "bigmodel",

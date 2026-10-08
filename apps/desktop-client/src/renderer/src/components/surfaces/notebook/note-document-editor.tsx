@@ -52,7 +52,7 @@ export function NoteDocumentEditor({ mode, ref, ...props }: ComponentProps<typeo
     <div hidden={mode !== "source"}>
       {editor ? <NoteSourceEditor editor={editor} handleRef={sourceRef} disabled={Boolean(props.disabled) || mode !== "source"}
         onChange={props.onChange} onImagePaste={props.onImagePaste}
-        annotationPlacements={props.annotationPlacements} onOpenAnnotation={props.onOpenAnnotation} /> : null}
+        annotationPlacements={props.annotationPlacements} onOpenAnnotation={props.onOpenAnnotation} aiRanges={props.aiRanges} /> : null}
     </div>
   </div>;
 }

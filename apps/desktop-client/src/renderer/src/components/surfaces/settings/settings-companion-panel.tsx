@@ -63,6 +63,7 @@ export function SettingsCompanionPanel(props: { onReadable: (value: SettingsRead
       { label: "主动介入", state: interventionOptions.find(option => option[0] === (account.interventionLevel ?? "moderate"))?.[1] },
       { label: "静默时段", state: quiet ? `${quiet.startLocal}–${quiet.endLocal}` : "已关闭" },
       { label: "助理权限", state: permissionOptions.find(option => option[0] === (account.agentSettings?.permissionLevel ?? "guided"))?.[1] },
+      { label: "联网搜索", state: account.agentSettings?.webSearchEnabled === true ? "已开启" : "已关闭" },
       { label: "自动生成日记", state: account.diaryEnabled ? "已开启" : "已暂停" },
     ] : [],
   };
@@ -88,6 +89,7 @@ export function SettingsCompanionPanel(props: { onReadable: (value: SettingsRead
         </section>
         <section className="settings-companion-chapter"><header><h3>她可以做什么</h3><p>执行动作的权限与表达边界分别管理。</p></header>
           <SettingRow title="助理权限" detail={COMPANION_AGENT_PERMISSION_DETAIL[account.agentSettings?.permissionLevel ?? "guided"]}><HudSegmented label="助理权限档位" value={account.agentSettings?.permissionLevel ?? "guided"} options={permissionOptions} compact disabled={busy} onChange={value => void patch({ agentPermissionLevel: value })} /></SettingRow>
+          <SettingRow title="联网搜索" detail="允许她按需向智谱发送搜索词，查找公开网页。回复会附上可查看、复制和打开的来源；搜索不可用时继续交流。默认关闭。"><HudSwitch label="联网搜索" checked={account.agentSettings?.webSearchEnabled === true} disabled={busy} onChange={next => void patch({ webSearchEnabled: next })} /></SettingRow>
           <SettingRow title="自动生成日记" detail="暂停期间不收集日记素材；重新开启后从开启时起积累。"><HudSwitch label="自动生成日记" checked={account.diaryEnabled} disabled={busy} onChange={next => void patch({ diaryEnabled: next })} /></SettingRow>
           <p className="settings-companion-note">说话风格、名字和表达分量，在伴星中心的「人格」页调整。</p>
         </section>

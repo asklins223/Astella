@@ -264,6 +264,43 @@ test("原文引文纠正后仍不匹配时发布失败，不保存成功答案�
   }
 });
 
+for (const corrected of [true, false]) test(`实际读取后引文纠正：${corrected ? "修正后完成答复" : "仍不匹配则诚实失败"}`, async () => {
+  const scope = await seedBase();
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId, { userText: "看看现在的页面，原句怎么说的？" });
+  const originalChat = MockProvider.prototype.chatCompletion;
+  const originalExecute = MockProvider.prototype.executeAgentTurn;
+  let calls = 0;
+  try {
+    MockProvider.prototype.chatCompletion = async () => ({ content: JSON.stringify({ intent: "question", toolUse: "read",
+      subjects: [], goalRelation: "unrelated", candidateOperations: ["companion_read_current_page"], ambiguities: [], pendingOfferIndexes: [] }), usage: {} });
+    MockProvider.prototype.executeAgentTurn = async request => {
+      calls += 1;
+      if (calls === 1) return { content: "", toolCalls: [{ id: "read-for-quote", name: "companion_read_current_page", arguments: {} }],
+        finishReason: "tool_calls", usage: null, providerRequestId: null };
+      assert.ok(request.messages.some(message => message.role === "tool"), "校验前已经真实执行读取工具");
+      if (calls === 3) assert.match(request.messages.filter(message => message.role === "system").map(message => message.content).join("\n"), /引语.*不一致/);
+      return { content: corrected && calls === 3 ? "当前没有可读取的页面信息，我无法核对这段原文。" : "> 弹簧总是满足胡克定律，没有任何适用限制。",
+        toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null };
+    };
+    if (corrected) await invokeRun(scope.workspaceId, scope.userId, run);
+    else await assert.rejects(invokeRun(scope.workspaceId, scope.userId, run),
+      (error: unknown) => error instanceof AgentOutputError && error.code === "unverified_quote");
+    assert.equal(calls, 3, "一次读取、一次答复、一次独立的引文纠正");
+    const [result] = await readInScope(scope, tx => tx`SELECT status,tool_call_count FROM companion_turn_runs WHERE id=${run.runId}`);
+    assert.equal(result.status, corrected ? "succeeded" : "failed");
+    assert.equal(result.tool_call_count, 1, "引文纠正不重复读取工具");
+    const history = await readInScope(scope, tx => tx`SELECT kind,blocks FROM companion_messages WHERE run_id=${run.runId} AND role='assistant'`);
+    assert.equal(history.length, 1);
+    assert.doesNotMatch(JSON.stringify(history[0].blocks), /弹簧总是满足/);
+    if (corrected) assert.match(JSON.stringify(history[0].blocks), /无法核对/);
+    else assert.equal(history[0].kind, "error");
+  } finally {
+    MockProvider.prototype.chatCompletion = originalChat;
+    MockProvider.prototype.executeAgentTurn = originalExecute;
+    await run.cleanup();
+  }
+});
+
 test("20,000 字选区通过真实 handler 装配，末尾原文进入提交的模型快照", async () => {
   const previousWindow = process.env.MOCK_CONTEXT_WINDOW_TOKENS;
   // Exercise the active 1M route's input size; the default 128K mock route has

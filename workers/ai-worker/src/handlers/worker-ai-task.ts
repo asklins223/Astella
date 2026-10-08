@@ -84,7 +84,8 @@ export async function runWorkerAiTask<TInput, TOutput>(
     budget: {
       maxModelCalls: options.maxModelCalls ?? 1,
       stepTimeoutMs: options.timeoutMs,
-      taskDeadlineMs: options.taskDeadlineMs ?? options.timeoutMs,
+      // Each allowed attempt needs its own model wait; the job signal still bounds the whole task.
+      taskDeadlineMs: options.taskDeadlineMs ?? options.timeoutMs * (options.maxModelCalls ?? 1),
       maxAutoRetries: options.maxAutoRetries ?? 0,
     },
     completion: { kind: "structured_parsed" },

@@ -371,9 +371,9 @@ services:
       S3_BUCKET: ${S3_BUCKET:-astella-workspaces}
       MINIO_ROOT_USER: astella
       MINIO_ROOT_PASSWORD: astella_dev_secret
-      # Handler timeouts (ms) — per job type, clamped below lease timeout (120s)
+      # Handler budgets are independent of the 120s crash-recovery lease; active jobs renew it.
       WORKER_MODEL_TIMEOUT_MS: ${WORKER_MODEL_TIMEOUT_MS:-}
-      WORKER_PROVIDER_TIMEOUT_MS: ${WORKER_PROVIDER_TIMEOUT_MS:-75000}
+      WORKER_PROVIDER_TIMEOUT_MS: ${WORKER_PROVIDER_TIMEOUT_MS:-900000}
       # V2 生成调试：失败时打印 author/planner 原始输出与 parse issues（溯源用）。
       V2_E2E_DEBUG_ERRORS: ${V2_E2E_DEBUG_ERRORS:-1}
       WORKER_TIMEOUT_PARSE_SOURCE_MS: ${WORKER_TIMEOUT_PARSE_SOURCE_MS:-}
@@ -395,6 +395,7 @@ services:
     volumes:
       - ./workers/ai-worker/src:/app/src
       - ./packages/shared:/app/packages/shared
+      - /app/packages/shared/node_modules
       - ./packages/agent-core/src:/app/packages/agent-core/src
       - ./packages/agent-core/package.json:/app/packages/agent-core/package.json:ro
       - ./packages/agent-host/src:/app/packages/agent-host/src

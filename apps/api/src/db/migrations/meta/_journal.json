@@ -2731,6 +2731,34 @@
       "when": 1791269351528,
       "tag": "0393_object_transfers",
       "breakpoints": true
+    },
+    {
+      "idx": 390,
+      "version": "7",
+      "when": 1791427187706,
+      "tag": "0394_job_lease_heartbeat",
+      "breakpoints": true
+    },
+    {
+      "idx": 391,
+      "version": "7",
+      "when": 1791427187707,
+      "tag": "0395_companion_note_creation",
+      "breakpoints": true
+    },
+    {
+      "idx": 392,
+      "version": "7",
+      "when": 1791427187708,
+      "tag": "0396_companion_note_edit_dispatch",
+      "breakpoints": true
+    },
+    {
+      "idx": 393,
+      "version": "7",
+      "when": 1791427187709,
+      "tag": "0397_companion_note_edit_pending_index",
+      "breakpoints": true
     }
   ]
 }

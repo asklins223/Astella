@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defineAgentCapability as tool, type AgentCapabilityDeclaration } from "./agent-capability-definition.ts";
+import { companionCreateNoteV1Schema, companionEditNoteV1Schema } from "./contracts/companion-note-authoring-contracts.ts";
 import {
   COMPANION_PAGE_DESTINATIONS_V2,
   companionPageKindValuesV2,
@@ -24,6 +25,8 @@ function companionOpenPageDescriptionV2(): string {
 }
 
 export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] = [
+  tool("companion_edit_note", "用户明确要改当前笔记时直接编辑正文：insert_at_cursor在本轮光标后插入，append追加末尾，replace_selection/delete_selection处理本轮选区，replace_blocks/delete_blocks处理0起算的段落，读取的第1块对应0。段落操作先读正文，逐字带expectedBlocks；选区与光标取页面editing。表格用GFM，流程图用mermaid围栏。收到保存回执才说完成，原文变化就停止。", "reversible_low", false, companionEditNoteV1Schema,
+    { label: "正在调整笔记正文", discovery: "在光标后补充、追加到末尾、删除段落，或把原文改成表格和流程图。" }, { maxInputChars: 20_000, maxOutputChars: 4_000 }),
   tool("companion_read_context", "读取当前用户在当前 workspace 的学习上下文。", "read", false, emptyArguments, { label: "正在看你的学习上下文" }),
   tool("companion_read_current_page", "读取用户此刻屏幕上正显示的内容：页面标题、状态行、计数器、按屏幕顺序编号的条目、空态与当前筛选。用户说「这一页」「第N张」「为什么这么慢/卡住」时先调它——别用别的工具的数字代替眼前这屏。返回 available=false 表示这一页没有可读内容，要问她是在哪儿看到的，不要据此推断系统没问题。", "read", false, emptyArguments, { label: "正在看你这一页" }),
   // 「取回入口」就是这条工具（方案 44 §5.5）。摘要块与覆盖回执会告诉她哪一段被折掉了、
@@ -33,7 +36,9 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   // 系统敞开面（方案 29 §4.2，抱怨 #5/#6「连跳到某个笔记都做不到、看不到学习数据、
   // 看不到任务队列」）。这些不是"锦上添花的工具"：没有它们，她能说的只有闲聊。
   // 描述统一写成"什么时候该调"，因为工具描述是她唯一能看到的用法说明。
-  tool("companion_search_notes", "按关键词搜用户的笔记标题与正文，返回笔记 id/标题/时间。用户问「我之前记过什么」或要跳到某篇笔记时先用它。", "read", false, z.object({ query: z.string().min(1).max(120), limit: z.number().int().min(1).max(10).optional() }).strict(), { label: "正在翻你的笔记" }),
+  tool("companion_search_notes", "按关键词搜当前空间可见笔记的标题与正文，返回真实身份。找指定笔记默认match=all，所有词都命中；为新笔记找关联内容用match=any，将主题、相关概念和前置知识分词查询，结果按命中数排列。候选只是关键词匹配，必须读正文核对关系，不能仅凭标题建立链接。", "read", false, z.object({ query: z.string().min(1).max(120), limit: z.number().int().min(1).max(10).optional(), match: z.enum(["all", "any"]).optional() }).strict(), { label: "正在翻你的笔记" }),
+  tool("companion_create_note", "用户明确要把知识点或当前讨论整理成一篇新笔记时，直接保存完整可编辑笔记。先搜索库内相关笔记，读正文再选links，没关联就留空；执行器附真实链接与说明。仅生成速看或拓展草稿用agent_start_goal，聊天回答不保存。每轮一篇，保存回执后才说完成，不改旧笔记。", "reversible_low", false, companionCreateNoteV1Schema,
+    { label: "正在写成笔记", discovery: "把聊清楚的知识点写成一篇可编辑笔记，并链接库内读过的相关内容。" }, { maxInputChars: 18_000 }),
   // 分页续读（39d W6-2 / 39b C5）：正文按块分页，`startOrdinal` 是续读的起点
   // （上一页返回的 nextStartOrdinal）。不再"截前 3000 字假装读过"——返回体带
   // 块序号、总块数与下一页起点，读不到结尾时按它续，不谎称已读全文。
@@ -241,4 +246,3 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   // 明明能办的事也回答"我看不了"。
   tool("companion_show_image", "把用户自己库里的图片显示在伴星身旁和对话中（只在本机显示，不发给模型，不需要图片外发开关）。自然地说想看看某文章的插图也属于展示请求。若只知道文章简称或标题，先用 companion_search_notes 找到真实 noteId，再用 noteId 与 position（从 1 起）或 assetId 展示；不可凭旧对话猜图片归属。", "read", false, z.object({ noteId: uuid.optional(), assetId: uuid.optional(), position: z.number().int().min(1).max(20).optional() }).strict(), { label: "正在把那张图调出来" }),
 ];
-

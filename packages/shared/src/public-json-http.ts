@@ -3,14 +3,15 @@ import { request as httpsRequest, type RequestOptions } from "node:https";
 import { isIP, type LookupFunction } from "node:net";
 import type { Readable } from "node:stream";
 import { assertOutsideRegisteredTransactions } from "./workspace-transaction.ts";
+import { DEFAULT_AI_PROVIDER_TIMEOUT_MS } from "./ai-execution-budgets.ts";
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const CONNECT_TIMEOUT_MS = 10_000;
 // 2026-08-12（模型调用面审计）：生产路径此前只有 10s connect 超时，响应体
 // 读取无任何上限——provider 半挂时请求无限挂起（http-pool 的 300s 只作用于
 // undici dispatcher 路径，node:https 直连不经它）。总超时 = connect + 响应
-// 体读取，默认 300s（长生成场景），可 AI_ENDPOINT_RESPONSE_TIMEOUT_MS 覆盖。
-const TOTAL_RESPONSE_TIMEOUT_MS = envTimeoutMs("AI_ENDPOINT_RESPONSE_TIMEOUT_MS", 300_000);
+// 体读取，默认 15min（长生成场景），可 AI_ENDPOINT_RESPONSE_TIMEOUT_MS 覆盖。
+const TOTAL_RESPONSE_TIMEOUT_MS = envTimeoutMs("AI_ENDPOINT_RESPONSE_TIMEOUT_MS", DEFAULT_AI_PROVIDER_TIMEOUT_MS);
 
 function envTimeoutMs(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();

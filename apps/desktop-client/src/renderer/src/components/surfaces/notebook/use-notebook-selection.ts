@@ -12,7 +12,11 @@ export function useNotebookSelection(input: {
     text: string; blockOrdinal: number; noteId: string; anchor: NoteAnnotationAnchorV1 | null; range: Range;
   } | null>(null);
   const latest = useRef(input); latest.current = input;
+  const passage = useRef(selectedPassage); passage.current = selectedPassage;
+  const gesture = useRef<{ pointerId: number | null; keys: Set<string> }>({ pointerId: null, keys: new Set() });
   const captureSelectedPassage = useCallback(() => {
+    // selectionchange fires throughout a drag. Publish only its settled range.
+    if (gesture.current.pointerId !== null || gesture.current.keys.size) return;
     const { bodyRef, note, blocks, active } = latest.current;
     const body = bodyRef.current, selection = window.getSelection();
     if (!active || !body || !selection || !selection.rangeCount || selection.isCollapsed) { setSelectedPassage(null); return; }
@@ -64,10 +68,55 @@ export function useNotebookSelection(input: {
   useEffect(() => {
     if (!input.active) { setSelectedPassage(null); return; }
     let frame = 0;
-    const changed = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(captureSelectedPassage); };
+    const changed = () => {
+      cancelAnimationFrame(frame);
+      if (gesture.current.pointerId === null && !gesture.current.keys.size) frame = requestAnimationFrame(captureSelectedPassage);
+    };
+    const pointerdown = (event: PointerEvent) => {
+      if (event.button > 0 || event.isPrimary === false || !(event.target instanceof Node) || !latest.current.bodyRef.current?.contains(event.target)) return;
+      gesture.current.pointerId = event.pointerId;
+      cancelAnimationFrame(frame); setSelectedPassage(null);
+    };
+    const pointerup = (event: PointerEvent) => {
+      if (gesture.current.pointerId === null || gesture.current.pointerId !== event.pointerId) return;
+      gesture.current.pointerId = null; changed();
+    };
+    const keydown = (event: KeyboardEvent) => {
+      const body = latest.current.bodyRef.current;
+      const paper = body?.closest(".notebook-desk__scroll") ?? body;
+      if (!(event.target instanceof Node) || !paper?.contains(event.target)) return;
+      if (event.key === "Escape" && passage.current && !document.querySelector("dialog[open], [aria-modal='true']")
+        && !(event.target instanceof Element && event.target.closest("[data-note-selection-action]"))) {
+        event.preventDefault(); setSelectedPassage(null); window.getSelection()?.removeAllRanges(); return;
+      }
+      const extendsSelection = event.shiftKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(event.key);
+      const selectsAll = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a";
+      if (!extendsSelection && !selectsAll) return;
+      gesture.current.keys.add(event.key);
+      cancelAnimationFrame(frame); setSelectedPassage(null);
+    };
+    const keyup = (event: KeyboardEvent) => { if (gesture.current.keys.delete(event.key)) changed(); };
+    const cancel = () => {
+      gesture.current.pointerId = null; gesture.current.keys.clear();
+      cancelAnimationFrame(frame); setSelectedPassage(null);
+    };
     document.addEventListener("selectionchange", changed);
-    document.addEventListener("pointerup", changed);
-    return () => { document.removeEventListener("selectionchange", changed); document.removeEventListener("pointerup", changed); cancelAnimationFrame(frame); };
+    document.addEventListener("pointerdown", pointerdown, true);
+    document.addEventListener("pointerup", pointerup, true);
+    document.addEventListener("pointercancel", cancel, true);
+    document.addEventListener("keydown", keydown, true);
+    document.addEventListener("keyup", keyup, true);
+    window.addEventListener("blur", cancel);
+    return () => {
+      document.removeEventListener("selectionchange", changed);
+      document.removeEventListener("pointerdown", pointerdown, true);
+      document.removeEventListener("pointerup", pointerup, true);
+      document.removeEventListener("pointercancel", cancel, true);
+      document.removeEventListener("keydown", keydown, true);
+      document.removeEventListener("keyup", keyup, true);
+      window.removeEventListener("blur", cancel);
+      cancelAnimationFrame(frame); gesture.current.pointerId = null; gesture.current.keys.clear();
+    };
   }, [input.active, captureSelectedPassage]);
   useEffect(() => setSelectedPassage(null), [input.note?.noteId, input.note?.currentVersionId]);
   return { selectedPassage, setSelectedPassage, captureSelectedPassage };

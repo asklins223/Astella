@@ -20,7 +20,7 @@ import { invokeCardGenerationCapability } from "./card-capabilities.ts";
 import { invokeMethodCapability } from "./method-capabilities.ts";
 import { invokeBasicCapability } from "./basic-capabilities.ts";
 import { invokeExternalCapability } from "./external-capabilities.ts";
-import { resolveCompanionAgentBudget } from "../lib/handler-timeout-config.ts";
+import { resolveCompanionAgentBudget, resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 
 /**
  * 能力名 → 适配器。**按 manifest 归属**而不是按前缀猜：名字写错时落到
@@ -81,7 +81,7 @@ export async function runAgentAdvance(job: JobPayload) {
             if (declared) return declared.response;
             if (!provider?.executeAgentTurn) throw new AgentStoreError(422, "capability_unavailable", "当前模型不能执行持续目标。");
             return runAgentModelStep({
-            request, resourceClass: "maintenance", timeoutMs: Math.max(1, Math.min(60000, deadlineAt-Date.now())),
+            request, resourceClass: "maintenance", timeoutMs: Math.max(1, Math.min(resolveProviderCallTimeout("agent_run_advance"), deadlineAt-Date.now())),
             context: { ...store.scope, permissionLevel: "server", signal: job.signal,
               inputSnapshotRef: { kind: "task", id: step.id, hash: step.request_hash } },
             attempt: { ...store.scope, taskId: "agent_goal_step", taskVersion: 1, attemptId: randomUUID(),

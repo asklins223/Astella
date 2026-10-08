@@ -5,6 +5,7 @@ import { pmNodesToNoteBlocks } from "@astella/shared/note-doc-schema";
 import type { NoteDocStreamEventV1 } from "@astella/shared/desktop-ipc-contracts";
 import { noteBlockTypeV1Schema, type NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
 import { createCommandId, createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
+import { companionEditedNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
 
 /**
  * 一篇笔记在**渲染进程**里的那份共享文档（批次 C2）。
@@ -178,6 +179,21 @@ export function useNoteDocLiveView(
   currentVersionId: string | null = null,
 ): NoteDocLiveView {
   const docRef = useRef<Y.Doc | null>(null);
+  useEffect(() => {
+    const receive = (event: Event) => {
+      const result = companionEditedNoteV1Schema.safeParse((event as CustomEvent).detail);
+      const currentDoc = docRef.current;
+      if (!result.success || result.data.noteId !== noteId || !currentDoc) return;
+      const bytes = decodeUpdate(result.data.update);
+      if (bytes) {
+        Y.applyUpdate(currentDoc, bytes, REMOTE_ORIGIN);
+        setRevision(value => value + 1);
+      }
+      changeRef.current();
+    };
+    window.addEventListener("astella:note-ai-edited", receive);
+    return () => window.removeEventListener("astella:note-ai-edited", receive);
+  }, [noteId]);
 
   const [stream, setStream] = useState<{ peers: NoteDocPeer[]; authorizedScope: "read-write" | "readonly" | null; failure: string | null }>({ peers: [], authorizedScope: null, failure: null });
   const [revision, setRevision] = useState(0);

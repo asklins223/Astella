@@ -9,6 +9,7 @@ import { createProvider } from "../lib/ai-provider.ts";
 import { createGovernedProvider, resolveVisionReader, type AIGovernanceContext } from "../lib/governance.ts";
 import { getObjectBytes } from "../lib/object-storage.ts";
 import { isJobLeaseActive } from "../lib/job-lease.ts";
+import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { runAiTask, type AiTaskDefinition } from "@astella/shared/ai-task-kernel";
 import { createDiaryCheckpointPort } from "./companion-diary-checkpoints.ts";
 import { committedDiaryTask, diaryTaskAttempt, diaryTaskContext } from "./companion-daily-summary-task.ts";
@@ -17,8 +18,6 @@ import type { JobPayload } from "./index.ts";
 import type { DiaryEmbed, DiaryMaterial } from "./companion-diary-content.ts";
 
 const DIARY_IMAGE_MAX_RAW_BYTES = 2_000_000;
-
-const DIARY_IMAGE_READ_TIMEOUT_MS = 30_000;
 
 const DIARY_IMAGE_DESCRIPTION_MAX_CHARS = 300;
 
@@ -114,7 +113,7 @@ export async function describeDiaryImage(input: {
       resourceClass: "vision",
       budget: {
         maxModelCalls: 1,
-        stepTimeoutMs: Math.max(1, Math.min(DIARY_IMAGE_READ_TIMEOUT_MS, remainingMs)),
+        stepTimeoutMs: Math.max(1, Math.min(resolveProviderCallTimeout("companion_daily_summary"), remainingMs)),
         taskDeadlineMs: remainingMs,
         maxAutoRetries: 0,
       },

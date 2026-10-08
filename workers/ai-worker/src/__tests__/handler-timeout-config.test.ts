@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import { test, beforeEach, afterEach } from "node:test";
+import { DEFAULT_AI_PROVIDER_TIMEOUT_MS, DEFAULT_AI_TASK_TIMEOUT_MS } from "@astella/shared";
 import {
   resolveHandlerTimeout,
   resolveProviderCallTimeout,
@@ -34,16 +35,21 @@ afterEach(() => {
 
 test("resolveHandlerTimeout returns active built-in defaults", () => {
   assert.equal(resolveHandlerTimeout("parse_source"), 60_000);
-  assert.equal(resolveHandlerTimeout("companion_agent"), 110_000);
+  assert.equal(resolveHandlerTimeout("companion_agent"), DEFAULT_AI_TASK_TIMEOUT_MS);
+  for (const type of ["companion_memory_extract", "companion_summarizer", "companion_daily_summary",
+    "note_overview_generate", "note_annotation_explain", "note_expansion_generate", "note_dynamic_artifact_generate"]) {
+    assert.equal(resolveHandlerTimeout(type), DEFAULT_AI_TASK_TIMEOUT_MS);
+    assert.equal(resolveProviderCallTimeout(type), DEFAULT_AI_PROVIDER_TIMEOUT_MS);
+  }
 });
 
 test("resolveHandlerTimeout falls back to global default for unknown types", () => {
-  assert.equal(resolveHandlerTimeout("unknown_type"), 90_000);
+  assert.equal(resolveHandlerTimeout("unknown_type"), DEFAULT_AI_TASK_TIMEOUT_MS);
 });
 
 test("resolveHandlerTimeout respects a per-type override", () => {
   process.env.WORKER_TIMEOUT_PARSE_SOURCE_MS = "120000";
-  assert.equal(resolveHandlerTimeout("parse_source"), 110_000);
+  assert.equal(resolveHandlerTimeout("parse_source"), 120_000);
 });
 
 test("resolveHandlerTimeout respects the global override", () => {
@@ -58,11 +64,10 @@ test("resolveHandlerTimeout ignores invalid env values", () => {
   assert.equal(resolveHandlerTimeout("parse_source"), 60_000);
 });
 
-test("lease safety margin remains below the lease timeout", () => {
-  assert.equal(
-    RESOLVED_TIMEOUT_INFO.maxAllowedTimeoutMs,
-    RESOLVED_TIMEOUT_INFO.leaseTimeoutMs - 10_000,
-  );
+test("configured long tasks are independent of the crash recovery lease", () => {
+  process.env.WORKER_TIMEOUT_NOTE_DYNAMIC_ARTIFACT_GENERATE_MS = "3600000";
+  assert.equal(resolveHandlerTimeout("note_dynamic_artifact_generate"), 3600000);
+  assert.ok(resolveHandlerTimeout("note_dynamic_artifact_generate") > RESOLVED_TIMEOUT_INFO.leaseTimeoutMs);
 });
 
 test("provider budget leaves time for persistence", () => {
@@ -79,25 +84,13 @@ test("dynamic artifact generation finishes inside the handler and follows its ov
   assert.equal(budget.handlerAbortMs, resolveHandlerTimeout("note_dynamic_artifact_generate"));
   assert.equal(budget.loopDeadlineMs, budget.handlerAbortMs - COMPANION_AGENT_PERSISTENCE_MARGIN_MS);
   assert.ok(budget.loopDeadlineMs < budget.handlerAbortMs);
-  assert.ok(budget.handlerAbortMs < budget.leaseMs);
+  assert.ok(budget.handlerAbortMs > budget.leaseMs);
   process.env.WORKER_TIMEOUT_NOTE_DYNAMIC_ARTIFACT_GENERATE_MS = "60000";
   assert.equal(resolveNoteDynamicArtifactBudget().loopDeadlineMs, 45_000);
 });
 
-/**
- * 伴星回合的预算阶梯（方案 29 §4.7/§9.6/§4.9 第 6 项）。
- *
- * 这四层数字以前靠手工同时修改来保持协调：lease(120s) > handler(110s) >
- * run 预算(handler - 持久化余量) > 单次工具 / 单次 provider 调用。任何一层被单独
- * 抬高，症状都不是报错而是**用户什么都收不到**——例如工具预算超过 run 预算时，
- * 那一轮必然被 handler 抢杀（delta 与终态事务没时间落库）。
- * 读图那次改动（45s 单工具预算）就是在这条阶梯上加的，所以钉它的那只手也钉在这里。
- *
- * 2026-09-22 收口：前三层不再各写一份数字，全部由 `resolveCompanionAgentBudget()`
- * 从租约派生。这条用例除了钉大小关系，还钉**派生本身**——把任一层改回字面量、
- * 或让 env 覆盖只动 handler 不动 loop deadline，都会在这里红。
- */
-test("伴星预算阶梯：lease > handler > run > 单次工具/单次 provider", async () => {
+/** The renewable lease is a recovery window; execution budgets still reserve persistence time. */
+test("续租独立于执行预算，handler > run > 单次模型调用", async () => {
   const { LEASE_TIMEOUT_MS } = await import("../queue.ts");
   const { COMPANION_AGENT_DEADLINE_MS, COMPANION_AGENT_TOOL_TIMEOUT_MS } = await import("@astella/shared");
   const { READ_IMAGE_TOOL_TIMEOUT_MS } = await import("../handlers/companion-read-tools.ts");
@@ -109,7 +102,7 @@ test("伴星预算阶梯：lease > handler > run > 单次工具/单次 provider"
   const handler = resolveHandlerTimeout("companion_agent");
   const runBudget = handler - COMPANION_AGENT_PERSISTENCE_MARGIN_MS;
 
-  assert.ok(handler < LEASE_TIMEOUT_MS, "handler 必须先到期；否则 reaper 抢在 abort 前把 job 收回，run 停在 running");
+  assert.ok(handler > LEASE_TIMEOUT_MS, "长任务应能跨过可续租的崩溃回收窗口");
   assert.ok(
     COMPANION_AGENT_DEADLINE_MS >= handler,
     "合同预算不该在一个新 attempt 里比 handler 更早绑住：那会把超时误记成 AGENT_BUDGET_EXCEEDED",
@@ -138,8 +131,8 @@ test("伴星预算阶梯：lease > handler > run > 单次工具/单次 provider"
   );
   assert.equal(
     RESOLVED_TIMEOUT_INFO.defaultTimeouts.companion_agent,
-    RESOLVED_TIMEOUT_INFO.maxAllowedTimeoutMs,
-    "companion_agent 的默认值必须由租约派生（= 租约 - 安全余量），不能再写成字面量",
+    DEFAULT_AI_TASK_TIMEOUT_MS,
+    "伴星跟随统一任务时限，不能再被两分钟租约限制",
   );
 });
 

@@ -41,7 +41,7 @@ import {
   recoverCompanionRunFailureSpanBestEffort,
 } from "./companion-dialogue-store.ts";
 import { CompanionAgentBudgetExceededError } from "../lib/non-retryable-errors.ts";
-import { COMPANION_AGENT_TOOL_TIMEOUT_MS } from "@astella/shared";
+import { COMPANION_AGENT_TOOL_TIMEOUT_MS, COMPANION_AGENT_TOOL_LABELS } from "@astella/shared";
 import { READ_IMAGE_TOOL_TIMEOUT_MS, type AgentEventContext } from "./companion-read-tools.ts";
 import type { CompanionAgentToolDefinitionV1, CompanionAgentToolStatus } from "@astella/shared";
 
@@ -88,7 +88,7 @@ export async function runCompanionToolExecution(args: ToolExecutionRunArgs): Pro
       toolVersion: definition.toolVersion,
       riskClass: definition.riskClass,
       status: "requested",
-      safeLabel: definition.description.slice(0, 240),
+      safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
     },
   });
 
@@ -160,7 +160,7 @@ export async function runCompanionToolExecution(args: ToolExecutionRunArgs): Pro
         toolVersion: definition.toolVersion,
         riskClass: definition.riskClass,
         status: failure.ledgerStatus,
-        safeLabel: definition.description.slice(0, 240),
+        safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
         safeSummary: failure.safeSummary,
       },
     });

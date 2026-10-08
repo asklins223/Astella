@@ -100,7 +100,7 @@ export function companionMessageText(message: CompanionMessageV1): string {
     .map((block) => {
       if (block.type === "text") return block.text;
       if (block.type === "code") return block.code;
-      if (block.type === "citation") return `[${block.label}]`;
+      if (block.type === "citation") return block.referenceId ? "" : `[${block.label}]`;
       return "";
     })
     .filter((value) => value.length > 0)

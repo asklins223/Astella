@@ -240,7 +240,8 @@ export function renderNoteInline(
       const formula = <ReadableMath source={atom.text} value={atom.value} display={atom.display} />;
       const badges = annotations.filter(item => item.endsHere && item.range[1] > atom.start && item.range[1] <= atom.end);
       node = <span key={key}>{anchored ? <NoteAnnotationMark annotation={anchored.annotation}
-        open={anchored.annotation.annotationId === options.openAnnotationId} onOpen={options.onOpenAnnotation}>{formula}</NoteAnnotationMark> : formula}
+        open={anchored.annotation.annotationId === options.openAnnotationId} onOpen={options.onOpenAnnotation}
+        onDelete={options.onDeleteAnnotation?.(anchored.annotation)}>{formula}</NoteAnnotationMark> : formula}
         {badges.length ? <span className="note-annotation-badges" aria-label="原句的批注角标">{badges.map(item => <NoteAnnotationMark key={item.annotation.annotationId}
           annotation={item.annotation} number={item.number} badge open={item.annotation.annotationId === options.openAnnotationId}
           onOpen={options.onOpenAnnotation} onDelete={options.onDeleteAnnotation?.(item.annotation)}>{null}</NoteAnnotationMark>)}</span> : null}
@@ -295,9 +296,8 @@ function renderTextAtom(
         : <NoteAnnotationMark annotation={annotation}
         open={annotation.annotationId === openAnnotationId}
         onOpen={onOpenAnnotation}
-        // 只有这段末尾（`endsHere`）挂删除入口：跨块的锚会在每一段都出现一枚 ✕，
-        // 删的是**同一条**批注——按一次删对，另一枚留在原地会让「删干净了吗」没法答。
-        onDelete={onDeleteAnnotation && anchored!.endsHere ? onDeleteAnnotation(annotation) : undefined}
+        // 所有片段接到同一份删除状态；单张预览接管展示，不在正文插入按钮。
+        onDelete={onDeleteAnnotation?.(annotation)}
         >{text}</NoteAnnotationMark>;
       const badges = annotations.filter(item => item.endsHere && item.range[1] === end);
       return <span key={start}><span className={explanation ? "note-explanation-anchor" : undefined} data-phase={explanation?.phase}>{content}</span>

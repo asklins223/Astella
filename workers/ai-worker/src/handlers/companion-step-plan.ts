@@ -24,6 +24,7 @@ export const TOOL_FAILURE_SAFE_SUMMARY = "工具执行失败，请稍后再试";
 
 import { COMPANION_AGENT_MAX_STEPS, type CompanionContentBlockV1, type AgentTurnRequest } from "@astella/shared";
 import { AGENT_GOAL_HANDOFF_INSTRUCTIONS } from "../agent/goal-handoff-instructions.ts";
+import { COMPANION_CASUAL_POLICY_V2 } from "./companion-conversation-policy.ts";
 
 /** Internal repair cannot take the place of the user's current request. */
 export function companionStepCorrectionMessages(input: {
@@ -83,6 +84,17 @@ export function stepHoldChars(input: { userAskedForAction: boolean }): number {
  */
 export function actionSteerBudget(input: { userAskedForAction: boolean }): number {
   return input.userAskedForAction ? 2 : 1;
+}
+
+/** A read result is precisely when quote correction is useful; it has its own allowance. */
+export function shouldCorrectCompanionQuote(input: {
+  stepCalls: number;
+  hasUnverifiedQuotes: boolean;
+  correctionUsed: boolean;
+  withinBudget: boolean;
+}): boolean {
+  return input.stepCalls === 0 && input.hasUnverifiedQuotes
+    && !input.correctionUsed && input.withinBudget;
 }
 
 /**
@@ -240,13 +252,7 @@ export function companionStepRuntimePolicy(input: {
 }): string {
   const { toolCount, stepBudget, finalAnswerOnly, attentionIntent } = input;
   if (toolCount === 0 && attentionIntent === "conversation") {
-    return [
-      "本轮只回应用户此刻的话题。共同记录帮助理解，不续办或汇报旧任务、笔记与学习进度。",
-      "这一轮没有工具；实际读取、保存与操作只按已有回执说，不用承诺代替动作。",
-      "回应用户分享里的具体细节，可以有看法、小玩笑或简单确认。用户没有求办法时，不替他安排检查步骤、计划、休息或继续工作的时间。用户说到哪一步，事实就停在哪一步，不把进展补成后续完成的结果。",
-      "用户纠正时，承认刚才说错的具体事实并采用新信息，接回他正在说的事，不辩解、不催促。",
-      "按当前人格自然接话，内容说完就停；提问要有话题上的具体缘由，不用建议或邀请充当收尾，不解释接话策略。",
-    ].join("\n");
+    return COMPANION_CASUAL_POLICY_V2;
   }
   if (toolCount === 0) {
     return [

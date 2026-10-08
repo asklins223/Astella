@@ -328,9 +328,9 @@ services:
       # 上面的 stop_grace_period: 60s = 45s drain + 2s notify + 5s db + 8s 余量。
       # 调大这个值而不同步调大 stop_grace_period，会重新引入 P0-10。
       WORKER_DRAIN_TIMEOUT_MS: ${WORKER_DRAIN_TIMEOUT_MS:-45000}
-      # Handler timeouts (ms) — per job type, clamped below lease timeout (120s)
+      # Handler budgets are independent of the 120s crash-recovery lease; active jobs renew it.
       WORKER_MODEL_TIMEOUT_MS: ${WORKER_MODEL_TIMEOUT_MS:-}
-      WORKER_PROVIDER_TIMEOUT_MS: ${WORKER_PROVIDER_TIMEOUT_MS:-75000}
+      WORKER_PROVIDER_TIMEOUT_MS: ${WORKER_PROVIDER_TIMEOUT_MS:-900000}
       WORKER_TIMEOUT_PARSE_SOURCE_MS: ${WORKER_TIMEOUT_PARSE_SOURCE_MS:-}
     ports:
       - "${WORKER_METRICS_BIND_ADDRESS:-127.0.0.1}:${WORKER_METRICS_PORT:-9100}:${WORKER_METRICS_PORT:-9100}"

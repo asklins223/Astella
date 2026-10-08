@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AIProvider } from "../../lib/ai-provider.ts";
+import { getCompanionAgentTool, resolveAllCompanionAgentTools } from "@astella/shared";
 import {
   companionClassifierRecent,
   companionOfferCandidates,
@@ -27,6 +28,50 @@ function taskContext(signal = new AbortController().signal) {
 
 const proposal = (action: boolean) => ({ intent: action ? "task" : "conversation", toolUse: action ? "act" : "none",
   subjects: [], goalRelation: action ? "new" : "unrelated", candidateOperations: [], ambiguities: [] });
+
+test("生成请求的分类输入包含现役能力说明，当前笔记与历史拒绝不会替代能力事实", async () => {
+  const note = { kind: "note_version" as const, id: "11111111-1111-4111-8111-111111111111",
+    versionId: "22222222-2222-4222-8222-222222222222" };
+  const names = resolveAllCompanionAgentTools("full").map(tool => tool.name);
+  const model = { ...provider(() => true), chatCompletion: async (messages: Parameters<AIProvider["chatCompletion"]>[0]) => {
+    const input = JSON.parse(String(messages.at(-1)?.content));
+    const instruction = String(messages[0]?.content);
+    assert.deepEqual(input.objects, [note]);
+    assert.equal(input.current, "生成拓展笔记");
+    assert.deepEqual(input.capabilities.map((tool: { name: string }) => tool.name), names);
+    const handoff = input.capabilities.find((tool: { name: string }) => tool.name === "agent_start_goal");
+    assert.equal(handoff.description, getCompanionAgentTool("agent_start_goal")!.description,
+      "用途取唯一能力清单，不能只给无法说明用途的内部名字");
+    assert.equal(handoff.riskClass, "reversible_low");
+    assert.match(handoff.description, /速看.*拓展草稿/);
+    assert.match(instruction, /历史助手说过能力没接上、不能保存，不是当前能力事实/);
+    assert.match(instruction, /不要求用户再说‘保存’或指定保存位置/);
+    return { content: JSON.stringify({ ...proposal(true),
+      subjects: [{ description: "这篇笔记", objectIndex: 0 }], candidateOperations: ["agent_start_goal"] }), usage: {} };
+  } } as AIProvider;
+  const result = await interpretCompanionTurn(model, [
+    { role: "assistant", content: "速看和拓展能力没有接上，这轮只能写文字。" },
+    { role: "user", content: "生成拓展笔记" },
+  ], { ...taskContext(), objects: [note], capabilities: names });
+  assert.equal(result.toolUse, "act");
+  assert.deepEqual(result.subjects[0]?.reference, note);
+  assert.deepEqual(result.candidateOperations, ["agent_start_goal"]);
+});
+
+test("只读权限的分类输入不泄露创建任务工具，模型猜出的写能力不能变成执行候选", async () => {
+  const names = resolveAllCompanionAgentTools("read_only").map(tool => tool.name);
+  const model = { ...provider(() => true), chatCompletion: async (messages: Parameters<AIProvider["chatCompletion"]>[0]) => {
+    const input = JSON.parse(String(messages.at(-1)?.content));
+    assert.ok(input.capabilities.every((tool: { riskClass: string }) => tool.riskClass === "read"));
+    assert.ok(!input.capabilities.some((tool: { name: string }) => tool.name === "agent_start_goal"));
+    return { content: JSON.stringify({ ...proposal(true), candidateOperations: ["agent_start_goal"] }), usage: {} };
+  } } as AIProvider;
+  const result = await interpretCompanionTurn(model, [{ role: "user", content: "生成速看" }], {
+    ...taskContext(), permissionLevel: "read_only", capabilities: names,
+  });
+  assert.equal(result.toolUse, "uncertain");
+  assert.deepEqual(result.candidateOperations, []);
+});
 
 test("自动思考分类保留历史中部纠正，不只读首尾摘要", () => {
   const content = "原话开头。" + "旧背景".repeat(400) + "这项提醒已经取消，当前只聊天。" + "后续描述".repeat(400) + "原话结束。";

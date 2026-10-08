@@ -84,9 +84,9 @@ export interface AIGovernanceContext {
    * 当未配置 vision 时,回退到 providerConfig。 */
   visionProviderName: string | null;
   visionProviderConfig: import("./ai-provider.ts").AIProviderRuntimeConfig | null;
-  /** 伴星退化兜底 provider（方案 29 §9.6 / B8）。
-   * 主模型高频返回"一词 + finish=stop"的退化补全时，agent loop 会用这个**不同模型、
-   * 最好不同 provider** 的槽再要一次答案。未配置时为 null，loop 跳过跨模型兜底。 */
+  /** 伴星恢复备用 provider；按当前正式配置解析，可以与主槽使用同一模型。
+   * 旧的跨模型恢复经验不覆盖用户的固定模型决定。
+   * 未配置时为 null，loop 跳过此备用级。 */
   companionFallbackProviderName: string | null;
   companionFallbackProviderConfig: import("./ai-provider.ts").AIProviderRuntimeConfig | null;
   /** 独立的向量嵌入 provider 配置（plan §3.4: embedding 折进治理 map）。
@@ -315,7 +315,7 @@ export async function resolveAIGovernanceContext(
     textProviderConfig = runtimeConfigFromResolved(textPlatform);
   }
 
-  // companion_fallback — 伴星退化时的跨模型兜底（方案 29 §9.6）。
+  // companion_fallback follows the configured route; it may use the same model.
   // 未配置就是 null：agent loop 会跳过这一级，只保留同模型思考档重试。
   let companionFallbackProviderName: string | null = null;
   let companionFallbackProviderConfig: import("./ai-provider.ts").AIProviderRuntimeConfig | null = null;
@@ -585,6 +585,7 @@ export function createGovernedProvider(
   const governed: import("./ai-provider.ts").AIProvider = {
     ...provider,
     chatCompletion: async (messages, options, signal) => {
+      options = { ...options, maxTokens: provider.resolveOutputTokenLimit?.(options.maxTokens) ?? options.maxTokens };
       const startedAt = performance.now();
       let data: Record<string, unknown>;
       try {
@@ -624,14 +625,21 @@ export function createGovernedProvider(
   };
   if (provider.chatCompletionStream) {
     governed.chatCompletionStream = async (messages, options, signal, onDelta) => {
+      options = { ...options, maxTokens: provider.resolveOutputTokenLimit?.(options.maxTokens) ?? options.maxTokens };
       const startedAt = performance.now();
       let data: Record<string, unknown>;
       try {
-        data = governedPayload(context, workspaceId, provider.id, { messages });
+        data = governedPayload(context, workspaceId, provider.id, {
+          messages, ...(options.nativeAgentRequest ? { request: options.nativeAgentRequest } : {}),
+        });
+        if (options.nativeAgentRequest) options = { ...options,
+          nativeAgentRequest: data.request as NonNullable<typeof options.nativeAgentRequest> };
         signal?.throwIfAborted();
         await checkContextPressure("chat_completion_stream", {
           requestedOutputTokens: options.maxTokens ?? null,
-          measure: (ports) => measureChatRequest(data.messages as typeof messages, options, ports),
+          measure: (ports) => options.nativeAgentRequest
+            ? measureAgentTurnRequest(options.nativeAgentRequest, ports)
+            : measureChatRequest(data.messages as typeof messages, options, ports),
         });
         signal?.throwIfAborted();
         await audit?.reserveCall?.();
@@ -666,6 +674,7 @@ export function createGovernedProvider(
   }
   if (provider.executeAgentTurn) {
     governed.executeAgentTurn = async (request, signal) => {
+      request = { ...request, maxTokens: provider.resolveOutputTokenLimit?.(request.maxTokens) ?? request.maxTokens };
       const startedAt = performance.now();
       let data: Record<string, unknown>;
       try {
@@ -744,6 +753,9 @@ export function createGovernedProvider(
   }
   if (provider.countTextTokens) {
     governed.countTextTokens = provider.countTextTokens.bind(provider);
+  }
+  if (provider.resolveOutputTokenLimit) {
+    governed.resolveOutputTokenLimit = provider.resolveOutputTokenLimit.bind(provider);
   }
   governedWrappers.set(governed, { raw: provider, workspaceId, consentOk: context.consentOk, policy: JSON.stringify(context.policy), audit });
   return governed;

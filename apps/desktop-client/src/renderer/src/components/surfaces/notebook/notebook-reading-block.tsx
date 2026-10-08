@@ -26,6 +26,7 @@ import { useSourceImage } from "../source/source-image.ts";
 import { ZoomableReadingImage } from "../source/image-viewer.tsx";
 import { noteReadingTextNodes } from "./note-reading-text";
 import { noteExplanationBusy, noteExplanationLabel, type NoteCompanionExplanation } from "../../companion/note-companion-explanation";
+import type { NoteAiRange } from "../../companion/note-companion-editing";
 
 /**
  * 阅读正文里**每一块的锚点**（39d W4-6 刀二）：教学面的依据要能"点开定位到那一块"，
@@ -39,6 +40,7 @@ import { noteExplanationBusy, noteExplanationLabel, type NoteCompanionExplanatio
 
 
 export function ReadingBlock(props: {
+  readonly aiWork?: NoteAiRange;
   readonly block: NoteBlockProjectionV1;
   readonly alignment?: "left" | "center" | "right";
   readonly annotations?: readonly NoteAnnotationV1[];
@@ -76,7 +78,8 @@ export function ReadingBlock(props: {
       data-block-ordinal={props.block.ordinal}
       {...(props.focused ? { "data-block-focused": "true" } : {})}
     >
-      <div data-note-block-content="true"><ReadingBlockContent
+      <div data-note-block-content="true" className={props.aiWork ? "note-ai-working" : undefined}
+        aria-busy={Boolean(props.aiWork)} data-ai-label={props.aiWork?.label} inert={Boolean(props.aiWork)}><ReadingBlockContent
         block={props.block}
         mark={annotationMark ?? props.mark}
         workspaceEpoch={props.workspaceEpoch}

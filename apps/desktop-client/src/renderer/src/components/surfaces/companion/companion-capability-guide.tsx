@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { ArrowRight, Sparkles } from "lucide-react";
-import { agentGoalCapabilityManifest } from "@astella/shared/agent-capabilities";
+import { agentCapabilityCatalog } from "@astella/shared/agent-capability-catalog";
 import { companionConsentGate, SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
 import { useRoomStore } from "../../../app/room-store";
 import { useCompanionResource } from "./use-companion-resource";
 
 // Display metadata lives beside the actual executable capability, never in a second tool directory.
-export const companionDiscoverableCapabilities = agentGoalCapabilityManifest.filter(item => item.presentation.discovery);
+export const companionDiscoverableCapabilities = agentCapabilityCatalog.filter(item => item.presentation.discovery);
 
 export function CompanionCapabilityGuide({ onContinue, onOpenChange }: { onContinue: () => void; onOpenChange?: (open: boolean) => void }) {
   const [open, setOpen] = useState(false);

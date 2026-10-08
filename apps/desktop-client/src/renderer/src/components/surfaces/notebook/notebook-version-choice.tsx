@@ -24,7 +24,7 @@ export function NotebookVersionChoice(props: {
     play(dialog, "fold");
     return () => { if (dialog.open && typeof dialog.close === "function") dialog.close(); };
   }, [play]);
-  return <dialog ref={ref} className="notebook-version-choice" aria-labelledby="notebook-learning-confirm-title" aria-modal="true"
+  return <dialog ref={ref} className="notebook-dialog" aria-labelledby="notebook-learning-confirm-title" aria-modal="true"
     onCancel={event => { event.preventDefault(); if (!props.saving) props.onDismiss(); }}>
     <h3 id="notebook-learning-confirm-title">{props.hasChanges ? "这次从哪一版开始？" : `为这篇准备${label}？`}</h3>
     <p>{props.kind === "overview" ? "整理整篇的重点，每一处都能回到原文核对。"

@@ -195,10 +195,12 @@ function emptyAccountState(): CompanionAccountStateV1 {
  */
 function buildAgentSettings(input: {
   permissionLevel: CompanionAgentSettingsV1["permissionLevel"];
+  webSearchEnabled?: boolean;
 }): CompanionAgentSettingsV1 {
   return companionAgentSettingsV1Schema.parse({
     version: 1,
     permissionLevel: input.permissionLevel,
+    ...(input.webSearchEnabled !== undefined ? { webSearchEnabled: input.webSearchEnabled } : {}),
   });
 }
 
@@ -694,6 +696,7 @@ export async function updateCompanionAccountState(
           quietHours: patch.quietHours ?? null,
           agentSettings: buildAgentSettings({
             permissionLevel: patch.agentPermissionLevel ?? "guided",
+            webSearchEnabled: patch.webSearchEnabled,
           }),
           updatedAt: now,
         })
@@ -744,6 +747,7 @@ export async function updateCompanionAccountState(
         quietHours: patch.quietHours !== undefined ? patch.quietHours : row.quietHours,
         agentSettings: buildAgentSettings({
           permissionLevel: patch.agentPermissionLevel ?? currentAgentSettings.permissionLevel,
+          webSearchEnabled: patch.webSearchEnabled ?? currentAgentSettings.webSearchEnabled,
         }),
         revision: row.revision + 1,
         // global off → account epoch 递增（**边沿触发**：仅 on→off 跃迁，

@@ -35,8 +35,10 @@ import {
   waitForV2OutboxDrain,
 } from "./card-generation-v2/outbox-queue.ts";
 
-import { runWithAbortTimeout } from "./lib/handler-timeout.ts";
-import { resolveHandlerTimeout, RESOLVED_TIMEOUT_INFO } from "./lib/handler-timeout-config.ts";
+import { runWithAbortTimeout, runWithAbortBudget } from "./lib/handler-timeout.ts";
+import { runWithLeaseHeartbeat } from "./lib/lease-heartbeat.ts";
+import { withJobTransaction, lockJobLease } from "./lib/job-lease.ts";
+import { resolveHandlerTimeout, resolveProviderCallTimeout, RESOLVED_TIMEOUT_INFO } from "./lib/handler-timeout-config.ts";
 import { isNonRetryableError } from "./lib/non-retryable-errors.ts";
 import { createPollWakeSignal } from "./lib/poll-wakeup.ts";
 import { JobResourceClass, readJobPayloadString, safeErrorMessage, sanitizeOperationalError } from "@astella/shared";
@@ -49,6 +51,7 @@ import {
   markUnknownJobFailed,
   reapStaleJobs,
   QUEUE_CONCURRENCY,
+  LEASE_TIMEOUT_MS,
   type ClaimedJob,
 } from "./queue.ts";
 // OPS-01: Prometheus 指标（ADR-0006 §1-3）
@@ -192,14 +195,23 @@ export async function processJob(job: ClaimedJob): Promise<void> {
     // R-007: 超时会中止 provider；leaseToken 继续保护迟到 handler 的业务提交。
     const handlerTimeoutMs = resolveHandlerTimeout(job.type);
     await runWithAbortTimeout(
-      (signal) => handler({
+      (signal) => runWithLeaseHeartbeat({
+        signal,
+        intervalMs: LEASE_TIMEOUT_MS / 4,
+        renew: heartbeatSignal => runWithAbortBudget(async renewalSignal => {
+          const lease = { ...job, signal: renewalSignal };
+          await withJobTransaction(lease, tx => lockJobLease(tx, lease));
+        }, heartbeatSignal, LEASE_TIMEOUT_MS / 4),
+        operation: executionSignal => handler({
           id: job.id,
           payload: job.payload,
           workspaceId: job.workspaceId,
           requestedBy: job.requestedBy,
           leaseToken: job.leaseToken,
-          signal,
+          signal: executionSignal,
         }),
+        onLateError: error => logger.warn({ jobId: job.id, err: error }, "handler settled after lease heartbeat stopped"),
+      }),
       handlerTimeoutMs,
       (lateError) => logger.warn(
         { jobId: job.id, err: lateError },
@@ -670,8 +682,11 @@ export async function main() {
       leaseTimeoutMs: RESOLVED_TIMEOUT_INFO.leaseTimeoutMs,
       maxAllowedTimeoutMs: RESOLVED_TIMEOUT_INFO.maxAllowedTimeoutMs,
       defaultTimeouts: RESOLVED_TIMEOUT_INFO.defaultTimeouts,
+      companionHandlerTimeoutMs: resolveHandlerTimeout("companion_agent"),
+      companionProviderTimeoutMs: resolveProviderCallTimeout("companion_agent"),
       envOverrides: {
         global: process.env.WORKER_MODEL_TIMEOUT_MS,
+        provider: process.env.WORKER_PROVIDER_TIMEOUT_MS,
         parse_source: process.env.WORKER_TIMEOUT_PARSE_SOURCE_MS,
       },
     },

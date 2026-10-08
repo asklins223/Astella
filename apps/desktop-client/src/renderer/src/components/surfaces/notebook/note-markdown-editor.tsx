@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { noteAiLockPlugin, noteAiLockKey } from "./note-ai-lock";
+import type { NoteAiRange } from "../../companion/note-companion-editing";
 import {
   Editor,
   editorViewCtx,
@@ -163,6 +165,7 @@ type Props = {
    * 记号只要说清「这里有一条批注」就够了，把整句变成按钮会抢选区与光标。
    */
   readonly annotationPlacements?: readonly AnnotationPlacement[];
+  readonly aiRanges?: readonly NoteAiRange[];
   readonly onOpenAnnotation?: (annotationId: string) => void;
   readonly ref?: React.Ref<NoteMarkdownEditorHandle | null>;
   readonly onReady?: (handle: NoteMarkdownEditorHandle | null) => void;
@@ -494,7 +497,8 @@ function annotationIdFromEvent(target: EventTarget | null): string | null {
   return element?.dataset.annotationId ?? null;
 }
 
-function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePaste, onCaretBlock, annotationPlacements, onOpenAnnotation }: Props) {
+function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePaste, onCaretBlock, annotationPlacements, onOpenAnnotation, aiRanges }: Props) {
+  const aiRangesRef = useRef(aiRanges ?? []); aiRangesRef.current = aiRanges ?? [];
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const disabledRef = useRef(disabled);
@@ -565,7 +569,15 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
     .use(caretBlockPlugin(onCaretBlockRef))
     .use(codeBlockTabPlugin())
     .use(placeholderPlugin())
-    .use(annotationPlugin()));
+    .use(annotationPlugin())
+    .use(noteAiLockPlugin(aiRangesRef)));
+  const [loading, getInstance] = useInstance();
+  useEffect(() => {
+    if (loading) return;
+    withReadyEditor(getInstance(), editor => editor.action(ctx => {
+      const view = ctx.get(editorViewCtx); view.dispatch(view.state.tr.setMeta(noteAiLockKey, true));
+    }), undefined);
+  }, [loading, getInstance, aiRanges]);
 
   // ProseMirror 的 ensureEditable() 只在 view 创建与 view.update() 时执行。
   // disabled 由 true 变 false 时（例如这一版笔记刚读回来）contenteditable 不会
@@ -754,6 +766,7 @@ export function NoteMarkdownEditor({
   onImagePaste,
   onCaretBlock,
   annotationPlacements,
+  aiRanges,
   onOpenAnnotation,
   ref,
   onReady,
@@ -770,6 +783,7 @@ export function NoteMarkdownEditor({
         onImagePaste={onImagePaste}
         onCaretBlock={onCaretBlock}
         onOpenAnnotation={onOpenAnnotation}
+        aiRanges={aiRanges}
       />
       {/* 记号集合走 props 进插件 state，而不是模块级 ref：ref 那条路试过，
           `MilkdownControls` 的渲染早于 `MilkdownBody` 写 ref，effect 读到的永远是

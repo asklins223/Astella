@@ -18,6 +18,7 @@ export const jobs = pgTable(
     lastError: text("last_error"),
     scheduledAt: timestamp("scheduled_at", { withTimezone: true }).defaultNow().notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }),
+    leaseRenewedAt: timestamp("lease_renewed_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     // G-001: 不可变 lease token — claim 时生成并写入 DB，完成/失败时以此作为原子条件。
     leaseToken: text("lease_token"),

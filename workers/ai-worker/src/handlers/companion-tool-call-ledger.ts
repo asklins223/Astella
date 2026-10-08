@@ -22,10 +22,12 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { companionEditedNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
 import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import { sql } from "drizzle-orm";
 import {
   canUseCompanionAgentTool,
+  COMPANION_AGENT_TOOL_LABELS,
   type CompanionAgentToolDefinitionV1,
   type ProviderReasoningHandle,
 } from "@astella/shared";
@@ -37,6 +39,7 @@ import { appendAgentEvent, readRunMeta } from "./companion-agent-events.ts";
 import { buildActionPayload, createAgentProposal } from "./companion-agent-proposal.ts";
 import { TOOL_OUTCOME_UNKNOWN_SAFE_SUMMARY } from "./companion-tool-outcome.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
+import { companionNoteEditTarget } from "./companion-note-edit.ts";
 import {
   executeDirectTool,
   executeReadTool,
@@ -269,7 +272,7 @@ export async function executeTool(
         toolVersion: definition.toolVersion,
         riskClass: definition.riskClass,
         status: "waiting_confirmation",
-        safeLabel: definition.description.slice(0, 240),
+        safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
         proposalId: proposal.proposalId,
         safeSummary: proposal.safeSummary,
       },
@@ -284,22 +287,22 @@ export async function executeTool(
       toolVersion: definition.toolVersion,
       riskClass: definition.riskClass,
       status: "executing",
-      safeLabel: definition.description.slice(0, 240),
+      ...(definition.name === "companion_edit_note" ? { noteEditTarget: companionNoteEditTarget(call.arguments, event.read.pageContext) } : {}),
+      safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
     },
   });
-  // 读类走既有 read 执行器；非读类能走到这里必然是 full 档预授权的
-  // auto-set / auto-fill 工具（guided 在上方 requiresConfirmation 分支已被
-  // 拦成提案，read_only 更早在授权门禁被阻止），走直执行器。
+  // 读类走既有 read 执行器；其余工具通过本轮授权与能力定义的确认判据后直执行。
+  // 当前笔记编辑不需要额外确认，read_only 仍在授权门禁被阻止。
   const result = definition.riskClass === "read"
     ? await executeReadTool(event, definition, call.arguments)
-    : await executeDirectTool(event, definition, call.arguments);
+    : await executeDirectTool(event, definition, call.arguments, signal, call.id);
   // 超时已被判定的调用不再写 succeeded（审计表由 SQL fence 兜底，这里同时
   // 阻止迟到的 succeeded SSE 事件覆盖已下发的 failed）。
   if (fence.abandoned) return result;
   const recorded = await updateToolCall(event, call.id, {
     status: "succeeded",
     safeSummary: result.safeSummary,
-    resultRef: result.route ? JSON.stringify(result.route) : undefined,
+    resultRef: result.resultRef ?? (result.route ? JSON.stringify(result.route) : undefined),
   });
   // Recovery may have changed an interrupted write to outcome_unknown while
   // this process was still finishing. Do not publish a late success over it.
@@ -329,7 +332,8 @@ export async function executeTool(
       toolVersion: definition.toolVersion,
       riskClass: definition.riskClass,
       status: "succeeded",
-      safeLabel: definition.description.slice(0, 240),
+      ...(definition.name === "companion_edit_note" && result.resultRef ? { noteEdit: companionEditedNoteV1Schema.parse(JSON.parse(result.resultRef)) } : {}),
+      safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
       safeSummary: result.safeSummary,
       ...(result.route ? { route: result.route } : {}),
       ...(autoExecute ? { autoExecute: true } : {}),

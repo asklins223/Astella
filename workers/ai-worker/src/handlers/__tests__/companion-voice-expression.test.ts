@@ -140,3 +140,15 @@ test("real generation context includes expression protocol and respects the user
   assert.match(off, /声音表达已关闭/);
   assert.doesNotMatch(off, /声音表达协议：/);
 });
+
+
+test("web references stay in display ranges but never enter speech, including across hard splits", () => {
+  const raw = "先看列表。[^web-1234567890abcdef]再看元组。[^web-fedcba0987654321]两种都可以保存有序数据。[^web-3c284a008b00842]";
+  const expression = projectCompanionVoiceExpression(raw);
+  const { segments } = splitCommittedDisplaySegments(expression.displayText, { cursor: 0, sentCount: 0 }, true, { maxSegmentChars: 10 });
+  const spoken = segments.map(segment => companionVoiceSegmentExpression(expression, segment, false).text).join("");
+  assert.equal(spoken, "先看列表。再看元组。两种都可以保存有序数据。");
+  assert.equal(expression.displayText, raw);
+  assert.equal(segments.at(-1)?.displayEnd, raw.length);
+  assert.equal(sanitizeCompanionVisibleText("解释[^web-12345"), "解释");
+});

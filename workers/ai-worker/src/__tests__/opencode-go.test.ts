@@ -28,6 +28,8 @@ import type { AgentTurnRequest, ChatMessage } from "@astella/shared";
 import { AgentRole } from "@astella/shared";
 import { ProviderRequestError, ProviderStreamError } from "../lib/provider-request-error.ts";
 import { AgentOutputError } from "../lib/non-retryable-errors.ts";
+import { runStreamingAgentStep } from "../handlers/companion-agent-streaming-step.ts";
+import { createGovernedProvider } from "../lib/governance.ts";
 
 interface CapturedRequest {
   url: string;
@@ -77,6 +79,35 @@ function makeProvider(overrides: Partial<ConstructorParameters<typeof OpenCodeGo
     ...overrides,
   });
 }
+
+test("工具循环的流式终答保留原生调用/回执及不透明思考句柄，经过同一外发治理", async () => {
+  const { request, captured } = streamingRequester([
+    'data: {"type":"response.output_text.delta","delta":"笔记已保存，可以打开。"}\n\n',
+    'data: {"type":"response.completed","response":{"status":"completed"}}\n\n',
+  ]);
+  const provider = makeProvider({ streamRequest: request });
+  const governed = createGovernedProvider(provider, { consentOk: true, policy: {
+    sendToExternal: true, sendImageContent: false, piiDetection: true, auditLogging: false,
+  } }, "synthetic-stream-scope");
+  const step = agentTurnRequest({ tools: [], messages: [
+    { role: "user", content: "把知识点写成一篇笔记。" },
+    { role: "assistant", content: "我正在保存。", phase: "commentary",
+      reasoning: [{ type: "reasoning", id: "rs_note", status: "completed", summary: [], encrypted_content: "opaque-note" }],
+      toolCalls: [{ id: "save_note", name: "companion_create_note", arguments: { title: "知识点", example: "testperson@example.com" } }] },
+    { role: "tool", toolCallId: "save_note", content: '{"status":"succeeded","noteId":"saved-synthetic-note"}' },
+  ] });
+  const result = await runStreamingAgentStep({ provider: governed, stepRequest: step,
+    ctxSignal: new AbortController().signal, timeoutMs: 3000, onProviderDelta: async () => true });
+  assert.equal(result.content, "笔记已保存，可以打开。");
+  const input = captured[0]!.body.input as Array<Record<string, unknown>>;
+  assert.deepEqual(input.map(item => item.type ?? item.role), ["user", "reasoning", "assistant", "function_call", "function_call_output"]);
+  assert.equal(input[1]!.encrypted_content, "opaque-note");
+  assert.equal(input[2]!.phase, "commentary");
+  assert.equal(input[3]!.call_id, "save_note");
+  assert.equal(input[4]!.call_id, "save_note");
+  assert.ok(!JSON.stringify(input).includes("testperson@example.com"), "原生历史不能绕过PII治理");
+  assert.equal(captured[0]!.body.tools, undefined, "终答没有新的写工具");
+});
 
 function completionResponse(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {

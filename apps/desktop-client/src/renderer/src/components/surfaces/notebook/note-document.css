@@ -33,20 +33,53 @@
 .hud-surface .note-source-editor .cm-search input:focus-visible, .hud-surface .note-source-editor .cm-search button:focus-visible { outline: 2px solid var(--hud-green); outline-offset: 1px; }
 .hud-surface .note-source-editor__status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 16px; padding: 8px 14px; border-top: 1px solid #e8ebdc; border-radius: 0 0 15px 15px; color: var(--hud-soft); background: #f8f8ee; font: 11px/1.6 "Noto Sans SC Variable", sans-serif; font-variant-numeric: tabular-nums; }
 .hud-surface .note-source-editor__error { margin: 0; padding: 12px 14px; color: var(--hud-clay); font: 12px/1.8 "Noto Sans SC Variable", sans-serif; }
-.hud-surface .notebook-version-choice { width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 32px); margin: auto; padding: 24px 28px; overflow: auto; color: var(--hud-ink); border: 4px solid var(--hud-cream); border-radius: 27px; background: var(--hud-paper-light); box-shadow: var(--hud-shadow); }
-.hud-surface .notebook-version-choice::backdrop { background: rgba(46,27,16,.34); }
-.hud-surface .notebook-version-choice h3 { font: 700 24px/1.5 "Noto Sans SC Variable", sans-serif; margin: 0 0 14px; }
-.hud-surface .notebook-version-choice p { font-size: 14px; line-height: 1.8; }
-.hud-surface .notebook-version-choice .actions { flex-wrap: wrap; gap: 8px 12px; margin-top: 24px; }
-.hud-surface .notebook-link-editor { pointer-events: auto; }
-.hud-surface .notebook-link-editor label { display: grid; gap: 8px; font-size: 14px; }
-.hud-surface .notebook-link-editor input { width: 100%; box-sizing: border-box; padding: 10px 12px; color: var(--hud-ink); border: 1px solid var(--hud-line); border-radius: 12px; background: var(--hud-paper-light); }
-.hud-surface .notebook-link-editor input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.hud-surface .notebook-link-kind { display: flex; gap: 8px; margin-bottom: 18px; }
-.hud-surface .notebook-link-kind [aria-pressed="true"] { background: var(--hud-mint); }
-.hud-surface .notebook-link-notes { max-height: 240px; overflow: auto; margin-top: 12px; border-block: 1px solid var(--hud-line); }
-.hud-surface .notebook-link-notes label { display: flex; align-items: center; gap: 10px; padding: 10px 4px; cursor: pointer; }
-.hud-surface .notebook-link-notes input { width: auto; accent-color: var(--hud-green); }
+.hud-surface .notebook-dialog { width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 24px 28px; overflow: auto; color: var(--hud-ink); border: 2px solid #fff8e7; border-radius: 28px; background: var(--hud-paper-light); box-shadow: 0 5px 0 #a9c497, 0 18px 40px #283f3033, inset 0 0 0 1px var(--hud-line); pointer-events: auto; }
+.hud-surface .notebook-dialog::backdrop { background: #2a39264d; }
+.hud-surface .notebook-dialog h3 { margin: 0 0 14px; font: 800 22px/1.5 "Noto Sans SC Variable", sans-serif; letter-spacing: -.035em; }
+.hud-surface .notebook-dialog p { color: var(--hud-soft); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.hud-surface .notebook-dialog .actions { flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+.hud-surface .notebook-dialog .button { min-height: 38px; padding: 7px 16px; font-size: 13px; transition: background-color 100ms ease; }
+.hud-surface .notebook-dialog .button:is(:hover, :active) { transform: none; }
+.hud-surface .notebook-dialog .button:hover:not(:disabled) { background: #edf2df; }
+.hud-surface .notebook-dialog .button.primary:hover:not(:disabled) { background: #7ba784; }
+.hud-surface .notebook-dialog .button:disabled { opacity: .45; cursor: default; }
+.hud-surface .notebook-dialog :is(button, input, .text-action):focus-visible { outline: 2px solid #71a883; outline-offset: 3px; }
+.hud-surface .notebook-link-editor[open] { display: flex; flex-direction: column; overflow: hidden; }
+.hud-surface .notebook-link-editor form { display: flex; flex: 1; flex-direction: column; min-height: 0; gap: 18px; }
+.hud-surface .notebook-link-heading { display: flex; flex: none; align-items: center; gap: 11px; }
+.hud-surface .notebook-link-heading > span { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 14px; background: var(--hud-mint); color: var(--hud-green); }
+.hud-surface .notebook-link-heading svg { width: 21px; height: 21px; }
+.hud-surface .notebook-link-heading h3 { margin: 0; }
+.hud-surface .notebook-link-editor .hud-segmented { align-self: flex-start; width: min(100%, 280px); min-width: 0; padding: 4px; border: 1px solid var(--hud-line); border-radius: 17px; background: #eef1df; }
+.hud-surface .notebook-link-editor .hud-segmented__plate { inset: 4px auto 4px 4px; width: calc((100% - 8px) / var(--hud-seg-count)); border-radius: 13px; background: var(--hud-paper-light); box-shadow: 0 2px 0 #ccd7bd; }
+.hud-surface .notebook-link-editor .hud-segmented button { min-height: 36px; padding: 6px 12px; border-radius: 13px; font-size: 13px; }
+.hud-surface .notebook-link-editor .hud-segmented button.is-active { color: var(--hud-green); }
+.hud-surface .notebook-link-editor .hud-segmented button svg { width: 16px; height: 16px; }
+.hud-surface .notebook-link-body { min-height: 0; overflow: auto; padding: 3px; margin: -3px; scrollbar-width: thin; scrollbar-color: #c8d2b8 transparent; }
+.hud-surface .notebook-link-field { display: grid; gap: 8px; font-size: 13px; font-weight: 650; }
+.hud-surface .notebook-link-field input { width: 100%; min-height: 44px; padding: 10px 13px; color: var(--hud-ink); border: 1px solid #cbd7ba; border-radius: 14px; background: #fffdf5; font: 400 14px/1.6 "Noto Sans SC Variable", sans-serif; }
+.hud-surface .notebook-link-field input::placeholder { color: #8b9683; }
+.hud-surface .notebook-link-field input[aria-invalid="true"] { border-color: var(--hud-clay); }
+.hud-surface .notebook-link-notes { max-height: 220px; overflow: auto; margin-top: 12px; padding: 3px; border-block: 1px solid var(--hud-line); scrollbar-width: thin; scrollbar-color: #c8d2b8 transparent; }
+.hud-surface .notebook-link-notes label { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 10px; margin-block: 3px; border-radius: 12px; font-size: 14px; line-height: 1.6; cursor: pointer; }
+.hud-surface .notebook-link-notes label:hover { background: #eef2e2; }
+.hud-surface .notebook-link-notes label:has(:checked) { background: #e4efd9; color: var(--hud-green); }
+.hud-surface .notebook-link-notes label > span { min-width: 0; overflow-wrap: anywhere; }
+.hud-surface .notebook-link-notes label > svg { flex: none; width: 17px; height: 17px; color: #829575; }
+.hud-surface .notebook-link-notes input { appearance: none; display: grid; place-items: center; flex: none; width: 18px; height: 18px; margin: 0; padding: 0; border: 2px solid #a7bf9b; border-radius: 50%; background: #fffdf5; cursor: pointer; }
+.hud-surface .notebook-link-notes input:checked { border-color: var(--hud-green); }
+.hud-surface .notebook-link-notes input:checked::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--hud-green); }
+.hud-surface .notebook-link-editor #notebook-link-help { margin: 12px 0 0; font-size: 12px; }
+.hud-surface .notebook-link-editor .actions { flex: none; justify-content: flex-end; margin: 0; padding-top: 15px; border-top: 1px solid var(--hud-line); }
+.desktop-app:is([data-motion-mode="lite"], [data-motion-mode="off"]) .notebook-link-editor .hud-segmented__plate { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .hud-surface .notebook-link-editor .hud-segmented__plate { transition: none; }
+}
+@media (max-height: 520px) {
+  .hud-surface .notebook-dialog { padding: 18px 22px; }
+  .hud-surface .notebook-link-editor form { gap: 12px; }
+  .hud-surface .notebook-link-editor .actions { padding-top: 12px; }
+}
 .hud-surface .note-link-failure { display: inline; margin-inline-start: .5em; color: var(--hud-clay); font-size: 12px; }
 .hud-surface .note-library-link { text-decoration-style: dotted; }
 .hud-surface .note-library-link[aria-busy="true"] { opacity: .65; cursor: progress; }
@@ -107,3 +140,29 @@
 .note-annotation-preview .note-annotation-delete { display: grid; gap: 8px; font: 12px/1.6 "Noto Sans SC Variable", sans-serif; }
 .note-annotation-preview .note-annotation-delete__buttons { display: flex; gap: 8px; }
 .note-annotation-preview .note-annotation-delete button { min-height: 32px; padding: 6px 10px; border: 1px solid #d7c896; border-radius: 11px; background: #fffbed; color: #846e40; cursor: pointer; font: 12px/1.5 "Noto Sans SC Variable", sans-serif; }
+
+/* A visible wash moves across the whole working passage. The independent layer
+   survives editor paragraph backgrounds; multiply keeps the original ink dark. */
+.note-ai-working { position: relative; isolation: isolate; cursor: progress; }
+.note-ai-working::after {
+  content: ""; position: absolute; inset: -5px -10px; z-index: 1;
+  border-radius: 14px; pointer-events: none; mix-blend-mode: multiply;
+  background: linear-gradient(105deg, #cbdcde 0%, #e2d9e9 18%, #c5dade 34%, #fff9e8 46%, #fffdf4 50%, #b5d2d8 63%, #e2d9e9 80%, #cbdcde 100%);
+  background-size: 250% 100%; background-position: 100% 0;
+  animation: note-ai-paper-shimmer 1.8s linear infinite;
+}
+.hud-surface .note-ai-working::before,
+.hud-surface .note-draft .ProseMirror .note-ai-working[data-ai-label]::before {
+  content: attr(data-ai-label); position: absolute; right: 0; top: -17px; z-index: 2;
+  inset-inline-start: auto;
+  padding: 3px 10px; border-radius: 9px; background: #49646b; color: #fffbee;
+  font: 650 11px/1.6 var(--font-sans, sans-serif); letter-spacing: .02em; pointer-events: none;
+}
+.cm-line.note-ai-working::after { inset: 0 -4px; border-radius: 4px; }
+.hud-surface .cm-line.note-ai-working::before { display: none; }
+.hud-surface .note-ai-working.note-annotation-block { border-inline-start-color: transparent; }
+.hud-surface .note-ai-working.note-annotation-source { box-shadow: none; }
+.note-ai-working :is(button, input, textarea, [contenteditable="true"]) { pointer-events: none; }
+@keyframes note-ai-paper-shimmer { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+.desktop-app:is([data-motion-mode="off"], [data-motion-mode="lite"], [data-reduced-motion="true"]) .note-ai-working::after { animation: none; background: #d5e2e6; }
+@media (prefers-reduced-motion: reduce) { .note-ai-working::after { animation: none; background: #d5e2e6; } }

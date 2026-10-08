@@ -551,7 +551,7 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
       modelId: provider.modelId,
       promptVersion: `${provider.promptVersion}:companion-summarizer-v1`,
       resourceClass: "maintenance",
-      timeoutMs: resolveProviderCallTimeout("companion_agent"),
+      timeoutMs: resolveProviderCallTimeout("companion_summarizer"),
       isOutputShapeError: (error) => error instanceof SummarizerOutputError,
       execute: async (request, signal) => {
         // 2026-08-24（AI 设计审查 §4.2）：responseFormat "text" → "json_object"，

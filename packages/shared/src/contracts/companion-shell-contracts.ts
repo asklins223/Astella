@@ -301,6 +301,7 @@ export const companionAccountPatchSchema = z.object({
     .nullable()
     .optional(),
   agentPermissionLevel: companionAgentPermissionLevelSchema.optional(),
+  webSearchEnabled: z.boolean().optional(),
 }).strict().superRefine((patch, ctx) => {
   const hasChange =
     patch.globalEnabled !== undefined ||
@@ -313,7 +314,8 @@ export const companionAccountPatchSchema = z.object({
     patch.notificationBoundary !== undefined ||
     patch.interventionLevel !== undefined ||
     patch.quietHours !== undefined ||
-    patch.agentPermissionLevel !== undefined;
+    patch.agentPermissionLevel !== undefined ||
+    patch.webSearchEnabled !== undefined;
   if (!hasChange) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,

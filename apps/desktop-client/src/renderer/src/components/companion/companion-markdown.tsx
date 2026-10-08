@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { parseInlineMarkdown, parseMarkdownTable, type NoteDocInlineSegment } from "@astella/shared/note-doc-schema";
 import { isWebLinkUrl } from "@astella/shared/desktop-ipc-contracts";
 import { openExternalLink } from "../../app/external-link";
+import { WebCitationContext, WebCitationText, type WebCitation } from "./companion-web-citations";
 import { ReadableMath } from "../content/readable-math";
 
 function segmentSource(segment: NoteDocInlineSegment): string {
@@ -54,7 +55,7 @@ function renderInline(text: string, keyBase: string, depth = 0): ReactNode[] {
       // A model-supplied image is not an authorized download. Retain its source
       // for inspection; actual artifact media uses the existing asset path.
       case "image": return [source];
-      default: return withLineBreaks(segment.text, key);
+      default: return [<WebCitationText key={key} text={segment.text} />];
     }
   });
 }
@@ -109,10 +110,11 @@ function visibleParagraphs(text: string): string {
   return encodedParagraph ? formatted : text;
 }
 
-export function plainCompanionBubbleText(text: string): string {
+export function plainCompanionBubbleText(text: string, keepWebCitations = false): string {
   const value = visibleParagraphs(text).replace(/^```[^\n]*\n?/gm, "").replace(/^```\s*$/gm, "")
     .replace(/^#{1,6}\s+/gm, "").replace(/^>\s?/gm, "").replace(/__(.*?)__/g, "$1");
-  return plainInline(value).replace(/\n{3,}/g, "\n\n").trimEnd();
+  const plain = plainInline(value);
+  return (keepWebCitations ? plain : plain.replace(/\[\^web-[a-zA-Z0-9_-]+\]/g, "")).replace(/\n{3,}/g, "\n\n").trimEnd();
 }
 
 function plainInline(value: string, depth = 0): string {
@@ -148,8 +150,8 @@ function renderList(lines: string[], start: number, key: string, depth: number):
     : <ul className="companion-md__list" key={key}>{children}</ul>, next };
 }
 
-export function renderCompanionMarkdown(text: string): ReactNode[] {
-  return renderBlocks(visibleParagraphs(text), 0);
+export function renderCompanionMarkdown(text: string, sources: readonly WebCitation[] = []): ReactNode[] {
+  return [<WebCitationContext.Provider key="markdown" value={sources}>{renderBlocks(visibleParagraphs(text), 0)}</WebCitationContext.Provider>];
 }
 
 function renderBlocks(text: string, depth: number): ReactNode[] {

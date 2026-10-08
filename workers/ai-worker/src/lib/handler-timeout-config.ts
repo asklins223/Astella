@@ -7,64 +7,36 @@
  *   WORKER_PROVIDER_TIMEOUT_MS           — nested provider-call default
  *   WORKER_PROVIDER_TIMEOUT_<TYPE>_MS    — nested provider-call override
  *
- * The lease timeout (LEASE_TIMEOUT_MS = 120 s) must remain strictly larger
- * than every handler timeout so the abort fires before the reaper reclaims
- * the job.  resolveHandlerTimeout clamps each value to LEASE_TIMEOUT_MS - 10 s
- * as a safety margin.
+ * Running jobs renew their lease. Lease duration controls crash recovery,
+ * while handler/provider deadlines control execution time independently.
  */
 
 import { LEASE_TIMEOUT_MS } from "../queue.ts";
+import { DEFAULT_AI_PROVIDER_TIMEOUT_MS, DEFAULT_AI_TASK_TIMEOUT_MS } from "@astella/shared";
 
-const LEASE_SAFETY_MARGIN_MS = 10_000;
-const MAX_ALLOWED_TIMEOUT_MS = LEASE_TIMEOUT_MS - LEASE_SAFETY_MARGIN_MS;
+const MAX_ALLOWED_TIMEOUT_MS = 24 * 60 * 60_000;
 
 /** Default per-type timeouts (milliseconds). */
 const DEFAULT_TIMEOUTS: Record<string, number> = {
   // URL fetch + text segmentation, no AI call.
   parse_source: 60_000,
-  // Companion Agent：bounded model/tool loop + 确定性落库。
-  //
-  // 这里**不写数字**（方案 29 §4.9 第 6 项：三套预算收一）。以前它是字面量 110_000，
-  // 必须由人记得和 `LEASE_TIMEOUT_MS - LEASE_SAFETY_MARGIN_MS` 保持一致；租约一改，
-  // 症状不是报错而是 reaper 抢在 abort 前把 job 收回、run 停在 running。
-  // 现在整条链由 resolveCompanionAgentBudget() 派生，见该函数。
-  companion_agent: MAX_ALLOWED_TIMEOUT_MS,
-  agent_run_advance: MAX_ALLOWED_TIMEOUT_MS,
-  // 2026-09-15 审计（设计 P1-13）：此前只覆盖 parse_source + companion_agent，
-  // 其余 4 种 job 落到 GLOBAL_DEFAULT_MS(90s)。HEAD 的同名映射覆盖了它那个时代的
-  // **全部** job 类型——job 类型换代后映射没跟上，属覆盖率回归。补齐现在的 6 种。
-  // 单次 LLM 调用 + 确定性落库。2026-10-06 全链路开思考后，单次取回从 7.6s 涨到
-  // 36s（实测）——60s 装不下"慢调用 + 一次重试"，放宽到租约上限，让单次 provider
-  // 调用拿到完整的 75s 预算。
-  companion_memory_extract: MAX_ALLOWED_TIMEOUT_MS,
-  companion_summarizer: MAX_ALLOWED_TIMEOUT_MS,
-  // 桌宠日记正文由模型写（2026-09-21 从确定性模板改过来），一次 job 最多两次采样。
-  // 实测（dev，ai_audit_log.duration_ms，10 次成功调用，关思考）：5.3–20.2s，典型 8–14s。
-  // 2026-10-06 开思考后单次采样变长，90s 装不下两次采样；放宽到租约上限
-  //（job 内部还有 100s 总预算兜着）。
-  companion_daily_summary: MAX_ALLOWED_TIMEOUT_MS,
-  // 最重的一个：最多 200 次 embed + 每行 2 条写语句（BATCH_LIMIT=200）。
-  // 取 clamp 上限（LEASE_TIMEOUT_MS - 10s），是 lease 约束下能给的唯一选择。
-  companion_memory_embedding_rebuild: 110_000,
-  // 念头生成（0227）：素材收集 + 可选 LLM 批量/表达 + embedding 去重，多次外部往返。
-  companion_thought: 110_000,
-  // 独立笔记速看最多 6 个文本分段；3 组模型调用和一次带租约的持久化。
-  note_overview_generate: 100_000,
-  // 2026-10-06 开思考后单次取回变长（实测同类 7.6s → 36s），60s 只剩 45s
-  // 单调用预算，慢一点的解释会被本地 abort 掐掉；90s 让单调用拿满 75s。
-  note_annotation_explain: 90_000,
-  note_dynamic_artifact_generate: MAX_ALLOWED_TIMEOUT_MS,
-  note_expansion_generate: 100_000,
+  companion_agent: DEFAULT_AI_TASK_TIMEOUT_MS,
+  agent_run_advance: DEFAULT_AI_TASK_TIMEOUT_MS,
+  companion_memory_extract: DEFAULT_AI_TASK_TIMEOUT_MS,
+  companion_summarizer: DEFAULT_AI_TASK_TIMEOUT_MS,
+  companion_daily_summary: DEFAULT_AI_TASK_TIMEOUT_MS,
+  companion_memory_embedding_rebuild: DEFAULT_AI_TASK_TIMEOUT_MS,
+  companion_memory_organize: DEFAULT_AI_TASK_TIMEOUT_MS,
+  companion_thought: DEFAULT_AI_TASK_TIMEOUT_MS,
+  note_overview_generate: DEFAULT_AI_TASK_TIMEOUT_MS,
+  note_annotation_explain: DEFAULT_AI_TASK_TIMEOUT_MS,
+  note_dynamic_artifact_generate: DEFAULT_AI_TASK_TIMEOUT_MS,
+  note_expansion_generate: DEFAULT_AI_TASK_TIMEOUT_MS,
 };
 
-const GLOBAL_DEFAULT_MS = 90_000;
+const GLOBAL_DEFAULT_MS = DEFAULT_AI_TASK_TIMEOUT_MS;
 const PROVIDER_SAFETY_MARGIN_MS = 15_000;
-// 75s (was 60s): long structured JSON outputs on commercial Qwen-class models
-// regularly need 40-70s even without thinking mode. Still bounded by
-// handlerTimeout - 15s, so the agent turn (120s) keeps its
-// persistence margin inside the 120s lease. Override per deployment via
-// WORKER_PROVIDER_TIMEOUT_MS / WORKER_PROVIDER_TIMEOUT_<TYPE>_MS.
-const DEFAULT_PROVIDER_TIMEOUT_MS = 75_000;
+const DEFAULT_PROVIDER_TIMEOUT_MS = DEFAULT_AI_PROVIDER_TIMEOUT_MS;
 
 function parsePositiveInt(value: string | undefined): number | undefined {
   if (value === undefined || value === "") return undefined;
@@ -88,9 +60,9 @@ function providerEnvKeyForType(jobType: string): string {
  *   1. Per-type env var (e.g. WORKER_TIMEOUT_PARSE_SOURCE_MS)
  *   2. Global env var (WORKER_MODEL_TIMEOUT_MS)
  *   3. Per-type built-in default
- *   4. Global built-in default (90 000 ms)
+ *   4. Global built-in default (30 minutes)
  *
- * The result is clamped to MAX_ALLOWED_TIMEOUT_MS to stay within the lease.
+ * Explicit deployment overrides are retained; lease renewal permits long work.
  */
 export function resolveHandlerTimeout(jobType: string): number {
   // 1. Per-type env var — highest priority, explicit operator override.
@@ -134,19 +106,13 @@ function clamp(ms: number): number {
  * 伴星 agent 的**唯一预算链**（方案 29 §4.9 第 6 项）。
  *
  * ```
- *   lease (120s)                    job 租约：reaper 按它回收，最外层硬边界
- *     └─ handler abort (lease-10s)  runWithAbortTimeout 强制执行
+ *   lease heartbeat (120s)         job 租约：续租停止后回收崩溃任务
+ *   handler abort (30min)          runWithAbortTimeout 强制执行
  *          └─ loop deadline         agent 循环自己的 deadline = abort - 持久化余量
  * ```
  *
- * 三者的关系以前是**三个数字靠人手工协调**：`companion_agent: 110_000` 与
- * `AGENT_PERSISTENCE_MARGIN_MS` 分别写在两个文件里，改一个忘一个的症状是
- * "用户什么都收不到"（delta 与终态事务没时间落库），而不是一条报错。
- *
- * 合同侧 `COMPANION_AGENT_DEADLINE_MS` 是**跨尝试累加**的 run 预算（确认后续跑），
- * 与这条"单次尝试"的链不是同一个轴：它必须 ≥ handler abort，否则新 attempt 里
- * 它会更早绑住，把超时误记成 `AGENT_BUDGET_EXCEEDED`（那条不变量由
- * `__tests__/handler-timeout-config.test.ts` 的预算阶梯用例钉住）。
+ * 租约不再限制合法任务的总时长；运行时持续续租，失去租约或取消仍立即中止。
+ * 合同预算跨确认续跑累加，handler 是单次执行预算；循环为持久化留下余量。
  *
  * 走函数而不是常量：handler 超时可以被 `WORKER_TIMEOUT_COMPANION_AGENT_MS`
  * 覆盖，而 abort 用的是**解析后**的值——循环若用静态常量算 deadline，env 一改
@@ -173,7 +139,7 @@ export function resolveCompanionAgentBudget(jobType = "companion_agent"): Compan
   };
 }
 
-/** Keep structured page generation and its bounded retry inside the live lease. */
+/** Structured page generation shares the normal execution budget. */
 export function resolveNoteDynamicArtifactBudget(): CompanionAgentBudget {
   return resolveCompanionAgentBudget("note_dynamic_artifact_generate");
 }

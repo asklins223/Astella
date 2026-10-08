@@ -1,3 +1,5 @@
+import { useNotebookCompanionEditing } from "./use-notebook-companion-editing";
+import { beginNoteAiWork, endNoteAiWork, useNoteAiWork, resolveNoteAiRanges, type NoteAiRange } from "../../companion/note-companion-editing";
 import { noteHtmlAlignments } from "./note-html-alignment";
 import { publishCompanionRecordsChanged } from "../../companion/companion-events";
 import { NoteReflectionShelf } from "./note-reflection-shelf.tsx";
@@ -84,6 +86,7 @@ import {
 } from "../run/objective-state-copy.ts";
 import { startObjectiveJourney } from "../run/objective-primary-action.ts";
 import { ArtifactFrameHost } from "../source/artifact-frame-host.tsx";
+import { resolveArtifactMotion } from "../source/artifact-motion";
 import { NotebookLearningArtifactPaper } from "./notebook-learning-artifact-paper";
 import { RoundNotice } from "./round-notice.tsx";
 import { parseMarkdownTable } from "@astella/shared/note-doc-schema";
@@ -99,6 +102,8 @@ import { AnnotationDeleteControl, useAnnotationDeleteConfirm } from "./annotatio
 import { isNoteEditingMode, type NoteBodyMode } from "./note-document-mode";
 import { useNotebookBodyMode } from "./use-notebook-body-mode";
 import { NotebookDesk } from "./notebook-desk";
+import { useNotebookFullscreenActive, useNotebookFullscreenSession, useNotebookFullscreenState } from "./notebook-fullscreen-state";
+import { NotebookFullscreenRibbon } from "./notebook-fullscreen-ribbon";
 import { NotebookEditorTools } from "./notebook-editor-tools";
 import { useNotebookLinkEditor } from "./notebook-link-editor";
 import { noteOutline } from "./note-outline";
@@ -845,6 +850,7 @@ export function NotebookSurface() {
    */
   const [artifactState, setArtifactState] = useState<"idle" | "ready" | "failed">("idle");
   const motionMode = useRoomStore((state) => state.motionMode);
+  const reducedMotion = useRoomStore((state) => state.reducedMotion);
   /**
    * 依据里点开的那一段。它只是**屏幕上的注意力**（滚动 + 短暂高亮），不进任何写：
    * 值一过期就撤掉，不留"上次点到哪"这种会跟人走的读数。
@@ -1636,6 +1642,9 @@ const noteDocLive = useNoteDocLiveView(
     const request = ++annotationTaskRequestRef.current;
     setAnnotationTaskStarting(true);
     setAnnotationTaskError(null);
+    const workId = `annotation-start:${note.noteId}:${request}`;
+    beginNoteAiWork(workId, note.noteId, [{ startBlock: anchor.startBlockOrdinal, endBlock: anchor.endBlockOrdinal,
+      label: "伴星正在解读原句", expectedBlocks: note.currentVersion.blocks.slice(anchor.startBlockOrdinal, anchor.endBlockOrdinal + 1).map(b => b.content) }]);
     try {
       const task = unwrapGatewayResult(await api.noteAnnotation.startTask({
         meta: createRequestMeta(epochRef.current),
@@ -1655,6 +1664,7 @@ const noteDocLive = useNoteDocLiveView(
     } catch (error) {
       if (request === annotationTaskRequestRef.current) setAnnotationTaskError(gatewayErrorMessage(error));
     } finally {
+      endNoteAiWork(workId);
       if (request === annotationTaskRequestRef.current) setAnnotationTaskStarting(false);
     }
   }, [note?.noteId, note?.currentVersionId, annotationTaskStarting]);
@@ -2175,7 +2185,18 @@ const noteDocLive = useNoteDocLiveView(
   useEffect(() => {
     if (unresolvedNoteAnnotations.length > 0) setAnnotationShelfOpen(true);
   }, [unresolvedNoteAnnotations.length, note?.noteId, note?.currentVersionId]);
-  const { selectedPassage, setSelectedPassage, captureSelectedPassage } = useNotebookSelection({ note, blocks: readSourceBlocks, bodyRef: readingBodyRef, active: leaf === "reading" && learningView === "body" && mode === "preview" });
+  const { selectedPassage, setSelectedPassage } = useNotebookSelection({ note, blocks: readSourceBlocks, bodyRef: readingBodyRef, active: leaf === "reading" && learningView === "body" && mode === "preview" });
+
+  useNotebookCompanionEditing({ note, blocks: readSourceBlocks, mode, editable, bodyRef: readingBodyRef, editorRef,
+    selection: selectedPassage, flush: noteDocLive.flush });
+  const noteAiWork = useNoteAiWork(state => state.items);
+  const noteAiRanges: NoteAiRange[] = resolveNoteAiRanges([
+    ...Object.values(noteAiWork).filter(item => item.noteId === note?.noteId).flatMap(item => item.ranges),
+    ...noteCompanionExplanations.filter(item => noteExplanationBusy(item) && item.target.anchor.noteVersionId === note?.currentVersionId).map(item => ({ startBlock: item.target.anchor.startBlockOrdinal,
+      endBlock: item.target.anchor.endBlockOrdinal, label: "伴星正在解释这段", expectedBlocks: note?.currentVersion.blocks.slice(item.target.anchor.startBlockOrdinal, item.target.anchor.endBlockOrdinal + 1).map(b => b.content) })),
+    ...(annotationTask && annotationTask.noteVersionId === note?.currentVersionId && (annotationTask.status === "queued" || annotationTask.status === "running") ? [{ startBlock: annotationTask.anchor.startBlockOrdinal,
+      endBlock: annotationTask.anchor.endBlockOrdinal, label: "伴星正在解读原句", expectedBlocks: note?.currentVersion.blocks.slice(annotationTask.anchor.startBlockOrdinal, annotationTask.anchor.endBlockOrdinal + 1).map(b => b.content) }] : []),
+  ], readSourceBlocks);
 
   const askCompanionAboutPassage = (text: string, anchor: NoteAnnotationAnchorV1 | null, noteId: string): void => {
     if (anchor) {
@@ -3519,7 +3540,7 @@ const noteDocLive = useNoteDocLiveView(
         <NotebookLearningArtifactPaper artifact={activeLearningArtifact} paperRef={learningArtifactPaperRef}
           ready={learningArtifactStoredId === activeLearningArtifact.artifactId} error={learningArtifactError}
           referenceBlocks={readSourceBlocks}
-          motion={motionMode === "full" ? "full" : "reduced"} onLocateReference={locateTeachingReference}
+          motion={resolveArtifactMotion(motionMode, reducedMotion)} onLocateReference={locateTeachingReference}
           onRegenerate={activeLearningArtifact.sourceKind === "overview" || activeLearningArtifact.versionState === "current" ? () => regenerateArtifact(activeLearningArtifact) : undefined}
           regenerationStarting={learningArtifactTaskStarting}
           regenerationError={learningArtifactTaskError}
@@ -3553,15 +3574,13 @@ const noteDocLive = useNoteDocLiveView(
       <div
         className="note-transcript"
         ref={readingBodyRef}
-        onMouseUp={captureSelectedPassage}
-        onKeyUp={captureSelectedPassage}
-        onTouchEnd={captureSelectedPassage}
       >
         {readSourceBlocks.length ? readingBlocks.map((block) => (
           <ReadingBlock
             key={block.ordinal}
             block={block}
             alignment={htmlAlignments.get(block.ordinal)}
+            aiWork={noteAiRanges.find(range => block.ordinal >= range.startBlock && block.ordinal <= range.endBlock)}
             annotations={currentNoteAnnotations}
             companionExplanations={noteCompanionExplanations.filter(item => !item.dismissed && item.phase !== "saved"
               && item.target.anchor.noteVersionId === note.currentVersionId && noteAnchorMatchesV1(readSourceBlocks, item.target.anchor))}
@@ -3804,7 +3823,7 @@ const noteDocLive = useNoteDocLiveView(
                   <span className="round-sheet__fold" aria-hidden="true" />
                   <ArtifactFrameHost
                     artifactId={roundArtifact.artifactId}
-                    motion={motionMode === "full" ? "full" : "reduced"}
+                    motion={resolveArtifactMotion(motionMode, reducedMotion)}
                     fallback={<p className="round-slip__aside">{ROUND_COPY.teaching.artifactFallback}</p>}
                   />
                 </figure>
@@ -4141,6 +4160,7 @@ const noteDocLive = useNoteDocLiveView(
           mode={mode}
           fragment={noteDocLive.fragment}
           initialMarkdown={draft.content}
+          aiRanges={noteAiRanges}
           onChange={applyContent}
           disabled={!editable || leaf !== "reading" || learningView !== "body"}
           onImagePaste={imageUploads.queueFile}
@@ -4168,6 +4188,8 @@ const noteDocLive = useNoteDocLiveView(
 
 
 
+  useNotebookFullscreenSession(note ? { noteId: note.noteId, noteVersionId: activeNoteRef?.noteVersionId ?? null, mode } : null);
+  const notebookFullscreen = useNotebookFullscreenActive();
   return (
     <>
       <div className="task-title notebook-page-title"><h1>{pageTitle}</h1><p>{pageSubtitle}</p></div>
@@ -4194,6 +4216,7 @@ const noteDocLive = useNoteDocLiveView(
           }}
         >
           {statePaper ? <div className="notebook-workspace__state">{statePaper}</div> : null}
+          {statePaper && notebookFullscreen ? <NotebookFullscreenRibbon onExit={() => useNotebookFullscreenState.setState({ active: false })} /> : null}
           {!loading && !failure && note ? (
             <>
               <NotebookDesk
@@ -4251,6 +4274,7 @@ const noteDocLive = useNoteDocLiveView(
                   {!editable ? <span className="tag">只读</span> : null}
                   <NotebookPresence peers={noteDocLive.presencePeers} selfName={presenceName} />{shareStateControls}</>}
                 scrollRef={leafScrollRef}
+                saveError={saveState === "error" ? saveLabel : null}
                 sidePage={historyOpen ? { kind: "history", title: "版本历史", closeLabel: "收起版本历史", onClose: () => setHistoryOpen(false), content: historyPaper } : sourceBagOpen ? { kind: "source", title: "资料袋", closeLabel: "合起资料袋", onClose: () => setSourceBagOpen(false), content: <>
                   <h3>原始资料</h3><p>{sourceTitle}</p>{clips}
                   {note.sourceId ? <button type="button" className="button" onClick={openSource}>打开只读原始资料</button> : null}
@@ -4268,7 +4292,10 @@ const noteDocLive = useNoteDocLiveView(
                 companionPending={Boolean(selectedPassage.anchor && noteCompanionExplanations.some(item => (noteExplanationBusy(item) || item.phase === "save-error") && noteAnchorsOverlap(item.target.anchor, selectedPassage.anchor!)))}
                 onExplain={() => { explainSelectedPassage(); setSelectedPassage(null); window.getSelection()?.removeAllRanges(); }}
                 onWrite={() => { if (selectedPassage.anchor) { annotationDraft.start(selectedPassage.anchor); setAnnotationDraftOpen(true); setSelectedPassage(null); window.getSelection()?.removeAllRanges(); } }}
-                onAskCompanion={askCompanionAboutSelectedPassage} onDismiss={() => { setSelectedPassage(null); window.getSelection()?.removeAllRanges(); }} /> : null}
+                onAskCompanion={askCompanionAboutSelectedPassage} onEditWithCompanion={editable && selectedPassage.anchor ? () => {
+                  feedSelectionToCompanion({ text: selectedPassage.text, source: "selection" });
+                  setSelectedPassage(null); window.getSelection()?.removeAllRanges();
+                } : undefined} onDismiss={() => { setSelectedPassage(null); window.getSelection()?.removeAllRanges(); }} /> : null}
             </>
           ) : null}
           {/* 阅读页的图片画廊：点击正文任一张图进入，左右切换整篇的图。

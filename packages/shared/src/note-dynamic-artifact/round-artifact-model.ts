@@ -34,6 +34,7 @@
  * ——读数由服务端从材料里算，模型写不进来。
  */
 import { randomUUID } from "node:crypto";
+import { DEFAULT_AI_PROVIDER_TIMEOUT_MS, DEFAULT_AI_TASK_TIMEOUT_MS } from "../ai-execution-budgets.ts";
 import { z } from "zod";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import type { PublicJsonRequester } from "@astella/shared/public-json-http";
@@ -62,7 +63,7 @@ export const DYNAMIC_ARTIFACT_TASK_ID = "note_dynamic_artifact_v1";
  * 按 taskVersion 分开，所以 v2 留下的半份不会被这一版默默复用。
  */
 export const DYNAMIC_ARTIFACT_TASK_VERSION = 3;
-export const DYNAMIC_ARTIFACT_PROMPT_VERSION = "note-dynamic-artifact-v15";
+export const DYNAMIC_ARTIFACT_PROMPT_VERSION = "note-dynamic-artifact-v16";
 
 /** 讲一个动作（"合上书先讲一遍"），不讲一个栏目（"讲解"）。 */
 const ARTIFACT_OUTLINE_TITLE_MAX_V1 = 24;
@@ -131,16 +132,10 @@ export function buildDynamicArtifactPrompt(input: DynamicArtifactInputV1): strin
     "请根据下面的学习内容，制作一个有趣、生动的动态讲解动画网页，帮助读者直观理解。",
     "网页的创意、视觉风格、版面、配色、图形、交互和动画由你自由设计。",
     "交付自包含的 HTML/CSS/JavaScript，供应用直接嵌入展示。",
-    "优先把最有助于理解的例子演示清楚，代码保持精简；不为装饰增加大段重复样式、脚本或重复展示同一份说明。",
-    "交付前独立核对原文、outline、画面和代码的含义一致：不能强化原文的限定条件，例如允许重复值的有序数组是非递减，不是严格递增。",
-    "若演示算法或公式，先用素材中的输入逐步推演，再核对空输入、单元素、重复值与边界。每次移动前保存待用的值和索引；画面、下标、状态说明必须描述同一帧实际发生的动作，不能显示旧下标或尚未发生的结果。",
-    "算法演示的比较、移动、写入应有可观察的状态变化。声称已经赋值或移动的那一帧必须显示操作后的数组或对象，不能只变颜色后直接跳到最终答案；暂存的值应独立显示，覆盖或挪动后仍看得见。讨论相等元素的稳定性时，用原始编号等方式区分它们，才能观察相对顺序。生成前逐帧写出实际状态并与说明核对，不以预设文字替代执行过程。",
-    "若展示插入排序的稳定性，元素应同时保留值和永不改变的原始身份（例如 2a、2b、1c）；当前位置下标会变化，不能用它代替原始身份。右移时复制元素的值与身份，key 单独暂存并持续显示它的值与身份；最后能看到 1c、2a、2b，才能核对两个 2 的先后。不要把 key 只写在某一步会消失的说明里。",
-    "逐项核对关键状态的实际可见性：暂存值从取出到写回的每个状态（包括比较前、比较后和移动前后）都应留在可见区域，不能只在部分 phase 显示；不要把状态放在 overflow:hidden 容器的负 top/left 位置，也不能用透明度、裁切或遮挡让它实际上看不见。使用正常文档流或容器内部明确留出的空间承载暂存值。",
-    "代码保持完整而简洁，交付前移除待修补逻辑和临时补丁；重置应恢复全部状态，暂停和动效切换必须停止现有计时器，手动单步仍能继续。最后一步明确显示完成，停止播放并禁用已无法继续前进的单步按钮；再次播放时应清楚地重新开始，而不是让用户对着终点反复点击却没有反馈。",
-    "页面必须支持 window.setLessonMotion(motion)：reduced 时停止自动播放和循环动画，full 时可恢复；系统 prefers-reduced-motion: reduce 优先。切换不禁用滑块、按钮等手动交互。计算处理零值与边界，避免 Infinity、NaN 或无效动画时长。",
-    "页面自己的关闭动效开关同样停止现有播放计时器、CSS 动画和过渡，不能以更短的计时器把关闭动效实现成加速播放；关闭后单步等手动操作即时显示最终状态。重置和重新开始必须同步按钮文字、完成标记和播放状态。",
-    "自动播放许可与动效状态使用同一处判断：Off/reduced 时播放按钮禁用（单步仍可用），清理 timer 后不得重新 startPlayback。不要写 motionEnabled ? 1200 : 500 之类让 Off 变快的分支。关闭 CSS 动效应有实际生效的类或选择器，不能只设置未被样式引用的 --transition-duration 变量；本地动效开关与 window.setLessonMotion 必须调用同一个状态更新函数，系统减少动态不能被本地开关越过。",
+    "让核心知识发生在画面中：用对象的运动、形变、轨迹或关系变化呈现过程与因果，让读者能观察并探索。按内容选择合适的动画与操作方式。",
+    "忠实保留原文的含义与适用条件；画面、说明和计算应一致，交互过程与边界输入都能正确运行。",
+    "运行环境支持内联 CSS、JavaScript、SVG、Canvas 和 Web Animations；不加载外部资源，不访问网络、存储或父窗口。",
+    "与宿主对接 window.setLessonMotion(motion)：reduced 时停止自动播放与循环动效，保留手动操作；full 时允许播放。系统 prefers-reduced-motion: reduce 优先。CSS/SVG 动画由宿主暂停，脚本动画由这个函数处理。",
     "为保存网页和回查原文，只返回以下 JSON；这些附属字段不决定网页的画面结构：",
     JSON.stringify({ title: "标题，40字以内", subject: "主题，60字以内", caution: "示意说明，120字以内",
       document: "完整网页的 HTML/CSS/JavaScript", outline: outlineExample }),
@@ -300,8 +295,8 @@ function escapeForSvgV1(text: string): string {
 }
 
 /** 单步与整任务的时长上界。一整页比一段 JSON 大得多，超时也该给得更宽。 */
-const ARTIFACT_STEP_TIMEOUT_MS = 120_000;
-const ARTIFACT_TASK_DEADLINE_MS = 210_000;
+const ARTIFACT_STEP_TIMEOUT_MS = DEFAULT_AI_PROVIDER_TIMEOUT_MS;
+const ARTIFACT_TASK_DEADLINE_MS = DEFAULT_AI_TASK_TIMEOUT_MS;
 
 /** 未达成时给用户看的那一句的类别——同一个读数只许一个来源，所以不交给上层编。 */
 export const ARTIFACT_COMPLETION_UNMET_V1 =

@@ -164,11 +164,10 @@ export async function loadNoteReadPage(
   const head = heads[0] as NoteReadRow | undefined;
   if (!head) return null;
   const blocks = await tx.execute(sql`
-    SELECT nb.ordinal::text AS ordinal, nb.content
-    FROM note_blocks nb
-    WHERE nb.version_id = ${head.version_id}::uuid
-      AND nb.ordinal >= ${input.startOrdinal}
-    ORDER BY nb.ordinal
+    SELECT numbered.ordinal::text AS ordinal, numbered.content FROM (
+      SELECT row_number() OVER (ORDER BY nb.ordinal) AS ordinal, nb.content
+      FROM note_blocks nb WHERE nb.version_id = ${head.version_id}::uuid
+    ) numbered WHERE numbered.ordinal >= ${input.startOrdinal} ORDER BY numbered.ordinal
   `);
   const totals = await tx.execute(sql`
     SELECT count(*)::text AS total FROM note_blocks nb
@@ -283,7 +282,7 @@ export const READ_IMAGE_MAX_RAW_BYTES = 2_000_000;
  * 不是"偶尔超时"而是**每轮必超时**，而她拿到的是 `ok:false` + 一句通用失败。
  * 仍受 run deadline 夹住（取 min），不会把整轮拖爆。
  */
-export const READ_IMAGE_TOOL_TIMEOUT_MS = 45_000;
+export const READ_IMAGE_TOOL_TIMEOUT_MS = DEFAULT_AI_PROVIDER_TIMEOUT_MS;
 
 /** 政策拒绝时给她的那句话：说得出原因、也给得出出路，不出现内部术语。 */
 export const VISION_EGRESS_DENIED_MESSAGE = "「允许发送图片内容」没有开启，图片留在本机，我看不到图里的内容";
@@ -557,3 +556,4 @@ export async function readLatestPageContextRow(
   `);
   return Array.isArray(rows) ? rows[0] ?? null : null;
 }
+import { DEFAULT_AI_PROVIDER_TIMEOUT_MS } from "@astella/shared";
