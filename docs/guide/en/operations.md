@@ -109,7 +109,9 @@ Capability flags are checked by `.github/scripts/verify-companion-capability-con
 
 ## Unified version and release chain
 
-The server and desktop share `release/version.json` (currently `1.0.0`) and the same `v<version>` tag. After editing that file, run `node .github/scripts/version-contract.mjs --write` to synchronize API, Worker, Shared and Desktop package metadata and lockfiles; `--check` verifies consistency. Desktop packaging uses `desktop-version.mjs` to invoke that same contract. Pushing `v1.0.0` triggers server CI and deployment alongside desktop quality checks and installer publishing. A version mismatch stops the release.
+The server and desktop share `release/version.json` and the same `v<version>` tag. Maintain both `version` and `notes` in this file; `notes` is a non-empty array of Markdown strings, one per update. Run `npm run release:prepare` at the repository root to synchronize API, Worker, Shared and Desktop package metadata, lockfiles and the README version, and preview the release notes. Use `npm run release:check` to verify consistency and `npm run release:notes` to preview notes separately. The release workflow generates the GitHub Release body from this file; it needs no per-version edits.
+
+Commit the prepared changes, create an annotated tag with `git tag -a v<version> -m "Astella v<version>"`, then push with `git push --atomic origin main v<version>`. The version tag triggers server CI and deployment alongside desktop quality checks and installer publishing. Missing notes or a version mismatch stops the release. Manual desktop version overrides preserve the notes.
 
 Make targets: `make version-check` checks both server and desktop versions; `make release-manifest` produces the machine-readable manifest from `release-manifest-generate.mjs`; `make release-check` runs `verify-release-inputs.mjs` → `make verify` → `coverage-gate.mjs` → `release-manifest-generate.mjs` → `release-manifest-contract.mjs`. On an exact release tag the last step fails closed unless `RELEASE_MANIFEST_PATH` points at a complete CI/release JSON artifact.
 

@@ -6,8 +6,7 @@
 
 面向个人学习的 AI 原生知识系统。从一份真正想弄懂的材料出发，把它写成笔记、在笔记里按需理解与回想、需要时制卡与长期复习；出处、练习证据与下一步始终可追溯。桌面端是一间有 Live2D 伴星坐着的纸上书房。
 
-[![服务端栈 1.0.0](https://img.shields.io/badge/%E6%9C%8D%E5%8A%A1%E7%AB%AF%E6%A0%88-1.0.0-blue)](release/version.json)
-[![桌面端 1.0.0](https://img.shields.io/badge/%E6%A1%8C%E9%9D%A2%E7%AB%AF-1.0.0-blue)](release/version.json)
+[![最新发布](https://img.shields.io/github/v/release/asklins223/Astella)](https://github.com/asklins223/Astella/releases/latest)
 [![Electron 43](https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Fastify 5](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
@@ -349,12 +348,12 @@ CI（`.github/workflows/main-ci.yml`）现在跑的是与本地基线一一对�
 
 ## 版本与发布
 
-服务端与桌面客户端共用一个产品版本：
+服务端与桌面客户端共用一个产品版本，版本号与更新内容集中在 [release/version.json](release/version.json)。发版时编辑其中的 `version` 与 `notes`，在仓库根运行 `npm run release:prepare`，自动同步包版本、lockfile 与本页版本文字，并预览 GitHub 发布说明；不需要修改工作流。提交后推送对应的带注释 `v<版本>` 标签即可触发发布。
 
-| 线 | 当前 | 载体 | 标签 |
-| --- | --- | --- | --- |
-| 服务端栈 | `1.0.0` | `release/version.json`，由 `.github/scripts/version-contract.mjs` 同步到 api／worker／shared 的 `package.json` | `v*` |
-| 桌面客户端 | `1.0.0` | `release/version.json` | `v*` |
+| 线 | 载体 | 标签 |
+| --- | --- | --- |
+| 服务端栈 | `release/version.json`，自动同步到 api／worker／shared 的 `package.json` | `v*` |
+| 桌面客户端 | 同一个 `release/version.json`，自动同步到 desktop-client 的 `package.json` | `v*` |
 
 桌面端产物由 `desktop-release.yml` 发布到 GitHub Releases（先 Draft、资产传完再公开）。客户端更新器**直连 GitHub Releases，不经过自家 API**：macOS `dmg` + `zip`、Windows NSIS、Linux AppImage，产物名固定 ASCII 前缀 `astella-`。未配置 Apple 证书时，macOS 使用完整 ad-hoc 签名和稳定的跨版本更新要求；首次打开仍可能需要在系统隐私与安全中允许。
 

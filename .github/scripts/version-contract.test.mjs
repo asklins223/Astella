@@ -3,14 +3,18 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
+import { execFileSync } from "node:child_process";
+import { formatReleaseNotes } from "./release-notes.mjs";
 import {
   inspectExactReleaseTags,
   inspectVersionCopies,
   loadVersionSource,
+  loadReleaseSource,
   PACKAGE_ROOTS,
   parseReleaseTag,
   REPOSITORY_ROOT,
   syncVersionCopies,
+  setReleaseVersion,
   validateVersion,
 } from "./version-contract.mjs";
 
@@ -44,7 +48,7 @@ function createFixture(copyVersion = "0.4.0") {
   const root = mkdtempSync(join(tmpdir(), "astella-version-contract-"));
   temporaryRoots.push(root);
   mkdirSync(join(root, "release"), { recursive: true });
-  writeJson(join(root, "release/version.json"), { version: "0.5.0" });
+  writeJson(join(root, "release/version.json"), { version: "0.5.0", notes: ["修复笔记保存", "改善伴星回复"] });
   writeFileSync(
     join(root, "README.md"),
     `[![Version](https://img.shields.io/badge/version-v${copyVersion}-blue.svg)](https://example.invalid)\n`,
@@ -70,6 +74,42 @@ describe("version contract", () => {
   it("accepts the canonical repository copies", () => {
     const version = loadVersionSource(REPOSITORY_ROOT);
     assert.deepEqual(inspectVersionCopies(REPOSITORY_ROOT, version), []);
+  });
+
+  it("preserves release notes when setting and synchronizing the version", () => {
+    const root = createFixture();
+    const notes = loadReleaseSource(root).notes;
+    setReleaseVersion(root, "1.2.3");
+    syncVersionCopies(root);
+    assert.deepEqual(loadReleaseSource(root), { version: "1.2.3", notes });
+    assert.deepEqual(inspectVersionCopies(root), []);
+  });
+
+  it("rejects missing or empty notes and unknown release fields", () => {
+    const root = createFixture();
+    for (const source of [
+      { version: "1.2.3" },
+      { version: "1.2.3", notes: [] },
+      { version: "1.2.3", notes: [" "] },
+      { version: "1.2.3", notes: [null] },
+      { version: "1.2.3", notes: "changes" },
+      { version: "1.2.3", notes: ["changes"], unexpected: true },
+    ]) {
+      writeJson(join(root, "release/version.json"), source);
+      assert.throws(() => loadReleaseSource(root), /version and notes|non-empty/);
+    }
+  });
+
+  it("writes the selected version and Markdown changes to release notes", () => {
+    const root = createFixture();
+    const output = join(root, "release-notes.md");
+    const preview = execFileSync(process.execPath, [join(REPOSITORY_ROOT, ".github/scripts/release-notes.mjs")], { encoding: "utf8" });
+    execFileSync(process.execPath, [join(REPOSITORY_ROOT, ".github/scripts/release-notes.mjs"), "--output", output]);
+    assert.equal(readFileSync(output, "utf8"), preview);
+    const source = loadReleaseSource();
+    assert.ok(preview.startsWith(`Astella v${source.version}\n`));
+    assert.ok(preview.includes(`- ${source.notes[0]}`));
+    assert.ok(formatReleaseNotes({ version: "1.2.3", notes: ["第一行\n第二行"] }).includes("- 第一行\n  第二行"));
   });
 
   /**

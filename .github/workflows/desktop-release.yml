@@ -167,16 +167,7 @@ jobs:
           cat "$latest_win"
 
       - name: Write release notes
-        run: |
-          cat > release-notes.md <<'EOF'
-          本次版本包含伴星对话与流式回复修复：停止后保留本轮已经收到的正文，空回复不生成历史消息；完善笔记长选区、创作意图识别和原文引用核对，并对齐模型思考与采样能力。
-
-          macOS 安装包已完成 ad-hoc 签名，尚未使用 Apple Developer ID 签名与公证；首次打开可能需要在系统设置 → 隐私与安全性中选择“仍要打开”。Windows 首次运行可能经过 SmartScreen。
-
-          已安装旧版的用户可在客户端检查更新，或下载本次安装包替换原应用。
-
-          更新走 GitHub Releases 直连下载，不经过本项目服务器。
-          EOF
+        run: node .github/scripts/release-notes.mjs --output release-notes.md
 
       - name: Create draft release and upload all assets
         id: upload
@@ -184,9 +175,8 @@ jobs:
         with:
           tag_name: ${{ needs.resolve.outputs.tag }}
           name: Astella ${{ needs.resolve.outputs.tag }}
-          # 变更清单交给 GitHub 自己按 tag 区间生成（比在 runner 上手搓 git log
-          # 可靠：runner 里只有浅检出，父提交常常不在本地）。
-          generate_release_notes: true
+          # 产品更新内容与版本号都由 release/version.json 管理。
+          generate_release_notes: false
           body_path: release-notes.md
           draft: true
           fail_on_unmatched_files: true

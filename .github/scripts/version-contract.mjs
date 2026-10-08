@@ -81,16 +81,33 @@ export function validateVersion(value) {
   return value;
 }
 
-export function loadVersionSource(root = REPOSITORY_ROOT) {
+export function loadReleaseSource(root = REPOSITORY_ROOT) {
   const source = readJson(join(root, VERSION_SOURCE_PATH));
   if (!source || typeof source !== "object" || Array.isArray(source)) {
     throw new Error(`${VERSION_SOURCE_PATH} must contain one JSON object`);
   }
   const keys = Object.keys(source).sort();
-  if (keys.length !== 1 || keys[0] !== "version") {
-    throw new Error(`${VERSION_SOURCE_PATH} must contain only the manually maintained version field`);
+  if (keys.length !== 2 || keys[0] !== "notes" || keys[1] !== "version") {
+    throw new Error(`${VERSION_SOURCE_PATH} must contain only version and notes`);
   }
-  return validateVersion(source.version);
+  const version = validateVersion(source.version);
+  if (!Array.isArray(source.notes) || source.notes.length === 0
+    || source.notes.some((note) => typeof note !== "string" || !note.trim())) {
+    throw new Error(`${VERSION_SOURCE_PATH} notes must be a non-empty array of non-empty strings`);
+  }
+  return { version, notes: source.notes.map((note) => note.trim()) };
+}
+
+export function loadVersionSource(root = REPOSITORY_ROOT) {
+  return loadReleaseSource(root).version;
+}
+
+export function setReleaseVersion(root = REPOSITORY_ROOT, version) {
+  validateVersion(version);
+  const source = loadReleaseSource(root);
+  const sourcePath = join(root, VERSION_SOURCE_PATH);
+  const contents = serializeJson({ ...source, version });
+  if (readFileSync(sourcePath, "utf8") !== contents) writeFileAtomically(sourcePath, contents);
 }
 
 export function inspectVersionCopies(root = REPOSITORY_ROOT, version = loadVersionSource(root)) {

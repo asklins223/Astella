@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
 // Desktop and server share release/version.json and the same v<version> tag.
-import { readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   REPOSITORY_ROOT, VERSION_SOURCE_PATH, loadVersionSource, validateVersion,
   inspectVersionCopies, syncVersionCopies, parseReleaseTag,
+  setReleaseVersion,
 } from "./version-contract.mjs";
 
 export { REPOSITORY_ROOT };
@@ -28,9 +28,7 @@ function main() {
   try {
     if (args[0] === "--set") {
       const version = validateVersion(args[1]);
-      const sourcePath = join(REPOSITORY_ROOT, VERSION_SOURCE_PATH);
-      const next = `${JSON.stringify({ version }, null, 2)}\n`;
-      if (readFileSync(sourcePath, "utf8") !== next) writeFileSync(sourcePath, next);
+      setReleaseVersion(REPOSITORY_ROOT, version);
       const changed = syncVersionCopies(REPOSITORY_ROOT, version);
       console.log(`unified release version ${version}; synchronized ${changed.join(", ") || "no changes"}`);
       return;

@@ -121,8 +121,8 @@ rebuild:
 config:
 	$(COMPOSE) config --quiet
 
-# release/version.json is the only manually edited version source. To update
-# generated copies, run: node .github/scripts/version-contract.mjs --write
+# release/version.json holds the version and update notes. To synchronize
+# generated copies and preview release notes, run: npm run release:prepare
 version-check:
 	node .github/scripts/version-contract.mjs --check
 

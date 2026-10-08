@@ -6,8 +6,7 @@
 
 An AI-native knowledge system for self-directed learning. Start from material you actually want to understand, turn it into notes, understand and recall on demand inside the same note, and opt into learning cards and long-term review when it's worth it. Sources, practice evidence and the next step stay traceable. The desktop app is a paper study room with a Live2D companion sitting beside you.
 
-[![server stack 1.0.0](https://img.shields.io/badge/server_stack-1.0.0-blue)](release/version.json)
-[![desktop 1.0.0](https://img.shields.io/badge/desktop-1.0.0-blue)](release/version.json)
+[![Latest release](https://img.shields.io/github/v/release/asklins223/Astella)](https://github.com/asklins223/Astella/releases/latest)
 [![Electron 43](https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Fastify 5](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
@@ -347,12 +346,12 @@ See [Models and the worker pipeline](docs/guide/en/ai-and-companion.md).
 
 ## Versions and releases
 
-Server and desktop share one product version:
+Server and desktop share one product version. Maintain the version and update notes in [release/version.json](release/version.json), then run `npm run release:prepare` at the repository root to synchronize package versions and lockfiles and preview the GitHub release notes. Commit and push the corresponding annotated `v<version>` tag to publish; no workflow edits are needed.
 
-| Line | Current | Held in | Tag |
-| --- | --- | --- | --- |
-| Server stack | `1.0.0` | `release/version.json`, synced by `.github/scripts/version-contract.mjs` into api / worker / shared `package.json` | `v*` |
-| Desktop client | `1.0.0` | `release/version.json` | `v*` |
+| Line | Held in | Tag |
+| --- | --- | --- |
+| Server stack | `release/version.json`, automatically synced into api / worker / shared `package.json` | `v*` |
+| Desktop client | The same `release/version.json`, automatically synced into desktop-client `package.json` | `v*` |
 
 `desktop-release.yml` publishes to GitHub Releases (draft first, flipped public once assets finish uploading). The client updater talks **straight to GitHub Releases, never through our own API**: macOS `dmg` + `zip`, Windows NSIS, Linux AppImage, artifact names pinned to the ASCII prefix `astella-`. Without an Apple certificate, macOS uses complete ad-hoc signing with a stable update requirement; users may still need to allow first launch in Privacy & Security.
 
