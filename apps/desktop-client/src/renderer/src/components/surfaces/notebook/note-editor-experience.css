@@ -1,0 +1,51 @@
+/* Inline content keeps the writing measure; properties live above the paper. */
+.note-editor .note-image-node { position: relative; display: inline-block; width: auto; max-width: 100%; margin: 4px 0; vertical-align: middle; border-radius: 8px; }
+.note-editor .note-image-node__frame { position: relative; display: inline-block; width: fit-content; max-width: 100%; vertical-align: middle; border-radius: 8px; }
+.hud-surface .note-draft .ProseMirror .note-image-node__image { display: block; width: auto; max-width: 100%; max-height: none; height: auto; margin: 0; border-radius: 8px; cursor: default; }
+.hud-surface .note-draft .ProseMirror .note-image-node__frame[style*="width:"] .note-image-node__image { width: 100%; }
+.note-editor .note-image-node [hidden], .note-image-properties[hidden] { display: none !important; }
+.note-editor .note-image-node.ProseMirror-selectednode { outline: none; }
+.note-editor .note-image-node.ProseMirror-selectednode .note-image-node__frame { outline: 2px solid #6d9a86; outline-offset: 3px; }
+.note-editor .note-image-node__frame { user-select: none; }
+.note-editor .note-image-node::selection, .note-editor .note-image-node ::selection { background: transparent; }
+.note-editor .note-image-node__resize { position: absolute; bottom: -6px; right: -6px; width: 16px; height: 16px; padding: 0; border: 2px solid #fffbee; border-radius: 4px; background: #6d9a86; cursor: ew-resize; touch-action: none; }
+.note-editor .note-image-node__resize:focus-visible { outline: 2px solid #315f45; outline-offset: 3px; }
+.note-editor .note-image-node__frame:has(.note-image-node__image[hidden]) { min-width: min(300px, 100%); }
+.note-editor .note-image-node[data-preview="true"] .note-image-node__placeholder { position: absolute; inset: 0; min-height: 0; display: flex; align-items: end; padding: 12px; color: #fffbee; background: linear-gradient(transparent 45%, #263e4db0); }
+.note-editor .note-image-node[data-preview="true"] .note-image-node__placeholder::before { opacity: .22; }
+.note-editor .note-image-node[data-preview="true"] .note-image-node__name { font-size: 12px; }
+.note-image-properties { position: fixed; inset: auto; box-sizing: border-box; z-index: 900; display: grid; grid-template-columns: 1fr 100px; gap: 9px 12px; margin: 0; padding: 13px 15px; border: 1px solid #cbcfc0; border-radius: 12px; background: #fffdf5; color: #3c4a40; box-shadow: 0 7px 28px #253b3528, 0 1px 3px #253b3518; font: 500 12px/1.5 "Noto Sans SC Variable", sans-serif; }
+.note-image-properties::backdrop { background: transparent; pointer-events: none; }
+.note-image-properties > label { display: grid; gap: 4px; min-width: 0; }
+.note-image-properties > label:first-child { grid-column: 1 / -1; }
+.note-image-properties input { box-sizing: border-box; min-width: 0; width: 100%; padding: 5px 7px; border: 1px solid #d5d9cc; border-radius: 6px; background: #fafaf3; color: inherit; font: inherit; }
+.note-image-properties input[aria-invalid="true"] { border-color: #aa6550; }
+.note-image-properties :is(input, button, summary):focus-visible { outline: 2px solid #6d9a86; outline-offset: 2px; }
+.note-image-properties__actions { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.note-image-properties :is(button, summary) { padding: 4px 7px; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; font: inherit; }
+.note-image-properties button:disabled { opacity: .45; cursor: default; }
+.note-image-properties :is(button, summary):hover { background: #eaf0e3; }
+.note-image-properties__menu { position: relative; }
+.note-image-properties__menu-items { position: absolute; top: calc(100% + 6px); left: 0; display: grid; width: max-content; min-width: 150px; padding: 5px; border: 1px solid #cbcfc0; border-radius: 8px; background: #fffdf5; box-shadow: 0 5px 14px #253b3520; }
+.note-image-properties__menu-items button { text-align: left; }
+.note-image-properties__menu-items button[hidden] { display: none; }
+.hud-surface .notebook-volume__tools .editor-tools .editor-tools-item { display: inline-flex; align-items: center; width: auto; height: auto; gap: 4px; font: inherit; }
+.hud-surface .notebook-volume__tools .editor-tools .editor-tools-divider { display: block; width: 1px; height: 18px; margin: 0 4px; background: var(--hud-line-strong); }
+.hud-surface .notebook-volume__tools .editor-tools .editor-block-format { display: inline-flex; }
+.hud-surface .notebook-volume__tools .editor-block-format select { width: 92px; min-height: 34px; padding: 4px 8px; border: 1px solid var(--hud-line); border-radius: 9px; background: #f6f4e7; color: var(--hud-ink); font: 550 12px/1.5 "Noto Sans SC Variable", sans-serif; }
+.hud-surface .notebook-volume__tools .editor-tools .tool[aria-pressed="true"] { background: #dcebd7; color: #365e46; box-shadow: inset 0 0 0 1px #8cac8190; }
+.hud-surface .notebook-volume__tools .editor-tools .tool:focus-visible { outline: 2px solid #6d9a86; outline-offset: 2px; }
+.hud-surface .notebook-volume__tools .editor-tools .editor-tools-legend { display: block; width: auto; height: auto; font: 450 11px/1.5 "Noto Sans SC Variable", sans-serif; }
+.hud-surface .note-draft .ProseMirror p.note-image-row,
+.hud-surface .note-transcript p.note-image-row { display: flex; flex-wrap: wrap; align-items: start; gap: 12px; margin-block: 20px; }
+.hud-surface .note-draft .ProseMirror p.note-image-paragraph:not(.note-image-row),
+.hud-surface .note-transcript p.note-image-paragraph:not(.note-image-row) { text-align: center; }
+.hud-surface .note-draft .note-image-row > .note-image-node,
+.hud-surface .note-transcript .note-image-row > .note-html-image,
+.hud-surface .note-transcript .note-image-row > a > .note-html-image { flex: var(--note-image-width, 320) 1 0; width: auto !important; min-width: min(64px, 100%); margin: 0; }
+.hud-surface .note-draft .note-image-row .note-image-node__frame { width: 100% !important; }
+.hud-surface .note-draft .note-image-row .note-image-node__image,
+.hud-surface .note-transcript .note-image-row .reading-image { width: 100%; max-height: none; margin: 0; height: auto; }
+.hud-surface .note-draft .note-image-row > :is(br, .ProseMirror-separator) { display: none; }
+.hud-surface .note-transcript .note-image-row > a { display: contents; }
+.hud-surface .note-transcript .note-image-row .note-html-image a { display: block; }

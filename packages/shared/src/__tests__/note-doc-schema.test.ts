@@ -26,6 +26,17 @@ import {
 
 const roundTrip = (blocks: NoteDocBlockSpec[]) => pmNodesToNoteBlocks(noteBlocksToPmNodes(blocks));
 
+test("并排图片经服务端投影和重建仍在同段，尺寸、说明与目的链接不丢失", () => {
+  const content = '<img src="/a.png" alt="图 &amp; A" width="240" /> <a href="https://example.com/detail"><img src="/b.png" alt="乙图" title="原图" width="120" /></a>';
+  const blocks = [{ type: "paragraph", content }];
+  assert.deepEqual(roundTrip(blocks), blocks);
+  const paragraph = noteBlocksToPmNodes(blocks)[0]!;
+  assert.deepEqual(paragraph.content?.map(node => ({ src: node.attrs?.src, width: node.attrs?.width, linkHref: node.attrs?.linkHref })), [
+    { src: "/a.png", width: 240, linkHref: null },
+    { src: "/b.png", width: 120, linkHref: "https://example.com/detail" },
+  ]);
+});
+
 test("粗体里的单星号保留为乘号，不拆散外层标记", () => {
   assert.deepEqual(parseInlineMarkdown("**长 * 宽 * 高** 为什么相乘？"), [
     { kind: "strong", text: "长 * 宽 * 高" },

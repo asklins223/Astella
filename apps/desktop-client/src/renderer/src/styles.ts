@@ -101,6 +101,8 @@ import "./components/companion/companion-journal.css";
 
 /* Fullscreen borrows both the paper and the companion seat after their ordinary layout rules. */
 import "./components/surfaces/notebook/notebook-fullscreen.css";
+import "./components/surfaces/notebook/note-editor-experience.css";
+import "./components/surfaces/notebook/note-editor-blocks.css";
 
 /**
  * 本文件刻意不导出任何东西：它唯一的作用是「被 import 时按上面那张单子把 CSS 注入」。

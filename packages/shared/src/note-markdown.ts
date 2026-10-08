@@ -10,8 +10,75 @@ import type { Root as MarkdownRoot, RootContent as MarkdownContent } from "mdast
 
 export type { Root as NoteMarkdownTree, Element as NoteMarkdownElement, RootContent as NoteMarkdownNode } from "hast";
 export type { RootContent as NoteMarkdownSyntaxNode } from "mdast";
-const syntax = unified().use(remarkParse).use(remarkGfm).use(remarkMath).use(noteWikiLinks);
+const syntax = unified().use(remarkParse).use(remarkGfm).use(remarkMath).use(noteWikiLinks).use(noteImageElements);
 export function noteMarkdownSyntax(source: string): MarkdownRoot { return syntax.runSync(syntax.parse(source), { value: source }) as MarkdownRoot; }
+
+export function noteImageSize(value: unknown): number | null {
+  const size = Number(value);
+  return Number.isFinite(size) && size > 0 ? Math.min(4096, Math.round(size)) : null;
+}
+
+/** Sized images use portable HTML; ordinary images retain Markdown syntax. */
+export function noteImageMarkdown(attrs: Record<string, unknown>, forceHtml = false): string {
+  const src = String(attrs.src ?? ""), alt = String(attrs.alt ?? ""), title = String(attrs.title ?? "");
+  const width = noteImageSize(attrs.width), height = noteImageSize(attrs.height);
+  const escapeHtml = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  if (width || height || forceHtml) {
+    const image = `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"${title ? ` title="${escapeHtml(title)}"` : ""}${width ? ` width="${width}"` : ""}${height ? ` height="${height}"` : ""} />`;
+    return forceHtml && attrs.linkHref ? `<a href="${escapeHtml(String(attrs.linkHref))}">${image}</a>` : image;
+  }
+  const label = alt.replace(/[\\[\]]/g, "\\$&");
+  const url = src.replace(/\\/g, "%5C").replace(/\(/g, "%28").replace(/\)/g, "%29").replace(/\s/g, value => encodeURIComponent(value));
+  return `![${label}](${url}${title ? ` "${title.replace(/[\\"]/g, "\\$&")}"` : ""})`;
+}
+
+/** Only a standalone, sanitized img becomes an editor atom; other HTML stays source. */
+export function noteImageHtmlAttrs(value: string): Record<string, unknown> | null {
+  const images = noteImageHtmlSequence(value);
+  return images?.length === 1 ? images[0]! : null;
+}
+function noteImageHtmlSequence(value: string): Record<string, unknown>[] | null {
+  if (!/^(?:\s*<img\b[^>]*>\s*|\s*<a\b[^>]*>\s*<img\b[^>]*>\s*<\/a>\s*)+$/i.test(value)) return null;
+  const images: Record<string, unknown>[] = [];
+  const walk = (node: Root | RootContent, linkHref: string | null = null): boolean => {
+    if (node.type === "text") return !node.value.trim();
+    if (node.type === "root" || node.type === "element" && node.tagName === "p") return node.children.every(child => walk(child, linkHref));
+    if (node.type === "element" && node.tagName === "a") return node.children.every(child => walk(child, String(node.properties.href ?? "") || null));
+    if (node.type !== "element" || node.tagName !== "img" || typeof node.properties.src !== "string" || !node.properties.src) return false;
+    images.push({ src: node.properties.src, alt: String(node.properties.alt ?? ""), title: String(node.properties.title ?? ""), width: noteImageSize(node.properties.width), height: noteImageSize(node.properties.height), ...(linkHref ? { linkHref } : {}) });
+    return true;
+  };
+  return walk(imageHtmlProcessor.runSync(imageHtmlProcessor.parse(value)) as Root) && images.length ? images : null;
+}
+
+export function noteImageElements() {
+  return (tree: MarkdownRoot) => {
+    const imagesFrom = (attrs: Record<string, unknown>[], position: MarkdownContent["position"]): MarkdownContent[] => attrs.map(attrs => {
+      const image = { type: "image" as const, url: String(attrs.src), alt: String(attrs.alt), title: String(attrs.title),
+        data: { hProperties: { width: noteImageSize(attrs.width) ?? undefined, height: noteImageSize(attrs.height) ?? undefined, ...(attrs.linkHref ? { noteImageLinkHref: String(attrs.linkHref) } : {}) } }, position };
+      return attrs.linkHref ? { type: "link" as const, url: String(attrs.linkHref), children: [image], position } : image;
+    });
+    const walk = (parent: { type: string; position?: MarkdownContent["position"]; children?: MarkdownContent[] }) => {
+      if (!parent.children) return;
+      if (parent.type === "paragraph" && parent.children.every(child => child.type === "html" || child.type === "text" && !child.value.trim())) {
+        const attrs = noteImageHtmlSequence(parent.children.map(child => "value" in child ? child.value : "").join(""));
+        if (attrs) { parent.children = imagesFrom(attrs, parent.position); return; }
+      }
+      parent.children = parent.children.flatMap(child => {
+        if (child.type === "html") {
+          const attrs = noteImageHtmlSequence(child.value);
+          if (attrs) {
+            const images = imagesFrom(attrs, child.position);
+            return parent.type === "root" ? [{ type: "paragraph", children: images, position: child.position } as MarkdownContent] : images;
+          }
+        }
+        walk(child as never);
+        return [child];
+      });
+    };
+    walk(tree as never);
+  };
+}
 
 export const noteLinkHref = (noteId: string): string => `astella-note:${encodeURIComponent(noteId)}`;
 export function noteLinkTarget(href: string): { kind: "id" | "title"; value: string } | null {
@@ -79,9 +146,7 @@ function mathSource() {
   };
 }
 
-const processor = unified().use(remarkParse).use(remarkGfm).use(remarkMath, { singleDollarTextMath: true })
-  .use(noteWikiLinks).use(mathSource).use(remarkRehype, { allowDangerousHtml: true })
-  .use(rehypeRaw).use(rehypeSanitize, {
+const sanitizeSchema = {
     ...defaultSchema,
     attributes: {
       ...defaultSchema.attributes,
@@ -90,7 +155,12 @@ const processor = unified().use(remarkParse).use(remarkGfm).use(remarkMath, { si
       img: [...(defaultSchema.attributes?.img ?? []), 'width', 'height'],
     },
     protocols: { ...defaultSchema.protocols, href: [...(defaultSchema.protocols?.href ?? []), 'astella-note', 'astella-note-title'] },
-  });
+  };
+const imageHtmlProcessor = unified().use(remarkParse).use(remarkRehype, { allowDangerousHtml: true }).use(rehypeRaw)
+  .use(rehypeSanitize, { ...sanitizeSchema, protocols: { ...sanitizeSchema.protocols, src: [...(defaultSchema.protocols?.src ?? []), "uploading"] } });
+const processor = unified().use(remarkParse).use(remarkGfm).use(remarkMath, { singleDollarTextMath: true })
+  .use(noteWikiLinks).use(noteImageElements).use(mathSource).use(remarkRehype, { allowDangerousHtml: true })
+  .use(rehypeRaw).use(rehypeSanitize, sanitizeSchema);
 
 /** Parsed and allowlisted elements, never executable HTML. Shared by reader and API anchors. */
 const treeCache = new Map<string, Root>();

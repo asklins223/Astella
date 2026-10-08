@@ -23,12 +23,15 @@ import {
   wrapInHeadingCommand,
   wrapInOrderedListCommand,
 } from "@milkdown/kit/preset/commonmark";
-import { gfm, tableSchema } from "@milkdown/kit/preset/gfm";
+import { gfm, tableSchema, toggleStrikethroughCommand } from "@milkdown/kit/preset/gfm";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import { clipboard } from "@milkdown/kit/plugin/clipboard";
 import { $prose, $remark, callCommand, insert, replaceAll } from "@milkdown/kit/utils";
 import { keymap } from "@milkdown/kit/prose/keymap";
-import { Plugin, PluginKey, Selection } from "@milkdown/kit/prose/state";
+import { lift } from "@milkdown/kit/prose/commands";
+import { liftListItem } from "@milkdown/kit/prose/schema-list";
+import { noteEditorFormat, noteEditorFormatPlugin, notifyNoteEditorFormat, type NoteEditorFormat } from "./note-editor-format";
+import { Plugin, PluginKey, Selection, NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import { Decoration, DecorationSet } from "@milkdown/kit/prose/view";
 import { placementsByBlock, type AnnotationPlacement } from "./note-annotation-placement";
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from "@milkdown/react";
@@ -44,27 +47,24 @@ import {
   orderedListSchema,
   imageSchema,
 } from "@milkdown/kit/preset/commonmark";
-import { noteLinkTarget, noteWikiLinks } from "@astella/shared/note-markdown";
+import { noteLinkTarget, noteWikiLinks, noteImageElements, noteImageMarkdown, noteImageSize } from "@astella/shared/note-markdown";
 import { LightboxViewer } from "../source/image-viewer.tsx";
 import { noteImageViewPlugin, noteImageUploadsKey } from "./note-image-node-view";
 import type { NoteImageUploadView } from "./note-image-uploads";
+import { imageRow, insertNoteImages } from "./note-image-layout";
+import { noteListItemViewPlugin, noteTableKeyboardPlugin, noteTableContextPlugin } from "./note-editor-table-and-lists";
+import { noteCodeBlockPlugins, codeBlockConfig, noteCodeLanguages } from "./note-code-block-editor";
+import { noteEditorMathPreview } from "./note-editor-math-preview";
 
 /**
  * 笔记正文的所见即所得编辑器（Milkdown）。
  *
- * 这里用的是 Web 端笔记编辑器那一套：CommonMark + GFM 的 ProseMirror 文档、
- * `history` 承担撤销栈、`listener` 把整篇 Markdown 交出去，正文本身是**真
- * Markdown**——`#`、`> `、`- `、围栏都由编辑器自己写，不再靠工具按钮往纯文本里
- * 拼标记。保存合同存的仍是分类型的块，换算在 shared 的 `note-doc-schema.ts` 里收口。
+ * CommonMark + GFM 的结构和 Y.Doc 共用正文事实与撤销；源码视图保留原始写法。
+ * 图片属性、表格操作和代码语言控件不进入正文或搜索投影；尺寸与排版经 Markdown
+ * 和 shared 的 `note-doc-schema.ts` 保存。代码块继续使用 CodeMirror，嵌套编辑器的
+ * 修改、锁定和撤销接到同一份协同文档。
  *
- * 三个自有插件补上写作时的实际需要：
- * - 图片粘贴/拖拽拦截：剪贴板或拖拽里只要有图片就交给父组件上传，正文里先落一个
- *   占位地址，上传完成后原位换成服务端确认的站内地址；
- * - 代码块内 Tab：插两个空格，而不是把焦点移出编辑器；
- * - 空文档占位符：`data-placeholder` 由 CSS 画出来。
- *
- * 命令式操作（工具栏按钮、图片上传后回填）通过 `ref` 暴露的 handle 完成。Web 端
- * 那套 handle 的形状原样保留，因为它已经在真实使用中定过型。
+ * 命令式操作（工具栏按钮、图片上传后回填）通过 `ref` 暴露的 handle 完成。
  */
 export type NoteMarkdownEditorHandle = {
   /** 当前整篇 Markdown；编辑器尚未就绪时返回 null。 */
@@ -74,6 +74,7 @@ export type NoteMarkdownEditorHandle = {
   readonly focus: () => void;
   /** 在光标处插入文本，Markdown 语法会被解析渲染。 */
   readonly insertText: (text: string) => void;
+  readonly insertImageMarkdown?: (markdown: string) => void;
   /** 就地替换图片地址，用于上传完成后把占位地址换成真地址。 */
   readonly replaceImageSrc: (oldSrc: string, newSrc: string) => void;
   /** 删除指定地址的图片节点，不重置正文、选区和撤销历史。 */
@@ -81,6 +82,8 @@ export type NoteMarkdownEditorHandle = {
   readonly toggleStrong: () => void;
   readonly toggleEmphasis: () => void;
   readonly toggleInlineCode: () => void;
+  readonly toggleStrikethrough?: () => void;
+  readonly getFormatState?: () => NoteEditorFormat | null;
   readonly toggleHeading: (level: number) => void;
   readonly toggleBlockquote: () => void;
   readonly toggleBulletList: () => void;
@@ -115,11 +118,25 @@ const withNoteDocAttrs = (schemaObject: { extendSchema: (handler: never) => unkn
 
 const linkedImageSchema = imageSchema.extendSchema(previous => ctx => {
   const definition = previous(ctx);
-  return { ...definition, attrs: { ...definition.attrs, ...NOTE_DOC_ATTRS, linkHref: { default: null } },
+  return { ...definition, attrs: { ...definition.attrs, ...NOTE_DOC_ATTRS, linkHref: { default: null }, width: { default: null }, height: { default: null } },
+    parseDOM: [{ tag: "img[src]", getAttrs: (dom) => {
+      const image = dom as HTMLElement;
+      return { src: image.getAttribute("src") ?? "", alt: image.getAttribute("alt") ?? "", title: image.getAttribute("title") ?? "", width: noteImageSize(image.getAttribute("width")), height: noteImageSize(image.getAttribute("height")) };
+    } }],
+    parseMarkdown: { ...definition.parseMarkdown, runner: (state, node, type) => {
+      const properties = (node.data as { hProperties?: Record<string, unknown> } | undefined)?.hProperties;
+      state.addNode(type, { src: node.url, alt: node.alt ?? "", title: node.title ?? "", width: noteImageSize(properties?.width), height: noteImageSize(properties?.height), linkHref: properties?.noteImageLinkHref ?? null });
+    } },
     toMarkdown: { ...definition.toMarkdown, runner: (state, node) => {
+      let inRow = false;
+      ctx.get(editorViewCtx).state.doc.descendants((candidate, _pos, parent) => {
+        if (candidate === node && parent && imageRow(parent)) inRow = true;
+      });
       const href = node.attrs.linkHref as string | null;
+      if (inRow) { state.addNode("html", undefined, noteImageMarkdown(node.attrs, true)); return; }
       if (href) state.openNode("link", undefined, { url: href, title: null });
-      definition.toMarkdown.runner(state, node);
+      if (inRow || noteImageSize(node.attrs.width) || noteImageSize(node.attrs.height)) state.addNode("html", undefined, noteImageMarkdown(node.attrs, inRow));
+      else definition.toMarkdown.runner(state, node);
       if (href) state.closeNode();
     } },
   };
@@ -160,6 +177,7 @@ type Props = {
   readonly disabled?: boolean;
   /** 图片粘贴/拖拽回调，上传由父组件负责。 */
   readonly onImagePaste?: (file: File) => void;
+  readonly onImagesPaste?: (files: readonly File[]) => void;
   readonly imageUploads?: readonly NoteImageUploadView[];
   /**
    * 可编辑预览态的批注记号（41 §1.1「已有批注记号保留」/ §1.4「保留记号但不阻断输入」）。
@@ -197,32 +215,33 @@ function withReadyEditor<TEditor extends { readonly status: string }, TResult>(
  * 只有整份剪贴板/拖拽内容都是图片时才拦截。图片与文本混在一起（例如从网页复制
  * 一段带图的内容）交回 ProseMirror 走正常粘贴，否则会连文字一起丢掉。
  */
-function imageUploadPlugin(onImagePaste: React.RefObject<((file: File) => void) | undefined>) {
+function imageUploadPlugin(onImagePaste: React.RefObject<((file: File) => void) | undefined>, onImagesPaste: React.RefObject<((files: readonly File[]) => void) | undefined>) {
   return $prose(() => new Plugin({
     key: new PluginKey("NOTE_IMAGE_UPLOAD"),
     props: {
       handlePaste(_view, event) {
+        if (!_view.editable || !onImagePaste.current) return false;
         const items = event.clipboardData?.items;
         if (!items) return false;
         const all = Array.from(items);
         const images = all.filter((item) => item.type.startsWith("image/"));
         if (images.length === 0 || images.length < all.length) return false;
-        for (const item of images) {
-          const file = item.getAsFile();
-          if (!file) continue;
-          onImagePaste.current?.(file);
-          event.preventDefault();
-        }
+        const files = images.map(item => item.getAsFile()).filter((file): file is File => Boolean(file));
+        if (onImagesPaste.current) onImagesPaste.current(files); else files.forEach(file => onImagePaste.current?.(file));
+        event.preventDefault();
         return true;
       },
       handleDrop(_view, event) {
+        if (!_view.editable || !onImagePaste.current) return false;
         const files = event.dataTransfer?.files;
         if (!files || files.length === 0) return false;
         const all = Array.from(files);
         const images = all.filter((file) => file.type.startsWith("image/"));
-        if (images.length === 0) return false;
-        if (images.length === all.length) event.preventDefault();
-        for (const file of images) onImagePaste.current?.(file);
+        if (images.length === 0 || images.length !== all.length) return false;
+        const at = _view.posAtCoords({ left: event.clientX, top: event.clientY });
+        if (at) _view.dispatch(_view.state.tr.setSelection(Selection.near(_view.state.doc.resolve(at.pos))));
+        event.preventDefault();
+        if (onImagesPaste.current) onImagesPaste.current(images); else images.forEach(file => onImagePaste.current?.(file));
         return images.length === all.length;
       },
     },
@@ -404,7 +423,7 @@ function annotationIdFromEvent(target: EventTarget | null): string | null {
   return element?.dataset.annotationId ?? null;
 }
 
-function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePaste, onCaretBlock, annotationPlacements, onOpenAnnotation, aiRanges }: Props) {
+function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePaste, onImagesPaste, onCaretBlock, annotationPlacements, onOpenAnnotation, aiRanges }: Props) {
   const aiRangesRef = useRef(aiRanges ?? []); aiRangesRef.current = aiRanges ?? [];
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -412,6 +431,7 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
   disabledRef.current = disabled;
   const onImagePasteRef = useRef(onImagePaste);
   onImagePasteRef.current = onImagePaste;
+  const onImagesPasteRef = useRef(onImagesPaste); onImagesPasteRef.current = onImagesPaste;
   const onCaretBlockRef = useRef(onCaretBlock);
   onCaretBlockRef.current = onCaretBlock;
   // 记号集合与打开回调：插件是命令式对象，拿不到 props，经这个 ref 过去。
@@ -428,6 +448,7 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
     .config((ctx) => {
       ctx.set(rootCtx, root);
       ctx.set(defaultValueCtx, initialMarkdown);
+      ctx.update(codeBlockConfig.key, config => ({ ...config, languages: noteCodeLanguages }));
       // listener 必须按方法调用，不能整体赋值。
       ctx.get(listenerCtx).markdownUpdated((_ctx, markdown) => {
         onChangeRef.current(markdown);
@@ -436,6 +457,15 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
       ctx.update(editorViewOptionsCtx, (previous) => ({
         ...previous,
         editable: () => !disabledRef.current,
+        handleDOMEvents: {
+          ...previous.handleDOMEvents,
+          keydown: (view, event) => {
+            // ProseMirror otherwise prevents every native Esc (keyCode 27),
+            // even without an editor action; let page-level papers handle it.
+            if (event.key === "Escape" && !event.isComposing && event.keyCode !== 229) return true;
+            return previous.handleDOMEvents?.keydown?.(view, event) ?? false;
+          },
+        },
         attributes: {
           ...previous.attributes,
           "aria-label": "笔记正文编辑区",
@@ -445,7 +475,13 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
     })
     .use(commonmark)
     .use(gfm)
+    .use(noteListItemViewPlugin())
+    .use(noteTableKeyboardPlugin())
+    .use(noteTableContextPlugin())
+    .use(noteCodeBlockPlugins())
+    .use(noteEditorMathPreview())
     .use($remark("note-wiki-links", () => noteWikiLinks))
+    .use($remark("note-image-elements", () => noteImageElements))
     .use(noteLinkSchema)
     // 块属性要在那七个节点类型上都声明，否则编辑器一次写入就把它们删掉。
     .use(withNoteDocAttrs(paragraphSchema) as never)
@@ -470,10 +506,11 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
     // 而我重写这条链时把它和 `history` 一起删了（`history` 是故意删的，它不是）。
     .use(listener)
     .use(clipboard)
-    .use(imageUploadPlugin(onImagePasteRef))
+    .use(imageUploadPlugin(onImagePasteRef, onImagesPasteRef))
     .use(linkedImagePlugin())
     .use(noteImageViewPlugin(onImageZoomRef))
     .use(caretBlockPlugin(onCaretBlockRef))
+    .use(noteEditorFormatPlugin())
     .use(codeBlockTabPlugin())
     .use(placeholderPlugin())
     .use(annotationPlugin())
@@ -492,7 +529,10 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
   useEffect(() => {
     const dom = wrapperRef.current?.querySelector<HTMLElement>(".ProseMirror");
     if (dom) dom.contentEditable = disabled ? "false" : "true";
-  }, [disabled]);
+    if (!loading) withReadyEditor(getInstance(), editor => editor.action(ctx => {
+      const view = ctx.get(editorViewCtx); view.updateState(view.state);
+    }), undefined);
+  }, [disabled, loading, getInstance]);
 
   return (
     <div
@@ -591,13 +631,19 @@ function MilkdownControls({
       setMarkdown: (markdown, flush) => run((editor) => editor.action(replaceAll(markdown, flush))),
       focus: () => run((editor) => editor.action((ctx) => { ctx.get(editorViewCtx).focus(); })),
       insertText: (text) => run((editor) => editor.action(insert(text))),
+      insertImageMarkdown: markdown => run(editor => editor.action(ctx => {
+        const view = ctx.get(editorViewCtx), parsed = ctx.get(parserCtx)(markdown);
+        const paragraph = parsed?.firstChild;
+        if (!paragraph || parsed!.childCount !== 1 || paragraph.type.name !== "paragraph") return;
+        insertNoteImages(view, paragraph);
+      })),
       replaceImageSrc: (oldSrc, newSrc) => run((editor) => editor.action((ctx) => {
         const view = ctx.get(editorViewCtx);
         const { state } = view;
         let transaction = state.tr;
         state.doc.descendants((node, pos) => {
           if (node.type.name === "image" && node.attrs.src === oldSrc) {
-            transaction = transaction.setNodeMarkup(pos, undefined, { ...node.attrs, src: newSrc, alt: "" });
+            transaction = transaction.setNodeMarkup(pos, undefined, { ...node.attrs, src: newSrc, alt: node.attrs.alt === "上传中…" ? "" : node.attrs.alt });
           }
         });
         if (transaction.docChanged) view.dispatch(transaction);
@@ -615,10 +661,22 @@ function MilkdownControls({
       toggleStrong: () => run(command(toggleStrongCommand.key)),
       toggleEmphasis: () => run(command(toggleEmphasisCommand.key)),
       toggleInlineCode: () => run(command(toggleInlineCodeCommand.key)),
-      toggleHeading: (level) => run(command(wrapInHeadingCommand.key, level)),
-      toggleBlockquote: () => run(command(wrapInBlockquoteCommand.key)),
-      toggleBulletList: () => run(command(wrapInBulletListCommand.key)),
-      toggleOrderedList: () => run(command(wrapInOrderedListCommand.key)),
+      toggleStrikethrough: () => run(command(toggleStrikethroughCommand.key)),
+      getFormatState: () => withReadyEditor(getInstance(), editor => editor.action(ctx => noteEditorFormat(ctx.get(editorViewCtx).state)), null),
+      toggleHeading: (level) => run((editor) => editor.action(ctx => {
+        const view = ctx.get(editorViewCtx);
+        const current = noteEditorFormat(view.state).heading;
+        callCommand(wrapInHeadingCommand.key, current === level ? 0 : level)(ctx);
+        view.focus();
+      })),
+      toggleBlockquote: () => run((editor) => editor.action(ctx => {
+        const view = ctx.get(editorViewCtx);
+        if (noteEditorFormat(view.state).quote) lift(view.state, view.dispatch);
+        else callCommand(wrapInBlockquoteCommand.key)(ctx);
+        view.focus();
+      })),
+      toggleBulletList: () => run((editor) => toggleList(editor, "bullet_list", wrapInBulletListCommand.key)),
+      toggleOrderedList: () => run((editor) => toggleList(editor, "ordered_list", wrapInOrderedListCommand.key)),
       toggleLink: (href, label = href) => run((editor) => editor.action((ctx) => {
         const view = ctx.get(editorViewCtx);
         const { from, to } = view.state.selection;
@@ -671,6 +729,7 @@ function MilkdownControls({
     handleRef.current = handle;
     writeExternal(handle);
     onReady?.(handle);
+    if (handle) queueMicrotask(() => run(editor => editor.action(ctx => notifyNoteEditorFormat(ctx.get(editorViewCtx).dom))));
     return () => {
       if (handleRef.current === handle) handleRef.current = null;
       writeExternal(null);
@@ -679,6 +738,20 @@ function MilkdownControls({
   }, [loading, getInstance, handleRef, externalRef, fragment, onReady]);
 
   return null;
+}
+
+function toggleList(editor: Editor, target: "bullet_list" | "ordered_list", command: typeof wrapInBulletListCommand.key) {
+  editor.action(ctx => {
+    const view = ctx.get(editorViewCtx), { state } = view, { $from } = state.selection;
+    for (let depth = $from.depth; depth > 0; depth--) {
+      const node = $from.node(depth);
+      if (!["bullet_list", "ordered_list"].includes(node.type.name)) continue;
+      if (node.type.name === target) liftListItem(state.schema.nodes.list_item!)(state, view.dispatch);
+      else view.dispatch(state.tr.setNodeMarkup($from.before(depth), state.schema.nodes[target], { ...node.attrs, ...(target === "ordered_list" ? { order: 1 } : {}) }));
+      view.focus(); return;
+    }
+    callCommand(command)(ctx); view.focus();
+  });
 }
 
 /**
@@ -691,6 +764,7 @@ export function NoteMarkdownEditor({
   onChange,
   disabled,
   onImagePaste,
+  onImagesPaste,
   imageUploads,
   onCaretBlock,
   annotationPlacements,
@@ -709,6 +783,7 @@ export function NoteMarkdownEditor({
         onChange={onChange}
         disabled={disabled}
         onImagePaste={onImagePaste}
+        onImagesPaste={onImagesPaste}
         onCaretBlock={onCaretBlock}
         onOpenAnnotation={onOpenAnnotation}
         aiRanges={aiRanges}

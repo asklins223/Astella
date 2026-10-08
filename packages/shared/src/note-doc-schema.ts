@@ -1,4 +1,4 @@
-import { noteBlockMarkdown, noteMarkdownTree, noteMarkdownText, noteMarkdownSyntax, type NoteMarkdownSyntaxNode } from "./note-markdown.ts";
+import { noteBlockMarkdown, noteMarkdownTree, noteMarkdownText, noteMarkdownSyntax, noteImageMarkdown, type NoteMarkdownSyntaxNode } from "./note-markdown.ts";
 /**
  * 笔记正文的 ProseMirror schema 定义与块形状转换（CRDT 批次 B）。
  *
@@ -92,7 +92,7 @@ export const noteDocSchemaSpec = {
     table_row: { content: "table_cell*" },
     table_header: { content: "paragraph", isolating: true, attrs: { colspan: { default: 1 }, rowspan: { default: 1 }, colwidth: { default: null }, alignment: { default: "left" } } },
     table_cell: { content: "paragraph", isolating: true, attrs: { colspan: { default: 1 }, rowspan: { default: 1 }, colwidth: { default: null }, alignment: { default: "left" } } },
-    image: { inline: true, group: "inline", attrs: { src: { default: "" }, alt: { default: "" }, linkHref: { default: null }, ...blockAttrs } },
+    image: { inline: true, group: "inline", attrs: { src: { default: "" }, alt: { default: "" }, title: { default: "" }, width: { default: null }, height: { default: null }, linkHref: { default: null }, ...blockAttrs } },
     // Milkdown renders HTML atoms as literal source. The reader applies its own allowlist.
     html: { atom: true, inline: true, group: "inline", attrs: { value: { default: "" } } },
     hr: { group: "block" },
@@ -272,10 +272,14 @@ function collectInline(node: PmJson | undefined): string {
   if (!node) return "";
   if (node.type === "hardbreak") return "\n";
   if (node.type === "html") return String(node.attrs?.value ?? "");
+  if (node.type === "paragraph" && (node.content ?? []).filter(child => child.type === "image").length > 1
+    && (node.content ?? []).every(child => child.type === "image" || child.type === "text" && !child.text?.trim())) {
+    return (node.content ?? []).filter(child => child.type === "image").map(child => {
+      return noteImageMarkdown(child.attrs ?? {}, true);
+    }).join(" ");
+  }
   if (node.type === "image") {
-    const alt = String(node.attrs?.alt ?? "");
-    const src = String(node.attrs?.src ?? "");
-    const image = alt ? `![${alt}](${src})` : `![](${src})`;
+    const image = noteImageMarkdown(node.attrs ?? {});
     return node.attrs?.linkHref ? `[${image}](${String(node.attrs.linkHref)})` : applyMarks(image, node.marks ?? []);
   }
   if (typeof node.text === "string") return applyMarks(node.text, node.marks ?? []);
@@ -392,9 +396,7 @@ export function pmNodesToNoteBlocks(nodes: readonly PmJson[]): NoteDocBlockSpec[
         };
       case "image": {
         // 老数据与跨进程向量里那份字节：图片**就是**一个顶层节点。仍然投成 `image`。
-        const src = String(node.attrs?.src ?? "");
-        const alt = String(node.attrs?.alt ?? "");
-        return { type: "image", content: alt ? `![${alt}](${src})` : `![](${src})`, ...extras };
+        return { type: "image", content: collectInline(node), ...extras };
       }
       case "hr":
         // 与 `markdownToBlocks` 的既有约定对齐：一条 `---` 是一个段落，不是新的块类型。
@@ -465,7 +467,7 @@ function syntaxToPm(node: NoteMarkdownSyntaxNode, source: string, references: Ma
       return inline(child.children as NoteMarkdownSyntaxNode[], [...inherited, mark]);
     }
     if (child.type === "inlineCode") return [{ type: "text", text: child.value, marks: [...inherited, { type: "inlineCode" }] }];
-    if (child.type === "image") return [{ type: "image", attrs: { src: child.url, alt: child.alt ?? "", title: child.title, linkHref: inherited.find(mark => mark.type === "link")?.attrs?.href ?? null } }];
+    if (child.type === "image") return [{ type: "image", attrs: { src: child.url, alt: child.alt ?? "", title: child.title ?? "", width: child.data?.hProperties?.width ?? null, height: child.data?.hProperties?.height ?? null, linkHref: inherited.find(mark => mark.type === "link")?.attrs?.href ?? child.data?.hProperties?.noteImageLinkHref ?? null } }];
     if (child.type === "html") return [{ type: "html", attrs: { value: child.value } }];
     if (child.type === "linkReference" || child.type === "imageReference") {
       const destination = references.get(child.identifier.toLowerCase());

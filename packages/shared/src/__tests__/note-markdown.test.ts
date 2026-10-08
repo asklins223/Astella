@@ -1,8 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { noteBlockMarkdown, noteMarkdownText, noteMarkdownTree, noteLinkHref, noteLinkTarget } from "../note-markdown.ts";
+import { noteBlockMarkdown, noteMarkdownText, noteMarkdownTree, noteLinkHref, noteLinkTarget, noteImageMarkdown, noteImageHtmlAttrs } from "../note-markdown.ts";
 import { noteBlocksToPmNodes, pmNodesToNoteBlocks, noteBlockRenderedTextV1 } from "../note-doc-schema.ts";
 import { markdownToBlocks } from "../markdown-parser.ts";
+
+test("图片尺寸、说明和悬停提示通过服务端投影与 Markdown 再导入保留", () => {
+  const attrs = { src: "https://example.com/a.png?a=1&b=2", alt: '图 [A] & "B"', title: "原图", width: 320, height: null };
+  const content = noteImageMarkdown(attrs);
+  const nodes = noteBlocksToPmNodes([{ type: "image", content, imageAssetId: "asset-1" }]);
+  assert.deepEqual(nodes[0]?.content?.[0]?.attrs, { ...attrs, linkHref: null });
+  const blocks = pmNodesToNoteBlocks(nodes);
+  assert.deepEqual(blocks, [{ type: "image", content, imageAssetId: "asset-1" }]);
+  assert.equal(noteImageHtmlAttrs(blocks[0]!.content)?.width, 320);
+  assert.equal(noteImageHtmlAttrs('<img src="javascript:alert(1)" width="320" />'), null);
+  assert.equal(noteImageHtmlAttrs('<img src="/a.png" onerror="evil()" width="320" />')?.src, "/a.png");
+  assert.equal(noteImageHtmlAttrs('<div><img src="/a.png" /></div>'), null);
+});
 
 test("真实 Markdown 导入保留 Mermaid 语言、标题级别、任务项和嵌套列表", () => {
   const source = '# 一级\n\n###### 六级\n\n- [x] 已完成\n  - 子项\n- [ ] 待完成\n\n```mermaid\nflowchart LR\nA --> B\n```';

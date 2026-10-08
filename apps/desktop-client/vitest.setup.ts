@@ -41,3 +41,27 @@ if (typeof Range !== "undefined") {
   Range.prototype.getClientRects = emptyRectList as unknown as Range["getClientRects"]
   Range.prototype.getBoundingClientRect = () => new DOMRect()
 }
+
+// jsdom has no viewport observer. Exercise lazy CodeMirror node views as visible;
+// asynchronous delivery matches the browser and lets their constructor finish first.
+if (typeof window !== "undefined" && typeof IntersectionObserver === "undefined") {
+  class VisibleIntersectionObserver implements IntersectionObserver {
+    readonly root = null
+    readonly rootMargin = "0px"
+    readonly thresholds = [0]
+    private targets = new Set<Element>()
+    constructor(private callback: IntersectionObserverCallback) {}
+    observe(target: Element) {
+      this.targets.add(target)
+      queueMicrotask(() => {
+        if (!this.targets.has(target)) return
+        const rect = target.getBoundingClientRect()
+        this.callback([{ target, isIntersecting: true, intersectionRatio: 1, time: performance.now(), boundingClientRect: rect, intersectionRect: rect, rootBounds: null }], this)
+      })
+    }
+    unobserve(target: Element) { this.targets.delete(target) }
+    disconnect() { this.targets.clear() }
+    takeRecords(): IntersectionObserverEntry[] { return [] }
+  }
+  globalThis.IntersectionObserver = VisibleIntersectionObserver
+}

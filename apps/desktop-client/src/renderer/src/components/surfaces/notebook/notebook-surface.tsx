@@ -3995,6 +3995,7 @@ const noteDocLive = useNoteDocLiveView(
           onChange={applyContent}
           disabled={!editable || leaf !== "reading" || learningView !== "body"}
           onImagePaste={imageUploads.queueFile}
+          onImagesPaste={imageUploads.queueFiles}
           imageUploads={imageUploads.uploads}
           onCaretBlock={onCaretBlock}
           // 41 §1.4：两个编辑态都要保留批注记号。落位只收**当前版本上仍核得上**的
@@ -4044,7 +4045,7 @@ const noteDocLive = useNoteDocLiveView(
             const files = paperImageFiles(event);
             if (files.length === 0) return;
             event.preventDefault();
-            for (const file of files) imageUploads.queueFile(file);
+            imageUploads.queueFiles(files);
           }}
         >
           {statePaper ? <div className="notebook-workspace__state">{statePaper}</div> : null}

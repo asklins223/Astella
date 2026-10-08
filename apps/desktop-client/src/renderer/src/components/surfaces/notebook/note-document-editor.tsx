@@ -23,9 +23,12 @@ export function NoteDocumentEditor({ mode, ref, ...props }: ComponentProps<typeo
       ...editor,
       focus: () => inSource() ? sourceRef.current!.focus() : editor.focus(),
       insertText: (text) => inSource() ? sourceRef.current!.insertText(text) : editor.insertText(text),
+      insertImageMarkdown: text => inSource() ? sourceRef.current!.insertImageMarkdown(text) : editor.insertImageMarkdown?.(text),
       toggleStrong: () => inSource() ? wrap("**", "**") : editor.toggleStrong(),
       toggleEmphasis: () => inSource() ? wrap("*", "*") : editor.toggleEmphasis(),
       toggleInlineCode: () => inSource() ? wrap("`", "`") : editor.toggleInlineCode(),
+      toggleStrikethrough: () => inSource() ? wrap("~~", "~~") : editor.toggleStrikethrough?.(),
+      getFormatState: () => inSource() ? sourceRef.current!.getFormatState() : editor.getFormatState?.() ?? null,
       toggleHeading: (level) => inSource() ? sourceRef.current!.toggleLinePrefix(`${"#".repeat(level)} `, /^#{1,6} /) : editor.toggleHeading(level),
       toggleBlockquote: () => inSource() ? sourceRef.current!.toggleLinePrefix("> ", /^> /) : editor.toggleBlockquote(),
       toggleBulletList: () => inSource() ? sourceRef.current!.toggleLinePrefix("- ", /^(?:[-+*]|\d+\.) /) : editor.toggleBulletList(),
@@ -51,7 +54,7 @@ export function NoteDocumentEditor({ mode, ref, ...props }: ComponentProps<typeo
     </div>
     <div hidden={mode !== "source"}>
       {editor ? <NoteSourceEditor editor={editor} handleRef={sourceRef} disabled={Boolean(props.disabled) || mode !== "source"}
-        onChange={props.onChange} onImagePaste={props.onImagePaste}
+        onChange={props.onChange} onImagePaste={props.onImagePaste} onImagesPaste={props.onImagesPaste}
         annotationPlacements={props.annotationPlacements} onOpenAnnotation={props.onOpenAnnotation} aiRanges={props.aiRanges} /> : null}
     </div>
   </div>;

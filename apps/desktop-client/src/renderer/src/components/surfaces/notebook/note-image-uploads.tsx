@@ -14,7 +14,7 @@ import type { NoteMarkdownEditorHandle } from "./note-markdown-editor.tsx";
 /**
  * 编辑器里粘贴/拖进来的图片，从文件到站内地址的那一段。
  *
- * 先在正文里落一个 `![上传中…](uploading:{id})`，节点视图将它显示为扫光占位，
+ * 先在光标处落下临时图片节点，节点视图用本地预览与扫光说明上传状态，
  * 上传成功后**原位**换成服务端确认的 `/api/uploads/…`，失败留给用户重试或移除。
  * 差别只有一处——浏览器那边是渲染层直接 POST，能拿到字节进度；桌面端走 main 的
  * IPC，没有进度事件，所以这里不画进度条，只报状态。编造一个假的百分比不如不说。
@@ -27,6 +27,7 @@ export type NoteImageUploadView = {
   readonly size: number;
   readonly status: NoteImageUploadStatus;
   readonly error: string | null;
+  readonly previewUrl?: string;
 };
 
 /** 同时上传的图片数上限：再多也只是把同一条链路的队列拉长。 */
@@ -47,6 +48,8 @@ type UploadTask = {
   readonly file: File;
   /** 正文里的占位地址，成功后就地替换成真地址。 */
   readonly placeholder: string;
+  readonly noteId: string | null;
+  readonly previewUrl?: string;
   cleanupTimer: ReturnType<typeof setTimeout> | null;
 };
 
@@ -73,7 +76,7 @@ export type NoteImageUploadsHandle = {
   readonly error: string | null;
   readonly fileInputRef: React.RefObject<HTMLInputElement | null>;
   readonly queueFile: (file: File) => void;
-  readonly queueFiles: (files: FileList | null) => void;
+  readonly queueFiles: (files: FileList | readonly File[] | null) => void;
   readonly retry: (id: string) => void;
   readonly dismiss: (id: string) => void;
 };
@@ -86,6 +89,7 @@ export function useNoteImageUploads(options: UseNoteImageUploadsOptions): NoteIm
   const tasksRef = useRef(new Map<string, UploadTask>());
   const queueRef = useRef<string[]>([]);
   const activeRef = useRef(0);
+  const lifecycleRef = useRef(0);
   const pumpRef = useRef<() => void>(() => {});
 
   /**
@@ -107,8 +111,8 @@ export function useNoteImageUploads(options: UseNoteImageUploadsOptions): NoteIm
   };
 
   const sync = useCallback(() => {
-    setUploads(Array.from(tasksRef.current.values()).map(({ id, name, size, status, error: failure }) => ({
-      id, name, size, status, error: failure,
+    setUploads(Array.from(tasksRef.current.values()).map(({ id, name, size, status, error: failure, previewUrl }) => ({
+      id, name, size, status, error: failure, previewUrl,
     })));
   }, []);
 
@@ -119,6 +123,7 @@ export function useNoteImageUploads(options: UseNoteImageUploadsOptions): NoteIm
       const current = tasksRef.current.get(task.id);
       if (current !== task || task.status !== "succeeded") return;
       tasksRef.current.delete(task.id);
+      if (task.previewUrl) URL.revokeObjectURL(task.previewUrl);
       sync();
     }, RESULT_VISIBLE_MS);
   }, [sync]);
@@ -146,8 +151,8 @@ export function useNoteImageUploads(options: UseNoteImageUploadsOptions): NoteIm
       publish(`${current}${separator}${task.placeholder}`, true);
       return;
     }
-    // 走 insertText 而不是整体替换：占位落在光标处，撤销栈和后续输入都不受影响。
-    editor.insertText(task.placeholder);
+    // 图片落在正文光标处，保留段落和共享撤销。
+    if (editor.insertImageMarkdown) editor.insertImageMarkdown(task.placeholder); else editor.insertText(task.placeholder);
     const updated = editor.getMarkdown();
     if (updated !== null) latestRef.current.onContentChange(updated);
   }, []);
@@ -155,12 +160,15 @@ export function useNoteImageUploads(options: UseNoteImageUploadsOptions): NoteIm
   const runUpload = useCallback(async (task: UploadTask) => {
     task.status = "uploading";
     sync();
-    const noteId = latestRef.current.noteId;
+    const noteId = task.noteId;
+    const lifecycle = lifecycleRef.current;
+    const isCurrent = () => tasksRef.current.get(task.id) === task && latestRef.current.noteId === noteId;
     try {
       if (!noteId) throw new Error("no_note");
       const api = typeof window === "undefined" ? undefined : window.astella;
       if (!api) throw new Error("no_api");
       const bytesBase64 = await readFileAsBase64(task.file);
+      if (!isCurrent()) return;
       const result = unwrapGatewayResult(await api.note.uploadImage({
         meta: createRequestMeta(),
         noteId,
@@ -171,6 +179,7 @@ export function useNoteImageUploads(options: UseNoteImageUploadsOptions): NoteIm
           bytesBase64,
         },
       }));
+      if (!isCurrent()) return;
       const editor = latestRef.current.editorRef.current;
       const objectKey = sourceImageObjectKeyFromUrl(result.url);
       if (objectKey && result.byteLength === task.file.size && result.mimeType === task.file.type) {
@@ -187,15 +196,17 @@ export function useNoteImageUploads(options: UseNoteImageUploadsOptions): NoteIm
       task.status = "succeeded";
       task.error = null;
     } catch (failure) {
+      if (!isCurrent()) return;
       task.status = "failed";
       task.error = noteImageUploadFailureMessage({
         httpStatus: (failure as { readonly httpStatus?: number }).httpStatus,
         fileName: task.file.name,
       });
     } finally {
+      if (lifecycle !== lifecycleRef.current) return;
       activeRef.current = Math.max(0, activeRef.current - 1);
       sync();
-      if (task.status === "succeeded") scheduleRemoval(task);
+      if (isCurrent() && task.status === "succeeded") scheduleRemoval(task);
       pumpRef.current();
     }
   }, [publish, scheduleRemoval, sync]);
@@ -213,7 +224,7 @@ export function useNoteImageUploads(options: UseNoteImageUploadsOptions): NoteIm
   pumpRef.current = pump;
 
   /** 入队前先把合同能说的那两种拒绝说清楚，不必等一次往返。 */
-  const queueFile = useCallback((file: File) => {
+  const prepareFile = useCallback((file: File) => {
     const reject = (message: string) => {
       setError(message);
       sync();
@@ -240,19 +251,27 @@ export function useNoteImageUploads(options: UseNoteImageUploadsOptions): NoteIm
       error: null,
       file,
       placeholder: `![上传中…](uploading:${id})`,
+      noteId: latestRef.current.noteId,
+      previewUrl: typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : undefined,
       cleanupTimer: null,
     };
     tasksRef.current.set(id, task);
     queueRef.current.push(id);
+    return task;
+  }, [sync]);
+
+  const queueFile = useCallback((file: File) => {
+    const task = prepareFile(file);
+    if (!task) return;
     insertPlaceholder(task);
     setError(null);
     sync();
     pump();
-  }, [insertPlaceholder, pump, sync]);
+  }, [prepareFile, insertPlaceholder, pump, sync]);
 
   const retry = useCallback((id: string) => {
     const task = tasksRef.current.get(id);
-    if (!task || task.status !== "failed") return;
+    if (!task || task.status !== "failed" || latestRef.current.disabled) return;
     if (task.cleanupTimer) {
       clearTimeout(task.cleanupTimer);
       task.cleanupTimer = null;
@@ -269,30 +288,41 @@ export function useNoteImageUploads(options: UseNoteImageUploadsOptions): NoteIm
   const dismiss = useCallback((id: string) => {
     const task = tasksRef.current.get(id);
     if (!task || task.status === "succeeded") return;
-    if (task.status !== "uploading") dropPlaceholder(task);
+    dropPlaceholder(task);
     if (task.cleanupTimer) clearTimeout(task.cleanupTimer);
     tasksRef.current.delete(id);
+    if (task.previewUrl) URL.revokeObjectURL(task.previewUrl);
     queueRef.current = queueRef.current.filter((queued) => queued !== id);
     sync();
   }, [dropPlaceholder, sync]);
 
-  const queueFiles = useCallback((files: FileList | null) => {
+  const queueFiles = useCallback((files: FileList | readonly File[] | null) => {
     if (!files) return;
-    for (const file of Array.from(files)) queueFile(file);
-  }, [queueFile]);
+    const tasks = Array.from(files).map(prepareFile).filter((task): task is UploadTask => Boolean(task));
+    if (!tasks.length) return;
+    const text = tasks.map(task => task.placeholder).join(" ");
+    const editor = latestRef.current.editorRef.current;
+    if (editor) { if (editor.insertImageMarkdown) editor.insertImageMarkdown(text); else editor.insertText(text); const updated = editor.getMarkdown(); if (updated !== null) latestRef.current.onContentChange(updated); }
+    else publish(`${editorMarkdown()}\n\n${text}`);
+    if (tasks.length === files.length) setError(null);
+    sync(); pump();
+  }, [prepareFile, publish, sync, pump]);
 
   // 离开这一页时不再更新状态，也不再让结果写回一篇已经换掉的笔记。
   useEffect(() => {
     const tasks = tasksRef.current;
+    setUploads([]); setError(null);
     return () => {
+      lifecycleRef.current += 1;
       queueRef.current = [];
       for (const task of tasks.values()) {
         if (task.cleanupTimer) clearTimeout(task.cleanupTimer);
+        if (task.previewUrl) URL.revokeObjectURL(task.previewUrl);
       }
       tasks.clear();
       activeRef.current = 0;
     };
-  }, []);
+  }, [options.noteId]);
 
   return { uploads, error, fileInputRef, queueFile, queueFiles, retry, dismiss };
 }

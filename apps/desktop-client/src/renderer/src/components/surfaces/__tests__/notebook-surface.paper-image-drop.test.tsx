@@ -199,6 +199,18 @@ describe("NotebookSurface · 纸面上的图片拖放", () => {
     expect(uploads).toHaveLength(0);
   });
 
+  it("一次拖入多张图片成为同一排，上传完成仍保留分组", async () => {
+    const { uploads } = await renderNote("live-preview");
+    const transfer = pngTransfer();
+    transfer.files.push(new File(["\x89PNG\r\n\x1a\n"], "另一张.png", { type: "image/png" }));
+    fireEvent.drop(document.querySelector(".note-draft")!, { dataTransfer: transfer });
+    expect(document.querySelector(".note-image-row")?.querySelectorAll(".note-image-node")).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(uploads).toHaveLength(2);
+    expect(document.querySelector(".note-image-row")?.querySelectorAll(".note-image-node")).toHaveLength(2);
+    expect(document.querySelector(".ProseMirror")?.textContent).toContain("第一段正文");
+  });
+
   it("正文里那一下轮不到纸面兜底", async () => {
     const { uploads } = await renderNote("live-preview");
     /**

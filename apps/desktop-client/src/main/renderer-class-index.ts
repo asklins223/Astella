@@ -140,6 +140,12 @@ export const classesEmitted = (source: string): EmittedWithOpaque => {
   const dynamic = new Set<string>();
   const opaquePrefixes = new Set<string>();
 
+  // ProseMirror decorations emit class attributes as object properties rather
+  // than JSX. Treat literal branches as dynamic emitters, not missing styles.
+  for (const property of source.matchAll(/\bclass\s*:\s*([^}\n]+)/g)) {
+    for (const literal of property[1]!.matchAll(/(["'])([^"']*)\1/g)) add(dynamic, literal[2]!, false);
+  }
+
   for (const { text, direct } of classNameValues(source)) {
     const trimmed = text.trim();
 
@@ -370,6 +376,15 @@ export const buildIndex = (): Index => {
     const e = classesEmitted(readFileSync(file, "utf8"));
     emitted.set(file, e);
     for (const p of e.opaquePrefixes) opaquePrefixes.add(p);
+  }
+
+  // The notebook imports Milkdown's CodeMirror component. Its Vue TSX owns the
+  // runtime classes styled in note-editor-blocks.css; verify those actual emitters
+  // instead of recording a growing list of third-party exemptions.
+  const codeBlockRoot = resolve("node_modules/@milkdown/components/src/code-block");
+  if (codeBlockRoot) for (const file of walk(codeBlockRoot, /\.(ts|tsx)$/)) {
+    const source = readFileSync(file, "utf8").replace(/\bclass\s*=/g, "className=");
+    emitted.set(file, classesEmitted(source));
   }
 
   cached = { cssFiles, tsFiles, styled, emitted, opaquePrefixes, rules, declared };

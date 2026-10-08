@@ -4,7 +4,8 @@ import { Decoration, EditorView, drawSelection, highlightActiveLine, highlightAc
 import { useNotebookFullscreenActive } from "./notebook-fullscreen-state";
 import { defaultKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
-import { bracketMatching, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { bracketMatching, HighlightStyle, syntaxHighlighting, syntaxTree } from "@codemirror/language";
+import { notifyNoteEditorFormat, type NoteEditorFormat } from "./note-editor-format";
 import { tags } from "@lezer/highlight";
 import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from "@codemirror/search";
 import { Code2, Hash, Search, WrapText } from "lucide-react";
@@ -14,15 +15,18 @@ import { placementsByBlock, type AnnotationPlacement } from "./note-annotation-p
 import type { NoteDocumentPosition } from "./note-source-bridge";
 import type { NoteAiRange } from "../../companion/note-companion-editing";
 import { changesTouchLockedRange } from "./note-ai-lock";
+import { noteImageMarkdown, noteMarkdownSyntax } from "@astella/shared/note-markdown";
 
 export type NoteSourceEditorHandle = {
   readonly insertText: (text: string) => void;
+  readonly insertImageMarkdown: (text: string) => void;
   readonly surround: (before: string, after?: string, emptyText?: string) => void;
   readonly toggleLinePrefix: (prefix: string, existing: RegExp) => void;
   readonly getPosition: () => NoteDocumentPosition;
   readonly focusPosition: (position: NoteDocumentPosition) => void;
   readonly isComposing: () => boolean;
   readonly focus: () => void;
+  readonly getFormatState: () => NoteEditorFormat;
 };
 
 /** A retained code view of the live document. Undo remains in the document, not CodeMirror. */
@@ -32,6 +36,7 @@ export function NoteSourceEditor(props: {
   readonly disabled: boolean;
   readonly onChange: (source: string) => void;
   readonly onImagePaste?: (file: File) => void;
+  readonly onImagesPaste?: (files: readonly File[]) => void;
   /**
    * 纯编辑态的批注记号（41 §1.4）。
    *
@@ -148,8 +153,18 @@ export function NoteSourceEditor(props: {
             if (latest.current.disabled) return false;
             const files = Array.from(event.clipboardData?.items ?? []);
             if (!files.length || files.some((item) => !item.type.startsWith("image/"))) return false;
-            for (const item of files) { const file = item.getAsFile(); if (file) latest.current.onImagePaste?.(file); }
+            const images = files.map(item => item.getAsFile()).filter((file): file is File => Boolean(file));
+            if (latest.current.onImagesPaste) latest.current.onImagesPaste(images); else images.forEach(file => latest.current.onImagePaste?.(file));
             return true;
+          },
+          drop: event => {
+            if (latest.current.disabled) return false;
+            const files = Array.from(event.dataTransfer?.files ?? []);
+            if (!files.length || files.some(file => !file.type.startsWith("image/"))) return false;
+            const at = view.posAtCoords({ x: event.clientX, y: event.clientY });
+            if (at !== null) view.dispatch({ selection: { anchor: at } });
+            if (latest.current.onImagesPaste) latest.current.onImagesPaste(files); else files.forEach(file => latest.current.onImagePaste?.(file));
+            event.preventDefault(); event.stopPropagation(); return true;
           },
         }),
         EditorView.updateListener.of((update) => {
@@ -162,6 +177,7 @@ export function NoteSourceEditor(props: {
       const selection = state.selection.main;
       const line = state.doc.lineAt(selection.head);
       setPosition({ line: line.number, column: selection.head - line.from + 1, lines: state.doc.lines, selected: selection.to - selection.from });
+      notifyNoteEditorFormat(view.dom);
     }
     updatePosition(view.state);
     function sync() {
@@ -182,6 +198,15 @@ export function NoteSourceEditor(props: {
     };
     props.handleRef.current = {
       insertText,
+      insertImageMarkdown: text => {
+        if (latest.current.disabled) return;
+        const paragraph = noteMarkdownSyntax(text).children[0];
+        const images = paragraph?.type === "paragraph" ? paragraph.children.filter(node => node.type === "image") : [];
+        if (images.length < 2) { insertText(text); return; }
+        const width = Math.max(64, Math.round(((view.scrollDOM.clientWidth || 640) - 12 * (images.length - 1)) / images.length));
+        const row = images.map(image => noteImageMarkdown({ src: image.url, alt: image.alt, title: image.title, width }, true)).join(" ");
+        insertText(`\n\n${row}\n\n`);
+      },
       surround: (before, after = "", emptyText = "") => {
         if (latest.current.disabled) return;
         const range = view.state.selection.main;
@@ -225,6 +250,15 @@ export function NoteSourceEditor(props: {
       },
       isComposing: () => view.compositionStarted,
       focus: () => view.focus(),
+      getFormatState: () => {
+        const names = new Set<string>();
+        let node = syntaxTree(view.state).resolveInner(view.state.selection.main.head, -1);
+        while (node) { names.add(node.name); if (!node.parent) break; node = node.parent; }
+        const heading = /^(?:ATX|Setext)Heading([1-6])$/.exec(Array.from(names).find(name => name.includes("Heading")) ?? "");
+        const history = latest.current.editor.getFormatState?.();
+        return { heading: Number(heading?.[1] ?? 0), strong: names.has("StrongEmphasis"), emphasis: names.has("Emphasis"), inlineCode: names.has("InlineCode"), strike: names.has("Strikethrough"),
+          quote: names.has("Blockquote"), bullet: names.has("BulletList"), ordered: names.has("OrderedList"), canUndo: history?.canUndo ?? false, canRedo: history?.canRedo ?? false };
+      },
     };
     return () => { unsubscribe(); props.handleRef.current = null; viewRef.current = null; view.destroy(); };
   }, [props.editor, props.handleRef]);

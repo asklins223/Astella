@@ -69,7 +69,7 @@ const SINK_PATTERNS: ReadonlyArray<{ label: string; test: RegExp }> = [
  */
 const MATH_RENDERER = "src/renderer/src/components/content/readable-math.tsx";
 const ALLOWED: ReadonlyArray<{ path: string; allow: readonly string[] }> = [
-  { path: MATH_RENDERER, allow: ["dangerouslySetInnerHTML"] },
+  { path: MATH_RENDERER, allow: ["dangerouslySetInnerHTML", "innerHTML 赋值"] },
 ];
 
 /** 注释粗剥：只剥块注释与整行 `//` 注释，够用来把说明文字与代码形状分开。 */
@@ -116,8 +116,10 @@ describe("渲染进程没有 HTML 注入点（D4 §5.1）", () => {
   it("唯一公式落点仅使用有边界的 KaTeX HTML，不能把原始内容送入 HTML", () => {
     const source = stripComments(readFileSync(MATH_RENDERER, "utf8"));
     expect(source).toContain('import { renderToString } from "katex"');
-    expect(source).toContain('props.value.length > 10_000');
-    expect(source).toContain('renderToString(props.value,');
+    expect(source).toContain('value.length > 10_000');
+    expect(source).toContain('renderToString(value,');
+    expect(source).toContain('const html = noteMathHtml(value, display)');
+    expect(source).toContain('element.innerHTML = html');
     expect(source).toContain('trust: false');
     expect(source).toContain('throwOnError: true');
     expect(source).toContain('maxExpand: 1000');

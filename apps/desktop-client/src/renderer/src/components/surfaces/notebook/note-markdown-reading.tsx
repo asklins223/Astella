@@ -25,7 +25,7 @@ export function NoteMarkdownReading({ type, content, options }: { type: string; 
       const index = options.galleryStart === undefined ? undefined : options.galleryStart + imageIndex;
       imageIndex += 1;
       const width = positiveSize(props.width), height = positiveSize(props.height);
-      return <span key={key} className="note-html-image" style={width ? { display: "inline-block", width, height, maxWidth: "100%" } : undefined}>
+      return <span key={key} className="note-html-image" style={{ ...(width ? { display: "inline-block", width, height, maxWidth: "100%" } : {}), "--note-image-width": width ?? 320 } as React.CSSProperties}>
         <InlineImage src={src} alt={String(props.alt ?? "")} workspaceEpoch={options.workspaceEpoch}
           linked={linked}
           galleryIndex={index} onOpenGallery={options.onOpenGallery} />
@@ -56,9 +56,14 @@ export function NoteMarkdownReading({ type, content, options }: { type: string; 
       return <a key={key} href={href} title={String(props.title ?? "")} onClick={event => { event.preventDefault(); void openExternalLink(href); }}>{children}</a>;
     }
     const align = ["left", "center", "right"].includes(String(props.align)) ? props.align as "left" | "center" | "right" : undefined;
+    const imageOnly = (child: NoteMarkdownNode): boolean => child.type === "text" ? !child.value.trim() : child.type === "element" && (child.tagName === "img" || child.tagName === "a" && child.children.every(imageOnly));
+    const countImages = (child: NoteMarkdownNode): number => child.type !== "element" ? 0 : child.tagName === "img" ? 1 : child.children.reduce((sum, nested) => sum + countImages(nested), 0);
+    const onlyImages = tag === "p" && node.children.every(imageOnly) && node.children.reduce((count, child) => count + countImages(child), 0) > 0;
+    const row = onlyImages && node.children.reduce((count, child) => count + countImages(child), 0) > 1;
     return createElement(tag, {
       key, ...(props.id ? { id: String(props.id) } : {}),
       ...(tag === "table" ? { className: "md-table" } : {}),
+      ...(onlyImages ? { className: row ? "note-image-paragraph note-image-row" : "note-image-paragraph" } : {}),
       ...(tag === "hr" ? { className: "reading-rule" } : {}),
       ...(align ? { style: { textAlign: align } } : {}),
       ...(tag === "ol" && props.start ? { start: Number(props.start) } : {}),

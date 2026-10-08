@@ -11,6 +11,17 @@ const diagram = vi.hoisted(() => ({ initialize: vi.fn(), render: vi.fn(async () 
 vi.mock("mermaid", () => ({ default: diagram }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
+it("同段多图在阅读态保留并排比例、说明、目的链接与批注字符流", () => {
+  const content = '<img src="https://example.com/a.png" alt="甲图" width="240" /> <a href="https://example.com/detail"><img src="https://example.com/b.png" alt="乙图" width="120" /></a>';
+  const view = render(<ReadingBlock block={{ type: "paragraph", ordinal: 0, content }} mark={null} />);
+  const row = view.container.querySelector(".note-image-row");
+  expect(row?.querySelectorAll("img")).toHaveLength(2);
+  expect(view.getByAltText("甲图").closest<HTMLElement>(".note-html-image")?.style.getPropertyValue("--note-image-width")).toBe("240");
+  expect(view.getByAltText("乙图").closest<HTMLElement>(".note-html-image")?.style.getPropertyValue("--note-image-width")).toBe("120");
+  expect(view.getByAltText("乙图").closest("a")?.getAttribute("href")).toBe("https://example.com/detail");
+  expect(noteReadingText(view.container.querySelector("[data-note-block-content]")!)).toBe("");
+});
+
 it("HTML 图像尺寸、徽章链接、嵌套强调与表格按真实元素呈现", () => {
   const content = '<div align="center"><img src="https://example.com/logo.png" width="96" height="96" alt="标志" /></div>\n\n[![徽章](https://example.com/badge.png)](https://example.com)\n\n**重点 *强调***\n\n| 左 | 右 |\n| :--- | ---: |\n| 一 | 二 |';
   const view = render(<ReadingBlock block={{ type: "paragraph", ordinal: 0, content }} mark={null} />);
