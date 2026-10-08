@@ -10,6 +10,7 @@ What this page covers: the shape of the Fastify 5 service in `apps/api` — entr
 - [Multi-tenancy and row-level security](#multi-tenancy-and-row-level-security)
 - [Database, schema and migrations](#database-schema-and-migrations)
 - [The three database roles](#the-three-database-roles)
+- [Companion note writes and object transfers](#companion-note-writes-and-object-transfers)
 - [Job handoff and outbox invariants](#job-handoff-and-outbox-invariants)
 - [SSE and streaming responses](#sse-and-streaming-responses)
 - [Configuration](#configuration)
@@ -21,7 +22,7 @@ What this page covers: the shape of the Fastify 5 service in `apps/api` — entr
 
 ## Runtime shape and startup order
 
-The entrypoint is `apps/api/src/server.ts`: one Fastify instance, **no global path prefix**, and 48 route bundles registered flat (one of them, `card-generation-v2`, only when `CARD_GENERATION_V2_ENABLED=true`). The bind address comes from `resolveApiBindHost()` (`apps/api/src/modules/desktop-trust/routes.ts`) — default `127.0.0.1`; `0.0.0.0` is accepted only when `ASTELLA_CONTAINER_MODE` and `ASTELLA_ALLOW_CONTAINER_WILDCARD` are both `true`, otherwise startup throws. The port is `PORT`, default `4000`.
+The entrypoint is `apps/api/src/server.ts`: one Fastify instance, **no global path prefix**, and domain route bundles registered flat (one of them, `card-generation-v2`, only when `CARD_GENERATION_V2_ENABLED=true`). The bind address comes from `resolveApiBindHost()` (`apps/api/src/modules/desktop-trust/routes.ts`) — default `127.0.0.1`; `0.0.0.0` is accepted only when `ASTELLA_CONTAINER_MODE` and `ASTELLA_ALLOW_CONTAINER_WILDCARD` are both `true`, otherwise startup throws. The port is `PORT`, default `4000`.
 
 Plugins and hooks:
 
@@ -99,9 +100,9 @@ The endpoints you actually reach for:
 
 | Item | Fact |
 | --- | --- |
-| Single source | `apps/api/drizzle.config.ts` points `schema` at `packages/shared/src/db-schema/index.ts` (33 `.ts` files, 138 `pgTable` declarations); `out` is `apps/api/src/db/migrations`. There is no `packages/db`, and no application-side copy or compatibility shim |
+| Single source | `apps/api/drizzle.config.ts` points `schema` at `packages/shared/src/db-schema/index.ts` ; `out` is `apps/api/src/db/migrations`. There is no `packages/db`, and no application-side copy or compatibility shim |
 | Guard status | `.github/scripts/verify-schema-mirror.mjs` (called by `make verify`) does exactly one thing: it confirms the directory exists and contains `.ts` files, throws if empty, and prints the file count. **It does not diff two schemas**, because there is only one |
-| Migration count | Take it from `apps/api/src/db/migrations/meta/_journal.json` (this round: 389 entries, newest `0392_ai_settings_default_send_image`); it moves every round, so never bake it into an assertion |
+| Migration order | `apps/api/src/db/migrations/meta/_journal.json` is authoritative; register new SQL and update role grants. The guide does not maintain a fixed total |
 | Runner | `src/db/migrate.ts` is a hand-written runner, not `drizzle-orm/migrator` (that package's exports map puts `types` before `default`, so tsx resolves to the `.d.ts` and the module comes out empty) |
 | Idempotency | Each migration is compared by `sha256(SQL file contents)` against `drizzle.__drizzle_migrations.hash`; the runner **does not look at the newest timestamp** — one stray record with a bigger timestamp silently skips every later migration |
 | Transaction granularity | One transaction per migration (not one for the whole batch): smaller lock window and recoverable failure, at the cost of overall atomicity, so "create structure + backfill" must be written idempotently and re-entrantly |
@@ -124,9 +125,17 @@ The endpoints you actually reach for:
 
 The `REQUIRE_RLS_DISABLED=true` check now means "every table with RLS enabled has at least one policy": it passes only when that count is zero, so `role-grants` fails outright when policies lag behind instead of letting the application start on bare isolation.
 
+## Companion note writes and object transfers
+
+`companion_create_note` calls `packages/agent-host/src/note-creation.ts` from the Worker. Controlled database functions save a private note, initial version and real links, checking workspace write permission, the active request and linked-note visibility/version. Global Agent permissions do not override a Member's read-only role.
+
+API `modules/note/companion-edit-dispatch.ts` claims authorized `companion_edit_note` tools. `companion-edit-document.ts` verifies frozen text/version before changing the existing Hocuspocus Y.Doc. The established save/projection/search path commits it; the Worker reads a real save receipt. Tool identity prevents reapplication, and cancellation/stale text stops replacement. It is not a separate raw-SQL body overwrite endpoint.
+
+`modules/storage-transfer/` supplies remote transfers. Clients obtain `/storage/transfers/config` and signed upload URLs, then finalize for API validation and copying to final objects. Downloads/exports check session/visibility before signed GET URLs. Main-process object requests carry no API token/Cookie. local_loopback retains the existing API upload path. See [Deployment](deployment.md) for modes and integration tests.
+
 ## Job handoff and outbox invariants
 
-`createJob()` in `modules/job/service.ts` is the only enqueue path in the API: it **only inserts rows into `jobs`**, and never claims or executes (the claim function's `EXECUTE` is granted to the worker only, and the matrix assertion in `roles.sql` stops the API from ever acquiring it). Inside the same transaction it first takes `pg_advisory_xact_lock(hashtextextended('job-quota:<workspaceId>', 0))`, then:
+`createJob()` in `modules/job/service.ts` is the general API enqueue path; Agent host ports also enqueue direct capabilities and advancement under the same quota/idempotency contracts. This general entry: it **only inserts rows into `jobs`**, and never claims or executes (the claim function's `EXECUTE` is granted to the worker only, and the matrix assertion in `roles.sql` stops the API from ever acquiring it). Inside the same transaction it first takes `pg_advisory_xact_lock(hashtextextended('job-quota:<workspaceId>', 0))`, then:
 
 - **Quota**: when the workspace has ≥ `MAX_PENDING_JOBS_PER_WORKSPACE` pending jobs (`@astella/shared`, value 50), it throws an error carrying `statusCode = 429`. The lock is what prevents two concurrent requests from both passing the check at 49.
 - **Idempotency key**: a hit returns the existing job; a key already bound to another type or another `requestedBy` is treated as a caller error.
@@ -135,6 +144,8 @@ The `REQUIRE_RLS_DISABLED=true` check now means "every table with RLS enabled ha
 - The payload carries the session actor (when the worker needs user scope it reads it) and `traceId`. `GET /jobs` and `GET /jobs/:id` never return payloads, and `last_error` comes back as `"error occurred"` plus a privacy-safe `failureReason`.
 
 Each worker round calls `SELECT * FROM public.astella_claim_jobs(p_limit, p_background_limit, p_max_attempts)` (`workers/ai-worker/src/queue.ts`): `FOR UPDATE SKIP LOCKED` claims, one lease stamped for the batch, and a returned `lease_token`; renewals and write-backs are compare-and-set against that token, so if another instance re-claims an expired row this instance's update simply no-ops. `p_background_limit` keeps background lanes from taking the last free slot, so an interactive job has a slot as soon as it is enqueued.
+
+Running jobs renew every 30 seconds. Migration 0394 adds `lease_renewed_at` for crash detection; separate handler/provider budgets govern execution, so the 120-second lease is not total runtime.
 
 Downstream delivery uses outbox tables: inserted inside the transaction, delivered at least once, and idempotent by key on the consumer side.
 
@@ -174,7 +185,7 @@ Variable names and purposes only. Values live in [`.env.example`](../../../.env.
 | Auth and rate limiting | `AUTH_RATE_LIMIT_STORE`, `AUTH_RATE_LIMIT_WINDOW_MS` (15min), `AUTH_RATE_LIMIT_MAX_ATTEMPTS` (5), `AUTH_COOKIE_SECURE`, `NODE_ENV` | The store defaults to `postgres`; `Secure` comes from `AUTH_COOKIE_SECURE` or `NODE_ENV=production` |
 | Capability flags (the 13 the API reads) | `LEARNING_RUN_ENABLED`, `CARD_GENERATION_V2_ENABLED`, `COMPANION_DIALOGUE_V1_ENABLED`, `COMPANION_VOICE_DIALOGUE_V1_ENABLED`, `COMPANION_STREAMING_VOICE_V1_ENABLED`, `COMPANION_JOURNEY_V2`, `COMPANION_BRIDGE_V2`, `COMPANION_MEMORY_VECTOR_V1`, `COMPANION_MEMORY_STAR_MAP_V1`, `COMPANION_PET_PROFILE_V1`, `COMPANION_PROACTIVE_PERSONALIZED_V1`, `COMPANION_SUMMARIZER_V1`, `COMPANION_DAILY_SUMMARY_V1` | All strictly `=== "true"`, i.e. **fail closed**: unset means off, endpoints 404 or the whole bundle is not registered. Most predicates live in `config/learning-companion-flags.ts`; a few are read in their own routes (star map, daily summary, bridge, proactive delivery). `verify-companion-capability-config.mjs`, run by `make verify`, pins both directions — each service declares exactly the flags it actually reads — plus defaults: the companion basics are on in dev and prod, while `LEARNING_RUN_ENABLED`, `CARD_GENERATION_V2_ENABLED` and voice are on in dev and off in prod. Worker-side siblings are covered in [Models and the worker pipeline](./ai-and-companion.md) |
 | SSE and processing concurrency | `SSE_MAX_STREAMS_PER_USER` (5), `SSE_MAX_STREAMS_TOTAL` (200), `RUN_PROCESSING_CONCURRENCY` (4, ceiling 16) | Counters are per-process memory |
-| Object storage | `STORAGE_ENDPOINT` (`http://minio:9000`), `S3_REGION` (`us-east-1`), `S3_BUCKET` (`astella-workspaces`), `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` (falling back to `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`), `STORAGE_REQUEST_TIMEOUT_MS` (120s) | A credential pair must be complete **within one set**; when nothing is configured the upload endpoints return 503. The decision logic lives in `@astella/shared/storage-config`, shared with the worker |
+| Object storage | `STORAGE_MODE`, `STORAGE_ENDPOINT`, `STORAGE_PUBLIC_ENDPOINT`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`, `S3_REGION` (`us-east-1`), `S3_BUCKET` (`astella-workspaces`), `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` (falling back to `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`), `STORAGE_REQUEST_TIMEOUT_MS` (120s) | A credential pair must be complete **within one set**; when nothing is configured the upload endpoints return 503. The decision logic lives in `@astella/shared/storage-config`, shared with the worker |
 | Voice | `EDGE_TTS_BASE_URL`, `EDGE_TTS_PORT`, `EDGE_TTS_AUTH_TOKEN`, `EDGE_TTS_MAX_CONCURRENCY`, `QWEN_TTS_MAX_CONCURRENCY`, `DASHSCOPE_TTS_WORKSPACE_ID`, `SILICONFLOW_API_KEY`, `VOICE_ASR_MODEL` | Local edge-tts container plus external ASR |
 | Run secrets | `LEARNING_DRAFT_ENC_KEY`, `PROJECTION_CHECKPOINT_SECRET`, `ASTELLA_DESKTOP_PAIRING_KEY_ID`, `ASTELLA_DESKTOP_PAIRING_SECRET`, `ASTELLA_DOMAIN_SCHEMA_REVISION` | Draft encryption, projection checkpoint signing, desktop trust handshake |
 | Readiness and observability | `MIN_READY_MIGRATION_CREATED_AT`, `LOG_LEVEL`, `GIT_COMMIT`, `MIGRATION_COUNT`, `npm_package_version` | See the next section |
@@ -233,8 +244,8 @@ The limits are deliberately uneven; change one and look at all of them:
 
 ## Test entry points on the API side
 
-- Unit and guard tests: `cd apps/api && npm test` = `node --import tsx --test --test-concurrency=8 $(find src -name '*.test.ts')` (281 `*.test.ts` files today). Besides service unit tests, `src/__tests__/` contains a family of `*-source-guard.test.ts` and `*-contract.test.ts` files that read source text and migration SQL, pinning conventions runtime checks cannot catch: layering boundaries, the error envelope, capability-flag naming, the no-transaction migration directive.
-- Integration: `*.integration.ts` files (119, under `src/integration-tests/`) are **not part of `npm test`**; they run only through the explicit `test:*:postgres` scripts in `apps/api/package.json` and need a real database plus `DATABASE_URL_*`.
+- Unit and guard tests: `cd apps/api && npm test` = `node --import tsx --test --test-concurrency=8 $(find src -name '*.test.ts')` . Besides service unit tests, `src/__tests__/` contains a family of `*-source-guard.test.ts` and `*-contract.test.ts` files that read source text and migration SQL, pinning conventions runtime checks cannot catch: layering boundaries, the error envelope, capability-flag naming, the no-transaction migration directive.
+- Integration: `*.integration.ts` files under `src/integration-tests/` are **not part of `npm test`**; they run only through the explicit `test:*:postgres` scripts in `apps/api/package.json` and need a real database plus `DATABASE_URL_*`.
 - Everything at once: `make test-postgres` walks every `test:*:postgres` script in `apps/api` and `workers/ai-worker` and injects restricted-role connection strings (a superuser bypasses RLS and turns isolation assertions into false passes). They must run on a **clean disposable database**: `bash scripts/dev-disposable-db.sh astella_it` — several cases assert that the database holds only their own fixtures, and a shared dev database fails them.
 - Contracts and route coverage: `npm run test:route-contract:postgres`, `test:users-rls:postgres` (includes the schema ratchet), `test:db-integrity:postgres` (migrations and rate limiting).
 - Type checking: `cd apps/api && npm run typecheck`. The local baseline is `make verify` (the same set as CI, pinned by `ci-workflow-contract.test.mjs`); the wider verification matrix is in [Testing and quality](./testing-and-quality.md).

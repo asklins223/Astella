@@ -2,7 +2,7 @@
 
 中文 · [English](../en/architecture.md)
 
-这篇讲什么：这套代码今天由哪几个进程组成、一次请求从桌面窗口走到数据库再回到屏幕要过哪几跳、138 张表分成哪几组，以及每条"边界"的强制力实际来自哪个文件。读完你应该能说出进程名、跳数和表组名，而不是只剩"前后端分离"这个印象。所有名称、端口与默认值都按当前代码核对过；命令与安装步骤在 [development.md](development.md)，本页只在需要说明结构时点到。
+这篇讲什么：这套代码今天由哪几个进程组成、一次请求从桌面窗口走到数据库再回到屏幕要过哪几跳、数据表按什么职责分组，以及每条"边界"的强制力实际来自哪个文件。读完你应该能说出进程名、跳数和表组名，而不是只剩"前后端分离"这个印象。所有名称、端口与默认值都按当前代码核对过；命令与安装步骤在 [development.md](development.md)，本页只在需要说明结构时点到。
 
 - [运行时拓扑](#运行时拓扑)
 - [一次 AI 回合的完整链路](#一次-ai-回合的完整链路)
@@ -19,7 +19,7 @@
 
 ## 运行时拓扑
 
-开发栈是 `docker-compose.dev.yml`（Compose 项目名 `astella-dev`），生产镜像构建是 `docker-compose.yml`，Alpha 环境是 `docker-compose.alpha.yml`。下图是开发栈加桌面客户端的形状；`prometheus` / `alertmanager` **只存在于 alpha 文件**，开发栈里没有。
+开发栈是 `docker-compose.dev.yml`（Compose 项目名 `astella-dev`），正式部署使用 `docker-compose.yml` 加 `docker-compose.deploy.yml`，Alpha 环境是 `docker-compose.alpha.yml`。下图是开发栈加桌面客户端的形状；`prometheus` / `alertmanager` **只存在于 alpha 文件**，开发栈里没有。
 
 ```mermaid
 flowchart TB
@@ -38,7 +38,7 @@ flowchart TB
   TTS["edge-tts 容器<br/>容器内 :8080 → 宿主 127.0.0.1:8088"]
   LLM["外部模型平台<br/>由 config/ai-platforms.json 声明"]
 
-  MAIN -->|"HTTP：Bearer + CSRF + 本机配对信任"| API
+  MAIN -->|"HTTP：Bearer + 本机配对信任"| API
   API --> PG
   WK --> PG
   API -->|"评估 / 转写 / 语音：进程内直连"| LLM
@@ -51,12 +51,12 @@ flowchart TB
 三条容易被省略、但会改变结论的边：
 
 - 渲染进程**不发业务 HTTP**。它对 API 的一切访问都要经过 `window.astella` → IPC → 主进程网关 → HTTP。渲染层里确实有 `fetch`，但只取同源的打包资源（Live2D 清单、字体、音频），见 `components/companion/WindowLive2DDriver.ts`、`media/learning-room-manifest.ts`。
-- api 和 worker **不互相调用**。两者唯一的共享通道是 postgres：api 写 `jobs`，worker 用 `SECURITY DEFINER` 函数领取与收尾，事件通过 `pg_notify` 频道传播。
+- API 与 Worker 的作业、编辑派发和回执通过 PostgreSQL 交换：api 写 `jobs`，worker 用 `SECURITY DEFINER` 函数领取与收尾，事件通过 `pg_notify` 频道传播。
 - 自动更新**不经过 apps/api**。客户端直连 GitHub Releases（`apps/desktop-client/electron-builder.yml` 的 `publish`，以及 `src/main/desktop-update.ts`），所以自家 API 挂了不影响更新。
 
 ## 一次 AI 回合的完整链路
 
-下图是伴星对话回合（`companion_agent`），因为只有这条路有 SSE。另外两条回传路径在图后用文字说清。
+下图以伴星对话回合（`companion_agent`）为例；学习运行、制卡与通知也有自己的 SSE。另外两条回传路径在图后用文字说清。
 
 ```mermaid
 sequenceDiagram
@@ -124,21 +124,21 @@ sequenceDiagram
 | `@astella/ai-quality`（`packages/ai-quality`） | 离线打分、数据集与 `pr-gate`（固定桩，不走付费网络） | worker（`make verify` 里唯一跑 `npm run pr-gate` 的包） | 不进渲染层，也不被 api import |
 | `@astella/card-generation`（`packages/card-generation`） | 制卡的创建、证据封存、事务与事件形状 | api、worker、agent-host | 只有 `typecheck` 脚本，**没有测试**；`make verify` 目前也没把它接进去（verify 覆盖 shared / agent-core / agent-host / ai-quality / api / desktop-client / ai-worker 七个） |
 
-`shared` 的 `exports` 有 143 条、零通配符。这条不是风格：宿主 `tsc --noEmit` 能顺着 workspace 软链找到磁盘上的文件，而 Node 运行时读的是 `exports`——写了"文件存在但没登记"的深路径 import，类型检查是绿的，运行时才 `ERR_PACKAGE_PATH_NOT_EXPORTED`。
+`shared` 的 `exports` 显式登记模块。这条不是风格：宿主 `tsc --noEmit` 能顺着 workspace 软链找到磁盘上的文件，而 Node 运行时读的是 `exports`——写了"文件存在但没登记"的深路径 import，类型检查是绿的，运行时才 `ERR_PACKAGE_PATH_NOT_EXPORTED`。
 
 ## 表分组
 
-`packages/shared/src/db-schema/` 下 31 个模块共声明 **138 张 `pgTable`**（另外两个文件 `enums.ts` / `index.ts` 不建表）。迁移侧对应 388 个 `.sql`，journal 最新一条是 `0391_summary_verified_revision_backfill`。按模块分组的实际分布：
+数据库 schema 在 `packages/shared/src/db-schema/`；完整迁移顺序以 `apps/api/src/db/migrations/meta/_journal.json` 为准。部分表、函数与约束只在 SQL 中声明，不能仅由 Drizzle 文件数推断数据库全貌。下表按职责定位模块，数量不作为契约。
 
-| 组 | schema 模块 | 表数 | 这一组装的是什么 |
-| --- | --- | --- | --- |
-| 身份、会话与 AI 同意 | `identity.ts`、`session.ts`、`ai.ts` | 11 | 用户、工作区、成员与邀请、`sessions`、登录限流计数、`user_ai_settings`、`ai_artifacts` |
-| 来源与笔记 | `note.ts`、`evidence.ts`、`note-annotations.ts`、`note-expansions.ts`、`note-learning-artifacts.ts`、`note-learning-reflections.ts`、`note-learning-rounds.ts`、`note-overviews.ts`、`note-recalls.ts` | 24 | 来源与解析产物、笔记与不可变版本、出处对齐，以及速看 / 批注 / 拓展 / 动态产物 / 轮次 / 回顾这些按需能力各自的任务与产物表 |
-| 后台队列 | `job.ts` | 1 | 单张 `jobs`：`type` / `status` / `attempts` / `payload` / `lease_token` / `priority` / `resource_class` / `idempotency_key` |
-| 学习运行与复习 | `learning-runs.ts`、`learning-metrics.ts`、`assessment-disputes.ts`、`validation-v2.ts`、`personal-objective-bindings.ts`、`personal-relation-decisions.ts` | 25 | LearningRun 与其私有契约、任务与变体、事件与 outbox、复习排期、判定争议与更正、目标绑定 |
-| 制卡 | `card-generation-v2.ts` | 33 | 最大的一组：制卡运行、候选、审核与曝光账本、质量与证据封存、激活回执 |
-| 伴星 | `companion.ts`、`companion-conversations.ts`、`companion-memory.ts`、`assistant-memory.ts`、`assistant-deliveries.ts`、`companion-bridge.ts`、`companion-journey.ts`、`companion-home.ts`、`companion-sandbox.ts` | 40 | 伴星本体与账号状态、会话与回合事件、记忆条目与修订、投递与提醒、页面上下文桥、旅程、房间投影、隔离产物 |
-| 检索与理解投影 | `search.ts`、`understanding-projection.ts` | 4 | 全文搜索写入表，与理解关系图的读侧投影 |
+| 组 | schema 模块 | 这一组装的是什么 |
+| --- | --- | --- |
+| 身份、会话与 AI 同意 | `identity.ts`、`session.ts`、`ai.ts` | 用户、工作区、成员与邀请、`sessions`、登录限流计数、`user_ai_settings`、`ai_artifacts` |
+| 来源与笔记 | `note.ts`、`evidence.ts`、`note-annotations.ts`、`note-expansions.ts`、`note-learning-artifacts.ts`、`note-learning-reflections.ts`、`note-learning-rounds.ts`、`note-overviews.ts`、`note-recalls.ts` | 来源与解析产物、笔记与不可变版本、出处对齐，以及速看 / 批注 / 拓展 / 动态产物 / 轮次 / 回顾这些按需能力各自的任务与产物表 |
+| 后台队列 | `job.ts` | 单张 `jobs`：`type` / `status` / `attempts` / `payload` / `lease_token` / `lease_renewed_at` / `priority` / `resource_class` / `idempotency_key` |
+| 学习运行与复习 | `learning-runs.ts`、`learning-metrics.ts`、`assessment-disputes.ts`、`validation-v2.ts`、`personal-objective-bindings.ts`、`personal-relation-decisions.ts` | LearningRun 与其私有契约、任务与变体、事件与 outbox、复习排期、判定争议与更正、目标绑定 |
+| 制卡 | `card-generation-v2.ts` | 最大的一组：制卡运行、候选、审核与曝光账本、质量与证据封存、激活回执 |
+| 伴星 | `companion.ts`、`companion-conversations.ts`、`companion-memory.ts`、`assistant-memory.ts`、`assistant-deliveries.ts`、`companion-bridge.ts`、`companion-journey.ts`、`companion-home.ts`、`companion-sandbox.ts` | 伴星本体与账号状态、会话与回合事件、记忆条目与修订、投递与提醒、页面上下文桥、旅程、房间投影、隔离产物 |
+| 检索与理解投影 | `search.ts`、`understanding-projection.ts` | 全文搜索写入表，与理解关系图的读侧投影 |
 
 三件读这张表时容易得出错误结论的事：
 
@@ -164,7 +164,7 @@ sequenceDiagram
 
 **SSE 限流。** `apps/api/src/lib/sse-connection-limiter.ts`：默认每用户 5 条、进程总量 200（28、37 行），可用 `SSE_MAX_STREAMS_PER_USER` / `SSE_MAX_STREAMS_TOTAL` 覆盖；按 namespace 分桶，现役有 `run-events`、`card-gen-events`、`inbox` 等。计数是**单进程内存态**，多副本部署时真实上限是副本数 × 本上限。写入统一走 `safe-sse-write.ts` 的 `safeSseWrite`，写失败只返回 false，绝不上冒成 HTTP 500。
 
-**LISTEN / NOTIFY 唤醒。** 频道一共这几条：`astella_job_events`（worker 主循环被叫醒，`workers/ai-worker/src/lib/job-notify.ts:9`）、`astella_companion_events_v1`（对话事件，驱动 SSE）、`astella_companion_inbox_v1`（投递箱）、`astella_companion_account_v1`。发送方全在 SQL 侧（`0115_job_insert_notify.sql`、`0271_job_ready_notify_on_retry.sql`、`0226_card_generation_outbox_notify.sql` 等），应用层只消费。worker 的空闲轮询是 500ms 指数退避到 5000ms（`index.ts:103-104`），NOTIFY 到达会直接打断当前 sleep 并回到快档；LISTEN 建立失败只警告并退回纯轮询。
+**LISTEN / NOTIFY 唤醒。** 频道一共这几条：`astella_job_events`（worker 主循环被叫醒，`workers/ai-worker/src/lib/job-notify.ts:9`）、`astella_companion_events_v1`（对话事件，驱动 SSE）、`astella_companion_inbox_v1`（投递箱）、`astella_companion_account_v1`。发送方包括 SQL 触发器与业务事务中的通知（`0115_job_insert_notify.sql`、`0271_job_ready_notify_on_retry.sql`、`0226_card_generation_outbox_notify.sql` 等），API／Worker 分别发布与消费相关通知。worker 的空闲轮询是 500ms 指数退避到 5000ms（`index.ts:103-104`），NOTIFY 到达会直接打断当前 sleep 并回到快档；LISTEN 建立失败只警告并退回纯轮询。
 
 ## AI 的工作到底跑在哪一侧
 
@@ -201,13 +201,15 @@ sequenceDiagram
 
 ## 统一版本
 
-服务端与桌面客户端的唯一手工来源是 `release/version.json`，当前为 `1.0.0`。`version-contract.mjs --write` 同步 `apps/api`、`workers/ai-worker`、`packages/shared`、`apps/desktop-client` 的 package.json、lockfile 与 README 版本标记；`make version-check` 检查一致性。桌面打包脚本使用同一契约。统一的 `v1.0.0` tag 同时触发服务端测试与部署、桌面测试与安装包发布。内部的 agent-core、agent-host、card-generation、ai-quality 包仍保留各自内部版本。
+服务端与桌面客户端共用 `release/version.json`。`npm run release:prepare` 同步 API、Worker、shared、desktop 的包版本与 lockfile，以及中文 README 版本标记；英文 README 的显示版本手动同步。内部包保留内部版本。
+
+`v<版本>` 标签通过 `main-ci.yml` 的测试后调用 `server-deploy.yml` 构建 GHCR 镜像并部署；桌面独立完成质量与安装包发布。详见 [服务器部署](deployment.md) 与 [运行与发布](operations.md)。
 
 ## 架构决策与代价
 
 | 决策 | 为什么 | 记录在哪 | 代价 |
 | --- | --- | --- | --- |
-| 本地优先、全部跑在同一份 Compose 里 | 产品是个人学习书房：资料、笔记、记忆不该先经过别人的云。`PRODUCT.md`「Operating Context」与「技术约束」把 PostgreSQL 16 列为唯一持久化存储 | [PRODUCT.md](../../../PRODUCT.md) | 没有云端多租户扩缩路径；SSE 上限这类进程内计数在多副本下会各算各的；alpha 那套监控是"有机器人才有告警"的形状，不是平台 |
+| 数据、同步与部署模式分开 | 本机开发用 MinIO，正式服务器用远程 S3；客户端同时支持回环 HTTP 与 HTTPS | [部署说明](deployment.md) | PostgreSQL 管业务状态，S3 管长期对象；备份与权限需覆盖两侧，单机部署无自动扩缩容 |
 | 队列 + 独立 worker，而不是 api 直接调模型 | 模型调用慢、会超时、要重试，还要能在用户取消或租约失效后**不再写入**。代码里的运行边界是：短事务准备 → 事务外执行 → 短事务核对并保存（最早由[方案 41a §3](../../plans/learning-companion/41a-unified-agent-foundation-2026-09-28.md) 写下） | 实现即 `jobs` + `astella_claim_jobs` + `assertOutsideRegisteredTransactions`；方案 41a §3 | 一次回合跨两个进程，排障要靠 `traceId` 串；引入租约、reaper、退避与幂等这一整套；`Exited` 容器与 `LISTEN` 连接都得有人管 |
 | AI 同意作为账号级闸门，桌面端不给个人模型配置界面 | 数据出本机的决定权在写内容的人手里，而不是在每个空间的管理员手里。`PRODUCT.md`「Capabilities and Constraints」写明"账号级 AI 使用同意与数据外发政策设置（无模型/供应商配置）" | 代码 `ai-consent-gate.ts` + `lib/governance.ts`；最早写在 41a §2/§3 | 语音路径曾能从旁边绕过去（该文件头写明是 doc 34 L13 补的）；两处判据必须同形状，否则迟早一处松一处紧；没签同意的用户看到的是 403 引导，不是一个能自己填 key 的输入框 |
 

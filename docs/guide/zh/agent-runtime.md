@@ -89,31 +89,26 @@ sequenceDiagram
 | `validateAgentGoalDelivery` | `goal-delivery.ts:36` | 判 `completed`：每个操作 `succeeded` 且有结果、每条要求被满足、非纯文本要求必须引用真实成功的 `callId` | 不接受"模型说做完了" |
 | `classifyAgentRunFailure` | `failure-learning.ts:71` | 失败归类：`transient_provider / outcome_unknown / cancelled / incomplete / not_applicable / unclassified`，并给出这条失败**能不能**作为经验证据（`contributesRule`） | 不把取消当经验 |
 
-`state.prepare()` 会返回缓存的 `response`——**同一 checkpoint 重放不再花一次钱**；`saveResponse` 在任何能力提交之前落库，所以进程中途死掉，重放时模型那段直接复用（`execute-step.ts:20`）。
+`state.prepare()` 会复用已保存的模型响应；响应成功落库后，同一 checkpoint 重放可跳过模型调用。如果进程在供应商返回与保存之间退出，重放仍可能再次调用，不能承诺任意中断都不重复付费。工具执行另受幂等标记与租约围栏控制。
 
 终止由宿主给：`workers/ai-worker/src/agent/advance.ts:60-112` 用 `maxSteps:3`、每步 `maxCalls:4`；`packages/agent-host/src/advance-store.ts:105-114` 按交付结果写 `completed|paused|failed`，还有回执未回就 `waiting`，连续两轮助手都不调工具判 `failed`。
 
 ## 能力目录与工具面
 
-**唯一索引**：`packages/shared/src/agent-capability-catalog.ts:15-30`，把 8 个 manifest 组（共 56 条声明）映射成 `{executor, surfaces, requires}`，重名直接抛错。能力的模型可见参数由 zod 反推 JSON Schema（`agent-capability-definition.ts:13`），所以"给模型看的形状"和"运行时校验的形状"不可能漂移。
+唯一索引是 `packages/shared/src/agent-capability-catalog.ts`。领域 manifest 声明参数、风险与执行器，再投影到对话和目标面；工具参数的 JSON Schema 与运行时校验同源于 Zod，仍需合同测试防止序列化或适配发生差异。
 
-| 面 | 数量 | 定义位置 | 用途 |
-| --- | --- | --- | --- |
-| 对话（伴星） | 41 条伴星工具，投影后共 48 个 | `packages/shared/src/companion-capability-manifest.ts:26-243` | 读页面、读材料、导航、查状态、学习任务、记忆读写、人格自改、提醒、日记、图与计算 |
-| 目标（长任务） | 另 15 条声明，投影后目标面 10 个 | `packages/shared/src/agent-capability-manifests.ts:19-87` | 笔记四件套、制卡、读方法、计算、读公开文档、`agent_deliver_goal` |
+| 执行域 | 主要能力 |
+| --- | --- |
+| 伴星 | 上下文与历史读取、笔记检索／阅读、导航、学习动作、记忆、人格、提醒、日记、图示；`companion_create_note` 和 `companion_edit_note` 保存新笔记或修改当前正文 |
+| 目标控制 | 启动、列出、修订、暂停／继续／停止持续目标与读取长期目标 |
+| 笔记与制卡 | 读取冻结版本、生成速看／演示／拓展草稿、读取已保存草稿、生成待审核学习卡 |
+| 方法 | 读取有条件适用且版本有效的合作方法 |
+| 基础与外部 | `agent_calculate`、`agent_read_public_document`、`agent_web_search`；搜索同时投影到对话与目标面 |
+| 交付 | `agent_deliver_goal` 核对逐项要求与真实成功回执 |
 
-对话面按用途分组（名字就是模型看到的名字）：
+数量以导出目录为准，不另维护固定总数。当前可用工具还要经过只读、识图、联网开关与搜索服务可用性的过滤。执行主要在 `workers/ai-worker/src/handlers/companion-tool-execution.ts` 和 `workers/ai-worker/src/agent/external-capabilities.ts`。
 
-- **读上下文**：`companion_read_context`、`companion_read_current_page`、`companion_read_history`（带 `fromSeq`，压缩后取回原文靠它）。
-- **读材料**：`companion_search_notes`、`companion_read_note`、`companion_read_source`、`companion_read_image`、`companion_show_image`。分页读，读不完时诚实返回 `truncated`。
-- **导航**：`companion_open_note`、`companion_open_page`、`companion_open_card`、`companion_focus_graph`——可跳目标受 `components/hud/hud-pages.ts` 的 `HUD_PAGE_DESTINATIONS` 约束（见产品设计篇）。
-- **系统读**：`companion_get_learning_stats`、`companion_list_task_queue`、`companion_list_due_reviews`、`companion_list_recent_activity`、`companion_list_reminders`。
-- **学习动作**：`companion_start_learning`、`companion_resume_learning`、`companion_pause_learning`、`companion_request_hint`、`companion_switch_task_variant`、`companion_defer_review`。
-- **记忆动作**：`companion_save_memory`、`companion_read_memory`、`companion_recall_memory`、`companion_recall_past_conversation`、`companion_move_memory`、`companion_forget_memory`、`companion_revise_memory`、`companion_remember_judgment`。
-- **她自己**：`companion_revise_own_style`、`companion_revise_own_tags`、`companion_set_boundary`、`companion_set_activeness`、`companion_pause_learning_suggestions`。
-- **其他**：`companion_schedule_reminder`、`companion_cancel_reminder`、`companion_read_playbook`、`companion_read_diary`、`companion_render_diagram`、`agent_calculate`、`agent_read_public_document`。
-
-执行落在 `workers/ai-worker/src/agent/companion-tool-execution.ts`（例如 `agent_calculate:117`、`agent_read_public_document:111`、`companion_read_image:540`，识图路由在 `:614`）。
+新笔记保存端口在 `packages/agent-host/src/note-creation.ts`；当前正文编辑由 API 的 `modules/note/companion-edit-dispatch.ts` 领取已授权工具，再经现有协同文档保存。两者都核对空间、用户与版本，成功回执和最后一句聊天回复分别记录。
 
 ## 权限档位与提案往返
 
@@ -121,7 +116,7 @@ sequenceDiagram
 
 | 档位（设置里可见） | 读 | 可逆低影响写 | 其他写 | 强制提案的 6 个工具 |
 | --- | --- | --- | --- | --- |
-| 只读 `read_only` | 允许 | 拦 | 拦 | 提案，等确认 |
+| 只读 `read_only` | 允许 | 拦 | 拦 | 拦 |
 | 引导 `guided`（默认） | 允许 | 直接做 | 先确认 | 提案，等确认 |
 | 完全 `full` | 允许 | 直接做 | 直接做 | **仍然**提案，等确认 |
 
@@ -173,7 +168,7 @@ G(目标) = floor(B_hard × 0.60)
 伴星的压缩与通用压缩**不是同一件事**：
 
 - 通用：`withBoundedContextCompaction`（`workers/ai-worker/src/handlers/companion-compaction.ts:223`）+ `boundedStepSender`（`:279`），一次请求最多压一次。
-- 伴星：**无损覆盖折叠** `foldReplayUnderSummaryCoverage`（`:95-155`）——只折"被摘要完整覆盖到的整条消息"（`seq ≤ coverage.throughSeq` 且摘要带 `sourceSha256`），当前请求永远保留，回执记 `remainingFromSeq` / `uncoveredBeforeSeq`。被折掉的原文模型仍能通过 `companion_read_history{fromSeq}` 取回，所以压缩不造成失忆。
+- 伴星：**按摘要覆盖范围折叠** `foldReplayUnderSummaryCoverage`（`:95-155`）——只折"被摘要完整覆盖到的整条消息"（`seq ≤ coverage.throughSeq` 且摘要带 `sourceSha256`），当前请求永远保留，回执记 `remainingFromSeq` / `uncoveredBeforeSeq`。被折掉的原文模型仍能通过 `companion_read_history{fromSeq}` 取回，原文可找回，但摘要的语义完整性与模型是否取回仍需验证。
 - 交接快照是另一条链：`companion_context_handoff_snapshots`（`packages/shared/src/db-schema/companion-conversations.ts:206`），由 `handlers/companion-context-handoff.ts:157` 生成，回放窗口 `REPLAY_WINDOW_MESSAGES 20`。
 
 ## 持久化与主机端口
@@ -218,21 +213,28 @@ G(目标) = floor(B_hard × 0.60)
 
 ## 值得进图的数字
 
-| 组 | 值 | 出处 |
-| --- | --- | --- |
-| 伴星循环 | 步 `AGENT_LOOP_MAX_STEPS=4`（宽限 2），钳到 `COMPANION_AGENT_MAX_STEPS=8`；每步 4 次工具、全程 12 次工具、12 次模型；run 截止 120000ms；单工具 10000ms | `companion-step-plan.ts:165,174`（4 步 + 宽限 2）、`companion-agent-contracts.ts:15-20`（钳位与 12/12/120000）、`companion-agent-runtime.ts:286-296`（单工具 10000） |
-| 目标推进 | `maxSteps:3`、`maxCalls:4`、模型超时 `min(60000, deadline−now)`、`max_model_calls` 默认 16（1–32） | `advance.ts:61,84,96`、迁移 `0368` |
-| 队列 | 租约 120000ms、`MAX_ATTEMPTS=3`、并发 `QUEUE_CONCURRENCY`（留 1 个 interactive 槽位）、轮询 500→5000ms | `workers/ai-worker/src/queue.ts:12,20,21,120` |
-| 超时阶梯 | handler 上限 = 租约−10000；循环截止 = abort−15000；单次供应商 75000 | `lib/handler-timeout-config.ts:18-19,70,155-172` |
-| 配额 | 同时活跃 run ≤5（advisory xact 锁）；每工作区待处理作业 ≤50 | `store.ts:147-155`、`job-queue-limits.ts:17` |
-| 上下文 | 0.80 / 0.60 / 2048 / 128000 / 16384；图片 1500；压缩 3 次 / 60000ms / 2 次无进展 | 上一节 |
-| SSE 与限流 | 单批 500 事件、每会话 3 路、每用户 10 路、轮询 2500→30000ms；`createTurn` 12/分与 120/时、决定 20/分、读 120/分 | `companion-events.ts:27-35`、`companion-rate-limit.ts:94-116` |
+这些是机制默认值，部署覆盖值与任务剩余预算可能更小。
+
+| 机制 | 默认与来源 |
+| --- | --- |
+| 伴星循环 | 最多 8 步，每步最多 4 次工具，整轮工具／模型调用各最多 12 次；合同 deadline 30 分钟，普通工具超时 10 秒。见 `companion-agent-contracts.ts`，生成笔记等长调用有专用预算 |
+| 目标推进 | 每次执行最多 3 步，每步最多 4 次调用；单模型请求受任务剩余时间与供应商预算限制。见 `agent/advance.ts` |
+| 主队列 | 租约窗口 120 秒，运行中每 30 秒心跳续租；失联后按最近心跳回收，最多 3 次尝试。见 `queue.ts`、`index.ts`、迁移 0394 |
+| 执行时长 | 供应商默认 15 分钟，handler 默认 30 分钟；循环为保存留 15 秒余量。租约不限制总时长，见 `lib/handler-timeout-config.ts` |
+| 多阶段制卡 | 默认总预算 60 分钟，独立 outbox 租约与续租，见 `card-generation-v2/outbox-queue.ts` |
+| 配额 | 同时活跃 Agent run 最多 5 个；每空间待处理 jobs 最多 50 个 |
+| 上下文 | 硬预算内触发线 0.80、目标线 0.60；压缩冷却与尝试次数另有上限 |
+| SSE | 对话每会话 3 路、每用户 10 路，断线后可从事件序号恢复 |
+
+输出额度按模型档案声明的上限处理，篇幅由任务合同控制；不会把少量正文 token 当作包含推理的总额度。具体覆盖方式见 [模型链路](ai-and-companion.md#超时阶梯)。
 
 ## 已接通 vs 只有后端
 
-**今天真跑着的**：14 条 `astella.v1.agent.*` IPC 通道（`packages/shared/src/contracts/desktop-ipc-contracts.ts:484-497` → `apps/desktop-client/src/preload/index.ts:197-212` → `apps/desktop-client/src/main/desktop-ipc-agent.ts`），被长期目标页、方法页与 `use-agent-goals.ts:31-113` 使用；声明式请求由 4 个领域服务发起（`note-overviews/service.ts:115`、`note-learning-artifacts/service.ts:117`、`note-expansions/service.ts:162`、`card-generation-v2/generation-run-service.ts:51`）；目标执行器 `note / card / method / basic / external / delivery` 绑在 `advance.ts:35-38`；诊断路由 `GET /companion/runs`、`/doctor`、`/turn`、`/issue-bundle` 与取消都已注册且 IPC 可达。
+已接通的入口包括声明式笔记／制卡请求、轻聊与目标推进、长期目标和方法页，以及新笔记生成、当前正文编辑、联网来源和运行诊断。能力是否可调用须核对本轮投影，不能由静态目录推断。
 
-**只有后端或半截**：`irreversible` 风险级无人声明；完全档的服务端自动确认未实现（6 个工具仍要人点）；`not_executed` / `unavailable` 回给模型后在 worker 侧映射，不是一等台账状态；`capability-bundle.ts:22-45` 只剩名字表，不参与门控；`agent_deliver_goal` 除目标 run 外没有别的 UI 入口。
+`not_executed` 与 `unavailable` 已进入工具状态合同和数据库约束，分别表达未执行与本轮不可用，不能一概写成失败。完全档对六个提案执行工具的服务端自动确认仍未实现；`irreversible` 枚举存在但当前 manifest 没有此风险级能力。`agent_deliver_goal` 专用于目标 run。
+
+上下文治理已有实库、真实模型对照与部分窗口样本；压缩接续、并发恢复、经验采用与长期效果按 [方案 44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md) 的具体证据核对，不能写成从未验证或整体已经完成。
 
 ## 排障入口
 

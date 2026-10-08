@@ -89,31 +89,26 @@ The parts that matter:
 | `validateAgentGoalDelivery` | `goal-delivery.ts:36` | Decides `completed`: every operation `succeeded` with a result, every requirement satisfied, and any non-text requirement must cite a `callId` that really succeeded | Does not accept "the model says it is done" |
 | `classifyAgentRunFailure` | `failure-learning.ts:71` | Classifies failure as `transient_provider / outcome_unknown / cancelled / incomplete / not_applicable / unclassified` and says whether that failure **may** count as experiential evidence (`contributesRule`) | Cancellation never counts as experience |
 
-`state.prepare()` can hand back a cached `response` — **replaying the same checkpoint does not spend a second call**; `saveResponse` is persisted before any capability commits, so if the process dies mid-step the model portion is reused on replay (`execute-step.ts:20`).
+`state.prepare()` reuses persisted responses, so replay of a saved checkpoint can skip the model call. A crash between the provider response and persistence can still result in another call; this is not an unconditional exactly-once billing guarantee. Tool execution has separate idempotency and lease fencing.
 
 Termination comes from the host: `workers/ai-worker/src/agent/advance.ts:60-112` uses `maxSteps:3` and `maxCalls:4` per step; `packages/agent-host/src/advance-store.ts:105-114` writes `completed|paused|failed` from the delivery outcome, stays `waiting` while receipts are still outstanding, and judges `failed` when two assistant turns in a row call no tool at all.
 
 ## Capability catalog and tool surfaces
 
-**The single index**: `packages/shared/src/agent-capability-catalog.ts:15-30` maps the 8 manifest groups — 56 declarations in total — onto `{executor, surfaces, requires}` and throws outright on a duplicate name. A capability's model-visible parameters are derived back into JSON Schema from zod (`agent-capability-definition.ts:13`), so "the shape the model sees" and "the shape the runtime validates" cannot drift apart.
+`packages/shared/src/agent-capability-catalog.ts` is the index. Domain manifests declare arguments, risks and executors, then project onto conversation and goal surfaces. JSON Schema and runtime validation share Zod definitions; contract tests are still needed for serialization and adapters.
 
-| Surface | Count | Defined in | Used for |
-| --- | --- | --- | --- |
-| Conversation (companion) | 41 companion tools, 48 after projection | `packages/shared/src/companion-capability-manifest.ts:26-243` | Reading the page, reading material, navigation, status queries, learning tasks, memory read/write, editing her own persona, reminders, diary, diagrams and calculation |
-| Goal (long tasks) | 15 further declarations, 10 on the goal surface | `packages/shared/src/agent-capability-manifests.ts:19-87` | The four note artifacts, card generation, reading methods, calculation, reading public documents, `agent_deliver_goal` |
+| Executor domain | Main capabilities |
+| --- | --- |
+| Companion | Read context/history/material, search notes, navigate, learning actions, memory, persona, reminders, diary and diagrams; `companion_create_note` and `companion_edit_note` persist new notes or edit the current body |
+| Goal control | Start, list, revise, pause/resume/cancel work and read long-term goals |
+| Notes and cards | Read frozen versions, generate overview/demonstration/expansion, read saved drafts and generate card candidates |
+| Methods | Read applicable, current cooperation methods |
+| Basic and external | `agent_calculate`, `agent_read_public_document`, `agent_web_search`; search is on conversation and goal surfaces |
+| Delivery | `agent_deliver_goal` checks each requirement against successful receipts |
 
-The conversation surface grouped by purpose (these are the exact names the model sees):
+Use the exported catalog rather than a separately maintained total. Exposure also filters read-only permissions, vision policy, web-search opt-in and service availability. Main executors live in `workers/ai-worker/src/handlers/companion-tool-execution.ts` and `workers/ai-worker/src/agent/external-capabilities.ts`.
 
-- **Reading context**: `companion_read_context`, `companion_read_current_page`, `companion_read_history` (takes `fromSeq` — this is how original text comes back after compaction).
-- **Reading material**: `companion_search_notes`, `companion_read_note`, `companion_read_source`, `companion_read_image`, `companion_show_image`. Reads are paged, and when a read does not reach the end it returns an honest `truncated`.
-- **Navigation**: `companion_open_note`, `companion_open_page`, `companion_open_card`, `companion_focus_graph` — jump targets are constrained by `HUD_PAGE_DESTINATIONS` in `components/hud/hud-pages.ts` (see the product design page).
-- **System reads**: `companion_get_learning_stats`, `companion_list_task_queue`, `companion_list_due_reviews`, `companion_list_recent_activity`, `companion_list_reminders`.
-- **Learning actions**: `companion_start_learning`, `companion_resume_learning`, `companion_pause_learning`, `companion_request_hint`, `companion_switch_task_variant`, `companion_defer_review`.
-- **Memory actions**: `companion_save_memory`, `companion_read_memory`, `companion_recall_memory`, `companion_recall_past_conversation`, `companion_move_memory`, `companion_forget_memory`, `companion_revise_memory`, `companion_remember_judgment`.
-- **Herself**: `companion_revise_own_style`, `companion_revise_own_tags`, `companion_set_boundary`, `companion_set_activeness`, `companion_pause_learning_suggestions`.
-- **The rest**: `companion_schedule_reminder`, `companion_cancel_reminder`, `companion_read_playbook`, `companion_read_diary`, `companion_render_diagram`, `agent_calculate`, `agent_read_public_document`.
-
-Execution lands in `workers/ai-worker/src/agent/companion-tool-execution.ts` (for example `agent_calculate:117`, `agent_read_public_document:111`, `companion_read_image:540`, with the vision routing at `:614`).
+New notes use `packages/agent-host/src/note-creation.ts`. Current-note edits are claimed by API `modules/note/companion-edit-dispatch.ts` and saved through the existing collaborative document. Both verify workspace, user and version; saved receipts and the final chat reply are recorded separately.
 
 ## Permission tiers and the proposal round trip
 
@@ -121,7 +116,7 @@ One place decides, ever: `canUseCompanionAgentTool` (`packages/shared/src/contra
 
 | Tier (visible in Settings) | Reads | Reversible low-impact writes | Other writes | The 6 tools that must propose |
 | --- | --- | --- | --- | --- |
-| Read only `read_only` | allowed | blocked | blocked | proposal, waits for confirmation |
+| Read-only `read_only` | Allowed | Blocked | Blocked | Blocked |
 | Guided `guided` (default) | allowed | done directly | confirmed first | proposal, waits for confirmation |
 | Full `full` | allowed | done directly | done directly | **still** proposes, waits for confirmation |
 
@@ -173,7 +168,7 @@ The decision order inside `evaluateContextPressure` (`:198-251`) **is** the poli
 Companion compaction and generic compaction are **not the same thing**:
 
 - Generic: `withBoundedContextCompaction` (`workers/ai-worker/src/handlers/companion-compaction.ts:223`) plus `boundedStepSender` (`:279`), at most one compaction per request.
-- Companion: **lossless coverage folding** `foldReplayUnderSummaryCoverage` (`:95-155`) — it folds only whole messages fully covered by a summary (`seq ≤ coverage.throughSeq`, and the summary must carry `sourceSha256`); the current request is always kept, and the receipt records `remainingFromSeq` / `uncoveredBeforeSeq`. The model can still pull the folded original back with `companion_read_history{fromSeq}`, so compaction costs no memory.
+- Companion: **coverage-based folding** `foldReplayUnderSummaryCoverage` (`:95-155`) — it folds only whole messages fully covered by a summary (`seq ≤ coverage.throughSeq`, and the summary must carry `sourceSha256`); the current request is always kept, and the receipt records `remainingFromSeq` / `uncoveredBeforeSeq`. The model can still pull the folded original back with `companion_read_history{fromSeq}`, so compaction costs no memory.
 - The handoff snapshot is its own chain: `companion_context_handoff_snapshots` (`packages/shared/src/db-schema/companion-conversations.ts:206`), produced by `handlers/companion-context-handoff.ts:157`, with replay window `REPLAY_WINDOW_MESSAGES 20`.
 
 ## Persistence and host ports
@@ -218,21 +213,28 @@ Non-retryability is decided at two layers: the task kernel retries only `transpo
 
 ## Numbers worth remembering
 
-| Group | Value | Source |
-| --- | --- | --- |
-| Companion loop | steps `AGENT_LOOP_MAX_STEPS=4` (grace 2), clamped to `COMPANION_AGENT_MAX_STEPS=8`; 4 tools per step, 12 tools and 12 model calls overall; run deadline 120000ms; single tool 10000ms | `companion-agent-contracts.ts:15-20`, `companion-agent-runtime.ts:286-296` |
-| Goal advancement | `maxSteps:3`, `maxCalls:4`, model timeout `min(60000, deadline−now)`, `max_model_calls` default 16 (range 1–32) | `advance.ts:61,84,96`, migration `0368` |
-| Queue | lease 120000ms, `MAX_ATTEMPTS=3`, concurrency `QUEUE_CONCURRENCY` (one interactive slot held back), polling 500→5000ms | `workers/ai-worker/src/queue.ts:12,20,21,120` |
-| Timeout ladder | handler ceiling = lease − 10000; loop deadline = abort − 15000; single provider call 75000 | `lib/handler-timeout-config.ts:18-19,70,155-172` |
-| Quota | at most 5 concurrently active runs (advisory xact lock); at most 50 pending jobs per workspace | `store.ts:147-155`, `job-queue-limits.ts:17` |
-| Context | 0.80 / 0.60 / 2048 / 128000 / 16384; images 1500; compaction 3 attempts / 60000ms / 2 no-progress attempts | previous section |
-| SSE and rate limits | 500 events per batch, 3 streams per conversation, 10 per user, polling 2500→30000ms; `createTurn` 12/min and 120/hour, decisions 20/min, reads 120/min | `companion-events.ts:27-35`, `companion-rate-limit.ts:94-116` |
+These are mechanism defaults. Deployment overrides and remaining task time can reduce them.
+
+| Mechanism | Default and source |
+| --- | --- |
+| Companion loop | At most 8 steps, 4 tools per step, 12 tools and 12 model calls per turn; contract deadline 30 minutes and ordinary tool timeout 10 seconds. See `companion-agent-contracts.ts`; long note generation has a dedicated budget |
+| Goal advancement | Up to 3 steps per execution and 4 calls per step; model calls respect remaining task time and provider budget. See `agent/advance.ts` |
+| Main queue | 120-second lease, renewed every 30 seconds while running; reaping uses the latest heartbeat, with at most 3 attempts. See `queue.ts`, `index.ts`, migration 0394 |
+| Execution time | Provider default 15 minutes, handler default 30 minutes; loop retains 15 seconds for persistence. The lease does not cap total runtime. See `lib/handler-timeout-config.ts` |
+| Multistage cards | Default total budget 60 minutes with separate outbox leases and renewal. See `card-generation-v2/outbox-queue.ts` |
+| Quotas | At most 5 active Agent runs and 50 pending jobs per workspace |
+| Context | Trigger 0.80 and target 0.60 of the hard budget; cooldown and compaction attempts are separately bounded |
+| SSE | 3 streams per conversation, 10 per user; sequence cursors support recovery |
+
+Model profiles supply output limits; task contracts constrain content length. A small visible-text allowance is not treated as the total reasoning-plus-output budget. See [Model pipeline](ai-and-companion.md#timeout-ladder) for overrides.
 
 ## Wired up today vs backend only
 
-**Actually running today**: the 14 `astella.v1.agent.*` IPC channels (`desktop-ipc-contracts.ts:484-497` → `preload/index.ts:197-212` → `src/main/desktop-ipc-agent.ts:31-49`), used by the long-goal page, the methods page and `use-agent-goals.ts:31-113`; declarative requests are issued by 4 domain services (`note-overviews/service.ts:115`, `note-learning-artifacts/service.ts:117`, `note-expansions/service.ts:162`, `card-generation-v2/generation-run-service.ts:51`); the goal executors `note / card / method / basic / external / delivery` are bound at `advance.ts:35-38`; the diagnostic routes `GET /companion/runs`, `/doctor`, `/turn` and `/issue-bundle` are all registered and reachable over IPC.
+Connected entries include direct note/card requests, short chat and goal advancement, goal/method pages, new-note creation, current-body edits, web sources and run diagnostics. Check this turn's exposure instead of treating the static catalog as available tools.
 
-**Backend only, or half built**: no manifest declares the `irreversible` risk class; server-side auto-confirmation for the full tier is unimplemented, so those 6 tools still need a human click; `not_executed` / `unavailable` are mapped back to the model on the worker side and are not first-class ledger states; `capability-bundle.ts:22-45` is down to a name table and gates nothing; `agent_deliver_goal` has no UI entry outside the goal run itself.
+`not_executed` and `unavailable` are persisted tool states in contracts and database constraints, representing no execution and current unavailability respectively. Full-mode automatic confirmation is still absent for six proposal-backed tools. `irreversible` exists as a risk enum but is not used by current manifests. `agent_deliver_goal` is specific to goal runs.
+
+Context governance has real-database, model-comparison and selected window evidence. Check compaction continuity, concurrency recovery, method adoption and long-term effects against individual evidence in [plan 44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md); neither “never verified” nor “complete” describes the whole system.
 
 ## Where to start debugging
 

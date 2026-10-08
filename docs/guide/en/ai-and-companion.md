@@ -14,6 +14,7 @@ This page explains how the model side actually runs: a Node worker consuming a P
 - [Thinking and reasoning levels](#thinking-and-reasoning-levels)
 - [Vision routing](#vision-routing)
 - [Token measurement and context governance](#token-measurement-and-context-governance)
+- [Web search and sources](#web-search-and-sources)
 - [Governance and consent](#governance-and-consent)
 - [Card generation: domain package and worker chain](#card-generation-domain-package-and-worker-chain)
 - [ai-quality: the offline quality layer](#ai-quality-the-offline-quality-layer)
@@ -34,6 +35,8 @@ Entrypoint: `workers/ai-worker/src/index.ts`. `main()` starts on module load. Th
 - `MAX_ATTEMPTS = 3`. Retry parameters are **not computed in TS**: `astella_fail_job(id, workspace_id, lease_token, last_error, max_attempts)` returns `status / attempts / backoff_ms / is_dead / scheduled_at` directly, with backoff `2000 * 2^(attempts-1)` milliseconds. TS keeps only `MAX_ATTEMPTS`, for dead-letter forcing and for the claim/reap arguments; `retry-strategy-contract.test.ts` asserts the two sides agree.
 - Every terminal transition is a lease-token CAS: `astella_finish_job` / `astella_fail_job` are both fenced by `(id, workspace_id, status='running', lease_token)`. Zero rows affected means the job was reaped or re-claimed, so this attempt's result is **not committed** and only `jobLeaseLostTotal` is incremented.
 - Terminal transitions also have a wall-clock bound: `resolveWorkerStatementTimeoutMs() + 5_000` (60 s + 5 s by default). A timeout means the outcome is unknown, so it is handed to the reaper to settle by lease — never mislabelled as a failure.
+
+Main-queue jobs renew every 30 seconds while running (`index.ts` + `lib/lease-heartbeat.ts`). Migration 0394 adds `lease_renewed_at`; reaping uses the latest heartbeat. Failed renewal aborts execution, and an obsolete lease cannot commit.
 
 ### Concurrency and the interactive lane
 
@@ -82,7 +85,7 @@ Alongside the main queue there is `card_generation_run_outbox_v2`, polled at the
 | per-tick poll budget | `V2_POLL_TICK_BUDGET_MS = 5_000`; the poll returns past it while running jobs continue in the background |
 | lease | `V2_OUTBOX_LEASE_TIMEOUT_MS = 30 * 60_000` (30 minutes) |
 | renewal / loss detection | `V2_LEASE_RENEWAL_INTERVAL_MS`, default 120_000, must be smaller than the lease window |
-| job wall-clock budget | `V2_PIPELINE_BUDGET_MS`, default 20 minutes; expiry aborts and terminates the job without retry |
+| job wall-clock budget | `V2_PIPELINE_BUDGET_MS`, default 60 minutes; expiry aborts and terminates the job without retry |
 | concurrency | `V2_OUTBOX_MAX_CONCURRENCY`, default 4 (independent of main-queue concurrency) |
 | orphan reap | `V2_REAP_THROTTLE_MS = 30_000` |
 
@@ -100,7 +103,7 @@ The user-facing surface is a single file, `config/ai-platforms.json` (relocatabl
 
 **Declaration is the truth.** Context window, output ceiling, whether the model can read images, and reasoning levels are attributes of the **model**, written under `platforms.<id>.models.<model>`: `contextWindowTokens`, `maxOutputTokens`, `vision`, `reasoning.levels` / `reasoning.default`. The admin panel runs `validateConfig()` (`apps/api/src/modules/admin/config-service.ts`) before writing back, and a `capabilities` reference to an undeclared model is a **blocking** issue — guessing the window or output ceiling shows up as a mis-computed budget or an upstream 400, so it is better caught while editing. A `reasoning.default` outside that model's `levels` blocks too. When a hand-written file bypasses validation, undeclared models take provider defaults and warn once per (platform, model). The old platform-level `options.contextWindowTokens` / `enableThinking` / `reasoningEffort` keys have no readers left and are blocking.
 
-```jsonc
+```json
 {
   "platforms": {
     "opencode-go": {
@@ -110,7 +113,7 @@ The user-facing surface is a single file, `config/ai-platforms.json` (relocatabl
       "models": {
         "deepseek-v4.1-flash": {
           "contextWindowTokens": 1000000,
-          "maxOutputTokens": 131072,
+          "maxOutputTokens": 384000,
           "vision": true,
           "reasoning": {
             "levels": ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
@@ -118,13 +121,10 @@ The user-facing surface is a single file, `config/ai-platforms.json` (relocatabl
           }
         }
       }
-    },
-    "mock": { "type": "mock" }
+    }
   },
   "capabilities": {
-    "agent_turn": { "platform": "opencode-go", "model": "deepseek-v4.1-flash" },
-    "vision": { "platform": "bigmodel", "model": "GLM-4.1V-Thinking-Flash" },
-    "embedding": { "platform": "siliconflow", "model": "BAAI/bge-m3" }
+    "agent_turn": { "platform": "opencode-go", "model": "deepseek-v4.1-flash" }
   }
 }
 ```
@@ -163,7 +163,7 @@ Two things on the long path:
 - **Reasoning-handle replay order.** deepseek models in thinking mode require the previous turn's reasoning to be passed back verbatim, or the second step of the tool loop returns 400. The Responses provider re-inserts handles as input items in the order `reasoning → message → function_call`; putting the message first is rejected. The plaintext reasoning content is stripped on the provider side and only the opaque handle is kept. The cold-start path for "continue after the user confirms" persists handles in `companion_agent_tool_calls.reasoning_handles` (migration 0218); proposals awaiting confirmation created before 0218 have no handle and take a non-retryable 400 when resumed.
 - **Empty-content retry.** With thinking on, some providers intermittently return an empty `content` (everything landed in `reasoning_content`). `openai-compatible.ts` re-sends the same request up to 3 times (`MAX_EMPTY_OUTPUT_ATTEMPTS`); the outer AbortSignal is unchanged, so timeout semantics do not move.
 
-The cost is real: a single retrieval went from 7.6 s to 36 s (the measurement recorded in `handler-timeout-config.ts`), and a 60-second handler budget cannot hold "one slow call plus a retry". Handler timeouts for several job types were therefore raised to the lease ceiling (`MAX_ALLOWED_TIMEOUT_MS`) so a single provider call gets its full 75 seconds.
+Long reasoning and multistage generation can exceed older short deadlines. Provider calls now default to 15 minutes and ordinary handlers to 30 minutes, with leases renewed during execution. Model profiles supply output limits and task contracts constrain content. A lease controls crash recovery, not total runtime.
 
 > **Note for future changes**: the project has decided to keep thinking enabled across the whole companion chain, favouring quality. The levels, replay and retry machinery above exist so that running with thinking on works — not as a case for switching it off to gain speed.
 
@@ -187,7 +187,15 @@ Conservative ratios and floors: CJK counts 1 token per character, non-CJK 1 toke
 
 The budget line itself (`B_hard = max(0, min(C − O, I) − M)`, trigger 0.80 / target 0.60, `M = 2_048`, fallback window 128 000 and output reservation 16 384), its fixed decision order, the compaction cooldown and the companion's lossless folding are written out in full in the context-governance section of [Unified agent runtime (technical)](./agent-runtime.md). What belongs here is where the layer is attached: `createGovernedProvider` — the single boundary for every outbound model call — so it covers the first step, every tool turn, material refetch, background continuation, retries and fallback model switches, and it measures the full outgoing request **before** it is sent. Its job is only to decide and record honestly; it does not delete content.
 
-> **Evidence gap**: all four phases of plan [44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md) have code wired along the real call path with their own criteria, but row 44 of the [current plan index](../../plans/learning-companion/README.md) states plainly that §8 acceptance has not a single piece of real-model, real-database or real-window evidence, and that migrations 0382–0389 have never run against a real database (the unified execution foundation is defined in [41a](../../plans/learning-companion/41a-unified-agent-foundation-2026-09-28.md), the full-request budget and reliable compaction in [44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md)). [Plan 43](../../plans/learning-companion/43-companion-guidance-and-space-arrival-2026-10-04.md), companion guidance, **is implemented** — the island button plus a seven-topic guide booklet under `components/companion/guidance/`; what its "not implemented or window-accepted" line still refers to is the acceptance: the brand-new-account walk and the post-consent speech have never been run in a real window.
+> **Evidence scope:** plan 44 records database migrations, compaction commits and permission fences, real-model comparisons and selected windows. Review semantic continuity, concurrent recovery and long-term effects against [plan 44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md) §8/§11; old “never run” claims are no longer a current-state summary.
+
+## Web search and sources
+
+`agent_web_search` serves both conversation and ongoing goals. `agent/web-search.ts` reuses the `bigmodel` credential for BigModel Web Search. Account `webSearchEnabled` defaults to false, and exposure/execution check opt-in, service availability and AI governance.
+
+Each turn has at most 3 searches, returning bounded excerpts and HTTPS sources. URLs determine stable source identities and citation markers. Durable receipts restore sources on replay without searching again. Chat, journal and history share citation blocks; titles, URLs and dates stay in source lists/popovers and outside spoken text.
+
+Exhausted quota starts a 30-minute credential cooldown in the current Worker. The turn can continue but cannot claim online verification. Cooldown is process-local, so restarts and other replicas do not share it; it is not global quota enforcement. See [search validation](../../testing/agent-web-search-2026-10-08.md).
 
 ## Governance and consent
 
@@ -279,16 +287,19 @@ Every real-model probe needs an explicit switch, and CI never satisfies it, so n
 
 ## Timeout ladder
 
-An outbound call has to write either its result or its fallback state before the lease expires, so each layer below is derived from the outermost one rather than being a separately chosen number.
+Execution deadlines and crash recovery are separate. Defaults come from `packages/shared/src/ai-execution-budgets.ts`, `lib/handler-timeout-config.ts` and the card outbox; deployed overrides can differ.
 
-| layer | value | source |
-| --- | --- | --- |
-| job lease | 120 000 ms | `LEASE_TIMEOUT_MS`; the reaper uses it, the hardest outer bound |
-| handler abort | ≤ 110 000 ms | `MAX_ALLOWED_TIMEOUT_MS = lease − 10_000` safety margin, enforced by `runWithAbortTimeout` |
-| single provider call | 75 000 ms cap, and ≤ handler − 15 000 | `DEFAULT_PROVIDER_TIMEOUT_MS` / `PROVIDER_SAFETY_MARGIN_MS`, overridable via `WORKER_PROVIDER_TIMEOUT_MS` and `WORKER_PROVIDER_TIMEOUT_<TYPE>_MS` |
-| companion loop deadline | abort − 15 000 ms | derived by `resolveCompanionAgentBudget()`; the margin is for delta replay, TTS segments and the terminal transaction |
+| Layer | Default and constraint |
+| --- | --- |
+| Main queue lease | 120 seconds, renewed every 30 seconds while running; reaping uses the latest `lease_renewed_at` |
+| Handler | Ordinary AI jobs 30 minutes, `parse_source` 60 seconds; resolved values cap at 24 hours |
+| Provider call | Default 15 minutes, bounded by remaining handler time minus persistence margin |
+| Companion/artifact loop | Derived from the handler, reserving 15 seconds for persistence |
+| Multistage cards | `V2_PIPELINE_BUDGET_MS` defaults to 60 minutes; separate 30-minute outbox lease and renewal |
 
-Handler timeout resolution order: per-type env (`WORKER_TIMEOUT_<TYPE>_MS`) > global env (`WORKER_MODEL_TIMEOUT_MS`) > per-type built-in default > the global built-in 90 000, always clamped to 110 000. Current built-ins: `parse_source` 60 000; `companion_agent`, `agent_run_advance`, `companion_memory_extract`, `companion_summarizer`, `companion_daily_summary` and `note_dynamic_artifact_generate` take the lease ceiling; `companion_memory_embedding_rebuild` and `companion_thought` 110 000; `note_overview_generate` and `note_expansion_generate` 100 000; `note_annotation_explain` 90 000; `companion_memory_organize` has no mapping and falls to the global default.
+Handler priority: `WORKER_TIMEOUT_<TYPE>_MS` → `WORKER_MODEL_TIMEOUT_MS` → per-type default → global default. Provider priority: `WORKER_PROVIDER_TIMEOUT_<TYPE>_MS` → `WORKER_PROVIDER_TIMEOUT_MS` → 15-minute default, then constrained by available handler time. New overrides must be forwarded in Compose; a value in `.env` alone may not reach the process.
+
+`lib/providers/model-output-budget.ts` resolves output limits. Normal generation uses the model profile's declared ceiling; a small visible-text allowance is not a reasoning-plus-output total. Context budgeting still reserves output capacity and task contracts limit structure/content. Cancellation, lease loss, bounded call counts and retries remain enforced. See [budget validation](../../testing/ai-execution-budgets-2026-10-08.md).
 
 ## Related volumes
 

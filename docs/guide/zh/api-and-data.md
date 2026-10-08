@@ -10,6 +10,7 @@
 - [多租户与行级安全](#多租户与行级安全)
 - [数据库、schema 与迁移](#数据库schema-与迁移)
 - [三个数据库角色](#三个数据库角色)
+- [伴星笔记写入与对象传输](#伴星笔记写入与对象传输)
 - [作业投递与 outbox 不变量](#作业投递与-outbox-不变量)
 - [SSE 与流式响应](#sse-与流式响应)
 - [配置项](#配置项)
@@ -21,7 +22,7 @@
 
 ## 运行形态与启动顺序
 
-入口是 `apps/api/src/server.ts`：一个 Fastify 实例、**没有全局路径前缀**，48 组路由束平级 `register`（其中 `card-generation-v2` 只在 `CARD_GENERATION_V2_ENABLED=true` 时才注册）。监听地址由 `resolveApiBindHost()`（`apps/api/src/modules/desktop-trust/routes.ts`）决定——默认 `127.0.0.1`，只有 `ASTELLA_CONTAINER_MODE` 与 `ASTELLA_ALLOW_CONTAINER_WILDCARD` 同时为 `true` 才允许 `0.0.0.0`，否则启动即抛错；端口取 `PORT`，默认 `4000`。
+入口是 `apps/api/src/server.ts`：一个 Fastify 实例、**没有全局路径前缀**，各领域路由束平级 `register`（其中 `card-generation-v2` 只在 `CARD_GENERATION_V2_ENABLED=true` 时才注册）。监听地址由 `resolveApiBindHost()`（`apps/api/src/modules/desktop-trust/routes.ts`）决定——默认 `127.0.0.1`，只有 `ASTELLA_CONTAINER_MODE` 与 `ASTELLA_ALLOW_CONTAINER_WILDCARD` 同时为 `true` 才允许 `0.0.0.0`，否则启动即抛错；端口取 `PORT`，默认 `4000`。
 
 插件层与钩子层：
 
@@ -99,9 +100,9 @@
 
 | 项 | 事实 |
 | --- | --- |
-| 单一来源 | `apps/api/drizzle.config.ts` 的 `schema` 指向 `packages/shared/src/db-schema/index.ts`（33 个 `.ts`、138 处 `pgTable` 声明），`out` 是 `apps/api/src/db/migrations`。仓库里没有 `packages/db`，也没有应用侧副本或兼容垫片 |
+| 单一来源 | `apps/api/drizzle.config.ts` 的 `schema` 指向 `packages/shared/src/db-schema/index.ts`，`out` 是 `apps/api/src/db/migrations`。仓库里没有 `packages/db`，也没有应用侧副本或兼容垫片 |
 | 守卫现状 | `.github/scripts/verify-schema-mirror.mjs`（由 `make verify` 调用）只做一件事：确认那个目录存在且含 `.ts` 文件，为空即抛错，并打印文件数。**它不比对两份 schema**——因为只有一份 |
-| 迁移数量 | 以 `apps/api/src/db/migrations/meta/_journal.json` 为准（本轮 389 条 entry，最新一条 `0392_ai_settings_default_send_image`）；这个数字每轮都会变，别把它写进断言 |
+| 迁移顺序 | 以 `apps/api/src/db/migrations/meta/_journal.json` 为准；新增迁移必须登记 journal 并补角色授权，不在手册维护固定总数 |
 | 执行器 | `src/db/migrate.ts` 是自己实现的，不用 `drizzle-orm/migrator`（该包 exports map 把 `types` 排在 `default` 前，tsx 下会解析到 `.d.ts` 而模块为空） |
 | 幂等判据 | 逐条比对 `sha256(SQL 文件内容)` 是否已在 `drizzle.__drizzle_migrations.hash`；**不看最新时间戳**——混进一条更大的时间戳会让后续迁移被静默跳过 |
 | 事务粒度 | 每条迁移独立事务（不再整批一个）：锁窗口更小、失败可恢复，代价是不再整体原子，所以"建结构 + 回填"要写成幂等可重入 |
@@ -124,9 +125,17 @@
 
 `REQUIRE_RLS_DISABLED=true` 那条检查现在的语义是"启用了 RLS 的表必须都有策略"：数量为 0 才放行，`role-grants` 因此会在策略没跟上时直接失败，而不是让应用带着裸隔离启动。
 
+## 伴星笔记写入与对象传输
+
+`companion_create_note` 在 Worker 中调用 `packages/agent-host/src/note-creation.ts`，通过受控数据库函数保存私有新笔记、初始版本与真实链接。保存时复核空间写权限、当前请求和关联笔记的可见性／版本，不能由全局 Agent 权限绕过 Member 的只读限制。
+
+`companion_edit_note` 的授权工具由 API `modules/note/companion-edit-dispatch.ts` 领取，`companion-edit-document.ts` 核对冻结原文与版本，再修改现有 Hocuspocus Y.Doc。写入沿既有保存、正文投影与搜索链路提交；Worker 读取实际保存回执。工具身份用于幂等，取消或原文变化时停止替换。它不是另一条裸 SQL 覆盖正文的接口。
+
+对象传输在 `modules/storage-transfer/`。远程客户端先请求 `/storage/transfers/config` 与限时签名上传地址，完成后由 API 校验并转存到最终对象；下载／导出先校验会话与可见性，再发短期签名 GET。主进程直传请求不携带 API token／Cookie。本机 local_loopback 继续使用原 API 上传路径；模式与集测见 [部署说明](deployment.md)。
+
 ## 作业投递与 outbox 不变量
 
-`modules/job/service.ts` 的 `createJob()` 是 API 侧唯一的入队口：**只往 `jobs` 表插行**，不认领、不执行（认领函数的 `EXECUTE` 只给 worker，矩阵断言会拦住 API 拿到它）。同一条事务里先取 `pg_advisory_xact_lock(hashtextextended('job-quota:<workspaceId>', 0))`，再做：
+`modules/job/service.ts` 的 `createJob()` 是 API 通用入队口；Agent 宿主还有声明式能力与推进的入队端口，均须保持同一配额和幂等合同。通用入口：**只往 `jobs` 表插行**，不认领、不执行（认领函数的 `EXECUTE` 只给 worker，矩阵断言会拦住 API 拿到它）。同一条事务里先取 `pg_advisory_xact_lock(hashtextextended('job-quota:<workspaceId>', 0))`，再做：
 
 - **配额**：该空间 `pending` 作业数 ≥ `MAX_PENDING_JOBS_PER_WORKSPACE`（`@astella/shared`，值 50）时抛 `statusCode = 429`。锁保证了并发请求不能在 49 条时双双通过检查。
 - **幂等键**：命中同 key 直接返回既有 job；key 已绑到别的 type 或别的 `requestedBy` 视为调用错误。
@@ -135,6 +144,8 @@
 - payload 里带上会话 actor（worker 需要用户作用域时读它）与 `traceId`；`GET /jobs` 与 `GET /jobs/:id` 不回 payload，`last_error` 也只回 `"error occurred"` + 脱敏后的 `failureReason`。
 
 worker 侧每轮 `SELECT * FROM public.astella_claim_jobs(p_limit, p_background_limit, p_max_attempts)`（`workers/ai-worker/src/queue.ts`）：`FOR UPDATE SKIP LOCKED` 认领、统一打租约、返回 `lease_token`；之后的续租与回写都按 `lease_token` 做 CAS，租约过期被别的实例重领后，本实例的置位自然失效。`p_background_limit` 让后台车道拿不到最后一个空槽，交互作业一入队就有槽。
+
+运行中每 30 秒续租，迁移 0394 的 `lease_renewed_at` 用于失联判断；执行时长由独立 handler／provider 预算控制，120 秒租约不再是总时长上限。
 
 投递给下游的是 outbox 表，事务内插入、至少一次投递、按键幂等：
 
@@ -174,7 +185,7 @@ hijack 之后的响应**不经过 `onSend`**，所以全局安全头不适用，
 | 鉴权与限流 | `AUTH_RATE_LIMIT_STORE`、`AUTH_RATE_LIMIT_WINDOW_MS`(15min)、`AUTH_RATE_LIMIT_MAX_ATTEMPTS`(5)、`AUTH_COOKIE_SECURE`、`NODE_ENV` | store 默认 `postgres`；`Secure` 由 `AUTH_COOKIE_SECURE` 或 `NODE_ENV=production` 决定 |
 | 能力开关（API 侧读取的 13 个） | `LEARNING_RUN_ENABLED`、`CARD_GENERATION_V2_ENABLED`、`COMPANION_DIALOGUE_V1_ENABLED`、`COMPANION_VOICE_DIALOGUE_V1_ENABLED`、`COMPANION_STREAMING_VOICE_V1_ENABLED`、`COMPANION_JOURNEY_V2`、`COMPANION_BRIDGE_V2`、`COMPANION_MEMORY_VECTOR_V1`、`COMPANION_MEMORY_STAR_MAP_V1`、`COMPANION_PET_PROFILE_V1`、`COMPANION_PROACTIVE_PERSONALIZED_V1`、`COMPANION_SUMMARIZER_V1`、`COMPANION_DAILY_SUMMARY_V1` | 一律严格 `=== "true"`，**fail closed**：未设即关，端点 404 或整组不注册。多数判据集中在 `config/learning-companion-flags.ts`，少数在各自路由里读（星图、日报、桥接、主动投递）。`make verify` 的 `.github/scripts/verify-companion-capability-config.mjs` 双向钉住"每个服务只声明它实际读取的开关"及默认值：伴星基础能力 dev/prod 都默认开，`LEARNING_RUN_ENABLED` / `CARD_GENERATION_V2_ENABLED` / 语音只有 dev 默认开、prod 关。worker 侧的同族开关见 [模型与 Worker 链路](./ai-and-companion.md) |
 | SSE 与处理并发 | `SSE_MAX_STREAMS_PER_USER`(5)、`SSE_MAX_STREAMS_TOTAL`(200)、`RUN_PROCESSING_CONCURRENCY`(4，上界 16) | 计数单进程内存态 |
-| 对象存储 | `STORAGE_ENDPOINT`(`http://minio:9000`)、`S3_REGION`(`us-east-1`)、`S3_BUCKET`(`astella-workspaces`)、`MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`（回退 `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`）、`STORAGE_REQUEST_TIMEOUT_MS`(120s) | 凭证必须**同一套齐全**；未配置时上传端点回 503。判定在 `@astella/shared/storage-config`，与 worker 共用 |
+| 对象存储 | `STORAGE_MODE`、`STORAGE_ENDPOINT`、`STORAGE_PUBLIC_ENDPOINT`、`STORAGE_ACCESS_KEY_ID`、`STORAGE_SECRET_ACCESS_KEY`、`S3_REGION`(`us-east-1`)、`S3_BUCKET`(`astella-workspaces`)、`MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`（回退 `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`）、`STORAGE_REQUEST_TIMEOUT_MS`(120s) | local 使用 MinIO 凭据；remote 使用远程专用凭据，不回退本地配置。凭证须成套，未配置时上传回 503。判定在 `@astella/shared/storage-config`，与 worker 共用 |
 | 语音 | `EDGE_TTS_BASE_URL`、`EDGE_TTS_PORT`、`EDGE_TTS_AUTH_TOKEN`、`EDGE_TTS_MAX_CONCURRENCY`、`QWEN_TTS_MAX_CONCURRENCY`、`DASHSCOPE_TTS_WORKSPACE_ID`、`SILICONFLOW_API_KEY`、`VOICE_ASR_MODEL` | 本机 edge-tts 容器 + 外部 ASR |
 | 学习运行密钥 | `LEARNING_DRAFT_ENC_KEY`、`PROJECTION_CHECKPOINT_SECRET`、`ASTELLA_DESKTOP_PAIRING_KEY_ID`、`ASTELLA_DESKTOP_PAIRING_SECRET`、`ASTELLA_DOMAIN_SCHEMA_REVISION` | 草稿加密、投影检查点签名、桌面信任握手 |
 | 就绪与观测 | `MIN_READY_MIGRATION_CREATED_AT`、`LOG_LEVEL`、`GIT_COMMIT`、`MIGRATION_COUNT`、`npm_package_version` | 见下一节 |
@@ -233,8 +244,8 @@ hijack 之后的响应**不经过 `onSend`**，所以全局安全头不适用，
 
 ## API 侧的测试入口
 
-- 单元与守卫：`cd apps/api && npm test` = `node --import tsx --test --test-concurrency=8 $(find src -name '*.test.ts')`（当前 281 个 `*.test.ts`）。`src/__tests__/` 里除了服务单测，还有一族 `*-source-guard.test.ts` 与 `*-contract.test.ts`：它们读源码文本与迁移 SQL，钉住分层边界、错误信封、能力开关命名、迁移免事务指令这类不能靠运行时发现的约定。
-- 集成：`*.integration.ts`（119 个，`src/integration-tests/`）**不在 `npm test` 里**，只能通过 `apps/api/package.json` 里那些 `test:*:postgres` 脚本显式跑；需要真实库和 `DATABASE_URL_*`。
+- 单元与守卫：`cd apps/api && npm test` = `node --import tsx --test --test-concurrency=8 $(find src -name '*.test.ts')`。`src/__tests__/` 里除了服务单测，还有一族 `*-source-guard.test.ts` 与 `*-contract.test.ts`：它们读源码文本与迁移 SQL，钉住分层边界、错误信封、能力开关命名、迁移免事务指令这类不能靠运行时发现的约定。
+- 集成：`*.integration.ts`（`src/integration-tests/`）**不在 `npm test` 里**，只能通过 `apps/api/package.json` 里那些 `test:*:postgres` 脚本显式跑；需要真实库和 `DATABASE_URL_*`。
 - 一条命令跑全：`make test-postgres` 会遍历 `apps/api` 与 `workers/ai-worker` 里所有 `test:*:postgres` 脚本，并注入受限角色的连接串（超级用户会绕过 RLS，隔离断言变成假通过）。前提是要在**干净的一次性库**上跑：`bash scripts/dev-disposable-db.sh astella_it`——多个用例断言"库里只有自己的夹具"，共享开发库会假失败。
 - 契约与路由覆盖：`npm run test:route-contract:postgres`、`test:users-rls:postgres`（含 schema 棘轮）、`test:db-integrity:postgres`（迁移与限流）。
 - 类型检查：`cd apps/api && npm run typecheck`。本地基线是 `make verify`（与 CI 同集合，由 `.github/scripts/ci-workflow-contract.test.mjs` 钉住）；更完整的验证矩阵见[测试与质量](./testing-and-quality.md)。

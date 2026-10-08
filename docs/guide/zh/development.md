@@ -2,7 +2,7 @@
 
 中文 · [English](../en/development.md)
 
-这篇讲什么：从一次干净检出到一个能操作的真窗口，中间每一步跑的是什么、哪些命令只做表面功夫、哪些变量必须自己填。所有条目按 `Makefile`、`docker-compose.dev.yml`、各包的 `package.json` 与 Dockerfile 逐行核对过；本页只覆盖本机开发栈，生产镜像构建与 Alpha 环境在 [operations.md](operations.md)。
+这篇讲什么：从一次干净检出到一个能操作的真窗口，中间每一步跑的是什么、各命令的实际范围、哪些变量必须自己填。所有条目按 `Makefile`、`docker-compose.dev.yml`、各包的 `package.json` 与 Dockerfile 逐行核对过；本页只覆盖本机开发栈，生产镜像构建与 Alpha 环境在 [operations.md](operations.md)。
 
 - [前置条件](#前置条件)
 - [从干净检出到能操作的窗口](#从干净检出到能操作的窗口)
@@ -26,7 +26,7 @@
 | 每个包各跑一次 `npm ci` | 九个包各有自己的 `package-lock.json`；`.astella/*` 是 `file:` 软链，但 `tsc` 要靠**被引包自己的** `node_modules` 解析 `zod` / `drizzle-orm` | `ls package-lock.json packages/*/package-lock.json apps/*/package-lock.json workers/*/package-lock.json` |
 | `python3` | 一部分现场探针（`scripts/companion-inbox-sse-probe.py` 等）与 `edge-tts` 的服务脚本是 Python | `python3 -V` |
 
-**这里要诚实写清楚的两件事**：仓库根、`apps/*`、`packages/*`、`workers/*` 的 `package.json` **都没有 `engines` 字段**，也**没有 `.nvmrc`**。"Node 22" 这条约束只活在镜像标签和 CI 变量里，换 Node 版本不会有任何东西拦你——出问题也不会有一行提示。另外仓库里散落着六个 `pnpm-lock.yaml`（根 + api + desktop-client + shared + ai-quality + ai-worker），**没有一条命令读它们**：`Makefile`、两个 Dockerfile 和 CI 全部是 `npm ci`。把它们当作历史材料，不要基于它们推断依赖关系。
+依赖管理需注意：仓库根、`apps/*`、`packages/*`、`workers/*` 的 `package.json` **都没有 `engines` 字段**，也**没有 `.nvmrc`**。"Node 22" 这条约束只活在镜像标签和 CI 变量里，换 Node 版本不会有任何东西拦你——出问题也不会有一行提示。另外仓库里散落着六个 `pnpm-lock.yaml`（根 + api + desktop-client + shared + ai-quality + ai-worker），**没有一条命令读它们**：`Makefile`、两个 Dockerfile 和 CI 全部是 `npm ci`。把它们当作历史材料，不要基于它们推断依赖关系。
 
 ## 从干净检出到能操作的窗口
 
@@ -54,7 +54,15 @@ cp .env.example .env
 
 `openssl rand -base64 32` 生成的串是标准 base64（含 `+` `/`），而 `readDesktopTrustConfig` 要求 `^[A-Za-z0-9_-]+$` 且 `Buffer.from(v,'base64url').toString('base64url') === v`——用之前先换成 base64url 形式。
 
-要真跑模型还要填 key：`DASHSCOPE_API_KEY`、`OPENAI_COMPAT_API_KEY`、`OPENCODE_GO_API_KEY`、`SILICONFLOW_API_KEY`、`BIGMODEL_API_KEY`、`TOKENRHYTHM_API_KEY`。具体哪个平台服务哪种能力由 `config/ai-platforms.json` 决定，而 `docker-compose.dev.yml` 只透传**显式列出**的那几个变量——2026-09-17 那次事故就是 compose 漏了 `OPENCODE_GO_API_KEY`，容器内解析为空，制卡 fail closed。**加平台时必须同时改这个文件和两份 compose**（dev 里 api 与 worker 各有一份同样的列表）。`ASSESSMENT_CRITIC_URL` / `_KEY` / `_MODEL` 是另一组：未配置时 LearningRun 的开放回答评估走确定性路径而不是猜。
+可直接生成符合编码要求的配对密钥：
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
+
+`ASTELLA_DESKTOP_PAIRING_KEY_ID` 可用 `local-dev`，本机修订标识可用 `local-dev-v1`；两端需保持一致。远程 HTTPS 模式不使用本机配对密钥，仍需契约修订与合法证书，见 [部署说明](deployment.md)。
+
+要真跑模型还要按槽位填所需 key：`DASHSCOPE_API_KEY`、`OPENAI_COMPAT_API_KEY`、`OPENCODE_GO_API_KEY`、`SILICONFLOW_API_KEY`、`BIGMODEL_API_KEY`、`TOKENRHYTHM_API_KEY`。具体哪个平台服务哪种能力由 `config/ai-platforms.json` 决定，而 `docker-compose.dev.yml` 只透传**显式列出**的那几个变量——2026-09-17 那次事故就是 compose 漏了 `OPENCODE_GO_API_KEY`，容器内解析为空，制卡 fail closed。**加平台时必须同时改这个文件和两份 compose**（dev 里 api 与 worker 各有一份同样的列表）。`ASSESSMENT_CRITIC_URL` / `_KEY` / `_MODEL` 是另一组：未配置时 LearningRun 的开放回答评估走确定性路径而不是猜。
 
 其余变量（`COMPANION_*`、`LEARNING_RUN_ENABLED`、`CARD_GENERATION_*` 等）在 dev 里已经给了本机默认值，`make verify` 的 `.github/scripts/verify-companion-capability-config.mjs` 会检查 api 与 worker 声明的旗标是否成对，避免"API 收下的回合被 worker 当作功能关闭立刻拒掉"。
 
@@ -71,7 +79,7 @@ make up
 3. `compose --profile storage up -d --build --remove-orphans`：构建 `target: dev` 镜像并拉起 postgres / minio / api / worker / edge-tts。开发栈**默认带 storage profile**（`DEV_PROFILES`），所以头像与笔记图片上传开箱可用，不用再单独 `make storage`。
 4. 对 `role-bootstrap`、`migrate`、`role-grants`、`minio-init` 逐个 `docker wait`。
 
-第 4 步的语义要说准：`docker wait` **阻塞到容器退出并打印它的退出码**，但 CLI 自身的退出码是 0（本机 2026-10-06 实测：容器 `exit 3` 时 `docker wait` 打印 `3`、`$?` 仍是 `0`），而 Makefile 又把输出重定向到 `/dev/null`。所以"等初始化跑完"是真的，"迁移失败就中断 `make up`"**不是**——`make up` 会绿着结束，故障要另外看。判断依据用 `/ready` 或 `docker compose -p astella-dev logs migrate`。
+第 4 步的语义要说准：`docker wait` **阻塞到容器退出并打印它的退出码**，但 CLI 自身的退出码是 0（本机 2026-10-06 实测：容器 `exit 3` 时 `docker wait` 打印 `3`、`$?` 仍是 `0`），而 Makefile 又把输出重定向到 `/dev/null`。所以"等初始化跑完"是真的，"迁移失败就中断 `make up`"**不是**——`make up` 会绿着结束，故障要另外看。判断依据用 `/ready` 或 `docker compose -p astella-dev -f docker-compose.dev.yml logs migrate`。
 
 `migrate`、`role-bootstrap` 与 `role-grants` 每次启动都跑（幂等，没有变化时是 no-op），不是"只在首次跑"；`minio-init` 与 `seed-*` 才是真一次性。
 
@@ -88,7 +96,9 @@ make seed-demo
 密码：astella_owner
 ```
 
-**这对凭据只服务于本机开发**。`seed.ts:28-32` 里 `NODE_ENV=production && SEED_DEMO_DATA=true` 直接抛错，生产栈的 Owner 由 `OWNER_EMAIL` / `OWNER_PASSWORD` 显式给。
+`make seed-demo` 不传入 `.env` 中的 `OWNER_EMAIL`／`OWNER_PASSWORD`，默认创建上面的开发账号。已有同邮箱账号只跳过，不修改密码；如需自定义播种，使用 `docker compose -p astella-dev -f docker-compose.dev.yml --profile seed run --rm -e OWNER_EMAIL -e OWNER_PASSWORD seed-demo`，先在 shell 导出这两个值，密码至少 12 字符。
+
+**这对默认凭据只服务于本机开发**。`seed.ts:28-32` 里 `NODE_ENV=production && SEED_DEMO_DATA=true` 直接抛错，生产栈的 Owner 由 `OWNER_EMAIL` / `OWNER_PASSWORD` 显式给。
 
 ### 4. 装依赖并起窗口
 
@@ -165,7 +175,7 @@ dev_postgres_data:
   external: true
 ```
 
-`external: true` 意味着 compose 不拥有这个卷：`make down`（`down --remove-orphans`）、删容器、甚至 `docker compose down -v` **都删不掉它**。唯一的删除路径是显式确认：
+`external: true` 意味着 compose 不拥有这个卷：`make down`（`down --remove-orphans`）、删容器、甚至 `docker compose down -v` **都不会自动删除它**。项目提供的重置入口需要显式确认：
 
 ```bash
 make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB
@@ -173,7 +183,7 @@ make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB
 
 `Makefile:86-99`：值不完全是 `DELETE_DEV_DB` 就打印取消并 `exit 2`，不碰任何东西；值对时才 `down` + `docker volume rm` + 重新 `make up`。先备份再按。
 
-要一个"库里只有我自己的夹具"的干净环境时，别Reset 开发卷——用一次性库：
+要一个"库里只有我自己的夹具"的干净环境时，使用隔离测试库——用一次性库：
 
 ```bash
 make disposable-db DISPOSABLE_DB=astella_it   # scripts/dev-disposable-db.sh，只删/建 astella_* 且不等于 astella 的库
@@ -190,10 +200,10 @@ make disposable-db DISPOSABLE_DB=astella_it   # scripts/dev-disposable-db.sh，�
 | `make logs` | `compose logs -f`，全部服务 |
 | `make down` | `down --remove-orphans`，保留数据 |
 | `make config` | `compose config --quiet`：只验 YAML 与变量插值，**不碰 Docker**，`.env` 少填一个必填项在这里就会红 |
-| `make rebuild` | `compose --profile seed build --no-cache` |
+| `make rebuild` | `compose --profile seed build --no-cache`; 随后 `make up` 应用 |
 | `make clean-init` | 清 `role-bootstrap`、`migrate` 与 `role-grants`（取自 `INIT_SERVICES`） |
 | `make shell-api` / `make shell-worker` | `compose exec api sh` / `exec worker sh` |
-| `make verify` | 先 `version-check`，再跑五个 contract 测试、schema 镜像校验、伴星旗标配对校验，然后七个包的 `typecheck` + `test`（`packages/ai-quality` 额外 `pr-gate`）。**这就是 CI 的本地基线**，由 `.github/scripts/ci-workflow-contract.test.mjs` 钉住两边一致 |
+| `make verify` | 先 `version-check`，再跑仓库合同测试、schema 目录与伴星旗标校验、备份脚本自测，然后七个包的 `typecheck` + `test`（`packages/ai-quality` 额外 `pr-gate`）。**这就是 CI 的本地基线**，由 `.github/scripts/ci-workflow-contract.test.mjs` 钉住两边一致 |
 | `make test-postgres` | 真库集成套件，需干净的一次性库（见上一节） |
 | `make disposable-db` | 创建/删除一次性开发库 |
 | `make release-check` | `verify` + 发布输入校验 + `coverage-gate`（真卡阈值）+ manifest 生成与校验 |
@@ -228,7 +238,7 @@ make disposable-db DISPOSABLE_DB=astella_it   # scripts/dev-disposable-db.sh，�
    ```
 
    不带这个变量时脚本会另起一个 Electron 实例（`electron.launch`，读 `out/`），那个副本的 profile、工作区与重载状态都和你眼前的窗口不同。同目录下的 `compare-mockup-geometry.mjs` 干脆不设默认值，缺 `ASTELLA_CAPTURE_CDP` 直接抛错——附着真实窗口才有证据价值。`ASTELLA_CAPTURE_NO_SANDBOX=1` 是给受限环境（CI 容器、被沙箱化的 agent shell）准备的逃生口，本机不要加。
-2. **跑一遍门禁。** `make verify` 是最便宜的全量信号；它**真的**卡覆盖率阈值（2026-09-29 之前挂的是 `--report-only`，那时"验证覆盖率"是假话）。样式与契约类守卫集中在 `apps/desktop-client/src/main/__tests__/`（`css-var-resolution-guard`、`renderer-style-dead`、`component-size-guard`、`docs-vite-vars-have-readers` 等）和 `.github/scripts/`，改之前先看清它们保护的是哪个行为。
+2. **跑对应验证。** 干净检出先安装各被引包依赖并构建桌面产物，再运行 `make verify`。它不包含覆盖率与 skip/todo；两者分别用 `make coverage-gate`／`make skip-todo-gate`。守卫保护的实际行为与范围见 [测试与质量](testing-and-quality.md)。
 3. **再读结构与边界。** [architecture.md](architecture.md) 说进程与链路，[api-and-data.md](api-and-data.md) 说角色与迁移，[desktop-client.md](desktop-client.md) 说 IPC 与窗口，[testing-and-quality.md](testing-and-quality.md) 说门禁。产品边界以 [PRODUCT.md](../../../PRODUCT.md) 为准，视觉与交互以 [DESIGN.md](../../../DESIGN.md) 为准，协作约定以 [AGENTS.md](../../../AGENTS.md) 为准。
 
 ## 常见首跑失败
@@ -237,7 +247,7 @@ make disposable-db DISPOSABLE_DB=astella_it   # scripts/dev-disposable-db.sh，�
 
 - `make up` 在 compose 解析阶段就报 `Set EDGE_TTS_AUTH_TOKEN in .env`：`.env` 里那行还是注释状态。填上任意本机 token，`make config` 先验一遍。
 - 窗口能开但登录报连接配置问题：`ASTELLA_DESKTOP_PAIRING_*` / `ASTELLA_DOMAIN_SCHEMA_REVISION` 没填，或 `.env` 改了但没重启主进程（`electron.vite.config.ts` 只在启动时 `loadDotenv` 一次）。
-- 迁移或角色授权没生效但 `make up` 是绿的：见 [一次性容器的约定](#一次性容器的约定)里 `docker wait` 的那段——`docker compose -p astella-dev logs migrate` 与 `GET /ready` 才是判据。
+- 迁移或角色授权没生效但 `make up` 是绿的：见 [启动步骤](#2-make-up)里 `docker wait` 的那段——`docker compose -p astella-dev -f docker-compose.dev.yml logs migrate` 与 `GET /ready` 才是判据。
 
 完整的现象→原因→处理在 [faq-and-troubleshooting.md](faq-and-troubleshooting.md)，本页不重复那份清单。
 

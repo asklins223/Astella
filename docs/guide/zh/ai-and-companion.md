@@ -4,7 +4,7 @@
 
 ## 这篇讲什么
 
-这一册讲清模型这一路真正是怎么跑的：一个消费 Postgres 队列的 Node worker、一份用户可见的模型配置、一层账号级同意与外发治理，以及 worker 侧的制卡、语音与伴星作业落在哪些文件与表上。每条判据都来自 `workers/ai-worker/src/**`、`packages/*/src/**`、`config/ai-platforms.json`、`apps/api/src/modules/**` 与迁移文件，而不是方案文档的声明。统一 Agent 怎么被驱动（回合内核、能力与工具面、上下文与状态词表）已经单独写在 [统一 Agent 运行时（技术）](./agent-runtime.md)，伴星面向用户的那一面（她是什么、能做什么、哪里还做不到）写在 [伴星体验（产品设计）](./companion-experience.md)，本页不再重复展开。方案 44 的上下文治理已经有代码接线，但它的验收证据仍是缺口——这一条在文中单独标出。
+这一册讲清模型这一路真正是怎么跑的：一个消费 Postgres 队列的 Node worker、一份服务端模型配置、一层账号级同意与外发治理，以及 worker 侧的制卡、语音与伴星作业落在哪些文件与表上。每条判据都来自 `workers/ai-worker/src/**`、`packages/*/src/**`、`config/ai-platforms.json`、`apps/api/src/modules/**` 与迁移文件，而不是方案文档的声明。统一 Agent 怎么被驱动（回合内核、能力与工具面、上下文与状态词表）已经单独写在 [统一 Agent 运行时（技术）](./agent-runtime.md)，伴星面向用户的那一面（她是什么、能做什么、哪里还做不到）写在 [伴星体验（产品设计）](./companion-experience.md)，本页不再重复展开。方案 44 已有实库、真实模型与部分窗口证据，剩余限制按相关记录逐项确认。
 
 - [Worker 运行时](#worker-运行时)
 - [Job 类型清单](#job-类型清单)
@@ -14,6 +14,7 @@
 - [思考与推理档位](#思考与推理档位)
 - [识图路由](#识图路由)
 - [Token 计量与上下文治理](#token-计量与上下文治理)
+- [联网搜索与来源](#联网搜索与来源)
 - [治理与同意](#治理与同意)
 - [制卡：领域包与 worker 链](#制卡领域包与-worker-链)
 - [ai-quality：离线质量层](#ai-quality离线质量层)
@@ -34,6 +35,8 @@
 - `MAX_ATTEMPTS = 3`。重试参数**不在 TS 侧算**：`astella_fail_job(id, workspace_id, lease_token, last_error, max_attempts)` 直接返回 `status / attempts / backoff_ms / is_dead / scheduled_at`，回退是 `2000 * 2^(attempts-1)` 毫秒。TS 只保留 `MAX_ATTEMPTS` 给死信强制收敛与 claim/reap 传参，两侧一致性由 `retry-strategy-contract.test.ts` 断言。
 - 每一次终态转换都是租约令牌 CAS：`astella_finish_job` / `astella_fail_job` 都带 `(id, workspace_id, status='running', lease_token)` 围栏，影响 0 行就意味着 job 已被回收或重派，本轮结果**不提交**，只记 `jobLeaseLostTotal`。
 - 终态转换本身有墙钟上界 `resolveWorkerStatementTimeoutMs() + 5_000`（默认 60s + 5s）。超时等于"结果未知"，一律交给 reaper 按租约收敛，绝不误判成失败。
+
+运行中主队列作业每 30 秒心跳续租（`index.ts` + `lib/lease-heartbeat.ts`）。迁移 0394 增加 `lease_renewed_at`，失联回收按最近心跳判断；续租失败中止本轮，旧租约不能提交。
 
 ### 并发与交互车道
 
@@ -82,7 +85,7 @@
 | 单 tick poll 预算 | `V2_POLL_TICK_BUDGET_MS = 5_000`，超预算即返回，运行中的 job 继续后台跑 |
 | 租约 | `V2_OUTBOX_LEASE_TIMEOUT_MS = 30 * 60_000`（30 分钟） |
 | 租约续租/丢失探测 | `V2_LEASE_RENEWAL_INTERVAL_MS` 默认 120_000，必须小于租约窗口 |
-| job 墙钟预算 | `V2_PIPELINE_BUDGET_MS` 默认 20 分钟，到期 abort 并终结 job（不重试） |
+| job 墙钟预算 | `V2_PIPELINE_BUDGET_MS` 默认 60 分钟，到期 abort 并终结 job（不重试） |
 | 并发 | `V2_OUTBOX_MAX_CONCURRENCY` 默认 4（与主队列并发彼此独立） |
 | 孤儿回收 | `V2_REAP_THROTTLE_MS = 30_000` |
 
@@ -90,9 +93,9 @@
 
 ## 模型配置：一个文件
 
-用户能配的只有一份 `config/ai-platforms.json`（`AI_PLATFORMS_CONFIG` 可指到别的路径）。`packages/shared/src/platform-config.ts` 描述契约，`platform-config-node.ts` 负责加载。
+部署者维护的模型与能力映射集中在 `config/ai-platforms.json`（`AI_PLATFORMS_CONFIG` 可指到别的路径）。`packages/shared/src/platform-config.ts` 描述契约，`platform-config-node.ts` 负责加载。
 
-- `platforms.<id>`：用户自己起的标识 + 协议 `type` + `apiKey` + `baseUrl` + `models` 档案 + 只装网关怪癖的 `options`。
+- `platforms.<id>`：部署者定义的标识 + 协议 `type` + `apiKey` + `baseUrl` + `models` 档案 + 只装网关怪癖的 `options`。
 - `capabilities.<cap>`：把能力映射到 `平台 + 模型`。代码里的能力枚举是 `text_generation`、`vision`、`agent_turn`、`companion_fallback`、`embedding`、`rerank`、`speech_recognition`、`image_generation`；当前配置文件映射了其中的五个：`agent_turn`、`text_generation`、`companion_fallback`、`vision`、`embedding`。未映射的能力不可用，每进程只告警一次。
 - `tts`：可选节点，已在契约内（见[语音](#语音合成在-api切句在-worker识别在桌面)）。
 
@@ -100,7 +103,7 @@
 
 **声明即真相**。上下文窗口、输出上限、能否识图、推理档位都是**模型**的属性，写在 `platforms.<id>.models.<model>` 里：`contextWindowTokens`、`maxOutputTokens`、`vision`、`reasoning.levels` / `reasoning.default`。面板写回前跑 `validateConfig()`（`apps/api/src/modules/admin/config-service.ts`），`capabilities` 引用了未声明的模型是**阻断项**——窗口或输出猜错会表现成预算误算或上游 400，不如写配置时就拦下；`reasoning.default` 不在该模型的 `levels` 里同样阻断。手写文件绕过校验时，未声明的模型用 provider 缺省值，每个 (平台, 模型) 只告警一次。旧的平台级 `options.contextWindowTokens` / `enableThinking` / `reasoningEffort` 等字段没有任何读取方，是阻断级问题。
 
-```jsonc
+```json
 {
   "platforms": {
     "opencode-go": {
@@ -110,7 +113,7 @@
       "models": {
         "deepseek-v4.1-flash": {
           "contextWindowTokens": 1000000,
-          "maxOutputTokens": 131072,
+          "maxOutputTokens": 384000,
           "vision": true,
           "reasoning": {
             "levels": ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
@@ -118,13 +121,10 @@
           }
         }
       }
-    },
-    "mock": { "type": "mock" }
+    }
   },
   "capabilities": {
-    "agent_turn": { "platform": "opencode-go", "model": "deepseek-v4.1-flash" },
-    "vision": { "platform": "bigmodel", "model": "GLM-4.1V-Thinking-Flash" },
-    "embedding": { "platform": "siliconflow", "model": "BAAI/bge-m3" }
+    "agent_turn": { "platform": "opencode-go", "model": "deepseek-v4.1-flash" }
   }
 }
 ```
@@ -144,7 +144,7 @@
 三个反复踩的坑：
 
 1. **DashScope 是预设不是协议分支。** `providers/dashscope.ts` 造的还是 `OpenAICompatibleProvider`，只是带上 `resolveEndpoint`、`maxTokensStrategy: "always"`、`X-DashScope-WorkSpace` 头与 `enable_thinking` 预设；baseUrl 必须以 `/compatible-mode/v1` 结尾。
-2. **`opencode_go` 说 Responses API。** `muse-spark-*`、`grok-4.6`、`gpt-5.6-luna` 只在 `/responses` 提供，走 `/chat/completions` 稳定 500；同一个端点上的 `deepseek-*`、`glm-*`、`kimi-*` 等 chat 系模型必须**另建一个 `openai_compatible` 平台指向同一个 baseUrl**。每个请求还要带稳定的 `x-opencode-session`，客户端也要自报非通用 SDK 的 user agent。
+2. **`opencode_go` 说 Responses API。** `muse-spark-*`、`grok-4.6`、`gpt-5.6-luna` 只在 `/responses` 提供，走 `/chat/completions` 稳定 500；当前 DeepSeek 槽位也使用 `/responses`；仅提供 chat/completions 的模型应另建 `openai_compatible` 平台，不能从模型名称猜协议。每个请求还要带稳定的 `x-opencode-session`，客户端也要自报非通用 SDK 的 user agent。
 3. **阿里云域名守卫。** `dashscope` 的 `validateBaseUrl` 只接受 `^dashscope(-[a-z0-9]+)?\.aliyuncs\.com$`，把 baseUrl 指去别的主机是配置错误而不是可选行为。
 
 `createCapabilityProvider()` 在工厂出口还会做一次形状校验：声明了 `vision` 却没实现 `analyzeImage()` 会变成明确的配置错误，而不是调用时才 `TypeError`。
@@ -163,7 +163,7 @@ chat/completions 的混合思考模型只有开/关，Responses API 有档位，
 - **reasoning 句柄回放顺序。** deepseek 系在思考模式下要求把上一轮的 reasoning 原样带回，否则工具循环第二步 400。Responses provider 把句柄按 `reasoning → message → function_call` 的顺序回填 input items，顺序反了就会被拒；明文思考内容在 provider 侧已经剥离，只保留不透明句柄。"用户确认后续跑"的冷启动路径把句柄持久化在 `companion_agent_tool_calls.reasoning_handles`（迁移 0218），0218 之前创建的待确认提案没有句柄，续跑时是不可重试 400。
 - **空内容重试。** 开启思考后部分 provider 偶发返回空 `content`（内容全落进 `reasoning_content`）。`openai-compatible.ts` 对同一请求最多重发 3 次（`MAX_EMPTY_OUTPUT_ATTEMPTS`），外层 AbortSignal 仍是那一个，不改变超时语义。
 
-代价是真实的：单次取回从 7.6 秒涨到 36 秒（`handler-timeout-config.ts` 记录的实测），60 秒的 handler 预算装不下"一次慢调用 + 一次重试"，所以多个 job 类型的 handler 超时被抬到租约上限（`MAX_ALLOWED_TIMEOUT_MS`），让单次 provider 调用拿满 75 秒。
+长推理和多阶段生成可能超过早期的短超时设置。当前单供应商默认可等待 15 分钟，普通 handler 默认 30 分钟，运行中续租；模型输出上限来自模型档案，正文长度由任务合同控制。租约用于失联回收，不再限制正常任务总时长。
 
 > **记一笔**：项目已经决定伴星全链路保持思考开启，质量优先。这里的档位、回放与重试机制是为了让开着思考能跑通，不是为了把它关掉换取速度。
 
@@ -187,7 +187,15 @@ chat/completions 的混合思考模型只有开/关，Responses API 有档位，
 
 预算那条线（`B_hard = max(0, min(C − O, I) − M)`，触发 0.80 / 目标 0.60，`M = 2_048`，窗口不可获知时兜底 128 000、输出预留 16 384）与它的判定顺序、压缩冷却参数、伴星的无损折叠，都在 [统一 Agent 运行时（技术）](./agent-runtime.md) 的上下文治理一节写全；这一层接到 `createGovernedProvider`——所有外发模型的唯一边界——因此它覆盖首步、每个工具回合、补取材料、后台继续、重试与备用模型切换，并且**在真实发送之前**计量完整送出的请求。职责只有判定与如实记录，它不删内容。
 
-> **证据缺口**：44 四个阶段的代码侧已沿真实调用链接通并有对应判据，但 [现行索引](../../plans/learning-companion/README.md) 第 44 行明确记录：§8 验收尚无一条真实模型、实库或窗口证据，迁移 0382–0389 从未在实库上跑过（统一执行基础定义在 [41a](../../plans/learning-companion/41a-unified-agent-foundation-2026-09-28.md)，完整请求预算与可靠压缩在 [44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md)）。[43](../../plans/learning-companion/43-companion-guidance-and-space-arrival-2026-10-04.md) 那套伴星带路**已经实现**（岛内按钮 + 7 个主题目录册，`components/companion/guidance/`），索引里"未做实现与窗口验收"这句针对的是它的窗口验收：新账号全程与签署同意后的语音还没在真实窗口跑过。
+> **验证范围**：方案 44 已记录迁移、压缩提交、权限围栏的实库证据、真实模型对照与窗口样本。压缩后的语义接续、并发恢复和长期效果仍需按 [方案 44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md) §8／§11 核对，不能把历史的「从未跑过」沿用为现状。
+
+## 联网搜索与来源
+
+`agent_web_search` 同时用于对话和持续目标。`agent/web-search.ts` 复用 `bigmodel` 平台凭据调用智谱 Web Search API；账号的 `webSearchEnabled` 默认为 false，工具下发与执行都检查开关、服务可用性及 AI 治理。
+
+每轮最多 3 次搜索，返回有界摘要与 HTTPS 来源；网址生成稳定来源身份与引用标记。工具回执持久化，重放能恢复来源而无需重新搜索。轻聊、手记与历史复用来源块，标题／网址／日期放在来源列表和弹层，不进入朗读正文。
+
+额度不足时当前 Worker 按凭据冷却 30 分钟，本轮可以继续作答但不得声称已联网核实。冷却是进程内状态，重启或另一副本不共享，不能当成全局配额控制。测试与边界见 [联网搜索](../../testing/agent-web-search-2026-10-08.md)。
 
 ## 治理与同意
 
@@ -231,11 +239,11 @@ make verify                                  # 已包含 typecheck + test + pr-g
 
 ## 语音：合成在 API，切句在 worker，识别在桌面
 
-**TTS 不在 worker。** 引擎选择在 `apps/api/src/modules/learning-sessions/voice-providers/tts-engine.ts`：`tts.engine === "qwen"` 且 workspaceId 已配置 → 走 DashScope WebSocket 原始协议，按队列键 `workspaceId:userId` 严格串行（同一段音频顺序不能乱），不同用户并行但总量受 `QWEN_TTS_MAX_CONCURRENCY`（默认 4）约束，连接池空闲 60 秒复用；qwen 任务失败（`QwenTtsError` / 网络错误）→ 记日志后自动降级 edge-tts。
+**TTS 合成不在 worker。** 引擎选择在 `apps/api/src/modules/learning-sessions/voice-providers/tts-engine.ts`：`tts.engine === "qwen"` 且 workspaceId 已配置 → 走 DashScope WebSocket 原始协议，按队列键 `workspaceId:userId` 严格串行（同一段音频顺序不能乱），不同用户并行但总量受 `QWEN_TTS_MAX_CONCURRENCY`（默认 4）约束，连接池空闲 60 秒复用；qwen 任务失败（`QwenTtsError` / 网络错误）→ 记日志后自动降级 edge-tts。
 
 降级有一条例外：**治理拒绝不触发降级**。`isGovernanceDenial()` 把 `AIConsentRequiredError` / `AIDataPolicyDeniedError` 单独认出来——没签同意是这件事不该发生，不是上游挂了，重试一次不会让它变成应该发生。
 
-预算算术是 30 + 30 + 8：qwen 默认 `DEFAULT_TIMEOUT_MS = 30_000`、edge 默认同为 30_000、编排余量 8 秒，合起来 `TTS_TASK_DEADLINE_MS = 68_000`。语气标签（`[excited]` 等 23 个控制标签）是 qwen-audio 专属：qwen 原样传入，edge 分支合成前必须 `stripVoiceExpressionTags` 剥离，否则标签会被当普通文字念出来；`emotion` 字段（Live2D 表情驱动）与引擎无关，worker 始终解析下发。
+预算算术是 30 + 30 + 8：qwen 默认 `DEFAULT_TIMEOUT_MS = 30_000`、edge 默认同为 30_000、编排余量 8 秒，合起来 `TTS_TASK_DEADLINE_MS = 68_000`。语气标签（`[excited]` 等 23 个控制标签）是 qwen-audio 专属：qwen 原样传入，edge 分支合成前必须 `stripVoiceExpressionTags` 剥离，否则标签会被当普通文字念出来；声音表达由回复模型标注，表情跟随实际播放段；历史与显示剥离语音标签。
 
 **切句的唯一所有者是 worker**（`workers/ai-worker/src/lib/tts-segments.ts`）：优先按 `。！？；\n .!?;` 切，单段上限 `TTS_MAX_SEGMENT_CHARS = 160`，展示段目标 48 字（超过且句内有逗号级停顿就先切），首段满 14 字即可提前触发以让声音与文字同步，每 run 最多 200 段、总可朗读文本 20000 字；`segmentId = sha256(runId:ordinal:text)`，另存 `textSha256`。服务端还会在把段事件推给客户端之前预热合成（`companion-tts-warm.ts`：TTL 120 秒、最多 64 条、每用户在飞 3 条）。
 
@@ -279,16 +287,19 @@ make verify                                  # 已包含 typecheck + test + pr-g
 
 ## 超时阶梯
 
-外发调用要能在租约到期之前把结果或回退状态写进库，所以这几层是从最外层派生的，不是各自拍的数字。
+执行预算与失联回收分别管理。默认值由 `packages/shared/src/ai-execution-budgets.ts`、`lib/handler-timeout-config.ts` 和制卡 outbox 声明；部署覆盖值可能不同。
 
-| 层 | 值 | 出处 |
-| --- | --- | --- |
-| job 租约 | 120 000 ms | `LEASE_TIMEOUT_MS`，reaper 按它回收，最外层硬边界 |
-| handler abort | ≤ 110 000 ms | `MAX_ALLOWED_TIMEOUT_MS = 租约 − 10_000` 安全余量，`runWithAbortTimeout` 强制 |
-| provider 单调用 | 75 000 ms 上限，且 ≤ handler − 15 000 | `DEFAULT_PROVIDER_TIMEOUT_MS` / `PROVIDER_SAFETY_MARGIN_MS`，可用 `WORKER_PROVIDER_TIMEOUT_MS`、`WORKER_PROVIDER_TIMEOUT_<TYPE>_MS` 覆盖 |
-| 伴星循环 deadline | abort − 15 000 ms | `resolveCompanionAgentBudget()` 派生；余量给 delta 回放、TTS 段与终态事务 |
+| 层 | 默认与约束 |
+| --- | --- |
+| 主队列租约 | 120 秒；运行中每 30 秒续租，reaper 从最近 `lease_renewed_at` 判断失联 |
+| handler | 普通 AI 任务 30 分钟，`parse_source` 60 秒；解析结果上限 24 小时 |
+| 单供应商请求 | 默认 15 分钟，且不超过 handler 剩余预算减保存余量 |
+| 伴星／动态产物循环 | 从 handler 派生，为持久化保留 15 秒 |
+| 多阶段制卡 | `V2_PIPELINE_BUDGET_MS` 默认 60 分钟，独立的 30 分钟 outbox 租约与续租 |
 
-handler 超时的解析优先级是：类型级 env（`WORKER_TIMEOUT_<TYPE>_MS`）> 全局 env（`WORKER_MODEL_TIMEOUT_MS`）> 类型内置默认 > 全局内置 90 000，结果一律 clamp 到 110 000。当前内置值：`parse_source` 60 000；`companion_agent`、`agent_run_advance`、`companion_memory_extract`、`companion_summarizer`、`companion_daily_summary`、`note_dynamic_artifact_generate` 取租约上限；`companion_memory_embedding_rebuild`、`companion_thought` 110 000；`note_overview_generate`、`note_expansion_generate` 100 000；`note_annotation_explain` 90 000；`companion_memory_organize` 没有映射，落到全局默认。
+handler 优先级：`WORKER_TIMEOUT_<TYPE>_MS` → `WORKER_MODEL_TIMEOUT_MS` → 类型默认 → 全局默认。供应商优先级：`WORKER_PROVIDER_TIMEOUT_<TYPE>_MS` → `WORKER_PROVIDER_TIMEOUT_MS` → 15 分钟默认，再受 handler 可用时间约束。新增覆盖变量需在 Compose 中显式透传；仅写 `.env` 不代表进程一定读得到。
+
+输出预算在 `lib/providers/model-output-budget.ts` 解析，正常生成使用模型档案声明的输出上限；不再把少量正文 token 当作包括推理在内的总额度。上下文预算仍为输出预留空间，任务合同仍限制正文与结构。取消、租约丢失、有限调用次数和重试约束继续生效。实现与验证见 [预算调整](../../testing/ai-execution-budgets-2026-10-08.md)。
 
 ## 相关分册
 

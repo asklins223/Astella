@@ -4,7 +4,7 @@
 
 ## 这篇讲什么
 
-`apps/desktop-client` 是拾星笔记唯一的用户界面：一个 Electron 43 单窗口书房。主进程握着窗口、自定义协议、笔记协同通道、产物落盘与更新器；渲染进程握着全部版面，但**没有路由库**——16 个意图由一份 store 解析成 16 张页面，纸面旁边始终坐着同一个 Live2D 伴星。本页沿这条真实调用链写：进程边界在哪、页面怎么被选中、伴星怎么被驱动、笔记怎么保存、安装包怎么产出，以及哪几处最容易写出与代码相反的话。事实来自 `apps/desktop-client/**` 源码与仓库根 [PRODUCT.md](../../../PRODUCT.md)、[DESIGN.md](../../../DESIGN.md)；除另有说明，本页路径都相对 `apps/desktop-client/`。
+`apps/desktop-client` 是拾星笔记唯一的用户界面：一个 Electron 43 单窗口书房。主进程握着窗口、自定义协议、笔记协同通道、产物落盘与更新器；渲染进程握着全部版面，但**没有路由库**——页面意图由 store 解析到已登记页面，纸面旁边始终坐着同一个 Live2D 伴星。本页沿这条真实调用链写：进程边界在哪、页面怎么被选中、伴星怎么被驱动、笔记怎么保存、安装包怎么产出，以及哪几处最容易写出与代码相反的话。事实来自 `apps/desktop-client/**` 源码与仓库根 [PRODUCT.md](../../../PRODUCT.md)、[DESIGN.md](../../../DESIGN.md)；除另有说明，本页路径都相对 `apps/desktop-client/`。
 
 - [构建与三个入口](#构建与三个入口)
 - [窗口、协议与 preload](#窗口协议与-preload)
@@ -25,7 +25,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 包名 / 版本 | `astella-desktop-client` / `0.1.0` |
+| 包名 / 版本 | `astella-desktop-client` / `release/version.json` |
 | 运行时 | Electron `43.4.1`、electron-vite `^5.0.0`、Vite `^7.3.6` |
 | 界面 | React `^19.2.0`、TypeScript `^5.9.3`、Zustand `^5`、GSAP `^3.15` |
 | 编辑栈 | `@milkdown/kit` `^7.22.1` + CodeMirror 6 + `yjs` `^13.6` + `@hocuspocus/provider` `^4.7` |
@@ -57,7 +57,7 @@
 
 内容只从自定义协议 `astella-app` 进窗口，两个 host：`astella-app://bundle`（应用自身文档）与 `astella-app://artifact/<uuid>`（AI 生成的互动整页）。协议注册为 privileged / standard / secure / stream，只接 `GET` / `HEAD`，其余方法回 405 带 `Allow: GET, HEAD`，并读取 `Range` 头。产物落点是 `<userData>/artifacts/<artifactId>.html`，路径安全靠 `artifactId` 的形状（`src/shared/artifact-frame.ts` 只认 uuid）：没有 `..`、没有可写的分隔符，`resolve` 之后一定落在 `artifacts/` 里。响应头的 CSP 按主文档 / 产物 origin / 其余一律 `rejectAll` 三路分流，并且先删掉上游同名头（`src/main/index.ts:424`）；入口还有 `onBeforeRequest`（同文件:390）与 `will-navigate`（同文件:454）两道闸。
 
-`webPreferences`：`sandbox: true`、`contextIsolation: true`、`nodeIntegration: false`、`webviewTag: false`、`devTools: !app.isPackaged`。preload 暴露两条冻结的桥 `window.astellaDesktop` 与 `window.astella`，包在 `if (process.isMainFrame)` 里（`src/preload/index.ts:553`）——Electron 的 preload 会注入**每一个** iframe，今天没有子 frame 所以从没触发，一旦产物以 iframe 落地，不拦就等于把两条 IPC 桥静默交给一段不可信内容。CI 容器一类受限环境会额外 `appendSwitch('no-sandbox')`（`src/main/index.ts:66`），否则 Chromium 起不了自己的沙箱、每个子进程都以"sandbox initialization failed"死掉；本地正常跑不动沙箱开关。
+`webPreferences`：`sandbox: true`、`contextIsolation: true`、`nodeIntegration: false`、`webviewTag: false`、`devTools: !app.isPackaged`。preload 暴露两条冻结的桥 `window.astellaDesktop` 与 `window.astella`，包在 `if (process.isMainFrame)` 里（`src/preload/index.ts:553`）——Electron 的 preload 会注入**每一个** iframe，互动产物已通过 iframe 呈现，这道守卫禁止把 IPC 桥交给产物内容。CI 容器一类受限环境会额外 `appendSwitch('no-sandbox')`（`src/main/index.ts:66`），否则 Chromium 起不了自己的沙箱、每个子进程都以"sandbox initialization failed"死掉；本地正常跑不动沙箱开关。
 
 ## 没有路由器的导航
 
@@ -96,7 +96,7 @@
 
 ## 目录栏、右上岛与全局按键
 
-左侧 `components/DirectoryRail.tsx:42` 的 `DIRECTORY_ITEMS` 就是十项，`aria-label="学习空间目录"`：首页、来源、笔记、学习卡、星图、今日学习、复习、查找、伴星、设置；折叠态按钮文案是 展开目录 / 收起目录，行为模式 `auto | expanded | collapsed` 持久化在 `astella.directory-rail.mode.v1`。星图与来源 / 笔记 / 学习卡同组，因为它就是同一条链的拓扑视图；今日学习与复习是两张不同的页面，而目录栏是唯一能到它们的地方。
+左侧 `components/DirectoryRail.tsx:42` 的 `DIRECTORY_ITEMS` 就是十项，`aria-label="学习空间目录"`：首页、来源、笔记、学习卡、星图、今日学习、复习、查找、伴星、设置；折叠态按钮文案是 展开目录 / 收起目录，行为模式 `auto | expanded | collapsed` 持久化在 `astella.directory-rail.mode.v1`。星图与来源 / 笔记 / 学习卡同组，因为它就是同一条链的拓扑视图；今日学习与复习是两张不同的页面，目录栏、首页与快捷键都可到达。
 
 右上角岛 `components/hud/HudRoomControl.tsx`：空间胶囊（`aria-label="学习空间控制"`）、返回学习空间总览、日夜切换、总静音、动效模式循环（完整 / 轻量 / 关闭，带指示灯）、设置（有新版本时标题带版本号）、伴星带路、账户槽位（展开后是一张脸或首字母印章），再配一个收起 / 展开。左下角的返回书签在 `components/hud/HudPage.tsx`，`aria-label` 直接沿用传进来的 label——那本身就带「返回」，再加前缀读屏会念成"返回返回书房"（同文件:53 的记录）。
 
@@ -125,7 +125,21 @@
 
 编辑器是 Milkdown + CodeMirror 的所见即所得（`surfaces/notebook/note-markdown-editor.tsx`），正文三种模式 阅读 / 编辑 / 源码 由 `note-document-mode.ts` 的 `NoteBodyMode` 决定。一张册页四张书签互斥：`notebook-surface.tsx:755` 的 `leaf` 取 `reading` / `learning` / `history` / `expansion`，切过去之后原来读到哪儿还在屏上，不是重装一遍；对外发布的页面身份则是 `hud/hud-pages.ts` 里的四张——这篇笔记、笔记编辑（副标题写着"Markdown 所见即所得；可回去的版本按「保存」留下"）、学这篇笔记、学习记录。
 
-CRDT 与 WebSocket 都在主进程：`src/main/note-doc-transport.ts` 用 `HocuspocusProvider`，一条连接只服务一篇笔记（v4 的文档名在协议首条消息里、服务端按文档逐条路由），本地缓存落在 `note-doc-cache-store.ts`，渲染进程通过 preload 桥读写。自动保存防抖，状态要等服务器回执才落定；版本是不可变的，回看与还原走 `version-history.tsx`，还原不销毁历史。批注锚在原稿区间上（`note-annotation-mark.tsx`、`note-annotation-placement.ts`），讲解纸贴在精确锚点旁；回想由 `notebook-recall-contract.ts` 控制提示、揭示与自评三档；速看有原文依据与覆盖范围；往外学的草稿逐篇确认后才成为新笔记与关系。AI 生成的整页 HTML/SVG 在隔离 frame 里跑（`surfaces/source/artifact-frame-host.tsx` 经 `astella-app://artifact/<uuid>`），与纸面同源但不共享能力。图片上传在 `note-image-uploads.tsx`，Markdown 导出在主进程 `src/main/note-markdown-export.ts`，星图取数来自 `understanding.getTopology` 加关系判定。
+CRDT 与 WebSocket 都在主进程：`src/main/note-doc-transport.ts` 用 `HocuspocusProvider`，一条连接只服务一篇笔记（v4 的文档名在协议首条消息里、服务端按文档逐条路由），本地缓存落在 `note-doc-cache-store.ts`，渲染进程通过 preload 桥读写。自动保存防抖，状态要等服务器回执才落定；版本是不可变的，回看与还原走 `version-history.tsx`，还原不销毁历史。批注锚在原稿区间上（`note-annotation-mark.tsx`、`note-annotation-placement.ts`），讲解纸贴在精确锚点旁；回想由 `notebook-recall-contract.ts` 控制提示、揭示与自评三档；速看有原文依据与覆盖范围；往外学的草稿逐篇确认后才成为新笔记与关系。AI 生成的整页 HTML/SVG 在隔离 frame 里跑（`surfaces/source/artifact-frame-host.tsx` 经 `astella-app://artifact/<uuid>`），使用独立 artifact origin 且不共享 preload 能力。图片上传在 `note-image-uploads.tsx`，Markdown 导出在主进程 `src/main/note-markdown-export.ts`，星图取数来自 `understanding.getTopology` 加关系判定。
+
+### 全屏与连续阅读
+
+正文可进入全屏阅读／编辑，使用同一份工作稿和编辑器。纸面铺满应用视口，右上折签打开工具页，工具浮在纸面上而不挤动正文；伴星保留右下临时座位。切换笔记与加载时保留全屏，返回箭头沿本次笔记跳转路径恢复原模式与位置；离开笔记页、切空间或主动退出时结束。
+
+Esc 先关闭当前浮层，再收工具，最后退出全屏，不直接跳首页。册页与全屏接续选区、撤销和阅读位置；临时伴星座位不修改用户摆位设置。实现入口是 `notebook-fullscreen-state.ts`、`use-notebook-fullscreen-controls.ts` 和 `notebook-fullscreen-ribbon.tsx`。
+
+### 批注、改正文与链接
+
+选文操作浮签在拖选结束后出现，键盘扩选也按最终选区更新。原句旁的编号角标分别打开批注；短预览固定在句尾角标，句尾不可见时锚定首个可见片段。展开旁页后，点击其他正文或留白收起，点击另一批注直接切换；拖选不当作关闭。
+
+「让伴星改这段」将原句与位置带入轻聊，用户补充要求后发送。原句解释、处理进度与正式批注分别保留；忙碌范围在阅读、富文本和源码中一致锁定，停止或失败解除。生成新笔记与库内关联见 [伴星体验](companion-experience.md)。链接有真实笔记身份，可跳转并接续返回路径。
+
+互动演示独立运行在受限 iframe。轻量动效保留演示的教学过程；Off 和系统减少动态停止自动运动，手动探索与说明仍可用。生成失败保留已有产物和原文。
 
 ## 设置中心
 
@@ -136,11 +150,11 @@ CRDT 与 WebSocket 都在主进程：`src/main/note-doc-transport.ts` 用 `Hocus
 | 账户与空间 | 昵称、头像裁剪、空间改名 / 解散 / 移交 | `settings-account-panel.tsx`、`avatar-crop-dialog.tsx`、`settings-workspace-group.tsx` |
 | 成员与邀请 | 加入一间书房、邀请与待处理邀请 | `settings-invite-join-field.tsx` |
 | 主题与动效 | 光线（随时间 / 日 / 夜）、动效（完整 / 轻量 / 关闭，系统减少动效始终优先）、目录行为、弹性手感预览 | `settings-theme-picker.tsx`、`settings-motion-preview.tsx` |
-| 伴星设置 | 陪伴规则、静默时段、助理权限三档（`read_only` / `guided` / `full`，默认 guided）、自动日记、书桌上的形象与大小、总静音、TTS 引擎与音色试听、默认作答方式、本机识别模型下载 | `settings-companion-time.tsx`、`settings-companion-panel.tsx`、`settings-companion-voice.tsx`、`settings-answer-mode-row.tsx`、`settings-voice-model.tsx` |
+| 伴星设置 | 陪伴规则、静默时段、助理权限三档（`read_only` / `guided` / `full`，默认 guided）、联网搜索（账号级、默认关闭）、自动日记、书桌上的形象与大小、总静音、TTS 引擎与音色试听、默认作答方式、本机识别模型下载 | `settings-companion-time.tsx`、`settings-companion-panel.tsx`、`settings-companion-voice.tsx`、`settings-answer-mode-row.tsx`、`settings-voice-model.tsx` |
 | AI 数据同意 | 同意开关、数据策略、外发记录 | `settings-data-boundary-group.tsx` |
 | 数据与维护 | 空间导出、导出清单、能力芯片、更新面板 | `settings-export-group.tsx`、`settings-companion-status.tsx`、`settings-update-panel.tsx` |
 
-伴星那章的读写全在 `use-companion-account-settings.ts`，`patch()` 一次一条设置；助理权限的文案解释了三档差别（只读要改权限才动手 / 每次改动先确认 / 跳转与填充可自动执行但不可恢复操作仍确认），页面上就按这段写。这同一份说明取自 `companion-account-presence.ts` 的 `COMPANION_AGENT_PERMISSION_DETAIL`：伴星的两个输入框（气泡与对话手记）工具行里各有一颗就地档位按钮（`companion-agent-permission.tsx`），当场改完当场生效，并广播给设置页，不出现两处各说一套。目录下方还有一个「重新认识书房」按钮（`settings-book.tsx` 的 `onReplayIntro`），每章的说明文字与配色 tone 也都在 `SETTINGS_SECTIONS` 一处定义，图标取自 `lucide-react`。
+伴星那章的读写全在 `use-companion-account-settings.ts`，`patch()` 一次一条设置；助理权限的文案解释了三档差别（只读禁止写入／引导允许可逆低影响动作、其他动作先确认／完全减少确认但六个学习提案工具仍确认），页面上就按这段写。这同一份说明取自 `companion-account-presence.ts` 的 `COMPANION_AGENT_PERMISSION_DETAIL`：轻聊工具行提供就地档位按钮（`companion-agent-permission.tsx`），当场改完当场生效，并广播给设置页，不出现两处各说一套。目录下方还有一个「重新认识书房」按钮（`settings-book.tsx` 的 `onReplayIntro`），每章的说明文字与配色 tone 也都在 `SETTINGS_SECTIONS` 一处定义，图标取自 `lucide-react`。
 
 ## 动效与可访问性
 
@@ -168,7 +182,7 @@ CRDT 与 WebSocket 都在主进程：`src/main/note-doc-transport.ts` 用 `Hocus
 
 `vitest.config.ts`：`testTimeout: 15_000`、`setupFiles: ['./vitest.setup.ts']`（放宽 `waitFor`），环境靠每个文件顶部的 `@vitest-environment jsdom` 声明——178 个 `.test.tsx` 里 177 个带，另有 172 个 `.test.ts`。守卫本身也写测试：`startup-failure-guard.test.ts` 盯主进程起不来的形状。
 
-`src/main/__tests__/` 里的源码守卫值得单独看，因为它们断言的是**形状**而不是行为：
+`vitest.config.ts` 配置测试超时与 setup；DOM 测试在文件顶部声明 jsdom。部分素材包含测试读取 `out/`，干净检出先构建再测试。
 
 | 守卫 | 判据 |
 | --- | --- |
@@ -197,12 +211,14 @@ CRDT 与 WebSocket 都在主进程：`src/main/note-doc-transport.ts` 用 `Hocus
 - **three.js 只有一个用户。**`surfaces/review/candidate-card-scene.ts` 与 `candidate-card-geometry.ts`，只负责候选卡审核台的卡厚、受光与翻面。首页不是 3D，星图也不是（星图是自绘 canvas）。
 - **行数与 hook 数不是拆分红线。**`NotebookSurface` 早就过 2000 行，靠 `SIZE_DEBT` 台账合法存在；拆不拆看依赖与职责，不看指标。
 - **`sandbox` 与 `--no-sandbox` 是环境相关的。**受限容器里不加那条 switch 整个客户端起不来，本地加了反而丢掉沙箱；判断前先读 `src/main/index.ts:59` 的注释。
-- **子 iframe 拿不到桥。**今天没有子 frame，产物落地时靠 `process.isMainFrame` 兜住；加任何 iframe 前先确认这条守卫还在。
+- **子 iframe 拿不到桥。**产物 iframe 由 `process.isMainFrame` 守住 preload；修改 frame 接线前确认这条边界。
 - **目录上的「学习卡」与代码里的 objective 是同一处。**`DIRECTORY_ITEMS` 的 `goals` 项指向 `open-objectives`，组件叫 `WorkspaceLibrarySurface` 里的 `ObjectiveLibrarySurface`；改这张屏的文案要三处一起对，别只改一处留下名字分裂。
 
 ## 现状与边界
 
-「伴星带路」与「新空间到达」这条体验**已经接线，但没走完真实窗口验收**：岛上的「伴星带路」按钮与 7 个主题都在（`HudRoomControl.tsx:366`、`companion/guidance/guide-definitions.ts`），可新账号的全程走查、签署同意后的语音都还没在真窗口跑过。全系统上下文治理与压缩同理——代码链路已通，验收判据还没有一条来自真实模型、真实库或真实窗口。
+笔记全屏、批注与伴星编辑均已有实现及相关测试／窗口记录；各自覆盖范围见 notebook 的 `__tests__/` 体验记录和 [笔记编辑验证](../../testing/companion-note-editing-2026-10-08.md)。带路的新账号全程、真实麦克风和跨设备听感仍需单独验收。
+
+上下文治理已有实库、真实模型对照与部分窗口样本，不再是「从未验证」。压缩接续与长期效果按 [方案 44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md) 核对。截图或代码测试不代替连续操作体验。
 
 ## 相关分册
 

@@ -54,6 +54,14 @@ Then, **for the desktop window to log in**, three more are required (`.env.examp
 
 `openssl rand -base64 32` yields standard base64 (with `+` and `/`), while `readDesktopTrustConfig` requires `^[A-Za-z0-9_-]+$` and that `Buffer.from(v,'base64url').toString('base64url') === v` — convert to base64url before pasting.
 
+Generate a correctly encoded pairing key directly:
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
+
+For local development use a key id such as `local-dev` and revision such as `local-dev-v1`, matching both sides. Remote HTTPS does not use the local pairing secret but still needs a valid certificate and contract revision; see [Deployment](deployment.md).
+
 Real model calls need keys: `DASHSCOPE_API_KEY`, `OPENAI_COMPAT_API_KEY`, `OPENCODE_GO_API_KEY`, `SILICONFLOW_API_KEY`, `BIGMODEL_API_KEY`, `TOKENRHYTHM_API_KEY`. Which platform serves which capability is decided by `config/ai-platforms.json`, and `docker-compose.dev.yml` only passes through the variables **explicitly listed** there — on 2026-09-17 `OPENCODE_GO_API_KEY` was missing, resolved empty inside the container, and card generation failed closed. **When you add a platform you change that JSON plus both compose files**, and inside dev compose both api and worker carry their own copy of the list. `ASSESSMENT_CRITIC_URL` / `_KEY` / `_MODEL` are a separate group: unconfigured, open-ended answer assessment takes the deterministic path instead of guessing.
 
 The remaining variables (`COMPANION_*`, `LEARNING_RUN_ENABLED`, `CARD_GENERATION_*`, …) already have local defaults in dev. `.github/scripts/verify-companion-capability-config.mjs`, run by `make verify`, checks that the flags declared by api and worker stay paired, so the API never accepts a turn the worker immediately rejects as disabled.
@@ -71,7 +79,7 @@ Reading `Makefile:40-56` line by line, it does four things:
 3. `compose --profile storage up -d --build --remove-orphans`: build the `target: dev` images and start postgres / minio / api / worker / edge-tts. The dev stack **includes the storage profile by default** (`DEV_PROFILES`), so avatar and note-image upload work without a separate `make storage`.
 4. `docker wait` on each of `role-bootstrap`, `migrate`, `role-grants` and `minio-init`.
 
-Get step 4's semantics right, because it is where a green command lies. `docker wait` **blocks until the container exits and prints its exit code**, but the CLI itself exits 0 (measured on this machine 2026-10-06: a container exiting with code 3 made `docker wait` print `3` while `$?` stayed `0`), and the Makefile redirects that output to `/dev/null`. So "waits for init to finish" is true; **"a failed migration aborts `make up`" is not**. `make up` will complete successfully, and you find out another way: `GET /ready`, or `docker compose -p astella-dev logs migrate`.
+Get step 4's semantics right, because it is where a green command lies. `docker wait` **blocks until the container exits and prints its exit code**, but the CLI itself exits 0 (measured on this machine 2026-10-06: a container exiting with code 3 made `docker wait` print `3` while `$?` stayed `0`), and the Makefile redirects that output to `/dev/null`. So "waits for init to finish" is true; **"a failed migration aborts `make up`" is not**. `make up` will complete successfully, and you find out another way: `GET /ready`, or `docker compose -p astella-dev -f docker-compose.dev.yml logs migrate`.
 
 `migrate`, `role-bootstrap` and `role-grants` run on every start (idempotent no-ops when nothing changed) — they are not first-time-only. `minio-init` and `seed-*` are the genuinely one-time ones.
 
@@ -88,7 +96,9 @@ email:    owner@astella.local
 password: astella_owner
 ```
 
-**This pair is for local development only.** `seed.ts:28-32` throws when `NODE_ENV=production` and `SEED_DEMO_DATA=true` are combined; a production stack seeds its Owner from explicit `OWNER_EMAIL` / `OWNER_PASSWORD`.
+`make seed-demo` does not forward `.env` values for `OWNER_EMAIL`/`OWNER_PASSWORD`. It creates the defaults above and skips an existing email without resetting its password. For custom seeding, export both values in the shell and use `docker compose -p astella-dev -f docker-compose.dev.yml --profile seed run --rm -e OWNER_EMAIL -e OWNER_PASSWORD seed-demo`; passwords must have at least 12 characters.
+
+**These default credentials are only for local development.** `seed.ts:28-32` throws when `NODE_ENV=production` and `SEED_DEMO_DATA=true` are combined; a production stack seeds its Owner from explicit `OWNER_EMAIL` / `OWNER_PASSWORD`.
 
 ### 4. Install dependencies and open the window
 
@@ -190,7 +200,7 @@ make disposable-db DISPOSABLE_DB=astella_it   # scripts/dev-disposable-db.sh, gu
 | `make logs` | `compose logs -f`, all services |
 | `make down` | `down --remove-orphans`, data preserved |
 | `make config` | `compose config --quiet`: validates YAML and variable interpolation only, **never touches Docker** — a missing required `.env` value shows up here |
-| `make rebuild` | `compose --profile seed build --no-cache` |
+| `make rebuild` | `compose --profile seed build --no-cache`; follow with `make up` |
 | `make clean-init` | clears `role-bootstrap`, `migrate` and `role-grants` (taken from `INIT_SERVICES`) |
 | `make shell-api` / `make shell-worker` | `compose exec api sh` / `exec worker sh` |
 | `make verify` | `version-check` first, then five contract test files, the schema-mirror check, the companion flag parity check, and `typecheck` + `test` across seven packages (`packages/ai-quality` additionally runs `pr-gate`). **This is the CI baseline locally**, and `.github/scripts/ci-workflow-contract.test.mjs` pins the two together |
@@ -228,7 +238,7 @@ make disposable-db DISPOSABLE_DB=astella_it   # scripts/dev-disposable-db.sh, gu
    ```
 
    Without that variable the script launches a second Electron instance (`electron.launch`, reading `out/`) whose profile, workspace and reload state all differ from the window under review. `compare-mockup-geometry.mjs` in the same folder sets no default at all and throws if `ASTELLA_CAPTURE_CDP` is missing — attaching to the live window is the point. `ASTELLA_CAPTURE_NO_SANDBOX=1` is an escape hatch for restricted environments (CI containers, sandboxed agent shells); leave it off locally.
-2. **Run the gates.** `make verify` is the cheapest full signal, and it **does** enforce coverage thresholds (before 2026-09-29 it ran `--report-only`, at which point "verifying coverage" was a false claim). Style and contract guards cluster in `apps/desktop-client/src/main/__tests__/` (`css-var-resolution-guard`, `renderer-style-dead`, `component-size-guard`, `docs-vite-vars-have-readers`, …) and `.github/scripts/` — read what behaviour a guard protects before changing it.
+2. **Run relevant validation.** Install dependencies in referenced packages and build desktop output before `make verify` on a clean checkout. It excludes coverage and skip/todo; use `make coverage-gate` and `make skip-todo-gate` separately. See [Testing and quality](testing-and-quality.md) for guard scope.
 3. **Then read the structure.** [architecture.md](architecture.md) for processes and chains, [api-and-data.md](api-and-data.md) for roles and migrations, [desktop-client.md](desktop-client.md) for IPC and the window, [testing-and-quality.md](testing-and-quality.md) for the gates. Product boundaries are in [PRODUCT.md](../../../PRODUCT.md), visual and interaction direction in [DESIGN.md](../../../DESIGN.md), collaboration rules in [AGENTS.md](../../../AGENTS.md).
 
 ## Common first-run failures
@@ -237,7 +247,7 @@ Only the three that self-resolve at the command-and-configuration layer; the res
 
 - `make up` fails during compose interpolation with `Set EDGE_TTS_AUTH_TOKEN in .env`: that line is still commented out. Fill in any local token and re-validate cheaply with `make config`.
 - The window opens but login reports a connection-configuration problem: `ASTELLA_DESKTOP_PAIRING_*` / `ASTELLA_DOMAIN_SCHEMA_REVISION` are unset, or you edited `.env` without restarting the main process (`electron.vite.config.ts` calls `loadDotenv` once at startup).
-- Migrations or role grants clearly did not apply, yet `make up` was green: see the `docker wait` paragraph in [The one-shot container convention](#the-one-shot-container-convention) — `docker compose -p astella-dev logs migrate` and `GET /ready` are the evidence.
+- Migrations or role grants clearly did not apply, yet `make up` was green: see the `docker wait` paragraph in [The one-shot container convention](#the-one-shot-container-convention) — `docker compose -p astella-dev -f docker-compose.dev.yml logs migrate` and `GET /ready` are the evidence.
 
 The full symptom → cause → fix list lives in [faq-and-troubleshooting.md](faq-and-troubleshooting.md); this page deliberately does not duplicate it.
 

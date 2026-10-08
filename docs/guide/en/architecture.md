@@ -2,7 +2,7 @@
 
 [中文](../zh/architecture.md) · English
 
-What this covers: which processes make up this codebase today, every hop a request takes from the desktop window to the database and back to the screen, how the 138 tables group up, and where each boundary's enforcement actually lives. After reading it you should be able to name processes, hops and table groups — not just remember "front end and back end". Ports and commands follow `Makefile` and `docker-compose.dev.yml`; this page maps structure and points at files. Every name, port, default and line reference below was read out of the source.
+What this covers: which processes make up this codebase today, every hop a request takes from the desktop window to the database and back to the screen, how the tables group up, and where each boundary's enforcement actually lives. After reading it you should be able to name processes, hops and table groups — not just remember "front end and back end". Ports and commands follow `Makefile` and `docker-compose.dev.yml`; this page maps structure and points at files. Every name, port, default and line reference below was read out of the source.
 
 - [Runtime topology](#runtime-topology)
 - [One AI turn, end to end](#one-ai-turn-end-to-end)
@@ -19,7 +19,7 @@ What this covers: which processes make up this codebase today, every hop a reque
 
 ## Runtime topology
 
-The development stack is `docker-compose.dev.yml` (Compose project `astella-dev`), production image builds use `docker-compose.yml`, and the Alpha environment uses `docker-compose.alpha.yml`. The diagram below is the dev stack plus the desktop client. `prometheus` / `alertmanager` **exist only in the alpha file** — there is none in the dev stack.
+The development stack is `docker-compose.dev.yml` (Compose project `astella-dev`), production combines `docker-compose.yml` with `docker-compose.deploy.yml`, and the Alpha environment uses `docker-compose.alpha.yml`. The diagram below is the dev stack plus the desktop client. `prometheus` / `alertmanager` **exist only in the alpha file** — there is none in the dev stack.
 
 ```mermaid
 flowchart TB
@@ -38,7 +38,7 @@ flowchart TB
   TTS["edge-tts container<br/>container :8080 → host 127.0.0.1:8088"]
   LLM["External model platforms<br/>declared in config/ai-platforms.json"]
 
-  MAIN -->|"HTTP: Bearer + CSRF + local pairing trust"| API
+  MAIN -->|"HTTP: Bearer + local pairing trust"| API
   API --> PG
   WK --> PG
   API -->|"assessment / transcription / voice: in-process"| LLM
@@ -51,7 +51,7 @@ flowchart TB
 Three edges people tend to drop, each of which changes the conclusion:
 
 - The renderer **issues no business HTTP**. Everything it wants from the API goes `window.astella` → IPC → main-process gateway → HTTP. There are `fetch` calls in the renderer, but they only load same-origin bundled assets (Live2D manifests, fonts, audio) — see `components/companion/WindowLive2DDriver.ts` and `media/learning-room-manifest.ts`.
-- api and worker **never call each other**. Postgres is their only shared channel: api writes `jobs`, worker claims and settles it through `SECURITY DEFINER` functions, and events propagate over `pg_notify` channels.
+- API and Worker exchange jobs, edit dispatch and receipts through PostgreSQL; queue functions and notifications carry processing between them.
 - Auto-update **does not go through apps/api**. The client talks to GitHub Releases directly (`publish` in `apps/desktop-client/electron-builder.yml`, implemented in `src/main/desktop-update.ts`), so a dead local API does not block updates.
 
 ## One AI turn, end to end
@@ -128,17 +128,17 @@ The one-shot containers (`role-bootstrap`, `migrate`, `role-grants`, `minio-init
 
 ## Table groups
 
-31 modules under `packages/shared/src/db-schema/` declare **138 `pgTable`s** (the other two files, `enums.ts` and `index.ts`, declare none). On the migration side there are 388 `.sql` files, and the newest journal entry is `0391_summary_verified_revision_backfill`. Grouped by module:
+Database schema lives in `packages/shared/src/db-schema/`; migration order comes from `apps/api/src/db/migrations/meta/_journal.json`. Some tables, functions and constraints are declared only in SQL. Module counts do not describe the whole database; the table below is a navigation aid.
 
-| Group | Schema modules | Tables | What lives here |
-| --- | --- | --- | --- |
-| Identity, session, AI consent | `identity.ts`, `session.ts`, `ai.ts` | 11 | users, workspaces, membership and invites, `sessions`, sign-in rate-limit counters, `user_ai_settings`, `ai_artifacts` |
-| Sources and notes | `note.ts`, `evidence.ts`, `note-annotations.ts`, `note-expansions.ts`, `note-learning-artifacts.ts`, `note-learning-reflections.ts`, `note-learning-rounds.ts`, `note-overviews.ts`, `note-recalls.ts` | 24 | sources and parsed output, notes with immutable versions and evidence alignment, then one task-plus-artifact table set per on-demand capability: overview, annotation, expansion, dynamic artifact, rounds, reflection |
-| Background queue | `job.ts` | 1 | the single `jobs` table: `type` / `status` / `attempts` / `payload` / `lease_token` / `priority` / `resource_class` / `idempotency_key` |
-| Learning runs and review | `learning-runs.ts`, `learning-metrics.ts`, `assessment-disputes.ts`, `validation-v2.ts`, `personal-objective-bindings.ts`, `personal-relation-decisions.ts` | 25 | LearningRun with its private contracts, tasks and variants, events and outboxes, review scheduling, assessment disputes and corrections, objective binding |
-| Card generation | `card-generation-v2.ts` | 33 | the largest set: generation runs, candidates, review and exposure ledger, quality and evidence sealing, activation receipts |
-| Companion | `companion.ts`, `companion-conversations.ts`, `companion-memory.ts`, `assistant-memory.ts`, `assistant-deliveries.ts`, `companion-bridge.ts`, `companion-journey.ts`, `companion-home.ts`, `companion-sandbox.ts` | 40 | the companion and its account state, conversations and turn events, memory items and revisions, deliveries and reminders, the page-context bridge, journey, room projection, isolated artifacts |
-| Search and understanding projection | `search.ts`, `understanding-projection.ts` | 4 | the full-text search write projection and the read-side projection behind the understanding graph |
+| Group | Schema modules | What lives here |
+| --- | --- | --- |
+| Identity, session, AI consent | `identity.ts`, `session.ts`, `ai.ts` | users, workspaces, membership and invites, `sessions`, sign-in rate-limit counters, `user_ai_settings`, `ai_artifacts` |
+| Sources and notes | `note.ts`, `evidence.ts`, `note-annotations.ts`, `note-expansions.ts`, `note-learning-artifacts.ts`, `note-learning-reflections.ts`, `note-learning-rounds.ts`, `note-overviews.ts`, `note-recalls.ts` | sources and parsed output, notes with immutable versions and evidence alignment, then one task-plus-artifact table set per on-demand capability: overview, annotation, expansion, dynamic artifact, rounds, reflection |
+| Background queue | `job.ts` | the single `jobs` table: `type` / `status` / `attempts` / `payload` / `lease_token` / `lease_renewed_at` / `priority` / `resource_class` / `idempotency_key` |
+| Learning runs and review | `learning-runs.ts`, `learning-metrics.ts`, `assessment-disputes.ts`, `validation-v2.ts`, `personal-objective-bindings.ts`, `personal-relation-decisions.ts` | LearningRun with its private contracts, tasks and variants, events and outboxes, review scheduling, assessment disputes and corrections, objective binding |
+| Card generation | `card-generation-v2.ts` | the largest set: generation runs, candidates, review and exposure ledger, quality and evidence sealing, activation receipts |
+| Companion | `companion.ts`, `companion-conversations.ts`, `companion-memory.ts`, `assistant-memory.ts`, `assistant-deliveries.ts`, `companion-bridge.ts`, `companion-journey.ts`, `companion-home.ts`, `companion-sandbox.ts` | the companion and its account state, conversations and turn events, memory items and revisions, deliveries and reminders, the page-context bridge, journey, room projection, isolated artifacts |
+| Search and understanding projection | `search.ts`, `understanding-projection.ts` | the full-text search write projection and the read-side projection behind the understanding graph |
 
 Three things about this table that lead to wrong conclusions if you read it too quickly:
 
@@ -201,13 +201,15 @@ Three identities that never mix.
 
 ## Unified version
 
-The single manually maintained source for server and desktop is `release/version.json`, currently `1.0.0`. `version-contract.mjs --write` synchronizes package metadata and lockfiles for `apps/api`, `workers/ai-worker`, `packages/shared` and `apps/desktop-client`, plus the README version marker; `make version-check` verifies consistency. Desktop packaging uses the same contract. The unified `v1.0.0` tag triggers server tests and deployment alongside desktop tests and installer publication. Internal agent-core, agent-host, card-generation and ai-quality packages retain their internal versions.
+Server and desktop share `release/version.json`. `npm run release:prepare` synchronizes API, Worker, shared and desktop package versions/lockfiles and the Chinese README marker; maintain the English README version alongside it. Internal packages retain their internal versions.
+
+A `v<version>` tag passes `main-ci.yml` tests before `server-deploy.yml` builds GHCR images and deploys. Desktop quality/installer publication runs separately. See [Deployment](deployment.md) and [Operations](operations.md).
 
 ## Decisions and what they cost
 
 | Decision | Why | Recorded in | What it costs |
 | --- | --- | --- | --- |
-| Local-first, everything in one Compose file | The product is a personal study room: material, notes and memory should not pass through someone else's cloud first. `PRODUCT.md` lists PostgreSQL 16 as the only persistence store | [PRODUCT.md](../../../PRODUCT.md) | No cloud multi-tenant scaling path; in-process counters such as the SSE ceiling are per replica; the alpha stack is shaped like "a robot means alerts", not a platform |
+| Separate data, synchronization and deployment modes | Local development uses MinIO, production uses remote S3; clients support loopback HTTP and HTTPS | [Deployment](deployment.md) | PostgreSQL owns domain state, S3 owns durable objects; permissions/backups cover both and single-host deployment has no automatic scaling |
 | A queue plus a separate worker, instead of api calling models directly | Model calls are slow, time out, need retrying, and must not write once the user cancels or the lease expires. The run boundary in the code is: short transaction to prepare → execute outside the transaction → short transaction to verify and save ([plan 41a §3](../../plans/learning-companion/41a-unified-agent-foundation-2026-09-28.md) first wrote it down) | Implemented as `jobs` + `astella_claim_jobs` + `assertOutsideRegisteredTransactions`; plan 41a §3 | One turn spans two processes, so tracing needs `traceId`; you acquire leases, a reaper, backoff and idempotency to maintain; `Exited` containers and a `LISTEN` connection are things someone has to keep alive |
 | AI consent as an account-level gate, with no per-user model configuration UI in the desktop client | The decision to let content leave the machine belongs to the person who wrote it, not to each workspace's admin. `PRODUCT.md` states "account-level AI consent and outbound-data policy (no model/provider configuration)" | Code: `ai-consent-gate.ts` + `lib/governance.ts`; first written up in 41a §2/§3 | The voice path once bypassed it (the file header records that doc 34 L13 closed it); the two tests must stay the same shape or one side loosens while the other tightens; an unconsented user gets a 403 with guidance rather than a field to paste an API key into |
 

@@ -613,7 +613,7 @@ describe("重构后的伴星中心", () => {
     const api = installApi(); api.companion.memory.list.mockResolvedValue(ok({ version: 2, items: [memoryItem(), secondMemoryItem()] }));
     renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
     await screen.findByRole("button", { name: /我更喜欢从例子开始理解概念/ });
-    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除" }));
     expect(screen.getByRole("button", { name: "确认删除" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /这个月完成力学复习/ }));
     expect(screen.queryByRole("button", { name: "确认删除" })).toBeNull();
