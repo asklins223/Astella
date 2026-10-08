@@ -142,7 +142,7 @@ const REFINE_RUNNABLE_STATUSES_V3 = new Set(["review_ready", "needs_attention"])
 type SimplifiedSettleScope = "batch_generation" | "candidate_refine";
 
 /**
- * 唯一结果写入点（`writeSimplifiedCheckResults`）这一发**从哪些状态收走 run**。
+ * 终态写入点（`writeSimplifiedCheckResults`）这一发**从哪些状态收走 run**。
  *
  * 为什么不是一个并集：两条腿从不同的档位接手——整批那一发永远在在制档
  * （`queued`…`checking`），逐候选那一发接手时 run 已经停在审核台档
@@ -609,6 +609,18 @@ async function runContentCheckLegV3(args: {
   let finalCandidates = candidates;
   const rewriteEntries = checkOutput.parsed.perCandidate.filter((entry) => entry.verdict === "rewrite");
   if (rewriteEntries.length > 0) {
+    // A later rewrite can fail its output contract. Keep the authoritative
+    // first check, including passed cards and the issues on remaining drafts.
+    // The run stays in checking; only the final settle opens user review.
+    await withJobTransaction(async (tx) => {
+      await writeSimplifiedCandidateCheckResults(tx, {
+        workspaceId, runId, candidates, sealed: loaded.sealed, entries: checkOutput.parsed.perCandidate,
+      });
+      await insertEvent(tx, workspaceId, runId, "card_generation.content_checked", {
+        candidateCount: candidates.length,
+      });
+      await fenceV2OutboxLease(tx, job);
+    });
     const rebuilt: LearningCardCandidateRevisionV2[] = [];
     const task = createCardCandidateRewriteV3Task({
       provider: rewriteProvider,
@@ -1047,9 +1059,8 @@ async function finishNoCards(
 }
 
 /**
- * 段 5 的**唯一**结果写入点：binding plan ＋ 质量报告 ＋ 逐候选 `quality_state`
- * ＋ run 终态 ＋ 这一发的完成回执，全部在这里落。整批那一发与审核台上的逐候选那一发
- * 共用它，所以门禁、报告形状、终态判据只有一份；起第二份就会有第二天只改一边。
+ * 段 5 收口：补齐候选核对结果，再落 run 终态与完成回执。
+ * 初次检查与最终检查共用候选写入函数，终态只在整条核对链结束后更新。
  */
 async function writeSimplifiedCheckResults(
   tx: WorkerTransaction,
@@ -1066,6 +1077,50 @@ async function writeSimplifiedCheckResults(
   },
 ): Promise<void> {
   const { workspaceId, runId, candidates, sealed, settleScope } = args;
+  const passedRevisionIds = await writeSimplifiedCandidateCheckResults(tx, { workspaceId, runId, candidates, sealed, entries: args.entries });
+
+  // run 终态只在整条核对链结束后收口；候选结论可以先落盘。
+  const needsAttention = settleScope === "candidate_refine"
+    ? !(await hasReviewablePassedCandidateV3(tx, workspaceId, runId))
+    : passedRevisionIds.size === 0;
+  const status = needsAttention ? "needs_attention" : "review_ready";
+  const settledErrorMessage = needsAttention
+    ? (settleScope === "candidate_refine"
+      ? "重检后审核台上没有可保留的候选了"
+      : "批量内容检查没有放行任何一张")
+    : null;
+  // 只从接手时允许的状态收口，用户取消后的迟到结果不能写回终态或完成回执。
+  const settled = await tx.execute(sql`
+    UPDATE public.card_generation_runs_v2
+    SET status = ${status},
+        error_code = ${needsAttention ? "quality_gate_failed" : null},
+        error_message = ${settledErrorMessage},
+        updated_at = now()
+    WHERE id = ${runId} AND workspace_id = ${workspaceId}
+      AND status IN ${SETTLE_FROM_STATUSES[settleScope]}
+    RETURNING id
+  `);
+  if (!settled.count) return;
+  await insertEvent(tx, workspaceId, runId, "card_generation.simplified_completed", {
+    modelCalls: args.modelCalls,
+    passed: [...passedRevisionIds],
+    verdicts: args.entries.map((entry) => ({
+      objectiveLocalId: entry.objectiveLocalId,
+      verdict: entry.verdict,
+    })),
+    unchecked: args.unchecked,
+    status,
+    rewriteCalls: args.rewriteCalls,
+    settleScope,
+  });
+}
+
+async function writeSimplifiedCandidateCheckResults(tx: WorkerTransaction, args: {
+  workspaceId: string; runId: string; candidates: LearningCardCandidateRevisionV2[];
+  sealed: Awaited<ReturnType<typeof loadV2RunInputs>>["sealed"];
+  entries: CardContentCheckV3Output["perCandidate"];
+}): Promise<Set<string>> {
+  const { workspaceId, runId, candidates, sealed } = args;
   const byLocalId = new Map(candidates.map((candidate) => [candidate.planObjectiveLocalId, candidate]));
   const passedRevisionIds = new Set<string>();
 
@@ -1122,53 +1177,7 @@ async function writeSimplifiedCheckResults(
     `);
   }
 
-  // run 终态。**判据随收口语境换，问的不是同一个问题**：
-  //
-  // - 整批那一发刚刚把这一批每张都判过了，`passedRevisionIds` 就是全批的答案；
-  // - 逐候选那一发只过了一张。拿这一张判整个 run 等于说"这张没过 ⇒ 这批一张都没过"，
-  //   于是审核台上还摆着另外几张 passed 的那一批会被迟到的这一发打成 needs_attention。
-  //   那一档改问库（`hasReviewablePassedCandidateV3`）：台上还剩几张可保留的。
-  //
-  // 两个问法都发生在上面那圈逐候选更新**之后**，所以本发刚写下的那张算在里面。
-  const needsAttention = settleScope === "candidate_refine"
-    ? !(await hasReviewablePassedCandidateV3(tx, workspaceId, runId))
-    : passedRevisionIds.size === 0;
-  const status = needsAttention ? "needs_attention" : "review_ready";
-  const settledErrorMessage = needsAttention
-    ? (settleScope === "candidate_refine"
-      ? "重检后审核台上没有可保留的候选了"
-      : "批量内容检查没有放行任何一张")
-    : null;
-  // 终态写带 CAS：只在 run 仍停在这一发允许收走的那一档上才落，被取消／已激活／
-  // 已过期的 run 不许被迟到的模型结果改写。来源状态集合按收口语境取
-  // （见 `SETTLE_FROM_STATUSES`）——放宽它等于允许一次迟到的结果撤销用户按下的取消。
-  const settled = await tx.execute(sql`
-    UPDATE public.card_generation_runs_v2
-    SET status = ${status},
-        error_code = ${needsAttention ? "quality_gate_failed" : null},
-        error_message = ${settledErrorMessage},
-        updated_at = now()
-    WHERE id = ${runId} AND workspace_id = ${workspaceId}
-      AND status IN ${SETTLE_FROM_STATUSES[settleScope]}
-    RETURNING id
-  `);
-  // CAS 0 行只说明一件事：run 已经不在这一发允许收走的那一档上（被取消了、已激活、
-  // 已过期，或已被别的 job 推到别的档）。于是终态与回执不由这一发写——**仅此而已**：
-  // 它与租约无关（租约由本段之后的 `fenceV2OutboxLease` 单独核，租约不在了它会抛，
-  // 整笔事务连同这一发刚写的候选与质量报告一起回滚）。
-  if (!settled.count) return;
-  await insertEvent(tx, workspaceId, runId, "card_generation.simplified_completed", {
-    modelCalls: args.modelCalls,
-    passed: [...passedRevisionIds],
-    verdicts: args.entries.map((entry) => ({
-      objectiveLocalId: entry.objectiveLocalId,
-      verdict: entry.verdict,
-    })),
-    unchecked: args.unchecked,
-    status,
-    rewriteCalls: args.rewriteCalls,
-    settleScope,
-  });
+  return passedRevisionIds;
 }
 
 /**

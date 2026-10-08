@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronLeft, ChevronRight, LoaderCircle, Settings2, X } from "lucide-react";
 import { useCompanionFloatingPlacement } from "./use-companion-floating-placement";
 import { CompanionGoalControls } from "./CompanionGoalControls";
+import { CompanionCardTasks } from "./CompanionCardTasks";
 import { isCompanionComposition } from "./companion-composer-key";
 import { agentGoalActive, type AgentGoalsController } from "./use-agent-goals";
 import { artifactLabel, goalHeadline, goalNextHint, goalStatusText, goalTitle, latestGoalArtifacts, openAgentArtifact } from "./agent-goal-presentation";
@@ -64,6 +65,7 @@ export function CompanionGoalBubble({ anchorRef, motionMode, blocked, open, sele
                 {artifacts.length > 3 ? <button type="button" className="companion-goal-bubble__more-results" aria-expanded={moreResults}
                   onClick={() => setMoreResults(value => !value)}>{moreResults ? "收起更多成果" : `其余 ${artifacts.length - 3} 份成果`}</button> : null}
               </div> : null}
+              <CompanionCardTasks operations={selected.operations} artifacts={selected.artifacts} scope={goals.scope} onOpen={close} />
               <p className="companion-goal-bubble__hint" role="status">{goalNextHint(selected)}</p>
               {adjusting ? <CompanionGoalControls run={selected} goals={goals} onNewGoal={onChat} /> : null}
             </> : !initialLoading && !initialError ? <><p className="companion-goal-bubble__hint">告诉我想做什么，例如整理笔记、解释问题，或准备学习卡。</p>

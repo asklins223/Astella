@@ -1,5 +1,5 @@
 import { agentCapabilityLabel } from "@astella/shared/agent-capabilities";
-import type { AgentArtifactRefV1, AgentRunV1 } from "@astella/shared/agent-contracts";
+import type { AgentArtifactRefV1, AgentOperationV1, AgentRunV1 } from "@astella/shared/agent-contracts";
 import { useRoomStore } from "../../app/room-store";
 import { plainCompanionBubbleText } from "./companion-markdown";
 
@@ -44,7 +44,9 @@ export function goalHeadline(run: AgentRunV1) {
 export function goalNextHint(run: AgentRunV1) {
   if (run.operations.some(operation => operation.status === "outcome_unknown")) return "暂时无法确认操作结果，先查看完整记录，避免重复生成。";
   if (run.modelCalls >= run.maxModelCalls && run.status !== "completed") return "这次处理额度已用完，成果保留。可以重新交代一个更小的目标。";
-  if (run.status === "failed") return "可以调整要求再继续，已经做好的内容会保留。";
+  if (run.status === "failed") return run.operations.some(operation => operation.execution.kind === "card_generation")
+    ? "这批学习卡的生成或核对没有完成。可以打开本次任务查看草稿、原因和重试方式；进入任务页面不代表候选已通过核对。"
+    : "可以调整要求再继续，已经做好的内容会保留。";
   if (run.status === "paused") return "不再推进新步骤，已经启动的生成会收回结果。";
   if (run.status === "cancelled") return "未完成的生成已停止，之前的成果仍能打开。";
   if (run.status === "completed") {
@@ -78,4 +80,13 @@ export function openAgentArtifact(artifact: AgentArtifactRefV1, scope: number) {
 
 export function operationLabel(capability: string) {
   return agentCapabilityLabel(capability) ?? "处理学习内容";
+}
+
+/** Execution references remain navigable before there is a deliverable artifact. */
+export function openAgentCardOperation(operation: AgentOperationV1, scope: number) {
+  const room = useRoomStore.getState();
+  if (room.workspaceScopeRevision !== scope || operation.execution.kind !== "card_generation") return false;
+  room.setActiveCardGenerationRunId(operation.execution.id);
+  room.invoke("open-card-generation");
+  return true;
 }

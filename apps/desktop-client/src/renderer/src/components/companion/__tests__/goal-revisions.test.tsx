@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AgentRunHistoryV1, AgentRunV1 } from "@astella/shared/agent-contracts";
 import { CompanionGoalRevisions } from "../CompanionGoalRevisions";
 
-const room = vi.hoisted(() => ({ workspaceScopeRevision: 1, setActiveNoteRef: vi.fn(), invoke: vi.fn() }));
+const room = vi.hoisted(() => ({ workspaceScopeRevision: 1, setActiveNoteRef: vi.fn(), setActiveCardGenerationRunId: vi.fn(), invoke: vi.fn() }));
 vi.mock("../../../app/room-store", () => ({ useRoomStore: { getState: () => room } }));
 vi.mock("../../../app/desktop-client", () => ({ createRequestMeta: () => ({}),
   unwrapGatewayResult: (value: unknown) => value, gatewayErrorMessage: (error: Error) => error.message }));
@@ -60,4 +60,18 @@ it("ignores an old response when the visible run or space changes", async () => 
   await act(async () => { resolve(page(2, null)); });
   expect(screen.queryByText("第 2 次要求")).toBeNull();
   expect(screen.getByText(/没有保存完整记录/)).toBeTruthy();
+});
+it("opens the failed card batch from an older requirement rather than the later successful batch", async () => {
+  const history = page(1, null);
+  history.items[0] = { ...history.items[0]!, status: "failed", artifacts: [], operations: [{
+    operationId: "old-operation", runId: run.runId, revision: 1, scope: { workspaceId: "space", userId: "user" },
+    capability: "card_generation_generate", execution: { kind: "card_generation", id: "old-card-run" },
+    status: "failed", lastEventSeq: 1, result: null, error: null,
+  }] };
+  getRunHistory.mockResolvedValue(history);
+  render(<CompanionGoalRevisions run={run} scope={1} onArtifactOpen={vi.fn()} />);
+  open(); await screen.findByText("第 1 次要求"); open("第 1 次要求");
+  fireEvent.click(screen.getByRole("button", { name: "查看学习卡生成任务" }));
+  expect(room.setActiveCardGenerationRunId).toHaveBeenCalledWith("old-card-run");
+  expect(room.invoke).toHaveBeenCalledWith("open-card-generation");
 });

@@ -174,6 +174,18 @@ afterEach(() => {
 });
 
 describe("生成中的那一屏：已经写好的卡要一张张出现", () => {
+  it("核对中断且没有通过的候选时，保留草稿并停在生成任务，不能称为可审核", async () => {
+    stubGateway({ status: "needs_attention", rows: [...LANDED,
+      { candidateId: randomUUID(), prompt: "已被换掉的旧卡", concept: "上一版", qualityState: "passed", publishState: "superseded" },
+    ] });
+    renderSurface();
+    await screen.findByText("第一次提取时要先想起什么？");
+    expect(screen.getAllByText("题面已保留 · 核对尚未完成")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "重新生成学习卡" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^保留/ })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "候选卡审核" })).toBeNull();
+    expect(screen.queryByText("已被换掉的旧卡")).toBeNull();
+  });
   it("authoring 期间就去读候选，并把落地的题面列出来", async () => {
     const gateway = stubGateway({
       status: "authoring",
@@ -201,6 +213,7 @@ describe("生成中的那一屏：已经写好的卡要一张张出现", () => {
         ...LANDED,
         { candidateId: randomUUID(), prompt: "这条根本不该出现", concept: "落选", qualityState: "dropped" },
         { candidateId: randomUUID(), prompt: "没过证据这一关", concept: "失败", qualityState: "failed" },
+        { candidateId: randomUUID(), prompt: "已被換掉的旧题面", concept: "上一版", qualityState: "passed", publishState: "superseded" },
       ],
       progress: { plannedCards: 6, authored: 4, gatePassed: 0, gateFailed: 0 },
     });
@@ -209,6 +222,7 @@ describe("生成中的那一屏：已经写好的卡要一张张出现", () => {
     await waitFor(() => expect(screen.getAllByTestId("card-generation-landing-item")).toHaveLength(2));
     expect(screen.queryByText("这条根本不该出现")).toBeNull();
     expect(screen.queryByText("没过证据这一关")).toBeNull();
+    expect(screen.queryByText("已被換掉的旧题面")).toBeNull();
   });
 
   it("候选列表先更新、任务读数仍是零时，题面、计数和进度描述保持一致", async () => {

@@ -42,7 +42,7 @@ export type ArtifactDocumentViolationV1 =
 export interface ArtifactDocumentVerdictV1 {
   readonly ok: boolean;
   /** 第一条命中的判据与它的证据片段（进留痕，不上屏）。 */
-  readonly violation?: { readonly reason: ArtifactDocumentViolationV1; readonly evidence: string };
+  readonly violation?: { readonly reason: ArtifactDocumentViolationV1; readonly evidence: string; readonly rule?: string };
 }
 
 /**
@@ -117,7 +117,22 @@ function maskDocumentNamespacesV1(html: string): string {
   const declarations = new RegExp(`\\bxmlns(?::[\\w-]+)?\\s*=\\s*(["'])(${namespace})\\1`, "g");
   const domArguments = new RegExp(`\\b(?:createElementNS|setAttributeNS)\\s*\\(\\s*(["'])(${namespace})\\1`, "g");
   const mask = (whole: string, _quote: string, identifier: string) => whole.replace(identifier, " ".repeat(identifier.length));
-  return html.replace(declarations, mask).replace(domArguments, mask);
+  let scan = html.replace(declarations, mask).replace(domArguments, mask);
+  // Models commonly reuse a namespace constant for many SVG nodes. Only mask
+  // bindings whose every reference is a namespace API's first arg;
+  // a binding used as src/href, reassigned or passed elsewhere stays rejected.
+  scan = scan.replace(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi, (script: string, body: string) => {
+    const bindings = new RegExp(`\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(["'])(${namespace})\\2\\s*;`, "g");
+    return script.replace(bindings, (declaration: string, name: string, _quote: string, identifier: string) => {
+      const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const uses = body.replace(declaration, " ".repeat(declaration.length));
+      const namespaceUses = new RegExp(`\\b(?:createElementNS|setAttributeNS)\\s*\\(\\s*${escapedName}\\s*,`, "g");
+      const remaining = uses.replace(namespaceUses, "");
+      if (!namespaceUses.test(uses) || new RegExp(`(?<![\\w$])${escapedName}(?![\\w$])`).test(remaining)) return declaration;
+      return declaration.replace(identifier, " ".repeat(identifier.length));
+    });
+  });
+  return scan;
 }
 
 /** 截一段证据出来进留痕；这一段会进日志，所以先压长度、不留换行。 */
@@ -170,10 +185,10 @@ export function checkArtifactDocumentV1(
   input: CheckArtifactDocumentV1Input,
 ): CheckArtifactDocumentV1Result {
   const html = input.document;
-  const fail = (reason: ArtifactDocumentViolationV1, evidence: string) => ({
+  const fail = (reason: ArtifactDocumentViolationV1, evidence: string, rule?: string) => ({
     ok: false,
     text: "",
-    verdict: { ok: false, violation: { reason, evidence } } as ArtifactDocumentVerdictV1,
+    verdict: { ok: false, violation: { reason, evidence, ...(rule ? { rule } : {}) } } as ArtifactDocumentVerdictV1,
   });
 
   if (html.length < ARTIFACT_DOCUMENT_MIN_CHARS_V1) {
@@ -185,7 +200,7 @@ export function checkArtifactDocumentV1(
   const referenceScan = maskDocumentNamespacesV1(html);
   for (const rule of FORBIDDEN_DOCUMENT_PATTERNS_V1) {
     const match = rule.pattern.exec(referenceScan);
-    if (match) return fail(rule.reason, evidenceAroundV1(html, match.index, rule.label));
+    if (match) return fail(rule.reason, evidenceAroundV1(html, match.index, rule.label), rule.label);
   }
   if (!scriptTagsBalancedV1(html)) {
     return fail("unbalanced_script", "`<script>` 开合不配平");

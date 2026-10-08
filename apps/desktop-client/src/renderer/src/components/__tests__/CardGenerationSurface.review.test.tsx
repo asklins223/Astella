@@ -920,7 +920,7 @@ describe("CardGenerationSurface · 候选审核", () => {
    * 「返回笔记」曾经在同一屏出现两次：恢复契约签发的那个 + 旁栏常驻的那个。
    * 一屏一个就够了，而且必须是可点的那一个。
    */
-  it("恢复态的候选审核页只有一个『返回笔记』", async () => {
+  it("没有通过候选的恢复任务页只有一个『返回笔记』", async () => {
     stubGateway(
       [],
       {
@@ -939,7 +939,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     useRoomStore.setState({ activeCardGenerationRunId: RUN_ID, activeNoteRef: null });
     render(<CardGenerationSurface />);
 
-    await waitFor(() => expect(screen.getAllByText("需要后台再看一次才能继续").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "这次生成尚未完成" })).toBeTruthy());
     expect(screen.getAllByText("返回笔记")).toHaveLength(1);
     expect(screen.getByRole("button", { name: /重新检查/ })).toBeTruthy();
 
@@ -952,10 +952,10 @@ describe("CardGenerationSurface · 候选审核", () => {
   /**
    * 一张候选都没有的恢复态（截图里那一屏）曾经只剩「重新检查」和「返回笔记」——
    * 笔记页的生成入口又写着「处理生成任务」把用户送回工作台，来回没有任何出口。
-   * 结束审核是这条路的出口：它把 run 收成 closed_without_activation，笔记页随后
+   * 结束本次生成是这条路的出口：它把 run 收成 closed_without_activation，笔记页随后
    * 就能重新发起一次生成。
    */
-  it("没有候选的恢复态给出「结束本次审核」这个出口", async () => {
+  it("没有通过候选的恢复态在生成任务里给出「结束本次生成」这个出口", async () => {
     const { gateway } = stubGateway(
       [],
       {
@@ -974,12 +974,12 @@ describe("CardGenerationSurface · 候选审核", () => {
     useRoomStore.setState({ activeCardGenerationRunId: RUN_ID, activeNoteRef: null });
     render(<CardGenerationSurface />);
 
-    await waitFor(() => expect(screen.getAllByText("需要后台再看一次才能继续").length).toBeGreaterThan(0));
-    fireEvent.click(screen.getByRole("button", { name: "结束本次审核" }));
-    // 结束审核必须真的打到服务端，而不是一个点了没反应的按钮。
+    await waitFor(() => expect(screen.getByRole("heading", { name: "这次生成尚未完成" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "结束本次生成" }));
+    // 结束任务必须真的打到服务端，而不是一个点了没反应的按钮。
     await waitFor(() => expect(gateway.note.cardGeneration.close).toHaveBeenCalledTimes(1));
-    // 而且点完之后这一屏必须真的离开审核态：出口消失、状态说出新结论。
-    await waitFor(() => expect(screen.queryByRole("button", { name: "结束本次审核" })).toBeNull());
+    // 点完之后出口消失，状态说出新结论。
+    await waitFor(() => expect(screen.queryByRole("button", { name: "结束本次生成" })).toBeNull());
     expect(screen.getAllByText("已结束，没有保存到卡组").length).toBeGreaterThan(0);
   });
 

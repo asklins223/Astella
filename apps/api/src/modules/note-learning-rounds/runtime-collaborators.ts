@@ -41,6 +41,7 @@ import { createRoundTargetGrounder, type RoundTargetGrounder } from "./target-gr
 import type { TeachingExplainProviderV1 } from "./teaching/teaching-explain.ts";
 import {
   llmDynamicArtifactProvider,
+  type DynamicArtifactInputV1,
   type DynamicArtifactProviderV1,
 } from "@astella/shared/note-dynamic-artifact/round-artifact-model";
 
@@ -88,6 +89,9 @@ export function createRoundRuntimeCollaborators(
 ): RoundRuntimeCollaborators {
   const modelConfig = resolveTeachingModelConfig();
   const configuredModelId = modelConfig?.model ?? UNCONFIGURED_MODEL_ID;
+  // A model-step retry must retain its safe page. Inputs are frozen per run;
+  // WeakMap keeps concurrent requests and their metadata repairs separate.
+  const artifactProviders = new WeakMap<DynamicArtifactInputV1, { scope: string; provider: DynamicArtifactProviderV1 }>();
 
   const teaching = overrides.teaching ?? {
     provider: llmTeachingExplainProvider({ config: modelConfig }),
@@ -97,10 +101,16 @@ export function createRoundRuntimeCollaborators(
   const artifact = overrides.artifact ?? {
     provider: ((input, step) => {
       if (!step.scope?.workspaceId || !step.scope.userId) throw new Error("artifact model call requires the initiating user scope");
-      return llmDynamicArtifactProvider({ config: modelConfig,
-        requester: createGovernedApiRequester(
-          step.scope, "note_dynamic_artifact", ["note_content"], productionAiGovernancePorts),
-      })(input, step);
+      const scope = `${step.scope.workspaceId}:${step.scope.userId}`;
+      let cached = artifactProviders.get(input);
+      if (!cached || cached.scope !== scope) {
+        cached = { scope, provider: llmDynamicArtifactProvider({ config: modelConfig,
+          requester: createGovernedApiRequester(
+            step.scope, "note_dynamic_artifact", ["note_content"], productionAiGovernancePorts),
+        }) };
+        artifactProviders.set(input, cached);
+      }
+      return cached.provider(input, step);
     }) satisfies DynamicArtifactProviderV1,
     modelId: configuredModelId,
   };

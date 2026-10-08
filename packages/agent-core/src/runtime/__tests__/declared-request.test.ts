@@ -44,6 +44,17 @@ test("running and uncertain operations wait; failed operations never become comp
   const failed = declaredAgentRequestStep({ ...input, operations: [{ ...operation, status: "failed", result: null }] });
   assert.equal(failed.response.toolCalls[0]?.arguments.outcome, "failed");
 });
+test("a failed card receipt distinguishes retained drafts from candidates ready for review", () => {
+  const failed = declaredAgentRequestStep({ ...input, goal: "生成学习卡", directRequest: {
+    capability: "card_generation_generate", noteId: "note", request: {
+      version: 2, noteVersionId: "version", sourceScope: { kind: "whole_note" }, learningGoal: "understand",
+      detailThreshold: "balanced", quantity: { kind: "adaptive" }, clientRequestId: "request",
+    },
+  }, operations: [{ ...operation, capability: "card_generation_generate", execution: { kind: "card_generation", id: "card-run" }, status: "failed", result: null }] });
+  assert.equal(failed.response.toolCalls[0]?.arguments.outcome, "failed");
+  assert.match(String(failed.response.toolCalls[0]?.arguments.summary), /生成或核对没有完成/);
+  assert.match(String(failed.response.toolCalls[0]?.arguments.summary), /已写出的草稿保留/);
+});
 test("a confirmed reused result finishes a retry; an unrelated result cannot suppress the selected capability", () => {
   const retry = declaredAgentRequestStep({ ...input, operations: [] });
   assert.equal(retry.response.toolCalls[0]?.name, "note_overview_generate");

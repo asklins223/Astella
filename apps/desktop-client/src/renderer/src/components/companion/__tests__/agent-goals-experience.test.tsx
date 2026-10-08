@@ -156,6 +156,26 @@ it("treats no card recommendation as an answer without inventing an artifact or 
   expect(screen.queryByRole("region", { name: "做好的成果" })).toBeNull();
   expect(room.setActiveCardGenerationRunId).not.toHaveBeenCalled();
 });
+it("opens running and failed card tasks without claiming there is a finished artifact", () => {
+  for (const status of ["running", "failed"] as const) {
+    const item: AgentRunV1 = { ...run, status, artifacts: [], operations: [{
+      operationId: "card-operation", runId: run.runId, revision: run.revision,
+      scope: { workspaceId: "workspace", userId: "user" }, capability: "card_generation_generate",
+      execution: { kind: "card_generation", id: "exact-card-run" }, status, lastEventSeq: 1, result: null, error: null,
+    }] };
+    const label = status === "running" ? "查看学习卡生成进度" : "查看学习卡生成任务";
+    const view = render(bubble(controller(item)));
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    expect(room.setActiveCardGenerationRunId).toHaveBeenLastCalledWith("exact-card-run");
+    expect(room.invoke).toHaveBeenLastCalledWith("open-card-generation");
+    expect(screen.queryByRole("button", { name: "待审核学习卡" })).toBeNull();
+    view.unmount();
+    const journal = render(<CompanionGoalJournal goals={controller(item)} targetId="run" onChat={vi.fn()} onArtifactOpen={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    expect(room.setActiveCardGenerationRunId).toHaveBeenLastCalledWith("exact-card-run");
+    journal.unmount();
+  }
+});
 it("puts a later read-only answer ahead of retained artifacts without claiming a new generation", () => {
   const reading = { ...run, revision: 3, status: "completed" as const, goal: "核对上一批修改后的拓展草稿",
     artifacts: [{ ...artifact, kind: "note_expansion" as const, id: "earlier", jobId: "earlier-job" },

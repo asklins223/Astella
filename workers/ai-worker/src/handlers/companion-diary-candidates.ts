@@ -21,8 +21,8 @@ export interface DiaryCandidate {
 
 const MESSAGE_SOURCE = "companion_message";
 const MAX_DIARY_CANDIDATES = 4;
-const MAX_CANDIDATE_PIECES = 8;
-const MAX_CANDIDATE_TEXT_CHARS = 1_600;
+const MAX_CANDIDATE_PIECES = 16;
+const MAX_CANDIDATE_TEXT_CHARS = 12_000;
 
 function minuteOfDay(at: string): number | null {
   if (!/^\d{2}:\d{2}$/.test(at)) return null;
@@ -62,17 +62,19 @@ function buildCandidate(
   piecesInput: DiaryPiece[],
   material: DiaryMaterial,
 ): DiaryCandidate | null {
-  const pieces = uniquePieces(piecesInput).slice(0, MAX_CANDIDATE_PIECES);
+  const originals = uniquePieces(piecesInput).sort((a, b) => (a.at || "99:99").localeCompare(b.at || "99:99"));
+  const pieces = originals.slice(-MAX_CANDIDATE_PIECES);
   const textChars = pieces.reduce((total, piece) => total + piece.text.length, 0);
   if (pieces.length === 0 || textChars < 6) return null;
-  // Select complete source records. The first may exceed the soft page budget;
-  // the full-request governor decides whether it fits the selected model.
+  // Keep a contiguous ending, including later corrections and outcomes. Never
+  // skip a long reply and then present the next turn without its context.
+  // A single oversized source stays whole for the full-request governor.
   let used = 0;
   const boundedPieces: DiaryPiece[] = [];
-  for (const piece of pieces) {
+  for (const piece of [...pieces].reverse()) {
     if (!piece.text.trim()) continue;
-    if (boundedPieces.length > 0 && used + piece.text.length > MAX_CANDIDATE_TEXT_CHARS) continue;
-    boundedPieces.push({ ...piece });
+    if (boundedPieces.length > 0 && used + piece.text.length > MAX_CANDIDATE_TEXT_CHARS) break;
+    boundedPieces.unshift({ ...piece });
     used += piece.text.length;
   }
   if (boundedPieces.length === 0) return null;
@@ -89,7 +91,7 @@ function buildCandidate(
     ...material,
     pieces: boundedPieces,
     subject: candidateSubject(boundedPieces),
-    embeds: noteId ? material.embeds.filter((embed) => embed.noteId === noteId) : [],
+    embeds: material.embeds.filter((embed) => noteIds.includes(embed.noteId)),
     focused: false,
   };
   return {
@@ -116,55 +118,60 @@ export function buildDiaryCandidates(material: DiaryMaterial): DiaryCandidate[] 
     .filter((piece) => piece.sourceType === MESSAGE_SOURCE)
     .sort((a, b) => (a.at || "99:99").localeCompare(b.at || "99:99"));
   const nonMessages = grounded.filter((piece) => piece.sourceType !== MESSAGE_SOURCE);
-  const consumedMessages = new Set<string>();
   const grouped: DiaryPiece[][] = [];
+  const noteEvents = nonMessages.filter((piece) => piece.sourceType === "note" && piece.noteId);
+  const attachedNotes = new Set<string>();
 
-  // A note edit and the nearby exchange about that same note form one clip.
-  const noteGroups = new Map<string, DiaryPiece[]>();
-  for (const piece of nonMessages) {
-    if (piece.sourceType !== "note" || !piece.noteId) continue;
-    const group = noteGroups.get(piece.noteId) ?? [];
-    group.push(piece);
-    noteGroups.set(piece.noteId, group);
-  }
-  for (const [noteId, group] of noteGroups) {
-    const noteMinutes = group.map((piece) => minuteOfDay(piece.at)).filter((n): n is number => n !== null);
-    for (const message of messages) {
-      if (message.noteId !== noteId) continue;
-      const minute = minuteOfDay(message.at);
-      if (minute === null || noteMinutes.length === 0) continue;
-      if (Math.min(...noteMinutes.map((noteMinute) => Math.abs(noteMinute - minute))) > 15) continue;
-      group.push(message);
-      consumedMessages.add(sourceId(message)!);
-    }
-    grouped.push(group);
-  }
-
-  // Other presented events are independent anchors, each bound to its source row.
-  for (const piece of nonMessages) {
-    if (piece.sourceType === "note" && piece.noteId) continue;
-    grouped.push([piece]);
-  }
-
-  // Messages that are not already part of a note clip are grouped by an uninterrupted
-  // short exchange. This keeps one conversation from turning into several fake choices.
+  // Group the whole short exchange before attaching note events. Distinct
+  // conversations must not turn into one scene just because their times overlap.
   let exchange: DiaryPiece[] = [];
   let previousMinute: number | null = null;
   const flushExchange = () => {
-    if (exchange.some((piece) => piece.group === "her")) grouped.push(exchange);
+    if (exchange.some((piece) => piece.group === "her")) {
+      // Attach note edits to a whole exchange. Taking only the turns that mention
+      // its title would detach later answers and corrections from that scene.
+      const nearbyNotes = noteEvents.filter((note) => {
+        const noteMinute = minuteOfDay(note.at);
+        return noteMinute !== null && exchange.some((message) => {
+          const minute = minuteOfDay(message.at);
+          return message.noteId === note.noteId && minute !== null && Math.abs(noteMinute - minute) <= 15;
+        });
+      });
+      nearbyNotes.forEach((note) => attachedNotes.add(sourceId(note)!));
+      grouped.push([...exchange, ...nearbyNotes]);
+    }
     exchange = [];
     previousMinute = null;
   };
+  const conversations = new Map<string | undefined, DiaryPiece[]>();
   for (const message of messages) {
-    if (consumedMessages.has(sourceId(message)!)) continue;
-    const minute = minuteOfDay(message.at);
-    if (exchange.length > 0 && minute !== null && previousMinute !== null && minute - previousMinute > 15) {
-      flushExchange();
-    }
-    exchange.push(message);
-    if (minute !== null) previousMinute = minute;
+    const conversation = conversations.get(message.conversationId) ?? [];
+    conversation.push(message);
+    conversations.set(message.conversationId, conversation);
   }
-  flushExchange();
+  for (const conversation of conversations.values()) {
+    for (const message of conversation) {
+      const minute = minuteOfDay(message.at);
+      if (exchange.length > 0 && minute !== null && previousMinute !== null && minute - previousMinute > 15) {
+        flushExchange();
+      }
+      exchange.push(message);
+      if (minute !== null) previousMinute = minute;
+    }
+    flushExchange();
+  }
+
+  // Events without a nearby exchange remain independent source-bound anchors.
+  const remainingNotes = new Map<string, DiaryPiece[]>();
+  for (const piece of nonMessages) {
+    if (attachedNotes.has(sourceId(piece)!)) continue;
+    if (piece.sourceType === "note" && piece.noteId) {
+      const group = remainingNotes.get(piece.noteId) ?? [];
+      group.push(piece);
+      remainingNotes.set(piece.noteId, group);
+    } else grouped.push([piece]);
+  }
+  grouped.push(...remainingNotes.values());
 
   const candidates = grouped
     .map((pieces) => buildCandidate(pieces, material))

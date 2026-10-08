@@ -11,7 +11,7 @@ import { CandidateText } from "./candidate-text";
 import { CardGenerationRecoveryActions } from "./card-generation-recovery-actions";
 import type { CardGenerationSession } from "./use-card-generation-session";
 
-function WrittenCard({ candidate, index }: { candidate: CardGenerationCandidateV1; index: number }) {
+function WrittenCard({ candidate, index, working }: { candidate: CardGenerationCandidateV1; index: number; working: boolean }) {
   const paperRef = useRef<HTMLLIElement>(null);
   // 同样用「一直可见」那一档：这一列的意义就是**一张张多出来**，而"刚出来的那张先
   // 透明半秒"会把用户最想看的那一条藏起来。
@@ -20,7 +20,8 @@ function WrittenCard({ candidate, index }: { candidate: CardGenerationCandidateV
     <header><span className="card-generation-landing__type">{cardStrategyPresentation[candidate.strategy].symbol} · {cardStrategyPresentation[candidate.strategy].label}</span><span>{String(index + 1).padStart(2, "0")}</span></header>
     <strong className="card-generation-landing__concept"><CandidateText text={candidate.objective.publicSummary} /></strong>
     <span className="card-generation-landing__prompt"><CandidateText text={candidate.front.prompt} /></span>
-    <small>{candidate.qualityState === "passed" ? "依据已核对 · 等你挑选" : "题面已写出 · 正在核对依据"}</small>
+    <small>{candidate.qualityState === "passed" ? "依据已核对 · 等你挑选"
+      : working ? "题面已写出 · 正在核对依据" : "题面已保留 · 核对尚未完成"}</small>
   </li>;
 }
 
@@ -35,7 +36,7 @@ function PreparingPack({ working, count }: { working: boolean; count: number }) 
 }
 
 export function CardGenerationProgress({ session }: { readonly session: CardGenerationSession }) {
-  const { run, noteTitle, progressCounts, progressView, loading, waitingForRun, failure, actionFailure, busyAction, landedCandidates, syncReport, resync, returnToNote, cancel, canRegenerate, regenerate } = session;
+  const { run, noteTitle, progressCounts, progressView, loading, waitingForRun, failure, actionFailure, busyAction, landedCandidates, syncReport, resync, returnToNote, cancel, close, canRegenerate, regenerate } = session;
   const working = Boolean(run && isCardGenerationInFlight(run.status));
   const canCancel = Boolean(run && working && run.status !== "activating");
   const authored = progressCounts.authored;
@@ -58,10 +59,12 @@ export function CardGenerationProgress({ session }: { readonly session: CardGene
       {!loading && !waitingForRun && failure ? <div className="card-making__state" role="alert"><CircleAlert size={23} aria-hidden="true" /><h2>无法确认这次生成</h2><p>{failure}</p></div> : null}
       {!loading && !waitingForRun && !failure && !run ? <div className="card-making__state" role="status"><h2>还没有进行中的生成任务</h2><p>回到笔记页，从已保存的整篇笔记开始。</p></div> : null}
       {!loading && !failure && run && !progressView && !run.recovery ? <div className="card-making__state" role="status"><CircleAlert size={23} aria-hidden="true" /><h2>{isCardGenerationStopped(run.status) ? "这次生成已取消" : cardGenerationStatusLabel(run.status)}</h2><p>本次已经停下。可以直接按最新已保存的笔记，重新生成一套学习卡。</p></div> : null}
-      {!loading && !failure && run?.recovery ? <div className="card-making__recovery" role="status"><CircleAlert size={23} aria-hidden="true" /><h2>{cardGenerationRecoveryReasonLabel(run.recovery.publicReasonCode)}</h2><p>{run.recovery.retryability === "resync_required" ? "重新检查状态，或按最新笔记重新生成。" : "可以重试本次任务，也可以按最新笔记重新生成。"}</p><div className="actions"><CardGenerationRecoveryActions session={session} showReturn={false} /></div></div> : null}
+      {!loading && !failure && run?.recovery ? <div className="card-making__recovery" role="status"><CircleAlert size={23} aria-hidden="true" /><h2>{run.status === "needs_attention" && run.recovery.publicReasonCode === "attention_required" ? "这次生成尚未完成" : cardGenerationRecoveryReasonLabel(run.recovery.publicReasonCode)}</h2><p>{run.recovery.retryability === "resync_required" ? "重新检查状态，或按最新笔记重新生成。" : "可以重试本次任务，也可以按最新笔记重新生成。"}</p><div className="actions"><CardGenerationRecoveryActions session={session} showReturn={false} /></div></div> : null}
+      {run?.status === "needs_attention" ? <p className="card-making__source-notice">{authored > 0 ? `已写出 ${authored} 张草稿，` : ""}还没有通过核对、可供审核保存的候选。已有题面保留在右侧。</p> : null}
       {run?.sourceOutdated ? <p className="card-making__source-notice" role="status">笔记已有新版本。本次依据旧版；重新生成会读取最新已保存的内容。</p> : null}
       <footer className="card-making__footer">
         {canCancel ? <button type="button" className="button" disabled={locked} onClick={() => void cancel()}><Square size={14} aria-hidden="true" />{busyAction === "cancel" ? "正在停止…" : "停止生成"}</button> : canRegenerate ? <button type="button" className="button primary" disabled={locked || loading} onClick={() => void regenerate()}><RotateCcw size={16} aria-hidden="true" />{busyAction === "regenerate" ? "正在重新生成…" : "重新生成学习卡"}</button> : null}
+        {run?.status === "needs_attention" ? <button type="button" className="text-action" disabled={locked || loading} onClick={() => void close()}>{busyAction === "close" ? "正在结束…" : "结束本次生成"}</button> : null}
         <button type="button" className="text-action" onClick={returnToNote}><ArrowLeft size={14} aria-hidden="true" />返回笔记</button>
       </footer>
       <p className="card-making__background-note">{working ? "可以先去做别的，离开这里不会中断生成。" : "重新生成会另开一份，已经保存的卡仍在卡组里。"}</p>
@@ -69,8 +72,8 @@ export function CardGenerationProgress({ session }: { readonly session: CardGene
       {run && syncReport ? <p className="card-generation-board__sync-report" role="status" aria-live="polite">{cardGenerationSyncReportText(syncReport.status, syncReport.changed)}</p> : null}
       {actionFailure ? <p className="card-making__failure" role="alert">这一步没成功：{actionFailure}</p> : null}
     </div>
-    <section className="card-generation-landing" aria-label="已经写好的卡"><header><h2>写好的题面</h2><span>{landedCandidates.length ? `${landedCandidates.length} 张候选` : "完成后开始挑选"}</span></header>
-      {landedCandidates.length ? <ol className="card-generation-landing__list">{landedCandidates.map((candidate, index) => <WrittenCard key={candidate.candidateId} candidate={candidate} index={index} />)}</ol> : <PreparingPack working={working} count={authored} />}
+    <section className="card-generation-landing" aria-label="已经写好的卡"><header><h2>写好的题面</h2><span>{landedCandidates.length ? `${landedCandidates.length} 张${run?.status === "needs_attention" ? "草稿" : "候选"}` : "完成后开始挑选"}</span></header>
+      {landedCandidates.length ? <ol className="card-generation-landing__list">{landedCandidates.map((candidate, index) => <WrittenCard key={candidate.candidateId} candidate={candidate} index={index} working={working} />)}</ol> : <PreparingPack working={working} count={authored} />}
     </section>
   </section>;
 }

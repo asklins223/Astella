@@ -117,6 +117,7 @@ let cancelRefineRunId = "";
 let settleSiblingRunId = "";
 let settleLastPassRunId = "";
 let suspectRunId = "";
+let failedRewriteRunId = "";
 
 async function seedNote(key: string, title: string, blocks: string[], owner: { workspaceId: string; userId: string } = { workspaceId: WORKSPACE_ID, userId: USER_ID }): Promise<NoteFixture> {
   const noteId = randomUUID();
@@ -372,6 +373,10 @@ before(async () => {
     [INDEX_SUSPECT_SOURCE, INDEX_SAFE_CLAIM],
     { workspaceId: SUSPECT_WORKSPACE_ID, userId: SUSPECT_USER_ID });
   suspectRunId = (await createRun(notes.suspect.versionId, `v3-suspect-${randomUUID()}`,
+    { workspaceId: SUSPECT_WORKSPACE_ID, userId: SUSPECT_USER_ID })).runId;
+  notes.failedrewrite = await seedNote("failedrewrite", "改写失败保留已核对候选", LEARNABLE_BLOCKS,
+    { workspaceId: SUSPECT_WORKSPACE_ID, userId: SUSPECT_USER_ID });
+  failedRewriteRunId = (await createRun(notes.failedrewrite.versionId, `v3-failed-rewrite-${randomUUID()}`,
     { workspaceId: SUSPECT_WORKSPACE_ID, userId: SUSPECT_USER_ID })).runId;
 });
 
@@ -1052,6 +1057,43 @@ test("增量改写：只重做被判 rewrite 的那一张，重检只看它，�
     WHERE run_id = ${rewriteRunId} AND event_type = 'card_candidate.rewritten'
   ` as unknown as Array<{ n: number }>;
   assert.equal(Number(rewrittenEvents[0]?.n), 1, "改写这一发要留一条能对账的事件");
+});
+
+test("改写返回非法字段时，初次核对的通过结果与剩余草稿问题已经落盘且进度可读", async () => {
+  const { processCardGenerationSimplifiedJob } = await import("../card-generation-v3/handler.ts");
+  const { createDeterministicCardGenerateV3Provider } = await import("../card-generation-v3/deterministic.ts");
+  const { getGenerationRunV2, getGenerationRunCandidatesV2 } = await import(
+    "../../../../apps/api/src/modules/card-generation-v2/generation-run-service.ts"
+  );
+  const ctx = { workspaceId: SUSPECT_WORKSPACE_ID, userId: SUSPECT_USER_ID };
+  const job = await claimSimplifiedJob(failedRewriteRunId);
+  let checkedCount = 0, rewriteCalls = 0;
+  await assert.rejects(processCardGenerationSimplifiedJob(job, {
+    generate: createDeterministicCardGenerateV3Provider(),
+    check: { modelId: "scripted-check", async complete({ input }) {
+      checkedCount = input.candidates.length;
+      return { text: JSON.stringify({ perCandidate: input.candidates.map((item, index) => ({
+        objectiveLocalId: item.objectiveLocalId, verdict: index === 0 ? "rewrite" : "keep",
+        issues: index === 0 ? [{ code: "front_leaks_answer", severity: "soft", detail: "需要调整题面" }] : [],
+      })), setIssues: [] }) };
+    } },
+    rewrite: { modelId: "broken-rewrite", async complete() {
+      rewriteCalls++;
+      // Read through the production API while the next model step is running.
+      const snapshot = await getGenerationRunV2(ctx, failedRewriteRunId);
+      assert.equal(snapshot?.status, "checking");
+      assert.equal(snapshot?.progress?.gatePassed, checkedCount - 1);
+      return { text: JSON.stringify({ rewrites: [{ practiceItem: { stem: "非法字段" } }] }) };
+    } },
+  }), /card_candidate_rewrite_v3 output rejected: output_shape/);
+  assert.ok(checkedCount > 1);
+  assert.equal(rewriteCalls, 2, "内核补采样一次后停止，不能无限重放");
+  const list = await getGenerationRunCandidatesV2(ctx, failedRewriteRunId);
+  assert.equal(list?.candidates.filter(candidate => candidate.qualityState === "passed").length, checkedCount - 1);
+  assert.ok(list?.candidates.filter(candidate => candidate.qualityState === "passed")
+    .every(candidate => candidate.candidateEvidenceBindingPlanHash));
+  const draft = list?.candidates.find(candidate => candidate.qualityState === "authored");
+  assert.ok(draft?.qualityIssues.some(issue => issue.code === "front_leaks_answer"));
 });
 
 // ── provider 选择那两道闸的形状 ──────────────────────────────────────────

@@ -8,8 +8,8 @@
  *
  * 现在的形状：
  *   1. 当天**具体发生过什么**（笔记标题、学了什么、她说过的话、说到做到的提醒）当素材；
- *   2. 账号人格 + 空间关系决定语气与篇幅；
- *   3. 模型写正文，服务端按"不许报数"这道机器闸校验，不合规重采样一次；
+ *   2. 账号人格决定语气，选定片段的素材决定篇幅；
+ *   3. 模型写完整正文，服务端核对结构、篇幅和重复表达，失败时重采样一次；
  *   4. 写不出来就诚实留一行 failed 带成因，不返回任何看起来像日记的兜底文本。
  *
  * 两件事没变、也不能变：
@@ -68,6 +68,7 @@ import {
   diaryTaskContext,
 } from "./companion-daily-summary-task.ts";
 import { describeDiaryImage } from "./companion-daily-summary-image.ts";
+import { reviseDiaryDraft } from "./companion-diary-revision.ts";
 export { pickImageToRead } from "./companion-daily-summary-image.ts";
 import {
   buildDiaryCandidates,
@@ -96,12 +97,9 @@ import {
   dayPartOf,
   diaryAssistantWeight,
   diaryImageLabel,
-  diaryLengthOverflow,
   diaryLengthShortfall,
   diaryParagraphCount,
-  endsInQuestion,
   exampleEchoIn,
-  fitDiaryToParagraphBudget,
   focusDiaryMaterial,
   groundedDiaryDigest,
   imageShape,
@@ -117,17 +115,16 @@ import {
   resolveDiaryBlocks,
   stripEmbedRefs,
   selfPutdownIn,
-  thirdPersonForUserIn,
   diaryBlockDraftSchema,
   DIARY_MAX_TOKENS,
 } from "./companion-diary-content.ts";
 import type { DiaryBlock, DiaryDraft, DiaryEmbed, DiaryMaterial, DiaryPersona, DiaryPiece } from "./companion-diary-content.ts";
 export {
   buildDiaryPrompt, captionEchoIn, clockPhrase, countingToneIn, dayPartOf, diaryAssistantWeight,
-  clipAtBoundary, diaryImageLabel, diaryLengthOverflow, diaryParagraphCount, endsInQuestion, exampleEchoIn,
-  fitDiaryToParagraphBudget, focusDiaryMaterial, groundedDiaryDigest, imageShape, isQuotableQuote,
+  clipAtBoundary, diaryImageLabel, diaryParagraphCount, exampleEchoIn,
+  focusDiaryMaterial, groundedDiaryDigest, imageShape, isQuotableQuote,
   pickDiarySubject, pickImagesPerNote, pickQuoteCandidates, repeatedOpeningIn, stripEmbedRefs,
-  renderMaterial, resolveDiaryBlocks, selfPutdownIn, thirdPersonForUserIn, DIARY_MAX_TOKENS,
+  renderMaterial, resolveDiaryBlocks, selfPutdownIn, DIARY_MAX_TOKENS,
 };
 export type { DiaryBlock, DiaryEmbed, DiaryMaterial, DiaryPersona, DiaryPiece };
 
@@ -431,29 +428,30 @@ export async function collectDiaryMaterial(tx: WorkerTransaction, scope: DayScop
   // 每个角色各留最近 12 条再还原时间序，比"取最后 24 条"更能留住上午那次认真的提问。
   const messageRows = await tx.execute<{
     at_local: string; role: string; text: string; source_id: string; source_version: string;
+    conversation_id: string;
   }>(sql`
     WITH day AS (
-      SELECT m.id, m.role, m.created_at, m.content_sha256,
+      SELECT m.id, m.role, m.created_at, m.content_sha256, m.conversation_id, m.seq,
              to_char(m.created_at AT TIME ZONE ${scope.timezone}, 'HH24:MI') AS at_local,
              coalesce((SELECT string_agg(b->>'text', '') FROM jsonb_array_elements(m.blocks) b
                         WHERE b->>'type' = 'text'), '') AS text,
-             row_number() OVER (PARTITION BY m.role ORDER BY m.created_at DESC) AS recent_rank
+             row_number() OVER (PARTITION BY m.role ORDER BY m.created_at DESC, m.seq DESC) AS recent_rank
       FROM companion_messages m
       WHERE m.workspace_id = ${scope.workspaceId} AND m.user_id = ${scope.userId}
         AND m.kind IN ('text', 'voice_transcript', 'proactive')
         AND m.created_at >= ${dayStart(scope)} AND m.created_at < ${dayEnd(scope)}
     )
     SELECT at_local, role, text,
-           id::text AS source_id, content_sha256 AS source_version
+           id::text AS source_id, content_sha256 AS source_version, conversation_id::text
     FROM day
     WHERE recent_rank <= 12 AND length(trim(text)) > 0
-    ORDER BY created_at ASC
+    ORDER BY created_at ASC, conversation_id, seq
   `);
   const touchedNotes = Array.isArray(noteRows) ? noteRows : [];
   const mentionedNoteId = (text: string) => touchedNotes.find(
     (note) => note.title.length >= 8 && text.includes(note.title),
   )?.note_id;
-  let lastUserNote: { noteId: string; minute: number } | null = null;
+  let lastUserNote: { noteId: string; minute: number; conversationId: string } | null = null;
   for (const row of Array.isArray(messageRows) ? messageRows : []) {
     // 她自己说过的话权重最高：用户裁定"日记的主角是她自己的日子"，而这是素材里
     // 唯一属于她的一天、且不是我们编的东西。他自己说的话退成背景。
@@ -461,18 +459,22 @@ export async function collectDiaryMaterial(tx: WorkerTransaction, scope: DayScop
     const directNoteId = mentionedNoteId(row.text);
     if (row.role === "assistant") {
       const noteId = directNoteId ?? (
-        lastUserNote && minute !== null && minute >= lastUserNote.minute && minute - lastUserNote.minute <= 5
+        lastUserNote && lastUserNote.conversationId === row.conversation_id
+          && minute !== null && minute >= lastUserNote.minute && minute - lastUserNote.minute <= 5
           ? lastUserNote.noteId : undefined
       );
       pieces.push({
         text: `我说：${row.text}`, group: "her", weight: diaryAssistantWeight(row.text), at: row.at_local, noteId,
         sourceId: row.source_id, sourceType: "companion_message", sourceVersion: row.source_version,
+        conversationId: row.conversation_id,
       });
     } else {
-      lastUserNote = directNoteId && minute !== null ? { noteId: directNoteId, minute } : null;
+      lastUserNote = directNoteId && minute !== null
+        ? { noteId: directNoteId, minute, conversationId: row.conversation_id } : null;
       pieces.push({
         text: `你说：${row.text}`, group: "his", weight: 1, at: row.at_local, noteId: directNoteId,
         sourceId: row.source_id, sourceType: "companion_message", sourceVersion: row.source_version,
+        conversationId: row.conversation_id,
       });
     }
   }
@@ -667,11 +669,13 @@ export async function collectDiaryMaterial(tx: WorkerTransaction, scope: DayScop
   };
 }
 
-const DIARY_TASK_MODEL_CALLS = 4;
+// Selection, draft and source-based revision each allow one retry; image read
+// consumes at most one additional call. All share the original job deadline.
+const DIARY_TASK_MODEL_CALLS = 7;
 const DIARY_SELECTION_TASK_ID = "companion_diary_selection";
 const DIARY_SELECTION_TASK_VERSION = 1;
 const DIARY_DRAFT_TASK_ID = "companion_diary_draft";
-const DIARY_DRAFT_TASK_VERSION = 1;
+const DIARY_DRAFT_TASK_VERSION = 2;
 
 const diarySelectionCheckpointOutputSchema = z.object({
   selection: companionDiarySelectionSchema,
@@ -729,6 +733,7 @@ function diaryDraftInputHash(input: {
   return createHash("sha256").update(JSON.stringify({
     task: DIARY_DRAFT_TASK_ID,
     taskVersion: DIARY_DRAFT_TASK_VERSION,
+    draftPromptVersion: COMPANION_DIARY_DRAFT_PROMPT_VERSION,
     sourceSnapshotHash: input.sourceSnapshotHash,
     workspaceId: input.scope.workspaceId,
     userId: input.scope.userId,
@@ -981,7 +986,7 @@ async function composeDiary(
   });
   const remainingCalls = input.callsAvailable - imageRead.callsUsed;
   const remainingMs = input.deadlineAt - Date.now();
-  if (remainingCalls <= 0 || remainingMs <= 0) throw new Error("日记任务的剩余模型预算不足以成稿");
+  if (remainingCalls < 2 || remainingMs <= 0) throw new Error("日记任务的剩余模型预算不足以成稿和校订");
 
   let rejection: string | null = null;
   let snapshotChanged = false;
@@ -991,10 +996,10 @@ async function composeDiary(
     mode: "structured",
     resourceClass: "maintenance",
     budget: {
-      maxModelCalls: Math.min(2, remainingCalls),
+      maxModelCalls: Math.min(2, remainingCalls - 1),
       stepTimeoutMs: Math.max(1, Math.min(resolveProviderCallTimeout("companion_daily_summary"), remainingMs)),
       taskDeadlineMs: remainingMs,
-      maxAutoRetries: Math.min(1, remainingCalls - 1),
+      maxAutoRetries: Math.min(1, remainingCalls - 2),
     },
     completion: { kind: "structured_parsed" },
     usageContext: {
@@ -1027,27 +1032,18 @@ async function composeDiary(
         const { blocks, droppedRefs, strippedRefs } = resolveDiaryBlocks(parsed.data, prepared.material.embeds);
         const digest = groundedDiaryDigest(prepared.material);
         // `droppedRefs` 现在有三类来源：不存在的编号、同一个编号重复用、以及每篇一图一引
-// 的额度用满（§5.4）。文案按"丢掉了"写，不要只说"不认识的编号"——那样这条日志
-// 在额度生效时会报一件没发生的事。
-if (droppedRefs.length > 0) logger.warn({ jobId: job.id, date, droppedRefs }, "companion diary dropped embed refs");
+        // 的额度用满（§5.4）。文案按"丢掉了"写，不要只说"不认识的编号"——那样这条日志
+        // 在额度生效时会报一件没发生的事。
+        if (droppedRefs.length > 0) logger.warn({ jobId: job.id, date, droppedRefs }, "companion diary dropped embed refs");
         if (strippedRefs.length > 0) logger.warn({ jobId: job.id, date, strippedRefs }, "companion diary wrote embed refs into prose");
         const prose = blocks.filter((block) => block.type === "text").map((block) => block.text).join(" ");
         const retryable = (message: string) => {
           rejection = message;
           return { ok: false as const, class: "output_shape" as const, message };
         };
-        if (prose.length < (prepared.material.quietDay ? 6 : 24)) {
-          return retryable("正文太短，不像一篇日记。写一件今天真实发生过的事，再写你自己。");
-        }
-        // 地板比那句 24 字的旧判据宽，只在第一轮退：她写两遍还是这个长度就收下，
-        // 宁可短一段，也不让这一天没有日记（口径与下面的上限、问句收尾一致）。
+        const short = diaryLengthShortfall(blocks, prepared.material);
+        if (short) return retryable(short);
         if (env.retryIndex === 0) {
-          const short = diaryLengthShortfall(
-            blocks,
-            persona.activeness,
-            prepared.material.quietDay,
-          );
-          if (short) return retryable(short);
           const motif = repeatedMotifIn(blocks, prepared.material.previousMotifs);
           if (motif) {
             return retryable(
@@ -1056,8 +1052,6 @@ if (droppedRefs.length > 0) logger.warn({ jobId: job.id, date, droppedRefs }, "c
             );
           }
         }
-        const counted = countingToneIn(prose);
-        if (counted) return retryable(`你在报数（${counted}）。重写，把数字全去掉。`);
         const firstAttempt = env.retryIndex === 0;
         const echo = exampleEchoIn(prose, persona.examples);
         if (echo && firstAttempt) return retryable(`你把人格例子里的原话搬进来了（「${echo}」）。同一个意思，用你自己的话说。`);
@@ -1070,15 +1064,8 @@ if (droppedRefs.length > 0) logger.warn({ jobId: job.id, date, droppedRefs }, "c
           ? repeatedOpeningIn(firstParagraph.text, prepared.material.previousOpenings)
           : null;
         if (repeated && firstAttempt) return retryable(`今天的开头「${repeated}…」和你前几天写过的一样，换一个开头，也别只换几个字。`);
-        if (endsInQuestion(blocks) && firstAttempt) {
-          return retryable("你最后落在一个问句上。日记没有人回，把那句改成你当时怎么想的，或者直接停在那件事上。");
-        }
-        const thirdPerson = thirdPersonForUserIn(prose);
-        if (thirdPerson && firstAttempt) return retryable(`你把他写成了「${thirdPerson}」。这篇是对着他本人写的，全程用「你」。`);
-        const tooLong = diaryLengthOverflow(blocks, persona.activeness);
-        if (tooLong && firstAttempt) return retryable(tooLong);
         const output: DiaryDraft = {
-          blocks: z.array(companionDailyBlockV1Schema).max(24).parse(fitDiaryToParagraphBudget(blocks, persona.activeness)),
+          blocks: z.array(companionDailyBlockV1Schema).max(24).parse(blocks),
           digest,
         };
         return {
@@ -1138,7 +1125,18 @@ if (droppedRefs.length > 0) logger.warn({ jobId: job.id, date, droppedRefs }, "c
     throw new Error(receipt.failure?.message ?? "日记成稿步骤没有完成");
   }
   if (!receipt.output || job.signal?.aborted) return null;
-  const persisted = await persistDiary(job, scope, facts, receipt.output, null, {
+  const revised = await reviseDiaryDraft({
+    job, userId, persona, provider, draft: receipt.output, material: diaryMaterial,
+    sourceSnapshotHash: draftSnapshotHash,
+    callsAvailable: remainingCalls - receipt.usage.modelCalls, deadlineAt: input.deadlineAt,
+    verifySource: lock => withJobTransaction(job, async tx => {
+      if (lock) await lockJobLease(tx, job);
+      const current = await readCurrentDiarySelectionSnapshot(tx, scope, provider, govCtx);
+      return current?.hash === input.snapshotHash;
+    }),
+  });
+  if (!revised) return null;
+  const persisted = await persistDiary(job, scope, facts, revised, null, {
     expectedHash: input.snapshotHash,
     govCtx,
     provider,
@@ -1150,7 +1148,7 @@ if (droppedRefs.length > 0) logger.warn({ jobId: job.id, date, droppedRefs }, "c
     defaultExpressionVersion: persona.defaultExpressionVersion ?? String(PET_PERSONA_PRESET_VERSION),
   });
   if (!persisted) return null;
-  return receipt.output;
+  return revised;
 }
 
 export async function runCompanionDailySummary(job: JobPayload): Promise<void> {

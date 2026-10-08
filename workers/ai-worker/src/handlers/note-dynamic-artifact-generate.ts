@@ -7,8 +7,7 @@ import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
 import { noteAnchorMatchesV1 } from "@astella/shared/note-annotation-contracts";
 import * as schema from "@astella/shared/db-schema";
 import {
-  buildDynamicArtifactPrompt,
-  dynamicArtifactDocV1Schema,
+  createDynamicArtifactResponseSessionV1,
   runDynamicArtifactV1,
   ARTIFACT_COMPLETION_TOKENS_V1,
   type DynamicArtifactProviderV1,
@@ -101,6 +100,7 @@ async function readFrozenInput(job: JobPayload, input: ReturnType<typeof readNot
 }
 
 function jsonArtifactProvider(provider: ReturnType<typeof createGovernedProvider>, job: JobPayload, context: Awaited<ReturnType<typeof loadAgentGenerationContext>>): DynamicArtifactProviderV1 {
+  const session = createDynamicArtifactResponseSessionV1();
   return async (input, step) => {
     try {
       if (job.signal?.aborted) return { ok: false, class: "cancelled", message: "动态演示任务已取消" };
@@ -109,7 +109,7 @@ function jsonArtifactProvider(provider: ReturnType<typeof createGovernedProvider
       }
       await context.reserveModelCall();
       const result = await provider.chatCompletion(
-        [{ role: "system", content: context.instructions }, { role: "user", content: buildDynamicArtifactPrompt(input) }],
+        [{ role: "system", content: context.instructions }, { role: "user", content: session.prompt(input) }],
         { temperature: 0.4, maxTokens: ARTIFACT_COMPLETION_TOKENS_V1, responseFormat: "json_object" },
         step.signal,
       );
@@ -117,17 +117,11 @@ function jsonArtifactProvider(provider: ReturnType<typeof createGovernedProvider
       try { parsed = extractJsonFromText(result.content, ["title", "subject", "caution", "document", "outline"]); } catch {
         return { ok: false, class: "output_shape", message: "动态页面返回的 JSON 不完整" };
       }
-      const document = dynamicArtifactDocV1Schema.safeParse(parsed);
-      if (!document.success) {
-        const fields = document.error.issues.slice(0, 4).map((issue) => `${issue.path.join(".") || "root"}:${issue.code}`).join(", ");
-        const rawOutline = parsed && typeof parsed === "object" && "outline" in parsed ? parsed.outline : null;
-        const firstOutline = Array.isArray(rawOutline) ? rawOutline[0] : null;
-        const outlineKeys = firstOutline && typeof firstOutline === "object" ? Object.keys(firstOutline).join("|") : "none";
-        return { ok: false, class: "output_shape", message: `动态页面不符合输出约定（${fields}; outlineKeys=${outlineKeys}）` };
-      }
+      const accepted = session.accept(parsed, input);
+      if (!accepted.ok) return accepted;
       return {
         ok: true,
-        output: document.data,
+        output: accepted.output,
         promptTokens: result.usage?.promptTokens ?? undefined,
         completionTokens: result.usage?.completionTokens ?? undefined,
       };
@@ -206,8 +200,9 @@ export async function runNoteDynamicArtifactGenerate(job: JobPayload): Promise<v
   if (!documentCheck.ok) {
     // Only the bounded rule category is logged; the rejected page may contain
     // note text, URLs or script literals and must stay out of operational logs.
-    logger.warn({ jobId: job.id, stage: "document", reason: documentCheck.verdict.violation?.reason }, "note dynamic artifact rejected");
-    throw new NoteDynamicArtifactOutputError("动态演示页面没有通过安全检查");
+    const violation = documentCheck.verdict.violation;
+    logger.warn({ jobId: job.id, stage: "document", reason: violation?.reason, rule: violation?.rule }, "note dynamic artifact rejected");
+    throw new NoteDynamicArtifactOutputError(`动态演示页面没有通过安全检查（${violation?.rule ?? violation?.reason ?? "unknown"}）`);
   }
   const generatorRef = `${DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1} (${provider.modelId})`;
   const rendered = buildDynamicArtifactHtmlV1({

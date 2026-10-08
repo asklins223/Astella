@@ -22,6 +22,7 @@ const IN_FLIGHT_POLL_MS = 2000;
 /** The generation and review read the same records, including live partial cards. */
 export function useCardGenerationData() {
   const runId = useRoomStore((state) => state.activeCardGenerationRunId);
+  const scope = useRoomStore((state) => state.workspaceScopeRevision);
   const setRunId = useRoomStore((state) => state.setActiveCardGenerationRunId);
   const [run, setRun] = useState<CardGenerationRunSnapshotV1 | null>(null);
   const [candidates, setCandidates] = useState<CardGenerationCandidateV1[]>([]);
@@ -35,6 +36,7 @@ export function useCardGenerationData() {
   const [syncReport, setSyncReport] = useState<{ at: string; status: string | null; changed: boolean } | null>(null);
   const epochRef = useRef<number | undefined>(undefined);
   const requestRef = useRef(0);
+  const pendingRef = useRef<{ again: boolean; promise: Promise<string | null> } | null>(null);
   const lastStatusRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -66,39 +68,61 @@ export function useCardGenerationData() {
     return () => { active = false; };
   }, [noteId, runId]);
 
-  const load = useCallback(async (showLoading = false): Promise<string | null> => {
-    const request = ++requestRef.current;
-    if (!runId || !window.astella) { setLoading(false); return null; }
+  const load = useCallback((showLoading = false): Promise<string | null> => {
     if (showLoading) setLoading(true);
-    try {
-      const response = await window.astella.note.cardGeneration.getRun({ meta: createRequestMeta(epochRef.current), runId });
-      if (request !== requestRef.current) return null;
-      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
-      const nextRun = unwrapGatewayResult(response);
-      let nextCandidates: CardGenerationCandidateV1[] = [];
-      let nextQuota: CardGenerationPracticeQuotaV1 | null = null;
-      if (isCardGenerationReviewStage(nextRun.status) || isCardGenerationInFlight(nextRun.status)) {
-        const candidateResponse = await window.astella.note.cardGeneration.getCandidates({ meta: createRequestMeta(epochRef.current), runId });
-        if (request !== requestRef.current) return null;
-        if (candidateResponse.workspaceEpoch) epochRef.current = candidateResponse.workspaceEpoch;
-        const list = unwrapGatewayResult(candidateResponse);
-        nextCandidates = list.candidates;
-        nextQuota = list.practiceQuota;
-      }
-      setRun(nextRun);
-      setCandidates(nextCandidates);
-      setPracticeQuota(nextQuota);
-      setLandedCandidates(isCardGenerationReviewStage(nextRun.status) ? [] : nextCandidates.filter((candidate) => isLandedCandidate(candidate.qualityState)));
-      setActiveCandidateId((current) => nextCandidates.some((candidate) => candidate.candidateId === current)
-        ? current : nextCandidates.find(isActionableUndecidedCandidate)?.candidateId ?? nextCandidates[0]?.candidateId ?? null);
-      lastStatusRef.current = nextRun.status;
-      setFailure(null);
-      return nextRun.status;
-    } catch (error) {
-      if (request === requestRef.current) setFailure(gatewayErrorMessage(error));
-      return null;
-    } finally { if (request === requestRef.current) setLoading(false); }
-  }, [runId]);
+    if (pendingRef.current) {
+      pendingRef.current.again = true;
+      return pendingRef.current.promise;
+    }
+    const request = ++requestRef.current;
+    const current = () => request === requestRef.current && useRoomStore.getState().workspaceScopeRevision === scope
+      && useRoomStore.getState().activeCardGenerationRunId === runId;
+    const flight = { again: false, promise: Promise.resolve<string | null>(null) };
+    pendingRef.current = flight;
+    const read = async (): Promise<string | null> => {
+      if (!runId || !window.astella) { setLoading(false); return null; }
+      try {
+        const response = await window.astella.note.cardGeneration.getRun({ meta: createRequestMeta(epochRef.current), runId });
+        if (!current()) return null;
+        if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+        const nextRun = unwrapGatewayResult(response);
+        // The run snapshot is already authoritative even if the separate
+        // candidate read fails or takes longer. Keep the stage moving.
+        setRun(nextRun);
+        lastStatusRef.current = nextRun.status;
+        let nextCandidates: CardGenerationCandidateV1[] = [];
+        let nextQuota: CardGenerationPracticeQuotaV1 | null = null;
+        if (isCardGenerationReviewStage(nextRun.status) || isCardGenerationInFlight(nextRun.status)) {
+          const candidateResponse = await window.astella.note.cardGeneration.getCandidates({ meta: createRequestMeta(epochRef.current), runId });
+          if (!current()) return null;
+          if (candidateResponse.workspaceEpoch) epochRef.current = candidateResponse.workspaceEpoch;
+          const list = unwrapGatewayResult(candidateResponse);
+          nextCandidates = list.candidates;
+          nextQuota = list.practiceQuota;
+        }
+        if (!current()) return null;
+        setCandidates(nextCandidates);
+        setPracticeQuota(nextQuota);
+        setLandedCandidates(isCardGenerationReviewStage(nextRun.status) && nextRun.status !== "needs_attention"
+          ? [] : nextCandidates.filter((candidate) => candidate.publishState === "unpublished" && isLandedCandidate(candidate.qualityState)));
+        setActiveCandidateId((current) => nextCandidates.some((candidate) => candidate.candidateId === current)
+          ? current : nextCandidates.find(isActionableUndecidedCandidate)?.candidateId ?? nextCandidates[0]?.candidateId ?? null);
+        setFailure(null);
+        return nextRun.status;
+      } catch (error) {
+        if (current()) setFailure(gatewayErrorMessage(error));
+        return null;
+      } finally { if (current()) setLoading(false); }
+    };
+    // Finish each snapshot before reading the next. A poll/event burst must not
+    // invalidate every response on a slow connection and freeze the progress.
+    flight.promise = read().finally(() => {
+      if (pendingRef.current !== flight) return;
+      pendingRef.current = null;
+      if (flight.again && current()) void load(false);
+    });
+    return flight.promise;
+  }, [runId, scope]);
 
   const resync = useCallback(async () => {
     const before = lastStatusRef.current;
@@ -107,6 +131,8 @@ export function useCardGenerationData() {
   }, [load]);
 
   useEffect(() => {
+    pendingRef.current = null;
+    epochRef.current = undefined;
     setRun(null); setCandidates([]); setLandedCandidates([]); setPracticeQuota(null);
     setActiveCandidateId(null); setFailure(null); setSyncReport(null);
     lastStatusRef.current = null;
@@ -139,16 +165,16 @@ export function useCardGenerationData() {
   /**
    * 在途轮询：后台还在做这一批的时候，自己按节奏重读一次。
    *
-   * **只在"还在做"的时候跑**。终态（待审核／已完成／失败…）之后这一屏不再自己变，
-   * 继续轮询就只是白白消耗——而审核台上每点一次「保留」都已经自己重读过一次了。
+   * 后台还在做、首次状态未读到或读数失败时继续重试。完整读取终态后停，
+   * 审核台上的用户操作会自己重读结果。
    *
    * 它与事件流是**并联**而不是串联：流在，它把两次重读之间的空档补上；流被限流顶回、
    * 建不上、或者中途断了，这一屏照样往前走。窗口不可见时停——看不见的时候没有人在等
    * 那一列题面，重新可见时立刻补读一次。
    */
-  const inFlight = Boolean(run && isCardGenerationInFlight(run.status));
+  const shouldPoll = !run || isCardGenerationInFlight(run.status) || Boolean(failure);
   useEffect(() => {
-    if (!runId || !inFlight) return;
+    if (!runId || !shouldPoll) return;
     let timer: number | null = null;
     const read = () => { void load(false); };
     const start = (): void => {
@@ -165,7 +191,7 @@ export function useCardGenerationData() {
       if (timer !== null) window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [runId, inFlight, load]);
+  }, [runId, shouldPoll, load]);
 
   return { runId, run, candidates, landedCandidates, practiceQuota, activeCandidateId, setActiveCandidateId,
     loading, failure, noteTitle, waitingForRun: !runId && !runIdHealed, syncReport, epochRef, load, resync };

@@ -702,6 +702,7 @@ test("改写请求使用 JSON 内容合同，冻结事实完整保留，并拒�
   for (const field of ["answerParts", "judgingPoints", "front", "evidenceSnapshotIds", "estimatedReviewSeconds"])
     assert.ok(prompt.includes(field), `模型要收到真实合同字段 ${field}`);
   assert.match(prompt, /rewrites\.judgingPoints\[\]/);
+  assert.match(prompt, /practiceItem.*允许字段：kind、options、correctUnitId；不可添加其他字段/);
   assert.ok(prompt.includes(JSON.stringify(first.presentation.front)), "现有题面以真实 cue/prompt 对象进入同一内容合同");
   assert.ok(prompt.includes(input.sourceContent));
   assert.ok(prompt.includes(EVIDENCE_A));

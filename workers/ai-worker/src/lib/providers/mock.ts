@@ -351,11 +351,22 @@ fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
       });
       return { content, usage: this.estimateUsage(userContent, content) };
     }
+    if (diaryRoundTripFixture && systemContent.includes("你是这篇私人日记的校订者")) {
+      const parsed = JSON.parse(userContent) as { draft: unknown };
+      const content = JSON.stringify(parsed.draft);
+      return { content, usage: this.estimateUsage(userContent, content) };
+    }
     if (diaryRoundTripFixture && systemContent.includes("只输出 JSON。通常只需要正文：")) {
       const content = JSON.stringify({
         blocks: [{
           type: "text",
-          text: "今天我记下了我们一起核对那道题的过程。你把卡住的地方说清楚后，我陪着你把利息怎样并入本金看清了。这个过程让我觉得很踏实。",
+          text: "今天一起核对了那道复利题。对方问的是利息为什么要并进本金，我回答时把这一步重新拆开了。现在写下来，才觉得那个问题很具体：不是笼统地不会算，而是没想明白这一步从哪里来。要是只把计算往下列，问的地方就被越过去了。",
+        }, {
+          type: "text",
+          text: "我此刻更在意的也是这一处。一个步骤看起来顺理成章，不代表它已经说清楚了；讲的人容易顺着往下走，听的人还停在前面。这次留下来的正是那个停顿。具体怎么算，我在对话里已经拆开讲过，这里先记住对方真正问的是什么。",
+        }, {
+          type: "text",
+          text: "利息并入本金，这几个字以前读起来很快，现在看着就会停一下。并不是题目忽然换了模样，是那个追问让我重新注意到这个步骤。我还想把来由讲得更直白些，少绕一点。今天的这段先留在这里。",
         }],
       });
       return { content, usage: this.estimateUsage(userContent, content) };

@@ -344,23 +344,6 @@ function placeholderPlugin() {
 }
 
 /**
- * 可编辑预览态的批注记号（41 §1.1 / §1.4）。
- *
- * 落位放在 **PM StateField** 里而不是模块级变量：装饰是随 state 重算的，
- * 放进 state 意味着「批注集合变了」本身就是一次事务，装饰自动跟上；
- * 放模块变量就得自己想办法让 PM 重算一次，那条路实测起来是「记号不消失」。
- *
- * **块下标 == 顶层 PM 节点下标**，实测确认（`use-note-doc-live-view.ts` 是
- * `pmNodesToNoteBlocks(json.content).map((b, ordinal) => …)`，而
- * `pmNodesToNoteBlocks` 对顶层节点 1:1，不摊平）。所以这里用 `doc.forEach`
- * 顺次记数——**不读**任何节点属性：节点 attrs 里根本没有 ordinal（只有
- * `sourceRef` 与 `imageAssetId`），按属性找会永远找不到。
- *
- * 装饰用 `Decoration.node` 挂在块上，而不是 `Decoration.inline` 包住那几个字：
- * 这一格的首要职责是让人改字，把整句变成可点区域会抢选区与光标；41 §1.1 要的
- * 只是「已有批注记号保留」，说清「这一块有一条批注」就够了。
- */
-/**
  * 打开旁页的回调：命令式插件拿不到 React props，经这一个 ref 过去。
  *
  * 它是**模块级单例**、跨换笔记也活着，所以每次渲染都要覆盖回去——否则上一篇的
@@ -380,9 +363,10 @@ const ANNOTATION_PLUGIN = new PluginKey<readonly AnnotationPlacement[]>("NOTE_ED
  * 顺次记数——**不读**任何节点属性：节点 attrs 里根本没有 ordinal（只有
  * `sourceRef` 与 `imageAssetId`），按属性找会永远找不到。
  *
- * 装饰用 `Decoration.node` 挂在块上，而不是 `Decoration.inline` 包住那几个字：
- * 这一格的首要职责是让人改字，把整句变成可点区域会抢选区与光标；41 §1.1 要的
- * 只是「已有批注记号保留」，说清「这一块有一条批注」就够了。
+ * 装饰用 `Decoration.node` 挂在块上画那道行边，另用一枚 `Decoration.widget` 角标
+ * 承接点击——**不是**把 `data-annotation-id` 放在块上：块级属性会让整段正文都成为
+ * 点击目标，于是「点到这一段就想改字」每次都先弹出批注旁页（2026-10-08 用户报）。
+ * 41 §1.1 要的只是「已有批注记号保留」，说清「这一块有一条批注」就够了。
  */
 function annotationPlugin() {
   return $prose(() => new Plugin<readonly AnnotationPlacement[]>({
@@ -406,17 +390,44 @@ function annotationPlugin() {
           const entries = byBlock.get(ordinal);
           ordinal += 1;
           if (!entries) return;
-          decorations.push(Decoration.node(offset, offset + node.nodeSize, {
-            class: "note-annotation-block",
-            "data-annotation-id": entries[0]!.annotationId,
-            "data-annotation-number": String(entries[0]!.number),
-            "aria-label": entries.length > 1 ? `这一段有 ${entries.length} 条批注` : "这一段有批注",
-          }));
+          decorations.push(Decoration.node(offset, offset + node.nodeSize, { class: "note-annotation-block" }));
+          // 角标是这一段里唯一的可点目标，所以它必须是真元素，不能是 `::before`——
+          // 伪元素没有盒子可命中，只能退化成「整块都能点」。
+          // `key` 不是可选的优化：这一遍每次 state 变化都会新建 DOM 节点，没有 key 就按
+          // 节点身份比，于是角标被换掉——真实点击的 mousedown 与 mouseup 落在两个节点上，
+          // 浏览器把 click 发到它们共同的父元素（那一段正文）上，点开就永远失效。
+          // key 取整段的批注集合：一段上挂着几条就有几枚角标（2026-10-08 用户报只见到一枚）。
+          if (node.isTextblock) {
+            decorations.push(Decoration.widget(offset + 1, annotationBadges(entries), {
+              side: -1, key: entries.map((entry) => entry.annotationId).join(","),
+              stopEvent: () => true, ignoreSelection: true,
+            }));
+          }
         });
         return DecorationSet.create(state.doc, decorations);
       },
     },
   }));
+}
+
+/**
+ * 行边那一排角标：这一段挂着几条批注就有几枚，各自开自己那张旁页。
+ * 外层与阅读态共用 `.note-annotation-badges`，两个视图里是同一套记号。
+ */
+function annotationBadges(entries: readonly AnnotationPlacement[]) {
+  const row = document.createElement("span");
+  row.className = "note-annotation-badges note-annotation-block-badges";
+  for (const entry of entries) {
+    const badge = document.createElement("span");
+    badge.className = "note-annotation-badge";
+    badge.setAttribute("role", "button");
+    badge.setAttribute("tabindex", "0");
+    badge.setAttribute("aria-label", `打开批注 ${entry.number}`);
+    badge.dataset.annotationId = entry.annotationId;
+    badge.dataset.number = String(entry.number);
+    row.append(badge);
+  }
+  return row;
 }
 
 /**

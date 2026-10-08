@@ -165,12 +165,16 @@ function contractSheetV3(node: unknown, path: string, out: string[], depth = 0):
       return;
     case "ZodObject": {
       const shape = n.shape ?? {};
+      const allowed = Object.keys(shape).filter(key => !isServerOwnedKeyV3(key, path));
       const required = Object.entries(shape)
         .filter(([key]) => !isServerOwnedKeyV3(key, path))
         .filter(([, field]) => (field as { safeParse: (v: unknown) => { success: boolean } })
           .safeParse(undefined).success === false)
         .map(([key]) => key);
-      if (path) out.push(`${path} 必填：${required.join("、") || "（这一层没有必填）"}`);
+      if (path) {
+        out.push(`${path} 允许字段：${allowed.join("、")}；不可添加其他字段`);
+        out.push(`${path} 必填：${required.join("、") || "（这一层没有必填）"}`);
+      }
       for (const [key, field] of Object.entries(shape)) {
         // 服务端整棵拿掉的子树（`relations`）不再向模型要，也不往里递归列格子。
         if (isServerOwnedKeyV3(key, path)) continue;
@@ -356,7 +360,7 @@ export function createCardGenerateV3Task(
     resourceClass: "card_foreground",
     budget,
     completion: { kind: "structured_parsed" },
-    usageContext: { modelId: deps.provider.modelId, promptVersion: "card-generate-v3.1", resourceClass: "card_foreground" },
+    usageContext: { modelId: deps.provider.modelId, promptVersion: "card-generate-v3.2", resourceClass: "card_foreground" },
     prepare: deps.prepare,
     execute: async (input, env): Promise<AiStepResult<CardGenerateV3TaskOutput>> => {
       const completion = await deps.provider.complete({
@@ -787,7 +791,7 @@ export function createCardCandidateRewriteV3Task(
     resourceClass: "card_foreground",
     budget,
     completion: { kind: "structured_parsed" },
-    usageContext: { modelId: deps.provider.modelId, promptVersion: "card-rewrite-v3.1", resourceClass: "card_foreground" },
+    usageContext: { modelId: deps.provider.modelId, promptVersion: "card-rewrite-v3.2", resourceClass: "card_foreground" },
     prepare: deps.prepare,
     execute: async (input, env): Promise<AiStepResult<CardCandidateRewriteV3TaskOutput>> => {
       const completion = await deps.provider.complete({

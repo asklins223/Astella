@@ -6,6 +6,7 @@ import { artifactBatchLabel, goalHeadline, goalNextHint, goalStatusText, goalTit
 import { renderCompanionMarkdown } from "./companion-markdown";
 import { CompanionGoalRevisions } from "./CompanionGoalRevisions";
 import { CompanionGoalMethod } from "./CompanionGoalMethod";
+import { CompanionCardTasks } from "./CompanionCardTasks";
 
 /** Task records live inside our conversation book, using the same projection as the bubble. */
 export function CompanionGoalJournal({ goals, targetId, onChat, onArtifactOpen }: {
@@ -51,6 +52,7 @@ export function CompanionGoalJournal({ goals, targetId, onChat, onArtifactOpen }
         <Check size={17} /><span><strong>{artifactBatchLabel(artifact, run)}</strong><small>{run.operations.some(operation => operation.result?.kind === "artifact" && operation.result.artifact.id === artifact.id) ? artifact.kind === "card_candidates" ? "按这次要求准备 · 由你审核与保存" : "按这次要求生成" : "之前做好的 · 保留在这里"}</small></span><ArrowUpRight size={16} />
       </button>)}
     </section> : null}
+    <CompanionCardTasks operations={run.operations} artifacts={run.artifacts} scope={goals.scope} onOpen={onArtifactOpen} />
     <div className="companion-goal-journal__next"><p>{goalNextHint(run)}</p><CompanionGoalControls run={run} goals={goals} onNewGoal={onChat} /></div>
     {hasCurrentArtifact ? delivery : null}
     <CompanionGoalMethod key={`${goals.scope}:${run.runId}:${run.revision}`} run={run} scope={goals.scope} onOpen={onArtifactOpen} />

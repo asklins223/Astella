@@ -39,7 +39,9 @@
 .hud-surface .notebook-desk[data-fullscreen] .notebook-desk__page {
   width: min(100%, 88ch); min-height: calc(100dvh - 190px); margin-inline: auto; font-size: 18px;
 }
-.hud-surface .notebook-desk[data-fullscreen] :is(.note-transcript, .note-draft, .notebook-volume__article-head) {
+/* 带上 .notebook-workspace 这一级：排版偏好那条规则（note-writing.css 的 --writing-width）
+   与本条同权重且加载在后，不加重就只剩标题铺满 88ch、正文被收成 800px，两边各缩一截。 */
+.hud-surface .notebook-workspace .notebook-desk[data-fullscreen] :is(.note-transcript, .note-draft, .notebook-volume__article-head) {
   max-width: none; font-size: 18px; line-height: 1.95;
 }
 .hud-surface .notebook-desk[data-fullscreen] .notebook-volume__article-head { padding-bottom: 26px; margin-bottom: 30px; }

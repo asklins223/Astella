@@ -43,7 +43,11 @@ export function useCardGenerationSession() {
   const progressCounts = cardGenerationObservedProgress(run?.progress, data.landedCandidates);
   const progressView = run ? cardGenerationProgressView(run.status, progressCounts) : null;
   const canRegenerate = Boolean(run && !isCardGenerationInFlight(run.status));
-  const page: "candidate" | "generating" = run && isCardGenerationReviewStage(run.status) ? "candidate" : "generating";
+  // needs_attention also covers interrupted checks with only unaudited drafts.
+  const page: "candidate" | "generating" = run && isCardGenerationReviewStage(run.status)
+    && (run.status !== "needs_attention" || candidates.some(candidate => candidate.qualityState === "passed"
+      && candidate.publishState === "unpublished" && candidate.candidateEvidenceBindingPlanHash !== null))
+    ? "candidate" : "generating";
   const receipt = activation?.receipt ?? null;
   const schedulingNotice = activation ? activation.askedForScheduling
     ? reviewSchedulingNotice(activation.receipt.scheduling ?? []) : saveOnlyReceiptNotice() : null;

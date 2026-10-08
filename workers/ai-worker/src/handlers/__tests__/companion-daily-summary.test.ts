@@ -13,7 +13,6 @@ import {
 } from "../companion-daily-summary.ts";
 import { pickImageToRead } from "../companion-daily-summary-image.ts";
 import {
-  COMPANION_DIARY_DRAFT_PROMPT_VERSION,
   buildDiaryPrompt,
   captionEchoIn,
   clipAtBoundary,
@@ -23,20 +22,12 @@ import {
   diaryImageLabel,
   diaryAssistantWeight,
   exampleEchoIn,
-  diaryLengthOverflow,
-  diaryLengthShortfall,
-  diaryParagraphCount,
-  focusDiaryMaterial,
   groundedDiaryDigest,
-  endsInQuestion,
   imageShape,
-  thirdPersonForUserIn,
-  fitDiaryToParagraphBudget,
   isQuotableQuote,
   pickDiarySubject,
   pickImagesPerNote,
   pickQuoteCandidates,
-  renderMaterial,
   recurringMotifs,
   repeatedMotifIn,
   repeatedOpeningIn,
@@ -57,7 +48,6 @@ import {
   validateDiarySelection,
 } from "../companion-diary-candidates.ts";
 import { createDiaryCheckpointPort } from "../companion-diary-checkpoints.ts";
-import { COMPANION_VOICE_STYLE_LINES_V2 } from "@astella/shared";
 import { sanitizePersonaField } from "../companion-dialogue-content.ts";
 import { AIConsentRequiredError, AIDataPolicyDeniedError, AIProviderNotConfiguredError } from "../../lib/governance.ts";
 import { DailyDiaryOutputError } from "../../lib/non-retryable-errors.ts";
@@ -66,8 +56,8 @@ import { DailyDiaryOutputError } from "../../lib/non-retryable-errors.ts";
  * 日记 prompt 的测试。
  *
  * 旧文件测的是 `buildSummaryText()` 拼出来的统计句（"新增学习卡 3 张"），
- * 那正是用户嫌弃的东西，所以断言整体换掉：现在测的是**她拿到的设定**、
- * **她只能依据的素材**、以及**服务端那道反报数的机器闸**。
+ * 那正是用户嫌弃的东西，所以断言整体换掉：现在测的是**她拿到的设定**、**可核对的素材**与来源、嵌入物的合同。
+ * 完整经过与篇幅的回归用例见 companion-diary-writing.test.ts。
  */
 
 function persona(overrides: Partial<DiaryPersona> = {}): DiaryPersona {
@@ -111,9 +101,6 @@ const aQuote: DiaryEmbed = {
   ref: "引1", kind: "quote", label: "《欧姆定律》里写着", text: "电流与电压成正比。", noteId: "note-ohm",
 };
 const para = (text: string): DiaryBlock => ({ type: "text", text });
-/** n 段正文；每段 15 个字，够不够得着篇幅地板由调用方自己算。 */
-const paragraphsOf = (n: number): DiaryBlock[] =>
-  Array.from({ length: n }, (_unused, i) => para(`第${i + 1}段正文，说了一件小事。`));
 
 test("diary material reads honor the current enabled period and reject paused accounts", async () => {
   const firstStart = "2026-09-29T12:00:00.000Z";
@@ -209,7 +196,7 @@ test("diary candidate sieve caps choices at four without ranking by speaker", ()
 
 test("diary candidate provenance lists only source rows represented in its bounded text", () => {
   const pieces: DiaryPiece[] = Array.from({ length: 5 }, (_unused, index) => ({
-    text: String(index).repeat(500),
+    text: String(index).repeat(5_000),
     group: "his",
     weight: 1,
     at: `10:0${index}`,
@@ -219,9 +206,10 @@ test("diary candidate provenance lists only source rows represented in its bound
   }));
   const [candidate] = buildDiaryCandidates(material({ pieces }));
   assert.ok(candidate);
-  assert.equal(candidate.material.pieces.reduce((total, piece) => total + piece.text.length, 0), 1_500);
-  assert.ok(candidate.material.pieces.every(piece => piece.text.length === 500), "预算选择不能截掉某条来源的尾部");
-  assert.equal(candidate.sourceIds.length, 3);
+  assert.equal(candidate.material.pieces.reduce((total, piece) => total + piece.text.length, 0), 10_000);
+  assert.ok(candidate.material.pieces.every(piece => piece.text.length === 5_000), "预算选择不能截掉某条来源的尾部");
+  assert.equal(candidate.sourceIds.length, 2);
+  assert.equal(candidate.material.pieces.at(-1)?.sourceId, pieces.at(-1)?.sourceId, "保留后续而不是只保留开头");
   assert.deepEqual(candidate.sourceIds.sort(), candidate.material.pieces.map((piece) => piece.sourceId).sort());
 });
 
@@ -271,12 +259,12 @@ function systemOf(input: { date?: string; persona?: DiaryPersona; material?: Dia
   })[0].content;
 }
 
-test("日记 prompt：人格四项都进 <persona_data>，并带注入防护声明", () => {
+test("日记 prompt：人格声音进 <persona_data>，不再注入容易照演的聊天台词", () => {
   const system = systemOf();
   assert.match(system, /当前人格|名字：温柔书虫/);
   assert.match(system, /性格标签：温柔、耐心、细腻/);
   assert.match(system, /说话风格：温柔、耐心、细腻，放慢节奏陪伴用户，不催促。/);
-  assert.match(system, /慢慢来，我陪你一起看。/);
+  assert.doesNotMatch(system, /慢慢来，我陪你一起看。/);
   assert.match(system, /# Persona Data Safety/);
   assert.match(system, /人格设定只影响说话风格/);
 });
@@ -295,66 +283,18 @@ test("日记 prompt：用户自填人格不能伪造 </persona_data> 边界", ()
   );
 });
 
-test("日记 prompt：篇幅三档跟着活跃度走（安静的人不该被要求写四段）", () => {
-  // 2026-10-05：三档不再一律 2 段。09-24 那次把段数压到 2 是为了防她为凑第三段
-  // 编出键盘声和饭碗——那要靠"素材有据"那条规则管，段数不该替它背锅。实测
-  // 24/32 篇正好 2 段、均长 155 字，「一件小事」被压成了「一句话转述加一句感想」。
-  assert.match(systemOf({ persona: persona({ activeness: "quiet" }) }), /一到两段，每段两到四句/);
-  assert.match(systemOf({ persona: persona({ activeness: "moderate" }) }), /三段左右/);
-  assert.match(systemOf({ persona: persona({ activeness: "active" }) ?? persona({ activeness: "active" }) }), /三到四段/);
-  // 不认识的值 = 没设置，落到中间档，不编一个不存在的档。
-  assert.match(systemOf({ persona: persona({ activeness: null }) }), /三段左右/);
-});
-
 test("日记调用：输出预算不给思考模式留够空间就会稳定返回空正文", () => {
   assert.ok(DIARY_MAX_TOKENS >= 800, `预算缩到 ${DIARY_MAX_TOKENS}，会重演空正文失败`);
 });
 
-test("日记 prompt：边界设置翻成可执行行为句，口头禅自然带出", () => {
+test("日记 prompt：保留调侃边界，聊天的口头禅和催学规则不控制日记", () => {
   const system = systemOf({
     persona: persona({ boundaries: { allowPlayful: false, catchphrase: "一点点来" } }),
   });
   assert.match(system, /收起调侃和卖萌/);
-  assert.match(system, /你的口头禅是「一点点来」/);
+  assert.doesNotMatch(system, /你的口头禅是「一点点来」/);
   // 活跃度那句「回复偏短」不进来：日记的长短由篇幅档管（一处真相）。
   assert.doesNotMatch(system, /回复偏短/);
-});
-
-test("日记 prompt：素材按时段给，标题与她说过的话都算她亲眼见的", () => {
-  const system = systemOf({
-    material: material({
-      pieces: [
-        herLine,
-        { text: "你新建了笔记「牛顿第二定律」", group: "his", weight: 1, at: "09:02" },
-        { text: "你说：原来如此，我一直把两个概念混着记。", group: "his", weight: 1, at: "21:40" },
-      ],
-    }),
-  });
-  assert.match(system, /<day_material>/);
-  // 精确到分的 `HH:MM` 不再进素材：她记不住自己昨天的分钟数，抄进日记就是日志腔。
-  assert.match(system, /上午 · 你新建了笔记「牛顿第二定律」/);
-  assert.match(system, /晚上 · 你说：原来如此/);
-  assert.doesNotMatch(system, /09:02|21:40/);
-});
-
-/**
- * 素材超预算时先丢背景。
- *
- * 旧实现按时间平铺、超了从**前面**丢，于是"她上午说的那句"最先被挤掉、
- * 留下的是他晚上一件无关的事——用户裁定日记的主角是她自己，优先级就得写在结构里。
- */
-test("日记 prompt：素材超预算时先丢骨架与背景，她的那一天最后才动", () => {
-  const pieces: DiaryPiece[] = [
-    { text: "我说：这句话留在最前面，预算再紧也不该先丢它。", group: "her", weight: 3, at: "09:02" },
-    ...Array.from({ length: 120 }, (_unused, index) => ({
-      text: `他那边的一条背景素材 ${index}，专门用来把预算撑爆，越靠后越该先被丢掉。`,
-      group: "backdrop" as const, weight: 0, at: "",
-    })),
-  ];
-  const rendered = renderMaterial(material({ pieces }));
-  assert.ok(rendered.length < 3_400, `素材块没被夹住：${rendered.length}`);
-  assert.match(rendered, /这句话留在最前面/);
-  assert.doesNotMatch(rendered, /背景素材 119/);
 });
 
 test("素材时段：钟点折成时段词，节奏行折成「晚上八点多」", () => {
@@ -394,80 +334,13 @@ test("线头：她亲口承认没弄懂的片段优先于普通问候", () => {
   assert.equal(pickDiarySubject([greeting, stumble]), stumble);
 });
 
-test("素材块：线头单列一行，然后是她的一天、他的动静、时间骨架", () => {
-  const pieces: DiaryPiece[] = [
-    { text: "我说：这条我得翻一下笔记才敢说。", group: "her", weight: 3, at: "09:12" },
-    { text: "我主动开口说的是：那张卡到点了。", group: "her", weight: 2, at: "21:02" },
-    hisNote,
-    { text: "你在这些页面上待过：资料", group: "backdrop", weight: 0, at: "" },
-  ];
-  const rendered = renderMaterial(material({ pieces }));
-  assert.match(rendered, /^这一天的线头：我说：这条我得翻一下笔记才敢说。/);
-  // 其余素材按三块分组，各自按时间排。
-  assert.match(rendered, /# 她的一天\n晚上 · 我主动开口说的是：那张卡到点了。/);
-  assert.match(rendered, /# 他的动静（背景）\n晚上 · 你新建了笔记「欧姆定律」/);
-  assert.match(rendered, /# 时间骨架\n你在这些页面上待过：资料/);
-  // 线头只列一次：分组里再出现一遍，她会以为有两件事。
-  assert.equal((rendered.match(/这条我得翻一下笔记/g) ?? []).length, 1);
-});
-
-test("成稿素材只留当时那一幕，别把同一天的笔记、卡片和图硬塞进来", () => {
-  const subject: DiaryPiece = { text: "我说：嗯？大肥鱼是谁呀，我是元气小猫。", group: "her", weight: 3, at: "13:13" };
-  const focused = focusDiaryMaterial(material({
-    pieces: [
-      { text: "你说：大肥鱼你好啊", group: "his", weight: 1, at: "13:13" },
-      subject,
-      { text: "我说：后来给你看了 IndexTTS 的图。", group: "her", weight: 3, at: "13:25", noteId: "note-ohm" },
-      hisNote,
-      { text: "你问了地球公转的复习卡", group: "his", weight: 1, at: "13:03" },
-      { text: "你在资料页待过", group: "backdrop", weight: 0, at: "" },
-    ],
-    subject,
-    embeds: [anImage, aQuote],
-  }));
-  assert.deepEqual(focused.pieces.map((piece) => piece.text), [subject.text, "你说：大肥鱼你好啊"]);
-  assert.deepEqual(focused.embeds, []);
-  const prompt = systemOf({ material: focused });
-  assert.match(prompt, /你先说：「大肥鱼你好啊」\n我回答：「嗯？大肥鱼是谁呀，我是元气小猫。」/);
-  assert.doesNotMatch(prompt, /IndexTTS|地球公转|欧姆定律/);
-  assert.doesNotMatch(prompt, /图1 =|引1 =/);
-});
-
-test("笔记是这一幕的主角时，才给那篇的原文和图", () => {
-  const subject: DiaryPiece = { text: "我说：这段原文我得先翻笔记。", group: "her", weight: 3, at: "12:40", noteId: "note-ohm" };
-  const focused = focusDiaryMaterial(material({
-    pieces: [
-      hisNote,
-      { text: "你说：帮我看《欧姆定律》", group: "his", weight: 1, at: "12:39", noteId: "note-ohm" },
-      subject,
-      { text: "你说：换个话题", group: "his", weight: 1, at: "12:48" },
-    ],
-    subject,
-    embeds: [anImage, aQuote, { ...aQuote, ref: "引2", noteId: "other" }],
-  }));
-  assert.deepEqual(focused.pieces.map((piece) => piece.text), [subject.text, "你说：帮我看《欧姆定律》"]);
-  assert.deepEqual(focused.embeds.map((embed) => embed.ref), ["图1", "引1"]);
-});
-
 test("派生记忆只存可核对的线头，不把模型的感想当事实", () => {
   assert.equal(groundedDiaryDigest(material({ pieces: [herLine] })), herLine.text);
   assert.equal(groundedDiaryDigest(material({ pieces: [], subject: null, quietDay: true })), "");
   assert.doesNotMatch(systemOf(), /"digest"/);
 });
 
-test("日记 prompt：前几天日记的开头进得去，第一次写则明说", () => {
-  const withHistory = systemOf({ material: material({ previousOpenings: ["今天他来得比昨天早。"] }) });
-  assert.match(withHistory, /今天不许沿用同样的开头/);
-  assert.match(withHistory, /今天他来得比昨天早。/);
-  assert.match(systemOf(), /这是你第一次写日记/);
-});
-
-test("日记 prompt：重采样那一轮带上报错原因，第一轮不带", () => {
-  assert.doesNotMatch(systemOf(), /上一轮你交回来的东西被拒了/);
-  assert.match(systemOf({ rejection: "你在报数（4 张）。重写，把数字全去掉。" }), /你在报数（4 张）/);
-});
-
-test("反报数闸：数字加量词就拒，标题里的数字不误伤", () => {
+test("图注计数检测：识别数字加量词，标题里的数字不误伤", () => {
   assert.equal(countingToneIn("今天新增学习卡 4 张，收录资料 1 份。"), "4 张");
   assert.equal(countingToneIn("他学了 45 分钟。"), "45 分钟");
   assert.equal(countingToneIn("他一共问了 3 个问题"), "3 个");
@@ -475,62 +348,6 @@ test("反报数闸：数字加量词就拒，标题里的数字不误伤", () =>
   assert.equal(countingToneIn("他新建了笔记「100 以内加法」"), null);
   assert.equal(countingToneIn("笔记里那句 F=ma 他念了两遍"), null);
   assert.equal(countingToneIn("晚上十点他说想慢慢来。"), null);
-});
-
-/**
- * 篇幅闸：按**段**核对。
- *
- * 两轮的实测账：第一轮按句数收（安静 5 句），用户回来说"太短了，而且只有一段，
- * 这不是日记的格式"。所以档位换成段，每段内部不再限句数。
- */
-test("篇幅闸：按人格核对段数，图与引用不占段", () => {
-  const paragraphs = paragraphsOf;
-  assert.equal(diaryParagraphCount(paragraphs(4)), 4);
-  assert.equal(diaryParagraphCount([para("一段。"), anImageBlock(), para("二段。")]), 2, "嵌进去的块不该被数成一段");
-
-  assert.equal(diaryLengthOverflow(paragraphs(2), "quiet"), null, "2 段是安静档的上限");
-  assert.match(diaryLengthOverflow(paragraphs(3), "quiet") ?? "", /太长了/);
-  // 上限跟着档位走：2026-10-05 起中等档 3 段、活跃档 4 段（此前一律 2 段，
-  // 而 `fitDiaryToParagraphBudget` 会把超出的部分整段丢掉）。
-  assert.equal(diaryLengthOverflow(paragraphs(3), "moderate"), null, "中等档写满 3 段不算长");
-  assert.ok(diaryLengthOverflow(paragraphs(4), "moderate"));
-  assert.equal(diaryLengthOverflow(paragraphs(4), "active"), null, "活跃档写满 4 段不算长");
-  assert.ok(diaryLengthOverflow(paragraphs(5), "active"));
-  // 没设置活跃度 = 按中间档核对，不给一个不存在的档放水。
-  assert.ok(diaryLengthOverflow(paragraphs(4), null));
-});
-
-test("篇幅地板：太短要退，但安静日与普通日子各用各的数（2026-10-05）", () => {
-  const short = diaryLengthShortfall(paragraphsOf(1), "moderate", false);
-  assert.ok(short, "普通日子里写一段就是短");
-  assert.match(short ?? "", /至少写 190 字/);
-  // 夹具每段 15 字，两段 30 字仍低于中等档的 190——地板是真的有牙齿。
-  assert.ok(diaryLengthShortfall(paragraphsOf(2), "moderate", false));
-  // 安静日另算：没发生事的时候，短是诚实的，不能拿普通日子的地板去逼它。
-  // 安静日的地板也比旧判据宽（70 字 vs 原来的 6 字）——6 字那种"地板"等于没有。
-  const quietDayProse = "今天没什么事。页面停在一个地方停了很久，我没什么想做的，也就没动。"
-    + "光标闪了一阵，我盯着看了一会儿，忽然觉得这样也挺好，不用非去弄明白什么。"
-    + "过一会儿大概还是会这样，先记下来。";
-  assert.ok(quietDayProse.length >= 70, `夹具自己得够长，实际 ${quietDayProse.length} 字`);
-  assert.equal(
-    diaryLengthShortfall([para(quietDayProse)], "quiet", true),
-    null,
-    "安静日过了 70 字放行",
-  );
-  assert.ok(
-    diaryLengthShortfall([para("今天没什么事。")], "quiet", true),
-    "安静日一句 6 字仍然要退，但退的理由不再是那句几乎不拦人的 24 字判据",
-  );
-  // 地板跟着档位走，活跃的人被要求写得更多。
-  assert.equal(
-    diaryLengthShortfall(paragraphsOf(2), "active", false) === null,
-    false,
-    "同一篇在活跃档更低",
-  );
-  assert.match(
-    diaryLengthShortfall(paragraphsOf(2), "active", false) ?? "",
-    /至少写 260 字/,
-  );
 });
 
 test("意象去重：跨篇复现的**连续说法**要被挑出来（2026-10-05）", () => {
@@ -575,25 +392,6 @@ test("意象去重：今天把老说法又用了一遍才算套路，闸才响�
   );
   assert.equal(repeatedMotifIn(twice, []), null, "没有历史可比时不拦");
 });
-
-/** 重采样一次后仍超长时收在段边界，而不是把这一天判成没有日记。 */
-test("篇幅收口：超长只在段边界截，跟着那段的图一起留下", () => {
-  const blocks: DiaryBlock[] = [
-    para("第一段。"), anImageBlock(), para("第二段。"), para("第三段。"),
-  ];
-  const kept = fitDiaryToParagraphBudget(blocks, "quiet");
-  assert.deepEqual(kept.map((block) => block.type), ["text", "image", "text"]);
-  assert.equal(diaryParagraphCount(kept), 2);
-  // 没超就一个字都不动。
-  const withinBudget = blocks.slice(0, 3);
-  assert.equal(fitDiaryToParagraphBudget(withinBudget, "active"), withinBudget);
-  // 截断不会留下一张没有正文陪着的图：只嵌块、没有正文的极端输入原样返回。
-  assert.deepEqual(fitDiaryToParagraphBudget([anImageBlock()], "quiet"), [anImageBlock()]);
-});
-
-function anImageBlock(): DiaryBlock {
-  return { type: "image", url: anImage.url, label: "《欧姆定律》里的一张图" };
-}
 
 test("编号换成真货：她不存在的编号丢掉，引用原文由服务端带", () => {
   const draft = {
@@ -729,7 +527,7 @@ test("引用候选：招聘/清单条目排在真句子后面，池子里只剩�
  * 量词表刻意比阿拉伯那道窄：「这两天」「一个念头」「几天没见」是正常的话，
  * 误判的代价是一天没有日记。
  */
-test("反报数闸：中文数字加量词也拒，正常说法不误伤", () => {
+test("图注计数检测：中文数字加量词也识别，正常说法不误伤", () => {
   assert.equal(countingToneIn("今天学了半小时上下，不算多但够踏实。"), "半小时");
   assert.equal(countingToneIn("你翻了两篇笔记就走了。"), "两篇");
   assert.equal(countingToneIn("你问了我三次同一件事。"), "三次");
@@ -780,23 +578,6 @@ test("开头重复闸：前十个字撞上就报出来", () => {
   assert.equal(repeatedOpeningIn("夜深了。", previous), null);
 });
 
-test("日记 prompt：多段格式、她自己的生活、可嵌素材都送到了", () => {
-  const system = systemOf({ material: material({ embeds: [anImage, aQuote] }) });
-  assert.match(system, /分成几段往下写，像日记那样/);
-  assert.match(system, /只写一件小事、写透/);
-  assert.match(system, /你是这篇日记的主角/);
-  // 清单只有一处：day_material 里带编号与内容，规则 10 只负责指过去。
-  // 早先两处各列一份，改一处就会和另一处对不上。
-  assert.match(system, /图1 = 《欧姆定律》里的第 1 张图/);
-  assert.match(system, /引1 = 《欧姆定律》里写着：「电流与电压成正比。」/);
-  assert.match(system, /已经在上面 day_material 里用编号列出来了/);
-  assert.match(system, /一件都不想用就不用，宁可不放也别硬塞/);
-  assert.match(system, /\{\"blocks\":\[/, "输出说明要换成块数组，不能再是单个 diary 字段");
-  assert.doesNotMatch(system, /\"diary\"/);
-  // 图注要她自己写一句：输出样例里得有 caption，否则模型不知道这个字段存在。
-  assert.match(system, /\"caption\"/);
-});
-
 /**
  * 音色只有一处真相（用户判词"文风还是怪怪的"的正解）。
  *
@@ -805,43 +586,12 @@ test("日记 prompt：多段格式、她自己的生活、可嵌素材都送到�
  * 不接整段是第一版试过、真跑否掉的：整段里"把球抛回去""不假称自己有身体""黏人但
  * 懂分寸"三处被她抄成了日记题材。这几条 doesNotMatch 就是防那个回潮。
  */
-test("日记 prompt：接音色的两句，不接整段角色底座", () => {
-  const system = systemOf();
-  assert.equal(COMPANION_DIARY_DRAFT_PROMPT_VERSION, "diary-draft-v2");
-  assert.ok(system.includes(COMPANION_VOICE_STYLE_LINES_V2), "音色那两句没进 prompt");
-  assert.ok(system.indexOf("# 你说话的样子") < system.indexOf("<persona_data>"));
-  assert.doesNotMatch(system, /把球抛回去/);
-  assert.doesNotMatch(system, /不假称自己有身体/);
-  assert.doesNotMatch(system, /黏人但懂分寸/);
-  assert.doesNotMatch(system, /^用户：/m, "对话示范不能进日记——它们每段都以问句收尾");
-  assert.match(system, /没有人在听/);
-  assert.doesNotMatch(system, /谈论你有没有身体、是不是程序/, "不要再把自我声明的题材送进 prompt");
-});
 
 /**
  * 图那条素材：她看不见图里画的是什么，但"挨着它上面那段在说什么"是库里现成的。
  * 没有这条，她就只能写出「你问我插图的事，我倒是挺配合地把图摆了出来」——
  * 09-23 的原句，读起来是在自曝机制。
  */
-test("日记 prompt：图给她挨着的那段正文，并明令不许写「摆图」这类动作", () => {
-  const system = systemOf({ material: material({ embeds: [anImage] }) });
-  assert.match(system, /它挨着的那段正文在说「电压和电流成正比，电阻是那个比值。」/);
-  assert.match(system, /不许写「给你看图」/);
-  assert.match(system, /「把图摆出来」「插图」这类动作/);
-  // 没读图时明说没人告诉她图里是什么——不这么写她就会猜（实测猜成"人挤人"）。
-  assert.match(system, /图里画的是什么没人告诉你——那就别猜/);
-  // 图块没有邻居（老素材）时不能说半句——"挨着的那段在说「」"比不给更糟。
-  assert.doesNotMatch(systemOf({ material: material({ embeds: [{ ...anImage, nearby: null }] }) }), /挨着的那段正文在说/);
-});
-
-test("日记 prompt：读过图之后把描述给她，并要求图注用自己的话", () => {
-  const described = { ...anImage, description: "一张流程图：语义 token 先出声学特征，再经声码器出波形。" };
-  const system = systemOf({ material: material({ embeds: [described] }) });
-  assert.match(system, /图里画的是：一张流程图：语义 token 先出声学特征/);
-  assert.match(system, /这是别人转述给你的/);
-  assert.match(system, /别写成你亲眼看了它/);
-  assert.match(system, /别照抄那句描述/);
-});
 
 /**
  * 读图限量与降级。政策关着 / 线头不在笔记上 / 图太大——三种都不读，
@@ -902,70 +652,12 @@ test("图候选：每篇笔记只留一张，优先有上下文的，池子空�
  * 第二轮把"至少两件能指着说的东西"删了：用户裁定"一件小事写透、宁少勿全"，
  * 那个凑数要求与它直接冲突。
  */
-test("日记 prompt：没事发生的日子写短、别拿情绪填，也不许编他说过话", () => {
-  // 安静日 = 没有事件 = 没有线头。素材只剩页面轨迹与时刻时，规矩 2 不能去指一行
-  // 不存在的「线头」，得换成"写一小段或写一句没什么事"。
-  const quiet = systemOf({
-    material: material({
-      quietDay: true,
-      pieces: [{ text: "你在这些页面上待过：对话、复习", group: "backdrop", weight: 0, at: "" }],
-    }),
-  });
-  assert.match(quiet, /今天没剩下什么线头：写一小段就好/);
-  assert.match(quiet, /别拿情绪和感受来填/);
-  assert.match(quiet, /别写成他问了什么、说了什么/);
-  assert.match(quiet, /今天这篇的篇幅：一到两段/);
-  assert.doesNotMatch(quiet, /素材最上面那行「这一天的线头」/);
-  assert.doesNotMatch(quiet, /至少要有两件/);
-  // 有事情发生的日子走另一支：线头必须被指出来，篇幅跟着人格档位走。
-  const normal = systemOf({ persona: persona({ activeness: "active" }) });
-  assert.match(normal, /素材最上面那行「这一天的线头」就是它/);
-  assert.match(normal, /今天这篇的篇幅：三到四段/);
-  assert.doesNotMatch(normal, /今天没剩下什么线头/);
-});
 
-/**
- * 反 AI 腔那一组——第二轮的判据换了。
- *
- * 泛化的"不写比喻、不写等待和思念"是上一轮加的，实测压不住症状也不产音色，
- * 还和音色基线自己的口语打架（她聊天里就说"嘿嘿""好呀"）。现在只留窄版：
- * **心情不靠比喻和天气写**，不升华。等待与思念由结构消灭——她是主角、只写一件事。
- * 这两条 doesNotMatch 是防裁定回潮的。
- */
-test("日记 prompt：只拦借景抒情与升华，不再泛化禁比喻；不念设定、不照抄", () => {
-  const system = systemOf();
-  assert.match(system, /不补天气和布景，也不用比喻代替那件事/);
-  assert.match(system, /不要在结尾把这一天总结成什么道理/);
-  assert.doesNotMatch(system, /不写比喻（/);
-  assert.doesNotMatch(system, /不写等待和思念/);
-  assert.match(system, /性格只体现在说法里/);
-  assert.match(system, /一句都别原样搬进日记/);
-  assert.match(system, /用你自己的话转述，别照抄/);
-  assert.match(system, /只是语气，别把原句搬进日记/);
-  // 禁词表：「后台」必须在（她的 persona 例子里就有「我在后台偷偷猜了个词」），
-  // 「页面、界面」必须不在——素材里就写着"资料页/复习页"，禁了等于自相矛盾。
-  assert.match(system, /系统、后台/);
-  assert.doesNotMatch(system, /卡片 ID、页面、界面/);
-});
-
-test("日记 prompt：人格例子最多送三条", () => {
+test("日记 prompt：聊天例子不变成日记事件，正面示范明确是虚构示例", () => {
   const five = ["一。", "二。", "三。", "四。", "五。"];
   const system = systemOf({ persona: persona({ examples: five }) });
-  assert.match(system, /- 三。/);
-  assert.doesNotMatch(system, /- 四。/);
-});
-
-test("日记 prompt：谁说的别记反——素材里的角色标签要原样讲给她", () => {
-  const system = systemOf();
-  assert.match(system, /谁说的别记反/);
-  assert.match(system, /「我主动开口说的是」/);
-  assert.match(system, /别把自己说过的话写成他让你做的事/);
-});
-
-test("日记 prompt：正文不许出现表情符号与内部词（与基础人格协议同一口径）", () => {
-  const system = systemOf();
-  assert.match(system, /不用 emoji/);
-  assert.match(system, /workspace、job、run/);
+  assert.doesNotMatch(system, /- 一。|- 三。|- 四。/);
+  assert.match(system, /虚构示例.*不是今天的素材/);
 });
 
 /**
@@ -984,37 +676,6 @@ test("失败分诊：没同意 / 模型没回来 / 写得不合规矩，三句�
   assert.equal(classifyDiaryFailure("not even an error"), "model_unavailable");
 });
 
-/**
- * 段数上限必须出现在**最后一条规则**上。
- *
- * 实测：只在中间设定段写"3 到 5 句"，同一人格两次真跑分别交回 15 句和 7 句。
- * 规则离输出段越近越容易被执行，而且它与服务端核对读同一张档位表。
- */
-/**
- * 问句收尾闸。
- *
- * 实录两笔：「不知道你现在是不是已经睡着了，还是正盯着天花板发呆？」（09-21）
- * 「这种时候是该回得热络些，还是保持刚才打招呼时的分寸？」（09-24 真跑）。
- * 日记没有听者，以问句收尾等于硬造一个。
- */
-test("问句收尾闸：最后落在问句上就报，落在陈述上就不报", () => {
-  assert.equal(endsInQuestion([para("你今天来了又走了。"), para("那我接着等？")]), true);
-  assert.equal(endsInQuestion([para("你今天来了又走了。"), para("我接着等。")]), false);
-  // 中间段落里的问句不算——只管收在哪个句子上。
-  assert.equal(endsInQuestion([para("你问我为啥笑？"), para("因为你自己先笑的。")]), false);
-  // 末尾是图或引用时，看它们前面那段正文。
-  assert.equal(endsInQuestion([para("这算什么呢？"), anImageBlock()]), true);
-});
-
-test("第三人称闸：日记里出现「他」就报，其他/他们不误伤", () => {
-  // 实录两稿漂："中午那会儿他随口一句…"、"这就是他下午随手敲进去的东西啊"。
-  assert.match(thirdPersonForUserIn("中午那会儿他随口一句「大肥鱼就大肥鱼」。") ?? "", /^他随口/);
-  assert.match(thirdPersonForUserIn("这就是他下午随手敲进去的东西啊。") ?? "", /^他下午/);
-  assert.equal(thirdPersonForUserIn("你说要详细解读，我就硬着头皮拆。"), null);
-  assert.equal(thirdPersonForUserIn("其他那些术语我没懂。"), null);
-  assert.equal(thirdPersonForUserIn("他们后来都没来过。"), null);
-});
-
 test("图的形状：照实量给她，她就不用猜", () => {
   assert.equal(imageShape(1080, 368), "横长条一张");
   assert.equal(imageShape(1242, 2736), "竖长条一张");
@@ -1024,30 +685,4 @@ test("图的形状：照实量给她，她就不用猜", () => {
   assert.equal(imageShape(900, 900), "接近方形的");
   // 量不出来就不说，不编一个形状。
   assert.equal(imageShape(0, 0), "");
-});
-
-test("日记 prompt：不让她把设定念成散文", () => {
-  const system = systemOf();
-  // 实录：「哪怕你知道我只是一段代码，没有真正的肢体」「不需要刻意讨好，也不需要
-  // 过分冷淡」——都是她把 prompt 里的自我描述抄进了日记。
-  assert.doesNotMatch(system, /谈论你有没有身体、是不是程序/);
-  assert.doesNotMatch(system, /那是你在跟自己说话，不用声明/);
-  assert.match(system, /不要用问句结尾|不抛问题、不接话、不向谁交代/);
-  // 自我声明那类词也进禁词表（规则 7 只拦 prompt，真跑里她确实写出了"一段代码"）。
-  assert.match(system, /后台、代码、程序、模型/);
-});
-
-test("日记 prompt：段数上限与字数地板作为最后一条规则送出，与服务端核对同一张表", () => {
-  // 2026-10-05：上限跟着档位走（2/3/4），并且第一次同时送出**地板**——
-  // 只说上限会被当成「最多」，155 字的均值就是「没人当真」的直接后果。
-  const quiet = systemOf({ persona: persona({ activeness: "quiet" }) });
-  assert.match(quiet, /13\. 全文最多 2 段/);
-  assert.match(quiet, /这一篇至少 70 字/);
-  assert.match(systemOf({ persona: persona({ activeness: "moderate" }) }), /13\. 全文最多 3 段/);
-  assert.match(systemOf({ persona: persona({ activeness: "active" }) }), /13\. 全文最多 4 段/);
-  assert.match(systemOf({ persona: persona({ activeness: "moderate" }) }), /这一篇至少 190 字/);
-  assert.match(systemOf({ persona: persona({ activeness: null }) }), /13\. 全文最多 3 段/);
-  // 必须排在素材与其余规则之后、输出说明之前。
-  assert.ok(quiet.indexOf("13. 全文最多") > quiet.indexOf("<day_material>"));
-  assert.ok(quiet.indexOf("13. 全文最多") < quiet.indexOf("# 输出"));
 });

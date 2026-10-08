@@ -104,12 +104,15 @@
 .hud-surface .note-annotation-anchor::after { content: attr(data-number); margin-inline: 3px; color: #917847; vertical-align: super; font: 700 11px/1 "Noto Sans SC Variable", sans-serif; }
 /* 两个编辑态的批注记号（41 §1.4）。它们**不包住正文**——可编辑预览那一格的首要
    职责是让人改字，纯编辑那一格是 Markdown 源码，所以两边都只在**行边**点一枚记号：
-   看得见「这一块／这一行有批注」，点得开同一张旁页，而一个字都不会被包起来。 */
-.hud-surface .note-annotation-block { position: relative; border-inline-start: 2px solid var(--hud-butter); border-radius: 2px 5px 5px 2px; cursor: pointer; }
-.hud-surface .note-annotation-block::before { content: attr(data-annotation-number); position: absolute; inset-inline-start: 2px; inset-block-start: -1px; padding: 0 4px; color: #6b5528; border-radius: 5px 8px 5px 9px; background: var(--hud-butter); font: 700 9px/1.6 "Noto Sans SC Variable", sans-serif; }
+   看得见「这一块／这一行有批注」，点得开同一张旁页，而一个字都不会被包起来。
+   点击目标也只有那一枚角标：整段可点会让「点到这一段就想改字」每次都弹出旁页。 */
+.hud-surface .note-annotation-block { position: relative; border-inline-start: 2px solid var(--hud-butter); border-radius: 2px 5px 5px 2px; }
+/* 角标落在纸面左边那道空档里，并且**朝左长**：一段挂着几条就有几枚，
+   若从行边往右排，第三枚起就压住了用户正要改的那几个字。 */
+.hud-surface .note-annotation-block-badges { position: absolute; inset-inline-end: calc(100% + 4px); inset-block-start: -1px; margin: 0; }
 .hud-surface .note-annotation-source { border-radius: 3px; background: color-mix(in srgb, var(--hud-butter) 22%, transparent); box-shadow: inset 2px 0 var(--hud-butter); cursor: pointer; }
 .hud-surface .note-annotation-source:hover { background: color-mix(in srgb, var(--hud-butter) 34%, transparent); }
-.hud-surface .note-annotation-block:focus-visible, .hud-surface .note-annotation-source:focus-visible { outline: 2px solid #b86742; outline-offset: 2px; }
+.hud-surface .note-annotation-block-badges .note-annotation-badge:focus-visible, .hud-surface .note-annotation-source:focus-visible { outline: 2px solid #b86742; outline-offset: 2px; }
 .hud-surface .note-explanation-anchor { border-bottom: 2px dotted #79a88c; background: color-mix(in srgb, var(--hud-mint) 25%, transparent); }
 .hud-surface .note-explanation-anchor:is([data-phase="interrupted"], [data-phase="save-error"], [data-phase="stopped"]) { border-bottom-color: #b89b75; background: color-mix(in srgb, var(--hud-butter) 24%, transparent); }
 .hud-surface .note-explanation-progress { margin: -12px 0 18px; color: var(--hud-green); font: 12px/1.6 "Noto Sans SC Variable", sans-serif; }

@@ -71,7 +71,9 @@
 .hud-surface .notebook-desk__drawer > summary::-webkit-details-marker { display: none; }
 .hud-surface .notebook-desk__drawer-paper { position: absolute; top: calc(100% + 9px); right: 0; display: grid; gap: 5px; width: 205px; padding: 10px; border: 2px solid #fef8e8; border-radius: 20px; background: #f6f0dc; box-shadow: 0 8px 22px #34482a24; transform-origin: top right; }
 .hud-surface .notebook-desk__drawer-paper .text-action { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 7px 10px; border-radius: 12px; font-size: 13px; text-align: left; }
-.hud-surface .notebook-volume__article-head { min-width: 0; max-width: 72ch; margin: 0 auto 28px; padding-bottom: 22px; border-bottom: 1px solid var(--hud-line); font-size: 17px; }
+/* 标题块与正文共用同一份纸面宽度：宽度是「排版」里可调的偏好（见 note-writing.css），
+   这里若固定 72ch，两边都居中就会让标题左右各缩进一截。源码视图与全屏各自另有整幅规则。 */
+.hud-surface .notebook-volume__article-head { min-width: 0; max-width: var(--writing-width, 72ch); margin: 0 auto 28px; padding-bottom: 22px; border-bottom: 1px solid var(--hud-line); font-size: 17px; }
 .hud-surface .notebook-volume__heading h2 { margin: 0; color: var(--hud-ink); font: 800 clamp(24px, 2vw, 30px)/1.5 "Noto Sans SC Variable", sans-serif; letter-spacing: -.04em; overflow-wrap: anywhere; text-wrap: pretty; }
 .hud-surface .notebook-volume__heading textarea { display: block; width: 100%; min-height: 1lh; max-height: 3lh; field-sizing: content; margin: 0; padding: 0; resize: none; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; }
 .hud-surface .notebook-volume__heading textarea::placeholder { color: #a0ac91; }

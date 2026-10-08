@@ -5,6 +5,7 @@ import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../
 import { useRoomStore } from "../../app/room-store";
 import { artifactLabel, goalStatusText, openAgentArtifact } from "./agent-goal-presentation";
 import { renderCompanionMarkdown } from "./companion-markdown";
+import { CompanionCardTasks } from "./CompanionCardTasks";
 
 /** Older requirements stay in the book; each page keeps its own delivery and saved results. */
 export function CompanionGoalRevisions({ run, scope, onArtifactOpen }: {
@@ -47,6 +48,7 @@ export function CompanionGoalRevisions({ run, scope, onArtifactOpen }: {
         {item.summary ? <div className="companion-record__body">{renderCompanionMarkdown(item.summary)}</div> : null}
         {item.artifacts.length ? <div className="companion-goal-journal__results">{item.artifacts.map(artifact => <button type="button" key={artifact.id}
           onClick={() => { if (openAgentArtifact(artifact, scope)) onArtifactOpen(); }}><span>{artifactLabel(artifact, run)}</span><ArrowUpRight size={16} /></button>)}</div> : null}
+        <CompanionCardTasks operations={item.operations} artifacts={item.artifacts} scope={scope} onOpen={onArtifactOpen} />
         {item.error ? <p className="companion-goal-error">{item.error}</p> : null}
       </details>)}
       {page?.unrecordedRevisions.length ? <p className="companion-goal-journal__intro">第 {page.unrecordedRevisions.join("、")} 次要求没有保存完整记录，已有成果仍保留在这件事里。</p> : null}

@@ -641,7 +641,7 @@ test("§6c · 选材与成稿检查点：发布写入失败后复用两步产物
     FROM companion_diary_generation_checkpoints
     WHERE job_id = ${jobId}
     ORDER BY task_id`, worker);
-  assert.deepEqual(beforeResume.map((row) => row.task_id), ["companion_diary_draft", "companion_diary_selection"]);
+  assert.deepEqual(beforeResume.map((row) => row.task_id), ["companion_diary_draft", "companion_diary_revision", "companion_diary_selection"]);
 
   await runCompanionDailySummary(job);
   const [diary] = await readInScope(scope(), (tx) => tx`

@@ -25,7 +25,9 @@ export function declaredAgentRequestStep(input: {
     card_generation_generate: "学习卡候选已准备好，等你审核决定收下哪些。",
   };
   const summary = current.some(operation => operation.result?.kind === "no_cards_recommended")
-    ? "这版材料暂不建议制卡，结论和原因已保留。" : done ? summaries[capability] : "这次生成没有完成，已有内容保留。";
+    ? "这版材料暂不建议制卡，结论和原因已保留。" : done ? summaries[capability]
+      : capability === "card_generation_generate" ? "这批学习卡的生成或核对没有完成。已写出的草稿保留，可以打开本次生成任务查看进度和重试方式。"
+        : "这次生成没有完成，已有内容保留。";
   const response: AgentTurnResult = { content: "", usage: {}, providerRequestId: null, toolCalls: current.length || reused ? [{
     id: `domain-delivery:${input.runId}:${input.revision}`, name: AGENT_GOAL_DELIVERY_CAPABILITY,
     arguments: { outcome: done ? "completed" : "failed", summary, requirements: [{ requirement: input.goal.slice(0,500),
