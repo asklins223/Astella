@@ -1,3 +1,4 @@
+import { createNoteMindMapTaskV1Schema, noteMindMapLatestTaskQueryV1Schema, noteMindMapLatestTaskV1Schema, noteMindMapPageV1Schema, noteMindMapTaskV1Schema, noteMindMapSourceV1Schema } from "@astella/shared/note-mind-map-contracts";
 import { uploadRemoteObject } from "./desktop-object-transfers";
 /**
  * 笔记正文的本机会话缓存（2026-09-30 随 `noteDocLocalSession` 一起搬成模块级）。
@@ -1729,3 +1730,57 @@ export function dropNoteDocLocalSessions(t: GatewayTransport, ): void {
     for (const session of noteDocLocalSessions.values()) session.state.dispose();
     noteDocLocalSessions.clear();
   }
+
+export async function getLatestNoteMindMapTask(t: GatewayTransport, noteId: string, query: unknown, requestId?: string) {
+    await t.ensureConnected(requestId);
+    const input = noteMindMapLatestTaskQueryV1Schema.parse(query);
+    const search = new URLSearchParams({ noteVersionId: safeUuid(input.noteVersionId) });
+    const result = await t.request(`/v2/notes/${safeUuid(noteId)}/mind-map-tasks/latest?${search.toString()}`, { method: "GET" }, true, true, requestId);
+    if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
+    const parsed = noteMindMapLatestTaskV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+export async function getNoteMindMapTask(t: GatewayTransport, noteId: string, taskId: string, requestId?: string) {
+    await t.ensureConnected(requestId);
+    const result = await t.request(`/v2/notes/${safeUuid(noteId)}/mind-map-tasks/${safeUuid(taskId)}`, { method: "GET" }, true, true, requestId);
+    if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
+    const parsed = noteMindMapTaskV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+export async function listNoteMindMaps(t: GatewayTransport, input: { noteId: string; before?: string }, requestId?: string) {
+    await t.ensureConnected(requestId);
+    const query = new URLSearchParams();
+    if (input.before) query.set("before", safeUuid(input.before));
+    const encodedQuery = query.toString();
+    const suffix = encodedQuery ? `?${encodedQuery}` : "";
+    const result = await t.request(`/v2/notes/${safeUuid(input.noteId)}/mind-maps${suffix}`, { method: "GET" }, true, true, requestId);
+    if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
+    const parsed = noteMindMapPageV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+export async function startNoteMindMapTask(t: GatewayTransport, noteId: string, request: unknown, requestId?: string) {
+    await t.ensureConnected(requestId);
+    const input = createNoteMindMapTaskV1Schema.parse(request);
+    const result = await t.request(`/v2/notes/${safeUuid(noteId)}/mind-map-tasks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    }, true, true, requestId);
+    if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
+    const parsed = noteMindMapTaskV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+export async function getNoteMindMapSource(t: GatewayTransport, noteId: string, mindMapId: string, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const result = await t.request(`/v2/notes/${safeUuid(noteId)}/mind-maps/${safeUuid(mindMapId)}/source`, { method: "GET" }, true, true, requestId);
+  if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
+  return noteMindMapSourceV1Schema.parse(result.body);
+}

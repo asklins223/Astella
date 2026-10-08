@@ -12,7 +12,7 @@ export const operationStatusText: Record<AgentRunV1["operations"][number]["statu
   cancelled: "已停止", outcome_unknown: "结果待核对",
 };
 export function artifactLabel(artifact: AgentArtifactRefV1, run?: AgentRunV1) {
-  const label = { note_overview: "速看", note_dynamic_artifact: "互动演示", note_expansion: "拓展草稿", card_candidates: "待审核学习卡" }[artifact.kind];
+  const label = { note_mind_map: "思维导图", note_overview: "速看", note_dynamic_artifact: "互动演示", note_expansion: "拓展草稿", card_candidates: "待审核学习卡" }[artifact.kind];
   if (!run || new Set(run.inputs.map(input => input.noteId)).size < 2) return label;
   const index = run.inputs.findIndex(input => input.noteId === artifact.noteId && input.noteVersionId === artifact.noteVersionId);
   return index < 0 ? label : `笔记 ${index + 1} 的${label}`;
@@ -70,7 +70,7 @@ export function openAgentArtifact(artifact: AgentArtifactRefV1, scope: number) {
     return true;
   }
   room.setActiveNoteRef({ noteId: artifact.noteId, noteVersionId: artifact.noteVersionId,
-    learningView: artifact.kind === "note_overview" ? "overview" : artifact.kind === "note_expansion" ? "expansion" : "artifact",
+    learningView: (artifact.kind === "note_overview" || artifact.kind === "note_mind_map") ? "overview" : artifact.kind === "note_expansion" ? "expansion" : "artifact",
     learningResult: { kind: artifact.kind, artifactId: artifact.id, taskId: artifact.jobId, noteVersionId: artifact.noteVersionId } });
   room.invoke("open-notebook");
   return true;

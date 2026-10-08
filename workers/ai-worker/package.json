@@ -1,6 +1,6 @@
 {
   "name": "@astella/ai-worker",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
@@ -26,7 +26,8 @@
     "test:ai-task-kernel:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/ai-task-kernel-postgres.integration.ts",
     "test:public-http-gate:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/public-http-gate-postgres.integration.ts",
     "test:shared-foundation-vertical-slice:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/shared-foundation-vertical-slice-postgres.integration.ts",
-    "test:long-job-lease:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/long-job-lease-postgres.integration.ts"
+    "test:long-job-lease:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/long-job-lease-postgres.integration.ts",
+    "test:note-mind-map:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/note-mind-map-postgres.integration.ts"
   },
   "dependencies": {
     "@astella/agent-core": "file:../../packages/agent-core",

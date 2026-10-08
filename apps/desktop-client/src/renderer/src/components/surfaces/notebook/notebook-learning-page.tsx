@@ -2,6 +2,7 @@ import { BookOpen, Lightbulb, ScanText, Sprout } from "lucide-react";
 import type { NoteLearningEntry } from "./use-notebook-learning-entry";
 
 const COPY = {
+  mindMap: { label: "脑图", Icon: ScanText, purpose: "把整篇笔记整理成思维导图，展开知识分支，点选节点查看解释和原文依据。", working: "正在整理这篇的脑图", result: "完成后可以缩放、拖动和折叠分支，逐个核对原文。" },
   overview: { label: "速看", Icon: ScanText, purpose: "把整篇的重点整理在一起，每一处都带着可以核对的原文。", working: "正在整理这篇的重点", result: "完成后，重点与原文出处会放在这一页。" },
   recall: { label: "回想", Icon: Lightbulb, purpose: "先回想一个问题，想不起时看一点线索，再翻开对应的原文。", working: "正在准备回想问题", result: "问题准备好后，先自己想，线索和原文由你决定何时打开。" },
   expansion: { label: "往外学", Icon: Sprout, purpose: "从这篇出发找值得继续读的内容。草稿先给你看，再由你决定收下哪篇。", working: "正在整理相关笔记草稿", result: "完成后可以逐篇翻开、编辑和选择；确认收下才会存入笔记库。" },
@@ -9,7 +10,7 @@ const COPY = {
 
 /** Real state, expected result, and a route back to the note occupy the task page. */
 export function NotebookLearningPage(props: {
-  readonly kind: NoteLearningEntry;
+  readonly kind: NoteLearningEntry | "mindMap";
   readonly title: string;
   readonly version: number;
   readonly state: "empty" | "loading" | "queued" | "running" | "failed";

@@ -10,6 +10,15 @@ import type { NoteDetailV1 } from "@astella/shared/note-projection-contracts";
 
 afterEach(() => { cleanup(); window.getSelection()?.removeAllRanges(); });
 
+it("多处脚注编号一致、正文可跳转、定义可阅读，批注字符流仍与服务端一致", () => {
+  const blocks = [{ ordinal: 0, type: "paragraph" as const, content: "首处[^A] 后续文字" }, { ordinal: 1, type: "paragraph" as const, content: "另一处[^B] 再次[^A]" }, { ordinal: 2, type: "paragraph" as const, content: "[^A]: **第一条**解释" }, { ordinal: 3, type: "paragraph" as const, content: "[^B]: 第二条解释" }];
+  const documentSource = blocks.map(block => block.content).join("\n\n");
+  const view = render(<article className="note-transcript">{blocks.map(block => <ReadingBlock key={block.ordinal} block={block} mark={null} documentSource={documentSource} />)}</article>);
+  expect(view.getAllByRole("link", { name: /前往脚注/ }).map(link => link.textContent)).toEqual(["1", "2", "1"]);
+  expect(view.getByText("第一条").tagName).toBe("STRONG"); expect(view.getByText("第二条解释")).not.toBeNull();
+  for (const root of view.container.querySelectorAll<HTMLElement>("[data-note-block-content]")) { const block = blocks[Number(root.parentElement!.dataset.blockOrdinal)]!; expect(noteReadingText(root)).toBe(noteBlockRenderedTextV1(block.type, block.content)); }
+});
+
 it("独立公式排出指数与分数，行内公式也排版；TeX 源码往返不改变", () => {
   const blocks = [{ type: "paragraph" as const, content: "$$\nA = P(1 + r)^n\n$$" },
     { type: "paragraph" as const, content: "增长为 $\\frac{A}{P}$，这里是**正文**。" }];

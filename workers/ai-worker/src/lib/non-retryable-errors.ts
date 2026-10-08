@@ -158,6 +158,10 @@ export class DailyDiaryOutputError extends Error {
 }
 
 /** A generated note overview cannot be trusted or the frozen note exceeds this task's supported size. */
+export class NoteMindMapOutputError extends Error {
+  constructor(message: string, readonly code = "NOTE_MIND_MAP_OUTPUT_INVALID") { super(message); this.name = "NoteMindMapOutputError"; }
+}
+
 export class NoteOverviewOutputError extends Error {
   readonly code = "NOTE_OVERVIEW_OUTPUT_INVALID" as const;
 }
@@ -215,7 +219,7 @@ export function isNonRetryableError(error: unknown): boolean {
 
   // 日记正文不合规同理（报数 / 空到不像日记），重投只是重复计费。
   if (error instanceof DailyDiaryOutputError) return true;
-  if (error instanceof NoteOverviewOutputError) return true;
+  if (error instanceof NoteOverviewOutputError || error instanceof NoteMindMapOutputError) return true;
   if (error instanceof NoteAnnotationOutputError) return true;
   if (error instanceof NoteDynamicArtifactOutputError) return true;
   if (error instanceof NoteDynamicArtifactAttemptExhaustedError) return true;

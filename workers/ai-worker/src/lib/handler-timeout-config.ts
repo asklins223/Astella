@@ -29,6 +29,7 @@ const DEFAULT_TIMEOUTS: Record<string, number> = {
   companion_memory_organize: DEFAULT_AI_TASK_TIMEOUT_MS,
   companion_thought: DEFAULT_AI_TASK_TIMEOUT_MS,
   note_overview_generate: DEFAULT_AI_TASK_TIMEOUT_MS,
+  note_mind_map_generate: DEFAULT_AI_TASK_TIMEOUT_MS,
   note_annotation_explain: DEFAULT_AI_TASK_TIMEOUT_MS,
   note_dynamic_artifact_generate: DEFAULT_AI_TASK_TIMEOUT_MS,
   note_expansion_generate: DEFAULT_AI_TASK_TIMEOUT_MS,

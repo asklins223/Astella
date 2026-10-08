@@ -163,6 +163,7 @@ export function isHorizontalRule(text: string): boolean {
  * `lineClass` 给每一行套一个 `<span>`（列表项要逐行带记号），此时不再插 `<br>`。
  */
 export type NoteInlineRenderOptions = {
+    readonly documentSource?: string;
     readonly mark?: readonly [number, number] | null;
     readonly workspaceEpoch?: number;
     readonly galleryStart?: number;
@@ -195,6 +196,25 @@ function annotationRanges(options: NoteInlineRenderOptions) {
     return range ? [{ annotation, range, number: index + 1,
       endsHere: !options.block || options.block.ordinal === annotation.anchor.endBlockOrdinal }] : [];
   });
+}
+
+/**
+ * 公式的批注挂载只此一份。行内公式走这里的原子通道，整块公式段落走
+ * `note-markdown-reading` 的语法树通道——两边都得挂得上，否则同一种内容
+ * 在屏上长得一样，批注却只认其中一条路。
+ */
+export function renderNoteMath(atom: Extract<NoteInlineAtom, { kind: "math" }>, options: NoteInlineRenderOptions, key: string): ReactNode {
+  const annotations = annotationRanges(options);
+  const anchored = annotations.find(item => item.range[0] < atom.end && item.range[1] > atom.start);
+  const formula = <ReadableMath source={atom.text} value={atom.value} display={atom.display} />;
+  const badges = annotations.filter(item => item.endsHere && item.range[1] > atom.start && item.range[1] <= atom.end);
+  return <span key={key}>{anchored ? <NoteAnnotationMark annotation={anchored.annotation}
+    open={anchored.annotation.annotationId === options.openAnnotationId} onOpen={options.onOpenAnnotation}
+    onDelete={options.onDeleteAnnotation?.(anchored.annotation)}>{formula}</NoteAnnotationMark> : formula}
+    {badges.length ? <span className="note-annotation-badges" aria-label="原句的批注角标">{badges.map(item => <NoteAnnotationMark key={item.annotation.annotationId}
+      annotation={item.annotation} number={item.number} badge open={item.annotation.annotationId === options.openAnnotationId}
+      onOpen={options.onOpenAnnotation} onDelete={options.onDeleteAnnotation?.(item.annotation)}>{null}</NoteAnnotationMark>)}</span> : null}
+  </span>;
 }
 
 /** Code preserves its literal characters, using the same saved annotation ranges. */
@@ -236,16 +256,7 @@ export function renderNoteInline(
         />
       );
     } else if (atom.kind === "math") {
-      const anchored = annotations.find(item => item.range[0] < atom.end && item.range[1] > atom.start);
-      const formula = <ReadableMath source={atom.text} value={atom.value} display={atom.display} />;
-      const badges = annotations.filter(item => item.endsHere && item.range[1] > atom.start && item.range[1] <= atom.end);
-      node = <span key={key}>{anchored ? <NoteAnnotationMark annotation={anchored.annotation}
-        open={anchored.annotation.annotationId === options.openAnnotationId} onOpen={options.onOpenAnnotation}
-        onDelete={options.onDeleteAnnotation?.(anchored.annotation)}>{formula}</NoteAnnotationMark> : formula}
-        {badges.length ? <span className="note-annotation-badges" aria-label="原句的批注角标">{badges.map(item => <NoteAnnotationMark key={item.annotation.annotationId}
-          annotation={item.annotation} number={item.number} badge open={item.annotation.annotationId === options.openAnnotationId}
-          onOpen={options.onOpenAnnotation} onDelete={options.onDeleteAnnotation?.(item.annotation)}>{null}</NoteAnnotationMark>)}</span> : null}
-      </span>;
+      node = renderNoteMath(atom, options, key);
     } else {
       node = renderTextAtom(atom, key, mark, [from, to], annotations, options.onOpenAnnotation, options.openAnnotationId, explanationRanges(options), options.onDeleteAnnotation);
     }

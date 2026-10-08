@@ -10,13 +10,13 @@ import { openLibraryNoteLink } from "../note-library-links";
 import { noteLinkHref } from "@astella/shared/note-markdown";
 import type { NoteBodyMode } from "../note-document-mode";
 
-function Desk({ noteId = "note", canEdit = true, view = "body", saveError = null }: { noteId?: string; canEdit?: boolean; view?: "body" | "history"; saveError?: string | null }) {
+function Desk({ noteId = "note", canEdit = true, view = "body", saveError = null }: { noteId?: string; canEdit?: boolean; view?: "body" | "overview" | "recall" | "artifact" | "expansion" | "history" | "learning"; saveError?: string | null }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [mode, setMode] = useState<NoteBodyMode>("preview");
   const [side, setSide] = useState<NotebookSidePage | null>(null);
   return <NotebookDesk noteId={noteId} noteTitle="笔记" version={1} mode={mode} canEdit={canEdit}
     pendingMode={null} onMode={setMode} articleHeader={<h2>笔记</h2>} outline={[{ block: 2, title: "第二节", level: 2 }]}
-    onLocate={() => {}} onOpenDirectory={() => setSide(null)} learningView={view} onLearning={() => {}} onBody={() => {}}
+    onLocate={() => {}} onOpenDirectory={() => setSide(null)} learningView={view} onLearning={() => {}} onBody={() => {}} onHistory={() => {}}
     tools={mode !== "preview" ? <button type="button">加粗</button> : null}
     primaryAction={mode !== "preview" ? <button type="button">保存版本</button> : null} taskActions={null} extraActions={<button type="button">版本历史</button>}
     status="已同步" saveError={saveError} scrollRef={scrollRef} sidePage={side}
@@ -100,21 +100,58 @@ it("输入法组合与模态中的快捷键不抢走当前操作；只读仍可�
   expect((screen.getByRole("button", { name: /^源码$/ }) as HTMLButtonElement).disabled).toBe(true);
 });
 
-it("全屏错误回执不会被折叠隐藏，离开正文或笔记页面归还借用的座位", () => {
+it("全屏错误回执不会被折叠隐藏；切到子页面或换篇都留在全屏", () => {
   const screen = render(<Visit><Desk saveError="改动还没同步成功" /></Visit>);
   fireEvent.click(screen.getByRole("button", { name: "全屏笔记" }));
   expect(screen.getByRole("alert").textContent).toContain("改动还没同步成功");
   fireEvent.click(screen.getByRole("button", { name: "查看保存" }));
   expect(screen.getByRole("group", { name: "正文视图" })).toBeTruthy();
   screen.rerender(<Visit><Desk view="history" /></Visit>);
-  expect(useNotebookFullscreenState.getState().active).toBe(false);
-  screen.rerender(<Visit><Desk /></Visit>);
-  fireEvent.click(screen.getByRole("button", { name: "全屏笔记" }));
+  expect(useNotebookFullscreenState.getState().active).toBe(true);
   screen.rerender(<Visit><Desk noteId="another-note" /></Visit>);
   expect(useNotebookFullscreenState.getState().active).toBe(true);
   act(() => useNotebookFullscreenState.setState({ active: true }));
   screen.unmount();
   expect(useNotebookFullscreenState.getState().active).toBe(false);
+});
+
+it("速看、回想、往外学、记录与这一轮学习都留在同一张整窗纸面，页签仍在工具页里可切换", () => {
+  const screen = render(<Visit><Desk /></Visit>);
+  fireEvent.click(screen.getByRole("button", { name: "全屏笔记" }));
+  fireEvent.click(screen.getByRole("button", { name: "展开笔记工具" }));
+  for (const view of ["overview", "recall", "expansion", "history", "learning"] as const) {
+    screen.rerender(<Visit><Desk view={view} /></Visit>);
+    expect(useNotebookFullscreenState.getState().active).toBe(true);
+    expect(screen.getByRole("button", { name: "退出全屏笔记" })).toBeTruthy();
+    for (const tab of ["正文", "速看", "回想", "往外学", "学习记录"]) {
+      expect(screen.getByRole("button", { name: tab })).toBeTruthy();
+    }
+  }
+  fireEvent.click(screen.getByRole("button", { name: "收起笔记工具" }));
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(useNotebookFullscreenState.getState().active).toBe(false);
+});
+
+it("全屏编辑时编辑工具常驻顶部的纸签条，不再折进右侧工具页", () => {
+  const screen = render(<Visit><Desk /></Visit>);
+  fireEvent.click(screen.getByRole("button", { name: /^编辑$/ }));
+  fireEvent.click(screen.getByRole("button", { name: "全屏笔记" }));
+  const island = screen.getByRole("button", { name: "加粗" }).closest(".notebook-desk__tool-island");
+  expect(island).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "展开笔记工具" }));
+  expect(screen.getByRole("button", { name: "加粗" }).closest(".notebook-desk__tool-island")).toBe(island);
+  expect(document.querySelector("#notebook-tool-page .notebook-volume__tools")).toBeNull();
+  expect(screen.getByRole("button", { name: "保存版本" })).toBeTruthy();
+});
+
+it("从子页面直接进全屏，快捷键在子页面也生效", () => {
+  const screen = render(<Visit><Desk view="recall" /></Visit>);
+  fireEvent.click(screen.getByRole("button", { name: "全屏笔记" }));
+  expect(useNotebookFullscreenState.getState().active).toBe(true);
+  fireEvent.keyDown(document, { key: "f", ctrlKey: true, shiftKey: true });
+  expect(useNotebookFullscreenState.getState().active).toBe(false);
+  fireEvent.keyDown(document, { key: "f", metaKey: true, shiftKey: true });
+  expect(useNotebookFullscreenState.getState().active).toBe(true);
 });
 
 function Loading() {

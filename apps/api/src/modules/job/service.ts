@@ -103,6 +103,7 @@ function jobScheduling(type: JobType): { priority: number; resourceClass: string
       return { priority: 100, resourceClass: JobResourceClass.INTERACTIVE_AI };
     case JobType.PARSE_SOURCE:
       return { priority: 70, resourceClass: JobResourceClass.CARD_FOREGROUND };
+    case JobType.NOTE_MIND_MAP_GENERATE:
     case JobType.NOTE_OVERVIEW_GENERATE:
       return { priority: 80, resourceClass: JobResourceClass.CARD_FOREGROUND };
     case JobType.NOTE_ANNOTATION_EXPLAIN:

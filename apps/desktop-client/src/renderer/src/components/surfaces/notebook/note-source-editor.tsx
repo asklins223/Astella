@@ -15,7 +15,7 @@ import { placementsByBlock, type AnnotationPlacement } from "./note-annotation-p
 import type { NoteDocumentPosition } from "./note-source-bridge";
 import type { NoteAiRange } from "../../companion/note-companion-editing";
 import { changesTouchLockedRange } from "./note-ai-lock";
-import { noteImageMarkdown, noteMarkdownSyntax } from "@astella/shared/note-markdown";
+import { noteImageMarkdown, noteMarkdownSyntax, noteRichStyleCss, cleanNoteRichStyle, richStyleFromCss, noteStyledMdastHtml, type NoteRichStyle } from "@astella/shared/note-markdown";
 
 export type NoteSourceEditorHandle = {
   readonly insertText: (text: string) => void;
@@ -26,7 +26,11 @@ export type NoteSourceEditorHandle = {
   readonly focusPosition: (position: NoteDocumentPosition) => void;
   readonly isComposing: () => boolean;
   readonly focus: () => void;
+  readonly openSearch: () => void;
   readonly getFormatState: () => NoteEditorFormat;
+  readonly getSelectedMarkdown: () => string;
+  readonly setTextStyle: (style: NoteRichStyle) => void;
+  readonly setParagraphStyle: (style: NoteRichStyle) => void;
 };
 
 /** A retained code view of the live document. Undo remains in the document, not CodeMirror. */
@@ -150,7 +154,7 @@ export function NoteSourceEditor(props: {
             return true;
           },
           paste: (event) => {
-            if (latest.current.disabled) return false;
+            if (latest.current.disabled || !latest.current.onImagePaste && !latest.current.onImagesPaste) return false;
             const files = Array.from(event.clipboardData?.items ?? []);
             if (!files.length || files.some((item) => !item.type.startsWith("image/"))) return false;
             const images = files.map(item => item.getAsFile()).filter((file): file is File => Boolean(file));
@@ -158,7 +162,7 @@ export function NoteSourceEditor(props: {
             return true;
           },
           drop: event => {
-            if (latest.current.disabled) return false;
+            if (latest.current.disabled || !latest.current.onImagePaste && !latest.current.onImagesPaste) return false;
             const files = Array.from(event.dataTransfer?.files ?? []);
             if (!files.length || files.some(file => !file.type.startsWith("image/"))) return false;
             const at = view.posAtCoords({ x: event.clientX, y: event.clientY });
@@ -178,6 +182,7 @@ export function NoteSourceEditor(props: {
       const line = state.doc.lineAt(selection.head);
       setPosition({ line: line.number, column: selection.head - line.from + 1, lines: state.doc.lines, selected: selection.to - selection.from });
       notifyNoteEditorFormat(view.dom);
+      if (view.hasFocus && root.current?.closest(".notebook-workspace")?.getAttribute("data-typewriter") === "true") queueMicrotask(() => { if (viewRef.current === view && view.state.selection.main.head === selection.head) view.dispatch({ effects: EditorView.scrollIntoView(selection.head, { y: "center" }) }); });
     }
     updatePosition(view.state);
     function sync() {
@@ -250,13 +255,33 @@ export function NoteSourceEditor(props: {
       },
       isComposing: () => view.compositionStarted,
       focus: () => view.focus(),
+      openSearch: () => { openSearchPanel(view); },
+      getSelectedMarkdown: () => { const range = view.state.selection.main; return range.empty ? view.state.doc.toString() : view.state.sliceDoc(range.from, range.to); },
+      setTextStyle: style => {
+        if (latest.current.disabled) return; const range = view.state.selection.main, selected = view.state.sliceDoc(range.from, range.to);
+        const content = noteMarkdownSyntax(selected).children.map(node => noteStyledMdastHtml(node)).join("<br>");
+        const before = `<span style="${noteRichStyleCss(style)}">`;
+        view.dispatch({ changes: { from: range.from, to: range.to, insert: `${before}${content}</span>` }, selection: { anchor: range.from + before.length, head: range.from + before.length + content.length } }); view.focus();
+      },
+      setParagraphStyle: style => {
+        if (latest.current.disabled) return; const range = view.state.selection.main, source = view.state.doc.toString();
+        const definitions = noteMarkdownSyntax(source).children.filter(node => node.type === "footnoteDefinition").map(node => source.slice(node.position?.start.offset, node.position?.end.offset)).join("\n\n");
+        const blocks = noteSourceBlocks(source).filter(block => block.to >= range.from && block.from <= range.to);
+        const changes = blocks.map(block => { const old = source.slice(block.from, block.to), node = noteMarkdownSyntax(`${old}\n\n${definitions}`).children[0]; if (!node || !["paragraph", "heading"].includes(node.type)) return null;
+          const current = cleanNoteRichStyle((node.data as { noteStyle?: unknown })?.noteStyle), next = { ...current, ...style, ...(style.indent === undefined ? {} : { indent: Math.max(0, Math.min(8, (current.indent ?? 0) + style.indent)) }) }, tag = node.type === "heading" ? `h${node.depth}` : "p";
+          return { from: block.from, to: block.to, insert: `<${tag} style="${noteRichStyleCss(next)}">${noteStyledMdastHtml(node)}</${tag}>` };
+        }).filter(change => change !== null); if (!changes.length) return;
+        const changeSet = ChangeSet.of(changes, view.state.doc.length); view.dispatch({ changes: changeSet, selection: view.state.selection.map(changeSet) }); view.focus();
+      },
       getFormatState: () => {
         const names = new Set<string>();
         let node = syntaxTree(view.state).resolveInner(view.state.selection.main.head, -1);
         while (node) { names.add(node.name); if (!node.parent) break; node = node.parent; }
         const heading = /^(?:ATX|Setext)Heading([1-6])$/.exec(Array.from(names).find(name => name.includes("Heading")) ?? "");
         const history = latest.current.editor.getFormatState?.();
-        return { heading: Number(heading?.[1] ?? 0), strong: names.has("StrongEmphasis"), emphasis: names.has("Emphasis"), inlineCode: names.has("InlineCode"), strike: names.has("Strikethrough"),
+        const head = view.state.selection.main.head, source = view.state.doc.toString(), block = noteSourceBlocks(source).find(block => block.from <= head && block.to >= head), paragraph = block ? noteMarkdownSyntax(source.slice(block.from, block.to)).children[0] : undefined;
+        const span = source.slice(block?.from ?? 0, head).match(/<span\s+style="([^"]*)">[^<]*$/);
+        return { source: true, textStyle: span ? richStyleFromCss(span[1]) : {}, paragraphStyle: cleanNoteRichStyle((paragraph?.data as { noteStyle?: unknown })?.noteStyle), heading: Number(heading?.[1] ?? 0), strong: names.has("StrongEmphasis"), emphasis: names.has("Emphasis"), inlineCode: names.has("InlineCode"), strike: names.has("Strikethrough"),
           quote: names.has("Blockquote"), bullet: names.has("BulletList"), ordered: names.has("OrderedList"), canUndo: history?.canUndo ?? false, canRedo: history?.canRedo ?? false };
       },
     };

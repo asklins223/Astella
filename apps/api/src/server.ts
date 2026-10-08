@@ -15,6 +15,7 @@ import { runWithRequestContext } from "./lib/request-context.ts";
 import { authRoutes } from "./modules/identity/routes.ts";
 import { noteRoutes } from "./modules/note/routes.ts";
 import { noteAnnotationRoutes } from "./modules/note-annotations/routes.ts";
+import { noteMindMapRoutes } from "./modules/note-mind-maps/routes.ts";
 import { noteOverviewRoutes } from "./modules/note-overviews/routes.ts";
 import { noteRecallRoutes } from "./modules/note-recalls/routes.ts";
 import { noteExpansionRoutes } from "./modules/note-expansions/routes.ts";
@@ -368,6 +369,7 @@ async function main() {
   await app.register(noteRoutes);
   await app.register(noteAnnotationRoutes);
   await app.register(noteOverviewRoutes);
+  await app.register(noteMindMapRoutes);
   await app.register(noteRecallRoutes);
   await app.register(noteExpansionRoutes);
   await app.register(noteLearningArtifactRoutes);

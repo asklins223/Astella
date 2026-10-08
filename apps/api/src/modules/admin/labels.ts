@@ -113,6 +113,7 @@ export const JOB_TYPE_LABELS: Record<string, string> = {
   companion_memory_embedding_rebuild: "记忆重建",
   companion_memory_organize: "记忆整理",
   note_overview_generate: "笔记概览",
+  note_mind_map_generate: "笔记脑图",
   note_expansion_generate: "笔记拓展",
   note_dynamic_artifact_generate: "动态演示",
   note_annotation_explain: "批注解读",

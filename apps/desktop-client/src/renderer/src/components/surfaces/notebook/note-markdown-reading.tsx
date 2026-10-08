@@ -1,14 +1,23 @@
 import { createElement, useMemo, type ReactNode } from "react";
-import { noteBlockMarkdown, noteLinkTarget, noteMarkdownText, noteMarkdownTree, type NoteMarkdownElement, type NoteMarkdownNode } from "@astella/shared/note-markdown";
+import { noteBlockMarkdown, noteLinkTarget, noteMarkdownText, noteMarkdownTree, noteMarkdownSyntax, noteEquationLabels, noteEquationValue, noteFootnoteBody, type NoteMarkdownElement, type NoteMarkdownNode } from "@astella/shared/note-markdown";
 import { isWebLinkUrl } from "@astella/shared/desktop-ipc-contracts";
-import { InlineImage, renderNoteInline, renderNotePlainText, type NoteInlineRenderOptions } from "./note-reading-inline";
+import { InlineImage, renderNoteInline, renderNoteMath, renderNotePlainText, type NoteInlineRenderOptions } from "./note-reading-inline";
 import { openExternalLink } from "../../../app/external-link";
 import { NoteReadingLink } from "./note-library-links";
 import { NoteMermaid } from "./note-mermaid";
 
 /** Render the allowlisted syntax tree as React elements. Annotation offsets follow this same tree. */
 export function NoteMarkdownReading({ type, content, options }: { type: string; content: string; options: NoteInlineRenderOptions }) {
-  const tree = useMemo(() => noteMarkdownTree(noteBlockMarkdown(type, content)), [type, content]);
+  const context = useMemo(() => {
+    const source = options.documentSource ?? noteBlockMarkdown(type, content), syntax = noteMarkdownSyntax(source), definitions: string[] = [], equations: string[] = [], headings: { title: string; depth: number }[] = [], references = new Map<string, number>();
+    const collect = (node: { type: string; identifier?: string; value?: string; depth?: number; children?: unknown[]; position?: { start: { offset?: number }; end: { offset?: number } } }) => {
+      if (node.type === "footnoteReference" && node.identifier && !references.has(node.identifier)) references.set(node.identifier, references.size + 1);
+      if (node.type === "footnoteDefinition") definitions.push(source.slice(node.position?.start.offset ?? 0, node.position?.end.offset ?? 0));
+      if (node.type === "math") equations.push(node.value ?? ""); if (node.type === "heading") headings.push({ title: noteMarkdownText(noteMarkdownTree(source.slice(node.position?.start.offset ?? 0, node.position?.end.offset ?? 0))), depth: node.depth ?? 1 }); node.children?.forEach(child => collect(child as never));
+    }; collect(syntax); return { definitions, equations, headings, references, labels: noteEquationLabels(equations) };
+  }, [options.documentSource, type, content]);
+  const definition = noteFootnoteBody(content);
+  const tree = useMemo(() => noteMarkdownTree(definition ? definition.body : `${noteBlockMarkdown(type, content)}\n\n${context.definitions.join("\n\n")}`), [type, content, context]);
   let offset = 0;
   let imageIndex = 0;
   const render = (node: NoteMarkdownNode, key: string, parent?: string, linked = false): ReactNode => {
@@ -31,10 +40,16 @@ export function NoteMarkdownReading({ type, content, options }: { type: string; 
           galleryIndex={index} onOpenGallery={options.onOpenGallery} />
       </span>;
     }
+    if (tag === "nav" && props.dataNoteToc !== undefined) return <nav key={key} className="note-body-toc" aria-label="正文目录">{context.headings.map((heading, index) => <button key={index} type="button" style={{ paddingInlineStart: (heading.depth - 1) * 16 }} onClick={event => {
+      const paper = event.currentTarget.closest(".note-transcript"); const target = paper?.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6")[index]; target?.scrollIntoView({ block: "start" });
+    }}>{heading.title}</button>)}</nav>;
+    if (tag === "section" && props.dataFootnotes !== undefined && !definition) return null;
     if (tag === "span" && typeof props.dataNoteMath === "string") {
       const source = noteMarkdownText(node);
       const start = offset; offset += source.length;
-      return <span key={key}>{renderNoteInline(source, { ...options, textOffset: start })}</span>;
+      const syntax = noteMarkdownSyntax(noteBlockMarkdown(type, content)).children.find(node => node.type === "math");
+      const value = syntax?.type === "math" ? noteEquationValue(syntax.value, context.labels, context.equations.indexOf(syntax.value) + 1) : noteEquationValue(String(props.dataNoteMath), context.labels);
+      return renderNoteMath({ kind: "math", text: source, value, display: props.dataNoteMathDisplay !== undefined, start, end: start + source.length }, options, key);
     }
     if (tag === "pre") {
       const code = node.children.find(child => child.type === "element" && child.tagName === "code") as NoteMarkdownElement | undefined;
@@ -43,6 +58,12 @@ export function NoteMarkdownReading({ type, content, options }: { type: string; 
       const start = offset; offset += source.length;
       if (language?.toLowerCase() === "mermaid") return <NoteMermaid key={key} source={source} />;
       return <pre key={key} className="code-block" data-language={language}><code>{renderNotePlainText(source, { ...options, textOffset: start })}</code></pre>;
+    }
+    if (tag === "sup") {
+      const reference = node.children.find((child): child is NoteMarkdownElement => child.type === "element" && child.tagName === "a" && child.properties.dataFootnoteRef !== undefined);
+      if (reference) { const source = noteMarkdownText(node), label = decodeURIComponent(String(reference.properties.href).split("fn-")[1] ?? ""), number = context.references.get(label) ?? noteMarkdownText(reference); offset += source.length;
+        return <sup key={key} className="note-reading-footnote-ref"><span className="note-footnote-source" aria-hidden="true">{source}</span><a data-note-decoration="true" id={`${reference.properties.id}-${options.block?.ordinal ?? 0}`} href={String(reference.properties.href)} aria-label={`前往脚注 ${number}`} onClick={event => { event.preventDefault(); scrollNoteAnchor(event.currentTarget, String(reference.properties.href)); }}>{number}</a></sup>;
+      }
     }
     const children = node.children.map((child, index) => render(child, `${key}-${index}`, tag, linked || tag === "a"));
     if (tag === "a") {
@@ -65,14 +86,16 @@ export function NoteMarkdownReading({ type, content, options }: { type: string; 
       ...(tag === "table" ? { className: "md-table" } : {}),
       ...(onlyImages ? { className: row ? "note-image-paragraph note-image-row" : "note-image-paragraph" } : {}),
       ...(tag === "hr" ? { className: "reading-rule" } : {}),
-      ...(align ? { style: { textAlign: align } } : {}),
+      ...(align || props.style ? { style: { ...(align ? { textAlign: align } : {}), ...Object.fromEntries(String(props.style ?? "").split(";").filter(Boolean).map(part => { const [property, value] = part.split(":"); return [property!.replace(/-([a-z])/g, (_all, char: string) => char.toUpperCase()), value]; })) } } : {}),
+      ...(tag === "blockquote" && props.dataNoteAlert ? { className: "note-alert", "data-alert": props.dataNoteAlert } : {}),
       ...(tag === "ol" && props.start ? { start: Number(props.start) } : {}),
       ...(tag === "input" ? { type: "checkbox", checked: Boolean(props.checked), disabled: true, readOnly: true, "aria-label": props.checked ? "已完成" : "未完成" } : {}),
       ...(tag === "td" || tag === "th" ? { colSpan: Number(props.colSpan ?? 1), rowSpan: Number(props.rowSpan ?? 1) } : {}),
       ...(tag === "th" ? { scope: "col" } : {}),
     }, ...children);
   };
-  return <>{tree.children.map((node, index) => render(node, `md-${index}`))}</>;
+  const children = tree.children.map((node, index) => render(node, `md-${index}`));
+  return definition ? <aside className="note-footnote-body" id={`user-content-user-content-fn-${definition.label.toLowerCase()}`}><span data-note-decoration="true" className="note-footnote-label">脚注 {context.references.get(definition.label.toLowerCase()) ?? definition.label}</span>{children}<a data-note-decoration="true" href={`#user-content-fnref-${definition.label.toLowerCase()}`} onClick={event => { event.preventDefault(); scrollNoteAnchor(event.currentTarget, event.currentTarget.getAttribute("href")!); }}>返回引用</a></aside> : <>{children}</>;
 }
 
 function scrollNoteAnchor(link: HTMLElement, href: string) {
@@ -80,7 +103,7 @@ function scrollNoteAnchor(link: HTMLElement, href: string) {
   try { anchor = decodeURIComponent(href.slice(1)); } catch { return; }
   const paper = link.closest(".note-transcript") ?? link.closest(".notebook-desk__page");
   if (!paper) return;
-  const explicit = Array.from(paper.querySelectorAll<HTMLElement>("[id]")).find(node => node.id === anchor || node.id === `user-content-${anchor}`);
+  const explicit = Array.from(paper.querySelectorAll<HTMLElement>("[id]")).find(node => node.id === anchor || node.id === `user-content-${anchor}` || anchor.includes("fnref-") && node.id.startsWith(`user-content-${anchor}-`));
   const counts = new Map<string, number>();
   const heading = Array.from(paper.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6")).find(node => {
     const slug = (node.textContent ?? "").trim().toLowerCase().replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, "").replace(/\s/g, "-");

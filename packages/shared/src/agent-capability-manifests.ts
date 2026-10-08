@@ -17,7 +17,7 @@ const startGoalArgs = createAgentRunV1Schema.omit({ requestId: true, conversatio
 
 /** The same capability entry supplies the model description and its argument validator. */
 export const agentGoalToolManifest = [
-  manifest("agent_start_goal", "把用户当前明确交代的目标交给后台持续处理，可生成速看、互动演示、知识拓展草稿、待审核学习卡及其组合；普通闲聊和提问不启动。要求由执行器保存用户本轮原话，参数里只给真实材料引用。回执仅代表接受，完成后按真实保存结果交付；学习卡由用户审核保存。", "reversible_low", startGoalArgs, { label: "交给伴星" }),
+  manifest("agent_start_goal", "把用户当前明确交代的目标交给后台持续处理，可生成速看、思维导图、互动演示、知识拓展草稿、待审核学习卡及其组合；普通闲聊和提问不启动。要求由执行器保存用户本轮原话，参数里只给真实材料引用。回执仅代表接受，完成后按真实保存结果交付；学习卡由用户审核保存。", "reversible_low", startGoalArgs, { label: "交给伴星" }),
   manifest("agent_list_goals", "读取当前空间持续任务的简短目录；与此刻聊天分开。回到上次任务或问进度时先核对，不能凭旧历史猜runId。每页5件，nextCursor不为空时用cursor续读；可按longGoalMemoryId筛选关联任务。完整要求与成果在手记中。", "read", z.object({cursor:z.string().max(512).optional(),longGoalMemoryId:z.string().uuid().optional()}).strict(), { label: "查看交代的事" }),
   manifest("agent_list_long_goals", "读取当前空间已确认的长期目标目录与关联任务数量。可用query按内容查找或memoryId精确核对；每页5条，nextCursor不为空时用cursor续读。任务交付不证明掌握或整个目标完成。明确接续长期目标时先核对，agent_start_goal可带目录的longGoal原始身份与版本；当前要求优先，不主动发起无关任务。", "read", agentLongGoalsQueryV1Schema.omit({limit:true}), { label: "查看长期目标" }),
   manifest("agent_revise_goal", "用户明确修改某个持续目标时更新要求，旧版本未完成操作会停止，已有产物保留。先核对 runId 和 revision；闲聊或一句好不表示修改。长期目标依据已修订时，先读长期目标目录，再按用户明确要求传新longGoal引用；显式null表示解绑，省略表示沿用。", "reversible_low", reviseAgentRunV1Schema.extend({ runId: z.string().uuid() }).strict(), { label: "修改要求" }),
@@ -41,6 +41,7 @@ const expansionReadArgs = noteArgs.extend({
 });
 export const noteAgentCapabilityManifest = [
   manifest("note_read", "按冻结版本读取一篇实际可见的笔记，获取可核对正文。输入必须来自目标的材料引用；长文返回有界正文与覆盖信息，同时用 nextStartOrdinal 与 nextStartOffset 作为 startOrdinal、startOffset 继续读。", "read", noteArgs.extend({ startOrdinal: z.number().int().positive().optional(), startOffset: z.number().int().nonnegative().optional() }), { label: "读取笔记", methodStep: "先读取新材料的正文，明确内容与边界。" }),
+  manifest("note_mind_map_generate", "为这版整篇笔记生成有原文依据的思维导图。独立于速看要点；保留条件与层级，不添加笔记外的事实。accepted 仅代表任务已接受，真实产物保存后才能交付，不重复提交。", "reversible_low", noteArgs, { label: "生成脑图", methodStep: "读取整篇材料，整理概念层级与原文依据并核对保存结果。", discovery: "把整篇笔记整理成可以展开、查看原文的思维导图。" }),
   manifest("note_overview_generate", "生成这版笔记的速看。返回 accepted、稳定 operationId 与 execution 引用；后台返回真实产物后才算完成。不要重复提交同一个产物。", "reversible_low", noteArgs, { label: "整理速看", methodStep: "根据当前材料整理速看，核对真实保存的内容。", discovery: "把一篇笔记的重点整理清楚，留着随时回看。" }),
   manifest("note_dynamic_artifact_generate", "为这版笔记生成互动讲解演示。返回 accepted、稳定 operationId 与 execution 引用；后台核对产物后才能交付。材料过长或不适合会返回真实失败，不虚构演示。", "reversible_low", noteArgs, { label: "准备互动演示", methodStep: "按当前材料制作互动演示，等待并核对真实结果。", discovery: "用可操作的演示讲清概念，材料和想观察的变化先一起确定。" }),
   manifest("note_expansion_generate", "基于这版笔记生成一批可挑选的知识拓展草稿，用于把一个概念往前追。accepted 只代表已接受，不是完成；后台保存真实草稿后才算完成，产物是等用户自己挑选的草稿，不会变成新笔记，也不会自动制卡。用户没有明确要看别的方向就不要顺手启动。", "reversible_low", noteArgs, { label: "准备拓展草稿", methodStep: "沿当前目标准备拓展草稿，保留来源，交给用户选择。", discovery: "沿一个概念往外探索，保留来源，先给你可选择的草稿。" }),

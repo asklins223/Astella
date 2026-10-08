@@ -1,0 +1,143 @@
+/* Attachments belong to the same mint binding as the book. Short slips keep
+   their natural height; long explanations have one scrolling paper interior. */
+.hud-surface .notebook-desk__side-page {
+  z-index: 7; display: flex; flex: 0 0 clamp(300px, 31%, 380px); flex-direction: column;
+  min-height: 0; min-width: 0; padding: 0; overflow: hidden; color: var(--hud-ink);
+  border: 3px solid #fff9e7; border-radius: 24px; background: var(--hud-paper-light);
+  box-shadow: 0 4px 0 #a9c497, 0 12px 28px #40544724;
+  font: 14px/1.85 "Noto Sans SC Variable", sans-serif;
+}
+.hud-surface .notebook-desk__side-head {
+  display: flex; align-items: center; gap: 12px; flex: none; margin: 0; padding: 17px 19px;
+  border-bottom: 1px solid #ccdcbf; background: #e3efd7;
+}
+.hud-surface .notebook-desk__side-mark {
+  display: grid; place-items: center; flex: none; width: 42px; height: 42px;
+  color: #527c61; border: 2px solid #fff9e7; border-radius: 15px; background: #c8dfb9;
+  box-shadow: 0 2px 0 #afc89d;
+}
+.hud-surface .notebook-desk__side-page[data-kind="source"] .notebook-desk__side-mark { background: var(--hud-sky); box-shadow: 0 2px 0 #b7d1cb; }
+.hud-surface .notebook-desk__side-page[data-kind="history"] .notebook-desk__side-mark { background: var(--hud-butter); box-shadow: 0 2px 0 #d9c992; }
+.hud-surface .notebook-desk__side-title { flex: 1; min-width: 0; }
+.hud-surface .notebook-desk__side-title h2 { margin: 0; color: #405447; font: 800 20px/1.45 "Noto Sans SC Variable", sans-serif; letter-spacing: -.025em; overflow-wrap: anywhere; }
+.hud-surface .notebook-desk__side-title small { display: block; margin-top: 3px; color: #64785d; font-size: 11px; line-height: 1.5; }
+.hud-surface .notebook-desk__side-head .text-action {
+  display: grid; place-items: center; flex: none; width: 34px; min-height: 34px; padding: 0;
+  border: 1px solid #c7d6b8; border-radius: 12px; color: #56704f; background: #fffbed;
+  box-shadow: 0 2px 0 #cad5b8; text-decoration: none;
+}
+.hud-surface .notebook-desk__side-scroll {
+  flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden auto; padding: 22px 22px 24px;
+  scroll-padding-block: 20px; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #bcccae transparent;
+}
+.hud-surface .notebook-desk__side-scroll p { overflow-wrap: anywhere; }
+.hud-surface .notebook-desk__side-scroll :is(.button, .text-action, .note-annotation-paper__ask, .task-slip__action) {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px;
+  padding: 8px 12px; border: 1px solid #d5dfc6; border-radius: 14px;
+  color: #52735a; background: #edf3e3; box-shadow: 0 2px 0 #d0d9be;
+  font: 650 12px/1.6 "Noto Sans SC Variable", sans-serif; text-decoration: none; cursor: pointer;
+}
+.hud-surface .notebook-desk__side-scroll :is(.button, .text-action, .note-annotation-paper__ask, .task-slip__action) svg { flex: none; }
+.hud-surface .notebook-desk__side-scroll .button.primary { background: #6b9a75; border-color: #618e6b; color: #fffcec; box-shadow: 0 3px 0 #4d785b; }
+.hud-surface .notebook-desk__side-scroll :is(.button, .text-action):disabled { opacity: .45; cursor: default; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__write { background: #f5ddc9; border-color: #e4cbb8; color: #795b46; box-shadow: 0 2px 0 #dfc6ae; }
+.hud-surface .notebook-desk__side-scroll [role="alert"] { padding: 10px 12px; border-radius: 13px; color: #975c45; background: #f9e9dc; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; transform: none; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper p { margin: 0 0 16px; font-size: 14px; line-height: 1.85; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper .small { color: #6d7c67; font-size: 13px; line-height: 1.85; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper blockquote {
+  margin: 12px 0 18px; padding: 13px 16px; border: 0; border-left: 3px solid #a8c795;
+  border-radius: 4px 15px 15px 4px; background: #eff4e5; color: #526650;
+  font: 14px/1.85 "Noto Sans SC Variable", sans-serif; overflow-wrap: anywhere;
+}
+.hud-surface .note-annotation-paper__quote { margin-bottom: 22px; padding: 13px 15px 14px; border-radius: 17px; background: #edf3e3; }
+.hud-surface .note-annotation-paper__quote > span { display: flex; align-items: center; gap: 6px; color: #6a8363; font-size: 11px; font-weight: 650; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__quote blockquote { margin: 8px 0 0; padding: 0; border: 0; border-radius: 0; background: none; color: #4e624c; }
+.hud-surface .notebook-desk__side-scroll .note-companion-explanation__status {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: #527c61; font-size: 13px; font-weight: 750;
+}
+.hud-surface .note-companion-explanation__status svg { flex: none; }
+.hud-surface .note-companion-explanation__status:is([data-phase="interrupted"], [data-phase="save-error"], [data-phase="stopped"]) { color: #93714e; }
+.hud-surface .note-companion-explanation [data-incomplete="true"] { padding-inline-start: 14px; border-inline-start: 2px dashed #c3ccb6; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 20px; }
+.hud-surface .notebook-desk__side-scroll .note-companion-explanation .note-annotation-paper__actions { margin: 22px 0 3px; padding-top: 17px; border-top: 1px dashed #d5dec7; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper :is(.note-annotation-paper__source, .note-annotation-paper__more) { margin: 0 0 20px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper summary {
+  display: flex; align-items: center; gap: 10px; width: fit-content; min-height: 34px; padding: 5px 10px;
+  border-radius: 11px; background: #edf3e3; color: #5b795b; font-size: 12px; font-weight: 650; cursor: pointer; list-style: none;
+}
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper summary::-webkit-details-marker { display: none; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper summary::after { content: ""; width: 6px; height: 6px; border-right: 1.5px solid; border-bottom: 1.5px solid; rotate: 45deg; translate: 0 -2px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper details[open] > summary::after { rotate: 225deg; translate: 0 2px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper summary:focus-visible { outline: 3px solid #71a883; outline-offset: 3px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__explanation { font: 14px/1.9 "Noto Sans SC Variable", sans-serif; color: #405447; overflow-wrap: anywhere; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__explanation :is(p, ul, ol) { margin: 0 0 18px; font: inherit; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__explanation :is(ul, ol) { padding-left: 23px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__explanation li { margin-bottom: 8px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__explanation li::marker { color: #789667; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__explanation strong { color: #466b50; font-weight: 750; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__explanation .companion-md__heading { margin: 24px 0 12px; color: #466b50; font-size: 17px; font-weight: 800; line-height: 1.6; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__explanation > :first-child { margin-top: 0; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper :is(.companion-md__code, code) { padding: 2px 5px; border-radius: 6px; background: #edf0e1; font: .9em/1.8 ui-monospace, "SFMono-Regular", Consolas, monospace; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper .companion-md__code { margin: 18px 0; padding: 13px 15px; border-radius: 13px; overflow-x: auto; white-space: pre; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper .companion-md__table-scroll { max-width: 100%; overflow-x: auto; margin-block: 18px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper .companion-md__table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper :is(th, td) { padding: 9px 11px; border: 1px solid #dce0ce; text-align: left; vertical-align: top; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper th { background: #edf3e3; font-weight: 650; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper .companion-md__link { display: inline; padding: 0; color: #527c61; background: none; border: 0; text-align: left; font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper .companion-md__link small { display: none; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper .companion-md__divider { margin: 24px 0; border: 0; border-top: 1px dashed #d5dec7; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper > small { display: block; margin-top: 20px; color: #75816d; font-size: 11px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-delete { display: grid; gap: 10px; margin-top: 18px; padding-top: 15px; border-top: 1px dashed #d5dec7; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-delete p { margin: 0; font-size: 12px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-delete__buttons { display: flex; flex-wrap: wrap; gap: 9px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-delete .text-action--danger { background: #f6e6da; color: #986247; border-color: #e6cebe; box-shadow: 0 2px 0 #ddc7b7; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-composer label { display: block; margin-top: 20px; color: #527c61; font-size: 13px; font-weight: 750; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-composer textarea { width: 100%; min-height: 150px; margin: 10px 0 12px; padding: 14px 16px; resize: vertical; border: 1px solid #c7d6b8; border-radius: 16px; background: #fffef7; color: #405447; font: 14px/1.85 "Noto Sans SC Variable", sans-serif; box-shadow: inset 0 2px 3px #40544706; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-composer textarea::placeholder { color: #85917d; }
+
+/* Related sources and versions use the same flat reading interior. */
+.hud-surface .notebook-desk__side-scroll .source-clips { position: static; width: auto; display: grid; gap: 20px; }
+.hud-surface .notebook-desk__side-scroll .source-clips .clip { margin: 0; padding: 0 0 20px; border: 0; border-bottom: 1px dashed #d5dec7; border-radius: 0; background: none; box-shadow: none; transform: none; font-size: 14px; line-height: 1.85; overflow-wrap: anywhere; }
+.hud-surface .notebook-desk__side-scroll .source-clips .clip b { display: inline-block; margin-bottom: 6px; color: #527c61; font-size: 13px; font-weight: 750; }
+.hud-surface .notebook-desk__side-scroll .version-history { margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
+.hud-surface .notebook-desk__side-scroll .version-history > p { margin: 0 0 18px; color: #6d7c67; font-size: 13px; }
+.hud-surface .notebook-desk__side-scroll .version-list { margin: 0; padding: 0; list-style: none; }
+.hud-surface .notebook-desk__side-scroll .version-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding: 14px 12px; border: 1px solid #e1e6d4; border-radius: 15px; background: #f5f6e9; }
+.hud-surface .notebook-desk__side-scroll .version-list li.current { background: #e9f2de; border-color: #cdddbd; }
+.hud-surface .notebook-desk__side-scroll .version-no { color: #527c61; font: 800 20px/1.5 "Noto Sans SC Variable", sans-serif; }
+.hud-surface .notebook-desk__side-scroll .version-time { color: #75816d; font-size: 12px; }
+.hud-surface .notebook-desk__side-scroll .version-tag { margin-left: auto; padding: 3px 8px; border-radius: 8px; background: #d6e8c7; color: #527c61; font-size: 11px; }
+.hud-surface .notebook-desk__side-scroll .version-list .text-action { margin-left: auto; }
+.hud-surface .notebook-desk__side-scroll .task-slip { margin: 0 0 20px; padding: 14px; border-radius: 16px; }
+
+.hud-surface .notebook-desk[data-compact="true"] .notebook-desk__side-page {
+  position: absolute; top: 14px; right: 14px; bottom: auto; width: min(380px, calc(100% - 28px));
+  max-height: calc(100% - 28px); margin: 0;
+}
+/* 全屏里旁页开在左边、与目录同一列（2026-10-08 用户裁决）：右侧是伴星的座位，
+   开在右边会被她压住；批注、资料袋与版本历史共用这一张旁页。 */
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__side-page {
+  left: 24px; right: auto;
+  top: var(--notebook-focus-left-top); bottom: auto; max-height: calc(100% - var(--notebook-focus-left-top) - 24px);
+}
+
+/* The short preview is a body portal, so it owns the notebook palette. */
+.note-annotation-preview { position: fixed; z-index: 12; width: 270px; padding: 14px 16px; border: 3px solid #fff9e7; border-radius: 20px; background: #eff4e5; color: #405447; box-shadow: 0 3px 0 #b6cba5, 0 9px 20px #40544724; font: 13px/1.8 "Noto Sans SC Variable", sans-serif; pointer-events: auto; overflow-wrap: anywhere; }
+.note-annotation-preview p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 0; }
+.note-annotation-preview small { display: block; margin-top: 8px; color: #6d7c67; font-size: 11px; }
+.note-annotation-preview__actions { margin-top: 10px; padding-top: 9px; border-top: 1px dashed #c6d5b7; pointer-events: auto; }
+.note-annotation-preview .note-annotation-delete { display: grid; gap: 8px; font: 12px/1.7 "Noto Sans SC Variable", sans-serif; }
+.note-annotation-preview .note-annotation-delete__buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.note-annotation-preview .note-annotation-delete button { min-height: 32px; padding: 6px 10px; border: 1px solid #c7d6b8; border-radius: 11px; background: #fffbed; color: #697a5e; cursor: pointer; font: 12px/1.5 "Noto Sans SC Variable", sans-serif; }
+@media (hover: hover) and (pointer: fine) {
+  .hud-surface .notebook-desk__side-head .text-action:hover { background: #f2f6e9; text-decoration: none; }
+  .hud-surface .notebook-desk__side-scroll :is(.button, .text-action, .note-annotation-paper__ask, .task-slip__action):hover:not(:disabled) { background: #e1ecd4; text-decoration: none; }
+  .hud-surface .notebook-desk__side-scroll .button.primary:hover:not(:disabled) { background: #7ba784; }
+  .hud-surface .notebook-desk__side-scroll .note-annotation-paper__write:hover { background: #f1d3b9; }
+}
+@container (max-width: 440px) {
+  .hud-surface .notebook-desk__side-head { padding: 14px; gap: 9px; }
+  .hud-surface .notebook-desk__side-scroll { padding: 18px 17px 20px; }
+  .hud-surface .notebook-desk__side-title h2 { font-size: 18px; }
+}

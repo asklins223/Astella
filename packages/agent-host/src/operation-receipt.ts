@@ -53,6 +53,14 @@ function noteArtifactCandidate(request: OperationReceiptRequest): SQL | null {
           AND j.workspace_id=n.workspace_id AND j.requested_by=n.user_id
           AND j.payload->>'noteId'=n.note_id::text AND j.payload->>'noteVersionId'=n.note_version_id::text
         WHERE n.generation_job_id=${jobId} AND n.workspace_id=${workspaceId} AND n.user_id=${userId} LIMIT 1`;
+    case "note_mind_map_generate":
+      return sql`SELECT jsonb_build_object('kind','note_mind_map','id',n.id,'jobId',n.generation_job_id,
+          'noteId',n.note_id,'noteVersionId',n.note_version_id) AS artifact
+        FROM public.note_mind_maps n
+        JOIN public.jobs j ON j.id=n.generation_job_id AND j.type=${capability}
+          AND j.workspace_id=n.workspace_id AND j.requested_by=n.user_id
+          AND j.payload->>'noteId'=n.note_id::text AND j.payload->>'noteVersionId'=n.note_version_id::text
+        WHERE n.generation_job_id=${jobId} AND n.workspace_id=${workspaceId} AND n.user_id=${userId} LIMIT 1`;
     case "note_dynamic_artifact_generate":
       return sql`SELECT jsonb_build_object('kind','note_dynamic_artifact','id',n.id,'jobId',n.generation_job_id,
           'noteId',n.note_id,'noteVersionId',n.note_version_id) AS artifact

@@ -116,6 +116,7 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   companion_memory_embedding_rebuild: "伴星记忆重建",
   agent_run_advance: "伴星推进任务",
   note_overview_generate: "整理笔记速看",
+  note_mind_map_generate: "生成笔记脑图",
   note_expansion_generate: "生成笔记拓展",
   note_dynamic_artifact_generate: "生成学习演示",
   note_annotation_generate: "生成笔记批注",

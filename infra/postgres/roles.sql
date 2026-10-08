@@ -379,6 +379,17 @@ BEGIN
 END
 $$;
 
+-- Mind maps are immutable saved artifacts; model stages are worker-private.
+DO $$ BEGIN
+  IF to_regclass('public.note_mind_maps') IS NOT NULL THEN
+    REVOKE ALL ON public.note_mind_maps FROM astella_api;
+    GRANT SELECT ON public.note_mind_maps TO astella_api;
+  END IF;
+  IF to_regclass('public.note_mind_map_stages') IS NOT NULL THEN
+    REVOKE ALL ON public.note_mind_map_stages FROM astella_api;
+  END IF;
+END $$;
+
 -- Worker read set. Keep identity/session/benchmark tables out of this list.
 DO $$
 DECLARE
@@ -787,6 +798,8 @@ BEGIN
     'card_candidate_feedback_v2',
     -- 0321–0324: independent note learning jobs read their saved result by
     -- generation_job_id before writing, then insert the completed artifact.
+    'note_mind_maps',
+    'note_mind_map_stages',
     'note_overviews',
     'note_annotations',
     'note_learning_artifacts',
@@ -1407,6 +1420,8 @@ BEGIN
   WHERE n.nspname = 'public'
     AND c.relkind IN ('r', 'p')
     AND c.relname NOT IN (
+      'note_mind_maps',
+      'note_mind_map_stages',
       'companion_diary_generation_checkpoints',
       'companion_context_handoff_snapshots',
       'companion_run_failure_spans',
@@ -1566,6 +1581,14 @@ BEGIN
     RAISE EXCEPTION 'private turn replay function privilege matrix mismatch';
   END IF;
 
+  IF to_regclass('public.note_mind_maps') IS NOT NULL AND (
+    NOT has_table_privilege('astella_api','public.note_mind_maps','SELECT')
+    OR has_table_privilege('astella_api','public.note_mind_maps','INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+  ) THEN RAISE EXCEPTION 'mind map artifact must be read-only for API'; END IF;
+  IF to_regclass('public.note_mind_map_stages') IS NOT NULL AND has_table_privilege(
+    'astella_api','public.note_mind_map_stages','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+  ) THEN RAISE EXCEPTION 'mind map checkpoint must be private to worker'; END IF;
+
   WITH expected(
     table_name, can_select, can_insert, can_update, can_delete
   ) AS (
@@ -1574,6 +1597,8 @@ BEGIN
       ('notes', true, false, false, false),
       ('note_versions', true, false, false, false),
       ('note_blocks', true, false, false, false),
+      ('note_mind_maps', true, true, false, false),
+      ('note_mind_map_stages', true, true, false, false),
       ('note_overviews', true, true, false, false),
       ('note_annotations', true, true, false, false),
       ('note_learning_artifacts', true, true, false, false),

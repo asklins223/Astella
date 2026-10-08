@@ -53,6 +53,12 @@
 .hud-surface .notebook-desk__mode:disabled { opacity: .45; cursor: default; }
 .hud-surface .notebook-desk__utilities { display: flex; align-items: center; gap: 11px; flex: none; }
 .hud-surface .notebook-desk__utilities > .text-action { display: inline-flex; align-items: center; gap: 5px; min-height: 36px; font-size: 13px; }
+/* 学习子页面的顶条与脑图同一种做法（2026-10-08 用户裁决）：工具浮成一条纸签贴在纸面右上，
+   标题不再占一行，也没有那条下划线；左侧同高度留给速看的「要点／脑图」开关。 */
+.hud-surface .notebook-desk:not([data-view="body"]):not([data-fullscreen]) .notebook-desk__chrome { display: block; position: absolute; z-index: 12; top: 18px; right: 18px; max-width: calc(100% - 178px); }
+.hud-surface .notebook-desk:not([data-view="body"]):not([data-fullscreen]) .notebook-desk__rack { flex-wrap: nowrap; min-height: 40px; padding: 5px 7px; border: 1px solid #d8dfcc; border-radius: 20px; background: #edf1e2ed; box-shadow: 0 3px 0 #bccbb340, 0 7px 20px #40544712; backdrop-filter: blur(16px); }
+.hud-surface .notebook-desk:not([data-view="body"]):not([data-fullscreen]) .notebook-volume__trail { display: none; }
+.hud-surface .notebook-desk:not([data-view="body"]):not([data-fullscreen]):not([data-mind-map]) .notebook-desk__scroll { padding-top: 78px; }
 .hud-surface .notebook-desk__utilities .notebook-card-entry { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 36px; padding: 6px 12px; font-size: 12px; border-radius: 15px; box-shadow: 0 2px 0 #d2cdb3; }
 .hud-surface .notebook-card-entry__state, .hud-surface .notebook-card-entry__coverage { padding: 2px 6px; border-radius: 8px; background: var(--hud-mint); color: #426646; font-size: 10px; }
 .hud-surface .notebook-card-entry__coverage, .hud-surface .notebook-card-entry[data-status="review_ready"] .notebook-card-entry__state, .hud-surface .notebook-card-entry[data-status="needs_attention"] .notebook-card-entry__state { background: var(--hud-butter); color: #75623b; }
@@ -174,6 +180,15 @@
 .hud-surface .note-transcript a, .hud-surface .note-draft .ProseMirror a { color: #538169; text-underline-offset: 4px; }
 .hud-surface .note-transcript .reading-rule { margin: 26px 0; border: 0; border-top: 1px solid var(--hud-line); }
 .hud-surface .note-transcript .reading-more { justify-content: center; padding: 12px 0; }
+/* 正文目录是导航，不是正文：紧凑一行一条，层级缩进由按钮自己的内联 padding 给。 */
+.hud-surface .note-transcript .note-body-toc { display: grid; gap: 2px; margin: 0 0 22px; padding: 12px 14px; border: 1px dashed #cdc4ae; border-radius: 12px; background: #f7f2e4; }
+.hud-surface .note-transcript .note-body-toc button { display: flex; align-items: baseline; gap: 7px; padding: 5px 7px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; font-size: 13px; line-height: 1.6; text-align: left; cursor: pointer; }
+.hud-surface .note-transcript .note-body-toc button:hover { background: #efe7d2; }
+.hud-surface .note-transcript .note-body-toc button::before { content: "·"; color: #a89b7f; }
+/* 脚注角标贴着句尾走，不把行高顶开；`[1]` 那串源标记由 .note-footnote-source 视觉隐藏，屏上只剩可点的数字。 */
+.hud-surface .note-transcript .note-reading-footnote-ref { top: -.35em; margin-inline: 2px 6px; font-size: .72em; line-height: 0; }
+.hud-surface .note-transcript .note-reading-footnote-ref a { padding: 3px 5px; border-radius: 6px; text-decoration: none; }
+.hud-surface .note-transcript .note-reading-footnote-ref a:hover { background: #e9efdf; }
 .hud-surface .note-draft .note-editor, .hud-surface .note-draft .ProseMirror { color: inherit; font: inherit; background: none; }
 .hud-surface .note-draft .ProseMirror { padding: 0; min-height: 180px; outline: none; }
 .hud-surface .note-draft .ProseMirror p { margin: 0 0 1.15em; padding: 0; background: none; line-height: inherit; }

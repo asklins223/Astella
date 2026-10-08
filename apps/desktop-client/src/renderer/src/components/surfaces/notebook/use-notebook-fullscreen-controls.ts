@@ -2,19 +2,18 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObje
 import { useNotebookFullscreen } from "./notebook-fullscreen-state";
 
 /** Keep the same document nodes and pin the visible paragraph through the layout change. */
-export function useNotebookFullscreenControls(noteId: string, available: boolean, scrollRef: RefObject<HTMLDivElement | null>, closeAttachments: () => void) {
-  const { fullscreen, setFullscreen } = useNotebookFullscreen(available);
+export function useNotebookFullscreenControls(noteId: string, scrollRef: RefObject<HTMLDivElement | null>, closeAttachments: () => void) {
+  const { fullscreen, setFullscreen } = useNotebookFullscreen();
   const [toolsOpen, setToolsOpen] = useState(false);
   const toolTriggerRef = useRef<HTMLButtonElement | null>(null);
   const enterRef = useRef<HTMLButtonElement | null>(null);
   const chromeRef = useRef<HTMLDivElement | null>(null);
   const anchor = useRef<{ node: HTMLElement; offset: number } | null>(null);
-  const latest = useRef({ fullscreen, toolsOpen, available, closeAttachments, setFullscreen });
-  latest.current = { fullscreen, toolsOpen, available, closeAttachments, setFullscreen };
+  const latest = useRef({ fullscreen, toolsOpen, closeAttachments, setFullscreen });
+  latest.current = { fullscreen, toolsOpen, closeAttachments, setFullscreen };
 
   const toggleFullscreen = useCallback(() => {
     const current = latest.current;
-    if (!current.available) return;
     const scroll = scrollRef.current;
     if (scroll) {
       const top = scroll.getBoundingClientRect().top;
@@ -69,12 +68,12 @@ export function useNotebookFullscreenControls(noteId: string, available: boolean
     const keydown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || document.querySelector("dialog[open], [aria-modal='true']")) return;
       const current = latest.current;
-      if (current.available && (event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "f" && !event.altKey) {
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "f" && !event.altKey) {
         event.preventDefault(); toggleFullscreen(); return;
       }
       if (event.key !== "Escape" || !current.fullscreen) return;
       // Local papers, search panels and companion conversation get the first Escape.
-      if (document.querySelector('.companion-hud:not([data-mode="closed"]), .notebook-desk__side-page:not([inert]), .notebook-desk__index:not([inert]), .cm-search')) return;
+      if (document.querySelector('.companion-hud:not([data-mode="closed"]), .notebook-desk__side-page:not([inert]), .notebook-desk__index:not([inert]), .notebook-note-list__paper:not([inert]), .cm-search')) return;
       event.preventDefault();
       if (current.toolsOpen) closeTools(); else toggleFullscreen();
     };

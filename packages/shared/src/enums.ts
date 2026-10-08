@@ -71,6 +71,7 @@ export const JobType = {
   COMPANION_THOUGHT: "companion_thought",
   // 用户从笔记纸签启动的速看生成。结果由 note_overviews 保存，与伴星对话解耦。
   NOTE_OVERVIEW_GENERATE: "note_overview_generate",
+  NOTE_MIND_MAP_GENERATE: "note_mind_map_generate",
   // 用户从原文选区发起的独立批注解释任务。
   NOTE_ANNOTATION_EXPLAIN: "note_annotation_explain",
   // 笔记页发起的 AI 自由创作互动演示，由后台任务生成并保存。

@@ -1,3 +1,4 @@
+import { writingImage, getWritingFile } from "./note-writing-assets";
 import type { RefObject } from "react";
 import { $prose } from "@milkdown/kit/utils";
 import { DOMSerializer, type Node } from "@milkdown/kit/prose/model";
@@ -19,6 +20,7 @@ export function createNoteImageNodeView(initialNode: Node, onZoom: (src: string,
   const asImage = (candidate: Node) => candidate.type.name === "image" ? candidate : candidate.type.name === "html"
     ? (() => { const attrs = noteImageHtmlAttrs(String(candidate.attrs.value ?? "")); return attrs ? view.state.schema.nodes.image!.create(attrs) : null; })() : null;
   let node = asImage(initialNode)!;
+  let localBlob: string | null = null;
   let shown: string | null = null, disposed = false, selected = false;
   let uploads: Uploads = new Map(), retryTimer: ReturnType<typeof setTimeout> | null = null;
   let frameRequest = 0;
@@ -197,7 +199,14 @@ export function createNoteImageNodeView(initialNode: Node, onZoom: (src: string,
     if (src.startsWith("uploading:")) { refreshUpload(uploads); return; }
     pending("loading", "正在载入图片…", alt || "图片");
     const objectKey = sourceImageObjectKeyFromUrl(src);
-    if (!objectKey) { if (src) image.src = src; else pending("unavailable", "图片暂时无法显示", alt || "图片"); return; }
+    if (!objectKey) {
+      if (!window.astella || /^(?:data:|blob:)/.test(src)) { image.src = src; return; }
+      if (!src) { pending("unavailable", "图片暂时无法显示", alt || "图片"); return; }
+      void writingImage(src, getWritingFile(view.dom)).then(result => {
+        if (disposed || shown !== src) return; if (localBlob) URL.revokeObjectURL(localBlob);
+        localBlob = URL.createObjectURL(new Blob([Uint8Array.from(atob(result.base64), char => char.charCodeAt(0))], { type: result.mime })); image.src = localBlob;
+      }).catch(() => { if (!disposed && shown === src) pending("unavailable", "图片暂时无法显示，请打开对应的本地笔记", alt || "图片"); }); return;
+    }
     void loadSourceImageBlobUrl(objectKey).then(blobUrl => {
       if (disposed || shown !== src) return;
       if (blobUrl) { image.src = blobUrl; return; }
@@ -205,6 +214,7 @@ export function createNoteImageNodeView(initialNode: Node, onZoom: (src: string,
       retryTimer = setTimeout(() => { if (!disposed && shown === src) show(src, alt, attempt + 1); }, 1200 * (attempt + 1));
     });
   };
+  const refreshFile = () => show(String(node.attrs.src ?? ""), String(node.attrs.alt ?? ""), 1); view.dom.addEventListener("note-local-file-change", refreshFile);
   show(String(node.attrs.src ?? ""), String(node.attrs.alt ?? ""));
   return {
     dom, refreshUpload,
@@ -213,7 +223,7 @@ export function createNoteImageNodeView(initialNode: Node, onZoom: (src: string,
     deselectNode() { selected = false; dom.classList.remove("ProseMirror-selectednode"); hidePopup(); finishDrag(false); size(); },
     stopEvent: event => event.target === resize || event.type === "click" || event.type === "dblclick" || event.type === "contextmenu",
     ignoreMutation: () => true,
-    destroy() { disposed = true; finishDrag(false); hidePopup(); popup.remove(); if (retryTimer) clearTimeout(retryTimer); if (frameRequest) cancelAnimationFrame(frameRequest); document.removeEventListener("keydown", escapePopup, true); document.removeEventListener("pointerdown", outside, true); document.removeEventListener("scroll", schedulePosition, true); window.removeEventListener("resize", schedulePosition); },
+    destroy() { view.dom.removeEventListener("note-local-file-change", refreshFile); if (localBlob) URL.revokeObjectURL(localBlob); disposed = true; finishDrag(false); hidePopup(); popup.remove(); if (retryTimer) clearTimeout(retryTimer); if (frameRequest) cancelAnimationFrame(frameRequest); document.removeEventListener("keydown", escapePopup, true); document.removeEventListener("pointerdown", outside, true); document.removeEventListener("scroll", schedulePosition, true); window.removeEventListener("resize", schedulePosition); },
   };
 }
 

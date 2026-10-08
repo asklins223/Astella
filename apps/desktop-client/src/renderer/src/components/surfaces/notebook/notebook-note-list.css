@@ -1,0 +1,80 @@
+/* A small mint index belongs to the visit, so loading another page never folds it away. */
+.hud-surface .content.notebook-space { container-type: inline-size; }
+.hud-surface .notebook-detail-layout { position: relative; display: flex; gap: 14px; height: 100%; min-width: 0; min-height: 0; }
+.hud-surface .notebook-detail-layout > .notebook-workspace { flex: 1; width: 0; }
+.hud-surface .notebook-detail-layout:has(> .notebook-note-list[data-open="false"]:not([data-fullscreen])) { gap: 0; }
+.hud-surface .notebook-detail-layout:has(> .notebook-note-list[data-open="false"]:not([data-fullscreen])) .notebook-desk > .notebook-volume__bookmarks { padding-left: 56px; }
+.hud-surface .notebook-detail-layout:has(> .notebook-note-list[data-open="false"]:not([data-fullscreen])) .notebook-workspace__state { padding-top: 68px; }
+.hud-surface .notebook-note-list {
+  position: relative; flex: none; display: flex; flex-direction: column; gap: 10px; width: 238px; min-height: 0;
+  color: #405447; font-family: "Noto Sans SC Variable", sans-serif;
+}
+.hud-surface .notebook-note-list[data-open="false"] { width: 0; }
+.hud-surface .notebook-note-list__toggle {
+  align-self: flex-start; flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 42px; padding: 8px 13px; border: 2px solid #fff8e7; border-radius: 16px; background: #e7efd9;
+  color: #52745a; box-shadow: 0 3px 0 #bdcbaa90; font: 700 12px/1.5 "Noto Sans SC Variable", sans-serif; text-decoration: none;
+}
+.hud-surface .notebook-note-list[data-open="false"] .notebook-note-list__toggle { position: absolute; z-index: 4; top: 3px; left: 0; width: 42px; padding-inline: 0; }
+.hud-surface .notebook-note-list[data-open="false"] .notebook-note-list__toggle span { display: none; }
+.hud-surface .notebook-note-list__paper {
+  position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; width: 238px; box-sizing: border-box;
+  padding: 17px 12px 12px; border: 2px solid #fff9e7; border-radius: 24px 19px 21px 24px; background: #eaf1dd;
+  box-shadow: 0 3px 0 #b9c6a790, 0 6px 18px #344b3610; transform-origin: left center;
+}
+.hud-surface .notebook-note-list__paper[inert] { position: absolute; inset-block: 52px 0; z-index: 11; pointer-events: none; }
+.hud-surface .notebook-note-list__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 14px; }
+.hud-surface .notebook-note-list__head > div { display: flex; align-items: center; gap: 9px; }
+.hud-surface .notebook-note-list__head h2 { margin: 0; color: #4d6c51; font: 750 15px/1.5 "Noto Sans SC Variable", sans-serif; }
+.hud-surface .notebook-note-list :is(.notebook-note-list__head, .notebook-note-list__search) .text-action { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; padding: 5px; border-radius: 9px; color: #6b8165; }
+.hud-surface .notebook-note-list__search { display: flex; flex: none; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #d4ddc6; border-radius: 13px; background: #fffdf1; color: #7b8c70; }
+.hud-surface .notebook-note-list__search input { width: 0; flex: 1; min-width: 0; padding: 0; border: 0; border-radius: 0; background: none; color: #405447; outline: none; box-shadow: none; font: 12px/1.8 "Noto Sans SC Variable", sans-serif; }
+.hud-surface .notebook-note-list__search input::-webkit-search-cancel-button { display: none; }
+.hud-surface .notebook-note-list__search:focus-within { outline: 2px solid #81a97e; outline-offset: 2px; }
+.hud-surface .notebook-note-list__scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 12px 2px; margin-inline: -2px; }
+.hud-surface .notebook-note-list__scroll ul { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.hud-surface .notebook-note-list__item {
+  display: flex; flex-direction: column; gap: 7px; width: 100%; padding: 12px 13px; text-align: left;
+  border: 1px solid transparent; border-radius: 15px; background: transparent; color: #405447; cursor: pointer;
+  font-family: "Noto Sans SC Variable", sans-serif;
+}
+.hud-surface .notebook-note-list__item[aria-current="page"] { border-color: #cedcc0; background: #fffbeb; box-shadow: 0 2px 0 #c5cfaf70; }
+.hud-surface .notebook-note-list__title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font-size: 13px; line-height: 1.7; font-weight: 650; }
+.hud-surface .notebook-note-list__meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px; color: #7c8873; font-size: 10px; line-height: 1.6; }
+.hud-surface .notebook-note-list__meta > span { display: inline-flex; align-items: center; gap: 3px; color: #5c825b; }
+.hud-surface .notebook-note-list__message { margin: 12px 6px; color: #738267; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.hud-surface .notebook-note-list__message p { margin: 0 0 6px; }
+.hud-surface .notebook-note-list__message[role="alert"] { color: #a06245; }
+.hud-surface .notebook-note-list__more { display: block; width: 100%; margin-top: 12px; padding: 8px; color: #52745a; font-size: 12px; }
+.hud-surface .notebook-note-list__foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; padding: 10px 4px 0; border-top: 1px solid #d5dfc7; color: #78876e; font-size: 10px; line-height: 1.7; }
+.hud-surface .notebook-note-list button:focus-visible { outline: 3px solid #71a883; outline-offset: 2px; }
+.hud-surface .notebook-note-list :is(button, summary) { scale: var(--note-touch-scale, 1); }
+@media (hover: hover) and (pointer: fine) {
+  .hud-surface .notebook-note-list__item:hover { background: #f7f8e9; }
+  .hud-surface .notebook-note-list__item[aria-current="page"]:hover { background: #fffbeb; }
+}
+/* A narrow book borrows an overlay instead of taking away the reading measure. */
+@container (max-width: 760px) {
+  .hud-surface .notebook-detail-layout { gap: 0; }
+  .hud-surface .notebook-note-list { width: 0; }
+  .hud-surface .notebook-note-list__toggle { position: absolute; z-index: 4; top: 3px; left: 0; width: 42px; padding-inline: 0; }
+  .hud-surface .notebook-note-list__toggle span { display: none; }
+  .hud-surface .notebook-note-list__paper { position: absolute; z-index: 11; inset-block: 52px 0; left: 0; width: min(260px, calc(100cqi - 16px)); box-shadow: 0 3px 0 #b9c6a790, 0 12px 32px #344b3626; }
+  .hud-surface .notebook-detail-layout .notebook-desk:not([data-fullscreen]) > .notebook-volume__bookmarks { padding-left: 56px; }
+  .hud-surface .notebook-detail-layout .notebook-workspace__state { padding-top: 68px; }
+}
+/* Full-sheet controls always float: opening the index leaves text and editor geometry intact. */
+.desktop-app.hud-surface[data-notebook-fullscreen] .notebook-detail-layout > .notebook-workspace { width: 100%; }
+.hud-surface .notebook-note-list[data-fullscreen] { --notebook-list-tool-top: max(var(--notebook-focus-tool-top), calc(env(titlebar-area-height, 40px) + 12px)); position: absolute; z-index: 11; inset: 0; width: auto; pointer-events: none; }
+.hud-surface .notebook-note-list[data-fullscreen] .notebook-note-list__toggle { position: absolute; top: var(--notebook-list-tool-top); left: 24px; width: auto; min-height: 46px; border-width: 1px; pointer-events: auto; }
+.hud-surface .notebook-note-list[data-fullscreen] .notebook-note-list__toggle span { display: inline; }
+.hud-surface .notebook-note-list[data-fullscreen] .notebook-note-list__paper { position: absolute; z-index: 11; top: calc(var(--notebook-list-tool-top) + 58px); bottom: 24px; left: 24px; width: min(260px, calc(100% - 48px)); pointer-events: auto; box-shadow: 0 3px 0 #b9c6a790, 0 12px 32px #344b3626; }
+.hud-surface .notebook-note-list[data-fullscreen] .notebook-note-list__paper[inert] { pointer-events: none; }
+.hud-surface .notebook-space:has(.notebook-note-list[data-fullscreen]) .notebook-focus-save-error { top: var(--notebook-focus-page-top); }
+@media (max-height: 520px) {
+  .hud-surface .notebook-note-list__paper { padding-top: 12px; }
+  .hud-surface .notebook-note-list__head { padding-bottom: 8px; }
+  .hud-surface .notebook-note-list__foot span { display: none; }
+  .hud-surface .notebook-note-list[data-fullscreen] .notebook-note-list__toggle { left: 16px; min-height: 42px; }
+  .hud-surface .notebook-note-list[data-fullscreen] .notebook-note-list__paper { left: 16px; bottom: 16px; }
+}

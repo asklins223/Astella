@@ -9,6 +9,7 @@ import {
   parserCtx,
   serializerCtx,
   rootCtx,
+  remarkStringifyOptionsCtx,
 } from "@milkdown/kit/core";
 import {
   commonmark,
@@ -23,20 +24,20 @@ import {
   wrapInHeadingCommand,
   wrapInOrderedListCommand,
 } from "@milkdown/kit/preset/commonmark";
-import { gfm, tableSchema, toggleStrikethroughCommand } from "@milkdown/kit/preset/gfm";
+import { gfm, tableSchema, remarkGFMPlugin, footnoteDefinitionSchema, footnoteReferenceSchema, toggleStrikethroughCommand } from "@milkdown/kit/preset/gfm";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import { clipboard } from "@milkdown/kit/plugin/clipboard";
 import { $prose, $remark, callCommand, insert, replaceAll } from "@milkdown/kit/utils";
 import { keymap } from "@milkdown/kit/prose/keymap";
 import { lift } from "@milkdown/kit/prose/commands";
-import { liftListItem } from "@milkdown/kit/prose/schema-list";
+import { liftListItem, sinkListItem } from "@milkdown/kit/prose/schema-list";
 import { noteEditorFormat, noteEditorFormatPlugin, notifyNoteEditorFormat, type NoteEditorFormat } from "./note-editor-format";
 import { Plugin, PluginKey, Selection, NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import { Decoration, DecorationSet } from "@milkdown/kit/prose/view";
 import { placementsByBlock, type AnnotationPlacement } from "./note-annotation-placement";
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from "@milkdown/react";
 import * as Y from "yjs";
-import { yUndoPlugin, ySyncPlugin, ySyncPluginKey, undoCommand, redoCommand } from "y-prosemirror";
+import { yUndoPlugin, yUndoPluginKey, ySyncPlugin, ySyncPluginKey, undoCommand, redoCommand } from "y-prosemirror";
 import { applyNoteSource, noteCaretPosition, noteSourceSignature, readNoteSource, NOTE_SOURCE_INPUT_ORIGIN, type NoteDocumentPosition } from "./note-source-bridge";
 import {
   paragraphSchema,
@@ -47,7 +48,7 @@ import {
   orderedListSchema,
   imageSchema,
 } from "@milkdown/kit/preset/commonmark";
-import { noteLinkTarget, noteWikiLinks, noteImageElements, noteImageMarkdown, noteImageSize } from "@astella/shared/note-markdown";
+import { noteLinkTarget, noteWikiLinks, noteImageElements, noteImageMarkdown, noteImageSize, noteRichStyles, noteRichStyleCss, richStyleFromCss, cleanNoteRichStyle, noteStyledPmHtml, type NoteRichStyle } from "@astella/shared/note-markdown";
 import { LightboxViewer } from "../source/image-viewer.tsx";
 import { noteImageViewPlugin, noteImageUploadsKey } from "./note-image-node-view";
 import type { NoteImageUploadView } from "./note-image-uploads";
@@ -55,6 +56,13 @@ import { imageRow, insertNoteImages } from "./note-image-layout";
 import { noteListItemViewPlugin, noteTableKeyboardPlugin, noteTableContextPlugin } from "./note-editor-table-and-lists";
 import { noteCodeBlockPlugins, codeBlockConfig, noteCodeLanguages } from "./note-code-block-editor";
 import { noteEditorMathPreview } from "./note-editor-math-preview";
+import { setWritingFile } from "./note-writing-assets";
+import { DOMSerializer } from "@milkdown/kit/prose/model";
+import { toggleMark } from "@milkdown/kit/prose/commands";
+import { noteRichStyleMark, noteFormatBrushKey, noteFormatBrushPlugin } from "./note-format-brush";
+import { noteWritingExtensionPlugins } from "./note-writing-extensions";
+import { noteLiveWritingPlugin } from "./note-live-writing";
+import { noteRichSearchPlugin } from "./note-rich-search";
 
 /**
  * 笔记正文的所见即所得编辑器（Milkdown）。
@@ -83,6 +91,17 @@ export type NoteMarkdownEditorHandle = {
   readonly toggleEmphasis: () => void;
   readonly toggleInlineCode: () => void;
   readonly toggleStrikethrough?: () => void;
+  readonly openSearch?: () => void;
+  readonly getSelectedMarkdown?: () => string;
+  readonly getHtml?: () => string;
+  readonly setLocalFile?: (path: string) => void;
+  readonly clearHistory?: () => void;
+  readonly setTextStyle?: (style: NoteRichStyle) => void;
+  readonly setParagraphStyle?: (style: NoteRichStyle) => void;
+  readonly formatBrush?: () => void;
+  readonly clearFormat?: () => void;
+  readonly toggleExtension?: (kind: "highlight" | "subscript" | "superscript") => void;
+  readonly insertExtension?: (kind: "math" | "yaml" | "toc" | "footnote" | "alert") => void;
   readonly getFormatState?: () => NoteEditorFormat | null;
   readonly toggleHeading: (level: number) => void;
   readonly toggleBlockquote: () => void;
@@ -109,11 +128,18 @@ export type NoteMarkdownEditorHandle = {
  * preset 自己的 `extendSchema`：在 `.config()` 里改 `nodesCtx` 是空操作
  * （那时 preset 还没把节点推进去），实测过。
  */
-const NOTE_DOC_ATTRS = { sourceRef: { default: null }, imageAssetId: { default: null } };
+const NOTE_DOC_ATTRS = { noteStyle: { default: null }, sourceRef: { default: null }, imageAssetId: { default: null } };
 const withNoteDocAttrs = (schemaObject: { extendSchema: (handler: never) => unknown }) =>
   schemaObject.extendSchema(((factory: (ctx: never) => object) => (ctx: never) => {
     const definition = factory(ctx) as { attrs?: Record<string, unknown> };
-    return { ...definition, attrs: { ...definition.attrs, ...NOTE_DOC_ATTRS } };
+    const rich = schemaObject === paragraphSchema || schemaObject === headingSchema;
+    const full = definition as typeof definition & { parseMarkdown: { match: unknown; runner: (state: unknown, node: unknown, type: unknown) => void }; toMarkdown: { match: unknown; runner: (state: unknown, node: unknown) => void }; toDOM: (node: unknown) => unknown; parseDOM: readonly { getAttrs?: (dom: Node | string) => Record<string, unknown> | false | null; [key: string]: unknown }[] };
+    return { ...definition, attrs: { ...definition.attrs, ...NOTE_DOC_ATTRS }, ...(rich ? {
+      parseDOM: full.parseDOM?.map(rule => ({ ...rule, getAttrs: (dom: Node | string) => { const attrs = rule.getAttrs?.(dom); return attrs === false ? false : { ...attrs, noteStyle: dom instanceof HTMLElement ? richStyleFromCss(dom.getAttribute("style")) : null }; } })),
+      parseMarkdown: { ...full.parseMarkdown, runner: (state: { openNode: (type: unknown, attrs: object) => unknown; next: (children: unknown) => unknown; closeNode: () => unknown }, node: { depth?: number; children: unknown; data?: { noteStyle?: unknown } }, type: unknown) => { state.openNode(type, { ...(node.depth ? { level: node.depth } : {}), noteStyle: node.data?.noteStyle ?? null }); state.next(node.children); state.closeNode(); } },
+      toMarkdown: { ...full.toMarkdown, runner: (state: { addNode: (type: string, children: undefined, value: string) => unknown }, node: { attrs: { noteStyle?: unknown }; toJSON: () => Parameters<typeof noteStyledPmHtml>[0] }) => { if (Object.keys(cleanNoteRichStyle(node.attrs.noteStyle)).length) state.addNode("html", undefined, noteStyledPmHtml(node.toJSON())); else full.toMarkdown.runner(state, node); } },
+      toDOM: (node: { attrs: { noteStyle?: unknown } }) => { const dom = full.toDOM(node) as [string, Record<string, unknown>, unknown]; return [dom[0], { ...dom[1], style: noteRichStyleCss(node.attrs.noteStyle) }, dom[2]]; },
+    } : {}) };
   }) as never);
 
 const linkedImageSchema = imageSchema.extendSchema(previous => ctx => {
@@ -165,6 +191,7 @@ function linkedImagePlugin() {
 }
 
 type Props = {
+  readonly localFilePath?: string;
   /** 正文的共享文档片段。编辑器直接写它，不再持有一份文本拷贝。 */
   readonly fragment: Y.XmlFragment;
   /**
@@ -220,7 +247,7 @@ function imageUploadPlugin(onImagePaste: React.RefObject<((file: File) => void) 
     key: new PluginKey("NOTE_IMAGE_UPLOAD"),
     props: {
       handlePaste(_view, event) {
-        if (!_view.editable || !onImagePaste.current) return false;
+        if (!_view.editable || !onImagePaste.current && !onImagesPaste.current) return false;
         const items = event.clipboardData?.items;
         if (!items) return false;
         const all = Array.from(items);
@@ -232,7 +259,7 @@ function imageUploadPlugin(onImagePaste: React.RefObject<((file: File) => void) 
         return true;
       },
       handleDrop(_view, event) {
-        if (!_view.editable || !onImagePaste.current) return false;
+        if (!_view.editable || !onImagePaste.current && !onImagesPaste.current) return false;
         const files = event.dataTransfer?.files;
         if (!files || files.length === 0) return false;
         const all = Array.from(files);
@@ -447,7 +474,13 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
   useEditor((root) => Editor.make()
     .config((ctx) => {
       ctx.set(rootCtx, root);
+      ctx.set(remarkGFMPlugin.options.key, { singleTilde: false });
       ctx.set(defaultValueCtx, initialMarkdown);
+      ctx.update(remarkStringifyOptionsCtx, options => ({ ...options, handlers: { ...options.handlers,
+        text: (node, _parent, state, info) => {
+          let value = "", cursor = 0; for (const match of node.value.matchAll(/\$\$[^]*?\$\$|(?<![\\$])\$(?![\s\d])[^$\n]+?(?<!\s)\$(?!\$)/g)) { value += state.safe(node.value.slice(cursor, match.index), info) + match[0]; cursor = match.index + match[0].length; } return value + state.safe(node.value.slice(cursor), info);
+        },
+      } }));
       ctx.update(codeBlockConfig.key, config => ({ ...config, languages: noteCodeLanguages }));
       // listener 必须按方法调用，不能整体赋值。
       ctx.get(listenerCtx).markdownUpdated((_ctx, markdown) => {
@@ -474,7 +507,13 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
       }));
     })
     .use(commonmark)
-    .use(gfm)
+    .use(gfm.filter(plugin => !footnoteDefinitionSchema.includes(plugin as never) && !footnoteReferenceSchema.includes(plugin as never)))
+    .use($remark("note-rich-styles", () => noteRichStyles))
+    .use(noteWritingExtensionPlugins().flat())
+    .use(noteRichStyleMark)
+    .use(noteLiveWritingPlugin())
+    .use(noteRichSearchPlugin())
+    .use(noteFormatBrushPlugin())
     .use(noteListItemViewPlugin())
     .use(noteTableKeyboardPlugin())
     .use(noteTableContextPlugin())
@@ -565,7 +604,9 @@ function MilkdownControls({
   onReady,
   annotationPlacements,
   imageUploads,
+  localFilePath,
 }: {
+  readonly localFilePath?: string;
   readonly handleRef: React.RefObject<NoteMarkdownEditorHandle | null>;
   readonly externalRef?: React.Ref<NoteMarkdownEditorHandle | null>;
   readonly fragment: Y.XmlFragment;
@@ -574,6 +615,11 @@ function MilkdownControls({
   readonly imageUploads?: readonly NoteImageUploadView[];
 }) {
   const [loading, getInstance] = useInstance();
+
+  useEffect(() => {
+    if (loading || localFilePath === undefined) return;
+    withReadyEditor(getInstance(), editor => editor.action(ctx => setWritingFile(ctx.get(editorViewCtx).dom, localFilePath)), undefined);
+  }, [loading, getInstance, localFilePath]);
 
   useEffect(() => {
     if (loading) return;
@@ -613,7 +659,11 @@ function MilkdownControls({
     /** 每个命令都走同一条「就绪才执行、竞态就放弃」的路。 */
     const run = <T,>(operation: (editor: NonNullable<ReturnType<typeof getInstance>>) => T) => {
       const editor = getInstance();
-      withReadyEditor(editor, operation, undefined);
+      withReadyEditor(editor, ready => {
+        const undo = ready.action(ctx => yUndoPluginKey.getState(ctx.get(editorViewCtx).state)?.undoManager);
+        undo?.stopCapturing();
+        try { return operation(ready); } finally { undo?.stopCapturing(); }
+      }, undefined);
     };
     const command = (...args: readonly unknown[]) => (editor: NonNullable<ReturnType<typeof getInstance>>) => {
       editor.action(callCommand(args[0] as string, ...args.slice(1)));
@@ -630,7 +680,11 @@ function MilkdownControls({
       ),
       setMarkdown: (markdown, flush) => run((editor) => editor.action(replaceAll(markdown, flush))),
       focus: () => run((editor) => editor.action((ctx) => { ctx.get(editorViewCtx).focus(); })),
-      insertText: (text) => run((editor) => editor.action(insert(text))),
+      insertText: (text) => run(editor => editor.action(ctx => {
+        const view = ctx.get(editorViewCtx);
+        if (view.state.selection.$from.parent.type.spec.code) view.dispatch(view.state.tr.insertText(text).scrollIntoView());
+        else insert(text)(ctx);
+      })),
       insertImageMarkdown: markdown => run(editor => editor.action(ctx => {
         const view = ctx.get(editorViewCtx), parsed = ctx.get(parserCtx)(markdown);
         const paragraph = parsed?.firstChild;
@@ -662,6 +716,36 @@ function MilkdownControls({
       toggleEmphasis: () => run(command(toggleEmphasisCommand.key)),
       toggleInlineCode: () => run(command(toggleInlineCodeCommand.key)),
       toggleStrikethrough: () => run(command(toggleStrikethroughCommand.key)),
+      openSearch: () => run(editor => editor.action(ctx => { ctx.get(editorViewCtx).dom.dispatchEvent(new CustomEvent("note-open-search")); })),
+      getSelectedMarkdown: () => withReadyEditor(getInstance(), editor => editor.action(ctx => {
+        const view = ctx.get(editorViewCtx); if (view.state.selection.empty) return readNoteSource(view, ctx.get(serializerCtx), undefined);
+        const doc = view.state.schema.topNodeType.createAndFill(undefined, view.state.selection.content().content); return doc ? ctx.get(serializerCtx)(doc) : "";
+      }), ""),
+      getHtml: () => withReadyEditor(getInstance(), editor => editor.action(ctx => {
+        const view = ctx.get(editorViewCtx), wrapper = document.createElement("div");
+        wrapper.append(DOMSerializer.fromSchema(view.state.schema).serializeFragment(view.state.selection.empty ? view.state.doc.content : view.state.selection.content().content)); return wrapper.innerHTML;
+      }), ""),
+      clearHistory: () => run(editor => editor.action(ctx => yUndoPluginKey.getState(ctx.get(editorViewCtx).state)?.undoManager.clear())),
+      setLocalFile: path => run(editor => editor.action(ctx => setWritingFile(ctx.get(editorViewCtx).dom, path))),
+      setTextStyle: style => run(editor => editor.action(ctx => { const view = ctx.get(editorViewCtx), { from, to, empty, $from } = view.state.selection, type = view.state.schema.marks.noteStyle!;
+        if (!view.editable) return; const current = ((view.state.storedMarks ?? $from.marks()).find(mark => mark.type === type)?.attrs.noteStyle ?? {}) as NoteRichStyle, mark = type.create({ noteStyle: cleanNoteRichStyle({ ...current, ...style }) });
+        view.dispatch(empty ? view.state.tr.addStoredMark(mark) : view.state.tr.addMark(from, to, mark)); view.focus();
+      })),
+      setParagraphStyle: style => run(editor => editor.action(ctx => { const view = ctx.get(editorViewCtx), { from, to, $from } = view.state.selection, tr = view.state.tr; if (!view.editable) return;
+        if (style.indent !== undefined && Array.from({ length: $from.depth }, (_, depth) => $from.node(depth + 1)).some(node => node.type.name === "list_item")) { (style.indent > 0 ? sinkListItem : liftListItem)(view.state.schema.nodes.list_item!)(view.state, view.dispatch); view.focus(); return; }
+        view.state.doc.nodesBetween(from, to, (node, pos) => { if (["paragraph", "heading"].includes(node.type.name)) tr.setNodeMarkup(pos, undefined, { ...node.attrs, noteStyle: cleanNoteRichStyle({ ...cleanNoteRichStyle(node.attrs.noteStyle), ...style, ...(style.indent !== undefined ? { indent: Math.min(8, Math.max(0, (cleanNoteRichStyle(node.attrs.noteStyle).indent ?? 0) + style.indent)) } : {}) }) }); }); view.dispatch(tr); view.focus();
+      })),
+      formatBrush: () => run(editor => editor.action(ctx => { const view = ctx.get(editorViewCtx); if (!view.editable) return; view.dispatch(view.state.tr.setMeta(noteFormatBrushKey, { marks: view.state.selection.$from.marks(), paragraph: view.state.selection.$from.parent.attrs.noteStyle })); })),
+      clearFormat: () => run(editor => editor.action(ctx => { const view = ctx.get(editorViewCtx), { from, to } = view.state.selection, tr = view.state.tr.removeMark(from, to); if (!view.editable) return; tr.setStoredMarks([]); view.state.doc.nodesBetween(from, to, (node, pos) => { if (["paragraph", "heading"].includes(node.type.name)) tr.setNodeMarkup(pos, undefined, { ...node.attrs, noteStyle: null }); }); view.dispatch(tr); view.focus(); })),
+      toggleExtension: kind => run(editor => editor.action(ctx => { const view = ctx.get(editorViewCtx), type = view.state.schema.marks[{ highlight: "noteHighlight", subscript: "noteSubscript", superscript: "noteSuperscript" }[kind]]!; if (!view.editable) return; toggleMark(type)(view.state, view.dispatch); view.focus(); })),
+      insertExtension: kind => run(editor => editor.action(ctx => {
+        const view = ctx.get(editorViewCtx), tr = view.state.tr, type = view.state.schema.nodes.note_source!; if (!view.editable) return;
+        if (kind === "footnote") { let label = 1; const existing = new Set<string>(); view.state.doc.descendants(node => { if (node.type.name === "note_source" && node.attrs.kind === "footnote") existing.add(node.attrs.label); }); while (existing.has(String(label))) label++;
+          tr.replaceSelectionWith(view.state.schema.nodes.note_ref!.create({ label: String(label) })); tr.insert(tr.doc.content.size, type.create({ kind, label: String(label) }, view.state.schema.text("脚注内容")));
+        } else if (kind === "alert") { const parsed = ctx.get(parserCtx)("> [!NOTE]\n> 提示内容"); if (parsed?.firstChild) tr.replaceSelectionWith(parsed.firstChild); }
+        else { const value = kind === "math" ? "E = mc^2" : kind === "yaml" ? "title: 笔记\ntags: []" : "", node = type.create({ kind }, value ? view.state.schema.text(value) : undefined); if (kind === "yaml") tr.insert(0, node); else tr.replaceSelectionWith(node); }
+        view.dispatch(tr.scrollIntoView()); view.focus();
+      })),
       getFormatState: () => withReadyEditor(getInstance(), editor => editor.action(ctx => noteEditorFormat(ctx.get(editorViewCtx).state)), null),
       toggleHeading: (level) => run((editor) => editor.action(ctx => {
         const view = ctx.get(editorViewCtx);
@@ -772,6 +856,7 @@ export function NoteMarkdownEditor({
   onOpenAnnotation,
   ref,
   onReady,
+  localFilePath,
 }: Props) {
   const handleRef = useRef<NoteMarkdownEditorHandle | null>(null);
 
@@ -793,7 +878,7 @@ export function NoteMarkdownEditor({
           上一轮那份（症状是「记号画不出来」）。值进插件 state 之后，
           「批注变了」本身就是一次事务，装饰自动跟上。 */}
       <MilkdownControls handleRef={handleRef} externalRef={ref} fragment={fragment} onReady={onReady}
-        annotationPlacements={annotationPlacements} imageUploads={imageUploads} />
+        annotationPlacements={annotationPlacements} imageUploads={imageUploads} localFilePath={localFilePath} />
     </MilkdownProvider>
   );
 }

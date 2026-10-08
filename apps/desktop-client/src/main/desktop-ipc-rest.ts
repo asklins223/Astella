@@ -1,3 +1,4 @@
+import { createNoteMindMapTaskV1Schema, noteMindMapLatestTaskQueryV1Schema, noteMindMapLatestTaskV1Schema, noteMindMapPageV1Schema, noteMindMapTaskV1Schema, noteMindMapSourceV1Schema } from "@astella/shared/note-mind-map-contracts";
 import { runtimeInputSchema } from "./desktop-ipc-companion";
 import type { NoteDocStreamEntry } from "./desktop-ipc";
 import {
@@ -670,6 +671,34 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_note.getNoteOverviewTask(gateway.gatewayTransport, input.noteId, input.taskId, input.meta.requestId);
   }, noteOverviewTaskV1Schema);
+  channel(DESKTOP_IPC_CHANNELS.noteMindMapList, z.strictObject({ ...m1InputBase, noteId: uuidSchema, before: uuidSchema.optional() }), async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_note.listNoteMindMaps(gateway.gatewayTransport, { noteId: input.noteId, before: input.before }, input.meta.requestId);
+  }, noteMindMapPageV1Schema);
+
+  channel(DESKTOP_IPC_CHANNELS.noteMindMapStartTask, z.strictObject({ ...m1InputBase, noteId: uuidSchema, request: createNoteMindMapTaskV1Schema }), async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_note.startNoteMindMapTask(gateway.gatewayTransport, input.noteId, createNoteMindMapTaskV1Schema.parse(input.request), input.meta.requestId);
+  }, noteMindMapTaskV1Schema);
+
+  channel(DESKTOP_IPC_CHANNELS.noteMindMapLatestTask, z.strictObject({ ...m1InputBase, noteId: uuidSchema, query: noteMindMapLatestTaskQueryV1Schema }), async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_note.getLatestNoteMindMapTask(gateway.gatewayTransport, input.noteId, noteMindMapLatestTaskQueryV1Schema.parse(input.query), input.meta.requestId);
+  }, noteMindMapLatestTaskV1Schema);
+
+  channel(DESKTOP_IPC_CHANNELS.noteMindMapGetTask, z.strictObject({ ...m1InputBase, noteId: uuidSchema, taskId: uuidSchema }), async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_note.getNoteMindMapTask(gateway.gatewayTransport, input.noteId, input.taskId, input.meta.requestId);
+  }, noteMindMapTaskV1Schema);
+  channel(DESKTOP_IPC_CHANNELS.noteMindMapSource, z.strictObject({ ...m1InputBase, noteId: uuidSchema, mindMapId: uuidSchema }), async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_note.getNoteMindMapSource(gateway.gatewayTransport, input.noteId, input.mindMapId, input.meta.requestId);
+  }, noteMindMapSourceV1Schema);
 
   channel(DESKTOP_IPC_CHANNELS.noteRecallList, z.strictObject({ ...m1InputBase, noteId: uuidSchema, before: uuidSchema.optional() }), async (_event, _window, input) => {
     requireM2Route(contract, "note.detail");

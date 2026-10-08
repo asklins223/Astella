@@ -101,6 +101,9 @@ import "./components/companion/companion-journal.css";
 
 /* Fullscreen borrows both the paper and the companion seat after their ordinary layout rules. */
 import "./components/surfaces/notebook/notebook-fullscreen.css";
+/* Attachment geometry follows both ordinary and fullscreen book placement. */
+import "./components/surfaces/notebook/notebook-attachments.css";
+import "./components/surfaces/notebook/notebook-note-list.css";
 import "./components/surfaces/notebook/note-editor-experience.css";
 import "./components/surfaces/notebook/note-editor-blocks.css";
 
@@ -111,3 +114,8 @@ import "./components/surfaces/notebook/note-editor-blocks.css";
 export {};
 
 import "./components/companion/guidance/companion-guidance.css";
+
+import "./components/surfaces/notebook/note-writing.css";
+import "./components/surfaces/notebook/notebook-format-controls.css";
+
+import "./components/surfaces/notebook/note-mind-map.css";

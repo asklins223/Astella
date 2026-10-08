@@ -28,6 +28,7 @@ export type AITaskType =
   // ── P2 companion（03 合同 §9.5 参数） ──
   | "companion_agent"       // 日常对话与受控工具 loop
   // ── 笔记学习任务 ──
+  | "note_learning_mind_map"
   | "note_learning_overview" // 独立后台任务：读取整篇笔记并生成带原文依据的速看
   | "note_annotation_explain" // 独立后台任务：解释选区并保存到原文锚点
   | "note_dynamic_artifact" // 独立后台任务：为笔记内容自由创作可交互的演示页面
@@ -58,6 +59,7 @@ const TASK_CAPABILITY_MAP: Record<AITaskType, Capability> = {
   repair:              "agent_turn",
   companion_agent:     "agent_turn",
   note_learning_overview: "agent_turn",
+  note_learning_mind_map: "agent_turn",
   note_annotation_explain: "agent_turn",
   note_dynamic_artifact: "agent_turn",
   note_expansion_draft: "agent_turn",
@@ -84,6 +86,7 @@ const TASK_COMPLEXITY: Record<AITaskType, TaskComplexity> = {
   image_generation:    "medium",
   companion_agent:     "low",
   note_learning_overview: "high",
+  note_learning_mind_map: "high",
   note_annotation_explain: "medium",
   note_dynamic_artifact: "high",
   note_expansion_draft: "high",

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 export type NoteLearningEntry = "overview" | "recall" | "expansion";
-export type NoteLearningTask = NoteLearningEntry | "artifact";
+export type NoteLearningTask = NoteLearningEntry | "artifact" | "mindMap";
 
 /** Choosing a version is explicit; autosync and body-mode changes never start a task. */
 export function useNotebookLearningEntry<Kind extends NoteLearningTask = NoteLearningEntry>(input: {

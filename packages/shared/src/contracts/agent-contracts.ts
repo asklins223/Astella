@@ -76,6 +76,7 @@ export type AgentExecutionRefV1 = z.infer<typeof agentExecutionRefV1Schema>;
 
 /** 三类笔记产物保留 jobId（权威事实在那张 jobs 行上）；制卡候选没有 jobId。 */
 export const agentArtifactRefV1Schema = z.discriminatedUnion("kind", [
+  z.object({kind:z.literal("note_mind_map"),id:z.string().uuid(),jobId:z.string().uuid(),noteId:z.string().uuid(),noteVersionId:z.string().uuid()}).strict(),
   z.object({
     kind: z.literal("note_overview"),
     id: z.string().uuid(), jobId: z.string().uuid(), noteId: z.string().uuid(), noteVersionId: z.string().uuid(),

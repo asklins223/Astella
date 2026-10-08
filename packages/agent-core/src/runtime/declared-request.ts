@@ -18,6 +18,7 @@ export function declaredAgentRequestStep(input: {
   const reused = current.length === 0 && evidence.length > 0;
   const done = reused || (current.length > 0 && current.every(operation => operation.status === "succeeded" && operation.result !== null));
   const summaries = {
+    note_mind_map_generate: "脑图已生成，可以在速看或对话手记里回看。",
     note_overview_generate: "速看已生成，可以在原页面或对话手记里回看。",
     note_dynamic_artifact_generate: "互动演示已生成，可以打开操作和观察。",
     note_expansion_generate: "知识拓展草稿已准备好，等你挑选后再保存。",

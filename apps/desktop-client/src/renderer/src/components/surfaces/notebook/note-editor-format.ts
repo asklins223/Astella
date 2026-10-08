@@ -1,3 +1,5 @@
+import { cleanNoteRichStyle, type NoteRichStyle } from "@astella/shared/note-markdown";
+import { noteFormatBrushKey } from "./note-format-brush";
 import { $prose } from "@milkdown/kit/utils";
 import { Plugin } from "@milkdown/kit/prose/state";
 import type { EditorState } from "@milkdown/kit/prose/state";
@@ -13,6 +15,8 @@ export type NoteEditorFormat = {
   quote: boolean;
   bullet: boolean;
   ordered: boolean;
+  textStyle?: NoteRichStyle; paragraphStyle?: NoteRichStyle; highlight?: boolean; brush?: boolean;
+  source?: boolean;
   canUndo: boolean;
   canRedo: boolean;
 };
@@ -24,6 +28,7 @@ export function noteEditorFormat(state: EditorState): NoteEditorFormat {
   const parents = Array.from({ length: selection.$from.depth }, (_, depth) => selection.$from.node(depth + 1));
   const undo = yUndoPluginKey.getState(state)?.undoManager;
   return {
+    textStyle: cleanNoteRichStyle(marks.find(item => item.type.name === "noteStyle")?.attrs.noteStyle), paragraphStyle: cleanNoteRichStyle(selection.$from.parent.attrs.noteStyle), highlight: mark("noteHighlight"), brush: Boolean(noteFormatBrushKey.getState(state)),
     heading: parents.find(node => node.type.name === "heading")?.attrs.level ?? 0,
     strong: mark("strong"), emphasis: mark("emphasis"), inlineCode: mark("inlineCode"), strike: mark("strike_through"),
     quote: parents.some(node => node.type.name === "blockquote"), bullet: parents.some(node => node.type.name === "bullet_list"), ordered: parents.some(node => node.type.name === "ordered_list"),

@@ -2759,6 +2759,13 @@
       "when": 1791427187709,
       "tag": "0397_companion_note_edit_pending_index",
       "breakpoints": true
+    },
+    {
+      "idx": 394,
+      "version": "7",
+      "when": 1791427187710,
+      "tag": "0398_note_mind_maps",
+      "breakpoints": true
     }
   ]
 }

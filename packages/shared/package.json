@@ -1,6 +1,6 @@
 {
   "name": "@astella/shared",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -699,12 +699,24 @@
       "types": "./src/contracts/object-transfer-contracts.ts",
       "import": "./src/contracts/object-transfer-contracts.ts",
       "default": "./src/contracts/object-transfer-contracts.ts"
+    },
+    "./note-mind-map-contracts": {
+      "types": "./src/contracts/note-mind-map-contracts.ts",
+      "import": "./src/contracts/note-mind-map-contracts.ts",
+      "default": "./src/contracts/note-mind-map-contracts.ts"
+    },
+    "./db-schema/note-mind-maps": {
+      "types": "./src/db-schema/note-mind-maps.ts",
+      "import": "./src/db-schema/note-mind-maps.ts",
+      "default": "./src/db-schema/note-mind-maps.ts"
     }
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
+    "gemoji": "^8.1.0",
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",
+    "remark-frontmatter": "^5.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "remark-parse": "^11.0.0",

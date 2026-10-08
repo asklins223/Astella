@@ -93,6 +93,7 @@ export type TypedJobPayloadByType = {
   [JobType.PARSE_SOURCE]: ParseSourceJobPayload;
   [JobType.COMPANION_THOUGHT]: CompanionThoughtJobPayload;
   [JobType.NOTE_OVERVIEW_GENERATE]: NoteOverviewGenerateJobPayload;
+  [JobType.NOTE_MIND_MAP_GENERATE]: NoteOverviewGenerateJobPayload;
   [JobType.NOTE_ANNOTATION_EXPLAIN]: NoteAnnotationExplainJobPayload;
   [JobType.NOTE_DYNAMIC_ARTIFACT_GENERATE]: NoteDynamicArtifactGenerateJobPayload;
   [JobType.NOTE_EXPANSION_GENERATE]: NoteExpansionGenerateJobPayload;
@@ -176,6 +177,22 @@ export function readNoteOverviewGenerateJobPayload(
     const value = payload[key];
     if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
       throw new JobPayloadContractError(JobType.NOTE_OVERVIEW_GENERATE, `payload.${key} must be a UUID`);
+    }
+    return value;
+  };
+  return { noteId: readUuid("noteId"), noteVersionId: readUuid("noteVersionId"), requestId: readUuid("requestId") };
+}
+
+export function readNoteMindMapGenerateJobPayload(
+  payload: Record<string, unknown> | null | undefined,
+): NoteOverviewGenerateJobPayload {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new JobPayloadContractError(JobType.NOTE_MIND_MAP_GENERATE, "payload must be a JSON object");
+  }
+  const readUuid = (key: keyof NoteOverviewGenerateJobPayload): string => {
+    const value = payload[key];
+    if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+      throw new JobPayloadContractError(JobType.NOTE_MIND_MAP_GENERATE, `payload.${key} must be a UUID`);
     }
     return value;
   };

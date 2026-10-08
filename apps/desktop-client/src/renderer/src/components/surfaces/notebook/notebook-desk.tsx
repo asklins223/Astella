@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from "react";
-import { BookOpen, Code2, Eye, History, Maximize2, Lightbulb, ListTree, MoreHorizontal, PencilLine, Pin, PinOff, ScanText, Sprout, X } from "lucide-react";
+import { BookOpen, Code2, Eye, History, Maximize2, Lightbulb, ListTree, MoreHorizontal, Paperclip, PencilLine, Pin, PinOff, ScanText, Sprout, StickyNote, X } from "lucide-react";
 import { NOTE_BODY_MODES, type NoteBodyMode } from "./note-document-mode";
 import type { NoteOutlineEntry } from "./note-outline";
 import { useNotebookPageTurn, useNotebookPaperMotion, useNotebookPaperPresence } from "./use-notebook-paper-motion";
@@ -8,6 +8,11 @@ import { useNotebookFullscreenControls } from "./use-notebook-fullscreen-control
 import { NotebookFullscreenRibbon } from "./notebook-fullscreen-ribbon";
 
 const modeIcons = { preview: Eye, "live-preview": PencilLine, source: Code2 };
+const attachmentFaces = {
+  annotation: { Icon: StickyNote, detail: "想法留在原句旁" },
+  source: { Icon: Paperclip, detail: "和这篇笔记一起收好" },
+  history: { Icon: History, detail: "留住每一次理解" },
+};
 const learningTabs = [
   { kind: "overview", label: "速看", detail: "读懂重点", Icon: ScanText },
   { kind: "recall", label: "回想", detail: "想起一点", Icon: Lightbulb },
@@ -24,6 +29,7 @@ export type NotebookSidePage = {
 
 type Props = {
   readonly noteId: string;
+  readonly mindMapActive?: boolean;
   readonly noteTitle: string;
   readonly version: number;
   readonly mode: NoteBodyMode;
@@ -39,6 +45,8 @@ type Props = {
   readonly onBody: () => void;
   readonly onHistory?: () => void;
   readonly tools: ReactNode;
+  /** 速看的「要点／脑图」开关：挂在纸面框上，不在会翻页的页内容里（见 notebook-overview-switch.tsx）。 */
+  readonly overviewSwitch?: ReactNode;
   readonly primaryAction: ReactNode;
   readonly taskActions: ReactNode;
   readonly sourceAction: ReactNode;
@@ -66,7 +74,7 @@ export function NotebookDesk(props: Props) {
   const sideWasOpen = useRef(false);
   const sideClosedFromBody = useRef(false);
   const bodyPressPoint = useRef<{ x: number; y: number } | null>(null);
-  const focus = useNotebookFullscreenControls(props.noteId, props.learningView === "body", props.scrollRef, () => {
+  const focus = useNotebookFullscreenControls(props.noteId, props.scrollRef, () => {
     setDirectoryOpen(false); setPinned(false); props.sidePage?.onClose();
     if (drawerRef.current) drawerRef.current.open = false;
   });
@@ -77,12 +85,16 @@ export function NotebookDesk(props: Props) {
   const chromePaper = useNotebookPaperPresence(showChrome ? true : null, "tools", "fold", play);
   const indexPaper = useNotebookPaperPresence(showDirectory ? true : null, "index", "index", play);
   const sidePaper = useNotebookPaperPresence(props.sidePage, props.sidePage?.kind ?? "", "side", play);
+  const attachmentFace = sidePaper.value ? attachmentFaces[sidePaper.value.kind] : null;
   const pageRef = useRef<HTMLDivElement | null>(null);
   useNotebookPageTurn(pageRef, `${props.noteId}:${props.learningView}:${props.mode}`, play);
   const editingBody = props.learningView === "body" && props.mode !== "preview";
   const context = props.learningView === "body"
     ? props.mode === "preview" ? "正在阅读" : props.mode === "source" ? "Markdown 源码" : "正在编辑"
     : { overview: "这篇的速看", recall: "回想这篇", expansion: "往外学", artifact: "互动演示", history: "学习记录", learning: "这一轮学习" }[props.learningView];
+  /** 全屏折签上的短标签：正文说模式，子页面说自己是谁——避免在速看里写「阅读」。 */
+  const focusViewLabel = props.learningView === "body" ? undefined
+    : { overview: "速看", recall: "回想", expansion: "往外学", artifact: "互动演示", history: "记录", learning: "这一轮学习" }[props.learningView];
 
   useEffect(() => {
     setDirectoryOpen(false);
@@ -181,9 +193,11 @@ export function NotebookDesk(props: Props) {
   </nav>;
 
   const coveringPage = compact && Boolean(showDirectory || props.sidePage);
-  return <div className="notebook-desk" ref={deskRef} data-fullscreen={focus.fullscreen || undefined} data-mode={props.mode} data-view={props.learningView} data-compact={compact} data-margin-open={indexPaper.value ? "directory" : sidePaper.value ? "side" : undefined}>
-      {focus.fullscreen ? <NotebookFullscreenRibbon mode={props.mode} toolsOpen={focus.toolsOpen} toolTriggerRef={focus.toolTriggerRef}
+  return <div className="notebook-desk" ref={deskRef} data-fullscreen={focus.fullscreen || undefined} data-mind-map={props.mindMapActive || undefined} data-mode={props.mode} data-view={props.learningView} data-compact={compact} data-margin-open={indexPaper.value ? "directory" : sidePaper.value ? "side" : undefined}>
+      {focus.fullscreen ? <NotebookFullscreenRibbon mode={props.mode} viewLabel={focusViewLabel} toolsOpen={focus.toolsOpen} toolTriggerRef={focus.toolTriggerRef}
         onToggleTools={() => { if (focus.toolsOpen) focus.closeTools(); else focus.setToolsOpen(true); }} onExit={focus.toggleFullscreen} /> : null}
+      {/* 全屏编辑时编辑工具常驻顶部这条纸签（用户裁决的「灵动岛」），不折进右侧工具页、不随页面滚动。 */}
+      {focus.fullscreen && props.tools ? <div className="notebook-volume__tools notebook-desk__tool-island">{props.tools}</div> : null}
       {focus.fullscreen && props.saveError ? <p className="notebook-focus-save-error" role="alert">{props.saveError}<button type="button" className="text-action" onClick={() => focus.setToolsOpen(true)}>查看保存</button></p> : null}
 
     {!focus.fullscreen ? bookmarks : null}
@@ -230,7 +244,7 @@ export function NotebookDesk(props: Props) {
                 <span title={props.noteTitle}>{props.noteTitle}</span>
               </div>}
               <div className="notebook-desk__utilities">
-                {props.learningView === "body" && !focus.fullscreen ? <button type="button" className="text-action" ref={focus.enterRef} aria-label="全屏笔记" title="全屏阅读与编辑 · ⌘/Ctrl+Shift+F"
+                {!focus.fullscreen && !props.mindMapActive ? <button type="button" className="text-action" ref={focus.enterRef} aria-label="全屏笔记" title={props.learningView === "body" ? "全屏阅读与编辑 · ⌘/Ctrl+Shift+F" : "全屏看这一页 · ⌘/Ctrl+Shift+F"}
                   onMouseDown={event => event.preventDefault()} onClick={focus.toggleFullscreen}><Maximize2 size={17} aria-hidden="true" /><span>全屏</span></button> : null}
                 {props.generationAction}
                 {props.sourceAction}
@@ -243,13 +257,16 @@ export function NotebookDesk(props: Props) {
               </div>
             </nav>
 
-            {props.tools ? <div className="notebook-volume__tools">{props.tools}</div> : null}
+            {!focus.fullscreen && props.tools ? <div className="notebook-volume__tools">{props.tools}</div> : null}
             {props.pendingMode ? <p className="notebook-volume__pending" role="status">输入法确认后会切换正文视图。</p> : null}
             {(editingBody || focus.fullscreen) ? <footer className="notebook-desk__save-tray">
               <div className="notebook-desk__status" role="status" aria-live="polite">{props.status}</div>{props.primaryAction}
             </footer> : null}
-            {focus.fullscreen ? <p className="notebook-focus-tools__hint">点回正文就收起 · Esc 收起工具，再按退出</p> : null}
+            {focus.fullscreen ? <p className="notebook-focus-tools__hint">点回纸面就收起 · Esc 收起工具，再按退出</p> : null}
           </div>
+          {/* 开关是纸面框上的控件，与滚动页平级：页内容入场动画的 transform 会改掉
+              绝对定位的包含块，放在页里就会先落在页上、动画一停再跳回纸面左上。 */}
+          {props.overviewSwitch}
           <div className="notebook-desk__scroll" ref={props.scrollRef} tabIndex={0} aria-label={context}
             onPointerDownCapture={event => { bodyPressPoint.current = { x: event.clientX, y: event.clientY }; }}
             onPointerCancelCapture={() => { bodyPressPoint.current = null; }} onClick={dismissAnnotationFromBody}>
@@ -261,7 +278,11 @@ export function NotebookDesk(props: Props) {
 
         {sidePaper.value ? <aside className="notebook-desk__side-page" data-kind={sidePaper.value.kind} aria-label="笔记旁页" ref={sidePaper.ref} tabIndex={-1} inert={sidePaper.closing} aria-hidden={sidePaper.closing || undefined}
           onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); sidePaper.value?.onClose(); } }}>
-          <header className="notebook-desk__side-head"><h2>{sidePaper.value.title}</h2><button type="button" className="text-action" aria-label={sidePaper.value.closeLabel} onClick={sidePaper.value.onClose}><X size={18} aria-hidden="true" /></button></header>
+          <header className="notebook-desk__side-head">
+            {attachmentFace ? <span className="notebook-desk__side-mark" aria-hidden="true"><attachmentFace.Icon size={21} /></span> : null}
+            <div className="notebook-desk__side-title"><h2>{sidePaper.value.title}</h2><small>{attachmentFace?.detail}</small></div>
+            <button type="button" className="text-action" aria-label={sidePaper.value.closeLabel} onClick={sidePaper.value.onClose}><X size={18} aria-hidden="true" /></button>
+          </header>
           <div className="notebook-desk__side-scroll">{sidePaper.value.content}</div>
         </aside> : null}
       </div>

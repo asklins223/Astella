@@ -31,11 +31,18 @@
 .note-image-properties__menu-items button[hidden] { display: none; }
 .hud-surface .notebook-volume__tools .editor-tools .editor-tools-item { display: inline-flex; align-items: center; width: auto; height: auto; gap: 4px; font: inherit; }
 .hud-surface .notebook-volume__tools .editor-tools .editor-tools-divider { display: block; width: 1px; height: 18px; margin: 0 4px; background: var(--hud-line-strong); }
-.hud-surface .notebook-volume__tools .editor-tools .editor-block-format { display: inline-flex; }
-.hud-surface .notebook-volume__tools .editor-block-format select { width: 92px; min-height: 34px; padding: 4px 8px; border: 1px solid var(--hud-line); border-radius: 9px; background: #f6f4e7; color: var(--hud-ink); font: 550 12px/1.5 "Noto Sans SC Variable", sans-serif; }
 .hud-surface .notebook-volume__tools .editor-tools .tool[aria-pressed="true"] { background: #dcebd7; color: #365e46; box-shadow: inset 0 0 0 1px #8cac8190; }
 .hud-surface .notebook-volume__tools .editor-tools .tool:focus-visible { outline: 2px solid #6d9a86; outline-offset: 2px; }
 .hud-surface .notebook-volume__tools .editor-tools .editor-tools-legend { display: block; width: auto; height: auto; font: 450 11px/1.5 "Noto Sans SC Variable", sans-serif; }
+/* 笔记里的编辑工具条只排一行（2026-10-08 用户要求，全屏与非全屏同此）：插入类动作进「插入」菜单、
+   按钮与触发都收紧一号；一行仍排不下时横向滚，不再折成两行。本地 Markdown 那套工具条不受影响。 */
+.hud-surface .notebook-workspace .notebook-volume__tools .editor-tools { flex-wrap: nowrap; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+.hud-surface .notebook-workspace .notebook-volume__tools .editor-tools::-webkit-scrollbar { display: none; }
+.hud-surface .notebook-workspace .notebook-volume__tools .editor-tools .editor-tools-legend { display: none; }
+.hud-surface .notebook-workspace .notebook-volume__tools .editor-tools button.tool { width: 30px; height: 30px; border-radius: 9px; }
+.hud-surface .notebook-workspace .notebook-volume__tools .editor-tools .editor-tools-item { gap: 2px; }
+.hud-surface .notebook-workspace .notebook-volume__tools .editor-tools .editor-tools-divider { margin: 0 3px; }
+.hud-surface .notebook-workspace .notebook-volume__tools .writing-control-trigger { gap: 5px; min-height: 30px; padding: 4px 7px; }
 .hud-surface .note-draft .ProseMirror p.note-image-row,
 .hud-surface .note-transcript p.note-image-row { display: flex; flex-wrap: wrap; align-items: start; gap: 12px; margin-block: 20px; }
 .hud-surface .note-draft .ProseMirror p.note-image-paragraph:not(.note-image-row),

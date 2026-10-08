@@ -23,6 +23,21 @@ test("a declared request delivers only its authoritative operation, with no plan
   assert.deepEqual((step.response.toolCalls[0]?.arguments.requirements as { evidenceCallIds: string[] }[])[0]?.evidenceCallIds, ["accepted"]);
   assert.deepEqual(step.request.tools.map(value => value.name), ["note_overview_generate", "agent_deliver_goal"]);
 });
+test("a mind map receipt produces a completed delivery with its own capability and summary", () => {
+  const step = declaredAgentRequestStep({ ...input, goal: "生成脑图",
+    directRequest: { capability: "note_mind_map_generate", noteId: "note", request: { noteVersionId: "version", requestId: "request" } },
+    messages: [
+      { role: "assistant", content: "", toolCalls: [{ id: "accepted", name: "note_mind_map_generate", arguments: { noteId: "note", noteVersionId: "version" } }] },
+      input.messages[1]!,
+    ], operations: [{ ...operation, capability: "note_mind_map_generate", result: { kind: "artifact", artifact: {
+      kind: "note_mind_map", id: "map", jobId: "job", noteId: "note", noteVersionId: "version",
+    } } }],
+  });
+  assert.equal(step.response.toolCalls[0]?.arguments.outcome, "completed");
+  assert.match(String(step.response.toolCalls[0]?.arguments.summary), /脑图已生成/);
+  assert.deepEqual((step.response.toolCalls[0]?.arguments.requirements as { evidenceCallIds: string[] }[])[0]?.evidenceCallIds, ["accepted"]);
+  assert.deepEqual(step.request.tools.map(value => value.name), ["note_mind_map_generate", "agent_deliver_goal"]);
+});
 test("running and uncertain operations wait; failed operations never become completion", () => {
   for (const status of ["accepted", "running", "outcome_unknown"] as const)
     assert.throws(() => declaredAgentRequestStep({ ...input, operations: [{ ...operation, status, result: null }] }), /authoritative receipt/);

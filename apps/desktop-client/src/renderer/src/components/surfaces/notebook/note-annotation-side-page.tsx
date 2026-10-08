@@ -3,6 +3,8 @@ import type { NoteLearningArtifactTaskV1, NoteLearningArtifactV1 } from "@astell
 import { TaskSlip } from "./task-slip";
 import { AnnotationDeleteControl, type AnnotationDeleteView } from "./annotation-delete-control";
 import { renderCompanionMarkdown } from "../../companion/companion-markdown";
+import { NoteAnnotationQuote } from "./note-annotation-paper";
+import { MessageCircle, Play } from "lucide-react";
 
 export function NoteAnnotationSidePage(props: {
   readonly annotation: NoteAnnotationV1 | null;
@@ -47,9 +49,9 @@ export function NoteAnnotationSidePage(props: {
     {annotation ? <>
       {!props.readOnlySnapshot ? <div className="note-annotation-paper__actions">
         <button type="button" className="button" disabled={props.artifactStarting || artifact?.status === "queued" || artifact?.status === "running"} onClick={() => artifact?.status === "ready" && artifact.artifact ? props.onOpenArtifact(artifact.artifact) : props.onCreateArtifact(anchor)}>
-          {artifact?.status === "ready" && artifact.artifact ? "打开互动演示" : artifact?.status === "queued" ? "排队做演示…" : artifact?.status === "running" ? "正在做演示…" : artifact?.status === "failed" ? "再试一次演示" : "做个互动演示"}
+          <Play size={15} aria-hidden="true" />{artifact?.status === "ready" && artifact.artifact ? "打开互动演示" : artifact?.status === "queued" ? "排队做演示…" : artifact?.status === "running" ? "正在做演示…" : artifact?.status === "failed" ? "再试一次演示" : "做个互动演示"}
         </button>
-        <button type="button" className="text-action" onClick={() => props.onAsk(anchor)}>问伴星换种说法</button>
+        <button type="button" className="text-action" onClick={() => props.onAsk(anchor)}><MessageCircle size={15} aria-hidden="true" />问伴星换种说法</button>
       </div> : null}
       {props.artifactError ? <p role="alert">演示暂时没能开始：{props.artifactError}</p> : null}
       {artifact?.status === "failed" ? <TaskSlip kind="artifact" status={artifact.status} failureReason={artifact.failureReason} onRetry={() => props.onCreateArtifact(anchor)} onOpenSettings={props.onSettings} /> : null}
@@ -71,7 +73,7 @@ export function NoteAnnotationSidePage(props: {
           而不是「按了一下，纸没了」。那一句只由回执给——服务端没回执就不写它。 */}
       {props.removedNotice ? <p className="small" role="status">{props.removedNotice}</p> : null}
     </> : <>
-      <blockquote>{anchor.excerpt}</blockquote>
+      <NoteAnnotationQuote excerpt={anchor.excerpt} />
       <TaskSlip kind="annotation" status={task!.status} failureReason={task!.failureReason} onRetry={props.onRetry} onOpenSettings={props.onSettings} />
       {task!.status === "failed" ? <button type="button" className="note-annotation-paper__ask" onClick={() => props.onAsk(anchor)}>让伴星换个说法</button> : null}
     </>}

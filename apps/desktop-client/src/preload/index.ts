@@ -152,6 +152,7 @@ const desktopApi: AstellaDesktopApiM2 = {
   capabilities: {
     get: (input) => invoke(DESKTOP_IPC_CHANNELS.capabilitiesGet, input)
   },
+  noteWriting: { perform: input => invoke(DESKTOP_IPC_CHANNELS.noteWriting, input) },
   clipboard: {
     readLinks: (input) => invoke(DESKTOP_IPC_CHANNELS.clipboardReadLinks, input),
     writeText: (input) => invoke(DESKTOP_IPC_CHANNELS.clipboardWriteText, input)
@@ -425,6 +426,13 @@ const desktopApi: AstellaDesktopApiM2 = {
     startTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteOverviewStartTask, input),
     latestTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteOverviewLatestTask, input),
     getTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteOverviewGetTask, input),
+  },
+  noteMindMap: {
+    list: (input) => invoke(DESKTOP_IPC_CHANNELS.noteMindMapList, input),
+    startTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteMindMapStartTask, input),
+    latestTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteMindMapLatestTask, input),
+    getTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteMindMapGetTask, input),
+    source: (input) => invoke(DESKTOP_IPC_CHANNELS.noteMindMapSource, input),
   },
   noteRecall: {
     list: (input) => invoke(DESKTOP_IPC_CHANNELS.noteRecallList, input),

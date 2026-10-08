@@ -129,7 +129,7 @@ The CRDT and the WebSocket live in the main process: `src/main/note-doc-transpor
 
 ### Full-screen and reading continuity
 
-The body supports full-screen reading/editing with the same working draft and editor. Paper fills the application viewport; an upper-right fold opens tools without moving the body, while the companion keeps a temporary lower-right seat. Full-screen mode survives note navigation/loading; the back arrow follows the current note path and restores mode/position. Leaving notes, switching workspace or explicitly exiting ends the mode.
+The body supports full-screen reading/editing with the same working draft and editor. Paper fills the application viewport; an upper-right fold opens tools without moving the body, while the companion keeps a temporary lower-right seat. Full-screen is the display mode of this page: 速看 (overview, including its mind map), 回想 (recall), 往外学 (expansion), interactive demos, the learning record and the current round all stay on the same window-filling paper — their tabs no longer drop back to the ordinary book, every view can enter the mode, and exiting leaves you on the sub-page you were on. Full-screen mode survives note navigation/loading; the back arrow follows the current note path and restores mode/position. Leaving notes, switching workspace or explicitly exiting ends the mode.
 
 Esc closes the current overlay, then tools, then full-screen mode before global navigation. Selection, undo and reading position continue across modes, and the temporary seat does not change placement preferences. Entry modules are `notebook-fullscreen-state.ts`, `use-notebook-fullscreen-controls.ts` and `notebook-fullscreen-ribbon.tsx`.
 

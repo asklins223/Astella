@@ -1,3 +1,7 @@
+import { useNotebookMindMap } from "./use-notebook-mind-map";
+import { NoteMindMapPaper } from "./note-mind-map-paper";
+import type { NoteMindMapV1 } from "@astella/shared/note-mind-map-contracts";
+import { noteBlockMarkdown } from "@astella/shared/note-markdown";
 import { readNotebookProjection } from "./notebook-projection";
 import { useNotebookCompanionEditing } from "./use-notebook-companion-editing";
 import { beginNoteAiWork, endNoteAiWork, useNoteAiWork, resolveNoteAiRanges, type NoteAiRange } from "../../companion/note-companion-editing";
@@ -103,9 +107,13 @@ import { AnnotationDeleteControl, useAnnotationDeleteConfirm } from "./annotatio
 import { isNoteEditingMode, type NoteBodyMode } from "./note-document-mode";
 import { useNotebookBodyMode } from "./use-notebook-body-mode";
 import { NotebookDesk } from "./notebook-desk";
+import { NotebookNoteList } from "./notebook-note-list";
+import { NotebookOverviewSwitch } from "./notebook-overview-switch";
+import { openNotebookListNote } from "./notebook-note-navigation";
 import { useNotebookFullscreenActive, useNotebookFullscreenSession, useNotebookFullscreenState } from "./notebook-fullscreen-state";
 import { NotebookFullscreenRibbon } from "./notebook-fullscreen-ribbon";
 import { NotebookEditorTools } from "./notebook-editor-tools";
+import { useWritingPreferences, writingPreferenceAttributes } from "./note-writing-preferences";
 import { useNotebookLinkEditor } from "./notebook-link-editor";
 import { noteOutline } from "./note-outline";
 import { useNotebookLearningView } from "./use-notebook-learning-view";
@@ -723,6 +731,8 @@ function NoteChangeImpactNotice({
 
 /** Page 08 / 09 / 22 — the note as one paper, read, written or discussed. */
 export function NotebookSurface() {
+  // 排版偏好属于书桌本身：阅读、编辑与源码共用同一份，切换视图不重排。
+  const writingPreferences = useWritingPreferences();
   const invoke = useRoomStore((state) => state.invoke);
   const setSettingsAttention = useRoomStore((state) => state.setSettingsAttention);
   const setSettingsSection = useRoomStore((state) => state.setSettingsSection);
@@ -1044,6 +1054,10 @@ const noteDocLive = useNoteDocLiveView(
     noteOverviews, taskForCurrentVersion, latestNoteOverview,
   } = useNotebookOverview({ note, epochRef, requestedOverview: requestedGoalResult?.kind === "note_overview"
     ? goalResult.result?.kind === "note_overview" ? goalResult.result.overview : null : undefined });
+  const mindMap = useNotebookMindMap({ note, epochRef, requestedMindMap: requestedGoalResult?.kind === "note_mind_map"
+    ? goalResult.result?.kind === "note_mind_map" ? goalResult.result.mindMap : null : undefined });
+  const [overviewTab, setOverviewTab] = useState<{ noteId: string; tab: "points" | "mindMap" } | null>(null);
+  const brainActive = requestedGoalResult?.kind === "note_mind_map" || overviewTab?.noteId === note?.noteId && overviewTab?.tab === "mindMap";
   const { learningView, setLearningView, rememberReadingPosition } = useNotebookLearningView({
     noteId: note?.noteId ?? null,
     leaf, recallVisit,
@@ -1921,6 +1935,7 @@ const noteDocLive = useNoteDocLiveView(
     () => conceptMark(readSourceBlocks, objective?.content.conceptLabel),
     [readSourceBlocks, objective],
   );
+  const readingDocumentSource = useMemo(() => readSourceBlocks.map(block => noteBlockMarkdown(block.type, block.content)).join("\n\n"), [readSourceBlocks]);
   const allBlocks = readSourceBlocks;
   const htmlAlignments = useMemo(() => noteHtmlAlignments(readSourceBlocks), [readSourceBlocks]);
   // §16.16 的第二半：这篇有小节时才多给几颗"从结构里另选"的起步句（用全部块，
@@ -2761,18 +2776,21 @@ const noteDocLive = useNoteDocLiveView(
 
 
   const footprintHasRecords = noteOverviews.length > 0
+    || mindMap.noteMindMaps.length > 0
     || noteRecallRecords.length > 0
     || noteExpansions.length > 0
     || noteAnnotations.length > 0
     || noteLearningArtifacts.length > 0;
   const footprintRowsLoaded = Boolean(note
+    && mindMap.mindMapRows?.noteId === note.noteId
     && overviewRows?.noteId === note.noteId
     && recallRows?.noteId === note.noteId
     && expansionRows?.noteId === note.noteId
     && annotationRows?.noteId === note.noteId
     && learningArtifactRows?.noteId === note.noteId);
   const footprintPending = Boolean(note && (
-    (overviewRows?.noteId !== note.noteId && !overviewError)
+    (mindMap.mindMapRows?.noteId !== note.noteId && !mindMap.mindMapError)
+    || (overviewRows?.noteId !== note.noteId && !overviewError)
     || (recallRows?.noteId !== note.noteId && !recallError)
     || (expansionRows?.noteId !== note.noteId && !expansionError)
     || (annotationRows?.noteId !== note.noteId && !annotationError)
@@ -2814,7 +2832,14 @@ const noteDocLive = useNoteDocLiveView(
     setLeaf("reading");
     setLearningView("artifact");
   };
+  const openFootprintMindMap = (map: NoteMindMapV1) => {
+    clearGoalResultSelection(); rememberReadingPosition(); closeSidePage();
+    mindMap.setMindMapRows(current => ({ noteId: map.noteId, nextCursor: current?.noteId === map.noteId ? current.nextCursor : null,
+      items: [map, ...(current?.noteId === map.noteId ? current.items.filter(item => item.mindMapId !== map.mindMapId) : [])] }));
+    mindMap.selectMindMap(map); setOverviewTab({ noteId: map.noteId, tab: "mindMap" }); setLeaf("reading"); setLearningView("overview");
+  };
   const loadOlderFootprint = (kind: FootprintKind) => {
+    if (kind === "mindMap" && mindMap.mindMapRows?.nextCursor) void mindMap.loadNoteMindMaps(mindMap.mindMapRows.nextCursor);
     if (kind === "overview" && overviewRows?.nextCursor) void loadNoteOverviews(overviewRows.nextCursor);
     if (kind === "recall" && recallRows?.nextCursor) void loadNoteRecallRecords(recallRows.nextCursor);
     if (kind === "annotation" && annotationRows?.nextCursor) void loadNoteAnnotations(annotationRows.nextCursor);
@@ -3275,11 +3300,17 @@ const noteDocLive = useNoteDocLiveView(
     open: (kind) => {
       if (kind !== "expansion" || requestedGoalResult?.kind !== "note_expansion") clearGoalResultSelection();
       if (kind === "artifact") return;
+      if (kind === "mindMap") setOverviewTab({ noteId: note!.noteId, tab: "mindMap" });
+      else if (kind === "overview") setOverviewTab({ noteId: note!.noteId, tab: "points" });
       rememberReadingPosition(); closeSidePage();
       if (kind === "expansion") setLeaf("expansion");
-      else { setLeaf("reading"); setLearningView(kind); if (kind === "overview") setOverviewOpen(true); }
+      else { setLeaf("reading"); setLearningView(kind === "mindMap" ? "overview" : kind); if (kind === "overview" || kind === "mindMap") setOverviewOpen(true); }
     },
     lookup: async (kind) => {
+      if (kind === "mindMap") {
+        const [latest, page] = await Promise.all([mindMap.loadLatestNoteMindMapTask(), mindMap.loadNoteMindMaps()]);
+        return !latest || !page ? "error" : latest.task || page.items.length ? "existing" : "missing";
+      }
       if (kind === "artifact") return activeLearningArtifact ? "existing" : "missing";
       if (kind === "expansion") {
         const result = await loadLatestNoteExpansionTask();
@@ -3307,8 +3338,9 @@ const noteDocLive = useNoteDocLiveView(
       closeSidePage();
       if (kind === "expansion") { setLeaf("expansion"); void startNoteExpansionTask(undefined, true); }
       else {
-        setLeaf("reading"); setLearningView(kind);
-        if (kind === "overview") { setOverviewOpen(true); if (regenerate || !latestNoteOverview) void startNoteOverviewTask(false); }
+        setLeaf("reading"); setLearningView(kind === "mindMap" ? "overview" : kind);
+        if (kind === "mindMap") { setOverviewTab({ noteId: note!.noteId, tab: "mindMap" }); if (regenerate || !mindMap.latestNoteMindMap) void mindMap.startNoteMindMapTask(false); }
+        else if (kind === "overview") { setOverviewOpen(true); if (regenerate || !latestNoteOverview) void startNoteOverviewTask(false); }
         else void startNoteRecall(regenerate);
       }
     },
@@ -3322,20 +3354,33 @@ const noteDocLive = useNoteDocLiveView(
   const readPageBody = note ? (
     <>
       {leaf === "reading" ? <>
-      {((learningView === "overview" && requestedGoalResult?.kind === "note_overview")
+      {learningView === "overview" && brainActive && requestedGoalResult?.kind !== "note_mind_map" && !mindMap.latestNoteMindMap ? <NotebookLearningPage kind="mindMap" title={readTitle || note.title} version={note.currentVersion.versionNo}
+        state={mindMap.mindMapLoading || learningEntry.checking === "mindMap" ? "loading" : mindMap.mindMapTaskStarting ? "queued" : mindMap.taskForCurrentVersion?.status === "ready" ? "loading" : mindMap.taskForCurrentVersion?.status ?? (mindMap.mindMapTaskError || mindMap.mindMapError || learningEntry.error ? "failed" : "empty")}
+        error={mindMap.taskForCurrentVersion?.failureMessage ?? mindMap.taskForCurrentVersion?.failureReason ?? mindMap.mindMapTaskError ?? mindMap.mindMapError ?? learningEntry.error}
+        onPrepare={() => learningEntry.prepare("mindMap")} onBody={() => setLearningView("body")}
+        onRetry={() => learningEntry.prepare("mindMap", true)} onSettings={openAiConsentSettings} /> : null}
+      {learningView === "overview" && brainActive && mindMap.latestNoteMindMap ? <NoteMindMapPaper key={`${mindMap.latestNoteMindMap.mindMapId}:${epochRef.current}`} map={mindMap.latestNoteMindMap} currentVersionId={note.currentVersionId}
+        unversioned={readingUnversionedContent || dirty} epoch={epochRef.current} regenerating={mindMap.mindMapTaskStarting || ["queued","running"].includes(mindMap.taskForCurrentVersion?.status ?? "")}
+        onRegenerate={() => learningEntry.prepare("mindMap", true)}
+        notice={mindMap.mindMapTaskStarting || ["queued","running","failed"].includes(mindMap.taskForCurrentVersion?.status ?? "") || mindMap.mindMapTaskError ? <aside className="note-mind-map__notice" aria-live="polite">
+        <p>{mindMap.taskForCurrentVersion?.status === "failed" ? mindMap.taskForCurrentVersion.failureMessage ?? (mindMap.taskForCurrentVersion.failureReason === "ai_consent_required" ? "需要先到设置开启 AI 使用权限。" : "这次脑图没有完成，之前的脑图仍可阅读。") : mindMap.mindMapTaskError ?? "正在后台整理新脑图，之前的脑图仍可阅读。"}</p>
+        {mindMap.taskForCurrentVersion?.failureReason === "ai_consent_required" || mindMap.taskForCurrentVersion?.failureReason === "ai_data_policy_denied" ? <button type="button" className="text-action" onClick={openAiConsentSettings}>去 AI 设置</button> : null}
+        {mindMap.taskForCurrentVersion?.status === "failed" || mindMap.mindMapTaskError ? <button type="button" className="text-action" onClick={() => learningEntry.prepare("mindMap", true)}>重新生成</button> : null}
+      </aside> : null} /> : null}
+      {((learningView === "overview" && (requestedGoalResult?.kind === "note_overview" || requestedGoalResult?.kind === "note_mind_map"))
         || (learningView === "artifact" && requestedGoalResult?.kind === "note_dynamic_artifact")) && !goalResult.result ? <SurfaceDataState
           kind={goalResult.error ? "error" : "loading"}
           message={goalResult.error ? "这份结果暂时没读到" : "正在翻开这份结果"}
           detail={goalResult.error ?? "正在读取手记里保存的这一份内容。"}
           onRetry={goalResult.retry}
           action={<button type="button" className="text-action" onClick={() => { clearGoalResultSelection(); setLearningView("body"); }}>回正文</button>} /> : null}
-      {learningView === "overview" && !latestNoteOverview && requestedGoalResult?.kind !== "note_overview" ? <NotebookLearningPage kind="overview" title={readTitle || note.title} version={note.currentVersion.versionNo}
+      {learningView === "overview" && !brainActive && !latestNoteOverview && requestedGoalResult?.kind !== "note_overview" ? <NotebookLearningPage kind="overview" title={readTitle || note.title} version={note.currentVersion.versionNo}
         state={learningEntry.checking === "overview" ? "loading" : overviewTaskStarting ? "queued" : taskForCurrentVersion?.status === "ready" ? "loading" : taskForCurrentVersion?.status ?? (overviewTaskError || learningEntry.error ? "failed" : "empty")}
         error={taskForCurrentVersion?.failureReason ?? overviewTaskError ?? learningEntry.error}
         onPrepare={() => learningEntry.prepare("overview")} onBody={() => setLearningView("body")}
         onRetry={() => learningEntry.error ? void learningEntry.request("overview") : void startNoteOverviewTask(dirty)} onSettings={openAiConsentSettings} /> : null}
 
-      {latestNoteOverview && learningView === "overview" ? (
+      {latestNoteOverview && learningView === "overview" && !brainActive ? (
             <NoteOverviewPaper
               overview={latestNoteOverview}
               paperRef={overviewPaperRef}
@@ -3352,13 +3397,13 @@ const noteDocLive = useNoteDocLiveView(
               regenerating={overviewTaskStarting || taskForCurrentVersion?.status === "queued" || taskForCurrentVersion?.status === "running"}
             />
       ) : null}
-      {latestNoteOverview && learningView === "overview" && (overviewTaskStarting || taskForCurrentVersion?.status === "queued" || taskForCurrentVersion?.status === "running" || taskForCurrentVersion?.status === "failed" || overviewTaskError) ? <aside className="notebook-regeneration" aria-label="新速看的进度">
+      {latestNoteOverview && learningView === "overview" && !brainActive && (overviewTaskStarting || taskForCurrentVersion?.status === "queued" || taskForCurrentVersion?.status === "running" || taskForCurrentVersion?.status === "failed" || overviewTaskError) ? <aside className="notebook-regeneration" aria-label="新速看的进度">
         <TaskSlip kind="overview" status={overviewTaskStarting ? "queued" : taskForCurrentVersion?.status}
           failureReason={taskForCurrentVersion?.failureReason} onRetry={() => learningEntry.prepare("overview", true)} onOpenSettings={openAiConsentSettings} />
         {overviewTaskError ? <p role="alert">{overviewTaskError}</p> : null}
         <small>之前的速看仍可阅读，所有结果都留在学习记录里。</small>
       </aside> : null}
-      {(learningView === "body" || learningView === "overview") && (learningView === "overview" && learningArtifactTaskError || learningArtifactTasks.some((task) => task.sourceKind === "overview")) ? (
+      {(learningView === "body" || learningView === "overview" && !brainActive) && (learningView === "overview" && learningArtifactTaskError || learningArtifactTasks.some((task) => task.sourceKind === "overview")) ? (
         <NotebookArtifactTaskPaper
           tasks={learningArtifactTasks.filter((task) => task.sourceKind === "overview").slice(0, 1)}
           error={learningArtifactTaskError}
@@ -3410,6 +3455,7 @@ const noteDocLive = useNoteDocLiveView(
           <ReadingBlock
             key={block.ordinal}
             block={block}
+            documentSource={readingDocumentSource}
             alignment={htmlAlignments.get(block.ordinal)}
             aiWork={noteAiRanges.find(range => block.ordinal >= range.startBlock && block.ordinal <= range.endBlock)}
             annotations={currentNoteAnnotations}
@@ -3720,7 +3766,7 @@ const noteDocLive = useNoteDocLiveView(
         </section>
       ) : null}
       {(<div hidden={leaf !== "history"}>{<section id="notebook-history-leaf" className="notebook-journey" aria-label="学习记录" tabIndex={-1} data-task-focus>
-        <p className="notebook-journey__intro">速看、回想、批注和拓展都留在这里。打开一条记录，接着看当时的内容。</p>
+        <p className="notebook-journey__intro">速看、脑图、回想、批注和拓展都留在这里。打开一条记录，接着看当时的内容。</p>
           {/* ── 那一块为什么没被搬走（2026-09-29 量过的，不是猜的）─────────────────
               250 行、79 个外部符号，里面**已经有 10 处是组件调用**（足迹 / 学习记录 /
               轮回看 / 路线覆盖 / 感想区 / 在场…）。再往里逐块扫，**只有一段 18 行的
@@ -3733,11 +3779,14 @@ const noteDocLive = useNoteDocLiveView(
         <NoteLearningFootprint
           key={note.noteId}
           overviews={noteOverviews}
+          mindMaps={mindMap.noteMindMaps}
+          onOpenMindMap={openFootprintMindMap}
           recalls={noteRecallRecords}
           annotations={noteAnnotations}
           artifacts={noteLearningArtifacts}
           expansions={noteExpansions}
           hasMore={{
+            mindMap: Boolean(mindMap.mindMapRows?.nextCursor),
             overview: Boolean(overviewRows?.nextCursor),
             recall: Boolean(recallRows?.nextCursor),
             annotation: Boolean(annotationRows?.nextCursor),
@@ -3745,6 +3794,7 @@ const noteDocLive = useNoteDocLiveView(
             expansion: Boolean(expansionRows?.nextCursor),
           }}
           loadingMore={{
+            mindMap: mindMap.mindMapLoading,
             overview: overviewLoading,
             recall: recallLoading,
             annotation: annotationLoading,
@@ -3967,7 +4017,7 @@ const noteDocLive = useNoteDocLiveView(
     : learningView === "recall" ? "先自己想想，再翻开原文" : learningView === "overview" ? "抓住要点，回原文核对"
       : isNoteEditingMode(mode) ? "写下理解，留下可回看的版本" : "原文还在，接着往下读";
 
-  const editChrome = note ? <NotebookEditorTools editorRef={editorRef} editable={editable} canUpload={Boolean(note.permissions.canSave)} fileInputRef={imageUploads.fileInputRef} onImages={imageUploads.queueFiles} onLink={linkEditor.open} /> : null;
+  const editChrome = note ? <NotebookEditorTools title={titleValue || "笔记"} editorRef={editorRef} editable={editable} canUpload={Boolean(note.permissions.canSave)} fileInputRef={imageUploads.fileInputRef} onImages={imageUploads.queueFiles} onLink={linkEditor.open} /> : null;
 
   // Both editors stay attached to the shared document throughout this visit.
   // Saving snapshots the draft, so fields remain editable during the request.
@@ -4028,10 +4078,18 @@ const noteDocLive = useNoteDocLiveView(
       <div className="task-title notebook-page-title"><h1>{pageTitle}</h1><p>{pageSubtitle}</p></div>
       <main className="content notebook-space">
         {linkEditor.dialog}
+        <div className="notebook-detail-layout">
+        <NotebookNoteList currentId={activeNoteRef?.noteId ?? note?.noteId ?? null}
+          currentTitle={note && (!activeNoteRef || activeNoteRef.noteId === note.noteId) ? readTitle : null}
+          fullscreen={notebookFullscreen} onSelect={noteId => {
+            rememberReadingPosition();
+            openNotebookListNote(noteId, note ? { noteId: note.noteId, noteVersionId: activeNoteRef?.noteVersionId ?? null, mode } : null);
+          }} />
         <article
           className="notebook-workspace notebook-hud"
           aria-busy={loading || undefined}
           data-mode={mode}
+          {...writingPreferenceAttributes(writingPreferences)}
           data-note-paper-image-drop={paperAcceptsImages ? "" : undefined}
           onPointerDown={(event) => {
             if (!(event.target instanceof Element) || !event.target.closest("[data-note-selection-action]")) {
@@ -4053,6 +4111,10 @@ const noteDocLive = useNoteDocLiveView(
           {!loading && !failure && note ? (
             <>
               <NotebookDesk
+                // 只有画布真的挂出来时才让画布自己管全屏：脑图还没生成时纸面是「生成脑图内容」那一页，页内全屏入口不能被藏掉。
+                mindMapActive={leaf === "reading" && learningView === "overview" && Boolean(brainActive && mindMap.latestNoteMindMap)}
+                overviewSwitch={leaf === "reading" && learningView === "overview" ? <NotebookOverviewSwitch active={brainActive ? "mindMap" : "points"}
+                  onSelect={(tab) => { clearGoalResultSelection(); setOverviewTab({ noteId: note.noteId, tab }); }} /> : null}
                 noteId={note.noteId} noteTitle={readTitle || "未命名笔记"} version={note.currentVersion.versionNo} mode={mode} canEdit={editable} pendingMode={pendingMode}
                 articleHeader={leaf === "reading" && learningView === "body" ? <header className="notebook-volume__article-head" tabIndex={-1} data-task-focus>
                   <div className="notebook-volume__heading">{documentHeading}</div>
@@ -4144,6 +4206,7 @@ const noteDocLive = useNoteDocLiveView(
             />
           ) : null}
         </article>
+        </div>
       </main>
       {generationSetup}
     </>

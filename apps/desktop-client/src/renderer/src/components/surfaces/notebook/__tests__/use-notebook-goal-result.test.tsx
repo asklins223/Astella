@@ -12,6 +12,7 @@ vi.mock("../../../../app/room-store", () => ({ useRoomStore: Object.assign(
 vi.mock("../../../../app/desktop-client", () => ({ createRequestMeta: () => ({}),
   unwrapGatewayResult: (value: unknown) => value, gatewayErrorMessage: (error: Error) => error.message }));
 
+const getMindMap = vi.fn();
 const getOverview = vi.fn(), getArtifact = vi.fn(), startTask = vi.fn();
 const target: NonNullable<NoteTargetRef["learningResult"]> = { kind: "note_overview", artifactId: "saved", taskId: "job" };
 const receipt = (id = "saved") => ({ taskId: "job", noteId: "note", overview: { overviewId: id, body: "已保存的内容" } });
@@ -24,6 +25,7 @@ beforeEach(() => {
   state.scope = 1; vi.clearAllMocks();
   getOverview.mockResolvedValue(receipt());
   Object.defineProperty(window, "astella", { configurable: true, value: {
+    noteMindMap: { getTask: getMindMap, startTask },
     noteOverview: { getTask: getOverview, startTask }, noteLearningArtifact: { getTask: getArtifact, startTask },
   } });
 });
@@ -73,4 +75,12 @@ it("opens an exact saved interactive artifact using its task instead of the firs
   expect(view.result.current.result?.kind === "note_dynamic_artifact" && view.result.current.result.artifact.artifactId).toBe("old-artifact");
   expect(getOverview).not.toHaveBeenCalled();
   expect(startTask).not.toHaveBeenCalled();
+});
+
+it("reopens an exact brain receipt from Agent history without generating again", async () => {
+  getMindMap.mockResolvedValue({ taskId: "brain-job", noteId: "note", mindMap: { mindMapId: "old-brain" } });
+  const view = renderHook(() => useNotebookGoalResult("note", { kind: "note_mind_map", taskId: "brain-job", artifactId: "old-brain" }, { current: 4 }));
+  await waitFor(() => expect(view.result.current.loading).toBe(false));
+  expect(view.result.current.result?.kind === "note_mind_map" && view.result.current.result.mindMap.mindMapId).toBe("old-brain");
+  expect(getOverview).not.toHaveBeenCalled(); expect(startTask).not.toHaveBeenCalled();
 });

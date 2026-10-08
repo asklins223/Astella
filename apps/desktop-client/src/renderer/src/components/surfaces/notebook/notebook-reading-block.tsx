@@ -41,6 +41,7 @@ import type { NoteAiRange } from "../../companion/note-companion-editing";
 
 export function ReadingBlock(props: {
   readonly aiWork?: NoteAiRange;
+  readonly documentSource?: string;
   readonly block: NoteBlockProjectionV1;
   readonly alignment?: "left" | "center" | "right";
   readonly annotations?: readonly NoteAnnotationV1[];
@@ -80,6 +81,7 @@ export function ReadingBlock(props: {
     >
       <div data-note-block-content="true" className={props.aiWork ? "note-ai-working" : undefined}
         aria-busy={Boolean(props.aiWork)} data-ai-label={props.aiWork?.label} inert={Boolean(props.aiWork)}><ReadingBlockContent
+        documentSource={props.documentSource}
         block={props.block}
         mark={annotationMark ?? props.mark}
         workspaceEpoch={props.workspaceEpoch}
@@ -144,6 +146,7 @@ export function textRangeAtOffsets(root: HTMLElement, start: number, end: number
 }
 
 export function ReadingBlockContent({
+  documentSource,
   block,
   mark,
   workspaceEpoch,
@@ -154,6 +157,7 @@ export function ReadingBlockContent({
   onDeleteAnnotation,
   companionExplanations,
 }: {
+  readonly documentSource?: string;
   readonly block: NoteBlockProjectionV1;
   /** Character range of the sentence this block contributes, when it has one. */
   readonly mark: readonly [number, number] | null;
@@ -181,6 +185,7 @@ export function ReadingBlockContent({
     return <ReadingImage block={block} workspaceEpoch={workspaceEpoch} gallery={gallery} />;
   }
   const inline = {
+    documentSource,
     mark,
     workspaceEpoch,
     annotations,
@@ -208,6 +213,7 @@ export function ReadingImage({
   workspaceEpoch,
   gallery,
 }: {
+  readonly documentSource?: string;
   readonly block: NoteBlockProjectionV1;
   readonly workspaceEpoch?: number;
   readonly gallery?: {

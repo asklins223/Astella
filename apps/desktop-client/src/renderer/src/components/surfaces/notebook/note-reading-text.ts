@@ -13,7 +13,7 @@ export function noteReadingText(root: Node): string {
 
 export function noteReadingOffset(root: HTMLElement, node: Node, at: number, fallback: number, edge: "start" | "end"): number {
   if (!root.contains(node)) return fallback;
-  const math = (node instanceof Element ? node : node.parentElement)?.closest<HTMLElement>(".note-math");
+  const math = (node instanceof Element ? node : node.parentElement)?.closest<HTMLElement>(".note-math,.note-reading-footnote-ref");
   const before = document.createRange(); before.selectNodeContents(root);
   // A visual formula is an atom. A partial glyph selection anchors its whole TeX.
   if (math && root.contains(math)) edge === "start" ? before.setEndBefore(math) : before.setEndAfter(math);

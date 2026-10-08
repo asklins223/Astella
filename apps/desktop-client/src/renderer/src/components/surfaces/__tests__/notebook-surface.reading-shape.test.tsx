@@ -280,6 +280,22 @@ describe("阅读页画的是编辑器里那一份", () => {
     expect(view.queryByText("从记得的地方接着读")).toBeNull();
   });
 
+  it("速看开关挂在纸面框上，页内容的翻页动画抢不走它的位置", async () => {
+    const view = await show([block("paragraph", "Tool 是 Agent 调用外部能力的入口。")]);
+    fireEvent.click(view.getByRole("button", { name: "速看" }));
+    const switcher = view.getByRole("navigation", { name: "速看内容" });
+    // 页内容（`.notebook-desk__page`）的入场动画带 `transform`，会把那一页变成绝对定位的
+    // 包含块。开关若还在页里，就先落在页上、动画一停再跳回纸面左上——2026-10-08 真窗口
+    // 逐帧量到这一跳是 62×127px。所以它必须挂在纸面框上，与滚动页平级。
+    expect(switcher.closest(".notebook-desk__page")).toBeNull();
+    expect(switcher.closest(".notebook-desk__scroll")).toBeNull();
+    expect(switcher.closest(".notebook-volume__leaf")).not.toBeNull();
+    expect(switcher.closest(".notebook-desk")).not.toBeNull();
+    fireEvent.click(within(switcher).getByRole("button", { name: "脑图" }));
+    expect(within(switcher).getByRole("button", { name: "脑图" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(switcher).getByRole("button", { name: "要点" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("打开笔记时不自动展开旧回想；用户点接续后再显示干净的问题", async () => {
     const unfinishedRecall = {
       recallId: "77777777-7777-4777-8777-777777777777",

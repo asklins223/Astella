@@ -13,6 +13,7 @@ import { runCompanionSummarizer } from "./handlers/companion-summarizer.ts";
 import { runCompanionMemoryEmbeddingRebuild } from "./handlers/companion-memory-embedding.ts";
 import { runCompanionDailySummary } from "./handlers/companion-daily-summary.ts";
 import { runCompanionThought } from "./handlers/companion-thought.ts";
+import { runNoteMindMapGenerate } from "./handlers/note-mind-map-generate.ts";
 import { runNoteOverviewGenerate } from "./handlers/note-overview-generate.ts";
 import { runNoteAnnotationExplain } from "./handlers/note-annotation-explain.ts";
 import { runNoteDynamicArtifactGenerate } from "./handlers/note-dynamic-artifact-generate.ts";
@@ -85,6 +86,7 @@ const HANDLERS = {
   // 念头管线切片②（2026-09-18）：候选念头生成 + 表达 + 送达。
   companion_thought: runCompanionThought,
   note_overview_generate: runNoteOverviewGenerate,
+  note_mind_map_generate: runNoteMindMapGenerate,
   note_annotation_explain: runNoteAnnotationExplain,
   note_dynamic_artifact_generate: runNoteDynamicArtifactGenerate,
   note_expansion_generate: runNoteExpansionGenerate,

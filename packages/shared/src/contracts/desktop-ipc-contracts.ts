@@ -1,3 +1,6 @@
+import { createNoteMindMapTaskV1Schema, noteMindMapLatestTaskQueryV1Schema, noteMindMapLatestTaskV1Schema, noteMindMapPageV1Schema, noteMindMapTaskV1Schema, noteMindMapSourceV1Schema } from "./note-mind-map-contracts.ts";
+import type { NoteWritingAction, NoteWritingResult } from "./note-writing-contracts.ts";
+export { noteWritingActionSchema, noteWritingResultSchema, type NoteWritingAction, type NoteWritingResult } from "./note-writing-contracts.ts";
 import {agentLongGoalsV1Schema,type AgentLongGoalsQueryV1} from "./agent-long-goal-contracts.ts";
 import { agentRunV1Schema, agentRunListV1Schema, agentRunListQueryV1Schema, agentRunHistoryV1Schema, agentRunHistoryQueryV1Schema, createAgentRunV1Schema, reviseAgentRunV1Schema, controlAgentRunV1Schema } from "./agent-contracts.ts";
 import { agentMethodV1Schema, agentMethodListV1Schema, agentMethodHistoryV1Schema, agentMethodUsesV1Schema,
@@ -561,6 +564,11 @@ export const DESKTOP_IPC_CHANNELS = {
   noteOverviewStartTask: "astella.v1.noteOverview.startTask",
   noteOverviewLatestTask: "astella.v1.noteOverview.latestTask",
   noteOverviewGetTask: "astella.v1.noteOverview.getTask",
+  noteMindMapList: "astella.v1.noteMindMap.list",
+  noteMindMapStartTask: "astella.v1.noteMindMap.startTask",
+  noteMindMapLatestTask: "astella.v1.noteMindMap.latestTask",
+  noteMindMapGetTask: "astella.v1.noteMindMap.getTask",
+  noteMindMapSource: "astella.v1.noteMindMap.source",
   noteRecallList: "astella.v1.noteRecall.list",
   noteRecallStart: "astella.v1.noteRecall.start",
   noteRecallAction: "astella.v1.noteRecall.action",
@@ -705,6 +713,7 @@ export const DESKTOP_IPC_CHANNELS = {
   workspaceAiAuditLog: "astella.v1.workspace.aiAuditLog",
   workspaceExport: "astella.v1.workspace.export",
   clipboardReadLinks: "astella.v1.clipboard.readLinks",
+  noteWriting: "astella.v1.note.writing",
   clipboardWriteText: "astella.v1.clipboard.writeText",
   shellOpenExternal: "astella.v1.shell.openExternal",
   // 自动更新：检查 → 下载 → 重启安装。更新源是 GitHub Releases（直连，不过服务端）。
@@ -2423,6 +2432,7 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
    * 系统剪贴板里的候选链接。渲染层被权限策略挡在剪贴板外，
    * 由主进程读出并只交出其中像目标链接的地址（原文永不过桥）。
    */
+  readonly noteWriting: { perform(input: { meta: RequestMetaV1; request: NoteWritingAction }): Promise<GatewayResultV1<NoteWritingResult>> };
   readonly clipboard: {
     readLinks(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<ClipboardReadLinksResult>>;
     writeText(input: { meta: RequestMetaV1; request: ClipboardWriteTextRequestV1 }): Promise<GatewayResultV1<ClipboardWriteTextResultV1>>;
@@ -2984,6 +2994,13 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
     startTask(input: { meta: RequestMetaV1; noteId: Uuid; request: z.infer<typeof createNoteOverviewTaskV1Schema> }): Promise<GatewayResultV1<z.infer<typeof noteOverviewTaskV1Schema>>>;
     latestTask(input: { meta: RequestMetaV1; noteId: Uuid; query: z.infer<typeof noteOverviewLatestTaskQueryV1Schema> }): Promise<GatewayResultV1<z.infer<typeof noteOverviewLatestTaskV1Schema>>>;
     getTask(input: { meta: RequestMetaV1; noteId: Uuid; taskId: Uuid }): Promise<GatewayResultV1<z.infer<typeof noteOverviewTaskV1Schema>>>;
+  };
+  readonly noteMindMap: {
+    list(input: { meta: RequestMetaV1; noteId: Uuid; before?: Uuid }): Promise<GatewayResultV1<z.infer<typeof noteMindMapPageV1Schema>>>;
+    startTask(input: { meta: RequestMetaV1; noteId: Uuid; request: z.infer<typeof createNoteMindMapTaskV1Schema> }): Promise<GatewayResultV1<z.infer<typeof noteMindMapTaskV1Schema>>>;
+    latestTask(input: { meta: RequestMetaV1; noteId: Uuid; query: z.infer<typeof noteMindMapLatestTaskQueryV1Schema> }): Promise<GatewayResultV1<z.infer<typeof noteMindMapLatestTaskV1Schema>>>;
+    getTask(input: { meta: RequestMetaV1; noteId: Uuid; taskId: Uuid }): Promise<GatewayResultV1<z.infer<typeof noteMindMapTaskV1Schema>>>;
+    source(input: { meta: RequestMetaV1; noteId: Uuid; mindMapId: Uuid }): Promise<GatewayResultV1<z.infer<typeof noteMindMapSourceV1Schema>>>;
   };
   readonly noteRecall: {
     list(input: { meta: RequestMetaV1; noteId: Uuid; before?: Uuid }): Promise<GatewayResultV1<z.infer<typeof noteRecallPageV1Schema>>>;

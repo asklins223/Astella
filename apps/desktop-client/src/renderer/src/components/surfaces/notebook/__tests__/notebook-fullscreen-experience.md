@@ -52,3 +52,45 @@ Windows 原生标题栏与不同 DPI、真实中文输入法组合过程中全�
 真实 macOS Electron 窗口：在「电功率与电阻」末尾点击真实库内链接进入「欧姆定律的适用条件」，再通过全屏返回箭头退回。渲染帧采样覆盖两次加载纸面，全程 fullscreen 和伴星全屏标记均保持；返回前后 scrollTop 为 2285、可见块为 24、块顶相对偏移为 -27.859375px。过程只读取已有笔记，没有修改内容。证据 `fullscreen-navigation.json` 与 `13-fullscreen-before-link.png` / `14-fullscreen-linked-note.png` / `15-fullscreen-returned.png`。
 
 回归覆盖多篇库内返回、其他入口直接跳转、主笔记入口、加载时返回/退出、换篇重新挂载、失效链接、空间隔离、正文模式与各篇阅读位置恢复；本次 6 个相关测试文件共 30 项通过，桌面类型检查与构建通过。
+
+## 全屏覆盖全部子页面 · 2026-10-08
+
+用户新决定：全屏是笔记页面的显示模式，速看（含脑图）、回想、往外学、互动演示、记录与这一轮学习都留在同一张整窗纸面里——点这些页签不再退出全屏、不再退回普通册页，从任意视图都能进入全屏；退出全屏后停在刚才的子页面。
+
+实现上把「可用性」从视图判断里拿掉：`notebook-fullscreen-state.ts` 的 `useNotebookFullscreen` 只读访问期间的 `active`（原来 `learningView === "body" || mindMapActive` 才可用，换视图会被强制退出），`notebook-desk.tsx` 不再传 second gate，页内「全屏」按钮在所有视图可见（脑图除外——画布的「全屏脑图」就是它自己的入口），⌘/Ctrl+Shift+F 在子页面同样生效。折签的小标签在子页面改报当前视图名（速看／回想／往外学／互动演示／记录／这一轮学习），不再一律写「阅读」；工具页提示改为「点回纸面就收起 · Esc 收起工具，再按退出」。子页面沿用同一张纸面几何（页宽 min(100%, 88ch)、右侧为伴星座位留白），因此没有为子页面新增 CSS；脑图既有 `[data-fullscreen]` 座位规则不变。
+
+自动检查：`notebook-fullscreen.test.tsx` 12 项通过，含新增的两项——「速看、回想、往外学、记录与这一轮学习都留在同一张整窗纸面，页签仍在工具页里可切换」与「从子页面直接进全屏，快捷键在子页面也生效」；「切到子页面或换篇都留在全屏」替代了旧的「切到记录会退出全屏」断言。笔记目录 39 个测试文件、265 项通过；桌面类型检查通过；文案守卫与 objective-flow 样式守卫通过。样式闭合守卫仍报 5 个既有缺样式类（`note-body-toc`、`note-reading-footnote-ref`、`note-mind-map__detail`、`note-mind-map__metadata`、`note-mind-map__branch-actions`），全部来自同期未提交的脑图与正文改动（`note-mind-map-paper.tsx`、`note-markdown-reading.tsx`），本次改动没有新增 class，未动这些文件。
+
+真实 macOS Electron 窗口（1440×810，探测账号，CDP 探针 `scripts/probe-notebook-fullscreen-subpages.mjs`）：全屏里依次点速看／回想／往外学／记录，`data-notebook-fullscreen`、`data-fullscreen` 与折签（退出按钮）全程保持，纸面宽 880、滚动内边距 100/304/90/100.8px 四个视图一致；速看里点「全屏」与按 Ctrl+Shift+F 都能进入；Esc 第一次只收工具、第二次退出全屏且视图仍是速看；从记录里点「全屏」同样直接进入。速看→脑图（该篇真实脑图，32 节点）在全屏里画布占满 1440×810，画布工具条右缘 1142 仍在伴星座位留白内。证据 `outputs/notebook-fullscreen-subpages-20261008/`（`01-overview.png` … `06-after-exit.png`、`measurements.json`）。
+
+未确认：探针账号这篇笔记没有「这一轮学习」轮次与互动演示，这两块只有自动测试覆盖，没有窗口截图；Windows 原生标题按钮与全屏折签的相对位置本次未复测；探针只点了浏览入口，没有触发任何生成任务。
+
+## 全屏浮层落位 · 2026-10-08
+
+用户指出三处遮挡（截图红框）：批注旁页被右下伴星压住；脑图的「要点／脑图」页签顶到 macOS 红绿灯上、「图信息」纸签叠着「笔记列表」；「大纲」阅读页盖住右侧画布。裁决：全屏里批注旁页与脑图的这些抽屉全部放左边，右侧留给伴星；工具页（手边的工具）贴右缘，不必为伴星座位让位。
+
+改动都在样式层，组件未动：
+
+- `notebook-fullscreen.css`：新增 `--notebook-focus-left-top`（左列从「笔记列表」纸签下面起：`max(--notebook-focus-page-top, env(titlebar-area-height, 40px) + 70px)`），目录与旁页用它；工具页改为 `right: 24px`（原 `calc(seat + 18px)`），并删掉 ≤900px 时把工具页挪去左边的旧规则。
+- `notebook-attachments.css`：旁页的全屏规则改到左边（`left: 24px; right: auto`，与目录同列）。旁页的「真实样式赢家」在这份后加载的表里，改它是为了让全屏落位只有一个来源。
+- `note-mind-map.css`：追加全屏段——页签与纸签同一行（top 取 `env(titlebar-area-height, 40px) + 12px` 与折签顶对齐，left 112 = 纸签左 24 + 宽 76 + 12）；图信息、进度条与大纲／分支阅读页排进左列（信息岛从 left-top 起，其余 left-top + 70）；旁页打开（`[data-margin-open="side"]`）时信息岛与进度条隐藏，不从旁页边缘露出半截。
+
+真实 macOS Electron 窗口（1440×810，全屏）：笔记列表纸签 [24,52,100,98]、页签 [112,52,236,95]（与纸签无重叠）、图信息 [24,110,285,168]、资料袋旁页 [24,110,404,506]（与伴星座 [1212,553,1414,796] 无重叠）、大纲阅读页 [24,180,364,786]、工具页 [1006,78,1416,393]（右缘距窗口 24px）、脑图工具条 [753,746,1142,792]。证据 `outputs/notebook-fullscreen-panels-20261008/`（`02-mind-map-base.png`、`07-mindmap-side.png`、`08-mindmap-outline-left.png` 等）与 `panel-geometry.json`；探针 `scripts/probe-notebook-fullscreen-panels.mjs`。样式闭合守卫的 5 个既有缺样式类与本次改动前完全一致，没有扩大；全屏、desk 焦点、脑图与笔记列表相关测试通过。
+
+未确认：Windows／Linux 的原生标题带位置（公式沿用既有 `env(titlebar-area-height)` 约定，未复测）；≤900px 窄窗工具页保持贴右的新行为只过了样式检查，没有窄窗截图；批注旁页在窗口宽度接近纸面时仍会压住正文左缘（用户已裁决接受，右列让给伴星）。
+
+## 顶条与要点／脑图开关 · 2026-10-08
+
+用户要求：速看顶条（标题行 + 下划线）整块改为脑图那种浮起的纸签；「要点／脑图」的位置与脑图对齐；并把开关统一成一个组件、加上弹性动效。
+
+做法：
+
+- 新增 `notebook-overview-switch.tsx`（两挡纸签，`data-tab` 决定指示块位置），`notebook-surface.tsx` 改用它。样式在 `note-mind-map.css`：容器薄荷半透明，内嵌奶油指示块；`translate` 用 340ms `cubic-bezier(.22, 1.25, .36, 1)`，与正文「阅读／编辑／源码」开关同一条弹簧；Lite／Off 与 `prefers-reduced-motion` 下 `transition: none`，减少透明／高对比时改实色。按下的那一下仍走 `--note-touch-scale`。
+- 位置：开关在速看视图里始终绝对定位——普通页面 (18, 18)；全屏 `top: var(--notebook-focus-tabs-top)`、`left: 112px`（与「笔记列表」纸签同一行）。要点与脑图完全同位。
+- 顶条：`notebook-desk.css` 对 `[data-view]:not([data-view="body"]):not([data-fullscreen])`（速看／回想／往外学／互动演示／记录／这一轮学习）把工具区改成浮起的纸签（`top/right: 18px`、薄荷半透明、圆角 20、blur），标题行不再单占一行，纸面内容 `padding-top: 78px` 从它下面起。脑图原有的同名规则并入这一份，画布滚动仍是 `padding: 0`。
+
+真窗口（1440×810，探测账号）：普通要点开关落在书桌内 (18, 18)、普通脑图同位；全屏要点与全屏脑图的开关都是 [112,52,234,95]，与「笔记列表」纸签 [24,52,100,98] 同一行；指示块 `translate` 0px ↔ 100%；回想／往外学／记录的工具纸签 [1027,175,1327,223]，内容 `padding-top` 78px。证据 `outputs/notebook-overview-tabs-20261008/`（`21`–`23`、`31`–`33`）。
+
+自动检查：笔记目录 40 个文件 277 项中 276 项通过——唯一失败仍是那 5 个既有缺样式类（来自同期未提交的脑图／正文改动，本次没有新增 class）；桌面类型检查通过；样式顺序、文案与 objective-flow 守卫通过。
+
+未确认：普通要点有真实速看内容时，浮起的两条纸签与滚动内容的相对关系只按几何判断（探测账号这篇没有速看内容，截图是准备页）；窄窗（≤900px）下这两条纸签与页头控件的间距没有专门截图。

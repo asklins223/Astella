@@ -1,0 +1,109 @@
+/* 「要点 / 脑图」是同一枚两挡开关：纸面与画布各放一处，位置、样式与弹簧只此一份
+   （2026-10-08 用户要求统一为脑图样式并加弹性切换）。
+   它是纸面框上的控件，始终浮在纸面／画布左上；挂载点在 `NotebookDesk` 的叶子里、
+   滚动页之外——放进页内容里，入场动画的 `transform` 会改掉包含块，开关会跳一下。 */
+.notebook-overview-tabs { position:absolute; z-index:10; left:18px; top:18px; display:grid; grid-template-columns:repeat(2, 1fr); width:fit-content; margin:0; padding:4px; isolation:isolate; border:1px solid #d8dfcc; border-radius:20px; background:#edf1e2ed; box-shadow:0 3px 0 #bccbb340, 0 7px 20px #40544712; backdrop-filter:blur(16px); animation:notebook-overview-tabs-in 180ms var(--hud-ease-out) both; }
+/* 只淡入，不带位移：控件落在纸面框上就不该再动（对比页内容的翻页入场）。 */
+@keyframes notebook-overview-tabs-in { from { opacity:0; } to { opacity:1; } }
+.notebook-overview-tabs::before { content:""; position:absolute; z-index:-1; top:4px; bottom:4px; left:4px; width:calc((100% - 8px) / 2); border-radius:16px; background:#fffbef; box-shadow:0 2px 5px #40544715; translate:0; transition:translate 340ms cubic-bezier(.22, 1.25, .36, 1); }
+.notebook-overview-tabs[data-tab="mindMap"]::before { translate:100% 0; }
+.notebook-overview-tabs button { border:0; background:transparent; padding:7px 15px; border-radius:16px; color:var(--hud-soft); font:inherit; font-size:13px; cursor:pointer; }
+.notebook-overview-tabs button[aria-pressed="true"] { color:var(--hud-ink); font-weight:600; }
+.desktop-app:is([data-motion-mode="lite"], [data-motion-mode="off"]) .notebook-overview-tabs { animation:none; }
+.desktop-app:is([data-motion-mode="lite"], [data-motion-mode="off"]) .notebook-overview-tabs::before { transition:none; }
+@media (prefers-reduced-motion:reduce) { .notebook-overview-tabs { animation:none; } .notebook-overview-tabs::before { transition:none; } }
+.hud-surface .notebook-desk[data-mind-map] .notebook-desk__scroll { position:relative; overflow:hidden; padding:0; scrollbar-gutter:auto; overscroll-behavior:none; }
+.hud-surface .notebook-desk[data-mind-map] .notebook-desk__page { position:relative; width:100%; height:100%; min-height:0; margin:0; }
+.note-mind-map { --map-paper:var(--hud-paper-light, #fbf8f0); --map-hud-right:18px; position:absolute; inset:0; min-width:0; min-height:0; overflow:hidden; color:var(--hud-ink); container:mind-map / size; }
+.note-mind-map__viewport { position:absolute; inset:0; overflow:hidden; isolation:isolate; background-color:var(--map-paper); background-image:radial-gradient(#a793762a .8px, transparent .8px); background-size:20px 20px; touch-action:none; cursor:grab; }
+.note-mind-map__viewport:active { cursor:grabbing; }
+.note-mind-map__world { position:absolute; left:0; top:0; width:0; height:0; transform-origin:0 0; }
+.note-mind-map__lines { position:absolute; inset:0; overflow:visible; width:1px; height:1px; pointer-events:none; }
+.note-mind-map__lines path { fill:none; stroke-width:2; opacity:.55; }
+.note-mind-map__node { position:absolute; display:flex; align-items:center; background:var(--map-paper); border:1px solid color-mix(in srgb, var(--branch-color) 65%, transparent); border-radius:10px; box-shadow:0 3px 10px #513a2310; }
+.note-mind-map__node[data-kind="root"] { background:#8d6148; color:#fffaf0; border-color:#8d6148; }
+.note-mind-map__node[data-kind="group"] { background:color-mix(in srgb, var(--branch-color) 9%, var(--map-paper)); }
+.note-mind-map__node[data-selected="true"] { outline:3px solid color-mix(in srgb, var(--branch-color) 38%, transparent); outline-offset:3px; }
+.note-mind-map__node > button:first-child { border:0; border-radius:inherit; background:transparent; color:inherit; width:100%; padding:12px 19px; font:inherit; font-size:15px; font-weight:500; line-height:22px; text-align:center; overflow-wrap:anywhere; cursor:pointer; }
+.note-mind-map__node .note-mind-map__fold { position:absolute; right:-12px; bottom:-12px; border:1px solid var(--branch-color); border-radius:50%; width:26px; height:26px; padding:0; background:var(--map-paper); color:var(--branch-color); font-size:18px; line-height:20px; cursor:pointer; }
+/* 浮岛和阅读页是画布的兄弟节点，滚动阅读页不会进入地图的 wheel/pointer 路径。 */
+.note-mind-map__info-island { position:absolute; z-index:4; top:78px; left:18px; max-width:min(330px, calc(100% - 36px)); }
+.note-mind-map__info-island > button { display:flex; align-items:center; gap:10px; max-width:100%; padding:10px 14px; border:1px solid #d8dfcc; border-radius:20px; color:inherit; background:#fffbefe8; box-shadow:0 3px 0 #bccbb330, 0 7px 20px #4054470d; backdrop-filter:blur(16px); text-align:left; cursor:pointer; }
+.note-mind-map__info-island span { display:grid; gap:4px; min-width:0; }
+.note-mind-map__info-island strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:650; }
+.note-mind-map__info-island small { color:var(--hud-soft); font-size:10px; }
+.note-mind-map__toolbar { position:absolute; z-index:5; right:var(--map-hud-right); bottom:18px; display:flex; align-items:center; gap:2px; padding:5px; border:1px solid #d8dfcc; border-radius:23px; background:#edf1e2f0; box-shadow:0 3px 0 #bccbb340, 0 7px 22px #40544718; backdrop-filter:blur(16px); }
+.note-mind-map__toolbar button { display:inline-flex; gap:6px; align-items:center; justify-content:center; min-width:34px; height:34px; padding:6px 10px; color:inherit; font:inherit; font-size:12px; border:0; border-radius:17px; background:transparent; cursor:pointer; white-space:nowrap; }
+.note-mind-map__toolbar button:hover,.note-mind-map__toolbar button[aria-expanded="true"] { background:#fffbef; }
+.note-mind-map__tool-divider { height:18px; width:1px; margin:0 3px; background:var(--hud-line); }
+.note-mind-map__hint { position:absolute; inset:auto auto 78px 18px; padding:5px 10px; border-radius:12px; background:#fffbefc9; color:#826f5d; font-size:10px; pointer-events:none; }
+.note-mind-map__reading-pane { position:absolute; z-index:6; top:78px; right:var(--map-hud-right); bottom:78px; display:flex; flex-direction:column; width:min(340px, calc(100% - 36px)); min-height:0; padding:0; border:1px solid #d7decc; border-radius:23px; background:#fffbefef; box-shadow:0 4px 0 #bccbb350, 0 18px 44px #40544724; backdrop-filter:blur(22px); outline-offset:-3px; }
+.note-mind-map__reading-pane:is([data-panel="info"],[data-panel="branches"]) { bottom:auto; max-height:calc(100% - 156px); }
+.note-mind-map__reading-pane > header { display:flex; align-items:center; justify-content:space-between; flex:none; gap:12px; padding:15px 18px 12px; border-bottom:1px solid var(--hud-line); }
+.note-mind-map__reading-pane > header span { font-size:13px; font-weight:700; }
+.note-mind-map__reading-pane > header button { display:grid; place-items:center; width:30px; height:30px; padding:0; border:0; border-radius:50%; color:inherit; background:#e9efdf; cursor:pointer; }
+.note-mind-map__pane-scroll { min-height:0; flex:1; padding:14px 17px 20px; overflow:hidden auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:#c4cfb2 transparent; }
+.note-mind-map__reading-pane h3 { margin:0 0 12px; font-size:17px; line-height:1.6; overflow-wrap:anywhere; }
+.note-mind-map__reading-pane p { margin:0 0 14px; font-size:13px; line-height:1.85; white-space:pre-wrap; }
+.note-mind-map__reading-pane .small { color:var(--hud-soft); font-size:11px; }
+.note-mind-map__pane-action { display:block; width:100%; min-height:38px; padding:9px 12px; margin-bottom:12px; border:1px solid #cdd9bd; border-radius:13px; background:#e9efdf; color:inherit; font:inherit; font-size:13px; cursor:pointer; text-align:left; }
+.note-mind-map__pane-action:disabled { opacity:.55; cursor:default; }
+.note-mind-map__outline { display:flex; flex-direction:column; gap:4px; }
+.note-mind-map__outline button { display:flex; align-items:flex-start; gap:6px; width:100%; border:0; border-radius:10px; background:transparent; color:inherit; font:inherit; font-size:12px; line-height:1.7; cursor:pointer; padding:8px 6px; text-align:left; }
+.note-mind-map__outline button svg { flex:none; margin-top:3px; }
+.note-mind-map__outline button:hover,.note-mind-map__outline button[aria-pressed="true"] { background:#e9efdf; color:#527c61; }
+.note-mind-map__reference { display:block; width:100%; text-align:left; color:inherit; font:inherit; padding:11px 12px; margin:10px 0; border:0; border-left:2px solid #ad895e; border-radius:0 10px 10px 0; background:#ad895e0e; cursor:pointer; }
+.note-mind-map__reference span { display:block; color:#8d6148; font-size:11px; margin-bottom:6px; }
+.note-mind-map__reference q { font-size:12px; line-height:1.8; white-space:pre-wrap; overflow-wrap:anywhere; }
+/* 三个面板的容器管节奏：说明、动作与引用各自带 margin 时，一个面板里能数出三种间距。 */
+.note-mind-map :is(.note-mind-map__detail,.note-mind-map__metadata,.note-mind-map__branch-actions) { display:grid; align-content:start; gap:12px; }
+.note-mind-map :is(.note-mind-map__detail,.note-mind-map__metadata,.note-mind-map__branch-actions) > :is(h3,p,button) { margin:0; }
+.note-mind-map__notice { position:absolute; z-index:5; top:150px; left:18px; max-width:min(320px, calc(100% - 36px)); padding:12px 15px; border:1px solid #d7decc; border-radius:17px; background:#fffbefed; box-shadow:0 5px 20px #40544712; }
+.note-mind-map__notice p { margin:0; font-size:12px; line-height:1.8; }
+.note-mind-map__notice button { margin-top:8px; font-size:12px; }
+.hud-surface .notebook-desk[data-mind-map] .notebook-learning-page { position:absolute; inset:72px 20px 20px; display:flex; align-items:center; justify-content:center; margin:0; min-height:0; padding:20px; overflow:hidden; }
+.hud-surface .notebook-desk[data-mind-map] .notebook-learning-page__content { max-height:100%; overflow:auto; overscroll-behavior:contain; }
+.note-mind-map[data-fullscreen="true"] { --map-hud-right:calc(var(--notebook-focus-seat, 200px) + 18px); }
+@container mind-map (max-width:620px) {
+  .note-mind-map__reading-pane { top:146px; bottom:76px; }
+  .note-mind-map__toolbar { left:12px; right:12px; justify-content:center; padding:4px; }
+  .note-mind-map__toolbar button { min-width:28px; padding-inline:7px; font-size:11px; }
+  .note-mind-map__info-island { max-width:calc(100% - 36px); }
+  .note-mind-map__hint { display:none; }
+}
+@container mind-map (max-height:360px) {
+  .note-mind-map__info-island { top:64px; }
+  .note-mind-map__info-island small { display:none; }
+  .note-mind-map__reading-pane { top:64px; bottom:66px; }
+  .note-mind-map__hint { display:none; }
+  .note-mind-map__toolbar { bottom:10px; }
+}
+@media (prefers-reduced-transparency:reduce), (prefers-contrast:more) {
+  .note-mind-map :is(.note-mind-map__reading-pane,.note-mind-map__toolbar,.note-mind-map__info-island > button) { background:#fffbef; backdrop-filter:none; }
+  .notebook-overview-tabs, .hud-surface .notebook-desk:not([data-view="body"]):not([data-fullscreen]) .notebook-desk__rack { background:#edf1e2; backdrop-filter:none; }
+}
+.note-mind-map__source { width:min(840px, 88vw); max-height:86vh; box-sizing:border-box; border:1px solid #b9a08470; border-radius:14px; background:var(--hud-paper-light, #faf7ef); color:var(--hud-ink); padding:24px; overflow:auto; box-shadow:0 16px 80px #261b2440; }
+.note-mind-map__source::backdrop { background:#201a1a66; }
+.note-mind-map__source header { display:flex; justify-content:space-between; gap:16px; }
+.note-mind-map__source header h2 { font-size:20px; line-height:1.6; }
+.note-mind-map__source header button { align-self:flex-start; border:0; background:transparent; color:inherit; padding:8px; cursor:pointer; }
+.note-mind-map__source blockquote { border-left:3px solid #986c51; padding:10px 16px; margin:12px 0 20px; background:#ad895e10; white-space:pre-wrap; }
+.note-mind-map__source-body article { padding:18px 16px; scroll-margin:20px; }
+.note-mind-map__source-body article > small { opacity:.6; font-size:11px; }
+.note-mind-map__source-body article[data-cited="true"] { background:color-mix(in srgb, #ad895e 12%, transparent); border-radius:8px; }
+.note-mind-map__source footer { display:flex; justify-content:flex-end; padding-top:16px; }
+.note-mind-map__source[open] { display:flex; flex-direction:column; height:min(86vh, 900px); overflow:hidden; }
+.note-mind-map__source > header,.note-mind-map__source > footer { flex-shrink:0; }
+.note-mind-map__source > blockquote { flex-shrink:0; max-height:130px; overflow:auto; }
+.note-mind-map__source-body { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; }
+.note-mind-map :is(button,[tabindex="0"]):focus-visible { outline:2px solid var(--hud-green, #637c65); outline-offset:3px; }
+
+/* 全屏：画布铺满整窗，左侧让给控制列与抽屉——右边留给伴星（2026-10-08 用户裁决：
+   切换组原先顶在红绿灯上，信息岛叠着「笔记列表」，大纲阅读页又盖住右侧画布）。 */
+/* 速看的开关与「笔记列表」纸签（left 24 + 宽 76 + 12）同一行，让开原生标题带。 */
+.hud-surface .notebook-desk[data-fullscreen][data-view="overview"] .notebook-overview-tabs { top:var(--notebook-focus-tabs-top); left:112px; }
+.note-mind-map[data-fullscreen="true"] .note-mind-map__info-island { top:var(--notebook-focus-left-top); left:24px; }
+.note-mind-map[data-fullscreen="true"] .note-mind-map__notice { top:calc(var(--notebook-focus-left-top) + 70px); left:24px; }
+.note-mind-map[data-fullscreen="true"] .note-mind-map__reading-pane { left:24px; right:auto; top:calc(var(--notebook-focus-left-top) + 70px); bottom:24px; }
+/* 旁页打开时它占住左列，信息与进度条先让开，不再从旁页边缘露出半截。 */
+.hud-surface .notebook-desk[data-fullscreen][data-mind-map][data-margin-open="side"] :is(.note-mind-map__info-island, .note-mind-map__notice) { visibility:hidden; }

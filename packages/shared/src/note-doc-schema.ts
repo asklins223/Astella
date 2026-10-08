@@ -1,4 +1,4 @@
-import { noteBlockMarkdown, noteMarkdownTree, noteMarkdownText, noteMarkdownSyntax, noteImageMarkdown, type NoteMarkdownSyntaxNode } from "./note-markdown.ts";
+import { noteBlockMarkdown, noteMarkdownTree, noteMarkdownText, noteMarkdownSyntax, noteImageMarkdown, noteSourceMarkdown, noteStyledPmHtml, cleanNoteRichStyle, noteFootnoteBody, type NoteMarkdownSyntaxNode } from "./note-markdown.ts";
 /**
  * 笔记正文的 ProseMirror schema 定义与块形状转换（CRDT 批次 B）。
  *
@@ -45,7 +45,7 @@ export const NOTE_BLOCK_NODE_NAMES = {
  * 只剩 `{"type":"paragraph","content":[…]}`，一个字符的报错都没有）。段落与标题正是
  * "来源转笔记"最常产出的两种块，所以这两个键漏在这里等于证据链在最常见的那条路上失效。
  */
-const blockAttrs = { sourceRef: { default: null }, imageAssetId: { default: null } };
+const blockAttrs = { sourceRef: { default: null }, noteStyle: { default: null }, imageAssetId: { default: null } };
 
 /**
  * 交给 `new Schema(...)` 的规格。`content` 表达式按 ProseMirror 的语法写。
@@ -83,6 +83,7 @@ export const noteDocSchemaSpec = {
     paragraph: { content: "inline*", group: "block", attrs: blockAttrs },
     heading: { content: "inline*", group: "block", attrs: { level: { default: 2 }, ...blockAttrs } },
     code_block: { content: "text*", group: "block", code: true, attrs: { language: { default: "" }, ...blockAttrs } },
+    note_source: { content: "text*", group: "block", code: true, attrs: { kind: { default: "math" }, label: { default: "" }, ...blockAttrs } },
     blockquote: { content: "block+", group: "block", attrs: blockAttrs },
     bullet_list: { content: "list_item+", group: "block", attrs: blockAttrs },
     ordered_list: { content: "list_item+", group: "block", attrs: { order: { default: 1 }, ...blockAttrs } },
@@ -94,6 +95,7 @@ export const noteDocSchemaSpec = {
     table_cell: { content: "paragraph", isolating: true, attrs: { colspan: { default: 1 }, rowspan: { default: 1 }, colwidth: { default: null }, alignment: { default: "left" } } },
     image: { inline: true, group: "inline", attrs: { src: { default: "" }, alt: { default: "" }, title: { default: "" }, width: { default: null }, height: { default: null }, linkHref: { default: null }, ...blockAttrs } },
     // Milkdown renders HTML atoms as literal source. The reader applies its own allowlist.
+    note_ref: { inline: true, group: "inline", atom: true, attrs: { label: { default: "1" } } },
     html: { atom: true, inline: true, group: "inline", attrs: { value: { default: "" } } },
     hr: { group: "block" },
     // `inline: true` 不是装饰：prosemirror-model 判行内只看 `!(spec.inline || name=="text")`，
@@ -112,6 +114,8 @@ export const noteDocSchemaSpec = {
     inlineCode: {},
     link: { attrs: { href: { default: "" } } },
     strike_through: {},
+    noteStyle: { attrs: { noteStyle: { default: null } } },
+    noteHighlight: {}, noteSubscript: {}, noteSuperscript: {},
   },
 } as const;
 
@@ -214,6 +218,7 @@ export function parseMarkdownTable(content: string): readonly (readonly string[]
  */
 export function noteBlockRenderedTextV1(type: string, content: string): string {
   if (type === "image") return "";
+  const footnote = noteFootnoteBody(content); if (footnote) return noteMarkdownText(noteMarkdownTree(footnote.body));
   return noteMarkdownText(noteMarkdownTree(noteBlockMarkdown(type, content)));
 
 }
@@ -270,6 +275,7 @@ function inlineContent(content: string, mode: "markdown" | "raw" = "markdown"): 
  */
 function collectInline(node: PmJson | undefined): string {
   if (!node) return "";
+  if (node.type === "note_ref") return `[^${node.attrs?.label}]`;
   if (node.type === "hardbreak") return "\n";
   if (node.type === "html") return String(node.attrs?.value ?? "");
   if (node.type === "paragraph" && (node.content ?? []).filter(child => child.type === "image").length > 1
@@ -282,6 +288,7 @@ function collectInline(node: PmJson | undefined): string {
     const image = noteImageMarkdown(node.attrs ?? {});
     return node.attrs?.linkHref ? `[${image}](${String(node.attrs.linkHref)})` : applyMarks(image, node.marks ?? []);
   }
+  if (node.marks?.some(mark => mark.type === "noteStyle") || ["paragraph", "heading"].includes(node.type) && Object.keys(cleanNoteRichStyle(node.attrs?.noteStyle)).length) return noteStyledPmHtml(node);
   if (typeof node.text === "string") return applyMarks(node.text, node.marks ?? []);
   return (node.content ?? []).map(collectInline).join("");
 }
@@ -299,6 +306,9 @@ function applyMarks(text: string, marks: readonly PmJsonMark[]): string {
   // must stay escaped when text atoms are projected back into Markdown.
   let value = names.has("inlineCode") ? text : text.replace(/\[\[/g, "\\[\\[");
   if (names.has("inlineCode")) value = `\`${value}\``;
+  if (names.has("noteHighlight")) value = `==${value}==`;
+  if (names.has("noteSubscript")) value = `~${value}~`;
+  if (names.has("noteSuperscript")) value = `^${value}^`;
   if (names.has("strike_through")) value = `~~${value}~~`;
   if (names.has("strong")) value = `**${value}**`;
   if (names.has("emphasis")) value = `*${value}*`;
@@ -378,7 +388,9 @@ export function pmNodesToNoteBlocks(nodes: readonly PmJson[]): NoteDocBlockSpec[
     const { sourceRef, imageAssetId } = attrOf(node);
     const extras = { ...(sourceRef ? { sourceRef } : {}), ...(imageAssetId ? { imageAssetId } : {}) };
     switch (node.type) {
+      case "note_source": return { type: "paragraph", content: noteSourceMarkdown(String(node.attrs?.kind), collectInline(node), String(node.attrs?.label ?? "")), ...extras };
       case "heading":
+        if (Object.keys(cleanNoteRichStyle(node.attrs?.noteStyle)).length) return { type: "paragraph", content: noteStyledPmHtml(node), ...extras };
         return { type: "heading", content: Number(node.attrs?.level ?? 2) === 2 ? collectInline(node) : `${"#".repeat(Number(node.attrs?.level ?? 2))} ${collectInline(node)}`, ...extras };
       case "code_block":
         return { type: "code", content: node.attrs?.language
@@ -439,6 +451,7 @@ export function noteBlocksToPmNodes(blocks: readonly NoteDocBlockSpec[]): PmJson
       references.set(node.identifier.toLowerCase(), node);
       definitions.push(documentSource.slice(node.position?.start.offset, node.position?.end.offset));
     }
+    if (node.type === "footnoteDefinition") definitions.push(documentSource.slice(node.position?.start.offset, node.position?.end.offset));
   }
   return blocks.map(block => {
     const source = noteBlockMarkdown(block.type, block.content);
@@ -466,6 +479,8 @@ function syntaxToPm(node: NoteMarkdownSyntaxNode, source: string, references: Ma
         : { type: child.type === "delete" ? "strike_through" : child.type };
       return inline(child.children as NoteMarkdownSyntaxNode[], [...inherited, mark]);
     }
+    if (String(child.type) === "noteStyle") return inline((child as unknown as { children: NoteMarkdownSyntaxNode[] }).children, [...inherited, { type: "noteStyle", attrs: { noteStyle: (child as unknown as { noteStyle: unknown }).noteStyle } }]);
+    if (["noteHighlight", "noteSubscript", "noteSuperscript"].includes(child.type)) return inline((child as unknown as { children: NoteMarkdownSyntaxNode[] }).children, [...inherited, { type: child.type }]);
     if (child.type === "inlineCode") return [{ type: "text", text: child.value, marks: [...inherited, { type: "inlineCode" }] }];
     if (child.type === "image") return [{ type: "image", attrs: { src: child.url, alt: child.alt ?? "", title: child.title ?? "", width: child.data?.hProperties?.width ?? null, height: child.data?.hProperties?.height ?? null, linkHref: inherited.find(mark => mark.type === "link")?.attrs?.href ?? child.data?.hProperties?.noteImageLinkHref ?? null } }];
     if (child.type === "html") return [{ type: "html", attrs: { value: child.value } }];
@@ -475,13 +490,18 @@ function syntaxToPm(node: NoteMarkdownSyntaxNode, source: string, references: Ma
         ? [{ type: "image", attrs: { src: destination.url, alt: child.alt ?? "", title: destination.title, linkHref: inherited.find(mark => mark.type === "link")?.attrs?.href ?? null } }]
         : inline(child.children as NoteMarkdownSyntaxNode[], [...inherited, { type: "link", attrs: { href: destination.url, title: destination.title } }]);
     }
+    if (child.type === "footnoteReference") return [{ type: "note_ref", attrs: { label: child.identifier } }];
+    if (child.type === "inlineMath" && !child.position) return [{ type: "text", text: `$${child.value}$`, ...(inherited.length ? { marks: inherited } : {}) }];
     if (child.type === "break") return [{ type: "hardbreak" }];
     const text = source.slice(child.position?.start.offset ?? 0, child.position?.end.offset ?? source.length);
     return text ? [{ type: "text", text, ...(inherited.length ? { marks: inherited } : {}) }] : [];
   });
   switch (node.type) {
-    case "heading": return { type: "heading", attrs: { level: node.depth }, content: inline(node.children as NoteMarkdownSyntaxNode[]) };
-    case "paragraph": return { type: "paragraph", content: inline(node.children as NoteMarkdownSyntaxNode[]) };
+    case "math": return { type: "note_source", attrs: { kind: "math", label: "" }, content: node.value ? [textNode(node.value)] : undefined };
+    case "yaml": return { type: "note_source", attrs: { kind: "yaml", label: "" }, content: (node as unknown as { value: string }).value ? [textNode((node as unknown as { value: string }).value)] : undefined };
+    case "footnoteDefinition": return { type: "note_source", attrs: { kind: "footnote", label: node.identifier }, content: [textNode(raw().replace(/^\[\^[^\]]+\]:\s*/, "").replace(/\n {4}/g, "\n"))] };
+    case "heading": return { type: "heading", attrs: { level: node.depth, noteStyle: (node.data as { noteStyle?: unknown } | undefined)?.noteStyle ?? null }, content: inline(node.children as NoteMarkdownSyntaxNode[]) };
+    case "paragraph": if (raw().trim().toLowerCase() === "[toc]") return { type: "note_source", attrs: { kind: "toc", label: "" } }; return { type: "paragraph", attrs: { noteStyle: (node.data as { noteStyle?: unknown } | undefined)?.noteStyle ?? null }, content: inline(node.children as NoteMarkdownSyntaxNode[]) };
     case "code": return { type: "code_block", attrs: { language: node.lang ?? "" }, content: node.value ? [textNode(node.value)] : undefined };
     case "blockquote": return { type: "blockquote", content: node.children.map(child => syntaxToPm(child, source, references)) };
     case "list": return { type: node.ordered ? "ordered_list" : "bullet_list", attrs: node.ordered ? { order: node.start ?? 1 } : {},

@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { EditorView } from "@codemirror/view";
+import { TextSelection } from "@milkdown/kit/prose/state";
+import { EditorView as ProseMirrorView } from "@milkdown/kit/prose/view";
 import { NoteDocumentEditor } from "../note-document-editor";
 import type { NoteMarkdownEditorHandle } from "../note-markdown-editor";
 import type { NoteBodyMode } from "../note-document-mode";
@@ -46,6 +48,43 @@ afterEach(async () => {
 });
 
 describe("三种正文视图共用真实编辑器与 Y.Doc", () => {
+  it("文字排版作用于选区，连续设置合并，格式刷与撤销都写入同一份正文", async () => {
+    const dispatch = vi.spyOn(ProseMirrorView.prototype, "dispatch");
+    const doc = documentWith("选取文字", "刷到这里"), view = await mount(doc, "live-preview");
+    await act(async () => view.ref.current!.focusPosition({ block: 0, offset: 0 }));
+    const pm = dispatch.mock.instances.at(-1)! as ProseMirrorView; dispatch.mockRestore();
+    await act(async () => pm.dispatch(pm.state.tr.setSelection(TextSelection.create(pm.state.doc, 1, 3))));
+    await act(async () => { view.ref.current!.setTextStyle!({ color: "#a44b3b" }); view.ref.current!.setTextStyle!({ font: "sans", size: 24 }); });
+    expect(view.ref.current!.getMarkdown()).toContain('color:#a44b3b;font-family:sans-serif;font-size:24px');
+    await act(async () => view.ref.current!.formatBrush!());
+    const at = pm.state.doc.child(0).nodeSize + 1;
+    await act(async () => { pm.dispatch(pm.state.tr.setSelection(TextSelection.create(pm.state.doc, at, at + 2))); fireEvent.mouseUp(pm.dom); });
+    expect(view.ref.current!.getFormatState!()?.brush).toBe(false);
+    expect(pm.state.doc.child(1).firstChild?.marks.find(mark => mark.type.name === "noteStyle")?.attrs.noteStyle.color).toBe("#a44b3b");
+    await act(async () => view.ref.current!.undo()); expect(pm.state.doc.child(1).firstChild?.marks.find(mark => mark.type.name === "noteStyle")).toBeUndefined();
+    await act(async () => view.ref.current!.redo());
+    const saved = view.ref.current!.getMarkdown()!; await act(async () => view.ref.current!.applySource(saved));
+    expect(view.container.querySelectorAll('.ProseMirror span[style*="color"]')).toHaveLength(2);
+  });
+  it("源码中的文字和段落排版切回正文后生效，并保留公式和脚注", async () => {
+    const view = await mount(documentWith("起点")); await source(view, '正文 **重点** $x^2$ 参考[^n]\n\n[^n]: 注释\n');
+    await act(async () => view.code().dispatch({ selection: { anchor: 5, head: 7 } }));
+    await act(async () => view.ref.current!.setTextStyle!({ color: "#a44b3b" }));
+    await act(async () => view.ref.current!.setParagraphStyle!({ align: "center", leading: 2 }));
+    view.mode("live-preview"); await waitFor(() => expect(view.container.querySelector('.ProseMirror p[style*="text-align"]')).not.toBeNull());
+    expect(view.ref.current!.getMarkdown()).toContain('$x^2$'); expect(view.ref.current!.getMarkdown()).toContain('data-note-ref="n"');
+    expect(view.container.querySelector('.note-editor-math-preview')).not.toBeNull(); expect(view.container.querySelector('[data-note-ref]')).not.toBeNull();
+  });
+  it("粘贴混合 HTML 保留文字排版、表格和图片，脚本不会进入正文", async () => {
+    const view = await mount(documentWith("起点"), "live-preview"); await act(async () => view.ref.current!.focusPosition({ block: 0, offset: 999 }));
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    const html = '<p style="text-align:center"><strong>粗体</strong><span style="color:rgb(164,75,59);font-size:24px">彩色</span><img src="https://example.com/image.png" alt="图" width="120"></p><table><tr><th>甲</th><th>乙</th></tr><tr><td>A</td><td>B</td></tr></table><script>bad()</script>';
+    Object.defineProperty(event, "clipboardData", { value: { items: [], files: [], getData: (kind: string) => kind === "text/html" ? html : kind === "text/plain" ? "粗体彩色\n甲乙\nAB" : "", types: ["text/html", "text/plain"] } });
+    await act(async () => fireEvent(view.container.querySelector('.ProseMirror')!, event));
+    expect(view.container.querySelector('.ProseMirror strong')?.textContent).toBe('粗体'); expect(view.container.querySelector('.ProseMirror span[style*="color"]')?.textContent).toBe('彩色');
+    expect(view.container.querySelectorAll('.ProseMirror td')).toHaveLength(2); expect(view.container.querySelector('.note-image-node img')?.getAttribute('src')).toBe('https://example.com/image.png');
+    expect(view.ref.current!.getMarkdown()).not.toContain('bad()'); expect(view.ref.current!.getMarkdown()).toContain('color:#a44b3b');
+  });
   it("单图按正文光标行内插入，属性浮层不进入正文", async () => {
     const view = await mount(documentWith("前文后文"), "live-preview");
     await act(async () => { view.ref.current!.focusPosition({ block: 0, offset: 2 }); view.ref.current!.insertImageMarkdown?.("![甲图](https://example.com/a.png)"); });
@@ -109,9 +148,47 @@ describe("三种正文视图共用真实编辑器与 Y.Doc", () => {
     const root = view.container.querySelector(".ProseMirror")!;
     fireEvent.keyDown(root, { key: "Tab" }); expect(root.querySelectorAll("tr")).toHaveLength(3);
     fireEvent.keyDown(root, { key: "Enter", ctrlKey: true }); expect(root.querySelectorAll("tr")).toHaveLength(4);
-    fireEvent.change(view.getByLabelText("当前列对齐"), { target: { value: "right" } });
+    fireEvent.click(view.getByRole("button", { name: "右对齐" }));
     expect(view.ref.current!.getMarkdown()).toMatch(/-+:/);
     expect(Array.from(root.querySelectorAll("tr")).map(row => (row.querySelector("td,th") as HTMLElement)?.style.textAlign)).toEqual(Array(4).fill("right"));
+  });
+
+  it("表格拖动改变行列次序、批量扩容保留内容、整行选区可删除并撤销", async () => {
+    const dispatch = vi.spyOn(ProseMirrorView.prototype, "dispatch");
+    const view = await mount(documentWith("起点")); await source(view, "| 甲 | 乙 |\n| --- | --- |\n| 一 | 二 |\n| 三 | 四 |\n"); view.mode("live-preview");
+    await act(async () => view.ref.current!.focusPosition({ block: 0, offset: 9999 }));
+    const pm = dispatch.mock.instances.at(-1)! as ProseMirrorView; dispatch.mockRestore();
+    let first = 0; pm.state.doc.descendants((node, pos) => { if (node.isText && node.text === "一") first = pos; });
+    await act(async () => pm.dispatch(pm.state.tr.setSelection(TextSelection.create(pm.state.doc, first))));
+    const table = pm.dom.querySelector('table')!;
+    const box = (top: number, left = 0) => ({ top, left, bottom: top + 40, right: left + 200, width: 200, height: 40, x: left, y: top, toJSON() {} });
+    [...table.querySelectorAll('tr')].forEach((row, index) => vi.spyOn(row, 'getBoundingClientRect').mockReturnValue(box(index * 50)));
+    const handle = view.getByRole('button', { name: '拖动当前行' });
+    Object.assign(handle, { setPointerCapture: vi.fn(), hasPointerCapture: () => false });
+    await act(async () => { fireEvent(handle, new MouseEvent('pointerdown', { bubbles: true, button: 0 })); fireEvent(handle, new MouseEvent('pointermove', { bubbles: true, clientY: 70 })); fireEvent(handle, new MouseEvent('pointerup', { bubbles: true, clientY: 120 })); });
+    expect([...pm.dom.querySelectorAll('tr')].map(row => row.textContent)).toEqual(['甲乙', '三四', '一二']);
+    await act(async () => view.ref.current!.undo()); expect([...pm.dom.querySelectorAll('tr')].map(row => row.textContent)).toEqual(['甲乙', '一二', '三四']);
+    fireEvent.change(view.getByRole('spinbutton', { name: '正文行数' }), { target: { value: '3' } });
+    fireEvent.change(view.getByRole('spinbutton', { name: '列数' }), { target: { value: '3' } }); fireEvent.click(view.getByRole('button', { name: '应用表格大小' }));
+    expect(pm.dom.querySelectorAll('tr')).toHaveLength(4); expect(pm.dom.querySelectorAll('th')).toHaveLength(3); expect(pm.dom.textContent).toContain('一二');
+    fireEvent.click(view.getByRole('button', { name: '选中整行' })); expect(pm.state.selection.constructor.name).toBe('CellSelection');
+    fireEvent.click(view.getByRole('button', { name: '删除当前行' })); expect(pm.dom.querySelectorAll('tr')).toHaveLength(3);
+    await act(async () => view.ref.current!.undo()); expect(pm.dom.querySelectorAll('tr')).toHaveLength(4);
+  });
+
+  it("列表 Tab 缩进和 Shift+Tab 返回，格式边界只删除当前范围且输入法不触发", async () => {
+    const dispatch = vi.spyOn(ProseMirrorView.prototype, 'dispatch');
+    const view = await mount(documentWith("起点")); await source(view, '- 甲\n- 乙\n\n**一** 中间 **二**\n'); view.mode('live-preview'); await act(async () => view.ref.current!.focusPosition({ block: 0, offset: 9999 }));
+    const pm = dispatch.mock.instances.at(-1)! as ProseMirrorView; dispatch.mockRestore();
+    let at = 0; pm.state.doc.descendants((node, pos) => { if (node.isText && node.text === '乙') at = pos; });
+    await act(async () => pm.dispatch(pm.state.tr.setSelection(TextSelection.create(pm.state.doc, at + 1))));
+    fireEvent.keyDown(pm.dom, { key: 'Tab' }); expect(pm.dom.querySelector('li li')?.textContent).toContain('乙');
+    fireEvent.keyDown(pm.dom, { key: 'Tab', shiftKey: true }); expect(pm.dom.querySelector('li li')).toBeNull();
+    pm.state.doc.descendants((node, pos) => { if (node.isText && node.text === '二') at = pos; });
+    await act(async () => pm.dispatch(pm.state.tr.setSelection(TextSelection.create(pm.state.doc, at + 1))));
+    const before = view.ref.current!.getMarkdown(); fireEvent.keyDown(pm.dom, { key: 'Backspace', isComposing: true, keyCode: 229 }); expect(view.ref.current!.getMarkdown()).toBe(before);
+    fireEvent.keyDown(pm.dom, { key: 'Backspace' }); expect(pm.dom.querySelectorAll('strong')).toHaveLength(1); expect(pm.dom.querySelector('strong')?.textContent).toBe('一');
+    await act(async () => view.ref.current!.clearHistory!()); await act(async () => view.ref.current!.undo()); expect(pm.dom.querySelectorAll('strong')).toHaveLength(1);
   });
 
   it("代码块原位输入使用同一共享撤销，语言和文本跨源码保持", async () => {
@@ -608,4 +685,40 @@ describe("三种正文视图共用真实编辑器与 Y.Doc", () => {
     expect(left.ref.current!.getMarkdown()).toContain("乙段输入法尾句");
     expect(left.ref.current!.getMarkdown()).toContain("甲段远端更新");
   });
+  it("扩展语法跨源码、排版、编辑和重开保留", async () => {
+    const doc = documentWith("正文"); const view = await mount(doc);
+    const markdown = ["---", "title: 测试", "tags: [数学]", "---", "", "# 推导", "", "[toc]", "", "==重点== H~2~O x^2^ 参考[^说明]", "", "$$", String.raw`\begin{aligned}`, String.raw`a &= b+c \\`, "  &= d", String.raw`\end{aligned}`, String.raw`\label{eq-one}`, "$$", "", "[^说明]: **粗体**说明", "", "收尾"].join("\n");
+    await source(view, markdown); view.mode("live-preview");
+    expect(view.container.querySelectorAll(".note-source-block").length).toBe(4);
+    expect(view.container.querySelector("mark")?.textContent).toBe("重点"); expect(view.container.querySelector("sub")?.textContent).toBe("2");
+    await act(async () => { view.ref.current!.focusPosition({ block: 7, offset: 2 }); view.ref.current!.toggleStrong(); });
+    const saved = view.ref.current!.getMarkdown()!; expect(saved).toContain("[^说明]: **粗体**说明"); expect(saved).toContain("\\label{eq-one}"); expect(saved).toContain("tags: [数学]");
+    view.unmount(); const reopened = await mount(doc, "live-preview"); expect(reopened.container.querySelector("mark")?.textContent).toBe("重点");
+    expect(reopened.ref.current!.getMarkdown()).toContain("[toc]");
+  });
+  it("脚注离开光标后显示排版正文，点击编号回到来源并可原位编辑", async () => {
+    const view = await mount(documentWith('起点')); await source(view, '参考[^说明]\n\n[^说明]: **详细说明** $x^2$\n\n尾段\n'); view.mode('live-preview');
+    await act(async () => view.ref.current!.focusPosition({ block: 2, offset: 0 }));
+    expect(view.container.querySelector('.note-source-block[data-kind=footnote] .note-source-block__preview strong')?.textContent).toBe('详细说明');
+    const block = view.container.querySelector('.note-source-block[data-kind=footnote]') as HTMLElement; expect(block.dataset.editing).toBe('false');
+    const link = view.getByRole('button', { name: '前往脚注 说明' }); expect(link.textContent).toBe('[1]'); fireEvent.click(link); expect(block.dataset.editing).toBe('true');
+    await act(async () => view.ref.current!.insertText('补充')); expect(view.ref.current!.getMarkdown()).toContain('[^说明]: 补充**详细说明** $x^2$');
+  });
+
+  it("字体、字号、颜色、对齐、行距和缩进在实际选区保存并重开", async () => {
+    const doc = documentWith("样式正文", "后段"); const view = await mount(doc, "live-preview");
+    await act(async () => { view.ref.current!.focusPosition({ block: 0, offset: 0 }); view.ref.current!.setTextStyle!({ color: "#c05640", font: "sans", size: 24 }); view.ref.current!.insertText("彩色"); view.ref.current!.setParagraphStyle!({ align: "center", leading: 2.4, indent: 1 }); });
+    const saved = view.ref.current!.getMarkdown()!; expect(saved).toContain("text-align:center"); expect(saved).toContain("line-height:2.4"); expect(saved).toContain("margin-left:2em");
+    await act(async () => view.ref.current!.applySource(saved));
+    const paragraph = view.container.querySelector(".ProseMirror p[style*=text-align]") as HTMLElement; expect(paragraph.style.textAlign).toBe("center");
+    view.unmount(); const reopened = await mount(doc, "live-preview"); expect((reopened.container.querySelector(".ProseMirror p[style*=text-align]") as HTMLElement).style.lineHeight).toBe("2.4");
+  });
+  it("正文查找跨不同文字格式，全部替换可以整体撤销", async () => {
+    const doc = documentWith("共同 **共同**", "共同"); const view = await mount(doc, "live-preview");
+    await act(async () => { view.ref.current!.focusPosition({ block: 1, offset: 9999 }); view.ref.current!.insertText("先前输入"); view.ref.current!.openSearch!(); }); const input = view.getByRole("textbox", { name: "查找文字" }); fireEvent.change(input, { target: { value: "共同" } }); fireEvent.input(input);
+    expect(view.container.querySelector(".note-search-panel output")?.textContent).toBe("1 / 3");
+    fireEvent.change(view.getByRole("textbox", { name: "替换为" }), { target: { value: "改后" } }); fireEvent.click(view.getByRole("button", { name: "全部替换" }));
+    expect(view.ref.current!.getMarkdown()).not.toContain("共同"); await act(async () => view.ref.current!.undo()); expect(view.ref.current!.getMarkdown()).toContain("共同"); expect(view.ref.current!.getMarkdown()).toContain("先前输入");
+  });
+
 });

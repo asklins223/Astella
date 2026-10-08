@@ -37,14 +37,11 @@ export function useNotebookFullscreenSession(currentNote: NoteTargetRef | null =
   }, []);
 }
 
-export function useNotebookFullscreen(available: boolean) {
+/** 全屏是这次笔记访问的显示模式：速看、回想、往外学、演示、记录与这一轮学习都留在同一个整窗纸面里，换视图不退出。 */
+export function useNotebookFullscreen() {
   const active = useNotebookFullscreenState(state => state.active);
-  const fullscreen = active && available;
-  useLayoutEffect(() => {
-    if (!available && active) useNotebookFullscreenState.setState({ active: false });
-  }, [available, active]);
   return {
-    fullscreen,
-    setFullscreen: (open: boolean) => useNotebookFullscreenState.setState({ active: open && available && useRoomStore.getState().surface === "notebook" }),
+    fullscreen: active,
+    setFullscreen: (open: boolean) => useNotebookFullscreenState.setState({ active: open && useRoomStore.getState().surface === "notebook" }),
   };
 }

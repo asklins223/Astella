@@ -20,6 +20,8 @@ import {
   yXmlFragmentToProseMirrorRootNode,
 } from "y-prosemirror";
 import { noteBlocksToPmNodes, noteDocSchemaSpec } from "@astella/shared/note-doc-schema";
+import { noteWritingSchemas } from "../notebook/note-writing-extensions";
+import { noteRichStyleMark } from "../notebook/note-format-brush";
 
 /**
  * 批次 C2 的门槛用例：**编辑器的 schema 带不带得住我们的块属性**。
@@ -78,6 +80,8 @@ function makeEditor(withAttrs: boolean) {
   editor = editor.use(commonmark).use(gfm) as typeof editor;
   if (withAttrs) {
     for (const schemaObject of ATTR_BEARING) editor = editor.use(withNoteDocAttrs(schemaObject) as never) as typeof editor;
+    // 写作扩展装**产品那一份**：窄规格新增的节点与行内标记一旦没跟上，这里就红。
+    for (const plugin of [...noteWritingSchemas, noteRichStyleMark]) editor = editor.use(plugin as never) as typeof editor;
   }
   return editor.create();
 }

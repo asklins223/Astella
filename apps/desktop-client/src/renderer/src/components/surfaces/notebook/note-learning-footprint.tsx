@@ -1,3 +1,4 @@
+import type { NoteMindMapV1 } from "@astella/shared/note-mind-map-contracts";
 import { useRef, useState } from "react";
 import type { NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 import type { NoteLearningArtifactV1 } from "@astella/shared/note-learning-artifact-contracts";
@@ -8,8 +9,10 @@ import { plainCompanionBubbleText } from "../../companion/companion-markdown";
 import { recallQuestionText } from "./recall-question-text";
 import { useNotebookPageTurn, useNotebookPaperMotion } from "./use-notebook-paper-motion";
 
-export type FootprintKind = "overview" | "recall" | "annotation" | "artifact" | "expansion";
+type OriginalFootprintKind = "overview" | "recall" | "annotation" | "artifact" | "expansion";
+export type FootprintKind = OriginalFootprintKind | "mindMap";
 type FootprintEntry =
+  | { kind: "mindMap"; id: string; createdAt: string; record: NoteMindMapV1 }
   | { kind: "overview"; id: string; createdAt: string; record: NoteOverviewV1 }
   | { kind: "recall"; id: string; createdAt: string; record: NoteRecallRecordV1 }
   | { kind: "annotation"; id: string; createdAt: string; record: NoteAnnotationV1 }
@@ -17,6 +20,7 @@ type FootprintEntry =
   | { kind: "expansion"; id: string; createdAt: string; record: NoteExpansionLinkV1 };
 
 const KIND_LABEL: Record<FootprintKind, string> = {
+  mindMap: "脑图",
   overview: "速看",
   recall: "回想",
   annotation: "难句批注",
@@ -27,6 +31,7 @@ const KIND_LABEL: Record<FootprintKind, string> = {
 const FILTERS: readonly { kind: FootprintKind | "all"; label: string }[] = [
   { kind: "all", label: "全部" },
   { kind: "overview", label: "速看" },
+  { kind: "mindMap", label: "脑图" },
   { kind: "recall", label: "回想" },
   { kind: "annotation", label: "批注" },
   { kind: "artifact", label: "演示" },
@@ -34,6 +39,7 @@ const FILTERS: readonly { kind: FootprintKind | "all"; label: string }[] = [
 ];
 
 const MORE_LABEL: Record<FootprintKind, string> = {
+  mindMap: "脑图",
   overview: "速览",
   recall: "回想",
   annotation: "批注",
@@ -69,12 +75,14 @@ function versionLabel(version: number, state: "current" | "older"): string {
 
 export type NoteLearningFootprintProps = {
   overviews: readonly NoteOverviewV1[];
+  mindMaps?: readonly NoteMindMapV1[];
+  onOpenMindMap?: (record: NoteMindMapV1) => void;
   recalls: readonly NoteRecallRecordV1[];
   annotations: readonly NoteAnnotationV1[];
   artifacts: readonly NoteLearningArtifactV1[];
   expansions: readonly NoteExpansionLinkV1[];
-  hasMore: Readonly<Record<FootprintKind, boolean>>;
-  loadingMore: Readonly<Record<FootprintKind, boolean>>;
+  hasMore: Readonly<Record<OriginalFootprintKind, boolean> & Partial<Record<"mindMap", boolean>>>;
+  loadingMore: Readonly<Record<OriginalFootprintKind, boolean> & Partial<Record<"mindMap", boolean>>>;
   onLoadMore: (kind: FootprintKind) => void;
   onOpenRecall: (record: NoteRecallRecordV1) => void;
   onOpenAnnotation: (record: NoteAnnotationV1) => void;
@@ -88,6 +96,7 @@ export function NoteLearningFootprint(props: NoteLearningFootprintProps) {
   const listRef = useRef<HTMLOListElement | null>(null);
   useNotebookPageTurn(listRef, filter, useNotebookPaperMotion());
   const entries: FootprintEntry[] = [
+    ...(props.mindMaps ?? []).map(record => ({ kind: "mindMap" as const, id: record.mindMapId, createdAt: record.createdAt, record })),
     ...props.overviews.map((record) => ({ kind: "overview" as const, id: record.overviewId, createdAt: record.createdAt, record })),
     ...props.recalls.map((record) => ({ kind: "recall" as const, id: record.recallId, createdAt: record.createdAt, record })),
     ...props.annotations.map((record) => ({ kind: "annotation" as const, id: record.annotationId, createdAt: record.createdAt, record })),
@@ -114,6 +123,12 @@ export function NoteLearningFootprint(props: NoteLearningFootprintProps) {
         <ol className="note-footprint__list" ref={listRef}>
           {visibleEntries.map((entry) => (
             <li key={`${entry.kind}:${entry.id}`} data-footprint-kind={entry.kind}>
+              {entry.kind === "mindMap" ? <article className="note-footprint__entry" data-kind="mindMap">
+                <header><strong>脑图</strong><time dateTime={entry.createdAt}>{createdLabel(entry.createdAt)} · {versionLabel(entry.record.noteVersionNumber, entry.record.versionState)}</time></header>
+                <h3>{entry.record.content.nodes.find(node => node.id === entry.record.content.rootId)?.label}</h3>
+                <p>{entry.record.content.nodes.length} 个节点 · {entry.record.content.nodes.filter(node => node.parentId === entry.record.content.rootId).map(node => node.label).join(" / ")}</p>
+                <button type="button" className="text-action" onClick={() => props.onOpenMindMap?.(entry.record)}>打开这份脑图</button>
+              </article> : null}
               {entry.kind === "overview" ? (
                 <article className="note-footprint__entry" data-kind="overview">
                   <header><strong>{entry.record.generationJobId ? KIND_LABEL.overview : "当时保存的伴星答复"}</strong><time dateTime={entry.createdAt}>{createdLabel(entry.createdAt)} · {versionLabel(entry.record.noteVersionNumber, entry.record.versionState)}</time></header>

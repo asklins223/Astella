@@ -4,6 +4,26 @@ import { noteBlockMarkdown, noteMarkdownText, noteMarkdownTree, noteLinkHref, no
 import { noteBlocksToPmNodes, pmNodesToNoteBlocks, noteBlockRenderedTextV1 } from "../note-doc-schema.ts";
 import { markdownToBlocks } from "../markdown-parser.ts";
 
+test("富文本排版经服务端分块重建保留脚注、行内公式和字体", () => {
+  const content = '<p style="text-align:center;line-height:2.4"><span style="color:#a44b3b;font-size:24px">彩色</span> H<sub>2</sub>O $x^2$ 参考<sup data-note-ref="n">[n]</sup></p>';
+  const nodes = noteBlocksToPmNodes([{ type: "paragraph", content }, { type: "paragraph", content: "[^n]: **注释**" }]);
+  assert.equal(nodes[0]?.attrs?.noteStyle && (nodes[0].attrs.noteStyle as { align: string }).align, "center");
+  assert.ok(nodes[0]?.content?.some(node => node.type === "note_ref" && node.attrs?.label === "n"));
+  assert.ok(nodes[0]?.content?.some(node => node.text?.includes("$x^2$")));
+  const roundTrip = pmNodesToNoteBlocks(nodes).map(block => block.content).join("\n\n");
+  const tree = noteMarkdownTree(roundTrip), elements: { tagName: string; properties: Record<string, unknown> }[] = [];
+  const walk = (node: unknown) => { const value = node as { type: string; tagName: string; properties: Record<string, unknown>; children?: unknown[] }; if (value.type === "element") elements.push(value); value.children?.forEach(walk); }; walk(tree);
+  assert.ok(elements.some(node => node.tagName === "sub"));
+  assert.ok(elements.some(node => node.properties.dataNoteMath === "x^2" && node.properties.dataNoteMathDisplay === undefined));
+  assert.ok(noteMarkdownText(tree).includes("注释"));
+});
+
+test("普通脚注引用经独立分块重建仍是引用节点", () => {
+  const nodes = noteBlocksToPmNodes([{ type: "paragraph", content: "参考[^n]" }, { type: "paragraph", content: "[^n]: 注释内容" }]);
+  assert.equal(nodes[0]?.content?.at(-1)?.type, "note_ref");
+  assert.equal(pmNodesToNoteBlocks(nodes)[0]?.content, "参考[^n]");
+});
+
 test("图片尺寸、说明和悬停提示通过服务端投影与 Markdown 再导入保留", () => {
   const attrs = { src: "https://example.com/a.png?a=1&b=2", alt: '图 [A] & "B"', title: "原图", width: 320, height: null };
   const content = noteImageMarkdown(attrs);
@@ -15,6 +35,14 @@ test("图片尺寸、说明和悬停提示通过服务端投影与 Markdown 再�
   assert.equal(noteImageHtmlAttrs('<img src="javascript:alert(1)" width="320" />'), null);
   assert.equal(noteImageHtmlAttrs('<img src="/a.png" onerror="evil()" width="320" />')?.src, "/a.png");
   assert.equal(noteImageHtmlAttrs('<div><img src="/a.png" /></div>'), null);
+});
+
+test("内嵌剪贴板图片跨共享文档保留，只允许安全的栅格图片 data URI", () => {
+  const src = "data:image/png;base64,iVBORw0KGgo=";
+  const nodes = noteBlocksToPmNodes([{ type: "image", content: `![图](${src})` }]);
+  assert.equal(nodes[0]?.content?.[0]?.attrs?.src, src);
+  assert.match(JSON.stringify(noteMarkdownTree(pmNodesToNoteBlocks(nodes)[0]!.content)), /data:image\/png;base64/);
+  assert.doesNotMatch(JSON.stringify(noteMarkdownTree('<img src="data:image/svg+xml;base64,PHN2Zz4=" />')), /data:image\/svg/);
 });
 
 test("真实 Markdown 导入保留 Mermaid 语言、标题级别、任务项和嵌套列表", () => {

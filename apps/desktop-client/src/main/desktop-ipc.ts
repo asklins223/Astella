@@ -1,3 +1,4 @@
+import { registerNoteWritingChannels } from "./note-writing-files";
 import {
   setPersonalRelationDecisionV2ResultSchema,
   setPersonalRelationDecisionV2Schema,
@@ -1603,6 +1604,7 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
 
   // 2026-09-30（第②步）：「空间」这一族搬去 `desktop-ipc-rest.ts`。
   // 纪元按 **getter** 传；宽松签名的那几个**真类型在本文件里断言**——传的就是同一个函数。
+  registerNoteWritingChannels({ channel: channel as never, requireM2Route: requireM2Route as never, contract });
   registerRestChannels({
     channel: channel as never,
     installHandler: installHandler as never,

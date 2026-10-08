@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createNoteMindMapTaskV1Schema } from "./note-mind-map-contracts.ts";
 import { createNoteOverviewTaskV1Schema } from "./note-overview-contracts.ts";
 import { createNoteDynamicArtifactTaskV1Schema } from "./note-learning-artifact-contracts.ts";
 import { createNoteExpansionTaskV1Schema } from "./note-expansion-contracts.ts";
@@ -7,6 +8,7 @@ import { createCardGenerationRunRequestV2Schema } from "./card-generation-v2-con
 /** A domain button supplies the real domain request. It does not ask a model
  * to reconstruct options/selection, or grant them to later conversation turns. */
 export const agentDirectRequestV1Schema = z.discriminatedUnion("capability", [
+  z.object({ capability:z.literal("note_mind_map_generate"),noteId:z.string().uuid(),request:createNoteMindMapTaskV1Schema }).strict(),
   z.object({ capability: z.literal("note_overview_generate"), noteId: z.string().uuid(), request: createNoteOverviewTaskV1Schema }).strict(),
   z.object({ capability: z.literal("note_dynamic_artifact_generate"), noteId: z.string().uuid(), request: createNoteDynamicArtifactTaskV1Schema }).strict(),
   z.object({ capability: z.literal("note_expansion_generate"), noteId: z.string().uuid(), request: createNoteExpansionTaskV1Schema }).strict(),

@@ -15,7 +15,7 @@ export function NotebookVersionChoice(props: {
   readonly onSave: () => void;
   readonly onDismiss: () => void;
 }) {
-  const label = { overview: "速看", recall: "回想", expansion: "往外学", artifact: "互动演示" }[props.kind];
+  const label = { overview: "速看", mindMap: "脑图", recall: "回想", expansion: "往外学", artifact: "互动演示" }[props.kind];
   const ref = useRef<HTMLDialogElement>(null), play = useNotebookPaperMotion();
   useLayoutEffect(() => {
     const dialog = ref.current;
@@ -27,7 +27,8 @@ export function NotebookVersionChoice(props: {
   return <dialog ref={ref} className="notebook-dialog" aria-labelledby="notebook-learning-confirm-title" aria-modal="true"
     onCancel={event => { event.preventDefault(); if (!props.saving) props.onDismiss(); }}>
     <h3 id="notebook-learning-confirm-title">{props.hasChanges ? "这次从哪一版开始？" : `为这篇准备${label}？`}</h3>
-    <p>{props.kind === "overview" ? "整理整篇的重点，每一处都能回到原文核对。"
+    <p>{props.kind === "mindMap" ? "读取整篇笔记生成思维导图；之前的脑图会保留，每个知识节点都能核对当时的原文。"
+      : props.kind === "overview" ? "整理整篇的重点，每一处都能回到原文核对。"
       : props.kind === "recall" ? "从这篇原文中准备一个问题，先自己想，再按需翻开线索和对照。"
       : props.kind === "artifact" ? "根据原文单独制作新的互动演示，之前的演示仍留在学习记录里。"
       : "从这篇原文出发整理相关笔记草稿，由你挑选、编辑并确认收下。"}</p>
