@@ -1,7 +1,7 @@
 import type { CompanionAccountPatch,CompanionAccountStateV1 } from "@astella/shared/companion-shell-contracts";
 import { useEffect,useRef,useState } from "react";
 import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
-import { COMPANION_ACCOUNT_CHANGED,publishCompanionAccountChanged } from "../../companion/companion-events";
+import { publishCompanionAccountChanged,subscribeCompanionAccountChanged } from "../../companion/companion-events";
 import { useCompanionResource } from "../companion/use-companion-resource";
 
 export function useCompanionAccountSettings() {
@@ -13,16 +13,14 @@ export function useCompanionAccountSettings() {
   const [notice, setNotice] = useState<string | null>(null);
   useEffect(() => { if (resource.section?.ok) setAccount(resource.section.value.account); }, [resource.section]);
   useEffect(() => {
-    const refresh = () => { void resource.reload({ silent: true }); };
-    window.addEventListener(COMPANION_ACCOUNT_CHANGED, refresh);
-    return () => window.removeEventListener(COMPANION_ACCOUNT_CHANGED, refresh);
-  }, [resource.reload]);
+    return subscribeCompanionAccountChanged(setAccount);
+  }, []);
   const patch = async (changes: Omit<CompanionAccountPatch, "revision">): Promise<boolean> => {
     if (!account || lock.current) return false;
     lock.current = true; setBusy(true); setError(null); setNotice(null);
     try {
       const updated = unwrapGatewayResult(await window.astella.companion.account.patchState({ meta: resource.meta(), request: { revision: account.revision, ...changes } }));
-      setAccount(updated); setNotice("伴星设置已保存。"); publishCompanionAccountChanged();
+      setAccount(updated); setNotice("伴星设置已保存。"); publishCompanionAccountChanged(updated);
       return true;
     } catch (cause) { const message = gatewayErrorMessage(cause); await resource.reload({ silent: true }); setError(message); return false; }
     finally { lock.current = false; setBusy(false); }

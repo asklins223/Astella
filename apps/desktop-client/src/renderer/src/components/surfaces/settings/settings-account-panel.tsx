@@ -22,6 +22,7 @@
  */
 import { useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 import type { AuthProfileResultV1 } from "@astella/shared";
+import { AVATAR_MAX_BYTES } from "@astella/shared/desktop-ipc-contracts";
 import { ImageUp } from "lucide-react";
 import { SettingRow } from "./settings-primitives.tsx";
 import { AvatarCropDialog } from "./avatar-crop-dialog.tsx";
@@ -49,6 +50,7 @@ export function SettingsAccountPanel(props: {
    * 键盘用户不会掉回页面开头。
    */
   const [pendingAvatar, setPendingAvatar] = useState<File | null>(null);
+  const [fileFailure, setFileFailure] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const closeCropper = (restoreFocus: boolean) => {
     setPendingAvatar(null);
@@ -89,7 +91,7 @@ export function SettingsAccountPanel(props: {
     </div>
   </div>
   <div className="settings-rows">
-    <SettingRow title="头像" detail="PNG / JPG / WebP / GIF；选好后拖动、缩放取景，圆环里就是最终的头像。">
+    <SettingRow title="头像" detail="PNG / JPG / WebP / GIF，10 MB 以内；选好后拖动、缩放取景，圆环里就是最终的头像。">
       <label className="button" data-disabled={props.busy !== null || !profile ? "true" : undefined} aria-disabled={props.busy !== null || !profile}>
         <ImageUp size={13} aria-hidden="true" />
         {props.busy === "avatar" ? "上传中…" : "更换…"}
@@ -102,6 +104,11 @@ export function SettingsAccountPanel(props: {
           onChange={(event) => {
             const file = event.currentTarget.files?.[0];
             event.currentTarget.value = "";
+            setFileFailure(null);
+            if (file && file.size > AVATAR_MAX_BYTES) {
+              setFileFailure("这张图片超过 10 MB，请换一张小一点的。");
+              return;
+            }
             if (file) setPendingAvatar(file);
           }}
         />
@@ -113,6 +120,7 @@ export function SettingsAccountPanel(props: {
       ) : null}
     </SettingRow>
   </div>
+  {fileFailure ? <p role="alert">{fileFailure}</p> : null}
   {pendingAvatar ? (
     <AvatarCropDialog
       file={pendingAvatar}

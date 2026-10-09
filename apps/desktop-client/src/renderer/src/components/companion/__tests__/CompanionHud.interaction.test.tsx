@@ -79,6 +79,49 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("production companion interaction", () => {
+  it("keeps a created note and all its material in one reply, then clears it together on close", () => {
+    const dismissLiveReply = vi.fn(() => patch({ liveReply: null }));
+    const dismissRichReply = vi.fn(() => patch({ richReply: null }));
+    state.chat = interactionSession({ mode: "closed", dismissLiveReply, dismissRichReply,
+      liveReply: { messageId: "created", text: "新笔记建好了", hasActionBlocks: false, proposalIds: [] },
+      richReply: { messageId: "created", blocks: [
+        { type: "quote", label: "《中国朝代历程总揽》", text: "先秦到清朝的历程。" },
+        { type: "quote", label: "《中国近代史总揽》", text: "从鸦片战争到新中国成立。" },
+        { type: "nav", label: "打开新笔记", route: { kind: "note", noteId: "created-note" } },
+      ] },
+      nodes: [{ key: "tool:one", kind: "tool", label: "查阅原文", state: "succeeded", toolName: "companion_read_note", summary: "已找到", proposalId: null }] });
+    render(<Harness />);
+    advance(1_000);
+    const reply = document.querySelector(".companion-hud__output")!;
+    expect(reply.contains(screen.getByRole("button", { name: "打开新笔记" }))).toBe(true);
+    expect(reply.contains(screen.getByRole("status", { name: "小鲸 正在做的事" }))).toBe(false);
+    expect(document.querySelectorAll(".companion-hud__paper")).toHaveLength(0);
+    expect(screen.queryByText("先秦到清朝的历程。")).toBeNull();
+    expect(dismissLiveReply).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "收起伴星回复" }));
+    expect(dismissLiveReply).toHaveBeenCalledOnce();
+    expect(dismissRichReply).toHaveBeenCalledOnce();
+    expect(document.querySelector(".companion-hud__output")).toBeNull();
+    expect(screen.queryByRole("status", { name: "小鲸 正在做的事" })).toBeNull();
+  });
+
+  it("keeps an attachment-only delivery visible and lets its one lifetime retire the complete reply", async () => {
+    const dismissLiveReply = vi.fn(() => patch({ liveReply: null }));
+    const dismissRichReply = vi.fn(() => patch({ richReply: null }));
+    state.chat = interactionSession({ mode: "closed", dismissLiveReply, dismissRichReply,
+      liveReply: { messageId: "created", text: "", hasActionBlocks: false, proposalIds: [] },
+      richReply: { messageId: "created", blocks: [{ type: "nav", label: "打开新笔记", route: { kind: "note", noteId: "created-note" } }] } });
+    render(<Harness />);
+    advance(10_000);
+    expect(document.querySelector(".companion-hud__output")?.getAttribute("data-stage")).toBe("visible");
+    expect(screen.getByRole("button", { name: "打开新笔记" })).toBeTruthy();
+    expect(dismissLiveReply).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(51_000); });
+    expect(dismissRichReply).toHaveBeenCalledOnce();
+    expect(dismissLiveReply).toHaveBeenCalledOnce();
+    expect(document.querySelector(".companion-hud__output")).toBeNull();
+  });
+
   it("stopping a new turn before any output never freezes the preceding reply", async () => {
     const previous = "上一轮聊的是早上的太阳。";
     const cancel = vi.fn(async () => {
@@ -350,7 +393,43 @@ describe("production companion interaction", () => {
     patch({ conversationId: "first-conversation" });
     expect((screen.getByRole("textbox", { name: "给 小鲸 的消息" }) as HTMLTextAreaElement).value).toBe("加载时写下的草稿");
   });
-  it("keeps tools above the reply with an independent finite lifetime", () => {
+  it("keeps streamed speech and tool progress visible together, regardless of which arrives first", () => {
+    const spoken = "我先看一下相关笔记，再把关键年代整理进新笔记。";
+    state.chat = interactionSession({ mode: "closed", phase: "sending", processRunId: "current", draft: { runId: "current", text: spoken } });
+    render(<Harness />);
+    advance(1_200);
+    const reply = document.querySelector(".companion-hud__output")!;
+    expect(reply.querySelector(".companion-hud__output-body")?.textContent).toContain("我先看一下");
+    const tool = { key: "tool:read", kind: "tool" as const, label: "查阅原文", state: "running" as const, toolName: "companion_read_note", summary: null, proposalId: null };
+    patch({ nodes: [tool] });
+    expect(document.querySelector(".companion-hud__output")).toBe(reply);
+    expect(screen.getByRole("status", { name: "小鲸 正在做的事" }).textContent).toContain("进行中");
+    patch({ draft: { runId: "current", text: spoken + "我也会核对前后顺序。" }, nodes: [{ ...tool, state: "succeeded" }, { ...tool, key: "tool:create", toolName: "companion_create_note" }] });
+    advance(2_500);
+    expect(reply.querySelector(".companion-hud__output-body")?.textContent).toContain("我也会核对");
+    expect(screen.getByRole("status", { name: "小鲸 正在做的事" }).textContent).toContain("2 项操作");
+    patch({ draft: null, nodes: [tool] });
+    expect(document.querySelector(".companion-hud__output")).toBeNull();
+    patch({ draft: { runId: "current", text: "这段内容我读到了。" } });
+    advance(1_000);
+    expect(document.querySelector(".companion-hud__output-body")?.textContent).toContain("这段内容");
+    expect(screen.getByRole("status", { name: "小鲸 正在做的事" })).toBeTruthy();
+  });
+
+  it("shows the current tool instantly, keeps stop accessible, and avoids a duplicate waiting bubble", () => {
+    state.chat = interactionSession({ mode: "closed", phase: "sending", processRunId: "current",
+      nodes: [{ key: "tool:one", kind: "tool", label: "查阅原文", state: "running", toolName: "companion_read_note", summary: null, proposalId: null }] });
+    render(<Harness />);
+    expect(screen.getByRole("status", { name: "小鲸 正在做的事" }).textContent).toContain("进行中");
+    expect(document.querySelector(".companion-hud__output")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "停止这一轮" }));
+    expect((state.chat as CompanionChatSession).cancel).toHaveBeenCalledOnce();
+    patch({ phase: "sending", processRunId: "next", nodes: [] });
+    expect(document.querySelector(".companion-hud__rail")).toBeNull();
+    expect(document.querySelector(".companion-hud__output")).toBeTruthy();
+  });
+
+  it("keeps tool process in its own bubble above the reply and pauses while reading", () => {
     const dismissLiveReply = vi.fn();
     state.chat = interactionSession({ mode: "closed", liveReply: { messageId: "one", text: "这里是回复", hasActionBlocks: false, proposalIds: [] }, dismissLiveReply,
       nodes: [{ key: "tool:one", kind: "tool", label: "查阅原文", state: "succeeded", toolName: "companion_read_note", summary: "已找到", proposalId: null }] });
@@ -358,12 +437,20 @@ describe("production companion interaction", () => {
     advance(1_000);
     const rail = screen.getByRole("status", { name: "小鲸 正在做的事" });
     const reply = document.querySelector(".companion-hud__output")!;
-    expect(rail.compareDocumentPosition(reply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(reply.contains(rail)).toBe(false);
+    const process = document.querySelector(".companion-hud__rail")!;
+    expect(process.parentElement).toBe(reply.parentElement);
+    expect(process.compareDocumentPosition(reply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "查看过程" }));
+    expect(process.querySelector(".companion-hud__rail-steps li")).toBeTruthy();
+    advance(60_000);
+    expect(dismissLiveReply).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "收起过程" }));
     advance(6_000);
     expect(dismissLiveReply).toHaveBeenCalled();
-    expect(screen.getByRole("status", { name: "小鲸 正在做的事" }).hasAttribute("data-leaving")).toBe(false);
+    expect(screen.getByRole("status", { name: "小鲸 正在做的事" })).toBeTruthy();
     advance(3_000);
-    expect(screen.queryByRole("status", { name: "小鲸 正在做的事" })).toBeNull();
+    expect(screen.getByRole("status", { name: "小鲸 正在做的事" })).toBeTruthy();
   });
   it("also closes an idle shortcut bubble without closing the conversation record", () => {
     state.chat = interactionSession({ mode: "closed" });

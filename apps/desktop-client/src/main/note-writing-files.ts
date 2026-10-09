@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, nativeImage } from "electron";
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, nativeImage } from "electron";
 import { readFile, readdir, realpath, stat, mkdir, writeFile, rename, rm } from "node:fs/promises";
 import { dirname, basename, resolve, relative, extname, join, sep, isAbsolute } from "node:path";
 import { createHash } from "node:crypto";
@@ -118,7 +118,7 @@ export function registerNoteWritingChannels(deps: Pick<RestChannelDeps, "channel
     };
     if (request.action === "clipboard") { const images = new Map((request.images ?? []).map(image => [image.src, `data:${image.mime};base64,${image.base64}`]));
       const html = request.markdown === undefined ? request.html ?? "" : noteExportHtml("", request.markdown, images).split("<body>")[1]?.split("</body>")[0] ?? "";
-      clipboard.write({ text: request.markdown ?? "", html }); return {}; }
+      await clipboard.write([new ClipboardItem({ "text/plain": request.markdown ?? "", "text/html": html })]); return {}; }
     if (request.action === "folder") {
       const picked = await dialog.showOpenDialog(window, { title: "打开 Markdown 文件夹", properties: ["openDirectory"] }); if (picked.canceled || !picked.filePaths[0]) return { canceled: true };
       const root = picked.filePaths[0]; await grant(root); const entries: { path: string; name: string }[] = [];

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DESKTOP_IPC_CHANNELS } from "@astella/shared/desktop-ipc-contracts";
 import { registerNoteWritingChannels, rewriteNoteImagePaths } from "../note-writing-files";
 const mocks = vi.hoisted(() => ({ open: vi.fn(), save: vi.fn(), clipboard: vi.fn() }));
-vi.mock("electron", () => ({ app: { getAppPath: () => process.cwd() }, BrowserWindow: class {}, clipboard: { write: mocks.clipboard }, dialog: { showOpenDialog: mocks.open, showSaveDialog: mocks.save }, nativeImage: {} }));
+vi.mock("electron", () => ({ app: { getAppPath: () => process.cwd() }, BrowserWindow: class {}, ClipboardItem: class { constructor(readonly data: Record<string, string>) {} }, clipboard: { write: mocks.clipboard }, dialog: { showOpenDialog: mocks.open, showSaveDialog: mocks.save }, nativeImage: {} }));
 const directories: string[] = []; let id = 1000;
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))); vi.clearAllMocks(); });
 function channel() {
@@ -15,6 +15,21 @@ function channel() {
 }
 async function directory() { const path = await realpath(await mkdtemp(join(tmpdir(), "note-writing-"))); directories.push(path); return path; }
 describe("本地 Markdown 与图片资源", () => {
+  it("Electron 44 将 Markdown 与富文本作为同一项复制，并等系统写入完成", async () => {
+    const invoke = channel();
+    let complete!: () => void;
+    mocks.clipboard.mockReturnValueOnce(new Promise<void>(resolve => { complete = resolve; }));
+    let settled = false;
+    const result = invoke({ action: "clipboard", markdown: "**中文**\n原文" }).then(value => { settled = true; return value; });
+    expect(mocks.clipboard).toHaveBeenCalledWith([expect.objectContaining({ data: {
+      "text/plain": "**中文**\n原文", "text/html": expect.stringContaining("<strong>中文</strong>"),
+    } })]);
+    expect(settled).toBe(false);
+    complete();
+    expect(await result).toEqual({});
+    mocks.clipboard.mockRejectedValueOnce(new Error("clipboard unavailable"));
+    await expect(invoke({ action: "clipboard", html: "<p>原文</p>" })).rejects.toThrow("clipboard unavailable");
+  });
   it("未经文件选择器授权不能读文件，选中文件后支持相对图片，符号链接不能越界", async () => {
     const root = await directory(), external = await directory(), path = join(root, "note.md"), invoke = channel();
     await writeFile(path, "正文"); await writeFile(join(root, "image.png"), "png"); await writeFile(join(external, "secret.png"), "secret"); await symlink(join(external, "secret.png"), join(root, "escape.png"));

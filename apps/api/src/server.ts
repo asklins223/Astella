@@ -345,7 +345,7 @@ async function main() {
   // 在流式读取阶段就拒绝超大文件，防止 OOM
   await app.register(multipart, {
     limits: {
-      fileSize: 10 * 1024 * 1024,  // 10MB — 全局上限；头像端点通过 req.file({ limits }) 单独覆写为 2MB
+      fileSize: 10 * 1024 * 1024,  // 10MB — 全局上限；头像端点共用 10MB 上限
       files: 1,                     // 每次请求只允许 1 个文件
       fields: 3,                    // 非文件字段上限（noteId 等；CSRF token 通过 header 传递，不计入）
       fieldSize: 1024,              // 单个字段值上限

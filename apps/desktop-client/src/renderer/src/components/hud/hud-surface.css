@@ -1449,8 +1449,14 @@
 }
 .hud-surface .hud-rail::-webkit-scrollbar { display: none; }
 
+/* The morph owns opacity. A second CSS fade after the snapshot is removed
+   would hide the real icons for 120ms when reopening the directory. */
+.hud-surface .hud-rail > .nav-chip {
+  transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
 /* While the column changes shape, its live destination and focus are already
-   available. A frozen column paints the journey using transforms only. */
+   available. A frozen column paints the journey with the same material. */
 .hud-surface .hud-rail[data-rail-morphing] {
   background: transparent;
   border-color: transparent;
@@ -1461,32 +1467,13 @@
 .hud-surface .hud-rail[data-rail-morphing] > .nav-chip { opacity: 0; }
 .hud-surface .directory-rail-skin {
   position: absolute;
-  inset: 0;
-  pointer-events: none;
-  transform-origin: center bottom;
-  filter: drop-shadow(0 10px 24px rgba(32, 20, 12, 0.28));
-}
-.hud-surface .directory-rail-skin i {
-  position: absolute;
   left: 0;
   right: 0;
-  height: 22px;
-  background: var(--directory-skin-color);
-  border-inline: 1px solid var(--directory-skin-line);
-}
-.hud-surface .directory-rail-skin i:first-child {
-  top: 0;
-  border-top: 1px solid var(--directory-skin-line);
-  border-radius: 22px 22px 0 0;
-}
-.hud-surface .directory-rail-skin i:nth-child(2) {
-  bottom: 22px;
-  transform-origin: center bottom;
-}
-.hud-surface .directory-rail-skin i:last-child {
   bottom: 0;
-  border-bottom: 1px solid var(--directory-skin-line);
-  border-radius: 0 0 22px 22px;
+  height: 100%;
+  box-sizing: border-box;
+  pointer-events: none;
+  transform-origin: center bottom;
 }
 
 /* ---------------------------------------------------------------------------

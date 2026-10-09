@@ -1,5 +1,8 @@
 # macOS 滚动画面闪烁的兼容处理（2026-10-09）
 
+> 当前实现以 [真实手记滚动跟进](../../../../../../docs/testing/desktop-journal-flicker-2026-10-09.md) 为准。晚间真实窗口对照中，用户确认软件合成不再闪烁，升级 Electron 44.7.0 后，兼容模式只保留 `disable-gpu-compositing`，避免 `disable-skia-graphite` 在 Chromium 152 上使 WebGL 不可用；按照本任务中用户要求，具体图形故障自动保存兼容模式，下一次启动生效。下文是早先调查与旧实现记录，不能代表当前行为。
+
+
 用户报告 M1 Pro 上滚动时整个应用闪烁，随后确认更新系统后恢复正常，并要求检测到异常后自动使用兼容模式。原故障系统版本未提供，本机为 M4 / macOS 27.0.1，不能复现原故障。系统更新的效果支持系统/GPU 路径的兼容性判断，但不足以锁定某个驱动或 Chromium 缺陷；本次提供自动选择、可手动撤回的备用渲染路径，不宣称已复现并根治原故障。
 
 代码检查：主窗口没有透明窗口或 vibrancy；普通纸面滚动没有一条全局滚轮处理器反复刷新整页。Electron 43.4.1 / Chromium 150.0.7871.224 的本机 GPU 实测显示默认页面后端为 `GraphiteDawnMetal`。开启 `disable-skia-graphite` 后实际后端为 `GaneshGL`，ANGLE 仍为 Metal，`gpu_compositing / rasterization / webgl / 2d_canvas` 均保持 enabled。

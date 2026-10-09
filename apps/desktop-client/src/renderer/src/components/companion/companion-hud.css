@@ -313,12 +313,6 @@
   transition: transform 220ms var(--ease-out);
 }
 
-.companion-hud__rail-overflow {
-  color: var(--companion-muted);
-  font-size: 10px;
-  letter-spacing: .04em;
-}
-
 .companion-hud__rail-steps li {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr) 15px;

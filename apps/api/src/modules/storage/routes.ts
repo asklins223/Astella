@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { notes } from "@astella/shared/db-schema/note";
 import { MAX_SOURCE_TEXT_BYTES, objectTransferRequestSchema, objectTransferUploadSchema, type ObjectTransferRequest } from "@astella/shared/object-transfer-contracts";
+import { AVATAR_MAX_BYTES } from "@astella/shared/desktop-ipc-contracts";
 import { SOURCE_IMAGE_MAX_BYTES } from "@astella/shared/source-image-contracts";
 import { db, withWorkspaceTransaction, scopeOfSession, type WorkspaceTransactionContext } from "../../db/client.ts";
 import { requireSession, isWorkspaceOwner } from "../identity/middleware.ts";
@@ -36,7 +37,7 @@ export function validateTransferPurpose(request: ObjectTransferRequest): void {
   // 导入随文图片按**渲染层取得动的体积**收口（SOURCE_IMAGE_MAX_BYTES），而不是按
   // 笔记图片那条的 10MB：一张 6MB 的图存进对象存储，取图时会被通道上限拒掉，
   // 结果是「导入说收下了、笔记里永远缺一块」。在这里按能显示的数拦，失败就发生在上传这一刻。
-  const max = request.purpose === "avatar" ? 2 * 1024 * 1024
+  const max = request.purpose === "avatar" ? AVATAR_MAX_BYTES
     : request.purpose === "markdown_import_image" ? SOURCE_IMAGE_MAX_BYTES
     : image ? 10 * 1024 * 1024
     : request.purpose === "source_text" ? MAX_SOURCE_TEXT_BYTES : 50 * 1024 * 1024;

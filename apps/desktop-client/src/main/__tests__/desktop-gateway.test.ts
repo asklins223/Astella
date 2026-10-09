@@ -729,6 +729,25 @@ describe("DesktopGateway", () => {
       expect(seen).toEqual(["Bearer stored-token", "Bearer stored-token"]);
     });
 
+    it("restores and reverifies the authoritative epoch before projecting the workspace", async () => {
+      const { store } = fakeStore("stored-token");
+      let serverEpoch = 6;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        if (url.endsWith("/health")) return healthResponse();
+        if (url.endsWith("/auth/me")) return new Response(JSON.stringify({ ...meEnvelope, workspaceEpoch: serverEpoch }), { status: 200 });
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+      const gateway = new DesktopGateway(environment(), { credentials: store });
+      for (const [nextEpoch, expectedEpoch] of [[6, 6], [7, 7], [3, 7]]) {
+        serverEpoch = nextEpoch;
+        const session = await ns_auth.getSession(gateway.gatewayTransport);
+        expect(session.workspaceEpoch).toBe(expectedEpoch);
+        expect(session.workspace?.workspaceEpoch).toBe(expectedEpoch);
+      }
+    });
+
     it("persists the issued token only when the user keeps the choice", async () => {
       const record: { loginBody?: string } = {};
       vi.spyOn(globalThis, "fetch").mockImplementation(routeAuth(record));

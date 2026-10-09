@@ -1,3 +1,4 @@
+import { AVATAR_MAX_BYTES } from "@astella/shared/desktop-ipc-contracts";
 /**
  * 图片上传端到端逻辑测试
  *
@@ -321,14 +322,14 @@ describe("端到端逻辑：共享层 Markdown 解析器", () => {
 describe("端到端逻辑：头像上传流水线", () => {
   // 复现 AvatarUploader.tsx 的前端校验逻辑
   const ALLOWED_MIME_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
-  const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
+  const MAX_AVATAR_SIZE = AVATAR_MAX_BYTES;
 
   function validateAvatarFile(file: { type: string; size: number }): { valid: boolean; error?: string } {
     if (!ALLOWED_MIME_TYPES.includes(file.type)) {
       return { valid: false, error: "仅支持 PNG、JPEG、WebP、GIF 格式" };
     }
     if (file.size > MAX_AVATAR_SIZE) {
-      return { valid: false, error: "头像文件不能超过 2MB" };
+      return { valid: false, error: "头像文件不能超过 10MB" };
     }
     return { valid: true };
   }
@@ -343,10 +344,10 @@ describe("端到端逻辑：头像上传流水线", () => {
     assert.equal(result.valid, false);
   });
 
-  it("超过 2MB 的头像 → 前端拒绝", () => {
-    const result = validateAvatarFile({ type: "image/png", size: 3 * 1024 * 1024 });
+  it("超过 10MB 的头像 → 前端拒绝", () => {
+    const result = validateAvatarFile({ type: "image/png", size: AVATAR_MAX_BYTES + 1 });
     assert.equal(result.valid, false);
-    assert.ok(result.error!.includes("2MB"));
+    assert.ok(result.error!.includes("10MB"));
   });
 
   it("magic bytes 校验通过的真实 PNG → 可以上传", () => {

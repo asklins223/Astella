@@ -7,7 +7,7 @@ import {
   unwrapGatewayResult,
 } from "../../app/desktop-client";
 import { useHomeProjectionInvalidation } from "../../app/home-projection";
-import { shouldPlayHomeV2Feedback } from "./home-v2";
+import { shouldPlayCompanionReplyVoice, shouldPlayHomeV2Feedback } from "./home-v2";
 import { setHomeV2VoiceLevel } from "../../app/companion-voice-level";
 import {
   isCompanionMicrophoneActive, isCompanionNotificationSpeechActive,
@@ -90,8 +90,12 @@ type VoicePlayback = {
   readonly analyser: AnalyserNode;
   readonly samples: Float32Array;
   frame: number;
-  /** 播完或被 stopVoicePlayback 打断时收尾，让等待这次播放的人一定拿到结果。 */
-  readonly settle: () => void;
+  /**
+   * 播完或被 stopVoicePlayback 打断时收尾，让等待这次播放的人一定拿到结果。
+   * 参数是**这一段到底响没响**：自然播完才是 true，被喊停的一律 false——
+   * 播放服务靠它把没出声的段报成 dropped，而不是记成一次成功播放。
+   */
+  readonly settle: (heard: boolean) => void;
 };
 
 function whiteNoise(context: AudioContext, seconds: number): AudioBuffer {
@@ -264,7 +268,7 @@ export function HomeV2AudioController() {
   const audibleRef = useRef(false);
   const notificationAudioCache = useRef(new Map<CompanionNotificationAudio, Promise<AudioBuffer>>());
 
-  const stopVoicePlayback = useCallback((immediate = true) => {
+  const stopVoicePlayback = useCallback((immediate = true, heard = false) => {
     const playback = voiceRef.current;
     voiceRef.current = null;
     activePlaybackRef.current = null;
@@ -303,7 +307,7 @@ export function HomeV2AudioController() {
       mouthReleaseFrameRef.current = window.requestAnimationFrame(release);
     }
     // 等待这次播放的人必须拿到结果，否则它会一直以为自己还在播。
-    playback.settle();
+    playback.settle(heard);
   }, []);
 
   /**
@@ -312,21 +316,26 @@ export function HomeV2AudioController() {
    * 这是全应用唯一的语音播放出口：界面音效、伴星台词都走同一个
    * AudioContext 和同一条振幅通道。喊停永远由 stopVoicePlayback 统一处理，
    * 所以 cue 与对话台词天然互斥——谁抢到谁播，被抢的那个立刻拿到 resolve。
+   *
+   * 返回值是**这一段响没响**。闸门关着的时候这里直接返回 false，绝不"默默 resolve"：
+   * 调用方拿不到这个区分，就会把没出声的段当成播完了（2026-10-09：窗口被盖住的
+   * 那一瞬间，剩下每一段都这样被记成 played）。
    */
   const playVoiceBuffer = useCallback(async (
     buffer: AudioBuffer,
     onProgress: (fraction: number) => void,
-    allowed: () => boolean = () => true,
+    /** 这一路声音自己的闸门：对话台词、主动提示音、界面 cue 各有各的理由被关掉。 */
+    allowed: () => boolean = () => replyAudibleRef.current,
     offset = 0,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const graph = graphRef.current;
-    if (!graph || !userInitiatedAudibleRef.current || isCompanionReplyBlockedByMicrophone() || !allowed()) {
-      return;
+    if (!graph || !allowed() || isCompanionReplyBlockedByMicrophone()) {
+      return false;
     }
     await graph.context.resume();
-    if (graphRef.current !== graph || !userInitiatedAudibleRef.current || isCompanionReplyBlockedByMicrophone() || !allowed()) return;
+    if (graphRef.current !== graph || !allowed() || isCompanionReplyBlockedByMicrophone()) return false;
     stopVoicePlayback();
-    return new Promise<void>((resolve) => {
+    return new Promise<boolean>((resolve) => {
       const source = graph.context.createBufferSource();
       const analyser = graph.context.createAnalyser();
       const tuning = HOME_V2_AUDIO_TUNING.voice;
@@ -338,7 +347,7 @@ export function HomeV2AudioController() {
       const startedAt = graph.context.currentTime - offset;
       activePlaybackRef.current = { context: graph.context, startedAt, duration: buffer.duration };
       let previousMeterAt = performance.now();
-      const playback: VoicePlayback = { source, analyser, samples, frame: 0, settle: () => resolve() };
+      const playback: VoicePlayback = { source, analyser, samples, frame: 0, settle: resolve };
       const meter = (at: number) => {
         if (voiceRef.current !== playback) return;
         analyser.getFloatTimeDomainData(samples);
@@ -354,7 +363,7 @@ export function HomeV2AudioController() {
       playback.frame = requestAnimationFrame(meter);
       source.onended = () => {
         if (voiceRef.current !== playback) return;
-        stopVoicePlayback(false);
+        stopVoicePlayback(false, true);
       };
       voiceRef.current = playback;
       if (offset > 0) source.start(0, offset); else source.start();
@@ -438,18 +447,29 @@ export function HomeV2AudioController() {
   audibleRef.current = audible;
 
   /**
-   * 用户主动发起的对话语音走独立闸门：同样的解锁/静音/可见性条件，但**不含**
-   * `surfaceOpen`。任务页静音是为了不打扰专注；而用户点一下亲口问出来的
-   * 回复是他主动要的反馈，不是"主动输出"——这与 §2026-09-16 裁决 3 里"按页静音只
-   * 抑制主动输出、不阻断用户主动触发的互动"是同一条线。
+   * 伴星**主动**发声的那一路：提示音、手边念想、带路旁白，以及 success 这一记音效。
+   * 它们不是用户要的回答，所以进任务页、窗口被盖住都得收声——用户在读东西或已经
+   * 走开了，房间不该替他制造动静。
    */
-  const userInitiatedAudible = shouldPlayHomeV2Feedback({
+  const proactiveAudible = shouldPlayHomeV2Feedback({
     unlocked,
     masterMuted,
     surfaceOpen: false,
     windowVisible: windowState === "visible" && !document.hidden,
   });
-  const userInitiatedAudibleRef = useRef(false);
+  const proactiveAudibleRef = useRef(false);
+
+  /**
+   * 用户亲口问出来的那条回复走第三条闸门：只看解锁与总静音，**不看可见性**
+   * （2026-10-09）。窗口被别的程序整块盖住时 Chromium 报 `document.hidden`，旧口径
+   * 把它当成"别说了"，当场挂起 AudioContext——话念到一半就断。屏幕在不在前面
+   * 不改变这句话还该不该说完。
+   *
+   * 它与 §2026-09-16 裁决 3 是同一条线："按页静音只抑制主动输出、不阻断用户主动
+   * 触发的互动"；看不见同样只该抑制主动输出。
+   */
+  const replyAudible = shouldPlayCompanionReplyVoice({ unlocked, masterMuted });
+  const replyAudibleRef = useRef(false);
   /**
    * 正在播的那一段的**音频时钟读数**（方案 29 §14.11 修复 ⑤）。
    *
@@ -458,7 +478,8 @@ export function HomeV2AudioController() {
    * rAF 会被节流甚至停住，采样值冻住而声音照走，字幕立刻与声音脱开。
    */
   const activePlaybackRef = useRef<{ context: AudioContext; startedAt: number; duration: number } | null>(null);
-  userInitiatedAudibleRef.current = userInitiatedAudible;
+  proactiveAudibleRef.current = proactiveAudible;
+  replyAudibleRef.current = replyAudible;
 
   /**
    * 取出音频图；没有就**当场建一个**。
@@ -579,7 +600,7 @@ export function HomeV2AudioController() {
   // 全应用因此只有一个 AudioContext 和一条嘴型通道。
   useEffect(() => {
     setCompanionVoiceHost({
-      audible: () => userInitiatedAudibleRef.current && !isCompanionReplyBlockedByMicrophone(),
+      audible: () => replyAudibleRef.current && !isCompanionReplyBlockedByMicrophone(),
       synthesize: synthesizeVoice,
       synthesizeSegment: synthesizeVoiceSegment,
       readCachedSegment: readCachedVoiceSegment,
@@ -593,9 +614,12 @@ export function HomeV2AudioController() {
 
   useEffect(() => {
     setCompanionNotificationVoiceHost({
-      available: () => userInitiatedAudibleRef.current && !isCompanionSpeechActive() && !isCompanionMicrophoneActive(),
+      available: () => proactiveAudibleRef.current && !isCompanionSpeechActive() && !isCompanionMicrophoneActive(),
       synthesize: synthesizeNotification,
-      play: (buffer, allowed, offset) => playVoiceBuffer(buffer, () => undefined, allowed, offset),
+      // 提示音自己那道路仍看可见性；播没播响这里不关心，它按自己的 phase 收尾。
+      play: async (buffer, allowed, offset) => {
+        await playVoiceBuffer(buffer, () => undefined, () => proactiveAudibleRef.current && allowed(), offset);
+      },
       progress: voiceProgress,
       stop: stopVoicePlayback,
     });
@@ -611,30 +635,40 @@ export function HomeV2AudioController() {
   }), [stopVoicePlayback]);
 
   /**
-   * 通道开关：不被允许发声时整个 AudioContext 挂起，正在念的立刻停。
+   * 通道开关：分两层，**别把"听不见"当成"别说"**。
+   *
+   * - 静音或没解锁：整条音频通道关掉，挂起 AudioContext，正在念的和在路上的都作废。
+   * - 只是窗口被盖住：收掉伴星**主动**那点动静（提示音、念想、带路旁白），正在念的
+   *   回复继续念完。旧口径把这两层合成一条，失焦那一刻声音当场断掉。
    *
    * 这里以前还负责把环境床的增益 ramp 上去——那一层删掉之后，这一段只剩"该不该
-   * 有声音"。`audible` 不再参与：房间自己那点动静由各自的入口现查 `audibleRef`，
-   * 不需要在这里改任何运行期参数。
+   * 有声音"。房间自己那点瞬态音由各自的入口现查 `audibleRef`，不在这里改运行期参数。
    */
   useEffect(() => {
     const graph = graphRef.current;
     if (!graph) return;
-    if (!userInitiatedAudible) {
+    // 带路的旁白暂停时要留着位置等回来看，不能被"收声"顺手取消（两条出口同一判据）。
+    const mayReleaseProactiveSpeech = useRoomStore.getState().windowState === "visible"
+      || !isPausedCompanionGuidanceSpeech();
+    if (!replyAudible) {
       voiceRequestGenerationRef.current += 1;
-      if (useRoomStore.getState().windowState === "visible" || !isPausedCompanionGuidanceSpeech()) stopCompanionNotificationSpeech();
+      if (mayReleaseProactiveSpeech) stopCompanionNotificationSpeech();
       stopVoicePlayback();
       void graph.context.suspend().catch(() => undefined);
       return;
     }
+    if (!proactiveAudible) {
+      voiceRequestGenerationRef.current += 1;
+      if (mayReleaseProactiveSpeech) stopCompanionNotificationSpeech();
+    }
     void graph.context.resume().catch(() => undefined);
-  }, [stopVoicePlayback, userInitiatedAudible]);
+  }, [stopVoicePlayback, replyAudible, proactiveAudible]);
 
   useEffect(() => {
     const play = (event: Event) => {
       const kind = (event as CustomEvent<{ kind?: HomeV2SoundKind }>).detail?.kind;
       const graph = graphRef.current;
-      const allowed = kind === "success" ? userInitiatedAudibleRef.current : audibleRef.current;
+      const allowed = kind === "success" ? proactiveAudibleRef.current : audibleRef.current;
       if (!graph || !allowed || !kind) return;
       playTransient(graph, kind);
     };
@@ -684,7 +718,8 @@ export function HomeV2AudioController() {
             || !audibleRef.current
             || isCompanionSpeechActive() || isCompanionNotificationSpeechActive() || isCompanionMicrophoneActive()
           ) return;
-          await playVoiceBuffer(buffer, () => undefined, () => requestGeneration === voiceRequestGenerationRef.current
+          await playVoiceBuffer(buffer, () => undefined, () => audibleRef.current
+            && requestGeneration === voiceRequestGenerationRef.current
             && !isCompanionSpeechActive() && !isCompanionNotificationSpeechActive() && !isCompanionMicrophoneActive());
         })
         .catch((error: unknown) => {

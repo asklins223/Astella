@@ -96,7 +96,7 @@
 .companion-record__attachments > details > summary::-webkit-details-marker, .companion-record__selection > summary::-webkit-details-marker { display: none; }
 .companion-history .companion-record__quote { margin: 8px 0 12px; padding: 11px 14px; border: 0; border-left: 2px solid #c5d4b9; border-radius: 0 10px 10px 0; background: #f4f6ee; }
 .companion-history .companion-record__quote > figcaption { color: #7f8e73; font-size: 11px; font-weight: 600; }
-.companion-history .companion-record__quote > p { margin: 7px 0 0; padding: 0; color: #697160; font-size: 12px; line-height: 1.75; }
+.companion-history .companion-record__quote > .companion-record__quote-text { margin: 7px 0 0; padding: 0; color: #697160; font-size: 12px; line-height: 1.75; }
 .companion-record__decisions { margin-top: 16px; }
 .companion-record__references > .companion-record__citation { margin: 8px 0 12px; }
 .companion-record__decision-history > .companion-choice-card { margin-block: 8px 12px; }

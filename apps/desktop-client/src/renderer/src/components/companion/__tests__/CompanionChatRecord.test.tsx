@@ -370,29 +370,29 @@ describe("引用块的高度上限（实机量到一条长引用把正文撑到 
     ],
   });
 
-  it("正文超出折叠高度才出「展开原文」，展开之后还能收回去", () => {
+  it("正文超出折叠高度才出「展开片段」，展开之后还能收回去", () => {
     fake(1256, 168);
     render(<CompanionChatRecordArticle message={quoteMessage()} chat={session()} />);
     const figure = document.querySelector(".companion-record__quote")!;
     expect(figure.hasAttribute("data-expanded")).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "展开原文" }));
+    fireEvent.click(screen.getByRole("button", { name: "展开片段" }));
     expect(figure.getAttribute("data-expanded")).toBe("true");
-    expect(screen.getByRole("button", { name: "收起原文" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "收起原文" }));
+    expect(screen.getByRole("button", { name: "收起片段" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "收起片段" }));
     expect(figure.hasAttribute("data-expanded")).toBe(false);
   });
 
   it("没超出就一个节点都不多：短引用不该带按钮", () => {
     fake(160, 160);
     render(<CompanionChatRecordArticle message={quoteMessage()} chat={session()} />);
-    expect(screen.queryByRole("button", { name: /原文/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /片段/ })).toBeNull();
   });
 
   it("按钮不能被裁进受高度的那段里（否则收起来就展不开）", () => {
     fake(1256, 168);
     render(<CompanionChatRecordArticle message={quoteMessage()} chat={session()} />);
-    const text = document.querySelector(".companion-record__quote p")!;
-    const toggle = screen.getByRole("button", { name: "展开原文" });
+    const text = document.querySelector(".companion-record__quote-text")!;
+    const toggle = screen.getByRole("button", { name: "展开片段" });
     expect(text.contains(toggle)).toBe(false);
     expect(toggle.parentElement?.classList.contains("companion-record__quote")).toBe(true);
   });
@@ -403,11 +403,11 @@ describe("引用块的高度上限（实机量到一条长引用把正文撑到 
     vi.stubGlobal("ResizeObserver", class { constructor(callback: () => void) { measure = callback; } observe() {} disconnect = disconnect; });
     fake(0, 0);
     const view = render(<CompanionChatRecordArticle message={quoteMessage()} chat={session()} />);
-    expect(screen.queryByRole("button", { name: "展开原文" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "展开片段" })).toBeNull();
     const attachment = view.container.querySelector<HTMLDetailsElement>(".companion-record__references")!;
     attachment.open = true;
     fake(1256, 168); act(() => measure());
-    fireEvent.click(screen.getByRole("button", { name: "展开原文" }));
+    fireEvent.click(screen.getByRole("button", { name: "展开片段" }));
     expect(view.container.querySelector(".companion-record__quote")?.getAttribute("data-expanded")).toBe("true");
     expect(disconnect).toHaveBeenCalled();
   });

@@ -19,13 +19,14 @@ let streamEvent: ((event: GatewayEventV1) => void) | null;
 let items: CompanionMessageV1[];
 const page = () => ok({ items, total: items.length, oldestSeq: items[0]?.seq ?? null, hasMore: false });
 const listMessages = vi.fn(async () => page());
+const listRunNodes = vi.fn(async () => ok({ items: [] as unknown[], runs: [] as unknown[] }));
 function Capture() { chat = useCompanionChat(); return null; }
 
-function emit(eventType: string, payload: Record<string, unknown> = {}) {
+function emit(eventType: string, payload: Record<string, unknown> = {}, runId = id(6)) {
   act(() => streamEvent?.({
     version: 1, subscriptionId: id(7), workspaceEpoch: 1, cursor: "1", eventRevision: 1,
     kind: "companion_chat_event", schemaRevision: "desktop-ipc-v1",
-    data: { kind: "companion_chat_event", conversationId: id(5), event: { runId: id(6), generation: 1, seq: 1, eventType, payload } },
+    data: { kind: "companion_chat_event", conversationId: id(5), event: { runId, generation: 1, seq: 1, eventType, payload } },
   }));
 }
 async function openHistory() {
@@ -52,6 +53,7 @@ function addReply() {
 
 beforeEach(() => {
   streamEvent = null; items = []; listMessages.mockReset().mockImplementation(async () => page());
+  listRunNodes.mockReset().mockImplementation(async () => ok({ items: [], runs: [] }));
   useRoomStore.setState({ hudPage: "home", activeNoteRef: null, pageReadableView: null });
   Object.defineProperty(window, "astella", { configurable: true, value: {
     auth: { getState: vi.fn(async () => ok({ status: "authenticated", workspace: { workspaceEpoch: 1 } })) },
@@ -62,7 +64,7 @@ beforeEach(() => {
         ensureConversation: vi.fn(async () => ok({ conversation: { version: 1, id: id(5), workspaceId: id(10), userId: id(11), kind: "dialogue", title: "伴星", titleSource: "placeholder", status: "active", createdAt: date, updatedAt: date, lastMessageAt: null } })),
         listMessages,
         listAgentRoutes: vi.fn(async () => ok({ items: [], latestSeq: 0 })),
-        listRunNodes: vi.fn(async () => ok({ items: [], runs: [] })),
+        listRunNodes,
         sendTurn: vi.fn(async () => ok({ runId: id(6), generation: 1, eventCursor: 0 })),
       },
     },
@@ -76,6 +78,44 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); Reflect.deleteProperty(window, "astella"); });
 
 describe("手记记录刷新与当前回复的状态归属", () => {
+  it("本轮工具即刻投影，快照补回丢失回执；新轮不继承旧工具或旧统计", async () => {
+    await openHistory();
+    const { sending } = await startSend();
+    expect(chat.processRunId).toBe(id(6));
+    emit("assistant.delta", { appendFrom: 0, textDelta: "我先查一下相关笔记。" });
+    const tool = { toolCallId: "read-one", name: "companion_read_note", safeLabel: "读取笔记" };
+    emit("agent.tool", { tool: { ...tool, status: "requested" } });
+    expect(chat.nodes.filter(node => node.kind === "tool")).toHaveLength(1);
+    expect(chat.draft?.text).toBe("我先查一下相关笔记。");
+    emit("agent.tool", { tool: { ...tool, status: "executing" } });
+    expect(chat.nodes.filter(node => node.kind === "tool")).toHaveLength(1);
+    expect(chat.nodes.find(node => node.kind === "tool")?.state).toBe("running");
+    listRunNodes.mockResolvedValue(ok({
+      items: [{ version: 1, seq: 2, runId: id(6), type: "agent.tool", payload: { tool: { ...tool, status: "succeeded", safeSummary: "笔记已读取" } } }],
+      runs: [{ version: 1, runId: id(6), status: "running", generation: 1, stepCount: 1, toolCallCount: 1, maxSteps: 20, maxToolCalls: 40, assistantMessageId: null, nodeCount: 1 }],
+    }));
+    await act(async () => chat.setMode("conversation"));
+    await openHistory();
+    await waitFor(() => expect(chat.nodes.find(node => node.kind === "tool")?.state).toBe("succeeded"));
+    emit("agent.tool", { tool: { ...tool, status: "executing" } });
+    expect(chat.nodes.find(node => node.kind === "tool")?.state).toBe("succeeded");
+    // 更旧或缺失的轮询结果到达时，补回的成功回执仍属于本轮。
+    listRunNodes.mockResolvedValue(ok({ items: [], runs: [] }));
+    await act(async () => chat.setMode("conversation"));
+    await openHistory();
+    await waitFor(() => expect(chat.runTraces).toHaveLength(0));
+    expect(chat.nodes.find(node => node.kind === "tool")?.state).toBe("succeeded");
+    addReply();
+    await act(async () => { await sending; });
+    expect(chat.processRunId).toBe(id(6));
+    vi.mocked(window.astella.companion.chat.sendTurn).mockResolvedValueOnce(ok({ version: 1, runId: id(20), conversationId: id(5), status: "accepted", generation: 2, eventCursor: 0, clientMessageId: id(21), userMessageId: id(22) }));
+    const next = await startSend();
+    expect(chat.processRunId).toBe(id(20));
+    expect(chat.nodes).toHaveLength(0);
+    emit("error", { code: "PROVIDER_FAILED", recoverable: true }, id(20));
+    await act(async () => { await next.sending; });
+  });
+
   it("首次打开读完记录后正常进入就绪，读取失败仍可重开恢复", async () => {
     listMessages.mockRejectedValueOnce(new Error("记录暂时无法读取"));
     await openHistory();

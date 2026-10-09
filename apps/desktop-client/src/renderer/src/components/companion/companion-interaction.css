@@ -223,12 +223,54 @@
 .companion-history textarea:focus-visible { outline: none; box-shadow: none; }
 .companion-hud--floating button:focus-visible,
 .companion-history button:focus-visible { outline: 2px solid var(--hud-green); outline-offset: 2px; }
-.companion-hud--floating .companion-hud__rail { position: relative; inset: auto; width: 100%; max-width: none; margin: 0; padding: 7px 11px; border: 3px solid var(--hud-paper-light); border-radius: 16px 21px 15px 18px; background: #e5ecd8; box-shadow: 0 6px 12px #30231a26; transform: none; pointer-events: auto; animation: companion-interaction-pop 560ms var(--hud-ease-out) both; }
-.companion-hud--floating .companion-hud__rail-steps { max-height: 104px; overflow: auto; }
-.companion-hud--floating .companion-hud__rail[data-expanded] .companion-hud__rail-steps { max-height: 176px; }
-.companion-hud__rail-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.companion-hud__rail-heading strong { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; }
-.companion-hud__rail-heading button { min-height: 32px; padding: 3px 0; font-size: 11px; }
+.companion-hud--floating .companion-hud__rail {
+  position: relative; inset: auto; align-self: center; width: calc(100% - 12px); max-width: none;
+  margin: 0; padding: 9px 12px 12px; border: 2px solid #f5f8e9;
+  border-radius: 18px 24px 17px 22px; background: #e4ecd8;
+  box-shadow: 0 6px 14px #30231a24; color: #405540; transform: none;
+  pointer-events: auto; animation: companion-interaction-pop 400ms var(--hud-ease-out) both;
+}
+.companion-hud--floating .companion-hud__rail::after {
+  content: ""; position: absolute; right: 28px; bottom: -6px; width: 9px; height: 9px;
+  transform: rotate(45deg); background: inherit; border-right: 2px solid #f5f8e9;
+  border-bottom: 2px solid #f5f8e9; border-radius: 0 0 3px 0; pointer-events: none;
+}
+.companion-hud__rail-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.companion-hud__rail-heading strong { display: inline-flex; align-items: center; gap: 5px; color: #6a7d62; font-size: 11px; font-weight: 600; }
+.companion-hud__rail-heading button { display: inline-flex; align-items: center; gap: 4px; flex: none; min-height: 28px; padding: 3px 0 3px 5px; color: #61725a; font-size: 10.5px; }
+.companion-hud__rail-heading button[aria-expanded] svg { transition: transform 160ms var(--hud-ease-out); }
+.companion-hud__rail-heading button[aria-expanded="true"] svg { transform: rotate(180deg); }
+.companion-hud__rail-actions { display: flex; align-items: center; gap: 8px; }
+.companion-hud__rail-heading .companion-hud__rail-dismiss { width: 22px; padding: 2px; justify-content: center; }
+.companion-hud__rail-current { display: flex; align-items: center; gap: 9px; margin-top: 3px; }
+.companion-hud__rail-current > div { min-width: 0; }
+.companion-hud__rail-current p { margin: 0 0 2px; font-size: 13px; line-height: 1.55; font-weight: 650; overflow-wrap: anywhere; }
+.companion-hud__rail-current > div > span { color: #6a7d62; font-size: 10.5px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.companion-hud__rail-current-icon { position: relative; display: grid; place-items: center; flex: 0 0 32px; width: 32px; height: 32px; border-radius: 11px 13px 10px 12px; background: #f4f7e9; color: #4f7953; }
+.companion-hud__rail[data-state="running"] .companion-hud__rail-current-icon::after { content: ""; position: absolute; right: -2px; bottom: -1px; width: 7px; height: 7px; border: 2px solid #e4ecd8; border-radius: 50%; background: #6f9868; animation: companion-hud-rail-breathe 1.8s ease-in-out infinite; }
+.companion-hud__rail[data-state="cancelled"] .companion-hud__rail-current-icon { color: #7a7b6d; }
+.companion-hud__rail[data-state="failed"] { background: #f1e1d3; color: #854e3d; }
+.companion-hud__rail:is([data-state="outcome_unknown"], [data-state="waiting_confirmation"], [data-state="not_executed"], [data-state="unavailable"]) { background: #f0e8d0; color: #82653b; }
+.companion-hud__rail:not([data-state="succeeded"]):not([data-state="running"]) .companion-hud__rail-current-icon { color: inherit; }
+.companion-hud__rail-details { margin-top: 10px; padding-top: 7px; border-top: 1px solid #b9c7a670; }
+.companion-hud--floating .companion-hud__rail-steps { display: grid; gap: 0; max-height: min(210px, 28dvh); margin: 0; padding: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; list-style: none; scrollbar-width: thin; scrollbar-color: #a9b99c transparent; }
+.companion-hud--floating .companion-hud__rail-steps::before { content: none; }
+.companion-hud--floating .companion-hud__rail-steps li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: start; gap: 7px; height: auto; min-height: 32px; padding: 6px 0; white-space: normal; animation: none; }
+.companion-hud__rail-steps li + li { border-top: 1px solid #b9c7a632; }
+.companion-hud--floating .companion-hud__rail-label { min-width: 0; display: grid; gap: 3px; overflow: visible; font-size: 11.5px; line-height: 1.55; overflow-wrap: anywhere; }
+.companion-hud__rail-label small { color: #6a7d62; font-size: 10.5px; line-height: 1.6; }
+.companion-hud--floating .companion-hud__rail-mark { display: flex; align-items: center; gap: 3px; margin-top: 1px; font-size: 10px; white-space: nowrap; }
+.companion-hud--floating .companion-hud__rail-steps li .companion-hud__rail-mark { animation: none; }
+.companion-hud--floating .companion-hud__rail-steps li[data-state="running"] .companion-hud__rail-mark svg { animation: companion-hud-rail-breathe 1.8s ease-in-out infinite; }
+.companion-hud--floating .companion-hud__rail-summary { margin: 6px 0 0; padding: 0; color: #6a7d62; font-size: 10px; line-height: 1.6; }
+.companion-hud--floating[data-motion="off"] .companion-hud__rail-current-icon::after,
+.companion-hud--floating[data-motion="off"] .companion-hud__rail-mark svg { animation: none; }
+.companion-hud--floating[data-motion="off"] .companion-hud__rail-heading button[aria-expanded] svg { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .companion-hud--floating .companion-hud__rail-current-icon::after,
+  .companion-hud--floating .companion-hud__rail-mark svg { animation: none; }
+  .companion-hud__rail-heading button[aria-expanded] svg { transition: none; }
+}
 /* Extra results face the content, above it rather than inside its layout. */
 .companion-hud__papers { position: fixed; left: calc(var(--companion-papers-x, 20vw) - 32px); top: calc(var(--companion-papers-y, 58px) - 44px); width: calc(var(--companion-papers-w, 430px) + 64px); max-height: calc(var(--companion-papers-max-h, calc(100dvh - 72px)) + 62px); display: flex; flex-direction: column; gap: 15px; padding: 44px 32px 18px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scroll-padding-block: 44px 18px; scrollbar-width: thin; scrollbar-color: #b69b77 transparent; pointer-events: auto; }
 .companion-hud__papers:empty { display: none; }
@@ -238,15 +280,6 @@
 .companion-hud__paper > footer { flex: none; }
 .companion-hud--floating[data-side="left"] .companion-hud__paper { transform-origin: 100% 85%; }
 .companion-hud--floating[data-side="right"] .companion-hud__paper { transform-origin: 0 85%; }
-/* 「去这一页」是递到眼前的一张纸，不是页面角落里的一条通知。星图、搜索这类满幅
-   页面里，贴着伴星的侧廊会压到页面自己的标题栏上；引用与图片要贴着正文读，仍留在侧廊。 */
-.companion-hud__nav-papers { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, calc(100vw - 56px)); display: flex; flex-direction: column; gap: 15px; pointer-events: auto; }
-.companion-hud--floating .companion-hud__nav-papers .companion-hud__paper { max-height: calc(100dvh - 96px); transform-origin: 50% 88%; }
-.companion-hud__paper[data-kind="quote"],
-.companion-hud__paper[data-kind="citation"] { background: #f2e6bd; }
-.companion-hud__paper[data-kind="diagram"] { background: #e5ecd8; }
-.companion-hud__paper[data-kind="card"] { background: #efe3bd; }
-.companion-hud__paper[data-kind="image"] { background: var(--hud-paper-light); }
 .companion-hud__paper[data-confirmation] { background: #f3dfc6; }
 .companion-hud__paper > header strong { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; font-weight: 700; }
 .companion-hud__paper > header button { width: 32px; height: 32px; min-height: 32px; flex-basis: 32px; }
@@ -259,6 +292,62 @@
 .companion-hud__paper .companion-record__image img { max-height: 290px; border-radius: 17px 22px 16px 20px; }
 .companion-hud__paper .companion-choice-card { margin: 6px 0 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; font-size: 13px; }
 .companion-hud__paper .companion-choice-card dl { font-size: 14px; line-height: 1.7; }
+/* Reply destinations and reading material share one paper. The process bubble sits above it. */
+.companion-hud--floating .companion-hud__output[data-delivery] { display: flex; flex-direction: column; max-height: var(--companion-head-max-h, calc(100dvh - 74px)); }
+.companion-hud__head > .companion-hud__output[data-delivery] { flex: 0 1 auto; }
+.companion-hud__head:has(.companion-reply-content) .companion-hud__rail-steps { max-height: min(210px, max(60px, calc(var(--companion-head-max-h, 600px) - 480px))); }
+.companion-hud__output[data-delivery] > :is(header, footer) { flex: none; }
+.companion-hud__output[data-delivery] > .companion-reply-attachments { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; }
+.companion-hud__output[data-delivery] .companion-reply-attachments > :is(details, div, section) { flex: 0 0 auto; }
+.companion-hud__output[data-delivery] .companion-reply-attachments > .companion-reply-content { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 172px; }
+.companion-hud__output[data-delivery] .companion-reply-attachments > details[open] { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.companion-hud__output[data-delivery] .companion-reply-attachments > details[open] > summary { flex: none; }
+.companion-hud__output[data-delivery] .companion-reply-attachments__reading { flex: 1 1 auto; min-height: 0; }
+/* Rich objects are a small reading surface within their reply, rather than
+ * identical closed attachment rows. Paging keeps multi-image turns compact. */
+.companion-reply-content { min-width: 0; margin-bottom: 8px; padding: 8px 9px 5px; border: 1px solid #ded2b0; border-radius: 16px 21px 14px 18px; background: #fff8e4; }
+.companion-reply-content > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 1px 5px; font-size: 11px; color: #796c55; }
+.companion-reply-content > header > span { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
+.companion-reply-content > header > small { font-size: 10px; }
+.companion-reply-content > header > button { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 3px 5px; border: 0; border-radius: 7px; background: transparent; color: #607653; font: inherit; font-size: 10px; cursor: pointer; }
+.companion-reply-content__preview { flex: 0 1 auto; min-height: 90px; max-height: min(240px, 30dvh); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #bdad8c transparent; }
+.companion-reply-content > :is(header, nav) { flex: none; }
+.companion-reply-content[data-expanded] .companion-reply-content__preview { max-height: min(370px, 45dvh); }
+.companion-reply-content__preview > :is(figure, p) { margin: 0; }
+.companion-reply-content[data-type="image"] .companion-reply-content__preview { height: min(230px, 29dvh); overflow: hidden; }
+.companion-reply-content .companion-record__image { display: grid; grid-template-rows: minmax(0, 1fr) auto; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.companion-reply-content .companion-record__image-preview { display: flex; justify-content: center; width: 100%; min-height: 0; }
+.companion-reply-content .companion-record__image-preview img { width: 100%; height: 100%; max-height: 100%; object-fit: scale-down; }
+.companion-reply-content .companion-record__image-placeholder { width: 100%; }
+.companion-reply-content .companion-record__image figcaption { margin-block: 6px 3px; }
+.companion-reply-content .companion-record__diagram { padding: 7px 4px; border: 0; border-radius: 0; background: transparent; }
+.companion-reply-content .companion-record__code { max-height: none; }
+.companion-reply-content .companion-record__code-sheet { overflow: clip; }
+.companion-reply-content .companion-record__code-sheet > figcaption { position: sticky; top: 0; z-index: 1; background: #f4ecd7; }
+.companion-reply-content__paging { display: flex; align-items: center; justify-content: center; gap: 16px; padding-top: 5px; }
+.companion-reply-content__paging > span { min-width: 75px; color: #8b7d65; font-size: 10.5px; text-align: center; font-variant-numeric: tabular-nums; }
+.companion-reply-content__paging button { display: grid; place-items: center; width: 32px; min-height: 30px; padding: 0; border: 0; border-radius: 10px; background: #e5ecd8; color: #50664a; cursor: pointer; }
+.companion-reply-content__paging button:disabled { opacity: .35; cursor: default; }
+.companion-reply-attachments { margin-top: 9px; font-size: 12px; }
+.companion-reply-attachments__destinations .companion-record__nav { margin: 0 0 8px; }
+.companion-reply-attachments__destinations .companion-record__nav button { width: 100%; min-height: 42px; justify-content: flex-start; padding: 9px 11px; border: 1px solid #c3cdb1; border-radius: 12px 16px 11px 14px; background: #e5ecd8; color: #3d583d; text-align: left; line-height: 1.6; }
+/* 附页与上面的正文用虚线分开；材料内部每一项自己是实线，两种线不重复。 */
+.companion-reply-attachments__materials { margin-top: 2px; padding-top: 6px; border-top: 1px dashed #ddcfab; }
+.companion-reply-attachments summary { display: flex; align-items: center; gap: 7px; min-height: 36px; cursor: pointer; list-style: none; color: #70644f; }
+.companion-reply-attachments summary::-webkit-details-marker { display: none; }
+.companion-reply-attachments summary::after { content: "›"; margin-left: auto; color: #87775d; font-size: 18px; }
+.companion-reply-attachments details[open] > summary::after { transform: rotate(90deg); }
+.companion-reply-attachments summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.companion-reply-attachments summary small { color: #8a7b65; font-size: 11px; }
+.companion-reply-attachments summary:focus-visible { outline: 2px solid var(--hud-green); outline-offset: 1px; border-radius: 6px; }
+.companion-reply-attachments__reading { max-height: min(280px, 36dvh); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #b69b77 transparent; padding: 0 2px 6px; }
+.companion-reply-attachments__hint { margin: 0 0 5px; color: #8a7b65; font-size: 11px; line-height: 1.6; }
+.companion-reply-attachments__material { border-top: 1px solid #ddcfab; }
+.companion-reply-attachments__material > summary { font-size: 11px; line-height: 1.6; }
+.companion-reply-attachments__material > summary > span { white-space: normal; overflow: visible; }
+.companion-reply-attachments .companion-record__quote { margin: 2px 0 8px; padding: 0 0 0 10px; background: transparent; border-left-color: #c3cdb1; }
+.companion-reply-attachments .companion-record__quote > figcaption { display: none; }
+.companion-reply-attachments .companion-record__quote-text { max-height: none; line-height: 1.75; }
 .companion-record__citation { margin: 10px 0; color: var(--hud-green); font-size: 13px; }
 .companion-record__code { max-width: 100%; margin: 10px 0; padding: 12px; overflow: auto; color: var(--hud-ink); background: #efe3bd; border-radius: 14px 18px 16px 13px; font: 12px/1.7 ui-monospace, monospace; }
 .companion-hud__voice > p { display: flex; gap: 8px; line-height: 1.7; }

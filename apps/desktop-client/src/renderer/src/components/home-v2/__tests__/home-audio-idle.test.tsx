@@ -104,6 +104,23 @@ it("constructs the graph in idle time, stays silent before a gesture, and reuses
   expect(close).toHaveBeenCalledTimes(1);
 });
 
+it("窗口被盖住不再挂起音频通道：这一轮朗读照旧，看不见的只是房间", async () => {
+  const view = render(<HomeV2AudioController />);
+  await act(async () => { warm(); interact(); });
+  expect(audible()).toBe(true);
+  suspend.mockClear();
+  // 焦点不参与（方案 35 E7）；被整块盖住时 Chromium 报的就是 document.hidden。
+  Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+  try {
+    await act(async () => { useRoomStore.setState({ windowState: "hidden" }); });
+    expect(suspend).not.toHaveBeenCalled();
+    expect(audible()).toBe(true);
+  } finally {
+    delete (document as Partial<{ hidden: unknown }>).hidden;
+  }
+  view.unmount();
+});
+
 it("实时会话开麦后回复仍能真正启动音源，单段录音仍会挡住并打断播放", async () => {
   const view = render(<HomeV2AudioController />);
   await act(async () => { warm(); interact(); });

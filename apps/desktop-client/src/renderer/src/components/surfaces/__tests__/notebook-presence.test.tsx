@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { useRoomStore } from "../../../app/room-store";
 import { NotebookPresence, NotebookPresenceReaders } from "../notebook/notebook-presence.tsx";
 
 /**
@@ -25,7 +26,7 @@ const letters = () => stamps().map((n) => n.textContent);
 const labels = () => stamps().map((n) => n.getAttribute("aria-label"));
 const text = () => document.body.textContent ?? "";
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); useRoomStore.setState({ accountIdentity: null, accountAvatar: null }); });
 
 describe("笔记页的在场印章", () => {
   it("还没有身份时不出现（那时连'你'都说不出是谁）", () => {
@@ -99,5 +100,28 @@ describe("笔记列表那一行的在场", () => {
     render(<NotebookPresenceReaders viewers={[{ id: "u3", name: null, mode: "reading" }]} />);
     expect(letters()).toEqual(["?"]);
     expect(text()).toContain("没留下名字的人 在读");
+  });
+});
+
+describe("笔记中的账户头像", () => {
+  it("与账户头像一起更新，清除后回到首字母", () => {
+    useRoomStore.setState({ accountIdentity: { email: "me@example.test", displayName: "Asklins" },
+      accountAvatar: { email: "me@example.test", src: "data:image/png;base64,OLD" } });
+    render(<NotebookPresence peers={[]} selfName="Asklins" selfMode="reading" compact />);
+    const avatar = () => document.querySelector(".notebook-presence__peer img");
+    expect(avatar()?.getAttribute("src")).toBe("data:image/png;base64,OLD");
+    act(() => useRoomStore.getState().setAccountAvatar({ email: "me@example.test", src: "data:image/png;base64,NEW" }));
+    expect(avatar()?.getAttribute("src")).toBe("data:image/png;base64,NEW");
+    expect(labels()).toEqual(["Asklins（你） · 在读"]);
+    act(() => useRoomStore.getState().setAccountAvatar({ email: "me@example.test", src: "" }));
+    expect(avatar()).toBeNull();
+    expect(letters()).toEqual(["A"]);
+  });
+  it("切换账号后不显示上一位的头像", () => {
+    useRoomStore.setState({ accountIdentity: { email: "new@example.test", displayName: "新人" },
+      accountAvatar: { email: "old@example.test", src: "data:image/png;base64,OLD" } });
+    render(<NotebookPresence peers={[]} selfName="新人" selfMode="reading" />);
+    expect(document.querySelector(".notebook-presence__peer img")).toBeNull();
+    expect(letters()).toEqual(["新"]);
   });
 });

@@ -129,7 +129,7 @@ export async function uploadRoutes(
       return reply.code(503).send({ error: "object storage is not configured" });
     }
 
-    // R3（round-3 审计）：req.file()/toBuffer() 在超限（>10MB 全局 / >2MB 头像）时
+    // R3（round-3 审计）：req.file()/toBuffer() 在超限（>10MB 全局 / >10MB 头像）时
     // 抛 FST_REQ_FILE_TOO_LARGE → 此前落入 Fastify 默认 500。参照 voice-routes 转 413。
     let file;
     try {
@@ -332,7 +332,7 @@ export async function uploadRoutes(
     } catch (err) {
       // R3：req.file() 超限抛 FST_REQ_FILE_TOO_LARGE → 413（非 500）。
       if (fileTooLargeError(err)) {
-        return reply.code(413).send({ error: "file too large (max 2MB)", code: "FST_REQ_FILE_TOO_LARGE" });
+        return reply.code(413).send({ error: "file too large (max 10MB)", code: "FST_REQ_FILE_TOO_LARGE" });
       }
       throw err;
     }
@@ -353,11 +353,11 @@ export async function uploadRoutes(
         return reply.code(415).send({ error: "unsupported file type" });
       case "file_read_too_large":
         drainMultipartFile(file);
-        return reply.code(413).send({ error: "file too large (max 2MB)", code: "FST_REQ_FILE_TOO_LARGE" });
+        return reply.code(413).send({ error: "file too large (max 10MB)", code: "FST_REQ_FILE_TOO_LARGE" });
       case "content_type_mismatch":
         return reply.code(415).send({ error: "file content does not match declared type" });
       case "too_large":
-        return reply.code(413).send({ error: "file too large (max 2MB)" });
+        return reply.code(413).send({ error: "file too large (max 10MB)" });
       case "dimensions_undecodable":
         return reply.code(415).send({ error: "image dimensions could not be decoded" });
       case "pixel_count_exceeded":

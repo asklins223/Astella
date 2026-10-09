@@ -1,5 +1,5 @@
 import { useSpaceArrival } from "../hud/space-arrival";
-import { COMPANION_ACCOUNT_CHANGED, publishCompanionAccountChanged } from "./companion-events";
+import { publishCompanionAccountChanged, subscribeCompanionAccountChanged } from "./companion-events";
 // 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { X } from "lucide-react";
@@ -417,10 +417,11 @@ export function CompanionPresence() {
   }, [setCompanionName]);
 
   useEffect(() => {
-    const refresh = () => { void loadCompanionAccount(); };
-    window.addEventListener(COMPANION_ACCOUNT_CHANGED, refresh);
-    return () => window.removeEventListener(COMPANION_ACCOUNT_CHANGED, refresh);
-  }, [loadCompanionAccount]);
+    return subscribeCompanionAccountChanged(account => {
+      setAccountState(account);
+      setAccountFailure(null);
+    });
+  }, []);
 
   // 伴星中心改了名字，这里当场换过来。写入响应本来就带着新名字，
   // 所以不再拉一遍人格——两处各自拉就会出现"中心已改、气泡还叫旧名字"。
@@ -443,9 +444,10 @@ export function CompanionPresence() {
         meta: createRequestMeta(context.workspace.workspaceEpoch),
         request: { ...patch, revision: accountState.revision },
       });
-      setAccountState(unwrapGatewayResult(response));
+      const updated = unwrapGatewayResult(response);
+      setAccountState(updated);
       setAccountFailure(null);
-      publishCompanionAccountChanged();
+      publishCompanionAccountChanged(updated);
     } catch (error) {
       // CAS 冲突不做自动重放：先重新读取账号状态，再由用户重新确认这次改动。
       const message = gatewayErrorMessage(error);

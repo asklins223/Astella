@@ -8,7 +8,7 @@ const clip = { duration: 1 } as AudioBuffer;
 afterEach(() => resetCompanionVoicePlayback());
 function host(overrides: Partial<CompanionVoiceHost> = {}): CompanionVoiceHost {
   return { audible: () => true, synthesize: vi.fn(), synthesizeSegment: vi.fn(),
-    readCachedSegment: vi.fn(async () => clip), play: vi.fn(async () => undefined), stop: vi.fn(),
+    readCachedSegment: vi.fn(async () => clip), play: vi.fn(async () => true), stop: vi.fn(),
     reportSegmentOutcome: vi.fn(), ...overrides };
 }
 
@@ -42,8 +42,8 @@ it("a later click supersedes a pending local read and old bytes cannot reclaim p
 });
 
 it("stops immediately during playback and never advances to another segment", async () => {
-  let settle!: () => void;
-  const audio = host({ play: vi.fn(() => new Promise<void>(resolve => { settle = resolve; })), stop: vi.fn(() => settle?.()) });
+  let settle!: (heard: boolean) => void;
+  const audio = host({ play: vi.fn(() => new Promise<boolean>(resolve => { settle = resolve; })), stop: vi.fn(() => settle?.(false)) });
   setCompanionVoiceHost(audio);
   const phases: string[] = [];
   subscribeCompanionSpeech(progress => phases.push(progress.phase));
@@ -52,6 +52,19 @@ it("stops immediately during playback and never advances to another segment", as
   handle.stop();
   expect(phases.at(-1)).toBe("stopped");
   await Promise.resolve(); await Promise.resolve();
+  expect(audio.readCachedSegment).toHaveBeenCalledOnce();
+});
+
+// 2026-10-09：宿主"没播但照样 resolve"时不能再往下走。旧形状会把剩下的 ordinal
+// 一段一段安静地"放完"，最后报一次 finished。
+it("宿主说这一段没响时就此收住，不放完后面的段", async () => {
+  const audio = host({ play: vi.fn(async () => false) });
+  setCompanionVoiceHost(audio);
+  const phases: string[] = [];
+  subscribeCompanionSpeech(progress => phases.push(progress.phase));
+  playCachedCompanionMessage(runId, [1, 2]);
+  await vi.waitFor(() => expect(phases.at(-1)).toBe("stopped"));
+  expect(audio.play).toHaveBeenCalledOnce();
   expect(audio.readCachedSegment).toHaveBeenCalledOnce();
 });
 

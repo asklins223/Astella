@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
+import { AVATAR_MAX_BYTES } from "@astella/shared/desktop-ipc-contracts";
 import { MAX_SOURCE_TEXT_BYTES, objectTransferRequestSchema, objectTransferDownloadSchema } from "@astella/shared/object-transfer-contracts";
 import { validateTransferPurpose, verifyTransferredBytes } from "../routes.ts";
 
@@ -9,7 +10,7 @@ const base = { purpose: "companion_image" as const, fileName: "test.png", mimeTy
 test("direct uploads reject mismatched purpose, missing target, and oversized payload", () => {
   assert.throws(() => validateTransferPurpose({ ...base, purpose: "note_image" }));
   assert.throws(() => validateTransferPurpose({ ...base, mimeType: "text/html" }));
-  assert.throws(() => validateTransferPurpose({ ...base, purpose: "avatar", byteLength: 3 * 1024 * 1024 }));
+  assert.throws(() => validateTransferPurpose({ ...base, purpose: "avatar", byteLength: AVATAR_MAX_BYTES + 1 }));
   assert.throws(() => validateTransferPurpose({ ...base, purpose: "source_text", mimeType: "text/plain", byteLength: MAX_SOURCE_TEXT_BYTES + 1 }));
   assert.equal(objectTransferRequestSchema.safeParse({ ...base, objectKey: "another-user/file" }).success, false);
 });
@@ -34,4 +35,10 @@ test("download descriptors reject insecure, credential-bearing and unbounded URL
   assert.equal(objectTransferDownloadSchema.safeParse({ ...ticket, url: "http://objects.example.test/file" }).success, false);
   assert.equal(objectTransferDownloadSchema.safeParse({ ...ticket, url: "https://user:secret@objects.example.test/file" }).success, false);
   assert.equal(objectTransferDownloadSchema.safeParse({ ...ticket, byteLength: 1024 ** 3 }).success, false);
+});
+
+test("avatar upload authorization accepts 10 MB and rejects a byte over the shared limit", () => {
+  assert.doesNotThrow(() => validateTransferPurpose({ ...base, purpose: "avatar", byteLength: 3 * 1024 * 1024 }));
+  assert.doesNotThrow(() => validateTransferPurpose({ ...base, purpose: "avatar", byteLength: AVATAR_MAX_BYTES }));
+  assert.throws(() => validateTransferPurpose({ ...base, purpose: "avatar", byteLength: AVATAR_MAX_BYTES + 1 }), /too large/);
 });

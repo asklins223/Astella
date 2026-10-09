@@ -5,7 +5,6 @@ import {
   DESKTOP_RENDERING_GET_CHANNEL,
   DESKTOP_RENDERING_SET_CHANNEL,
   DESKTOP_RENDERING_REPORT_FAILURE_CHANNEL,
-  DESKTOP_RENDERING_DISMISS_SUGGESTION_CHANNEL,
   isDesktopRenderingFailure,
   isDesktopRenderingMode,
   type DesktopRenderingFailure,
@@ -14,17 +13,12 @@ import {
 } from '../shared/desktop-rendering'
 
 /**
- * macOS users reported whole-window flashing on scroll, resolved by an OS
- * update. That implicates the OS/GPU path but does not identify a driver bug.
- * Keep Chromium's defaults, with a manually selected fallback on macOS (also
- * offered after a concrete graphics failure). Electron 43 / Chromium 150 uses
- * GraphiteDawnMetal by default; --disable-skia-graphite selects GaneshGL via
- * ANGLE Metal instead. GPU compositing, rasterization and Live2D WebGL remain
- * accelerated.
- *
- * A graphics failure only earns a suggestion. Switching the backend on a process
- * exit is a guess, and the fallback is not measurably cheaper — on this M4 the
- * two backends came out within noise of each other — so it never flips itself on.
+ * Real journal scrolling still flashed with Ganesh, CPU rasterization, and
+ * CoreAnimationRenderer disabled. The user confirmed the software compositor
+ * stopped the flashing. Keep the healthy-device defaults; compatible mode uses
+ * that verified path, retaining accelerated Live2D WebGL through readback.
+ * Concrete graphics failures save this fallback for the next launch. Visual
+ * flicker without a process/context failure has no reliable detection event.
  *
  * This must be constructed before app.whenReady(), not when settings opens.
  */
@@ -32,7 +26,7 @@ export class DesktopRenderingPreferences {
   private configuredMode: DesktopRenderingMode = 'default'
   private readonly activeMode: DesktopRenderingMode
   private readonly supported: boolean
-  private suggestedFallbackReason: DesktopRenderingFailure | null = null
+  private automaticFallbackReason: DesktopRenderingFailure | null = null
   private readonly listeners = new Set<(state: DesktopRenderingState) => void>()
 
   constructor(
@@ -47,9 +41,9 @@ export class DesktopRenderingPreferences {
         && 'version' in value && value.version === 1
         && 'mode' in value && isDesktopRenderingMode(value.mode)) {
         this.configuredMode = value.mode
-        if ('suggestedFallbackReason' in value
-          && isDesktopRenderingFailure(value.suggestedFallbackReason)) {
-          this.suggestedFallbackReason = value.suggestedFallbackReason
+        if (value.mode === 'compatible' && 'automaticFallbackReason' in value
+          && isDesktopRenderingFailure(value.automaticFallbackReason)) {
+          this.automaticFallbackReason = value.automaticFallbackReason
         }
       }
     } catch {
@@ -57,7 +51,7 @@ export class DesktopRenderingPreferences {
     }
     this.activeMode = this.supported ? this.configuredMode : 'default'
     if (this.activeMode === 'compatible') {
-      app.commandLine.appendSwitch('disable-skia-graphite')
+      app.commandLine.appendSwitch('disable-gpu-compositing')
     }
   }
 
@@ -67,7 +61,7 @@ export class DesktopRenderingPreferences {
       configuredMode: this.configuredMode,
       activeMode: this.activeMode,
       restartRequired: this.supported && this.configuredMode !== this.activeMode,
-      suggestedFallbackReason: this.suggestedFallbackReason,
+      automaticFallbackReason: this.automaticFallbackReason,
     }
   }
 
@@ -75,26 +69,21 @@ export class DesktopRenderingPreferences {
     if (!this.supported || !isDesktopRenderingMode(mode)) {
       throw new Error('Unsupported rendering mode')
     }
-    // Choosing either way answers the suggestion, so it must not linger behind.
+    // An explicit choice supersedes the automatic selection and its explanation.
     if (mode === this.configuredMode) {
-      return this.suggestedFallbackReason === null ? this.getState() : this.persist(mode, null)
+      return this.automaticFallbackReason === null ? this.getState() : this.persist(mode, null)
     }
     return this.persist(mode, null)
   }
 
   recordGraphicsFailure(reason: unknown): DesktopRenderingState {
     if (!isDesktopRenderingFailure(reason)) throw new Error('Unsupported graphics failure')
-    // Nothing to offer while the fallback is already running or already pending,
-    // and a suggestion already on disk should not be overwritten by a later cause.
-    if (!this.supported || this.configuredMode === 'compatible' || this.suggestedFallbackReason !== null) {
+    // Do not undo a pending return to defaults while the fallback is still active,
+    // or repeatedly write/restart when a failure also affects the fallback.
+    if (!this.supported || this.activeMode === 'compatible' || this.configuredMode === 'compatible') {
       return this.getState()
     }
-    return this.persist(this.configuredMode, reason)
-  }
-
-  dismissFallbackSuggestion(): DesktopRenderingState {
-    if (this.suggestedFallbackReason === null) return this.getState()
-    return this.persist(this.configuredMode, null)
+    return this.persist('compatible', reason)
   }
 
   subscribe(listener: (state: DesktopRenderingState) => void): () => void {
@@ -108,11 +97,11 @@ export class DesktopRenderingPreferences {
     mkdirSync(dirname(this.path), { recursive: true })
     const pending = `${this.path}.tmp`
     writeFileSync(pending, `${JSON.stringify({ version: 1, mode,
-      ...(reason ? { suggestedFallbackReason: reason } : {}),
+      ...(reason ? { automaticFallbackReason: reason } : {}),
     })}\n`, { mode: 0o600 })
     renameSync(pending, this.path)
     this.configuredMode = mode
-    this.suggestedFallbackReason = reason
+    this.automaticFallbackReason = reason
     const state = this.getState()
     for (const listener of this.listeners) {
       try { listener(state) } catch { /* A notification failure cannot undo a saved preference. */ }
@@ -136,9 +125,9 @@ export function registerDesktopRenderingHealthMonitor(
     try {
       const previous = preferences.getState()
       const current = preferences.recordGraphicsFailure('gpu-process-failed')
-      if (previous.suggestedFallbackReason !== current.suggestedFallbackReason) trace('rendering-fallback-suggested; user decides')
+      if (previous.configuredMode !== current.configuredMode) trace('rendering-fallback-saved; next launch uses software compositing')
     } catch {
-      trace('rendering-fallback-suggestion save-failed')
+      trace('rendering-fallback save-failed')
     }
   }
   app.on('child-process-gone', onProcessGone)
@@ -174,9 +163,5 @@ export function registerDesktopRenderingIpc(
     // Native GPU process failures must originate in main, not renderer input.
     if (reason !== 'webgl-context-lost') throw new Error('Unsupported renderer graphics failure')
     return preferences.recordGraphicsFailure(reason)
-  })
-  ipc.handle(DESKTOP_RENDERING_DISMISS_SUGGESTION_CHANNEL, (event) => {
-    authorize(event)
-    return preferences.dismissFallbackSuggestion()
   })
 }

@@ -36,7 +36,7 @@ class FakeHost implements CompanionVoiceHost {
   readonly played: string[] = [];
   readonly failFor = new Set<string>();
   audibleValue = true;
-  private resolvers: Array<() => void> = [];
+  private resolvers: Array<(heard: boolean) => void> = [];
   private progressHandlers: Array<(fraction: number) => void> = [];
 
   audible(): boolean {
@@ -79,16 +79,16 @@ class FakeHost implements CompanionVoiceHost {
     return this.synthesize(ref.segmentId);
   }
 
-  play(value: AudioBuffer, onProgress: (fraction: number) => void): Promise<void> {
+  play(value: AudioBuffer, onProgress: (fraction: number) => void): Promise<boolean> {
     this.played.push(bufferId(value));
     this.progressHandlers.push(onProgress);
-    return new Promise<void>((resolve) => { this.resolvers.push(resolve); });
+    return new Promise<boolean>((resolve) => { this.resolvers.push(resolve); });
   }
 
   stop(): void {
     const resolvers = this.resolvers;
     this.resolvers = [];
-    for (const resolve of resolvers) resolve();
+    for (const resolve of resolvers) resolve(false);
   }
 
   /** 每一段的结局上报（0247）——这段测试断言的就是这只数组。 */
@@ -100,7 +100,12 @@ class FakeHost implements CompanionVoiceHost {
 
   /** 让当前这一段播完。 */
   finishSegment(): void {
-    this.resolvers.shift()?.();
+    this.resolvers.shift()?.(true);
+  }
+
+  /** 当前这一段宿主**没播**（闸门关着，直接 resolve false）。 */
+  missSegment(): void {
+    this.resolvers.shift()?.(false);
   }
 
   /** 报告当前段的播放进度（0..1）。 */
@@ -788,6 +793,27 @@ describe("逐段播放结局上报", () => {
     await flush();
 
     expect(host.reports.filter((report) => report.reason === "played")).toEqual([]);
+  });
+
+  // 2026-10-09：宿主"不播但照样 resolve"的那条出口。旧形状里这一段被当成播完，
+  // 后面的段一段接一段安静地"念完"——文字冲到结尾、服务端留下一整轮 played 行，
+  // 用户听到的只有一句断音。现在宿主说没响，就到此为止。
+  it("宿主说「这一段没响」时不记 played、报 dropped，并放开整轮", async () => {
+    const host = new FakeHost();
+    setCompanionVoiceHost(host);
+    const events = collect();
+    strictSessionWithRef(host, 2);
+
+    await waitUntil(() => host.played.length === 1);
+    host.missSegment();
+    await waitUntil(() => host.reports.length > 0);
+
+    expect(host.reports.filter((report) => report.reason === "played")).toEqual([]);
+    expect(host.reports.some((report) => report.ordinal === 1 && report.reason === "dropped")).toBe(true);
+    // 第 2 段不该再被交给宿主"瞬间播完"。
+    expect(host.played).toHaveLength(1);
+    expect(isCompanionSpeechActive()).toBe(false);
+    expect(events.some((event) => event.phase === "stopped")).toBe(true);
   });
 
   // 方案 29 §12 C5 的判据：「取段成功但没有 playback 行的段，必须有一个明确的

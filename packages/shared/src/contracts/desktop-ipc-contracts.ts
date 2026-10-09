@@ -1806,8 +1806,12 @@ export const authProfileResultV1Schema = z.strictObject({
 });
 export type AuthProfileResultV1 = z.infer<typeof authProfileResultV1Schema>;
 
-/** 头像通道上限与 API 的 MAX_AVATAR_SIZE（2MB）对齐。 */
-export const AVATAR_MAX_BYTES = 2_000_000;
+/** 头像上传、读取与缓存共用上限：10 MB。 */
+export const AVATAR_MAX_BYTES = 10 * 1024 * 1024;
+export const avatarGetResultV1Schema = sourceImageGetResultV1Schema.extend({
+  byteLength: z.number().int().positive().max(AVATAR_MAX_BYTES),
+});
+export type AvatarGetResultV1 = z.infer<typeof avatarGetResultV1Schema>;
 const AVATAR_OBJECT_KEY_PATTERN =
   /^avatars\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(?:png|jpg|jpeg|gif|webp)$/;
 
@@ -2485,7 +2489,7 @@ export interface AstellaDesktopApiM1 {
     getProfile(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<AuthProfileResultV1>>;
     updateProfile(input: { meta: RequestMetaV1; displayName?: string | null; avatarUrl?: string | null }): Promise<GatewayResultV1<AuthProfileResultV1>>;
     uploadAvatar(input: { meta: RequestMetaV1; request: { version: 1; fileName: string; mimeType: string; bytesBase64: string } }): Promise<GatewayResultV1<AvatarUploadResultV1>>;
-    getAvatar(input: { meta: RequestMetaV1; request: { version: 1; objectKey: string } }): Promise<GatewayResultV1<z.infer<typeof sourceImageGetResultV1Schema>>>;
+    getAvatar(input: { meta: RequestMetaV1; request: { version: 1; objectKey: string } }): Promise<GatewayResultV1<AvatarGetResultV1>>;
     leaveWorkspace(input: { meta: RequestMetaV1; workspaceId: Uuid }): Promise<GatewayResultV1<SessionContextV1>>;
   };
   readonly workspace: {

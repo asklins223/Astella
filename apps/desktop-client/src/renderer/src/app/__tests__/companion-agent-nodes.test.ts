@@ -5,7 +5,7 @@ import {
   companionRunTraceExpired,
   companionTurnProcessLine,
   countAgentToolCalls,
-  visibleAgentNodes,
+  reconcileCompanionAgentNodes,
   type CompanionAgentNodes,
 } from "../companion-agent-nodes.ts";
 
@@ -29,6 +29,28 @@ const tool = (status: string, extra: Record<string, unknown> = {}) => ({
       ...extra,
     },
   },
+});
+
+describe("实时工具帧与本轮快照接续", () => {
+  it("快照补回漏接的工具，按真实顺序展示且不重复计数", () => {
+    const live = fold([tool("executing", { toolCallId: "second" })]);
+    const snapshot = fold([tool("succeeded"), tool("requested", { toolCallId: "second" })]);
+    const merged = reconcileCompanionAgentNodes(live, snapshot);
+    expect(merged.map(node => node.key)).toEqual(["tool:call-1", "tool:second"]);
+    expect(countAgentToolCalls(merged)).toBe(2);
+    expect(merged[1]).toBe(live[0]);
+  });
+
+  it("SSE 领先轮询时，旧快照不能把完成倒退成执行中", () => {
+    const live = fold([tool("succeeded")]);
+    expect(reconcileCompanionAgentNodes(live, fold([tool("executing")]))).toBe(live);
+  });
+
+  it("终态帧丢失时采用已保存的真实回执，待确认也能接续完成", () => {
+    for (const status of ["executing", "waiting_confirmation"]) {
+      expect(reconcileCompanionAgentNodes(fold([tool(status)]), fold([tool("succeeded")]))[0].state).toBe("succeeded");
+    }
+  });
 });
 
 describe("companion agent node stream", () => {
@@ -116,17 +138,6 @@ describe("companion agent node stream", () => {
       { eventType: "assistant.delta", payload: { textDelta: "hi" } },
     ]);
     expect(nodes).toHaveLength(0);
-  });
-
-  it("collapses the overflow into a hidden counter", () => {
-    const nodes = fold([tool("succeeded"), tool("succeeded"), tool("succeeded"), tool("succeeded")].map((event, index) => ({
-      ...event,
-      payload: { tool: { toolCallId: `call-${index}`, name: "n", status: "succeeded", safeLabel: `第 ${index} 步` } },
-    })));
-    const { hiddenCount, visible } = visibleAgentNodes(nodes);
-    expect(hiddenCount).toBe(1);
-    expect(visible.map((node) => node.label)).toEqual(["第 1 步", "第 2 步", "第 3 步"]);
-    expect(countAgentToolCalls(nodes)).toBe(4);
   });
 });
 

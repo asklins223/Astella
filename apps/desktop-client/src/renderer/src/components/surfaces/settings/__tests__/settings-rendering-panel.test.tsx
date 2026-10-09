@@ -4,21 +4,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DesktopRenderingState } from '../../../../../../shared/desktop-rendering'
 import { SettingsRenderingGroup } from '../settings-rendering-panel'
 
-const initial: DesktopRenderingState = { supported: true, configuredMode: 'default', activeMode: 'default', restartRequired: false, suggestedFallbackReason: null }
+const initial: DesktopRenderingState = { supported: true, configuredMode: 'default', activeMode: 'default', restartRequired: false, automaticFallbackReason: null }
 const getState = vi.fn()
 const setMode = vi.fn()
-const dismissFallbackSuggestion = vi.fn()
 const unsubscribe = vi.fn()
 let stateListener: (state: DesktopRenderingState) => void
 const onStateChanged = vi.fn(listener => { stateListener = listener; return unsubscribe })
 beforeEach(() => {
   getState.mockReset().mockResolvedValue(initial)
   setMode.mockReset()
-  dismissFallbackSuggestion.mockReset()
   unsubscribe.mockClear()
   Object.defineProperty(window, 'astellaDesktop', {
     configurable: true,
-    value: { platform: 'darwin', rendering: { getState, setMode, dismissFallbackSuggestion, onStateChanged } },
+    value: { platform: 'darwin', rendering: { getState, setMode, onStateChanged } },
   })
 })
 afterEach(cleanup)
@@ -55,51 +53,39 @@ describe('rendering compatibility settings', () => {
     render(<SettingsRenderingGroup />)
     await screen.findByRole('alert')
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
-    await screen.findByText('当前使用默认渲染。')
+    await screen.findByText(/当前使用默认渲染/)
   })
 
-  it('offers the fallback after a graphics failure without switching anything', async () => {
+  it('reflects an automatic selection and lets the user revert it', async () => {
     render(<SettingsRenderingGroup />)
     await waitFor(() => expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(false))
-    act(() => stateListener({ ...initial, suggestedFallbackReason: 'gpu-process-failed' }))
-    expect(screen.getByText('图形进程在这台 Mac 上异常退出过')).toBeTruthy()
-    // 只是问一句：不该同时冒出「已保存」这种已经改过设置的话。
+    act(() => stateListener({ ...initial, configuredMode: 'compatible', restartRequired: true, automaticFallbackReason: 'gpu-process-failed' }))
+    expect(screen.getByText('检测到图形进程异常，已自动保存兼容模式')).toBeTruthy()
+    expect(screen.getByText('已保存，下次启动生效')).toBeTruthy()
+    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true')
+    expect(setMode).not.toHaveBeenCalled()
+    setMode.mockResolvedValue(initial)
+    fireEvent.click(screen.getByRole('switch'))
+    await waitFor(() => expect(setMode).toHaveBeenCalledWith('default'))
     expect(screen.queryByText('已保存，下次启动生效')).toBeNull()
     expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false')
-    setMode.mockResolvedValue({ ...initial, configuredMode: 'compatible', restartRequired: true })
-    fireEvent.click(screen.getByRole('button', { name: '改用兼容渲染' }))
-    await screen.findByText('已保存，下次启动生效')
-    expect(setMode).toHaveBeenCalledWith('compatible')
-  })
-
-  it('dismisses the offer without touching the preference', async () => {
-    render(<SettingsRenderingGroup />)
-    await waitFor(() => expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(false))
-    act(() => stateListener({ ...initial, suggestedFallbackReason: 'webgl-context-lost' }))
-    dismissFallbackSuggestion.mockResolvedValue({ ...initial, suggestedFallbackReason: null })
-    fireEvent.click(screen.getByRole('button', { name: '不用了' }))
-    await waitFor(() => expect(dismissFallbackSuggestion).toHaveBeenCalledOnce())
-    expect(setMode).not.toHaveBeenCalled()
-    expect(screen.queryByText(/伴星画布的 WebGL 上下文丢失过/)).toBeNull()
   })
 
   it('does not let a stale initial read hide a newly detected graphics failure', async () => {
     let finishRead: (state: DesktopRenderingState) => void = () => {}
     getState.mockReturnValue(new Promise<DesktopRenderingState>(resolve => { finishRead = resolve }))
     render(<SettingsRenderingGroup />)
-    act(() => stateListener({ ...initial, suggestedFallbackReason: 'webgl-context-lost' }))
+    act(() => stateListener({ ...initial, configuredMode: 'compatible', restartRequired: true, automaticFallbackReason: 'webgl-context-lost' }))
     await act(async () => finishRead(initial))
-    expect(screen.getByText(/伴星画布的 WebGL 上下文丢失过/)).toBeTruthy()
+    expect(screen.getByText(/检测到伴星画布异常/)).toBeTruthy()
   })
 
-  it('keeps an answer already given while the switch waits for a restart', async () => {
+  it('removes the automatic explanation when a manual selection is pushed', async () => {
     render(<SettingsRenderingGroup />)
     await waitFor(() => expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(false))
+    act(() => stateListener({ ...initial, configuredMode: 'compatible', restartRequired: true, automaticFallbackReason: 'gpu-process-failed' }))
     act(() => stateListener({ ...initial, configuredMode: 'compatible', restartRequired: true }))
-    expect(screen.getByText('已保存，下次启动生效')).toBeTruthy()
-    // 已经选了兼容渲染，就不该再出现一次询问。
-    act(() => stateListener({ ...initial, configuredMode: 'compatible', restartRequired: true, suggestedFallbackReason: 'gpu-process-failed' }))
-    expect(screen.queryByText('图形进程在这台 Mac 上异常退出过')).toBeNull()
+    expect(screen.queryByText(/检测到图形进程异常/)).toBeNull()
     expect(unsubscribe).not.toHaveBeenCalled()
   })
 

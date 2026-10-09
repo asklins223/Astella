@@ -19,6 +19,7 @@ import { CompanionMessageAudioCache } from './companion-message-audio-cache'
 import { primeUpdateStateFromCache } from './desktop-update'
 import { voiceAsrModelDirectory } from '../shared/voice-asr-model-path'
 import { createVoiceAsrModelResponder } from './voice-asr-model-route'
+import { createAvatarImageStore } from './avatar-image-store'
 import { createNoteImageStore } from './note-image-store'
 import { VOICE_ASR_MODEL_ROUTE_PREFIX } from '@astella/shared/voice-asr-model-contracts'
 import { ARTIFACT_HOST, isArtifactFrameUrl, isArtifactId } from '../shared/artifact-frame'
@@ -789,6 +790,7 @@ app.whenReady()
   await voiceAsrModel.sweepPartialFiles()
   traceBoot('voice-asr-swept')
   createNoteImageStore(join(app.getPath('userData'), 'note-images'))
+  createAvatarImageStore(join(app.getPath('userData'), 'avatars'))
   registerAppProtocol(voiceAsrModel)
   traceBoot('app-protocol-registered')
   registerRendererSecurityPolicy()

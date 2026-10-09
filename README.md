@@ -7,7 +7,7 @@
 面向个人学习的桌面书房。把材料整理成笔记，在原文旁理解、回想和追问；需要时生成学习卡，接入长期复习。Live2D 伴星陪你读，也能按你的要求查资料、整理新笔记和修改正文。
 
 [![最新发布](https://img.shields.io/github/v/release/asklins223/Astella)](https://github.com/asklins223/Astella/releases/latest)
-[![Electron 43](https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![Electron 44](https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Fastify 5](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
 [![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
@@ -15,7 +15,7 @@
 
 [中文](README.md) · [English](README.en.md) · [使用与开发手册](docs/guide/README.md)
 
-当前版本：`v1.3.5`（仓库版本；服务端与桌面客户端共用）
+当前版本：`v1.4.0`（仓库版本；服务端与桌面客户端共用）
 
 </div>
 

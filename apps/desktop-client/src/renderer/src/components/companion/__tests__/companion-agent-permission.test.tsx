@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanionAccountPatch, CompanionAccountStateV1 } from "@astella/shared/companion-shell-contracts";
 import { CompanionAgentPermissionMenu } from "../companion-agent-permission";
 import { COMPANION_ACCOUNT_CHANGED } from "../companion-events";
+import { setCurrentWorkspaceEpoch } from "../../../app/desktop-client";
 
 let account = { revision: 5, globalEnabled: true, diaryEnabled: true, agentSettings: { permissionLevel: "guided" } } as CompanionAccountStateV1;
 const patches: CompanionAccountPatch[] = [];
@@ -27,8 +28,8 @@ function installApi() {
   return api;
 }
 
-beforeEach(() => { installApi(); });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+beforeEach(() => { installApi(); setCurrentWorkspaceEpoch(7); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); setCurrentWorkspaceEpoch(0); });
 
 describe("助理权限就地档", () => {
   it("每一档有自己的图标，切完按钮上就换成那一档的形状", async () => {
@@ -65,6 +66,29 @@ describe("助理权限就地档", () => {
     await waitFor(() => expect(patches).toHaveLength(1));
     await waitFor(() => expect(api.companion.account.getState.mock.calls.length).toBe(readsBefore));
   });
+  it("使用门禁已确认的纪元切档，两处入口同步回执与 revision，不重核登录或重读账号", async () => {
+    const api = installApi();
+    render(<>
+      <CompanionAgentPermissionMenu buttonClassName="companion-hud__compose-action" />
+      <CompanionAgentPermissionMenu buttonClassName="companion-history__tool" />
+    </>);
+    const triggers = await screen.findAllByRole("button", { name: "助理权限：分步确认" });
+    const readsBefore = api.companion.account.getState.mock.calls.length;
+    fireEvent.click(triggers[0]);
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: /自动执行/ }));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "助理权限：自动执行" })).toHaveLength(2));
+
+    fireEvent.click(screen.getAllByRole("button", { name: "助理权限：自动执行" })[1]);
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: /仅可读取/ }));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "助理权限：仅可读取" })).toHaveLength(2));
+    expect(patches).toEqual([
+      { revision: 5, agentPermissionLevel: "full" },
+      { revision: 6, agentPermissionLevel: "read_only" },
+    ]);
+    expect(api.auth.getState).not.toHaveBeenCalled();
+    expect(api.companion.account.getState).toHaveBeenCalledTimes(readsBefore);
+    expect(api.companion.account.patchState.mock.calls[0][0]).toMatchObject({ meta: { workspaceEpoch: 7 } });
+  });
   it("点的就是当前那一档时不再写一次账号", async () => {
     const api = installApi();
     render(<CompanionAgentPermissionMenu buttonClassName="companion-history__tool" />);
@@ -74,6 +98,7 @@ describe("助理权限就地档", () => {
     expect(api.companion.account.patchState).not.toHaveBeenCalled();
   });
   it("这个房间没有账号级设置时，这颗按钮不出现", async () => {
+    setCurrentWorkspaceEpoch(0);
     Object.defineProperty(window, "astella", {
       configurable: true,
       value: { auth: { getState: vi.fn(async () => ({ ok: true, data: { status: "anonymous", workspace: null } })) }, companion: { account: { getState: vi.fn(), patchState: vi.fn() } } },

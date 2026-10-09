@@ -23,6 +23,8 @@
 .hud-surface .notebook-sharing .notebook-presence { padding-right: 5px; flex: none; }
 .hud-surface .notebook-sharing .notebook-presence__peer { width: 20px; height: 20px; border-color: #fffbef; background: #e0e8d7; font-family: "Noto Sans SC Variable", sans-serif; }
 .hud-surface .notebook-sharing .notebook-presence__peer[data-mode="editing"] { background: #bed9bd; color: #365e46; }
+.hud-surface .notebook-sharing .notebook-presence__peer { overflow: hidden; }
+.hud-surface .notebook-sharing .notebook-presence__peer img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .hud-surface .notebook-presence__more { margin-left: 7px; color: #698069; font-size: 10px; }
 .hud-surface .notebook-desk__presence { gap: 0; }
 .hud-surface .notebook-focus-ribbon__presence { padding: 0 2px; border: 0; }

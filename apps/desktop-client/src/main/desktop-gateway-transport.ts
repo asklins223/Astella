@@ -243,13 +243,14 @@ export class GatewayTransport {
       const result = await this.request("/auth/me", { method: "GET" }, true, true, requestId);
       const parsed = rawAuthMeSchema.safeParse(result.body);
       if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-      const workspace = this.toWorkspaceContext(parsed.data);
       // 服务端是本机 epoch 的权威来源：边界一变（成员 / AI 同意 / 改名）它就变大，
       // 这里跟着走。本地切换时仍会 +1（切空间必须立刻让在途请求作废），但两者取
       // 较大值——否则"服务端抬过、本地计数还小"会让刚拿到的新 epoch 被自己覆盖回去。
       if (parsed.data.workspaceEpoch > this.workspaceEpoch) {
         this.workspaceEpoch = parsed.data.workspaceEpoch;
       }
+      // 先接纳权威纪元，再组装空间；否则同一回执里的 session 与 workspace 会各带一个号。
+      const workspace = this.toWorkspaceContext(parsed.data);
       const deploymentRef = this.configuration?.config.apiOrigin ?? "unconfigured";
       const arrival = this.pendingWorkspaceArrival;
       const validArrival = arrival && arrival.userId === parsed.data.userId

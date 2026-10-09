@@ -1,6 +1,7 @@
 import type { NoteDocPeer } from "./use-note-doc-live-view.ts";
 import type { NotebookPresenceViewer } from "./use-notebook-note-presence.ts";
 import type { NotePresenceModeV1 } from "@astella/shared/note-presence-contracts";
+import { useRoomStore } from "../../../app/room-store";
 
 /**
  * 「谁开着这一篇」：一排印章 + 一句人数（共享空间的在场）。
@@ -10,8 +11,8 @@ import type { NotePresenceModeV1 } from "@astella/shared/note-presence-contracts
  * 一篇还没共享出去的笔记不会走到这里——那里本来就没有别人能看见，画出来的
  * 「只有你在看」是废话，界面上说的是旁边那颗「仅自己可见」。
  *
- * 名字同时写在三个地方——印章里的首字母、悬停的 `title`、`aria-label`——因为鼠标
- * 悬停不是唯一的到达方式。人数与档位也是同一理由：颜色和小圆点谁都能一眼看到，
+ * 自己的印章使用账户头像，没有头像时回退首字母；姓名保留在 `title` 与 `aria-label`，
+ * 因为鼠标悬停不是唯一的到达方式。人数与档位也是同一理由：颜色和小圆点谁都能一眼看到，
  * 但读屏和键盘浏览要有一句文字可对得上这一排印章。
  */
 const modeLabel = (mode: NotePresenceModeV1): string => (mode === "editing" ? "在写" : "在读");
@@ -37,6 +38,9 @@ export function NotebookPresence({
   readonly failure?: string | null;
   readonly compact?: boolean;
 }) {
+  // 与账户胶囊读同一份头像，换头像/清头像后立即更新；换账号时不沿用旧字节。
+  const selfAvatar = useRoomStore(state => state.accountIdentity
+    && state.accountAvatar?.email === state.accountIdentity.email ? state.accountAvatar.src : null);
   if (failure) {
     return <span className="tag" role="status" title={failure}>{compact ? "协同没连上" : "协同没连上，暂时无法确认谁在这篇里"}</span>;
   }
@@ -61,7 +65,9 @@ export function NotebookPresence({
               title={label}
               data-mode={peer.mode}
             >
-              {stampOf(name)}
+              {peer.clientId === -1 && selfAvatar
+                ? <img src={selfAvatar} alt="" aria-hidden="true" />
+                : stampOf(name)}
             </span>
           );
         })}

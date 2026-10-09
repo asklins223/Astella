@@ -44,3 +44,20 @@ export function shouldPlayHomeV2Feedback(input: {
     && !input.surfaceOpen
     && input.windowVisible;
 }
+
+/**
+ * 用户亲口问出来的那条回复该不该出声。
+ *
+ * 与上面那条闸门只差一件事：**不看窗口可见性**。被别的程序整块盖住（Chromium 把这
+ * 报成 `document.hidden`）不是取消这句回答的理由——她人在屏幕外，话还是她的。
+ * 2026-10-09 之前可见性并在这条判断里，失焦那一刻整个 AudioContext 被挂起，
+ * 念到一半的句子直接断掉。
+ *
+ * 没解锁与总静音仍然挡住：那是用户明确要的安静，不是"暂时看不见"。
+ */
+export function shouldPlayCompanionReplyVoice(input: {
+  readonly unlocked: boolean;
+  readonly masterMuted: boolean;
+}): boolean {
+  return input.unlocked && !input.masterMuted;
+}

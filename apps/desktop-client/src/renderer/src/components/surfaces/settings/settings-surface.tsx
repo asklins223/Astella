@@ -789,16 +789,21 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
+      const bytesBase64 = await fileToBase64(file);
       const response = await window.astella.auth.uploadAvatar({
         meta: createRequestMeta(epochRef.current),
         request: {
           version: 1,
           fileName: file.name,
           mimeType: file.type,
-          bytesBase64: await fileToBase64(file),
+          bytesBase64,
         },
       });
       const result = unwrapGatewayResult(response);
+      const src = `data:${file.type};base64,${bytesBase64}`;
+      setAvatarSrc(src);
+      const email = session?.user?.email;
+      if (email) useRoomStore.getState().setAccountAvatar({ email, src });
       setProfile((current) => ({ version: 1, displayName: current?.displayName ?? null, avatarUrl: result.url }));
       setNotice("头像已更新。");
       return { ok: true };
@@ -822,6 +827,9 @@ export function SettingsSurface() {
         avatarUrl: null,
       });
       setProfile(unwrapGatewayResult(response));
+      setAvatarSrc(null);
+      const email = session?.user?.email;
+      if (email) useRoomStore.getState().setAccountAvatar({ email, src: NO_AVATAR_SRC });
       setNotice("头像已清除，恢复首字母印章。");
     } catch (error) {
       setFailureNotice(gatewayErrorMessage(error));

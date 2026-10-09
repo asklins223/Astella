@@ -88,7 +88,7 @@ export function useCompanionFloatingPlacement(
         viewport,
         headWidth: preferredWidth,
         hasPapers: Boolean(floating.querySelector(".companion-hud__papers")?.childElementCount),
-        // The centered "去这一页" surface is a sibling; it never reserves corridor width.
+        // Only pending decisions and note status reserve a separate corridor.
         paperWidth: floating.querySelector('.companion-hud__papers > .companion-hud__paper:not([data-kind="note-status"])') ? 360 : 280,
       };
       // Establish width before measuring wrapping; a side corridor may narrow it.

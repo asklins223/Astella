@@ -148,6 +148,35 @@ describe("连续、可打断的目录形变", () => {
     style.remove();
   });
 
+  it("重新展开的副本保持真实目录的材质，完成时立即交回真实图标", () => {
+    window.localStorage.setItem(DIRECTORY_RAIL_MODE_KEY, "collapsed");
+    const style = document.createElement("style");
+    style.textContent = `.hud-surface .hud-rail {
+      background: rgba(57, 40, 29, .82); border: 1px solid rgba(255, 244, 214, .22);
+      border-radius: 22px; box-shadow: 0 20px 48px rgba(32, 20, 12, .28); backdrop-filter: blur(12px);
+    }`;
+    document.head.append(style);
+    render(<div className="desktop-app hud-surface"><DirectoryRail /></div>);
+    fireEvent.click(screen.getByRole("button", { name: "展开目录" }));
+    const rail = document.querySelector<HTMLElement>(".hud-rail:not(.nav-morph-ghost)")!;
+    const skin = document.querySelector<HTMLElement>(".directory-rail-skin")!;
+    const authored = getComputedStyle(rail);
+    expect(skin.style.background).toBe(authored.background);
+    expect(skin.style.border).toBe(authored.border);
+    expect(skin.style.borderRadius).toBe(authored.borderRadius);
+    expect(skin.style.boxShadow).toBe(authored.boxShadow);
+    expect(skin.style.backdropFilter).toBe(authored.backdropFilter);
+    const motion = animated.find(entry => entry.element === skin)!;
+    expect(motion.frames.at(-1)?.height).toBe(`${RAIL_EXPANDED.height}px`);
+    motion.animation.onfinish?.(new Event("finish") as AnimationPlaybackEvent);
+    expect(document.querySelector(".nav-morph-ghost")).toBeNull();
+    expect(rail.hasAttribute("data-rail-morphing")).toBe(false);
+    const source = screen.getByRole("button", { name: "来源" });
+    expect(source.tabIndex).toBe(0);
+    expect(source.hasAttribute("aria-hidden")).toBe(false);
+    style.remove();
+  });
+
   it("换向承接当前弹簧状态；旧完成回调不会清掉最新动画", () => {
     window.localStorage.setItem(DIRECTORY_RAIL_MODE_KEY, "expanded");
     render(<div className="desktop-app hud-surface"><DirectoryRail /></div>);

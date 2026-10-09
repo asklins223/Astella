@@ -188,15 +188,6 @@ function appendToolNode(nodes: CompanionAgentNodes, payload: unknown): Companion
   return [...nodes, { key, kind: "tool", label: tool.safeLabel, state, toolName: name, summary, proposalId }];
 }
 
-/** 轨道只显示最近几步，更早的折成左端 `…+N`（方案 §1 第一层）。 */
-export function visibleAgentNodes(nodes: CompanionAgentNodes, max = 3): {
-  readonly hiddenCount: number;
-  readonly visible: CompanionAgentNodes;
-} {
-  if (nodes.length <= max) return { hiddenCount: 0, visible: nodes };
-  return { hiddenCount: nodes.length - max, visible: nodes.slice(-max) };
-}
-
 /**
  * 本轮用掉的工具次数——**去重后的 `toolCallId` 个数**。
  *
@@ -205,6 +196,30 @@ export function visibleAgentNodes(nodes: CompanionAgentNodes, max = 3): {
  */
 export function countAgentToolCalls(nodes: CompanionAgentNodes): number {
   return nodes.reduce((total, node) => total + (node.kind === "tool" ? 1 : 0), 0);
+}
+
+/** 补回漏接的工具帧；较旧快照不能把 SSE 已落定的操作倒退成进行中。 */
+export function reconcileCompanionAgentNodes(live: CompanionAgentNodes, snapshot: CompanionAgentNodes): CompanionAgentNodes {
+  const missing = snapshot.filter(node => node.kind === "tool" && !live.some(item => item.key === node.key));
+  let changed = missing.length > 0;
+  const updated = live.map(node => {
+    const saved = snapshot.find(item => item.key === node.key && item.kind === "tool");
+    if (!saved) return node;
+    // 等待选择仍会得到后续回执；普通终态保持即时帧的结果。
+    if ((node.state === "running" || node.state === "waiting_confirmation") && saved.state !== "running" && saved.state !== node.state) {
+      changed = true;
+      return saved;
+    }
+    return node;
+  });
+  if (!changed) return live;
+  for (const node of missing) {
+    const savedIndex = snapshot.findIndex(item => item.key === node.key);
+    const following = snapshot.slice(savedIndex + 1).find(item => updated.some(current => current.key === item.key));
+    const insertAt = following ? updated.findIndex(item => item.key === following.key) : updated.length;
+    updated.splice(insertAt, 0, node);
+  }
+  return updated;
 }
 
 /** 一轮 run 的过程留痕：服务端摘要 + 由事件折出的节点。 */

@@ -413,64 +413,30 @@
   background: rgba(52, 38, 24, .08);
 }
 
-/* 步骤流与卡片（§4.8 diagram / card 块）。 */
-.companion-record__diagram,
-.companion-record__card {
-  margin: 8px 0 0;
-  padding: 10px 12px;
-  border-radius: 11px;
-  background: rgba(255, 241, 207, .42);
-  border: 1px solid rgba(201, 164, 126, .34);
+/* Structured content keeps its own reading rhythm in replies and history. */
+.companion-record__diagram, .companion-record__card {
+  margin: 8px 0; padding: 13px 14px; border: 1px solid #ddcfaa;
+  border-radius: 13px 17px 12px 15px; background: #fff9e8;
+  overflow-wrap: anywhere;
 }
-
-.companion-record__diagram figcaption,
-.companion-record__card figcaption {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--companion-muted);
-}
-
-.companion-record__diagram ol {
-  display: grid;
-  gap: 4px;
-  margin: 5px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.companion-record__diagram li {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  align-items: baseline;
-  gap: 2px 6px;
-  font-size: 12.5px;
-  line-height: 1.55;
-}
-
-.companion-record__step-no {
-  display: inline-grid;
-  place-items: center;
-  width: 19px;
-  height: 19px;
-  font-size: 11px;
-  font-weight: 700;
-  color: rgba(60, 42, 24, .82);
-  border-radius: 50%;
-  background: rgba(201, 164, 126, .34);
-}
-
-.companion-record__diagram li small,
-.companion-record__card small {
-  grid-column: 2;
-  color: var(--companion-muted);
-  font-size: 11px;
-}
-
-.companion-record__card p {
-  margin: 4px 0 0;
-  font-size: 12.5px;
-  line-height: 1.55;
-}
+.companion-record__diagram figcaption, .companion-record__card figcaption { color: var(--companion-muted); font-size: 11px; font-weight: 700; line-height: 1.6; }
+.companion-record__diagram > ol { display: grid; gap: 0; margin: 10px 0 0; padding: 0; list-style: none; }
+.companion-record__diagram > ol > li { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; padding: 0 0 14px; font-size: 12.5px; line-height: 1.65; }
+.companion-record__diagram > ol > li:last-child { padding-bottom: 0; }
+.companion-record__diagram > ol > li:not(:last-child)::before { content: ""; position: absolute; left: 11px; top: 27px; bottom: 3px; width: 1px; background: #c3cdb4; }
+.companion-record__step-no { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 9px 11px 8px 10px; background: #e2ead5; color: #4a6748; font-size: 11px; font-weight: 700; }
+.companion-record__diagram > ol > li > div > strong { font-weight: 650; }
+.companion-record__step-detail { margin-top: 3px; color: var(--companion-muted); font-size: 12px; line-height: 1.75; }
+.companion-record__step-detail > :is(p, ul, ol), .companion-record__card-front > :is(p, ul, ol), .companion-record__card-summary > :is(p, ul, ol) { margin-block: 3px; }
+.companion-record__card { border-top: 4px solid #b9cda7; }
+.companion-record__card-front { margin-top: 10px; font-size: 14px; line-height: 1.8; }
+.companion-record__card-summary { margin-top: 11px; padding-top: 9px; border-top: 1px dashed #daceac; color: var(--companion-muted); font-size: 12px; line-height: 1.75; }
+.companion-record__code-sheet { min-width: 0; max-width: 100%; margin: 8px 0; border: 1px solid #ddcfaa; border-radius: 13px 17px 12px 15px; overflow: hidden; background: #f4ecd7; }
+.companion-record__code-sheet > figcaption { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 7px 11px; color: var(--companion-muted); font-size: 11px; }
+.companion-record__code-sheet > figcaption > span { min-width: 0; overflow-wrap: anywhere; }
+.companion-record__code-sheet > figcaption > button { display: inline-flex; flex: none; align-items: center; gap: 5px; min-height: 28px; padding: 3px 7px; border: 0; border-radius: 8px; background: #fff9e8; color: #50664a; font: inherit; cursor: pointer; }
+.companion-record__code-sheet > .companion-record__code { max-height: 330px; margin: 0; padding: 12px; border-top: 1px solid #ddcfaa; border-radius: 0; background: transparent; font: 12px/1.75 ui-monospace, SFMono-Regular, Menlo, monospace; overflow: auto; white-space: pre; tab-size: 2; overscroll-behavior: contain; }
+.companion-record__copy-status { margin: 0; padding: 5px 11px; color: #8b543c; font-size: 11px; }
 
 /* 她读到的原文（§4.8 quote 块）：一眼能和她说过的话分开。 */
 .companion-record__quote {
@@ -486,57 +452,21 @@
   color: var(--companion-muted);
 }
 
-.companion-record__quote p {
+.companion-record__quote-text {
   margin: 3px 0 0;
   font-size: 12.5px;
   line-height: 1.55;
-  white-space: pre-wrap;
 }
 
-/*
- * 她摆进对话里的那张图（§4.8 的 image 块）。
- *
- * 只用 max-*：`.reading-image` 在 styles.css 里只有 `cursor: zoom-in`，宽度靠各页面
- * 自己限（笔记正文、HUD 阅读区各有规则），所以图放进抽屉时**没人限过它**——
- * 库里的图实测有 1536×1024，直接把消息列撑破（抱怨 #11 那一类）。`max-height` 管的是
- * 另一头：竖长截图（实测 1024×1536）会把整条消息顶出屏幕。
- * 不写 `width: 100%`——那会把 990×150 这种小图放大糊掉；两个 max- 只缩不放，
- * 宽高比由浏览器自己保。点它是灯箱放大，所以缩着显示不影响看清。
- */
-.companion-record__image {
-  width: fit-content;
-  max-width: 100%;
-  margin: 0;
-  padding: 8px;
-  border: 1.5px solid rgba(201, 164, 126, .58);
-  border-radius: 15px;
-  background: var(--companion-cream);
-}
-
-.companion-record__image img {
-  display: block;
-  max-width: 100%;
-  max-height: 240px;
-  border-radius: 11px;
-  border: 1px solid rgba(201, 164, 126, .34);
-  background: rgba(255, 241, 207, .42);
-}
-
-.companion-record__image figcaption {
-  margin-top: 4px;
-  color: var(--companion-muted);
-  font-size: 10.5px;
-  font-weight: 700;
-}
-
-.companion-record__image-note {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 8px 0 0;
-  color: var(--companion-muted);
-  font-size: 10.5px;
-}
+/* A contained thumbnail keeps the whole image visible; the button opens
+ * the shared fullscreen viewer. Loading/error keep the caption and geometry. */
+.companion-record__image { width: fit-content; max-width: 100%; margin: 8px 0; padding: 7px; border: 1px solid #ddcfaa; border-radius: 15px 20px 13px 17px; background: #fff9e8; }
+.companion-record__image-preview { position: relative; display: block; max-width: 100%; margin: 0; padding: 0; border: 0; border-radius: 10px 14px 9px 12px; overflow: hidden; background: #eee9d9; cursor: zoom-in; }
+.companion-record__image-preview img { display: block; width: auto; height: auto; max-width: 100%; max-height: 240px; object-fit: contain; }
+.companion-record__image-zoom { position: absolute; display: inline-flex; align-items: center; gap: 4px; right: 7px; bottom: 7px; padding: 4px 7px; border-radius: 8px; background: #fff9e8ed; color: #596948; font-size: 10px; line-height: 1.5; box-shadow: 0 1px 5px #51472e18; }
+.companion-record__image figcaption { margin: 6px 2px 1px; color: var(--companion-muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.companion-record__image-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; width: 280px; max-width: 100%; min-height: 145px; padding: 14px; border-radius: 10px 14px 9px 12px; background: #eee9d9; color: var(--companion-muted); font-size: 12px; text-align: center; }
+.companion-record__image-placeholder button { min-height: 32px; padding: 4px 14px; border: 1px solid #becaa9; border-radius: 10px; background: #e2ead5; color: #50664a; font: inherit; cursor: pointer; }
 
 /*
  * 引用块的折叠（2026-09-21 抽屉实机量到：一条长引用的正文把气泡撑到 1256px ≈ 三个视口高，
@@ -549,12 +479,12 @@
  *    折叠按钮一起裁掉，用户就没法展开了。
  * 3. 168px 约等于 11px/1.55 的 10 行：实机 140px 左右那几条短引用照旧整段摊开。
  */
-.companion-record__quote p {
+.companion-record__quote-text {
   max-height: 168px;
   overflow: hidden;
 }
 
-.companion-record__quote[data-expanded="true"] p {
+.companion-record__quote[data-expanded="true"] .companion-record__quote-text {
   max-height: none;
 }
 

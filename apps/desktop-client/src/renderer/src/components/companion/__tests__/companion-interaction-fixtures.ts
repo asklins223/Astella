@@ -5,7 +5,7 @@ import type { CompanionHudSettings } from "../CompanionHud";
 export function interactionSession(overrides: Partial<CompanionChatSession> = {}): CompanionChatSession {
   return {
     phase: "ready", failure: null, conversationId: "44444444-4444-4444-8444-444444444444",
-    messages: [], liveReply: null, richReply: null, autoNavigatedRoutes: new Set<string>(), draft: null, interrupted: null, nodes: [], runTraces: [],
+    messages: [], liveReply: null, richReply: null, autoNavigatedRoutes: new Set<string>(), draft: null, interrupted: null, nodes: [], processRunId: null, runTraces: [],
     feedSelection: null, feedPrompt: null, feedNoteAnchor: null, feedNoteIntent: null,
     autoSendRequestId: null, navChips: [], proposalStates: {}, mode: "conversation", companionName: "小鲸",
     historyHasMore: false, historyLoadingOlder: false, historyOlderError: null, historyRevision: 0,

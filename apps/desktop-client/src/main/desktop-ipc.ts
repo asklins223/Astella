@@ -1780,18 +1780,18 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     voiceAsrModelStore: options.voiceAsrModelStore,
   });
 
-  installHandler(DESKTOP_IPC_CHANNELS.clipboardReadLinks, runtimeInputSchema, options, () => {
+  installHandler(DESKTOP_IPC_CHANNELS.clipboardReadLinks, runtimeInputSchema, options, async () => {
     // 外部复制的链接只在这里过一遍：剪贴板原文截断后提取候选地址，
     // 原文永不过桥，渲染层拿到的只有至多 3 个 http(s) 地址。
-    const text = clipboard.readText().slice(0, 4000);
+    const text = (await clipboard.readText()).slice(0, 4000);
     return clipboardReadLinksResultSchema.parse({ urls: extractCandidateLinks(text) });
   }, undefined, clipboardReadLinksResultSchema);
 
   installHandler(DESKTOP_IPC_CHANNELS.clipboardWriteText, z.strictObject({
     meta: requestMetaSchema,
     request: clipboardWriteTextRequestV1Schema,
-  }), options, (_event, _window, input) => {
-    clipboard.writeText(input.request.text);
+  }), options, async (_event, _window, input) => {
+    await clipboard.writeText(input.request.text);
     return { written: true as const };
   }, undefined, clipboardWriteTextResultV1Schema);
 

@@ -31,9 +31,25 @@ files:
   # public 树里已经没有 models/ 了；这一条挡的是"有人又把一份拷回 public/"与
   # "用了一份外部提供的 out/"这两种情况——它们都会让安装包平白多 239MB。
   - '!out/renderer/models{,/**/*}'
+  # 依赖只给打包器读，运行时不读：main/preload 在 electron.vite.config.ts 里是
+  # `externalizeDeps: false`（全部打进 out/main、out/preload），renderer 由 Vite 打包。
+  # 实测成品 out/main 里非内置模块的 require 只剩 `electron`，所以整套 node_modules
+  # 是死重量——原始 408MB、压进 asar 后 105MB，其中光 mermaid/pixi.js 就 187MB。
+  # 例外是 katex：src/main/note-writing-files.ts 用 require.resolve 读它的 CSS 和
+  # woff2 字体来导出带公式的笔记，那 4.6MB 得留在包里（node_modules 里只此一处）。
+  # 新增运行时真的要从磁盘读的依赖时，往下面这条白名单里加，别把整树放回来。
+  - '!node_modules{,/**/*}'
+  - node_modules/katex{,/**/*}
   - package.json
 
 asar: true
+# Electron 自带的 55 份 Chromium 界面字符串：这个应用只有中文界面，日期与排序走
+# icudtl.dat（不受这条影响），其余 52 份 .pak 没人读——压进安装包 10.5MB。
+# en-US 是 Chromium 的兜底语言，必须留。
+electronLanguages:
+  - zh-CN
+  - zh-TW
+  - en-US
 extraResources:
   - from: build/deployment.json
     to: deployment.json
@@ -45,6 +61,7 @@ compression: maximum
 # 开关覆盖，所以这里**故意不写 arch**，避免和脚本互相覆盖后打出没人要的架构。
 
 mac:
+  minimumSystemVersion: '13.0'
   category: public.app-category.education
   target:
     - dmg

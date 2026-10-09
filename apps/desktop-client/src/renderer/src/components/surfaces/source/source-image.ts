@@ -142,6 +142,8 @@ export type SourceImageHandle = {
    * 免得一张真损坏的图把渲染拖进重试循环。
    */
   readonly retry: () => void;
+  /** Explicit user action may retry again after a second transient failure. */
+  readonly reload: () => void;
 };
 
 export function useSourceImage(url: string, workspaceEpoch?: number): SourceImageHandle {
@@ -171,5 +173,11 @@ export function useSourceImage(url: string, workspaceEpoch?: number): SourceImag
     setAttempt((value) => value + 1);
   };
 
-  return { state, retry };
+  const reload = () => {
+    if (!objectKey) return;
+    invalidateSourceImage(objectKey, workspaceEpoch);
+    setAttempt(value => value + 1);
+  };
+
+  return { state, retry, reload };
 }

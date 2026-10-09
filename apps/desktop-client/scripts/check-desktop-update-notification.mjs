@@ -8,7 +8,7 @@ import { _electron as electron } from '@playwright/test'
 import './load-capture-env.mjs'
 
 const appRoot = resolve(import.meta.dirname, '..')
-// electron 43 的二进制按需安装：`require('electron')` 返回可执行路径，
+// Electron 43 起二进制按需安装：`require('electron')` 返回可执行路径，
 // 缺失时自动触发下载（同 check-macos-update-download 的理由）。
 const electronExecutable = createRequire(import.meta.url)('electron')
 const output = resolve(appRoot, '../../outputs/desktop-update-20261009')

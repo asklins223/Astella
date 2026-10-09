@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useId, useState } from "react";
 import {
   BarChart3,
   Bell,
@@ -6,6 +6,7 @@ import {
   Brain,
   CalendarClock,
   Check,
+  ChevronDown,
   CircleDashed,
   Ear,
   FileText,
@@ -15,6 +16,7 @@ import {
   Network,
   ScanSearch,
   Sparkles,
+  Square,
   TriangleAlert,
   Wrench,
   X,
@@ -22,28 +24,12 @@ import {
 } from "lucide-react";
 import {
   countAgentToolCalls,
-  visibleAgentNodes,
   type CompanionAgentNode,
   type CompanionAgentNodes,
   nodeLabel,
 } from "../../app/companion-agent-nodes";
 
-/**
- * 头顶「步骤轨道」（方案 §1 第一层，2026-09-19）。
- *
- * 贴在状态气泡上方，一行一步，最多同时显示最近 3 步，更早的折成左端 `…+N`。
- * 它回答的是现在用户唯一看不到的那件事：**她到底做了什么、做到哪了**——在此之前
- * 工具调用、技能选择、第几步全部不可见，而服务端一直在发。
- *
- * 三条自我约束：
- *
- * 1. **文案只用 `safeLabel`**（收敛层已经保证），这里不合成描述。
- * 2. **不做表演**：状态点只在 `running` 呼吸、`waiting_confirmation` 脉冲；其余是静态
- *    的落定态。方案 §5 明确不做第二层打字机、不做循环旋转光晕。
- * 3. **收不收由回合状态决定，退场由交互生命周期决定**：`assistant.final` 后 400ms 收成一行摘要；
- *    用户按停止保留 2s（让他看见"停在这里"）；出错**不自动收**——错误必须被看见。
- *    用户能展开全部节点；宿主在完成后有限展示，不与回复气泡的退场耦合。
- */
+/** 实际工具调用的独立过程气泡。执行状态来自 SSE，展开只改变阅读范围。 */
 
 /** 本 run 的真实消耗。来自 `companion_turn_runs`，不是客户端数事件数出来的。 */
 export interface CompanionAgentRailProgress {
@@ -69,6 +55,8 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   companion_open_note: FileText,
   companion_search_notes: ScanSearch,
   companion_read_note: FileText,
+  companion_create_note: FileText,
+  companion_edit_note: FileText,
   companion_get_learning_stats: BarChart3,
   companion_list_task_queue: ListChecks,
   companion_list_due_reviews: CalendarClock,
@@ -87,125 +75,92 @@ function nodeIcon(node: CompanionAgentNode): LucideIcon {
   return (node.toolName ? TOOL_ICONS[node.toolName] : undefined) ?? Wrench;
 }
 
-/** 状态点：结果不明与失败分开提示，其余终态按方案 §1 的表呈现。 */
+const STATE_LABEL: Record<CompanionAgentNode["state"], string> = {
+  running: "进行中",
+  succeeded: "已完成",
+  waiting_confirmation: "等你确认",
+  outcome_unknown: "结果待核对",
+  failed: "未完成",
+  cancelled: "已停止",
+  not_executed: "没有开始",
+  unavailable: "这次用不了",
+};
+
 function nodeMark(node: CompanionAgentNode) {
-  if (node.state === "succeeded") return <Check size={13} aria-hidden="true" />;
-  if (node.state === "failed" || node.state === "outcome_unknown") return <TriangleAlert size={13} aria-hidden="true" />;
-  if (node.state === "cancelled") return <X size={13} aria-hidden="true" />;
-  return <CircleDashed size={13} aria-hidden="true" />;
+  if (node.state === "succeeded") return <Check size={14} aria-hidden="true" />;
+  if (["failed", "outcome_unknown", "not_executed", "unavailable"].includes(node.state)) return <TriangleAlert size={14} aria-hidden="true" />;
+  if (node.state === "cancelled") return <X size={14} aria-hidden="true" />;
+  return <CircleDashed size={14} aria-hidden="true" />;
 }
 
-function progressText(
-  progress: CompanionAgentRailProgress | null,
-  toolCalls: number,
-  turnState: CompanionAgentRailTurnState,
-  hasUnknownOutcome: boolean,
-): string {
-  // 步数只在拿到**本 run** 的摘要时才说。`assistant.status` 一轮只发一次，客户端数不出
-  // 步数——与其猜一个数字，不如先只说工具次数，摘要到了再补上步数。
-  const steps = progress ? `${progress.stepCount} 步` : null;
-  const tools = `${toolCalls} 项操作`;
-  if (hasUnknownOutcome) return steps ? `结果待核对 · ${steps} · ${tools}` : `结果待核对 · ${tools}`;
-  // 失败必须被**读**出来，不能只靠边框变红（`companion-hud.css:599`）：矮窗口下
-  // （方案 35 F4）。用词跟记录里那句「这一轮没能说完」同一口径。
-  if (turnState === "failed") return steps ? `回复未完成 · ${steps} · ${tools}` : `回复未完成 · ${tools}`;
-  if (turnState === "stopped") return steps ? `已停止 · ${steps} · ${tools}` : `已停止 · ${tools}`;
-  return steps ? `${steps} · ${tools}` : tools;
-}
-
-export function CompanionAgentRail({
-  nodes,
-  progress,
-  turnState,
-  companionName,
-  onActivity,
-}: {
+export function CompanionAgentRail({ nodes, progress, turnState, companionName, onActivity, onReadingChange, onDismiss, onStop, stopping = false }: {
   readonly nodes: CompanionAgentNodes;
   readonly progress: CompanionAgentRailProgress | null;
   readonly turnState: CompanionAgentRailTurnState;
-  /** 她对自己的称呼：轨道的 aria-label 用，不再写死模型名。 */
   readonly companionName: string;
   readonly onActivity?: () => void;
+  readonly onReadingChange?: (open: boolean) => void;
+  readonly onDismiss?: () => void;
+  readonly onStop?: () => void;
+  readonly stopping?: boolean;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
   const [expanded, setExpanded] = useState(false);
-
-  /**
-   * 收起时机。`final` 后 400ms 收（让最后一步的落定被看见），停止后 2s 收
-   * （"停在这里"需要停留），出错不收（错误被自动折叠掉等于没提示）。
-   *
-   * 这里只管"收成摘要"，不管消失——消失跟着气泡走（见文件头第 3 条约束）。
-   */
+  const detailsId = useId();
   useEffect(() => {
-    if (turnState === "running" || turnState === "failed") {
-      setCollapsed(false);
-      setExpanded(false);
-      return;
-    }
-    if (turnState === "stopped") {
-      const timer = window.setTimeout(() => setCollapsed(true), 2_000);
-      return () => window.clearTimeout(timer);
-    }
-    const collapseTimer = window.setTimeout(() => setCollapsed(true), 400);
-    return () => window.clearTimeout(collapseTimer);
-  }, [turnState]);
+    onReadingChange?.(expanded);
+    return () => onReadingChange?.(false);
+  }, [expanded, onReadingChange]);
 
-  if (nodes.length === 0) return null;
-
-  const folded = collapsed && !expanded;
-  const recent = visibleAgentNodes(nodes);
-  const visible = expanded ? nodes : recent.visible;
-  const hiddenCount = expanded ? 0 : recent.hiddenCount;
-  // 工具次数取「摘要」与「本轮节点去重计数」的较大者：摘要是权威值但它按轮询节奏到，
-  // 节点是即时的。两者同口径（都是去重后的 toolCallId 个数），取大不会虚报。
-  const toolCalls = Math.max(progress?.toolCallCount ?? 0, countAgentToolCalls(nodes));
-  const hasUnknownOutcome = nodes.some((node) => node.state === "outcome_unknown");
+  // 等待模型与思考帧不构成工具调用，普通聊天始终不生成这张气泡。
+  const tools = nodes.filter(node => node.kind === "tool");
+  if (tools.length === 0) return null;
+  const latestFirst = [...tools].reverse();
+  const unresolved = latestFirst.find(node => node.state === "outcome_unknown") ?? latestFirst.find(node => node.state === "waiting_confirmation");
+  const running = latestFirst.find(node => node.state === "running");
+  const issue = latestFirst.find(node => ["failed", "not_executed", "unavailable", "cancelled"].includes(node.state));
+  const current = unresolved ?? running ?? issue ?? tools[tools.length - 1];
+  const count = Math.max(progress?.toolCallCount ?? 0, countAgentToolCalls(tools));
+  const completed = tools.filter(node => node.state === "succeeded").length;
+  const state = unresolved?.state ?? (turnState === "failed" ? "failed"
+    : turnState === "stopped" ? "cancelled" : turnState === "running" && running ? "running" : issue?.state ?? (turnState === "running" ? "running" : running ? "outcome_unknown" : "succeeded"));
+  const composing = turnState === "running" && !running && !unresolved && !issue;
+  const active = turnState === "running" && !composing;
+  const headline = composing ? "正在组织回复…" : active || unresolved || issue ? nodeLabel(current)
+    : state === "succeeded" ? "操作已完成" : state === "failed" ? "回复未完成" : STATE_LABEL[state];
+  const CurrentIcon = composing ? BookOpen : state === "succeeded" && !active ? Check : state === "cancelled" ? X : nodeIcon(current);
+  const countText = `${count} 项操作`;
 
   return (
-    <div
-      className="companion-hud__rail"
-      data-turn={turnState}
-      data-collapsed={folded || undefined}
+    <section className="companion-hud__rail" data-turn={turnState} data-state={state}
       data-expanded={expanded || undefined}
-      onPointerMove={onActivity}
-      onWheel={onActivity}
-      onKeyDown={onActivity}
-      onFocus={onActivity}
-      role="status"
-      aria-live="polite"
-      aria-label={`${companionName} 正在做的事`}
-    >
+      onPointerMove={onActivity} onWheel={onActivity} onKeyDown={onActivity} onFocus={onActivity}
+      aria-label={`${companionName} 的做事经过`}>
       <header className="companion-hud__rail-heading">
         <strong><Wrench size={13} aria-hidden="true" />做事经过</strong>
-        <button type="button" className="text-action" aria-expanded={expanded} onClick={() => { onActivity?.(); setExpanded(value => !value); }}>
-          {expanded ? "收起过程" : "查看过程"}
+        <div className="companion-hud__rail-actions"><button type="button" className="text-action" aria-expanded={expanded} aria-controls={detailsId}
+          onClick={() => { onActivity?.(); setExpanded(value => !value); }}>
+          {expanded ? "收起过程" : "查看过程"}<ChevronDown size={12} aria-hidden="true" />
         </button>
+        {turnState === "running" && onStop ? <button type="button" className="text-action" onClick={onStop} disabled={stopping} aria-label="停止这一轮"><Square size={10} fill="currentColor" aria-hidden="true" />{stopping ? "停止中" : "停止"}</button>
+          : onDismiss ? <button type="button" className="text-action companion-hud__rail-dismiss" onClick={onDismiss} aria-label="收起做事经过"><X size={14} /></button> : null}</div>
       </header>
-      {folded ? (
-        <p className="companion-hud__rail-summary">{progressText(progress, toolCalls, turnState, hasUnknownOutcome)}</p>
-      ) : (
-        <ol
-          className="companion-hud__rail-steps"
-          style={{ "--rail-index": Math.max(0, visible.length - 1) } as CSSProperties}
-        >
-          {hiddenCount > 0 ? <li className="companion-hud__rail-overflow">…+{hiddenCount}</li> : null}
-          {visible.map((node) => {
+      <div className="companion-hud__rail-current" role="status" aria-live="polite" aria-atomic="true" aria-label={`${companionName} 正在做的事`}>
+        <span className="companion-hud__rail-current-icon" aria-hidden="true"><CurrentIcon size={18} /></span>
+        <div><p>{headline}</p><span>{state === "succeeded" ? countText : <>{composing ? "工具操作已结束" : STATE_LABEL[state]}<span aria-hidden="true"> · </span>{countText}</>}</span></div>
+      </div>
+      {expanded ? <div id={detailsId} className="companion-hud__rail-details">
+        <ol className="companion-hud__rail-steps">
+          {tools.map(node => {
             const Icon = nodeIcon(node);
-            return (
-              <li key={node.key} data-state={node.state} data-kind={node.kind} title={node.summary ?? undefined}>
-                <span className="companion-hud__rail-icon"><Icon size={13} aria-hidden="true" /></span>
-                <span className="companion-hud__rail-label">
-                  {nodeLabel(node)}{node.state === "outcome_unknown" ? " · 结果待核对" : ""}
-                </span>
-                <span className="companion-hud__rail-mark">{nodeMark(node)}</span>
-              </li>
-            );
+            return <li key={node.key} data-state={node.state}>
+              <span className="companion-hud__rail-icon"><Icon size={14} aria-hidden="true" /></span>
+              <div className="companion-hud__rail-label"><span>{nodeLabel(node)}</span>{node.summary ? <small>{node.summary}</small> : null}</div>
+              <span className="companion-hud__rail-mark">{nodeMark(node)}<span>{STATE_LABEL[node.state]}</span></span>
+            </li>;
           })}
         </ol>
-      )}
-      {!folded ? (
-        <p className="companion-hud__rail-summary">{progressText(progress, toolCalls, turnState, hasUnknownOutcome)}</p>
-      ) : null}
-    </div>
+        <p className="companion-hud__rail-summary">已完成 {completed} 项 · 共 {countText}{progress && progress.stepCount > 0 ? ` · ${progress.stepCount} 步` : ""}</p>
+      </div> : <div id={detailsId} hidden />}
+    </section>
   );
 }

@@ -6,7 +6,7 @@ import { useCompanionTransient } from "./use-companion-transient";
 import { stopCompanionSpeech } from "../../app/companion-voice-playback";
 
 /** 输入草稿与语音会话各有状态；真实发送回执通过 HUD 绑定，等待和失败不会静默丢掉。 */
-export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled: boolean, obscured = false) {
+export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled: boolean, obscured = false, processReading = false) {
   const input = useRoomStore(state => state.companionComposerDraft);
   const setInput = useRoomStore(state => state.setCompanionComposerDraft);
   const [voiceOpen, setVoiceOpen] = useState(false);
@@ -55,7 +55,8 @@ export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled
   const errorLife = useCompanionTransient(errorKey, 60_000, obscured);
   const toolKey = chat.nodes.some(node => node.kind === "tool")
     ? `${chat.conversationId}:${chat.nodes.map(node => `${node.key}:${node.state}`).join("|")}:${chat.phase === "sending" ? "running" : "done"}` : null;
-  const toolLife = useCompanionTransient(toolKey, 8_000, obscured || chat.phase === "sending");
+  const toolNeedsAttention = chat.nodes.some(node => node.kind === "tool" && ["waiting_confirmation", "outcome_unknown", "failed", "not_executed", "unavailable"].includes(node.state));
+  const toolLife = useCompanionTransient(toolKey, 8_000, obscured || chat.phase === "sending" || Boolean(chat.liveReply || chat.richReply) || processReading || toolNeedsAttention);
   return {
     input, setInput, voice,
     voiceOpen: voiceOpen && (voiceLife.visible || voice.phase !== "idle"),
@@ -77,6 +78,7 @@ export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled
     outputActivity: errorLife.activity,
     toolVisible: toolLife.visible,
     toolActivity: toolLife.activity,
+    dismissTool: toolLife.dismiss,
     menuActivity: menuLife.activity,
   };
 }

@@ -3,9 +3,9 @@ import { createPortal } from "react-dom";
 import { Eye, Hand, Zap } from "lucide-react";
 import type { CompanionAgentPermissionLevel } from "@astella/shared/companion-agent-contracts";
 import type { CompanionAccountStateV1 } from "@astella/shared/companion-shell-contracts";
-import { createRequestMeta, gatewayErrorMessage, requireWorkspaceEpoch, unwrapGatewayResult } from "../../app/desktop-client";
+import { createRequestMeta, gatewayErrorMessage, getCurrentWorkspaceEpoch, requireWorkspaceEpoch, unwrapGatewayResult } from "../../app/desktop-client";
 import { COMPANION_AGENT_PERMISSION_DETAIL, COMPANION_AGENT_PERMISSION_OPTIONS } from "./companion-account-presence";
-import { COMPANION_ACCOUNT_CHANGED, publishCompanionAccountChanged } from "./companion-events";
+import { publishCompanionAccountChanged, subscribeCompanionAccountChanged } from "./companion-events";
 
 const MENU_WIDTH = 296;
 const EDGE = 14;
@@ -39,11 +39,10 @@ export function CompanionAgentPermissionMenu({ buttonClassName }: { buttonClassN
   const [error, setError] = useState<string | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const selfPublish = useRef(false);
 
   const load = useCallback(async () => {
     try {
-      const epoch = await requireWorkspaceEpoch();
+      const epoch = getCurrentWorkspaceEpoch() || await requireWorkspaceEpoch();
       const overview = unwrapGatewayResult(await window.astella.companion.account.getState({ meta: createRequestMeta(epoch) }));
       setAccount(overview.account);
     } catch {
@@ -54,9 +53,7 @@ export function CompanionAgentPermissionMenu({ buttonClassName }: { buttonClassN
 
   useEffect(() => {
     void load();
-    const refresh = () => { if (!selfPublish.current) void load(); };
-    window.addEventListener(COMPANION_ACCOUNT_CHANGED, refresh);
-    return () => window.removeEventListener(COMPANION_ACCOUNT_CHANGED, refresh);
+    return subscribeCompanionAccountChanged(setAccount);
   }, [load]);
 
   const toggle = () => {
@@ -105,17 +102,13 @@ export function CompanionAgentPermissionMenu({ buttonClassName }: { buttonClassN
     setBusy(true);
     setError(null);
     try {
-      const epoch = await requireWorkspaceEpoch();
+      const epoch = getCurrentWorkspaceEpoch() || await requireWorkspaceEpoch();
       const patched = unwrapGatewayResult(await window.astella.companion.account.patchState({
         meta: createRequestMeta(epoch),
         request: { revision: account.revision, agentPermissionLevel: level },
       }));
       setAccount(patched);
-      // 设置页与伴星自己都在听这个事件；不广播就会出现「这里已改、那里还是旧档位」。
-      // 广播之前先挂上自己的标记：这一次新状态已经在手上，不能再把自己拽回去重读一遍。
-      selfPublish.current = true;
-      publishCompanionAccountChanged();
-      selfPublish.current = false;
+      publishCompanionAccountChanged(patched);
       setOpen(false);
     } catch (cause) {
       // 失败要留在这张卡上：CAS 撞车时重新读一遍账号，用户才看得见现在到底是哪档。

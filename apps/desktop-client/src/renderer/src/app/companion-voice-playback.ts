@@ -38,8 +38,13 @@ export interface CompanionVoiceHost {
   /**
    * 播放到结束；期间按播放进度回调 0..1（调用方会自行节流）。播完 resolve，
    * 被 stop() 打断时也 resolve——打断由 generation 判定，不靠异常。
+   *
+   * resolve 的值是**这一段到底响没响**：闸门关着时宿主不会播，直接给 false。
+   * 这个区分不能让调用方自己猜——猜错的旧行为是"没出声也当播完了"，于是窗口被
+   * 盖住的那一瞬间，剩下每一段都被记成一次成功播放，文字安静地冲到结尾
+   * （2026-10-09）。
    */
-  readonly play: (buffer: AudioBuffer, onProgress: (fraction: number) => void) => Promise<void>;
+  readonly play: (buffer: AudioBuffer, onProgress: (fraction: number) => void) => Promise<boolean>;
   /**
    * 此刻的播放位置 0..1；没有在播返回 null（方案 29 §14.11 修复 ⑤）。
    *
@@ -230,9 +235,11 @@ export function playCachedCompanionMessage(runId: string, ordinals: readonly num
         const buffer = await withDeadline(read({ runId, ordinal: ordered[index] }), COMPANION_SPEECH_FIRST_AUDIO_DEADLINE_MS);
         if (!current()) return;
         emit({ planId, phase: "speaking", segmentIndex: index, segmentCount: ordered.length, visibleChars: 0 });
-        await withDeadline(activeHost.play(buffer, () => undefined),
+        // 没出声的一趟交给 finally 收（stopCompanionSpeech 会给这一轮一个 stopped 终态），
+        // 不能让它继续往下一个 ordinal 走——那等于把整条录音"安静地放完"。
+        const heard = await withDeadline(activeHost.play(buffer, () => undefined),
           (Number.isFinite(buffer.duration) ? buffer.duration : 0) * 1000 + COMPANION_SPEECH_PLAY_STALL_MS);
-        if (!current()) return;
+        if (!current() || !heard) return;
       }
       setActiveSpeechPlan(null);
       emit({ planId, phase: "finished", segmentIndex: ordinals.length - 1, segmentCount: ordinals.length, visibleChars: 0 });
@@ -323,7 +330,7 @@ async function runSpeech(run: SpeechRun): Promise<void> {
         visibleChars: visibleAt(index, 0),
       });
       let lastProgressAt = 0;
-      await run.host.play(buffer, (fraction) => {
+      const heard = await run.host.play(buffer, (fraction) => {
         if (run.runGeneration !== generation) return;
         const now = Date.now();
         // 逐帧回调会带着 React 一起 60Hz 重渲；80ms 的步进看起来依然是连续打字的。
@@ -338,6 +345,11 @@ async function runSpeech(run: SpeechRun): Promise<void> {
         });
       });
       if (run.runGeneration !== generation) return;
+      // 一个音节都没响就别把这一段算成念过，后面的段也不能接着被"瞬间播完"。
+      if (!heard) {
+        stopCompanionSpeech();
+        return;
+      }
     }
     setActiveSpeechPlan(null);
     emit({
@@ -676,8 +688,9 @@ async function runQueuedSpeech(args: {
        * 上限按这段音频自己的时长给，再加固定余量，正常长句不会被误杀。
        */
       let stalled = false;
+      let heard = false;
       try {
-        await withDeadline(
+        heard = await withDeadline(
           args.host.play(buffer, (fraction) => {
             if (args.runGeneration !== generation) return;
             const now = Date.now();
@@ -697,12 +710,14 @@ async function runQueuedSpeech(args: {
       } catch {
         stalled = true;
       }
-      if (stalled || args.runGeneration !== generation) {
-        // play() 被 stop() 提前 resolve、或根本没走完时"到底听没听见"是不知道的，
-        // 所以这里报 dropped 而不是 played：played 继续只由正常路径写。
+      if (stalled || !heard || args.runGeneration !== generation) {
+        // play() 被 stop() 提前 resolve、没走完、或宿主闸门关着根本没播，
+        // "到底听没听见"都是否——所以这里报 dropped 而不是 played：
+        // played 继续只由正常路径写。
         reportAbandoned();
-        if (stalled) {
-          // 卡住的那一轮要把界面和 `activePlanId` 一起放开，否则她永远"在说话"，
+        // 新的那一轮已经接管通道（generation 变了），这里不能再替它喊停。
+        if ((stalled || !heard) && args.runGeneration === generation) {
+          // 卡住或没出声的这一轮要把界面和 `activePlanId` 一起放开，否则她永远"在说话"，
           // 主动提示音会一直给这条不存在的朗读让路（见 isCompanionSpeechActive）。
           stopCompanionSpeech();
         }

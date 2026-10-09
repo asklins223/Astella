@@ -1,3 +1,4 @@
+import { AVATAR_MAX_BYTES } from "@astella/shared/desktop-ipc-contracts";
 /**
  * 图片上传安全测试
  *
@@ -19,7 +20,7 @@ import { avatarUrlSchema } from "../modules/identity/routes.ts";
 // ─── 测试常量 ──────────────────────────────────────────────────────────────
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
-const MAX_AVATAR_SIZE = 2 * 1024 * 1024; // 2MB
+const MAX_AVATAR_SIZE = AVATAR_MAX_BYTES;
 
 const WORKSPACE_A = "00000000-0000-4000-8000-000000000001";
 const WORKSPACE_B = "00000000-0000-4000-8000-000000000002";
@@ -96,7 +97,7 @@ describe("安全测试：超大文件上传防护", () => {
     assert.ok(oversized.length > MAX_IMAGE_SIZE);
   });
 
-  it("头像超过 2MB → 应被拒绝", () => {
+  it("头像超过 10MB → 应被拒绝", () => {
     const oversized = Buffer.alloc(MAX_AVATAR_SIZE + 1);
     assert.ok(oversized.length > MAX_AVATAR_SIZE);
   });
@@ -106,7 +107,7 @@ describe("安全测试：超大文件上传防护", () => {
     assert.ok(exactLimit.length <= MAX_IMAGE_SIZE);
   });
 
-  it("恰好 2MB 的头像 → 不超过限制", () => {
+  it("恰好 10MB 的头像 → 不超过限制", () => {
     const exactLimit = Buffer.alloc(MAX_AVATAR_SIZE);
     assert.ok(exactLimit.length <= MAX_AVATAR_SIZE);
   });

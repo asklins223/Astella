@@ -4,7 +4,7 @@
 
 ## What this covers
 
-`apps/desktop-client` is the only user interface in Astella: a single-window Electron 43 study room. The main process owns the window, the custom scheme, the note collaboration channel, artifact storage and the updater; the renderer owns every layout but has **no router** — registered page intents resolved by a store, and the same Live2D companion (伴星, "companion star") sits beside the paper on all of them. This page follows that real call path: where the process boundary falls, how a screen gets chosen, how the companion is driven, how notes are saved, how an installer is produced, and which sentences are easiest to write in a way that contradicts the code. Facts come from `apps/desktop-client/**` sources plus the repository-root [PRODUCT.md](../../../PRODUCT.md) and [DESIGN.md](../../../DESIGN.md); unless stated otherwise, all paths here are relative to `apps/desktop-client/`.
+`apps/desktop-client` is the only user interface in Astella: a single-window Electron 44 study room. The main process owns the window, the custom scheme, the note collaboration channel, artifact storage and the updater; the renderer owns every layout but has **no router** — registered page intents resolved by a store, and the same Live2D companion (伴星, "companion star") sits beside the paper on all of them. This page follows that real call path: where the process boundary falls, how a screen gets chosen, how the companion is driven, how notes are saved, how an installer is produced, and which sentences are easiest to write in a way that contradicts the code. Facts come from `apps/desktop-client/**` sources plus the repository-root [PRODUCT.md](../../../PRODUCT.md) and [DESIGN.md](../../../DESIGN.md); unless stated otherwise, all paths here are relative to `apps/desktop-client/`.
 
 - [Build and three entry points](#build-and-three-entry-points)
 - [Window, scheme and preload](#window-scheme-and-preload)
@@ -26,7 +26,8 @@
 | Item | Value |
 | --- | --- |
 | Package / version | `astella-desktop-client` / `release/version.json` |
-| Runtime | Electron `43.4.1`, electron-vite `^5.0.0`, Vite `^7.3.6` |
+| Runtime | Electron `44.7.0`, electron-vite `^5.0.0`, Vite `^7.3.6` |
+| Minimum macOS | macOS 13 Ventura; declared in `electron-builder.yml` |
 | UI | React `^19.2.0`, TypeScript `^5.9.3`, Zustand `^5`, GSAP `^3.15` |
 | Editor stack | `@milkdown/kit` `^7.22.1` + CodeMirror 6 + `yjs` `^13.6` + `@hocuspocus/provider` `^4.7` |
 | Tests | Vitest `^4.1.11` + `jsdom` + Testing Library |

@@ -7,7 +7,7 @@
 A desktop study room for personal learning. Turn material into notes, understand and recall it beside the original passage, and make cards for long-term review when needed. A Live2D companion can discuss what you are reading, find sources, create notes and edit the body at your request.
 
 [![Latest release](https://img.shields.io/github/v/release/asklins223/Astella)](https://github.com/asklins223/Astella/releases/latest)
-[![Electron 43](https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![Electron 44](https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Fastify 5](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
 [![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
@@ -15,7 +15,7 @@ A desktop study room for personal learning. Turn material into notes, understand
 
 [中文](README.md) · [English](README.en.md) · [User and developer guide](docs/guide/README.md)
 
-Repository version: `v1.3.5` (shared by the server and desktop client)
+Repository version: `v1.4.0` (shared by the server and desktop client)
 
 </div>
 

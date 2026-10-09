@@ -8,8 +8,8 @@ import { gatewayErrorMessage } from "../../app/desktop-client";
 import type { CompanionRunTrace } from "../../app/companion-agent-nodes";
 import { CompanionProposalChoice } from "./CompanionProposalChoice";
 import { CompanionRunTraceView } from "./CompanionRunTraceView";
-import { ZoomableReadingImage } from "../surfaces/source/image-viewer.tsx";
-import { useSourceImage } from "../surfaces/source/source-image.ts";
+import { CompanionCardBlock, CompanionCodeBlock, CompanionDiagramBlock, CompanionRecordImage } from "./companion-rich-content";
+export { CompanionRecordImage } from "./companion-rich-content";
 import { CompanionWebSources, companionWebCitations } from "./companion-web-citations";
 import { renderCompanionMarkdown } from "./companion-markdown";
 import { openExternalLink } from "../../app/external-link";
@@ -60,11 +60,7 @@ export function messageDayLabel(value: string): string {
 }
 
 export function shouldShowRunTrace(trace: CompanionRunTrace): boolean {
-  return trace.summary.stepCount > 1
-    || trace.summary.toolCallCount > 0
-    || trace.summary.status === "failed"
-    || trace.summary.status === "waiting_for_confirmation"
-    || trace.nodes.some(node => node.state === "outcome_unknown" || node.state === "unavailable" || node.state === "not_executed" || node.state === "failed");
+  return trace.summary.toolCallCount > 0 || trace.nodes.some(node => node.kind === "tool");
 }
 
 export function stopSummary(trace: CompanionRunTrace | null): string {
@@ -139,61 +135,21 @@ function NavBlockLine({
 }
 
 /**
- * 她摆到对话里的那张图（§4.8 的 image 块，`companion_show_image` 服务端拼的 url）。
- *
- * 字节必须走 main 的站内图片通道：渲染层的 origin 是 `astella-app://`，
- * `/api/uploads/…` 会落到应用包里（404），而外链又被 CSP 的 `img-src` 拦掉。
- * 载入中与取不回来都不给 `<img>`——破图图标比一句人话更像"她坏了"。
- * 取不回来时留一个重试：这类失败通常是瞬时的（API 正在重启），
- * 而这块内容一旦落成消息就会一直在，不该一次失败就永久空白。
- */
-export function CompanionRecordImage({
-  block,
-}: {
-  readonly block: Extract<CompanionContentBlockV1, { type: "image" }>;
-}) {
-  const { state, retry } = useSourceImage(block.url);
-  if (state.status === "ready" || state.status === "external") {
-    return (
-      <figure className="companion-record__image">
-        <ZoomableReadingImage
-          src={state.src}
-          alt={block.alt ?? block.label}
-          retryable={state.status === "ready"}
-          onRetry={retry}
-          ownedByCompanion
-        />
-        <figcaption>{block.label}</figcaption>
-      </figure>
-    );
-  }
-  if (state.status === "loading") {
-    return <p className="companion-record__image-note">正在载入图片…</p>;
-  }
-  return (
-    <p className="companion-record__image-note">
-      图片取不回来（{block.label}）。
-      <button type="button" onClick={retry}>重试</button>
-    </p>
-  );
-}
-
-/**
- * 引用块（她读到的原文）。
+ * 查阅片段（工具当时返回的截短快照）。
  *
  * 折叠是**量出来**的，不是按字数猜的：抽屉实测 406px 宽，同一条规则下 165px 的短引用
- * 该整段摊开、1256px 的长原文（实机真的出现过，等于三个视口）才出「展开原文」。
- * 上限必须由 CSS **一直挂着**（`.companion-record__quote` 的 `max-height`）：
+ * 该整段摊开、1256px 的长片段（实机真的出现过，等于三个视口）才出「展开片段」。
+ * 上限必须由 CSS **一直挂着**（`.companion-record__quote-text` 的 `max-height`）：
  * 元素自己不受限时 `scrollHeight === clientHeight`，溢出永远量不出来——
  * 实机第一版就是这么错的（四条引用全部 1256/1256，一个按钮都没有）。
- * 展开之后也不再复检：那时量到的就是全文高度，会把「收起」自己量没掉。
+ * 展开之后也不再复检：那时量到的是全部片段的高度，会把「收起」自己量没掉。
  */
 export function CompanionQuoteBlock({
   block,
 }: {
   readonly block: Extract<CompanionContentBlockV1, { type: "quote" }>;
 }) {
-  const textRef = useRef<HTMLParagraphElement>(null);
+  const textRef = useRef<HTMLDivElement>(null);
   const [overflowing, setOverflowing] = useState(false);
   const [expanded, setExpanded] = useState(false);
   useLayoutEffect(() => {
@@ -210,10 +166,10 @@ export function CompanionQuoteBlock({
   return (
     <figure className="companion-record__quote" data-expanded={expanded ? "true" : undefined}>
       <figcaption>{block.label}</figcaption>
-      <p ref={textRef}>{block.text}</p>
+      <div className="companion-record__quote-text" ref={textRef}>{renderCompanionMarkdown(block.text)}</div>
       {overflowing ? (
         <button type="button" onClick={() => setExpanded((value) => !value)}>
-          {expanded ? "收起原文" : "展开原文"}
+          {expanded ? "收起片段" : "展开片段"}
         </button>
       ) : null}
     </figure>
@@ -225,10 +181,12 @@ export function CompanionMessageRichBlocks({
   blocks,
   chat,
   onNavNavigated,
+  onReadingChange,
 }: {
   readonly blocks: readonly CompanionContentBlockV1[];
   readonly chat?: CompanionChatSession;
   readonly onNavNavigated?: () => void;
+  readonly onReadingChange?: (reading: boolean) => void;
 }) {
   const sources = companionWebCitations(blocks);
   return <>
@@ -241,30 +199,11 @@ export function CompanionMessageRichBlocks({
           : block.type === "quote"
             ? <CompanionQuoteBlock key={`quote-${index}`} block={block} />
             : block.type === "diagram"
-              ? (
-                  <figure className="companion-record__diagram" key={`diagram-${index}`}>
-                    <figcaption>{block.title}</figcaption>
-                    <ol>
-                      {block.steps.map((step, n) => (
-                        <li key={n}>
-                          <span className="companion-record__step-no">{n + 1}</span>
-                          <span>{step.label}</span>
-                          {step.detail ? <small>{step.detail}</small> : null}
-                        </li>
-                      ))}
-                    </ol>
-                  </figure>
-                )
+              ? <CompanionDiagramBlock key={`diagram-${index}`} block={block} />
               : block.type === "card"
-                ? (
-                    <figure className="companion-record__card" key={`card-${index}`}>
-                      <figcaption>{block.knowledgeForm ? `题面预览 · ${block.knowledgeForm}` : "题面预览"}</figcaption>
-                      <p>{block.front}</p>
-                      {block.summary ? <small>{block.summary}</small> : null}
-                    </figure>
-                  )
+                ? <CompanionCardBlock key={`card-${index}`} block={block} />
                 : block.type === "image"
-                  ? <CompanionRecordImage key={`image-${index}`} block={block} />
+                  ? <CompanionRecordImage key={`image-${index}`} block={block} onReadingChange={onReadingChange} />
                   : block.type === "citation"
                     ? <p className="companion-record__citation" key={`citation-${index}`}>
                         {block.target.kind === "external_https"
@@ -272,7 +211,7 @@ export function CompanionMessageRichBlocks({
                           : <span>{block.label}</span>}
                       </p>
                     : block.type === "code"
-                      ? <pre className="companion-record__code" key={`code-${index}`}><code>{block.code}</code></pre>
+                      ? <CompanionCodeBlock key={`code-${index}-${block.code}`} block={block} />
                       : null
       ))}
   </>;
@@ -317,7 +256,7 @@ export function CompanionChatRecordArticle({
       {message.kind === "error" ? <p className="companion-record__stopped">这一轮没能说完{stopSummary(trace)}</p> : null}
       {pending.length ? <div className="companion-record__decisions">{choices(pending)}</div> : null}
       {references.length || settled.length || (trace && shouldShowRunTrace(trace)) ? <div className="companion-record__attachments">
-        {references.length ? <details className="companion-record__references"><summary><Quote size={14} aria-hidden="true" />引用与出处 <small>{references.length}</small></summary><CompanionMessageRichBlocks blocks={references} chat={chat} /></details> : null}
+        {references.length ? <details className="companion-record__references"><summary><Quote size={14} aria-hidden="true" />查阅与出处 <small>{references.length}</small></summary><CompanionMessageRichBlocks blocks={references} chat={chat} /></details> : null}
         {settled.length ? <details className="companion-record__decision-history"><summary>确认记录 <small>{settled.length}</small></summary>{choices(settled)}</details> : null}
         {trace && shouldShowRunTrace(trace) ? (
         <CompanionRunTraceView

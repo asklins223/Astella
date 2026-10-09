@@ -121,6 +121,7 @@ import {
   authProfileResultV1Schema,
   avatarObjectKeySchema,
   avatarUploadResultV1Schema,
+  avatarGetResultV1Schema,
   inviteCreatedV1Schema,
   inviteListResultV1Schema,
   memberListResultV1Schema,
@@ -271,7 +272,6 @@ import {
 } from "@astella/shared/companion-conversation-contracts";
 import {
   sourceImageGetRequestV1Schema,
-  sourceImageGetResultV1Schema,
 } from "@astella/shared/source-image-contracts";
 import {
   noteImageUploadRequestV1Schema,
@@ -600,7 +600,7 @@ installHandler(DESKTOP_IPC_CHANNELS.authGetState, runtimeInputSchema, options, a
     requireM2Route(contract, "settings.section");
     assertEpochBoundaryExempt(input.meta, getActiveWorkspaceEpoch());
     return ns_auth.getAvatar(gateway.gatewayTransport, input.request.objectKey, input.meta.requestId);
-  }, sourceImageGetResultV1Schema);
+  }, avatarGetResultV1Schema);
 
   // 退出协作工作区是空间边界变化：回执是重读后的会话，与 joinWorkspace 同构。
   installHandler(DESKTOP_IPC_CHANNELS.authLeaveWorkspace, authLeaveWorkspaceInputSchema, options, async (_event, _window, input) => {

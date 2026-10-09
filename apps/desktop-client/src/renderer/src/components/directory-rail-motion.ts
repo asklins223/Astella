@@ -35,7 +35,7 @@ export function directorySpring(from: SpringState, target: number, seconds: numb
     velocity: decay * (-halfDamping * value - displacement * frequency * sin + b * frequency * cos) };
 }
 
-type FrozenRail = { root: HTMLElement; skin: HTMLElement; top: HTMLElement; middle: HTMLElement; box: Box; chips: Array<{ element: HTMLElement; box: Box }> };
+type FrozenRail = { root: HTMLElement; skin: HTMLElement; box: Box; chips: Array<{ element: HTMLElement; box: Box }> };
 
 function freezeRail(rail: HTMLElement): FrozenRail {
   const box = directoryBox(rail);
@@ -75,14 +75,16 @@ function freezeRail(rail: HTMLElement): FrozenRail {
     zIndex: "45", pointerEvents: "none" });
   const skin = document.createElement("span");
   skin.className = "directory-rail-skin";
-  skin.style.setProperty("--directory-skin-color", sourceStyle.backgroundColor);
-  skin.style.setProperty("--directory-skin-line", sourceStyle.borderTopColor);
-  const [top, middle, bottom] = [document.createElement("i"), document.createElement("i"), document.createElement("i")];
-  middle.style.height = `${Math.max(0, box.height - 44)}px`;
-  skin.append(top, middle, bottom);
+  // Paint the same material as the destination. Three flat slices with a
+  // different shadow and no backdrop blur visibly changed at the handoff.
+  skin.style.background = sourceStyle.background;
+  skin.style.border = sourceStyle.border;
+  skin.style.borderRadius = sourceStyle.borderRadius;
+  skin.style.boxShadow = sourceStyle.boxShadow;
+  skin.style.backdropFilter = sourceStyle.backdropFilter;
   root.prepend(skin);
   rail.parentElement?.append(root);
-  return { root, skin, top, middle, box, chips };
+  return { root, skin, box, chips };
 }
 
 /** One visual column for both directions; the live controls adopt intent immediately. */
@@ -156,13 +158,12 @@ export function createDirectoryRailMotion() {
       animations.push(animation);
       return animation;
     };
-    const { box, skin, top, middle, chips } = frozen;
+    const { box, skin, chips } = frozen;
     const compact = collapsedRail;
     const compactButton = collapsedButton;
-    animate(skin, progress => ({ transform: `translate3d(${(centerX(compact) - centerX(box)) * progress}px, ${(compact.bottom - box.bottom) * progress}px, 0) scaleX(${mix(1, compact.width / box.width, progress)})`,
+    animate(skin, progress => ({ height: `${Math.max(compact.height, mix(box.height, compact.height, progress))}px`,
+      transform: `translate3d(${(centerX(compact) - centerX(box)) * progress}px, ${(compact.bottom - box.bottom) * progress}px, 0) scaleX(${mix(1, compact.width / box.width, progress)})`,
       opacity: 1 - clamp((progress - 0.8) / 0.2) }));
-    animate(top, progress => ({ transform: `translateY(${box.height - Math.max(44, mix(box.height, compact.height, progress))}px)` }));
-    animate(middle, progress => ({ transform: `scaleY(${Math.max(0, mix(box.height, compact.height, progress) - 44) / Math.max(1, box.height - 44)})` }));
     for (const chip of chips) {
       animate(chip.element, progress => ({ transform: `translate3d(${(centerX(compact) - centerX(box)) * progress}px, ${(centerY(compactButton) - centerY(chip.box)) * progress}px, 0)`,
         opacity: clamp(1 - progress / 0.66) }));

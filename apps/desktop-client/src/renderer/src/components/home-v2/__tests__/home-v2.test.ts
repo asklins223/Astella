@@ -3,6 +3,7 @@ import {
   HOME_V2_CAMERA_PRESETS,
   homeV2CameraCss,
   homeV2CameraDuration,
+  shouldPlayCompanionReplyVoice,
   shouldPlayHomeV2Feedback,
 } from "../home-v2.ts";
 
@@ -73,5 +74,13 @@ describe("home V2 sound gate", () => {
     expect(shouldPlayHomeV2Feedback({ ...ready, masterMuted: true })).toBe(false);
     expect(shouldPlayHomeV2Feedback({ ...ready, surfaceOpen: true })).toBe(false);
     expect(shouldPlayHomeV2Feedback({ ...ready, windowVisible: false })).toBe(false);
+  });
+
+  // 2026-10-09：用户亲口问出来的那条回复和被盖住的窗口是两件事。合成一条闸门时，
+  // Cmd+Tab 走开的那一瞬间 AudioContext 被挂起，话念到一半就断。
+  it("对话朗读只看解锁与静音，不看窗口在不在前面", () => {
+    expect(shouldPlayCompanionReplyVoice({ unlocked: true, masterMuted: false })).toBe(true);
+    expect(shouldPlayCompanionReplyVoice({ unlocked: false, masterMuted: false })).toBe(false);
+    expect(shouldPlayCompanionReplyVoice({ unlocked: true, masterMuted: true })).toBe(false);
   });
 });

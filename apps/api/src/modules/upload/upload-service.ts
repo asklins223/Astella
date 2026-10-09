@@ -1,3 +1,4 @@
+import { AVATAR_MAX_BYTES } from "@astella/shared/desktop-ipc-contracts";
 import type { ObjectTransferDownload } from "@astella/shared/object-transfer-contracts";
 /**
  * 上传业务/存储服务。
@@ -42,7 +43,7 @@ import { logger } from "../../lib/logger.ts";
 
 // 上传体积上限：路由层用于 multipart limits，服务层用于 toBuffer() 后的双重校验。
 export const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
-export const MAX_AVATAR_SIZE = 2 * 1024 * 1024; // 2MB
+export const MAX_AVATAR_SIZE = AVATAR_MAX_BYTES;
 
 /**
  * R3（round-3 审计）：@fastify/multipart 在 fileSize 超限时，req.file()/toBuffer()
@@ -431,7 +432,7 @@ export async function uploadAvatar(
   // QUAL-48 安全注释：file.toBuffer() 将整个文件读入内存。
   // 防护措施：
   //   1. req.file({ limits: { fileSize: MAX_AVATAR_SIZE } }) 已在上游设置
-  //      2MB 限制，Fastify 会在流式读取时自动截断并拒绝超大文件
+  //      10MB 限制，Fastify 会在流式读取时自动截断并拒绝超大文件
   //   2. toBuffer() 后的双重校验（buffer.length > MAX_AVATAR_SIZE）作为
   //      第二道防线，防止 limits 配置被绕过
   //   3. magic bytes 校验在 toBuffer 后进行，因为需要检查前几字节

@@ -4,7 +4,7 @@
 
 ## 这篇讲什么
 
-`apps/desktop-client` 是拾星笔记唯一的用户界面：一个 Electron 43 单窗口书房。主进程握着窗口、自定义协议、笔记协同通道、产物落盘与更新器；渲染进程握着全部版面，但**没有路由库**——页面意图由 store 解析到已登记页面，纸面旁边始终坐着同一个 Live2D 伴星。本页沿这条真实调用链写：进程边界在哪、页面怎么被选中、伴星怎么被驱动、笔记怎么保存、安装包怎么产出，以及哪几处最容易写出与代码相反的话。事实来自 `apps/desktop-client/**` 源码与仓库根 [PRODUCT.md](../../../PRODUCT.md)、[DESIGN.md](../../../DESIGN.md)；除另有说明，本页路径都相对 `apps/desktop-client/`。
+`apps/desktop-client` 是拾星笔记唯一的用户界面：一个 Electron 44 单窗口书房。主进程握着窗口、自定义协议、笔记协同通道、产物落盘与更新器；渲染进程握着全部版面，但**没有路由库**——页面意图由 store 解析到已登记页面，纸面旁边始终坐着同一个 Live2D 伴星。本页沿这条真实调用链写：进程边界在哪、页面怎么被选中、伴星怎么被驱动、笔记怎么保存、安装包怎么产出，以及哪几处最容易写出与代码相反的话。事实来自 `apps/desktop-client/**` 源码与仓库根 [PRODUCT.md](../../../PRODUCT.md)、[DESIGN.md](../../../DESIGN.md)；除另有说明，本页路径都相对 `apps/desktop-client/`。
 
 - [构建与三个入口](#构建与三个入口)
 - [窗口、协议与 preload](#窗口协议与-preload)
@@ -26,7 +26,8 @@
 | 项 | 值 |
 | --- | --- |
 | 包名 / 版本 | `astella-desktop-client` / `release/version.json` |
-| 运行时 | Electron `43.4.1`、electron-vite `^5.0.0`、Vite `^7.3.6` |
+| 运行时 | Electron `44.7.0`、electron-vite `^5.0.0`、Vite `^7.3.6` |
+| macOS 最低版本 | macOS 13 Ventura；`electron-builder.yml` 同步声明安装要求 |
 | 界面 | React `^19.2.0`、TypeScript `^5.9.3`、Zustand `^5`、GSAP `^3.15` |
 | 编辑栈 | `@milkdown/kit` `^7.22.1` + CodeMirror 6 + `yjs` `^13.6` + `@hocuspocus/provider` `^4.7` |
 | 测试 | Vitest `^4.1.11` + `jsdom` + Testing Library |

@@ -1,6 +1,6 @@
 {
   "name": "astella-desktop-client",
-  "version": "1.3.5",
+  "version": "1.4.0",
   "description": "Astella 拾星笔记 immersive desktop study room",
   "private": true,
   "main": "./out/main/index.js",
@@ -79,7 +79,7 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.0.0",
     "dotenv": "^16.4.7",
-    "electron": "43.4.1",
+    "electron": "44.7.0",
     "electron-builder": "^26.0.0",
     "electron-vite": "^5.0.0",
     "jsdom": "^26.1.0",

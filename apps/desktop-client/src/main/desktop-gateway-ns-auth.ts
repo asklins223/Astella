@@ -1,3 +1,4 @@
+import { avatarCacheScope, getAvatarImageStore, primeAvatarCache } from "./avatar-image-store";
 import { uploadRemoteObject } from "./desktop-object-transfers";
 import { randomUUID } from "node:crypto";
 /**
@@ -62,6 +63,8 @@ import {
   AVATAR_MAX_BYTES,
   AuthProfileResultV1,
   AvatarUploadResultV1,
+  AvatarGetResultV1,
+  avatarGetResultV1Schema,
   SessionContextV1,
   authProfileResultV1Schema,
   authSurfaceManifestResultV1Schema,
@@ -71,8 +74,6 @@ import {
 } from "@astella/shared/desktop-ipc-contracts";
 import {
   SOURCE_IMAGE_MIME_TYPES,
-  SourceImageGetResultV1,
-  sourceImageGetResultV1Schema,
 } from "@astella/shared/source-image-contracts";
 import type { GatewayTransport } from "./desktop-gateway-transport";
 
@@ -107,27 +108,30 @@ export async function getProfile(t: GatewayTransport, requestId?: string): Promi
     return parsed.data;
   }
 
-export async function getAvatar(t: GatewayTransport, objectKey: string, requestId?: string): Promise<SourceImageGetResultV1> {
+export async function getAvatar(t: GatewayTransport, objectKey: string, requestId?: string): Promise<AvatarGetResultV1> {
     await t.ensureConnected(requestId);
     if (!avatarObjectKeySchema.safeParse(objectKey).success) {
       throw new DesktopGatewayFailure("validation", "user_action");
     }
-    const result = await t.requestBinaryBytes(
-      `/uploads/${objectKey}`,
-      { method: "GET" },
-      { accept: "image/*", contentTypePrefix: "image/", maxBytes: AVATAR_MAX_BYTES },
-      requestId,
-    );
-    const mimeType = result.contentType.split(";")[0].trim();
-    if (!(SOURCE_IMAGE_MIME_TYPES as readonly string[]).includes(mimeType)) {
-      throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    }
-    const parsed = sourceImageGetResultV1Schema.safeParse({
-      version: 1,
-      mimeType,
-      imageBase64: Buffer.from(result.bytes).toString("base64"),
-      byteLength: result.bytes.byteLength,
-    });
+    const token = t.token;
+    const scope = avatarCacheScope(t, objectKey);
+    if (t.currentSession?.status === "authenticated" && !scope) throw new DesktopGatewayFailure("not_found", "never");
+    const assertCurrent = () => {
+      if (t.token !== token) throw new DesktopGatewayFailure("stale_workspace", "resync_first");
+    };
+    const load = async () => {
+      const result = await t.requestBinaryBytes(`/uploads/${objectKey}`, { method: "GET" },
+        { accept: "image/*", contentTypePrefix: "image/", maxBytes: AVATAR_MAX_BYTES }, requestId);
+      const mime = result.contentType.split(";")[0].trim();
+      if (!(SOURCE_IMAGE_MIME_TYPES as readonly string[]).includes(mime)) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+      assertCurrent();
+      return { bytes: Buffer.from(result.bytes), mime };
+    };
+    const store = getAvatarImageStore();
+    const image = scope && store ? await store.get(scope, objectKey, load) : await load();
+    assertCurrent();
+    const parsed = avatarGetResultV1Schema.safeParse({ version: 1, mimeType: image.mime,
+      imageBase64: image.bytes.toString("base64"), byteLength: image.bytes.length });
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }
@@ -139,6 +143,8 @@ export async function uploadAvatar(t: GatewayTransport,
     await t.ensureConnected(requestId);
     const configuration = t.configuration;
     if (!configuration) throw new DesktopGatewayFailure("configuration_error", "user_action");
+    const token = t.token;
+    const assertCurrent = () => { if (t.token !== token) throw new DesktopGatewayFailure("stale_workspace", "resync_first"); };
     const bytes = Buffer.from(request.bytesBase64, "base64");
     if (bytes.byteLength === 0 || bytes.byteLength > AVATAR_MAX_BYTES) {
       throw new DesktopGatewayFailure("validation", "user_action");
@@ -149,6 +155,9 @@ export async function uploadAvatar(t: GatewayTransport,
       const payload = (remote.body ?? {}) as Record<string, unknown>;
       const parsed = avatarUploadResultV1Schema.safeParse({ version: 1, url: payload.url, objectKey: payload.objectKey });
       if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+      assertCurrent();
+      await primeAvatarCache(t, parsed.data.objectKey, { bytes, mime: request.mimeType });
+      assertCurrent();
       return parsed.data;
     }
     const form = new FormData();
@@ -196,6 +205,9 @@ export async function uploadAvatar(t: GatewayTransport,
       objectKey: payload.objectKey,
     });
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    assertCurrent();
+    await primeAvatarCache(t, parsed.data.objectKey, { bytes, mime: request.mimeType });
+    assertCurrent();
     return parsed.data;
   }
 

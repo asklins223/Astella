@@ -6,7 +6,7 @@ import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../
 import { companionConsentGate, SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
 import { useRoomStore } from "../../../app/room-store";
 import { notifyCompanion, useCompanionNotifications } from "../companion-notifications";
-import { COMPANION_ACCOUNT_CHANGED } from "../companion-events";
+import { subscribeCompanionAccountChanged } from "../companion-events";
 import { GUIDE_STEPS, GUIDE_TOPICS, openCompanionGuide, topicForStep, type GuideTopicId } from "./guide-definitions";
 import { GuideProgressClient, resumableGuide, verifiedGuideIdentity, type GuideScope } from "./guide-progress";
 
@@ -214,9 +214,13 @@ export function useCompanionGuide(decorative = false) {
     // 这条链一旦抛异常，首次带路就"什么都没发生"，而且哪儿都查不到——所以留下这一行。
     void initialize().catch((error) => { console.warn("[companion-guide] first-run init failed", error); }); void reloadContents();
     const reconcile = () => { void adapter.load().then(({ overview }) => { if (currentGeneration === generation.current) { setAccount(overview?.account ?? null); refresh(); } }); };
-    window.addEventListener(COMPANION_ACCOUNT_CHANGED, reconcile);
+    const stopAccountChanges = subscribeCompanionAccountChanged(account => {
+      if (currentGeneration === generation.current) setAccount(account);
+    });
     window.addEventListener("online", reconcile);
     return () => {
+      stopAccountChanges();
+      window.removeEventListener("online", reconcile);
       generation.current++;
       const active = sessionRef.current;
       if (active) {

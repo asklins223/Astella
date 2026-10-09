@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadSourceImageBlobUrl, primeSourceImageBlobUrl, useSourceImage } from "../source/source-image.ts";
 
@@ -30,10 +30,11 @@ const imageIds = {
 };
 
 function Harness({ url }: { readonly url: string }) {
-  const { state, retry } = useSourceImage(url, 9);
+  const { state, retry, reload } = useSourceImage(url, 9);
   return (
     <div>
       <span data-testid="status">{state.status}</span>
+      <button onClick={reload}>重新载入</button>
       {state.status === "ready" || state.status === "external" ? (
         <img
           data-testid="image"
@@ -137,5 +138,21 @@ describe("useSourceImage", () => {
 
     await waitFor(() => expect(view.getByTestId("status").textContent).toBe("unavailable"));
     expect(view.queryByTestId("image")).toBeNull();
+  });
+
+  it("allows repeated explicit retries while automatic image-error recovery remains bounded", async () => {
+    let attempts = 0;
+    const getImage = stubGetImage(() => ++attempts < 3
+      ? { ok: false, error: { code: "not_found", retry: "never", safeMessageKey: "x" } }
+      : { ok: true, data: { mimeType: "image/png", imageBase64: "iVBORw0KGgo=" } });
+    const view = render(<Harness url={imageUrlFor("ffffffff-ffff-4fff-8fff-ffffffffffff")} />);
+    await waitFor(() => expect(view.getByTestId("status").textContent).toBe("unavailable"));
+    fireEvent.click(view.getByRole("button", { name: "重新载入" }));
+    await waitFor(() => expect(getImage).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(view.getByTestId("status").textContent).toBe("unavailable"));
+    fireEvent.click(view.getByRole("button", { name: "重新载入" }));
+    await waitFor(() => expect(view.getByTestId("status").textContent).toBe("ready"));
+    fireEvent.error(view.getByTestId("image"));
+    expect(getImage).toHaveBeenCalledTimes(3);
   });
 });

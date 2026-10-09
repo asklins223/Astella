@@ -48,6 +48,7 @@ import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation
 import {
   appendCompanionAgentNode,
   buildCompanionRunTraces,
+  reconcileCompanionAgentNodes,
   type CompanionAgentNodes,
   type CompanionRunTrace,
 } from "./companion-agent-nodes";
@@ -211,7 +212,7 @@ export interface CompanionChatSession {
   readonly conversationId: string | null;
   readonly messages: readonly CompanionMessageV1[];
   readonly liveReply: CompanionChatLiveReply | null;
-  /** 本轮图片、引用等结果；文字气泡退场后仍停在伴星身旁。 */
+  /** 本轮交付与查阅材料，和回复共用一处展示；完整内容留在手记。 */
   readonly richReply: CompanionChatRichReply | null;
   /**
    * 已经**替用户跳过**的落点（`JSON.stringify(DesktopRouteV1)`）。
@@ -234,16 +235,18 @@ export interface CompanionChatSession {
    *
    * 来源是**服务端早就在发、桌面端此前整批丢弃**的 `assistant.status` /
    * `agent.tool` 帧（收敛逻辑见 `companion-agent-nodes.ts`）。发新消息时清空，所以它始终
-   * 描述"当前这一轮"。气泡的当前节点槽位与头顶步骤轨道都读它，历史留痕读只读端点。
+   * 描述"当前这一轮"。本轮只读快照可补回漏接的工具回执；消息文字和工具过程分别展示，历史留痕读只读端点。
    */
   readonly nodes: CompanionAgentNodes;
+  /** 与本轮实时节点绑定的身份，结束后保留到下一轮，避免取到旧轮统计。 */
+  readonly processRunId: string | null;
   /**
    * 各轮 run 的过程留痕（新 → 旧），来自只读端点 `listRunNodes`（2026-09-19）。
    *
    * 与 `nodes` 的分工：`nodes` 是**本轮实时**的节点（SSE），`runTraces` 是**历史**留痕
    * 与真实步数摘要（`companion_turn_runs` 的 `stepCount` / `toolCallCount`——`assistant.status`
    * 一轮只发一次，客户端凭事件数不出步数，所以进度只能取这里）。抽屉按
-   * `summary.assistantMessageId` 把它挂到对应消息上；头顶轨道的进度取活跃的那一轮。
+   * `summary.assistantMessageId` 把它挂到对应消息上；工具气泡的统计按 processRunId 精确匹配当前轮次。
    */
   readonly runTraces: readonly CompanionRunTrace[];
   /** 用户刚从业务页面划选或拖入的原文；由会话层持有，面板尚未挂载时也不会丢。 */
@@ -509,6 +512,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   const [interrupted, setInterrupted] = useState<CompanionChatInterrupted | null>(null);
   /** 本轮节点轨道（见 CompanionChatSession.nodes 的说明）。 */
   const [nodes, setNodes] = useState<CompanionAgentNodes>([]);
+  const [processRunId, setProcessRunId] = useState<string | null>(null);
   /** 历史过程留痕（见 CompanionChatSession.runTraces 的说明）。 */
   const [runTraces, setRunTraces] = useState<readonly CompanionRunTrace[]>([]);
   /**
@@ -591,6 +595,8 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     pendingSendRef.current = null;
     resetNoteAiWork();
     activeTurnRef.current = null;
+    setProcessRunId(null);
+    setNodes([]);
     replyWaitRef.current?.cancel();
     replyWaitRef.current = null;
     resetNoteExplanations();
@@ -857,6 +863,13 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   useCompanionPolls({
     conversation, mode, phase, routeCursorRef, pushNavChips, setRunTraces, tracesRevision,
   });
+
+  useEffect(() => {
+    const snapshot = runTraces.find(trace => trace.summary.runId === processRunId);
+    if (!snapshot) return;
+    // 把补回的回执留在本轮节点里，后到的旧轮询或空快照不能撤销已看到的结果。
+    setNodes(current => reconcileCompanionAgentNodes(current, snapshot.nodes));
+  }, [nodes, processRunId, runTraces]);
 
   // ── 提案快照拉取 ──────────────────────────────────────────────────────
   /**
@@ -1477,6 +1490,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       // 轨道节点是"本轮"的：不清空的话，上一轮的 skill/tool 节点会让 railVisible
       // 永久为 true——上一轮的「N 次工具」摘要挂到天荒地老，连纯闲聊轮也挂着。
       setNodes([]);
+      setProcessRunId(null);
       draftRef.current = "";
       setDraft(null);
       const optimistic: CompanionMessageV1 = {
@@ -1541,6 +1555,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
           // 否则紧接着的那条会把它读成 null。
           if (generation === sendGenerationRef.current) {
             activeTurnRef.current = { runId: sent.runId, generation: sent.generation, conversationId: active.id, explanationId: explanation?.id ?? null };
+            setProcessRunId(sent.runId);
           } else {
             // Stop may arrive before the turn receipt: cancel its eventual run without reviving the UI.
             cancelRunInBackground(sent.runId, sent.generation, epoch);
@@ -1643,7 +1658,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         const proposalIds = reply.blocks.flatMap((block) => block.type === "action_ref" ? [block.proposalId] : []);
         setLiveReply({
           messageId: reply.id,
-          text: companionMessageText(reply),
+          text: companionMessageText({ ...reply, blocks: reply.blocks.filter(block => block.type === "text") }),
           webCitations: reply.blocks.filter(block => block.type === "citation" && block.referenceId),
           hasActionBlocks: proposalIds.length > 0,
           proposalIds,
@@ -1924,7 +1939,8 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     autoNavigatedRoutes,
     draft,
     interrupted,
-    nodes,
+    nodes: reconcileCompanionAgentNodes(nodes, runTraces.find(trace => trace.summary.runId === processRunId)?.nodes ?? []),
+    processRunId,
     runTraces,
     feedSelection,
     feedPrompt,
@@ -1990,6 +2006,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     autoNavigatedRoutes,
     navChips,
     nodes,
+    processRunId,
     phase,
     proposalStates,
     runTraces,

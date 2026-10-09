@@ -212,6 +212,33 @@ async function inspectPackagedArtifact(executable) {
   if (excludedArchiveEntries.length) {
     throw new Error(`Package-excluded paths entered app.asar: ${excludedArchiveEntries.slice(0, 12).join(', ')}`)
   }
+  // 运行时不从磁盘 require 任何第三方包：main/preload 在 electron.vite.config.ts 里是
+  // `externalizeDeps: false`（全部打进 out/），renderer 由 Vite 打包，成品里非内置模块的
+  // require 只剩 `electron`。所以整棵 node_modules 是死重量（2026-10-09 实测：原始 408MB、
+  // 压进 asar 105MB），边界写在 electron-builder.yml 的 files 里。
+  // 唯一的例外是笔记导出：`src/main/note-writing-files.ts` 用 require.resolve 读 katex 的
+  // CSS 和 woff2 字体。谁把别的包放回来、或者把 katex 这几样裁掉，这里红——
+  // 后一种在开发机上永远不会暴露（那里 node_modules 是完整的）。
+  // `listPackage` 会把**目录**也列出来，所以 `node_modules` 和 `node_modules/katex`
+  // 这两个目录条目本身要放过，判的是"katex 之外还有没有别的包"。
+  const unexpectedDependencyEntries = archiveEntries.filter((entry) => (
+    entry.startsWith('node_modules/')
+    && entry !== 'node_modules/katex'
+    && !entry.startsWith('node_modules/katex/')
+  ))
+  if (unexpectedDependencyEntries.length) {
+    throw new Error(`Runtime-unread node_modules re-entered app.asar: ${unexpectedDependencyEntries.slice(0, 8).join(', ')}`)
+  }
+  const noteExportKatexFiles = [
+    'node_modules/katex/package.json',
+    'node_modules/katex/dist/katex.min.css',
+    'node_modules/katex/dist/fonts/KaTeX_Main-Regular.woff2',
+    'node_modules/katex/dist/fonts/KaTeX_Math-BoldItalic.woff2',
+  ]
+  const missingNoteExportKatexFiles = noteExportKatexFiles.filter((entry) => !archiveEntrySet.has(entry))
+  if (missingNoteExportKatexFiles.length) {
+    throw new Error(`Packaged note export lost its katex files: ${missingNoteExportKatexFiles.join(', ')}`)
+  }
   // 2026-09-16 裁决移除 orb，打包产物不得再包含它（Live2D 是唯一形态）；
   // 2026-10-01 旧书房底板整条删除后，`objects/` 整个目录都已不在产物里。
   const removedOrb = 'out/renderer/assets/learning-room/v1/objects/companion-orb.webp'

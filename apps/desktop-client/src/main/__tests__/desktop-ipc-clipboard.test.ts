@@ -5,6 +5,7 @@ import type { DesktopGateway } from "../desktop-gateway";
 const electronMock = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, input: unknown) => Promise<unknown>>(),
   writeText: vi.fn(),
+  readText: vi.fn(),
 }));
 vi.mock("electron", () => ({
   BrowserWindow: class {},
@@ -12,7 +13,7 @@ vi.mock("electron", () => ({
     handle: (channel: string, handler: (event: unknown, input: unknown) => Promise<unknown>) => electronMock.handlers.set(channel, handler),
     on: vi.fn(),
   },
-  clipboard: { writeText: electronMock.writeText },
+  clipboard: { writeText: electronMock.writeText, readText: electronMock.readText },
 }));
 
 const meta = {
@@ -23,7 +24,7 @@ const meta = {
   clientStartedAt: "2026-10-02T00:00:00.000Z",
 };
 
-async function register(trusted = true) {
+async function register(trusted = true, readLinks = false) {
   vi.resetModules();
   const { registerM1DesktopIpc } = await import("../desktop-ipc");
   registerM1DesktopIpc({
@@ -33,15 +34,16 @@ async function register(trusted = true) {
     getWindowState: () => ({ state: "visible", revision: 1 }),
     setTitlebarTheme: () => true,
   });
-  const handler = electronMock.handlers.get(DESKTOP_IPC_CHANNELS.clipboardWriteText);
+  const handler = electronMock.handlers.get(readLinks ? DESKTOP_IPC_CHANNELS.clipboardReadLinks : DESKTOP_IPC_CHANNELS.clipboardWriteText);
   if (!handler) throw new Error("clipboard.writeText handler missing");
-  return (request: unknown) => handler({ sender: {}, senderFrame: { url: "astella-app://bundle/index.html" } }, { meta, request });
+  return (request: unknown) => handler({ sender: {}, senderFrame: { url: "astella-app://bundle/index.html" } }, readLinks ? { meta } : { meta, request });
 }
 
 describe("系统剪贴板写入 IPC", () => {
   beforeEach(() => {
     electronMock.handlers.clear();
     electronMock.writeText.mockReset();
+    electronMock.readText.mockReset();
   });
 
   it("本机复制无需 API 或登录，保留换行、中文和原文符号", async () => {
@@ -65,5 +67,27 @@ describe("系统剪贴板写入 IPC", () => {
     const invoke = await register(false);
     expect(await invoke({ text: "原文" })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
     expect(electronMock.writeText).not.toHaveBeenCalled();
+  });
+
+  it("Electron 44 的异步写入完成前不报告成功，拒绝也回传失败", async () => {
+    const invoke = await register();
+    let complete!: () => void;
+    electronMock.writeText.mockReturnValueOnce(new Promise<void>(resolve => { complete = resolve; }));
+    let settled = false;
+    const result = invoke({ text: "等待系统完成复制" }).then(value => { settled = true; return value; });
+    await vi.waitFor(() => expect(electronMock.writeText).toHaveBeenCalledOnce());
+    expect(settled).toBe(false);
+    complete();
+    expect(await result).toMatchObject({ ok: true, data: { written: true } });
+    electronMock.writeText.mockRejectedValueOnce(new Error("clipboard unavailable"));
+    expect(await invoke({ text: "失败的复制" })).toMatchObject({ ok: false });
+  });
+
+  it("异步读取后只返回候选链接，并截断过长的剪贴板原文", async () => {
+    const invoke = await register(true, true);
+    electronMock.readText.mockResolvedValueOnce("https://example.com/page\n" + "x".repeat(4000) + " https://hidden.example.com");
+    expect(await invoke(undefined)).toMatchObject({ ok: true, data: { urls: ["https://example.com/page"] } });
+    electronMock.readText.mockRejectedValueOnce(new Error("clipboard unavailable"));
+    expect(await invoke(undefined)).toMatchObject({ ok: false });
   });
 });
