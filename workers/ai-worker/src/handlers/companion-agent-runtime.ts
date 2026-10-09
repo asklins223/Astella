@@ -35,6 +35,7 @@ import {
   type AgentTurnResult,
 } from "@astella/shared";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
+import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
 
 import { COMPANION_TOOL_INTENT_TIMEOUT_MS, interpretCompanionTurn } from "./companion-tool-intent.ts";
 import { companionAttentionObjects } from "./companion-attention.ts";
@@ -66,7 +67,7 @@ import {
   emitCompanionAssistantStatus,
   recoverCompanionRunFailureSpanBestEffort,
 } from "./companion-dialogue-store.ts";
-import { companionReplyIsTruncated, companionStepOutputCeiling } from "./companion-dialogue-content.ts";
+import { looksTruncatedReply, companionStepOutputCeiling } from "./companion-dialogue-content.ts";
 import { unavailableCompanionToolSummary } from "./companion-tool-outcome.ts";
 import { companionNumericEvidenceContext } from "./companion-context-evidence.ts";
 import { companionToolFailureFaces } from "./companion-tool-failure-faces.ts";
@@ -384,6 +385,17 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   let lookupClaimSteered = false;
   /** steer 之后紧跟的那一步换哪个 provider（见下面 stepProvider 的选取）。 */
   let steerSwapToFallback = false;
+  /**
+   * "这句话在语法上说完了吗"——**只看结构，不看长度**（40 §4.4.2）。
+   *
+   * 旧版按活跃度取 2/4/6 字当阈值。合同把这条判掉了：「移除…所有场景共用的长度
+   * 要求」「短句…不单独触发重跑」「字数…只作诊断」。用户设成「安静」就是要
+   * 「在的。」这种答案，阈值拦它等于每轮白烧一次调用。
+   *
+   * 这层薄包装留在运行时文件里：输出闸棘轮（companion-gate-ratchet.test.ts 的 G5）
+   * 要求 `looksTruncatedReply(` 的调用仍出现在运行时侧，挪进别的模块会让它红。
+   */
+  const companionReplyIsTruncated = (text: string): boolean => looksTruncatedReply(stripVoiceExpressionTags(text));
   /**
    * 本轮**实际生效**的步数预算。合同快照 `budget` 保持声明值不动（它是审计口径），
    * 只有终答步违约宽限时这个局部值抬高，见 planWithheldFinalStepCalls。

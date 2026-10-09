@@ -442,11 +442,6 @@ export function looksTruncatedReply(text: string): boolean {
   return BARE_DIGIT_TAIL.test(trimmed) || UNCLOSED_PAIR.test(trimmed);
 }
 
-/** runtime 侧的入口：先剥掉语音标签再判结构——`[sigh]` 这类标签不属于正文句子。 */
-export function companionReplyIsTruncated(text: string): boolean {
-  return looksTruncatedReply(stripVoiceExpressionTags(text));
-}
-
 /**
  * 笔记检索词的切分（纯函数，方案 29 §12.3）。
  *

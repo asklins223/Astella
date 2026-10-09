@@ -147,9 +147,8 @@ const BASELINE: Readonly<Record<string, number>> = {
   //
   // 2026-10-09（全文格式调整）：产出核对（claims/quotes 判定 + steer／correctQuote
   // 决定）与纠正指令的文案分支移入同族的 `companion-step-plan.ts`——那一族回答
-  // 「这一步要不要纠正、纠正时提示词怎么写」；同次把判截断的包装层并回
-  // companion-dialogue-content 的 looksTruncatedReply 边上。
-  // companion-agent-runtime 1504 → 1453，重新回到阈值以下。
+  // 「这一步要不要纠正、纠正时提示词怎么写」。
+  // companion-agent-runtime 1504 → 1465，重新回到阈值以下。
   // 它同样**不在**基线里（一直贴着阈值，谁动它都会红）。
   // 判据是**域**：核对与纠正决定「这句话要不要拦、怎么改」，与「这一轮怎么读进来、
   // 这些步怎么走」没有耦合；纯判据，不查库、不看时钟。

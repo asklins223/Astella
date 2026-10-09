@@ -41,11 +41,18 @@ const GATE_JUDGES: ReadonlyArray<{ id: string; fn: string; file: string }> = [
   { id: "G11", fn: "readsOutStatistics", file: "../handlers/companion-thought.ts" },
 ];
 
-/** 运行时侧：判据被谁调用。删掉调用点同样算"这条判据已经不在链上"。 */
+/**
+ * 运行时侧：判据被谁调用。删掉调用点同样算"这条判据已经不在链上"。
+ *
+ * 2026-10-09：产出核对（G1–G4/G6 的调用点）随神文件拆分移入
+ * companion-step-plan.ts——它仍由运行时同步调用、在交付链上；名单跟着真实
+ * 调用点走。G5 的包装层则特意留在 companion-agent-runtime.ts 里（见那里的注释）。
+ */
 const RUNTIME_FILES = [
   "../handlers/companion-agent-runtime.ts",
   "../handlers/companion-dialogue-stream.ts",
   "../handlers/companion-thought.ts",
+  "../handlers/companion-step-plan.ts",
 ];
 
 function read(relative: string): string {
