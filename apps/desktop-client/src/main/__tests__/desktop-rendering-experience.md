@@ -41,3 +41,25 @@
 本机运行时对照与隔离窗口夹具保存在 `apps/desktop-client/outputs/rendering-compatibility-20261009/`。夹具不进入生产构建，未读取或修改用户笔记。核验初期整套应用启动曾被工作区另一项进行中的能力声明改动挡住（`maxInputChars` 超过 schema 上限），因此采用独立窗口；那项改动随后已同步上限。本次没有修改该链路。
 
 仍需确认：原 M1 Pro 旧系统环境中的闪烁是否因这条备用路径而消失。窗口滚动后的截图和本机 GPU 对照不能替代该环境的连续运行验证，也没有测量兼容模式的耗电或性能变化。
+
+## 同日跟进：备用路径的代价测不出来，于是取消静默自动降级（2026-10-09 下午）
+
+用户报告两件事：开启渲染兼容模式后「所有操作都卡、像慢动作」；笔记页滚动时仍会闪烁，表格附近最明显。
+
+实测（`scripts/measure-rendering-backend-cost.mjs`，隔离 profile、真实登录、真实笔记「唐朝由盛转衰…」816 个表格单元格，两种后端各起一次进程）：
+
+- 判据先过自己的考卷：第一版用「JPEG 帧字节数骤降」判空白帧，人为把整张纸藏掉都抓不到 → 判为无效，弃用。第二版对 `Page.startScreencast` 的真实合成帧在页面里解码成 256x144 灰度，统计逐帧最大色块占比与相邻帧平均亮度差；正对照（整窗子树隐藏 220ms）实测把平色从 24.8% 推到 42.4%、剧变从中位 6.0 冲到 48.7 → 判据可用。
+- 在这套判据下，两种后端在 1440x810 与 2560x1440 下都是 **0 空白帧、0 整屏剧变帧**，rAF 帧间隔中位同为 6.9ms、`>34ms` 0 次。也就是说这台 M4 / macOS 27.0.1 上复现不出闪烁。
+- 兼容模式的代价**没能测出来**：1440x810 那趟 compatible 的 GPU 进程 CPU 更高（0.42s vs 0.35s），2560x1440 那趟反而更低（0.27s vs 0.39s）。两次符号相反 → 这个采样分辨不了后端差异，先前写下的「多烧 20% GPU CPU」已撤回，不作为任何一侧的证据。canvas 微基准（模糊 1.2/1.3ms、200 行文本 0.97/1.0ms）同样在噪声内。
+
+结论：既然备用路径既没被证明能治这台机器上复现不出的闪烁，也没被证明更贵或更便宜，那就不该由一次进程退出替用户选它。改为：
+
+- `recordGraphicsFailure` 只写 `suggestedFallbackReason`，**不再改写 mode**；GPU 进程异常与伴星 WebGL 上下文丢失都只换来设置页里的一次询问（「改用兼容渲染」/「不用了」，后者走 `desktop-rendering:dismiss-suggestion`）。
+- 用户无论选哪边都算答过，建议随之清掉；关掉之后再次故障还会再问。已经处于兼容模式时不再重复建议，也不重复写盘。
+- 健康检测本身保留（`child-process-gone` 分类不变，`killed`/`clean-exit`/`memory-eviction`/`integrity-failure` 仍不算故障），boot-trace 文案改成 `rendering-fallback-suggested; user decides`。
+
+同时量到并修掉一件与后端无关的结构问题：`.room-camera-rig` / `.room-depth-layer` 常驻 `transform-style: preserve-3d`，而书房子树没有任何真实 3D 变换（相机只做 `translate+scale`，D0–D6 各带的 `parallaxFactor` 在 `scene/scene-depth.ts` 之外没有消费者）。它让每个深度带在任务页上也各自成为一个整窗合成层：实测整窗层 **16 → 9**（2560x1440 下 10），`Transform3DSceneLeaf` 归零，首页实拍无视觉变化。
+
+`release/version.json` 里 v1.3.3 的说明写着「GPU 进程异常或图形上下文丢失会自动落下兼容选择」——那是 1.3.3 发布时的事实，不改写；下一次发布的说明要写清这条改成了询问。
+
+仍未确认：用户体感的「慢动作」在这台机器上没有任何指标能对上，可能是窗口更大、并存的 Electron 实例与容器争用、或那台机器的其它条件；闪烁也仍只在 M1 Pro 旧系统的口头报告上。要坐实需要在用户真实窗口里做一次被动录制（`scripts/probe-note-scroll-flicker.mjs` 的 `ASTELLA_FLICKER_PASSIVE=1`）。
