@@ -6,10 +6,15 @@ import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { build } from 'vite'
 
 if (process.platform !== 'darwin') throw new Error('Run on macOS')
 const appRoot = resolve(import.meta.dirname, '..')
+// electron 43 起二进制改为按需安装（包上没有 postinstall，CI 的 npm ci 不会拉它）。
+// `require('electron')` 返回可执行路径，缺失时由它自己触发 install.js 下载——
+// 本地与 CI 因此走同一条解析路径，不再硬拼 dist 目录。
+const electronExecutable = createRequire(import.meta.url)('electron')
 const root = await mkdtemp(join(tmpdir(), 'astella-update-download-'))
 const bytes = Buffer.alloc(64 * 1024, 'Astella verified update fixture')
 const sha512 = createHash('sha512').update(bytes).digest('base64')
@@ -72,7 +77,7 @@ void probe().catch(error => { console.error(error); app.exit(1); });
   await build({ configFile: false, logLevel: 'warn', build: { ssr: source, outDir: join(root, 'out'),
     rollupOptions: { external: ['electron'], output: { format: 'cjs', entryFileNames: 'runner.cjs' } } },
     ssr: { noExternal: true, external: ['electron'] }, esbuild: { supported: { 'top-level-await': true } } })
-  const child = spawn(resolve(appRoot, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron'), [root], { stdio: 'inherit' })
+  const child = spawn(electronExecutable, [root], { stdio: 'inherit' })
   const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve) })
   if (code !== 0) throw new Error(`Electron probe exited ${code}`)
   if (downloads !== 2) throw new Error(`Expected good and corrupt downloads, with cached reuse; got ${downloads}`)

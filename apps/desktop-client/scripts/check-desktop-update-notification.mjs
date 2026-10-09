@@ -2,11 +2,15 @@
 import { mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve, join, basename } from 'node:path'
+import { createRequire } from 'node:module'
 import { createServer, loadConfigFromFile } from 'vite'
 import { _electron as electron } from '@playwright/test'
 import './load-capture-env.mjs'
 
 const appRoot = resolve(import.meta.dirname, '..')
+// electron 43 的二进制按需安装：`require('electron')` 返回可执行路径，
+// 缺失时自动触发下载（同 check-macos-update-download 的理由）。
+const electronExecutable = createRequire(import.meta.url)('electron')
 const output = resolve(appRoot, '../../outputs/desktop-update-20261009')
 await mkdir(output, { recursive: true })
 const profile = await mkdtemp(join(tmpdir(), 'astella-update-voice-'))
@@ -39,7 +43,7 @@ createRoot(document.getElementById('root')).render(<Probe />);
 let app
 const launch = () => electron.launch({ args: ['.', `--user-data-dir=${profile}`], cwd: appRoot,
   env: { ...process.env, ASTELLA_DOMAIN_SCHEMA_REVISION: process.env.ASTELLA_DOMAIN_SCHEMA_REVISION || 'domain-dev-v1', ELECTRON_RENDERER_URL: qaUrl },
-  executablePath: resolve(appRoot, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron') })
+  executablePath: electronExecutable })
 try {
   app = await launch()
   const page = await app.firstWindow()
