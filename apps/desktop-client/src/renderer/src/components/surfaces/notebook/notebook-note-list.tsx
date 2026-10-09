@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Check, ChevronLeft, PanelLeftOpen, RefreshCw, Search, X } from "lucide-react";
 import { useRoomStore } from "../../../app/room-store";
 import { useNotebookNoteList } from "./use-notebook-note-list";
+import { useNotebookNotePresence } from "./use-notebook-note-presence";
+import { NotebookPresenceReaders } from "./notebook-presence";
 import { useNotebookPaperMotion, useNotebookPaperPresence } from "./use-notebook-paper-motion";
 import { useNotebookTouch } from "./use-notebook-touch";
 import { formatRelative } from "./surface-data";
@@ -25,6 +27,8 @@ function NotebookNoteListContent({ scope, ...props }: Props & { readonly scope: 
   const setOpen = props.fullscreen ? setFullscreenOpen : setBookOpen;
   const [query, setQuery] = useState("");
   const library = useNotebookNoteList(scope);
+  // 只在纸展开的那一段读：这一排印章说的是"此刻"，纸都合上了还留着一条轮询没有意义。
+  const presence = useNotebookNotePresence(scope, open);
   const play = useNotebookPaperMotion();
   const paper = useNotebookPaperPresence(open ? true : null, "note-list", "index", play);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -96,14 +100,20 @@ function NotebookNoteListContent({ scope, ...props }: Props & { readonly scope: 
         {query ? <button type="button" className="text-action" aria-label="清除笔记查找" onClick={() => setQuery("")}><X size={14} aria-hidden="true" /></button> : null}
       </div>
       <div className="notebook-note-list__scroll" ref={scrollRef} onScroll={event => { scrollPosition.current = event.currentTarget.scrollTop; }}>
-        <nav aria-label="切换笔记"><ul>{items.map(item => <li key={item.id}>
+        <nav aria-label="切换笔记"><ul>{items.map(item => {
+          // 没人在看的笔记，这一行保持原来的样子；只在真的有人在这篇里时多一个东西。
+          const readers = presence.others.get(item.id) ?? [];
+          return <li key={item.id}>
           <button type="button" className="notebook-note-list__item" aria-current={item.id === props.currentId ? "page" : undefined} title={item.title || "未命名笔记"} onClick={() => props.onSelect(item.id)}>
-            <span className="notebook-note-list__title">{item.title || "未命名笔记"}</span><span className="notebook-note-list__meta">{item.updatedAt ? <time dateTime={item.updatedAt}>{formatRelative(item.updatedAt)}更新</time> : null}{item.id === props.currentId ? <span><Check size={12} aria-hidden="true" />当前</span> : null}</span>
+            <span className="notebook-note-list__title">{item.title || "未命名笔记"}</span><span className="notebook-note-list__meta">{item.updatedAt ? <time dateTime={item.updatedAt}>{formatRelative(item.updatedAt)}更新</time> : null}{item.id === props.currentId ? <span><Check size={12} aria-hidden="true" />当前</span> : null}<NotebookPresenceReaders viewers={readers} /></span>
           </button>
-        </li>)}</ul></nav>
+        </li>; })}</ul></nav>
         {library.loading ? <p className="notebook-note-list__message" role="status">{term ? "正在查找更多笔记…" : "正在翻开笔记列表…"}</p> : null}
         {!library.loading && !library.failure && !items.length ? <p className="notebook-note-list__message" role="status">{term ? "没有找到这个标题，试试别的词。" : "这间书房还没有笔记。"}</p> : null}
         {library.failure ? <div className="notebook-note-list__message" role="alert"><p>{library.failure}</p><button type="button" className="text-action" onClick={() => void library.retry()}>重试读取笔记</button></div> : null}
+        {/* 读不到在场就收回那一排，并说一句实话：什么都不说会让人以为"没人在这几篇里"，
+            而那正是这一排本来要回答的问题。 */}
+        {presence.failure ? <p className="notebook-note-list__readers-failure" role="status">别人在不在看，这一列暂时读不到。<button type="button" className="text-action" onClick={() => void presence.reload()}>重试</button></p> : null}
         {library.nextCursor && !term && !library.failure ? <button type="button" className="text-action notebook-note-list__more" disabled={library.loading} onClick={() => void library.loadMore()}>继续翻 · 更多笔记</button> : null}
       </div>
       <footer className="notebook-note-list__foot">{term ? `找到 ${items.length} 篇${library.nextCursor ? " · 继续查找中" : ""}` : `共 ${library.total} 篇`}<span>点一篇，接着读</span></footer>

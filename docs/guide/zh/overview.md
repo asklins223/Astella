@@ -20,7 +20,7 @@
 
 | 领域 | 当前能力 | 使用边界 |
 | --- | --- | --- |
-| 来源 | 文本、Markdown、代码、URL 采集、解析与原文回看 | URL 抓取受公开网络与内容上限约束 |
+| 来源 | 文本、Markdown、代码、URL 采集、解析与原文回看；PDF 与 Word（.docx）在本机解析成正文与图片后收录 | URL 抓取受公开网络与内容上限约束；一份正文 10 MB；扫描页保留图像、不自动识别文字；旧版 .doc 不解析；文本文件按 UTF-8 读，读不出再按 GBK 试 |
 | 笔记 | 阅读／编辑／源码、自动保存、版本、全屏、公式、表格、Mermaid、库内链接 | 工作稿同步与存成版本是不同动作 |
 | 原文学习 | 速看、回想、拓展、记录、批注、解释与互动演示 | 生成按需启动；拓展草稿需用户收下 |
 | 伴星编辑 | 光标插入、末尾追加、选区／段落替换和删除 | 必须有明确要求、权限与原文／版本核对；锁定处理段落 |
@@ -54,7 +54,7 @@
 
 ## 产品边界与验证状态
 
-源码采用 [MIT](../../../LICENSE)，第三方 SDK、模型与素材按 [第三方声明](../../../THIRD_PARTY_NOTICES.md) 分别处理。产品版本由 [release/version.json](../../../release/version.json) 统一维护，具体下载资产以发布页为准。
+项目自有源码和文档采用 [PolyForm Noncommercial 1.0.0](../../../LICENSE)，限许可规定的非商业用途（源码可用许可，不属于 OSI 开源许可），第三方 SDK、模型与素材按 [第三方声明](../../../THIRD_PARTY_NOTICES.md) 分别处理。产品版本由 [release/version.json](../../../release/version.json) 统一维护，具体下载资产以发布页为准。
 
 现有入口和业务链路已有代码、测试及部分窗口／真实模型证据。验收应逐项阅读：笔记编辑与写作见 [编辑记录](../../testing/companion-note-editing-2026-10-08.md) 和 [生成记录](../../testing/companion-note-authoring-2026-10-08.md)；上下文治理的实库、模型对照与剩余限制见 [方案 44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md)；长对话自然度与等待稳定性见 [方案 46](../../plans/learning-companion/46-companion-natural-conversation-research-and-design-2026-10-07.md)。这些记录不构成全产品或长期效果已经通过的结论。
 

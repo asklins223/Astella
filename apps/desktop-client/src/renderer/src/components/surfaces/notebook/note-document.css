@@ -95,7 +95,9 @@
 .hud-surface .note-transcript [data-note-block-content] blockquote { margin: 22px 0; padding: 11px 16px; border-left: 3px solid #bfd6ad; border-radius: 3px 15px 15px 3px; background: #f2f5e6; color: var(--hud-green); }
 .hud-surface .note-transcript [data-note-block-content] blockquote > p { margin: .35em 0; }
 .hud-surface .note-transcript .code-block { white-space: pre; }
-.hud-surface .note-transcript .note-html-image .reading-image { width: 100%; max-height: 100%; margin: 0; border-radius: 8px; }
+.hud-surface .note-transcript .note-html-image { display: inline-block; max-width: 100%; vertical-align: middle; }
+.hud-surface .note-transcript .note-html-image :is(.reading-image, img) { display: block; width: auto; max-width: 100%; max-height: none; height: auto; margin: 0; border-radius: 8px; }
+.hud-surface .note-transcript .note-html-image[data-sized="true"] img { width: 100%; }
 .hud-surface .note-transcript .note-mermaid { margin-block: 24px; }
 .hud-surface .note-transcript .note-mermaid > details { margin-top: 10px; }
 .hud-surface .note-transcript .note-mermaid summary { color: var(--hud-soft); font-size: 12px; cursor: pointer; }

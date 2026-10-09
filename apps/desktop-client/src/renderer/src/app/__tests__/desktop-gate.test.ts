@@ -104,7 +104,7 @@ describe("session and workspace gate", () => {
       membership: null,
       capabilities: null,
       workspaceEpoch: 0,
-      credentialPersistence: "safe_storage",
+      credentialPersistence: "local_file",
     })).toEqual({ kind: "wait", reason: "restoring" });
 
     expect(decideSessionGate({ ...authenticatedSession, status: "reauth_required" }).kind).toBe("reauthenticate");

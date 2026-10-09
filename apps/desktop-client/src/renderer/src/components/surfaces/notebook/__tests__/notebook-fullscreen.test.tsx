@@ -144,6 +144,18 @@ it("全屏编辑时编辑工具常驻顶部的纸签条，不再折进右侧工�
   expect(screen.getByRole("button", { name: "保存版本" })).toBeTruthy();
 });
 
+it("全屏编辑的保存状态只出现一次，工具收起后仍能核对", () => {
+  const screen = render(<Visit><Desk /></Visit>);
+  fireEvent.click(screen.getByRole("button", { name: /^编辑$/ }));
+  fireEvent.click(screen.getByRole("button", { name: "全屏笔记" }));
+  expect(screen.getByText("已同步").closest(".notebook-focus-ribbon__status")).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "展开笔记工具" }));
+  expect(screen.getAllByText("已同步")).toHaveLength(1);
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.getByText("已同步").closest(".notebook-focus-ribbon__status")).not.toBeNull();
+  expect(useNotebookFullscreenState.getState().active).toBe(true);
+});
+
 it("从子页面直接进全屏，快捷键在子页面也生效", () => {
   const screen = render(<Visit><Desk view="recall" /></Visit>);
   fireEvent.click(screen.getByRole("button", { name: "全屏笔记" }));

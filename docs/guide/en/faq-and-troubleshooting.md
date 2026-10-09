@@ -134,4 +134,4 @@ The first command deletes an existing database with that name. Never target prod
 
 Connected code, passing unit tests, database checks, real-model completion and smooth window interactions are distinct evidence. Context governance has database, model-comparison and selected-window records; “never verified” is outdated. Long-term effects, concurrent recovery, audio quality and cross-version updates remain subject to their specific records.
 
-See the [current plans](../../plans/learning-companion/README.md), [Testing and quality](testing-and-quality.md), [Operations](operations.md) and [Deployment](deployment.md). MIT code licensing does not replace third-party model or asset authorization; see [THIRD_PARTY_NOTICES.md](../../../THIRD_PARTY_NOTICES.md).
+See the [current plans](../../plans/learning-companion/README.md), [Testing and quality](testing-and-quality.md), [Operations](operations.md) and [Deployment](deployment.md). The PolyForm Noncommercial license for project-owned code and documentation does not replace third-party model or asset authorization; see [THIRD_PARTY_NOTICES.md](../../../THIRD_PARTY_NOTICES.md).

@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it } from "vitest";
+import { MAX_SOURCE_TEXT_BYTES } from "@astella/shared/object-transfer-contracts";
 import {
+  DOCUMENT_FILE_PATTERN,
+  LEGACY_DOCUMENT_FILE_PATTERN,
   MAX_CAPTURE_BYTES,
+  MAX_DOCUMENT_BYTES,
   NOTE_PAPER_IMAGE_DROP_ATTR,
   TEXT_FILE_PATTERN,
   captureBytes,
+  decodeCaptureText,
   formatCaptureSize,
   imageOnlyFiles,
   isOwnedDropTarget,
@@ -27,20 +32,38 @@ function memoryStorage(): Storage {
 }
 
 describe("source-intake", () => {
-  it("文本后缀白名单与来源库采集栏一致", () => {
+  it("文本后缀与文档后缀各管各的：PDF 是解析，不是读文本", () => {
     expect(TEXT_FILE_PATTERN.test("note.md")).toBe(true);
     expect(TEXT_FILE_PATTERN.test("app.tsx")).toBe(true);
     expect(TEXT_FILE_PATTERN.test("data.csv")).toBe(true);
     expect(TEXT_FILE_PATTERN.test("photo.png")).toBe(false);
     expect(TEXT_FILE_PATTERN.test("deck.pdf")).toBe(false);
     expect(TEXT_FILE_PATTERN.test("archive.zip")).toBe(false);
+    expect(DOCUMENT_FILE_PATTERN.test("deck.pdf")).toBe(true);
+    expect(DOCUMENT_FILE_PATTERN.test("报告.DOCX")).toBe(true);
+    expect(DOCUMENT_FILE_PATTERN.test("legacy.doc")).toBe(false);
+    expect(LEGACY_DOCUMENT_FILE_PATTERN.test("legacy.doc")).toBe(true);
   });
 
-  it("900 KB 上限与中文尺寸文案", () => {
-    expect(MAX_CAPTURE_BYTES).toBe(900_000);
+  it("单份正文上限只有一个源，尺寸文案到 MB 一档", () => {
+    expect(MAX_CAPTURE_BYTES).toBe(MAX_SOURCE_TEXT_BYTES);
+    expect(MAX_CAPTURE_BYTES).toBe(10 * 1024 * 1024);
     expect(captureBytes("a".repeat(1024))).toBe(1024);
     expect(formatCaptureSize(512)).toBe("512 字节");
     expect(formatCaptureSize(2048)).toBe("2.0 KB");
+    expect(formatCaptureSize(MAX_CAPTURE_BYTES)).toBe("10 MB");
+    expect(formatCaptureSize(MAX_DOCUMENT_BYTES)).toBe("40 MB");
+  });
+
+  it("文本解码：UTF-8 严格优先，其次 GBK，两种都不是就如实说", () => {
+    expect(decodeCaptureText(new TextEncoder().encode("间隔重复"))).toEqual({ ok: true, text: "间隔重复" });
+    // Windows 记事本的「ANSI」就是 GBK：过去 file.text() 不报错地把它变成一串替换字符。
+    expect(decodeCaptureText(new Uint8Array([0xbc, 0xe4, 0xb8, 0xf4, 0xd6, 0xd8, 0xb8, 0xb4]))).toEqual({ ok: true, text: "间隔重复" });
+    // BOM 不留在正文里。
+    expect(decodeCaptureText(new Uint8Array([0xef, 0xbb, 0xbf, 0x41]))).toEqual({ ok: true, text: "A" });
+    const binary = decodeCaptureText(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xff]));
+    expect(binary.ok).toBe(false);
+    expect(binary.ok === false && binary.message).toContain("另存为 UTF-8");
   });
 
   it("文件名去后缀做标题，无后缀原样返回", () => {

@@ -6,6 +6,7 @@ import websocket from "@fastify/websocket";
 import type { WebSocket as WsSocket, RawData } from "ws";
 import { and, eq } from "drizzle-orm";
 import { noteBlocks, noteDocumentStates, notes } from "@astella/shared/db-schema/note";
+import { users } from "@astella/shared/db-schema/identity";
 import { logger } from "../../lib/logger.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { decodeToken } from "../identity/session-service.ts";
@@ -49,6 +50,13 @@ export type NoteDocContext = {
   noteId: string;
   versionId: string;
   readOnly: boolean;
+  /**
+   * 这条连接的主人在别人眼里叫什么。鉴权时从 `users` 解出来、挂在这份 context 上，
+   * 于是「谁在看这篇」这句话**只有一个出处**：库里那一份显示名。
+   * 对端在 awareness 里自报的名字不再往下发（见 `beforeHandleAwareness`）。
+   * 只有 WS 连接会带它；`openDirectConnection` 那两条 HTTP 路没有对端可广播。
+   */
+  displayName?: string;
 };
 
 export const NOTE_DOC_PREFIX = "note:";
@@ -118,6 +126,156 @@ export function openDocumentCountFor(userId: string): number {
   return openDocuments.get(scopeKey(userId))?.size ?? 0;
 }
 
+/**
+ * 「此刻谁开着这一篇」的登记表。
+ *
+ * 判据是**连接本身**：`onAuthenticate` 过了才登记，那条连接断了才销，引用计数与上面
+ * 那份额度同一套形状——同一个人开两个窗口算一个人，不算两个。所以这一份不需要心跳，
+ * 也不会有"人早走了名字还挂着"的尾巴（那是落库那份的宿命）。
+ *
+ * 名字来自库里的 `users`，不来自对端自报（见 `beforeHandleAwareness`）：一个改过的客户端
+ * 在 awareness 里写什么，不该变成别人屏上的一句「某某在读」。
+ *
+ * 只报此刻：人走了这一格就没了。谁读过这篇、什么时候读的，这里一概不知道，也不装作知道。
+ */
+
+export type NotePresenceMode = "reading" | "editing";
+
+export type NotePresenceViewer = {
+  userId: string;
+  displayName: string;
+  /** 他自己在 awareness 里报的那一档；没报过就是「在读」——他确实只是开着这一篇。 */
+  mode: NotePresenceMode;
+  /** 他此刻在哪一块（`null` = 不在正文里）。「也在写这一段」那句话用的是它。 */
+  block: number | null;
+  /** 这条连接建立的时刻（epoch ms），只用来把同一篇里的几个人排个稳定顺序。 */
+  since: number;
+};
+
+type PresenceRecord = NotePresenceViewer & { workspaceId: string; connections: number };
+
+const presenceByNote = new Map<string, Map<string, PresenceRecord>>();
+
+export function openNotePresenceSlot(input: {
+  workspaceId: string;
+  noteId: string;
+  userId: string;
+  displayName: string;
+}): void {
+  let byUser = presenceByNote.get(input.noteId);
+  if (!byUser) {
+    byUser = new Map();
+    presenceByNote.set(input.noteId, byUser);
+  }
+  const held = byUser.get(input.userId);
+  if (held) {
+    held.connections += 1;
+    // 重连时按库里那一份刷新：显示名改过的人不该在别人的屏上停在旧名字上。
+    held.displayName = input.displayName;
+    return;
+  }
+  byUser.set(input.userId, {
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    displayName: input.displayName,
+    mode: "reading",
+    block: null,
+    since: Date.now(),
+    connections: 1,
+  });
+}
+
+export function closeNotePresenceSlot(noteId: string, userId: string): void {
+  const held = presenceByNote.get(noteId)?.get(userId);
+  if (!held) return;
+  held.connections -= 1;
+  if (held.connections > 0) return;
+  const byUser = presenceByNote.get(noteId);
+  byUser?.delete(userId);
+  if (byUser && byUser.size === 0) presenceByNote.delete(noteId);
+}
+
+/** 他报的那一档；认不出来的一律读成「在读」，因为"开着这一篇"是这一格唯一确定的事。 */
+function presenceModeOf(value: unknown): NotePresenceMode {
+  return value === "editing" ? "editing" : "reading";
+}
+
+function presenceBlockOf(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+/**
+ * 把对端自报的那一份 awareness 收成三位：`{name, mode, block}`。
+ *
+ * `name` 由调用方（服务端认识的这一位）给，不从 `state` 里读——那是客户端自己写的。
+ * 对端多塞的键不跟着转发；`mode`/`block` 认不出来就落到「在读」「不在任何块里」。
+ */
+export function sanitizePresenceState(
+  state: Record<string, unknown>,
+  name: string,
+): { name: string; mode: NotePresenceMode; block: number | null } {
+  return { name, mode: presenceModeOf(state.mode), block: presenceBlockOf(state.block) };
+}
+
+/**
+ * 他刚报了自己在哪一档、哪一块。
+ *
+ * 没有这一格（人不在这篇上了）就当没听见：登记表的生命线是连接，不该由一条迟到的
+ * awareness 把已经离开的人重新塞回去。
+ */
+export function notePresenceReported(
+  noteId: string,
+  userId: string,
+  report: { mode: NotePresenceMode; block: number | null },
+): void {
+  const held = presenceByNote.get(noteId)?.get(userId);
+  if (!held) return;
+  held.mode = report.mode;
+  held.block = report.block;
+}
+
+/**
+ * 这一位在别人眼里叫什么：库里的显示名优先，缺省落回邮箱 @ 前那一段。
+ *
+ * 落回邮箱段而不是邮箱本身：名册本来就不向成员展示别人的邮箱（`GET /members` 是
+ * owner 专属），在场这一排不该另开一条路把邮箱散出去。两个都没有就留空串，
+ * 界面画一枚「?」印章，而不是替别人编一个名字。
+ */
+function displayNameOf(person: { displayName: string | null; email: string } | undefined): string {
+  return person?.displayName?.trim() || person?.email.split("@")[0]?.trim() || "";
+}
+
+/**
+ * 这一空间里此刻的在场，按笔记聚合。
+ *
+ * 不做可见性过滤——那一判据仍然只在 `visibleNotesCondition` 一处（调用方是路由，
+ * 它带着这次来看的人）。这里只是按空间切一刀：登记表全局共享，跨空间的那几格
+ * 不该从这一份快照里端出去。
+ */
+export function notePresenceSnapshot(workspaceId: string): { noteId: string; viewers: NotePresenceViewer[] }[] {
+  const items: { noteId: string; viewers: NotePresenceViewer[] }[] = [];
+  for (const [noteId, byUser] of presenceByNote) {
+    const viewers: NotePresenceViewer[] = [];
+    for (const record of byUser.values()) {
+      if (record.workspaceId !== workspaceId) continue;
+      viewers.push({
+        userId: record.userId,
+        displayName: record.displayName,
+        mode: record.mode,
+        block: record.block,
+        since: record.since,
+      });
+    }
+    if (viewers.length > 0) items.push({ noteId, viewers });
+  }
+  return items;
+}
+
+/** 供测试：登记表现在长什么样（键是 noteId）。 */
+export function notePresenceNotes(): string[] {
+  return [...presenceByNote.keys()];
+}
+
 export const noteCollaboration = new Hocuspocus<NoteDocContext>({
   // 决定 6：空闲后落一次整份快照，不写 update log。
   debounce: 2_000,
@@ -155,20 +313,30 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
     // dev 因为 compose 把 API 指到 BYPASSRLS 的 `astella` 角色而完全看不出来（doc 34 L2/L37）。
     const note = await withWorkspaceTransaction(
       scopeOfSession(session),
-      (tx) => tx.query.notes.findFirst({
-        where: eq(notes.id, noteId),
-        columns: { id: true, workspaceId: true, currentVersionId: true, deletedAt: true, shareScope: true },
-      }),
+      async (tx) => {
+        const row = await tx.query.notes.findFirst({
+          where: eq(notes.id, noteId),
+          columns: { id: true, workspaceId: true, currentVersionId: true, deletedAt: true, shareScope: true },
+        });
+        if (!row) return null;
+        // 「谁在看这篇」要说得出名字。这一位来自库，不来自对端自报（见 beforeHandleAwareness）。
+        const person = await tx.query.users.findFirst({
+          where: eq(users.id, session.userId),
+          columns: { displayName: true, email: true },
+        });
+        return { row, displayName: displayNameOf(person) };
+      },
     );
-    if (!note || note.workspaceId !== session.workspaceId || note.deletedAt !== null) {
+    const noteRow = note?.row;
+    if (!noteRow || noteRow.workspaceId !== session.workspaceId || noteRow.deletedAt !== null) {
       // 空间不符一律按"不存在"处理：跨空间探测不该从错误信息里得到答案。
       throw new Error("note_not_found");
     }
-    if (!note.currentVersionId) throw new Error("note_has_no_version");
+    if (!noteRow.currentVersionId) throw new Error("note_has_no_version");
     // 批次 4.5：实时连接只服务「已共享给空间」的笔记。仅自己可见的那篇不广播，
     // 但**照样能编辑**（写入内核不看这一位，走 HTTP 上送那条同一个口）——门控关的是
     // 传输，不是写入。理由与拒绝的措辞都跟"没权限"同一类，不给探测留缝。
-    if (note.shareScope !== "shared") throw new Error("not_shareable");
+    if (noteRow.shareScope !== "shared") throw new Error("not_shareable");
 
     // P1-14：按人计的**并发文档**闸。unloadImmediately 封的是"没人连了就卸"，
     // 封不住"同一个人同时连着很多篇"——那 N 篇会同时常驻。桌面端多标签页、
@@ -177,10 +345,17 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
     // 额度按「人 × 空间」，不是按连接：同一篇开两个标签页是正常用法，
     // 而同一个人同时编辑 5 篇以上就不是了。超了直接拒绝连接（抛错），
     // 不排队——排队等于把内存上限从"额度"推迟到"连接数"，那道闸就白设了。
-    const slot = openUserDocumentSlot(session.userId, note.id);
+    const slot = openUserDocumentSlot(session.userId, noteRow.id);
     if (!slot) {
       throw new Error("too_many_open_documents");
     }
+    // 额度这一格成了才算这个人**真的**在这一篇里；登记放在这之后，被拒的连接不留名字。
+    openNotePresenceSlot({
+      workspaceId: session.workspaceId,
+      noteId: noteRow.id,
+      userId: session.userId,
+      displayName: note.displayName,
+    });
 
     const readOnly = !isWorkspaceOwner(session);
     // 只读要写进 connectionConfig，不是自己挡消息：服务端会据此回一条
@@ -192,9 +367,10 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
     return {
       userId: session.userId,
       workspaceId: session.workspaceId,
-      noteId: note.id,
-      versionId: note.currentVersionId,
+      noteId: noteRow.id,
+      versionId: noteRow.currentVersionId,
       readOnly,
+      displayName: note.displayName,
     };
   },
 
@@ -204,6 +380,31 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
   async onDisconnect({ context }) {
     if (!context?.userId || !context?.noteId) return;
     closeUserDocumentSlot(context.userId, context.noteId);
+    closeNotePresenceSlot(context.noteId, context.userId);
+  },
+
+  /**
+   * 下发给同一篇里其他人的在场状态，由服务端改写一遍。
+   *
+   * 三件事在这里做，缺一个都会留下把柄：
+   *  - **名字换成库里那一份**。`states` 是对端自己写的，直接转发的话，一个改过的客户端
+   *    就能在别人屏上落一句「某某在读」。归属判据用来源连接的 context（`onAuthenticate`
+   *    放进去的 userId/noteId），而不是状态里写的东西——那才是服务端认识的那一个人。
+   *  - **形状收成 {name, mode, block} 三位**。对端多塞的键不跟着转发，
+   *    `mode`/`block` 认不出来就落到「在读」「不在任何块里」。
+   *  - **登记表跟着走**：这一格是「谁在读 / 谁在写」这句话唯一的出处，列表页读的是它。
+   *
+   * `context` 为空的是服务端内部写的（`openDirectConnection` 那两条 HTTP 路）——那里
+   * 没有"对端"，不登记也不改写。
+   */
+  async beforeHandleAwareness({ context, states }) {
+    if (!context?.userId || !context?.noteId) return;
+    const name = context.displayName ?? "";
+    for (const [clientId, state] of states) {
+      const clean = sanitizePresenceState(state, name);
+      states.set(clientId, clean);
+      notePresenceReported(context.noteId, context.userId, { mode: clean.mode, block: clean.block });
+    }
   },
 
   async onLoadDocument({ document, context }) {

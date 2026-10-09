@@ -50,6 +50,8 @@ import {
 } from "../app/desktop-gate";
 import {
   createRequestMeta,
+  gatewayErrorMessage,
+  isJoinCommittedWithoutSession,
   RendererGatewayError,
   setCurrentWorkspaceEpoch,
   unwrapGatewayResult,
@@ -1037,7 +1039,13 @@ export function DesktopAccessGate({
           unwrapGatewayResult(await api.auth.joinWorkspace({ meta: createRequestMeta(), inviteToken: pendingInvite }));
           setInviteToken("");
         } catch (error) {
-          pendingWorkspaceNoticeRef.current = gateErrorPolicy(error, "登录成功，但邀请码没有生效").detail;
+          if (isJoinCommittedWithoutSession(error)) {
+            // 成员关系已经落库：这串码不再有用，留着它下次登录只会得到"已经被使用"。
+            setInviteToken("");
+            pendingWorkspaceNoticeRef.current = `登录成功。${gatewayErrorMessage(error)}`;
+          } else {
+            pendingWorkspaceNoticeRef.current = gateErrorPolicy(error, "登录成功，但邀请码没有生效").detail;
+          }
         }
       }
       beginRoomReveal();

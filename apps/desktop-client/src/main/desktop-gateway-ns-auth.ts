@@ -241,7 +241,14 @@ export async function joinWorkspace(t: GatewayTransport, inviteToken: string, re
       body: JSON.stringify({ inviteToken }),
     }, true, true, requestId);
     t.roomProjectionCache = null;
-    return t.loadSession(requestId);
+    // 走到这一行，成员关系与邀请码消费已经整笔落库（服务端把它们放在同一个事务里，
+    // 消费是最后一步）。后面的会话重读只是把这份事实投影回本机，它失败**不能**改写
+    // 已经发生的事：换成一个专门的码，让界面能说"已经加入了，刷新列表就能看到"。
+    try {
+      return await t.loadSession(requestId);
+    } catch {
+      throw new DesktopGatewayFailure("join_committed_session_stale", "resync_first");
+    }
   }
 
 export async function leaveWorkspace(t: GatewayTransport, workspaceId: string, requestId?: string): Promise<SessionContextV1> {

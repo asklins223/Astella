@@ -33,10 +33,23 @@ test("闲聊预生成和正式闲聊使用同一参数，不附知识检查清�
     stepBudget: 3, finalAnswerOnly: false, attentionIntent: "conversation" });
   assert.ok(request.systemPrompt.includes(policy));
   assert.ok(policy.includes(COMPANION_DIALOGUE_CONTINUATION_GOAL_V1));
+  // 闲聊姿态按**本轮意图**给，不再按工具面给（2026-10-09）：工具面已经与意图解耦，
+  // "这轮有工具"不再等于"这轮要办事"。
   for (const input of [{ attentionIntent: "question", toolCount: 0 },
-    { attentionIntent: "conversation", toolCount: 1 }, { attentionIntent: "task", toolCount: 0 }]) {
+    { attentionIntent: "question", toolCount: 40 }, { attentionIntent: "task", toolCount: 0 },
+    { attentionIntent: "mixed", toolCount: 40 }]) {
     assert.ok(!companionStepRuntimePolicy({ ...input, permissionLevel: "read_only", stepBudget: 3,
       finalAnswerOnly: false }).includes(COMPANION_DIALOGUE_CONTINUATION_GOAL_V1));
+  }
+  // 两种闲聊各说各的事实：那句"这一轮没有工具"只在她真的没拿到工具时出现。
+  // 线上一句"我手上没有新建笔记的入口"就是这么来的——工具被摘了，她照实说；
+  // 提示词反过来把没有的东西说成有，是同一类错。
+  for (const toolCount of [0, 40]) {
+    const casual = companionStepRuntimePolicy({ permissionLevel: "full", toolCount, stepBudget: 3,
+      finalAnswerOnly: false, attentionIntent: "conversation" });
+    assert.ok(casual.includes(COMPANION_DIALOGUE_CONTINUATION_GOAL_V1));
+    assert.equal(casual.includes("这一轮没有工具"), toolCount === 0,
+      `工具面 ${toolCount} 个时"没有工具"那句话${toolCount === 0 ? "该在" : "不该在"}`);
   }
 });
 

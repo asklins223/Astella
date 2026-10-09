@@ -66,7 +66,7 @@ function stub() {
   listeners = [];
   let call = 0;
   const seed = seedUpdate(SEED_TITLE, [STALE]);
-  const syncUpdate = vi.fn(async (_input: { noteId: string; update: string }) => ({ ok: true as const, workspaceEpoch: 1, data: { via: "stream", revision: null, savedAt: new Date().toISOString() } }));
+  const syncUpdate = vi.fn(async (_input: { noteId: string; update: string }) => ({ ok: true as const, workspaceEpoch: 1, data: { via: "uploaded" as const, revision: 2, savedAt: new Date().toISOString() } }));
   const state = vi.fn(async () => noteDocResult({ update: seed }));
   const presence = vi.fn(async (_input: { noteId: string; state: string }) => ({ ok: true as const, workspaceEpoch: 1, data: { shared: true } }));
   window.astella = {
@@ -281,7 +281,7 @@ describe("编辑态：标题跟着别人那份走，我改的那一段不被顶�
     await act(async () => { input.focus(); fireEvent.focusIn(input); await vi.advanceTimersByTimeAsync(100); });
     const reported = () => JSON.parse(
       String((stubbed.presence.mock.calls.at(-1)?.[0] as { state: string }).state),
-    ) as { name: string; block: number | null };
+    ) as { mode: string; block: number | null };
     const mine = reported();
     // 编辑器真报了一格（不是本机替它编的）；报的是 null 就说明这次挂载里没有选区，
     // 那这条用例测不到东西，直接喊出来而不是悄悄放行。
@@ -290,9 +290,9 @@ describe("编辑态：标题跟着别人那份走，我改的那一段不被顶�
     // 只认这一个类：保存那一行的回执也带 `role="status"`，用角色去取会读到它，
     // 于是"提示收回去了"这条断言会绿在错的东西上。
     const hint = () => document.querySelector(".notebook-cowriters")?.textContent?.trim() ?? null;
-    const deliver = (block: number | null) => act(() => {
+    const deliver = (block: number | null, mode: "reading" | "editing" = "editing") => act(() => {
       for (const listener of listeners) {
-        listener({ data: { kind: "note_doc_event", noteId: NOTE_ID, event: { type: "presence", states: [{ clientId: 7, state: { name: "小琳", block } }] } } });
+        listener({ data: { kind: "note_doc_event", noteId: NOTE_ID, event: { type: "presence", states: [{ clientId: 7, state: { name: "小琳", mode, block } }] } } });
       }
     });
 
@@ -300,6 +300,9 @@ describe("编辑态：标题跟着别人那份走，我改的那一段不被顶�
     expect(hint()).toContain("小琳 也在写这一段");
     // 错开一格就该收回去：常驻的是"这一段有没有人"，不是"这篇有没有人"。
     deliver((mine.block as number) + 1);
+    expect(hint()).toBeNull();
+    // 同一格里但他说他只是在读（块号是上一档留下的）——那句"也在写"不成立。
+    deliver(mine.block, "reading");
     expect(hint()).toBeNull();
   });
 
@@ -318,6 +321,24 @@ describe("编辑态：标题跟着别人那份走，我改的那一段不被顶�
     await settle(30);
     expect(stubbed.syncUpdate).toHaveBeenCalledTimes(1);
     expect(titleValue()).toBe(MINE);
-    expect(saveTag()).toBe("已同步");
+    expect(saveTag()).toBe("已自动保存");
+  });
+
+  it("自动保存等落盘回执，再结束等待状态", async () => {
+    const stubbed = stub();
+    ownerRoom();
+    await open("live-preview");
+    let confirm!: (receipt: Awaited<ReturnType<typeof stubbed.syncUpdate>>) => void;
+    stubbed.syncUpdate.mockImplementationOnce(() => new Promise((resolve) => { confirm = resolve; }));
+    fireEvent.input(document.getElementById("notebook-surface-title")!, { target: { value: MINE } });
+    await settle(30);
+    expect(stubbed.syncUpdate).toHaveBeenCalledTimes(1);
+    expect(saveTag()).toBe("正在保存…");
+    await act(async () => {
+      confirm({ ok: true, workspaceEpoch: 1, data: { via: "uploaded", revision: 2, savedAt: new Date().toISOString() } });
+    });
+    await settle(3);
+    expect(saveTag()).toBe("已自动保存");
+    expect(titleValue()).toBe(MINE);
   });
 });

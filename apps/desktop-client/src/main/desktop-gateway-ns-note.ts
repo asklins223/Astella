@@ -1,5 +1,6 @@
 import { createNoteMindMapTaskV1Schema, noteMindMapLatestTaskQueryV1Schema, noteMindMapLatestTaskV1Schema, noteMindMapPageV1Schema, noteMindMapTaskV1Schema, noteMindMapSourceV1Schema } from "@astella/shared/note-mind-map-contracts";
 import { uploadRemoteObject } from "./desktop-object-transfers";
+import { primeNoteImageCache } from "./note-image-cache";
 /**
  * 笔记正文的本机会话缓存（2026-09-30 随 `noteDocLocalSession` 一起搬成模块级）。
  *
@@ -218,6 +219,10 @@ import {
   NoteShareScopeV1,
   noteShareScopeReceiptV1Schema,
 } from "@astella/shared/note-share-contracts";
+import {
+  NotePresenceListV1,
+  notePresenceListV1Schema,
+} from "@astella/shared/note-presence-contracts";
 import {
   z,
 } from "zod";
@@ -989,6 +994,20 @@ export async function listNotes(t: GatewayTransport, options: { cursor?: string;
   }
 
 /**
+ * 「此刻谁开着哪一篇」（共享空间在场）。
+ *
+ * 本机不留一份副本：这一份的事实源是**服务端活着的那些连接**，人走了那一格就没了，
+ * 缓存它只会有一天在别人已经离开之后还报一句「小琳在读」。
+ */
+export async function listNotePresence(t: GatewayTransport, requestId?: string): Promise<NotePresenceListV1> {
+    await t.ensureConnected(requestId);
+    const result = await t.request("/notes/presence", { method: "GET" }, true, true, requestId);
+    const parsed = notePresenceListV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+/**
  * 导出用：把这个调用者**看得见的**全部笔记列出来（不含回收站）。
  *
  * 刻意不走「让界面翻页」：导出是主进程里一次跑完的扇出，界面不会一页一页地问，
@@ -1414,9 +1433,12 @@ export async function syncNoteDocUpdate(t: GatewayTransport,
   ): Promise<NoteDocSyncOutcome> {
     const safeNoteId = safeUuid(noteId);
     await deps.ensureNoteDocSeeded(t, safeNoteId, requestId);
+    noteDocLocalSession(t, safeNoteId).state.applyLocal(update);
+    // 实时帧可能已经把同一批操作并进影子文档，但收到帧不代表已经落盘。
+    // 确认的是调用者提交的完整增量；幂等重发也要等 HTTP 的持久化回执。
     return settleNoteDocUpdate(t, 
       safeNoteId,
-      noteDocLocalSession(t, safeNoteId).state.applyLocal(update),
+      update,
       requestId,
     );
   }
@@ -1442,6 +1464,7 @@ export async function uploadNoteImage(t: GatewayTransport,
       const parsed = noteImageUploadResultV1Schema.safeParse({ version: 1, url: payload.url, byteLength: payload.size,
         mimeType: payload.mimeType, width: payload.width, height: payload.height });
       if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+      await primeNoteImageCache(t, parsed.data.url, { bytes, mime: parsed.data.mimeType });
       return parsed.data;
     }
     const form = new FormData();
@@ -1497,6 +1520,7 @@ export async function uploadNoteImage(t: GatewayTransport,
       height: payload.height,
     });
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    await primeNoteImageCache(t, parsed.data.url, { bytes, mime: parsed.data.mimeType });
     return parsed.data;
   }
 

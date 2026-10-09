@@ -326,6 +326,7 @@ import {
 import { noteDetailV1Schema } from "@astella/shared/note-projection-contracts";
 import { noteSaveReceiptV1Schema } from "@astella/shared/note-save-contracts";
 import { noteShareScopeReceiptV1Schema, noteShareScopeValuesV1, type NoteShareScopeReceiptV1 } from "@astella/shared/note-share-contracts";
+import { notePresenceListV1Schema } from "@astella/shared/note-presence-contracts";
 import {
   cardActivationReceiptDesktopV1Schema,
   cardGenerationCandidateListV1Schema,
@@ -494,6 +495,14 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_note.listNotes(gateway.gatewayTransport, { cursor: input.cursor, limit: input.limit, trashed: input.trashed }, input.meta.requestId);
   }, desktopNoteListPageSchema);
+
+  // 「此刻谁开着哪一篇」（共享空间在场）。与笔记列表同一个路线门槛：它服务的就是
+  // "列表那一行有没有人在看"这句话，列表还读不动的时候这一发也不该发出去。
+  channel(DESKTOP_IPC_CHANNELS.notePresenceList, z.strictObject({ ...m1InputBase }), async (_event, _window, input) => {
+    requireM2Route(contract, "note.library");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_note.listNotePresence(gateway.gatewayTransport, input.meta.requestId);
+  }, notePresenceListV1Schema);
 
   // Writing a note is gated on `note.detail` (the note surfaces) plus the
   // workspace capability, so a member never fills in a title only to be
@@ -929,20 +938,12 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
   channel(DESKTOP_IPC_CHANNELS.noteDocSyncUpdate, noteDocSyncUpdateInputSchema, async (_event, _window, input): Promise<NoteDocWriteResultV1> => {
     requireM2Route(contract, "note.detail");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    // 可写性这里一律不判：判据只在服务端那一处（WS 侧 `Authenticated("readonly")`、
-    // HTTP 侧 `requireOwner`）。这里只决定"走哪条出口"。
-    // 走哪条出口只判一次（同一个表达式），因为两条出口的判据必须是同一句话：连接被服务端
-    // 认定可写，才并进那份文档（服务端由 WS 落盘）；否则取起点差分后走 HTTP，让同一句
-    // `requireOwner` 给出答复。只读成员现在也建连（他要看到别人的改动），所以"有连接"
-    // 本身不再等于"写得进去"。
+    // 实时连接及时广播；保存完成仍等同一个增量的 HTTP 落盘确认。
+    // provider 接收本机增量没有后续持久化回执，直接回 stream 会让「正在同步」永不结束。
+    // 可写性来自服务端：只有已鉴权的可写连接才广播，HTTP 同样按真实权限给答复。
     const stream = noteDocStreams.get(input.noteId);
-    const onStream = Boolean(stream && stream.workspaceEpoch === getActiveWorkspaceEpoch() && stream.authorizedScope === "read-write");
-    if (onStream && stream) {
-      const update = stream.handle.applyLocal(input.update);
-      // 本机没产生任何增量时不报"同步中"——那一次什么都没写，报成提交过就是在骗回执。
-      return update === null
-        ? { via: "unchanged", revision: null, savedAt: new Date().toISOString() }
-        : { via: "stream", revision: null, savedAt: new Date().toISOString() };
+    if (stream?.workspaceEpoch === getActiveWorkspaceEpoch() && stream.authorizedScope === "read-write") {
+      stream.handle.applyLocal(input.update);
     }
     // 出口由网关如实报：uploaded（服务端已落盘）/ unchanged（这次没改动）/
     // queued（没网，已攒在本机文档里）。

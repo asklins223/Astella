@@ -43,6 +43,8 @@ function installApi(blocks: readonly { ordinal: number; type: string; content: s
           ? { items: [], nextCursor: null, total: 0 }
           : { items: [noteRow], nextCursor: null, total: 1 },
       )),
+      // 在场那一排的读数：这一份夹具里没有别人在，列表按"没人在看"的样子渲染。
+      presenceList: vi.fn(async () => ok({ items: [] })),
       get: vi.fn(async () => ok({
         noteId: "note-1",
         title: "轨道周期",

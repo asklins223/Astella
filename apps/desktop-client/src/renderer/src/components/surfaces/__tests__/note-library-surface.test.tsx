@@ -125,6 +125,8 @@ function stubGateway(options: {
         }),
         presence: vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: { shared: false } })),
       },
+      // 在场那一排的读数：这一份夹具里没有别人在，行按"没人在看"的样子渲染。
+      presenceList: vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: { items: [] } })),
       delete: vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: { noteId: "n1", status: "deleted" } })),
       restore: vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: { noteId: "n1", status: "restored" } })),
     },

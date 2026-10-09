@@ -1,5 +1,7 @@
 # Third-Party Notices
 
+
+项目自有源码采用 PolyForm Noncommercial 1.0.0；该变更不修改下列第三方组件与素材的原始许可。Windows 自定义安装器随包携带 Microsoft .NET / WPF 运行时及其原始 LICENSE、ThirdPartyNotices。
 本应用（Astella 桌面客户端，中文显示名「拾星笔记」）包含以下第三方组件的源码、二进制或素材。
 许可证全文见各条目链接；模型/素材的再分发与商用限制见
 `apps/desktop-client/src/renderer/public/assets/companion/live2d-v3/whale/manifest.json`。
@@ -86,3 +88,24 @@
 - 位置：`POST /voice/transcribe`（`apps/api/.../voice-providers/siliconflow-asr.ts`）
 - 说明：服务端仍保留这条能力。**桌面客户端 2026-10 起不再调用它**——语音识别
   全部在本机完成，没有任何一条 IPC 能把录音送出去。本节仅为追溯来由而保留。
+
+## PDF.js（`pdfjs-dist` 6.4.299，`apps/desktop-client` 渲染层）
+- 用途：把拖进来的 PDF 的文字层取出来，重建成自然段（`src/renderer/src/app/source-pdf*.ts`）
+- 许可：Apache-2.0
+- 来源：https://github.com/mozilla/pdf.js
+- 说明：只在真的拖入一份 PDF 时才加载（构建产物是独立的 `pdf-*.js` 分片 +
+  `pdf.worker.min-*.mjs`，约 0.8MB + 1.2MB）；解析跑在它自己的 Worker 里，界面线程不参与。
+  只读文字层，不渲染页面，因此不需要 canvas 原生依赖。
+
+## Mammoth（`mammoth` 1.13.0，`apps/desktop-client` 渲染层）
+- 用途：读 .docx 里文档自己声明的段落样式，产出语义 HTML（标题、列表、表格）
+- 许可：BSD-2-Clause
+- 来源：https://github.com/mwilliamson/mammoth.js
+- 说明：配置成不读取图片字节（`convertImage` 只留一个空 `src`），所以一份带几十张图的
+  Word 不会因此变成一长串 base64；图片数量会在正文末尾如实说明。旧版 .doc 是另一种二进制
+  格式，Mammoth 不支持，界面给出「另存为 .docx」的下一步。
+
+## Turndown（`turndown` 7.2.2，`apps/desktop-client` 渲染层）
+- 用途：把 Mammoth 的语义 HTML 落成 Markdown；GFM 表格那一条规则是本仓库自己写的
+- 许可：MIT
+- 来源：https://github.com/mixmark-io/turndown

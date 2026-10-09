@@ -11,11 +11,11 @@ A desktop study room for personal learning. Turn material into notes, understand
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Fastify 5](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
 [![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![License MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm_Noncommercial-blue)](LICENSE)
 
 [中文](README.md) · [English](README.en.md) · [User and developer guide](docs/guide/README.md)
 
-Repository version: `v1.3.3` (shared by the server and desktop client)
+Repository version: `v1.3.4` (shared by the server and desktop client)
 
 </div>
 
@@ -29,7 +29,7 @@ A typical path is **capture material → write a note → use overview, recall o
 
 | Capability | What it does |
 | --- | --- |
-| Source library | Capture text, Markdown, code and URLs; inspect parsing state and source content |
+| Source library | Capture text, Markdown, code and URLs, or drop in a PDF / Word (.docx) that this machine parses into text and images; inspect parsing state and source content |
 | Notes | Reading, editing and source views; autosaved working drafts and explicit saved versions; full-screen reading and editing, formulas, tables, Mermaid and links to library notes |
 | Study beside the text | Independent overview, recall, expansion and records; annotate a selection, request an explanation or send it to the companion; accept expansion drafts individually |
 | Companion authoring | Explicitly create an editable note with verified links to accessible library notes; insert, replace or delete text at the current cursor, selection or blocks |
@@ -193,6 +193,6 @@ Ordinary `npm test` does not discover `*.integration.ts`; real-model and S3 prob
 
 Desktop updates go directly to GitHub Releases. Packaging supports macOS, Windows and Linux; the current automated installer release covers macOS and Windows, while Linux can be packaged separately. macOS builds without an Apple certificate use ad-hoc signing and may need first-launch authorization. See [Server deployment](docs/guide/en/deployment.md) for credentials, migration rollback and object transfers.
 
-Source code is licensed under [MIT](LICENSE). The bundled Live2D SDK, models and other assets have separate licenses and redistribution restrictions in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); brand assets are described in [assets/brand/README.md](assets/brand/README.md).
+Project-owned source code and documentation are licensed under [PolyForm Noncommercial 1.0.0](LICENSE) for its permitted noncommercial purposes. Commercial use requires separate permission. This is a source-available license, not an OSI open-source license. New versions use this license from 2026-10-09; versions previously released under MIT retain that license. The bundled Live2D SDK, models and other assets have separate licenses and redistribution restrictions in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); brand assets are described in [assets/brand/README.md](assets/brand/README.md).
 
 Ongoing validation includes long-dialogue naturalness and waiting stability, context continuity after compaction, cross-day memory and the long-term effects of cooperation methods, real microphone use and packaged updates. Implemented code, passing tests and long-term effectiveness require different evidence; current limits are kept with the relevant plans and validation records.

@@ -23,7 +23,7 @@ import sensible from "@fastify/sensible";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 import { checkpointNote, createNote } from "../modules/note/service.ts";
-import { documentNameForNote, closeNoteCollaboration, collaborationLoad } from "../modules/note/collaboration.ts";
+import { closeNoteCollaboration, collaborationLoad, documentNameForNote, notePresenceSnapshot } from "../modules/note/collaboration.ts";
 import { docFromSnapshot, editFragmentBlockText, projectFragmentBlocks, writeFragmentBlocks } from "../modules/note/doc-fragment.ts";
 
 /**
@@ -947,6 +947,102 @@ test("「仅自己可见」的那篇不建实时连接，但作者照样能取�
   const afterShare = connect(ownerToken, documentNameForNote(privateNoteId));
   await afterShare.synced;
   assert.equal(afterShare.provider.isAuthenticated, true, "共享之后仍然连不上——按篇判据读的不是这一列");
+  destroyProviders();
+  await waitFor(() => collaborationLoad().documents === 0, "文档卸载");
+});
+
+// ─── 在场（谁开着这一篇）───────────────────────────────────────────────
+//
+// 这几条用真连接而不是问登记表：那一排的**生命线是连接本身**——登记在鉴权之后、
+// 销在断开之后、名字在服务端改写。这三件事在纯函数层面都能各测各的，但"真客户端
+// 连上来之后列表页能不能说出是谁"只有走一遍协议才知道。
+
+type PresenceItem = { noteId: string; viewers: { userId: string; displayName: string; mode: string; block: number | null }[] };
+
+async function readPresence(token: string): Promise<PresenceItem[]> {
+  const listed = await app.inject({ method: "GET", url: "/notes/presence", headers: { authorization: `Bearer ${token}` } });
+  assert.equal(listed.statusCode, 200, `读在场应当 200，实际 ${listed.statusCode}: ${listed.body}`);
+  assert.match(listed.headers["cache-control"] ?? "", /no-store/, "在场只说此刻，缓存它就是让名单停在几秒前");
+  return (listed.json() as { items: PresenceItem[] }).items;
+}
+
+test("在场：两个人开着同一篇就报两个人，名字是库里那份而不是对端自报的", async () => {
+  const owner = connect(ownerToken);
+  await owner.synced;
+  const member = connect(memberToken);
+  await member.synced;
+  // 对端自报一个假名字（外加真档位）：假名字应当被服务端换成库里那一份，档位应当留下。
+  owner.provider.awareness?.setLocalState({ name: `冒充的别人 ${tag}`, mode: "editing", block: 1 });
+
+  const ownerName = `note-collab-owner-${tag}`;
+  await waitFor(() => {
+    const seen = member.provider.awareness?.getStates().get(owner.doc.clientID) as { name?: string } | undefined;
+    return seen?.name === ownerName;
+  }, "对端收到的名字应当是服务端改写后的那一份");
+
+  const items = await readPresence(memberToken);
+  const entry = items.find((item) => item.noteId === noteId);
+  assert.ok(entry, `在场里找不到这一篇（拿到的是 ${JSON.stringify(items)}）`);
+  assert.equal(entry.viewers.length, 2, `两个人连着却报了 ${entry.viewers.length} 个人`);
+  assert.equal(entry.viewers.find((viewer) => viewer.userId === userOwner)?.displayName, ownerName);
+  assert.equal(entry.viewers.find((viewer) => viewer.userId === userOwner)?.mode, "editing",
+    "档位是他自己报的：在读/在写这一位要留下");
+  assert.equal(entry.viewers.find((viewer) => viewer.userId === userMember)?.mode, "reading",
+    "没报过状态的连接只能说「开着这一篇」，读成在读");
+  assert.ok(!JSON.stringify(items).includes(`冒充的别人`), "客户端自报的名字穿进了在场名单");
+
+  destroyProviders();
+  await waitFor(() => collaborationLoad().documents === 0, "文档卸载");
+});
+
+test("在场：只读成员连上来也算一个人（他确实在读这一篇）", async () => {
+  const member = connect(memberToken);
+  await member.synced;
+  assert.equal(member.provider.authorizedScope, "readonly", "夹具里成员应当是只读——不然这条测的是 owner");
+  const items = await readPresence(ownerToken);
+  const entry = items.find((item) => item.noteId === noteId);
+  assert.equal(entry?.viewers.length, 1, `只读成员开着这一篇，在场应当有他（实际 ${JSON.stringify(entry)})`);
+  assert.equal(entry?.viewers[0]?.userId, userMember);
+  destroyProviders();
+  await waitFor(() => collaborationLoad().documents === 0, "文档卸载");
+});
+
+test("在场：还没共享出去的笔记不上榜，断开之后名字跟着连接消失", async () => {
+  const privateDraft = await withWorkspaceTransaction({ workspaceId: wsCollab, userId: userOwner }, (tx) =>
+    createNote(tx, wsCollab, userOwner, { title: `在场不该端出这篇 ${tag}`, blocks: [{ type: "paragraph", content: "只有作者看得见" }] }),
+  );
+  assert.ok(privateDraft, "夹具没能建出那篇私有笔记");
+  const draftId = privateDraft.note.id;
+  const draftVersionId = privateDraft.version.id;
+
+  const refused = connect(ownerToken, documentNameForNote(draftId));
+  await once(refused.provider, "authenticationFailed", "私有笔记被拒");
+  const items = await readPresence(ownerToken);
+  assert.equal(items.some((item) => item.noteId === draftId), false, "被拒的连接在别人那一排里留下了名字");
+
+  // 断开是这一排的另一个生死：连上来的人走了，那一格必须跟着空掉（不落库，只报此刻）。
+  const live = connect(ownerToken);
+  await live.synced;
+  assert.ok((await readPresence(ownerToken)).some((item) => item.noteId === noteId), "连上了却没上榜");
+  live.provider.destroy();
+  await waitFor(() => !notePresenceSnapshot(wsCollab).some((item) => item.noteId === noteId),
+    "断开之后这一篇应当从在场里消失");
+
+  await sql`DELETE FROM note_document_states WHERE note_id = ${draftId}`;
+  await sql`DELETE FROM note_blocks WHERE version_id = ${draftVersionId}`;
+  await sql`DELETE FROM note_versions WHERE note_id = ${draftId}`;
+  await sql`DELETE FROM notes WHERE id = ${draftId}`;
+  destroyProviders();
+  await waitFor(() => collaborationLoad().documents === 0, "文档卸载");
+});
+
+test("在场：另一个空间的人读不到这一间的名单，自己的那一格也不混进来", async () => {
+  const live = connect(ownerToken);
+  await live.synced;
+  const foreign = await readPresence(strangerToken);
+  assert.equal(foreign.length, 0, `陌生空间的人拿到了这一间的在场（${JSON.stringify(foreign)}）`);
+  // 正向对照：同一个人换回这个空间的 session 就读得到，否则上面那条可能只是因为坏了。
+  assert.ok((await readPresence(ownerToken)).some((item) => item.noteId === noteId));
   destroyProviders();
   await waitFor(() => collaborationLoad().documents === 0, "文档卸载");
 });

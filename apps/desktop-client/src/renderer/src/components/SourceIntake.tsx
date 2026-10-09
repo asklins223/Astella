@@ -306,7 +306,8 @@ export function ClipboardLinkPrompt({ url, onClose }: { readonly url: string; re
 
 type DropPhase =
   | { kind: "armed" }
-  | { kind: "working"; done: number; total: number }
+  /** `reading` = 还在本机把原文变成正文（PDF、Word）；`capturing` = 在一份一份建来源。 */
+  | { kind: "working"; stage: "reading" | "capturing"; done: number; total: number; name: string | null }
   | { kind: "report"; outcomes: readonly BatchCaptureOutcome[]; overflow: boolean; created: { readonly sourceId: string; readonly title: string } | null };
 
 export function GlobalDropOverlay() {
@@ -353,7 +354,7 @@ export function GlobalDropOverlay() {
     let overflow = false;
 
     // 进度条先亮起来：读 50 份文件不是零耗时，没有这一帧的话界面像是没接住这次拖放。
-    phaseRef.current = { kind: "working", done: 0, total: Math.max(1, files.length) };
+    phaseRef.current = { kind: "working", stage: "reading", done: 0, total: Math.max(1, files.length), name: null };
     setPhase(phaseRef.current);
 
     if (files.length === 0) {
@@ -363,7 +364,11 @@ export function GlobalDropOverlay() {
       if (urls.length === 0) { reset(); return; }
       for (const url of urls) tasks.push({ name: hostOf(url), request: { url } });
     } else {
-      const read = await readCaptureFiles(files);
+      const read = await readCaptureFiles(files, MAX_BATCH_CAPTURE_FILES, (index, total, name) => {
+        if (!isCurrent()) return;
+        phaseRef.current = { kind: "working", stage: "reading", done: index, total, name };
+        setPhase(phaseRef.current);
+      });
       overflow = read.overflow;
       tasks.push(...read.tasks);
       outcomes.push(...read.outcomes);
@@ -373,7 +378,7 @@ export function GlobalDropOverlay() {
     const total = tasks.length + outcomes.length;
     // 一份都没成：收掉这一屏。原来这里是直接 return，于是「正在收进第 1/1 份…」会一直挂着。
     if (total === 0) { reset(); return; }
-    setPhase({ kind: "working", done: 0, total });
+    setPhase({ kind: "working", stage: "capturing", done: 0, total, name: null });
 
     if (tasks.length > 0) {
       const capture = await canCaptureSource();
@@ -389,7 +394,7 @@ export function GlobalDropOverlay() {
         // 所以界面上那一条进度条从头到尾走的是同一件事：收下第几份。
         const result = await captureSourceTasks(tasks, {
           isCurrent,
-          onProgress: (done) => { if (isCurrent()) setPhase({ kind: "working", done: outcomes.length + done, total }); },
+          onProgress: (done) => { if (isCurrent()) setPhase({ kind: "working", stage: "capturing", done: outcomes.length + done, total, name: null }); },
         });
         if (!result) return;
         if (result.created) dispatchSourceCaptured(result.created.sourceId, result.created.title);
@@ -509,13 +514,15 @@ export function GlobalDropOverlay() {
           {report ? <FileText size={24} /> : <Link2 size={24} />}
         </span>
         <h2 id="source-intake-drop-title">
-          {working ? `正在收进第 ${Math.min(working.done + 1, working.total)}/${working.total} 份…`
+          {working ? (working.stage === "reading"
+            ? `${working.name ? `正在解析《${working.name}》` : "正在本机解析原文"}${working.total > 1 ? `（第 ${Math.min(working.done + 1, working.total)}/${working.total} 份）` : ""}…`
+            : `正在收进第 ${Math.min(working.done + 1, working.total)}/${working.total} 份…`)
             : report ? (succeeded ? "收好了" : "这次没收进来")
             : "松开，收进来源库"}
         </h2>
         {working ? (
           <>
-            <p>直接解析到来源库，完成后索引会自动更新。</p>
+            <p>{working.stage === "reading" ? "PDF 与 Word 在这台机器上变成正文，收进来源库的是解析出来的文字。" : "直接解析到来源库，完成后索引会自动更新。"}</p>
             <div className="source-intake-drop__progress" aria-hidden="true">
               <span style={{ transform: `scaleX(${working.total === 0 ? 0 : working.done / working.total})` }} />
             </div>
@@ -558,7 +565,7 @@ export function GlobalDropOverlay() {
             </div>
           </>
         ) : (
-          <p>文本、Markdown、代码文件，或一条网页链接。</p>
+          <p>文本、Markdown、代码、PDF、Word 文件，或一条网页链接。</p>
         )}
       </div>
     </div>

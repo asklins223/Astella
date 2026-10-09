@@ -19,7 +19,6 @@ import {
   formatRelative,
   formatSourceKindLabel,
   formatSourceStatus,
-  parseImageBlock,
   useSurfaceProjection,
 } from "../notebook/surface-data.tsx";
 import {
@@ -36,10 +35,9 @@ import {
   segmentLabel,
   segmentText,
 } from "./source-segments.ts";
-import { useSourceImage } from "./source-image.ts";
-import { ZoomableReadingImage } from "./image-viewer.tsx";
 import { useSourceMotion, useSourceSheetMotion } from "./use-source-motion";
 import { renderNoteInline } from "../notebook/note-reading-inline";
+import { NoteMarkdownReading } from "../notebook/note-markdown-reading";
 
 const readingPositions = new Map<string, number>();
 
@@ -770,22 +768,5 @@ function SegmentImage({
   readonly segment: DesktopSourceSegment;
   readonly workspaceEpoch?: number;
 }) {
-  const image = parseImageBlock(segment.text);
-  const { state, retry } = useSourceImage(image?.url ?? "", workspaceEpoch);
-
-  if (!image) return <p className="sub">图片片段：{segmentText(segment)}</p>;
-
-  const alt = image.alt || "来源图片";
-  if (state.status === "external" || state.status === "ready") {
-    return (
-      <ZoomableReadingImage
-        src={state.src}
-        alt={alt}
-        retryable={state.status === "ready"}
-        onRetry={retry}
-      />
-    );
-  }
-  if (state.status === "loading") return <p className="sub">正在载入图片…</p>;
-  return <p className="sub">这张图片没能取回：{alt}</p>;
+  return <NoteMarkdownReading type="image" content={segment.text} options={{ workspaceEpoch }} />;
 }

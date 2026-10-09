@@ -53,6 +53,12 @@ type Props = {
   readonly generationAction?: ReactNode;
   readonly extraActions: ReactNode;
   readonly status: ReactNode;
+  /**
+   * 「谁开着这一篇」那一排。平时挂在纸面顶上那条常驻工具条上（不随正文滚，
+   * 见 `.notebook-desk__presence`）；全屏时那条 chrome 会右侧化成工具页，
+   * 于是这一排改挂到常驻纸签上——同一个句子，换一个还在屏上的位置。
+   */
+  readonly presence?: ReactNode;
   readonly saveError?: string | null;
   readonly scrollRef: RefObject<HTMLDivElement | null>;
   readonly children: ReactNode;
@@ -65,6 +71,7 @@ export function NotebookDesk(props: Props) {
   const [compactLayout, setCompact] = useState(true);
   const spreadRef = useRef<HTMLDivElement | null>(null);
   const deskRef = useRef<HTMLDivElement | null>(null);
+  const ribbonRef = useRef<HTMLDivElement | null>(null);
   useNotebookTouch(deskRef);
   const [currentBlock, setCurrentBlock] = useState(0);
   const drawerRef = useRef<HTMLDetailsElement>(null);
@@ -95,6 +102,21 @@ export function NotebookDesk(props: Props) {
   /** 全屏折签上的短标签：正文说模式，子页面说自己是谁——避免在速看里写「阅读」。 */
   const focusViewLabel = props.learningView === "body" ? undefined
     : { overview: "速看", recall: "回想", expansion: "往外学", artifact: "互动演示", history: "记录", learning: "这一轮学习" }[props.learningView];
+
+  useLayoutEffect(() => {
+    const ribbon = ribbonRef.current, desk = deskRef.current;
+    if (!focus.fullscreen || !ribbon || !desk) return;
+    const measure = () => {
+      const ribbonWidth = ribbon.getBoundingClientRect().width;
+      desk.style.setProperty("--notebook-focus-ribbon-width", `${ribbonWidth}px`);
+      // Below this capacity even the compact toolbar needs its own line. The document yields the same space.
+      desk.toggleAttribute("data-tools-row", desk.clientWidth - ribbonWidth - 152 < 520);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure); observer.observe(ribbon); observer.observe(desk);
+    return () => { observer.disconnect(); desk.removeAttribute("data-tools-row"); };
+  }, [focus.fullscreen]);
 
   useEffect(() => {
     setDirectoryOpen(false);
@@ -193,8 +215,8 @@ export function NotebookDesk(props: Props) {
   </nav>;
 
   const coveringPage = compact && Boolean(showDirectory || props.sidePage);
-  return <div className="notebook-desk" ref={deskRef} data-fullscreen={focus.fullscreen || undefined} data-mind-map={props.mindMapActive || undefined} data-mode={props.mode} data-view={props.learningView} data-compact={compact} data-margin-open={indexPaper.value ? "directory" : sidePaper.value ? "side" : undefined}>
-      {focus.fullscreen ? <NotebookFullscreenRibbon mode={props.mode} viewLabel={focusViewLabel} toolsOpen={focus.toolsOpen} toolTriggerRef={focus.toolTriggerRef}
+  return <div className="notebook-desk" ref={deskRef} data-editing={editingBody || undefined} data-fullscreen={focus.fullscreen || undefined} data-mind-map={props.mindMapActive || undefined} data-mode={props.mode} data-view={props.learningView} data-compact={compact} data-margin-open={indexPaper.value ? "directory" : sidePaper.value ? "side" : undefined}>
+      {focus.fullscreen ? <NotebookFullscreenRibbon containerRef={ribbonRef} status={editingBody ? props.status : null} mode={props.mode} viewLabel={focusViewLabel} presence={props.presence} toolsOpen={focus.toolsOpen} toolTriggerRef={focus.toolTriggerRef}
         onToggleTools={() => { if (focus.toolsOpen) focus.closeTools(); else focus.setToolsOpen(true); }} onExit={focus.toggleFullscreen} /> : null}
       {/* 全屏编辑时编辑工具常驻顶部这条纸签（用户裁决的「灵动岛」），不折进右侧工具页、不随页面滚动。 */}
       {focus.fullscreen && props.tools ? <div className="notebook-volume__tools notebook-desk__tool-island">{props.tools}</div> : null}
@@ -243,7 +265,10 @@ export function NotebookDesk(props: Props) {
               </div> : <div className="notebook-volume__trail">
                 <span title={props.noteTitle}>{props.noteTitle}</span>
               </div>}
+              {/* 在场那一排挂在工具条上：这一条不随正文滚，四种正文视图与三个学习页都在。
+                  全屏时整条 chrome 会变成右侧的工具页，那时它改挂常驻纸签（见上面 Ribbon）。 */}
               <div className="notebook-desk__utilities">
+                {!focus.fullscreen && props.presence ? <div className="notebook-desk__presence">{props.presence}</div> : null}
                 {!focus.fullscreen && !props.mindMapActive ? <button type="button" className="text-action" ref={focus.enterRef} aria-label="全屏笔记" title={props.learningView === "body" ? "全屏阅读与编辑 · ⌘/Ctrl+Shift+F" : "全屏看这一页 · ⌘/Ctrl+Shift+F"}
                   onMouseDown={event => event.preventDefault()} onClick={focus.toggleFullscreen}><Maximize2 size={17} aria-hidden="true" /><span>全屏</span></button> : null}
                 {props.generationAction}
@@ -260,7 +285,7 @@ export function NotebookDesk(props: Props) {
             {!focus.fullscreen && props.tools ? <div className="notebook-volume__tools">{props.tools}</div> : null}
             {props.pendingMode ? <p className="notebook-volume__pending" role="status">输入法确认后会切换正文视图。</p> : null}
             {(editingBody || focus.fullscreen) ? <footer className="notebook-desk__save-tray">
-              <div className="notebook-desk__status" role="status" aria-live="polite">{props.status}</div>{props.primaryAction}
+              {!(focus.fullscreen && editingBody) ? <div className="notebook-desk__status" role="status" aria-live="polite">{props.status}</div> : null}{props.primaryAction}
             </footer> : null}
             {focus.fullscreen ? <p className="notebook-focus-tools__hint">点回纸面就收起 · Esc 收起工具，再按退出</p> : null}
           </div>

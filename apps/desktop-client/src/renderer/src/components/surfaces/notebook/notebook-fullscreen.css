@@ -12,9 +12,10 @@
   --notebook-focus-page-top: calc(var(--notebook-focus-tool-top) + 58px);
   background: #fffbef;
 }
-/* Windows/Linux keep native caption buttons over the client area. Folded tools live below that entire band. */
+/* Windows/Linux keep native caption buttons over the client area. Folded tools drop below that whole band
+   and stay flush to the right edge, off the same --native-caption-band the 灵动岛 uses. */
 .desktop-app.hud-surface[data-notebook-fullscreen]:is([data-platform="win32"], [data-platform="linux"]) .task-surface--notebook {
-  --notebook-focus-tool-top: max(20px, calc(env(titlebar-area-height, 40px) + 12px));
+  --notebook-focus-tool-top: max(20px, var(--native-caption-band, 32px));
 }
 .desktop-app.hud-surface[data-notebook-fullscreen] .task-surface--notebook::after,
 .desktop-app.hud-surface[data-notebook-fullscreen] .notebook-page-title { display: none; }
@@ -62,6 +63,14 @@
 .hud-surface .notebook-focus-ribbon__tools small { padding: 2px 6px; border-radius: 6px; color: #788b73; font-size: 10px; font-weight: 500; background: #e2ead7; }
 .hud-surface .notebook-focus-ribbon .notebook-focus-ribbon__exit { width: 36px; padding: 6px; border-left: 1px solid #dce5d0; border-radius: 0 12px 12px 0; }
 .hud-surface .notebook-focus-ribbon .notebook-focus-ribbon__back { width: 36px; padding: 6px; border-right: 1px solid #dce5d0; border-radius: 12px 0 0 12px; }
+/* 全屏时「谁开着这一篇」挂在常驻纸签上：册页页眉那一条在全屏下是收起来的
+   （上面 `.notebook-volume__meta { display: none }`），这一排就换一个还在屏上的位置，
+   说的还是同一句话。尺寸压一档，与纸签两侧的节奏对齐。 */
+.hud-surface .notebook-focus-ribbon__presence {
+  display: inline-flex; align-items: center; gap: 7px; padding: 0 9px; border-right: 1px solid #dce5d0;
+}
+.hud-surface .notebook-focus-ribbon .notebook-presence .notebook-presence__peer { width: 17px; height: 17px; margin-right: -5px; font-size: 9px; }
+.hud-surface .notebook-focus-ribbon .tag { flex: none; padding: 2px 7px; font-size: 10px; white-space: nowrap; }
 /* 工具页贴右缘（与折签同一列）：2026-10-08 用户裁决，不必为伴星座位让位。 */
 .hud-surface .notebook-desk[data-fullscreen] .notebook-desk__chrome {
   display: flex; position: absolute; z-index: 8; top: var(--notebook-focus-page-top); right: 24px; flex-direction: column;
@@ -84,9 +93,8 @@
 .hud-surface .notebook-desk[data-fullscreen] .notebook-desk__utilities { flex-wrap: wrap; justify-content: space-between; margin: 0; gap: 10px; }
 .hud-surface .notebook-desk[data-fullscreen] .notebook-volume__tools { padding: 8px 0; }
 /* 全屏编辑的编辑工具条常驻顶部（2026-10-08 用户裁决：做成「灵动岛」那种纸签，不随页面滚动、不折进右侧工具页）；
-   纸签按内容收边，上限给右上折签留位，排不下时横向滚。 */
-.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__tool-island { position: absolute; z-index: 9; top: var(--notebook-focus-tool-top); left: 112px; right: auto; width: fit-content; max-width: calc(100% - 412px); display: flex; padding: 4px; border: 1px solid #d8dfcc; border-radius: 20px; background: #edf1e2ed; box-shadow: 0 3px 0 #bccbb340, 0 7px 20px #40544712; backdrop-filter: blur(16px); overflow-x: auto; scrollbar-width: none; }
-.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__tool-island::-webkit-scrollbar { display: none; }
+   纸签按内容收边，上限给右上折签留位；2026-10-09 用户决定：余下格式收进明确菜单，工具条不横向滚。 */
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__tool-island { position: absolute; z-index: 9; top: var(--notebook-focus-tool-top); left: 112px; right: auto; width: fit-content; max-width: calc(100% - 412px); display: flex; padding: 4px; border: 1px solid #d8dfcc; border-radius: 20px; background: #edf1e2ed; box-shadow: 0 3px 0 #bccbb340, 0 7px 20px #40544712; backdrop-filter: blur(16px); overflow: visible; }
 .hud-surface .notebook-desk[data-fullscreen] .notebook-desk__tool-island .editor-tools { flex: none; min-width: max-content; gap: 3px; flex-wrap: nowrap; }
 .hud-surface .notebook-desk[data-fullscreen] .editor-tools { gap: 5px; padding: 0; border: 0; }
 .hud-surface .notebook-desk[data-fullscreen] .editor-tools-legend { display: none; }

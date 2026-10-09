@@ -1,4 +1,6 @@
 node_modules/
+apps/windows-installer/**/bin/
+apps/windows-installer/**/obj/
 .github/scripts/node_modules
 .next/
 __pycache__/

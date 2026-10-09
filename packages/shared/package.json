@@ -1,6 +1,6 @@
 {
   "name": "@astella/shared",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -500,6 +500,11 @@
       "import": "./src/contracts/note-projection-contracts.ts",
       "default": "./src/contracts/note-projection-contracts.ts"
     },
+    "./note-presence-contracts": {
+      "types": "./src/contracts/note-presence-contracts.ts",
+      "import": "./src/contracts/note-presence-contracts.ts",
+      "default": "./src/contracts/note-presence-contracts.ts"
+    },
     "./note-recall-contracts": {
       "types": "./src/contracts/note-recall-contracts.ts",
       "import": "./src/contracts/note-recall-contracts.ts",
@@ -734,5 +739,6 @@
     "@types/node": "^22.10.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
-  }
+  },
+  "license": "PolyForm-Noncommercial-1.0.0"
 }

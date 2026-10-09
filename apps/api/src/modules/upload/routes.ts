@@ -1,9 +1,11 @@
 import { OBJECT_TRANSFER_HEADER } from "@astella/shared/object-transfer-contracts";
+import { SOURCE_IMAGE_MAX_BYTES } from "@astella/shared/source-image-contracts";
 /**
  * 图片上传与下载路由。
  *
  * - POST /uploads/images           — 笔记图片上传（需 noteId，校验归属）
  * - POST /uploads/companion-images — 伴星对话图片上传（不挂笔记，2026-10-06）
+ * - POST /uploads/import-images    — 导入 Markdown 随文图片（不挂笔记；没配预签名时的那条回退）
  * - POST /uploads/avatars          — 用户头像上传
  * - GET  /uploads/*                — 图片下载（租户/用户隔离校验）
  *
@@ -25,6 +27,7 @@ import {
   fileTooLargeError,
   uploadNoteImage,
   uploadCompanionImage,
+  uploadImportedImage,
   uploadAvatar,
   downloadUploadObject,
 } from "./upload-service.ts";
@@ -57,6 +60,13 @@ const DEFAULT_AVATAR_RATE_LIMIT_MAX = 5;
 // 多图笔记场景，同时限制异常拉取。
 const DEFAULT_DOWNLOAD_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_DOWNLOAD_RATE_LIMIT_MAX = 60;
+/**
+ * 导入 Markdown 文件夹/zip 时，每张随文图片各要一次上传，和「手工往笔记里贴一张图」不是
+ * 一个数量级。这一条与 `markdown_import_image` 预签名用途同额度（240/min）：同一个包走
+ * 预签名还是走这条回退，不该听到两句不同的话。
+ */
+const DEFAULT_IMPORT_IMAGE_RATE_LIMIT_WINDOW_MS = 60_000;
+const DEFAULT_IMPORT_IMAGE_RATE_LIMIT_MAX = 240;
 
 const defaultRateLimitStore = createRateLimitStoreFromEnv();
 
@@ -66,6 +76,8 @@ export interface UploadRoutesOptions {
   imageRateLimitMaxAttempts?: number;
   avatarRateLimitWindowMs?: number;
   avatarRateLimitMaxAttempts?: number;
+  importImageRateLimitWindowMs?: number;
+  importImageRateLimitMaxAttempts?: number;
   downloadRateLimitWindowMs?: number;
   downloadRateLimitMaxAttempts?: number;
 }
@@ -87,6 +99,10 @@ export async function uploadRoutes(
   const avatarLimiter = new RateLimiter(options.rateLimitStore ?? defaultRateLimitStore, {
     windowMs: options.avatarRateLimitWindowMs ?? DEFAULT_AVATAR_RATE_LIMIT_WINDOW_MS,
     maxAttempts: options.avatarRateLimitMaxAttempts ?? DEFAULT_AVATAR_RATE_LIMIT_MAX,
+  });
+  const importImageLimiter = new RateLimiter(options.rateLimitStore ?? defaultRateLimitStore, {
+    windowMs: options.importImageRateLimitWindowMs ?? DEFAULT_IMPORT_IMAGE_RATE_LIMIT_WINDOW_MS,
+    maxAttempts: options.importImageRateLimitMaxAttempts ?? DEFAULT_IMPORT_IMAGE_RATE_LIMIT_MAX,
   });
   const downloadLimiter = new RateLimiter(options.rateLimitStore ?? defaultRateLimitStore, {
     windowMs: options.downloadRateLimitWindowMs ?? DEFAULT_DOWNLOAD_RATE_LIMIT_WINDOW_MS,
@@ -214,6 +230,73 @@ export async function uploadRoutes(
         return reply.code(415).send({ error: "file content does not match declared type" });
       case "too_large":
         return reply.code(413).send({ error: "file too large (max 10MB)" });
+      case "dimensions_undecodable":
+        return reply.code(415).send({ error: "image dimensions could not be decoded" });
+      case "pixel_count_exceeded":
+        return reply.code(413).send({ error: "image pixel count exceeds 40 megapixels" });
+      case "storage_upload_failed":
+        return reply.code(503).send({ error: "failed to upload image" });
+      case "asset_persist_failed":
+        return reply.code(503).send({ error: "failed to register uploaded image" });
+    }
+  });
+
+  // ─── POST /uploads/import-images — 导入 Markdown 随文图片 ────────
+  // 预签名那条（`markdown_import_image` 用途）在没启用远端存储时被禁用（409 direct_storage_disabled），
+  // 桌面端这时回退到这条 multipart。与笔记图片同一套校验，区别两处：不挂笔记（这一刻还没有笔记），
+  // 以及按**渲染层取得动的体积**收口（5MB），存得下的图必须也显示得出来。
+  app.post("/uploads/import-images", { preHandler: [requireOwner] }, async (req, reply) => {
+    const importDecision = await importImageLimiter.consume(`upload:bundle-image:user:${req.session.userId}`);
+    if (!importDecision.allowed) {
+      reply.header("Retry-After", retryAfterSeconds(importDecision.resetAt));
+      return reply.code(429).send({ error: "rate_limited", message: "上传过于频繁，请稍后重试" });
+    }
+
+    const credential = getRequestCredential(req);
+    if (credential?.source === "cookie" && !hasValidCookieCsrf(req.method, req.headers)) {
+      return reply.code(403).send({ error: "csrf token required" });
+    }
+
+    if (!isStorageConfigured()) {
+      return reply.code(503).send({ error: "object storage is not configured" });
+    }
+
+    let file;
+    try {
+      file = await req.file({ limits: { fileSize: SOURCE_IMAGE_MAX_BYTES } });
+    } catch (err) {
+      if (fileTooLargeError(err)) {
+        return reply.code(413).send({
+          error: "file too large",
+          message: `图片超过 ${Math.floor(SOURCE_IMAGE_MAX_BYTES / 1024 / 1024)} MB，笔记里显示不出来，请先压缩再导入`,
+          code: "FST_REQ_FILE_TOO_LARGE",
+        });
+      }
+      throw err;
+    }
+    if (!file) return reply.code(400).send({ error: "no file provided" });
+
+    const outcome = await uploadImportedImage(scopeOfSession(req.session), { file });
+    if (outcome.ok) {
+      return reply.code(201).send(outcome.body);
+    }
+    switch (outcome.reason) {
+      case "unsupported_type":
+        drainMultipartFile(file);
+        return reply.code(415).send({ error: "unsupported file type" });
+      case "file_read_too_large":
+        drainMultipartFile(file);
+        return reply.code(413).send({
+          error: "file too large",
+          message: `图片超过 ${Math.floor(SOURCE_IMAGE_MAX_BYTES / 1024 / 1024)} MB，笔记里显示不出来，请先压缩再导入`,
+        });
+      case "content_type_mismatch":
+        return reply.code(415).send({ error: "file content does not match declared type" });
+      case "too_large":
+        return reply.code(413).send({
+          error: "file too large",
+          message: `图片超过 ${Math.floor(SOURCE_IMAGE_MAX_BYTES / 1024 / 1024)} MB，笔记里显示不出来，请先压缩再导入`,
+        });
       case "dimensions_undecodable":
         return reply.code(415).send({ error: "image dimensions could not be decoded" });
       case "pixel_count_exceeded":

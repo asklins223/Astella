@@ -134,4 +134,4 @@ make test-postgres COMPANION_HOME_TEST_DB=astella_it
 
 代码接通、单测通过、实库通过、真实模型完成和窗口顺手是不同证据。上下文治理已经有实库、模型对照与部分窗口记录，不能继续写成「从未验证」；长期效果、并发恢复、声音质量与跨版本更新仍按具体记录确认。
 
-查看 [现行方案](../../plans/learning-companion/README.md)、[测试与质量](testing-and-quality.md)、[运行与发布](operations.md) 和 [服务器部署](deployment.md)。MIT 代码许可不替代第三方模型与素材的授权，见 [THIRD_PARTY_NOTICES.md](../../../THIRD_PARTY_NOTICES.md)。
+查看 [现行方案](../../plans/learning-companion/README.md)、[测试与质量](testing-and-quality.md)、[运行与发布](operations.md) 和 [服务器部署](deployment.md)。PolyForm Noncommercial 自有源码与文档许可不替代第三方模型与素材的授权，见 [THIRD_PARTY_NOTICES.md](../../../THIRD_PARTY_NOTICES.md)。

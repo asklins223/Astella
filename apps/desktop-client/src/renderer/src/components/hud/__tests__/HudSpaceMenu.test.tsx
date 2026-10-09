@@ -293,6 +293,53 @@ describe("HudSpaceMenu", () => {
     expect(joinWorkspace).toHaveBeenCalledOnce();
   });
 
+  it("「已经在这个空间里了」这句不带 alert，也不抢红色那一格", async () => {
+    // 这一格的真相是"你已经在里面了"，那一行空间就摆在同一张纸的列表里；
+    // 报成失败会让人去重试或再要一张码，而该做的是点上去。
+    installApi({
+      auth: {
+        getState: vi.fn().mockResolvedValue(ok(session(CURRENT.workspaceId), 1)),
+        joinWorkspace: vi.fn().mockResolvedValue({
+          version: 1, ok: false, requestId: "r", correlationId: "c", schemaRevision: "s",
+          error: { code: "already_member", safeMessageKey: "error.already_member", retry: "never" },
+        }),
+      },
+      workspace: { list: vi.fn().mockResolvedValue(ok({ workspaces: [CURRENT, OTHER] }, 1)) },
+    });
+    await renderMenu();
+    fireEvent.click(screen.getByRole("button", { name: "加入空间" }));
+    fireEvent.change(screen.getByLabelText("协作空间邀请码"), { target: { value: "invite-token" } });
+    fireEvent.click(screen.getByRole("button", { name: "加入" }));
+    const line = await screen.findByText(/已经在这个协作空间里了/);
+    expect(line.getAttribute("role")).toBe("status");
+    expect(line.getAttribute("data-tone")).toBe("notice");
+    expect(screen.queryByRole("alert")).toBeNull();
+    // 那句话指的那一行必须真的在同一屏上，否则"点它就能进去"又是一句空话。
+    expect(screen.getByRole("button", { name: /海岸研究室/ })).toBeTruthy();
+  });
+
+  it("会话没重读上但加入已提交时，仍按已加入处理并继续刷列表", async () => {
+    // 主进程把「成员关系已落库」与「GET /auth/me 失败」分成两个码回。这一格如果
+    // 当失败处理，用户会拿同一个码再试一次，下一次得到"已经被使用"。
+    const joinWorkspace = vi.fn().mockResolvedValue({
+      version: 1, ok: false, requestId: "r", correlationId: "c", schemaRevision: "s",
+      error: { code: "join_committed_session_stale", safeMessageKey: "error.join_committed_session_stale", retry: "resync_first" },
+    });
+    const list = vi.fn()
+      .mockResolvedValueOnce(ok({ workspaces: [CURRENT, OTHER] }, 1))
+      .mockResolvedValueOnce(ok({ workspaces: [CURRENT, OTHER, JOINED] }, 2));
+    installApi({ auth: { getState: vi.fn().mockResolvedValue(ok(session(CURRENT.workspaceId), 1)), joinWorkspace },
+      workspace: { list } });
+    await renderMenu();
+    fireEvent.click(screen.getByRole("button", { name: "加入空间" }));
+    fireEvent.change(screen.getByLabelText("协作空间邀请码"), { target: { value: "invite-token" } });
+    fireEvent.click(screen.getByRole("button", { name: "加入" }));
+    await screen.findByText("已加入「山顶读书会」，点击它即可进入。");
+    await waitFor(() => expect(screen.getByLabelText("协作空间邀请码")).toHaveProperty("value", ""));
+    expect(joinWorkspace).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("较旧的后台读取迟到时不会覆盖较新的空间列表", async () => {
     let release: (value: GatewayResultV1<{ workspaces: WorkspaceSummaryV1[] }>) => void = () => {};
     installApi({ auth: { getState: vi.fn().mockResolvedValue(ok(session(CURRENT.workspaceId), 1)) },

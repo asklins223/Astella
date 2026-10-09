@@ -42,6 +42,16 @@
 .hud-surface .notebook-note-list__title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font-size: 13px; line-height: 1.7; font-weight: 650; }
 .hud-surface .notebook-note-list__meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px; color: #7c8873; font-size: 10px; line-height: 1.6; }
 .hud-surface .notebook-note-list__meta > span { display: inline-flex; align-items: center; gap: 3px; color: #5c825b; }
+/* 那一行只在真的有人在这篇里时多出来。印章沿用顶栏那一排的形状（压小一号），
+   名字说"是谁"；人数那句话留给点开以后的顶栏，两处不各算一遍。
+   名字随 `.notebook-note-list__meta` 的 wrap 折行，不做省略号——一行里被切掉的名字
+   读不出"到底是谁"。 */
+.hud-surface .notebook-note-list__readers { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.hud-surface .notebook-note-list__readers .notebook-presence { flex: none; }
+.hud-surface .notebook-note-list__readers .notebook-presence .notebook-presence__peer {
+  width: 15px; height: 15px; margin-right: -4px; font-size: 8px;
+}
+.hud-surface .notebook-note-list__readers-failure { margin: 10px 6px 0; color: #738267; font-size: 11px; line-height: 1.7; }
 .hud-surface .notebook-note-list__message { margin: 12px 6px; color: #738267; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
 .hud-surface .notebook-note-list__message p { margin: 0 0 6px; }
 .hud-surface .notebook-note-list__message[role="alert"] { color: #a06245; }

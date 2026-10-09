@@ -9,7 +9,6 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 type GatewayTransportLike = import("../desktop-gateway-transport").GatewayTransport;
-import * as realNoteModule from "../desktop-gateway-ns-note";
 import { noteModuleMock, noteStub } from "./ns-note-stubs";
 
 // 2026-09-30：笔记这一族已变成**自由函数**（`desktop-gateway-ns-note.ts`），
@@ -137,11 +136,13 @@ async function setup(session: {
   // 所以每个用例换一个干净的模块实例，而不是共享同一张订阅表。
   vi.resetModules();
   const { registerM1DesktopIpc } = await import("../desktop-ipc");
+  const actualNoteModule = await vi.importActual<typeof import("../desktop-gateway-ns-note")>("../desktop-gateway-ns-note");
+  const seed = bodyUpdate();
   const noteDocCache = session.noteDocCache ?? new MemoryNoteDocCacheStore();
   let releaseStream: () => void = () => undefined;
   const gate = new Promise<void>((resolve) => { releaseStream = resolve; });
   const streamHandle = {
-    // 返回一条增量 = 这次提交确实改了文档（回执 `stream`）；返回 null 是"没改动"。
+    // 只代表 provider 接收了增量；保存完成必须等 HTTP 的持久化回执。
     applyLocal: vi.fn(() => "AA==" as string | null),
     setPresence: vi.fn(),
     stop: vi.fn(),
@@ -193,7 +194,7 @@ async function setup(session: {
 // 2026-09-30：本机正文的存储接缝换成假实现（见 `ns-note-stubs.ts` 的说明）。
 // **桩登记了但模块内部那一步走真实现**——`vi.mock` 拦不住内部调用，
 // 真持久化跑起来会抛 `note_doc_update_unmerged`。
-realNoteModule.setNoteDocDeps({
+actualNoteModule.setNoteDocDeps({
   // **只假网络那一层**。`restoreNoteDocLocal` / `dropNoteDocLocalSessions` 保持真实现——
   // `desktop-ipc.ts` 的落盘（`persistNoteDocLocal`）要读本机会话，
   // 把它也假掉的话会话表就是空的，写完什么都存不下来。
@@ -215,13 +216,17 @@ realNoteModule.setNoteDocDeps({
       docStateRequests.push(path);
       if (path.endsWith("/doc-state")) {
         return {
-          body: { update: bodyUpdate(), revision: 3, savedAt: "2026-09-30T00:00:00.000Z", backfilled: false, shareScope: "shared" },
+          body: { update: seed, revision: 3, savedAt: "2026-09-30T00:00:00.000Z", backfilled: false, shareScope: "shared" },
           status: 200,
         } as never;
       }
       throw new Error(`测试传输层没有这条：${path}（requestId=${requestId}）`);
     },
   };
+  actualNoteModule.dropNoteDocLocalSessions(gatewayTransport as unknown as GatewayTransportLike);
+  // resetModules 后代理可能仍持有首个真实模块；所有文档状态访问都落到当前实例。
+  noteStub("noteDocLocalSession", actualNoteModule.noteDocLocalSession);
+  noteStub("dropNoteDocLocalSessions", actualNoteModule.dropNoteDocLocalSessions);
   const gateway = {
     gatewayTransport,
     getDeploymentConfig: () => undefined,
@@ -276,6 +281,9 @@ realNoteModule.setNoteDocDeps({
   await handler(DESKTOP_IPC_CHANNELS.authGetState)(event, { meta });
   return {
     docStateRequests,
+    gatewayTransport: gatewayTransport as unknown as GatewayTransportLike,
+    actualNoteModule,
+    seed,
     event,
     streamHandle,
     watchNoteDocument,
@@ -394,7 +402,7 @@ describe("笔记协同的 IPC 通道", () => {
     expect(streamHandle.setPresence).toHaveBeenCalledWith(JSON.stringify({ name: "小琳" }));
   });
 
-  it("有连接时写入并进那份文档，不再走 HTTP", async () => {
+  it("实时广播后仍等服务端落盘回执，返回真实 revision 和 savedAt", async () => {
     const { event, streamHandle, watchNoteDocument, syncViaGateway, uploadNoteDocUpdate } = await setup({
       workspaceType: "collaborative",
       role: "owner",
@@ -416,18 +424,14 @@ describe("笔记协同的 IPC 通道", () => {
       noteId: NOTE_ID,
       update: makeUpdate("a"),
     });
-    expect(written).toMatchObject({ ok: true, data: { via: "stream", revision: null } });
+    expect(written).toMatchObject({ ok: true, data: { via: "uploaded", revision: 11, savedAt: "2026-09-21T00:00:00.000Z" } });
+    expect(syncViaGateway.mock.calls[0].slice(1)).toEqual([NOTE_ID, expect.any(String), meta.requestId]);
     expect(streamHandle.applyLocal).toHaveBeenCalledWith(expect.any(String));
     expect(uploadNoteDocUpdate).not.toHaveBeenCalled();
   });
 
-  it("连接掉了之后写入退回 HTTP，重连鉴权后再回到流", async () => {
-    // 可写的那句答复只在鉴权那一刻来一次，而连接会掉。掉了还留着 `read-write`，写入就
-    // 继续并进那条**发不出去**的文档：provider 的 `send` 在 socket 不是 open 时静默丢弃
-    // （`readyState === Open` 才发），界面上照样"● 已写入，正在同步"，而正文只活在主进程
-    // 那份内存文档里——离开这一篇（transport 被销毁）就没了。所以掉线必须让 `via` 变回
-    // `uploaded`（HTTP 那条同一个增量口，服务端一样收到）。
-    const { event, watchNoteDocument, syncViaGateway, uploadNoteDocUpdate } = await setup({
+  it("掉线停止实时广播，重连后恢复；每次保存都等服务端确认", async () => {
+    const { event, streamHandle, watchNoteDocument, syncViaGateway, uploadNoteDocUpdate } = await setup({
       workspaceType: "collaborative",
       role: "owner",
     });
@@ -439,14 +443,15 @@ describe("笔记协同的 IPC 通道", () => {
     const onEvent = watchNoteDocument.mock.calls[0][3] as (e: unknown) => void | Promise<void>;
     await onEvent({ noteId: NOTE_ID, type: "status", status: "authenticated", authorizedScope: "read-write" });
 
-    // 正向对照：连着的时候确实走流。
+    // 连着时先广播，再确认落盘。
     const onStream = await handler(DESKTOP_IPC_CHANNELS.noteDocSyncUpdate)(event, {
       meta,
       commandId: "command-before-drop",
       noteId: NOTE_ID,
       update: makeUpdate("before-drop"),
     });
-    expect(onStream).toMatchObject({ ok: true, data: { via: "stream" } });
+    expect(onStream).toMatchObject({ ok: true, data: { via: "uploaded" } });
+    expect(streamHandle.applyLocal).toHaveBeenCalledTimes(1);
 
     await onEvent({ noteId: NOTE_ID, type: "status", status: "disconnected" });
     const afterDrop = await handler(DESKTOP_IPC_CHANNELS.noteDocSyncUpdate)(event, {
@@ -456,10 +461,11 @@ describe("笔记协同的 IPC 通道", () => {
       update: makeUpdate("after-drop"),
     });
     expect(afterDrop).toMatchObject({ ok: true, data: { via: "uploaded" } });
-    expect(syncViaGateway).toHaveBeenCalledTimes(1);
+    expect(streamHandle.applyLocal).toHaveBeenCalledTimes(1);
+    expect(syncViaGateway).toHaveBeenCalledTimes(2);
     expect(uploadNoteDocUpdate).not.toHaveBeenCalled();
 
-    // 重连并再次鉴权之后回到流那条路：掉一次不等于永久退化。
+    // 重连并再次鉴权后恢复实时广播。
     await onEvent({ noteId: NOTE_ID, type: "status", status: "authenticated", authorizedScope: "read-write" });
     const reconnected = await handler(DESKTOP_IPC_CHANNELS.noteDocSyncUpdate)(event, {
       meta,
@@ -467,7 +473,79 @@ describe("笔记协同的 IPC 通道", () => {
       noteId: NOTE_ID,
       update: makeUpdate("after-reconnect"),
     });
-    expect(reconnected).toMatchObject({ ok: true, data: { via: "stream" } });
+    expect(reconnected).toMatchObject({ ok: true, data: { via: "uploaded" } });
+    expect(streamHandle.applyLocal).toHaveBeenCalledTimes(2);
+    expect(syncViaGateway).toHaveBeenCalledTimes(3);
+  });
+
+  it("provider 接收增量后不提前完成保存；重复提交仍确认 HTTP 回执", async () => {
+    const { event, streamHandle, watchNoteDocument, syncViaGateway } = await setup({ workspaceType: "collaborative", role: "owner" });
+    await handler(DESKTOP_IPC_CHANNELS.subscriptionsSubscribe)(event, { meta, topic: { kind: "noteDoc", noteId: NOTE_ID } });
+    await settle();
+    await watchNoteDocument.mock.calls[0][3]({ noteId: NOTE_ID, type: "status", status: "authenticated", authorizedScope: "read-write" });
+    let confirm!: (receipt: Awaited<ReturnType<typeof syncViaGateway>>) => void;
+    syncViaGateway.mockImplementationOnce(() => new Promise((resolve) => { confirm = resolve; }));
+    // provider 已经持有这批操作，也不能替服务端宣布已落盘。
+    streamHandle.applyLocal.mockReturnValueOnce(null);
+    let completed = false;
+    const writing = handler(DESKTOP_IPC_CHANNELS.noteDocSyncUpdate)(event, {
+      meta, commandId: "command-await-receipt", noteId: NOTE_ID, update: makeUpdate("await-receipt"),
+    }).then((result) => { completed = true; return result; });
+    await settle();
+    expect(streamHandle.applyLocal).toHaveBeenCalledTimes(1);
+    expect(syncViaGateway).toHaveBeenCalledTimes(1);
+    expect(completed).toBe(false);
+    confirm({ via: "uploaded", revision: 19, savedAt: "2026-10-09T08:50:00.000Z" });
+    expect(await writing).toMatchObject({ ok: true, data: { via: "uploaded", revision: 19, savedAt: "2026-10-09T08:50:00.000Z" } });
+  });
+
+  it("协作者先新增内容，再基于它编辑时，保存影子文档有共同历史", async () => {
+    const { event, watchNoteDocument, gatewayTransport, actualNoteModule, seed, uploadNoteDocUpdate } = await setup({ workspaceType: "collaborative", role: "owner" });
+    await actualNoteModule.ensureNoteDocSeeded(gatewayTransport, NOTE_ID);
+    await handler(DESKTOP_IPC_CHANNELS.subscriptionsSubscribe)(event, { meta, topic: { kind: "noteDoc", noteId: NOTE_ID } });
+    await settle();
+    const peer = new Y.Doc();
+    Y.applyUpdate(peer, Buffer.from(seed, "base64"));
+    const beforePeer = Y.encodeStateVector(peer);
+    const text = new Y.Text();
+    peer.getMap("probe").set("shared-text", text);
+    text.insert(0, "协作者写的句子");
+    const peerUpdate = Buffer.from(Y.encodeStateAsUpdate(peer, beforePeer)).toString("base64");
+    await watchNoteDocument.mock.calls[0][3]({ noteId: NOTE_ID, type: "update", update: peerUpdate });
+    expect(actualNoteModule.noteDocLocalSession(gatewayTransport, NOTE_ID).state.doc.getMap("probe").get("shared-text")?.toString()).toBe("协作者写的句子");
+    const beforeLocal = Y.encodeStateVector(peer);
+    text.delete(0, 3);
+    text.insert(0, "我修改了");
+    const localUpdate = Buffer.from(Y.encodeStateAsUpdate(peer, beforeLocal)).toString("base64");
+    noteStub("syncNoteDocUpdate", actualNoteModule.syncNoteDocUpdate);
+    const written = await handler(DESKTOP_IPC_CHANNELS.noteDocSyncUpdate)(event, {
+      meta, commandId: "command-edit-peer-text", noteId: NOTE_ID, update: localUpdate,
+    });
+    expect(requireData(written)).toMatchObject({ via: "uploaded", revision: 7 });
+    expect(uploadNoteDocUpdate).toHaveBeenCalledTimes(1);
+    expect(actualNoteModule.noteDocLocalSession(gatewayTransport, NOTE_ID).state.doc.getMap("probe").get("shared-text")?.toString()).toBe("我修改了写的句子");
+    peer.destroy();
+  });
+
+  it("实时广播后保存失败不返回成功，下一次提交重试同一批改动", async () => {
+    const { event, watchNoteDocument, gatewayTransport, actualNoteModule, uploadNoteDocUpdate } = await setup({ workspaceType: "collaborative", role: "owner" });
+    await handler(DESKTOP_IPC_CHANNELS.subscriptionsSubscribe)(event, { meta, topic: { kind: "noteDoc", noteId: NOTE_ID } });
+    await settle();
+    await watchNoteDocument.mock.calls[0][3]({ noteId: NOTE_ID, type: "status", status: "authenticated", authorizedScope: "read-write" });
+    noteStub("syncNoteDocUpdate", actualNoteModule.syncNoteDocUpdate);
+    uploadNoteDocUpdate.mockRejectedValueOnce(new Error("durable write failed"));
+    const update = makeUpdate("must-retry");
+    const first = await handler(DESKTOP_IPC_CHANNELS.noteDocSyncUpdate)(event, {
+      meta, commandId: "command-write-failure", noteId: NOTE_ID, update,
+    });
+    expect(first.ok).toBe(false);
+    expect(actualNoteModule.noteDocLocalSession(gatewayTransport, NOTE_ID).pending).toHaveLength(1);
+    const retried = await handler(DESKTOP_IPC_CHANNELS.noteDocSyncUpdate)(event, {
+      meta, commandId: "command-write-retry", noteId: NOTE_ID, update,
+    });
+    expect(retried).toMatchObject({ ok: true, data: { via: "uploaded", revision: 7 } });
+    expect(uploadNoteDocUpdate).toHaveBeenCalledTimes(2);
+    expect(actualNoteModule.noteDocLocalSession(gatewayTransport, NOTE_ID).pending).toEqual([]);
   });
 
   it("服务端还没答复可写之前，写入退回 HTTP（不把没落盘的东西报成 stream）", async () => {

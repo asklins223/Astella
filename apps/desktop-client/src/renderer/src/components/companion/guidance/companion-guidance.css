@@ -226,9 +226,10 @@ body[data-companion-guidance] .home-v2-object__label { visibility: hidden !impor
 body[data-companion-guidance] .hud-rail .nav-chip::after { display: none; }
 .guidance-stage[data-motion="off"] *, .guidance-stage[data-motion="lite"] .guidance-scene * { transition: none !important; animation: none !important; }
 .guidance-stage[data-motion="off"] .guidance-scene [data-guide-object], .guidance-stage[data-motion="lite"] .guidance-scene [data-guide-object] { transform: none !important; }
-/* The real arrival stays close to its persistent space capsule. */
+/* The real arrival stays close to its persistent space capsule. 82 = 岛顶 22 + 60；
+   Windows/Linux 的岛沉到原生标题带下面，纸签跟着同一道偏移走，才不会骑在岛上。 */
 .space-arrival { position: absolute; inset: 0; z-index: 75; pointer-events: none; perspective: 900px; }
-.space-arrival__sign { position: absolute; top: 82px; right: 25px; display: flex; align-items: center; gap: 14px; max-width: min(420px, calc(100vw - 30px)); padding: 16px 20px; background: #fff8e6; color: #596c51; border: 2px solid #fffdf5; border-radius: 8px 22px 22px 22px; box-shadow: 0 5px 0 #cbbc99, 0 14px 22px #3c37282b; pointer-events: auto; transform-origin: 88% -24px; }
+.space-arrival__sign { position: absolute; top: calc(60px + var(--native-caption-band, 22px)); right: 25px; display: flex; align-items: center; gap: 14px; max-width: min(420px, calc(100vw - 30px)); padding: 16px 20px; background: #fff8e6; color: #596c51; border: 2px solid #fffdf5; border-radius: 8px 22px 22px 22px; box-shadow: 0 5px 0 #cbbc99, 0 14px 22px #3c37282b; pointer-events: auto; transform-origin: 88% -24px; }
 .space-arrival__sign > div { min-width: 0; display: flex; flex-direction: column; }
 .space-arrival__sign small { font-size: 10px; color: #9ba287; letter-spacing: .1em; }
 .space-arrival__sign strong { font-size: 20px; line-height: 1.5; font-weight: 750; letter-spacing: -.02em; overflow-wrap: anywhere; }
@@ -249,7 +250,7 @@ body[data-companion-guidance] .hud-rail .nav-chip::after { display: none; }
   .guidance-narration[data-film="true"] p { font-size: 12px; }
   .guidance-film__timeline ol { gap: 7px; }
   .guidance-film__transport > button { padding-inline: 9px; font-size: 11px; gap: 5px; }
-  .space-arrival__sign { top: 63px; right: 15px; padding: 12px 15px; gap: 10px; }
+  .space-arrival__sign { top: calc(41px + var(--native-caption-band, 22px)); right: 15px; padding: 12px 15px; gap: 10px; }
   .space-arrival__sign strong { font-size: 17px; }
 }
 @media (max-width: 800px) {

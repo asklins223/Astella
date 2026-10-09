@@ -94,3 +94,18 @@ Windows 原生标题栏与不同 DPI、真实中文输入法组合过程中全�
 自动检查：笔记目录 40 个文件 277 项中 276 项通过——唯一失败仍是那 5 个既有缺样式类（来自同期未提交的脑图／正文改动，本次没有新增 class）；桌面类型检查通过；样式顺序、文案与 objective-flow 守卫通过。
 
 未确认：普通要点有真实速看内容时，浮起的两条纸签与滚动内容的相对关系只按几何判断（探测账号这篇没有速看内容，截图是准备页）；窄窗（≤900px）下这两条纸签与页头控件的间距没有专门截图。
+
+## 贴右落位改判 · 2026-10-09
+
+用户看 Windows 实机截图后否决了 2026-10-08 那条「右侧从 25px 调到 150px」的做法：整条岛往左让位会把它从右上角摘下来，看着像换了个归属。新裁决是**仍然贴右缘，改为沉到原生标题带下面**，笔记全屏的右上工具岛同步走同一条线。
+
+- `styles.css`：`--native-caption-band: calc(env(titlebar-area-height, 40px) + 12px)`，与既有的 `--native-caption-width` 同处声明，是这条起算线唯一的源。
+- `hud-surface.css`：`.room-control` 的 win32/linux 覆盖从 `right:` 换成 `top:`，`right` 交回基线（25px／紧凑档 12px）。特异度 (0,4,0) 仍高于紧凑档，窄窗一样生效。
+- `notebook-fullscreen.css`：折签的 `--notebook-focus-tool-top` 改读同一条 token，数值与原来逐像素相同（52px），只是不再有第二份 `40px + 12px`。
+- `companion-guidance.css`：空间到达纸签原本落在岛下方 12px（82 = 岛顶 22 + 60），岛沉下去后它跟着同一条 band 走，否则 z-75 会骑在岛上。macOS 走 fallback，82px／紧凑 63px 原值不变。
+
+真窗口走查（macOS 上把根节点强制成 `data-platform="win32"` 并钉住 52px，量的是 Windows 几何）：1469×838 下灵动岛折叠与展开都是 top 52／right 25，笔记全屏折签 top 52／right 24，「笔记列表」纸签同一行 top 52，全部不与右侧 138×40 的原生按钮带相交；`--hud-rail`、`.content` 与岛无碰撞。探针 `scripts/probe-caption-clearance.mjs`。macOS 侧同一次走查确认岛 22/25、折签 20、到达纸签 82 均未动。
+
+自动检查：`room-control-motion.test.ts` 新增两条守卫——岛的平台规则不得再出现 `right:`，且折签必须走 `--native-caption-band`（防止有人把 `40px + 12px` 再抄一遍）；灵动岛与空间菜单 51 项、笔记目录 40 个文件 278 项、样式闭合与死样式守卫全部通过。
+
+未确认：真实 Windows 机器与不同 DPI 缩放未复测（`env(titlebar-area-height)` 在 Windows 上按 `titleBarOverlay.height` = 40 取值，本机只能钉住模拟）；岛沉到 52px 后底缘 100px，比内容区基线 94px 低 6px，展开态右半截会压住内容顶边这一条只按几何判断，没在 Windows 上截图。

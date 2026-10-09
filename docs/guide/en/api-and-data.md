@@ -240,6 +240,7 @@ The limits are deliberately uneven; change one and look at all of them:
 | `POST /uploads/avatars` | 2MB (override via `req.file({limits})`; `MAX_IMAGE_SIZE` is 10MB and `MAX_AVATAR_SIZE` 2MB in `upload-service.ts`) | `modules/upload/` |
 | `POST /v2/notes/:id/doc-update` | `bodyLimit` 8MB is only a coarse filter; the real rule is **decoded bytes** ≤ 2MB (`NOTE_DOC_UPDATE_MAX_BYTES`), otherwise `update_too_large` | `modules/note/` |
 | `POST /import/markdown` | `bodyLimit` 50MB, aligned with the schema ceiling (100 items × 500KB) | `modules/import/` |
+| `POST /sources` and the `source_text` transfer | One source body is capped at 10 MB (`MAX_SOURCE_TEXT_BYTES`, declared once in the shared contract: the client checks it, the storage purpose checks it, the worker re-verifies it on readback); this route's `bodyLimit` adds 1MB on top because without object storage the body travels as JSON | `modules/source/`, `modules/storage/` |
 | Every other JSON route | Fastify's default 1MiB | — |
 
 ## Test entry points on the API side

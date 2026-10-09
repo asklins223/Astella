@@ -24,7 +24,10 @@ const MODULE_CONTRACTS: ModuleContract[] = [
   // 事务执行器"的断言仍然成立——这里只是把数量对上，不是放宽判据。
   // handlers 11 → 12：批次 4.5 的 `PATCH /v2/notes/:id/share-scope`（「共享给空间」）。
   // 它同样自己开 `withWorkspaceTransaction` 并带上 (workspaceId, userId)，所以另外两条断言一起过。
-  { name: "note", handlers: 12, services: 10, handlerWithoutInlineTransaction: 1 },
+  // handlers 12 → 13：`GET /notes/presence`（共享空间的在场）。它自己开
+  // `withWorkspaceTransaction(scopeOfSession(req.session), …)` 只拿去判可见性，
+  // 在场本身读的是内存里那份按连接计的登记表（不落库、不占事务）。
+  { name: "note", handlers: 13, services: 10, handlerWithoutInlineTransaction: 1 },
   // 删掉无人调用的 POST /sources/statuses 后：7 路由 / 7 服务。
   // 补上 POST /sources/:id/reparse（doc 34 L7，"可以重新解析"那句文案的端点）后各加一：
   // 两个数一起动正是这条断言要的形状——多一条路由就必须多一个事务边界。

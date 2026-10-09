@@ -96,6 +96,7 @@ import {
 import { executeCompanionMemoryTool } from "./companion-memory-tools.ts";
 import { executeCompanionCreateNote } from "./companion-note-authoring.ts";
 import { executeCompanionNoteEdit } from "./companion-note-edit.ts";
+import { executeCompanionShareNote } from "./companion-note-share.ts";
 
 
 
@@ -939,6 +940,13 @@ export async function executeDirectTool(
     case "companion_edit_note": {
       if (!toolCallId) throw new CompanionToolError("正文编辑缺少这轮的执行记录，请重新发送要求。");
       return executeCompanionNoteEdit(event, toolCallId, signal);
+    }
+    // 「共享给空间」/「取消共享」（2026-10-09 补的能力）。与正文编辑同一形状：
+    // worker 不写 `notes`（0395 起就没有那个权限，而可见性一变要跟着刷新目标索引里的
+    // 公开标题，那条规则只住在服务层一处），派发给 API 的 `companion-share-dispatch`。
+    case "companion_share_note": {
+      if (!toolCallId) throw new CompanionToolError("共享缺少这轮的执行记录，请重新发送要求。");
+      return executeCompanionShareNote(event, toolCallId, signal);
     }
     // 模型自改**表达层**（40 §4.8.4）。
     //

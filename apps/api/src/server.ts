@@ -1,4 +1,5 @@
 import { companionNoteEditDispatch } from "./modules/note/companion-edit-dispatch.ts";
+import { companionNoteShareDispatch } from "./modules/note/companion-share-dispatch.ts";
 import { objectExportHook } from "./modules/storage/exports.ts";
 import { objectTransferRoutes } from "./modules/storage/routes.ts";
 import { agentRoutes } from "./modules/agent/routes.ts";
@@ -377,6 +378,7 @@ async function main() {
   // `preHandler: requireSession`，而 v4 的 token 在握手之后的 Auth 消息里，不在请求头上。
   await app.register(noteCollaborationRoutes);
   await app.register(companionNoteEditDispatch);
+  await app.register(companionNoteShareDispatch);
   // §21.5：Card Generation V2 是原子 capability bundle，默认 fail-closed。
   if (isCardGenerationV2Enabled()) {
     await app.register(cardGenerationV2Routes);

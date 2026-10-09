@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   allocateMarkdownFileName,
@@ -15,6 +16,17 @@ const NOTE = (id: string, title: string) => ({
   firstImageBlock: null,
   paragraphCount: 1,
 } as never);
+
+/** 一个合法的站内图片地址：形状要和渲染层取图那条认的一样，不然测的是个假引用。 */
+const WS = "11111111-1111-4111-8111-111111111111";
+const imageKey = (seed: string) => `${WS}/notes/${WS}/${seed.repeat(8).slice(0, 8)}-1111-4111-8111-111111111111.png`;
+const imageUrl = (seed: string) => `/api/uploads/${imageKey(seed)}`;
+
+/** 这一批里没有图片时用的那两份依赖。 */
+const noImages = {
+  fetchImage: async () => { throw new Error("这一批没有图要取"); },
+  writeAsset: async () => true,
+};
 
 describe("Markdown 导出的文件名", () => {
   it("路径分隔符与保留字符换掉，标题里的空格留着", () => {
@@ -43,10 +55,10 @@ describe("Markdown 目录导出", () => {
     const listNotes = vi.fn();
     const writeNote = vi.fn();
     const result = await exportNotesAsMarkdown({
-      listNotes, writeNote, fetchMarkdown: vi.fn(),
+      listNotes, writeNote, fetchMarkdown: vi.fn(), ...noImages,
       pickDirectory: async () => null, existingNames: async () => new Set(),
     });
-    expect(result).toEqual({ version: 1, canceled: true, directory: null, total: 0, exported: 0, failed: 0 });
+    expect(result).toEqual({ version: 1, canceled: true, directory: null, total: 0, exported: 0, failed: 0, images: 0, imageFailures: 0 });
     expect(listNotes).not.toHaveBeenCalled();
     expect(writeNote).not.toHaveBeenCalled();
   });
@@ -63,6 +75,7 @@ describe("Markdown 目录导出", () => {
       pickDirectory: async () => "/tmp/export",
       existingNames: async () => new Set(["记忆研究.md"]),
       writeNote: async (filePath, text) => { written.set(filePath, text); },
+      ...noImages,
     });
     // 回执恒满足 exported + failed === total：读者需要知道**少了几篇**。
     expect(result).toMatchObject({ canceled: false, directory: "/tmp/export", total: 3, exported: 2, failed: 1 });
@@ -75,13 +88,63 @@ describe("Markdown 目录导出", () => {
   });
 
   it("批量里已经写过的名字不会被后一篇抢走", async () => {
+    const names: string[] = [];
     const result = await exportNotesAsMarkdown({
       listNotes: async () => [NOTE("n1", "同名"), NOTE("n2", "同名"), NOTE("n3", "同名")],
       fetchMarkdown: async (noteId) => noteId,
       pickDirectory: async () => "/tmp/export",
       existingNames: async () => new Set(),
-      writeNote: async () => undefined,
+      writeNote: async (path) => { await Promise.resolve(); names.push(path); },
+      ...noImages,
     });
     expect(result).toMatchObject({ total: 3, exported: 3, failed: 0 });
+    expect(new Set(names).size).toBe(3);
+  });
+
+  it("同一张图被两篇引用只落一份，两篇都指到那一个文件", async () => {
+    const assets = new Map<string, Buffer>();
+    const fetched: string[] = [];
+    const written = new Map<string, string>();
+    const result = await exportNotesAsMarkdown({
+      listNotes: async () => [NOTE("n1", "有图"), NOTE("n2", "也有同一张图")],
+      fetchMarkdown: async (noteId) => `# ${noteId}\n\n![那张图](${imageUrl("aaaa")})\n`,
+      pickDirectory: async () => "/tmp/export",
+      existingNames: async () => new Set(),
+      writeNote: async (filePath, text) => { written.set(filePath, text); },
+      fetchImage: async (objectKey) => { fetched.push(objectKey); return { bytes: Buffer.from("同一个字节"), mime: "image/png" }; },
+      writeAsset: async (filePath, bytes) => { assets.set(filePath, bytes); return true; },
+    });
+    // 取一次、写一份：几十篇引用同一张图时这次导出不该变成几十 MB 的重复字节。
+    expect(fetched).toHaveLength(1);
+    expect([...assets.keys()]).toEqual([`/tmp/export/assets/${hashName("同一个字节")}`]);
+    expect([...written.values()].every((text) => text.includes(`assets/${hashName("同一个字节")}`))).toBe(true);
+    expect(written.get("/tmp/export/有图.md")).not.toContain("/api/uploads/");
+    expect(result).toMatchObject({ exported: 2, failed: 0, images: 1, imageFailures: 0 });
+  });
+
+  it("取不回来的那一张不改正文：那一处留着站内地址，并单独报数", async () => {
+    const written = new Map<string, string>();
+    const result = await exportNotesAsMarkdown({
+      listNotes: async () => [NOTE("n1", "一张好图一张丢的")],
+      fetchMarkdown: async () => `![好的](${imageUrl("bbbb")})\n\n![丢的](${imageUrl("cccc")})\n`,
+      pickDirectory: async () => "/tmp/export",
+      existingNames: async () => new Set(),
+      writeNote: async (filePath, text) => { written.set(filePath, text); },
+      fetchImage: async (objectKey) => {
+        if (objectKey.includes("cccccccc")) throw new Error("这一张没权限读");
+        return { bytes: Buffer.from("好图"), mime: "image/png" };
+      },
+      writeAsset: async () => true,
+    });
+    const text = written.get("/tmp/export/一张好图一张丢的.md") ?? "";
+    expect(text).toContain(`assets/${hashName("好图")}`);
+    // 没落地的这一处**留着原样**：那份 .md 依然说得出这里本来有一张什么图。
+    expect(text).toContain(imageUrl("cccc"));
+    expect(result).toMatchObject({ exported: 1, failed: 0, images: 1, imageFailures: 1 });
   });
 });
+
+/** 资源文件名是内容寻址的：测试里也按同一算法算，不写死一串哈希。 */
+function hashName(bytes: string): string {
+  return createHash("sha256").update(Buffer.from(bytes)).digest("hex").slice(0, 20) + ".png";
+}

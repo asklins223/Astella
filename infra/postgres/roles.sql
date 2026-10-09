@@ -1311,6 +1311,7 @@ DO $$ DECLARE t text; BEGIN
   FOREACH t IN ARRAY ARRAY['astella_agent_scope_current(uuid,uuid)','astella_enqueue_agent_recovery()',
     'astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid)',
     'astella_pending_companion_note_edits_v1()',
+    'astella_pending_companion_note_shares_v1()',
     'astella_note_creation_scope_current(uuid,uuid)',
     'astella_cancel_agent_operations(uuid,integer)','astella_agent_job_current(uuid,uuid,uuid,boolean)',
     'astella_agent_run_authorized(uuid)',
@@ -1327,6 +1328,11 @@ DO $$ DECLARE t text; BEGIN
   END LOOP;
   IF to_regprocedure('public.astella_pending_companion_note_edits_v1()') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.astella_pending_companion_note_edits_v1() TO astella_api;
+  END IF;
+  -- 0399：伴星「共享给空间」的派发清单。与编辑同一形状——worker 只登记，
+  -- 真正写那一列的是 API 那一个入口（可见性一变要刷目标索引里的公开标题）。
+  IF to_regprocedure('public.astella_pending_companion_note_shares_v1()') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_pending_companion_note_shares_v1() TO astella_api;
   END IF;
   IF to_regprocedure('public.astella_enqueue_agent_recovery()') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.astella_agent_scope_current(uuid,uuid) TO astella_api,astella_worker;
@@ -1982,6 +1988,7 @@ BEGIN
     AND has_function_privilege('astella_api', p.oid, 'EXECUTE')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_pending_companion_note_edits_v1()')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_pending_companion_note_shares_v1()')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_note_creation_scope_current(uuid,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_scope_current(uuid,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_cancel_agent_operations(uuid,integer)')

@@ -97,7 +97,7 @@ import {
   useRoomStore,
   type Live2dStatus,
 } from "../../../app/room-store";
-import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
+import { createRequestMeta, gatewayErrorMessage, isJoinCommittedWithoutSession, joinFailureTone, unwrapGatewayResult } from "../../../app/desktop-client";
 import { signOutCurrentAccount } from "../../../app/account-signout";
 import { companionConsentGate, COMPANION_CONSENT_REQUIRED_LINE, COMPANION_EXTERNAL_DISABLED_LINE, SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
 import { publishGateInvalidation } from "../../../app/gate-invalidation";
@@ -619,16 +619,20 @@ export function SettingsSurface() {
     setNotice(null);
     setFailureNotice(null);
     try {
-      const response = await window.astella.auth.joinWorkspace({
-        meta: createRequestMeta(epochRef.current),
-        inviteToken,
-      });
-      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
-      unwrapGatewayResult(response);
+      try {
+        const response = await window.astella.auth.joinWorkspace({
+          meta: createRequestMeta(epochRef.current),
+          inviteToken,
+        });
+        if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+        unwrapGatewayResult(response);
+      } catch (error) {
+        // 成员关系已经落库、只是本机会话没重读上：加入这件事确实成了，走完成功那一段。
+        if (!isJoinCommittedWithoutSession(error)) throw error;
+      }
       setInviteCode("");
-      // joinWorkspace binds the joined space as the current one (the contract
-      // answers with the new session), so this is a workspace boundary too —
-      // and, like the picker above, it must not eject the reader from settings.
+      // 加入改变的是「名册与可进入的空间集合」，当前空间**没有**被换掉（服务端那条路
+      // 只写成员行，不换 session）。所以这里要重发的是各面的读数，而不是把人弹出设置页。
       publishGateInvalidation("stale_workspace");
       invoke("open-settings");
       setSettingsSection(section);
@@ -636,7 +640,11 @@ export function SettingsSurface() {
       setNotice("已加入协作空间，可在「账户与空间」查看和切换。");
       await load();
     } catch (error) {
-      setFailureNotice(gatewayErrorMessage(error));
+      const text = gatewayErrorMessage(error);
+      // 「已经在这个空间里」不是一次失败：那一行就在同一张纸的空间列表里，
+      // 放进红色那格会把它说成"没做成"，而人要做的只是去点它。
+      if (joinFailureTone(error) === "notice") setNotice(text);
+      else setFailureNotice(text);
     } finally {
       setJoining(false);
     }
@@ -684,9 +692,16 @@ export function SettingsSurface() {
         setNotice("已取消导出，没有写入任何文件。");
         return;
       }
+      const images = result.images ?? 0;
+      const imageFailures = result.imageFailures ?? 0;
+      // 图片的数要说**两句**：放进 assets/ 的那几张，和没取回来、正文里还留着站内地址的那几张。
+      // 只报前者，读者拿去别的编辑器才发现有几处点开是空的。
+      const imageNote = images > 0
+        ? `，${images} 张图放在 assets/${imageFailures > 0 ? `，另有 ${imageFailures} 张没取回来（正文里那一处还是站内地址）` : ""}`
+        : imageFailures > 0 ? `，有 ${imageFailures} 张图没取回来（正文里那一处还是站内地址）` : "";
       setNotice(result.failed > 0
-        ? `已导出 ${result.exported} 篇到 ${result.directory}，${result.failed} 篇没写成（这一篇取不到或写不进去，可以再导一次）。`
-        : `已导出 ${result.exported} 篇到 ${result.directory}。`);
+        ? `已导出 ${result.exported} 篇到 ${result.directory}${imageNote}，${result.failed} 篇没写成（这一篇取不到或写不进去，可以再导一次）。`
+        : `已导出 ${result.exported} 篇到 ${result.directory}${imageNote}。`);
     } catch (error) {
       setFailureNotice(gatewayErrorMessage(error));
     } finally {

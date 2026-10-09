@@ -35,9 +35,8 @@
 .hud-surface .notebook-volume__tools .editor-tools .tool:focus-visible { outline: 2px solid #6d9a86; outline-offset: 2px; }
 .hud-surface .notebook-volume__tools .editor-tools .editor-tools-legend { display: block; width: auto; height: auto; font: 450 11px/1.5 "Noto Sans SC Variable", sans-serif; }
 /* 笔记里的编辑工具条只排一行（2026-10-08 用户要求，全屏与非全屏同此）：插入类动作进「插入」菜单、
-   按钮与触发都收紧一号；一行仍排不下时横向滚，不再折成两行。本地 Markdown 那套工具条不受影响。 */
-.hud-surface .notebook-workspace .notebook-volume__tools .editor-tools { flex-wrap: nowrap; gap: 2px; overflow-x: auto; scrollbar-width: none; }
-.hud-surface .notebook-workspace .notebook-volume__tools .editor-tools::-webkit-scrollbar { display: none; }
+   按钮与触发都收紧一号；2026-10-09 用户决定：更多格式使用菜单，一行不横向滚。本地 Markdown 那套工具条不受影响。 */
+.hud-surface .notebook-workspace .notebook-volume__tools .editor-tools { flex-wrap: nowrap; gap: 2px; overflow: visible; }
 .hud-surface .notebook-workspace .notebook-volume__tools .editor-tools .editor-tools-legend { display: none; }
 .hud-surface .notebook-workspace .notebook-volume__tools .editor-tools button.tool { width: 30px; height: 30px; border-radius: 9px; }
 .hud-surface .notebook-workspace .notebook-volume__tools .editor-tools .editor-tools-item { gap: 2px; }

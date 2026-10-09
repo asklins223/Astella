@@ -19,6 +19,9 @@ import { useRoomStore } from "../../app/room-store.ts";
 
 const TEST_URL = "https://example.com/deep-dive";
 
+/** jsdom 的 File 既没有 text() 也没有 arrayBuffer()：采集通道读的是字节，用例自己带上。 */
+const fileBytes = (text: string) => new TextEncoder().encode(text).buffer;
+
 function stubDialog() {
   const proto = HTMLDialogElement.prototype as HTMLDialogElement & {
     showModal?: () => void;
@@ -160,8 +163,8 @@ describe("GlobalDropOverlay", () => {
     const calls = stubGateway(reason === "create" ? { createWait: pending } : {});
     render(<GlobalDropOverlay />);
     const first = new File(["body"], "first.md"), second = new File(["body"], "second.md");
-    Object.defineProperty(first, "text", { value: async () => { if (reason === "file") await pending; return "first body"; } });
-    Object.defineProperty(second, "text", { value: async () => "second body" });
+    Object.defineProperty(first, "arrayBuffer", { value: async () => { if (reason === "file") await pending; return fileBytes("first body"); } });
+    Object.defineProperty(second, "arrayBuffer", { value: async () => fileBytes("second body") });
     const transfer = { files: [first, second], types: ["Files"], getData: () => "", dropEffect: "none" };
     fireEvent.dragEnter(document.body, { dataTransfer: transfer });
     fireEvent.drop(document.body, { dataTransfer: transfer });
@@ -177,9 +180,9 @@ describe("GlobalDropOverlay", () => {
     const calls = stubGateway({ createTitle: "拖入的笔记" });
     render(<GlobalDropOverlay />);
     const file = new File(["# 拖入的正文"], "note.md", { type: "text/markdown" });
-    // jsdom 的 File 没有可用的 text()，桩掉实例方法；读失败分支由组件内的
+    // jsdom 的 File 没有可用的 arrayBuffer()，桩掉实例方法；读失败分支由组件内的
     // try/catch 覆盖，这里只验证"读出 → 创建 → 报告"的 happy path。
-    Object.defineProperty(file, "text", { value: async () => "# 拖入的正文" });
+    Object.defineProperty(file, "arrayBuffer", { value: async () => fileBytes("# 拖入的正文") });
     const transfer = {
       files: [file],
       types: ["Files"],

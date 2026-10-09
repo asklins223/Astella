@@ -3,6 +3,7 @@ import * as Y from "yjs";
 import { yXmlFragmentToProsemirrorJSON } from "y-prosemirror";
 import { pmNodesToNoteBlocks } from "@astella/shared/note-doc-schema";
 import type { NoteDocStreamEventV1 } from "@astella/shared/desktop-ipc-contracts";
+import type { NotePresenceModeV1 } from "@astella/shared/note-presence-contracts";
 import { noteBlockTypeV1Schema, type NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
 import { createCommandId, createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
 import { companionEditedNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
@@ -116,18 +117,34 @@ export function projectBlocks(doc: Y.Doc): NoteBlockProjectionV1[] {
 }
 
 /**
- * 一个远端协作者。名字与"他在改第几块"都来自对端自己广播的 awareness 状态，
+ * 一个远端协作者。名字、「在读还是在写」与"他在改第几块"都来自对端那一侧，
  * 不是查名册查出来的，也不是本机替他猜的。
+ *
+ * `name` 与服务端那份在场快照用的是**同一个出处**：`beforeHandleAwareness` 会把对端
+ * 自报的名字换成库里 `users` 那一份再往下发，所以这里读到的不是随便一个客户端写的字符串。
  */
-export type NoteDocPeer = { clientId: number; name: string | null; block: number | null };
+export type NoteDocPeer = {
+  clientId: number;
+  name: string | null;
+  mode: NotePresenceModeV1;
+  block: number | null;
+};
 
 /**
- * awareness 那一份状态只有一个形状：名字 + 当前光标所在的块（`null` = 不在任何块里）。
- * 报块是为了"别人也在写这一段"这句话有出处——它必须是一句文字，不能只靠颜色，
+ * awareness 那一份状态只有两位：他在读还是在写、他当前在哪一块（`null` = 不在任何块里）。
+ *
+ * **名字不在这里报**。它曾经在这里，于是"别人屏上出现谁"取决于那个客户端自己写了什么；
+ * 现在那一位由服务端按库里的那一份改写（`collaboration.ts` 的 `beforeHandleAwareness`）。
+ * 报块是为了"也在写这一段"那句话有出处——它必须是一句文字，不能只靠颜色，
  * 也必须是**对端自己说的**，否则界面会在别人早就离开之后还挂着那个提示。
  */
-const presenceState = (name: string | null, block: number | null): string =>
-  JSON.stringify({ name: (name ?? "").slice(0, 40), block });
+const presenceState = (mode: NotePresenceModeV1, block: number | null): string =>
+  JSON.stringify({ mode, block });
+
+/** 认不出的档位读成「在读」：这一格唯一确定的事是他开着这一篇。 */
+function peerMode(value: unknown): NotePresenceModeV1 {
+  return value === "editing" ? "editing" : "reading";
+}
 
 /** 对端的形状不归这里管：认不出的就当没有，而不是整帧丢掉（丢了会凭空少一个人）。 */
 function peerBlock(value: unknown): number | null {
@@ -163,6 +180,8 @@ export type NoteDocLiveView = {
   flush: () => Promise<"stream" | "uploaded" | "queued" | "unchanged" | null>;
   /** 本机光标进了哪一块（`null` = 离开正文）。换块才报一次，认不出的对端读成没有。 */
   setLocalBlock: (block: number | null) => void;
+  /** 本机在这一篇里的档位（在读 / 在写）。换档才报一次，报的是同一份 awareness。 */
+  setLocalMode: (mode: NotePresenceModeV1) => void;
 };
 
 export function useNoteDocLiveView(
@@ -171,8 +190,6 @@ export function useNoteDocLiveView(
   enabled: boolean,
   /** 别人改了字要不要叫醒一次回读：版本、权限、来源片段只能从那次回读拿。 */
   onRemoteChange: () => void,
-  /** 广播给同处这一篇的人看的名字；没有显示名时传 null（对端看到一枚无名印章，不编名字）。 */
-  presenceName: string | null = null,
   /** 主进程按 epoch 拒收过期请求，所以这里必须带着它、并跟着回执更新。 */
   epochRef?: { current: number | undefined },
   /** Checkpoints and restorations change the current version; personal notes have no stream to carry that update. */
@@ -205,8 +222,8 @@ export function useNoteDocLiveView(
   const draftWrittenRef = useRef<string | null>(null);
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const blockRef = useRef<number | null>(null);
-  const presenceNameRef = useRef(presenceName);
-  presenceNameRef.current = presenceName;
+  /** 本机在这一篇里的档位。默认「在读」：只有界面真的切进编辑器才会改成「在写」。 */
+  const modeRef = useRef<NotePresenceModeV1>("reading");
   const changeRef = useRef(onRemoteChange);
   changeRef.current = onRemoteChange;
 
@@ -398,6 +415,25 @@ export function useNoteDocLiveView(
     void saveDraft(targetRef.current, pendingRef.current);
   }, [saveDraft]);
 
+  /**
+   * 把本机这一格**整份**报出去：档位（在读/在写）与块号是同一条 awareness。
+   *
+   * 上传统一是替换，所以每次重发的是完整一份，而不是加一个键——两边各写半份迟早会拼出
+   * "在写却没有块"或"有块却说不出档位"。
+   */
+  const reportPresence = useCallback((): void => {
+    const api = window.astella;
+    const target = targetRef.current;
+    if (!api?.note?.doc?.presence || !target) return;
+    void api.note.doc
+      .presence({
+        meta: createRequestMeta(epochRef?.current ?? undefined),
+        noteId: target,
+        state: presenceState(modeRef.current, blockRef.current),
+      })
+      .catch(() => undefined);
+  }, []);
+
   useEffect(() => {
     const api = window.astella;
     if (!noteId || !enabled || !api) return undefined;
@@ -425,9 +461,10 @@ export function useNoteDocLiveView(
           ...previous,
           peers: event.states.map((peer) => ({
             clientId: peer.clientId,
-            // awareness 状态是对端自己写的，形状不归这里管：认不出的就无名，
-            // 而不是整帧丢掉（丢掉会让头像凭空少一个人）。
+            // 名字这一位现在由服务端按库里那份改写后再下发，不再是客户端自报的字符串；
+            // 形状仍然不归这里管：认不出的就无名，而不是整帧丢掉（丢掉会让头像凭空少一个人）。
             name: typeof peer.state.name === "string" && peer.state.name.trim() ? peer.state.name.trim() : null,
+            mode: peerMode(peer.state.mode),
             block: peerBlock(peer.state.block),
           })),
         }));
@@ -435,7 +472,13 @@ export function useNoteDocLiveView(
       }
       setStream((previous) => ({
         peers: previous.peers,
-        failure: event.status === "failed" ? event.reason ?? "connection_lost" : previous.failure,
+        // 重连上了就要把那句"没连上"收回去：`failure` 一旦留住，界面会在一个已经活过来的
+        // 通道上一直说"别人看不到你在看"。
+        failure: event.status === "failed"
+          ? event.reason ?? "connection_lost"
+          : event.status === "connected" || event.status === "authenticated"
+            ? null
+            : previous.failure,
         authorizedScope: event.authorizedScope ?? previous.authorizedScope,
       }));
     };
@@ -450,8 +493,8 @@ export function useNoteDocLiveView(
           if (payload.kind !== "note_doc_event" || payload.noteId !== noteId) return;
           handle(payload.event);
         });
-        // 没有显示名也照样报名字为空：不报的话这一行的人数会比头像多出一个来历不明的位置。
-        void api.note.doc.presence({ meta: meta(), noteId, state: presenceState(presenceName, blockRef.current) }).catch(() => undefined);
+        // 一连上就先报这一格：不报的话别人只知道"有个人连着"，说不出他在读还是在写。
+        reportPresence();
       } catch {
         // 订阅不通只是看不到实时帧，正文本身仍由读路径保证。
       }
@@ -468,19 +511,26 @@ export function useNoteDocLiveView(
         void api.subscriptions.unsubscribe({ meta: meta(), subscriptionId }).catch(() => undefined);
       }
     };
-  }, [doc, enabled, noteId, presenceName]);
+  }, [doc, enabled, noteId, reportPresence]);
 
-  // 报块与报名字是同一条 awareness，换块就重发一次整份（不是加一个键）：awareness 的
-  // 本机上传统一是替换，两边各写半份迟早会拼出"有名没块"或"有块没名"。
+  /**
+   * 本机在这一篇里的档位（在读 / 在写）。换档就重报一次整份。
+   *
+   * 它不进上面那条订阅的依赖：在阅读与编辑之间来回不该把订阅与那条 WS 拆了重建，
+   * 那会让正文短暂看不到别人的帧。
+   */
+  const setLocalMode = useCallback((next: NotePresenceModeV1): void => {
+    if (modeRef.current === next) return;
+    modeRef.current = next;
+    reportPresence();
+  }, [reportPresence]);
+
+  /** 本机光标进了哪一块（`null` = 离开正文）。换块才报一次，认不出的对端读成没有。 */
   const setLocalBlock = useCallback((block: number | null): void => {
     if (blockRef.current === block) return;
     blockRef.current = block;
-    const api = window.astella;
-    if (!api?.note?.doc?.presence || !noteId) return;
-    void api.note.doc
-      .presence({ meta: createRequestMeta(epochRef?.current ?? undefined), noteId, state: presenceState(presenceNameRef.current, block) })
-      .catch(() => undefined);
-  }, [noteId]);
+    reportPresence();
+  }, [reportPresence]);
 
   const flush = useCallback(async (): Promise<"stream" | "uploaded" | "queued" | "unchanged" | null> => {
     const api = window.astella;
@@ -552,6 +602,7 @@ export function useNoteDocLiveView(
     flush,
     setLocalTitle,
     setLocalBlock,
+    setLocalMode,
     ...projection,
   };
 }

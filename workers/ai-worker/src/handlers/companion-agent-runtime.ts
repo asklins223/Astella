@@ -256,8 +256,24 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   const toolIntent = attention.toolUse === "none" ? false : attention.toolUse === "uncertain" ? null : true;
   const userRequiresTool = companionStepRequiresTool(toolIntent);
   const userAskedForAction = attention.toolUse === "act";
-  const definitions = availableDefinitions.filter(definition => attention.toolUse === "act"
-    || (attention.toolUse !== "none" && definition.riskClass === "read"));
+  /**
+   * 工具面只由声明决定：权限档 + 数据外发政策，也就是 `resolveAllCompanionAgentTools`
+   * 给出的那一份（它自己的注释：Exposure is a view of the project catalog, filtered by
+   * current permissions and data-egress policy）。**本轮意图不再参与筛选。**
+   *
+   * 原来这里按 `attention.toolUse === "act"` 才留写类工具，于是分类器的一次猜测成了
+   * 能力总闸。2026-10-09 线上：用户说「生成一片新笔记…然后开启共享」，共享没有对应能力，
+   * 分类器因此记下一条歧义，`resolveAgentTurnInterpretation` 把 act 降成 uncertain
+   * （agent-core/runtime/attention.ts:40），于是 `companion_create_note` 整批被摘——
+   * **一个做不到的请求否掉了做得到的那个**。她照着自己那一份工具清单如实回答"我手上没有
+   * 新建笔记的入口"，下一轮单句请求时工具又在了，于是当众改口。本地 159 轮里 28.2% 的轮次
+   * 写类工具为空，另有 5 轮分类器自己点名了写操作却被摘。
+   *
+   * 摘工具从来没能真正拦住误写：要不要动数据由 `riskClass`、`requiresConfirmation`
+   * 与提案确认门在执行侧判（`companion-tool-execution.ts` 还会复核这轮是否真的给过）。
+   * 意图仍然有用，它管的是档位与姿态——步数预算、开不开思考、闲聊还是办事的语气，见下面。
+   */
+  const definitions = availableDefinitions;
   const toolDefinitions = definitions.map((definition) => ({
     name: definition.name,
     description: definition.description,
@@ -269,9 +285,12 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   // action 那一支以前没有名字可点（只有泛指文案），实机 2026-09-22 场景 T 就是在这儿翻车的：
   // 用户说「以后别主动催我复习」，她两步都只回"我记下了"，`companion_set_boundary` 一次没调。
   const steerableActionTools = steerableToolNames(definitions, "action");
-  const requestedActionTools = definitions.filter(definition => definition.riskClass !== "read"
-    && (attention.candidateOperations.length === 0 || attention.candidateOperations.includes(definition.name)))
-    .map(definition => definition.name);
+  // 只点名本轮解释**自己指出**的那些写操作。`companionActionResultRecorded` 拿这份判
+  // "她声称的动作是否已有回执"，把全部写工具塞进去等于让任意一次写替这次声称作证。
+  // 一个都没点名时留空：纠正指令会退回 `steerableActionTools`（见 step-plan 那条 fallback），
+  // 宁可多 steer 一次，也不要放过一句没做过的事。
+  const requestedActionTools = attention.candidateOperations.filter(name => definitions.some(
+    definition => definition.name === name && definition.riskClass !== "read"));
   const providerCapabilities = args.provider.getCapabilities?.();
   const providerCapabilityFingerprint = sha256Utf8V1(canonicalJsonV1({
     capabilityFingerprint: providerCapabilities?.fingerprint ?? null,

@@ -69,6 +69,7 @@ vi.mock("../update-install-receipt", () => ({ UpdateInstallReceiptStore: class {
   acknowledge() { if (receipts.value) receipts.value.status = "acknowledged"; }
 } }));
 vi.mock("../macos-archive-updater", () => ({ MacosArchiveUpdater: class { constructor() { return updater; } } }));
+vi.mock("../windows-installer-updater", () => ({ WindowsInstallerUpdater: class { constructor() { return updater; } } }));
 
 vi.mock("electron-updater", () => ({ autoUpdater: updater }));
 
@@ -119,14 +120,17 @@ describe("更新状态机", () => {
     expect(updater.prepareInstall).toHaveBeenCalledOnce();
   });
 
-  it("Windows 保留原安装器，同样保存启动后的成功回执", async () => {
+  it("Windows 先启动独立安装器，再退出应用并保存成功回执", async () => {
     Object.defineProperty(process, "platform", { value: "win32", configurable: true });
     const module = await import("../desktop-update");
     await module.checkForUpdates({ userInitiated: true });
     updater.emit("update-downloaded", { version: "0.2.0" });
     await module.installUpdate();
-    expect(updater.quitAndInstall).toHaveBeenCalledWith(false, true);
-    expect(updater.prepareInstall).not.toHaveBeenCalled();
+    expect(updater.quitAndInstall).not.toHaveBeenCalled();
+    expect(updater.prepareInstall).toHaveBeenCalledOnce();
+    const prepared = await updater.prepareInstall.mock.results[0].value;
+    expect(prepared.launch).toHaveBeenCalledOnce();
+    expect((await import("electron")).app.quit).toHaveBeenCalled();
     expect(receipts.value).toMatchObject({ status: "pending", version: "0.2.0" });
   });
   it("开发模式下如实说不检查，而不是去查一个装不上的版本", async () => {

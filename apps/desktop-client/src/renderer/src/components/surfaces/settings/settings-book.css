@@ -215,7 +215,7 @@
 .hud-surface .settings-hud .hud-picker__menu { border: 3px solid #fffdee; border-radius: 21px; background: #f1f6df; box-shadow: 0 4px 0 #b6cda3, 0 12px 25px #324a3326; color: #45674e; font-family: inherit; }
 .hud-surface .settings-hud .hud-picker__menu::backdrop { background: transparent; }
 .hud-surface .settings-hud .settings-companion-time .hud-picker__trigger { min-width: 44px; }
-.hud-surface .settings-hud .settings-companion-time .hud-picker__menu { min-width: 82px; }
+.hud-surface .settings-hud .settings-companion-time .hud-picker__menu { --hud-picker-menu-min: 82px; }
 .hud-surface .settings-hud .hud-picker__option b { font: 700 13px/1.5 "Noto Sans SC Variable", sans-serif; }
 .hud-surface .settings-hud .hud-picker__option small { font: 12px/1.5 "Noto Sans SC Variable", sans-serif; }
 .hud-surface .settings-hud .hud-picker__option.is-active { border-radius: 14px; background: #dfeecb; }

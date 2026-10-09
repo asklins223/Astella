@@ -97,6 +97,8 @@ describe("笔记页的归属状态", () => {
     useRoomStore.setState({ spaceIdentity: { name: "验收空间", role: "owner", isPersonal: false } });
     await open("preview");
     expect(byText("仅自己可见")).toBe(true);
+    expect(byText("共享给空间")).toBe(false);
+    fireEvent.click(document.querySelector('button[aria-label="共享与协同"]')!);
     expect(byText("共享给空间")).toBe(true);
   });
 
@@ -120,6 +122,7 @@ describe("笔记页的归属状态", () => {
     useRoomStore.setState({ spaceIdentity: { name: "验收空间", role: "member", isPersonal: false } });
     await open("preview");
     expect(byText("仅自己可见")).toBe(true);
+    fireEvent.click(document.querySelector('button[aria-label="共享与协同"]')!);
     const button = [...document.querySelectorAll("button")].find((n) => (n.textContent ?? "").trim() === "共享给空间");
     expect(button?.disabled).toBe(true);
     expect(button?.getAttribute("title")).toContain("只有写下这篇的人");

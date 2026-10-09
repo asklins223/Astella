@@ -3101,9 +3101,11 @@
   gap: 0;
 }
 
-/* Reserve the native caption buttons at the right edge; read their current overlay width at every zoom. */
+/* 右缘照常贴住（25px / 紧凑 12px），改为整条岛沉到原生标题带下面。
+   往左让位会把岛从右上角摘下来，看着像换了个归属；沉下去仍然在这一列，
+   与笔记全屏折签同一条起算线。特异度 (0,4,0) 高于紧凑档的 (0,2,0)，窄窗同样生效。 */
 .desktop-app.hud-surface:is([data-platform="win32"], [data-platform="linux"]) .room-control {
-  right: calc(var(--native-caption-width, 138px) + 12px);
+  top: var(--native-caption-band, 52px);
 }
 
 /* 折叠 = 先淡出（110ms@0），再关门（320ms@80ms）。

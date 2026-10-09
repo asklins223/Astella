@@ -51,6 +51,9 @@ const PARAM_TARGETS: Readonly<Record<string, Readonly<Record<string, IdTarget>>>
   },
   companion_read_source: { sourceId: { table: "sources", column: "id" } },
   companion_open_note: { noteId: { table: "notes", column: "id" } },
+  // 共享改的是 `notes.share_scope` 那一列，身份仍是笔记主键；判据是 `created_by`，
+  // 所以这一条走的是与 `setNoteShareScope` 同一个 id-space，没有另起一套。
+  companion_share_note: { noteId: { table: "notes", column: "id" } },
   companion_open_card: { cardId: { table: "learning_cards_v2", column: "card_id" } },
   companion_focus_graph: { objectiveId: { table: "learning_objectives_v2", column: "objective_id" } },
   // 可选参数（39d W2-1 的裁定）：给了就按那篇笔记收窄查找范围，所以目标仍是 notes。

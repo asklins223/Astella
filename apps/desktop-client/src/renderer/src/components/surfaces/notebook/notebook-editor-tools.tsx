@@ -1,7 +1,7 @@
-import { NotebookFormatControls, NotebookBlockFormat, WritingPopover } from "./notebook-format-controls";
+import { NotebookFormatActions, NotebookFormatControls, NotebookBlockFormat, WritingPopover } from "./notebook-format-controls";
 import { NotebookWritingMenu } from "./notebook-writing-menu";
-import { useEffect, useRef, useState, type RefObject } from "react";
-import { Bold, Code, CodeXml, ImagePlus, Italic, Link2, List, ListOrdered, Minus, Plus, Quote, Redo2, Table2, Undo2, Strikethrough, type LucideIcon } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { Bold, Code, CodeXml, Highlighter, ImagePlus, Italic, Link2, List, ListOrdered, Minus, Plus, Quote, Redo2, SlidersHorizontal, Table2, Undo2, Strikethrough, type LucideIcon } from "lucide-react";
 import { NOTE_FORMAT_EVENT, type NoteEditorFormat } from "./note-editor-format";
 import type { NoteMarkdownEditorHandle } from "./note-markdown-editor";
 
@@ -16,7 +16,7 @@ type EditorToolSpec = {
   readonly active?: keyof NoteEditorFormat;
 };
 
-/** 一行里直接点到的开关；插入类动作收进「插入」菜单，整条工具条因此排得成一行（2026-10-08 用户要求）。 */
+/** 常用操作常驻，余下格式收进明确入口；整行不横向滚动（2026-10-09 用户决定）。 */
 const EDITOR_TOOLS: readonly EditorToolSpec[] = [
   { Icon: Undo2, label: "撤销", title: "撤销（⌘/Ctrl+Z）", run: (editor) => editor.undo() },
   { Icon: Redo2, label: "重做", title: "重做（⌘/Ctrl+Shift+Z）", run: (editor) => editor.redo() },
@@ -48,6 +48,23 @@ export function NotebookEditorTools(props: {
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [format, setFormat] = useState<NoteEditorFormat | null>(null);
+  const [compact, setCompact] = useState(false);
+  useLayoutEffect(() => {
+    const holder = root.current?.closest<HTMLElement>(".notebook-volume__tools"), workspace = root.current?.closest<HTMLElement>(".notebook-workspace");
+    if (!holder) return;
+    const measure = () => {
+      // A fullscreen island hugs its contents. Measure the space between the fixed controls to avoid width feedback.
+      const desk = holder.closest<HTMLElement>(".notebook-desk"), ribbon = desk?.querySelector<HTMLElement>(".notebook-focus-ribbon");
+      const besideRibbon = desk && ribbon ? desk.clientWidth - ribbon.getBoundingClientRect().width - 152 : null;
+      const capacity = besideRibbon === null ? holder.clientWidth : besideRibbon < 520 ? desk!.clientWidth - 136 : besideRibbon;
+      setCompact(capacity < 740);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure); observer.observe(holder); if (workspace) observer.observe(workspace);
+    const ribbon = holder.closest(".notebook-desk")?.querySelector(".notebook-focus-ribbon"); if (ribbon) observer.observe(ribbon);
+    return () => observer.disconnect();
+  }, []);
   useEffect(() => {
     const surface = root.current?.closest(".notebook-workspace") ?? document;
     const read = () => {
@@ -57,28 +74,39 @@ export function NotebookEditorTools(props: {
     surface.addEventListener(NOTE_FORMAT_EVENT, read); read();
     return () => surface.removeEventListener(NOTE_FORMAT_EVENT, read);
   }, [props.editorRef, props.editable]);
+  const disabled = (spec: EditorToolSpec) => !props.editable || (spec.label === "撤销" && format?.canUndo === false) || (spec.label === "重做" && format?.canRedo === false);
+  const run = (spec: EditorToolSpec) => { if (props.editorRef.current) { spec.run(props.editorRef.current); props.editorRef.current.focus(); } };
   const tool = (spec: EditorToolSpec) => (
     <span key={spec.label} className="editor-tools-item">
-      <button type="button" className="tool" disabled={!props.editable || (spec.label === "撤销" && format?.canUndo === false) || (spec.label === "重做" && format?.canRedo === false)}
+      <button type="button" className="tool" disabled={disabled(spec)}
         aria-pressed={spec.active ? Boolean(format?.[spec.active]) : undefined} aria-label={spec.label} title={spec.title} onMouseDown={event => event.preventDefault()}
-        onClick={() => { if (props.editorRef.current) { spec.run(props.editorRef.current); props.editorRef.current.focus(); } }}><spec.Icon size={16} aria-hidden="true" /></button>
+        onClick={() => run(spec)}><spec.Icon size={16} aria-hidden="true" /></button>
     </span>
   );
   return <>
-    <div ref={root} className="editor-tools" role="toolbar" aria-label="Markdown 格式工具">
-      {EDITOR_TOOLS.slice(0, 2).map(tool)}
+    <div ref={root} className="editor-tools" data-compact={compact || undefined} role="toolbar" aria-label="Markdown 格式工具">
+      {tool(EDITOR_TOOLS[0])}
       <span className="editor-tools-divider" aria-hidden="true" />
-      <WritingPopover label="插入" disabled={!props.editable} trigger={<><Plus size={16} aria-hidden="true" /><span>插入</span></>} onClose={() => props.editorRef.current?.focus()}>{close => (
+      <WritingPopover label="插入" disabled={!props.editable} trigger={<><Plus size={16} aria-hidden="true" /><span className="editor-tools__insert-label">插入</span></>} onClose={() => props.editorRef.current?.focus()}>{close => (
         <div className="writing-menu-grid editor-tools-insert">
           <button type="button" title="图片可粘贴或拖入正文" disabled={!props.editable || !props.canUpload} onClick={() => { close(); props.fileInputRef.current?.click(); }}><ImagePlus size={15} aria-hidden="true" />图片</button>
           {INSERT_TOOLS.map(spec => <button key={spec.label} type="button" title={spec.title} onClick={() => { close(); if (props.editorRef.current) { spec.run(props.editorRef.current); props.editorRef.current.focus(); } }}><spec.Icon size={15} aria-hidden="true" />{spec.label}</button>)}
           <button type="button" title="插入链接（⌘/Ctrl+K）" onClick={() => { close(); props.onLink(); }}><Link2 size={15} aria-hidden="true" />链接</button>
         </div>
       )}</WritingPopover>
-      <span className="editor-tools-item"><NotebookBlockFormat heading={format?.heading ?? 0} editable={props.editable} editorRef={props.editorRef} /></span>
-      {EDITOR_TOOLS.slice(2).map(tool)}
+      {!compact ? <span className="editor-tools-item"><NotebookBlockFormat heading={format?.heading ?? 0} editable={props.editable} editorRef={props.editorRef} /></span> : null}
+      {tool(EDITOR_TOOLS[2])}
+      {!compact ? tool(EDITOR_TOOLS[3]) : null}
       <span className="editor-tools-divider" aria-hidden="true" />
-      <NotebookFormatControls editorRef={props.editorRef} editable={props.editable} format={format} />
+      <NotebookFormatControls editorRef={props.editorRef} editable={props.editable} format={format} actions={false} compact={compact} />
+      <WritingPopover label="更多格式" disabled={!props.editable} trigger={<><SlidersHorizontal size={16} aria-hidden="true" /><span>更多</span></>} className="editor-tools-overflow" onClose={() => props.editorRef.current?.focus()}>{close => <>
+        {compact ? <div className="editor-tools-overflow__headings" aria-label="段落格式">{[0, 1, 2, 3, 4, 5, 6].map(level => <button type="button" key={level} aria-label={level ? `标题 ${level}` : "正文段落"} aria-pressed={(format?.heading ?? 0) === level} onMouseDown={event => event.preventDefault()} onClick={() => { props.editorRef.current?.toggleHeading(level); close(); }}>{level ? `H${level}` : "正文"}</button>)}</div> : null}
+        <div className="writing-menu-grid editor-tools-overflow__commands">
+          {[EDITOR_TOOLS[1], ...(compact ? [EDITOR_TOOLS[3]] : []), ...EDITOR_TOOLS.slice(4)].map(spec => <button key={spec.label} type="button" disabled={disabled(spec)} aria-pressed={spec.active ? Boolean(format?.[spec.active]) : undefined} title={spec.title} onMouseDown={event => event.preventDefault()} onClick={() => { close(); run(spec); }}><spec.Icon size={16} aria-hidden="true" /><span>{spec.label}</span></button>)}
+          {compact ? <button type="button" aria-pressed={Boolean(format?.highlight)} onMouseDown={event => event.preventDefault()} onClick={() => { props.editorRef.current?.toggleExtension?.("highlight"); close(); }}><Highlighter size={16} aria-hidden="true" /><span>文本高亮</span></button> : null}
+          <NotebookFormatActions editorRef={props.editorRef} editable={props.editable} format={format} labels onDone={close} />
+        </div>
+      </>}</WritingPopover>
       <NotebookWritingMenu {...props.writing} editorRef={props.editorRef} editable={props.editable} title={props.title} />
       <span className="editor-tools-legend">{props.legend ?? "改动自动同步 · 图片可粘贴或拖入"}</span>
       <input ref={props.fileInputRef} className="note-image-upload-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp"

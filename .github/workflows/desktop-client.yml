@@ -16,6 +16,20 @@ env:
   NODE_VERSION: "22"
 
 jobs:
+  windows-installer:
+    name: Independent Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Test install, rollback, migration and data retention
+        run: dotnet run --project apps/windows-installer/Core.Tests/Astella.Setup.Core.Tests.csproj -c Release
+      - name: Compile the native wizard
+        run: dotnet build apps/windows-installer/Astella.Setup.csproj -c Release -r win-x64 --nologo
+
   shared-contracts:
     name: Shared contracts
     runs-on: ubuntu-latest

@@ -77,6 +77,8 @@ let memberToken = "";
 let strangerToken = "";
 /** owner 在协作空间里建的笔记，用于测 member 的写权限与跨空间读取。 */
 let sharedNoteId = "";
+/** `before` 里 member 用过的那串邀请码；重试用它自己测「已提交」的幂等语义。 */
+let memberInviteToken = "";
 
 async function seedIdentity(): Promise<void> {
   await sql`
@@ -129,6 +131,7 @@ before(async () => {
 
   // 真实 invite 流程：owner 发 member 档邀请 → member 消费 → member 切进协作空间。
   const invite = await createInvite(wsCollab, userOwner, { role: "member" });
+  memberInviteToken = invite.token;
   const memberBootstrap = await issueSession(userMember, wsMemberPersonal);
   const joined = await appInject("POST", "/auth/join-workspace", memberBootstrap.token, {
     inviteToken: invite.token,
@@ -218,6 +221,55 @@ test("经真实 invite 加入的成员，/auth/me 与空间列表都报 member",
   const collab = list.json().workspaces.find((w: { workspaceId: string }) => w.workspaceId === wsCollab);
   assert.ok(collab, `成员应能在空间列表里看到加入的协作空间：${list.body}`);
   assert.equal(collab.role, "member", `空间列表 role 应为 member：${JSON.stringify(collab)}`);
+});
+
+test("本人拿已经消费过的码重试同一条：幂等成功，不是「码被用掉了」", async () => {
+  // 这条重试就是线上那串报错的入口：加入整笔提交了，但回执没回到界面上（主进程随后
+  // 还要 `GET /auth/me`）。以前这里回 `already_consumed`，界面把它解释成"去要一张新码"，
+  // 而那张新码接着回 `already_member`——一次成功的加入变成三条互相矛盾的报错。
+  const retry = await appInject("POST", "/auth/join-workspace", memberToken, {
+    inviteToken: memberInviteToken,
+  });
+  assert.equal(retry.statusCode, 200, `本人重试必须幂等成功，实际 ${retry.statusCode}：${retry.body}`);
+  assert.equal(retry.json().workspaceId, wsCollab, `重试要回到同一个空间：${retry.body}`);
+  assert.equal(retry.json().role, "member", `role 取成员行那一份：${retry.body}`);
+});
+
+test("别人拿同一条已消费的码仍然 409：幂等只认本人，不放宽隔离", async () => {
+  const other = await appInject("POST", "/auth/join-workspace", strangerToken, {
+    inviteToken: memberInviteToken,
+  });
+  assert.equal(other.statusCode, 409, `陌生人复用别人的码必须 409，实际 ${other.statusCode}：${other.body}`);
+  assert.equal(other.json().error, "already_consumed", `错误码应为 already_consumed：${other.body}`);
+});
+
+test("加入过又自己退出去的人重试同一条码：仍然是已使用，不谎称他在空间里", async () => {
+  // 幂等成功的依据是**活跃成员行**，不是"consumed_by 等于我"。退出去之后成员行还在
+  // 但带着 left_at，这时说"你已经在这个空间里了"是假话，而它会把人挡在正确的出路
+  // （要一张新码）之外。
+  //
+  // 这里直接写 left_at，要的是那个**状态**，不是退出流程本身（退出由 workspace-
+  // departure 那份覆盖）。会话**必须**用另一条绑在个人空间上的 token：`decodeToken`
+  // 见到 left_at 非空会当场吊销会话行（session-service.ts 的 ADR-0009 分支），拿
+  // memberToken 试会把后面整串成员用例一起打断。
+  const personalSession = await issueSession(userMember, wsMemberPersonal);
+  await sql`
+    UPDATE workspace_members SET left_at = now()
+    WHERE workspace_id = ${wsCollab} AND user_id = ${userMember}
+  `;
+  try {
+    const retry = await appInject("POST", "/auth/join-workspace", personalSession.token, {
+      inviteToken: memberInviteToken,
+    });
+    assert.equal(retry.statusCode, 409, `已退出的人重试必须 409，实际 ${retry.statusCode}：${retry.body}`);
+    assert.equal(retry.json().error, "already_consumed", `错误码应为 already_consumed：${retry.body}`);
+  } finally {
+    await sql`
+      UPDATE workspace_members SET left_at = NULL
+      WHERE workspace_id = ${wsCollab} AND user_id = ${userMember}
+    `;
+    await revokeSession(personalSession.token).catch(() => {});
+  }
 });
 
 // ─── 2. 只读成员：写面必须被服务端挡下，读面必须放行 ───────────────────────

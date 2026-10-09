@@ -7,10 +7,14 @@ import { SourceDetailSurface } from "../source-detail-surface";
 import { CaptureStrip } from "../source-capture";
 
 const ok = <T,>(data: T) => ({ ok: true as const, workspaceEpoch: 1, data });
-/** jsdom 的 File 没有 text()；批量收录逐份读文件，所以测试里的文件得自己带上。 */
+/** PDF 解析换成假的：这一屏要验的是「先说在解析、收的是正文」，不是 pdf.js 本身。 */
+const pdfExtract = vi.hoisted(() => vi.fn());
+vi.mock("../../../../app/source-pdf", () => ({ extractPdfMarkdown: pdfExtract }));
+/** jsdom 的 File 既没有 text() 也没有 arrayBuffer()；采集通道逐份读字节，测试里的文件得自己带上。 */
+const fileBytes = (text: string) => new TextEncoder().encode(text).buffer;
 const mdFile = (name: string, body: string) => {
   const file = new File([body], name, { type: "text/markdown" });
-  Object.defineProperty(file, "text", { value: () => Promise.resolve(body) });
+  Object.defineProperty(file, "arrayBuffer", { value: () => Promise.resolve(fileBytes(body)) });
   return file;
 };
 const source = (id: string, title: string) => ({ id, title, type: "text", status: "ready", origin: null,
@@ -93,6 +97,80 @@ describe("来源资料架的连续操作", () => {
 });
 
 describe("少一步的材料录入", () => {
+  const preview = { version: 1, stage: "preview", kind: "folder", bundlePath: "/materials/学习资料", files: 1, overflow: 0,
+    referenced: 2, localizable: 1, imageBytes: 2048, toUpload: 1, issues: [], issueOverflow: 0 };
+  function bundleApi() {
+    const api = installApi();
+    const bundleImport = vi.fn();
+    Object.assign(api.source, { bundleImport });
+    bundleImport.mockResolvedValue(ok(preview));
+    capture();
+    fireEvent.click(screen.getByRole("button", { name: "采集新来源" }));
+    fireEvent.click(screen.getByRole("radio", { name: "带图的包" }));
+    return { api, bundleImport };
+  }
+
+  it("检查中收起附页：迟到预览不展开，忙碌状态结束后可重新选择", async () => {
+    const { bundleImport } = bundleApi(), pending = deferred();
+    bundleImport.mockReturnValueOnce(pending.promise);
+    fireEvent.click(screen.getByRole("button", { name: "选文件夹" }));
+    expect(screen.getByRole<HTMLButtonElement>("radio", { name: "链接" }).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "收起采集" }));
+    await act(async () => pending.resolve(ok(preview)));
+    expect(screen.queryByRole("dialog", { name: "采集新来源" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "采集新来源" }));
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "选文件夹" }).disabled).toBe(false);
+    expect(screen.queryByText("正在检查正文与图片…")).toBeNull();
+    expect(screen.queryByText("学习资料")).toBeNull();
+  });
+
+  it("取消重新选包时保留上一次的预览，缺图警告不算正文导入失败", async () => {
+    const { api, bundleImport } = bundleApi();
+    fireEvent.click(screen.getByRole("button", { name: "选文件夹" }));
+    await screen.findByText("学习资料");
+    bundleImport.mockResolvedValueOnce(ok({ ...preview, canceled: true }));
+    fireEvent.click(screen.getByRole("button", { name: "选 zip" }));
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>("button", { name: "选 zip" }).disabled).toBe(false));
+    expect(screen.getByText("学习资料")).toBeTruthy();
+    bundleImport.mockResolvedValueOnce(ok({ version: 1, stage: "imported", tasks: [{ name: "材料.md", content: "正文", title: "材料" }],
+      uploaded: 0, issues: [{ src: "assets/缺图.png", message: "没有找到图片" }], dropped: [], issueOverflow: 0 }));
+    fireEvent.click(screen.getByRole("button", { name: "收下这 1 篇" }));
+    await waitFor(() => expect(api.source.create).toHaveBeenCalledTimes(1));
+    await screen.findByText("部分图片未能导入，点此查看");
+    expect(screen.queryByText(/份材料未能收录/)).toBeNull();
+  });
+
+  it("导入失败重新打开预览并保留可重试的材料", async () => {
+    const { bundleImport } = bundleApi();
+    fireEvent.click(screen.getByRole("button", { name: "选文件夹" }));
+    await screen.findByText("学习资料");
+    bundleImport.mockRejectedValueOnce(new Error("上传暂时失败"));
+    fireEvent.click(screen.getByRole("button", { name: "收下这 1 篇" }));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "采集新来源" })).toBeTruthy();
+    expect(screen.getByText("学习资料")).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>("button", { name: "收下这 1 篇" }).disabled).toBe(false));
+  });
+
+  it("采集方式可通过方向键切换，选择和焦点立即接续", () => {
+    installApi(); capture(); fireEvent.click(screen.getByRole("button", { name: "采集新来源" }));
+    const text = screen.getByRole("radio", { name: "文本" }); text.focus();
+    fireEvent.keyDown(text, { key: "ArrowRight" });
+    const link = screen.getByRole("radio", { name: "链接" });
+    expect(link.getAttribute("aria-checked")).toBe("true"); expect(document.activeElement).toBe(link);
+    fireEvent.keyDown(link, { key: "End" });
+    expect(screen.getByRole("radio", { name: "带图的包" }).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("同一帧快速反向开合仍按每次意图切换，不读取过期的 open 值", () => {
+    installApi(); capture();
+    const trigger = screen.getByRole("button", { name: "采集新来源" });
+    act(() => { for (let index = 0; index < 9; index++) trigger.click(); });
+    expect(screen.getByRole("dialog", { name: "采集新来源" })).toBeTruthy();
+    act(() => { for (let index = 0; index < 8; index++) trigger.click(); });
+    expect(screen.getByRole("dialog", { name: "采集新来源" })).toBeTruthy();
+  });
+
   it("页外主动粘贴直接展开草稿，收起重开保留内容和标题", () => {
     installApi(); capture(); paste(document, "这是一份正文");
     const body = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "正文" });
@@ -135,8 +213,8 @@ describe("少一步的材料录入", () => {
   it("文件读完后不覆盖标题，也不抢走正在输入标题的焦点", async () => {
     installApi(); capture(); const pending = deferred();
     const file = new File(["content"], "source.md", { type: "text/markdown" });
-    Object.defineProperty(file, "text", { value: () => pending.promise });
-    fireEvent.change(screen.getByLabelText("文本文件"), { target: { files: [file] } });
+    Object.defineProperty(file, "arrayBuffer", { value: async () => fileBytes(String(await pending.promise)) });
+    fireEvent.change(screen.getByLabelText("要采集的文件"), { target: { files: [file] } });
     const title = screen.getByRole<HTMLInputElement>("textbox", { name: /标题/ });
     title.focus(); fireEvent.change(title, { target: { value: "自己的标题" } });
     await act(async () => pending.resolve("文件正文"));
@@ -149,8 +227,8 @@ describe("少一步的材料录入", () => {
   it("文件选择器交回页面焦点后，读完立即聚焦正文", async () => {
     installApi(); capture(); const pending = deferred();
     const file = new File(["content"], "source.md", { type: "text/markdown" });
-    Object.defineProperty(file, "text", { value: () => pending.promise });
-    fireEvent.change(screen.getByLabelText("文本文件"), { target: { files: [file] } });
+    Object.defineProperty(file, "arrayBuffer", { value: async () => fileBytes(String(await pending.promise)) });
+    fireEvent.change(screen.getByLabelText("要采集的文件"), { target: { files: [file] } });
     screen.getByRole<HTMLTextAreaElement>("textbox", { name: "正文" }).blur();
     await act(async () => pending.resolve("文件正文"));
     expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "正文" }));
@@ -167,7 +245,7 @@ describe("少一步的材料录入", () => {
     const onBatchCaptured = vi.fn();
     capture(vi.fn(), vi.fn(), onBatchCaptured);
     const files = [mdFile("甲.md", "# 一"), mdFile("乙.md", "# 二"), mdFile("丙.md", "# 三")];
-    fireEvent.change(screen.getByLabelText("文本文件"), { target: { files } });
+    fireEvent.change(screen.getByLabelText("要采集的文件"), { target: { files } });
 
     await waitFor(() => expect(api.source.create).toHaveBeenCalledTimes(3));
     // 逐份走正常收录流程：正文是文件内容，标题取文件名（去掉扩展名）。
@@ -188,7 +266,7 @@ describe("少一步的材料录入", () => {
     const api = installApi();
     capture();
     const files = Array.from({ length: 52 }, (_, index) => mdFile(`第${index}篇.md`, `# 第${index}篇`));
-    fireEvent.change(screen.getByLabelText("文本文件"), { target: { files } });
+    fireEvent.change(screen.getByLabelText("要采集的文件"), { target: { files } });
     await waitFor(() => expect(api.source.create).toHaveBeenCalledTimes(50));
     expect(await screen.findByText(/另外 2 份/)).toBeTruthy();
     expect(screen.getByText(/一次最多收 50 份/)).toBeTruthy();
@@ -207,8 +285,8 @@ describe("少一步的材料录入", () => {
     capture();
     const good = mdFile("好.md", "# 好");
     const unreadable = new File(["# 坏"], "坏.md", { type: "text/markdown" });
-    Object.defineProperty(unreadable, "text", { value: () => Promise.reject(new Error("读不出来")) });
-    fireEvent.change(screen.getByLabelText("文本文件"), { target: { files: [unreadable, good] } });
+    Object.defineProperty(unreadable, "arrayBuffer", { value: () => Promise.reject(new Error("读不出来")) });
+    fireEvent.change(screen.getByLabelText("要采集的文件"), { target: { files: [unreadable, good] } });
     await waitFor(() => expect(api.source.create).toHaveBeenCalledTimes(1));
     expect(api.source.create.mock.calls[0][0]).toMatchObject({ request: { title: "好" } });
     expect(await screen.findByText(/读不出来/)).toBeTruthy();
@@ -217,11 +295,35 @@ describe("少一步的材料录入", () => {
   it("文件读取晚于收起操作时，不重新打开附页", async () => {
     installApi(); capture(); const pending = deferred();
     const file = new File(["content"], "材料.md", { type: "text/markdown" });
-    Object.defineProperty(file, "text", { value: () => pending.promise });
-    fireEvent.change(screen.getByLabelText("文本文件"), { target: { files: [file] } });
+    Object.defineProperty(file, "arrayBuffer", { value: async () => fileBytes(String(await pending.promise)) });
+    fireEvent.change(screen.getByLabelText("要采集的文件"), { target: { files: [file] } });
     fireEvent.click(screen.getByRole("button", { name: "收起采集" }));
     await act(async () => pending.resolve("迟到的文件正文"));
     expect(screen.queryByRole("dialog", { name: "采集新来源" })).toBeNull();
+  });
+
+  it("拖一份 PDF：先说在解析，收进来的是解析出的正文", async () => {
+    const api = installApi();
+    const pending = deferred();
+    pdfExtract.mockReturnValue(pending.promise);
+    capture();
+    const file = new File(["%PDF-1.4"], "报告.pdf", { type: "application/pdf" });
+    Object.defineProperty(file, "arrayBuffer", { value: () => Promise.resolve(new Uint8Array([1, 2, 3]).buffer) });
+    fireEvent.drop(document.querySelector(".capture-strip")!, { dataTransfer: { files: [file] } });
+    expect(await screen.findByText(/正在本机解析《报告.pdf》/)).toBeTruthy();
+    await act(async () => pending.resolve({ ok: true, markdown: "从 PDF 提取的正文", pages: 3 }));
+    await waitFor(() => expect(api.source.create).toHaveBeenCalledTimes(1));
+    expect(api.source.create.mock.calls[0][0]).toMatchObject({ request: { content: "从 PDF 提取的正文", title: "报告" } });
+    // 文档不填表单：几十页正文塞进一个可编辑的文本框读不动，进度条才是这一屏的主人。
+    expect(screen.queryByRole("dialog", { name: "采集新来源" })).toBeNull();
+  });
+
+  it("旧版 .doc 那一句带着下一步，且不建来源", async () => {
+    const api = installApi();
+    capture();
+    fireEvent.drop(document.querySelector(".capture-strip")!, { dataTransfer: { files: [new File(["旧版"], "legacy.doc")] } });
+    expect(await screen.findByText(/另存为/)).toBeTruthy();
+    expect(api.source.create).not.toHaveBeenCalled();
   });
 });
 

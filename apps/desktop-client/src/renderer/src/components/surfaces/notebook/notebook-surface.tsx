@@ -42,7 +42,6 @@ import type {
 } from "@astella/shared/note-learning-round-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import { SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
-import { SpaceShareButton, noteShareScopeLabel } from "../../space-share-control";
 import type { NoteShareScopeV1 } from "@astella/shared/note-share-contracts";
 import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
 import {
@@ -154,7 +153,7 @@ import { NotebookArtifactTaskPaper } from "./notebook-artifact-task-paper.tsx";
 import { NotebookRoundRecap } from "./notebook-round-recap.tsx";
 import { NotebookRoundHistory } from "./notebook-round-history.tsx";
 import { NoteExpansionDrafts } from "./notebook-expansion-drafts.tsx";
-import { NotebookPresence } from "./notebook-presence.tsx";
+import { NotebookSharingControl } from "./notebook-sharing-control";
 import { useNotebookReviewHold } from "./use-notebook-review-hold.ts";
 import { useNotebookSubscription } from "./use-notebook-subscription.ts";
 import { useNotebookTeaching } from "./use-notebook-teaching.ts";
@@ -948,7 +947,6 @@ const noteDocLive = useNoteDocLiveView(
     () => {
       void reload({ silent: true });
     },
-    presenceName,
     epochRef,
     note?.currentVersionId ?? null,
   );
@@ -1933,11 +1931,12 @@ const noteDocLive = useNoteDocLiveView(
   // cleared dirty flag cannot make a run from the previous source current again.
   const generationNeedsSavedVersion = dirty || readingUnversionedContent;
   const readTitle = titleValue;
-  // 谁在这同一块里：判据只有对端自己报的那一格，`caretBlock` 为空时不成立
-  // （光标还没进正文，说不出"这一段"是哪一段）。
+  // 谁在这同一块里：判据是**对端自己报的那一格**，而且要他已经报明「在写」——
+  // 只报过块号却还在读的人，不该被写成"也在写这一段"（那是同一句话的两个条件）。
+  // `caretBlock` 为空时整条不成立（光标还没进正文，说不出"这一段"是哪一段）。
   const coWriters = caretBlock === null
     ? []
-    : noteDocLive.presencePeers.filter((peer) => peer.block === caretBlock);
+    : noteDocLive.presencePeers.filter((peer) => peer.mode === "editing" && peer.block === caretBlock);
   const mark = useMemo(
     () => conceptMark(readSourceBlocks, objective?.content.conceptLabel),
     [readSourceBlocks, objective],
@@ -2222,7 +2221,13 @@ const noteDocLive = useNoteDocLiveView(
   // 这两个引用按 noteId / doc 建（`useCallback`），每个 noteId 内不变。把它们单独取出来
   // 再进 `save` 的依赖，是为了不让 `save` 每次渲染都换身份——那会把自动保存的 debounce
   // 一帧一帧地重置掉，永远等不到触发。
-  const { setLocalTitle, flush, setLocalBlock } = noteDocLive;
+  const { setLocalTitle, flush, setLocalBlock, setLocalMode } = noteDocLive;
+
+  // 「在读 / 在写」报的是正文模式这一格，不是"这台机器今天改过字没有"：
+  // 停在编辑器里但一个字没敲的人确实在写，切回阅读的人不该继续挂着那个说法。
+  useEffect(() => {
+    setLocalMode(isNoteEditingMode(mode) ? "editing" : "reading");
+  }, [mode, setLocalMode]);
 
   // 光标换块：本机改这一格，对端那一格交给 awareness（同一次调用里两份一起动，
   // 否则"我看到的"与"别人看到的我"会分开）。
@@ -3253,25 +3258,6 @@ const noteDocLive = useNoteDocLiveView(
         document.body,
       ) : null;
 
-  /**
-   * 归属那一位状态 + 那一个动作。编辑态与阅读态共用同一段：只读成员永远进不了
-   * 编辑态，而"这篇是只给自己看还是已经拿出去"正是他最该看见的一条信息。
-   */
-  const shareStateControls = !note || !spaceIdentity || spaceIdentity.isPersonal ? null : (
-    <>
-      <span className="tag" title={note.permissions.canShare ? "这篇的归属由你决定" : "只有写下这篇的人能改它共享给谁"}>
-        {noteShareScopeLabel(note.shareScope)}
-      </span>
-      <SpaceShareButton
-        shareScope={note.shareScope}
-        canShare={note.permissions.canShare}
-        isPersonal={spaceIdentity.isPersonal}
-        busy={sharing}
-        onShare={(next) => void setShareScope(next)}
-      />
-    </>
-  );
-
   const askCompanionAboutNote = () => {
     if (!note || dirty || !note.currentVersionId) return;
     feedNoteIntentToCompanion({
@@ -4082,11 +4068,33 @@ const noteDocLive = useNoteDocLiveView(
 
 
 
+  // One visibility entry stays outside the scrolling paper in reading, editing and fullscreen.
+  // Private notes expose their scope here too, without inventing a presence list.
+  const presenceRow = !note || !spaceIdentity || spaceIdentity.isPersonal ? null : (
+    <NotebookSharingControl
+      key={note.noteId}
+      shareScope={note.shareScope}
+      canShare={note.permissions.canShare}
+      busy={sharing}
+      onShare={setShareScope}
+      peers={noteDocLive.presencePeers}
+      selfName={presenceName}
+      selfMode={isNoteEditingMode(mode) ? "editing" : "reading"}
+      failure={noteDocLive.failure}
+    />
+  );
+  const saveStatusLabel = saving || saveState === "saving" ? "正在保存…"
+    : saveState === "error" ? "这次没保存上"
+      : dirty ? "草稿"
+        : saveState === "committed" && receipt
+          ? receipt.via === "queued" ? "离线暂存" : receipt.via === "stream" ? "正在同步" : receipt.isAutosave ? "已自动保存" : "已保存"
+          : "已同步";
+
   useNotebookFullscreenSession(note ? { noteId: note.noteId, noteVersionId: activeNoteRef?.noteVersionId ?? null, mode } : null);
   const notebookFullscreen = useNotebookFullscreenActive();
   return (
     <>
-      <div className="task-title notebook-page-title"><h1>{pageTitle}</h1><p>{pageSubtitle}</p></div>
+      <div className="task-title notebook-page-title" data-editing={isNoteEditingMode(mode) && learningView === "body" && leaf === "reading" || undefined}><h1>{pageTitle}</h1><p>{pageSubtitle}</p></div>
       <main className="content notebook-space">
         {linkEditor.dialog}
         <div className="notebook-detail-layout">
@@ -4127,6 +4135,7 @@ const noteDocLive = useNoteDocLiveView(
                 overviewSwitch={leaf === "reading" && learningView === "overview" ? <NotebookOverviewSwitch active={brainActive ? "mindMap" : "points"}
                   onSelect={(tab) => { clearGoalResultSelection(); setOverviewTab({ noteId: note.noteId, tab }); }} /> : null}
                 noteId={note.noteId} noteTitle={readTitle || "未命名笔记"} version={note.currentVersion.versionNo} mode={mode} canEdit={editable} pendingMode={pendingMode}
+                presence={presenceRow}
                 articleHeader={leaf === "reading" && learningView === "body" ? <header className="notebook-volume__article-head" tabIndex={-1} data-task-focus>
                   <div className="notebook-volume__heading">{documentHeading}</div>
                   <div className="notebook-volume__meta">{/*
@@ -4152,7 +4161,7 @@ const noteDocLive = useNoteDocLiveView(
                     {noteExpansions.length ? <button type="button" className="text-action" onClick={() => openExpansionPage()}><Link2 size={13} aria-hidden="true" />关联笔记 · {noteExpansions.length}</button> : null}
                     <time dateTime={note.currentVersion.updatedAt}>{formatRelative(note.currentVersion.updatedAt)}更新</time>
                     {!isNoteEditingMode(mode) ? <span title={saveLabel} role="status">{saveState === "error" ? "同步失败" : saving ? "正在同步…" : dirty ? "等待同步…" : "已同步"}</span> : null}
-                    {!editable ? <span className="tag">只读</span> : null}<NotebookPresence peers={noteDocLive.presencePeers} selfName={presenceName} />{shareStateControls}
+                    {!editable ? <span className="tag">只读</span> : null}
                   </div>
                 </header> : null}
                 onMode={switchMode} outline={noteOutline(noteDocLive.fragment, readSourceBlocks)}
@@ -4175,10 +4184,11 @@ const noteDocLive = useNoteDocLiveView(
                   {versionAndOptionsToggles}
                 </>}
                 tools={isNoteEditingMode(mode) && leaf === "reading" && learningView === "body" ? editChrome : null}
-                status={<><span className={dirty || saveState === "error" ? "tag red" : "tag"}>{dirty || saveState === "error" ? "草稿" : "已同步"}</span>
-                  <span role="status">{saveLabel}</span>
+                status={<><span className={dirty || saveState === "error" ? "tag red notebook-save-status" : "tag notebook-save-status"}
+                  data-state={saveState === "error" ? "error" : saving || dirty || saveStatusLabel === "正在同步" || saveStatusLabel === "离线暂存" ? "pending" : "saved"}
+                  title={saveLabel} role="status">{saveStatusLabel}</span>
                   {!editable ? <span className="tag">只读</span> : null}
-                  <NotebookPresence peers={noteDocLive.presencePeers} selfName={presenceName} />{shareStateControls}</>}
+                  </>}
                 scrollRef={leafScrollRef}
                 saveError={saveState === "error" ? saveLabel : null}
                 sidePage={historyOpen ? { kind: "history", title: "版本历史", closeLabel: "收起版本历史", onClose: () => setHistoryOpen(false), content: historyPaper } : sourceBagOpen ? { kind: "source", title: "资料袋", closeLabel: "合起资料袋", onClose: () => setSourceBagOpen(false), content: <>

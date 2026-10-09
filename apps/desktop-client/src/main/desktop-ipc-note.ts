@@ -18,6 +18,7 @@ import {
   noteOverviewTaskV1Schema,
 } from "@astella/shared/note-overview-contracts";
 import { noteRecallActionV1Schema, noteRecallActionResultV1Schema, noteRecallPageV1Schema, noteRecallStartInputV1Schema, noteRecallStartResultV1Schema } from "@astella/shared/note-recall-contracts";
+import { notePresenceListV1Schema } from "@astella/shared/note-presence-contracts";
 import {
   createNoteExpansionTaskV1Schema,
   confirmNoteExpansionTaskV1Schema,
@@ -615,6 +616,11 @@ const noteDocPresenceInputSchema = z.strictObject({
   // 空串 = 我离开了这篇。上限与主进程里的 awareness 检查同一个数。
   state: z.string().max(NOTE_DOC_PRESENCE_MAX_CHARS),
 });
+/**
+ * 「此刻谁开着哪一篇」：不带参数——这一发放出去的范围就是**当前空间里活着的那些连接**，
+ * 服务端按 session 的空间与可见性判，界面不参与圈范围。
+ */
+const notePresenceListInputSchema = z.strictObject({ ...m1InputBase });
 const noteDocDraftSaveInputSchema = z.strictObject({
   ...m1InputBase,
   noteId: uuidSchema,
@@ -703,6 +709,14 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_note.listNotes(gateway.gatewayTransport, { cursor: input.cursor, limit: input.limit, trashed: input.trashed }, input.meta.requestId);
   }, desktopNoteListPageSchema);
+
+  // 在场与笔记列表同一个路线门槛：它服务的就是"列表那一行有没有人在看"这句话，
+  // 列表还没读得动的时候，这一发也不该发出去。
+  channel(DESKTOP_IPC_CHANNELS.notePresenceList, notePresenceListInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "note.library");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_note.listNotePresence(gateway.gatewayTransport, input.meta.requestId);
+  }, notePresenceListV1Schema);
 
   // Writing a note is gated on `note.detail` (the note surfaces) plus the
   // workspace capability, so a member never fills in a title only to be

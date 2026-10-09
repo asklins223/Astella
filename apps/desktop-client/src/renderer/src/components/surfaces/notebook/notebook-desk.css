@@ -52,6 +52,13 @@
 .hud-surface .notebook-desk__directory-toggle[aria-expanded="true"] { background: var(--hud-mint); color: var(--hud-green); }
 .hud-surface .notebook-desk__mode:disabled { opacity: .45; cursor: default; }
 .hud-surface .notebook-desk__utilities { display: flex; align-items: center; gap: 11px; flex: none; }
+/* 在场那一排：跟着工具条常驻，不随正文滚（正文页的工具条允许折行，所以那一格不会被切）。 */
+.hud-surface .notebook-desk__presence { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.hud-surface .notebook-desk__presence .notebook-presence { flex: none; }
+/* 速看／回想／往外学／记录那几页的工具条是一粒 `nowrap` 的纸签：挤的时候收掉人数
+   那半句，只留印章（每一枚都还带 `aria-label` 与悬停名字，信息不丢）。
+   这里不用省略号——被切半的"3 人在看…"比不说更糟。 */
+.hud-surface .notebook-desk:not([data-view="body"]):not([data-fullscreen]) .notebook-desk__presence .tag { display: none; }
 .hud-surface .notebook-desk__utilities > .text-action { display: inline-flex; align-items: center; gap: 5px; min-height: 36px; font-size: 13px; }
 /* 学习子页面的顶条与脑图同一种做法（2026-10-08 用户裁决）：工具浮成一条纸签贴在纸面右上，
    标题不再占一行，也没有那条下划线；左侧同高度留给速看的「要点／脑图」开关。 */

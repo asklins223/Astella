@@ -14,9 +14,23 @@
  * 与粘贴、拖链接进来的材料**完全同构**。至于「要不要写成笔记」，那是读者在来源页自己
  * 按「开始写笔记」的决定——材料先到，笔记是后续的一步。
  */
-import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "./desktop-client";
+import { createRequestMeta, getCurrentWorkspaceEpoch, gatewayErrorMessage, unwrapGatewayResult } from "./desktop-client";
 import { RendererGatewayError } from "./desktop-client";
-import { MAX_CAPTURE_BYTES, TEXT_FILE_PATTERN, captureBytes, formatCaptureSize, titleFromFileName } from "./source-intake";
+import {
+  DOCUMENT_FILE_PATTERN,
+  LEGACY_DOCUMENT_FILE_PATTERN,
+  MAX_CAPTURE_BYTES,
+  MAX_DOCUMENT_BYTES,
+  PDF_FILE_PATTERN,
+  TEXT_FILE_PATTERN,
+  captureBytes,
+  decodeCaptureText,
+  formatCaptureSize,
+  titleFromFileName,
+} from "./source-intake";
+import { createDocumentImageImporter } from "./source-document-images";
+import { extractDocxMarkdown } from "./source-docx";
+import { extractPdfMarkdown } from "./source-pdf";
 import { formatRelative } from "../components/surfaces/notebook/surface-data";
 
 /** 一份待收录的材料：名字给界面看，`request` 是建来源那一发的正文。 */
@@ -29,6 +43,8 @@ export type BatchCaptureOutcome = {
   readonly name: string;
   readonly ok: boolean;
   readonly message: string;
+  /** 合并报告中实际未收录的材料数，缺省为一份。 */
+  readonly count?: number;
 };
 
 export type BatchCaptureResult = {
@@ -62,46 +78,96 @@ export async function canCaptureSource(): Promise<"allowed" | "denied" | "unknow
   }
 }
 
+/** 一份文件读成了正文，或者读不出来——`message` 是给读者看的那一句，不是日志。 */
+export type CaptureFileRead =
+  | { readonly ok: true; readonly text: string }
+  | { readonly ok: false; readonly message: string };
+
+/** 收不了的格式要说得出下一步做什么；只说「暂不解析」等于把人推回试错。 */
+function unsupportedMessage(name: string): string {
+  if (LEGACY_DOCUMENT_FILE_PATTERN.test(name)) {
+    return `旧版文档（${name.slice(name.lastIndexOf(".")).toLowerCase()}）不解析：在 Word 里「另存为」选 .docx，或在原来的程序里导出成 PDF，再拖进来。`;
+  }
+  return `采集通道目前接收文本、Markdown、代码、PDF 与 Word（.docx），暂不解析 ${name}。`;
+}
+
+/** 解析出来的正文照样过正文上限：超了就把真实字节数报回去，不悄悄截断。 */
+function withinTextLimit(text: string, name: string): CaptureFileRead {
+  const bytes = captureBytes(text);
+  if (bytes > MAX_CAPTURE_BYTES) {
+    return { ok: false, message: `${name} 解析出约 ${formatCaptureSize(bytes)} 正文，超过单份正文的 ${formatCaptureSize(MAX_CAPTURE_BYTES)} 上限，请把原文拆成几份再收。` };
+  }
+  return { ok: true, text };
+}
+
+/**
+ * 一份文件 → 正文。文本类直接读，PDF 与 Word 先在这一台机器上解析。
+ *
+ * 单份拖与批量拖都必须经过这里：能收的后缀、两处上限、解析失败的说法只在这一处成立，
+ * 两个入口才不会对同一份文件说出不一致的话。
+ */
+export async function readCaptureFile(file: File): Promise<CaptureFileRead> {
+  const isDocument = DOCUMENT_FILE_PATTERN.test(file.name);
+  if (!isDocument && !TEXT_FILE_PATTERN.test(file.name)) {
+    return { ok: false, message: unsupportedMessage(file.name) };
+  }
+  if (!isDocument && file.size > MAX_CAPTURE_BYTES) {
+    return { ok: false, message: `这份材料约 ${formatCaptureSize(file.size)}，超过单份正文的 ${formatCaptureSize(MAX_CAPTURE_BYTES)} 上限，请分段采集。` };
+  }
+  if (!isDocument) {
+    let bytes: Uint8Array;
+    try {
+      bytes = new Uint8Array(await file.arrayBuffer());
+    } catch {
+      return { ok: false, message: "这份文件读不出来，换一种方式粘贴正文试试。" };
+    }
+    const decoded = decodeCaptureText(bytes);
+    if (!decoded.ok) return decoded;
+    if (!decoded.text.trim()) return { ok: false, message: "这份文件是空的，没有可收的内容。" };
+    return withinTextLimit(decoded.text, file.name);
+  }
+  if (file.size > MAX_DOCUMENT_BYTES) {
+    return { ok: false, message: `这份原文约 ${formatCaptureSize(file.size)}，超过本机一次解析的 ${formatCaptureSize(MAX_DOCUMENT_BYTES)} 上限，请先在原文程序里拆成几份。` };
+  }
+  let bytes: Uint8Array;
+  try {
+    bytes = new Uint8Array(await file.arrayBuffer());
+  } catch {
+    return { ok: false, message: "这份文件读不出来，可以在原文程序里另存一份再拖。" };
+  }
+  const images = createDocumentImageImporter();
+  const parsed = PDF_FILE_PATTERN.test(file.name) ? await extractPdfMarkdown(bytes, images.importImage) : await extractDocxMarkdown(bytes, images.importImage);
+  if (!parsed.ok) return { ok: false, message: parsed.message };
+  const warnings = images.warnings.length ? `\n\n（部分图片未能导入：\n${images.warnings.join("\n")}）` : "";
+  const text = parsed.markdown + warnings;
+  return withinTextLimit(text, file.name);
+}
+
 /**
  * 把一批文件读成待收录的任务；读不进来的就地记成一条失败，不影响同一批的其他文件。
  *
  * 顺序有意保持原样（先失败的几条排在前面）：读者扫一眼报告时，先看到的是「这几份收不了」，
  * 而不是要翻到最后才看见。
+ *
+ * `onReading` 报的是**解析**那一段的进度：一份几十页的 PDF 不是零耗时，没有这一句的话
+ * 界面会停在「正在收进第 1/1 份…」，说的是还没发生的事。
  */
 export async function readCaptureFiles(
   files: readonly File[],
   limit: number = MAX_BATCH_CAPTURE_FILES,
+  onReading?: (index: number, total: number, name: string) => void,
 ): Promise<{ tasks: CaptureTask[]; outcomes: BatchCaptureOutcome[]; overflow: boolean }> {
   const overflow = files.length > limit;
   const tasks: CaptureTask[] = [];
   const outcomes: BatchCaptureOutcome[] = [];
-  for (const file of files.slice(0, limit)) {
-    if (!TEXT_FILE_PATTERN.test(file.name)) {
-      outcomes.push({ name: file.name, ok: false, message: `采集通道目前接收文本、Markdown 与代码文件，暂不解析 ${file.name}。` });
-      continue;
-    }
-    if (file.size > MAX_CAPTURE_BYTES) {
-      outcomes.push({ name: file.name, ok: false, message: `这份材料约 ${formatCaptureSize(file.size)}，超过单次采集的 900 KB 上限，请分段采集。` });
-      continue;
-    }
-    let text: string;
-    try {
-      text = await file.text();
-    } catch {
-      outcomes.push({ name: file.name, ok: false, message: "这份文件读不出来，换一种方式粘贴试试。" });
-      continue;
-    }
-    if (!text.trim()) {
-      outcomes.push({ name: file.name, ok: false, message: "这份文件是空的，没有可收的内容。" });
-      continue;
-    }
-    const bytes = captureBytes(text);
-    if (bytes > MAX_CAPTURE_BYTES) {
-      outcomes.push({ name: file.name, ok: false, message: `这份材料约 ${formatCaptureSize(bytes)}，超过单次采集的 900 KB 上限，请分段采集。` });
-      continue;
-    }
+  const selected = files.slice(0, limit), epoch = getCurrentWorkspaceEpoch();
+  for (const [index, file] of selected.entries()) {
+    if (epoch !== getCurrentWorkspaceEpoch()) break;
+    onReading?.(index, selected.length, file.name);
+    const read = await readCaptureFile(file);
+    if (!read.ok) { outcomes.push({ name: file.name, ok: false, message: read.message }); continue; }
     const title = titleFromFileName(file.name);
-    tasks.push({ name: file.name, request: { content: text, ...(title ? { title } : {}) } });
+    tasks.push({ name: file.name, request: { content: read.text, ...(title ? { title } : {}) } });
   }
   return { tasks, outcomes, overflow };
 }

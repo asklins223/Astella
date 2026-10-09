@@ -1,4 +1,8 @@
 import { join } from "node:path";
+import { extname } from "node:path";
+import { createHash } from "node:crypto";
+import { sourceImageObjectKeyFromUrl } from "@astella/shared/source-image-contracts";
+import { markdownImageSources, rewriteNoteImagePaths } from "./note-writing-files";
 import type { DesktopNoteListItem } from "@astella/shared/desktop-surface-contracts";
 
 /**
@@ -95,6 +99,13 @@ export interface NotesMarkdownExportDeps {
   readonly existingNames: (directory: string) => Promise<Set<string>>;
   /** 写一个文件。 */
   readonly writeNote: (filePath: string, text: string) => Promise<void>;
+  /**
+   * 取一张站内图片的字节。取不回来（没权限、已删除、服务不在了）返回 null——
+   * 那一处引用就原样留在正文里，导出的那份文件仍然完整可读。
+   */
+  readonly fetchImage: (objectKey: string) => Promise<{ readonly bytes: Buffer; readonly mime: string } | null>;
+  /** 往 `assets/` 里落一个文件；同名已存在时不覆盖（内容寻址的名字意味着那份字节本来就一样）。 */
+  readonly writeAsset: (filePath: string, bytes: Buffer) => Promise<boolean>;
 }
 
 export interface NotesMarkdownExportOutcome {
@@ -104,6 +115,10 @@ export interface NotesMarkdownExportOutcome {
   readonly total: number;
   readonly exported: number;
   readonly failed: number;
+  /** 真的落到 `assets/` 里的图片文件数（跨笔记去重之后的数）。 */
+  readonly images: number;
+  /** 没能落下来的图片引用数：正文照旧收了，那一处仍是站内地址。 */
+  readonly imageFailures: number;
 }
 
 /**
@@ -112,17 +127,22 @@ export interface NotesMarkdownExportOutcome {
  * 单篇失败只记数、不中断整批：导出 200 篇时第 137 篇的网络抖动，不该让前 136 篇白导。
  * 回执里 `exported + failed === total` 恒成立，界面上据此说「导出了 X 篇，Y 篇没写成」——
  * 只报成功数会让人以为整个空间都存下来了。
+ *
+ * 图片落在**一个共享的 `assets/`** 里而不是每篇旁边一个：同一个来源被十几篇引用时，
+ * 每篇复制一份只是把那次导出变成几十 MB 的重复字节。名字按内容哈希取，
+ * 于是「同一张图」在物理上就只有一份，谁也不用再去认哪两份是一样的。
  */
 export async function exportNotesAsMarkdown(
   deps: NotesMarkdownExportDeps,
 ): Promise<NotesMarkdownExportOutcome> {
   const directory = await deps.pickDirectory();
   if (!directory) {
-    return { version: 1, canceled: true, directory: null, total: 0, exported: 0, failed: 0 };
+    return { version: 1, canceled: true, directory: null, total: 0, exported: 0, failed: 0, images: 0, imageFailures: 0 };
   }
   // 先问目录再取清单：读者取消的时候一次网络往返都不该发生。
   const notes = await deps.listNotes();
   const taken = await deps.existingNames(directory);
+  const assets = new AssetSink(deps);
   let cursor = 0;
   let exported = 0;
   let failed = 0;
@@ -136,8 +156,8 @@ export async function exportNotesAsMarkdown(
       try {
         const markdown = await deps.fetchMarkdown(note.id);
         const name = allocateMarkdownFileName(markdownFileStem(note.title, note.id), taken);
-        await deps.writeNote(join(directory, name), markdown);
         taken.add(name.toLowerCase());
+        await deps.writeNote(join(directory, name), await assets.localize(markdown, directory));
         exported += 1;
       } catch {
         failed += 1;
@@ -146,5 +166,64 @@ export async function exportNotesAsMarkdown(
   };
 
   await Promise.all(Array.from({ length: Math.min(EXPORT_CONCURRENCY, notes.length) }, worker));
-  return { version: 1, canceled: false, directory, total: notes.length, exported, failed };
+  return {
+    version: 1, canceled: false, directory, total: notes.length, exported, failed,
+    images: assets.written, imageFailures: assets.failures,
+  };
+}
+
+/** 导出的那一个目录里，图片共用的落点名字。 */
+const ASSETS_DIR_NAME = "assets";
+
+/**
+ * 把正文里的站内图片地址换成 `assets/…` 的相对地址。
+ *
+ * 三件事按同一条判据办：同一张图只取一次、只落一份、几篇引用它都指到那一个文件。
+ * 取不回来的那一张**不改正文**——留着原来的地址，那份 .md 依旧完整，读者知道那里少了一张图，
+ * 而不是看到一段什么都没有的文字。
+ */
+class AssetSink {
+  /** objectKey → 那个文件的名字（null = 这一张没落地）。正在取的那次共享同一个 promise，
+   *  几百篇同时引用同一张图也只发一次网络。 */
+  private readonly located = new Map<string, Promise<string | null>>();
+  private readonly writtenNames = new Set<string>();
+  written = 0;
+  failures = 0;
+
+  constructor(private readonly deps: NotesMarkdownExportDeps) {}
+
+  async localize(markdown: string, directory: string): Promise<string> {
+    const sources = markdownImageSources(markdown);
+    if (sources.length === 0) return markdown;
+    const replacements = new Map<string, string>();
+    for (const src of sources) {
+      const objectKey = sourceImageObjectKeyFromUrl(src);
+      if (!objectKey) continue;
+      const name = await this.ensure(objectKey, directory);
+      // 导出的每一篇 .md 都直接落在这个目录里，所以相对地址就是 `assets/名字`。
+      if (name) replacements.set(src, `${ASSETS_DIR_NAME}/${name}`);
+    }
+    return replacements.size > 0 ? rewriteNoteImagePaths(markdown, replacements) : markdown;
+  }
+
+  /** 一张图从取回到落盘的整个过程；失败如实记一笔并返回 null。 */
+  private async ensure(objectKey: string, directory: string): Promise<string | null> {
+    const pending = this.located.get(objectKey);
+    if (pending) return pending;
+    const attempt = (async () => {
+      const fetched = await this.deps.fetchImage(objectKey).catch(() => null);
+      if (!fetched || fetched.bytes.byteLength === 0) return null;
+      const name = `${createHash("sha256").update(fetched.bytes).digest("hex").slice(0, 20)}${extname(objectKey).toLowerCase()}`;
+      // 写不下去（磁盘满、目录被读者删了）也算这一张没落地：正文那处原样留着，
+      // 别让读者以为文件已经在 assets 里了。
+      if (!await this.deps.writeAsset(join(directory, ASSETS_DIR_NAME, name), fetched.bytes)) return null;
+      return name;
+    })().then((name) => {
+      if (name && !this.writtenNames.has(name)) { this.writtenNames.add(name); this.written += 1; }
+      else if (!name) this.failures += 1;
+      return name;
+    });
+    this.located.set(objectKey, attempt);
+    return attempt;
+  }
 }

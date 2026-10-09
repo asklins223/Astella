@@ -1,6 +1,6 @@
 {
   "name": "@astella/ai-worker",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
@@ -13,7 +13,7 @@
     "test:companion-dialogue:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-dialogue-postgres.integration.ts",
     "test:companion-speculative:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-speculative-loop-postgres.integration.ts",
     "test:agent-integration:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/agent-goals-postgres.integration.ts src/integration-tests/agent-history-postgres.integration.ts src/integration-tests/agent-expansion-postgres.integration.ts src/integration-tests/agent-learning-preferences-postgres.integration.ts src/integration-tests/agent-card-generation-postgres.integration.ts src/integration-tests/agent-growth-postgres.integration.ts src/integration-tests/agent-long-goals-postgres.integration.ts",
-    "test:companion-integration:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-scheduler-ticks-postgres.integration.ts src/integration-tests/companion-memory-handlers-postgres.integration.ts src/integration-tests/companion-agent-postgres.integration.ts src/integration-tests/companion-dialogue-postgres.integration.ts src/integration-tests/companion-memory-semantic-dismissal-postgres.integration.ts src/integration-tests/companion-turn-facts-postgres.integration.ts src/integration-tests/companion-answer-exposure-postgres.integration.ts src/integration-tests/companion-thought-candidate-postgres.integration.ts src/integration-tests/companion-read-pagination-task-memory-postgres.integration.ts src/integration-tests/companion-memory-cross-space.integration.ts src/integration-tests/companion-note-visibility-postgres.integration.ts src/integration-tests/companion-failed-partial-postgres.integration.ts src/integration-tests/companion-runtime-recovery-postgres.integration.ts src/integration-tests/companion-diary-array-parameter-postgres.integration.ts src/integration-tests/companion-model-budget-postgres.integration.ts src/integration-tests/companion-card-original-postgres.integration.ts src/integration-tests/companion-diary-material-original-postgres.integration.ts src/integration-tests/companion-diary-writing-postgres.integration.ts src/integration-tests/companion-memory-embedding-original-postgres.integration.ts src/integration-tests/companion-note-authoring-postgres.integration.ts",
+    "test:companion-integration:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-scheduler-ticks-postgres.integration.ts src/integration-tests/companion-memory-handlers-postgres.integration.ts src/integration-tests/companion-agent-postgres.integration.ts src/integration-tests/companion-dialogue-postgres.integration.ts src/integration-tests/companion-memory-semantic-dismissal-postgres.integration.ts src/integration-tests/companion-turn-facts-postgres.integration.ts src/integration-tests/companion-answer-exposure-postgres.integration.ts src/integration-tests/companion-thought-candidate-postgres.integration.ts src/integration-tests/companion-read-pagination-task-memory-postgres.integration.ts src/integration-tests/companion-memory-cross-space.integration.ts src/integration-tests/companion-note-visibility-postgres.integration.ts src/integration-tests/companion-failed-partial-postgres.integration.ts src/integration-tests/companion-runtime-recovery-postgres.integration.ts src/integration-tests/companion-diary-array-parameter-postgres.integration.ts src/integration-tests/companion-model-budget-postgres.integration.ts src/integration-tests/companion-card-original-postgres.integration.ts src/integration-tests/companion-diary-material-original-postgres.integration.ts src/integration-tests/companion-diary-writing-postgres.integration.ts src/integration-tests/companion-memory-embedding-original-postgres.integration.ts src/integration-tests/companion-note-authoring-postgres.integration.ts src/integration-tests/companion-note-share-postgres.integration.ts",
     "test:platform-live:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/opencode-go-live.integration.ts",
     "test:card-generation-v3:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/card-generation-v3-simplified-postgres.integration.ts",
     "test:objective-reuse:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/objective-reuse-lookup-postgres.integration.ts",
@@ -51,5 +51,6 @@
     "pino-pretty": "^13.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
-  }
+  },
+  "license": "PolyForm-Noncommercial-1.0.0"
 }

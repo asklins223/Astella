@@ -93,6 +93,26 @@ export async function requireWorkspaceEpoch(): Promise<number> {
   return context.workspace.workspaceEpoch;
 }
 
+/**
+ * 「加入已经提交，只是本机会话没重读上」不是一次失败。
+ *
+ * 三处加入入口都要按已加入处理（HUD 空间菜单、设置页、首次进入那一屏，加上登录那道门），
+ * 判据集中在这里，免得某一处自己认码、下一处又漏。
+ */
+export function isJoinCommittedWithoutSession(error: unknown): boolean {
+  return error instanceof RendererGatewayError && error.code === "join_committed_session_stale";
+}
+
+/**
+ * 加入失败该用哪一种语气回。
+ *
+ * `already_member` 不是"没做成"：那一行空间通常就摆在同一张纸的列表里，点它即可进入。
+ * 给它上红字加 `role="alert"`，说的是"这一步失败了"，而人要做的是往上挪两厘米。
+ */
+export function joinFailureTone(error: unknown): "notice" | "error" {
+  return error instanceof RendererGatewayError && error.code === "already_member" ? "notice" : "error";
+}
+
 export function gatewayErrorMessage(error: unknown): string {
   if (!(error instanceof RendererGatewayError)) return "服务暂时没有返回可确认的结果。";
 
@@ -194,7 +214,13 @@ export function gatewayErrorMessage(error: unknown): string {
     case "workspace_limit":
       return "你已经加入了可参与的工作区数量上限，无法再加入新的协作空间。";
     case "already_member":
-      return "你的账号已经在这个协作空间里了，无需重复加入。";
+      // 这一句的下一步动作是"进去"，不是"再试一次"，所以把它写出来：没有它，
+      // 刚拿到一张新码的人会以为加入没成，继续在邀请码那个框里打转。
+      return "你的账号已经在这个协作空间里了，无需重复加入——在空间列表里选它就能进去。";
+    case "join_committed_session_stale":
+      // 成员关系已经落库，只是本机会话没重读上。说成"邀请失败"会把人推去重试一条
+      // 已经消费掉的码（下一次就是"已经被使用"）。
+      return "已经加入这个协作空间了，只是这台机器上的会话还没刷新上；在空间列表里刷新一下就能进去。";
     // 网关把 /auth/change-password 的 403 `invalid_password` 翻成这个码。
     // 没有它就会落到 `forbidden` 那句"没有执行这个动作的权限"：改密失败被说成权限
     // 问题，用户去翻权限，而真正要做的只是把当前密码重输一遍。（登录那道门

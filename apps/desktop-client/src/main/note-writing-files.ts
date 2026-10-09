@@ -8,36 +8,88 @@ import { createRequire } from "node:module";
 import { z } from "zod";
 import { DESKTOP_IPC_CHANNELS, requestMetaSchema, noteWritingActionSchema, noteWritingResultSchema, type NoteWritingResult } from "@astella/shared/desktop-ipc-contracts";
 import { isNonPublicAIEndpointAddress } from "@astella/shared/public-json-http";
-import { noteMarkdownSyntax } from "@astella/shared/note-markdown";
+import { noteImageMarkdown, noteMarkdownSyntax } from "@astella/shared/note-markdown";
 import { noteExportHtml, noteExportDocx } from "./note-writing-export";
 import type { RestChannelDeps } from "./desktop-ipc-rest";
 const MAX_IMAGE = 12_000_000;
 const roots = new Map<number, Set<string>>();
 const mimeFor = (path: string) => ({ ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp" } as Record<string, string>)[extname(path).toLowerCase()];
+type ImageSyntaxNode = { type: string; url?: string; value?: string; alt?: string; title?: string; identifier?: string; children?: ImageSyntaxNode[]; position?: { start: { offset?: number }; end: { offset?: number } } };
+function imageDefinitions(tree: ImageSyntaxNode): Map<string, ImageSyntaxNode> {
+  const definitions = new Map<string, ImageSyntaxNode>();
+  const walk = (node: ImageSyntaxNode) => { if (node.type === "definition" && node.identifier && !definitions.has(node.identifier.toLowerCase())) definitions.set(node.identifier.toLowerCase(), node); node.children?.forEach(walk); };
+  walk(tree);
+  return definitions;
+}
+const decodeHtmlSrc = (src: string) => src.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+const htmlSourcePattern = /(<img\b[^>]*?\bsrc\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
+
+/** 替换图片节点的地址，代码示例和普通链接保持原样；引用式图片展开为内联图片。 */
 export function rewriteNoteImagePaths(markdown: string, replacements: Map<string, string>): string {
+  const tree = noteMarkdownSyntax(markdown) as ImageSyntaxNode, definitions = imageDefinitions(tree);
   const edits = new Map<string, { from: number; to: number; value: string }>();
-  const walk = (node: { type: string; url?: string; children?: unknown[]; position?: { start: { offset?: number }; end: { offset?: number } } }) => {
-    if (node.type === "image" && replacements.has(node.url ?? "")) {
-      const from = node.position?.start.offset, to = node.position?.end.offset; if (from !== undefined && to !== undefined) {
-        const key = `${from}:${to}`, original = edits.get(key)?.value ?? markdown.slice(from, to), src = node.url!, target = replacements.get(src)!;
-        edits.set(key, { from, to, value: original.includes("<img") ? original.replaceAll(`src="${src.replace(/&/g, "&amp;")}"`, `src="${target}"`).replaceAll(`src='${src}'`, `src='${target}'`) : original.replace(src, target) });
+  const replacedReferences = new Set<string>(), retainedReferences = new Set<string>();
+  const swapHtml = (text: string) => text.replace(htmlSourcePattern, (whole, prefix: string, double: string, single: string, bare: string) => {
+    const target = replacements.get(decodeHtmlSrc(double ?? single ?? bare ?? ""));
+    return target ? `${prefix}"${target.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"` : whole;
+  });
+  const walk = (node: ImageSyntaxNode) => {
+    const identifier = node.identifier?.toLowerCase();
+    if (node.type === "linkReference" && identifier) retainedReferences.add(identifier);
+    const from = node.position?.start.offset, to = node.position?.end.offset;
+    if (from !== undefined && to !== undefined) {
+      const key = `${from}:${to}`, original = edits.get(key)?.value ?? markdown.slice(from, to);
+      const definition = node.type === "imageReference" ? definitions.get(node.identifier?.toLowerCase() ?? "") : null;
+      const target = replacements.get(node.url ?? definition?.url ?? "");
+      if ((node.type === "image" || node.type === "imageReference") && target) {
+        const value = original.includes("<img") ? swapHtml(original) : noteImageMarkdown({ src: target, alt: node.alt ?? "", title: node.title ?? definition?.title ?? "" });
+        edits.set(key, { from, to, value });
+        if (node.type === "imageReference" && identifier) replacedReferences.add(identifier);
+      } else if (node.type === "html" && original.toLowerCase().includes("<img")) {
+        const value = swapHtml(original); if (value !== original) edits.set(key, { from, to, value });
       }
-    } node.children?.forEach(child => walk(child as never));
-  }; walk(noteMarkdownSyntax(markdown));
+      if (node.type === "imageReference" && !target && identifier) retainedReferences.add(identifier);
+    }
+    node.children?.forEach(walk);
+  };
+  walk(tree);
+  // 已展开为内联图片的定义不再需要；仍供普通链接或未改写图片使用的定义保留。
+  for (const identifier of replacedReferences) {
+    if (retainedReferences.has(identifier)) continue;
+    const definition = definitions.get(identifier), from = definition?.position?.start.offset, to = definition?.position?.end.offset;
+    if (from !== undefined && to !== undefined) edits.set(`${from}:${to}`, { from, to, value: "" });
+  }
   for (const edit of [...edits.values()].sort((a, b) => b.from - a.from)) markdown = markdown.slice(0, edit.from) + edit.value + markdown.slice(edit.to);
   return markdown;
 }
-async function downloadImage(url: string, redirects = 0): Promise<{ mime: string; base64: string }> {
+
+/** 图片地址按出现顺序去重，支持内联、引用式和 HTML。 */
+export function markdownImageSources(markdown: string): string[] {
+  const tree = noteMarkdownSyntax(markdown) as ImageSyntaxNode, definitions = imageDefinitions(tree);
+  const found = new Set<string>();
+  const push = (src?: string) => { if (src?.trim()) found.add(src.trim()); };
+  const walk = (node: ImageSyntaxNode) => {
+    if (node.type === "image") push(node.url);
+    if (node.type === "imageReference") push(definitions.get(node.identifier?.toLowerCase() ?? "")?.url);
+    if (node.type === "html" && node.value) for (const match of node.value.matchAll(htmlSourcePattern)) push(decodeHtmlSrc(match[2] ?? match[3] ?? match[4] ?? ""));
+    node.children?.forEach(walk);
+  };
+  walk(tree);
+  return [...found];
+}
+/** 抓一张外链图片。`maxBytes` 由调用方按**它要拿去干什么**给：导出到本机文件可以宽松，
+ * 要进对象存储再在笔记里显示的，就得停在渲染层取得动的那个数。 */
+export async function downloadImage(url: string, redirects = 0, maxBytes = MAX_IMAGE): Promise<{ mime: string; base64: string }> {
   const parsed = new URL(url); if (parsed.protocol !== "https:" || parsed.username || parsed.password || redirects > 3) throw new Error("图片下载仅支持公开 HTTPS 地址");
   const addresses = await lookup(parsed.hostname, { all: true }); if (!addresses.length || addresses.some(address => isNonPublicAIEndpointAddress(address.address))) throw new Error("图片地址不能指向本机或内部网络");
   const address = addresses[0]!;
   return new Promise((resolveImage, reject) => {
     const request = httpsRequest(parsed, { lookup: (_host, _opts, callback) => callback(null, address.address, address.family), timeout: 15000 }, response => {
-      if ([301, 302, 303, 307, 308].includes(response.statusCode ?? 0) && response.headers.location) { response.resume(); downloadImage(new URL(response.headers.location, parsed).href, redirects + 1).then(resolveImage, reject); return; }
+      if ([301, 302, 303, 307, 308].includes(response.statusCode ?? 0) && response.headers.location) { response.resume(); downloadImage(new URL(response.headers.location, parsed).href, redirects + 1, maxBytes).then(resolveImage, reject); return; }
       const mime = String(response.headers["content-type"] ?? "").split(";")[0]!;
       if (response.statusCode !== 200 || !["image/png", "image/jpeg", "image/gif", "image/webp"].includes(mime)) { response.resume(); reject(new Error("图片地址未返回支持的图片")); return; }
       const chunks: Buffer[] = []; let size = 0;
-      response.on("data", (chunk: Buffer) => { size += chunk.length; if (size > MAX_IMAGE) { response.destroy(new Error("图片超过 12 MB")); return; } chunks.push(chunk); });
+      response.on("data", (chunk: Buffer) => { size += chunk.length; if (size > maxBytes) { response.destroy(new Error(`图片超过 ${Math.floor(maxBytes / 1024 / 1024)} MB`)); return; } chunks.push(chunk); });
       response.on("end", () => resolveImage({ mime, base64: Buffer.concat(chunks).toString("base64") })); response.on("error", reject);
     }); request.on("timeout", () => request.destroy(new Error("图片下载超时"))); request.on("error", reject); request.end();
   });

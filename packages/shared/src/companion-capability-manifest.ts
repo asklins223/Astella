@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { defineAgentCapability as tool, type AgentCapabilityDeclaration } from "./agent-capability-definition.ts";
 import { companionCreateNoteV1Schema, companionEditNoteV1Schema } from "./contracts/companion-note-authoring-contracts.ts";
+import { companionShareNoteV1Schema } from "./contracts/note-share-contracts.ts";
 import {
   COMPANION_PAGE_DESTINATIONS_V2,
   companionPageKindValuesV2,
@@ -39,6 +40,18 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   tool("companion_search_notes", "按关键词搜当前空间可见笔记的标题与正文，返回真实身份。找指定笔记默认match=all，所有词都命中；为新笔记找关联内容用match=any，将主题、相关概念和前置知识分词查询，结果按命中数排列。候选只是关键词匹配，必须读正文核对关系，不能仅凭标题建立链接。", "read", false, z.object({ query: z.string().min(1).max(120), limit: z.number().int().min(1).max(10).optional(), match: z.enum(["all", "any"]).optional() }).strict(), { label: "正在翻你的笔记" }),
   tool("companion_create_note", "用户明确要把知识点或当前讨论整理成一篇新笔记时，直接保存完整可编辑笔记。先搜索库内相关笔记，读正文再选links，没关联就留空；执行器附真实链接与说明。仅生成速看或拓展草稿用agent_start_goal，聊天回答不保存。每轮一篇，保存回执后才说完成，不改旧笔记。", "reversible_low", false, companionCreateNoteV1Schema,
     { label: "正在写成笔记", discovery: "把聊清楚的知识点写成一篇可编辑笔记，并链接库内读过的相关内容。" }, { maxInputChars: 18_000 }),
+  // 「开启共享」这一句她以前只能回"没那个按钮"，而且这回她说的是真的：工具面里没有共享，
+  // 页面词表里也没有协作空间，连跳过去自己点都跳不了（2026-10-09 线上）。补的是这个真缺口。
+  // 判据沿用服务端 `setNoteShareScope` 的**作者**校验，不是空间角色——"我是所有者"不等于
+  // "我能把别人的笔记共享出去"；不是作者时她照实说这一项要作者自己去那一页。
+  //
+  // `requiresConfirmation: false` 不是"这项动作不重要"，是**guided 档走不了提案**：
+  // 提案载荷要 `buildActionPayload` 里有这一条的 kind，没有就抛"这一步现在做不了"，
+  // 于是 guided 档反而比 full 档更做不到。写这一列可逆（一句"取消共享"就回来）、
+  // 不改学习状态、且只在用户指名某篇时发生——与建笔记、约提醒同一档，见 0395 那条理由：
+  // 用户刚亲口要的动作再弹一次"确定吗"是噪音。
+  tool("companion_share_note", "把用户指名的一篇笔记共享给当前空间，或取消共享收回（shareScope=shared/private）。noteId 用本轮搜索、读取或页面上下文给出的真实身份，不要猜。判据是作者：不是他写的那篇改不动，照实说该由作者自己去那一页。收到回执才说已共享或已收回，changed=false 表示本来就是那个状态；取消共享只影响之后别人还能不能读到，不撤销已经生成的学习卡。", "reversible_low", false, companionShareNoteV1Schema,
+    { label: "正在调整这篇的可见范围", discovery: "把某篇笔记共享给空间里的人，或者取消共享收回来。" }),
   // 分页续读（39d W6-2 / 39b C5）：正文按块分页，`startOrdinal` 是续读的起点
   // （上一页返回的 nextStartOrdinal）。不再"截前 3000 字假装读过"——返回体带
   // 块序号、总块数与下一页起点，读不到结尾时按它续，不谎称已读全文。

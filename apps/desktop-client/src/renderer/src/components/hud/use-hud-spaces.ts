@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SessionContextV1, WorkspaceSummaryV1 } from "@astella/shared/desktop-ipc-contracts";
-import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../app/desktop-client";
+import { createRequestMeta, gatewayErrorMessage, isJoinCommittedWithoutSession, joinFailureTone, unwrapGatewayResult } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
 import { markSpaceUsed, readSpaceRecents } from "../../app/space-recents";
 import { readAuthenticatedSession } from "../../app/surface-session";
@@ -14,7 +14,7 @@ type SpaceState = {
   loading: boolean;
   ready: boolean;
 };
-type SpaceMessage = { text: string; tone: "success" | "error" };
+type SpaceMessage = { text: string; tone: "success" | "error" | "notice" };
 export type SpaceConfirmation = { kind: "switch"; workspace: WorkspaceSummaryV1 } | { kind: "create"; name: string };
 
 /** The bubble reads facts and commits through the existing gateway and gate boundary. */
@@ -115,9 +115,16 @@ export function useHudSpaces(onSwitched?: (name: string) => void) {
     const knownIds = new Set(state.workspaces.map(workspace => workspace.workspaceId));
     let committed = false;
     try {
-      const response = await window.astella.auth.joinWorkspace({ meta: createRequestMeta(epochRef.current), inviteToken });
-      unwrapGatewayResult(response); committed = true;
-      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+      try {
+        const response = await window.astella.auth.joinWorkspace({ meta: createRequestMeta(epochRef.current), inviteToken });
+        unwrapGatewayResult(response);
+        if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+      } catch (error) {
+        // 成员关系已经落库、只是这台机器上的会话没重读上——这一条按已加入继续往下走。
+        // 把它当失败会把人退回重试一条已经消费掉的码，下一次就是"已经被使用"。
+        if (!isJoinCommittedWithoutSession(error)) throw error;
+      }
+      committed = true;
       const listed = await window.astella.workspace.list({ meta: createRequestMeta(epochRef.current) });
       const list = unwrapGatewayResult(listed);
       if (listed.workspaceEpoch) epochRef.current = listed.workspaceEpoch;
@@ -131,7 +138,7 @@ export function useHudSpaces(onSwitched?: (name: string) => void) {
         if (committed) {
           setMessage({ text: "已加入学习空间，列表暂时没有更新。刷新后即可选择它。", tone: "success" });
           setState(current => ({ ...current, failure: gatewayErrorMessage(error), loading: false }));
-        } else setMessage({ text: gatewayErrorMessage(error), tone: "error" });
+        } else setMessage({ text: gatewayErrorMessage(error), tone: joinFailureTone(error) });
       }
     } finally { finish(); }
     return committed;

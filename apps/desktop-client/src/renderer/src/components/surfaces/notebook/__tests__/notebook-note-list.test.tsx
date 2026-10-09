@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../../../../app/room-store";
 import { NotebookNoteList } from "../notebook-note-list";
 import { openNotebookListNote } from "../notebook-note-navigation";
@@ -16,8 +16,8 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); window.astella = previousApi; useNotebookFullscreenState.setState({ active: false }); });
 
-function install(list = vi.fn(async (_input: { cursor?: string }) => ok({ items: [item("first", "第一篇"), item("second", "第二篇")], total: 2, nextCursor: null }))) {
-  window.astella = { auth: { getState: vi.fn(async () => ok({ status: "authenticated", workspace: { workspaceId: "workspace" }, workspaceEpoch: 1 })) }, note: { list } } as never;
+function install(list = vi.fn(async (_input: { cursor?: string }) => ok({ items: [item("first", "第一篇"), item("second", "第二篇")], total: 2, nextCursor: null })), presence = vi.fn(async () => ok({ items: [] }))) {
+  window.astella = { auth: { getState: vi.fn(async () => ok({ status: "authenticated", workspace: { workspaceId: "workspace" }, workspaceEpoch: 1 })) }, note: { list, presenceList: presence } } as never;
   return list;
 }
 function Visit({ loading = false, fullscreen = false }: { loading?: boolean; fullscreen?: boolean }) {
@@ -141,4 +141,62 @@ it("空间切换清除查询与旧列表，晚到的旧空间回执不能露出�
   await act(async () => finish(ok({ items: [item("old", "旧空间私有标题")], total: 1, nextCursor: null })));
   expect(screen.queryByText("旧空间私有标题")).toBeNull();
   expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("");
+});
+
+describe("列表里「谁在这一篇」那一排", () => {
+  const inSharedSpace = () => useRoomStore.setState({
+    spaceIdentity: { name: "共享空间", role: "owner", isPersonal: false, userId: "me" },
+    accountIdentity: { email: "me@astella.local", displayName: "我" },
+  });
+
+  it("别人在看的那一行长出印章与名字，没人在看的那一行保持原样，自己那枚不算", async () => {
+    inSharedSpace();
+    install(undefined, vi.fn(async () => ok({ items: [{
+      noteId: "second",
+      viewers: [
+        { userId: "me", displayName: "我", mode: "reading", block: null },
+        { userId: "peer-1", displayName: "小琳", mode: "editing", block: 2 },
+        { userId: "peer-2", displayName: "", mode: "reading", block: null },
+      ],
+    }] })));
+    const screen = render(<Visit />);
+    fireEvent.click(screen.getByRole("button", { name: "展开笔记列表" }));
+    const row = await screen.findByRole("button", { name: /第二篇/ });
+    // 纸上那一行只放得下一句短话：先说在写的那个，剩下的如实报数；
+    // 全名（包括没留下名字的那位）在 title 与 aria-label 里。
+    expect(row.textContent).toContain("小琳 在写 · 还有 1 人");
+    const readers = row.querySelector(".notebook-note-list__readers");
+    expect(readers?.getAttribute("aria-label")).toBe("小琳 在写 · 没留下名字的人 在读");
+    // 你自己开着这篇由「当前」那一位在说；那一排再画一枚就是同一天两个人数。
+    expect(row.querySelectorAll(".notebook-presence__peer")).toHaveLength(2);
+    expect(row.textContent).not.toMatch(/我 在读/);
+    const quiet = screen.getByRole("button", { name: /第一篇/ });
+    expect(quiet.querySelector(".notebook-note-list__readers")).toBeNull();
+  });
+
+  it("读不到时那一排放下，并说一句读不到（不拿空的名单说「没人」）", async () => {
+    inSharedSpace();
+    install(undefined, vi.fn(async () => { throw new Error("暂时断开"); }));
+    const screen = render(<Visit />);
+    fireEvent.click(screen.getByRole("button", { name: "展开笔记列表" }));
+    await screen.findByText(/别人在不在看，这一列暂时读不到/);
+    expect(document.querySelectorAll(".notebook-note-list__readers")).toHaveLength(0);
+  });
+
+  it("纸合着的时候不读，展开才读，收起就停", async () => {
+    inSharedSpace();
+    const presence = vi.fn(async () => ok({ items: [] }));
+    install(undefined, presence);
+    const screen = render(<Visit />);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(presence).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "展开笔记列表" }));
+    await waitFor(() => expect(presence).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "收起笔记列表" }));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    const after = presence.mock.calls.length;
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+    // 合上的纸不该继续打服务端。
+    expect(presence.mock.calls.length).toBe(after);
+  });
 });

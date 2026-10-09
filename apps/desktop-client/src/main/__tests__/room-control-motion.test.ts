@@ -6,6 +6,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const CSS = "src/renderer/src/components/hud/hud-surface.css";
+const STYLES = "src/renderer/src/styles.css";
+const FULLSCREEN_CSS = "src/renderer/src/components/surfaces/notebook/notebook-fullscreen.css";
 
 function read(relative: string): string {
   const fromCwd = relative;
@@ -39,5 +41,30 @@ describe("顶栏灵动岛的折叠时序", () => {
     const rule = section.slice(at, section.indexOf("}", at));
     const transition = rule.match(/transition:\s*([^;]+);/)?.[1] ?? "";
     expect(transition, "胶囊带了 transform 过渡，会和岛的位移抢时间轴").not.toContain("transform");
+  });
+});
+
+/** 2026-10-09 用户裁决：Windows/Linux 不再把岛往左让位，改为贴右缘、沉到原生标题带下面。 */
+describe("原生标题带下的贴右落位", () => {
+  const platformRule = (css: string, selector: string) => {
+    const at = css.indexOf(selector);
+    expect(at, `找不到 ${selector}`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at));
+  };
+
+  it("岛只改 top，right 交回基线，不整体往左挪", () => {
+    const rule = platformRule(read(CSS),
+      '.desktop-app.hud-surface:is([data-platform="win32"], [data-platform="linux"]) .room-control');
+    expect(rule, "岛又改回 right 了——往左让位会把岛从右上角摘下来").not.toMatch(/(^|[^-])\bright\s*:/);
+    expect(rule, "岛的起算线没有走 --native-caption-band").toContain("var(--native-caption-band");
+  });
+
+  it("灵动岛与笔记全屏折签共用同一条起算线", () => {
+    const styles = read(STYLES);
+    expect(styles.match(/--native-caption-band:/g), "起算线应当只在 styles.css 声明一次")
+      .toHaveLength(1);
+    const rule = platformRule(read(FULLSCREEN_CSS),
+      '.desktop-app.hud-surface[data-notebook-fullscreen]:is([data-platform="win32"], [data-platform="linux"])');
+    expect(rule, "折签自己又写了一遍 40px + 12px").toContain("var(--native-caption-band");
   });
 });

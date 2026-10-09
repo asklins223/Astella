@@ -34,7 +34,7 @@ export function NoteMarkdownReading({ type, content, options }: { type: string; 
       const index = options.galleryStart === undefined ? undefined : options.galleryStart + imageIndex;
       imageIndex += 1;
       const width = positiveSize(props.width), height = positiveSize(props.height);
-      return <span key={key} className="note-html-image" style={{ ...(width ? { display: "inline-block", width, height, maxWidth: "100%" } : {}), "--note-image-width": width ?? 320 } as React.CSSProperties}>
+      return <span key={key} className="note-html-image" data-sized={width ? "true" : undefined} style={{ ...(width ? { width, height } : {}), "--note-image-width": width ?? 320 } as React.CSSProperties}>
         <InlineImage src={src} alt={String(props.alt ?? "")} workspaceEpoch={options.workspaceEpoch}
           linked={linked}
           galleryIndex={index} onOpenGallery={options.onOpenGallery} />

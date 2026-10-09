@@ -266,27 +266,34 @@ export function HudPicker<T extends string>({
     // tokens and event path. The application draws all of the menu's chrome.
     if (typeof element.showPopover === "function" && !element.matches(":popover-open")) element.showPopover();
     const trigger = triggerRef.current?.getBoundingClientRect();
-    const menu = element.getBoundingClientRect();
-    if (!trigger || !menu) return;
+    if (!trigger) return;
     if (typeof element.showPopover === "function") {
-      const below = window.innerHeight - trigger.bottom - 10;
-      const above = trigger.top - 10;
-      const up = below < menu.height + 6 && above > below;
-      const height = Math.max(40, Math.min(232, up ? above : below));
+      // The top layer resolves percentages against the viewport, so the CSS floor
+      // `max(100%, …)` would stretch the list across the whole window — and since
+      // `min-width` outranks `max-width`, the 320px cap below cannot save it.
+      // Restate the same floor against the trigger, which is what it means in flow.
+      const floor = Number.parseFloat(getComputedStyle(element).getPropertyValue("--hud-picker-menu-min")) || 0;
       element.style.position = "fixed";
       element.style.margin = "0";
-      element.style.maxHeight = `${height}px`;
+      element.style.minWidth = `${Math.round(Math.max(floor, trigger.width))}px`;
       element.style.maxWidth = `${Math.min(320, window.innerWidth - 20)}px`;
-      const width = Math.min(menu.width, window.innerWidth - 20);
+      const size = element.getBoundingClientRect();
+      const below = window.innerHeight - trigger.bottom - 10;
+      const above = trigger.top - 10;
+      const up = below < size.height + 6 && above > below;
+      const height = Math.max(40, Math.min(232, up ? above : below));
+      element.style.maxHeight = `${height}px`;
+      const width = Math.min(size.width, window.innerWidth - 20);
       element.style.left = `${Math.max(10, Math.min(window.innerWidth - width - 10, align === "end" ? trigger.right - width : trigger.left))}px`;
       element.style.right = "auto";
       element.style.bottom = "auto";
-      element.style.top = `${up ? Math.max(10, trigger.top - Math.min(menu.height, height) - 6) : trigger.bottom + 6}px`;
+      element.style.top = `${up ? Math.max(10, trigger.top - Math.min(size.height, height) - 6) : trigger.bottom + 6}px`;
       setFlipUp(up);
       element.focus({ preventScroll: true });
       return;
     }
     // Flip against the box that would clip the menu, not against the window.
+    const menu = element.getBoundingClientRect();
     const container = nearestScrollContainer(rootRef.current)?.getBoundingClientRect();
     const bounds = container ?? { top: 0, bottom: window.innerHeight };
     const spaceBelow = bounds.bottom - trigger.bottom;

@@ -40,8 +40,8 @@ import {
 import { BrowserWindow, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent, type WebContents } from "electron";
 import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { readdir, rename, rm, stat, writeFile } from "node:fs/promises";
-import { basename } from "node:path";
+import { mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { basename, dirname } from "node:path";
 import { exportNotesAsMarkdown } from "./note-markdown-export";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -667,7 +667,24 @@ channel(DESKTOP_IPC_CHANNELS.notesMarkdownExport, notesMarkdownExportInputSchema
         return new Set<string>();
       }
     },
-    writeNote: (filePath, text) => writeFile(filePath, text, "utf8"),
+    writeNote: (filePath, text) => writeFile(filePath, text, { encoding: "utf8", flag: "wx" }),
+    // 图片走的是阅读页那同一条通道（main 带会话令牌取原始字节），不为导出另开一条路。
+    fetchImage: async (objectKey) => {
+      const image = await ns_source.getSourceImage(gateway.gatewayTransport, { version: 1, objectKey }, input.meta.requestId);
+      return { bytes: Buffer.from(image.imageBase64, "base64"), mime: image.mimeType };
+    },
+    writeAsset: async (filePath, bytes) => {
+      try {
+        await mkdir(dirname(filePath), { recursive: true });
+        // wx：名字是按内容哈希取的，同名即同字节。已经在那儿了就算成功，不去覆盖读者
+        // 目录里可能存在的任何东西。
+        await writeFile(filePath, bytes, { flag: "wx" });
+        return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") return true;
+        return false;
+      }
+    },
   });
 }, notesMarkdownExportResultV1Schema);
 

@@ -2,12 +2,13 @@ import { randomUUID, createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { notes } from "@astella/shared/db-schema/note";
-import { objectTransferRequestSchema, objectTransferUploadSchema, type ObjectTransferRequest } from "@astella/shared/object-transfer-contracts";
+import { MAX_SOURCE_TEXT_BYTES, objectTransferRequestSchema, objectTransferUploadSchema, type ObjectTransferRequest } from "@astella/shared/object-transfer-contracts";
+import { SOURCE_IMAGE_MAX_BYTES } from "@astella/shared/source-image-contracts";
 import { db, withWorkspaceTransaction, scopeOfSession, type WorkspaceTransactionContext } from "../../db/client.ts";
 import { requireSession, isWorkspaceOwner } from "../identity/middleware.ts";
 import { parseBody } from "../../lib/validate.ts";
 import { storageTransferOrigins, usesRemoteStorage, signObjectUpload, getObject, headObject, deleteObject, persistObject } from "../../lib/object-storage.ts";
-import { uploadNoteImage, uploadCompanionImage, uploadAvatar } from "../upload/upload-service.ts";
+import { uploadNoteImage, uploadCompanionImage, uploadAvatar, uploadImportedImage } from "../upload/upload-service.ts";
 import { createSource } from "../source/service.ts";
 import { sourceCreateSchema } from "../source/schema.ts";
 // Share the import payload contract with the established Markdown import domain.
@@ -20,13 +21,25 @@ type TransferRow = { id: string; staging_key: string; request_json: ObjectTransf
   status: "pending" | "verifying" | "completed" | "failed"; result_json: unknown; result_status: number | null; expires_at: Date };
 const limiter = new RateLimiter(createRateLimitStoreFromEnv(), { windowMs: 60_000, maxAttempts: 20 });
 const avatarLimiter = new RateLimiter(createRateLimitStoreFromEnv(), { windowMs: 60_000, maxAttempts: 5 });
+/**
+ * 导入一整个 Markdown 文件夹/zip 时，每张随文图片各要一次预签名——它和「手工往笔记里
+ * 贴一张图」不是一个数量级，按笔记图片那条 20/min 走会让几百张图的导入光排队就几分钟。
+ * 单独一条额度（240/min），尺寸/类型/归属校验与别的图片用途完全同一套。
+ */
+const bundleImageLimiter = new RateLimiter(createRateLimitStoreFromEnv(), { windowMs: 60_000, maxAttempts: 240 });
 
 export function validateTransferPurpose(request: ObjectTransferRequest): void {
-  const image = request.purpose === "note_image" || request.purpose === "companion_image" || request.purpose === "avatar";
+  const image = request.purpose === "note_image" || request.purpose === "companion_image"
+    || request.purpose === "avatar" || request.purpose === "markdown_import_image";
   if (image && !["image/png", "image/jpeg", "image/gif", "image/webp"].includes(request.mimeType))
     throw Object.assign(new Error("unsupported file type"), { statusCode: 415 });
-  const max = request.purpose === "avatar" ? 2 * 1024 * 1024 : image ? 10 * 1024 * 1024
-    : request.purpose === "source_text" ? 900_000 : 50 * 1024 * 1024;
+  // 导入随文图片按**渲染层取得动的体积**收口（SOURCE_IMAGE_MAX_BYTES），而不是按
+  // 笔记图片那条的 10MB：一张 6MB 的图存进对象存储，取图时会被通道上限拒掉，
+  // 结果是「导入说收下了、笔记里永远缺一块」。在这里按能显示的数拦，失败就发生在上传这一刻。
+  const max = request.purpose === "avatar" ? 2 * 1024 * 1024
+    : request.purpose === "markdown_import_image" ? SOURCE_IMAGE_MAX_BYTES
+    : image ? 10 * 1024 * 1024
+    : request.purpose === "source_text" ? MAX_SOURCE_TEXT_BYTES : 50 * 1024 * 1024;
   if (request.byteLength > max) throw Object.assign(new Error("file too large"), { statusCode: 413 });
   if (request.purpose === "note_image" && !request.noteId) throw Object.assign(new Error("noteId is required"), { statusCode: 400 });
   if (request.purpose === "source_text" && request.mimeType !== "text/plain" && request.mimeType !== "text/markdown")
@@ -42,10 +55,11 @@ export function verifyTransferredBytes(bytes: Buffer, request: Pick<ObjectTransf
 async function commitTransfer(scope: WorkspaceTransactionContext, request: ObjectTransferRequest,
   staging: { key: string; etag: string }, bytes: Buffer): Promise<{ status: number; body: unknown }> {
   const file = { mimetype: request.mimeType, toBuffer: async () => bytes };
-  if (request.purpose === "note_image" || request.purpose === "companion_image" || request.purpose === "avatar") {
+  if (request.purpose === "note_image" || request.purpose === "companion_image" || request.purpose === "avatar" || request.purpose === "markdown_import_image") {
     const result = request.purpose === "note_image" ? await uploadNoteImage(scope, { noteId: request.noteId!, file, staging })
-      : request.purpose === "companion_image" ? await uploadCompanionImage(scope, { file, staging })
-        : await uploadAvatar(scope, { file, staging });
+      : request.purpose === "markdown_import_image" ? await uploadImportedImage(scope, { file, staging })
+        : request.purpose === "companion_image" ? await uploadCompanionImage(scope, { file, staging })
+          : await uploadAvatar(scope, { file, staging });
     if (result.ok) return { status: 201, body: result.body };
     const reason = result.reason;
     const status = reason === "note_not_found" ? 404 : reason === "too_large" || reason === "file_read_too_large" ? 413
@@ -94,8 +108,10 @@ export async function objectTransferRoutes(app: FastifyInstance): Promise<void> 
     if (!["companion_image", "avatar"].includes(request.purpose) && !isWorkspaceOwner(req.session))
       return reply.code(403).send({ error: "owner role required" });
     const image = request.purpose === "note_image" || request.purpose === "companion_image";
-    const selectedLimiter = request.purpose === "avatar" ? avatarLimiter : limiter;
+    const bundleImage = request.purpose === "markdown_import_image";
+    const selectedLimiter = request.purpose === "avatar" ? avatarLimiter : bundleImage ? bundleImageLimiter : limiter;
     const rateKey = request.purpose === "avatar" ? `upload:avatar:user:${req.session.userId}`
+      : bundleImage ? `upload:bundle-image:user:${req.session.userId}`
       : image ? `upload:image:user:${req.session.userId}` : `object-transfer:file:${req.session.userId}`;
     const decision = await selectedLimiter.consume(rateKey);
     if (!decision.allowed) return reply.header("Retry-After", "60").code(429).send({ error: "rate_limited" });

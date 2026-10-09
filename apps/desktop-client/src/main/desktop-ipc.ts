@@ -1,4 +1,5 @@
 import { registerNoteWritingChannels } from "./note-writing-files";
+import { registerMarkdownBundleChannels } from "./markdown-bundle-import";
 import {
   setPersonalRelationDecisionV2ResultSchema,
   setPersonalRelationDecisionV2Schema,
@@ -1279,13 +1280,12 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
       .then(() => persistNoteDocLocal(noteId))
       .then(() => ns_note.watchNoteDocument(gateway.gatewayTransport, gateway.noteDocTransportHandle, noteId, ({ noteId: _framedByGateway, ...event }) => {
       if (streamWorkspaceEpoch !== activeWorkspaceEpoch) return;
+      // 保存用的影子文档也要接到协作者的历史，否则基于对方新内容的编辑会缺 CRDT 依赖。
+      // 先过空间 epoch 检查，避免旧连接在切空间后重新创建上一空间的本机会话。
+      if (event.type === "update") ns_note.noteDocLocalSession(gateway.gatewayTransport, noteId).state.applyRemote(event.update);
       if (event.type === "status") {
-        // 可写的那句答复只在鉴权那一刻来一次，而**连接会掉**。掉了还留着
-        // `read-write`，写入就继续并进那条已经发不出去的文档：provider 的 `send` 在
-        // socket 不是 open 时**静默丢弃**（`readyState === Open` 才发），界面上照样是
-        // "● 已写入，正在同步"，而这一篇的正文只活在主进程那份内存文档里——离开这篇
-        // （transport 被销毁）就没了。所以连接不在时把这一位清掉，写入退回 HTTP 那条
-        // 同一个增量口（服务端一样收到，且 `via` 如实报 `uploaded`）。
+        // 连接不在时清掉可写标记，停止向断开的 provider 广播。
+        // 保存仍走 HTTP 的落盘确认；重连鉴权后才恢复实时广播。
         const scope = event.status === "authenticated"
           ? (event.authorizedScope ?? authorizedScope)
           : null;
@@ -1607,6 +1607,16 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
   // 2026-09-30（第②步）：「空间」这一族搬去 `desktop-ipc-rest.ts`。
   // 纪元按 **getter** 传；宽松签名的那几个**真类型在本文件里断言**——传的就是同一个函数。
   registerNoteWritingChannels({ channel: channel as never, requireM2Route: requireM2Route as never, contract });
+  // 带图导入一整个 Markdown 包（文件夹或 zip）：读盘与传图都在这台机器上完成，
+  // 交回渲染层的只是**已经改写好站内地址**的几份正文，建来源仍然走 `sourceCreate` 那条。
+  registerMarkdownBundleChannels({
+    channel: channel as never,
+    requireM2Route: requireM2Route as never,
+    assertEpoch: assertEpoch as never,
+    contract,
+    getActiveWorkspaceEpoch: () => activeWorkspaceEpoch,
+    gateway: gateway as never,
+  });
   registerRestChannels({
     channel: channel as never,
     installHandler: installHandler as never,

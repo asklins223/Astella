@@ -204,6 +204,9 @@ const desktopApi: AstellaDesktopApiM2 = {
   source: {
     list: (input) => invoke(DESKTOP_IPC_CHANNELS.sourceList, input),
     create: (input) => invoke(DESKTOP_IPC_CHANNELS.sourceCreate, input),
+    // 带图导入一个 Markdown 包（文件夹/zip）：读盘、传图、改写正文都在主进程做完，
+    // 这里交出的只是那几份已经换成站内地址的正文。
+    bundleImport: (input) => invoke(DESKTOP_IPC_CHANNELS.sourceBundleImport, input),
     get: (input) => invoke(DESKTOP_IPC_CHANNELS.sourceGet, input),
     listNotes: (input) => invoke(DESKTOP_IPC_CHANNELS.sourceNotes, input),
     update: (input) => invoke(DESKTOP_IPC_CHANNELS.sourceUpdate, input),
@@ -213,7 +216,8 @@ const desktopApi: AstellaDesktopApiM2 = {
     reparse: (input) => invoke(DESKTOP_IPC_CHANNELS.sourceReparse, input),
     // 站内图片原始字节：正文引用是 `/api/uploads/…`，渲染层够不到 API 源，
     // 由 main 带会话令牌取回，这里只把那条通道接出来。
-    getImage: (input) => invoke(DESKTOP_IPC_CHANNELS.sourceImageGet, input)
+    getImage: (input) => invoke(DESKTOP_IPC_CHANNELS.sourceImageGet, input),
+    uploadImage: (input) => invoke(DESKTOP_IPC_CHANNELS.sourceImageUpload, input)
   },
   agent: {
     listRuns: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunsList, input),
@@ -390,6 +394,8 @@ const desktopApi: AstellaDesktopApiM2 = {
     delete: (input) => invoke(DESKTOP_IPC_CHANNELS.noteDelete, input),
     restore: (input) => invoke(DESKTOP_IPC_CHANNELS.noteRestore, input),
     get: (input) => invoke(DESKTOP_IPC_CHANNELS.noteGet, input),
+    // 「此刻谁开着哪一篇」：列表那一行与笔记顶栏都读这一发（事实源是服务端活连接）。
+    presenceList: (input) => invoke(DESKTOP_IPC_CHANNELS.notePresenceList, input),
     save: (input) => invoke(DESKTOP_IPC_CHANNELS.noteSave, input),
     // 协同正文：渲染进程不能直连 WS（沙箱 + CSP + onBeforeRequest），所以起点、写入和
     // presence 都走这里，实时下行是 `subscriptions` 上 kind=noteDoc 的事件。

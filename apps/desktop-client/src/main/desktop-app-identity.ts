@@ -1,6 +1,6 @@
 import type { App } from "electron";
 
-/** Set before ready: Chromium uses the app name to select its Keychain item. */
+/** Set before ready: the installed app owns one profile directory, whichever name it ships under. */
 export function configureDesktopAppIdentity(
   app: Pick<App, "isPackaged" | "getPath" | "setPath" | "setName">,
   platform: NodeJS.Platform = process.platform,

@@ -133,6 +133,7 @@ interface PersistedCheck {
 let currentState: UpdateStateV1 | null = null
 let autoUpdater: import('electron-updater').AppUpdater | null = null
 let macosUpdater: import('./macos-archive-updater').MacosArchiveUpdater | null = null
+let windowsUpdater: import('./windows-installer-updater').WindowsInstallerUpdater | null = null
 
 /**
  * 当前正在做的是哪一步。
@@ -153,7 +154,7 @@ let operation: UpdateOperation = null
 /** 原始更新错误可能带本机路径、响应正文或栈；界面只展示能指导下一步的原因。 */
 function updateFailureMessage(error: unknown, action: Exclude<UpdateOperation, null>): string {
   const detail = error instanceof Error ? error.message : String(error ?? '')
-  if (/^MAC_UPDATE_(LOCATION|PERMISSION):/.test(detail)) return detail.replace(/^MAC_UPDATE_[A-Z]+: /, '')
+  if (/^(MAC|WINDOWS)_UPDATE_(LOCATION|PERMISSION):/.test(detail)) return detail.replace(/^(MAC|WINDOWS)_UPDATE_[A-Z]+: /, '')
   if (/app-update\.ya?ml|dev-app-update\.ya?ml/i.test(detail)) return '这份安装包缺少更新配置，请使用正式安装包后再检查。'
   if (/rate limit|\b429\b/i.test(detail)) return 'GitHub 的查询次数用完了，请稍后再检查。'
   if (/ENOSPC|no space left/i.test(detail)) return '设备可用空间不足，请腾出空间后重试。'
@@ -281,6 +282,10 @@ async function loadAutoUpdater(): Promise<import('electron-updater').AppUpdater 
       const { MacosArchiveUpdater } = await import('./macos-archive-updater')
       macosUpdater = new MacosArchiveUpdater()
       loaded = macosUpdater
+    } else if (process.platform === 'win32') {
+      const { WindowsInstallerUpdater } = await import('./windows-installer-updater')
+      windowsUpdater = new WindowsInstallerUpdater()
+      loaded = windowsUpdater
     } else {
       loaded = (await import('electron-updater')).autoUpdater
     }
@@ -434,9 +439,10 @@ export async function installUpdate(): Promise<UpdateStateV1> {
   operation = 'install'
   try {
     const state = getUpdateState()
-    const prepared = macosUpdater ? await macosUpdater.prepareInstall() : null
+    const prepared: { launch: () => Promise<void>; stagingDirectory?: string } | null = macosUpdater
+      ? await macosUpdater.prepareInstall() : windowsUpdater ? await windowsUpdater.prepareInstall() : null
     receiptStore().write({ fromVersion: app.getVersion(), version: state.availableVersion!, status: 'pending',
-      ...(prepared ? { stagingDirectory: prepared.stagingDirectory } : {}) })
+      ...(prepared?.stagingDirectory ? { stagingDirectory: prepared.stagingDirectory } : {}) })
     if (prepared) {
       await prepared.launch()
       app.quit()
@@ -496,5 +502,6 @@ export function resetUpdateModuleForTests(): void {
   currentState = null
   autoUpdater = null
   macosUpdater = null
+  windowsUpdater = null
   operation = null
 }

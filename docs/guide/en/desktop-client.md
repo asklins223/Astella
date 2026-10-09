@@ -164,15 +164,15 @@ The home background is poster plus parallax layers, not a 3D scene: `data-scene-
 
 ## Packaging and auto-update
 
-`electron-builder.yml`: `appId: com.asklins.astella`, `productName: Astella` (the Chinese display name 拾星笔记 comes from `CFBundleDisplayName` / `shortcutName`), output `release/`, `asar: true` with maximum compression. `files` explicitly excludes `out/renderer/assets/3d/**` and `out/renderer/models/**` — recognition models are an add-on the user downloads in settings, and one careless copy back into `public/` would add 239MB to the installer for nothing.
+`electron-builder.yml`: `appId: com.asklins.astella`, `productName: Astella` (the Chinese display name 拾星笔记 comes from `CFBundleDisplayName` / `WindowsRegistration`), output `release/`, `asar: true` with maximum compression. `files` explicitly excludes `out/renderer/assets/3d/**` and `out/renderer/models/**` — recognition models are an add-on the user downloads in settings, and one careless copy back into `public/` would add 239MB to the installer for nothing.
 
 | Platform | Target | Notes |
 | --- | --- | --- |
 | macOS | `dmg` + `zip` | `NSMicrophoneUsageDescription` (without it TCC denies `getUserMedia` outright), `hardenedRuntime: true` |
-| Windows | `nsis` x64 | `oneClick: true` (changed 2026-10-04), `asInvoker`, desktop and Start Menu shortcuts |
+| Windows | Independent WPF x64 installer | Custom wizard, affirmative notice and noncommercial-license consent, custom location, update and uninstall; current user only |
 | Linux | `AppImage` | — |
 
-The `oneClick` comment records the cost honestly: the assisted installer has a nsDialogs "choose install scope" page; silent `/S` skips painting it but the multi-user mode decision still needs one explicit input, so the installer just waits — on CI that shows up as the install step timing out, indistinguishable from a broken installer. One-click makes `/S` reliable, at the price of no custom directory: it installs to `%LOCALAPPDATA%\Programs\Astella`. `artifactName` hardcodes the ASCII prefix — `astella-${version}-${os}-${arch}.${ext}` — because asset names go straight into `latest.yml` and are parsed by the client, while GitHub asset URLs, NSIS differential download and ShipIt each mishandle non-ASCII filenames in their own way. The yml **intentionally omits arch**: architecture is chosen by `package:mac:arm64` / `package:win:x64` and `desktop-package.yml`, so the two places cannot override each other.
+Windows uses the independent .NET 10 / WPF project in `apps/windows-installer/`; no NSIS shell or installation script is used. `scripts/package-windows.mjs` packages the verified application ZIP and manifest with a self-contained native installer and writes `latest.yml`. The wizard requires affirmative consent before proceeding, supports a custom initial location, and retains local data by default when uninstalling. Updates keep the existing directory and profile, use full-download SHA-512 verification, wait for the old application to exit and roll back failed replacement. See the [installer implementation and verification scope](../../../apps/windows-installer/README.md). Artifact names remain ASCII and versions follow the unified release source.
 
 The update source is GitHub Releases, direct (`publish: provider github, owner asklins223, repo Astella`; implementation `src/main/desktop-update.ts`): the check goes to `api.github.com` and the download to GitHub's CDN, **never through `apps/api`** — so your own API being down does not block updates, and update bandwidth does not land on your own servers.
 

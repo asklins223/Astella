@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { MAX_SOURCE_TEXT_BYTES } from "@astella/shared/object-transfer-contracts";
 import { usesRemoteStorage, uploadObject, deleteObject } from "../../lib/object-storage.ts";
 import type { FastifyInstance } from "fastify";
 import { requireSession, requireOwner } from "../identity/middleware.ts";
@@ -27,12 +28,14 @@ export async function sourceRoutes(app: FastifyInstance) {
 
   // POST /sources — 创建来源
   // RBAC: 仅 owner 可创建来源
-  app.post("/sources", { preHandler: [requireOwner] }, async (req) => {
+  // bodyLimit 抬到正文上限之上：没配对象存储时正文走 JSON body，Fastify 默认的 1MB
+  // 会把合法的大份材料变成 413。真正的判据还是下面那个字节数检查。
+  app.post("/sources", { preHandler: [requireOwner], bodyLimit: MAX_SOURCE_TEXT_BYTES + 1024 * 1024 }, async (req) => {
     const body = parseBody(app, sourceCreateSchema, req.body);
     let storedFile: { objectKey: string; sha256: string; byteLength: number; fileName: string } | undefined;
     if (usesRemoteStorage() && body.content) {
       const bytes = Buffer.from(body.content);
-      if (bytes.length > 900_000) throw app.httpErrors.payloadTooLarge("source file too large");
+      if (bytes.length > MAX_SOURCE_TEXT_BYTES) throw app.httpErrors.payloadTooLarge("source file too large");
       const objectKey = `${req.session.workspaceId}/files/${req.session.userId}/${randomUUID()}.txt`;
       await uploadObject(objectKey, bytes, body.type === "markdown" ? "text/markdown" : "text/plain");
       storedFile = { objectKey, sha256: createHash("sha256").update(bytes).digest("hex"), byteLength: bytes.length, fileName: `${body.title?.slice(0, 180) || "source"}.txt` };

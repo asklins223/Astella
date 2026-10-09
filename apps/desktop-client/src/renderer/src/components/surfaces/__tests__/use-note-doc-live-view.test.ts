@@ -79,7 +79,7 @@ describe("渲染进程那份文档", () => {
     Y.applyUpdate(server, Uint8Array.from(atob(seedUpdate()), (char) => char.charCodeAt(0)));
     installApi(b64(Y.encodeStateAsUpdate(server)));
     const { result, rerender } = renderHook(({ version }) =>
-      useNoteDocLiveView(NOTE_ID, false, () => undefined, null, undefined, version),
+      useNoteDocLiveView(NOTE_ID, false, () => undefined, undefined, version),
       { initialProps: { version: "v2" } },
     );
     await settle();
@@ -236,57 +236,66 @@ describe("渲染进程那份文档", () => {
     expect(via).toBe("stream");
   });
 
-  it("订阅回执比连接早时，名字照旧广播得出去；在场人数只认这一排", async () => {
-    const { result } = renderHook(() => useNoteDocLiveView(NOTE_ID, true, () => undefined, null));
+  it("订阅回执比连接早时，服务端改写过的在场状态读得出来；在场名单只认这一排", async () => {
+    const { result } = renderHook(() => useNoteDocLiveView(NOTE_ID, true, () => undefined));
     await settle();
     act(() => {
-      emit(frame(NOTE_ID, { type: "presence", states: [{ clientId: 7, state: { name: "小林" } }, { clientId: 8, state: {} }] }));
+      emit(frame(NOTE_ID, { type: "presence", states: [{ clientId: 7, state: { name: "小林", mode: "editing" } }, { clientId: 8, state: {} }] }));
     });
-    // 两枚都要有 `block` 这一格（对端没报就是 null）：断言整个对象而不是挑字段，
+    // 三枚字段都要有（对端没报就是 null / 默认「在读」）：断言整个对象而不是挑字段，
     // 以后加一份没约定的东西进 awareness 就会在这里被看见。
     expect(result.current.presencePeers).toEqual([
-      { clientId: 7, name: "小林", block: null },
-      { clientId: 8, name: null, block: null },
+      { clientId: 7, name: "小林", mode: "editing", block: null },
+      { clientId: 8, name: null, mode: "reading", block: null },
     ]);
   });
 
-  it("换块才报一次 awareness，同一块里的按键不重发", async () => {
+  it("换块、换档才报 awareness，同一块里的按键不重发", async () => {
     installApi();
-    const { result } = renderHook(() => useNoteDocLiveView(NOTE_ID, true, () => undefined, "小琳"));
+    const { result } = renderHook(() => useNoteDocLiveView(NOTE_ID, true, () => undefined));
     await settle();
-    // 起点那一次已经报过名字（块还没定，报的是 null）。
+    // 起点那一次已经报过（默认在读、块还没定）。名字**不在这一格里**：那一位由服务端
+    // 按库里那份改写后再下发，客户端自报的名字穿不到别人屏上。
     const reported = () => presence.mock.calls.map((call) => (call[0] as { state: string }).state);
-    expect(JSON.parse(reported().at(-1)!)).toEqual({ name: "小琳", block: null });
+    expect(JSON.parse(reported().at(-1)!)).toEqual({ mode: "reading", block: null });
 
     act(() => { result.current.setLocalBlock(2); });
-    expect(JSON.parse(reported().at(-1)!)).toEqual({ name: "小琳", block: 2 });
+    expect(JSON.parse(reported().at(-1)!)).toEqual({ mode: "reading", block: 2 });
 
     // 同一块里再来一次（一次按键会派发好几回事务）不该多发一条广播。
     const before = presence.mock.calls.length;
     act(() => { result.current.setLocalBlock(2); });
     expect(presence.mock.calls.length).toBe(before);
 
+    // 切进编辑器要说得出「在写」——列表那一行与别人屏上那句"谁在写"都读这一位。
+    act(() => { result.current.setLocalMode("editing"); });
+    expect(JSON.parse(reported().at(-1)!)).toEqual({ mode: "editing", block: 2 });
+    const afterMode = presence.mock.calls.length;
+    act(() => { result.current.setLocalMode("editing"); });
+    // 同一档不重发。
+    expect(presence.mock.calls.length).toBe(afterMode);
+
     act(() => { result.current.setLocalBlock(null); });
-    expect(JSON.parse(reported().at(-1)!)).toEqual({ name: "小琳", block: null });
+    expect(JSON.parse(reported().at(-1)!)).toEqual({ mode: "editing", block: null });
   });
 
-  it("对端报的块号读得出来，认不出的形状读成没有而不是丢掉那个人", async () => {
+  it("对端报的块号与档位读得出来，认不出的形状读成默认而不是丢掉那个人", async () => {
     const { result } = renderHook(() => useNoteDocLiveView(NOTE_ID, true, () => undefined));
     await settle();
     act(() => {
       emit(frame(NOTE_ID, {
         type: "presence",
         states: [
-          { clientId: 7, state: { name: "小林", block: 1 } },
-          { clientId: 8, state: { name: "老周", block: "第三段" } },
+          { clientId: 7, state: { name: "小林", mode: "editing", block: 1 } },
+          { clientId: 8, state: { name: "老周", mode: "sleeping", block: "第三段" } },
         ],
       }));
     });
-    // 第二条那个块号是字符串（对端版本不同或被改坏），读成 null——但人还在名单上：
-    // 因为一格认不出来就把人抹掉，那一排头像会凭空少一位。
+    // 第二条那个块号是字符串、档位是认不出的值（对端版本不同或被改坏），读成默认——
+    // 但人还在名单上：因为一格认不出来就把人抹掉，那一排头像会凭空少一位。
     expect(result.current.presencePeers).toEqual([
-      { clientId: 7, name: "小林", block: 1 },
-      { clientId: 8, name: "老周", block: null },
+      { clientId: 7, name: "小林", mode: "editing", block: 1 },
+      { clientId: 8, name: "老周", mode: "reading", block: null },
     ]);
   });
 

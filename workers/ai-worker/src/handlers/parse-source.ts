@@ -13,6 +13,7 @@ import {
 import { logger } from "../lib/logger.ts";
 import * as schema from "@astella/shared/db-schema";
 import { safeErrorMessage, SourceStatus } from "@astella/shared";
+import { MAX_SOURCE_TEXT_BYTES } from "@astella/shared/object-transfer-contracts";
 // 稳定 P1（2026-09-15 审计）：parse_source payload 的精确契约 + fail-closed 读取器
 // （与 API 生产端 source/service.ts 同源），替代此前的 `as string | undefined` 弱读。
 import { readParseSourceJobPayload } from "@astella/shared/job-payload-contracts";
@@ -1115,7 +1116,7 @@ export async function runParseSource(job: JobPayload) {
     if (typeof metadata.storageObjectKey === "string") {
       const key = metadata.storageObjectKey;
       if (!key.startsWith(`${job.workspaceId}/files/`) || key.includes("..") || key.includes("\\")) throw new Error("invalid source object reference");
-      const bytes = await getObjectBytes(key, 900_000);
+      const bytes = await getObjectBytes(key, MAX_SOURCE_TEXT_BYTES);
       if (bytes.length !== metadata.storageByteLength || createHash("sha256").update(bytes).digest("hex") !== metadata.storageSha256)
         throw new Error("stored source integrity mismatch");
       rawContent = new TextDecoder("utf-8", { fatal: true }).decode(bytes);

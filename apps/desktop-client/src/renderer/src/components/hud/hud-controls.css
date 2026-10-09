@@ -141,9 +141,12 @@
   top: calc(100% + 6px);
   /* The list sizes to its longest entry and never falls below a readable width,
      which matters for the chip-shaped trigger where 100% would be a few glyphs
-     wide and every label would break one character per line. */
+     wide and every label would break one character per line. The floor is a
+     variable because the open list moves to the browser top layer, where `100%`
+     means the window rather than the trigger; HudControls re-states it in px. */
+  --hud-picker-menu-min: 178px;
   width: max-content;
-  min-width: max(100%, 178px);
+  min-width: max(100%, var(--hud-picker-menu-min));
   max-width: 320px;
   max-height: 232px;
   margin: 0;

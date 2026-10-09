@@ -4,7 +4,7 @@ appId: com.asklins.astella
 # 全部用 ASCII，避免 GitHub 资产 URL、NSIS 差分下载与 Squirrel.Mac 在中文
 # 文件名上的边角问题。用户看到的名字另说——
 #   - macOS Dock / 关于面板：mac.extendInfo.CFBundleDisplayName
-#   - Windows 开始菜单与"应用和功能"：nsis.shortcutName / uninstallDisplayName
+#   - Windows 开始菜单与"已安装的应用"：apps/windows-installer/WindowsRegistration.cs
 #   - 窗口标题与界面文案：渲染层自己的品牌名
 productName: Astella
 copyright: Copyright © 2026 Astella
@@ -39,7 +39,7 @@ extraResources:
     to: deployment.json
 compression: maximum
 
-# `electron-builder.yml` 只回答"一个 target 长什么样"：出 nsis 安装包还是 dmg。
+# `electron-builder.yml` 描述应用目录与平台产物；Windows 安装器另由独立项目构建。
 # "这次打哪个架构"交给 package.json 里的 package:win:x64 / package:mac:arm64 / ...
 # 以及 .github/workflows/desktop-package.yml——两处都用 `--win --x64` 这类命令行
 # 开关覆盖，所以这里**故意不写 arch**，避免和脚本互相覆盖后打出没人要的架构。
@@ -65,10 +65,8 @@ mac:
   hardenedRuntime: true
 
 win:
-  target:
-    - target: nsis
-      arch:
-        - x64
+  # electron-builder 只产出 Electron 程序目录；Windows 安装器由独立 WPF 项目构建。
+  target: dir
   # 桌面学习房是单窗口应用，不需要管理员权限。显式写 asInvoker 而不是留默认：
   # 提权会让安装程序往 Program Files 写，用户目录下的免安装包和绿色版都用不了。
   requestedExecutionLevel: asInvoker
@@ -81,27 +79,6 @@ linux:
   category: Education
   target:
     - AppImage
-
-nsis:
-  # 2026-10-04 由 oneClick: false 改为 true。
-  #
-  # 原来选"向导式"是为了让用户自己挑安装目录，但**向导式安装器在无人值守的
-  # runner 上跑不了 /S**：它有一个 `PageEx custom` 的"选安装范围"页（nsDialogs 画的），
-  # NSIS 静默模式会跳过绘制，可 MultiUser 的模式判定仍需要一次显式决策，于是安装器
-  # 就那么一直等着——CI 上表现为安装 step 挂到超时，症状与"安装器坏了"完全一样。
-  #
-  # oneClick 模式没有那一页，/S 静默安装可靠（消费级 Electron 应用的通行做法：
-  # VS Code / Slack / Notion 都是一键装）。同时省掉一次提权交互。
-  # 代价：用户不能再自己挑安装目录，改为装到 %LOCALAPPDATA%\Programs\Astella。
-  oneClick: true
-  # 装完留一个开始菜单入口和桌面快捷方式。
-  createDesktopShortcut: true
-  createStartMenuShortcut: true
-  # 未签名的安装包被 SmartScreen 拦下时，"更多信息 → 仍要运行"这条路要能走通，
-  # 前提是用户知道去哪找。快捷方式与"应用和功能"里的条目都用中文显示名，
-  # 而安装目录与 exe 是 ASCII 的 Astella——两条各管一头。
-  shortcutName: 拾星笔记
-  uninstallDisplayName: 拾星笔记
 
 # 图标在 apps/desktop-client/build/（electron-builder 的 buildResources 默认目录）：
   # icon.icns 给 macOS，icon.ico 给 Windows，icon.png 是 1024×1024 的母版。

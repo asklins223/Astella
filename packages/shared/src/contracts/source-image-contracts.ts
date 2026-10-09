@@ -29,10 +29,14 @@ export const SOURCE_IMAGE_UPLOAD_PREFIX = "/api/uploads/";
  * 与 API 下载路由接受的对象键形状一致：
  *   - {workspaceId}/{notes|sources}/{ownerId}/{uuid}.{ext}
  *   - {workspaceId}/companion/{uuid}.{ext}   ← 伴星对话里用户上传的图（2026-10-06）
+ *   - {workspaceId}/imports/{userId}/{uuid}.{ext}   ← 导入 Markdown 时带上来的图片
+ *     （笔记还不存在，所以不能借 notes 那一段：下载闸门对 notes 形状硬要求资产已回填
+ *     所属笔记。这里与 `markdown_import` 正文的 {ws}/imports/{userId}/{uuid}.json 同段。）
  */
 const UUID_SEGMENT = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const IMAGE_EXTENSION_SEGMENT = "png|jpg|jpeg|gif|webp";
 const SOURCE_IMAGE_OBJECT_KEY_PATTERN = new RegExp(
-  `^${UUID_SEGMENT}/(?:(?:notes|sources)/${UUID_SEGMENT}/${UUID_SEGMENT}|companion/${UUID_SEGMENT})\\.(?:png|jpg|jpeg|gif|webp)$`,
+  `^${UUID_SEGMENT}/(?:(?:notes|sources|imports)/${UUID_SEGMENT}/${UUID_SEGMENT}|companion/${UUID_SEGMENT})\\.(?:${IMAGE_EXTENSION_SEGMENT})$`,
 );
 
 /** worker 只按这四种 content-type 落盘（见 `EXT_FROM_MIME`），据此收窄通道。 */

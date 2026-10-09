@@ -146,7 +146,8 @@ describe("NotebookSurface · 手动定版（审计 F36）", () => {
     const button = screen.getByRole("button", { name: "保存版本" });
     expect(button).toBeTruthy();
     // 提示语里指的那个名字，屏上必须真有。
-    expect(saveLine()).toContain("服务器上的版本一致");
+    expect(saveLine()).toBe("已同步");
+    expect(document.querySelector(".notebook-save-status")?.getAttribute("title")).toContain("服务器上的版本一致");
     // 干净态不摆第二颗带"保存"字样的按钮：那时「重试保存」必须不在屏上。
     expect(screen.queryByRole("button", { name: /重试保存/ })).toBeNull();
   });

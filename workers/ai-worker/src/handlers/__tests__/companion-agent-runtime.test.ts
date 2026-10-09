@@ -27,6 +27,7 @@ import {
 } from "../companion-step-plan.ts";
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   canUseCompanionAgentTool,
@@ -1165,8 +1166,8 @@ test("工具兜底只处理 required 能力错误，不吞其他错误或同模�
 });
 
 test("分类器不可用时不强制工具，不继承历史执行授权", async () => {
-  // null 是分类未完成，不强制动作。运行宿主仅保留只读工具面，当前提问
-  // 仍可回答；只有明确 true 才开放当前权限允许的行动能力。
+  // null 是分类未完成，不强制动作：她这一轮不必去调工具，也不因为上一轮办过事就接着办。
+  // 工具面不在这条判据里（2026-10-09）——读不到判定时，她照样拿到权限档允许的全部工具。
   assert.equal(companionStepRequiresTool(null), false, "意图未知不强制工具，也不继承旧任务授权");
   assert.equal(companionStepRequiresTool(false), false, "明确说了不要工具，就别强制");
   assert.equal(companionStepRequiresTool(true), true);
@@ -1179,7 +1180,7 @@ test("分类器不可用时不强制工具，不继承历史执行授权", async
     },
   } as unknown as AIProvider;
   const decision = await interpretCompanionTurn(broken, [{ role: "user", content: "帮我把那篇笔记打开" }], toolIntentTaskContext());
-  assert.equal(decision.toolUse, "uncertain", "解释失败保留不确定性，不能放开写工具");
+  assert.equal(decision.toolUse, "uncertain", "解释失败要留在不确定，不能悄悄判成闲聊");
   assert.equal(companionStepRequiresTool(null), false);
 });
 
@@ -1296,4 +1297,30 @@ test("mock 守 provider 合同：required 必回工具调用，工具面为空�
   assert.equal((await interpretCompanionTurn(mock, [
     { role: "user", content: "打开那篇笔记【mock:wants-tool】" },
   ], toolIntentTaskContext())).toolUse, "act", "整条链（mock 答复 → 分类器解析）要接得上");
+});
+
+/**
+ * 工具面装配守卫（2026-10-09 线上）。
+ *
+ * 用户说「生成一片新笔记，然后开启共享」，她回「这一轮我手上新建笔记没有入口」，
+ * 下一轮又改口"入口有，我说错了"。查出来不是她撒谎：那一轮 `companion_create_note`
+ * **确实没被发给她**。共享没有对应能力 ⇒ 分类器记下一条歧义 ⇒ act 被降成 uncertain
+ * （agent-core/runtime/attention.ts:40）⇒ 运行时按 uncertain 把全部写类工具摘掉。
+ * 一个做不到的请求否掉了做得到的那个，而她只能照自己看到的那份清单说话。
+ *
+ * 本仓库这份契约其实早就写在两处：`companion-agent-registry.ts` 的
+ * "filtered by current permissions and data-egress policy"，以及本文件开头那句
+ * "工具面：每轮全给、只按权限档过滤"。这里把它钉住，因为它是**装配形状**上的性质，
+ * 单测跑不到整条循环（循环归 postgres 集成测）。
+ */
+test("工具面只由权限档与数据外发政策装配，不再被本轮判定摘除", () => {
+  const source = readFileSync(new URL("../companion-agent-runtime.ts", import.meta.url), "utf8");
+  assert.match(source,
+    /const availableDefinitions = resolveAllCompanionAgentTools\(meta\.permissionLevel, event\.constraints\)/,
+    "工具面必须来自那份按声明过滤的目录，不是另起一处清单");
+  const assembly = /^  const definitions = ([^;]+);$/m.exec(source);
+  assert.ok(assembly, "找不到工具面装配那一句（形状变了，这条判据要先跟着改）");
+  assert.equal(assembly[1].trim(), "availableDefinitions",
+    `工具面又被加了筛选（${assembly[1].trim()}）：能不能被她看见只该由权限档与外发政策决定，`
+    + "要不要真写由 riskClass、确认门与执行侧复核决定");
 });

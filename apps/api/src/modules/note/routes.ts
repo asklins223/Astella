@@ -16,6 +16,9 @@ import {
   NoteNotDeletedError,
 } from "./service.ts";
 import { requireSession, requireOwner, isWorkspaceOwner } from "../identity/middleware.ts";
+import { and, inArray, isNull } from "drizzle-orm";
+import { notes } from "@astella/shared/db-schema/note";
+import { visibleNotesCondition } from "./visibility.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { recordWorkspaceAudit } from "../audit/service.ts";
 import { parseBody } from "../../lib/validate.ts";
@@ -23,7 +26,11 @@ import { parseQuery, paginationQuerySchema, uuidParamSchema } from "../../lib/pa
 import { deleteObject } from "../../lib/object-storage.ts";
 import { logger } from "../../lib/logger.ts";
 import { projectNoteDetailV1, projectNoteSaveReceiptV1 } from "./note-projection.ts";
-import { applyUploadedDocUpdate, publishRestoredNoteDoc } from "./collaboration.ts";
+import {
+  applyUploadedDocUpdate,
+  notePresenceSnapshot,
+  publishRestoredNoteDoc,
+} from "./collaboration.ts";
 import { readNoteDocState } from "./document-state.ts";
 import { noteSaveRequestV1Schema } from "@astella/shared/note-save-contracts";
 import { noteShareScopeRequestV1Schema } from "@astella/shared/note-share-contracts";
@@ -49,6 +56,44 @@ export async function noteRoutes(app: FastifyInstance) {
       }),
     );
     return result;
+  });
+
+  // 「此刻谁开着哪一篇」（共享空间在场）。
+  //
+  // 只读服务端那份按连接计的登记表，不碰库、不落库：人走了那一格就没了，所以这一条
+  // 说不出"谁读过这篇"——那也不是它要说的话。
+  //
+  // 可见性仍然只在 `visibleNotesCondition` 一处。登记的是"连上了这篇的人"，而一篇没共享
+  // 出去的笔记本来就连不上（`onAuthenticate` 那一档），这里那一道过滤是给**作者刚撤回共享、
+  // 或把这篇丢进回收站**那一刻兜底的：连接还没断，但这一页不该再向别人报出那一格。
+  app.get("/notes/presence", async (req, reply) => {
+    const snapshot = notePresenceSnapshot(req.session.workspaceId);
+    reply.header("Cache-Control", "private, no-store");
+    if (snapshot.length === 0) return { items: [] };
+    const visible = await withWorkspaceTransaction(scopeOfSession(req.session), (transaction) =>
+      transaction
+        .select({ id: notes.id })
+        .from(notes)
+        .where(and(
+          inArray(notes.id, snapshot.map((item) => item.noteId)),
+          isNull(notes.deletedAt),
+          visibleNotesCondition(req.session.userId),
+        )),
+    );
+    const readable = new Set(visible.map((row) => row.id));
+    return {
+      items: snapshot
+        .filter((item) => readable.has(item.noteId))
+        .map((item) => ({
+          noteId: item.noteId,
+          viewers: item.viewers.map((viewer) => ({
+            userId: viewer.userId,
+            displayName: viewer.displayName,
+            mode: viewer.mode,
+            block: viewer.block,
+          })),
+        })),
+    };
   });
 
   // Desktop NOTE-READ-PROJECTION-01: the desktop adapter consumes this strict

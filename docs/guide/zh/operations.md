@@ -50,7 +50,7 @@ prepare 同步 API、Worker、shared、desktop 的 package.json／lockfile 和�
 | 桌面平台 | 本地打包 | 自动安装包发布 |
 | --- | --- | --- |
 | macOS | `package:mac:arm64`／`package:mac:x64`，dmg + zip | 当前工作流覆盖 |
-| Windows | `package:win:x64`，NSIS | 当前工作流覆盖 |
+| Windows | `package:win:x64`，独立 .NET / WPF 安装器 | 当前工作流覆盖 |
 | Linux | `package:linux:x64`，AppImage | 可单独打包，当前统一发布工作流未覆盖 |
 
 打包配置使用 `electron-builder.config.cjs` 加 YAML。产物前缀为 ASCII `astella-`，更新器直连 GitHub Releases，与 API 是否可用分开。无 Apple 证书使用 ad-hoc 签名，首次启动仍可能需系统允许；签名通过不等于真实跨版本替换已验收。

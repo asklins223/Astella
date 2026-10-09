@@ -11,11 +11,11 @@
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Fastify 5](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
 [![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![License MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm_Noncommercial-blue)](LICENSE)
 
 [中文](README.md) · [English](README.en.md) · [使用与开发手册](docs/guide/README.md)
 
-当前版本：`v1.3.3`（仓库版本；服务端与桌面客户端共用）
+当前版本：`v1.3.4`（仓库版本；服务端与桌面客户端共用）
 
 </div>
 
@@ -29,7 +29,7 @@
 
 | 能力 | 可以做什么 |
 | --- | --- |
-| 来源库 | 采集文本、Markdown、代码和 URL，查看解析状态与原文 |
+| 来源库 | 采集文本、Markdown、代码与 URL，也能拖入 PDF 与 Word（.docx）在本机解析成正文与图片，查看解析状态与原文 |
 | 笔记册页 | 阅读、编辑、源码三种视图；自动保存工作稿，按「保存」留下版本；全屏阅读与编辑，公式、表格、Mermaid 和库内笔记链接 |
 | 原文旁的学习 | 速看、回想、往外学、学习记录分别使用；选文写批注、原句解读或发给伴星；拓展草稿逐篇收下后成为新笔记 |
 | 伴星写笔记 | 明确要求后生成一篇可编辑笔记，检索并关联实际可见的库内笔记；也能按当前光标、选区或段落补写、替换和删除正文 |
@@ -193,6 +193,6 @@ make verify
 
 桌面更新直连 GitHub Releases。打包配置支持 macOS、Windows 和 Linux；当前自动发布安装包的工作流覆盖 macOS 和 Windows，Linux 可单独打包。macOS 无 Apple 证书时使用 ad-hoc 签名，首次打开仍可能需要系统授权。部署凭据、迁移回退与对象传输见 [服务器部署](docs/guide/zh/deployment.md)。
 
-源码采用 [MIT 许可](LICENSE)。随包分发的 Live2D SDK、模型和其他素材有各自的许可及再分发限制，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；品牌素材见 [assets/brand/README.md](assets/brand/README.md)。
+项目自有源码和文档采用 [PolyForm Noncommercial 1.0.0](LICENSE)，允许许可规定的非商业用途；商业用途需另行取得授权。该许可属于源码可用许可，不属于 OSI 定义的开源许可。2026-10-09 起的新版本采用此许可，此前已按 MIT 发布的版本仍遵循原授权。随包分发的 Live2D SDK、模型和其他素材有各自的许可及再分发限制，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；品牌素材见 [assets/brand/README.md](assets/brand/README.md)。
 
 当前仍需持续验证的部分包括长对话自然度与等待稳定性、压缩后的上下文接续、跨天记忆与合作方法的长期效果，以及真实麦克风和安装包更新体验。功能代码、测试通过和长期效果各有不同的证据，具体限制随相关方案与验证记录更新。

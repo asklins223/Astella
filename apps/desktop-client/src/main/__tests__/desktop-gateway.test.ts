@@ -855,6 +855,42 @@ describe("DesktopGateway", () => {
     expect(requested).toEqual([JSON.stringify({ inviteToken: "invite-token-1" })]);
   });
 
+  it("reports an already-committed join when the session re-read fails", async () => {
+    // 加入是两次往返：`POST /auth/join-workspace` 整笔落库，再 `GET /auth/me` 投影回本机。
+    // 第二跳失败不能把已经成功的加入说成失败——那正是"第一次报错、第二次说码被用过、
+    // 第三张新码说已经在空间里"这一串的来源。
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (url.endsWith("/health")) return healthResponse();
+      if (url.endsWith("/auth/join-workspace")) {
+        return new Response(JSON.stringify({ workspaceId: "00000000-0000-4000-8000-000000000099", workspaceName: "Studio", role: "member" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: "internal_error" }), { status: 500 });
+    });
+
+    const gateway = new DesktopGateway(environment());
+    await gateway.connect();
+    await expect(ns_auth.joinWorkspace(gateway.gatewayTransport, "invite-token-1", "request-join"))
+      .rejects.toMatchObject({ code: "join_committed_session_stale", retry: "resync_first" });
+  });
+
+  it("does not soften a join the server actually refused", async () => {
+    // 反面对照：409 `already_consumed` 发生在 POST 那一跳，库里什么都没写，
+    // 必须原样把域名失败传出去，不能被"已提交"那格吞掉。
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (url.endsWith("/health")) return healthResponse();
+      return new Response(JSON.stringify({ error: "already_consumed" }), { status: 409 });
+    });
+
+    const gateway = new DesktopGateway(environment());
+    await gateway.connect();
+    await expect(ns_auth.joinWorkspace(gateway.gatewayTransport, "invite-token-1", "request-join"))
+      .rejects.toMatchObject({ code: "invite_consumed" });
+  });
+
   it("uses only strict V2 paths and keeps main-owned idempotency stable per command", async () => {
     const requestedIdempotencyKeys: string[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -2613,6 +2649,18 @@ describe("DesktopGateway · 笔记正文的离线提交（批次 4.4）", () => 
       via: "queued",
     });
     expect(uploaded).toEqual([]);
+  });
+
+  it("实时帧已包含提交增量时，仍确认落盘，不提前报 unchanged", async () => {
+    const { base, gateway, uploaded } = harness();
+    await gateway.connect();
+    await ns_note.getNoteDocState(gateway.gatewayTransport, NOTE_ID);
+    const update = editTo(base, "已在实时帧出现，还要确认保存的一句");
+    ns_note.noteDocLocalSession(gateway.gatewayTransport, NOTE_ID).state.applyRemote(update);
+    const receipt = await ns_note.syncNoteDocUpdate(gateway.gatewayTransport, NOTE_ID, update);
+    expect(receipt).toMatchObject({ via: "uploaded", revision: 5, savedAt: "2026-09-21T00:00:09.000Z" });
+    expect(uploaded).toHaveLength(1);
+    expect(contentsAfter(base, uploaded[0]!)).toEqual(["标题", "已在实时帧出现，还要确认保存的一句"]);
   });
 
   it("恢复后一次把攒下的都交掉，两条改动服务端都看得到", async () => {

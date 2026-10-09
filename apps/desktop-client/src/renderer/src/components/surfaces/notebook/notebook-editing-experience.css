@@ -1,0 +1,85 @@
+/* The document leads; modes and learning tabs keep their place with less visual weight while writing. */
+.hud-surface .notebook-page-title[data-editing] { padding: 10px 18px; border-radius: 20px; }
+.hud-surface .notebook-page-title[data-editing] h1 { font-size: 19px; }
+.hud-surface .notebook-page-title[data-editing] p { display: none; }
+.hud-surface .notebook-desk[data-editing]:not([data-fullscreen]) .notebook-volume__bookmark { min-height: 36px; padding: 5px 13px; font-size: 13px; border-width: 1px; box-shadow: 0 2px 0 #b3ba9a, 0 3px 6px #2938290d; }
+.hud-surface .notebook-desk[data-editing]:not([data-fullscreen]) .notebook-volume__bookmark small { display: none; }
+.hud-surface .notebook-desk[data-editing]:not([data-fullscreen]) .notebook-desk__rack { min-height: 50px; padding: 7px 18px; gap: 7px 10px; }
+.hud-surface .notebook-desk[data-editing]:not([data-fullscreen]) .notebook-desk__utilities { gap: 6px; }
+.hud-surface .notebook-desk[data-editing] .notebook-card-entry { min-height: 32px; padding: 5px 8px; border: 0; background: transparent; box-shadow: none; color: var(--hud-green); }
+.hud-surface .notebook-desk[data-editing] .notebook-card-entry:hover { background: #e9efdf; }
+.hud-surface .notebook-desk[data-editing]:not([data-fullscreen]) .notebook-volume__tools .editor-tools { padding-block: 4px; border-bottom-style: solid; }
+.hud-surface .notebook-desk[data-editing]:not([data-fullscreen]) .notebook-desk__scroll { padding-top: 22px; }
+.hud-surface .notebook-desk[data-editing]:not([data-fullscreen]) .notebook-volume__article-head { margin-bottom: 20px; padding-bottom: 16px; }
+.hud-surface .notebook-desk[data-editing]:not([data-fullscreen]) .notebook-volume__meta { margin-top: 8px; gap: 5px 12px; }
+
+/* One entry owns visibility, names, modes and the author's sharing action. */
+.hud-surface .notebook-sharing { display: inline-flex; min-width: 0; }
+.hud-surface .notebook-sharing > .writing-control-trigger { min-height: 34px; padding: 5px 9px; gap: 6px; border-radius: 12px; color: #52765a; font-size: 12px; }
+.hud-surface .notebook-sharing > .writing-control-trigger:focus-visible { outline: 2px solid #6d9a86; outline-offset: 3px; }
+.hud-surface .notebook-sharing__scope { font-weight: 650; }
+.hud-surface .notebook-sharing__presence { display: inline-flex; align-items: center; gap: 7px; padding-left: 7px; border-left: 1px solid #d3dfca; }
+.hud-surface .notebook-sharing__presence .tag { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: #768270; font-size: 11px; font-weight: 450; }
+.hud-surface .notebook-sharing .notebook-presence { padding-right: 5px; flex: none; }
+.hud-surface .notebook-sharing .notebook-presence__peer { width: 20px; height: 20px; border-color: #fffbef; background: #e0e8d7; font-family: "Noto Sans SC Variable", sans-serif; }
+.hud-surface .notebook-sharing .notebook-presence__peer[data-mode="editing"] { background: #bed9bd; color: #365e46; }
+.hud-surface .notebook-presence__more { margin-left: 7px; color: #698069; font-size: 10px; }
+.hud-surface .notebook-desk__presence { gap: 0; }
+.hud-surface .notebook-focus-ribbon__presence { padding: 0 2px; border: 0; }
+.hud-surface .notebook-focus-ribbon .notebook-sharing > .writing-control-trigger { padding-inline: 8px; }
+.hud-surface .notebook-focus-ribbon .notebook-sharing .notebook-presence__peer { width: 18px; height: 18px; }
+.note-format-popup.notebook-sharing-popup { width: 304px; padding: 16px; border-color: #d7dfcc; border-radius: 20px; background: #fffbef; color: #405447; }
+.notebook-sharing-popup .note-format-popup__caption { padding: 0 0 9px; color: #788674; letter-spacing: 0; }
+.notebook-sharing-popup__scope { margin: 0 0 5px; font-size: 16px; font-weight: 750; }
+.notebook-sharing-popup__hint { margin: 0; color: #768270; font-size: 12px; line-height: 1.75; }
+.notebook-sharing-popup__people { margin: 14px 0 0; padding: 11px 0; border-top: 1px solid #dce0ce; list-style: none; }
+.notebook-sharing-popup__people li { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 5px 0; }
+.notebook-sharing-popup__people li > span { min-width: 0; overflow-wrap: anywhere; }
+.notebook-sharing-popup__people small { flex: none; color: #789074; font-size: 11px; }
+.notebook-sharing-popup__failure { margin: 12px 0; color: #9a654a; font-size: 12px; line-height: 1.7; }
+.notebook-sharing-popup__actions { display: flex; flex-wrap: wrap; gap: 7px 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #dce0ce; }
+.notebook-sharing-popup__actions .text-action { padding: 6px 10px; border-radius: 10px; color: #52765a; font: 600 12px/1.5 "Noto Sans SC Variable", sans-serif; text-decoration: none; }
+.notebook-sharing-popup__actions .note-share-confirm { flex-basis: 100%; color: #768270; font-size: 12px; line-height: 1.75; }
+.notebook-sharing-popup__actions p { flex-basis: 100%; }
+
+/* Short, truthful save feedback stays visible even with the fullscreen tools folded away. */
+.hud-surface .notebook-save-status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.hud-surface .notebook-save-status::before { content: ""; width: 6px; height: 6px; flex: none; border-radius: 50%; background: #79a383; }
+.hud-surface .notebook-save-status[data-state="pending"]::before { background: #bb9855; }
+.hud-surface .notebook-save-status[data-state="error"]::before { background: #b76c50; }
+.hud-surface .notebook-focus-ribbon > * { flex-shrink: 0; }
+.hud-surface .notebook-focus-ribbon__status { display: flex; flex: none; min-width: max-content; align-items: center; padding: 0 10px; border-left: 1px solid #dce5d0; }
+.hud-surface .notebook-focus-ribbon__status .notebook-save-status { padding: 0; border: 0; background: transparent; box-shadow: none; color: #788674; font-size: 11px; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__save-tray { justify-content: flex-end; gap: 10px; padding: 12px 4px 4px; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__status { flex-basis: 100%; }
+.hud-surface .notebook-desk[data-fullscreen] .notebook-desk__tool-island { max-width: calc(100% - 112px - var(--notebook-focus-ribbon-width, 410px) - 40px); }
+.hud-surface .notebook-focus-save-error { top: auto; bottom: 22px; max-width: min(440px, calc(100% - var(--notebook-focus-seat) - 64px)); }
+
+/* Fixed tools have an explicit overflow page; all format choices remain reachable without sideways scrolling. */
+.hud-surface .notebook-volume__tools .editor-tools > * { flex-shrink: 0; }
+.hud-surface .notebook-volume__tools .editor-tools .writing-format-group { flex-wrap: nowrap; }
+.hud-surface .editor-tools[data-compact] .writing-control-trigger { padding-inline: 7px; gap: 3px; }
+.hud-surface .editor-tools[data-compact] .editor-tools__insert-label,
+.hud-surface .editor-tools[data-compact] .writing-control-trigger[aria-label="段落排版"] > span { display: none; }
+.hud-surface .editor-tools[data-compact] .writing-format-group__divider { margin-inline: 3px; }
+.hud-surface .notebook-desk[data-fullscreen][data-tools-row] .notebook-desk__tool-island { top: calc(var(--notebook-focus-tool-top) + 56px); max-width: calc(100% - 136px); }
+.hud-surface .notebook-desk[data-fullscreen][data-tools-row][data-editing] .notebook-desk__scroll { padding-top: 154px; scroll-padding-top: 144px; }
+.note-format-popup.editor-tools-overflow { width: 280px; color: #405447; border-color: #d7dfcc; border-radius: 18px; background: #fffbef; }
+.editor-tools-overflow__commands button { display: flex; align-items: center; gap: 8px; width: auto; height: auto; padding: 8px 9px; border: 0; border-radius: 9px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.editor-tools-overflow__commands button:hover:not(:disabled), .editor-tools-overflow__commands button[aria-pressed="true"] { background: #e4ecd9; color: #365e46; }
+.editor-tools-overflow__commands button:disabled { opacity: .45; cursor: default; }
+.editor-tools-overflow__commands button:focus-visible, .editor-tools-overflow__headings button:focus-visible { outline: 2px solid #6d9a86; outline-offset: 1px; }
+.editor-tools-overflow__headings { display: flex; gap: 2px; padding-bottom: 10px; margin-bottom: 6px; border-bottom: 1px solid #dce0ce; }
+.editor-tools-overflow__headings button { flex: 1; padding: 7px 2px; }
+.editor-tools-overflow .writing-brush-hint { grid-column: 1 / -1; }
+
+@container (max-width: 780px) {
+  .hud-surface .notebook-desk[data-editing]:not([data-fullscreen]) .notebook-desk__rack { padding-inline: 12px; }
+  .hud-surface .notebook-desk__utilities .notebook-sharing__presence .tag { display: none; }
+  .hud-surface .notebook-desk[data-editing]:not([data-fullscreen]) .notebook-desk__utilities { flex-wrap: wrap; }
+}
+@media (max-width: 900px) {
+  .hud-surface .notebook-focus-ribbon__tools > span { display: none; }
+  .hud-surface .notebook-focus-ribbon .notebook-sharing__presence .tag { display: none; }
+  .hud-surface .notebook-focus-ribbon__status { padding-inline: 7px; }
+}

@@ -32,7 +32,7 @@
 
 import { and, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { DomainError } from "@astella/shared";
-import { adoptWorkspaceContext, withActorTransaction, withWorkspaceTransaction } from "../../db/client.ts";
+import { adoptWorkspaceContext, withActorTransaction, withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
 import { inviteCodes, onboardingStates, users, workspaceMembers, workspaces } from "@astella/shared/db-schema/identity";
 import { sessions } from "@astella/shared/db-schema/session";
 import { deleteObject } from "../../lib/object-storage.ts";
@@ -143,6 +143,36 @@ export class JoinWorkspaceError extends DomainError {
   }
 }
 
+/** `joinWorkspaceByInviteToken` 的成功形状：加入者看得到这一个空间。 */
+type JoinedWorkspace = { workspaceId: string; workspaceName: string; role: string };
+
+/**
+ * 读「这次加入是否已经落在库里」，供本人重试同一条邀请码时给幂等成功。
+ *
+ * 取数顺序照抄正常那条路（读 `workspaces` → `adoptWorkspaceContext` → 读
+ * `workspaceMembers`，与它同一族调用），这样两条路过的是同一组 RLS 策略，
+ * 不额外放宽隔离。角色取成员行上的那一份：转让过所有权的话，它与当初那条邀请
+ * 的档已经不是一个事实。
+ */
+async function readCommittedJoin(
+  tx: ApiTransaction,
+  userId: string,
+  workspaceId: string,
+): Promise<JoinedWorkspace | null> {
+  const ws = await tx.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
+  if (!ws) return null;
+  await adoptWorkspaceContext(tx, workspaceId);
+  const membership = await tx.query.workspaceMembers.findFirst({
+    where: and(
+      eq(workspaceMembers.workspaceId, workspaceId),
+      eq(workspaceMembers.userId, userId),
+      isNull(workspaceMembers.leftAt),
+    ),
+  });
+  if (!membership) return null;
+  return { workspaceId, workspaceName: ws.name, role: membership.role ?? "member" };
+}
+
 /**
  * ADR-0009: 已登录用户通过邀请码加入协作工作区。
  * 不创建新用户，只创建 membership 记录。
@@ -150,14 +180,14 @@ export class JoinWorkspaceError extends DomainError {
 export async function joinWorkspaceByInviteToken(
   userId: string,
   token: string,
-): Promise<{ workspaceId: string; workspaceName: string; role: string } | JoinWorkspaceError> {
+): Promise<JoinedWorkspace | JoinWorkspaceError> {
   // 验证邀请码
   if (!isValidInvitationTokenLocal(token)) {
     return new JoinWorkspaceError("not_found");
   }
   const tokenHash = hashInvitationTokenLocal(token);
 
-  let result: { workspaceId: string; workspaceName: string; role: string } | null;
+  let result: JoinedWorkspace | null;
   try {
     // 边界事务：进来时只知道"手里这串邀请码"，空间 id 要读出来才知道。
     // actor 是加入者本人；令牌哈希进 `app.session_token`，让邀请码那一行的
@@ -198,6 +228,7 @@ export async function joinWorkspaceByInviteToken(
               consumedBy: inviteCodes.consumedBy,
               revokedAt: inviteCodes.revokedAt,
               expiresAt: inviteCodes.expiresAt,
+              workspaceId: inviteCodes.workspaceId,
             })
             .from(inviteCodes)
             .where(eq(inviteCodes.tokenHash, tokenHash))
@@ -205,7 +236,19 @@ export async function joinWorkspaceByInviteToken(
           if (existing.length === 0) return null;
           const row = existing[0];
           if (row.revokedAt) throw new JoinWorkspaceError("revoked");
-          if (row.consumedBy) throw new JoinWorkspaceError("already_consumed");
+          if (row.consumedBy) {
+            // **本人**消费过这串码 = 上一次加入已经整笔提交（消费与成员行在同一事务里，
+            // 且成员行先写、码最后翻）。这时报 `already_consumed` 说的是假话：界面把它
+            // 解释成"码被用掉了，去要一张新的"，那张新码接着报 `already_member`，一次
+            // 成功的加入在用户眼前变成三条互相矛盾的报错。按库里的事实回答——成员行还
+            // 在就幂等成功，重试不再需要新码。
+            // 只认「活跃」成员行：他加入后又自己退出去过，这串码确实已经烧掉了。
+            if (row.consumedBy === userId) {
+              const committed = await readCommittedJoin(tx, userId, row.workspaceId);
+              if (committed) return committed;
+            }
+            throw new JoinWorkspaceError("already_consumed");
+          }
           if (row.expiresAt && row.expiresAt < now) throw new JoinWorkspaceError("expired");
           return null;
         }

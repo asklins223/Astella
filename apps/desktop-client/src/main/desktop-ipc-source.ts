@@ -273,6 +273,7 @@ import {
   createCompanionLearningRunContextGrantRequestV1Schema,
 } from "@astella/shared/companion-conversation-contracts";
 import {
+  SOURCE_IMAGE_MAX_BYTES,
   sourceImageGetRequestV1Schema,
   sourceImageGetResultV1Schema,
 } from "@astella/shared/source-image-contracts";
@@ -541,6 +542,18 @@ channel(DESKTOP_IPC_CHANNELS.sourceList, sourceListInputSchema, async (_event, _
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_source.getSourceImage(gateway.gatewayTransport, input.request, input.meta.requestId);
   }, sourceImageGetResultV1Schema)
+
+  channel(DESKTOP_IPC_CHANNELS.sourceImageUpload, z.strictObject({ meta: requestMetaSchema, request: noteImageUploadRequestV1Schema }), async (_event, _window, input) => {
+    requireM2Route(contract, "source.library");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    const capabilities = await ns_source.getCapabilities(gateway.gatewayTransport, input.meta.requestId);
+    if (capabilities.actionCapabilities["source.create"] !== "allowed") throw new DesktopGatewayFailure("forbidden", "never");
+    const bytes = Buffer.from(input.request.bytesBase64, "base64");
+    if (!bytes.length || bytes.length > SOURCE_IMAGE_MAX_BYTES) throw new DesktopGatewayFailure("validation", "never");
+    const url = await ns_source.uploadBundleImage(gateway.gatewayTransport, { fileName: input.request.fileName, mimeType: input.request.mimeType, bytes }, input.meta.requestId);
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return { version: 1 as const, url };
+  }, z.strictObject({ version: z.literal(1), url: z.string().min(1).max(512) }));
 
 channel(DESKTOP_IPC_CHANNELS.artifactEnsure, artifactEnsureInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "note.detail");

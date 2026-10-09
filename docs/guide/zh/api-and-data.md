@@ -240,6 +240,7 @@ hijack 之后的响应**不经过 `onSend`**，所以全局安全头不适用，
 | `POST /uploads/avatars` | 2MB（`req.file({limits})` 覆写；`MAX_IMAGE_SIZE` 10MB、`MAX_AVATAR_SIZE` 2MB 在 `modules/upload/upload-service.ts`） | `modules/upload/` |
 | `POST /v2/notes/:id/doc-update` | `bodyLimit` 8MB 只是粗筛，真正判据是**解码后字节数** ≤ 2MB（`NOTE_DOC_UPDATE_MAX_BYTES`），否则回 `update_too_large` | `modules/note/` |
 | `POST /import/markdown` | `bodyLimit` 50MB，与 schema 上界对齐（100 条 × 500KB） | `modules/import/` |
+| `POST /sources` 与 `source_text` 直传 | 一份正文 10 MB（`MAX_SOURCE_TEXT_BYTES`，只有共享合同那一个源：客户端拦一次、存储用途拦一次、Worker 回读再验一次）；这一发的 `bodyLimit` 是它再加 1MB，因为没配对象存储时正文走 JSON body | `modules/source/`、`modules/storage/` |
 | 其他 JSON 路由 | Fastify 默认 1MiB | — |
 
 ## API 侧的测试入口

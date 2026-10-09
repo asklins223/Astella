@@ -7,6 +7,9 @@ import type { ObjectTransferDownload } from "@astella/shared/object-transfer-con
  *
  * - uploadNoteImage      — POST /uploads/images：笔记归属校验 → 类型/magic bytes/
  *                          尺寸校验 → 对象存储写入 → noteImageAssets 登记；
+ * - uploadCompanionImage / uploadImportedImage
+ *                        — 不挂笔记的图片（伴星对话图、导入 Markdown 随文带进来的图）：
+ *                          同一套校验 → 对象存储写入 → 登记资产，key 段名各自决定；
  * - uploadAvatar         — POST /uploads/avatars：同上校验 → 对象存储写入 →
  *                          users.avatarUrl 行锁读改写 → 旧头像回收；
  * - downloadUploadObject — GET /uploads/*：路径遍历防御 → 租户/用户归属校验 →
@@ -102,14 +105,17 @@ export type NoteImageUploadResult =
   | { ok: false; reason: NoteImageUploadFailure };
 
 /**
- * POST /uploads/companion-images 失败原因：与笔记图片同一套校验，
+ * 不挂在任何笔记下的图片上传失败原因：与笔记图片同一套校验，
  * 只少一个 `note_not_found`（这条路径没有笔记校验这一关）。
+ *
+ * 伴星对话图（`POST /uploads/companion-images`）与导入 Markdown 随文带进来的图
+ * （`markdown_import_image` 用途）共用这一套，所以类型名也按「不挂笔记」取。
  */
-export type CompanionImageUploadFailure = Exclude<NoteImageUploadFailure, "note_not_found">;
+export type DetachedImageUploadFailure = Exclude<NoteImageUploadFailure, "note_not_found">;
 
-export type CompanionImageUploadResult =
+export type DetachedImageUploadResult =
   | { ok: true; body: NoteImageUploadBody }
-  | { ok: false; reason: CompanionImageUploadFailure };
+  | { ok: false; reason: DetachedImageUploadFailure };
 
 /** POST /uploads/avatars 成功响应体。 */
 export interface AvatarUploadBody {
@@ -280,19 +286,19 @@ export async function uploadNoteImage(
 }
 
 /**
- * 伴星对话图片上传（2026-10-06 输入框传图）：POST /uploads/companion-images。
+ * 把一张**不挂笔记**的图片落进对象存储并登记 `note_image_assets`。
  *
- * 与笔记图片共用同一套文件校验与 `note_image_assets` 登记，唯一区别是
- * **不挂在任何笔记下**（`uploaded_for_note_id = NULL`，该列本就可空）——
- * 对话里的图不属于笔记，也不该在笔记被删时被连带 404。
- * 对象键 `{workspaceId}/companion/{uuid}.{ext}`，下载路由按同一形状放行。
+ * 与笔记图片共用同一套文件校验与登记，唯一区别是 `uploaded_for_note_id = NULL`
+ * （该列本就可空）——它不属于任何笔记，也不该在笔记被删时被连带 404。
+ * 对象键由调用方给（两个入口的段名不同），下载路由按同一形状放行。
  *
  * 不含 `note_not_found` 失败原因——这条路径没有笔记校验这一关。
  */
-export async function uploadCompanionImage(
+async function storeDetachedImage(
   scope: WorkspaceTransactionContext,
   input: { file: UploadFileHandle; staging?: { key: string; etag: string } },
-): Promise<CompanionImageUploadResult> {
+  objectKeyFor: (ext: string) => string,
+): Promise<DetachedImageUploadResult> {
   const { file } = input;
 
   if (!ALLOWED_IMAGE_TYPES.includes(file.mimetype as typeof ALLOWED_IMAGE_TYPES[number])) {
@@ -323,8 +329,7 @@ export async function uploadCompanionImage(
     return { ok: false, reason: "pixel_count_exceeded" };
   }
 
-  const ext = extFromMimeType(file.mimetype);
-  const objectKey = `${scope.workspaceId}/companion/${randomUUID()}.${ext}`;
+  const objectKey = objectKeyFor(extFromMimeType(file.mimetype));
 
   try {
     await persistObject(objectKey, buffer, file.mimetype, input.staging);
@@ -353,15 +358,15 @@ export async function uploadCompanionImage(
             createdBy: scope.userId,
           })
           .returning();
-        if (!registered) throw new Error("companion image asset insert returned no row");
+        if (!registered) throw new Error("image asset insert returned no row");
         return registered;
       },
     );
   } catch (err) {
     await deleteObject(objectKey).catch((cleanupError) => {
-      logger.error({ err: cleanupError, objectKey }, "failed to clean up companion image after asset persistence failure");
+      logger.error({ err: cleanupError, objectKey }, "failed to clean up image after asset persistence failure");
     });
-    logger.error({ err, objectKey }, "failed to persist companion image asset");
+    logger.error({ err, objectKey }, "failed to persist detached image asset");
     return { ok: false, reason: "asset_persist_failed" };
   }
 
@@ -378,6 +383,34 @@ export async function uploadCompanionImage(
       height: dimensions.height,
     },
   };
+}
+
+/** 伴星对话图片上传（2026-10-06 输入框传图）：POST /uploads/companion-images。 */
+export async function uploadCompanionImage(
+  scope: WorkspaceTransactionContext,
+  input: { file: UploadFileHandle; staging?: { key: string; etag: string } },
+): Promise<DetachedImageUploadResult> {
+  return storeDetachedImage(scope, input, (ext) => `${scope.workspaceId}/companion/${randomUUID()}.${ext}`);
+}
+
+/**
+ * 导入 Markdown 时随正文带进来的图片（`markdown_import_image` 用途）。
+ *
+ * 与伴星图同一套校验与登记，也是 `uploaded_for_note_id = NULL`：**导入这一刻还没有笔记**，
+ * 而 `notes/` 那个形状在下载路由上硬要求资产已回填所属笔记（见 `downloadUploadObject`
+ * 里的 notes 分支）——借它会让图存得下、取不回。所以走 `{workspaceId}/imports/{userId}/`，
+ * 与 `markdown_import` 正文自己的 `{workspaceId}/imports/{userId}/{uuid}.json` 同段。
+ * 稍后建笔记时 `ensureImageAssetsForBlocks` 按 objectKey 命中这一行并把块接上资产 id。
+ */
+export async function uploadImportedImage(
+  scope: WorkspaceTransactionContext,
+  input: { file: UploadFileHandle; staging?: { key: string; etag: string } },
+): Promise<DetachedImageUploadResult> {
+  return storeDetachedImage(
+    scope,
+    input,
+    (ext) => `${scope.workspaceId}/imports/${scope.userId}/${randomUUID()}.${ext}`,
+  );
 }
 
 /**
@@ -536,10 +569,11 @@ export async function downloadUploadObject(
     // Note/source image path: {workspaceId}/notes/{noteId}/{uuid}.{ext}
     //   or: {workspaceId}/sources/{sourceId}/{uuid}.{ext}
     //   or: {workspaceId}/companion/{uuid}.{ext}（伴星对话里用户上传的图，2026-10-06）
+    //   or: {workspaceId}/imports/{userId}/{uuid}.{ext}（导入 Markdown 随文带进来的图）
     const parts = path.split("/");
     const kind = parts[1];
     const isCompanionImage = kind === "companion";
-    if ((kind !== "notes" && kind !== "sources" && !isCompanionImage)
+    if ((kind !== "notes" && kind !== "sources" && kind !== "imports" && !isCompanionImage)
       || (isCompanionImage ? parts.length < 3 : parts.length < 4)) {
       return { ok: false, reason: "not_found" };
     }

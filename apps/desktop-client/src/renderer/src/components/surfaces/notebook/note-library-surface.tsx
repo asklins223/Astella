@@ -30,6 +30,8 @@ import { useSourceImage } from "../source/source-image.ts";
 import { NoteShelfTag } from "./note-shelf-tag.tsx";
 import { BookOpen, Plus, Search, X } from "lucide-react";
 import { useNotebookTouch } from "./use-notebook-touch";
+import { useNotebookNotePresence } from "./use-notebook-note-presence";
+import { NotebookPresenceReaders } from "./notebook-presence";
 
 /**
  * Page 07 has two views over the same records, because a shelf and a library
@@ -647,6 +649,10 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
   };
 
   /** The row's own line: what the note is, or what the pending action will do. */
+  // 「谁在这一篇里」那一排只在索引那一档读（架子上摆的是封面，挤不下名字），
+  // 个人空间里没有人可共享，连读都不必读。
+  const presence = useNotebookNotePresence(scope, view === "index" && trash === null && !spaceIdentity?.isPersonal);
+
   const rowLine = (note: DesktopNoteListItem) => {
     if (renaming?.noteId === note.id) return "回车保存，Esc 取消";
     if (confirmingId === note.id) return "删除后可在回收站恢复。";
@@ -857,6 +863,9 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
             ) : (
               <div className="source-list">
                 {rowFailure ? <p className="small notebook-note" role="alert">{rowFailure}</p> : null}
+                {/* 读不到在场就把那一排放下，并说一句实话：沉默会被读成"没人在看"，
+                    而那正是这一列要回答的问题。 */}
+                {presence.failure ? <p className="small notebook-note" role="status">别人在不在看，这一列暂时读不到。<button type="button" className="text-action" onClick={() => void presence.reload()}>重试</button></p> : null}
                 {indexed.length === 0 ? (
                   <SurfaceDataState
                     kind="empty"
@@ -893,6 +902,9 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
                           就不画，不替数据库编一句「还没看」。 */}
                       <NoteShelfTag state={note.shelfState} />
                       <small>{rowLine(note)}</small>
+                      {/* 「谁在这篇里」：只在这一行真的有人在时多出来，说的是别人（你自己那一篇
+                          由这一行的「最近在读」与点开后的顶栏在说）。 */}
+                      <NotebookPresenceReaders viewers={presence.others.get(note.id) ?? []} />
                     </span>
                     <span className="source-state note-row-actions">{rowActions(note)}</span>
                   </div>

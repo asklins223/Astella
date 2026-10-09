@@ -234,6 +234,7 @@ import { authSurfaceManifestV1Schema } from "../auth-surface-manifest.ts";
 import { noteDetailV1Schema } from "./note-projection-contracts.ts";
 import { noteSaveReceiptV1Schema, noteSaveRequestV1Schema } from "./note-save-contracts.ts";
 import { noteShareScopeReceiptV1Schema, type NoteShareScopeV1 } from "./note-share-contracts.ts";
+import { notePresenceListV1Schema } from "./note-presence-contracts.ts";
 import {
   cardActivationReceiptDesktopV1Schema,
   cardGenerationCandidateListV1Schema,
@@ -524,6 +525,8 @@ export const DESKTOP_IPC_CHANNELS = {
   noteGet: "astella.v1.note.get",
   sourceList: "astella.v1.source.list",
   sourceCreate: "astella.v1.source.create",
+  /** 带图导入一个 Markdown 文件夹/zip：读盘与传图都在这台机器上，见上面那段合同注释。 */
+  sourceBundleImport: "astella.v1.source.bundleImport",
   sourceGet: "astella.v1.source.get",
   sourceNotes: "astella.v1.source.notes",
   sourceUpdate: "astella.v1.source.update",
@@ -533,6 +536,8 @@ export const DESKTOP_IPC_CHANNELS = {
   sourceRestore: "astella.v1.source.restore",
   sourceReparse: "astella.v1.source.reparse",
   sourceImageGet: "astella.v1.source.image.get",
+  /** 把站内地址换成本机那条同源地址（字节由协议路由直供，不过进程边界）。 */
+  sourceImageUpload: "astella.v1.source.image.upload",
   noteList: "astella.v1.note.list",
   noteCreate: "astella.v1.note.create",
   noteDelete: "astella.v1.note.delete",
@@ -644,6 +649,11 @@ export const DESKTOP_IPC_CHANNELS = {
   // 从笔记列表改名：那里没有打开的文档，所以由主进程把标题写进它那一份再上行。
   noteDocSyncTitle: "astella.v1.note.doc.syncTitle",
   noteDocPresence: "astella.v1.note.doc.presence",
+  // 「此刻谁开着哪一篇」（共享空间在场）。与上面那一条**方向相反**：`noteDocPresence`
+  // 是本机往外报自己的状态（走 WS 的 awareness），这一条是把别人报上来的收成一句能读的话
+  // （走 HTTP，列表页与笔记页都读它）。两条合成一条就会让"我在哪一块"这种本机状态
+  // 变成界面每次刷新列表都要问一遍的东西。
+  notePresenceList: "astella.v1.note.presence.list",
   noteSetShare: "astella.v1.note.set-share",
   noteCardGenerationStart: "astella.v1.note.cardGeneration.start",
   noteCardGenerationGetRun: "astella.v1.note.cardGeneration.getRun",
@@ -1138,6 +1148,17 @@ export const gatewayErrorCodeValues = [
   "invite_consumed",
   "workspace_limit",
   "already_member",
+  /**
+   * 加入**已经提交**，只是这台机器上的会话没重读上。
+   *
+   * `ns_auth.joinWorkspace` 是两次往返：`POST /auth/join-workspace`（成员行与邀请码
+   * 消费在同一事务里落库，服务端那一侧不会留半截），然后 `GET /auth/me` 把这份事实
+   * 投影回本机会话。第二跳失败（网络断了 / 服务重启 / 回信形状不受支持）时，把整件事
+   * 说成"邀请失败"是假话——人已经在空间里了，而他下一次用同一个码会得到
+   * `invite_consumed`，再向邀请人要一张新码又得到 `already_member`，一次成功的加入在
+   * 眼前变成三条互相矛盾的报错。这一格存在的意义就是说真话：已经加入，只是列表要刷新。
+   */
+  "join_committed_session_stale",
   /**
    * 个人空间不能邀请成员：服务端在 `POST /invites` 上回 409 +
    * `error: "personal_workspace_not_shareable"`（`identity/invite-service.ts`）。
@@ -1641,8 +1662,126 @@ export const notesMarkdownExportResultV1Schema = z.strictObject({
   total: nonNegativeIntSchema,
   exported: nonNegativeIntSchema,
   failed: nonNegativeIntSchema,
+  /** 落到共享 `assets/` 里的图片文件数（同一张图被几篇引用只算一份）。 */
+  images: nonNegativeIntSchema.optional(),
+  /** 没能落下来的那几张：正文照旧导出了，那一处仍是站内地址。 */
+  imageFailures: nonNegativeIntSchema.optional(),
 });
 export type NotesMarkdownExportResultV1 = z.infer<typeof notesMarkdownExportResultV1Schema>;
+
+// ─── 带图导入 Markdown（文件夹 / zip）─────────────────────────────
+/**
+ * 读者手上常常是**一整个包**：一个文件夹或一个 zip，里面是 `.md` 和它们旁边引用的图片。
+ * 采集通道一次只读一份文件，包里的图片到了服务端就成了死链。
+ *
+ * 这条通道只做「包 → 一批待收录的正文」这一步：主进程在这台机器上把图片读出来、传进
+ * 对象存储、把正文里的引用改写成站内地址，交回的是和拖文件进来**完全同构**的几份正文，
+ * 建来源仍然走 `source.create` 那条老路（进度、重复提示、每份的成败回执都在那边）。
+ *
+ * 分两步走：`inspect` 只读盘不上传，先让读者看见「42 篇、180 张图、6 张找不到」；
+ * `import` 才真的传。一步做完的话，选错文件夹的代价就是白等一次几百张图的上传。
+ */
+export const MARKDOWN_BUNDLE_MAX_FILES = 50;
+export const markdownBundleKindSchema = z.enum(["folder", "zip"]);
+export type MarkdownBundleKind = z.infer<typeof markdownBundleKindSchema>;
+
+export const markdownBundleInspectRequestV1Schema = z.strictObject({
+  meta: requestMetaSchema,
+  request: z.strictObject({
+    version: z.literal(1),
+    action: z.literal("inspect"),
+    /** 留下 null 就是让主进程去开文件选择器；带值时用它重扫（读者换台机器上的路径不会发生）。 */
+    kind: markdownBundleKindSchema,
+  }),
+});
+export type MarkdownBundleInspectRequestV1 = z.infer<typeof markdownBundleInspectRequestV1Schema>;
+
+export const markdownBundleImportRequestV1Schema = z.strictObject({
+  meta: requestMetaSchema,
+  request: z.strictObject({
+    version: z.literal(1),
+    action: z.literal("import"),
+    kind: markdownBundleKindSchema,
+    /** `inspect` 交回来的那个包路径；主进程只认自己刚给这个窗口开过选择器的包。 */
+    bundlePath: nonEmptyStringSchema,
+  }),
+});
+export type MarkdownBundleImportRequestV1 = z.infer<typeof markdownBundleImportRequestV1Schema>;
+
+export const markdownBundleActionSchema = z.union([
+  markdownBundleInspectRequestV1Schema,
+  markdownBundleImportRequestV1Schema,
+]);
+export type MarkdownBundleAction = z.infer<typeof markdownBundleActionSchema>;
+
+/** 一张没能变成站内地址的引用，逐条带着原因回给读者。 */
+export const markdownBundleImageIssueV1Schema = z.strictObject({
+  /** 正文里原本那串引用（`./img/a.png`、`https://…`）。 */
+  src: z.string().min(1).max(2_000),
+  /** 说得出「下一步做什么」的那句话；空字符串不会被 schema 收下。 */
+  message: z.string().min(1).max(500),
+});
+export type MarkdownBundleImageIssueV1 = z.infer<typeof markdownBundleImageIssueV1Schema>;
+
+/** `inspect` 的回执：这一刻还没有任何上传。 */
+export const markdownBundlePreviewV1Schema = z.strictObject({
+  version: z.literal(1),
+  stage: z.literal("preview"),
+  canceled: z.boolean().optional(),
+  kind: markdownBundleKindSchema.optional(),
+  bundlePath: z.string().max(1_000).optional(),
+  /** 包里能收的 `.md`／`.markdown` 份数。 */
+  files: nonNegativeIntSchema,
+  /** 超过单次上限、这一轮不会收的那几份。 */
+  overflow: nonNegativeIntSchema,
+  /** 正文里出现的图片引用总数（同一个 src 在多份正文里各算一次）。 */
+  referenced: nonNegativeIntSchema,
+  /** 在包里找得到、或外链抓得回来、能变成站内地址的那几张。 */
+  localizable: nonNegativeIntSchema,
+  /** 字节数合计（只算能落地的那些）。 */
+  imageBytes: nonNegativeIntSchema,
+  /** 去重之后实际要上传的张数（同一个文件被几篇引用只上一次）。 */
+  toUpload: nonNegativeIntSchema,
+  /** 说不出下落的那些，逐条带原因。 */
+  issues: z.array(markdownBundleImageIssueV1Schema).max(50),
+  /** 有更多同类问题时给个数，界面上说「另有 N 条」。 */
+  issueOverflow: nonNegativeIntSchema,
+});
+export type MarkdownBundlePreviewV1 = z.infer<typeof markdownBundlePreviewV1Schema>;
+
+/** `import` 交回的就是几份待收录正文，字段与 `source.create` 的正文入参同形。 */
+export const markdownBundleTaskV1Schema = z.strictObject({
+  name: z.string().min(1).max(500),
+  /**
+   * 字符数上限放到与「单份正文 10 MB」同一个量级，真正的判据是**字节**：
+   * 改写前每篇都按 `MAX_SOURCE_TEXT_BYTES` 量一次，超了整篇进 `dropped` 并说清原因，
+   * 不是悄悄截到某个字符数（那是把一份笔记变成半份）。
+   */
+  content: z.string().min(1).max(10_000_000),
+  title: z.string().max(500).optional(),
+});
+export type MarkdownBundleTaskV1 = z.infer<typeof markdownBundleTaskV1Schema>;
+
+export const markdownBundleImportedV1Schema = z.strictObject({
+  version: z.literal(1),
+  stage: z.literal("imported"),
+  kind: markdownBundleKindSchema,
+  tasks: z.array(markdownBundleTaskV1Schema).max(MARKDOWN_BUNDLE_MAX_FILES),
+  /** 真的传进对象存储的张数。 */
+  uploaded: nonNegativeIntSchema,
+  /** 没落地的引用（含上传失败的），逐条带原因。 */
+  issues: z.array(markdownBundleImageIssueV1Schema).max(50),
+  issueOverflow: nonNegativeIntSchema,
+  /** 整篇没能改写成功的（比如改写后正文超上限），这些不会出现在 tasks 里。 */
+  dropped: z.array(markdownBundleImageIssueV1Schema).max(MARKDOWN_BUNDLE_MAX_FILES),
+});
+export type MarkdownBundleImportedV1 = z.infer<typeof markdownBundleImportedV1Schema>;
+
+export const markdownBundleResultV1Schema = z.union([
+  markdownBundlePreviewV1Schema,
+  markdownBundleImportedV1Schema,
+]);
+export type MarkdownBundleResultV1 = z.infer<typeof markdownBundleResultV1Schema>;
 
 const workspaceSummaryShape = {
   version: z.literal(1),
@@ -2499,6 +2638,12 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
      * 并带 `duplicateOf`；`request.force` 是用户明确说"再采一次"。
      */
     create(input: { meta: RequestMetaV1; request: DesktopSourceCreateRequest }): Promise<GatewayResultV1<DesktopSourceCreateResultV1>>;
+    /**
+     * 带图导入一个 Markdown 包（文件夹或 zip）：主进程把包里的图片传进对象存储，
+     * 交回的是**已经改写好站内地址**的几份正文（`stage:"imported"`），或先看一眼的
+     * -preview（`stage:"preview"`）。建来源不在这条通道里，仍然走上面的 `create`。
+     */
+    bundleImport(input: MarkdownBundleAction): Promise<GatewayResultV1<MarkdownBundleResultV1>>;
     get(input: { meta: RequestMetaV1; sourceId: Uuid }): Promise<GatewayResultV1<z.infer<typeof desktopSourceDetailSchema>>>;
     listNotes(input: { meta: RequestMetaV1; sourceId: Uuid }): Promise<GatewayResultV1<z.infer<typeof desktopSourceNotesPageSchema>>>;
     update(input: { meta: RequestMetaV1; sourceId: Uuid; request: DesktopSourceUpdateRequest }): Promise<GatewayResultV1<z.infer<typeof desktopSourceDetailSchema>>>;
@@ -2529,6 +2674,8 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
       meta: RequestMetaV1;
       request: SourceImageGetRequestV1;
     }): Promise<GatewayResultV1<z.infer<typeof sourceImageGetResultV1Schema>>>;
+    /** 本机文档提取的图片；来源尚未创建，使用随文图片的上传用途。 */
+    uploadImage(input: { meta: RequestMetaV1; request: NoteImageUploadRequestV1 }): Promise<GatewayResultV1<{ version: 1; url: string }>>;
   };
   readonly companion: {
     readonly home: {
@@ -2823,6 +2970,12 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
     delete(input: { meta: RequestMetaV1; noteId: Uuid }): Promise<GatewayResultV1<DesktopNoteMutationResult>>;
     restore(input: { meta: RequestMetaV1; noteId: Uuid }): Promise<GatewayResultV1<DesktopNoteMutationResult>>;
     get(input: { meta: RequestMetaV1; noteId: Uuid }): Promise<GatewayResultV1<z.infer<typeof noteDetailV1Schema>>>;
+    /**
+     * 「此刻谁开着哪一篇」（共享空间在场）。只回**真的有人开着**的那些篇，
+     * 没人在看的一篇在这一份里不出现——界面因此不需要为它画任何东西，也不会把
+     * "读不到在场"错读成"没人在看"以外的意思。
+     */
+    presenceList(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof notePresenceListV1Schema>>>;
     /**
      * 协同正文（批次 4.3/4.4 建立，C2 之后两侧交的都是 yjs 增量）。渲染进程不直连 WS
      * ——那层硬拦截还在——但它**持有文档**：`state` 给的是那份编码本身，界面据此建自己的

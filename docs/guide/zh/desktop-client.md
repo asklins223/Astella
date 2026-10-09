@@ -164,15 +164,19 @@ Esc 先关闭当前浮层，再收工具，最后退出全屏，不直接跳首�
 
 ## 打包与自动更新
 
-`electron-builder.yml`：`appId: com.asklins.astella`，`productName: Astella`（中文显示名 拾星笔记 另由 `CFBundleDisplayName` / `shortcutName` 提供），输出 `release/`，`asar: true` + maximum 压缩。`files` 显式排除 `out/renderer/assets/3d/**` 与 `out/renderer/models/**`——识别模型是用户自己在设置里下的附加功能，一条误拷回 `public/` 就让安装包平白多 239MB。
+`electron-builder.yml`：`appId: com.asklins.astella`，`productName: Astella`（中文显示名 拾星笔记 另由 `CFBundleDisplayName` / `WindowsRegistration` 提供），输出 `release/`，`asar: true` + maximum 压缩。`files` 显式排除 `out/renderer/assets/3d/**` 与 `out/renderer/models/**`——识别模型是用户自己在设置里下的附加功能，一条误拷回 `public/` 就让安装包平白多 239MB。
 
 | 平台 | 目标 | 备注 |
 | --- | --- | --- |
 | macOS | `dmg` + `zip` | `NSMicrophoneUsageDescription`（少了它 TCC 直接判拒 `getUserMedia`）、`hardenedRuntime: true` |
-| Windows | `nsis` x64 | `oneClick: true`（2026-10-04 改）、`asInvoker`、桌面与开始菜单快捷方式 |
+| Windows | 独立 WPF 安装器 x64 | 自绘向导、勾选须知与非商用许可后继续、自定义位置、更新与卸载；仅当前用户 |
 | Linux | `AppImage` | — |
 
-`oneClick` 那处注释记着代价：向导式安装器有一张 nsDialogs 画的"选安装范围"页，静默 `/S` 会跳过绘制但模式判定仍要一次显式决策，CI 上表现为安装 step 挂到超时；改成一键后 /S 可靠，用户不能再挑目录，装到 `%LOCALAPPDATA%\Programs\Astella`。`artifactName` 写死 ASCII 前缀 `astella-${version}-${os}-${arch}.${ext}`（不取 `${productName}`：显示名以后再调，已发布元数据里的文件名不该跟着漂）：资产名会直接进 `latest.yml` 被客户端解析，而 GitHub 资产 URL、NSIS 差分下载、ShipIt 对非 ASCII 文件名各有边角问题。yml 里**故意不写 arch**，架构由 `package:mac:arm64` / `package:win:x64` 一类命令与 `desktop-package.yml` 决定，避免两边互相覆盖。
+Windows 不再复用 NSIS 的外壳或安装脚本。`apps/windows-installer/` 使用 .NET 10 / WPF，自绘奶油纸面与薄荷侧栏；运行时随单文件安装器携带。`scripts/package-windows.mjs` 先由 electron-builder 生成程序目录，再打包经过校验的 ZIP、文件清单与独立安装器，生成 `latest.yml`；旧客户端迁移保留 `.exe.blockmap`。
+
+向导先展示使用须知与 PolyForm Noncommercial 非商用许可全文，须主动勾选同意才可继续。新安装可选择本机位置，已有安装与更新沿用原位置；更新先校验并暂存文件，再替换整目录，提交失败时恢复旧程序。本机资料保存在 `%APPDATA%\astella-desktop-client`，安装确认不替代账号内的 AI 授权。Windows「已安装的应用」与程序目录中的卸载器均可进入卸载界面，清除资料的勾选默认关闭。
+
+Windows 更新使用 `WindowsInstallerUpdater` 完整下载与 SHA-512 校验，并在退出应用前启动独立安装器。安装器等待旧进程退出，保留安装目录与本机资料；应用重启后沿用统一更新回执。构建与实际验证范围见 [安装器说明](../../../apps/windows-installer/README.md)。产物继续使用 ASCII 名称 `astella-${version}-win-x64.exe`，版本来自统一发布配置。
 
 更新源是 GitHub Releases 直连（`publish: provider github, owner asklins223, repo Astella`，实现 `src/main/desktop-update.ts`），检查走 `api.github.com`、下载走 GitHub CDN，**不经过 `apps/api`**：自家 API 挂了不影响更新，更新带宽也不落在自家服务器上。
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SessionContextV1, WorkspaceSummaryV1 } from "@astella/shared/desktop-ipc-contracts";
-import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../app/desktop-client";
+import { createRequestMeta, gatewayErrorMessage, isJoinCommittedWithoutSession, joinFailureTone, unwrapGatewayResult } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
 import { mediaAssetUrl, useLearningRoomManifest } from "../../media/learning-room-manifest";
 import { CompanionPresence } from "../companion/CompanionPresence";
@@ -39,6 +39,8 @@ function HudFirstSpace({
   const [inviteCode, setInviteCode] = useState("");
   const [busy, setBusy] = useState<"enter" | "join" | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  /** 不是失败的那一句（例如"已经在这个空间里了"）走这一格，语气与 role 都跟着放平。 */
+  const [receipt, setReceipt] = useState<string | null>(null);
 
   const selected = useMemo(
     () => workspaces.find((workspace) => workspace.workspaceId === selectedId) ?? workspaces[0] ?? null,
@@ -100,26 +102,36 @@ function HudFirstSpace({
     setBusy("join");
     setFailure(null);
     try {
-      unwrapGatewayResult(await window.astella.auth.joinWorkspace({
-        meta: createRequestMeta(workspaceEpoch),
-        inviteToken,
-      }));
+      try {
+        unwrapGatewayResult(await window.astella.auth.joinWorkspace({
+          meta: createRequestMeta(workspaceEpoch),
+          inviteToken,
+        }));
+      } catch (error) {
+        // 成员关系已经落库、只是本机会话没重读上：加入这件事成了，收起这一屏，
+        // 不要报"邀请码失败"——那会让人拿同一个码再试一次。
+        if (!isJoinCommittedWithoutSession(error)) throw error;
+      }
       setInviteCode("");
       setBusy(null);
       onCommitted();
     } catch (error) {
-      setFailure(gatewayErrorMessage(error));
+      const text = gatewayErrorMessage(error);
+      // 「已经在这个空间里」不是一次失败：左列那一行就是它，红色那格会把它说成没做成，
+      // 而人要做的是点上去，不是再去要一张码。
+      if (joinFailureTone(error) === "notice") setReceipt(text);
+      else setFailure(text);
       setBusy(null);
     }
   };
 
-  const status = failure ?? notice ?? null;
+  const status = failure ?? receipt ?? notice ?? null;
 
   return (
     <section ref={dialogRef} className="first-space" role="dialog" aria-modal="true" aria-labelledby="first-space-title">
       <h1 id="first-space-title" ref={headingRef} tabIndex={-1}>先选一个学习空间</h1>
       <p className="sub">这是首次进入学习空间的一次性设置；选择前不会读取任何空间数据。</p>
-      {status ? <p className="sub first-space__notice" role="alert">{status}</p> : null}
+      {status ? <p className="sub first-space__notice" role={failure ? "alert" : "status"}>{status}</p> : null}
       <div className="space-path">
         <section className="space-choice">
           <div className="stamp">{selected ? selected.name.slice(0, 1) : "＋"}</div>

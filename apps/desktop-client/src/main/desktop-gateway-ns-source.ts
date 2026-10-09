@@ -1,3 +1,5 @@
+import { getNoteImageStore } from "./note-image-store";
+import { noteImageCacheScope, primeNoteImageCache } from "./note-image-cache";
 import { uploadRemoteObject } from "./desktop-object-transfers";
 /**
  * 网关的「来源」那一族方法 —— **2026-09-30 从 `DesktopGateway` 类搬出**。
@@ -30,6 +32,7 @@ import {
   SourceImageGetRequestV1,
   SourceImageGetResultV1,
   sourceImageGetResultV1Schema,
+  sourceImageObjectKeyFromUrl,
 } from "@astella/shared/source-image-contracts";
 import {
   DesktopSourceArchiveResult,
@@ -194,18 +197,25 @@ export async function getSourceImage(t: GatewayTransport,
     requestId?: string,
   ): Promise<SourceImageGetResultV1> {
     await t.ensureConnected(requestId);
-    const result = await t.requestBinaryBytes(
-      `/uploads/${request.objectKey}`,
-      { method: "GET" },
-      { accept: "image/*", contentTypePrefix: "image/", maxBytes: SOURCE_IMAGE_MAX_BYTES },
-      requestId,
-    );
-    // 只放行 worker 会落盘的四种类型：服务端把别的 image/* 子类型（或带参数的
-    // 变体）回给渲染层之前，先在这里收敛成合同里那一个枚举。
-    const mimeType = result.contentType.split(";")[0].trim();
-    if (!(SOURCE_IMAGE_MIME_TYPES as readonly string[]).includes(mimeType)) {
-      throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    }
+    const epoch = t.workspaceEpoch, token = t.token;
+    const scope = noteImageCacheScope(t, request.objectKey);
+    if (t.currentSession?.status === "authenticated" && !scope) throw new DesktopGatewayFailure("not_found", "never");
+    const load = async () => {
+      const result = await t.requestBinaryBytes(`/uploads/${request.objectKey}`, { method: "GET" },
+        { accept: "image/*", contentTypePrefix: "image/", maxBytes: SOURCE_IMAGE_MAX_BYTES }, requestId);
+      const mime = result.contentType.split(";")[0].trim();
+      if (!(SOURCE_IMAGE_MIME_TYPES as readonly string[]).includes(mime)) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+      if (t.workspaceEpoch !== epoch || t.token !== token) throw new DesktopGatewayFailure("stale_workspace", "resync_first");
+      return { bytes: Buffer.from(result.bytes), mime };
+    };
+    const store = getNoteImageStore();
+    const result = scope && store ? await store.get(scope, request.objectKey, load, async () => {
+      // 复用磁盘字节仍复核当前可见性；通配条件只返回 304，存储只查元数据，不取图片体。
+      const authorized = await t.request(`/uploads/${request.objectKey}`, { method: "HEAD", headers: { "If-None-Match": "*" } }, true, false, requestId, undefined, true);
+      if (authorized.status !== 304) throw t.mapResponseError(authorized.status, authorized.headers, undefined, authorized.body);
+    }) : await load();
+    if (t.workspaceEpoch !== epoch || t.token !== token) throw new DesktopGatewayFailure("stale_workspace", "resync_first");
+    const mimeType = result.mime;
     const parsed = sourceImageGetResultV1Schema.safeParse({
       version: 1,
       mimeType,
@@ -215,6 +225,87 @@ export async function getSourceImage(t: GatewayTransport,
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }
+
+/**
+ * 导入 Markdown 时随正文进来的图片：先走预签名那条（`markdown_import_image` 用途），
+ * 这台机器没启用远端存储时回退到 `POST /uploads/import-images`（与笔记图片那条同形）。
+ *
+ * 交回的是**站内地址** `/api/uploads/{objectKey}`：正文里的相对路径换成它之后，
+ * 建来源、建笔记、翻页显示，走的和网页图片那条是同一条路，一处都不新。
+ */
+export async function uploadBundleImage(t: GatewayTransport,
+    input: { fileName: string; mimeType: string; bytes: Buffer },
+    requestId?: string,
+  ): Promise<string> {
+    await t.ensureConnected(requestId);
+    const epoch = t.workspaceEpoch, token = t.token;
+    const assertCurrent = () => { if (t.workspaceEpoch !== epoch || t.token !== token) throw new DesktopGatewayFailure("stale_workspace", "resync_first"); };
+    const remote = await uploadRemoteObject(t, { purpose: "markdown_import_image", fileName: input.fileName,
+      mimeType: input.mimeType }, input.bytes, requestId);
+    if (remote) {
+      assertCurrent();
+      const url = bundleImageUploadUrl(remote.body);
+      await primeNoteImageCache(t, url, { bytes: input.bytes, mime: input.mimeType });
+      return url;
+    }
+    const configuration = t.configuration;
+    if (!configuration) throw new DesktopGatewayFailure("configuration_error", "user_action");
+    const form = new FormData();
+    form.set("file", new Blob([input.bytes], { type: input.mimeType }), input.fileName);
+
+    const headers = new Headers();
+    if (t.token) headers.set("Authorization", `Bearer ${t.token}`);
+    const controller = requestId ? new AbortController() : undefined;
+    if (requestId && controller) t.activeRequests.set(requestId, controller);
+    let response: Response;
+    try {
+      response = await fetch(new URL("/uploads/import-images", `${configuration.config.apiOrigin}/`), {
+        method: "POST",
+        headers,
+        body: form,
+        signal: controller?.signal,
+        redirect: "manual",
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new DesktopGatewayFailure("cancelled", "never", { localEffect: "request_cancelled" });
+      }
+      t.connection = { version: 1, kind: "api_unavailable" };
+      throw new DesktopGatewayFailure("api_unavailable", "safe_retry");
+    } finally {
+      if (requestId && controller && t.activeRequests.get(requestId) === controller) t.activeRequests.delete(requestId);
+    }
+    if (response.status >= 300 && response.status < 400 && response.status !== 304) {
+      t.connection = { version: 1, kind: "api_untrusted", reason: "wrong_service" };
+      throw new DesktopGatewayFailure("api_untrusted", "user_action");
+    }
+    let body: unknown = null;
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+    if (!response.ok && response.status === 401 && t.tokenIsRestored) await t.discardStoredCredential();
+    if (!response.ok) throw t.mapResponseError(response.status, response.headers, undefined, body);
+    assertCurrent();
+    const url = bundleImageUploadUrl(body);
+    await primeNoteImageCache(t, url, { bytes: input.bytes, mime: input.mimeType });
+    return url;
+  }
+
+/**
+ * 上传回执里的站内地址，按**渲染层那一份**判据核过形状才交出去。
+ *
+ * 存得进对象存储却显示不出来的地址（形状不合 → 取图通道拒），读者要等到打开笔记才
+ * 发现，而且那时正文已经收进去了。所以在这里 fail closed，这一张如实报失败。
+ */
+function bundleImageUploadUrl(body: unknown): string {
+  const url = (body as { url?: unknown } | null)?.url;
+  if (typeof url !== "string" || !sourceImageObjectKeyFromUrl(url)) {
+    throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+  }
+  return url;
+}
 
 export async function listSourceNotes(t: GatewayTransport, sourceId: string, requestId?: string): Promise<DesktopSourceNotesPage> {
     await t.ensureConnected(requestId);

@@ -117,5 +117,6 @@ import "./components/companion/guidance/companion-guidance.css";
 
 import "./components/surfaces/notebook/note-writing.css";
 import "./components/surfaces/notebook/notebook-format-controls.css";
+import "./components/surfaces/notebook/notebook-editing-experience.css";
 
 import "./components/surfaces/notebook/note-mind-map.css";

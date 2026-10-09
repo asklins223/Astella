@@ -50,7 +50,7 @@ Commit prepared changes and use an annotated `v<version>` tag. Passing server CI
 | Platform | Local packaging | Automated installer publication |
 | --- | --- | --- |
 | macOS | `package:mac:arm64` / `package:mac:x64`, dmg + zip | Covered |
-| Windows | `package:win:x64`, NSIS | Covered |
+| Windows | `package:win:x64`, independent .NET / WPF installer | Covered |
 | Linux | `package:linux:x64`, AppImage | Separate packaging; not in current unified release workflow |
 
 Packaging uses `electron-builder.config.cjs` plus YAML. Assets use ASCII `astella-`; updates go directly to GitHub Releases and do not depend on API health. Without an Apple certificate, ad-hoc signing may require first-launch authorization. Valid signatures do not accept actual cross-version replacement.
