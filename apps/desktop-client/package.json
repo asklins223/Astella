@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "electron-vite dev --remoteDebuggingPort 9222",
     "dev:watch-main": "electron-vite dev -w --remoteDebuggingPort 9222",
-    "build": "npm run validate:room-layers && electron-vite build && npm run validate:room-layers:output",
+    "build": "npm run validate:room-layers && node --max-old-space-size=4096 node_modules/electron-vite/bin/electron-vite.js build && npm run validate:room-layers:output",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
     "test": "vitest run --passWithNoTests",
     "validate:room-layers": "node scripts/validate-room-layers.mjs",
