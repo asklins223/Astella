@@ -16,15 +16,17 @@
  *
  * ## macOS 安装签名
  *
- * Developer ID 与跨版本稳定的 ad-hoc 签名均可进入更新流程。没有证书时，
- * 构建脚本签完整包体并固定主应用的 designated requirement；下载后的首次
- * 打开仍可能需要用户在系统隐私与安全中允许。运行时拦截损坏或不稳定的签名。
+ * macOS 使用完整 ZIP 下载与 SHA-512 校验，暂存并验证新包后，退出旧进程、
+ * 同卷替换应用再启动。新包保留完整 ad-hoc 签名即可，无需 Apple 证书或
+ * 旧包的跨版本签名要求；首次手动安装仍遵循系统的打开确认。
  */
 
 import { app, BrowserWindow } from 'electron'
-import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { rm } from 'node:fs/promises'
+import { UpdateInstallReceiptStore } from './update-install-receipt'
+import { macosAppBundle } from './macos-update-install'
 
 import {
   updateStateV1Schema,
@@ -34,8 +36,6 @@ import {
 
 /** 检查结果缓存时长。GitHub 匿名限额是 60 次/小时/IP，6 小时一次对个人用户足够及时。 */
 const CHECK_CACHE_MS = 6 * 60 * 60 * 1000
-/** 单次检查的网络超时，避免窗口一直挂在"正在检查"。 */
-const CHECK_TIMEOUT_MS = 30_000
 
 /**
  * Release 仓库。与 `electron-builder.yml` 的 `publish.github` 是同一处配置的两个
@@ -47,25 +47,56 @@ const PUBLISH_REPO = 'Astella'
 const DESKTOP_TAG_PREFIX = 'v'
 
 /**
- * 对应版本的 Release 页。
+ * Release 正文 → 纯文本。
  *
- * macOS 更新签名无效时安装不了，界面要给出"去下载页手动装"的路——那条链接必须真的有
- * href，不能是个点了没反应的 `<a>`。按 tag 规则（v<version>）拼，
- * 与 `.github/scripts/desktop-version.mjs` 的 DESKTOP_TAG_PREFIX 是同一套约定。
+ * GitHub 的 release feed（`releases.atom` 里的 `<content type="html">`）交回来的是
+ * **渲染后的 HTML**，而通知纸片与设置页都按纯文本显示它——不转的话用户读到的是
+ * `<ul>` 和 `<li>` 这些标签本身。
+ *
+ * 只对带标签的正文调用它：实体解码不可逆，已经洗过的文本再过一遍会把正文里
+ * 本来的尖括号（`v1<2`）当成标签吃掉。
  */
+function plainTextReleaseNotes(notes: string): string {
+  return notes
+    .replace(/<br\s*\/?>\s*/gi, '\n')
+    // 一个列表项在浏览器里就是一行：项内的换行是 markdown 的续行排版，不是分段，
+    // 松散列表写进项里的那几个 <p> 也一并摊平。不折起来的话，通知纸片按要点取行时
+    // 会把后半句当成另一段丢掉。
+    .replace(/<li[^>]*>((?:(?!<\/?li\b|<[ou]l\b)[\s\S])*)<\/li>/gi,
+      (_match, inner: string) => `<li>${inner.replace(/<\/?(?:p|div|blockquote)\s*>/gi, ' ').replace(/\s+/g, ' ').trim()}</li>`)
+    // 列表项各占一行：项首换成「· 」，项尾给下一条留换行。GitHub 在块级标签之间
+    // 排的空白是排版不是内容，一并吃掉；行内标签（strong / code / a）两侧的空格
+    // 留着，那是真的词间空格。
+    .replace(/\s*<li[^>]*>\s*/gi, '· ')
+    .replace(/\s*<\/li\s*>\s*/gi, '\n')
+    .replace(/\s*<(?:p|div|ul|ol|blockquote|h[1-6]|pre|table|thead|tbody|tr|td|th|section|article)[^>]*>\s*/gi, '\n')
+    .replace(/\s*<\/(?:p|div|ul|ol|blockquote|h[1-6]|pre|table|thead|tbody|tr|td|th|section|article)\s*>\s*/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(\d+);/g, (_entity, digits: string) => String.fromCodePoint(Number(digits)))
+    .replace(/&#x([0-9a-f]+);/gi, (_entity, digits: string) => String.fromCodePoint(Number.parseInt(digits, 16)))
+    .replace(/&amp;/gi, '&')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 /**
  * `UpdateInfo.releaseNotes` 是 `string | ReleaseNoteInfo[] | null`——开了
- * `fullChangelog` 就是数组。拼成纯文本，数组按 `version` 去重后逐条列出。
+ * `fullChangelog` 就是数组。逐条洗成纯文本再拼起来，数组按 `version` 去重后列出。
  */
 function describeReleaseNotes(
   notes: string | { version?: string | null; note?: string | null }[] | null | undefined
 ): string | null {
-  if (typeof notes === 'string') return notes.trim() ? notes.trim() : null
+  if (typeof notes === 'string') return plainTextReleaseNotes(notes) || null
   if (!Array.isArray(notes)) return null
   const lines = notes
     .map((entry) => {
-      const text = typeof entry.note === 'string' ? entry.note.trim() : ''
-      return text ? `## ${entry.version ?? ''}\n${text}`.trim() : ''
+      const text = plainTextReleaseNotes(typeof entry.note === 'string' ? entry.note : '')
+      return text ? `${entry.version ?? ''}\n${text}`.trim() : ''
     })
     .filter(Boolean)
   return lines.length ? lines.join('\n\n') : null
@@ -83,6 +114,13 @@ function firstFileSize(info: { files?: readonly { size?: number }[] }): number |
   return typeof file?.size === 'number' ? file.size : null
 }
 
+/**
+ * 对应版本的 Release 页。
+ *
+ * macOS 更新签名无效时安装不了，界面要给出"去下载页手动装"的路——那条链接必须真的有
+ * href，不能是个点了没反应的 `<a>`。按 tag 规则（v<version>）拼，
+ * 与 `.github/scripts/desktop-version.mjs` 的 DESKTOP_TAG_PREFIX 是同一套约定。
+ */
 function releasePageUrl(version: string): string {
   return `https://github.com/${PUBLISH_OWNER}/${PUBLISH_REPO}/releases/tag/${DESKTOP_TAG_PREFIX}${version}`
 }
@@ -94,7 +132,7 @@ interface PersistedCheck {
 
 let currentState: UpdateStateV1 | null = null
 let autoUpdater: import('electron-updater').AppUpdater | null = null
-let macosUpdateBlocked: boolean | null = null
+let macosUpdater: import('./macos-archive-updater').MacosArchiveUpdater | null = null
 
 /**
  * 当前正在做的是哪一步。
@@ -115,6 +153,7 @@ let operation: UpdateOperation = null
 /** 原始更新错误可能带本机路径、响应正文或栈；界面只展示能指导下一步的原因。 */
 function updateFailureMessage(error: unknown, action: Exclude<UpdateOperation, null>): string {
   const detail = error instanceof Error ? error.message : String(error ?? '')
+  if (/^MAC_UPDATE_(LOCATION|PERMISSION):/.test(detail)) return detail.replace(/^MAC_UPDATE_[A-Z]+: /, '')
   if (/app-update\.ya?ml|dev-app-update\.ya?ml/i.test(detail)) return '这份安装包缺少更新配置，请使用正式安装包后再检查。'
   if (/rate limit|\b429\b/i.test(detail)) return 'GitHub 的查询次数用完了，请稍后再检查。'
   if (/ENOSPC|no space left/i.test(detail)) return '设备可用空间不足，请腾出空间后重试。'
@@ -122,7 +161,7 @@ function updateFailureMessage(error: unknown, action: Exclude<UpdateOperation, n
   // 签名类失败说的是**这台电脑上的书房本身**，不是刚下下来的那份包：让用户
   // 「重新下载」是让他把同一件事再失败一遍。分开说，他才知道自己该去下载页手动装。
   if (/signature|code sign|not signed|signed with|sbvalidate|SecStatic/i.test(detail)) {
-    return 'macOS 更新签名校验未通过。请到下载页手动安装已修复的版本。'
+    return '新版本的应用校验未通过，已保留当前书房。请重新下载或到下载页手动安装。'
   }
   if (/sha512|checksum/i.test(detail)) return '安装包校验未通过，请重新下载或到下载页获取安装包。'
   if (/\b404\b|release.*not found|no published versions/i.test(detail)) return '更新服务暂时没有可用的发布版本，请稍后再检查。'
@@ -166,28 +205,8 @@ export function getUpdateState(): UpdateStateV1 {
   return currentState ?? initialState()
 }
 
-/** Verify integrity and the identity that ShipIt will apply to the next build. */
-function detectMacosUpdateBlocked(): boolean {
-  if (process.platform !== 'darwin' || !app.isPackaged) return false
-  if (macosUpdateBlocked !== null) return macosUpdateBlocked
-  const bundle = join(app.getAppPath(), '..', '..', '..')
-  const run = (args: string[]) => spawnSync('/usr/bin/codesign', args, { encoding: 'utf8', timeout: 15_000 })
-  macosUpdateBlocked = true
-  if (!existsSync(bundle) || run(['--verify', '--deep', '--strict', bundle]).status !== 0) return true
-  const probe = run(['--display', '--verbose=4', bundle])
-  const detail = `${probe.stdout ?? ''}${probe.stderr ?? ''}`
-  if (probe.status !== 0) return true
-  if (/Authority=Developer ID Application:/.test(detail)) {
-    macosUpdateBlocked = false
-    return false
-  }
-  if (!/Signature=adhoc/.test(detail) || !detail.includes('Identifier=com.asklins.astella\n')) return true
-  const requirements = run(['--display', '--requirements', '-', bundle])
-  const requirementText = `${requirements.stdout ?? ''}${requirements.stderr ?? ''}`
-  const designated = requirementText.split(/\r?\n/).find(line => /^(# )?designated => /.test(line))
-  if (requirements.status !== 0 || designated?.replace(/^# /, '') !== 'designated => identifier "com.asklins.astella"') return true
-  macosUpdateBlocked = run(['--verify', '--deep', '--strict', '-R', '=identifier "com.asklins.astella"', bundle]).status !== 0
-  return macosUpdateBlocked
+function receiptStore(): UpdateInstallReceiptStore {
+  return new UpdateInstallReceiptStore(app.getPath('userData'))
 }
 
 function loadPersistedCheck(): PersistedCheck | null {
@@ -197,7 +216,17 @@ function loadPersistedCheck(): PersistedCheck | null {
     if (typeof parsed?.checkedAt !== 'number') return null
     // 过期的结果只用来填"上次查过"，不再当成有效结论。
     if (Date.now() - parsed.checkedAt > CHECK_CACHE_MS) return null
-    return updateStateV1Schema.safeParse(parsed.state).success ? parsed : null
+    const checked = updateStateV1Schema.safeParse(parsed.state)
+    if (!checked.success || checked.data.currentVersion !== app.getVersion()) return null
+    // 修复之前落盘的缓存写着 GitHub 的 HTML 正文，读出来时洗一次。已经处理过的
+    // 纯文本不再过第二遍——实体解码不可逆，跑两遍会把正文里本来的尖括号吃掉。
+    const stillCarriesMarkup = /<\/?[a-z][^>]*>/i.test(checked.data.releaseNotes ?? '')
+    return {
+      checkedAt: parsed.checkedAt,
+      state: { ...checked.data, currentVersion: app.getVersion(), installBlockedReason: null,
+        installedUpdate: getUpdateState().installedUpdate ?? null,
+        releaseNotes: stillCarriesMarkup ? describeReleaseNotes(checked.data.releaseNotes) : checked.data.releaseNotes },
+    }
   } catch {
     return null
   }
@@ -247,7 +276,14 @@ async function loadAutoUpdater(): Promise<import('electron-updater').AppUpdater 
   if (!app.isPackaged) return null
 
   try {
-    const { autoUpdater: loaded } = await import('electron-updater')
+    let loaded: import('electron-updater').AppUpdater
+    if (process.platform === 'darwin') {
+      const { MacosArchiveUpdater } = await import('./macos-archive-updater')
+      macosUpdater = new MacosArchiveUpdater()
+      loaded = macosUpdater
+    } else {
+      loaded = (await import('electron-updater')).autoUpdater
+    }
     loaded.autoDownload = false
     loaded.autoInstallOnAppQuit = false
     loaded.logger = null
@@ -268,11 +304,11 @@ async function loadAutoUpdater(): Promise<import('electron-updater').AppUpdater 
           // 发布时刻与安装包大小：用户问"这次更新是什么、多大、什么时候的"，
           // 答案全在这三个字段里，对端本来就有，不取等于白放着。
           releaseDate: typeof info.releaseDate === 'string' && info.releaseDate ? info.releaseDate : null,
-          fileSize: firstFileSize(info),
+          fileSize: firstFileSize(process.platform === 'darwin' ? { files: info.files?.filter(file => file.url.endsWith(`-${process.arch}.zip`) || file.url.endsWith('-universal.zip')) } : info),
           // macOS 未签名那条提示里的「下载页」靠这个字段；没有它那条链接点不动。
           releaseUrl: releasePageUrl(info.version),
           message: null,
-          installBlockedReason: detectMacosUpdateBlocked() ? 'macosUnsigned' : null,
+          installBlockedReason: null,
         }),
       )
     })
@@ -346,6 +382,8 @@ export async function checkForUpdates(options: { userInitiated: boolean }): Prom
     )
   }
 
+  if (operation || getUpdateState().phase === 'ready') return getUpdateState()
+
   if (!options.userInitiated) {
     const cached = loadPersistedCheck()
     if (cached) return publish(cached.state)
@@ -373,6 +411,7 @@ export async function checkForUpdates(options: { userInitiated: boolean }): Prom
 }
 
 export async function downloadUpdate(): Promise<UpdateStateV1> {
+  if (operation || getUpdateState().phase === 'ready') return getUpdateState()
   const updater = await loadAutoUpdater()
   if (!updater) return failed('更新模块加载失败。')
   operation = 'download'
@@ -390,14 +429,18 @@ export async function installUpdate(): Promise<UpdateStateV1> {
   const updater = await loadAutoUpdater()
   if (!updater) return failed('更新模块加载失败。')
 
-  if (detectMacosUpdateBlocked()) {
-    // 损坏或绑定旧构建内容的签名无法验证下一版。
-    return failed('这份 macOS 安装包的更新签名无效。请到下载页手动安装已修复的版本。')
-  }
+  if (operation || getUpdateState().phase !== 'ready') return getUpdateState()
 
   operation = 'install'
   try {
-    updater.quitAndInstall(false, true)
+    const state = getUpdateState()
+    const prepared = macosUpdater ? await macosUpdater.prepareInstall() : null
+    receiptStore().write({ fromVersion: app.getVersion(), version: state.availableVersion!, status: 'pending',
+      ...(prepared ? { stagingDirectory: prepared.stagingDirectory } : {}) })
+    if (prepared) {
+      await prepared.launch()
+      app.quit()
+    } else updater.quitAndInstall(false, true)
     return getUpdateState()
   } catch (error) {
     return failed(updateFailureMessage(error, 'install'))
@@ -408,8 +451,37 @@ export async function installUpdate(): Promise<UpdateStateV1> {
 
 /** 应用启动时先拿上一次的结果打底，避免界面在第一次联网前一直空着。 */
 export function primeUpdateStateFromCache(): void {
+  let receipt: import('./update-install-receipt').UpdateInstallReceipt | null = null
+  try { receipt = receiptStore().reconcile(app.getVersion()) }
+  catch { /* A receipt write failure must not prevent opening the room. */ }
+  // Also recognize successful installs performed by an older updater, which did
+  // not write an intent receipt but did persist the previous and target version.
+  if (!receipt && !receiptStore().read()) {
+    try {
+      const old = updateStateV1Schema.parse(JSON.parse(readFileSync(statePath(), 'utf8')).state)
+      if (old.currentVersion !== app.getVersion() && old.availableVersion === app.getVersion()) {
+        receiptStore().write({ fromVersion: old.currentVersion, version: app.getVersion(), status: 'completed' })
+        receipt = receiptStore().read()
+      }
+    } catch { /* No reliable record of an update. */ }
+  }
   const cached = loadPersistedCheck()
-  if (cached) publish(cached.state)
+  publish({ ...(cached?.state ?? initialState()),
+    installedUpdate: receipt?.status === 'completed' ? { fromVersion: receipt.fromVersion, version: receipt.version } : null,
+    ...(receipt?.status === 'failed' ? { phase: 'failed', message: '重启后仍未完成更新，已保留原来的书房。请重新下载并安装。' } : {}),
+  })
+}
+
+export function acknowledgeInstalledUpdate(version: string): UpdateStateV1 {
+  if (getUpdateState().installedUpdate?.version !== version) return getUpdateState()
+  const receipt = receiptStore().read()
+  receiptStore().acknowledge(version)
+  // Keep the rollback bundle until the new renderer really presents the receipt.
+  const staging = receipt?.stagingDirectory
+  if (receipt?.status === 'completed' && staging && dirname(staging) === dirname(macosAppBundle()) && staging.startsWith(join(dirname(macosAppBundle()), '.astella-update-'))) {
+    void rm(staging, { recursive: true, force: true }).catch(() => undefined)
+  }
+  return publish({ ...getUpdateState(), installedUpdate: null })
 }
 
 /**
@@ -423,6 +495,6 @@ export function primeUpdateStateFromCache(): void {
 export function resetUpdateModuleForTests(): void {
   currentState = null
   autoUpdater = null
-  macosUpdateBlocked = null
+  macosUpdater = null
   operation = null
 }

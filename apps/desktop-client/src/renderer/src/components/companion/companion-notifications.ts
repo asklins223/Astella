@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type CompanionNotificationKind = "model" | "task" | "review" | "reminder" | "help";
-export type CompanionNotificationAudio = "voice-model-needed" | "voice-model-ready" | "voice-model-failed" | "task-ready" | "task-failed" | "review-due";
+export type CompanionNotificationAudio = "voice-model-needed" | "voice-model-ready" | "voice-model-failed" | "task-ready" | "task-failed" | "review-due" | "update-installed";
 
 export interface CompanionNotificationAction {
   readonly id: string;

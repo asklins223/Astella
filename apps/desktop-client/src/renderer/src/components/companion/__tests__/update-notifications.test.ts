@@ -20,7 +20,7 @@ vi.mock("../../../app/room-store", () => ({
 vi.mock("../../../app/update-status", () => ({ useUpdateStatus: { getState: () => ({ install: vi.fn() }) } }));
 
 import { useCompanionNotifications } from "../companion-notifications";
-import { notifyUpdateAvailable, notifyUpdateDownloading, notifyUpdateFailed, notifyUpdateReady } from "../update-notifications";
+import { notifyUpdateAvailable, notifyUpdateDownloading, notifyUpdateFailed, notifyUpdateReady, notifyUpdateInstalled } from "../update-notifications";
 
 function state(patch: Partial<UpdateStateV1>): UpdateStateV1 {
   return {
@@ -50,6 +50,24 @@ beforeEach(() => {
 });
 
 describe("更新通知", () => {
+  it("启动成功回执带语音、去掉旧提醒，同一版本不会重复投递", () => {
+    notifyUpdateReady(state({ phase: "ready", availableVersion: "0.2.0" }));
+    const installed = state({ currentVersion: "0.2.0", installedUpdate: { fromVersion: "0.1.0", version: "0.2.0" } });
+    notifyUpdateInstalled(installed);
+    notifyUpdateInstalled(installed);
+    const notices = useCompanionNotifications.getState().items;
+    expect(notices).toHaveLength(1);
+    expect(notices[0].source).toBe("更新成功");
+    expect(notices[0].audio?.text).toContain("更新成功");
+    expect(notices[0].delivery).toBe("when-idle");
+    expect(notices[0].onShown).toBeTypeOf("function");
+  });
+
+  it("只下载或仍在旧版本时不声称更新成功", () => {
+    notifyUpdateInstalled(state({ phase: "ready", availableVersion: "0.2.0" }));
+    notifyUpdateInstalled(state({ installedUpdate: { fromVersion: "0.1.0", version: "0.2.0" } }));
+    expect(ids()).toHaveLength(0);
+  });
   it("发现新版本：设备级、闲时投递、不打断", () => {
     notifyUpdateAvailable(state({ phase: "available", availableVersion: "0.2.0" }));
     const [notice] = useCompanionNotifications.getState().items;
@@ -59,6 +77,33 @@ describe("更新通知", () => {
     // 正做题时不能抢话。
     expect(notice.delivery).toBe("when-idle");
     expect(ids()).toContain("update-available");
+  });
+
+  /**
+   * 纸片只有 326px 宽、内部还要滚动，装不下一篇长文；而正文末尾那两段安装说明
+   * 与卡片自己那句"可以在设置里下载"说的是同一件事。要点之外的内容留在设置的
+   * 「客户端更新」那一格读全文。
+   */
+  it("正文只带要点：标题与安装说明不进纸片，免得与卡片自己那句话重复", () => {
+    notifyUpdateAvailable(state({
+      phase: "available",
+      availableVersion: "0.2.0",
+      releaseNotes: [
+        "Astella v0.2.0",
+        "· 生成学习卡这类 AI 操作，会在创建任务前确认本人的 AI 同意。",
+        "· 伴星把同一话题的连续补充当成一段话理解。",
+        "已安装旧版的用户可在客户端检查更新，或下载本次安装包替换原应用。",
+      ].join("\n"),
+    }));
+    const body = useCompanionNotifications.getState().items[0].body;
+    expect(body).toContain("· 伴星把同一话题的连续补充当成一段话理解。");
+    expect(body).not.toContain("已安装旧版的用户");
+    expect(body).not.toContain("Astella v0.2.0");
+  });
+
+  it("认不出要点时整段留着——宁可长，也不悄悄把内容裁掉", () => {
+    notifyUpdateAvailable(state({ phase: "available", availableVersion: "0.2.0", releaseNotes: "这次只写了一段话。" }));
+    expect(useCompanionNotifications.getState().items[0].body).toContain("这次只写了一段话。");
   });
 
   it("下载中复用同一条 id，进度是就地更新而不是每次多一条", () => {

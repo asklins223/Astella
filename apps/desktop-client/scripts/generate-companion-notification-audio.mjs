@@ -13,6 +13,7 @@ const lines = {
   'task-ready': '你交给我的后台任务完成了，结果已经保存。方便的时候可以打开看看。',
   'task-failed': '后台任务这次没有完成。可以打开原来的页面查看原因，再试一次。',
   'review-due': '今天有学过的知识到了复习时间。方便的时候，和我一起温习一下吧。',
+  'update-installed': '书房更新成功啦，我也回来陪你了。我们继续吧。',
 }
 await mkdir(output, { recursive: true })
 const manifest = { generator: 'edge-tts', voice, rate: '+0%', clips: {} }

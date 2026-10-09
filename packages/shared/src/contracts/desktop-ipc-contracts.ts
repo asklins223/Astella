@@ -721,6 +721,7 @@ export const DESKTOP_IPC_CHANNELS = {
   updateCheck: "astella.v1.update.check",
   updateDownload: "astella.v1.update.download",
   updateInstall: "astella.v1.update.install",
+  updateAcknowledgeInstalled: "astella.v1.update.acknowledgeInstalled",
 } as const;
 
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
@@ -1478,10 +1479,12 @@ export const updateStateV1Schema = z.strictObject({
   /** phase 为 failed 时的说明；其余为 null。 */
   message: z.string().nullable(),
   /**
-   * macOS 上未签名的包装不上（Squirrel.Mac 校验代码签名）。主进程读出这个事实
-   * 交给渲染层如实说，而不是让用户点完"重启安装"才看到一个没头没尾的失败。
+   * 旧版检查缓存的签名限制标记。现行 Mac 更新采用退出后替换应用，
+   * 主进程恢复缓存时清除此标记，不再把没有 Apple 证书视为不能安装。
    */
   installBlockedReason: z.enum(["macosUnsigned"]).nullable(),
+  /** Confirmed by the newly running app; acknowledged only after companion presentation. */
+  installedUpdate: z.strictObject({ fromVersion: z.string().min(1), version: z.string().min(1) }).nullable().optional(),
   checkedAt: z.string().min(1).nullable(),
 });
 export type UpdateStateV1 = z.infer<typeof updateStateV1Schema>;
@@ -1499,6 +1502,10 @@ export const updateInstallInputV1Schema = z.strictObject({
 });
 export const updateGetStateInputV1Schema = z.strictObject({
   meta: requestMetaSchema,
+});
+export const updateAcknowledgeInstalledInputV1Schema = z.strictObject({
+  meta: requestMetaSchema,
+  version: z.string().min(1),
 });
 export const updateGetStateResultV1Schema = z.strictObject({
   state: updateStateV1Schema,
@@ -2458,6 +2465,7 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
     check(input: { meta: RequestMetaV1; userInitiated?: boolean }): Promise<GatewayResultV1<UpdateStateV1>>;
     download(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<UpdateStateV1>>;
     install(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<UpdateStateV1>>;
+    acknowledgeInstalled(input: { meta: RequestMetaV1; version: string }): Promise<GatewayResultV1<UpdateStateV1>>;
   };
   readonly room: {
     getProjection(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof roomProjectionV1Schema>>>;

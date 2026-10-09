@@ -2,6 +2,7 @@ import type { UpdateStateV1 } from "@astella/shared/desktop-ipc-contracts";
 import { notifyCompanion, useCompanionNotifications } from "./companion-notifications";
 import { useUpdateStatus } from "../../app/update-status";
 import { useRoomStore } from "../../app/room-store";
+import { createRequestMeta } from "../../app/desktop-client";
 
 export const SETTINGS_ATTENTION_UPDATE = "desktop-update";
 
@@ -27,6 +28,22 @@ function megabytes(bytes: number): string {
 }
 
 /**
+ * 纸片上只说**这次改了什么**，不说怎么装。
+ *
+ * 正文由 `.github/scripts/release-notes.mjs` 生成，形状固定：首行版本号（与这张
+ * 纸片的标题重复），接一段「· 」要点，最后是写给 GitHub 页面读者的安装与签名说明
+ * ——那两段与这张纸片自己那句"可以在设置里下载"说的是同一件事，读两遍只会更烦。
+ * 而这张卡片只有 326px 宽、内部还要滚动，装不下一篇长文。
+ *
+ * 认不出要点时（手写的正文、别的格式）整段原样留着：宁可长，也不悄悄把内容裁掉。
+ * 全文始终在设置的「客户端更新」那一格有位置。
+ */
+function releaseHighlights(notes: string): string {
+  const bullets = notes.split("\n").filter(line => line.startsWith("· "))
+  return bullets.length ? bullets.join("\n") : notes;
+}
+
+/**
  * 发现新版本。
  *
  * `kind: "reminder"` 是刻意的：通知中心在静音（专注）模式下只放行 `reminder`
@@ -41,7 +58,7 @@ export function notifyUpdateAvailable(state: UpdateStateV1): void {
     id: "update-available", kind: "reminder", scope: "device", delivery: "when-idle", repeat: true,
     source: "客户端更新", title: `有新版本 ${state.availableVersion}`,
     body: state.releaseNotes
-      ? `${state.releaseNotes}\n\n可以在设置的「客户端更新」里下载，更新从 GitHub 下载，不会打断你现在做的事。`
+      ? `${releaseHighlights(state.releaseNotes)}\n\n可以在设置的「客户端更新」里看全并下载，更新从 GitHub 下载，不会打断你现在做的事。`
       : "可以在设置的「客户端更新」里下载，更新从 GitHub 下载，不会打断你现在做的事。",
     audio: { text: `有新版本 ${state.availableVersion}，可以在设置里下载，不会打断你。` },
     snoozable: true,
@@ -94,6 +111,27 @@ export function notifyUpdateReady(state: UpdateStateV1): void {
   });
 }
 
+/** A receipt from the running new version, retained until this paper is shown. */
+export function notifyUpdateInstalled(state: UpdateStateV1): void {
+  const receipt = state.installedUpdate;
+  if (!receipt || receipt.version !== state.currentVersion || receipt.fromVersion === receipt.version) return;
+  if (useCompanionNotifications.getState().items.some(item => item.id === `update-installed:${receipt.version}`)) return;
+  for (const id of ["update-downloading", "update-available", "update-ready", "update-failed"]) {
+    useCompanionNotifications.getState().remove(id);
+  }
+  notifyCompanion({
+    id: `update-installed:${receipt.version}`, kind: "reminder", scope: "device", delivery: "when-idle", priority: "high",
+    source: "更新成功", title: `已经更新到 ${receipt.version}`,
+    body: "书房更新成功啦，我也回来陪你了。可以接着刚才的学习。",
+    audio: { clip: "update-installed", text: "书房更新成功啦，我也回来陪你了。我们继续吧。" },
+    onShown: async () => {
+      const result = await window.astella.update.acknowledgeInstalled({ meta: createRequestMeta(), version: receipt.version });
+      if (result.ok) useUpdateStatus.getState().accept(result.data);
+    },
+    actions: [{ id: "ok", label: "继续学习", kind: "confirm" }],
+  });
+}
+
 /**
  * 更新失败。
  *
@@ -106,7 +144,7 @@ export function notifyUpdateFailed(state: UpdateStateV1): void {
     id: "update-failed", kind: "reminder", scope: "device", priority: "high", repeat: true,
     source: "客户端更新", title: state.installBlockedReason === "macosUnsigned" ? "macOS 需要手动安装" : "这次更新没能完成",
     body: state.installBlockedReason === "macosUnsigned"
-      ? "这份安装包没有代码签名，系统不允许书房自己替换自己。到下载页手动装一下就好。"
+      ? "这份 macOS 安装包的校验没有通过，可以到下载页手动安装。"
       : (state.message ?? "可以在设置的「客户端更新」里再试一次。"),
     actions: [{ id: "go", label: "打开更新设置", kind: "navigate", run: openUpdateSettings }],
   });

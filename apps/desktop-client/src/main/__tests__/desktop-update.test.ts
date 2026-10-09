@@ -27,6 +27,7 @@ const updater = {
   checkForUpdates: vi.fn(async (): Promise<{ updateInfo: { version: string } } | null> => null),
   downloadUpdate: vi.fn(async () => undefined),
   quitAndInstall: vi.fn(),
+  prepareInstall: vi.fn(async () => ({ launch: vi.fn(async () => undefined), stagingDirectory: "/Applications/.astella-update-test" })),
   on(event: string, handler: (payload?: unknown) => void) {
     updater.handlers.set(event, handler);
   },
@@ -36,13 +37,15 @@ const updater = {
 };
 
 const userData = "/tmp/astella-update-test";
+const runtime = vi.hoisted(() => ({ version: "0.1.0", cached: null as string | null }));
 const windows: { isDestroyed: () => boolean; webContents: { send: (channel: string, payload: unknown) => void } }[] = [];
 
 vi.mock("electron", () => ({
   app: {
     isPackaged: true,
-    getVersion: () => "0.1.0",
+    getVersion: () => runtime.version,
     getPath: () => userData,
+    quit: vi.fn(),
     getAppPath: () => "/tmp/测试.app/Contents/Resources/app.asar",
   },
   BrowserWindow: { getAllWindows: () => windows },
@@ -52,40 +55,31 @@ vi.mock("node:fs", () => ({
   existsSync: (path: string) => !String(path).includes("Resources/app.asar"),
   mkdirSync: vi.fn(),
   readFileSync: () => {
+    if (runtime.cached) return runtime.cached;
     throw new Error("no persisted check");
   },
   writeFileSync: vi.fn(),
 }));
 
-const codesign = vi.hoisted(() => ({
-  status: 1,
-  stdout: "",
-  stderr: "code object is not signed at all",
-  verifyStatus: 0,
-  requirement: 'designated => identifier "com.asklins.astella"',
-}));
-vi.mock("node:child_process", () => ({
-  // codesign 问不出来 = 当作未签名，正好把 macOS 那条分支走通。
-  // 每条用例可以把它改成 ad-hoc 签名 / Developer ID 签名，验那条判据本身。
-  spawnSync: (_command: string, args: string[]) => args.includes('--verify')
-    ? { status: codesign.verifyStatus, stdout: '', stderr: '' }
-    : args.includes('--requirements')
-      ? { status: 0, stdout: codesign.requirement, stderr: '' }
-      : { status: codesign.status, stdout: codesign.stdout, stderr: codesign.stderr },
-}));
+const receipts = vi.hoisted(() => ({ value: null as { fromVersion: string; version: string; status: string } | null }));
+vi.mock("../update-install-receipt", () => ({ UpdateInstallReceiptStore: class {
+  read() { return receipts.value; }
+  write(value: typeof receipts.value) { receipts.value = value; }
+  reconcile() { return receipts.value?.status === "acknowledged" ? null : receipts.value; }
+  acknowledge() { if (receipts.value) receipts.value.status = "acknowledged"; }
+} }));
+vi.mock("../macos-archive-updater", () => ({ MacosArchiveUpdater: class { constructor() { return updater; } } }));
 
 vi.mock("electron-updater", () => ({ autoUpdater: updater }));
 
 const send = vi.fn();
 beforeEach(async () => {
   vi.resetModules();
-  // codesign 探针是共享替身：复位成"没签"，否则上一条用例把它改成
-  // Developer ID，会顺着模块单例漏进这一条。
-  codesign.status = 1;
-  codesign.verifyStatus = 0;
-  codesign.requirement = 'designated => identifier "com.asklins.astella"';
-  codesign.stdout = "";
-  codesign.stderr = "code object is not signed at all";
+  Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+  runtime.version = "0.1.0";
+  runtime.cached = null;
+  receipts.value = null;
+  updater.prepareInstall.mockReset().mockResolvedValue({ launch: vi.fn(async () => undefined), stagingDirectory: "/Applications/.astella-update-test" });
   updater.handlers.clear();
   updater.checkForUpdates.mockReset().mockResolvedValue(null);
   updater.downloadUpdate.mockReset().mockResolvedValue(undefined);
@@ -98,6 +92,43 @@ beforeEach(async () => {
 });
 
 describe("更新状态机", () => {
+  it("更新后丢弃旧版本缓存，以真实运行版本确认成功，展示后不会再报", async () => {
+    const module = await import("../desktop-update");
+    await module.checkForUpdates({ userInitiated: true });
+    updater.emit("update-available", { version: "0.2.0" });
+    runtime.cached = JSON.stringify({ checkedAt: Date.now(), state: module.getUpdateState() });
+    runtime.version = "0.2.0";
+    module.resetUpdateModuleForTests();
+    module.primeUpdateStateFromCache();
+    expect(module.getUpdateState()).toMatchObject({ phase: "idle", currentVersion: "0.2.0", availableVersion: null,
+      installedUpdate: { fromVersion: "0.1.0", version: "0.2.0" } });
+    module.acknowledgeInstalledUpdate("0.2.0");
+    module.resetUpdateModuleForTests();
+    module.primeUpdateStateFromCache();
+    expect(module.getUpdateState().installedUpdate).toBeNull();
+  });
+
+  it("已有可安装包时检查不会把它改回可下载，重复安装也不启动第二个替换进程", async () => {
+    const module = await import("../desktop-update");
+    await module.checkForUpdates({ userInitiated: true });
+    updater.emit("update-downloaded", { version: "0.2.0" });
+    updater.checkForUpdates.mockClear();
+    expect((await module.checkForUpdates({ userInitiated: true })).phase).toBe("ready");
+    expect(updater.checkForUpdates).not.toHaveBeenCalled();
+    await Promise.all([module.installUpdate(), module.installUpdate()]);
+    expect(updater.prepareInstall).toHaveBeenCalledOnce();
+  });
+
+  it("Windows 保留原安装器，同样保存启动后的成功回执", async () => {
+    Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+    const module = await import("../desktop-update");
+    await module.checkForUpdates({ userInitiated: true });
+    updater.emit("update-downloaded", { version: "0.2.0" });
+    await module.installUpdate();
+    expect(updater.quitAndInstall).toHaveBeenCalledWith(false, true);
+    expect(updater.prepareInstall).not.toHaveBeenCalled();
+    expect(receipts.value).toMatchObject({ status: "pending", version: "0.2.0" });
+  });
   it("开发模式下如实说不检查，而不是去查一个装不上的版本", async () => {
     const { app } = await import("electron");
     (app as unknown as { isPackaged: boolean }).isPackaged = false;
@@ -170,7 +201,7 @@ describe("更新状态机", () => {
     expect(state.message).not.toMatch(/private|app-update|网络/);
   });
 
-  it("拿到新版本时带上 release 页地址与未签名标记", async () => {
+  it("无证书也可下载和安装，带上 release 页地址", async () => {
     const { checkForUpdates } = await import("../desktop-update");
     updater.checkForUpdates.mockImplementation(async () => {
       updater.emit("update-available", { version: "0.2.0", releaseNotes: "加了什么" });
@@ -181,51 +212,94 @@ describe("更新状态机", () => {
     expect(state.availableVersion).toBe("0.2.0");
     // macOS 未签名那条提示里的「下载页」靠它；缺了这个链接点了没反应。
     expect(state.releaseUrl).toBe("https://github.com/asklins223/Astella/releases/tag/v0.2.0");
-    expect(state.installBlockedReason).toBe("macosUnsigned");
+    expect(state.installBlockedReason).toBeNull();
   });
 
-  it("完整且跨版本稳定的 ad-hoc 签名可以自动安装", async () => {
-    codesign.status = 0;
-    codesign.stdout = "Identifier=com.asklins.astella\nSignature=adhoc\n";
-    codesign.stderr = "";
-    const { checkForUpdates, installUpdate } = await import("../desktop-update");
+  /**
+   * GitHub 的 release feed（`releases.atom` 的 `<content type="html">`）给的是
+   * **渲染后的 HTML**，而通知纸片与设置页都按纯文本显示它。原样传下去的话，
+   * 用户读到的就是 `<p>Astella v1.3.2</p>` 和一排 `<li>`（2026-10-09 真实截图）。
+   */
+  it("release 正文是 HTML 时洗成纯文本，通知里不再露出标签", async () => {
+    const { checkForUpdates } = await import("../desktop-update");
+    const html = [
+      "<p>Astella v0.2.0</p>",
+      "<ul>",
+      "<li>生成学习卡这类 AI 操作，会在创建任务前确认本人的 AI 同意。</li>",
+      "<li>伴星把同一话题的连续补充当成一段话理解。</li>",
+      "</ul>",
+      "<p>已安装旧版的用户可在客户端检查更新。</p>",
+    ].join("\n");
     updater.checkForUpdates.mockImplementation(async () => {
-      updater.emit("update-available", { version: "0.2.0" });
+      updater.emit("update-available", { version: "0.2.0", releaseNotes: html });
       return { updateInfo: { version: "0.2.0" } };
     });
     const state = await checkForUpdates({ userInitiated: true });
-    expect(state.installBlockedReason).toBeNull();
-    await installUpdate();
-    expect(updater.quitAndInstall).toHaveBeenCalledOnce();
+    expect(state.releaseNotes).toBe([
+      "Astella v0.2.0",
+      "· 生成学习卡这类 AI 操作，会在创建任务前确认本人的 AI 同意。",
+      "· 伴星把同一话题的连续补充当成一段话理解。",
+      "已安装旧版的用户可在客户端检查更新。",
+    ].join("\n"));
   });
 
-  it.each([
-    { name: '包体损坏', verifyStatus: 1, requirement: 'designated => identifier "com.asklins.astella"' },
-    { name: '签名绑定一次构建的 CDHash', verifyStatus: 0, requirement: 'designated => cdhash H"123456"' },
-    { name: '签名属于其他应用', verifyStatus: 0, requirement: 'designated => identifier "other.app"' },
-  ])("拒绝不能验证下一版的签名：$name", async ({ verifyStatus, requirement }) => {
-    codesign.status = 0;
-    codesign.stdout = "Identifier=com.asklins.astella\nSignature=adhoc\n";
-    codesign.stderr = "";
-    codesign.verifyStatus = verifyStatus;
-    codesign.requirement = requirement;
-    const { installUpdate } = await import("../desktop-update");
-    const state = await installUpdate();
-    expect(state.phase).toBe('failed');
+  /**
+   * 一条笔记在 markdown 里换行（`release-notes.mjs` 把正文里的换行缩进两格续排）
+   * 时，浏览器渲染出来仍然是一项。折成一行是纸片那条"按要点取行"的规矩能成立的前提，
+   * 否则后半句会被当成另一段、在通知里凭空消失。
+   */
+  it("一条笔记在正文里换行时仍是一项，不会被拆成两行", async () => {
+    const { checkForUpdates } = await import("../desktop-update");
+    updater.checkForUpdates.mockImplementation(async () => {
+      updater.emit("update-available", {
+        version: "0.2.0",
+        releaseNotes: "<ul>\n<li>生成学习卡前会先确认本人的 AI 同意；\n  取消、手动保存和审核已有内容不受影响。</li>\n<li><p>松散写的项</p><p>第二段</p></li>\n</ul>",
+      });
+      return { updateInfo: { version: "0.2.0" } };
+    });
+    const state = await checkForUpdates({ userInitiated: true });
+    expect(state.releaseNotes).toBe([
+      "· 生成学习卡前会先确认本人的 AI 同意； 取消、手动保存和审核已有内容不受影响。",
+      "· 松散写的项 第二段",
+    ].join("\n"));
+  });
+
+  it("正文里的实体与行内标签还原成文字，行内空格不丢", async () => {
+    const { checkForUpdates } = await import("../desktop-update");
+    updater.checkForUpdates.mockImplementation(async () => {
+      updater.emit("update-available", {
+        version: "0.2.0",
+        releaseNotes: '<p>未配置签名时可能经过 &#34;仍要打开&#34; 与 SmartScreen，用法是 <code>npm run dev</code> 与 <strong>加粗</strong> <em>斜体</em>，写作 v1&lt;2。</p>',
+      });
+      return { updateInfo: { version: "0.2.0" } };
+    });
+    const state = await checkForUpdates({ userInitiated: true });
+    expect(state.releaseNotes).toBe(
+      "未配置签名时可能经过 \"仍要打开\" 与 SmartScreen，用法是 npm run dev 与 加粗 斜体，写作 v1<2。"
+    );
+  });
+
+  it("macOS 安装先暂存、写入重启回执，再退出，不调用 ShipIt", async () => {
+    const { app } = await import("electron");
+    const { checkForUpdates, installUpdate } = await import("../desktop-update");
+    await checkForUpdates({ userInitiated: true });
+    updater.emit("update-downloaded", { version: "0.2.0" });
+    await installUpdate();
+    expect(updater.prepareInstall).toHaveBeenCalledOnce();
+    expect(receipts.value).toMatchObject({ fromVersion: "0.1.0", version: "0.2.0", status: "pending" });
+    expect(app.quit).toHaveBeenCalled();
     expect(updater.quitAndInstall).not.toHaveBeenCalled();
   });
 
-  it("正式签名的包不挡路：没有这条闸", async () => {
-    codesign.status = 0;
-    codesign.stdout = "Authority=Developer ID Application: Someone (TEAMID)\nSignature=Developer ID Application: Someone (TEAMID)\n";
-    codesign.stderr = "";
-    const { checkForUpdates } = await import("../desktop-update");
-    updater.checkForUpdates.mockImplementation(async () => {
-      updater.emit("update-available", { version: "0.2.0" });
-      return { updateInfo: { version: "0.2.0" } };
-    });
-    const state = await checkForUpdates({ userInitiated: true });
-    expect(state.installBlockedReason).toBeNull();
+  it("安装前校验或权限失败时留在旧书房，不写成功回执", async () => {
+    const { checkForUpdates, installUpdate } = await import("../desktop-update");
+    await checkForUpdates({ userInitiated: true });
+    updater.emit("update-downloaded", { version: "0.2.0" });
+    updater.prepareInstall.mockRejectedValue(new Error("MAC_UPDATE_PERMISSION: 当前应用位置不能写入。"));
+    const state = await installUpdate();
+    expect(state.phase).toBe("failed");
+    expect(state.message).toBe("当前应用位置不能写入。");
+    expect(receipts.value).toBeNull();
   });
 
   it("同一个 phase 不重复推——通知是按 phase 变化触发的", async () => {
@@ -239,11 +313,10 @@ describe("更新状态机", () => {
     expect(new Set(phases).size).toBeLessThanOrEqual(phases.length);
   });
 
-  it("macOS 未签名时拒绝自动安装，并把话说清楚", async () => {
+  it("未下载完成不能安装或退出", async () => {
     const { installUpdate } = await import("../desktop-update");
-    const state = await installUpdate();
-    expect(state.phase).toBe("failed");
-    expect(state.message).toContain("更新签名无效");
+    await installUpdate();
+    expect(updater.prepareInstall).not.toHaveBeenCalled();
     expect(updater.quitAndInstall).not.toHaveBeenCalled();
   });
 
@@ -261,23 +334,3 @@ describe("更新状态机", () => {
     expect(state.total).toBe(209_715_200);
   });
 });
-
-
-  /**
-   * 签名失败说的是**这台电脑上的书房**，不是刚下下来的那份包。说成"重新下载"，
-   * 用户只会把同一件事再失败一遍（2026-10-06 真窗口实测：ad-hoc 包点完安装，
-   * 书房重启、版本没变，只留下一句"安装包校验未通过"）。
-   */
-  it("签名类安装失败指向下载页，而不是让用户重新下载", async () => {
-    codesign.status = 0;
-    codesign.stdout = "Authority=Developer ID Application: Someone (TEAMID)\n";
-    codesign.stderr = "";
-    const { installUpdate } = await import("../desktop-update");
-    updater.quitAndInstall.mockImplementation(() => {
-      throw new Error("Code signature validation failed for the new version");
-    });
-    const state = await installUpdate();
-    expect(state.phase).toBe("failed");
-    expect(state.message).toContain("下载页");
-    expect(state.message).not.toContain("重新下载");
-  });

@@ -32,6 +32,11 @@
       "text": "今天有学过的知识到了复习时间。方便的时候，和我一起温习一下吧。",
       "file": "review-due.mp3",
       "bytes": 40464
+    },
+    "update-installed": {
+      "text": "书房更新成功啦，我也回来陪你了。我们继续吧。",
+      "file": "update-installed.mp3",
+      "bytes": 30240
     }
   }
 }

@@ -12,6 +12,7 @@ vi.mock("../../../app/companion-voice-playback", () => ({
 import { HomeV2AudioController } from "../HomeV2AudioController";
 import { isCompanionSpeechActive, setCompanionVoiceHost } from "../../../app/companion-voice-playback";
 import { useRoomStore } from "../../../app/room-store";
+import { UNKNOWN_UPDATE_STATE, useUpdateStatus } from "../../../app/update-status";
 import { holdCompanionMicrophone } from "../../companion/companion-notification-voice";
 
 let warm: () => void;
@@ -42,6 +43,7 @@ beforeEach(() => {
     frequency: { value: 0 }, Q: { value: 0 },
   });
   vi.stubGlobal("AudioContext", class {
+    state = "running";
     sampleRate = 16;
     currentTime = 0;
     destination = node("destination");
@@ -57,6 +59,7 @@ beforeEach(() => {
     createOscillator = () => node("oscillator");
   });
   useRoomStore.setState({ masterMuted: false, surface: null, windowState: "visible" });
+  useUpdateStatus.setState({ state: UNKNOWN_UPDATE_STATE });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
@@ -66,6 +69,25 @@ function interact(trusted = true) {
   (handler as (event: Event) => void)({ isTrusted: trusted } as Event);
 }
 const audible = () => vi.mocked(setCompanionVoiceHost).mock.calls.at(-1)?.[0]?.audible();
+
+it("confirmed update startup opens the local voice channel without another click", async () => {
+  useUpdateStatus.setState({ state: { ...UNKNOWN_UPDATE_STATE, currentVersion: "1.3.3", installedUpdate: { fromVersion: "1.3.2", version: "1.3.3" } } });
+  render(<HomeV2AudioController />);
+  await act(async () => { warm(); });
+  expect(resume).toHaveBeenCalled();
+  expect(audible()).toBe(true);
+  expect(started).toEqual([]);
+});
+
+it.each([{ masterMuted: true, windowState: "visible" as const }, { masterMuted: false, windowState: "hidden" as const }])("update startup respects mute and hidden windows: %j", async patch => {
+  useRoomStore.setState(patch);
+  useUpdateStatus.setState({ state: { ...UNKNOWN_UPDATE_STATE, currentVersion: "1.3.3", installedUpdate: { fromVersion: "1.3.2", version: "1.3.3" } } });
+  render(<HomeV2AudioController />);
+  await act(async () => { warm(); });
+  expect(resume).not.toHaveBeenCalled();
+  expect(audible()).toBe(false);
+  expect(started).toEqual([]);
+});
 
 it("constructs the graph in idle time, stays silent before a gesture, and reuses it on the first click", async () => {
   const view = render(<HomeV2AudioController />);

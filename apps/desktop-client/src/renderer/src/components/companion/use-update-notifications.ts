@@ -7,6 +7,7 @@ import {
   notifyUpdateDownloading,
   notifyUpdateFailed,
   notifyUpdateReady,
+  notifyUpdateInstalled,
 } from "./update-notifications";
 
 /**
@@ -31,11 +32,13 @@ export function useUpdateNotifications(): void {
   const previous = useRef<string | null>(null);
   useEffect(() => {
     const react = (state: UpdateStateV1): void => {
+      // A startup receipt is independent of check/download phase changes.
+      if (state.installedUpdate) notifyUpdateInstalled(state);
       const phase = state.phase;
+      if (phase === "downloading") { notifyUpdateDownloading(state); previous.current = phase; return; }
       if (phase === previous.current) return;
       previous.current = phase;
-      if (phase === "available") notifyUpdateAvailable(state);
-      else if (phase === "downloading") notifyUpdateDownloading(state);
+      if (phase === "available" && state.availableVersion !== state.currentVersion) notifyUpdateAvailable(state);
       else if (phase === "ready") notifyUpdateReady(state);
       else if (phase === "failed" && state.message) notifyUpdateFailed(state);
     };

@@ -18,6 +18,7 @@ import {
   downloadUpdate,
   getUpdateState,
   installUpdate,
+  acknowledgeInstalledUpdate,
 } from "./desktop-update";
 import * as ns_learning from "./desktop-gateway-ns-learning";
 import * as ns_workspace from "./desktop-gateway-ns-workspace";
@@ -77,6 +78,7 @@ import {
   shellOpenExternalRequestV1Schema,
   shellOpenExternalResultV1Schema,
   updateGetStateInputV1Schema,
+  updateAcknowledgeInstalledInputV1Schema,
   updateGetStateResultV1Schema,
   updateCheckInputV1Schema,
   updateDownloadInputV1Schema,
@@ -1812,6 +1814,10 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
 
   installHandler(DESKTOP_IPC_CHANNELS.updateInstall, updateInstallInputV1Schema, options, async () => {
     return installUpdate();
+  }, undefined, updateStateV1Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.updateAcknowledgeInstalled, updateAcknowledgeInstalledInputV1Schema, options, (_event, _window, input) => {
+    return acknowledgeInstalledUpdate(input.version);
   }, undefined, updateStateV1Schema);
 
   installHandler(DESKTOP_IPC_CHANNELS.subscriptionsSubscribe, subscribeInputSchema, options, (_event, window, input) => {

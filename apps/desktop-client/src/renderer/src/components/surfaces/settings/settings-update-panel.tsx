@@ -106,9 +106,10 @@ export function SettingsUpdateGroup(props: {
   const hasUpdate = hasActionableUpdate(state);
   const blocked = state.installBlockedReason === "macosUnsigned";
   const day = releaseDay(state.releaseDate);
-  // 「这次更新」这一行只显示**标题**。没有标题时说明文字落在上面那行的 detail 里
-  // ——两处都显示就是同一段话在屏上出现两次。标题与 notes 至多显示一处。
-  const metaNotes = state.releaseName;
+  // 「这次更新」摆**完整正文**：伴星那张纸片只带要点，全文要有地方读得着，而这一格
+  // 就是那个位置。正文首行本来就是标题（`release-notes.mjs` 写的），不再另拼
+  // releaseName——两处都摆就是同一段话在屏上出现两次。取不到正文才退回标题。
+  const metaNotes = state.releaseNotes ?? state.releaseName;
   const size = state.fileSize !== null && state.fileSize > 0 ? megabytes(state.fileSize) : null;
 
   return (
@@ -123,12 +124,9 @@ export function SettingsUpdateGroup(props: {
         </SettingRow>
 
         {hasUpdate && state.availableVersion ? (
-          // detail 只在没有标题时才用 notes：有标题的话 notes 会在下面的元信息块里
-          // 完整出现，行里再抄一遍就是同一段话在屏上出现两次。
-          <SettingRow
-            title={`新版本 ${state.availableVersion}`}
-            detail={state.releaseName ? undefined : (state.releaseNotes ?? undefined)}
-          >
+          // 正文不在这里重复一遍：它整段落在下面的元信息块里，行里再抄一遍就是
+          // 同一段话在屏上出现两次。
+          <SettingRow title={`新版本 ${state.availableVersion}`} detail={undefined}>
             {state.phase === "ready" ? (
               <button type="button" className="button primary" onClick={onInstall} disabled={busy || blocked}>
                 <Download size={14} aria-hidden="true" />

@@ -164,7 +164,8 @@ const desktopApi: AstellaDesktopApiM2 = {
     getState: (input) => invoke(DESKTOP_IPC_CHANNELS.updateGetState, input),
     check: (input) => invoke(DESKTOP_IPC_CHANNELS.updateCheck, input),
     download: (input) => invoke(DESKTOP_IPC_CHANNELS.updateDownload, input),
-    install: (input) => invoke(DESKTOP_IPC_CHANNELS.updateInstall, input)
+    install: (input) => invoke(DESKTOP_IPC_CHANNELS.updateInstall, input),
+    acknowledgeInstalled: (input) => invoke(DESKTOP_IPC_CHANNELS.updateAcknowledgeInstalled, input)
   },
   window: {
     getState: (input) => invoke(DESKTOP_IPC_CHANNELS.windowGetState, input),

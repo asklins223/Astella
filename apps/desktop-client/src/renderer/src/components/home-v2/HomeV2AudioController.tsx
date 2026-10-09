@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRoomStore } from "../../app/room-store";
+import { useUpdateStatus } from "../../app/update-status";
 import {
   createRequestMeta,
   gatewayErrorMessage,
@@ -254,6 +255,9 @@ export function HomeV2AudioController() {
   const masterMuted = useRoomStore((state) => state.masterMuted);
   const surface = useRoomStore((state) => state.surface);
   const windowState = useRoomStore((state) => state.windowState);
+  const installedUpdateVersion = useUpdateStatus(state => state.state.installedUpdate?.version);
+  const startupAudioAllowed = useRef(false);
+  startupAudioAllowed.current = Boolean(installedUpdateVersion) && !masterMuted && windowState === "visible" && !document.hidden;
   const invalidation = useHomeProjectionInvalidation();
   const workspaceEpochRef = useRef(invalidation.workspaceEpoch);
   workspaceEpochRef.current = invalidation.workspaceEpoch;
@@ -369,7 +373,7 @@ export function HomeV2AudioController() {
       try {
         const graph = graphRef.current ?? buildAudioGraph();
         graphRef.current = graph;
-        if (interacted) {
+        if (interacted || startupAudioAllowed.current) {
           void graph.context.resume().catch(() => undefined);
           setUnlocked(true);
         } else {
@@ -473,6 +477,16 @@ export function HomeV2AudioController() {
     setUnlocked(true);
     return built;
   }, []);
+
+  // A confirmed update is an expected startup message. Reopen the existing
+  // local audio channel for it while respecting mute and window visibility.
+  useEffect(() => {
+    if (!installedUpdateVersion || masterMuted || windowState !== "visible" || document.hidden) return;
+    const graph = ensureGraph();
+    void graph.context.resume().then(() => {
+      if (graphRef.current === graph && graph.context.state === "running") setUnlocked(true);
+    }).catch(() => undefined);
+  }, [installedUpdateVersion, masterMuted, windowState, ensureGraph]);
 
   const synthesizeVoice = useCallback(async (text: string): Promise<AudioBuffer> => {
     const speakApi = window.astella?.companion?.voice?.speak;

@@ -110,10 +110,11 @@
   overflow-wrap: anywhere;
 }
 
-/* 更新说明可能很长（GitHub 自动生成的 notes 会把整个 changelog 铺进来），
-   限高并可滚动：不让它把下面的空间内容统计挤出视野。 */
+/* 这一格是更新正文**唯一**的全文落点（伴星那张纸片只带要点），所以按整段正文给高度：
+   一次能读完七八行，不必靠滚动。仍然留限高——GitHub 自动生成的 changelog 能铺上百行，
+   不该把下面的空间内容统计推出视野。 */
 .hud-surface .settings-update__notes {
-  max-height: 9em;
+  max-height: 15em;
   overflow-y: auto;
   white-space: pre-wrap;
 }

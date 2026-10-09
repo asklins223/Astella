@@ -101,30 +101,41 @@ describe("有新版本时给出这次更新的内容、时间与大小", () => {
     renderGroup({
       phase: "available",
       availableVersion: "0.2.0",
-      releaseName: "给书房加了新版房间",
       releaseNotes: "- 修复了若干问题\n- 优化了启动速度",
       releaseDate: "2026-10-04T12:50:09.026Z",
       fileSize: 250_043_464,
     });
     expect(screen.getByText(/新版本 0\.2\.0/)).toBeTruthy();
-    expect(screen.getByText("给书房加了新版房间")).toBeTruthy();
+    expect(screen.getByText(/优化了启动速度/)).toBeTruthy();
     expect(screen.getByText(/2026/)).toBeTruthy();
     expect(screen.getByText("238.5 MB")).toBeTruthy();
   });
 
-  it("有标题时优先显示标题，而不是自动生成的 notes", () => {
+  /**
+   * 这一格是更新正文**唯一**的全文落点：伴星那张纸片只带要点，所以完整正文
+   * （含写给 GitHub 页面读者的安装说明）要在这里读得着。
+   *
+   * 标题不再另占一行——`release-notes.mjs` 写出的正文首行就是标题，两处都摆就是
+   * 同一段话在屏上出现两次（上面那行的行标题也已经写着版本号）。
+   */
+  it("「这次更新」摆完整正文，标题不重复出现第二次", () => {
     renderGroup({
       phase: "available",
       availableVersion: "0.2.0",
-      releaseName: "给书房加了新版房间",
-      releaseNotes: "## What's Changed\n- 一堆自动生成的条目",
+      releaseName: "Astella v0.2.0",
+      releaseNotes: "Astella v0.2.0\n· 生成学习卡前会先确认本人的 AI 同意\n· 伴星读得到每条消息的真实发送时间\n\n已安装旧版的用户可在客户端检查更新。",
     });
-    // GitHub 自动生成的 notes 往往把整个 changelog 铺进来；标题更像一句人话。
-    expect(screen.getByText("给书房加了新版房间")).toBeTruthy();
-    expect(screen.queryByText(/What's Changed/)).toBeNull();
+    expect(screen.getByText(/伴星读得到每条消息的真实发送时间/)).toBeTruthy();
+    expect(screen.getByText(/已安装旧版的用户可在客户端检查更新/)).toBeTruthy();
+    expect(screen.getAllByText(/Astella v0\.2\.0/)).toHaveLength(1);
   });
 
-  it("只有 notes 没有标题时，退回显示 notes", () => {
+  it("只有标题没有正文时，那一行退回显示标题", () => {
+    renderGroup({ phase: "available", availableVersion: "0.2.0", releaseName: "给书房加了新版房间" });
+    expect(screen.getByText("给书房加了新版房间")).toBeTruthy();
+  });
+
+  it("只有 notes 没有标题时，正文照样显示", () => {
     renderGroup({ phase: "available", availableVersion: "0.2.0", releaseNotes: "- 只写了条目" });
     expect(screen.getByText("- 只写了条目")).toBeTruthy();
   });

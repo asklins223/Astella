@@ -806,6 +806,7 @@ jobs:
         # 同 Windows 那一节：CI + tag checkout 会让 electron-builder 自行尝试发布。
         run: |
           node scripts/check-macos-update-signature.cjs
+          node scripts/check-macos-update-download.mjs
           node ../../.github/scripts/desktop-deployment.mjs
           npm run package:mac:${{ inputs.mac_arch || 'arm64' }} -- --publish never
       - name: Verify macOS deliverables (zip → app bundle → launch)
