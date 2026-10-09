@@ -7,5 +7,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <PackageLicenseExpression>PolyForm-Noncommercial-1.0.0</PackageLicenseExpression>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="../Core/Astella.Setup.Core.csproj" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Core/Astella.Setup.Core.csproj" />
+    <Compile Include="../WindowsShortcut.cs" Link="WindowsShortcut.cs" />
+  </ItemGroup>
 </Project>

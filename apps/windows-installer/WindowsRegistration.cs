@@ -1,5 +1,4 @@
 using System.IO;
-using System.Runtime.InteropServices;
 using Astella.Setup.Core;
 using Microsoft.Win32;
 
@@ -21,7 +20,7 @@ internal sealed class WindowsRegistration : IInstallationRegistration
             File.Exists(DesktopShortcut), [], "");
     }
 
-    public void Register(InstalledInstallation installation) => OnSta(() =>
+    public void Register(InstalledInstallation installation) => WindowsShortcut.OnSta(() =>
     {
         using var install = Registry.CurrentUser.CreateSubKey(InstallKey);
         install.SetValue("InstallLocation", installation.InstallDirectory);
@@ -38,61 +37,20 @@ internal sealed class WindowsRegistration : IInstallationRegistration
         uninstall.SetValue("NoModify", 1, RegistryValueKind.DWord);
         uninstall.SetValue("NoRepair", 1, RegistryValueKind.DWord);
         uninstall.SetValue("EstimatedSize", (int)Math.Min(int.MaxValue, installation.Files.Sum(f => f.Size) / 1024), RegistryValueKind.DWord);
-        CreateShortcut(StartShortcut, executable);
-        if (installation.DesktopShortcut) CreateShortcut(DesktopShortcut, executable);
-        else DeleteOwnedShortcut(DesktopShortcut, installation.InstallDirectory);
+        WindowsShortcut.Create(StartShortcut, executable);
+        if (installation.DesktopShortcut) WindowsShortcut.Create(DesktopShortcut, executable);
+        else WindowsShortcut.DeleteIfOwned(DesktopShortcut, installation.InstallDirectory);
     });
 
-    public void Remove(string installDirectory) => OnSta(() =>
+    public void Remove(string installDirectory) => WindowsShortcut.OnSta(() =>
     {
         using (var key = Registry.CurrentUser.OpenSubKey(InstallKey))
             if (key?.GetValue("InstallLocation") is string registered && !registered.Equals(installDirectory, InstallPaths.Comparison))
                 throw new IOException("安装登记已发生变化，已停止移除。");
-        DeleteOwnedShortcut(StartShortcut, installDirectory);
-        DeleteOwnedShortcut(DesktopShortcut, installDirectory);
+        WindowsShortcut.DeleteIfOwned(StartShortcut, installDirectory);
+        WindowsShortcut.DeleteIfOwned(DesktopShortcut, installDirectory);
         Registry.CurrentUser.DeleteSubKeyTree(UninstallKey, false);
         Registry.CurrentUser.DeleteSubKeyTree(InstallKey, false);
     });
 
-    private static void OnSta(Action action)
-    {
-        if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA) { action(); return; }
-        Exception? failure = null;
-        var thread = new Thread(() => { try { action(); } catch (Exception error) { failure = error; } });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure != null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
-    }
-
-    private static void CreateShortcut(string path, string executable)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var type = Type.GetTypeFromProgID("WScript.Shell") ?? throw new IOException("无法创建 Windows 快捷方式。");
-        dynamic shell = Activator.CreateInstance(type)!;
-        dynamic shortcut = shell.CreateShortcut(path);
-        try
-        {
-            shortcut.TargetPath = executable;
-            shortcut.WorkingDirectory = Path.GetDirectoryName(executable);
-            shortcut.Description = "Astella 拾星笔记";
-            shortcut.IconLocation = executable + ",0";
-            shortcut.Save();
-        }
-        finally { Marshal.FinalReleaseComObject(shortcut); Marshal.FinalReleaseComObject(shell); }
-    }
-
-    private static void DeleteOwnedShortcut(string path, string directory)
-    {
-        if (!File.Exists(path)) return;
-        var type = Type.GetTypeFromProgID("WScript.Shell") ?? throw new IOException("无法读取 Windows 快捷方式。");
-        dynamic shell = Activator.CreateInstance(type)!;
-        dynamic shortcut = shell.CreateShortcut(path);
-        try
-        {
-            string target = shortcut.TargetPath;
-            if (Path.GetFullPath(target).Equals(Path.Combine(directory, Identity.Executable), InstallPaths.Comparison)) File.Delete(path);
-        }
-        finally { Marshal.FinalReleaseComObject(shortcut); Marshal.FinalReleaseComObject(shell); }
-    }
 }

@@ -128,6 +128,23 @@ foreach (var test in tests)
 }
 Console.WriteLine($"{tests.Length} installer core scenarios passed.");
 
+if (OperatingSystem.IsWindows())
+{
+    using var fixture = new Fixture();
+    Directory.CreateDirectory(fixture.Target);
+    var executable = Path.Combine(fixture.Target, Identity.Executable);
+    File.WriteAllText(executable, "shortcut target");
+    var shortcut = Path.Combine(fixture.Root, "快捷方式 中文 ' 空格.lnk");
+    Astella.Setup.WindowsShortcut.Create(shortcut, executable);
+    Assert(File.Exists(shortcut));
+    Assert(Astella.Setup.WindowsShortcut.ReadTarget(shortcut).Equals(executable, InstallPaths.Comparison));
+    Astella.Setup.WindowsShortcut.DeleteIfOwned(shortcut, Path.Combine(fixture.Root, "other app"));
+    Assert(File.Exists(shortcut));
+    Astella.Setup.WindowsShortcut.DeleteIfOwned(shortcut, fixture.Target);
+    Assert(!File.Exists(shortcut));
+    Console.WriteLine("PASS native Windows shortcut round trip; Chinese, spaces and apostrophe paths; preserve foreign targets");
+}
+
 static void Assert(bool condition) { if (!condition) throw new Exception("Assertion failed"); }
 static void AssertThrows(Action action) { try { action(); } catch { return; } throw new Exception("Expected rejection"); }
 static async Task Reject(Func<Task> action) { try { await action(); } catch { return; } throw new Exception("Expected rejection"); }

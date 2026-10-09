@@ -60,7 +60,8 @@ try {
   Invoke-Installer $Installer @('--quiet', '--install-dir', $target)
   Assert-Installed
   # Confirm native wizard consent, location, license and default-retention UI before mutations.
-  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'check-windows-installer-ui.ps1') -Installer $Installer -InstallDirectory $target -Diagnostics $diagnostics
+  # The UI script uses a UTF-8 BOM for Windows PowerShell's Chinese names and runs in STA.
+  & powershell.exe -STA -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'check-windows-installer-ui.ps1') -Installer $Installer -InstallDirectory $target -Diagnostics $diagnostics
   if ($LASTEXITCODE -ne 0) { throw 'Windows 安装界面交互检查未通过' }
 
   Write-Host 'Launch the installed Electron application'
