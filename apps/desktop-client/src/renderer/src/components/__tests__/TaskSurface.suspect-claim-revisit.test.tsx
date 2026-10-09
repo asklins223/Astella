@@ -104,6 +104,9 @@ function stubGateway() {
   };
 
   const gateway = {
+    // 「开始生成」现在先过一次 AI 操作门禁（2026-10-09），夹具不给这一格就会把
+    // 整条路由挡在 start 之前——屏上没有审核页，也不是产品该给的结果。
+    workspace: { getAiSettings: vi.fn(async () => ({ ok: true as const, data: { requiresConsent: true, consentVersion: "ai-consent-v1", dataPolicy: { sendToExternal: true } } })) },
     contract: { enabledRoutes: ["note.detail", "note.cardGeneration"] },
     auth: {
       getState: vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: { status: "authenticated" as const, workspace: { workspaceId: "w-1" } } })),
