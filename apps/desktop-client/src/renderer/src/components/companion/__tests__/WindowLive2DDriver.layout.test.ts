@@ -40,6 +40,7 @@ let driver: WindowLive2DDriver;
 let container: HTMLDivElement;
 let canvas: HTMLCanvasElement;
 let onStatus: NonNullable<ConstructorParameters<typeof WindowLive2DDriver>[0]["onStatus"]>;
+let onGraphicsFailure: ReturnType<typeof vi.fn<() => void>>;
 let size: { width: number; height: number };
 let nextFixture: ReturnType<typeof modelFixture>;
 let ticker: { add: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>; deltaMS: number; maxFPS: number };
@@ -47,7 +48,7 @@ let resizeRenderer: ReturnType<typeof vi.fn>;
 
 /** 在当前容器上装一个驱动器并挂载模型。`PIXI` 桩总是返回 `nextFixture.model`。 */
 function mountDriver(): Promise<void> {
-  driver = new WindowLive2DDriver({ canvas, container, onStatus });
+  driver = new WindowLive2DDriver({ canvas, container, onStatus, onGraphicsFailure });
   return driver.init();
 }
 
@@ -86,6 +87,7 @@ beforeEach(async () => {
   canvas = document.createElement("canvas");
   Object.defineProperty(canvas, "getContext", { value: () => ({ MAX_TEXTURE_IMAGE_UNITS: 1, getParameter: () => 8 }) });
   onStatus = vi.fn();
+  onGraphicsFailure = vi.fn();
   await mountDriver();
   expect(onStatus).toHaveBeenLastCalledWith("ready");
   expect(container.style.getPropertyValue("--companion-model-ink-left")).toBe("0.0900");
@@ -95,6 +97,30 @@ afterEach(() => {
   driver?.destroy();
   document.head.replaceChildren();
   vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers();
+});
+
+it("reports native context loss once, but ignores synthetic events and losses after disposal", async () => {
+  canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+  expect(onStatus).toHaveBeenLastCalledWith("ready");
+  expect(onGraphicsFailure).not.toHaveBeenCalled();
+  driver.destroy();
+  const listen = vi.spyOn(canvas, "addEventListener");
+  await mountDriver();
+  const handler = listen.mock.calls.find(([name]) => name === "webglcontextlost")![1] as EventListener;
+  const event = { isTrusted: true, preventDefault: vi.fn() } as unknown as Event;
+  handler(event);
+  expect(event.preventDefault).toHaveBeenCalled();
+  expect(onGraphicsFailure).toHaveBeenCalledOnce();
+  expect(onStatus).toHaveBeenLastCalledWith("failed");
+  handler(event);
+  expect(onGraphicsFailure).toHaveBeenCalledOnce();
+});
+
+it("does not classify a model parameter error as a GPU failure", () => {
+  fixture.write.mockImplementationOnce(() => { throw new Error("invalid model parameter"); });
+  fixture.update();
+  expect(onStatus).toHaveBeenLastCalledWith("failed");
+  expect(onGraphicsFailure).not.toHaveBeenCalled();
 });
 
 /**

@@ -49,6 +49,8 @@ import { FilePendingReturnMarkerStore } from './pending-return-marker-store'
 import { FileNoteDocCacheStore } from './note-doc-cache-store'
 import { guardProcessOutputStreams } from './output-stream-guard'
 import { configureDesktopAppIdentity } from './desktop-app-identity'
+import { DesktopRenderingPreferences, registerDesktopRenderingHealthMonitor, registerDesktopRenderingIpc } from './desktop-rendering'
+import { DESKTOP_RENDERING_STATE_CHANNEL } from '../shared/desktop-rendering'
 
 // 主进程的第一件事：stdout/stderr 的写失败（终端关掉后的 EIO/EPIPE）不能再升级成
 // 未捕获异常——那会弹出一个阻塞整个应用的模态框，而原因只是"没人再读日志"。
@@ -56,6 +58,12 @@ import { configureDesktopAppIdentity } from './desktop-app-identity'
 guardProcessOutputStreams(process.stdout, process.stderr)
 
 configureDesktopAppIdentity(app)
+
+// GPU backend selection is startup-only. Loading this after ready is too late.
+const desktopRendering = new DesktopRenderingPreferences(
+  resolve(app.getPath('userData'), 'desktop-rendering.json'), app,
+)
+registerDesktopRenderingHealthMonitor(app, desktopRendering, traceBoot)
 
 const APP_SCHEME = 'astella-app'
 const APP_HOST = 'bundle'
@@ -518,6 +526,16 @@ function windowFor(contents: WebContents, sourceUrl: string): BrowserWindow | nu
 }
 
 function registerWindowIpc(): void {
+  registerDesktopRenderingIpc(ipcMain, desktopRendering, event =>
+    Boolean(windowFor(event.sender, event.senderFrame?.url ?? '')))
+  desktopRendering.subscribe(state => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()
+        && isAllowedNavigation(window.webContents.getURL())) {
+        window.webContents.send(DESKTOP_RENDERING_STATE_CHANNEL, state)
+      }
+    }
+  })
   ipcMain.on(TITLE_BAR_THEME_CHANNEL, (event, theme: unknown) => {
     const window = windowFor(event.sender, event.senderFrame?.url ?? '')
 
@@ -738,6 +756,18 @@ function reportStartupFailure(error: unknown): void {
 app.whenReady()
   .then(async () => {
   traceBoot('whenReady-resolved')
+  // Keep enough local evidence to distinguish renderer crashes from driver
+  // compatibility. Do not collect page contents or send diagnostics anywhere.
+  void app.getGPUInfo('complete').then((info) => {
+    const attributes = typeof info === 'object' && info !== null && 'auxAttributes' in info
+      ? info.auxAttributes as Record<string, unknown> | undefined : undefined
+    traceBoot(`rendering-runtime ${JSON.stringify({
+      electron: process.versions.electron, chromium: process.versions.chrome,
+      os: process.getSystemVersion(), arch: process.arch,
+      ...desktopRendering.getState(), features: app.getGPUFeatureStatus(),
+      renderer: attributes?.glRenderer, backend: attributes?.skiaBackendType,
+    })}`)
+  }).catch(() => undefined)
   Menu.setApplicationMenu(null)
   /**
    * 用上一次查到的结果给界面打底（2026-10）。不联网、不预取安装包——

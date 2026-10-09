@@ -137,6 +137,11 @@ export function WindowLive2D({
     const driver = new WindowLive2DDriver({
       canvas,
       container,
+      onGraphicsFailure: () => {
+        if (cancelled || window.astellaDesktop?.platform !== "darwin") return;
+        void window.astellaDesktop.rendering?.reportGraphicsFailure("webgl-context-lost")
+          .catch(error => console.warn("[WindowLive2D] could not save rendering fallback", error));
+      },
       onStatus: (nextStatus) => {
         if (cancelled) return;
         if (nextStatus === "ready" || nextStatus === "failed") {

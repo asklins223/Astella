@@ -4,9 +4,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WindowLive2D } from "../WindowLive2D";
 
+let graphicsFailure: (() => void) | undefined;
 vi.mock("../WindowLive2DDriver", () => ({
   WindowLive2DDriver: class {
-    constructor(private options: { onStatus: (status: string) => void }) {}
+    constructor(private options: { onStatus: (status: string) => void; onGraphicsFailure?: () => void }) { graphicsFailure = options.onGraphicsFailure; }
     async init() { this.options.onStatus("ready"); }
     destroy() {}
     setPresentation() {}
@@ -21,6 +22,7 @@ vi.mock("../../../app/companion-voice-level", () => ({ subscribeHomeV2VoiceLevel
 
 let styles: HTMLStyleElement;
 beforeEach(() => {
+  Object.defineProperty(window, "astellaDesktop", { configurable: true, value: undefined });
   vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
   styles = document.createElement("style");
   styles.textContent = readFileSync("src/renderer/src/components/companion/companion-root.css", "utf8");
@@ -56,4 +58,15 @@ it("keeps a task-page invite clickable without advertising a drag gesture", () =
   expect(getComputedStyle(button).cursor).toBe("pointer");
   fireEvent.click(button);
   expect(invite).toHaveBeenCalledOnce();
+});
+
+it("forwards a graphics failure to the device fallback and ignores callbacks after unmount", async () => {
+  const reportGraphicsFailure = vi.fn().mockResolvedValue({});
+  Object.defineProperty(window, "astellaDesktop", { configurable: true, value: { platform: "darwin", rendering: { reportGraphicsFailure } } });
+  const { unmount } = render(<WindowLive2D active motionMode="off" />);
+  graphicsFailure?.();
+  expect(reportGraphicsFailure).toHaveBeenCalledWith("webgl-context-lost");
+  unmount();
+  graphicsFailure?.();
+  expect(reportGraphicsFailure).toHaveBeenCalledOnce();
 });

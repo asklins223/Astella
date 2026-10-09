@@ -49,6 +49,7 @@ export interface ReadPageBlock {
 }
 
 export interface ReadPage {
+  readonly blocks: readonly { ordinal: number; content: string; startOffset: number; complete: boolean }[];
   readonly body: string;
   /** 本页实际读到的最后一个块序号；一块都没有时为 null。 */
   readonly endOrdinal: number | null;
@@ -70,6 +71,7 @@ export function paginateReadBlocks(blocks: readonly ReadPageBlock[], maxChars: n
     throw new Error("invalid read page budget or offset");
   }
   const parts: string[] = [];
+  const pageBlocks: Array<{ ordinal: number; content: string; startOffset: number; complete: boolean }> = [];
   let used = 0;
   let endOrdinal: number | null = null;
   let blockTextTruncated = false;
@@ -88,6 +90,7 @@ export function paginateReadBlocks(blocks: readonly ReadPageBlock[], maxChars: n
     // UTF-16 offset agrees with JS/string contracts, but never splits a surrogate pair.
     if (take < remaining.length && /[\uD800-\uDBFF]/.test(remaining.charAt(take - 1))) take--;
     const text = remaining.slice(0, take);
+    pageBlocks.push({ ordinal: block.ordinal, content: text, startOffset: offset, complete: offset === 0 && take === block.content.length });
     parts.push(separator + text);
     used += separator.length + text.length;
     endOrdinal = block.ordinal;
@@ -97,7 +100,7 @@ export function paginateReadBlocks(blocks: readonly ReadPageBlock[], maxChars: n
       break;
     }
   }
-  return { body: parts.join(""), endOrdinal, blockTextTruncated, nextStartOffset };
+  return { body: parts.join(""), blocks: pageBlocks, endOrdinal, blockTextTruncated, nextStartOffset };
 }
 
 /** 来源没解析好时的那句照实说明（39b C5："来源没有解析或无权限时明确说明"）。 */

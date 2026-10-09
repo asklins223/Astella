@@ -2,6 +2,18 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderCompanionUserTurn } from "../companion-dialogue-content.ts";
 import { paginateReadBlocks } from "../companion-read-tools.ts";
+
+test("全文编辑可以完整取得八千字及精确块边界，过长单块保留可续读位置", () => {
+  const blocks = Array.from({ length: 55 }, (_, i) => ({ ordinal: i + 1, content: `第${i + 1}块\n` + "正文".repeat(75) }));
+  const page = paginateReadBlocks(blocks, 20_000);
+  assert.equal(page.endOrdinal, 55);
+  assert.equal(page.blockTextTruncated, false);
+  assert.deepEqual(page.blocks.map(block => block.content), blocks.map(block => block.content));
+  assert.ok(page.blocks.every(block => block.complete && block.startOffset === 0));
+  const partial = paginateReadBlocks([{ ordinal: 1, content: "代码".repeat(11_000) }], 20_000);
+  assert.equal(partial.blocks[0]?.complete, false);
+  assert.equal(partial.nextStartOffset, 20_000);
+});
 import { boundCompanionRecentHistory } from "../companion-context-handoff.ts";
 import { foldReplayUnderSummaryCoverage, replayToMessages } from "../companion-compaction.ts";
 import { companionClassifierRecent } from "../companion-tool-intent.ts";

@@ -162,8 +162,9 @@ export const companionAgentToolDefinitionV1Schema = z.object({
   parameters: z.record(z.unknown()),
   riskClass: companionAgentRiskClassSchema,
   requiresConfirmation: z.boolean(),
-  maxInputChars: z.number().int().positive().max(20_000),
-  maxOutputChars: z.number().int().positive().max(20_000),
+  // Editing carries both expected original blocks and replacement Markdown, including JSON escapes.
+  maxInputChars: z.number().int().positive().max(120_000),
+  maxOutputChars: z.number().int().positive().max(60_000),
 }).strict();
 export type CompanionAgentToolDefinitionV1 = z.infer<
   typeof companionAgentToolDefinitionV1Schema

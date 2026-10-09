@@ -637,6 +637,17 @@ export const QUOTE_MIN_CHARS = 12;
 
 /** 她正文里"当成原文端出来"的那些段落：Markdown 引用块 + 「…」式直接引语。 */
 export function extractQuotedPassages(text: string, allowUnattributedQuotes = false): string[] {
+  // Quotes and comparison operators inside fenced code are literal code, not source claims.
+  let fence: { char: string; length: number } | null = null;
+  text = text.split("\n").map(line => {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      if (marker && marker[1][0] === fence.char && marker[1].length >= fence.length && !marker[2].trim()) fence = null;
+      return "";
+    }
+    if (marker) { fence = { char: marker[1][0], length: marker[1].length }; return ""; }
+    return line;
+  }).join("\n");
   const out: string[] = [];
   const sourceAttribution = /原文|原句|逐字|引文|(?:材料|笔记|文中|书上|教材|课本|你|用户|老师).{0,12}(?:写|说|提到|记载|如下|：)/;
   // 相邻人物对白是被引用的内容，不是叙述者对现实来源的归属声明。

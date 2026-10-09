@@ -2,6 +2,11 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 import type { AstellaDesktopApi } from './index.d'
 import {
+  DESKTOP_RENDERING_GET_CHANNEL, DESKTOP_RENDERING_SET_CHANNEL,
+  DESKTOP_RENDERING_REPORT_FAILURE_CHANNEL, DESKTOP_RENDERING_STATE_CHANNEL,
+  isDesktopRenderingState,
+} from '../shared/desktop-rendering'
+import {
   DESKTOP_IPC_CHANNELS,
   UPDATE_STATE_CHANNEL,
   desktopContractSnapshotSchema,
@@ -20,6 +25,18 @@ import {
 
 const api: AstellaDesktopApi = {
   platform: process.platform,
+  rendering: {
+    getState: () => ipcRenderer.invoke(DESKTOP_RENDERING_GET_CHANNEL),
+    setMode: (mode) => ipcRenderer.invoke(DESKTOP_RENDERING_SET_CHANNEL, mode),
+    reportGraphicsFailure: (reason) => ipcRenderer.invoke(DESKTOP_RENDERING_REPORT_FAILURE_CHANNEL, reason),
+    onStateChanged: (listener) => {
+      const handleState = (_event: Electron.IpcRendererEvent, state: unknown) => {
+        if (isDesktopRenderingState(state)) listener(state)
+      }
+      ipcRenderer.on(DESKTOP_RENDERING_STATE_CHANNEL, handleState)
+      return () => { ipcRenderer.removeListener(DESKTOP_RENDERING_STATE_CHANNEL, handleState) }
+    },
+  },
   setTitleBarTheme: (theme) => ipcRenderer.send(TITLE_BAR_THEME_CHANNEL, theme),
   onWindowState: (listener) => {
     let active = true

@@ -309,6 +309,7 @@ export interface WindowLive2DDriverOptions {
   readonly canvas: HTMLCanvasElement;
   readonly container: HTMLElement;
   readonly onStatus?: (status: DriverStatus) => void;
+  readonly onGraphicsFailure?: () => void;
 }
 
 /**
@@ -319,6 +320,7 @@ export class WindowLive2DDriver {
   private readonly canvas: HTMLCanvasElement;
   private readonly container: HTMLElement;
   private readonly onStatus?: (status: DriverStatus) => void;
+  private readonly onGraphicsFailure?: () => void;
   private app: PixiApplication | null = null;
   private model: Live2DModel | null = null;
   private modelId: WindowLive2DModelId = DEFAULT_WINDOW_LIVE2D_MODEL_ID;
@@ -393,10 +395,11 @@ export class WindowLive2DDriver {
 
   private readonly handleContextLost = (event: Event): void => {
     event.preventDefault();
-    if (this.disposed) return;
+    if (this.disposed || !event.isTrusted) return;
     console.warn("[WindowLive2D] WebGL context lost; disabling the companion canvas");
     this.onStatus?.("failed");
     this.destroy();
+    this.onGraphicsFailure?.();
   };
 
   /**
@@ -468,6 +471,7 @@ export class WindowLive2DDriver {
     this.canvas = options.canvas;
     this.container = options.container;
     this.onStatus = options.onStatus;
+    this.onGraphicsFailure = options.onGraphicsFailure;
   }
 
   /**

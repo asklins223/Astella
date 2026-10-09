@@ -22,6 +22,7 @@ import {
   writeFragmentBlocks,
 } from "./doc-fragment.ts";
 import { visibleNotesCondition } from "./visibility.ts";
+import { disconnectAndVerifyNoteDocSave } from "./note-doc-save-confirmation.ts";
 
 /**
  * 笔记协同的服务端（批次 4.2）。
@@ -268,6 +269,19 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
 
 export type NoteCollaboration = typeof noteCollaboration;
 
+export async function disconnectAndConfirmNoteDocSaved(
+  connection: Parameters<typeof disconnectAndVerifyNoteDocSave>[0],
+  context: NoteDocContext,
+): Promise<void> {
+  await disconnectAndVerifyNoteDocSave(connection, () => withWorkspaceTransaction(context, async tx => {
+    const stored = await tx.query.noteDocumentStates.findFirst({
+      where: and(eq(noteDocumentStates.noteId, context.noteId), eq(noteDocumentStates.workspaceId, context.workspaceId)),
+      columns: { state: true },
+    });
+    return stored?.state;
+  }));
+}
+
 /**
  * WS 通道本身（批次 4.2）。
  *
@@ -408,9 +422,9 @@ export async function applyUploadedDocUpdate(input: {
       landed = applyAndReportLanded(document, input.update);
     });
   } finally {
-    // `disconnect` 才是"落盘"这一步：它会跑 storeDocumentHooks，并且只在没有任何
-    // WS 连接时才卸载文档，所以并进来的增量不会把在线协作者的文档踢掉。
-    await connection.disconnect();
+    // The store hook can fail silently; only the persisted CRDT confirms the upload.
+    if (landed) await disconnectAndConfirmNoteDocSaved(connection, context);
+    else await connection.disconnect();
   }
   // 没进去就说没进去。以前这里照样往下走去读 revision，回一份 200——那条路径在界面上
   // 读起来和"已保存"一模一样，而库里一个字没动（丢字现场见 `applyAndReportLanded`）。
@@ -487,7 +501,7 @@ export async function publishRestoredNoteDoc(input: {
       setNoteTitle(document, input.title, input.titleSource);
     });
   } finally {
-    await connection.disconnect();
+    await disconnectAndConfirmNoteDocSaved(connection, context);
   }
 }
 

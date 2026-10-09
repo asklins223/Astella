@@ -18,7 +18,7 @@ import type { AIProvider } from "../lib/ai-provider.ts";
 import { DEFAULT_AI_PROVIDER_TIMEOUT_MS, getCompanionAgentTool } from "@astella/shared";
 
 const TASK_ID = "companion_tool_intent";
-const TASK_VERSION = 9;
+const TASK_VERSION = 10;
 /**
  * 分类器关闭思考、单次调用且不自行重试。调用等待使用公共模型上限；
  * 超时仍保留 uncertain，不能据此把可能需要读取资料的请求当作闲聊。
@@ -100,7 +100,7 @@ function toolIntentMessages(messages: readonly ChatMessage[], taskContext: Compa
         "一般知识问答、闲聊、自我介绍以及询问操作方法可以直接回答。此前助手说过已找到或已展示，不等于本轮真的查询过。",
         "区分直接写回复与操作项目数据：要求在回复里写故事、诗、对话、示例或文案草稿，是task/none，不需要工具，goalRelation=unrelated、candidateOperations为空。要求把它保存到笔记、生成学习卡、修改已有资料或读取指定来源，才需要相应工具；不要把纯文本创作中的‘写/生成’自动解释成数据库写入。",
         "用户要求生成项目里的速看、互动演示、往外学/拓展笔记草稿或学习卡时，是生成真实产物的task/act、goalRelation=new；不要求用户再说‘保存’或指定保存位置。capabilities里提供agent_start_goal时，用它接下生成目标；专业生成工具在后台使用，不因它们没直接出现在聊天工具表里就认定能力缺失。用户明确只要在聊天里解释、概括或列方向时，才按直接文字回答或读取资料处理。历史助手说过能力没接上、不能保存，不是当前能力事实，以本轮capabilities为准。",
-        "用户明确要求在当前笔记光标后插入、补充到末尾、删除段落、替换选区、转换为表格或流程图时，是task/act，候选companion_edit_note，goalRelation=unrelated：这是直接修改正文，不需要agent_run目标引用，即使是重试上一轮编辑也不能标为continue而要求后台目标。当前页面唯一note/note_version就是编辑对象；光标和选区是它内部的位置，无需另找对象身份。它不新建笔记、不启动速看或互动演示目标。普通解释和原句解读不修改正文。",
+        "用户明确要求调整、整理、规范或优化当前笔记的格式/排版，把标题改成真正标题、代码改成代码块，或插入、补充、删除、替换正文、转换为表格或流程图时，是task/act，候选companion_edit_note，goalRelation=unrelated。‘调整下这篇笔记的格式规范，例如代码的要转成代码块，标题的要转标题’已经要求实际修改，不是只分析问题；‘改一下’与‘调整一下’含义相同，不要求用户额外说保存。用户明确说全文/整篇，或指向整篇笔记且没有局部限制时，范围是整篇，无需选区或光标。只问有哪些问题、怎么调整，或明确只给建议/先别改时才按question/read。这是直接修改正文，不需要agent_run目标引用，即使是重试上一轮编辑也不能标为continue而要求后台目标。当前页面唯一note/note_version就是编辑对象；光标和选区是它内部的位置，无需另找对象身份。它不新建笔记、不启动速看或互动演示目标。普通解释和原句解读不修改正文。",
         "用户要求将刚讨论的知识点总结、整理或保存为一篇库内新笔记时，是task/act、goalRelation=new，候选companion_create_note；它不需要已有笔记作为起点。‘这个知识点’可由recent中的当前讨论定位，不因没有note对象就制造材料歧义。只问能不能做、操作方法或只要回复里的总结仍可直接回答；不要把普通知识问答自动保存。新笔记可检索并链接库内相关笔记，这是创建笔记的一部分，不等同于基于已有笔记生成拓展草稿。",
         "当前页面有唯一note或note_version对象、用户说‘这篇笔记’或省略笔记名称请求速看/拓展时，可以用该对象的objectIndex定位材料；note_version已经包含真实笔记及版本。未指定其他材料时，不凭空要求笔记名、版本或保存位置，也不把当前笔记新生成的请求当成延续一个不存在的agent_run。用户明确指向别的材料或有多个可能对象时才核对指代。",
         "称呼伴星、随口招呼、情绪表达和角色口味是对话内容，不要求在 objects 中找到数据库身份。没有资料读取或操作目标时，不因为话题名词或昵称没对应 object 就制造歧义；普通招呼可用 conversation/none、subjects 空数组。只有会影响所问资料或操作目标的歧义才要求澄清。",

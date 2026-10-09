@@ -36,6 +36,7 @@ import { assessAnswerExposure, isFormalAnswerLivePage, recordCompanionAnswerExpo
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger.ts";
+import { companionSavedNoteEditExists } from "./companion-note-edit.ts";
 import { ProviderRequestError } from "../lib/provider-request-error.ts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { loadHereAndNow, renderHereAndNow } from "./companion-here-and-now.ts";
@@ -984,7 +985,14 @@ export async function runCompanionDialogue(
     const streamStopped = err instanceof CompanionStreamStoppedError;
     const outputIncomplete = err instanceof AgentOutputError && err.code === "output_truncated";
     const outputUnverified = err instanceof AgentOutputError && err.code === "unverified_quote";
-    const unverifiedQuoteFailureText = "这次引文与已读取的原文对不上，答复没有完成。";
+    let noteEditSaved = false;
+    if (outputUnverified) {
+      try { noteEditSaved = await companionSavedNoteEditExists({ workspaceId: ctx.workspaceId, userId: read.userId }, read.runId); }
+      catch { logger.warn({ runId: read.runId }, "could not verify saved note edit while reporting quote failure"); }
+    }
+    const unverifiedQuoteFailureText = noteEditSaved
+      ? "笔记正文修改已保存；这次修改说明的引文没有核对通过，说明未完成。"
+      : "这次引文与已读取的原文对不上，答复没有完成。";
     const providerRejected = err instanceof ProviderRequestError;
     const rateLimited = providerRejected && err.status === 429;
     const policyDenied = err instanceof AIDataPolicyDeniedError;

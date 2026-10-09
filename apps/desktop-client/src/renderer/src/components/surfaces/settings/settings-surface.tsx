@@ -5,6 +5,7 @@ import { SettingsCompanionPanel } from "./settings-companion-panel";
 import { SettingsAccountPanel, type AvatarUploadOutcome } from "./settings-account-panel.tsx";
 import { SettingsExportGroup } from "./settings-export-group.tsx";
 import { SettingsUpdateGroup, UpdateBadge } from "./settings-update-panel.tsx";
+import { SettingsRenderingGroup } from "./settings-rendering-panel";
 import { useUpdateStatus } from "../../../app/update-status";
 import { SettingsThemePicker, themeLabel } from "./settings-theme-picker.tsx";
 import { SettingsInviteJoinField } from "./settings-invite-join-field.tsx";
@@ -1890,6 +1891,8 @@ export function SettingsSurface() {
           onDownload={() => { void update.download(); }}
           onInstall={() => { void update.install(); }}
         />
+
+        <SettingsRenderingGroup />
 
         <section className="settings-group">
           <h3 className="settings-group__title">空间内容</h3>

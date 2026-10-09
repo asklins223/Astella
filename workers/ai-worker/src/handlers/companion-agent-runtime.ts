@@ -225,6 +225,10 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   // 作废是这条飞地的正常出口之一：先接住，免得没人处理的 rejection 冒出来。
   speculativeFlight?.catch(() => undefined);
   const attention = await attentionPromise;
+  // Full-note editing needs room for paginated reads, writes and a verified final reply.
+  if (attention.toolUse === "act" && attention.candidateOperations.includes("companion_edit_note")) {
+    budget.maxSteps = COMPANION_AGENT_MAX_STEPS;
+  }
   /**
    * 把她自己那些"用户这句没接的收尾"降级成记录（判据与实测见 `renderPendingOffersAsRecords`）。
    *
@@ -266,6 +270,9 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   // action 那一支以前没有名字可点（只有泛指文案），实机 2026-09-22 场景 T 就是在这儿翻车的：
   // 用户说「以后别主动催我复习」，她两步都只回"我记下了"，`companion_set_boundary` 一次没调。
   const steerableActionTools = steerableToolNames(definitions, "action");
+  const requestedActionTools = definitions.filter(definition => definition.riskClass !== "read"
+    && (attention.candidateOperations.length === 0 || attention.candidateOperations.includes(definition.name)))
+    .map(definition => definition.name);
   const providerCapabilities = args.provider.getCapabilities?.();
   const providerCapabilityFingerprint = sha256Utf8V1(canonicalJsonV1({
     capabilityFingerprint: providerCapabilities?.fingerprint ?? null,
@@ -958,6 +965,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       finalAnswerOnly,
       withinBudget: stepCount < stepBudget && Date.now() < deadlineAt,
       userAskedForAction,
+      actionResultRecorded: companionActionResultRecorded(messages, requestedActionTools),
       hasUnverifiedClaims: unverifiedClaims.length > 0 || unverifiedQuotes.length > 0,
       looksLikeUnfulfilledNarration: looksLikeUnfulfilledActionNarration(said),
       lookupClaim,
@@ -1011,7 +1019,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
             + JSON.stringify(unverifiedQuotes.slice(0, 4).map(quote => quote.slice(0, 600)))
           : unverifiedClaims.length > 0
           ? `（系统提示：你报了 ${unverifiedClaims.slice(0, 4).join("、")} 这些数字，`
-            + "但这一轮你没有调用任何工具，给定的上下文里也没有这些数字。"
+            + "但给定的上下文里没有这些数字。"
             + "要么现在调用对应的工具查真实数字，要么不要说具体数值。）"
           : unverifiedQuotes.length > 0
             ? "回复中的引文与本轮原文不一致。核对当前问题所附选区或已读取的材料；把自己的解释明确写成解释，不要冒充逐字引文，也不要为此改答实时页面。"
@@ -1026,10 +1034,10 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
             : steerableActionTools.length > 0
               // 点名可逆写那一组（记/忘、提醒、边界、活跃度）。read_only 档下这一组是空的
               // ——那时她本来就不许动这些工具，退回泛指，不能拿提示去绕权限。
-              ? `（系统提示：你还没有调用任何工具，所以那件事一件也没有发生。`
-                + `用户要的这个动作需要工具：${steerableActionTools.join("、")}。`
+              ? `（系统提示：本轮还没有用户所要求动作的执行回执。`
+                + `读取和分析不等于完成用户要求的修改。用户要的这个动作需要工具：${(requestedActionTools.length > 0 ? requestedActionTools : steerableActionTools).join("、")}。`
                 + "在这一轮调用它再回答；没有真的调用就不要说已经做过，也不要只说你要去做。）"
-              : "（系统提示：你还没有调用任何工具，所以那件事一件也没有发生。"
+              : "（系统提示：本轮还没有用户所要求动作的执行回执。"
                 + "要么在这一轮调用合适的工具再回答，要么直接回答用户；"
                 + "不要说已经做过，也不要只说你要去做。）",
       }));
@@ -1473,6 +1481,7 @@ export { readLatestPageContextRow };
 import {
   AGENT_LOOP_GRACE_STEPS,
   AGENT_LOOP_MAX_STEPS,
+  companionActionResultRecorded,
   actionSteerBudget,
   planStepSteer,
   shouldCorrectCompanionQuote,

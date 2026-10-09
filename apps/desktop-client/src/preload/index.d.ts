@@ -1,11 +1,13 @@
 import type { AstellaWindowState } from '../shared/window-state'
 import type { AstellaDesktopApiM2, UpdateStateV1 } from '@astella/shared/desktop-ipc-contracts'
+import type { DesktopRenderingApi } from '../shared/desktop-rendering'
 
 export type { AstellaWindowState } from '../shared/window-state'
 export type { AstellaDesktopApiM1, AstellaDesktopApiM2, UpdateStateV1 } from '@astella/shared/desktop-ipc-contracts'
 
 export interface AstellaDesktopApi {
   readonly platform: string
+  readonly rendering: DesktopRenderingApi
   setTitleBarTheme: (theme: 'day' | 'night') => void
   onWindowState: (listener: (state: AstellaWindowState) => void) => () => void
   /** 主进程推来的更新状态；返回退订函数。 */

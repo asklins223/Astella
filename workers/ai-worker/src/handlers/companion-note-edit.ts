@@ -33,6 +33,9 @@ export async function executeCompanionNoteEdit(event: AgentEventContext, callId:
     if (rows[0]?.result_ref) {
       const value = JSON.parse(rows[0].result_ref);
       if (value.kind === "note_edit_failed") throw new CompanionToolNotExecutedError(value.message);
+      // A live edit may survive a rolled-back persistence transaction. The generic
+      // write-error classifier preserves outcome_unknown and forbids automatic retry.
+      if (value.kind === "note_edit_unknown") throw new Error("note_edit_save_unconfirmed");
       const receipt = companionEditedNoteV1Schema.parse(value);
       const { update: _update, ...modelReceipt } = receipt;
       return { value: { ...modelReceipt, status: "succeeded" }, safeSummary: receipt.summary, resultRef: JSON.stringify(receipt) };
@@ -40,4 +43,16 @@ export async function executeCompanionNoteEdit(event: AgentEventContext, callId:
     if (!rows[0] || rows[0].status !== "executing") throw new CompanionToolNotExecutedError("这次编辑已经停止，请核对正文。");
     await delay(180, undefined, { signal });
   }
+}
+
+/** A failed explanation must not imply that a previously confirmed edit was undone. */
+export async function companionSavedNoteEditExists(scope: { workspaceId: string; userId: string }, runId: string): Promise<boolean> {
+  const rows = await withWorkerWorkspaceTransaction(scope, tx => tx.execute<{ result_ref: string | null }>(sql`
+    SELECT result_ref FROM companion_agent_tool_calls
+    WHERE run_id=${runId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
+      AND name='companion_edit_note' AND status='succeeded' AND result_ref IS NOT NULL`));
+  return rows.some(row => {
+    try { return companionEditedNoteV1Schema.safeParse(JSON.parse(row.result_ref!)).success; }
+    catch { return false; }
+  });
 }

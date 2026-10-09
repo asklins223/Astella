@@ -28,6 +28,7 @@ interface ElectronMock {
     setPath: ReturnType<typeof vi.fn>;
     setName: ReturnType<typeof vi.fn>;
     getVersion: ReturnType<typeof vi.fn>;
+    getGPUInfo: ReturnType<typeof vi.fn>;
     whenReady: () => Promise<void>;
     requestSingleInstanceLock: () => boolean;
     isPackaged: boolean;
@@ -49,6 +50,7 @@ const electronMock: ElectronMock = {
     setPath: vi.fn(),
     setName: vi.fn(),
     getVersion: vi.fn(() => "0.1.0"),
+    getGPUInfo: vi.fn(async () => ({})),
     isPackaged: true,
     // 模块顶层就会调用（取不到锁就 app.quit()）。返回 true 表示"拿到锁"，
     // 让它走进 app.whenReady() 那条我们真正想验的分支。

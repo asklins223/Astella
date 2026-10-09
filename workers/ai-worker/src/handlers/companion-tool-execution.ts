@@ -458,7 +458,7 @@ export async function executeReadTool(
           ...(noteVersionId ? { noteVersionId } : {}),
           startOrdinal,
           startOffset: typeof args.startOffset === "number" ? args.startOffset : 0,
-          maxChars: NOTE_READ_MAX_CHARS,
+          maxChars: typeof args.maxChars === "number" ? args.maxChars : NOTE_READ_MAX_CHARS,
         }),
       );
       if (!note) throw new CompanionToolError("这个空间里没有这篇笔记");
@@ -493,6 +493,7 @@ export async function executeReadTool(
           ...(nextStartOrdinal !== null ? { nextStartOrdinal, nextStartOffset: nextStartOffset ?? 0 } : {}),
           ...(page.blockTextTruncated ? { blockTextTruncated: true } : {}),
           body: page.body,
+          blocks: page.blocks,
         },
         resultRef: JSON.stringify({ kind: "note_read", noteId, noteVersionId: note.versionId }),
         blocks: quoted.length > 0

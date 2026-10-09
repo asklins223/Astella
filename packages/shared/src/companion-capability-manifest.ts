@@ -26,7 +26,7 @@ function companionOpenPageDescriptionV2(): string {
 
 export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] = [
   tool("companion_edit_note", "用户明确要改当前笔记时直接编辑正文：insert_at_cursor在本轮光标后插入，append追加末尾，replace_selection/delete_selection处理本轮选区，replace_blocks/delete_blocks处理0起算的段落，读取的第1块对应0。段落操作先读正文，逐字带expectedBlocks；选区与光标取页面editing。表格用GFM，流程图用mermaid围栏。收到保存回执才说完成，原文变化就停止。", "reversible_low", false, companionEditNoteV1Schema,
-    { label: "正在调整笔记正文", discovery: "在光标后补充、追加到末尾、删除段落，或把原文改成表格和流程图。" }, { maxInputChars: 20_000, maxOutputChars: 4_000 }),
+    { label: "正在调整笔记正文", discovery: "调整整篇笔记的标题、代码块和排版；在光标后补充、追加、删除或替换正文。" }, { maxInputChars: 120_000, maxOutputChars: 4_000 }),
   tool("companion_read_context", "读取当前用户在当前 workspace 的学习上下文。", "read", false, emptyArguments, { label: "正在看你的学习上下文" }),
   tool("companion_read_current_page", "读取用户此刻屏幕上正显示的内容：页面标题、状态行、计数器、按屏幕顺序编号的条目、空态与当前筛选。用户说「这一页」「第N张」「为什么这么慢/卡住」时先调它——别用别的工具的数字代替眼前这屏。返回 available=false 表示这一页没有可读内容，要问她是在哪儿看到的，不要据此推断系统没问题。", "read", false, emptyArguments, { label: "正在看你这一页" }),
   // 「取回入口」就是这条工具（方案 44 §5.5）。摘要块与覆盖回执会告诉她哪一段被折掉了、
@@ -42,7 +42,7 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   // 分页续读（39d W6-2 / 39b C5）：正文按块分页，`startOrdinal` 是续读的起点
   // （上一页返回的 nextStartOrdinal）。不再"截前 3000 字假装读过"——返回体带
   // 块序号、总块数与下一页起点，读不到结尾时按它续，不谎称已读全文。
-  tool("companion_read_note", "读出一篇笔记的正文内容（按块分页，一次约三千字）。要引用、总结或核对用户写过什么时必须先读，不要凭标题猜内容。页面上下文若带 noteVersionId，就必须原样传入以读取用户眼前这一版；正文没读完时（truncated=true）同时传回 nextStartOrdinal 与 nextStartOffset（作为 startOrdinal、startOffset）续读，不要假装已经读过全文。", "read", false, z.object({ noteId: uuid, noteVersionId: uuid.optional().describe("页面上下文给出的固定笔记版本；读取用户正在看的旧版本时必须传入"), startOrdinal: z.number().int().min(1).optional().describe("续读时传上一页 nextStartOrdinal，并把 version 作为 noteVersionId 保持同版"), startOffset: z.number().int().nonnegative().optional().describe("块内位置；续读时传 nextStartOffset，缺省0") }).strict(), { label: "正在读那篇笔记" }),
+  tool("companion_read_note", "读出笔记正文，默认每页三千字，全文编辑可用maxChars=20000。blocks给出各块原文和1起算序号，complete=false要续读。页面有noteVersionId时原样传入。truncated=true时用nextStartOrdinal、nextStartOffset续读并保持version，不要假装读完。", "read", false, z.object({ noteId: uuid, noteVersionId: uuid.optional().describe("页面上下文给出的固定笔记版本；读取用户正在看的旧版本时必须传入"), startOrdinal: z.number().int().min(1).optional().describe("续读时传上一页 nextStartOrdinal，并把 version 作为 noteVersionId 保持同版"), startOffset: z.number().int().nonnegative().optional().describe("块内位置；续读时传 nextStartOffset，缺省0"), maxChars: z.number().int().min(3_000).max(20_000).optional().describe("全文编辑用20000；一般阅读默认3000") }).strict(), { label: "正在读那篇笔记" }, { maxOutputChars: 60_000 }),
   // 来源正文读取（39d W6-2 / 39b C5："当前工具表没有来源正文读取工具"）：
   // 分页形状与 read_note 相同；来源没解析好（draft/processing/failed）时如实说明，
   // 不假装读过。凭据面不受影响——这不是页面读取，是材料读取，走材料可见性。

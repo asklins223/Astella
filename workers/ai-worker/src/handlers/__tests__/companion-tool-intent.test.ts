@@ -29,6 +29,22 @@ function taskContext(signal = new AbortController().signal) {
 const proposal = (action: boolean) => ({ intent: action ? "task" : "conversation", toolUse: action ? "act" : "none",
   subjects: [], goalRelation: action ? "new" : "unrelated", candidateOperations: [], ambiguities: [] });
 
+test("全文格式调整提供明确编辑协议，保留只分析与不改的边界", async () => {
+  const model = { ...provider(() => true), chatCompletion: async (messages: Parameters<AIProvider["chatCompletion"]>[0]) => {
+    const instruction = String(messages[0]?.content);
+    assert.match(instruction, /‘改一下’与‘调整一下’含义相同/);
+    assert.match(instruction, /无需选区或光标/);
+    assert.match(instruction, /只给建议\/先别改时才按question\/read/);
+    assert.match(instruction, /不要求用户额外说保存/);
+    return { content: JSON.stringify({ ...proposal(true), goalRelation: "unrelated", candidateOperations: ["companion_edit_note"] }), usage: {} };
+  } } as AIProvider;
+  const result = await interpretCompanionTurn(model, [{ role: "user", content: "调整下这篇笔记的格式规范，例如代码的要转成代码块，标题的要转标题" }],
+    { ...taskContext(), capabilities: ["companion_edit_note", "companion_read_note"] });
+  assert.equal(result.toolUse, "act");
+  assert.equal(result.goalRelation, "unrelated");
+  assert.deepEqual(result.candidateOperations, ["companion_edit_note"]);
+});
+
 test("生成请求的分类输入包含现役能力说明，当前笔记与历史拒绝不会替代能力事实", async () => {
   const note = { kind: "note_version" as const, id: "11111111-1111-4111-8111-111111111111",
     versionId: "22222222-2222-4222-8222-222222222222" };

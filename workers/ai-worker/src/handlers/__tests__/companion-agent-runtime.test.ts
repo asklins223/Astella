@@ -17,6 +17,7 @@ import {
 
 import {
   FINAL_ANSWER_HOLD_CHARS,
+  companionActionResultRecorded,
   actionSteerBudget,
   companionStepCorrectionMessages,
   partitionPersonaPatch,
@@ -841,6 +842,21 @@ test("planStepSteer：工具真跑过 / 已是强制收尾步 → 一律不补",
   assert.equal(planStepSteer({ ...steerInput, withinBudget: false }).steer, false);
   assert.equal(planStepSteer({ ...steerInput, hasUnverifiedClaims: false }).steer, false,
     "没命中任何一类就不该白烧一步");
+});
+
+test("编辑请求只读过正文仍须推进，写入有失败或未知回执时不重复执行", () => {
+  const input = { ...steerInput, userAskedForAction: true, toolCallCount: 4,
+    hasUnverifiedClaims: false, actionResultRecorded: false };
+  assert.equal(planStepSteer(input).steer, true);
+  assert.equal(planStepSteer({ ...input, actionResultRecorded: true }).steer, false);
+  const messages = [{ role: "assistant" as const, content: "", toolCalls: [{ id: "read", name: "companion_read_note", arguments: {} }] },
+    { role: "tool" as const, toolCallId: "read", content: JSON.stringify({ ok: true }) }];
+  assert.equal(companionActionResultRecorded(messages, ["companion_edit_note"]), false);
+  for (const status of ["succeeded", "failed", "outcome_unknown", "not_executed"]) {
+    assert.equal(companionActionResultRecorded([...messages,
+      { role: "assistant", content: "", toolCalls: [{ id: "edit", name: "companion_edit_note", arguments: {} }] },
+      { role: "tool", toolCallId: "edit", content: JSON.stringify({ status }) }], ["companion_edit_note"]), true);
+  }
 });
 
 test("planStepSteer：额度用尽后不再重复补同一条", () => {
