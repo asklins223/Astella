@@ -1,6 +1,20 @@
 import { configure } from '@testing-library/react'
 
 /**
+ * React 19 只在 `IS_REACT_ACT_ENVIRONMENT` 为真时让 `act` 真的把更新冲干净。
+ * 这个标记原来没给：Testing Library 的 `render`/`fireEvent` 于是只在 stderr 留一句
+ * "The current testing environment is not configured to support act(...)"，而 passive
+ * effect 与状态更新被排到渲染**之后**——`fireEvent` 紧接一句同步 `getByRole` 的用例
+ * 就成了运气：本地单跑基本赶得上，CI 全量并行时赶不上。v1.4.0 两轮发布 CI 各红一条，
+ * 形状都是这个（一条点了提交却没发出租约上报，一条粘贴后找不到「开始解析」），
+ * 本地 406 文件全量跑都复现不出来。
+ *
+ * 这里给的是 Testing Library 官方要求的那个开关，不是往生产代码里塞兜底：
+ * 改的是"测试环境怎么解释 act"，用例断言的内容一个字没动。
+ */
+globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
+/**
  * 放宽 Testing Library 的异步等待上限（默认 1000ms）。
  *
  * 这只影响"轮询等 UI 更新"的等待时长，不影响任何断言内容：真正没渲染出来的东西
