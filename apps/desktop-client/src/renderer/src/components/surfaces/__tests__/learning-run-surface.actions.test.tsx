@@ -450,6 +450,19 @@ describe("LearningRunSurface · 九类作答", () => {
     vi.spyOn(Date, "now").mockImplementation(() => now);
     const { gateway } = renderInteraction({ kind: "text_response", maxChars: 400 });
     const textarea = await screen.findByRole("textbox", { name: "用自己的话回答" });
+    // 先**确定性地**让秒表跑起来，再谈"提交前那一段"。
+    //
+    // 只靠挂载那一刻的 syncEligibility 起算是不可靠的：`activeWindowStartedAtMs` 是
+    // effect 内的局部量，而这份文件里 `act` 的告警说明 passive effect 排在渲染之后，
+    // CI 全量并行时就出现过点了提交却一发上报都没有（2026-10-09 v1.4.0 的 v1 质量任务：
+    // 断言要 1 次、实得 0 次，DOM 已经进「回答已锁定，正在评估」）。推过一个上报周期再
+    // focus 一次，它必然结算——下面这条 waitFor 同时是"上报确实接通"的前提。
+    act(() => { window.dispatchEvent(new Event("focus")); });
+    now += 15_000;
+    act(() => { window.dispatchEvent(new Event("focus")); });
+    await waitFor(() => expect(gateway.learningRun.recordActivityLease).toHaveBeenCalled());
+    gateway.learningRun.recordActivityLease.mockClear();
+
     let finishLease!: () => void;
     gateway.learningRun.recordActivityLease.mockImplementationOnce(() => new Promise(resolve => {
       finishLease = () => resolve({ ok: true, workspaceEpoch: 1, data: { activeSecondsUsed: 23, runRevision: 1 } });
