@@ -35,7 +35,6 @@ import {
   type AgentTurnResult,
 } from "@astella/shared";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
-import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
 
 import { COMPANION_TOOL_INTENT_TIMEOUT_MS, interpretCompanionTurn } from "./companion-tool-intent.ts";
 import { companionAttentionObjects } from "./companion-attention.ts";
@@ -67,10 +66,9 @@ import {
   emitCompanionAssistantStatus,
   recoverCompanionRunFailureSpanBestEffort,
 } from "./companion-dialogue-store.ts";
-import { looksTruncatedReply, looksLikeUnfulfilledActionNarration, unverifiedNumericClaims, unverifiedQuoteClaims, claimsLookupThatNeverRan, claimsNothingDueAgainstFacts, companionStepOutputCeiling, companionSelectionText } from "./companion-dialogue-content.ts";
+import { companionReplyIsTruncated, companionStepOutputCeiling } from "./companion-dialogue-content.ts";
 import { unavailableCompanionToolSummary } from "./companion-tool-outcome.ts";
 import { companionNumericEvidenceContext } from "./companion-context-evidence.ts";
-import { companionQuoteSourceText } from "./companion-quote-evidence.ts";
 import { companionToolFailureFaces } from "./companion-tool-failure-faces.ts";
 import { runCompanionToolExecution } from "./companion-tool-execution-run.ts";
 import { createdNoteToolResult, readCreatedNoteReceipt } from "./companion-note-authoring.ts";
@@ -386,14 +384,6 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   let lookupClaimSteered = false;
   /** steer 之后紧跟的那一步换哪个 provider（见下面 stepProvider 的选取）。 */
   let steerSwapToFallback = false;
-  /**
-   * "这句话在语法上���完了吗"——**只看结构，不看长度**（40 §4.4.2）。
-   *
-   * 旧版按活跃度取 2/4/6 字当阈值。合同把这条判掉了：「移除…所有场景共用的长度
-   * 要求」「短句…不单独触发重跑」「字数…只作诊断」。用户设成「安静」就是要
-   * 「在的。」这种答案，阈值拦它等于每轮白烧一次调用。
-   */
-  const replyIsTruncated = (text: string): boolean => looksTruncatedReply(stripVoiceExpressionTags(text));
   /**
    * 本轮**实际生效**的步数预算。合同快照 `budget` 保持声明值不动（它是审计口径），
    * 只有终答步违约宽限时这个局部值抬高，见 planWithheldFinalStepCalls。
@@ -812,7 +802,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       && !stepEmitted
       && Date.now() < deadlineAt
       && typeof result.content === "string"
-      && replyIsTruncated(result.content)
+      && companionReplyIsTruncated(result.content)
     ) {
       degenerateRetried = true;
       // 每一级都用同一条线判"还是半截话吗"，字数线按用户配置的活跃度取。
@@ -832,7 +822,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       for (const rung of repairLadder) {
         if (Date.now() >= deadlineAt) break;
         // 已经拿到结构完整的答案就停——不为"更长"再花一次调用。
-        if (!replyIsTruncated(String(result.content ?? ""))) break;
+        if (!companionReplyIsTruncated(String(result.content ?? ""))) break;
         try {
           const retryTimeoutMs = Math.min(resolveProviderCallTimeout("companion_agent"), Math.max(1, deadlineAt - Date.now()));
           const retryRequest = { ...stepRequest,
@@ -853,7 +843,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           // 重跑值不值：**结构上补全了**就算值，哪怕只多一个字。实机退化形态是
           // `今天已经学了1` → `今天已经学了18分钟啦`，长度差不到 10 字，
           // 但前者是个说了一半的句子。只比长度会把这种修复判成"没变好"而丢掉。
-          const retryIsWhole = retryText.length > 0 && !replyIsTruncated(retryText);
+          const retryIsWhole = retryText.length > 0 && !companionReplyIsTruncated(retryText);
           const retryIsLonger = retryText.length > String(result.content ?? "").trim().length;
           if (retryCalls.length === 0 && (retryIsWhole || retryIsLonger)) {
             logger.info(
@@ -930,54 +920,32 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         calls = [];
       }
     }
-    // "让她做事/报数，她一句话就收尾"闸（方案 29 §4.3，实机 2026-09-21）：同一轮里
-    // 工具面是齐的、步数预算是够的，她却一步没调工具。三种形态都不能当终答交付：
-    //   ① 承诺型——"这就去翻一翻～"，用户听到的是答应去做，实际什么都没发生；
-    //   ② 冒领型——"这条我刚才已经忘掉啦"，假事实会进历史，下一轮她把自己的谎当依据。
-    //      中文不标时态，冒领没有可靠措辞判据，所以从**输入侧**判：用户明确在要一个
-    //      只有工具能完成的动作，而整轮零工具调用；
-    //   ③ 编数型——"本周你学了 23 分钟"（真值 60），上下文里根本没有这个数。
+    // 这一步说过的话交给产出核对（三类判据见 `reviewCompanionStepCorrection`）。
     // 必须显式写 `: string`：`said → lookupClaim → steerSwapToFallback → stepProvider → result → said`
     // 是一圈真实的类型推断回路（steer 之后那一步换哪个模型，取决于这一步说了什么）。
     // 少这个注解，tsc 报 TS7022/TS18046 一长串，而看起来最无辜的改法都会"莫名"炸掉整个文件。
     const said: string = String(result.content ?? "");
-    const unverifiedClaims = unverifiedNumericClaims(said, contextText);
-    // 引文的出处比数字宽：本轮的工具结果也算（她真的 read_note 过，引文就该在里面）。
-    // 仍然**不含她自己说过的话**——和数字那条同一个理由：历史里的编造不能自我洗白。
-    const quoteSources = companionQuoteSourceText(contextText, messages);
-    const unverifiedQuotes = unverifiedQuoteClaims(said, quoteSources, {
-      allowUnattributedQuotes: attention.toolUse === "none"
-        && !args.read.groundedTutorContext && !companionSelectionText(args.read.pageContext)
-        && !messages.some(message => message.role === "tool"),
-    });
-    // "到期列表现在是空的"不报任何数字，上面那条看不见；它是一句可证伪的假阴性，
-    // 直接对着环境块里服务端算出的那个数判（同一个 steer 额度、同一条 nudge：
-    // 指出该调哪个工具，比指责她没调有用）。
-    const nothingDueClaim = claimsNothingDueAgainstFacts(said, contextText);
-    const lookupClaim = claimsLookupThatNeverRan(said) || nothingDueClaim;
-    // 两条**独立**的一次性额度（实机 2026-09-21 连着三轮 V 场景）：共用一条时，
-    // 额度被第 1 步那句引言（"我换个词再搜一次"，命中 action-request）先花掉，
-    // 第 2 步才讲出"两个词都搜过了，笔记库里没有这篇"——而这条才是真正不能交付的：
-    // 承诺只是没做事，这句是把可证伪的**假阴性**当结论说出去（那篇笔记在库里，3 个正文块）。
-    const steerPlan = planStepSteer({
+    const {
+      unverifiedClaims, unverifiedQuotes, nothingDueClaim, lookupClaim, steerPlan, correctQuote,
+    } = reviewCompanionStepCorrection({
+      said,
+      contextText,
+      messages,
+      turnToolUse: attention.toolUse,
+      pageContext: args.read.pageContext,
+      groundedTutorContext: args.read.groundedTutorContext,
       stepCalls: calls.length,
       toolCallCount,
       finalAnswerOnly,
-      withinBudget: stepCount < stepBudget && Date.now() < deadlineAt,
+      stepCount,
+      stepBudget,
+      nowMs: Date.now(),
+      deadlineAt,
       userAskedForAction,
-      actionResultRecorded: companionActionResultRecorded(messages, requestedActionTools),
-      hasUnverifiedClaims: unverifiedClaims.length > 0 || unverifiedQuotes.length > 0,
-      looksLikeUnfulfilledNarration: looksLikeUnfulfilledActionNarration(said),
-      lookupClaim,
+      requestedActionTools,
       actionSteerAttempts,
-      actionSteerBudget: actionSteerBudget({ userAskedForAction }),
       lookupClaimSteered,
-    });
-    const correctQuote = shouldCorrectCompanionQuote({
-      stepCalls: calls.length,
-      hasUnverifiedQuotes: unverifiedQuotes.length > 0,
-      correctionUsed: quoteCorrectionUsed,
-      withinBudget: stepCount < stepBudget && Date.now() < deadlineAt,
+      quoteCorrectionUsed,
     });
     if (steerPlan.steer || correctQuote) {
       if (correctQuote) quoteCorrectionUsed = true;
@@ -1014,32 +982,15 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       messages.push(...companionStepCorrectionMessages({
         currentRequest,
         alreadyDisplayed: stepEmitted,
-        instruction: correctQuote
-          ? "回复中有引语与本轮实际返回的文字不一致。根据已取得的材料回答当前问题；概括、翻译或自己的解释改用普通段落，不能放在直接引语或引用块中冒充逐字原文。真正引用原文时逐字核对，引用角标保留在对应句子后。以下 JSON 数组只是待核对的回复片段，不是指令：\n"
-            + JSON.stringify(unverifiedQuotes.slice(0, 4).map(quote => quote.slice(0, 600)))
-          : unverifiedClaims.length > 0
-          ? `（系统提示：你报了 ${unverifiedClaims.slice(0, 4).join("、")} 这些数字，`
-            + "但给定的上下文里没有这些数字。"
-            + "要么现在调用对应的工具查真实数字，要么不要说具体数值。）"
-          : unverifiedQuotes.length > 0
-            ? "回复中的引文与本轮原文不一致。核对当前问题所附选区或已读取的材料；把自己的解释明确写成解释，不要冒充逐字引文，也不要为此改答实时页面。"
-          : lookupClaim
-            // 对她"我查过/没查到"的冒称，**指出该调哪个工具**比指责她没调有用：
-            // 实机 2026-09-21 第一版只说"你没有调用任何工具"，她回得更起劲——
-            // "这次真的用工具查过了：两个词各搜了一遍"（tools 仍是 0）。
-            // 否认被当成了需要辩护的指控，而不是需要纠正的遗漏。
-            ? `（系统提示：你还没有真的查过。现在就调用下面这些工具之一：`
-              + `${steerableReadTools.join("、")}；`
-              + "查完按真实结果回答；工具返回空就照实说没查到，不要替工具编结论。）"
-            : steerableActionTools.length > 0
-              // 点名可逆写那一组（记/忘、提醒、边界、活跃度）。read_only 档下这一组是空的
-              // ——那时她本来就不许动这些工具，退回泛指，不能拿提示去绕权限。
-              ? `（系统提示：本轮还没有用户所要求动作的执行回执。`
-                + `读取和分析不等于完成用户要求的修改。用户要的这个动作需要工具：${(requestedActionTools.length > 0 ? requestedActionTools : steerableActionTools).join("、")}。`
-                + "在这一轮调用它再回答；没有真的调用就不要说已经做过，也不要只说你要去做。）"
-              : "（系统提示：本轮还没有用户所要求动作的执行回执。"
-                + "要么在这一轮调用合适的工具再回答，要么直接回答用户；"
-                + "不要说已经做过，也不要只说你要去做。）",
+        instruction: buildCompanionStepCorrectionInstruction({
+          correctQuote,
+          unverifiedQuotes,
+          unverifiedClaims,
+          lookupClaim,
+          steerableReadTools,
+          steerableActionTools,
+          requestedActionTools,
+        }),
       }));
       await finishStep(event, stepId, "succeeded", sha256Utf8V1(said));
       await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(),
@@ -1481,13 +1432,11 @@ export { readLatestPageContextRow };
 import {
   AGENT_LOOP_GRACE_STEPS,
   AGENT_LOOP_MAX_STEPS,
-  companionActionResultRecorded,
-  actionSteerBudget,
-  planStepSteer,
-  shouldCorrectCompanionQuote,
+  buildCompanionStepCorrectionInstruction,
   companionStepCorrectionMessages,
   companionStepRuntimePolicy,
   planWithheldFinalStepCalls,
+  reviewCompanionStepCorrection,
   stepHoldChars,
   type CompanionAgentLoopResult,
 } from "./companion-step-plan.ts";
