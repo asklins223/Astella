@@ -1274,7 +1274,7 @@ export function SettingsSurface() {
               )}
             <div>
               <b>{session?.user?.displayName ?? session?.user?.email ?? "已登录"}</b>
-              <small>{session?.user?.displayName ? session.user.email : "凭据只加密保存在这台设备上"}</small>
+              <small>{session?.user?.displayName ? session.user.email : "凭据只保存在这台设备上"}</small>
             </div>
           </div>
           {profileFailure ? (

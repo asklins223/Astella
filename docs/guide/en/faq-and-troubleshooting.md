@@ -113,7 +113,7 @@ Use ⌘/Ctrl with `+`, `-` and `0` to adjust/reset zoom. `src/shared/window-geom
 | Local images, attachments and originals | MinIO object volume, without the PostgreSQL external-volume protection |
 | Production objects | private remote S3-compatible bucket, backed up separately from the database |
 | Local recognition models and artifact cache | corresponding directories in Electron `userData` |
-| Session credentials | Main-process `safeStorage` encryption; no persistence without an encryption backend |
+| Session credentials | Written by the main process to a 0600 file under Electron `userData`; when the write fails nothing is stored and the sign-in lasts only for that session |
 
 `make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB` permanently deletes the development database volume and restarts the stack. Explicit Docker administration can still delete volumes; this is not absolute deletion prevention. Database backups do not automatically include remote/MinIO objects. Check long-lived resources before migration.
 

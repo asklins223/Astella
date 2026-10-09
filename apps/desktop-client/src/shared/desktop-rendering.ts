@@ -2,6 +2,7 @@
 export const DESKTOP_RENDERING_GET_CHANNEL = 'desktop-rendering:get'
 export const DESKTOP_RENDERING_SET_CHANNEL = 'desktop-rendering:set'
 export const DESKTOP_RENDERING_REPORT_FAILURE_CHANNEL = 'desktop-rendering:report-failure'
+export const DESKTOP_RENDERING_DISMISS_SUGGESTION_CHANNEL = 'desktop-rendering:dismiss-suggestion'
 export const DESKTOP_RENDERING_STATE_CHANNEL = 'desktop-rendering:state-changed'
 
 export type DesktopRenderingMode = 'default' | 'compatible'
@@ -12,13 +13,18 @@ export interface DesktopRenderingState {
   readonly configuredMode: DesktopRenderingMode
   readonly activeMode: DesktopRenderingMode
   readonly restartRequired: boolean
-  readonly automaticFallbackReason: DesktopRenderingFailure | null
+  /**
+   * A graphics failure was seen, but nothing was switched on its behalf. The user decides
+   * whether the compatible backend is worth a restart; a process exit alone is not proof.
+   */
+  readonly suggestedFallbackReason: DesktopRenderingFailure | null
 }
 
 export interface DesktopRenderingApi {
   getState(): Promise<DesktopRenderingState>
   setMode(mode: DesktopRenderingMode): Promise<DesktopRenderingState>
   reportGraphicsFailure(reason: 'webgl-context-lost'): Promise<DesktopRenderingState>
+  dismissFallbackSuggestion(): Promise<DesktopRenderingState>
   onStateChanged(listener: (state: DesktopRenderingState) => void): () => void
 }
 
@@ -35,5 +41,5 @@ export function isDesktopRenderingState(value: unknown): value is DesktopRenderi
   const state = value as Record<string, unknown>
   return typeof state.supported === 'boolean' && isDesktopRenderingMode(state.configuredMode)
     && isDesktopRenderingMode(state.activeMode) && typeof state.restartRequired === 'boolean'
-    && (state.automaticFallbackReason === null || isDesktopRenderingFailure(state.automaticFallbackReason))
+    && (state.suggestedFallbackReason === null || isDesktopRenderingFailure(state.suggestedFallbackReason))
 }

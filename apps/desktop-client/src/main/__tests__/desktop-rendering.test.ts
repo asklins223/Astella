@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { App, IpcMain, IpcMainInvokeEvent } from 'electron'
 import { DesktopRenderingPreferences, registerDesktopRenderingHealthMonitor, registerDesktopRenderingIpc } from '../desktop-rendering'
-import { DESKTOP_RENDERING_GET_CHANNEL, DESKTOP_RENDERING_SET_CHANNEL, DESKTOP_RENDERING_REPORT_FAILURE_CHANNEL } from '../../shared/desktop-rendering'
+import { DESKTOP_RENDERING_GET_CHANNEL, DESKTOP_RENDERING_SET_CHANNEL, DESKTOP_RENDERING_REPORT_FAILURE_CHANNEL, DESKTOP_RENDERING_DISMISS_SUGGESTION_CHANNEL } from '../../shared/desktop-rendering'
 
 let directory: string
 let path: string
@@ -23,7 +23,7 @@ describe('device rendering preferences', () => {
   it('keeps Chromium defaults on a healthy device', () => {
     expect(new DesktopRenderingPreferences(path, app, 'darwin').getState()).toEqual({
       supported: true, configuredMode: 'default', activeMode: 'default', restartRequired: false,
-      automaticFallbackReason: null,
+      suggestedFallbackReason: null,
     })
     expect(appendSwitch).not.toHaveBeenCalled()
   })
@@ -32,7 +32,7 @@ describe('device rendering preferences', () => {
     const current = new DesktopRenderingPreferences(path, app, 'darwin')
     expect(current.setMode('compatible')).toEqual({
       supported: true, configuredMode: 'compatible', activeMode: 'default', restartRequired: true,
-      automaticFallbackReason: null,
+      suggestedFallbackReason: null,
     })
     expect(appendSwitch).not.toHaveBeenCalled()
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ version: 1, mode: 'compatible' })
@@ -109,45 +109,56 @@ describe('device rendering preferences', () => {
     expect(prefs.getState().configuredMode).toBe('compatible')
   })
 
-  it('automatically persists a graphics failure and applies the fallback on the next launch', () => {
+  it('records a graphics failure as a suggestion and never switches the backend on its own', () => {
     const prefs = new DesktopRenderingPreferences(path, app, 'darwin')
-    const changed = vi.fn(() => expect(JSON.parse(readFileSync(path, 'utf8')).mode).toBe('compatible'))
+    const changed = vi.fn(() => expect(JSON.parse(readFileSync(path, 'utf8')).mode).toBe('default'))
     prefs.subscribe(changed)
     expect(prefs.recordGraphicsFailure('webgl-context-lost')).toMatchObject({
-      configuredMode: 'compatible', activeMode: 'default', restartRequired: true,
-      automaticFallbackReason: 'webgl-context-lost',
+      configuredMode: 'default', activeMode: 'default', restartRequired: false,
+      suggestedFallbackReason: 'webgl-context-lost',
     })
     expect(changed).toHaveBeenCalledOnce()
     expect(appendSwitch).not.toHaveBeenCalled()
+    // 第二次故障不再改写已经挂着的那条建议，也不反复写盘。
     prefs.recordGraphicsFailure('gpu-process-failed')
     expect(changed).toHaveBeenCalledOnce()
     const restarted = new DesktopRenderingPreferences(path, app, 'darwin')
-    expect(restarted.getState()).toMatchObject({ activeMode: 'compatible', restartRequired: false, automaticFallbackReason: 'webgl-context-lost' })
-    expect(appendSwitch).toHaveBeenCalledWith('disable-skia-graphite')
-    restarted.setMode('default')
-    expect(restarted.getState().automaticFallbackReason).toBeNull()
-    restarted.recordGraphicsFailure('gpu-process-failed')
-    expect(restarted.getState().configuredMode).toBe('default')
-    expect(new DesktopRenderingPreferences(path, app, 'darwin').getState().activeMode).toBe('default')
+    expect(restarted.getState()).toMatchObject({ activeMode: 'default', suggestedFallbackReason: 'webgl-context-lost' })
+    expect(appendSwitch).not.toHaveBeenCalled()
   })
 
-  it('does not overwrite a pending manual selection or create unsupported-platform preferences', () => {
+  it('clears the suggestion once the user answers it either way', () => {
+    const prefs = new DesktopRenderingPreferences(path, app, 'darwin')
+    prefs.recordGraphicsFailure('gpu-process-failed')
+    expect(prefs.setMode('compatible')).toMatchObject({ configuredMode: 'compatible', suggestedFallbackReason: null })
+    const restarted = new DesktopRenderingPreferences(path, app, 'darwin')
+    expect(restarted.getState()).toMatchObject({ activeMode: 'compatible' })
+    expect(restarted.setMode('default').suggestedFallbackReason).toBeNull()
+    // 关掉之后，下一次故障还能再问一次。
+    restarted.recordGraphicsFailure('gpu-process-failed')
+    expect(restarted.getState().suggestedFallbackReason).toBe('gpu-process-failed')
+    expect(restarted.dismissFallbackSuggestion().suggestedFallbackReason).toBeNull()
+    expect(JSON.parse(readFileSync(path, 'utf8')).suggestedFallbackReason).toBeUndefined()
+    expect(new DesktopRenderingPreferences(path, app, 'darwin').getState().suggestedFallbackReason).toBeNull()
+  })
+
+  it('does not suggest over a manual choice or on an unsupported platform', () => {
     const prefs = new DesktopRenderingPreferences(path, app, 'darwin')
     prefs.setMode('compatible')
-    expect(prefs.recordGraphicsFailure('gpu-process-failed').automaticFallbackReason).toBeNull()
+    expect(prefs.recordGraphicsFailure('gpu-process-failed').suggestedFallbackReason).toBeNull()
     const unsupported = new DesktopRenderingPreferences(join(directory, 'unsupported.json'), app, 'win32')
     expect(unsupported.recordGraphicsFailure('webgl-context-lost').configuredMode).toBe('default')
     expect(() => prefs.recordGraphicsFailure('slow-frame')).toThrow()
   })
 
-  it('never publishes an automatic fallback when persistence fails and can retry later', () => {
+  it('never publishes a suggestion when persistence fails and can retry later', () => {
     const prefs = new DesktopRenderingPreferences(path, app, 'darwin')
     const changed = vi.fn()
     const unsubscribe = prefs.subscribe(changed)
     mkdirSync(path)
     expect(() => prefs.recordGraphicsFailure('gpu-process-failed')).toThrow()
     expect(changed).not.toHaveBeenCalled()
-    expect(prefs.getState()).toMatchObject({ configuredMode: 'default', automaticFallbackReason: null })
+    expect(prefs.getState()).toMatchObject({ configuredMode: 'default', suggestedFallbackReason: null })
     rmSync(path, { recursive: true })
     prefs.recordGraphicsFailure('gpu-process-failed')
     expect(changed).toHaveBeenCalledOnce()
@@ -165,7 +176,9 @@ describe('device rendering preferences', () => {
     const event = { sender: { mainFrame: frame }, senderFrame: frame } as unknown as IpcMainInvokeEvent
     const report = handlers.get(DESKTOP_RENDERING_REPORT_FAILURE_CHANNEL)!
     for (const reason of ['gpu-process-failed', 'slow-frame', null, {}]) expect(() => report(event, reason)).toThrow()
-    expect(report(event, 'webgl-context-lost')).toMatchObject({ configuredMode: 'compatible', automaticFallbackReason: 'webgl-context-lost' })
+    expect(report(event, 'webgl-context-lost')).toMatchObject({ configuredMode: 'default', suggestedFallbackReason: 'webgl-context-lost' })
+    const dismiss = handlers.get(DESKTOP_RENDERING_DISMISS_SUGGESTION_CHANNEL)!
+    expect(dismiss(event)).toMatchObject({ suggestedFallbackReason: null })
   })
 })
 
@@ -176,8 +189,8 @@ describe('automatic GPU health monitoring', () => {
     const trace = vi.fn()
     registerDesktopRenderingHealthMonitor(emitter as unknown as App, prefs, trace)
     emitter.emit('child-process-gone', {}, { type: 'GPU', reason, exitCode: 1 })
-    expect(prefs.getState()).toMatchObject({ configuredMode: 'compatible', automaticFallbackReason: 'gpu-process-failed' })
-    expect(trace).toHaveBeenCalledWith('rendering-auto-fallback saved; applies-next-launch')
+    expect(prefs.getState()).toMatchObject({ configuredMode: 'default', activeMode: 'default', suggestedFallbackReason: 'gpu-process-failed' })
+    expect(trace).toHaveBeenCalledWith('rendering-fallback-suggested; user decides')
   })
 
   it('ignores orderly exit, intentional termination, integrity problems, other processes and shutdown', () => {
@@ -205,11 +218,11 @@ describe('automatic GPU health monitoring', () => {
     registerDesktopRenderingHealthMonitor(emitter as unknown as App, prefs, trace)
     mkdirSync(path)
     expect(() => emitter.emit('child-process-gone', {}, { type: 'GPU', reason: 'crashed', exitCode: 1 })).not.toThrow()
-    expect(trace).toHaveBeenCalledWith('rendering-auto-fallback save-failed')
+    expect(trace).toHaveBeenCalledWith('rendering-fallback-suggestion save-failed')
     expect(prefs.getState().configuredMode).toBe('default')
     rmSync(path, { recursive: true })
     emitter.emit('child-process-gone', {}, { type: 'GPU', reason: 'crashed', exitCode: 1 })
-    expect(prefs.getState().configuredMode).toBe('compatible')
+    expect(prefs.getState().suggestedFallbackReason).toBe('gpu-process-failed')
   })
 
   it('continues detecting failures after a quit request is cancelled', () => {
@@ -218,6 +231,6 @@ describe('automatic GPU health monitoring', () => {
     registerDesktopRenderingHealthMonitor(emitter as unknown as App, prefs, vi.fn())
     emitter.emit('before-quit', {})
     emitter.emit('child-process-gone', {}, { type: 'GPU', reason: 'crashed', exitCode: 1 })
-    expect(prefs.getState().configuredMode).toBe('compatible')
+    expect(prefs.getState().suggestedFallbackReason).toBe('gpu-process-failed')
   })
 })

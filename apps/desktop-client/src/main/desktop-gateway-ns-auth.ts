@@ -254,7 +254,7 @@ export async function leaveWorkspace(t: GatewayTransport, workspaceId: string, r
     if (body.switchedToPersonalWorkspace === true && typeof body.token === "string" && body.token.length > 0) {
       t.token = body.token;
       t.workspaceEpoch += 1;
-      await t.persistCredential(t.credentialPersistence === "safe_storage");
+      await t.persistCredential(t.credentialPersistence === "local_file");
     }
     t.roomProjectionCache = null;
     return t.loadSession(requestId);
@@ -263,7 +263,7 @@ export async function leaveWorkspace(t: GatewayTransport, workspaceId: string, r
 export async function login(t: GatewayTransport, b: CompanionBridge, email: string, password: string, requestId?: string, remember?: boolean): Promise<SessionContextV1> {
     await t.ensureConnected(requestId);
     await b.clearCompanionBridgeContext(requestId).catch(() => undefined);
-    const persist = remember ?? t.credentialPersistence === "safe_storage";
+    const persist = remember ?? t.credentialPersistence === "local_file";
     const result = await t.request("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password, remember: persist }),
@@ -285,7 +285,7 @@ export async function login(t: GatewayTransport, b: CompanionBridge, email: stri
 export async function register(t: GatewayTransport, b: CompanionBridge, email: string, password: string, inviteToken?: string, displayName?: string, requestId?: string, remember?: boolean): Promise<SessionContextV1> {
     await t.ensureConnected(requestId);
     await b.clearCompanionBridgeContext(requestId).catch(() => undefined);
-    const persist = remember ?? t.credentialPersistence === "safe_storage";
+    const persist = remember ?? t.credentialPersistence === "local_file";
     const body: { email: string; password: string; inviteToken?: string; displayName?: string } = { email, password };
     if (inviteToken) body.inviteToken = inviteToken;
     if (displayName) body.displayName = displayName;
@@ -373,7 +373,7 @@ export async function switchWorkspace(t: GatewayTransport, b: CompanionBridge, w
     t.token = parsed.data.token;
     t.workspaceEpoch += 1;
     t.roomProjectionCache = null;
-    await t.persistCredential(t.credentialPersistence === "safe_storage");
+    await t.persistCredential(t.credentialPersistence === "local_file");
     const session = await t.loadSession();
     if (reason !== "restore" && session.status === "authenticated" && session.workspace
       && previous?.user?.userId === session.user.userId && previous.workspace?.workspaceId !== session.workspace.workspaceId) {

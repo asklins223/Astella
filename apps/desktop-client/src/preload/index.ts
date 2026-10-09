@@ -3,7 +3,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AstellaDesktopApi } from './index.d'
 import {
   DESKTOP_RENDERING_GET_CHANNEL, DESKTOP_RENDERING_SET_CHANNEL,
-  DESKTOP_RENDERING_REPORT_FAILURE_CHANNEL, DESKTOP_RENDERING_STATE_CHANNEL,
+  DESKTOP_RENDERING_REPORT_FAILURE_CHANNEL, DESKTOP_RENDERING_DISMISS_SUGGESTION_CHANNEL,
+  DESKTOP_RENDERING_STATE_CHANNEL,
   isDesktopRenderingState,
 } from '../shared/desktop-rendering'
 import {
@@ -29,6 +30,7 @@ const api: AstellaDesktopApi = {
     getState: () => ipcRenderer.invoke(DESKTOP_RENDERING_GET_CHANNEL),
     setMode: (mode) => ipcRenderer.invoke(DESKTOP_RENDERING_SET_CHANNEL, mode),
     reportGraphicsFailure: (reason) => ipcRenderer.invoke(DESKTOP_RENDERING_REPORT_FAILURE_CHANNEL, reason),
+    dismissFallbackSuggestion: () => ipcRenderer.invoke(DESKTOP_RENDERING_DISMISS_SUGGESTION_CHANNEL),
     onStateChanged: (listener) => {
       const handleState = (_event: Electron.IpcRendererEvent, state: unknown) => {
         if (isDesktopRenderingState(state)) listener(state)

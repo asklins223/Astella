@@ -431,7 +431,7 @@ export function DesktopAccessGate({
   const [inviteEntryOpen, setInviteEntryOpen] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [keepSignedIn, setKeepSignedIn] = useState(true);
-  const [credentialPersistence, setCredentialPersistence] = useState<"safe_storage" | "memory">("memory");
+  const [credentialPersistence, setCredentialPersistence] = useState<"local_file" | "memory">("memory");
   const [authSurfaceHelp, setAuthSurfaceHelp] = useState<string | null>(null);
   const [roomRevealed, setRoomRevealed] = useState(false);
   const [scenePreference, setScenePreference] = useState<AuthScenePreference>("system");
@@ -1256,7 +1256,7 @@ export function DesktopAccessGate({
           ) : null}
           </div>
           {(formFailure ?? view.serviceNotice) ? <p className="desktop-access-gate__form-error" role="alert">{formFailure ?? view.serviceNotice}</p> : null}
-          {credentialPersistence === "safe_storage" ? (
+          {credentialPersistence === "local_file" ? (
             <label className="desktop-access-gate__keep-signed-in">
               <input
                 type="checkbox"
@@ -1270,9 +1270,9 @@ export function DesktopAccessGate({
           <p className="desktop-access-gate__trust-note">
             <ShieldCheck size={16} aria-hidden="true" />
             <span>
-              {authSurfaceHelp ?? (credentialPersistence === "safe_storage"
-                ? "登录凭据由系统钥匙串加密保存，密码本身不会写入磁盘。"
-                : "密码会安全提交；这台设备无法加密保存登录状态，关闭应用后需要重新登录。")}
+              {authSurfaceHelp ?? (credentialPersistence === "local_file"
+                ? "登录凭据只保存在这台设备的本地文件里，密码本身不会写入磁盘。"
+                : "密码会安全提交；这次没能把登录状态写到这台设备，关闭应用后需要重新登录。")}
             </span>
           </p>
           <button className="desktop-access-gate__primary" type="submit" disabled={formBusy}>

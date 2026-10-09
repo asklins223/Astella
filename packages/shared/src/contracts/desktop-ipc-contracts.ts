@@ -1877,7 +1877,7 @@ export const sessionContextSchema = z.union([
     membership: z.null(),
     capabilities: z.null(),
     workspaceEpoch: nonNegativeIntSchema,
-    credentialPersistence: z.enum(["none", "memory", "safe_storage"]),
+    credentialPersistence: z.enum(["none", "memory", "local_file"]),
     pendingNavigationIntent: pendingNavigationIntentSchema.optional(),
   }),
   z.strictObject({
@@ -1901,7 +1901,7 @@ export const sessionContextSchema = z.union([
     membership: z.strictObject({ role: z.enum(["owner", "member"]) }).nullable(),
     capabilities: capabilityProjectionSchema.nullable(),
     workspaceEpoch: positiveIntSchema,
-    credentialPersistence: z.enum(["memory", "safe_storage"]),
+    credentialPersistence: z.enum(["memory", "local_file"]),
     pendingNavigationIntent: pendingNavigationIntentSchema.optional(),
   }),
   z.strictObject({
@@ -1912,7 +1912,7 @@ export const sessionContextSchema = z.union([
     membership: z.null(),
     capabilities: z.null(),
     workspaceEpoch: positiveIntSchema,
-    credentialPersistence: z.enum(["memory", "safe_storage"]),
+    credentialPersistence: z.enum(["memory", "local_file"]),
     pendingNavigationIntent: pendingNavigationIntentSchema.optional(),
   }),
 ]);
@@ -1935,7 +1935,7 @@ export const runtimeSnapshotSchema = z.strictObject({
    * signed in" would be honest.
    */
   sessionCredential: z.strictObject({
-    persistence: z.enum(["safe_storage", "memory"]),
+    persistence: z.enum(["local_file", "memory"]),
     stored: z.boolean(),
   }),
 });

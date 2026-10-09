@@ -276,18 +276,18 @@ export class GatewayTransport {
       if (workspace) this.sessionWorkspaceReturn = { email: parsed.data.email, workspaceId: workspace.workspaceId };
       return this.currentSession;
     }
-  // `persistCredential` 把凭据写回（内存或 `safe_storage`）。
+  // `persistCredential` 把凭据写回（内存或 `local_file`）。
   async persistCredential(remember: boolean): Promise<void> {
       const store = this.credentials;
       this.tokenIsRestored = false;
-      if (!remember || !store?.available || !this.token) {
+      if (!remember || !store || !this.token) {
         this.credentialPersistence = "memory";
-        if (store?.available) await store.clear().catch(() => undefined);
+        if (store) await store.clear().catch(() => undefined);
         return;
       }
       try {
         await store.save(this.token);
-        this.credentialPersistence = "safe_storage";
+        this.credentialPersistence = "local_file";
       } catch {
         this.credentialPersistence = "memory";
         await store.clear().catch(() => undefined);
@@ -380,12 +380,12 @@ export class GatewayTransport {
         if (this.credentialRestored) return;
         this.credentialRestorePromise = (async () => {
           const store = this.credentials;
-          if (!store?.available || this.token) return;
+          if (!store || this.token) return;
           const stored = await store.load().catch(() => null);
           if (!stored) return;
           this.token = stored;
           this.tokenIsRestored = true;
-          this.credentialPersistence = "safe_storage";
+          this.credentialPersistence = "local_file";
         })();
         try {
           await this.credentialRestorePromise;
@@ -557,7 +557,7 @@ readonly companionAccountSessionId = randomUUID();
     readonly commandIdempotency = new Map<string, string>();
     token: string | null = null;
     tokenIsRestored = false;
-    credentialPersistence: "memory" | "safe_storage" = "memory";
+    credentialPersistence: "memory" | "local_file" = "memory";
 
   // ── 方法 ────────────────────────────────────────────────────────
     async discardStoredCredential(): Promise<void> {

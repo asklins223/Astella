@@ -113,7 +113,7 @@ Compose 中 API 用 `http://edge-tts:8080`；宿主机直接运行 API 时用 `h
 | 本地图片、附件与原文 | MinIO 对象卷；不享有上述 PostgreSQL external 保护 |
 | 正式对象 | 私有远程 S3 兼容桶，与数据库分开备份 |
 | 本机识别模型与互动页缓存 | Electron `userData` 下对应目录 |
-| 会话凭据 | 主进程通过 `safeStorage` 加密；加密后端不可用时不落盘 |
+| 会话凭据 | 主进程写在 Electron `userData` 下的 0600 本地文件；写入失败时不落盘，登录只保持到本次结束 |
 
 `make reset-db CONFIRM_RESET_DB=DELETE_DEV_DB` 会永久删除开发数据库卷并重新启动。Docker 管理操作仍可显式删除卷，不能理解为绝对防删除。数据库备份不会自动包含远程／MinIO 对象，迁移前同时核对长期资源。
 

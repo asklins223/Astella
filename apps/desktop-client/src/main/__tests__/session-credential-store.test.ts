@@ -5,126 +5,77 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const electron = vi.hoisted(() => ({
   app: { isPackaged: true, getPath: vi.fn() },
-  safeStorage: {
-    isEncryptionAvailable: vi.fn(),
-    encryptString: vi.fn(),
-    decryptString: vi.fn(),
-  },
 }));
 vi.mock("electron", () => electron);
-vi.mock("../session-credential-identity", () => ({ readSessionCredentialSigningIdentity: vi.fn(async () => "adhoc:com.asklins.astella:build-one") }));
-import { readSessionCredentialSigningIdentity } from "../session-credential-identity";
 
 import { createSessionCredentialStore } from "../session-credential-store";
 
+const filename = "session-credential-local-v1.txt";
+
 describe("session credential storage", () => {
   let directory: string;
-  const filename = () => process.platform === "darwin" && electron.app.isPackaged
-    ? "session-credential-packaged-v2.bin" : "session-credential-v1.bin";
-  const ciphertext = Buffer.from("encrypted fixture, not a bearer token");
 
   beforeEach(async () => {
     vi.resetAllMocks();
     directory = await mkdtemp(join(tmpdir(), "astella-session-test-"));
     electron.app.isPackaged = true;
-    vi.mocked(readSessionCredentialSigningIdentity).mockResolvedValue("adhoc:com.asklins.astella:build-one");
     electron.app.getPath.mockReturnValue(directory);
-    electron.safeStorage.isEncryptionAvailable.mockReturnValue(true);
-    electron.safeStorage.encryptString.mockReturnValue(ciphertext);
-    electron.safeStorage.decryptString.mockReturnValue("test-session-token");
   });
   afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 
-  it("does not touch Keychain during boot, runtime snapshots, or loading an absent credential", async () => {
-    const store = createSessionCredentialStore();
-    expect(store.available).toBe(true);
-    expect(store.hasStored()).toBe(false);
-    expect(await store.load()).toBeNull();
-    await store.clear();
-    expect(electron.safeStorage.isEncryptionAvailable).not.toHaveBeenCalled();
-    expect(electron.safeStorage.decryptString).not.toHaveBeenCalled();
-  });
-
-  it.skipIf(process.platform !== "darwin")("ignores development's old encrypted session in an installed app", async () => {
-    await writeFile(join(directory, "session-credential-v1.bin"), ciphertext);
-    const installed = createSessionCredentialStore();
-    expect(installed.hasStored()).toBe(false);
-    expect(await installed.load()).toBeNull();
-    await installed.clear();
-    expect(electron.safeStorage.isEncryptionAvailable).not.toHaveBeenCalled();
-    expect(await readFile(join(directory, "session-credential-v1.bin"))).toEqual(ciphertext);
-
-    electron.app.isPackaged = false;
-    const development = createSessionCredentialStore();
-    expect(development.hasStored()).toBe(true);
-    expect(await development.load()).toBe("test-session-token");
-  });
-
-  it("encrypts an explicitly remembered session and restores it after a restart", async () => {
+  it("keeps the session across a restart without asking the system for anything", async () => {
     const store = createSessionCredentialStore();
     await store.save("test-session-token");
-    expect(await readFile(join(directory, filename()))).toEqual(ciphertext);
-    expect((await stat(join(directory, filename()))).mode & 0o777).toBe(0o600);
-    expect(electron.safeStorage.encryptString).toHaveBeenCalledWith("test-session-token");
-    expect(await createSessionCredentialStore().load()).toBe("test-session-token");
-    await store.clear();
-    expect(store.hasStored()).toBe(false);
+
+    expect((await readFile(join(directory, filename), "utf8"))).toBe("test-session-token");
+    expect((await stat(join(directory, filename))).mode & 0o777).toBe(0o600);
+
+    const restarted = createSessionCredentialStore();
+    expect(restarted.hasStored()).toBe(true);
+    await expect(restarted.load()).resolves.toBe("test-session-token");
+    expect(await readFile(join(directory, filename), "utf8")).toBe("test-session-token");
   });
 
-  it("fails closed after access is denied and does not retry Keychain during this launch", async () => {
-    electron.safeStorage.isEncryptionAvailable.mockReturnValue(false);
+  it("reports nothing stored until a credential is saved", async () => {
     const store = createSessionCredentialStore();
-    await expect(store.save("test-session-token")).rejects.toThrow("Session encryption unavailable");
-    expect(store.available).toBe(false);
     expect(store.hasStored()).toBe(false);
+    await expect(store.load()).resolves.toBeNull();
+  });
+
+  it("treats a blank credential as absent", async () => {
+    await writeFile(join(directory, filename), "   \n", "utf8");
+    await expect(createSessionCredentialStore().load()).resolves.toBeNull();
+  });
+
+  it("keeps a credential it cannot make sense of for the server to reject", async () => {
+    // 一次偶发的读取问题不该让人重登，更不该把还可能是好的凭据删掉。
+    await writeFile(join(directory, filename), "not-a-token-from-this-app", "utf8");
+    const store = createSessionCredentialStore();
+    await expect(store.load()).resolves.toBe("not-a-token-from-this-app");
+    await expect(stat(join(directory, filename))).resolves.toBeTruthy();
+  });
+
+  it("throws when the write cannot land, so the caller keeps the session in memory", async () => {
+    electron.app.getPath.mockReturnValue(join("/no-such-root-astella-test", directory));
+    const store = createSessionCredentialStore();
     await expect(store.save("test-session-token")).rejects.toThrow();
-    expect(electron.safeStorage.isEncryptionAvailable).toHaveBeenCalledTimes(1);
-    expect(electron.safeStorage.encryptString).not.toHaveBeenCalled();
-    await expect(stat(join(directory, filename()))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("retains an encrypted session when Keychain is temporarily unavailable", async () => {
-    await writeFile(join(directory, filename()), ciphertext);
-    if (process.platform === "darwin") await writeFile(join(directory, `${filename()}.identity.json`), JSON.stringify({ version: 1, identity: "adhoc:com.asklins.astella:build-one", access: "allowed" }));
-    electron.safeStorage.isEncryptionAvailable.mockReturnValue(false);
+  it("clears the credential without leaving a partial write behind", async () => {
     const store = createSessionCredentialStore();
-    expect(await store.load()).toBeNull();
-    expect(await readFile(join(directory, filename()))).toEqual(ciphertext);
-    expect(electron.safeStorage.decryptString).not.toHaveBeenCalled();
+    await store.save("test-session-token");
+    await writeFile(join(directory, `${filename}.tmp`), "stale", "utf8");
     await store.clear();
-    await expect(stat(join(directory, filename()))).rejects.toMatchObject({ code: "ENOENT" });
-  });
 
-  it("drops corrupted credentials so they are not repeatedly decrypted on startup", async () => {
-    await writeFile(join(directory, filename()), ciphertext);
-    if (process.platform === "darwin") await writeFile(join(directory, `${filename()}.identity.json`), JSON.stringify({ version: 1, identity: "adhoc:com.asklins.astella:build-one", access: "allowed" }));
-    electron.safeStorage.decryptString.mockImplementation(() => { throw new Error("Bad ciphertext"); });
-    const store = createSessionCredentialStore();
-    expect(await store.load()).toBeNull();
     expect(store.hasStored()).toBe(false);
-    expect(await store.load()).toBeNull();
-    expect(electron.safeStorage.decryptString).toHaveBeenCalledTimes(1);
+    await expect(readFile(join(directory, filename), "utf8")).rejects.toThrow();
+    await expect(readFile(join(directory, `${filename}.tmp`), "utf8")).rejects.toThrow();
   });
 
-  it.skipIf(process.platform !== "darwin")("does not silently open Keychain after an ad-hoc update or a previous denial", async () => {
-    await createSessionCredentialStore().save("test-session-token");
-    electron.safeStorage.isEncryptionAvailable.mockClear();
-    vi.mocked(readSessionCredentialSigningIdentity).mockResolvedValue("adhoc:com.asklins.astella:build-two");
-    expect(await createSessionCredentialStore().load()).toBeNull();
-    expect(electron.safeStorage.isEncryptionAvailable).not.toHaveBeenCalled();
-    expect(electron.safeStorage.decryptString).not.toHaveBeenCalled();
-    vi.mocked(readSessionCredentialSigningIdentity).mockResolvedValue("adhoc:com.asklins.astella:build-one");
-    electron.safeStorage.isEncryptionAvailable.mockReturnValue(false);
-    expect(await createSessionCredentialStore().load()).toBeNull();
-    electron.safeStorage.isEncryptionAvailable.mockClear();
-    expect(await createSessionCredentialStore().load()).toBeNull();
-    expect(electron.safeStorage.isEncryptionAvailable).not.toHaveBeenCalled();
-  });
-
-  it.skipIf(process.platform !== "darwin")("skips unmarked legacy ad-hoc credentials before any Keychain access", async () => {
-    await writeFile(join(directory, filename()), ciphertext);
-    expect(await createSessionCredentialStore().load()).toBeNull();
-    expect(electron.safeStorage.isEncryptionAvailable).not.toHaveBeenCalled();
-    expect(electron.safeStorage.decryptString).not.toHaveBeenCalled();
+  it("replaces the remembered credential when a different account signs in", async () => {
+    const store = createSessionCredentialStore();
+    await store.save("first-account-token");
+    await store.save("second-account-token");
+    await expect(createSessionCredentialStore().load()).resolves.toBe("second-account-token");
   });
 });

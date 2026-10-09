@@ -634,12 +634,11 @@ describe("DesktopGateway", () => {
       workspaceEpoch: 1,
     };
 
-    function fakeStore(initial: string | null = null, available = true) {
+    function fakeStore(initial: string | null = null) {
       const state = { token: initial, saves: [] as string[], clears: 0 };
       return {
         state,
         store: {
-          available,
           hasStored: () => state.token !== null,
           load: async () => state.token,
           save: async (token: string) => { state.token = token; state.saves.push(token) },
@@ -663,13 +662,13 @@ describe("DesktopGateway", () => {
       };
     }
 
-    it("reports memory persistence and no stored session when the platform cannot encrypt", async () => {
-      const { store } = fakeStore(null, false);
+    it("reports local-file persistence for a device that has not stored a credential yet", async () => {
+      const { store } = fakeStore();
       const gateway = new DesktopGateway(environment(), { credentials: store });
       expect(gateway.getRuntimeSnapshot(
         { version: 1, revision: 1, state: "visible" },
         false,
-      ).sessionCredential).toEqual({ persistence: "memory", stored: false });
+      ).sessionCredential).toEqual({ persistence: "local_file", stored: false });
     });
 
     it("adopts a stored credential before the first authenticated call", async () => {
@@ -689,7 +688,7 @@ describe("DesktopGateway", () => {
       const gateway = new DesktopGateway(environment(), { credentials: store });
       await expect(ns_auth.getSession(gateway.gatewayTransport)).resolves.toMatchObject({
         status: "authenticated",
-        credentialPersistence: "safe_storage",
+        credentialPersistence: "local_file",
       });
       expect(seen).toEqual(["Bearer stored-token"]);
     });
@@ -752,7 +751,6 @@ describe("DesktopGateway", () => {
       const state = { clears: 0 };
       const gateway = new DesktopGateway(environment(), {
         credentials: {
-          available: true,
           hasStored: () => false,
           load: async () => null,
           save: async () => { throw new Error("disk full") },

@@ -739,7 +739,7 @@ export class DesktopGateway {
       reducedMotion,
       startupRevision: 1,
       sessionCredential: {
-        persistence: this.transport.credentials?.available ? "safe_storage" : "memory",
+        persistence: this.transport.credentials ? "local_file" : "memory",
         stored: this.transport.credentials?.hasStored() ?? false,
       },
     });

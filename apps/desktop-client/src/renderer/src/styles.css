@@ -229,7 +229,10 @@ button:disabled {
   position: absolute;
   inset: 0;
   transform-origin: 50% 50%;
-  transform-style: preserve-3d;
+  /* 这里原来有 `transform-style: preserve-3d`，但书房子树没有任何真实 3D 变换
+     （相机只做 translate+scale，D0–D6 的 parallaxFactor 在 scene-depth.ts 之外没有消费者）。
+     实测它让每个深度带在任务页上仍各自成为一个整窗合成层（7 个 `Transform3DSceneLeaf`，
+     1440x810 @DPR2），压平后整窗层从 16 降到 9。 */
 }
 
 .room-camera-rig {
@@ -319,6 +322,9 @@ button:disabled {
 
 .desktop-app[data-platform="win32"], .desktop-app[data-platform="linux"] {
   --native-caption-width: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)));
+  /* 原生标题按钮画在客户区上缘。贴右缘的浮层从这条带下面起，而不是往左让位——
+     起算点只有一个源，灵动岛与笔记全屏折签、到达纸签都跟着它走。 */
+  --native-caption-band: calc(env(titlebar-area-height, 40px) + 12px);
 }
 
 .desktop-app[data-platform="win32"] .window-drag-region, .desktop-app[data-platform="linux"] .window-drag-region {
