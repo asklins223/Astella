@@ -249,6 +249,57 @@ describe("LearningRunSurface · 新结果过关演出", () => {
     expect(document.querySelector(".learning-run-result-board")?.hasAttribute("inert")).toBe(false);
   });
 
+  /**
+   * 2026-10-09 实机：学习卡提交后，服务端 run 事件（评估完成、phase 推进）会让
+   * 快照从 assessing 变成 checkpoint/completed；结果轮询 effect 依赖
+   * `snapshot.phase`，于是重跑并再读一次同一份结果。那次重复读取此前被当成
+   * "恢复的历史结果"走安静分支，把刚开场的演出收掉了——用户看到的是
+   * "庆祝不到 1 秒自己关了"。
+   */
+  it("run 事件推进快照后重读同一份结果，演出不被收掉", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    stubGateway(allCoveredPractice(), 4, assessingSnapshot());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gateway = (window as any).astella;
+    const checkpoint = learningRunPublicSnapshotV2Schema.parse({
+      ...assessingSnapshot(),
+      phase: "checkpoint",
+      allowedActions: [{
+        version: 2,
+        kind: "end",
+        abandonLockedEvidence: false,
+        confirmationRequired: true,
+      }],
+    });
+    let snapshotReads = 0;
+    gateway.learningRun.get = vi.fn(async () => {
+      snapshotReads += 1;
+      return { ok: true as const, workspaceEpoch: 1, data: snapshotReads === 1 ? assessingSnapshot() : checkpoint };
+    });
+    const baseGetResult = gateway.learningRun.getResult;
+    let resultReads = 0;
+    gateway.learningRun.getResult = vi.fn(async () => {
+      resultReads += 1;
+      return baseGetResult();
+    });
+    let fireRunEvent: (() => void) | null = null;
+    gateway.subscriptions.onEvent = vi.fn((_subscriptionId: string, handler: () => void) => {
+      fireRunEvent = handler;
+      return () => undefined;
+    });
+    useRoomStore.setState({ activeRunId: RUN_ID, activeObjectiveId: OBJECTIVE_ID });
+    render(<LearningRunSurface onExit={vi.fn()} />);
+
+    await waitFor(() => expect(document.querySelector(".learning-run-ceremony")).not.toBeNull());
+    expect(fireRunEvent).not.toBeNull();
+    act(() => fireRunEvent!());
+    await waitFor(() => expect(snapshotReads).toBeGreaterThan(1));
+    // 第二次读同一份结果已经走完，演出仍应留在屏上等用户点。
+    await waitFor(() => expect(resultReads).toBeGreaterThan(1));
+    expect(document.querySelector(".learning-run-ceremony"), "演出不应被快照刷新收掉").not.toBeNull();
+    expect(document.querySelector(".learning-run-result-board")?.hasAttribute("inert")).toBe(true);
+  });
+
   it("有组件截断 pointerdown 冒泡时，演出仍点得开", async () => {
     renderResult(2, allCoveredPractice(), vi.fn(), assessingSnapshot());
     await waitFor(() => expect(document.querySelector(".learning-run-ceremony")).not.toBeNull());

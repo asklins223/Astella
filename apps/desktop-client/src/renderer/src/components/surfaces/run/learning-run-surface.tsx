@@ -896,9 +896,14 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
           resultSpeechRef.current = null;
           setCompanionMoment("idle");
         }
-      } else {
+      } else if (acknowledgedResultKeyRef.current !== resultKey) {
         // skipped / declared_unable / repair and restored terminal results are
         // deliberately neutral and never reuse the success presentation.
+        //
+        // 这一段只在**没见过的**结果上安静收场：`acknowledgedResultKeyRef` 已经是
+        // 同一个 resultKey 时说明这一份结果刚刚演过——提交后服务端 run 事件会把快照
+        // 推进到 checkpoint/completed，轮询 effect 因此重跑并再读一次同一份结果，
+        // 那不是"恢复的历史结果"，不能把已经开场的演出和伴星一起收掉。
         setResultAcknowledgementActive(false);
         pendingResultFeedbackRef.current = null;
         setCompanionMoment("idle");
