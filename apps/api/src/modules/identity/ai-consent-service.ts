@@ -17,16 +17,7 @@ import { users } from "@astella/shared/db-schema";
 // "系统账号能不能用某个能力"那套判据是纯函数，且与 identity 其余部分共用，
 // 所以从 shared 取而不是从 ./service.ts 取——**那会造出一个新的环**
 // （service.ts 从本文件 re-export，本文件再从 service.ts 取）。
-import { resolveSystemProviderForCapability } from "@astella/shared/task-router";
-
-function systemUsesExternalAI(): boolean {
-  return (
-    resolveSystemProviderForCapability("agent_turn") !== "mock" ||
-    resolveSystemProviderForCapability("vision") !== "mock" ||
-    resolveSystemProviderForCapability("text_generation") !== "mock" ||
-    resolveSystemProviderForCapability("embedding") !== "mock"
-  );
-}
+import { systemUsesExternalAI } from "../../lib/ai-execution-consent.ts";
 
 export async function getAIPrivacySettings(workspaceId: string, userId: string) {
   const settings = await withWorkspaceTransaction({ workspaceId, userId }, async (transaction) => {

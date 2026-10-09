@@ -69,6 +69,7 @@ function stubGateway(
       : { state: "empty" },
   });
   const gateway = {
+    workspace: { getAiSettings: vi.fn(async () => ({ ok: true as const, data: { requiresConsent: true, consentVersion: "ai-consent-v1", dataPolicy: { sendToExternal: true } } })) },
     contract: { enabledRoutes: ["note.detail", "note.cardGeneration"] },
     auth: {
       getState: vi.fn(async () => ({

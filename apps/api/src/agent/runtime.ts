@@ -6,10 +6,12 @@ import { agentInputRefV1Schema, type AgentScopeV1 } from "@astella/shared/agent-
 import type { AgentDirectRequestV1 } from "@astella/shared/agent-request-contracts";
 import { sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkspaceTransaction, type ApiTransaction } from "../db/client.ts";
+import { requireAiExecutionConsent } from "../lib/ai-execution-consent.ts";
 
 const ports = { transaction: withWorkspaceTransaction, id: randomUUID };
 export const agentMethodStore = createAgentMethodStore(ports);
 export const agentStore = createAgentStore({ ...ports,
+  assertExecutionAllowed: requireAiExecutionConsent,
   ensureIdentity: async (tx, scope) => { await tx.execute(sql`INSERT INTO user_companion_account_state(user_id) VALUES(${scope.userId}) ON CONFLICT(user_id) DO NOTHING`); },
   acceptDirectCapability: async (tx, scope, run, call) => {
     const operationStore: AgentOperationStore<ApiTransaction> = { scope, invoke: action => action(tx, run) };

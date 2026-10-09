@@ -98,7 +98,7 @@ import {
 } from "../../../app/room-store";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { signOutCurrentAccount } from "../../../app/account-signout";
-import { SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
+import { companionConsentGate, COMPANION_CONSENT_REQUIRED_LINE, COMPANION_EXTERNAL_DISABLED_LINE, SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
 import { publishGateInvalidation } from "../../../app/gate-invalidation";
 import {
   DIRECTORY_RAIL_MODE_EVENT,
@@ -414,6 +414,7 @@ export function SettingsSurface() {
   const consentGroupRef = useRef<HTMLElement | null>(null);
   const consentAttentionTimerRef = useRef<number | null>(null);
   const [consentAttention, setConsentAttention] = useState(false);
+  const [consentGuidance, setConsentGuidance] = useState(false);
   useHudPage("settings");
 
   const section: SettingsSectionId = SECTION_IDS.includes(settingsSection)
@@ -434,6 +435,7 @@ export function SettingsSurface() {
     if (settingsAttention !== SETTINGS_ATTENTION_AI_CONSENT || section !== SETTINGS_SECTION_AI_CONSENT) return;
     setSettingsAttention(null);
     setConsentAttention(true);
+    setConsentGuidance(true);
     consentGroupRef.current?.scrollIntoView({ block: "center", behavior: reducedMotion || motionMode !== "full" ? "auto" : "smooth" });
     if (consentAttentionTimerRef.current !== null) window.clearTimeout(consentAttentionTimerRef.current);
     consentAttentionTimerRef.current = window.setTimeout(() => {
@@ -1785,6 +1787,12 @@ export function SettingsSurface() {
             className={`settings-group${consentAttention ? " settings-group--attention" : ""}`}
             data-attention={consentAttention ? SETTINGS_ATTENTION_AI_CONSENT : undefined}
           >
+            {consentGuidance && companionConsentGate(aiSettings) !== null ? (
+              <p className="settings-notice-paper" role="status">
+                <strong>伴星：</strong>{companionConsentGate(aiSettings) === "external_disabled"
+                  ? COMPANION_EXTERNAL_DISABLED_LINE : COMPANION_CONSENT_REQUIRED_LINE}
+              </p>
+            ) : null}
             <h3 className="settings-group__title">签署状态</h3>
             <div className="settings-rows">
               <SettingRow

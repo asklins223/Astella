@@ -350,9 +350,9 @@ export async function serializeRunPublic(
       noteVersionId: row.noteVersionId,
       status: cardGenerationRunStatusV2Schema.parse(row.status),
       sourceOutdated,
-      error: row.errorCode ? { code: row.errorCode, message: row.errorMessage } : null,
+      error: row.errorCode ? { code: row.errorCode, message: row.errorMessage?.slice(0, 500) ?? null } : null,
     }),
-    error: row.errorCode ? { code: row.errorCode, message: row.errorMessage } : null,
+    error: row.errorCode ? { code: row.errorCode, message: row.errorMessage?.slice(0, 500) ?? null } : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

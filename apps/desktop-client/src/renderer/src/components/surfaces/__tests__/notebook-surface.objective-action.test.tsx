@@ -409,6 +409,7 @@ function installApi(
       noteLearningRound: api.noteLearningRound,
       artifact: api.artifact,
       contract: { enabledRoutes: ["note.detail"] },
+      workspace: { getAiSettings: vi.fn(async () => ok({ requiresConsent: false, consentVersion: null })) },
       auth: { getState: vi.fn(async () => ok({ status: "authenticated", workspace: { workspaceId: "ws-1" } })) },
       room: {
         getProjection: vi.fn(async () => ok({ primaryFocus: { state: "empty" } })),
@@ -1214,6 +1215,16 @@ describe("这一篇的轮次记录（§10.3 读侧）", () => {
  *  4. 生成失败不装作已经讲过：错的句子照实说，那颗按钮还在。
  */
 describe("笔记页的教学面（39d W4-6 刀二）", () => {
+  it("未授权时先试一小问只打开授权设置，不请求练习生成", async () => {
+    const { api, roundBlock } = await show([], { openRound: roundRow({ revision: 4 }) });
+    const gateway = window.astella as unknown as { workspace: { getAiSettings: ReturnType<typeof vi.fn> } };
+    gateway.workspace.getAiSettings.mockResolvedValueOnce(ok({ requiresConsent: true, consentVersion: null, dataPolicy: { sendToExternal: false } }));
+    fireEvent.click(within(roundBlock()!).getByRole("button", { name: "先试一小问" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(api.noteLearningRound.preparePractice).not.toHaveBeenCalled();
+    expect(useRoomStore.getState()).toMatchObject({ settingsSection: "data", settingsAttention: "ai-consent" });
+  });
+
   it("可以先试且不提前展示讲解；准备后使用服务端签发的练习起点", async () => {
     const practiceStart = {
       objectiveId: OBJECTIVE_ID,

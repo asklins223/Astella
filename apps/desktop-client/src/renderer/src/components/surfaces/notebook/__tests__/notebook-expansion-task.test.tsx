@@ -26,7 +26,7 @@ function install() {
     startTask: vi.fn(async (_request: { noteId: string; request: { noteVersionId: string; requestId: string } }) => ok(task({ taskId: id(12) }))),
     review: vi.fn(async (request: { review: { drafts: NoteExpansionTaskV1["drafts"] } }) => ok(task({ drafts: task().drafts.map(draft => ({ ...draft, ...request.review.drafts.find(item => item.candidateId === draft.candidateId) })) }))),
     confirm: vi.fn(async (_request: { taskId: string; request: { candidateIds: string[] } }) => ok([link])) };
-  Object.defineProperty(window, "astella", { configurable: true, value: { noteExpansion: api } });
+  Object.defineProperty(window, "astella", { configurable: true, value: { workspace: { getAiSettings: vi.fn(async () => ({ ok: true as const, data: { requiresConsent: true, consentVersion: "ai-consent-v1", dataPolicy: { sendToExternal: true } } })) }, noteExpansion: api } });
   return api;
 }
 const input = () => ({ note, dirty: false, epochRef: { current: undefined }, onConfirmed: vi.fn() });
@@ -75,6 +75,7 @@ it("旧版草稿重新生成绑定当前笔记版本，接收成功后才切到�
   await act(async () => {});
   let request!: Promise<void>;
   act(() => { request = view.result.current.startNoteExpansionTask(); });
+  await act(async () => {});
   expect(api.startTask.mock.calls[0]?.[0]).toMatchObject({ noteId: note.noteId, request: { noteVersionId: note.currentVersionId } });
   expect(view.result.current.expansionTask?.taskId).toBe(old.taskId);
   expect(onStarted).not.toHaveBeenCalled();

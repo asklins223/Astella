@@ -11,6 +11,15 @@
 import { CardGenerationPipelineErrorV2 } from "@astella/shared/card-generation-v2-pipeline";
 import { DomainError } from "@astella/shared";
 
+/** Preserve the cause at the public boundary; never expose a provider response. */
+export function cardGenerationFailureCode(error: unknown): string {
+  const value = error as { code?: unknown; failureClass?: unknown } | null;
+  if (value?.code === "ai_consent_required" || value?.code === "ai_data_policy_denied") return value.code;
+  if (value?.failureClass === "output_shape") return "generation_output_invalid";
+  if (value?.failureClass === "timeout") return "generation_timeout";
+  return "generation_failed";
+}
+
 /**
  * 判别错误是否不可重试（provider 5xx/429/408/超时 → retryable；
  * schema/协议/配置 → non-retryable）。

@@ -1,3 +1,4 @@
+import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../../app/ai-action-gate";
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { NoteDetailV1 } from "@astella/shared/note-projection-contracts";
 import type { NoteAnnotationAnchorV1 } from "@astella/shared/note-annotation-contracts";
@@ -146,6 +147,7 @@ export function useNotebookExpansionTask(input: {
     setStarting(true); setError(null);
     const notifyTask = prepareNotebookTaskNotification(note, epochRef.current);
     try {
+      if (!await ensureAiActionAllowed(epochRef.current, () => buffer.current.scope === expectedScope && request === actionRequest.current)) return;
       if (!resolved.current) {
         const result = await loadLatest();
         if (!result.ok || buffer.current.scope !== expectedScope || request !== actionRequest.current) return;
@@ -164,7 +166,7 @@ export function useNotebookExpansionTask(input: {
         if (matches(expected)) { publish(task); latest.current.onStarted?.(task); }
         else reportError("当前草稿又有新修改，已保留在本页，请先保存。", "save");
       }
-    } catch (failure) { if (request === actionRequest.current && buffer.current.scope === expectedScope) reportError(gatewayErrorMessage(failure), "start"); }
+    } catch (failure) { if (request === actionRequest.current && buffer.current.scope === expectedScope && !guideAiPermissionFailure(failure)) reportError(gatewayErrorMessage(failure), "start"); }
     finally { if (request === actionRequest.current && buffer.current.scope === expectedScope) { inFlight.current = false; setStarting(false); } }
   }, [loadLatest]);
 

@@ -29,7 +29,7 @@ const listRuns = vi.fn(), controlRun = vi.fn(), reviseRun = vi.fn(), getRun = vi
 beforeEach(() => {
   state.scope = 1; vi.clearAllMocks();
   listRuns.mockResolvedValue({ version: 1, items: [run()], nextCursor: null });
-  Object.defineProperty(window, "astella", { configurable: true, value: { agent: { listRuns, controlRun, reviseRun, getRun } } });
+  Object.defineProperty(window, "astella", { configurable: true, value: { workspace: { getAiSettings: vi.fn(async () => ({ requiresConsent: false, consentVersion: null })) }, agent: { listRuns, controlRun, reviseRun, getRun } } });
   Object.defineProperty(document, "hidden", { configurable: true, value: false });
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });

@@ -12,14 +12,14 @@ const note={noteId:"note",title:"笔记",currentVersionId:"version"} as NoteDeta
 const old={mindMapId:"old",noteId:"note",noteVersionId:"old-version",versionState:"older"};
 const task=(status:string)=>({taskId:"job",noteId:"note",noteVersionId:"version",status,mindMap:null,failureReason:status==="failed"?"unknown":null});
 const deferred=()=>{let resolve!:(value:unknown)=>void;const promise=new Promise(yes=>{resolve=yes});return{resolve,promise};};
-beforeEach(()=>{state.scope=1;vi.clearAllMocks();list.mockResolvedValue({items:[],nextCursor:null});latestTask.mockResolvedValue({task:null});Object.defineProperty(window,"astella",{configurable:true,value:{noteMindMap:{list,latestTask,startTask,getTask}}});});
+beforeEach(()=>{state.scope=1;vi.clearAllMocks();list.mockResolvedValue({items:[],nextCursor:null});latestTask.mockResolvedValue({task:null});Object.defineProperty(window,"astella",{configurable:true,value:{workspace:{getAiSettings:vi.fn(async()=>({requiresConsent:false,consentVersion:null}))},noteMindMap:{list,latestTask,startTask,getTask}}});});
 afterEach(cleanup);
 it("opening a note only reads records; a direct brain request needs no overview and guards rapid duplicate clicks",async()=>{
  const result=renderHook(()=>useNotebookMindMap({note,epochRef:{current:1}}));
  await waitFor(()=>expect(list).toHaveBeenCalledTimes(1));expect(startTask).not.toHaveBeenCalled();
  const pending=deferred();startTask.mockReturnValue(pending.promise);
  let first!:Promise<unknown>;act(()=>{first=result.result.current.startNoteMindMapTask(false);void result.result.current.startNoteMindMapTask(false);});
- expect(startTask).toHaveBeenCalledTimes(1);expect(startTask.mock.calls[0]![0].request.noteVersionId).toBe("version");
+ await act(async()=>{});expect(startTask).toHaveBeenCalledTimes(1);expect(startTask.mock.calls[0]![0].request.noteVersionId).toBe("version");
  await act(async()=>{pending.resolve(task("queued"));await first;});expect(result.result.current.taskForCurrentVersion?.status).toBe("queued");
 });
 it("a failed regeneration preserves the selected earlier map",async()=>{

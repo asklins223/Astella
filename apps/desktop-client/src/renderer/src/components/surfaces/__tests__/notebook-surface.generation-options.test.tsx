@@ -22,6 +22,7 @@ const PREVIOUS_RUN_ID = "bbbbbbb2-2222-4222-8222-222222222222";
 function stubGateway(latestRunStatus: string | null, runVersionId = VERSION_ID) {
   const state = { startRequests: [] as unknown[] };
   const gateway = {
+    workspace: { getAiSettings: vi.fn(async () => ({ ok: true as const, data: { requiresConsent: true, consentVersion: "ai-consent-v1", dataPolicy: { sendToExternal: true } } })) },
     contract: { enabledRoutes: ["note.detail", "note.cardGeneration"] },
     auth: {
       getState: vi.fn(async () => ({

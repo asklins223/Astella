@@ -1,3 +1,4 @@
+import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../../app/ai-action-gate";
 /**
  * 笔记「速看」那一簇的状态、读写与派生。
  *
@@ -90,7 +91,7 @@ export function useNotebookOverview(input: {
       if (request === overviewTaskRequestRef.current) setOverviewTask(result.task);
       return result;
     } catch (error) {
-      if (request === overviewTaskRequestRef.current) setOverviewTaskError(gatewayErrorMessage(error));
+      if (request === overviewTaskRequestRef.current && !guideAiPermissionFailure(error)) setOverviewTaskError(gatewayErrorMessage(error));
     }
   }, [note?.noteId, note?.currentVersionId]);
 
@@ -108,6 +109,7 @@ export function useNotebookOverview(input: {
     setOverviewTaskError(null);
     const notifyTask = prepareNotebookTaskNotification(note, epochRef.current);
     try {
+      if (!await ensureAiActionAllowed(epochRef.current, () => request === overviewTaskRequestRef.current)) return;
       const task = unwrapGatewayResult(await api.noteOverview.startTask({
         meta: createRequestMeta(epochRef.current),
         noteId: note.noteId,
@@ -116,7 +118,7 @@ export function useNotebookOverview(input: {
       notifyTask(task, "overview");
       if (request === overviewTaskRequestRef.current) setOverviewTask(task);
     } catch (error) {
-      if (request === overviewTaskRequestRef.current) setOverviewTaskError(gatewayErrorMessage(error));
+      if (request === overviewTaskRequestRef.current && !guideAiPermissionFailure(error)) setOverviewTaskError(gatewayErrorMessage(error));
     } finally {
       if (request === overviewTaskRequestRef.current) { startingRef.current = false; setOverviewTaskStarting(false); }
     }

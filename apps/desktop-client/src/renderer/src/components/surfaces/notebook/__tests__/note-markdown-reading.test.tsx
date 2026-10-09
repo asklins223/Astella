@@ -11,6 +11,16 @@ const diagram = vi.hoisted(() => ({ initialize: vi.fn(), render: vi.fn(async () 
 vi.mock("mermaid", () => ({ default: diagram }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
+it("缩小后的 HTML 图片块保留尺寸并能打开画廊", () => {
+  const gallery = vi.fn();
+  const view = render(<ReadingBlock block={{ type: "image", ordinal: 0, content: '<img src="https://example.com/resized.png" alt="缩小的图片" width="122" />' }} mark={null} gallery={{ start: 0, openAt: gallery, close: vi.fn() }} />);
+  const image = view.getByAltText("缩小的图片");
+  expect(image.closest<HTMLElement>(".note-html-image")?.style.getPropertyValue("--note-image-width")).toBe("122");
+  expect(view.queryByText(/图片片段无法解析/)).toBeNull();
+  fireEvent.click(image);
+  expect(gallery).toHaveBeenCalledWith(0);
+});
+
 it("同段多图在阅读态保留并排比例、说明、目的链接与批注字符流", () => {
   const content = '<img src="https://example.com/a.png" alt="甲图" width="240" /> <a href="https://example.com/detail"><img src="https://example.com/b.png" alt="乙图" width="120" /></a>';
   const view = render(<ReadingBlock block={{ type: "paragraph", ordinal: 0, content }} mark={null} />);

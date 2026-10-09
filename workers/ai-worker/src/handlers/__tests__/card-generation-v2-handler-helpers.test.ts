@@ -15,7 +15,14 @@ import {
   capSourceContentForPrompts,
   V2_SOURCE_CONTENT_MAX_CHARS,
 } from "../../card-generation-v2/run-io.ts";
-import { isNonRetryableErrorLike } from "../../card-generation-v2/retry-classification.ts";
+import { cardGenerationFailureCode, isNonRetryableErrorLike } from "../../card-generation-v2/retry-classification.ts";
+
+test("terminal card failures retain output, timeout and permission causes", () => {
+  assert.equal(cardGenerationFailureCode({ failureClass: "output_shape" }), "generation_output_invalid");
+  assert.equal(cardGenerationFailureCode({ failureClass: "timeout" }), "generation_timeout");
+  assert.equal(cardGenerationFailureCode({ code: "ai_data_policy_denied" }), "ai_data_policy_denied");
+  assert.equal(cardGenerationFailureCode(new Error("unrecognized")), "generation_failed");
+});
 
 test("源文本上限：未超限原样返回；超限截断并标记", () => {
   const workspaceId = randomUUID();

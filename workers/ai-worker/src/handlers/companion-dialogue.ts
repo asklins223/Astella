@@ -289,7 +289,7 @@ export async function runCompanionDialogue(
               : "用户发来的图片",
           }));
         const currentUserSeq = userRows[0]?.seq ?? "0";
-        // 先在 SQL 排除非对话与失败消息，再按模型真实采用的字符预算裁尾；摘要水位
+        // 排除非对话与未完成的助手输出，保留用户连发的补充以及发送时间、回合状态；摘要水位
         // 必须从这份相同的可见尾部计算，不能让 system 注记占掉最近消息名额。
         const historyRows = await readCompanionHistoryRows(tx, run.conversation_id, {
           beforeSeq: currentUserSeq, limit: REPLAY_WINDOW_MESSAGES,
@@ -302,6 +302,7 @@ export async function runCompanionDialogue(
             role: m.role as "user" | "assistant",
             text: companionHistoryText(m),
             createdAt: m.created_at,
+            replyStatus: m.run_status,
           }));
         const visibleRecent = boundCompanionRecentHistory(recentWithSeq);
         replayTailSeqs = visibleRecent.map((message) => message.seq ?? null);

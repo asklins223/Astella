@@ -8,7 +8,7 @@ import { AI_CONSENT_VERSION } from "@astella/shared/desktop-ipc-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QWEN_TTS_VOICE_OPTIONS } from "@astella/shared/tts-voice-catalog";
 import { useRoomStore } from "../../../app/room-store.ts";
-import { SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-consent-gate.ts";
+import { COMPANION_CONSENT_REQUIRED_LINE, COMPANION_EXTERNAL_DISABLED_LINE, SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-consent-gate.ts";
 import { SETTINGS_ATTENTION_MS, SettingsSurface, summaryOfDissolveCounts } from "../settings/settings-surface.tsx";
 import { subscribeGateInvalidation } from "../../../app/gate-invalidation.ts";
 import { clearAccountSignOutNotice, peekAccountSignOutNotice } from "../../../app/account-signout.ts";
@@ -458,6 +458,7 @@ describe("伴星把读者送到同意卡（2026-09-19）", () => {
       const card = document.querySelector('[data-attention="ai-consent"]');
       expect(card).not.toBeNull();
       expect(within(card as HTMLElement).getByText("签署状态")).toBeTruthy();
+      expect(within(card as HTMLElement).getByText(COMPANION_CONSENT_REQUIRED_LINE, { exact: false })).toBeTruthy();
       // 一次性请求被立刻消费：下次进设置页不会再闪。
       expect(useRoomStore.getState().settingsAttention).toBeNull();
     } finally {
@@ -483,10 +484,25 @@ describe("伴星把读者送到同意卡（2026-09-19）", () => {
         vi.advanceTimersByTime(SETTINGS_ATTENTION_MS + 50);
       });
       expect(document.querySelector(".settings-group--attention")).toBeNull();
+      expect(screen.getByText(COMPANION_CONSENT_REQUIRED_LINE, { exact: false })).toBeTruthy();
     } finally {
       vi.useRealTimers();
       Reflect.deleteProperty(Element.prototype, "scrollIntoView");
     }
+  });
+
+  it("外发开关关闭时，设置页保留伴星指引；开启后指引消失", async () => {
+    const { api } = installApi({ ai: aiSettings({ consentVersion: AI_CONSENT_VERSION, consentAt: "2026-10-08T00:00:00Z" }) });
+    mockScrollIntoView();
+    try {
+      useRoomStore.setState({ settingsSection: "data", settingsAttention: SETTINGS_ATTENTION_AI_CONSENT });
+      render(<SettingsSurface />);
+      await screen.findByText(COMPANION_EXTERNAL_DISABLED_LINE, { exact: false });
+      expect(api.workspace.updateAiDataPolicy).not.toHaveBeenCalled();
+      const row = screen.getByText("允许发送到外部模型服务").closest(".settings-row") as HTMLElement;
+      fireEvent.click(within(row).getByRole("switch"));
+      await waitFor(() => expect(screen.queryByText(COMPANION_EXTERNAL_DISABLED_LINE, { exact: false })).toBeNull());
+    } finally { Reflect.deleteProperty(Element.prototype, "scrollIntoView"); }
   });
 
   it("停在别的 section 时不闪：请求留着，切到「AI 数据同意」才生效", async () => {

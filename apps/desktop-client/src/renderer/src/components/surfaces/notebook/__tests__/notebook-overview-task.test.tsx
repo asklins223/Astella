@@ -31,13 +31,26 @@ function overviewFixture() {
   return { noteId, note, ready };
 }
 
+it("速看外发未授权时只打开设置，不创建任务", async () => {
+  const { note } = overviewFixture();
+  const startTask = vi.fn();
+  Object.defineProperty(window, "astella", { configurable: true, value: {
+    workspace: { getAiSettings: vi.fn(async () => ({ ok: true, data: { requiresConsent: true, consentVersion: "signed", dataPolicy: { sendToExternal: false } } })) },
+    noteOverview: { latestTask: vi.fn(async () => ({ ok: true, data: { task: null } })), startTask },
+  } });
+  const view = renderHook(() => useNotebookOverview({ note, epochRef: { current: 1 } }));
+  await act(async () => view.result.current.startNoteOverviewTask(false));
+  expect(startTask).not.toHaveBeenCalled();
+  expect(view.result.current.overviewTaskStarting).toBe(false);
+});
+
 it("关起学习页继续读，速看迟到完成只更新结果；主动打开才切回速看", async () => {
   vi.useFakeTimers();
   const { noteId, note, ready } = overviewFixture();
   const ok = <T,>(data: T) => ({ ok: true, data });
   const latestTask = vi.fn(async () => ok({ version: 1, task: null }));
   const getTask = vi.fn(async () => ok(ready));
-  Object.defineProperty(window, "astella", { configurable: true, value: { noteOverview: {
+  Object.defineProperty(window, "astella", { configurable: true, value: { workspace: { getAiSettings: vi.fn(async () => ({ ok: true as const, data: { requiresConsent: true, consentVersion: "ai-consent-v1", dataPolicy: { sendToExternal: true } } })) }, noteOverview: {
     latestTask, getTask, startTask: vi.fn(async () => ok({ ...ready, status: "queued", overview: null })),
   } } });
   const epochRef = { current: undefined };
@@ -64,7 +77,7 @@ it("关起学习页继续读，速看迟到完成只更新结果；主动打开�
 
 it("选中的结果尚未读取时不回退到其他速看；解除选择后重新跟随最新生成", async () => {
   const { noteId, note, ready } = overviewFixture();
-  Object.defineProperty(window, "astella", { configurable: true, value: { noteOverview: {
+  Object.defineProperty(window, "astella", { configurable: true, value: { workspace: { getAiSettings: vi.fn(async () => ({ ok: true as const, data: { requiresConsent: true, consentVersion: "ai-consent-v1", dataPolicy: { sendToExternal: true } } })) }, noteOverview: {
     latestTask: vi.fn(async () => ({ ok: true, data: { version: 1, task: ready } })),
   } } });
   const view = renderHook(({ requestedOverview }: { requestedOverview: NoteOverviewV1 | null | undefined }) =>

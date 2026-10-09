@@ -332,7 +332,7 @@ describe("伴星回答保存回笔记", () => {
     }));
     Object.defineProperty(window, "astella", {
       configurable: true,
-      value: { noteExpansion: { startTask } },
+      value: { workspace: { getAiSettings: vi.fn(async () => ok({ requiresConsent: false, consentVersion: null })) }, noteExpansion: { startTask } },
     });
     const send = vi.fn(async () => true);
     const expansionIntent = { kind: "expansion" as const, noteId: NOTE_ID, noteVersionId: NOTE_VERSION_ID, noteTitle: "工具调用" };

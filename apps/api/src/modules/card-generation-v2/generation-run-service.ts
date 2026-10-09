@@ -1,3 +1,4 @@
+import { requireAiExecutionConsent } from "../../lib/ai-execution-consent.ts";
 import { startDomainAgentRequest } from "../../agent/runtime.ts";
 /** Card generation keeps its domain Run and review flow. Creation accepts one
  * Agent Run and its real domain operation atomically through the host. */
@@ -370,6 +371,7 @@ export async function cancelGenerationRunV2(ctx: RunContext, runId: string) {
  */
 export async function retryGenerationRunV2(ctx: RunContext, runId: string) {
   return withWorkspaceTransaction(ctx, async (tx) => {
+    await requireAiExecutionConsent(tx, ctx);
     const runRows = await tx.select().from(cardGenerationRunsV2)
       .where(and(eq(cardGenerationRunsV2.id, runId), eq(cardGenerationRunsV2.workspaceId, ctx.workspaceId)))
       .limit(1);

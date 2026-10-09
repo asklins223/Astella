@@ -277,6 +277,25 @@ export const cardGenerationRunServerViewV2Schema = z.strictObject({
 });
 export type CardGenerationRunServerViewV2 = z.infer<typeof cardGenerationRunServerViewV2Schema>;
 
+/** Only known reasons cross IPC; provider errors and model output stay in main. */
+export const cardGenerationRunFailureV1Schema = z.strictObject({
+  reason: z.enum(["consent_required", "external_disabled", "output_invalid", "timeout", "quality_failed"]),
+  stage: z.enum(["generate", "check", "rewrite"]).nullable(),
+});
+export type CardGenerationRunFailureV1 = z.infer<typeof cardGenerationRunFailureV1Schema>;
+
+export function projectCardGenerationRunFailureV1(error: CardGenerationRunServerViewV2["error"]): CardGenerationRunFailureV1 | null {
+  if (!error) return null;
+  const code = error.code.toLowerCase(), message = error.message ?? "";
+  if (code === "ai_consent_required" || /AIConsentRequiredError|AI_CONSENT_REQUIRED/.test(message)) return { reason: "consent_required", stage: null };
+  if (code === "ai_data_policy_denied" || /AIDataPolicyDeniedError|AI_DATA_POLICY_DENIED/.test(message)) return { reason: "external_disabled", stage: null };
+  if (code === "quality_gate_failed") return { reason: "quality_failed", stage: null };
+  if (code === "generation_output_invalid" || /output rejected: output_shape/.test(message)) return { reason: "output_invalid",
+    stage: /card_content_check_v3/.test(message) ? "check" : /card_candidate_rewrite_v3/.test(message) ? "rewrite" : "generate" };
+  if (code === "generation_timeout" || /wall-clock budget exhausted|output rejected: timeout/.test(message)) return { reason: "timeout", stage: null };
+  return null;
+}
+
 export const cardGenerationRunSnapshotV1Schema = z.strictObject({
   version: z.literal(1),
   runId: uuidSchema,
@@ -290,6 +309,7 @@ export const cardGenerationRunSnapshotV1Schema = z.strictObject({
   sourceRef: cardGenerationSourceRefV1Schema,
   progress: cardGenerationProgressV1Schema.nullable(),
   recovery: cardGenerationRecoveryProjectionV1Schema.nullable(),
+  failure: cardGenerationRunFailureV1Schema.nullable().optional(),
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,
 }).superRefine((value, context) => {
@@ -521,6 +541,7 @@ export function projectCardGenerationRunSnapshotV1(value: CardGenerationRunServe
     sourceRef: { noteId: value.noteId, noteVersionId: value.noteVersionId },
     progress: value.progress,
     recovery: value.recovery,
+    failure: projectCardGenerationRunFailureV1(value.error),
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
   });

@@ -1,3 +1,4 @@
+import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../../app/ai-action-gate";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CardActivationReceiptDesktopV1, CardGenerationCandidateV1, CardGenerationExposureEligibilityV1, DesktopCandidateRevealV2, DesktopCardRejectReasonV2 } from "@astella/shared/card-generation-desktop-contracts";
 import { useRoomStore } from "../../../app/room-store";
@@ -89,7 +90,7 @@ export function useCardGenerationSession() {
       await write();
       return identity.current === scope;
     } catch (error) {
-      if (identity.current === scope) setActionFailure(gatewayErrorMessage(error));
+      if (identity.current === scope && !guideAiPermissionFailure(error)) setActionFailure(gatewayErrorMessage(error));
       return false;
     } finally {
       if (identity.current === scope) { actionLock.current = false; setBusyAction(null); }
@@ -171,6 +172,7 @@ export function useCardGenerationSession() {
   });
   const retry = () => perform("retry", async () => {
     if (!run || !window.astella) return;
+    if (!await ensureAiActionAllowed(epochRef.current, () => identity.current === run.runId)) return;
     const response = await window.astella.note.cardGeneration.retry({ meta: createRequestMeta(epochRef.current), commandId: createCommandId("card-generation-retry"), runId: run.runId });
     unwrapGatewayResult(response); if (identity.current === run.runId) await load(false);
   });
@@ -178,6 +180,7 @@ export function useCardGenerationSession() {
   const regenerate = () => perform("regenerate", async () => {
     if (!run || !window.astella || !canRegenerate) return;
     const api = window.astella;
+    if (!await ensureAiActionAllowed(epochRef.current, () => identity.current === run.runId)) return;
     // Read the latest saved source before ending the old review. A read failure
     // leaves that review intact; a start failure still leaves a usable retry.
     const noteResponse = await api.note.get({ meta: createRequestMeta(epochRef.current), noteId: run.noteId });

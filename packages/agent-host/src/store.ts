@@ -20,6 +20,7 @@ export interface AgentSqlExecutor { execute(query: SQL): Promise<unknown> }
 export interface AgentStorePorts<Tx extends AgentSqlExecutor = AgentSqlExecutor> {
   transaction<T>(scope: AgentScopeV1, action: (tx: Tx) => Promise<T>): Promise<T>;
   id(): string;
+  assertExecutionAllowed?(tx: Tx, scope: AgentScopeV1): Promise<void>;
   ensureIdentity?(tx: AgentSqlExecutor, scope: AgentScopeV1): Promise<void>;
   acceptDirectCapability?(tx: Tx, scope: AgentScopeV1, run: AgentRunRow,
     call: { id: string; name: string; arguments: Record<string, unknown> }): Promise<unknown>;
@@ -186,6 +187,7 @@ export function createAgentStore<Tx extends AgentSqlExecutor = AgentSqlExecutor>
             throw new AgentStoreError(409, "request_conflict", "这次请求已有另一份设置，请重新提交。");
           return projectRun(tx, scope, existing);
         }
+        await ports.assertExecutionAllowed?.(tx, scope);
         await requireRunCapacity(tx, scope);
         const [run] = await queryRows<AgentRunRow>(tx, sql`INSERT INTO agent_runs(workspace_id,user_id,identity_id,account_epoch,
           request_id,conversation_id,goal,inputs,long_goal_ref,direct_request) VALUES(${scope.workspaceId},${scope.userId},${identity.id},${identity.epoch},
@@ -266,6 +268,7 @@ export function createAgentStore<Tx extends AgentSqlExecutor = AgentSqlExecutor>
         const old = await readRun(tx, scope, id, true);
         // CAS 先判：失败时一行都不写，历史也不会多出一条。
         if (old.revision !== expectedRevision) throw new AgentStoreError(409, "revision_conflict", "这件事刚刚更新了，请看最新状态再修改。");
+        await ports.assertExecutionAllowed?.(tx, scope);
         const identity = await requireAgentAuthority(tx, scope);
         const goalRef = longGoal === undefined ? old.long_goal_ref : longGoal;
         if(goalRef) await requireAgentLongGoal(tx,scope,goalRef);
@@ -292,6 +295,7 @@ export function createAgentStore<Tx extends AgentSqlExecutor = AgentSqlExecutor>
         if (old.revision !== expectedRevision) throw new AgentStoreError(409, "revision_conflict", "请先查看这件事的最新状态。");
         if (action === "resume" && old.status !== "paused" && old.status !== "failed") return projectRun(tx, scope, old);
         if (action === "resume") {
+          await ports.assertExecutionAllowed?.(tx, scope);
           const identity = await requireAgentAuthority(tx, scope, Boolean(old.direct_request));
           if(old.long_goal_ref) await requireAgentLongGoal(tx,scope,old.long_goal_ref);
           if (identity.id !== old.identity_id || identity.epoch !== old.account_epoch)

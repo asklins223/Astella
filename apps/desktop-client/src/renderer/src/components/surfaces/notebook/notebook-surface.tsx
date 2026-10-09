@@ -1,3 +1,4 @@
+import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../../app/ai-action-gate";
 import { useNotebookMindMap } from "./use-notebook-mind-map";
 import { NoteMindMapPaper } from "./note-mind-map-paper";
 import type { NoteMindMapV1 } from "@astella/shared/note-mind-map-contracts";
@@ -65,7 +66,6 @@ import {
   SurfaceDataState,
   formatRelative,
   noteBlockText,
-  parseImageBlock,
   useSurfaceProjection,
 } from "./surface-data.tsx";
 import {
@@ -126,7 +126,7 @@ import { useNoteDocLiveView } from "./use-note-doc-live-view.ts";
 import { NoteAnnotationSidePage } from "./note-annotation-side-page";
 import { useNotebookSidePage } from "./use-notebook-side-page";
 import { VersionHistory } from "./version-history.tsx";
-import { ReadingBlock, ReadingImage } from "./notebook-reading-block.tsx";
+import { ReadingBlock } from "./notebook-reading-block.tsx";
 import { noteReadingText } from "./note-reading-text";
 import { noteAnchorMatchesV1 } from "@astella/shared/note-annotation-contracts";
 import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
@@ -922,6 +922,8 @@ export function NotebookSurface() {
 
   const note = data?.note ?? null;
   learningArtifactScopeRef.current = `${note?.noteId ?? ""}:${note?.currentVersionId ?? ""}`;
+  const noteAiSourceRef = useRef(learningArtifactScopeRef.current);
+  noteAiSourceRef.current = learningArtifactScopeRef.current;
   const { historyOpen, setHistoryOpen, sourceBagOpen, setSourceBagOpen,
     openAnnotationId, setOpenAnnotationId, annotationTaskOpen, setAnnotationTaskOpen, annotationDraftOpen, setAnnotationDraftOpen,
     companionExplanationId, setCompanionExplanationId, closeSidePage } = useNotebookSidePage(note?.noteId ?? null);
@@ -1224,7 +1226,7 @@ const noteDocLive = useNoteDocLiveView(
         });
       }
     } catch (error) {
-      if (request === learningArtifactTaskRequestRef.current) setLearningArtifactTaskError(gatewayErrorMessage(error));
+      if (request === learningArtifactTaskRequestRef.current && !guideAiPermissionFailure(error)) setLearningArtifactTaskError(gatewayErrorMessage(error));
     }
   }, [note?.noteId, note?.currentVersionId]);
 
@@ -1473,7 +1475,7 @@ const noteDocLive = useNoteDocLiveView(
         }
       }
     } catch (error) {
-      if (request === annotationTaskRequestRef.current) setAnnotationTaskError(gatewayErrorMessage(error));
+      if (request === annotationTaskRequestRef.current && !guideAiPermissionFailure(error)) setAnnotationTaskError(gatewayErrorMessage(error));
     }
   }, [note?.noteId, note?.currentVersionId]);
 
@@ -1488,9 +1490,11 @@ const noteDocLive = useNoteDocLiveView(
     setAnnotationTaskStarting(true);
     setAnnotationTaskError(null);
     const workId = `annotation-start:${note.noteId}:${request}`;
-    beginNoteAiWork(workId, note.noteId, [{ startBlock: anchor.startBlockOrdinal, endBlock: anchor.endBlockOrdinal,
-      label: "伴星正在解读原句", expectedBlocks: note.currentVersion.blocks.slice(anchor.startBlockOrdinal, anchor.endBlockOrdinal + 1).map(b => b.content) }]);
+    const expectedSource = noteAiSourceRef.current;
     try {
+      if (!await ensureAiActionAllowed(epochRef.current, () => request === annotationTaskRequestRef.current && expectedSource === noteAiSourceRef.current)) return;
+      beginNoteAiWork(workId, note.noteId, [{ startBlock: anchor.startBlockOrdinal, endBlock: anchor.endBlockOrdinal,
+        label: "伴星正在解读原句", expectedBlocks: note.currentVersion.blocks.slice(anchor.startBlockOrdinal, anchor.endBlockOrdinal + 1).map(b => b.content) }]);
       const task = unwrapGatewayResult(await api.noteAnnotation.startTask({
         meta: createRequestMeta(epochRef.current),
         noteId: note.noteId,
@@ -1507,7 +1511,7 @@ const noteDocLive = useNoteDocLiveView(
         setLeaf("reading");
       }
     } catch (error) {
-      if (request === annotationTaskRequestRef.current) setAnnotationTaskError(gatewayErrorMessage(error));
+      if (request === annotationTaskRequestRef.current && !guideAiPermissionFailure(error)) setAnnotationTaskError(gatewayErrorMessage(error));
     } finally {
       endNoteAiWork(workId);
       if (request === annotationTaskRequestRef.current) setAnnotationTaskStarting(false);
@@ -1690,6 +1694,8 @@ const noteDocLive = useNoteDocLiveView(
   /** W7-3 刀六：这一篇的笔记订阅；读不到＝没有那一档开关（与上面同一纪律）。 */
   const noteSubscription = data?.noteSubscription ?? null;
   const openRound = data?.openRound ?? null;
+  const openRoundScopeRef = useRef("");
+  openRoundScopeRef.current = `${openRound?.roundId ?? ""}:${openRound?.revision ?? ""}`;
 
   /** 三簇「一颗写动作 + 它的在途 + 它的失败」已于 2026-09-29 收进各自的 hook。
       三处纪律（成功后回读 / 回执念出来 / 失败不吞）在那些文件的头注释里。 */
@@ -1884,6 +1890,7 @@ const noteDocLive = useNoteDocLiveView(
     setLearningArtifactTaskError(null);
     const notifyTask = prepareNotebookTaskNotification(note, epochRef.current);
     try {
+      if (!await ensureAiActionAllowed(epochRef.current, () => request === learningArtifactTaskRequestRef.current && expectedScope === learningArtifactScopeRef.current)) return;
       const task = unwrapGatewayResult(await api.noteLearningArtifact.startTask({
         meta: createRequestMeta(epochRef.current),
         noteId: note.noteId,
@@ -1905,7 +1912,7 @@ const noteDocLive = useNoteDocLiveView(
         }
       }
     } catch (error) {
-      if (request === learningArtifactTaskRequestRef.current) setLearningArtifactTaskError(gatewayErrorMessage(error));
+      if (request === learningArtifactTaskRequestRef.current && !guideAiPermissionFailure(error)) setLearningArtifactTaskError(gatewayErrorMessage(error));
     } finally {
       if (request === learningArtifactTaskRequestRef.current) { learningArtifactStartingRef.current = false; setLearningArtifactTaskStarting(false); }
     }
@@ -2172,12 +2179,7 @@ const noteDocLive = useNoteDocLiveView(
     const images: GalleryImage[] = [];
     const ordinalToStart = new Map<number, number>();
     for (const block of allBlocks) {
-      const found = block.type === "image"
-        ? (() => {
-          const image = parseImageBlock(block.content);
-          return image ? [{ src: image.url, alt: image.alt }] : [];
-        })()
-        : noteInlineImages(block.content);
+      const found = noteInlineImages(block.content);
       if (found.length === 0) continue;
       ordinalToStart.set(block.ordinal, images.length);
       for (const item of found) {
@@ -2407,7 +2409,10 @@ const noteDocLive = useNoteDocLiveView(
     if (!api || !note || generationNeedsSavedVersion || saving || startingGeneration || !generationEnabled) return;
     setStartingGeneration(true);
     setGenerationFailure(null);
+    const expectedSource = noteAiSourceRef.current;
+    const isCurrent = () => expectedSource === noteAiSourceRef.current;
     try {
+      if (!await ensureAiActionAllowed(epochRef.current, isCurrent)) return;
       const previous = noteGeneration ?? latestRun;
       if (previous && isCardGenerationInFlight(previous.status)) {
         setGenerationFailure("上一份还在生成，请先查看进度并停止，再按最新笔记生成。");
@@ -2419,6 +2424,7 @@ const noteDocLive = useNoteDocLiveView(
           runId: previous.runId, expectedReviewDraftRevision: previous.reviewDraftRevision,
         });
         unwrapGatewayResult(ended);
+        if (!isCurrent()) return;
         if (ended.workspaceEpoch) epochRef.current = ended.workspaceEpoch;
         // If creating the next run fails, return to an entry that can retry.
         reload();
@@ -2455,6 +2461,7 @@ const noteDocLive = useNoteDocLiveView(
       setOptionsOpen(false);
       invoke("open-card-generation");
     } catch (error) {
+      if (guideAiPermissionFailure(error)) return;
       setGenerationFailure(gatewayErrorMessage(error));
       // 被服务端拒绝说明页面看到的是过期状态（这篇笔记已有一批在制，或配额已满）。
       // 不重读的话入口会一直停在「生成学习卡」，用户点一次撞一次 409。
@@ -2636,7 +2643,10 @@ const noteDocLive = useNoteDocLiveView(
     const api = desktopApi();
     if (!api || !openRound || practiceBusy) return;
     beginPractice();
+    const expectedSource = noteAiSourceRef.current;
+    const expectedRound = openRoundScopeRef.current;
     try {
+      if (!await ensureAiActionAllowed(epochRef.current, () => expectedSource === noteAiSourceRef.current && expectedRound === openRoundScopeRef.current)) return;
       const response = await api.noteLearningRound.preparePractice({
         meta: createRequestMeta(epochRef.current),
         roundId: openRound.roundId,
@@ -2646,6 +2656,7 @@ const noteDocLive = useNoteDocLiveView(
       unwrapGatewayResult(response);
       await reload({ silent: true });
     } catch (error) {
+      if (guideAiPermissionFailure(error)) return;
       setPracticeFailure(classifyGatewayError(error));
       await reload({ silent: true });
     } finally {

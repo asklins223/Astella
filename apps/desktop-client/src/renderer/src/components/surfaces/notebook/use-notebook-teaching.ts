@@ -18,9 +18,10 @@
  *
  * 判据见 `AGENTS.md` §工程结构与分层：单函数超过 400 行或 hook 超过 25 个就是信号。
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { GatewayFailureKind } from "../../../app/desktop-client";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
+import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../../app/ai-action-gate";
 
 /** 生成失败那一句。`kind` 由 `classifyGatewayError` 判，页面按它选话。 */
 export type NotebookTeachingFailureV1 = {
@@ -40,6 +41,9 @@ export function useNotebookTeaching(input: {
     : { kind: GatewayFailureKind; message: string };
 }) {
   const { epochRef, reload, api, openRound, classifyError } = input;
+  const roundScope = `${openRound?.roundId ?? ""}:${openRound?.revision ?? ""}`;
+  const currentRound = useRef(roundScope);
+  currentRound.current = roundScope;
 
   const [teachingBusy, setTeachingBusy] = useState(false);
   const [teachingFailure, setTeachingFailure] = useState<NotebookTeachingFailureV1>(null);
@@ -50,6 +54,7 @@ export function useNotebookTeaching(input: {
     setTeachingBusy(true);
     setTeachingFailure(null);
     try {
+      if (!await ensureAiActionAllowed(epochRef.current, () => currentRound.current === roundScope)) return;
       const response = await api.noteLearningRound.explain({
         meta: createRequestMeta(epochRef.current),
         roundId: openRound.roundId,
@@ -63,6 +68,7 @@ export function useNotebookTeaching(input: {
       setTeachingReflectionIds([]);
       await reload({ silent: true });
     } catch (error) {
+      if (guideAiPermissionFailure(error)) return;
       setTeachingFailure(classifyError(error));
       await reload({ silent: true });
     } finally {

@@ -7,6 +7,7 @@ import { WINDOW_LIVE2D_MODEL_REGISTRY, type WindowLive2DModelId } from "./window
 import type { CompanionAgentPermissionLevel } from "@astella/shared/companion-agent-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
+import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../app/ai-action-gate";
 import { useCompanionChat } from "../../app/companion-chat-session";
 import { beginCompanionSpeechLine, stopCompanionSpeech, subscribeCompanionSpeech, type CompanionServerVoiceSegment, type CompanionSpeechSession } from "../../app/companion-voice-playback";
 import { COMPANION_REVEAL_TICK_MS, createCompanionRevealDriver, type CompanionRevealDriver } from "../../app/companion-reveal-driver";
@@ -407,6 +408,10 @@ export function CompanionHud({
     const meta = createRequestMeta();
     const notifyTask = prepareNotebookTaskNotification({ noteId: intent.noteId, currentVersionId: intent.noteVersionId, title: intent.noteTitle }, meta.workspaceEpoch);
     try {
+      if (!await ensureAiActionAllowed(meta.workspaceEpoch, () => expansionTaskRequestRef.current?.key === key)) {
+        setExpansionTaskState("idle");
+        return;
+      }
       const task = unwrapGatewayResult(await api.noteExpansion.startTask({
         meta,
         noteId: intent.noteId,
@@ -428,6 +433,7 @@ export function CompanionHud({
           ? "这次整理没有完成。回到笔记页可以查看原因并重试。"
           : "已经开始整理。进度和可编辑草稿会留在这篇笔记里；这段对话也会保存在伴星手记中。" );
     } catch (error) {
+      if (guideAiPermissionFailure(error)) { setExpansionTaskState("idle"); return; }
       setExpansionTaskState("error");
       setExpansionTaskMessage(`没有开始整理：${gatewayErrorMessage(error)}。可以重试，伴星回复仍在手记里。`);
     }

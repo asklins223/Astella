@@ -1,3 +1,4 @@
+import { requireAiExecutionConsent } from "../../../lib/ai-execution-consent.ts";
 /**
  * P2 — companion turn create（03 §8.1 原子流程）。
  *
@@ -411,6 +412,8 @@ export async function createCompanionTurn(args: {  workspaceId: string;
         return { statusCode: 200, body };
       }
     }
+
+    await requireAiExecutionConsent(tx, args);
 
     // active run 规则（partial unique 保证至多一条 active；SQL 过滤避免
     // 拉取该 conversation 全部 run 行——L6）

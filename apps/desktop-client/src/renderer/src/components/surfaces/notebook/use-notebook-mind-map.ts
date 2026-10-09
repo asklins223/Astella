@@ -1,3 +1,4 @@
+import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../../app/ai-action-gate";
 import { useRoomStore } from "../../../app/room-store";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NoteMindMapTaskV1, NoteMindMapV1 } from "@astella/shared/note-mind-map-contracts";
@@ -74,7 +75,7 @@ export function useNotebookMindMap(input: {
       if (request === mindMapTaskRequestRef.current) setMindMapTask(result.task);
       return result;
     } catch (error) {
-      if (request === mindMapTaskRequestRef.current) setMindMapTaskError(gatewayErrorMessage(error));
+      if (request === mindMapTaskRequestRef.current && !guideAiPermissionFailure(error)) setMindMapTaskError(gatewayErrorMessage(error));
     }
   }, [note?.noteId, note?.currentVersionId, scope]);
 
@@ -92,6 +93,7 @@ export function useNotebookMindMap(input: {
     setMindMapTaskError(null);
     const notifyTask = prepareNotebookTaskNotification(note, epochRef.current);
     try {
+      if (!await ensureAiActionAllowed(epochRef.current, () => request === mindMapTaskRequestRef.current)) return;
       const task = unwrapGatewayResult(await api.noteMindMap.startTask({
         meta: createRequestMeta(epochRef.current),
         noteId: note.noteId,
@@ -100,7 +102,7 @@ export function useNotebookMindMap(input: {
       notifyTask(task, "mindMap");
       if (request === mindMapTaskRequestRef.current) { setSelectedId(null); setMindMapTask(task); }
     } catch (error) {
-      if (request === mindMapTaskRequestRef.current) setMindMapTaskError(gatewayErrorMessage(error));
+      if (request === mindMapTaskRequestRef.current && !guideAiPermissionFailure(error)) setMindMapTaskError(gatewayErrorMessage(error));
     } finally {
       if (request === mindMapTaskRequestRef.current) { startingRef.current = false; setMindMapTaskStarting(false); }
     }

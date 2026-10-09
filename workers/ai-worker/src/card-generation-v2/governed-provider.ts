@@ -26,7 +26,7 @@ import {
 /** 可分类错误：`kind` 是队列决定重不重投的唯一依据（见文件头的事故记录）。 */
 export class CardGenerationProviderError extends Error {
   readonly kind: "retryable" | "non-retryable";
-  constructor(kind: "retryable" | "non-retryable", message: string) {
+  constructor(kind: "retryable" | "non-retryable", message: string, readonly failureClass?: string) {
     super(message);
     this.name = "CardGenerationProviderError";
     this.kind = kind;

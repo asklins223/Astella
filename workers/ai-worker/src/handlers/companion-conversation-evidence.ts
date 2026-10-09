@@ -22,23 +22,44 @@ export function conversationInstant(value: unknown): string | null {
 export function renderCompanionConversationEvidence(
   history: readonly CompanionRecentHistoryMessage[], clock?: CompanionConversationClock,
 ): string | null {
-  if (!clock && !history.some(message => message.createdAt)) return null;
+  if (!clock && !history.some(message => message.createdAt || message.replyStatus)) return null;
   const observedAt = conversationInstant(clock?.observedAt);
   let timezone: string | null = null;
   if (clock?.timezone) {
     try { timezone = new Intl.DateTimeFormat("en", { timeZone: clock.timezone }).resolvedOptions().timeZone; } catch { /* unknown */ }
   }
-  const stamp = (createdAt: unknown) => {
+  const gap = (from: unknown, to: unknown) => {
+    const earlier = conversationInstant(from), later = conversationInstant(to);
+    const ms = earlier && later ? Date.parse(later) - Date.parse(earlier) : null;
+    return ms !== null && ms >= 0 ? ms : null;
+  };
+  const duration = (ms: number | null) => {
+    if (ms === null) return null;
+    const seconds = Math.floor(ms / 1000), minutes = Math.floor(seconds / 60), hours = Math.floor(minutes / 60);
+    if (seconds < 1) return "不足 1 秒";
+    if (minutes < 1) return `${seconds} 秒`;
+    if (hours < 1) return `${minutes} 分钟 ${seconds % 60} 秒`;
+    if (hours < 24) return `${hours} 小时 ${minutes % 60} 分钟`;
+    return `${Math.floor(hours / 24)} 天 ${hours % 24} 小时 ${minutes % 60} 分钟`;
+  };
+  const replyStates: Record<string, string> = { succeeded: "已回复", failed: "回复未完成", cancelled: "用户已取消回复",
+    superseded: "回复被后续消息接替", accepted: "等待回复", running: "回复中", waiting_for_confirmation: "等待用户确认" };
+  const stamp = (createdAt: unknown, previousCreatedAt?: unknown) => {
     const utteredAt = conversationInstant(createdAt);
-    const elapsedMs = observedAt && utteredAt ? Date.parse(observedAt) - Date.parse(utteredAt) : null;
-    return { utteredAt, elapsedMs: elapsedMs !== null && elapsedMs >= 0 ? elapsedMs : null };
+    const elapsedMs = gap(utteredAt, observedAt);
+    const gapFromPreviousMs = gap(previousCreatedAt, utteredAt);
+    const localDateTime = utteredAt && timezone ? new Intl.DateTimeFormat("sv-SE", { timeZone: timezone,
+      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(new Date(utteredAt)) : null;
+    return { utteredAt, localDateTime, elapsedMs, elapsed: duration(elapsedMs), gapFromPreviousMs, gapFromPrevious: duration(gapFromPreviousMs) };
   };
   return [
     "<conversation_timeline>",
     "服务器消息记录：时间指消息发送时间，不代表消息中叙述的外部事件时间。位置只对应下方原样回放的近期消息；窗口不是全部经历，两条消息相隔多久也不证明期间一直在线或一直在做某事。",
     JSON.stringify({ observedAt, timezone,
-      history: history.map((message, index) => ({ position: index + 1, speaker: message.role, ...stamp(message.createdAt) })),
-      current: { speaker: "user", ...stamp(clock?.currentMessageCreatedAt) },
+      history: history.map((message, index) => ({ position: index + 1, speaker: message.role,
+        replyState: message.role === "user" ? replyStates[message.replyStatus ?? ""] ?? null : null,
+        ...stamp(message.createdAt, history[index - 1]?.createdAt) })),
+      current: { speaker: "user", ...stamp(clock?.currentMessageCreatedAt, history.at(-1)?.createdAt) },
     }),
     "</conversation_timeline>",
   ].join("\n");

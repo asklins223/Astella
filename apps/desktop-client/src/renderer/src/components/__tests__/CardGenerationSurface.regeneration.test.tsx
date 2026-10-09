@@ -15,6 +15,7 @@ function fixture(status: string) {
     progress: { authored: 0, plannedCards: 4, gatePassed: 0, gateFailed: 0 }, recovery: null,
     createdAt: "2026-10-03T06:00:00Z", updatedAt: "2026-10-03T06:00:00Z" });
   const api = {
+    workspace: { getAiSettings: vi.fn(async () => ({ ok: true as const, data: { requiresConsent: true, consentVersion: "ai-consent-v1", dataPolicy: { sendToExternal: true } } })) },
     note: {
       get: vi.fn(async () => state.noteFails ? { ok: false as const, error: { code: "network_unavailable", safeMessageKey: "读取笔记失败" } } : ok({ noteId: NOTE, currentVersionId: NEW_VERSION, title: "更新后的笔记" })),
       cardGeneration: {
@@ -38,6 +39,15 @@ function fixture(status: string) {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); useRoomStore.setState({ activeCardGenerationRunId: null, activeNoteRef: null, surface: null, returnTarget: null }); });
 
 describe("学习卡重生成接到最新保存版本", () => {
+  it("外发未授权时不结束旧审核、不创建队列任务，直接指向授权设置", async () => {
+    const { api } = fixture("needs_attention");
+    api.workspace.getAiSettings.mockResolvedValue({ ok: true, data: { requiresConsent: true, consentVersion: "ai-consent-v1", dataPolicy: { sendToExternal: false } } });
+    fireEvent.click(await screen.findByRole("button", { name: "重新生成学习卡" }));
+    await waitFor(() => expect(useRoomStore.getState().settingsAttention).toBe("ai-consent"));
+    expect(api.note.cardGeneration.close).not.toHaveBeenCalled();
+    expect(api.note.cardGeneration.start).not.toHaveBeenCalled();
+    expect(useRoomStore.getState().activeCardGenerationRunId).toBe(OLD_RUN);
+  });
   it.each(["cancelled", "failed", "stale", "closed_without_activation", "no_cards_recommended", "activated", "review_ready", "needs_attention"])("%s 页面直接新建一份，而不是把人送回旧任务", async status => {
     const { api } = fixture(status);
     const button = await screen.findByRole("button", { name: "重新生成学习卡" });

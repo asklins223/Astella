@@ -3,6 +3,7 @@ import { companionMemoryContentMaxLength } from "@astella/shared/companion-memor
 import type { CreateAgentRunV1 } from "@astella/shared/agent-contracts";
 import { gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { useRoomStore } from "../../../app/room-store";
+import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../../app/ai-action-gate";
 import { goalStatusText } from "../../companion/agent-goal-presentation";
 import { openCompanionGoalJournal } from "../../companion/companion-events";
 import { plainCompanionBubbleText, renderCompanionMarkdown } from "../../companion/companion-markdown";
@@ -43,6 +44,7 @@ export function CompanionLongGoalsPage({ refreshKey, onMemory }: { refreshKey: n
       await action();
       if (epoch === generation.current && current()) { publishCompanionRecordsChanged(); await resource.reload({ silent: true }); }
     } catch (failure) {
+      if (epoch === generation.current && current() && guideAiPermissionFailure(failure)) return;
       if (epoch === generation.current && current()) { setError(gatewayErrorMessage(failure)); await resource.reload({ silent: true }); }
     } finally {
       if (epoch === generation.current) { writing.current = false; setBusy(false); }
@@ -60,6 +62,7 @@ export function CompanionLongGoalsPage({ refreshKey, onMemory }: { refreshKey: n
     const ref = selected.ref, goal = task.trim();
     const key = JSON.stringify([scope, ref, goal, noteId]);
     void write(async () => {
+      if (!await ensureAiActionAllowed(resource.meta().workspaceEpoch, current)) return;
       if (submission.current?.key !== key) {
         const inputs: CreateAgentRunV1["inputs"] = [];
         if (noteId) {

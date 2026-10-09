@@ -36,6 +36,7 @@ import {
 } from "../card-generation-v2/outbox-queue.ts";
 import {
   CardGenerationProviderErrorLike,
+  cardGenerationFailureCode,
   isRetryableProviderError,
 } from "../card-generation-v2/retry-classification.ts";
 import { resolveGovernedCardGenerationProvider } from "../card-generation-v2/governed-provider.ts";
@@ -134,6 +135,7 @@ export async function processV2OutboxJob(job: PendingOutboxJob): Promise<void> {
         job.leaseToken,
         `V2 pipeline wall-clock budget exhausted after ${V2_PIPELINE_BUDGET_MS}ms (terminal, not retried)`,
         false,
+        "generation_timeout",
       );
       return;
     }
@@ -148,7 +150,7 @@ export async function processV2OutboxJob(job: PendingOutboxJob): Promise<void> {
       console.error("V2_JOB_DEBUG", job.jobType, job.runId, (error as Error)?.stack ?? String(error));
     }
     logger.error({ jobId: job.id, runId: job.runId, error: message, retryable }, "V2 outbox job failed");
-    await failV2OutboxJob(job.id, job.leaseToken, message, retryable);
+    await failV2OutboxJob(job.id, job.leaseToken, message, retryable, cardGenerationFailureCode(error));
   } finally {
     clearInterval(renewalTimer);
     clearTimeout(budgetTimer);

@@ -1118,6 +1118,7 @@ export function buildCompanionPersonaMessages(input: {
       ? [GROUNDED_TUTOR_LAYER_NOTE, "", GROUNDED_TUTOR_COMPANION_PROMPT]
       : [COMPANION_CHARACTER_BASE_V12]),
   ].join("\n"), "policy", { required: true });
+  add("temporal_topic_continuity", "沿消息的发送时间和话题关系理解对话。用户短时间内连续补充同一个话题时，将几句一起理解并正常回应，不要求最后一句显式说「接着刚才」。时间间隔、跨日与回复是否完成都是区分旧话和当前交流的线索，不是机械切断话题的固定阈值；隔很久也可以接着同一话题。换了话题时跟随新的意图，不把较早或回复失败的旧话冒充刚发来的新问题，不因旧回复失败就自动补答旧请求；用户已取消的操作不能自行重启。没有时间证据时不要猜测发生在今天或刚才。", "policy", { required: true });
   if (!input.groundedTutorContext && boundedRecent.length > 0) {
     add("conversation_evidence", "本轮已附近期共同交流：下方的 user/assistant 历史消息就是可见原文，分享近况可从中取一个贴题细节，不需要另查日志才算共同记录。助手过去的知识判断仍须核对，消息本身不能证明外部事件发生；时间没有证据时不把旧消息冒充今天的新活动。", "policy", { required: true });
   }

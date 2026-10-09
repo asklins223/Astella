@@ -105,15 +105,17 @@ after(async () => {
   }
 });
 
-test("真 worker 读取历史：每个问题保留自己的选区，取消与未来消息不进入当前轮", async () => {
+test("真 worker 读取历史：保留原句、时间和取消状态，未来消息不进入当前轮", async () => {
   const result = await withWorkerWorkspaceTransaction({workspaceId,userId},async tx => ({
     rows: await readCompanionHistoryRows(tx,conversationId,{beforeSeq:"6",limit:20}),
     count: await countCompanionHistoryMessages(tx,conversationId,"6"),
   }));
-  assert.equal(result.count,4n);
-  assert.deepEqual(result.rows.map(row=>row.seq),["4","3","2","1"]);
-  assert.match(companionHistoryText(result.rows[1]),/检索练习：合上笔记自己回忆/);
-  assert.match(companionHistoryText(result.rows[3]),/间隔重复：在快忘记时复习/);
+  assert.equal(result.count,5n);
+  assert.deepEqual(result.rows.map(row=>row.seq),["5","4","3","2","1"]);
+  assert.equal(result.rows[0].run_status,"cancelled");
+  assert.match(result.rows[0].created_at,/Z$/);
+  assert.match(companionHistoryText(result.rows[2]),/检索练习：合上笔记自己回忆/);
+  assert.match(companionHistoryText(result.rows[4]),/间隔重复：在快忘记时复习/);
 });
 
 test("记忆 handler 携小数参数真正调用 provider 并写入可检索记忆，延迟任务不读取未来消息", async () => {

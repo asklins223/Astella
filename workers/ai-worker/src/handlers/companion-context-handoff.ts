@@ -44,6 +44,8 @@ export interface CompanionRecentHistoryMessage {
   seq?: string;
   /** Server creation instant of this utterance; not the time of a narrated event. */
   createdAt?: string | null;
+  /** State of the reply to this user message, including superseded additions. */
+  replyStatus?: string | null;
 }
 
 export interface CompanionContextHandoffSnapshotV1 {

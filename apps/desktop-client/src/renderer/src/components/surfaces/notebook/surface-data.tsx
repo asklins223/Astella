@@ -4,6 +4,7 @@ import type { DesktopSourceListItem } from "@astella/shared/desktop-surface-cont
 import type { NoteBlockProjectionV1 } from "@astella/shared/note-projection-contracts";
 import { gatewayErrorMessage } from "../../../app/desktop-client";
 import { readAuthenticatedSession } from "../../../app/surface-session";
+import { noteImageHtmlAttrs } from "@astella/shared/note-markdown";
 
 export { readAuthenticatedSession };
 
@@ -259,6 +260,8 @@ function isSameCalendarDay(a: Date, b: Date): boolean {
  * 而笔记库的封面缩略图与正文图片必须共用同一个解析规则。
  */
 export function parseImageBlock(content: string): { readonly alt: string; readonly url: string } | null {
+  const html = noteImageHtmlAttrs(content);
+  if (html && typeof html.src === "string" && html.src) return { alt: String(html.alt ?? ""), url: html.src };
   const match = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(content.trim());
   if (!match) return null;
   return { alt: match[1] ?? "", url: match[2] ?? "" };

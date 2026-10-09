@@ -348,6 +348,7 @@ export async function failV2OutboxJob(
   leaseToken: string,
   error: string,
   retryable = true,
+  errorCode = "generation_failed",
 ): Promise<void> {
   if (!retryable) {
     // Outbox 终态与 run 的 needs_attention 必须在同一 SQL 语句内完成。
@@ -363,7 +364,7 @@ export async function failV2OutboxJob(
         RETURNING id, run_id, workspace_id
       )
       UPDATE public.card_generation_runs_v2 AS run
-      SET status = 'needs_attention', error_code = 'generation_failed', error_message = ${error},
+      SET status = 'needs_attention', error_code = ${errorCode}, error_message = ${error},
           updated_at = now()
       FROM updated
       WHERE updated.run_id = run.id
@@ -400,7 +401,7 @@ export async function failV2OutboxJob(
       RETURNING status, run_id, workspace_id
     )
     UPDATE public.card_generation_runs_v2 AS run
-    SET status = 'needs_attention', error_code = 'generation_failed', error_message = ${error},
+    SET status = 'needs_attention', error_code = ${errorCode}, error_message = ${error},
         updated_at = now()
     FROM updated
     WHERE updated.status = 'failed'

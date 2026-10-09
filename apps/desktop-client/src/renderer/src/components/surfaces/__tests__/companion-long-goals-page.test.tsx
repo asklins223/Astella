@@ -14,7 +14,7 @@ beforeEach(()=>{
   agent={listLongGoals:vi.fn(async()=>ok({version:1,items:[goal],nextCursor:null})),createRun:vi.fn(async()=>ok({runId})),listRuns:vi.fn(async()=>ok({version:1,items:[],nextCursor:null}))};
   note={list:vi.fn(async()=>ok({items:[{id:noteId,title:"欧姆定律"}],nextCursor:null})),get:vi.fn(async()=>ok({noteId,currentVersionId:noteVersionId}))};
   createMemory=vi.fn(async()=>ok({memoryItemId:memoryId}));
-  Object.defineProperty(window,"astella",{configurable:true,value:{auth:{getState:vi.fn(async()=>ok({version:1,status:"authenticated",workspace:{workspaceId:"55555555-5555-4555-8555-555555555555"},workspaceEpoch:1}))},agent,note,companion:{memory:{create:createMemory}}}});
+  Object.defineProperty(window,"astella",{configurable:true,value:{workspace:{getAiSettings:vi.fn(async()=>ok({requiresConsent:false,consentVersion:null}))},auth:{getState:vi.fn(async()=>ok({version:1,status:"authenticated",workspace:{workspaceId:"55555555-5555-4555-8555-555555555555"},workspaceEpoch:1}))},agent,note,companion:{memory:{create:createMemory}}}});
 });
 afterEach(()=>cleanup());
 

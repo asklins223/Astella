@@ -37,9 +37,11 @@ describe("companionConsentGate", () => {
 });
 
 describe("isCompanionConsentFailure", () => {
-  it("只认 worker 写的那个错误码", () => {
+  it("识别 API 入队拒绝与 worker 兜底错误码", () => {
     expect(isCompanionConsentFailure(COMPANION_RUN_ERROR_AI_CONSENT_REQUIRED)).toBe(true);
     expect(isCompanionConsentFailure(COMPANION_RUN_ERROR_AI_DATA_POLICY_DENIED)).toBe(true);
+    expect(isCompanionConsentFailure("ai_consent_required")).toBe(true);
+    expect(isCompanionConsentFailure("ai_data_policy_denied")).toBe(true);
     expect(isCompanionConsentFailure("INTERNAL_ERROR")).toBe(false);
     expect(isCompanionConsentFailure(undefined)).toBe(false);
     expect(isCompanionConsentFailure(42)).toBe(false);

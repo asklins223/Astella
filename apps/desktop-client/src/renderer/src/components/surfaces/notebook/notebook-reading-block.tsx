@@ -21,9 +21,6 @@ import type {
 } from "@astella/shared/note-annotation-contracts";
 import { noteAnchorBlockRangeV1 } from "@astella/shared/note-annotation-contracts";
 import type { NoteLearningArtifactTaskV1 } from "@astella/shared/note-learning-artifact-contracts";
-import { parseImageBlock } from "./surface-data.tsx";
-import { useSourceImage } from "../source/source-image.ts";
-import { ZoomableReadingImage } from "../source/image-viewer.tsx";
 import { noteReadingTextNodes } from "./note-reading-text";
 import { noteExplanationBusy, noteExplanationLabel, type NoteCompanionExplanation } from "../../companion/note-companion-explanation";
 import type { NoteAiRange } from "../../companion/note-companion-editing";
@@ -179,11 +176,6 @@ export function ReadingBlockContent({
     readonly close: () => void;
   };
 }) {
-  if (block.type === "image" && !block.content.trimStart().startsWith("[![")) {
-    // 图片块要先取字节再画图，所以由自己的组件承载状态：hook 不能排在这一串
-    // 按块类型分叉的早返回之后。
-    return <ReadingImage block={block} workspaceEpoch={workspaceEpoch} gallery={gallery} />;
-  }
   const inline = {
     documentSource,
     mark,
@@ -198,53 +190,4 @@ export function ReadingBlockContent({
     onOpenGallery: gallery?.openAt,
   };
   return <NoteMarkdownReading type={block.type} content={block.content} options={inline} />;
-}
-
-/**
- * A stored image block (`![alt](url)`).
- *
- * 从来源起稿的笔记里，这个地址是 `/api/uploads/{objectKey}`：解析把网页内嵌图片
- * 下载进对象存储后改写的站内引用。渲染层的 origin 是 `astella-app://`，相对路径
- * 会落到应用包内，所以图由 main 带会话令牌取回字节，这里用 blob URL 画出来。
- * 站外地址仍原样交给 `<img>`；取不回来时只这一张缺位，正文照旧读下去。
- */
-export function ReadingImage({
-  block,
-  workspaceEpoch,
-  gallery,
-}: {
-  readonly documentSource?: string;
-  readonly block: NoteBlockProjectionV1;
-  readonly workspaceEpoch?: number;
-  readonly gallery?: {
-    readonly start: number;
-    readonly openAt: (index: number) => void;
-    readonly close: () => void;
-  };
-}) {
-  const image = parseImageBlock(block.content);
-  const { state, retry } = useSourceImage(image?.url ?? "", workspaceEpoch);
-
-  if (!image) return <p className="small">图片片段无法解析：{block.content}</p>;
-
-  const alt = image.alt || "笔记图片";
-  if (state.status === "external" || state.status === "ready") {
-    return (
-      <ZoomableReadingImage
-        src={state.src}
-        alt={alt}
-        retryable={state.status === "ready"}
-        onRetry={retry}
-        // 有整篇画廊时开关归画廊（受控，组件自己不再叠一层灯箱）；没有就单张放大。
-        open={gallery ? false : undefined}
-        onOpenChange={(open) => {
-          if (!gallery) return;
-          if (open) gallery.openAt(gallery.start);
-          else gallery.close();
-        }}
-      />
-    );
-  }
-  if (state.status === "loading") return <p className="small notebook-note" data-note-decoration="true">正在载入图片…</p>;
-  return <p className="small notebook-note" data-note-decoration="true">这张图片没能取回：{alt}</p>;
 }

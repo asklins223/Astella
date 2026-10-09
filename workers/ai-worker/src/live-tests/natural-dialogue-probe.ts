@@ -113,7 +113,7 @@ try {
         const current = await tx.execute<{created_at:string}>(sql`SELECT to_char(created_at AT TIME ZONE 'UTC',
           'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at FROM companion_messages WHERE id=${messageId}`);
         return {history:rows.reverse().map(m=>({role:m.role as "user"|"assistant",text:companionHistoryText(m),seq:m.seq,
-          ...(!baseline ? {createdAt:m.created_at} : {})})), hereAndNow:renderHereAndNow(snapshot),
+          ...(!baseline ? {createdAt:m.created_at,replyStatus:m.run_status} : {})})), hereAndNow:renderHereAndNow(snapshot),
           conversationClock:!baseline && snapshot.observedAt && snapshot.timezone ? {
             observedAt:snapshot.observedAt,timezone:snapshot.timezone,currentMessageCreatedAt:current[0]?.created_at??null,
           } : undefined};

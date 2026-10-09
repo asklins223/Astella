@@ -3,13 +3,13 @@ import type { WorkspaceAiSettingsV1 } from "@astella/shared/desktop-ipc-contract
 /**
  * 伴星的 AI 同意门禁（2026-09-19）。
  *
- * 背景：工作区没签 AI 使用同意时，后端不会在创建回合时拦——turn 照常 accepted，
+ * 原有问题：工作区没签 AI 使用同意时，后端不会在创建回合时拦——turn 照常 accepted，
  * worker 到调用 provider 前才发现 `consentOk=false`，于是 run 失败、只留下一个
  * `error` 事件。用户侧看到的是"发出去没反应"（静默失败）。
  *
  * 这里把失败变成引导：发送前先读一次工作区 AI 设置，需要签署而没签就直接让
- * 伴星开口 + 把人送到设置页的同意卡，不消耗一轮 job。SSE 的
- * `AI_CONSENT_REQUIRED` 错误码是同一条引导的兜底（签署状态可能在两次检查之间变化）。
+ * 伴星开口 + 把人送到设置页的同意卡，不消耗一轮 job。
+ * API 的入队事务重复检查；`AI_CONSENT_REQUIRED` 错误码是 worker 的最后兜底。
  */
 
 /** 设置页里要被高亮的卡（room-store.settingsAttention 的取值）。 */
@@ -39,7 +39,7 @@ export const COMPANION_CONSENT_REQUIRED_LINE =
 export const COMPANION_RUN_ERROR_AI_CONSENT_REQUIRED = "AI_CONSENT_REQUIRED";
 export const COMPANION_RUN_ERROR_AI_DATA_POLICY_DENIED = "AI_DATA_POLICY_DENIED";
 export const COMPANION_EXTERNAL_DISABLED_LINE =
-  "你的 AI 使用同意已签署，但「允许发送到外部模型服务」还没有开启，我暂时无法回复。设置页已经打开，开启这个开关后，我们接着来。";
+  "你的 AI 使用同意已签署，但「允许发送到外部模型服务」还没有开启，我暂时不能开始这次帮忙。设置页已经打开，开启这个开关后，我们接着来。";
 
 export type CompanionConsentGateVerdict = "consent_required" | "external_disabled" | null;
 
@@ -61,5 +61,6 @@ export function companionConsentGate(
 
 /** SSE error 事件里是否是"缺同意"这一类失败。 */
 export function isCompanionConsentFailure(code: unknown): boolean {
-  return code === COMPANION_RUN_ERROR_AI_CONSENT_REQUIRED || code === COMPANION_RUN_ERROR_AI_DATA_POLICY_DENIED;
+  return code === COMPANION_RUN_ERROR_AI_CONSENT_REQUIRED || code === COMPANION_RUN_ERROR_AI_DATA_POLICY_DENIED
+    || code === "ai_consent_required" || code === "ai_data_policy_denied";
 }

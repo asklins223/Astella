@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { CardGenerationRunFailureV1 } from "@astella/shared/card-generation-desktop-contracts";
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -37,7 +38,7 @@ type PracticeQuota = { requiredCount: number; metCount: number };
 /** 回执里那一格的样子：`created` 说这条是这一发排上的，还是沿用已有那一条。 */
 type SchedulingEntry = { objectiveId: string; nextReviewAt: string; created: boolean };
 
-function stubGateway(initial: readonly CandidateState[], runOverride: { status?: string; recovery?: unknown; progress?: Record<string, number> | null; practiceQuota?: PracticeQuota | null; evidencePreviews?: unknown[]; activationScheduling?: SchedulingEntry[] | null } = {}) {
+function stubGateway(initial: readonly CandidateState[], runOverride: { failure?: CardGenerationRunFailureV1; status?: string; recovery?: unknown; progress?: Record<string, number> | null; practiceQuota?: PracticeQuota | null; evidencePreviews?: unknown[]; activationScheduling?: SchedulingEntry[] | null } = {}) {
   const state = {
     candidates: initial.map((candidate) => ({ ...candidate })),
     reviewCalls: [] as unknown[],
@@ -71,6 +72,7 @@ function stubGateway(initial: readonly CandidateState[], runOverride: { status?:
       : null,
     // 生成中的候选计数自 0249 起来自服务端的实时读数，stub 要能把它带进来。
     progress: runOverride.progress ?? null,
+    failure: runOverride.failure ?? null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
@@ -100,6 +102,7 @@ function stubGateway(initial: readonly CandidateState[], runOverride: { status?:
     front: { cue: "回忆一次提取练习", prompt: "请解释机制" },
   }));
   const gateway = {
+    workspace: { getAiSettings: vi.fn(async () => ({ ok: true as const, data: { requiresConsent: true, consentVersion: "ai-consent-v1", dataPolicy: { sendToExternal: true } } })) },
     contract: { enabledRoutes: ["note.detail", "note.cardGeneration"] },
     auth: {
       getState: vi.fn(async () => ({
@@ -262,6 +265,19 @@ afterEach(() => {
 });
 
 describe("CardGenerationSurface · 候选审核", () => {
+  it.each([
+    { failure: { reason: "quality_failed", stage: null }, title: "这批草稿未通过核对" },
+    { failure: { reason: "output_invalid", stage: "check" }, title: "核对结果未能读取" },
+  ] as const)("生成页显示准确的失败原因：$title", async ({ failure, title }) => {
+    stubGateway([], { status: "needs_attention", failure, progress: { plannedCards: 4, authored: 4, gatePassed: 0, gateFailed: 0 },
+      recovery: { version: 1, publicReasonCode: "attention_required", retryability: "resync_required",
+        allowedActions: [{ kind: "refresh_status", runId: RUN_ID }] } });
+    useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });
+    render(<CardGenerationSurface />);
+    await screen.findByRole("heading", { name: title });
+    expect(screen.queryByRole("heading", { name: "这次生成尚未完成" })).toBeNull();
+  });
+
   it("卡片正反面有独立焦点边界，档案不触发答案读取", async () => {
     const { state } = stubGateway([{ candidateId: "cand-1", statement: "第一张", reviewDecision: "undecided", publishState: "unpublished" }]);
     useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });

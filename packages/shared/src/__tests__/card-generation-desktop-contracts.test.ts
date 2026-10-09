@@ -12,6 +12,7 @@ import {
   cardActivationReceiptDesktopV1Schema,
   projectCardActivationReceiptV1,
   projectCardGenerationRunSnapshotV1,
+  projectCardGenerationRunFailureV1,
   isCardGenerationReviewOpen,
 } from "../contracts/card-generation-desktop-contracts.ts";
 import { cardActivationReceiptV2Schema } from "../contracts/card-generation-v2-contracts.ts";
@@ -77,6 +78,10 @@ test("main-only run view projects without hashes", () => {
   // 把逐候选计数原样带过去，否则进度条除了档位以外无数可用。
   const projected = projectCardGenerationRunSnapshotV1(server);
   assert.deepEqual(projected.progress, server.progress);
+  const stopped = projectCardGenerationRunSnapshotV1({ ...server, error: { code: "generation_failed",
+    message: "card_content_check_v3 output rejected: output_shape — private response" } });
+  assert.deepEqual(stopped.failure, { reason: "output_invalid", stage: "check" });
+  assert.equal(JSON.stringify(stopped).includes("private response"), false);
 });
 
 test("Owner recovery summary is strict and carries only a safe navigation target", () => {
@@ -294,4 +299,13 @@ test("activation receipt projects the scheduling outcome, and omits the key when
   const savedOnly = projectCardActivationReceiptV1(serverReceipt());
   assert.equal("scheduling" in savedOnly, false, "只保存到卡组那一发不该带一个空数组冒充排过");
   assert.deepEqual(cardActivationReceiptDesktopV1Schema.parse(savedOnly).mappings.length, 1);
+});
+
+
+test("failed run exposes known reason and stage without raw provider text", () => {
+  const failure = projectCardGenerationRunFailureV1({ code: "generation_failed",
+    message: "card_content_check_v3 output rejected: output_shape — private source text and provider response" });
+  assert.deepEqual(failure, { reason: "output_invalid", stage: "check" });
+  assert.equal(projectCardGenerationRunFailureV1({ code: "generation_failed", message: "private unknown failure" }), null);
+  assert.deepEqual(projectCardGenerationRunFailureV1({ code: "quality_gate_failed", message: "批量内容检查没有放行任何一张" }), { reason: "quality_failed", stage: null });
 });

@@ -72,6 +72,7 @@ const SUMMARIZER_PROMPT = [
   "title 不能为空；四个列表没有内容就给空数组；emotionalState 只填一个英文词" +
     "（neutral / positive / frustrated / tired 里选）。",
   "只输出 JSON。",
+  "按消息发送时间区分早先与较新的话题；时间指交流时间，不证明描述的事件已发生。用户连续补充同一话题时合并理解；回复失败、取消或被后续消息接替不代表用户意图已执行，不把旧请求改写成已完成的事或今天的新活动。",
 ].join("\n");
 
 export const SUMMARIZER_INPUT_CHARS = 12_000;
@@ -82,7 +83,7 @@ export const SUMMARIZER_INPUT_CHARS = 12_000;
  * 摘要的幂等键绑定它（44 §5.3）：策略变了以后，同一个来源区间用旧策略跑出的结论
  * 不能被当成「同一次提交」复用，否则一次「提高保真度」的策略调整会被旧缓存吞掉。
  */
-export const COMPACTION_POLICY_VERSION = "companion-summary-v2";
+export const COMPACTION_POLICY_VERSION = "companion-summary-v3";
 
 /** 单次压缩计划最多读多少个分段（44 §5.4：分块计划也有总调用上限）。 */
 export const MAX_SUMMARIZER_CHUNKS = 4;
@@ -102,8 +103,10 @@ export interface SummarizerSnapshotMessage {
   contentSha256: string;
   blocks: unknown;
   pageContext?: unknown;
+  createdAt?: string | null;
+  replyStatus?: string | null;
 }
-function transcriptLine(row: Pick<SummarizerSnapshotMessage, "role" | "blocks" | "pageContext">): string {
+function transcriptLine(row: Pick<SummarizerSnapshotMessage, "role" | "blocks" | "pageContext" | "createdAt" | "replyStatus">): string {
   const text = Array.isArray(row.blocks)
     ? (row.blocks as Array<{ type?: string; text?: unknown }>)
         .filter((block) => block.type === "text")
@@ -113,7 +116,9 @@ function transcriptLine(row: Pick<SummarizerSnapshotMessage, "role" | "blocks" |
   const contextualText = row.role === "user"
     ? companionHistoryText({ role: "user", blocks: row.blocks, page_context: row.pageContext })
     : text;
-  return `${row.role === "assistant" ? "桌宠" : "用户"}：${contextualText}`;
+  const metadata = [row.createdAt ? `发送时间 ${row.createdAt}` : null,
+    row.role === "user" && row.replyStatus ? `回复状态 ${row.replyStatus}` : null].filter(Boolean).join("；");
+  return `${row.role === "assistant" ? "桌宠" : "用户"}${metadata ? `（${metadata}）` : ""}：${contextualText}`;
 }
 
 export interface SummarizerSnapshot {
@@ -489,6 +494,8 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
         contentSha256: row.content_sha256,
         blocks: row.blocks,
         pageContext: row.page_context,
+        createdAt: row.created_at,
+        replyStatus: row.run_status,
       })), chunkChars, conversationId);
       if (candidate.coverageFromSeq) break;
       beforeSeq = rows.at(-1)!.seq;
@@ -503,6 +510,8 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
         contentSha256: row.content_sha256,
         blocks: row.blocks,
         pageContext: row.page_context,
+        createdAt: row.created_at,
+        replyStatus: row.run_status,
       })), chunkChars, conversationId),
       parent,
     };
@@ -618,6 +627,8 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
       contentSha256: row.content_sha256,
       blocks: row.blocks,
       pageContext: row.page_context,
+      createdAt: row.created_at,
+      replyStatus: row.run_status,
     })), chunkChars, conversationId);
     if (
       currentSnapshot.coverageFromSeq !== coverageFromSeq

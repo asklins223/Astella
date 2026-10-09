@@ -228,21 +228,18 @@ export interface CompanionHistoryRow extends Record<string, unknown> {
   content_sha256: string;
   page_context: unknown;
   created_at: string;
+  run_status: string | null;
 }
 
-// A cancelled/superseded request is no longer waiting for an answer. Its user
-// message keeps kind='text', so checking message.kind alone does not exclude it.
+// Preserve user additions, including an interrupted or superseded turn. Their
+// timestamps and reply status distinguish continuous additions from old topics.
+// Partial/error assistant outputs are records, not completed model replies.
 function companionHistoryCondition(conversationId: string, beforeSeq?: string) {
   return sql`
     m.conversation_id = ${conversationId}
     AND m.role IN ('user', 'assistant')
     AND m.kind NOT IN ('cancelled', 'error')
     ${beforeSeq ? sql`AND m.seq < ${beforeSeq}::bigint` : sql``}
-    AND NOT EXISTS (
-      SELECT 1 FROM companion_turn_runs cancelled_run
-      WHERE cancelled_run.user_message_id = m.id
-        AND cancelled_run.status IN ('cancelled', 'superseded')
-    )
   `;
 }
 
@@ -255,6 +252,9 @@ export async function readCompanionHistoryRows(
   const rows = await tx.execute<CompanionHistoryRow>(sql`
     SELECT m.id, m.seq::text AS seq, m.role, m.blocks, m.content_sha256,
            to_char(m.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
+           (SELECT r.status FROM companion_turn_runs r
+            WHERE r.user_message_id = m.id AND m.role = 'user'
+            ORDER BY r.created_at DESC LIMIT 1) AS run_status,
            (SELECT jsonb_build_object('selection', coalesce(r.page_context->'selection', r.page_context->'context'->'selection'))
             FROM companion_turn_runs r
             WHERE r.user_message_id = m.id AND m.role = 'user'

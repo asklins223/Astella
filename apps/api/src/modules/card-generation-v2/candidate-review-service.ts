@@ -1,3 +1,4 @@
+import { requireAiExecutionConsent } from "../../lib/ai-execution-consent.ts";
 /**
  * Card Generation V2 — Candidate Review Actions（方案 20 §17.4）。
  *
@@ -155,6 +156,7 @@ async function dispatchAction(
   runId: string,
   action: CandidateActionV2,
 ): Promise<{ actionType: string; runId: string; reviewDraftRevision: number }> {
+  if (["edit", "merge", "regenerate_candidate", "replan_set"].includes(action.type)) await requireAiExecutionConsent(tx, ctx);
   const result = await dispatchActionInner(tx, ctx, runId, action);
   // §20.1/§18.1（R36）：显式反馈落库（reject 原因/edit-merge diff 记录；
   // note 自由文本按敏感用户内容分级保留，不进入普通日志）。

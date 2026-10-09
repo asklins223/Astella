@@ -39,6 +39,16 @@ test("summarizer prompt: 要求只输出 JSON（json_object 模式配套）", ()
   assert.match(messages[0].content, /只输出 JSON/);
 });
 
+test("summary preserves message dates and incomplete reply status without inventing completion", () => {
+  const row = { id: "message-1", seq: "1", role: "user", contentSha256: "a".repeat(64),
+    blocks: [{ type: "text", text: "帮我整理笔记" }], createdAt: "2026-10-08T06:07:00Z", replyStatus: "failed" };
+  const snapshot = buildSummarizerSnapshot([row], 1000);
+  assert.match(snapshot.transcript, /发送时间 2026-10-08T06:07:00Z/);
+  assert.match(snapshot.transcript, /回复状态 failed/);
+  assert.notEqual(snapshot.sourceHash, buildSummarizerSnapshot([{ ...row, replyStatus: "succeeded" }], 1000).sourceHash);
+  assert.match(buildSummarizerMessages({ conversationText: snapshot.transcript })[0].content, /不把旧请求改写成已完成的事/);
+});
+
 // 实机 2026-09-22：`conversation_summaries` 建表以来 **0 行**，而 ai_audit_log 里
 // `companion_summarizer:chat_completion` 有 283 次 success——每一次都成功调用、
 // 每一次都没落库。原因不在模型也不在解析器：**提示词只给了中文的字段名**

@@ -10,6 +10,8 @@ import { cardStrategyPresentation } from "./card-strategy-presentation";
 import { CandidateText } from "./candidate-text";
 import { CardGenerationRecoveryActions } from "./card-generation-recovery-actions";
 import type { CardGenerationSession } from "./use-card-generation-session";
+import { cardGenerationDiagnostic } from "./card-generation-diagnostics";
+import { guideToAiSettings } from "../../../app/ai-action-gate";
 
 function WrittenCard({ candidate, index, working }: { candidate: CardGenerationCandidateV1; index: number; working: boolean }) {
   const paperRef = useRef<HTMLLIElement>(null);
@@ -43,6 +45,7 @@ export function CardGenerationProgress({ session }: { readonly session: CardGene
   const planned = progressCounts.plannedCards;
   const passed = progressCounts.gatePassed;
   const locked = busyAction !== null;
+  const diagnostic = cardGenerationDiagnostic(run?.failure ?? null);
 
   return <section className="card-making-workshop" aria-label="学习卡生成进度" data-working={working}>
     <div className="card-making__paper">
@@ -59,7 +62,7 @@ export function CardGenerationProgress({ session }: { readonly session: CardGene
       {!loading && !waitingForRun && failure ? <div className="card-making__state" role="alert"><CircleAlert size={23} aria-hidden="true" /><h2>无法确认这次生成</h2><p>{failure}</p></div> : null}
       {!loading && !waitingForRun && !failure && !run ? <div className="card-making__state" role="status"><h2>还没有进行中的生成任务</h2><p>回到笔记页，从已保存的整篇笔记开始。</p></div> : null}
       {!loading && !failure && run && !progressView && !run.recovery ? <div className="card-making__state" role="status"><CircleAlert size={23} aria-hidden="true" /><h2>{isCardGenerationStopped(run.status) ? "这次生成已取消" : cardGenerationStatusLabel(run.status)}</h2><p>本次已经停下。可以直接按最新已保存的笔记，重新生成一套学习卡。</p></div> : null}
-      {!loading && !failure && run?.recovery ? <div className="card-making__recovery" role="status"><CircleAlert size={23} aria-hidden="true" /><h2>{run.status === "needs_attention" && run.recovery.publicReasonCode === "attention_required" ? "这次生成尚未完成" : cardGenerationRecoveryReasonLabel(run.recovery.publicReasonCode)}</h2><p>{run.recovery.retryability === "resync_required" ? "重新检查状态，或按最新笔记重新生成。" : "可以重试本次任务，也可以按最新笔记重新生成。"}</p><div className="actions"><CardGenerationRecoveryActions session={session} showReturn={false} /></div></div> : null}
+      {!loading && !failure && run?.recovery ? <div className="card-making__recovery" role="status"><CircleAlert size={23} aria-hidden="true" /><h2>{diagnostic?.title ?? (run.status === "needs_attention" && run.recovery.publicReasonCode === "attention_required" ? "这次生成尚未完成" : cardGenerationRecoveryReasonLabel(run.recovery.publicReasonCode))}</h2><p>{diagnostic?.detail ?? (run.recovery.retryability === "resync_required" ? "重新检查状态，或按最新笔记重新生成。" : "可以重试本次任务，也可以按最新笔记重新生成。")}</p><div className="actions">{diagnostic?.permission ? <button type="button" className="button primary" onClick={() => guideToAiSettings(diagnostic.permission!)}>开启 AI 使用权限</button> : null}<CardGenerationRecoveryActions session={session} showReturn={false} /></div></div> : null}
       {run?.status === "needs_attention" ? <p className="card-making__source-notice">{authored > 0 ? `已写出 ${authored} 张草稿，` : ""}还没有通过核对、可供审核保存的候选。已有题面保留在右侧。</p> : null}
       {run?.sourceOutdated ? <p className="card-making__source-notice" role="status">笔记已有新版本。本次依据旧版；重新生成会读取最新已保存的内容。</p> : null}
       <footer className="card-making__footer">

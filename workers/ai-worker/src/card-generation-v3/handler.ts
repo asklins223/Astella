@@ -984,6 +984,7 @@ function kernelFailureError(taskId: string, failure: AiStepFailure | null): Erro
   return new CardGenerationProviderError(
     judged.class === "output_shape" || !AI_TASK_RETRYABLE_FAILURE_CLASSES.has(judged.class) ? "non-retryable" : "retryable",
     `${taskId} output rejected: ${judged.class} — ${judged.message}`.slice(0, 600),
+    judged.class,
   );
 }
 

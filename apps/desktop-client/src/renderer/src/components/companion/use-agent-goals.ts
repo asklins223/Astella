@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentRunV1 } from "@astella/shared/agent-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
+import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../app/ai-action-gate";
 import { notifyCompanion } from "./companion-notifications";
 import { COMPANION_RECORDS_CHANGED } from "./companion-events";
 
@@ -108,6 +109,7 @@ export function useAgentGoals(chatPhase: string, onReady: (runId: string) => voi
     locked.current = true; ++sequence.current; setPending(run.runId); setError(null);
     try {
       const meta = createRequestMeta();
+      if ((action === "resume" || typeof action !== "string") && !await ensureAiActionAllowed(meta.workspaceEpoch, current)) return false;
       const result = typeof action === "string"
         ? await window.astella.agent.controlRun({ meta, runId: run.runId, request: { expectedRevision: run.revision, action } })
         : await window.astella.agent.reviseRun({ meta, runId: run.runId, request: { expectedRevision: run.revision, ...action } });
@@ -118,6 +120,7 @@ export function useAgentGoals(chatPhase: string, onReady: (runId: string) => voi
       setSnapshot(previous => ({ ...previous, scope, items: [updated, ...previous.items.filter(item => item.runId !== updated.runId)] }));
       return true;
     } catch (cause) {
+      if (current() && guideAiPermissionFailure(cause)) return false;
       if (current()) { await refresh(); if (current()) setError(`${gatewayErrorMessage(cause)} 请核对最新状态后重试。`); }
       return false;
     } finally { if (current()) { locked.current = false; setPending(null); } }

@@ -27,13 +27,13 @@ import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
 import type { MainPageContextInputV2, PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { companionPageRouteV2, SETTINGS_SECTION_IDS_V2 } from "@astella/shared/companion-bridge-contracts";
 import { useRoomStore } from "./room-store";
+import { guideToAiSettings } from "./ai-action-gate";
 import type { HudPageId } from "../components/hud/hud-pages";
 import { createRequestMeta, gatewayErrorMessage, requireWorkspaceEpoch, unwrapGatewayResult, RendererGatewayError } from "./desktop-client";
 import {
   COMPANION_CONSENT_REQUIRED_LINE,
   COMPANION_EXTERNAL_DISABLED_LINE,
   COMPANION_RUN_ERROR_AI_DATA_POLICY_DENIED,
-  SETTINGS_ATTENTION_AI_CONSENT, SETTINGS_SECTION_AI_CONSENT,
   companionConsentGate,
   isCompanionConsentFailure,
 } from "./companion-consent-gate";
@@ -1390,10 +1390,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       proposalIds: [],
     });
     setPhase("ready");
-    const store = useRoomStore.getState();
-    store.setSettingsAttention(SETTINGS_ATTENTION_AI_CONSENT);
-    store.setSettingsSection(SETTINGS_SECTION_AI_CONSENT);
-    store.invoke("open-settings");
+    guideToAiSettings(externalDisabled ? "external_disabled" : "consent_required");
   }, []);
 
   const send = useCallback(async (input: CompanionChatSendInput): Promise<boolean> => {
@@ -1614,7 +1611,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         if (isCompanionConsentFailure(claimed.code)) {
           // 兜底：签署状态可能在发送前后变化（或发送前那次设置读取失败）。
           // 前置门禁已覆盖大多数情况，这里保证不会退回静默失败。
-          guideToConsent(claimed.code === COMPANION_RUN_ERROR_AI_DATA_POLICY_DENIED);
+          guideToConsent(claimed.code === COMPANION_RUN_ERROR_AI_DATA_POLICY_DENIED || claimed.code === "ai_data_policy_denied");
           return true;
         }
         if (partial.trim().length > 0) setInterrupted({ text: partial, message: claimed.message });
@@ -1674,6 +1671,12 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         // 就是一句"你说过但没有"的幽灵消息：抽屉里看得见、她不回应，直到下一次
         // 任意刷新才自己消失（方案 35 A3）。输入框那份文本此刻已经还给用户了。
         setMessages((current) => current.filter((message) => message.id !== optimisticId));
+      }
+      const code = error && typeof error === "object" && "code" in error ? error.code : null;
+      if (isCompanionConsentFailure(code)) {
+        if (explanation) interruptNoteExplanation(explanation.id, "interrupted", "需要先在设置中允许 AI 读取内容，解释尚未开始。");
+        guideToConsent(code === "ai_data_policy_denied" || code === COMPANION_RUN_ERROR_AI_DATA_POLICY_DENIED);
+        return false;
       }
       setFailure(companionTurnErrorMessage(error));
       if (explanation) interruptNoteExplanation(explanation.id, "interrupted", companionTurnErrorMessage(error));
