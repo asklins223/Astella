@@ -962,7 +962,8 @@ export async function executeDirectTool(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         (tx) => applyAssistantPersonaEdit(tx, event.read.userId, "speakingStyle", speakingStyle, reason,
           { stage: true, sourceWorkspaceId: event.ctx.workspaceId,
-            expectedRevision: event.read.personaProfileRevision }),
+            expectedRevision: event.read.personaProfileRevision,
+            proposal: { kind: "assistant_tool", proposalId: event.read.runId } }),
       );
       if (outcome.kind === "conflict") throw new CompanionToolError("人格档案刚刚被改过，这次没有改动，请重新看一眼");
       if (outcome.kind === "unchanged") {
@@ -993,7 +994,8 @@ export async function executeDirectTool(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         (tx) => applyAssistantPersonaEdit(tx, event.read.userId, "personalityTags", tags, reason,
           { stage: true, sourceWorkspaceId: event.ctx.workspaceId,
-            expectedRevision: event.read.personaProfileRevision }),
+            expectedRevision: event.read.personaProfileRevision,
+            proposal: { kind: "assistant_tool", proposalId: event.read.runId } }),
       );
       if (outcome.kind === "conflict") throw new CompanionToolError("人格档案刚刚被改过，这次没有改动，请重新看一眼");
       if (outcome.kind === "unchanged") {
@@ -1067,7 +1069,7 @@ export async function executeDirectTool(
         (tx) => applyAssistantPersonaEdit(
           tx, event.read.userId, "activeness", activeness,
           "Changed by an explicitly requested companion setting.",
-          { sourceWorkspaceId: event.ctx.workspaceId },
+          { sourceWorkspaceId: event.ctx.workspaceId, proposal: { kind: "assistant_tool", proposalId: event.read.runId } },
         ),
       );
       if (outcome.kind === "conflict") throw new CompanionToolError("人格档案刚刚被改过，这次没有改动，请重新看一眼");
@@ -1127,7 +1129,7 @@ export async function executeDirectTool(
             event.read.userId,
             Object.entries(changed).map(([key, value]) => ({ field: `boundaries.${key}` as SwitchableField, value })),
             "Changed by an explicitly requested companion setting.",
-            { sourceWorkspaceId: event.ctx.workspaceId },
+            { sourceWorkspaceId: event.ctx.workspaceId, proposal: { kind: "assistant_tool", proposalId: event.read.runId } },
           );
           if (result.kind === "conflict") return null;
           return { boundaries: result.profile.boundaries ?? {}, changed, unchangedKeys } as const;

@@ -59,6 +59,7 @@ export type PersonaFieldOrigin = {
   speakingStyle?: PersonaOrigin;
   examples?: PersonaOrigin;
   activeness?: PersonaOrigin;
+  selfDescription?: PersonaOrigin;
   boundaries?: {
     allowPlayful?: PersonaOrigin;
     allowNudgeLearning?: PersonaOrigin;
@@ -75,6 +76,16 @@ export type CompanionPersonaProfileContent = {
   speakingStyle: string;
   examples: { text: string }[];
   activeness: PetProfileActiveness;
+  /**
+   * 她自己攒的「她是谁」（方案 50 §8.1）：真实相处里形成的自我认识——关注的角度、
+   * 讲法上的偏好、还在修订的看法。与 `speakingStyle`（用户或预设给的说话方式）分工不同，
+   * 跟着账号人格走不可变版本，不是第二份记忆库。
+   *
+   * 容量在 `PERSONA_FIELD_CAPACITY`（`pet-persona-merge.ts` 那一个纯模块）：契约、
+   * 装配计量与界面都从那一处取；那是**工程容量**（进完整请求计量），不是说话篇幅。
+   * 旧档案没有这一项时读作「还没有自我描述」，不回填、不制造一次成长版本。
+   */
+  selfDescription?: string;
   boundaries: {
     allowPlayful?: boolean;
     allowNudgeLearning?: boolean;
@@ -115,6 +126,22 @@ export const companionPersonaProfiles = pgTable(
 export type CompanionPersonaProfileVersionAuthor = "user" | "assistant_tool" | "restore" | "migration";
 export type CompanionPersonaProfileVersionAction = "update" | "reset" | "restore" | "migration";
 
+/**
+ * 一条待生效修订是**谁在什么时候提的**（方案 50 §4 新增并发风险 / §9.3）。
+ *
+ * `author` 只说"这一版的正文归谁"，答不出"这一版出自哪一次提议"。少了后者，
+ * 同一个账号里两次互不相干的提议就会被当成同一次的两笔改动**盲目并到一起**——
+ * 比如上一轮没被采用的一条说话方式，和她后来在另一个空间回顾出来的一条。
+ *
+ * 所以版本行上除 author 再记一对提案身份：
+ *  - `assistant_tool`：一次前台 run 里的连续修改（同 `proposalId` 可以延续）；
+ *  - `assistant_reflection`：一次后台反思（`proposalId` 是 reflection id）。
+ * 两者不同就不合并，新提议回到**当前生效**的基线上重评，旧的那版留在历史里。
+ *
+ * 旧行没有这两列内容，读作「来源不明的历史提议」，不参与延续判断。
+ */
+export type CompanionPersonaProposalKind = "assistant_tool" | "assistant_reflection";
+
 /** Immutable, owner-readable versions used by profile history and private turn replay. */
 export const companionPersonaProfileVersions = pgTable(
   "companion_persona_profile_versions",
@@ -126,6 +153,8 @@ export const companionPersonaProfileVersions = pgTable(
     author: text("author").$type<CompanionPersonaProfileVersionAuthor>().notNull(),
     action: text("action").$type<CompanionPersonaProfileVersionAction>().notNull(),
     reason: text("reason"),
+    proposalKind: text("proposal_kind").$type<CompanionPersonaProposalKind | null>(),
+    proposalId: text("proposal_id"),
     moduleScope: text("module_scope").array().notNull().default(sql`ARRAY['companion']::text[]`),
     sourceWorkspaceId: uuid("source_workspace_id"),
     profile: jsonb("profile").$type<CompanionPersonaProfileContent | null>(),
@@ -141,9 +170,85 @@ export const companionPersonaProfileVersions = pgTable(
   }),
 );
 
+/**
+ * 一次有界后台反思的输入水位与结论（方案 50 §8.3，迁移 0400）。
+ *
+ * 执行状态（running / lease / attempt）**不在这里**——那是现役 jobs 体系的职责。
+ * 这张表只回答"这一次回顾看了哪一段、按哪一版人格看的、结论是什么、留下了哪一版待生效"，
+ * 让 §12.2 要求分辨的那些结果码有处可记：无合适触发、来源不足、`no_change`、
+ * 提交冲突、已暂存未采用，是四种不同的事实，不是同一句"后台维护正常"。
+ */
+export type CompanionReflectionDecision =
+  | "queued" | "running" | "trigger_none" | "insufficient_input" | "no_change"
+  | "proposed" | "committed" | "source_invalid" | "protocol_failed"
+  | "commit_conflict" | "lease_lost";
+
+export const companionReflections = pgTable(
+  "companion_reflections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id").notNull(),
+    conversationId: uuid("conversation_id").notNull(),
+    jobId: uuid("job_id"),
+    triggerKind: text("trigger_kind").$type<"exchange_segment">().notNull(),
+    inputFromSeq: bigint("input_from_seq", { mode: "number" }).notNull(),
+    inputToSeq: bigint("input_to_seq", { mode: "number" }).notNull(),
+    inputFingerprint: text("input_fingerprint").notNull(),
+    dedupeKey: text("dedupe_key").notNull(),
+    strategyVersion: text("strategy_version").notNull(),
+    baselinePersonaRevision: integer("baseline_persona_revision").notNull(),
+    decision: text("decision").$type<CompanionReflectionDecision>().notNull().default("queued"),
+    /** 脱敏短句；不放模型隐藏推理，也不放用户原文。 */
+    decisionSummary: text("decision_summary"),
+    pendingPersonaRevision: integer("pending_persona_revision"),
+    resultRef: jsonb("result_ref").$type<Record<string, unknown> | null>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    dedupeUnique: uniqueIndex("companion_reflections_dedupe_unique").on(t.userId, t.dedupeKey),
+    conversationWatermarkIdx: index("companion_reflections_conversation_watermark_idx").on(
+      t.conversationId, t.inputToSeq,
+    ),
+  }),
+);
+
+/**
+ * 有类型的派生关系（0400）：`read` = 这次反思读过的依据，`produced` = 它产出的版本。
+ *
+ * 分成两边是因为撤回要顺着边走：原文被删 → 依赖它的经验停用 → 由该来源支持的人格修改
+ * 取消 pending 或生成修订（§9.4）。混在一张表里，"读过的"和"造出来的"就分不开，
+ * 递进核对只能整片撤。
+ */
+export const companionReflectionSources = pgTable(
+  "companion_reflection_sources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    reflectionId: uuid("reflection_id").notNull().references(
+      () => companionReflections.id, { onDelete: "cascade" },
+    ),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id").notNull(),
+    relation: text("relation").$type<"read" | "produced">().notNull(),
+    sourceKind: text("source_kind").$type<
+      "user_message" | "assistant_message" | "memory" | "tool_receipt" | "persona_revision"
+    >().notNull(),
+    sourceId: text("source_id").notNull(),
+    /** 那一版来源的身份证据：记忆用 revision 号，消息用内容哈希。空串表示没有可核对的版本。 */
+    sourceRevision: text("source_revision").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    edgeUnique: uniqueIndex("companion_reflection_sources_edge_unique").on(
+      t.reflectionId, t.relation, t.sourceKind, t.sourceId, t.sourceRevision,
+    ),
+    targetIdx: index("companion_reflection_sources_target_idx").on(t.userId, t.sourceKind, t.sourceId),
+  }),
+);
+
 /** Workspace-scoped relationship state only; persona expression is account-scoped above. */
-export const petProfiles = pgTable(
-  "pet_profiles",
+export const petProfiles = pgTable(  "pet_profiles",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     workspaceId: uuid("workspace_id").notNull(),

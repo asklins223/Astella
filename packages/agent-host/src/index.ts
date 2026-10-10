@@ -7,6 +7,8 @@ export * from "./note-operation.ts";
 export * from "./note-creation.ts";
 export * from "./card-operation.ts";
 export * from "./methods.ts";
+export * from "./identity.ts";
+export * from "./reflections.ts";
 export * from "./ai-governance-policy.ts";
 export * from "./context-sources.ts";
 export {listAgentLongGoals,requireAgentLongGoal} from "./long-goals.ts";

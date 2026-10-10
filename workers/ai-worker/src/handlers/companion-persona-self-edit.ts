@@ -1,18 +1,17 @@
 /**
  * 她自己改人格的那条通路（40 §4.8.4「模型自改表达层」）。
  *
- * ## 为什么单独一个文件
+ * ## 这里只剩转接
  *
- * 四个自改工具（语气、性格标签、表达分量、边界）此前各自抄了一遍
- * `SELECT … FOR UPDATE → 判断 → UPDATE → 插版本行`，于是两件事被复制成了四份：
+ * 写入本体已经抽到 `@astella/agent-host/src/identity.ts` 的共享提交端口。
+ * 抽出去的理由是方案 50 §9.3：后台反思接进来之后，人格就有了**第二个写入者**。
+ * 如果两条路径各自抄一遍 `SELECT … FOR UPDATE → 判断 → UPDATE → 插版本行`，
+ * 「用户草稿优先」「排队不推当前版本」「版本号排在队尾」这几条规矩就会分处两地维护，
+ * 早晚漂成两种行为——而漂的那一次是静默的。
  *
- *  1. **没有账号档案时一律返回 `missing`。** 账号从来没选过人格时，她手里只有
- *     系统默认人格（不在档案表里），于是她第一次想调一下语气就被拒——而用户看到的
- *     是"她明明有人格却改不了"。这里改成**以系统默认人格为底稿起一份档案**。
- *  2. **改动不记字段来源。** 换人格时要靠 `fieldOrigin` 判断哪几项是她写的，
- *     漏记一次就等于她调过的东西会被一键冲掉，而且再没有线索能查出来。
- *
- * 两条都收在这里，四处调用点不再重复判断。
+ * 本文件保留原签名，让四个前台工具的调用点不用一起改；新增的是**提案身份**：
+ * 前台工具带当次 run 的 runId，于是同一次运行里先改语气、再改标签仍然两项都留下，
+ * 而**另一个提案**（另一次运行、或一次后台反思）排的那一版不会被当成自己的底稿。
  *
  * ## 版本号
  *
@@ -21,24 +20,20 @@
  * 看不到"她改的第一次是哪一版"。
  */
 
-import { sql } from "drizzle-orm";
 import type { WorkerTransaction } from "../db.ts";
 import {
-  getDefaultPersonaPreset,
-} from "@astella/shared/pet-persona-presets";
-import {
-  personaFromDefaultPreset,
-  withAssistantEditedField,
-  type SwitchableField,
-} from "@astella/shared/pet-persona-merge";
+  commitPersonaProposalV1,
+  type CompanionPersonaCommitOutcomeV1,
+  type CompanionPersonaProposalV1,
+} from "@astella/agent-host";
 import type { CompanionPersonaProfileContent } from "@astella/shared/db-schema/companion-memory";
+import type {
+  PersonaAssistantEditableField,
+  SwitchableField,
+} from "@astella/shared/pet-persona-merge";
 
-/** 库里那一行可能什么形状都有：null、数组、任意对象。不认识的当"没档案"。 */
-function readProfile(value: unknown): CompanionPersonaProfileContent | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as CompanionPersonaProfileContent
-    : null;
-}
+/** 前台工具用的字段集合；`selfDescription` 走的是后台反思那条通路。 */
+export type PersonaSelfEditField = SwitchableField | PersonaAssistantEditableField;
 
 export type PersonaSelfEditResult =
   /** 已保存实质改动；stage=true 时 revision 是待生效版本号。 */
@@ -47,6 +42,14 @@ export type PersonaSelfEditResult =
   | { readonly kind: "unchanged"; readonly profile: CompanionPersonaProfileContent }
   /** 并发把版本推走了；调用方按"请重试"处理。 */
   | { readonly kind: "conflict" };
+
+function toSelfEditResult(outcome: CompanionPersonaCommitOutcomeV1): PersonaSelfEditResult {
+  if (outcome.kind === "conflict") return { kind: "conflict" };
+  if (outcome.kind === "unchanged") return { kind: "unchanged", profile: outcome.profile };
+  // `supersededPendingRevision` 不往前台工具暴露：回执仍然说"排上了哪一版"，
+  // 被顶掉的那一版由版本历史与诊断解释（它在历史里仍可查、可恢复）。
+  return { kind: "changed", revision: outcome.revision, profile: outcome.profile };
+}
 
 /**
  * 改一项或多项表达层的设定，来源记 `assistant`。
@@ -58,111 +61,47 @@ export type PersonaSelfEditResult =
 export async function applyAssistantPersonaEdits(
   tx: WorkerTransaction,
   userId: string,
-  edits: readonly { field: SwitchableField; value: unknown }[],
+  edits: readonly { field: PersonaSelfEditField; value: unknown }[],
   reason: string,
-  options: { stage?: boolean; sourceWorkspaceId?: string; expectedRevision?: number } = {},
+  options: {
+    stage?: boolean;
+    sourceWorkspaceId?: string;
+    expectedRevision?: number;
+    expectedPendingRevision?: number | null;
+    proposal?: CompanionPersonaProposalV1;
+  } = {},
 ): Promise<PersonaSelfEditResult> {
   if (edits.length === 0) throw new Error("applyAssistantPersonaEdits requires at least one edit");
-  // Create the lockable account row before reading, including first-write races.
-  // A staged first edit keeps the effective persona at revision 0/defaults.
-  await tx.execute(sql`
-    INSERT INTO companion_persona_profiles (user_id, revision, profile)
-    VALUES (${userId}, 0, NULL)
-    ON CONFLICT (user_id) DO NOTHING
-  `);
-  const current = await tx.execute<{ revision: number; profile: unknown; pending_revision: number | null }>(sql`
-    SELECT revision, profile, pending_revision FROM companion_persona_profiles
-    WHERE user_id = ${userId}
-    LIMIT 1
-    FOR UPDATE
-  `);
-  const row = (Array.isArray(current) ? current : [])[0];
-  if (!row) return { kind: "conflict" };
-  if (options.expectedRevision !== undefined && row.revision !== options.expectedRevision) {
-    return { kind: "conflict" };
-  }
-  let existing = readProfile(row.profile);
-  if (options.stage && row.pending_revision !== null) {
-    const pending = await tx.execute<{ profile: unknown; author: string }>(sql`
-      SELECT profile, author FROM companion_persona_profile_versions
-      WHERE user_id = ${userId} AND revision = ${row.pending_revision}
-    `);
-    // A user-staged draft is a decision in progress, not a model-edit base.
-    if (pending[0]?.author !== "assistant_tool") return { kind: "conflict" };
-    const staged = readProfile(pending[0]?.profile);
-    if (!staged) throw new Error("pending persona content is unavailable");
-    // Two edits in one turn (style, then tags) extend the same pending persona.
-    existing = staged;
-  }
-  // 档案还没有：拿系统默认人格当底稿。她改的是"当前生效的那份人格"，
-  // 不是凭空造一个——所以起手之后整份档案与默认人格一致，只有这一项归她。
-  const base = existing ?? personaFromDefaultPreset(getDefaultPersonaPreset());
-  const next = edits.reduce(
-    (profile, edit) => withAssistantEditedField(profile, edit.field, edit.value),
-    base as CompanionPersonaProfileContent,
-  );
-  // 比的是**内容**，不是整个对象：`fieldOrigin` 是这一行改出来的，拿它参与比较
-  // 会让"改成一样的值"也算改 —— 版本被推高，而屏上什么都没变，更要命的是
-  // 那一项从此被标成"她改的"，以后每次换人格都要问它一遍。
-  const { fieldOrigin: _ignored, ...nextContent } = next;
-  const { fieldOrigin: _alsoIgnored, ...baseContent } = base;
-  if (JSON.stringify(nextContent) === JSON.stringify(baseContent)) return { kind: "unchanged", profile: base };
-
-  // 版本号走同一条规矩：当前与待生效里更大的 +1。直接写死 1 会在"排队的版本
-  // 比当前的还大"时撞 0355 的 CHECK（pending_revision > revision）。
-  const nextRevision = Math.max(row?.revision ?? 0, row?.pending_revision ?? 0) + 1;
-  if (options.stage) {
-    // The FK requires the immutable version before the pending pointer.
-    await tx.execute(sql`
-      INSERT INTO companion_persona_profile_versions
-        (user_id, revision, examples_revision, author, action, reason, profile,
-         module_scope, source_workspace_id)
-      VALUES (${userId}, ${nextRevision}, ${nextRevision}, 'assistant_tool', 'update',
-              ${reason}, ${JSON.stringify(next)}::jsonb,
-              ARRAY['companion']::text[],
-              ${options.sourceWorkspaceId ?? null}::uuid)
-    `);
-    await tx.execute(sql`
-      UPDATE companion_persona_profiles SET pending_revision = ${nextRevision}
-      WHERE user_id = ${userId} AND revision = ${row.revision}
-    `);
-    return { kind: "changed", revision: nextRevision, profile: next };
-  }
-  const saved = await tx.execute<{ revision: number; profile: unknown }>(sql`
-    INSERT INTO companion_persona_profiles (user_id, revision, profile, updated_at)
-    VALUES (${userId}, ${nextRevision}, ${JSON.stringify(next)}::jsonb, now())
-    ON CONFLICT (user_id) DO UPDATE
-      SET profile = EXCLUDED.profile,
-          revision = EXCLUDED.revision,
-          pending_revision = NULL,
-          updated_at = now()
-      WHERE companion_persona_profiles.revision = ${row?.revision ?? 0}
-    RETURNING revision, profile
-  `);
-  const updated = (Array.isArray(saved) ? saved : [])[0];
-  if (!updated) return { kind: "conflict" };
-  const profile = readProfile(updated.profile) ?? next;
-  await tx.execute(sql`
-    INSERT INTO companion_persona_profile_versions
-      (user_id, revision, examples_revision, author, action, reason, profile,
-       module_scope, source_workspace_id)
-    VALUES (${userId}, ${updated.revision}, ${updated.revision},
-            'assistant_tool', 'update', ${reason},
-            ${JSON.stringify(profile)}::jsonb,
-            ARRAY['companion']::text[],
-            ${options.sourceWorkspaceId ?? null}::uuid)
-  `);
-  return { kind: "changed", revision: updated.revision, profile };
+  return toSelfEditResult(await commitPersonaProposalV1(
+    tx,
+    userId,
+    {
+      edits: edits.map((edit) => ({ field: edit.field, value: edit.value })),
+      reason,
+      stage: options.stage === true,
+      ...(options.expectedRevision === undefined ? {} : { expectedRevision: options.expectedRevision }),
+      ...(options.expectedPendingRevision === undefined
+        ? {} : { expectedPendingRevision: options.expectedPendingRevision }),
+      ...(options.proposal === undefined ? {} : { proposal: options.proposal }),
+    },
+    { sourceWorkspaceId: options.sourceWorkspaceId ?? null },
+  ));
 }
 
 /** 单项版的薄封装——四个工具里有三个只改一项。 */
 export function applyAssistantPersonaEdit(
   tx: WorkerTransaction,
   userId: string,
-  field: SwitchableField,
+  field: PersonaSelfEditField,
   value: unknown,
   reason: string,
-  options: { stage?: boolean; sourceWorkspaceId?: string; expectedRevision?: number } = {},
+  options: {
+    stage?: boolean;
+    sourceWorkspaceId?: string;
+    expectedRevision?: number;
+    expectedPendingRevision?: number | null;
+    proposal?: CompanionPersonaProposalV1;
+  } = {},
 ): Promise<PersonaSelfEditResult> {
   return applyAssistantPersonaEdits(tx, userId, [{ field, value }], reason, options);
 }

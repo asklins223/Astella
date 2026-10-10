@@ -1,16 +1,19 @@
 import { resolveCompanionPersonaProfile } from "@astella/shared/pet-persona-presets";
 import { companionPersonaProfileV1Schema } from "@astella/shared";
+import { PERSONA_FIELD_CAPACITY } from "@astella/shared/pet-persona-merge";
 
 /** Shared persona data only; callers choose the execution or conversation policy. */
 export interface CompanionPersonaContextProfile {
   name: string; speakingStyle: string; personalityTags: string[]; examples: { text: string }[];
   activeness?: "quiet" | "moderate" | "active" | null;
+  /** 她自己攒下的自我认识（方案 50 §8.1）；没有就是还没有，不补一句出厂台词。 */
+  selfDescription?: string | null;
   boundaries?: { allowPlayful?: boolean; allowNudgeLearning?: boolean; allowVoiceTags?: boolean; catchphrase?: string | null } | null;
 }
 
 const personaContentSchema = companionPersonaProfileV1Schema.pick({
   name: true, speakingStyle: true, personalityTags: true, examples: true,
-  activeness: true, boundaries: true,
+  activeness: true, selfDescription: true, boundaries: true,
 }).strip();
 
 /** Both interactive and proactive chains resolve the same account profile or
@@ -95,6 +98,9 @@ export function buildCompanionPersonaData(profile: CompanionPersonaContextProfil
           .slice(0, 5)
           .map((example) => sanitizePersonaField(example.text, 200))
           .filter((example) => example.length > 0),
+        // 自我描述是用户可编辑 + 她可小改的自由文本，走同一道净化（剥尖括号、压换行、限长）。
+        selfDescription: sanitizePersonaField(
+          profile.selfDescription ?? "", PERSONA_FIELD_CAPACITY.selfDescription),
         // 活跃度/边界不是自由文本，不需要 sanitizePersonaField（无注入面），
         // 但 catchphrase 是用户自填的，进 prompt 前必须走同一道净化。
         activeness: profile.activeness ?? null,
@@ -119,6 +125,11 @@ export function buildCompanionPersonaData(profile: CompanionPersonaContextProfil
           ? [`性格标签：${persona.personalityTags.join("、")}`]
           : []),
         `说话风格：${persona.speakingStyle}`,
+        // 这一句是她**对自己说话方式的回顾**，不是关于用户的事实：写成事实就会让
+        // 她拿一条可能已经改过的自我判断去替用户下结论。
+        ...(persona.selfDescription.length > 0
+          ? [`你对自己的认识（可能还在改，也不是关于用户的事实；用户这一轮明确说的优先）：${persona.selfDescription}`]
+          : []),
         ...renderPersonaBehaviour(persona),
         ...(persona.examples.length > 0
           ? [`表达风格示例（没有附对应用户问题，不代表当前对话目的、已经发生的经历或已接受的建议）：`, ...persona.examples.map((e) => `- ${e}`)]

@@ -14,6 +14,11 @@ import {
   type CompanionPersonaProfileVersionAuthor,
 } from "@astella/shared/db-schema/companion-memory";
 import { users } from "@astella/shared/db-schema/identity";
+import {
+  adoptPendingPersonaForNewTurn,
+  finalizeReflection,
+  pendingPersonaProposalSources,
+} from "@astella/agent-host";
 import { getPresetById } from "@astella/shared/pet-persona-presets";
 export {
   DEFAULT_PERSONA_PRESET_ID,
@@ -712,18 +717,25 @@ export async function activateAssistantPersonaForNewTurn(
   executor: ApiTransaction,
   scope: PetProfileScope,
 ): Promise<number | null> {
-  const rows = await executor.execute<{ revision: number }>(sql`
-    UPDATE public.companion_persona_profiles p
-       SET revision = v.revision,
-           profile = v.profile,
-           pending_revision = NULL,
-           updated_at = now()
-      FROM public.companion_persona_profile_versions v
-     WHERE p.user_id = ${scope.userId}
-       AND v.user_id = p.user_id
-       AND v.revision = p.pending_revision
-       AND v.author = 'assistant_tool'
-    RETURNING p.revision
-  `);
-  return rows[0] ? Number(rows[0].revision) : null;
+  // 写入与采用都走 `@astella/agent-host` 的身份端口：那条排队是 worker（前台工具）
+  // 或后台反思排下的，API 自己再实现一遍"什么时候可以把它当成当前版本"就一定漂。
+  //
+  // 采用前再核一次依据（方案 50 §9.4）：用户把那条原话删了、或者反思引用的那一版
+  // 记忆已经不是当初那一版，这一版就不该在下一次被接受时悄悄生效。核对不过只清指针，
+  // 版本行留在历史里（用户仍可查、可恢复），不重写成另一份内容。
+  const outcome = await adoptPendingPersonaForNewTurn(
+    executor,
+    scope.userId,
+    (pending) => pendingPersonaProposalSources(executor, scope.userId, pending),
+  );
+  if (!outcome) return null;
+  if (outcome.kind === "adopted") return outcome.revision;
+  const pending = outcome.pending;
+  if (pending.proposalKind === "assistant_reflection" && pending.proposalId) {
+    await finalizeReflection(executor, scope.userId, pending.proposalId, {
+      decision: "source_invalid",
+      summary: "依据已被删除或已换版本，这一版自我修订没有采用",
+    });
+  }
+  return null;
 }

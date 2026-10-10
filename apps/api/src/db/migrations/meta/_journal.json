@@ -2773,6 +2773,13 @@
       "when": 1791519333921,
       "tag": "0399_companion_note_share_dispatch",
       "breakpoints": true
+    },
+    {
+      "idx": 396,
+      "version": "7",
+      "when": 1791590400000,
+      "tag": "0400_companion_persona_reflection",
+      "breakpoints": true
     }
   ]
 }

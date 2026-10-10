@@ -22,7 +22,7 @@ import {
   companionTextBlockV1Schema,
 } from "./companion-conversation-contracts.ts";
 import type { CompanionPersonaProfileContent } from "../db-schema/companion-memory.ts";
-import { applyPersonaSwitch, type SwitchableField } from "../pet-persona-merge.ts";
+import { applyPersonaSwitch, PERSONA_FIELD_CAPACITY, type SwitchableField } from "../pet-persona-merge.ts";
 
 // ─── 记忆条目（§3.3 memory-routes.ts 的 MemoryItemV2）────────────────────
 
@@ -395,6 +395,7 @@ export const personaFieldOriginV1Schema = z.strictObject({
   speakingStyle: personaOriginV1Schema.optional(),
   examples: personaOriginV1Schema.optional(),
   activeness: personaOriginV1Schema.optional(),
+  selfDescription: personaOriginV1Schema.optional(),
   boundaries: z.strictObject({
     allowPlayful: personaOriginV1Schema.optional(),
     allowNudgeLearning: personaOriginV1Schema.optional(),
@@ -414,6 +415,8 @@ export const companionPersonaProfileV1Schema = z.strictObject({
   speakingStyle: z.string().min(1).max(1000),
   examples: z.array(z.strictObject({ text: z.string().min(1).max(200) })).max(5),
   activeness: companionPersonaActivenessV1Schema,
+  /** 她自己攒下的自我认识；没有这一项就是「还没有」，不是「空的一句话」。 */
+  selfDescription: z.string().min(1).max(PERSONA_FIELD_CAPACITY.selfDescription).optional(),
   boundaries: companionPersonaBoundariesV1Schema,
   fieldOrigin: personaFieldOriginV1Schema.optional(),
   revision: z.number().int().positive(),
@@ -466,6 +469,7 @@ export const companionPersonaPatchV1Schema = z.strictObject({
   speakingStyle: z.string().min(1).max(1000),
   examples: z.array(z.strictObject({ text: z.string().min(1).max(200) })).max(5),
   activeness: companionPersonaActivenessV1Schema,
+  selfDescription: z.string().min(1).max(PERSONA_FIELD_CAPACITY.selfDescription).optional(),
   boundaries: companionPersonaBoundariesV1Schema,
   fieldOrigin: personaFieldOriginV1Schema.optional(),
 });
@@ -619,6 +623,9 @@ export function companionPersonaPatchFromContent(
     speakingStyle: base.speakingStyle,
     examples: base.examples,
     activeness: change.activeness ?? base.activeness,
+    // 自我描述同样要**原样带回**：PATCH 是整份写入，漏带一列就等于用户在界面上
+    // 改一下活跃度就把她攒下的自我认识悄悄清空了。
+    ...(base.selfDescription === undefined ? {} : { selfDescription: base.selfDescription }),
     boundaries: change.boundaries ?? base.boundaries,
     fieldOrigin,
   });

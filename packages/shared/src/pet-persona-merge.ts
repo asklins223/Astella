@@ -35,6 +35,22 @@ import type { PetPersonaPreset } from "./pet-persona-presets.ts";
 
 export type { PersonaFieldOrigin, PersonaOrigin } from "./db-schema/companion-memory.ts";
 
+/**
+ * 人格每一项的字符容量。
+ *
+ * 只有这一个地方写这些数字：契约校验、她自己的写入端口、进 prompt 前的净化、
+ * 界面上的剩余字数都从这一处取。两处各写一遍的结局一定是某一处先漂——
+ * 而漂的那一次表现为"存进去了但屏幕上看不见"或"界面能写、契约拒收"。
+ */
+export const PERSONA_FIELD_CAPACITY = {
+  name: 60,
+  personalityTags: 20,
+  speakingStyle: 1000,
+  example: 200,
+  selfDescription: 1000,
+  catchphrase: 30,
+} as const;
+
 /** 换预设时能逐项选择「替换 / 保留」的项。名字不在其中（见模块头）。 */
 export const SWITCHABLE_FIELDS = [
   "speakingStyle",
@@ -56,7 +72,16 @@ export type SwitchableField = typeof SWITCHABLE_FIELDS[number];
  * （§4.8.4）。她自己的那条通路仍然收 `SwitchableField`——改不了名字这条规矩
  * 要在类型上就成立，不能只靠描述文案。
  */
-export type PersonaEditableField = SwitchableField | "name";
+export type PersonaEditableField = SwitchableField | "name" | "selfDescription";
+
+/**
+ * 她能自己改的项 = 可覆盖的项 + 自我描述。
+ *
+ * `selfDescription` 也不在 `SWITCHABLE_FIELDS` 里：预设并没有一份"出厂的自我描述"
+ * 可以拿去覆盖，所以换人格时它只是原样带回（见 `applyPersonaSwitch`）。她改它走的是
+ * 同一条来源记账，用户在人格页看到的仍然是「她改的」。
+ */
+export type PersonaAssistantEditableField = SwitchableField | "selfDescription";
 
 export const SWITCHABLE_FIELD_LABEL: Record<SwitchableField, string> = {
   speakingStyle: "说话风格",
@@ -214,6 +239,9 @@ export function applyPersonaSwitch(
     speakingStyle: takesPresetValue("speakingStyle") ? preset.speakingStyle : current.speakingStyle,
     examples: takesPresetValue("examples") ? preset.examples : current.examples,
     activeness: takesPresetValue("activeness") ? preset.activeness : current.activeness,
+    // 自我描述没有预设基线可覆盖：换成另一套人格，她攒下的那几句仍然带过去。
+    // 这里必须显式带回，因为这一份返回值是**逐项列出**的，漏一列就是静默丢弃。
+    ...(current.selfDescription === undefined ? {} : { selfDescription: current.selfDescription }),
     boundaries,
     fieldOrigin,
   };
@@ -236,7 +264,7 @@ export function withUserEditedField<T extends CompanionPersonaProfileContent>(
 /** 她自己改一项时的档案 + 来源。名字不在可改之列（§4.8.4）。 */
 export function withAssistantEditedField<T extends CompanionPersonaProfileContent>(
   profile: T,
-  field: SwitchableField,
+  field: PersonaAssistantEditableField,
   value: unknown,
 ): T {
   return { ...applyFieldValue(profile, field, value), fieldOrigin: withFieldOrigin(profile.fieldOrigin, field, "assistant") } as T;
@@ -250,6 +278,7 @@ function applyFieldValue<T extends CompanionPersonaProfileContent>(
   switch (field) {
     case "name": return { ...profile, name: String(value) };
     case "speakingStyle": return { ...profile, speakingStyle: String(value) };
+    case "selfDescription": return { ...profile, selfDescription: String(value) };
     case "personalityTags": return { ...profile, personalityTags: (value as string[]).map(String) };
     case "examples": return { ...profile, examples: (value as { text: string }[]).map((e) => ({ text: String(e.text ?? "") })) };
     case "activeness": return { ...profile, activeness: value as PetProfileActiveness };
