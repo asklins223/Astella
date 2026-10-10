@@ -19,6 +19,8 @@ import { runCompanionReflectionJob, companionReflectionDedupeKey }
   from "../../../../workers/ai-worker/src/handlers/companion-reflection.ts";
 import { applyAssistantPersonaEdit }
   from "../../../../workers/ai-worker/src/handlers/companion-persona-self-edit.ts";
+import { retrievePlaybookCandidates, retrievePlaybookCatalog }
+  from "../../../../workers/ai-worker/src/handlers/companion-playbooks.ts";
 import { closeDatabase as closeWorkerDatabase, withWorkerWorkspaceTransaction }
   from "../../../../workers/ai-worker/src/db.ts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
@@ -269,6 +271,20 @@ test("§16 一条完整路径：回顾留下经验与待生效自我描述，下
     assert.equal(methods.length, 1);
     assert.equal(methods[0].author, "maintenance");
     assert.equal(methods[0].epistemic_status, "tentative");
+
+    // 读回边（§16 第 6 步在方法这一侧的落点）：那条候选要能在下一次相处里
+    // 被她看见，而「可以照做」那本目录仍然不放它进去——两个集合各读各的。
+    const scope = { workspaceId: f.workspaceId, userId: f.userId };
+    const candidates = await withWorkerWorkspaceTransaction(scope,
+      (tx) => retrievePlaybookCandidates(tx, scope));
+    assert.deepEqual(candidates.map((entry) => entry.title), ["招呼只接眼前这句"]);
+    assert.equal(candidates[0].triggerCondition, "对方只说了一句招呼");
+    assert.deepEqual(candidates[0].exceptions, ["对方点名要接着昨天那篇时照常接续"],
+      "例外要一起读回来：刚提炼的经验最容易过度套用");
+    assert.equal(candidates[0].epistemicStatus, "tentative");
+    const catalog = await withWorkerWorkspaceTransaction(scope,
+      (tx) => retrievePlaybookCatalog(tx, scope));
+    assert.equal(catalog.length, 0, "没核对的候选不得占「可以照做」那本目录");
 
     // 隔天：下一条被接受的新用户消息采用那一版；当前版本从此是第 1 版。
     await f.newTurn("早");
