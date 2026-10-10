@@ -40,6 +40,25 @@ test("unbounded short-window goals are rejected; episodic events remain historic
   }), { ok: true, appliesWhen: null, validUntil: null });
 });
 
+test("正文里顺手提到的今天/这次不算短窗口：时间说法只认用户原话", () => {
+  // 真实形状（2026-10-10 dev 栈）：用户那句没有期限含义，正文里的「今天」是行为描述。
+  assert.deepEqual(resolveCompanionMemoryTemporalMetadata({
+    kind: "preference",
+    content: "打招呼时就只回应招呼：不盘点笔记、不回顾之前的对话、不追问对方今天的安排。",
+    sourceQuote: "以后打招呼别盘点笔记",
+    appliesWhen: "以后打招呼",
+    sourceText: "以后打招呼别盘点笔记",
+  }), { ok: true, appliesWhen: "以后打招呼", validUntil: null });
+
+  // 守卫仍然在：用户原话里带了今天/这次，就得给出期限。
+  assert.deepEqual(resolveCompanionMemoryTemporalMetadata({
+    kind: "goal",
+    content: "今天先把索引复习完",
+    sourceQuote: "今天先把索引复习完",
+    sourceText: "今天先把索引复习完",
+  }), { ok: false, reason: "missing_finite_validity" });
+});
+
 test("source quotes and applicability conditions are exact user-authored substrings", () => {
   assert.deepEqual(resolveCompanionMemoryTemporalMetadata({
     kind: "preference",
