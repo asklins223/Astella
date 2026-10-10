@@ -84,7 +84,56 @@ export const companionRunDoctorFindingCodeV1Schema = z.enum([
   "tool_snapshot_missing",
   "active_event_tail_missing",
   "open_failure_span",
+  // 方案 50 §12.2：诊断要说清成长闭环停在哪一格，不能只报「后台维护正常」。
+  "growth_reflection_failed",
+  "growth_reflection_quiet",
+  "growth_staged_not_adopted",
+  "growth_persona_version_not_this_run",
+  "growth_candidates_not_in_context",
 ]);
+
+/**
+ * 这一轮与「她自己的变化」之间的关系（§12.2 要求能分辨到每一格）。
+ *
+ * 每个数都是从已有的权威行读出来的事实，不新立一份状态机：
+ * 回顾的结论码在 `companion_reflections`，人格的当前/排队在账号档案上，
+ * 这一轮钉的是哪一版在 run 上，进没进上下文在这轮的装配回执里。
+ * 「进了上下文但行为没兑现」这一格机器证不了，由报告明说它需要样本。
+ */
+export const companionRunDoctorGrowthV1Schema = z.object({
+  reflection: z.object({
+    id: z.string().uuid(),
+    createdAt: z.string().datetime(),
+    decision: z.string().max(40),
+    decisionSummary: z.string().max(300).nullable(),
+    strategyVersion: z.string().max(40),
+    inputFromSeq: z.number().int().nonnegative(),
+    inputToSeq: z.number().int().nonnegative(),
+    baselinePersonaRevision: z.number().int().nonnegative(),
+    pendingPersonaRevision: z.number().int().nonnegative().nullable(),
+    /** 被核对丢掉的那几条（不静默），来自 `result_ref.dropped`。 */
+    droppedCount: z.number().int().nonnegative(),
+    /** 这条结论由哪个后台任务产出；队列那一格要看它。 */
+    jobId: z.string().uuid().nullable(),
+    jobStatus: companionRunJobStatusV1Schema.nullable(),
+  }).strict().nullable(),
+  persona: z.object({
+    currentRevision: z.number().int().nonnegative(),
+    pendingRevision: z.number().int().nonnegative().nullable(),
+    pendingAuthor: z.string().max(40).nullable(),
+    /** 这一轮固定下来的那一版；null = 这轮还没到过钉版本的阶段。 */
+    pinnedThisRun: z.number().int().nonnegative().nullable(),
+  }).strict().nullable(),
+  context: z.object({
+    personaIncluded: z.boolean(),
+    methodCandidatesIncluded: z.boolean(),
+    /** 装配回执有没有落下来：没有就什么都不能断。 */
+    receiptPresent: z.boolean(),
+    candidateCount: z.number().int().nonnegative(),
+  }).strict().nullable(),
+}).strict();
+export type CompanionRunDoctorGrowthV1 = z.infer<typeof companionRunDoctorGrowthV1Schema>;
+
 
 export const companionRunDoctorV1Schema = z.object({
   version: z.literal(1),
@@ -149,6 +198,7 @@ export const companionRunDoctorV1Schema = z.object({
     recoveredAt: z.string().datetime().nullable(),
     recoveryRunId: z.string().uuid().nullable(),
   }).strict()).max(7),
+  growth: companionRunDoctorGrowthV1Schema.nullable(),
   findings: z.array(z.object({
     code: companionRunDoctorFindingCodeV1Schema,
     severity: z.enum(["info", "warning", "error"]),

@@ -37,6 +37,12 @@ function input(): CompanionRunDoctorProjectionInput {
       agentElapsedMs: 500,
       lastEventSeq: 3,
       jobId: "00000000-0000-4000-8000-000000000003",
+      personaProfileRevision: 3,
+      contextAssemblyReceipt: {
+        maxCharacters: 60000,
+        included: [{ id: "persona", characters: 900 }],
+        omitted: [],
+      },
     },
     job: {
       id: "00000000-0000-4000-8000-000000000003",
@@ -123,4 +129,72 @@ test("doctor exposes bounded failure span identity and recovery without private 
   assert.ok(report.findings.some((finding) => finding.code === "open_failure_span"));
   assert.match(report.markdown, /transport：3 次/);
   assert.equal(report.markdown.includes("provider response carried private user text"), false);
+});
+
+/**
+ * §12.2 成长闭环那一格：诊断要说清停在哪一步，而不是只报「后台维护正常」。
+ * 这几条钉的是投影层的判据——每格都能追到一条已落库的事实，读不到就说读不到。
+ */
+test("回顾提交成功但那一版还在排队：写成「等下一条被接受的消息」，不算故障", () => {
+  const base = input();
+  const report = projectCompanionRunDoctorV1({
+    ...base,
+    growth: {
+      reflection: {
+        id: "00000000-0000-4000-8000-00000000000a",
+        createdAt: new Date("2026-10-10T00:00:00.000Z"),
+        decision: "committed", decisionSummary: "提了一版自我描述",
+        strategyVersion: "reflection-v1", inputFromSeq: 1, inputToSeq: 29,
+        baselinePersonaRevision: 3, pendingPersonaRevision: 4,
+        resultRef: { dropped: [] }, jobId: "00000000-0000-4000-8000-00000000000b",
+      },
+      reflectionJobStatus: "succeeded",
+      persona: { currentRevision: 3, pendingRevision: 4, pendingAuthor: "assistant_reflection", pinnedThisRun: 3 },
+      candidateCount: 1,
+    },
+  });
+  assert.equal(report.growth?.reflection?.decision, "committed");
+  assert.deepEqual(report.growth?.context, {
+    personaIncluded: true, methodCandidatesIncluded: false, receiptPresent: true, candidateCount: 1,
+  });
+  const codes = report.findings.map((finding) => finding.code);
+  assert.ok(codes.includes("growth_staged_not_adopted"), codes.join(","));
+  assert.ok(codes.includes("growth_candidates_not_in_context"), codes.join(","));
+  assert.equal(report.findings.some((f) => f.code === "growth_reflection_failed"), false,
+    "提交成功不该被报成失败");
+  assert.match(report.markdown, /## 成长闭环/);
+  assert.match(report.markdown, /等\*\*下一条被接受的新用户消息\*\*才生效/);
+});
+
+test("回顾的结论码逐项对应各自的解释；安静的那些不许报成故障", () => {
+  const base = input();
+  const withDecision = (decision: string) => projectCompanionRunDoctorV1({
+    ...base,
+    growth: {
+      reflection: {
+        id: "00000000-0000-4000-8000-00000000000a",
+        createdAt: new Date("2026-10-10T00:00:00.000Z"),
+        decision, decisionSummary: null, strategyVersion: "reflection-v1",
+        inputFromSeq: 1, inputToSeq: 12, baselinePersonaRevision: 3,
+        pendingPersonaRevision: null, resultRef: { dropped: [{ slot: "judgments" }] }, jobId: null,
+      },
+      persona: null, candidateCount: 0,
+    },
+  });
+  const failed = withDecision("protocol_failed");
+  assert.ok(failed.findings.some((f) => f.code === "growth_reflection_failed"
+    && f.message.includes("没通过核对")));
+  assert.equal(failed.growth?.reflection?.droppedCount, 1);
+  const quiet = withDecision("no_change");
+  assert.ok(quiet.findings.some((f) => f.code === "growth_reflection_quiet"
+    && f.message.includes("没有什么要改")));
+  assert.equal(quiet.findings.some((f) => f.code === "growth_reflection_failed"), false);
+  assert.notEqual(quiet.findings.find((f) => f.code === "growth_reflection_quiet")?.severity, "error",
+    "允许不改是正常结果");
+});
+
+test("没有成长数据时投影成 null：没有证据不说「一切正常」", () => {
+  const report = projectCompanionRunDoctorV1(input());
+  assert.equal(report.growth, null);
+  assert.equal(report.markdown.includes("## 成长闭环"), false);
 });

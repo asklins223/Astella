@@ -1,4 +1,4 @@
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, sql } from "drizzle-orm";
 import {
   COMPANION_AGENT_DEADLINE_MS,
   COMPANION_AGENT_MAX_STEPS,
@@ -16,6 +16,9 @@ import {
 import {
   companionAgentSteps,
   companionAgentToolCalls,
+  companionProceduralPlaybooks,
+  companionPersonaProfiles,
+  companionReflections,
   companionStreamEvents,
   companionTurnRuns,
   jobs,
@@ -43,6 +46,10 @@ export interface CompanionRunDoctorRunRow {
   permissionLevel: CompanionAgentPermissionLevel | null;
   permissionSnapshot: unknown;
   budgetSnapshot: unknown;
+  /** 这一轮钉死的那一版人格（0341/0356）；null = 还没到钉版本的阶段。 */
+  personaProfileRevision: number | null;
+  /** 44 的装配回执：哪些来源真进了这一次请求。 */
+  contextAssemblyReceipt: unknown;
   stepCount: number;
   toolCallCount: number;
   agentElapsedMs: number;
@@ -65,6 +72,26 @@ export interface CompanionRunDoctorProjectionInput {
   toolCounts: CompanionRunDoctorV1["ledger"]["toolCounts"];
   retainedEvent: { count: number; latestSeq: number | null; latestAt: Date | null };
   failureSpans?: CompanionRunDoctorV1["failureSpans"];
+  /**
+   * 成长闭环的格子（方案 50 §12.2）。读的是已有的权威行，不新立一份状态：
+   * 回顾结论在 `companion_reflections`，人格当前/排队在账号档案上，
+   * 进没进上下文在这一轮的装配回执里。整个字段可缺省——缺省就是「什么都不能说」，
+   * 投影成 null，而不是投影成「一切正常」。
+   */
+  growth?: {
+    reflection: {
+      id: string; createdAt: Date; decision: string; decisionSummary: string | null;
+      strategyVersion: string; inputFromSeq: number; inputToSeq: number;
+      baselinePersonaRevision: number; pendingPersonaRevision: number | null;
+      resultRef: unknown; jobId: string | null;
+    } | null;
+    reflectionJobStatus?: string | null;
+    persona?: {
+      currentRevision: number; pendingRevision: number | null; pendingAuthor: string | null;
+      pinnedThisRun: number | null;
+    } | null;
+    candidateCount?: number;
+  } | null;
 }
 
 const ACTIVE_RUN_STATUSES = new Set([
@@ -113,6 +140,8 @@ function buildMarkdown(report: Omit<CompanionRunDoctorV1, "markdown">): string {
   } else {
     lines.push("", "运行状态与当前可读账本未发现明显断链。");
   }
+  const growthLines = describeGrowthLoop(report.growth);
+  if (growthLines.length > 0) lines.push("", ...growthLines);
   const openSpans = report.failureSpans.filter((span) => span.recoveredAt === null);
   if (openSpans.length > 0) {
     lines.push("", "## 尚未恢复的失败段");
@@ -121,6 +150,146 @@ function buildMarkdown(report: Omit<CompanionRunDoctorV1, "markdown">): string {
     }
   }
   return lines.join("\n");
+}
+
+
+/**
+ * 成长闭环那一格：把「她回顾了吗 / 得出什么 / 提交了吗 / 生效了吗 / 这一轮带上身了吗」
+ * 摊成可诊断的事实（方案 50 §12.2）。
+ *
+ * 三条刻意的口径：
+ * - **安静不是故障**。`no_change`、段落没落定这些都属正常结果，报 info 并把原因说清，
+ *   不能不报——不报与报成「后台维护正常」是同一个毛病。
+ * - 缺省（读不到任何行）投影成 null：没有证据时不说「正常」。
+ * - 「进了上下文但行为没兑现」这一格机器证不了，这里只交事实，
+ *   报告里明写它要靠样本。
+ */
+function projectGrowthLoop(
+  input: CompanionRunDoctorProjectionInput,
+  addFinding: (code: CompanionRunDoctorV1["findings"][number]["code"],
+    severity: CompanionRunDoctorV1["findings"][number]["severity"], message: string) => void,
+): CompanionRunDoctorV1["growth"] {
+  const growth = input.growth;
+  if (!growth) return null;
+  const reflection = growth.reflection;
+  const persona = growth.persona ?? null;
+
+  const receipt = input.run.contextAssemblyReceipt as
+    { included?: Array<{ id?: unknown }>; omitted?: Array<{ id?: unknown }> } | null | undefined;
+  const includedIds = new Set((receipt?.included ?? [])
+    .map((entry) => (typeof entry?.id === "string" ? entry.id : "")));
+  const context = receipt === null || receipt === undefined ? null : {
+    personaIncluded: includedIds.has("persona"),
+    methodCandidatesIncluded: includedIds.has("method_candidates"),
+    receiptPresent: true,
+    candidateCount: growth.candidateCount ?? 0,
+  };
+
+  const quietReason: Record<string, string> = {
+    trigger_none: "这一段还没落定（末尾还停在用户说话），所以她还没回顾。",
+    insufficient_input: "这一段的来回太少，回顾没有可依据的东西，模型也没被调用。",
+    no_change: "她看过这一段，认为没有什么要改。",
+  };
+  const failedReason: Record<string, string> = {
+    protocol_failed: "回顾拿到的那份结论没通过核对，这一次什么都没留下。",
+    commit_conflict: "回顾想提交时，它参照的那一版人格已经被推走，于是不提交。",
+    source_invalid: "那一版改动引用的原话已经不在了，所以没有生效。",
+    lease_lost: "回顾任务被接手过，这一次的结果没有提交。",
+    governance_denied: "数据同意或预算不允许，这一次回顾没有向模型发任何东西。",
+  };
+  if (reflection) {
+    if (failedReason[reflection.decision]) {
+      addFinding("growth_reflection_failed", "warning",
+        `回顾（${reflection.decision}）：${failedReason[reflection.decision]}`);
+    } else if (quietReason[reflection.decision]) {
+      addFinding("growth_reflection_quiet", "info",
+        `回顾（${reflection.decision}）：${quietReason[reflection.decision]}`);
+    } else if (["queued", "running"].includes(reflection.decision)) {
+      addFinding("growth_reflection_quiet", "info",
+        `回顾还在排队或正在跑（job ${growth.reflectionJobStatus ?? "未知状态"}）。`);
+    }
+  }
+  if (persona?.pendingRevision != null) {
+    addFinding("growth_staged_not_adopted", "info",
+      `第 ${persona.pendingRevision} 版她自己的改动在排队（${persona.pendingAuthor ?? "未知出处"}），`
+        + "等下一条被接受的新消息才生效。");
+  }
+  if (persona && input.run.personaProfileRevision !== null
+    && input.run.personaProfileRevision !== persona.currentRevision) {
+    addFinding("growth_persona_version_not_this_run", "info",
+      `这一轮钉的是第 ${input.run.personaProfileRevision} 版，账号现在是第 ${persona.currentRevision} 版。`);
+  }
+  if (context && context.candidateCount > 0 && !context.methodCandidatesIncluded) {
+    addFinding("growth_candidates_not_in_context", "info",
+      `有 ${context.candidateCount} 条她自己提炼的做法，这一轮没带上`
+        + "（正式作答那一档不带候选，或没进这一轮的装配）。");
+  }
+
+  const dropped = Array.isArray((reflection?.resultRef as { dropped?: unknown } | null)?.dropped)
+    ? ((reflection?.resultRef as { dropped: unknown[] }).dropped.length) : 0;
+  return {
+    reflection: reflection ? {
+      id: reflection.id,
+      createdAt: iso(reflection.createdAt) ?? new Date(0).toISOString(),
+      decision: reflection.decision,
+      decisionSummary: reflection.decisionSummary,
+      strategyVersion: reflection.strategyVersion,
+      // bigint 列经这条读边回来可能是字符串形态；合同要的是数，在边界上换算一次。
+      inputFromSeq: Number(reflection.inputFromSeq),
+      inputToSeq: Number(reflection.inputToSeq),
+      baselinePersonaRevision: Number(reflection.baselinePersonaRevision),
+      pendingPersonaRevision: reflection.pendingPersonaRevision === null
+        ? null : Number(reflection.pendingPersonaRevision),
+      droppedCount: dropped,
+      jobId: reflection.jobId,
+      jobStatus: growth.reflectionJobStatus
+        ? companionRunJobStatusV1Schema.parse(growth.reflectionJobStatus) : null,
+    } : null,
+    // 「这一轮钉的是哪一版」只有 run 自己说了算，不由那份账号档案推。
+    persona: persona
+      // 这一列在库里是 bigint，读边给的是字符串；合同要数，在边界换算一次。
+      ? {
+        ...persona,
+        pinnedThisRun: input.run.personaProfileRevision === null
+          ? null : Number(input.run.personaProfileRevision),
+      } : null,
+    context,
+  };
+}
+
+/**
+ * 报告里那一格「成长闭环」。每行都是已落库的事实；读不出的那一步直说读不出来。
+ */
+function describeGrowthLoop(growth: CompanionRunDoctorV1["growth"]): string[] {
+  if (!growth) return [];
+  const lines: string[] = ["## 成长闭环"];
+  if (growth.reflection) {
+    const r = growth.reflection;
+    lines.push(`- 最近一次回顾：${r.decision}${r.decisionSummary ? `；${r.decisionSummary}` : ""}`
+      + `（段 seq ${r.inputFromSeq}→${r.inputToSeq}，策略 ${r.strategyVersion}，`
+      + `基线第 ${r.baselinePersonaRevision} 版，核对丢掉 ${r.droppedCount} 条）`);
+    if (r.jobStatus) lines.push(`- 那次回顾的后台任务：${r.jobStatus}`);
+  } else {
+    lines.push("- 这个会话还没有回顾记录：入队门没挑中它（段落没落定、来回太少，或还没到下一次叫醒）。");
+  }
+  if (growth.persona) {
+    const p = growth.persona;
+    lines.push(`- 人格：当前第 ${p.currentRevision} 版`
+      + (p.pendingRevision != null
+        ? `，另有第 ${p.pendingRevision} 版在排队（${p.pendingAuthor ?? "未知出处"}）`
+        : "，没有排队的版本")
+      + (p.pinnedThisRun != null ? `；这一轮钉的是第 ${p.pinnedThisRun} 版` : "；这一轮还没钉版本"));
+    if (p.pendingRevision != null) {
+      lines.push("- 排队那一版要等**下一条被接受的新用户消息**才生效；正在进行的这一轮不变。");
+    }
+  }
+  if (growth.context) {
+    const c = growth.context;
+    lines.push(`- 带上身了吗：人格 ${c.personaIncluded ? "在" : "不在"}这一轮请求、`
+      + `她自己提炼的做法 ${c.candidateCount} 条（${c.methodCandidatesIncluded ? "已进这一轮" : "未进这一轮"}）`);
+  }
+  lines.push("- 「进了上下文之后行为是否兑现」不由这里判定，需要独立后续对话样本。");
+  return lines;
 }
 
 /**
@@ -207,6 +376,8 @@ export function projectCompanionRunDoctorV1(input: CompanionRunDoctorProjectionI
     );
   }
 
+  const growth = projectGrowthLoop(input, addFinding);
+
   const reportBase = {
     version: 1 as const,
     run: {
@@ -257,6 +428,7 @@ export function projectCompanionRunDoctorV1(input: CompanionRunDoctorProjectionI
       latestRetainedEventAt: iso(input.retainedEvent.latestAt),
     },
     failureSpans,
+    growth,
     findings,
   };
   const parsedBase = companionRunDoctorV1Schema.omit({ markdown: true }).parse(reportBase);
@@ -294,6 +466,8 @@ export async function loadCompanionRunDoctorV1(
     agentElapsedMs: companionTurnRuns.agentElapsedMs,
     lastEventSeq: companionTurnRuns.lastEventSeq,
     jobId: companionTurnRuns.jobId,
+    personaProfileRevision: companionTurnRuns.personaProfileRevision,
+    contextAssemblyReceipt: companionTurnRuns.contextAssemblyReceipt,
   }).from(companionTurnRuns).where(and(
     eq(companionTurnRuns.id, runId),
     eq(companionTurnRuns.workspaceId, scope.workspaceId),
@@ -380,6 +554,55 @@ export async function loadCompanionRunDoctorV1(
     recoveryRunId: row.recovery_run_id,
   }));
 
+  // 成长闭环那几格（§12.2）读的是已有权威行：最近一次回顾、它那个后台任务的状态、
+  // 账号人格的当前/排队指针，以及这一轮有没有把「她自己提炼的做法」带上身。
+  const [reflectionRow] = await tx.select({
+    id: companionReflections.id,
+    createdAt: companionReflections.createdAt,
+    decision: companionReflections.decision,
+    decisionSummary: companionReflections.decisionSummary,
+    strategyVersion: companionReflections.strategyVersion,
+    inputFromSeq: companionReflections.inputFromSeq,
+    inputToSeq: companionReflections.inputToSeq,
+    baselinePersonaRevision: companionReflections.baselinePersonaRevision,
+    pendingPersonaRevision: companionReflections.pendingPersonaRevision,
+    resultRef: companionReflections.resultRef,
+    jobId: companionReflections.jobId,
+  }).from(companionReflections).where(and(
+    eq(companionReflections.conversationId, run.conversationId),
+    eq(companionReflections.workspaceId, scope.workspaceId),
+    eq(companionReflections.userId, scope.userId),
+  )).orderBy(desc(companionReflections.createdAt)).limit(1);
+  let reflectionJobStatus: string | null = null;
+  if (reflectionRow?.jobId) {
+    const [reflectionJobRow] = await tx.select({ status: jobs.status }).from(jobs)
+      .where(and(eq(jobs.id, reflectionRow.jobId), eq(jobs.workspaceId, scope.workspaceId),
+        eq(jobs.requestedBy, scope.userId))).limit(1);
+    reflectionJobStatus = reflectionJobRow?.status ?? null;
+  }
+  const [personaRow] = await tx.select({
+    revision: companionPersonaProfiles.revision,
+    pendingRevision: companionPersonaProfiles.pendingRevision,
+  }).from(companionPersonaProfiles)
+    .where(eq(companionPersonaProfiles.userId, scope.userId)).limit(1);
+  // 排队那一版的「出自谁」在版本行上（指针只是指针），单独读一次。
+  let pendingAuthor: string | null = null;
+  if (personaRow?.pendingRevision != null) {
+    const [versionRow] = await tx.execute<{ author: string }>(sql`
+      SELECT author FROM companion_persona_profile_versions
+      WHERE user_id = ${scope.userId} AND revision = ${personaRow.pendingRevision}
+      LIMIT 1
+    `);
+    pendingAuthor = versionRow?.author ?? null;
+  }
+  const [candidateRow] = await tx.select({
+    count: sql<number>`count(*)::int`,
+  }).from(companionProceduralPlaybooks).where(and(
+    eq(companionProceduralPlaybooks.workspaceId, scope.workspaceId),
+    eq(companionProceduralPlaybooks.userId, scope.userId),
+    sql`${companionProceduralPlaybooks.methodState} = 'candidate'`,
+  ));
+
   return projectCompanionRunDoctorV1({
     run,
     job,
@@ -387,9 +610,23 @@ export async function loadCompanionRunDoctorV1(
     toolCounts,
     retainedEvent: {
       count: Number(eventRows[0]?.count ?? 0),
-      latestSeq: eventRows[0]?.latestSeq ?? null,
+      // max(seq) 打的是 bigint 列：这条读边给字符串，合同要数。
+      latestSeq: eventRows[0]?.latestSeq == null ? null : Number(eventRows[0].latestSeq),
       latestAt: eventRows[0]?.latestAt ?? null,
     },
     failureSpans,
+    growth: {
+      reflection: reflectionRow ?? null,
+      reflectionJobStatus,
+      persona: personaRow
+        ? {
+          currentRevision: Number(personaRow.revision ?? 0),
+          pendingRevision: personaRow.pendingRevision ?? null,
+          pendingAuthor,
+          pinnedThisRun: run.personaProfileRevision,
+        }
+        : null,
+      candidateCount: Number(candidateRow?.count ?? 0),
+    },
   });
 }

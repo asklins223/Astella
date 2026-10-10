@@ -15,6 +15,7 @@ import { after, test } from "node:test";
 import postgres from "postgres";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { MockProvider } from "../../../../workers/ai-worker/src/lib/providers/mock.ts";
+import { loadCompanionRunDoctorV1 } from "../modules/companion-conversation/run-doctor.ts";
 import { runCompanionReflectionJob, companionReflectionDedupeKey }
   from "../../../../workers/ai-worker/src/handlers/companion-reflection.ts";
 import { applyAssistantPersonaEdit }
@@ -58,7 +59,8 @@ interface Fixture {
   readReflection: () => Promise<Record<string, unknown>[]>;
   readEdges: (relation: string) => Promise<Record<string, unknown>[]>;
   persona: () => Promise<Awaited<ReturnType<typeof getPetProfileState>>>;
-  newTurn: (text: string) => Promise<void>;
+  /** 回这一轮的 run id：§12.2 的诊断是按 run 读的。 */
+  newTurn: (text: string) => Promise<string>;
   deleteMessage: (id: string) => Promise<void>;
   cleanup: () => Promise<void>;
 }
@@ -165,6 +167,8 @@ async function fixture(options: { userMessages?: number; intervalBlocked?: boole
           blocks: [{ type: "text", text }], sourceSurface: "pet" },
       });
       assert.equal(result.statusCode, 202, `新用户回合应当被接受（${text}）`);
+      // 回给用例这一轮的 run：§12.2 的诊断是按 run 读的。
+      return (result.body as { runId: string }).runId;
     },
     async deleteMessage(id) { await mutate(tx => tx`DELETE FROM companion_messages WHERE id=${id}`); },
     cleanup: async () => {
@@ -287,12 +291,30 @@ test("§16 一条完整路径：回顾留下经验与待生效自我描述，下
     assert.equal(catalog.length, 0, "没核对的候选不得占「可以照做」那本目录");
 
     // 隔天：下一条被接受的新用户消息采用那一版；当前版本从此是第 1 版。
-    await f.newTurn("早");
+    const adoptedRunId = await f.newTurn("早");
     const adopted = await f.persona();
     assert.equal(adopted.profileRevision, 1);
     assert.equal(adopted.pending, null);
     assert.equal(adopted.profile?.selfDescription,
       "我容易一上来就把读过的东西数一遍，被说过一次，正在改。");
+
+    // §12.2：诊断要能说出这一格——回顾成了、那一版已被这一轮采用、没有东西还在排队。
+    const doctor = await withWorkspaceTransaction({ workspaceId: f.workspaceId, userId: f.userId },
+      (tx) => loadCompanionRunDoctorV1(tx, { workspaceId: f.workspaceId, userId: f.userId }, adoptedRunId));
+    assert.ok(doctor, "刚接受的回合应当能读出诊断");
+    assert.equal(doctor.growth?.reflection?.decision, "committed");
+    assert.equal(doctor.growth?.reflection?.pendingPersonaRevision, 1);
+    assert.equal(doctor.growth?.persona?.currentRevision, 1);
+    assert.equal(doctor.growth?.persona?.pendingRevision, null,
+      "已采用就不该再有排队的版本");
+    // 钉版本发生在 worker 真正跑这一轮的时候（0341/0356 那条锁），这里没有跑它：
+    // 那一格必须是 null，而不是替这一轮编一个"已经用上了"。
+    assert.equal(doctor.growth?.persona?.pinnedThisRun, null);
+    assert.equal(doctor.findings.some((finding) => finding.code === "growth_staged_not_adopted"), false,
+      "排队已经清了还报「在排队」，就是把诊断写成了装饰");
+    // 这一轮还没被 worker 跑过，装配回执不存在：那一格必须是 null，而不是「都带上了」。
+    assert.equal(doctor.growth?.context, null);
+    assert.match(doctor.markdown, /## 成长闭环/);
   } finally {
     restore();
     await f.cleanup();
