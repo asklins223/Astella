@@ -38,9 +38,11 @@ export async function fixture() {
       await tx`DELETE FROM companion_agent_tool_calls WHERE conversation_id=${conversationId}`;
       await tx`DELETE FROM companion_agent_steps WHERE conversation_id=${conversationId}`;
       await tx`DELETE FROM companion_stream_events WHERE conversation_id=${conversationId}`;
-      await tx`DELETE FROM companion_action_proposals WHERE conversation_id=${conversationId}`;
       await tx`DELETE FROM agent_runs WHERE workspace_id=${workspaceId} AND user_id=${userId}`;
       await tx`DELETE FROM companion_turn_runs WHERE conversation_id=${conversationId}`;
+      // 卡与消息互相指：先解除消息这一侧的 action_ref，才能删卡。
+      await tx`UPDATE companion_messages SET action_ref=NULL WHERE conversation_id=${conversationId}`;
+      await tx`DELETE FROM companion_action_proposals WHERE conversation_id=${conversationId}`;
       await tx`DELETE FROM companion_messages WHERE conversation_id=${conversationId}`;
       await tx`DELETE FROM companion_conversations WHERE id=${conversationId}`;
       await tx`DELETE FROM jobs WHERE workspace_id=${workspaceId}`;

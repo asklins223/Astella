@@ -112,10 +112,14 @@ async function seedAgentRun(
       await tx`SELECT set_config('app.user_id', ${uid}, true)`;
       await tx`DELETE FROM companion_agent_tool_calls WHERE conversation_id = ${cid}`;
       await tx`DELETE FROM companion_agent_steps WHERE conversation_id = ${cid}`;
-      await tx`DELETE FROM companion_action_proposals WHERE conversation_id = ${cid}`;
       await tx`DELETE FROM companion_stream_events WHERE conversation_id = ${cid}`;
       // turn_runs 必须早于 messages：user_message_id 外键指向 companion_messages。
       await tx`DELETE FROM companion_turn_runs WHERE conversation_id = ${cid}`;
+      // 卡与那条可读记录之间是**双向**外键：proposals.source_message_id 指向消息，
+      // 而消息的 action_ref 指回卡。所以先解除消息这一侧，再删卡，最后删消息
+      // （服务端清历史走的是同一个顺序，见 continuous-history-service）。
+      await tx`UPDATE companion_messages SET action_ref = NULL WHERE conversation_id = ${cid}`;
+      await tx`DELETE FROM companion_action_proposals WHERE conversation_id = ${cid}`;
       await tx`DELETE FROM companion_messages WHERE conversation_id = ${cid}`;
       await tx`DELETE FROM companion_conversations WHERE id = ${cid}`;
       await tx`DELETE FROM user_companion_account_state WHERE user_id = ${uid}`;
@@ -370,14 +374,6 @@ test("只回一张确认卡：卡要在历史里留下可读的记录，而不�
   try {
     await invoke(workspaceId, userId, { runId: f.runId });
     const s = await readState(workspaceId, userId, f);
-    if (process.env.DEBUG_CARD) {
-      console.log("DEBUG_CARD", JSON.stringify({
-        run: s.run, proposals: s.proposals, toolCalls: s.toolCalls,
-        assistant: s.assistant, steps: s.steps,
-        events: s.events.map((e) => (e as { type: string }).type),
-      }));
-    }
-
     assert.equal(s.run.status, "waiting_for_confirmation");
     assert.equal(s.proposals.length, 1, "guided 档下这条写入必须冻结成一张确认卡");
 

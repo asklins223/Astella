@@ -131,6 +131,15 @@ export class MockProvider implements AIProvider {
        */
       const scriptedLeak = request.messages.some((message) =>
         message.role === "user" && String(message.content ?? "").includes("【mock:leak-answer】"));
+      /**
+       * 剧本 `【mock:wants-memory】`：她**只回一个需要确认的工具调用，一个字都不说**。
+       * 这是 2026-10-10 真实栈上撞到的形状（用户纠正"以后打招呼别盘点笔记"，deepseek 直接
+       * 调 `companion_save_memory`，正文为空）：那一轮的可见记录全靠提案卡自己，
+       * 卡过期后历史里就只剩用户那句话。用例见
+       * `integration-tests/companion-agent-postgres.integration.ts`。
+       */
+      const scriptedMemoryProposal = request.messages.some((message) =>
+        message.role === "user" && String(message.content ?? "").includes("【mock:wants-memory】"));
       const wantsToolCall = ((scriptedWithheldViolation || !toolResult) && !scriptedFactSpan && !scriptedLeak)
         // `tool_choice:"required"` 是 provider 原生机制（39b §9.5）。mock 以前**完全不理它**，
         // 于是"required 生效了"这类断言全是空转——它按自己的偏好回话，看起来却像模型照办了。
@@ -151,6 +160,27 @@ export class MockProvider implements AIProvider {
           : request.tools.length > 0
             ? "我先读取一下当前上下文。"
             : "我在这里，准备好陪你学习了。";
+      if (scriptedMemoryProposal && !toolResult) {
+        // 原话引句必须是夹具用户文本里真的出现过的那几个字，否则会被
+        // `readCompanionMemoryWriteSource` 的原话门拒掉——那道门正是要一起验的。
+        toolCalls.push({
+          id: `call_save_memory_${randomUUID()}`,
+          name: "companion_save_memory",
+          arguments: {
+            kind: "preference",
+            content: "打招呼时就只打招呼，不盘点笔记",
+            sourceQuote: "以后打招呼别盘点笔记",
+          },
+        });
+        const memoryUsage = this.estimateUsage(JSON.stringify(request), "");
+        return {
+          content: null,
+          toolCalls,
+          finishReason: "tool_calls",
+          usage: memoryUsage,
+          providerRequestId: `mock_companion_req_${Date.now()}`,
+        };
+      }
       if (wantsToolCall) {
         const contextTool = request.tools.find((tool) => tool.name === "companion_read_context");
         // required 这一档下"没找到那个顺手的工具"不能变成"干脆不回 tool_calls"——
@@ -324,7 +354,8 @@ fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
     const isToolIntentCall = messages.some(message => message.role === "system"
       && String(message.content).includes("goalObjectIndex"));
     if (isToolIntentCall) {
-      const action = userContent.includes("【mock:wants-tool】");
+      const action = userContent.includes("【mock:wants-tool】")
+        || userContent.includes("【mock:wants-memory】");
       const decided = JSON.stringify({ intent: action ? "task" : "conversation", toolUse: action ? "act" : "none",
         subjects: [], goalRelation: action ? "new" : "unrelated", candidateOperations: [], ambiguities: [] });
       return { content: decided, usage: this.estimateUsage(userContent, decided) };

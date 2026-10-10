@@ -132,6 +132,7 @@ export async function createAgentProposal(
   const parsedPayload = proposedLearningActionPayloadV1Schema.safeParse(payload);
   if (!parsedPayload.success) throw new CompanionToolError("这次要记的内容没通过校验，先没有写入");
   const proposalId = randomUUID();
+  const proposalMessageId = randomUUID();
   const payloadSha256 = sha256Utf8V1(canonicalJsonV1(parsedPayload.data));
   // 这三行是**给用户看**的（提案卡），文案来自 payload 而不是工具描述：
   // 描述是写给模型的行为约束，截断后上屏等于让用户在决定要不要按下去的那一刻
@@ -153,13 +154,15 @@ export async function createAgentProposal(
         LIMIT 1
       `);
       if (pending[0]) throw new CompanionToolError("还有一件等你确认的事没处理完，先处理那件");
-      const counters = await tx.execute<{ next_event_seq: string }>(sql`
+      const counters = await tx.execute<{ next_event_seq: string; next_message_seq: string }>(sql`
         UPDATE companion_conversations
-        SET next_event_seq = next_event_seq + 1
+        SET next_event_seq = next_event_seq + 1,
+            next_message_seq = next_message_seq + 1, last_message_at = now()
         WHERE id = ${event.read.conversationId}
-        RETURNING next_event_seq
+        RETURNING next_event_seq, next_message_seq
       `);
       const eventSeq = Number(counters[0]?.next_event_seq ?? 1) - 1;
+      const messageSeq = Number(counters[0]?.next_message_seq ?? 1) - 1;
       // Cancel/cancel-requested/superseded fence. The run may have been
       // cancelled by the user while this tool call was in flight; without this
       // conditional the UPDATE below would resurrect a terminal run as
@@ -188,6 +191,39 @@ export async function createAgentProposal(
            ${sha256Utf8V1(`agent:${event.read.runId}:${call.id}`)}, now() + interval '5 minutes',
            'agent_tool', ${event.read.runId}, ${call.id},
            ${definition.toolVersion}, ${definition.riskClass})
+      `);
+      // 这张卡还要在**历史里留一条可读的记录**（方案 50 §12.1、§16 第 2 步）。
+      // 只有 `action.proposed` 事件的话，本轮就没有任何伴星正文：确认卡没人点、
+      // 五分钟后被回收时 run 直接落 `failed / ACTION_EXPIRED`，而 `assistant_message_id`
+      // 一直是 NULL——用户回头看到的是自己那句话之后一片空白，连"她当时想做什么"
+      // 都查不到。菜单那条路（learning-action-bridge 的 createCompanionProposalInTransaction）
+      // 从一开始就写这种消息，这里是把 agent 工具那条补齐：形状与 §3.3 一致
+      // （一个 text 块 + 恰好一个 action_ref 块），文案全部来自提案自己的三行，
+      // 不另外编一句话。
+      // 记的是**她准备改的那件事**，以及**依据的是用户哪句原话**——两个值都来自提案
+      // 自己的 payload，不另编一句话。原话那一行要紧：历史里只剩"记住一条偏好"时，
+      // 用户过几天看不出这条是从哪一句来的，也就没法定要不要撤回。
+      const sourceQuote = "sourceQuote" in parsedPayload.data
+        && typeof parsedPayload.data.sourceQuote === "string" ? parsedPayload.data.sourceQuote : null;
+      const noticeText = [
+        title,
+        targetSummary,
+        ...(sourceQuote ? [`依据你的原话：「${sourceQuote}」`] : []),
+        "确认后才会执行。",
+      ].join("\n");
+      const noticeBlocks = [
+        { type: "text", text: noticeText },
+        { type: "action_ref", proposalId },
+      ];
+      await tx.execute(sql`
+        INSERT INTO companion_messages
+          (id, workspace_id, user_id, conversation_id, seq, role, kind, blocks,
+           run_id, action_ref, content_sha256)
+        VALUES
+          (${proposalMessageId}, ${event.ctx.workspaceId}, ${event.read.userId},
+           ${event.read.conversationId}, ${messageSeq}, 'assistant', 'action',
+           ${JSON.stringify(noticeBlocks)}, ${event.read.runId}, ${proposalId}::uuid,
+           ${sha256Utf8V1(canonicalJsonV1(noticeBlocks))})
       `);
       await insertStreamEvent(tx, {
         conversationId: event.read.conversationId,
