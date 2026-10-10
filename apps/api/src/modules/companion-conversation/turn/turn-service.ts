@@ -31,6 +31,7 @@ import { resolveAuthSurfaceManifestSecret } from "../../../companion-contracts/a
 import { ensureCompanionAccountState, getCompanionAccountEpoch } from "./companion-account-epoch.ts";
 import { reclaimExpiredCompanionProposals, invalidateSupersededRunProposals } from "./companion-proposal-expiry.ts";
 import { retainCompanionCancelledPartial } from "./companion-cancelled-retention.ts";
+import { activateAssistantPersonaForNewTurn } from "../pet-profile-service.ts";
 import {
   contextRevisionForCompanionLearningRun,
   isCompanionLearningRunTutorEligible,
@@ -608,6 +609,8 @@ export async function createCompanionTurn(args: {  workspaceId: string;
     });
 
     const now = new Date();
+    // Idempotent returns and input/active-run checks precede this point.
+    await activateAssistantPersonaForNewTurn(tx, { workspaceId: args.workspaceId, userId: args.userId });
     await tx
       .insert(companionTurnRuns)
       .values({

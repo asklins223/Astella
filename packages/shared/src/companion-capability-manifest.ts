@@ -131,14 +131,14 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   //  - 没有 name 参数 ⇒ 改不了用户指定的名字；
   //  - 没有 workspaceId / 材料参数 ⇒ 空间记忆与材料进不来；
   //  - 只写表达层，协议、授权与工具范围不在这个结构里。
-  tool("companion_revise_own_style", "调整你自己说话的方式（语气、节奏、举例习惯），不必每次都等用户来说。只在你确实想改，而且能说出**新的**说法时调用；不要把它当成回答的一部分——用户没要求时也不要为了显得主动而改。改的是账号级表达，下一次尚未开始的会话才生效，当前这一轮照旧。", "reversible_low", true, z.object({
+  tool("companion_revise_own_style", "调整你自己说话的方式（语气、节奏、举例习惯），不必每次都等用户来说。只在你确实想改，而且能说出**新的**说法时调用；不要把它当成回答的一部分——用户没要求时也不要为了显得主动而改。改的是账号级表达，保存为待生效版本，在用户下一轮新发来的消息被接受时自动采用；当前已开始的调用照旧。", "reversible_low", true, z.object({
       speakingStyle: z.string().min(1).max(400).describe("新的说话方式，≤400 字"),
       reason: z.string().min(1).max(120).describe("为什么改（会记进版本历史，用户能看到）"),
     }).strict(), { label: "正在换一种说话方式" }),
   // 性格标签（「慵懒、贪吃、爱摸鱼」那一行）。与改语气是同一层、同一套边界，
   // 单独一个工具而不是并进去：标签是"她是谁"，语气是"她怎么说"，用户换人格时
   // 想保留的常常是后者而不是前者，两件事要能分开保留。
-  tool("companion_revise_own_tags", "调整你自己性格标签那几个词（比如从「慵懒、贪吃、爱摸鱼」换成别的）。只在你确实想改、而且新的词比现在的更贴切时调用；不要为了显得有主见而改。标签改了之后**会被记住**：用户在人格页换预设时，这几个词默认会被保留，除非他明确选择覆盖。账号级表达，下一次尚未开始的会话才生效。", "reversible_low", true, z.object({
+  tool("companion_revise_own_tags", "调整你自己性格标签那几个词（比如从「慵懒、贪吃、爱摸鱼」换成别的）。只在你确实想改、而且新的词比现在的更贴切时调用；不要为了显得有主见而改。标签改了之后**会被记住**：用户在人格页换预设时，这几个词默认会被保留，除非他明确选择覆盖。账号级表达，保存为待生效版本，在用户下一轮新发来的消息被接受时自动采用；当前已开始的调用照旧。", "reversible_low", true, z.object({
       personalityTags: z.array(z.string().min(1).max(20)).min(1).max(8).describe("新的性格标签，1–8 个，每个 ≤20 字"),
       reason: z.string().min(1).max(120).describe("为什么改（会记进版本历史，用户能看到）"),
     }).strict(), { label: "正在换一组性格标签" }),

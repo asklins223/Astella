@@ -112,8 +112,8 @@ function pending(): CompanionPersonaPendingV1 {
       reason: "你连着三次先问证据再问结论。",
       moduleScope: ["companion"],
       stagedAt: "2026-09-23T00:00:00.000Z",
-      // 合同原话的生效条件，由服务端算出：模型自改下一会话才生效。
-      effectiveWhen: "下一次会话建立时生效",
+      // 生效条件由服务端提供，持久手记的下一轮新消息自动采用。
+      effectiveWhen: "下一轮新发起的对话生效，当前已开始的调用保持原版本",
     },
   };
 }
@@ -164,7 +164,7 @@ describe("40 §4.8.4 · 人格「待生效版本」在伴星中心看得见", ()
       .find((node) => node.querySelector("h3")?.textContent === "待生效版本")!;
     expect(section).toBeTruthy();
     // 生效条件是服务端算出来的产品规则；界面复述一遍就一定会漂。
-    expect(section.textContent).toContain("下一次会话建立时生效");
+    expect(section.textContent).toContain("下一轮新发起的对话生效，当前已开始的调用保持原版本");
     expect(section.textContent).toContain("她调整的");
     expect(section.textContent).toContain("第 4 版");
     // 这一版的内容要能被读到，否则"她改了什么"仍然看不见。
@@ -200,7 +200,7 @@ describe("40 §4.8.4 · 人格「待生效版本」在伴星中心看得见", ()
     const view = publishedView()!;
     expect(view.filters?.find((entry) => entry.label === "当前版本")?.value).toBe("第 3 版");
     expect(view.filters?.find((entry) => entry.label === "待生效版本")?.value).toBe("第 4 版");
-    expect(view.filters?.find((entry) => entry.label === "生效条件")?.value).toBe("下一次会话建立时生效");
+    expect(view.filters?.find((entry) => entry.label === "生效条件")?.value).toBe("下一轮新发起的对话生效，当前已开始的调用保持原版本");
   });
 
   it("没有排队时明说没有，且没有那颗按钮", () => {

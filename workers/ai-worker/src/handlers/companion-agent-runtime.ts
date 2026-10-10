@@ -167,6 +167,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     requestHash: attentionRequestHash,
     objects: companionAttentionObjects(args.read, meta.relatedGoals),
     capabilities: availableDefinitions.map(definition => definition.name),
+    recentMessages: args.read.recentMessages,
+    conversationClock: args.read.conversationClock,
     job: args.ctx,
     runId: args.read.runId,
     userId: args.read.userId,

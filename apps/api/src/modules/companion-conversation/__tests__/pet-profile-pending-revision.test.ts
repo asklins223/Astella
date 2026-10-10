@@ -56,7 +56,7 @@ test("【自证】旧的算法（当前 +1）在排队存在时确实会撞号",
 });
 
 test("生效条件按作者区分（40 §4.8.4 原文那两句）", () => {
-  assert.equal(personaRevisionEffectiveWhen("assistant_tool"), "下一次会话建立时生效");
+  assert.equal(personaRevisionEffectiveWhen("assistant_tool"), "下一轮新发起的对话生效，当前已开始的调用保持原版本");
   assert.equal(personaRevisionEffectiveWhen("user"), "下一轮未开始的调用生效");
   assert.equal(personaRevisionEffectiveWhen("restore"), "恢复后立即生效");
   assert.equal(personaRevisionEffectiveWhen("migration"), "历史导入版本");

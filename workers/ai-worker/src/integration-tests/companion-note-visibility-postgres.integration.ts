@@ -6,7 +6,7 @@
  * 它的两条读点此前只按 `workspace_id` 查 `notes`：
  *
  *   1. `companion_read_note`（工具，读**正文**）；
- *   2. `loadHereAndNow` 的 `noteCount` / `recentNotes` / `noteReference`（读标题与
+ *   2. `loadHereAndNow` 的 `noteCount` / `noteReference`（读标题与
  *      存在性，然后注进 prompt 外发给模型）。
  *
  * 结果是：协作空间里，成员甲的伴星能读出成员乙私有笔记的正文与标题。空间隔离

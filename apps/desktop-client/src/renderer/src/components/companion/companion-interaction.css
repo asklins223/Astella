@@ -181,7 +181,7 @@
   resize: none;
   outline: none;
 }
-.companion-hud--floating .companion-hud__composer { padding: 8px 12px 10px; border-radius: 22px 28px 20px 25px; }
+.companion-hud--floating .companion-hud__composer { align-self: center; max-width: 320px; padding: 8px 12px 10px; border-radius: 22px 28px 20px 25px; }
 .companion-hud--floating .companion-hud__composer textarea { min-height: 40px; max-height: 112px; padding: 4px 0; font-size: 13px; line-height: 1.75; }
 .companion-hud--floating textarea::placeholder { color: #75624e; opacity: 1; }
 .companion-hud__compose-tools { display: flex; align-items: center; gap: 5px; margin-top: 3px; }

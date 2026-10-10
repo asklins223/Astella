@@ -49,10 +49,9 @@ test("必须给出**理由** —— §4.8.4「记录作者、范围和依据」�
   assert.ok(((definition!.parameters.required ?? []) as string[]).includes("reason"));
 });
 
-test("说明里写清生效时点：下一次会话，不是这一轮", () => {
-  // §4.8.4：「模型自改在下一次会话建立时生效；一次调用使用固定版本。」
-  assert.match(definition!.description, /下一次/);
-  assert.match(definition!.description, /下一次尚未开始的会话才生效/);
+test("说明里写清生效时点：下一轮新消息，当前调用固定", () => {
+  assert.match(definition!.description, /用户下一轮新发来的消息被接受时自动采用/);
+  assert.match(definition!.description, /当前已开始的调用照旧/);
 });
 
 test("【自证】判据认得出「把 name 顺手加进去」这个真实退化", () => {

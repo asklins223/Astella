@@ -858,8 +858,8 @@ export function buildCompanionPersonaMessages(input: {
   memoryDirectory?: CompanionMemoryDirectoryEntry[];
   /**
    * 环境快照数据块（方案 29 §4.1）：`<here_and_now>` 原文，null = 本轮无任何有值行。
-   * 时钟、当前学习、今日量、最近笔记、待确认动作——每轮无条件给，不让它依赖工具调用：
-   * 基线实测 90.7% 的轮次工具面是空的，把「知道」做成工具等于把这些事实一起关掉。
+   * 当前页面、当前学习与待确认动作提供在场线索；具体库内材料由本轮指称和读取工具提供，
+   * 不把最近笔记清单无条件塞进招呼等与资料无关的交流。
    */
   hereAndNow?: string | null;
   /**

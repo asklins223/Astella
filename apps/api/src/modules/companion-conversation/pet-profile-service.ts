@@ -231,7 +231,7 @@ export function personaRevisionEffectiveWhen(
 ): string {
   switch (author) {
     case "assistant_tool":
-      return "下一次会话建立时生效";
+      return "下一轮新发起的对话生效，当前已开始的调用保持原版本";
     case "restore":
       return "恢复后立即生效";
     case "migration":
@@ -701,4 +701,29 @@ export async function activatePetProfilePendingRevision(
         profile,
       )
       : null,
-  };}
+  };
+}
+
+/** Reading pages or resuming a run does not consume a pending expression.
+ * Only a new accepted user turn adopts assistant revisions; user-staged drafts
+ * keep their explicit activation step. Already pinned runs retain their version.
+ */
+export async function activateAssistantPersonaForNewTurn(
+  executor: ApiTransaction,
+  scope: PetProfileScope,
+): Promise<number | null> {
+  const rows = await executor.execute<{ revision: number }>(sql`
+    UPDATE public.companion_persona_profiles p
+       SET revision = v.revision,
+           profile = v.profile,
+           pending_revision = NULL,
+           updated_at = now()
+      FROM public.companion_persona_profile_versions v
+     WHERE p.user_id = ${scope.userId}
+       AND v.user_id = p.user_id
+       AND v.revision = p.pending_revision
+       AND v.author = 'assistant_tool'
+    RETURNING p.revision
+  `);
+  return rows[0] ? Number(rows[0].revision) : null;
+}

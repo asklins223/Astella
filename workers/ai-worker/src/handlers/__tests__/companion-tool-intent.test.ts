@@ -29,6 +29,26 @@ function taskContext(signal = new AbortController().signal) {
 const proposal = (action: boolean) => ({ intent: action ? "task" : "conversation", toolUse: action ? "act" : "none",
   subjects: [], goalRelation: action ? "new" : "unrelated", candidateOperations: [], ambiguities: [] });
 
+test("纠正的分类输入保留同一消息的时间证据，来源错位不借用别的日期", async () => {
+  const messages = [{ role: "assistant" as const, content: "昨天整理了笔记。" },
+    { role: "user" as const, content: "我只是在说昨天的事。" }];
+  const history = [{ role: "assistant" as const, text: messages[0].content, seq: "1",
+    createdAt: "2026-10-09T10:00:00Z" }];
+  const clock = { observedAt: "2026-10-10T00:00:00Z", timezone: "Asia/Shanghai", currentMessageCreatedAt: "2026-10-10T00:00:00Z" };
+  let calls = 0;
+  const model = { ...provider(() => false), chatCompletion: async (input: Parameters<AIProvider["chatCompletion"]>[0]) => {
+    const data = JSON.parse(String(input[1]?.content));
+    assert.deepEqual(data.conversationClock, clock);
+    assert.equal(data.recent[0].createdAt, calls++ === 0 ? "2026-10-09T10:00:00.000Z" : null);
+    assert.equal(data.recent[1].createdAt, null);
+    assert.match(String(input[0]?.content), /不为了证明改口而额外查询/);
+    return { content: JSON.stringify(proposal(false)), usage: {} };
+  } } as AIProvider;
+  await interpretCompanionTurn(model, messages, { ...taskContext(), recentMessages: history, conversationClock: clock });
+  await interpretCompanionTurn(model, messages, { ...taskContext(), recentMessages: [{ ...history[0]!, text: "另一段话" }], conversationClock: clock });
+  assert.equal(calls, 2);
+});
+
 test("全文格式调整提供明确编辑协议，保留只分析与不改的边界", async () => {
   const model = { ...provider(() => true), chatCompletion: async (messages: Parameters<AIProvider["chatCompletion"]>[0]) => {
     const instruction = String(messages[0]?.content);
@@ -251,7 +271,7 @@ test("退休用途开关不能扩大分类输入、输出额度或重启来源�
   ) => {
     calls++;
     const input = JSON.parse(String(messages.at(-1)?.content));
-    assert.deepEqual(Object.keys(input).sort(), ["capabilities", "current", "objects", "recent"]);
+    assert.deepEqual(Object.keys(input).sort(), ["capabilities", "conversationClock", "current", "objects", "recent"]);
     assert.doesNotMatch(String(messages[0]?.content), /dialogueFrame|userRecords/);
     assert.equal(options?.maxTokens, 900);
     assert.equal(options?.disableThinking, true);

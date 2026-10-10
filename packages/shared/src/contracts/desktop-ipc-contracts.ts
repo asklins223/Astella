@@ -2914,9 +2914,8 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
       /**
        * 「排队 → 生效」两步（40 §4.8.4 / A50「待生效版本可见」）。
        *
-       * 与 `patch` 的差别就是合同那句话：「模型自改在下一次会话建立时生效；
-       * 用户直接纠正可从下一轮未开始的调用生效」。`stage` 写下内容但**不动当前
-       * 版本**，`activate` 才把它提升为当前。
+       * `stage` 写下内容但不动当前版本；用户草稿由 `activate` 提升为当前，
+       * 模型自改由服务在下一轮新用户消息接受时自动采用。当前调用的固定版本不变。
        */
       pending(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionPersonaPendingV1Schema>>>;
       stage(input: {

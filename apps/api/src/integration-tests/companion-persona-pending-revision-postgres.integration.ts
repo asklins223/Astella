@@ -139,7 +139,7 @@ test("排队一版修订：写下内容，当前版本一个字都不动", async
   assert.equal(state.pending.profile?.speakingStyle, "更慢一点、句子更短");
   assert.equal(state.pending.author, "assistant_tool");
   assert.equal(state.pending.reason, "她想把语气再收一点。");
-  assert.equal(state.pending.effectiveWhen, "下一次会话建立时生效");
+  assert.equal(state.pending.effectiveWhen, "下一轮新发起的对话生效，当前已开始的调用保持原版本");
   assert.deepEqual(state.pending.moduleScope, ["companion"]);
   assert.ok(Date.parse(state.pending.stagedAt) > 0, "排队时间必须可解析");
 });

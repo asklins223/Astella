@@ -16,9 +16,11 @@ import { currentWorkerWorkspaceTransaction } from "../db.ts";
 import { JobLeaseLostError, type JobLeaseContext } from "../lib/job-lease.ts";
 import type { AIProvider } from "../lib/ai-provider.ts";
 import { DEFAULT_AI_PROVIDER_TIMEOUT_MS, getCompanionAgentTool } from "@astella/shared";
+import { boundCompanionRecentHistory, type CompanionRecentHistoryMessage } from "./companion-context-handoff.ts";
+import { conversationInstant, type CompanionConversationClock } from "./companion-conversation-evidence.ts";
 
 const TASK_ID = "companion_tool_intent";
-const TASK_VERSION = 11;
+const TASK_VERSION = 12;
 /**
  * 分类器关闭思考、单次调用且不自行重试。调用等待使用公共模型上限；
  * 超时仍保留 uncertain，不能据此把可能需要读取资料的请求当作闲聊。
@@ -46,6 +48,8 @@ export interface CompanionToolIntentTaskContext {
   requestHash?: string;
   objects?: readonly AgentAttentionObjectV1[];
   capabilities?: readonly string[];
+  recentMessages?: readonly CompanionRecentHistoryMessage[];
+  conversationClock?: CompanionConversationClock;
   onReceipt?: (receipt: CompanionToolIntentReceipt) => void;
 }
 
@@ -86,6 +90,17 @@ function toolIntentMessages(messages: readonly ChatMessage[], taskContext: Compa
     ? latest.content
     : latest.content.filter((part) => part.type === "text").map((part) => part.text).join(" ");
   const recent = companionClassifierRecent(messages);
+  const history = boundCompanionRecentHistory([...(taskContext.recentMessages ?? [])]);
+  const native = messages.filter(message => message.role !== "system");
+  const timedRecent = recent.map(item => {
+    const source = history[item.index];
+    // The classifier and native dialogue must agree on both position and text.
+    // Mismatched/absent metadata stays unknown rather than acquiring a false date.
+    const createdAt = history.length === native.length - 1
+      && source?.role === item.role && source.text === item.content
+      ? conversationInstant(source.createdAt) : null;
+    return { ...item, createdAt };
+  });
   return [
     {
       role: "system",
@@ -97,6 +112,8 @@ function toolIntentMessages(messages: readonly ChatMessage[], taskContext: Compa
         "当 capabilities 含 agent_web_search 时，用户要联网查找公开资料、核实事实或查询最新信息，用question/read，并将agent_web_search记入候选；普通知识解释和闲聊仍可直接回答。未提供该能力时不要声称能联网。",
         "用户给出公开文档网址并要求阅读、核对或总结时需要工具；不能靠网址标题猜正文。",
         "用户明确要求记住、以后遵循、纠正或忘记一项偏好、目标或共同记录时，需要调用记忆工具核对并保存/修订/撤回。口头说记下了、延后自动整理或只在这轮照做不能代替持久动作。一次性的表达要求没有要求长期保存时可直接按本轮执行。",
+        "用户明确要求你以后改变语气、节奏、举例习惯等长期表达方式时，是task/act；能力表有companion_revise_own_style时将它记入候选。事实纠正、单次抱怨和只约束这一轮的篇幅不自动变成长期人格修订。",
+        "普通招呼是conversation/none、goalRelation=unrelated；页面、旧任务和旧邀请不把招呼变成进度查询。用户只在纠正你刚才的话（时间、对象、完成范围）时，先采用本轮纠正；已有对话原文与发送时间足以理解的，是conversation/none，不为了证明改口而额外查询动态或旧历史。用户确实要求核对某项外部记录、现有证据不足时才read；要长期修订保存的记忆时仍act。recent.createdAt和conversationClock是服务器发送时间证据，不直接证明消息所描述的外部事件时间；没有时间证据不猜日期。",
         "一般知识问答、闲聊、自我介绍以及询问操作方法可以直接回答。此前助手说过已找到或已展示，不等于本轮真的查询过。",
         "区分直接写回复与操作项目数据：要求在回复里写故事、诗、对话、示例或文案草稿，是task/none，不需要工具，goalRelation=unrelated、candidateOperations为空。要求把它保存到笔记、生成学习卡、修改已有资料或读取指定来源，才需要相应工具；不要把纯文本创作中的‘写/生成’自动解释成数据库写入。",
         "用户要求生成项目里的速看、互动演示、往外学/拓展笔记草稿或学习卡时，是生成真实产物的task/act、goalRelation=new；不要求用户再说‘保存’或指定保存位置。capabilities里提供agent_start_goal时，用它接下生成目标；专业生成工具在后台使用，不因它们没直接出现在聊天工具表里就认定能力缺失。用户明确只要在聊天里解释、概括或列方向时，才按直接文字回答或读取资料处理。历史助手说过能力没接上、不能保存，不是当前能力事实，以本轮capabilities为准。",
@@ -111,7 +128,8 @@ function toolIntentMessages(messages: readonly ChatMessage[], taskContext: Compa
         "pendingOfferIndexes：recent 里某条 assistant 消息**结尾留着一个用户这句话没有接的邀请、提议或等待**（例如「要不要接着往下讲」「我随时接」「就等你说下一步」「还需要我展开吗」），就把那条消息的 index 放进去；陈述句和问句都算，判据是「它还在等她回应」。窗口里**每一条**这样的消息都要列出来，不要只报最近那一条。用户接了、照做了，或她已经明说不用回应（「先放着」「不催你」「不想管也行」），就不放。只引用 recent 给过的 index，没有就返回空数组。",
       ].join("\n"),
     },
-    { role: "user", content: JSON.stringify({ current, recent, objects: taskContext.objects ?? [],
+    { role: "user", content: JSON.stringify({ current, recent: timedRecent,
+      conversationClock: taskContext.conversationClock ?? null, objects: taskContext.objects ?? [],
       capabilities: (taskContext.capabilities ?? []).map(name => {
         const definition = getCompanionAgentTool(name);
         return definition ? { name, description: definition.description, riskClass: definition.riskClass } : { name };

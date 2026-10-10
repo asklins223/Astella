@@ -22,7 +22,6 @@ function snapshot(overrides: Partial<HereAndNowSnapshot> = {}): HereAndNowSnapsh
     activeRun: null,
     dueReviews: 0,
     today: { studySeconds: 0, runs: 0 },
-    recentNotes: [],
     noteCount: 0,
     pendingProposals: 0,
     nextReminder: null,
@@ -216,7 +215,6 @@ test("环境块不给可念的时长与计数：知道 ≠ 念出来", () => {
     dueReviews: 41,
     today: { studySeconds: 1_560, runs: 2 },
     noteCount: 828,
-    recentNotes: [{ title: "贝叶斯笔记", ageLabel: "刚刚" }],
     pet: { name: "Mao", activeness: "moderate", interactionCount: 137 },
     activeRun: { topic: "贝叶斯更新", phase: "active", usedSeconds: 240, budgetSeconds: 600, taskPrompt: null },
   }))!;
@@ -228,7 +226,7 @@ test("环境块不给可念的时长与计数：知道 ≠ 念出来", () => {
   assert.match(block, /到期待复习 41 项/);
   assert.match(block, /正在学习「贝叶斯更新」/);
   assert.match(block, /你是「Mao」/);
-  assert.match(block, /《贝叶斯笔记》\(刚刚\)/);
+  assert.doesNotMatch(block, /最近笔记|贝叶斯笔记/);
 });
 
 test("久未见面才提示间隔，刚聊过不打扰", () => {
@@ -237,16 +235,13 @@ test("久未见面才提示间隔，刚聊过不打扰", () => {
   assert.match(renderHereAndNow(snapshot({ minutesSinceLastSeen: 60 * 26 })) ?? "", /距上次和用户说话：昨天/);
 });
 
-test("笔记标题与目标超长被截断，不撑爆每轮 token", () => {
+test("当前学习目标超长被截断，不撑爆每轮 token", () => {
   const block = renderHereAndNow(snapshot({
     activeRun: { topic: "一".repeat(80), phase: "active", usedSeconds: 0, budgetSeconds: null, taskPrompt: null },
-    recentNotes: [{ title: "《嵌套》书名号里还有很长的标题一直到需要截断的程度", ageLabel: "刚刚" }],
     noteCount: 828,
   }))!;
-  // 标题里带书名号也不能把整行撑爆：按 20 字截断加省略号（不做嵌套解析，那是渲染层的事）。
-  const noteLine = block.split("\n").find((line) => line.startsWith("最近笔记"))!;
-  assert.match(noteLine, /《.*?…》\(刚刚\)$/);
-  assert.ok(noteLine.length < 60, `笔记行应被截住，实际 ${noteLine.length}`);
+  assert.doesNotMatch(block, /最近笔记|嵌套/);
+  assert.match(block, /正在学习「一{30}…」/);
   assert.ok(block.length < 400, `整块应控制在几百字符内，实际 ${block.length}`);
 });
 

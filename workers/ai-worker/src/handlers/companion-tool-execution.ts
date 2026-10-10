@@ -960,19 +960,20 @@ export async function executeDirectTool(
       const reason = String(args.reason).slice(0, 120);
       const outcome = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-        (tx) => applyAssistantPersonaEdit(tx, event.read.userId, "speakingStyle", speakingStyle, reason),
+        (tx) => applyAssistantPersonaEdit(tx, event.read.userId, "speakingStyle", speakingStyle, reason,
+          { stage: true, sourceWorkspaceId: event.ctx.workspaceId,
+            expectedRevision: event.read.personaProfileRevision }),
       );
       if (outcome.kind === "conflict") throw new CompanionToolError("人格档案刚刚被改过，这次没有改动，请重新看一眼");
       if (outcome.kind === "unchanged") {
         return {
           value: { changed: false },
-          safeSummary: "说话方式本来就是这样，没改动",
+          safeSummary: "这项说话方式与现有设定相同，没有新增修订",
         };
       }
       return {
         value: { changed: true },
-        // 明说生效时点：§4.8.4「模型自改在下一次会话建立时生效」。
-        safeSummary: "换了一种说话方式；下一次尚未开始的对话会用上",
+        safeSummary: "已保存新的说话方式；从下一轮你发来的消息起使用",
       };
     }
     /**
@@ -990,13 +991,15 @@ export async function executeDirectTool(
       const reason = String(args.reason ?? "换一组性格标签").slice(0, 120);
       const outcome = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-        (tx) => applyAssistantPersonaEdit(tx, event.read.userId, "personalityTags", tags, reason),
+        (tx) => applyAssistantPersonaEdit(tx, event.read.userId, "personalityTags", tags, reason,
+          { stage: true, sourceWorkspaceId: event.ctx.workspaceId,
+            expectedRevision: event.read.personaProfileRevision }),
       );
       if (outcome.kind === "conflict") throw new CompanionToolError("人格档案刚刚被改过，这次没有改动，请重新看一眼");
       if (outcome.kind === "unchanged") {
-        return { value: { changed: false }, safeSummary: "性格标签本来就是这样，没改动" };
+        return { value: { changed: false }, safeSummary: "这组性格标签与现有设定相同，没有新增修订" };
       }
-      return { value: { changed: true }, safeSummary: `换成了${tags.join("、")}；下一次尚未开始的对话会用上` };
+      return { value: { changed: true }, safeSummary: `已保存${tags.join("、")}；从下一轮你发来的消息起使用` };
     }
     /**
      * 40 §8.2：用户说「今天别催我学习」⇒ 记下**本地日**；说「可以了」⇒ 清掉。
@@ -1064,6 +1067,7 @@ export async function executeDirectTool(
         (tx) => applyAssistantPersonaEdit(
           tx, event.read.userId, "activeness", activeness,
           "Changed by an explicitly requested companion setting.",
+          { sourceWorkspaceId: event.ctx.workspaceId },
         ),
       );
       if (outcome.kind === "conflict") throw new CompanionToolError("人格档案刚刚被改过，这次没有改动，请重新看一眼");
@@ -1123,6 +1127,7 @@ export async function executeDirectTool(
             event.read.userId,
             Object.entries(changed).map(([key, value]) => ({ field: `boundaries.${key}` as SwitchableField, value })),
             "Changed by an explicitly requested companion setting.",
+            { sourceWorkspaceId: event.ctx.workspaceId },
           );
           if (result.kind === "conflict") return null;
           return { boundaries: result.profile.boundaries ?? {}, changed, unchangedKeys } as const;

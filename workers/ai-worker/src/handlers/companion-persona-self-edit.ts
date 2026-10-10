@@ -41,7 +41,7 @@ function readProfile(value: unknown): CompanionPersonaProfileContent | null {
 }
 
 export type PersonaSelfEditResult =
-  /** 真的改了什么，版本号已经是新的。 */
+  /** 已保存实质改动；stage=true 时 revision 是待生效版本号。 */
   | { readonly kind: "changed"; readonly revision: number; readonly profile: CompanionPersonaProfileContent }
   /** 新值与现值相同：不给"已改"的回执，也不占一个版本号。 */
   | { readonly kind: "unchanged"; readonly profile: CompanionPersonaProfileContent }
@@ -60,8 +60,16 @@ export async function applyAssistantPersonaEdits(
   userId: string,
   edits: readonly { field: SwitchableField; value: unknown }[],
   reason: string,
+  options: { stage?: boolean; sourceWorkspaceId?: string; expectedRevision?: number } = {},
 ): Promise<PersonaSelfEditResult> {
   if (edits.length === 0) throw new Error("applyAssistantPersonaEdits requires at least one edit");
+  // Create the lockable account row before reading, including first-write races.
+  // A staged first edit keeps the effective persona at revision 0/defaults.
+  await tx.execute(sql`
+    INSERT INTO companion_persona_profiles (user_id, revision, profile)
+    VALUES (${userId}, 0, NULL)
+    ON CONFLICT (user_id) DO NOTHING
+  `);
   const current = await tx.execute<{ revision: number; profile: unknown; pending_revision: number | null }>(sql`
     SELECT revision, profile, pending_revision FROM companion_persona_profiles
     WHERE user_id = ${userId}
@@ -69,7 +77,23 @@ export async function applyAssistantPersonaEdits(
     FOR UPDATE
   `);
   const row = (Array.isArray(current) ? current : [])[0];
-  const existing = readProfile(row?.profile);
+  if (!row) return { kind: "conflict" };
+  if (options.expectedRevision !== undefined && row.revision !== options.expectedRevision) {
+    return { kind: "conflict" };
+  }
+  let existing = readProfile(row.profile);
+  if (options.stage && row.pending_revision !== null) {
+    const pending = await tx.execute<{ profile: unknown; author: string }>(sql`
+      SELECT profile, author FROM companion_persona_profile_versions
+      WHERE user_id = ${userId} AND revision = ${row.pending_revision}
+    `);
+    // A user-staged draft is a decision in progress, not a model-edit base.
+    if (pending[0]?.author !== "assistant_tool") return { kind: "conflict" };
+    const staged = readProfile(pending[0]?.profile);
+    if (!staged) throw new Error("pending persona content is unavailable");
+    // Two edits in one turn (style, then tags) extend the same pending persona.
+    existing = staged;
+  }
   // 档案还没有：拿系统默认人格当底稿。她改的是"当前生效的那份人格"，
   // 不是凭空造一个——所以起手之后整份档案与默认人格一致，只有这一项归她。
   const base = existing ?? personaFromDefaultPreset(getDefaultPersonaPreset());
@@ -87,12 +111,30 @@ export async function applyAssistantPersonaEdits(
   // 版本号走同一条规矩：当前与待生效里更大的 +1。直接写死 1 会在"排队的版本
   // 比当前的还大"时撞 0355 的 CHECK（pending_revision > revision）。
   const nextRevision = Math.max(row?.revision ?? 0, row?.pending_revision ?? 0) + 1;
+  if (options.stage) {
+    // The FK requires the immutable version before the pending pointer.
+    await tx.execute(sql`
+      INSERT INTO companion_persona_profile_versions
+        (user_id, revision, examples_revision, author, action, reason, profile,
+         module_scope, source_workspace_id)
+      VALUES (${userId}, ${nextRevision}, ${nextRevision}, 'assistant_tool', 'update',
+              ${reason}, ${JSON.stringify(next)}::jsonb,
+              ARRAY['companion']::text[],
+              ${options.sourceWorkspaceId ?? null}::uuid)
+    `);
+    await tx.execute(sql`
+      UPDATE companion_persona_profiles SET pending_revision = ${nextRevision}
+      WHERE user_id = ${userId} AND revision = ${row.revision}
+    `);
+    return { kind: "changed", revision: nextRevision, profile: next };
+  }
   const saved = await tx.execute<{ revision: number; profile: unknown }>(sql`
     INSERT INTO companion_persona_profiles (user_id, revision, profile, updated_at)
     VALUES (${userId}, ${nextRevision}, ${JSON.stringify(next)}::jsonb, now())
     ON CONFLICT (user_id) DO UPDATE
       SET profile = EXCLUDED.profile,
           revision = EXCLUDED.revision,
+          pending_revision = NULL,
           updated_at = now()
       WHERE companion_persona_profiles.revision = ${row?.revision ?? 0}
     RETURNING revision, profile
@@ -102,10 +144,13 @@ export async function applyAssistantPersonaEdits(
   const profile = readProfile(updated.profile) ?? next;
   await tx.execute(sql`
     INSERT INTO companion_persona_profile_versions
-      (user_id, revision, examples_revision, author, action, reason, profile)
+      (user_id, revision, examples_revision, author, action, reason, profile,
+       module_scope, source_workspace_id)
     VALUES (${userId}, ${updated.revision}, ${updated.revision},
             'assistant_tool', 'update', ${reason},
-            ${JSON.stringify(profile)}::jsonb)
+            ${JSON.stringify(profile)}::jsonb,
+            ARRAY['companion']::text[],
+            ${options.sourceWorkspaceId ?? null}::uuid)
   `);
   return { kind: "changed", revision: updated.revision, profile };
 }
@@ -117,6 +162,7 @@ export function applyAssistantPersonaEdit(
   field: SwitchableField,
   value: unknown,
   reason: string,
+  options: { stage?: boolean; sourceWorkspaceId?: string; expectedRevision?: number } = {},
 ): Promise<PersonaSelfEditResult> {
-  return applyAssistantPersonaEdits(tx, userId, [{ field, value }], reason);
+  return applyAssistantPersonaEdits(tx, userId, [{ field, value }], reason, options);
 }

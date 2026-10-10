@@ -104,7 +104,6 @@ export interface HereAndNowSnapshot {
   activeRun: { topic: string | null; phase: string; usedSeconds: number; budgetSeconds: number | null; taskPrompt: string | null } | null;
   dueReviews: number;
   today: { studySeconds: number; runs: number };
-  recentNotes: { title: string; ageLabel: string }[];
   noteCount: number;
   pendingProposals: number;
   /**
@@ -482,14 +481,6 @@ export async function loadHereAndNow(
   const noteCountRows = await tx.execute<{ n: string }>(sql`
     SELECT ${visibleCompanionNoteCountSql(scope)} n
   `);
-  const noteRows = await tx.execute<{ title: string; age_minutes: string }>(sql`
-    SELECT n.title, EXTRACT(EPOCH FROM (now() - n.updated_at)) / 60 age_minutes
-    FROM notes n
-    WHERE n.workspace_id = ${scope.workspaceId} AND n.deleted_at IS NULL
-      AND ${sql.raw(noteVisibleSqlText("n", `'${scope.userId}'::uuid`))}
-    ORDER BY n.updated_at DESC LIMIT 3
-  `);
-
   const proposalRows = await tx.execute<{ n: string }>(sql`
     SELECT count(*) n FROM companion_action_proposals
     WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId} AND status = 'pending'
@@ -621,7 +612,6 @@ export async function loadHereAndNow(
       studySeconds: Number(todayRows[0]?.seconds ?? 0),
       runs: Number(todayRows[0]?.runs ?? 0),
     },
-    recentNotes: noteRows.map((row) => ({ title: row.title, ageLabel: ageLabel(Number(row.age_minutes)) })),
     noteCount: Number(noteCountRows[0]?.n ?? 0),
     pendingProposals: Number(proposalRows[0]?.n ?? 0),
     noteReference: noteRefTitle
@@ -822,10 +812,9 @@ export function renderHereAndNow(snapshot: HereAndNowSnapshot): string | null {
       + `玩趣=${on(b.allowPlayful)}，语音情绪标签=${on(b.allowVoiceTags)}。`
       + "这些开关只有调用 companion_set_boundary 才会变；光答\"记下了\"什么都没变。");
   }
-  if (snapshot.recentNotes.length > 0) {
-    const listed = snapshot.recentNotes.map((note) => `《${truncate(note.title, 20)}》(${note.ageLabel})`).join("、");
-    lines.push(`最近笔记：${listed}`);
-  }
+  // An inventory of recent notes made greetings repeat yesterday's work.
+  // The current page and explicit note reference remain below; library history
+  // is available through the existing read tools when the user asks about it.
   if (snapshot.pendingProposals > 0) {
     lines.push(`还有 ${snapshot.pendingProposals} 个动作在等用户确认`);
   }

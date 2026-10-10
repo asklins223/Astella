@@ -80,8 +80,10 @@ export function useCompanionFloatingPlacement(
       const inputOnly = head.childElementCount === 1 && head.firstElementChild?.classList.contains("companion-hud__composer");
       const output = head.querySelector<HTMLElement>(".companion-hud__output");
       const textLength = output?.querySelector(".companion-hud__output-body")?.textContent?.length ?? 0;
-      const preferredWidth = preferredHeadWidth ?? (inputOnly || output?.dataset.tone === "note" || output?.dataset.tone === "process" ? 280
-        : output && textLength < 80 ? 300 : 340);
+      // The composer stays compact even when replies request a wider paper.
+      const preferredWidth = inputOnly ? Math.min(preferredHeadWidth ?? 280, 320)
+        : preferredHeadWidth ?? (output?.dataset.tone === "note" || output?.dataset.tone === "process" ? 280
+          : output && textLength < 80 ? 300 : 340);
       const options = {
         role,
         controls: hud ? companionHudControlBounds(hud) : [],
