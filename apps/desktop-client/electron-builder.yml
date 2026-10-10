@@ -9,11 +9,13 @@ appId: com.asklins.astella
 productName: Astella
 copyright: Copyright © 2026 Astella
 
-# electron-updater 的更新源。客户端直连 GitHub Releases：
-# 检查走 api.github.com，下载走 GitHub 的 CDN——**不经过 apps/api**，
-# 所以更新带宽不落在自家服务器上，也不会因为自家 API 挂掉而更新不了。
+# electron-updater 的**兜底**更新源。2026-10-10 改判（服务端下发）：客户端检查时
+# 先问自家 `GET /updates/desktop/latest[-mac].yml`，服务端现场拉 GitHub 清单并按
+# 自己的规则改写下载地址；探不通才用这里这份 GitHub 源。所以这里必须留着——
+# 它同时是「自家 API 挂了还能更新」的那条路。
 # 这里只提供 owner/repo；真正的 Release 由 desktop-release.yml 以
 # 「先建 Draft、资产传完再公开」的方式发布，避免更新器读到半成品。
+# （发布时把资产传上去的也是这一份 publish 配置——别改成 generic。）
 publish:
   provider: github
   owner: asklins223

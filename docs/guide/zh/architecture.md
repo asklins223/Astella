@@ -52,7 +52,7 @@ flowchart TB
 
 - 渲染进程**不发业务 HTTP**。它对 API 的一切访问都要经过 `window.astella` → IPC → 主进程网关 → HTTP。渲染层里确实有 `fetch`，但只取同源的打包资源（Live2D 清单、字体、音频），见 `components/companion/WindowLive2DDriver.ts`、`media/learning-room-manifest.ts`。
 - API 与 Worker 的作业、编辑派发和回执通过 PostgreSQL 交换：api 写 `jobs`，worker 用 `SECURITY DEFINER` 函数领取与收尾，事件通过 `pg_notify` 频道传播。
-- 自动更新**不经过 apps/api**。客户端直连 GitHub Releases（`apps/desktop-client/electron-builder.yml` 的 `publish`，以及 `src/main/desktop-update.ts`），所以自家 API 挂了不影响更新。
+- 自动更新由**服务端下发信息与地址**（2026-10-10 改判）：客户端先问自家 `apps/api` 的 `/updates/desktop/latest[-mac].yml`，服务端现场从 GitHub 拉清单并改写下载地址；探不通就退回打包配置里的 GitHub 源（`electron-builder.yml` 的 `publish`，发布时上传资产也用它）。安装包的字节仍从 GitHub 走，自家 API 只出地址不出带宽，挂了也不影响更新。
 
 ## 一次 AI 回合的完整链路
 

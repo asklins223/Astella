@@ -52,7 +52,7 @@ Three edges people tend to drop, each of which changes the conclusion:
 
 - The renderer **issues no business HTTP**. Everything it wants from the API goes `window.astella` → IPC → main-process gateway → HTTP. There are `fetch` calls in the renderer, but they only load same-origin bundled assets (Live2D manifests, fonts, audio) — see `components/companion/WindowLive2DDriver.ts` and `media/learning-room-manifest.ts`.
 - API and Worker exchange jobs, edit dispatch and receipts through PostgreSQL; queue functions and notifications carry processing between them.
-- Auto-update **does not go through apps/api**. The client talks to GitHub Releases directly (`publish` in `apps/desktop-client/electron-builder.yml`, implemented in `src/main/desktop-update.ts`), so a dead local API does not block updates.
+- Auto-update metadata and addresses are **server-delivered** (decided 2026-10-10): the client asks `apps/api`'s `/updates/desktop/latest[-mac].yml` first, the server fetches the GitHub manifest live and rewrites the download addresses, and an unreachable manifest falls back to the GitHub source baked into the package (`publish` in `apps/desktop-client/electron-builder.yml`, also what the release job uses to upload assets). Installer bytes still travel from GitHub — your API sells addresses, not bandwidth — so a dead API does not block updates.
 
 ## One AI turn, end to end
 

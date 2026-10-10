@@ -25,6 +25,7 @@ const updater = {
   autoInstallOnAppQuit: true,
   logger: null as unknown,
   checkForUpdates: vi.fn(async (): Promise<{ updateInfo: { version: string } } | null> => null),
+  setFeedURL: vi.fn(),
   downloadUpdate: vi.fn(async () => undefined),
   quitAndInstall: vi.fn(),
   prepareInstall: vi.fn(async () => ({ launch: vi.fn(async () => undefined), stagingDirectory: "/Applications/.astella-update-test" })),
@@ -83,6 +84,9 @@ beforeEach(async () => {
   updater.prepareInstall.mockReset().mockResolvedValue({ launch: vi.fn(async () => undefined), stagingDirectory: "/Applications/.astella-update-test" });
   updater.handlers.clear();
   updater.checkForUpdates.mockReset().mockResolvedValue(null);
+  updater.setFeedURL.mockReset();
+  delete process.env.DESKTOP_API_ORIGIN;
+  vi.unstubAllGlobals();
   updater.downloadUpdate.mockReset().mockResolvedValue(undefined);
   updater.quitAndInstall.mockReset();
   windows.length = 0;
@@ -93,6 +97,32 @@ beforeEach(async () => {
 });
 
 describe("更新状态机", () => {
+describe("自家更新清单（服务端下发信息与地址）", () => {
+  it("清单拿得到就把更新源指过去，地址按服务端给的 base 来", async () => {
+    process.env.DESKTOP_API_ORIGIN = "http://update-stub.test/";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => ({ ok: true, status: 200, text: async () => "version: 0.2.0" })) as typeof fetch);
+    const module = await import("../desktop-update");
+    await module.checkForUpdates({ userInitiated: true });
+    expect(updater.setFeedURL).toHaveBeenCalledWith({ provider: "generic", url: "http://update-stub.test/updates/desktop/" });
+  });
+
+  it("清单探不通就不动更新源——保留打包配置里那份 GitHub 更新源", async () => {
+    process.env.DESKTOP_API_ORIGIN = "http://update-stub.test/";
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("ECONNREFUSED"); }) as typeof fetch);
+    const module = await import("../desktop-update");
+    await module.checkForUpdates({ userInitiated: true });
+    expect(updater.setFeedURL).not.toHaveBeenCalled();
+  });
+
+  it("探到的不是 2xx 也不切换，不让一个 404 的清单把更新带走", async () => {
+    process.env.DESKTOP_API_ORIGIN = "http://update-stub.test/";
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 502, text: async () => "" })) as typeof fetch);
+    const module = await import("../desktop-update");
+    await module.checkForUpdates({ userInitiated: true });
+    expect(updater.setFeedURL).not.toHaveBeenCalled();
+  });
+});
+
   it("更新后丢弃旧版本缓存，以真实运行版本确认成功，展示后不会再报", async () => {
     const module = await import("../desktop-update");
     await module.checkForUpdates({ userInitiated: true });

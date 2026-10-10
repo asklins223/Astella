@@ -1,10 +1,14 @@
 /**
  * 桌面端自动更新。
  *
- * ## 更新源为什么不经过自家服务端
+ * ## 更新源：自家下发信息与地址，字节仍从外部走
  *
- * 检查走 `api.github.com`，安装包走 GitHub 的 CDN，`apps/api` 完全不在这条链路上。
- * 更新带宽不落在自家服务器上，自家 API 挂掉也不影响用户升级。
+ * 2026-10-10 改判：**检查**先问自家 API 的 `/updates/desktop/<channel>.yml`——服务端现场去
+ * GitHub 拉最新清单并按自己的规则改写下载地址（想直连、想换镜像、想换包源，改服务端一处）。
+ * 拿不到就退回打包配置里的 GitHub 更新源，所以自家 API 挂了也不会挡住更新。
+ *
+ * **安装包的字节不走自家服务器**：清单里给的是外部地址，下载仍直连 GitHub，失败再回退镜像。
+ * 更新带宽不落自家机器，跟改判之前一样。
  *
  * 代价是 GitHub 匿名 API 有 **60 次/小时/IP** 的限额。公司 NAT 后面的一整层办公网
  * 共用一个出口 IP，很容易撞上。所以本模块做了两件事：
@@ -29,6 +33,7 @@ import { UpdateInstallReceiptStore } from './update-install-receipt'
 import { macosAppBundle } from './macos-update-install'
 
 import {
+  deploymentConfigSchema,
   updateStateV1Schema,
   type UpdatePhase,
   type UpdateStateV1,
@@ -289,6 +294,9 @@ async function loadAutoUpdater(): Promise<import('electron-updater').AppUpdater 
     } else {
       loaded = (await import('electron-updater')).autoUpdater
     }
+    // 自家清单拿得到就把更新源指向它；拿不到就是打包配置里的 GitHub 源，不额外处理。
+    await preferOwnUpdateManifest(loaded)
+
     loaded.autoDownload = false
     loaded.autoInstallOnAppQuit = false
     loaded.logger = null
@@ -371,6 +379,44 @@ async function loadAutoUpdater(): Promise<import('electron-updater').AppUpdater 
     return autoUpdater
   } catch (error) {
     return null
+  }
+}
+
+
+/**
+ * 自家清单的地址：优先环境覆盖（开发/烟测），装好的包读安装时那份 `deployment.json`。
+ *
+ * 拿不到就返回 null——调用方保持打包配置里的更新源，不自己猜一个地址。
+ */
+function configuredApiOrigin(): string | null {
+  try {
+    const fromEnv = process.env.DESKTOP_API_ORIGIN?.trim()
+    if (fromEnv) return fromEnv.replace(/\/+$/, "")
+    if (!app.isPackaged) return null
+    const config = deploymentConfigSchema.parse(JSON.parse(readFileSync(join(process.resourcesPath, "deployment.json"), "utf8")))
+    return config.apiOrigin.replace(/\/+$/, "")
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 更新源优先指向自家清单（服务端下发信息与地址）。
+ *
+ * 先探一次再切：探不通就**什么都不做**，保留打包配置里的 GitHub 更新源。
+ * 直接 setFeedURL 而不探的话，自家 API 一挂，用户连"有没有新版"都问不到了。
+ */
+async function preferOwnUpdateManifest(updater: { setFeedURL: (options: { provider: "generic"; url: string }) => unknown }): Promise<boolean> {
+  const origin = configuredApiOrigin()
+  if (!origin) return false
+  const base = new URL("updates/desktop/", `${origin}/`).toString()
+  try {
+    const probe = await fetch(`${base}${process.platform === "darwin" ? "latest-mac.yml" : "latest.yml"}`, { signal: AbortSignal.timeout(8_000) })
+    if (!probe.ok) return false
+    updater.setFeedURL({ provider: "generic", url: base })
+    return true
+  } catch {
+    return false
   }
 }
 

@@ -181,7 +181,7 @@ Windows 不再复用 NSIS 的外壳或安装脚本。`apps/windows-installer/` �
 
 Windows 更新使用 `WindowsInstallerUpdater` 完整下载与 SHA-512 校验，并在退出应用前启动独立安装器。安装器等待旧进程退出，保留安装目录与本机资料；应用重启后沿用统一更新回执。构建与实际验证范围见 [安装器说明](../../../apps/windows-installer/README.md)。产物继续使用 ASCII 名称 `astella-${version}-win-x64.exe`，版本来自统一发布配置。
 
-更新源是 GitHub Releases 直连（`publish: provider github, owner asklins223, repo Astella`，实现 `src/main/desktop-update.ts`），检查走 `api.github.com`、下载走 GitHub CDN，**不经过 `apps/api`**：自家 API 挂了不影响更新，更新带宽也不落在自家服务器上。安装包先直连下载，失败再自动改走 GH-Proxy（`https://v4.gh-proxy.org/`）的加速地址，指向同一个文件、校验码一致；手动下载时仓库 README 的「下载」表里两条地址都有。
+更新信息与下载地址由**服务端下发**（2026-10-10 改判，实现 `src/main/desktop-update.ts` 与 `apps/api` 的 `GET /updates/desktop/latest[-mac].yml`）：客户端先问自家 API，服务端现场从 GitHub 拉最新清单并按服务端规则改写下载地址——想换直连、换镜像或换包源，改服务端一处即可。自家清单探不通时退回打包配置里的 GitHub 更新源（`publish: provider github, owner asklins223, repo Astella`，发布时上传资产也是它），所以自家 API 挂了照样能更新。**安装包的字节仍不走自家服务器**：清单给的是外部地址，下载直连 GitHub，失败再自动改走 GH-Proxy（`https://v4.gh-proxy.org/`）的加速地址，指向同一个文件、校验码一致；手动下载时仓库 README 的「下载」表里两条地址都有。
 
 > macOS 无 Apple 证书时使用完整 ad-hoc 签名与稳定的 designated requirement，供跨版本更新校验；首次打开仍可能需要用户在隐私与安全中允许。配置 Developer ID 后改用开发者签名与公证。
 

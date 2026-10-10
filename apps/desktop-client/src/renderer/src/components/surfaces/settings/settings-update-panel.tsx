@@ -9,8 +9,10 @@
  *
  * ## 更新从哪里来
  *
- * GitHub Releases。检查走 `api.github.com`，安装包走 GitHub 的 CDN——
- * **不经过自家服务端**，所以更新带宽不落在 apps/api 上，自家 API 挂掉也不影响升级。
+ * 自家清单（服务端下发信息与地址）：检查先问 `/updates/desktop/latest[-mac].yml`，
+ * 拿不到就退回打包配置里的 GitHub Releases 源，所以自家 API 挂了照样能更新。
+ * 安装包的字节不走自家服务器——清单给的是外部地址，下载直连 GitHub、失败回退镜像，
+ * 更新带宽仍然不落在 apps/api 上。
  *
  * ## 有新版本时要说清三件事
  *

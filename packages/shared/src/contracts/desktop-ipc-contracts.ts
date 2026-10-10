@@ -1455,7 +1455,8 @@ export type ShellOpenExternalResultV1 = z.infer<typeof shellOpenExternalResultV1
  *
  * ## 为什么下载不走自家服务端
  *
- * 检查走 `api.github.com`，安装包走 GitHub 的 CDN —— `apps/api` 完全不在这条链路上。
+ * 检查先问自家 `/updates/desktop/<channel>.yml`（服务端下发信息与地址），拿不到退回 GitHub 源；
+ * 安装包的字节仍在 GitHub 上，`apps/api` 只出地址不出带宽。
  * 更新带宽不落在自家服务器上，自家 API 挂掉也不影响用户升级。
  * 代价是 GitHub 匿名 API 有 60 次/小时/IP 的限额，NAT 后的办公网容易撞上，
  * 所以主进程对检查做了缓存，撞限额时按 `unreachable` 报（"暂时没拿到新版本信息"），
@@ -2606,7 +2607,7 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
   };
   /**
    * 桌面端自动更新。更新源是 GitHub Releases：主进程直连 api.github.com 与
-   * GitHub CDN，**不经过 apps/api**——更新带宽不落在自家服务器上。
+   * 外部地址，拿不到自家清单就退回 GitHub 源——更新带宽不落在自家服务器上。
    *
    * 状态由主进程单方面推给渲染层（见 `UPDATE_STATE_CHANNEL`），所以这里只有
    * 四个动作，没有订阅。
