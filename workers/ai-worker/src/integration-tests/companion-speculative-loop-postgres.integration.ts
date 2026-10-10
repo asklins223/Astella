@@ -127,7 +127,7 @@ function readContext(f: Awaited<ReturnType<typeof fixture>>): ReadContext {
   return { ...f.event.read, conversationId: f.conversationId, userMessageId: f.messageId,
     runStatus: "running", formalAnswerInProgress: false, formalAnswerTarget: null,
     livePageView: null, pageContext: null, groundedTutorContext: null, userText: "你好",
-    recentMessages: [], residentMemories: [], memoryDirectory: [], playbookCatalog: [],
+    recentMessages: [], residentMemories: [], memoryDirectory: [], playbookCatalog: [], playbookCandidates: [],
     organizationSurface: null, memoryRefs: [], hereAndNow: null, thisTurnFacts: null,
     factSpans: null, conversationSummary: null, personaProfileRevision: 0,
     personaExamplesRevision: 0, defaultExpressionVersion: "test", petProfile: null,

@@ -27,7 +27,7 @@ import { assertCompanionHandoffSourcesCurrent, assertCompanionContextSourcesCurr
 import { parsePageContext, renderCompanionUserTurn, textOfCompanionBlocks } from "./companion-dialogue-content.ts";
 import type { CompanionContextHandoffSnapshotV1 } from "./companion-dialogue-content.ts";
 import type { CompanionMemoryDirectoryEntry } from "./companion-memory-vector.ts";
-import type { PlaybookCatalogEntry } from "./companion-playbooks.ts";
+import type { PlaybookCandidateEntry, PlaybookCatalogEntry } from "./companion-playbooks.ts";
 import {
   materializeGroundedTutorEvidence,
   type GroundedTutorEvidenceRow,
@@ -87,6 +87,9 @@ export interface ReadContext {
   memoryDirectory: CompanionMemoryDirectoryEntry[];
   /** §4.6.10 手册目录：只有标题与触发条件；正文由 companion_read_playbook 按 id 展开。 */
   playbookCatalog: PlaybookCatalogEntry[];
+  /** 方案 50 §16 第 6 步：她自己提炼、还没核对的候选做法，与目录分开一条通道。 */
+  playbookCandidates: PlaybookCandidateEntry[];
+
   /** §4.5.10/§4.6.9 上一次后台整理返回的那段结论；没有就是 null。 */
   organizationSurface: string | null;
   memoryRefs: Array<{ memoryId: string; kind: string; content: string }>;

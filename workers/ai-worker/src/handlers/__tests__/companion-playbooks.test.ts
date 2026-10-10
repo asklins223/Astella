@@ -160,3 +160,17 @@ test("依据站得住的方法按当前版本能展开正文，并带上它的�
   assert.equal(await readPlaybookById(fakeTx([methodRow()]), SCOPE, METHOD_ID, 2), null,
     "拿着旧版本读到了当前正文：「她读的是哪一版」就永远答不出来");
 });
+test("候选渲染写明「还没核对」，并带上别用的情形，正文步骤不进来了", async () => {
+  const { renderPlaybookCandidates } = await import("../companion-playbooks.ts");
+  const rendered = renderPlaybookCandidates([
+    { playbookId: "m1", playbookKey: "greet-only", title: "打招呼时就只打招呼",
+      triggerCondition: "对方只发来一个招呼", version: 2, epistemicStatus: "tentative",
+      exceptions: ["对方点名要接着昨天那篇时照常接续", "对方在问学习安排时不用"] },
+  ]);
+  assert.match(rendered, /还没经过用户核对/);
+  assert.match(rendered, /打招呼时就只打招呼/);
+  assert.match(rendered, /别用的情形：对方点名要接着昨天那篇时照常接续；对方在问学习安排时不用/);
+  // 与目录同一口径：正文（步骤）不在这段里，别把没核对的东西写得像操作手册。
+  assert.doesNotMatch(rendered, /步骤/);
+  assert.equal(renderPlaybookCandidates([]), "");
+});

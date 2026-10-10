@@ -19,7 +19,10 @@
  * 两条路径都经过 host 的「可采用」围栏：停用、依据失效、暂定的方法既不进目录，
  * 也读不出正文。
  */
-import { listAgentMethods, readAgentMethod, upsertAgentMethodCandidate, type AgentSqlExecutor } from "@astella/agent-host";
+import {
+  listAgentMethodCandidates, listAgentMethods, readAgentMethod, upsertAgentMethodCandidate,
+  type AgentSqlExecutor,
+} from "@astella/agent-host";
 import type { AgentMethodV1, AgentMethodEvidenceV1, AgentMethodEpistemicStatusV1 } from "@astella/shared/agent-growth-contracts";
 
 export interface PlaybookScope { workspaceId: string; userId: string }
@@ -34,6 +37,13 @@ export interface PlaybookBody extends PlaybookCatalogEntry {
 }
 /** 目录最多几条。手册是「少数几条常用的」，不是数据库的全量导出。 */
 export const PLAYBOOK_CATALOG_LIMIT = 20;
+/**
+ * 候选（她自己提炼、还没经用户核对）另开一条有界通道。
+ *
+ * 上限单独一个源：候选和目录是两个集合，共用一个数会让"目录被候选挤掉"这种
+ * 退化没法解释（§4.6.10 那条纪律讲的是两条独立通道）。
+ */
+export const PLAYBOOK_CANDIDATE_LIMIT = 5;
 /** 认识状态原样透传：它决定模型能不能把这条当成已确认的做法照做。 */
 const catalogEntry = (method: AgentMethodV1): PlaybookCatalogEntry => ({
   playbookId: method.methodId, playbookKey: method.methodId, title: method.title,
@@ -42,11 +52,53 @@ const catalogEntry = (method: AgentMethodV1): PlaybookCatalogEntry => ({
 export async function retrievePlaybookCatalog(tx: AgentSqlExecutor, scope: PlaybookScope): Promise<PlaybookCatalogEntry[]> {
   return (await listAgentMethods(tx, scope, true)).map(catalogEntry);
 }
+/**
+ * 候选条目：与目录同样的身份，多带「什么时候别用」那几行。
+ *
+ * 例外要紧：一条刚从相处里提炼出来的做法最容易过度套用（"打招呼别盘点笔记"被
+ * 引申成"永远不接学习笔记"），而那几行例外本来就是反思时从同一批素材里读出来的。
+ */
+export interface PlaybookCandidateEntry extends PlaybookCatalogEntry { exceptions: string[] }
+
+/**
+ * 她自己提炼的候选：`method_state='candidate'`，还没经过用户核对。
+ *
+ * 这一条是成长闭环的**读回**边（方案 50 §16 第 6 步）。此前反思只写不读：
+ * `upsertReflectionMethod` 落的是 candidate+tentative，而目录那道门要 active+supported，
+ * 于是她提炼出的做法永远进不了下一次相处——「用户改过之后下一轮不再照旧的来」
+ * 这句话就没有可观察的落点。候选不进那 20 条目录（那是「可以照做」的集合），
+ * 另走一条通道，状态由渲染那一步写明。
+ */
+export async function retrievePlaybookCandidates(tx: AgentSqlExecutor, scope: PlaybookScope): Promise<PlaybookCandidateEntry[]> {
+  return (await listAgentMethodCandidates(tx, scope, PLAYBOOK_CANDIDATE_LIMIT))
+    .map((method) => ({ ...catalogEntry(method), exceptions: method.exceptions }));
+}
 export async function readPlaybookById(tx: AgentSqlExecutor, scope: PlaybookScope, playbookId: string, expectedVersion: number,
   consultation?: { kind: "agent_goal" | "conversation"; id: string; revision: number; sourceKey: string }): Promise<PlaybookBody | null> {
   const method = await readAgentMethod(tx, scope, playbookId, expectedVersion, consultation);
   return method ? { ...catalogEntry(method), steps: method.steps, exceptions: method.exceptions, evidence: method.evidence } : null;
 }
+/**
+ * 候选渲染成给模型看的一段纯文本，与目录同一口径：**正文不在这里出现**。
+ *
+ * 「还没核对」这个状态必须写在文字里：这一条与目录那条的差别不是排版，而是
+ * 她能不能把眼前这条当既成约定。同时也不给她台阶去向用户复述这条内部账目
+ * （「我有一条待核对的做法」不是对用户说的话，撤换在方法页里做）。
+ */
+export function renderPlaybookCandidates(entries: readonly PlaybookCandidateEntry[]): string {
+  if (!entries.length) return "";
+  return [
+    "（合作方法·她自己从最近相处里提炼的候选，还没经过用户核对；只有标题、触发条件与别用的情形）",
+    ...entries.map((entry, index) => {
+      const avoid = entry.exceptions.length > 0 ? `｜别用的情形：${entry.exceptions.join("；")}` : "";
+      return `${index + 1}. ${entry.title}｜触发：${entry.triggerCondition}${avoid}`;
+    }),
+    "这些是她自己记下的尝试，不是用户定过的约定：这一轮确实合触发条件才参考，"
+      + "用户现在说的与手头材料优先，合不上就当没有。不要把这条清单念给用户听，"
+      + "也不要说「我还在等你核对」；用户想看不核对的做法在「方法」页里。",
+  ].join("\n");
+}
+
 export const upsertPlaybook = upsertAgentMethodCandidate;
 /**
  * 把目录渲染成给模型看的一段**纯文本**：编号 + 标题 + 触发条件 + 稳定 ID + 版本。

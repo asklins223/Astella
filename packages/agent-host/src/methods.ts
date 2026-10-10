@@ -113,6 +113,25 @@ export async function listAgentMethods(tx: AgentSqlExecutor, scope: AgentScopeV1
     ORDER BY p.updated_at DESC,p.id LIMIT ${activeOnly ? 20 : 100}`);
   return rows.map(row=>projectAgentMethod(row)).filter(method=>!activeOnly || method.availability==="available");
 }
+/**
+ * 她自己从相处里提炼、**还没经过用户核对**的那些做法。
+ *
+ * 为什么不并进 `listAgentMethods(activeOnly=true)` 那道门：那 20 条目录是「可以照做」的
+ * 集合，`tentative`/`candidate` 混进去就等于把没核对的当成已确认（0374 拆两列就是为了
+ * 挡这个退化）。但成长也不能因此只写不落——反思产出的经验如果永远读不回来，
+ * 「用户改过之后下一轮不再照旧的来」这条就没有可观察的落点（方案 50 §16 第 6 步）。
+ * 所以另开一条有界的候选通道，状态原样带出去，由装配层写明它还没核对。
+ */
+export async function listAgentMethodCandidates(tx: AgentSqlExecutor, scope: AgentScopeV1, limit = 5) {
+  const rows = await queryRows<AgentMethodRow>(tx, sql`SELECT p.*,s.*,
+    astella_agent_method_sources_current(p.id,p.workspace_id,p.user_id) AS sources_current
+    FROM companion_procedural_playbooks p ${stats}
+    WHERE p.workspace_id=${scope.workspaceId} AND p.user_id=${scope.userId}
+      AND p.method_state='candidate' AND p.epistemic_status NOT IN ('disputed')
+    ORDER BY p.updated_at DESC,p.id LIMIT ${limit}`);
+  // 依据已经被撤掉的（`source_changed`）不算候选：那是「不该再来」，不是「还没核」。
+  return rows.map(row=>projectAgentMethod(row)).filter(method=>method.availability==="pending");
+}
 /** 读前核对：版本要对得上，并且此刻仍可采用。依据被纠正／被停用／暂定的都读不出正文。 */
 export async function readAgentMethod(tx: AgentSqlExecutor, scope: AgentScopeV1, id: string, revision: number,
   consultation?: { kind: "agent_goal" | "conversation"; id: string; revision: number; sourceKey: string }) {

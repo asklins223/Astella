@@ -95,3 +95,38 @@ test("⑦ 策略版本进幂等判据：换策略能重新回顾同一段，不�
   assert.match(content, /COMPANION_REFLECTION_PROMPT_VERSION/);
   assert.match(content, /strategyVersion/);
 });
+
+/**
+ * ⑧ 反思产出的经验要**读得回来**。
+ *
+ * 这条链以前只有一半：`upsertReflectionMethod` 把做法落成 `candidate`+`tentative`，
+ * 而目录那道门只放 `active`+`supported`（那条门是对的——没核对的东西不该占「可照做」
+ * 的名额）。结果是她提炼的任何东西都进不了下一次相处，§16 第 6 步
+ * 「用户改过之后下一轮不再照旧的来」在方法这一侧根本没有落点。
+ * 这里钉的是那条读回边完整存在：权威读 → worker 投影 → 装配 → 进请求。
+ */
+test("⑧ 候选经验有独立的读回通道，且不与「可照做」那 20 条混流", () => {
+  const hostMethods = read("packages/agent-host/src/methods.ts");
+  assert.match(hostMethods, /export async function listAgentMethodCandidates/,
+    "agent-host 要有一条只读 candidate 的权威查询");
+  assert.match(hostMethods, /AND p\.method_state='candidate'/,
+    "候选那条按生命周期读，不按「已确认」读");
+  // 目录那道门必须还是原来的门：候选是另开一条，不是把门放宽。
+  assert.match(hostMethods, /AND p\.method_state='active' AND p\.epistemic_status='supported'/,
+    "把 candidate 并进目录那道门，等于让没核对的做法冒充可照做");
+
+  const playbooks = read("workers/ai-worker/src/handlers/companion-playbooks.ts");
+  assert.match(playbooks, /retrievePlaybookCandidates/);
+  assert.match(playbooks, /renderPlaybookCandidates/);
+  assert.match(playbooks, /PLAYBOOK_CANDIDATE_LIMIT/,
+    "候选的条数要有自己的源，不与目录的 20 条共用一个数");
+
+  const orchestrator = read("workers/ai-worker/src/handlers/companion-context-orchestrator.ts");
+  assert.match(orchestrator, /await retrievePlaybookCandidates\(tx, scope\)/);
+  const dialogue = read("workers/ai-worker/src/handlers/companion-dialogue.ts");
+  assert.match(dialogue, /methodCandidates: read\.groundedTutorContext \? "" : renderPlaybookCandidates/,
+    "正式作答那一档不带候选：讲解只按材料与题面来");
+  const content = read("workers/ai-worker/src/handlers/companion-dialogue-content.ts");
+  assert.match(content, /add\("method_candidates", input\.methodCandidates/,
+    "候选要作为自己的一个来源进 44 的来源计划，否则预算回执里看不见它");
+});

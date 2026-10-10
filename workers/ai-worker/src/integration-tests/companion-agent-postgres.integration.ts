@@ -569,6 +569,7 @@ function continuationEvent(ws: string, uid: string, f: Fixture) {
       residentMemories: [],
       memoryDirectory: [],
       playbookCatalog: [],
+      playbookCandidates: [],
       organizationSurface: null,
       memoryRefs: [],
       hereAndNow: null,

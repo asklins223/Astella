@@ -122,10 +122,12 @@ test("普通对话只注入 resident 正文和 active 元数据目录", async ()
   assert.ok(!JSON.stringify(context.memoryDirectory).includes("正文不应自动进入提示词"));
   assert.match(calls[0] ?? "", /budget_tier = 'resident'/);
   assert.match(calls[1] ?? "", /budget_tier = 'active'/);
-  // 4 次查询：resident 正文、active 目录、手册目录（§4.6.10）、整理结论
-  // （§4.5.10 的 surface，一次性消费）。仍然全是**读**——统计写入在独立的
-  // best-effort 事务里，那条不变。
-  assert.equal(calls.length, 4, "context assembly 只读数据：resident + 目录 + 手册目录 + 整理结论");
+  // 5 次查询：resident 正文、active 目录、手册目录（§4.6.10）、她自己提炼还没核对的
+  // 候选（方案 50 §16 第 6 步的读回边）、整理结论（§4.5.10 的 surface，一次性消费）。
+  // 仍然全是**读**——统计写入在独立的 best-effort 事务里，那条不变。
+  assert.equal(calls.length, 5, "context assembly 只读数据：resident + 目录 + 手册目录 + 候选 + 整理结论");
+  // 候选与目录是**两条**读：按生命周期读，不按「已确认」读——混成一条就等于放宽那道门。
+  assert.match(calls[3] ?? "", /method_state='candidate'/);
   assert.doesNotMatch(calls.join("\n"), /UPDATE assistant_memory_items|memory_usage_log/);
 });
 

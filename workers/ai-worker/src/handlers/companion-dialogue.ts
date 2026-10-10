@@ -1,6 +1,6 @@
 import { resolveCompanionPersonaContext } from "./companion-identity-context.ts";
 import { reserveCompanionProviderCall } from "./companion-agent-events.ts";
-import { renderPlaybookCatalog } from "./companion-playbooks.ts";
+import { renderPlaybookCandidates, renderPlaybookCatalog } from "./companion-playbooks.ts";
 /**
  * companion_agent Worker handler（03 合同 §8.1/§9，runbook 6.4 步骤 5-7）。
  *
@@ -543,6 +543,7 @@ export async function runCompanionDialogue(
           // 手册目录与整理结论在 assembleCompanionContext 阶段填；
           // 在此之前它们是"没有"，不是"有但为空"。
           playbookCatalog: [],
+          playbookCandidates: [],
           organizationSurface: null,
           memoryRefs: [],
           hereAndNow,
@@ -614,6 +615,7 @@ export async function runCompanionDialogue(
     residentMemories: read.residentMemories,
     memoryDirectory: read.memoryDirectory,
     playbookCatalog: [],
+    playbookCandidates: [],
     organizationSurface: null,
     memoryRefs: read.memoryRefs,
     retrievalMode: "disabled",
@@ -643,6 +645,7 @@ export async function runCompanionDialogue(
       read.memoryDirectory = memoryContext.memoryDirectory;
       read.memoryRefs = memoryContext.memoryRefs;
       read.playbookCatalog = memoryContext.playbookCatalog;
+      read.playbookCandidates = memoryContext.playbookCandidates;
       read.organizationSurface = memoryContext.organizationSurface;
     } catch (err) {
       // 目录读取失败不阻塞对话：本轮暂不注入长期记忆。
@@ -684,6 +687,7 @@ export async function runCompanionDialogue(
     messages = buildCompanionPersonaMessages({
       scope: { workspaceId: ctx.workspaceId, userId: read.userId },
       methodCatalog: read.groundedTutorContext ? "" : renderPlaybookCatalog(read.playbookCatalog),
+      methodCandidates: read.groundedTutorContext ? "" : renderPlaybookCandidates(read.playbookCandidates),
       contextReceipt: receipts => {
         contextReceipts.recordAssembly(receipts);
         logger.info({ runId: read.runId, sources: receipts }, "agent context budget receipt");
