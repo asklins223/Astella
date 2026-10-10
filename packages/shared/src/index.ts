@@ -41,6 +41,8 @@ export * from "./companion-proactive-quota.ts";
 export * from "./contracts/companion-home-contracts.ts";
 // 伴星中心（桌面页 20）读取合同：记忆 / 记忆星图 / 日记 / 人格档案 / 对话记录。
 export * from "./contracts/companion-memory-desktop-contracts.ts";
+export * from "./contracts/companion-observation-contracts.ts";
+export * from "./companion-observation-render.ts";
 // Companion M2 语音朗读合同（companion.voice.speak → POST /voice/tts）。
 export * from "./contracts/companion-voice-contracts.ts";
 export * from "./contracts/note-projection-contracts.ts";

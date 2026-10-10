@@ -53,7 +53,7 @@ const ctx = { workspaceId: "00000000-0000-0000-0000-000000000001", id: "job-1",
 const read = { userId: "00000000-0000-0000-0000-000000000002", runId:"run-1",conversationId:"conversation-1",
   userMessageId:"message-1",generation:1,accountEpoch:0,runStatus:"running",formalAnswerInProgress:false,
   formalAnswerTarget:null,livePageView:null,pageContext:null,groundedTutorContext:null,userText:"你好",
-  recentMessages:[],residentMemories:[],memoryDirectory:[],playbookCatalog:[],playbookCandidates:[],organizationSurface:null,
+  recentMessages:[],residentMemories:[],memoryDirectory:[],playbookCatalog:[],playbookCandidates:[],deliveryObservation:null,organizationSurface:null,
   memoryRefs:[],hereAndNow:null,thisTurnFacts:null,factSpans:null,conversationSummary:null,
   personaProfileRevision:0,personaExamplesRevision:0,defaultExpressionVersion:"test",petProfile:null,
   nextMessageSeq:1,nextEventSeq:1 };

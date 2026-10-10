@@ -89,6 +89,8 @@ export interface ReadContext {
   playbookCatalog: PlaybookCatalogEntry[];
   /** 方案 50 §16 第 6 步：她自己提炼、还没核对的候选做法，与目录分开一条通道。 */
   playbookCandidates: PlaybookCandidateEntry[];
+  /** 上一句朗读的实际交付回执（§10.2）；null = 没有要带的背景。 */
+  deliveryObservation: unknown;
 
   /** §4.5.10/§4.6.9 上一次后台整理返回的那段结论；没有就是 null。 */
   organizationSurface: string | null;

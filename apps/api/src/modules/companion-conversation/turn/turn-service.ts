@@ -44,6 +44,8 @@ import {
   companionTurnRuns,
 } from "@astella/shared/db-schema/companion-conversations";
 
+import { loadCompanionDeliveryObservation } from "./companion-delivery-observation.ts";
+
 export {
   companionConversations,
   companionMessages,
@@ -631,6 +633,11 @@ export async function createCompanionTurn(args: {  workspaceId: string;
         // 之前这一格没有，台子只能靠 git log 人工对（本轮就是这么分清的）。
         pageContext: sanitizeContext(request) as never,
         contextGrantId,
+        // 上一句实际播到哪（§10.2）。正常播完、没失败段就是 null：她不必每轮复述流水。
+        deliveryObservation: await loadCompanionDeliveryObservation(tx, {
+          workspaceId: args.workspaceId, userId: args.userId,
+          conversationId: args.conversationId, observedAt: now,
+        }),
         createdAt: now,
         updatedAt: now,
       })

@@ -2794,6 +2794,13 @@
       "when": 1791590600000,
       "tag": "0402_agent_method_message_evidence_source",
       "breakpoints": true
+    },
+    {
+      "idx": 399,
+      "version": "7",
+      "when": 1791590700000,
+      "tag": "0403_companion_delivery_observation",
+      "breakpoints": true
     }
   ]
 }

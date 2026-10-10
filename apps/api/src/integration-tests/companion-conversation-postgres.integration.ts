@@ -1172,3 +1172,97 @@ test("P0：全新账号第一句话建 run 前补出账号状态行，取值是�
     await cleanup();
   }
 });
+
+/**
+ * §10.2：把"上一句实际播到哪"带回下一轮。
+ *
+ * 这里钉三件事：
+ * 1. 观察只在**真有必要**时产生（播了一半），全部播完时那一格是 null；
+ * 2. 它是段粒度的事实，不带段内位置（合同里也没有那一格）；
+ * 3. worker 那侧读的是 run 行上这一格，不额外去查那张它没有读边的回执表。
+ */
+test("朗读只播了一半时下一轮带得上段粒度背景，播完时什么都不带", async () => {
+  const { workspaceId, userId, conversationId, cleanup } = await seedConversation();
+  const previousRunId = randomUUID();
+  const outcome = (segmentId: string, ordinal: number, stage: string) => sql.begin(async (tx) => {
+    await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+    await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+    await tx`INSERT INTO companion_tts_outcomes
+               (workspace_id, user_id, conversation_id, run_id, segment_id, ordinal, outcome, stage)
+             VALUES (${workspaceId}, ${userId}, ${conversationId}, ${previousRunId},
+                     ${segmentId}, ${ordinal}, 'ok', ${stage})`;
+  });
+
+  const seedDeliveredTurn = async () => {
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+      const userMessageId = randomUUID();
+      const assistantMessageId = randomUUID();
+      await tx`INSERT INTO companion_messages
+                 (id, conversation_id, workspace_id, user_id, role, seq, kind, blocks, content_sha256)
+               VALUES (${userMessageId}, ${conversationId}, ${workspaceId}, ${userId}, 'user', 1, 'text',
+                       ${tx.json([{ type: "text", text: "讲讲光合作用" }])}, ${"0".repeat(64)})`;
+      await tx`INSERT INTO companion_messages
+                 (id, conversation_id, workspace_id, user_id, role, seq, kind, blocks, content_sha256, run_id)
+               VALUES (${assistantMessageId}, ${conversationId}, ${workspaceId}, ${userId}, 'assistant', 2, 'text',
+                       ${tx.json([{ type: "text", text: "光合作用是…" }])}, ${"1".repeat(64)}, ${previousRunId})`;
+      await tx`INSERT INTO companion_turn_runs
+                 (id, conversation_id, workspace_id, user_id, user_message_id, assistant_message_id,
+                  generation, status, idempotency_key_hash, request_body_hash, account_epoch, finished_at)
+               VALUES (${previousRunId}, ${conversationId}, ${workspaceId}, ${userId}, ${userMessageId},
+                       ${assistantMessageId}, 1, 'succeeded', ${"a".repeat(64)}, ${"b".repeat(64)}, 0, now())`;
+      // 上一轮占掉 generation 1：不推进 next_generation 的话，新回合会拿到同一个代，
+      // 撞 (conversation, generation) 唯一键——红的是夹具，不是被测路径。
+      await tx`UPDATE companion_conversations
+               SET next_message_seq = 3, next_generation = 2, last_message_at = now()
+               WHERE id = ${conversationId}`;
+    });
+    for (const ordinal of [0, 1, 2]) await outcome(`seg-${ordinal}`, ordinal, "synth");
+  };
+
+  const observationOfNextTurn = async () => {
+    const created = await createCompanionTurn({
+      workspaceId, userId, conversationId, idempotencyKey: randomUUID(), body: turnBody(randomUUID()),
+    });
+    const runId = (created.body as { runId: string }).runId;
+    const rows = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+      return tx`SELECT delivery_observation AS observation FROM companion_turn_runs WHERE id = ${runId}`;
+    });
+    // 用例自己造出来的那一轮不是真跑过的，留着 active 会挡住下一次建回合。
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+      await tx`DELETE FROM companion_turn_runs WHERE id = ${runId}`;
+    });
+    return (rows[0] as { observation: Record<string, unknown> | null }).observation;
+  };
+
+  try {
+    await seedDeliveredTurn();
+    await outcome("seg-0", 0, "playback");
+    await outcome("seg-1", 1, "playback");
+
+    const observation = await observationOfNextTurn();
+    const entry = (observation as { observations: Array<Record<string, unknown>> } | null)?.observations?.[0];
+    assert.ok(entry, "上一句只播了两段中的第一段，这一轮该知道");
+    assert.deepEqual(entry.payload, {
+      segmentsPlayed: 2, segmentsPrepared: 3, failedSegmentCount: 0,
+      interruptedByUser: true, lastOutcomeAt: (entry.payload as { lastOutcomeAt: string }).lastOutcomeAt,
+    });
+    assert.equal(entry.purpose, "current_context_clue", "只作线索，不推进话题");
+    assert.equal(entry.trust, "device_recorded", "设备回执不是用户的说法");
+    assert.equal((entry.scope as { runId: string }).runId, previousRunId, "指向的是那一句自己的 run");
+    const { renderCompanionDeliveryObservation } = await import("@astella/shared");
+    const rendered = renderCompanionDeliveryObservation(observation);
+    assert.match(rendered, /只播到第 2 段（一共 3 段）/);
+    assert.equal(rendered.includes("%"), false, "段内位置没有权威来源，渲染里也不能出现");
+
+    await outcome("seg-2", 2, "playback");
+    assert.equal(await observationOfNextTurn(), null, "整句都播完了就不该再带这条背景");
+  } finally {
+    await cleanup();
+  }
+});

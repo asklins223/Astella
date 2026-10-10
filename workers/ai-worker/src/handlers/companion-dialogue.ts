@@ -1,6 +1,7 @@
 import { resolveCompanionPersonaContext } from "./companion-identity-context.ts";
 import { reserveCompanionProviderCall } from "./companion-agent-events.ts";
 import { renderPlaybookCandidates, renderPlaybookCatalog } from "./companion-playbooks.ts";
+import { renderCompanionDeliveryObservation } from "@astella/shared";
 /**
  * companion_agent Worker handler（03 合同 §8.1/§9，runbook 6.4 步骤 5-7）。
  *
@@ -238,10 +239,12 @@ export async function runCompanionDialogue(
           default_expression_version: string | null;
           context_grant_id: string | null; permission_level: string | null;
           permission_snapshot: unknown; cancel_requested_at: string | null;
+          delivery_observation: unknown;
         }>(sql`
           SELECT id, conversation_id, user_id, generation, status, page_context, user_message_id,
                  account_epoch, context_grant_id, permission_level, permission_snapshot,
                  persona_profile_revision, persona_examples_revision, default_expression_version,
+                 delivery_observation,
                  cancel_requested_at::text AS cancel_requested_at
           FROM companion_turn_runs WHERE id = ${runId}
         `);
@@ -486,6 +489,7 @@ export async function runCompanionDialogue(
           runStatus: run.status,
           accountEpoch: Number(run.account_epoch ?? 0),
           pageContext: run.page_context,
+          deliveryObservation: run.delivery_observation,
           contextHandoff: {
             runId: run.id,
             conversationId: run.conversation_id,
@@ -688,6 +692,7 @@ export async function runCompanionDialogue(
       scope: { workspaceId: ctx.workspaceId, userId: read.userId },
       methodCatalog: read.groundedTutorContext ? "" : renderPlaybookCatalog(read.playbookCatalog),
       methodCandidates: read.groundedTutorContext ? "" : renderPlaybookCandidates(read.playbookCandidates),
+      deliveryObservation: renderCompanionDeliveryObservation(read.deliveryObservation),
       contextReceipt: receipts => {
         contextReceipts.recordAssembly(receipts);
         logger.info({ runId: read.runId, sources: receipts }, "agent context budget receipt");

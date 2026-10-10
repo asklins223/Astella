@@ -178,6 +178,12 @@ export const companionTurnRuns = pgTable(
      */
     contextAssemblyReceipt: jsonb("context_assembly_receipt"),
     /**
+     * 上一句朗读的实际交付回执（方案 50 §10.2，合同见 `companion-observation-contracts`）。
+     * 由 API 在接受这一轮时算好写下来：worker 对那张回执表没有读边，
+     * 而「这一轮知道些什么」必须可回放，不能靠临时查询。null = 没有要带的背景。
+     */
+    deliveryObservation: jsonb("delivery_observation").$type<Record<string, unknown> | null>(),
+    /**
      * 完整请求的预算读数与判定（44 §4）。
      *
      * 「窗口放大后触发变少」与「预算从来没接上」在日志里长得一样；落库之后才分得开。

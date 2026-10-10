@@ -22,7 +22,7 @@ test("真实卡片工具：完整题面与尾部条件进入模型，富块仍�
       conversationId: randomUUID(), userMessageId: randomUUID(), runStatus: "running", formalAnswerInProgress: false,
       formalAnswerTarget: null, livePageView: null, pageContext: null, groundedTutorContext: null,
       userText: "看看这张卡的题面", recentMessages: [], residentMemories: [], memoryDirectory: [],
-      playbookCatalog: [], playbookCandidates: [], organizationSurface: null, memoryRefs: [], hereAndNow: null, thisTurnFacts: null,
+      playbookCatalog: [], playbookCandidates: [], deliveryObservation: null, organizationSurface: null, memoryRefs: [], hereAndNow: null, thisTurnFacts: null,
       factSpans: null, conversationSummary: null, personaProfileRevision: 0, personaExamplesRevision: 0,
       defaultExpressionVersion: "test", petProfile: null, nextMessageSeq: 1, nextEventSeq: 1 };
     const event: AgentEventContext = { read, expiresAt: new Date(Date.now() + 60000).toISOString(),
