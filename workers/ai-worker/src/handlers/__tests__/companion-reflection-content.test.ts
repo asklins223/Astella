@@ -8,7 +8,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  buildReflectionPrompt, reflectionInputFingerprint, verifyReflectionOutput,
+  buildReflectionPrompt, clipReflectionOverflow, companionReflectionOutputV1Schema, normalizeReflectionPayload,
+  reflectionInputFingerprint, verifyReflectionOutput,
   type ReflectionInputSnapshotV1,
 } from "../companion-reflection-content.ts";
 
@@ -128,4 +129,46 @@ test("输入指纹只认消息身份、人格版本与策略版本：重排空�
 
   const strategyBumped = reflectionInputFingerprint(snapshot(), "reflection-v2");
   assert.notEqual(first, strategyBumped);
+});
+
+test("归一层收得下模型的另一套写法，但不替它把猜测洗成已验证", () => {
+  const raw = {
+    decision: "不需要改",
+    summary: "这一段她自己说得对。",
+    judgments: [{ text: "一句判断", epistemic_status: "暂定", source_message_ids: "5f0c1a44-0000-4000-8000-000000000001, 5f0c1a44-0000-4000-8000-000000000002", note: "多出来的键" }],
+    experiences: [],
+    persona: null,
+  };
+  const { payload, droppedKeys } = normalizeReflectionPayload(raw);
+  const validated = companionReflectionOutputV1Schema.safeParse(payload);
+  assert.equal(validated.success, true, JSON.stringify(validated.error?.issues ?? []));
+  assert.equal(validated.success && validated.data.decision, "no_change");
+  assert.deepEqual(validated.success && validated.data.judgments[0].sourceMessageIds,
+    ["5f0c1a44-0000-4000-8000-000000000001", "5f0c1a44-0000-4000-8000-000000000002"]);
+  assert.equal(validated.success && validated.data.judgments[0].epistemicStatus, "tentative");
+  assert.deepEqual(droppedKeys, ["note"]);
+});
+
+test("归一层不许把不认识的认识状态改成能用的值，也不许凭空造依据", () => {
+  const raw = { decision: "proposals", summary: "s",
+    judgments: [{ text: "一句判断", epistemicStatus: "确信", sourceMessageIds: ["5f0c1a44-0000-4000-8000-000000000001"] }] };
+  const parsed = companionReflectionOutputV1Schema.safeParse(normalizeReflectionPayload(raw).payload);
+  assert.equal(parsed.success, false);
+  const missing = normalizeReflectionPayload({ decision: "proposals", summary: "s" });
+  assert.equal(companionReflectionOutputV1Schema.safeParse(missing.payload).success, true);
+});
+
+test("剪容量：模型多给一条经验时不要整次回顾作废", () => {
+  const one = { text: "一句判断", epistemicStatus: "tentative",
+    sourceMessageIds: ["5f0c1a44-0000-4000-8000-000000000001"] };
+  const raw = { decision: "proposals", summary: "s", judgments: [one, { ...one }, { ...one }],
+    experiences: [{ title: "甲种做法", triggerCondition: "条件甲", steps: ["先看一眼"], sourceMessageIds: [one.sourceMessageIds[0]] },
+      { title: "乙种做法", triggerCondition: "条件乙", steps: ["先看一眼"], sourceMessageIds: [one.sourceMessageIds[0]] },
+      { title: "丙种做法", triggerCondition: "条件丙", steps: ["先看一眼"], sourceMessageIds: [one.sourceMessageIds[0]] }] };
+  const { payload, clipped } = clipReflectionOverflow(normalizeReflectionPayload(raw).payload);
+  const parsed = companionReflectionOutputV1Schema.safeParse(payload);
+  assert.equal(parsed.success, true, JSON.stringify(parsed.success ? {} : parsed.error.issues));
+  assert.equal(parsed.success && parsed.data.judgments.length, 2);
+  assert.equal(parsed.success && parsed.data.experiences.length, 2);
+  assert.deepEqual(clipped, ["judgments:1", "experiences:1"]);
 });

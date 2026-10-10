@@ -6,7 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { companionReflectionGate, reflectionSnapshotSufficient } from "../companion-reflection-gate.ts";
+import { companionReflectionGate, reflectionSnapshotSufficient, reflectionTailWindow } from "../companion-reflection-gate.ts";
 import type { ReflectionInputSnapshotV1 } from "../companion-reflection-content.ts";
 
 const now = new Date("2026-10-10T08:00:00+08:00");
@@ -77,4 +77,15 @@ test("末尾是用户还在说话时不回顾：不能在被说到一半的时�
     { id: "a1", seq: 2, role: "assistant", kind: "text", text: "早！" },
   ]));
   assert.deepEqual(settled, { ok: true });
+});
+
+test("快照取尾窗：一段聊长了也要包含刚说完的那句，不然段落被误判成没落定", () => {
+  const rows = Array.from({ length: 30 }, (_unused, index) => ({ seq: index + 1 }));
+  const window = reflectionTailWindow(rows, 24);
+  assert.equal(window.length, 24);
+  assert.equal(window[0].seq, 7);
+  assert.equal(window[window.length - 1].seq, 30);
+  // 没超过容量时一条都不丢。
+  assert.equal(reflectionTailWindow(rows, 40).length, 30);
+  assert.equal(reflectionTailWindow(rows, 40)[0].seq, 1);
 });

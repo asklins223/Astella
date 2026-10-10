@@ -78,3 +78,17 @@ export function reflectionSnapshotSufficient(
   if (snapshot.persona.revision < 0) return { ok: false, reason: "persona_version_unreadable" };
   return { ok: true };
 }
+
+/**
+ * 段落窗口只留**最近**那些消息（活口在末尾，不在开头）。
+ *
+ * 为什么单独抽出来：快照有容量上限，而 SQL 里写 `ORDER BY seq LIMIT n` 会取到**段首**
+ * 那几条——一段聊长了，末尾那句刚刚说过的话反而不在她读到的材料里，
+ * 「段落是否已经落定」也就会被误判成"还停在用户说话"（2026-10-10 真实栈上就是这么撞上的）。
+ * 所以取尾、再按时间正序交给模型。
+ */
+export function reflectionTailWindow<T extends { seq: number }>(
+  rows: readonly T[], max: number,
+): T[] {
+  return rows.length <= max ? [...rows] : rows.slice(rows.length - max);
+}

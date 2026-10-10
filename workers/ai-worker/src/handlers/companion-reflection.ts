@@ -67,11 +67,11 @@ import { logger } from "../lib/logger.ts";
 import { parseMemoryExtractJson } from "./companion-memory-extractor.ts";
 import {
   COMPANION_REFLECTION_PROMPT_VERSION, COMPANION_REFLECTION_TASK_ID, COMPANION_REFLECTION_TASK_VERSION,
-  buildReflectionPrompt, companionReflectionOutputV1Schema, reflectionInputFingerprint,
-  verifyReflectionOutput,
+  buildReflectionMessages, clipReflectionOverflow, companionReflectionOutputV1Schema,
+  normalizeReflectionPayload, reflectionInputFingerprint, verifyReflectionOutput,
   type ReflectionInputSnapshotV1, type ReflectionVerifiedV1,
 } from "./companion-reflection-content.ts";
-import { companionReflectionGate, reflectionSnapshotSufficient } from "./companion-reflection-gate.ts";
+import { companionReflectionGate, reflectionSnapshotSufficient, reflectionTailWindow } from "./companion-reflection-gate.ts";
 import type { JobPayload } from "./index.ts";
 
 /** 一次回顾的输出上限：它是结构化结论，不是文章。 */
@@ -244,17 +244,20 @@ async function readSegmentMessages(tx: WorkerTransaction, input: {
      WHERE conversation_id = ${input.conversationId}::uuid
        AND seq > ${input.fromSeq} AND seq <= ${input.toSeq}
        AND role IN ('user', 'assistant')
-     ORDER BY seq
+     ORDER BY seq DESC
      LIMIT ${COMPANION_REFLECTION_INPUT_BUDGET.maxMessages}
   `);
-  return (Array.isArray(rows) ? rows : []).map((row) => ({
+  // 库里按 seq 倒序取**尾窗**，交给模型前排回正序（见 reflectionTailWindow 的注释：
+  // 取前 N 条会把刚说完的那句截掉，段落还会被误判成"没落定"）。
+  const window = reflectionTailWindow((Array.isArray(rows) ? rows : []).map((row) => ({
     id: String(row.id),
     seq: Number(row.seq),
     role: row.role as "user" | "assistant",
     kind: String(row.kind),
     text: textFromBlocks(row.blocks),
     contentHash: String(row.content_sha256 ?? ""),
-  }));
+  })), COMPANION_REFLECTION_INPUT_BUDGET.maxMessages);
+  return window.sort((left, right) => left.seq - right.seq);
 }
 
 function textFromBlocks(blocks: unknown): string {
@@ -403,7 +406,7 @@ async function runReflectionModelCall(
     govCtx, job.workspaceId,
     { userId, operation: "companion_reflection", jobId: job.id, dataCategories: ["conversation_content"] },
   );
-  const prompt = buildReflectionPrompt(prepared.snapshot);
+  const messages = buildReflectionMessages(prepared.snapshot);
   let rejection: string | null = null;
 
   const definition: AiTaskDefinition<void, ReflectionVerifiedV1> = {
@@ -424,12 +427,30 @@ async function runReflectionModelCall(
     },
     execute: async (_prepared, env) => {
       const result = await provider.chatCompletion(
-        [{ role: "system", content: prompt }],
+        messages,
         { temperature: 0.2, maxTokens: REFLECTION_MAX_OUTPUT_TOKENS, responseFormat: "json_object" },
         env.signal);
-      const parsed = companionReflectionOutputV1Schema.safeParse(parseMemoryExtractJson(result.content));
+      const normalized = normalizeReflectionPayload(parseMemoryExtractJson(result.content));
+      const clipped = clipReflectionOverflow(normalized.payload);
+      if (clipped.clipped.length > 0) {
+        // 超出容量的条目被剪掉，剩下的照收：这不是失败，但要看得见剪了几条。
+        logger.warn({ jobId: job.id, clipped: clipped.clipped }, "companion reflection trimmed over-capacity items");
+      }
+      const parsed = companionReflectionOutputV1Schema.safeParse(clipped.payload);
       if (!parsed.success) {
-        rejection = "必须返回 {decision, summary, judgments, experiences, persona} 这一个 JSON 对象。";
+        // 记下**哪一个字段不合**：只说"格式不对"，第二次跑还是同样失败，
+        // 而线上排查的人什么也看不见（§12.2 要能分辨协议失败）。
+        // 不落原始正文：那里面有用户的原话。
+        const issues = parsed.error.issues
+          .slice(0, 6)
+          .map((issue) => `${issue.path.join(".") || "(root)"}:${issue.code}`)
+          .join(",");
+        rejection = `字段不合 [${issues}]。键名必须照这个写：decision("no_change" 或 "proposals")、summary、`
+          + `judgments[{text,appliesWhen,epistemicStatus,sourceMessageIds}]、`
+          + `experiences[{title,triggerCondition,steps,exceptions,sourceMessageIds}]、`
+          + `persona({selfDescription,speakingStyle,reason,sourceMessageIds} 或 null)。${
+            normalized.droppedKeys.length > 0 ? `多出来的键没有采用：${normalized.droppedKeys.slice(0, 5).join(",")}。` : ""}`;
+        logger.warn({ jobId: job.id, issues }, "companion reflection output rejected by schema");
         return { ok: false, class: "output_shape", message: rejection };
       }
       return {

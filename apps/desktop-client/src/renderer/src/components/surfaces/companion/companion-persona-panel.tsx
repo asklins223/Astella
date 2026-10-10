@@ -88,7 +88,7 @@ function CompanionSelfDescriptionRow(props: {
     </label>
     <div className="cc-actions">
       <button type="button" className="button primary" disabled={props.busy || !dirty} onClick={commit}>
-        {trimmed.length === 0 ? "清空这一句" : "改这一句"}
+        {trimmed.length === 0 && props.current.trim().length > 0 ? "清空这一句" : "改这一句"}
       </button>
       {dirty ? <button type="button" disabled={props.busy} onClick={() => setDraft(null)}>取消</button> : null}
     </div>

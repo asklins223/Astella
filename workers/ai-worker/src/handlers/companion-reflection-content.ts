@@ -155,6 +155,150 @@ function citedSourcesOrReason(
 }
 
 /**
+ * 把模型那份 JSON 归一到上面的字段名。
+ *
+ * 2026-10-10 真实栈上跑第一次时，协议一次也没过：模型写的是 `source_message_ids`
+ * 与 `epistemic_status`（蛇形）、`decision` 给的是中文说法、还多带了一个 `note`。
+ * 严格 schema 是对的（不严格就会照收编造出来的字段），但要收得下**同一件事的另一种写法**。
+ *
+ * 所以这里只做三件确定性的事：键名别名、把逗号/顿号分隔的一串 id 拆开、枚举的同义词。
+ * 认不出来的键**丢掉并数下来**（不静默塞进产物），值本身不合枚举的照旧由 schema 拒收——
+ * 归一层不负责把"猜测"洗成"已验证"。
+ */
+const REFLECTION_KEY_ALIASES: Record<string, string> = {
+  source_message_ids: "sourceMessageIds",
+  source_ids: "sourceMessageIds",
+  message_ids: "sourceMessageIds",
+  epistemic_status: "epistemicStatus",
+  applies_when: "appliesWhen",
+  trigger_condition: "triggerCondition",
+  no_change: "no_change",
+};
+
+const REFLECTION_DECISION_SYNONYMS: Record<string, "no_change" | "proposals"> = {
+  no_change: "no_change", none: "no_change", unchanged: "no_change",
+  "不需要改": "no_change", "没有": "no_change", "无": "no_change",
+  proposals: "proposals", proposal: "proposals", change: "proposals", propose: "proposals",
+  "有建议": "proposals", "有": "proposals", "可以改": "proposals",
+};
+
+const REFLECTION_EPISTEMIC_SYNONYMS: Record<string, "tentative" | "supported"> = {
+  tentative: "tentative", "暂定": "tentative", "待核": "tentative", "待验证": "tentative",
+  supported: "supported", "成立": "supported", "已核对": "supported", "已验证": "supported",
+};
+
+function canonicalKey(key: string): string {
+  if (REFLECTION_KEY_ALIASES[key]) return REFLECTION_KEY_ALIASES[key];
+  const camel = key.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase());
+  return camel;
+}
+
+function idList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => (typeof entry === "string" ? entry.split(/[,，、\s]+/) : []))
+      .map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+  }
+  if (typeof value === "string") {
+    return value.split(/[,，、\s]+/).map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+  }
+  return [];
+}
+
+function normalizeObject(raw: Record<string, unknown>, dropped: string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const canonical = canonicalKey(key);
+    if (!Object.hasOwn(REFLECTION_KNOWN_KEYS, canonical)) {
+      dropped.push(key);
+      continue;
+    }
+    if (canonical === "sourceMessageIds") out[canonical] = idList(value);
+    else if (canonical === "decision") {
+      const mapped = REFLECTION_DECISION_SYNONYMS[String(value).trim().toLowerCase()]
+        ?? REFLECTION_DECISION_SYNONYMS[String(value).trim()];
+      out[canonical] = mapped ?? value;
+    } else if (canonical === "epistemicStatus") {
+      const mapped = REFLECTION_EPISTEMIC_SYNONYMS[String(value).trim().toLowerCase()]
+        ?? REFLECTION_EPISTEMIC_SYNONYMS[String(value).trim()];
+      out[canonical] = mapped ?? value;
+    } else out[canonical] = value;
+  }
+  return out;
+}
+
+/** 认得的键集合：不在这里的一律算多出来的东西（丢掉，不照收）。 */
+const REFLECTION_KNOWN_KEYS: Record<string, true> = {
+  decision: true, summary: true, judgments: true, experiences: true, persona: true,
+  text: true, appliesWhen: true, epistemicStatus: true, sourceMessageIds: true,
+  title: true, triggerCondition: true, steps: true, exceptions: true,
+  selfDescription: true, speakingStyle: true, reason: true,
+};
+
+export function normalizeReflectionPayload(value: unknown): { payload: unknown; droppedKeys: string[] } {
+  const dropped: string[] = [];
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return { payload: value, droppedKeys: dropped };
+  const out = normalizeObject(value as Record<string, unknown>, dropped);
+  for (const listKey of ["judgments", "experiences"]) {
+    const list = out[listKey];
+    if (Array.isArray(list)) {
+      out[listKey] = list.map((entry) => (typeof entry === "object" && entry !== null && !Array.isArray(entry)
+        ? normalizeObject(entry as Record<string, unknown>, dropped) : entry));
+    }
+  }
+  const persona = out.persona;
+  if (persona && typeof persona === "object" && !Array.isArray(persona)) {
+    out.persona = normalizeObject(persona as Record<string, unknown>, dropped);
+  }
+  return { payload: out, droppedKeys: dropped };
+}
+
+/**
+ * 超出容量的那几条**剪掉**，而不是把整次回顾判废。
+ *
+ * 2026-10-10 真实栈上撞到的：模型给出 3 条合作方法，schema 的上限是 2，
+ * 于是两条好的也跟着一起被拒——协议闸门是用来挡编造的，不是用来惩罚"多说了一条"。
+ * 剪掉的条数交给调用方记进诊断（不静默）。
+ */
+export function clipReflectionOverflow(raw: unknown): { payload: unknown; clipped: string[] } {
+  const clipped: string[] = [];
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { payload: raw, clipped };
+  const value = raw as Record<string, unknown>;
+  const limits: Record<string, { cap: number }> = {
+    judgments: { cap: 2 }, experiences: { cap: 2 },
+  };
+  const out: Record<string, unknown> = { ...value };
+  for (const [key, limit] of Object.entries(limits)) {
+    const list = out[key];
+    if (Array.isArray(list) && list.length > limit.cap) {
+      clipped.push(`${key}:${list.length - limit.cap}`);
+      out[key] = list.slice(0, limit.cap);
+    }
+  }
+  for (const key of ["judgments", "experiences"]) {
+    const list = out[key];
+    if (!Array.isArray(list)) continue;
+    out[key] = list.map((entry) => {
+      if (typeof entry !== "object" || entry === null) return entry;
+      const item = { ...(entry as Record<string, unknown>) };
+      if (Array.isArray(item.exceptions) && item.exceptions.length > 3) {
+        clipped.push("exceptions");
+        item.exceptions = item.exceptions.slice(0, 3);
+      }
+      if (Array.isArray(item.steps) && item.steps.length > 4) {
+        clipped.push("steps");
+        item.steps = item.steps.slice(0, 4);
+      }
+      if (Array.isArray(item.sourceMessageIds) && item.sourceMessageIds.length > 6) {
+        clipped.push("sourceMessageIds");
+        item.sourceMessageIds = item.sourceMessageIds.slice(0, 6);
+      }
+      return item;
+    });
+  }
+  return { payload: out, clipped };
+}
+
+/**
  * 验收这次回顾的产出。
  *
  * 丢东西不是失败：§9.2 明确允许 `no_change`，而"为了满足 schema 造一条假记忆"是
@@ -273,6 +417,33 @@ export function renderReflectionPersona(snapshot: ReflectionInputSnapshotV1): st
 }
 
 /**
+ * 那一次回顾的双消息形状：规则在 system，素材在 user。
+ *
+ * 不是风格问题：现役那个 provider 对"只有 system 一条消息"的请求直接回 HTTP 400，
+ * 于是这次回顾**一次也没成过**，而结论码只会写下 `protocol_failed`。
+ * 素材与指令分开也与日记那一路一致（`buildDiaryRevisionPrompt`）。
+ */
+export function buildReflectionMessages(snapshot: ReflectionInputSnapshotV1): Array<{ role: "system" | "user"; content: string }> {
+  return [
+    { role: "system", content: buildReflectionPrompt(snapshot) },
+    { role: "user", content: `就是下面这一段，按上面的规矩回顾。只输出一个 json 对象。\n\n${renderReflectionInputBlock(snapshot)}` },
+  ];
+}
+
+/** 素材在 user 轮里再给一遍紧凑版：消息、动作与已记条目，带上真实 id。 */
+function renderReflectionInputBlock(snapshot: ReflectionInputSnapshotV1): string {
+  return [
+    `人格：${renderReflectionPersona(snapshot)}`,
+    `交流：`,
+    ...snapshot.messages.map((message) => `${message.seq}. ${message.role === "user" ? "用户" : "伴星"}（id=${message.id}）${message.text}`),
+    ...(snapshot.toolReceipts.length > 0
+      ? [`动作：`, ...snapshot.toolReceipts.map(r => `- ${r.name}（${r.status}）${r.safeSummary}`)] : []),
+    ...(snapshot.relatedMemories.length > 0
+      ? [`已记条目：`, ...snapshot.relatedMemories.map(m => `- [${m.kind}] ${m.content}`)] : []),
+  ].join("\n");
+}
+
+/**
  * 那一次回顾的系统提示。
  *
  * 注意最后一条：**没有值得留下的就别硬凑**。这一句不是客气话——schema 要求数组
@@ -292,7 +463,9 @@ export function buildReflectionPrompt(snapshot: ReflectionInputSnapshotV1): stri
     "同一个意思不要抄成两条；她已经记过的条目不要重复再记。",
     "没有值得留下的就返回 {\"decision\":\"no_change\",\"summary\":\"一句为什么不必改\"}，三类都留空数组。这是正常结果，不是失败。",
     "selfDescription 是**她对自己的短段落**，不是给用户看的介绍文案；照原样重写整段时要带着已有的内容改，不要丢掉还成立的部分。",
-    "只输出一个 JSON 对象，字段严格是：decision、summary、judgments[]、experiences[]、persona。不要输出分析过程。",
+    "只输出一个 JSON 对象。键名照下面一字不差地写（不要用蛇形、不要改英文名、不要加别的键）：",
+    `{"decision":"no_change" 或 "proposals","summary":"…","judgments":[{"text":"…","appliesWhen":"…","epistemicStatus":"tentative" 或 "supported","sourceMessageIds":["…"]}],"experiences":[{"title":"…","triggerCondition":"…","steps":["…"],"exceptions":["…"],"sourceMessageIds":["…"]}],"persona":{"selfDescription":"…","speakingStyle":"…","reason":"…","sourceMessageIds":["…"]} 或 null}`,
+    "sourceMessageIds 里填上面列出的消息 id 原文，不要填序号、不要自己编号。不要输出分析过程。",
     "",
     "# 你现在是谁（这一段结束时生效的那一版）",
     renderReflectionPersona(snapshot),

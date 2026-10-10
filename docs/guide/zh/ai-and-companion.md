@@ -264,7 +264,9 @@ make verify                                  # 已包含 typecheck + test + pr-g
 | 念头与主动送达 | `companion-thought.ts`、`companion-delivery-write.ts`、`companion-proposal-copy.ts` | `assistant_deliveries`（唯一的送达通道）、`companion_action_proposals`；`companion_proactive_deliveries` 只有表定义与测试引用，没有生产写入方 |
 | 发现簿与长期经验 | 发现簿的读写在 API 侧，不在 worker；方法经验由 `packages/agent-host/src/methods.ts` 持有 | `companion_discovery_entries`、`companion_procedural_playbooks`、`companion_method_revisions` / `companion_method_uses` |
 
-自改人格的四件事（语气、性格标签、表达分量、边界）共用 `applyAssistantPersonaEdits()`：改动靠 `fieldOrigin` 记账标成 `assistant`，换人格时才知道哪几项是她写的、不该被预设冲掉；账号从没选过人格时以系统默认人格为底稿起一份档案，而不是回一句"改不了"；内容没变不给"已改"回执也不占版本号；`name` 在类型上就不让她改。
+自改人格的四件事（语气、性格标签、表达分量、边界）与她的自我描述共用**同一个身份写入口** `commitPersonaProposalV1()`（`packages/agent-host/src/identity.ts`）：前台工具与后台回顾都经它落，规则只有一份。改动靠 `fieldOrigin` 记账标成 `assistant`，换人格时才知道哪几项是她写的、不该被预设冲掉；账号从没选过人格时以系统默认人格为底稿起一份档案，而不是回一句"改不了"；内容没变不给"已改"回执也不占版本号；`name` 在类型上就不让她改。每条待生效版本还记「出自哪一次提议」（前台是那次运行，后台是那次回顾）：同一次运行里先改语气再改标签两项都留，不相干的两笔不并成一条，新的那笔回到当前生效的版本重排，旧的仍在人格版本记录里可恢复。
+
+她回顾一段相处是独立的后台任务（`companion_reflection`，maintenance 车道）：读的是那段真实交流与当时的回执，产出三类东西——她自己的理解（判断，`user_stated=false`、留在空间里）、下次怎么配合的方法候选（仍是待核对）、以及一句对自己的描述（人格页「她怎么说自己」那一格）。值得改就提一版待生效，不值得就什么都不留。依据被删掉或换过版本时，那一版不会在下一条新消息被接受时生效，人格页与回顾记录都写明为什么。
 
 主动送达走 inbox：`assistant_deliveries` 上的 `inboxSequence` 在同一把用户级 advisory 锁内取 max+1，写行与 `pg_notify` 同事务；客户端连 `GET /companion/deliveries/inbox/stream`（`event=assistant.delivery`、`id=inboxSequence`），断线按 `Last-Event-ID` 续，是 durable 语义。worker 写 `system_event` 那类展示行走的是同一条锁与通知，不另立一套。
 
