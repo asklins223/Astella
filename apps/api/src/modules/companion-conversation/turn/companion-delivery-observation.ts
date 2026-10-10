@@ -137,16 +137,3 @@ export async function loadCompanionDeliveryObservation(tx: ApiTransaction, args:
   });
   return projected ? JSON.parse(JSON.stringify(projected)) : null;
 }
-
-/**
- * 这一轮能不能带着那份观察（worker 侧用）。
- *
- * 两件事各自独立：过期只表示"别再当新线索用"；权威行被彻底清掉之后这条也不该复活——
- * 但读边在 worker 上没有那张回执表，所以这里能核的只有时间。这一点如实记在合同旁边。
- */
-export function isDeliveryObservationLive(value: unknown, now = new Date()): boolean {
-  const parsed = companionObservationSetV1Schema.safeParse(value);
-  if (!parsed.success) return false;
-  return parsed.data.observations.some((entry) => entry.withdrawal.expiresAt === null
-    || new Date(entry.withdrawal.expiresAt) > now);
-}

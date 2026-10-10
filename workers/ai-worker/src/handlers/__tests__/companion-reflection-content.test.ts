@@ -172,3 +172,15 @@ test("剪容量：模型多给一条经验时不要整次回顾作废", () => {
   assert.equal(parsed.success && parsed.data.experiences.length, 2);
   assert.deepEqual(clipped, ["judgments:1", "experiences:1"]);
 });
+
+test("剪容量也要管到 persona：她那一段自我描述的依据给多了，剪掉而不是整份判废", () => {
+  const ids = Array.from({ length: 8 }, (_u, i) =>
+    `5f0c1a44-0000-4000-8000-00000000000${i + 1}`);
+  const raw = { decision: "proposals", summary: "s",
+    persona: { selfDescription: "我在学着不把读过的东西数一遍。", reason: "对方明确说过", sourceMessageIds: ids } };
+  const { payload, clipped } = clipReflectionOverflow(normalizeReflectionPayload(raw).payload);
+  const parsed = companionReflectionOutputV1Schema.safeParse(payload);
+  assert.equal(parsed.success, true, JSON.stringify(parsed.success ? {} : parsed.error.issues));
+  assert.equal(parsed.success && parsed.data.persona?.sourceMessageIds.length, 6);
+  assert.deepEqual(clipped, ["persona.sourceMessageIds"]);
+});

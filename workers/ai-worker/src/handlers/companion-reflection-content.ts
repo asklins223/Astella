@@ -172,7 +172,6 @@ const REFLECTION_KEY_ALIASES: Record<string, string> = {
   epistemic_status: "epistemicStatus",
   applies_when: "appliesWhen",
   trigger_condition: "triggerCondition",
-  no_change: "no_change",
 };
 
 const REFLECTION_DECISION_SYNONYMS: Record<string, "no_change" | "proposals"> = {
@@ -273,6 +272,15 @@ export function clipReflectionOverflow(raw: unknown): { payload: unknown; clippe
       clipped.push(`${key}:${list.length - limit.cap}`);
       out[key] = list.slice(0, limit.cap);
     }
+  }
+  // persona 与 judgments/experiences 是同一件事：超容量剪掉、别整份判废。
+  if (out.persona && typeof out.persona === "object" && !Array.isArray(out.persona)) {
+    const persona = { ...(out.persona as Record<string, unknown>) };
+    if (Array.isArray(persona.sourceMessageIds) && persona.sourceMessageIds.length > 6) {
+      clipped.push("persona.sourceMessageIds");
+      persona.sourceMessageIds = persona.sourceMessageIds.slice(0, 6);
+    }
+    out.persona = persona;
   }
   for (const key of ["judgments", "experiences"]) {
     const list = out[key];
