@@ -86,9 +86,10 @@ try {
   if (Test-Path $trace) { Copy-Item -LiteralPath $trace -Destination $diagnostics }
 
   Write-Host 'Rounded transparent sheet and self-drawn caption buttons'
-  # 圆角不是 CSS 写上去就算数：四个角必须透出窗口背后的那一层。取同屏窗口外的邻居像素与角上像素比对，
-  # 直角不透明窗口会让两者不同（角上是应用自己的深色衬底），这条当场判红。
-  Add-Type -AssemblyName System.Drawing, System.Windows.Forms, UIAutomationClient, UIAutomationTypes
+  # 圆角不是 CSS 写上去就算数：把窗口藏起来重拍一张，同一个位置的角必须透出它自己背后那一层。
+  # 判据与安装窗口共用 windows-rounded-sheet-probe.ps1（邻居像素当参考在任务栏上会误判）。
+  Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+  . (Join-Path $PSScriptRoot 'windows-rounded-sheet-probe.ps1')
   $handleDeadline = [DateTime]::UtcNow.AddSeconds(20)
   do {
     $app.Refresh()
@@ -98,53 +99,12 @@ try {
   } while ([DateTime]::UtcNow -lt $handleDeadline)
   if ($app.MainWindowHandle -eq 0) { throw '已安装应用没有主窗口句柄' }
   $window = [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
-  $sheet = $window.Current.BoundingRectangle
-  if ($sheet.Width -lt 300 -or $sheet.Height -lt 300) { throw "应用窗口尺寸异常：$sheet" }
-  $originX = [int]$sheet.X - 8; $originY = [int]$sheet.Y - 8
-  $shot = New-Object System.Drawing.Bitmap ([int]$sheet.Width + 16), ([int]$sheet.Height + 16)
-  $canvas = [System.Drawing.Graphics]::FromImage($shot)
-  try {
-    $canvas.CopyFromScreen($originX, $originY, 0, 0, $shot.Size)
-    $shot.Save((Join-Path $diagnostics 'windows-app-window.png'), [System.Drawing.Imaging.ImageFormat]::Png)
-    function Get-PixelAt([int]$x, [int]$y) { return $shot.GetPixel($x - $originX, $y - $originY) }
-    function Same-Layer([int]$ax, [int]$ay, [int]$bx, [int]$by) {
-      $a = Get-PixelAt $ax $ay; $b = Get-PixelAt $bx $by
-      return ([Math]::Abs($a.R - $b.R) -lt 24) -and ([Math]::Abs($a.G - $b.G) -lt 24) -and ([Math]::Abs($a.B - $b.B) -lt 24)
-    }
-    $left = [int]$sheet.X; $top = [int]$sheet.Y
-    $right = [int]($sheet.X + $sheet.Width) - 1; $bottom = [int]($sheet.Y + $sheet.Height) - 1
-    $corners = @(
-      @{ Name = '左上'; Corner = @(($left + 2), ($top + 2)); Outside = @(($left - 4), ($top - 4)); Inside = @(($left + 48), ($top + 48)) },
-      @{ Name = '右上'; Corner = @(($right - 2), ($top + 2)); Outside = @(($right + 4), ($top - 4)); Inside = @(($right - 48), ($top + 48)) },
-      @{ Name = '左下'; Corner = @(($left + 2), ($bottom - 2)); Outside = @(($left - 4), ($bottom + 4)); Inside = @(($left + 48), ($bottom - 48)) },
-      @{ Name = '右下'; Corner = @(($right - 2), ($bottom - 2)); Outside = @(($right + 4), ($bottom + 4)); Inside = @(($right - 48), ($bottom - 48)) }
-    )
-    $checked = 0
-    foreach ($corner in $corners) {
-      $usable = $true
-      foreach ($point in @($corner.Corner, $corner.Outside, $corner.Inside)) {
-        if ($point[0] -lt $originX -or $point[1] -lt $originY -or ($point[0] - $originX) -ge $shot.Width -or ($point[1] - $originY) -ge $shot.Height) { $usable = $false }
-      }
-      # 贴到屏幕边缘时窗外没有可比像素，跳过这一角。
-      if (-not $usable) { continue }
-      if (-not (Same-Layer $corner.Corner[0] $corner.Corner[1] $corner.Outside[0] $corner.Outside[1])) {
-        throw "$($corner.Name)角没有透出窗口背后那一层：圆角透明未生效（见 windows-app-window.png）"
-      }
-      if (Same-Layer $corner.Corner[0] $corner.Corner[1] $corner.Inside[0] $corner.Inside[1]) {
-        throw "$($corner.Name)角与卡片内部同色：疑似窗口仍是直角"
-      }
-      $checked++
-    }
-    if ($checked -lt 2) { throw "可比对的窗口角只有 $checked 个，无法判断圆角是否生效" }
-    Write-Host "四个角按可见性比对了 $checked 个，均透出背后层。"
-    foreach ($name in @('最小化', '最大化', '关闭')) {
-      $find = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, $name)
-      if (-not $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $find)) { throw "标题带缺少自绘按钮：$name" }
-    }
-    Write-Host '自绘标题按钮三个都在无障碍树里。'
-  } finally {
-    $canvas.Dispose(); $shot.Dispose()
+  Assert-RoundedSheet -Handle $app.MainWindowHandle -Window $window -Diagnostics $diagnostics -CaptureName 'windows-app-window.png' -Label '主窗口'
+  foreach ($name in @('最小化', '最大化', '关闭')) {
+    $find = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, $name)
+    if (-not $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $find)) { throw "标题带缺少自绘按钮：$name" }
   }
+  Write-Host '自绘标题按钮三个都在无障碍树里。'
   & taskkill.exe /PID $app.Id /T /F | Out-Null
   Start-Sleep -Seconds 3
 

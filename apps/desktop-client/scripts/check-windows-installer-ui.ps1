@@ -49,49 +49,7 @@ function Screenshot($Window, [string]$Name) {
     $bitmap.Save((Join-Path $Diagnostics $Name), [System.Drawing.Imaging.ImageFormat]::Png)
   } finally { $graphics.Dispose(); $bitmap.Dispose() }
 }
-function Test-SameLayer($Shot, [int]$OriginX, [int]$OriginY, $A, $B) {
-  $first = $Shot.GetPixel($A[0] - $OriginX, $A[1] - $OriginY)
-  $second = $Shot.GetPixel($B[0] - $OriginX, $B[1] - $OriginY)
-  return ([Math]::Abs($first.R - $second.R) -lt 24) -and ([Math]::Abs($first.G - $second.G) -lt 24) -and ([Math]::Abs($first.B - $second.B) -lt 24)
-}
-function Assert-RoundedSheet($Window, [string]$Diagnostics) {
-  # 圆角不是写了 CornerRadius 就算数：四角必须透出窗口背后的那一层。判据与 check-windows-installer.ps1
-  # 对主窗口的相同 —— 取同屏窗口外的邻居像素与角上像素比对，直角不透明窗口会让两者不同。
-  $sheet = $Window.Current.BoundingRectangle
-  if ($sheet.Width -lt 300 -or $sheet.Height -lt 300) { throw "安装窗口尺寸异常：$sheet" }
-  $originX = [int]$sheet.X - 8; $originY = [int]$sheet.Y - 8
-  $shot = New-Object System.Drawing.Bitmap ([int]$sheet.Width + 16), ([int]$sheet.Height + 16)
-  $canvas = [System.Drawing.Graphics]::FromImage($shot)
-  try {
-    $canvas.CopyFromScreen($originX, $originY, 0, 0, $shot.Size)
-    $shot.Save((Join-Path $Diagnostics 'windows-installer-window.png'), [System.Drawing.Imaging.ImageFormat]::Png)
-    $left = [int]$sheet.X; $top = [int]$sheet.Y
-    $right = [int]($sheet.X + $sheet.Width) - 1; $bottom = [int]($sheet.Y + $sheet.Height) - 1
-    $corners = @(
-      @{ Name = '左上'; Corner = @(($left + 2), ($top + 2)); Outside = @(($left - 4), ($top - 4)); Inside = @(($left + 48), ($top + 48)) },
-      @{ Name = '右上'; Corner = @(($right - 2), ($top + 2)); Outside = @(($right + 4), ($top - 4)); Inside = @(($right - 48), ($top + 48)) },
-      @{ Name = '左下'; Corner = @(($left + 2), ($bottom - 2)); Outside = @(($left - 4), ($bottom + 4)); Inside = @(($left + 48), ($bottom - 48)) },
-      @{ Name = '右下'; Corner = @(($right - 2), ($bottom - 2)); Outside = @(($right + 4), ($bottom + 4)); Inside = @(($right - 48), ($bottom - 48)) }
-    )
-    $checked = 0
-    foreach ($corner in $corners) {
-      $usable = $true
-      foreach ($point in @($corner.Corner, $corner.Outside, $corner.Inside)) {
-        if ($point[0] -lt $originX -or $point[1] -lt $originY -or ($point[0] - $originX) -ge $shot.Width -or ($point[1] - $originY) -ge $shot.Height) { $usable = $false }
-      }
-      if (-not $usable) { continue }
-      if (-not (Test-SameLayer $shot $originX $originY $corner.Corner $corner.Outside)) {
-        throw "$($corner.Name)角没有透出窗口背后那一层：安装窗口仍是直角不透明（见 windows-installer-window.png）"
-      }
-      if (Test-SameLayer $shot $originX $originY $corner.Corner $corner.Inside) {
-        throw "$($corner.Name)角与纸面同色：疑似窗口仍是直角"
-      }
-      $checked++
-    }
-    if ($checked -lt 2) { throw "可比对的窗口角只有 $checked 个，无法判断圆角是否生效" }
-    Write-Host "安装窗口四个角按可见性比对了 $checked 个，均透出背后层。"
-  } finally { $canvas.Dispose(); $shot.Dispose() }
-}
+. (Join-Path $PSScriptRoot 'windows-rounded-sheet-probe.ps1')
 
 $process = $null
 $waiter = $null
@@ -106,7 +64,7 @@ try {
   Screenshot $window 'windows-installer-notice.png'
   # 无边框透明窗口的圆角与自绘标题按钮：与 check-windows-installer.ps1 对主窗口用同一条判据。
   Start-Sleep -Milliseconds 400
-  Assert-RoundedSheet $window $Diagnostics
+  Assert-RoundedSheet -Handle $process.MainWindowHandle -Window $window -Diagnostics $Diagnostics -CaptureName 'windows-installer-window.png' -Label '安装窗口'
   foreach ($caption in @('最小化', '关闭')) { Assert-Visible (Find-Control $window $caption ([System.Windows.Automation.ControlType]::Button)) }
   Write-Host '安装窗口四角透出背后层，自绘的标题按钮在无障碍树里。'
   Click (Find-Control $window '阅读许可全文 ↗')
