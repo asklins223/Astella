@@ -89,6 +89,7 @@ describe("伴星中心 · 人格：登记的预设与边界就是屏上那两列
       versions: [],
       versionsError: null,
       onRename: noop,
+onSelfDescription: noop,
       onRetry: noop,
     };
     render(<PersonaPanel {...base} {...props} />);

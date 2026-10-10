@@ -84,7 +84,7 @@ function renderPanel(overrides: Partial<PanelProps> = {}) {
     onReset={noop}
     onRestore={noop}
     onReloadVersions={noop}
-    onRename={noop}
+    onRename={noop} onSelfDescription={() => Promise.resolve(false)}
     onRetry={noop}
     // 弹层要四个回调齐了才渲染（页面持有状态，面板只画）。这里给齐，
     // 想验「回调没给就不画」的那条用例再显式传 undefined。

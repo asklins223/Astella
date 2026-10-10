@@ -1,6 +1,6 @@
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import type { CompanionPersonaPendingRevisionV1,CompanionPersonaPendingV1,CompanionPersonaPresetV1,CompanionPersonaProfileV1,CompanionPersonaProfileVersionV1,CompanionPersonaV1 } from "@astella/shared/companion-memory-desktop-contracts";
-import { personaOriginOf, type PersonaSwitchOption, type SwitchableField } from "@astella/shared/pet-persona-merge";
+import { PERSONA_FIELD_CAPACITY, personaOriginOf, type PersonaSwitchOption, type SwitchableField } from "@astella/shared/pet-persona-merge";
 import { useId,useMemo,useState } from "react";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
@@ -28,7 +28,7 @@ type PersonaPendingProps = {
   readonly onRetryPending?: () => void;
 };
 
-type PersonaPanelProps = { section: Section<CompanionPersonaV1>; persona: CompanionPersonaV1 | null; versions: CompanionPersonaProfileVersionV1[] | null; versionsError: string | null; busy: string | null; error: string | null; notice: string | null; onPreset: (preset: CompanionPersonaPresetV1) => void; onActiveness: (value: CompanionPersonaProfileV1["activeness"]) => void; onBoundary: (key: (typeof BOUNDARY_ITEMS)[number][0]) => void; onReset: () => void; onRestore: (revision: number) => void; onReloadVersions: () => void; onRename: (name: string) => Promise<boolean> | void; onSettings?: () => void; onRetry: () => void; switchTarget?: CompanionPersonaPresetV1 | null; switchOptions?: readonly PersonaSwitchOption[]; overwrite?: readonly SwitchableField[]; onOverwrite?: (fields: readonly SwitchableField[]) => void; onSwitchCancel?: () => void; onSwitchConfirm?: () => void } & PersonaPendingProps;
+type PersonaPanelProps = { section: Section<CompanionPersonaV1>; persona: CompanionPersonaV1 | null; versions: CompanionPersonaProfileVersionV1[] | null; versionsError: string | null; busy: string | null; error: string | null; notice: string | null; onPreset: (preset: CompanionPersonaPresetV1) => void; onActiveness: (value: CompanionPersonaProfileV1["activeness"]) => void; onBoundary: (key: (typeof BOUNDARY_ITEMS)[number][0]) => void; onReset: () => void; onRestore: (revision: number) => void; onReloadVersions: () => void; onRename: (name: string) => Promise<boolean> | void; onSelfDescription: (text: string) => Promise<boolean> | void; onSettings?: () => void; onRetry: () => void; switchTarget?: CompanionPersonaPresetV1 | null; switchOptions?: readonly PersonaSwitchOption[]; overwrite?: readonly SwitchableField[]; onOverwrite?: (fields: readonly SwitchableField[]) => void; onSwitchCancel?: () => void; onSwitchConfirm?: () => void } & PersonaPendingProps;
 
 function CompanionNameRow(props: { readonly current: string; readonly busy: boolean; readonly onRename: (name: string) => Promise<boolean> | void }) {
   const [draft, setDraft] = useState<string | null>(null);
@@ -53,6 +53,48 @@ function CompanionNameRow(props: { readonly current: string; readonly busy: bool
   </div>;
 }
 
+/**
+ * 她怎么说自己（方案 50 §8.1）。
+ *
+ * 与「说话风格」分开显示是刻意的：那一行是**你或预设给她的说法要求**，这一行是
+ * 她自己回顾相处之后攒下的认识。混在一句话里，用户分不清哪句是自己写的，
+ * 也就看不出"她变了"这件事到底发生过没有。
+ *
+ * 允许直接改和清空（来源从此记 `user`）——她能提，你也改得动，才算双向。
+ */
+function CompanionSelfDescriptionRow(props: {
+  readonly current: string;
+  readonly busy: boolean;
+  readonly origin: string;
+  readonly onSave: (text: string) => Promise<boolean> | void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? props.current;
+  const trimmed = shown.trim();
+  const dirty = trimmed !== props.current.trim();
+  const commit = async () => { const saved = await props.onSave(trimmed); if (saved !== false) setDraft(null); };
+  return <div className="cc-self-description">
+    <label className="cc-self-description__field">
+      <span className="cc-kicker">她怎么说自己<OriginBadge origin={props.origin} /></span>
+      <textarea
+        value={shown}
+        rows={3}
+        maxLength={PERSONA_FIELD_CAPACITY.selfDescription}
+        aria-label="她怎么说自己"
+        disabled={props.busy}
+        placeholder={props.current ? undefined : "等她回顾过一段相处，这一句会自己长出来。你也可以先写一句。"}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+    </label>
+    <div className="cc-actions">
+      <button type="button" className="button primary" disabled={props.busy || !dirty} onClick={commit}>
+        {trimmed.length === 0 ? "清空这一句" : "改这一句"}
+      </button>
+      {dirty ? <button type="button" disabled={props.busy} onClick={() => setDraft(null)}>取消</button> : null}
+    </div>
+  </div>;
+}
+
 const PERSONA_UNAVAILABLE = "人格档案当前不可用";
 
 const PERSONA_SECTIONS = { appearance: "人格预设", boundaries: "边界", pending: "待生效版本" } as const;
@@ -72,6 +114,20 @@ const PERSONA_VERSION_AUTHOR_LABEL: Record<CompanionPersonaPendingRevisionV1["au
 };
 
 const PERSONA_NO_PENDING = "现在没有排队的人格版本。";
+
+/**
+ * 待生效那一版是谁提的、出自哪一次提议。
+ *
+ * 同一个人格修订，"她在这次对话里被你指出后改的"与"她自己回顾了一段相处之后改的"
+ * 是两件不同的事（方案 50 §9.4 要求用户能察觉变化从哪来）。旧数据没有提案身份，
+ * 就只说作者，不编一个来源出来。
+ */
+function pendingAuthorLabel(pending: CompanionPersonaPendingRevisionV1): string {
+  if (pending.author === "assistant_tool" && pending.proposalKind === "assistant_reflection") {
+    return "她回顾这段相处后提的";
+  }
+  return PERSONA_VERSION_AUTHOR_LABEL[pending.author];
+}
 
 const PERSONA_PENDING_LOADING = "正在加载待生效版本…";
 
@@ -191,6 +247,13 @@ export function PersonaPanel(props: PersonaPanelProps) {
         <h3>{profile?.name ?? "伴星"}</h3>
         <div className="cc-tags">{profile?.personalityTags.map(tag => <span className="cc-tag" key={tag}>{tag}</span>)}<OriginBadge origin={personaOriginOf(fieldOrigin, "personalityTags")} /></div>
         <p>{profile?.speakingStyle ?? "正在使用系统默认表达。"}<OriginBadge origin={personaOriginOf(fieldOrigin, "speakingStyle")} /></p>
+        {/* 预设里没有"出厂的自我描述"这一项：它只可能来自账号档案。 */}
+        <CompanionSelfDescriptionRow
+          current={props.persona.profile?.selfDescription ?? ""}
+          busy={props.busy !== null}
+          origin={personaOriginOf(fieldOrigin, "selfDescription")}
+          onSave={props.onSelfDescription}
+        />
         {profile?.examples.length ? <blockquote>{profile.examples[0].text}</blockquote> : null}
       </section>
       <section className="cc-persona-name"><h4>她叫什么</h4><p>用在署名、对话和书桌旁的称呼。</p>
@@ -217,7 +280,7 @@ export function PersonaPanel(props: PersonaPanelProps) {
       {props.pendingError ? <SectionState message="待生效版本暂时读不到" detail={props.pendingError} onRetry={props.onRetryPending} />
         : !props.pending ? <p className="cc-muted" role="status">{PERSONA_PENDING_LOADING}</p>
         : props.pending.pending === null ? <p className="cc-muted">{PERSONA_NO_PENDING}</p>
-        : <article className="cc-persona-pending"><div><strong>第 {props.pending.pending.revision} 版 · {props.pending.pending.profile?.name ?? "回到默认表达"}</strong><small>{PERSONA_VERSION_AUTHOR_LABEL[props.pending.pending.author]} · {formatDate(props.pending.pending.stagedAt)}</small><p>{props.pending.pending.profile?.speakingStyle ?? "这一版会恢复默认人格表达。"}</p><span className="cc-tag">{props.pending.pending.effectiveWhen}</span></div><button type="button" className="button primary" disabled={props.busy !== null} onClick={props.onActivatePending}>{props.busy === "activate-pending" ? "正在应用这一版…" : "现在生效"}</button></article>}
+        : <article className="cc-persona-pending"><div><strong>第 {props.pending.pending.revision} 版 · {props.pending.pending.profile?.name ?? "回到默认表达"}</strong><small>{pendingAuthorLabel(props.pending.pending)} · {formatDate(props.pending.pending.stagedAt)}</small><p>{props.pending.pending.profile?.speakingStyle ?? props.pending.pending.profile?.selfDescription ?? "这一版会恢复默认人格表达。"}</p>{props.pending.pending.reason ? <p className="cc-pending-reason">{props.pending.pending.reason}</p> : null}<span className="cc-tag">{props.pending.pending.effectiveWhen}</span></div><button type="button" className="button primary" disabled={props.busy !== null} onClick={props.onActivatePending}>{props.busy === "activate-pending" ? "正在应用这一版…" : "现在生效"}</button></article>}
     </CenterSection>
     <details className="cc-persona-history"><summary>人格版本记录{props.versions ? ` · ${props.versions.length} 版` : ""}</summary>
       <p className="cc-muted">恢复旧版会留下新版本。各个书房累积的熟悉度会保留。</p>

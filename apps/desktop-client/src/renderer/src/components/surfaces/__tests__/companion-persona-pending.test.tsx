@@ -92,7 +92,7 @@ function version(revision: number): CompanionPersonaProfileVersionV1 {
   };
 }
 
-function pending(): CompanionPersonaPendingV1 {
+function pending(overrides: Partial<CompanionPersonaPendingV1["pending"]> = {}): CompanionPersonaPendingV1 {
   return {
     version: 1,
     currentRevision: 3,
@@ -114,6 +114,7 @@ function pending(): CompanionPersonaPendingV1 {
       stagedAt: "2026-09-23T00:00:00.000Z",
       // 生效条件由服务端提供，持久手记的下一轮新消息自动采用。
       effectiveWhen: "下一轮新发起的对话生效，当前已开始的调用保持原版本",
+      ...overrides,
     },
   };
 }
@@ -138,6 +139,7 @@ function renderPanel(props: Partial<PersonaProps> = {}) {
     onRestore: noop,
     onReloadVersions: noop,
     onRename: noop,
+onSelfDescription: noop,
     onRetry: noop,
   };
   render(<PersonaPanel {...base} {...props} />);
@@ -169,6 +171,18 @@ describe("40 §4.8.4 · 人格「待生效版本」在伴星中心看得见", ()
     expect(section.textContent).toContain("第 4 版");
     // 这一版的内容要能被读到，否则"她改了什么"仍然看不见。
     expect(section.textContent).toContain("先把证据摆出来，再说结论。");
+  });
+
+  it("同一位作者、两种来源：回顾出来的那一句自己说清楚（方案 50 §9.4）", () => {
+    renderPanel({
+      pending: pending({ proposalKind: "assistant_reflection", reason: "我把你三次的反应连起来看了一次" }),
+    });
+    const section = [...document.querySelectorAll(".cc-persona > .cc-section")]
+      .find((node) => node.querySelector("h3")?.textContent === "待生效版本")!;
+    expect(section.textContent).toContain("她回顾这段相处后提的");
+    expect(section.textContent).not.toContain("她调整的");
+    // 依据要能在屏上读到，否则"她为什么改"仍然只能去翻数据库。
+    expect(section.textContent).toContain("我把你三次的反应连起来看了一次");
   });
 
   it("「现在生效」按钮在，且点了就调那个动作", () => {

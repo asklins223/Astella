@@ -527,3 +527,16 @@
 .hud-surface .cc-long-goal-task strong { font-size: 13px; line-height: 1.7; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .hud-surface .cc-long-goal-task small, .hud-surface .cc-long-goal-task span { color: var(--cc-muted); font-size: 11px; line-height: 1.7; }
 .hud-surface .cc-long-goal-task:hover span { color: var(--cc-ink); }
+
+/* 她怎么说自己：与「说话风格」分开的一格。 textarea 而不是 input —— 这是一段话，
+   不是一行标签；不给它比旁边更大的重心，让用户先读到的是她此刻的说法。 */
+.cc-self-description { display: grid; gap: 8px; margin-top: 12px; }
+.cc-self-description__field { display: grid; gap: 6px; }
+.cc-self-description textarea {
+  font: inherit;
+  resize: vertical;
+  min-height: 64px;
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+.cc-pending-reason { color: var(--ink-soft); font-size: 13px; margin: 4px 0 0; }
