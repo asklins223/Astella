@@ -9,6 +9,8 @@ import { runCompanionDialogue } from "./handlers/companion-dialogue.ts";
 import { runCompanionMemoryExtract } from "./handlers/companion-memory-extractor.ts";
 import { runCompanionMemoryOrganizeJob } from "./handlers/companion-memory-organize.ts";
 import { tickCompanionMemoryOrganizeScheduler } from "./handlers/companion-memory-organize-scheduler.ts";
+import { runCompanionReflectionJob } from "./handlers/companion-reflection.ts";
+import { tickCompanionReflectionScheduler } from "./handlers/companion-reflection-scheduler.ts";
 import { runCompanionSummarizer } from "./handlers/companion-summarizer.ts";
 import { runCompanionMemoryEmbeddingRebuild } from "./handlers/companion-memory-embedding.ts";
 import { runCompanionDailySummary } from "./handlers/companion-daily-summary.ts";
@@ -83,6 +85,8 @@ const HANDLERS = {
   companion_daily_summary: runCompanionDailySummary,
   // 40 §4.6.3/§4.6.9：后台语义整理。判据与租约早就写好了，这一行是那个「接电」。
   companion_memory_organize: runCompanionMemoryOrganizeJob,
+  // 方案 50 §9：同一个人格的后台回顾。门在 gate，结论码落在 companion_reflections。
+  companion_reflection: runCompanionReflectionJob,
   // 念头管线切片②（2026-09-18）：候选念头生成 + 表达 + 送达。
   companion_thought: runCompanionThought,
   note_overview_generate: runNoteOverviewGenerate,
@@ -531,6 +535,8 @@ export async function tick(): Promise<void> {
   await tickCompanionMemoryMaintenance();
   // 40 §4.6.3：后台整理的入队 tick（1h 桶，内部按阈值挑人）。
   await tickCompanionMemoryOrganizeScheduler();
+  // 方案 50 §9.1：同一个人格的后台回顾入队（1h 桶，段落水位幂等）。
+  await tickCompanionReflectionScheduler();
   // 念头管线切片②（2026-09-18）：念头生成调度（4h 桶幂等，内部 15min 节流）。
   await tickCompanionThoughtScheduler();
   // Agent 方案 §5：过期/世代失效的确认兜底回收（内部 throttle）。

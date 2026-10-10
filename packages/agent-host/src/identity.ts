@@ -323,7 +323,8 @@ export async function commitPersonaProposalV1(
  * 判不出"还是不是当初那一条"。
  */
 export type CompanionPersonaSourceRefV1 = {
-  readonly kind: "user_message" | "assistant_message" | "memory" | "tool_receipt" | "persona_revision";
+  readonly kind: "user_message" | "assistant_message" | "memory" | "tool_receipt"
+    | "persona_revision" | "method";
   readonly id: string;
   readonly revision?: string | null;
 };
@@ -367,7 +368,29 @@ function sourceProbeSql(source: CompanionPersonaSourceRefV1, userId: string) {
       return sql`SELECT count(*)::int AS found FROM companion_persona_profile_versions v
         WHERE v.user_id = ${userId} AND v.revision::text = ${source.id}
           AND (${revision}::text IS NULL OR v.revision::text = ${revision}::text)`;
+    case "method":
+      // 方法条目没有软删列：停用走 `method_state`，所以"还在不在"按行与版本核。
+      return sql`SELECT count(*)::int AS found FROM companion_procedural_playbooks p
+        WHERE p.id = ${source.id}::uuid AND p.user_id = ${userId}
+          AND (${revision}::text IS NULL OR p.version::text = ${revision}::text)`;
   }
+}
+
+/**
+ * 提议还剩几条**站得住的依据**（§9.4 的「同一内容尚有独立有效依据时重新评估」）。
+ *
+ * 判据是"至少一条还在"，不是"全部都在"：一条结论引用了五句话，用户删掉了其中一句
+ * 不该让整条结论失去依据——那样等于把"删除一条消息"变成"撤回她的一次成长"。
+ * 反过来，**所有**依据都被删除或换版时，这一版就真的没有根据了，不能再被采用。
+ */
+export async function personaProposalHasLiveBasis(
+  tx: AgentSqlExecutor,
+  userId: string,
+  sources: readonly CompanionPersonaSourceRefV1[],
+): Promise<boolean> {
+  if (sources.length === 0) return true;
+  const dead = await personaSourcesCurrent(tx, userId, sources);
+  return dead.dead.length < sources.length;
 }
 
 /**
@@ -402,16 +425,13 @@ export async function adoptPendingPersonaForNewTurn(
   if (pending.author !== "assistant_tool") return null;
 
   const sources = resolveSources ? await resolveSources(pending) : [];
-  if (sources.length > 0) {
-    const validity = await personaSourcesCurrent(tx, userId, sources);
-    if (!validity.current) {
-      // 失去依据：不采用，也不把这一版留在排队里（历史行不动，用户仍可查、可恢复）。
-      await tx.execute(sql`
-        UPDATE companion_persona_profiles SET pending_revision = NULL
-        WHERE user_id = ${userId} AND pending_revision = ${pending.revision}
-      `);
-      return { kind: "source_invalid", pending };
-    }
+  if (sources.length > 0 && !await personaProposalHasLiveBasis(tx, userId, sources)) {
+    // 失去依据：不采用，也不把这一版留在排队里（历史行不动，用户仍可查、可恢复）。
+    await tx.execute(sql`
+      UPDATE companion_persona_profiles SET pending_revision = NULL
+      WHERE user_id = ${userId} AND pending_revision = ${pending.revision}
+    `);
+    return { kind: "source_invalid", pending };
   }
 
   const promoted = await queryRows<{ revision: number }>(tx, sql`

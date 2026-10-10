@@ -181,7 +181,7 @@ export const companionPersonaProfileVersions = pgTable(
 export type CompanionReflectionDecision =
   | "queued" | "running" | "trigger_none" | "insufficient_input" | "no_change"
   | "proposed" | "committed" | "source_invalid" | "protocol_failed"
-  | "commit_conflict" | "lease_lost";
+  | "commit_conflict" | "lease_lost" | "governance_denied";
 
 export const companionReflections = pgTable(
   "companion_reflections",
@@ -230,9 +230,14 @@ export const companionReflectionSources = pgTable(
     ),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     workspaceId: uuid("workspace_id").notNull(),
-    relation: text("relation").$type<"read" | "produced">().notNull(),
+    /**
+     * `read` = 这次回顾读过的全部素材；`cited` = 某条结论**点名引用**的依据；
+     * `produced` = 这次产出的版本。三者必须分开：撤回一条被删掉的原话时，
+     * 只有把它当作依据（cited）的那条结论该失效，仅仅"当时读过"不算依据。
+     */
+    relation: text("relation").$type<"read" | "cited" | "produced">().notNull(),
     sourceKind: text("source_kind").$type<
-      "user_message" | "assistant_message" | "memory" | "tool_receipt" | "persona_revision"
+      "user_message" | "assistant_message" | "memory" | "tool_receipt" | "persona_revision" | "method"
     >().notNull(),
     sourceId: text("source_id").notNull(),
     /** 那一版来源的身份证据：记忆用 revision 号，消息用内容哈希。空串表示没有可核对的版本。 */
@@ -244,6 +249,37 @@ export const companionReflectionSources = pgTable(
       t.reflectionId, t.relation, t.sourceKind, t.sourceId, t.sourceRevision,
     ),
     targetIdx: index("companion_reflection_sources_target_idx").on(t.userId, t.sourceKind, t.sourceId),
+  }),
+);
+
+/**
+ * 反思那次模型调用的**响应检查点**（0401）。
+ *
+ * 与现役规则同一条：响应先落检查点，副作用后提交。少了这一格，
+ * "模型答过了但 worker 在这中间断了"只能重跑一次，而重跑可能给出**另一份**结论——
+ * 同一段相处留下两版人格，比多花一次钱严重得多。
+ */
+export const companionReflectionCheckpoints = pgTable(
+  "companion_reflection_checkpoints",
+  {
+    jobId: uuid("job_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    taskId: text("task_id").notNull(),
+    taskVersion: integer("task_version").notNull(),
+    inputSnapshotHash: text("input_snapshot_hash").notNull(),
+    output: jsonb("output").$type<unknown>().notNull(),
+    promptTokens: integer("prompt_tokens").notNull().default(0),
+    completionTokens: integer("completion_tokens").notNull().default(0),
+    /** 这次回顾当时看到的是哪一版人格；不是那一版就不能拿旧检查点去提交。 */
+    personaProfileRevision: integer("persona_profile_revision"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    keyUnique: uniqueIndex("companion_reflection_checkpoints_key_unique").on(
+      t.jobId, t.taskId, t.taskVersion, t.inputSnapshotHash,
+    ),
+    userCreatedIdx: index("companion_reflection_checkpoints_user_created_idx").on(t.userId, t.createdAt),
   }),
 );
 

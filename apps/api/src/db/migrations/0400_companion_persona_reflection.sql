@@ -149,32 +149,56 @@ COMMENT ON TABLE public.companion_reflection_sources IS
 --> statement-breakpoint
 
 ALTER TABLE public.companion_reflections ENABLE ROW LEVEL SECURITY;
+
+--> statement-breakpoint
+
 ALTER TABLE public.companion_reflections FORCE ROW LEVEL SECURITY;
+
+--> statement-breakpoint
+
 CREATE POLICY companion_reflections_user_isolation
   ON public.companion_reflections FOR ALL
   USING (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid)
-  WITH CHECK (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid);
+  WITH CHECK (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid)
 
 --> statement-breakpoint
 
 ALTER TABLE public.companion_reflection_sources ENABLE ROW LEVEL SECURITY;
+
+--> statement-breakpoint
+
 ALTER TABLE public.companion_reflection_sources FORCE ROW LEVEL SECURITY;
+
+--> statement-breakpoint
+
 CREATE POLICY companion_reflection_sources_user_isolation
   ON public.companion_reflection_sources FOR ALL
   USING (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid)
-  WITH CHECK (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid);
+  WITH CHECK (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid)
 
 --> statement-breakpoint
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_reflections TO astella_api;
+
+--> statement-breakpoint
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_reflection_sources TO astella_api;
+
+--> statement-breakpoint
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_reflections TO astella_worker;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_reflection_sources TO astella_worker;
+
+--> statement-breakpoint
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companion_reflection_sources TO astella_worker
 
 --> statement-breakpoint
 
 -- worker 只能投白名单里的类型（0182 起这条策略就是那道闸）；反思接进现役队列就要登记。
 DROP POLICY IF EXISTS "worker_type_allowlist_insert_guard" ON public.jobs;
+
+--> statement-breakpoint
+
 CREATE POLICY "worker_type_allowlist_insert_guard"
   ON public.jobs
   AS PERMISSIVE
@@ -186,7 +210,7 @@ CREATE POLICY "worker_type_allowlist_insert_guard"
       'companion_agent', 'companion_memory_extract', 'companion_summarizer',
       'companion_daily_summary', 'companion_memory_organize', 'companion_reflection'
     )
-  );
+  )
 
 --> statement-breakpoint
 
@@ -305,9 +329,18 @@ $$;
 --> statement-breakpoint
 
 REVOKE ALL ON FUNCTION public.astella_enqueue_companion_reflection() FROM PUBLIC;
+
+--> statement-breakpoint
+
 REVOKE ALL ON FUNCTION public.astella_companion_reflection_thresholds() FROM PUBLIC;
+
+--> statement-breakpoint
+
 GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_reflection() TO astella_worker;
-GRANT EXECUTE ON FUNCTION public.astella_companion_reflection_thresholds() TO astella_worker;
+
+--> statement-breakpoint
+
+GRANT EXECUTE ON FUNCTION public.astella_companion_reflection_thresholds() TO astella_worker
 
 --> statement-breakpoint
 

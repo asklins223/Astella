@@ -243,7 +243,12 @@ export async function upsertAgentMethodCandidate(tx: AgentSqlExecutor, scope: Ag
     origins: grouping.origins.map(entry => ({ originKey: entry.originKey, refCount: entry.refCount })),
   };
   for (const ref of [...evidence].sort((a,b)=>(a.memoryId ?? "").localeCompare(b.memoryId ?? ""))) {
-    if (!ref.memoryId || !ref.memoryRevision) return null;
+    // 这一段锁的是**记忆行**（防止依据在写候选的当口被纠正或遗忘）。
+    // 事件/运行来源没有那一行可锁：以前这里对任何不带 memoryId 的依据直接 `return null`，
+    // 于是"一条只引用了原话的方法候选"永远写不进去，而调用方只看到一个 null——
+    // 与"这次没有可用依据"长得一模一样（后台反思那条通路就是这么撞上的）。
+    if (!ref.memoryId) continue;
+    if (!ref.memoryRevision) return null;
     const [source] = await queryRows(tx,sql`SELECT id FROM assistant_memory_items
       WHERE id=${ref.memoryId} AND revision=${ref.memoryRevision}
         AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}

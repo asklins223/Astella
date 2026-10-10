@@ -496,6 +496,15 @@ export const companionPersonaProfileVersionV1Schema = z.strictObject({
   revision: z.number().int().positive(),
   examplesRevision: z.number().int().positive(),
   author: z.enum(["user", "assistant_tool", "restore", "migration"]),
+  /**
+   * 这一版出自哪一次提议（方案 50 §9.3）。
+   *
+   * `author` 只说正文归她，答不出"是当面对话里改的，还是她自己回顾出来的"。
+   * 人格页要能说清这句话是哪来的 —— 一句没头没尾出现的自我描述，与一句"她回顾过
+   * 那段相处之后写的"，对用户是完全不同的两件事。
+   * null / 缺省 = 旧数据里没有记录，不猜。
+   */
+  proposalKind: z.enum(["assistant_tool", "assistant_reflection"]).nullable().optional(),
   action: z.enum(["update", "reset", "restore", "migration"]),
   reason: z.string().nullable(),
   moduleScope: z.array(z.string()).min(1).max(8),
@@ -542,6 +551,15 @@ export const companionPersonaPendingRevisionV1Schema = z.strictObject({
   /** null = 那一版的内容是「回到当前发布的默认表达」，不是「没有内容」。 */
   profile: companionPersonaPatchV1Schema.omit({ revision: true }).nullable(),
   author: z.enum(["user", "assistant_tool", "restore", "migration"]),
+  /**
+   * 这一版出自哪一次提议（方案 50 §9.3）。
+   *
+   * `author` 只说正文归她，答不出"是当面对话里改的，还是她自己回顾出来的"。
+   * 人格页要能说清这句话是哪来的 —— 一句没头没尾出现的自我描述，与一句"她回顾过
+   * 那段相处之后写的"，对用户是完全不同的两件事。
+   * null / 缺省 = 旧数据里没有记录，不猜。
+   */
+  proposalKind: z.enum(["assistant_tool", "assistant_reflection"]).nullable().optional(),
   action: z.enum(["update", "reset", "restore", "migration"]),
   reason: z.string().nullable(),
   moduleScope: z.array(z.string()).min(1).max(8),
@@ -598,11 +616,25 @@ export function companionPersonaPatchFromContent(
     readonly activeness?: CompanionPersonaActivenessV1;
     readonly boundaries?: CompanionPersonaBoundariesV1;
     readonly name?: string;
+    /** 用户接手她的自我描述。给了就是 `user` 写的；省略 = 原样带回，不改动。 */
+    readonly selfDescription?: string;
   },
 ): CompanionPersonaPatchV1 {
   const fieldOrigin = { ...base.fieldOrigin };
   if (change.name !== undefined && change.name !== base.name) fieldOrigin.name = "user";
   if (change.activeness !== undefined && change.activeness !== base.activeness) fieldOrigin.activeness = "user";
+  // 自我描述允许**清空**（界面上就是"这一句我不要了"），但 PATCH 是整份写入，
+  // 契约那一层的 `min(1)` 又不收空串 —— 所以空串在这里翻译成"没有这一项"，
+  // 来源也跟着一起删掉。留着"她写的"标记而正文已经空了，下次换人格会无端问一句。
+  const selfDescription = change.selfDescription === undefined
+    ? base.selfDescription
+    : change.selfDescription.trim().length === 0
+      ? undefined
+      : change.selfDescription.trim();
+  if (change.selfDescription !== undefined && selfDescription !== base.selfDescription) {
+    if (selfDescription === undefined) delete fieldOrigin.selfDescription;
+    else fieldOrigin.selfDescription = "user";
+  }
   if (change.boundaries) {
     const boundaries = { ...change.boundaries };
     const origin = { ...fieldOrigin.boundaries };
@@ -625,7 +657,7 @@ export function companionPersonaPatchFromContent(
     activeness: change.activeness ?? base.activeness,
     // 自我描述同样要**原样带回**：PATCH 是整份写入，漏带一列就等于用户在界面上
     // 改一下活跃度就把她攒下的自我认识悄悄清空了。
-    ...(base.selfDescription === undefined ? {} : { selfDescription: base.selfDescription }),
+    ...(selfDescription === undefined ? {} : { selfDescription }),
     boundaries: change.boundaries ?? base.boundaries,
     fieldOrigin,
   });

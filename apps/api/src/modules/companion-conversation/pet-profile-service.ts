@@ -12,11 +12,12 @@ import {
   type CompanionPersonaProfileContent,
   type CompanionPersonaProfileVersionAction,
   type CompanionPersonaProfileVersionAuthor,
+  type CompanionPersonaProposalKind,
 } from "@astella/shared/db-schema/companion-memory";
 import { users } from "@astella/shared/db-schema/identity";
 import {
   adoptPendingPersonaForNewTurn,
-  finalizeReflection,
+  markReflectionProposalWithdrawn,
   pendingPersonaProposalSources,
 } from "@astella/agent-host";
 import { getPresetById } from "@astella/shared/pet-persona-presets";
@@ -91,6 +92,8 @@ export interface PetProfilePendingRevision {
   /** null 表示那一版的内容是「回到当前发布的默认表达」，不是「没有内容」。 */
   profile: CompanionPersonaProfileContent | null;
   author: CompanionPersonaProfileVersionAuthor;
+  /** 这一版出自哪一次提议；null = 旧数据没有记录，不猜（方案 50 §9.3）。 */
+  proposalKind: CompanionPersonaProposalKind | null;
   action: CompanionPersonaProfileVersionAction;
   reason: string | null;
   moduleScope: string[];
@@ -104,6 +107,7 @@ export interface PetProfileVersion {
   revision: number;
   examplesRevision: number;
   author: CompanionPersonaProfileVersionAuthor;
+  proposalKind: CompanionPersonaProposalKind | null;
   action: CompanionPersonaProfileVersionAction;
   reason: string | null;
   moduleScope: string[];
@@ -163,6 +167,7 @@ type PendingPersonaVersionRow = {
   revision: number;
   profile: CompanionPersonaProfileContent | null;
   author: CompanionPersonaProfileVersionAuthor;
+  proposal_kind: CompanionPersonaProposalKind | null;
   action: CompanionPersonaProfileVersionAction;
   reason: string | null;
   module_scope: string[];
@@ -192,7 +197,7 @@ async function readPendingRevisionRow(
   userId: string,
 ): Promise<PendingPersonaVersionRow | null> {
   const rows = await executor.execute<PendingPersonaVersionRow>(sql`
-    SELECT v.revision, v.profile, v.author, v.action, v.reason,
+    SELECT v.revision, v.profile, v.author, v.proposal_kind, v.action, v.reason,
            v.module_scope, v.created_at
     FROM public.companion_persona_profiles p
     JOIN public.companion_persona_profile_versions v
@@ -256,6 +261,7 @@ function toPendingRevisionContract(row: PendingPersonaVersionRow): PetProfilePen
     revision: Number(row.revision),
     profile: row.profile ?? null,
     author: row.author,
+    proposalKind: row.proposal_kind ?? null,
     action: row.action,
     reason: row.reason ?? null,
     moduleScope: row.module_scope ?? ["companion"],
@@ -500,6 +506,7 @@ export async function listPetProfileVersions(
     revision: row.revision,
     examplesRevision: row.examplesRevision,
     author: row.author,
+    proposalKind: row.proposalKind ?? null,
     action: row.action,
     reason: row.reason,
     moduleScope: row.moduleScope,
@@ -732,10 +739,10 @@ export async function activateAssistantPersonaForNewTurn(
   if (outcome.kind === "adopted") return outcome.revision;
   const pending = outcome.pending;
   if (pending.proposalKind === "assistant_reflection" && pending.proposalId) {
-    await finalizeReflection(executor, scope.userId, pending.proposalId, {
-      decision: "source_invalid",
-      summary: "依据已被删除或已换版本，这一版自我修订没有采用",
-    });
+    // 那一次回顾的结论本身不改写（她确实得出过那一版）；只把"这一版永远不会生效"
+    // 记在撤回上——留在 `committed`，排查的人会以为人格里已经有了它。
+    await markReflectionProposalWithdrawn(executor, scope.userId, pending.proposalId,
+      "排队那一版的依据在采用前已经不可读，这一版自我修订没有生效");
   }
   return null;
 }

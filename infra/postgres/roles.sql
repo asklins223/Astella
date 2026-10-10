@@ -348,6 +348,34 @@ BEGIN
 END
 $$;
 
+-- 方案 50 §8.3：后台反思的记录、派生来源边与模型输出检查点。
+--
+-- 上面那条"API 拿全表 CRUD"是有意为之的宽授权，所以这里要逐个收回该收的：
+--  反思那一行只有 worker 会创建（`queued → running → 终态`），API 读它、并在采用
+--  复查不过时把结论码写成 `source_invalid`，但它不该能凭空造一条回顾记录；
+--  派生来源边同样只由 worker 写，API 读是为了人格页能说清"这一版的依据是什么"；
+--  检查点装的是模型的原始返回，属于 worker 私有状态，但诊断入口要能看见它存在过，
+--  所以给 API 只读，不像日记那样整表撤走。
+DO $$
+BEGIN
+  IF to_regclass('public.companion_reflections') IS NOT NULL THEN
+    REVOKE ALL PRIVILEGES ON TABLE public.companion_reflections FROM astella_api, astella_worker;
+    GRANT SELECT, UPDATE, DELETE ON TABLE public.companion_reflections TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.companion_reflections TO astella_worker;
+  END IF;
+  IF to_regclass('public.companion_reflection_sources') IS NOT NULL THEN
+    REVOKE ALL PRIVILEGES ON TABLE public.companion_reflection_sources FROM astella_api, astella_worker;
+    GRANT SELECT, DELETE ON TABLE public.companion_reflection_sources TO astella_api;
+    GRANT SELECT, INSERT, DELETE ON TABLE public.companion_reflection_sources TO astella_worker;
+  END IF;
+  IF to_regclass('public.companion_reflection_checkpoints') IS NOT NULL THEN
+    REVOKE ALL PRIVILEGES ON TABLE public.companion_reflection_checkpoints FROM astella_api, astella_worker;
+    GRANT SELECT, DELETE ON TABLE public.companion_reflection_checkpoints TO astella_api;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.companion_reflection_checkpoints TO astella_worker;
+  END IF;
+END
+$$;
+
 -- Diary selection output contains private worker state, not an API read model.
 -- The broad API grant above is intentional for application tables, so revoke
 -- this checkpoint explicitly on every post-migration role bootstrap.
@@ -1436,6 +1464,10 @@ BEGIN
       'companion_method_uses',
       'agent_run_revisions',
       'assistant_memory_budget_events',
+      -- 方案 50：反思的结论与产出是 worker 写的，API 只读并在采用复查不过时改结论码。
+      'companion_reflections',
+      'companion_reflection_sources',
+      'companion_reflection_checkpoints',
       'companion_persona_profile_versions'
     )
     AND (
@@ -1477,6 +1509,26 @@ BEGIN
     OR has_table_privilege('astella_api',c.oid,'TRIGGER')
   );
   IF mismatch IS NOT NULL THEN RAISE EXCEPTION 'API method history/feedback privilege matrix mismatch: %',mismatch; END IF;
+
+  -- 方案 50 §8.3 / §9.4：反思的三张表 API 只读，加上两处例外。
+  -- 例外一是 `companion_reflections` 的 UPDATE —— 采用前的依据复查不过时，
+  -- 是 API 那条事务把结论码写成 `source_invalid` 并清掉排队指针的；
+  -- 例外二是三张表都给了 DELETE：账号彻底清除时外键级联由 API 的角色执行，
+  -- 少给一张就会变成"前台条目删了、自动恢复用的快照还在"。
+  -- INSERT 一律不给：一条回顾记录必须由 worker 真的跑过一次才存在。
+  SELECT string_agg(format('%I.%I',n.nspname,c.relname), ', ') INTO mismatch
+  FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+  WHERE n.nspname='public' AND c.relname IN (
+      'companion_reflections','companion_reflection_sources','companion_reflection_checkpoints') AND (
+    NOT has_table_privilege('astella_api',c.oid,'SELECT')
+    OR has_table_privilege('astella_api',c.oid,'INSERT')
+    OR has_table_privilege('astella_api',c.oid,'UPDATE') <> (c.relname='companion_reflections')
+    OR NOT has_table_privilege('astella_api',c.oid,'DELETE')
+    OR has_table_privilege('astella_api',c.oid,'TRUNCATE')
+    OR has_table_privilege('astella_api',c.oid,'REFERENCES')
+    OR has_table_privilege('astella_api',c.oid,'TRIGGER')
+  );
+  IF mismatch IS NOT NULL THEN RAISE EXCEPTION 'API reflection privilege matrix mismatch: %',mismatch; END IF;
 
   IF to_regclass('public.companion_run_failure_spans') IS NOT NULL AND (
     NOT has_table_privilege('astella_api', 'public.companion_run_failure_spans', 'SELECT')
@@ -1745,6 +1797,11 @@ BEGIN
       -- 不给 INSERT/UPDATE/DELETE：开争议与复核都只由 API 的 run-disputes 做，
       -- worker 写它就是绕开"一个判定至多一份争议"与"复核至多一次"那两条库级闸。
       ('assessment_disputes_v2', true, false, false, false),
+      -- 方案 50 §8.3：反思那一行与它的模型检查点由 worker 全权维护；
+      -- 派生来源边只写与删（边一旦落下就不改，改等于伪造当时的依据）。
+      ('companion_reflections', true, true, true, true),
+      ('companion_reflection_sources', true, true, false, true),
+      ('companion_reflection_checkpoints', true, true, true, true),
       ('review_subscriptions_v2', true, false, false, false)
   ), actual AS (
     SELECT

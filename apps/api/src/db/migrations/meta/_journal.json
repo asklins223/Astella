@@ -2780,6 +2780,13 @@
       "when": 1791590400000,
       "tag": "0400_companion_persona_reflection",
       "breakpoints": true
+    },
+    {
+      "idx": 397,
+      "version": "7",
+      "when": 1791590500000,
+      "tag": "0401_companion_reflection_checkpoint",
+      "breakpoints": true
     }
   ]
 }

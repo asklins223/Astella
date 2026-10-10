@@ -48,10 +48,16 @@ export const COMPANION_REFLECTION_INPUT_BUDGET = {
   maxRelatedMemories: 6,
 } as const;
 
-export type CompanionReflectionDecision =
-  | "queued" | "running" | "trigger_none" | "insufficient_input" | "no_change"
-  | "proposed" | "committed" | "source_invalid" | "protocol_failed"
-  | "commit_conflict" | "lease_lost";
+/**
+ * 反思的结论码只有一个定义处：`@astella/shared/db-schema/companion-memory`
+ * （那里同时是 0400/0401 两条 CHECK 的镜像）。在这里再抄一份枚举，
+ * 结果就是"库里允许、端口拒收"这种谁都没错的失败。
+ */
+import type {
+  CompanionReflectionDecision,
+} from "@astella/shared/db-schema/companion-memory";
+
+export type { CompanionReflectionDecision };
 
 export type CompanionReflectionTriggerKind = "exchange_segment";
 
@@ -201,7 +207,7 @@ export async function recordReflectionEdge(
   userId: string,
   reflectionId: string,
   edge: {
-    relation: "read" | "produced";
+    relation: "read" | "cited" | "produced";
     workspaceId: string;
     source: CompanionPersonaSourceRefV1;
   },
@@ -215,16 +221,41 @@ export async function recordReflectionEdge(
   `);
 }
 
-/** 这次回顾读过哪些依据（采用前的复查、人格页的"依据"都读它）。 */
+/** 这次回顾读过哪些依据（诊断"她当时看得见什么"）。 */
 export async function loadReflectionReadSources(
   tx: AgentSqlExecutor,
   userId: string,
   reflectionId: string,
 ): Promise<CompanionPersonaSourceRefV1[]> {
+  return loadReflectionEdges(tx, userId, reflectionId, "read");
+}
+
+/**
+ * 这次回顾的结论**点名引用**了哪些依据。
+ *
+ * 与 `read` 分开是撤回判据的要求：一段相处里六句话都被读过，而那一版自我描述只引用
+ * 其中一句——用户删掉任何一句都不该让整版失去依据，只有删掉被引用那一句才算。
+ * 粒度是一条反思（这一批结论一起落下），不是一条结论：库里没有按条区分依据的列，
+ * 宁可这里粗一点，也不把"读过"当成"依据"。
+ */
+export async function loadReflectionCitedSources(
+  tx: AgentSqlExecutor,
+  userId: string,
+  reflectionId: string,
+): Promise<CompanionPersonaSourceRefV1[]> {
+  return loadReflectionEdges(tx, userId, reflectionId, "cited");
+}
+
+async function loadReflectionEdges(
+  tx: AgentSqlExecutor,
+  userId: string,
+  reflectionId: string,
+  relation: "read" | "cited" | "produced",
+): Promise<CompanionPersonaSourceRefV1[]> {
   const rows = await queryRows<{ source_kind: string; source_id: string; source_revision: string }>(tx, sql`
     SELECT source_kind, source_id, source_revision
     FROM companion_reflection_sources
-    WHERE user_id = ${userId} AND reflection_id = ${reflectionId}::uuid AND relation = 'read'
+    WHERE user_id = ${userId} AND reflection_id = ${reflectionId}::uuid AND relation = ${relation}
     ORDER BY created_at, id
   `);
   return rows.map((row) => ({
@@ -237,7 +268,8 @@ export async function loadReflectionReadSources(
 /**
  * 一条待生效提议此刻还站得住的依据。
  *
- * - 后台反思提的：读它自己留下的 read 边（原话、回执、记忆版本）。
+ * - 后台反思提的：优先用这次留下的 `cited` 边；那一批还没有 cited 边（旧数据）才退回
+ *   读过的全部依据——宁可多核一遍，也不因为换了边的形状就放过一条真的失去依据的建议。
  * - 前台工具提的：那次运行的工具回执还在（会话被删时它们一起消失）——
  *   所以"用户把那条消息删了"会让这一版失去依据，不会在下一次被接受时悄悄生效。
  * - 来源不明的历史版本（这两列为空）：不猜，按原来的语义仍可被采用。
@@ -249,7 +281,8 @@ export async function pendingPersonaProposalSources(
 ): Promise<CompanionPersonaSourceRefV1[]> {
   if (!pending.proposalKind || !pending.proposalId) return [];
   if (pending.proposalKind === "assistant_reflection") {
-    return loadReflectionReadSources(tx, userId, pending.proposalId);
+    const cited = await loadReflectionCitedSources(tx, userId, pending.proposalId);
+    return cited.length > 0 ? cited : loadReflectionReadSources(tx, userId, pending.proposalId);
   }
   const rows = await queryRows<{ id: string; name: string; arguments_sha256: string }>(tx, sql`
     SELECT c.id, c.name, c.arguments_sha256
@@ -263,6 +296,35 @@ export async function pendingPersonaProposalSources(
     id: String(row.id),
     revision: String(row.arguments_sha256 ?? ""),
   }));
+}
+
+/**
+ * 把一条**已经写下、但采用时失去依据**的结论标成撤回（§12.2 的「来源失效」）。
+ *
+ * 只允许 `committed` → `source_invalid` 这一条窄路：反思那一行的 `decision`
+ * 说的是"她这次回顾得出了什么"，采用是另一件事。但用户把原话删了之后，
+ * 那一版建议永远不会生效——留在 `committed` 上，排查的人会以为人格里已经有了它。
+ * `result_ref` 与 `produced` 边都原样留着：这次确实写过判断与方法，那部分**不撤销**
+ * （它们的依据各自另有核对），只有人格那一版退回排队之外。
+ */
+export async function markReflectionProposalWithdrawn(
+  tx: AgentSqlExecutor,
+  userId: string,
+  reflectionId: string,
+  reason: string,
+): Promise<boolean> {
+  const rows = await queryRows<{ id: string }>(tx, sql`
+    UPDATE companion_reflections
+       SET decision = 'source_invalid',
+           decision_summary = ${reason.slice(0, 300)},
+           updated_at = now()
+     WHERE id = ${reflectionId}::uuid
+       AND user_id = ${userId}
+       AND decision = 'committed'
+       AND pending_persona_revision IS NOT NULL
+    RETURNING id
+  `);
+  return rows.length > 0;
 }
 
 /**

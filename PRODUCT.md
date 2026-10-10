@@ -36,6 +36,8 @@ Electron desktop
 
 Electron desktop UI，覆盖 macOS / Windows / Linux；不再提供浏览器端产品。
 
+**移动端方向（2026-10-10 用户决定，当前为渲染设计阶段）：**App 与小程序都以伴星为中心，承担交流、内容预览与讲解，两端共用一套移动端 UI 与业务逻辑。移动端不要求展示桌面全部功能；先围绕伴星与手边内容形成短路径，具体入口和平台能力在移动端实施时验证。效果图与范围见 [移动端设计](docs/design/mobile/2026-10-10/README.md)。
+
 ## Stack
 
 Electron 44 + electron-vite 5 + Vite 7 + React 19 + TypeScript（独立桌面客户端）；GSAP 动效编排 + Zustand（本地呈现状态）。任务面的阅读和操作保留真实 DOM，候选审核的局部实体卡片使用 WebGL 表达厚度、光照与翻面；Home V2 预览允许 PixiJS 只合成已注册的 2D 图层，不引入场景级 3D、自由相机或 GLB 运行时。Fastify 5 + Drizzle ORM + PostgreSQL 16 继续承担 API 与持久化，Node.js + TypeScript 继续承担 AI Worker。
