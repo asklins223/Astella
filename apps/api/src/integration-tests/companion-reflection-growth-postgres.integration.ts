@@ -22,6 +22,8 @@ import { applyAssistantPersonaEdit }
   from "../../../../workers/ai-worker/src/handlers/companion-persona-self-edit.ts";
 import { retrievePlaybookCandidates, retrievePlaybookCatalog }
   from "../../../../workers/ai-worker/src/handlers/companion-playbooks.ts";
+import { createHash } from "node:crypto";
+import { upsertAgentMethodCandidate } from "@astella/agent-host";
 import { closeDatabase as closeWorkerDatabase, withWorkerWorkspaceTransaction }
   from "../../../../workers/ai-worker/src/db.ts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
@@ -289,6 +291,23 @@ test("§16 一条完整路径：回顾留下经验与待生效自我描述，下
     const catalog = await withWorkerWorkspaceTransaction(scope,
       (tx) => retrievePlaybookCatalog(tx, scope));
     assert.equal(catalog.length, 0, "没核对的候选不得占「可以照做」那本目录");
+
+    // §16 第 6 步的另一半：用户把候选取下来之后，下一轮读不回来；**迟到的反思也不能把它复活**。
+    // 「取下来」在这里直接用 SQL 置 disabled（那是用户停用会落到的那一列），
+    // 写的那一侧仍走真实的 `upsertAgentMethodCandidate`——它按设计遇到 disabled 就不并存。
+    await admin`UPDATE companion_procedural_playbooks SET method_state = 'disabled' WHERE user_id = ${f.userId}`;
+    const afterWithdraw = await withWorkerWorkspaceTransaction(scope,
+      (tx) => retrievePlaybookCandidates(tx, scope));
+    assert.equal(afterWithdraw.length, 0, "停用之后不该再读回来");
+    // 同一个触发条件 → 反思那条路会算出的同一个 playbookKey（键由触发条件定型）。
+    const sameKey = `reflection:${createHash("sha256").update("对方只说了一句招呼").digest("hex").slice(0, 24)}`;
+    const lateReflection = await withWorkerWorkspaceTransaction(scope, (tx) =>
+      upsertAgentMethodCandidate(tx, scope, {
+        playbookKey: sameKey, title: "迟到的一次提炼", triggerCondition: "对方只说了一句招呼",
+        steps: ["先接住这一句"], exceptions: [], evidence: [{ eventId: `message:${f.correctionMessageId}` }],
+        epistemicStatus: "tentative", author: "maintenance",
+      }));
+    assert.equal(lateReflection, null, "用户说过「别再给我这条」，同条件的迟到提炼不该长出孪生候选");
 
     // 隔天：下一条被接受的新用户消息采用那一版；当前版本从此是第 1 版。
     const adoptedRunId = await f.newTurn("早");

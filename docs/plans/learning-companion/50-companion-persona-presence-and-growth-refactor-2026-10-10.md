@@ -407,3 +407,19 @@ flowchart TD
 | 真实播放段、动作与交付状态 | [音频表情](/Users/asklins/Documents/asklins_workspace/study/apps/desktop-client/src/renderer/src/components/companion/use-companion-speech-expression.ts:5)、[参数投影](/Users/asklins/Documents/asklins_workspace/study/apps/desktop-client/src/renderer/src/components/companion/window-live2d-contract.ts:618)、[播放保存](/Users/asklins/Documents/asklins_workspace/study/apps/api/src/modules/learning-sessions/companion-voice-service.ts:369) |
 
 仍需实证回答：现役模型在改进后的相关上下文中是否更会接话；语义反思是否稳定提炼出正确、有限的经验；自动人格提议的长期质量；身体表达在实际资产和语音下是否合适。后续把证据留在对应任务/测试附近，索引记录验证范围，不以架构图、通过测试或新增版本数替代这些结论。
+
+## 18. 实施记录（2026-10-10）
+
+阶段 1–3 与 §16 首批已沿现役运行时落地；逐条证据在 `docs/testing/companion-persona-paired-eval-2026-10-10.md`
+的「验证台账」，提交从 `7eea5703`（身份共享提交端口）到 `f23a0fe0`（交付背景回流）。
+
+- 观察投影（§6.1）首批只落 `delivery` 一种：合同在 `contracts/companion-observation-contracts.ts`，
+  其余用途（后台任务结果、主动表达机会、反思线索）等各自权威行有需求时按同一形状加，不先造空壳。
+- 交付背景（§10.2）由 API 在接受回合时算成有界投影写在 run 行上（worker 对回执表没有读边），
+  只在「真出声过却没播完、或有段播失败」时存在。
+- 场景指引（§7）已从每步共用的运行时策略归到能力声明，按工具面进出。
+- runDoctor（§12.2）新增成长闭环段：回顾结论码、人格当前/排队/本轮钉的版本、装配回执里的
+  `method_candidates`，以及「行为是否兑现要靠样本」这句明说。
+
+**未做**：阶段 4 的身体表达、阶段 5 的主动关注；线上那一臂的**改动后重测**（安装版登录态被 dev
+桌面实例按设计作废，需要重新登录一次）；纠正那一轮 16.43s 首字的成因未查。
