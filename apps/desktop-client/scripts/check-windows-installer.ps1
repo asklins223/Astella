@@ -85,11 +85,11 @@ try {
   if ($boot -notmatch 'renderer-ready-to-show') { throw '已安装应用没有确认渲染窗口就绪' }
   if (Test-Path $trace) { Copy-Item -LiteralPath $trace -Destination $diagnostics }
 
-  Write-Host 'Rounded transparent sheet and self-drawn caption buttons'
-  # 圆角不是 CSS 写上去就算数：把窗口藏起来重拍一张，同一个位置的角必须透出它自己背后那一层。
-  # 判据与安装窗口共用 windows-rounded-sheet-probe.ps1（邻居像素当参考在任务栏上会误判）。
+  Write-Host 'Self-drawn caption buttons (the main window rounded sheet is a real-machine check)'
+  # 主窗口的逐像素圆角不在这里判：这一步用 --disable-gpu 起应用（runner 没有 GPU 才起得来），
+  # 而 Chromium 在软件合成下不支持逐像素透明，CI 上永远拿不到「角上透出背后那一层」的证据。
+  # 同一条判据留给真机探针 scripts/check-windows-window-rounding.ps1，在有你自己的 GPU 合成的机器上看。
   Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
-  . (Join-Path $PSScriptRoot 'windows-rounded-sheet-probe.ps1')
   $handleDeadline = [DateTime]::UtcNow.AddSeconds(20)
   do {
     $app.Refresh()
@@ -99,12 +99,11 @@ try {
   } while ([DateTime]::UtcNow -lt $handleDeadline)
   if ($app.MainWindowHandle -eq 0) { throw '已安装应用没有主窗口句柄' }
   $window = [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
-  Assert-RoundedSheet -Handle $app.MainWindowHandle -Window $window -Diagnostics $diagnostics -CaptureName 'windows-app-window.png' -Label '主窗口'
   foreach ($name in @('最小化', '最大化', '关闭')) {
     $find = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, $name)
     if (-not $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $find)) { throw "标题带缺少自绘按钮：$name" }
   }
-  Write-Host '自绘标题按钮三个都在无障碍树里。'
+  Write-Host '自绘标题按钮三个都在无障碍树里。主窗口圆角透明需在真机跑 check-windows-window-rounding.ps1。'
   & taskkill.exe /PID $app.Id /T /F | Out-Null
   Start-Sleep -Seconds 3
 
