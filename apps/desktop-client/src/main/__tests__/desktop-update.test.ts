@@ -100,7 +100,7 @@ describe("更新状态机", () => {
 describe("自家更新清单（服务端下发信息与地址）", () => {
   it("清单拿得到就把更新源指过去，地址按服务端给的 base 来", async () => {
     process.env.DESKTOP_API_ORIGIN = "http://update-stub.test/";
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => ({ ok: true, status: 200, text: async () => "version: 0.2.0" })) as typeof fetch);
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, text: async () => "version: 0.2.0" })) as unknown as typeof fetch);
     const module = await import("../desktop-update");
     await module.checkForUpdates({ userInitiated: true });
     expect(updater.setFeedURL).toHaveBeenCalledWith({ provider: "generic", url: "http://update-stub.test/updates/desktop/" });
@@ -108,7 +108,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
 
   it("清单探不通就不动更新源——保留打包配置里那份 GitHub 更新源", async () => {
     process.env.DESKTOP_API_ORIGIN = "http://update-stub.test/";
-    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("ECONNREFUSED"); }) as typeof fetch);
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("ECONNREFUSED"); }) as unknown as typeof fetch);
     const module = await import("../desktop-update");
     await module.checkForUpdates({ userInitiated: true });
     expect(updater.setFeedURL).not.toHaveBeenCalled();
@@ -116,7 +116,7 @@ describe("自家更新清单（服务端下发信息与地址）", () => {
 
   it("探到的不是 2xx 也不切换，不让一个 404 的清单把更新带走", async () => {
     process.env.DESKTOP_API_ORIGIN = "http://update-stub.test/";
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 502, text: async () => "" })) as typeof fetch);
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 502, text: async () => "" })) as unknown as typeof fetch);
     const module = await import("../desktop-update");
     await module.checkForUpdates({ userInitiated: true });
     expect(updater.setFeedURL).not.toHaveBeenCalled();

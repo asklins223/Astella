@@ -357,6 +357,14 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- 更新清单缓存（全局一份，无 RLS 无 policy：见 0406 的说明）。
+-- 只有 API 服务这张表；worker 拿它没用，不给。
+DO $$ BEGIN
+  IF to_regclass('public.update_manifest_cache') IS NOT NULL THEN
+    GRANT SELECT, INSERT, UPDATE ON TABLE public.update_manifest_cache TO astella_api;
+  END IF;
+END $$;
+
 -- 方案 50 §8.3：后台反思的记录、派生来源边与模型输出检查点。
 --
 -- 上面那条"API 拿全表 CRUD"是有意为之的宽授权，所以这里要逐个收回该收的：

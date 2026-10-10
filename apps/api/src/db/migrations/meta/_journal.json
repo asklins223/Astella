@@ -2815,6 +2815,13 @@
       "when": 1791590900000,
       "tag": "0405_companion_autonomous_self_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 402,
+      "version": "7",
+      "when": 1791590901000,
+      "tag": "0406_update_manifest_cache",
+      "breakpoints": true
     }
   ]
 }
