@@ -20,7 +20,7 @@ import { runCompanionReflectionJob, companionReflectionDedupeKey }
   from "../../../../workers/ai-worker/src/handlers/companion-reflection.ts";
 import { applyAssistantPersonaEdit }
   from "../../../../workers/ai-worker/src/handlers/companion-persona-self-edit.ts";
-import { retrievePlaybookCandidates, retrievePlaybookCatalog }
+import { retrievePlaybookViews }
   from "../../../../workers/ai-worker/src/handlers/companion-playbooks.ts";
 import { createHash } from "node:crypto";
 import { upsertAgentMethodCandidate } from "@astella/agent-host";
@@ -281,24 +281,23 @@ test("§16 一条完整路径：回顾留下经验与待生效自我描述，下
     // 读回边（§16 第 6 步在方法这一侧的落点）：那条候选要能在下一次相处里
     // 被她看见，而「可以照做」那本目录仍然不放它进去——两个集合各读各的。
     const scope = { workspaceId: f.workspaceId, userId: f.userId };
-    const candidates = await withWorkerWorkspaceTransaction(scope,
-      (tx) => retrievePlaybookCandidates(tx, scope));
+    // 一次取回，两个桶：这正是下一轮装配用的那一条读。
+    const views = await withWorkerWorkspaceTransaction(scope, (tx) => retrievePlaybookViews(tx, scope));
+    const candidates = views.candidates;
     assert.deepEqual(candidates.map((entry) => entry.title), ["招呼只接眼前这句"]);
     assert.equal(candidates[0].triggerCondition, "对方只说了一句招呼");
     assert.deepEqual(candidates[0].exceptions, ["对方点名要接着昨天那篇时照常接续"],
       "例外要一起读回来：刚提炼的经验最容易过度套用");
     assert.equal(candidates[0].epistemicStatus, "tentative");
-    const catalog = await withWorkerWorkspaceTransaction(scope,
-      (tx) => retrievePlaybookCatalog(tx, scope));
-    assert.equal(catalog.length, 0, "没核对的候选不得占「可以照做」那本目录");
+    assert.equal(views.catalog.length, 0, "没核对的候选不得占「可以照做」那本目录");
 
     // §16 第 6 步的另一半：用户把候选取下来之后，下一轮读不回来；**迟到的反思也不能把它复活**。
     // 「取下来」在这里直接用 SQL 置 disabled（那是用户停用会落到的那一列），
     // 写的那一侧仍走真实的 `upsertAgentMethodCandidate`——它按设计遇到 disabled 就不并存。
     await admin`UPDATE companion_procedural_playbooks SET method_state = 'disabled' WHERE user_id = ${f.userId}`;
     const afterWithdraw = await withWorkerWorkspaceTransaction(scope,
-      (tx) => retrievePlaybookCandidates(tx, scope));
-    assert.equal(afterWithdraw.length, 0, "停用之后不该再读回来");
+      (tx) => retrievePlaybookViews(tx, scope));
+    assert.equal(afterWithdraw.candidates.length, 0, "停用之后不该再读回来");
     // 同一个触发条件 → 反思那条路会算出的同一个 playbookKey（键由触发条件定型）。
     const sameKey = `reflection:${createHash("sha256").update("对方只说了一句招呼").digest("hex").slice(0, 24)}`;
     const lateReflection = await withWorkerWorkspaceTransaction(scope, (tx) =>

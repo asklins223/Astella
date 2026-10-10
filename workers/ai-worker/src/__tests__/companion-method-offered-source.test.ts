@@ -18,7 +18,7 @@ test("44 §6.3（源码守卫）：目录被提供的调用点还在——这是
   // 文件名带 `-source-` 是仓库约定：只对源码文本下断言的守卫必须自报家门。
   const source = await readFile(
     new URL("../handlers/companion-context-orchestrator.ts", import.meta.url), "utf8");
-  const callSite = source.slice(source.indexOf("await retrievePlaybookCatalog"));
+  const callSite = source.slice(source.indexOf("await retrievePlaybookViews"));
   const window = callSite.slice(0, 1200);
   assert.match(window, /recordAgentMethodOffered\(/, "取到目录之后必须记一次 offered");
   assert.match(window, /kind:\s*"conversation"/, "来源要与 agent-goal 分得清");

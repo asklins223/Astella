@@ -19,7 +19,7 @@ import {
   PLAYBOOK_CATALOG_LIMIT,
   readPlaybookById,
   renderPlaybookCatalog,
-  retrievePlaybookCatalog,
+  retrievePlaybookViews,
   type PlaybookCatalogEntry,
 } from "../companion-playbooks.ts";
 
@@ -122,14 +122,27 @@ const methodRow = (over: Record<string, unknown> = {}): Record<string, unknown> 
   ...over,
 });
 
-/** 假 SQL 端口：第一次 SELECT 回给定行，之后的（记账写入）回空。 */
+/**
+ * 假 SQL 端口：第一次 SELECT 回给定行，之后的（记账写入）回空。
+ *
+ * 行里那格 `bucket` 是**照着真实查询的 CASE 补的**：目录要 active+supported、
+ * 候选要 candidate 且非 disputed，两条 SQL 谓词同一份（`listAgentMethodBuckets`）。
+ * 这里补一次是为了让假端口与真查询同一个形状；SQL 那一道由
+ * `agent-growth-postgres.integration.ts` 的真库用例负责。
+ */
+const withBucket = (row: Record<string, unknown>): Record<string, unknown> => {
+  const state = row.method_state, epistemic = row.epistemic_status;
+  const bucket = state === "active" && epistemic === "supported" ? "catalog"
+    : state === "candidate" && epistemic !== "disputed" ? "candidate" : null;
+  return { ...row, bucket };
+};
 const fakeTx = (rows: Record<string, unknown>[]): AgentSqlExecutor => {
   let calls = 0;
-  return { execute: async () => (++calls === 1 ? rows : []) };
+  return { execute: async () => (++calls === 1 ? rows.map(withBucket) : []) };
 };
 
 test("目录条目的认识状态来自数据库那一行，不是在渲染时编的", async () => {
-  const catalog = await retrievePlaybookCatalog(fakeTx([methodRow()]), SCOPE);
+  const { catalog } = await retrievePlaybookViews(fakeTx([methodRow()]), SCOPE);
   assert.deepEqual(catalog.map(item => item.epistemicStatus), ["supported"],
     "数据库里写着 supported，目录却说成别的");
   assert.equal(catalog[0]?.version, 3, "目录丢了版本：按 ID 展开时没有可核对的那一版");
@@ -141,8 +154,12 @@ test("目录条目的认识状态来自数据库那一行，不是在渲染时�
 test("active 但依据已被纠正的方法：既不进目录，也读不出正文", async () => {
   // 生命周期（active）与认识状态（disputed）是两列；只盯前一列就会把它当成已确认可用。
   const disputed = methodRow({ epistemic_status: "disputed" });
-  assert.deepEqual(await retrievePlaybookCatalog(fakeTx([disputed]), SCOPE), [],
+  assert.deepEqual((await retrievePlaybookViews(fakeTx([disputed]), SCOPE)).catalog, [],
     "依据已被用户纠正的方法出现在可自动采用的目录里");
+  assert.deepEqual((await retrievePlaybookViews(fakeTx([disputed]), SCOPE)).candidates, []);
+  assert.deepEqual(
+    (await retrievePlaybookViews(fakeTx([methodRow({ method_state: "candidate", epistemic_status: "disputed" })]), SCOPE)).candidates,
+    [], "候选那道门也要求不是 disputed");
   assert.equal(await readPlaybookById(fakeTx([disputed]), SCOPE, METHOD_ID, 3), null,
     "active 但依据已被纠正的方法，按当前版本读出了正文");
   assert.equal(await readPlaybookById(fakeTx([methodRow({ method_state: "disabled" })]), SCOPE, METHOD_ID, 3), null,

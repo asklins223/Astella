@@ -90,7 +90,7 @@ test("⑤ surface 结论真的会进下一轮上下文，而且是一次性消�
 
 test("⑥ 手册目录进上下文，正文不进来（§4.6.10）", () => {
   const orchestrator = read("workers/ai-worker/src/handlers/companion-context-orchestrator.ts");
-  assert.match(orchestrator, /retrievePlaybookCatalog/,
+  assert.match(orchestrator, /retrievePlaybookViews/,
     "手册目录没有接进上下文：companion_read_playbook 展开的是一条不存在的记录");
   assert.match(orchestrator, /playbookCatalog/);
   // 正文按 id 展开（companion_read_playbook），目录里只应有标题与触发条件。

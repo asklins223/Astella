@@ -107,22 +107,25 @@ test("⑦ 策略版本进幂等判据：换策略能重新回顾同一段，不�
  */
 test("⑧ 候选经验有独立的读回通道，且不与「可照做」那 20 条混流", () => {
   const hostMethods = read("packages/agent-host/src/methods.ts");
-  assert.match(hostMethods, /export async function listAgentMethodCandidates/,
-    "agent-host 要有一条只读 candidate 的权威查询");
-  assert.match(hostMethods, /AND p\.method_state='candidate'/,
-    "候选那条按生命周期读，不按「已确认」读");
-  // 目录那道门必须还是原来的门：候选是另开一条，不是把门放宽。
-  assert.match(hostMethods, /AND p\.method_state='active' AND p\.epistemic_status='supported'/,
+  // 目录与候选是一次取回（2026-10-10：同表同事务，分两条 SQL 只是每轮多一次往返），
+  // 但**两道门一条不能省**：谁进哪个桶由这一条 SQL 的 CASE 决定。
+  assert.match(hostMethods, /export async function listAgentMethodBuckets/,
+    "agent-host 要有一条把目录与候选分桶的权威查询");
+  assert.match(hostMethods, /WHEN p\.method_state='active' AND p\.epistemic_status='supported' THEN 'catalog'/,
     "把 candidate 并进目录那道门，等于让没核对的做法冒充可照做");
+  assert.match(hostMethods, /WHEN p\.method_state='candidate' AND p\.epistemic_status <> 'disputed' THEN 'candidate'/,
+    "候选那条按生命周期读，且排除依据已被纠正的");
 
   const playbooks = read("workers/ai-worker/src/handlers/companion-playbooks.ts");
-  assert.match(playbooks, /retrievePlaybookCandidates/);
+  assert.match(playbooks, /retrievePlaybookViews/);
   assert.match(playbooks, /renderPlaybookCandidates/);
   assert.match(playbooks, /PLAYBOOK_CANDIDATE_LIMIT/,
     "候选的条数要有自己的源，不与目录的 20 条共用一个数");
+  assert.match(playbooks, /candidateLimit: PLAYBOOK_CANDIDATE_LIMIT/,
+    "两个上限分别作用在各自的桶上，不能互相挤占");
 
   const orchestrator = read("workers/ai-worker/src/handlers/companion-context-orchestrator.ts");
-  assert.match(orchestrator, /await retrievePlaybookCandidates\(tx, scope\)/);
+  assert.match(orchestrator, /await retrievePlaybookViews\(tx, scope\)/);
   const dialogue = read("workers/ai-worker/src/handlers/companion-dialogue.ts");
   assert.match(dialogue, /methodCandidates: read\.groundedTutorContext \? "" : renderPlaybookCandidates/,
     "正式作答那一档不带候选：讲解只按材料与题面来");

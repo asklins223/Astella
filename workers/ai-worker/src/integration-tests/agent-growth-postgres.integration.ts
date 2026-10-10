@@ -82,7 +82,7 @@ const {
   upsertMemory, confirmMemory, correctMemory,
   deleteMemory, dismissMemory, archiveMemory, eraseMemory,
 } = memoryService;
-const { upsertPlaybook, readPlaybookById, retrievePlaybookCatalog } =
+const { upsertPlaybook, readPlaybookById, retrievePlaybookViews } =
   await import("../handlers/companion-playbooks.ts");
 const { runCompanionMemoryOrganize } =
   await import("../handlers/companion-memory-organize.ts");
@@ -127,7 +127,7 @@ const readAdopted = (scope: Scope) =>
 
 /** 一次真实的「手册目录」读取。目录里没有正文，这是 0348 的设计。 */
 const readCatalog = (scope: Scope) =>
-  inWorker(scope, (tx) => retrievePlaybookCatalog(tx, scope));
+  inWorker(scope, (tx) => retrievePlaybookViews(tx, scope)).then((views) => views.catalog);
 
 const readBody = (scope: Scope, playbookId: string, version: number) =>
   inWorker(scope, (tx) => readPlaybookById(tx, scope, playbookId, version));

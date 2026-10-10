@@ -20,7 +20,7 @@
  * 也读不出正文。
  */
 import {
-  listAgentMethodCandidates, listAgentMethods, readAgentMethod, upsertAgentMethodCandidate,
+  listAgentMethodBuckets, readAgentMethod, upsertAgentMethodCandidate,
   type AgentSqlExecutor,
 } from "@astella/agent-host";
 import type { AgentMethodV1, AgentMethodEvidenceV1, AgentMethodEpistemicStatusV1 } from "@astella/shared/agent-growth-contracts";
@@ -49,9 +49,6 @@ const catalogEntry = (method: AgentMethodV1): PlaybookCatalogEntry => ({
   playbookId: method.methodId, playbookKey: method.methodId, title: method.title,
   triggerCondition: method.appliesWhen, version: method.revision, epistemicStatus: method.epistemicStatus,
 });
-export async function retrievePlaybookCatalog(tx: AgentSqlExecutor, scope: PlaybookScope): Promise<PlaybookCatalogEntry[]> {
-  return (await listAgentMethods(tx, scope, true)).map(catalogEntry);
-}
 /**
  * 候选条目：与目录同样的身份，多带「什么时候别用」那几行。
  *
@@ -61,17 +58,25 @@ export async function retrievePlaybookCatalog(tx: AgentSqlExecutor, scope: Playb
 export interface PlaybookCandidateEntry extends PlaybookCatalogEntry { exceptions: string[] }
 
 /**
- * 她自己提炼的候选：`method_state='candidate'`，还没经过用户核对。
+ * 目录与候选**一次取回**（2026-10-10 审计：同一张表、同一个事务，分两条 SQL 只让每轮装配
+ * 多一次往返）。两条通道的判据都留在 agent-host 那条查询里（`listAgentMethodBuckets` 的
+ * bucket：目录 active+supported、候选 candidate 且非 disputed），这里只做投影——
+ * 目录给 id/标题/触发条件，候选还要「什么时候别用」那几行。
  *
- * 这一条是成长闭环的**读回**边（方案 50 §16 第 6 步）。此前反思只写不读：
- * `upsertReflectionMethod` 落的是 candidate+tentative，而目录那道门要 active+supported，
- * 于是她提炼出的做法永远进不了下一次相处——「用户改过之后下一轮不再照旧的来」
- * 这句话就没有可观察的落点。候选不进那 20 条目录（那是「可以照做」的集合），
- * 另走一条通道，状态由渲染那一步写明。
+ * 候选这一边就是成长闭环的**读回**边（方案 50 §16 第 6 步）：反思产出若永远进不了下一次
+ * 相处，「用户改过之后下一轮不再照旧的来」就没有可观察的落点。候选不进那 20 条目录
+ * （那是「可以照做」的集合），上限也各算各的。
  */
-export async function retrievePlaybookCandidates(tx: AgentSqlExecutor, scope: PlaybookScope): Promise<PlaybookCandidateEntry[]> {
-  return (await listAgentMethodCandidates(tx, scope, PLAYBOOK_CANDIDATE_LIMIT))
-    .map((method) => ({ ...catalogEntry(method), exceptions: method.exceptions }));
+export async function retrievePlaybookViews(tx: AgentSqlExecutor, scope: PlaybookScope): Promise<{
+  catalog: PlaybookCatalogEntry[]; candidates: PlaybookCandidateEntry[];
+}> {
+  const buckets = await listAgentMethodBuckets(tx, scope, {
+    catalogLimit: PLAYBOOK_CATALOG_LIMIT, candidateLimit: PLAYBOOK_CANDIDATE_LIMIT,
+  });
+  return {
+    catalog: buckets.catalog.map(catalogEntry),
+    candidates: buckets.candidates.map((method) => ({ ...catalogEntry(method), exceptions: method.exceptions })),
+  };
 }
 export async function readPlaybookById(tx: AgentSqlExecutor, scope: PlaybookScope, playbookId: string, expectedVersion: number,
   consultation?: { kind: "agent_goal" | "conversation"; id: string; revision: number; sourceKey: string }): Promise<PlaybookBody | null> {

@@ -122,12 +122,22 @@ test("普通对话只注入 resident 正文和 active 元数据目录", async ()
   assert.ok(!JSON.stringify(context.memoryDirectory).includes("正文不应自动进入提示词"));
   assert.match(calls[0] ?? "", /budget_tier = 'resident'/);
   assert.match(calls[1] ?? "", /budget_tier = 'active'/);
-  // 5 次查询：resident 正文、active 目录、手册目录（§4.6.10）、她自己提炼还没核对的
-  // 候选（方案 50 §16 第 6 步的读回边）、整理结论（§4.5.10 的 surface，一次性消费）。
+  // 4 次查询：resident 正文、active 目录、手册目录与候选（**一次取回**，两条通道靠 SQL 的
+  // CASE 分桶）、整理结论（§4.5.10 的 surface，一次性消费）。
   // 仍然全是**读**——统计写入在独立的 best-effort 事务里，那条不变。
-  assert.equal(calls.length, 5, "context assembly 只读数据：resident + 目录 + 手册目录 + 候选 + 整理结论");
-  // 候选与目录是**两条**读：按生命周期读，不按「已确认」读——混成一条就等于放宽那道门。
-  assert.match(calls[3] ?? "", /method_state='candidate'/);
+  const reads = [
+    { match: /budget_tier = 'resident'/, why: "resident 正文" },
+    { match: /budget_tier = 'active'/, why: "active 目录" },
+    { match: /method_state='active' AND p\.epistemic_status='supported'/, why: "手册目录与候选一次取回" },
+    { match: /UPDATE companion_memory_organization_state/, why: "整理结论（一次性消费）" },
+  ];
+  assert.equal(calls.length, reads.length, `context assembly 只读数据：${reads.map((r) => r.why).join(" + ")}`);
+  for (const read of reads) {
+    assert.ok(calls.some((sql) => read.match.test(sql)), `缺少这一条读：${read.why}`);
+  }
+  // 两个桶的谓词在同一条 SQL 里：只留下目录那道门，候选就会被一并放进来。
+  assert.ok(calls.some((sql) => /method_state='candidate' AND p\.epistemic_status <> 'disputed'/.test(sql)),
+    "候选的判据必须与目录同一条查询出现");
   assert.doesNotMatch(calls.join("\n"), /UPDATE assistant_memory_items|memory_usage_log/);
 });
 

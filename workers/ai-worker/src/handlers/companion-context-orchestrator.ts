@@ -20,8 +20,7 @@ import {
 } from "./companion-memory-vector.ts";
 import { recordAgentMethodOffered } from "@astella/agent-host";
 import {
-  retrievePlaybookCandidates, retrievePlaybookCatalog,
-  type PlaybookCandidateEntry, type PlaybookCatalogEntry,
+  retrievePlaybookViews, type PlaybookCandidateEntry, type PlaybookCatalogEntry,
 } from "./companion-playbooks.ts";
 import {
   companionMemoryRetrievalModeTotal,
@@ -198,13 +197,12 @@ export async function assembleCompanionContext(
 
   // §4.6.10：手册目录与记忆目录是两条独立通道——手册讲"怎么协作"，
   // 记忆讲"关于用户的什么"。目录有界（PLAYBOOK_CATALOG_LIMIT），正文不进来。
-  const playbooks = input.playbooksDisabled
-    ? []
-    : await retrievePlaybookCatalog(tx, scope);
-  // 候选与目录一起读、同一个开关下：她们俩讲的是同一件事（怎么配合），只是核对状态不同。
-  const playbookCandidates = input.playbooksDisabled
-    ? []
-    : await retrievePlaybookCandidates(tx, scope);
+  // 目录与候选一次取回（同表同事务；判据都在 agent-host 那一条查询里）。
+  const playbookViews = input.playbooksDisabled
+    ? { catalog: [], candidates: [] }
+    : await retrievePlaybookViews(tx, scope);
+  const playbooks = playbookViews.catalog;
+  const playbookCandidates = playbookViews.candidates;
   // 方案 44 §6.3：目录**被提供**要记一次，且只记一次。
   //
   // 这条以前只在 agent-goal 那条路记（`agent/execution-context.ts`），伴星对话这条路

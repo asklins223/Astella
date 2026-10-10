@@ -132,6 +132,43 @@ export async function listAgentMethodCandidates(tx: AgentSqlExecutor, scope: Age
   // 依据已经被撤掉的（`source_changed`）不算候选：那是「不该再来」，不是「还没核」。
   return rows.map(row=>projectAgentMethod(row)).filter(method=>method.availability==="pending");
 }
+/**
+ * 一次查询同时取回「可以照做」的目录与「她自己提炼、还没核对」的候选。
+ *
+ * 两件事读的是同一张表、同一个事务；分两条 SQL 只是让每轮装配多一次往返（2026-10-10 审计）。
+ * 合并之后**两道门一条不省**：谁进哪个桶由 SQL 里的 `bucket` 决定——
+ * 目录要 `active` + `supported`，候选要 `candidate` 且不是 `disputed`——读侧再各自
+ * 复核 `availability`（停用、依据失效的那些既不进目录也不进候选）。
+ *
+ * 排序只有一处（最近更新的在前），两个上限分别作用在各自的桶上：目录那 20 条是
+ * 「可自动采用」的名额，候选那 5 条是她自己还没核对的尝试，两本账不能互相挤占。
+ */
+export async function listAgentMethodBuckets(tx: AgentSqlExecutor, scope: AgentScopeV1, limits: {
+  catalogLimit?: number; candidateLimit?: number;
+} = {}) {
+  const catalogLimit = limits.catalogLimit ?? 20;
+  const candidateLimit = limits.candidateLimit ?? 5;
+  const rows = await queryRows<AgentMethodRow & { bucket: string }>(tx, sql`SELECT p.*,s.*,
+    astella_agent_method_sources_current(p.id,p.workspace_id,p.user_id) AS sources_current,
+    CASE
+      WHEN p.method_state='active' AND p.epistemic_status='supported' THEN 'catalog'
+      WHEN p.method_state='candidate' AND p.epistemic_status <> 'disputed' THEN 'candidate'
+    END AS bucket
+    FROM companion_procedural_playbooks p ${stats}
+    WHERE p.workspace_id=${scope.workspaceId} AND p.user_id=${scope.userId}
+      AND (
+        (p.method_state='active' AND p.epistemic_status='supported')
+        OR (p.method_state='candidate' AND p.epistemic_status <> 'disputed')
+      )
+    ORDER BY p.updated_at DESC,p.id`);
+  const projected = rows.map((row) => ({ bucket: row.bucket, method: projectAgentMethod(row) }));
+  return {
+    catalog: projected.filter((entry) => entry.bucket === "catalog" && entry.method.availability === "available")
+      .slice(0, catalogLimit).map((entry) => entry.method),
+    candidates: projected.filter((entry) => entry.bucket === "candidate" && entry.method.availability === "pending")
+      .slice(0, candidateLimit).map((entry) => entry.method),
+  };
+}
 /** 读前核对：版本要对得上，并且此刻仍可采用。依据被纠正／被停用／暂定的都读不出正文。 */
 export async function readAgentMethod(tx: AgentSqlExecutor, scope: AgentScopeV1, id: string, revision: number,
   consultation?: { kind: "agent_goal" | "conversation"; id: string; revision: number; sourceKey: string }) {
