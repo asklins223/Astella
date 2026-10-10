@@ -146,13 +146,13 @@ jobs:
         run: |
           node ../../.github/scripts/desktop-deployment.mjs
           npm run package:win:x64
-      - name: Verify Windows installer, native UI, update and uninstall
+      - name: Verify Windows installer, native UI and uninstall
         shell: pwsh
         working-directory: apps/desktop-client
-        # 这一串（装→向导→起应用→覆盖更新→卸载→再装→清资料卸载）在 v1.4.0 实测 26 秒。
-        # 卡住时 job 级 90 分钟太久，而且步骤没结束就取不到日志；12 分钟拿不到结论就先判红，
-        # 日志里各阶段的 Write-Host 时间戳就能直接指出卡在哪一段。
-        timeout-minutes: 12
+        # 2026-10-10（用户决定）：这一步只跑真实 Windows 才给得出、而且一次一个文件的那几项。
+        # 之前它把覆盖更新、清除资料卸载、带网络标记的双击路径串在一起，每换一个新文件都要重新
+        # 解一次 66MB 单文件包，实测从 v1.4.0 的 26 秒拖到十分钟以上。现在 6 分钟拿不到结论就判红。
+        timeout-minutes: 6
         run: ./scripts/check-windows-installer.ps1 -ExpectedVersion "${{ steps.version.outputs.version }}"
       - name: Upload Windows installer diagnostics
         if: always()
