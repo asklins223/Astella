@@ -185,6 +185,17 @@ describe("40 §4.8.4 · 人格「待生效版本」在伴星中心看得见", ()
     expect(section.textContent).toContain("我把你三次的反应连起来看了一次");
   });
 
+  it("只改自我描述时，不再被原来的说话风格盖掉", () => {
+    const next = pending();
+    next.pending!.profile!.speakingStyle = "先给结论。";
+    next.pending!.profile!.selfDescription = "我开始学会先听完你眼前这句话。";
+    renderPanel({ pending: next });
+    const changes = document.querySelector(".cc-persona-changes")!;
+    expect(changes.textContent).toContain("她怎么说自己");
+    expect(changes.textContent).toContain("我开始学会先听完你眼前这句话。");
+    expect([...changes.querySelectorAll("h4")].map(node => node.textContent)).not.toContain("她怎样表达");
+  });
+
   it("「现在生效」按钮在，且点了就调那个动作", () => {
     const onActivatePending = vi.fn();
     renderPanel({ pending: pending(), onActivatePending });

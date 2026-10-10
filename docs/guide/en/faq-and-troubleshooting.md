@@ -48,6 +48,17 @@ There is no email self-service recovery. `/auth/change-password` requires the cu
 
 When changing the API port, update `DESKTOP_API_ORIGIN` too. Check development configuration with `make config`, then apply it with `make up`.
 
+### Double-clicking the Windows installer does nothing and shows no error?
+
+The installer is a GUI-subsystem single-file bundle: when the `.NET` launcher fails **before** `Program.Main`, it only writes to standard error, so a double-click shows nothing and the installer's own error handling never runs. Work through the layers:
+
+1. Check `%LOCALAPPDATA%\Astella\setup-logs\startup.log`, written by the first line of `Program.Main`. No file means managed code never started; a fresh entry with no window points at the UI layer instead.
+2. Delete `%TEMP%\.net\AstellaSetup`, make sure no `AstellaSetup` process is left in Task Manager, then double-click **once** and wait a full 60 seconds. An unsigned bundle of this size gets rescanned by security software, and repeated launches contend on the extraction directory.
+3. Keep the file in a plain folder on local disk — not a cloud-synced directory, and don't launch it from an archive preview window. Clear the block flag in Properties, or run `Unblock-File`.
+4. If nothing still appears, run `diagnose-windows-installer.ps1`, published next to the release asset. It is read-only and reports the package structure and manifest, the temp directory and extraction leftovers, the mutex and running processes, security software and event logs, then launches the package once with standard error redirected so the pre-`Main` failure text is captured.
+
+Signed release builds need `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` in CI; the packaging script warns loudly when the artifact is unsigned and re-parses the finished PE to verify the appended payload before publishing. Full layer criteria and the automated acceptance run are in [the standalone Windows installer](../../../apps/windows-installer/README.md).
+
 ## The API is alive, but `/ready` fails
 
 `/health` checks process liveness. `/ready` also checks database connectivity, business tables and the migration threshold. One-shot containers run initialization: `role-bootstrap` → `migrate` → `role-grants`, followed by API and Worker startup after successful grants.

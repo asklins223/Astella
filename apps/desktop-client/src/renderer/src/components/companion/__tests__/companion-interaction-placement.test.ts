@@ -35,6 +35,16 @@ describe("conversation book placement", () => {
 });
 
 describe("floating companion placement", () => {
+  it("keeps a short receipt close to the companion inside the safe corridor", () => {
+    const role = { left: 1150, right: 1410, top: 530, bottom: 790 };
+    const short = companionFloatingPlacement({ role, viewport: { width: 1440, height: 810 }, headHeight: 0, hasPapers: true, paperWidth: 300, paperHeight: 150 });
+    expect(short.papers.top).toBe(364);
+    expect(short.papers.width).toBe(300);
+    expect(overlaps({ ...short.papers, bottom: short.papers.top + 150 }, role)).toBe(false);
+    const long = companionFloatingPlacement({ role, viewport: { width: 1440, height: 810 }, headHeight: 0, hasPapers: true, paperHeight: 2000 });
+    expect(long.papers.top).toBe(58);
+    expect(long.papers.bottom).toBe(796);
+  });
   it.each([124, 220, 380, 680])("keeps %ipx floating content and rich papers outside either interaction seat", (headHeight) => {
     for (const viewport of [{ width: 1440, height: 810 }, { width: 720, height: 405 }]) {
       for (const side of ["left", "right"] as const) {

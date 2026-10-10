@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>随身伴星 · 玻璃书房设计稿</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="mobile-companion-layout.css">
+</head>
+<body>
+  <main id="workbench" class="workbench">
+    <aside class="lab-panel">
+      <p class="eyebrow">ASTELLA · 移动端布局评审</p>
+      <h1>身边有伴星，<br>手里有书房。</h1>
+      <p class="lab-intro">看得清的角色、透出环境的玻璃，以及可以一直读下去的正文。在这里直接检验它们的比例。</p>
+      <div class="lab-views" aria-label="示例状态">
+        <button data-view="chat" class="active">连续聊天</button>
+        <button data-view="keyboard">键盘与长输入</button>
+        <button data-view="read">长文阅读</button>
+        <button data-view="upload">材料处理中</button>
+        <button data-view="edit">修改与对照</button>
+        <button data-view="mini">小程序占位</button>
+      </div>
+      <label class="lab-field">参考屏幕<select id="device-size"><option value="390,844">390 × 844</option><option value="360,720">360 × 720</option><option value="320,640">320 × 640</option><option value="430,932">430 × 932</option></select></label>
+      <label class="lab-field">正文字体<select id="text-size"><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option></select></label>
+      <label class="lab-check"><input id="keyboard-toggle" type="checkbox">显示 292px 键盘占位</label>
+      <label class="lab-check"><input id="glass-toggle" type="checkbox" checked>玻璃层局部模糊</label>
+      <p class="lab-note">本机交互示例。消息、文件进度、修改和音频状态是样例，不访问账号、AI、麦克风或业务服务。键盘为布局占位，非系统键盘验收。</p>
+    </aside>
+    <section class="preview-area" aria-label="移动界面预览">
+      <div id="device" class="phone"></div>
+      <div id="metrics" class="metrics" aria-live="polite"></div>
+    </section>
+    <aside class="space-notes">
+      <span class="note-number">01</span><h2>伴星看得清</h2><p>交流时角色宽 120px；阅读与输入时收拢到侧身布局。来自现有模型的实际取帧。</p>
+      <span class="note-number">02</span><h2>底部只有一条操作栏</h2><p>输入、播放按当前状态替换。历史和材料从顶栏或“＋”进入。</p>
+      <span class="note-number">03</span><h2>玻璃有厚薄</h2><p>环境是一张底图，不单独占高度。聊天透色，长文的磨砂更厚；控件与正文按真实布局分配空间。</p>
+    </aside>
+  </main>
+  <script src="notebook-icons.js"></script>
+  <script src="mobile-companion-layout.js"></script>
+</body>
+</html>

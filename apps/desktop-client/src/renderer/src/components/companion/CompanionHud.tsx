@@ -183,7 +183,6 @@ export function CompanionHud({
   const imageInputRef = useRef<HTMLInputElement>(null);
   /** 回合结束后只发布一次的稳定摘要（方案 §3 无障碍）：流式文本不再是持续 live region。 */
   const [turnSummary, setTurnSummary] = useState("");
-  const [proposalNotice, setProposalNotice] = useState("");
   const [revealedChars, setRevealedChars] = useState(0);
   const [bubbleStage, setBubbleStage] = useState<BubbleStage>("visible");
   const [preparingSend, setPreparingSend] = useState(false);
@@ -1106,39 +1105,6 @@ export function CompanionHud({
 
   const toggleVoice = interaction.toggleVoice;
 
-  // 优先展示刚落地回复里的选择；气泡文字消失后，尚未决定的真实 proposal 仍留在伴星旁。
-  // 这样用户不需要在一秒多的回复停留时间里抢着点，也不会为了作决定被迫打开历史。
-  const proposalEntries = Object.entries(chat.proposalStates);
-  const liveProposalId = [...(chat.liveReply?.proposalIds ?? [])].reverse().find((proposalId) => {
-    const state = chat.proposalStates[proposalId];
-    return !state || state.phase !== "ready" || state.proposal.status === "pending";
-  });
-  const pendingProposalId = liveProposalId ?? [...proposalEntries].reverse().find(([, state]) => (
-    state.phase === "loading" || (state.phase === "ready" && state.proposal.status === "pending")
-  ))?.[0] ?? null;
-
-  /**
-   * 选择卡的无障碍播报（方案 §3）：出现与状态变化各发一句**简短**提示，靠
-   * `lastProposalNoticeRef` 去重——`proposalStates` 每次快照刷新都是新对象，
-   * 不去重的话读屏会反复念同一句。
-   */
-  const lastProposalNoticeRef = useRef("");
-  useEffect(() => {
-    const state = pendingProposalId ? chat.proposalStates[pendingProposalId] : undefined;
-    let next = "";
-    if (pendingProposalId && (!state || state.phase !== "ready" || state.proposal.status === "pending")) {
-      next = `${chat.companionName} 有一项动作在等你确认；可以稍后决定，也可以直接继续聊。`;
-    } else if (state?.phase === "ready" && state.proposal.status !== "pending") {
-      next = state.proposal.status === "accepted" ? "动作建议已确认。"
-        : state.proposal.status === "rejected" ? "动作建议已拒绝。"
-          : state.proposal.status === "expired" ? "动作建议已过期。"
-            : "动作建议已处理。";
-    }
-    if (!next || next === lastProposalNoticeRef.current) return;
-    lastProposalNoticeRef.current = next;
-    setProposalNotice(next);
-  }, [pendingProposalId, chat.proposalStates]);
-
   // 语音模型在设置 → 伴星 → 声音与显示。与边缘设置里那条走同一个通道：设分区 → 开设置页。
   const openVoiceModelSettings = useCallback(() => {
     openVoiceModelSettingsAction();
@@ -1401,7 +1367,6 @@ export function CompanionHud({
         document.body,
       ) : null}
       <div className="companion-hud__sr-status" role="status">{turnSummary}</div>
-      <div className="companion-hud__sr-status" role="status">{proposalNotice}</div>
       <CompanionHistoryDrawer
         goals={goals}
         goalTarget={goalHistoryTarget}

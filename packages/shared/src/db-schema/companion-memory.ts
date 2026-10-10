@@ -195,6 +195,8 @@ export const companionReflections = pgTable(
     inputFromSeq: bigint("input_from_seq", { mode: "number" }).notNull(),
     inputToSeq: bigint("input_to_seq", { mode: "number" }).notNull(),
     inputFingerprint: text("input_fingerprint").notNull(),
+    /** Bounded input for recovery; cleared with the business conclusion. */
+    inputSnapshot: jsonb("input_snapshot").$type<unknown>(),
     dedupeKey: text("dedupe_key").notNull(),
     strategyVersion: text("strategy_version").notNull(),
     baselinePersonaRevision: integer("baseline_persona_revision").notNull(),

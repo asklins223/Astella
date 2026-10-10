@@ -2,7 +2,7 @@
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile, open } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -42,6 +42,51 @@ async function list(directory, relative = '') {
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
 
+// 安装包是「单文件壳 + 追加的 zip + 追加的清单」，签名又贴在最后。这几段只能靠 PE 自己的
+// 证书目录定位，任何一段错位都会在用户机器上表现为「双击没反应」，所以在这里当场拆开核对。
+async function inspectWindowsExecutable(path) {
+  const handle = await open(path, 'r');
+  try {
+    const size = (await handle.stat()).size;
+    const dos = Buffer.alloc(64);
+    await handle.read(dos, 0, 64, 0);
+    if (dos.subarray(0, 2).toString('latin1') !== 'MZ') throw new Error(`不是 Windows 可执行文件（缺 MZ 头）：${path}`);
+    const peOffset = dos.readInt32LE(60);
+    if (peOffset < 64 || peOffset > size - 240) throw new Error(`PE 偏移不合理：${peOffset}（文件 ${size} 字节）`);
+    const header = Buffer.alloc(240);
+    await handle.read(header, 0, 240, peOffset);
+    if (header.subarray(0, 4).toString('latin1') !== 'PE\0\0') throw new Error(`PE 头缺失：${path}`);
+    const machine = header.readUInt16LE(4);
+    const certificateAt = peOffset + (header.readUInt16LE(24) === 0x20b ? 168 : 152);
+    const certificate = Buffer.alloc(8);
+    await handle.read(certificate, 0, 8, certificateAt);
+    const certificateOffset = certificate.readUInt32LE(0);
+    const certificateSize = certificate.readUInt32LE(4);
+    const subsystem = header.readUInt16LE(24 + 68);
+    if (machine !== 0x8664) throw new Error(`安装包不是 x64：machine=0x${machine.toString(16)}`);
+    if (subsystem !== 2) throw new Error(`安装程序不是 GUI 子系统：subsystem=${subsystem}`);
+    if (certificateSize > 0 && certificateOffset + certificateSize !== size)
+      throw new Error(`签名没贴在文件末尾：证书 ${certificateOffset}+${certificateSize}，总长 ${size}`);
+    const dataEnd = certificateSize === 0 ? size : certificateOffset;
+    for (let padding = 0; padding < 8; padding++) {
+      const at = dataEnd - padding - 24;
+      if (at < 24) break;
+      const footer = Buffer.alloc(24);
+      await handle.read(footer, 0, 24, at);
+      if (footer.subarray(16, 24).toString('latin1') !== 'ASTELLA1') continue;
+      const jsonSize = Number(footer.readBigInt64LE(0));
+      const zipSize = Number(footer.readBigInt64LE(8));
+      const manifest = Buffer.alloc(jsonSize);
+      await handle.read(manifest, 0, jsonSize, at - jsonSize);
+      const apphostSize = at - jsonSize - zipSize;
+      if (apphostSize < 20 * 1024 * 1024)
+        throw new Error(`尾部尺寸不合理：壳 ${apphostSize}、载荷 ${zipSize}、清单 ${jsonSize}`);
+      return { size, signed: certificateSize > 0, apphostSize, zipSize, manifest: JSON.parse(manifest.toString('utf8')) };
+    }
+    throw new Error(`安装包尾部找不到 ASTELLA1 标记：${path}`);
+  } finally { await handle.close(); }
+}
+
 await mkdir(setup, { recursive: true });
 await run(process.env.ASTELLA_DOTNET ?? 'dotnet', ['publish', join(root, 'apps/windows-installer/Astella.Setup.csproj'),
   '-c', 'Release', '-r', 'win-x64', '-o', setup, `-p:Version=${version}`, '--nologo']);
@@ -76,6 +121,16 @@ footer.write('ASTELLA1', 16, 'ascii');
 await writeFile(artifact, Buffer.concat([manifest, footer]), { flag: 'a' });
 // Sign last: signing covers the custom payload. Its trailer reader understands PE certificate padding.
 await windowsPackager.signIf(artifact);
+const shipped = await inspectWindowsExecutable(artifact);
+const { version: shippedVersion, appId, arch, size: unpackedSize, files: listed } = shipped.manifest;
+if (shippedVersion !== version || appId !== 'com.asklins.astella' || arch !== 'x64')
+  throw new Error(`安装包内登记的版本与本次构建不符：${shippedVersion}/${appId}/${arch}，期望 ${version}/com.asklins.astella/x64`);
+if (unpackedSize !== files.reduce((sum, file) => sum + file.size, 0) || listed.length !== files.length)
+  throw new Error(`安装包清单与 win-unpacked 对不上：清单 ${listed.length} 项 ${unpackedSize} 字节，实际 ${files.length} 项 ${files.reduce((sum, file) => sum + file.size, 0)} 字节`);
+console.log(`安装包自检：壳 ${Math.round(shipped.apphostSize / 1024 / 1024)} MB + 载荷 ${Math.round(shipped.zipSize / 1024 / 1024)} MB + 清单 ${listed.length} 项 = ${shipped.size} 字节 · ${shipped.signed ? '已签名' : '未签名'}`);
+if (!shipped.signed) console.warn('⚠ 未签名：数百 MB 的自解压单文件包最容易在用户机器上被安全软件静默拦下——双击没反应、也不报错。正式包请配好 WIN_CSC_LINK。');
+// 出问题的机器上「双击没反应」查不出原因，随包带上只读诊断脚本（不安装、不卸载）。
+await copyFile(join(desktop, 'scripts/diagnose-windows-installer.ps1'), join(release, 'diagnose-windows-installer.ps1'));
 // Older released clients can download this EXE using their existing differential-download path.
 await buildBlockMap(artifact, 'gzip', artifact + '.blockmap');
 const sha512 = createHash('sha512');

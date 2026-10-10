@@ -1,6 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <!-- 文件属性里写清产品名：任务管理器和资源管理器都靠它认人，未签名包更需要能被用户认出来。 -->
+    <Product>拾星笔记</Product>
+    <Description>拾星笔记 Windows 安装程序</Description>
+    <Company>asklins223</Company>
+    <Copyright>PolyForm Noncommercial 1.0.0</Copyright>
     <TargetFramework>net10.0-windows</TargetFramework>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <UseWPF>true</UseWPF>

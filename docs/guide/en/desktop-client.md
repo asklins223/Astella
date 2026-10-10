@@ -49,8 +49,10 @@ The renderer has zero Node access. CRDT documents, image uploads, dynamic artifa
 | Window title | 拾星笔记 (display name; package name `Astella`) | `src/main/index.ts` |
 | Initial content size | 1440×810 | `src/shared/window-geometry.ts` |
 | Minimum size | 1280×720 | same file |
-| Background | `#211914`, `autoHideMenuBar: true` | `src/main/index.ts` |
-| Chrome | macOS `titleBarStyle: hiddenInset`; other platforms `titleBarOverlay`, recomputed with the theme | `src/main/window-chrome.ts` |
+| Background | `#211914` for opaque windows; `#00000000` on Windows, where the window is transparent (otherwise the first frame flashes the desktop, and the opaque colour would seal off the rounded corners) | `src/main/window-chrome.ts` |
+| Chrome | macOS `titleBarStyle: hiddenInset`; Windows `frame: false` + `transparent: true` with caption buttons drawn by the renderer; Linux still uses `titleBarOverlay`, recomputed with the theme | `src/main/window-chrome.ts`, `src/renderer/src/components/hud/window-caption.tsx` |
+| Window shape | Rounded 14px on the document root while floating; square when maximised or full screen | `src/shared/window-frame.ts`, `src/renderer/src/styles.css` |
+| Menu bar | `autoHideMenuBar: true` | `src/main/index.ts` |
 | Single instance | `app.requestSingleInstanceLock()` | `src/main/index.ts` |
 | Zoom | ⌘ / Ctrl with `+` `-` `=` `0` over a discrete step table | `src/main/window-zoom.ts` |
 

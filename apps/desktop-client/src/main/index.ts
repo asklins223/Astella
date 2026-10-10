@@ -42,6 +42,15 @@ import {
   TITLE_BAR_THEME_CHANNEL,
 } from '../shared/window-state'
 import {
+  WINDOW_CONTROL_CHANNEL,
+  WINDOW_FRAME_CHANNEL,
+  WINDOW_FRAME_SNAPSHOT_CHANNEL,
+  isWindowAction,
+  resolveWindowFrame,
+  type AstellaWindowFrame,
+  type WindowFrameSnapshot,
+} from '../shared/window-frame'
+import {
   HOME_WINDOW_INITIAL_CONTENT_SIZE,
   HOME_WINDOW_MINIMUM_SIZE
 } from '../shared/window-geometry'
@@ -541,13 +550,32 @@ function registerWindowIpc(): void {
   ipcMain.on(TITLE_BAR_THEME_CHANNEL, (event, theme: unknown) => {
     const window = windowFor(event.sender, event.senderFrame?.url ?? '')
 
-    if (!window || process.platform === 'darwin' || (theme !== 'day' && theme !== 'night')) return
+    // Windows 的窗口已经没有可染色的原生标题栏（无边框透明窗口才有圆角），按钮由渲染层自绘。
+    if (!window || process.platform === 'darwin' || process.platform === 'win32' || (theme !== 'day' && theme !== 'night')) return
     window.setTitleBarOverlay(titleBarOverlayForTheme(theme))
   })
 
   ipcMain.handle(WINDOW_STATE_SNAPSHOT_CHANNEL, (event): WindowStateSnapshot | null => {
     const window = windowFor(event.sender, event.senderFrame?.url ?? '')
     return window ? windowStateSnapshot(window) : null
+  })
+
+  ipcMain.handle(WINDOW_FRAME_SNAPSHOT_CHANNEL, (event): WindowFrameSnapshot | null => {
+    const window = windowFor(event.sender, event.senderFrame?.url ?? '')
+    return window ? windowFrameSnapshot(window) : null
+  })
+
+  ipcMain.on(WINDOW_CONTROL_CHANNEL, (event, action: unknown) => {
+    const window = windowFor(event.sender, event.senderFrame?.url ?? '')
+    if (!window || !isWindowAction(action)) return
+    if (action === 'minimize') {
+      window.minimize()
+    } else if (action === 'toggle-maximize') {
+      if (window.isMaximized()) window.unmaximize()
+      else window.maximize()
+    } else {
+      window.close()
+    }
   })
 }
 
@@ -586,16 +614,59 @@ function publishWindowState(window: BrowserWindow): void {
   if (changed) window.webContents.send(WINDOW_STATE_CHANNEL, snapshot)
 }
 
+// 卡片形状（悬浮 / 最大化 / 全屏）与「看不看得见」是两件事：前者决定渲染层要不要收圆角、
+// 自绘按钮用还原还是最大化图标，后者的 revision 只在可见性变化时递增，搭不上车。
+const windowFrameRevisions = new WeakMap<BrowserWindow, number>()
+const publishedWindowFrames = new WeakMap<BrowserWindow, AstellaWindowFrame>()
+
+function currentWindowFrame(window: BrowserWindow): AstellaWindowFrame {
+  return resolveWindowFrame({ fullscreen: window.isFullScreen(), maximized: window.isMaximized() })
+}
+
+function synchronizeWindowFrame(window: BrowserWindow): {
+  readonly changed: boolean
+  readonly snapshot: WindowFrameSnapshot
+} {
+  const frame = currentWindowFrame(window)
+  const changed = publishedWindowFrames.get(window) !== frame
+  const revision = (windowFrameRevisions.get(window) ?? 0) + (changed ? 1 : 0)
+
+  windowFrameRevisions.set(window, revision)
+  publishedWindowFrames.set(window, frame)
+
+  return { changed, snapshot: { frame, revision } }
+}
+
+function windowFrameSnapshot(window: BrowserWindow): WindowFrameSnapshot {
+  return synchronizeWindowFrame(window).snapshot
+}
+
+function publishWindowFrame(window: BrowserWindow): void {
+  if (window.isDestroyed() || window.webContents.isDestroyed()) return
+
+  const { changed, snapshot } = synchronizeWindowFrame(window)
+  if (changed) window.webContents.send(WINDOW_FRAME_CHANNEL, snapshot)
+}
+
 function registerWindowLifecycle(window: BrowserWindow): void {
   windowStateRevisions.set(window, 0)
   publishedWindowStates.set(window, currentWindowState(window))
+  windowFrameRevisions.set(window, 0)
+  publishedWindowFrames.set(window, currentWindowFrame(window))
 
   // 焦点不在这一组里：`resolveWindowState` 已经不看焦点了，留着这两条只会变成
   // 每次都判定、永远判定为"没变"的空转订阅（方案 35 E7）。
   window.on('show', () => publishWindowState(window))
   window.on('hide', () => publishWindowState(window))
   window.on('minimize', () => publishWindowState(window))
-  window.on('restore', () => publishWindowState(window))
+  window.on('restore', () => {
+    publishWindowState(window)
+    publishWindowFrame(window)
+  })
+  window.on('maximize', () => publishWindowFrame(window))
+  window.on('unmaximize', () => publishWindowFrame(window))
+  window.on('enter-full-screen', () => publishWindowFrame(window))
+  window.on('leave-full-screen', () => publishWindowFrame(window))
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {
@@ -608,7 +679,6 @@ async function createMainWindow(): Promise<BrowserWindow> {
     show: false,
     ...nativeWindowChrome(process.platform),
     autoHideMenuBar: true,
-    backgroundColor: '#211914',
     title: '拾星笔记',
     webPreferences: {
       preload: resolve(__dirname, '../preload/index.js'),
@@ -801,7 +871,8 @@ app.whenReady()
     resolveWindow: windowFor,
     getWindowState: windowStateSnapshot,
     setTitlebarTheme: (window, theme) => {
-      if (process.platform === 'darwin') return false
+      // macOS 用的是 hiddenInset 的红绿灯，Windows 已经改成无边框自绘按钮，两边都没有可染色的原生覆盖层。
+      if (process.platform === 'darwin' || process.platform === 'win32') return false
       window.setTitleBarOverlay(titleBarOverlayForTheme(theme))
       return true
     },

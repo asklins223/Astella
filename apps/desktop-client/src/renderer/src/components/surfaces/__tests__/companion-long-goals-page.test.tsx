@@ -68,3 +68,15 @@ it("creates a goal as user-confirmed workspace intent without starting backgroun
   await screen.findByText("目标已留下；每次想推进时，再交代这次要做的事。");
   expect(createMemory.mock.calls[0][0].request).toEqual({kind:"goal",scope:"workspace",content:"学会解释电路的边界",appliesWhen:null});expect(agent.createRun).not.toHaveBeenCalled();
 });
+
+it("returns to the same goal index and keeps an unsent task draft when reopening it",async()=>{
+  render(<CompanionLongGoalsPage refreshKey={0} onMemory={vi.fn()}/>);await selectGoal();
+  fireEvent.change(screen.getByLabelText("这次想做什么"),{target:{value:"还没有提交的这次要求"}});
+  // jsdom has no container queries, so dispatch the visible-in-narrow-layout control directly.
+  fireEvent.click(document.querySelector(".cc-reading-back")!);
+  expect(screen.queryByLabelText("这次想做什么")).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("button",{name:/理解电路/}));
+  await selectGoal();
+  expect((screen.getByLabelText("这次想做什么") as HTMLTextAreaElement).value).toBe("还没有提交的这次要求");
+  expect(agent.createRun).not.toHaveBeenCalled();
+});

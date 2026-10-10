@@ -9,7 +9,7 @@
  * 弹层由页面持有状态、面板只渲染，所以这里直接喂 `switchTarget`；
  * 「点卡片把控制权交出去」单独立一条。
  */
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PersonaPanel } from "../companion/companion-center-panels.tsx";
 import { companionPersonaV1Schema } from "@astella/shared/companion-memory-desktop-contracts";
@@ -178,7 +178,7 @@ describe("换人格之前的那一问", () => {
 describe("谁写的：她能自己改了，屏上要看得见", () => {
   it("语气行标出「她改的」", () => {
     renderPanel();
-    expect(document.querySelector(".cc-persona-identity p")?.textContent).toContain("她改的");
+    expect(document.querySelector(".cc-persona-speaking header")?.textContent).toContain("她改的");
   });
 
   it("边界那颗开关标出「你改的」", () => {
@@ -200,5 +200,53 @@ describe("谁写的：她能自己改了，屏上要看得见", () => {
     for (const button of document.querySelectorAll(".cc-switch-list button")) {
       expect(button.hasAttribute("disabled")).toBe(false);
     }
+  });
+});
+
+describe("先读人格内容，再主动修改", () => {
+  const withDescription = () => {
+    const value = personaWithGrowth();
+    return { ...value, profile: { ...value.profile!, selfDescription: "我喜欢慢慢把事情讲清楚。\n今天又多了解了你一点。", fieldOrigin: { ...value.profile!.fieldOrigin, selfDescription: "assistant" as const } } };
+  };
+  it("完整自我描述默认是正文，名字与描述都没有常驻输入框", () => {
+    renderPanel({ persona: withDescription() });
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(document.querySelector(".cc-self-description p")?.textContent).toContain("今天又多了解了你一点。");
+    expect(document.querySelector(".cc-self-description header")?.textContent).toContain("她改的");
+  });
+  it("打开描述编辑立即聚焦，未改也可取消，Esc 返回原按钮", () => {
+    renderPanel({ persona: withDescription() });
+    fireEvent.click(screen.getByRole("button", { name: "修改自我描述" }));
+    const editor = screen.getByRole("textbox", { name: "她怎么说自己" });
+    expect(document.activeElement).toBe(editor);
+    expect((screen.getByRole("button", { name: "保存描述" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(editor, { key: "Escape" });
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "修改自我描述" }));
+  });
+  it("保存失败留住正在修改的描述，允许明确保存清空", async () => {
+    const onSelfDescription = vi.fn(async () => false);
+    renderPanel({ persona: withDescription(), onSelfDescription });
+    fireEvent.click(screen.getByRole("button", { name: "修改自我描述" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "她怎么说自己" }), { target: { value: "重新写的一段话" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存描述" }));
+    await waitFor(() => expect(onSelfDescription).toHaveBeenCalledWith("重新写的一段话"));
+    expect((screen.getByRole("textbox", { name: "她怎么说自己" }) as HTMLTextAreaElement).value).toBe("重新写的一段话");
+    fireEvent.change(screen.getByRole("textbox", { name: "她怎么说自己" }), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "清空描述" }));
+    await waitFor(() => expect(onSelfDescription).toHaveBeenLastCalledWith(""));
+  });
+  it("改名按 Enter 保存，取消不写入且返回改名入口", async () => {
+    const onRename = vi.fn(async () => true);
+    renderPanel({ onRename });
+    fireEvent.click(screen.getByRole("button", { name: "改名" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(onRename).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "改名" }));
+    fireEvent.click(screen.getByRole("button", { name: "改名" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "她叫什么" }), { target: { value: "小鱼" } });
+    fireEvent.submit(document.querySelector(".cc-name-form")!);
+    await waitFor(() => expect(onRename).toHaveBeenCalledWith("小鱼"));
+    await waitFor(() => expect(screen.queryByRole("textbox")).toBeNull());
   });
 });

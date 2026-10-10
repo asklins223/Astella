@@ -19,6 +19,8 @@ import {
   adoptPendingPersonaForNewTurn,
   markReflectionProposalWithdrawn,
   pendingPersonaProposalSources,
+  nextAvailablePersonaRevision,
+  reconcileReflectedPersonaSources,
 } from "@astella/agent-host";
 import { getPresetById } from "@astella/shared/pet-persona-presets";
 export {
@@ -340,8 +342,7 @@ async function planNextRevision(
   userId: string,
   currentRevision: number,
 ): Promise<number> {
-  const staged = await readPendingRevisionRow(executor, userId);
-  return nextPersonaRevisionNumber(currentRevision, staged?.revision ?? null);
+  return nextAvailablePersonaRevision(executor, userId, currentRevision);
 }
 
 async function writeCurrentProfile(
@@ -724,6 +725,7 @@ export async function activateAssistantPersonaForNewTurn(
   executor: ApiTransaction,
   scope: PetProfileScope,
 ): Promise<number | null> {
+  await reconcileReflectedPersonaSources(executor, scope.userId);
   // 写入与采用都走 `@astella/agent-host` 的身份端口：那条排队是 worker（前台工具）
   // 或后台反思排下的，API 自己再实现一遍"什么时候可以把它当成当前版本"就一定漂。
   //

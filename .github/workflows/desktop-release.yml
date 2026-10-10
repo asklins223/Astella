@@ -141,8 +141,10 @@ jobs:
           win_blockmap="${win_installer}.blockmap"
           mac_zip="artifacts/astella-${EXPECTED_VERSION}-mac-${MACOS_ARCH}.zip"
           mac_dmg="artifacts/astella-${EXPECTED_VERSION}-mac-${MACOS_ARCH}.dmg"
+          # 只读诊断脚本：用户机器上「双击安装包没反应、也没报错」时，只有它能分层判断故障在哪一层。
+          diagnose="artifacts/diagnose-windows-installer.ps1"
 
-          for f in "$win_installer" "$win_blockmap" "$mac_zip" "$mac_dmg"; do
+          for f in "$win_installer" "$win_blockmap" "$mac_zip" "$mac_dmg" "$diagnose"; do
             if [ ! -s "$f" ]; then echo "::error::缺少发布产物: $f" >&2; exit 1; fi
             echo "ok  $f  ($(du -h "$f" | cut -f1))"
           done
@@ -188,6 +190,7 @@ jobs:
             artifacts/astella-${{ needs.resolve.outputs.version }}-win-x64.exe.blockmap
             artifacts/astella-${{ needs.resolve.outputs.version }}-mac-${{ needs.build.outputs.macos_arch }}.zip
             artifacts/astella-${{ needs.resolve.outputs.version }}-mac-${{ needs.build.outputs.macos_arch }}.dmg
+            artifacts/diagnose-windows-installer.ps1
 
       - name: Publish the release
         env:

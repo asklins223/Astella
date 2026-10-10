@@ -1,0 +1,6320 @@
+{
+  "date": "2026-10-10",
+  "scope": "Browser layout demo only; no native keyboard, mobile runtime, Agent, audio or business integration.",
+  "checks": [
+    "54 combinations: 3 screen sizes × 3 body-font scales × 6 states; content, header and composer remain in their own non-overlapping areas.",
+    "Draft is preserved when opening a note and returning to the same conversation.",
+    "Long note reaches its last paragraph; before/after edit views are actually switchable.",
+    "Input and submit work with keyboard placeholder present; message joins the local conversation.",
+    "Task stop changes the displayed local task state without removing already available material.",
+    "No-blur fallback preserves the same component layout.",
+    "No page runtime errors during interaction and captures."
+  ],
+  "geometry": [
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1,
+      "state": "chat",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 390,
+        "height": 578,
+        "bottom": 754
+      },
+      "composer": {
+        "x": 12,
+        "y": 754,
+        "width": 366,
+        "height": 66,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 856,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 876,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 920,
+          "bottom": 152
+        },
+        {
+          "x": 839,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 920,
+          "bottom": 204
+        },
+        {
+          "x": 566,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 610,
+          "bottom": 860
+        },
+        {
+          "x": 824,
+          "y": 813,
+          "width": 44,
+          "height": 44,
+          "right": 868,
+          "bottom": 857
+        },
+        {
+          "x": 872,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 916,
+          "bottom": 860
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1,
+      "state": "keyboard",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 76,
+        "bottom": 120
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 120,
+        "width": 390,
+        "height": 343,
+        "bottom": 463
+      },
+      "composer": {
+        "x": 8,
+        "y": 463,
+        "width": 374,
+        "height": 82,
+        "bottom": 545
+      },
+      "keyboard": {
+        "x": 0,
+        "y": 552,
+        "width": 390,
+        "height": 292,
+        "bottom": 844
+      },
+      "bodyScrollHeight": 856,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": true,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 673,
+        "y": 92,
+        "width": 136,
+        "height": 74,
+        "right": 809,
+        "bottom": 166
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 104,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 148
+        },
+        {
+          "x": 673,
+          "y": 92,
+          "width": 136,
+          "height": 74,
+          "right": 809,
+          "bottom": 166
+        },
+        {
+          "x": 876,
+          "y": 104,
+          "width": 44,
+          "height": 44,
+          "right": 920,
+          "bottom": 148
+        },
+        {
+          "x": 561,
+          "y": 542,
+          "width": 44,
+          "height": 44,
+          "right": 605,
+          "bottom": 586
+        },
+        {
+          "x": 829,
+          "y": 539,
+          "width": 44,
+          "height": 44,
+          "right": 873,
+          "bottom": 583
+        },
+        {
+          "x": 877,
+          "y": 542,
+          "width": 44,
+          "height": 44,
+          "right": 921,
+          "bottom": 586
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1,
+      "state": "read",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 100,
+        "bottom": 144
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 144,
+        "width": 390,
+        "height": 592,
+        "bottom": 736
+      },
+      "composer": {
+        "x": 12,
+        "y": 736,
+        "width": 366,
+        "height": 84,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1567,
+      "view": "read",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 670,
+        "y": 95,
+        "width": 142,
+        "height": 90,
+        "right": 812,
+        "bottom": 185
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 144
+        },
+        {
+          "x": 670,
+          "y": 95,
+          "width": 142,
+          "height": 90,
+          "right": 812,
+          "bottom": 185
+        },
+        {
+          "x": 876,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 920,
+          "bottom": 144
+        },
+        {
+          "x": 839,
+          "y": 148,
+          "width": 81,
+          "height": 44,
+          "right": 920,
+          "bottom": 192
+        },
+        {
+          "x": 566,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 610,
+          "bottom": 860
+        },
+        {
+          "x": 824,
+          "y": 813,
+          "width": 44,
+          "height": 44,
+          "right": 868,
+          "bottom": 857
+        },
+        {
+          "x": 872,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 916,
+          "bottom": 860
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1,
+      "state": "upload",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 364,
+        "height": 551,
+        "bottom": 727
+      },
+      "composer": {
+        "x": 12,
+        "y": 736,
+        "width": 366,
+        "height": 84,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 854,
+      "view": "upload",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 876,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 920,
+          "bottom": 152
+        },
+        {
+          "x": 839,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 920,
+          "bottom": 204
+        },
+        {
+          "x": 566,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 610,
+          "bottom": 860
+        },
+        {
+          "x": 824,
+          "y": 813,
+          "width": 44,
+          "height": 44,
+          "right": 868,
+          "bottom": 857
+        },
+        {
+          "x": 872,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 916,
+          "bottom": 860
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1,
+      "state": "edit",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 364,
+        "height": 551,
+        "bottom": 727
+      },
+      "composer": {
+        "x": 12,
+        "y": 736,
+        "width": 366,
+        "height": 84,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 674,
+      "view": "edit",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 876,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 920,
+          "bottom": 152
+        },
+        {
+          "x": 839,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 920,
+          "bottom": 204
+        },
+        {
+          "x": 566,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 610,
+          "bottom": 860
+        },
+        {
+          "x": 824,
+          "y": 813,
+          "width": 44,
+          "height": 44,
+          "right": 868,
+          "bottom": 857
+        },
+        {
+          "x": 872,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 916,
+          "bottom": 860
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1,
+      "state": "mini",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 390,
+        "height": 560,
+        "bottom": 736
+      },
+      "composer": {
+        "x": 12,
+        "y": 736,
+        "width": 366,
+        "height": 84,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 856,
+      "view": "chat",
+      "mini": true,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": {
+        "x": 834,
+        "y": 100,
+        "width": 86,
+        "height": 32,
+        "right": 920,
+        "bottom": 132
+      },
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 144
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 839,
+          "y": 152,
+          "width": 81,
+          "height": 44,
+          "right": 920,
+          "bottom": 196
+        },
+        {
+          "x": 566,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 610,
+          "bottom": 860
+        },
+        {
+          "x": 824,
+          "y": 813,
+          "width": 44,
+          "height": 44,
+          "right": 868,
+          "bottom": 857
+        },
+        {
+          "x": 872,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 916,
+          "bottom": 860
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1.25,
+      "state": "chat",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 390,
+        "height": 560,
+        "bottom": 736
+      },
+      "composer": {
+        "x": 12,
+        "y": 736,
+        "width": 366,
+        "height": 84,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1036,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 876,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 920,
+          "bottom": 152
+        },
+        {
+          "x": 839,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 920,
+          "bottom": 204
+        },
+        {
+          "x": 566,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 610,
+          "bottom": 860
+        },
+        {
+          "x": 824,
+          "y": 813,
+          "width": 44,
+          "height": 44,
+          "right": 868,
+          "bottom": 857
+        },
+        {
+          "x": 872,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 916,
+          "bottom": 860
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1.25,
+      "state": "keyboard",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 76,
+        "bottom": 120
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 120,
+        "width": 390,
+        "height": 343,
+        "bottom": 463
+      },
+      "composer": {
+        "x": 8,
+        "y": 463,
+        "width": 374,
+        "height": 82,
+        "bottom": 545
+      },
+      "keyboard": {
+        "x": 0,
+        "y": 552,
+        "width": 390,
+        "height": 292,
+        "bottom": 844
+      },
+      "bodyScrollHeight": 1036,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": true,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 673,
+        "y": 92,
+        "width": 136,
+        "height": 74,
+        "right": 809,
+        "bottom": 166
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 104,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 148
+        },
+        {
+          "x": 673,
+          "y": 92,
+          "width": 136,
+          "height": 74,
+          "right": 809,
+          "bottom": 166
+        },
+        {
+          "x": 876,
+          "y": 104,
+          "width": 44,
+          "height": 44,
+          "right": 920,
+          "bottom": 148
+        },
+        {
+          "x": 561,
+          "y": 542,
+          "width": 44,
+          "height": 44,
+          "right": 605,
+          "bottom": 586
+        },
+        {
+          "x": 829,
+          "y": 539,
+          "width": 44,
+          "height": 44,
+          "right": 873,
+          "bottom": 583
+        },
+        {
+          "x": 877,
+          "y": 542,
+          "width": 44,
+          "height": 44,
+          "right": 921,
+          "bottom": 586
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1.25,
+      "state": "read",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 100,
+        "bottom": 144
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 144,
+        "width": 390,
+        "height": 592,
+        "bottom": 736
+      },
+      "composer": {
+        "x": 12,
+        "y": 736,
+        "width": 366,
+        "height": 84,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 2045,
+      "view": "read",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 670,
+        "y": 95,
+        "width": 142,
+        "height": 90,
+        "right": 812,
+        "bottom": 185
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 144
+        },
+        {
+          "x": 670,
+          "y": 95,
+          "width": 142,
+          "height": 90,
+          "right": 812,
+          "bottom": 185
+        },
+        {
+          "x": 876,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 920,
+          "bottom": 144
+        },
+        {
+          "x": 839,
+          "y": 148,
+          "width": 81,
+          "height": 44,
+          "right": 920,
+          "bottom": 192
+        },
+        {
+          "x": 566,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 610,
+          "bottom": 860
+        },
+        {
+          "x": 824,
+          "y": 813,
+          "width": 44,
+          "height": 44,
+          "right": 868,
+          "bottom": 857
+        },
+        {
+          "x": 872,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 916,
+          "bottom": 860
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1.25,
+      "state": "upload",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 364,
+        "height": 551,
+        "bottom": 727
+      },
+      "composer": {
+        "x": 12,
+        "y": 736,
+        "width": 366,
+        "height": 84,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 949,
+      "view": "upload",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 876,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 920,
+          "bottom": 152
+        },
+        {
+          "x": 839,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 920,
+          "bottom": 204
+        },
+        {
+          "x": 566,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 610,
+          "bottom": 860
+        },
+        {
+          "x": 824,
+          "y": 813,
+          "width": 44,
+          "height": 44,
+          "right": 868,
+          "bottom": 857
+        },
+        {
+          "x": 872,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 916,
+          "bottom": 860
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1.25,
+      "state": "edit",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 364,
+        "height": 551,
+        "bottom": 727
+      },
+      "composer": {
+        "x": 12,
+        "y": 736,
+        "width": 366,
+        "height": 84,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 714,
+      "view": "edit",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 876,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 920,
+          "bottom": 152
+        },
+        {
+          "x": 839,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 920,
+          "bottom": 204
+        },
+        {
+          "x": 566,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 610,
+          "bottom": 860
+        },
+        {
+          "x": 824,
+          "y": 813,
+          "width": 44,
+          "height": 44,
+          "right": 868,
+          "bottom": 857
+        },
+        {
+          "x": 872,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 916,
+          "bottom": 860
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1.25,
+      "state": "mini",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 390,
+        "height": 560,
+        "bottom": 736
+      },
+      "composer": {
+        "x": 12,
+        "y": 736,
+        "width": 366,
+        "height": 84,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1036,
+      "view": "chat",
+      "mini": true,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": {
+        "x": 834,
+        "y": 100,
+        "width": 86,
+        "height": 32,
+        "right": 920,
+        "bottom": 132
+      },
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 144
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 839,
+          "y": 152,
+          "width": 81,
+          "height": 44,
+          "right": 920,
+          "bottom": 196
+        },
+        {
+          "x": 566,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 610,
+          "bottom": 860
+        },
+        {
+          "x": 824,
+          "y": 813,
+          "width": 44,
+          "height": 44,
+          "right": 868,
+          "bottom": 857
+        },
+        {
+          "x": 872,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 916,
+          "bottom": 860
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1.5,
+      "state": "chat",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 390,
+        "height": 560,
+        "bottom": 736
+      },
+      "composer": {
+        "x": 12,
+        "y": 736,
+        "width": 366,
+        "height": 84,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1174,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 876,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 920,
+          "bottom": 152
+        },
+        {
+          "x": 839,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 920,
+          "bottom": 204
+        },
+        {
+          "x": 566,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 610,
+          "bottom": 860
+        },
+        {
+          "x": 824,
+          "y": 813,
+          "width": 44,
+          "height": 44,
+          "right": 868,
+          "bottom": 857
+        },
+        {
+          "x": 872,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 916,
+          "bottom": 860
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1.5,
+      "state": "keyboard",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 76,
+        "bottom": 120
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 120,
+        "width": 390,
+        "height": 343,
+        "bottom": 463
+      },
+      "composer": {
+        "x": 8,
+        "y": 463,
+        "width": 374,
+        "height": 82,
+        "bottom": 545
+      },
+      "keyboard": {
+        "x": 0,
+        "y": 552,
+        "width": 390,
+        "height": 292,
+        "bottom": 844
+      },
+      "bodyScrollHeight": 1174,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": true,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 673,
+        "y": 92,
+        "width": 136,
+        "height": 74,
+        "right": 809,
+        "bottom": 166
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 104,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 148
+        },
+        {
+          "x": 673,
+          "y": 92,
+          "width": 136,
+          "height": 74,
+          "right": 809,
+          "bottom": 166
+        },
+        {
+          "x": 876,
+          "y": 104,
+          "width": 44,
+          "height": 44,
+          "right": 920,
+          "bottom": 148
+        },
+        {
+          "x": 561,
+          "y": 542,
+          "width": 44,
+          "height": 44,
+          "right": 605,
+          "bottom": 586
+        },
+        {
+          "x": 829,
+          "y": 539,
+          "width": 44,
+          "height": 44,
+          "right": 873,
+          "bottom": 583
+        },
+        {
+          "x": 877,
+          "y": 542,
+          "width": 44,
+          "height": 44,
+          "right": 921,
+          "bottom": 586
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1.5,
+      "state": "read",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 100,
+        "bottom": 144
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 144,
+        "width": 390,
+        "height": 592,
+        "bottom": 736
+      },
+      "composer": {
+        "x": 12,
+        "y": 736,
+        "width": 366,
+        "height": 84,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 2619,
+      "view": "read",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 670,
+        "y": 95,
+        "width": 142,
+        "height": 90,
+        "right": 812,
+        "bottom": 185
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 144
+        },
+        {
+          "x": 670,
+          "y": 95,
+          "width": 142,
+          "height": 90,
+          "right": 812,
+          "bottom": 185
+        },
+        {
+          "x": 876,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 920,
+          "bottom": 144
+        },
+        {
+          "x": 839,
+          "y": 148,
+          "width": 81,
+          "height": 44,
+          "right": 920,
+          "bottom": 192
+        },
+        {
+          "x": 566,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 610,
+          "bottom": 860
+        },
+        {
+          "x": 824,
+          "y": 813,
+          "width": 44,
+          "height": 44,
+          "right": 868,
+          "bottom": 857
+        },
+        {
+          "x": 872,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 916,
+          "bottom": 860
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1.5,
+      "state": "upload",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 364,
+        "height": 551,
+        "bottom": 727
+      },
+      "composer": {
+        "x": 12,
+        "y": 736,
+        "width": 366,
+        "height": 84,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1063,
+      "view": "upload",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 876,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 920,
+          "bottom": 152
+        },
+        {
+          "x": 839,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 920,
+          "bottom": 204
+        },
+        {
+          "x": 566,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 610,
+          "bottom": 860
+        },
+        {
+          "x": 824,
+          "y": 813,
+          "width": 44,
+          "height": 44,
+          "right": 868,
+          "bottom": 857
+        },
+        {
+          "x": 872,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 916,
+          "bottom": 860
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1.5,
+      "state": "edit",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 364,
+        "height": 551,
+        "bottom": 727
+      },
+      "composer": {
+        "x": 12,
+        "y": 736,
+        "width": 366,
+        "height": 84,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 754,
+      "view": "edit",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 876,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 920,
+          "bottom": 152
+        },
+        {
+          "x": 839,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 920,
+          "bottom": 204
+        },
+        {
+          "x": 566,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 610,
+          "bottom": 860
+        },
+        {
+          "x": 824,
+          "y": 813,
+          "width": 44,
+          "height": 44,
+          "right": 868,
+          "bottom": 857
+        },
+        {
+          "x": 872,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 916,
+          "bottom": 860
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "textScale": 1.5,
+      "state": "mini",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 390,
+        "height": 560,
+        "bottom": 736
+      },
+      "composer": {
+        "x": 12,
+        "y": 736,
+        "width": 366,
+        "height": 84,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1174,
+      "view": "chat",
+      "mini": true,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": {
+        "x": 834,
+        "y": 100,
+        "width": 86,
+        "height": 32,
+        "right": 920,
+        "bottom": 132
+      },
+      "actionBoxes": [
+        {
+          "x": 562,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 606,
+          "bottom": 144
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 839,
+          "y": 152,
+          "width": 81,
+          "height": 44,
+          "right": 920,
+          "bottom": 196
+        },
+        {
+          "x": 566,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 610,
+          "bottom": 860
+        },
+        {
+          "x": 824,
+          "y": 813,
+          "width": 44,
+          "height": 44,
+          "right": 868,
+          "bottom": 857
+        },
+        {
+          "x": 872,
+          "y": 816,
+          "width": 44,
+          "height": 44,
+          "right": 916,
+          "bottom": 860
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1,
+      "state": "chat",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 360,
+        "height": 412,
+        "bottom": 588
+      },
+      "composer": {
+        "x": 12,
+        "y": 588,
+        "width": 336,
+        "height": 108,
+        "bottom": 696
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 884,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 577,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 621,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 861,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 905,
+          "bottom": 152
+        },
+        {
+          "x": 824,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 905,
+          "bottom": 204
+        },
+        {
+          "x": 581,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 625,
+          "bottom": 736
+        },
+        {
+          "x": 809,
+          "y": 689,
+          "width": 44,
+          "height": 44,
+          "right": 853,
+          "bottom": 733
+        },
+        {
+          "x": 857,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 901,
+          "bottom": 736
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1,
+      "state": "keyboard",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 52,
+        "bottom": 96
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 96,
+        "width": 360,
+        "height": 252,
+        "bottom": 348
+      },
+      "composer": {
+        "x": 8,
+        "y": 348,
+        "width": 344,
+        "height": 76,
+        "bottom": 424
+      },
+      "keyboard": {
+        "x": 0,
+        "y": 428,
+        "width": 360,
+        "height": 292,
+        "bottom": 720
+      },
+      "bodyScrollHeight": 884,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": true,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 691.5,
+        "y": 92,
+        "width": 99,
+        "height": 52,
+        "right": 790.5,
+        "bottom": 144
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 573,
+          "y": 94,
+          "width": 44,
+          "height": 44,
+          "right": 617,
+          "bottom": 138
+        },
+        {
+          "x": 691.5,
+          "y": 92,
+          "width": 99,
+          "height": 52,
+          "right": 790.5,
+          "bottom": 144
+        },
+        {
+          "x": 865,
+          "y": 94,
+          "width": 44,
+          "height": 44,
+          "right": 909,
+          "bottom": 138
+        },
+        {
+          "x": 573,
+          "y": 424,
+          "width": 44,
+          "height": 44,
+          "right": 617,
+          "bottom": 468
+        },
+        {
+          "x": 817,
+          "y": 421,
+          "width": 44,
+          "height": 44,
+          "right": 861,
+          "bottom": 465
+        },
+        {
+          "x": 865,
+          "y": 424,
+          "width": 44,
+          "height": 44,
+          "right": 909,
+          "bottom": 468
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1,
+      "state": "read",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 100,
+        "bottom": 144
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 144,
+        "width": 360,
+        "height": 444,
+        "bottom": 588
+      },
+      "composer": {
+        "x": 12,
+        "y": 588,
+        "width": 336,
+        "height": 108,
+        "bottom": 696
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1660,
+      "view": "read",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 655.59375,
+        "y": 95,
+        "width": 142,
+        "height": 90,
+        "right": 797.59375,
+        "bottom": 185
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 577,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 621,
+          "bottom": 144
+        },
+        {
+          "x": 655.59375,
+          "y": 95,
+          "width": 142,
+          "height": 90,
+          "right": 797.59375,
+          "bottom": 185
+        },
+        {
+          "x": 861,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 905,
+          "bottom": 144
+        },
+        {
+          "x": 824,
+          "y": 148,
+          "width": 81,
+          "height": 44,
+          "right": 905,
+          "bottom": 192
+        },
+        {
+          "x": 581,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 625,
+          "bottom": 736
+        },
+        {
+          "x": 809,
+          "y": 689,
+          "width": 44,
+          "height": 44,
+          "right": 853,
+          "bottom": 733
+        },
+        {
+          "x": 857,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 901,
+          "bottom": 736
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1,
+      "state": "upload",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 334,
+        "height": 403,
+        "bottom": 579
+      },
+      "composer": {
+        "x": 12,
+        "y": 588,
+        "width": 336,
+        "height": 108,
+        "bottom": 696
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 882,
+      "view": "upload",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 577,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 621,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 861,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 905,
+          "bottom": 152
+        },
+        {
+          "x": 824,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 905,
+          "bottom": 204
+        },
+        {
+          "x": 581,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 625,
+          "bottom": 736
+        },
+        {
+          "x": 809,
+          "y": 689,
+          "width": 44,
+          "height": 44,
+          "right": 853,
+          "bottom": 733
+        },
+        {
+          "x": 857,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 901,
+          "bottom": 736
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1,
+      "state": "edit",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 334,
+        "height": 403,
+        "bottom": 579
+      },
+      "composer": {
+        "x": 12,
+        "y": 588,
+        "width": 336,
+        "height": 108,
+        "bottom": 696
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 674,
+      "view": "edit",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 577,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 621,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 861,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 905,
+          "bottom": 152
+        },
+        {
+          "x": 824,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 905,
+          "bottom": 204
+        },
+        {
+          "x": 581,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 625,
+          "bottom": 736
+        },
+        {
+          "x": 809,
+          "y": 689,
+          "width": 44,
+          "height": 44,
+          "right": 853,
+          "bottom": 733
+        },
+        {
+          "x": 857,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 901,
+          "bottom": 736
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1,
+      "state": "mini",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 360,
+        "height": 412,
+        "bottom": 588
+      },
+      "composer": {
+        "x": 12,
+        "y": 588,
+        "width": 336,
+        "height": 108,
+        "bottom": 696
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 884,
+      "view": "chat",
+      "mini": true,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 685,
+        "y": 92,
+        "width": 112,
+        "height": 119,
+        "right": 797,
+        "bottom": 211
+      },
+      "hostBox": {
+        "x": 819,
+        "y": 100,
+        "width": 86,
+        "height": 32,
+        "right": 905,
+        "bottom": 132
+      },
+      "actionBoxes": [
+        {
+          "x": 577,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 621,
+          "bottom": 144
+        },
+        {
+          "x": 685,
+          "y": 92,
+          "width": 112,
+          "height": 119,
+          "right": 797,
+          "bottom": 211
+        },
+        {
+          "x": 824,
+          "y": 152,
+          "width": 81,
+          "height": 44,
+          "right": 905,
+          "bottom": 196
+        },
+        {
+          "x": 581,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 625,
+          "bottom": 736
+        },
+        {
+          "x": 809,
+          "y": 689,
+          "width": 44,
+          "height": 44,
+          "right": 853,
+          "bottom": 733
+        },
+        {
+          "x": 857,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 901,
+          "bottom": 736
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1.25,
+      "state": "chat",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 360,
+        "height": 412,
+        "bottom": 588
+      },
+      "composer": {
+        "x": 12,
+        "y": 588,
+        "width": 336,
+        "height": 108,
+        "bottom": 696
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1071,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 577,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 621,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 861,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 905,
+          "bottom": 152
+        },
+        {
+          "x": 824,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 905,
+          "bottom": 204
+        },
+        {
+          "x": 581,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 625,
+          "bottom": 736
+        },
+        {
+          "x": 809,
+          "y": 689,
+          "width": 44,
+          "height": 44,
+          "right": 853,
+          "bottom": 733
+        },
+        {
+          "x": 857,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 901,
+          "bottom": 736
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1.25,
+      "state": "keyboard",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 52,
+        "bottom": 96
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 96,
+        "width": 360,
+        "height": 252,
+        "bottom": 348
+      },
+      "composer": {
+        "x": 8,
+        "y": 348,
+        "width": 344,
+        "height": 76,
+        "bottom": 424
+      },
+      "keyboard": {
+        "x": 0,
+        "y": 428,
+        "width": 360,
+        "height": 292,
+        "bottom": 720
+      },
+      "bodyScrollHeight": 1071,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": true,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 691.5,
+        "y": 92,
+        "width": 99,
+        "height": 52,
+        "right": 790.5,
+        "bottom": 144
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 573,
+          "y": 94,
+          "width": 44,
+          "height": 44,
+          "right": 617,
+          "bottom": 138
+        },
+        {
+          "x": 691.5,
+          "y": 92,
+          "width": 99,
+          "height": 52,
+          "right": 790.5,
+          "bottom": 144
+        },
+        {
+          "x": 865,
+          "y": 94,
+          "width": 44,
+          "height": 44,
+          "right": 909,
+          "bottom": 138
+        },
+        {
+          "x": 573,
+          "y": 424,
+          "width": 44,
+          "height": 44,
+          "right": 617,
+          "bottom": 468
+        },
+        {
+          "x": 817,
+          "y": 421,
+          "width": 44,
+          "height": 44,
+          "right": 861,
+          "bottom": 465
+        },
+        {
+          "x": 865,
+          "y": 424,
+          "width": 44,
+          "height": 44,
+          "right": 909,
+          "bottom": 468
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1.25,
+      "state": "read",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 100,
+        "bottom": 144
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 144,
+        "width": 360,
+        "height": 444,
+        "bottom": 588
+      },
+      "composer": {
+        "x": 12,
+        "y": 588,
+        "width": 336,
+        "height": 108,
+        "bottom": 696
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 2240,
+      "view": "read",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 655.59375,
+        "y": 95,
+        "width": 142,
+        "height": 90,
+        "right": 797.59375,
+        "bottom": 185
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 577,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 621,
+          "bottom": 144
+        },
+        {
+          "x": 655.59375,
+          "y": 95,
+          "width": 142,
+          "height": 90,
+          "right": 797.59375,
+          "bottom": 185
+        },
+        {
+          "x": 861,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 905,
+          "bottom": 144
+        },
+        {
+          "x": 824,
+          "y": 148,
+          "width": 81,
+          "height": 44,
+          "right": 905,
+          "bottom": 192
+        },
+        {
+          "x": 581,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 625,
+          "bottom": 736
+        },
+        {
+          "x": 809,
+          "y": 689,
+          "width": 44,
+          "height": 44,
+          "right": 853,
+          "bottom": 733
+        },
+        {
+          "x": 857,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 901,
+          "bottom": 736
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1.25,
+      "state": "upload",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 334,
+        "height": 403,
+        "bottom": 579
+      },
+      "composer": {
+        "x": 12,
+        "y": 588,
+        "width": 336,
+        "height": 108,
+        "bottom": 696
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 949,
+      "view": "upload",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 577,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 621,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 861,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 905,
+          "bottom": 152
+        },
+        {
+          "x": 824,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 905,
+          "bottom": 204
+        },
+        {
+          "x": 581,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 625,
+          "bottom": 736
+        },
+        {
+          "x": 809,
+          "y": 689,
+          "width": 44,
+          "height": 44,
+          "right": 853,
+          "bottom": 733
+        },
+        {
+          "x": 857,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 901,
+          "bottom": 736
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1.25,
+      "state": "edit",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 334,
+        "height": 403,
+        "bottom": 579
+      },
+      "composer": {
+        "x": 12,
+        "y": 588,
+        "width": 336,
+        "height": 108,
+        "bottom": 696
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 714,
+      "view": "edit",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 577,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 621,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 861,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 905,
+          "bottom": 152
+        },
+        {
+          "x": 824,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 905,
+          "bottom": 204
+        },
+        {
+          "x": 581,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 625,
+          "bottom": 736
+        },
+        {
+          "x": 809,
+          "y": 689,
+          "width": 44,
+          "height": 44,
+          "right": 853,
+          "bottom": 733
+        },
+        {
+          "x": 857,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 901,
+          "bottom": 736
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1.25,
+      "state": "mini",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 360,
+        "height": 412,
+        "bottom": 588
+      },
+      "composer": {
+        "x": 12,
+        "y": 588,
+        "width": 336,
+        "height": 108,
+        "bottom": 696
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1071,
+      "view": "chat",
+      "mini": true,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 685,
+        "y": 92,
+        "width": 112,
+        "height": 119,
+        "right": 797,
+        "bottom": 211
+      },
+      "hostBox": {
+        "x": 819,
+        "y": 100,
+        "width": 86,
+        "height": 32,
+        "right": 905,
+        "bottom": 132
+      },
+      "actionBoxes": [
+        {
+          "x": 577,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 621,
+          "bottom": 144
+        },
+        {
+          "x": 685,
+          "y": 92,
+          "width": 112,
+          "height": 119,
+          "right": 797,
+          "bottom": 211
+        },
+        {
+          "x": 824,
+          "y": 152,
+          "width": 81,
+          "height": 44,
+          "right": 905,
+          "bottom": 196
+        },
+        {
+          "x": 581,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 625,
+          "bottom": 736
+        },
+        {
+          "x": 809,
+          "y": 689,
+          "width": 44,
+          "height": 44,
+          "right": 853,
+          "bottom": 733
+        },
+        {
+          "x": 857,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 901,
+          "bottom": 736
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1.5,
+      "state": "chat",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 360,
+        "height": 412,
+        "bottom": 588
+      },
+      "composer": {
+        "x": 12,
+        "y": 588,
+        "width": 336,
+        "height": 108,
+        "bottom": 696
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1216,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 577,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 621,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 861,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 905,
+          "bottom": 152
+        },
+        {
+          "x": 824,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 905,
+          "bottom": 204
+        },
+        {
+          "x": 581,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 625,
+          "bottom": 736
+        },
+        {
+          "x": 809,
+          "y": 689,
+          "width": 44,
+          "height": 44,
+          "right": 853,
+          "bottom": 733
+        },
+        {
+          "x": 857,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 901,
+          "bottom": 736
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1.5,
+      "state": "keyboard",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 52,
+        "bottom": 96
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 96,
+        "width": 360,
+        "height": 252,
+        "bottom": 348
+      },
+      "composer": {
+        "x": 8,
+        "y": 348,
+        "width": 344,
+        "height": 76,
+        "bottom": 424
+      },
+      "keyboard": {
+        "x": 0,
+        "y": 428,
+        "width": 360,
+        "height": 292,
+        "bottom": 720
+      },
+      "bodyScrollHeight": 1216,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": true,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 691.5,
+        "y": 92,
+        "width": 99,
+        "height": 52,
+        "right": 790.5,
+        "bottom": 144
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 573,
+          "y": 94,
+          "width": 44,
+          "height": 44,
+          "right": 617,
+          "bottom": 138
+        },
+        {
+          "x": 691.5,
+          "y": 92,
+          "width": 99,
+          "height": 52,
+          "right": 790.5,
+          "bottom": 144
+        },
+        {
+          "x": 865,
+          "y": 94,
+          "width": 44,
+          "height": 44,
+          "right": 909,
+          "bottom": 138
+        },
+        {
+          "x": 573,
+          "y": 424,
+          "width": 44,
+          "height": 44,
+          "right": 617,
+          "bottom": 468
+        },
+        {
+          "x": 817,
+          "y": 421,
+          "width": 44,
+          "height": 44,
+          "right": 861,
+          "bottom": 465
+        },
+        {
+          "x": 865,
+          "y": 424,
+          "width": 44,
+          "height": 44,
+          "right": 909,
+          "bottom": 468
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1.5,
+      "state": "read",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 100,
+        "bottom": 144
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 144,
+        "width": 360,
+        "height": 444,
+        "bottom": 588
+      },
+      "composer": {
+        "x": 12,
+        "y": 588,
+        "width": 336,
+        "height": 108,
+        "bottom": 696
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 2803,
+      "view": "read",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 655.59375,
+        "y": 95,
+        "width": 142,
+        "height": 90,
+        "right": 797.59375,
+        "bottom": 185
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 577,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 621,
+          "bottom": 144
+        },
+        {
+          "x": 655.59375,
+          "y": 95,
+          "width": 142,
+          "height": 90,
+          "right": 797.59375,
+          "bottom": 185
+        },
+        {
+          "x": 861,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 905,
+          "bottom": 144
+        },
+        {
+          "x": 824,
+          "y": 148,
+          "width": 81,
+          "height": 44,
+          "right": 905,
+          "bottom": 192
+        },
+        {
+          "x": 581,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 625,
+          "bottom": 736
+        },
+        {
+          "x": 809,
+          "y": 689,
+          "width": 44,
+          "height": 44,
+          "right": 853,
+          "bottom": 733
+        },
+        {
+          "x": 857,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 901,
+          "bottom": 736
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1.5,
+      "state": "upload",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 334,
+        "height": 403,
+        "bottom": 579
+      },
+      "composer": {
+        "x": 12,
+        "y": 588,
+        "width": 336,
+        "height": 108,
+        "bottom": 696
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1099,
+      "view": "upload",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 577,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 621,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 861,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 905,
+          "bottom": 152
+        },
+        {
+          "x": 824,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 905,
+          "bottom": 204
+        },
+        {
+          "x": 581,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 625,
+          "bottom": 736
+        },
+        {
+          "x": 809,
+          "y": 689,
+          "width": 44,
+          "height": 44,
+          "right": 853,
+          "bottom": 733
+        },
+        {
+          "x": 857,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 901,
+          "bottom": 736
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1.5,
+      "state": "edit",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 334,
+        "height": 403,
+        "bottom": 579
+      },
+      "composer": {
+        "x": 12,
+        "y": 588,
+        "width": 336,
+        "height": 108,
+        "bottom": 696
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 754,
+      "view": "edit",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 577,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 621,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 861,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 905,
+          "bottom": 152
+        },
+        {
+          "x": 824,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 905,
+          "bottom": 204
+        },
+        {
+          "x": 581,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 625,
+          "bottom": 736
+        },
+        {
+          "x": 809,
+          "y": 689,
+          "width": 44,
+          "height": 44,
+          "right": 853,
+          "bottom": 733
+        },
+        {
+          "x": 857,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 901,
+          "bottom": 736
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "height": 720,
+      "textScale": 1.5,
+      "state": "mini",
+      "viewport": {
+        "width": 360,
+        "height": 720
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 360,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 360,
+        "height": 412,
+        "bottom": 588
+      },
+      "composer": {
+        "x": 12,
+        "y": 588,
+        "width": 336,
+        "height": 108,
+        "bottom": 696
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1216,
+      "view": "chat",
+      "mini": true,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 685,
+        "y": 92,
+        "width": 112,
+        "height": 119,
+        "right": 797,
+        "bottom": 211
+      },
+      "hostBox": {
+        "x": 819,
+        "y": 100,
+        "width": 86,
+        "height": 32,
+        "right": 905,
+        "bottom": 132
+      },
+      "actionBoxes": [
+        {
+          "x": 577,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 621,
+          "bottom": 144
+        },
+        {
+          "x": 685,
+          "y": 92,
+          "width": 112,
+          "height": 119,
+          "right": 797,
+          "bottom": 211
+        },
+        {
+          "x": 824,
+          "y": 152,
+          "width": 81,
+          "height": 44,
+          "right": 905,
+          "bottom": 196
+        },
+        {
+          "x": 581,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 625,
+          "bottom": 736
+        },
+        {
+          "x": 809,
+          "y": 689,
+          "width": 44,
+          "height": 44,
+          "right": 853,
+          "bottom": 733
+        },
+        {
+          "x": 857,
+          "y": 692,
+          "width": 44,
+          "height": 44,
+          "right": 901,
+          "bottom": 736
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1,
+      "state": "chat",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 320,
+        "height": 308,
+        "bottom": 484
+      },
+      "composer": {
+        "x": 12,
+        "y": 484,
+        "width": 296,
+        "height": 132,
+        "bottom": 616
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 968,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 597,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 641,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 841,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 885,
+          "bottom": 152
+        },
+        {
+          "x": 804,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 885,
+          "bottom": 204
+        },
+        {
+          "x": 601,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 645,
+          "bottom": 656
+        },
+        {
+          "x": 789,
+          "y": 609,
+          "width": 44,
+          "height": 44,
+          "right": 833,
+          "bottom": 653
+        },
+        {
+          "x": 837,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 881,
+          "bottom": 656
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1,
+      "state": "keyboard",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 52,
+        "bottom": 96
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 96,
+        "width": 320,
+        "height": 172,
+        "bottom": 268
+      },
+      "composer": {
+        "x": 8,
+        "y": 268,
+        "width": 304,
+        "height": 76,
+        "bottom": 344
+      },
+      "keyboard": {
+        "x": 0,
+        "y": 348,
+        "width": 320,
+        "height": 292,
+        "bottom": 640
+      },
+      "bodyScrollHeight": 968,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": true,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 691.5,
+        "y": 92,
+        "width": 99,
+        "height": 52,
+        "right": 790.5,
+        "bottom": 144
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 593,
+          "y": 94,
+          "width": 44,
+          "height": 44,
+          "right": 637,
+          "bottom": 138
+        },
+        {
+          "x": 691.5,
+          "y": 92,
+          "width": 99,
+          "height": 52,
+          "right": 790.5,
+          "bottom": 144
+        },
+        {
+          "x": 845,
+          "y": 94,
+          "width": 44,
+          "height": 44,
+          "right": 889,
+          "bottom": 138
+        },
+        {
+          "x": 593,
+          "y": 344,
+          "width": 44,
+          "height": 44,
+          "right": 637,
+          "bottom": 388
+        },
+        {
+          "x": 797,
+          "y": 341,
+          "width": 44,
+          "height": 44,
+          "right": 841,
+          "bottom": 385
+        },
+        {
+          "x": 845,
+          "y": 344,
+          "width": 44,
+          "height": 44,
+          "right": 889,
+          "bottom": 388
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1,
+      "state": "read",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 100,
+        "bottom": 144
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 144,
+        "width": 320,
+        "height": 340,
+        "bottom": 484
+      },
+      "composer": {
+        "x": 12,
+        "y": 484,
+        "width": 296,
+        "height": 132,
+        "bottom": 616
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1782,
+      "view": "read",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 657.1875,
+        "y": 95,
+        "width": 142,
+        "height": 90,
+        "right": 799.1875,
+        "bottom": 185
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 597,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 641,
+          "bottom": 144
+        },
+        {
+          "x": 657.1875,
+          "y": 95,
+          "width": 142,
+          "height": 90,
+          "right": 799.1875,
+          "bottom": 185
+        },
+        {
+          "x": 841,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 885,
+          "bottom": 144
+        },
+        {
+          "x": 804,
+          "y": 148,
+          "width": 81,
+          "height": 44,
+          "right": 885,
+          "bottom": 192
+        },
+        {
+          "x": 601,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 645,
+          "bottom": 656
+        },
+        {
+          "x": 789,
+          "y": 609,
+          "width": 44,
+          "height": 44,
+          "right": 833,
+          "bottom": 653
+        },
+        {
+          "x": 837,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 881,
+          "bottom": 656
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1,
+      "state": "upload",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 294,
+        "height": 299,
+        "bottom": 475
+      },
+      "composer": {
+        "x": 12,
+        "y": 484,
+        "width": 296,
+        "height": 132,
+        "bottom": 616
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 882,
+      "view": "upload",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 597,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 641,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 841,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 885,
+          "bottom": 152
+        },
+        {
+          "x": 804,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 885,
+          "bottom": 204
+        },
+        {
+          "x": 601,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 645,
+          "bottom": 656
+        },
+        {
+          "x": 789,
+          "y": 609,
+          "width": 44,
+          "height": 44,
+          "right": 833,
+          "bottom": 653
+        },
+        {
+          "x": 837,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 881,
+          "bottom": 656
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1,
+      "state": "edit",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 294,
+        "height": 299,
+        "bottom": 475
+      },
+      "composer": {
+        "x": 12,
+        "y": 484,
+        "width": 296,
+        "height": 132,
+        "bottom": 616
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 674,
+      "view": "edit",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 597,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 641,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 841,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 885,
+          "bottom": 152
+        },
+        {
+          "x": 804,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 885,
+          "bottom": 204
+        },
+        {
+          "x": 601,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 645,
+          "bottom": 656
+        },
+        {
+          "x": 789,
+          "y": 609,
+          "width": 44,
+          "height": 44,
+          "right": 833,
+          "bottom": 653
+        },
+        {
+          "x": 837,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 881,
+          "bottom": 656
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1,
+      "state": "mini",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 320,
+        "height": 308,
+        "bottom": 484
+      },
+      "composer": {
+        "x": 12,
+        "y": 484,
+        "width": 296,
+        "height": 132,
+        "bottom": 616
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 968,
+      "view": "chat",
+      "mini": true,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 685,
+        "y": 92,
+        "width": 112,
+        "height": 119,
+        "right": 797,
+        "bottom": 211
+      },
+      "hostBox": {
+        "x": 799,
+        "y": 100,
+        "width": 86,
+        "height": 32,
+        "right": 885,
+        "bottom": 132
+      },
+      "actionBoxes": [
+        {
+          "x": 597,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 641,
+          "bottom": 144
+        },
+        {
+          "x": 685,
+          "y": 92,
+          "width": 112,
+          "height": 119,
+          "right": 797,
+          "bottom": 211
+        },
+        {
+          "x": 804,
+          "y": 152,
+          "width": 81,
+          "height": 44,
+          "right": 885,
+          "bottom": 196
+        },
+        {
+          "x": 601,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 645,
+          "bottom": 656
+        },
+        {
+          "x": 789,
+          "y": 609,
+          "width": 44,
+          "height": 44,
+          "right": 833,
+          "bottom": 653
+        },
+        {
+          "x": 837,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 881,
+          "bottom": 656
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1.25,
+      "state": "chat",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 320,
+        "height": 308,
+        "bottom": 484
+      },
+      "composer": {
+        "x": 12,
+        "y": 484,
+        "width": 296,
+        "height": 132,
+        "bottom": 616
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1106,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 597,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 641,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 841,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 885,
+          "bottom": 152
+        },
+        {
+          "x": 804,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 885,
+          "bottom": 204
+        },
+        {
+          "x": 601,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 645,
+          "bottom": 656
+        },
+        {
+          "x": 789,
+          "y": 609,
+          "width": 44,
+          "height": 44,
+          "right": 833,
+          "bottom": 653
+        },
+        {
+          "x": 837,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 881,
+          "bottom": 656
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1.25,
+      "state": "keyboard",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 52,
+        "bottom": 96
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 96,
+        "width": 320,
+        "height": 172,
+        "bottom": 268
+      },
+      "composer": {
+        "x": 8,
+        "y": 268,
+        "width": 304,
+        "height": 76,
+        "bottom": 344
+      },
+      "keyboard": {
+        "x": 0,
+        "y": 348,
+        "width": 320,
+        "height": 292,
+        "bottom": 640
+      },
+      "bodyScrollHeight": 1106,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": true,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 691.5,
+        "y": 92,
+        "width": 99,
+        "height": 52,
+        "right": 790.5,
+        "bottom": 144
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 593,
+          "y": 94,
+          "width": 44,
+          "height": 44,
+          "right": 637,
+          "bottom": 138
+        },
+        {
+          "x": 691.5,
+          "y": 92,
+          "width": 99,
+          "height": 52,
+          "right": 790.5,
+          "bottom": 144
+        },
+        {
+          "x": 845,
+          "y": 94,
+          "width": 44,
+          "height": 44,
+          "right": 889,
+          "bottom": 138
+        },
+        {
+          "x": 593,
+          "y": 344,
+          "width": 44,
+          "height": 44,
+          "right": 637,
+          "bottom": 388
+        },
+        {
+          "x": 797,
+          "y": 341,
+          "width": 44,
+          "height": 44,
+          "right": 841,
+          "bottom": 385
+        },
+        {
+          "x": 845,
+          "y": 344,
+          "width": 44,
+          "height": 44,
+          "right": 889,
+          "bottom": 388
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1.25,
+      "state": "read",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 100,
+        "bottom": 144
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 144,
+        "width": 320,
+        "height": 340,
+        "bottom": 484
+      },
+      "composer": {
+        "x": 12,
+        "y": 484,
+        "width": 296,
+        "height": 132,
+        "bottom": 616
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 2432,
+      "view": "read",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 657.1875,
+        "y": 95,
+        "width": 142,
+        "height": 90,
+        "right": 799.1875,
+        "bottom": 185
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 597,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 641,
+          "bottom": 144
+        },
+        {
+          "x": 657.1875,
+          "y": 95,
+          "width": 142,
+          "height": 90,
+          "right": 799.1875,
+          "bottom": 185
+        },
+        {
+          "x": 841,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 885,
+          "bottom": 144
+        },
+        {
+          "x": 804,
+          "y": 148,
+          "width": 81,
+          "height": 44,
+          "right": 885,
+          "bottom": 192
+        },
+        {
+          "x": 601,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 645,
+          "bottom": 656
+        },
+        {
+          "x": 789,
+          "y": 609,
+          "width": 44,
+          "height": 44,
+          "right": 833,
+          "bottom": 653
+        },
+        {
+          "x": 837,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 881,
+          "bottom": 656
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1.25,
+      "state": "upload",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 294,
+        "height": 299,
+        "bottom": 475
+      },
+      "composer": {
+        "x": 12,
+        "y": 484,
+        "width": 296,
+        "height": 132,
+        "bottom": 616
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1014,
+      "view": "upload",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 597,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 641,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 841,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 885,
+          "bottom": 152
+        },
+        {
+          "x": 804,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 885,
+          "bottom": 204
+        },
+        {
+          "x": 601,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 645,
+          "bottom": 656
+        },
+        {
+          "x": 789,
+          "y": 609,
+          "width": 44,
+          "height": 44,
+          "right": 833,
+          "bottom": 653
+        },
+        {
+          "x": 837,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 881,
+          "bottom": 656
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1.25,
+      "state": "edit",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 294,
+        "height": 299,
+        "bottom": 475
+      },
+      "composer": {
+        "x": 12,
+        "y": 484,
+        "width": 296,
+        "height": 132,
+        "bottom": 616
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 714,
+      "view": "edit",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 597,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 641,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 841,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 885,
+          "bottom": 152
+        },
+        {
+          "x": 804,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 885,
+          "bottom": 204
+        },
+        {
+          "x": 601,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 645,
+          "bottom": 656
+        },
+        {
+          "x": 789,
+          "y": 609,
+          "width": 44,
+          "height": 44,
+          "right": 833,
+          "bottom": 653
+        },
+        {
+          "x": 837,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 881,
+          "bottom": 656
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1.25,
+      "state": "mini",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 320,
+        "height": 308,
+        "bottom": 484
+      },
+      "composer": {
+        "x": 12,
+        "y": 484,
+        "width": 296,
+        "height": 132,
+        "bottom": 616
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1106,
+      "view": "chat",
+      "mini": true,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 685,
+        "y": 92,
+        "width": 112,
+        "height": 119,
+        "right": 797,
+        "bottom": 211
+      },
+      "hostBox": {
+        "x": 799,
+        "y": 100,
+        "width": 86,
+        "height": 32,
+        "right": 885,
+        "bottom": 132
+      },
+      "actionBoxes": [
+        {
+          "x": 597,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 641,
+          "bottom": 144
+        },
+        {
+          "x": 685,
+          "y": 92,
+          "width": 112,
+          "height": 119,
+          "right": 797,
+          "bottom": 211
+        },
+        {
+          "x": 804,
+          "y": 152,
+          "width": 81,
+          "height": 44,
+          "right": 885,
+          "bottom": 196
+        },
+        {
+          "x": 601,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 645,
+          "bottom": 656
+        },
+        {
+          "x": 789,
+          "y": 609,
+          "width": 44,
+          "height": 44,
+          "right": 833,
+          "bottom": 653
+        },
+        {
+          "x": 837,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 881,
+          "bottom": 656
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1.5,
+      "state": "chat",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 320,
+        "height": 308,
+        "bottom": 484
+      },
+      "composer": {
+        "x": 12,
+        "y": 484,
+        "width": 296,
+        "height": 132,
+        "bottom": 616
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1335,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 597,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 641,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 841,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 885,
+          "bottom": 152
+        },
+        {
+          "x": 804,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 885,
+          "bottom": 204
+        },
+        {
+          "x": 601,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 645,
+          "bottom": 656
+        },
+        {
+          "x": 789,
+          "y": 609,
+          "width": 44,
+          "height": 44,
+          "right": 833,
+          "bottom": 653
+        },
+        {
+          "x": 837,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 881,
+          "bottom": 656
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1.5,
+      "state": "keyboard",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 52,
+        "bottom": 96
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 96,
+        "width": 320,
+        "height": 172,
+        "bottom": 268
+      },
+      "composer": {
+        "x": 8,
+        "y": 268,
+        "width": 304,
+        "height": 76,
+        "bottom": 344
+      },
+      "keyboard": {
+        "x": 0,
+        "y": 348,
+        "width": 320,
+        "height": 292,
+        "bottom": 640
+      },
+      "bodyScrollHeight": 1335,
+      "view": "chat",
+      "mini": false,
+      "keyboardOn": true,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 691.5,
+        "y": 92,
+        "width": 99,
+        "height": 52,
+        "right": 790.5,
+        "bottom": 144
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 593,
+          "y": 94,
+          "width": 44,
+          "height": 44,
+          "right": 637,
+          "bottom": 138
+        },
+        {
+          "x": 691.5,
+          "y": 92,
+          "width": 99,
+          "height": 52,
+          "right": 790.5,
+          "bottom": 144
+        },
+        {
+          "x": 845,
+          "y": 94,
+          "width": 44,
+          "height": 44,
+          "right": 889,
+          "bottom": 138
+        },
+        {
+          "x": 593,
+          "y": 344,
+          "width": 44,
+          "height": 44,
+          "right": 637,
+          "bottom": 388
+        },
+        {
+          "x": 797,
+          "y": 341,
+          "width": 44,
+          "height": 44,
+          "right": 841,
+          "bottom": 385
+        },
+        {
+          "x": 845,
+          "y": 344,
+          "width": 44,
+          "height": 44,
+          "right": 889,
+          "bottom": 388
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1.5,
+      "state": "read",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 100,
+        "bottom": 144
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 144,
+        "width": 320,
+        "height": 340,
+        "bottom": 484
+      },
+      "composer": {
+        "x": 12,
+        "y": 484,
+        "width": 296,
+        "height": 132,
+        "bottom": 616
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 3220,
+      "view": "read",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 657.1875,
+        "y": 95,
+        "width": 142,
+        "height": 90,
+        "right": 799.1875,
+        "bottom": 185
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 597,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 641,
+          "bottom": 144
+        },
+        {
+          "x": 657.1875,
+          "y": 95,
+          "width": 142,
+          "height": 90,
+          "right": 799.1875,
+          "bottom": 185
+        },
+        {
+          "x": 841,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 885,
+          "bottom": 144
+        },
+        {
+          "x": 804,
+          "y": 148,
+          "width": 81,
+          "height": 44,
+          "right": 885,
+          "bottom": 192
+        },
+        {
+          "x": 601,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 645,
+          "bottom": 656
+        },
+        {
+          "x": 789,
+          "y": 609,
+          "width": 44,
+          "height": 44,
+          "right": 833,
+          "bottom": 653
+        },
+        {
+          "x": 837,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 881,
+          "bottom": 656
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1.5,
+      "state": "upload",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 294,
+        "height": 299,
+        "bottom": 475
+      },
+      "composer": {
+        "x": 12,
+        "y": 484,
+        "width": 296,
+        "height": 132,
+        "bottom": 616
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1133,
+      "view": "upload",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 597,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 641,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 841,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 885,
+          "bottom": 152
+        },
+        {
+          "x": 804,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 885,
+          "bottom": 204
+        },
+        {
+          "x": 601,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 645,
+          "bottom": 656
+        },
+        {
+          "x": 789,
+          "y": 609,
+          "width": 44,
+          "height": 44,
+          "right": 833,
+          "bottom": 653
+        },
+        {
+          "x": 837,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 881,
+          "bottom": 656
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1.5,
+      "state": "edit",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 294,
+        "height": 299,
+        "bottom": 475
+      },
+      "composer": {
+        "x": 12,
+        "y": 484,
+        "width": 296,
+        "height": 132,
+        "bottom": 616
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 866,
+      "view": "edit",
+      "mini": false,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 678,
+        "y": 92,
+        "width": 126,
+        "height": 129,
+        "right": 804,
+        "bottom": 221
+      },
+      "hostBox": null,
+      "actionBoxes": [
+        {
+          "x": 597,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 641,
+          "bottom": 152
+        },
+        {
+          "x": 678,
+          "y": 92,
+          "width": 126,
+          "height": 129,
+          "right": 804,
+          "bottom": 221
+        },
+        {
+          "x": 841,
+          "y": 108,
+          "width": 44,
+          "height": 44,
+          "right": 885,
+          "bottom": 152
+        },
+        {
+          "x": 804,
+          "y": 160,
+          "width": 81,
+          "height": 44,
+          "right": 885,
+          "bottom": 204
+        },
+        {
+          "x": 601,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 645,
+          "bottom": 656
+        },
+        {
+          "x": 789,
+          "y": 609,
+          "width": 44,
+          "height": 44,
+          "right": 833,
+          "bottom": 653
+        },
+        {
+          "x": 837,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 881,
+          "bottom": 656
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "textScale": 1.5,
+      "state": "mini",
+      "viewport": {
+        "width": 320,
+        "height": 640
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 320,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 320,
+        "height": 308,
+        "bottom": 484
+      },
+      "composer": {
+        "x": 12,
+        "y": 484,
+        "width": 296,
+        "height": 132,
+        "bottom": 616
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1335,
+      "view": "chat",
+      "mini": true,
+      "keyboardOn": false,
+      "contentHorizontalOverflow": 0,
+      "headerHorizontalOverflow": 0,
+      "composerHorizontalOverflow": 0,
+      "roleBox": {
+        "x": 685,
+        "y": 92,
+        "width": 112,
+        "height": 119,
+        "right": 797,
+        "bottom": 211
+      },
+      "hostBox": {
+        "x": 799,
+        "y": 100,
+        "width": 86,
+        "height": 32,
+        "right": 885,
+        "bottom": 132
+      },
+      "actionBoxes": [
+        {
+          "x": 597,
+          "y": 100,
+          "width": 44,
+          "height": 44,
+          "right": 641,
+          "bottom": 144
+        },
+        {
+          "x": 685,
+          "y": 92,
+          "width": 112,
+          "height": 119,
+          "right": 797,
+          "bottom": 211
+        },
+        {
+          "x": 804,
+          "y": 152,
+          "width": 81,
+          "height": 44,
+          "right": 885,
+          "bottom": 196
+        },
+        {
+          "x": 601,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 645,
+          "bottom": 656
+        },
+        {
+          "x": 789,
+          "y": 609,
+          "width": 44,
+          "height": 44,
+          "right": 833,
+          "bottom": 653
+        },
+        {
+          "x": 837,
+          "y": 612,
+          "width": 44,
+          "height": 44,
+          "right": 881,
+          "bottom": 656
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    "08-layout-chat-keyboard-reading.png",
+    "09-layout-upload-edit-miniprogram.png"
+  ],
+  "board1Geometry": [
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 390,
+        "height": 578,
+        "bottom": 754
+      },
+      "composer": {
+        "x": 12,
+        "y": 754,
+        "width": 366,
+        "height": 66,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 856
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 76,
+        "bottom": 120
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 120,
+        "width": 390,
+        "height": 343,
+        "bottom": 463
+      },
+      "composer": {
+        "x": 8,
+        "y": 463,
+        "width": 374,
+        "height": 82,
+        "bottom": 545
+      },
+      "keyboard": {
+        "x": 0,
+        "y": 552,
+        "width": 390,
+        "height": 292,
+        "bottom": 844
+      },
+      "bodyScrollHeight": 856
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 100,
+        "bottom": 144
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 144,
+        "width": 390,
+        "height": 610,
+        "bottom": 754
+      },
+      "composer": {
+        "x": 12,
+        "y": 754,
+        "width": 366,
+        "height": 66,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 1567
+    }
+  ],
+  "board2Geometry": [
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 364,
+        "height": 569,
+        "bottom": 745
+      },
+      "composer": {
+        "x": 12,
+        "y": 754,
+        "width": 366,
+        "height": 66,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 854
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 13,
+        "y": 176,
+        "width": 364,
+        "height": 569,
+        "bottom": 745
+      },
+      "composer": {
+        "x": 12,
+        "y": 754,
+        "width": 366,
+        "height": 66,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 674
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "header": {
+        "x": 0,
+        "y": 44,
+        "width": 390,
+        "height": 132,
+        "bottom": 176
+      },
+      "status": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 44,
+        "bottom": 44
+      },
+      "content": {
+        "x": 0,
+        "y": 176,
+        "width": 390,
+        "height": 578,
+        "bottom": 754
+      },
+      "composer": {
+        "x": 12,
+        "y": 754,
+        "width": 366,
+        "height": 66,
+        "bottom": 820
+      },
+      "keyboard": null,
+      "bodyScrollHeight": 856
+    }
+  ]
+}

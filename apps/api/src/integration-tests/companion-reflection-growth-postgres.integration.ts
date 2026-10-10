@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 import postgres from "postgres";
+import { sql } from "drizzle-orm";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { MockProvider } from "../../../../workers/ai-worker/src/lib/providers/mock.ts";
 import { loadCompanionRunDoctorV1 } from "../modules/companion-conversation/run-doctor.ts";
@@ -23,15 +24,17 @@ import { applyAssistantPersonaEdit }
 import { retrievePlaybookViews }
   from "../../../../workers/ai-worker/src/handlers/companion-playbooks.ts";
 import { createHash } from "node:crypto";
-import { upsertAgentMethodCandidate } from "@astella/agent-host";
+import { upsertAgentMethodCandidate, adoptPendingPersonaForNewTurn, pendingPersonaProposalSources,
+  createAgentMethodStore } from "@astella/agent-host";
 import { closeDatabase as closeWorkerDatabase, withWorkerWorkspaceTransaction }
   from "../../../../workers/ai-worker/src/db.ts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
-import { getPetProfileState, stagePetProfileRevision }
+import { getPetProfileState, stagePetProfileRevision, upsertPetProfile }
   from "../modules/companion-conversation/pet-profile-service.ts";
 import { personaFromDefaultPreset } from "@astella/shared/pet-persona-merge";
 import { getDefaultPersonaPreset } from "@astella/shared/pet-persona-presets";
 import { createCompanionTurn } from "../modules/companion-conversation/turn/turn-service.ts";
+import { correctMemory } from "../modules/companion-conversation/memory/memory-service.ts";
 
 // 让 `agent_turn` 解析不到平台 → 走 mock provider（与日记那一份集成测试同一手法）。
 process.env.AI_PLATFORMS_CONFIG = "/nonexistent/companion-reflection-fixture.json";
@@ -58,6 +61,8 @@ interface Fixture {
   readonly messageIds: string[];
   readonly correctionMessageId: string;
   runReflection: (jobFields?: { fromSeq?: number; toSeq?: number }) => Promise<void>;
+  retryReflection: () => Promise<void>;
+  replaceLease: () => Promise<void>;
   readReflection: () => Promise<Record<string, unknown>[]>;
   readEdges: (relation: string) => Promise<Record<string, unknown>[]>;
   persona: () => Promise<Awaited<ReturnType<typeof getPetProfileState>>>;
@@ -129,6 +134,7 @@ async function fixture(options: { userMessages?: number; intervalBlocked?: boole
 
   let jobSerial = 0;
   const jobs: string[] = [];
+  let lastJob: Parameters<typeof runCompanionReflectionJob>[0] | null = null;
   return {
     userId, workspaceId, conversationId, messageIds, correctionMessageId,
     async runReflection(jobFields) {
@@ -143,10 +149,21 @@ async function fixture(options: { userMessages?: number; intervalBlocked?: boole
             ${tx.json({ userId, workspaceId, conversationId, fromSeq, toSeq })},
             'running',${leaseToken},now(),'maintenance',30)`;
       });
-      await runCompanionReflectionJob({
+      lastJob = {
         id: jobId, workspaceId, requestedBy: userId, leaseToken,
         payload: { userId, workspaceId, conversationId, fromSeq, toSeq },
-      });
+      };
+      await runCompanionReflectionJob(lastJob);
+    },
+    async retryReflection() {
+      assert.ok(lastJob);
+      await runCompanionReflectionJob(lastJob);
+    },
+    async replaceLease() {
+      assert.ok(lastJob);
+      const renewed = { ...lastJob, leaseToken: randomUUID() };
+      await mutate(tx => tx`UPDATE jobs SET lease_token=${renewed.leaseToken} WHERE id=${renewed.id}`);
+      lastJob = renewed;
     },
     readReflection: () => mutate(tx => tx`
       SELECT decision, decision_summary, baseline_persona_revision, pending_persona_revision,
@@ -536,4 +553,394 @@ test("入队门按段落挑人：够格才投一条，同一段不重复投", as
   } finally {
     await f.cleanup();
   }
+});
+
+test("来源在模型等待中换版：旧判断与人格均不提交", async () => {
+  const f = await fixture();
+  const restore = reflectionModelFixture({
+    judgments: [{ text: "招呼不要数笔记", epistemicStatus: "tentative", sourceMessageIds: [f.correctionMessageId] }],
+  }, async () => {
+    await admin`UPDATE companion_messages SET content_sha256=${"1".repeat(64)},
+      blocks=${admin.json([{ type: "text", text: "这次可以盘点" }])} WHERE id=${f.correctionMessageId}`;
+  });
+  try {
+    await f.runReflection();
+    assert.equal((await f.readReflection())[0].decision, "source_invalid");
+    assert.equal((await admin`SELECT id FROM assistant_memory_items WHERE user_id=${f.userId}`).length, 0);
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("等待中用户暂存人格草稿：整个反思不写半份经验", async () => {
+  const f = await fixture();
+  const scope = { workspaceId: f.workspaceId, userId: f.userId };
+  const restore = reflectionModelFixture({
+    judgments: [{ text: "招呼不要数笔记", epistemicStatus: "tentative", sourceMessageIds: [f.correctionMessageId] }],
+    persona: { selfDescription: "我正在改盘点笔记的习惯。", reason: "对方明确纠正过", sourceMessageIds: [f.correctionMessageId] },
+  }, async () => {
+    await withWorkspaceTransaction(scope, tx => stagePetProfileRevision(tx, scope,
+      { ...personaFromDefaultPreset(getDefaultPersonaPreset()), revision: 0 }, new Date(), { author: "user" }));
+  });
+  try {
+    await f.runReflection();
+    assert.equal((await f.readReflection())[0].decision, "commit_conflict");
+    assert.equal((await admin`SELECT id FROM assistant_memory_items WHERE user_id=${f.userId}`).length, 0,
+      "人格冲突不能留下未记产出关系的判断");
+    assert.equal((await f.persona()).pending?.author, "user");
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("终态保存失败：副作用一并回滚；同一 job 从检查点恢复不再调用模型", async () => {
+  const f = await fixture();
+  let calls = 0;
+  const restore = reflectionModelFixture({
+    judgments: [{ text: "招呼不要数笔记", epistemicStatus: "tentative", sourceMessageIds: [f.correctionMessageId] }],
+  }, () => { calls += 1; });
+  try {
+    await admin.unsafe(`CREATE FUNCTION plan50_fail_finalize() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.user_id = '${f.userId}'::uuid AND NEW.decision = 'committed' THEN
+        RAISE EXCEPTION 'injected finalize failure'; END IF; RETURN NEW; END $$`);
+    await admin`CREATE TRIGGER plan50_fail_finalize BEFORE UPDATE ON companion_reflections
+      FOR EACH ROW EXECUTE FUNCTION plan50_fail_finalize()`;
+    await assert.rejects(f.runReflection(), error =>
+      String((error as Error & { cause?: Error }).cause?.message).includes("injected finalize failure"));
+    await admin`DROP TRIGGER plan50_fail_finalize ON companion_reflections`;
+    await admin`DROP FUNCTION plan50_fail_finalize()`;
+    assert.equal((await admin`SELECT id FROM assistant_memory_items WHERE user_id=${f.userId}`).length, 0,
+      "结论没保存，判断也应回滚");
+    // 新消息到达也不改变已冻结输入和检查点的身份。
+    await admin`INSERT INTO assistant_memory_items(workspace_id,user_id,kind,content,scope,source_type)
+      VALUES(${f.workspaceId},${f.userId},'preference','之后新增的条目','workspace','model_inferred')`;
+    await f.retryReflection();
+    assert.equal(calls, 1, "恢复应读原输入检查点");
+    assert.equal((await f.readReflection())[0].decision, "committed");
+    assert.equal((await admin`SELECT id FROM assistant_memory_items WHERE user_id=${f.userId} AND kind='judgment'`).length, 1);
+  } finally {
+    await admin`DROP TRIGGER IF EXISTS plan50_fail_finalize ON companion_reflections`;
+    await admin`DROP FUNCTION IF EXISTS plan50_fail_finalize()`;
+    restore(); await f.cleanup();
+  }
+});
+
+test("人格采用只核自己的依据：另一条判断的原话不能代替被删掉的纠正", async () => {
+  const f = await fixture();
+  const restore = reflectionModelFixture({
+    judgments: [{ text: "眼前这句招呼无需安排", epistemicStatus: "tentative", sourceMessageIds: [f.messageIds[0]] }],
+    persona: { selfDescription: "我正在改盘点笔记的习惯。", reason: "对方明确纠正过", sourceMessageIds: [f.correctionMessageId] },
+  });
+  try {
+    await f.runReflection();
+    await f.deleteMessage(f.correctionMessageId);
+    await f.newTurn("早");
+    assert.equal((await f.persona()).profileRevision, 0);
+    assert.equal((await f.persona()).pending, null);
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("账号世代在模型等待中撤销：迟到反思不能提交", async () => {
+  const f = await fixture();
+  const restore = reflectionModelFixture({
+    judgments: [{ text: "招呼不要数笔记", epistemicStatus: "tentative", sourceMessageIds: [f.correctionMessageId] }],
+  }, async () => { await admin`UPDATE user_companion_account_state SET epoch=epoch+1 WHERE user_id=${f.userId}`; });
+  try {
+    await f.runReflection();
+    assert.equal((await f.readReflection())[0].decision, "governance_denied");
+    assert.equal((await admin`SELECT id FROM assistant_memory_items WHERE user_id=${f.userId}`).length, 0);
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("来源采用后删除：只恢复自动字段，保留用户新设置和未生效草稿", async () => {
+  const f = await fixture();
+  const scope = { workspaceId: f.workspaceId, userId: f.userId };
+  const restore = reflectionModelFixture({ persona: { selfDescription: "我正在改盘点笔记的习惯。",
+    reason: "对方明确纠正过", sourceMessageIds: [f.correctionMessageId] } });
+  try {
+    await f.runReflection();
+    await f.newTurn("早");
+    const adopted = await f.persona();
+    await withWorkspaceTransaction(scope, tx => upsertPetProfile(tx,scope,{
+      ...adopted.profile!, name: "用户新名字", revision: adopted.profileRevision,
+    }));
+    const changed = await f.persona();
+    await withWorkspaceTransaction(scope, tx => stagePetProfileRevision(tx,scope,{
+      ...changed.profile!, name: "尚未生效的名字", revision: changed.profileRevision,
+    },new Date(),{ author: "user" }));
+    await f.deleteMessage(f.correctionMessageId);
+    await f.newTurn("早");
+    const after = await f.persona();
+    assert.equal(after.profile?.selfDescription, undefined);
+    assert.equal(after.profile?.name, "用户新名字");
+    assert.equal(after.pending?.author, "user");
+    assert.equal(after.pending?.profile?.name, "尚未生效的名字");
+    assert.equal(after.pending?.profile?.selfDescription, undefined,"用户草稿不能复活继承的失效自动字段");
+    assert.equal((await f.readReflection())[0].decision, "source_invalid");
+    await f.retryReflection();
+    assert.equal((await f.persona()).profileRevision, after.profileRevision, "旧任务不恢复已撤回字段");
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("失效 pending 清掉后版本号不复用，用户仍能正常编辑", async () => {
+  const f = await fixture();
+  const scope = { workspaceId: f.workspaceId, userId: f.userId };
+  const restore = reflectionModelFixture({ persona: { selfDescription: "我正在改盘点笔记的习惯。",
+    reason: "对方明确纠正过", sourceMessageIds: [f.correctionMessageId] } });
+  try {
+    await f.runReflection();
+    await f.deleteMessage(f.correctionMessageId);
+    await f.newTurn("早");
+    await withWorkspaceTransaction(scope,tx=>upsertPetProfile(tx,scope,{
+      ...personaFromDefaultPreset(getDefaultPersonaPreset()), name:"用户新名字", revision:0,
+    }));
+    assert.equal((await f.persona()).profileRevision, 2);
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("旧反思缺少新增元数据时仍恢复已采用字段，并保留合法表达风格", async () => {
+  const f = await fixture();
+  const initial = personaFromDefaultPreset(getDefaultPersonaPreset());
+  const restore = reflectionModelFixture({ persona:{ selfDescription:"我正在改盘点笔记的习惯。",speakingStyle:"先简单回应招呼",
+    reason:"对方明确纠正过",sourceMessageIds:[f.correctionMessageId] } });
+  try {
+    await f.runReflection();
+    await f.newTurn("早");
+    await admin`UPDATE companion_reflections SET result_ref='{}' WHERE user_id=${f.userId}`;
+    await f.deleteMessage(f.correctionMessageId);
+    await f.newTurn("早");
+    const after = await f.persona();
+    assert.equal(after.profile?.speakingStyle,initial.speakingStyle);
+    assert.equal(after.profile?.selfDescription,undefined);
+    assert.equal((await f.readReflection())[0].decision,"source_invalid");
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("连续两版依赖同一失效来源时，一次新回合完成逐层撤回", async () => {
+  const f = await fixture();
+  let restore = reflectionModelFixture({ persona:{ selfDescription:"第一版自动描述",reason:"对方明确纠正过",
+    sourceMessageIds:[f.correctionMessageId] } });
+  try {
+    await f.runReflection();
+    await f.newTurn("早");
+    await admin`UPDATE companion_reflections SET created_at=now()-interval '25 hours' WHERE user_id=${f.userId}`;
+    await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,role,seq,kind,blocks,content_sha256)
+      VALUES(${randomUUID()},${f.workspaceId},${f.userId},${f.conversationId},'assistant',8,'text',
+        ${admin.json([{ type:"text",text:"早。" }])},${HASH})`;
+    await admin`UPDATE companion_conversations SET next_message_seq=9 WHERE id=${f.conversationId}`;
+    restore();
+    restore = reflectionModelFixture({ persona:{ selfDescription:"第二版自动描述",reason:"继续调整表达",
+      sourceMessageIds:[f.correctionMessageId] } });
+    await f.runReflection({ fromSeq:0,toSeq:8 });
+    await f.newTurn("再打个招呼");
+    assert.equal((await f.persona()).profile?.selfDescription,"第二版自动描述");
+    await f.deleteMessage(f.correctionMessageId);
+    await f.newTurn("早");
+    assert.equal((await f.persona()).profile?.selfDescription,undefined);
+    assert.ok((await f.readReflection()).every(r=>r.decision==="source_invalid"));
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("另一空间的新回合采用账号人格只查来源有效性，不泄漏原文", async () => {
+  const f = await fixture();
+  const secondSpace = randomUUID();
+  const restore = reflectionModelFixture({ persona: { selfDescription: "我正在改盘点笔记的习惯。",
+    reason: "对方明确纠正过", sourceMessageIds: [f.correctionMessageId] } });
+  try {
+    await admin`INSERT INTO workspaces(id,name,owner_id) VALUES(${secondSpace},'第二空间',${f.userId})`;
+    await admin`INSERT INTO workspace_members(workspace_id,user_id,role) VALUES(${secondSpace},${f.userId},'owner')`;
+    await f.runReflection();
+    const scope = { workspaceId: secondSpace, userId:f.userId };
+    const adopted = await withWorkspaceTransaction(scope,tx=>adoptPendingPersonaForNewTurn(tx,f.userId,
+      p=>pendingPersonaProposalSources(tx,f.userId,p)));
+    assert.deepEqual(adopted,{ kind:"adopted",revision:1 });
+  } finally {
+    restore(); await admin`DELETE FROM workspace_members WHERE workspace_id=${secondSpace}`;
+    await admin`DELETE FROM workspaces WHERE id=${secondSpace}`; await f.cleanup();
+  }
+});
+
+test("角色初始化后受限 worker 仍有调度权限", async () => {
+  const f = await fixture();
+  try {
+    await withWorkerWorkspaceTransaction({ workspaceId:f.workspaceId,userId:f.userId },async tx=>{
+      await tx.execute(sql`SELECT astella_enqueue_companion_reflection()`);
+    });
+    assert.equal((await admin`SELECT id FROM jobs WHERE type='companion_reflection' AND workspace_id=${f.workspaceId}`).length,1);
+  } finally { await f.cleanup(); }
+});
+
+test("调度按真实待处理 jobs 限制账号积压，同一会话不排重叠水位", async () => {
+  const f = await fixture();
+  const conversations = [randomUUID(),randomUUID(),randomUUID()];
+  const scope = { workspaceId:f.workspaceId,userId:f.userId };
+  const schedule = () => withWorkerWorkspaceTransaction(scope,tx=>tx.execute(sql`SELECT astella_enqueue_companion_reflection()`));
+  try {
+    for (const id of conversations) {
+      await admin`INSERT INTO companion_conversations(id,workspace_id,user_id,kind,title,title_source,status)
+        VALUES(${id},${f.workspaceId},${f.userId},'dialogue','另一段交流','system','active')`;
+      await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,role,seq,kind,blocks,content_sha256)
+        SELECT gen_random_uuid(),workspace_id,user_id,${id},role,seq,kind,blocks,content_sha256
+        FROM companion_messages WHERE conversation_id=${f.conversationId}`;
+    }
+    await Promise.all([schedule(),schedule()]);
+    const jobs = await admin`SELECT id,payload FROM jobs WHERE type='companion_reflection' AND requested_by=${f.userId}`;
+    assert.equal(jobs.length,3,"未被 worker 读取的排队任务也占账号积压名额");
+    assert.equal(new Set(jobs.map(j=>j.payload.conversationId)).size,3);
+    for (const job of jobs) {
+      await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,role,seq,kind,blocks,content_sha256)
+        VALUES(${randomUUID()},${f.workspaceId},${f.userId},${job.payload.conversationId},'assistant',7,'text',
+          ${admin.json([{ type:"text",text:"后续补充。" }])},${HASH})`;
+    }
+    await admin`UPDATE jobs SET status='succeeded' WHERE id=${jobs[0].id}`;
+    await schedule();
+    const active = await admin`SELECT payload FROM jobs WHERE requested_by=${f.userId} AND status IN ('pending','running')`;
+    assert.equal(active.length,3);
+    assert.equal(new Set(active.map(j=>j.payload.conversationId)).size,3,"同一会话排队时不重复收新水位");
+  } finally {
+    await admin`DELETE FROM companion_messages WHERE conversation_id IN ${admin(conversations)}`;
+    await admin`DELETE FROM companion_conversations WHERE id IN ${admin(conversations)}`;
+    await f.cleanup();
+  }
+});
+
+test("来源改写后自动判断与方法不再读回，并清除检查点正文", async () => {
+  const f = await fixture();
+  const restore = reflectionModelFixture({
+    judgments:[{ text:"招呼不要数笔记",epistemicStatus:"tentative",sourceMessageIds:[f.correctionMessageId] }],
+    experiences:[{ title:"先接眼前招呼",triggerCondition:"只是招呼",steps:["不盘点笔记"],exceptions:[],
+      sourceMessageIds:[f.correctionMessageId] }],
+  });
+  try {
+    await f.runReflection();
+    await admin`UPDATE companion_messages SET content_sha256=${"2".repeat(64)},
+      blocks=${admin.json([{ type:"text",text:"招呼时可以接昨天笔记" }])} WHERE id=${f.correctionMessageId}`;
+    const scope = { workspaceId:f.workspaceId,userId:f.userId };
+    const views = await withWorkerWorkspaceTransaction(scope,tx=>retrievePlaybookViews(tx,scope));
+    assert.equal(views.candidates.length,0);
+    assert.equal((await admin`SELECT id FROM assistant_memory_items WHERE user_id=${f.userId} AND deleted_at IS NULL`).length,0);
+    assert.equal((await admin`SELECT job_id FROM companion_reflection_checkpoints WHERE user_id=${f.userId}`).length,0);
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("迟到模型回调不能终结新租约的反思，重试仍可正常完成", async () => {
+  const f = await fixture();
+  let calls = 0;
+  const restore = reflectionModelFixture({ judgments:[{ text:"招呼不要数笔记",epistemicStatus:"tentative",
+    sourceMessageIds:[f.correctionMessageId] }] },async()=>{
+    calls += 1;
+    if (calls===1) await f.replaceLease();
+  });
+  try {
+    await f.runReflection();
+    assert.equal((await f.readReflection())[0].decision,"running");
+    assert.equal((await admin`SELECT id FROM assistant_memory_items WHERE user_id=${f.userId}`).length,0);
+    await f.retryReflection();
+    assert.equal((await f.readReflection())[0].decision,"committed");
+    assert.equal((await admin`SELECT id FROM assistant_memory_items WHERE user_id=${f.userId}`).length,1);
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("重试耗尽的反思释放账号门槛并清除冻结输入", async () => {
+  const f = await fixture();
+  const restore = reflectionModelFixture({ judgments:[{ text:"招呼不要数笔记",epistemicStatus:"tentative",
+    sourceMessageIds:[f.correctionMessageId] }] },()=>f.replaceLease());
+  try {
+    await f.runReflection();
+    assert.equal((await f.readReflection())[0].decision,"running");
+    await admin`UPDATE jobs SET status='dead' WHERE workspace_id=${f.workspaceId} AND type='companion_reflection'`;
+    const [after] = await admin`SELECT decision,input_snapshot FROM companion_reflections WHERE user_id=${f.userId}`;
+    assert.equal(after.decision,"lease_lost");
+    assert.equal(after.input_snapshot,null);
+    assert.equal((await admin`SELECT job_id FROM companion_reflection_checkpoints WHERE user_id=${f.userId}`).length,0);
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("来源清除保留用户亲自修订的判断与方法", async () => {
+  const f = await fixture();
+  const scope = { workspaceId:f.workspaceId,userId:f.userId };
+  const restore = reflectionModelFixture({
+    judgments:[{ text:"招呼不要数笔记",epistemicStatus:"tentative",sourceMessageIds:[f.correctionMessageId] }],
+    experiences:[{ title:"先接眼前招呼",triggerCondition:"只是招呼",steps:["不盘点笔记"],exceptions:[],
+      sourceMessageIds:[f.correctionMessageId] }],
+  });
+  try {
+    await f.runReflection();
+    const [memory] = await admin`SELECT id FROM assistant_memory_items WHERE user_id=${f.userId}`;
+    const [method] = await admin`SELECT id FROM companion_procedural_playbooks WHERE user_id=${f.userId}`;
+    await withWorkspaceTransaction(scope,tx=>correctMemory(tx,scope,memory.id,{
+      content:"用户重新确认的判断",expectedRevision:1,
+    }));
+    const methods = createAgentMethodStore({ transaction:withWorkspaceTransaction,id:randomUUID });
+    await methods.revise(scope,method.id,{ expectedRevision:1,title:"用户改过的方法",appliesWhen:"用户确认的适用范围",
+      steps:["先问用户"],exceptions:[],reason:"用户自行调整" });
+    await f.deleteMessage(f.correctionMessageId);
+    const [afterMemory] = await admin`SELECT content,deleted_at,user_stated,author_type FROM assistant_memory_items WHERE id=${memory.id}`;
+    const [afterMethod] = await admin`SELECT title,epistemic_status,user_controlled FROM companion_procedural_playbooks WHERE id=${method.id}`;
+    assert.equal(afterMemory.content,"用户重新确认的判断");
+    assert.equal(afterMemory.deleted_at,null);
+    assert.equal(afterMemory.user_stated,false);
+    assert.equal(afterMemory.author_type,"user");
+    assert.equal(afterMethod.title,"用户改过的方法");
+    assert.equal(afterMethod.user_controlled,true);
+    assert.equal(afterMethod.epistemic_status,"tentative");
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("模型等待中清除来源后，迟到响应不重建检查点或冻结正文", async () => {
+  const f = await fixture();
+  const restore = reflectionModelFixture({ judgments:[{ text:"招呼不要数笔记",epistemicStatus:"tentative",
+    sourceMessageIds:[f.correctionMessageId] }] },()=>f.deleteMessage(f.correctionMessageId));
+  try {
+    await f.runReflection();
+    const [row] = await admin`SELECT decision,input_snapshot FROM companion_reflections WHERE user_id=${f.userId}`;
+    assert.equal(row.decision,"source_invalid");
+    assert.equal(row.input_snapshot,null);
+    assert.equal((await admin`SELECT job_id FROM companion_reflection_checkpoints WHERE user_id=${f.userId}`).length,0);
+    assert.equal((await admin`SELECT id FROM assistant_memory_items WHERE user_id=${f.userId}`).length,0);
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("并发 worker 只领取同账号一个反思，其他账号不受阻塞，完成后再领取下一空间", async () => {
+  const f = await fixture(), other = await fixture();
+  const secondSpace = randomUUID();
+  try {
+    await admin`INSERT INTO workspaces(id,name,owner_id) VALUES(${secondSpace},'第二反思空间',${f.userId})`;
+    await admin`INSERT INTO workspace_members(workspace_id,user_id,role) VALUES(${secondSpace},${f.userId},'owner')`;
+    const ids = [randomUUID(),randomUUID(),randomUUID()];
+    for (const [i,id] of ids.entries()) {
+      await admin`INSERT INTO jobs(id,type,workspace_id,requested_by,payload,status,resource_class,scheduled_at)
+        VALUES(${id},'companion_reflection',${i===1 ? secondSpace : i===2 ? other.workspaceId : f.workspaceId},
+          ${i===2 ? other.userId : f.userId},'{}','pending','maintenance',now()+${i}*interval '1 millisecond'-interval '1 second')`;
+    }
+    const claim = () => withWorkerWorkspaceTransaction({ workspaceId:f.workspaceId,userId:f.userId },async tx=>
+      tx.execute<{ id:string; requested_by:string }>(sql`SELECT * FROM astella_claim_jobs(8,8,3)`));
+    const groups = await Promise.all([claim(),claim()]);
+    const claimed = groups.flat();
+    assert.equal(claimed.length,2);
+    assert.equal(claimed.filter(j=>j.requested_by===f.userId).length,1);
+    assert.equal(claimed.filter(j=>j.requested_by===other.userId).length,1);
+    assert.ok(claimed.some(j=>j.id===ids[0]),"同账号先领取最早水位");
+    await admin`UPDATE jobs SET status='succeeded',lease_token=NULL WHERE id=${ids[0]}`;
+    assert.deepEqual((await claim()).map(j=>j.id),[ids[1]]);
+  } finally {
+    await admin`DELETE FROM jobs WHERE workspace_id=${secondSpace}`;
+    await admin`DELETE FROM workspace_members WHERE workspace_id=${secondSpace}`;
+    await admin`DELETE FROM workspaces WHERE id=${secondSpace}`;
+    await f.cleanup(); await other.cleanup();
+  }
+});
+
+test("用户亲自固定的表达不被后台人格建议覆盖", async () => {
+  const f = await fixture();
+  const scope = { workspaceId:f.workspaceId,userId:f.userId };
+  const restore = reflectionModelFixture({ persona:{ selfDescription:"后台不该覆盖的描述",speakingStyle:"后台不该覆盖的风格",
+    reason:"一次建议",sourceMessageIds:[f.correctionMessageId] } });
+  try {
+    await withWorkspaceTransaction(scope,tx=>upsertPetProfile(tx,scope,{
+      ...personaFromDefaultPreset(getDefaultPersonaPreset()), revision:0,
+      speakingStyle:"用户固定风格",selfDescription:"用户固定描述",
+      fieldOrigin:{ speakingStyle:"user",selfDescription:"user" },
+    }));
+    await f.runReflection();
+    assert.equal((await f.persona()).pending,null);
+    assert.equal((await f.persona()).profile?.speakingStyle,"用户固定风格");
+    assert.equal((await f.readReflection())[0].decision,"no_change");
+  } finally { restore(); await f.cleanup(); }
 });

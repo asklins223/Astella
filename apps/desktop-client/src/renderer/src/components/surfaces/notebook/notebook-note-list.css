@@ -75,7 +75,7 @@
 }
 /* Full-sheet controls always float: opening the index leaves text and editor geometry intact. */
 .desktop-app.hud-surface[data-notebook-fullscreen] .notebook-detail-layout > .notebook-workspace { width: 100%; }
-.hud-surface .notebook-note-list[data-fullscreen] { --notebook-list-tool-top: max(var(--notebook-focus-tool-top), calc(env(titlebar-area-height, 40px) + 12px)); position: absolute; z-index: 11; inset: 0; width: auto; pointer-events: none; }
+.hud-surface .notebook-note-list[data-fullscreen] { --notebook-list-tool-top: max(var(--notebook-focus-tool-top), var(--native-caption-band, 52px)); position: absolute; z-index: 11; inset: 0; width: auto; pointer-events: none; }
 .hud-surface .notebook-note-list[data-fullscreen] .notebook-note-list__toggle { position: absolute; top: var(--notebook-list-tool-top); left: 24px; width: auto; min-height: 46px; border-width: 1px; pointer-events: auto; }
 .hud-surface .notebook-note-list[data-fullscreen] .notebook-note-list__toggle span { display: inline; }
 .hud-surface .notebook-note-list[data-fullscreen] .notebook-note-list__paper { position: absolute; z-index: 11; top: calc(var(--notebook-list-tool-top) + 58px); bottom: 24px; left: 24px; width: min(260px, calc(100% - 48px)); pointer-events: auto; box-shadow: 0 3px 0 #b9c6a790, 0 12px 32px #344b3626; }

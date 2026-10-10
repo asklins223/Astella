@@ -978,7 +978,8 @@ export async function correctMemory(
       appliesWhen: input.appliesWhen === undefined ? existing.appliesWhen : input.appliesWhen,
       validFrom,
       validUntil,
-      userStated: true,
+      // Editing an interpretation does not turn it into a fact about the user.
+      userStated: existing.kind !== "judgment",
       userConfirmed: true,
       candidate: false,
       sourceType: "user_stated",

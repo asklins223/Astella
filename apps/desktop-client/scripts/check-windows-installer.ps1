@@ -69,6 +69,7 @@ try {
   $start.UseShellExecute = $false
   $start.WorkingDirectory = $target
   $start.ArgumentList.Add('--disable-gpu')
+  $start.ArgumentList.Add('--force-renderer-accessibility')
   $start.ArgumentList.Add('--enable-logging=file')
   $start.ArgumentList.Add('--log-file=' + (Join-Path $diagnostics 'installed-chromium.log'))
   $app = [System.Diagnostics.Process]::Start($start)
@@ -83,6 +84,67 @@ try {
   } while ([DateTime]::UtcNow -lt $deadline)
   if ($boot -notmatch 'renderer-ready-to-show') { throw '已安装应用没有确认渲染窗口就绪' }
   if (Test-Path $trace) { Copy-Item -LiteralPath $trace -Destination $diagnostics }
+
+  Write-Host 'Rounded transparent sheet and self-drawn caption buttons'
+  # 圆角不是 CSS 写上去就算数：四个角必须透出窗口背后的那一层。取同屏窗口外的邻居像素与角上像素比对，
+  # 直角不透明窗口会让两者不同（角上是应用自己的深色衬底），这条当场判红。
+  Add-Type -AssemblyName System.Drawing, System.Windows.Forms, UIAutomationClient, UIAutomationTypes
+  $handleDeadline = [DateTime]::UtcNow.AddSeconds(20)
+  do {
+    $app.Refresh()
+    if ($app.HasExited) { throw "已安装应用在看窗口句柄前退出：$($app.ExitCode)" }
+    if ($app.MainWindowHandle -ne 0) { break }
+    Start-Sleep -Milliseconds 250
+  } while ([DateTime]::UtcNow -lt $handleDeadline)
+  if ($app.MainWindowHandle -eq 0) { throw '已安装应用没有主窗口句柄' }
+  $window = [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
+  $sheet = $window.Current.BoundingRectangle
+  if ($sheet.Width -lt 300 -or $sheet.Height -lt 300) { throw "应用窗口尺寸异常：$sheet" }
+  $originX = [int]$sheet.X - 8; $originY = [int]$sheet.Y - 8
+  $shot = New-Object System.Drawing.Bitmap ([int]$sheet.Width + 16), ([int]$sheet.Height + 16)
+  $canvas = [System.Drawing.Graphics]::FromImage($shot)
+  try {
+    $canvas.CopyFromScreen($originX, $originY, 0, 0, $shot.Size)
+    $shot.Save((Join-Path $diagnostics 'windows-app-window.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+    function Get-PixelAt([int]$x, [int]$y) { return $shot.GetPixel($x - $originX, $y - $originY) }
+    function Same-Layer([int]$ax, [int]$ay, [int]$bx, [int]$by) {
+      $a = Get-PixelAt $ax $ay; $b = Get-PixelAt $bx $by
+      return ([Math]::Abs($a.R - $b.R) -lt 24) -and ([Math]::Abs($a.G - $b.G) -lt 24) -and ([Math]::Abs($a.B - $b.B) -lt 24)
+    }
+    $left = [int]$sheet.X; $top = [int]$sheet.Y
+    $right = [int]($sheet.X + $sheet.Width) - 1; $bottom = [int]($sheet.Y + $sheet.Height) - 1
+    $corners = @(
+      @{ Name = '左上'; Corner = @(($left + 2), ($top + 2)); Outside = @(($left - 4), ($top - 4)); Inside = @(($left + 48), ($top + 48)) },
+      @{ Name = '右上'; Corner = @(($right - 2), ($top + 2)); Outside = @(($right + 4), ($top - 4)); Inside = @(($right - 48), ($top + 48)) },
+      @{ Name = '左下'; Corner = @(($left + 2), ($bottom - 2)); Outside = @(($left - 4), ($bottom + 4)); Inside = @(($left + 48), ($bottom - 48)) },
+      @{ Name = '右下'; Corner = @(($right - 2), ($bottom - 2)); Outside = @(($right + 4), ($bottom + 4)); Inside = @(($right - 48), ($bottom - 48)) }
+    )
+    $checked = 0
+    foreach ($corner in $corners) {
+      $usable = $true
+      foreach ($point in @($corner.Corner, $corner.Outside, $corner.Inside)) {
+        if ($point[0] -lt $originX -or $point[1] -lt $originY -or ($point[0] - $originX) -ge $shot.Width -or ($point[1] - $originY) -ge $shot.Height) { $usable = $false }
+      }
+      # 贴到屏幕边缘时窗外没有可比像素，跳过这一角。
+      if (-not $usable) { continue }
+      if (-not (Same-Layer $corner.Corner[0] $corner.Corner[1] $corner.Outside[0] $corner.Outside[1])) {
+        throw "$($corner.Name)角没有透出窗口背后那一层：圆角透明未生效（见 windows-app-window.png）"
+      }
+      if (Same-Layer $corner.Corner[0] $corner.Corner[1] $corner.Inside[0] $corner.Inside[1]) {
+        throw "$($corner.Name)角与卡片内部同色：疑似窗口仍是直角"
+      }
+      $checked++
+    }
+    if ($checked -lt 2) { throw "可比对的窗口角只有 $checked 个，无法判断圆角是否生效" }
+    Write-Host "四个角按可见性比对了 $checked 个，均透出背后层。"
+    foreach ($name in @('最小化', '最大化', '关闭')) {
+      $find = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, $name)
+      if (-not $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $find)) { throw "标题带缺少自绘按钮：$name" }
+    }
+    Write-Host '自绘标题按钮三个都在无障碍树里。'
+  } finally {
+    $canvas.Dispose(); $shot.Dispose()
+  }
   & taskkill.exe /PID $app.Id /T /F | Out-Null
   Start-Sleep -Seconds 3
 
@@ -105,6 +167,33 @@ try {
   Assert-Installed
   Invoke-Uninstall -DeleteData
   if (Test-Path $profile) { throw '选择清除后仍残留默认本机资料' }
+
+  Write-Host 'Double-click path: a browser-downloaded copy launched through ShellExecute'
+  # 上面每一步都带参数、走 ProcessStartInfo。真实用户是零参数、从资源管理器双击一份刚下载的、
+  # 带网络来源标记的文件 —— 未签名包被拦下、或 .NET 启动器在 Main 之前失败，都只表现为没反应。
+  $downloaded = Join-Path $workspace 'downloaded-like-setup.exe'
+  Copy-Item -LiteralPath $Installer -Destination $downloaded -Force
+  Set-Content -LiteralPath $downloaded -Stream Zone.Identifier -Encoding ascii -Value "`r`n[ZoneTransfer]`r`nZoneId=3`r`nReferrerUrl=https://github.com`r`n"
+  $shell = Start-Process -FilePath $downloaded -PassThru -WorkingDirectory $workspace
+  try {
+    $shown = $false
+    $deadline = [DateTime]::UtcNow.AddSeconds(60)
+    while ($true) {
+      $shell.Refresh()
+      if ($shell.MainWindowHandle -ne 0) { $shown = $true; break }
+      if ($shell.HasExited) { throw "带网络来源标记的安装包双击后直接退出（退出码 $($shell.ExitCode)）" }
+      if ([DateTime]::UtcNow -ge $deadline) { break }
+      Start-Sleep -Milliseconds 250
+    }
+    if (-not $shown) { throw '带网络来源标记的安装包双击后 60 秒内没有出界面' }
+    # 心跳由 Program.Main 第一行落盘：用户在别的机器上遇到没反应时，这是唯一能分层判断的依据。
+    $heartbeat = Join-Path $env:LOCALAPPDATA 'Astella\setup-logs\startup.log'
+    if (-not (Test-Path $heartbeat)) { throw '安装器没有留下启动心跳，故障无法分层判断' }
+    Write-Host "心跳已落盘：$((Get-Item -LiteralPath $heartbeat).Length) 字节"
+  } finally {
+    if (-not $shell.HasExited) { Stop-Process -Id $shell.Id -Force }
+    Remove-Item -LiteralPath $downloaded -Force
+  }
   Write-Host 'Install, native UI, launch, overwrite update, retain-data uninstall and clear-data uninstall passed.'
 } finally {
   $logs = Join-Path $env:LOCALAPPDATA 'Astella\setup-logs'

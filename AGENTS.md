@@ -10,6 +10,7 @@
 | --- | --- |
 | 产品、用户、权限与已确认能力 | [PRODUCT.md](PRODUCT.md) |
 | 视觉方向、布局与交互 | [DESIGN.md](DESIGN.md) |
+| App 与小程序的随身伴星、便携学习、共享数据与实时聊天 | [方案 51](docs/plans/learning-companion/51-mobile-companion-full-agent-product-design-2026-10-10.md) |
 | 全项目 Agent、持续身份、成长闭环与伴星体验 | [方案 42](docs/plans/learning-companion/42-unified-agent-and-companion-experience-2026-10-04.md) |
 | 伴星带路、首次使用、新空间认识与空间到达体验（42 之后实施） | [方案 43](docs/plans/learning-companion/43-companion-guidance-and-space-arrival-2026-10-04.md) |
 | 笔记学习的页面、流程与状态 | [方案 41](docs/plans/learning-companion/41-note-companion-learning-experience-2026-09-28.md) |

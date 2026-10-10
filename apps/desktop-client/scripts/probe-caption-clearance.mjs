@@ -3,8 +3,8 @@
  * 浮层仍然贴右缘、从 --native-caption-band 那条线起。
  *
  * 跑法：`npm run dev`（带 --remoteDebuggingPort 9222）后 `node scripts/probe-caption-clearance.mjs`。
- * 在 macOS 上跑会把根节点强制成 data-platform="win32" 并钉住 52px 这条带，
- * 所以量到的是 Windows 的几何，不是本机的 env() 值。
+ * 在 macOS 上跑只把根节点强制成 data-platform="win32"，`--native-caption-band` 走真声明
+ * （本机 env(titlebar-area-height) 实测同样报 40），所以量到的是 Windows 的几何。
  */
 import { chromium } from 'playwright'
 
@@ -22,11 +22,12 @@ if (await page.locator('input[type="password"]').count()) {
 await page.waitForSelector('.room-control', { timeout: 60000 })
 await page.waitForTimeout(1200)
 
-await page.evaluate((caption) => {
-  const root = document.querySelector('.desktop-app')
-  root.dataset.platform = 'win32'
-  root.style.setProperty('--native-caption-band', `calc(${caption.height}px + 12px)`)
-}, CAPTION)
+await page.evaluate(() => {
+  // 只换平台属性：--native-caption-band 走真声明，env(titlebar-area-height) 在 macOS 上实测同样报 40。
+  document.querySelector('.desktop-app').dataset.platform = 'win32'
+})
+const band = await page.evaluate(() => getComputedStyle(document.querySelector('.desktop-app')).getPropertyValue('--native-caption-band').trim())
+console.log('resolved --native-caption-band =', band)
 
 const probe = (selectors) => page.evaluate(({ selectors, caption }) => {
   const box = { left: innerWidth - caption.width, top: 0, right: innerWidth, bottom: caption.height }
@@ -53,7 +54,14 @@ await page.waitForTimeout(600)
 
 await page.getByRole('button', { name: /^笔记$/ }).first().click()
 await page.waitForTimeout(2500)
-await page.getByRole('button', { name: /^打开笔记/ }).first().click()
+const noteButton = page.getByRole('button', { name: /^打开笔记/ }).first()
+if (await noteButton.count()) {
+  await noteButton.click()
+} else {
+  console.log('no 打开笔记 button, on-screen buttons:', JSON.stringify(
+    await page.evaluate(() => [...document.querySelectorAll('button')].map(e => (e.textContent || '').trim().slice(0, 16)).filter(Boolean).slice(0, 40))))
+  await page.screenshot({ path: '/tmp/caption-clearance-no-note.png' })
+}
 await page.waitForTimeout(3000)
 await page.keyboard.press('Control+Shift+F')
 await page.waitForTimeout(2000)

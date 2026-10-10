@@ -50,6 +50,16 @@ export function useCompanionFloatingPlacement(
         }
       }
     };
+    const paperContentHeight = () => {
+      const papers = Array.from(floating.querySelectorAll<HTMLElement>('.companion-hud__papers > .companion-hud__paper:not([hidden])'));
+      const gap = Number.parseFloat(getComputedStyle(floating.querySelector('.companion-hud__papers') ?? floating).rowGap) || 0;
+      return papers.reduce((height, paper) => {
+        const value = paper.style.getPropertyValue("max-height"), priority = paper.style.getPropertyPriority("max-height");
+        paper.style.setProperty("max-height", "none");
+        try { return height + paper.offsetHeight; }
+        finally { if (value) paper.style.setProperty("max-height", value, priority); else paper.style.removeProperty("max-height"); }
+      }, Math.max(0, papers.length - 1) * gap);
+    };
     const measure = () => {
       const anchor = presence.querySelector<HTMLElement>(".window-live2d") ?? presence.querySelector<HTMLElement>(".companion-visual-shell");
       if (!anchor) { delete floating.dataset.placementReady; return; }
@@ -89,16 +99,21 @@ export function useCompanionFloatingPlacement(
         controls: hud ? companionHudControlBounds(hud) : [],
         viewport,
         headWidth: preferredWidth,
-        hasPapers: Boolean(floating.querySelector(".companion-hud__papers")?.childElementCount),
-        // Only pending decisions and note status reserve a separate corridor.
-        paperWidth: floating.querySelector('.companion-hud__papers > .companion-hud__paper:not([data-kind="note-status"])') ? 360 : 280,
+        hasPapers: Boolean(floating.querySelector('.companion-hud__papers > .companion-hud__paper:not([hidden])')),
+        paperWidth: floating.querySelector('.companion-hud__paper[data-kind="proposal-choice"]') ? 360
+          : floating.querySelector('.companion-hud__paper[data-kind="proposal-results"]') ? 300 : 280,
       };
       // Establish width before measuring wrapping; a side corridor may narrow it.
       publish("head-w", Math.min(preferredWidth, options.viewport.width - 28));
-      let placement = companionFloatingPlacement({ ...options, headHeight: contentHeight() });
+      publish("papers-w", Math.min(options.paperWidth, options.viewport.width - 28));
+      let placement = companionFloatingPlacement({ ...options, headHeight: contentHeight(), paperHeight: paperContentHeight() });
       if (Math.round(placement.head.width) !== Number.parseFloat(floating.style.getPropertyValue("--companion-head-w"))) {
         publish("head-w", placement.head.width);
-        placement = companionFloatingPlacement({ ...options, headHeight: contentHeight() });
+        placement = companionFloatingPlacement({ ...options, headHeight: contentHeight(), paperHeight: paperContentHeight() });
+      }
+      if (Math.round(placement.papers.width) !== Number.parseFloat(floating.style.getPropertyValue("--companion-papers-w"))) {
+        publish("papers-w", placement.papers.width);
+        placement = companionFloatingPlacement({ ...options, headHeight: contentHeight(), paperHeight: paperContentHeight() });
       }
       for (const [name, value] of Object.entries({
         "head-x": placement.head.left, "head-y": placement.head.top, "head-w": placement.head.width,

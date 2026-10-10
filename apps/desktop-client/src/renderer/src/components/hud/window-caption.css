@@ -1,0 +1,43 @@
+/* Windows 无边框窗口的自绘标题按钮：位置、尺寸与命中的可拖区域对齐原来系统画的那一条带，
+   图标颜色沿用同一套墨色（日 #33251d / 夜 #f6ead7），所以换自绘之后顶部这一排看着没搬家。
+   z-index 高于灵动岛（28）但低于整屏浮层：全屏浮层自己带关闭出口，不该被窗口按钮压在下面。 */
+.window-caption {
+  position: fixed;
+  z-index: 60;
+  top: 0;
+  right: 0;
+  display: grid;
+  grid-auto-flow: column;
+  width: var(--window-caption-width);
+  height: var(--native-caption-band, 40px);
+  -webkit-app-region: drag;
+}
+
+.window-caption__button {
+  display: grid;
+  place-items: center;
+  width: calc(var(--window-caption-width) / 3);
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #33251d;
+  -webkit-app-region: no-drag;
+}
+
+.desktop-app[data-theme="night"] .window-caption__button {
+  color: #f6ead7;
+}
+
+.window-caption__button:hover {
+  background: rgb(51 37 29 / 12%);
+}
+
+.desktop-app[data-theme="night"] .window-caption__button:hover {
+  background: rgb(246 234 215 / 14%);
+}
+
+.window-caption__button--close:hover {
+  background: var(--accent-deep);
+  color: #fff8ee;
+}

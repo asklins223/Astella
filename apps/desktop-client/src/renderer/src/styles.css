@@ -6,6 +6,10 @@
   font-family: "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  /* 窗口本体的两处尺寸：右上角自绘标题按钮的宽度（同时是 env(titlebar-area-*) 缺席时的回退值），
+     以及无边框窗口的卡片半径。都只在这里声明一次。 */
+  --window-caption-width: 138px;
+  --window-sheet-radius: 14px;
   /* ── 衬底 token 指向 V3.1 母本 ────────────────────────────────────────
      这几条与 `--hud-*` 要么逐字节相同（`--ink` #30231a、`--paper-deep` #e8d4b1），
      要么是 1–5 通道偏差的近义重抄。两套名字描述同一层纸、同一条线、同一个影子，
@@ -321,10 +325,24 @@ button:disabled {
 }
 
 .desktop-app[data-platform="win32"], .desktop-app[data-platform="linux"] {
-  --native-caption-width: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)));
+  --native-caption-width: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - var(--window-caption-width))));
   /* 原生标题按钮画在客户区上缘。贴右缘的浮层从这条带下面起，而不是往左让位——
-     起算点只有一个源，灵动岛与笔记全屏折签、到达纸签都跟着它走。 */
-  --native-caption-band: calc(env(titlebar-area-height, 40px) + 12px);
+     起算点只有一个源，灵动岛与笔记全屏折签、到达纸签都跟着它走。
+     不再另加间距：岛高 48，带底 40 → 岛底 88，正好是册页「记录」页签的顶边，
+     再往下 1px 就会压住它。 */
+  --native-caption-band: env(titlebar-area-height, 40px);
+}
+
+/* Windows 走的是逐像素透明的无边框窗口：Win10 的 DWM 不给窗口倒角，圆角只能由页面自己裁。
+   半径落在文档根，因为 html 的 overflow 会传播到视口——portal 到 body 的整屏浮层才跟着一起裁角。
+   最大化与全屏铺满整块屏幕时收直角，否则四个角会露出桌面。 */
+:root[data-platform="win32"] {
+  border-radius: var(--window-sheet-radius);
+}
+
+:root[data-platform="win32"][data-window-frame="maximized"],
+:root[data-platform="win32"][data-window-frame="fullscreen"] {
+  border-radius: 0;
 }
 
 .desktop-app[data-platform="win32"] .window-drag-region, .desktop-app[data-platform="linux"] .window-drag-region {

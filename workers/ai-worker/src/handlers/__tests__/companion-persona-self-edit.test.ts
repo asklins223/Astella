@@ -16,8 +16,9 @@ test("首次自改从默认人格起稿，只改指定字段并留下 assistant 
   const tx = { execute: async (statement: any) => {
     const query = new PgDialect().sqlToQuery(statement);
     statements.push(query);
-    if (statements.length === 2) return [{ revision: 0, pending_revision: null, profile: null }];
-    if (statements.length === 3) {
+    if (query.sql.includes("SELECT revision, profile, pending_revision")) return [{ revision: 0, pending_revision: null, profile: null }];
+    if (query.sql.includes("max(revision)")) return [{ revision: 0 }];
+    if (query.sql.includes("RETURNING revision, profile")) {
       saved = JSON.parse(query.params.find((param) => typeof param === "string" && param.startsWith("{")) as string);
       return [{ revision: 1, profile: saved }];
     }
@@ -31,9 +32,9 @@ test("首次自改从默认人格起稿，只改指定字段并留下 assistant 
   assert.equal(result.profile.speakingStyle, base.speakingStyle);
   assert.equal(result.profile.activeness, value);
   assert.equal(result.profile.fieldOrigin?.activeness, "assistant");
-  assert.equal(statements.length, 4);
-  assert.match(statements[3].sql, /companion_persona_profile_versions/);
-  assert.ok(statements[3].params.includes(JSON.stringify(saved)));
+  const history = statements.filter(query=>query.sql.includes("INSERT INTO companion_persona_profile_versions"));
+  assert.equal(history.length, 1);
+  assert.ok(history[0].params.includes(JSON.stringify(saved)));
 });
 
 test("没有实质改动时不新增版本；并发未保存时不写版本历史", async () => {
@@ -46,12 +47,13 @@ test("没有实质改动时不新增版本；并发未保存时不写版本历�
   const queries: { sql: string; params: unknown[] }[] = [];
   const conflicted = { execute: async (statement: any) => {
     count++; queries.push(new PgDialect().sqlToQuery(statement));
+    if (queries.at(-1)!.sql.includes("max(revision)")) return [{ revision: 10 }];
     return count === 2 ? [{ revision: 3, pending_revision: 10, profile: base }] : [];
   } } as unknown as WorkerTransaction;
   assert.equal((await applyAssistantPersonaEdit(conflicted, userId, "activeness", value, "并发写入")).kind, "conflict");
-  assert.equal(count, 3);
-  assert.ok(queries[2].params.includes(11));
-  assert.match(queries[2].sql, /pending_revision = NULL/);
+  const update = queries.find(query=>query.sql.includes("pending_revision = NULL"));
+  assert.ok(update?.params.includes(11));
+  assert.ok(!queries.some(query=>query.sql.includes("INSERT INTO companion_persona_profile_versions")));
 });
 
 test("模型旧版本提议不能覆盖期间用户的新设置", async () => {

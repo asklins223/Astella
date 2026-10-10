@@ -2,162 +2,205 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        Title="拾星笔记" Width="900" Height="650" MinWidth="760" MinHeight="520"
+        Title="拾星笔记" Width="920" Height="680" MinWidth="760" MinHeight="520"
         WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanMinimize"
-        FontFamily="Microsoft YaHei UI, Microsoft YaHei" FontSize="14" Foreground="#304C43" Background="#FFFCF4">
+        AllowsTransparency="True" Background="Transparent"
+        FontFamily="Microsoft YaHei UI, Microsoft YaHei" FontSize="14" Foreground="#304D43"
+        TextOptions.TextFormattingMode="Display" UseLayoutRounding="True">
+    <!-- Win10 也使用逐像素透明圆角；所有表面都留在根纸片轮廓内。 -->
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="44" ResizeBorderThickness="0" GlassFrameThickness="0" CornerRadius="16" />
+        <shell:WindowChrome CaptionHeight="46" ResizeBorderThickness="0" GlassFrameThickness="0" />
     </shell:WindowChrome.WindowChrome>
     <Window.Resources>
-        <Style TargetType="Button">
-            <Setter Property="Padding" Value="20,12" />
-            <Setter Property="Background" Value="#366453" />
-            <Setter Property="Foreground" Value="#FFFFFF" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
-                <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}" CornerRadius="12" BorderThickness="2" BorderBrush="Transparent">
-                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Border>
-                <ControlTemplate.Triggers>
-                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.88" /></Trigger>
-                    <Trigger Property="IsPressed" Value="True"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.7" /></Trigger>
-                    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#DEAD63" /></Trigger>
-                    <Trigger Property="IsEnabled" Value="False"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.4" /></Trigger>
-                </ControlTemplate.Triggers>
-            </ControlTemplate></Setter.Value></Setter>
-        </Style>
-        <Style x:Key="Secondary" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Background" Value="#EAF1E7" /><Setter Property="Foreground" Value="#366453" />
-        </Style>
-        <Style TargetType="CheckBox">
-            <Setter Property="Margin" Value="0,12,0,0" /><Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="FontSize" Value="14" /><Setter Property="Padding" Value="8,0,0,0" />
-            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
-                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="20" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                    <Border x:Name="CheckBorder" Width="18" Height="18" CornerRadius="5" Background="#FFFCF4" BorderThickness="1.5" BorderBrush="#8AA795" VerticalAlignment="Center">
-                        <Path x:Name="CheckMark" Data="M3,8 L7,12 L14,4" Stroke="#FFFFFF" StrokeThickness="2" Visibility="Collapsed" />
-                    </Border>
-                    <ContentPresenter Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True" />
-                </Grid>
-                <ControlTemplate.Triggers>
-                    <Trigger Property="IsChecked" Value="True"><Setter TargetName="CheckBorder" Property="Background" Value="#366453" /><Setter TargetName="CheckMark" Property="Visibility" Value="Visible" /></Trigger>
-                    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="CheckBorder" Property="BorderBrush" Value="#DEAD63" /></Trigger>
-                    <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5" /></Trigger>
-                </ControlTemplate.Triggers>
-            </ControlTemplate></Setter.Value></Setter>
-        </Style>
-        <Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap" /></Style>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Resources/InstallerTheme.xaml" /></ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
     </Window.Resources>
-    <Grid>
-        <Grid.RowDefinitions><RowDefinition Height="44" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-        <TextBlock Text="ASTELLA / 拾星笔记" FontSize="11" Foreground="#6F8274" Margin="28,14,0,0" />
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,10,4" shell:WindowChrome.IsHitTestVisibleInChrome="True">
-            <Button Content="—" Click="Minimize_Click" Style="{StaticResource Secondary}" Padding="12,4" Margin="0,0,6,0" AutomationProperties.Name="最小化" />
-            <Button x:Name="CloseButton" Content="×" Click="Close_Click" Style="{StaticResource Secondary}" Padding="12,4" AutomationProperties.Name="关闭" />
-        </StackPanel>
-        <Grid Grid.Row="1" Margin="18,8,18,18">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="230" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-            <Border CornerRadius="22" Background="#DFEDE1" Padding="26,30">
-                <Grid>
-                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                    <StackPanel>
-                        <Image Source="Resources/icon.png" Width="58" Height="58" HorizontalAlignment="Left" Margin="-4,0,0,20" />
-                        <TextBlock Text="拾星笔记" FontSize="27" FontWeight="Bold" />
-                        <TextBlock Text="安放想法，慢慢生长。" Foreground="#688276" Margin="0,10,0,0" FontSize="13" />
-                        <TextBlock x:Name="VersionText" Foreground="#688276" FontSize="12" Margin="0,8,0,0" />
+    <Border CornerRadius="24" Background="{StaticResource Paper}" BorderBrush="#DCE4D5" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="46" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="26,0,0,0">
+                <Path Data="M5,0 L6.5,3.5 L10,5 L6.5,6.5 L5,10 L3.5,6.5 L0,5 L3.5,3.5 Z" Fill="#83A083" Width="10" Height="10" Margin="0,0,9,0" />
+                <TextBlock Text="ASTELLA" FontFamily="Segoe UI" FontWeight="SemiBold" FontSize="11" Foreground="#6B8371" />
+                <TextBlock Text="拾星笔记" FontSize="11" Foreground="#8B988B" Margin="12,0,0,0" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,14,0" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                <Button Click="Minimize_Click" Style="{StaticResource CaptionButton}" AutomationProperties.Name="最小化">
+                    <Path Data="M0,5 H10" Stroke="#728178" StrokeThickness="1.5" Width="10" Height="10" />
+                </Button>
+                <Button x:Name="CloseButton" Click="Close_Click" Style="{StaticResource CaptionButton}" AutomationProperties.Name="关闭">
+                    <Path Data="M1,1 L9,9 M9,1 L1,9" Stroke="#728178" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Width="10" Height="10" />
+                </Button>
+            </StackPanel>
+            <Grid Grid.Row="1" Margin="14,0,14,14">
+                <Grid.ColumnDefinitions><ColumnDefinition x:Name="CoverColumn" Width="240" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <Border CornerRadius="20" Background="{StaticResource Mint}" Padding="24,28,24,22">
+                    <Grid>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                        <StackPanel>
+                            <Border Background="#F9FCF2" CornerRadius="10" Padding="10,5" HorizontalAlignment="Left" Margin="0,0,0,18">
+                                <TextBlock x:Name="OperationLabel" Text="安装到电脑" FontSize="11" Foreground="#64816B" />
+                            </Border>
+                            <StackPanel Orientation="Horizontal">
+                                <Image Source="Resources/icon.png" Width="36" Height="36" Margin="-3,0,8,0" />
+                                <TextBlock Text="拾星笔记" FontSize="26" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Text="安放想法，慢慢生长。" Foreground="#758A76" FontSize="12" Margin="0,12,0,0" />
+                            <TextBlock x:Name="VersionText" Foreground="#758A76" FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="11" Margin="0,7,0,0" />
+                        </StackPanel>
+                        <StackPanel x:Name="CoverStory" Grid.Row="1" VerticalAlignment="Center" Margin="0,8,0,8">
+                            <Image x:Name="BookIllustration" Source="{StaticResource StudyIllustration}" Width="210" Height="172" Margin="-9,0,-9,0" />
+                            <TextBlock x:Name="CoverCaption" Text="让每一颗好奇心，&#10;都有生长的地方。" TextAlignment="Center" FontSize="12" Foreground="#728A73" LineHeight="23" Margin="0,8,0,0" />
+                        </StackPanel>
+                        <StackPanel Grid.Row="2">
+                            <Border x:Name="StepOneRow" Style="{StaticResource StepRow}" Tag="active">
+                                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="28" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="StepOneNumber" Text="01" FontFamily="Segoe UI" FontSize="11" Foreground="#759274" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="StepOne" Grid.Column="1" Text="阅读须知" FontSize="12" FontWeight="SemiBold" />
+                                </Grid>
+                            </Border>
+                            <Border x:Name="StepTwoRow" Style="{StaticResource StepRow}">
+                                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="28" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="StepTwoNumber" Text="02" FontFamily="Segoe UI" FontSize="11" Foreground="#759274" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="StepTwo" Grid.Column="1" Text="选择位置" FontSize="12" Foreground="#728178" />
+                                </Grid>
+                            </Border>
+                            <Border x:Name="StepThreeRow" Style="{StaticResource StepRow}" Margin="0">
+                                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="28" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="StepThreeNumber" Text="03" FontFamily="Segoe UI" FontSize="11" Foreground="#759274" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="StepThree" Grid.Column="1" Text="准备出发" FontSize="12" Foreground="#728178" />
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+                <Grid Grid.Column="1" Margin="34,18,22,0">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                        <Ellipse Width="6" Height="6" Fill="#91AC89" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <TextBlock x:Name="PageEyebrow" Text="开始之前" FontSize="11" Foreground="#7E8E7B" />
                     </StackPanel>
-                    <StackPanel Grid.Row="1" VerticalAlignment="Center" Margin="0,12,0,0">
-                        <TextBlock x:Name="StepOne" Text="01   认识书房" FontWeight="SemiBold" Margin="0,0,0,22" />
-                        <TextBlock x:Name="StepTwo" Text="02   安放在这里" Foreground="#7B9588" Margin="0,0,0,22" />
-                        <TextBlock x:Name="StepThree" Text="03   准备出发" Foreground="#7B9588" />
-                    </StackPanel>
-                    <StackPanel Grid.Row="2">
-                        <Canvas x:Name="BookIllustration" Width="160" Height="106" HorizontalAlignment="Left">
-                            <Ellipse Width="154" Height="18" Fill="#C7DCCE" Canvas.Top="88" />
-                            <Border Width="120" Height="69" Background="#FFF9EB" CornerRadius="8" Canvas.Left="13" Canvas.Top="25" BorderBrush="#86AA95" BorderThickness="2" />
-                            <Path Data="M73,29 L73,90 M26,48 L60,48 M26,60 L57,60 M26,72 L52,72 M85,48 L119,48 M85,60 L117,60 M85,72 L109,72" Stroke="#A5BBAA" StrokeThickness="2" />
-                            <Path Data="M120,5 L124,16 L136,17 L127,24 L130,36 L120,29 L110,36 L113,24 L104,17 L116,16 Z" Fill="#E9B666" Stroke="#D1A365" StrokeThickness="1" />
-                        </Canvas>
-                        <TextBlock Text="你的下一颗灵感，&#10;从这里开始。" FontSize="12" Foreground="#6A8377" Margin="0,14,0,0" LineHeight="21" />
-                    </StackPanel>
-                </Grid>
-            </Border>
-            <Grid Grid.Column="1" Margin="34,12,16,0">
-                <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /><RowDefinition Height="76" /></Grid.RowDefinitions>
-                <ScrollViewer x:Name="PageScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <Grid>
-                    <StackPanel x:Name="NoticePanel">
-                        <TextBlock x:Name="NoticeTitle" Text="给学习，安一个家" FontSize="30" FontWeight="Bold" Margin="0,10,0,12" />
-                        <TextBlock Text="先了解书房如何保存资料、使用 AI，以及更新和卸载。" Foreground="#7A8174" Margin="0,0,0,20" />
-                        <Border CornerRadius="14" Background="#F2F1E7" Padding="18">
-                            <ScrollViewer Height="248" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="True" AutomationProperties.Name="用户使用须知全文">
-                                <TextBlock x:Name="UsageText" FontSize="12" LineHeight="22" Foreground="#52665A" />
-                            </ScrollViewer>
-                        </Border>
-                        <CheckBox x:Name="AcceptNotice" Content="我已阅读并同意用户使用须知及非商用许可" Checked="Acceptance_Changed" Unchecked="Acceptance_Changed" />
-                        <Button Content="阅读许可全文 ↗" Background="Transparent" Foreground="#557563" FontSize="12" Padding="0,10" HorizontalAlignment="Left" Click="License_Click" />
-                    </StackPanel>
-                    <StackPanel x:Name="LocationPanel" Visibility="Collapsed">
-                        <TextBlock Text="书房放在哪里？" FontSize="30" FontWeight="Bold" Margin="0,10,0,12" />
-                        <TextBlock Text="选择一个本机文件夹，程序和个人资料各有位置。" Foreground="#7A8174" Margin="0,0,0,30" />
-                        <TextBlock Text="安装位置" FontWeight="SemiBold" Margin="0,0,0,12" />
-                        <Border CornerRadius="12" Background="#F2F1E7" Padding="14">
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <TextBox x:Name="InstallDirectory" VerticalContentAlignment="Center" Background="Transparent" BorderThickness="0" Padding="0,6" Margin="0,0,12,0" AutomationProperties.Name="安装文件夹" TextChanged="Directory_Changed" />
-                                <Button x:Name="BrowseButton" Grid.Column="1" Content="更改…" Style="{StaticResource Secondary}" Padding="14,8" Click="Browse_Click" />
+                    <Grid Grid.Row="1">
+                        <ScrollViewer x:Name="PageScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,6,0">
+                            <Grid>
+                                <StackPanel x:Name="NoticePanel">
+                                    <TextBlock x:Name="NoticeTitle" Text="给学习，安一个家" Style="{StaticResource Heading}" />
+                                    <TextBlock Text="先了解资料如何保存，以及 AI、更新与卸载的约定。" Style="{StaticResource Description}" Margin="0,0,0,20" />
+                                    <Border CornerRadius="16" BorderBrush="{StaticResource Line}" BorderThickness="1" Background="#F5F6EF" Padding="18,14">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,12">
+                                                <TextBlock Text="用户使用须知" FontSize="12" FontWeight="SemiBold" />
+                                                <TextBlock Text="请完整阅读" FontSize="11" Foreground="#899382" HorizontalAlignment="Right" />
+                                            </Grid>
+                                            <ScrollViewer x:Name="UsageScroller" Height="226" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="True" AutomationProperties.Name="用户使用须知全文" Padding="0,0,8,0">
+                                                <TextBlock x:Name="UsageText" FontSize="12" LineHeight="23" Foreground="#617363" />
+                                            </ScrollViewer>
+                                        </StackPanel>
+                                    </Border>
+
+                                </StackPanel>
+                                <StackPanel x:Name="LocationPanel" Visibility="Collapsed">
+                                    <TextBlock x:Name="LocationTitle" Text="书房放在哪里？" Style="{StaticResource Heading}" />
+                                    <TextBlock x:Name="LocationDescription" Text="选一个合适的位置，安放你的学习书房。" Style="{StaticResource Description}" Margin="0,0,0,28" />
+                                    <TextBlock Text="安装文件夹" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <TextBox x:Name="InstallDirectory" Margin="0,0,10,0" FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="12" AutomationProperties.Name="安装文件夹" TextChanged="Directory_Changed" />
+                                        <Button x:Name="BrowseButton" Grid.Column="1" Content="更改…" Style="{StaticResource Secondary}" Padding="16,10" Click="Browse_Click" />
+                                    </Grid>
+                                    <TextBlock x:Name="LocationHint" Style="{StaticResource Description}" FontSize="12" Margin="0,12,0,12" />
+                                    <CheckBox x:Name="CreateDesktopShortcut" Content="在桌面放一个书房入口" IsChecked="True" />
+                                    <Border Background="#EDF3E8" CornerRadius="16" Padding="18" Margin="0,28,0,0">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="30" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <Path Data="M2,7 L10,1 L18,7 V19 H2 Z M7,19 V12 H13 V19" Stroke="#829E7C" StrokeThickness="1.5" StrokeLineJoin="Round" Width="20" Height="20" Margin="0,2,0,0" VerticalAlignment="Top" />
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="资料有自己的位置" FontSize="13" FontWeight="SemiBold" />
+                                                <TextBlock Text="本机草稿、缓存与语音模型单独保存，更新程序时会保留。" Style="{StaticResource Description}" FontSize="12" Margin="0,7,0,0" />
+                                                <TextBlock Text="%APPDATA%\astella-desktop-client" FontFamily="Segoe UI" FontSize="11" Foreground="#83917D" Margin="0,9,0,0" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel x:Name="ProgressPanel" Visibility="Collapsed" VerticalAlignment="Center" Margin="0,12,0,24">
+                                    <TextBlock x:Name="ProgressTitle" Text="正在安放你的书房" Style="{StaticResource Heading}" />
+                                    <TextBlock x:Name="ProgressDescription" Text="把程序放好，再为你准备好书房入口。" Style="{StaticResource Description}" Margin="0,0,0,28" />
+                                    <Border Background="#EEF4E9" CornerRadius="20" Padding="24">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,20">
+                                                <TextBlock Text="当前进度" FontSize="12" Foreground="#748B73" VerticalAlignment="Center" />
+                                                <TextBlock x:Name="ProgressPercent" Text="0%" FontFamily="Segoe UI" FontSize="38" FontWeight="SemiBold" Foreground="#53775B" HorizontalAlignment="Right" />
+                                            </Grid>
+                                            <ProgressBar x:Name="InstallProgressBar" Minimum="0" Maximum="100" AutomationProperties.Name="安装进度" />
+                                            <TextBlock x:Name="ProgressMessage" Text="正在准备文件" FontSize="12" Foreground="#617363" LineHeight="23" Margin="0,18,0,0" AutomationProperties.LiveSetting="Polite" />
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="处理文件期间，请保持窗口打开。" Style="{StaticResource Description}" FontSize="12" Margin="0,20,0,0" />
+                                </StackPanel>
+                                <StackPanel x:Name="UninstallPanel" Visibility="Collapsed">
+                                    <TextBlock Text="暂时收起这间书房" Style="{StaticResource Heading}" />
+                                    <TextBlock Text="移除应用与快捷方式。你账号里的笔记仍然保留。" Style="{StaticResource Description}" Margin="0,0,0,24" />
+                                    <Border Background="#EDF3E8" CornerRadius="16" Padding="20">
+                                        <StackPanel>
+                                            <TextBlock x:Name="DataChoiceTitle" Text="本机资料，留在原处" FontSize="16" FontWeight="SemiBold" />
+                                            <TextBlock x:Name="DataChoiceHint" Text="默认保留草稿、登录状态、缓存与语音模型，&#10;下次安装可以接着使用。" Style="{StaticResource Description}" FontSize="12" Margin="0,10,0,0" />
+                                        </StackPanel>
+                                    </Border>
+                                    <CheckBox x:Name="DeleteLocalData" AutomationProperties.Name="同时清除这台电脑的本机资料" Margin="0,22,0,0" Checked="DataChoice_Changed" Unchecked="DataChoice_Changed">
+                                        <TextBlock Text="同时清除这台电脑的本机资料" TextWrapping="Wrap" />
+                                    </CheckBox>
+                                    <Border x:Name="DeleteDataWarning" Visibility="Collapsed" Background="#FCEDDF" CornerRadius="12" Padding="14,12" Margin="0,12,0,0">
+                                        <TextBlock x:Name="DeleteDataWarningText" Text="未同步草稿将无法恢复，请先保存或导出。只清除默认本机资料目录，账号、云端笔记和外部导出仍会保留。" FontSize="12" LineHeight="22" Foreground="#99654A" AutomationProperties.LiveSetting="Polite" />
+                                    </Border>
+                                    <TextBlock x:Name="UninstallDirectoryText" Style="{StaticResource Description}" FontSize="11" Margin="0,24,0,0" />
+                                </StackPanel>
+                                <StackPanel x:Name="DonePanel" Visibility="Collapsed" VerticalAlignment="Center" Margin="0,12,0,24">
+                                    <Border Width="68" Height="68" CornerRadius="23" Background="#E4EFDC" HorizontalAlignment="Left" Margin="0,0,0,24">
+                                        <Path Data="M0,12 L9,21 L28,0" Stroke="#6C9370" StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Width="28" Height="24" Stretch="Uniform" />
+                                    </Border>
+                                    <TextBlock x:Name="DoneTitle" Text="书房准备好了" Style="{StaticResource Heading}" />
+                                    <TextBlock x:Name="DoneMessage" Text="带上一颗好奇心，开始今天的学习。" Style="{StaticResource Description}" />
+                                    <TextBlock x:Name="DoneDetail" FontSize="12" Foreground="#82907D" LineHeight="22" Margin="0,24,0,0" />
+                                </StackPanel>
+                            </Grid>
+                        </ScrollViewer>
+                        <Border x:Name="LicensePanel" Background="{StaticResource Paper}" Visibility="Collapsed">
+                            <Grid>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                <StackPanel Margin="0,0,0,16">
+                                    <TextBlock Text="非商业使用许可" FontSize="25" FontWeight="SemiBold" />
+                                    <TextBlock Text="PolyForm Noncommercial 1.0.0" FontFamily="Segoe UI" FontSize="12" Foreground="#728178" Margin="0,10,0,0" />
+                                </StackPanel>
+                                <ScrollViewer x:Name="LicenseScroller" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="True" AutomationProperties.Name="非商用许可全文" Padding="0,0,12,0">
+                                    <TextBlock x:Name="LicenseText" FontSize="12" LineHeight="23" Foreground="#617363" />
+                                </ScrollViewer>
+                                <Button Grid.Row="2" Content="返回须知" HorizontalAlignment="Left" Style="{StaticResource Secondary}" Margin="0,18,0,6" Click="CloseLicense_Click" />
                             </Grid>
                         </Border>
-                        <TextBlock x:Name="LocationHint" Foreground="#7A8174" FontSize="12" Margin="0,14,0,20" LineHeight="22" />
-                        <CheckBox x:Name="CreateDesktopShortcut" Content="在桌面放一个书房入口" IsChecked="True" />
-                        <Border BorderThickness="0,1,0,0" BorderBrush="#E2E5D8" Margin="0,26,0,0" Padding="0,22,0,0">
-                            <StackPanel>
-                                <TextBlock Text="本机资料单独保存" FontWeight="SemiBold" FontSize="13" />
-                                <TextBlock Text="草稿、缓存和语音模型保存在 %APPDATA%\astella-desktop-client；账号里的笔记不随程序目录移动。" FontSize="12" LineHeight="22" Foreground="#7A8174" Margin="0,8,0,0" />
+                    </Grid>
+                    <StackPanel x:Name="NoticeConsentPanel" Grid.Row="2">
+                        <CheckBox x:Name="AcceptNotice" AutomationProperties.Name="我已阅读并同意用户使用须知及非商用许可" Checked="Acceptance_Changed" Unchecked="Acceptance_Changed">
+                            <TextBlock Text="我已阅读并同意用户使用须知及非商用许可" TextWrapping="Wrap" LineHeight="22" />
+                        </CheckBox>
+                        <Button Content="阅读许可全文 ↗" Style="{StaticResource Quiet}" Padding="0,5" HorizontalAlignment="Left" Margin="32,2,0,0" Click="License_Click" />
+                    </StackPanel>
+                    <Border x:Name="ErrorPanel" Grid.Row="3" Visibility="Collapsed" Background="#FCEDDF" CornerRadius="12" Padding="14,10" Margin="0,12,0,0">
+                        <ScrollViewer MaxHeight="72" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <TextBlock x:Name="ErrorText" Foreground="#A15B42" FontSize="12" LineHeight="21" AutomationProperties.LiveSetting="Assertive" />
+                        </ScrollViewer>
+                    </Border>
+                    <Border Grid.Row="4" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Margin="0,22,0,0" Padding="0,18,0,8">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock x:Name="FooterHint" Text="仅为当前 Windows 用户安装" FontSize="11" Foreground="#8A9583" VerticalAlignment="Center" Margin="0,0,16,0" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button x:Name="BackButton" Content="上一步" Style="{StaticResource Secondary}" Padding="16,11" Margin="0,0,10,0" Click="Back_Click" Visibility="Collapsed" />
+                                <Button x:Name="PrimaryButton" Content="继续" MinWidth="130" IsDefault="True" IsEnabled="False" Click="Primary_Click" />
                             </StackPanel>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel x:Name="ProgressPanel" Visibility="Collapsed" VerticalAlignment="Center" Margin="0,-30,0,0">
-                        <TextBlock x:Name="ProgressTitle" Text="正在安放你的书房" FontSize="30" FontWeight="Bold" Margin="0,0,0,16" />
-                        <TextBlock x:Name="ProgressMessage" Text="正在准备文件" Foreground="#7A8174" Margin="0,0,0,30" />
-                        <ProgressBar x:Name="InstallProgressBar" Height="12" Minimum="0" Maximum="100" Foreground="#72A18A" Background="#E6EBDF" BorderThickness="0" />
-                        <TextBlock x:Name="ProgressPercent" Text="0%" Margin="0,12,0,0" Foreground="#688276" HorizontalAlignment="Right" />
-                        <TextBlock Text="正在处理文件时，请保持这个窗口打开。" FontSize="12" Foreground="#91978B" Margin="0,30,0,0" />
-                    </StackPanel>
-                    <StackPanel x:Name="UninstallPanel" Visibility="Collapsed">
-                        <TextBlock Text="暂时收起这间书房" FontSize="30" FontWeight="Bold" Margin="0,10,0,12" />
-                        <TextBlock Text="我们会移除应用与快捷方式。你账号里的笔记仍然保留。" Foreground="#7A8174" Margin="0,0,0,24" LineHeight="24" />
-                        <Border CornerRadius="14" Background="#F2F1E7" Padding="20">
-                            <StackPanel>
-                                <TextBlock Text="默认保留本机资料" FontWeight="SemiBold" />
-                                <TextBlock Text="草稿、登录状态、缓存与已下载的语音模型，重装后仍可使用。" Foreground="#7A8174" FontSize="13" Margin="0,12,0,0" LineHeight="23" />
-                                <CheckBox x:Name="DeleteLocalData" Content="同时清除这台电脑的本机资料" />
-                                <TextBlock Text="勾选后，未同步草稿将无法恢复。请先保存或导出。账号与云端笔记不会被删除。" Foreground="#A57850" FontSize="12" Margin="26,10,0,0" LineHeight="22" />
-                            </StackPanel>
-                        </Border>
-                        <TextBlock x:Name="UninstallDirectoryText" Foreground="#7A8174" FontSize="12" Margin="0,22,0,0" LineHeight="22" />
-                    </StackPanel>
-                    <StackPanel x:Name="DonePanel" Visibility="Collapsed" VerticalAlignment="Center" Margin="0,-30,0,0">
-                        <TextBlock Text="✦" FontSize="56" Foreground="#CFA368" Margin="0,0,0,14" />
-                        <TextBlock x:Name="DoneTitle" Text="书房准备好了" FontSize="30" FontWeight="Bold" />
-                        <TextBlock x:Name="DoneMessage" Text="带上一颗好奇心，开始今天的学习。" Foreground="#7A8174" Margin="0,16,0,0" LineHeight="25" />
-                    </StackPanel>
-                    <Border x:Name="LicensePanel" Background="#FFFCF4" Visibility="Collapsed" Height="{Binding ElementName=PageScroller, Path=ViewportHeight}">
-                        <Grid><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                            <TextBlock Text="PolyForm Noncommercial 1.0.0" FontSize="20" FontWeight="Bold" Margin="0,10,0,16" />
-                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="LicenseText" FontSize="12" LineHeight="21" /></ScrollViewer>
-                            <Button Grid.Row="2" Content="返回须知" HorizontalAlignment="Left" Style="{StaticResource Secondary}" Margin="0,16,0,0" Click="CloseLicense_Click" />
                         </Grid>
                     </Border>
                 </Grid>
-                </ScrollViewer>
-                <TextBlock x:Name="ErrorText" Grid.Row="1" Visibility="Collapsed" Foreground="#A44E3B" FontSize="12" Margin="0,14,0,0" LineHeight="20" AutomationProperties.LiveSetting="Assertive" />
-                <Grid Grid.Row="2" VerticalAlignment="Bottom" Margin="0,18,0,0">
-                    <Button x:Name="BackButton" Content="上一步" HorizontalAlignment="Left" Style="{StaticResource Secondary}" Click="Back_Click" Visibility="Collapsed" />
-                    <Button x:Name="PrimaryButton" Content="继续" HorizontalAlignment="Right" MinWidth="138" IsDefault="True" IsEnabled="False" Click="Primary_Click" />
-                </Grid>
             </Grid>
         </Grid>
-    </Grid>
+    </Border>
 </Window>

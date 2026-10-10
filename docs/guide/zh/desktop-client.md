@@ -49,8 +49,10 @@
 | 窗口标题 | 拾星笔记 | `src/main/index.ts` |
 | 初始内容尺寸 | 1440×810 | `src/shared/window-geometry.ts` |
 | 最小尺寸 | 1280×720 | 同上 |
-| 背景色 | `#211914`、`autoHideMenuBar: true` | `src/main/index.ts` |
-| 窗口装饰 | macOS `titleBarStyle: hiddenInset`；其余平台 `titleBarOverlay`，随主题重算 | `src/main/window-chrome.ts` |
+| 背景色 | 不透明窗口 `#211914`；Windows 无边框窗口 `#00000000`（否则首帧前闪桌面，反过来会堵死圆角） | `src/main/window-chrome.ts` |
+| 窗口装饰 | macOS `titleBarStyle: hiddenInset`；Windows `frame: false` + `transparent: true`，标题按钮由渲染层自绘；Linux 仍用 `titleBarOverlay`，随主题重算 | `src/main/window-chrome.ts`、`src/renderer/src/components/hud/window-caption.tsx` |
+| 窗口形状 | 悬浮时文档根裁 14px 圆角；最大化与全屏收直角 | `src/shared/window-frame.ts`、`src/renderer/src/styles.css` |
+| 菜单栏 | `autoHideMenuBar: true` | `src/main/index.ts` |
 | 单实例 | `app.requestSingleInstanceLock()` | `src/main/index.ts` |
 | 缩放 | ⌘ / Ctrl 与 `+` `-` `=` `0`，走离散档位表 | `src/main/window-zoom.ts` |
 

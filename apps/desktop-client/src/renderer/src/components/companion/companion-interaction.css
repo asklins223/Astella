@@ -286,6 +286,21 @@
 .companion-hud__paper > footer { margin: 10px 0 0; padding: 0; border: 0; color: var(--hud-soft); font-size: 11px; line-height: 1.6; }
 .companion-hud__paper-body { min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: #b69b77 transparent; }
 .companion-hud__paper[data-kind="note-status"] { background: var(--hud-paper-light); }
+.companion-hud__paper[hidden] { display: none; }
+.companion-hud__papers:not(:has(.companion-hud__paper:not([hidden]))) { display: none; }
+.companion-hud__paper[data-kind="proposal-results"] { background: var(--hud-paper-light); }
+.companion-proposal-pager { display: flex; gap: 6px; align-items: center; margin: 6px 0 12px; color: var(--hud-soft); }
+.companion-proposal-pager > span { flex: 1; }
+.companion-proposal-pager > button { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--hud-line); border-radius: 12px; background: var(--hud-paper-light); color: var(--hud-ink); }
+.companion-proposal-pager > button:disabled { opacity: .4; }
+.companion-proposal-receipt { padding: 6px 2px 0; font-size: 13px; line-height: 1.8; }
+.companion-proposal-receipt > strong { display: block; font-weight: 700; }
+.companion-proposal-receipt > p { margin: 5px 0 0; color: var(--hud-soft); }
+.companion-proposal-receipt .companion-proposal-receipt__error { color: #813f2c; }
+.companion-proposal-record-link { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; color: var(--hud-soft); }
+.companion-proposal-record-link > button { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 4px 9px; border: 1px solid var(--hud-line); border-radius: 12px; background: var(--hud-mint); color: #44674c; font: inherit; }
+.companion-hud__paper[data-kind="proposal-results"] .companion-proposal-record-link { margin-top: 8px; }
+.companion-hud__paper[data-kind="proposal-results"] .companion-proposal-record-link > button { padding: 0 2px; min-height: 28px; border: 0; background: transparent; }
 .companion-hud__paper .companion-record__quote,
 .companion-hud__paper .companion-record__diagram,
 .companion-hud__paper .companion-record__card { margin: 6px 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
@@ -413,6 +428,9 @@
 .companion-hud--floating[data-motion="lite"] .companion-hud__paper,
 .companion-hud--floating[data-motion="lite"] .companion-hud__rail { animation: companion-interaction-lite 280ms var(--hud-ease-out) both; }
 .companion-hud__edge-panel[data-motion="lite"] { animation: companion-interaction-lite 280ms var(--hud-ease-out) both; }
+.companion-hud--floating[data-motion="lite"] .companion-hud__paper[data-stage="leaving"] { animation: companion-paper-fade-out 150ms ease-out both; }
+@keyframes companion-paper-fade-out { to { opacity: 0; } }
+.companion-hud--floating[data-motion="off"] .companion-hud__paper[data-stage="leaving"] { display: none; }
 @keyframes companion-interaction-lite { from { opacity: 0; transform: translateY(18px) scale(.94); } to { opacity: 1; transform: none; } }
 .companion-hud--floating[data-motion="off"] *,
 .companion-history[data-motion="off"],
@@ -428,6 +446,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .companion-hud--floating *, .companion-history, .companion-history *, .companion-hud__edge-panel, .companion-hud__edge-panel *, .companion-hud__controls > button::before { animation: none !important; transition: none !important; }
+  .companion-hud__paper[data-stage="leaving"] { display: none; }
 }
 
 /* ── 输入框传图（2026-10-06）：隐藏的文件选择、待发送附件条与上传状态 ──

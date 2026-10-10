@@ -804,7 +804,8 @@ describe("重构后的伴星中心", () => {
     const api = installApi(); api.companion.persona.get.mockResolvedValue(ok({ ...persona(), profile: personaProfile(), profileRevision: 1 }));
     api.companion.persona.patch.mockRejectedValue(new Error("rename failed"));
     renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "人格" }));
-    fireEvent.change(await screen.findByLabelText("她叫什么"), { target: { value: "新名字" } }); fireEvent.click(screen.getByRole("button", { name: "改名" }));
+    fireEvent.click(await screen.findByRole("button", { name: "改名" }));
+    fireEvent.change(screen.getByLabelText("她叫什么"), { target: { value: "新名字" } }); fireEvent.click(screen.getByRole("button", { name: "保存名字" }));
     await waitFor(() => expect(api.companion.persona.patch).toHaveBeenCalledWith(expect.objectContaining({ request: expect.objectContaining({ name: "新名字", revision: 1 }) })));
     expect((screen.getByLabelText("她叫什么") as HTMLInputElement).value).toBe("新名字");
     expect(screen.queryByRole("button", { name: "清除" })).toBeNull();

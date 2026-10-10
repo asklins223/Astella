@@ -315,17 +315,29 @@
 .hud-surface .cc-journey p { margin: 8px 0 14px; font-size: 12px; }
 .hud-surface .cc-journey .cc-actions { margin-top: 16px; }
 
-/* Persona starts with a portrait card and a small wardrobe of expressions. */
-.hud-surface .cc-persona-profile { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 28px; align-items: start; }
-.hud-surface .cc-persona-identity { padding: 25px; border-radius: 22px; background: #e4f1d3; }
-.hud-surface .cc-persona-identity h3 { margin: 9px 0 12px; font: 600 23px/1.5 var(--cc-serif); overflow-wrap: anywhere; }
-.hud-surface .cc-persona-identity p { margin: 15px 0; font-size: 13px; line-height: 1.9; }
-.hud-surface .cc-persona-identity blockquote { margin-top: 18px; color: #6f8062; font: 13px/1.8 var(--cc-serif); }
-.hud-surface .cc-persona-name { padding-top: 10px; }
-.hud-surface .cc-persona-name h4 { font-size: 13px; }
-.hud-surface .cc-persona-name > p { margin: 6px 0 15px; color: var(--cc-muted); font-size: 12px; }
-.hud-surface .cc-name-form { display: grid; gap: 12px; }
-.hud-surface .cc-name-form input { width: 100%; min-width: 0; padding: 9px 12px; border: 1px solid var(--cc-line); border-radius: 17px; background: #fffcee; }
+/* A short identity cover, then two readable pieces of her current expression. */
+.hud-surface .cc-persona-profile { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 28px; align-items: start; padding-block: 26px 8px; }
+.hud-surface .cc-persona-identity { padding: 20px 24px; border: 2px solid #f7fbe9; border-radius: 22px 28px 24px 26px; background: #e4f1d3; box-shadow: 0 3px 0 #d4e4bd; }
+.hud-surface .cc-persona-identity h3 { margin: 8px 0 12px; font: 750 23px/1.5 var(--cc-serif); overflow-wrap: anywhere; }
+.hud-surface .cc-persona-name { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.hud-surface .cc-persona-name h3 { flex: 1; min-width: 0; }
+.hud-surface .cc-persona-name > button { flex: none; }
+.hud-surface .cc-name-form { display: grid; gap: 10px; margin-block: 12px; }
+.hud-surface .cc-name-form label { display: grid; gap: 6px; color: var(--cc-muted); font-size: 12px; }
+.hud-surface .cc-name-form input { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--cc-line); border-radius: 17px; background: #fffcee; color: var(--cc-ink); font: inherit; }
+.hud-surface :is(.cc-self-description,.cc-persona-speaking) { display: grid; gap: 15px; min-width: 0; }
+.hud-surface :is(.cc-self-description,.cc-persona-speaking) > header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hud-surface :is(.cc-self-description,.cc-persona-speaking) h4 { font-size: 14px; font-weight: 750; }
+.hud-surface .cc-self-description > header > button { margin-left: auto; }
+.hud-surface .cc-persona-prose { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.95; }
+.hud-surface .cc-self-description .cc-form { padding: 15px; background: #eff4e4; }
+.hud-surface .cc-self-description .cc-form textarea { min-height: 180px; background: #fffdf3; font-family: var(--cc-serif); font-size: 14px; line-height: 1.85; }
+.hud-surface .cc-persona-speaking .cc-details { margin: 0; padding-top: 10px; }
+.hud-surface .cc-persona-speaking blockquote { margin-top: 10px; color: var(--cc-ink); font-size: 13px; line-height: 1.8; }
+.hud-surface .cc-persona-wardrobe { margin-top: 20px; border-block: 1px solid var(--cc-line); }
+.hud-surface .cc-persona-wardrobe > summary { padding: 14px 0; cursor: pointer; font-size: 13px; font-weight: 650; }
+.hud-surface .cc-persona-wardrobe > summary > span { margin-left: 12px; color: var(--cc-muted); font-size: 11px; font-weight: 500; }
+.hud-surface .cc-persona-wardrobe > .cc-section { margin-top: 0; padding-top: 8px; border: 0; padding-bottom: 20px; }
 .hud-surface .cc-persona-presets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .hud-surface .cc-persona-presets > button { display: block; padding: 20px; border: 2px solid #efead3; border-radius: 23px 29px 25px 28px; background: #fffbed; box-shadow: 0 3px 0 #e9e6ce; text-align: left; }
 .hud-surface .cc-persona-presets > button[aria-pressed="true"] { border-color: #9dd2a8; background: #e0efd2; }
@@ -344,26 +356,37 @@
 .hud-surface .cc-switch[data-on="true"] { background: #7fc59a; }
 .hud-surface .cc-switch[data-on="true"] i { transform: translateX(16px); }
 /* 「谁写的」小标：她能自己改了，所以屏上要看得见。 */
-.hud-surface .cc-origin { display: inline-block; margin-left: 7px; padding: 2px 7px; border-radius: 9px; font-size: 9px; font-weight: 500; letter-spacing: .02em; vertical-align: 2px; }
+.hud-surface .cc-origin { display: inline-block; margin-left: 7px; padding: 2px 7px; border-radius: 9px; font-size: 11px; font-weight: 500; letter-spacing: .02em; vertical-align: 2px; }
+.hud-surface :is(.cc-self-description,.cc-persona-speaking) > header .cc-origin { margin-left: 0; }
 .hud-surface .cc-origin[data-origin="user"] { background: #e3ecf5; color: #4d6a86; }
 .hud-surface .cc-origin[data-origin="assistant"] { background: #f0e6f6; color: #75588a; }
 .hud-surface .cc-origin-line { display: flex; align-items: center; }
 .hud-surface .cc-origin-line .cc-origin { margin-left: 0; }
 
 /* 换人格之前的那一问：就地摊在卡片下面，不弹窗——这一页是纸面，不是网页。 */
-.hud-surface .cc-switch-sheet { margin-top: 16px; padding: 20px 22px; border: 2px solid #9dd2a8; border-radius: 22px; background: #eaf4e0; }
+.hud-surface .cc-switch-sheet { margin-block: 0 18px; padding: 20px 22px; border: 2px solid #9dd2a8; border-radius: 22px; background: #eaf4e0; }
 .hud-surface .cc-switch-sheet h4 { font-size: 14px; }
 .hud-surface .cc-switch-sheet__lead { margin: 9px 0 4px; font-size: 12px; line-height: 1.8; }
 .hud-surface .cc-switch-list--pick { margin: 6px 0 0; padding: 0; list-style: none; }
 .hud-surface .cc-switch-list--pick > li { border-bottom: 1px solid #cfe0c1; }
 .hud-surface .cc-switch-list--pick > li:last-child { border-bottom: 0; }
 .hud-surface .cc-switch-list--pick label { display: flex; align-items: flex-start; gap: 11px; padding: 11px 0; cursor: pointer; }
-.hud-surface .cc-switch-list--pick input { margin: 3px 0 0; flex: none; accent-color: #5f9a6d; }
-.hud-surface .cc-switch-list--pick input:checked + span strong { text-decoration: line-through; opacity: .65; }
+.hud-surface .cc-switch-list--pick input { appearance: none; width: 20px; height: 20px; margin: 3px 0 0; flex: none; border: 2px solid #9dbb8c; border-radius: 7px; background: #fffdef; }
+.hud-surface .cc-switch-list--pick input:checked { background: #348c78; border-color: #348c78; box-shadow: inset 0 0 0 3px #fffdef; }
+.hud-surface .cc-switch-list--pick input:checked + span strong { color: #237b65; }
 .hud-surface .cc-switch-sheet__actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
-.hud-surface .cc-persona-pending { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 19px; border-radius: 22px; border: 2px solid #f2dfa9; background: #fff0c9; }
+.hud-surface .cc-persona-pending { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding: 19px; border-radius: 22px; border: 2px solid #f2dfa9; background: #fff0c9; }
+.hud-surface .cc-persona-pending > div { min-width: 0; flex: 1; }
 .hud-surface .cc-persona-pending small { display: block; margin: 6px 0; color: var(--cc-muted); font-size: 10px; }
 .hud-surface .cc-persona-pending p { font-size: 12px; }
+.hud-surface .cc-persona-pending-empty { margin-top: 24px; }
+.hud-surface .cc-persona-changes { display: grid; gap: 16px; margin-block: 18px; }
+.hud-surface .cc-persona-changes h4 { font-size: 12px; color: #7b704e; }
+.hud-surface .cc-persona-changes p { margin-top: 5px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.85; }
+.hud-surface .cc-persona-changes details { margin-top: 7px; color: var(--cc-muted); font-size: 11px; }
+.hud-surface .cc-persona-changes summary { cursor: pointer; }
+.hud-surface .cc-pending-reason { margin-block: 12px; color: #78684e; font-size: 13px; }
+.hud-surface .cc-pending-condition { padding-top: 10px; border-top: 1px dashed #dccc9b; color: #78684e; line-height: 1.8; }
 .hud-surface .cc-version { display: flex; align-items: center; gap: 15px; margin-top: 8px; padding: 13px 0; border-bottom: 1px solid var(--cc-line); }
 .hud-surface .cc-version > div { flex: 1; }
 .hud-surface .cc-version strong { color: var(--cc-ink); font-size: 12px; }
@@ -407,6 +430,7 @@
   .hud-surface .cc-house-settings { flex-direction: column; gap: 3px; padding: 8px 2px; font-size: 10px; }
 }
 @container companion-reading (max-width: 650px) {
+  .hud-surface :is(.cc-methods,.cc-long-goals):has(.has-selection) > :is(.cc-rule-intro,.cc-search,.cc-page-tools) { display: none; }
   .hud-surface .cc-house-header { padding: 17px 20px 12px; gap: 11px; min-height: 82px; }
   .hud-surface .cc-house-badge { width: 43px; height: 43px; border-radius: 18px 21px 17px 20px; }
   .hud-surface .cc-house-heading h2 { font-size: 23px; }
@@ -488,7 +512,8 @@
 .hud-surface .cc-book .button:hover { transform: none; }
 
 /* Methods are a quiet index and a readable leaf within the memory book. */
-.hud-surface .cc-memory-views { flex: none; }
+.hud-surface .cc-memory-views { flex: none; flex-wrap: nowrap; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.hud-surface .cc-memory-views > button { flex: none; white-space: nowrap; }
 .hud-surface :is(.cc-methods,.cc-long-goals) { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
 .hud-surface .cc-methods > .cc-search { flex: none; }
 .hud-surface :is(.cc-methods-workspace,.cc-long-goals-workspace) { display: grid; grid-template-columns: minmax(0,1fr); min-height: 0; flex: 1; gap: 24px; }
@@ -497,8 +522,11 @@
 .hud-surface :is(.cc-methods-index,.cc-long-goals-index) > button { display: grid; gap: 7px; text-align: left; width: 100%; padding: 15px 12px; border: 0; border-bottom: 1px dashed var(--cc-line); border-radius: 17px; background: transparent; color: var(--cc-ink); }
 .hud-surface :is(.cc-methods-index,.cc-long-goals-index) > button[aria-pressed="true"] { background: var(--cc-mint,#def0d1); }
 .hud-surface :is(.cc-methods-index,.cc-long-goals-index) small, .hud-surface :is(.cc-methods-index,.cc-long-goals-index) span { color: var(--cc-muted); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.hud-surface :is(.cc-methods-index,.cc-long-goals-index) > button > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .hud-surface :is(.cc-methods-index,.cc-long-goals-index) strong { font-size: 14px; font-weight: 650; line-height: 1.65; overflow-wrap: anywhere; }
 .hud-surface :is(.cc-method-detail,.cc-long-goal-detail) { min-width: 0; overflow-y: auto; scrollbar-width: thin; padding: 14px 8px 26px; }
+.hud-surface .cc-book :is(.cc-method-detail,.cc-long-goal-detail):focus { outline: none; }
+.hud-surface .cc-reading-back { display: none; }
 .hud-surface :is(.cc-method-detail,.cc-long-goal-detail) > header { display: flex; gap: 12px; justify-content: space-between; align-items: center; }
 .hud-surface :is(.cc-method-detail,.cc-long-goal-detail) h3 { font-size: 21px; line-height: 1.55; margin: 20px 0 10px; overflow-wrap: anywhere; }
 .hud-surface .cc-method-condition { color: var(--cc-muted); font-size: 12px; line-height: 1.8; }
@@ -511,14 +539,17 @@
 .hud-surface .cc-method-use { padding: 12px 0; border-top: 1px dashed var(--cc-line); }
 .hud-surface :is(.cc-method-detail,.cc-long-goal-detail) input { width: 100%; padding: 10px 12px; border: 1px solid var(--cc-line); border-radius: 14px; background: #fffcee; font: inherit; }
 .hud-surface :is(.cc-method-detail,.cc-long-goal-detail) button[aria-pressed="true"] { color: #42613f; text-decoration: underline; }
-@media (max-width: 1000px) {
+@container companion-reading (max-width: 650px) {
   .hud-surface :is(.cc-methods-workspace,.cc-long-goals-workspace).has-selection { grid-template-columns: minmax(0,1fr); }
-  .hud-surface :is(.cc-methods-workspace,.cc-long-goals-workspace) { overflow-y: auto; }
+  .hud-surface :is(.cc-methods-workspace,.cc-long-goals-workspace).has-selection > :is(.cc-methods-index,.cc-long-goals-index) { display: none; }
+  .hud-surface .cc-reading-back { display: inline-flex; margin-bottom: 12px; }
+  .hud-surface :is(.cc-methods,.cc-long-goals) { flex: none; }
   .hud-surface :is(.cc-methods-index,.cc-long-goals-index), .hud-surface :is(.cc-method-detail,.cc-long-goal-detail) { overflow: visible; }
 }
 
 .hud-surface .cc-long-goals .cc-page-tools { align-items: center; gap: 12px; }
 .hud-surface .cc-long-goals .cc-page-tools .cc-search { flex: 1; }
+.hud-surface .cc-long-goals[data-creating] .cc-long-goals-workspace { display: none; }
 .hud-surface .cc-long-goal-create { flex: none; padding: 15px 0; border-bottom: 1px dashed var(--cc-line); }
 .hud-surface :is(.cc-long-goal-create,.cc-long-goal-detail .cc-form) > button { justify-self: start; }
 .hud-surface .cc-long-goal-statement { font-size: 21px; line-height: 1.65; margin: 20px 0 14px; overflow-wrap: anywhere; }
@@ -527,16 +558,3 @@
 .hud-surface .cc-long-goal-task strong { font-size: 13px; line-height: 1.7; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .hud-surface .cc-long-goal-task small, .hud-surface .cc-long-goal-task span { color: var(--cc-muted); font-size: 11px; line-height: 1.7; }
 .hud-surface .cc-long-goal-task:hover span { color: var(--cc-ink); }
-
-/* 她怎么说自己：与「说话风格」分开的一格。 textarea 而不是 input —— 这是一段话，
-   不是一行标签；不给它比旁边更大的重心，让用户先读到的是她此刻的说法。 */
-.cc-self-description { display: grid; gap: 8px; margin-top: 12px; }
-.cc-self-description__field { display: grid; gap: 6px; }
-.cc-self-description textarea {
-  font: inherit;
-  resize: vertical;
-  min-height: 64px;
-  padding: 8px 10px;
-  border-radius: 10px;
-}
-.cc-pending-reason { color: var(--ink-soft); font-size: 13px; margin: 4px 0 0; }

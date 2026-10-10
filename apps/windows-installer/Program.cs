@@ -12,12 +12,20 @@ internal static class Program
     internal static string UserData => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "astella-desktop-client");
     internal static InstallerPackage? Package;
     internal static string? LogPath;
+    private static int failureReported;
 
     [STAThread]
     public static int Main(string[] args)
     {
+        // 这个 exe 是 GUI 子系统：.NET 启动器在进入 Main 之前失败时（临时目录解包不了、被安全软件拦下、
+        // 盘不够）只写标准错误，双击的用户看不到任何东西。先落一行心跳，才能把「没进托管代码」
+        // 和「进了但没出界面」这两类完全无声的故障分开。
+        TraceLaunch(args);
         var quiet = args.Contains("--quiet") || args.Contains("/S");
         InstallerOptions? options = null;
+        // 界面线程与工作线程上的异常不会回到这里的 try；不接住它们，故障就只剩事件日志里一行。
+        AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) => ReportSetupFailure(quiet, options,
+            eventArgs.ExceptionObject as Exception ?? new IOException("安装程序遇到没有原因的异常。"));
         try
         {
             options = InstallerOptions.Parse(args);
@@ -55,15 +63,48 @@ internal static class Program
                 return 0;
             }
             var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
+            app.DispatcherUnhandledException += (_, eventArgs) =>
+            {
+                ReportSetupFailure(quiet, options, eventArgs.Exception);
+                eventArgs.Handled = true;
+                app.Shutdown(1);
+            };
             var window = new MainWindow(engine, options, registered);
             return app.Run(window);
         }
         catch (Exception error)
         {
-            RecordFailure(options, error);
-            if (!quiet) MessageBox.Show(error.Message + "\n\n" + (LogPath is null ? "" : "诊断记录：" + LogPath), "拾星笔记", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ReportSetupFailure(quiet, options, error);
             return 1;
         }
+    }
+
+    // 心跳缺失就是「没进托管 Main」，此时安装器自己的 try/catch 根本无从执行。
+    private static void TraceLaunch(string[] args)
+    {
+        try
+        {
+            var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Astella", "setup-logs");
+            Directory.CreateDirectory(directory);
+            var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "未知";
+            // 反复双击正是故障现场，追加句柄必须允许别的进程同时在写，否则越出问题越读不到。
+            using var handle = new FileStream(Path.Combine(directory, "startup.log"), FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+            using var writer = new StreamWriter(handle);
+            writer.WriteLine($"{DateTime.UtcNow:u} v{version} pid={Environment.ProcessId} args=\"{string.Join(" ", args)}\" 程序={Environment.ProcessPath}");
+        }
+        catch (IOException) { } catch (UnauthorizedAccessException) { }
+    }
+
+    internal static void ReportSetupFailure(bool quiet, InstallerOptions? options, Exception error)
+    {
+        if (Interlocked.Exchange(ref failureReported, 1) != 0) return;
+        RecordFailure(options, error);
+        if (quiet) return;
+        try
+        {
+            MessageBox.Show(error.Message + "\n\n" + (LogPath is null ? "" : "诊断记录：" + LogPath), "拾星笔记", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        catch (Exception) { } // 报告失败不能盖掉真正的原因，诊断记录已经落盘。
     }
 
     internal static void Launch(string directory)

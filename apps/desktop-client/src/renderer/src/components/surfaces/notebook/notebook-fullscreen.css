@@ -25,7 +25,7 @@
 }
 .desktop-app.hud-surface[data-notebook-fullscreen] :is(.hud-rail, .room-control, .return-home, .window-drag-region) { display: none; }
 .desktop-app.hud-surface[data-notebook-fullscreen] .notebook-workspace__state { border: 0; border-radius: 0; box-shadow: none; padding-top: 100px; }
-.hud-surface .notebook-desk[data-fullscreen] { padding: 0; gap: 0; --notebook-focus-left-top: max(var(--notebook-focus-page-top), calc(env(titlebar-area-height, 40px) + 70px)); --notebook-focus-tabs-top: max(var(--notebook-focus-tool-top, 20px), calc(env(titlebar-area-height, 40px) + 12px)); }
+.hud-surface .notebook-desk[data-fullscreen] { padding: 0; gap: 0; --notebook-focus-left-top: max(var(--notebook-focus-page-top), calc(var(--native-caption-band, 52px) + 58px)); --notebook-focus-tabs-top: max(var(--notebook-focus-tool-top, 20px), var(--native-caption-band, 52px)); }
 .hud-surface .notebook-desk[data-fullscreen] .notebook-volume {
   margin: 0; padding: 0; border: 0; border-radius: 0; background: var(--hud-paper-light); box-shadow: none;
 }

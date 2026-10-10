@@ -1,5 +1,6 @@
 import { memo, useEffect } from "react";
 import { HudRoomControl } from "./components/hud/HudRoomControl";
+import { WindowCaption } from "./components/hud/window-caption";
 import { RoomStage } from "./components/RoomStage";
 import { TaskSurface } from "./components/TaskSurface";
 import { SourceIntakeHost } from "./components/SourceIntake";
@@ -204,6 +205,9 @@ export function App() {
        * （由 `CompanionPresence` 自己挂的那个）。以后要看窗口状态去那儿读。
        */
     >
+      {/* 无边框窗口没有系统标题按钮，最小化/最大化/关闭由这里画；放在外壳兜底之外，
+          兜底页面上还挂着时窗口照样能关。 */}
+      {platform === "win32" ? <WindowCaption /> : null}
       {/*
         外壳级兜底（2026-09-20）：门禁、场景或伴星自身崩了时的最后一道。没有它，
         渲染期抛错会让 React 卸载整棵树，用户看到的只是一片黑；有了它，最坏情况下

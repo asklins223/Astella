@@ -26,7 +26,7 @@ export function interactionSettings(): CompanionHudSettings {
   };
 }
 
-export function interactionProposal(status: "pending" | "succeeded" = "pending", expiresAt: string | null = null): CompanionProposalUiState {
+export function interactionProposal(status: Extract<CompanionProposalUiState, { phase: "ready" }>["proposal"]["status"] = "pending", expiresAt: string | null = null): CompanionProposalUiState {
   return { phase: "ready", proposal: {
     status, expiresAt, title: "收下这张学习卡", targetSummary: "当前笔记", impactSummary: "新增一张学习卡",
   } } as CompanionProposalUiState;

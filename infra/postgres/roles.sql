@@ -1343,6 +1343,12 @@ DO $$ DECLARE t text; BEGIN
     'astella_note_creation_scope_current(uuid,uuid)',
     'astella_cancel_agent_operations(uuid,integer)','astella_agent_job_current(uuid,uuid,uuid,boolean)',
     'astella_agent_run_authorized(uuid)',
+    'astella_companion_reflection_authority(uuid,uuid,uuid)',
+    'astella_enqueue_companion_reflection()',
+    'astella_companion_reflection_thresholds()',
+    'astella_close_abandoned_reflection()',
+    'astella_companion_persona_message_current(uuid,uuid,text,text)',
+    'astella_clear_reflection_message_input()',
     'astella_agent_card_job_current(uuid,uuid,boolean)',
     'astella_agent_card_execution_binding(uuid,uuid)',
     'astella_propagate_playbook_evidence_change()',
@@ -1370,6 +1376,16 @@ DO $$ DECLARE t text; BEGIN
   END IF;
   IF to_regprocedure('public.astella_agent_run_authorized(uuid)') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.astella_agent_run_authorized(uuid) TO astella_worker;
+  END IF;
+  IF to_regprocedure('public.astella_enqueue_companion_reflection()') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_reflection() TO astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_companion_reflection_thresholds() TO astella_worker;
+  END IF;
+  IF to_regprocedure('public.astella_companion_reflection_authority(uuid,uuid,uuid)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_companion_reflection_authority(uuid,uuid,uuid) TO astella_worker;
+  END IF;
+  IF to_regprocedure('public.astella_companion_persona_message_current(uuid,uuid,text,text)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_companion_persona_message_current(uuid,uuid,text,text) TO astella_api,astella_worker;
   END IF;
   IF to_regprocedure('public.astella_agent_method_sources_current(uuid,uuid,uuid)') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.astella_agent_method_sources_current(uuid,uuid,uuid) TO astella_api, astella_worker;
@@ -1990,6 +2006,10 @@ BEGIN
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_method_sources_current(uuid,uuid,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_job_current(uuid,uuid,uuid,boolean)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_run_authorized(uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_enqueue_companion_reflection()')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_companion_reflection_thresholds()')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_companion_reflection_authority(uuid,uuid,uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_companion_persona_message_current(uuid,uuid,text,text)')
     -- 0373：制卡这一发的父围栏与初始归属读取（与上面 GRANT 成对，两份清单一起改）。
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_card_job_current(uuid,uuid,boolean)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_card_execution_binding(uuid,uuid)')
@@ -2051,6 +2071,7 @@ BEGIN
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_cancel_agent_operations(uuid,integer)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_method_sources_current(uuid,uuid,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_fanout_agent_global_preference(uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_companion_persona_message_current(uuid,uuid,text,text)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.astella_purge_companion_audit_ttl(integer,integer)')
     AND p.oid IS DISTINCT FROM
@@ -2169,6 +2190,11 @@ BEGIN
       ('astella_worker', 'astella_enqueue_agent_recovery()'),
       ('astella_worker', 'astella_agent_job_current(uuid,uuid,uuid,boolean)'),
       ('astella_worker', 'astella_agent_run_authorized(uuid)'),
+      ('astella_worker', 'astella_enqueue_companion_reflection()'),
+      ('astella_worker', 'astella_companion_reflection_thresholds()'),
+      ('astella_worker', 'astella_companion_reflection_authority(uuid,uuid,uuid)'),
+      ('astella_api', 'astella_companion_persona_message_current(uuid,uuid,text,text)'),
+      ('astella_worker', 'astella_companion_persona_message_current(uuid,uuid,text,text)'),
       -- 0373：制卡这一发的父围栏。缺它时链内每一段短事务与每次模型调用前的判定都会
       -- permission denied，而调用方多半把异常 catch 成一行 warn——父围栏静默失效，
       -- 表现是"用户已经停下的目标，那批卡片还在跑完并烧预算"。

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { PersonaPanel } from "../companion/companion-center-panels.tsx";
 import {
@@ -97,6 +97,9 @@ onSelfDescription: noop,
 
   it("预设与边界逐行与 DOM 相同，`state` 是那两段的段名", () => {
     renderPersona();
+    const wardrobe = document.querySelector<HTMLDetailsElement>(".cc-persona-wardrobe")!;
+    wardrobe.open = true;
+    fireEvent(wardrobe, new Event("toggle"));
     const view = publishedView()!;
     expect(view.pageId).toBe("companion");
     const presetNames = sectionTitles(".cc-persona-presets strong");
@@ -111,6 +114,13 @@ onSelfDescription: noop,
     // 段名不许是自己拼的：与屏上两个 `<h4>` 逐字比。
     expect(sectionTitles(".cc-section h3")).toContain("人格预设");
     expect(sectionTitles(".cc-section h3")).toContain(view.items?.[0].state);
+  });
+
+  it("收起预设时，只登记当前可见的边界，当前预设仍可读", () => {
+    renderPersona();
+    const view = publishedView()!;
+    expect(view.items?.map(entry => entry.state)).toEqual(["边界", "边界", "边界"]);
+    expect(view.filters?.find(entry => entry.label === "当前预设")?.value).toBe("沉稳");
   });
 
   it("当前预设与活跃度这两个选中项进 filters，字面取自屏上选中的那颗按钮", () => {
@@ -131,4 +141,3 @@ onSelfDescription: noop,
     expect(view.filters).toBeUndefined();
   });
 });
-

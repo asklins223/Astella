@@ -45,6 +45,7 @@ import "./components/hud/hud-surface.css";
 import "./components/hud-surface.css";
 import "./components/hud/hud-controls.css";
 import "./components/hud/hud-control-bubbles.css";
+import "./components/hud/window-caption.css";
 import "./components/source-intake.css";
 
 /* ── 4a. 修正层：覆盖集成层 ─────────────────────────────────────────────

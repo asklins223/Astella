@@ -173,7 +173,7 @@ function isSameProposal(
   proposal: CompanionPersonaProposalV1 | undefined,
 ): boolean {
   if (!proposal) return true;
-  if (!pending.proposalKind || !pending.proposalId) return true;
+  if (!pending.proposalKind || !pending.proposalId) return false;
   return pending.proposalKind === proposal.kind && pending.proposalId === proposal.proposalId;
 }
 
@@ -188,6 +188,8 @@ export interface CompanionPersonaCommitInputV1 {
   readonly expectedPendingRevision?: number | null;
   /** 这次写入出自哪一次提议；不给就按"延续当前排队"处理（沿用改造前的语义）。 */
   readonly proposal?: CompanionPersonaProposalV1;
+  /** Background suggestions cannot change an expression explicitly fixed by the user. */
+  readonly protectUserFields?: boolean;
   /** 反思等后台来源要能把自己关联到这一版；由调用方在同一事务里写。 */
   readonly onVersionWritten?: (revision: number, profile: CompanionPersonaProfileContent) => Promise<void>;
 }
@@ -242,7 +244,9 @@ export async function commitPersonaProposalV1(
   }
   // 账号还没有档案：拿系统默认人格当底稿，她改的是"当前生效的那份人格"。
   const starting = base ?? personaFromDefaultPreset(getDefaultPersonaPreset());
-  const next = input.edits.reduce<CompanionPersonaProfileContent>(
+  const edits = input.protectUserFields ? input.edits.filter(edit =>
+    (starting.fieldOrigin as Record<string, unknown> | undefined)?.[edit.field] !== "user") : input.edits;
+  const next = edits.reduce<CompanionPersonaProfileContent>(
     (profile, edit) => withAssistantEditedField(profile, edit.field, clampAssistantEdit(edit.field, edit.value)),
     starting,
   );
@@ -256,7 +260,7 @@ export async function commitPersonaProposalV1(
     return { kind: "unchanged", profile: starting };
   }
 
-  const nextRevision = Math.max(row.revision, row.pending_revision ?? 0) + 1;
+  const nextRevision = await nextAvailablePersonaRevision(tx, userId, row.revision);
   const proposalKind = input.proposal?.kind ?? null;
   const proposalId = input.proposal?.proposalId ?? null;
 
@@ -315,6 +319,14 @@ export async function commitPersonaProposalV1(
   return { kind: "changed", revision: Number(updated.revision), profile };
 }
 
+/** Rejected/withdrawn drafts remain in history and their numbers stay reserved. */
+export async function nextAvailablePersonaRevision(tx: AgentSqlExecutor, userId: string, currentRevision: number): Promise<number> {
+  const [history] = await queryRows<{ revision: number }>(tx, sql`
+    SELECT coalesce(max(revision),0)::int AS revision FROM companion_persona_profile_versions WHERE user_id=${userId}
+  `);
+  return Math.max(currentRevision, Number(history?.revision ?? 0)) + 1;
+}
+
 /**
  * 来源引用：一次提议凭什么这么说（方案 50 §8.3 的有类型派生来源）。
  *
@@ -354,9 +366,9 @@ function sourceProbeSql(source: CompanionPersonaSourceRefV1, userId: string) {
     // 消息被删除就是行不在了（硬删），改写会换 content_sha256。
     case "user_message":
     case "assistant_message":
-      return sql`SELECT count(*)::int AS found FROM companion_messages m
-        WHERE m.id = ${source.id}::uuid AND m.user_id = ${userId}
-          AND (${revision}::text IS NULL OR m.content_sha256 = ${revision}::text)`;
+      return sql`SELECT CASE WHEN astella_companion_persona_message_current(
+        ${userId}::uuid,${source.id}::uuid,${revision}::text,
+        ${source.kind === "user_message" ? "user" : "assistant"}) THEN 1 ELSE 0 END AS found`;
     case "memory":
       return sql`SELECT count(*)::int AS found FROM assistant_memory_items a
         WHERE a.id = ${source.id}::uuid AND a.user_id = ${userId} AND a.deleted_at IS NULL
@@ -379,9 +391,9 @@ function sourceProbeSql(source: CompanionPersonaSourceRefV1, userId: string) {
 /**
  * 提议还剩几条**站得住的依据**（§9.4 的「同一内容尚有独立有效依据时重新评估」）。
  *
- * 判据是"至少一条还在"，不是"全部都在"：一条结论引用了五句话，用户删掉了其中一句
- * 不该让整条结论失去依据——那样等于把"删除一条消息"变成"撤回她的一次成长"。
- * 反过来，**所有**依据都被删除或换版时，这一版就真的没有根据了，不能再被采用。
+ * Any changed citation requires reassessment on the new input. Existence of
+ * another citation alone does not prove that it independently supports every
+ * field in the proposal.
  */
 export async function personaProposalHasLiveBasis(
   tx: AgentSqlExecutor,
@@ -390,7 +402,7 @@ export async function personaProposalHasLiveBasis(
 ): Promise<boolean> {
   if (sources.length === 0) return true;
   const dead = await personaSourcesCurrent(tx, userId, sources);
-  return dead.dead.length < sources.length;
+  return dead.current;
 }
 
 /**
@@ -425,7 +437,8 @@ export async function adoptPendingPersonaForNewTurn(
   if (pending.author !== "assistant_tool") return null;
 
   const sources = resolveSources ? await resolveSources(pending) : [];
-  if (sources.length > 0 && !await personaProposalHasLiveBasis(tx, userId, sources)) {
+  if ((pending.proposalKind === "assistant_reflection" && sources.length === 0)
+    || (sources.length > 0 && !await personaProposalHasLiveBasis(tx, userId, sources))) {
     // 失去依据：不采用，也不把这一版留在排队里（历史行不动，用户仍可查、可恢复）。
     await tx.execute(sql`
       UPDATE companion_persona_profiles SET pending_revision = NULL
@@ -454,37 +467,49 @@ export async function adoptPendingPersonaForNewTurn(
 }
 
 /**
- * 撤回一条**只由已失效来源支持**的自动修订（方案 50 §9.4 末段）。
- *
- * 不能整版退回历史人格：用户后来改过的、与这次无关的有效变化都要留下。
- * 所以这里只把那一列自我描述去掉（回到没有自我描述的状态），其余字段原样，
- * 推一个新版本并记来源是这次撤回。
+ * 来源失效时，将仍由本次自动提案持有的字段恢复到其基线（方案 50 §9.4）。
+ * 用户后来改过的字段、其他有效变化与未生效草稿保留；恢复生成新的历史版本。
  */
-export async function retractPersonaFieldFromDeadSource(
+export async function restorePersonaFieldsFromDeadSource(
   tx: AgentSqlExecutor,
   userId: string,
-  field: PersonaAssistantEditableField,
+  input: {
+    revision: number;
+    fields: readonly ("selfDescription" | "speakingStyle")[];
+    proposalProfile: CompanionPersonaProfileContent;
+    baselineProfile: CompanionPersonaProfileContent;
+  },
   reason: string,
-): Promise<CompanionPersonaCommitOutcomeV1> {
-  if (field.includes(".")) {
-    // 边界那四项住在 `boundaries` 子对象里，"只撤这一项"要按嵌套形状走。
-    // 首批撤回只有 `selfDescription` / `speakingStyle` 两项是真的（一条结论只由
-    // 一个失效来源支撑时才会触发），这里不猜嵌套该怎么删。
-    throw new Error(`retractPersonaFieldFromDeadSource does not support nested field: ${field}`);
-  }
+): Promise<CompanionPersonaCommitOutcomeV1 & { restoredFields?: readonly ("selfDescription" | "speakingStyle")[] }> {
   const row = await lockPersonaProfileRow(tx, userId);
   if (!row) return { kind: "conflict", reason: "profile_row_missing" };
+  if (row.revision !== input.revision) return { kind: "conflict", reason: "revision_moved" };
   const current = readProfile(row.profile);
   if (!current) return { kind: "unchanged", profile: current ?? personaFromDefaultPreset(getDefaultPersonaPreset()) };
-  if ((current as Record<string, unknown>)[field] === undefined) return { kind: "unchanged", profile: current };
-  const next: Record<string, unknown> = { ...current };
-  delete next[field];
-  const origin: Record<string, unknown> = { ...(current.fieldOrigin ?? {}) };
-  delete origin[field];
-  if (Object.keys(origin).length > 0) next.fieldOrigin = origin;
-  else delete next.fieldOrigin;
-  const revision = Math.max(row.revision, row.pending_revision ?? 0) + 1;
-  const profile = next as CompanionPersonaProfileContent;
+  const restoreFields = (source: CompanionPersonaProfileContent) => {
+    const next: Record<string, unknown> = { ...source };
+    const origin: Record<string, unknown> = { ...(source.fieldOrigin ?? {}) };
+    let changed = false;
+    const restoredFields: ("selfDescription" | "speakingStyle")[] = [];
+    for (const field of input.fields) {
+      if (source.fieldOrigin?.[field] !== "assistant"
+        || source[field] !== input.proposalProfile[field]) continue;
+      if (input.baselineProfile[field] === undefined) delete next[field];
+      else next[field] = input.baselineProfile[field];
+      if (input.baselineProfile.fieldOrigin?.[field] === undefined) delete origin[field];
+      else origin[field] = input.baselineProfile.fieldOrigin[field];
+      changed = true;
+      restoredFields.push(field);
+    }
+    if (Object.keys(origin).length > 0) next.fieldOrigin = origin;
+    else delete next.fieldOrigin;
+    return { changed, restoredFields, profile: next as CompanionPersonaProfileContent };
+  };
+  const restored = restoreFields(current);
+  if (!restored.changed) return { kind: "unchanged", profile: current };
+  const revision = await nextAvailablePersonaRevision(tx, userId, row.revision);
+  const profile = restored.profile;
+  const pending = row.pending_revision === null ? null : await readPendingPersonaProposal(tx, userId);
   // 先清排队（0355 顺序），再推当前版本。
   await tx.execute(sql`
     UPDATE companion_persona_profiles SET pending_revision = NULL
@@ -499,8 +524,22 @@ export async function retractPersonaFieldFromDeadSource(
     INSERT INTO companion_persona_profile_versions
       (user_id, revision, examples_revision, author, action, reason, profile,
        module_scope, source_workspace_id)
-    VALUES (${userId}, ${revision}, ${revision}, 'user', 'update', ${reason},
+    VALUES (${userId}, ${revision}, ${revision}, 'assistant_tool', 'update', ${reason},
             ${JSON.stringify(profile)}::jsonb, ARRAY['companion']::text[], NULL)
   `);
-  return { kind: "changed", revision, profile };
+  if (pending) {
+    // Keep a later user draft (or an unrelated proposal) reviewable and pending;
+    // its old number is now behind the restored current revision. Also remove
+    // inherited automatic fields so confirming the draft cannot revive them.
+    const pendingProfile = pending.profile ? restoreFields(pending.profile).profile : null;
+    await tx.execute(sql`
+      INSERT INTO companion_persona_profile_versions
+        (user_id,revision,examples_revision,author,action,reason,profile,module_scope,source_workspace_id,proposal_kind,proposal_id)
+      SELECT user_id,${revision + 1},${revision + 1},author,action,reason,
+        ${pendingProfile ? sql`${JSON.stringify(pendingProfile)}::jsonb` : sql`profile`},module_scope,source_workspace_id,proposal_kind,proposal_id
+        FROM companion_persona_profile_versions WHERE user_id=${userId} AND revision=${pending.revision}
+    `);
+    await tx.execute(sql`UPDATE companion_persona_profiles SET pending_revision=${revision + 1} WHERE user_id=${userId}`);
+  }
+  return { kind: "changed", revision, profile, restoredFields: restored.restoredFields };
 }

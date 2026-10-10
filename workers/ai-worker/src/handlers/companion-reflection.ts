@@ -20,11 +20,9 @@
  *
  * ## 关于"同一账号串行"这一条
  *
- * §9.2 要求同一账号不要有多个空间同时改同一份人格。这里的做法是：**模型调用可以并行**
- * （那只是花钱），**人格与经验的提交在同一账号上加事务级咨询锁串行**，
- * 提交前再按基线 revision 与 pending 提案身份核对一次。
- * 不采用"持有一个长租约跨过模型等待"那种做法——那会让用户编辑、删除与前台聊天
- * 等在她一次后台回顾后面。
+ * 队列领取保证同账号最多一个 running 反思，其他空间的回顾按水位等候。
+ * 模型等待发生在事务外；提交时才短暂取得账号写锁，并核对基线与 pending 提案。
+ * 用户编辑、删除与前台聊天不等待反思模型。
  */
 
 import { createHash, randomUUID } from "node:crypto";
@@ -35,6 +33,7 @@ import {
   type AiTaskCheckpointPort, type AiTaskContext, type AiTaskDefinition, type AiTaskReceipt,
 } from "@astella/shared/ai-task-kernel";
 import { toTextArrayLiteral } from "@astella/shared/pg-text-array";
+import { resolveSystemProviderForCapability } from "@astella/shared/task-router";
 import { agentMethodEvidenceV1Schema } from "@astella/shared/agent-growth-contracts";
 import { companionMemoryMutationLockKey } from "@astella/shared/db-schema/assistant-memory";
 import { getDefaultPersonaPreset } from "@astella/shared/pet-persona-presets";
@@ -68,7 +67,8 @@ import { parseMemoryExtractJson } from "./companion-memory-extractor.ts";
 import {
   COMPANION_REFLECTION_PROMPT_VERSION, COMPANION_REFLECTION_TASK_ID, COMPANION_REFLECTION_TASK_VERSION,
   buildReflectionMessages, clipReflectionOverflow, companionReflectionOutputV1Schema,
-  normalizeReflectionPayload, reflectionInputFingerprint, verifyReflectionOutput,
+  boundReflectionSnapshot, normalizeReflectionPayload, reflectionInputFingerprint, verifyReflectionOutput,
+  reflectionInputSnapshotV1Schema,
   type ReflectionInputSnapshotV1, type ReflectionVerifiedV1,
 } from "./companion-reflection-content.ts";
 import { companionReflectionGate, reflectionSnapshotSufficient, reflectionTailWindow } from "./companion-reflection-gate.ts";
@@ -97,6 +97,7 @@ export async function runCompanionReflectionJob(job: JobPayload): Promise<void> 
   if (input.userId !== job.requestedBy) {
     throw new Error("companion_reflection payload 的 userId 与认领到的请求人不一致");
   }
+  if (input.workspaceId !== job.workspaceId) throw new Error("companion_reflection workspace 与 job 不一致");
   throwIfJobAborted(job);
 
   const prepared = await prepareReflection(job, input);
@@ -137,20 +138,24 @@ async function prepareReflection(
   return withWorkerWorkspaceTransaction(
     { workspaceId: input.workspaceId, userId: input.userId },
     async (tx) => {
+      await lockJobLease(tx, job);
       const persona = await readPersona(tx, input.userId);
       const messages = await readSegmentMessages(tx, input);
       const receipts = await readSegmentToolReceipts(tx, input);
       const related = await readRelatedMemories(tx, input);
       const context = await readReflectionContext(tx, input.conversationId, input.userId);
 
-      const snapshot: ReflectionInputSnapshotV1 = {
+      const authority = await readReflectionAuthority(tx, input);
+      const snapshot = boundReflectionSnapshot({
+        accountEpoch: authority.epoch,
+        pendingPersonaRevision: persona.pendingRevision,
         conversationId: input.conversationId,
         fromSeq: input.fromSeq,
         toSeq: input.toSeq,
         persona, messages,
         toolReceipts: receipts,
         relatedMemories: related,
-      };
+      });
       const fingerprint = reflectionInputFingerprint(snapshot, COMPANION_REFLECTION_STRATEGY_VERSION);
       const created = await createOrLoadReflection(tx, {
         userId: input.userId,
@@ -159,11 +164,33 @@ async function prepareReflection(
         jobId: job.id,
         dedupeKey: companionReflectionDedupeKey(input.conversationId, input.toSeq),
         inputFingerprint: fingerprint,
+        inputSnapshot: snapshot,
         baselinePersonaRevision: persona.revision,
         fromSeq: input.fromSeq,
         toSeq: input.toSeq,
       });
       if (!created) return null;
+
+      // A second job cannot take over a running reflection. A queue retry uses
+      // the same job and frozen input, so its response checkpoint still matches.
+      if (created.decision === "running") {
+        if (created.jobId !== job.id) return null;
+        const frozen = reflectionInputSnapshotV1Schema.safeParse(created.inputSnapshot);
+        if (!frozen.success) {
+          await finalizeReflection(tx, input.userId, created.id, {
+            decision: "source_invalid", summary: "原输入快照已清除或不可读，没有重新取材提交旧结论",
+          });
+          return null;
+        }
+        return { reflection: created, snapshot: frozen.data, fingerprint: created.inputFingerprint };
+      }
+      if (created.decision !== "queued") return { reflection: created, snapshot, fingerprint };
+      if (!authority.allowed) {
+        await finalizeReflection(tx, input.userId, created.id, {
+          decision: "governance_denied", summary: "伴星已关闭、账号未授权或已离开来源空间，没有外发或提交",
+        });
+        return null;
+      }
 
       const settled = await settleReflectionGate(tx, job, input, created, snapshot, context, fingerprint);
       if (!settled) return null;
@@ -311,6 +338,10 @@ async function readRelatedMemories(tx: WorkerTransaction, input: { workspaceId: 
       FROM assistant_memory_items a
      WHERE a.workspace_id = ${input.workspaceId} AND a.user_id = ${input.userId}
        AND a.deleted_at IS NULL AND a.candidate = false
+       AND a.dismissed_at IS NULL AND a.archived_at IS NULL
+       AND a.epistemic_status NOT IN ('disputed','superseded')
+       AND (a.valid_from IS NULL OR a.valid_from <= now())
+       AND (a.valid_until IS NULL OR a.valid_until > now())
        AND a.kind IN ('judgment', 'preference', 'interaction_note')
      ORDER BY a.updated_at DESC
      LIMIT ${COMPANION_REFLECTION_INPUT_BUDGET.maxRelatedMemories}
@@ -343,9 +374,11 @@ async function loadReflectionRow(tx: WorkerTransaction, userId: string, id: stri
     id: string; user_id: string; workspace_id: string; conversation_id: string;
     trigger_kind: string; input_from_seq: string; input_to_seq: string;
     strategy_version: string; baseline_persona_revision: number; decision: string;
+    job_id: string | null; input_snapshot: unknown; input_fingerprint: string;
   }>(sql`
     SELECT id, user_id, workspace_id, conversation_id, trigger_kind,
-           input_from_seq, input_to_seq, strategy_version, baseline_persona_revision, decision
+           input_from_seq, input_to_seq, strategy_version, baseline_persona_revision, decision,
+           job_id, input_snapshot, input_fingerprint
     FROM companion_reflections WHERE id = ${id}::uuid AND user_id = ${userId} LIMIT 1
   `);
   const row = (Array.isArray(rows) ? rows : [])[0];
@@ -358,13 +391,14 @@ async function loadReflectionRow(tx: WorkerTransaction, userId: string, id: stri
     strategyVersion: row.strategy_version,
     baselinePersonaRevision: Number(row.baseline_persona_revision),
     decision: row.decision as CompanionReflectionDecision,
+    jobId: row.job_id, inputSnapshot: row.input_snapshot, inputFingerprint: row.input_fingerprint,
   } satisfies CompanionReflectionRowV1;
 }
 
 /** 她当时是谁：账号档案，没有就用系统默认人格（与前台装配同一条读取规则）。 */
 async function readPersona(tx: WorkerTransaction, userId: string) {
-  const rows = await tx.execute<{ revision: number; profile: unknown }>(sql`
-    SELECT revision, profile FROM companion_persona_profiles WHERE user_id = ${userId} LIMIT 1
+  const rows = await tx.execute<{ revision: number; profile: unknown; pending_revision: number | null }>(sql`
+    SELECT revision, profile, pending_revision FROM companion_persona_profiles WHERE user_id = ${userId} LIMIT 1
   `);
   const row = (Array.isArray(rows) ? rows : [])[0];
   const content = (typeof row?.profile === "object" && row.profile !== null && !Array.isArray(row.profile)
@@ -372,11 +406,25 @@ async function readPersona(tx: WorkerTransaction, userId: string) {
   const base = content ?? personaFromDefaultPreset(getDefaultPersonaPreset());
   return {
     revision: Number(row?.revision ?? 0),
+    pendingRevision: row?.pending_revision ?? null,
     name: base.name,
     speakingStyle: base.speakingStyle,
     selfDescription: base.selfDescription ?? null,
     personalityTags: base.personalityTags,
   };
+}
+
+/** Recheck actual access and consent inside each short execution boundary. */
+async function readReflectionAuthority(tx: WorkerTransaction, input: {
+  workspaceId: string; userId: string; conversationId: string;
+}) {
+  const [authority] = await tx.execute<{ epoch: number; allowed: boolean; external_allowed: boolean }>(sql`
+    SELECT * FROM astella_companion_reflection_authority(
+      ${input.userId}::uuid,${input.workspaceId}::uuid,${input.conversationId}::uuid)
+  `);
+  const usesExternal = resolveSystemProviderForCapability("agent_turn") !== "mock";
+  return { epoch: Number(authority?.epoch ?? 0),
+    allowed: authority?.allowed === true && (!usesExternal || authority.external_allowed === true) };
 }
 
 // ─── 2. 那一次模型调用（事务外） ─────────────────────────────────────────
@@ -424,10 +472,16 @@ async function runReflectionModelCall(
     },
     prepare: async () => {
       if (!await isJobLeaseActive(job)) throw new Error("反思的执行租约已经不在这一次手里");
+      const authority = await withJobTransaction(job, tx => readReflectionAuthority(tx, {
+        workspaceId: job.workspaceId, userId, conversationId: prepared.snapshot.conversationId,
+      }));
+      if (!authority.allowed || authority.epoch !== prepared.snapshot.accountEpoch) {
+        throw new Error("回顾的账号授权或来源空间已失效");
+      }
     },
     execute: async (_prepared, env) => {
       const result = await provider.chatCompletion(
-        messages,
+        rejection ? [...messages, { role: "user", content: `上一版协议没有通过，请修正：${rejection}` }] : messages,
         { temperature: 0.2, maxTokens: REFLECTION_MAX_OUTPUT_TOKENS, responseFormat: "json_object" },
         env.signal);
       const normalized = normalizeReflectionPayload(parseMemoryExtractJson(result.content));
@@ -508,6 +562,7 @@ function parseReflectionCheckpointOutput(value: unknown): ReflectionVerifiedV1 |
     })).max(8),
     citedSources: z.array(z.strictObject({
       kind: z.enum(["user_message", "assistant_message"]), id: z.string().uuid(),
+      revision: z.string().nullable().optional(),
     })).max(24),
   }).safeParse(value);
   return parsed.success ? (parsed.data as ReflectionVerifiedV1) : null;
@@ -576,6 +631,14 @@ function createReflectionCheckpointPort<TOutput>(input: {
       }
       await withJobTransaction(input.job, async (tx) => {
         await lockJobLease(tx, input.job);
+        const [reflection] = await tx.execute<{ input_snapshot: unknown }>(sql`
+          SELECT input_snapshot FROM companion_reflections
+          WHERE job_id=${input.job.id} AND user_id=${input.userId} AND decision='running'
+          FOR UPDATE
+        `);
+        // Deletion clears input before a late model response arrives. Do not
+        // recreate its checkpoint; commit will record source_invalid instead.
+        if (!reflection?.input_snapshot) return;
         await tx.execute(sql`
           INSERT INTO companion_reflection_checkpoints
             (job_id, workspace_id, user_id, task_id, task_version, input_snapshot_hash,
@@ -615,90 +678,114 @@ async function commitReflection(
     async (tx) => {
       // 同一账号的写入串行：两个空间的回顾不能同时改一份人格（§9.2）。
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${companionMemoryMutationLockKey(input.userId)},0))`);
-      if (!await isJobLeaseActive(job)) {
-        return { decision: "lease_lost" as const, summary: "租约已经不在这一次手里，没有提交" };
-      }
-      const current = await readPersona(tx, input.userId);
-      if (current.revision !== reflection.baselinePersonaRevision) {
-        return {
-          decision: "commit_conflict" as const,
-          summary: `基线已变：回顾时第 ${reflection.baselinePersonaRevision} 版，现在第 ${current.revision} 版`,
-        };
-      }
-      const sources: CompanionPersonaSourceRefV1[] = verified.citedSources
-        .map((cited) => ({ kind: cited.kind, id: cited.id }));
-      if (sources.length > 0) {
-        const validity = await personaSourcesCurrent(tx, input.userId, sources);
-        if (!validity.current) {
+      await lockJobLease(tx, job);
+      const [active] = await tx.execute<{ decision: string; job_id: string; input_snapshot: unknown }>(sql`
+        SELECT decision, job_id, input_snapshot FROM companion_reflections WHERE id=${reflection.id}::uuid
+          AND user_id=${input.userId} FOR UPDATE
+      `);
+      if (active?.decision !== "running" || active.job_id !== job.id) return null;
+      const write = async () => {
+        if (!active.input_snapshot) {
+          return { decision: "source_invalid" as const, summary: "原始输入已改写或清除，没有提交旧快照结论" };
+        }
+        const authority = await readReflectionAuthority(tx, input);
+        if (!authority.allowed || authority.epoch !== prepared.snapshot.accountEpoch) {
+          return { decision: "governance_denied" as const, summary: "账号授权、世代或来源空间已失效，没有提交" };
+        }
+        const current = await readPersona(tx, input.userId);
+        if (current.revision !== reflection.baselinePersonaRevision) {
           return {
-            decision: "source_invalid" as const,
-            summary: `依据已不可读：${validity.dead.map((dead) => `${dead.kind}:${dead.id}`).join(",")}`,
+            decision: "commit_conflict" as const,
+            summary: `基线已变：回顾时第 ${reflection.baselinePersonaRevision} 版，现在第 ${current.revision} 版`,
           };
         }
-      }
-
-      // 依据落到"这一批结论点名引用了哪几句"：撤回按这一组判，不按"当时读过的一切"。
-      for (const cited of verified.citedSources) {
-        await recordReflectionEdge(tx, input.userId, reflection.id, {
-          relation: "cited", workspaceId: input.workspaceId, source: cited,
-        });
-      }
-
-      const produced: CompanionPersonaSourceRefV1[] = [];
-      for (const judgment of verified.output.judgments) {
-        const memoryId = await insertReflectionJudgment(tx, input, judgment);
-        if (memoryId) produced.push({ kind: "memory", id: memoryId, revision: "1" });
-      }
-      for (const experience of verified.output.experiences) {
-        const method = await upsertReflectionMethod(tx, input, experience);
-        if (method) produced.push({ kind: "method", id: method.playbookId, revision: String(method.version) });
-      }
-
-      let pendingPersonaRevision: number | null = null;
-      const persona = verified.output.persona;
-      if (persona) {
-        const edits: { field: "selfDescription" | "speakingStyle"; value: unknown }[] = [];
-        if (persona.selfDescription !== undefined) {
-          edits.push({ field: "selfDescription", value: persona.selfDescription });
+        const sources: readonly CompanionPersonaSourceRefV1[] = verified.citedSources;
+        if (sources.length > 0) {
+          const validity = await personaSourcesCurrent(tx, input.userId, sources);
+          if (!validity.current) {
+            return {
+              decision: "source_invalid" as const,
+              summary: `依据已不可读：${validity.dead.map((dead) => `${dead.kind}:${dead.id}`).join(",")}`,
+            };
+          }
         }
-        if (persona.speakingStyle !== undefined) edits.push({ field: "speakingStyle", value: persona.speakingStyle });
-        const result = await commitPersonaProposalV1(tx, input.userId, {
-          edits, reason: persona.reason, stage: true,
-          expectedRevision: reflection.baselinePersonaRevision,
-          proposal: { kind: "assistant_reflection", proposalId: reflection.id },
-        }, { sourceWorkspaceId: input.workspaceId });
-        if (result.kind === "conflict") {
-          return { decision: "commit_conflict" as const, summary: `人格排队不让写：${result.reason}` };
-        }
-        if (result.kind === "changed") {
-          pendingPersonaRevision = result.revision;
-          produced.push({ kind: "persona_revision", id: String(result.revision), revision: null });
-        }
-      }
 
-      for (const edge of produced) {
-        await recordReflectionEdge(tx, input.userId, reflection.id, {
-          relation: "produced", workspaceId: input.workspaceId, source: edge,
-        });
-      }
-      const wroteAnything = produced.length > 0;
-      return {
-        decision: wroteAnything ? ("committed" as const) : ("no_change" as const),
-        summary: wroteAnything ? verified.output.summary : `没有值得留下的：${verified.output.summary}`,
-        pendingPersonaRevision,
-        resultRef: {
-          judgments: verified.output.judgments.length,
-          experiences: verified.output.experiences.length,
-          dropped: verified.rejected.map((drop) => `${drop.slot}#${drop.index}:${drop.reason}`),
-        },
+        // 依据落到"这一批结论点名引用了哪几句"：撤回按这一组判，不按"当时读过的一切"。
+        for (const cited of verified.citedSources) {
+          await recordReflectionEdge(tx, input.userId, reflection.id, {
+            relation: "cited", workspaceId: input.workspaceId, source: cited,
+          });
+        }
+
+        const produced: CompanionPersonaSourceRefV1[] = [];
+        let pendingPersonaRevision: number | null = null;
+        const persona = verified.output.persona;
+        if (persona) {
+          const edits: { field: "selfDescription" | "speakingStyle"; value: unknown }[] = [];
+          if (persona.selfDescription !== undefined) {
+            edits.push({ field: "selfDescription", value: persona.selfDescription });
+          }
+          if (persona.speakingStyle !== undefined) edits.push({ field: "speakingStyle", value: persona.speakingStyle });
+          const result = await commitPersonaProposalV1(tx, input.userId, {
+            edits, reason: persona.reason, stage: true,
+            protectUserFields: true,
+            expectedRevision: reflection.baselinePersonaRevision,
+            expectedPendingRevision: prepared.snapshot.pendingPersonaRevision ?? null,
+            proposal: { kind: "assistant_reflection", proposalId: reflection.id },
+          }, { sourceWorkspaceId: input.workspaceId });
+          if (result.kind === "conflict") {
+            return { decision: "commit_conflict" as const, summary: `人格排队不让写：${result.reason}` };
+          }
+          if (result.kind === "changed") {
+            pendingPersonaRevision = result.revision;
+            produced.push({ kind: "persona_revision", id: String(result.revision), revision: null });
+          }
+        }
+
+        // All conflicts have been checked before experience writes. The persona,
+        // experiences, derivation edges and conclusion share this transaction.
+        for (const judgment of verified.output.judgments) {
+          const memoryId = await insertReflectionJudgment(tx, input, judgment);
+          if (memoryId) produced.push({ kind: "memory", id: memoryId, revision: "1" });
+        }
+        for (const experience of verified.output.experiences) {
+          const method = await upsertReflectionMethod(tx, input, experience);
+          if (method) produced.push({ kind: "method", id: method.playbookId, revision: String(method.version) });
+        }
+
+        for (const edge of produced) {
+          await recordReflectionEdge(tx, input.userId, reflection.id, {
+            relation: "produced", workspaceId: input.workspaceId, source: edge,
+          });
+        }
+        const wroteAnything = produced.length > 0;
+        return {
+          decision: wroteAnything ? ("committed" as const) : ("no_change" as const),
+          summary: wroteAnything ? verified.output.summary : `没有值得留下的：${verified.output.summary}`,
+          pendingPersonaRevision,
+          resultRef: {
+            judgments: verified.output.judgments.length,
+            experiences: verified.output.experiences.length,
+            dropped: verified.rejected.map((drop) => `${drop.slot}#${drop.index}:${drop.reason}`),
+            personaSources: persona ? sources.filter(source => persona.sourceMessageIds.includes(source.id)) : [],
+            personaFields: persona ? [
+              ...(persona.selfDescription !== undefined ? ["selfDescription"] : []),
+              ...(persona.speakingStyle !== undefined ? ["speakingStyle"] : []),
+            ] : [],
+          },
+        };
       };
+      const outcome = await write();
+      const finalized = await finalizeReflection(tx, input.userId, reflection.id, {
+        decision: outcome.decision, summary: outcome.summary.slice(0, 300),
+        pendingPersonaRevision: "pendingPersonaRevision" in outcome ? outcome.pendingPersonaRevision : null,
+        resultRef: "resultRef" in outcome ? outcome.resultRef : null,
+      });
+      if (!finalized) throw new Error("反思终态未保存，撤销本次领域写入");
+      return outcome;
     },
   );
-
-  await finalizeOutcome(job, input.userId, reflection.id, outcome.decision, outcome.summary, {
-    pendingPersonaRevision: "pendingPersonaRevision" in outcome ? outcome.pendingPersonaRevision ?? null : null,
-    resultRef: "resultRef" in outcome ? outcome.resultRef ?? null : null,
-  });
+  if (!outcome) return;
   logger.info({
     jobId: job.id, conversationId: input.conversationId, decision: outcome.decision,
   }, "companion reflection settled");
@@ -760,8 +847,16 @@ async function finalizeOutcome(
   summary: string,
   extra: { pendingPersonaRevision?: number | null; resultRef?: Record<string, unknown> | null } = {},
 ): Promise<void> {
-  await withWorkerWorkspaceTransaction({ workspaceId: job.workspaceId, userId }, (tx) => finalizeReflection(
-    tx, userId, reflectionId,
-    { decision, summary: summary.slice(0, 300), ...extra },
-  ));
+  // A cancelled or reaped attempt cannot settle the reflection owned by a retry.
+  if (!await isJobLeaseActive(job)) return;
+  await withWorkerWorkspaceTransaction({ workspaceId: job.workspaceId, userId }, async (tx) => {
+    await lockJobLease(tx, job);
+    const [active] = await tx.execute<{ decision: string; job_id: string }>(sql`
+      SELECT decision, job_id FROM companion_reflections WHERE id=${reflectionId}::uuid
+        AND user_id=${userId} FOR UPDATE
+    `);
+    if (active?.decision !== "running" || active.job_id !== job.id) return;
+    await finalizeReflection(tx, userId, reflectionId,
+      { decision, summary: summary.slice(0, 300), ...extra });
+  });
 }

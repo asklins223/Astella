@@ -23,6 +23,13 @@ import {
   type WindowStateSnapshot,
   TITLE_BAR_THEME_CHANNEL,
 } from '../shared/window-state'
+import {
+  WINDOW_CONTROL_CHANNEL,
+  WINDOW_FRAME_CHANNEL,
+  WINDOW_FRAME_SNAPSHOT_CHANNEL,
+  isWindowFrameSnapshot,
+} from '../shared/window-frame'
+import type { AstellaWindowAction, WindowFrameSnapshot } from '../shared/window-frame'
 
 const api: AstellaDesktopApi = {
   platform: process.platform,
@@ -39,6 +46,7 @@ const api: AstellaDesktopApi = {
     },
   },
   setTitleBarTheme: (theme) => ipcRenderer.send(TITLE_BAR_THEME_CHANNEL, theme),
+  controlWindow: (action: AstellaWindowAction) => ipcRenderer.send(WINDOW_CONTROL_CHANNEL, action),
   onWindowState: (listener) => {
     let active = true
     let latestRevision = -1
@@ -63,6 +71,32 @@ const api: AstellaDesktopApi = {
     return () => {
       active = false
       ipcRenderer.removeListener(WINDOW_STATE_CHANNEL, handleState)
+    }
+  },
+  onWindowFrame: (listener) => {
+    let active = true
+    let latestRevision = -1
+
+    const deliver = (snapshot: unknown): void => {
+      if (!active || !isWindowFrameSnapshot(snapshot) || snapshot.revision <= latestRevision) return
+
+      latestRevision = snapshot.revision
+      listener(snapshot.frame)
+    }
+
+    const handleFrame = (_event: Electron.IpcRendererEvent, snapshot: unknown): void => {
+      deliver(snapshot)
+    }
+
+    ipcRenderer.on(WINDOW_FRAME_CHANNEL, handleFrame)
+    void ipcRenderer
+      .invoke(WINDOW_FRAME_SNAPSHOT_CHANNEL)
+      .then((snapshot: WindowFrameSnapshot | null) => deliver(snapshot))
+      .catch(() => undefined)
+
+    return () => {
+      active = false
+      ipcRenderer.removeListener(WINDOW_FRAME_CHANNEL, handleFrame)
     }
   },
   /**

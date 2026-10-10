@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AgentMethodV1 } from "@astella/shared/agent-growth-contracts";
 import { gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { useRoomStore } from "../../../app/room-store";
@@ -28,6 +28,21 @@ export function CompanionMethodsPage({refreshKey,requestedId,onFocusConsumed}:{r
   const [draft,setDraft]=useState<Draft|null>(null), [busy,setBusy]=useState(false);
   const [error,setError]=useState<string|null>(null), [notice,setNotice]=useState<string|null>(null);
   const generation=useRef(0), writing=useRef(false);
+  const detailRef=useRef<HTMLElement>(null), indexRef=useRef<HTMLDivElement>(null);
+  const readingIntent=useRef(false), returnFocus=useRef<string|null>(null);
+  useLayoutEffect(()=>{
+    if(readingIntent.current && selectedId && detailRef.current) {
+      if(indexRef.current && getComputedStyle(indexRef.current).display==="none") detailRef.current.scrollIntoView?.({block:"start",behavior:"instant"});
+      detailRef.current.focus({preventScroll:true});readingIntent.current=false;
+    }
+    if(!selectedId && returnFocus.current) {
+      const button=indexRef.current?.querySelector<HTMLButtonElement>(`button[data-method-id="${returnFocus.current}"]`);
+      button?.focus({preventScroll:true});button?.scrollIntoView?.({block:"nearest",behavior:"instant"});returnFocus.current=null;
+    }
+  },[selectedId,resource.section]);
+  const returnToIndex=()=>{
+    returnFocus.current=selectedId;setSelectedId(null);
+  };
   useEffect(()=>{ generation.current++; writing.current=false; setBusy(false); setSelectedId(null); setDraft(null); setQuery(""); setError(null); setNotice(null); },[scope]);
   const items=resource.section?.ok ? resource.section.value.items : [];
   const selected=items.find(method=>method.methodId===selectedId) ?? null;
@@ -83,14 +98,15 @@ export function CompanionMethodsPage({refreshKey,requestedId,onFocusConsumed}:{r
   return <section className="cc-methods" aria-label="我们的方法">
     <div className="cc-rule-intro"><h3>我们的方法</h3><p>从真实合作留下做法，由你确认、修订或停用。</p></div>
     <CenterFeedback error={error} notice={notice} />
-    <CenterSearch value={query} onChange={setQuery} placeholder="找一种做事方法…" label="筛选合作方法" />
+    <CenterSearch value={query} onChange={value=>{setQuery(value);setSelectedId(null);}} placeholder="找一种做事方法…" label="筛选合作方法" />
     <div className={`cc-methods-workspace${selected ? " has-selection" : ""}`}>
-      <div className="cc-methods-index" aria-label="方法清单">
-        {visible.length ? visible.map(method=><button key={method.methodId} type="button" aria-pressed={method.methodId===selectedId} disabled={busy} onClick={()=>{setSelectedId(method.methodId);setError(null);setNotice(null);}}>
+      <div ref={indexRef} className="cc-methods-index" aria-label="方法清单">
+        {visible.length ? visible.map(method=><button key={method.methodId} data-method-id={method.methodId} type="button" aria-pressed={method.methodId===selectedId} disabled={busy} onClick={()=>{readingIntent.current=true;setSelectedId(method.methodId);setError(null);setNotice(null);}}>
           <small>{stateLabels[method.availability]} · 第 {method.revision} 版</small><strong>{method.title}</strong><span>{method.appliesWhen}</span>
         </button>) : <SectionState message={query ? "还没找到这条方法" : "还没有保存合作方法"} detail={query ? "试试其他关键词。" : "任务做好后，可以在我们的对话手记里，把这次合作留成方法。整理出的候选也会在这里等待你确认。"} />}
       </div>
-      {selected ? <article className="cc-method-detail" aria-label="方法详情">
+      {selected ? <article ref={detailRef} tabIndex={-1} className="cc-method-detail" aria-label="方法详情">
+        <button type="button" className="cc-link cc-reading-back" disabled={busy} onClick={returnToIndex}>← 返回方法清单</button>
         <header><span className="cc-kicker">这个书房的合作方法</span><span className="cc-badge">{stateLabels[selected.availability]}</span></header>
         {editing ? <form className="cc-form" onSubmit={event=>{event.preventDefault();save();}}>
           <label>方法名称<input value={editing.title} maxLength={120} disabled={busy} onChange={event=>setDraft({...editing,title:event.currentTarget.value})} /></label>

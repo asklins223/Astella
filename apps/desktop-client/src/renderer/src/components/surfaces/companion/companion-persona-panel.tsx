@@ -1,7 +1,7 @@
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import type { CompanionPersonaPendingRevisionV1,CompanionPersonaPendingV1,CompanionPersonaPresetV1,CompanionPersonaProfileV1,CompanionPersonaProfileVersionV1,CompanionPersonaV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { PERSONA_FIELD_CAPACITY, personaOriginOf, type PersonaSwitchOption, type SwitchableField } from "@astella/shared/pet-persona-merge";
-import { useId,useMemo,useState } from "react";
+import { useEffect,useId,useLayoutEffect,useMemo,useRef,useState } from "react";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { formatDate } from "../notebook/surface-data";
@@ -32,25 +32,29 @@ type PersonaPanelProps = { section: Section<CompanionPersonaV1>; persona: Compan
 
 function CompanionNameRow(props: { readonly current: string; readonly busy: boolean; readonly onRename: (name: string) => Promise<boolean> | void }) {
   const [draft, setDraft] = useState<string | null>(null);
-  const shown = draft ?? props.current;
-  const trimmed = shown.trim();
+  const editRef = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef(false);
+  useEffect(() => { if (draft === null && restoreFocus.current) { editRef.current?.focus({ preventScroll: true }); restoreFocus.current = false; } }, [draft]);
+  const close = () => { restoreFocus.current = true; setDraft(null); };
+  const trimmed = (draft ?? props.current).trim();
   const dirty = trimmed.length > 0 && trimmed !== props.current;
-  const commit = async () => { const saved = await props.onRename(trimmed); if (saved !== false) setDraft(null); };
-  return <div className="cc-name-form">
-    <input
+  const commit = async () => { const saved = await props.onRename(trimmed); if (saved !== false) close(); };
+  if (draft === null) return <div className="cc-persona-name"><h3>{props.current}</h3><button ref={editRef} type="button" className="cc-link" disabled={props.busy} onClick={() => setDraft(props.current)}>改名</button></div>;
+  return <form className="cc-name-form" onSubmit={event => { event.preventDefault(); if (dirty && !props.busy) void commit(); }} onKeyDown={event => { if (event.key === "Escape" && !props.busy) { event.preventDefault(); event.stopPropagation(); close(); } }}>
+    <label>她叫什么<input
       type="text"
-      value={shown}
+      value={draft}
       maxLength={60}
       aria-label="她叫什么"
       disabled={props.busy}
+      autoFocus
       onChange={(event) => setDraft(event.target.value)}
-      onKeyDown={(event) => { if (event.key === "Enter" && dirty) { event.preventDefault(); commit(); } }}
-    />
+    /></label>
     <div className="cc-actions">
-      <button type="button" className="button primary" disabled={props.busy || !dirty} onClick={commit}>改名</button>
-      {dirty ? <button type="button" onClick={() => setDraft(null)}>取消</button> : null}
+      <button type="submit" className="cc-button is-primary" disabled={props.busy || !dirty}>{props.busy ? "正在保存…" : "保存名字"}</button>
+      <button type="button" className="cc-link" disabled={props.busy} onClick={close}>取消</button>
     </div>
-  </div>;
+  </form>;
 }
 
 /**
@@ -69,30 +73,36 @@ function CompanionSelfDescriptionRow(props: {
   readonly onSave: (text: string) => Promise<boolean> | void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
-  const shown = draft ?? props.current;
-  const trimmed = shown.trim();
+  const editRef = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef(false);
+  useEffect(() => { if (draft === null && restoreFocus.current) { editRef.current?.focus({ preventScroll: true }); restoreFocus.current = false; } }, [draft]);
+  const close = () => { restoreFocus.current = true; setDraft(null); };
+  const trimmed = (draft ?? props.current).trim();
   const dirty = trimmed !== props.current.trim();
-  const commit = async () => { const saved = await props.onSave(trimmed); if (saved !== false) setDraft(null); };
-  return <div className="cc-self-description">
-    <label className="cc-self-description__field">
-      <span className="cc-kicker">她怎么说自己<OriginBadge origin={props.origin} /></span>
+  const commit = async () => { const saved = await props.onSave(trimmed); if (saved !== false) close(); };
+  return <section className="cc-self-description" aria-label="她怎么说自己">
+    <header><h4>她怎么说自己</h4><OriginBadge origin={props.origin} />{draft === null ? <button ref={editRef} type="button" className="cc-link" disabled={props.busy} onClick={() => setDraft(props.current)}>修改自我描述</button> : null}</header>
+    {draft === null ? <p className={props.current ? "cc-persona-prose" : "cc-muted"}>{props.current || "她还没有留下自我描述。等相处久一些，也可以由你先写下来。"}</p>
+      : <form className="cc-form" onSubmit={event => { event.preventDefault(); if (dirty && !props.busy) void commit(); }} onKeyDown={event => { if (event.key === "Escape" && !props.busy) { event.preventDefault(); event.stopPropagation(); close(); } }}>
+      <label><span className="cc-muted">写下或纠正她对自己的认识，清空后也可以保存。</span>
       <textarea
-        value={shown}
-        rows={3}
+        value={draft}
+        rows={6}
         maxLength={PERSONA_FIELD_CAPACITY.selfDescription}
         aria-label="她怎么说自己"
         disabled={props.busy}
-        placeholder={props.current ? undefined : "等她回顾过一段相处，这一句会自己长出来。你也可以先写一句。"}
+        autoFocus
         onChange={(event) => setDraft(event.target.value)}
       />
     </label>
     <div className="cc-actions">
-      <button type="button" className="button primary" disabled={props.busy || !dirty} onClick={commit}>
-        {trimmed.length === 0 && props.current.trim().length > 0 ? "清空这一句" : "改这一句"}
+      <button type="submit" className="cc-button is-primary" disabled={props.busy || !dirty}>
+        {props.busy ? "正在保存…" : trimmed.length === 0 && props.current.trim().length > 0 ? "清空描述" : "保存描述"}
       </button>
-      {dirty ? <button type="button" disabled={props.busy} onClick={() => setDraft(null)}>取消</button> : null}
+      <button type="button" className="cc-link" disabled={props.busy} onClick={close}>取消</button>
     </div>
-  </div>;
+    </form>}
+  </section>;
 }
 
 const PERSONA_UNAVAILABLE = "人格档案当前不可用";
@@ -104,6 +114,28 @@ function activenessLabel(value: CompanionPersonaProfileV1["activeness"] | undefi
   if (value === "moderate") return "适度";
   if (value === "active") return "活跃";
   return null;
+}
+
+function PendingPersonaChanges({ current, next }: {
+  current: CompanionPersonaProfileV1 | CompanionPersonaPresetV1 | null;
+  next: CompanionPersonaPendingRevisionV1["profile"];
+}) {
+  if (!next) return <p>这一版会恢复默认人格表达。</p>;
+  const changes: Array<{ label: string; before: string; after: string }> = [];
+  const add = (label: string, before: string | undefined, after: string | undefined) => {
+    if ((before ?? "") !== (after ?? "")) changes.push({ label, before: before || "尚未填写", after: after || "清空这项内容" });
+  };
+  add("名字", current?.name, next.name);
+  add("性格", current?.personalityTags.join(" · "), next.personalityTags.join(" · "));
+  add("她怎么说自己", current && "selfDescription" in current ? current.selfDescription : undefined, next.selfDescription);
+  add("她怎样表达", current?.speakingStyle, next.speakingStyle);
+  add("表达分量", activenessLabel(current?.activeness) ?? undefined, activenessLabel(next.activeness) ?? undefined);
+  for (const [key, label] of BOUNDARY_ITEMS) add(label, current?.boundaries[key] ? "允许" : "关闭", next.boundaries[key] ? "允许" : "关闭");
+  add("口头禅", current?.boundaries.catchphrase ?? undefined, next.boundaries.catchphrase ?? undefined);
+  add("回应示例", current?.examples.map(item => item.text).join("\n"), next.examples.map(item => item.text).join("\n"));
+  return changes.length ? <div className="cc-persona-changes">{changes.map(change => <section key={change.label}>
+    <h4>{change.label}</h4><p>{change.after}</p><details><summary>原来的内容</summary><p>{change.before}</p></details>
+  </section>)}</div> : <p>这一版保留当前的表达内容。</p>;
 }
 
 const PERSONA_VERSION_AUTHOR_LABEL: Record<CompanionPersonaPendingRevisionV1["author"], string> = {
@@ -155,11 +187,16 @@ function PersonaSwitchSheet(props: {
   readonly onCancel: () => void;
   readonly onConfirm: () => void;
 }) {
+  const sheetRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    sheetRef.current?.focus({ preventScroll: true });
+    sheetRef.current?.scrollIntoView?.({ block: "nearest", behavior: "instant" });
+  }, [props.target.presetId]);
   const kept = props.options.length - props.overwrite.length;
   const toggle = (field: SwitchableField) => props.onChange(
     props.overwrite.includes(field) ? props.overwrite.filter((entry) => entry !== field) : [...props.overwrite, field],
   );
-  return <div className="cc-switch-sheet" role="group" aria-label={`换成 ${props.target.name} 之前`}>
+  return <div ref={sheetRef} tabIndex={-1} className="cc-switch-sheet" role="group" aria-label={`换成 ${props.target.name} 之前`}>
     <h4>换成「{props.target.name}」</h4>
     {props.options.length === 0
       ? <p className="cc-muted">你和她的改动都还是预设原样，这次换过去不会有东西被盖掉。</p>
@@ -191,6 +228,15 @@ function PersonaSwitchSheet(props: {
 
 export function PersonaPanel(props: PersonaPanelProps) {
   const olderVersionsId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const previousSwitch = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const previous = previousSwitch.current;
+    if (previous && !props.switchTarget) panelRef.current?.querySelector<HTMLButtonElement>(`button[data-preset-id="${previous}"]`)?.focus({ preventScroll: true });
+    previousSwitch.current = props.switchTarget?.presetId ?? null;
+  }, [props.switchTarget]);
+  const [presetsOpen, setPresetsOpen] = useState(false);
+  const wardrobeOpen = presetsOpen || Boolean(props.switchTarget);
   const personaReadableView = useMemo<PageReadableV1 | null>(() => {
     const profile = props.persona?.profile ?? props.persona?.activePreset ?? null;
     if (!props.section.ok || !props.persona) {
@@ -205,7 +251,7 @@ export function PersonaPanel(props: PersonaPanelProps) {
     const push = (label: string, state: string) => {
       if (label.trim() && rows.length < 12) rows.push({ label, state });
     };
-    props.persona.presets.forEach((preset) => push(preset.name, PERSONA_SECTIONS.appearance));
+    if (wardrobeOpen) props.persona.presets.forEach((preset) => push(preset.name, PERSONA_SECTIONS.appearance));
     BOUNDARY_ITEMS.forEach(([, label]) => push(label, PERSONA_SECTIONS.boundaries));
     const presetName = props.persona.presets.find((preset) => preset.presetId === profile?.presetId)?.name;
     // 「当前 / 待生效 + 生效条件」是合同点名要在**回执**里给出的一格（A50）。
@@ -226,7 +272,7 @@ export function PersonaPanel(props: PersonaPanelProps) {
       ],
       items: rows.map((row, index) => ({ ordinal: index + 1, label: row.label.slice(0, 120), state: row.state.slice(0, 40) })),
     };
-  }, [props.error, props.notice, props.pending, props.persona, props.section]);
+  }, [props.error, props.notice, props.pending, props.persona, props.section, wardrobeOpen]);
   usePageReadableView(personaReadableView);
   if (!props.section.ok || !props.persona) return <SectionState message={PERSONA_UNAVAILABLE} detail={!props.section.ok ? props.section.message : undefined} onRetry={props.onRetry} />;
   const profile = props.persona.profile ?? props.persona.activePreset;
@@ -239,14 +285,14 @@ export function PersonaPanel(props: PersonaPanelProps) {
     <span className="cc-tag">{version.revision === pendingRevision ? "待生效" : version.revision === currentRevision ? "当前版本" : "旧版"}</span>
     <button type="button" className="cc-link" disabled={props.busy !== null || version.revision === currentRevision} onClick={() => props.onRestore(version.revision)}>恢复第 {version.revision} 版</button>
   </article>;
-  return <div className="cc-persona">
+  return <div ref={panelRef} className="cc-persona">
     <CenterFeedback error={props.error} notice={props.notice} />
-    <div className="cc-persona-profile">
       <section className="cc-persona-identity" aria-label="当前人格">
         <span className="cc-kicker">当前第 {currentRevision} 版 · 账号共享</span>
-        <h3>{profile?.name ?? "伴星"}</h3>
+        {profile ? <CompanionNameRow current={profile.name} busy={props.busy !== null} onRename={props.onRename} /> : <h3>伴星</h3>}
         <div className="cc-tags">{profile?.personalityTags.map(tag => <span className="cc-tag" key={tag}>{tag}</span>)}<OriginBadge origin={personaOriginOf(fieldOrigin, "personalityTags")} /></div>
-        <p>{profile?.speakingStyle ?? "正在使用系统默认表达。"}<OriginBadge origin={personaOriginOf(fieldOrigin, "speakingStyle")} /></p>
+      </section>
+    <div className="cc-persona-profile">
         {/* 预设里没有"出厂的自我描述"这一项：它只可能来自账号档案。 */}
         <CompanionSelfDescriptionRow
           current={props.persona.profile?.selfDescription ?? ""}
@@ -254,18 +300,21 @@ export function PersonaPanel(props: PersonaPanelProps) {
           origin={personaOriginOf(fieldOrigin, "selfDescription")}
           onSave={props.onSelfDescription}
         />
-        {profile?.examples.length ? <blockquote>{profile.examples[0].text}</blockquote> : null}
-      </section>
-      <section className="cc-persona-name"><h4>她叫什么</h4><p>用在署名、对话和书桌旁的称呼。</p>
-        {profile ? <CompanionNameRow current={profile.name} busy={props.busy !== null} onRename={props.onRename} /> : <p>先选一份人格预设，就能给她取名。</p>}
+      <section className="cc-persona-speaking" aria-label="她怎样表达">
+        <header><h4>她怎样表达</h4><OriginBadge origin={personaOriginOf(fieldOrigin, "speakingStyle")} /></header>
+        <p className="cc-persona-prose">{profile?.speakingStyle ?? "正在使用系统默认表达。"}</p>
+        {profile?.examples.length ? <details className="cc-details"><summary>看看一句日常回应</summary><blockquote>{profile.examples[0].text}</blockquote></details> : null}
       </section>
     </div>
-    <CenterSection title={PERSONA_SECTIONS.appearance} detail="每份都是完整的表达方式，包含名字、语气、示例与边界。选择后会生成新版本。">
-      <div className="cc-persona-presets">{props.persona.presets.map(preset => <button key={preset.presetId} type="button" aria-pressed={props.switchTarget ? props.switchTarget.presetId === preset.presetId : profile?.presetId === preset.presetId} disabled={props.busy !== null} onClick={() => props.onPreset(preset)}><span><strong>{preset.name}</strong>{profile?.presetId === preset.presetId ? <small>当前预设</small> : null}</span><p>{preset.speakingStyle}</p><small>{preset.personalityTags.join(" · ")}</small></button>)}</div>
+    <details className="cc-persona-wardrobe" open={wardrobeOpen} onToggle={event => setPresetsOpen(event.currentTarget.open)}>
+    <summary>切换人格预设<span>{props.persona.presets.find(preset => preset.presetId === profile?.presetId)?.name ?? "自定义表达"}</span></summary>
+    <CenterSection title={PERSONA_SECTIONS.appearance} detail="选一份作为新的基础。你们已经调整过的内容默认保留。">
       {props.switchTarget && props.onSwitchConfirm && props.onSwitchCancel && props.onOverwrite
         ? <PersonaSwitchSheet target={props.switchTarget} options={props.switchOptions ?? []} overwrite={props.overwrite ?? []} busy={props.busy !== null} onChange={props.onOverwrite} onCancel={props.onSwitchCancel} onConfirm={props.onSwitchConfirm} />
         : null}
+      <div className="cc-persona-presets">{props.persona.presets.map(preset => <button key={preset.presetId} data-preset-id={preset.presetId} type="button" aria-pressed={props.switchTarget ? props.switchTarget.presetId === preset.presetId : profile?.presetId === preset.presetId} disabled={props.busy !== null} onClick={() => props.onPreset(preset)}><span><strong>{preset.name}</strong>{profile?.presetId === preset.presetId ? <small>当前预设</small> : null}</span><p>{preset.speakingStyle}</p><small>{preset.personalityTags.join(" · ")}</small></button>)}</div>
     </CenterSection>
+    </details>
     <div className="cc-persona-expression">
       <CenterSection title="表达分量" detail="决定她一次说多少、日记写多细。">
         <div className="cc-segments" role="group" aria-label="人格表达分量">{(["quiet", "moderate", "active"] as const).map(value => <button key={value} type="button" aria-pressed={profile?.activeness === value} disabled={props.busy !== null} onClick={() => props.onActiveness(value)}>{activenessLabel(value)}</button>)}</div>
@@ -276,12 +325,11 @@ export function PersonaPanel(props: PersonaPanelProps) {
         <div className="cc-switch-list">{BOUNDARY_ITEMS.map(([key, label, detail]) => <button key={key} type="button" role="switch" aria-checked={profile?.boundaries[key] === true} disabled={props.busy !== null} onClick={() => props.onBoundary(key)}><span><strong>{label}</strong><OriginBadge origin={personaOriginOf(fieldOrigin, `boundaries.${key}`)} /><small>{detail}</small></span><span className="cc-switch" data-on={profile?.boundaries[key] === true || undefined} aria-hidden="true"><i /></span></button>)}</div>
       </CenterSection>
     </div>
-    <CenterSection title={PERSONA_SECTIONS.pending} detail="她自己的调整会先排在这里。生效条件以这一版的说明为准。">
+    {props.pending?.pending === null && !props.pendingError ? <p className="cc-persona-pending-empty cc-muted">{PERSONA_NO_PENDING}</p> : <CenterSection title={PERSONA_SECTIONS.pending} detail="先看她调整了什么，再决定何时采用。">
       {props.pendingError ? <SectionState message="待生效版本暂时读不到" detail={props.pendingError} onRetry={props.onRetryPending} />
         : !props.pending ? <p className="cc-muted" role="status">{PERSONA_PENDING_LOADING}</p>
-        : props.pending.pending === null ? <p className="cc-muted">{PERSONA_NO_PENDING}</p>
-        : <article className="cc-persona-pending"><div><strong>第 {props.pending.pending.revision} 版 · {props.pending.pending.profile?.name ?? "回到默认表达"}</strong><small>{pendingAuthorLabel(props.pending.pending)} · {formatDate(props.pending.pending.stagedAt)}</small><p>{props.pending.pending.profile?.speakingStyle ?? props.pending.pending.profile?.selfDescription ?? "这一版会恢复默认人格表达。"}</p>{props.pending.pending.reason ? <p className="cc-pending-reason">{props.pending.pending.reason}</p> : null}<span className="cc-tag">{props.pending.pending.effectiveWhen}</span></div><button type="button" className="button primary" disabled={props.busy !== null} onClick={props.onActivatePending}>{props.busy === "activate-pending" ? "正在应用这一版…" : "现在生效"}</button></article>}
-    </CenterSection>
+        : props.pending.pending ? <article className="cc-persona-pending"><div><strong>第 {props.pending.pending.revision} 版 · {props.pending.pending.profile?.name ?? "回到默认表达"}</strong><small>{pendingAuthorLabel(props.pending.pending)} · {formatDate(props.pending.pending.stagedAt)}</small><PendingPersonaChanges current={profile} next={props.pending.pending.profile} />{props.pending.pending.reason ? <p className="cc-pending-reason">{props.pending.pending.reason}</p> : null}<p className="cc-pending-condition">{props.pending.pending.effectiveWhen}</p></div><button type="button" className="cc-button is-primary" disabled={props.busy !== null} onClick={props.onActivatePending}>{props.busy === "activate-pending" ? "正在应用这一版…" : "现在生效"}</button></article> : null}
+    </CenterSection>}
     <details className="cc-persona-history"><summary>人格版本记录{props.versions ? ` · ${props.versions.length} 版` : ""}</summary>
       <p className="cc-muted">恢复旧版会留下新版本。各个书房累积的熟悉度会保留。</p>
       {props.versionsError ? <SectionState message="版本记录暂时无法读取" detail={props.versionsError} onRetry={props.onReloadVersions} /> : !props.versions ? <p role="status">正在加载版本记录…</p> : props.versions.length === 0 ? <p>还没有人格版本记录。</p> : <div id={olderVersionsId}>{props.versions.map(versionCard)}</div>}

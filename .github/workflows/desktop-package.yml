@@ -163,6 +163,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: desktop-windows-x64-${{ github.run_id }}
+          # apps/desktop-client/release/diagnose-windows-installer.ps1 由 package-windows.mjs 复制进
+          # release，与包同一版本产出：用户机器上「双击没反应、也没报错」时，只有它能分层判断故障在哪一层。
           # 不只是安装包：`latest.yml` 是自动更新的版本清单（缺了 Windows 客户端
           # 永远看不到新版本），`*.exe.blockmap` 保留旧客户端的下载迁移。少了任何一个，
           # Release 都发不出去。
@@ -170,6 +172,7 @@ jobs:
             apps/desktop-client/release/*.exe
             apps/desktop-client/release/*.exe.blockmap
             apps/desktop-client/release/latest.yml
+            apps/desktop-client/release/diagnose-windows-installer.ps1
           # 打包这条链路最容易的失败不是报错，而是"什么都没产出但步骤是绿的"
           # （target 被覆盖成 --dir、artifacts 全被 gitignore、artifactName 写错）。
           # error 而不是 warn，让空产物当场把这一环判红。

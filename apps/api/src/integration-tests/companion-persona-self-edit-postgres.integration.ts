@@ -43,6 +43,8 @@ test("自改保存、采用与用户优先的完整链路", async t => {
     VALUES (${userId}, ${`self-edit-${userId}@example.test`}, 'test', 'owner')`;
   await admin`INSERT INTO workspaces (id, name, owner_id) VALUES (${workspaceId}, '合成人格测试', ${userId})`;
   await admin`INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (${workspaceId}, ${userId}, 'owner')`;
+  await admin`INSERT INTO user_ai_settings(user_id,consent_version,consent_at,data_policy)
+    VALUES(${userId},'fixture',now(),${admin.json({ sendToExternal:true,sendImageContent:true,piiDetection:true,auditLogging:true })})`;
   await admin`INSERT INTO companion_conversations (id, workspace_id, user_id, kind, title, title_source, status)
     VALUES (${conversationId}, ${workspaceId}, ${userId}, 'dialogue', '合成对话', 'system', 'active')`;
 

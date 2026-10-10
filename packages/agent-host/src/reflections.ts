@@ -15,6 +15,10 @@ import { sql } from "drizzle-orm";
 import type { AgentSqlExecutor } from "./store.ts";
 import { queryRows } from "./store.ts";
 import type { CompanionPersonaPendingProposalV1, CompanionPersonaSourceRefV1 } from "./identity.ts";
+import { personaSourcesCurrent, restorePersonaFieldsFromDeadSource } from "./identity.ts";
+import { personaFromDefaultPreset } from "@astella/shared/pet-persona-merge";
+import { getDefaultPersonaPreset } from "@astella/shared/pet-persona-presets";
+import type { CompanionPersonaProfileContent } from "@astella/shared/db-schema/companion-memory";
 
 /**
  * 反思的策略版本。
@@ -72,6 +76,9 @@ export interface CompanionReflectionRowV1 {
   readonly strategyVersion: string;
   readonly baselinePersonaRevision: number;
   readonly decision: CompanionReflectionDecision;
+  readonly jobId: string | null;
+  readonly inputSnapshot: unknown;
+  readonly inputFingerprint: string;
 }
 
 function toIso(value: unknown): string {
@@ -82,6 +89,7 @@ function projectReflection(row: {
   id: string; user_id: string; workspace_id: string; conversation_id: string;
   trigger_kind: string; input_from_seq: string | number; input_to_seq: string | number;
   strategy_version: string; baseline_persona_revision: string | number; decision: string;
+  job_id: string | null; input_snapshot: unknown; input_fingerprint: string;
 }): CompanionReflectionRowV1 {
   return {
     id: String(row.id),
@@ -94,6 +102,9 @@ function projectReflection(row: {
     strategyVersion: row.strategy_version,
     baselinePersonaRevision: Number(row.baseline_persona_revision),
     decision: row.decision as CompanionReflectionDecision,
+    jobId: row.job_id,
+    inputSnapshot: row.input_snapshot,
+    inputFingerprint: row.input_fingerprint,
   };
 }
 
@@ -112,6 +123,7 @@ export async function createOrLoadReflection(
     jobId?: string | null;
     dedupeKey: string;
     inputFingerprint: string;
+    inputSnapshot?: unknown;
     baselinePersonaRevision: number;
     fromSeq: number;
     toSeq: number;
@@ -123,19 +135,21 @@ export async function createOrLoadReflection(
     INSERT INTO companion_reflections
       (user_id, workspace_id, conversation_id, job_id, trigger_kind,
        input_from_seq, input_to_seq, input_fingerprint, dedupe_key, strategy_version,
-       baseline_persona_revision, decision)
+       baseline_persona_revision, decision, input_snapshot)
     VALUES (${input.userId}, ${input.workspaceId}, ${input.conversationId},
             ${input.jobId ?? null}::uuid, 'exchange_segment',
             ${input.fromSeq}, ${input.toSeq}, ${input.inputFingerprint}, ${input.dedupeKey},
-            ${strategyVersion}, ${input.baselinePersonaRevision}, 'queued')
+            ${strategyVersion}, ${input.baselinePersonaRevision}, 'queued',
+            ${JSON.stringify(input.inputSnapshot ?? null)}::jsonb)
     ON CONFLICT (user_id, dedupe_key) DO NOTHING
   `);
   const rows = await queryRows<Parameters<typeof projectReflection>[0]>(tx, sql`
     SELECT id, user_id, workspace_id, conversation_id, trigger_kind,
-           input_from_seq, input_to_seq, strategy_version, baseline_persona_revision, decision
+           input_from_seq, input_to_seq, strategy_version, baseline_persona_revision, decision,
+           job_id, input_snapshot, input_fingerprint
     FROM companion_reflections
     WHERE user_id = ${input.userId} AND dedupe_key = ${input.dedupeKey}
-    LIMIT 1
+    LIMIT 1 FOR UPDATE
   `);
   const row = rows[0];
   return row ? projectReflection(row) : null;
@@ -184,6 +198,7 @@ export async function finalizeReflection(
        SET decision = ${outcome.decision},
            decision_summary = ${summary},
            pending_persona_revision = ${outcome.pendingPersonaRevision ?? null},
+           input_snapshot = NULL,
            result_ref = ${outcome.resultRef === undefined || outcome.resultRef === null
              ? sql`result_ref` : sql`${JSON.stringify(outcome.resultRef)}::jsonb`},
            updated_at = now()
@@ -268,8 +283,8 @@ async function loadReflectionEdges(
 /**
  * 一条待生效提议此刻还站得住的依据。
  *
- * - 后台反思提的：优先用这次留下的 `cited` 边；那一批还没有 cited 边（旧数据）才退回
- *   读过的全部依据——宁可多核一遍，也不因为换了边的形状就放过一条真的失去依据的建议。
+ * - 后台反思提的：使用专属于人格提案的来源；旧批次缺少细分记录时，保守核对全部
+ *   read 边（含原始版本），等待新回顾重评，不能把批次中另一条判断的来源当成支持。
  * - 前台工具提的：那次运行的工具回执还在（会话被删时它们一起消失）——
  *   所以"用户把那条消息删了"会让这一版失去依据，不会在下一次被接受时悄悄生效。
  * - 来源不明的历史版本（这两列为空）：不猜，按原来的语义仍可被采用。
@@ -281,8 +296,13 @@ export async function pendingPersonaProposalSources(
 ): Promise<CompanionPersonaSourceRefV1[]> {
   if (!pending.proposalKind || !pending.proposalId) return [];
   if (pending.proposalKind === "assistant_reflection") {
-    const cited = await loadReflectionCitedSources(tx, userId, pending.proposalId);
-    return cited.length > 0 ? cited : loadReflectionReadSources(tx, userId, pending.proposalId);
+    // A judgment in the same batch cannot supply the basis for a persona edit.
+    const [row] = await queryRows<{ result_ref: { personaSources?: CompanionPersonaSourceRefV1[] } | null }>(tx, sql`
+      SELECT result_ref FROM companion_reflections
+      WHERE user_id=${userId} AND id=${pending.proposalId}::uuid
+    `);
+    if (Array.isArray(row?.result_ref?.personaSources)) return row.result_ref.personaSources;
+    return loadReflectionReadSources(tx, userId, pending.proposalId);
   }
   const rows = await queryRows<{ id: string; name: string; arguments_sha256: string }>(tx, sql`
     SELECT c.id, c.name, c.arguments_sha256
@@ -296,6 +316,52 @@ export async function pendingPersonaProposalSources(
     id: String(row.id),
     revision: String(row.arguments_sha256 ?? ""),
   }));
+}
+
+/** Revalidate adopted automatic fields before the next accepted conversation. */
+export async function reconcileReflectedPersonaSources(tx: AgentSqlExecutor, userId: string): Promise<void> {
+  const rows = await queryRows<{
+    id: string; pending_persona_revision: number; persona_revision: number;
+    result_ref: { personaSources?: CompanionPersonaSourceRefV1[]; personaFields?: string[] } | null;
+    proposal_profile: CompanionPersonaProfileContent;
+    baseline_profile: CompanionPersonaProfileContent | null;
+  }>(tx, sql`
+    SELECT r.id,r.pending_persona_revision,p.revision AS persona_revision,r.result_ref,
+      v.profile AS proposal_profile,b.profile AS baseline_profile
+    FROM companion_reflections r JOIN companion_persona_profiles p ON p.user_id=r.user_id
+    JOIN companion_persona_profile_versions v ON v.user_id=r.user_id AND v.revision=r.pending_persona_revision
+    LEFT JOIN companion_persona_profile_versions b ON b.user_id=r.user_id AND b.revision=r.baseline_persona_revision
+    WHERE r.user_id=${userId} AND r.decision='committed' AND r.pending_persona_revision<=p.revision
+    ORDER BY r.pending_persona_revision DESC
+  `);
+  const handled = new Set<string>();
+  let currentRevision = Number(rows[0]?.persona_revision ?? 0);
+  for (const row of rows) {
+    const baseline = row.baseline_profile ?? personaFromDefaultPreset(getDefaultPersonaPreset());
+    // Earlier reflections predate field/source metadata. Immutable versions
+    // still identify their automatic edits; their read edges are a conservative
+    // basis until a fresh reflection can assess narrower independent support.
+    const proposedFields = row.result_ref?.personaFields ?? (["selfDescription","speakingStyle"] as const).filter(
+      field=>row.proposal_profile.fieldOrigin?.[field]==="assistant" && row.proposal_profile[field]!==baseline[field]);
+    const fields = proposedFields.filter(
+      (field): field is "selfDescription" | "speakingStyle" =>
+        (field === "selfDescription" || field === "speakingStyle") && !handled.has(field));
+    fields.forEach(field => handled.add(field));
+    const sources = row.result_ref?.personaSources ?? await loadReflectionReadSources(tx,userId,row.id);
+    if (fields.length === 0 || (sources.length > 0 && (await personaSourcesCurrent(tx, userId, sources)).current)) continue;
+    const restored = await restorePersonaFieldsFromDeadSource(tx,userId,{
+      revision: currentRevision, fields, proposalProfile: row.proposal_profile,
+      baselineProfile: baseline,
+    }, "自动表达修订的来源已失效，恢复受影响字段并保留后续设置");
+    if (restored.kind === "conflict") continue;
+    if (restored.kind === "changed") {
+      currentRevision = restored.revision;
+      // The baseline can itself be an older automatic proposal with dead
+      // sources. Follow only fields actually restored, within this same turn.
+      for (const field of restored.restoredFields ?? []) handled.delete(field);
+    }
+    await markReflectionProposalWithdrawn(tx,userId,row.id,"已采用的表达修订来源失效，受影响字段已复查撤回");
+  }
 }
 
 /**

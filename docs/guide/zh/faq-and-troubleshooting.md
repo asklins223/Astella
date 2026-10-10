@@ -48,6 +48,17 @@ docker compose -p astella-dev -f docker-compose.dev.yml --profile seed   run --r
 
 修改 API 端口时同步修改 `DESKTOP_API_ORIGIN`。执行 `make config` 检查开发配置，再 `make up` 应用。
 
+### 双击 Windows 安装包没有反应，也没有报错？
+
+安装程序是 GUI 子系统的自解压单文件包：`.NET` 启动器在进入 `Program.Main` 之前失败时只写标准错误，双击的那条路没有任何提示，安装器自己的错误处理也无从执行。按分层判据走：
+
+1. 看 `%LOCALAPPDATA%\Astella\setup-logs\startup.log`。没有这个文件说明连托管代码都没进去；有本次心跳但没界面，问题在界面层或窗口之外。
+2. 删除 `%TEMP%\.net\AstellaSetup`，确认任务管理器里没有残留的 `AstellaSetup` 进程，再双击**一次**并等满 60 秒——未签名的数百 MB 包会被安全软件反复扫描，重复双击还会在解包处互相占用。
+3. 把包放到本机本地磁盘的普通文件夹（不要在网盘同步目录里、不要从压缩软件预览窗口直接打开），右键属性勾选「解除锁定」或执行 `Unblock-File`。
+4. 仍然没反应，运行 Release 页随包发布的 `diagnose-windows-installer.ps1`。它只读，会核对包体结构与清单、临时目录与解包残留、互斥锁与残留进程、安全软件与事件日志，并重定向标准错误实跑一次，拿到 `Main` 之前的失败文本。
+
+正式包应在 CI 配好 `WIN_CSC_LINK` 与 `WIN_CSC_KEY_PASSWORD` 完成代码签名；构建脚本在成品未签名时会打印醒目警告，并在组装完成后自行解析 PE 核对包体结构。三层故障的完整判据与自动验收见 [独立 Windows 安装器](../../../apps/windows-installer/README.md)。
+
 ## API 活着，但 `/ready` 失败
 
 `/health` 表示进程存活；`/ready` 还检查数据库连接、业务表与迁移门槛。迁移由一次性容器执行，初始化顺序是 `role-bootstrap` → `migrate` → `role-grants`，API 与 Worker 在授权成功后启动。

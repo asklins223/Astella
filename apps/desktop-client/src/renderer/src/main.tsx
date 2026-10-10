@@ -15,6 +15,10 @@ if (!root) throw new Error("Desktop renderer root is missing");
 // `:focus-visible` behaviour, so every surface needs the same modality signal.
 trackInputModality();
 
+// 窗口本体的圆角写在文档根上（html 的 overflow 才裁得到视口）。这一行必须在首帧之前，
+// 否则窗口显示的那一帧还是直角；平台来自 preload，渲染前就能读到。
+document.documentElement.dataset.platform = window.astellaDesktop?.platform ?? "unknown";
+
 createRoot(root).render(
   <StrictMode>
     <App />

@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 const CSS = "src/renderer/src/components/hud/hud-surface.css";
 const STYLES = "src/renderer/src/styles.css";
 const FULLSCREEN_CSS = "src/renderer/src/components/surfaces/notebook/notebook-fullscreen.css";
+const NOTE_LIST_CSS = "src/renderer/src/components/surfaces/notebook/notebook-note-list.css";
 
 function read(relative: string): string {
   const fromCwd = relative;
@@ -65,6 +66,10 @@ describe("原生标题带下的贴右落位", () => {
       .toHaveLength(1);
     const rule = platformRule(read(FULLSCREEN_CSS),
       '.desktop-app.hud-surface[data-notebook-fullscreen]:is([data-platform="win32"], [data-platform="linux"])');
-    expect(rule, "折签自己又写了一遍 40px + 12px").toContain("var(--native-caption-band");
+    expect(rule, "折签自己又写了一遍标题带高度").toContain("var(--native-caption-band");
+    // 标题带一旦有两个源，调岛的高度就会和折签、笔记列表纸签错开成两行。
+    for (const file of [FULLSCREEN_CSS, NOTE_LIST_CSS]) {
+      expect(read(file), `${file} 又直接读 env(titlebar-area-height) 了`).not.toContain("env(titlebar-area-height");
+    }
   });
 });

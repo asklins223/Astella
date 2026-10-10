@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { companionMemoryContentMaxLength } from "@astella/shared/companion-memory-desktop-contracts";
 import type { CreateAgentRunV1 } from "@astella/shared/agent-contracts";
 import { gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
@@ -27,8 +27,32 @@ export function CompanionLongGoalsPage({ refreshKey, onMemory }: { refreshKey: n
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [notice, setNotice] = useState<string | null>(null);
   const writing = useRef(false), generation = useRef(0);
   const submission = useRef<{ key: string; request: CreateAgentRunV1 } | null>(null);
+  const detailRef = useRef<HTMLElement>(null), indexRef = useRef<HTMLDivElement>(null);
+  const readingIntent = useRef(false), returnFocus = useRef<string | null>(null);
+  const drafts = useRef(new Map<string, { task: string; noteId: string; noteCursor: string | undefined }>());
+  useLayoutEffect(() => {
+    if (readingIntent.current && selectedId && detailRef.current) {
+      if (indexRef.current && getComputedStyle(indexRef.current).display === "none") detailRef.current.scrollIntoView?.({ block: "start", behavior: "instant" });
+      detailRef.current.focus({ preventScroll: true }); readingIntent.current = false;
+    }
+    if (!selectedId && returnFocus.current) {
+      const button = indexRef.current?.querySelector<HTMLButtonElement>(`button[data-goal-id="${returnFocus.current}"]`);
+      button?.focus({ preventScroll: true }); button?.scrollIntoView?.({ block: "nearest", behavior: "instant" }); returnFocus.current = null;
+    }
+  }, [selectedId, resource.section]);
+  const returnToIndex = () => {
+    if (selectedId) drafts.current.set(selectedId, { task, noteId, noteCursor });
+    returnFocus.current = selectedId; setSelectedId(null);
+  };
+  const selectGoal = (id: string) => {
+    if (selectedId) drafts.current.set(selectedId, { task, noteId, noteCursor });
+    const draft = drafts.current.get(id);
+    readingIntent.current = true; setSelectedId(id); setTask(draft?.task ?? ""); setNoteId(draft?.noteId ?? ""); setNoteCursor(draft?.noteCursor);
+    setBrowsing(false); setTaskCursor(undefined); setError(null); setNotice(null);
+  };
   useEffect(() => {
     generation.current++; writing.current = false; submission.current = null;
+    drafts.current.clear(); returnFocus.current = null; readingIntent.current = false;
     setSelectedId(null); setQuery(""); setCreating(false); setContent(""); setCondition("");
     setCursor(undefined); setBrowsing(false); setTaskCursor(undefined);
     setTask(""); setNoteId(""); setNoteCursor(undefined); setBusy(false); setError(null); setNotice(null);
@@ -54,7 +78,7 @@ export function CompanionLongGoalsPage({ refreshKey, onMemory }: { refreshKey: n
     const created = unwrapGatewayResult(await window.astella.companion.memory.create({ meta: resource.meta(),
       request: { kind: "goal", scope: "workspace", content: content.trim(), appliesWhen: condition.trim() || null } }));
     if (!current()) return;
-    setSelectedId(created.memoryItemId); setCreating(false); setContent(""); setCondition("");
+    selectGoal(created.memoryItemId); setCreating(false); setContent(""); setCondition("");
     setNotice("目标已留下；每次想推进时，再交代这次要做的事。");
   });
   const start = () => {
@@ -74,31 +98,32 @@ export function CompanionLongGoalsPage({ refreshKey, onMemory }: { refreshKey: n
       }
       const run = unwrapGatewayResult(await window.astella.agent.createRun({ meta: resource.meta(), request: submission.current.request }));
       if (!current()) return;
-      submission.current = null; setTask(""); setNotice("这次的事已交给伴星，进展与成果会留在我们的对话手记里。");
+      submission.current = null; drafts.current.delete(ref.memoryId); setTask(""); setNotice("这次的事已交给伴星，进展与成果会留在我们的对话手记里。");
       openCompanionGoalJournal(run.runId, scope);
     });
   };
   if (!resource.section) return <SectionState loading={resource.loading} message={resource.failure ? "长期目标暂时读不到" : "正在加载长期目标…"} detail={resource.failure ?? undefined} onRetry={resource.failure ? () => void resource.reload() : undefined} />;
   if (!resource.section.ok) return <SectionState message="长期目标暂时读不到" detail={resource.section.message} onRetry={() => void resource.reload()} />;
   const visible = items.filter(item => `${item.content} ${item.appliesWhen ?? ""}`.includes(query.trim()));
-  return <section className="cc-long-goals" aria-label="长期目标">
+  return <section className="cc-long-goals" aria-label="长期目标" data-creating={creating || undefined}>
     <div className="cc-rule-intro"><h3>一起慢慢做到的事</h3><p>留下你想达到的目标，再一次次交代具体任务。</p></div>
     <CenterFeedback error={error} notice={notice} />
     <div className="cc-page-tools"><CenterSearch value={query} onChange={value => { if (!busy) { setQuery(value); setCursor(undefined); } }} placeholder="找一个长期目标…" label="筛选长期目标" /><button type="button" className="cc-button" disabled={busy} onClick={() => setCreating(value => !value)}>{creating ? "收起" : "留下一个目标"}</button></div>
     {creating ? <form className="cc-form cc-long-goal-create" onSubmit={event => { event.preventDefault(); create(); }}>
-      <label>想慢慢达到什么<textarea value={content} maxLength={companionMemoryContentMaxLength} disabled={busy} onChange={event => setContent(event.currentTarget.value)} placeholder="比如：从基础开始学会分析电路" /></label>
+      <label>想慢慢达到什么<textarea autoFocus value={content} maxLength={companionMemoryContentMaxLength} disabled={busy} onChange={event => setContent(event.currentTarget.value)} placeholder="比如：从基础开始学会分析电路" /></label>
       <label>适用的情境（可选）<input value={condition} maxLength={200} disabled={busy} onChange={event => setCondition(event.currentTarget.value)} placeholder="比如：这段时间学习物理时" /></label>
-      <button type="submit" className="cc-button is-primary" disabled={busy || !content.trim()}>{busy ? "正在保存目标…" : "确认留下"}</button>
+      <div className="cc-actions"><button type="button" className="cc-link" disabled={busy} onClick={() => setCreating(false)}>取消添加</button><button type="submit" className="cc-button is-primary" disabled={busy || !content.trim()}>{busy ? "正在保存目标…" : "确认留下"}</button></div>
     </form> : null}
     <div className={`cc-long-goals-workspace${selected ? " has-selection" : ""}`}>
-      <div className="cc-long-goals-index" aria-label="目标清单">
-        {visible.length ? visible.map(item => <button type="button" key={item.ref.memoryId} aria-pressed={selectedId === item.ref.memoryId} disabled={busy || resource.loading} onClick={() => { setSelectedId(item.ref.memoryId); setTask(""); setNoteId(""); setNoteCursor(undefined); setBrowsing(false); setTaskCursor(undefined); setError(null); setNotice(null); }}>
+      <div ref={indexRef} className="cc-long-goals-index" aria-label="目标清单">
+        {visible.length ? visible.map(item => <button type="button" data-goal-id={item.ref.memoryId} key={item.ref.memoryId} aria-pressed={selectedId === item.ref.memoryId} disabled={busy || resource.loading} onClick={() => selectGoal(item.ref.memoryId)}>
           <small>已确认 · 第 {item.ref.revision} 版</small><strong>{plainCompanionBubbleText(item.content)}</strong>{item.appliesWhen ? <span>{item.appliesWhen}</span> : null}
         </button>) : <SectionState message={query ? "还没找到这个目标" : "给想做的事留一个位置"} detail={query ? "试试其他关键词。" : "目标会和具体任务关联，方便下次接着推进。"} />}
         {resource.section.value.nextCursor ? <button type="button" className="cc-link" disabled={busy || resource.loading} onClick={() => { setSelectedId(null); setCursor(resource.section?.ok ? resource.section.value.nextCursor ?? undefined : undefined); }}>更早的目标</button> : null}
         {cursor ? <button type="button" className="cc-link" disabled={busy || resource.loading} onClick={() => { setSelectedId(null); setCursor(undefined); }}>回到近期目标</button> : null}
       </div>
-      {selected ? <article className="cc-long-goal-detail" aria-label="长期目标详情">
+      {selected ? <article ref={detailRef} tabIndex={-1} className="cc-long-goal-detail" aria-label="长期目标详情">
+        <button type="button" className="cc-link cc-reading-back" disabled={busy} onClick={returnToIndex}>← 返回目标清单</button>
         <header><span className="cc-kicker">你的长期目标</span><button type="button" className="cc-link" disabled={busy} onClick={() => onMemory(selected.ref.memoryId)}>修订或撤回</button></header>
         <div className="cc-long-goal-statement" role="heading" aria-level={3}>{renderCompanionMarkdown(selected.content)}</div>
         {selected.appliesWhen ? <p className="cc-muted">适用情境：{selected.appliesWhen}</p> : null}

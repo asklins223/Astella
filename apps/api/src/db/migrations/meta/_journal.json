@@ -2801,6 +2801,13 @@
       "when": 1791590700000,
       "tag": "0403_companion_delivery_observation",
       "breakpoints": true
+    },
+    {
+      "idx": 400,
+      "version": "7",
+      "when": 1791590800000,
+      "tag": "0404_companion_reflection_frozen_input",
+      "breakpoints": true
     }
   ]
 }

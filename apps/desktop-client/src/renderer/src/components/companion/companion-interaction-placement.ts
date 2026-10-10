@@ -34,8 +34,8 @@ export function companionHistoryPlacement(role: Rect, viewportWidth: number, pre
 }
 
 /** Measures only floating surfaces; never changes a page's seat or width. */
-export function companionFloatingPlacement({ role, controls = [], viewport, headHeight, headWidth: preferredWidth = 340, hasPapers = false, paperWidth: preferredPaperWidth = 360 }: {
-  role: Rect; controls?: readonly Rect[]; viewport: { width: number; height: number }; headHeight: number; headWidth?: number; hasPapers?: boolean; paperWidth?: number;
+export function companionFloatingPlacement({ role, controls = [], viewport, headHeight, headWidth: preferredWidth = 340, hasPapers = false, paperWidth: preferredPaperWidth = 360, paperHeight }: {
+  role: Rect; controls?: readonly Rect[]; viewport: { width: number; height: number }; headHeight: number; headWidth?: number; hasPapers?: boolean; paperWidth?: number; paperHeight?: number;
 }): CompanionFloatingPlacement {
   const bounds = interactionBounds(role, controls);
   const edge = 14;
@@ -109,5 +109,11 @@ export function companionFloatingPlacement({ role, controls = [], viewport, head
   }
   const headDock = head.bottom <= role.top ? "above" : head.top >= role.bottom ? "below"
     : head.right <= role.left ? "left" : "right";
+  // Short receipts sit near the companion within the already safe corridor.
+  // Long decisions retain that corridor's full scroll budget.
+  if (paperHeight !== undefined && paperHeight > 0) {
+    const shownHeight = Math.min(paperHeight, Math.max(0, paperBottom - paperTop));
+    paperTop = clamp(bounds.top - gap - shownHeight, paperTop, paperBottom - shownHeight);
+  }
   return { side, headDock, head, papers: rect(paperLeft, paperTop, paperWidth, Math.max(0, paperBottom - paperTop)) };
 }
