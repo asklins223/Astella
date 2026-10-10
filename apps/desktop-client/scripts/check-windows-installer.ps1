@@ -1,4 +1,4 @@
-param([string]$Installer, [string]$ExpectedVersion)
+﻿param([string]$Installer, [string]$ExpectedVersion)
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true') { throw '此测试会安装和卸载应用，仅在全新的 GitHub Windows runner 中执行。' }
 $packageRoot = Split-Path -Parent $PSScriptRoot
