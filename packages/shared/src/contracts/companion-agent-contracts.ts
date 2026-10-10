@@ -10,6 +10,7 @@
  */
 
 import { z } from "zod";
+import { isCompanionAutonomousTool } from "../companion-autonomy.ts";
 import { companionEditedNoteV1Schema } from "./companion-note-authoring-contracts.ts";
 import { DEFAULT_AI_TASK_TIMEOUT_MS } from "../ai-execution-budgets.ts";
 
@@ -163,8 +164,8 @@ export const companionAgentToolDefinitionV1Schema = z.object({
   riskClass: companionAgentRiskClassSchema,
   requiresConfirmation: z.boolean(),
   // Editing carries both expected original blocks and replacement Markdown, including JSON escapes.
-  maxInputChars: z.number().int().positive().max(120_000),
-  maxOutputChars: z.number().int().positive().max(60_000),
+  maxInputChars: z.number().int().positive().max(150_000),
+  maxOutputChars: z.number().int().positive().max(70_000),
 }).strict();
 export type CompanionAgentToolDefinitionV1 = z.infer<
   typeof companionAgentToolDefinitionV1Schema
@@ -246,7 +247,7 @@ export function canUseCompanionAgentTool(
   permission: CompanionAgentPermissionLevel,
   definition: Pick<CompanionAgentToolDefinitionV1, "riskClass" | "requiresConfirmation" | "name">,
 ): { allowed: boolean; requiresConfirmation: boolean; reason?: string } {
-  if (definition.riskClass === "read") {
+  if (definition.riskClass === "read" || isCompanionAutonomousTool(definition.name)) {
     return { allowed: true, requiresConfirmation: false };
   }
   if (permission === "read_only") {

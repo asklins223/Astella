@@ -32,7 +32,7 @@ import type {
   SwitchableField,
 } from "@astella/shared/pet-persona-merge";
 
-/** 前台工具用的字段集合；`selfDescription` 走的是后台反思那条通路。 */
+/** 前台自改与后台整理共用同一组表达字段。 */
 export type PersonaSelfEditField = SwitchableField | PersonaAssistantEditableField;
 
 export type PersonaSelfEditResult =

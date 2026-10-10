@@ -308,7 +308,7 @@ export async function pendingPersonaProposalSources(
     SELECT c.id, c.name, c.arguments_sha256
     FROM companion_agent_tool_calls c
     WHERE c.user_id = ${userId} AND c.run_id = ${pending.proposalId}::uuid
-      AND c.name IN ('companion_revise_own_style', 'companion_revise_own_tags')
+      AND c.name IN ('companion_revise_own_style', 'companion_revise_own_tags', 'companion_revise_identity')
     ORDER BY c.created_at
   `);
   return rows.map((row) => ({
@@ -322,7 +322,7 @@ export async function pendingPersonaProposalSources(
 export async function reconcileReflectedPersonaSources(tx: AgentSqlExecutor, userId: string): Promise<void> {
   const rows = await queryRows<{
     id: string; pending_persona_revision: number; persona_revision: number;
-    result_ref: { personaSources?: CompanionPersonaSourceRefV1[]; personaFields?: string[] } | null;
+    result_ref: { personaSources?: CompanionPersonaSourceRefV1[]; personaFields?: string[]; personaBasis?: string } | null;
     proposal_profile: CompanionPersonaProfileContent;
     baseline_profile: CompanionPersonaProfileContent | null;
   }>(tx, sql`
@@ -347,6 +347,7 @@ export async function reconcileReflectedPersonaSources(tx: AgentSqlExecutor, use
       (field): field is "selfDescription" | "speakingStyle" =>
         (field === "selfDescription" || field === "speakingStyle") && !handled.has(field));
     fields.forEach(field => handled.add(field));
+    if (row.result_ref?.personaBasis === "self_authored") continue;
     const sources = row.result_ref?.personaSources ?? await loadReflectionReadSources(tx,userId,row.id);
     if (fields.length === 0 || (sources.length > 0 && (await personaSourcesCurrent(tx, userId, sources)).current)) continue;
     const restored = await restorePersonaFieldsFromDeadSource(tx,userId,{

@@ -191,7 +191,7 @@ describe("40 §4.8.4 · 人格「待生效版本」在伴星中心看得见", ()
     next.pending!.profile!.selfDescription = "我开始学会先听完你眼前这句话。";
     renderPanel({ pending: next });
     const changes = document.querySelector(".cc-persona-changes")!;
-    expect(changes.textContent).toContain("她怎么说自己");
+    expect(changes.textContent).toContain("她写给自己的文档");
     expect(changes.textContent).toContain("我开始学会先听完你眼前这句话。");
     expect([...changes.querySelectorAll("h4")].map(node => node.textContent)).not.toContain("她怎样表达");
   });

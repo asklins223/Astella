@@ -66,7 +66,7 @@ test("她能改这一项，来源记 assistant；名字仍然不在她能改的�
 });
 
 test("容量只有这一个来源：契约按它拒收，超出长度的写入不会静默落库", () => {
-  assert.equal(PERSONA_FIELD_CAPACITY.selfDescription, 1000);
+  assert.equal(PERSONA_FIELD_CAPACITY.selfDescription, 65_536);
   const tooLong = withSelfDescription("啊".repeat(PERSONA_FIELD_CAPACITY.selfDescription + 1));
   const parsed = companionPersonaProfileV1Schema.safeParse({
     ...tooLong, id: "00000000-0000-4000-8000-000000000001", userId: "00000000-0000-4000-8000-000000000002",

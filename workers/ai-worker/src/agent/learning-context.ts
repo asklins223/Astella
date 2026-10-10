@@ -10,7 +10,7 @@ import {
   type AgentPreferenceRow,
 } from "./learning-preferences.ts";
 
-interface CompanionProfile { name: string; speakingStyle: string; personalityTags: string[]; examples: { text: string }[] }
+interface CompanionProfile { selfDescription?: string; name: string; speakingStyle: string; personalityTags: string[]; examples: { text: string }[] }
 
 /** 白名单拼成 SQL 的 IN 列表——词表只有 `learning-preferences.ts` 那一处定义。 */
 const inList = (values: readonly string[]) =>

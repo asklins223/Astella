@@ -77,6 +77,26 @@ describe("stableVisibleCut", () => {
     const raw = "干净的第一行。\n干净的第二行。\n*含标记的第三行";
     assert.equal(stableVisibleCut(raw), "干净的第一行。\n干净的第二行。\n".length);
   });
+
+  it("完整加粗、代码、链接和括号不把第一句压到终态", () => {
+    for (const raw of ["**先做这一件事。**", "用 `示例` 理解。", "打开[笔记](https://example.com)。", "先想一想（例子很简单）。"]) {
+      assert.equal(stableVisibleCut(raw), raw.length);
+    }
+    for (const raw of ["**还没闭合", "链接[笔记](https://", "有一个(例子"]) assert.equal(stableVisibleCut(raw), 0);
+  });
+});
+
+it("加粗首句在后续正文生成前已经交付；逐拍保持最终正文前缀", async () => {
+  const { delivery, written } = deliveryWithRecorder({ flushChars: 1, flushIntervalMs: 0 });
+  const first = "**先从眼前这一步开始。**";
+  await delivery.onRawDelta(first);
+  assert.equal(written.join(""), first, "不能等整段或换行才触发第一句语音");
+  await delivery.onRawDelta("然后再");
+  await delivery.onRawDelta("慢慢整理思路。");
+  const final = first + "然后再慢慢整理思路。";
+  assert.ok((await delivery.finish()).ok);
+  assert.ok(await delivery.writeTail(final));
+  assert.equal(written.join(""), final);
 });
 
 describe("projectCompanionVisible", () => {

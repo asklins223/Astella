@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { shouldKeepSpeculativeFirstStep } from "../companion-speculative-first-step.ts";
+import { getCompanionAgentTool } from "@astella/shared";
+import { buildCasualFirstStepRequest, shouldKeepSpeculativeFirstStep } from "../companion-speculative-first-step.ts";
 
 /**
  * 保留投机结果的条件（2026-10-07）：投机的提示词里没有注意力块，所以只有真实解释
@@ -43,4 +44,14 @@ test("她上一条还挂着用户没接的收尾时作废——投机的请求�
     intent: "conversation", toolUse: "none", subjects: [], ambiguities: [],
     pendingOfferIndexes: [],
   }), true, "没有待收的账时不额外花一次调用");
+});
+
+
+test("提前生成的闲聊第一步提供自身工具，业务写入不进入投机面", () => {
+  const own = getCompanionAgentTool("companion_write_self_note")!, business = getCompanionAgentTool("companion_create_note")!;
+  const request = buildCasualFirstStepRequest({ turnPolicy: "当前身份", permissionLevel: "read_only", stepBudget: 3,
+    messages: [{ role: "user", content: "你在关注什么？" }], maxTokens: 8000,
+    tools: [own, business].map(({ name, description, parameters }) => ({ name, description, parameters })) });
+  assert.deepEqual(request.tools?.map(tool => tool.name), ["companion_write_self_note"]);
+  assert.doesNotMatch(request.systemPrompt, /本轮没有可调用工具/);
 });

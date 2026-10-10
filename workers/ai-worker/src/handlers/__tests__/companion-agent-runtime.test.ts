@@ -31,7 +31,9 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   canUseCompanionAgentTool,
+  COMPANION_AUTONOMOUS_TOOLS,
   getCompanionAgentTool,
+  isCompanionAutonomousTool,
   resolveAllCompanionAgentTools,
   validateCompanionAgentToolArguments,
 } from "@astella/shared";
@@ -133,13 +135,20 @@ test("工具异常使用执行器的同一类，写操作超时以结果待核�
   );
 });
 
-test("工具解析：只读权限下不存在任何写工具", () => {
+test("工具解析：只读权限下只有她自己的记事与身份文档可以写", () => {
   const readOnlyTools = resolveAllCompanionAgentTools("read_only");
   assert.ok(readOnlyTools.length > 0, "只读权限仍应保留读取工具");
   for (const definition of readOnlyTools) {
-    assert.equal(definition.riskClass, "read", `${definition.name} 不应出现在只读权限中`);
+    // 权限档管的是用户的材料。她写给自己的记事与身份文档由声明划界（§20），
+    // 不因此多拿到任何触碰用户内容的口子。
+    assert.ok(definition.riskClass === "read" || isCompanionAutonomousTool(definition.name),
+      `${definition.name} 不是她自己的记录，不应出现在只读权限中`);
     assert.equal(canUseCompanionAgentTool("read_only", definition).allowed, true);
   }
+  assert.deepEqual(
+    readOnlyTools.filter(d => d.riskClass !== "read").map(d => d.name).sort(),
+    COMPANION_AUTONOMOUS_TOOLS.filter(name => getCompanionAgentTool(name)?.riskClass !== "read").sort(),
+    "只读权限里的非读工具必须恰好等于声明的自主集合");
   // 计划类写工具在只读权限下必须被拒绝
   for (const name of ["companion_start_learning", "companion_pause_learning", "companion_defer_review"]) {
     const definition = getCompanionAgentTool(name);
@@ -650,11 +659,11 @@ test("扁平工具面：guided/full 档下写工具与读工具同时在列，�
   }
 });
 
-test("扁平工具面：read_only 档仍然只剩读工具（权限边界不因常开而放松）", () => {
+test("扁平工具面：read_only 档只剩读工具与她自己的记录（权限边界不因常开而放松）", () => {
   const readOnly = resolveAllCompanionAgentTools("read_only");
   assert.ok(readOnly.length > 0, "read_only 下仍要有读工具");
-  assert.ok(readOnly.every((d) => d.riskClass === "read"),
-    "read_only 绝不能出现任何写/动作工具");
+  assert.ok(readOnly.every((d) => d.riskClass === "read" || isCompanionAutonomousTool(d.name)),
+    "read_only 绝不能出现触碰用户材料的写/动作工具");
 });
 /**
  * steer 的提示里到底该点名哪个工具。

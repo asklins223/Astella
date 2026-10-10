@@ -39,24 +39,34 @@ export interface WarmSegmentResult {
 interface WarmEntry {
   readonly userId: string;
   readonly promise: Promise<WarmSegmentResult>;
+  readonly controller: AbortController;
+  readonly turn?: { workspaceId: string; conversationId: string; runId: string; generation: number };
   expiresAt: number;
 }
 
 const entries = new Map<string, WarmEntry>();
-const inFlightPerUser = new Map<string, number>();
+const inFlightPerUser = new Map<string, Set<WarmEntry>>();
+
+function discardEntry(segmentId: string, entry: WarmEntry): void {
+  entries.delete(segmentId);
+  const inFlight = inFlightPerUser.get(entry.userId);
+  inFlight?.delete(entry);
+  if (inFlight?.size === 0) inFlightPerUser.delete(entry.userId);
+  entry.controller.abort();
+}
 
 /** 预热命中/未命中的计数（只用于日志与验证，不参与任何判定）。 */
 export const companionTtsWarmStats = { started: 0, joined: 0, hits: 0, missed: 0, failed: 0, skipped: 0 };
 
 function pruneExpired(now: number): void {
   for (const [segmentId, entry] of entries) {
-    if (entry.expiresAt <= now) entries.delete(segmentId);
+    if (entry.expiresAt <= now) discardEntry(segmentId, entry);
   }
   // 超上限时按过期时间淘汰最旧的（Map 保持插入序，先插的先走）。
   while (entries.size > COMPANION_TTS_WARM_MAX_ENTRIES) {
     const oldest = entries.keys().next();
     if (oldest.done) break;
-    entries.delete(oldest.value);
+    discardEntry(oldest.value, entries.get(oldest.value)!);
   }
 }
 
@@ -68,23 +78,36 @@ function pruneExpired(now: number): void {
 export function warmCompanionSegment(args: {
   userId: string;
   segmentId: string;
-  run: () => Promise<WarmSegmentResult>;
+  turn?: WarmEntry["turn"];
+  run: (signal: AbortSignal) => Promise<WarmSegmentResult>;
 }): void {
   const now = Date.now();
   pruneExpired(now);
+  if (args.turn) {
+    for (const [segmentId, entry] of entries) {
+      if (entry.userId !== args.userId || entry.turn?.workspaceId !== args.turn.workspaceId
+        || entry.turn.conversationId !== args.turn.conversationId) continue;
+      if (entry.turn.generation > args.turn.generation) return; // 迟到的旧批次不重新挤进队列。
+      if (entry.turn.generation < args.turn.generation) discardEntry(segmentId, entry);
+    }
+  }
   if (entries.has(args.segmentId)) {
     companionTtsWarmStats.joined += 1;
     return;
   }
-  const inFlight = inFlightPerUser.get(args.userId) ?? 0;
-  if (inFlight >= COMPANION_TTS_WARM_MAX_IN_FLIGHT_PER_USER) {
+  const inFlight = inFlightPerUser.get(args.userId) ?? new Set<WarmEntry>();
+  if (inFlight.size >= COMPANION_TTS_WARM_MAX_IN_FLIGHT_PER_USER) {
     // 这个用户的 TTS 队列已经排满：不再往前面塞，让客户端自己按需来取。
     companionTtsWarmStats.skipped += 1;
     return;
   }
-  inFlightPerUser.set(args.userId, inFlight + 1);
+  inFlightPerUser.set(args.userId, inFlight);
   companionTtsWarmStats.started += 1;
-  const promise = args.run()
+  const controller = new AbortController();
+  const promise = Promise.resolve().then(() => {
+    controller.signal.throwIfAborted();
+    return args.run(controller.signal);
+  })
     .catch((error: unknown): WarmSegmentResult => {
       // 不变量 2：预热失败只记一笔，绝不外抛（它跑在 SSE 的推流循环里）。
       companionTtsWarmStats.failed += 1;
@@ -95,11 +118,13 @@ export function warmCompanionSegment(args: {
       return { statusCode: 500, error: { code: "TTS_FAILED", message: "warm synthesis failed" } };
     })
     .finally(() => {
-      const current = inFlightPerUser.get(args.userId) ?? 1;
-      if (current <= 1) inFlightPerUser.delete(args.userId);
-      else inFlightPerUser.set(args.userId, current - 1);
+      inFlight.delete(entry);
+      if (inFlight.size === 0 && inFlightPerUser.get(args.userId) === inFlight) inFlightPerUser.delete(args.userId);
     });
-  entries.set(args.segmentId, { userId: args.userId, promise, expiresAt: now + COMPANION_TTS_WARM_TTL_MS });
+  const entry: WarmEntry = { userId: args.userId, promise, controller, turn: args.turn, expiresAt: now + COMPANION_TTS_WARM_TTL_MS };
+  inFlight.add(entry);
+  entries.set(args.segmentId, entry);
+  pruneExpired(now);
   // 没人来取也不能变成未处理拒绝。
   void promise.catch(() => undefined);
 }
@@ -112,6 +137,7 @@ export function warmCompanionSegment(args: {
 export async function takeWarmCompanionSegment(segmentId: string): Promise<WarmSegmentResult | null> {
   const entry = entries.get(segmentId);
   if (!entry || entry.expiresAt <= Date.now()) {
+    if (entry) discardEntry(segmentId, entry);
     companionTtsWarmStats.missed += 1;
     return null;
   }
@@ -121,6 +147,7 @@ export async function takeWarmCompanionSegment(segmentId: string): Promise<WarmS
 
 /** 测试用：清空缓存与计数。 */
 export function resetCompanionTtsWarmCache(): void {
+  for (const [segmentId, entry] of entries) discardEntry(segmentId, entry);
   entries.clear();
   inFlightPerUser.clear();
   companionTtsWarmStats.started = 0;

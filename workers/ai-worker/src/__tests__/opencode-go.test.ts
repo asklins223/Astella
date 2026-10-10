@@ -153,6 +153,74 @@ function agentTurnRequest(overrides: Partial<AgentTurnRequest> = {}): AgentTurnR
   } as AgentTurnRequest;
 }
 
+test("带工具的真实流式步骤在终止事件前交付首句，并保留工具和思考句柄", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let delivered!: () => void;
+  const firstSentence = new Promise<void>(resolve => { delivered = resolve; });
+  let captured: Record<string, unknown> | undefined;
+  const text = "我先看看当前内容，再陪你整理。";
+  const terminal = completionResponse({ output: [
+    { type: "reasoning", id: "rs_stream", summary: [], encrypted_content: "opaque-stream", content: [{ text: "private reasoning" }] },
+    { type: "message", content: [{ type: "output_text", text }] },
+    { type: "function_call", call_id: "call_context", name: "companion_read_context", arguments: '{"section":"current"}' },
+  ] });
+  const provider = makeProvider({ streamRequest: async (_url, _headers, body) => {
+    captured = body as Record<string, unknown>;
+    async function* stream() {
+      yield new TextEncoder().encode(`data: ${JSON.stringify({ type: "response.output_text.delta", delta: text })}\n\n`);
+      await gate;
+      yield new TextEncoder().encode(`data: ${JSON.stringify({ type: "response.completed", response: terminal })}\n\n`);
+    }
+    return { status: 200, statusText: "OK", body: stream(), cancel: () => undefined };
+  } });
+  const governed = createGovernedProvider(provider, { consentOk: true, policy: {
+    sendToExternal: true, sendImageContent: false, piiDetection: true, auditLogging: false,
+  } }, "synthetic-stream-scope");
+  assert.equal(governed.chatCompletionStreamToolCalls, true, "真实运行时据此决定工具步骤是否能流式");
+  let finished = false;
+  const pending = runStreamingAgentStep({ provider: governed, stepRequest: agentTurnRequest(),
+    ctxSignal: new AbortController().signal, timeoutMs: 1000,
+    onProviderDelta: async delta => { assert.equal(delta, text); delivered(); return true; },
+  }).then(result => { finished = true; return result; });
+  try {
+    await firstSentence;
+    assert.equal(finished, false, "首句不能等模型整段结束才发");
+    assert.deepEqual(captured?.tools, [{ type: "function", ...agentTurnRequest().tools[0] }]);
+    assert.equal(captured?.tool_choice, "auto");
+  } finally { release(); }
+  const result = await pending;
+  assert.deepEqual(result.toolCalls, [{ id: "call_context", name: "companion_read_context", arguments: { section: "current" } }]);
+  assert.deepEqual(result.reasoning, [{ type: "reasoning", id: "rs_stream", summary: [], encrypted_content: "opaque-stream" }]);
+  assert.equal(result.providerRequestId, "resp_test_1");
+  assert.equal(result.usage?.totalTokens, 160);
+});
+
+test("原生流式工具调用允许无正文；损坏参数和缺失终止快照仍拒绝", async () => {
+  const tool = { type: "function_call", call_id: "read_1", name: "companion_read_context", arguments: "{}" };
+  const stream = (response: unknown) => streamingRequester([
+    `data: ${JSON.stringify({ type: "response.completed", response })}\n\n`,
+  ]);
+  const native = agentTurnRequest({ toolChoice: "required" });
+  const valid = stream({ status: "completed", output: [tool] });
+  const provider = makeProvider({ streamRequest: valid.request, modelProfile: { reasoning: { default: "high", levels: ["none", "high"] } } });
+  const result = await runStreamingAgentStep({ provider, stepRequest: native,
+    ctxSignal: new AbortController().signal, timeoutMs: 1000, onProviderDelta: async () => { assert.fail("工具参数不能作为正文"); } });
+  assert.equal(result.content, "");
+  assert.equal(result.finishReason, "tool_calls");
+  assert.equal(result.toolCalls[0]?.id, "read_1");
+  assert.equal(valid.captured[0]?.body.tool_choice, "auto", "思考与 required 的兼容规则与整段请求一致");
+  for (const [response, code] of [
+    [{ status: "completed", output: [{ ...tool, arguments: '{"broken":' }] }, "arguments_malformed"],
+    [{ status: "completed" }, "stream_incomplete"],
+  ] as const) {
+    const broken = stream(response);
+    await assert.rejects(() => makeProvider({ streamRequest: broken.request }).chatCompletionStream([], {
+      responseFormat: "text", nativeAgentRequest: native,
+    }, undefined, () => undefined), (error: unknown) => error instanceof Error && "code" in error && error.code === code);
+  }
+});
+
 // ─── 端点解析 ────────────────────────────────────────────────────────────
 
 test("resolveOpenCodeGoEndpoint: 追加 /responses", () => {

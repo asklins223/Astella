@@ -417,7 +417,8 @@ export async function voiceRoutes(app: FastifyInstance) {
         warmCompanionSegment({
           userId: scope.userId,
           segmentId: notice.segmentId,
-          run: () => synthesizeCompanionTtsSegment({
+          turn: { workspaceId: scope.workspaceId, conversationId: notice.conversationId, runId: notice.runId, generation: notice.generation },
+          run: (signal) => synthesizeCompanionTtsSegment({
             workspaceId: scope.workspaceId,
             userId: scope.userId,
             ref: {
@@ -437,6 +438,7 @@ export async function voiceRoutes(app: FastifyInstance) {
               scope: { ...scope, currentActiveTransaction: currentApiWorkspaceTransaction },
               log: app.log,
               ordinal: notice.ordinal,
+              signal,
             }),
           }),
         });

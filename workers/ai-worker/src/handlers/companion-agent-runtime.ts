@@ -206,6 +206,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       stepBudget: budget.maxSteps,
       messages,
       maxTokens: companionStepOutputCeiling(args.provider),
+      tools: availableDefinitions.map(({ name, description, parameters }) => ({ name, description, parameters })),
     })
     : null;
   /** 投机那一步真的发过字没有——保留时它就是这一步的 `stepEmitted`。 */
@@ -636,7 +637,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
        * - 终答步（工具已被撤下）恒可流式；
        * - **带工具的一步**只有在 provider 声明"流式也解析 tool_calls"时才可流式：
        *   否则模型返回的工具调用会被静默丢掉（用户看到"我去看看"，然后什么都没发生）。
-       *   未声明的实现（如 opencode_go）那一步仍走整段取回。
+       *   未声明的实现那一步仍走整段取回；opencode_go 已解析流式工具回执。
        */
       const canStreamThisStep = Boolean(args.onProviderDelta)
         && typeof stepProvider.chatCompletionStream === "function"

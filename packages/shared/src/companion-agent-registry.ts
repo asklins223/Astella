@@ -1,3 +1,4 @@
+import { isCompanionAutonomousTool } from "./companion-autonomy.ts";
 import { agentCapabilityCatalog, getAgentCapability, validateAgentCapabilityArguments } from "./agent-capability-catalog.ts";
 import { isVisionGatedCompanionTool, type CompanionAgentPermissionLevel,
   type CompanionAgentToolDefinitionV1, type CompanionAgentToolExecutionConstraints } from "./contracts/companion-agent-contracts.ts";
@@ -19,7 +20,7 @@ export function resolveAllCompanionAgentTools(
   return COMPANION_AGENT_TOOL_DEFINITIONS.filter(definition =>
     (!isVisionGatedCompanionTool(definition.name) || constraints.visionEnabled === true)
     && (definition.name !== "agent_web_search" || constraints.webSearchEnabled === true)
-    && (permission !== "read_only" || definition.riskClass === "read"));
+    && (permission !== "read_only" || definition.riskClass === "read" || isCompanionAutonomousTool(definition.name)));
 }
 export function getCompanionAgentTool(toolName: string): CompanionAgentToolDefinitionV1 | null {
   const entry = getAgentCapability(toolName);

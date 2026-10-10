@@ -1,6 +1,7 @@
 import type { CompanionMemoryKindV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { Archive,Map,RotateCcw } from "lucide-react";
 import { Activity,useEffect,useRef,useState } from "react";
+import { CompanionSelfNotesPage } from "./companion-self-notes-page";
 import { CompanionMethodsPage } from "./companion-methods-page";
 import { CompanionLongGoalsPage } from "./companion-long-goals-page";
 import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
@@ -16,7 +17,7 @@ import { publishCompanionRecordsChanged,useCompanionRecordsRefresh,useCompanionR
 type MemoryPageProps = { refreshKey: number; requestedMemoryId: string | null; onFocusConsumed: () => void;
   requestedMethodId?: string | null; onMethodFocusConsumed?: () => void };
 export function CompanionMemoryPage(props: MemoryPageProps) {
-  const [view,setView] = useState<"all" | "cooperation" | "methods" | "goals">("all");
+  const [view,setView] = useState<"all" | "cooperation" | "methods" | "goals" | "self">("all");
   useEffect(() => { if (props.requestedMemoryId) setView("all"); },[props.requestedMemoryId]);
   useEffect(() => { if (props.requestedMethodId) setView("methods"); },[props.requestedMethodId]);
   return <>
@@ -24,8 +25,10 @@ export function CompanionMemoryPage(props: MemoryPageProps) {
       <button type="button" aria-pressed={view==="all"} onClick={()=>setView("all")}>全部记忆</button>
       <button type="button" aria-pressed={view==="cooperation"} onClick={()=>setView("cooperation")}>合作方式</button>
       <button type="button" aria-pressed={view==="methods"} onClick={()=>setView("methods")}>我们的方法</button>
+      <button type="button" aria-pressed={view==="self"} onClick={()=>setView("self")}>她的记事</button>
       <button type="button" aria-pressed={view==="goals"} onClick={()=>setView("goals")}>长期目标</button>
     </div>
+    {view==="self" ? <CompanionSelfNotesPage refreshKey={props.refreshKey} /> : null}
     <Activity mode={view==="methods" ? "visible" : "hidden"}><CompanionMethodsPage refreshKey={props.refreshKey} requestedId={props.requestedMethodId} onFocusConsumed={props.onMethodFocusConsumed} /></Activity>
     <Activity mode={view==="goals" ? "visible" : "hidden"}><CompanionLongGoalsPage refreshKey={props.refreshKey} onMemory={id=>{useRoomStore.getState().setCompanionCenterTarget({tab:"memory",focusMemoryId:id});setView("all");}} /></Activity>
     <Activity mode={view==="all" || view==="cooperation" ? "visible" : "hidden"}><CompanionMemoryRecordsPage {...props} cooperation={view==="cooperation"} onViewMemory={()=>setView("all")} /></Activity>

@@ -849,6 +849,7 @@ export function buildCompanionPersonaMessages(input: {
   methodCatalog?: string;
   /** 她自己提炼、还没经用户核对的候选做法（方案 50 §16 第 6 步的读回边）。 */
   methodCandidates?: string;
+  selfNotes?: string;
   /** 上一句实际播到哪（方案 50 §10.2）。没有背景时是空串。 */
   deliveryObservation?: string;
   userText: string;
@@ -1139,7 +1140,7 @@ export function buildCompanionPersonaMessages(input: {
   }
   const timeline = renderCompanionConversationEvidence(boundedRecent, input.conversationClock);
   add("conversation_timeline", timeline, "data", { required: Boolean(timeline) });
-  add("persona", personaBlock.join("\n"), "data", { priority: 30, maxCharacters: 4000 });
+  add("persona", personaBlock.join("\n"), "data", { priority: 30, maxCharacters: 8000 });
   if (input.groundedTutorContext) {
     add("grounded_target", groundedTargetBlock, "data", { required: true, maxCharacters: 24000 });
   } else {
@@ -1158,6 +1159,7 @@ export function buildCompanionPersonaMessages(input: {
     add("page_context", pageContextBlock, "data", { priority: 5, maxCharacters: 16000 });
     add("method_catalog", input.methodCatalog, "data", { priority: 20, maxCharacters: 8000 });
     // 候选与目录两个源：合并成一个就等于把「还没核对」这个状态在文字层抹掉。
+    add("companion_self_notes", input.selfNotes, "data", { priority: 23, maxCharacters: 16000 });
     add("method_candidates", input.methodCandidates, "data", { priority: 22, maxCharacters: 4000 });
     // 交付背景只有一个用途：让她知道刚才那句可能没播完。它不推进话题，也不要求她复述。
     add("delivery_observation", input.deliveryObservation, "data",

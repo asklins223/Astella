@@ -316,7 +316,7 @@ export async function consumeInvite(
   // ——其中几张表的策略按 `app.user_id` 判。让数据库 gen_random_uuid() 再回头设
   // actor 会撞上嵌套校验（同一条请求里两个身份），所以显式生成一次。
   const newUserId = randomUUID();
-  let result: { userId: string; workspaceId: string; tx: ApiTransaction } | null;
+  let result: { session: { token: string; ctx: SessionContext } } | null;
   try {
     // 边界事务：进来时只知道"手里这串邀请码"，空间 id 要读出来才知道。
     // `app.session_token` 放令牌哈希，让邀请码那一行的 actor 读策略能命中。
@@ -446,8 +446,23 @@ export async function consumeInvite(
           ),
         );
 
-      // ADR-0009: 默认进入个人工作区
-      return { userId: user.id, workspaceId: personalWs.id, tx };
+      // ADR-0009: 默认进入个人工作区，会话也就签在它上面。
+      //
+      // **必须在这条事务里签发**（2026-10-10 修复）：`withActorTransaction` 的
+      // 回调一返回事务就提交，`app.user_id` 是 `set_config(..., true)` 的事务局部
+      // 值，跟着一起没了。把 `tx` 交出事务再写 `sessions`，那条 INSERT 是在**没有
+      // actor 上下文**的连接上跑的，`sec01_v1_sessions_actor_insert` 要
+      // `user_id = app.user_id`，于是报 `new row violates row-level security policy
+      // for table "sessions"` → 接口 500。而用户、个人空间、成员行、邀请码消费
+      // 都已经提交——人看到的是"注册失败"，库里账号已经建好、邀请空间也进去了。
+      //
+      // 签会话前把租户切到个人空间：会话绑定的就是它，`issueSession` 要读它的
+      // `workspace_epoch`，而此刻 `app.workspace_id` 还停在邀请码那个空间上，
+      // 租户守卫会把这一行读成 0 行。
+      await adoptWorkspaceContext(tx, personalWs.id);
+      const session = await issueSession(user.id, personalWs.id, tx);
+
+      return { session };
     });
   } catch (error) {
     if (error instanceof ConsumeInviteError) return error;
@@ -462,11 +477,7 @@ export async function consumeInvite(
   // OPS-01: Funnel 指标 — 邀请码被消费（新用户注册成功）
   recordFunnelEvent("invite_consumed");
 
-  // `issueSession` 的会话写入必须落在那条 actor 事务里（`app.user_id` 就是新用户，
-  // 而 `sessions` 的写策略按它判）。把事务交出去，别让它自己再开一条——
-  // 那条新事务里 actor 已经换人了，旧写法在真实库上能过（策略只认 user_id），
-  // 但在这里会先撞上"嵌套上下文换人"的校验。
-  return issueSession(result.userId, result.workspaceId, result.tx);
+  return result.session;
 }
 
 // ─── Member management ──────────────────────────────────────────────

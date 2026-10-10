@@ -51,15 +51,15 @@ export function agentMethodCapabilitiesCurrent(refs: readonly AgentMethodCapabil
  * 行 → DTO。`state`（生命周期）与 `epistemicStatus`（认识状态）**分别**投影：
  * 库里就是两列，读出来合成一个字段就是丢信息。
  *
- * `availability` 只在「已确认 **且** 依据站得住」时才可能是 `available`：
- * `method_state='active'` 只说明用户点过确认；0374 的触发器把依据降为 disputed 时
- * 两列一起动，但读侧不能依赖这个巧合——`tentative`/`disputed` 一样不是已确认可用。
+ * `availability` reflects whether an active method can be tried with current sources
+ * and capabilities. Adoption does not imply proof: tentative remains tentative;
+ * disputed, disabled and stale-source methods cannot be used.
  */
 export function projectAgentMethod(row: AgentMethodRow, historical = false): AgentMethodV1 {
   const availability = historical ? "previous_version" : row.method_state === "disabled" ? "disabled"
     : !row.sources_current || row.method_state === "disputed" || row.epistemic_status === "disputed" ? "source_changed"
     : !agentMethodCapabilitiesCurrent(row.capability_refs) ? "capability_changed"
-    : row.method_state === "active" && row.epistemic_status === "supported" ? "available" : "pending";
+    : row.method_state === "active" ? "available" : "pending";
   return agentMethodV1Schema.parse({ version: 1, methodId: row.id, revision: Number(row.version), title: row.title,
     appliesWhen: row.trigger_condition, steps: row.steps, exceptions: row.exceptions, evidence: row.evidence,
     // §6.4：`evidence` 是完整派生关系，「有几条依据」按原始来源算。缺回执的旧行
@@ -101,7 +101,7 @@ async function lockVersion(tx: AgentSqlExecutor, scope: AgentScopeV1, id: string
 }
 /**
  * `activeOnly` 是「可自动采用」这个围栏，SQL 与读侧投影两道都要在。
- * SQL 那一道按**认识状态**收紧到 `supported`：`method_state='active'` 只是用户点过确认，
+ * SQL excludes disputed methods; active tentative methods can be tried autonomously.
  * tentative（依据还没核）不该占走目录上限、也不该出现在目录里。
  */
 export async function listAgentMethods(tx: AgentSqlExecutor, scope: AgentScopeV1, activeOnly = false) {
@@ -109,7 +109,7 @@ export async function listAgentMethods(tx: AgentSqlExecutor, scope: AgentScopeV1
     astella_agent_method_sources_current(p.id,p.workspace_id,p.user_id) AS sources_current
     FROM companion_procedural_playbooks p ${stats}
     WHERE p.workspace_id=${scope.workspaceId} AND p.user_id=${scope.userId}
-      ${activeOnly ? sql`AND p.method_state='active' AND p.epistemic_status='supported'` : sql``}
+      ${activeOnly ? sql`AND p.method_state='active' AND p.epistemic_status <> 'disputed'` : sql``}
     ORDER BY p.updated_at DESC,p.id LIMIT ${activeOnly ? 20 : 100}`);
   return rows.map(row=>projectAgentMethod(row)).filter(method=>!activeOnly || method.availability==="available");
 }
@@ -117,7 +117,7 @@ export async function listAgentMethods(tx: AgentSqlExecutor, scope: AgentScopeV1
  * 她自己从相处里提炼、**还没经过用户核对**的那些做法。
  *
  * 为什么不并进 `listAgentMethods(activeOnly=true)` 那道门：那 20 条目录是「可以照做」的
- * 集合，`tentative`/`candidate` 混进去就等于把没核对的当成已确认（0374 拆两列就是为了
+ * 集合，认识状态与采用独立；旧 candidate 单独投影，disputed 不能照做（两列就是为了
  * 挡这个退化）。但成长也不能因此只写不落——反思产出的经验如果永远读不回来，
  * 「用户改过之后下一轮不再照旧的来」这条就没有可观察的落点（方案 50 §16 第 6 步）。
  * 所以另开一条有界的候选通道，状态原样带出去，由装配层写明它还没核对。
@@ -151,13 +151,13 @@ export async function listAgentMethodBuckets(tx: AgentSqlExecutor, scope: AgentS
   const rows = await queryRows<AgentMethodRow & { bucket: string }>(tx, sql`SELECT p.*,s.*,
     astella_agent_method_sources_current(p.id,p.workspace_id,p.user_id) AS sources_current,
     CASE
-      WHEN p.method_state='active' AND p.epistemic_status='supported' THEN 'catalog'
+      WHEN p.method_state='active' AND p.epistemic_status <> 'disputed' THEN 'catalog'
       WHEN p.method_state='candidate' AND p.epistemic_status <> 'disputed' THEN 'candidate'
     END AS bucket
     FROM companion_procedural_playbooks p ${stats}
     WHERE p.workspace_id=${scope.workspaceId} AND p.user_id=${scope.userId}
       AND (
-        (p.method_state='active' AND p.epistemic_status='supported')
+        (p.method_state='active' AND p.epistemic_status <> 'disputed')
         OR (p.method_state='candidate' AND p.epistemic_status <> 'disputed')
       )
     ORDER BY p.updated_at DESC,p.id`);
@@ -332,15 +332,15 @@ export async function upsertAgentMethodCandidate(tx: AgentSqlExecutor, scope: Ag
    */
   const write = async (playbookKey: string) => {
     const [row] = await queryRows<{id:string;version:number}>(tx,sql`INSERT INTO companion_procedural_playbooks
-      (playbook_key,workspace_id,user_id,title,trigger_condition,steps,exceptions,evidence,evidence_origins,epistemic_status,author)
+      (playbook_key,workspace_id,user_id,title,trigger_condition,steps,exceptions,evidence,evidence_origins,epistemic_status,author,method_state,change_reason)
       VALUES(${playbookKey},${scope.workspaceId},${scope.userId},${input.title},${input.triggerCondition},
         ${JSON.stringify(input.steps)}::jsonb,${JSON.stringify(input.exceptions)}::jsonb,${JSON.stringify(evidence)}::jsonb,
         ${JSON.stringify(evidenceOrigins)}::jsonb,
-        ${epistemicStatus},${input.author})
+        ${epistemicStatus},${input.author},${epistemicStatus === "disputed" ? "disputed" : "active"},'自主整理；适用时采用，并持续核对效果。')
       ON CONFLICT(workspace_id,user_id,playbook_key) DO UPDATE
         SET title=EXCLUDED.title,trigger_condition=EXCLUDED.trigger_condition,steps=EXCLUDED.steps,exceptions=EXCLUDED.exceptions,
           evidence=EXCLUDED.evidence,evidence_origins=EXCLUDED.evidence_origins,epistemic_status=EXCLUDED.epistemic_status,author=EXCLUDED.author,
-          method_state='candidate',change_reason='新依据已整理，等待核对。',version=companion_procedural_playbooks.version+1,updated_at=now()
+          method_state=EXCLUDED.method_state,change_reason='自主修订；适用时采用，并持续核对效果。',version=companion_procedural_playbooks.version+1,updated_at=now()
         WHERE NOT companion_procedural_playbooks.user_controlled
           AND companion_procedural_playbooks.method_state NOT IN ('disabled','disputed')
       RETURNING id,version`);
@@ -427,12 +427,12 @@ export function createAgentMethodStore<Tx extends AgentSqlExecutor>(ports: Agent
         });
         if (!stepPlan.contributes) throw new AgentStoreError(422,"method_source_empty","这次没有走通任何一步，暂时不能整理成做法。");
         const [created]=await queryRows<{id:string}>(tx,sql`INSERT INTO companion_procedural_playbooks
-          (playbook_key,workspace_id,user_id,title,trigger_condition,steps,exceptions,evidence,capability_refs,source_run_id,source_run_revision,author,change_reason)
+          (playbook_key,workspace_id,user_id,title,trigger_condition,steps,exceptions,evidence,capability_refs,source_run_id,source_run_revision,author,change_reason,method_state,epistemic_status)
           VALUES(${`agent-run:${run.id}:${run.revision}`},${scope.workspaceId},${scope.userId},${input.title},${input.appliesWhen},
           ${JSON.stringify(stepPlan.steps)}::jsonb,
           ${JSON.stringify([...stepPlan.exceptions, ...(plan.failureNote ? [plan.failureNote] : [])])}::jsonb,
           ${JSON.stringify([{runId:run.id,runRevision:run.revision,note:run.goal.slice(0,400)}])}::jsonb,${JSON.stringify(capabilities)}::jsonb,
-          ${run.id},${run.revision},'user','从这次真实合作整理，等待确认。')
+          ${run.id},${run.revision},'user','从这次真实合作整理，适用时采用。','active',${plan.epistemicStatus})
           ON CONFLICT(workspace_id,user_id,playbook_key) DO NOTHING RETURNING id`);
         const [existing]=created ? [created] : await queryRows<{id:string}>(tx,sql`SELECT id FROM companion_procedural_playbooks
           WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND playbook_key=${`agent-run:${run.id}:${run.revision}`}`);
@@ -459,8 +459,8 @@ export function createAgentMethodStore<Tx extends AgentSqlExecutor>(ports: Agent
         const state=input.action==="disable" ? "disabled" : "active";
         if (current.method_state===state && current.user_controlled) return projectAgentMethod(current);
         await tx.execute(sql`UPDATE companion_procedural_playbooks SET method_state=${state},user_controlled=true,
-          epistemic_status=${state==="active" ? "supported" : current.method_state==="disputed" ? "disputed" : "tentative"},
-          change_reason=${input.reason ?? (state==="active" ? "用户确认采用这个方法。" : "用户暂时停用这个方法。")},
+          epistemic_status=${current.epistemic_status},
+          change_reason=${input.reason ?? (state==="active" ? "用户恢复采用这个方法。" : "用户暂时停用这个方法。")},
           version=version+1,updated_at=now() WHERE id=${id} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}`);
         return projectAgentMethod(await readRow(tx,scope,id));
       });

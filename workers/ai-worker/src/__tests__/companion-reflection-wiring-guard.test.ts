@@ -105,14 +105,14 @@ test("⑦ 策略版本进幂等判据：换策略能重新回顾同一段，不�
  * 「用户改过之后下一轮不再照旧的来」在方法这一侧根本没有落点。
  * 这里钉的是那条读回边完整存在：权威读 → worker 投影 → 装配 → 进请求。
  */
-test("⑧ 候选经验有独立的读回通道，且不与「可照做」那 20 条混流", () => {
+test("⑧ 自主方法进入读取目录，认识状态与来源独立于采用", () => {
   const hostMethods = read("packages/agent-host/src/methods.ts");
   // 目录与候选是一次取回（2026-10-10：同表同事务，分两条 SQL 只是每轮多一次往返），
   // 但**两道门一条不能省**：谁进哪个桶由这一条 SQL 的 CASE 决定。
   assert.match(hostMethods, /export async function listAgentMethodBuckets/,
     "agent-host 要有一条把目录与候选分桶的权威查询");
-  assert.match(hostMethods, /WHEN p\.method_state='active' AND p\.epistemic_status='supported' THEN 'catalog'/,
-    "把 candidate 并进目录那道门，等于让没核对的做法冒充可照做");
+  assert.match(hostMethods, /WHEN p\.method_state='active' AND p\.epistemic_status <> 'disputed' THEN 'catalog'/,
+    "可尝试的 active 方法无需用户批准，disputed 仍不能照做");
   assert.match(hostMethods, /WHEN p\.method_state='candidate' AND p\.epistemic_status <> 'disputed' THEN 'candidate'/,
     "候选那条按生命周期读，且排除依据已被纠正的");
 

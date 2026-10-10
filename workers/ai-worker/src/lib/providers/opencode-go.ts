@@ -445,6 +445,7 @@ function readOpenCodeGoErrorCode(body: unknown): string | undefined {
 
 export class OpenCodeGoProvider implements AIProvider {
   readonly id = "opencode_go";
+  readonly chatCompletionStreamToolCalls = true;
   readonly promptVersion = "v6-opencode-go";
   readonly modelId: string;
   readonly visionModelId: string;
@@ -519,6 +520,21 @@ export class OpenCodeGoProvider implements AIProvider {
     };
   }
 
+  private nativeToolFields(
+    tools: AgentTurnRequest["tools"],
+    toolChoice: AgentTurnRequest["toolChoice"],
+    reasoning: Record<string, unknown>,
+  ): Record<string, unknown> {
+    if (tools.length === 0) return {};
+    const effort = asRecord(reasoning.reasoning)?.effort;
+    // This gateway rejects required tools while thinking is enabled.
+    const forcedWithThinkingOn = toolChoice === "required" && effort !== undefined && effort !== "none";
+    return {
+      tools: tools.map(tool => ({ type: "function", name: tool.name, description: tool.description, parameters: tool.parameters })),
+      tool_choice: forcedWithThinkingOn ? "auto" : toolChoice ?? "auto",
+    };
+  }
+
   /** 2xx 但 status="failed" 的响应体 → 抛错（含隐私安全的错误码）。 */
   private throwIfResponseFailed(body: unknown, model: string): void {
     const record = asRecord(body);
@@ -589,13 +605,15 @@ export class OpenCodeGoProvider implements AIProvider {
     options: ChatOptions,
     signal: AbortSignal | undefined,
     onDelta: (deltaText: string) => void,
-  ): Promise<{ content: string; finishReason: string; phase?: "commentary" | "final_answer" }> {
+  ): Promise<Awaited<ReturnType<NonNullable<AIProvider["chatCompletionStream"]>>>> {
     if (signal?.aborted) throw abortError(signal, "before request");
     const model = options.model ?? this.modelId;
     const { instructions, input } = options.nativeAgentRequest
       ? buildAgentTurnInput(options.nativeAgentRequest.systemPrompt, options.nativeAgentRequest.messages)
       : buildChatInput(messages);
     const reasoning = this.reasoningField(options.disableThinking ?? false);
+    const tools = options.nativeAgentRequest?.tools ?? options.tools ?? [];
+    const hasTools = tools.length > 0;
     const body: Record<string, unknown> = {
       model,
       input,
@@ -606,6 +624,7 @@ export class OpenCodeGoProvider implements AIProvider {
         ? {}
         : { text: { format: { type: "json_object" as const } } }),
       ...reasoning,
+      ...this.nativeToolFields(tools, options.nativeAgentRequest?.toolChoice ?? options.toolChoice, reasoning),
     };
     if (!(this.platformOptions?.disableMaxTokens ?? false)) {
       body.max_output_tokens = this.resolveOutputTokenLimit(options.maxTokens ?? 4096);
@@ -633,6 +652,10 @@ export class OpenCodeGoProvider implements AIProvider {
     let completed = false;
     let providerError: Error | null = null;
     let finalPhase: "commentary" | "final_answer" | undefined;
+    let toolCalls: AgentTurnResult["toolCalls"] = [];
+    let reasoningHandles: AgentTurnResult["reasoning"];
+    let usage: AgentTurnResult["usage"] = null;
+    let providerRequestId: string | null = null;
     const itemPhases = new Map<number, unknown>();
     let withheldUnknownPhase = false;
     /** 终止事件/断流后的统一收尾：先抛 provider 错误，再拒绝空输出。 */
@@ -640,8 +663,11 @@ export class OpenCodeGoProvider implements AIProvider {
       response.cancel();
       if (providerError) throw providerError;
       if (!completed) throw new ProviderStreamError(this.id, "stream_incomplete");
-      if (!content.trim()) throw new ProviderStreamError(this.id, "stream_empty");
+      if (!content.trim() && toolCalls.length === 0) throw new ProviderStreamError(this.id, "stream_empty");
     };
+    const result = () => ({ content, toolCalls, finishReason: toolCalls.length ? "tool_calls" : "stop",
+      ...(finalPhase ? { phase: finalPhase } : {}), ...(reasoningHandles?.length ? { reasoning: reasoningHandles } : {}),
+      usage, providerRequestId });
     const consumeData = (data: string): boolean => {
       let parsed: Record<string, unknown>;
       try {
@@ -678,10 +704,17 @@ export class OpenCodeGoProvider implements AIProvider {
               content = finalText;
               if (suffix) onDelta(suffix);
             }
-            if (finalText !== content) providerError = new ProviderStreamError(this.id, "stream_content_mismatch");
+            if ((finalText ?? "") !== content) providerError = new ProviderStreamError(this.id, "stream_content_mismatch");
             finalPhase = responsesPhase({ output: readOutputItems(terminal).filter(item => item.phase !== "commentary") });
+            const parsedTurn = parseResponsesAgentTurn(terminal, hasTools);
+            const malformed = parsedTurn.toolCalls.find(call => call.argumentsMalformed);
+            if (malformed) providerError = new AgentOutputError("arguments_malformed", "provider stream returned malformed tool arguments");
+            toolCalls = parsedTurn.toolCalls.map(({ id, name, arguments: args }) => ({ id, name, arguments: args }));
+            reasoningHandles = readResponsesReasoningHandles(terminal);
+            usage = readResponsesUsage(terminal);
+            providerRequestId = parsedTurn.requestId;
           }
-          else if (withheldUnknownPhase) providerError = new ProviderStreamError(this.id, "stream_incomplete");
+          else if (withheldUnknownPhase || hasTools) providerError = new ProviderStreamError(this.id, "stream_incomplete");
           completed = true;
           return true;
         }
@@ -724,7 +757,7 @@ export class OpenCodeGoProvider implements AIProvider {
           if (!trimmed.startsWith("data:")) continue;
           if (consumeData(trimmed.slice(5).trim())) {
             settle();
-            return { content, finishReason: "stop", ...(finalPhase ? { phase: finalPhase } : {}) };
+            return result();
           }
         }
         buffer = buffer.slice(consumed);
@@ -741,7 +774,7 @@ export class OpenCodeGoProvider implements AIProvider {
     // Text deltas are not evidence of completion. The delivery layer retains
     // any already-visible prefix as a failed partial reply, never a success.
     settle();
-    return { content, finishReason: "stop", ...(finalPhase ? { phase: finalPhase } : {}) };
+    return result();
   }
 
   /**
@@ -770,24 +803,7 @@ export class OpenCodeGoProvider implements AIProvider {
     if (!(this.platformOptions?.disableMaxTokens ?? false)) {
       body.max_output_tokens = this.resolveOutputTokenLimit(request.maxTokens);
     }
-    if (hasTools) {
-      body.tools = request.tools.map((tool) => ({
-        type: "function" as const,
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters,
-      }));
-      /**
-       * 思考档与「必须调工具」在这一端是**互斥**的：开着思考发 `tool_choice: "required"`
-       * 会被直接 400「Thinking mode does not support this tool_choice」（2026-10-06
-       * 真窗口实测，带图那一轮必然要她调 `companion_read_image`，正好撞上）。
-       * 降级成 `auto`：工具照旧在她面前，本轮的 here-and-now 也点名了该调哪个，
-       * 比让整轮失败诚实。
-       */
-      const effort = (reasoning as { reasoning?: { effort?: string } }).reasoning?.effort;
-      const forcedWithThinkingOn = request.toolChoice === "required" && effort !== undefined && effort !== "none";
-      body.tool_choice = forcedWithThinkingOn ? "auto" : request.toolChoice ?? "auto";
-    }
+    Object.assign(body, this.nativeToolFields(request.tools, request.toolChoice, reasoning));
     // 无工具轮不再强制 json_object（根因二 2026-09-19，与 openai-compatible 同步）：
     // executeAgentTurn 的无工具轮是伴星自然文本终答，强制 JSON 是 json_envelope_leak
     // 的直接来源。structured_action fallback 由 parseResponsesAgentTurn 对 content

@@ -1,3 +1,5 @@
+import { listCompanionSelfNotes } from "@astella/agent-host";
+import { renderCompanionSelfNotes } from "@astella/shared";
 import { buildCompanionPersonaData, resolveCompanionPersonaContext, type CompanionPersonaContextProfile } from "./companion-identity-context.ts";
 import { COMPANION_IDENTITY_BOUNDARY_V4 } from "@astella/shared";
 /**
@@ -963,7 +965,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
       spaceMuted,
       formalAnswerInProgress,
       ambientDeliveredThisUsage: Number((Array.isArray(ambientDeliveredRows) ? ambientDeliveredRows : [])[0]?.n ?? 0),
-      facts: renderHereAndNow(hereAndNow),
+      facts: [renderHereAndNow(hereAndNow), renderCompanionSelfNotes(await listCompanionSelfNotes(tx, { workspaceId: job.workspaceId, userId }))].filter(Boolean).join("\n\n"),
     } satisfies ThoughtMaterial & {
       quietHours: CompanionQuietHours | null;
       interventionLevel: CompanionInterventionLevelV1;

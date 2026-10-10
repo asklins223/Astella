@@ -5,25 +5,25 @@ import type { AgentMethodV1 } from "@astella/shared/agent-growth-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import { CompanionMethodsPage } from "../companion/companion-methods-page";
 
-const method:AgentMethodV1={version:1,methodId:"11111111-1111-4111-8111-111111111111",revision:2,title:"先解释再练习",appliesWhen:"学习新材料时",steps:["**先看新材料**，不要复用旧答案。"],exceptions:["当下的要求优先"],evidence:[],evidenceIndependentCount:0,capabilities:[],state:"candidate",epistemicStatus:"tentative",userControlled:false,availability:"pending",author:"user",changeReason:null,sourceRunId:null,sourceRunRevision:null,offeredCount:0,adoptedCount:0,consultedCount:0,helpfulCount:0,unhelpfulCount:0,lastConsultedAt:null,createdAt:"2026-10-04T10:00:00.000Z",updatedAt:"2026-10-04T10:00:00.000Z"};
+const method:AgentMethodV1={version:1,methodId:"11111111-1111-4111-8111-111111111111",revision:2,title:"先解释再练习",appliesWhen:"学习新材料时",steps:["**先看新材料**，不要复用旧答案。"],exceptions:["当下的要求优先"],evidence:[],evidenceIndependentCount:0,capabilities:[],state:"active",epistemicStatus:"tentative",userControlled:false,availability:"available",author:"user",changeReason:null,sourceRunId:null,sourceRunRevision:null,offeredCount:0,adoptedCount:0,consultedCount:0,helpfulCount:0,unhelpfulCount:0,lastConsultedAt:null,createdAt:"2026-10-04T10:00:00.000Z",updatedAt:"2026-10-04T10:00:00.000Z"};
 const ok=<T,>(data:T)=>({version:1,ok:true,data,requestId:"methods",correlationId:"methods",schemaRevision:"desktop-ipc-v1"});
 let items:AgentMethodV1[],agent:{listMethods:ReturnType<typeof vi.fn>;controlMethod:ReturnType<typeof vi.fn>;getMethodHistory:ReturnType<typeof vi.fn>;getMethodUses:ReturnType<typeof vi.fn>;reviseMethod:ReturnType<typeof vi.fn>};
 beforeEach(()=>{
   useRoomStore.setState({workspaceScopeRevision:1});items=[{...method}];
-  agent={listMethods:vi.fn(async()=>ok({version:1,items})),controlMethod:vi.fn(async()=>{items=[{...method,revision:3,state:"active",userControlled:true,availability:"available"}];return ok(items[0]);}),getMethodHistory:vi.fn(async()=>ok({version:1,items:[]})),getMethodUses:vi.fn(async()=>ok({version:1,items:[]})),reviseMethod:vi.fn()};
+  agent={listMethods:vi.fn(async()=>ok({version:1,items})),controlMethod:vi.fn(async()=>{items=[{...method,revision:3,state:"disabled",userControlled:true,availability:"disabled"}];return ok(items[0]);}),getMethodHistory:vi.fn(async()=>ok({version:1,items:[]})),getMethodUses:vi.fn(async()=>ok({version:1,items:[]})),reviseMethod:vi.fn()};
   Object.defineProperty(window,"astella",{configurable:true,value:{auth:{getState:vi.fn(async()=>ok({version:1,status:"authenticated",workspace:{workspaceId:"22222222-2222-4222-8222-222222222222"},workspaceEpoch:1}))},agent}});
 });
 afterEach(()=>cleanup());
 
-it("shows a summary first, renders Markdown on selection and confirms only through the user's action",async()=>{
+it("shows autonomous tentative methods without an adoption approval and allows post-hoc stopping",async()=>{
   render(<CompanionMethodsPage refreshKey={0}/>);
   fireEvent.click(await screen.findByRole("button",{name:/先解释再练习/}));
   expect(screen.getByText("先看新材料").tagName).toBe("STRONG");
   expect(agent.controlMethod).not.toHaveBeenCalled();
-  const confirm=screen.getByRole("button",{name:"确认采用"});fireEvent.click(confirm);fireEvent.click(confirm);
-  await waitFor(()=>expect(screen.getByText("已确认采用；仍以你当下的要求和新材料为准。")).toBeTruthy());
-  expect(agent.controlMethod).toHaveBeenCalledTimes(1);
-  expect(agent.controlMethod.mock.calls[0][0]).toMatchObject({methodId:method.methodId,request:{expectedRevision:2,action:"confirm"}});
+  expect(screen.queryByRole("button",{name:"确认采用"})).toBeNull();
+  const stop=screen.getByRole("button",{name:"暂时不用"});fireEvent.click(stop);fireEvent.click(stop);
+  await waitFor(()=>expect(agent.controlMethod).toHaveBeenCalledTimes(1));
+  expect(agent.controlMethod.mock.calls[0][0]).toMatchObject({methodId:method.methodId,request:{expectedRevision:2,action:"disable"}});
 });
 
 it("hides the previous workspace immediately and ignores a response arriving after the switch",async()=>{

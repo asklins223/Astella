@@ -132,7 +132,7 @@ const methodRow = (over: Record<string, unknown> = {}): Record<string, unknown> 
  */
 const withBucket = (row: Record<string, unknown>): Record<string, unknown> => {
   const state = row.method_state, epistemic = row.epistemic_status;
-  const bucket = state === "active" && epistemic === "supported" ? "catalog"
+  const bucket = state === "active" && epistemic !== "disputed" ? "catalog"
     : state === "candidate" && epistemic !== "disputed" ? "candidate" : null;
   return { ...row, bucket };
 };
@@ -164,8 +164,8 @@ test("active 但依据已被纠正的方法：既不进目录，也读不出正�
     "active 但依据已被纠正的方法，按当前版本读出了正文");
   assert.equal(await readPlaybookById(fakeTx([methodRow({ method_state: "disabled" })]), SCOPE, METHOD_ID, 3), null,
     "用户已停用的方法被读出了正文");
-  assert.equal(await readPlaybookById(fakeTx([methodRow({ epistemic_status: "tentative" })]), SCOPE, METHOD_ID, 3), null,
-    "依据尚未核实的方法被读出了正文");
+  assert.equal((await readPlaybookById(fakeTx([methodRow({ epistemic_status: "tentative" })]), SCOPE, METHOD_ID, 3))?.epistemicStatus, "tentative",
+    "可尝试的方法应该读回并保持暂定认识状态");
 });
 
 test("依据站得住的方法按当前版本能展开正文，并带上它的认识状态", async () => {
@@ -184,7 +184,7 @@ test("候选渲染写明「还没核对」，并带上别用的情形，正文�
       triggerCondition: "对方只发来一个招呼", version: 2, epistemicStatus: "tentative",
       exceptions: ["对方点名要接着昨天那篇时照常接续", "对方在问学习安排时不用"] },
   ]);
-  assert.match(rendered, /还没经过用户核对/);
+  assert.match(rendered, /暂定做法/);
   assert.match(rendered, /打招呼时就只打招呼/);
   assert.match(rendered, /别用的情形：对方点名要接着昨天那篇时照常接续；对方在问学习安排时不用/);
   // 与目录同一口径：正文（步骤）不在这段里，别把没核对的东西写得像操作手册。

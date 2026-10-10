@@ -348,6 +348,15 @@ BEGIN
 END
 $$;
 
+-- Autonomous notebook: scoped mutable current rows, immutable trigger-owned history.
+DO $$ BEGIN
+  IF to_regclass('public.companion_self_notes') IS NOT NULL THEN
+    GRANT SELECT,INSERT,UPDATE,DELETE ON public.companion_self_notes TO astella_api,astella_worker;
+    REVOKE ALL ON public.companion_self_note_versions FROM astella_api,astella_worker;
+    GRANT SELECT ON public.companion_self_note_versions TO astella_api,astella_worker;
+  END IF;
+END $$;
+
 -- 方案 50 §8.3：后台反思的记录、派生来源边与模型输出检查点。
 --
 -- 上面那条"API 拿全表 CRUD"是有意为之的宽授权，所以这里要逐个收回该收的：
@@ -1344,6 +1353,7 @@ DO $$ DECLARE t text; BEGIN
     'astella_cancel_agent_operations(uuid,integer)','astella_agent_job_current(uuid,uuid,uuid,boolean)',
     'astella_agent_run_authorized(uuid)',
     'astella_companion_reflection_authority(uuid,uuid,uuid)',
+    'astella_enqueue_companion_self_wakes()',
     'astella_enqueue_companion_reflection()',
     'astella_companion_reflection_thresholds()',
     'astella_close_abandoned_reflection()',
@@ -1376,6 +1386,9 @@ DO $$ DECLARE t text; BEGIN
   END IF;
   IF to_regprocedure('public.astella_agent_run_authorized(uuid)') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.astella_agent_run_authorized(uuid) TO astella_worker;
+  END IF;
+  IF to_regprocedure('public.astella_enqueue_companion_self_wakes()') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_self_wakes() TO astella_worker;
   END IF;
   IF to_regprocedure('public.astella_enqueue_companion_reflection()') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_reflection() TO astella_worker;
@@ -1484,7 +1497,8 @@ BEGIN
       'companion_reflections',
       'companion_reflection_sources',
       'companion_reflection_checkpoints',
-      'companion_persona_profile_versions'
+      'companion_persona_profile_versions',
+      'companion_self_note_versions'
     )
     AND (
       NOT has_table_privilege(
@@ -1815,6 +1829,8 @@ BEGIN
       ('assessment_disputes_v2', true, false, false, false),
       -- 方案 50 §8.3：反思那一行与它的模型检查点由 worker 全权维护；
       -- 派生来源边只写与删（边一旦落下就不改，改等于伪造当时的依据）。
+      ('companion_self_notes', true, true, true, true),
+      ('companion_self_note_versions', true, false, false, false),
       ('companion_reflections', true, true, true, true),
       ('companion_reflection_sources', true, true, false, true),
       ('companion_reflection_checkpoints', true, true, true, true),
@@ -2006,6 +2022,7 @@ BEGIN
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_method_sources_current(uuid,uuid,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_job_current(uuid,uuid,uuid,boolean)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_run_authorized(uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_enqueue_companion_self_wakes()')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_enqueue_companion_reflection()')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_companion_reflection_thresholds()')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_companion_reflection_authority(uuid,uuid,uuid)')
@@ -2190,6 +2207,7 @@ BEGIN
       ('astella_worker', 'astella_enqueue_agent_recovery()'),
       ('astella_worker', 'astella_agent_job_current(uuid,uuid,uuid,boolean)'),
       ('astella_worker', 'astella_agent_run_authorized(uuid)'),
+      ('astella_worker', 'astella_enqueue_companion_self_wakes()'),
       ('astella_worker', 'astella_enqueue_companion_reflection()'),
       ('astella_worker', 'astella_companion_reflection_thresholds()'),
       ('astella_worker', 'astella_companion_reflection_authority(uuid,uuid,uuid)'),

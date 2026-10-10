@@ -120,6 +120,7 @@ export interface ReadContext {
   personaExamplesRevision: number;
   defaultExpressionVersion: string;
   petProfile: {
+    selfDescription?: string | null;
     name: string;
     speakingStyle: string;
     personalityTags: string[];

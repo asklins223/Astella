@@ -9,6 +9,7 @@ import {
 import { useHomeProjectionInvalidation } from "../../app/home-projection";
 import { shouldPlayCompanionReplyVoice, shouldPlayHomeV2Feedback } from "./home-v2";
 import { setHomeV2VoiceLevel } from "../../app/companion-voice-level";
+import { requestCompanionVoiceAudio } from "../../app/companion-voice-request";
 import {
   isCompanionMicrophoneActive, isCompanionNotificationSpeechActive,
   isCompanionReplyBlockedByMicrophone,
@@ -509,27 +510,26 @@ export function HomeV2AudioController() {
     }).catch(() => undefined);
   }, [installedUpdateVersion, masterMuted, windowState, ensureGraph]);
 
-  const synthesizeVoice = useCallback(async (text: string): Promise<AudioBuffer> => {
+  const synthesizeVoice = useCallback(async (text: string, signal?: AbortSignal): Promise<AudioBuffer> => {
     const speakApi = window.astella?.companion?.voice?.speak;
     if (!speakApi) throw new Error("语音通道还没准备好");
     // 图按需建：第一次解锁失败不该让这一整轮会话都没有声音。
     const graph = ensureGraph();
-    const response = await speakApi.call(window.astella.companion.voice, {
-      meta: createRequestMeta(workspaceEpochRef.current ?? undefined),
+    const response = await requestCompanionVoiceAudio(meta => speakApi.call(window.astella.companion.voice, {
+      meta,
       request: { version: 1, text },
-    });
-    return decodeBase64Audio(graph.context, unwrapGatewayResult(response).audioBase64);
+    }), workspaceEpochRef.current ?? undefined, signal);
+    return decodeBase64Audio(graph.context, response.audioBase64);
   }, [ensureGraph]);
 
-  const synthesizeVoiceSegment = useCallback(async (request: CompanionVoiceSpeakSegmentRequestV2): Promise<AudioBuffer> => {
+  const synthesizeVoiceSegment = useCallback(async (request: CompanionVoiceSpeakSegmentRequestV2, signal?: AbortSignal): Promise<AudioBuffer> => {
     const speakApi = window.astella?.companion?.voice?.speakSegment;
     if (!speakApi) throw new Error("语音通道还没准备好");
     const graph = ensureGraph();
-    const response = await speakApi.call(window.astella.companion.voice, {
-      meta: createRequestMeta(workspaceEpochRef.current ?? undefined),
+    const result = await requestCompanionVoiceAudio(meta => speakApi.call(window.astella.companion.voice, {
+      meta,
       request,
-    });
-    const result = unwrapGatewayResult(response);
+    }), workspaceEpochRef.current ?? undefined, signal);
     window.dispatchEvent(new Event("astella:companion-audio-cache-changed"));
     return decodeBase64Audio(graph.context, result.audioBase64);
   }, [ensureGraph]);

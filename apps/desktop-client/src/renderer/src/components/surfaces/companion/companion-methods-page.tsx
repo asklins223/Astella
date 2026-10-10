@@ -7,7 +7,7 @@ import { CenterFeedback, CenterSearch, SectionState } from "./companion-center-p
 import { publishCompanionRecordsChanged, useCompanionRecordsRefresh, useCompanionResource } from "./use-companion-resource";
 
 const stateLabels: Record<AgentMethodV1["availability"],string> = {
-  available:"已采用", pending:"等待确认", disabled:"暂时停用", source_changed:"依据需核对",
+  available:"已采用", pending:"暂定做法", disabled:"暂时停用", source_changed:"依据需核对",
   capability_changed:"做法需复验", previous_version:"以前的版本",
 };
 type Draft = { methodId:string; revision:number; title:string; appliesWhen:string; steps:string; exceptions:string; reason:string };
@@ -80,7 +80,7 @@ export function CompanionMethodsPage({refreshKey,requestedId,onFocusConsumed}:{r
     if(!selected) return;
     const method=selected;
     void write(async()=>unwrapGatewayResult(await window.astella.agent.controlMethod({meta:resource.meta(),methodId:method.methodId,
-      request:{expectedRevision:method.revision,action}})),action==="disable" ? "已停用，后续合作不会再采用这条方法。" : "已确认采用；仍以你当下的要求和新材料为准。");
+      request:{expectedRevision:method.revision,action}})),action==="disable" ? "已停用，后续合作不会再采用这条方法。" : "已恢复采用；仍以你当下的要求和新材料为准。");
   };
   const save=()=>{
     if(!draft || !selected || selected.methodId!==draft.methodId) return;
@@ -96,18 +96,18 @@ export function CompanionMethodsPage({refreshKey,requestedId,onFocusConsumed}:{r
   const visible=items.filter(method=>`${method.title} ${method.appliesWhen}`.toLowerCase().includes(query.trim().toLowerCase()));
   const editing=draft?.methodId===selectedId ? draft : null;
   return <section className="cc-methods" aria-label="我们的方法">
-    <div className="cc-rule-intro"><h3>我们的方法</h3><p>从真实合作留下做法，由你确认、修订或停用。</p></div>
+    <div className="cc-rule-intro"><h3>我们的方法</h3><p>伴星自主整理和修订做法，适用时采用；你可以查看、纠正或停用。</p></div>
     <CenterFeedback error={error} notice={notice} />
     <CenterSearch value={query} onChange={value=>{setQuery(value);setSelectedId(null);}} placeholder="找一种做事方法…" label="筛选合作方法" />
     <div className={`cc-methods-workspace${selected ? " has-selection" : ""}`}>
       <div ref={indexRef} className="cc-methods-index" aria-label="方法清单">
         {visible.length ? visible.map(method=><button key={method.methodId} data-method-id={method.methodId} type="button" aria-pressed={method.methodId===selectedId} disabled={busy} onClick={()=>{readingIntent.current=true;setSelectedId(method.methodId);setError(null);setNotice(null);}}>
           <small>{stateLabels[method.availability]} · 第 {method.revision} 版</small><strong>{method.title}</strong><span>{method.appliesWhen}</span>
-        </button>) : <SectionState message={query ? "还没找到这条方法" : "还没有保存合作方法"} detail={query ? "试试其他关键词。" : "任务做好后，可以在我们的对话手记里，把这次合作留成方法。整理出的候选也会在这里等待你确认。"} />}
+        </button>) : <SectionState message={query ? "还没找到这条方法" : "还没有保存合作方法"} detail={query ? "试试其他关键词。" : "任务做好后，可以在我们的对话手记里，把这次合作留成方法。伴星也会自主从相处中整理做法。"} />}
       </div>
       {selected ? <article ref={detailRef} tabIndex={-1} className="cc-method-detail" aria-label="方法详情">
         <button type="button" className="cc-link cc-reading-back" disabled={busy} onClick={returnToIndex}>← 返回方法清单</button>
-        <header><span className="cc-kicker">这个书房的合作方法</span><span className="cc-badge">{stateLabels[selected.availability]}</span></header>
+        <header><span className="cc-kicker">这个书房的合作方法</span><span className="cc-badge">{stateLabels[selected.availability]}{selected.epistemicStatus === "tentative" ? " · 仍在尝试" : ""}</span></header>
         {editing ? <form className="cc-form" onSubmit={event=>{event.preventDefault();save();}}>
           <label>方法名称<input value={editing.title} maxLength={120} disabled={busy} onChange={event=>setDraft({...editing,title:event.currentTarget.value})} /></label>
           <label>什么时候适用<textarea value={editing.appliesWhen} maxLength={200} disabled={busy} onChange={event=>setDraft({...editing,appliesWhen:event.currentTarget.value})} /></label>
@@ -122,7 +122,7 @@ export function CompanionMethodsPage({refreshKey,requestedId,onFocusConsumed}:{r
           {selected.exceptions.length ? <details className="cc-details"><summary>例外与边界</summary><ul>{selected.exceptions.map((exception,index)=><li key={index}>{renderCompanionMarkdown(exception)}</li>)}</ul></details> : null}
           <p className="cc-method-reason">{selected.changeReason ?? "当前要求优先；方法不会自动启动任务。"}</p>
           <div className="cc-actions">
-            {selected.availability==="pending" ? <button className="cc-button is-primary" type="button" disabled={busy} onClick={()=>control("confirm")}>确认采用</button> : null}
+            
             {selected.state==="disabled" ? <button className="cc-button" type="button" disabled={busy} onClick={()=>control("restore")}>恢复采用</button> : <button className="cc-link" type="button" disabled={busy} onClick={()=>control("disable")}>暂时不用</button>}
             <button className="cc-button" type="button" disabled={busy} onClick={()=>setDraft({methodId:selected.methodId,revision:selected.revision,title:selected.title,appliesWhen:selected.appliesWhen,steps:selected.steps.join("\n"),exceptions:selected.exceptions.join("\n"),reason:""})}>修订做法</button>
           </div>

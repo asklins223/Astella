@@ -30,9 +30,9 @@ export interface CompanionVoiceHost {
   /** 现在能不能出声（未解锁 / 静音 / 窗口不可见时为 false）。 */
   readonly audible: () => boolean;
   /** 合成一段文本并解码成可播放的 buffer；失败时抛错。 */
-  readonly synthesize: (text: string) => Promise<AudioBuffer>;
+  readonly synthesize: (text: string, signal?: AbortSignal) => Promise<AudioBuffer>;
   /** Agent 正文通过服务端签发的片段引用合成；renderer 不提交正文。 */
-  readonly synthesizeSegment: (ref: CompanionVoiceSpeakSegmentRequestV2) => Promise<AudioBuffer>;
+  readonly synthesizeSegment: (ref: CompanionVoiceSpeakSegmentRequestV2, signal?: AbortSignal) => Promise<AudioBuffer>;
   /** 历史回放只读本机录音，通过同一音频宿主解码和播放。 */
   readonly readCachedSegment?: (ref: CompanionCachedVoiceReadRequestV1) => Promise<AudioBuffer>;
   /**
@@ -94,11 +94,14 @@ let host: CompanionVoiceHost | null = null;
 let generation = 0;
 let sequence = 0;
 let activePlanId: string | null = null;
+let synthesisController: AbortController | null = null;
 const listeners = new Set<(progress: CompanionSpeechProgress) => void>();
 const activityListeners = new Set<() => void>();
 
 function setActiveSpeechPlan(next: string | null): void {
   if (activePlanId === next) return;
+  synthesisController?.abort();
+  synthesisController = next === null ? null : new AbortController();
   activePlanId = next;
   for (const listener of activityListeners) listener();
 }
@@ -262,6 +265,7 @@ interface SpeechRun {
   readonly host: CompanionVoiceHost;
   readonly segments: readonly CompanionSpeechSegment[];
   readonly totalChars: number;
+  readonly signal: AbortSignal;
 }
 
 /** 一条已发起、可能还没到手的预取（`delivered` 决定它能不能被记成 dropped）。 */
@@ -278,7 +282,7 @@ async function runSpeech(run: SpeechRun): Promise<void> {
   let pending: Promise<AudioBuffer> | null = null;
 
   const synthesize = (index: number): Promise<AudioBuffer> => {
-    const promise = run.host.synthesize(segments[index].text);
+    const promise = run.host.synthesize(segments[index].text, run.signal);
     // 预取失败会在用到它的那一轮被 await 到；先挂个空 handler 免得变成未处理拒绝。
     promise.catch(() => undefined);
     return promise;
@@ -303,6 +307,7 @@ async function runSpeech(run: SpeechRun): Promise<void> {
       try {
         buffer = await current;
       } catch {
+        if (run.signal.aborted || run.runGeneration !== generation) return;
         // 预取失败或即时失败都即时重发一次；再失败就**跳过这一段继续后面的**
         // （2026-09-19 用户实测"只读第一句甚至前几个字"的残余：单段合成抖动/
         // 限流曾把整轮语音直接判死）。文字显现靠阅读钟接管被跳过的段。
@@ -461,6 +466,7 @@ async function runQueuedSpeech(args: {
   runGeneration: number;
   host: CompanionVoiceHost;
   queue: CompanionSpeechQueue;
+  signal: AbortSignal;
 }): Promise<void> {
   const { queue } = args;
   let playedCount = 0;
@@ -506,9 +512,15 @@ async function runQueuedSpeech(args: {
       durationMs: Math.max(0, Date.now() - startedAtMs),
     });
   };
-  const synthesize = (segment: CompanionQueuedSpeechSegment): Promise<AudioBuffer> => segment.ref
-    ? args.host.synthesizeSegment(segment.ref)
-    : args.host.synthesize(segment.text);
+  const pendingControllers = new Map<CompanionQueuedSpeechSegment, AbortController>();
+  const abortPending = (): void => {
+    for (const controller of pendingControllers.values()) controller.abort();
+    const wake = queue.wake; queue.wake = null; wake?.();
+  };
+  args.signal.addEventListener("abort", abortPending, { once: true });
+  const synthesize = (segment: CompanionQueuedSpeechSegment, signal: AbortSignal): Promise<AudioBuffer> => segment.ref
+    ? args.host.synthesizeSegment(segment.ref, signal)
+    : args.host.synthesize(segment.text, signal);
   /**
    * 被 `withDeadline` 放弃的那些合成，**必须停下来**。
    *
@@ -521,27 +533,33 @@ async function runQueuedSpeech(args: {
    */
   const abandoned = new WeakSet<CompanionQueuedSpeechSegment>();
   const synthesizeWithRetry = async (segment: CompanionQueuedSpeechSegment): Promise<AudioBuffer> => {
+    const controller = new AbortController();
+    pendingControllers.set(segment, controller);
     // 原来只重试一次、无退避、且 `catch {}` 把原始异常整个丢掉——上游 500 之后
     // 立刻再打一次只会撞上同一个错误。现在带退避多试一次，并保留**最后一次的异常**
     // 交给调用方（超时/失败的分类要靠它）。
     let lastError: unknown = null;
-    for (let attempt = 0; attempt < SYNTH_MAX_ATTEMPTS; attempt += 1) {
-      // 上一轮等待已经超时：这一次不必再发出去。
-      if (abandoned.has(segment)) break;
-      try {
-        return await synthesize(segment);
-      } catch (error) {
-        lastError = error;
-        // 权限类拒绝是**永久**的：没签 AI 同意时服务端直接 403
-        // （`identity/ai-consent-gate.ts`，doc 34 L13），退避再打三次只是把同一个
-        // 答案要三遍，还会多要三份外部合成配额。当场放弃，让调用方按"没出声"走文字降级。
-        if (isPermanentVoiceRejection(error)) break;
-        if (attempt < SYNTH_MAX_ATTEMPTS - 1) {
-          await new Promise((resolve) => { setTimeout(resolve, SYNTH_RETRY_DELAY_MS * (attempt + 1)); });
+    try {
+      for (let attempt = 0; attempt < SYNTH_MAX_ATTEMPTS; attempt += 1) {
+        // 上一轮等待已经超时：这一次不必再发出去。
+        if (abandoned.has(segment) || args.signal.aborted || controller.signal.aborted || args.runGeneration !== generation) break;
+        try {
+          return await synthesize(segment, controller.signal);
+        } catch (error) {
+          lastError = error;
+          // 权限类拒绝是**永久**的：没签 AI 同意时服务端直接 403
+          // （`identity/ai-consent-gate.ts`，doc 34 L13），退避再打三次只是把同一个
+          // 答案要三遍，还会多要三份外部合成配额。当场放弃，让调用方按"没出声"走文字降级。
+          if (isPermanentVoiceRejection(error) || args.signal.aborted || controller.signal.aborted || args.runGeneration !== generation) break;
+          if (attempt < SYNTH_MAX_ATTEMPTS - 1) {
+            await new Promise((resolve) => { setTimeout(resolve, SYNTH_RETRY_DELAY_MS * (attempt + 1)); });
+          }
         }
       }
+      throw lastError instanceof Error ? lastError : new Error("VOICE_SEGMENT_SYNTH_FAILED");
+    } finally {
+      pendingControllers.delete(segment);
     }
-    throw lastError instanceof Error ? lastError : new Error("VOICE_SEGMENT_SYNTH_FAILED");
   };
   const takePrefetched = (key: string): { buffer: Promise<AudioBuffer>; startedAtMs: number } | null => {
     const index = prefetched.findIndex((entry) => entry.key === key);
@@ -655,7 +673,10 @@ async function runQueuedSpeech(args: {
         // 现在超时与合成失败同路：跳过这段继续后面。整轮一段都没播出来时，
         // 才在收尾处降级为 text_only（见循环结束后那段）。
         const deadlineHit = error instanceof Error && error.message === "VOICE_SEGMENT_DEADLINE";
-        if (deadlineHit) abandoned.add(segment);
+        if (deadlineHit) {
+          abandoned.add(segment);
+          pendingControllers.get(segment)?.abort();
+        }
         missedSegments += 1;
         lastMissReason = deadlineHit ? "deadline" : "synth_failed";
         report(segment, deadlineHit ? "deadline" : "synth_failed", pending.startedAtMs);
@@ -774,6 +795,8 @@ async function runQueuedSpeech(args: {
       failure: gatewayErrorMessage(error),
     });
   } finally {
+    args.signal.removeEventListener("abort", abortPending);
+    abortPending();
     // 循环真的退出了（念完 / 被打断 / 异常）：此后新到的段不再预取，也不再报位置。
     loopActive = false;
     playingSegment = null;
@@ -814,7 +837,7 @@ export function beginCompanionSpeechLine(options: { readonly strictSegments?: bo
 
   if (mode === "voice" && activeHost) {
     setActiveSpeechPlan(planId);
-    void runQueuedSpeech({ planId, runGeneration: generation, host: activeHost, queue });
+    void runQueuedSpeech({ planId, runGeneration: generation, host: activeHost, queue, signal: synthesisController!.signal });
   }
 
   return {
@@ -892,7 +915,7 @@ export function speakCompanionLine(text: string): CompanionSpeechHandle | null {
 
   setActiveSpeechPlan(planId);
   const runGeneration = generation;
-  void runSpeech({ planId, runGeneration, host: activeHost, segments, totalChars });
+  void runSpeech({ planId, runGeneration, host: activeHost, segments, totalChars, signal: synthesisController!.signal });
   return {
     planId,
     mode: "voice",

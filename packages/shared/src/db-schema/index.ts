@@ -27,6 +27,7 @@ export * from "./companion-sandbox.ts";
 export * from "./assistant-deliveries.ts";
 export * from "./assistant-memory.ts";
 export * from "./companion-memory.ts";
+export * from "./companion-self-notes.ts";
 export * from "./companion-home.ts";
 export * from "./companion.ts";
 export * from "./companion-conversations.ts";

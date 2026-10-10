@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { COMPANION_AUTONOMOUS_TOOLS, isCompanionAutonomousTool } from "../companion-autonomy.ts";
 import test from "node:test";
 import {
   canUseCompanionAgentTool,
@@ -56,10 +57,10 @@ test("Agent permission levels keep hard confirmation boundaries", () => {
   assert.equal(canUseCompanionAgentTool("guided", focusGraph).requiresConfirmation, false);
 });
 
-test("扁平工具面 fail closed：read_only 只剩读工具，未知档位不会放开写工具", () => {
+test("扁平工具面 fail closed：read_only 保留自主记录并禁止业务写入，未知档位不会放开写工具", () => {
   const readOnly = resolveAllCompanionAgentTools("read_only");
   assert.ok(readOnly.length > 0);
-  assert.ok(readOnly.every((definition) => definition.riskClass === "read"));
+  assert.ok(readOnly.every((definition) => definition.riskClass === "read" || isCompanionAutonomousTool(definition.name)));
   assert.ok(
     resolveAllCompanionAgentTools("guided").length > readOnly.length,
     "guided 必须比 read_only 多出写工具",
@@ -90,7 +91,7 @@ test("图片外发政策管的是「看不看得见」，不是「调不调得�
   // read_only + 政策开着：两条过滤线各自独立，谁都不会替谁放宽。
   assert.ok(
     resolveAllCompanionAgentTools("read_only", { visionEnabled: true })
-      .every((definition) => definition.riskClass === "read"),
+      .every((definition) => definition.riskClass === "read" || isCompanionAutonomousTool(definition.name)),
   );
   assert.deepEqual(
     COMPANION_AGENT_TOOL_DEFINITIONS.filter((d) => isVisionGatedCompanionTool(d.name))
@@ -279,4 +280,18 @@ test("Agent SSE event schemas expose only safe tool metadata", () => {
   }).success, true);
   // `agent.skill` 这个 SSE 事件类型已随技能层删除：现在每轮工具面是固定的
   // （只按权限档过滤），"选中了哪个技能"再也不是一个需要广播的事实。
+});
+
+
+test("身份和自己的记事在三档均自主执行；权限开关仍控制业务操作", () => {
+  for (const name of COMPANION_AUTONOMOUS_TOOLS) {
+    const tool = getCompanionAgentTool(name); assert.ok(tool, name);
+    for (const permission of ["read_only", "guided", "full"] as const) {
+      assert.ok(resolveAllCompanionAgentTools(permission).some(item => item.name === name));
+      assert.deepEqual(canUseCompanionAgentTool(permission, tool), { allowed: true, requiresConfirmation: false });
+    }
+  }
+  assert.equal(canUseCompanionAgentTool("read_only", getCompanionAgentTool("companion_create_note")!).allowed, false);
+  assert.equal(validateCompanionAgentToolArguments("companion_schedule_wake", {
+    key: "curiosity", expectedRevision: 2, at: "2026-10-11T09:00:00+08:00", reason: "稍后再看看" }).success, true);
 });

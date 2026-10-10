@@ -1136,7 +1136,9 @@ export async function clearMemories(
   scope: MemoryScope,
   now: Date = new Date(),
 ): Promise<number> {
+  // A late autonomous consolidation must not reconstruct cleared material.
   await lockMemoryMutations(executor, scope.userId);
+  await executor.execute(sql`UPDATE user_companion_account_state SET epoch=epoch+1 WHERE user_id=${scope.userId}`);
   await executor.execute(sql`
     INSERT INTO assistant_memory_source_suppressions (user_id, kind, source_event_id)
     SELECT DISTINCT user_id, kind, source_event_id
@@ -1147,6 +1149,9 @@ export async function clearMemories(
        AND source_event_id IS NOT NULL
     ON CONFLICT (user_id, kind, source_event_id) DO NOTHING
   `);
+  await executor.execute(sql`UPDATE companion_self_notes SET user_disabled=true,tier='archived',next_review_at=NULL,
+    revision=revision+1,reason='用户清空记忆，停止使用这篇记事。',updated_at=${now.toISOString()}::timestamptz
+    WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND NOT user_disabled`);
   const updated = await executor.update(assistantMemoryItems)
     .set({ deletedAt: now, updatedAt: now, purgeAfter: new Date(now.getTime() + MEMORY_RECYCLE_BIN_DAYS * 24 * 60 * 60 * 1000) })
     .where(and(

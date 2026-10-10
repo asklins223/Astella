@@ -293,14 +293,13 @@ interface PooledQwenConnection {
  * 同时这也是并发放开后的**必要**条件：全局名额 > 1 时，不同任务各自持有连接，
  * 单槽位会在每次归还时关掉另一个槽里的连接，复用率归零。
  *
- * 槽位数上界 = 配置过的 (URL, key) 组合数（现实里 1 个）；空闲 60s 自动断开，
- * 所以不需要额外的池容量旋钮。
+ * 每个身份最多保留全局并发上限数量的空闲连接；空闲 60s 自动断开。
  */
 function connectionKey(options: QwenTtsOptions): string {
   return `${wsUrl(options.workspaceId)}|${options.apiKey}`;
 }
 
-const idleConnections = new Map<string, PooledQwenConnection>();
+const idleConnections = new Map<string, Set<PooledQwenConnection>>();
 
 function clearPoolIdleTimer(conn: PooledQwenConnection): void {
   if (conn.idleTimer) {
@@ -312,7 +311,9 @@ function clearPoolIdleTimer(conn: PooledQwenConnection): void {
 function closePooledConnection(conn: PooledQwenConnection, WebSocketImpl: typeof WebSocket): void {
   clearPoolIdleTimer(conn);
   conn.alive = false;
-  if (idleConnections.get(conn.key) === conn) idleConnections.delete(conn.key);
+  const bucket = idleConnections.get(conn.key);
+  bucket?.delete(conn);
+  if (bucket?.size === 0) idleConnections.delete(conn.key);
   if (
     conn.socket.readyState === WebSocketImpl.OPEN ||
     conn.socket.readyState === WebSocketImpl.CONNECTING
@@ -323,16 +324,14 @@ function closePooledConnection(conn: PooledQwenConnection, WebSocketImpl: typeof
 
 /** 测试用：清空池状态（避免测试间串扰）。 */
 export function resetQwenConnectionPool(): void {
-  for (const conn of [...idleConnections.values()]) {
-    clearPoolIdleTimer(conn);
-    conn.alive = false;
-  }
+  for (const bucket of [...idleConnections.values()])
+    for (const conn of [...bucket]) closePooledConnection(conn, WebSocket);
   idleConnections.clear();
 }
 
 /** 测试钩子：空闲连接槽位数。 */
 export function qwenIdleConnectionCount(): number {
-  return idleConnections.size;
+  return [...idleConnections.values()].reduce((count, bucket) => count + bucket.size, 0);
 }
 
 /** 取连接：优先复用同身份的 IDLE 槽位；否则新建（并发由任务名额约束）。 */
@@ -341,7 +340,8 @@ function acquireQwenConnection(
 ): Promise<PooledQwenConnection> {
   if (options.signal?.aborted) return Promise.reject(new QwenTtsError("CANCELLED", "qwen TTS 已取消"));
   const key = connectionKey(options);
-  const idle = idleConnections.get(key);
+  const bucket = idleConnections.get(key);
+  const WebSocketImpl = options.WebSocketImpl ?? WebSocket;
   /**
    * `alive` 不可信：连接被停进 `idleConnections` 之后，它上一轮任务开始时已经
    * `socket.removeAllListeners()`，所以**上游主动关闭**这条 socket 时没有任何人把
@@ -350,22 +350,13 @@ function acquireQwenConnection(
    * 永远不来，请求一直挂到 30 秒超时才落边缘兜底，同时白占一个全局任务名额和那一整条
    * 用户队列。复用前看 socket 的真实状态，不看记账位。
    */
-  if (idle && idle.alive && idle.socket.readyState === WebSocket.OPEN) {
-    idleConnections.delete(key);
+  for (const idle of bucket ?? []) {
+    bucket!.delete(idle);
+    if (bucket!.size === 0) idleConnections.delete(key);
     clearPoolIdleTimer(idle);
-    return Promise.resolve(idle);
+    if (idle.alive && idle.socket.readyState === WebSocketImpl.OPEN) return Promise.resolve(idle);
+    closePooledConnection(idle, WebSocketImpl);
   }
-  if (idle) {
-    // 记账说它活着、socket 说不是：摘掉并关掉，别让死连接继续占着这个身份。
-    idleConnections.delete(key);
-    clearPoolIdleTimer(idle);
-    try {
-      idle.socket.close();
-    } catch {
-      // 已关掉的 socket 再 close 会抛；要的效果已经达成。
-    }
-  }
-  const WebSocketImpl = options.WebSocketImpl ?? WebSocket;
   const url = wsUrl(options.workspaceId);
   const socket = new WebSocketImpl(url, {
     headers: {
@@ -408,15 +399,20 @@ function releaseQwenConnection(
   WebSocketImpl: typeof WebSocket,
 ): void {
   if (!conn.alive) return;
-  if (!reusable) {
+  if (!reusable || conn.socket.readyState !== WebSocketImpl.OPEN) {
     closePooledConnection(conn, WebSocketImpl);
     return;
   }
-  const existing = idleConnections.get(conn.key);
-  if (existing && existing !== conn) {
-    closePooledConnection(existing, WebSocketImpl);
+  const bucket = idleConnections.get(conn.key) ?? new Set<PooledQwenConnection>();
+  // 一个身份可有多个并发任务。每次归还都关掉另一条，会让后续批次重新握手。
+  // 保留至多全局并发上限条，仍由各连接自己的 60s 空闲计时器回收。
+  if (!bucket.has(conn) && bucket.size >= resolveQwenTtsMaxConcurrency()) {
+    closePooledConnection(conn, WebSocketImpl);
+    return;
   }
-  idleConnections.set(conn.key, conn);
+  bucket.add(conn);
+  idleConnections.set(conn.key, bucket);
+  clearPoolIdleTimer(conn);
   // PERF-BN6 修复：idle timer 加 .unref()，无请求时该 60s 保活计时器
   // 不阻塞进程优雅停机/退出（对齐项目其它 .unref() 惯例）。
   conn.idleTimer = setTimeout(() => {
@@ -458,14 +454,18 @@ export async function qwenTtsSynthesizeStream(
     let finished = false;
     let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
     let textSent = false;
+    let cancelled = false;
+    let cleanedUp = false;
     let cancelTimer: ReturnType<typeof setTimeout> | null = null;
     const timer = setTimeout(() => {
-      if (!settled) fail(new QwenTtsError("TIMEOUT", "qwen TTS 任务超时"));
+      if (!finished) fail(new QwenTtsError("TIMEOUT", "qwen TTS 任务超时"));
     }, timeoutMs);
 
     // 先声明再赋值：cleanup 可能在流建立之前就被超时/错误路径调到。
     let externalAbort: (() => void) | null = null;
     const cleanup = (reusable: boolean): void => {
+      if (cleanedUp) return;
+      cleanedUp = true;
       clearTimeout(timer);
       options.signal?.removeEventListener("abort", onAbortBeforeStream);
       if (externalAbort) options.signal?.removeEventListener("abort", externalAbort);
@@ -481,16 +481,17 @@ export async function qwenTtsSynthesizeStream(
       if (!settled) fail(new QwenTtsError("CANCELLED", "qwen TTS 已取消"));
     };
     const fail = (err: Error): void => {
+      if (finished) return;
+      finished = true;
       if (settled && controller) {
         // 流已建立（task-started 后）出错：错误通过流传播（reject 已无意义）。
         // 先 error 再 cleanup（cleanup 关闭 socket 会同步触发 close 回调置空 controller）。
-        finished = true;
         controller.error(err);
         controller = null;
         cleanup(false);
         return;
       }
-      if (settled) return;
+      if (settled) { cleanup(false); return; }
       settled = true;
       cleanup(false);
       controller?.error(err);
@@ -543,6 +544,7 @@ export async function qwenTtsSynthesizeStream(
     });
 
     socket.on("message", (data, isBinary) => {
+      if (finished) return;
       if (isBinary) {
         // 音频帧 → 流式 push（resolve 已发生；若未 resolve 则先建立流）
         // 音频先于 task-started 到达（异常）——仍尝试建立流（controller 为空则丢弃）
@@ -552,29 +554,31 @@ export async function qwenTtsSynthesizeStream(
         }
         return;
       }
-      let msg: { header?: { event?: string; error_message?: string }; payload?: unknown };
+      let msg: { header?: { event?: string; task_id?: string; error_message?: string }; payload?: unknown };
       try {
         msg = JSON.parse(data.toString());
       } catch {
         return; // 非 JSON（忽略）
       }
+      // 复用连接上迟到的旧任务回执，不能结束或污染新任务。
+      if (msg.header?.task_id && msg.header.task_id !== taskId) return;
       const event = msg.header?.event;
       if (event === "task-started") {
         // 建立输出流并发送文本
         if (!settled) {
           settled = true;
           const cancelUpstream = (): void => {
-            if (!finished) {
-              sendJson({
-                header: { action: "finish-task", task_id: taskId, streaming: "duplex" },
-                payload: { input: { directive: "cancel" } },
-              });
-              cancelTimer = setTimeout(() => {
-                cleanup(false); // 服务端未及时确认 → 强制弃连
-              }, CANCEL_SETTLE_TIMEOUT_MS);
-            } else {
-              cleanup(true);
-            }
+            if (cancelled || finished) return;
+            cancelled = true;
+            // stream.cancel() 已关闭 controller；服务端确认前仍可能有音频在路上。
+            controller = null;
+            sendJson({
+              header: { action: "finish-task", task_id: taskId, streaming: "duplex" },
+              payload: { input: { directive: "cancel" } },
+            });
+            cancelTimer = setTimeout(() => {
+              cleanup(false); // 服务端未及时确认 → 强制弃连
+            }, CANCEL_SETTLE_TIMEOUT_MS);
           };
           // 调用方在流读期间按下取消：走与前端打断完全相同的那条路，
           // 所以上游看到的是同一个 cancel 指令，WS 也照样归还。
@@ -584,9 +588,9 @@ export async function qwenTtsSynthesizeStream(
             cancel() { cancelUpstream(); },
           });
           externalAbort = (): void => {
+            const activeController = controller;
             cancelUpstream();
-            controller?.error(new QwenTtsError("CANCELLED", "qwen TTS 已取消"));
-            controller = null;
+            activeController?.error(new QwenTtsError("CANCELLED", "qwen TTS 已取消"));
           };
           if (options.signal?.aborted) externalAbort();
           else options.signal?.addEventListener("abort", externalAbort, { once: true });

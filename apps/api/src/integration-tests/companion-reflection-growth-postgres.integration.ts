@@ -25,7 +25,7 @@ import { retrievePlaybookViews }
   from "../../../../workers/ai-worker/src/handlers/companion-playbooks.ts";
 import { createHash } from "node:crypto";
 import { upsertAgentMethodCandidate, adoptPendingPersonaForNewTurn, pendingPersonaProposalSources,
-  createAgentMethodStore } from "@astella/agent-host";
+  createAgentMethodStore, readAgentMethod, writeCompanionSelfNote, listCompanionSelfNotes, controlCompanionSelfNote } from "@astella/agent-host";
 import { closeDatabase as closeWorkerDatabase, withWorkerWorkspaceTransaction }
   from "../../../../workers/ai-worker/src/db.ts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
@@ -34,7 +34,7 @@ import { getPetProfileState, stagePetProfileRevision, upsertPetProfile }
 import { personaFromDefaultPreset } from "@astella/shared/pet-persona-merge";
 import { getDefaultPersonaPreset } from "@astella/shared/pet-persona-presets";
 import { createCompanionTurn } from "../modules/companion-conversation/turn/turn-service.ts";
-import { correctMemory } from "../modules/companion-conversation/memory/memory-service.ts";
+import { correctMemory, clearMemories } from "../modules/companion-conversation/memory/memory-service.ts";
 
 // 让 `agent_turn` 解析不到平台 → 走 mock provider（与日记那一份集成测试同一手法）。
 process.env.AI_PLATFORMS_CONFIG = "/nonexistent/companion-reflection-fixture.json";
@@ -60,7 +60,7 @@ interface Fixture {
   /** 段内每条消息的 id（按插入顺序）。 */
   readonly messageIds: string[];
   readonly correctionMessageId: string;
-  runReflection: (jobFields?: { fromSeq?: number; toSeq?: number }) => Promise<void>;
+  runReflection: (jobFields?: { fromSeq?: number; toSeq?: number; selfNoteKey?: string; selfNoteRevision?: number }) => Promise<void>;
   retryReflection: () => Promise<void>;
   replaceLease: () => Promise<void>;
   readReflection: () => Promise<Record<string, unknown>[]>;
@@ -146,12 +146,12 @@ async function fixture(options: { userMessages?: number; intervalBlocked?: boole
       await mutate(async (tx) => {
         await tx`INSERT INTO jobs(id,type,workspace_id,requested_by,payload,status,lease_token,started_at,resource_class,priority)
           VALUES(${jobId},'companion_reflection',${workspaceId},${userId},
-            ${tx.json({ userId, workspaceId, conversationId, fromSeq, toSeq })},
+            ${tx.json({ userId, workspaceId, conversationId, fromSeq, toSeq, ...jobFields })},
             'running',${leaseToken},now(),'maintenance',30)`;
       });
       lastJob = {
         id: jobId, workspaceId, requestedBy: userId, leaseToken,
-        payload: { userId, workspaceId, conversationId, fromSeq, toSeq },
+        payload: { userId, workspaceId, conversationId, fromSeq, toSeq, ...jobFields },
       };
       await runCompanionReflectionJob(lastJob);
     },
@@ -216,7 +216,7 @@ async function fixture(options: { userMessages?: number; intervalBlocked?: boole
 
 /** 固定她这一次回顾的产出：一条判断、一条方法、一句自我描述修订。 */
 function reflectionModelFixture(
-  body: { judgments?: unknown[]; experiences?: unknown[]; persona?: unknown; summary?: string },
+  body: { judgments?: unknown[]; experiences?: unknown[]; selfNotes?: unknown[]; persona?: unknown; summary?: string },
   onCall: (messages: Parameters<MockProvider["chatCompletion"]>[0]) => void | Promise<void> = () => {}, 
 ) {
   const original = MockProvider.prototype.chatCompletion;
@@ -232,6 +232,7 @@ function reflectionModelFixture(
         judgments: body.judgments ?? [],
         experiences: body.experiences ?? [],
         persona: body.persona ?? null,
+        selfNotes: body.selfNotes ?? [],
       }),
       usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
     };
@@ -300,13 +301,17 @@ test("§16 一条完整路径：回顾留下经验与待生效自我描述，下
     const scope = { workspaceId: f.workspaceId, userId: f.userId };
     // 一次取回，两个桶：这正是下一轮装配用的那一条读。
     const views = await withWorkerWorkspaceTransaction(scope, (tx) => retrievePlaybookViews(tx, scope));
-    const candidates = views.candidates;
-    assert.deepEqual(candidates.map((entry) => entry.title), ["招呼只接眼前这句"]);
-    assert.equal(candidates[0].triggerCondition, "对方只说了一句招呼");
-    assert.deepEqual(candidates[0].exceptions, ["对方点名要接着昨天那篇时照常接续"],
+    assert.equal(views.candidates.length, 0, "自主采用不再等待用户挑选候选");
+    const methodsInUse = views.catalog;
+    assert.equal(methodsInUse.length, 1);
+    const candidates = [await withWorkerWorkspaceTransaction(scope, tx => readAgentMethod(tx, scope, methodsInUse[0].playbookId, methodsInUse[0].version))];
+    assert.ok(candidates[0]);
+    assert.deepEqual(candidates.map((entry) => entry!.title), ["招呼只接眼前这句"]);
+    assert.equal(candidates[0]!.appliesWhen, "对方只说了一句招呼");
+    assert.deepEqual(candidates[0]!.exceptions, ["对方点名要接着昨天那篇时照常接续"],
       "例外要一起读回来：刚提炼的经验最容易过度套用");
-    assert.equal(candidates[0].epistemicStatus, "tentative");
-    assert.equal(views.catalog.length, 0, "没核对的候选不得占「可以照做」那本目录");
+    assert.equal(candidates[0]!.epistemicStatus, "tentative");
+    assert.equal(views.catalog.length, 1, "有来源的暂定做法自动进入目录，认识状态仍为暂定");
 
     // §16 第 6 步的另一半：用户把候选取下来之后，下一轮读不回来；**迟到的反思也不能把它复活**。
     // 「取下来」在这里直接用 SQL 置 disabled（那是用户停用会落到的那一列），
@@ -314,7 +319,7 @@ test("§16 一条完整路径：回顾留下经验与待生效自我描述，下
     await admin`UPDATE companion_procedural_playbooks SET method_state = 'disabled' WHERE user_id = ${f.userId}`;
     const afterWithdraw = await withWorkerWorkspaceTransaction(scope,
       (tx) => retrievePlaybookViews(tx, scope));
-    assert.equal(afterWithdraw.candidates.length, 0, "停用之后不该再读回来");
+    assert.equal(afterWithdraw.catalog.length + afterWithdraw.candidates.length, 0, "停用之后不该再读回来");
     // 同一个触发条件 → 反思那条路会算出的同一个 playbookKey（键由触发条件定型）。
     const sameKey = `reflection:${createHash("sha256").update("对方只说了一句招呼").digest("hex").slice(0, 24)}`;
     const lateReflection = await withWorkerWorkspaceTransaction(scope, (tx) =>
@@ -593,6 +598,7 @@ test("终态保存失败：副作用一并回滚；同一 job 从检查点恢复
   const f = await fixture();
   let calls = 0;
   const restore = reflectionModelFixture({
+    selfNotes: [ownNote("atomic")],
     judgments: [{ text: "招呼不要数笔记", epistemicStatus: "tentative", sourceMessageIds: [f.correctionMessageId] }],
   }, () => { calls += 1; });
   try {
@@ -607,11 +613,14 @@ test("终态保存失败：副作用一并回滚；同一 job 从检查点恢复
     await admin`DROP FUNCTION plan50_fail_finalize()`;
     assert.equal((await admin`SELECT id FROM assistant_memory_items WHERE user_id=${f.userId}`).length, 0,
       "结论没保存，判断也应回滚");
+    assert.equal((await admin`SELECT entry_key FROM companion_self_notes WHERE user_id=${f.userId}`).length, 0);
+    assert.equal((await admin`SELECT revision FROM companion_self_note_versions WHERE user_id=${f.userId}`).length, 0);
     // 新消息到达也不改变已冻结输入和检查点的身份。
     await admin`INSERT INTO assistant_memory_items(workspace_id,user_id,kind,content,scope,source_type)
       VALUES(${f.workspaceId},${f.userId},'preference','之后新增的条目','workspace','model_inferred')`;
     await f.retryReflection();
     assert.equal(calls, 1, "恢复应读原输入检查点");
+    assert.equal((await admin`SELECT revision FROM companion_self_note_versions WHERE user_id=${f.userId}`).length, 1);
     assert.equal((await f.readReflection())[0].decision, "committed");
     assert.equal((await admin`SELECT id FROM assistant_memory_items WHERE user_id=${f.userId} AND kind='judgment'`).length, 1);
   } finally {
@@ -930,7 +939,7 @@ test("并发 worker 只领取同账号一个反思，其他账号不受阻塞，
 test("用户亲自固定的表达不被后台人格建议覆盖", async () => {
   const f = await fixture();
   const scope = { workspaceId:f.workspaceId,userId:f.userId };
-  const restore = reflectionModelFixture({ persona:{ selfDescription:"后台不该覆盖的描述",speakingStyle:"后台不该覆盖的风格",
+  const restore = reflectionModelFixture({ persona:{ speakingStyle:"后台不该覆盖的风格",
     reason:"一次建议",sourceMessageIds:[f.correctionMessageId] } });
   try {
     await withWorkspaceTransaction(scope,tx=>upsertPetProfile(tx,scope,{
@@ -942,5 +951,149 @@ test("用户亲自固定的表达不被后台人格建议覆盖", async () => {
     assert.equal((await f.persona()).pending,null);
     assert.equal((await f.persona()).profile?.speakingStyle,"用户固定风格");
     assert.equal((await f.readReflection())[0].decision,"no_change");
+  } finally { restore(); await f.cleanup(); }
+});
+
+const ownNote = (key: string, tier: "resident" | "active" | "archived" = "active") => ({
+  key, expectedRevision: 0, title: "我还想弄明白的问题", body: "# 暂定看法\n\n先看一个反例，再决定是否保留这个认识。",
+  tier, reason: "自己的关注，不替用户认定。", nextReviewAt: null, expiresAt: null,
+});
+
+test("自主身份文档无需用户背书，完整 Markdown 自动进入下一轮，偶然读过的消息删除不撤销选择", async () => {
+  const f = await fixture();
+  const document = "# 我选择怎么参与\n\n我想认真追问一个反例。\n\n" + "## 仍在尝试\n我可以改变自己的看法。\n".repeat(200);
+  const restore = reflectionModelFixture({ persona: { selfDescription: document, basis: "self_authored",
+    reason: "这是我自己选择的关注角度", sourceMessageIds: [] } });
+  try {
+    await f.runReflection();
+    assert.equal((await f.persona()).pending?.revision, 1);
+    await f.deleteMessage(f.correctionMessageId);
+    await f.newTurn("接着说说你的看法");
+    const current = await f.persona();
+    assert.equal(current.profileRevision, 1);
+    assert.equal(current.profile?.selfDescription, document);
+    assert.equal(current.pending, null);
+    const [reflection] = await f.readReflection(); assert.equal(reflection.decision, "committed");
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("自己的记事保留不可变版本，CAS 与 RLS 隔离生效；用户停用后模型不能自行恢复", async () => {
+  const f = await fixture(), other = await fixture();
+  const scope = { workspaceId: f.workspaceId, userId: f.userId };
+  try {
+    const first = await withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope, ownNote("question")));
+    const second = await withWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope,
+      { ...ownNote("question"), expectedRevision: first.revision, body: "# 修订\n\n用户指出了这个反例。" }, true));
+    assert.equal(second.revision, 2);
+    await assert.rejects(withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope,
+      { ...ownNote("question"), expectedRevision: 1 })), /已有新版本/);
+    const hidden = await withWorkerWorkspaceTransaction({ workspaceId: f.workspaceId, userId: other.userId }, tx =>
+      tx.execute(sql`SELECT * FROM companion_self_notes WHERE entry_key='question'`));
+    assert.equal(hidden.length, 0);
+    const versions = await withWorkspaceTransaction(scope, tx => tx.execute<{ snapshot: { body: string } }>(sql`
+      SELECT snapshot FROM companion_self_note_versions WHERE entry_key='question' ORDER BY revision`));
+    assert.deepEqual(versions.map(v => v.snapshot.body), [first.body, second.body]);
+    await assert.rejects(withWorkerWorkspaceTransaction(scope, tx => tx.execute(sql`
+      DELETE FROM companion_self_note_versions WHERE entry_key='question'`)), (error: any) => error.cause?.code === "42501");
+    await assert.rejects(withWorkspaceTransaction(scope, tx => tx.execute(sql`
+      UPDATE companion_self_note_versions SET snapshot='{}'::jsonb WHERE entry_key='question'`)), (error: any) => error.cause?.code === "42501");
+    const stopped = await withWorkspaceTransaction(scope, tx => controlCompanionSelfNote(tx, scope,
+      { key: "question", expectedRevision: second.revision, action: "disable" }));
+    assert.equal(stopped.userDisabled, true);
+    assert.equal((await withWorkerWorkspaceTransaction(scope, tx => listCompanionSelfNotes(tx, scope))).length, 0);
+    await assert.rejects(withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope,
+      { ...ownNote("question"), expectedRevision: stopped.revision })), /已停用/);
+    const resumed = await withWorkspaceTransaction(scope, tx => controlCompanionSelfNote(tx, scope,
+      { key: "question", expectedRevision: stopped.revision, action: "restore" }));
+    assert.equal(resumed.userDisabled, false); assert.equal(resumed.revision, 4);
+  } finally { await f.cleanup(); await other.cleanup(); }
+});
+
+test("记事分层按资源容量整理，归档释放常驻位，重评时间允许带时区", async () => {
+  const f = await fixture(), scope = { workspaceId: f.workspaceId, userId: f.userId };
+  try {
+    for (let i = 0; i < 7; i++) await withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope, ownNote(`resident-${i}`, "resident")));
+    await assert.rejects(withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope, ownNote("overflow", "resident"))), /已经装满/);
+    await withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope,
+      { ...ownNote("resident-0", "archived"), expectedRevision: 1 }));
+    const time = new Date(Date.now() + 3600_000).toISOString();
+    const note = await withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope,
+      { ...ownNote("overflow", "resident"), nextReviewAt: time }));
+    assert.equal(note.nextReviewAt, time);
+    await assert.rejects(withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope,
+      { ...ownNote("overflow", "resident"), expectedRevision: note.revision, nextReviewAt: new Date().toISOString() })), /一分钟之后/);
+    const archived = await withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope,
+      { ...ownNote("overflow", "archived"), expectedRevision: note.revision }));
+    assert.equal(archived.nextReviewAt, null);
+    // 过期的记事不占新位子：常驻已经满员时，改写一条本来就过期的记事不该被容量挡回来。
+    const stale = await withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope,
+      { ...ownNote("stale", "resident"), expiresAt: new Date(Date.now() - 60_000).toISOString() }));
+    await withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope, ownNote("resident-7", "resident")));
+    const corrected = await withWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope,
+      { ...ownNote("stale", "resident"), expectedRevision: stale.revision, body: "# 改过\n\n用户纠正了这条过期素材。",
+        expiresAt: stale.expiresAt }, true));
+    assert.equal(corrected.revision, 2);
+    await assert.rejects(withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope, ownNote("resident-8", "resident"))), /已经装满/);
+  } finally { await f.cleanup(); }
+});
+
+test("持久唤醒消费一次，绕过普通反思间隔与三回合门；安静结束不再自行排队", async () => {
+  const f = await fixture(), scope = { workspaceId: f.workspaceId, userId: f.userId };
+  let calls = 0;
+  const restore = reflectionModelFixture({ summary: "我暂时没有新的依据，不用改变。" }, messages => {
+    calls++; assert.match(String(messages[0].content), /这次由你安排的记事 curiosity/);
+  });
+  try {
+    await admin`DELETE FROM companion_messages WHERE conversation_id=${f.conversationId} AND seq>2`;
+    const note = await withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope,
+      { ...ownNote("curiosity"), nextReviewAt: new Date(Date.now() + 3600_000).toISOString() }));
+    // Model-owned time is durable in the DB; no process-local timer is involved.
+    await admin`UPDATE companion_self_notes SET next_review_at=now()-interval '1 minute'
+      WHERE workspace_id=${f.workspaceId} AND user_id=${f.userId}`;
+    const enqueue = () => withWorkerWorkspaceTransaction(scope, tx => tx.execute<{ count: number }>(sql`
+      SELECT astella_enqueue_companion_self_wakes() AS count`));
+    assert.equal((await enqueue())[0].count, 1); assert.equal((await enqueue())[0].count, 0);
+    const [job] = await admin`SELECT id,payload FROM jobs WHERE workspace_id=${f.workspaceId} AND type='companion_reflection'`;
+    const leaseToken = randomUUID();
+    await admin`UPDATE jobs SET status='running',lease_token=${leaseToken},started_at=now() WHERE id=${job.id}`;
+    await runCompanionReflectionJob({ id: job.id, workspaceId: f.workspaceId, requestedBy: f.userId,
+      leaseToken, payload: job.payload });
+    assert.equal(calls, 1);
+    assert.equal((await f.readReflection())[0].decision, "no_change");
+    const [current] = await withWorkerWorkspaceTransaction(scope, tx => listCompanionSelfNotes(tx, scope));
+    assert.equal(current.revision, note.revision); assert.equal(current.nextReviewAt, null);
+    assert.equal((await enqueue())[0].count, 0);
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("唤醒读取后用户停用，旧返回不能写身份或新记事", async () => {
+  const f = await fixture(), scope = { workspaceId: f.workspaceId, userId: f.userId };
+  const first = await withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope, ownNote("curiosity")));
+  const restore = reflectionModelFixture({ selfNotes: [ownNote("late-copy")], persona: {
+    selfDescription: "不该从已停用材料写回的旧认识", basis: "self_authored", reason: "旧整理", sourceMessageIds: [] } }, async () => {
+    await withWorkspaceTransaction(scope, tx => controlCompanionSelfNote(tx, scope,
+      { key: first.key, expectedRevision: first.revision, action: "disable" }));
+  });
+  try {
+    await f.runReflection({ selfNoteKey: first.key, selfNoteRevision: first.revision });
+    assert.equal((await f.readReflection())[0].decision, "commit_conflict");
+    assert.equal((await f.persona()).pending, null);
+    assert.equal((await withWorkerWorkspaceTransaction(scope, tx => listCompanionSelfNotes(tx, scope))).length, 0);
+  } finally { restore(); await f.cleanup(); }
+});
+
+test("清空记忆使旧反思失效，连新 key 也不能沿旧快照重建", async () => {
+  const f = await fixture(), scope = { workspaceId: f.workspaceId, userId: f.userId };
+  await withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope, ownNote("curiosity")));
+  const restore = reflectionModelFixture({ selfNotes: [ownNote("late-copy")] }, async () => {
+    await withWorkspaceTransaction(scope, tx => clearMemories(tx, scope));
+  });
+  try {
+    await f.runReflection();
+    const [outcome] = await f.readReflection();
+    assert.equal(outcome.decision, "governance_denied", String(outcome.decision_summary));
+    assert.equal((await withWorkerWorkspaceTransaction(scope, tx => listCompanionSelfNotes(tx, scope))).length, 0);
+    const all = await withWorkerWorkspaceTransaction(scope, tx => listCompanionSelfNotes(tx, scope, { includeArchived: true }));
+    assert.deepEqual(all.map(n => [n.key,n.userDisabled]), [["curiosity",true]]);
   } finally { restore(); await f.cleanup(); }
 });

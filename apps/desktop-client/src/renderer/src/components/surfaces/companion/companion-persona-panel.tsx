@@ -1,6 +1,7 @@
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import type { CompanionPersonaPendingRevisionV1,CompanionPersonaPendingV1,CompanionPersonaPresetV1,CompanionPersonaProfileV1,CompanionPersonaProfileVersionV1,CompanionPersonaV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { PERSONA_FIELD_CAPACITY, personaOriginOf, type PersonaSwitchOption, type SwitchableField } from "@astella/shared/pet-persona-merge";
+import { renderCompanionMarkdown } from "../../companion/companion-markdown";
 import { useEffect,useId,useLayoutEffect,useMemo,useRef,useState } from "react";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
@@ -58,7 +59,7 @@ function CompanionNameRow(props: { readonly current: string; readonly busy: bool
 }
 
 /**
- * 她怎么说自己（方案 50 §8.1）。
+ * 她写给自己的文档（方案 50 §8.1）。
  *
  * 与「说话风格」分开显示是刻意的：那一行是**你或预设给她的说法要求**，这一行是
  * 她自己回顾相处之后攒下的认识。混在一句话里，用户分不清哪句是自己写的，
@@ -80,16 +81,16 @@ function CompanionSelfDescriptionRow(props: {
   const trimmed = (draft ?? props.current).trim();
   const dirty = trimmed !== props.current.trim();
   const commit = async () => { const saved = await props.onSave(trimmed); if (saved !== false) close(); };
-  return <section className="cc-self-description" aria-label="她怎么说自己">
-    <header><h4>她怎么说自己</h4><OriginBadge origin={props.origin} />{draft === null ? <button ref={editRef} type="button" className="cc-link" disabled={props.busy} onClick={() => setDraft(props.current)}>修改自我描述</button> : null}</header>
-    {draft === null ? <p className={props.current ? "cc-persona-prose" : "cc-muted"}>{props.current || "她还没有留下自我描述。等相处久一些，也可以由你先写下来。"}</p>
+  return <section className="cc-self-description" aria-label="她写给自己的文档">
+    <header><h4>她写给自己的文档</h4><OriginBadge origin={props.origin} />{draft === null ? <button ref={editRef} type="button" className="cc-link" disabled={props.busy} onClick={() => setDraft(props.current)}>纠正文档</button> : null}</header>
+    {draft === null ? <div className={props.current ? "cc-persona-prose" : "cc-muted"}>{props.current ? renderCompanionMarkdown(props.current) : "她会自主写下和修订自己的认识，变化自动进入后续交流。"}</div>
       : <form className="cc-form" onSubmit={event => { event.preventDefault(); if (dirty && !props.busy) void commit(); }} onKeyDown={event => { if (event.key === "Escape" && !props.busy) { event.preventDefault(); event.stopPropagation(); close(); } }}>
-      <label><span className="cc-muted">写下或纠正她对自己的认识，清空后也可以保存。</span>
+      <label><span className="cc-muted">自由篇章记录她的认识。你可以事后纠正或清空。</span>
       <textarea
         value={draft}
-        rows={6}
+        rows={12}
         maxLength={PERSONA_FIELD_CAPACITY.selfDescription}
-        aria-label="她怎么说自己"
+        aria-label="她写给自己的文档"
         disabled={props.busy}
         autoFocus
         onChange={(event) => setDraft(event.target.value)}
@@ -127,7 +128,7 @@ function PendingPersonaChanges({ current, next }: {
   };
   add("名字", current?.name, next.name);
   add("性格", current?.personalityTags.join(" · "), next.personalityTags.join(" · "));
-  add("她怎么说自己", current && "selfDescription" in current ? current.selfDescription : undefined, next.selfDescription);
+  add("她写给自己的文档", current && "selfDescription" in current ? current.selfDescription : undefined, next.selfDescription);
   add("她怎样表达", current?.speakingStyle, next.speakingStyle);
   add("表达分量", activenessLabel(current?.activeness) ?? undefined, activenessLabel(next.activeness) ?? undefined);
   for (const [key, label] of BOUNDARY_ITEMS) add(label, current?.boundaries[key] ? "允许" : "关闭", next.boundaries[key] ? "允许" : "关闭");

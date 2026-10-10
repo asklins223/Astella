@@ -54,7 +54,7 @@ class FakeHost implements CompanionVoiceHost {
   rejectWithCodeFor = new Set<string>();
   rejectCode = "forbidden";
 
-  synthesize(text: string): Promise<AudioBuffer> {
+  synthesize(text: string, _signal?: AbortSignal): Promise<AudioBuffer> {
     this.synthesized.push(text);
     if (this.rejectWithCodeFor.has(text)) {
       return Promise.reject(Object.assign(new Error("没有同意"), { code: this.rejectCode }));
@@ -75,8 +75,8 @@ class FakeHost implements CompanionVoiceHost {
   }
 
   /** 严格片段通道：测试里以 segmentId 为键，与 synthesize 共用失败表。 */
-  synthesizeSegment(ref: CompanionVoiceSpeakSegmentRequestV2): Promise<AudioBuffer> {
-    return this.synthesize(ref.segmentId);
+  synthesizeSegment(ref: CompanionVoiceSpeakSegmentRequestV2, signal?: AbortSignal): Promise<AudioBuffer> {
+    return this.synthesize(ref.segmentId, signal);
   }
 
   play(value: AudioBuffer, onProgress: (fraction: number) => void): Promise<boolean> {
@@ -113,6 +113,64 @@ class FakeHost implements CompanionVoiceHost {
     this.progressHandlers.at(-1)?.(fraction);
   }
 }
+
+class AbortableHost extends FakeHost {
+  readonly signals: AbortSignal[] = [];
+  override synthesize(text: string, signal?: AbortSignal): Promise<AudioBuffer> {
+    if (signal) this.signals.push(signal);
+    if (!this.hangFor.has(text)) return super.synthesize(text, signal);
+    this.synthesized.push(text);
+    return new Promise((_resolve, reject) => {
+      const abort = () => reject(new DOMException("Stopped", "AbortError"));
+      if (signal?.aborted) abort();
+      else signal?.addEventListener("abort", abort, { once: true });
+    });
+  }
+}
+
+describe("停止朗读取消实际合成", () => {
+  it("新回复开始时取消旧回复所有在飞请求，旧请求不能再重试或播放", async () => {
+    const host = new AbortableHost();
+    host.hangFor.add("旧第一句。");
+    host.hangFor.add("旧第二句。");
+    setCompanionVoiceHost(host);
+    const old = beginCompanionSpeechLine();
+    old.feed("旧第一句。");
+    old.feed("旧第二句。");
+    await flush();
+    const oldSignals = host.signals.slice();
+    expect(oldSignals.length).toBeGreaterThan(0);
+    const next = beginCompanionSpeechLine();
+    next.feed("新回复。");
+    next.finish();
+    await flush();
+    expect(oldSignals.every(signal => signal.aborted)).toBe(true);
+    expect(host.synthesized.filter(text => text.startsWith("旧"))).toHaveLength(oldSignals.length);
+    expect(host.played).toEqual(["新回复。"]);
+  });
+
+  it("首段到达截止时取消请求，随后段照常播放", async () => {
+    vi.useFakeTimers();
+    try {
+      const host = new AbortableHost();
+      host.hangFor.add("第一句。");
+      setCompanionVoiceHost(host);
+      const session = beginCompanionSpeechLine();
+      session.feed("第一句。");
+      session.feed("第二句。");
+      session.finish();
+      await vi.advanceTimersByTimeAsync(0);
+      const first = host.signals[0];
+      expect(first?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(COMPANION_SPEECH_FIRST_AUDIO_DEADLINE_MS + 50);
+      expect(first?.aborted).toBe(true);
+      expect(host.synthesized.filter(text => text === "第一句。")).toHaveLength(1);
+      expect(host.played).toEqual(["第二句。"]);
+      stopCompanionSpeech();
+      await vi.runAllTimersAsync();
+    } finally { vi.useRealTimers(); }
+  });
+});
 
 /**
  * 等真实时间里的某个条件成立。

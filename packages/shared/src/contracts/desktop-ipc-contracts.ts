@@ -1,3 +1,4 @@
+import { companionSelfNoteV1Schema, companionSelfNoteListV1Schema, companionSelfNoteWriteV1Schema, companionSelfNoteControlV1Schema } from "../companion-autonomy.ts";
 import { createNoteMindMapTaskV1Schema, noteMindMapLatestTaskQueryV1Schema, noteMindMapLatestTaskV1Schema, noteMindMapPageV1Schema, noteMindMapTaskV1Schema, noteMindMapSourceV1Schema } from "./note-mind-map-contracts.ts";
 import type { NoteWritingAction, NoteWritingResult } from "./note-writing-contracts.ts";
 export { noteWritingActionSchema, noteWritingResultSchema, type NoteWritingAction, type NoteWritingResult } from "./note-writing-contracts.ts";
@@ -495,6 +496,10 @@ export const DESKTOP_IPC_CHANNELS = {
   agentRunGet:"astella.v1.agent.run.get",
   agentRunRevise: "astella.v1.agent.runs.revise",
   agentRunControl: "astella.v1.agent.runs.control",
+  agentSelfNotesList: "astella.v1.agent.selfNotes.list",
+  agentSelfNotesHistory: "astella.v1.agent.selfNotes.history",
+  agentSelfNoteWrite: "astella.v1.agent.selfNotes.write",
+  agentSelfNoteControl: "astella.v1.agent.selfNotes.control",
   agentMethodsList: "astella.v1.agent.methods.list",
   agentMethodPropose: "astella.v1.agent.method.propose",
   agentMethodRevise: "astella.v1.agent.method.revise",
@@ -2569,6 +2574,10 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
     createRun(input: { meta: RequestMetaV1; request: z.infer<typeof createAgentRunV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentRunV1Schema>>>;
     reviseRun(input: { meta: RequestMetaV1; runId: string; request: z.infer<typeof reviseAgentRunV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentRunV1Schema>>>;
     controlRun(input: { meta: RequestMetaV1; runId: string; request: z.infer<typeof controlAgentRunV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentRunV1Schema>>>;
+    listSelfNotes(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionSelfNoteListV1Schema>>>;
+    getSelfNoteHistory(input: { meta: RequestMetaV1; key: string }): Promise<GatewayResultV1<z.infer<typeof companionSelfNoteListV1Schema>>>;
+    writeSelfNote(input: { meta: RequestMetaV1; request: z.infer<typeof companionSelfNoteWriteV1Schema> }): Promise<GatewayResultV1<z.infer<typeof companionSelfNoteV1Schema>>>;
+    controlSelfNote(input: { meta: RequestMetaV1; request: z.infer<typeof companionSelfNoteControlV1Schema> }): Promise<GatewayResultV1<z.infer<typeof companionSelfNoteV1Schema>>>;
     listMethods(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof agentMethodListV1Schema>>>;
     proposeMethod(input: { meta: RequestMetaV1; request: z.infer<typeof proposeAgentMethodV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentMethodV1Schema>>>;
     reviseMethod(input: { meta: RequestMetaV1; methodId: string; request: z.infer<typeof reviseAgentMethodV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentMethodV1Schema>>>;

@@ -47,7 +47,9 @@ export const PERSONA_FIELD_CAPACITY = {
   personalityTags: 20,
   speakingStyle: 1000,
   example: 200,
-  selfDescription: 1000,
+  // A self-authored document, with free headings and paragraphs. This is the
+  // storage/request budget, not a target length or a persona content template.
+  selfDescription: 65_536,
   catchphrase: 30,
 } as const;
 

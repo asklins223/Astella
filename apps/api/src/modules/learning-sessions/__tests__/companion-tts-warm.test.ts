@@ -23,6 +23,61 @@ function reset(): void {
   resetCompanionTtsWarmCache();
 }
 
+test("新轮语音取消旧轮在飞预热，立即释放名额；迟到旧事件不能重新占队列", async () => {
+  reset();
+  const turn = { workspaceId: "w1", conversationId: "c1", runId: "r1", generation: 1 };
+  const signals: AbortSignal[] = [];
+  const releases: Array<() => void> = [];
+  const hold = async (signal: AbortSignal) => {
+    signals.push(signal);
+    await new Promise<void>(resolve => { releases.push(resolve); });
+    return { statusCode: 200, audio: bytes(1) };
+  };
+  for (let i = 0; i < COMPANION_TTS_WARM_MAX_IN_FLIGHT_PER_USER; i++) {
+    warmCompanionSegment({ userId: "u1", segmentId: `old-${i}`, turn, run: hold });
+  }
+  await Promise.resolve();
+  let newStarted = false;
+  warmCompanionSegment({ userId: "u1", segmentId: "new", turn: { ...turn, runId: "r2", generation: 2 },
+    run: async () => { newStarted = true; return { statusCode: 200, audio: bytes(2) }; } });
+  assert.ok(signals.every(signal => signal.aborted), "取消真实合成，不能只删除缓存");
+  assert.equal((await takeWarmCompanionSegment("new"))?.statusCode, 200);
+  assert.equal(newStarted, true, "不用等旧请求返回才开始新轮");
+  warmCompanionSegment({ userId: "u1", segmentId: "late-old", turn, run: async () => assert.fail("迟到旧轮不能复活") });
+  assert.equal(await takeWarmCompanionSegment("late-old"), null);
+  assert.equal(await takeWarmCompanionSegment("old-0"), null);
+  releases.forEach(release => release());
+  await Promise.resolve();
+});
+
+test("取消范围只限同一用户、空间和对话；缓存过期会取消对应请求", async () => {
+  reset();
+  const turn = { workspaceId: "w1", conversationId: "c1", runId: "r1", generation: 1 };
+  const signals: AbortSignal[] = [];
+  const releases: Array<() => void> = [];
+  const hold = async (signal: AbortSignal) => {
+    signals.push(signal);
+    await new Promise<void>(resolve => { releases.push(resolve); });
+    return { statusCode: 200, audio: bytes(1) };
+  };
+  warmCompanionSegment({ userId: "u2", segmentId: "other-user", turn, run: hold });
+  warmCompanionSegment({ userId: "u1", segmentId: "other-chat", turn: { ...turn, conversationId: "c2" }, run: hold });
+  warmCompanionSegment({ userId: "u1", segmentId: "other-space", turn: { ...turn, workspaceId: "w2" }, run: hold });
+  await Promise.resolve();
+  warmCompanionSegment({ userId: "u1", segmentId: "new", turn: { ...turn, generation: 2 },
+    run: async () => ({ statusCode: 200, audio: bytes(2) }) });
+  await takeWarmCompanionSegment("new");
+  assert.ok(signals.every(signal => !signal.aborted));
+  const realNow = Date.now;
+  Date.now = () => realNow() + COMPANION_TTS_WARM_TTL_MS + 1;
+  try { assert.equal(await takeWarmCompanionSegment("other-user"), null); }
+  finally { Date.now = realNow; }
+  assert.equal(signals[0]?.aborted, true);
+  assert.equal(signals[1]?.aborted, false);
+  releases.forEach(release => release());
+  reset();
+});
+
 test("同一段只合成一次：预热在飞时来取是 join，不是再合成一遍", async () => {
   reset();
   let calls = 0;

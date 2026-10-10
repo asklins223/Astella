@@ -1,3 +1,5 @@
+import { listCompanionSelfNotes } from "@astella/agent-host";
+import { renderCompanionSelfNotes } from "@astella/shared";
 import { resolveCompanionPersonaContext } from "./companion-identity-context.ts";
 import { reserveCompanionProviderCall } from "./companion-agent-events.ts";
 import { renderPlaybookCandidates, renderPlaybookCatalog } from "./companion-playbooks.ts";
@@ -686,10 +688,14 @@ export async function runCompanionDialogue(
     ...handoffInput,
     modelMessages: [],
   });
+  const selfNotes = read.groundedTutorContext ? [] : await withWorkerWorkspaceTransaction(
+    { workspaceId: ctx.workspaceId, userId: read.userId }, tx => listCompanionSelfNotes(tx,
+      { workspaceId: ctx.workspaceId, userId: read.userId }));
   let messages: ReturnType<typeof buildCompanionPersonaMessages>;
   try {
     messages = buildCompanionPersonaMessages({
       scope: { workspaceId: ctx.workspaceId, userId: read.userId },
+      selfNotes: renderCompanionSelfNotes(selfNotes),
       methodCatalog: read.groundedTutorContext ? "" : renderPlaybookCatalog(read.playbookCatalog),
       methodCandidates: read.groundedTutorContext ? "" : renderPlaybookCandidates(read.playbookCandidates),
       deliveryObservation: renderCompanionDeliveryObservation(read.deliveryObservation),

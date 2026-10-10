@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   buildReflectionMessages, buildReflectionPrompt, clipReflectionOverflow, companionReflectionOutputV1Schema, normalizeReflectionPayload,
-  reflectionInputFingerprint, verifyReflectionOutput,
+  reflectionInputFingerprint, verifyReflectionOutput, boundReflectionSnapshot,
   type ReflectionInputSnapshotV1,
 } from "../companion-reflection-content.ts";
 
@@ -38,7 +38,7 @@ function snapshot(overrides: Partial<ReflectionInputSnapshotV1> = {}): Reflectio
   };
 }
 
-const base = { decision: "proposals" as const, summary: "她要求招呼别盘点笔记", judgments: [], experiences: [], persona: null };
+const base = { decision: "proposals" as const, summary: "她要求招呼别盘点笔记", judgments: [], experiences: [], selfNotes: [], persona: null };
 
 test("判断必须引用段内真实存在的用户原话；只有她自己的回复不算依据", () => {
   const judgment = { text: "打招呼时她先把昨天读的东西数了一遍，对方不想要这个。",
@@ -74,7 +74,7 @@ test("没有依据的判断直接拒收，不写一条空来源的长期记录",
 test("自我修订与当前生效内容一模一样时不占版本号", () => {
   const result = verifyReflectionOutput({
     ...base,
-    persona: { selfDescription: "我讲机制时爱举例。", reason: "沿用同一句", sourceMessageIds: [userTwo] },
+    persona: { basis: "experience", selfDescription: "我讲机制时爱举例。", reason: "沿用同一句", sourceMessageIds: [userTwo] },
   }, snapshot());
   assert.equal(result.output.persona, null);
   assert.equal(result.output.decision, "no_change");
@@ -205,4 +205,37 @@ test("剪容量也要管到 persona：她那一段自我描述的依据给多了
   assert.equal(parsed.success, true, JSON.stringify(parsed.success ? {} : parsed.error.issues));
   assert.equal(parsed.success && parsed.data.persona?.sourceMessageIds.length, 6);
   assert.deepEqual(clipped, ["persona.sourceMessageIds"]);
+});
+
+test("自主选择无需用户背书；对用户的判断仍必须引用用户原话", () => {
+  const document = "# 我的关注\n\n我想先看反例。\n" + "保留篇章。\n".repeat(500);
+  const output = companionReflectionOutputV1Schema.parse({ ...base,
+    persona: { selfDescription: document, basis: "self_authored", reason: "我选择先找反证" },
+    judgments: [{ text: "用户一定喜欢反例", epistemicStatus: "supported", sourceMessageIds: [] }] });
+  const result = verifyReflectionOutput(output, snapshot());
+  assert.equal(result.output.persona?.selfDescription, document);
+  assert.deepEqual(result.output.persona?.sourceMessageIds, []);
+  assert.equal(result.output.judgments.length, 0);
+  assert.equal(result.output.decision, "proposals");
+});
+
+test("长记事按整篇选入预算，唤醒条目优先，未读全文不能覆盖", () => {
+  const note = (key: string) => ({ key, revision: 1, userDisabled: false, title: key,
+    body: "整篇\n".repeat(8192), tier: "active" as const, nextReviewAt: null, expiresAt: null,
+    reason: "自己的问题", updatedAt: "2026-10-10T00:00:00Z" });
+  const input = boundReflectionSnapshot(snapshot({ selfNotes: [note("a"), note("b"), note("wake")], wake: { key: "wake", revision: 1 } }));
+  assert.deepEqual(input.selfNotes?.map(n => n.key), ["wake", "a"]);
+  assert.equal(input.selfNotes?.[0].body, note("wake").body);
+  assert.equal(input.selfNoteIndex?.length, 3);
+  const write = { key: "b", expectedRevision: 1, title: "b", body: "不完整的改写", tier: "active" as const, reason: "改写" };
+  const result = verifyReflectionOutput({ ...base, selfNotes: [write, { ...write, key: "new", expectedRevision: 0 }, { ...write, key: "new", expectedRevision: 0 }] }, input);
+  assert.deepEqual(result.output.selfNotes.map(n => n.key), ["new"]);
+  assert.deepEqual(result.rejected.map(r => r.reason), ["self_note_not_read", "duplicate_self_note"]);
+});
+
+test("当前时刻和消息时刻写入冻结快照，用于绝对日期与自主重评", () => {
+  const input = snapshot({ now: "2026-10-10T00:00:00Z", messages: snapshot().messages.map(m => ({ ...m, createdAt: "2026-10-09T00:00:00Z" })) });
+  const messages = buildReflectionMessages(input);
+  assert.match(messages[0].content, /本次快照时间：2026-10-10T00:00:00Z/);
+  assert.match(messages[1].content, /时间=2026-10-09T00:00:00Z/);
 });

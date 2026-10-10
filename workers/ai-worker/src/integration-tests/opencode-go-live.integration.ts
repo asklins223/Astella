@@ -83,6 +83,7 @@ const { getProviderById } = await import("@astella/shared");
 const { resolveOpenAIChatCompletionsUrl } = await import("@astella/shared/ai-endpoints");
 const { createProvider } = await import("../lib/ai-provider.ts");
 const { resolveOpenCodeGoEndpoint } = await import("../lib/providers/opencode-go.ts");
+const { runStreamingAgentStep } = await import("../handlers/companion-agent-streaming-step.ts");
 
 /**
  * 期望模型来自 config/ai-platforms.json 的 capabilities.agent_turn。
@@ -343,6 +344,38 @@ test("live: chatCompletionStream 逐增量返回全文", { timeout: CALL_TIMEOUT
   assert.ok(result.content.trim().length > 0, "流式空输出");
   assert.ok(deltas.length > 0, "未收到任何增量回调");
   assert.equal(deltas.join(""), result.content, "增量拼接与累计全文不一致");
+});
+
+test("live: 带工具流式语音链路及思考句柄回放", { timeout: CALL_TIMEOUT_MS, skip: LIVE_CALL_GATE }, async t => {
+  const { providerName, config } = agentTurnConfig();
+  const provider = createProvider(providerName, config);
+  assert.equal(provider.chatCompletionStreamToolCalls, true);
+  const base = {
+    role: "companion_agent" as const,
+    systemPrompt: "这是合成测试。调用 echo_probe 读取指定值，取得回执后用两句自然中文描述结果。不要调用其他工具。",
+    tools: [{ name: "echo_probe", description: "合成测试工具，只回传给定值，不读写任何真实数据。",
+      parameters: { type: "object", properties: { value: { type: "string" } }, required: ["value"] } }],
+    maxTokens: 2000, temperature: 0.3,
+  };
+  const user = { role: "user" as const, content: "请调用 echo_probe，value 使用 voice_probe_42，然后说明收到的结果。" };
+  const first = await runStreamingAgentStep({ provider, stepRequest: { ...base, messages: [user] },
+    ctxSignal: AbortSignal.timeout(60_000), timeoutMs: 60_000, onProviderDelta: async () => true });
+  assert.equal(first.toolCalls.length, 1);
+  assert.equal(first.toolCalls[0]?.name, "echo_probe");
+  for (const handle of first.reasoning ?? []) assert.equal("content" in handle, false);
+  const deltas: string[] = [];
+  const startedAt = performance.now();
+  let firstDeltaMs: number | undefined;
+  const second = await runStreamingAgentStep({ provider, stepRequest: { ...base, messages: [user,
+    { role: "assistant", content: first.content ?? "", toolCalls: first.toolCalls, ...(first.reasoning ? { reasoning: first.reasoning } : {}) },
+    { role: "tool", toolCallId: first.toolCalls[0]!.id, content: '{"value":"voice_probe_42","status":"ok"}' },
+  ] }, ctxSignal: AbortSignal.timeout(60_000), timeoutMs: 60_000,
+  onProviderDelta: async delta => { firstDeltaMs ??= Math.round(performance.now() - startedAt); deltas.push(delta); return true; } });
+  assert.equal(second.toolCalls.length, 0);
+  assert.ok(second.content?.includes("voice_probe_42"));
+  assert.equal(deltas.join(""), second.content);
+  assert.ok(firstDeltaMs !== undefined && deltas.length > 0);
+  t.diagnostic(JSON.stringify({ model: provider.modelId, firstDeltaMs, completeMs: Math.round(performance.now() - startedAt), deltaCount: deltas.length }));
 });
 
 test("live: /models 列出该模型（凭据对已配置端点有效）", { timeout: CALL_TIMEOUT_MS, skip: LIVE_CALL_GATE }, async () => {

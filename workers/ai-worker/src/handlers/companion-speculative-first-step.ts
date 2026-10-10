@@ -24,7 +24,7 @@
  * 带来（无待核对指称、无歧义、无工具意图）时，缺那一块才等价于没缺——所以
  * `shouldKeepSpeculativeFirstStep` 四条件缺一不可。
  */
-import { AgentRole, type AgentTurnRequest } from "@astella/shared";
+import { isCompanionAutonomousTool, AgentRole, type AgentTurnRequest } from "@astella/shared";
 import type { AgentTurnInterpretationV1 } from "@astella/shared/agent-contracts";
 import { composeAgentContext } from "@astella/agent-core";
 import { COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS } from "./companion-context-receipts.ts";
@@ -32,7 +32,7 @@ import { companionStepRuntimePolicy } from "./companion-step-plan.ts";
 import { companionResponseStrategy } from "./companion-response-strategy.ts";
 
 /**
- * "闲聊假设"的第一步：不给工具、不开思考、提示词里**没有注意力块**（那时还没有
+ * "闲聊假设"的第一步：仅提供自身记录工具、不开思考、提示词里**没有注意力块**（那时还没有
  * 真实的解释）。
  *
  * 只**构造**请求，不自己发——发出去那一下仍走循环里那条流式路径
@@ -46,7 +46,10 @@ export function buildCasualFirstStepRequest(args: {
   stepBudget: number;
   messages: AgentTurnRequest["messages"];
   maxTokens: number;
+  tools?: AgentTurnRequest["tools"];
 }): AgentTurnRequest {
+  // Speculation only proposes: runtime executes after release and checkpointing.
+  const tools = args.tools?.filter(tool => isCompanionAutonomousTool(tool.name)) ?? [];
   return {
     role: AgentRole.COMPANION_AGENT,
     systemPrompt: composeAgentContext({ maxCharacters: COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS, sources: [
@@ -56,7 +59,7 @@ export function buildCasualFirstStepRequest(args: {
       ["turn", { scope: { kind: "policy" as const }, content: args.turnPolicy }],
       ["execution", { scope: { kind: "policy" as const }, content: companionStepRuntimePolicy({
         permissionLevel: args.permissionLevel,
-        toolCount: 0,
+        toolCount: tools.length,
         stepBudget: args.stepBudget,
         finalAnswerOnly: false,
         attentionIntent: "conversation",
@@ -64,7 +67,7 @@ export function buildCasualFirstStepRequest(args: {
     ])).systemPrompt,
     // 浅拷贝：真实循环随后会往 messages 里推工具消息，别写进这次请求。
     messages: [...args.messages],
-    tools: [],
+    tools,
     disableThinking: true,
     maxTokens: args.maxTokens,
     temperature: companionResponseStrategy({ intent: "conversation", toolUse: "none" }).temperature,

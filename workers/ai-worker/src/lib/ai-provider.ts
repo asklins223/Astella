@@ -80,6 +80,10 @@ export interface AIProvider {
     /** SSE 末尾的 finish_reason（缺省视作 stop；"length" 表示输出被截断）。 */
     finishReason?: string;
     phase?: "commentary" | "final_answer";
+    /** Native Responses tool loops must replay opaque reasoning handles. */
+    reasoning?: AgentTurnResult["reasoning"];
+    usage?: AgentTurnResult["usage"];
+    providerRequestId?: string | null;
   }>;
 
   /**

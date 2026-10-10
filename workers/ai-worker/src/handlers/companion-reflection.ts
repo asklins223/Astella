@@ -51,7 +51,7 @@ import {
   finalizeReflection,
   personaSourcesCurrent,
   recordReflectionEdge,
-  upsertAgentMethodCandidate,
+  upsertAgentMethodCandidate, listCompanionSelfNotes, lockCompanionSelfNotes, writeCompanionSelfNote,
   type CompanionPersonaSourceRefV1,
   type CompanionReflectionRowV1,
 } from "@astella/agent-host";
@@ -75,7 +75,7 @@ import { companionReflectionGate, reflectionSnapshotSufficient, reflectionTailWi
 import type { JobPayload } from "./index.ts";
 
 /** 一次回顾的输出上限：它是结构化结论，不是文章。 */
-const REFLECTION_MAX_OUTPUT_TOKENS = 1_200;
+const REFLECTION_MAX_OUTPUT_TOKENS = 8_000;
 
 const jobPayloadSchema = z.strictObject({
   userId: z.string().uuid(),
@@ -83,6 +83,8 @@ const jobPayloadSchema = z.strictObject({
   conversationId: z.string().uuid(),
   fromSeq: z.number().int().nonnegative(),
   toSeq: z.number().int().positive(),
+  selfNoteKey: z.string().min(1).max(120).optional(),
+  selfNoteRevision: z.number().int().positive().optional(),
 });
 
 /** 同一段相处只有一个幂等键：worker 重启、outbox 重投都落回同一行反思记录。 */
@@ -143,16 +145,20 @@ async function prepareReflection(
       const messages = await readSegmentMessages(tx, input);
       const receipts = await readSegmentToolReceipts(tx, input);
       const related = await readRelatedMemories(tx, input);
+      const selfNotes = await listCompanionSelfNotes(tx, input);
+      if (input.selfNoteKey && !selfNotes.some(note => note.key === input.selfNoteKey && note.revision === input.selfNoteRevision)) return null;
       const context = await readReflectionContext(tx, input.conversationId, input.userId);
 
       const authority = await readReflectionAuthority(tx, input);
       const snapshot = boundReflectionSnapshot({
+        now: new Date().toISOString(),
         accountEpoch: authority.epoch,
         pendingPersonaRevision: persona.pendingRevision,
         conversationId: input.conversationId,
         fromSeq: input.fromSeq,
         toSeq: input.toSeq,
-        persona, messages,
+        persona, messages, selfNotes,
+        ...(input.selfNoteKey ? { wake: { key: input.selfNoteKey, revision: input.selfNoteRevision! } } : {}),
         toolReceipts: receipts,
         relatedMemories: related,
       });
@@ -162,7 +168,7 @@ async function prepareReflection(
         workspaceId: input.workspaceId,
         conversationId: input.conversationId,
         jobId: job.id,
-        dedupeKey: companionReflectionDedupeKey(input.conversationId, input.toSeq),
+        dedupeKey: input.selfNoteKey ? `companion-self-wake:${job.id}` : companionReflectionDedupeKey(input.conversationId, input.toSeq),
         inputFingerprint: fingerprint,
         inputSnapshot: snapshot,
         baselinePersonaRevision: persona.revision,
@@ -231,7 +237,9 @@ async function settleReflectionGate(
   const base = { reflection, snapshot, fingerprint };
   if (reflection.decision !== "queued") return base;
 
-  const gate = companionReflectionGate({
+  const gate = snapshot.wake
+    ? { run: context.openReflections <= 3, reason: "account_backlog_full" }
+    : companionReflectionGate({
     userMessageCount: snapshot.messages.filter((message) => message.role === "user").length,
     assistantDeliveredCount: snapshot.messages.filter((message) => message.role === "assistant").length,
     lastReflectionAt: context.lastReflectionAt,
@@ -264,9 +272,9 @@ async function readSegmentMessages(tx: WorkerTransaction, input: {
   conversationId: string; fromSeq: number; toSeq: number;
 }) {
   const rows = await tx.execute<{
-    id: string; seq: number; role: string; kind: string; blocks: unknown; content_sha256: string;
+    id: string; seq: number; role: string; kind: string; blocks: unknown; content_sha256: string; created_at: Date | string;
   }>(sql`
-    SELECT id::text AS id, seq, role, kind, blocks, content_sha256
+    SELECT id::text AS id, seq, role, kind, blocks, content_sha256, created_at
       FROM companion_messages
      WHERE conversation_id = ${input.conversationId}::uuid
        AND seq > ${input.fromSeq} AND seq <= ${input.toSeq}
@@ -283,6 +291,7 @@ async function readSegmentMessages(tx: WorkerTransaction, input: {
     kind: String(row.kind),
     text: textFromBlocks(row.blocks),
     contentHash: String(row.content_sha256 ?? ""),
+    createdAt: new Date(row.created_at).toISOString(),
   })), COMPANION_REFLECTION_INPUT_BUDGET.maxMessages);
   return window.sort((left, right) => left.seq - right.seq);
 }
@@ -502,7 +511,8 @@ async function runReflectionModelCall(
         rejection = `字段不合 [${issues}]。键名必须照这个写：decision("no_change" 或 "proposals")、summary、`
           + `judgments[{text,appliesWhen,epistemicStatus,sourceMessageIds}]、`
           + `experiences[{title,triggerCondition,steps,exceptions,sourceMessageIds}]、`
-          + `persona({selfDescription,speakingStyle,reason,sourceMessageIds} 或 null)。${
+          + `selfNotes[{key,expectedRevision,title,body,tier,nextReviewAt,expiresAt,reason}]、`
+          + `persona({selfDescription,speakingStyle,basis,reason,sourceMessageIds} 或 null)。${
             normalized.droppedKeys.length > 0 ? `多出来的键没有采用：${normalized.droppedKeys.slice(0, 5).join(",")}。` : ""}`;
         logger.warn({ jobId: job.id, issues }, "companion reflection output rejected by schema");
         return { ok: false, class: "output_shape", message: rejection };
@@ -555,11 +565,11 @@ function parseReflectionCheckpointOutput(value: unknown): ReflectionVerifiedV1 |
   const parsed = z.strictObject({
     output: companionReflectionOutputV1Schema,
     rejected: z.array(z.strictObject({
-      slot: z.enum(["judgments", "experiences", "persona"]),
+      slot: z.enum(["judgments", "experiences", "persona", "selfNotes"]),
       index: z.number().int().nonnegative(),
       reason: z.enum(["no_cited_source", "cited_source_not_in_snapshot",
-        "missing_user_utterance", "unchanged_from_current"]),
-    })).max(8),
+        "missing_user_utterance", "unchanged_from_current", "self_note_not_read", "duplicate_self_note"]),
+    })).max(16),
     citedSources: z.array(z.strictObject({
       kind: z.enum(["user_message", "assistant_message"]), id: z.string().uuid(),
       revision: z.string().nullable().optional(),
@@ -692,6 +702,24 @@ async function commitReflection(
         if (!authority.allowed || authority.epoch !== prepared.snapshot.accountEpoch) {
           return { decision: "governance_denied" as const, summary: "账号授权、世代或来源空间已失效，没有提交" };
         }
+        await lockCompanionSelfNotes(tx, input);
+        const ownCurrent = await listCompanionSelfNotes(tx, input, { includeArchived: true, limit: 100, lock: true });
+        if (prepared.snapshot.wake && !ownCurrent.some(note => note.key === prepared.snapshot.wake!.key
+          && note.revision === prepared.snapshot.wake!.revision && note.tier !== "archived"
+          && (!note.expiresAt || Date.parse(note.expiresAt) > Date.now()))) {
+          return { decision: "commit_conflict" as const, summary: "唤醒的记事已被修订、归档或过期，没有提交旧整理。" };
+        }
+        if ((prepared.snapshot.selfNoteIndex ?? prepared.snapshot.selfNotes ?? []).some(note => {
+          const current = ownCurrent.find(candidate => candidate.key === note.key);
+          return !current || current.userDisabled || current.revision !== note.revision || current.tier === "archived"
+            || (current.expiresAt !== null && Date.parse(current.expiresAt) <= Date.now());
+        })) return { decision: "commit_conflict" as const, summary: "读过的自己的记事已变化或停用，没有沿旧内容提交。" };
+        for (const note of verified.output.selfNotes) {
+          const [existing] = await listCompanionSelfNotes(tx, input, { key: note.key, includeArchived: true, lock: true });
+          if ((existing?.revision ?? 0) !== note.expectedRevision) {
+            return { decision: "commit_conflict" as const, summary: "自己的记事版本已变化，没有覆盖。" };
+          }
+        }
         const current = await readPersona(tx, input.userId);
         if (current.revision !== reflection.baselinePersonaRevision) {
           return {
@@ -758,16 +786,24 @@ async function commitReflection(
             relation: "produced", workspaceId: input.workspaceId, source: edge,
           });
         }
-        const wroteAnything = produced.length > 0;
+        const writtenNotes: { key: string; revision: number }[] = [];
+        for (const note of verified.output.selfNotes) {
+          const saved = await writeCompanionSelfNote(tx, input, note);
+          if (saved.revision !== note.expectedRevision) writtenNotes.push({ key: saved.key, revision: saved.revision });
+        }
+        const wroteAnything = produced.length > 0 || writtenNotes.length > 0;
         return {
           decision: wroteAnything ? ("committed" as const) : ("no_change" as const),
           summary: wroteAnything ? verified.output.summary : `没有值得留下的：${verified.output.summary}`,
           pendingPersonaRevision,
           resultRef: {
+            selfNotes: writtenNotes,
             judgments: verified.output.judgments.length,
             experiences: verified.output.experiences.length,
             dropped: verified.rejected.map((drop) => `${drop.slot}#${drop.index}:${drop.reason}`),
-            personaSources: persona ? sources.filter(source => persona.sourceMessageIds.includes(source.id)) : [],
+            personaBasis: persona?.basis ?? null,
+            personaSources: persona && persona.basis !== "self_authored"
+              ? sources.filter(source => persona.sourceMessageIds.includes(source.id)) : [],
             personaFields: persona ? [
               ...(persona.selfDescription !== undefined ? ["selfDescription"] : []),
               ...(persona.speakingStyle !== undefined ? ["speakingStyle"] : []),

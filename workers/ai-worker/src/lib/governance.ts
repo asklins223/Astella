@@ -658,9 +658,7 @@ export function createGovernedProvider(
           signal,
           onDelta,
         );
-        // 流式接口的返回类型只有 { content }（无 usage）——AI#9 已确认这是接口缺口；
-        // 这里如实记 null，不伪造 token 数（指标侧同样不递增 token）。
-        recordCall("chat_completion_stream", "stream", startedAt, { costTokens: null });
+        recordCall("chat_completion_stream", "stream", startedAt, { costTokens: result.usage?.totalTokens ?? null });
         return result;
       } catch (err) {
         recordCall("chat_completion_stream", "stream", startedAt, {

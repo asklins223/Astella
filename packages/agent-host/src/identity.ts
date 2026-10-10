@@ -85,8 +85,9 @@ export type CompanionPersonaCommitOutcomeV1 =
 /** 她能改的项与字符容量；越界的值在落库前就被收住，不靠调用方各自记得切。 */
 function clampAssistantEdit(field: PersonaAssistantEditableField, value: unknown): unknown {
   if (field === "selfDescription") {
-    const text = typeof value === "string" ? value.trim().slice(0, PERSONA_FIELD_CAPACITY.selfDescription) : "";
-    if (text.length === 0) throw new Error("selfDescription edit requires non-empty text");
+    const text = typeof value === "string" ? value : "";
+    if (text.trim().length === 0) throw new Error("selfDescription edit requires non-empty text");
+    if (text.length > PERSONA_FIELD_CAPACITY.selfDescription) throw new Error("Self-authored document exceeds the request budget");
     return text;
   }
   if (field === "speakingStyle") {
@@ -245,7 +246,7 @@ export async function commitPersonaProposalV1(
   // 账号还没有档案：拿系统默认人格当底稿，她改的是"当前生效的那份人格"。
   const starting = base ?? personaFromDefaultPreset(getDefaultPersonaPreset());
   const edits = input.protectUserFields ? input.edits.filter(edit =>
-    (starting.fieldOrigin as Record<string, unknown> | undefined)?.[edit.field] !== "user") : input.edits;
+    (edit.field === "selfDescription" || (starting.fieldOrigin as Record<string, unknown> | undefined)?.[edit.field] !== "user")) : input.edits;
   const next = edits.reduce<CompanionPersonaProfileContent>(
     (profile, edit) => withAssistantEditedField(profile, edit.field, clampAssistantEdit(edit.field, edit.value)),
     starting,
@@ -437,7 +438,12 @@ export async function adoptPendingPersonaForNewTurn(
   if (pending.author !== "assistant_tool") return null;
 
   const sources = resolveSources ? await resolveSources(pending) : [];
-  if ((pending.proposalKind === "assistant_reflection" && sources.length === 0)
+  const [selfAuthored] = pending.proposalKind === "assistant_reflection" && sources.length === 0
+    ? await queryRows<{ autonomous: boolean }>(tx, sql`SELECT true AS autonomous FROM companion_reflections
+        WHERE user_id=${userId} AND id=${pending.proposalId}::uuid AND decision='committed'
+          AND pending_persona_revision=${pending.revision} AND result_ref->>'personaBasis'='self_authored'`)
+    : [];
+  if ((pending.proposalKind === "assistant_reflection" && sources.length === 0 && !selfAuthored?.autonomous)
     || (sources.length > 0 && !await personaProposalHasLiveBasis(tx, userId, sources))) {
     // 失去依据：不采用，也不把这一版留在排队里（历史行不动，用户仍可查、可恢复）。
     await tx.execute(sql`

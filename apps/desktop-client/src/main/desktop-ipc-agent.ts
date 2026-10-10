@@ -1,3 +1,4 @@
+import { companionSelfNoteV1Schema, companionSelfNoteListV1Schema, companionSelfNoteWriteV1Schema, companionSelfNoteControlV1Schema } from "@astella/shared";
 import { z } from "zod";
 import {agentLongGoalsV1Schema,agentLongGoalsQueryV1Schema} from "@astella/shared/agent-long-goal-contracts";
 import { DESKTOP_IPC_CHANNELS, requestMetaSchema } from "@astella/shared/desktop-ipc-contracts";
@@ -48,6 +49,18 @@ export function registerAgentChannels(deps: Pick<CompanionChannelDeps, "channel"
   channel(DESKTOP_IPC_CHANNELS.agentRunControl, z.object({ ...base, runId: uuid, request: controlAgentRunV1Schema }).strict(), (_event, _window, input) => {
     authorize(input.meta); return request(`/agent/runs/${input.runId}/control`, "POST", agentRunV1Schema, input.meta.requestId, input.request);
   }, agentRunV1Schema);
+  channel(DESKTOP_IPC_CHANNELS.agentSelfNotesList, z.object(base).strict(), (_event, _window, input) => {
+    authorize(input.meta); return request("/agent/self-notes", "GET", companionSelfNoteListV1Schema, input.meta.requestId);
+  }, companionSelfNoteListV1Schema);
+  channel(DESKTOP_IPC_CHANNELS.agentSelfNotesHistory, z.object({ ...base, key: z.string().min(1).max(120) }).strict(), (_event, _window, input) => {
+    authorize(input.meta); return request(`/agent/self-notes/history?key=${encodeURIComponent(input.key)}`, "GET", companionSelfNoteListV1Schema, input.meta.requestId);
+  }, companionSelfNoteListV1Schema);
+  channel(DESKTOP_IPC_CHANNELS.agentSelfNoteWrite, z.object({ ...base, request: companionSelfNoteWriteV1Schema }).strict(), (_event, _window, input) => {
+    authorize(input.meta); return request("/agent/self-notes", "PATCH", companionSelfNoteV1Schema, input.meta.requestId, input.request);
+  }, companionSelfNoteV1Schema);
+  channel(DESKTOP_IPC_CHANNELS.agentSelfNoteControl, z.object({ ...base, request: companionSelfNoteControlV1Schema }).strict(), (_event, _window, input) => {
+    authorize(input.meta); return request("/agent/self-notes/control", "POST", companionSelfNoteV1Schema, input.meta.requestId, input.request);
+  }, companionSelfNoteV1Schema);
   channel(DESKTOP_IPC_CHANNELS.agentMethodsList, z.object(base).strict(), (_event, _window, input) => {
     authorize(input.meta); return request("/agent/methods", "GET", agentMethodListV1Schema, input.meta.requestId);
   }, agentMethodListV1Schema);

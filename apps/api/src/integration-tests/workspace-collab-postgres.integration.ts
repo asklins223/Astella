@@ -164,8 +164,18 @@ after(async () => {
   for (const token of [ownerToken, memberToken, strangerToken]) {
     if (token) await revokeSession(token).catch(() => {});
   }
-  const workspaceIds = [wsCollab, wsOwnerPersonal, wsMemberPersonal, wsStrangerPersonal, wsDivergent];
-  const userIds = [userOwner, userMember, userStranger];
+  // 「带邀请码注册」那条用例的账号**按邮箱找**，不按回执里的 id 收集：那个 bug 的形状
+  // 恰恰是"库里已经建好、回执却是 500"，按回执收集会在最该暴露的那次失败上漏掉它。
+  const spawned = await sql`SELECT id FROM users WHERE email LIKE ${`invite-register-${tag}%`}`;
+  const spawnedUserIds = spawned.map((row) => row.id as string);
+  const spawnedWorkspaces = spawnedUserIds.length > 0
+    ? await sql`SELECT id FROM workspaces WHERE owner_id = ANY(${spawnedUserIds})`
+    : [];
+  const workspaceIds = [
+    wsCollab, wsOwnerPersonal, wsMemberPersonal, wsStrangerPersonal, wsDivergent,
+    ...spawnedWorkspaces.map((row) => row.id as string),
+  ];
+  const userIds = [userOwner, userMember, userStranger, ...spawnedUserIds];
   // 删除顺序有硬约束，踩错就会静默残留（既有 mem-http-* 夹具就是这么攒出来的）：
   //  - `users.personal_workspace_id` 对 workspaces 是 RESTRICT，必须先解掉；
   //  - `notes` 对 workspaces **没有外键**（96 张带 workspace_id 的表里只有 7 张真有
@@ -221,6 +231,58 @@ test("经真实 invite 加入的成员，/auth/me 与空间列表都报 member",
   const collab = list.json().workspaces.find((w: { workspaceId: string }) => w.workspaceId === wsCollab);
   assert.ok(collab, `成员应能在空间列表里看到加入的协作空间：${list.body}`);
   assert.equal(collab.role, "member", `空间列表 role 应为 member：${JSON.stringify(collab)}`);
+});
+
+test("注册时带上邀请码：整条成功并回一份能直接用的会话，不是 500", async () => {
+  // 2026-10-10 线上症状：注册页填了邀请码 → 页面报错，可账号已经建好、邀请空间也进去了。
+  // 根因在 `consumeInvite`：它把 `issueSession` 放在 `withActorTransaction` **提交之后**
+  // ——`app.user_id` 是 `set_config(..., true)` 的事务局部值，提交即失效，`sessions`
+  // 的 INSERT 撞 `sec01_v1_sessions_actor_insert`（要 `user_id = app.user_id`）回 500；
+  // 而用户、个人空间、成员行、邀请码消费都已经落库。界面于是说"注册失败"，库里却是
+  // "注册成功且已加入"。
+  //
+  // 这条用例钉的是**回执与落库必须同生共死**：只要状态码不是 200，或者回执里的会话
+  // 不能直接用，都算这条链路没做完。
+  const invite = await appInject("POST", "/invites", ownerToken, { role: "member" });
+  assert.equal(invite.statusCode, 200, `发邀请应成功：${invite.body}`);
+
+  const registered = await appInject("POST", "/auth/register-v2", "", {
+    email: `invite-register-${tag}@example.test`,
+    password: "password-123456",
+    inviteToken: invite.json().token,
+  });
+  assert.equal(
+    registered.statusCode,
+    200,
+    `带邀请码注册必须成功，实际 ${registered.statusCode}：${registered.body}`,
+  );
+  const session = registered.json();
+  assert.ok(session.token, `回执必须带令牌：${registered.body}`);
+  assert.ok(session.ctx?.userId, `回执必须带用户：${registered.body}`);
+  assert.ok(session.ctx?.workspaceId, `回执必须带空间：${registered.body}`);
+
+  // 回执里的会话要能直接用——这正是断掉的那一环（落库成功、会话没签出来）。
+  const me = await appInject("GET", "/auth/me", session.token);
+  assert.equal(me.statusCode, 200, `回执里的令牌必须可用，实际 ${me.statusCode}：${me.body}`);
+  assert.equal(me.json().userId, session.ctx.userId, `会话要指向刚建的账号：${me.body}`);
+
+  const list = await appInject("GET", "/auth/workspaces", session.token);
+  assert.equal(list.statusCode, 200, list.body);
+  const collab = list.json().workspaces.find((w: { workspaceId: string }) => w.workspaceId === wsCollab);
+  assert.ok(collab, `新账号应已进入邀请的协作空间：${list.body}`);
+  assert.equal(collab.role, "member", `角色来自邀请码：${JSON.stringify(collab)}`);
+
+  // 邀请码要真的被这张账号消费掉（否则下一个人还能拿同一张码注册）。
+  const invites = await appInject("GET", "/invites", ownerToken, { limit: 100 });
+  assert.equal(invites.statusCode, 200, invites.body);
+  const consumed = invites.json().items.find((i: { id: string }) => i.id === invite.json().id);
+  assert.ok(consumed, `邀请码还在清单里：${invites.body}`);
+  assert.equal(consumed.status, "consumed", `邀请码应已消费：${invites.body}`);
+  assert.equal(
+    consumed.consumedByEmail,
+    `invite-register-${tag}@example.test`,
+    `消费人应是刚注册的账号：${invites.body}`,
+  );
 });
 
 test("本人拿已经消费过的码重试同一条：幂等成功，不是「码被用掉了」", async () => {

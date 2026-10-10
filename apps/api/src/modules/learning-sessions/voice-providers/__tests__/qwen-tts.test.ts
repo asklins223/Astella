@@ -9,7 +9,7 @@
 // qwen-tts-user-queue.test.ts 共用同一份替身，避免协议改动时两处漂移）。
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { qwenTtsSynthesizeStream, QwenTtsError, type QwenTtsOptions } from "../qwen-tts.ts";
+import { qwenTtsSynthesizeStream, qwenTtsSynthesizeStreamForUser, qwenTtsActiveTaskCount, QwenTtsError, type QwenTtsOptions } from "../qwen-tts.ts";
 import {
   MockWebSocket,
   QWEN_TEST_BASE_OPTS,
@@ -176,5 +176,48 @@ test("建连期间的取消关闭 socket；已开始音频的取消和意外断�
   task.ws.serverEvent("task-finished");resetState();
   const broken=await startTask("中途断开");broken.ws.serverEvent("task-started");const body=(await broken.result).stream;
   broken.ws.close();await assert.rejects(()=>pump(body),error=>error instanceof QwenTtsError&&error.code==="NETWORK_ERROR");
+  resetState();
+});
+
+test("task-started 后上游挂起也会超时，释放名额并让下一句继续", { timeout: 500 }, async () => {
+  resetState();
+  const task = await launchQwenTask(() => qwenTtsSynthesizeStreamForUser("same-user", "第一句", { ...BASE_OPTS, timeoutMs: 40 }));
+  task.ws.serverEvent("task-started");
+  const result = await task.result;
+  const timedOut = assert.rejects(() => pump(result.stream), error => error instanceof QwenTtsError && error.code === "TIMEOUT");
+  await timedOut;
+  assert.equal(task.ws.closed, true);
+  assert.equal(qwenTtsActiveTaskCount(), 0);
+  const next = await launchQwenTask(() => qwenTtsSynthesizeStreamForUser("same-user", "第二句", BASE_OPTS));
+  serveTaskBody(next.ws);
+  await pump((await next.result).stream);
+  resetState();
+});
+
+test("取消流后丢弃迟到音频，不向已经关闭的 controller 写帧", async () => {
+  resetState();
+  const task = await startTask("会被打断的一句");
+  task.ws.serverEvent("task-started");
+  await (await task.result).stream.cancel();
+  assert.doesNotThrow(() => task.ws.audioFrame());
+  task.ws.serverEvent("task-finished");
+  resetState();
+});
+
+test("并发任务归还的连接全部保留，下一轮无需逐个重新握手", async () => {
+  resetState();
+  const a = await startTask("用户 A");
+  const b = await startTask("用户 B");
+  serveTaskBody(a.ws); serveTaskBody(b.ws);
+  await Promise.all([pump((await a.result).stream), pump((await b.result).stream)]);
+  assert.equal(a.ws.closed, false);
+  assert.equal(b.ws.closed, false);
+  const c = await startTask("用户 C");
+  const d = await startTask("用户 D");
+  assert.equal(MockWebSocket.instances.length, 2);
+  assert.equal(a.ws.runTaskIds().length, 2);
+  assert.equal(b.ws.runTaskIds().length, 2);
+  serveTaskBody(a.ws); serveTaskBody(b.ws);
+  await Promise.all([pump((await c.result).stream), pump((await d.result).stream)]);
   resetState();
 });

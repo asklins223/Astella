@@ -28,8 +28,6 @@ import type { ReadContext } from "./companion-dialogue-store.ts";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
 import { stripVoiceExpressionTags, withholdPartialVoiceExpressionTag } from "@astella/shared/voice-expression-tags";
 
-/** 行内标记：出现在哪里都可能被后续文本配对改写。 */
-const INLINE_UNSTABLE_CHARS = "*_~`[]()";
 /** 行首标记：只有落在行首才参与改写（`- 列表`、`### 标题`、``` 围栏）。 */
 const LINE_START_UNSTABLE_CHARS = "#>-+|";
 
@@ -37,10 +35,23 @@ const LINE_START_UNSTABLE_CHARS = "#>-+|";
 function lineIsStable(line: string): boolean {
   if (line.length === 0) return true;
   if (LINE_START_UNSTABLE_CHARS.includes(line[0])) return false;
-  for (const char of INLINE_UNSTABLE_CHARS) {
-    if (line.includes(char)) return false;
+  // 可见正文已经保留 Markdown。完整的加粗、代码、链接和括号不能把整段
+  // 压到换行/终态才交付；只保留尚未闭合的标记，避免半个语气标签进入正文。
+  const markers = new Set<string>();
+  for (const match of line.matchAll(/\*{1,3}|_{1,3}|~{1,2}|`+/g)) {
+    const marker = match[0];
+    if (markers.has(marker)) markers.delete(marker);
+    else markers.add(marker);
   }
-  return true;
+  if (markers.size > 0) return false;
+  const brackets: string[] = [];
+  for (const char of line) {
+    if (char === "[" || char === "(") brackets.push(char);
+    else if (char === "]" || char === ")") {
+      if (brackets.pop() !== (char === "]" ? "[" : "(")) return false;
+    }
+  }
+  return brackets.length === 0;
 }
 
 /**
@@ -65,9 +76,8 @@ function maskCompleteFactSpans(line: string): string {
  * - markdown/标签规则要么是行内的（`**粗**`、`[tag]`、`` `code` ``），要么是行首的
  *   （`- 列表`、`### 标题`、``` 围栏）——已完成的行不会再被后续文本改写，
  *   所以以最后一个换行为界天然安全；
- * - 当前还没结束的行只有在**不含任何标记字符**时才整行下发（干净 ⇒ 没有规则
- *   能匹配上，发出去就是最终文本的一部分）；
- * - 含标记的当前行留到下一行到来（或流结束）再发，最多压住一行，不会长期停滞。
+ * - 当前行的行内标记已经闭合时立即下发，完整的 Markdown 保持原文；
+ * - 未闭合标记、行首结构留到闭合/换行（或流结束）再发。
  */
 export function stableVisibleCut(raw: string): number {
   const lineStart = raw.lastIndexOf("\n") + 1;

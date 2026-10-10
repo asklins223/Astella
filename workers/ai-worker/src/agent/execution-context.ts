@@ -40,7 +40,7 @@ export interface AgentExecutionBindingPorts {
 function generationInstructions(input: {
   scope: AgentScopeV1;
   goal: string | null;
-  persona: { name: string; speakingStyle: string } | null;
+  persona: { name: string; speakingStyle: string; selfDescription?: string } | null;
   preferences: ReadonlyArray<{ content: string; appliesWhen?: string | null }>;
   /** 方案 44 §6.1：与这次任务相关的做法**目录**（正文仍按 id+revision 另行展开）。 */
   methodCatalog: string;
@@ -101,6 +101,7 @@ export async function loadAgentExecutionContext(
       persona: learning.persona ? {
         name: sanitizePersonaField(learning.persona.name, 100),
         speakingStyle: sanitizePersonaField(learning.persona.speakingStyle, 400),
+        selfDescription: "selfDescription" in learning.persona ? learning.persona.selfDescription?.slice(0, 2400) : undefined,
       } : null,
     };
   });

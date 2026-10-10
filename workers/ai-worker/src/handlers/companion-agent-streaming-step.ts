@@ -268,7 +268,7 @@ export async function runStreamingAgentStep(args: {
   };
 
   try {
-    const { content, toolCalls, finishReason, phase } = await runWithAbortBudget(
+    const { content, toolCalls, finishReason, phase, reasoning, usage, providerRequestId } = await runWithAbortBudget(
       async (signal) => {
         const result = await args.provider.chatCompletionStream!(
         messages,
@@ -329,8 +329,9 @@ export async function runStreamingAgentStep(args: {
       toolCalls: toolCalls ?? [],
       finishReason: finishReason ?? "stop",
       ...(phase ? { phase } : {}),
-      usage: null,
-      providerRequestId: null,
+      ...(reasoning ? { reasoning } : {}),
+      usage: usage ?? null,
+      providerRequestId: providerRequestId ?? null,
     };
   } catch (error) {
     await flushChain.catch(() => undefined);

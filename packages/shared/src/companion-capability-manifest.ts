@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { companionSelfNoteWriteV1Schema } from "./companion-autonomy.ts";
+import { PERSONA_FIELD_CAPACITY } from "./pet-persona-merge.ts";
 import { defineAgentCapability as tool, type AgentCapabilityDeclaration } from "./agent-capability-definition.ts";
 import { companionCreateNoteV1Schema, companionEditNoteV1Schema } from "./contracts/companion-note-authoring-contracts.ts";
 import { companionShareNoteV1Schema } from "./contracts/note-share-contracts.ts";
@@ -166,14 +168,22 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   //  - 没有 name 参数 ⇒ 改不了用户指定的名字；
   //  - 没有 workspaceId / 材料参数 ⇒ 空间记忆与材料进不来；
   //  - 只写表达层，协议、授权与工具范围不在这个结构里。
-  tool("companion_revise_own_style", "调整你自己说话的方式（语气、节奏、举例习惯），不必每次都等用户来说。只在你确实想改，而且能说出**新的**说法时调用；不要把它当成回答的一部分——用户没要求时也不要为了显得主动而改。改的是账号级表达，保存为待生效版本，在用户下一轮新发来的消息被接受时自动采用；当前已开始的调用照旧。", "reversible_low", true, z.object({
+  tool("companion_read_self_notes", "读取你自己的记事抽屉。key 展开一篇完整文档；省略则看目录，includeArchived 可检索归档。它们是你的理解、疑问与素材，不是用户事实。", "read", false, z.object({ key: z.string().min(1).max(120).optional(), includeArchived: z.boolean().optional(), offset: z.number().int().nonnegative().optional() }).strict(), { label: "正在翻自己的记事" }, { maxOutputChars: 70_000 }),
+  tool("companion_write_self_note", "自主写入或整理自己的记事、兴趣和素材，自由 Markdown。先读现有 key 与 revision，创建用 expectedRevision=0。可以常驻、放入活跃目录或归档，消化多于追加。nextReviewAt 安排内部重评，null 取消；不发送提醒、不阻塞用户消息，不写成用户事实。无需确认。", "reversible_low", false, companionSelfNoteWriteV1Schema, { label: "正在整理自己的记事" }, { maxInputChars: 68_000, maxOutputChars: 70_000 }),
+  tool("companion_schedule_wake", "为你自己的一条未完记事安排内部重评，at 为带时区 ISO 时刻，null 取消。先读取 key 的当前版本。届时重新判断是否值得继续，允许不做任何改变；不会阻塞用户消息，也不会自动给用户发通知。", "reversible_low", false, z.object({ key: z.string().min(1).max(120), expectedRevision: z.number().int().positive(), at: z.string().datetime({ offset: true }).nullable(), reason: z.string().min(1).max(300) }).strict(), { label: "正在安排自己的重评" }),
+  tool("companion_read_identity", "读取本轮固定版本的完整身份文档。长文按 offset 与 maxChars 分段，truncated=true 时继续读取；重写前先读完整文档，保留仍成立的认识。", "read", false, z.object({ offset: z.number().int().nonnegative().optional(), maxChars: z.number().int().min(1).max(32_768).optional() }).strict(), { label: "正在读自己的身份文档" }, { maxOutputChars: 70_000 }),
+  tool("companion_revise_identity", "自主修订写给自己的身份文档。自由 Markdown，保留仍成立的认识，可形成自己的偏好、看法与合作习惯，无需用户确认。账号文档不写空间私人经历或用户事实；不改变权限、提醒与输出协议。保存后下一轮自动采用，用户可事后纠正或恢复。", "reversible_low", false, z.object({
+    document: z.string().min(1).max(PERSONA_FIELD_CAPACITY.selfDescription).refine(value => value.trim().length > 0 && !value.includes("\0"), "文档不能为空或包含 NUL"),
+    reason: z.string().trim().min(1).max(120),
+  }).strict(), { label: "正在修订自己的认识" }, { maxInputChars: PERSONA_FIELD_CAPACITY.selfDescription * 2 + 1000 }),
+  tool("companion_revise_own_style", "调整你自己说话的方式（语气、节奏、举例习惯），不必每次都等用户来说。只在你确实想改，而且能说出**新的**说法时调用；不要把它当成回答的一部分——用户没要求时也不要为了显得主动而改。改的是账号级表达，保存为待生效版本，在用户下一轮新发来的消息被接受时自动采用；当前已开始的调用照旧。", "reversible_low", false, z.object({
       speakingStyle: z.string().min(1).max(400).describe("新的说话方式，≤400 字"),
       reason: z.string().min(1).max(120).describe("为什么改（会记进版本历史，用户能看到）"),
     }).strict(), { label: "正在换一种说话方式" }),
   // 性格标签（「慵懒、贪吃、爱摸鱼」那一行）。与改语气是同一层、同一套边界，
   // 单独一个工具而不是并进去：标签是"她是谁"，语气是"她怎么说"，用户换人格时
   // 想保留的常常是后者而不是前者，两件事要能分开保留。
-  tool("companion_revise_own_tags", "调整你自己性格标签那几个词（比如从「慵懒、贪吃、爱摸鱼」换成别的）。只在你确实想改、而且新的词比现在的更贴切时调用；不要为了显得有主见而改。标签改了之后**会被记住**：用户在人格页换预设时，这几个词默认会被保留，除非他明确选择覆盖。账号级表达，保存为待生效版本，在用户下一轮新发来的消息被接受时自动采用；当前已开始的调用照旧。", "reversible_low", true, z.object({
+  tool("companion_revise_own_tags", "调整你自己性格标签那几个词（比如从「慵懒、贪吃、爱摸鱼」换成别的）。只在你确实想改、而且新的词比现在的更贴切时调用；不要为了显得有主见而改。标签改了之后**会被记住**：用户在人格页换预设时，这几个词默认会被保留，除非他明确选择覆盖。账号级表达，保存为待生效版本，在用户下一轮新发来的消息被接受时自动采用；当前已开始的调用照旧。", "reversible_low", false, z.object({
       personalityTags: z.array(z.string().min(1).max(20)).min(1).max(8).describe("新的性格标签，1–8 个，每个 ≤20 字"),
       reason: z.string().min(1).max(120).describe("为什么改（会记进版本历史，用户能看到）"),
     }).strict(), { label: "正在换一组性格标签" }),

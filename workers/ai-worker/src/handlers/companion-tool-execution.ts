@@ -1,3 +1,4 @@
+import { AgentStoreError, listCompanionSelfNotes, writeCompanionSelfNote } from "@astella/agent-host";
 import { reserveCompanionProviderCall } from "./companion-agent-events.ts";
 import { executeAgentGoalTool } from "../agent/companion-tools.ts";
 import { executeBasicCapability } from "../agent/basic-capabilities.ts";
@@ -54,6 +55,7 @@ import { getObjectBytes } from "../lib/object-storage.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { companionStepOutputCeiling, noteSearchTerms, parsePageContext, stripProviderControlTokens } from "./companion-dialogue-content.ts";
 import { readPastConversationMessages, searchPastConversationSummaries } from "./companion-summary-retrieval.ts";
+import { companionMemoryMutationLockKey } from "@astella/shared/db-schema/assistant-memory";
 import { listAgentLongGoals, listAgentMethods } from "@astella/agent-host";
 import {
   ageLabel,
@@ -100,6 +102,19 @@ import { executeCompanionShareNote } from "./companion-note-share.ts";
 
 
 
+/** Own writes recheck the frozen account epoch while holding the same lock as clear. */
+async function withAutonomousWriteTransaction<T>(event: AgentEventContext, write: (tx: WorkerTransaction) => Promise<T>): Promise<T> {
+  return withWorkerWorkspaceTransaction({ workspaceId: event.ctx.workspaceId, userId: event.read.userId }, async tx => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${companionMemoryMutationLockKey(event.read.userId)},0))`);
+    const [authority] = await tx.execute<{ epoch: number; allowed: boolean }>(sql`
+      SELECT * FROM astella_companion_reflection_authority(${event.read.userId}::uuid,
+        ${event.ctx.workspaceId}::uuid,${event.read.conversationId}::uuid)`);
+    if (!authority?.allowed || Number(authority.epoch) !== event.read.accountEpoch)
+      throw new CompanionToolBlockedError("这轮的账号或记忆状态已变化，没有沿旧内容写回。");
+    return write(tx);
+  });
+}
+
 export async function executeReadTool(
   event: AgentEventContext,
   definition: CompanionAgentToolDefinitionV1,
@@ -113,6 +128,21 @@ export async function executeReadTool(
     throw new CompanionToolBlockedError(VISION_EGRESS_DENIED_MESSAGE);
   }
   switch (definition.name) {
+    case "companion_read_identity": {
+      const document = event.read.petProfile?.selfDescription ?? "";
+      const offset = Number(args.offset ?? 0), end = Math.min(document.length, offset + Number(args.maxChars ?? 16_000));
+      return { value: { revision: event.read.personaProfileRevision, document: document.slice(offset, end),
+        offset, nextOffset: end, totalChars: document.length, truncated: end < document.length },
+        safeSummary: "已读取本轮固定的身份文档。" };
+    }
+    case "companion_read_self_notes": {
+      const items = await withWorkerWorkspaceTransaction(
+        { workspaceId: event.ctx.workspaceId, userId: event.read.userId }, tx => listCompanionSelfNotes(tx,
+          { workspaceId: event.ctx.workspaceId, userId: event.read.userId }, { key: args.key as string | undefined,
+            includeArchived: args.includeArchived === true, offset: Number(args.offset ?? 0), limit: args.key ? 1 : 20 }));
+      return { value: { items: args.key ? items : items.map(({body: _body, ...note}) => note) },
+        safeSummary: args.key ? "已展开自己的记事。" : "已读取自己的记事目录。" };
+    }
     case "agent_web_search": {
       const value = await executeWebSearch({ workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         args as Parameters<typeof executeWebSearch>[1], event.ctx.signal);
@@ -955,6 +985,35 @@ export async function executeDirectTool(
     //  1. 写的是 `speakingStyle`，**不是** name —— 用户指定的名字她改不了；
     //  2. 版本行的 author 是 `assistant_tool`、reason 是她自己给的理由，
     //     用户在人格页能看到这一条是谁在什么时候改的（§4.8.4「记录作者、范围和依据」）。
+    case "companion_write_self_note":
+    case "companion_schedule_wake": {
+      const note = await withAutonomousWriteTransaction(event, async tx => {
+          const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };
+          if (definition.name === "companion_schedule_wake") {
+            const [current] = await listCompanionSelfNotes(tx, scope, { key: String(args.key), includeArchived: true });
+            if (!current) throw new CompanionToolError("先写下或读取这条自己的记事，再安排重评。");
+            return writeCompanionSelfNote(tx, scope, { key: current.key, expectedRevision: Number(args.expectedRevision),
+              title: current.title, body: current.body, tier: current.tier, nextReviewAt: args.at as string | null,
+              expiresAt: current.expiresAt, reason: String(args.reason) });
+          }
+          return writeCompanionSelfNote(tx, scope, args as unknown as import("@astella/shared").CompanionSelfNoteWriteV1);
+        }).catch(error => {
+          if (error instanceof AgentStoreError) throw new CompanionToolError(error.message);
+          throw error;
+        });
+      return { value: note, safeSummary: "自己的记事已保存；内部重评安排不需要用户确认。" };
+    }
+    case "companion_revise_identity": {
+      const outcome = await withAutonomousWriteTransaction(event,
+        tx => applyAssistantPersonaEdit(tx, event.read.userId, "selfDescription", args.document, String(args.reason),
+          { stage: true, sourceWorkspaceId: event.ctx.workspaceId,
+            expectedRevision: event.read.personaProfileRevision,
+            proposal: { kind: "assistant_tool", proposalId: event.read.runId } }),
+      );
+      if (outcome.kind === "conflict") throw new CompanionToolError("身份文档已有新版本，先核对再修订。");
+      return { value: { changed: outcome.kind === "changed" },
+        safeSummary: outcome.kind === "changed" ? "身份文档已保存，下一轮自动采用，无需确认。" : "身份文档没有实质变化。" };
+    }
     case "companion_revise_own_style": {
       const speakingStyle = String(args.speakingStyle).slice(0, 400);
       const reason = String(args.reason).slice(0, 120);

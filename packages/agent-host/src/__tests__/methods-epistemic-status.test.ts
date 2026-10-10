@@ -61,7 +61,7 @@ test("认识状态照实投影：库里的 disputed 不会被读成 supported", 
 test("tentative / disputed / disabled 都不是「已确认可用」", () => {
   const availability = (over: Partial<AgentMethodRow>) => projectAgentMethod(row(over)).availability;
   assert.equal(availability({}), "available", "夹具前提：已确认且依据精确的方法应当可采用");
-  assert.equal(availability({ epistemic_status: "tentative" }), "pending",
+  assert.equal(availability({ epistemic_status: "tentative" }), "available",
     "依据还没核的方法被当成了已确认可采用：一次整理不该直接升为稳定经验");
   assert.equal(availability({ epistemic_status: "disputed" }), "source_changed");
   assert.equal(availability({ method_state: "disabled", epistemic_status: "disputed" }), "disabled",
@@ -78,10 +78,10 @@ test("目录围栏两道都在：SQL 按认识状态收紧，读侧再按可采�
     row({ id: "66666666-6666-4666-8666-666666666666", epistemic_status: "tentative" }),
   ]);
   const catalog = await listAgentMethods(tx, SCOPE, true);
-  assert.deepEqual(catalog.map(method => method.epistemicStatus), ["supported"],
-    "active+disputed 或 tentative 的方法混进了可自动采用的目录");
+  assert.deepEqual(catalog.map(method => method.epistemicStatus), ["supported", "tentative"],
+    "active+disputed 的方法混进了可自动采用的目录");
   // 读侧那道是兜底；SQL 里那道挡住的是「一条不合格的行先占走 LIMIT 名额」。
-  assert.match(queries[0]!, /method_state='active' AND p\.epistemic_status='supported'/,
+  assert.match(queries[0]!, /method_state='active' AND p\.epistemic_status <> 'disputed'/,
     "目录 SQL 没有按认识状态收紧：暂定或争议的方法会先占掉目录上限");
 });
 

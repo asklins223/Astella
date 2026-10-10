@@ -128,7 +128,7 @@ test("普通对话只注入 resident 正文和 active 元数据目录", async ()
   const reads = [
     { match: /budget_tier = 'resident'/, why: "resident 正文" },
     { match: /budget_tier = 'active'/, why: "active 目录" },
-    { match: /method_state='active' AND p\.epistemic_status='supported'/, why: "手册目录与候选一次取回" },
+    { match: /method_state='active' AND p\.epistemic_status <> 'disputed'/, why: "手册目录与候选一次取回" },
     { match: /UPDATE companion_memory_organization_state/, why: "整理结论（一次性消费）" },
   ];
   assert.equal(calls.length, reads.length, `context assembly 只读数据：${reads.map((r) => r.why).join(" + ")}`);
