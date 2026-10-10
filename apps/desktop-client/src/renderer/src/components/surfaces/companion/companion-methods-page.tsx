@@ -12,6 +12,12 @@ const stateLabels: Record<AgentMethodV1["availability"],string> = {
 };
 type Draft = { methodId:string; revision:number; title:string; appliesWhen:string; steps:string; exceptions:string; reason:string };
 const lines = (value:string) => value.split("\n").map(line=>line.trim()).filter(Boolean);
+/**
+ * 反思提炼出来的做法，依据就是那段相处里的某几句话（`eventId` 形如 `message:<uuid>`）。
+ * 以前一律写成「已记录的事件」——用户看不出这条到底从哪儿来，也没法判断要不要撤。
+ * 这里只换一个人都读得懂的-name，不把 uuid 搬上屏。
+ */
+const evidenceEventLabel=(eventId?:string|null)=>eventId?.startsWith("message:") ? "那段相处里的原话" : "已记录的事件";
 
 /** The paper owns full methods; the companion bubble only points here. */
 export function CompanionMethodsPage({refreshKey,requestedId,onFocusConsumed}:{refreshKey:number;requestedId?:string|null;onFocusConsumed?:()=>void}) {
@@ -107,7 +113,7 @@ export function CompanionMethodsPage({refreshKey,requestedId,onFocusConsumed}:{r
         </>}
         <details className="cc-details"><summary>来源与旧版本</summary>
           <p>依据 {selected.evidence.length} 条真实来源整理。第 {selected.revision} 版，更新于 {new Date(selected.updatedAt).toLocaleDateString("zh-CN")}。</p>
-          <ul>{selected.evidence.map((ref,index)=><li key={index}>{ref.memoryId ? `已保存记忆 · 第 ${ref.memoryRevision ?? "待核对"} 版` : ref.runId ? `已经完成的合作 · 第 ${ref.runRevision ?? "待核对"} 次要求` : "已记录的事件"}{ref.note ? `：${ref.note}` : ""}</li>)}</ul>
+          <ul>{selected.evidence.map((ref,index)=><li key={index}>{ref.memoryId ? `已保存记忆 · 第 ${ref.memoryRevision ?? "待核对"} 版` : ref.runId ? `已经完成的合作 · 第 ${ref.runRevision ?? "待核对"} 次要求` : evidenceEventLabel(ref.eventId)}{ref.note ? `：${ref.note}` : ""}</li>)}</ul>
           {history.loading ? <p>正在加载旧版本…</p> : history.section?.ok && history.section.value.methodId===selectedId ? history.section.value.items.map(item=><details key={item.revision}><summary>第 {item.revision} 版 · {item.title}</summary><p>{item.appliesWhen}</p><ol>{item.steps.map((step,index)=><li key={index}>{renderCompanionMarkdown(step)}</li>)}</ol><p>{item.changeReason}</p></details>) : <SectionState message="旧版本暂时读不到" onRetry={()=>void history.reload()} />}
         </details>
         <details className="cc-details"><summary>后续合作与反馈 · 本版查阅 {selected.consultedCount} 次</summary>

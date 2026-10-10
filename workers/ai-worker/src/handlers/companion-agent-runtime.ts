@@ -1,4 +1,5 @@
 import { companionEditedNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
+import { collectAgentCapabilitySceneGuidance } from "@astella/shared/agent-capability-catalog";
 import type { CompanionAgentLoopArgs } from "../contracts/companion-agent-loop.ts";
 import { executeTurn, composeAgentContext } from "@astella/agent-core";
 import {
@@ -463,6 +464,10 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       stepBudget,
       finalAnswerOnly,
       attentionIntent: attention.intent,
+      // 按这一步真的发下去的工具面取场景指引（`toolsOfferedThisStep` 已经是
+      // 收起过工具的那一份，所以终答步不会还背着编辑规程）。
+      sceneGuidance: collectAgentCapabilitySceneGuidance(
+        toolsOfferedThisStep.map((tool) => tool.name), currentMeta.permissionLevel),
     });
     /**
      * 第一步可能已经有现成的：投机的闲聊版（见上面的 speculative）。

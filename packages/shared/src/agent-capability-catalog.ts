@@ -34,6 +34,30 @@ for (const entry of agentCapabilityCatalog) {
   capabilitiesByName.set(entry.definition.name, entry);
 }
 export function getAgentCapability(name: string): AgentCapabilityEntry | undefined { return capabilitiesByName.get(name); }
+/**
+ * 这一步的工具面上真的有这些工具时，才把它们自带的场景指引拼出来（方案 50 §7）。
+ *
+ * 顺序按传进来的工具面走，并去重：好几条导航能力共用同一段措辞，重复进 prompt
+ * 只是占预算。判据是**工具面**（由声明装配），不是本轮被猜成什么意图——
+ * 面里没有编辑工具时，那段块序号规程就不该出现在一次招呼的请求里。
+ */
+export function collectAgentCapabilitySceneGuidance(
+  toolNames: readonly string[], permissionLevel: string,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const name of toolNames) {
+    const guidance = capabilitiesByName.get(name)?.sceneGuidance;
+    if (!guidance) continue;
+    for (const line of [...(guidance.shared ?? []),
+      ...(permissionLevel === "full" ? guidance.full ?? [] : guidance.guided ?? [])]) {
+      if (seen.has(line)) continue;
+      seen.add(line);
+      out.push(line);
+    }
+  }
+  return out;
+}
 export function validateAgentCapabilityArguments(name: string, args: unknown, surface?: AgentCapabilitySurface):
   { success: true; data: Record<string, unknown> } | { success: false; reason: string } {
   const entry = getAgentCapability(name);

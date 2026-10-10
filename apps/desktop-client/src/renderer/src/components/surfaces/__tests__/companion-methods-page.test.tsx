@@ -52,3 +52,12 @@ it("preserves the user's correction draft when the server reports a newer revisi
   expect((screen.getByLabelText("方法名称") as HTMLInputElement).value).toBe("我修订的做法");
   expect(agent.reviseMethod.mock.calls[0][0].request.expectedRevision).toBe(2);
 });
+
+it("names what a distilled method is based on as the user's own words, not a vague 'recorded event'",async()=>{
+  items=[{...method,evidence:[{eventId:"message:22222222-2222-4222-8222-222222222222"}],evidenceIndependentCount:1}];
+  render(<CompanionMethodsPage refreshKey={0}/>);
+  fireEvent.click(await screen.findByRole("button",{name:/先解释再练习/}));
+  expect(await screen.findByText(/那段相处里的原话/)).toBeTruthy();
+  expect(screen.queryByText(/已记录的事件/)).toBeNull();
+  expect(document.body.textContent).not.toContain("22222222-2222");
+});

@@ -79,3 +79,26 @@ test("没有工具的提问不注入执行手册，不暗示可以另查记录",
   assert.match(policy,/材料不足时直接说明不足/);
   assert.doesNotMatch(policy,/companion_read_memory|outcome_unknown|后台交付/);
 });
+
+/**
+ * 方案 50 §7：共用的运行时策略只留**每步都用得上**的东西。
+ *
+ * 这三句以前天天进每一次招呼的请求；它们现在登记在能力声明上，由调用方按
+ * 这一步真的发下去了哪些工具取来（`sceneGuidance`）。这条用例钉的是"搬走了"，
+ * 免得哪天图省事又粘回来。
+ */
+test("场景指引不再写死在每步共用的运行时策略里", () => {
+  const policy = companionStepRuntimePolicy({
+    permissionLevel: "guided", toolCount: 6, stepBudget: 4, finalAnswerOnly: false,
+    attentionIntent: "task",
+  });
+  for (const moved of ["expectedBlocks", "跳转入口已准备好", "取得真实 id"]) {
+    assert.equal(policy.includes(moved), false, `${moved} 应归到能力声明，不该在共用策略里`);
+  }
+  assert.match(policy, /只有在你确实要调用工具时/, "工具步那句「先说一句再停下」是每步都用得上的，留下");
+  const withScene = companionStepRuntimePolicy({
+    permissionLevel: "guided", toolCount: 6, stepBudget: 4, finalAnswerOnly: false,
+    attentionIntent: "task", sceneGuidance: ["编辑场景：先读正文，再按块位置改。"],
+  });
+  assert.match(withScene, /编辑场景：先读正文，再按块位置改。/);
+});

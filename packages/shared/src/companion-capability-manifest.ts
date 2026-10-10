@@ -25,9 +25,42 @@ function companionOpenPageDescriptionV2(): string {
   return `跳到某个页面：${pages}。用户说的页面不在列里时别硬挑相近的，问他在哪儿看到的。`;
 }
 
+/**
+ * 下面三段以前都写在**每一步共用**的运行时策略里（`companion-step-plan.ts`），
+ * 于是日常聊天也天天背着它们：一次招呼的请求里躺着「全文编辑先读两万字、块序号减一
+ * 才是 startBlock」。方案 50 §7 要求把它们归到各自的能力上——工具面没有那条能力时，
+ * 这段指引就不进请求。文字本身按原样搬，不改口径，免得顺手动了行为。
+ */
+const NOTE_EDITING_SCENE_GUIDANCE = {
+  shared: [
+    "用户要求调整笔记格式/排版、标题或代码块时，直接修改正文，读取和分析问题不算完成，不要求用户再说一次‘改’或‘保存’。全文编辑先用companion_read_note的maxChars=20000读正文；truncated=true就保持版本续读。用blocks的完整content核对expectedBlocks，1起算ordinal减1才是编辑的startBlock/endBlock；不能拿body的拼接文本猜块边界。保留原意与全部内容，将标题和代码转成真正Markdown结构。先读完目标范围，再调用companion_edit_note；只在保存回执后简短说明改动，不在聊天里重复粘贴全文。需要分批时从文末向前修改，每次重新读取最新版本和块位置，不能沿用改动前的序号。",
+  ],
+};
+
+/** 图片这一条只讲「先取真实 id，再展示」；展示本身不等于看见像素。 */
+const IMAGE_SCENE_GUIDANCE = "用户要看自己资料里的图片时，先查询对应资料取得真实 id，再用图片工具展示；不能从旧回复猜图片归属、数量或尺寸。展示图片并不代表你看见了像素，用户只要求展示时不要主动让他描述图片或去改图片外发设置。";
+
+/**
+ * 跳转类工具在两种授权档下的语义不同（2026-09-19 实机修的「显示已打开但没打开」）：
+ * guided 档要用户点「前往」才真的切页面，full 档是预授权、调用完就切。
+ * 这一段必须按档位分开说，合在一起说哪一档都会让她讲错当前屏幕。
+ */
+const NAVIGATION_SCENE_GUIDANCE = {
+  shared: [
+    "只有用户当前明确要求打开/前往某个页面时才调用导航工具；不要为了接任务自行跳去学习页。",
+  ],
+  guided: [
+    "跳转类工具（open_*/focus_graph）只表示「跳转入口已准备好」：页面真正跳转要等用户点击「前往」。在用户点击之前，不要说你已经带用户到了那个页面。",
+  ],
+  full: [
+    "跳转类工具（open_*/focus_graph）会直接执行跳转：你调用后页面就会切换，可以直接围绕新页面继续说。",
+  ],
+};
+
 export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] = [
   tool("companion_edit_note", "用户明确要改当前笔记时直接编辑正文：insert_at_cursor在本轮光标后插入，append追加末尾，replace_selection/delete_selection处理本轮选区，replace_blocks/delete_blocks处理0起算的段落，读取的第1块对应0。段落操作先读正文，逐字带expectedBlocks；选区与光标取页面editing。表格用GFM，流程图用mermaid围栏。收到保存回执才说完成，原文变化就停止。", "reversible_low", false, companionEditNoteV1Schema,
-    { label: "正在调整笔记正文", discovery: "调整整篇笔记的标题、代码块和排版；在光标后补充、追加、删除或替换正文。" }, { maxInputChars: 120_000, maxOutputChars: 4_000 }),
+    { label: "正在调整笔记正文", discovery: "调整整篇笔记的标题、代码块和排版；在光标后补充、追加、删除或替换正文。" }, { maxInputChars: 120_000, maxOutputChars: 4_000 },
+    NOTE_EDITING_SCENE_GUIDANCE),
   tool("companion_read_context", "读取当前用户在当前 workspace 的学习上下文。", "read", false, emptyArguments, { label: "正在看你的学习上下文" }),
   tool("companion_read_current_page", "读取用户此刻屏幕上正显示的内容：页面标题、状态行、计数器、按屏幕顺序编号的条目、空态与当前筛选。用户说「这一页」「第N张」「为什么这么慢/卡住」时先调它——别用别的工具的数字代替眼前这屏。返回 available=false 表示这一页没有可读内容，要问她是在哪儿看到的，不要据此推断系统没问题。", "read", false, emptyArguments, { label: "正在看你这一页" }),
   // 「取回入口」就是这条工具（方案 44 §5.5）。摘要块与覆盖回执会告诉她哪一段被折掉了、
@@ -60,12 +93,12 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   // 分页形状与 read_note 相同；来源没解析好（draft/processing/failed）时如实说明，
   // 不假装读过。凭据面不受影响——这不是页面读取，是材料读取，走材料可见性。
   tool("companion_read_source", "读一份来源（原始材料）的解析正文（按段分页，一次约三千字）。用户引用的是来源原文、或要对照笔记与来源时先读它；没解析好（还在处理/失败/已归档）会照实说明，此时不要假装读过。正文没读完时同时传回 nextStartOrdinal 与 nextStartOffset（作为 startOrdinal、startOffset）续读。", "read", false, z.object({ sourceId: uuid, startOrdinal: z.number().int().min(1).optional().describe("续读时传上一页 nextStartOrdinal"), startOffset: z.number().int().nonnegative().optional().describe("段内位置；续读时传 nextStartOffset，缺省0") }).strict(), { label: "正在读来源正文" }),
-  tool("companion_open_note", "跳到用户的一篇笔记（在应用里打开它）。", "read", false, z.object({ noteId: uuid }).strict(), { label: "正在打开那篇笔记" }),
+  tool("companion_open_note", "跳到用户的一篇笔记（在应用里打开它）。", "read", false, z.object({ noteId: uuid }).strict(), { label: "正在打开那篇笔记" }, {}, NAVIGATION_SCENE_GUIDANCE),
   // 页面词表由 `COMPANION_PAGE_DESTINATIONS_V2`（companion-bridge-contracts）一处定义：
   // 枚举、中文页名、用户的口语别名都从同一张表生成，桌面端有落点的页面才进得了这里。
   // 以前这份枚举手抄一遍，结果「今日」「设置」服务端能发、客户端没有分支，
   // 而笔记库/学习卡/查找三页她根本说不出名字，只能被就近塞进来源库和星图。
-  tool("companion_open_page", companionOpenPageDescriptionV2(), "read", false, z.object({ page: companionPageKindSchemaV2 }).strict(), { label: "正在带你去那个页面" }),
+  tool("companion_open_page", companionOpenPageDescriptionV2(), "read", false, z.object({ page: companionPageKindSchemaV2 }).strict(), { label: "正在带你去那个页面" }, {}, NAVIGATION_SCENE_GUIDANCE),
   // 描述里原有一句"（与首页同一口径）"——**2026-09-24 删掉**（39d W2-3 的对账核实）。
   // 那句话不是注释，是一条**需要断言的关系**，而逐字段核过之后它**只在三项上成立**：
   // 笔记数 / 活跃卡数 / 到期数两侧同源（`notes` / `learning_cards_v2` / `review_schedules`），
@@ -75,13 +108,13 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   tool("companion_get_learning_stats", "读取学习数据统计：今天/本周学了多久、到期复习数、活跃卡片数、笔记数等。**只在用户问自己学了多久/进度如何时调用**；她跟你打招呼、闲聊、或只是接着上一个话题时不要调。要报读数时写 `{{f:key}}` 由服务端填（见 <fact_spans>），不要自己写数值。", "read", false, emptyArguments, { label: "正在看你的学习数据" }),
   tool("companion_list_task_queue", "列出当前学习运行里排着的任务（含进度和第几步）。用户问「我接下来要做什么」「还有什么任务」时调用。", "read", false, emptyArguments, { label: "正在看你的任务队列" }),
   tool("companion_list_due_reviews", "列出到期（或快到期）的复习卡，带卡片标题和到期时间。用户问「有什么要复习的」时调用。", "read", false, z.object({ limit: z.number().int().min(1).max(20).optional() }).strict(), { label: "正在看到期复习" }),
-  tool("companion_open_card", "打开一个已存在的学习卡片。cardId 直接用到期复习列表给的那个 id 就行。", "read", false, z.object({ cardId: uuid }).strict(), { label: "正在打开那张卡" }),
+  tool("companion_open_card", "打开一个已存在的学习卡片。cardId 直接用到期复习列表给的那个 id 就行。", "read", false, z.object({ cardId: uuid }).strict(), { label: "正在打开那张卡" }, {}, NAVIGATION_SCENE_GUIDANCE),
   // 参数名从 `keyPointId` 改成 `objectiveId`（2026-09-24，39d W2-1）：执行体打的是
   // `learning_objectives_v2.objective_id`，而库里的 `key_point_id` 是另一个 id-space
   // （`validation_assistance_exposures.key_point_id → card_key_points.id`）。顺带把
   // 模型可见的 JSON schema 从 `minLength/maxLength` 收成 `format: "uuid"`——与 zod 那份
   // 成对，理由同上面三条。
-  tool("companion_focus_graph", "聚焦知识图谱中的某个学习目标。", "reversible_low", false, z.object({ objectiveId: uuid, lens: z.enum(["current_target", "evidence", "provenance", "issues"]) }).strict(), { label: "正在星图上定位" }),
+  tool("companion_focus_graph", "聚焦知识图谱中的某个学习目标。", "reversible_low", false, z.object({ objectiveId: uuid, lens: z.enum(["current_target", "evidence", "provenance", "issues"]) }).strict(), { label: "正在星图上定位" }, {}, NAVIGATION_SCENE_GUIDANCE),
   // `noteId` **可选**（39d W2-1 的裁定，2026-09-24）：给了就按那篇笔记收窄查找范围，
   // 修掉"无法指名哪一篇、服务端只能挑最近一条"；不给就保持今天的行为。
   // **改必填**（2026-09-26，W2-1 判据 1 转绿）：consequential 写工具必须能指名对象。
@@ -257,5 +290,6 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   // 只是本机显示，一个字节都不出境。所以图片外发关着时，"给我看那张图"仍然做得成——
   // 这一句必须写进描述，否则她会把自己"看不了图"的限制误套到"给你看"上，
   // 明明能办的事也回答"我看不了"。
-  tool("companion_show_image", "把用户自己库里的图片显示在伴星身旁和对话中（只在本机显示，不发给模型，不需要图片外发开关）。自然地说想看看某文章的插图也属于展示请求。若只知道文章简称或标题，先用 companion_search_notes 找到真实 noteId，再用 noteId 与 position（从 1 起）或 assetId 展示；不可凭旧对话猜图片归属。", "read", false, z.object({ noteId: uuid.optional(), assetId: uuid.optional(), position: z.number().int().min(1).max(20).optional() }).strict(), { label: "正在把那张图调出来" }),
+  tool("companion_show_image", "把用户自己库里的图片显示在伴星身旁和对话中（只在本机显示，不发给模型，不需要图片外发开关）。自然地说想看看某文章的插图也属于展示请求。若只知道文章简称或标题，先用 companion_search_notes 找到真实 noteId，再用 noteId 与 position（从 1 起）或 assetId 展示；不可凭旧对话猜图片归属。", "read", false, z.object({ noteId: uuid.optional(), assetId: uuid.optional(), position: z.number().int().min(1).max(20).optional() }).strict(), { label: "正在把那张图调出来" }, {},
+    { shared: [IMAGE_SCENE_GUIDANCE] }),
 ];
