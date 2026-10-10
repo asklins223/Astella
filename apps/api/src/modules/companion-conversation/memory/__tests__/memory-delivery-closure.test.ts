@@ -163,8 +163,11 @@ describe("记忆动作要把对应的候选交付结账", () => {
   it("一键清空在软删除前记录来源抑制，并与自动抽取共用用户锁", async () => {
     const { executor, executes, operations } = fakeExecutor([], [[{ id: MEMORY_ID }]]);
     assert.equal(await clearMemories(executor, scope), 1);
-    assert.equal(executes.length, 2, "需要先取记忆写锁，再写入抑制墓碑");
-    assert.deepEqual(operations, ["execute", "execute", "update"], "抑制写入必须先于软删除");
+    // 四条前置都在软删除之前：取用户级写锁 → 换账号世代（迟到的反思读不回旧材料）
+    // → 写来源抑制墓碑 → 停用这个账号下的自己的记事。少一条，清空就不完整。
+    assert.equal(executes.length, 4, "写锁、换世代、抑制墓碑、停用记事，四条都得先发出去");
+    assert.deepEqual(operations, ["execute", "execute", "execute", "execute", "update"],
+      "抑制与记事停用必须先于软删除");
   });
 
   it("记忆不在这个空间/本人时不结账：也不能顺带唤醒别的设备", async () => {

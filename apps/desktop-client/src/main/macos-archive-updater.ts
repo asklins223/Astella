@@ -2,6 +2,7 @@ import { AppUpdater } from 'electron-updater'
 import type { DownloadUpdateOptions } from 'electron-updater/out/AppUpdater'
 import { ElectronHttpExecutor } from 'electron-updater/out/electronHttpExecutor'
 import { prepareMacosArchiveInstall } from './macos-update-install'
+import { downloadDirectThenMirrored } from './update-mirror'
 
 /** Keep the provider, download cache and SHA-512 verification; install without ShipIt. */
 export class MacosArchiveUpdater extends AppUpdater {
@@ -20,7 +21,8 @@ export class MacosArchiveUpdater extends AppUpdater {
     if (!zip) throw new Error('No ZIP update for this Mac architecture')
     return this.executeDownload({
       fileExtension: 'zip', fileInfo: zip, downloadUpdateOptions: options,
-      task: (destination, downloadOptions) => this.archiveExecutor.download(zip.url, destination, downloadOptions),
+      task: (destination, downloadOptions) => downloadDirectThenMirrored(zip.url,
+        target => this.archiveExecutor.download(target, destination, downloadOptions)),
       done: async event => {
         this.archive = { path: event.downloadedFile, version: event.version, sha512: zip.info.sha512 }
         this.dispatchUpdateDownloaded(event)

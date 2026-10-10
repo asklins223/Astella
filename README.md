@@ -15,13 +15,25 @@
 
 [中文](README.md) · [English](README.en.md) · [使用与开发手册](docs/guide/README.md)
 
-当前版本：`v1.5.0`（仓库版本；服务端与桌面客户端共用）
+当前版本：`v1.6.0`（仓库版本；服务端与桌面客户端共用）
 
 </div>
 
 ![首页书房：房间入口、复习纸签与常驻伴星](docs/guide/assets/home-room.jpg)
 
 > 项目仍在持续开发和体验验证。仓库版本、发布流程与功能验收是不同的状态；可下载资产以 [GitHub Releases](https://github.com/asklins223/Astella/releases) 为准。产品边界见 [PRODUCT.md](PRODUCT.md)，视觉与交互方向见 [DESIGN.md](DESIGN.md)。
+
+## 下载
+
+安装包挂在 [GitHub Releases](https://github.com/asklins223/Astella/releases) 上，直连即可下载；打不开或下得很慢时用右边的加速地址——它只是在原地址前加了 GH-Proxy（`https://v4.gh-proxy.org/`）这一段前缀，指向的是同一个文件，校验码一致。
+
+| 平台 | 直连下载 | 加速下载（GH-Proxy） |
+| --- | --- | --- |
+| macOS（Apple 芯片，ZIP） | [astella-1.6.0-mac-arm64.zip]({direct.format(asset='astella-1.6.0-mac-arm64.zip')}) | [加速下载]({mirror.format(asset='astella-1.6.0-mac-arm64.zip')}) |
+| macOS（DMG 安装镜像） | [astella-1.6.0-mac-arm64.dmg]({direct.format(asset='astella-1.6.0-mac-arm64.dmg')}) | [加速下载]({mirror.format(asset='astella-1.6.0-mac-arm64.dmg')}) |
+| Windows（x64 安装器） | [astella-1.6.0-win-x64.exe]({direct.format(asset='astella-1.6.0-win-x64.exe')}) | [加速下载]({mirror.format(asset='astella-1.6.0-win-x64.exe')}) |
+
+应用内的自动更新走同一条规则：先连 GitHub，连不上才改走加速地址，不用你手动设置。换版本时本表要跟着 GitHub Releases 上的实际文件名更新。
 
 ## 从笔记开始学习
 

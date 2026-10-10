@@ -60,7 +60,7 @@ test("被放弃的重试会**停下**，不在后台继续压服务", () => {
   expect(source).toMatch(/abandoned\.has\(segment\)/);
   expect(source).toMatch(/abandoned\.add\(segment\)/);
   // 而且放弃只发生在**截止**命中时——真错误仍值得重试。
-  expect(source).toMatch(/if \(deadlineHit\) abandoned\.add\(segment\)/);
+  expect(source).toMatch(/if \(deadlineHit\)\s*\{?\s*abandoned\.add\(segment\)/);
 });
 
 test("【自证】判据认得出「把截止改回单发基线」这个真实退化", () => {

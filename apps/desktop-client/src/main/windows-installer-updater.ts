@@ -2,6 +2,7 @@ import { AppUpdater } from 'electron-updater'
 import type { DownloadUpdateOptions } from 'electron-updater/out/AppUpdater'
 import { ElectronHttpExecutor } from 'electron-updater/out/electronHttpExecutor'
 import { prepareWindowsInstaller } from './windows-update-install'
+import { downloadDirectThenMirrored } from './update-mirror'
 
 /** GitHub provider, SHA-512 download and cache; no NSIS installer runtime. */
 export class WindowsInstallerUpdater extends AppUpdater {
@@ -15,7 +16,8 @@ export class WindowsInstallerUpdater extends AppUpdater {
     const file = provider.resolveFiles(info).find(file => file.url.pathname.endsWith(`-win-${process.arch}.exe`))
     if (!file) throw new Error('No Windows installer for this architecture')
     return this.executeDownload({ fileExtension: 'exe', fileInfo: file, downloadUpdateOptions: options,
-      task: (destination, downloadOptions) => this.executor.download(file.url, destination, downloadOptions),
+      task: (destination, downloadOptions) => downloadDirectThenMirrored(file.url,
+        target => this.executor.download(target, destination, downloadOptions)),
       done: async event => {
         this.installer = { path: event.downloadedFile, version: event.version, sha512: file.info.sha512 }
         this.dispatchUpdateDownloaded(event)

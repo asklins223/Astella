@@ -15,13 +15,25 @@ A desktop study room for personal learning. Turn material into notes, understand
 
 [中文](README.md) · [English](README.en.md) · [User and developer guide](docs/guide/README.md)
 
-Repository version: `v1.5.0` (shared by the server and desktop client)
+Repository version: `v1.6.0` (shared by the server and desktop client)
 
 </div>
 
 ![The home study room, review slip and companion](docs/guide/assets/home-room.jpg)
 
 > Development and experience validation continue. Repository versions, release workflows and feature acceptance describe different states; downloadable assets are listed in [GitHub Releases](https://github.com/asklins223/Astella/releases). Product boundaries are in [PRODUCT.md](PRODUCT.md), and visual and interaction direction is in [DESIGN.md](DESIGN.md).
+
+## Download
+
+Installers live on [GitHub Releases](https://github.com/asklins223/Astella/releases) and download directly. If GitHub is slow or unreachable where you are, use the accelerated link in the right column — it is the same file behind a GH-Proxy prefix (`https://v4.gh-proxy.org/`), so the checksum is identical.
+
+| Platform | Direct | Accelerated (GH-Proxy) |
+| --- | --- | --- |
+| macOS (Apple silicon, ZIP) | [astella-1.6.0-mac-arm64.zip]({direct.format(asset='astella-1.6.0-mac-arm64.zip')}) | [Download]({mirror.format(asset='astella-1.6.0-mac-arm64.zip')}) |
+| macOS (DMG image) | [astella-1.6.0-mac-arm64.dmg]({direct.format(asset='astella-1.6.0-mac-arm64.dmg')}) | [Download]({mirror.format(asset='astella-1.6.0-mac-arm64.dmg')}) |
+| Windows (x64 installer) | [astella-1.6.0-win-x64.exe]({direct.format(asset='astella-1.6.0-win-x64.exe')}) | [Download]({mirror.format(asset='astella-1.6.0-win-x64.exe')}) |
+
+In-app updates follow the same rule: direct to GitHub first, accelerated only if that fails — no setting to flip. Keep this table in step with the asset names GitHub Releases actually publishes.
 
 ## Learn from a note
 
