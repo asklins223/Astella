@@ -8,7 +8,7 @@
  *    技能层已整条删除，工具面每轮全给。）
  * - 确认续跑：run 停在 waiting_for_confirmation 并冻结 proposal → 带 proposalId 重新入队 →
  *   loadContinuation 回填结果 → 同一次 run 产出最终答复（不做新用户对话）；
- * - 执行预算耗尽：agent_elapsed_ms 已达 120s → 直接终结，不再调用 provider；
+ * - 执行预算耗尽：累计耗时段达到合同上限 → 直接终结，不再调用 provider；
  * - epoch 失效：run 冻结的 epoch 与当前不一致 → 拒绝执行且零副作用。
  *
  * 这些是方案验收清单里"确认后继续同一次 run""超过预算安全终止""global off/epoch
@@ -47,7 +47,7 @@ after(async () => {
 
 const { runCompanionDialogue } = await import("../handlers/companion-dialogue.ts");
 const { ensureAgentToolCall, loadContinuation, safeArgumentsHash, updateToolCall } = await import("../handlers/companion-tool-call-ledger.ts");
-const { companionStreamEventV1Schema, getCompanionAgentTool } = await import("@astella/shared");
+const { companionStreamEventV1Schema, getCompanionAgentTool, COMPANION_AGENT_DEADLINE_MS } = await import("@astella/shared");
 
 async function seedBase(): Promise<{ workspaceId: string; userId: string }> {
   const ws = randomUUID();
@@ -75,6 +75,7 @@ async function seedAgentRun(
   opts: {
     userText: string;
     runStatus?: string;
+    permissionLevel?: string;
     accountEpoch?: number;
     runAccountEpoch?: number;
     agentElapsedMs?: number;
@@ -94,8 +95,9 @@ async function seedAgentRun(
                      ${tx.json([{ type: "text", text: opts.userText }])}, ${"0".repeat(64)})`;
     await tx`INSERT INTO companion_turn_runs
                (id, conversation_id, workspace_id, user_id, user_message_id, generation, status,
-                idempotency_key_hash, request_body_hash, account_epoch, agent_elapsed_ms)
+                permission_level, idempotency_key_hash, request_body_hash, account_epoch, agent_elapsed_ms)
              VALUES (${runId}, ${cid}, ${ws}, ${uid}, ${userMessageId}, 1, ${opts.runStatus ?? "accepted"},
+                     ${opts.permissionLevel ?? null},
                      ${"a".repeat(64)}, ${"b".repeat(64)},
                      ${opts.runAccountEpoch ?? 0}, ${opts.agentElapsedMs ?? 0})`;
     await tx`UPDATE companion_conversations SET next_message_seq = 3, next_event_seq = 100 WHERE id = ${cid}`;
@@ -153,8 +155,10 @@ async function readState(ws: string, uid: string, f: Fixture) {
     const run = await tx`SELECT status, permission_level, step_count, tool_call_count,
                                 agent_elapsed_ms, waiting_proposal_id, last_event_seq
                          FROM companion_turn_runs WHERE id = ${f.runId}`;
-    const assistant = await tx`SELECT id FROM companion_messages
-                               WHERE conversation_id = ${f.conversationId} AND role = 'assistant'`;
+    const assistant = await tx`SELECT id, seq, kind, blocks, run_id, action_ref
+                               FROM companion_messages
+                               WHERE conversation_id = ${f.conversationId} AND role = 'assistant'
+                               ORDER BY seq`;
     const events = await tx`SELECT type, payload, seq, conversation_id, workspace_id, run_id,
                                    generation, account_epoch, created_at
                             FROM companion_stream_events
@@ -340,6 +344,67 @@ test("Agent：工具循环的审计行与 agent.tool SSE 事件符合共享合�
     }
     const toolPayload = toolEvents[toolEvents.length - 1].payload as { tool: { safeLabel: string } };
     assert.ok(toolPayload.tool.safeLabel.length > 0, "工具事件只暴露安全标签");
+  } finally {
+    await f.cleanup();
+  }
+});
+
+/**
+ * 只回一张确认卡的那一轮（2026-10-10 真实栈上撞到的形状）。
+ *
+ * 用户明确纠正"以后打招呼别盘点笔记"，模型一个字都不说、只调 `companion_save_memory`；
+ * 那张卡此前**只存在于 `action.proposed` 事件里**，本轮没有任何伴星正文。于是卡没人点、
+ * 五分钟后被回收时 run 落 `failed / ACTION_EXPIRED`，历史里就只剩用户自己那句话——
+ * 用户回头查"她当时想做什么"什么也查不到（方案 50 §12.1 要口语化说真实状态、
+ * §16 第 2 步要求本轮先接住纠正）。
+ *
+ * 这里钉的是补齐后的形状：卡同时是一条 `kind='action'` 的可读记录，
+ * 文案来自提案自己的三行（不另外编一句话），并指回那个 proposal。
+ */
+test("只回一张确认卡：卡要在历史里留下可读的记录，而不是只有一个事件", async () => {
+  const { workspaceId, userId } = await seedBase();
+  const f = await seedAgentRun(workspaceId, userId, {
+    userText: "以后打招呼别盘点笔记【mock:wants-memory】",
+    permissionLevel: "guided",
+  });
+  try {
+    await invoke(workspaceId, userId, { runId: f.runId });
+    const s = await readState(workspaceId, userId, f);
+    if (process.env.DEBUG_CARD) {
+      console.log("DEBUG_CARD", JSON.stringify({
+        run: s.run, proposals: s.proposals, toolCalls: s.toolCalls,
+        assistant: s.assistant, steps: s.steps,
+        events: s.events.map((e) => (e as { type: string }).type),
+      }));
+    }
+
+    assert.equal(s.run.status, "waiting_for_confirmation");
+    assert.equal(s.proposals.length, 1, "guided 档下这条写入必须冻结成一张确认卡");
+
+    const cards = s.assistant.filter((row) => row.kind === "action");
+    assert.equal(cards.length, 1, "确认卡必须留下一条可读记录");
+    assert.equal(cards[0].run_id, f.runId);
+    assert.equal(cards[0].action_ref, s.proposals[0].id);
+    const blocks = cards[0].blocks as Array<{ type: string; text?: string; proposalId?: string }>;
+    assert.equal(blocks[0].type, "text", "§3.3：先一个 text 块");
+    assert.ok(blocks[0].text?.includes("以后打招呼别盘点笔记"),
+      "记录要指名她准备记下的那句话，不是通用占位文案");
+    assert.equal(blocks[1].type, "action_ref");
+    assert.equal(blocks[1].proposalId, s.proposals[0].id);
+
+    // 本轮仍**不发**终态帧：终态答复归确认后的续跑，一个回合两个"结束"会让客户端状态机打架。
+    const types = s.events.map((e) => (e as { type: string }).type);
+    assert.equal(types.includes("assistant.final"), false);
+    assert.ok(types.includes("action.proposed"));
+
+    // 记录不能顶掉本轮的终态消息位：续跑那条才是 `assistant_message_id`。
+    const flagged = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+      return tx`SELECT assistant_message_id FROM companion_turn_runs WHERE id = ${f.runId}`;
+    });
+    assert.equal(flagged[0].assistant_message_id, null,
+      "卡是随行的可读记录，不冒充本轮的终态答复");
   } finally {
     await f.cleanup();
   }
@@ -729,11 +794,19 @@ test("Agent 写操作结果不明：provider 换 call id 时不重放；相同�
   }
 });
 
-test("Agent 执行预算：agent_elapsed_ms 已达 120s → 直接终结且不调用 provider", async () => {
+/**
+ * 执行预算耗尽 → 直接终结、零副作用（方案 40b 的失败关闭）。
+ *
+ * 耗尽的那个数**由声明给**（`COMPANION_AGENT_DEADLINE_MS`），不是硬写 120s：
+ * 预算链在 2026-10 收到一处之后，合同上限是 30 分钟，那个 120s 只是当时抄下来的
+ * 一份影子值——它把这条用例变成了"断言某个字面量还等于旧的影子"，
+ * 于是预算改了、这条红、而真实行为完全正常。
+ */
+test("Agent 执行预算：累计耗时段已达合同上限 → 直接终结且不调用 provider", async () => {
   const { workspaceId, userId } = await seedBase();
   const f = await seedAgentRun(workspaceId, userId, {
     userText: "看一下我的学习进度",
-    agentElapsedMs: 120_000,
+    agentElapsedMs: COMPANION_AGENT_DEADLINE_MS,
   });
   try {
     await assert.rejects(
