@@ -43,7 +43,7 @@ import {
   type CompanionFeedDiaryAnchor,
 } from "../components/companion/companion-feed";
 import type { CompanionFeedNoteAnchor, CompanionNoteIntent } from "../components/companion/companion-feed";
-import { publishCompanionHistoryChanged } from "../components/companion/companion-events";
+import { COMPANION_CONVERSATION_INVALIDATED, publishCompanionHistoryChanged } from "../components/companion/companion-events";
 import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, progressNoteExplanation, reportNoteExplanationStopFailure, resetNoteExplanations, useNoteCompanionExplanations } from "../components/companion/note-companion-explanation";
 import {
   appendCompanionAgentNode,
@@ -564,6 +564,8 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   }, []);
 
   const [mode, setMode] = useState<CompanionUiMode>("closed");
+  /** 会话身份作废时递增：已经开着的手记要重新读一次，而不是等用户重新进出这一页。 */
+  const [conversationReloadKey, setConversationReloadKey] = useState(0);
   const [companionName, setCompanionName] = useState("伴星");
   const [cancelling, setCancelling] = useState(false);
   const [stopNotice, setStopNotice] = useState<string | null>(null);
@@ -590,16 +592,20 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   /** agent route 游标：null = 尚未建立基线（首次拉取只记 latestSeq 不渲染）。 */
   const routeCursorRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    sendGenerationRef.current += 1;
+  /**
+   * 丢掉这一条会话在本机的全部痕迹：会话身份、消息、分页游标、本轮回复与提案。
+   *
+   * `ensureConversation` 只在缓存为空时才重新 ensure，所以这一份丢弃是「服务端已经不
+   * 有这条会话」之后唯一能让下一次发送重新对上收件箱的地方。
+   */
+  const dropConversationCache = useCallback(() => {
+    ++sendGenerationRef.current;
     pendingSendRef.current = null;
-    resetNoteAiWork();
     activeTurnRef.current = null;
-    setProcessRunId(null);
-    setNodes([]);
     replyWaitRef.current?.cancel();
     replyWaitRef.current = null;
-    resetNoteExplanations();
+    setProcessRunId(null);
+    setNodes([]);
     conversationRef.current = null;
     routeCursorRef.current = null;
     draftRef.current = "";
@@ -625,20 +631,37 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     setRichReply(null);
     setDraft(null);
     setInterrupted(null);
+    setProposalStates({});
+    setNavChips([]);
+    setStreamCue(null);
+    setFailure(null);
+    setPhase("idle");
+  }, []);
+
+  useEffect(() => {
+    dropConversationCache();
+    resetNoteAiWork();
+    resetNoteExplanations();
     setFeedSelection(null);
     setFeedPrompt(null);
     setFeedNoteAnchor(null);
     setAutoSendRequestId(null);
     setFeedNoteIntent(null);
-    setProposalStates({});
-    setNavChips([]);
-    setStreamCue(null);
     setMode("closed");
     // 称呼是空间/账号级的：换空间后不许留着上一个空间里她的名字。
     setCompanionName("伴星");
-    setFailure(null);
-    setPhase("idle");
-  }, [workspaceScopeRevision]);
+  }, [dropConversationCache, workspaceScopeRevision]);
+
+  // 「清空连续对话记录」在服务端删掉的就是这一条会话。留着本机这份缓存，之后每一句都会
+  // 带着已经不存在的 conversationId 发出去，一路撞 `NOT_FOUND`，而手记里还摆着删掉的正文。
+  useEffect(() => {
+    const onInvalidate = () => {
+      dropConversationCache();
+      setConversationReloadKey((current) => current + 1);
+    };
+    window.addEventListener(COMPANION_CONVERSATION_INVALIDATED, onInvalidate);
+    return () => window.removeEventListener(COMPANION_CONVERSATION_INVALIDATED, onInvalidate);
+  }, [dropConversationCache]);
 
   // 页面划选/拖拽可能发生在伴星交互层关闭时，因此引用必须住在始终挂载的
   // 会话 Provider，而不能住在按需显示的输入气泡里。
@@ -856,7 +879,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       }
     })();
     return () => { cancelled = true; };
-  }, [ensureConversation, mode, refreshMessages]);
+  }, [conversationReloadKey, ensureConversation, mode, refreshMessages]);
 
   // 两段低频补白轮询（agent 导航 route / 过程留痕）——它们**不是聊天主链路**，
   // 失败静默跳过。收在 `useCompanionPolls` 里：性质写在文件名上，比埋在 Provider 中段好读。

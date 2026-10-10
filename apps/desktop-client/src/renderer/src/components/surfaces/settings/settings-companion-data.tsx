@@ -4,7 +4,7 @@ import { Download,Trash2 } from "lucide-react";
 import { useEffect,useRef,useState } from "react";
 import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
 import { useRoomStore } from "../../../app/room-store";
-import { publishCompanionRecordsChanged } from "../../companion/companion-events";
+import { publishCompanionConversationInvalidated, publishCompanionRecordsChanged } from "../../companion/companion-events";
 import { SettingsInlineState,type SettingsReadable } from "./settings-primitives";
 import { SETTINGS_SECTION_AI_CONSENT } from "../../../app/companion-consent-gate";
 
@@ -46,6 +46,9 @@ export function SettingsCompanionData(props: { meta: () => RequestMetaV1; onRead
       setNotice(`已将 ${result.deletedCount} 条记忆移入回收区，可在 30 天内恢复。`);
     } else if (kind === "history") {
       const result = unwrapGatewayResult(await window.astella.companion.history.clear({ meta: props.meta() }));
+      // 服务端删的是整段会话并新建收件箱：轻聊与手记里缓存的那条会话 id 已经不存在了，
+      // 不就地作废的话，回到书房再发一句只会一直撞「这条学习内容已经不存在」。
+      publishCompanionConversationInvalidated();
       setNotice(`已清除 ${result.deletedMessages} 条消息、${result.deletedConversations} 段对话；动态收件箱已重新建立。`);
     } else {
       const result = unwrapGatewayResult(await window.astella.companion.data.deleteAudit({ meta: props.meta() }));

@@ -13,6 +13,7 @@ import { SETTINGS_ATTENTION_MS, SettingsSurface, summaryOfDissolveCounts } from 
 import { subscribeGateInvalidation } from "../../../app/gate-invalidation.ts";
 import { clearAccountSignOutNotice, peekAccountSignOutNotice } from "../../../app/account-signout.ts";
 import { openVoiceModelSettings } from "../../companion/open-voice-model-settings";
+import { COMPANION_CONVERSATION_INVALIDATED } from "../../companion/companion-events";
 
 /**
  * The settings centre's regressions all had the same shape: a value the reader
@@ -1784,6 +1785,10 @@ describe("重构后的伴星设置：规则、设备和数据各有入口", () =
 
   it("每一类数据分别确认，先取消不会写入，成功回执来自真实计数", async () => {
     const { api } = await openRules();
+    // 清掉的是整段会话：本机必须收到作废通知，否则轻聊会一直带着已经不存在的会话 id 发送。
+    let conversationInvalidated = 0;
+    const countInvalidation = () => { conversationInvalidated += 1; };
+    window.addEventListener(COMPANION_CONVERSATION_INVALIDATED, countInvalidation);
     fireEvent.click(screen.getByRole("tab", { name: "伴星数据" }));
     const clearRows = document.querySelectorAll<HTMLElement>(".settings-companion-clear");
     fireEvent.click(within(clearRows[0]).getByRole("button", { name: "清除" }));
@@ -1797,9 +1802,12 @@ describe("重构后的伴星设置：规则、设备和数据各有入口", () =
     await screen.findByText("已清除 7 条消息、2 段对话；动态收件箱已重新建立。");
     expect(api.companion.history.clear).toHaveBeenCalledTimes(1);
     expect(api.companion.memory.clear).not.toHaveBeenCalled();
+    expect(conversationInvalidated).toBe(1);
     fireEvent.click(within(clearRows[2]).getByRole("button", { name: "清除" }));
     fireEvent.click(screen.getByRole("button", { name: "确认删除操作与邀请记录" }));
     await screen.findByText("已删除 4 条操作记录和 2 条邀请记录。");
+    expect(conversationInvalidated).toBe(1);
+    window.removeEventListener(COMPANION_CONVERSATION_INVALIDATED, countInvalidation);
   });
 
   it("导出提供三种实际范围，数据同意只跳转到统一授权页", async () => {

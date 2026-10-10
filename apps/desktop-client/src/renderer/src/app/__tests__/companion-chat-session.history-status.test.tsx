@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanionMessageV1 } from "@astella/shared/companion-conversation-contracts";
 import type { GatewayEventV1 } from "@astella/shared/desktop-ipc-contracts";
 import { CompanionChatProvider, useCompanionChat, type CompanionChatSession } from "../companion-chat-session";
+import { publishCompanionConversationInvalidated } from "../../components/companion/companion-events";
 import { useRoomStore } from "../room-store";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -20,13 +21,27 @@ let items: CompanionMessageV1[];
 const page = () => ok({ items, total: items.length, oldestSeq: items[0]?.seq ?? null, hasMore: false });
 const listMessages = vi.fn(async () => page());
 const listRunNodes = vi.fn(async () => ok({ items: [] as unknown[], runs: [] as unknown[] }));
+const ensureResult = (conversationId: string) => ok({
+  version: 1 as const,
+  created: false,
+  conversation: {
+    version: 1 as const, id: conversationId, workspaceId: id(10), userId: id(11), kind: "dialogue" as const,
+    title: "伴星", titleSource: "placeholder" as const, status: "active" as const,
+    createdAt: date, updatedAt: date, lastMessageAt: null,
+  },
+});
+const userMessage = (conversationId: string): CompanionMessageV1 => ({
+  version: 1, id: id(30), workspaceId: id(10), conversationId, seq: 1, role: "user", kind: "text",
+  blocks: [{ type: "text", text: "你好呀" }], runId: null, clientMessageId: null,
+  contentSha256: "0".repeat(64), createdAt: date, editedAt: null,
+});
 function Capture() { chat = useCompanionChat(); return null; }
 
-function emit(eventType: string, payload: Record<string, unknown> = {}, runId = id(6)) {
+function emit(eventType: string, payload: Record<string, unknown> = {}, runId = id(6), conversationId = id(5)) {
   act(() => streamEvent?.({
     version: 1, subscriptionId: id(7), workspaceEpoch: 1, cursor: "1", eventRevision: 1,
     kind: "companion_chat_event", schemaRevision: "desktop-ipc-v1",
-    data: { kind: "companion_chat_event", conversationId: id(5), event: { runId, generation: 1, seq: 1, eventType, payload } },
+    data: { kind: "companion_chat_event", conversationId, event: { runId, generation: 1, seq: 1, eventType, payload } },
   }));
 }
 async function openHistory() {
@@ -61,7 +76,7 @@ beforeEach(() => {
     companion: {
       bridge: { setContext: vi.fn(async () => ok({ enabled: true, published: true, snapshot: null })), clearContext: vi.fn(async () => ok({ enabled: true, published: false, snapshot: null })) },
       chat: {
-        ensureConversation: vi.fn(async () => ok({ conversation: { version: 1, id: id(5), workspaceId: id(10), userId: id(11), kind: "dialogue", title: "伴星", titleSource: "placeholder", status: "active", createdAt: date, updatedAt: date, lastMessageAt: null } })),
+        ensureConversation: vi.fn(async () => ensureResult(id(5))),
         listMessages,
         listAgentRoutes: vi.fn(async () => ok({ items: [], latestSeq: 0 })),
         listRunNodes,
@@ -184,5 +199,37 @@ describe("手记记录刷新与当前回复的状态归属", () => {
     await act(async () => history.resolve(page()));
     expect(chat.phase).toBe("error");
     expect(chat.failure).toBe(failure);
+  });
+});
+
+describe("清空连续对话记录后，本机不再握着那条已经不存在的会话", () => {
+  it("手记开着时清空：旧正文与旧会话身份一起丢弃，并重新读新建的收件箱", async () => {
+    items = [userMessage(id(5))];
+    await openHistory();
+    expect(chat.conversationId).toBe(id(5));
+    expect(chat.messages).toHaveLength(1);
+
+    const ensure = vi.mocked(window.astella.companion.chat.ensureConversation);
+    ensure.mockResolvedValue(ensureResult(id(12)));
+    items = [];
+    await act(async () => { publishCompanionConversationInvalidated(); });
+
+    await waitFor(() => expect(chat.conversationId).toBe(id(12)));
+    expect(ensure).toHaveBeenCalledTimes(2);
+    expect(chat.messages).toHaveLength(0);
+    expect(chat.failure).toBeNull();
+  });
+
+  it("清空后发出去的那一句带的是新建的收件箱，而不是被删掉的会话", async () => {
+    await openHistory();
+    vi.mocked(window.astella.companion.chat.ensureConversation).mockResolvedValue(ensureResult(id(12)));
+    await act(async () => { publishCompanionConversationInvalidated(); });
+    await waitFor(() => expect(chat.conversationId).toBe(id(12)));
+
+    const { sending } = await startSend();
+    const turn = vi.mocked(window.astella.companion.chat.sendTurn).mock.calls.at(-1)?.[0];
+    expect(turn?.request.conversationId).toBe(id(12));
+    emit("error", { code: "PROVIDER_FAILED", recoverable: true }, id(6), id(12));
+    await act(async () => { await sending; });
   });
 });
