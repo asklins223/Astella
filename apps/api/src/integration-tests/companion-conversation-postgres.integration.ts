@@ -1250,7 +1250,7 @@ test("朗读只播了一半时下一轮带得上段粒度背景，播完时什�
     assert.ok(entry, "上一句只播了两段中的第一段，这一轮该知道");
     assert.deepEqual(entry.payload, {
       segmentsPlayed: 2, segmentsPrepared: 3, failedSegmentCount: 0,
-      interruptedByUser: true, lastOutcomeAt: (entry.payload as { lastOutcomeAt: string }).lastOutcomeAt,
+      unfinishedPlayback: true, lastOutcomeAt: (entry.payload as { lastOutcomeAt: string }).lastOutcomeAt,
     });
     assert.equal(entry.purpose, "current_context_clue", "只作线索，不推进话题");
     assert.equal(entry.trust, "device_recorded", "设备回执不是用户的说法");

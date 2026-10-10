@@ -966,3 +966,66 @@ test("读页面：同一账号同时两行活着时，认的是最新那一屏�
   assert.ok(Number(row?.content_age_seconds) <= 5,
     "这一屏的年龄只由 issued_at 算：拿到 20 秒前那一条，说明读的是后台那一屏");
 });
+
+/**
+ * 同一条偏好不许存两遍，且她已经记过的那几条要对她可见（2026-10-10 真实栈）。
+ *
+ * 现场：用户三次说同一句纠正，她三次都"新存"了一条偏好——每一遍都能逐字核对过来源门，
+ * 而**已有条目对她不可见**，于是措辞略有差别就变成第二条、第三条。这里钉两件事：
+ * 逐字相同的不写第二遍（并把已有那条的 id 交回去），同类已有条目连 id 一起给她看。
+ */
+test("同一句偏好不重复写第二遍：第二次回执指向已有的那条", async () => {
+  // 两轮在**同一个 workspace**：重复写入是同一份记忆台账里的事。清理按 workspace 一次做完
+  // （两个 fixture 各删一次 workspace 会撞上另一边的会话外键）。
+  const { workspaceId, userId } = await seedBase();
+  const first = await seedAgentRun(workspaceId, userId, {
+    userText: "以后打招呼别盘点笔记【mock:wants-memory】", permissionLevel: "full",
+  });
+  const second = await seedAgentRun(workspaceId, userId, {
+    userText: "以后打招呼别盘点笔记【mock:wants-memory】", permissionLevel: "full",
+  });
+  const readMemories = async () => await sql.begin(async (tx) => {
+    await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+    await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+    return tx`SELECT id, content, kind FROM assistant_memory_items
+              WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
+                AND deleted_at IS NULL AND dismissed_at IS NULL AND archived_at IS NULL`;
+  });
+  try {
+    await invoke(workspaceId, userId, { runId: first.runId });
+    const afterFirst = await readMemories();
+    assert.equal(afterFirst.length, 1, "第一遍应当真的写进一条偏好");
+
+    await invoke(workspaceId, userId, { runId: second.runId });
+    const afterSecond = await readMemories();
+    assert.equal(afterSecond.length, 1, "逐字相同的第二条不该落库");
+    assert.equal(afterSecond[0].id, afterFirst[0].id, "留下的仍是第一条");
+
+    const calls = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+      return tx`SELECT result_safe_summary FROM companion_agent_tool_calls
+                WHERE run_id = ${second.runId} AND name = 'companion_save_memory'`;
+    });
+    assert.match(String(calls[0]?.result_safe_summary ?? ""), /已经记过/,
+      "第二遍的回执要说清是「已经记过」，而不是假装又存了一条");
+  } finally {
+    // 两个 fixture 共用一个 workspace：清理由这里做一次（fixture 的 cleanup 各自会去删
+    // workspace，先跑的会把另一个还没删的会话顶在外键上）。
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+      await tx`DELETE FROM companion_agent_tool_calls WHERE conversation_id IN (${first.conversationId}, ${second.conversationId})`;
+      await tx`DELETE FROM companion_agent_steps WHERE conversation_id IN (${first.conversationId}, ${second.conversationId})`;
+      await tx`DELETE FROM companion_stream_events WHERE conversation_id IN (${first.conversationId}, ${second.conversationId})`;
+      await tx`DELETE FROM companion_turn_runs WHERE conversation_id IN (${first.conversationId}, ${second.conversationId})`;
+      await tx`DELETE FROM companion_messages WHERE conversation_id IN (${first.conversationId}, ${second.conversationId})`;
+      await tx`DELETE FROM companion_conversations WHERE id IN (${first.conversationId}, ${second.conversationId})`;
+      await tx`DELETE FROM assistant_memory_items WHERE workspace_id = ${workspaceId}`;
+      await tx`DELETE FROM jobs WHERE workspace_id = ${workspaceId}`;
+      await tx`DELETE FROM workspace_members WHERE workspace_id = ${workspaceId}`;
+      await tx`DELETE FROM workspaces WHERE id = ${workspaceId}`;
+      await tx`DELETE FROM users WHERE id = ${userId}`;
+    });
+  }
+});

@@ -40,7 +40,7 @@ test("用户在朗读中途发下一条：带上「播到第几段、共几段�
   const entry = projected?.observations[0];
   assert.equal(entry?.payload.segmentsPlayed, 2);
   assert.equal(entry?.payload.segmentsPrepared, 5);
-  assert.equal(entry?.payload.interruptedByUser, true);
+  assert.equal(entry?.payload.unfinishedPlayback, true);
   assert.equal(entry?.purpose, "current_context_clue");
   assert.equal(entry?.trust, "device_recorded");
   assert.equal(JSON.stringify(projected).includes("percent"), false);
@@ -69,7 +69,7 @@ test("一部分没尝试、一部分没播完：只按真出声过的段算分�
   assert.equal(payload?.segmentsPrepared, 2);
   assert.equal(payload?.segmentsPlayed, 1);
   assert.equal(payload?.failedSegmentCount, 0);
-  assert.equal(payload?.interruptedByUser, true);
+  assert.equal(payload?.unfinishedPlayback, true);
 });
 
 test("播放侧真失败时把失败段数带出去", () => {
@@ -77,7 +77,7 @@ test("播放侧真失败时把失败段数带出去", () => {
     ...scope, rows: [...synth(2), row("s0", "playback", "ok"), row("s1", "playback", "failed")],
   });
   assert.equal(projected?.observations[0].payload.failedSegmentCount, 1);
-  assert.equal(projected?.observations[0].payload.interruptedByUser, true);
+  assert.equal(projected?.observations[0].payload.unfinishedPlayback, true);
 });
 
 test("没有任何回执（纯文字回合）时不产生观察", () => {

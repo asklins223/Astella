@@ -88,8 +88,7 @@ export function projectDeliveryObservation(args: {
         segmentsPlayed: played.size,
         segmentsPrepared: attempted.length,
         failedSegmentCount: failed.size,
-        // 用户在这一句还没播完时就发了下一条：她可能没听完最后那段。
-        interruptedByUser: unplayed.length > 0,
+        unfinishedPlayback: unplayed.length > 0,
         lastOutcomeAt: lastPlaybackAt ? lastPlaybackAt.toISOString() : null,
       },
     }],
@@ -119,6 +118,8 @@ export async function loadCompanionDeliveryObservation(tx: ApiTransaction, args:
       WHERE conversation_id = ${args.conversationId}::uuid
         AND workspace_id = ${args.workspaceId}::uuid AND user_id = ${args.userId}::uuid
         AND status = 'succeeded' AND assistant_message_id IS NOT NULL
+        -- 上一句交付得比 TTL 还早时，这条观察出生即过期：不必再算，直接不带。
+        AND created_at > now() - make_interval(hours => ${COMPANION_DELIVERY_OBSERVATION_TTL_HOURS})
       ORDER BY created_at DESC, id DESC LIMIT 1
     )
     SELECT o.segment_id, o.stage, o.outcome, o.created_at, o.run_id

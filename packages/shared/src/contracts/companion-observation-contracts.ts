@@ -90,8 +90,12 @@ export const companionDeliveryObservationV1Schema = z.object({
   segmentsPrepared: z.number().int().nonnegative(),
   /** 有段落尝试过但没播成（引擎失败、取段超时）。 */
   failedSegmentCount: z.number().int().nonnegative(),
-  /** 用户这一轮在朗读没走完时插话——她需要知道刚才那句话没说完。 */
-  interruptedByUser: z.boolean(),
+  /**
+   * 有段落真尝试过、但没播完——用户插话、关掉窗口、网络断在这儿都算在同一条里。
+   * 名字不写成"被打断"：那只是其中一种成因，而她要下结论的只有一件事——
+   * **不能假定对方听到了**。
+   */
+  unfinishedPlayback: z.boolean(),
   lastOutcomeAt: isoTimestampSchema.nullable(),
 }).strict();
 export type CompanionDeliveryObservationV1 = z.infer<typeof companionDeliveryObservationV1Schema>;

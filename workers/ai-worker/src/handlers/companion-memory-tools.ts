@@ -347,12 +347,32 @@ export async function executeCompanionMemoryTool(
       const sourceQuote = typeof args.sourceQuote === "string" ? args.sourceQuote : null;
       const appliesWhen = typeof args.appliesWhen === "string" ? args.appliesWhen : null;
       const validUntil = typeof args.validUntil === "string" ? args.validUntil : null;
-      const inserted = await withWorkerWorkspaceTransaction(
+      const outcome = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         async (tx) => {
           const temporal = await readCompanionMemoryWriteSource(tx, event, {
             kind, content, sourceQuote, appliesWhen, validUntil,
           });
+          /**
+           * 同一类里已经有的那几条（最多三条）与**逐字相同**的那一条（2026-10-10）。
+           *
+           * 为什么要在写入这一步看：真实栈上同一条打招呼偏好被存了三遍——每一遍她都能
+           * 逐字核对通过来源门（三句原话确实相似），而**已有的条目对她是不可见的**，
+           * 于是她只能一遍遍"新存"。这里给的是事实而不是判断：完全相同的那条不重复写，
+           * 其余同类条目连 id 一起交给她，改还是另记由她按用户的原话决定。
+           */
+          const existing = await tx.execute<{ id: string; content: string; revision: number | string }>(sql`
+            SELECT id, content, revision FROM assistant_memory_items
+            WHERE workspace_id = ${event.ctx.workspaceId} AND user_id = ${event.read.userId}
+              AND kind = ${kind}
+              AND deleted_at IS NULL AND dismissed_at IS NULL AND archived_at IS NULL
+              AND epistemic_status NOT IN ('disputed','superseded')
+            ORDER BY updated_at DESC, id
+            LIMIT 3
+          `);
+          const duplicate = (Array.isArray(existing) ? existing : [])
+            .find((row) => String(row.content).trim() === content.trim());
+          if (duplicate) return { duplicateId: String(duplicate.id), sameKind: [] as Array<{id:string;content:string}> };
           const rows = await tx.execute<{ id: string }>(sql`
             INSERT INTO assistant_memory_items
               (workspace_id, user_id, kind, content, source_event_id, source_session_id,
@@ -366,11 +386,27 @@ export async function executeCompanionMemoryTool(
                true, true, false, 0.8, 0.9, 'workspace', 'user_stated', false, 'pending')
             RETURNING id
           `);
-          return rows[0];
+          return {
+            insertedId: rows[0]?.id ?? null,
+            sameKind: (Array.isArray(existing) ? existing : []).map((row) => ({
+              id: String(row.id), content: String(row.content), revision: Number(row.revision ?? 0),
+            })),
+          };
         },
       );
+      if (outcome.duplicateId) {
+        // 逐字相同的一条已经在了：不写第二遍，把它的 id 交回给她（要改就用 revise）。
+        return {
+          value: { memoryId: outcome.duplicateId, alreadyRecorded: true, kind },
+          safeSummary: "这一条已经记过了，没有再存第二遍",
+        };
+      }
       return {
-        value: { memoryId: inserted?.id ?? null, kind },
+        value: {
+          memoryId: outcome.insertedId ?? null, kind,
+          // 同类的其它条目连 id 一起给她：改还是另记，由她按用户此刻的原话决定。
+          ...(outcome.sameKind.length > 0 ? { sameKindExisting: outcome.sameKind } : {}),
+        },
         safeSummary: `已记住（${content.slice(0, 60)}${content.length > 60 ? "…" : ""}）`,
       };
     }

@@ -32,7 +32,7 @@ const base = {
   withdrawal: { invalidatedWhenSourceChanges: true, expiresAt: "2026-10-11T04:05:00.000Z" },
   payload: {
     segmentsPlayed: 2, segmentsPrepared: 5, failedSegmentCount: 0,
-    interruptedByUser: true, lastOutcomeAt: "2026-10-10T04:00:30.000Z",
+    unfinishedPlayback: true, lastOutcomeAt: "2026-10-10T04:00:30.000Z",
   },
 };
 const set = { version: 1 as const, observations: [base], droppedCount: 0 };
@@ -75,7 +75,7 @@ test("渲染只说段粒度事实，过期那条直接不带上", () => {
 test("只有失败段时说的是「没播成」，没有段数进度", () => {
   const rendered = renderCompanionDeliveryObservation({
     ...set,
-    observations: [{ ...base, payload: { ...base.payload, segmentsPlayed: 5, interruptedByUser: false, failedSegmentCount: 2 } }],
+    observations: [{ ...base, payload: { ...base.payload, segmentsPlayed: 5, unfinishedPlayback: false, failedSegmentCount: 2 } }],
   }, new Date("2026-10-10T05:00:00.000Z"));
   assert.match(rendered, /有 2 段没播成/);
   assert.equal(rendered.includes("只播到"), false);

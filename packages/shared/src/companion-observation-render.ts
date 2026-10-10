@@ -16,9 +16,9 @@ export function renderCompanionDeliveryObservation(value: unknown, now = new Dat
   for (const entry of parsed.data.observations) {
     if (entry.withdrawal.expiresAt !== null && new Date(entry.withdrawal.expiresAt) <= now) continue;
     if (entry.kind !== "delivery") continue;
-    const { segmentsPlayed, segmentsPrepared, failedSegmentCount, interruptedByUser } = entry.payload;
+    const { segmentsPlayed, segmentsPrepared, failedSegmentCount, unfinishedPlayback } = entry.payload;
     const parts: string[] = [];
-    if (interruptedByUser) {
+    if (unfinishedPlayback) {
       parts.push(`上一句的朗读只播到第 ${segmentsPlayed} 段（一共 ${segmentsPrepared} 段），后面那段不能假定对方听到了`);
     }
     if (failedSegmentCount > 0) parts.push(`有 ${failedSegmentCount} 段没播成`);
