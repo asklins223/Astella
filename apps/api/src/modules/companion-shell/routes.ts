@@ -42,6 +42,7 @@ import {
 } from "./answer-mode-preference.ts";
 import { openCompanionAccountEventStream } from "./account-events.ts";
 import { getAuthSurfaceManifestInfo } from "../../companion-contracts/auth-surface.ts";
+import { isEmailChannelConfigured } from "../../lib/outbound-email.ts";
 import {
   CompanionAuditError,
   deleteCompanionUserData,
@@ -56,7 +57,14 @@ export async function companionShellRoutes(app: FastifyInstance) {
   // 未登录的登录/注册页也能获取角色说明、公开帮助与通用错误帮助，不依赖 authenticated
   // API，不发起 LLM/ASR/TTS 或个性化预取；manifest 签名校验失败时客户端 fail closed。
   app.get("/public/auth-surface-manifest", async () => {
-    return getAuthSurfaceManifestInfo();
+    // emailChannelAvailable：邮箱验证码通道是否配置齐全（QQ/2925 发信至少一家）。
+    // 登录/注册页据此决定要不要显示"验证码"输入——未配置时注册保持旧行为，
+    // 界面不出现一个点了必然 503 的按钮。它不在签名 manifest 里（那是随构建
+    // 固定的静态文案），与 testMode 同为端点级的动态字段。
+    return {
+      ...getAuthSurfaceManifestInfo(),
+      emailChannelAvailable: isEmailChannelConfigured(),
+    };
   });
 
   // GET /me/companion — 账号级聚合视图（onboarding 各版本状态 + account state）。

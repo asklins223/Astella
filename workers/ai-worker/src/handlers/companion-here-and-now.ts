@@ -381,7 +381,9 @@ export function extractNoteTitleReference(userText: string): string | null {
   // 「X」与《X》同级：中文里带书名号的写法不止一种（39b §9.3 规则① 写的是《X》／「X」）。
   // 实测 30 天真实流量里「」形态 0 次、只有《》8 次，但两种都得认——只认一种时，
   // 另一种写法会退化成"她其实手上有这篇却当成没有"。
-  const match = userText.match(/《([^》\n]{1,30})》|「([^」\n]{1,30})」/);
+  // 篇名长度不在这封顶（{1,30} 会让一篇 31 字的标题整条认不出来，退化成"按标题没找到"，
+  // 而她手上其实有这篇）：只以《》/「」自身为界。
+  const match = userText.match(/《([^》\n]+)》|「([^」\n]+)」/);
   const title = (match?.[1] ?? match?.[2])?.trim();
   return title ? title : null;
 }
@@ -654,22 +656,19 @@ export async function loadHereAndNow(
 /**
  * 首块正文 → 注进环境快照的那一句"开头是…"。
  *
- * 只取到第一句、上限 120 字，并把换行压成空格：这一段的作用是**让她不必自己补原文**
+ * 只取到第一句，并把换行压成空格：这一段的作用是**让她不必自己补原文**
  * （实机 2026-09-22 AC 轮她零工具交出一段课本话当"原文"），不是替她读完全篇——
  * 给得越多，越像可以照抄，而它不进历史、也不带块结构。
  */
-export const NOTE_OPENING_MAX_CHARS = 120;
-
 export function noteOpeningExcerpt(content: unknown): string | null {
   if (typeof content !== "string") return null;
   const flat = content.replace(/\s+/g, " ").trim();
   if (flat.length === 0) return null;
   const stop = flat.search(/[。！？!?；;]/);
   const firstSentence = stop >= 0 ? flat.slice(0, stop + 1) : flat;
-  const clipped = firstSentence.length > NOTE_OPENING_MAX_CHARS
-    ? `${firstSentence.slice(0, NOTE_OPENING_MAX_CHARS)}…`
-    : firstSentence;
-  return clipped.length > 0 ? clipped : null;
+  // 不再按 120 字剪：句子到哪算完由标点定，剪在半句上会让她照着半句说话，
+  // 而那正是这一格要避免的"她以为原文就这么短"。
+  return firstSentence.length > 0 ? firstSentence : null;
 }
 
 export const PAGE_KIND_LABELS: Record<string, string> = {
@@ -784,8 +783,8 @@ export function renderHereAndNow(snapshot: HereAndNowSnapshot): string | null {
     const run = snapshot.activeRun;
     // 进度条上的分钟数不在这里：她在学什么、正在做哪一步才是对话用得上的，
     // 而"已学 4 分钟"这种数用户低头就能看见，念出来就是报流水账。
-    const task = run.taskPrompt ? `，正在做：${truncate(run.taskPrompt, 60)}` : "";
-    lines.push(`用户正在学习${run.topic ? `「${truncate(run.topic, 30)}」` : ""}${task}`);
+    const task = run.taskPrompt ? `，正在做：${run.taskPrompt}` : "";
+    lines.push(`用户正在学习${run.topic ? `「${run.topic}」` : ""}${task}`);
   }
   // 今日学了多久 / 跑了几个运行 / 笔记库共几篇**不再渲染**（实机 2026-09-21：用户只说
   // 了「嘿嘿」，她回"今天已经学了 42 分钟，本周累计 99 分钟"）。这块是她的感知，
@@ -820,23 +819,23 @@ export function renderHereAndNow(snapshot: HereAndNowSnapshot): string | null {
   }
   if (snapshot.currentPage) {
     const page = snapshot.currentPage;
-    lines.push(`用户正在看${page.kind}${page.title ? `《${truncate(page.title, 24)}》` : ""}`);
+    lines.push(`用户正在看${page.kind}${page.title ? `《${page.title}》` : ""}`);
     // 那一屏的**状态行**（来自该页自己发布的 `readable_view.statusLine`，逐字）。
     // 有它她才能回答"这一页怎么了"，而没有它只能说"你在笔记页"——后者帮不上忙。
-    if (page.statusLine) lines.push(`这一屏：${truncate(page.statusLine, 60)}`);
+    if (page.statusLine) lines.push(`这一屏：${page.statusLine}`);
   }
   if (snapshot.nextReminder) {
-    lines.push(`你已经答应：${snapshot.nextReminder.fireAtLocal} 提醒用户「${truncate(snapshot.nextReminder.text, 30)}」`);
+    lines.push(`你已经答应：${snapshot.nextReminder.fireAtLocal} 提醒用户「${snapshot.nextReminder.text}」`);
   }
   if (snapshot.noteReference) {
     const ref = snapshot.noteReference;
     lines.push(ref.found
-      ? `用户提到的《${truncate(ref.title, 24)}》在笔记库里，noteId=${ref.noteId}（${ref.ageLabel}写的）；要看正文就调用 companion_read_note 用这个 id。`
+      ? `用户提到的《${ref.title}》在笔记库里，noteId=${ref.noteId}（${ref.ageLabel}写的）；要看正文就调用 companion_read_note 用这个 id。`
       // 没找到时**不把"它不存在"当结论交给她**——那正是实机里她零工具却脱口而出的假阴性。
       // 39b §9.3：这一行的价值在于"库里没有匹配"由服务端替她说完，还附赠一个更接近的
       // 真东西——她就没有编造的必要，也不会把"我没查到"说成"库里没有"。
-      : `按标题没找到《${truncate(ref.title, 24)}》这篇笔记${ref.nearest
-        ? `；最接近的是《${truncate(ref.nearest.title, 24)}》（相似度 ${ref.nearest.score.toFixed(2)}）`
+      : `按标题没找到《${ref.title}》这篇笔记${ref.nearest
+        ? `；最接近的是《${ref.nearest.title}》（相似度 ${ref.nearest.score.toFixed(2)}）`
         : ""}：标题可能记岔，或者它其实是一张卡片。先调用 companion_search_notes 换个关键词再查；查不到就照实说没查到，不要替笔记库下"没有这东西"的结论。`);
     // 只给开头一段，并点名"更长的原文还是要去读"：给全篇等于让她抄一个可能已经
     // 过期、也没进历史的版本，而那正是要修的东西。
@@ -874,9 +873,4 @@ export function renderHereAndNow(snapshot: HereAndNowSnapshot): string | null {
   }
   if (lines.length <= 1) return null;
   return ["<here_and_now>", ...lines, "</here_and_now>"].join("\n");
-}
-
-function truncate(value: string, max: number): string {
-  const chars = Array.from(value.replace(/\s+/g, " ").trim());
-  return chars.length > max ? `${chars.slice(0, max).join("")}…` : chars.join("");
 }

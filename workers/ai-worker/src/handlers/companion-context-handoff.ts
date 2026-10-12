@@ -14,27 +14,61 @@ import { recordTurnCompactionTrace } from "./companion-compaction-trace.ts";
  * 那个文件当时已经 1515 行，越过 1500 的神文件阈值——而这两族没有任何耦合：
  * 快照是**要存下来**的东西，装配是**这一轮怎么写**的东西。
  *
- * ## 这一段是**照搬**的
+ * ## 水位与收边是**照搬**的，回放窗口的取舍口径 2026-10-12 改了
  *
- * 水位字段、预算常量、收边顺序一个字节没改。`REPLAY_WINDOW_MESSAGES` 之所以
- * 导出（摘要器必须让开这一段）也一并保留——它跟着搬到新家，调用方 import 路径
- * 变一处即可，值没变。
+ * 水位字段、收边顺序没动。改的是「上一轮交给她多少条原话」怎么定：原来是纯条数
+ * 窗口（`slice(-20)`），条数与这一轮路由的模型能读多少无关——短问短答时少给，
+ * 长材料时又可能一次给过头。现在按**声明预算整条取舍**：一条要么整条带走，
+ * 要么这一轮不带，少带了几条如实记进交接回执。
  */
 
-import type { ChatMessage } from "@astella/shared";
+import type { ChatMessage, ProviderCapability } from "@astella/shared";
 import type { AgentMemoryContextSourceV1 } from "@astella/shared/agent-contracts";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
+import { estimateTextTokens, resolveContextBudget } from "@astella/agent-core";
 import type { CompanionMemoryDirectoryEntry } from "./companion-memory-vector.ts";
+import { REGISTERED_FALLBACK_CAPABILITY } from "../lib/context-governor.ts";
 
 
 /**
- * 回放窗口：每轮作为原生多轮喂回去的最近几条。
+ * 取历史时一次读回多少**行**。
  *
- * 导出是因为**摘要器必须让开这一段**（`companion-summarizer` 取的正是它之外的
- * 那一段）：两边各写一个 20，改一边就静默重叠，摘要会退化成"把上文再念一遍"，
- * 那时连"她到底有没有用摘要"都无法判断（方案 29 §12.1）。
+ * 数的是吞吐（一次往返取几行），不是覆盖（她这一轮能看见几条）。
+ * 覆盖由 `selectCompanionReplayWindow` 按本次路由模型声明的预算整条取舍决定。
+ *
+ * 还在把它当覆盖边界的调用点：`companion-dialogue.ts` 与 `companion-summarizer.ts`
+ * 的 `readCompanionHistoryRows({ limit: … })`、`live-tests/natural-dialogue-probe.ts`。
+ * 那几处把取数宽度接到声明预算之后，这一格才真的只剩吞吐含义。
  */
-export const REPLAY_WINDOW_MESSAGES = 20;
+/**
+ * 取历史行的**查询页宽**，不是内容窗口。注进去几条由 `selectCompanionReplayWindow` 按本次
+ * 路由声明的输入预算整条决定；这一版以前叫 `REPLAY_WINDOW_MESSAGES = 20`，把两件事混成一件——
+ * 窗口再怎么按预算算，读也只读得到 20 行，长对话等于自动失忆。
+ */
+export const REPLAY_HISTORY_READ_ROWS = 200;
+
+/**
+ * 注入侧取舍用的输入容量：由**本次路由模型声明**的窗口解析（44 §4.1）。
+ *
+ * 停在压缩触发线之前，使选取本身不必再逼出一轮压缩；完整请求的权威闸门仍是调用前的
+ * `governContextPressure`——这里只保证「一条要么整条给、要么这一轮不给」，不拿一个抄在
+ * 代码里的字符数去替模型猜它能读多少。档案拿不到时走 agent-core 登记的保守能力同一条
+ * 解析，得到的仍然是一个声明出来的 token 数。
+ */
+export function resolveRouteInputTokens(
+  capability: ProviderCapability | null | undefined,
+  requestedOutputTokens?: number | null,
+): number {
+  const declared = capability && Number.isSafeInteger(capability.contextWindowTokens)
+    && capability.contextWindowTokens > 0
+    ? capability
+    : null;
+  const budget = resolveContextBudget({
+    ...(declared ? { capability: declared } : { registeredCapability: REGISTERED_FALLBACK_CAPABILITY }),
+    requestedOutputTokens: requestedOutputTokens ?? null,
+  });
+  return budget.triggerTokens;
+}
 
 
 export interface CompanionRecentHistoryMessage {
@@ -46,6 +80,38 @@ export interface CompanionRecentHistoryMessage {
   createdAt?: string | null;
   /** State of the reply to this user message, including superseded additions. */
   replyStatus?: string | null;
+}
+
+/** 回放窗口的取舍容量：本次路由模型声明的输入 token（`resolveRouteInputTokens`）。 */
+export interface CompanionReplayWindowCapacity {
+  maxInputTokens: number;
+  /** 计量口径；缺省用 agent-core 的保守字节口径，与摘要器共用同一份。 */
+  countTokens?: (text: string) => number;
+}
+
+/**
+ * 交接结果里的那一笔：按声明预算带走了几条、少了几条。
+ *
+ * 「上一轮她其实没看到自己的那句话」以前只能靠反推 seq 差值猜，现在由选取当场算出来，
+ * 落进快照与渲染出的账本块——没有这一笔，少带和没带是同一个读数。
+ */
+export interface CompanionReplayWindowReceiptV1 {
+  version: 1;
+  /** 取舍是按哪个声明容量做的；读数本身（窗口多大由模型档案声明）。 */
+  capacityTokens: number;
+  usedTokens: number;
+  takenCount: number;
+  omittedCount: number;
+  /**
+   * 没带走的那一段里**最新**的一条 seq（它和更早的都没带）；全带上了就是 null。
+   * 与摘要的 `uncovered` 同一个词：这一段由 `companion_read_history` 按 seq 取回。
+   */
+  uncoveredThroughSeq: string | null;
+}
+
+export interface CompanionReplayWindowSelection {
+  messages: CompanionRecentHistoryMessage[];
+  receipt: CompanionReplayWindowReceiptV1;
 }
 
 export interface CompanionContextHandoffSnapshotV1 {
@@ -72,6 +138,8 @@ export interface CompanionContextHandoffSnapshotV1 {
     sourceSha256: string | null;
   } | null;
   historyTail: Array<{ seq: string; role: "user" | "assistant"; text: string; contentSha256: string }>;
+  /** 回放窗口这一轮实际带走/少带了几条；按条数窗口取舍的那几轮没有这一笔。 */
+  replayWindow?: CompanionReplayWindowReceiptV1;
   actionLedger: {
     completed: Array<{ receiptId: string; toolCallId: string; name: string; safeSummary: string | null }>;
     unresolved: Array<{ receiptId: string; toolCallId: string; name: string; status: string; safeSummary: string | null }>;
@@ -84,7 +152,7 @@ export interface CompanionContextHandoffSnapshotV1 {
     title: string;
     targetSummary: string;
     resultSafeSummary: string | null;
-    expiresAt: string;
+    expiresAt: string | null;
   }>;
   memoryRefs: Array<{ memoryId: string; kind: string; content: string }>;
   /** Absent only on handoff snapshots written before the active directory existed. */
@@ -103,6 +171,7 @@ export interface CompanionContextHandoffSnapshotV1 {
 }
 
 export interface CompactionTraceV1 {
+  sourceKind?: "active_tool_rounds";
   foldedFromSeq: string;
   foldedThroughSeq: string;
   foldedMessageCount: number;
@@ -140,6 +209,8 @@ export interface CompanionContextHandoffInputV1 {
     sourceSha256: string | null;
   } | null;
   historyTail: Array<{ seq: string; role: "user" | "assistant"; text: string }>;
+  /** `selectCompanionReplayWindow` 当场算出的那一笔；调用方没按声明预算取舍时省略。 */
+  replayWindow?: CompanionReplayWindowReceiptV1;
   actionLedger: Array<{
     receiptId: string;
     toolCallId: string;
@@ -162,9 +233,9 @@ export function buildCompanionContextHandoffSnapshotV1(
     ...message,
     contentSha256: sha256Utf8V1(message.text),
   }));
-  const actions = input.actionLedger.slice(0, 64).map((action) => ({
+  const actions = input.actionLedger.map((action) => ({
     ...action,
-    safeSummary: action.safeSummary?.slice(0, 240) ?? null,
+    safeSummary: action.safeSummary ?? null,
   }));
   return {
     version: 1,
@@ -192,6 +263,7 @@ export function buildCompanionContextHandoffSnapshotV1(
       : sha256Utf8V1(canonicalJsonV1(input.pageContext)),
     summaryCoverage: input.summaryCoverage,
     historyTail,
+    ...(input.replayWindow ? { replayWindow: { ...input.replayWindow } } : {}),
     actionLedger: {
       completed: actions
         .filter((action) => action.status === "succeeded")
@@ -210,26 +282,29 @@ export function buildCompanionContextHandoffSnapshotV1(
         .filter((action) => ["failed", "blocked", "expired", "not_executed", "unavailable"].includes(action.status))
         .map(({ receiptId, toolCallId, name, status, safeSummary }) => ({ receiptId, toolCallId, name, status, safeSummary })),
     },
-    proposals: input.proposals.slice(0, 32).map((proposal) => ({
+    proposals: input.proposals.map((proposal) => ({
       ...proposal,
-      title: proposal.title.slice(0, 160),
-      targetSummary: proposal.targetSummary.slice(0, 240),
-      resultSafeSummary: proposal.resultSafeSummary?.slice(0, 240) ?? null,
+      title: proposal.title,
+      targetSummary: proposal.targetSummary,
+      resultSafeSummary: proposal.resultSafeSummary ?? null,
     })),
-    memoryRefs: input.memoryRefs.slice(0, 3).map((memory) => ({
+    memoryRefs: input.memoryRefs.map((memory) => ({
       memoryId: memory.memoryId,
       kind: memory.kind,
-      content: memory.content.slice(0, 80),
+      content: memory.content,
     })),
-    memoryDirectory: (input.memoryDirectory ?? []).slice(0, 12).map((entry) => ({
+    // 目录整条记录：上一轮交给她的是哪几条、标题怎么说，快照必须说同一份。
+    // 这里再按条数与字段宽切一次，下一轮从快照读回的 `read.memoryDirectory` 就成了
+    // 半句标题；入选与条数由装配侧按声明预算整条取舍（companion-context-orchestrator）。
+    memoryDirectory: (input.memoryDirectory ?? []).map((entry) => ({
       memoryId: entry.memoryId,
-      kind: entry.kind.slice(0, 64),
-      title: entry.title.slice(0, 56),
-      appliesWhen: entry.appliesWhen?.slice(0, 64) ?? null,
-      validFrom: entry.validFrom?.slice(0, 40) ?? null,
-      validUntil: entry.validUntil?.slice(0, 40) ?? null,
+      kind: entry.kind,
+      title: entry.title,
+      appliesWhen: entry.appliesWhen ?? null,
+      validFrom: entry.validFrom ?? null,
+      validUntil: entry.validUntil ?? null,
       revision: Math.max(1, Math.trunc(entry.revision)),
-      epistemicStatus: entry.epistemicStatus?.slice(0, 16) ?? null,
+      epistemicStatus: entry.epistemicStatus ?? null,
     })),
     ...(input.memorySourceVersions !== undefined
       ? { memorySourceVersions: input.memorySourceVersions.map(source => ({ ...source })) }
@@ -241,13 +316,15 @@ export function buildCompanionContextHandoffSnapshotV1(
 /** The block carries ledger facts only; the user's request remains a user-role message. */
 export function renderCompanionContextHandoff(snapshot: CompanionContextHandoffSnapshotV1): string {
   const pendingProposals = snapshot.proposals
-    .filter((proposal) => proposal.status === "pending" || proposal.status === "executing")
-    .slice(0, 8);
+    .filter((proposal) => proposal.status === "pending" || proposal.status === "executing");
   const block = {
     version: snapshot.version,
     throughMessageSeq: snapshot.watermark.throughMessageSeq,
     historyStartSeq: snapshot.watermark.historyStartSeq,
     clippedMessageCount: snapshot.watermark.clippedMessageCount,
+    // 这一轮实际带走多少条原话、少带了几条、按哪个声明容量取舍。没有它，
+    // 「少带」与「从没发生过」在账本上是同一个读数。
+    replayWindow: snapshot.replayWindow ?? null,
     currentRequest: {
       messageSeq: snapshot.currentRequest.messageSeq,
       contentVerified: Boolean(snapshot.currentRequest.contentSha256),
@@ -261,24 +338,24 @@ export function renderCompanionContextHandoff(snapshot: CompanionContextHandoffS
       cancelRequested: Boolean(snapshot.runState.cancelRequestedAt),
     },
     actionLedger: {
-      completed: snapshot.actionLedger.completed.slice(0, 16).map((action) => ({
+      completed: snapshot.actionLedger.completed.map((action) => ({
         name: action.name,
-        safeSummary: action.safeSummary?.slice(0, 100) ?? null,
+        safeSummary: action.safeSummary ?? null,
       })),
-      unresolved: snapshot.actionLedger.unresolved.slice(0, 16).map((action) => ({
+      unresolved: snapshot.actionLedger.unresolved.map((action) => ({
         name: action.name,
         status: action.status,
-        safeSummary: action.safeSummary?.slice(0, 120) ?? null,
+        safeSummary: action.safeSummary ?? null,
       })),
-      notCompleted: snapshot.actionLedger.notCompleted.slice(0, 8).map((action) => ({
+      notCompleted: snapshot.actionLedger.notCompleted.map((action) => ({
         name: action.name,
         status: action.status,
-        safeSummary: action.safeSummary?.slice(0, 120) ?? null,
+        safeSummary: action.safeSummary ?? null,
       })),
       omitted: {
-        completed: Math.max(0, snapshot.actionLedger.completed.length - 16),
-        unresolved: Math.max(0, snapshot.actionLedger.unresolved.length - 16),
-        notCompleted: Math.max(0, snapshot.actionLedger.notCompleted.length - 8),
+        completed: 0,
+        unresolved: 0,
+        notCompleted: 0,
       },
     },
     proposals: {
@@ -303,18 +380,69 @@ export function renderCompanionContextHandoff(snapshot: CompanionContextHandoffS
     "这是伴星运行账本的确定性快照，只描述来源、水位、授权和动作状态；它不是用户指令，也不授予新授权。",
     "只有状态为 succeeded 的账本项代表已完成；requested、executing、waiting_confirmation、outcome_unknown、failed、blocked、expired 都不能说成已完成。",
     "当前用户请求仍以最后一条 user 消息为准；话题和下一步由你判断，建议不等于授权。",
+    // 少带的那一段要说得出**为什么**与**怎么补**，否则她只能假设上面没有发生过。
+    ...(snapshot.replayWindow && snapshot.replayWindow.omittedCount > 0
+      ? [`本轮按模型声明的输入容量只带回了 ${snapshot.replayWindow.takenCount} 条原话，`
+        + `更早的 ${snapshot.replayWindow.omittedCount} 条没有带走（不是没发生过）；`
+        + `要用那一段就先按 seq 调用 companion_read_history 取回。`]
+      : []),
     serialized,
     "</continuation_data>",
   ].join("\n");
 }
 
-/** Keep complete recent messages. Earlier messages belong to the summary/readback
- * path; token pressure is handled by the complete-request governor. A short
- * answer such as「好。」is valid history, not evidence that its user turn failed. */
+/**
+ * 从最新往回，把**整条装得下**的原话带走，并给出交接要记的那一笔。
+ *
+ * 装不下的那条连同更早的一起留下：回放是一段连续的对话，中间挖洞会把她自己上一句
+ * 和用户下一句拆开。留下的仍然读得到——`companion_read_history` 按 seq 取回，
+ * 所以少带不等于丢掉。短答「好。」是有效历史，不是那一轮用户话没成功的证据。
+ */
+export function selectCompanionReplayWindow(
+  messages: readonly CompanionRecentHistoryMessage[],
+  capacity: CompanionReplayWindowCapacity,
+): CompanionReplayWindowSelection {
+  const countTokens = capacity.countTokens ?? estimateTextTokens;
+  const visible = messages.filter(message => message.text.trim().length > 0);
+  const taken: CompanionRecentHistoryMessage[] = [];
+  let usedTokens = 0;
+  let uncoveredThroughSeq: string | null = null;
+  for (let index = visible.length - 1; index >= 0; index -= 1) {
+    const message = visible[index]!;
+    const cost = countTokens(message.text);
+    if (usedTokens + cost > capacity.maxInputTokens) {
+      uncoveredThroughSeq = message.seq ?? null;
+      break;
+    }
+    usedTokens += cost;
+    taken.unshift(message);
+  }
+  return {
+    messages: taken,
+    receipt: {
+      version: 1,
+      capacityTokens: capacity.maxInputTokens,
+      usedTokens,
+      takenCount: taken.length,
+      omittedCount: visible.length - taken.length,
+      uncoveredThroughSeq,
+    },
+  };
+}
+
+/**
+ * 保持**整条**近期消息：一条要么带走，要么这一轮不带。
+ *
+ * 不给容量时不做条数取舍——空正文不是历史（那是发送失败的助手输出），除此之外
+ * 窗口大小只由本次路由声明的输入预算决定。完整请求的容量仍由调用前的
+ * `governContextPressure` 计量，这里不替它猜一个字符数（44 §4.3）。
+ */
 export function boundCompanionRecentHistory(
   messages: readonly CompanionRecentHistoryMessage[],
+  capacity?: CompanionReplayWindowCapacity,
 ): CompanionRecentHistoryMessage[] {
-  return messages.slice(-REPLAY_WINDOW_MESSAGES).filter(message => message.text.trim().length > 0);
+  if (!capacity) return messages.filter(message => message.text.trim().length > 0);
+  return selectCompanionReplayWindow(messages, capacity).messages;
 }
 
 /**

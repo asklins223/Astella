@@ -21,6 +21,11 @@
   --gate-lamp-control-height: 78px;
   --gate-time-menu-left: calc(var(--gate-lamp-control-left) + 58px);
   --gate-time-menu-top: calc(var(--gate-lamp-control-top) - 57px);
+  /* 左沿唯一源：窄屏各档只改这一处，表单列的起始位置不会和窗口内边距走散。 */
+  --gate-inline-pad: clamp(58px, 7.4vw, 128px);
+  /* 版本/更新 chip 占的那一条带（chip 36 + 下沿 14）。内容底部按它留白，短窗口里
+     表单最后一行不会被压在 chip 下面。 */
+  --gate-update-band: 50px;
   position: absolute;
   z-index: 80;
   inset: 0;
@@ -29,7 +34,7 @@
   align-items: center;
   min-width: 0;
   min-height: 100%;
-  padding: max(56px, 7vh) clamp(58px, 7.4vw, 128px) clamp(36px, 5vh, 56px);
+  padding: max(56px, 7vh) var(--gate-inline-pad) calc(clamp(36px, 5vh, 56px) + var(--gate-update-band));
   overflow-x: hidden;
   overflow-y: auto;
   color: var(--gate-ink);
@@ -615,6 +620,173 @@
   transition: color 160ms ease-out;
 }
 
+/* 验证码字段的标签行：左字段名、右「发送/倒计时」。发送是**文字行**不是实心
+   药丸——这一页的可点条目一贯如此（见 __text-action），实心块会抢主按钮的重心。 */
+.desktop-access-gate__field-label--send {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.desktop-access-gate__code-send {
+  font: inherit;
+  color: var(--gate-action-text);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-underline-offset: 3px;
+  transition: color 160ms var(--gate-ease-out);
+}
+
+.desktop-access-gate__code-send:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.desktop-access-gate__code-send:disabled {
+  color: var(--gate-ink-faint);
+  cursor: default;
+}
+
+.desktop-access-gate__code-send:focus-visible {
+  outline: 2px solid var(--gate-action);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* 发码成功后的中性提示：与红色 __form-error 分开，两者不同时表达同一件事。 */
+.desktop-access-gate__code-notice {
+  margin: 0;
+  color: var(--gate-ink-faint);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 版本与更新：钉在窗口下角，**跟着空的那半边跑**——登录那一屏表单在左列，它贴右下；
+   注册那一屏表单在右列，它贴左下。2026-10-11 用户按这个定的：压在表单同一列底下，
+   读起来像那一列多出来的一行；换到海报那半边才像窗口自己的角标。
+   为什么不放**上**角：Windows 那三个自绘标题按钮就在右上角，会遮住菜单键。
+   **玻璃配方照抄本页的台灯时间菜单**（`__time-menu`）：同一档 blur + saturate、
+   同一条暖描边、同一道内高光，只是半径用字段那一档的不对称切角、投影收小一号。
+   不做 999px 药丸——那形是 hover 提示的形，常驻就成了外来物。
+   位置由 `GateFrame` 的 `corner` 槽决定——它必须是 `.desktop-access-gate` 的直接
+   子节点，不能落进 `.desktop-access-gate__panel`：那个面板入场时被 GSAP 打了
+   transform，会把 fixed 的 containing block 抢过去，切一次登录/注册就跳一次位。 */
+.desktop-access-gate__update {
+  position: fixed;
+  z-index: 5;
+  bottom: 14px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 6px 12px;
+  color: var(--gate-ink);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.4;
+  border: 1px solid rgba(91, 61, 40, 0.28);
+  border-radius: 13px 17px 12px 16px;
+  background: rgba(255, 249, 236, 0.8);
+  box-shadow: 0 9px 20px rgba(59, 37, 21, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px) saturate(1.08);
+  -webkit-app-region: no-drag;
+}
+
+/* 注册那一屏的表单在右列，角标换到左边：两屏都待在没被表单占着的那半边。 */
+.desktop-access-gate[data-gate-variant="register"] .desktop-access-gate__update {
+  right: auto;
+  left: 16px;
+}
+
+/* 黄昏那张卡的底是暗的，而这一主题的正文变量整套是"深墨压浅纸"——照搬会把字吃掉，
+   所以这一档单独把三处颜色提到与夜间同一族。夜间不用改：它的变量本来就是浅字。 */
+.desktop-access-gate[data-gate-visual-theme="dusk"] .desktop-access-gate__update {
+  color: #fff4e8;
+  border-color: rgba(255, 216, 178, 0.27);
+  background: rgba(70, 39, 27, 0.8);
+  box-shadow: 0 10px 22px rgba(58, 28, 17, 0.3), inset 0 1px 0 rgba(255, 242, 222, 0.09);
+}
+
+.desktop-access-gate[data-gate-visual-theme="dusk"] .desktop-access-gate__update button,
+.desktop-access-gate[data-gate-visual-theme="dusk"] .desktop-access-gate__update-hint {
+  color: #ee8b52;
+}
+
+.desktop-access-gate[data-gate-visual-theme="dusk"] .desktop-access-gate__update-version {
+  color: #fff4e8;
+}
+
+.desktop-access-gate[data-gate-visual-theme="night"] .desktop-access-gate__update {
+  border-color: rgba(255, 218, 160, 0.22);
+  background: rgba(24, 22, 20, 0.78);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 244, 220, 0.07);
+}
+
+.desktop-access-gate__update button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 0;
+  color: var(--gate-action-text);
+  font: inherit;
+  font-weight: 700;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transition: color 160ms var(--gate-ease-out);
+}
+
+.desktop-access-gate__update button:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.desktop-access-gate__update button:disabled {
+  color: var(--gate-ink-soft);
+  cursor: default;
+}
+
+.desktop-access-gate__update button:focus-visible {
+  outline: 2px solid var(--gate-action);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.desktop-access-gate__update[data-update-state="available"] span:first-child,
+.desktop-access-gate__update[data-update-state="ready"] span:first-child {
+  color: var(--gate-action-text);
+  font-weight: 700;
+}
+
+.desktop-access-gate__update-version {
+  color: var(--gate-ink);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.desktop-access-gate__update-hint {
+  color: var(--gate-ink-soft);
+  font-weight: 560;
+}
+
+/* 登录屏的两个入口并排一行：都是"换个进门方式"，同一层级就不该占两行高度。 */
+.desktop-access-gate__auth-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px 18px;
+}
+
+.desktop-access-gate__auth-links .desktop-access-gate__text-action {
+  min-height: 34px;
+}
+
 /* 输入框对齐母本的字段语法（`hud-pages.css .write-line` 与 `hud-controls.css
    .hud-field input` 都是 2px 边界 + 13px 圆角）；原先是 V2 的 1px + 切角
    `13px 17px 12px 16px`，50px 高的字段配这种小切角读起来是上一代的东西。 */
@@ -1071,7 +1243,7 @@
 @media (max-width: 1080px) {
   .desktop-access-gate {
     grid-template-columns: minmax(350px, 420px) minmax(0, 1fr);
-    padding-inline: clamp(30px, 5vw, 64px);
+    --gate-inline-pad: clamp(30px, 5vw, 64px);
   }
 
   .desktop-access-gate__panel { width: min(100%, 420px); }
@@ -1082,7 +1254,8 @@
   .desktop-access-gate {
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
-    padding: 50px 18px 20px;
+    --gate-inline-pad: 18px;
+    padding: 50px var(--gate-inline-pad) calc(20px + var(--gate-update-band));
   }
 
   .desktop-access-gate__backdrop-layer--day,
@@ -1097,7 +1270,7 @@
 
   .desktop-access-gate[data-gate-variant="register"] {
     grid-template-columns: minmax(0, 1fr);
-    padding: 50px 18px 22px;
+    padding: 50px var(--gate-inline-pad) calc(22px + var(--gate-update-band));
   }
 
   .desktop-access-gate[data-gate-variant="register"] .desktop-access-gate__backdrop-layer--day,
@@ -1160,7 +1333,7 @@
 @media (max-height: 620px) {
   .desktop-access-gate {
     align-items: start;
-    padding-block: 34px 24px;
+    padding-block: 34px calc(24px + var(--gate-update-band));
   }
 
   /* One lamp hotspot would drift across a cropped poster at these heights, so
@@ -1211,7 +1384,7 @@
 }
 
 @media (max-width: 420px) {
-  .desktop-access-gate { padding: 46px 18px 20px; }
+  .desktop-access-gate { padding: 46px var(--gate-inline-pad) calc(20px + var(--gate-update-band)); }
 
   .desktop-access-gate__panel {
     gap: 16px;

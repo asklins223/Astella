@@ -257,11 +257,16 @@ export function NotebookDesk(props: Props) {
                 <div className="notebook-desk__mode-switch" data-mode={props.mode}>
                 {NOTE_BODY_MODES.map(({ id, label }) => {
                   const Icon = modeIcons[id];
+                  // 审计 F12：只读身份下编辑/源码以前是 disabled——禁用按钮悬停多半不给
+                  // tooltip，解释等于没写。改成 aria-disabled：留在键盘序里，点不动但
+                  // 悬停与读屏都能读到理由。
+                  const readOnlyMode = id !== "preview" && !props.canEdit;
                   return <button key={id} type="button" className="text-action notebook-desk__mode" aria-pressed={props.mode === id}
-                    disabled={id !== "preview" && !props.canEdit} title={id !== "preview" && !props.canEdit ? "当前身份只能阅读这篇笔记" : label}
-                    onMouseDown={(event) => event.preventDefault()} onClick={() => props.onMode(id)}><Icon size={15} aria-hidden="true" /><span>{label}</span></button>;
+                    aria-disabled={readOnlyMode || undefined} title={readOnlyMode ? "当前身份只能阅读这篇笔记" : label}
+                    onMouseDown={(event) => event.preventDefault()} onClick={() => { if (!readOnlyMode) props.onMode(id); }}><Icon size={15} aria-hidden="true" /><span>{label}</span></button>;
                 })}
                 </div>
+                {!props.canEdit ? <p className="small" role="note">当前身份只能阅读这篇笔记，编辑与源码视图不可用。</p> : null}
               </div> : <div className="notebook-volume__trail">
                 <span title={props.noteTitle}>{props.noteTitle}</span>
               </div>}

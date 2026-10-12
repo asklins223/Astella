@@ -39,7 +39,7 @@ import { deleteObject } from "../../lib/object-storage.ts";
 import { logger } from "../../lib/logger.ts";
 import { recordWorkspaceAudit } from "../audit/service.ts";
 import { retireWorkspaceMemoriesOnDeparture } from "../companion-conversation/memory/memory-departure.ts";
-import { hashToken, SessionContext } from "./credentials.ts";
+import { hashToken, toSessionClientKind, SessionContext } from "./credentials.ts";
 import { issueSession } from "./session-service.ts";
 import {
   hashInvitationToken as hashInvitationTokenLocal,
@@ -50,11 +50,15 @@ import type { WorkspaceInfo } from "./service.ts";
 /**
  * ADR-0009: 切换工作区 — 重新签发绑定目标 workspace 的 session。
  * 验证用户是否仍是目标 workspace 的活跃成员（left_at IS NULL）。
+ *
+ * `clientKind`（0413）把旧凭据身上的那一位带过来：换 token 不该洗掉它，否则手机上的
+ * 会话换一个空间就变成桌面会话，正文写入那道闸就跟着没了。
  */
 export async function switchWorkspace(
   userId: string,
   workspaceId: string,
   previousToken: string | null,
+  clientKind?: string | null,
 ): Promise<{ token: string; ctx: SessionContext } | null> {
   // 目标空间在这条路的入口就是已知量（请求体带 workspaceId），所以直接进
   // workspace 事务：成员行要过租户守卫，会话行的撤销与签发要过 actor 策略。
@@ -72,7 +76,8 @@ export async function switchWorkspace(
     if (previousToken) {
       await tx.delete(sessions).where(eq(sessions.token, hashToken(previousToken)));
     }
-    const session = await issueSession(userId, workspaceId, tx);
+    const kind = toSessionClientKind(clientKind);
+    const session = await issueSession(userId, workspaceId, tx, kind);
     return {
       token: session.token,
       ctx: {
@@ -80,6 +85,7 @@ export async function switchWorkspace(
         workspaceId,
         membershipRole: membership.role ?? null,
         workspaceEpoch: session.ctx.workspaceEpoch,
+        clientKind: kind,
       },
     };
   });

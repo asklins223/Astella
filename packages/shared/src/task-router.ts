@@ -63,7 +63,9 @@ const TASK_CAPABILITY_MAP: Record<AITaskType, Capability> = {
   note_annotation_explain: "agent_turn",
   note_dynamic_artifact: "agent_turn",
   note_expansion_draft: "agent_turn",
-  analyze_image:       "vision",
+  // 读图不是一条独立能力（2026-10-12「不再单独配识图模型」）：它走副模型的
+  // 普通 chat completion（消息里带 image_url），谁的眼睛由模型档案 vision 决定。
+  analyze_image:       "text_generation",
   embed:               "embedding",
   rerank:              "rerank",
   speech_recognition:  "speech_recognition",

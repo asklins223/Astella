@@ -9,7 +9,6 @@ import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { resolveAIGovernanceContext, logAICall } from "../lib/governance.ts";
 
 const SEARCH_URL = "https://open.bigmodel.cn/api/paas/v4/web_search";
-export const WEB_SEARCH_MAX_CALLS_PER_TURN = 3;
 const QUOTA_COOLDOWN_MS = 30 * 60_000;
 const QUOTA_CODES = new Set(["1113", "1308", "1310", "1316", "1317", "1318", "1319", "1320", "1321"]);
 const unavailableUntil = new Map<string, number>();
@@ -84,7 +83,7 @@ export function readWebSearchReceipt(ref: string | null): WebSearchResult | null
     const sources = normalizeWebSearchSources(data.sources.map((source: WebSearchSource) => ({
       link: source.url, title: source.title, content: source.content, media: source.media, publish_date: source.publishDate,
     })));
-    return { status: "succeeded", query: data.query.slice(0, 70), searchedAt: data.searchedAt, sources };
+    return { status: "succeeded", query: data.query, searchedAt: data.searchedAt, sources };
   } catch { return null; }
 }
 

@@ -206,7 +206,7 @@ async function writeCandidateFeedback(
       ? action.feedbackReasonCodes.join(",")
       : null;
   const note = "note" in action && typeof action.note === "string" && action.note.length > 0
-    ? action.note.slice(0, 2000)
+    ? action.note
     : null;
   await tx.insert(cardCandidateFeedbackV2).values({
     workspaceId: ctx.workspaceId,
@@ -214,7 +214,8 @@ async function writeCandidateFeedback(
     runId,
     candidateId: candidateId ?? "00000000-0000-0000-0000-000000000000",
     action: action.type,
-    reasonCode: reasonCode?.slice(0, 500) ?? null,
+    // schema 已在 `note.max(2000)` 处校验；这里不再落库前悄悄剪尾，两份数字就是两个来源。
+    reasonCode: reasonCode ?? null,
     note,
   }).onConflictDoNothing();
 }

@@ -1,0 +1,69 @@
+{
+  "date": "2026-10-11",
+  "version": "Demo 04",
+  "scope": "Standalone HTML/CSS/JS frontend with local fixture data; Codex browser walkthrough, no native host or model.",
+  "automated": {
+    "data_tests": 6,
+    "motion_and_navigation_tests": 8,
+    "passed": 14,
+    "syntax_checks": [
+      "mobile-companion-data.js",
+      "mobile-companion-motion.js",
+      "mobile-companion-layout.js",
+      "capture-mobile-companion-layout.mjs"
+    ],
+    "optional_playwright_script_executed": false
+  },
+  "walkthrough": [
+    "menu > settings > AI explanation > parent > parent > close",
+    "close menu during transition and immediately open spaces: final spaces stays visible",
+    "attach > choose existing note > parent",
+    "320px note picker within device with 0 horizontal overflow",
+    "detail left-edge short drag stays in reader; long drag returns to original notes tab and focuses source row",
+    "sample image > explanation > create > edit same note > before/after > reader > contextual ask",
+    "one resulting growth note in mirror; before has 0 tables, after has 1",
+    "sent contextual message returns focus to ask input",
+    "motion off: 0 route ghosts, hidden modal, no composer on notes",
+    "actual viewport resizing uses correct narrow/short layout and keeps latest chat at bottom"
+  ],
+  "geometry": [
+    {
+      "surface": "workbench phone",
+      "width": 320,
+      "height": 640,
+      "text_scale": 1.5,
+      "keyboard_placeholder": 244,
+      "attachment": true,
+      "question": "讲讲这张图，为什么增长越来越快？",
+      "content_height": 162.783203125,
+      "visible_reply_lines": 2,
+      "horizontal_overflow": 0
+    },
+    {
+      "surface": "standalone actual CSS viewport",
+      "width": 320,
+      "height": 640,
+      "text_scale": 1.5,
+      "keyboard_placeholder": 244,
+      "attachment": true,
+      "content_height": 162.6953125,
+      "visible_reply_lines": 2,
+      "horizontal_overflow": 0,
+      "bottom_distance": -0.375
+    }
+  ],
+  "browser_errors": [],
+  "screenshots": [
+    "15-motion-origin-menu.jpg",
+    "16-motion-child-picker.jpg",
+    "17-motion-context-reading.jpg",
+    "18-motion-small-keyboard.jpg",
+    "19-motion-real-mobile-viewport.jpg"
+  ],
+  "limitations": [
+    "System reduced-motion has implementation and static review; manual browser walkthrough exercised Off, not OS setting.",
+    "No frame-rate profiling on a physical phone.",
+    "Browser pointer gesture is tested; native system back and native keyboard remain host work.",
+    "Static character, editable ASR sample, prewritten responses, browser TTS, local store; no real account/API/Live2D or cross-device sync."
+  ]
+}

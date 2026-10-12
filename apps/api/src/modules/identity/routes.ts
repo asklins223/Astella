@@ -9,7 +9,7 @@ import { createCollaborativeWorkspace, dissolveWorkspace, previewWorkspaceDissol
 import { joinWorkspaceByInviteToken, leaveWorkspace, listUserWorkspaces, switchWorkspace, transferWorkspaceOwnership, updateUserProfile } from "../identity/workspace-membership-service.ts";
 import { JoinWorkspaceError, SESSION_TTL_MS } from "./service.ts";
 import { parseBody } from "../../lib/validate.ts";
-import { requireSession, requireOwner, isWorkspaceOwner, getRequestCredential } from "./middleware.ts";
+import { requireSession, requireOwner, isWorkspaceOwner, getRequestCredential, sessionClientKindSchema } from "./middleware.ts";
 import { clampLimit, clampOffset, parseQuery } from "../../lib/pagination.ts";
 import {
   createAuthCookieHeaders,
@@ -31,6 +31,8 @@ import {
   RateLimiter,
   type RateLimitStore,
 } from "../../lib/rate-limit-store.ts";
+import { isEmailChannelConfigured } from "../../lib/outbound-email.ts";
+import { EMAIL_CODE_VERIFY_MESSAGES, emailVerificationDisabled, verifyEmailCode } from "./email-code-service.ts";
 import { buildDesktopCapabilityProjection } from "./capability-projection.ts";
 
 export const loginSchema = z.object({
@@ -39,6 +41,9 @@ export const loginSchema = z.object({
   // Controls whether the browser keeps the HttpOnly cookie after closing.
   // Bearer clients can ignore this field and continue using the response token.
   remember: z.boolean().optional().default(false),
+  // 0413：这枚凭据要交给哪一种客户端。缺省 desktop，所以桌面端不用改；
+  // 其余取值由 parseBody 直接 400，不归一（见 middleware 的 sessionClientKindSchema）。
+  clientKind: sessionClientKindSchema,
 });
 
 const displayNameSchema = z.string().trim().min(1).max(32);
@@ -53,7 +58,7 @@ export const avatarUrlSchema = z
 
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const DEFAULT_RATE_LIMIT_MAX = 5; // max attempts per window
-function positiveIntegerEnv(name: string, fallback: number): number {
+export function positiveIntegerEnv(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();
   if (!raw) return fallback;
   const value = Number(raw);
@@ -80,7 +85,7 @@ export interface AuthRoutesOptions {
   rateLimitMaxAttempts?: number;
 }
 
-function setSessionCookies(
+export function setSessionCookies(
   reply: { header(name: string, value: string | string[]): unknown },
   token: string,
   remember = false,
@@ -130,7 +135,7 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
       reply.header("Retry-After", retryAfterSeconds(emailDecision.resetAt));
       return reply.code(429).send({ error: "rate_limited", message: "该账号登录尝试过于频繁，请稍后重试" });
     }
-    const result = await loginWithPassword(body.email, body.password);
+    const result = await loginWithPassword(body.email, body.password, body.clientKind);
     if (!result) {
       throw app.httpErrors.unauthorized("invalid credentials");
     }
@@ -201,7 +206,10 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
       return { ok: true, switchedToPersonalWorkspace: false };
     }
 
-    const switchResult = await switchWorkspace(req.session.userId, result.personalWorkspaceId, null);
+    // 换 token 不换客户端种类（0413）：手机上的会话退到个人空间之后仍该被同一道闸看着。
+    const switchResult = await switchWorkspace(
+      req.session.userId, result.personalWorkspaceId, null, req.session.clientKind,
+    );
     if (!switchResult) {
       // 理论上不会发生，但保护性处理
       clearSessionCookies(reply);
@@ -357,7 +365,11 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
   app.post("/auth/switch-workspace", { preHandler: [requireSession] }, async (req, reply) => {
     const body = parseBody(app, switchWorkspaceSchema, req.body);
     const previousCredential = getRequestCredential(req);
-    const result = await switchWorkspace(req.session.userId, body.workspaceId, previousCredential?.token ?? null);
+    // 0413：这一条会**撤销旧 token 并签一枚新的**，所以旧凭据上的客户端种类必须跟过去。
+    // 不带上它，手机上的会话换个空间就洗成桌面会话——那道正文写入的闸只在换空间之前有效。
+    const result = await switchWorkspace(
+      req.session.userId, body.workspaceId, previousCredential?.token ?? null, req.session.clientKind,
+    );
     if (!result) {
       return reply.code(403).send({ error: "not a member of this workspace" });
     }
@@ -657,6 +669,12 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
     inviteToken: z.string().min(1).max(200).optional(),
     displayName: displayNameSchema.optional(),
     avatarUrl: avatarUrlSchema.optional(),
+    // 邮箱验证码：注册**默认强制**这一格，只有显式
+    // `EMAIL_VERIFICATION_DISABLED=true` 才免（见下方闸门）。旧客户端不发这格，
+    // 会被判成"版本过旧"而不是"没填"。
+    emailCode: z.string().trim().regex(/^\d{6}$/).optional(),
+    // 0413：与 /auth/login 同一格，注册这条路签发的会话也要记住它给了谁。
+    clientKind: sessionClientKindSchema,
   });
 
   // PROFILE-01 / ADR-0009: 统一注册端点
@@ -672,11 +690,38 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
     }
     const body = parseBody(app, registerV2Schema, req.body);
 
+    // 注册验证：**默认强制**持有效邮箱验证码，只有显式声明
+    // `EMAIL_VERIFICATION_DISABLED=true` 才跳过（dev 无凭据、集测与 CI 用这一条；
+    // 生产 compose 不配它，所以"注册必过邮箱这一关"是默认事实）。
+    //
+    // 缺码分两种，说的话不一样：通道配齐时能拿到码却没带 = 旧客户端在打这个接口，
+    // 要的是"去更新客户端"；通道本身没配 = 谁都拿不到码，那是服务端配置问题，
+    // 不该让人去升级一个并没有错的客户端。
+    if (!emailVerificationDisabled()) {
+      if (!body.emailCode) {
+        return isEmailChannelConfigured()
+          ? reply.code(400).send({
+              error: "client_update_required",
+              message: "当前版本过旧，注册需要邮箱验证码。请更新拾星笔记客户端后重新注册。",
+            })
+          : reply.code(503).send({
+              error: "email_channel_unavailable",
+              message: "邮箱验证通道尚未配置，暂时无法注册。",
+            });
+      }
+      const verification = await verifyEmailCode(body.email, "register", body.emailCode);
+      if (!verification.ok) {
+        const mapped = EMAIL_CODE_VERIFY_MESSAGES[verification.error];
+        return reply.code(mapped.status).send({ error: mapped.error, message: mapped.message });
+      }
+    }
+
     // 分支：有 inviteToken → consumeInvite；无 → registerWithoutInvite
     if (body.inviteToken) {
       const result = await consumeInvite(body.email, body.password, body.inviteToken, {
         displayName: body.displayName,
         avatarUrl: body.avatarUrl,
+        clientKind: body.clientKind,
       });
       if (result instanceof ConsumeInviteError) {
         const statusMap: Record<string, number> = {
@@ -701,6 +746,7 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
     const result = await registerWithoutInvite(body.email, body.password, {
       displayName: body.displayName,
       avatarUrl: body.avatarUrl,
+      clientKind: body.clientKind,
     });
     if (!result) {
       throw app.httpErrors.badRequest("email already exists");

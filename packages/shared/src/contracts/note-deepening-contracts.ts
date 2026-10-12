@@ -34,6 +34,7 @@ export const understandingEdgeKindV3Schema = z.enum([
   "relates_to", // objective ↔ objective 语义关系
   "supersedes", // old objective → new objective
   "contains_note", // source → note（来源包含笔记）
+  "references", // note → note（正文里写了库内链接，见 note-link-edges.ts）
 ]);
 export type UnderstandingEdgeKindV3 = z.infer<
   typeof understandingEdgeKindV3Schema
@@ -86,8 +87,8 @@ export const objectiveNodeProjectionV3Schema = z.strictObject({
     kind: z.literal("objective"),
     objectiveId: z.string().uuid(),
   }),
-  label: z.string().min(1).max(200),
-  publicSummary: z.string().min(1).max(1500),
+  label: z.string().min(1),
+  publicSummary: z.string().min(1),
   activeCardId: z.string().uuid().nullable(),
   lifecycle: objectiveSurfaceLifecycleV3Schema,
   freshness: objectiveSurfaceFreshnessV3Schema,

@@ -8,8 +8,7 @@ import { useTactileSurface } from "../motion/use-tactile-surface";
 
 export const SPACE_SEARCH_MINIMUM = 5;
 
-export function HudSpaceMenu({ notice, onSwitched, onClose, onManage }: {
-  readonly notice?: string | null;
+export function HudSpaceMenu({ onSwitched, onClose, onManage }: {
   readonly onSwitched?: (name: string) => void;
   readonly onClose?: () => void;
   readonly onManage?: () => void;
@@ -85,11 +84,11 @@ export function HudSpaceMenu({ notice, onSwitched, onClose, onManage }: {
         </section> : null}
       </div>
       <footer className="hud-space-footer">
-        {message || notice ? <p className="hud-bubble-status" data-tone={message?.tone}
-          role={message?.tone === "error" ? "alert" : "status"}>{message?.text ?? notice}</p> : null}
+        {message ? <p className="hud-bubble-status" data-tone={message.tone}
+          role={message.tone === "error" ? "alert" : "status"}>{message.text}</p> : null}
         {confirmation ? <HudBubbleConfirmation title="切换会中断当前测评" confirmLabel={confirmation.kind === "create" ? "创建并进入" : "确认切换"}
           onConfirm={spaces.confirm} onCancel={cancelConfirmation}>
-          {confirmation.kind === "switch" ? `准备进入「${confirmation.workspace.name}」。` : `准备创建并进入「${confirmation.name}」。`}正在进行的正式测评会结束。
+          {confirmation.kind === "switch" ? `准备进入「${confirmation.workspace.name}」。` : `准备创建并进入「${confirmation.name}」。`}正在进行的正式测评会结束；这间书房的搜索词、阅读位置与返回记录不会带过去。
         </HudBubbleConfirmation> : <>
           <div className="hud-space-actions">
             <button type="button" className="hud-bubble-button" disabled={!state.ready || busy !== null} aria-expanded={form === "join"}

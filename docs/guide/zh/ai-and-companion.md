@@ -96,12 +96,12 @@
 部署者维护的模型与能力映射集中在 `config/ai-platforms.json`（`AI_PLATFORMS_CONFIG` 可指到别的路径）。`packages/shared/src/platform-config.ts` 描述契约，`platform-config-node.ts` 负责加载。
 
 - `platforms.<id>`：部署者定义的标识 + 协议 `type` + `apiKey` + `baseUrl` + `models` 档案 + 只装网关怪癖的 `options`。
-- `capabilities.<cap>`：把能力映射到 `平台 + 模型`。代码里的能力枚举是 `text_generation`、`vision`、`agent_turn`、`companion_fallback`、`embedding`、`rerank`、`speech_recognition`、`image_generation`；当前配置文件映射了其中的五个：`agent_turn`、`text_generation`、`companion_fallback`、`vision`、`embedding`。未映射的能力不可用，每进程只告警一次。
+- `capabilities.<cap>`：把能力映射到 `平台 + 模型`。代码里的能力枚举是 `text_generation`、`agent_turn`、`companion_fallback`、`embedding`、`rerank`、`speech_recognition`、`image_generation`；当前配置文件映射了其中的五个：`agent_turn`、`text_generation`、`companion_fallback`、`speech_recognition`、`embedding`。未映射的能力不可用，每进程只告警一次。**读图不是一条能力**：它由模型档案的 `vision` 决定用谁的眼睛，见[识图路由](#识图路由)。
 - `tts`：可选节点，已在契约内（见[语音](#语音合成在-api切句在-worker识别在桌面)）。
 
 `${ENV_VAR}` 插值递归作用在配置文件的**所有字符串**上。变量未命中时保留 `${VAR}` 字面文本并在加载时一次性告警；`resolveSystemPlatform()` 对非 mock 平台发现 `apiKey` 为空或仍含 `${`，直接返回 `null`——调用方据此走 mock 回退或 fail-closed，而不是把一个假 key 发出去拿 401。取值优先级是配置文件 > 环境变量 > 内置默认（`tts.qwen.*` 与 `DASHSCOPE_TTS_WORKSPACE_ID` 的关系就是这一条；provider 侧则只有配置文件这一个来源，v0.6 已移除个人 BYOK）。
 
-**声明即真相**。上下文窗口、输出上限、能否识图、推理档位都是**模型**的属性，写在 `platforms.<id>.models.<model>` 里：`contextWindowTokens`、`maxOutputTokens`、`vision`、`reasoning.levels` / `reasoning.default`。面板写回前跑 `validateConfig()`（`apps/api/src/modules/admin/config-service.ts`），`capabilities` 引用了未声明的模型是**阻断项**——窗口或输出猜错会表现成预算误算或上游 400，不如写配置时就拦下；`reasoning.default` 不在该模型的 `levels` 里同样阻断。手写文件绕过校验时，未声明的模型用 provider 缺省值，每个 (平台, 模型) 只告警一次。旧的平台级 `options.contextWindowTokens` / `enableThinking` / `reasoningEffort` 等字段没有任何读取方，是阻断级问题。
+**声明即真相**。上下文窗口、输出上限、能否识图、推理档位都是**模型**的属性，写在 `platforms.<id>.models.<model>` 里：`contextWindowTokens`、`maxOutputTokens`、`vision`、`reasoning.levels` / `reasoning.default`。向量模型只声明输入窗口（`BAAI/bge-m3`：8192 token、1024 维，实测 36000 字符英文样本通过、38000 被 `400 code 20015` 拒）——它没有文本输出也不看图，`maxOutputTokens` / `vision` / `reasoning` 不写。面板写回前跑 `validateConfig()`（`apps/api/src/modules/admin/config-service.ts`），`capabilities` 引用了未声明的模型是**阻断项**——窗口或输出猜错会表现成预算误算或上游 400，不如写配置时就拦下；`reasoning.default` 不在该模型的 `levels` 里同样阻断。手写文件绕过校验时，未声明的模型用 provider 缺省值，每个 (平台, 模型) 只告警一次。旧的平台级 `options.contextWindowTokens` / `enableThinking` / `reasoningEffort` 等字段没有任何读取方，是阻断级问题。
 
 ```json
 {
@@ -135,9 +135,9 @@
 
 | type | 协议形状 | 注册能力 | 注意 |
 | --- | --- | --- | --- |
-| `mock` | 进程内固定假文本 | text_generation, vision, agent_turn, embedding, rerank | 豁免同意检查；`AI_REQUIRE_CONFIGURED_PROVIDER=true` 时它作为回退会被拒绝 |
-| `openai_compatible` | `/chat/completions` | text_generation, vision, agent_turn, embedding | `options.disableMaxTokens` 关掉 `max_tokens` 下发 |
-| `dashscope` | compatible-mode 预设 | text_generation, vision, agent_turn, embedding | **就是 `OpenAICompatibleProvider` 的一层预设**，不是独立实现 |
+| `mock` | 进程内固定假文本 | text_generation, agent_turn, embedding, rerank | 豁免同意检查；`AI_REQUIRE_CONFIGURED_PROVIDER=true` 时它作为回退会被拒绝 |
+| `openai_compatible` | `/chat/completions` | text_generation, agent_turn, embedding | `options.disableMaxTokens` 关掉 `max_tokens` 下发；`options.thinkingParam` 选思考字段的方言 |
+| `dashscope` | compatible-mode 预设 | text_generation, agent_turn, embedding | **就是 `OpenAICompatibleProvider` 的一层预设**，不是独立实现 |
 | `siliconflow` | `/v1` | embedding, rerank | 只实现嵌入与重排；聊天要走 `openai_compatible` 指同一 baseUrl |
 | `opencode_go` | `/responses`（OpenAI Responses API） | agent_turn | 见下方陷阱 |
 
@@ -147,16 +147,18 @@
 2. **`opencode_go` 说 Responses API。** 当前 DeepSeek 槽位也使用 `/responses`；仅提供 chat/completions 的模型应另建 `openai_compatible` 平台，不能从模型名称猜协议。每个请求还要带稳定的 `x-opencode-session`，客户端也要自报非通用 SDK 的 user agent。
 3. **阿里云域名守卫。** `dashscope` 的 `validateBaseUrl` 只接受 `^dashscope(-[a-z0-9]+)?\.aliyuncs\.com$`，把 baseUrl 指去别的主机是配置错误而不是可选行为。
 
-`createCapabilityProvider()` 在工厂出口还会做一次形状校验：声明了 `vision` 却没实现 `analyzeImage()` 会变成明确的配置错误，而不是调用时才 `TypeError`。
+`createCapabilityProvider()` 在工厂出口还会做一次形状校验：实例没实现该能力要求的方法（比如 `text_generation` 缺 `chatCompletion()`）会变成明确的配置错误，而不是调用时才 `TypeError`。
 
 ## 思考与推理档位
 
-chat/completions 的混合思考模型只有开/关，Responses API 有档位，两条下发路径不同：
+chat/completions 没有统一的思考开关字段，Responses API 有档位，两条下发路径不同：
 
-- `OpenAICompatibleProvider#thinkingField()`：档案 `reasoning.default === "none"` 或调用显式 `disableThinking` → `enable_thinking: false`；声明了 `reasoning` → `enable_thinking: true`；未声明 → 不下发该字段，用网关默认。
+- `OpenAICompatibleProvider#thinkingField()`：字段名由平台 `options.thinkingParam` 声明——缺省 `enable_thinking`（开/关，DashScope 系网关）；声明 `reasoning_effort` 的网关按档案档位下发具体 effort。档位语义与 Responses 侧一致：档案 `default` 就是每发下发的档位，调用显式 `disableThinking` 时取该模型 `levels` 里最接近关的一档，未声明 `reasoning` 就不下发、用网关默认。API 侧自己拼请求体的三处（讲解、依据核查、互动演示）走同一个 `chatThinkingRequestFields()`，不再写死 `enable_thinking`。
 - `OpenCodeGoProvider#reasoningField()`：声明了就下发 `reasoning.effort = default`；显式关思考时取该模型 `levels` 里"最接近关"的一档；未声明 → 不下发。
 
-没有通用的"最低档"：实测 `muse-spark-*` 不接受 `none`、`gpt-5.6-luna` 不接受 `minimal`、deepseek 全档可用，所以档位必须逐模型声明，否则上游直接 400。
+方言不能猜：小米 MiMo 官方端点**忽略** `enable_thinking`（实测下发 `enable_thinking:false` 后 reasoning_tokens 照旧 20），只认 `reasoning_effort`；发错方言的表现是"配置说关了、实际还在烧思考 token"，不报错也查不出来，所以要平台显式声明。
+
+没有通用的"最低档"：实测 `muse-spark-*` 不接受 `none`、`gpt-5.6-luna` 不接受 `minimal`、`mimo-v2.6-flash` 只收 `none/low/medium/high`、deepseek 全档可用，所以档位必须逐模型声明，否则上游直接 400。
 
 深链路上的两件事：
 
@@ -172,8 +174,10 @@ chat/completions 的混合思考模型只有开/关，Responses API 有档位，
 `resolveVisionReader()`（`workers/ai-worker/src/lib/governance.ts`）按声明顺序判定"这次识图用谁的眼睛"，不做运行时能力探测：
 
 1. 当前对话模型的档案声明 `vision: true` → 用主模型自己看；
-2. 否则 `capabilities.vision` 有映射、且其档案没有被显式写成 `vision: false` → 用专门的识图模型；
-3. 都没有 → `null`。此时读图工具 `companion_read_image` **既不下发也不执行**（`visionEnabled = policy.sendImageContent === true && resolveVisionReader(govCtx) !== null`），绝不把图交给一个看不见的模型。
+2. 否则副模型（`text_generation` 那台）的档案声明 `vision: true` → 用副模型看；
+3. 都没有 → `null`。此时读图工具 `companion_read_image` **既不下发也不执行**（`visionEnabled = policy.sendImageContent === true && resolveVisionReader(govCtx) !== null`），话术也是如实说"看不了"，绝不把图交给一个看不见的模型。
+
+两处都要求**显式声明 `true`**：没写 `vision` 的模型不算能看图——"没声明"当"能看"会让一次图片外发变成猜，猜错的表现是模型对着图编内容。读图本身是普通 chat 消息里带 `image_url`，不走独立的识图 provider/工厂（2026-10-12 已删掉 `capabilities.vision` 与 `Capability` 里的 vision）。
 
 `visionReaderAvailableFromConfig()` 让 here-and-now 那句"这篇有 N 张图"的措辞与工具下发面同源，避免出现"告诉她看不了、却又把读图工具给她"。
 
@@ -248,6 +252,8 @@ make verify                                  # 已包含 typecheck + test + pr-g
 **切句的唯一所有者是 worker**（`workers/ai-worker/src/lib/tts-segments.ts`）：优先按 `。！？；\n .!?;` 切，单段上限 `TTS_MAX_SEGMENT_CHARS = 160`，展示段目标 48 字（超过且句内有逗号级停顿就先切），首段满 14 字即可提前触发以让声音与文字同步，每 run 最多 200 段、总可朗读文本 20000 字；`segmentId = sha256(runId:ordinal:text)`，另存 `textSha256`。服务端还会在把段事件推给客户端之前预热合成（`companion-tts-warm.ts`：TTL 120 秒、最多 64 条、每用户在飞 3 条）。
 
 **桌面侧是本地识别，不是云端转写。** SenseVoice int8 模型（`model.int8.onnx` 239 MB + `tokens.txt`，两个文件的字节数与 sha256 都在合同里）由用户在设置页自行下载、随时可移除；识别跑在 Electron 的 `utilityProcess`（Node 子进程）里，因为随包的 sherpa-onnx 是 emscripten 的 Node 构建，需要 `require`，而窗口是 sandbox + 无 nodeIntegration。录音仍只在渲染层采集，音频经一条本机 IPC 进子进程，不出这台机器。引擎懒启动、空闲 90 秒交还内存、单次解码上限 120 秒（第一次含引擎与模型加载）。
+
+**服务端另有一条远程识别**（`POST /voice/transcribe` 与伴星语音对话的上传分支）。`voice-providers/mimo-asr.ts` 按 `capabilities.speech_recognition`（当前 → mimo / `mimo-v2.5-asr`）解析平台与模型，走**聊天端点上的 `input_audio` 音频块**而不是 `/v1/audio/transcriptions`（官方契约如此，2026-10-12 实测），`asr_options.language` 只认 `auto/zh/en`——伴星那条固定 `zh-CN`，在这里夹成 `zh`，认不出的落 `auto` 而不是猜。上游只收 wav/mp3、base64 ≤10 MB，这两条在**出网前**就拦；瞬时状态（408/425/429/5xx）自动重试一次，其余 4xx 不重试（用户举着麦克风，重试只是多等一轮）；空 transcript fail closed。这条链路 2026-10-12 从 SiliconFlow SenseVoice 换过来，旧链路已退役，`siliconflow` 平台与它的向量模型不受影响。实测（`say` 合成的 16 kHz 中文 wav）：非流式与 `stream:true` 都给逐字转写，流式是标准 OpenAI SSE 的 `delta.content` 增量——手机端那套统一 WebSocket 协议可以把它原样转发；注意上游要的是**整段音频**，流的是结果，没有分片音频的 WebSocket。设备端离线识别（上面那段）是这条的兜底位置，合同在 `packages/shared/src/contracts/voice-asr-model-contracts.ts`，尚未接入。
 
 ## 伴星这条链路的后端落点
 

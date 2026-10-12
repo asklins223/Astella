@@ -190,12 +190,12 @@ export const agentTurnRequestSchema = z.object({
       id: z.string().min(1),
       name: z.string().min(1),
       arguments: z.record(z.unknown()),
-    }).strict()).max(4).optional(),
+    }).strict()).optional(),
     /**
      * 该 assistant 消息对应的 reasoning 句柄（由 provider 产出，见
      * providerReasoningHandleSchema）。工具循环回放时原样带回给同一 provider。
      */
-    reasoning: z.array(providerReasoningHandleSchema).max(4).optional(),
+    reasoning: z.array(providerReasoningHandleSchema).optional(),
     phase: z.enum(["commentary", "final_answer"]).optional(),
   })),
   /** 工具 schema（按 role allowlist） */
@@ -247,7 +247,7 @@ export const agentTurnResultSchema = z.object({
    * 否则需要 reasoning 回传的模型（deepseek 思考模式）会在工具循环第二步 400。
    * 无需 reasoning 的模型（muse-spark）带不带都能工作。
    */
-  reasoning: z.array(providerReasoningHandleSchema).max(4).optional(),
+  reasoning: z.array(providerReasoningHandleSchema).optional(),
   /** 本次调用的 token 用量 */
   usage: providerUsageSchema.nullable(),
   /** Provider 请求 ID（用于追踪） */

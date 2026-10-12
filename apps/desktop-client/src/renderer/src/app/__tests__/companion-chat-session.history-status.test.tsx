@@ -233,3 +233,29 @@ describe("清空连续对话记录后，本机不再握着那条已经不存在�
     await act(async () => { await sending; });
   });
 });
+
+
+it("待确认的动作卡不能提前结束回复，最终流到达时交付真正的正文", async () => {
+  await openHistory();
+  const { sending } = await startSend();
+  items = [{ version: 1, id: id(70), workspaceId: id(10), conversationId: id(5), seq: 1,
+    role: "assistant", kind: "action", blocks: [{ type: "text", text: "结果已准备好，等待确认保存" }],
+    runId: id(6), clientMessageId: null, contentSha256: "0".repeat(64), createdAt: date, editedAt: null }];
+  await waitFor(() => expect(chat.messages.some(message => message.id === id(70))).toBe(true));
+  expect(chat.phase).toBe("sending");
+  addReply();
+  await act(async () => { expect(await sending).toBe(true); });
+  expect(chat.liveReply?.text).toBe("蓝光更容易被空气分子散射。");
+});
+
+it("原始订阅已丢失时，持久化终答身份会自动补回确认后的回复", async () => {
+  await openHistory();
+  items = [{ version: 1, id: id(71), workspaceId: id(10), conversationId: id(5), seq: 2,
+    role: "assistant", kind: "text", blocks: [{ type: "text", text: "改动已保存，可以接着读。" }],
+    runId: id(6), clientMessageId: null, contentSha256: "0".repeat(64), createdAt: date, editedAt: null }];
+  listRunNodes.mockResolvedValue(ok({ items: [], runs: [{ version: 1, runId: id(6), status: "succeeded", generation: 1,
+    stepCount: 2, toolCallCount: 1, maxSteps: null, maxToolCalls: null, assistantMessageId: id(71), nodeCount: 0 }] }));
+  await waitFor(() => expect(chat.messages.some(message => message.id === id(71))).toBe(true), { timeout: 6000 });
+  expect(streamEvent).toBeNull();
+  expect(chat.phase).toBe("ready");
+});

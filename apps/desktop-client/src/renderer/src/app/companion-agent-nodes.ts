@@ -157,11 +157,21 @@ function appendStatusNode(nodes: CompanionAgentNodes, payload: unknown): Compani
 
 function appendToolNode(nodes: CompanionAgentNodes, payload: unknown): CompanionAgentNodes {
   const tool = (payload as { tool?: unknown })?.tool as
-    | { toolCallId?: unknown; name?: unknown; status?: unknown; safeLabel?: unknown; safeSummary?: unknown; proposalId?: unknown }
+    | { toolCallId?: unknown; preparationToolCallId?: unknown; name?: unknown; status?: unknown; safeLabel?: unknown; safeSummary?: unknown; proposalId?: unknown }
     | undefined;
   if (!tool) return nodes;
   if (typeof tool.toolCallId !== "string" || tool.toolCallId.length === 0) return nodes;
   if (typeof tool.safeLabel !== "string" || tool.safeLabel.length === 0) return nodes;
+  // A model retry can name a write already recorded under a previous call id.
+  // The saved operation replaces its preview so only one row stays active.
+  const previewKey = typeof tool.preparationToolCallId === "string" && tool.preparationToolCallId !== tool.toolCallId
+    ? `tool:${tool.preparationToolCallId}` : null;
+  if (previewKey) {
+    const savedKey = `tool:${tool.toolCallId}`;
+    const savedExists = nodes.some(node => node.key === savedKey);
+    nodes = savedExists ? nodes.filter(node => node.key !== previewKey)
+      : nodes.map(node => node.key === previewKey ? { ...node, key: savedKey } : node);
+  }
   const name = typeof tool.name === "string" && tool.name.length > 0 ? tool.name : null;
   const rawStatus = typeof tool.status === "string" ? tool.status : "";
   // Payload is unknown at the SSE boundary. An unfamiliar or missing state cannot

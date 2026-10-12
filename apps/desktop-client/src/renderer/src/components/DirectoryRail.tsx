@@ -51,7 +51,7 @@ const DIRECTORY_ITEMS: readonly DirectoryItem[] = [
   // `room-machine.ts` resolves to `{ surface: "study" }`, i.e. page 14.
   { id: "today", label: "今日学习", intent: "continue" },
   { id: "review", label: "复习", intent: "review" },
-  { id: "search", label: "查找", intent: "search" },
+  { id: "search", label: "搜索", intent: "search" },
   { id: "companion", label: "伴星", intent: "open-companion-center" },
   { id: "settings", label: "设置", intent: "open-settings" },
 ];
@@ -220,7 +220,12 @@ export function DirectoryRail({ readOnly = false }: { readonly readOnly?: boolea
   const motionMode = resolveSceneMotionMode(motionPreference, reducedMotion);
   const [mode, setMode] = useState<DirectoryRailMode>(readDirectoryRailMode);
   const [autoCollapsed, setAutoCollapsed] = useState(false);
+  const hadSurfaceRef = useRef(false);
   const [portalHost, setPortalHost] = useState<HTMLElement | null>(null);
+  // 十个自绘图标没有文字，光靠图形认不出「今日学习」和「复习」。悬停或键盘
+  // 聚焦时在图标旁浮一枚小纸签把目的地名字说出来；rail 自己有 overflow 裁剪，
+  // ::after 会被裁掉，所以标签走 fixed 定位、跟着当前 chip 的实时位置走。
+  const [chipTag, setChipTag] = useState<{ label: string; top: number; left: number } | null>(null);
   const railRef = useRef<HTMLElement>(null);
   const previousLayoutRef = useRef<RailLayoutSnapshot | null>(null);
   const railMotionRef = useRef<ReturnType<typeof createDirectoryRailMotion> | null>(null);
@@ -238,8 +243,16 @@ export function DirectoryRail({ readOnly = false }: { readonly readOnly?: boolea
     // 换到的空间没有东西可露，代价却是每次跳页都把这一列展开、1.9 秒后再收起——
     // 实窗量到一趟导航两次形变，用户读到的就是"目录栏一直闪"。所以有页面开着时
     // 不自动收，回书房才收。
+    // 2026-10-11：从任务页回到书房时，收起跟这次到达**同一步**发生（不再等 1.9 秒），
+    // 版面只有一次连续形变；冷启动停在书房时才保留原来的延迟让位节奏。
     if (mode !== "auto" || surface) {
+      hadSurfaceRef.current = Boolean(surface);
       setAutoCollapsed(false);
+      return undefined;
+    }
+    if (hadSurfaceRef.current) {
+      hadSurfaceRef.current = false;
+      setAutoCollapsed(true);
       return undefined;
     }
     setAutoCollapsed(false);
@@ -327,6 +340,9 @@ export function DirectoryRail({ readOnly = false }: { readonly readOnly?: boolea
   const activeId = useMemo<DirectoryItem["id"]>(() => {
     if (!surface) return "home";
     if (surface === "study") return "today";
+    // 「未完成的学习」是从今日学习「接着上次学」走进去的，高亮跟同一条学习线走；
+    // 以前它兜底到 home，停在这一页时目录最亮的是「首页」，位置感是错的。
+    if (surface === "resumable") return "today";
     if (surface.startsWith("source-")) return "sources";
     if (surface.startsWith("note")) return "notes";
     if (surface.startsWith("objective") || surface === "card-generation") return "goals";
@@ -338,9 +354,15 @@ export function DirectoryRail({ readOnly = false }: { readonly readOnly?: boolea
     return "home";
   }, [surface]);
 
+  const showChipTag = (target: HTMLElement, label: string) => {
+    const rect = target.getBoundingClientRect();
+    setChipTag({ label, top: rect.top + rect.height / 2, left: rect.right + 10 });
+  };
+
   const portalTarget = portalHost ?? document.body;
   return createPortal(
-    <nav ref={railRef} className="hud-rail" aria-label="学习空间目录">
+    <>
+    <nav ref={railRef} className="hud-rail" aria-label="页面目录">
       {DIRECTORY_ITEMS.map((item) => {
         const active = item.id === activeId;
         return (
@@ -353,8 +375,12 @@ export function DirectoryRail({ readOnly = false }: { readonly readOnly?: boolea
             aria-current={active ? "page" : undefined}
             aria-hidden={collapsed || undefined}
             tabIndex={collapsed ? -1 : undefined}
-            title={collapsed ? item.label : undefined}
+            title={item.label}
             disabled={readOnly}
+            onPointerEnter={(event) => { if (!collapsed && !readOnly) showChipTag(event.currentTarget, item.label); }}
+            onPointerLeave={() => setChipTag(null)}
+            onFocus={(event) => { if (!collapsed && !readOnly) showChipTag(event.currentTarget, item.label); }}
+            onBlur={() => setChipTag(null)}
             onClick={() => invoke(item.intent)}
           >
             <NavIcon id={item.id} />
@@ -366,14 +392,18 @@ export function DirectoryRail({ readOnly = false }: { readonly readOnly?: boolea
         className="nav-collapse"
         aria-label={collapsed ? "展开目录" : "收起目录"}
         aria-expanded={!collapsed}
-        onClick={() => setMode(collapsed ? "expanded" : "collapsed")}
+        onClick={() => { setChipTag(null); setMode(collapsed ? "expanded" : "collapsed"); }}
       >
         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
           <path d="m7 9 5 5 5-5" />
         </svg>
       </button>
-      <span className="nav-island-copy">学习空间目录</span>
-    </nav>,
+      <span className="nav-island-copy">页面目录</span>
+    </nav>
+    {chipTag && !collapsed ? (
+      <span className="hud-nav-tag" aria-hidden="true" style={{ top: chipTag.top, left: chipTag.left }}>{chipTag.label}</span>
+    ) : null}
+    </>,
     portalTarget,
   );
 }

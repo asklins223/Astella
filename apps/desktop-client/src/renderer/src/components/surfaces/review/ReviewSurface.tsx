@@ -1115,6 +1115,16 @@ export function ReviewSurface() {
                         >
                           <Clock3 size={15} aria-hidden="true" />{deferringReviewId === item.reviewId ? "正在延后…" : "明天再提醒"}
                         </button>
+                        {/* 审计 F5：开始/延后的失败回执以前只长在右侧侧袋底部，窄窗还排到卡组
+                            下面——点了按钮看着像没反应。动作旁就地出一条，重试也在原地。 */}
+                        {failure && queue?.items.length && (failure.source === "start" || failure.source === "defer") ? <p className="small" role="alert">
+                          {failure.source === "start" ? "还没收到「已经开始」的回音，再点一次不会重复开始。" : "延后没送出去，这一项还在队列里。"}
+                          <button type="button" className="text-action" disabled={busy} onClick={() => {
+                            const failedItem = queue.items.find(candidate => candidate.reviewId === failure.reviewId);
+                            if (!failedItem) return;
+                            void (failure.source === "start" ? startReview(failedItem) : deferFront(failedItem));
+                          }}>重试{failure.source === "start" ? "开始" : "延后"}</button>
+                        </p> : null}
                       </div>
                     </>
                   ) : null}
@@ -1178,13 +1188,12 @@ export function ReviewSurface() {
             <p className="small review-queue__loaded">已载入 {queue?.items.length ?? 0} / {deckTotal} 项<span>涉及 {affectedObjectives} 个学习目标</span></p>
             {queue?.nextCursor ? <button type="button" className="queue-reason__more" onClick={() => void loadMore()} disabled={loadingMore || busy}>{loadingMore ? "正在读取…" : "继续读取更多到期项"}<ArrowRight size={14} aria-hidden="true" /></button> : null}
           </> : <div className="review-queue__rest"><Leaf size={32} aria-hidden="true" /><h3>{boundary?.kind === "empty" ? "留一点时间给自己" : "小卡片正在路上"}</h3><p>{slipState}</p></div>}
-          {failure && queue?.items.length ? <div className="queue-reason__failure" role="alert">
-            <p>{failure.source === "pagination" ? "继续读取失败，已载入的到期项仍然保留。" : failure.source === "start" ? "还没收到「已经开始」的回音；再点一次不会重复开始。" : failure.source === "defer" ? "延后没送出去，这一项还在队列里。" : "队列刷新失败，当前到期项仍然保留。"}</p>
+          {/* 审计 F5：start/defer 的失败已经在卡面动作旁就地说了，侧袋只留
+              读取/刷新这类没有落点的失败，同一句话不在两处各说一遍。 */}
+          {failure && queue?.items.length && failure.source !== "start" && failure.source !== "defer" ? <div className="queue-reason__failure" role="alert">
+            <p>{failure.source === "pagination" ? "继续读取失败，已载入的到期项仍然保留。" : "队列刷新失败，当前到期项仍然保留。"}</p>
             <p className="small">{failure.message}</p>
-            {failure.source === "pagination" ? <button type="button" onClick={() => void loadMore()} disabled={loadingMore}>重试读取</button> : failure.source === "queue" ? <button type="button" onClick={reload}>重新读取</button> : (() => {
-              const failedItem = queue.items.find(item => item.reviewId === failure.reviewId);
-              return failedItem ? <button type="button" disabled={busy} onClick={() => failure.source === "start" ? void startReview(failedItem) : void deferFront(failedItem)}>{failure.source === "start" ? "重试开始" : "重试延后"}</button> : null;
-            })()}
+            {failure.source === "pagination" ? <button type="button" onClick={() => void loadMore()} disabled={loadingMore}>重试读取</button> : <button type="button" onClick={reload}>重新读取</button>}
           </div> : null}
         </aside>
       </div>

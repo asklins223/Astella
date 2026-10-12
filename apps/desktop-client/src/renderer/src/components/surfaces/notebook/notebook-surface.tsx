@@ -1,4 +1,5 @@
 import { ensureAiActionAllowed, guideAiPermissionFailure } from "../../../app/ai-action-gate";
+import { CompanionNoteWritePreview } from "../../companion/CompanionNoteWritePreview";
 import { useNotebookMindMap } from "./use-notebook-mind-map";
 import { NoteMindMapPaper } from "./note-mind-map-paper";
 import type { NoteMindMapV1 } from "@astella/shared/note-mind-map-contracts";
@@ -3021,11 +3022,16 @@ const noteDocLive = useNoteDocLiveView(
           : "● 已经存好，和服务器上的版本一致";
 
   const statePaper = loading ? (
-    <SurfaceDataState kind="loading" message="正在读取真实笔记" detail="先确认工作区、Note identity 与当前版本。" />
+    <SurfaceDataState kind="loading" message="正在打开这篇笔记" detail="先确认工作区与当前版本。" />
   ) : failure ? (
-    <SurfaceDataState kind="error" message="研究册暂时不可用" detail={failure} onRetry={() => void reload()} />
+    <SurfaceDataState kind="error" message="打不开这篇笔记" detail={failure} onRetry={() => void reload()} />
   ) : !note ? (
-    <SurfaceDataState kind="empty" message="当前学习空间还没有主笔记" detail="这篇笔记没有给出可编辑的版本，这一页不会在本机另存草稿。" />
+    <SurfaceDataState
+      kind="empty"
+      message="这里还没有打开的笔记"
+      detail="从笔记库挑一篇接着读，那里也能新建一篇空笔记。"
+      action={<button type="button" className="button primary" onClick={() => invoke("open-notes")}>打开笔记库</button>}
+    />
   ) : null;
 
   /**
@@ -3589,7 +3595,7 @@ const noteDocLive = useNoteDocLiveView(
         ) : null}
         {expansionRows?.nextCursor ? (
           <button type="button" className="note-expansion-shelf__more" disabled={expansionLoading} onClick={() => void loadNoteExpansions(expansionRows.nextCursor!)}>
-            {expansionLoading ? "正在找更早的…" : "再看一些关联笔记"}
+            {expansionLoading ? "正在找更早的…" : "再看一些拓展笔记"}
           </button>
         ) : null}
       </section>
@@ -3806,7 +3812,7 @@ const noteDocLive = useNoteDocLiveView(
           onLocateReference={locateTeachingReference}
         />
         {footprintPending ? <p className="notebook-footprint-status" role="status">正在找回这篇笔记的记录…</p> : null}
-        {overviewError ? <p className="notebook-footprint-error" role="alert">速览暂时没读到。<button type="button" className="text-action" onClick={() => void loadNoteOverviews()}>重试</button></p> : null}
+        {overviewError ? <p className="notebook-footprint-error" role="alert">速看暂时没读到。<button type="button" className="text-action" onClick={() => void loadNoteOverviews()}>重试</button></p> : null}
         {recallError ? <p className="notebook-footprint-error" role="alert">回想记录暂时没读到。<button type="button" className="text-action" onClick={() => void loadNoteRecallRecords()}>重试</button></p> : null}
         {annotationError ? <p className="notebook-footprint-error" role="alert">批注暂时没读到。<button type="button" className="text-action" onClick={() => void loadNoteAnnotations()}>重试</button></p> : null}
         {learningArtifactError && !activeLearningArtifact ? <p className="notebook-footprint-error" role="alert">互动讲解暂时没读到。<button type="button" className="text-action" onClick={() => void loadNoteLearningArtifacts()}>重试</button></p> : null}
@@ -3816,7 +3822,7 @@ const noteDocLive = useNoteDocLiveView(
             <History size={28} aria-hidden="true" />
             {historyTotal > 0 || historyItems.length > 0 ? (
               <>
-                <p>这篇笔记还没有速览、回想、批注或拓展笔记。</p>
+                <p>这篇笔记还没有速看、回想、批注或拓展笔记。</p>
                 <p className="small">以前的讲解和练习仍在下方；回到正文，可以从更轻的方式开始。</p>
               </>
             ) : (
@@ -4150,7 +4156,7 @@ const noteDocLive = useNoteDocLiveView(
                         ? "当前草稿"
                         : `已存版本 v${note.currentVersion.versionNo}`}
                     </span>
-                    {note.sourceId ? <button type="button" className="text-action" title={sourceTitle} onClick={() => setSourceBagOpen(true)}><FileText size={13} aria-hidden="true" />来源资料</button> : <span>独立笔记</span>}
+                    {note.sourceId ? <button type="button" className="text-action" title={sourceTitle} onClick={() => setSourceBagOpen(true)}><FileText size={13} aria-hidden="true" />资料袋</button> : <span>独立笔记</span>}
                     {/*
                         「来源片段」这四个字在屏上**只表示一个数**（2026-09-25 真窗口量到）：
                         资料卡片写 `第 N 段来源片段`（那是序号），页眉这里写条数。
@@ -4158,9 +4164,9 @@ const noteDocLive = useNoteDocLiveView(
                         自相矛盾的话。所以这里只放条数，卡片那侧只放序号。
                       */}
                     {segments.length > 0 ? <span>来源片段 {segments.length}</span> : null}
-                    {noteExpansions.length ? <button type="button" className="text-action" onClick={() => openExpansionPage()}><Link2 size={13} aria-hidden="true" />关联笔记 · {noteExpansions.length}</button> : null}
+                    {noteExpansions.length ? <button type="button" className="text-action" onClick={() => openExpansionPage()}><Link2 size={13} aria-hidden="true" />往外学 · {noteExpansions.length}</button> : null}
                     <time dateTime={note.currentVersion.updatedAt}>{formatRelative(note.currentVersion.updatedAt)}更新</time>
-                    {!isNoteEditingMode(mode) ? <span title={saveLabel} role="status">{saveState === "error" ? "同步失败" : saving ? "正在同步…" : dirty ? "等待同步…" : "已同步"}</span> : null}
+                    {!isNoteEditingMode(mode) ? saveState === "error" ? <><span title={saveLabel} role="status">{saveStatusLabel}</span><button type="button" className="text-action" onClick={() => switchMode("live-preview")}>去编辑并重试</button></> : <span title={saveLabel} role="status">{saveStatusLabel}</span> : null}
                     {!editable ? <span className="tag">只读</span> : null}
                   </div>
                 </header> : null}
@@ -4200,8 +4206,10 @@ const noteDocLive = useNoteDocLiveView(
                   regenerating={learningEntry.regenerating}
                   canSave={canSave} saving={learningEntry.saving} error={learningEntry.error} hasChanges={readingUnversionedContent || dirty} existing={learningEntry.existing}
                   onSaved={learningEntry.startSaved} onSave={() => void learningEntry.saveAndStart()} onDismiss={learningEntry.dismiss} /> : null}
-                <div hidden={leaf !== "reading" || learningView !== "body" || !isNoteEditingMode(mode)}>{editPageBody}</div>
-                <div hidden={leaf === "reading" && learningView === "body" && isNoteEditingMode(mode)}>{readPageBody}</div>
+                <CompanionNoteWritePreview noteId={note.noteId}>
+                  <div hidden={leaf !== "reading" || learningView !== "body" || !isNoteEditingMode(mode)}>{editPageBody}</div>
+                  <div hidden={leaf === "reading" && learningView === "body" && isNoteEditingMode(mode)}>{readPageBody}</div>
+                </CompanionNoteWritePreview>
               </NotebookDesk>
               {selectedPassage && leaf === "reading" && learningView === "body" && mode === "preview" ? <NotebookSelectionActions
                 range={selectedPassage.range} scrollRef={leafScrollRef} hasAnchor={Boolean(selectedPassage.anchor)} dirty={dirty} busy={annotationTaskStarting}

@@ -9,7 +9,6 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ARTIFACT_MAX_BYTES } from "../artifact-surface";
 import { ArtifactStoreFailure, ensureArtifactStored, type ArtifactStoreDeps } from "../artifact-store";
 import { DesktopGatewayFailure } from "../desktop-gateway-failure";
 
@@ -71,16 +70,12 @@ describe("ensureArtifactStored", () => {
     expect(written.equals(Buffer.from(html, "utf8"))).toBe(true);
   });
 
-  it("fetch 回超配额 ⇒ 整份拒绝：抛错、不落盘、目录里不留 .tmp-*", async () => {
-    const oversize = "a".repeat(ARTIFACT_MAX_BYTES + 1);
-    const fetchArtifactHtml = vi.fn(async () => oversize);
-
-    const failure = await ensureArtifactStored({ artifactId }, deps(fetchArtifactHtml)).catch((error: unknown) => error);
-    expect(failure).toBeInstanceOf(ArtifactStoreFailure);
-    expect((failure as ArtifactStoreFailure).code).toBe("unsupported_contract");
-    expect((failure as ArtifactStoreFailure).detail).toContain("配额");
-    // 半份 HTML 在 frame 里只会画成怪东西；临时名也不许留下（写一半的产物会被误读）。
-    expect(await artifactDirEntries()).toEqual([]);
+  it("完整长页面逐字节落盘，不按旧配额拒收，临时文件不残留", async () => {
+    const html = `<main>${"讲解正文".repeat(160_000)}页面末尾</main>`;
+    const result = await ensureArtifactStored({ artifactId }, deps(vi.fn(async () => html)));
+    expect(result).toEqual({ stored: true, bytes: Buffer.byteLength(html, "utf8") });
+    expect((await readFile(targetPath())).equals(Buffer.from(html, "utf8"))).toBe(true);
+    expect(await artifactDirEntries()).toEqual([`${artifactId}.html`]);
   });
 
   it("id 形状不对 ⇒ validation，且一个文件都不落（路径安全靠这一条）", async () => {

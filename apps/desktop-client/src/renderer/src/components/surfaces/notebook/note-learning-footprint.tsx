@@ -35,12 +35,12 @@ const FILTERS: readonly { kind: FootprintKind | "all"; label: string }[] = [
   { kind: "recall", label: "回想" },
   { kind: "annotation", label: "批注" },
   { kind: "artifact", label: "演示" },
-  { kind: "expansion", label: "新笔记" },
+  { kind: "expansion", label: "拓展笔记" },
 ];
 
 const MORE_LABEL: Record<FootprintKind, string> = {
   mindMap: "脑图",
-  overview: "速览",
+  overview: "速看",
   recall: "回想",
   annotation: "批注",
   artifact: "互动讲解",
@@ -149,7 +149,7 @@ export function NoteLearningFootprint(props: NoteLearningFootprintProps) {
                           </li>
                         ))}
                       </ol>
-                    ) : entry.record.references.length ? <div className="note-footprint__sources" aria-label="速览对应的原文">
+                    ) : entry.record.references.length ? <div className="note-footprint__sources" aria-label="速看对应的原文">
                       {entry.record.references.map((reference, index) => entry.record.versionState === "current" ? (
                         <button type="button" key={`${reference.blockOrdinal}:${index}`} onClick={() => props.onLocateReference(reference.blockOrdinal)}>
                           <span>回到第 {reference.blockOrdinal + 1} 段</span><q>{reference.quote}</q>

@@ -32,7 +32,7 @@ export function featureReason(state: string | undefined, reason: string | undefi
 export function nativeReason(value: NativeCapabilityValue | undefined): string {
   if (!value) return "还没有读到本机能力。";
   return value === "available"
-    ? "这台设备上的客户端已接入这条链路。"
+    ? "这台设备上的客户端已接好这条通道；能不能直接用，还看模型是否下载、开关是否打开。"
     : "桌面端还没有接入这条链路：能力值由主进程按真实存在的通道计算，不是权限被拒绝。";
 }
 
@@ -48,8 +48,10 @@ export function capabilityChipLabel(
 ): string | null {
   if (!value) return null;
   // 本机能力为 unavailable 时，含义是「客户端没有这条链路」，而不是「权限被拒」。
+  // 状态词写「通道」：通道接好不等于功能可用（语音还要模型下载），
+  // 只写「已接入/未接入」会被读成「这项功能能不能用」。
   return kind === "native"
-    ? (value === "available" ? "已接入" : "未接入")
+    ? (value === "available" ? "已接入通道" : "未接入通道")
     : kind === "feature"
       ? (value === "enabled" ? "已开启" : value === "conditional" ? "按条件" : value === "disabled" ? "已关闭" : "暂不可用")
       : (value === "allowed" ? "已允许" : value === "conditional" ? "按条件" : "未允许");

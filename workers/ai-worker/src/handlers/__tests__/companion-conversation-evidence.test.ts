@@ -51,9 +51,11 @@ test("消息序号决定回放位置；隔几天的记录不被压成连续的�
   const messages = buildCompanionPersonaMessages({ userText: "你今天有什么有意思的事？", recentMessages: history, pageContext: null, conversationClock: clock });
   const system = String(messages[0]!.content);
   const data = payload(system.slice(system.indexOf("<conversation_timeline>")));
-  assert.equal(data.history.length, 20);
-  assert.equal(messages[1]?.content, "记录3");
-  assert.equal(data.history.at(-1)?.position, 20);
+  // 条数不再决定覆盖（窗口由本次路由声明的输入预算决定，这一轮没碰到那条线）：
+  // 22 条整条进来，位置仍由 seq 顺序给出，跨天的间隔也仍然算得出来。
+  assert.equal(data.history.length, 22);
+  assert.equal(messages[1]?.content, "记录1");
+  assert.equal(data.history.at(-1)?.position, 22);
   assert.equal(data.history.at(-1)?.elapsedMs, 60_000);
   assert.ok(data.history[0]!.elapsedMs! > 3 * 86_400_000);
 });

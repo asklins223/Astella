@@ -34,15 +34,12 @@ export function registerFactory(
  * 每种能力**必须**在实例上暴露的方法名（形状校验用）。
  *
  * AI P0-2（2026-09-15 审计）：工厂以 `as unknown as CapabilityImpl` 强转返回实例，
- * 编译期不校验形状。三个 provider 声明了 `vision` 且注册了 vision 工厂，但全仓
- * **没有任何** provider 实现 `analyzeImage`（只有 provider-capabilities.ts 的接口
- * 声明）——能力闸在 :51 只校验"元数据声明支持"，因此会放行一个"看起来是
- * VisionCapability、一调用就 TypeError: analyzeImage is not a function"的对象。
+ * 编译期不校验形状——曾经有 provider 在元数据里声明了能力却没实现对应方法，
+ * 能力闸只看"声明支持"就放行，于是调用点直接 TypeError。
  * 在工厂出口做一次形状校验，把它变成明确的配置错误。
  */
 const REQUIRED_CAPABILITY_METHOD: Partial<Record<Capability, string>> = {
   text_generation: "chatCompletion",
-  vision: "analyzeImage",
   agent_turn: "executeAgentTurn",
   embedding: "embed",
   rerank: "rerank",

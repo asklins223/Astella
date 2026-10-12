@@ -128,7 +128,7 @@ export function expandCardGenerateV3ContentV3(input: {
     publicSummary: content.publicSummary,
     conceptLabel: content.conceptLabel,
     knowledgeForm: proposal?.knowledgeForm ?? "fact",
-    preferredTaskIntents: [...new Set(content.judgingPoints.map((point) => point.facet as TaskIntentV1))].slice(0, 6),
+    preferredTaskIntents: [...new Set(content.judgingPoints.map((point) => point.facet as TaskIntentV1))],
     canonicalAnswer: buildCanonicalAnswer(content),
     ...(content.practiceItem ? { practiceItem: content.practiceItem } : {}),
     learningSupport: {

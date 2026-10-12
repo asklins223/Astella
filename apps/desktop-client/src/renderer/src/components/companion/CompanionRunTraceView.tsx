@@ -11,7 +11,7 @@ import { CompanionProposalChoice } from "./CompanionProposalChoice";
 const NODE_STATE_LABEL = {
   running: "进行中",
   succeeded: "已完成",
-  waiting_confirmation: "等待选择",
+  waiting_confirmation: "待确认",
   outcome_unknown: "结果待核对",
   failed: "失败",
   cancelled: "已停止",
@@ -28,7 +28,7 @@ function runStateLabel(status: string): string {
     case "running":
       return "进行中";
     case "waiting_for_confirmation":
-      return "等待选择";
+      return "待确认";
     case "succeeded":
       return "已完成";
     case "failed":

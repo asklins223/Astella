@@ -36,7 +36,9 @@ import { formatRelative } from "../components/surfaces/notebook/surface-data";
 /** 一份待收录的材料：名字给界面看，`request` 是建来源那一发的正文。 */
 export type CaptureTask = {
   readonly name: string;
-  readonly request: { readonly content: string; readonly title?: string } | { readonly url: string };
+  readonly request:
+    | { readonly content: string; readonly title?: string; readonly origin?: string }
+    | { readonly url: string; readonly origin?: string };
 };
 
 export type BatchCaptureOutcome = {
@@ -45,6 +47,8 @@ export type BatchCaptureOutcome = {
   readonly message: string;
   /** 合并报告中实际未收录的材料数，缺省为一份。 */
   readonly count?: number;
+  /** 审计 F2：同一网址已存在、没有重复建——既不是「刚收下」，也不算失败。 */
+  readonly duplicate?: boolean;
 };
 
 export type BatchCaptureResult = {
@@ -167,9 +171,70 @@ export async function readCaptureFiles(
     const read = await readCaptureFile(file);
     if (!read.ok) { outcomes.push({ name: file.name, ok: false, message: read.message }); continue; }
     const title = titleFromFileName(file.name);
-    tasks.push({ name: file.name, request: { content: read.text, ...(title ? { title } : {}) } });
+    // 审计 F8：文件采进来的来路是文件本身，不是「粘贴的正文」——把文件名带进 origin，
+    // 详情页的来源行照着念「文件 X.pdf」，列表也认得出这是文件材料。
+    tasks.push({ name: file.name, request: { content: read.text, origin: `文件 ${file.name}`, ...(title ? { title } : {}) } });
   }
   return { tasks, outcomes, overflow };
+}
+
+/**
+ * 一次跑完（或被中止）的批量收录都会留下这样一份回执。它活在模块层而不是某一屏的
+ * state 里——审计 F1：收录跑到一半离开来源库时，进度随页面卸载被静默掐断，回来时
+ * 索引只是「多了几条少了几条」，说不出断在哪、哪几份没进来。现在跑完就把回执挂在这里，
+ * 来源库下次挂载/回焦时读走并展示，然后消费掉。
+ */
+export type BatchCaptureReceipt = {
+  readonly finishedAt: number;
+  /** 这一批一共要处理多少份。 */
+  readonly total: number;
+  /** 新收下的份数（重复的不算）。 */
+  readonly accepted: number;
+  /** 已存在、没有重复建的那些名字。 */
+  readonly duplicates: readonly string[];
+  /** 真正失败的（含读不出来、队列满、超限）。 */
+  readonly failures: readonly BatchCaptureOutcome[];
+  /** 因切空间/换账号而中止：后面几份没跑。 */
+  readonly stopped: boolean;
+};
+
+let lastBatchReceipt: BatchCaptureReceipt | null = null;
+
+/** 读一眼最近一次回执（不清除）。 */
+export function peekBatchReceipt(): BatchCaptureReceipt | null {
+  return lastBatchReceipt;
+}
+
+/** 展示过就消费掉，避免同一份回执反复出现。 */
+export function consumeBatchReceipt(): void {
+  lastBatchReceipt = null;
+}
+
+/**
+ * 单条一句话回执（审计 F10 归档那条）：详情页做完一件跨页的事（如归档）后
+ * 直接跳回来源库，回执原本留在已经卸载的详情页里。现在先寄存在这里，
+ * 来源库挂载时读走并展示。
+ */
+let lastLibraryReceipt: string | null = null;
+export function stashLibraryReceipt(text: string): void { lastLibraryReceipt = text; }
+export function peekLibraryReceipt(): string | null { return lastLibraryReceipt; }
+export function consumeLibraryReceipt(): void { lastLibraryReceipt = null; }
+
+/**
+ * 当前活着的收录批次。同一时刻只认最新一批：新一批开始时旧批在下一个循环收手，
+ * 它的结果不再写模块回执（避免用旧数字覆盖新一批的）。
+ */
+let activeCaptureRun: symbol | null = null;
+
+/** 开一批新的收录，返回它的身份牌。 */
+export function beginCaptureRun(): symbol {
+  const run = Symbol("capture-run");
+  activeCaptureRun = run;
+  return run;
+}
+
+export function isCaptureRunActive(run: symbol): boolean {
+  return activeCaptureRun === run;
 }
 
 /**
@@ -178,39 +243,52 @@ export async function readCaptureFiles(
  * 串行而不是并发：每一发都要在服务端占一次事务并入队一个解析任务，并发只会更快地撞上
  * 那个 50 的队列上限，而串行时 `onProgress` 报出去的数字就是读者真的能看见的进度。
  *
- * 返回 `null` 表示这批已经过期（切空间、换账号、或又来了一批）——调用方该直接收手，
- * 不要把过期批次的回执写进当前这一屏。
+ * 2026-10-11（审计 F1）：这个循环**不再随某一屏卸载而收手**。`shouldStop` 只应该回答
+ * 「这一批还属不属于当前空间」——切空间、换账号、或又有新的一批顶上来。离开来源库去
+ * 读一条材料时，收录继续跑；跑完把回执留在模块层，回来时来源库读走它。
+ *
+ * 返回 `null` 表示这一批被中止（stop 了）——调用方该直接收手，不要再往屏上写回执。
  */
 export async function captureSourceTasks(
   tasks: readonly CaptureTask[],
   options: {
+    readonly run: symbol;
     readonly onProgress: (done: number, total: number) => void;
-    readonly isCurrent: () => boolean;
+    /** 批次之外的中止条件：空间/账号换了就收手。默认永不中止。 */
+    readonly shouldStop?: () => boolean;
   },
 ): Promise<BatchCaptureResult | null> {
   const outcomes: BatchCaptureOutcome[] = [];
+  const duplicates: string[] = [];
   let created: BatchCaptureResult["created"] = null;
   let done = 0;
+  let stopped = false;
+  const halt = () => !isCaptureRunActive(options.run) || options.shouldStop?.() === true;
   for (const task of tasks) {
-    if (!options.isCurrent()) return null;
+    if (halt()) { stopped = true; break; }
     try {
       const response = await window.astella.source.create({
         meta: createRequestMeta(),
         request: task.request,
       });
-      if (!options.isCurrent()) return null;
+      if (halt()) { stopped = true; break; }
       const detail = unwrapGatewayResult(response);
       created = { sourceId: detail.source.id, title: detail.source.title };
-      outcomes.push({
-        name: task.name,
-        ok: true,
-        // 审计 F33：同一个网址不重复建——如实说「已经有一份了」，而不是假装刚收下。
-        message: detail.duplicateOf
-          ? `已经在 ${formatRelative(detail.duplicateOf.createdAt)} 采过，没有重复建一份。`
-          : "已收下，正在解析。",
-      });
+      if (detail.duplicateOf) {
+        // 审计 F2：重复既不是「收下 N 份」里的 N，也不是失败——单独记名，
+        // 收据里写「N 份已存在」，不和解析中的材料混在一个数里。
+        duplicates.push(task.name);
+        outcomes.push({
+          name: task.name,
+          ok: true,
+          duplicate: true,
+          message: `已经在 ${formatRelative(detail.duplicateOf.createdAt)} 采过，没有重复建一份。`,
+        });
+      } else {
+        outcomes.push({ name: task.name, ok: true, message: "已收下，正在解析。" });
+      }
     } catch (error) {
-      if (!options.isCurrent()) return null;
+      if (halt()) { stopped = true; break; }
       outcomes.push({
         name: task.name,
         ok: false,
@@ -222,5 +300,18 @@ export async function captureSourceTasks(
     done += 1;
     options.onProgress(done, tasks.length);
   }
+  const failures = outcomes.filter((outcome) => !outcome.ok);
+  // 中止的批次不写回执：它属于上一个空间/上一批，写进去只会把旧数字说成新事实。
+  if (!stopped) {
+    lastBatchReceipt = {
+      finishedAt: Date.now(),
+      total: tasks.length,
+      accepted: outcomes.filter((outcome) => outcome.ok && !outcome.duplicate).length,
+      duplicates,
+      failures,
+      stopped: false,
+    };
+  }
+  if (stopped) return null;
   return { outcomes, overflow: false, created };
 }

@@ -484,28 +484,6 @@ button:disabled {
 
 .text-action:hover { text-decoration: underline; text-underline-offset: 3px; }
 
-.surface-return-control {
-  position: absolute;
-  z-index: 8;
-  display: inline-flex;
-  min-width: 44px;
-  min-height: 44px;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 0 13px;
-  color: #fff5e7;
-  font-size: 11px;
-  font-weight: 700;
-  border: 1px solid rgba(255, 236, 205, 0.28);
-  border-radius:23px 29px 20px 27px/27px 21px 29px 22px ;
-  background: rgba(51, 36, 27, 0.86);
-  box-shadow: 0 10px 24px rgba(30, 18, 11, 0.28);
-  cursor: pointer;
-}
-
-.surface-return-control:hover { background: rgba(77, 49, 34, 0.94); }
-
 /* ---------------------------------------------------------------------------
  * 已删除：两代没有任何渲染端生产者的界面样式（2026-09-17 清理）。
  *

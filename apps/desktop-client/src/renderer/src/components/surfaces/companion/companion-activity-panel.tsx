@@ -58,6 +58,8 @@ type ActivityPanelProps = {
   onOpenObjective: (objectiveId: string) => void;
   onPresent: (item: CompanionActivityDeliveryV1) => void;
   onDelivery: (item: CompanionActivityDeliveryV1, transition: "acted" | "dismissed") => void;
+  /** 还在等决定的提案 id；卡片状态以提案本身为准（审计 F3）。 */
+  pendingProposalIds?: ReadonlySet<string>;
   onRetry: () => void;
 };
 
@@ -148,7 +150,7 @@ export function ActivityPanel(props: ActivityPanelProps) {
   }, [historyOpen, journeyState, messages, pending.length, proposals, props.deliverySection, props.deliveryLoading, props.error, props.journeyLoading, props.learningContextSection, props.learningLoading, resolved, resumeCandidate, startCandidate]);
   usePageReadableView(activityReadableView);
 
-  const renderDelivery = (item: CompanionActivityDeliveryV1) => <ActivityDeliveryCard key={item.deliveryId} item={item} busy={props.busy} onPresent={props.onPresent} onDelivery={props.onDelivery} />;
+  const renderDelivery = (item: CompanionActivityDeliveryV1) => <ActivityDeliveryCard key={item.deliveryId} item={item} busy={props.busy} onPresent={props.onPresent} onDelivery={props.onDelivery} pendingProposalIds={props.pendingProposalIds} />;
   return <div className="cc-activity">
     <CenterFeedback error={props.error} />
     <section className="cc-learning-continuation" aria-label="学习衔接">
@@ -163,7 +165,7 @@ export function ActivityPanel(props: ActivityPanelProps) {
       <section className="cc-timeline" aria-label="主动投递与状态更新"><h3>最近动态</h3>
         {props.deliveryLoading ? <SectionState loading message="正在加载动态" /> : !props.deliverySection.ok ? <SectionState message={ACTIVITY_LINES.feedUnavailable} detail={props.deliverySection.message} onRetry={props.onRetry} />
           : !props.deliveries.length ? <SectionState message={ACTIVITY_LINES.feedEmpty.message} detail={ACTIVITY_LINES.feedEmpty.detail} />
-          : <>{proposals.length ? <div className="cc-timeline-group"><h4>待选择 · {proposals.length}</h4>{proposals.map(renderDelivery)}</div> : null}
+          : <>{proposals.length ? <div className="cc-timeline-group"><h4>待确认 · {proposals.length}</h4>{proposals.map(renderDelivery)}</div> : null}
             {messages.length ? <div className="cc-timeline-group"><h4>留给你的消息 · {messages.length}</h4>{messages.map(renderDelivery)}</div> : null}
             {!pending.length ? <p className="cc-muted">{ACTIVITY_LINES.feedNoPending.message}</p> : null}
             {resolved.length ? <details className="cc-timeline-history" open={historyOpen} onToggle={event => setHistoryOpen(event.currentTarget.open)}><summary>{resolvedGroupLabel(resolved.length)}</summary>{resolved.map(renderDelivery)}</details> : null}</>}
@@ -185,11 +187,13 @@ export function ActivityPanel(props: ActivityPanelProps) {
   </div>;
 }
 
-function ActivityDeliveryCard({ item, busy, onPresent, onDelivery }: {
+function ActivityDeliveryCard({ item, busy, onPresent, onDelivery, pendingProposalIds }: {
   readonly item: CompanionActivityDeliveryV1;
   readonly busy: boolean;
   readonly onPresent: (item: CompanionActivityDeliveryV1) => void;
   readonly onDelivery: (item: CompanionActivityDeliveryV1, transition: "acted" | "dismissed") => void;
+  /** 还在等决定的提案 id（审计 F3）；命中时状态词以提案为准，写「待确认」。 */
+  readonly pendingProposalIds?: ReadonlySet<string>;
 }) {
   const ref = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -205,9 +209,11 @@ function ActivityDeliveryCard({ item, busy, onPresent, onDelivery }: {
     return () => observer.disconnect();
   }, [item, onPresent]);
 
+  const proposalPending = item.target.kind === "proposal" && pendingProposalIds?.has(item.target.proposalId);
+
   return <article ref={ref} className="cc-delivery" data-state={item.state} data-expired={item.expired || undefined}>
     <span className="cc-delivery__dot" aria-hidden="true" />
-    <div><strong>{item.label}</strong><small>{formatRelative(item.createdAt)} · {item.expired ? "已失效" : item.state === "acted" ? "已处理" : item.state === "dismissed" ? "已忽略" : needsDeliveryResponse(item) ? "待选择" : "未处理"}</small>
+    <div><strong>{item.label}</strong><small>{formatRelative(item.createdAt)} · {item.expired ? "已失效" : proposalPending ? "待确认" : item.state === "acted" ? "已处理" : item.state === "dismissed" ? "已忽略" : needsDeliveryResponse(item) ? "待确认" : "未处理"}</small>
       {!item.expired && DELIVERY_PENDING_STATES.includes(item.state) ? <div className="cc-actions"><button type="button" className="cc-link" disabled={busy} onClick={() => onDelivery(item, "acted")}>{item.target.kind === "none" ? "知道了" : item.target.kind === "proposal" ? "查看提议" : "查看"}</button><button type="button" className="cc-link cc-muted" disabled={busy} onClick={() => onDelivery(item, "dismissed")}>忽略</button></div> : null}
     </div>
   </article>;

@@ -58,7 +58,7 @@ internal static class Program
             if (options.Quiet)
             {
                 if (options.Uninstall) engine.Uninstall(options).GetAwaiter().GetResult();
-                else engine.Install(Package!, options).GetAwaiter().GetResult();
+                else RecordInstallResult(engine.Install(Package!, options).GetAwaiter().GetResult());
                 if (options.Launch && !options.Uninstall) Launch(options.InstallDirectory!);
                 return 0;
             }
@@ -132,6 +132,19 @@ internal static class Program
                     version = options.TargetVersion, status = "failed" }, Identity.Json));
                 File.Move(receipt + ".tmp", receipt, true);
             }
+        }
+        catch (IOException) { } catch (UnauthorizedAccessException) { }
+    }
+
+    internal static void RecordInstallResult(InstallResult result)
+    {
+        if (result.OldProgramDirectory is not string oldDirectory) return;
+        try
+        {
+            var logDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Astella", "setup-logs");
+            Directory.CreateDirectory(logDirectory);
+            File.WriteAllText(Path.Combine(logDirectory, DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-leftover.log"),
+                "安装成功。程序位置：" + result.Installation.InstallDirectory + "\n未能移除的旧程序：" + oldDirectory);
         }
         catch (IOException) { } catch (UnauthorizedAccessException) { }
     }

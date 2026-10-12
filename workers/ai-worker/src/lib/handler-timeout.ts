@@ -5,6 +5,21 @@ export class HandlerTimeoutError extends Error {
   }
 }
 
+/** Node timers have a signed 32-bit delay; longer policies need re-arming,
+ * otherwise Node turns a healthy long task into a one-millisecond timeout. */
+function scheduleDeadline(timeoutMs: number, expire: () => void): () => void {
+  if (!Number.isFinite(timeoutMs)) return () => undefined;
+  const deadlineAt = Date.now() + timeoutMs;
+  let timer: NodeJS.Timeout | undefined;
+  const tick = () => {
+    const remaining = deadlineAt - Date.now();
+    if (remaining <= 0) { expire(); return; }
+    timer = setTimeout(tick, Math.min(remaining, 2_147_483_647));
+  };
+  tick();
+  return () => { if (timer) clearTimeout(timer); };
+}
+
 /**
  * Abort the operation when its deadline expires. The operation may still take
  * time to unwind, so callers must also fence persistent side effects with the
@@ -17,22 +32,22 @@ export async function runWithAbortTimeout<T>(
 ): Promise<T> {
   const controller = new AbortController();
   const task = Promise.resolve().then(() => operation(controller.signal));
-  let timer: NodeJS.Timeout | undefined;
+  let cancelDeadline: (() => void) | undefined;
   let timedOut = false;
 
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
+    cancelDeadline = scheduleDeadline(timeoutMs, () => {
       timedOut = true;
       const error = new HandlerTimeoutError(timeoutMs);
       controller.abort(error);
       reject(error);
-    }, timeoutMs);
+    });
   });
 
   try {
     return await Promise.race([task, deadline]);
   } finally {
-    if (timer) clearTimeout(timer);
+    cancelDeadline?.();
     if (timedOut) {
       void task.catch((error) => onLateError?.(error));
     }
@@ -53,19 +68,19 @@ export async function runWithAbortBudget<T>(
   onLateError?: (error: unknown) => void,
 ): Promise<T> {
   const controller = new AbortController();
-  let timer: NodeJS.Timeout | undefined;
+  let cancelDeadline: (() => void) | undefined;
   let settledByDeadline = false;
   let rejectDeadline: ((reason: unknown) => void) | undefined;
 
   const task = Promise.resolve().then(() => operation(controller.signal));
   const deadline = new Promise<never>((_, reject) => {
     rejectDeadline = reject;
-    timer = setTimeout(() => {
+    cancelDeadline = scheduleDeadline(timeoutMs, () => {
       settledByDeadline = true;
       const error = new HandlerTimeoutError(timeoutMs);
       reject(error);
       controller.abort(error);
-    }, timeoutMs);
+    });
   });
 
   const onParentAbort = () => {
@@ -86,7 +101,7 @@ export async function runWithAbortBudget<T>(
   try {
     return await Promise.race([task, deadline]);
   } finally {
-    if (timer) clearTimeout(timer);
+    cancelDeadline?.();
     parentSignal?.removeEventListener("abort", onParentAbort);
     if (settledByDeadline) {
       void task.catch((error) => onLateError?.(error));

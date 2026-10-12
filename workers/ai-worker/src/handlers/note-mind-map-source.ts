@@ -27,7 +27,9 @@ export function exactQuote(blockText: string, candidate: string): string | null 
   const to = source.sourceOffsets[start + Array.from(needle).length - 1];
   if (from === undefined || to === undefined) return null;
   const quote = Array.from(blockText).slice(from, to + 1).join("").trim();
-  return quote.length <= 500 ? quote : null;
+  // 引多长由它要支撑的那个知识点决定：原先超过 500 字就判"核不回原文"，
+  // 于是模型引一段长论证时整张图判无效、这一轮全部重跑。
+  return quote.length > 0 ? quote : null;
 }
 
 export function imageSafeText(content: string): { text: string; imageCount: number } {

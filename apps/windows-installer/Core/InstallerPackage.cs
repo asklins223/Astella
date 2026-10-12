@@ -69,8 +69,9 @@ public sealed class InstallerPackage(string executable, long zipOffset, long zip
         var progressClock = Stopwatch.StartNew();
         try
         {
+            Directory.CreateDirectory(staging);
             await using (var source = File.OpenRead(executable))
-            await using (var destination = File.Create(archivePath))
+            await using (var destination = await CreateWritable(archivePath, cancel))
             {
                 source.Position = zipOffset;
                 var remaining = zipSize;
@@ -108,30 +109,97 @@ public sealed class InstallerPackage(string executable, long zipOffset, long zip
                 if (name.EndsWith('/')) continue;
                 if (!expected.Remove(name, out var file) || file.Size != entry.Length)
                     throw new IOException("安装包文件与清单不一致。");
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                await using var source = entry.Open();
-                await using var destination = File.Create(target);
-                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-                var buffer = new byte[128 * 1024];
-                int count;
-                while ((count = await source.ReadAsync(buffer, cancel)) != 0)
-                {
-                    hash.AppendData(buffer, 0, count);
-                    await destination.WriteAsync(buffer.AsMemory(0, count), cancel);
-                    transferred += count;
-                    if (progressClock.ElapsedMilliseconds >= 80)
-                    {
-                        progress?.Report(new(0.2 + 0.65 * transferred / Manifest.Size, "正在安放书房文件"));
-                        progressClock.Restart();
-                    }
-                }
-                if (!Convert.ToHexString(hash.GetHashAndReset()).Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
-                    throw new IOException("书房文件校验未通过，请重新下载。");
+                transferred = await WriteEntryAsync(entry, target, file.Sha256, transferred, progress, progressClock, cancel);
             }
             if (expected.Count != 0 || transferred != Manifest.Size
                 || !File.Exists(Path.Combine(staging, Identity.Executable)) || !File.Exists(Path.Combine(staging, Identity.Uninstaller)))
                 throw new IOException("安装包缺少必要文件。");
+            progress?.Report(new(0.85, "书房文件已校验"));
         }
-        finally { File.Delete(archivePath); }
+        finally
+        {
+            // A locked payload archive must not turn a finished extraction into a failure; the whole
+            // workspace gets deleted by the caller anyway.
+            try { File.Delete(archivePath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
     }
+
+    /// <summary>逐文件重开写入：实时防护常常是写完才扣住句柄，重来一次就过去了，所以整个「建文件 + 拷 + 校验」是一条重试单元。</summary>
+    private async Task<long> WriteEntryAsync(ZipArchiveEntry entry, string target, string sha,
+        long transferred, IProgress<InstallProgress>? progress, Stopwatch clock, CancellationToken cancel)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            cancel.ThrowIfCancellationRequested();
+            try
+            {
+                return await WriteEntryOnceAsync(entry, target, sha, transferred, progress, clock, cancel);
+            }
+            catch (Exception error) when (IsWriteRefusal(error))
+            {
+                TryDelete(target);
+                if (attempt >= MaxWriteAttempts) throw new WriteDeniedException(target, error);
+                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancel);
+            }
+        }
+    }
+
+    private async Task<long> WriteEntryOnceAsync(ZipArchiveEntry entry, string target, string sha,
+        long transferred, IProgress<InstallProgress>? progress, Stopwatch clock, CancellationToken cancel)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        await using var destination = File.Create(target);
+        await using var source = entry.Open();
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[128 * 1024];
+        long written = 0;
+        int count;
+        while ((count = await source.ReadAsync(buffer, cancel)) != 0)
+        {
+            hash.AppendData(buffer, 0, count);
+            await destination.WriteAsync(buffer.AsMemory(0, count), cancel);
+            written += count;
+            if (clock.ElapsedMilliseconds >= 80)
+            {
+                progress?.Report(new(0.2 + 0.65 * (transferred + written) / Manifest.Size, "正在安放书房文件"));
+                clock.Restart();
+            }
+        }
+        if (!Convert.ToHexString(hash.GetHashAndReset()).Equals(sha, StringComparison.OrdinalIgnoreCase))
+            throw new IOException("书房文件校验未通过，请重新下载。");
+        return transferred + written;
+    }
+
+    private static async Task<FileStream> CreateWritable(string path, CancellationToken cancel)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            cancel.ThrowIfCancellationRequested();
+            try { return File.Create(path); }
+            catch (Exception error) when (IsWriteRefusal(error))
+            {
+                TryDelete(path);
+                if (attempt >= MaxWriteAttempts) throw new WriteDeniedException(path, error);
+                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancel);
+            }
+        }
+    }
+
+    // 只认系统给的拒绝码：自己的 IOException（校验不通过、包不完整）走另一条文案，不能当写权限问题重试。
+    internal static bool IsWriteRefusal(Exception error) => error switch
+    {
+        UnauthorizedAccessException => true,
+        WriteDeniedException => true,
+        IOException io when io.HResult == AccessDenied || io.HResult == SharingViolation => true,
+        _ => false
+    };
+
+    private static void TryDelete(string path)
+    {
+        try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+    }
+
+    private const int MaxWriteAttempts = 4;
+    private static readonly int AccessDenied = unchecked((int)0x80070005);
+    private static readonly int SharingViolation = unchecked((int)0x80070020);
 }

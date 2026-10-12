@@ -395,6 +395,17 @@ test("确定性 HTTP 拒绝及其 cause 不重放；超时、限流和服务故�
   }
 });
 
+test("输出截断保留结构化类别及其 cause，不当网络故障重放半份结果", async () => {
+  const truncated = Object.assign(new Error("response exhausted its output limit"), { code: "output_truncated" });
+  for (const error of [truncated, new Error("governed provider rejected", { cause: truncated })]) {
+    const h = harness([error, ok("不应该再生成")]);
+    const receipt = await runAiTask(h.definition, { ctx: ctx(), attempt: attempt(), currentActiveTransaction: NO_TX });
+    assert.equal(receipt.failure?.class, "output_truncated");
+    assert.equal(h.executeCalls, 1);
+    assert.equal(h.commitCalls, 0);
+  }
+});
+
 test("外部调用边界：活动事务里跑内核 ⇒ 当场拒绝，一次模型都不发", async () => {
   // 类型上 `execute` 拿不到事务对象，但闭包能偷到——这一个读数挡的就是偷的那种
   // （D5 §5.2 第二件）。这里给的是"有活动事务"的返回值；真实作用域那一头见集测。

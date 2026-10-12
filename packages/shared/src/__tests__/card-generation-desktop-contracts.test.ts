@@ -303,6 +303,8 @@ test("activation receipt projects the scheduling outcome, and omits the key when
 
 
 test("failed run exposes known reason and stage without raw provider text", () => {
+  assert.deepEqual(projectCardGenerationRunFailureV1({ code: "generation_output_truncated",
+    message: "card_generate_v3 output rejected: output_truncated — private response" }), { reason: "output_truncated", stage: "generate" });
   const failure = projectCardGenerationRunFailureV1({ code: "generation_failed",
     message: "card_content_check_v3 output rejected: output_shape — private source text and provider response" });
   assert.deepEqual(failure, { reason: "output_invalid", stage: "check" });

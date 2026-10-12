@@ -27,16 +27,20 @@ import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import { sql } from "drizzle-orm";
 import {
   canUseCompanionAgentTool,
+  getCompanionAgentTool,
+  COMPANION_PROPOSAL_EXECUTED_TOOLS,
   COMPANION_AGENT_TOOL_LABELS,
   type CompanionAgentToolDefinitionV1,
   type ProviderReasoningHandle,
 } from "@astella/shared";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
+import { logger } from "../lib/logger.ts";
 import { ProviderRequestError } from "../lib/provider-request-error.ts";
 import type { AIProvider } from "../lib/ai-provider.ts";
 import { appendAgentEvent, readRunMeta } from "./companion-agent-events.ts";
 import { buildActionPayload, createAgentProposal } from "./companion-agent-proposal.ts";
+import { prepareCompanionToolReview } from "./companion-tool-review.ts";
 import { TOOL_OUTCOME_UNKNOWN_SAFE_SUMMARY } from "./companion-tool-outcome.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
 import { companionNoteEditTarget } from "./companion-note-edit.ts";
@@ -252,17 +256,36 @@ export async function executeTool(
    */
   signal?: AbortSignal,
 ): Promise<AgentToolExecutionResult | { waiting: true; proposalId: string }> {
-  const authorization = canUseCompanionAgentTool(
+  let confirmedProposalId: string | undefined;
+  let authorization = canUseCompanionAgentTool(
     (await readRunMeta(event)).permissionLevel,
     definition,
+    call.arguments,
   );
+  if (authorization.requiresConfirmation) {
+    const rows = await withWorkerWorkspaceTransaction({ workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+      tx => tx.execute<{ confirmed: boolean; proposal_id: string; proposal_status: string; decision: string; proposal_kind: string }>(sql`SELECT c.proposal_id,
+        p.status AS proposal_status,p.decision,p.payload->>'kind' AS proposal_kind,
+        astella_companion_tool_confirmed_v1(${event.read.runId}::uuid,${call.id}) AS confirmed
+        FROM companion_agent_tool_calls c LEFT JOIN companion_action_proposals p ON p.id=c.proposal_id
+        WHERE c.run_id=${event.read.runId} AND c.tool_call_id=${call.id}`));
+    if (rows[0]?.proposal_kind === "agent_tool_review" && rows[0].proposal_status === "accepted"
+      && rows[0].decision === "confirm" && !rows[0].confirmed)
+      throw new CompanionToolBlockedError("这次确认的权限、原文或运行状态已经失效，没有重复执行操作。");
+    if (rows[0]?.confirmed) {
+      confirmedProposalId = rows[0].proposal_id;
+      authorization = { allowed: true, requiresConfirmation: false };
+    }
+  }
   if (!authorization.allowed) {
     await updateToolCall(event, call.id, { status: "blocked", safeSummary: authorization.reason ?? "操作被权限阻止" });
     // `reason` 缺失时的兜底也会当 safeSummary 上屏（渲染层原样取用），所以这句同样是写给用户的。
     throw new CompanionToolBlockedError(authorization.reason ?? "这一步超出了你给伴星的权限，我先不做");
   }
   if (authorization.requiresConfirmation) {
-    const payload = await buildActionPayload(event, definition.name, call.arguments);
+    const payload = COMPANION_PROPOSAL_EXECUTED_TOOLS.has(definition.name)
+      ? await buildActionPayload(event, definition.name, call.arguments)
+      : await prepareCompanionToolReview(event, definition, call.arguments);
     if (!payload) throw new CompanionToolError("这一步现在做不了（要做的那件东西已经不在了）");
     const proposal = await createAgentProposal(event, definition, call, payload);
     await appendAgentEvent(event, "agent.tool", {
@@ -287,12 +310,13 @@ export async function executeTool(
       toolVersion: definition.toolVersion,
       riskClass: definition.riskClass,
       status: "executing",
+      ...(confirmedProposalId ? { proposalId: confirmedProposalId } : {}),
       ...(definition.name === "companion_edit_note" ? { noteEditTarget: companionNoteEditTarget(call.arguments, event.read.pageContext) } : {}),
       safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
     },
   });
   // 读类走既有 read 执行器；其余工具通过本轮授权与能力定义的确认判据后直执行。
-  // 当前笔记编辑不需要额外确认，read_only 仍在授权门禁被阻止。
+  // Low-permission writes reach this point only with one frozen user decision.
   const result = definition.riskClass === "read"
     ? await executeReadTool(event, definition, call.arguments)
     : await executeDirectTool(event, definition, call.arguments, signal, call.id);
@@ -316,6 +340,10 @@ export async function executeTool(
   // SSE 与审计行也就说同一句话。抛的是**不继承** CompanionToolError 的那一类，
   // 否则会被 `classifyCompanionToolFailure` 归成 failed（= 确定没发生）。
   if (!recorded) throw new CompanionToolOutcomeUnknownError(TOOL_OUTCOME_UNKNOWN_SAFE_SUMMARY);
+  if (confirmedProposalId) await withWorkerWorkspaceTransaction({ workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+    tx => tx.execute(sql`UPDATE companion_action_proposals SET status='succeeded',result_ref=${call.id},
+      result_safe_summary=${result.safeSummary},result_route=${JSON.stringify(result.route ?? null)}::jsonb,updated_at=now()
+      WHERE id=${confirmedProposalId}::uuid AND status='accepted' AND decision='confirm'`));
   // 迟到复查（40b §4.1-2「迟到结果在提交前复查取消、租约、权限和内容版本」）。
   //
   // 上面那道 fence 只覆盖"超时那一刻已经知道"的情形；这一支覆盖"调用方在预算
@@ -332,6 +360,7 @@ export async function executeTool(
       toolVersion: definition.toolVersion,
       riskClass: definition.riskClass,
       status: "succeeded",
+      ...(confirmedProposalId ? { proposalId: confirmedProposalId } : {}),
       ...(definition.name === "companion_edit_note" && result.resultRef ? { noteEdit: companionEditedNoteV1Schema.parse(JSON.parse(result.resultRef)) } : {}),
       safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
       safeSummary: result.safeSummary,
@@ -367,6 +396,31 @@ export async function updateToolCall(
       return updated.length > 0;
     },
   );
+}
+
+/**
+ * 这一轮**真正写成**的操作名（只读调用不算）。
+ *
+ * 失败面要说清"什么没完成"，前提是先知道什么已经完成了：引文核对不过会让整轮判失败，
+ * 但同一轮里已落库的写操作不会因为终答被丢弃而回滚。只回一句"答复没有完成"，就等于
+ * 把她已经做成的事报成没做（2026-10-12 真窗实测：`companion_save_memory` 与
+ * `companion_write_self_note` 都是 succeeded，界面上却是"答复没有完成"）。
+ *
+ * 判据取账本里的 `risk_class`，不另写一份"哪些工具算写"的名单——那份名单已经有
+ * 权限档、提案路由、chip 文案三处在读账本，再加一处就是第四份真相。
+ */
+export async function listSucceededWriteToolNames(
+  input: { workspaceId: string; userId: string },
+  runId: string,
+): Promise<string[]> {
+  return withWorkerWorkspaceTransaction(input, async (tx) => {
+    const rows = await tx.execute<{ name: string }>(sql`
+      SELECT DISTINCT name FROM companion_agent_tool_calls
+      WHERE run_id = ${runId} AND status = 'succeeded' AND risk_class <> 'read'
+      ORDER BY name
+    `);
+    return rows.map((row) => row.name);
+  });
 }
 
 export type AgentToolCallRecord = {
@@ -534,6 +588,7 @@ export async function loadContinuation(
   event: AgentEventContext,
   baseMessages: AgentMessage[],
   proposalId: string,
+  deadlineAt = Infinity,
 ): Promise<AgentMessage[]> {
   const rows = await withWorkerWorkspaceTransaction(
     { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
@@ -546,9 +601,13 @@ export async function loadContinuation(
       status: string;
       decision: string | null;
       reasoning_handles: ProviderReasoningHandle[] | null;
+      proposal_status: string;
+      proposal_payload: { kind?: string };
+      step_id: string;
     }>(sql`
       SELECT tc.tool_call_id, tc.name, tc.arguments, tc.result_ref,
-             tc.result_safe_summary, tc.status, p.decision, tc.reasoning_handles
+             tc.result_safe_summary, tc.status, p.decision, tc.reasoning_handles,
+             p.status AS proposal_status,p.payload AS proposal_payload,tc.step_id
       FROM companion_agent_tool_calls tc
       JOIN companion_action_proposals p ON p.id = tc.proposal_id
       WHERE tc.run_id = ${event.read.runId} AND p.id = ${proposalId}
@@ -559,9 +618,34 @@ export async function loadContinuation(
   if (!row || (row.decision !== "confirm" && row.decision !== "reject")) {
     throw new Error("agent continuation proposal is not decided");
   }
-  const toolResult = row.decision === "confirm"
-    ? { ok: true, summary: row.result_safe_summary ?? "操作已完成", resultRef: row.result_ref }
-    : { ok: false, summary: "用户拒绝了这次操作" };
+  let resumedValue: unknown;
+  if (row.decision === "confirm" && row.proposal_payload?.kind === "agent_tool_review"
+    && row.proposal_status === "accepted" && row.status === "requested") {
+    const definition = getCompanionAgentTool(row.name);
+    if (!definition) throw new CompanionToolError("这项能力已经不可用，确认的改动没有执行。");
+    const { runCompanionToolExecution } = await import("./companion-tool-execution-run.ts");
+    const run = await runCompanionToolExecution({ event, definition, arguments: row.arguments,
+      operationCallId: row.tool_call_id, toolCallId: row.tool_call_id, reviewProposalId: proposalId,
+      deadlineAt, signal: event.ctx.signal, runId: event.read.runId,
+      logger });
+    if (run.kind === "waiting") throw new CompanionToolError("确认状态已变化，没有重复执行这次操作。");
+    row.status = run.kind === "success" ? "succeeded" : run.ledgerStatus;
+    row.result_safe_summary = run.kind === "success" ? run.execution.safeSummary : run.safeSummary;
+    row.result_ref = run.kind === "success" ? run.execution.resultRef ?? null : null;
+    if (run.kind === "success") resumedValue = run.execution.value;
+    await withWorkerWorkspaceTransaction({ workspaceId: event.ctx.workspaceId, userId: event.read.userId }, async tx => {
+      await tx.execute(sql`UPDATE companion_agent_steps SET status=${run.kind === "success" ? "succeeded" : "failed"},finished_at=now()
+        WHERE id=${row.step_id}::uuid AND status='waiting'`);
+      if (run.kind === "failure") await tx.execute(sql`UPDATE companion_action_proposals SET status='failed',
+        result_safe_summary=${run.safeSummary},updated_at=now() WHERE id=${proposalId}::uuid AND status='accepted'`);
+    });
+  }
+  const toolResult = row.decision === "confirm" && row.status === "succeeded"
+    ? { ok: true, summary: row.result_safe_summary ?? "操作已完成", resultRef: row.result_ref,
+      ...(resumedValue !== undefined ? { data: resumedValue } : {}) }
+    : { ok: false, status: row.status, summary: row.decision === "reject"
+      ? "用户取消了这次预览或操作，原内容保持当前状态；不要重新执行或自动再次提出这次写入。"
+      : row.result_safe_summary ?? "操作尚未得到保存回执，请先核对结果。" };
   // 续跑是新 job：首轮 reasoning 已不在内存里，只能从列里取回，否则要求回传
   // reasoning 的模型（deepseek 思考模式）会在这一步 400。0218 之前创建的历史
   // 待确认提案该列为 NULL，只能不带句柄续跑（muse-spark/grok-4.6 正常，

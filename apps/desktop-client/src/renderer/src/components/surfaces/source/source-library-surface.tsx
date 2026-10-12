@@ -4,6 +4,7 @@ import type { DesktopSourceListItem } from "@astella/shared/desktop-surface-cont
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
+import { consumeBatchReceipt, consumeLibraryReceipt, peekBatchReceipt, peekLibraryReceipt } from "../../../app/source-batch-capture";
 import {
   SOURCE_CAPTURED_EVENT,
   type SourceCapturedDetail,
@@ -28,6 +29,8 @@ import {
   SOURCE_SEARCH_LIMIT,
   SOURCE_STATUS_POLL_MAX_ATTEMPTS,
   SOURCE_STATUS_POLL_MS,
+  SOURCE_STATUS_POLL_TOTAL_ATTEMPTS,
+  SOURCE_STATUS_SLOW_POLL_MS,
   SOURCE_STATUS_TABS,
   countSourcesByStatus,
   needsOriginAddress,
@@ -83,6 +86,8 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
   useEffect(() => () => { searchRequest.current++; }, []);
   const [searching, setSearching] = useState(false);
   const [searchNotice, setSearchNotice] = useState<{ readonly tone: "info" | "error"; readonly text: string } | null>(null);
+  /** 上一次真正提交给服务端正文检索的词；输入框一改就作废它带回来的命中（审计 F6）。 */
+  const bodySearchPhrase = useRef<string | null>(null);
   const [captured, setCaptured] = useState<{ readonly sourceId: string; readonly title: string } | null>(null);
   /** 一次收下多份时的收据。单独一格：单份那条说的是「这一份怎么样了」，批量这条说的是「这一批」。 */
   const [batchReceipt, setBatchReceipt] = useState<string | null>(null);
@@ -163,14 +168,16 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
       setStalled(false);
       return;
     }
-    if (pollAttemptsRef.current >= SOURCE_STATUS_POLL_MAX_ATTEMPTS) {
+    if (pollAttemptsRef.current >= SOURCE_STATUS_POLL_TOTAL_ATTEMPTS) {
       setStalled(true);
       return;
     }
+    // 审计 F7：快档用完转慢档继续跟，而不是在 60 秒时把等待说成故障。
+    const delay = pollAttemptsRef.current >= SOURCE_STATUS_POLL_MAX_ATTEMPTS ? SOURCE_STATUS_SLOW_POLL_MS : SOURCE_STATUS_POLL_MS;
     const timer = window.setTimeout(() => {
       pollAttemptsRef.current += 1;
       void reload({ silent: true });
-    }, SOURCE_STATUS_POLL_MS);
+    }, delay);
     return () => window.clearTimeout(timer);
   }, [items, reload]);
 
@@ -222,6 +229,7 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
       }));
       if (request !== searchRequest.current) return;
       setFullTextIds(hits.items.map((item) => item.objectId));
+      bodySearchPhrase.current = needle;
       setQuery(needle);
       if (hits.total > hits.items.length) {
         setSearchNotice({
@@ -233,6 +241,7 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
       if (request !== searchRequest.current) return;
       // A search index that cannot be reached must not take the index away.
       setFullTextIds([]);
+      bodySearchPhrase.current = needle;
       setQuery(needle);
       setSearchNotice({
         tone: "error",
@@ -250,6 +259,7 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
     setQuery("");
     setFullTextIds([]);
     setSearchNotice(null);
+    bodySearchPhrase.current = null;
   };
 
   const handleCaptured = useCallback(async (sourceId: string, title: string) => {
@@ -274,13 +284,17 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
    * 只想看到「收下了几份、有没有没进来的」。没进来的那几份由采集栏自己列着，
    * 这里只报数——两处各说各话的话，同一份材料会在两个地方被说成不同的样子。
    */
-  const handleBatchCaptured = useCallback(async (result: { readonly accepted: number; readonly failed: number }) => {
+  const handleBatchCaptured = useCallback(async (result: { readonly accepted: number; readonly failed: number; readonly duplicates?: number }) => {
     searchRequest.current++;
     setSearching(false);
     setCaptured(null);
-    setBatchReceipt(result.failed > 0
-      ? `已收下 ${result.accepted} 份材料，正在解析；另有 ${result.failed} 份没能收下，采集栏里列着是哪几份。`
-      : `已收下 ${result.accepted} 份材料，正在解析，完成后这张索引会自动更新。`);
+    const parts: string[] = [];
+    if (result.accepted > 0) parts.push(`已收下 ${result.accepted} 份材料，正在解析`);
+    if ((result.duplicates ?? 0) > 0) parts.push(`另有 ${result.duplicates} 份之前已经采过，没有重复`);
+    if (result.failed > 0) parts.push(`还有 ${result.failed} 份没能收下，采集栏里列着是哪几份`);
+    setBatchReceipt(parts.length > 0
+      ? `${parts.join("；")}。收下完成的会出现在这张索引上。`
+      : "这一批材料之前都已经采过，没有重复建。");
     setStatus("all");
     setDraft("");
     setQuery("");
@@ -290,6 +304,42 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
     setStalled(false);
     await reload({ silent: true });
   }, [reload, setStatus]);
+
+  /**
+   * 2026-10-11（审计 F1）：批量收录不再随页面卸载被掐断——它跑完会把回执留在
+   * `source-batch-capture` 的模块层。回到来源库时先把这份回执读出来说给读者听，
+   * 免得他只看到「索引多了几条少了几条」，说不清断在哪、哪几份没进来。
+   */
+  /** 归档这类一句话回执读走即消费（读的时候顺手清，见 source-batch-capture 注释）。 */
+  const consumeOrPeekOneLiner = (): string | null => {
+    const text = peekLibraryReceipt();
+    if (text) consumeLibraryReceipt();
+    return text;
+  };
+
+  useEffect(() => {
+    const receipt = peekBatchReceipt();
+    const oneLiner = consumeOrPeekOneLiner();
+    if (!receipt && !oneLiner) return;
+    if (receipt) consumeBatchReceipt();
+    const parts: string[] = [];
+    if (receipt) {
+      if (receipt.accepted > 0) parts.push(`收下 ${receipt.accepted} 份材料，正在解析`);
+      if (receipt.duplicates.length > 0) parts.push(`${receipt.duplicates.length} 份之前已经采过，没有重复`);
+      if (receipt.failures.length > 0) {
+        const count = receipt.failures.reduce((total, failure) => total + (failure.count ?? 1), 0);
+        const names = receipt.failures.map((failure) => failure.name);
+        const listed = names.slice(0, 3).join("、");
+        parts.push(`${count} 份没能收下（${listed}${names.length > 3 ? " 等" : ""}）`);
+      }
+    }
+    setBatchReceipt(receipt
+      ? parts.length > 0
+        ? `你在离开这一页时收的一批材料：${parts.join("；")}。`
+        : "你离开这一页时收的一批材料都已经在了。"
+      : oneLiner!);
+    void reload({ silent: true });
+  }, [reload]);
 
   // 弹窗与全局拖放在页面之外收进来的来源：同样回到全部、清掉搜索并重读，
   // 收据随行状态走，和采集栏亲手收的一样。
@@ -430,7 +480,7 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
           onOpenExisting={openSource}
         />
 
-        <section data-guide-anchor="sources" className="source-index" aria-label="来源资料索引">
+        <section data-guide-anchor="sources" className="source-index" aria-label="来源库索引">
           <form className="search-line" onSubmit={(event) => void submitSearch(event)} role="search">
             <Search size={18} aria-hidden="true" />
             <label className="sr-only" htmlFor="source-library-query">搜索标题或正文</label>
@@ -443,13 +493,19 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
                 searchRequest.current++;
                 setSearching(false);
                 setDraft(next);
-                // Clearing the box returns the whole index immediately; only a
-                // submit narrows it, so the mockup's 搜索 button carries weight.
+                // 审计 F6：输入框与结果不再各说各话。标题/类型这类本地字段**输入即筛选**；
+                // 正文在服务端索引里，仍按回车检索（清空两个世界一起清）。
+                setQuery(next.trim());
+                if (bodySearchPhrase.current !== null && next.trim() !== bodySearchPhrase.current) {
+                  setFullTextIds([]);
+                  setSearchNotice(null);
+                  bodySearchPhrase.current = null;
+                }
                 if (!next.trim()) clearQuery();
               }}
             />
             {draft ? <button type="button" className="source-icon" aria-label="清空搜索" title="清空搜索" onClick={clearQuery}><X size={16} /></button> : null}
-            <button type="submit" className="source-icon" aria-label={searching ? "检索中" : "搜索"} title="搜索" disabled={searching}>
+            <button type="submit" className="source-icon" aria-label={searching ? "检索中" : "搜索正文"} title="搜索正文（回车）" disabled={searching}>
               {searching ? <LoaderCircle size={18} className="source-spin" /> : <ArrowRight size={18} />}
             </button>
           </form>

@@ -251,13 +251,21 @@ test("schema：省略 version 字段可解析（以前 z.literal(1) 必填 → �
   }
 });
 
-test("schema：超过 3 条时截断保留前 3 条，而不是判整单失败", () => {
+test("schema：模型给出几条就收几条，既不截断也不判整单失败", () => {
+  // 2026-10-12 裁决取消条数上限：`MEMORY_EXTRACT_MAX_FACTS=3`、默认 1、schema 的
+  // `.max(3)`、preprocess 的 `.slice(0,3)` 都没了——一次解释里有几条独立事实就收几条。
+  // 重复的折叠不归这里：那是 (kind, sourceQuote) 那条语义判据（用例在
+  // companion-memory-admission.test.ts 的「同 kind 同 sourceQuote 只收一条」）。
   const many = Array.from({ length: 5 }, (_, i) => ({
     kind: "preference", content: `偏好 ${i}`, confidence: 0.8,
   }));
   const out = memoryExtractOutputSchema.safeParse({ candidates: many });
-  assert.equal(out.success, true);
-  if (out.success) assert.equal(out.data.candidates.length, 3);
+  assert.equal(out.success, true, "模型多给两条不该把整轮记忆一起丢掉");
+  if (out.success) {
+    assert.equal(out.data.candidates.length, 5, "不在解析这一层剪掉后面的条目");
+    assert.deepEqual(out.data.candidates.map((candidate) => candidate.content),
+      many.map((candidate) => candidate.content), "条目顺序与正文原样");
+  }
 });
 
 test("schema：confidence 仍必填——它是置信度闸的输入，给默认值等于替模型表态", () => {
@@ -364,6 +372,12 @@ const thinkingSanctioned = new Set([
   // 2026-10-07：主动念头的候选与改写是已核对素材的短 JSON 表达，
   // 当前生产实现明确关闭思考；对话提问/任务仍按本轮意图选择。
   "companion-thought.ts",
+  // 2026-10-11：压缩用的**工作状态摘要**。产出是给她自己接续工作的内部件，不是讲给
+  // 用户的回复，而这次调用发生在已经紧张的那一次请求里面、卡在 deadlineAt 上——
+  // 开高档等于在她回话的路上再加十几秒。判据与分类器、投机闲聊版同一档。
+  // 它被单独挪进这个模块而不是留在运行时里，正是为了让这条守卫仍然管得住对话主链路：
+  // `companion-agent-runtime.ts` 只能经 `companionTurnThinking` 决定思考档。
+  "companion-active-context-compaction.ts",
 ]);
 
 test("伴星思考档：对话按本轮意图，念头短 JSON 关闭，其余后台常开", () => {

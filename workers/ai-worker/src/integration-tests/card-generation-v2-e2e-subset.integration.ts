@@ -1974,7 +1974,7 @@ test(
  *
  * 不依赖真实模型：确定性管道照样先过计划段，而截断发生在计划段之前。
  */
-test("长正文：源文本被截断时在 run 事件流里留痕（不是只在日志里）", async () => {
+test("长正文完整参与生成，不产生截断事件", async () => {
   const LONG = Array.from({ length: 900 }, (_, index) => (
     `第 ${index + 1} 段：这一段用来把源文本撑过规模上限，其中有一个可成卡的判断——`
     + "冗长材料".repeat(40) + "。"
@@ -1989,11 +1989,7 @@ test("长正文：源文本被截断时在 run 事件流里留痕（不是只在
     SELECT payload FROM card_generation_events_v2
     WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID}
       AND event_type = 'card_generation.source_content_capped'`;
-  assert.equal(events.length, 1, `必须恰好一条留痕（拿到 ${events.length} 条）`);
-  const payload = events[0].payload as { limit: number; originalLength: number; usedLength: number };
-  assert.ok(payload.originalLength > payload.limit, "原始长度必须大于上限");
-  assert.equal(payload.usedLength, payload.limit, "用到的长度就是上限");
-  assert.ok(payload.originalLength >= LONG.length, "原始长度不许被算小");
+  assert.equal(events.length, 0, "新生成不再裁掉源文本");
 
   // 事件不是只在 DB 里存在：笔记页依赖 API run view → desktop active-summary 投影。
   // 用本次真实 run 走过这两层，钉住上屏读数仍来自事件里的同一组数字。
@@ -2006,10 +2002,7 @@ test("长正文：源文本被截断时在 run 事件流里留痕（不是只在
     "../../../../apps/api/src/modules/card-generation-v2/desktop-projection.ts"
   );
   const summary = projectCardGenerationActiveSummaryListV1([runView]);
-  assert.deepEqual(summary.items[0]?.sourceCapped, {
-    limit: payload.limit,
-    originalLength: payload.originalLength,
-  }, "笔记页投影必须保留事件中的真实截断范围");
+  assert.equal(summary.items[0]?.sourceCapped, null);
 });
 
 /**
@@ -2023,7 +2016,7 @@ test("长正文：源文本被截断时在 run 事件流里留痕（不是只在
  * （重生成要先有一条 revision=1 的候选），所以第一段用的是既有用例里那份能成卡的定义，
  * 其余是**各不相同**的长材料（若通篇重复同一句，planner 会按去重/可学性滤成 0 卡）。
  */
-test("长正文 + 重生成：截断留痕在重跑路径上也会多记一条", async () => {
+test("长正文重生成继续完整读取，不产生截断事件", async () => {
   const TOPICS = ["缓存淘汰", "索引选择", "事务隔离", "锁粒度", "副本同步", "分片路由", "连接池", "查询重写"];
   const LONG = [
     "OSI 模型把网络通信分为七层：物理层负责比特流传输；数据链路层负责帧与纠错；"
@@ -2050,7 +2043,7 @@ test("长正文 + 重生成：截断留痕在重跑路径上也会多记一条",
     return rows[0].n as number;
   };
   const before = await capEventCount();
-  assert.ok(before >= 1, `计划段本该先留一条（拿到 ${before}）`);
+  assert.equal(before, 0, "首次生成不得截断源文本");
 
   const runRow = await admin`
     SELECT review_draft_revision, card_content_epoch FROM card_generation_runs_v2 WHERE id = ${runId}`;
@@ -2089,7 +2082,7 @@ test("长正文 + 重生成：截断留痕在重跑路径上也会多记一条",
   await runPipelineOnce();
 
   const after = await capEventCount();
-  assert.equal(after, before + 1, `重跑路径必须再留一条（before=${before} after=${after}）`);
+  assert.equal(after, 0, "重生成也不得截断源文本");
 });
 
 // ─── 那份冷却的三个写入点，各自配一把会红的尺（39d W7-2 射程补齐） ──────────

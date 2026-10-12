@@ -633,9 +633,9 @@ export async function cardGenerationV2Routes(app: FastifyInstance) {
         expectedPublicPayloadHash: z.string().regex(/^[0-9a-f]{64}$/),
         patch: z.strictObject({
           front: z.strictObject({
-            cue: z.string().min(1).max(2000).optional(),
-            context: z.string().min(1).max(3000).optional(),
-            prompt: z.string().min(1).max(2000),
+            cue: z.string().min(1).optional(),
+            context: z.string().min(1).optional(),
+            prompt: z.string().min(1),
           }).optional(),
           strategy: z.enum(["recall", "cloze", "compare", "sequence", "why", "boundary", "application"]).optional(),
         }),

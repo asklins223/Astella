@@ -228,6 +228,7 @@ import {
   onboardingTransitionResponseSchema,
 } from "@astella/shared/companion-shell-contracts";
 import { ttsEngineV1Schema } from "@astella/shared/tts-voice-catalog";
+import { VOICE_STYLE_INSTRUCTION_MAX_UNITS } from "@astella/shared/voice-expression-tags";
 import {
   companionHomeProjectionV1Schema,
   companionRoomProfilePatchV1Schema,
@@ -658,6 +659,8 @@ const voicePreferencePatchInputSchema = z.strictObject({
   ...m1InputBase,
   engine: ttsEngineV1Schema,
   voice: z.string().min(1).max(120),
+  /** 说话风格：缺省不动、null 清除、字符串设置（长度在服务端合同按上游计数规则把关）。 */
+  instruction: z.string().max(VOICE_STYLE_INSTRUCTION_MAX_UNITS * 2).nullable().optional(),
 });
 
 /**
@@ -700,7 +703,7 @@ channel(DESKTOP_IPC_CHANNELS.companionAnswerModeGet, runtimeInputSchema, async (
     requireM2Route(contract, "settings.section");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_companion.setCompanionVoicePreference(gateway.gatewayTransport, 
-      { engine: input.engine, voice: input.voice },
+      { engine: input.engine, voice: input.voice, ...(input.instruction !== undefined ? { instruction: input.instruction } : {}) },
       input.meta.requestId,
     );
   }, companionVoicePreferenceV1Schema)

@@ -110,7 +110,24 @@ test("explicit memory actions own their immutable source even after rejection, e
   } finally { await f.cleanup(); }
 });
 
-test("parallel calls share the persistent turn ceiling; a confirmation continuation does not reset it", async () => {
+test("默认模型计数只记实际调用，不用旧次数上限截断并发任务", async () => {
+  const saved = process.env.WORKER_COMPANION_MAX_MODEL_CALLS;
+  delete process.env.WORKER_COMPANION_MAX_MODEL_CALLS;
+  const f = await fixture();
+  try {
+    const results = await Promise.allSettled(Array.from({ length: 40 }, () => reserveCompanionProviderCall(f.event)));
+    assert.equal(results.filter(result => result.status === "fulfilled").length, 40);
+    assert.equal(await f.count(), 40);
+  } finally {
+    if (saved === undefined) delete process.env.WORKER_COMPANION_MAX_MODEL_CALLS;
+    else process.env.WORKER_COMPANION_MAX_MODEL_CALLS = saved;
+    await f.cleanup();
+  }
+});
+
+test("显式配置的模型调用上限原子执行，确认续跑不重置已用次数", async () => {
+  const saved = process.env.WORKER_COMPANION_MAX_MODEL_CALLS;
+  process.env.WORKER_COMPANION_MAX_MODEL_CALLS = "12";
   const f = await fixture();
   try {
     const results = await Promise.allSettled(Array.from({length:13},()=>reserveCompanionProviderCall(f.event)));
@@ -128,7 +145,11 @@ test("parallel calls share the persistent turn ceiling; a confirmation continuat
     await f.mutate(tx=>tx`UPDATE companion_turn_runs SET model_call_count=2 WHERE id=${f.event.read.runId}`);
     await reserveCompanionProviderCall(resumed);
     assert.equal(await f.count(),3,"the legitimate continuation may call, retaining prior use");
-  } finally { await f.cleanup(); }
+  } finally {
+    if (saved === undefined) delete process.env.WORKER_COMPANION_MAX_MODEL_CALLS;
+    else process.env.WORKER_COMPANION_MAX_MODEL_CALLS = saved;
+    await f.cleanup();
+  }
 });
 
 async function memorySnapshot(f: Awaited<ReturnType<typeof fixture>>, versioned = true) {

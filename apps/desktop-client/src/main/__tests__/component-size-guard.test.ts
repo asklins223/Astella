@@ -704,6 +704,10 @@ const SIZE_DEBT: Readonly<Record<string, string>> = {
   // ```
   "components/surfaces/space/graph-surface.tsx":
     "1485 行 / 37 hook。下一步：证据面板与画布分开。",
+  // 2026-10-11：邮箱验证码三链路（发码/验证码登录/找回密码）落进 auth 屏，
+  // hooks 22 → 29（越 25 软线）；同日注册拆两步、门禁加版本行后到 1686 行。
+  "components/DesktopAccessGate.tsx":
+    "1686 行 / 29 hook。下一步：把 auth 屏抽成同目录 access-gate-auth-form——发码倒计时与模式状态一组、三个 submit 处理器一组，门禁状态机留在本文件。",
 };
 
 describe("组件体量：红线之上判死，软线之上要登记", () => {

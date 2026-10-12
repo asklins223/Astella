@@ -49,7 +49,6 @@ import { useCardTactile } from "../../motion/use-card-tactile";
 import { CardCollection } from "./card-collection";
 import { cardStrategyPresentation } from "../review/card-strategy-presentation";
 import { useCardVisibleArrival } from "../../motion/card-object-spring";
-import { SurfaceReturnControl } from "../study/SurfaceReturnControl.tsx";
 import { learningRunPhaseLabels } from "../run/learning-run-surface.tsx";
 import { startObjectiveJourney } from "../run/objective-primary-action.ts";
 import { ObjectiveProgressBand } from "../run/ObjectiveProgressBand.tsx";
@@ -89,17 +88,15 @@ type SurfaceHeaderProps = {
 };
 
 function SurfaceHeader({ eyebrow, title, detail, headingId }: SurfaceHeaderProps) {
-  // 样式在 components/approved-surfaces.css：__heading 是左上角标题块，
-  // __return 是独立的左下角返回控件（两者都自己绝对定位）。
+  // 样式在 components/approved-surfaces.css：__heading 是左上角标题块。
+  // 返回控件用全应用共享的那颗胶囊（HudReturn，App 渲染、自带初始焦点标记），
+  // 页内不再另画一颗——它挂着时永远 display:none，还会把初始焦点吃掉。
   return (
-    <>
-      <header className="approved-surface__heading task-artifact task-artifact--header">
-        <span className="approved-surface__eyebrow">{eyebrow}</span>
-        <h2 id={headingId}>{title}</h2>
-        <p>{detail}</p>
-      </header>
-      <SurfaceReturnControl className="approved-surface__return" />
-    </>
+    <header className="approved-surface__heading task-artifact task-artifact--header">
+      <span className="approved-surface__eyebrow">{eyebrow}</span>
+      <h2 id={headingId}>{title}</h2>
+      <p>{detail}</p>
+    </header>
   );
 }
 

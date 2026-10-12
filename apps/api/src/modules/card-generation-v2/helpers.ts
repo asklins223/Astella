@@ -350,9 +350,10 @@ export async function serializeRunPublic(
       noteVersionId: row.noteVersionId,
       status: cardGenerationRunStatusV2Schema.parse(row.status),
       sourceOutdated,
-      error: row.errorCode ? { code: row.errorCode, message: row.errorMessage?.slice(0, 500) ?? null } : null,
+      // errorMessage 在库里是 text、没有长度上限——读侧不再剪一刀，剪了就等于销毁排障证据。
+      error: row.errorCode ? { code: row.errorCode, message: row.errorMessage ?? null } : null,
     }),
-    error: row.errorCode ? { code: row.errorCode, message: row.errorMessage?.slice(0, 500) ?? null } : null,
+    error: row.errorCode ? { code: row.errorCode, message: row.errorMessage ?? null } : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

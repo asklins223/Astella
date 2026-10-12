@@ -98,6 +98,24 @@ const AUTH_DOMAIN_ERROR_CODES: Record<string, GatewayErrorCode> = {
   workspace_limit_reached: "workspace_limit",
   already_member: "already_member",
   personal_workspace_not_shareable: "personal_workspace_not_shareable",
+  // 邮箱验证码：核对失败说清"下一步做什么"；注册不带码 = 旧客户端在打这个接口，
+  // 要的是"去更新客户端"，别并进泛泛的 validation。
+  client_update_required: "client_update_required",
+  invalid_code: "invalid_email_code",
+  expired_code: "expired_email_code",
+  code_attempts_exhausted: "email_code_attempts_exhausted",
+  account_unavailable: "account_unavailable",
+};
+
+/**
+ * 发信通道的 503：`domainErrorCode` 的通用 token 表只收 400/404/409/410，
+ * 而"通道没配 / 发不出去"落到 `safe_internal_error` 会被说成"学习服务暂时不可用"——
+ * 离这件事很远。与 NOTE_TEACHING_DOMAIN_CODES 同款：在状态闸门之前按 token 认。
+ */
+const AUTH_SERVICE_DOMAIN_ERROR_CODES: Record<string, { status: number; code: GatewayErrorCode }> = {
+  email_channel_unavailable: { status: 503, code: "email_channel_unavailable" },
+  email_send_failed: { status: 503, code: "email_send_failed" },
+  daily_limit_reached: { status: 429, code: "email_daily_limit_reached" },
 };
 
 const NOTE_DOMAIN_ERROR_CODES: Record<string, GatewayErrorCode> = {
@@ -138,6 +156,8 @@ function domainErrorCode(status: number, body: unknown, path: string): GatewayEr
   }
   const teachingCode = NOTE_TEACHING_DOMAIN_CODES[token];
   if (teachingCode?.status === status) return teachingCode.code;
+  const authServiceCode = AUTH_SERVICE_DOMAIN_ERROR_CODES[token];
+  if (authServiceCode?.status === status) return authServiceCode.code;
   if (status === 413 && token === "note_too_long") return "note_artifact_too_long";
   // 403 上只认这两个 token：登录那一族的字符串是**路由内**的约定
   // （`not_found` 在邀请那条路上意思是"邀请码无效"，在取图上意思是"文件没了"）。

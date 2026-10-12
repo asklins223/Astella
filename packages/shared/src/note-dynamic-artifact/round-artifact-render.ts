@@ -21,7 +21,7 @@
  * 动效由展示宿主管理（`artifact-template.ts`）；保存成果只保留模型自己的页面脚本。
  * 不再附第二份动效转发器，避免重复通知和过期 load 回调覆盖用户最新的档位。
  */
-import { escapeArtifactTextV1, ROUND_ARTIFACT_MAX_CHARS_V1 } from "./round-artifact.ts";
+import { escapeArtifactTextV1 } from "./round-artifact.ts";
 import {
   ARTIFACT_ILLUSTRATION_NOTICE_V1,
   type ArtifactNodeV1,
@@ -48,12 +48,6 @@ export interface BuildDynamicArtifactInputV1 {
 export type BuildDynamicArtifactResultV1 =
   | { ok: true; html: string }
   | { ok: false; reason: RoundArtifactRenderFailureV1; detail: string };
-
-function artifactCodepointCountV1(text: string): number {
-  let length = 0;
-  for (const _codePoint of text) length += 1;
-  return length;
-}
 
 /**
  * 纸的样式。全部内联（产物是自包含的一小片 HTML，不引用任何外部资源）。
@@ -197,14 +191,6 @@ export function buildDynamicArtifactHtmlV1(
     + `</div>`
     + scriptTags;
 
-  const length = artifactCodepointCountV1(html);
-  if (length > ROUND_ARTIFACT_MAX_CHARS_V1) {
-    return {
-      ok: false,
-      reason: "over_quota",
-      detail: `产物 ${length} 字符，超过上限 ${ROUND_ARTIFACT_MAX_CHARS_V1}（整份拒绝，不截断）`,
-    };
-  }
   return { ok: true, html };
 }
 

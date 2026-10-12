@@ -40,6 +40,11 @@ const ARTIFACT_DOCUMENT_TEMPLATE = `<!doctype html>
   /* The host owns the document viewport; the generated page owns its contents. */
   html, body { height: auto !important; min-height: 0 !important; overflow: hidden !important; }
   #astella-artifact-root { box-sizing: border-box; width: 100%; }
+  /* 2026-10-12 用户裁决「只锁底色，画面仍自由」：模型那一页可以随便画，但不许把整张纸
+     染黑——生成的样式注入在这段之前，所以文档画布由这里钉住，笔记的纸面透得出来。
+     字色不在这里管：实测有深色卡片不自带 color、靠 body 那一句浅色撑住的页面，
+     宿主替它定墨色会把那些卡变成黑底黑字。底色归宿主，配色的搭配仍归这一页自己。 */
+  html, body, #astella-artifact-root { background: transparent !important; color-scheme: light !important; }
   html[data-artifact-motion="reduced"] #astella-artifact-root *,
   html[data-artifact-motion="reduced"] #astella-artifact-root *::before,
   html[data-artifact-motion="reduced"] #astella-artifact-root *::after {

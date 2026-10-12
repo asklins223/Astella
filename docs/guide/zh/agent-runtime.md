@@ -82,7 +82,7 @@ sequenceDiagram
 
 | 函数 | 位置 | 负责什么 | 不负责什么 |
 | --- | --- | --- | --- |
-| `executeTurn` | `execute-turn.ts` | 有界循环：`step 1..maxSteps`、`signal.throwIfAborted()`、`now() >= deadlineAt → budgetError()`，直到 `advance()` 返回 `{kind:"settled"}` | 不碰模型、不碰数据库 |
+| `executeTurn` | `execute-turn.ts` | 持续推进；`maxSteps:null` 时不按步骤数停止，`signal.throwIfAborted()`、`now() >= deadlineAt → budgetError()`，直到 `advance()` 返回 `{kind:"settled"}` | 不碰模型、不碰数据库 |
 | `executeAgentStep` | `execute-step.ts` | 一个可检查点步骤：`context.prepare()` → `state.prepare()` → `model.execute` → **先 `state.saveResponse` 再执行任何能力** → 逐个 `capabilities.invoke` → `state.apply` | 不决定终止条件 |
 | `runAgentModelStep` | `model-step.ts` | 单次模型边界，套在 `runAiTask` 内核上，预算 `{maxModelCalls:1, maxAutoRetries:0}`，完成判据 `structured_parsed`；把 `lease_lost` 或 `cancelled` 映射成 inactive，`timeout` 或 `budget_exhausted` 映射成 timeout | 不重试（重试归外层作业） |
 | `resolveAgentTurnInterpretation` | `attention.ts` | 把话绑定到主机对象上；未知序号、引用不到的目标、不可用能力各记一条歧义（上限 6）；纯闲聊强制 `toolUse:"none"` | 不猜——猜不出就标 `uncertain` |
@@ -209,7 +209,7 @@ G(目标) = floor(B_hard × 0.60)
 4. 数据类别由**调用点声明**：目标推进传 `["note_content","user_answer"]`（`advance.ts`），图片部分自动补 `image_content`；词表就是 `ai_audit_log.data_categories`。
 5. 审计只由 `logAICall` 写（`workers/ai-worker/src/lib/governance.ts`），只记 provider/model/operation/tokens/duration/status/userId/jobId，**永不记正文**。
 
-不可重试的判定分两层：任务内核只重试 `transport / timeout / output_shape`（`packages/shared/src/ai-task-kernel.ts`）；作业层 `isNonRetryableError`（`workers/ai-worker/src/lib/non-retryable-errors.ts`，模式表）把计费耗尽、`invalid api key`、`access denied`、`not configured`、`consent not signed` 与上下文相关的 401/403 直接判死。只读权限在排队前就拦：`requireAgentAuthority`（`store.ts`）。
+不可重试的判定分两层：任务内核只重试 `transport / timeout / output_shape`（`packages/shared/src/ai-task-kernel.ts`）；输出截断以 `output_truncated` 单独归类，不按网络故障重复发送；作业层 `isNonRetryableError`（`workers/ai-worker/src/lib/non-retryable-errors.ts`，模式表）把计费耗尽、`invalid api key`、`access denied`、`not configured`、`consent not signed` 与上下文相关的 401/403 直接判死。只读权限在排队前就拦：`requireAgentAuthority`（`store.ts`）。
 
 ## 值得进图的数字
 
@@ -217,16 +217,16 @@ G(目标) = floor(B_hard × 0.60)
 
 | 机制 | 默认与来源 |
 | --- | --- |
-| 伴星循环 | 最多 8 步，每步最多 4 次工具，整轮工具／模型调用各最多 12 次；合同 deadline 30 分钟，普通工具超时 10 秒。见 `companion-agent-contracts.ts`，生成笔记等长调用有专用预算 |
-| 目标推进 | 每次执行最多 3 步，每步最多 4 次调用；单模型请求受任务剩余时间与供应商预算限制。见 `agent/advance.ts` |
+| 伴星循环 | 默认不限制步骤、每步工具数或累计调用数，运行到完成、取消或明确的部署期限；显式环境覆盖会写入预算快照。见 `companion-execution-policy.ts` |
+| 目标推进 | 不按固定步骤或每步工具数停止；单次处理时段结束后续接原目标，模型请求受供应商声明与剩余时间约束。见 `agent/advance.ts` |
 | 主队列 | 租约窗口 120 秒，运行中每 30 秒心跳续租；失联后按最近心跳回收，最多 3 次尝试。见 `queue.ts`、`index.ts`、迁移 0394 |
-| 执行时长 | 供应商默认 15 分钟，handler 默认 30 分钟；循环为保存留 15 秒余量。租约不限制总时长，见 `lib/handler-timeout-config.ts` |
+| 执行时长 | 供应商默认 15 分钟，普通 handler 默认 30 分钟；伴星整任务默认无总时限，显式部署时限为保存留 15 秒余量。租约不限制总时长，见 `lib/handler-timeout-config.ts` |
 | 多阶段制卡 | 默认总预算 60 分钟，独立 outbox 租约与续租，见 `card-generation-v2/outbox-queue.ts` |
 | 配额 | 同时活跃 Agent run 最多 5 个；每空间待处理 jobs 最多 50 个 |
 | 上下文 | 硬预算内触发线 0.80、目标线 0.60；压缩冷却与尝试次数另有上限 |
 | SSE | 对话每会话 3 路、每用户 10 路，断线后可从事件序号恢复 |
 
-输出额度按模型档案声明的上限处理，篇幅由任务合同控制；不会把少量正文 token 当作包含推理的总额度。具体覆盖方式见 [模型链路](ai-and-companion.md#超时阶梯)。
+输出额度按模型档案声明处理，生成结构不再按固定步骤或条目数裁剪。动态讲解的文档、数据库保存与桌面读取也不另设字符／节点配额；不会把少量正文 token 当作包含推理的总额度。具体覆盖方式见 [模型链路](ai-and-companion.md#超时阶梯)。
 
 ## 当前接通范围与边界
 

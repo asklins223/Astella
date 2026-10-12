@@ -65,7 +65,8 @@ export function SettingsCompanionVoice(props: { onReadable: (value: SettingsRead
   const serialized = JSON.stringify(readable);
   useEffect(() => { props.onReadable(JSON.parse(serialized) as SettingsReadable); }, [serialized, props.onReadable]);
   return <div className="settings-companion-voice">
-    {error ? <SettingsInlineState title="这次设置没有保存" detail={error} tone="error" /> : null}
+    {/* 审计 F11：保存失败贴顶常驻（与陪伴规则同一口径），滚动里也看得见。 */}
+    {error ? <div className="settings-companion-sticky"><SettingsInlineState title="这次设置没有保存" detail={error} tone="error" /></div> : null}
     <section className="settings-companion-chapter"><header><h3>书桌上的伴星</h3><p>这台设备上的形象、大小与声音。</p></header>
       <SettingRow title="书桌上的形象" detail="只改变显示的角色模型，人格和记忆仍然保留。"><HudSegmented label="书桌上的形象" value={model} options={models} onChange={setModel} compact /></SettingRow>
       <div className="settings-companion-size"><b>伴星大小</b><HudSlider label="伴星大小" value={scale} min={MIN_COMPANION_SCALE} max={MAX_COMPANION_SCALE} step={0.05} onChange={setScale} format={percentLine} hint="位置可以在书桌和页面里拖动调整。" /></div>

@@ -69,6 +69,12 @@ export type CreateJobInput = {
 export type JobFailureReason =
   | "ai_consent_required"
   | "ai_data_policy_denied"
+  /**
+   * 这一发是被**它自己的生成上限**截住的：输出撞到档案声明的额度、要带的内容装不下、
+   * 或者这一轮的调用预算用尽。与材料、权限、模型可用性都无关，所以不能吞进 unknown——
+   * 用户看到"不认识的原因"时唯一能做的是重试，而这三档重试同样会发生。
+   */
+  | "generation_incomplete"
   | "unknown";
 
 /**
@@ -93,6 +99,10 @@ export function classifyJobFailureReason(
   if (code === "ai_data_policy_denied") return "ai_data_policy_denied";
   if (code === AI_CONSENT_REQUIRED_CODE) {
     return "ai_consent_required";
+  }
+  // 三个码都是"生成侧自己的限制"，worker 侧的错误类带着它们（见 non-retryable-errors / context-governor）。
+  if (code === "output_truncated" || code === "ai_context_overflow" || code === "AGENT_BUDGET_EXCEEDED") {
+    return "generation_incomplete";
   }
   return "unknown";
 }

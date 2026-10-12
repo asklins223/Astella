@@ -3,9 +3,9 @@ import { observedProvider, outputDir, platform, save, safeFailure, type WireRece
 import { createGovernedProvider, resolveVisionReader } from "../lib/governance.ts";
 
 const results:Array<Record<string,unknown>>=[],wire:WireReceipt[]=[];
-const main=platform("agent_turn"),dedicated=platform("vision"),fallback=platform("companion_fallback");
+const main=platform("agent_turn"),aux=platform("text_generation"),fallback=platform("companion_fallback");
 const config=(p:typeof main)=>({apiKey:p.apiKey,baseUrl:p.baseUrl,model:p.model,modelProfile:p.modelProfile,options:p.options});
-const gov={providerName:main.type,providerConfig:config(main),visionProviderName:dedicated.type,visionProviderConfig:config(dedicated)};
+const gov={providerName:main.type,providerConfig:config(main),textProviderName:aux.type,textProviderConfig:config(aux)};
 
 async function run(name:string,fn:()=>Promise<Record<string,unknown>>) {
   const entry:Record<string,unknown>={name};results.push(entry);console.log(JSON.stringify({starting:name}));
@@ -13,7 +13,7 @@ async function run(name:string,fn:()=>Promise<Record<string,unknown>>) {
   entry.elapsedMs=Date.now()-started;save("platforms",{results,wire});console.log(JSON.stringify(entry));
 }
 
-for(const [source,p] of [["main",main],["dedicated",dedicated]] as const) {
+for(const [source,p] of [["main",main],["aux",aux]] as const) {
   const routed=resolveVisionReader(source==="main"?gov:{...gov,providerConfig:{...gov.providerConfig,modelProfile:{...main.modelProfile,vision:false}}});
   for(const crop of [false,true])await run(`vision:${source}:${crop?"crop":"full"}`,async()=>{
     const raw=observedProvider(p,`vision-live-${source}`,wire);

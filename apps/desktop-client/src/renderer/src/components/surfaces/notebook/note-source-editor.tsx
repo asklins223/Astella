@@ -5,6 +5,7 @@ import { useNotebookFullscreenActive } from "./notebook-fullscreen-state";
 import { defaultKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { bracketMatching, HighlightStyle, syntaxHighlighting, syntaxTree } from "@codemirror/language";
+import { codeHighlighter, codeLanguages } from "../../content/code-tokens";
 import { notifyNoteEditorFormat, type NoteEditorFormat } from "./note-editor-format";
 import { tags } from "@lezer/highlight";
 import { search, searchKeymap, openSearchPanel, highlightSelectionMatches } from "@codemirror/search";
@@ -89,7 +90,7 @@ export function NoteSourceEditor(props: {
     };
     const view = new EditorView({ parent: root.current, state: EditorState.create({
       doc: props.editor.getMarkdown() ?? "",
-      extensions: [markdown(), syntaxHighlighting(sourceHighlightStyle), bracketMatching(), drawSelection(),
+      extensions: [noteMarkdown, syntaxHighlighting(sourceHighlightStyle), syntaxHighlighting(codeHighlighter), bracketMatching(), drawSelection(),
         highlightActiveLine(), highlightActiveLineGutter(), highlightSelectionMatches(),
         search({ top: true }), wrapping.current.of(EditorView.lineWrapping),
         EditorState.phrases.of({
@@ -318,6 +319,19 @@ export function NoteSourceEditor(props: {
   </div>;
 }
 
+/**
+ * 源码视图里 markdown 自己那层的墨色。
+ *
+ * `scope` 钉在 markdown 语言上是有原因的：围栏里挂的是**另一门语言的语法树**，
+ * 而 CodeMirror 只在进入子树顶层节点时按 scope 筛 highlighter。没有这个 scope，
+ * markdown 的 comment / string / 标记色会一路渗进围栏里的代码，把代码 token 盖掉——
+ * 症状就是「源码模式的高亮颜色跟着语言跑，但只有代码那截不对」。
+ *
+ * 与代码 token 重名的那几枚 tag（关键字、类型、属性、数字、字符串、注释）直接引用
+ * 同一份 class：颜色只有 `code-paper.css` 一个来源，两边不可能长出两种结果。
+ */
+const noteMarkdown = markdown({ codeLanguages });
+
 const sourceHighlightStyle = HighlightStyle.define([
   { tag: tags.heading, color: "#3e6b50", fontWeight: "750" },
   { tag: tags.processingInstruction, color: "#9d8061" },
@@ -326,12 +340,16 @@ const sourceHighlightStyle = HighlightStyle.define([
   { tag: tags.strikethrough, textDecoration: "line-through" },
   { tag: [tags.link, tags.url], color: "#4f7897" },
   { tag: tags.monospace, color: "#92583c" },
-  { tag: [tags.tagName, tags.typeName, tags.keyword], color: "#76649b" },
-  { tag: [tags.attributeName, tags.propertyName], color: "#4f7897" },
-  { tag: tags.string, color: "#5b7a47" },
-  { tag: [tags.number, tags.bool], color: "#ac7540" },
-  { tag: [tags.comment, tags.meta], color: "#8a907d" },
-]);
+  { tag: tags.meta, color: "#8a907d" },
+  // 与代码 token 重名的这几枚直接引用同一份 class：markdown 里的 HTML 与 ```html
+  // 围栏里的 HTML 必须是同一个颜色，而颜色不许有两个来源。
+  { tag: tags.keyword, class: "code-keyword" },
+  { tag: [tags.tagName, tags.typeName], class: "code-type" },
+  { tag: [tags.attributeName, tags.propertyName], class: "code-property" },
+  { tag: [tags.number, tags.bool], class: "code-number" },
+  { tag: tags.string, class: "code-string" },
+  { tag: tags.comment, class: "code-comment" },
+], { scope: noteMarkdown.language });
 
 /**
  * 批注落位放在 state 里：它一变就触发一次重算，而它本身不该进 undo 历史。

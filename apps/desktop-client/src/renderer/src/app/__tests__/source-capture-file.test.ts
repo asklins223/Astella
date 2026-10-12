@@ -107,8 +107,8 @@ describe("文档解析的门与回执", () => {
       (index, total, name) => progress.push(`${index}/${total}:${name}`),
     );
     expect(result.tasks.map((task) => task.request)).toEqual([
-      { content: "第一份", title: "a" },
-      { content: "# C", title: "c" },
+      { content: "第一份", origin: "文件 a.pdf", title: "a" },
+      { content: "# C", origin: "文件 c.md", title: "c" },
     ]);
     expect(result.outcomes).toEqual([{ name: "b.docx", ok: false, message: "打不开" }]);
     expect(progress).toEqual(["0/3:a.pdf", "1/3:b.docx", "2/3:c.md"]);

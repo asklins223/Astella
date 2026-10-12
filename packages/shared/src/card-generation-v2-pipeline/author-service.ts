@@ -109,7 +109,7 @@ export class DeterministicAuthoringProvider implements AuthoringProvider {
       kind: "text",
       unit: {
         unitId: `ans-${planObjective.objectiveLocalId}`,
-        text: sourceContent.slice(0, 4000),
+        text: sourceContent,
       },
     };
 
@@ -149,7 +149,7 @@ export class DeterministicAuthoringProvider implements AuthoringProvider {
       preferredTaskIntents: [...taskIntentsForStrategy(planObjective.strategy)],
       canonicalAnswer,
       learningSupport: {
-        explanation: sourceContent.slice(0, 6000),
+        explanation: sourceContent,
       },
       rubric,
       relations: [],
@@ -172,7 +172,7 @@ export class DeterministicAuthoringProvider implements AuthoringProvider {
       estimatedReviewSeconds: planObjective.estimatedReviewCostSeconds,
     };
 
-    const evidenceSetHash = hashCanonicalV2("evidence-set-v2", { source: sourceContent.slice(0, 500) });
+    const evidenceSetHash = hashCanonicalV2("evidence-set-v2", { source: sourceContent });
 
     return {
       objective,

@@ -167,7 +167,7 @@ export const companionTurnRuns = pgTable(
     toolCallCount: integer("tool_call_count").notNull().default(0),
     modelCallCount: integer("model_call_count").notNull().default(0),
     /** 已消耗的 Agent 执行毫秒数（跨确认续跑累计，不含等待用户确认的时间）。 */
-    agentElapsedMs: integer("agent_elapsed_ms").notNull().default(0),
+    agentElapsedMs: bigint("agent_elapsed_ms", { mode: "number" }).notNull().default(0),
     waitingProposalId: uuid("waiting_proposal_id"),
     providerCapabilityFingerprint: text("provider_capability_fingerprint"),
     /**
@@ -408,7 +408,7 @@ export const companionActionProposals = pgTable(
     agentToolCallId: text("agent_tool_call_id"),
     agentToolVersion: text("agent_tool_version"),
     riskClass: text("risk_class").$type<CompanionAgentRiskClass>(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

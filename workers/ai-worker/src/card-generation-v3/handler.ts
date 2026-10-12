@@ -32,6 +32,7 @@
  * 收不动 run：`simplified_completed` 一条不写，库里读到的完成回执是上一批那条旧事件。
  */
 import { randomUUID } from "node:crypto";
+import { CARD_GENERATION_DEFAULT_HARD_MAX_CARDS, CARD_GENERATION_HARD_MAX_CARDS_CEILING } from "@astella/shared/card-generation-v2-contracts";
 import { sql, type SQL } from "drizzle-orm";
 import {
   currentWorkerWorkspaceTransaction,
@@ -43,13 +44,12 @@ import { logger } from "../lib/logger.ts";
 // 所以引的是模块本体，不再绕旧 handler。
 import {
   candidateRowToObject,
-  emitSourceContentCapEvent,
+  cardGenerationPromptBlocks,
   insertAuthoredCandidatesBatched,
   insertBindingPlanRow,
   insertEvent,
   insertRepairedCandidateV2,
   loadV2RunInputs,
-  V2_SOURCE_CONTENT_MAX_CHARS,
 } from "../card-generation-v2/run-io.ts";
 // W7-5 刀三：复用的读侧（按 (工作区, 笔记) 收窄的既有目标 ＋ 它们的块锚与形态）。
 import { loadReusableObjectivesForNoteV2 } from "../card-generation-v2/objective-reuse-lookup.ts";
@@ -77,7 +77,7 @@ import {
   type AiTaskDefinition,
   type AiTaskReceipt,
 } from "@astella/shared/ai-task-kernel";
-import { extractAtomsDeterministic } from "@astella/shared/card-generation-v2-pipeline";
+import { extractAtomsDeterministicWithStats } from "@astella/shared/card-generation-v2-pipeline";
 import {
   createCardGenerateV3Task,
   createCardContentCheckV3Task,
@@ -166,25 +166,6 @@ const SETTLE_FROM_STATUSES: Record<SimplifiedSettleScope, SQL | SQL[]> = {
  */
 function jobModeV3(job: PendingOutboxJob): "generate" | "replan" {
   return (job.payload as { mode?: string }).mode === "replan" ? "replan" : "generate";
-}
-
-/**
- * 送进模型的 block 文本总量上限。
- *
- * `loadV2RunInputs` 只对"拼起来的源文本"施了这道上限（旧链的 author prompt 用的就是那份），
- * 而简化链的生成输入直接交 block 列表——不补这一刀，60k 那道护栏在这条链上等于没有：
- * 提示词规模与单 job 内存峰值都是按这份列表算的。额度按 ordinal 顺序给，与
- * `capSourceContentForPrompts` "截前留后"的方向一致；留痕由段 3 的写事务经同一份发射器记。
- */
-function capV3PromptBlocks(
-  blocks: ReadonlyArray<{ blockId: string; ordinal: number; content: string }>,
-): Array<{ blockId: string; ordinal: number; text: string }> {
-  let remaining = V2_SOURCE_CONTENT_MAX_CHARS;
-  return blocks.map((block) => {
-    const allowed = Math.max(0, Math.min(block.content.length, remaining));
-    remaining -= allowed;
-    return { blockId: block.blockId, ordinal: block.ordinal, text: block.content.slice(0, allowed) };
-  });
 }
 
 /**
@@ -344,7 +325,11 @@ export async function processCardGenerationSimplifiedJob(
   let planVersion = prepared.planVersion;
   const noteTitle = await readNoteTitle(workspaceId, String(loaded.run.note_version_id));
   const semanticRequest = loaded.semanticSpec.semanticRequest;
-  const activationHardMax = Math.min(8, Number(semanticRequest.quantity.hardMaxCards ?? 8) || 8);
+  // 用户声明了几张就是几张（到领域合同上限为止）。以前这里再夹一道 8：
+  // 声明 20 张的请求会被静默做成 8 张，界面上看不出少过。
+  const activationHardMax = Math.min(CARD_GENERATION_HARD_MAX_CARDS_CEILING,
+    Number(semanticRequest.quantity.hardMaxCards ?? CARD_GENERATION_DEFAULT_HARD_MAX_CARDS)
+      || CARD_GENERATION_DEFAULT_HARD_MAX_CARDS);
   const userRequest = semanticRequest.feedbackContext?.optionalNote ?? null;
 
   /**
@@ -358,14 +343,15 @@ export async function processCardGenerationSimplifiedJob(
     String(loaded.run.note_version_id), loaded.inputSnapshot.inputSnapshotHash, signal);
 
   /**
-   * 确定性抽出来的原子数：先算一份，装配与留痕共用同一个数。
+   * 确定性抽出来的原子数与被规则挡下的句数：先算一份，装配与留痕共用同一个数。
    *
-   * 为什么要把它写进事件：从"抽出的原子"到"落库的候选"中间有四道**静默**去位——句子太短、
-   * 被判成操作记录、对不上封存证据、超出 `activationHardMax`。现有三个计数器只记后两类之外
-   * 的丢法，所以"这篇笔记到底在哪一步变短的"从库里读不出来（C16 那发 `candidateCount:1`
-   * 而三个计数器全空，就是这么读不出来的）。
+   * 为什么要写进事件：从"抽出的原子"到"落库的候选"中间有四道去位——句子太短、被判成操作
+   * 记录、对不上封存证据、超出 `activationHardMax`。以前只有后两类有计数，前两道发生在
+   * 大模型选目标**之前**，连"原子数减候选数"都对不上，所以"这篇在哪一步变短的"从库里
+   * 读不出来（C16 那发 `candidateCount:1` 而三个计数器全空，就是这么读不出来的）。
    */
-  const atomsForRun = extractAtomsDeterministic(loaded.scopedBlocks);
+  const atomPlanForRun = extractAtomsDeterministicWithStats(loaded.scopedBlocks);
+  const atomsForRun = atomPlanForRun.atoms;
 
   // ── 段 2/3：生成＋落库；已经有这一版候选了就从段 4 接上（重投不重付）────
   let candidates: LearningCardCandidateRevisionV2[];
@@ -396,7 +382,7 @@ export async function processCardGenerationSimplifiedJob(
     const generateInput: CardGenerateV3TaskInput = {
       runId,
       noteTitle,
-      noteBlocks: capV3PromptBlocks(loaded.scopedBlocks),
+      noteBlocks: cardGenerationPromptBlocks(loaded.scopedBlocks),
       existingObjectives: loaded.existingObjectives.map((objective) => ({
         objectiveId: objective.objectiveId,
         statement: objective.objectiveStatement,
@@ -495,15 +481,11 @@ export async function processCardGenerationSimplifiedJob(
         droppedDrafts: generateOutput!.droppedCandidates,
         assemblyDropped: assembled!.dropped,
         gateRejected: gateRejections,
-        // 原子数与候选数放在同一条事件里：两者之差就是那四道静默去位吃掉的，
-        // 不用再靠"哪一步变短的"去猜（见 `atomsForRun` 那段注释）。
+        // 原子数、被两道规则挡下的句数与候选数放在同一条事件里：四道去位各自有数，
+        // "在哪一步变短的"直接从库里读，不用靠差值去猜（见 `atomsForRun` 那段注释）。
         atomCount: atomsForRun.length,
-      });
-      // 源文本被规模上限截断过就要留痕（39d W4-4 那条判据，简化链此前没人记）：
-      // `loadV2RunInputs` 交回来的已经是截断过的文本，只读加载器不发事件，
-      // 所以由这一段的写事务记——与旧链四处进入点同一份发射器。
-      await emitSourceContentCapEvent(tx, {
-        workspaceId, runId, cap: loaded.sourceContentCap,
+        excludedShortSentences: atomPlanForRun.excluded.tooShort,
+        excludedOperationalSentences: atomPlanForRun.excluded.operational,
       });
       await fenceV2OutboxLease(tx, job);
     });
@@ -720,7 +702,6 @@ async function runContentCheckLegV3(args: {
     // 这里再记就会把同一批数成两条；逐候选那一发（重检／按反馈改写）不经过段 3，
     // 而它同样经 `loadV2RunInputs` 拿到截断过的源文本——所以由这一处记。
     if (settleScope === "candidate_refine") {
-      await emitSourceContentCapEvent(tx, { workspaceId, runId, cap: loaded.sourceContentCap });
     }
     await fenceV2OutboxLease(tx, job);
   });

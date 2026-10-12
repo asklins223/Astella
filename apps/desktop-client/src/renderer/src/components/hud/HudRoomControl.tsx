@@ -14,10 +14,6 @@ import { HudControlPopover } from "./HudControlPopover";
 import type { HudMenuKind } from "./use-hud-popover-motion";
 import { useTactileSurface } from "../motion/use-tactile-surface";
 import { useHudPageClasses } from "./use-hud-page";
-import {
-  SPACE_MENU_OPEN_EVENT,
-  takePendingSpaceMenuRequest,
-} from "./space-menu-events";
 
 /**
  * 图标层全部使用 lucide（与全应用其他 surface 同一图标语言），只有学习空间的
@@ -71,7 +67,6 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
   const spaceMenuOpen = menuKind === "space";
   const accountMenuOpen = menuKind === "account";
   const popoverId = useId();
-  const [spaceNotice, setSpaceNotice] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -83,27 +78,6 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
 
   useTactileSurface(rootRef, "room-control");
   const isExpanded = decorative || onboardingOpen || expanded;
-
-  useEffect(() => {
-    if (decorative) return undefined;
-    // Same-commit requests (gate turns the room over with a failed invite)
-    // dispatched before this listener existed; they are parked and consumed
-    // here instead of being lost.
-    const parked = takePendingSpaceMenuRequest();
-    const onRequest = (event: Event) => {
-      // 一次请求只生效一次：live 事件被这里接住时，把停车副本一并清掉。
-      // 否则副本滞留，之后 gate 失效让药丸重挂载时会被当作新请求消费，
-      // 菜单带着过期的邀请码错误自发弹开。
-      takePendingSpaceMenuRequest();
-      const notice = (event as CustomEvent<{ notice?: unknown }>).detail?.notice;
-      setSpaceNotice(typeof notice === "string" ? notice : null);
-      setMenuKind("space");
-      setExpanded(true);
-    };
-    if (parked) onRequest(new CustomEvent(SPACE_MENU_OPEN_EVENT, { detail: { notice: parked.notice } }));
-    window.addEventListener(SPACE_MENU_OPEN_EVENT, onRequest);
-    return () => window.removeEventListener(SPACE_MENU_OPEN_EVENT, onRequest);
-  }, [decorative]);
 
   useEffect(() => {
     useRoomStore.getState().setCompanionGuideOpen(!decorative && (Boolean(guide.session) || guideMenuOpen && isExpanded));
@@ -198,7 +172,6 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
       setExpanded(false);
       return;
     }
-    setSpaceNotice(null);
     setExpanded(true);
   };
 
@@ -237,7 +210,6 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
    */
   const openSpaceMenu = () => {
     guide.pause();
-    setSpaceNotice(null);
     setMenuKind(current => current === "space" ? null : "space");
     setExpanded(true);
   };
@@ -296,8 +268,8 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
           className={destination === "room" ? "active" : undefined}
           disabled={decorative}
           inert={!isExpanded || undefined}
-          aria-label="返回学习空间"
-          title="返回学习空间总览"
+          aria-label="返回书房首页"
+          title="返回书房首页"
           onClick={() => collapseAndRun(() => invoke("home"))}
         >
           <House aria-hidden="true" />
@@ -421,7 +393,6 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
         guideRef={guideRef}
         guide={guide}
         id={popoverId}
-        notice={spaceNotice}
         onClose={closeMenu}
         onOpenAccount={() => openSettings("account")}
         onSwitched={() => {

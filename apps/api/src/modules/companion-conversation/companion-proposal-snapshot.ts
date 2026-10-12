@@ -63,7 +63,7 @@ export async function getCompanionProposalSnapshot(args: {
         result_ref: string | null;
         result_route: unknown;
         result_safe_summary: string | null;
-        expires_at: Date;
+        expires_at: Date | null;
         decided_at: Date | null;
         created_at: Date;
         updated_at: Date;
@@ -107,7 +107,7 @@ export async function getCompanionProposalSnapshot(args: {
             requiresConfirmation: true,
             status: row.status,
             decision: row.decision,
-            expiresAt: new Date(row.expires_at).toISOString(),
+            expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : null,
             decidedAt: row.decided_at ? new Date(row.decided_at).toISOString() : null,
             createdAt: new Date(row.created_at).toISOString(),
             updatedAt: new Date(row.updated_at).toISOString(),

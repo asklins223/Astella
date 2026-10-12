@@ -1,3 +1,5 @@
+import { resolveCompanionLearningContextInTransaction, sanitizeText } from "./companion-learning-menu-context.ts";
+export { resolveCompanionLearningContext } from "./companion-learning-menu-context.ts";
 /**
  * P5 §6.7：Learning menu context adapter（只读）。
  *
@@ -12,16 +14,11 @@
  */
 
 import { sql } from "drizzle-orm";
-import { companionGroundedTutorGrantV1Schema, companionLearningContextV1Schema, companionLearningRunContextV1Schema, createLearningRunV2RequestSchema, learningRunAssistanceConsequenceV1, proposedLearningActionPayloadV1Schema } from "@astella/shared";
+import { acceptCompanionToolReview } from "./companion-tool-review-action.ts";
+import { companionGroundedTutorGrantV1Schema, companionLearningContextV1Schema, companionLearningRunContextV1Schema, learningRunAssistanceConsequenceV1, proposedLearningActionPayloadV1Schema } from "@astella/shared";
 import { sha256Utf8V1, canonicalJsonV1 } from "@astella/shared/content-hash";
-import type { CompanionLearningContextV1, LearningRunOriginV2 } from "@astella/shared";
 import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
-import { primaryActionPrecedenceV3 } from "../learning-objectives/action-resolver.ts";
 // Plan 23 CS-05/CS-06：Objective Surface 派生 companion 上下文（不再依赖 V1 card_key_points.claim）。
-import {
-  listObjectiveSurfacesV3,
-  type SurfaceContext,
-} from "../learning-objectives/surface-service.ts";
 import { deliver } from "./delivery/delivery-service.ts";
 import { resolveAuthSurfaceManifestSecret } from "../../companion-contracts/auth-surface.ts";
 import { getCompanionAccountEpoch } from "./turn/companion-account-epoch.ts";
@@ -42,207 +39,6 @@ import { getPetProfile, PetProfileCasConflictError, upsertPetProfile } from "./p
 import { resolveNavigationRouteFor, snapshotFor } from "./companion-proposal-snapshot.ts";
 export { getCompanionProposalSnapshot, snapshotFor } from "./companion-proposal-snapshot.ts";
 import { executeCompanionMemoryProposalAction } from "./companion-memory-proposal-action.ts";
-
-function sanitizeText(value: string, max: number): string {
-  return value
-    .replace(/[\u0000-\u001f\u007f]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, max);
-}
-
-/**
- * resolveCompanionLearningContextInTransaction 的内部返回：除公开候选外，附带
- * 已查出、供 proposal create 无重复查询地构造 payload 的最小引用 id。
- * LearningRun 候选的合同已经携带创建/恢复所需的最小引用。
- */
-type ResolvedCompanionContextInternal = CompanionLearningContextV1;
-
-function toPublicContext(ctx: ResolvedCompanionContextInternal): CompanionLearningContextV1 {
-  return {
-    version: ctx.version,
-    contextRevision: ctx.contextRevision,
-    learningRunResumeCandidate: ctx.learningRunResumeCandidate,
-    learningRunStartCandidate: ctx.learningRunStartCandidate,
-  };
-}
-
-/**
- * Plan 23 CS-05/CS-06：V2 run 请求的 originV2 类型守卫。
- * pet 不自建 origin 对象；以下仅作 narrow，保证下游 createRunV2 类型安全。
- */
-function isLearningRunOriginV2(value: unknown): value is LearningRunOriginV2 {
-  if (!value || typeof value !== "object") return false;
-  const kind = (value as { kind?: unknown }).kind;
-  return kind === "card" || kind === "review" || kind === "today" || kind === "star_map" || kind === "onboarding";
-}
-
-/**
- * Plan 23 CS-05/CS-06：从 Objective Surface 主 action 构造 V2 run 请求。
- * 绝不从 claim/summary 自推断 run 参数；所有参数都来自 Surface 的 typed action。
- *
- * 返回 null 表示当前 action 不适合菜单创建（如 none / refresh）。
- */
-function buildStartPayloadV2(
-  surface: Awaited<ReturnType<typeof listObjectiveSurfacesV3>>["items"][number],
-): {
-  request: {
-    originV2: LearningRunOriginV2;
-    goal: "stabilize" | "clarify" | "repair" | "transfer" | "explore";
-    idempotencyKey: string;
-    requestedTimeBudgetSeconds?: number;
-    responsePreference?: "adaptive" | "voice" | "text" | "structured";
-  };
-} | null {
-  const objectiveId = surface.objectiveId;
-  switch (surface.primaryAction.kind) {
-    case "create_run": {
-      return {
-        request: {
-          ...surface.primaryAction.start,
-          idempotencyKey: `pet-menu-v2:${objectiveId}`,
-        },
-      };
-    }
-    case "create_review_run": {
-      return {
-        request: {
-          ...surface.primaryAction.start,
-          idempotencyKey: `pet-menu-v2:${objectiveId}`,
-        },
-      };
-    }
-    case "resume_run": {
-      // resume 语义走 resume_learning_run；create 入口仍需一个 create 语义。
-      return null;
-    }
-    case "view_successor":
-      // view_successor 不是可"创建 run"的 action；菜单不展示。
-      return null;
-    case "refresh":
-    case "practice_only":
-    case "none":
-      // 这些 action 不适合 pet 菜单创建 run。
-      return null;
-    default:
-      return null;
-  }
-  return null;
-}
-
-
-async function resolveCompanionLearningContextInTransaction(
-  tx: ApiTransaction,
-  args: {
-    workspaceId: string;
-    userId: string;
-  },
-): Promise<ResolvedCompanionContextInternal> {
-  // This helper deliberately accepts the caller's transaction. Proposal
-  // creation must validate the read-only context and perform all writes under
-  // the same RLS snapshot; opening a nested transaction here would leave a
-  // race between validation and insertion.
-  // 当前候选只从 Objective Surface 派生，不能从已删除的 Session/Episode 表回退。
-  const surfaceCtx: SurfaceContext = {
-    workspaceId: args.workspaceId,
-    userId: args.userId,
-  };
-  const objectiveLimit = 5;
-  const { items: objectives } = await listObjectiveSurfacesV3(tx, surfaceCtx, {
-    limit: objectiveLimit,
-    lifecycle: "active",
-  });
-
-  /**
-   * 顺位取 §3.2 那一份唯一住处（`action-resolver.ts`），**这里不再抄表**。
-   * 此前这份本地表把 `create_run` 排在 `create_review_run` 之前——伴星会因此把
-   * 「开始学习」排在「到期复习」前面，正是 §3.2 明令不许的那种不一致
-   * （"不能在笔记页推荐初学、首页强制复习、星图又恢复另一轮"）。
-   */
-  const sorted = [...objectives].sort(
-    (a, b) => primaryActionPrecedenceV3(a.primaryAction.kind) - primaryActionPrecedenceV3(b.primaryAction.kind),
-  );
-
-  // resume：带 activeRun 的第一个 Objective（typed resume_run）。
-  let learningRunResumeCandidate: CompanionLearningContextV1["learningRunResumeCandidate"] = null;
-  const resumeObjective = sorted.find((s) => s.personal.activeRun);
-  if (resumeObjective) {
-    const runId = resumeObjective.personal.activeRun!.runId;
-    const label = resumeObjective.content.conceptLabel;
-    const title = sanitizeText(label ?? "", 80) || "继续本次巩固";
-    const summaryPreview = resumeObjective.content.publicSummary.split("\n")[0] ?? "";
-    const payload = { kind: "resume_learning_run", runId };
-    learningRunResumeCandidate = {
-      candidateId: "learning_run_resume",
-      runId,
-      title,
-      targetSummary: sanitizeText(summaryPreview || `继续：${title}`, 160),
-      impactSummary: "恢复当前学习运行",
-      payloadSha256: sha256Utf8V1(canonicalJsonV1(payload)),
-    };
-  }
-
-  // start：可执行的第一个 Objective（typed create_run / create_review_run）。
-  let learningRunStartCandidate: CompanionLearningContextV1["learningRunStartCandidate"] = null;
-  const actionableObjective = sorted.find((s) => {
-    const k = s.primaryAction.kind;
-    return k === "create_run" || k === "create_review_run" || k === "resume_run";
-  });
-  if (actionableObjective) {
-    const label = actionableObjective.content.conceptLabel;
-    const claimText = label ?? "";
-    const startAction = actionableObjective.primaryAction;
-    const payloadV2 = buildStartPayloadV2(actionableObjective);
-    const v2Payload = payloadV2 ? {
-      kind: "start_learning_run_v2" as const,
-      request: payloadV2.request,
-    } : null;
-    if (v2Payload && isLearningRunOriginV2(v2Payload.request.originV2)) {
-      const request = createLearningRunV2RequestSchema.parse(v2Payload.request);
-      const proposalPayload = { kind: "start_learning_run_v2" as const, request };
-      learningRunStartCandidate = {
-      candidateId: "learning_run_start",
-      // 没有概念名时用**服务端这一条 action 自己带的 label**（「开始学习」／「开始首次验证」／
-      // 「再做一次正式挑战」／「开始到期复习」）。这里原来硬写了「开始验证」——那既不是
-      // 这一条动作的词，还把"练习/新学"说成"正式验证"（2026-09-25 量到：无卡目标的候选
-      // title=「开始验证」而 action.label=「开始学习」）。一个用户可见的词只准一个来源。
-      title: sanitizeText(claimText, 80)
-        || (startAction.kind === "create_run" || startAction.kind === "create_review_run"
-          ? startAction.label
-          : claimText),
-      targetSummary: sanitizeText(actionableObjective.content.publicSummary.split("\n")[0]
-        || `开始：${claimText}`, 160),
-      impactSummary: actionableObjective.personal.review?.status === "due"
-        ? "完成复习运行，恢复记忆曲线"
-        : "创建一次学习运行，完成后按真实结果安排复习",
-      payloadSha256: sha256Utf8V1(canonicalJsonV1(proposalPayload)),
-      objectiveId: actionableObjective.objectiveId,
-      originV2: request.originV2,
-      request,
-      };
-    }
-  }
-
-  const contextRevision = sha256Utf8V1(
-    canonicalJsonV1({ learningRunResumeCandidate, learningRunStartCandidate }),
-  );
-  return {
-    version: 1,
-    contextRevision,
-    learningRunResumeCandidate,
-    learningRunStartCandidate,
-  };
-}
-
-export async function resolveCompanionLearningContext(args: {
-  workspaceId: string;
-  userId: string;
-}): Promise<CompanionLearningContextV1> {
-  return withWorkspaceTransaction(
-    { workspaceId: args.workspaceId, userId: args.userId },
-    (tx) => resolveCompanionLearningContextInTransaction(tx, args).then(toPublicContext),
-  );
-}
 
 // ─── P5 §6.7 Menu proposal create（原子事务） ───────────────────────────
 
@@ -423,7 +219,7 @@ async function createCompanionProposalInTransaction(
         result_ref: string | null;
         result_route: unknown;
         result_safe_summary: string | null;
-        expires_at: Date;
+        expires_at: Date | null;
         decided_at: Date | null;
         created_at: Date;
         updated_at: Date;
@@ -483,7 +279,7 @@ async function createCompanionProposalInTransaction(
             resultRef: row.result_ref,
             route: row.result_route,
             safeSummary: row.result_safe_summary,
-            expiresAt: new Date(row.expires_at).toISOString(),
+            expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : null,
             decidedAt: row.decided_at ? new Date(row.decided_at).toISOString() : null,
             createdAt: new Date(row.created_at).toISOString(),
             updatedAt: new Date(row.updated_at).toISOString(),
@@ -616,7 +412,7 @@ async function createCompanionProposalInTransaction(
       // 应为最近 generation；新对话无 turn → 0）。
       const sourceGeneration = Math.max(0, Number(convGen[0]?.next_generation ?? 1) - 1);
       const insertedProposal = await tx.execute<{
-        expires_at: Date;
+        expires_at: Date | null;
         created_at: Date;
         updated_at: Date;
       }>(sql`
@@ -633,6 +429,7 @@ async function createCompanionProposalInTransaction(
         RETURNING expires_at, created_at, updated_at
       `);
       const proposalTimes = insertedProposal[0];
+      if (!proposalTimes?.expires_at) throw new CompanionConversationError("INTERNAL_ERROR", 500, "menu proposal expiry missing");
       await tx.execute(sql`
         UPDATE companion_messages SET action_ref = ${proposalId} WHERE id = ${assistantMessageId}
       `);
@@ -698,7 +495,7 @@ async function createCompanionProposalInTransaction(
           requiresConfirmation: true,
           status: "pending",
           decision: null,
-          expiresAt: new Date(proposalTimes.expires_at).toISOString(),
+          expiresAt: proposalTimes.expires_at ? new Date(proposalTimes.expires_at).toISOString() : null,
           decidedAt: null,
           createdAt: new Date(proposalTimes.created_at).toISOString(),
           updatedAt: new Date(proposalTimes.updated_at).toISOString(),
@@ -856,20 +653,37 @@ async function releaseExpiredProposalForDecision(args: {
  * - 同 key 同 decision 返回同一结果；异参 409；已被消费返回当前状态；
  * - router 只生成 proposal，不执行任何 Learning 副作用（执行在 worker）。
  */
-export async function decideCompanionProposal(args: {
+type CompanionProposalDecisionInput = {
   workspaceId: string;
   userId: string;
   proposalId: string;
   decision: "confirm" | "reject";
   idempotencyKey: string;
   expectedPayloadSha256: string;
-}): Promise<unknown> {
+};
+
+export async function decideCompanionProposal(args: CompanionProposalDecisionInput): Promise<unknown> {
+  return withWorkspaceTransaction({ workspaceId: args.workspaceId, userId: args.userId },
+    () => decideCompanionProposalInCurrentTransaction(args),
+  ).catch(async (error: unknown) => {
+    // The decision transaction rolled back because the confirmation TTL already
+    // elapsed. Release the parked agent run in a committed transaction so the
+    // conversation can accept the next turn, then surface the original 409.
+    if (error instanceof CompanionConversationError && error.code === "ACTION_EXPIRED") {
+      await releaseExpiredProposalForDecision(args);
+    }
+    throw error;
+  });
+}
+
+
+async function decideCompanionProposalInCurrentTransaction(args: CompanionProposalDecisionInput): Promise<unknown> {
   const result = await withWorkspaceTransaction(
     { workspaceId: args.workspaceId, userId: args.userId },
     async (tx) => {
       const rows = await tx.execute<{
         id: string; conversation_id: string; source_message_id: string | null; status: string; decision: string | null;
-        decision_key_hash: string | null; expires_at: Date;
+        decision_key_hash: string | null; expires_at: Date | null;
         payload: { kind: string; [key: string]: unknown } | string;
         payload_sha256: string;
         result_ref: string | null;
@@ -927,7 +741,7 @@ export async function decideCompanionProposal(args: {
           "ACTION_STALE", 409, "proposal not pending",
         );
       }
-      if (new Date(proposal.expires_at).getTime() < Date.now()) {
+      if (proposal.expires_at && new Date(proposal.expires_at).getTime() < Date.now()) {
         throw new CompanionConversationError("ACTION_EXPIRED", 409, "proposal expired");
       }
 
@@ -1001,6 +815,12 @@ export async function decideCompanionProposal(args: {
       }
 
       const kind = proposalPayload.kind;
+      if (kind === "agent_tool_review") {
+        await acceptCompanionToolReview(tx, args, proposal, proposalPayload, keyHash);
+        await appendDecisionEvent(tx, args.workspaceId, args.userId, proposal, "accepted");
+        return { version: 1, proposalId: proposal.id, status: "accepted", resultRef: null, route: null,
+          safeSummary: proposalPayload.confirmationStage === "after_preview" ? "已确认，正在保存结果" : "已确认，正在执行操作" };
+      }
       if (NAVIGATION_KINDS.has(kind)) {
         // 纯导航：同步完成（200 succeeded）
         const route = await resolveNavigationRouteFor(
@@ -1224,20 +1044,11 @@ export async function decideCompanionProposal(args: {
         "ACTION_STALE", 409, "unsupported companion action",
       );
     },
-  ).catch(async (error: unknown) => {
-    // The decision transaction rolled back because the confirmation TTL already
-    // elapsed. Release the parked agent run in a committed transaction so the
-    // conversation can accept the next turn, then surface the original 409.
-    if (error instanceof CompanionConversationError && error.code === "ACTION_EXPIRED") {
-      await releaseExpiredProposalForDecision(args);
-    }
-    throw error;
-  });
+  );
 
-  // Agent proposals are not terminal chat actions. Once the decision is
-  // committed, enqueue the original run with the proposal id so the worker
-  // can feed the frozen decision back into the same bounded loop. The
-  // run-status fence makes retries and late duplicate decisions harmless.
+  // Publish the decision, tool state, continuation job and run pointer together.
+  // Nested workspace transactions reuse this outer transaction: a worker never
+  // sees a queued job with the old run lease, and a queue error rolls back the decision.
   const continuation = await withWorkspaceTransaction(
     { workspaceId: args.workspaceId, userId: args.userId },
     async (tx) => {
@@ -1249,8 +1060,9 @@ export async function decideCompanionProposal(args: {
         decision: string | null;
         run_status: string | null;
         waiting_proposal_id: string | null;
+        payload: { kind?: string };
       }>(sql`
-        SELECT p.origin, p.agent_run_id, p.agent_tool_call_id, p.status, p.decision,
+        SELECT p.origin, p.agent_run_id, p.agent_tool_call_id, p.status, p.decision, p.payload,
                r.status AS run_status, r.waiting_proposal_id
         FROM companion_action_proposals p
         LEFT JOIN companion_turn_runs r ON r.id = p.agent_run_id
@@ -1265,9 +1077,11 @@ export async function decideCompanionProposal(args: {
       const safeSummary = typeof body.safeSummary === "string"
         ? body.safeSummary
         : row.decision === "reject" ? "用户拒绝了这次操作" : "操作已完成";
+      const reviewed = row.payload?.kind === "agent_tool_review";
+      if (reviewed && (row.run_status !== "waiting_for_confirmation" || row.waiting_proposal_id !== args.proposalId)) return null;
       await tx.execute(sql`
         UPDATE companion_agent_tool_calls
-        SET status = ${row.decision === "confirm" ? "succeeded" : "failed"},
+        SET status = ${reviewed ? row.decision === "confirm" ? "requested" : "not_executed" : row.decision === "confirm" ? "succeeded" : "failed"},
             result_ref = ${typeof body.resultRef === "string" ? body.resultRef : null},
             result_safe_summary = ${safeSummary},
             updated_at = now()
@@ -1283,7 +1097,7 @@ export async function decideCompanionProposal(args: {
     },
   );
   if (continuation) {
-    await createJob({
+    const continuationJob = await createJob({
       type: "companion_agent",
       workspaceId: args.workspaceId,
       requestedBy: args.userId,
@@ -1301,7 +1115,7 @@ export async function decideCompanionProposal(args: {
       { workspaceId: args.workspaceId, userId: args.userId },
       (tx) => tx.execute(sql`
         UPDATE companion_turn_runs
-        SET status = 'accepted', waiting_proposal_id = NULL, updated_at = now()
+        SET status = 'accepted', waiting_proposal_id = NULL, job_id=${continuationJob.id}, updated_at = now()
         WHERE id = ${continuation.runId}
           AND status = 'waiting_for_confirmation'
           AND waiting_proposal_id = ${continuation.proposalId}
@@ -1310,7 +1124,6 @@ export async function decideCompanionProposal(args: {
   }
   return result;
 }
-
 
 
 /** §18 同步工具成功收尾：proposal → succeeded + decision 事件。 */

@@ -58,7 +58,7 @@
 
 现有入口和业务链路已有代码、测试及部分窗口／真实模型证据。验收应逐项阅读：笔记编辑与写作见 [编辑记录](../../testing/companion-note-editing-2026-10-08.md) 和 [生成记录](../../testing/companion-note-authoring-2026-10-08.md)；上下文治理的实库、模型对照与剩余限制见 [方案 44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md)；长对话自然度与等待稳定性见 [方案 46](../../plans/learning-companion/46-companion-natural-conversation-research-and-design-2026-10-07.md)。这些记录不构成全产品或长期效果已经通过的结论。
 
-当前不提供个人模型／供应商配置界面、独立透明置顶桌宠窗口、自由相机与鼠标视差漫游、邮件自助找回密码。Live2D 加载失败时隐藏形象并说明，文字和已有记录继续可用。
+当前不提供个人模型／供应商配置界面、独立透明置顶桌宠窗口、自由相机与鼠标视差漫游。Live2D 加载失败时隐藏形象并说明，文字和已有记录继续可用。
 
 ## 继续阅读
 

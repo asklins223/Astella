@@ -1,43 +1,31 @@
 /**
  * 制卡内核里两份纯逻辑的回归（2026-09-15 管线评审 M6/M7 起，2026-09-27 刀二随旧链删余）。
  *
- * - `capSourceContentForPrompts`（`card-generation-v2/run-io.ts`）：源文本规模硬上限。
- *   旧链的四阶段 prompt 与简化链的 block 列表输入都受它管（后者是刀二补的那一格）。
+ * - `cardGenerationPromptBlocks`：长笔记全部原文与块序号完整进入生成请求。
  * - `isNonRetryableErrorLike`（`card-generation-v2/retry-classification.ts`）：
  *   "这一发错误能不能重投"的分类，两种形状都要认（下面第三格钉的就是那次事故）。
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { randomUUID } from "node:crypto";
 import { DomainError } from "@astella/shared";
 
 import {
-  capSourceContentForPrompts,
-  V2_SOURCE_CONTENT_MAX_CHARS,
+  cardGenerationPromptBlocks,
 } from "../../card-generation-v2/run-io.ts";
 import { cardGenerationFailureCode, isNonRetryableErrorLike } from "../../card-generation-v2/retry-classification.ts";
 
 test("terminal card failures retain output, timeout and permission causes", () => {
   assert.equal(cardGenerationFailureCode({ failureClass: "output_shape" }), "generation_output_invalid");
+  assert.equal(cardGenerationFailureCode({ failureClass: "output_truncated" }), "generation_output_truncated");
   assert.equal(cardGenerationFailureCode({ failureClass: "timeout" }), "generation_timeout");
   assert.equal(cardGenerationFailureCode({ code: "ai_data_policy_denied" }), "ai_data_policy_denied");
   assert.equal(cardGenerationFailureCode(new Error("unrecognized")), "generation_failed");
 });
 
-test("源文本上限：未超限原样返回；超限截断并标记", () => {
-  const workspaceId = randomUUID();
-  const small = "x".repeat(10);
-  assert.deepEqual(capSourceContentForPrompts(small, workspaceId), {
-    content: small,
-    truncated: false,
-    originalLength: small.length,
-  });
-
-  const huge = "y".repeat(V2_SOURCE_CONTENT_MAX_CHARS + 5_000);
-  const capped = capSourceContentForPrompts(huge, workspaceId);
-  assert.equal(capped.truncated, true);
-  assert.equal(capped.content.length, V2_SOURCE_CONTENT_MAX_CHARS);
-  assert.ok(huge.startsWith(capped.content));
+test("长笔记的所有块与末尾完整进入制卡提示，序号保持原样", () => {
+  const blocks = Array.from({ length: 3 }, (_, ordinal) => ({ blockId: `block-${ordinal}`, ordinal,
+    content: `${"完整材料。".repeat(10_000)}第${ordinal}块末尾` }));
+  assert.deepEqual(cardGenerationPromptBlocks(blocks), blocks.map(({ blockId, ordinal, content }) => ({ blockId, ordinal, text: content })));
 });
 
 // ─── 2026-09-17 事故回归：非重试错误被当成可重试 ────────────────────────────

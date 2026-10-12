@@ -1,0 +1,97 @@
+{
+  "date": "2026-10-11",
+  "version": "Demo 05 / clear-glass-r18",
+  "scope": "Local HTML/CSS/JS demo; account, chat, note, preference and memory fixtures only",
+  "automated": {
+    "tests": 27,
+    "passed": 27,
+    "failed": 0,
+    "dataTests": 7,
+    "motionTests": 12,
+    "accountTests": 8,
+    "syntaxScripts": 7,
+    "captureScriptExecuted": false
+  },
+  "windowChecks": {
+    "login": {
+      "layout": "Centered companion and one untinted glass form",
+      "portraitCssWidth": 215,
+      "portraitCssHeight": 182,
+      "scrollTop": 0,
+      "horizontalOverflow": 0,
+      "incorrectPassword": "Email/password error stays in form",
+      "correctDemoPassword": "Restored the sample bookroom"
+    },
+    "registration": {
+      "mainSubmitFullyVisibleAt390x844": true,
+      "optionalInviteInitiallyCollapsed": true,
+      "mismatchedPasswords": "Keeps editable fields; focuses confirmPassword"
+    },
+    "smallRegistration": {
+      "deviceWidth": 320,
+      "deviceHeight": 640,
+      "keyboardOccupancy": 205,
+      "focusedField": "confirmPassword",
+      "fieldTop": 282.6953125,
+      "fieldBottom": 332.6953125,
+      "viewportTop": 136.982421875,
+      "viewportBottom": 478.994140625,
+      "scrollTop": 321.25,
+      "horizontalOverflow": 0,
+      "nativeKeyboard": false
+    },
+    "sharedBackdrop": {
+      "beforeView": "当前对话",
+      "duringView": "手记内容",
+      "ghostPresentDuringCheck": true,
+      "rootColorBeforeAndDuring": "rgb(248, 247, 242)",
+      "imageBeforeAndDuring": "mobile-companion-toplight.png",
+      "maskBeforeAndDuring": "linear-gradient(rgb(0,0,0) 0%, rgba(0,0,0,.733) 35%, rgba(0,0,0,0) 92%)",
+      "pageAndGhostColor": "rgba(0, 0, 0, 0)",
+      "readerTransparent": true,
+      "horizontalOverflow": 0
+    },
+    "glass": {
+      "computedSurfaces": "White RGBA only; no colored material fill",
+      "defaultBlur": "20px",
+      "overlayBlur": "28px",
+      "observedControls": [
+        "login-card",
+        "registration inputs",
+        "composer-tray",
+        "navigation-tray",
+        "settings groups"
+      ],
+      "offBackground": "rgb(247, 247, 247)",
+      "offBlur": "none"
+    },
+    "checkedPages": [
+      "登录",
+      "创建账号",
+      "对话",
+      "手记",
+      "阅读",
+      "伴星中心",
+      "个人中心",
+      "设置"
+    ],
+    "consoleErrors": 0
+  },
+  "screenshots": {
+    "37": "37-toplight-companion.jpg",
+    "38": "38-toplight-conversation.jpg",
+    "39": "39-toplight-notes.jpg",
+    "40": "40-toplight-reading.jpg",
+    "41": "41-toplight-login.jpg",
+    "42": "42-toplight-settings.jpg",
+    "43": "43-toplight-profile.jpg",
+    "44": "44-toplight-registration.jpg",
+    "45": "45-clear-glass-small-keyboard.jpg"
+  },
+  "limits": [
+    "No real authentication, Agent/model, cross-device sync, ASR, mobile Live2D or native mobile host",
+    "Keyboard measurement uses a demo placeholder",
+    "Native GPU/compositor performance and sound quality not verified",
+    "Visual approval remains with the user"
+  ]
+}

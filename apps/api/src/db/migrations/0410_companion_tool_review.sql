@@ -41,7 +41,7 @@ BEGIN
   THEN RAISE EXCEPTION 'note creation scope unavailable' USING ERRCODE='42501'; END IF;
   IF p_title IS NULL OR length(btrim(p_title))=0 OR length(p_title)>200
     OR p_title_source NOT IN ('manual','auto') OR jsonb_typeof(blocks) IS DISTINCT FROM 'array'
-    OR jsonb_typeof(link_refs) IS DISTINCT FROM 'array' OR jsonb_array_length(link_refs)>6
+    OR jsonb_typeof(link_refs) IS DISTINCT FROM 'array'
     OR octet_length(p_blocks::text)>2097152
     OR EXISTS(SELECT 1 FROM jsonb_array_elements(blocks) b
       WHERE b->>'type' IS NULL OR b->>'type' NOT IN ('paragraph','heading','code','list','quote','image')

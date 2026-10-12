@@ -55,6 +55,8 @@ describe("学习卡作答后的返回", () => {
     const api = gateway();
     render(<ValidationSurface />);
     act(() => useRoomStore.getState().invoke("open-notes"));
+    // 审计 F3：作答中从侧栏导航先落进确认纸；确认后才释放并前往。
+    fireEvent.click(screen.getByRole("button", { name: "结束这一轮" }));
     await waitFor(() => expect(useRoomStore.getState().surface).toBe("note-library"));
     expect(api.learningRun.getReturnContract).toHaveBeenCalledWith(expect.objectContaining({ runId: RUN_ID }));
     expect(api.navigation.resolve).toHaveBeenCalledWith(expect.objectContaining({ route: { kind: "room.home" }, learningRunId: RUN_ID }));
@@ -82,6 +84,8 @@ describe("学习卡作答后的返回", () => {
     api.navigation.go.mockImplementation(() => pendingGo.promise);
     render(<ValidationSurface />);
     act(() => useRoomStore.getState().invoke("open-objectives"));
+    // 审计 F3：先经确认纸，才真正开始这一次释放。
+    fireEvent.click(screen.getByRole("button", { name: "结束这一轮" }));
     await waitFor(() => expect(api.navigation.go).toHaveBeenCalledTimes(1));
     act(() => {
       useRoomStore.getState().invoke("open-notes");
@@ -111,6 +115,7 @@ describe("学习卡作答后的返回", () => {
     api.learningRun.getReturnContract.mockRejectedValue(new Error("target unavailable"));
     render(<ValidationSurface />);
     act(() => useRoomStore.getState().invoke("open-notes"));
+    fireEvent.click(screen.getByRole("button", { name: "结束这一轮" }));
     await waitFor(() => expect(useRoomStore.getState().surface).toBe("note-library"));
     expect(api.navigation.resolve).toHaveBeenCalledWith(expect.objectContaining({ route: { kind: "room.home" } }));
     expect(api.navigation.resolve.mock.calls[0][0]).not.toHaveProperty("learningRunId");

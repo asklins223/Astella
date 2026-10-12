@@ -11,7 +11,7 @@ export const SETTINGS_SECTIONS = [
   { id: "appearance", label: "主题与动效", icon: Leaf, description: "挑一个喜欢的光线，再试试书房的弹性手感。", tone: "yellow" },
   { id: "companion", label: "伴星设置", icon: Sparkles, description: "什么时候陪伴、用什么声音，都按你的习惯来。", tone: "mint" },
   { id: "data", label: "AI 数据同意", icon: ShieldCheck, description: "哪些内容可以交给 AI，由你自己决定。", tone: "sky" },
-  { id: "management", label: "数据与维护", icon: Archive, description: "收好学习内容的副本，照看这间书房。", tone: "peach" },
+  { id: "management", label: "数据与维护", icon: Archive, description: "收好学习内容的副本，照看书房的数据与画面（含渲染兼容模式）。", tone: "peach" },
 ] as const;
 export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]["id"];
 

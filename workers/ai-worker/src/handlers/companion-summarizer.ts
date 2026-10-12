@@ -12,6 +12,7 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
+import { companionMemoryContentMaxLength } from "@astella/shared/companion-memory-desktop-contracts";
 import { logger } from "../lib/logger.ts";
 import { readJobPayloadString } from "@astella/shared";
 import { createProvider } from "../lib/ai-provider.ts";
@@ -34,7 +35,7 @@ import {
 } from "@astella/shared/context-budget-contracts";
 import {
   boundCompanionRecentHistory,
-  REPLAY_WINDOW_MESSAGES,
+  REPLAY_HISTORY_READ_ROWS,
 } from "./companion-dialogue-content.ts";
 import type { JobPayload } from "./index.ts";
 import { runWorkerAiTask } from "./worker-ai-task.ts";
@@ -461,7 +462,7 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
     // 先用和对话 prompt 相同的回放窗口规则找到真实裁剪点。
     // 这样，被回放窗口挤出 prompt、但仍在最近那几条里的旧消息也能进入摘要，
     // 而不是留下“摘要没覆盖、原文也没回放”的空档。
-    const tailRows = await readCompanionHistoryRows(tx, conversationId, { limit: REPLAY_WINDOW_MESSAGES });
+    const tailRows = await readCompanionHistoryRows(tx, conversationId, { limit: REPLAY_HISTORY_READ_ROWS });
     const visibleTail = boundCompanionRecentHistory(tailRows.slice().reverse().map((row) => ({
       seq: row.seq,
       role: row.role as "user" | "assistant",
@@ -690,21 +691,36 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
       return false;
     }
 
-    // 生成 episodic 候选记忆。§9.4：写入端即限制 ≤200 字，确保读取注入时不需截断。
-    const episodicContent = (summary.title + "：" + summary.keyEvents.slice(0, 3).join("；")).slice(0, 200);
-    await tx.execute(sql`
-      INSERT INTO assistant_memory_items
-        (workspace_id, user_id, kind, content, source_event_id, user_stated, user_confirmed,
-         candidate, importance, confidence, scope, source_type, embedding_status, created_at, updated_at)
-      VALUES
-        (${job.workspaceId}, ${userId}, 'episodic',
-         ${episodicContent},
-         ${`summary:${conversationId}:${sourceRunId ?? "conversation"}`},
-         false, false, true, 0.4, 0.7, 'workspace', 'summary', 'pending', now(), now())
-      ON CONFLICT (workspace_id, user_id, kind, source_event_id)
-        WHERE deleted_at IS NULL AND source_event_id IS NOT NULL
-      DO NOTHING
-    `);
+    // 生成 episodic 候选记忆。§9.4：正文的篇幅由 `companionMemoryContentMaxLength` 那一处声明；
+    // 超出就不再写这一条——以前 `.slice(0, 3)` + `.slice(0, 200)` 会静默剪尾，把一句话剪成半句
+    // 落库，读的人既看不出这是被裁过，也没法从这里回到原始事件。
+    const episodicContent = `${summary.title}：${summary.keyEvents.join("；")}`;
+    if (episodicContent.length > companionMemoryContentMaxLength) {
+      logger.info(
+        {
+          jobId: job.id,
+          conversationId,
+          sourceRunId,
+          contentLength: episodicContent.length,
+          limit: companionMemoryContentMaxLength,
+        },
+        "summarizer skipped the episodic memory: content exceeded the declared length",
+      );
+    } else {
+      await tx.execute(sql`
+        INSERT INTO assistant_memory_items
+          (workspace_id, user_id, kind, content, source_event_id, user_stated, user_confirmed,
+           candidate, importance, confidence, scope, source_type, embedding_status, created_at, updated_at)
+        VALUES
+          (${job.workspaceId}, ${userId}, 'episodic',
+           ${episodicContent},
+           ${`summary:${conversationId}:${sourceRunId ?? "conversation"}`},
+           false, false, true, 0.4, 0.7, 'workspace', 'summary', 'pending', now(), now())
+        ON CONFLICT (workspace_id, user_id, kind, source_event_id)
+          WHERE deleted_at IS NULL AND source_event_id IS NOT NULL
+        DO NOTHING
+      `);
+    }
     // 反向引用（方案 44 §3.3）：记下这份摘要派生出哪条记忆。
     // 没有它，用户遗忘那条记忆之后这份摘要仍会每轮注入同样的内容——遗忘被 undo 掉了。
     // 0388 的触发器靠这一列把失效传递回来（把摘要置为 `stale`，读取侧立刻不再注入）。

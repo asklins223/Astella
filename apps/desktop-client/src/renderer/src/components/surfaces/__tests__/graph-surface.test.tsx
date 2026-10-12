@@ -242,6 +242,39 @@ describe("GraphSurface · 全窗口的星空与笔记旁页", () => {
     expect(readout.className).toContain("universe-layer-readout");
   });
 
+  /**
+   * 「我在正文里引用了另一篇，星图上看不到那条线」（2026-10-10 用户报）。服务端那半边
+   * 有真库用例（`understanding-topology-v3` 的 TP-11），这一条管渲染这半边：笔记↔笔记
+   * 的端点 key 要落得进节点集合，否则边会在 `normalizeUnderstandingGraph` 处被当成悬空
+   * 引用**静默丢掉**——读数少一条光路，而屏幕上什么都没有。
+   */
+  it("笔记引用笔记也算一条真实光路，图例里的开关不因此禁用", async () => {
+    const citedNoteId = nextId();
+    const notesOnly = snapshot().nodes.filter(node => node.nodeRef.kind === "note");
+    const cited: UnderstandingNodeProjectionV3 = {
+      nodeRef: { kind: "note", noteId: citedNoteId },
+      label: "欧姆定律的适用条件",
+      currentVersionId: nextId(),
+      hasSource: false,
+    } as UnderstandingNodeProjectionV3;
+    stubGateway(snapshot({
+      nodes: [...notesOnly, cited],
+      edges: [{
+        edgeId: `ref-${NOTE_ID}-${citedNoteId}`,
+        kind: "references",
+        from: { kind: "note", id: NOTE_ID },
+        to: { kind: "note", id: citedNoteId },
+        reasonCodes: ["link_id"],
+        decidable: false,
+      }],
+    }));
+    render(<GraphSurface />);
+
+    expect(await screen.findByText("2 / 2 星体 · 0 理解恒星 · 0 证据卫星 · 1 真实光路")).toBeTruthy();
+    fireEvent.click(screen.getByText("图层与图例"));
+    expect((screen.getByRole("checkbox", { name: "关系光路" }) as HTMLInputElement).disabled).toBe(false);
+  });
+
   it("保留成熟版的缩放、适配、状态筛选和图层控制", async () => {
     stubGateway(snapshot());
     render(<GraphSurface />);

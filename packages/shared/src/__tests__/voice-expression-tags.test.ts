@@ -6,9 +6,13 @@ import { COMPANION_HOST_PROTOCOL_V7, COMPANION_PERSONA_V11, COMPANION_PERSONA_V1
 import {
   VOICE_EMOTION_TAGS,
   VOICE_RICH_TAGS,
+  VOICE_STYLE_INSTRUCTION_MAX_UNITS,
   stripVoiceExpressionTags,
+  stripVoiceStyleInstruction,
   extractVoiceEmotion,
+  readVoiceStyleInstruction,
   readVoiceExpressionTags, voiceExpressionCue, prepareQwenVoiceExpressionText, withholdPartialVoiceExpressionTag,
+  voiceStyleInstructionUnits,
 } from "../voice-expression-tags.ts";
 
 test("current host protocol admits scoped speech metadata and has a reproducible audit hash", () => {
@@ -50,6 +54,42 @@ test("标签剥离：白名单标签全部剥离（含大小写与带空格标�
 test("标签剥离：不误伤正文普通方括号（[重要] 原样保留）", () => {
   const out = stripVoiceExpressionTags("[重要] 这道题 [b] 不是标签");
   assert.equal(out, "[重要] 这道题 [b] 不是标签");
+});
+
+// ─── [voice-style:…] turn 级风格指令 ────────────────────────────────────────
+
+test("风格指令：读第一条、剥离干净，正文方括号与情绪标签都不受影响", () => {
+  const raw = "[voice-style:用河南话讲][neutral]中不中？[excited]太得劲了！";
+  assert.equal(readVoiceStyleInstruction(raw), "用河南话讲");
+  assert.equal(stripVoiceStyleInstruction(raw), "[neutral]中不中？[excited]太得劲了！");
+  // 展示/朗读走的总剥离入口也必须把它剥掉，否则会被当正文显示或念出来。
+  assert.equal(stripVoiceExpressionTags(raw), "中不中？太得劲了！");
+  assert.equal(readVoiceStyleInstruction("[neutral]没有指令的正文"), null);
+  // 空格变体：模型偶发写成 voice style，读/剥同样认——漏出去会显示在界面上。
+  assert.equal(readVoiceStyleInstruction("[voice style:慢慢说]正文"), "慢慢说");
+  assert.equal(stripVoiceExpressionTags("[voice style:慢慢说]正文"), "正文");
+});
+
+test("风格指令：超限整体丢弃不截断（回退偏好，不把半句风格发给上游）", () => {
+  const over = "温柔".repeat(51); // 102 单位
+  assert.ok(voiceStyleInstructionUnits(over) > VOICE_STYLE_INSTRUCTION_MAX_UNITS);
+  assert.equal(readVoiceStyleInstruction(`[voice-style:${over}]正文`), null);
+  assert.equal(voiceStyleInstructionUnits("abc汉字"), 3 + 4);
+});
+
+test("风格指令：qwen 分支从文本里剥掉（走 instruction 参数，不走正文）", () => {
+  assert.equal(
+    prepareQwenVoiceExpressionText("[voice-style:睡前故事口吻][excited]快听！", "qwen-audio-3.1-tts-flash"),
+    "[excited]快听！", // 已知情绪标签按 qwen 能力保留，风格标记必须剥
+  );
+});
+
+test("风格指令：流式半个标记扣住不下发，闭合后按前缀单调剥除", () => {
+  assert.equal(withholdPartialVoiceExpressionTag("正文。[voice-sty"), "正文。");
+  assert.equal(withholdPartialVoiceExpressionTag("正文。[voice-style:用河"), "正文。");
+  // 闭合了就不该再被扣——交给剥离；中文方括号不受影响。
+  assert.equal(withholdPartialVoiceExpressionTag("正文。[voice-style:用河南话]继续"), "正文。[voice-style:用河南话]继续");
+  assert.equal(withholdPartialVoiceExpressionTag("[重要]保留"), "[重要]保留");
 });
 
 // 2026-08-24 行为变更（AI 设计审查 §4.2）：此前模型自造标签原样漏进

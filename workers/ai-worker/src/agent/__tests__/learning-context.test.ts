@@ -15,7 +15,6 @@ import {
   ADOPTABLE_EPISTEMIC_STATUSES,
   ADOPTABLE_PREFERENCE_SCOPES,
   AGENT_PREFERENCE_LIMIT,
-  AGENT_PREFERENCE_TEXT_LIMIT,
   adoptAgentPreferences,
   type AgentPreferenceRow,
 } from "../learning-preferences.ts";
@@ -42,10 +41,13 @@ function executor(replies: unknown[]) {
   return { tx, queries };
 }
 
-test("采用的那一条带上真实 id、修订号与范围，正文与适用条件长度有界", () => {
+test("采用的那一条带上真实 id、修订号与范围，正文整条给出", () => {
+  // 2026-10-12 裁决：进提示词的输入不许按字数静默裁。这里原来钉的是
+  // 「单条正文截到 200 字」，钉的正是本轮要取消的旧行为，断言改为整条保留。
+  const longContent = `长正文：${"x".repeat(500)}`;
   const [adopted, ...rest] = adoptAgentPreferences([
     row({ revision: 3, scope: "global", applies_when: "讲新概念时", epistemic_status: "tentative" }),
-    row({ content: `长正文：${"x".repeat(AGENT_PREFERENCE_TEXT_LIMIT * 2)}` }),
+    row({ content: longContent }),
   ]);
   assert.equal(rest.length, 1);
   assert.deepEqual(adopted, {
@@ -53,7 +55,7 @@ test("采用的那一条带上真实 id、修订号与范围，正文与适用�
     content: "讲学习内容时，先举日常例子，再给公式。",
     appliesWhen: "讲新概念时", epistemicStatus: "tentative",
   });
-  assert.equal(rest[0]?.content.length, AGENT_PREFERENCE_TEXT_LIMIT);
+  assert.equal(rest[0]?.content, longContent);
   assert.equal(adoptAgentPreferences([row({ applies_when: "   " })])[0]?.appliesWhen, null);
 });
 

@@ -1,23 +1,65 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { PublicJsonRequester } from "@astella/shared/public-json-http";
 import { createGovernedApiRequester } from "../../../lib/ai-governance.ts";
 import { productionAiGovernancePorts } from "../../../governance/ai-governance-runtime.ts";
 import { roundTeachingContentV1Schema } from "@astella/shared/note-learning-round-contracts";
 import { resolveSystemPlatform } from "@astella/shared/platform-config-node";
+import { chatThinkingRequestFields } from "@astella/shared/platform-config";
+import type { ResolvedPlatform } from "@astella/shared/platform-config";
 import { resolveDashScopeTextEndpoint, resolveOpenAIChatCompletionsUrl } from "@astella/shared/ai-endpoints";
 import type { TeachingExplainInputV1, TeachingExplainProviderV1, TeachingExplainScope } from "./teaching-explain.ts";
 import { roundTargetDraftSchema } from "./round-target-contract.ts";
 
-export type TeachingModelConfig = { url: string; key: string; model: string };
+/**
+ * `maxOutputTokens` 是模型档案声明的**一次最大输出**（2026-10-06「声明即真相」）。
+ * 这条路径自己拼 HTTP 请求、不经过 provider 的夹取，所以声明值要一路带到这里，
+ * 否则代码里那个常数就成了比档案更大的谎言。
+ *
+ * `thinkingFields` 同理：本文件与依据核查、互动演示的请求体都是自己拼的，思考
+ * 开关若照抄 `enable_thinking:false` 写死，就会在只认 `reasoning_effort` 的网关
+ * （小米 MiMo）上静默失效——配置说关了、实际还在烧思考 token。方言与档位统一由
+ * `chatThinkingRequestFields` 按平台声明算，这里三个调用点都带"关思考"的意图。
+ */
+export type TeachingModelConfig = { url: string; key: string; model: string; maxOutputTokens?: number;
+  headers?: Record<string, string>; thinkingFields?: Record<string, unknown> };
 export function resolveTeachingModelConfig(): TeachingModelConfig | null {
   const platform = resolveSystemPlatform("text_generation");
   if (!platform?.baseUrl || !platform.apiKey || !platform.model || platform.type === "mock") return null;
   if (!["openai_compatible", "dashscope", "siliconflow"].includes(platform.type)) {
     throw new Error("Teaching requires a configured JSON chat provider in text_generation");
   }
-  const url = platform.type === "dashscope" ? resolveDashScopeTextEndpoint(platform.baseUrl).url
-    : resolveOpenAIChatCompletionsUrl(platform.baseUrl);
-  return { url, key: platform.apiKey, model: platform.model };
+  return chatCompletionsModelConfig(platform);
+}
+
+/**
+ * 轮次里那份演示改走 **agent_turn**（2026-10-12 用户决定）。理由是实测出来的：
+ * `text_generation` 那台档案声明 `maxOutputTokens: 8192`，一份整页 HTML＋SVG＋脚本
+ * 在这一发里实际写了 19528 字符、连同思考共 43197 token——8192 根本装不下，
+ * 按「声明即真相」把上限收下来就注定截断。笔记按钮那条路本来就是 agent_turn。
+ *
+ * OpenCode Go 的 `/chat/completions` 实测可用（2026-10-12，200 + json_object），但它要求
+ * 客户端自报身份：缺 `x-opencode-session` 直接 400 `MissingSessionID`。会话号按
+ * 「一个实例一次会话」给，与 worker 侧同一条约束（`opencode-go.ts` 文件头）。
+ */
+export function resolveArtifactModelConfig(): TeachingModelConfig | null {
+  const platform = resolveSystemPlatform("agent_turn");
+  if (!platform?.baseUrl || !platform.apiKey || !platform.model || platform.type === "mock") return null;
+  if (!["openai_compatible", "dashscope", "siliconflow", "opencode_go"].includes(platform.type)) return null;
+  const config = chatCompletionsModelConfig(platform);
+  if (platform.type !== "opencode_go") return config;
+  return { ...config, headers: {
+    accept: "application/json", "user-agent": "astella-api/1.0", "x-opencode-session": randomUUID(),
+    ...config.headers } };
+}
+
+function chatCompletionsModelConfig(platform: ResolvedPlatform): TeachingModelConfig {
+  const url = platform.type === "dashscope" ? resolveDashScopeTextEndpoint(platform.baseUrl!).url
+    : resolveOpenAIChatCompletionsUrl(platform.baseUrl!);
+  return { url, key: platform.apiKey!, model: platform.model,
+    ...(platform.modelProfile?.maxOutputTokens
+      ? { maxOutputTokens: platform.modelProfile.maxOutputTokens } : {}),
+    thinkingFields: chatThinkingRequestFields(platform.options, platform.modelProfile, true) };
 }
 
 /** The task identity that owns every teaching model call, for cost and audit bucketing. */
@@ -99,7 +141,8 @@ export function llmTeachingExplainProvider(options: {
     }, {
       model: options.config.model,
       messages: [{ role: "user", content: buildTeachingPrompt(input) }],
-      temperature: 0.2, response_format: { type: "json_object" }, enable_thinking: false, stream: false,
+      temperature: 0.2, response_format: { type: "json_object" }, stream: false,
+      ...options.config.thinkingFields,
     }, step.signal);
     if (response.status < 200 || response.status >= 300) {
       return { ok: false, class: [408, 425, 429].includes(response.status) || response.status >= 500

@@ -13,6 +13,8 @@ import test from "node:test";
  * 有没有出现过这个 handler 模块名）。16 里有 4 个是 `note-*` 生成类
  * （`note-dynamic-artifact-generate` / `note-expansion-generate` /
  * `note-overview-generate` / `note-annotation-explain`）。
+ * 其中 `note-annotation-explain` 与 `note-overview-generate` 已于 2026-10-12 补上单测并移出
+ * 基线（`note-annotation-explain.test.ts`／`note-overview-generate.test.ts`），基线随之从 16 减到 14。
  *
  * 数字对不上不改变要做什么，但它决定了**这份基线该写多大**——按 6 写基线，
  * 剩下 10 个会立刻把门禁顶红，而它们并不会因为写错数字而消失。
@@ -73,9 +75,7 @@ const BASELINE_UNTESTED: ReadonlySet<string> = new Set([
   "companion-reminder-scheduler",
   "companion-run-reconcile-scheduler",
   "companion-thought-scheduler",
-  "note-annotation-explain",
   "note-expansion-generate",
-  "note-overview-generate",
 ]);
 
 const WORKER_SRC = new URL("..", import.meta.url).pathname;

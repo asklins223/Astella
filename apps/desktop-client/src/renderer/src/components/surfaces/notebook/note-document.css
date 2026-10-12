@@ -94,7 +94,6 @@
 .hud-surface .note-transcript [data-note-block-content] input[type="checkbox"] { accent-color: var(--hud-green); margin-inline-end: .5em; }
 .hud-surface .note-transcript [data-note-block-content] blockquote { margin: 22px 0; padding: 11px 16px; border-left: 3px solid #bfd6ad; border-radius: 3px 15px 15px 3px; background: #f2f5e6; color: var(--hud-green); }
 .hud-surface .note-transcript [data-note-block-content] blockquote > p { margin: .35em 0; }
-.hud-surface .note-transcript .code-block { white-space: pre; }
 .hud-surface .note-transcript .note-html-image { display: inline-block; max-width: 100%; vertical-align: middle; }
 .hud-surface .note-transcript .note-html-image :is(.reading-image, img) { display: block; width: auto; max-width: 100%; max-height: none; height: auto; margin: 0; border-radius: 8px; }
 .hud-surface .note-transcript .note-html-image[data-sized="true"] img { width: 100%; }

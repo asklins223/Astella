@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { edgeTtsSynthesize, EdgeTtsError } from "../edge-tts.ts";
 import { qwenTtsSynthesizeStreamForUser } from "../qwen-tts.ts";
-import { siliconFlowTranscribe, SiliconFlowAsrError, type AsrRequester } from "../siliconflow-asr.ts";
+import { mimoTranscribe, MimoAsrError, type MimoAsrRequester } from "../mimo-asr.ts";
 
 const WS = "00000000-0000-0000-0000-00000000a001";
 const USER = "00000000-0000-0000-0000-00000000c001";
@@ -69,20 +69,21 @@ test("qwen：已取消时不建连、不向上游发任何指令", async () => {
 test("ASR：外部取消与内核步预算合并，任一按下都中止这一次转写", async () => {
   const controller = new AbortController();
   const seen: Array<boolean> = [];
-  const requester: AsrRequester = async (_url, init) => {
+  const requester: MimoAsrRequester = async (_url, init) => {
     seen.push(init.signal.aborted);
     return new Promise<Response>((_resolve, reject) => {
       if (init.signal.aborted) { reject(new Error("aborted")); return; }
       init.signal.addEventListener("abort", () => reject(new Error("aborted")));
     });
   };
-  const pending = siliconFlowTranscribe(new Uint8Array([1, 2, 3]), "a.mp3", {
-    apiKey: "k", scope: { workspaceId: WS, userId: USER },
+  const pending = mimoTranscribe(new Uint8Array([1, 2, 3]), "a.mp3", {
+    apiKey: "k", url: "https://example.invalid/chat/completions", model: "mimo-v2.5-asr",
+    scope: { workspaceId: WS, userId: USER },
     currentActiveTransaction: () => undefined, signal: controller.signal,
-    requester, model: "SenseVoice",
+    requester,
   });
   controller.abort();
-  await assert.rejects(() => pending, (error: unknown) => error instanceof SiliconFlowAsrError);
+  await assert.rejects(() => pending, (error: unknown) => error instanceof MimoAsrError);
   assert.ok(seen.length > 0, "转写请求根本没发出去：判据无效");
   assert.equal(seen.at(-1), true, "外部取消没有合并进内核那一份 signal");
 });

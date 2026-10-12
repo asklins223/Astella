@@ -78,12 +78,12 @@ export const HOME_FEATURE_REGISTRY_V1: readonly HomeFeatureDefinitionV1[] = Obje
   feature({ id: "continue", title: "今日下一步", purpose: "回到今天真正停下的位置", icon: "book", region: "desk", regionOrder: 0, pendingTitle: "今日下一步尚未接入新版页面", pendingDetail: "首页会展示已经定下的下一步和恢复状态，但当前版本不会跳入旧任务页面。" }),
   feature({ id: "today-review", title: "今日复习", purpose: "处理到期与需要巩固的内容", icon: "calendar", region: "desk", regionOrder: 1, pendingTitle: "今日复习尚未接入新版页面", pendingDetail: "待复习数量来自真实记录；新的复习页面完成前，这里只保留准确入口与建设状态。" }),
 
-  feature({ id: "current-notebook", title: "当前研究册", purpose: "查看正在整理的研究主题", icon: "notebook", region: "shelf", regionOrder: 0, pendingTitle: "当前研究册尚未接入新版页面", pendingDetail: "首页只展示已经存好的研究册；新版阅读与编辑页面完成前不会打开旧页面。" }),
+  feature({ id: "current-notebook", title: "这篇笔记", purpose: "回到正在读的那篇笔记", icon: "notebook", region: "shelf", regionOrder: 0, pendingTitle: "这篇笔记尚未接入新版页面", pendingDetail: "首页只展示已经读过的笔记；新版阅读与编辑页面完成前不会打开旧页面。" }),
   feature({ id: "all-notes", title: "全部笔记", purpose: "管理笔记、版本与回收内容", icon: "book", region: "shelf", regionOrder: 1, pendingTitle: "全部笔记尚未接入新版页面", pendingDetail: "笔记库的新建、导入、版本和回收流程正在重新设计。" }),
-  feature({ id: "sources", title: "来源资料", purpose: "查看资料的收录、解析与归档", icon: "cards", region: "shelf", regionOrder: 2, pendingTitle: "来源资料尚未接入新版页面", pendingDetail: "资料列表、处理状态与转为笔记的新版桌面链路仍在建设中。" }),
+  feature({ id: "sources", title: "来源库", purpose: "查看资料的收录、解析与归档", icon: "cards", region: "shelf", regionOrder: 2, pendingTitle: "来源库尚未接入新版页面", pendingDetail: "资料列表、处理状态与转为笔记的新版桌面链路仍在建设中。" }),
   feature({ id: "global-search", title: "搜索", purpose: "搜索笔记、来源与全部目标", icon: "search", region: "shelf", regionOrder: 3, pendingTitle: "搜索尚未接入新版页面", pendingDetail: "跨来源、笔记与目标的统一搜索仍在接入桌面端。" }),
 
-  feature({ id: "current-target", title: "当前学习目标", purpose: "查看正在推进的目标与下一步", icon: "target", region: "window", regionOrder: 0, pendingTitle: "当前学习目标尚未接入新版页面", pendingDetail: "目标状态来自服务器上的真实进度；新版目标页面完成前不会打开旧版页面。" }),
+  feature({ id: "current-target", title: "学习卡", purpose: "查看正在推进的目标与下一步", icon: "target", region: "window", regionOrder: 0, pendingTitle: "学习卡尚未接入新版页面", pendingDetail: "目标状态来自服务器上的真实进度；新版目标页面完成前不会打开旧版页面。" }),
   // 星图页已经在 Home V2 里接线（见 HomeV2Experience 的 understanding-graph 分支），
   // 所以这里不再需要 pending 文案——那段「尚未接入新版页面」的说明只会在
   // 「新版页面尚未接入」弹窗里出现，而那个弹窗永远不会为这个入口打开。

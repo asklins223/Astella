@@ -20,6 +20,7 @@
  * 也读不出正文。
  */
 import {
+  AGENT_METHOD_CATALOG_LIMIT, AGENT_METHOD_CANDIDATE_LIMIT,
   listAgentMethodBuckets, readAgentMethod, upsertAgentMethodCandidate,
   type AgentSqlExecutor,
 } from "@astella/agent-host";
@@ -35,15 +36,25 @@ export interface PlaybookCatalogEntry {
 export interface PlaybookBody extends PlaybookCatalogEntry {
   steps: string[]; exceptions: string[]; evidence: AgentMethodEvidenceV1[];
 }
-/** 目录最多几条。手册是「少数几条常用的」，不是数据库的全量导出。 */
-export const PLAYBOOK_CATALOG_LIMIT = 20;
 /**
- * 旧候选（待迁移或由历史流程留下）另开一条有界通道。
- *
- * 上限单独一个源：候选和目录是两个集合，共用一个数会让"目录被候选挤掉"这种
- * 退化没法解释（§4.6.10 那条纪律讲的是两条独立通道）。
+ * 目录/候选条数只有 agent-host 一个声明源（2026-10-12 收口：worker 侧不再各抄一遍 20/5）。
+ * 这里留旧名只为调用点不用改；手册是「少数几条常用的」，不是数据库的全量导出。
+ * 候选与目录是两个集合（§4.6.10 两条独立通道），上限各算各的，共用一个数会让
+ * 「目录被候选挤掉」这种退化没法解释。
  */
-export const PLAYBOOK_CANDIDATE_LIMIT = 5;
+export const PLAYBOOK_CATALOG_LIMIT = AGENT_METHOD_CATALOG_LIMIT;
+export const PLAYBOOK_CANDIDATE_LIMIT = AGENT_METHOD_CANDIDATE_LIMIT;
+/**
+ * 「少给了几条」的留痕：整条取舍之后条数必须**可读**，但用不可枚举属性挂上，
+ * 既有消费方拿到的仍是普通数组（deepEqual/序列化形状不变），渲染侧读得到回执。
+ */
+function markOmittedCount<T>(items: T[], omittedCount: number): T[] {
+  Object.defineProperty(items, "omittedCount", { value: omittedCount, enumerable: false, configurable: true });
+  return items;
+}
+function readOmittedCount(entries: readonly unknown[]): number {
+  return (entries as readonly unknown[] & { omittedCount?: number }).omittedCount ?? 0;
+}
 /** 认识状态原样透传：它决定模型能不能把这条当成已确认的做法照做。 */
 const catalogEntry = (method: AgentMethodV1): PlaybookCatalogEntry => ({
   playbookId: method.methodId, playbookKey: method.methodId, title: method.title,
@@ -66,16 +77,25 @@ export interface PlaybookCandidateEntry extends PlaybookCatalogEntry { exception
  * 候选这一边就是成长闭环的**读回**边（方案 50 §16 第 6 步）：反思产出若永远进不了下一次
  * 相处，「用户改过之后下一轮不再照旧的来」就没有可观察的落点。候选不进那 20 条目录
  * （那是「可以照做」的集合），上限也各算各的。
+ *
+ * 超限是**整条取舍**：少给的条数在返回值上有可见字段（`catalogOmittedCount` /
+ * `candidateOmittedCount`），并挂进数组自身的不可枚举回执，让目录渲染能如实说出短了几条。
  */
 export async function retrievePlaybookViews(tx: AgentSqlExecutor, scope: PlaybookScope): Promise<{
   catalog: PlaybookCatalogEntry[]; candidates: PlaybookCandidateEntry[];
+  catalogOmittedCount: number; candidateOmittedCount: number;
 }> {
   const buckets = await listAgentMethodBuckets(tx, scope, {
     catalogLimit: PLAYBOOK_CATALOG_LIMIT, candidateLimit: PLAYBOOK_CANDIDATE_LIMIT,
   });
   return {
-    catalog: buckets.catalog.map(catalogEntry),
-    candidates: buckets.candidates.map((method) => ({ ...catalogEntry(method), exceptions: method.exceptions })),
+    catalog: markOmittedCount(buckets.catalog.map(catalogEntry), buckets.catalogOmittedCount),
+    candidates: markOmittedCount(
+      buckets.candidates.map((method) => ({ ...catalogEntry(method), exceptions: method.exceptions })),
+      buckets.candidateOmittedCount,
+    ),
+    catalogOmittedCount: buckets.catalogOmittedCount,
+    candidateOmittedCount: buckets.candidateOmittedCount,
   };
 }
 export async function readPlaybookById(tx: AgentSqlExecutor, scope: PlaybookScope, playbookId: string, expectedVersion: number,
@@ -92,12 +112,15 @@ export async function readPlaybookById(tx: AgentSqlExecutor, scope: PlaybookScop
  */
 export function renderPlaybookCandidates(entries: readonly PlaybookCandidateEntry[]): string {
   if (!entries.length) return "";
+  const omitted = readOmittedCount(entries);
   return [
     "（合作方法·她自己从最近相处里提炼的候选，暂定做法；只有标题、触发条件与别用的情形）",
     ...entries.map((entry, index) => {
       const avoid = entry.exceptions.length > 0 ? `｜别用的情形：${entry.exceptions.join("；")}` : "";
       return `${index + 1}. ${entry.title}｜触发：${entry.triggerCondition}${avoid}`;
     }),
+    // 整条取舍要留痕：少给了几条直接说出来，不把「这次候选变少了」伪装成「她没有新提炼」。
+    ...(omitted > 0 ? [`（这一轮还有 ${omitted} 条候选没有列进来：目录按条数上限整条少给，不代表她没有新做法。）`] : []),
     "这些是她自己记下的尝试，不是用户定过的约定：这一轮确实合触发条件才参考，"
       + "用户现在说的与手头材料优先，合不上就当没有。不要把这条清单念给用户听，"
       + "也不要说「我还在等你核对」；用户可以事后在「方法」页查看、纠正或停用。",
@@ -115,6 +138,7 @@ export const upsertPlaybook = upsertAgentMethodCandidate;
  */
 export function renderPlaybookCatalog(entries: readonly PlaybookCatalogEntry[]): string {
   if (!entries.length) return "";
+  const omitted = readOmittedCount(entries);
   return [
     "（合作方法·目录，只有编号、标题、适用条件、稳定 ID 与版本；真正怎么做要按 id 展开）",
     ...entries.map((entry, index) => {
@@ -122,6 +146,9 @@ export function renderPlaybookCatalog(entries: readonly PlaybookCatalogEntry[]):
         : entry.epistemicStatus === "tentative" ? "（暂定做法，仍在尝试）" : "";
       return `${index + 1}. ${entry.title}｜触发：${entry.triggerCondition}｜id=${entry.playbookId} v=${entry.version}${disputed}`;
     }),
+    // 整条取舍的留痕：目录因条数上限少给时要如实说，模型才不会被「短了一截的目录」
+    // 误判成「她的经验就只有这些」。
+    ...(omitted > 0 ? [`（目录按条数上限整条取舍，另有 ${omitted} 条已确认做法没有列进来；需要更全可以在方法页查看。）`] : []),
     "条件匹配且与用户当前目标有关时，用 companion_read_playbook 读正文；不相关就别读。"
       + "做法由你判断采用、修订或放弃，无需用户批准；暂定不等于已证实。当前要求与材料优先，不搬用旧产物或旧授权。",
   ].join("\n");

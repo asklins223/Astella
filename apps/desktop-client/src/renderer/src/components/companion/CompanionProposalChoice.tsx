@@ -1,12 +1,13 @@
 // 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { Loader2 } from "lucide-react";
 import type { CompanionProposalUiState } from "../../app/companion-chat-session";
+import { renderCompanionMarkdown } from "./companion-markdown";
 
 const PROPOSAL_STATUS_LABEL: Record<
   Extract<CompanionProposalUiState, { phase: "ready" }>["proposal"]["status"],
   string
 > = {
-  pending: "等待你的选择",
+  pending: "待确认",
   accepted: "已确认",
   executing: "正在执行",
   succeeded: "已完成",
@@ -83,9 +84,11 @@ export function CompanionProposalChoice({
   }
 
   const { proposal, deciding, error } = state;
+  const review = proposal.payload.kind === "agent_tool_review" ? proposal.payload : null;
+  const saveReview = review?.confirmationStage === "after_preview";
   const expired = proposal.status === "pending" && companionProposalExpired(proposal.expiresAt);
   const pending = proposal.status === "pending" && !expired;
-  const statusLabel = expired ? PROPOSAL_STATUS_LABEL.expired : PROPOSAL_STATUS_LABEL[proposal.status];
+  const statusLabel = expired ? PROPOSAL_STATUS_LABEL.expired : saveReview && proposal.status === "pending" ? "待保存" : PROPOSAL_STATUS_LABEL[proposal.status];
 
   return (
     <section
@@ -98,7 +101,7 @@ export function CompanionProposalChoice({
       aria-busy={Boolean(deciding)}
     >
       <header>
-        <span>{pending ? "需要你的选择" : "选择结果"}</span>
+        <span>{pending ? saveReview ? "结果已准备好，等你保存" : "操作前请确认" : "选择结果"}</span>
         <small>{statusLabel}</small>
       </header>
       <strong className="companion-choice-card__title">{proposal.title}</strong>
@@ -106,6 +109,15 @@ export function CompanionProposalChoice({
         <div><dt>目标</dt><dd>{proposal.targetSummary}</dd></div>
         <div><dt>影响</dt><dd>{proposal.impactSummary}</dd></div>
       </dl>
+      {review?.preview.markdown ? <div className="companion-write-preview companion-markdown" aria-label={saveReview ? "待保存的完整结果" : "操作详情"}>
+        {renderCompanionMarkdown(review.preview.markdown)}
+      </div> : null}
+      {review?.preview.markdown ? <details className="companion-write-preview__source"><summary>查看完整 Markdown 源码</summary>
+        <pre>{review.preview.markdown}</pre>
+      </details> : null}
+      {review?.preview.beforeMarkdown ? <details className="companion-write-preview__original"><summary>查看改动前的原文</summary>
+        <div className="companion-markdown">{renderCompanionMarkdown(review.preview.beforeMarkdown)}</div>
+      </details> : null}
       {pending ? (
         <div className="companion-choice-card__actions">
           <button
@@ -114,7 +126,7 @@ export function CompanionProposalChoice({
             disabled={Boolean(deciding)}
             onClick={() => onDecide("reject")}
           >
-            {deciding === "reject" ? "正在跳过…" : "暂不执行"}
+            {deciding === "reject" ? "正在取消…" : saveReview ? "取消并还原" : "取消操作"}
           </button>
           <button
             type="button"
@@ -122,7 +134,7 @@ export function CompanionProposalChoice({
             disabled={Boolean(deciding)}
             onClick={() => onDecide("confirm")}
           >
-            {deciding === "confirm" ? "正在确认…" : "确认执行"}
+            {deciding === "confirm" ? "正在确认…" : saveReview ? "保存这次改动" : "确认执行"}
           </button>
         </div>
       ) : null}

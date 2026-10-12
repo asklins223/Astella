@@ -13,7 +13,7 @@ import { messageText } from "./companion-center-model";
 import { CenterFeedback,CenterSearch,SectionState } from "./companion-center-primitives";
 import { DiscoveryKeepAction,DiscoveryKeepFeedback,type DiscoveryKeepProps } from "./companion-discovery-offer";
 
-type DialoguePanelProps = { section: Section<{ version: 1; items: CompanionHistoryItemV1[]; nextCursor: string | null }>; items: CompanionHistoryItemV1[]; cursor: string | null; query: string; searching: boolean; loadingMore: boolean; error: string | null; onQuery: (value: string) => void; onSearch: () => void; onLoadMore: () => void; onRetry: () => void; discoveryFor?: (item: CompanionHistoryItemV1) => DiscoveryKeepProps | null; companionName?: string; appliedQuery?: string; initialLoading?: boolean; historyKey?: string; onLatest?: () => void };
+type DialoguePanelProps = { section: Section<{ version: 1; items: CompanionHistoryItemV1[]; nextCursor: string | null }>; items: CompanionHistoryItemV1[]; cursor: string | null; query: string; searching: boolean; loadingMore: boolean; error: string | null; onQuery: (value: string) => void; onSearch: () => void; onLoadMore: () => void; onRetry: () => void; discoveryFor?: (item: CompanionHistoryItemV1) => DiscoveryKeepProps | null; companionName?: string; appliedQuery?: string; initialLoading?: boolean; historyKey?: string; onLatest?: () => void; /** 打开对话手记去处理这条记录里的操作提议（审计 F11）。 */ onOpenProposal?: (proposalId: string) => void };
 
 const DIALOGUE_UNAVAILABLE = "对话记录当前不可用";
 
@@ -118,7 +118,11 @@ export function DialoguePanel(props: DialoguePanelProps) {
             {item.selection ? <CompanionQuoteBlock block={{ type: "quote", label: "引用的原文", text: item.selection.text }} /> : null}
             <div className="cc-prose">{text ? renderCompanionMarkdown(text, companionWebCitations(item.blocks)) : !item.blocks.length ? <p>{DIALOGUE_NO_BODY}</p> : null}</div>
             <CompanionMessageRichBlocks blocks={item.blocks} />
-            {item.blocks.some(block => block.type === "action_ref") ? <small>这段记录附有操作提议，可在对话手记查看。</small> : null}
+            {item.blocks.some(block => block.type === "action_ref") ? (props.onOpenProposal ? <small>这段记录附有操作提议。<button type="button" className="cc-link" onClick={() => {
+              // 审计 F11：小字旁边给一条真路——直接打开对话手记处理，而不是让用户自己找。
+              const ref = item.blocks.find(block => block.type === "action_ref");
+              if (ref?.type === "action_ref") props.onOpenProposal?.(ref.proposalId);
+            }}>去对话手记处理</button></small> : <small>这段记录附有操作提议，可在对话手记查看。</small>) : null}
             {item.kind === "cancelled" ? <small>这是一条被你停止的未完成回复。</small> : item.kind === "error" ? <small>这一轮没有完成。</small> : null}
             {discovery ? <DiscoveryKeepFeedback {...discovery} /> : null}
           </article></div>;

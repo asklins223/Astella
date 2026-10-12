@@ -96,8 +96,11 @@ it("输入法组合与模态中的快捷键不抢走当前操作；只读仍可�
   expect(useNotebookFullscreenState.getState().active).toBe(false); modal.remove();
   fireEvent.click(screen.getByRole("button", { name: "全屏笔记" }));
   fireEvent.click(screen.getByRole("button", { name: "展开笔记工具" }));
-  expect((screen.getByRole("button", { name: /^编辑$/ }) as HTMLButtonElement).disabled).toBe(true);
-  expect((screen.getByRole("button", { name: /^源码$/ }) as HTMLButtonElement).disabled).toBe(true);
+  // 审计 F12：只读下不再用 disabled（禁用按钮悬停多半不给 tooltip，解释等于没写），
+  // 改成 aria-disabled + 一行常驻说明；按钮留在键盘序里，点了不切换视图。
+  expect(screen.getByRole("button", { name: /^编辑$/ }).getAttribute("aria-disabled")).toBe("true");
+  expect(screen.getByRole("button", { name: /^源码$/ }).getAttribute("aria-disabled")).toBe("true");
+  expect(screen.getByText("当前身份只能阅读这篇笔记，编辑与源码视图不可用。")).toBeTruthy();
 });
 
 it("全屏错误回执不会被折叠隐藏；切到子页面或换篇都留在全屏", () => {

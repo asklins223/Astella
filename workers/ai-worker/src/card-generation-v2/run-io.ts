@@ -14,7 +14,6 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { type WorkerTransaction } from "../db.ts";
-import { logger } from "../lib/logger.ts";
 import { CardGenerationProviderErrorLike } from "./retry-classification.ts";
 
 /** 以下每一条都有旧 handler 或简化链在读；没在读的不导出（noUnusedLocals 会喊）。 */
@@ -39,89 +38,9 @@ import {
   type CardHintPairV2,
 } from "@astella/shared/card-generation-v2-contracts";
 
-/**
- * 单条证据文本进入 prompt 的字符上限（评审 M7）。
- *
- * Grounding 阶段每个候选都会携带**全部**证据引文，token 成本为
- * O(candidates × evidence)；不分块/不设上限时大笔记会直接顶穿模型上下文。
- * 上限只作用于**prompt 呈现**，sealed 证据本身的哈希/偏移/闭包不受影响
- * （quoteHash 仍来自完整切片）。
- */
-export const V2_EVIDENCE_QUOTE_MAX_CHARS = (() => {
-  const raw = Number(process.env.V2_EVIDENCE_QUOTE_MAX_CHARS ?? 2_000);
-  return Number.isInteger(raw) && raw > 0 ? raw : 2_000;
-})();
-
-/**
- * 每 job 全部证据文本的合计上限（评审 M7）：按 blockId 顺序累计，超出的引文
- * 截断到剩余额度（额度耗尽则为空串），避免"证据数 × 单条上限"仍然爆炸。
- */
-export const V2_EVIDENCE_TOTAL_MAX_CHARS = (() => {
-  const raw = Number(process.env.V2_EVIDENCE_TOTAL_MAX_CHARS ?? 40_000);
-  return Number.isInteger(raw) && raw > 0 ? raw : 40_000;
-})();
-
-/** 源文本（scoped note join）进入 author prompt 的字符上限（评审 M7）。 */
-export const V2_SOURCE_CONTENT_MAX_CHARS = (() => {
-  const raw = Number(process.env.V2_SOURCE_CONTENT_MAX_CHARS ?? 60_000);
-  return Number.isInteger(raw) && raw > 0 ? raw : 60_000;
-})();
-
-/**
- * 源文本规模上限（M7）：超限时截断并显式告警（不静默）。
- *
- * 原注释自认"大笔记可达数十万字符"且"激活前须为源文本设规模上限或分块"——
- * 本函数兑现该上限：单 job 的内存峰值与 prompt token 规模被钉住。
- */
-export function capSourceContentForPrompts(
-  sourceContent: string,
-  workspaceId: string,
-): { content: string; truncated: boolean; originalLength: number } {
-  if (sourceContent.length <= V2_SOURCE_CONTENT_MAX_CHARS) {
-    return { content: sourceContent, truncated: false, originalLength: sourceContent.length };
-  }
-  logger.warn(
-    {
-      workspaceId,
-      sourceLength: sourceContent.length,
-      limit: V2_SOURCE_CONTENT_MAX_CHARS,
-    },
-    "V2 source content truncated for prompts (规模上限，防止 token/内存峰值)",
-  );
-  return {
-    content: sourceContent.slice(0, V2_SOURCE_CONTENT_MAX_CHARS),
-    truncated: true,
-    originalLength: sourceContent.length,
-  };
-}
-
-/** 证据文本规模上限（M7）：逐条 + 合计双上限，超限时告警。 */
-function capEvidenceTextForPrompts(
-  evidence: SealedEvidenceEntryV2[],
-  workspaceId: string,
-): void {
-  let remaining = V2_EVIDENCE_TOTAL_MAX_CHARS;
-  let truncated = 0;
-  for (const entry of evidence) {
-    const text = entry.content ?? "";
-    const perEntry = text.slice(0, V2_EVIDENCE_QUOTE_MAX_CHARS);
-    const allowed = Math.max(0, Math.min(perEntry.length, remaining));
-    if (allowed < text.length) truncated += 1;
-    entry.content = perEntry.slice(0, allowed);
-    remaining -= allowed;
-  }
-  if (truncated > 0) {
-    logger.warn(
-      {
-        workspaceId,
-        truncatedEntries: truncated,
-        totalEntries: evidence.length,
-        perEntryLimit: V2_EVIDENCE_QUOTE_MAX_CHARS,
-        totalLimit: V2_EVIDENCE_TOTAL_MAX_CHARS,
-      },
-      "V2 evidence text truncated for prompts (规模上限，防止 O(candidates × evidence) token 膨胀)",
-    );
-  }
+/** Complete scoped blocks, with original ordinals for generation and evidence lookup. */
+export function cardGenerationPromptBlocks(blocks: ReadonlyArray<{ blockId: string; ordinal: number; content: string }>) {
+  return blocks.map(block => ({ blockId: block.blockId, ordinal: block.ordinal, text: block.content }));
 }
 
 export async function loadSealedEvidence(tx: WorkerTransaction, workspaceId: string, sourceSnapshotId: string) {
@@ -196,7 +115,6 @@ export async function loadSealedEvidence(tx: WorkerTransaction, workspaceId: str
       }
       e.content = quote;
     }
-    capEvidenceTextForPrompts(evidence, workspaceId);
   }
 
   const evidenceManifest: AssemblerEvidenceManifest = {
@@ -282,13 +200,7 @@ export async function loadV2RunInputs(tx: WorkerTransaction, workspaceId: string
   const unsupportedSourceBlocks = blockRows
     .filter((b) => ["image", "code", "diagram", "formula", "table"].includes(String(b.type ?? "").toLowerCase()))
     .map((b) => ({ blockId: b.id, type: b.type, content: b.content, ordinal: b.ordinal }));
-  // 同 processCardGenerationPlan（M7）：源文本规模硬上限（超限截断 + 告警），
-  // regenerate/replan/recheck 管道共用同一护栏，避免大笔记在重跑路径上再次膨胀。
-  const cappedSourceContent = capSourceContentForPrompts(
-    scopedBlocks.map((b) => b.content).join("\n"),
-    workspaceId,
-  );
-  const sourceContent = cappedSourceContent.content;
+  const sourceContent = scopedBlocks.map((b) => b.content).join("\n");
 
   const existingObjRows = (await tx.execute(sql`
     SELECT lor.objective_id, lor.semantic_target_fingerprint,
@@ -335,16 +247,6 @@ export async function loadV2RunInputs(tx: WorkerTransaction, workspaceId: string
 
   return {
     run, inputSnapshot, semanticSpec, sealed, scopedBlocks, unsupportedSourceBlocks, sourceContent, existingObjectives, plan,
-    /**
-     * 这一次的 prompt 源文本有没有被规模上限截断（M7）。**调用方负责在自己的写事务里
-     * 把它变成事件**（`emitSourceContentCapEvent`）——这个加载器是只读的、且被
-     * regenerate／replan／recheck 三处共用，留痕不该由它自己写。
-     */
-    sourceContentCap: {
-      truncated: cappedSourceContent.truncated,
-      originalLength: cappedSourceContent.originalLength,
-      limit: V2_SOURCE_CONTENT_MAX_CHARS,
-    },
   };
 }
 
@@ -391,30 +293,6 @@ export function candidateRowToObject(
  * recheck 接受的 run 状态。`checking` 是必需的：主管线在"候选被判 rewrite、等待复核"
  * 时保持的进行中状态。
  */
-
-/**
- * 源文本被规模上限截断时的那一条留痕（39d W4-4：不许"静默截前半篇冒充整篇输入"）。
- *
- * 旧链四处进入点共用这一份：主管线计划段、regenerate、replan、recheck。判据与载荷都只有
- * 简化链（39d W7-7 刀二之后）也算一个进入点：它经 `loadV2RunInputs` 拿到的就是截断过的
- * 源文本，留痕与旧链同判据——不然"新链少一道护栏"只能靠测试搬档时才发现。
- * 一处，免得"某一个进入点忘了记"。**只在真的截断时写**（没截断 = 没有这件事要记）。
- */
-export async function emitSourceContentCapEvent(
-  tx: WorkerTransaction,
-  input: {
-    workspaceId: string;
-    runId: string;
-    cap: { truncated: boolean; originalLength: number; limit: number };
-  },
-): Promise<void> {
-  if (!input.cap.truncated) return;
-  await insertEvent(tx, input.workspaceId, input.runId, "card_generation.source_content_capped", {
-    limit: input.cap.limit,
-    originalLength: input.cap.originalLength,
-    usedLength: input.cap.limit,
-  });
-}
 
 /**
  * 对失败候选做局部 repair 的**出网那一半**：调 author provider 重写 → 新 immutable

@@ -31,6 +31,8 @@ import {
 } from "./invitation-token.ts";
 import { issueSession } from "../identity/session-service.ts";
 import { canonicalizeEmail, hashPassword, type SessionContext } from "./service.ts";
+// 0413：会话的客户端种类。从**原语那一族**直接取，不绕 service.ts 的转出。
+import { toSessionClientKind } from "./credentials.ts";
 import { resolveSystemProviderForCapability } from "@astella/shared/task-router";
 // OPS-01: Funnel 指标（ADR-0006 §2）
 import { recordFunnelEvent } from "../../lib/metrics.ts";
@@ -297,7 +299,7 @@ export async function consumeInvite(
   email: string,
   password: string,
   token: string,
-  options?: { displayName?: string; avatarUrl?: string },
+  options?: { displayName?: string; avatarUrl?: string; clientKind?: string | null },
 ): Promise<{ token: string; ctx: SessionContext } | ConsumeInviteError> {
   const normalizedEmail = canonicalizeEmail(email);
 
@@ -460,7 +462,10 @@ export async function consumeInvite(
       // `workspace_epoch`，而此刻 `app.workspace_id` 还停在邀请码那个空间上，
       // 租户守卫会把这一行读成 0 行。
       await adoptWorkspaceContext(tx, personalWs.id);
-      const session = await issueSession(user.id, personalWs.id, tx);
+      // 0413：注册这一趟是这台设备第一次拿凭据，客户端种类就落在这行上。
+      const session = await issueSession(
+        user.id, personalWs.id, tx, toSessionClientKind(options?.clientKind),
+      );
 
       return { session };
     });

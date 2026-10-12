@@ -125,6 +125,14 @@ function fallbackCopy(toolName: string): AgentProposalCopy {
 
 function copy(payload: ProposalPayload): AgentProposalCopy | null {
   switch (payload.kind) {
+    case "agent_tool_review":
+      return {
+        title: clamp(payload.confirmationStage === "after_preview" ? "保存这次改动？" : "确认这次操作？", TITLE_MAX),
+        targetSummary: clamp(payload.preview.title, TARGET_MAX),
+        impactSummary: payload.confirmationStage === "after_preview"
+          ? "结果已经准备好。保存后正式生效；取消会恢复原文，不覆盖你自己的后续修改。"
+          : "确认之后才会执行这次操作；取消不会改变原内容。",
+      };
     case "save_memory":
       return {
         title: clamp(`记住一条${MEMORY_KIND_LABEL[payload.memoryKind] ?? "事情"}`, TITLE_MAX),

@@ -10,8 +10,8 @@ async function run(name:string,fn:()=>Promise<Record<string,unknown>>) {
   try{Object.assign(row,await fn());}catch(error){row.ok=false;row.error=safeFailure(error);}
   row.elapsedMs=Date.now()-started;save("quality-repeat",{results,wire});console.log(JSON.stringify(row));
 }
-for(let repeat=0;repeat<2;repeat++)await run(`dedicated-crop-repeat:${repeat}`,async()=>{
-  const provider=observedProvider(platform("vision"),"vision-repeat",wire);
+for(let repeat=0;repeat<2;repeat++)await run(`aux-crop-repeat:${repeat}`,async()=>{
+  const provider=observedProvider(platform("text_generation"),"vision-repeat",wire);
   const image=readFileSync(`${outputDir}/vision-crop.png`).toString("base64");
   const reply=await provider.chatCompletion([{role:"system",content:"只读取图片中确实可见的内容，看不到的字段填null，不猜。只输出JSON。"},
     {role:"user",content:[{type:"text",text:'输出JSON：{"blueCode":蓝色矩形的编号,"greenCode":绿色圆圈的编号,"rice":RICE的VALUE,"soup":SOUP的VALUE}。看不到的填null。'},

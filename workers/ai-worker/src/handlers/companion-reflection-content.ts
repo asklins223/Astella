@@ -108,32 +108,32 @@ export interface ReflectionInputOmittedV1 {
   readonly triggerTokens: number;
 }
 
-/** 模型那一次回顾的输出合同。每一项都有上限，超出即整条拒收（不是截断后照收）。 */
+/** 模型那一次回顾的输出合同。按真实依据核对，不按条数或步骤数裁剪。 */
 export const companionReflectionOutputV1Schema = z.strictObject({
   decision: z.enum(["no_change", "proposals"]),
   /** 脱敏短句：这一次看出了什么、为什么没改。会进诊断，不进台词。 */
-  summary: z.string().min(1).max(300),
+  summary: z.string().min(1),
   judgments: z.array(z.strictObject({
-    text: z.string().min(4).max(300),
+    text: z.string().min(4),
     appliesWhen: z.string().min(1).max(200).optional(),
     epistemicStatus: z.enum(["tentative", "supported"]),
-    sourceMessageIds: z.array(z.string().uuid()).max(6),
-  })).max(2).default([]),
+    sourceMessageIds: z.array(z.string().uuid()),
+  })).default([]),
   experiences: z.array(z.strictObject({
     title: z.string().min(2).max(60),
     triggerCondition: z.string().min(2).max(200),
-    steps: z.array(z.string().min(2).max(160)).min(1).max(4),
-    exceptions: z.array(z.string().min(2).max(160)).max(3).default([]),
-    sourceMessageIds: z.array(z.string().uuid()).max(6),
-  })).max(2).default([]),
-  selfNotes: z.array(companionSelfNoteWriteV1Schema).max(8).default([]),
+    steps: z.array(z.string().min(2)).min(1),
+    exceptions: z.array(z.string().min(2)).default([]),
+    sourceMessageIds: z.array(z.string().uuid()),
+  })).default([]),
+  selfNotes: z.array(companionSelfNoteWriteV1Schema).default([]),
   persona: z.strictObject({
     selfDescription: z.string().min(4).max(PERSONA_FIELD_CAPACITY.selfDescription).optional(),
     speakingStyle: z.string().min(4).max(400).optional(),
     /** Own choices need authorship, not an invented user endorsement. */
     basis: z.enum(["experience", "self_authored"]).default("experience"),
-    reason: z.string().min(2).max(120),
-    sourceMessageIds: z.array(z.string().uuid()).max(6).default([]),
+    reason: z.string().min(2),
+    sourceMessageIds: z.array(z.string().uuid()).default([]),
   }).nullable().optional(),
 });
 
@@ -161,8 +161,8 @@ type ReflectionCitedSourceV1 = { kind: "user_message" | "assistant_message"; id:
 export const reflectionInputSnapshotV1Schema = z.object({
   now: z.string().datetime({ offset: true }).optional(),
   selfNoteIndex: z.array(z.object({ key: z.string(), revision: z.number().int().positive(), title: z.string(),
-    tier: z.enum(["resident", "active", "archived"]) })).max(28).optional(),
-  selfNotes: z.array(companionSelfNoteV1Schema).max(28).optional(),
+    tier: z.enum(["resident", "active", "archived"]) })).optional(),
+  selfNotes: z.array(companionSelfNoteV1Schema).optional(),
   wake: z.object({ key: z.string(), revision: z.number().int().positive() }).optional(),
   accountEpoch: z.number().int().nonnegative().optional(),
   pendingPersonaRevision: z.number().int().nonnegative().nullable().optional(),
@@ -371,61 +371,6 @@ export function normalizeReflectionPayload(value: unknown): { payload: unknown; 
     out.persona = normalizeObject(persona as Record<string, unknown>, dropped);
   }
   return { payload: out, droppedKeys: dropped };
-}
-
-/**
- * 超出容量的那几条**剪掉**，而不是把整次回顾判废。
- *
- * 2026-10-10 真实栈上撞到的：模型给出 3 条合作方法，schema 的上限是 2，
- * 于是两条好的也跟着一起被拒——协议闸门是用来挡编造的，不是用来惩罚"多说了一条"。
- * 剪掉的条数交给调用方记进诊断（不静默）。
- */
-export function clipReflectionOverflow(raw: unknown): { payload: unknown; clipped: string[] } {
-  const clipped: string[] = [];
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { payload: raw, clipped };
-  const value = raw as Record<string, unknown>;
-  const limits: Record<string, { cap: number }> = {
-    judgments: { cap: 2 }, experiences: { cap: 2 },
-  };
-  const out: Record<string, unknown> = { ...value };
-  for (const [key, limit] of Object.entries(limits)) {
-    const list = out[key];
-    if (Array.isArray(list) && list.length > limit.cap) {
-      clipped.push(`${key}:${list.length - limit.cap}`);
-      out[key] = list.slice(0, limit.cap);
-    }
-  }
-  // persona 与 judgments/experiences 是同一件事：超容量剪掉、别整份判废。
-  if (out.persona && typeof out.persona === "object" && !Array.isArray(out.persona)) {
-    const persona = { ...(out.persona as Record<string, unknown>) };
-    if (Array.isArray(persona.sourceMessageIds) && persona.sourceMessageIds.length > 6) {
-      clipped.push("persona.sourceMessageIds");
-      persona.sourceMessageIds = persona.sourceMessageIds.slice(0, 6);
-    }
-    out.persona = persona;
-  }
-  for (const key of ["judgments", "experiences"]) {
-    const list = out[key];
-    if (!Array.isArray(list)) continue;
-    out[key] = list.map((entry) => {
-      if (typeof entry !== "object" || entry === null) return entry;
-      const item = { ...(entry as Record<string, unknown>) };
-      if (Array.isArray(item.exceptions) && item.exceptions.length > 3) {
-        clipped.push("exceptions");
-        item.exceptions = item.exceptions.slice(0, 3);
-      }
-      if (Array.isArray(item.steps) && item.steps.length > 4) {
-        clipped.push("steps");
-        item.steps = item.steps.slice(0, 4);
-      }
-      if (Array.isArray(item.sourceMessageIds) && item.sourceMessageIds.length > 6) {
-        clipped.push("sourceMessageIds");
-        item.sourceMessageIds = item.sourceMessageIds.slice(0, 6);
-      }
-      return item;
-    });
-  }
-  return { payload: out, clipped };
 }
 
 /**

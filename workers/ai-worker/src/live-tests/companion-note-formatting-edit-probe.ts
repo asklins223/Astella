@@ -47,7 +47,7 @@ try {
       if (!checked.success) throw new Error(checked.reason);
       const definition = getCompanionAgentTool(call.name)!;
       const inputChars = JSON.stringify(checked.data).length;
-      assert.ok(inputChars <= definition.maxInputChars);
+      assert.ok(definition.maxInputChars === null || inputChars <= definition.maxInputChars);
       operations.push({ name: call.name, inputChars, arguments: checked.data });
       if (call.name === "companion_read_note") {
         const current = projectFragmentBlocks(doc);

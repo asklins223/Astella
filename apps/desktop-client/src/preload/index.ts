@@ -168,6 +168,9 @@ const desktopApi: AstellaDesktopApiM2 = {
     logout: (input) => invoke(DESKTOP_IPC_CHANNELS.authLogout, input),
     reauthenticate: (input) => invoke(DESKTOP_IPC_CHANNELS.authReauthenticate, input),
     changePassword: (input) => invoke(DESKTOP_IPC_CHANNELS.authChangePassword, input),
+    sendEmailCode: (input) => invoke(DESKTOP_IPC_CHANNELS.authSendEmailCode, input),
+    loginWithCode: (input) => invoke(DESKTOP_IPC_CHANNELS.authLoginWithCode, input),
+    resetPassword: (input) => invoke(DESKTOP_IPC_CHANNELS.authResetPassword, input),
     joinWorkspace: (input) => invoke(DESKTOP_IPC_CHANNELS.authJoinWorkspace, input),
     // 旧版设置页回补（2026-09-18）：档案、头像与退出协作工作区。
     getProfile: (input) => invoke(DESKTOP_IPC_CHANNELS.authProfileGet, input),

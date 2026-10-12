@@ -25,7 +25,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  emitSourceContentCapEvent,
   insertAuthoredCandidatesBatched,
   insertEvent,
 } from "../../card-generation-v2/run-io.ts";
@@ -217,29 +216,4 @@ test("没给 payload 的条目落成空对象，不落成 undefined", async () =
   const t = makeTx();
   await insertEvent(t.tx, WORKSPACE_ID, RUN_ID, "card_generation.no_cards_recommended");
   assert.deepEqual(t.events[0]!.payload, {});
-});
-
-test("源文本截断留痕只在真截断时写，载荷是公开的三个数", async () => {
-  const capped = makeTx();
-  await emitSourceContentCapEvent(capped.tx, {
-    workspaceId: WORKSPACE_ID,
-    runId: RUN_ID,
-    cap: { truncated: true, originalLength: 90_000, limit: 60_000 },
-  });
-  assert.equal(capped.events.length, 1);
-  assert.equal(capped.events[0]!.eventType, "card_generation.source_content_capped");
-  assert.deepEqual(capped.events[0]!.payload, {
-    limit: 60_000,
-    originalLength: 90_000,
-    usedLength: 60_000,
-  });
-
-  const untouched = makeTx();
-  await emitSourceContentCapEvent(untouched.tx, {
-    workspaceId: WORKSPACE_ID,
-    runId: RUN_ID,
-    cap: { truncated: false, originalLength: 1_200, limit: 60_000 },
-  });
-  assert.deepEqual(untouched.events, []);
-  assert.equal(untouched.selectCount(), 0);
 });

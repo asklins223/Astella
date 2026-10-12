@@ -338,7 +338,7 @@ export type GenerationInputSnapshotV2 = z.infer<
 export const knowledgeAtomV2Schema = z
   .strictObject({
     atomId: z.string().min(1).max(160),
-    proposition: z.string().min(1).max(4000),
+    proposition: z.string().min(1),
     evidenceRefIds: z.array(z.string().uuid()).max(100),
     sourceSectionKeys: z.array(z.string().min(1).max(200)).max(50),
     importanceBps: z.number().int().min(0).max(10_000),
@@ -404,7 +404,7 @@ export type PracticeItemFormV2 = (typeof PracticeItemFormValuesV2)[number];
 export const plannedObjectiveV2Schema = z
   .strictObject({
     objectiveLocalId: z.string().min(1).max(160),
-    objectiveStatement: z.string().min(1).max(2000),
+    objectiveStatement: z.string().min(1),
     priority: z.enum(["critical", "important", "optional"]),
     knowledgeForm: knowledgeFormV2Schema,
     /**
@@ -419,8 +419,8 @@ export const plannedObjectiveV2Schema = z
      * 不能在 author 逐张出题时决定——它看不到别的卡。
      */
     practiceForm: z.enum(PracticeItemFormValuesV2).nullable(),
-    sourceAtomIds: z.array(z.string().min(1).max(160)).min(1).max(100),
-    reasonCodes: z.array(z.string().min(1).max(120)).min(1).max(20),
+    sourceAtomIds: z.array(z.string().min(1).max(160)).min(1),
+    reasonCodes: z.array(z.string().min(1)).min(1),
     estimatedReviewCostSeconds: z.number().int().min(1).max(3600),
     changeContext: z.discriminatedUnion("kind", [
       z.strictObject({ kind: z.literal("create_new") }),
@@ -471,7 +471,7 @@ export const plannedExistingLifecycleActionV2Schema = z
     objectiveId: z.string().uuid(),
     expectedPublicationRevision: z.number().int().min(1),
     expectedObjectiveLifecycleEpoch: z.number().int().min(1),
-    reasonCodes: z.array(z.string().min(1).max(120)).min(1).max(20),
+    reasonCodes: z.array(z.string().min(1)).min(1),
   })
   .strict();
 export type PlannedExistingLifecycleActionV2 = z.infer<
@@ -537,7 +537,7 @@ export const canonicalAnswerV2Schema = z.discriminatedUnion("kind", [
     kind: z.literal("text"),
     unit: z.strictObject({
       unitId: z.string().min(1).max(160),
-      text: z.string().min(1).max(8000),
+      text: z.string().min(1),
     }),
   }),
   z.strictObject({
@@ -546,11 +546,10 @@ export const canonicalAnswerV2Schema = z.discriminatedUnion("kind", [
       .array(
         z.strictObject({
           unitId: z.string().min(1).max(160),
-          text: z.string().min(1).max(4000),
+          text: z.string().min(1),
         }),
       )
-      .min(1)
-      .max(60),
+      .min(1),
   }),
   z.strictObject({
     kind: z.literal("ordered_steps"),
@@ -558,11 +557,10 @@ export const canonicalAnswerV2Schema = z.discriminatedUnion("kind", [
       .array(
         z.strictObject({
           unitId: z.string().min(1).max(160),
-          text: z.string().min(1).max(4000),
+          text: z.string().min(1),
         }),
       )
-      .min(2)
-      .max(60),
+      .min(2),
   }),
   z.strictObject({
     kind: z.literal("mapping"),
@@ -570,47 +568,44 @@ export const canonicalAnswerV2Schema = z.discriminatedUnion("kind", [
       .array(
         z.strictObject({
           unitId: z.string().min(1).max(160),
-          left: z.string().min(1).max(2000),
-          right: z.string().min(1).max(4000),
+          left: z.string().min(1),
+          right: z.string().min(1),
         }),
       )
-      .min(1)
-      .max(80),
+      .min(1),
   }),
   z.strictObject({
     kind: z.literal("comparison"),
-    columns: z.array(z.string().min(1).max(300)).min(2).max(12),
+    columns: z.array(z.string().min(1)).min(2),
     rows: z
       .array(
         z.strictObject({
           unitId: z.string().min(1).max(160),
-          dimension: z.string().min(1).max(1000),
-          values: z.array(z.string().min(1).max(4000)).min(1).max(12),
+          dimension: z.string().min(1),
+          values: z.array(z.string().min(1)).min(1),
         }),
       )
-      .min(1)
-      .max(60),
+      .min(1),
   }),
   z.strictObject({
     kind: z.literal("formula"),
     unitId: z.string().min(1).max(160),
-    latex: z.string().min(1).max(4000),
+    latex: z.string().min(1),
     variableMeanings: z
       .array(
         z.strictObject({
           symbol: z.string().min(1).max(100),
-          meaning: z.string().min(1).max(1000),
+          meaning: z.string().min(1),
         }),
       )
-      .min(1)
-      .max(60),
+      .min(1),
   }),
   z.strictObject({
     kind: z.literal("code"),
     unitId: z.string().min(1).max(160),
     language: z.string().min(1).max(100),
-    code: z.string().min(1).max(20_000),
-    explanation: z.string().min(1).max(4000).optional(),
+    code: z.string().min(1),
+    explanation: z.string().min(1).optional(),
   }),
 ]);
 export type CanonicalAnswerV2 = z.infer<typeof canonicalAnswerV2Schema>;
@@ -623,18 +618,16 @@ export const objectiveRubricV2Schema = z
         z.strictObject({
           rubricUnitId: z.string().min(1).max(160),
           facet: taskIntentSchema,
-          criterion: z.string().min(1).max(2000),
+          criterion: z.string().min(1),
           required: z.boolean(),
-          answerUnitIds: z.array(z.string().min(1).max(160)).min(1).max(80),
-          evidenceRefIds: z.array(z.string().uuid()).min(1).max(100),
+          answerUnitIds: z.array(z.string().min(1).max(160)).min(1),
+          evidenceRefIds: z.array(z.string().uuid()).min(1),
           contradictionRules: z
-            .array(z.string().min(1).max(1000))
-            .max(20)
+            .array(z.string().min(1))
             .optional(),
         }),
       )
-      .min(1)
-      .max(80),
+      .min(1),
     passingPolicy: z.strictObject({
       requireAllRequiredUnits: z.literal(true),
       allowContradiction: z.literal(false),
@@ -689,8 +682,8 @@ export type ObjectiveRelationV2 = z.infer<typeof objectiveRelationV2Schema>;
  * （首字、组成部分数量、易混点）。
  */
 export const cardHintPairV2Schema = z.strictObject({
-  level1: z.string().min(1).max(600),
-  level2: z.string().min(1).max(600),
+  level1: z.string().min(1),
+  level2: z.string().min(1),
 });
 export type CardHintPairV2 = z.infer<typeof cardHintPairV2Schema>;
 
@@ -705,39 +698,39 @@ export type CardHintPairV2 = z.infer<typeof cardHintPairV2Schema>;
  */
 const practiceItemOptionSchema = z.strictObject({
   unitId: z.string().min(1).max(40),
-  text: z.string().min(1).max(400),
+  text: z.string().min(1),
   /** 干扰项也必须可追溯：给不出证据的干扰项应由作者不产出整件，而不是硬造（§16.5）。 */
-  evidenceRefIds: z.array(z.string().uuid()).max(20).optional(),
+  evidenceRefIds: z.array(z.string().uuid()).optional(),
 });
 
 const practiceItemPairSchema = z.strictObject({
   leftId: z.string().min(1).max(40),
-  leftText: z.string().min(1).max(400),
+  leftText: z.string().min(1),
   rightId: z.string().min(1).max(40),
-  rightText: z.string().min(1).max(400),
-  evidenceRefIds: z.array(z.string().uuid()).max(20).optional(),
+  rightText: z.string().min(1),
+  evidenceRefIds: z.array(z.string().uuid()).optional(),
 });
 
 export const practiceItemV2Schema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("single_choice"),
-    options: z.array(practiceItemOptionSchema).min(2).max(6),
+    options: z.array(practiceItemOptionSchema).min(2),
     correctUnitId: z.string().min(1).max(40),
   }),
   z.strictObject({
     kind: z.literal("true_false"),
-    proposition: z.string().min(1).max(2000),
+    proposition: z.string().min(1),
     expected: z.boolean(),
-    evidenceRefIds: z.array(z.string().uuid()).max(20).optional(),
+    evidenceRefIds: z.array(z.string().uuid()).optional(),
   }),
   z.strictObject({
     kind: z.literal("ordering"),
-    units: z.array(practiceItemOptionSchema).min(2).max(8),
-    correctUnitOrder: z.array(z.string().min(1).max(40)).min(2).max(8),
+    units: z.array(practiceItemOptionSchema).min(2),
+    correctUnitOrder: z.array(z.string().min(1).max(40)).min(2),
   }),
   z.strictObject({
     kind: z.literal("matching"),
-    pairs: z.array(practiceItemPairSchema).min(2).max(8),
+    pairs: z.array(practiceItemPairSchema).min(2),
   }),
 ]);
 export type PracticeItemV2 = z.infer<typeof practiceItemV2Schema>;
@@ -826,27 +819,27 @@ export function derivePracticeItemFromCanonicalAnswer(
 
 export const learningObjectiveDraftV2Schema = z
   .strictObject({
-    objectiveStatement: z.string().min(1).max(2000),
-    publicSummary: z.string().min(1).max(1500),
+    objectiveStatement: z.string().min(1),
+    publicSummary: z.string().min(1),
     // Plan 23 W1-05：概念级知识标题（名词短语；不把 cue/prompt/完整命题当标题）。
     // 2026-08-22 修复：此前合同缺此字段导致 revision.concept_label 永远为 NULL，
     // 前端标题回退 publicSummary 造成"标题=摘要"。空值只允许迁移期存量记录。
-    conceptLabel: z.string().min(1).max(200),
+    conceptLabel: z.string().min(1),
     knowledgeForm: knowledgeFormV2Schema,
-    preferredTaskIntents: z.array(taskIntentSchema).min(1).max(6),
+    preferredTaskIntents: z.array(taskIntentSchema).min(1),
     canonicalAnswer: canonicalAnswerV2Schema,
     /** 客观练习件；作者给不出可追溯的干扰项时就该缺省，绝不为凑数硬造。 */
     practiceItem: practiceItemV2Schema.optional(),
     learningSupport: z.strictObject({
-      explanation: z.string().min(1).max(6000),
-      boundary: z.string().min(1).max(3000).optional(),
-      misconception: z.string().min(1).max(3000).optional(),
-      workedExample: z.string().min(1).max(6000).optional(),
+      explanation: z.string().min(1),
+      boundary: z.string().min(1).optional(),
+      misconception: z.string().min(1).optional(),
+      workedExample: z.string().min(1).optional(),
     }),
     rubric: objectiveRubricV2Schema,
-    relations: z.array(objectiveRelationV2Schema).max(60),
+    relations: z.array(objectiveRelationV2Schema),
     difficulty: z.enum(["introductory", "intermediate", "advanced"]),
-    evidenceRefIds: z.array(z.string().uuid()).min(1).max(100),
+    evidenceRefIds: z.array(z.string().uuid()).min(1),
   })
   .strict();
 export type LearningObjectiveDraftV2 = z.infer<
@@ -858,10 +851,10 @@ export const cardPresentationDraftV2Schema = z
     strategy: cardStrategyV2Schema,
     transformationKind: teachingTransformationV2Schema,
     front: z.strictObject({
-      cue: z.string().min(1).max(2000),
-      context: z.string().min(1).max(3000).optional(),
-      prompt: z.string().min(1).max(2000),
-      mediaRefs: z.array(z.string().min(1).max(200)).max(20).optional(),
+      cue: z.string().min(1),
+      context: z.string().min(1).optional(),
+      prompt: z.string().min(1),
+      mediaRefs: z.array(z.string().min(1).max(200)).optional(),
     }),
     estimatedReviewSeconds: z.number().int().min(1).max(3600),
   })
@@ -896,7 +889,7 @@ export const learningCardCandidateRevisionV2Schema = z
     planObjectiveLocalId: z.string().min(1).max(160),
     recommendation: z.strictObject({
       recommended: z.boolean(),
-      reasonCodes: z.array(z.string().min(1).max(120)).max(20),
+      reasonCodes: z.array(z.string().min(1)),
     }),
     derivedFromCandidateRevisions: z
       .array(candidateDerivationRefV2Schema)
@@ -1024,22 +1017,22 @@ export type CardSetGateReportV2 = z.infer<typeof cardSetGateReportV2Schema>;
 
 export const candidateEditablePatchV2Schema = z
   .strictObject({
-    objectiveStatement: z.string().min(1).max(2000).optional(),
+    objectiveStatement: z.string().min(1).optional(),
     front: z
       .strictObject({
-        cue: z.string().min(1).max(2000).optional(),
-        context: z.string().min(1).max(3000).optional(),
-        prompt: z.string().min(1).max(2000),
+        cue: z.string().min(1).optional(),
+        context: z.string().min(1).optional(),
+        prompt: z.string().min(1),
       })
       .optional(),
     canonicalAnswer: canonicalAnswerV2Schema.optional(),
-    explanation: z.string().min(1).max(6000).optional(),
-    boundary: z.string().min(1).max(3000).nullable().optional(),
-    misconception: z.string().min(1).max(3000).nullable().optional(),
-    workedExample: z.string().min(1).max(6000).nullable().optional(),
+    explanation: z.string().min(1).optional(),
+    boundary: z.string().min(1).nullable().optional(),
+    misconception: z.string().min(1).nullable().optional(),
+    workedExample: z.string().min(1).nullable().optional(),
     knowledgeForm: knowledgeFormV2Schema.optional(),
     strategy: cardStrategyV2Schema.optional(),
-    evidenceRefIds: z.array(z.string().uuid()).min(1).max(100).optional(),
+    evidenceRefIds: z.array(z.string().uuid()).min(1).optional(),
   })
   .strict();
 export type CandidateEditablePatchV2 = z.infer<
@@ -1392,23 +1385,22 @@ export const candidateRevealV2Schema = z
     revision: z.number().int().min(1),
     exposureId: z.string().uuid(),
     canonicalAnswer: canonicalAnswerV2Schema,
-    explanation: z.string().min(1).max(6000),
-    boundary: z.string().min(1).max(3000).optional(),
-    misconception: z.string().min(1).max(3000).optional(),
-    workedExample: z.string().min(1).max(6000).optional(),
+    explanation: z.string().min(1),
+    boundary: z.string().min(1).optional(),
+    misconception: z.string().min(1).optional(),
+    workedExample: z.string().min(1).optional(),
     evidencePreviews: z
       .array(
         z.strictObject({
           evidenceSnapshotId: z.string().uuid(),
-          preview: z.string().max(2000),
+          preview: z.string(),
           sourceLabel: z.string().min(1).max(300).nullable(),
           sourceState: z.enum(["located", "drifted", "missing"]),
           // 0275 之后才有值：密封时冻住的原文。null 有两种来源（存量证据 / 副本行缺失），
           // 界面必须把它当成"这段没被冻住"而不是"没有原文"。
-          originalPreview: z.string().max(2000).nullable(),
+          originalPreview: z.string().nullable(),
         }),
-      )
-      .max(20),
+      ),
     exposedAt: z.string().datetime({ offset: true }),
   })
   .strict();

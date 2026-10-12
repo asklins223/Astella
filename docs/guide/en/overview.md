@@ -58,7 +58,7 @@ Project-owned source code and documentation use [PolyForm Noncommercial 1.0.0](.
 
 Implemented entry points and business paths have tests and selected window/real-model evidence. Read acceptance per item: [note editing](../../testing/companion-note-editing-2026-10-08.md), [note creation](../../testing/companion-note-authoring-2026-10-08.md), [plan 44](../../plans/learning-companion/44-unified-context-window-and-compaction-2026-10-05.md) for context governance and database/model comparisons, and [plan 46](../../plans/learning-companion/46-companion-natural-conversation-research-and-design-2026-10-07.md) for dialogue naturalness and waiting stability. These records do not establish acceptance of the entire product or long-term effects.
 
-The product does not offer per-user model/provider settings, a separate transparent always-on-top pet window, free camera/parallax navigation or email password recovery. Failed Live2D loading hides the character with an explanation; text and stored records remain available.
+The product does not offer per-user model/provider settings, a separate transparent always-on-top pet window, or free camera/parallax navigation. Failed Live2D loading hides the character with an explanation; text and stored records remain available.
 
 ## Further reading
 

@@ -95,18 +95,33 @@ export interface ExtractedKnowledgeAtom {
   knowledgeFormHint: KnowledgeFormV2;
 }
 
+/** 确定性提取里被规则挡下来的句子，按挡在哪一条分开计数。 */
+export interface AtomExclusionStats {
+  readonly tooShort: number;
+  readonly operational: number;
+}
+
+export interface AtomExtractionResult {
+  readonly atoms: ExtractedKnowledgeAtom[];
+  readonly excluded: AtomExclusionStats;
+}
+
 /**
- * 确定性 Atom 提取：将 blocks 按段落/句子分割为候选 atoms。
+ * 确定性 Atom 提取：将 blocks 按段落/句子分割为候选 atoms，并给出被挡下的句数。
  * 不调用模型——纯规则。
+ *
+ * 两个计数不是装饰：「这篇笔记到底在哪一步变短的」以前只能靠 atomCount 减候选数去猜，
+ * 而那两条规则（句子太短、判成操作记录）发生在大模型选目标**之前**，根本不在差值里。
  */
-export function extractAtomsDeterministic(blocks: SourceBlockInput[]): ExtractedKnowledgeAtom[] {
+export function extractAtomsDeterministicWithStats(blocks: SourceBlockInput[]): AtomExtractionResult {
   const atoms: ExtractedKnowledgeAtom[] = [];
+  const excluded: { tooShort: number; operational: number } = { tooShort: 0, operational: 0 };
   for (const block of blocks) {
     const sentences = splitIntoSentences(block.content);
     for (let i = 0; i < sentences.length; i++) {
       const sentence = sentences[i].trim();
-      if (sentence.length < 10) continue;
-      if (isOperationalOrTemporary(sentence)) continue;
+      if (sentence.length < 10) { excluded.tooShort += 1; continue; }
+      if (isOperationalOrTemporary(sentence)) { excluded.operational += 1; continue; }
 
       atoms.push({
         atomId: `atom-${block.blockId}-${i}`,
@@ -120,7 +135,12 @@ export function extractAtomsDeterministic(blocks: SourceBlockInput[]): Extracted
       });
     }
   }
-  return atoms;
+  return { atoms, excluded };
+}
+
+/** 只要原子列表的调用方（确定性 provider 与测试）用这一份。 */
+export function extractAtomsDeterministic(blocks: SourceBlockInput[]): ExtractedKnowledgeAtom[] {
+  return extractAtomsDeterministicWithStats(blocks).atoms;
 }
 
 /**
@@ -446,9 +466,9 @@ function findMatchingExistingObjective(
   atom: ExtractedKnowledgeAtom,
   existing: ExistingObjectiveRef[],
 ): ExistingObjectiveRef | null {
-  const atomLower = atom.proposition.toLowerCase().slice(0, 200);
+  const atomLower = atom.proposition.toLowerCase();
   for (const obj of existing) {
-    const objLower = obj.objectiveStatement.toLowerCase().slice(0, 200);
+    const objLower = obj.objectiveStatement.toLowerCase();
     // Exact match
     if (atomLower === objLower) return obj;
 
@@ -554,7 +574,7 @@ function createPlannedObjective(
   if (practice.reasonCode) reasonCodes.push(practice.reasonCode);
   return {
     objectiveLocalId,
-    objectiveStatement: atom.proposition.slice(0, 2000),
+    objectiveStatement: atom.proposition,
     priority: index === 0 ? "critical" : index < 3 ? "important" : "optional",
     knowledgeForm: atom.knowledgeFormHint,
     strategy: strategy.strategy,

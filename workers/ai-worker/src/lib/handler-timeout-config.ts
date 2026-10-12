@@ -20,7 +20,9 @@ const MAX_ALLOWED_TIMEOUT_MS = 24 * 60 * 60_000;
 const DEFAULT_TIMEOUTS: Record<string, number> = {
   // URL fetch + text segmentation, no AI call.
   parse_source: 60_000,
-  companion_agent: DEFAULT_AI_TASK_TIMEOUT_MS,
+  // A renewable, user-cancellable agent task has no guessed total wall-clock
+  // deadline. Deployment overrides and individual provider timeouts still apply.
+  companion_agent: Infinity,
   agent_run_advance: DEFAULT_AI_TASK_TIMEOUT_MS,
   companion_memory_extract: DEFAULT_AI_TASK_TIMEOUT_MS,
   companion_summarizer: DEFAULT_AI_TASK_TIMEOUT_MS,
@@ -44,7 +46,7 @@ const DEFAULT_PROVIDER_TIMEOUT_MS = DEFAULT_AI_PROVIDER_TIMEOUT_MS;
 function parsePositiveInt(value: string | undefined): number | undefined {
   if (value === undefined || value === "") return undefined;
   const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  if (!Number.isSafeInteger(Math.floor(parsed)) || parsed <= 0) return undefined;
   return Math.floor(parsed);
 }
 
@@ -70,7 +72,11 @@ function providerEnvKeyForType(jobType: string): string {
 export function resolveHandlerTimeout(jobType: string): number {
   // 1. Per-type env var — highest priority, explicit operator override.
   const perTypeEnv = parsePositiveInt(process.env[envKeyForType(jobType)]);
-  if (perTypeEnv !== undefined) return clamp(perTypeEnv);
+  if (perTypeEnv !== undefined) return jobType === "companion_agent" ? perTypeEnv : clamp(perTypeEnv);
+
+  // A legacy global chat/job timeout is not an explicit agent-task policy.
+  // Only WORKER_TIMEOUT_COMPANION_AGENT_MS opts this task into a total deadline.
+  if (jobType === "companion_agent") return Infinity;
 
   // 2. Global env var — operator-wide override applies to all job types
   //    that don't have an explicit per-type env var.
@@ -79,7 +85,7 @@ export function resolveHandlerTimeout(jobType: string): number {
 
   // 3. Per-type built-in default — sensible per-type values when no env.
   const perTypeDefault = DEFAULT_TIMEOUTS[jobType];
-  if (perTypeDefault !== undefined) return clamp(perTypeDefault);
+  if (perTypeDefault !== undefined) return perTypeDefault === Infinity ? Infinity : clamp(perTypeDefault);
 
   // 4. Global built-in default.
   return clamp(GLOBAL_DEFAULT_MS);
@@ -110,12 +116,12 @@ function clamp(ms: number): number {
  *
  * ```
  *   lease heartbeat (120s)         job 租约：续租停止后回收崩溃任务
- *   handler abort (30min)          runWithAbortTimeout 强制执行
- *          └─ loop deadline         agent 循环自己的 deadline = abort - 持久化余量
+ *   handler abort                 仅按显式伴星部署配置启用整轮时限
+ *          └─ loop deadline         有限时限扣除持久化余量；默认没有整轮硬截止
  * ```
  *
  * 租约不再限制合法任务的总时长；运行时持续续租，失去租约或取消仍立即中止。
- * 合同预算跨确认续跑累加，handler 是单次执行预算；循环为持久化留下余量。
+ * 显式配置的预算跨确认续跑累加；循环为持久化留下余量。
  *
  * 走函数而不是常量：handler 超时可以被 `WORKER_TIMEOUT_COMPANION_AGENT_MS`
  * 覆盖，而 abort 用的是**解析后**的值——循环若用静态常量算 deadline，env 一改

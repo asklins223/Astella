@@ -374,7 +374,7 @@ export async function markReflectionProposalWithdrawn(
   const rows = await queryRows<{ id: string }>(tx, sql`
     UPDATE companion_reflections
        SET decision = 'source_invalid',
-           decision_summary = ${reason.slice(0, 300)},
+           decision_summary = ${reason},
            updated_at = now()
      WHERE id = ${reflectionId}::uuid
        AND user_id = ${userId}

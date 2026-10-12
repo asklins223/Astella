@@ -706,6 +706,8 @@ export interface CompanionTtsSegmentEvent {
     intensity: number;
     durationMs?: number;
   };
+  /** 这一轮的说话风格指令（一轮一条随每段下发）；模型这轮没写就不带该键。 */
+  instruction?: string;
 }
 
 /**
@@ -774,6 +776,8 @@ export async function emitCompanionTtsSegments(args: {
               synthesisText: segment.synthesisText,
               synthesisTextSha256: segment.synthesisTextSha256,
               cue: segment.cue,
+              // 一轮一条：没写就不落这个键（strict 合同下省略而非 null）。
+              ...(segment.instruction ? { instruction: segment.instruction } : {}),
             })}, ${args.expiresAt}
           )`), sql`, `)}
         `);
@@ -1140,7 +1144,7 @@ export async function markCompanionRunFailed(
           type: "error",
           payload: {
             code,
-            message: reason.slice(0, 240),
+            message: reason,
             recoverable,
             requestId: read.runId,
           },

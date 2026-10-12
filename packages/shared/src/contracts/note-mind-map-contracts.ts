@@ -1,24 +1,28 @@
 import { z } from "zod";
 
-export const MIND_MAP_MAX_NODES = 120;
-export const MIND_MAP_MAX_DEPTH = 6;
 export const mindMapReferenceV1Schema = z.strictObject({
   blockOrdinal: z.number().int().min(0).max(100_000),
-  quote: z.string().trim().min(1).max(500),
+  // 引多长由它要支撑的那个知识点决定；逐字核对由真窗口的校验说，不由字数说。
+  quote: z.string().trim().min(1),
 });
 export const mindMapNodeV1Schema = z.strictObject({
   id: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
   parentId: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/).nullable(),
   kind: z.enum(["root", "group", "concept"]),
-  label: z.string().trim().min(1).max(48),
-  explanation: z.string().trim().min(1).max(600).nullable(),
-  references: z.array(mindMapReferenceV1Schema).max(6),
+  // 名字与解释的长度随内容走：原先 48／600 是固定配额，模型写长一点整张图就判无效、
+  // 这一轮全部重跑，而结构本身是对的。
+  label: z.string().trim().min(1),
+  explanation: z.string().trim().min(1).nullable(),
+  // 一个节点挂几条依据由材料决定：交回 7 条时以前是整张图判无效、这一轮全部重跑，
+  // 而不是这张图少一条依据。依据能不能核对由真窗口的逐字引用校验说。
+  references: z.array(mindMapReferenceV1Schema),
 });
 
 export const mindMapContentV1Schema = z.strictObject({
   schemaVersion: z.literal(1),
   rootId: z.string().min(1).max(64),
-  nodes: z.array(mindMapNodeV1Schema).min(2).max(MIND_MAP_MAX_NODES),
+  // 节点不设数量上限：一张图有多少节点由材料决定（合并步也一样）；这里只管是不是一张合法的图。
+  nodes: z.array(mindMapNodeV1Schema).min(2),
 }).superRefine((map, ctx) => {
   const fail = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message });
   const nodes = new Map(map.nodes.map(node => [node.id, node]));
@@ -31,11 +35,9 @@ export const mindMapContentV1Schema = z.strictObject({
     if (node.id !== map.rootId && node.parentId === null) fail("非主题节点需要父节点");
     const visited = new Set<string>();
     let current: typeof node | undefined = node;
-    let depth = 0;
     while (current) {
       if (visited.has(current.id)) { fail("脑图不能成环"); break; }
       visited.add(current.id);
-      if (++depth > MIND_MAP_MAX_DEPTH) { fail("脑图层级超过上限"); break; }
       if (current.parentId === null) break;
       const parent: typeof node | undefined = nodes.get(current.parentId);
       if (!parent) { fail("脑图父节点不存在"); break; }
@@ -65,7 +67,7 @@ export const createNoteMindMapTaskV1Schema = z.strictObject({noteVersionId:z.str
 export const noteMindMapTaskV1Schema = z.strictObject({
   taskId:z.string().uuid(),agentRunId:z.string().uuid().optional(),noteId:z.string().uuid(),noteVersionId:z.string().uuid(),
   status:z.enum(["queued","running","ready","failed"]),mindMap:noteMindMapV1Schema.nullable(),
-  failureReason:z.enum(["ai_consent_required","ai_data_policy_denied","unknown"]).nullable(),
+  failureReason:z.enum(["ai_consent_required","ai_data_policy_denied","generation_incomplete","unknown"]).nullable(),
   failureMessage:z.string().max(500).nullable(),createdAt:z.string().datetime({offset:true}),
 });
 export const noteMindMapLatestTaskV1Schema = z.strictObject({version:z.literal(1),task:noteMindMapTaskV1Schema.nullable()});

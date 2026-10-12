@@ -181,7 +181,8 @@ export async function createNoteRecallRecord(
     answerTruncated = basis.truncated;
   }
 
-  const answerSnapshot = answer.slice(0, 20_000);
+  // `answer` 出自 `recallExcerptCandidates`（`max=900` 那一段），20_000 那道 slice 永远不会命中；
+  // 留着就是第二次定义一个不存在的上限，删。
   const [inserted] = await tx.insert(noteRecallRecords).values({
     ...scope,
     noteId,
@@ -195,7 +196,7 @@ export async function createNoteRecallRecord(
     hintSnapshot: null,
     hintSourceMessageId: null,
     hintConversationId: null,
-    answerSnapshot,
+    answerSnapshot: answer,
     answerTruncated,
   }).onConflictDoNothing().returning();
   if (inserted) return noteRecallStartResultV1Schema.parse(project(inserted, note.currentVersionId, version.versionNo));

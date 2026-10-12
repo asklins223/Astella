@@ -30,7 +30,12 @@ const uuidSchema = z.string().uuid();
 /** base64 必须是"编码回去一模一样"的那一种，和 `note-doc-state.ts` 同一个口径。 */
 const base64Schema = z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/);
 
-/** 与 `desktop-gateway.ts` 里 `NOTE_DOC_PENDING_MAX` 同一个数：两侧不能各说一套。 */
+/**
+ * 本机还没交给主进程的草稿最多留几拍。
+ *
+ * 它是**唯一**声明处：网关那一侧（`desktop-gateway-ns-note.ts`）从这里引入，
+ * 以前两边各写一个 200、注释还指向第三个文件，谁改一处另一边就悄悄不一致。
+ */
 export const NOTE_DOC_PENDING_LIMIT = 200;
 const ENTRY_LIMIT = 48;
 const SINGLE_ENTRY_MAX_BYTES = 2_000_000;

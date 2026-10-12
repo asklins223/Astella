@@ -1357,6 +1357,7 @@ DO $$ DECLARE t text; BEGIN
     'astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid)',
     'astella_pending_companion_note_edits_v1()',
     'astella_pending_companion_note_shares_v1()',
+    'astella_companion_tool_confirmed_v1(uuid,text)',
     'astella_note_creation_scope_current(uuid,uuid)',
     'astella_cancel_agent_operations(uuid,integer)','astella_agent_job_current(uuid,uuid,uuid,boolean)',
     'astella_agent_run_authorized(uuid)',
@@ -1385,6 +1386,13 @@ DO $$ DECLARE t text; BEGIN
   -- 真正写那一列的是 API 那一个入口（可见性一变要刷目标索引里的公开标题）。
   IF to_regprocedure('public.astella_pending_companion_note_shares_v1()') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.astella_pending_companion_note_shares_v1() TO astella_api;
+  END IF;
+  -- 0414：0410 建函数时漏授权，而本文件的 REVOKE ALL ON ALL FUNCTIONS 会把
+  -- 迁移里的 GRANT 清掉——只有在这里重新授过的那一支才活下来。API 的伴星
+  -- 改笔记/共享派发与 worker 的确认复查都以受限角色直接 SELECT 它。
+  IF to_regprocedure('public.astella_companion_tool_confirmed_v1(uuid,text)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_companion_tool_confirmed_v1(uuid,text)
+      TO astella_api, astella_worker;
   END IF;
   IF to_regprocedure('public.astella_enqueue_agent_recovery()') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.astella_agent_scope_current(uuid,uuid) TO astella_api,astella_worker;
@@ -1984,6 +1992,7 @@ BEGIN
   WHERE n.nspname = 'public'
     AND has_function_privilege('astella_worker', p.oid, 'EXECUTE')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_companion_tool_confirmed_v1(uuid,text)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_note_creation_scope_current(uuid,uuid)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.astella_claim_jobs(integer,integer,integer)')
@@ -2091,6 +2100,7 @@ BEGIN
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_pending_companion_note_edits_v1()')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_pending_companion_note_shares_v1()')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_companion_tool_confirmed_v1(uuid,text)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_note_creation_scope_current(uuid,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_scope_current(uuid,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_cancel_agent_operations(uuid,integer)')
@@ -2208,6 +2218,9 @@ BEGIN
       ('astella_api', 'astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid)'),
       ('astella_api', 'astella_pending_companion_note_edits_v1()'),
       ('astella_worker', 'astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid)'),
+      -- 0414：伴星改笔记的确认判定，API 派发与 worker 复查都以受限角色直接调用。
+      ('astella_api', 'astella_companion_tool_confirmed_v1(uuid,text)'),
+      ('astella_worker', 'astella_companion_tool_confirmed_v1(uuid,text)'),
       ('astella_api', 'astella_note_creation_scope_current(uuid,uuid)'),
       ('astella_worker', 'astella_note_creation_scope_current(uuid,uuid)'),
       ('astella_api', 'astella_cancel_agent_operations(uuid,integer)'),

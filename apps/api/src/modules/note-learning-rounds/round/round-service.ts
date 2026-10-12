@@ -53,10 +53,8 @@ import {
   type RoundPhaseV1,
 } from "./round-reducer.ts";
 import {
-  artifactCharLengthV1,
   buildDeterministicArtifactHtmlV1,
   ROUND_ARTIFACT_KIND_V1,
-  ROUND_ARTIFACT_MAX_CHARS_V1,
   type RoundArtifactSourceV1,
 } from "@astella/shared/note-dynamic-artifact/round-artifact";
 import { recordArtifactFailureV1, type ArtifactFailureReasonV1, type ArtifactFailureStageV1 } from "./artifact-failure.ts";
@@ -1361,26 +1359,10 @@ async function insertTeachingArtifactV1(
   }
 }
 
-/**
- * 落库前**第二道**配额闸（第一道在渲染器 `buildDynamicArtifactHtmlV1` 里，第三道在桌面
- * `assembleArtifactDocument` 里）。
- *
- * 为什么渲染器已经查过还要再查一次：渲染器与落库之间隔着一次 HTTP 回程与一次
- * `createTeaching` 调用，而整份拒绝（而不是截断）这条判据的**代价**落在库 CHECK 上——
-真到库那里才发现超长，得到的是一次 23514，于是"超配额"这件事被误报成"约束冲突"，
- * 而 0298 的 `over_quota` 那一档正是为它准备的。
- */
+/** 保存完整渲染结果；空页面仍显式拒绝，正文规模由实际产物决定。 */
 function verifyRenderedArtifactHtmlV1(html: string): { ok: true; html: string } | { ok: false; reason: "empty" | "over_quota"; detail: string } {
   if (html.trim().length === 0) {
     return { ok: false, reason: "empty", detail: "渲染器交回来的产物是空的" };
-  }
-  const length = artifactCharLengthV1(html);
-  if (length > ROUND_ARTIFACT_MAX_CHARS_V1) {
-    return {
-      ok: false,
-      reason: "over_quota",
-      detail: `产物 ${length} 字符，超过上限 ${ROUND_ARTIFACT_MAX_CHARS_V1}（整份拒绝，不截断）`,
-    };
   }
   return { ok: true, html };
 }

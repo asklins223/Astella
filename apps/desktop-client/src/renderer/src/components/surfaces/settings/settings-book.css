@@ -93,6 +93,12 @@
 /* Chapters stay flat on the paper. Only a form, a receipt, or a confirmation gets its own object. */
 .hud-surface .settings-group { min-width: 0; }
 .hud-surface .settings-group__title { margin: 0 0 11px; color: #5c7e5d; font: 750 15px/1.5 "Noto Sans SC Variable", sans-serif; letter-spacing: 0; }
+/* 快捷键清单：静态一行一键，不用 SettingRow（没有可调状态）。 */
+.hud-surface .settings-shortcut-list { display: grid; gap: 9px; margin: 0; padding: 0; }
+.hud-surface .settings-shortcut-list > div { display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr); gap: 4px 16px; align-items: baseline; padding: 9px 12px; border-radius: 15px; background: #f1f4e6; }
+.hud-surface .settings-shortcut-list dt { display: flex; align-items: center; gap: 10px; font-weight: 750; font-size: 13px; }
+.hud-surface .settings-shortcut-list dd { margin: 0; color: var(--hud-soft); font-size: 12px; line-height: 1.7; }
+.hud-surface .settings-shortcut-list kbd { padding: 3px 8px; border: 1px solid var(--hud-line-strong); border-radius: 9px; background: var(--hud-paper-light); font: 700 11px/1.4 "Noto Sans SC Variable", sans-serif; }
 .hud-surface .settings-group__note { margin: 0 0 12px; color: var(--settings-soft); font-size: 12px; line-height: 1.7; }
 .hud-surface .settings-group__note--after { margin: 10px 0 0; }
 .hud-surface .settings-notice-paper { padding: 12px 14px; border-radius: 18px; background: #f1f5e6; color: #647961; font-size: 12px; line-height: 1.8; }

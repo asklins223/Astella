@@ -25,7 +25,8 @@ export async function processCompanionNoteShare(scope: { workspaceId: string; us
           WHERE c.id=${callId} AND c.workspace_id=${scope.workspaceId} AND c.user_id=${scope.userId}
             AND c.name='companion_share_note' AND c.status='executing' AND c.result_ref IS NULL
             AND r.status IN ('accepted','running') AND r.cancel_requested_at IS NULL
-            AND a.global_enabled AND a.epoch=r.account_epoch AND r.permission_level<>'read_only'
+            AND a.global_enabled AND a.epoch=r.account_epoch
+            AND (r.permission_level='full' OR astella_companion_tool_confirmed_v1(r.id,c.tool_call_id))
             AND j.status='running' AND j.type='companion_agent' AND j.requested_by=c.user_id
             AND EXISTS(SELECT 1 FROM jsonb_array_elements(r.permission_snapshot->'offeredTools') t
               WHERE t->>'name'='companion_share_note')

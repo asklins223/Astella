@@ -33,7 +33,7 @@ export const noteLearningArtifacts = pgTable("note_learning_artifacts", {
   selectionAnchorShape: check("note_learning_artifacts_selection_anchor_shape_check", sql`${t.selectionAnchor} IS NULL OR jsonb_typeof(${t.selectionAnchor}) = 'object'`),
   overviewHasNoSelection: check("note_learning_artifacts_overview_selection_check", sql`${t.sourceKind} <> 'overview' OR ${t.selectionAnchor} IS NULL`),
   hashLength: check("note_learning_artifacts_hash_length_check", sql`char_length(${t.sourceContentHash}) BETWEEN 8 AND 128`),
-  htmlLength: check("note_learning_artifacts_html_length_check", sql`char_length(${t.html}) BETWEEN 1 AND 220000`),
+  htmlLength: check("note_learning_artifacts_html_length_check", sql`char_length(${t.html}) >= 1`),
   versionBelongsToNote: foreignKey({
     name: "note_learning_artifacts_version_note_fk",
     columns: [t.workspaceId, t.noteId, t.noteVersionId],

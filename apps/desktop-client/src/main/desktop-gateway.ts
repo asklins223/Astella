@@ -407,7 +407,6 @@ import {
 } from "@astella/shared/card-generation-desktop-contracts";
 import { projectLearningDashboardToRoomProjection } from "./room-projection";
 import { computeClientReviewHashV2 } from "@astella/shared/card-generation-v2-hashing";
-import { ARTIFACT_MAX_BYTES } from "./artifact-surface";
 // 2026-09-30 拆出：传输层与它依赖的两个类型各自成文件。`GatewayTransport` 持有
 // 发请求所需的那一小块状态（`request` 的传递闭包，恰好 11 个成员）——
 // 先抽状态、再搬方法，理由见那个文件的头。
@@ -516,8 +515,10 @@ export function parseCompanionSseFrame(block: string): CompanionChatStreamEventV
   if (typeof raw !== "object" || raw === null) return null;
   const envelope = companionStreamEventV1Schema.safeParse(raw);
   if (!envelope.success) return null;
+  // synthesisText 与 instruction 都只服务端合成用（服务端按 ref 重读事件），
+  // 渲染层只需要引用、正文区间与 cue——两个都不过桥。
   const payload = envelope.data.type === "voice.segment.ready"
-    ? (({ synthesisText: _privateSynthesisText, ...rendererSafe }) => rendererSafe)(envelope.data.payload)
+    ? (({ synthesisText: _privateSynthesisText, instruction: _privateInstruction, ...rendererSafe }) => rendererSafe)(envelope.data.payload)
     : envelope.data.payload;
   // A saved note receipt carries its bounded CRDT state so personal notes can
   // refresh without a collaboration stream. The strict shared schema has

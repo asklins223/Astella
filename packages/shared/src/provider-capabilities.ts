@@ -13,14 +13,12 @@ import type {
   AgentTurnRequest,
   AgentTurnResult,
 } from "./contracts/card-agent-contracts.ts";
-import type { ImageInsightOutput } from "./schemas.ts";
 
 // ─── 能力枚举 ──────────────────────────────────────────────────────────
 
 /** 能力枚举 — 可扩展 */
 export type Capability =
   | "text_generation"       // 文本生成（chat completion + JSON output）
-  | "vision"                // 视觉理解（图片分析、OCR）
   | "agent_turn"            // Agent 工具调用（native tool calls）
   /**
    * 伴星对话的**跨模型兜底**槽（方案 29 §9.6 / B8）。
@@ -76,6 +74,9 @@ export interface ChatOptions {
    */
   tools?: AgentTurnRequest["tools"];
   toolChoice?: "auto" | "required";
+  /** A named call is being generated; arguments may be incomplete. Display-only:
+   * this signal never authorizes execution or claims that a write has started. */
+  onToolCallStarted?: (slot: { index: number; id: string; name: string }) => void;
   /**
    * 流中**已完整**的工具调用被观察到时回调（40b §4.1-1 / R7，验收 A58）。
    *
@@ -124,16 +125,6 @@ export interface GeneratedImage {
 
 // ─── 输入类型（从 worker 迁移到 shared，供能力接口引用） ──────────────
 
-/** 图片分析输入 — 从 workers/ai-worker/src/lib/ai-provider.ts 迁移 */
-export interface AnalyzeImageInput {
-  body: Buffer;
-  mimeType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
-  width: number;
-  height: number;
-  sha256: string;
-  userDescription?: string;
-}
-
 // ─── 能力接口 ──────────────────────────────────────────────────────────
 
 /** 文本生成能力 */
@@ -144,15 +135,6 @@ export interface TextGenerationCapability {
     options: ChatOptions,
     signal?: AbortSignal,
   ): Promise<ChatResult>;
-}
-
-/** 视觉理解能力 */
-export interface VisionCapability {
-  readonly visionModelId: string;
-  analyzeImage(
-    input: AnalyzeImageInput,
-    signal?: AbortSignal,
-  ): Promise<ImageInsightOutput>;
 }
 
 /** Agent 工具调用能力 */
@@ -201,7 +183,6 @@ export interface ImageGenerationCapability {
  */
 export type CapabilityImpl =
   | TextGenerationCapability
-  | VisionCapability
   | AgentTurnCapability
   | EmbeddingCapability
   | RerankCapability;

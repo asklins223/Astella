@@ -20,6 +20,7 @@ import {
   ArrowRight,
   Eye,
   EyeOff,
+  Hash,
   KeyRound,
   LockKeyhole,
   LoaderCircle,
@@ -50,8 +51,6 @@ import {
 } from "../app/desktop-gate";
 import {
   createRequestMeta,
-  gatewayErrorMessage,
-  isJoinCommittedWithoutSession,
   RendererGatewayError,
   setCurrentWorkspaceEpoch,
   unwrapGatewayResult,
@@ -74,7 +73,7 @@ import { sceneMotionDuration, type SceneMotionMode } from "../scene/scene-motion
 import { useRoomStore } from "../app/room-store";
 import { setAuthenticatedSurfaceSession } from "../app/surface-session";
 import { HudFirstSpaceScene } from "./hud/HudFirstSpace";
-import { requestSpaceMenu, requestSpaceMenuRefresh } from "./hud/space-menu-events";
+import { requestSpaceMenuRefresh } from "./hud/space-menu-events";
 /**
  * 登录页那张氛围画布是**整个渲染层里唯一还在活的 pixi.js 引用**（`scene/*-pixi*` 那条链
  * 已经没有人 import 了，只剩自己的测试）。它以前静态引入，于是 pixi 的全部运行时被拖进
@@ -86,7 +85,8 @@ const AuthAmbientCanvas = lazy(() =>
   import("./AuthAmbientCanvas").then((module) => ({ default: module.AuthAmbientCanvas })),
 );
 import type { AuthAmbientLampCue } from "./AuthAmbientCanvas";
-import { MIN_PASSWORD_LENGTH, validateAuthForm } from "./auth-form-validation";
+import { MIN_PASSWORD_LENGTH, validateAuthForm, validateEmailCode, validateEmailFormat, validateResetForm } from "./auth-form-validation";
+import { GateUpdateRow } from "./gate-update-row";
 import {
   formatAuthSceneClock,
   resolveAuthScene,
@@ -112,20 +112,17 @@ type BlockedView = {
 type GateView =
   | { phase: "loading"; title: string; detail: string; stage?: string }
   | BlockedView
-  | { phase: "auth"; mode: "login" | "register"; serviceNotice?: string }
+  | { phase: "auth"; mode: "login" | "register" | "reset"; serviceNotice?: string }
   | { phase: "reauth"; session: ReauthenticationDesktopSession | ReadyDesktopSession | null }
   | {
       phase: "workspace";
       session: AuthenticatedDesktopSession;
       workspaces: WorkspaceSummaryV1[];
-      notice?: string;
     }
   | {
       phase: "ready";
       runtime: RuntimeSnapshotV1;
       session: ReadyDesktopSession;
-      /** An invite that failed to redeem during sign-in; the space menu reports it. */
-      spaceNotice?: string;
     };
 
 const initialView: GateView = {
@@ -202,19 +199,6 @@ function retryTimeLabel(value?: string): string | null {
   return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
-/**
- * Hands one gate outcome to the room. A failed invite redemption happens during
- * bootstrap, before the room exists, but its surface — the learning-space menu —
- * lives in the room control pill. Rendering this beside the room children lets
- * the request fire once the pill is actually mounted.
- */
-function SpaceMenuRequest({ notice }: { readonly notice: string }) {
-  useEffect(() => {
-    requestSpaceMenu(notice);
-  }, [notice]);
-  return null;
-}
-
 /** Room lighting the gate renders against; owned by the gate itself. */
 type GateTheme = "day" | "night";
 type GateBackdropUrls = Record<GateTheme, string | null> & { dusk: string | null };
@@ -231,6 +215,7 @@ function GateFrame({
   systemTimeLabel,
   onScenePreferenceChange,
   backdropUrls,
+  corner,
   children,
 }: {
   title: string;
@@ -244,6 +229,14 @@ function GateFrame({
   systemTimeLabel: string;
   onScenePreferenceChange: (preference: AuthScenePreference) => void;
   backdropUrls: GateBackdropUrls;
+  /**
+   * 钉在窗口上的那一类控件（版本与更新）。必须挂在 `<main>` 这一层而不是
+   * `{children}` 那一层：`.desktop-access-gate__panel` 入场时被 GSAP 打了
+   * `transform`，而带 transform 的祖先会接管 `position: fixed` 的 containing
+   * block——挂在 panel 里的右上角控件会在动效那几百毫秒里贴到面板边上，
+   * `clearProps` 撤掉 transform 后再弹回窗口角，登录↔注册每切一次都跳一下。
+   */
+  corner?: ReactNode;
   children?: ReactNode;
 }) {
   const frameRef = useRef<HTMLElement>(null);
@@ -402,6 +395,7 @@ function GateFrame({
         </div>
         {children}
       </section>
+      {corner}
     </main>
   );
 }
@@ -429,8 +423,20 @@ export function DesktopAccessGate({
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  /** 只属于注册第一步：协作空间在账号创建时一起加入，登录侧不再收码。 */
   const [inviteToken, setInviteToken] = useState("");
-  const [inviteEntryOpen, setInviteEntryOpen] = useState(false);
+  /** 邮箱验证码通道是否配置齐全（auth-surface manifest 端点的动态能力位）。 */
+  const [emailChannelAvailable, setEmailChannelAvailable] = useState(false);
+  const [emailCode, setEmailCode] = useState("");
+  const [codeSending, setCodeSending] = useState(false);
+  /** 重发冷却剩余秒数（0 = 可以再发）。 */
+  const [resendIn, setResendIn] = useState(0);
+  /** 发码成功后的中性提示；formFailure 是红色告警，两者不混用。 */
+  const [codeNotice, setCodeNotice] = useState<string | null>(null);
+  /** 登录屏的「用验证码登录」开关。 */
+  const [loginViaCode, setLoginViaCode] = useState(false);
+  /** 注册的两步：先填基础信息，下一步才去邮箱取码（发码是自动的）。 */
+  const [registerStep, setRegisterStep] = useState<"details" | "verify">("details");
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [keepSignedIn, setKeepSignedIn] = useState(true);
   const [credentialPersistence, setCredentialPersistence] = useState<"local_file" | "memory">("memory");
@@ -465,9 +471,6 @@ export function DesktopAccessGate({
     workspaceId: string;
     section: ReturnType<typeof useRoomStore.getState>["settingsSection"];
   } | null>(null);
-  // Set when an invite redemption fails right after login: the next bootstrap
-  // resolves into the workspace phase so the failure has a surface to land on.
-  const pendingWorkspaceNoticeRef = useRef<string | null>(null);
   const viewPhaseRef = useRef<GateView["phase"]>(initialView.phase);
   const systemScene = resolveAuthSceneFromDate(systemNow);
   const requestedScene = resolveAuthScene(scenePreference, systemNow);
@@ -502,7 +505,10 @@ export function DesktopAccessGate({
     if (!api) return;
     let cancelled = false;
     void api.auth.getSurfaceManifest({ meta: createRequestMeta() }).then((response) => {
-      if (cancelled || !response.ok || response.data.testMode) return;
+      if (cancelled || !response.ok) return;
+      // 能力位与签名无关：testMode 只说 manifest 的签名来源，通道配没配是另一件事。
+      setEmailChannelAvailable(response.data.emailChannelAvailable === true);
+      if (response.data.testMode) return;
       const targetId = `${view.mode}:static_help`;
       const entry = response.data.manifest.surfaces.find((surface) => surface.surfaceId === targetId);
       setAuthSurfaceHelp(entry?.textContent || null);
@@ -511,6 +517,13 @@ export function DesktopAccessGate({
     });
     return () => { cancelled = true; };
   }, [view.phase, view.phase === "auth" ? view.mode : null]);
+
+  // 重发倒计时：一秒一跳，到 0 放开「发送验证码」。
+  useEffect(() => {
+    if (resendIn <= 0) return undefined;
+    const timer = window.setTimeout(() => setResendIn((seconds) => seconds - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [resendIn]);
 
   const beginRoomReveal = useCallback(() => {
     // The gate owns a distinct window-side alcove, so entering the Room is a
@@ -546,18 +559,6 @@ export function DesktopAccessGate({
       });
     }
     setRefreshRevision((revision) => revision + 1);
-  }, []);
-
-  /**
-   * 取走（并清空）待报告的邀请码失败提示。返回**值**而不是对象：两个消费方的字段名
-   * 本来就不同（`workspace` 视图叫 `notice`、`ready` 视图叫 `spaceNotice`），此前
-   * 这里返回 `{ notice }` 再被 spread 进 ready 视图，读的一直是 `view.spaceNotice`，
-   * 于是登录页填的邀请码失败后没有任何地方能把话说出来。
-   */
-  const takeWorkspaceNotice = useCallback((): string | undefined => {
-    const notice = pendingWorkspaceNoticeRef.current;
-    pendingWorkspaceNoticeRef.current = null;
-    return notice ?? undefined;
   }, []);
 
   const invalidateReadyGate = useCallback((code?: GateInvalidationCode) => {
@@ -875,7 +876,7 @@ export function DesktopAccessGate({
             });
             const response = await api.workspace.list({ meta: createRequestMeta(sessionDecision.session.workspaceEpoch) });
             const workspaces = unwrapGatewayResult(response).workspaces;
-            apply({ phase: "workspace", session: sessionDecision.session, workspaces, notice: takeWorkspaceNotice() });
+            apply({ phase: "workspace", session: sessionDecision.session, workspaces });
             return;
           }
           case "ready": {
@@ -883,14 +884,11 @@ export function DesktopAccessGate({
             // already has a space to work in. More than one space no longer
             // gates the room — switching happens in the room control's
             // learning-space menu (mockup 04B), which lists `workspace.list` for
-            // itself. The one outcome that still needs a surface is an invite
-            // that failed to redeem during sign-in: the menu owns joining, so it
-            // opens for that message instead of a gate panel.
+            // itself.
             apply({
               phase: "ready",
               runtime,
               session: sessionDecision.session,
-              spaceNotice: takeWorkspaceNotice(),
             });
             return;
           }
@@ -943,7 +941,7 @@ export function DesktopAccessGate({
       window.clearTimeout(deadlineTimer);
       runtimeSubscription?.close();
     };
-  }, [connectOnce, invalidateReadyGate, onWorkspaceBoundaryReset, refreshRevision, requestBootstrap, takeWorkspaceNotice]);
+  }, [connectOnce, invalidateReadyGate, onWorkspaceBoundaryReset, refreshRevision, requestBootstrap]);
 
   useEffect(() => {
     if (view.phase !== "ready") return;
@@ -1001,57 +999,167 @@ export function DesktopAccessGate({
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   }, [requestBootstrap, view.phase]);
 
-  const handleAuthSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  /**
+   * 门禁这一屏的"一次只跑一件事"闸门。
+   *
+   * `formBusy`/`codeSending` 是 React state，同一 tick 内连点两次都会读到旧值——
+   * 发码是花钱的（外部邮箱有日配额），所以真正的防重复要落在同步的 ref 上，
+   * state 只负责让按钮看起来禁用。
+   */
+  const gateActionRef = useRef(false);
+  const beginGateAction = (): boolean => {
+    if (gateActionRef.current) return false;
+    gateActionRef.current = true;
+    return true;
+  };
+  const endGateAction = () => { gateActionRef.current = false; };
+
+  /** 发一枚验证码。本机只查邮箱格式，限流与通道状态由服务端回答。 */
+  const handleSendCode = async () => {
+    const api = desktopApi();
+    if (!api || view.phase !== "auth" || codeSending || resendIn > 0 || formBusy) return;
+    const emailFailure = validateEmailFormat(email);
+    if (emailFailure) {
+      setFormFailure(emailFailure);
+      return;
+    }
+    if (!beginGateAction()) return;
+    const purpose = view.mode === "register"
+      ? "register"
+      : view.mode === "reset"
+        ? "reset_password"
+        : "login";
+    setCodeSending(true);
+    setFormFailure(null);
+    setCodeNotice(null);
+    try {
+      const sent = unwrapGatewayResult(
+        await api.auth.sendEmailCode({ meta: createRequestMeta(), email: email.trim(), purpose }),
+      );
+      setEmailCode("");
+      setResendIn(Math.max(1, sent.resendInSeconds));
+      setCodeNotice(`验证码已发到 ${email.trim()}，5 分钟内有效。没收到可以看看垃圾邮件。`);
+    } catch (error) {
+      setFormFailure(gateErrorPolicy(error, "验证码发送失败").detail);
+    } finally {
+      setCodeSending(false);
+      endGateAction();
+    }
+  };
+
+  /**
+   * 注册第一步：校验基础信息并自动发出验证码，成功才进第二步。
+   * 只由 `handleAuthSubmit` 调用（下一步那颗按钮就是表单的提交键），
+   * 防连点的闸门在那边已经拿到了。
+   */
+  const handleRegisterNext = async () => {
     const api = desktopApi();
     if (!api || view.phase !== "auth") return;
-    const localFailure = validateAuthForm({ mode: view.mode, email, password, confirmPassword });
+    const localFailure = validateAuthForm({ mode: "register", email, password, confirmPassword });
     if (localFailure) {
       setFormFailure(localFailure);
       return;
     }
+    setFormBusy(true);
+    setFormFailure(null);
+    setCodeNotice(null);
+    try {
+      const sent = unwrapGatewayResult(
+        await api.auth.sendEmailCode({ meta: createRequestMeta(), email: email.trim(), purpose: "register" }),
+      );
+      setEmailCode("");
+      setResendIn(Math.max(1, sent.resendInSeconds));
+      setRegisterStep("verify");
+    } catch (error) {
+      setFormFailure(gateErrorPolicy(error, "验证码发送失败").detail);
+    } finally {
+      setFormBusy(false);
+    }
+  };
+
+  const handleAuthSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const api = desktopApi();
+    if (!api || view.phase !== "auth") return;
+    if (!beginGateAction()) return;
+    // 注册第一步的「下一步」走发码那条路，不提交注册。
+    if (view.mode === "register" && emailChannelAvailable && registerStep === "details") {
+      try {
+        await handleRegisterNext();
+      } finally {
+        endGateAction();
+      }
+      return;
+    }
     const registering = view.mode === "register";
-    const pendingInvite = inviteToken.trim();
+    const resetting = view.mode === "reset";
+    const viaCode = view.mode === "login" && loginViaCode;
+    const inviteForRegister = inviteToken.trim();
+    // 本机校验按模式分流：错在哪一格，就在哪一格回答，不打一发必败的往返。
+    const localFailure = resetting
+      ? validateResetForm({ email, code: emailCode, password, confirmPassword })
+      : viaCode
+        ? validateEmailFormat(email) ?? validateEmailCode(emailCode)
+        : (validateAuthForm({ mode: registering ? "register" : "login", email, password, confirmPassword })
+          ?? (registering && emailChannelAvailable ? validateEmailCode(emailCode) : null));
+    if (localFailure) {
+      setFormFailure(localFailure);
+      endGateAction();
+      return;
+    }
     // 开始下一次登录，上一次退出留下的结论就翻篇了：它描述的是刚离开的那个账号，
     // 继续挂在表单下面会把两件事混成一件。
     clearAccountSignOutNotice();
     setFormBusy(true);
     setFormFailure(null);
     try {
-      const response = registering
-        ? await api.auth.register({
+      if (resetting) {
+        unwrapGatewayResult(await api.auth.resetPassword({
+          meta: createRequestMeta(),
+          email: email.trim(),
+          code: emailCode.trim(),
+          newPassword: password,
+        }));
+        // 没有会话可签发：把人送回登录屏，带上"已重置"那句话，邮箱留着免得重打。
+        setPassword("");
+        setConfirmPassword("");
+        setEmailCode("");
+        setResendIn(0);
+        setCodeNotice(null);
+        setView({ phase: "auth", mode: "login", serviceNotice: "密码已重置，请用新密码登录。" });
+        return;
+      }
+      const response = viaCode
+        ? await api.auth.loginWithCode({
             meta: createRequestMeta(),
             email,
-            password,
+            code: emailCode.trim(),
             remember: keepSignedIn,
-            ...(displayName.trim() ? { displayName: displayName.trim() } : {}),
-            ...(pendingInvite ? { inviteToken: pendingInvite } : {}),
           })
-        : await api.auth.login({ meta: createRequestMeta(), email, password, remember: keepSignedIn });
+        : registering
+          ? await api.auth.register({
+              meta: createRequestMeta(),
+              email,
+              password,
+              remember: keepSignedIn,
+              ...(displayName.trim() ? { displayName: displayName.trim() } : {}),
+              ...(inviteForRegister ? { inviteToken: inviteForRegister } : {}),
+              ...(emailChannelAvailable && emailCode.trim() ? { emailCode: emailCode.trim() } : {}),
+            })
+          : await api.auth.login({ meta: createRequestMeta(), email, password, remember: keepSignedIn });
       unwrapGatewayResult(response);
       setPassword("");
       setConfirmPassword("");
-      if (!registering && pendingInvite) {
-        // The invite is redeemed only once the session exists. A failure here
-        // must not strand the user: they stay signed in and the workspace phase
-        // reports what happened to the code.
-        try {
-          unwrapGatewayResult(await api.auth.joinWorkspace({ meta: createRequestMeta(), inviteToken: pendingInvite }));
-          setInviteToken("");
-        } catch (error) {
-          if (isJoinCommittedWithoutSession(error)) {
-            // 成员关系已经落库：这串码不再有用，留着它下次登录只会得到"已经被使用"。
-            setInviteToken("");
-            pendingWorkspaceNoticeRef.current = `登录成功。${gatewayErrorMessage(error)}`;
-          } else {
-            pendingWorkspaceNoticeRef.current = gateErrorPolicy(error, "登录成功，但邀请码没有生效").detail;
-          }
-        }
-      }
+      setEmailCode("");
+      setResendIn(0);
+      setCodeNotice(null);
       beginRoomReveal();
       requestBootstrap();
     } catch (error) {
-      const policy = gateErrorPolicy(error, registering ? "无法创建账号" : "无法登录");
+      const policy = gateErrorPolicy(
+        error,
+        resetting ? "无法重置密码" : registering ? "无法创建账号" : viaCode ? "验证码登录没成功" : "无法登录",
+      );
       if (error instanceof RendererGatewayError && error.code === "configuration_error") {
         setFormFailure(policy.detail);
         setView({ phase: "auth", mode: view.mode, serviceNotice: policy.detail });
@@ -1062,6 +1170,7 @@ export function DesktopAccessGate({
       }
     } finally {
       setFormBusy(false);
+      endGateAction();
     }
   };
 
@@ -1122,7 +1231,6 @@ export function DesktopAccessGate({
   if (view.phase === "ready") {
     return (
       <div className="desktop-access-gate__room-content" data-room-revealed={roomRevealed}>
-        {view.spaceNotice ? <SpaceMenuRequest notice={view.spaceNotice} /> : null}
         {children}
       </div>
     );
@@ -1168,13 +1276,40 @@ export function DesktopAccessGate({
 
   if (view.phase === "auth") {
     const registering = view.mode === "register";
+    const resetting = view.mode === "reset";
+    const viaCode = view.mode === "login" && loginViaCode;
+    // 注册分两步（只在有邮箱通道时）：第一步基础信息，第二步邮箱验证码。
+    const registerVerifying = registering && emailChannelAvailable && registerStep === "verify";
+    const registerBasics = !registering || !emailChannelAvailable || registerStep === "details";
+    const showCodeField = viaCode || resetting || registerVerifying;
+    const title = resetting
+      ? "重置密码"
+      : registerVerifying
+        ? "确认邮箱"
+        : registering
+          ? "创建账号"
+          : viaCode
+            ? "验证码登录"
+            : "欢迎回来";
+    const detail = resetting
+      ? "邮箱收验证码，设置一个新密码。"
+      : registerVerifying
+        ? `验证码已发到 ${email.trim()}，5 分钟内有效。没收到就看看垃圾邮件。`
+        : registering
+          ? emailChannelAvailable
+            ? "先填基础信息，下一步去邮箱取验证码。"
+            : "填写邮箱和密码即可；昵称和邀请码按需填写。"
+          : viaCode
+            ? "不用记密码，邮箱收码直接进。"
+            : "登录后继续上次的学习。";
     return (
       <GateFrame
-        title={registering ? "创建账号" : "欢迎回来"}
-        detail={registering ? "填写邮箱和密码即可；昵称和邀请码按需填写。" : "登录后继续上次的学习。"}
+        title={title}
+        detail={detail}
         variant={registering ? "register" : "default"}
         motionMode={motionMode}
         backdropUrls={registering ? registerBackdropUrls : gateBackdropUrls}
+        corner={<GateUpdateRow />}
         {...gateSceneProps}
       >
         <form
@@ -1188,22 +1323,73 @@ export function DesktopAccessGate({
             <span className="desktop-access-gate__field-label">邮箱</span>
             <span className="desktop-access-gate__field-control">
               <Mail size={18} aria-hidden="true" />
-              <input type="email" autoComplete="email" maxLength={320} required value={email} placeholder="name@example.com" onChange={(event) => { setEmail(event.target.value); setFormFailure(null); }} />
+              <input
+                type="email"
+                autoComplete="email"
+                maxLength={320}
+                required
+                readOnly={registerVerifying}
+                value={email}
+                placeholder="name@example.com"
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  setFormFailure(null);
+                  // 验证码跟着邮箱走：换了一个地址，旧的码与冷却都不再对应。
+                  setEmailCode("");
+                  setCodeNotice(null);
+                  setResendIn(0);
+                }}
+              />
             </span>
           </label>
+          {showCodeField ? (
+            <label className={registering ? "desktop-access-gate__field--wide" : undefined}>
+              <span className="desktop-access-gate__field-label desktop-access-gate__field-label--send">
+                邮箱验证码
+                <button
+                  className="desktop-access-gate__code-send"
+                  type="button"
+                  disabled={codeSending || resendIn > 0 || formBusy}
+                  onClick={() => void handleSendCode()}
+                >
+                  {codeSending
+                    ? "发送中…"
+                    : resendIn > 0
+                      ? `${resendIn}s 后可重发`
+                      : registerVerifying || codeNotice
+                        ? "重新发送"
+                        : "发送验证码"}
+                </button>
+              </span>
+              <span className="desktop-access-gate__field-control">
+                <Hash size={18} aria-hidden="true" />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  required
+                  value={emailCode}
+                  placeholder="6 位数字"
+                  onChange={(event) => { setEmailCode(event.target.value.replace(/\D/g, "")); setFormFailure(null); }}
+                />
+              </span>
+            </label>
+          ) : null}
+          {!viaCode && !registerVerifying ? (
           <label>
             <span className="desktop-access-gate__field-label">
-              密码 {registering ? <small>至少 {MIN_PASSWORD_LENGTH} 位</small> : null}
+              {resetting ? "新密码" : "密码"} {registering || resetting ? <small>至少 {MIN_PASSWORD_LENGTH} 位</small> : null}
             </span>
             <span className="desktop-access-gate__field-control desktop-access-gate__field-control--with-action">
               <LockKeyhole size={18} aria-hidden="true" />
               <input
                 type={passwordVisible ? "text" : "password"}
-                autoComplete={registering ? "new-password" : "current-password"}
+                autoComplete={registering || resetting ? "new-password" : "current-password"}
                 maxLength={200}
                 required
                 value={password}
-                placeholder={registering ? `至少 ${MIN_PASSWORD_LENGTH} 位` : "输入密码"}
+                placeholder={registering || resetting ? `至少 ${MIN_PASSWORD_LENGTH} 位` : "输入密码"}
                 onChange={(event) => { setPassword(event.target.value); setFormFailure(null); }}
               />
               <button
@@ -1217,9 +1403,10 @@ export function DesktopAccessGate({
               </button>
             </span>
           </label>
-          {registering ? (
+          ) : null}
+          {(registering || resetting) && !registerVerifying ? (
             <label>
-              <span className="desktop-access-gate__field-label">确认密码</span>
+              <span className="desktop-access-gate__field-label">{resetting ? "确认新密码" : "确认密码"}</span>
               <span className="desktop-access-gate__field-control">
                 <LockKeyhole size={18} aria-hidden="true" />
                 <input
@@ -1234,7 +1421,7 @@ export function DesktopAccessGate({
               </span>
             </label>
           ) : null}
-          {registering ? (
+          {registering && registerBasics ? (
             <label>
               <span className="desktop-access-gate__field-label">昵称 <small>选填</small></span>
               <span className="desktop-access-gate__field-control">
@@ -1243,11 +1430,9 @@ export function DesktopAccessGate({
               </span>
             </label>
           ) : null}
-          {registering || inviteEntryOpen ? (
+          {registering && registerBasics ? (
             <label>
-              <span className="desktop-access-gate__field-label">
-                邀请码 <small>{registering ? "选填 · 加入协作空间" : "选填 · 登录后自动加入"}</small>
-              </span>
+              <span className="desktop-access-gate__field-label">邀请码 <small>选填 · 加入协作空间</small></span>
               <span className="desktop-access-gate__field-control">
                 <Ticket size={18} aria-hidden="true" />
                 <input
@@ -1264,6 +1449,7 @@ export function DesktopAccessGate({
           ) : null}
           </div>
           {(formFailure ?? view.serviceNotice) ? <p className="desktop-access-gate__form-error" role="alert">{formFailure ?? view.serviceNotice}</p> : null}
+          {codeNotice ? <p className="desktop-access-gate__code-notice" role="status">{codeNotice}</p> : null}
           {credentialPersistence === "local_file" ? (
             <label className="desktop-access-gate__keep-signed-in">
               <input
@@ -1286,30 +1472,102 @@ export function DesktopAccessGate({
           <button className="desktop-access-gate__primary" type="submit" disabled={formBusy}>
             {formBusy
               ? <LoaderCircle className="desktop-access-gate__button-spinner" size={17} aria-hidden="true" />
-              : registering ? <UserPlus size={17} aria-hidden="true" /> : <LogIn size={17} aria-hidden="true" />}
-            {formBusy ? registering ? "正在创建账号…" : "正在登录…" : registering ? "创建账号" : "登录"}
+              : resetting ? <KeyRound size={17} aria-hidden="true" />
+                : registerVerifying ? <UserPlus size={17} aria-hidden="true" />
+                  : registering ? <Mail size={17} aria-hidden="true" />
+                    : viaCode ? <Mail size={17} aria-hidden="true" />
+                      : <LogIn size={17} aria-hidden="true" />}
+            {formBusy
+              ? registering
+                ? registerVerifying ? "正在创建账号…" : "正在发送验证码…"
+                : resetting ? "正在重置…" : "正在登录…"
+              : resetting ? "重置密码"
+                : registering
+                  ? registerVerifying ? "创建账号" : "下一步"
+                  : "登录"}
             {/* 登录态不排尾箭头：`→]` 与 `→` 都在说"进入"，而文字已经写了"登录"。
-                尾箭头留着的是注册态——那里前面的图标是 `UserPlus`（讲"新建账号"，不是方向）。 */}
+                尾箭头留给注册的两步——那里说的是"往下一步走"，方向就是它要讲的。 */}
             {!formBusy && registering ? <ArrowRight className="desktop-access-gate__primary-arrow" size={16} aria-hidden="true" /> : null}
           </button>
-          {!registering ? (
+          {registerVerifying ? (
             <button
               className="desktop-access-gate__text-action desktop-access-gate__text-action--quiet"
               type="button"
               disabled={formBusy}
-              aria-expanded={inviteEntryOpen}
               onClick={() => {
                 setFormFailure(null);
-                setInviteEntryOpen((open) => {
-                  if (open) setInviteToken("");
-                  return !open;
-                });
+                setCodeNotice(null);
+                setEmailCode("");
+                setResendIn(0);
+                setRegisterStep("details");
               }}
             >
-              <Ticket size={15} aria-hidden="true" />
-              {inviteEntryOpen ? "取消填写邀请码" : "有邀请码？加入协作空间"}
+              <ArrowLeft size={15} aria-hidden="true" />
+              返回上一步，改邮箱或密码
             </button>
           ) : null}
+          {!registering && !resetting ? (
+            // 两个入口都是"换个进门方式"，同一层级就并排一行，不各占一行高度。
+            // **不看通道探针**：探针说的是"这台服务现在配没配发信凭据"，而忘了密码
+            // 的人手里没有第二条路。此前探针一失败（未配对、断网、契约不符都算失败）
+            // 这两格就一起消失，且不留一句解释——最需要一个出口的人，看到的是没有出口。
+            // 通道真没开时，点进去发码会回 503 并说清是通道问题，那才是该说话的地方。
+            <div className="desktop-access-gate__auth-links">
+              <button
+                className="desktop-access-gate__text-action desktop-access-gate__text-action--quiet"
+                type="button"
+                disabled={formBusy}
+                onClick={() => {
+                  setFormFailure(null);
+                  setCodeNotice(null);
+                  setEmailCode("");
+                  setResendIn(0);
+                  setLoginViaCode((on) => !on);
+                }}
+              >
+                <Mail size={15} aria-hidden="true" />
+                {loginViaCode ? "改用密码登录" : "用验证码登录"}
+              </button>
+              <button
+                className="desktop-access-gate__text-action desktop-access-gate__text-action--quiet"
+                type="button"
+                disabled={formBusy}
+                onClick={() => {
+                  setFormFailure(null);
+                  setCodeNotice(null);
+                  setEmailCode("");
+                  setResendIn(0);
+                  setLoginViaCode(false);
+                  setPassword("");
+                  setConfirmPassword("");
+                  setView({ phase: "auth", mode: "reset" });
+                }}
+              >
+                <KeyRound size={15} aria-hidden="true" />
+                忘记密码？
+              </button>
+            </div>
+          ) : null}
+          {resetting ? (
+            <button
+              className="desktop-access-gate__text-action desktop-access-gate__text-action--quiet"
+              type="button"
+              disabled={formBusy}
+              onClick={() => {
+                setFormFailure(null);
+                setCodeNotice(null);
+                setEmailCode("");
+                setResendIn(0);
+                setPassword("");
+                setConfirmPassword("");
+                setView({ phase: "auth", mode: "login" });
+              }}
+            >
+              <ArrowLeft size={15} aria-hidden="true" />
+              返回登录
+            </button>
+          ) : null}
+          {!resetting ? (
           <button
             className="desktop-access-gate__text-action desktop-access-gate__text-action--mode"
             type="button"
@@ -1319,13 +1577,19 @@ export function DesktopAccessGate({
               setPassword("");
               setConfirmPassword("");
               setInviteToken("");
-              setInviteEntryOpen(false);
+              // 验证码按用途签发：换屏就把上一屏的码与冷却清掉，不留错位状态。
+              setEmailCode("");
+              setCodeNotice(null);
+              setResendIn(0);
+              setLoginViaCode(false);
+              setRegisterStep("details");
               setView({ phase: "auth", mode: registering ? "login" : "register" });
             }}
           >
             {registering ? <ArrowLeft size={15} aria-hidden="true" /> : null}
             {registering ? "已有账号？登录" : "还没有账号？注册"}
           </button>
+          ) : null}
         </form>
       </GateFrame>
     );
@@ -1378,7 +1642,6 @@ export function DesktopAccessGate({
     <HudFirstSpaceScene
       session={view.session}
       workspaces={view.workspaces}
-      notice={view.notice}
       onCommitted={() => {
         beginRoomReveal();
         requestBootstrap();

@@ -34,7 +34,9 @@ docker compose -p astella-dev -f docker-compose.dev.yml --profile seed   run --r
 
 ### 能找回忘记的密码吗？
 
-当前没有邮件自助找回流程。`/auth/change-password` 需要当前密码；Owner 的 `/auth/recovered-users/:userId/reset-password` 仅初始化导入恢复用户尚未设置的密码，不能重置任意已有账号。不要把它当成通用找回接口。
+可以，走邮箱验证码：在登录页点「忘记密码？」，填邮箱、收 6 位验证码、设一个新密码。重置成功后这个账号在所有设备上的登录都会作废，要用新密码重新登录。验证码 5 分钟内有效、只能用一次，重发要等 60 秒。
+
+这一步依赖服务端的发信通道（QQ 邮箱 → 2925 无限邮按序降级）。收不到信时先确认服务端配了凭据：接口会回 503 并说明「邮箱验证通道尚未配置」，这不是你的账号问题。注册同样默认强制邮箱验证码；`/auth/change-password` 仍需当前密码（登录后改密），Owner 的 `/auth/recovered-users/:userId/reset-password` 只初始化导入恢复用户尚未设置的密码，不是通用找回接口。
 
 ### 端口被占用，或客户端连错地址？
 

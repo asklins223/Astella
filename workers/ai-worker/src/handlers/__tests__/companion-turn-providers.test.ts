@@ -40,7 +40,6 @@ const governance = (over: Partial<AIGovernanceContext> = {}): AIGovernanceContex
   providerName: "mock",
   providerConfig: {},
   textProviderName: null, textProviderConfig: null,
-  visionProviderName: null, visionProviderConfig: null,
   companionFallbackProviderName: null, companionFallbackProviderConfig: null,
   embeddingProviderName: null, embeddingProviderConfig: null,
   consentOk: true,

@@ -67,11 +67,12 @@ export interface ArtifactNodeV1 {
 }
 
 /**
- * 一份演示最多几步。知识过程再长也不该是一堂课；超出的**整份判失败并如实说明**，
- * 没有任何调用方可以按这个数裁掉条目——裁掉的那几条用户读不到，也没人解释过。
+ * 少于这么多步就不成其为「走一遍」，整份拒绝。
+ *
+ * 只有**下界**：一份演示走几步由材料里真实的过程决定（流程型的笔记一节一步，自然就长），
+ * 不设"最多几步"——那个数与窗口、与材料都无关。2026-10-12 的实测教训：上限 6 时，
+ * 七步的笔记整份判形状错、重发再判错，用户最后看到的是「没有演示」。
  */
-export const ARTIFACT_MAX_STEPS_V1 = 6;
-/** 少于这么多步就不成其为「走一遍」，整份拒绝。 */
 export const ARTIFACT_MIN_STEPS_V1 = 2;
 
 export type ArtifactStepRejectionV1 = "empty" | "unknown_block" | "quote_not_found" | "measurement_claim";
@@ -90,7 +91,7 @@ export interface ArtifactStepVerdictV1 {
  */
 export type ArtifactGroundingResultV1 =
   | { readonly ok: true; readonly nodes: readonly ArtifactNodeV1[]; readonly rejected: readonly ArtifactStepVerdictV1[] }
-  | { readonly ok: false; readonly reason: "empty" | "too_few" | "over_quota"; readonly detail: string };
+  | { readonly ok: false; readonly reason: "empty" | "too_few"; readonly detail: string };
 
 /**
  * 去掉 markdown 标记，得到「这句话读起来是什么」——与教学那侧的 `plainTextOfBlockV1`
@@ -169,14 +170,6 @@ export function groundArtifactStepsV1(input: {
   if (input.steps.length === 0) {
     return { ok: false, reason: "empty", detail: "这一轮没有可上屏的知识步骤" };
   }
-  if (input.steps.length > ARTIFACT_MAX_STEPS_V1) {
-    return {
-      ok: false,
-      reason: "over_quota",
-      detail: `一份演示最多 ${ARTIFACT_MAX_STEPS_V1} 步，这次给了 ${input.steps.length} 步`,
-    };
-  }
-
   const byOrdinal = new Map<number, ArtifactEvidenceBlockV1>();
   for (const block of input.blocks) byOrdinal.set(block.ordinal, block);
   // 块正文是纯文本化 + 去空白之后比，所以同一块算一次就够。
@@ -307,8 +300,15 @@ export function hasMeasurementClaimV1(text: string): boolean {
       // 紧贴判词的否定前缀（「非实测」「未实测」「未经实测」）就是免责本身。
       // 2026-10-12 真窗口那一发实测：提示词要求把读数标成示意值，模型老实写「非实测结果」，
       // 整页跑了 163 秒之后被完成判据判死——拦的应该是"声称测过"，不是这三个字出现过。
-      // 只认**紧贴**的那一个：「非但实测结果惊人」的「但」挡不住，仍然照拒。
-      if (/(?:未经|非|未|无|没)$/.test(before.trimEnd())) continue;
+      // 只认**紧贴**的那一片否定：「非但实测结果惊人」的「但」挡不住，仍然照拒。
+      // 2026-10-12 又实测到三种同形写法被误杀——「不算实测」「算不上实测」「未经过实测」：
+      // 它们的前缀是「不+算(得上)」「未+经过」，只认单字否定会漏掉中间那一个动词。
+      // 这是**放行**方向的口径（拦的是"声称测过"，不是"出现过这个词"），
+      // 放宽到「否定词 + 至多两个助动词」为止，不许跨过转折词。
+      if (/(?:未经|非|未|无|没|不|别)(?:算|是|曾|经|有|做|进行|过|得|作|要|会|能|上|下){0,3}$/.test(before.trimEnd())) continue;
+      // 判词**紧跟其后**的示意说法同样是免责：「耗时一栏只是示例」「这一步耗时仅为示意」。
+      // 只在很短的一小段里认（≤8 字），免得「耗时 12 毫秒后不是最优」这种把闸放过去。
+      if (/^(?:一栏|一列|这一格|这里)?(?:只是示例|仅为示意|是示意|为示意|属于示意|只是演示|仅作示意|仅为演示)/.test(lower.slice(at + token.length, at + token.length + 8))) continue;
       return true;
     }
     return false;

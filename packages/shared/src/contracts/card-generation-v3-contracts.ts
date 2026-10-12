@@ -31,6 +31,7 @@ import {
   knowledgeFormV2Schema,
   learningObjectiveDraftV2Schema,
   practiceItemV2Schema,
+  CARD_GENERATION_HARD_MAX_CARDS_CEILING,
 } from "./card-generation-v2-contracts.ts";
 import { groundingCriticReportV2Schema } from "./card-quality-v2-contracts.ts";
 import { taskIntentSchema } from "./learning-run-contracts.ts";
@@ -38,18 +39,28 @@ import { taskIntentSchema } from "./learning-run-contracts.ts";
 // ─── ① 生成任务（card_generate_v3）──────────────────────────────────────
 
 /**
+ * 候选与提案的**条数**上界只认领域合同那一份（`CARD_GENERATION_HARD_MAX_CARDS_CEILING`）。
+ *
+ * 这里原本各写着 8／12，与提示词直接打架：提示词按用户声明说"请选出最多 N 个"（N 可以到 50），
+ * 模型照做交回 19 张时，信封先在 `max(8)` 上整批拒掉——内容一个字没读，表象是 `output_shape`
+ * 而不是"多出来的逐条剔除并留因"。数量的真正闸门是 `validateCardGenerateV3Drafts` 按
+ * `activationHardMax` 剔除并留因；合同只兜领域上界，不再自己另写一个更小的数。
+ */
+const CARD_V3_BATCH_CEILING = CARD_GENERATION_HARD_MAX_CARDS_CEILING;
+
+/**
  * 单次生成里对"要立哪些目标"的**提案**。没有 strategy / practiceForm 强制档：
  * 那两件由服务端在整批上分配（见文件头），模型给的是内容与建议。
  */
 export const cardGenerateV3ObjectiveProposalSchema = z.strictObject({
   objectiveLocalId: z.string().min(1).max(160),
-  objectiveStatement: z.string().min(1).max(2000),
+  objectiveStatement: z.string().min(1),
   priority: z.enum(["critical", "important", "optional"]),
   knowledgeForm: knowledgeFormV2Schema,
   /** 模型的题型建议；服务端分配 strategy 时可参考可覆盖。 */
-  practiceFormSuggestion: z.string().min(1).max(60).optional(),
+  practiceFormSuggestion: z.string().min(1).optional(),
   /** 一句"为什么值得记"（39 §8.3 候选展示要求），进候选的推荐理由码。 */
-  rationale: z.string().min(1).max(500),
+  rationale: z.string().min(1),
 });
 export type CardGenerateV3ObjectiveProposal = z.infer<
   typeof cardGenerateV3ObjectiveProposalSchema
@@ -57,8 +68,8 @@ export type CardGenerateV3ObjectiveProposal = z.infer<
 
 /** 一行的答案片段：`label` 只在 pairs 那一支用得上（左边）。 */
 export const cardGenerateV3AnswerPartSchema = z.strictObject({
-  text: z.string().min(1).max(4000),
-  label: z.string().min(1).max(300).optional(),
+  text: z.string().min(1),
+  label: z.string().min(1).optional(),
 });
 
 /**
@@ -72,40 +83,40 @@ export const cardGenerateV3AnswerPartSchema = z.strictObject({
 export const cardGenerateV3CandidateContentSchema = z.strictObject({
   objectiveLocalId: z.string().min(1).max(160),
   /** 概念级标题（名词短语，不是 cue／prompt／整句命题）。 */
-  conceptLabel: z.string().min(1).max(200),
-  publicSummary: z.string().min(1).max(1500),
+  conceptLabel: z.string().min(1),
+  publicSummary: z.string().min(1),
   answerForm: z.enum(["prose", "bullets", "steps", "pairs"]),
-  answerParts: z.array(cardGenerateV3AnswerPartSchema).min(1).max(40),
+  answerParts: z.array(cardGenerateV3AnswerPartSchema).min(1),
   judgingPoints: z
     .array(
       z.strictObject({
         facet: taskIntentSchema,
-        criterion: z.string().min(1).max(2000),
+        criterion: z.string().min(1),
         required: z.boolean(),
         /**
          * 答案片段序号，**1 起**（服务端换成 `au-*`）。允许 0：第七发真模型就是写了 0 起的
          * 序号被 `too_small` 整批拒掉——序号约定不该是整批红的原因，展开器会按"含 0 且不
          * 含越界值"判出 0 起写法并整体 +1（见 `normalizePartIndexesV3`）。
          */
-        partIndexes: z.array(z.number().int().min(0).max(40)).min(1).max(40),
+        partIndexes: z.array(z.number().int().min(0)).min(1),
       }),
     )
-    .min(1).max(40),
-  explanation: z.string().min(1).max(6000),
-  boundary: z.string().min(1).max(3000).optional(),
-  misconception: z.string().min(1).max(3000).optional(),
-  workedExample: z.string().min(1).max(6000).optional(),
+    .min(1),
+  explanation: z.string().min(1),
+  boundary: z.string().min(1).optional(),
+  misconception: z.string().min(1).optional(),
+  workedExample: z.string().min(1).optional(),
   front: z.strictObject({
-    cue: z.string().min(1).max(2000),
-    prompt: z.string().min(1).max(2000),
-    context: z.string().min(1).max(3000).optional(),
+    cue: z.string().min(1),
+    prompt: z.string().min(1),
+    context: z.string().min(1).optional(),
   }),
   hints: cardHintPairV2Schema,
   estimatedReviewSeconds: z.number().int().min(1).max(3600),
   /** 可执行练习沿用真实作答合同；不给出的内容不能在组装时凭空补成题目。 */
   practiceItem: practiceItemV2Schema.optional(),
   /** 只能取提示里「可用依据」列出的那些 id（服务端仍会按 sealed 清单复检）。 */
-  evidenceSnapshotIds: z.array(z.string().uuid()).min(1).max(100),
+  evidenceSnapshotIds: z.array(z.string().uuid()).min(1),
 });
 export type CardGenerateV3CandidateContent = z.infer<
   typeof cardGenerateV3CandidateContentSchema
@@ -133,11 +144,11 @@ export type CardGenerateV3CandidateDraft = z.infer<
 export const cardGenerateV3PlanIntentSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("author_candidates"),
-    recommendedCardCount: z.number().int().min(1).max(8),
+    recommendedCardCount: z.number().int().min(1).max(CARD_V3_BATCH_CEILING),
   }),
   z.strictObject({
     kind: z.literal("no_cards_recommended"),
-    reasonCodes: z.array(z.string().min(1).max(120)).min(1).max(8),
+    reasonCodes: z.array(z.string().min(1)).min(1),
   }),
 ]);
 export type CardGenerateV3PlanIntent = z.infer<typeof cardGenerateV3PlanIntentSchema>;
@@ -147,8 +158,8 @@ export const cardGenerateV3OutputSchema = z
     planIntent: cardGenerateV3PlanIntentSchema,
     objectiveProposals: z
       .array(cardGenerateV3ObjectiveProposalSchema)
-      .max(12),
-    candidates: z.array(cardGenerateV3CandidateContentSchema).max(8),
+      .max(CARD_V3_BATCH_CEILING),
+    candidates: z.array(cardGenerateV3CandidateContentSchema).max(CARD_V3_BATCH_CEILING),
   })
   .strict()
   .superRefine((output, ctx) => {
@@ -189,8 +200,8 @@ export type CardGenerateV3Output = z.infer<typeof cardGenerateV3OutputSchema>;
 export const cardGenerateV3OutputEnvelopeSchema = z
   .strictObject({
     planIntent: cardGenerateV3PlanIntentSchema,
-    objectiveProposals: z.array(cardGenerateV3ObjectiveProposalSchema).max(12),
-    candidates: z.array(z.unknown()).max(8),
+    objectiveProposals: z.array(cardGenerateV3ObjectiveProposalSchema).max(CARD_V3_BATCH_CEILING),
+    candidates: z.array(z.unknown()).max(CARD_V3_BATCH_CEILING),
   })
   .superRefine((output, ctx) => {
     // 计划意图与提案**这一层仍然严格**（那是"零候选是正常结果"那条纪律的一部分）；
@@ -208,8 +219,8 @@ export type CardGenerateV3OutputEnvelope = z.infer<typeof cardGenerateV3OutputEn
 
 export const cardGenerateV3DraftOutputSchema = z.strictObject({
   planIntent: cardGenerateV3PlanIntentSchema,
-  objectiveProposals: z.array(cardGenerateV3ObjectiveProposalSchema).max(12),
-  candidates: z.array(cardGenerateV3CandidateDraftSchema).max(8),
+  objectiveProposals: z.array(cardGenerateV3ObjectiveProposalSchema).max(CARD_V3_BATCH_CEILING),
+  candidates: z.array(cardGenerateV3CandidateDraftSchema).max(CARD_V3_BATCH_CEILING),
 });
 export type CardGenerateV3DraftOutput = z.infer<typeof cardGenerateV3DraftOutputSchema>;
 
@@ -224,7 +235,7 @@ export type CardGenerateV3DraftOutput = z.infer<typeof cardGenerateV3DraftOutput
  * "结构修复与网络重试如实计入，不隐藏调用"），而不是再开一轮"修复—再检查"循环。
  */
 export const cardCandidateRewriteV3OutputSchema = z.strictObject({
-  rewrites: z.array(cardGenerateV3CandidateContentSchema).min(1).max(8),
+  rewrites: z.array(cardGenerateV3CandidateContentSchema).min(1),
 });
 export type CardCandidateRewriteV3Output = z.infer<
   typeof cardCandidateRewriteV3OutputSchema
@@ -246,8 +257,8 @@ export type CardContentCheckV3Verdict = z.infer<typeof cardContentCheckV3Verdict
 export const cardContentCheckV3IssueSchema = z.strictObject({
   code: z.string().min(1).max(120),
   severity: z.enum(["hard", "soft"]),
-  detail: z.string().min(1).max(2000),
-  sourceQuote: z.string().min(1).max(2000).optional(),
+  detail: z.string().min(1),
+  sourceQuote: z.string().min(1).optional(),
 });
 
 /**
@@ -267,14 +278,14 @@ export const cardContentCheckV3IssueSchema = z.strictObject({
 export const cardContentCheckV3EntryContentSchema = z.strictObject({
   objectiveLocalId: z.string().min(1).max(160),
   verdict: cardContentCheckV3VerdictSchema,
-  issues: z.array(cardContentCheckV3IssueSchema).max(40),
+  issues: z.array(cardContentCheckV3IssueSchema),
 });
 
 export const cardContentCheckV3EntrySchema = z.strictObject({
   objectiveLocalId: z.string().min(1).max(160),
   verdict: cardContentCheckV3VerdictSchema,
   /** 39c §6.2："有问题的候选单独显示原因"；措辞类是建议不升级整批失败。 */
-  issues: z.array(cardContentCheckV3IssueSchema).max(40),
+  issues: z.array(cardContentCheckV3IssueSchema),
   grounding: groundingCriticReportV2Schema,
 });
 
@@ -285,29 +296,27 @@ export const cardContentCheckV3EntrySchema = z.strictObject({
  * 不该把整批判成 `output_shape`（第十发真模型在 `grounding.version` 上正是这么整批红的）。
  */
 export const cardContentCheckV3EnvelopeSchema = z.strictObject({
-  perCandidate: z.array(z.unknown()).max(8),
+  perCandidate: z.array(z.unknown()).max(CARD_V3_BATCH_CEILING),
   setIssues: z
     .array(
       z.strictObject({
         code: z.string().min(1).max(120),
-        detail: z.string().min(1).max(2000),
+        detail: z.string().min(1),
       }),
-    )
-    .max(20),
+    ),
 });
 
 export const cardContentCheckV3OutputSchema = z
   .strictObject({
-    perCandidate: z.array(cardContentCheckV3EntrySchema).max(8),
+    perCandidate: z.array(cardContentCheckV3EntrySchema).max(CARD_V3_BATCH_CEILING),
     /** 整批层面的问题（如语义重复簇）；逐候选问题在各自条目里。 */
     setIssues: z
       .array(
         z.strictObject({
           code: z.string().min(1).max(120),
-          detail: z.string().min(1).max(2000),
+          detail: z.string().min(1),
         }),
-      )
-      .max(20),
+      ),
   })
   .strict();
 export type CardContentCheckV3Output = z.infer<typeof cardContentCheckV3OutputSchema>;

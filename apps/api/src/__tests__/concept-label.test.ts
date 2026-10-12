@@ -52,11 +52,13 @@ describe("deriveConceptLabelFromStatement", () => {
     assert.equal(label, "记忆，是把信息长期保留的加工过程");
   });
 
-  it("清理尾部标点并限制长度", () => {
-    const long = deriveConceptLabelFromStatement(
-      "理解一个没有标点的超长命题".repeat(20),
-    );
-    assert.ok(long.length <= 60);
+  it("清理尾部标点，但长命题不再被固定字数剪尾", () => {
+    const phrase = "理解一个没有标点的超长命题";
+    const long = deriveConceptLabelFromStatement(phrase.repeat(20));
+    // 只剥开头的学习动词前缀（"理解"），其余 19 遍一遍不剪。
+    const stripped = "一个没有标点的超长命题";
+    assert.equal(long, stripped + phrase.repeat(19), "标题长度随句子本身走，不另设剪尾上限");
+    assert.ok(long.endsWith(phrase), "末尾那几遍同样完整");
   });
 
   it("空输入返回空串", () => {

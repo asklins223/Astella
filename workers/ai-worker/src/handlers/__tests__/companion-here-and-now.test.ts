@@ -235,14 +235,21 @@ test("久未见面才提示间隔，刚聊过不打扰", () => {
   assert.match(renderHereAndNow(snapshot({ minutesSinceLastSeen: 60 * 26 })) ?? "", /距上次和用户说话：昨天/);
 });
 
-test("当前学习目标超长被截断，不撑爆每轮 token", () => {
+test("当前学习目标整条给：不剪成半句，也不再拿固定块宽当上限", () => {
+  // 2026-10-12 裁决：喂模型那一侧不做硬截断。目标与任务那句长也整句给——
+  // 剪成半句她会照着半句说话；"别把每轮 token 撑爆"由请求上下文治理那条闸负责，
+  // 不在这里靠剪字替它猜。
+  const topic = "一".repeat(80);
+  const taskPrompt = "把整条目标说完再谈下一步".repeat(12);
   const block = renderHereAndNow(snapshot({
-    activeRun: { topic: "一".repeat(80), phase: "active", usedSeconds: 0, budgetSeconds: null, taskPrompt: null },
+    activeRun: { topic, phase: "active", usedSeconds: 0, budgetSeconds: null, taskPrompt },
     noteCount: 828,
   }))!;
-  assert.doesNotMatch(block, /最近笔记|嵌套/);
-  assert.match(block, /正在学习「一{30}…」/);
-  assert.ok(block.length < 400, `整块应控制在几百字符内，实际 ${block.length}`);
+  assert.ok(block.includes(`正在学习「${topic}」`), "学习目标整条给");
+  assert.ok(block.includes(`正在做：${taskPrompt}`), "任务那句同样整条给");
+  assert.ok(!block.includes("…"), "剪在半句上的那个省略号不该再出现");
+  // 这一块真正不能再装回来的东西还在原地被挡着：笔记清单与可念的读数
+  assert.doesNotMatch(block, /最近笔记|嵌套|828/);
 });
 
 /**
@@ -338,27 +345,36 @@ test("要改边界时，当前状态先摆出来；说「记住了」不等于�
 
 // §12.5 ①：她把"原文"编成课本话，是因为手上只有一句"要看正文就调工具"，
 // 而没有任何一段真文本。注进首块开头之后，她不必补，也不该拿这段往下补。
-test("noteOpeningExcerpt：只取第一句、压换行、封顶 120 字", () => {
+test("noteOpeningExcerpt：只取第一句、压换行，那一句整句给", () => {
   assert.equal(
     noteOpeningExcerpt("欧姆定律说明，\n在电阻不变时，电流与电压成正比，公式为 I=U/R。\n例如电压增加一倍。"),
     "欧姆定律说明， 在电阻不变时，电流与电压成正比，公式为 I=U/R。",
   );
-  assert.equal(noteOpeningExcerpt("没有句号的整段".repeat(30))!.length, 121,
-    "超长要截断并留省略号");
+  // 第一句的边界仍然由标点决定，换行仍然压成空格；变的是不再封顶 120 字——
+  // 剪在半句上会让她以为原文就这么短，而这一格要避免的正是那个。
+  const longSentence = "这一段没有句号".repeat(30);
+  assert.equal(noteOpeningExcerpt(`${longSentence}。第二句说的是别的。`), `${longSentence}。`);
+  assert.equal(noteOpeningExcerpt(longSentence), longSentence, "整段没有标点时它本身就是第一句，整句给");
+  assert.ok(!noteOpeningExcerpt(longSentence)!.includes("…"));
   assert.equal(noteOpeningExcerpt(null), null);
   assert.equal(noteOpeningExcerpt("   \n  "), null);
 });
 
 test("点名的笔记找到时，快照里带出真开头并注明不许往下补", () => {
+  const opening = "欧姆定律说明，在电阻不变时，电流与电压成正比。";
   const block = renderHereAndNow(snapshot({
     noteReference: {
       title: "欧姆定律生成验收", found: true, noteId: "b4ab4749-d888-4b93-9019-e33b74679206",
-      ageLabel: "4 天前", imageCount: 0, opening: "欧姆定律说明，在电阻不变时，电流与电压成正比。",
+      ageLabel: "4 天前", imageCount: 0, opening,
       openRuns: [], nearest: null,
     },
   }));
-  assert.ok(block?.includes("这篇的开头是：「欧姆定律说明，在电阻不变时，电流与电压成正比。」"));
+  assert.ok(block?.includes(`这篇的开头是：「${opening}」`));
   assert.ok(block?.includes("不要照这段往下补"), "要同时点名边界：只有开头，更长的还得去读");
+  // 开头整句给之后，「这只给到了第一句」这句话更不能少：她是拿这句当全篇还是拿它
+  // 当线索，取决于这句提示还在不在（2026-10-12 取消封顶字数时钉住的就是这一条）。
+  assert.ok(block?.includes("只到第一句为止"), "取消剪字之后仍要说明这只是一句开头");
+  assert.ok(block?.includes("companion_read_note"), "要把方向指向读原文，而不是让她自己补");
 });
 
 /**
@@ -384,12 +400,16 @@ test("没有状态行时不多渲染那一行（少一行好过多一行假的�
   assert.ok(!block?.includes("这一屏："), "statusLine 为 null 时不该出现这一行");
 });
 
-test("状态行过长时截断，不把整段塞进环境块", () => {
+test("状态行整条逐字进块：那一屏说什么就说什么", () => {
+  // `statusLine` 来自该页自己发布的 readable_view，页面标题同理：都整条给。
+  // 剪成固定宽度留下的半句，她照样念出来——那一屏"怎么了"被说成半句比不说更容易错。
   const long = "● ".concat("很长的状态说明".repeat(20));
+  const title = "数据库索引优化策略".repeat(8);
   const block = renderHereAndNow(snapshot({
-    currentPage: { kind: "笔记", title: "X", statusLine: long },
+    currentPage: { kind: "笔记", title, statusLine: long },
   }));
   assert.ok(block);
-  assert.ok(!block.includes(long), "原样的超长状态行不该整段进块");
-  assert.ok(block.includes("这一屏："));
+  assert.ok(block.includes(`用户正在看笔记《${title}》`), "页面标题整条给");
+  assert.ok(block.includes(`这一屏：${long}`), "状态行整条逐字进块");
+  assert.ok(!block.includes("…"), "不再靠省略号表示这里被剪过");
 });

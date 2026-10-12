@@ -3,12 +3,12 @@
 .note-editor .note-task-item > input:disabled { cursor: default; }
 .note-editor .note-list-item__content > p { margin-block: 4px; }
 .note-editor .note-task-item > input[hidden] { display: none; }
-.note-editor .milkdown-code-block { position: relative; overflow: visible; margin: 22px 0; border: 1px solid #e1e4d8; border-radius: 10px; background: #f3f4eb; font: 14px/1.75 ui-monospace, "SFMono-Regular", Consolas, monospace; }
-.note-editor .milkdown-code-block .tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 10px; color: #69776b; border-bottom: 1px solid #e4e7dc; font: 500 11px/1.5 "Noto Sans SC Variable", sans-serif; }
+.note-editor .milkdown-code-block { position: relative; overflow: visible; margin: 22px 0; border: 1px solid var(--code-paper-line); border-radius: 10px; background: var(--code-paper); font: 14px/1.75 ui-monospace, "SFMono-Regular", Consolas, monospace; }
+.note-editor .milkdown-code-block .tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 10px; color: var(--code-rail); border-bottom: 1px solid var(--code-paper-line); font: 500 11px/1.5 "Noto Sans SC Variable", sans-serif; }
 .note-editor .milkdown-code-block :is(.language-button, .copy-button, .preview-toggle-button) { display: inline-flex; align-items: center; gap: 5px; border: 0; padding: 4px 6px; border-radius: 5px; background: transparent; color: inherit; cursor: pointer; font: inherit; }
 .note-editor .milkdown-code-block .cm-editor { padding: 9px 7px 12px; border-radius: 0 0 10px 10px; }
 .note-editor .milkdown-code-block .cm-editor.cm-focused { outline: none; }
-.note-editor .milkdown-code-block .cm-content { font: inherit; }
+.note-editor .milkdown-code-block .cm-content { font: inherit; color: var(--code-ink); }
 .note-editor .milkdown-code-block .cm-gutters { border: 0; background: transparent; color: #9da795; }
 .note-editor .milkdown-code-block .cm-activeLine, .note-editor .milkdown-code-block .cm-activeLineGutter { background: #e6edde70; }
 .note-editor .milkdown-code-block .language-picker { position: absolute; z-index: 8; width: 240px; max-width: calc(100% - 20px); }

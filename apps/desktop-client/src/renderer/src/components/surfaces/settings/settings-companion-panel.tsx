@@ -76,8 +76,12 @@ export function SettingsCompanionPanel(props: { onReadable: (value: SettingsRead
       if (next === null) return; event.preventDefault(); setChapter(CHAPTERS[next][0]); tabRefs.current[next]?.focus();
     }}>{label}</button>)}</nav>
     <Activity mode={chapter === "rules" ? "visible" : "hidden"}><div data-settings-page="rules" data-settings-active={chapter === "rules" ? "true" : "false"} id="companion-settings-panel-rules" role="tabpanel" aria-labelledby="companion-settings-tab-rules">
-      {settings.error ? <SettingsInlineState title="伴星设置暂时不可用" detail={settings.error} tone="error" onRetry={() => void settings.reload()} /> : null}
-      {settings.notice ? <p className="settings-companion-notice" role="status">{settings.notice}</p> : null}
+      {/* 审计 F11：保存失败与回执贴顶常驻——用户在章节底部拨开关，报错不该停在
+          已经滚过去的分区顶部。sticky 让它在滚动里一直看得见。 */}
+      {settings.error || settings.notice ? <div className="settings-companion-sticky">
+        {settings.error ? <SettingsInlineState title="伴星设置暂时不可用" detail={settings.error} tone="error" onRetry={() => void settings.reload()} /> : null}
+        {settings.notice ? <p className="settings-companion-notice" role="status">{settings.notice}</p> : null}
+      </div> : null}
       {!account && settings.loading ? <p role="status">正在读取伴星设置</p> : null}
       {account ? <>
         <section className="settings-companion-chapter"><header><h3>什么时候陪在旁边</h3><p>账号级规则，会在你的不同设备和书房间同步。</p></header>

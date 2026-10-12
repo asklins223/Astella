@@ -38,7 +38,7 @@ export interface ProactiveGenerationScope {
   readonly workspaceId: string;
   readonly userId: string;
   /**
-   * 必填（同 `siliconflow-asr` 的同名端口）。做成可选就等于让「忘记核对」成为
+   * 必填（同 `mimo-asr` 的同名端口）。做成可选就等于让「忘记核对」成为
    * 一种能通过编译的形状——而这正是 41a 要挡的那件事。
    */
   readonly currentActiveTransaction: () => unknown;

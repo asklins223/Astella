@@ -136,6 +136,19 @@ test("校验：平台级旧字段（enableThinking / contextWindowTokens 等）�
   assert.ok(legacy.some((i) => i.blocking && i.path.endsWith("options.contextWindowTokens")));
 });
 
+test("校验：思考开关方言拼错是阻断项（写错会被当成未声明、静默回落 enable_thinking）", () => {
+  const withDialect = (thinkingParam: unknown) => validateConfig({
+    platforms: { ...VALID.platforms, demo: { ...VALID.platforms.demo, options: { thinkingParam } } },
+    capabilities: VALID.capabilities,
+  });
+
+  const typo = withDialect("reason_effort");
+  assert.ok(typo.some((i) => i.blocking && i.path.endsWith("options.thinkingParam")));
+  assert.deepEqual(typo.filter((i) => i.blocking).map((i) => i.path), ["platforms.demo.options.thinkingParam"]);
+
+  assert.deepEqual(withDialect("reasoning_effort").filter((i) => i.blocking), []);
+});
+
 test("校验：模型档案的档位取值与 default∈levels 都是阻断项", () => {
   const badLevel = validateConfig({
     platforms: {
@@ -154,15 +167,15 @@ test("校验：模型档案的档位取值与 default∈levels 都是阻断项",
   assert.ok(badDefault.some((i) => i.blocking && i.path.includes("reasoning.default")));
 });
 
-test("校验：识图映射的模型声明 vision:false 只提示（运行时按没有可用看图模型处理）", () => {
+test("校验：vision 已不是能力槽（2026-10-12 起读图由模型档案 vision 决定），残留映射只提示", () => {
   const issues = validateConfig({
     platforms: {
-      vis: { type: "openai_compatible", apiKey: "${K}", baseUrl: "https://x.invalid", models: { vlm: { vision: false } } },
+      aux: { type: "openai_compatible", apiKey: "${K}", baseUrl: "https://x.invalid", models: { t1: { vision: true } } },
     },
-    capabilities: { vision: { platform: "vis", model: "vlm" } },
+    capabilities: { vision: { platform: "aux", model: "t1" } },
   });
   assert.deepEqual(issues.filter((i) => i.blocking), []);
-  assert.ok(issues.some((i) => !i.blocking && i.message.includes("vision:false")));
+  assert.ok(issues.some((i) => !i.blocking && i.path.includes("vision") && i.message.includes("未知能力")));
 });
 
 test("读取：密钥只回「引用了哪个变量 / 是否已注入」，明文永不出现在结果里", async () => {

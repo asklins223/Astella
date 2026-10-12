@@ -22,7 +22,6 @@ import {
   companionStepCorrectionMessages,
   partitionPersonaPatch,
   planStepSteer,
-  planWithheldFinalStepCalls,
   stepHoldChars
 } from "../companion-step-plan.ts";
 
@@ -31,7 +30,6 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   canUseCompanionAgentTool,
-  COMPANION_AUTONOMOUS_TOOLS,
   getCompanionAgentTool,
   isCompanionAutonomousTool,
   resolveAllCompanionAgentTools,
@@ -135,30 +133,19 @@ test("工具异常使用执行器的同一类，写操作超时以结果待核�
   );
 });
 
-test("工具解析：只读权限下只有她自己的记事与身份文档可以写", () => {
-  const readOnlyTools = resolveAllCompanionAgentTools("read_only");
-  assert.ok(readOnlyTools.length > 0, "只读权限仍应保留读取工具");
-  for (const definition of readOnlyTools) {
-    // 权限档管的是用户的材料。她写给自己的记事与身份文档由声明划界（§20），
-    // 不因此多拿到任何触碰用户内容的口子。
-    assert.ok(definition.riskClass === "read" || isCompanionAutonomousTool(definition.name),
-      `${definition.name} 不是她自己的记录，不应出现在只读权限中`);
-    assert.equal(canUseCompanionAgentTool("read_only", definition).allowed, true);
-  }
-  assert.deepEqual(
-    readOnlyTools.filter(d => d.riskClass !== "read").map(d => d.name).sort(),
-    COMPANION_AUTONOMOUS_TOOLS.filter(name => getCompanionAgentTool(name)?.riskClass !== "read").sort(),
-    "只读权限里的非读工具必须恰好等于声明的自主集合");
-  // 计划类写工具在只读权限下必须被拒绝
-  for (const name of ["companion_start_learning", "companion_pause_learning", "companion_defer_review"]) {
-    const definition = getCompanionAgentTool(name);
-    assert.ok(definition);
-    assert.equal(canUseCompanionAgentTool("read_only", definition).allowed, false, `${name} 必须被只读权限阻止`);
-    assert.equal(readOnlyTools.some((d) => d.name === name), false);
+test("低权限保留写能力供预览，实际业务写入必须等待确认", () => {
+  for (const permission of ["read_only", "guided"] as const) {
+    const tools = resolveAllCompanionAgentTools(permission);
+    assert.ok(tools.some(tool => tool.name === "companion_create_note"));
+    for (const definition of tools) {
+      const auth = canUseCompanionAgentTool(permission, definition);
+      assert.equal(auth.allowed, true);
+      assert.equal(auth.requiresConfirmation, definition.riskClass !== "read" && !isCompanionAutonomousTool(definition.name));
+    }
   }
 });
 
-test("工具解析：guided 自动执行可逆低风险，其余写操作一律确认", () => {
+test("工具解析：guided 的业务写操作都确认，读取与自主记录保留原授权", () => {
   const tools = resolveAllCompanionAgentTools("guided");
   assert.ok(tools.length > 0);
   for (const definition of tools) {
@@ -167,7 +154,7 @@ test("工具解析：guided 自动执行可逆低风险，其余写操作一律�
     // 读取永不确认；约定类写入（提醒）是用户亲口要过的、可逆且不改学习状态，
     // guided 下也直接执行；其余写操作一律先出提案。
     const autoExecutes = definition.riskClass === "read"
-      || (definition.riskClass === "reversible_low" && !definition.requiresConfirmation);
+      || isCompanionAutonomousTool(definition.name);
     assert.equal(
       auth.requiresConfirmation,
       !autoExecutes,
@@ -178,7 +165,7 @@ test("工具解析：guided 自动执行可逆低风险，其余写操作一律�
   for (const name of ["companion_focus_graph", "companion_schedule_reminder", "companion_cancel_reminder"]) {
     const definition = getCompanionAgentTool(name);
     assert.ok(definition, `${name} 必须存在`);
-    assert.equal(canUseCompanionAgentTool("guided", definition).requiresConfirmation, false, name);
+    assert.equal(canUseCompanionAgentTool("guided", definition).requiresConfirmation, true, name);
   }
   // 提醒必须是可查可撤的：只有 schedule 没有 list/cancel 的话，用户说"不用提醒了"
   // 就只能等它自己响。
@@ -639,8 +626,8 @@ test("坍缩闸：分段符只贴在真正放行的第一帧前面，不重复",
 // "读记忆 / 看系统状态 / 跳转"根本没出现在她面前。
 
 test("扁平工具面：guided/full 档下写工具与读工具同时在列，与用户说了什么无关", () => {
-  const guided = resolveAllCompanionAgentTools("guided").map((d) => d.name);
-  const full = resolveAllCompanionAgentTools("full").map((d) => d.name);
+  const guided = resolveAllCompanionAgentTools("guided").map(tool => tool.name);
+  const full = resolveAllCompanionAgentTools("full").map(tool => tool.name);
   // 曾经这些只存在于特定技能里：不选中的技能 = 拿不到的能力。
   for (const name of ["companion_save_memory", "companion_open_page", "companion_start_learning"]) {
     assert.ok(guided.includes(name), `guided 必须能看到 ${name}`);
@@ -659,11 +646,11 @@ test("扁平工具面：guided/full 档下写工具与读工具同时在列，�
   }
 });
 
-test("扁平工具面：read_only 档只剩读工具与她自己的记录（权限边界不因常开而放松）", () => {
+test("扁平工具面：read_only 档能生成可审阅写入，确认由执行侧判断", () => {
   const readOnly = resolveAllCompanionAgentTools("read_only");
   assert.ok(readOnly.length > 0, "read_only 下仍要有读工具");
-  assert.ok(readOnly.every((d) => d.riskClass === "read" || isCompanionAutonomousTool(d.name)),
-    "read_only 绝不能出现触碰用户材料的写/动作工具");
+  assert.ok(readOnly.every(d => canUseCompanionAgentTool("read_only", d).allowed),
+    "可见能力必须能读取或准备确认结果");
 });
 /**
  * steer 的提示里到底该点名哪个工具。
@@ -878,33 +865,6 @@ test("planStepSteer：额度用尽后不再重复补同一条", () => {
 
 // ─── #8 终答步 provider 违约的两条 fail-open 出口 ────────────────────────
 /** 三个条件都满足：预算 4（合同上限 8）、剩余时间够、工具名都在面上。 */
-const withheldStep = {
-  graceAlreadyUsed: false,
-  unknownToolNames: [] as string[],
-  remainingMs: 60_000,
-  stepBudget: 4,
-};
-
-test("planWithheldFinalStepCalls：宽限一次，且多给的是两步（跑工具 + 强制收尾）", () => {
-  assert.equal(planWithheldFinalStepCalls(withheldStep), "grace");
-  // 只加一步的话那一步依旧满足 `stepCount >= 步数预算`，工具仍然不在面上——
-  // 白走一步、她还是要拿这句话收尾。
-  assert.equal(planWithheldFinalStepCalls({ ...withheldStep, graceAlreadyUsed: true }), "deliver",
-    "宽限整轮只给一次，provider 反复违约时步数上界必须是确定的");
-});
-
-test("planWithheldFinalStepCalls：预算、时限、未知工具任一不满足就按已说文本交付", () => {
-  // 合同上限 8 步：6 + 2 = 8 仍在界内，7 就越界。
-  assert.equal(planWithheldFinalStepCalls({ ...withheldStep, stepBudget: 6 }), "grace");
-  assert.equal(planWithheldFinalStepCalls({ ...withheldStep, stepBudget: 7 }), "deliver");
-  // 时间线是边界值本身：低于它宁可直接交付，也不要跑到一半被预算拦停。
-  assert.equal(planWithheldFinalStepCalls({ ...withheldStep, remainingMs: 20_000 }), "grace");
-  assert.equal(planWithheldFinalStepCalls({ ...withheldStep, remainingMs: 19_999 }), "deliver");
-  assert.equal(planWithheldFinalStepCalls({ ...withheldStep, unknownToolNames: ["companion_x"] }), "deliver",
-    "她没被给到的工具不能借宽限这一步混进来执行");
-});
-
-// ─── §12.3 笔记检索：逐词命中，不是整串子串 ──────────────────────────────
 test("noteSearchTerms：实机那句检索词切成两个词", () => {
   // 她按摘要里的名字去搜《欧姆定律生成验收》，用的词是"欧姆定律 生成验收"——
   // 整串 `%…%` 在这篇笔记的标题里匹配不上，工具回了"没有找到"。
@@ -1043,7 +1003,7 @@ test("read_current_page：工具已注册、是读类、只读权限下也给她
   assert.equal(definition.riskClass, "read");
   assert.equal(definition.requiresConfirmation, false);
   assert.ok(
-    resolveAllCompanionAgentTools("read_only").some((tool) => tool.name === "companion_read_current_page"),
+    resolveAllCompanionAgentTools("read_only").map(tool => tool.name).includes("companion_read_current_page"),
     "只读权限下也应该能读页面",
   );
 });

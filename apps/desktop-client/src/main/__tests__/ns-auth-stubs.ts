@@ -29,6 +29,9 @@ export const NS_AUTH_METHODS = [
   "getAuthSurfaceManifest",
   "joinWorkspace",
   "leaveWorkspace",
+  "sendEmailCode",
+  "loginWithCode",
+  "resetPassword",
 ] as const;
 
 export type NsAuthMethod = (typeof NS_AUTH_METHODS)[number];

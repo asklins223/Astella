@@ -4,7 +4,7 @@
  * 背景：部分模型（deepseek 思考模式）要求把上一轮的 reasoning 原样回传，
  * 否则多轮工具循环第二步 400。契约因此增加 provider 不透明的 reasoning 句柄：
  * `AgentTurnResult.reasoning` 产出 → `AgentTurnRequest.messages[].reasoning` 回传。
- * 本文件锁定该字段的存在、透传与边界（未知字段被剥离、句柄上限）。
+ * 本文件锁定该字段的存在与透传；数量跟随实际 provider 响应。
  */
 
 import assert from "node:assert/strict";
@@ -82,6 +82,9 @@ test("agentTurnRequestSchema: 未传 reasoning 时不含该字段", () => {
   assert.equal(parsed.messages[1].reasoning, undefined);
 });
 
-test("agentTurnRequestSchema: 句柄数量上限 4（与 toolCalls 对齐）", () => {
-  assert.throws(() => agentTurnRequestSchema.parse(request({ reasoning: Array(5).fill(HANDLE) })));
+test("agentTurnRequestSchema: 完整回放真实并行工具与 reasoning，不猜数量上限", () => {
+  const calls = Array.from({ length: 12 }, (_, index) => ({ id: `call_${index}`, name: "get_weather", arguments: {} }));
+  const parsed = agentTurnRequestSchema.parse(request({ reasoning: Array(12).fill(HANDLE), toolCalls: calls }));
+  assert.equal(parsed.messages[1].reasoning?.length, 12);
+  assert.deepEqual(parsed.messages[1].toolCalls, calls);
 });

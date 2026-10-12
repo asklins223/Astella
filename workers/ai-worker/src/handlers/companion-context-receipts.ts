@@ -15,13 +15,12 @@ import { toContextPressureReceipt, type ContextBudgetGateOptions } from "../lib/
  * 它只记条目 id、状态、字符数与水位，**不记任何请求内容**。
  */
 
-/**
- * 每一步 system 段的字符上限。
- *
- * 这只是**装配**容量，不是窗口容量——完整的窗口治理在 `context-governor`（44 §4）。
- * 命名出来是因为回执要如实记下「这轮是按多少容量做的取舍」。
- */
-export const COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS = 100_000;
+// Assembly verifies scope and preserves complete sources. The governed provider
+// measures the full request against the selected model's token window; a second
+// guessed character ceiling would silently omit data before that measurement.
+export function companionContextAssemblyCapacity(sources: readonly (string | { characters: number })[]): number {
+  return sources.reduce((sum, source) => sum + (typeof source === "string" ? source.length : source.characters), 0) + Math.max(0, sources.length - 1) * 2;
+}
 
 export interface CompanionContextReceiptRunMeta {
   contextAssemblyReceipt?: ContextAssemblyReceiptV1;
@@ -41,6 +40,10 @@ export interface CompanionContextReceipts {
    * 而不是把同一个请求再压一遍。
    */
   readonly pressureGate: ContextBudgetGateOptions;
+  /** New growing requests can compact again; a retry of one request cannot spin. */
+  beginRequest(key: string): void;
+  /** Cooldown belongs to this exact input, not all later work in the run. */
+  currentRequestHash(): string | null;
   /** 本次请求还有没有一次有界压缩的额度。 */
   hasCompactionAttempt(): boolean;
   /** 消耗掉那次额度；在重发之前调用。 */
@@ -65,9 +68,14 @@ export function createCompanionContextReceipts(): CompanionContextReceipts {
   let assembly: readonly AgentContextReceipt[] | undefined;
   let pressure: ContextPressureReceiptV1 | null = null;
   let compactionAttemptAvailable = true;
+  let requestKey: string | null = null;
   return {
     // 「还没折过」= 还有一次额度。耗尽后闸不再要求压缩，而是按有效上下文继续。
     hasCompactionAttempt: () => compactionAttemptAvailable,
+    currentRequestHash: () => requestKey,
+    beginRequest(key) {
+      if (key !== requestKey) { requestKey = key; compactionAttemptAvailable = true; }
+    },
     consumeCompactionAttempt: () => { compactionAttemptAvailable = false; },
     latestPressure: () => pressure,
     pressureGate: {
@@ -88,7 +96,7 @@ export function createCompanionContextReceipts(): CompanionContextReceipts {
     runMetaPatch() {
       const contextAssemblyReceipt = summarizeContextAssemblyReceipt({
         receipts: assembly,
-        maxCharacters: COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS,
+        maxCharacters: companionContextAssemblyCapacity(assembly ?? []),
       });
       return {
         ...(contextAssemblyReceipt ? { contextAssemblyReceipt } : {}),

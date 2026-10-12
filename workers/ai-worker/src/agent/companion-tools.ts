@@ -35,12 +35,13 @@ export async function executeAgentGoalTool(
   case "agent_list_long_goals": {
     const page=await store.longGoals(scope,{...input,limit:5});
     return {value:{nextCursor:page.nextCursor,items:page.items.map(goal=>({ref:goal.ref,
-      content:goal.content.slice(0,200),appliesWhen:goal.appliesWhen,taskCount:goal.taskCount}))},safeSummary:"已核对确认的长期目标与实际任务"};
+      // 目标原文整条给她：她要在自己的工具结果里读到的是用户真正交代的那句话。
+      content:goal.content,appliesWhen:goal.appliesWhen,taskCount:goal.taskCount}))},safeSummary:"已核对确认的长期目标与实际任务"};
   }
   case "agent_list_goals": {
     const result = await store.list(scope,{limit:5,cursor:input.cursor as string|undefined,longGoalMemoryId:input.longGoalMemoryId as string|undefined});
-    return { value: { nextCursor:result.nextCursor,items: result.items.map(run => ({ runId: run.runId, revision: run.revision, goal: run.goal.slice(0,300),
-      status: run.status, artifactCount: run.artifacts.length, summary: run.summary?.slice(0,200) ?? null })) }, safeSummary: "已核对手边目标的真实状态" };
+    return { value: { nextCursor:result.nextCursor,items: result.items.map(run => ({ runId: run.runId, revision: run.revision, goal: run.goal,
+      status: run.status, artifactCount: run.artifacts.length, summary: run.summary ?? null })) }, safeSummary: "已核对手边目标的真实状态" };
   }
   }
   let run;

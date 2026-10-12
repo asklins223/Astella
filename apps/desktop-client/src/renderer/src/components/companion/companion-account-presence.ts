@@ -58,7 +58,7 @@ export function companionInterventionHint(level: CompanionInterventionLevel): st
  *   自动设置/自动填充类工具直接执行。
  */
 export const COMPANION_AGENT_PERMISSION_OPTIONS = [
-  ["read_only", "仅可读取"],
+  ["read_only", "审阅保存"],
   ["guided", "分步确认"],
   ["full", "自动执行"],
 ] as const;
@@ -68,9 +68,9 @@ export const COMPANION_AGENT_PERMISSION_OPTIONS = [
  * 同一个开关在两处给出两种说法，用户就不知道该信哪一句了。
  */
 export const COMPANION_AGENT_PERMISSION_DETAIL: Record<CompanionAgentPermissionLevel, string> = {
-  read_only: "只读取和查询，执行改动前需要你调整权限。",
-  guided: "每次产生改动前先征求你的确认。",
-  full: "跳转、设置与填充可以自动执行；不可恢复的操作仍会确认。",
+  read_only: "先查看生成或更新后的结果，确认后保存；取消恢复原文。删除与高危操作执行前确认。",
+  guided: "写入和更新先展示结果，等你确认保存；取消恢复原文。删除与高危操作执行前确认。",
+  full: "写入和更新可以自动保存；删除与高危操作仍在执行前确认。",
 };
 
 /** 默认静默时段：夜间 22:00 → 次日 07:00，与设置中心的口径一致。 */

@@ -33,6 +33,7 @@
  * 收不下的仍然是：任何**声称实测**的话（`hasMeasurementClaimV1`），以及数字读数字段
  * ——读数由服务端从材料里算，模型写不进来。
  */
+import { AI_UNDECLARED_OUTPUT_TOKENS } from "../ai-execution-budgets.ts";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_AI_PROVIDER_TIMEOUT_MS, DEFAULT_AI_TASK_TIMEOUT_MS } from "../ai-execution-budgets.ts";
 import { z } from "zod";
@@ -46,15 +47,20 @@ import {
   type AiTaskDefinition,
 } from "@astella/shared/ai-task-kernel";
 import {
-  ARTIFACT_MAX_STEPS_V1,
   ARTIFACT_MIN_STEPS_V1,
   groundArtifactStepsV1,
   hasMeasurementClaimV1,
   plainTextForGroundingV1,
   type ArtifactEvidenceBlockV1,
 } from "./round-artifact-measure.ts";
-import { ARTIFACT_DOCUMENT_MAX_CHARS_V1, ARTIFACT_DOCUMENT_MIN_CHARS_V1, artifactDocumentTextV1, checkArtifactDocumentV1 } from "./round-artifact-doc.ts";
-type DynamicArtifactModelConfigV1 = { url: string; key: string; model: string };
+import { ARTIFACT_DOCUMENT_MIN_CHARS_V1, artifactDocumentTextV1, checkArtifactDocumentV1 } from "./round-artifact-doc.ts";
+type DynamicArtifactModelConfigV1 = { url: string; key: string; model: string;
+  /**
+   * 思考字段按平台方言算（与讲解/核查同一规则，见 `chatThinkingRequestFields`）。
+   * 这条路径自己拼请求体，写死 `enable_thinking:false` 会在只认
+   * `reasoning_effort` 的网关上静默失效。
+   */
+  thinkingFields?: Record<string, unknown> };
 
 export const DYNAMIC_ARTIFACT_TASK_ID = "note_dynamic_artifact_v1";
 /**
@@ -90,7 +96,7 @@ export const dynamicArtifactDocV1Schema = z.strictObject({
    * 服务端会把它拆开组装（样式进 `<head>`、标记进内容落点、脚本进 `</body>` 前），
    * 所以模型不必管注入位置；它要控制顺序就在自己的脚本里用 `DOMContentLoaded`。
    */
-  document: z.string().min(ARTIFACT_DOCUMENT_MIN_CHARS_V1).max(ARTIFACT_DOCUMENT_MAX_CHARS_V1),
+  document: z.string().min(ARTIFACT_DOCUMENT_MIN_CHARS_V1),
   /**
    * 讲解的骨架（2–6 条）。**不是**画面的步骤，是这份页面在讲什么。
    *
@@ -103,7 +109,7 @@ export const dynamicArtifactDocV1Schema = z.strictObject({
     narration: z.string().trim().min(1).max(ARTIFACT_OUTLINE_NARRATION_MAX_V1),
     evidenceOrdinal: z.number().int().min(0),
     evidenceQuote: z.string().trim().min(1).max(ARTIFACT_OUTLINE_QUOTE_MAX_V1),
-  })).min(ARTIFACT_MIN_STEPS_V1).max(ARTIFACT_MAX_STEPS_V1),
+  })).min(ARTIFACT_MIN_STEPS_V1),
 });
 export type DynamicArtifactDocV1 = z.infer<typeof dynamicArtifactDocV1Schema>;
 
@@ -142,7 +148,7 @@ export function buildDynamicArtifactPrompt(input: DynamicArtifactInputV1): strin
     "为保存网页和回查原文，只返回以下 JSON；这些附属字段不决定网页的画面结构：",
     JSON.stringify({ title: "标题，40字以内", subject: "主题，60字以内", caution: "示意说明，120字以内",
       document: "完整网页的 HTML/CSS/JavaScript", outline: outlineExample }),
-    `outline 提供 ${ARTIFACT_MIN_STEPS_V1}–${ARTIFACT_MAX_STEPS_V1} 条文字说明和对应原文，用于网页之外的回查。`,
+    `outline 提供至少 ${ARTIFACT_MIN_STEPS_V1} 条文字说明和对应原文，用于网页之外的回查；按材料里真实的过程走，流程长的笔记自然就多几条。`,
     "同一块原文可以支撑多个不同要点；即使只选中一句，也可以引用同一块和同一句，不要编造第二块原文。",
     "outline 的步骤标题必须各不相同，每一步的引句都必须能在所指正文块里核对；核对失败会先修正回查字段。",
     "evidenceOrdinal 必须逐字复制相应 blocks[].ordinal，不能按数组下标重新编号。evidenceQuote 从该块正文逐字复制完整句段，最多160字；不能改写、补词、改公式符号或引用另一块。网页与 narration 可以解释，原文引句只负责保留依据。",
@@ -255,7 +261,7 @@ export function createDynamicArtifactResponseSessionV1() {
  * 口径）：DeepSeek 这类推理模型的 `max_output_tokens` 是**思考与正文的合计**，档案没
  * 声明时才回落到下面那个常数——留一个拍来的小数只会把整页砍断，不会省到钱。
  */
-export const ARTIFACT_COMPLETION_TOKENS_V1 = 24_000;
+export const ARTIFACT_COMPLETION_TOKENS_V1 = AI_UNDECLARED_OUTPUT_TOKENS;
 
 export function llmDynamicArtifactProvider(options: {
   config: DynamicArtifactModelConfigV1 | null;
@@ -286,7 +292,8 @@ export function llmDynamicArtifactProvider(options: {
       model: options.config.model,
       messages: [{ role: "user", content: session.prompt(input) }],
       temperature: 0.4, max_tokens: completionTokens,
-      response_format: { type: "json_object" }, enable_thinking: false, stream: false,
+      response_format: { type: "json_object" }, stream: false,
+      ...options.config.thinkingFields,
     }, step.signal);
     if (response.status < 200 || response.status >= 300) {
       return { ok: false, class: [408, 425, 429].includes(response.status) || response.status >= 500
@@ -328,9 +335,7 @@ export function deterministicDynamicArtifactProviderV1(): DynamicArtifactProvide
     if (input.blocks.length === 0) {
       return { ok: false, class: "invalid_input", message: "artifact_material_missing" };
     }
-    // 材料里每一条都留：按 `ARTIFACT_MAX_STEPS_V1` 裁掉的那些条目用户读不到，也没人
-    // 说明被裁了什么。条数由合同判（`groundArtifactStepsV1` 的 over_quota），判失败
-    // 会带出真实的那一句「这次给了 N 步」。
+    // 材料里每一条都留，演示步数由实际内容决定。
     const usable = input.blocks
       .filter((block) => block.type !== "heading" && plainTextForGroundingV1(block.text).length > 0);
     if (usable.length < ARTIFACT_MIN_STEPS_V1) {
@@ -433,8 +438,7 @@ export function artifactCompletionSatisfiedV1(
 ): boolean {
   const known = new Set(blocks.map((block) => block.ordinal));
   if (doc.document.length < ARTIFACT_DOCUMENT_MIN_CHARS_V1) return false;
-  if (doc.document.length > ARTIFACT_DOCUMENT_MAX_CHARS_V1) return false;
-  if (doc.outline.length < ARTIFACT_MIN_STEPS_V1 || doc.outline.length > ARTIFACT_MAX_STEPS_V1) return false;
+  if (doc.outline.length < ARTIFACT_MIN_STEPS_V1) return false;
   if (doc.outline.some((beat) =>
     beat.title.trim().length === 0
     || beat.narration.trim().length === 0

@@ -21,7 +21,7 @@ import { createHash } from "node:crypto";
 import { and, eq, inArray, isNull, sql, desc } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
 import { logger } from "../../lib/logger.ts";
-import { notes, sources } from "@astella/shared/db-schema/note";
+import { noteBlocks, notes, sources } from "@astella/shared/db-schema/note";
 import { visibleNotesCondition, visibleObjectivesCondition } from "../note/visibility.ts";
 import {
   learningObjectivesV2,
@@ -40,6 +40,10 @@ import { pickLatestCompletedRunV3, resolvePrimaryActionV3, type ActionResolverIn
 import { readAnswerModePreference } from "../companion-shell/answer-mode-preference.ts";
 import { objectiveSurfaceFreshnessV1 } from "@astella/shared";
 import { relationEdgeIsDecidableV2 } from "./personal-relation-decision-service.ts";
+import {
+  buildNoteReferenceEdgesV3,
+  noteLinkBlockContentConditionV3,
+} from "./note-link-edges.ts";
 import type {
   UnderstandingNodeProjectionV3,
   UnderstandingEdgeProjectionV3,
@@ -88,7 +92,9 @@ export interface TopologyContext {
  *      查询直接报错。故该列表自身也要设上限。
  *
  * 最坏情况界：nodes/edges 各自 ≤ 4 × 上限（note/source/objective/evidence 四类
- * 节点来源），默认 5000 时约 2 万条，指纹计算与响应体都是有界的。
+ * 节点来源），默认 5000 时约 2 万条，指纹计算与响应体都是有界的。`references`
+ * 那类边另有一道：它只从「筛过、且受限到同一个上限」的块里长出来，一篇笔记指向
+ * 同一篇多次只算一条（见 `note-link-edges.ts`）。
  */
 export const TOPOLOGY_SNAPSHOT_DEFAULT_COLLECTION_LIMIT = 5000;
 export const TOPOLOGY_SNAPSHOT_MAX_COLLECTION_LIMIT = 50_000;
@@ -700,6 +706,53 @@ export async function buildTopologySnapshotV3(
         reasonCodes: ["source_note"],
       });
     }
+  }
+
+  // ── 正文引用：note → note 的 `references` 边 ──────────────────────────
+  // 读的是当前版本里**看起来写了库内链接**的那些块，不是整库正文；什么算一个链接，
+  // 口径在 `note-link-edges.ts`（与阅读视图跳转同一份解析）。边在这里现算、不落库：
+  // 正文一改，`topologyRevision` 那份内容指纹就变，不需要谁去记得刷一张关系表。
+  const versionIdToNoteId = new Map(
+    noteRows
+      .filter((note) => note.currentVersionId !== null)
+      .map((note) => [note.currentVersionId as string, note.id]),
+  );
+  const linkVersionIds = boundedIdList(
+    [...versionIdToNoteId.keys()],
+    "note_link_versions",
+    collectionLimit,
+    truncation,
+  );
+  if (linkVersionIds.length > 0) {
+    const linkBlocks = boundedCollection(
+      await tx
+        .select({
+          versionId: noteBlocks.versionId,
+          type: noteBlocks.type,
+          content: noteBlocks.content,
+        })
+        .from(noteBlocks)
+        .where(and(
+          eq(noteBlocks.workspaceId, ctx.workspaceId),
+          inArray(noteBlocks.versionId, linkVersionIds),
+          noteLinkBlockContentConditionV3(noteBlocks.content),
+        ))
+        // LIMIT 之后必须有稳定行序（本文件护栏的第 3 条）：versionId+ordinal 不唯一，
+        // 再补主键，否则截断点上的行集合会在请求间抖动，指纹跟着抖，304 永远不命中。
+        .orderBy(noteBlocks.versionId, noteBlocks.ordinal, noteBlocks.id)
+        .limit(probeLimit),
+      "note_link_blocks",
+      collectionLimit,
+      truncation,
+    );
+    edges.push(...buildNoteReferenceEdgesV3({
+      blocks: linkBlocks.map((block) => ({
+        noteId: versionIdToNoteId.get(block.versionId)!,
+        blockType: block.type,
+        content: block.content,
+      })),
+      notes: noteRows.map((note) => ({ id: note.id, title: note.title })),
+    }));
   }
 
   // ── TP-05：supersedes 边（lineage）＋ relations jsonb ──────────────────

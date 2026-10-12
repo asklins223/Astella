@@ -25,7 +25,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { adoptWorkspaceContext, withActorTransaction, withWorkspaceTransaction } from "../../db/client.ts";
 import { onboardingStates, users, workspaceMembers, workspaces } from "@astella/shared/db-schema/identity";
 import { sessions } from "@astella/shared/db-schema/session";
-import { RECOVERED_PASSWORD_SENTINEL, canonicalizeEmail, hashPassword, SessionContext } from "./credentials.ts";
+import { RECOVERED_PASSWORD_SENTINEL, canonicalizeEmail, hashPassword, toSessionClientKind, SessionContext } from "./credentials.ts";
 import { issueSession } from "./session-service.ts";
 import { MAX_COLLABORATIVE_WORKSPACES } from "./workspace-membership-service.ts";
 const MAX_WORKSPACE_NAME_LENGTH = 50;
@@ -45,11 +45,13 @@ function generateDefaultDisplayName(displayName: string | null | undefined, emai
 
 /**
  * ADR-0009: 无邀请码注册 — 只创建个人工作区，不加入任何协作空间。
+ *
+ * `options.clientKind`（0413）落到刚签发的会话行上：注册就是这台设备第一次拿凭据。
  */
 export async function registerWithoutInvite(
   email: string,
   password: string,
-  options?: { displayName?: string; avatarUrl?: string },
+  options?: { displayName?: string; avatarUrl?: string; clientKind?: string | null },
 ): Promise<{ token: string; ctx: SessionContext } | null> {
   const normalizedEmail = canonicalizeEmail(email);
   // R5（round-3 审计）：bcryptjs 为纯 JS 主线程 CPU 密集（cost 10 ≈ 50-150ms）。
@@ -114,7 +116,11 @@ export async function registerWithoutInvite(
         status: "pending",
       });
 
-      return { userId: user.id, workspaceId: personalWs.id, session: await issueSession(user.id, personalWs.id, tx) };
+      return {
+        userId: user.id,
+        workspaceId: personalWs.id,
+        session: await issueSession(user.id, personalWs.id, tx, toSessionClientKind(options?.clientKind)),
+      };
     });
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "23505") {

@@ -1,4 +1,5 @@
 import { prepareCompanionNotePaper, beginNoteAiWork, endNoteAiWork, resetNoteAiWork, noteEditRequestRanges } from "../components/companion/note-companion-editing";
+import { journalProposalNeedsDecision } from "../components/companion/companion-journal-model";
 import { companionEditedNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
 import { useCompanionPolls } from "./companion-chat-session-polls";
 import { useCompanionPageContext } from "./companion-chat-session-page";
@@ -71,11 +72,10 @@ import {
  * 允许的生成预算是 handler 110s（run deadline ≈ 95s），45s 就报"等待超时"
  * 会在回复仍在生成时提前失败。
  *
- * 现行值：首轮立即查（不再先睡一个间隔），之后 300ms 一轮；等待上限 120s
- * 覆盖 worker 的最坏预算，避免客户端先于服务端放弃。
+ * 首轮立即查，之后 300ms 一轮；等待真实服务端终态或用户取消。
+ * 连续 Agent 不以客户端固定秒数冒充执行失败。
  */
 const REPLY_POLL_INTERVAL_MS = 300;
-const REPLY_POLL_TIMEOUT_MS = 120_000;
 /**
  * 兜底轮询赛道的节奏（与 SSE 并行）：慢到不至于变成"每条回复都打两遍接口"，
  * 又快到"流沉默时用户几乎察觉不到"。实机故障（气泡停在"想一想"、历史里已有回复）
@@ -268,6 +268,8 @@ export interface CompanionChatSession {
   readonly autoSendRequestId: string | null;
   readonly navChips: readonly CompanionNavChip[];
   readonly proposalStates: Readonly<Record<string, CompanionProposalUiState>>;
+  /** 还等着用户点头的提案数；手记入口的角标读它（见 pendingProposalCount 注释）。 */
+  readonly pendingProposalCount: number;
   readonly mode: CompanionUiMode;
   /**
    * 她对自己的称呼：来自账号级人格档案（`companion_persona_profiles.profile.name`），取不到是"伴星"。
@@ -397,6 +399,10 @@ export function useCompanionChat(): CompanionChatSession {
   const value = useContext(CompanionChatContext);
   if (!value) throw new Error("useCompanionChat must be used inside CompanionChatProvider");
   return value;
+}
+
+export function useOptionalCompanionChat(): CompanionChatSession | null {
+  return useContext(CompanionChatContext);
 }
 
 export function CompanionChatProvider({ children }: { readonly children: ReactNode }) {
@@ -570,6 +576,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   const [cancelling, setCancelling] = useState(false);
   const [stopNotice, setStopNotice] = useState<string | null>(null);
   const conversationRef = useRef<CompanionChatConversationV1 | null>(null);
+  const restoredReplyIdsRef = useRef(new Set<string>());
   /** 仅保留最新一次发送的结果；新的一轮会让上一轮的轮询自行退出。 */
   const sendGenerationRef = useRef(0);
   const pendingSendRef = useRef<{ generation: number; explanationId: string | null } | null>(null);
@@ -607,6 +614,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     setProcessRunId(null);
     setNodes([]);
     conversationRef.current = null;
+    restoredReplyIdsRef.current.clear();
     routeCursorRef.current = null;
     draftRef.current = "";
     setConversation(null);
@@ -883,9 +891,36 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
 
   // 两段低频补白轮询（agent 导航 route / 过程留痕）——它们**不是聊天主链路**，
   // 失败静默跳过。收在 `useCompanionPolls` 里：性质写在文件名上，比埋在 Provider 中段好读。
-  useCompanionPolls({
-    conversation, mode, phase, routeCursorRef, pushNavChips, setRunTraces, tracesRevision,
+  const followReviewContinuation = [...messages, ...olderMessages].some(message => {
+    if (!message.runId || message.kind !== "action") return false;
+    const decidedReview = message.blocks.some(block => {
+      if (block.type !== "action_ref") return false;
+      const state = proposalStates[block.proposalId];
+      return state?.phase === "ready" && state.proposal.payload.kind === "agent_tool_review"
+        && state.proposal.status !== "pending";
+    });
+    const run = runTraces.find(trace => trace.summary.runId === message.runId);
+    return decidedReview && (!run || ["accepted", "running", "waiting_for_confirmation", "cancel_requested"].includes(run.summary.status));
   });
+  useCompanionPolls({
+    conversation, mode, phase, routeCursorRef, pushNavChips, setRunTraces, tracesRevision, followReviewContinuation,
+  });
+
+  // A confirmed review can resume after reopening, without the original SSE
+  // consumer. The durable final-message identity triggers one history refresh.
+  useEffect(() => {
+    if (!conversation) return;
+    const known = new Set([...messages, ...olderMessages].map(message => message.id));
+    const missing = runTraces.flatMap(trace => {
+      const id = trace.summary.assistantMessageId;
+      return id && !known.has(id) && !restoredReplyIdsRef.current.has(id) ? [id] : [];
+    });
+    if (!missing.length) return;
+    missing.forEach(id => restoredReplyIdsRef.current.add(id));
+    void requireWorkspaceEpoch().then(epoch => refreshMessages(conversation.id, epoch)).catch(() => {
+      missing.forEach(id => restoredReplyIdsRef.current.delete(id));
+    });
+  }, [conversation, messages, olderMessages, refreshMessages, runTraces]);
 
   useEffect(() => {
     const snapshot = runTraces.find(trace => trace.summary.runId === processRunId);
@@ -914,7 +949,12 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
           request: { version: 1, proposalId: id },
         }));
         if (conversationRef.current?.id !== conversationId) return;
-        setProposalStates((current) => ({ ...current, [id]: { phase: "ready", proposal: snapshot.proposal } }));
+        setProposalStates((current) => {
+          const existing = current[id];
+          return { ...current, [id]: { phase: "ready", proposal: snapshot.proposal,
+            ...(snapshot.proposal.status === "pending" && existing?.phase === "ready" && existing.deciding
+              ? { deciding: existing.deciding } : {}) } };
+        });
       } catch (error) {
         if (conversationRef.current?.id !== conversationId) return;
         setProposalStates((current) => ({ ...current, [id]: { phase: "error", message: gatewayErrorMessage(error) } }));
@@ -928,15 +968,16 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   }, [loadProposalSnapshots]);
 
   // 消息流里出现 action_ref 就取快照（拿 payloadSha256 与当前状态）。
+  // 2026-10-11（审计 F4）：不再只在 `history` 打开时才扫——待确认的提案要在身边
+  // 有常驻入口（手记角标）就得提前知道，所以消息一到就取快照，数量有界
+  // （受已加载消息里的 action_ref 条数约束）。
   useEffect(() => {
     if (!conversation) return;
     const ids = new Set<string>();
-    if (mode === "history") {
-      for (const message of messages) {
-        if (message.role !== "assistant") continue;
-        for (const block of message.blocks) {
-          if (block.type === "action_ref") ids.add(block.proposalId);
-        }
+    for (const message of messages) {
+      if (message.role !== "assistant") continue;
+      for (const block of message.blocks) {
+        if (block.type === "action_ref") ids.add(block.proposalId);
       }
     }
     for (const proposalId of liveReply?.proposalIds ?? []) ids.add(proposalId);
@@ -953,6 +994,17 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   // 新 proposal 的触发源始终是消息、liveReply 或 mode 变化。
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversation, liveReply, messages, mode]);
+
+  // A review can be decided on another device or saved after reopening the app.
+  // Follow its durable state even when the original turn's SSE is no longer open.
+  useEffect(() => {
+    const ids = Object.values(proposalStates).flatMap(state => state.phase === "ready"
+      && state.proposal.payload.kind === "agent_tool_review"
+      && ["pending", "accepted", "executing"].includes(state.proposal.status) ? [state.proposal.proposalId] : []);
+    if (!conversation || ids.length === 0) return;
+    const timer = window.setTimeout(() => void loadProposalSnapshots(ids), 3000);
+    return () => window.clearTimeout(timer);
+  }, [conversation, loadProposalSnapshots, proposalStates]);
 
   /**
    * 读本轮 run 的终态（只读端点 `listRunNodes` 的 `runs[]` 摘要，2026-09-19 ②）。
@@ -1018,7 +1070,6 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     let timer = 0;
     let currentInterval = args.intervalMs;
     const promise = new Promise<CompanionReplyWaitOutcome>((resolve) => {
-      const deadline = Date.now() + REPLY_POLL_TIMEOUT_MS;
       let ticks = 0;
       const tick = async (): Promise<void> => {
         if (cancelled) return;
@@ -1029,7 +1080,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         try {
           const items = await refreshMessages(args.conversationId, args.epoch);
           if (cancelled) return;
-          const match = items.find((item) => item.role === "assistant" && item.runId === args.runId);
+          const match = items.find((item) => item.role === "assistant" && item.runId === args.runId && item.kind !== "action");
           if (match) {
             resolve(match.kind === "cancelled"
               ? { kind: "cancelled", text: companionMessageText(match) }
@@ -1049,10 +1100,6 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
           }
         } catch {
           // 单次轮询失败不致命：下一拍再试（deadline 会把总时长兜住）。
-        }
-        if (Date.now() >= deadline) {
-          resolve({ kind: "timeout" });
-          return;
         }
         timer = window.setTimeout(() => void tick(), currentInterval);
       };
@@ -1142,7 +1189,6 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
           void subscriptions.unsubscribe({ meta: createRequestMeta(args.epoch), subscriptionId }).catch(() => undefined);
           return;
         }
-        timer = window.setTimeout(() => settle({ kind: "timeout" }), REPLY_POLL_TIMEOUT_MS);
         // 静默只提速、不退订（2026-09-19 ②）：退订之后晚到的 `error` 帧就再也送不到，
         // 失败会被伪装成"等满 120s 然后超时"——真实原因（格式判死、预算耗尽）彻底丢失。
         // 兜底轮询本来就并行在跑，这里让它切到快档即可；订阅继续等终态帧，先到先赢。
@@ -1175,7 +1221,20 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
           // 直接折成 chip（抽屉轮询按同一 id 去重，两条来源不冲突），自动跳不再依赖
           // 抽屉开关。
           if (streamed.eventType === "agent.tool") {
-            const work = streamed.payload.tool as { name?: string; toolCallId?: string; status?: string; noteEditTarget?: { noteId: string; startBlock: number; endBlock: number }; noteEdit?: unknown } | undefined;
+            const work = streamed.payload.tool as { name?: string; toolCallId?: string; status?: string; proposalId?: string; noteEditTarget?: { noteId: string; startBlock: number; endBlock: number }; noteEdit?: unknown } | undefined;
+            if (work?.proposalId && work.status) {
+              const proposalId = work.proposalId;
+              const status = work.status === "succeeded" ? "succeeded" : ["failed", "blocked", "not_executed"].includes(work.status)
+                ? "failed" : work.status === "executing" ? "executing" : null;
+              if (status) setProposalStates(current => {
+                const existing = current[proposalId];
+                return existing?.phase === "ready" && !["succeeded", "rejected", "failed", "expired"].includes(existing.proposal.status)
+                  ? { ...current, [proposalId]: { ...existing,
+                  proposal: { ...existing.proposal, status }, deciding: undefined } } : current;
+              });
+              if (["succeeded", "failed", "blocked", "outcome_unknown", "not_executed"].includes(work.status))
+                void loadProposalSnapshots([proposalId]);
+            }
             if (work?.name === "companion_edit_note") {
               if (work.noteEditTarget && work.status === "executing") beginNoteAiWork(`turn:${args.generation}:tool:${work.toolCallId}`, work.noteEditTarget.noteId,
                 [{ ...work.noteEditTarget, label: "伴星正在调整这段" }]);
@@ -1344,7 +1403,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       })();
     });
     return { promise, cancel };
-  }, [pushNavChips]);
+  }, [loadProposalSnapshots, pushNavChips]);
 
   /**
    * 认领本轮的回复：SSE（快路径，含草稿）与兜底轮询（慢路径）并行，先到者胜。
@@ -1389,7 +1448,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         // 终态事务先写消息再写 final 事件，正常情况这里一次就拿到；
         // 拿不到（读取抖动）也不能让气泡停在"想一想"——回给兜底赛道继续等。
         const items = await refreshMessages(args.conversationId, args.epoch).catch(() => null);
-        const match = items?.find((item) => item.role === "assistant" && item.runId === args.runId) ?? null;
+        const match = items?.find((item) => item.role === "assistant" && item.runId === args.runId && item.kind !== "action") ?? null;
         return match ? { kind: "reply", message: match } : await backstop.promise;
       }
       if (winner.outcome.kind === "failed") {
@@ -1946,6 +2005,16 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     return newer.length > 0 ? [...olderMessages, ...newer] : olderMessages;
   }, [olderMessages, messages]);
 
+  /**
+   * 还等着用户点头的提案数（审计 F4）。手记入口靠它挂角标：确认纸签被关掉、
+   * 重启或换空间之后，身边至少有一个地方一直知道"还有一件事等你点头"。
+   * 和手记「待确认」页签共用同一条判据（journalProposalNeedsDecision），不另立一套。
+   */
+  const pendingProposalCount = useMemo(
+    () => Object.values(proposalStates).filter((state) => journalProposalNeedsDecision(state)).length,
+    [proposalStates],
+  );
+
   const value = useMemo<CompanionChatSession>(() => ({
     phase,
     failure,
@@ -1973,6 +2042,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     autoSendRequestId,
     navChips,
     proposalStates,
+    pendingProposalCount,
     mode,
     companionName,
     setCompanionName,
@@ -2032,6 +2102,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     processRunId,
     phase,
     proposalStates,
+    pendingProposalCount,
     runTraces,
     send,
     stopNotice,

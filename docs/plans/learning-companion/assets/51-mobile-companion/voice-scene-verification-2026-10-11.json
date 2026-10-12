@@ -1,0 +1,76 @@
+{
+  "date": "2026-10-11",
+  "revision": "Demo 06 / voice-scene-r23",
+  "url": "http://127.0.0.1:4196/demos/mobile-companion-layout.html",
+  "method": "CUA native browser interaction and DOM-derived observations",
+  "tests": 34,
+  "syntaxChecks": 9,
+  "defaultScene": {
+    "historyVisible": 0,
+    "layout": "scene",
+    "model": "ready",
+    "overflow": 0,
+    "size": [
+      390,
+      844
+    ]
+  },
+  "actualSpeaking": {
+    "caption": "按你确认的学习偏好：理解新概念时，先看一个例子，再回到定义。",
+    "model": "ready",
+    "mouth": "0.26",
+    "overflow": 0,
+    "particles": {
+      "amplitude": "0.23",
+      "frame": "2"
+    },
+    "phase": "speaking"
+  },
+  "interrupt": {
+    "phase": "listening",
+    "mouth": "0.00",
+    "nextRoundAvailable": true
+  },
+  "offAndGlassFallback": {
+    "blur": "none",
+    "frame": "1665",
+    "mouth": "0.00",
+    "overflow": 0,
+    "phase": "listening",
+    "secondFrame": "1665"
+  },
+  "compactPaused": {
+    "frame": "1",
+    "overflow": 0,
+    "phase": "paused",
+    "seatHeight": 223,
+    "size": [
+      320,
+      640
+    ]
+  },
+  "historyPreferenceRestoredAfterReload": true,
+  "settingsChoiceChangesLayout": true,
+  "historyPlaybackToScene": {
+    "mouth": "0.61",
+    "label": "正在说"
+  },
+  "keyboard320": {
+    "overflow": 0,
+    "inputFullyAboveKeyboard": true,
+    "unfinishedTranscriptKept": true
+  },
+  "browserErrors": [],
+  "screenshots": [
+    "46-live2d-default-scene.png",
+    "47-particle-voice-speaking.png",
+    "48-preserved-chat-history.png",
+    "49-scene-small-keyboard.png"
+  ],
+  "limitations": [
+    "No microphone capture or actual ASR; sample transcription only",
+    "Local fixture Agent/store, no real authentication or cross-device service",
+    "Browser local Chinese TTS; estimated mouth timing, not measured PCM amplitude",
+    "No native App/mini program, real-device or OS audio interruption acceptance"
+  ]
+}

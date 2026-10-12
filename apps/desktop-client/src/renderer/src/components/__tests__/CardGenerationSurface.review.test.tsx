@@ -268,6 +268,7 @@ describe("CardGenerationSurface · 候选审核", () => {
   it.each([
     { failure: { reason: "quality_failed", stage: null }, title: "这批草稿未通过核对" },
     { failure: { reason: "output_invalid", stage: "check" }, title: "核对结果未能读取" },
+    { failure: { reason: "output_truncated", stage: "generate" }, title: "生成内容未能完整输出" },
   ] as const)("生成页显示准确的失败原因：$title", async ({ failure, title }) => {
     stubGateway([], { status: "needs_attention", failure, progress: { plannedCards: 4, authored: 4, gatePassed: 0, gateFailed: 0 },
       recovery: { version: 1, publicReasonCode: "attention_required", retryability: "resync_required",

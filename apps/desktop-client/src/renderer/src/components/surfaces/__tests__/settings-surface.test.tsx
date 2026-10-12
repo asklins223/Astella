@@ -572,7 +572,7 @@ describe("AI consent is a real control, not a display", () => {
     expect(screen.queryByText("只有空间 Owner 可以签署或修改这些政策")).toBeNull();
   });
 
-  it("labels a native capability as 未接入 with the reason attached", async () => {
+  it("labels a native capability as 未接入通道 with the reason attached", async () => {
     installApi();
     render(<SettingsSurface />);
     await screen.findByText("理解空间", { selector: ".space-identity h3" });
@@ -582,7 +582,7 @@ describe("AI consent is a real control, not a display", () => {
     details.open = true;
     fireEvent(details, new Event("toggle"));
     const row = (await screen.findByText("系统通知")).closest(".settings-row") as HTMLElement;
-    const chip = within(row).getByText("未接入");
+    const chip = within(row).getByText("未接入通道");
     expect(chip.getAttribute("title")).toContain("还没有接入这条链路");
     expect(chip.getAttribute("aria-label")).toContain("还没有接入这条链路");
   });
@@ -1071,6 +1071,9 @@ describe("设置页的退出登录", () => {
     openSignOutDisclosure();
 
     fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+    // 审计 F4：设置页与顶栏气泡拉齐——第一下先问一声，第二下才真的走。
+    expect(api.auth.logout).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "确认退出" }));
 
     await waitFor(() => expect(api.auth.logout).toHaveBeenCalledOnce());
     expect(invalidations).toContain("auth_required");
@@ -1083,6 +1086,7 @@ describe("设置页的退出登录", () => {
     openSignOutDisclosure();
 
     fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认退出" }));
     await waitFor(() => expect(api.auth.logout).toHaveBeenCalledOnce());
 
     expect(peekAccountSignOutNotice()).toContain("没能通知学习服务撤销");

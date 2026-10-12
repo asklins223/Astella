@@ -89,6 +89,9 @@ export function SettingsAccountPanel(props: {
         {props.busy === "displayName" ? "保存中…" : "保存"}
       </button>
     </div>
+    {/* 审计 F14：这一页大半是即时保存，打了半截的显示名却在离开时静默蒸发。
+        有未保存改动就明说，别让「改了就会存」的心智背锅。 */}
+    {profile && displayName.trim() !== (profile.displayName ?? "") ? <p className="small" role="status">改动还没保存，离开这一页会丢失。</p> : null}
   </div>
   <div className="settings-rows">
     <SettingRow title="头像" detail="PNG / JPG / WebP / GIF，10 MB 以内；选好后拖动、缩放取景，圆环里就是最终的头像。">

@@ -157,6 +157,25 @@
   opacity: .74;
 }
 
+/* 待确认角标（审计 F4）：确认纸签被关掉或重启之后，手记入口也一直知道
+   "还有几件事等你点头"。 */
+.companion-hud__badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  place-items: center;
+  border: 2px solid var(--companion-ivory);
+  border-radius: 9px;
+  background: var(--companion-peach);
+  color: #4a2f1d;
+  font: 800 10px/1 "Noto Sans SC Variable", "PingFang SC", sans-serif;
+  font-style: normal;
+}
+
 .companion-hud__controls > button::after {
   position: absolute;
   inset: calc(-3px - var(--voice-level) * 8px);

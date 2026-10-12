@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { ArrowRight, BookOpenText, Play } from "lucide-react";
+import { RELATION_ROW_LIMIT } from "./graph-surface-types";
 import type { UnderstandingEdgeProjectionV3, UnderstandingNodeProjectionV3 } from "@astella/shared/note-deepening-contracts";
 import type { NoteApplicabilityAxisV3, NoteDeepeningV3, NoteNextStepAxisV3, NotePerformanceAxisV3 } from "@astella/shared/note-deepening-v3-contracts";
 import { graphNodeLabel, graphNodeSummary, graphObjectiveStateLabel, isNoteNode, isObjectiveNode } from "./graph-sky";
@@ -77,6 +78,7 @@ export function NoteOverviewLayer({
   onContinue,
   onOpenNote,
   onSelectObjective,
+  onSelectNote,
 }: {
   readonly noteId: string;
   readonly projections: readonly UnderstandingNodeProjectionV3[];
@@ -84,8 +86,11 @@ export function NoteOverviewLayer({
   readonly onContinue: () => void;
   readonly onOpenNote: () => void;
   readonly onSelectObjective: (objectiveId: string) => void;
+  readonly onSelectNote: (noteId: string) => void;
 }) {
   const note = projections.find((node) => isNoteNode(node) && node.nodeRef.noteId === noteId);
+  // 展开状态记的是"为哪一篇展开的"，不是布尔：换一篇笔记不能带着上一片的展开状态。
+  const [expandedFor, setExpandedFor] = useState<string | null>(null);
   const objectives = useMemo(() => {
     const keys = new Set(
       edges
@@ -99,6 +104,43 @@ export function NoteOverviewLayer({
   }, [edges, noteId, projections]);
   const openRun = objectives.find((objective) => objective.personal.activeRunId !== null) ?? null;
   const due = objectives.find((objective) => objective.personal.state === "due_review") ?? null;
+  /**
+   * 正文引用分两个方向列。画布上那条线不认方向，而「我引了它」和「它引了我」是两件
+   * 不同的事——只报一个数，用户就没法从这一篇走到引用它的那一篇。
+   *
+   * 折叠**按方向各切一刀**（不是整串切一刀）：被很多篇引用、自己只引了两篇的那种笔记，
+   * 整串切会把「引用了」那一半整个挤掉，方向就又看不全了。
+   */
+  const referenceGroups = useMemo(() => {
+    const rows: { edgeId: string; noteId: string; label: string; outbound: boolean }[] = [];
+    for (const edge of edges) {
+      if (edge.kind !== "references") continue;
+      const outbound = edge.from.kind === "note" && edge.from.id === noteId;
+      if (!outbound && !(edge.to.kind === "note" && edge.to.id === noteId)) continue;
+      const other = outbound ? edge.to : edge.from;
+      const node = projections.find(
+        (candidate) => isNoteNode(candidate) && candidate.nodeRef.noteId === other.id,
+      );
+      // 图上没这颗星就不列（截断时拓扑会少节点），否则这一行点过去是空的。
+      if (!node || other.kind !== "note") continue;
+      rows.push({ edgeId: edge.edgeId, noteId: other.id, label: graphNodeLabel(node), outbound });
+    }
+    const byLabel = (left: typeof rows[number], right: typeof rows[number]) =>
+      left.label.localeCompare(right.label, "zh-CN");
+    return {
+      outbound: rows.filter(row => row.outbound).sort(byLabel),
+      inbound: rows.filter(row => !row.outbound).sort(byLabel),
+    };
+  }, [edges, noteId, projections]);
+  const opened = expandedFor === noteId;
+  const collapsible = referenceGroups.outbound.length > RELATION_ROW_LIMIT
+    || referenceGroups.inbound.length > RELATION_ROW_LIMIT;
+  const shownReferences = opened ? referenceGroups : {
+    outbound: referenceGroups.outbound.slice(0, RELATION_ROW_LIMIT),
+    inbound: referenceGroups.inbound.slice(0, RELATION_ROW_LIMIT),
+  };
+  const hiddenReferences = referenceGroups.outbound.length + referenceGroups.inbound.length
+    - shownReferences.outbound.length - shownReferences.inbound.length;
 
   return (
     <>
@@ -138,6 +180,30 @@ export function NoteOverviewLayer({
           <p className="universe-layer-empty">这一篇还没有形成任何目标——正文在就行，不需要先制卡。</p>
         ) : null}
       </section>
+      {referenceGroups.outbound.length + referenceGroups.inbound.length > 0 ? (
+        // 安静的一排文字，不做药丸：这一面板里唯一的实心块是上面那颗「打开这一篇
+        // 笔记」，引用只是"顺便可以跳过去"，跟它同量级就把主次压平了。方向写在左边
+        // 那一格，笔记名是这一行最重的字——画布上那条线不认方向，这里得认。
+        <section className="universe-references">
+          <div className="universe-detail-section-title"><span>正文里的引用</span></div>
+          <ul>
+            {[...shownReferences.outbound, ...shownReferences.inbound].map(row => (
+              <li key={row.edgeId}>
+                <button type="button" onClick={() => onSelectNote(row.noteId)}>
+                  <em>{row.outbound ? "引用了" : "被引用"}</em>
+                  <strong>{row.label}</strong>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {collapsible ? (
+            // 收起来的那一半要说清有多少，不然这一串看着就是"这篇只有这些关系"。
+            <button type="button" className="universe-references__more" onClick={() => setExpandedFor(opened ? null : noteId)}>
+              {opened ? "收起" : `还有 ${hiddenReferences} 篇没列出`}
+            </button>
+          ) : null}
+        </section>
+      ) : null}
     </>
   );
 }

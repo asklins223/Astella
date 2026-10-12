@@ -17,6 +17,13 @@ import {
 } from "@astella/shared/db-schema";
 import type { ApiTransaction } from "../../db/client.ts";
 import type { CompanionRunDoctorScope } from "./run-doctor.ts";
+import {
+  boundedCollectionV1,
+  DIAGNOSTIC_STEP_MAX_COUNT,
+  DIAGNOSTIC_TIMELINE_EVENT_MAX_COUNT,
+  DIAGNOSTIC_TIMELINE_EVENT_PROBE_LIMIT,
+  DIAGNOSTIC_TOOL_CALL_MAX_COUNT,
+} from "./run-diagnostics-bounds.ts";
 
 const KNOWN_EVENT_TYPES = new Set<string>([
   "turn.accepted", "assistant.status", "agent.tool", "assistant.delta", "assistant.final",
@@ -80,13 +87,11 @@ export function projectCompanionRunIssueBundleV1(
     maxToolCalls: COMPANION_AGENT_MAX_TOOL_CALLS,
     deadlineMs: COMPANION_AGENT_DEADLINE_MS,
   };
-  const retainedEvents = input.events.slice(0, 201);
-  const eventTypes = retainedEvents
-    .map((event) => event.type)
-    .filter((type) => KNOWN_EVENT_TYPES.has(type))
-    .slice(0, 200);
-  const eventTailComplete = retainedEvents.length <= 200
-    && eventTypes.length === retainedEvents.length
+  const retainedEvents = input.events.slice(0, DIAGNOSTIC_TIMELINE_EVENT_PROBE_LIMIT);
+  const knownEventTypes = retainedEvents.map((event) => event.type).filter((type) => KNOWN_EVENT_TYPES.has(type));
+  const eventTypes = boundedCollectionV1(knownEventTypes, DIAGNOSTIC_TIMELINE_EVENT_MAX_COUNT).items;
+  const eventTailComplete = retainedEvents.length <= DIAGNOSTIC_TIMELINE_EVENT_MAX_COUNT
+    && knownEventTypes.length === retainedEvents.length
     && (run.lastEventSeq === 0 || retainedEvents[0]?.seq === run.lastEventSeq);
   const assistantFinalEventSeen = eventTypes.includes("assistant.final");
   const voiceSegmentsPrepared = eventTypes.filter((type) => type === "voice.segment.ready").length;
@@ -132,7 +137,11 @@ export function projectCompanionRunIssueBundleV1(
       },
       {
         path: "execution.json" as const,
-        content: { version: 1 as const, steps: input.steps.slice(0, 16), tools: safeTools.slice(0, 64) },
+        content: {
+          version: 1 as const,
+          steps: boundedCollectionV1(input.steps, DIAGNOSTIC_STEP_MAX_COUNT).items,
+          tools: boundedCollectionV1(safeTools, DIAGNOSTIC_TOOL_CALL_MAX_COUNT).items,
+        },
       },
       {
         path: "timeline.json" as const,
@@ -198,7 +207,7 @@ export async function loadCompanionRunIssueBundleV1(
       eq(companionAgentSteps.runId, runId),
       eq(companionAgentSteps.workspaceId, scope.workspaceId),
       eq(companionAgentSteps.userId, scope.userId),
-    )).orderBy(asc(companionAgentSteps.stepNo)).limit(16),
+    )).orderBy(asc(companionAgentSteps.stepNo)).limit(DIAGNOSTIC_STEP_MAX_COUNT + 1),
     tx.select({
       name: companionAgentToolCalls.name,
       toolVersion: companionAgentToolCalls.toolVersion,
@@ -208,7 +217,7 @@ export async function loadCompanionRunIssueBundleV1(
       eq(companionAgentToolCalls.runId, runId),
       eq(companionAgentToolCalls.workspaceId, scope.workspaceId),
       eq(companionAgentToolCalls.userId, scope.userId),
-    )).orderBy(asc(companionAgentToolCalls.createdAt)).limit(64),
+    )).orderBy(asc(companionAgentToolCalls.createdAt)).limit(DIAGNOSTIC_TOOL_CALL_MAX_COUNT + 1),
     tx.select({
       seq: companionStreamEvents.seq,
       type: companionStreamEvents.type,
@@ -217,7 +226,7 @@ export async function loadCompanionRunIssueBundleV1(
       eq(companionStreamEvents.workspaceId, scope.workspaceId),
       eq(companionStreamEvents.userId, scope.userId),
       gt(companionStreamEvents.expiresAt, now),
-    )).orderBy(desc(companionStreamEvents.seq)).limit(201),
+    )).orderBy(desc(companionStreamEvents.seq)).limit(DIAGNOSTIC_TIMELINE_EVENT_PROBE_LIMIT),
   ]);
 
   return projectCompanionRunIssueBundleV1({

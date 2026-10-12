@@ -34,7 +34,7 @@ const REGION_COPY: Readonly<Record<ObjectZone, Readonly<{
   icon: LucideIcon;
 }>>> = Object.freeze({
   desk: { id: "desk-book", label: "书桌", detail: "今日下一步与今日复习", icon: BookOpenText },
-  shelf: { id: "bookshelf", label: "书架", detail: "研究册、笔记、资料与搜索", icon: Search },
+  shelf: { id: "bookshelf", label: "书架", detail: "笔记、来源与搜索", icon: Search },
   window: { id: "window-stars", label: "星窗", detail: "学习目标与理解星图", icon: Orbit },
   rest: { id: "rest-cushion", label: "休息角", detail: "伴星、日记、人格与记忆", icon: MessageCircle },
 });

@@ -1,3 +1,4 @@
+import { reviewedTargetMatches } from "./companion-reviewed-target.ts";
 import { reserveCompanionProviderCall } from "./companion-agent-events.ts";
 import { readCompanionMemoryWriteSource } from "./companion-memory-write-source.ts";
 /**
@@ -67,6 +68,7 @@ export async function executeCompanionMemoryTool(
   event: AgentEventContext,
   definition: CompanionAgentToolDefinitionV1,
   args: Record<string, unknown>,
+  toolCallId?: string,
 ): Promise<AgentToolExecutionResult> {
   switch (definition.name) {
     case "companion_read_memory": {
@@ -115,11 +117,10 @@ export async function executeCompanionMemoryTool(
       }
 
       if (!event.read.memoryRefs.some((ref) => ref.memoryId === memory.memoryId)) {
-        if (event.read.memoryRefs.length >= 3) event.read.memoryRefs.shift();
         event.read.memoryRefs.push({
           memoryId: memory.memoryId,
           kind: memory.kind,
-          content: memory.content.slice(0, 80),
+          content: memory.content,
         });
       }
       return {
@@ -697,8 +698,7 @@ export async function executeCompanionMemoryTool(
     }
     case "companion_forget_memory": {
       // 软删（deleted_at）：星图/记忆中心的既有语义就是按 deleted_at 过滤，
-      // 硬删会把历史一起抹掉。免二次确认的理由与 cancel_reminder 同：
-      // 用户此刻正明确说"别记着这个"。
+      // 硬删会把历史一起抹掉。删除前确认，落库时再核对用户看到的版本。
       const memoryId = String(args.memoryId);
       const forgotten = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
@@ -715,6 +715,7 @@ export async function executeCompanionMemoryTool(
                AND workspace_id = ${event.ctx.workspaceId}
                AND user_id = ${event.read.userId}
                AND deleted_at IS NULL
+               AND ${reviewedTargetMatches(event, toolCallId, sql`jsonb_build_object('content',content,'revision',revision)`)}
             RETURNING kind, source_event_id AS "sourceEventId", left(content, 60) AS content
           `);
           const forgotten = (Array.isArray(rows) ? rows : [])[0] ?? null;

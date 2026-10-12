@@ -55,7 +55,7 @@ it("returns to the saved conversation position after viewing confirmations or en
   fireEvent.click(screen.getByRole("button", { name: "待确认 0" }));
   fireEvent.click(screen.getByRole("button", { name: "全部对话" }));
   act(() => vi.advanceTimersByTime(32)); expect(list.scrollTop).toBe(234);
-  fireEvent.click(screen.getByRole("button", { name: "聊天记录" }));
+  fireEvent.click(screen.getByRole("button", { name: "搜索对话手记" }));
   list.scrollTop = 0;
   fireEvent.click(screen.getByRole("button", { name: "返回对话" }));
   act(() => vi.advanceTimersByTime(32)); expect(list.scrollTop).toBe(234);
@@ -68,8 +68,8 @@ it("search previews show readable assistant text, retain user literals and jump 
   ];
   state.chat = interactionSession({ messages: messages as never, fetchAllMessages: vi.fn(async () => messages as never) });
   render(<Journal />);
-  fireEvent.click(screen.getByRole("button", { name: "聊天记录" }));
-  await act(async () => fireEvent.change(screen.getByRole("textbox", { name: "搜索聊天记录" }), { target: { value: "156" } }));
+  fireEvent.click(screen.getByRole("button", { name: "搜索对话手记" }));
+  await act(async () => fireEvent.change(screen.getByRole("textbox", { name: "搜索对话手记" }), { target: { value: "156" } }));
   const hit = screen.getByRole("button", { name: /12×13 = 156/ });
   expect(hit.textContent).not.toContain("**");
   expect(hit.querySelector("mark")?.textContent).toBe("156");

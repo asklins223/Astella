@@ -1183,7 +1183,7 @@ export async function setAnswerModePreference(t: GatewayTransport,
   }
 
 export async function setCompanionVoicePreference(t: GatewayTransport, 
-    input: { engine: TtsEngineV1; voice: string },
+    input: { engine: TtsEngineV1; voice: string; instruction?: string | null },
     requestId?: string,
   ) {
     await t.ensureConnected(requestId);
@@ -1279,8 +1279,9 @@ async function resolveCachedVoiceProfile(
     if (bucket === "thought") {
       const preference = await getCompanionVoicePreference(t, requestId);
       // 身份只进哈希：engine 与 voice 合起来才是"她这一身"，单看音色名会漏掉引擎换了。
+      // instruction 也进：它是这一身怎么说的一部分，改了风格偏好旧音频就该作废。
       return {
-        profileId: createHash("sha256").update(JSON.stringify([1, preference.engine, preference.voice])).digest("hex"),
+        profileId: createHash("sha256").update(JSON.stringify([1, preference.engine, preference.voice, preference.instruction])).digest("hex"),
         voice: preference.voice,
       };
     }

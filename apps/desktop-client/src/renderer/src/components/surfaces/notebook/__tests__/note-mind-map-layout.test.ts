@@ -1,6 +1,6 @@
 import { test, expect } from "vitest";
 import type { MindMapContentV1 } from "@astella/shared/note-mind-map-contracts";
-import { layoutMindMap } from "../note-mind-map-layout";
+import { layoutMindMap } from "@astella/shared/note-mind-map-layout";
 const map: MindMapContentV1={schemaVersion:1,rootId:"root",nodes:[
 {id:"root",parentId:null,kind:"root",label:"中心主题",explanation:null,references:[]},
 ...Array.from({length:6},(_,i)=>({id:`n${i}`,parentId:"root",kind:"concept" as const,label:"保留条件与因果关系的知识点".repeat(2),explanation:null,references:[{blockOrdinal:i,quote:"依据"}]})),

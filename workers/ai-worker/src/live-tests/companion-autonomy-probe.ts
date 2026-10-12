@@ -2,7 +2,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { resolveAllCompanionAgentTools, isCompanionAutonomousTool, renderCompanionSelfNotes } from "@astella/shared";
-import { buildReflectionMessages, companionReflectionOutputV1Schema, normalizeReflectionPayload, clipReflectionOverflow,
+import { buildReflectionMessages, companionReflectionOutputV1Schema, normalizeReflectionPayload,
   verifyReflectionOutput, type ReflectionInputSnapshotV1 } from "../handlers/companion-reflection-content.ts";
 import { buildCompanionPersonaMessages } from "../handlers/companion-dialogue-content.ts";
 import { resolveCompanionPersonaContext } from "../handlers/companion-identity-context.ts";
@@ -31,9 +31,9 @@ for (const sample of [{ id: "self-choice", snapshot }, { id: "quiet-wake", snaps
     const provider = observedProvider(route, `autonomy-${randomUUID()}`, wire);
     const response = await provider.chatCompletion(buildReflectionMessages(sample.snapshot),
       { temperature: 0.2, maxTokens: 8000, responseFormat: "json_object" }, AbortSignal.timeout(90_000));
-    const clipped = clipReflectionOverflow(normalizeReflectionPayload(parseMemoryExtractJson(response.content)).payload);
-    const parsed = companionReflectionOutputV1Schema.safeParse(clipped.payload);
-    results.push({ id: sample.id, protocol: parsed.success, clipped: clipped.clipped,
+    const normalized = normalizeReflectionPayload(parseMemoryExtractJson(response.content));
+    const parsed = companionReflectionOutputV1Schema.safeParse(normalized.payload);
+    results.push({ id: sample.id, protocol: parsed.success, droppedKeys: normalized.droppedKeys,
       ...(parsed.success
         ? { verified: verifyReflectionOutput(parsed.data, sample.snapshot) } : { issues: parsed.error.issues.map(issue => ({ path: issue.path, code: issue.code })) }) });
   } catch (error) { results.push({ id: sample.id, error: safeFailure(error) }); }

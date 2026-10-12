@@ -30,7 +30,7 @@ const OVERVIEW_STATES = {
   diaryFailed: "这一天她没能写下来。",
   diaryNone: "这里还没有日记。之后她写下的内容会出现在这里。",
   pendingUnavailable: "动态暂时读不到。",
-  pendingNone: "目前没有待回应的事。",
+  pendingNone: "目前没有待确认的事。",
   recentUnavailable: "对话记录暂时读不到。",
   recentNone: "你们还没有留下对话。",
 } as const;
@@ -102,7 +102,7 @@ export function CompanionCenterOverview({
       ...((activity.ok && pending.length > 0) || latest?.date
         ? {
             metrics: [
-              ...(activity.ok && pending.length > 0 ? [{ label: "待回应", value: `${pending.length} 件提议`.slice(0, 40) }] : []),
+              ...(activity.ok && pending.length > 0 ? [{ label: "待确认", value: `${pending.length} 件提议`.slice(0, 40) }] : []),
               ...(latest?.date ? [{ label: "最近日记", value: formatDate(latest.date).slice(0, 40) }] : []),
             ],
           }

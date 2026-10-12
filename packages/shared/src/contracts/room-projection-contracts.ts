@@ -81,8 +81,8 @@ export type RoomPrimaryActionV1 = z.infer<typeof roomPrimaryActionV1Schema>;
 export const roomObjectiveSummaryV1Schema = z.strictObject({
   objectiveId: uuidSchema,
   surfaceRevision: z.number().int().min(0),
-  conceptLabel: z.string().min(1).max(200).nullable(),
-  publicSummary: z.string().min(1).max(1500),
+  conceptLabel: z.string().min(1).nullable(),
+  publicSummary: z.string().min(1),
   personalState: objectivePersonalStateV3Schema,
   primaryAction: learningObjectivePrimaryActionV3Schema,
 });
@@ -113,7 +113,7 @@ const roomActiveRunItemSchema = z.strictObject({
    * "N 项可恢复"却列不出是什么。名字取目标当前修订的 `conceptLabel`；目标不可见或
    * V1 origin 没有目标时是 null，界面回退成"未命名目标"。
    */
-  conceptLabel: z.string().max(200).nullable(),
+  conceptLabel: z.string().nullable(),
   /** 这条 run 最近一次被动过的时间（清单上的"最近时间"）。 */
   updatedAt: isoTimestampSchema,
 });

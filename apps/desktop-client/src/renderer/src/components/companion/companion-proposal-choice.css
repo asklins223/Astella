@@ -193,3 +193,24 @@
 .companion-history[data-motion="off"] .companion-choice-card__spinner {
   animation: none;
 }
+/* Preview the complete changed paper. Overflow scrolls; content is never cut. */
+.companion-markdown {
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.companion-write-preview {
+  max-block-size: min(58vh, 36rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0.75rem;
+  border-block: 1px solid var(--border-subtle, rgba(91, 72, 50, 0.16));
+}
+.companion-write-preview__original,
+.companion-write-preview__source { margin-block: 0.5rem; }
+.companion-write-preview__source pre {
+  max-block-size: 28rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.companion-note-write-preview .companion-choice-card { max-inline-size: none; width: 100%; }

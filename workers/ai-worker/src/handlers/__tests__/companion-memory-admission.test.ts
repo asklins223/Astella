@@ -1,5 +1,5 @@
 /**
- * 记忆抽取的**自动准入**（40 §4.5.6）与**独立事实限额**（§4.5.6 第 3 条）。
+ * 记忆抽取的**自动准入**（40 §4.5.6）与**独立事实**判据。
  *
  * ## 为什么这两条要单独测
  *
@@ -16,7 +16,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  MEMORY_EXTRACT_MAX_FACTS,
   limitMemoryExtractionsToIndependentFacts,
   memoryAdmissionDecision,
 } from "../companion-memory-extractor.ts";
@@ -50,52 +49,29 @@ test("共同事件（episodic）不因「是推断」被拒——那是真实发
     "§4.5.2：真实 episodic 可以保存；把它们一起拒掉就是旧文档那个错");
 });
 
-test("默认只收一条独立事实", () => {
+test("互不重复的独立事实有几条收几条——本轮裁决取消条数硬上限", () => {
   const many = [
     fact("preference", "以后讲机制先举例"),
     fact("goal", "下周完成索引复习"),
     fact("learning_context", "我在准备 N3"),
     fact("episodic", "今天第一次听懂反例"),
   ];
-  const kept = limitMemoryExtractionsToIndependentFacts(many);
-  assert.equal(kept.length, 1, "默认上限就是一条，不该因为模型给了四条就收四条");
-  assert.equal(kept[0]?.sourceQuote, "以后讲机制先举例", "保留的应当是第一条");
-});
-
-test("「确有互不重复的事实」要**显式**增加，且受任务预算硬上限约束", () => {
-  const distinct = [
-    fact("goal", "下周完成索引复习"),
-    fact("preference", "以后讲机制先举例"),
-    fact("episodic", "今天第一次听懂反例"),
-  ];
-  assert.equal(limitMemoryExtractionsToIndependentFacts(distinct).length, 1,
-    "不显式增加时默认仍然只有一条");
-  assert.equal(limitMemoryExtractionsToIndependentFacts(distinct, { maxFacts: 3 }).length, 3,
-    "§4.5.6：确有互不重复的事实可以在任务预算内增加");
-
-  const overflow = [
-    ...distinct,
-    fact("learning_context", "我在准备 N3"),
-    fact("interaction_note", "今天很累"),
-  ];
-  assert.equal(limitMemoryExtractionsToIndependentFacts(overflow, { maxFacts: 99 }).length,
-    MEMORY_EXTRACT_MAX_FACTS,
-    "传再大的额度也要被任务预算的硬上限挡住");
+  assert.equal(limitMemoryExtractionsToIndependentFacts(many).length, 4,
+    "四条都是互不重复的独立事实：以前 slice(0, 3) 会静默丢掉一条，现在不剪");
 });
 
 test("没有最低配额：一条都不该记时就一条都不记", () => {
   assert.deepEqual(limitMemoryExtractionsToIndependentFacts([]), []);
-  assert.equal(limitMemoryExtractionsToIndependentFacts([], { maxFacts: 3 }).length, 0,
-    "§4.5.6：不上『每次必须记一条』的最低配额");
 });
 
-test("同一条事实被重复输出不占额度——否则模型重复三次就能填满", () => {
+test("同一条事实被重复输出只收一次——按 (kind, sourceQuote) 判独立性", () => {
   const repeated = [
     fact("preference", "以后讲机制先举例", "版本一"),
     fact("preference", "以后讲机制先举例", "版本二"),
     fact("preference", "以后讲机制先举例", "版本三"),
   ];
-  assert.equal(limitMemoryExtractionsToIndependentFacts(repeated, { maxFacts: 3 }).length, 1);
+  assert.equal(limitMemoryExtractionsToIndependentFacts(repeated).length, 1,
+    "同 kind 同引文就是同一条事实，模型说三遍也只入库一次");
 });
 
 test("【自证】判据认得出「按旧 kind 集合拒写」这个真实退化", () => {
@@ -110,10 +86,13 @@ test("【自证】判据认得出「按旧 kind 集合拒写」这个真实退�
   assert.equal(memoryAdmissionDecision({ kind: "interaction_note", sourceBasis: "direct_statement" }).ok, true);
 });
 
-test("【自证】限额判据对「照单全收」会红", () => {
-  const three = [fact("a", "1"), fact("b", "2"), fact("c", "3")];
-  assert.equal(three.length, 3, "自证样本：三条");
-  assert.equal(limitMemoryExtractionsToIndependentFacts(three).length, 1, "判据必须把三条压成一条");
-  assert.equal(limitMemoryExtractionsToIndependentFacts(three, { maxFacts: 3 }).length, 3,
-    "自证样本没造好：显式增加时它必须能收满");
+test("【自证】独立性判据对「照单全收」会红", () => {
+  // 三条里两条是同一句的两个说法：判据要能识别并折叠成两条。
+  const mixed = [
+    fact("preference", "以后讲机制先举例", "版本一"),
+    fact("preference", "以后讲机制先举例", "版本二"),
+    fact("goal", "下周完成索引复习"),
+  ];
+  assert.equal(limitMemoryExtractionsToIndependentFacts(mixed).length, 2,
+    "自证样本没造好：同 kind 同引文必须折叠，否则这里也会给出 3");
 });

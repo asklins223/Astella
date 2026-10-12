@@ -91,7 +91,9 @@ export function CompanionCenterSurface() {
           {CENTER_PAGES.map(page => <Activity key={page.id} mode={tab === page.id ? "visible" : "hidden"}>
             <section className={`cc-page cc-page--${page.id}`} id={`companion-panel-${page.id}`} role="tabpanel" aria-labelledby={`companion-tab-${page.id}`} tabIndex={-1}>
               {page.id === "overview" ? <CompanionOverviewPage refreshKey={refreshKey} onGo={navigate} onDiary={date => { setDiaryDate(date); setDiarySource(null); navigate("diary"); }} /> : null}
-              {page.id === "dialogue" ? <CompanionDialoguePage refreshKey={refreshKey} focusMessageId={focusMessageId} onFocusConsumed={() => setFocusMessageId(null)} companionName={chat.companionName} /> : null}
+              {page.id === "dialogue" ? <CompanionDialoguePage refreshKey={refreshKey} focusMessageId={focusMessageId} onFocusConsumed={() => setFocusMessageId(null)} companionName={chat.companionName}
+                /* 审计 F11：与近况「查看提议」同一条路——打开对话手记去处理。 */
+                onOpenProposal={proposalId => { chat.retryProposal(proposalId); chat.setMode("history"); }} /> : null}
               {page.id === "diary" ? <CompanionDiaryPage refreshKey={refreshKey} requestedDate={diaryDate} sourceTarget={diarySource} onSourceConsumed={() => setDiarySource(null)} onMemory={id => { setFocusMemoryId(id); navigate("memory"); }} onSettings={openSettings} /> : null}
               {page.id === "memory" ? <CompanionMemoryPage refreshKey={refreshKey} requestedMemoryId={focusMemoryId} requestedMethodId={focusMethodId} onMethodFocusConsumed={()=>setFocusMethodId(null)} onFocusConsumed={() => setFocusMemoryId(null)} /> : null}
               {page.id === "discovery" ? <CompanionDiscoveryPage refreshKey={refreshKey} onSource={openDiscoverySource} onBrowse={next => { if (next === "diary") { setDiaryDate(null); setDiarySource(null); } else setFocusMessageId(null); navigate(next); }} /> : null}

@@ -268,8 +268,8 @@ export const learningObjectiveSurfaceV3Schema = z.strictObject({
   /** Objective lifecycle epoch（§7.5 OCC；用于 archive/supersede 乐观并发校验）。 */
   lifecycleEpoch: z.number().int().min(1),
   content: z.strictObject({
-    conceptLabel: z.string().min(1).max(200).nullable(),
-    publicSummary: z.string().min(1).max(1500),
+    conceptLabel: z.string().min(1).nullable(),
+    publicSummary: z.string().min(1),
     knowledgeForm: knowledgeFormV2Schema,
     /** 当前正式学习卡的思考卡型；手动目标或尚未配卡时为空。 */
     cardStrategy: cardStrategyV2Schema.nullable(),
@@ -363,8 +363,8 @@ export type LearningObjectiveSurfaceV3 = z.infer<
 export const objectiveListItemV3Schema = z.strictObject({
   objectiveId: z.string().uuid(),
   surfaceRevision: z.number().int().min(0),
-  conceptLabel: z.string().min(1).max(200).nullable(),
-  publicSummary: z.string().min(1).max(1500),
+  conceptLabel: z.string().min(1).nullable(),
+  publicSummary: z.string().min(1),
   knowledgeForm: knowledgeFormV2Schema,
   cardStrategy: cardStrategyV2Schema.nullable(),
   lifecycle: objectiveSurfaceLifecycleV3Schema,
@@ -476,7 +476,7 @@ export const learningDashboardV2Schema = z.strictObject({
         runId: z.string().uuid(),
         phase: z.string().min(1).max(50),
         objectiveId: z.string().uuid().nullable(),
-        conceptLabel: z.string().max(200).nullable(),
+        conceptLabel: z.string().nullable(),
         updatedAt: z.string().datetime({ offset: true }),
       }),
     )

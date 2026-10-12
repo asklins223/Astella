@@ -163,7 +163,9 @@ test("普通语义召回只查 active；resident 独立常驻读取，归档只�
   assert.doesNotMatch(archivedTx.queries[0], /budget_tier = 'active'/);
   assert.equal(archived.items[0]?.budgetTier, "archived");
   assert.match(residentTx.queries[0], /budget_tier = 'resident'/);
-  assert.match(residentTx.queries[0], /LIMIT 6/);
+  // resident 整档读取：这一档是"她始终要知道"的那些，第 7 条不该因为一道 LIMIT 6
+  // 就永远进不了上下文；注不下由装配那一侧整条取舍并计数。
+  assert.doesNotMatch(residentTx.queries[0], /LIMIT/i, "resident 读取不再按条数截断");
   assert.equal(residents[0]?.budgetTier, "resident");
   assert.equal(residents[0]?.revision, 3);
 });
@@ -190,7 +192,8 @@ test("active 目录只返回有界语义线索与适用时间，不把正文带�
   assert.match(tx.queries[0], /candidate = false/);
   assert.match(tx.queries[0], /valid_until > now\(\)/);
   assert.match(tx.queries[0], /memory_links/);
-  assert.match(tx.queries[0], /LIMIT 64/);
+  // 目录的 LIMIT 是取行页宽（不是入选条数）——真正决定带几条的是按声明预算的整条取舍。
+  assert.match(tx.queries[0], /LIMIT 500/, "目录取行页宽");
   assert.deepEqual(directory, [{
     memoryId: ROW.id,
     kind: "preference",

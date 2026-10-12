@@ -1,5 +1,5 @@
 import { AiConsentTerms } from "../../ai-consent-terms";
-import { Activity, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Activity, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { SettingRow, SettingsInlineState, type SettingsReadable } from "./settings-primitives.tsx";
 import { SettingsCompanionPanel } from "./settings-companion-panel";
 import { SettingsAccountPanel, type AvatarUploadOutcome } from "./settings-account-panel.tsx";
@@ -383,6 +383,8 @@ export function SettingsSurface() {
   const [passwordForm, setPasswordForm] = useState({ current: "", next: "", confirm: "" });
   /** 退出登录后这台设备就交还给登录页了；这一位只用来让按下去的那一下有回音。 */
   const [signingOut, setSigningOut] = useState(false);
+  /** 审计 F4：设置页的退出登录与顶栏气泡拉齐——先问一声，再真的走。 */
+  const [signOutArmed, setSignOutArmed] = useState(false);
   const [invites, setInvites] = useState<InviteListResultV1 | null>(null);
   const [members, setMembers] = useState<MemberListResultV1 | null>(null);
   const [invitesRead, setInvitesRead] = useState(false);
@@ -1375,15 +1377,26 @@ export function SettingsSurface() {
                 title={`退出 ${session?.user?.email ?? "这个账号"}`}
                 detail="清掉这台设备上的登录状态，并请学习服务撤销这次登录。学习记录不会因为退出而减少，其他设备上的登录也不受影响。"
               >
-                <button
+                {signOutArmed ? <>
+                  <button
+                    type="button"
+                    className="button danger"
+                    disabled={signingOut}
+                    onClick={() => { setSignOutArmed(false); void signOutOfAccount(); }}
+                  >
+                    <LogOut size={13} aria-hidden="true" />
+                    {signingOut ? "正在退出…" : "确认退出"}
+                  </button>
+                  <button type="button" className="button" disabled={signingOut} onClick={() => setSignOutArmed(false)}>先不退出</button>
+                </> : <button
                   type="button"
                   className="button danger"
                   disabled={signingOut}
-                  onClick={() => void signOutOfAccount()}
+                  onClick={() => setSignOutArmed(true)}
                 >
                   <LogOut size={13} aria-hidden="true" />
-                  {signingOut ? "正在退出…" : "退出登录"}
-                </button>
+                  退出登录
+                </button>}
               </SettingRow>
             </div>
           </details>
@@ -1729,6 +1742,20 @@ export function SettingsSurface() {
             </div>
           </section>
         </div>
+
+        {/* 审计 F9 / F10：快捷键以前只能逐个悬停攒，这里给一份完整清单。
+            用静态清单而不是 SettingRow：这一组没有可调状态，不进登记与行账。 */}
+        <section className="settings-group">
+          <h3 className="settings-group__title">快捷键</h3>
+          <dl className="settings-shortcut-list">
+            <div><dt><kbd>⌘/Ctrl + K</kbd><span>搜索</span></dt><dd>在任何页面打开全局搜索。</dd></div>
+            <div><dt><kbd>⌘/Ctrl + Enter</kbd><span>继续学习</span></dt><dd>打开今天真正停下的位置。</dd></div>
+            <div><dt><kbd>⌘/Ctrl + S</kbd><span>保存版本</span></dt><dd>编辑笔记时留下一个可回去的版本。</dd></div>
+            <div><dt><kbd>⌘/Ctrl + Shift + F</kbd><span>全屏笔记</span></dt><dd>打开或退出全屏阅读与编辑。</dd></div>
+            <div><dt><kbd>R</kbd><span>今日复习</span></dt><dd>只在书桌（首页）生效，任务页里不会把你带走。</dd></div>
+            <div><dt><kbd>G</kbd><span>理解星图</span></dt><dd>同样只在书桌生效。</dd></div>
+          </dl>
+        </section>
 
       </>
     ),
@@ -2096,6 +2123,13 @@ export function SettingsSurface() {
       };
   usePageReadableView(settingsReadableView);
 
+  /**
+   * 审计 F12：非当前分区的 body 缓存为元素引用。以前每次渲染（包括在「账户与空间」
+   * 里每敲一个字符）都把已访问过的五个分区整个重建一遍（成员名册、审计清单一并重算）。
+   * 当前分区照常重建；切回某个分区时它自然成为当前分区，缓存即时刷新。
+   */
+  const panelBodies = useRef(new Map<SettingsSectionId, ReactNode>());
+
   return <SettingsBook
     section={section}
     onSectionChange={next => { setSettingsSection(next); setNotice(null); setFailureNotice(null); }}
@@ -2109,7 +2143,11 @@ export function SettingsSurface() {
     failureNotice={failureNotice}
     onDismissNotice={() => { setNotice(null); setFailureNotice(null); }}
     onReplayIntro={replayIntro}
-  >{(visitedSections.includes(section) ? visitedSections : [...visitedSections, section]).map(id => <Activity key={id} mode={id === section ? "visible" : "hidden"}>
-    <div className="settings-section-content" data-settings-active={id === section ? "true" : "false"}>{id === section ? panel.body : PANELS[id]().body}</div>
-  </Activity>)}</SettingsBook>;
+  >{(visitedSections.includes(section) ? visitedSections : [...visitedSections, section]).map(id => {
+    const body = id === section ? panel.body : panelBodies.current.get(id) ?? PANELS[id]().body;
+    if (id === section) panelBodies.current.set(id, body);
+    return <Activity key={id} mode={id === section ? "visible" : "hidden"}>
+      <div className="settings-section-content" data-settings-active={id === section ? "true" : "false"}>{body}</div>
+    </Activity>;
+  })}</SettingsBook>;
 }

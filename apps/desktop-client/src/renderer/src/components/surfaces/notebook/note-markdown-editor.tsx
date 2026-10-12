@@ -54,7 +54,8 @@ import { noteImageViewPlugin, noteImageUploadsKey } from "./note-image-node-view
 import type { NoteImageUploadView } from "./note-image-uploads";
 import { imageRow, insertNoteImages } from "./note-image-layout";
 import { noteListItemViewPlugin, noteTableKeyboardPlugin, noteTableContextPlugin } from "./note-editor-table-and-lists";
-import { noteCodeBlockPlugins, codeBlockConfig, noteCodeLanguages } from "./note-code-block-editor";
+import { noteCodeBlockPlugins, codeBlockConfig } from "./note-code-block-editor";
+import { codeLanguages } from "../../content/code-tokens";
 import { noteEditorMathPreview } from "./note-editor-math-preview";
 import { setWritingFile } from "./note-writing-assets";
 import { DOMSerializer } from "@milkdown/kit/prose/model";
@@ -492,7 +493,7 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
           let value = "", cursor = 0; for (const match of node.value.matchAll(/\$\$[^]*?\$\$|(?<![\\$])\$(?![\s\d])[^$\n]+?(?<!\s)\$(?!\$)/g)) { value += state.safe(node.value.slice(cursor, match.index), info) + match[0]; cursor = match.index + match[0].length; } return value + state.safe(node.value.slice(cursor), info);
         },
       } }));
-      ctx.update(codeBlockConfig.key, config => ({ ...config, languages: noteCodeLanguages }));
+      ctx.update(codeBlockConfig.key, config => ({ ...config, languages: codeLanguages }));
       // listener 必须按方法调用，不能整体赋值。
       ctx.get(listenerCtx).markdownUpdated((_ctx, markdown) => {
         onChangeRef.current(markdown);

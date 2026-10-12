@@ -539,8 +539,8 @@ export async function readNoteDeepeningV3(
     const summary = revision?.publicSummary?.trim() || revision?.conceptLabel?.trim() || "";
     return {
       objectiveId: row.objectiveId,
-      label: (revision?.conceptLabel?.trim() || "未命名目标").slice(0, 200),
-      summary: (summary || "这条目标还没有公开摘要。").slice(0, 1500),
+      label: revision?.conceptLabel?.trim() || "未命名目标",
+      summary: summary || "这条目标还没有公开摘要。",
       state: objectivePersonalStateForDeepeningV3({
         lifecycle: row.lifecycle,
         hasActiveRun,

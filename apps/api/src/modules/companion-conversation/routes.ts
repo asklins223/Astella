@@ -478,6 +478,7 @@ userId: req.session.userId,
           runs: result.runs.map((run) => ({
             version: 1 as const,
             runId: run.runId,
+            userMessageId: run.userMessageId,
             status: run.status,
             generation: run.generation,
             stepCount: run.stepCount,

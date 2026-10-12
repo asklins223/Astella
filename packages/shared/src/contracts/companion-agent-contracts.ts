@@ -165,8 +165,8 @@ export const companionAgentToolDefinitionV1Schema = z.object({
   requiresConfirmation: z.boolean(),
   confirmationStage: z.enum(["before_execute", "after_preview"]).optional(),
   // Editing carries both expected original blocks and replacement Markdown, including JSON escapes.
-  maxInputChars: z.number().int().positive().max(150_000),
-  maxOutputChars: z.number().int().positive().max(70_000),
+  maxInputChars: z.number().int().positive().nullable(),
+  maxOutputChars: z.number().int().positive().nullable(),
 }).strict();
 export type CompanionAgentToolDefinitionV1 = z.infer<
   typeof companionAgentToolDefinitionV1Schema

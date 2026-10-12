@@ -34,9 +34,9 @@ import {
 /** 本 run 的真实消耗。来自 `companion_turn_runs`，不是客户端数事件数出来的。 */
 export interface CompanionAgentRailProgress {
   readonly stepCount: number;
-  readonly maxSteps: number;
+  readonly maxSteps: number | null;
   readonly toolCallCount: number;
-  readonly maxToolCalls: number;
+  readonly maxToolCalls: number | null;
 }
 
 export type CompanionAgentRailTurnState = "running" | "done" | "stopped" | "failed";

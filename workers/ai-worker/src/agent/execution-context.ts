@@ -3,7 +3,8 @@ import { sql } from "drizzle-orm";
 import { AgentStoreError, listAgentMethods, queryRows, recordAgentMethodOffered, type AgentSqlExecutor } from "@astella/agent-host";
 import type { AgentScopeV1 } from "@astella/shared/agent-contracts";
 import { composeAgentContext, type AgentContextSource } from "@astella/agent-core";
-import { sanitizePersonaField } from "../handlers/companion-identity-context.ts";
+import { PERSONA_DOCUMENT_INJECTION_WINDOW_CHARS, sanitizePersonaField } from "../handlers/companion-identity-context.ts";
+import { PERSONA_FIELD_CAPACITY } from "@astella/shared/pet-persona-merge";
 import { companionContextAssemblyCapacity } from "../handlers/companion-context-receipts.ts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { loadAgentLearningContext } from "./learning-context.ts";
@@ -105,9 +106,11 @@ export async function loadAgentExecutionContext(
       methods,
       preferences: learning.preferences,
       persona: learning.persona ? {
-        name: sanitizePersonaField(learning.persona.name, 100),
-        speakingStyle: sanitizePersonaField(learning.persona.speakingStyle, 400),
-        selfDescription: "selfDescription" in learning.persona ? learning.persona.selfDescription?.slice(0, 2400) : undefined,
+        // 容量只有 PERSONA_FIELD_CAPACITY 那一个声明源；身份文档给的是**注入窗口**，
+        // 不是它的上限——读到底走 companion_read_identity 的分段。
+        name: sanitizePersonaField(learning.persona.name, PERSONA_FIELD_CAPACITY.name),
+        speakingStyle: sanitizePersonaField(learning.persona.speakingStyle, PERSONA_FIELD_CAPACITY.speakingStyle),
+        selfDescription: "selfDescription" in learning.persona ? learning.persona.selfDescription?.slice(0, PERSONA_DOCUMENT_INJECTION_WINDOW_CHARS) : undefined,
       } : null,
     };
   });

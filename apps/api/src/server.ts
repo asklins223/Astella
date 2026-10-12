@@ -7,6 +7,7 @@ import { agentMethodRoutes } from "./modules/agent/method-routes.ts";
 import { sql } from "drizzle-orm";
 import { closeDatabase, db, dbPoolOptionsMax } from "./db/client.ts";
 import Fastify from "fastify";
+import websocket from "@fastify/websocket";
 import cors from "@fastify/cors";
 import sensible from "@fastify/sensible";
 import multipart from "@fastify/multipart";
@@ -14,6 +15,7 @@ import compress from "@fastify/compress";
 import { logger } from "./lib/logger.ts";
 import { runWithRequestContext } from "./lib/request-context.ts";
 import { authRoutes } from "./modules/identity/routes.ts";
+import { emailCodeRoutes } from "./modules/identity/email-code-routes.ts";
 import { noteRoutes } from "./modules/note/routes.ts";
 import { noteAnnotationRoutes } from "./modules/note-annotations/routes.ts";
 import { noteMindMapRoutes } from "./modules/note-mind-maps/routes.ts";
@@ -40,7 +42,7 @@ import { understandingTopologyV3Routes } from "./modules/note-deepening/routes.t
 import { isCardGenerationV2Enabled } from "./config/learning-companion-flags.ts";
 import { companionShellRoutes } from "./modules/companion-shell/index.ts";
 import { learningMetricRoutes } from "./modules/observability/routes.ts";
-import { companionConversationRoutes, companionConversationManagementRoutes, companionDiscoveryRoutes, companionExportRoutes, companionRunDiagnosticsRoutes, continuousHistoryRoutes } from "./modules/companion-conversation/index.ts";
+import { companionConversationRoutes, companionConversationManagementRoutes, companionDiscoveryRoutes, companionExportRoutes, companionRealtimeRoutes, companionRunDiagnosticsRoutes, continuousHistoryRoutes } from "./modules/companion-conversation/index.ts";
 import { startCompanionNotifyListener, stopCompanionNotifyListener } from "./lib/companion-notify.ts";
 import { learningRunRoutes } from "./modules/learning-runs/run-routes.ts";
 import { learningDisputeRoutes } from "./modules/learning-runs/disputes/run-dispute-routes.ts";
@@ -325,6 +327,8 @@ app.get("/ready", async (_req, reply) => {
 
 // G-002: 包装在 async IIFE 中，使 esbuild --format=cjs 能正确构建（CJS 不支持 top-level await）
 async function main() {
+  // Register at the root scope before any WebSocket routes are mounted.
+  await app.register(websocket, { options: { maxPayload: 256 * 1024 } });
   const allowedOrigins = (process.env.CORS_ORIGIN ?? "")
     .split(",")
     .map((origin) => origin.trim())
@@ -367,6 +371,7 @@ async function main() {
   dbPoolMaxConnections.set(dbPoolOptionsMax());
 
   await app.register(authRoutes);
+  await app.register(emailCodeRoutes);
   await app.register(desktopTrustRoutes);
   // 桌面更新清单是**公开**的：更新发生在登录之前，也发生在账号还没有的机器上。
   await app.register(desktopUpdateRoutes);
@@ -410,6 +415,7 @@ async function main() {
   await app.register(companionShellRoutes);
   await app.register(learningMetricRoutes);
   await app.register(companionConversationRoutes);
+  await app.register(companionRealtimeRoutes);
   await app.register(agentRoutes);
   await app.register(agentMethodRoutes);
   // 40 §7 发现簿（本人收藏的视图）。取消收藏不删原始内容，见 discovery-service 的文件头。

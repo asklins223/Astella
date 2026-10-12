@@ -14,7 +14,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { COMPANION_AGENT_TOOL_DEFINITIONS } from "@astella/shared/companion-agent-registry";
+import { COMPANION_AGENT_TOOL_DEFINITIONS, getAgentCapability } from "@astella/shared/companion-agent-registry";
 
 const definition = COMPANION_AGENT_TOOL_DEFINITIONS.find((d) => d.name === "companion_read_diary");
 
@@ -44,9 +44,10 @@ test("版本必须显式给出 —— 不能悄悄拿新版顶替用户看到的
 test("工具说明要求区分「写了什么 / 实际发生了什么 / 她的主观表达」", () => {
   // §6：「回答区分『文中确实这样写了』『当时实际发生了什么』『那是她的主观表达』」
   // A09：用户问角色想象是否发生，要区分作品与真实事件。
-  const d = definition!.description;
-  assert.match(d, /区分三件事/);
-  assert.match(d, /主观表达/);
+  // 这条是「读到之后怎么讲」的纪律，归场景指引（方案 52 §4.1：一句话只有一个家）。
+  const guidance = (getAgentCapability("companion_read_diary")!.sceneGuidance!.shared ?? []).join("\n");
+  assert.match(guidance, /区分三件事/);
+  assert.match(guidance, /主观表达/);
 });
 
 test("【自证】判据认得出「让用户复制全文」这个真实退化", () => {

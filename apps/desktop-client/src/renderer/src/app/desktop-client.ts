@@ -204,7 +204,26 @@ export function gatewayErrorMessage(error: unknown): string {
     // Auth-form outcomes. These read as account and invitation problems, not as
     // learning-content problems, because that is the surface they appear on.
     case "email_exists":
-      return "这个邮箱已经注册过，请直接登录；忘记密码请联系管理员。";
+      return "这个邮箱已经注册过，直接登录就好；忘记密码可以走「忘记密码」用验证码找回。";
+    // 邮箱验证码三链路：每句都指向下一步动作（更新客户端 / 重新获取 / 核对 / 稍后再试）。
+    case "client_update_required":
+      return "这个版本的客户端还不能注册：现在注册需要邮箱验证码。请更新到最新版后重新注册。";
+    case "email_channel_unavailable":
+      // 三条链路（发码／注册／找回）都回这个码，所以这句话得同时说清哪条路还通：
+      // 密码登录不受影响，要验证码的这三件得等通道配好。
+      return "这台服务现在没开着邮箱验证通道，验证码发不出来。用密码登录不受影响；注册和找回密码要等通道配好，也可以稍后再试或联系维护者。";
+    case "email_daily_limit_reached":
+      return "这个邮箱今天的验证码次数已经用完，请明天再试。";
+    case "invalid_email_code":
+      return "验证码不正确，请核对邮箱里的 6 位数字。";
+    case "expired_email_code":
+      return "验证码已过期，重新点一次「发送验证码」获取新的。";
+    case "email_code_attempts_exhausted":
+      return "验证码试错次数已用完，请重新获取一枚。";
+    case "email_send_failed":
+      return "验证码邮件发送失败，请稍后再试；如果反复失败，需要检查发信配置。";
+    case "account_unavailable":
+      return "账号状态已变化，请重新发起找回密码。";
     case "invite_invalid":
       return "邀请码无效，请核对后重新输入，或向邀请你的人要一个新的。";
     case "invite_expired":

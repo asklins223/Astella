@@ -184,15 +184,17 @@ export async function retrieveResidentCompanionMemories(
        AND (valid_until IS NULL OR valid_until > now())
        ${taskScopeVisibility(taskEntity, scope, "")}
      ORDER BY pinned DESC, importance DESC, updated_at DESC, id ASC
-     LIMIT 6
+     -- resident 是她"始终要知道"的那一档，条数由写入那一侧管；
+     -- 这里再挡一道 6 条，就会让她攒的第 7 条始终在场却进不了上下文，且没人报这件事。
   `);
   return rowsOf<Record<string, unknown>>(result).map(mapMemoryRow);
 }
 
 function memoryDirectoryTitle(content: unknown): string {
   const normalized = String(content ?? "").replace(/\s+/g, " ").trim();
-  const firstSentence = normalized.split(/(?<=[。.!?！？])\s*/u, 1)[0] ?? normalized;
-  return firstSentence.slice(0, 72);
+  // 只取第一句是她"目录里那一行"的语义；句长不再封顶——
+  // 剪到 72 字会把一条记忆剪成半句，而她在目录上看到的就是那半句。
+  return normalized.split(/(?<=[。.!?！？])\s*/u, 1)[0] ?? normalized;
 }
 
 function mapMemoryDirectoryRow(row: Record<string, unknown>): CompanionMemoryDirectoryEntry {
@@ -228,7 +230,9 @@ export async function retrieveActiveCompanionMemoryDirectory(
        AND (valid_until IS NULL OR valid_until > now())
        ${taskScopeVisibility(taskEntity, scope, "")}
      ORDER BY pinned DESC, importance DESC, updated_at DESC, id ASC
-     LIMIT 64
+     -- 取行页宽，不是入选条数：目录最终带几条由 budgetCompanionMemoryDirectory
+     -- 按本次路由声明的输入预算整条取舍，并把少带的条数报出来（omittedCount）。
+     LIMIT 500
   `);
   return rowsOf<Record<string, unknown>>(result).map(mapMemoryDirectoryRow);
 }

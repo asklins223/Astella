@@ -9,7 +9,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  ROUND_ARTIFACT_MAX_CHARS_V1,
   buildDeterministicArtifactHtmlV1,
   escapeArtifactTextV1,
   type RoundArtifactInputV1,
@@ -114,26 +113,12 @@ test("屏数与输入对应：解释一屏、例子一屏（有才出）、计�
   assert.equal(panes(withoutExample.html).length, 2);
 });
 
-test("超长输入：整份拒绝（over_quota），不许截断 HTML 来凑配额", () => {
-  // 先用单字符正文量出固定开销，再凑到"恰好到界"与"越界一格"两档。
-  const probe = buildDeterministicArtifactHtmlV1({ explanation: "x", planSteps: [] });
-  assert.ok(probe.ok);
-  const overhead = probe.html.length - 1;
-
-  const exact = buildDeterministicArtifactHtmlV1({
-    explanation: "a".repeat(ROUND_ARTIFACT_MAX_CHARS_V1 - overhead),
-    planSteps: [],
-  });
-  assert.ok(exact.ok, "恰好到上界必须收得下（与 0285 的 char_length 上界同宽）");
-  assert.equal(exact.html.length, ROUND_ARTIFACT_MAX_CHARS_V1);
-
-  const over = buildDeterministicArtifactHtmlV1({
-    explanation: "a".repeat(ROUND_ARTIFACT_MAX_CHARS_V1 - overhead + 1),
-    planSteps: [],
-  });
-  assert.equal(over.ok, false);
-  assert.equal(over.ok === false ? over.reason : "", "over_quota");
-  assert.equal("html" in over, false, "被拒的那一份不许留下任何半截 HTML");
+test("超长输入完整保留，不按字符额度拒收或截断", () => {
+  const explanation = "完整内容。".repeat(110_000) + "最后一段";
+  const built = buildDeterministicArtifactHtmlV1({ explanation, planSteps: [] });
+  assert.ok(built.ok);
+  assert.ok(built.html.length > 524_288);
+  assert.ok(built.html.includes(explanation));
 });
 
 test("空输入：如实说 empty（不产出只有一个空壳的产物）", () => {

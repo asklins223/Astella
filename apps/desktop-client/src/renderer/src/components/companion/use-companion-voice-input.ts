@@ -18,6 +18,8 @@ export interface CompanionVoiceInputOptions {
   readonly onInterrupt?: () => void;
   readonly onModelMissing?: () => void;
   readonly onSessionEnd?: () => void;
+  /** 这一句没送出去时把转写交回上层（放进文字草稿，切到文字就能改完再发）。 */
+  readonly onTurnFailed?: (text: string) => void;
 }
 export interface CompanionVoiceInput {
   readonly phase: CompanionVoicePhase;
@@ -106,6 +108,12 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
     emitLevel(0);
   }, [emitLevel]);
   const cancel = useCallback(() => {
+    // 审计 F8：关麦时不把已经说出来的半句直接丢掉。转写交回上层放进文字草稿
+    // （不自动发送），想改完再发的人一开输入框就能看到它。已经在送的那一轮
+    // 由它自己的失败路径处理，不在这里重复交回。
+    const session = sessionRef.current;
+    const unsent = session && !session.waiting ? session.text.trim() : "";
+    if (unsent) optionsRef.current.onTurnFailed?.(unsent);
     releaseSession();
     setSessionPhase("idle"); setActivity("idle"); setCaption(null);
     optionsRef.current.onSessionEnd?.();
@@ -157,9 +165,17 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
       session.waiting = true; session.ignoreReply = false; setLastTurn(text); setNote(null); refreshActivity();
       try {
         const sent = await optionsRef.current.onTurn(text);
-        if (sessionRef.current === session && session.turn === turn && sent === false) showNote("这一句没送出，可以重说；文字仍留在这里。");
+        if (sessionRef.current === session && session.turn === turn && sent === false) {
+          // 审计 F9：「文字仍留在这里」说的是只读的「刚才你说」，不在输入框里、不能改。
+          // 现在真的把这一句放进文字草稿，并如实说清去哪儿找。
+          optionsRef.current.onTurnFailed?.(text);
+          showNote("这一句没送出，已经放进文字输入——切到文字可以改完再发。");
+        }
       } catch (error) {
-        if (sessionRef.current === session && session.turn === turn) showNote(`这一句没送出：${gatewayErrorMessage(error)}`);
+        if (sessionRef.current === session && session.turn === turn) {
+          optionsRef.current.onTurnFailed?.(text);
+          showNote(`这一句没送出（${gatewayErrorMessage(error)}），已经放进文字输入。`);
+        }
       } finally {
         if (sessionRef.current === session && session.turn === turn) { session.waiting = false; refreshActivity(); }
       }

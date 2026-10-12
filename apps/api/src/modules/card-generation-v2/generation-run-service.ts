@@ -203,7 +203,7 @@ export async function getGenerationRunCandidatesV2(ctx: RunContext, runId: strin
           ? rawIssues.flatMap((issue) => {
             const parsed = cardGenerationCandidateQualityIssueV1Schema.safeParse(issue);
             return parsed.success ? [parsed.data] : [];
-          }).slice(0, 40)
+          })
           : [];
         qualityIssuesByRevisionId.set(qualityReport.candidateRevisionId, issues);
       }

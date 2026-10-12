@@ -74,7 +74,7 @@ export function LearningRunNextStep(props: {
       <strong>{nextChallengeLabel}</strong>
       <p>
         {declaredUnable
-          ? "说不会不扣任何东西：这条已排到最近的复习。回研究册看懂之后再来一次，就当第一次见。"
+          ? "说不会不扣任何东西：这条已排到最近的复习。回笔记看懂之后再来一次，就当第一次见。"
           : returnContract?.status === "projection_pending"
             ? "返回后会显示最新的学习记录。"
             : returnContract?.status === "ready"

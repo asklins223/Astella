@@ -12,7 +12,7 @@ import {
   type PublicJsonRequester,
   type PublicStreamingRequester,
 } from "@astella/shared/public-json-http";
-import { shouldUsePromptCache, AI_UNDECLARED_OUTPUT_TOKENS } from "@astella/shared";
+import { shouldUsePromptCache, AI_UNDECLARED_OUTPUT_TOKENS, chatThinkingRequestFields } from "@astella/shared";
 import type { AIProvider, ProviderUsage } from "../ai-provider.ts";
 import {
   readChatCompletionContent,
@@ -106,18 +106,15 @@ export class OpenAICompatibleProvider implements AIProvider {
   private readonly modelProfile: ModelProfile | undefined;
 
   /**
-   * 思考字段（模型档案驱动，2026-10-06 配置重设计）。
+   * 思考字段（模型档案 + 平台方言驱动，2026-10-06 配置重设计 / 2026-10-12 方言）。
    *
-   * chat/completions 的混合思考模型只有开/关（`enable_thinking`）：
-   * 档案里 `reasoning.default === "none"` → 关；其余档位 → 开；未声明 reasoning
-   * 的模型不下发该字段（用网关默认）。每次调用自带的 `disableThinking`
-   * （离线评测等需要确定性/低延迟的调用）优先级最高。
+   * 字段名由平台 `options.thinkingParam` 声明：缺省 `enable_thinking`（开/关，
+   * DashScope 系网关）；声明 `reasoning_effort` 的网关（小米 MiMo 实测忽略
+   * enable_thinking）按档案档位下发具体 effort。每次调用自带的 `disableThinking`
+   * （离线评测等需要确定性/低延迟的调用）优先级最高，落到声明档位里最接近关的一档。
    */
   private thinkingField(perCallDisable: boolean): Record<string, unknown> {
-    const reasoning = this.modelProfile?.reasoning;
-    if (perCallDisable || reasoning?.default === "none") return { enable_thinking: false };
-    if (reasoning) return { enable_thinking: true };
-    return {};
+    return chatThinkingRequestFields(this.platformOptions, this.modelProfile, perCallDisable);
   }
 
   private outputTokenLimit(): number | undefined {
@@ -131,8 +128,12 @@ export class OpenAICompatibleProvider implements AIProvider {
   }
 
   private applyModelSampling(body: Record<string, unknown>): void {
+    // 用**实际下发**的档位判断，而不是调用方的意愿：reasoning_effort 方言下
+    // "关"是 none，enable_thinking 方言下"关"是 false，其余情况档位未知。
+    const effort = typeof body.reasoning_effort === "string" ? body.reasoning_effort
+      : body.enable_thinking === false ? "none" : undefined;
     const fields = modelTemperatureFields(this.modelProfile, typeof body.temperature === "number" ? body.temperature : undefined,
-      body.enable_thinking === false ? "none" : undefined);
+      effort);
     if (!("temperature" in fields)) delete body.temperature;
   }
 
@@ -161,7 +162,6 @@ export class OpenAICompatibleProvider implements AIProvider {
         >;
       }>,
       signal,
-      options.maxTokens ?? 4096,
       options.temperature ?? 0.2,
       options.model ?? this.modelId,
       options.responseFormat,
@@ -528,7 +528,6 @@ export class OpenAICompatibleProvider implements AIProvider {
       >;
     }>,
     signal?: AbortSignal,
-    maxTokens = 4096,
     temperature = 0.2,
     model = this.modelId,
     responseFormat: ChatOptions["responseFormat"] = "json_object",
@@ -854,12 +853,6 @@ function resolveOpenAICompatConfig(config: ProviderRuntimeConfig): {
 }
 
 registerFactory("openai_compatible", "text_generation", (config) => {
-  const resolved = resolveOpenAICompatConfig(config);
-  if (!resolved) return null;
-  return new OpenAICompatibleProvider(resolved) as unknown as CapabilityImpl;
-});
-
-registerFactory("openai_compatible", "vision", (config) => {
   const resolved = resolveOpenAICompatConfig(config);
   if (!resolved) return null;
   return new OpenAICompatibleProvider(resolved) as unknown as CapabilityImpl;

@@ -39,40 +39,25 @@ import type { JobPayload } from "./index.ts";
 import { runWorkerAiTask } from "./worker-ai-task.ts";
 
 /**
- * 单次抽取的**独立事实**限额（40 §4.5.6 第 3 条）。
+ * 单次抽取按**独立事实**收，不再设条数上限（40 §4.5.6 第 3 条本轮裁决的落地形状）。
  *
- * 合同原话：「单次抽取按独立事实限额。**默认最多一条**；确有互不重复的事实可在
- * 任务预算内增加。不上『每次必须记一条』的最低配额。」
+ * 判独立性那条确定性规则留着：按 (kind, sourceQuote) 去重——同一句话被模型重复输出
+ * 三遍只会占一格。它不是"数量闸"，是"语义判据"，用来把"我更喜欢先例子"和
+ * "下周完成索引复习"分成两件事，而不是把一件事按字符数剪掉。
  *
- * 三句话对应三处设计：
- *
- * 1. **默认最多一条** —— `maxFacts` 默认就是 1。绝大多数轮次确实只有一件事值得记。
- * 2. **可在任务预算内增加** —— 增加是**显式的**（调用方传 `maxFacts`），上界
- *    `MEMORY_EXTRACT_MAX_FACTS`。它不是"模型给几条就收几条"：必须先证明它们
- *    互不重复（同一条事实重复输出不占额度），再受硬上限约束。
- * 3. **不设最低配额** —— 返回空数组是完全正常的结果，没有任何"至少留一条"的兜底。
- *
- * 「互不重复」按 (种类, 原文短引) 判定，**不用相似度**：相似度那套是给**跨轮**
- * 去重用的（见 MEMORY_CONTENT_SIMILARITY_THRESHOLD），同一轮里对两条做相似度判断
- * 反而会把"目标 + 偏好"这种真的两件事合并掉。
+ * 三个数字以前各写一遍（`MEMORY_EXTRACT_MAX_FACTS = 3` / 默认 1 / schema `.max(3)` /
+ * preprocess `.slice(0, 3)`）；本轮归一为**没有条数上限**——一次解释找出的独立事实
+ * 有几条收几条。跨轮的重复由"同源同 kind 去重"和"已 dismissed 的孪生"挡着，
+ * 不需要在这一层再用一个固定的数砍一刀。
  */
-export const MEMORY_EXTRACT_MAX_FACTS = 3;
-export const MEMORY_EXTRACT_DEFAULT_MAX_FACTS = 1;
-
 export function limitMemoryExtractionsToIndependentFacts<T extends { kind: string; sourceQuote?: string | null }>(
   candidates: readonly T[],
-  options: { maxFacts?: number } = {},
 ): T[] {
-  const cap = Math.max(
-    0,
-    Math.min(options.maxFacts ?? MEMORY_EXTRACT_DEFAULT_MAX_FACTS, MEMORY_EXTRACT_MAX_FACTS),
-  );
   const kept: T[] = [];
   const seen = new Set<string>();
   for (const candidate of candidates) {
-    if (kept.length >= cap) break;
     const key = JSON.stringify([candidate.kind, candidate.sourceQuote ?? ""]);
-    if (seen.has(key)) continue; // 同一条事实被说了两遍 —— 不占额度
+    if (seen.has(key)) continue; // 同一条事实被说了两遍 —— 不重复入库
     seen.add(key);
     kept.push(candidate);
   }
@@ -181,12 +166,9 @@ export const memoryExtractOutputSchema = z.object({
   // `z.literal(1)` 必填，而 prompt 里从未提到这个形状——于是模型给出
   // `{"candidates":[…]}` 就整单解析失败。这是 §9.11 那 88 次失败的主因。
   version: z.literal(1).default(1),
-  // 候选超过 3 条时截断而不是判失败：多给一条是模型的正常发挥，
-  // 为这个把整轮记忆丢掉不值得。
-  candidates: z.preprocess(
-    (value) => (Array.isArray(value) ? value.slice(0, 3) : value),
-    z.array(memoryExtractCandidateSchema).max(3).default([]),
-  ),
+  // 一次解释找出几条独立事实就收几条：这里不再挂条数上限，
+  // 也不会因为模型多给一条就把整轮记忆丢掉。
+  candidates: z.array(memoryExtractCandidateSchema).default([]),
 });
 
 const EXTRACT_PROMPT = [
@@ -536,7 +518,8 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
   // 现在两条失败路径都必须抛：采样已在本函数内重试过一次，重投不会更好，
   // 所以判不可重试、直接 dead，让 `jobs.last_error` 说真话。
   type ExtractOutput = z.infer<typeof memoryExtractOutputSchema>;
-  const generationParameters = { temperature: 0.2, maxTokens: 3_000, responseFormat: "json_object" as const };
+  // 天花板只认档案声明：handler 不再自报 maxTokens，长输出被砍成半截话的那条路由此封住。
+  const generationParameters = { temperature: 0.2, responseFormat: "json_object" as const };
   const inputSnapshotHash = sha256Utf8V1(stableStringify({
     taskVersion: 1,
     runId,
@@ -665,6 +648,20 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
     admissionPassed.push(candidate);
   }
   const candidates = limitMemoryExtractionsToIndependentFacts(admissionPassed);
+  // 本轮从"通过准入"折叠到"独立事实"几条，是结果里能看出的那一格：以前 slice(0, 3)
+  // 会静默丢掉超出的部分，谁也不知道少收了几条；现在不剪，把折叠数原样打出来。
+  if (admissionPassed.length !== candidates.length) {
+    logger.info(
+      {
+        jobId: job.id,
+        runId,
+        admitted: admissionPassed.length,
+        independentFacts: candidates.length,
+        foldedDuplicateQuotes: admissionPassed.length - candidates.length,
+      },
+      "memory extract folded repeated (kind, sourceQuote) into one fact",
+    );
+  }
   if (nonVolatileCandidates.length < sourcedCandidates.length) {
     logger.warn(
       {

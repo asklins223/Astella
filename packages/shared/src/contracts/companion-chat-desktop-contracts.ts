@@ -180,8 +180,8 @@ export const companionRunSummaryV1Schema = z.strictObject({
    * 本轮冻结的预算上限（`companion_turn_runs.budget_snapshot`）。技能的 maxSteps 可能
    * 小于全局合同上限，所以进度分母必须取这里，不能用合同常量——否则会把 3/4 说成 3/8。
    */
-  maxSteps: z.number().int().positive(),
-  maxToolCalls: z.number().int().positive(),
+  maxSteps: z.number().int().positive().nullable(),
+  maxToolCalls: z.number().int().positive().nullable(),
   /** 本轮终态 assistant 消息 id；用户停止时是那条 kind='cancelled' 的部分记录。 */
   assistantMessageId: z.string().uuid().nullable(),
   /**

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { COMPANION_AUTONOMOUS_TOOLS, isCompanionAutonomousTool } from "../companion-autonomy.ts";
+import { COMPANION_AUTONOMOUS_TOOLS } from "../companion-autonomy.ts";
 import test from "node:test";
 import {
   canUseCompanionAgentTool,
@@ -23,8 +23,8 @@ test("Agent permission levels keep hard confirmation boundaries", () => {
     allowed: true,
     requiresConfirmation: false,
   });
-  assert.equal(canUseCompanionAgentTool("read_only", reversible).allowed, false);
-  assert.equal(canUseCompanionAgentTool("guided", reversible).requiresConfirmation, false);
+  assert.equal(canUseCompanionAgentTool("read_only", reversible).allowed, true);
+  assert.equal(canUseCompanionAgentTool("guided", reversible).requiresConfirmation, true);
   assert.equal(canUseCompanionAgentTool("guided", { ...reversible, requiresConfirmation: true }).requiresConfirmation, true);
   assert.equal(canUseCompanionAgentTool("full", dangerous).requiresConfirmation, true);
   // full = 用户预授权（2026-09-19 对齐原设计）：授权档位下不再逐步确认，
@@ -34,7 +34,7 @@ test("Agent permission levels keep hard confirmation boundaries", () => {
   assert.equal(
     canUseCompanionAgentTool("full", { name: "synthetic_direct", riskClass: "consequential" as const, requiresConfirmation: true })
       .requiresConfirmation,
-    false,
+    true,
   );
 
   // 六条提案执行的工具：三档都要出提案（full 档曾经判成"直执行"，于是撞 no direct
@@ -54,21 +54,21 @@ test("Agent permission levels keep hard confirmation boundaries", () => {
 
   const focusGraph = getCompanionAgentTool("companion_focus_graph");
   assert.ok(focusGraph);
-  assert.equal(canUseCompanionAgentTool("guided", focusGraph).requiresConfirmation, false);
+  assert.equal(canUseCompanionAgentTool("guided", focusGraph).requiresConfirmation, true);
 });
 
-test("扁平工具面 fail closed：read_only 保留自主记录并禁止业务写入，未知档位不会放开写工具", () => {
+test("低权限提供可审阅的写工具；未知档位不提供能力", () => {
   const readOnly = resolveAllCompanionAgentTools("read_only");
   assert.ok(readOnly.length > 0);
-  assert.ok(readOnly.every((definition) => definition.riskClass === "read" || isCompanionAutonomousTool(definition.name)));
+  assert.ok(readOnly.every(definition => canUseCompanionAgentTool("read_only", definition).allowed));
   assert.ok(
-    resolveAllCompanionAgentTools("guided").length > readOnly.length,
-    "guided 必须比 read_only 多出写工具",
+    resolveAllCompanionAgentTools("guided").length === readOnly.length,
+    "两档都能准备结果，执行确认由授权门判断",
   );
   assert.deepEqual(
     resolveAllCompanionAgentTools("full", { visionEnabled: true, webSearchEnabled: true }).map((definition) => definition.name),
     COMPANION_AGENT_TOOL_DEFINITIONS.map((definition) => definition.name),
-    "权限到顶 + 图片可外发 + 联网已开启时，full 档就是整个注册表",
+    "权限到顶 + 图片可外发 + 联网已开启时，full 档就是整个注册表（按格子比，读类合成一格也算在内）",
   );
   assert.ok(
     !resolveAllCompanionAgentTools("full").map((d) => d.name).includes("companion_read_image"),
@@ -91,7 +91,7 @@ test("图片外发政策管的是「看不看得见」，不是「调不调得�
   // read_only + 政策开着：两条过滤线各自独立，谁都不会替谁放宽。
   assert.ok(
     resolveAllCompanionAgentTools("read_only", { visionEnabled: true })
-      .every((definition) => definition.riskClass === "read" || isCompanionAutonomousTool(definition.name)),
+      .every(definition => canUseCompanionAgentTool("read_only", definition).allowed),
   );
   assert.deepEqual(
     COMPANION_AGENT_TOOL_DEFINITIONS.filter((d) => isVisionGatedCompanionTool(d.name))
@@ -117,7 +117,7 @@ test("Auto-set / auto-fill 工具按权限分级走确认或直执行（2026-09-
     // 注册表声明需要确认 → guided 档走提案；full 档预授权直执行；
     // read_only 档被门禁阻止。
     assert.equal(definition.requiresConfirmation, true);
-    assert.equal(canUseCompanionAgentTool("read_only", definition).allowed, false);
+    assert.equal(canUseCompanionAgentTool("read_only", definition).allowed, true);
     assert.equal(canUseCompanionAgentTool("guided", definition).requiresConfirmation, true);
     assert.equal(canUseCompanionAgentTool("full", definition).requiresConfirmation, false);
   }
@@ -168,7 +168,7 @@ test("Auto-set / auto-fill 工具按权限分级走确认或直执行（2026-09-
   assert.ok(revise, "显式纠正必须有独立的修订工具");
   assert.equal(revise.riskClass, "reversible_low");
   assert.equal(revise.requiresConfirmation, true);
-  assert.equal(canUseCompanionAgentTool("read_only", revise).allowed, false);
+  assert.equal(canUseCompanionAgentTool("read_only", revise).allowed, true);
   assert.equal(canUseCompanionAgentTool("guided", revise).requiresConfirmation, true);
   assert.equal(canUseCompanionAgentTool("full", revise).requiresConfirmation, false);
   assert.equal(validateCompanionAgentToolArguments("companion_revise_memory", {
@@ -209,7 +209,7 @@ test("记忆容量移动是明确请求的可逆写入，并严格校验目标�
   assert.equal(canUseCompanionAgentTool("read_only", read).allowed, true);
   assert.equal(move.riskClass, "reversible_low");
   assert.equal(move.requiresConfirmation, false);
-  assert.equal(canUseCompanionAgentTool("read_only", move).allowed, false);
+  assert.equal(canUseCompanionAgentTool("read_only", move).allowed, true);
   assert.equal(canUseCompanionAgentTool("guided", move).allowed, true);
   assert.equal(canUseCompanionAgentTool("full", move).requiresConfirmation, false);
 
@@ -254,7 +254,7 @@ test("记忆容量移动是明确请求的可逆写入，并严格校验目标�
   assert.equal(validateCompanionAgentToolArguments("companion_move_memory", { memoryId: "not-a-uuid", tier: "active" }).success, false);
   assert.equal(validateCompanionAgentToolArguments("companion_move_memory", { memoryId, tier: "active", extra: true }).success, false);
   assert.ok(resolveAllCompanionAgentTools("guided").some((definition) => definition.name === "companion_move_memory"));
-  assert.ok(!resolveAllCompanionAgentTools("read_only").some((definition) => definition.name === "companion_move_memory"));
+  assert.ok(resolveAllCompanionAgentTools("read_only").some((definition) => definition.name === "companion_move_memory"));
 });
 
 test("Agent SSE event schemas expose only safe tool metadata", () => {
@@ -291,7 +291,7 @@ test("身份和自己的记事在三档均自主执行；权限开关仍控制�
       assert.deepEqual(canUseCompanionAgentTool(permission, tool), { allowed: true, requiresConfirmation: false });
     }
   }
-  assert.equal(canUseCompanionAgentTool("read_only", getCompanionAgentTool("companion_create_note")!).allowed, false);
+  assert.equal(canUseCompanionAgentTool("read_only", getCompanionAgentTool("companion_create_note")!).allowed, true);
   assert.equal(validateCompanionAgentToolArguments("companion_schedule_wake", {
     key: "curiosity", expectedRevision: 2, at: "2026-10-11T09:00:00+08:00", reason: "稍后再看看" }).success, true);
 });

@@ -27,7 +27,7 @@ function ReplyPaper({ identity, title, holdMs, paused, icon, children, confirmat
       onPointerMove={life.activity} onKeyDown={life.activity} onWheel={life.activity} onFocus={life.activity}>
       <header><strong>{icon}{title}</strong><button type="button" onClick={life.dismiss} aria-label={`收起${title}`}><X size={16} /></button></header>
       <div className="companion-hud__paper-body">{children}</div>
-      {kind !== "proposal-results" ? <footer>{confirmation ? "收起后仍可在对话记录处理" : kind === "note-status" ? "稍后收起 · 原文仍在笔记中" : `${Math.round(holdMs / 1_000)} 秒后收起 · 对话记录中保留`}</footer> : null}
+      {kind !== "proposal-results" ? <footer>{confirmation ? "收起后仍可在对话手记处理" : kind === "note-status" ? "稍后收起 · 原文仍在笔记中" : `${Math.round(holdMs / 1_000)} 秒后收起 · 对话手记中保留`}</footer> : null}
     </article>
   );
 }
@@ -95,18 +95,18 @@ function ProposalPapers({ chat, paused, hostRef, focusRef }: { chat: CompanionCh
     {id ? <ReplyPaper identity={`proposal:${active.join("|")}`} title={executing ? "正在执行" : "等你确认"}
         kind="proposal-choice" icon={executing ? <Loader2 size={17} /> : <Sparkles size={17} />}
         holdMs={Infinity} paused={paused} confirmation>
-        {status === "pending" ? <span className="companion-hud__sr-status" role="status">{chat.companionName} 有 {active.length} 项动作待处理，当前是第 {index + 1} 项；可以稍后在对话记录中决定。</span> : null}
-        {active.length > 1 ? <nav className="companion-proposal-pager" aria-label="待处理动作">
+        {status === "pending" ? <span className="companion-hud__sr-status" role="status">{chat.companionName} 有 {active.length} 项动作待确认，当前是第 {index + 1} 项；可以稍后在对话手记中决定。</span> : null}
+        {active.length > 1 ? <nav className="companion-proposal-pager" aria-label="待确认的动作">
           <span>{index + 1} / {active.length} 项</span>
-          <button type="button" aria-label="上一项待处理动作" disabled={index === 0} onClick={() => setSelectedId(active[index - 1])}><ChevronLeft size={16} /></button>
-          <button type="button" aria-label="下一项待处理动作" disabled={index === active.length - 1} onClick={() => setSelectedId(active[index + 1])}><ChevronRight size={16} /></button>
+          <button type="button" aria-label="上一项动作" disabled={index === 0} onClick={() => setSelectedId(active[index - 1])}><ChevronLeft size={16} /></button>
+          <button type="button" aria-label="下一项动作" disabled={index === active.length - 1} onClick={() => setSelectedId(active[index + 1])}><ChevronRight size={16} /></button>
         </nav> : null}
         {executing && state?.phase === "ready" ? <div className="companion-proposal-receipt" role="status">
-          <strong>{state.proposal.title}</strong><p>正在处理，结果会留在对话记录里。</p>
+          <strong>{state.proposal.title}</strong><p>正在处理，结果会留在对话手记里。</p>
           {state.error ? <p>{state.error}</p> : null}
         </div> : <CompanionProposalChoice proposalId={id} state={state} context="bubble"
           onDecide={decision => { void chat.decideProposal(id, decision); }} onRetry={() => { void chat.retryProposal(id); }} />}
-        <div className="companion-proposal-record-link">{summary ? <span>{summary}</span> : null}<button type="button" onClick={openHistory}><History size={14} />查看对话记录</button></div>
+        <div className="companion-proposal-record-link">{summary ? <span>{summary}</span> : null}<button type="button" onClick={openHistory}><History size={14} />查看对话手记</button></div>
       </ReplyPaper> : null}
       {results.length ? <ReplyPaper identity={`proposal-results:${resultIdentity}`} title="动作结果" kind="proposal-results"
         icon={<Sparkles size={17} />} holdMs={failedId ? Infinity : 10_000} paused={paused} hidden={active.length > 0}>
@@ -115,7 +115,7 @@ function ProposalPapers({ chat, paused, hostRef, focusRef }: { chat: CompanionCh
           {singleResult?.phase === "ready" ? <p>{singleResult.proposal.title}</p> : null}
           {failed?.phase === "ready" ? <p className="companion-proposal-receipt__error">{results.length > 1 ? `${failed.proposal.title}：` : ""}{failed.error || "执行失败，请在记录中核对。"}</p> : null}
         </div>
-        <div className="companion-proposal-record-link"><button type="button" onClick={openHistory}><History size={14} />查看对话记录</button></div>
+        <div className="companion-proposal-record-link"><button type="button" onClick={openHistory}><History size={14} />查看对话手记</button></div>
       </ReplyPaper> : null}
   </>;
 }

@@ -1,0 +1,188 @@
+{
+  "skill": "check",
+  "generated_at": "2026-10-10T09:30:00Z",
+  "project_name": "拾星笔记 · 随身伴星（方案 51）",
+  "target": "docs/plans/learning-companion/51-mobile-companion-full-agent-product-design-2026-10-10.md + apps/desktop-client/demos/mobile-companion-layout.{html,css,js} + assets/51-mobile-companion/README.md",
+  "findings": [
+    {
+      "category": "flow-continuity",
+      "severity": "blocker",
+      "description": "主验收链路在手机端是断的：§2.1 把「上传文件」列为 P0、§9.1 承诺「不要求桌面正在运行」，但服务端只有图片上传（apps/api/src/modules/upload/routes.ts:114/191/248/312 全部落 note_image_assets），来源登记只收正文/URL（source/routes.ts:33，reparse :55-65），PDF/Word 解析代码全在 Electron 渲染进程（apps/desktop-client/src/renderer/src/app/source-pdf.ts、source-docx.ts、source-intake.ts）。api 与 ai-worker 里没有任何 pdf/docx 解析。",
+      "suggestion": "把「对象存储 + 上传 API + 服务端解析 worker + 页/段定位」拆成移动端前置工程单列一节，给出体积、耗时与存储成本；在它落地前，首版闭环改成「图片 + 已有资料」，PDF/Word 标为依赖服务端 ingestion 的第二批。",
+      "location": "51-...md:72, 337, 423-431 / §13 阶段2"
+    },
+    {
+      "category": "responsive",
+      "severity": "blocker",
+      "description": "小程序被当成与 App 同级的首版宿主，但 §15 又承认跨端框架尚未选定。玻璃（backdrop-filter）、Live2D 取帧与资源体积、文件选择（小程序只能从会话取文件）、后台/中断音频、中文输入法这几项在小程序侧各有硬限制，方案没有任何降级分支；§10「两种宿主运行同一组页面和控制逻辑」是先承诺后验证。",
+      "suggestion": "先做 2-3 天证伪样例：在小程序真机跑 玻璃大面 + 角色静态帧 + 录音 + 中文输入 + 文件转入，出一页结论表（能/不能/代价）。结论不成立就把 §0.1 的「两端共用一套 UI」降级为「共享逻辑与语义，外壳各自实现」，并把小程序改判为捕捉+只读的薄壳或押后。",
+      "location": "51-...md:9, 381-398, 488"
+    },
+    {
+      "category": "brief-consistency",
+      "severity": "blocker",
+      "description": "全文没有分发与合规这一节。AI 对话/生成式内容类小程序与 App 在国内上架涉及主体资质与生成式 AI、深度合成相关备案，个人主体通常走不通 AI 问答类目；而伴星的核心交互（对话、识图、语音、主动提示）全部是生成式能力。这直接决定「小程序」这一端是否存在。",
+      "suggestion": "补一节「分发与合规前提」：主体形态、类目、备案路径与替代方案（H5/PWA、企业主体、先 App 后小程序）。在确认前不要把小程序写进首版承诺。",
+      "location": "51-...md 全文（缺失）"
+    },
+    {
+      "category": "ia",
+      "severity": "blocker",
+      "description": "首屏英雄位是「接着学」卡片，但它依赖的 待看项 / 接力位置 / 阅读位置 在代码里完全不存在（全仓 grep 待看|接力|reading_progress|lastReadPosition|bookmark 零命中；最接近的 companion_context_handoff_snapshots 是每 run 的页面上下文快照，语义不同），而 §13 把这项排在最后一个阶段。首页最重要的位置压着一个没有数据源、也没有空态定义的模块。",
+      "suggestion": "二选一：把 待看项/接续位置 的表与 API 提到阶段1（它是移动端真前置），或首屏英雄位换成已有事实（最近一条真实交流/最近打开笔记），「接着学」等数据就绪再上位。",
+      "location": "51-...md:138, 207, 347, 373-379 / demos/mobile-companion-layout.js:183-196"
+    },
+    {
+      "category": "brief-consistency",
+      "severity": "major",
+      "description": "§9.4 写「两端同时发问时，每条请求保持自己的身份与回执」，实际合同是每个会话至多 1 个 active run，后来者 409 RUN_ALREADY_ACTIVE、必须带匹配的 supersedesGeneration 抢占取代（apps/api/src/modules/companion-conversation/turn-service.ts:421-460）。多端是抢占式接力，不是并发；文档也没定义被抢占那一端看到什么。",
+      "suggestion": "按真实合同改写：说明同一时刻只有一个回合在跑、另一端会收到抢占回执，并补上抢占提示的界面文案与取消通道；若要真并发，把它写成需要改的运行模型与成本，而不是既有事实。",
+      "location": "51-...md:369"
+    },
+    {
+      "category": "brief-consistency",
+      "severity": "major",
+      "description": "§9.4/§12 把「共享原声路径」列为需要补齐的缺口，但原声不落服务端是刻意的隐私决定：迁移 0088 有 CHECK (raw_audio_persisted = false)，集成测试断言恒 false（companion-conversation-postgres.integration.ts:690），桌面回放读本机按账号隔离的音频缓存。方案等于悄悄推翻了这条决定却没有把它摆上决策台。",
+      "suggestion": "把它写成一条需要重新拍板的取舍：A 保持原声本机（则「手机重听电脑原声」明确不做，只保留文字与新朗读）；B 上传原声（则要说清存放、权限、保留期与对既有 CHECK 约束的变更）。默认建议 A。",
+      "location": "51-...md:316, 371, 433"
+    },
+    {
+      "category": "flow-continuity",
+      "severity": "major",
+      "description": "回合输入合同是 blocks 1-2、首块必须 text、第二块只能是用户图，voice_transcript 携带图片直接判非法（packages/shared/src/companion-conversation-contracts.ts:426-464），多文件/多材料合同不存在。但 §4.7 把「语音随手记 + 拍照」列入首批交互验证，§14 验收有「语音问附件」，§13 却把语音结合材料排到阶段3。",
+      "suggestion": "统一口径：要么把多材料与语音带图的材料合同提到阶段2（与上传同期），要么把「语音问附件」从首版验收移到第二批，别让验收跑在合同前面。",
+      "location": "51-...md:209, 431, 444, 461"
+    },
+    {
+      "category": "brief-consistency",
+      "severity": "major",
+      "description": "§4.1 的界面描述与实现和评审记录对不上：文档说角色宽 120px／角色区 132px／阅读顶部收 100px／输入顶部收 76px，实际 CSS 是顶栏 154→86px、短屏再让 22px（css:141），肖像宽 132−shrink×52、高 120（css:167），100px 与 76px 两个数在代码里不存在；文档说「现有书房底图铺在整个界面下方」，README 与 DESIGN.md 已改为 CSS 画天空海面、不再复用房间底图；文档写「已检查 54 组」，README 是 63 组；DESIGN.md 写肖像宽 132px，51 写 120px 宽。",
+      "suggestion": "§4.1 不要复述像素，改成引用唯一来源（README 的几何表与 layout-verification JSON），或只写形态（交流/阅读/输入三档连续插值）。同一指标只允许一个源，其余用链接。",
+      "location": "51-...md:128, 132 / assets/51-mobile-companion/README.md:9,27,71,75 / DESIGN.md:31"
+    },
+    {
+      "category": "visual-hierarchy",
+      "severity": "major",
+      "description": "键盘态读不到上文：README 自报最坏情况（320×640 键盘态）正文只剩 168px，截图 02 的键盘态聊天区实际是空的渐变带，输入时看不到自己正在回复哪一句，与 §4.1「正在连续聊天：最新对话与足够的上文」直接冲突。",
+      "suggestion": "键盘态把顶栏压到一行（角色收到 40px 侧签或直接让位），并在输入时锚定最后一条回复的首行作为上下文；把「键盘态可见上文行数」写进检查判据，而不是只判几何不裁切。",
+      "location": "assets/51-mobile-companion/08-layout-chat-keyboard-reading.png（02 屏）/ README.md:71,75 / 51-...md:139"
+    },
+    {
+      "category": "edge-states",
+      "severity": "major",
+      "description": "状态覆盖几乎为空：demo 里 grep 离线|失败|加载|empty 零命中，手记硬编码 3 条样例、进度写死 46%；§8 状态表 11 行只有 4 行有对应界面；§14 要求的 权限与 AI 同意、只读空间、弱网、结果未知、多份材料失败全部没有界面。",
+      "suggestion": "按 §8 状态表逐行补最小呈现（每行一句文案 + 一个可行动作即可），并把「空/错误/只读/离线」四态列为交互稿的交付项，而不是等实现阶段才发现。",
+      "location": "demos/mobile-companion-layout.js:74,231,246-257,517 / 51-...md:296-308, 459-467"
+    },
+    {
+      "category": "edge-states",
+      "severity": "major",
+      "description": "AI 同意未签/失效时的移动首屏没有定义。PRODUCT.md:95/97 的既有规则是未签同意消息发不出去、外发与同意同事务，而移动端整个首屏就是「和伴星说点什么」；用户拿到的会是输入后失败，而不是先讲清受限。",
+      "suggestion": "定义未同意首屏：伴星在场但不发言、输入可用、首次发送前给一次同意说明与就地签署入口，拒绝后保留可读的只读书房；把这条写进 §4.1 与 §14。",
+      "location": "51-...md:415, 467 / PRODUCT.md:95,97"
+    },
+    {
+      "category": "ia",
+      "severity": "major",
+      "description": "导航职责重叠且与自身文案冲突：§4.1 正文写「取消常驻三个去处行」「首页没有固定四栏导航」，demo 已是常驻三段标签（README:86 记录 2026-10-10 改判），改判没回写方案正文与 docs/design/mobile/2026-10-10/README.md:19；同时「对话」标签与主画面重复；任务既在「手边的事」又在「手记」（§4.1 vs §4.6）；菜单、＋、手边、手记四处都能找到历史/材料。",
+      "suggestion": "先回写三处文档统一口径，再给一次「一个内容只有一个家」的归位：手记=记录与检索、手边=此刻要处理的事项与待看、菜单=空间与设置、＋=只放材料；任务只留一处（建议手边），「对话」标签改成本地化命名或直接去掉。",
+      "location": "51-...md:146, 150, 191-195 / assets README.md:86 / docs/design/mobile/2026-10-10/README.md:19"
+    },
+    {
+      "category": "brief-consistency",
+      "severity": "major",
+      "description": "首版范围实际没有裁剪：§2.1 把 11 项能力全列为「必须完整闭环」，§14 列 24 条验收 + 两条完整旅程且无分级，§13 只有阶段顺序没有砍项；同时 §15 承认几乎所有前提待验证。以单人开发规模，这份范围里没有「明确不做」。",
+      "suggestion": "把首版压成 3 条真闭环（递材料→讲解→成笔记／改笔记／跨端看到同一结果），其余能力写成「接入路径已定、不承诺时间」；§14 给每条标 P0/P1，并单列一节「首版明确不做」。",
+      "location": "51-...md:65-79, 440-449, 453-478"
+    },
+    {
+      "category": "flow-continuity",
+      "severity": "major",
+      "description": "阶段安排把两个未证明的高风险前提捆在同一个第一阶段：跨端框架选型未定 + 电脑手机看同一轮实时回复。任一失败整个阶段作废，且第二阶段的真实写入依赖第一阶段的宿主结论。",
+      "suggestion": "插一个阶段0「证伪闸门」：只做宿主能力验证（角色/玻璃/中文输入/录音/文件转入），产出结论表再选框架；实时互通已有 SSE + Last-Event-ID 补发底座，单独用一天做移动端订阅验证即可，不必与宿主选型捆绑。",
+      "location": "51-...md:442"
+    },
+    {
+      "category": "components",
+      "severity": "major",
+      "description": "一屏多个主操作、卡片套卡片、高饱和实心控件成片：01 首页同时有「继续看」大绿按钮 + 「拍一张问问」+「传文件」，接着学卡内部再嵌一个按钮；05 的「修改后/原文」切换和 03 的「听伴星讲这篇」用同一饱和绿实心块，在阅读器里与正文抢重心。这既违背 §4.1「一屏一个主操作」，也踩中项目自己定的雷区（默认控件、饱和底色、框套框）。",
+      "suggestion": "每屏只留一个实心主操作，其余降为文字链或描边小控件；「接着学」改成一条无边框的接续行（标题 + 上次位置 + 一个箭头），把卡片层级压平；阅读器的播放入口用行内小控件而不是与主按钮同级的色块。",
+      "location": "08-layout-chat-keyboard-reading.png（01/03）/ 09-layout-upload-edit-miniprogram.png（05）"
+    },
+    {
+      "category": "feedback",
+      "severity": "major",
+      "description": "撤回被当成按钮而不是功能：§6.3 自己承认「实施时补齐这条恢复路径」，demo 里撤回只改演示文本（layout.js:643-647），而 §14 把「冲突与撤回」列入验收。noteVersions 存在，但按版本做局部 revert 需要先检查其后是否有新改动，是新的服务端能力。",
+      "suggestion": "要么把「基于版本的局部撤回」单列为一条工程交付（含回执与失败口径），要么首版明确只提供「对照 + 重新调整」，撤回落后的版本；不要在有按钮却没有合同的情况下把它写进验收。",
+      "location": "51-...md:268, 465 / demos/mobile-companion-layout.js:643-647"
+    },
+    {
+      "category": "brief-consistency",
+      "severity": "major",
+      "description": "定位缺少竞品对照，导致卖点建立在通用 agent 已默认具备的能力上：§1 的三条价值（随手交给它／当下看懂／回到哪里都能接上）分别对应 ChatGPT 移动端的照片提问并高亮局部、语音模式随时打断、项目内传文件与画布改写、同一账号跨设备继续同一会话；§9.1 还把「聊天互通是核心交付」写成主打。全文没有一句「为什么不用 ChatGPT」。",
+      "suggestion": "把跨端实时互通降级为基本要求（table stakes），§1 重写为「只有在这个产品里才成立」的三条：递出去的东西变成有版本有出处的你自己的笔记；她记得你讲到哪一句（数据资产不是会话列表）；材料不进别人的训练集（原声不落库、模型自选、可自部署）。并补一小节与 ChatGPT/NotebookLM/ima 的对照表。",
+      "location": "51-...md:22-33, 335"
+    },
+    {
+      "category": "accessibility",
+      "severity": "minor",
+      "description": "玻璃与渐变底上的次级文字对比度未做量化核对：时间戳、「上次聊到：官员从哪里来」、未选中标签文字、顶栏「正在做事」小标签都压在浅色渐变上；150% 正文字号叠加键盘态 168px 正文区时，可读空间进一步被压缩。",
+      "suggestion": "把次级文字的最小对比度写进 capture 脚本判据（正文 ≥4.5:1、次级 ≥3:1），并在 320×640 + 150% 字号 + 键盘态这一组里加一条「至少能看到上一轮回复的一行」的断言。",
+      "location": "08-layout-chat-keyboard-reading.png / capture-mobile-companion-layout.mjs"
+    },
+    {
+      "category": "copy",
+      "severity": "minor",
+      "description": "首页一屏叠了三重身份标识：「拾星笔记 · 随身伴星」小标 + 大标题「把想弄懂的，交给我。」+ 右上「我的书房」胶囊，加上「接着学」卡标题，视觉重心被文案切碎。",
+      "suggestion": "留大标题与一处身份标识，小标并入菜单或顶栏空间胶囊；首屏只讲一件事：现在能继续的那一步。",
+      "location": "demos/mobile-companion-layout.js:176-196"
+    },
+    {
+      "category": "feedback",
+      "severity": "minor",
+      "description": "demo 里若干状态恒为真，容易在评审时被当成已覆盖：顶栏「伴星 · 正在做事」始终显示、标签角标恒为 1、「已上传」「已保存 · 我的书房」「已读《中国古代史总揽》」为写死样例（layout.js:147,202,215,228）。",
+      "suggestion": "把这些改成可切换的真实状态位（含「无事在做」时的隐藏态），或在截图与 README 里标注为样例，避免验收误读。",
+      "location": "demos/mobile-companion-layout.js:147,202,215,228"
+    },
+    {
+      "category": "edge-states",
+      "severity": "minor",
+      "description": "极端数据态未处理：空间名按钮 max-width 104px + nowrap 静默截断（css:198）；长文件名靠换行撑开；笔记数量、任务数量、手记条数增长后没有列表上限或分组策略。",
+      "suggestion": "空间名给两行或省略号 + 完整名 tooltip；材料签统一单行省略 + 大小另起一行；手边/手记定义分组与「更多」入口。",
+      "location": "mobile-companion-layout.css:198 / demos/mobile-companion-layout.js:222-240"
+    },
+    {
+      "category": "copy",
+      "severity": "minor",
+      "description": "demo 的解析进度写死 46% 并配假进度条，与 §4.3「百分比只用于有真实总量的传输，不能给未知生成进度编造百分比」自相矛盾，评审时会被当成已实现的真实反馈。",
+      "suggestion": "改成不确定态（流动条 + 「正在解析，完成后会告诉你」），或明确标注为样例；把 §4.3 这条规则做成检查项。",
+      "location": "demos/mobile-companion-layout.js:74,231 / 51-...md:164"
+    },
+    {
+      "category": "edge-states",
+      "severity": "minor",
+      "description": "圈问屏的「书页照片」是一张手绘占位折线图（README:106 已声明），不对应真实教材页；§14 的「手机随手使用」验收没有指定真实样本。",
+      "suggestion": "验收样本清单里加：真实教材扫描页、含公式的题目照片、低清照片、跨页表格 PDF、部分解析失败文件，各一张，逐张记录实际读取范围。",
+      "location": "assets/51-mobile-companion/README.md:106 / 51-...md:474,484"
+    },
+    {
+      "category": "copy",
+      "severity": "minor",
+      "description": "§6.1「也不要求为了保存再重复说一次同意」与 §11 的权限核对并列，容易被读成保存笔记可绕过 AI 同意门。",
+      "suggestion": "改写成「已签 AI 同意后，同一空间内的写入不再逐次确认」，把前置条件写进同一句。",
+      "location": "51-...md:252"
+    }
+  ],
+  "opportunities": [
+    "把「递出去的东西变成你自己的东西（noteId + 不可变版本 + 来源块级锚点 + 可见性）」写成第一卖点，这是 apps/api 里已实现、通用 agent 复制不出的底座。",
+    "把「学习判定闭环」（候选逐张审核、间隔复习排期、trusted_mastery 的作答/求助/自述分表记账）作为移动端『一小段学习』的落点，通用 agent 无法承担『我到底会不会』的证据。",
+    "把数据主权显式写进定位：原声不落服务端、私有可见性默认、模型自选与可自部署 —— 学生与版权材料场景的强卖点，方案 51 目前一字未提。",
+    "移动端真正独占的动作是『捕捉 → 归位』：路上拍一页、随口说一句，回来已在对的空间、对的笔记版本上；建议以此重写 §1 的三条价值。"
+  ],
+  "summary": {
+    "blocker": 4,
+    "major": 13,
+    "minor": 7,
+    "pass": 0
+  }
+}

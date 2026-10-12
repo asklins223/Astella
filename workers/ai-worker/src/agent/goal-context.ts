@@ -1,15 +1,24 @@
 import { createAgentAdvanceStore, projectRun, requireAgentLongGoal, type AgentRunRow } from "@astella/agent-host";
-import { assembleAgentContext, budgetAgentContextRecords, projectAgentGoalEvidence, type AgentContextSource } from "@astella/agent-core";
+import { budgetAgentContextRecords, composeAgentContext, projectAgentGoalEvidence, type AgentContextSource } from "@astella/agent-core";
 import { resolveAgentGoalExecutionManifest } from "@astella/shared/agent-capabilities";
-import { COMPANION_CHARACTER_IDENTITY_V1, COMPANION_DEFAULT_VOICE_V1, COMPANION_IDENTITY_BOUNDARY_V2, AgentRole, type AgentTurnRequest } from "@astella/shared";
+import { AI_UNDECLARED_OUTPUT_TOKENS, COMPANION_CHARACTER_IDENTITY_V1, COMPANION_DEFAULT_VOICE_V1, COMPANION_IDENTITY_BOUNDARY_V2, AgentRole, type AgentTurnRequest } from "@astella/shared";
 import { buildCompanionPersonaData, sanitizePersonaField } from "../handlers/companion-identity-context.ts";
+import { companionContextAssemblyCapacity } from "../handlers/companion-context-receipts.ts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { loadAgentLearningContext } from "./learning-context.ts";
 import { logger } from "../lib/logger.ts";
 import { readWebSearchEnabled, webSearchServiceAvailable } from "./web-search.ts";
 
 /** Scope-aware context assembly stays separate from leases and the execution loop. */
-export async function buildAgentGoalRequest(store: ReturnType<typeof createAgentAdvanceStore>, run: AgentRunRow): Promise<AgentTurnRequest> {
+export async function buildAgentGoalRequest(
+  store: ReturnType<typeof createAgentAdvanceStore>,
+  run: AgentRunRow,
+  // `AgentTurnRequest.maxTokens` 是必填形状，但**这里的数不是天花板**：
+  // 治理层在真正发送前会按档案声明覆盖（governance 的 `resolveOutputTokenLimit`），
+  // 拿不到声明时才落回 shared 那一个平台兜底。调用方传进来是为了让"这一发能给多少"
+  // 只从 provider 那一侧出来，而不是让 goal-context 自己再抄一个数。
+  outputTokenLimit?: number,
+): Promise<AgentTurnRequest> {
   const context = await withWorkerWorkspaceTransaction(store.scope, async tx => {
     const longGoal=run.long_goal_ref?await requireAgentLongGoal(tx,store.scope,run.long_goal_ref):null;
     const learning = await loadAgentLearningContext(tx, store.scope);
@@ -70,17 +79,23 @@ export async function buildAgentGoalRequest(store: ReturnType<typeof createAgent
     })}` }],
     ["evidence", { scope: workspaceScope, content: `可引用的成功工具callId（失败、仅accepted、未核对结果和交付自身不在其中）：${JSON.stringify(projectAgentGoalEvidence(run.messages, context.projection.operations))}` }],
   ]);
-  const assembled = await assembleAgentContext(store.scope, { maxCharacters: 64000, sources: [
+  // 整张 sources 表在这里已经建好了，原来却再用一个 resolve 端口把它逐条读回去一遍
+  // （assembleAgentContext 的端口是给「取数在别处」的宿主用的），于是容量只能在解析
+  // 之前拍一个固定 64000，逐条再各砍一刀——被砍掉的原文下游再也看不见，「窗口够用」和
+  // 「她没看到材料」在数据上长得一样。改成同步装配并按**实际源长**派生容量，
+  // 完整源交给 governed provider 按所选模型的 token 窗口做的那次全请求计量判定。
+  const assembled = composeAgentContext({ maxCharacters: companionContextAssemblyCapacity(
+    [...sources.values()].map((source) => ({ characters: source.content.length }))), sources: [
     { id: "identity", authority: "policy", required: true },
-    { id: "persona", authority: "data", maxCharacters: 4000, priority: 10 },
-    { id: "preferences", authority: "data", maxCharacters: 2000, priority: 20 },
+    { id: "persona", authority: "data", priority: 10 },
+    { id: "preferences", authority: "data", priority: 20 },
     { id: "execution", authority: "policy", required: true },
-    { id: "long_goal", authority: "data", required: true, maxCharacters: 12000 },
-    { id: "methods", authority: "data", maxCharacters: 8000, priority: 20 },
-    { id: "materials", authority: "data", required: true, maxCharacters: 6000 },
-    { id: "receipts", authority: "data", required: true, maxCharacters: 27000 },
-    { id: "evidence", authority: "data", required: true, maxCharacters: 10000 },
-  ] }, { async resolve(sourceId) { return sources.get(sourceId) ?? null; } });
+    { id: "long_goal", authority: "data", required: true },
+    { id: "methods", authority: "data", priority: 20 },
+    { id: "materials", authority: "data", required: true },
+    { id: "receipts", authority: "data", required: true },
+    { id: "evidence", authority: "data", required: true },
+  ] }, sources, store.scope);
   logger.info({ runId: run.id, sources: assembled.receipts, characters: assembled.characters }, "agent context budget receipt");
   return {
     role: AgentRole.COMPANION_AGENT,
@@ -90,8 +105,8 @@ export async function buildAgentGoalRequest(store: ReturnType<typeof createAgent
     tools: capabilities.map(m => ({ name: m.definition.name, description: m.definition.description, parameters: m.definition.parameters })),
     // Thinking-mode compatible endpoints may support only auto. The host still
     // requires an explicit validated delivery, even when the model stops.
-    // The governed provider resolves the model's declared output ceiling before
-    // context measurement and transport; 4096 is only an unconfigured fallback.
-    toolChoice: "auto", maxTokens: 4096, temperature: 0.3,
+    // 这一格是 AgentTurnRequest 必填形状，值来自调用方按 provider 解析出的档案声明；
+    // 治理层发送前还会再按声明覆盖一次，所以这里不是第二次定义天花板。
+    toolChoice: "auto", maxTokens: outputTokenLimit ?? AI_UNDECLARED_OUTPUT_TOKENS, temperature: 0.3,
   };
 }

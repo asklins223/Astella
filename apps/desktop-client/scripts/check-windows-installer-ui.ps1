@@ -62,7 +62,14 @@ try {
   $toggle.Toggle(); Start-Sleep -Milliseconds 200
   Click (Find-Control $window '继续')
   $directory = Find-Control $window '安装文件夹' ([System.Windows.Automation.ControlType]::Edit)
-  if ($directory.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value -ne $InstallDirectory) { throw '向导没有沿用真实安装位置' }
+  $directoryValue = $directory.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+  if ($directoryValue.Current.Value -ne $InstallDirectory) { throw '向导没有沿用真实安装位置' }
+  if ($directoryValue.Current.IsReadOnly) { throw '已有安装后仍然不能更换安装位置' }
+  $alternativeDirectory = $InstallDirectory + '-moved'
+  $directoryValue.SetValue($alternativeDirectory)
+  if ($directoryValue.Current.Value -ne $alternativeDirectory) { throw '安装位置修改没有生效' }
+  $directoryValue.SetValue($InstallDirectory)
+  if (-not (Find-Control $window '更改…' ([System.Windows.Automation.ControlType]::Button)).Current.IsEnabled) { throw '已有安装后浏览文件夹按钮仍不可用' }
   Assert-Visible (Find-Control $window '开始安装')
   $directory.SetFocus()
   if (-not $directory.Current.HasKeyboardFocus) { throw '安装文件夹无法取得键盘焦点' }

@@ -18,6 +18,10 @@
 import { test, after, before } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+
+// 本文件的夹具直接打 `/auth/register-v2` 建号，拿不到真邮箱验证码。
+// 注册默认强制验证码（生产事实），集测走显式旁路——不是"通道没配所以不算数"。
+process.env.EMAIL_VERIFICATION_DISABLED = "true";
 import postgres from "postgres";
 import Fastify, { type FastifyInstance, type InjectOptions } from "fastify";
 import sensible from "@fastify/sensible";

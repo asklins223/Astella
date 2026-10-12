@@ -4,7 +4,14 @@ import type {
   ObjectiveNoteChangeImpactV1,
 } from "@astella/shared/learning-objective-surface-contracts";
 
+/** 条数上限：单一定义处 + 触顶记数（`evidenceDetailsOmittedCount`），整条不给、不静默。 */
 const MAX_EVIDENCE_DETAILS_V1 = 200;
+/**
+ * 单条摘录的声明预算，与合同 `objectiveNoteChangeEvidenceV1Schema` 的 max(1200) 同值。
+ * 落屏/落库的成果不许逐条砍字（2026-10-12 裁决）：装得下整条给全文，
+ * 装不下整条不给并把 `…QuoteTruncated` 置 true 留痕——那一格就是省略台账
+ * （合同是 strict 形状，没有聚合计数字段，消费方按条数得出少了几条）。
+ */
 const MAX_EVIDENCE_EXCERPT_CHARS_V1 = 1200;
 
 export interface NoteEvidenceChangeInputV1 {
@@ -40,13 +47,12 @@ function verifiedQuoteCopyV1(evidence: NoteEvidenceChangeInputV1): string | null
 }
 
 function excerptV1(value: string | null): { value: string | null; truncated: boolean } {
-  if (value === null || value.length <= MAX_EVIDENCE_EXCERPT_CHARS_V1) {
-    return { value, truncated: false };
+  if (value === null) return { value: null, truncated: false };
+  if (value.length > MAX_EVIDENCE_EXCERPT_CHARS_V1) {
+    // 整条不给：半句引文不是可核对的证据，truncated 标出「这一条因为放不下没给」。
+    return { value: null, truncated: true };
   }
-  let excerpt = value.slice(0, MAX_EVIDENCE_EXCERPT_CHARS_V1);
-  const lastCodeUnit = excerpt.charCodeAt(excerpt.length - 1);
-  if (lastCodeUnit >= 0xd800 && lastCodeUnit <= 0xdbff) excerpt = excerpt.slice(0, -1);
-  return { value: excerpt, truncated: true };
+  return { value, truncated: false };
 }
 
 function evidenceDetailsV1(evidence: readonly NoteEvidenceChangeInputV1[]): {

@@ -57,6 +57,7 @@ export type AiTaskFailureClass =
   | "transport"
   | "timeout"
   | "output_shape"
+  | "output_truncated"
   | "permission"
   | "content_version"
   | "invalid_input"
@@ -251,7 +252,10 @@ export function classifyThrownAsStepFailure(err: unknown): AiStepFailure {
   // request or access denial cannot be repaired by replaying the same call.
   let current = err;
   for (let depth = 0; depth < 5 && current !== null && typeof current === "object"; depth += 1) {
-    const value = current as { status?: unknown; statusCode?: unknown; cause?: unknown };
+    const value = current as { status?: unknown; statusCode?: unknown; code?: unknown; cause?: unknown };
+    if (value.code === "output_truncated") {
+      return { ok: false, class: "output_truncated", message };
+    }
     const status = value.status ?? value.statusCode;
     if (typeof status === "number" && Number.isInteger(status) && status >= 400 && status < 500
       && status !== 408 && status !== 429) {

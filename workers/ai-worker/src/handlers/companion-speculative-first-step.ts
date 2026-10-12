@@ -27,7 +27,7 @@
 import { isCompanionAutonomousTool, AgentRole, type AgentTurnRequest } from "@astella/shared";
 import type { AgentTurnInterpretationV1 } from "@astella/shared/agent-contracts";
 import { composeAgentContext } from "@astella/agent-core";
-import { COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS } from "./companion-context-receipts.ts";
+import { companionContextAssemblyCapacity } from "./companion-context-receipts.ts";
 import { companionStepRuntimePolicy } from "./companion-step-plan.ts";
 import { companionResponseStrategy } from "./companion-response-strategy.ts";
 
@@ -50,12 +50,7 @@ export function buildCasualFirstStepRequest(args: {
 }): AgentTurnRequest {
   // Speculation only proposes: runtime executes after release and checkpointing.
   const tools = args.tools?.filter(tool => isCompanionAutonomousTool(tool.name)) ?? [];
-  return {
-    role: AgentRole.COMPANION_AGENT,
-    systemPrompt: composeAgentContext({ maxCharacters: COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS, sources: [
-      { id: "turn", authority: "policy", required: true },
-      { id: "execution", authority: "policy", required: true },
-    ] }, new Map([
+  const contextSources = new Map([
       ["turn", { scope: { kind: "policy" as const }, content: args.turnPolicy }],
       ["execution", { scope: { kind: "policy" as const }, content: companionStepRuntimePolicy({
         permissionLevel: args.permissionLevel,
@@ -64,7 +59,13 @@ export function buildCasualFirstStepRequest(args: {
         finalAnswerOnly: false,
         attentionIntent: "conversation",
       }) }],
-    ])).systemPrompt,
+    ]);
+  return {
+    role: AgentRole.COMPANION_AGENT,
+    systemPrompt: composeAgentContext({ maxCharacters: companionContextAssemblyCapacity([...contextSources.values()].map(source => source.content)), sources: [
+      { id: "turn", authority: "policy", required: true },
+      { id: "execution", authority: "policy", required: true },
+    ] }, contextSources).systemPrompt,
     // 浅拷贝：真实循环随后会往 messages 里推工具消息，别写进这次请求。
     messages: [...args.messages],
     tools,

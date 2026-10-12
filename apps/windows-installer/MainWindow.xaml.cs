@@ -32,10 +32,8 @@ public partial class MainWindow : Window
         CreateDesktopShortcut.IsChecked = registered?.DesktopShortcut ?? options.DesktopShortcut;
         if (registered != null)
         {
-            InstallDirectory.IsReadOnly = true;
-            BrowseButton.IsEnabled = false;
             CreateDesktopShortcut.IsEnabled = !options.Update;
-            LocationHint.Text = "沿用现有安装位置并保留本机资料。如需移动，请先卸载，保持本机资料不清除，再重新安装。";
+            LocationHint.Text = "默认沿用现有安装位置，也可以直接选择新的独立文件夹。\n新位置安装成功后移除旧程序，本机资料会保留。";
         }
         else
         {
@@ -61,7 +59,7 @@ public partial class MainWindow : Window
             StepThree.Text = "回到书房";
             NoticeTitle.Text = "更新前，认识新的约定";
             LocationTitle.Text = "让书房焕然一新";
-            LocationDescription.Text = "沿用现有位置，你的本机资料会完整保留。";
+            LocationDescription.Text = "可以沿用现有位置或选择新位置，你的本机资料会完整保留。";
         }
         var automaticUpdate = options.Update && registered?.LicenseId == Identity.LicenseId;
         ShowPage(options.Uninstall ? "uninstall" : automaticUpdate ? "progress" : "notice");
@@ -166,12 +164,14 @@ public partial class MainWindow : Window
         });
         try
         {
+            InstallResult? installation = null;
             // ZIP hashing and extraction stay off the UI thread; registry/COM uses an STA worker.
             await RunSta(async () =>
             {
                 if (options.Uninstall) await engine.Uninstall(options, progress);
-                else await engine.Install(Program.Package!, options, progress);
+                else installation = await engine.Install(Program.Package!, options, progress);
             });
+            if (installation is not null) Program.RecordInstallResult(installation);
             ShowPage("done");
             if (options.Uninstall)
             {
@@ -184,7 +184,10 @@ public partial class MainWindow : Window
                 DoneTitle.Text = options.Update ? "书房更新好了" : "书房准备好了";
                 DoneMessage.Text = options.Update ? "新的程序已经就位，接着上次的想法继续吧。" : "带上一颗好奇心，开始今天的学习。";
                 DoneDetail.Text = "程序位置：" + options.InstallDirectory;
-                if (options.Update && options.Launch) { Program.Launch(options.InstallDirectory!); CloseAfterOperation = true; }
+                if (installation?.OldProgramDirectory is string oldDirectory)
+                    DoneDetail.Text += "\n\n新位置已安装成功，旧程序暂时无法移除：" + oldDirectory + "\n旧位置的内容已保留，请确认后另行处理。";
+                if (options.Update && options.Launch && installation?.OldProgramDirectory is null)
+                { Program.Launch(options.InstallDirectory!); CloseAfterOperation = true; }
             }
         }
         catch (Exception error) { Program.RecordFailure(options, error); ShowPage(retryPage); ShowError(error); }

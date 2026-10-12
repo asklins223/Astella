@@ -23,6 +23,7 @@ internal sealed class WindowsRegistration : IInstallationRegistration
     public void Register(InstalledInstallation installation) => WindowsShortcut.OnSta(() =>
     {
         using var install = Registry.CurrentUser.CreateSubKey(InstallKey);
+        var previousDirectory = install.GetValue("InstallLocation") as string;
         install.SetValue("InstallLocation", installation.InstallDirectory);
         using var uninstall = Registry.CurrentUser.CreateSubKey(UninstallKey);
         var executable = Path.Combine(installation.InstallDirectory, Identity.Executable);
@@ -39,7 +40,11 @@ internal sealed class WindowsRegistration : IInstallationRegistration
         uninstall.SetValue("EstimatedSize", (int)Math.Min(int.MaxValue, installation.Files.Sum(f => f.Size) / 1024), RegistryValueKind.DWord);
         WindowsShortcut.Create(StartShortcut, executable);
         if (installation.DesktopShortcut) WindowsShortcut.Create(DesktopShortcut, executable);
-        else WindowsShortcut.DeleteIfOwned(DesktopShortcut, installation.InstallDirectory);
+        else
+        {
+            WindowsShortcut.DeleteIfOwned(DesktopShortcut, installation.InstallDirectory);
+            if (!string.IsNullOrWhiteSpace(previousDirectory)) WindowsShortcut.DeleteIfOwned(DesktopShortcut, previousDirectory);
+        }
     });
 
     public void Remove(string installDirectory) => WindowsShortcut.OnSta(() =>

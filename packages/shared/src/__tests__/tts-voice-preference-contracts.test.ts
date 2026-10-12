@@ -57,14 +57,44 @@ test("写入：未知引擎与多余字段都拒", () => {
   );
 });
 
-test("回执：读侧必须是完整的四件套", () => {
+test("写入：instruction 按上游计数规则卡长（汉字算 2，超 100 单位拒）", () => {
+  assert.equal(
+    companionVoicePreferencePatchV1Schema.safeParse({
+      version: 1, engine: "qwen", voice: "longhua_v3.1", instruction: "用河南话讲，语速稍慢",
+    }).success,
+    true,
+  );
+  assert.equal(
+    companionVoicePreferencePatchV1Schema.safeParse({
+      version: 1, engine: "qwen", voice: "longhua_v3.1", instruction: "温柔".repeat(51),
+    }).success,
+    false,
+    "51 个汉字 = 102 单位，超限必须在这里拦下而不是发给上游",
+  );
+  assert.equal(
+    companionVoicePreferencePatchV1Schema.safeParse({
+      version: 1, engine: "qwen", voice: "longhua_v3.1", instruction: null,
+    }).success,
+    true,
+    "null 是清除偏好的表达，要收",
+  );
+});
+
+test("回执：读侧必须是完整的五件套", () => {
   const parsed = companionVoicePreferenceV1Schema.safeParse({
-    version: 1, engine: "qwen", voice: "longhua_v3.1", explicit: false, updatedAt: null,
+    version: 1, engine: "qwen", voice: "longhua_v3.1", instruction: null, explicit: false, updatedAt: null,
   });
   assert.equal(parsed.success, true);
   assert.equal(
     companionVoicePreferenceV1Schema.safeParse({
       version: 1, engine: "qwen", voice: "longhua_v3.1", explicit: false,
+    }).success,
+    false,
+    "缺 instruction 的回执会让设置页分不清「没设过风格」和「服务端没这个字段」",
+  );
+  assert.equal(
+    companionVoicePreferenceV1Schema.safeParse({
+      version: 1, engine: "qwen", voice: "longhua_v3.1", instruction: null, explicit: false,
     }).success,
     false,
     "缺 updatedAt 的行会让界面分不清「没设过」和「没读到」",

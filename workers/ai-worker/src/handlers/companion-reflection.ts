@@ -43,7 +43,6 @@ import type {
   CompanionReflectionDecision,
 } from "@astella/shared/db-schema/companion-memory";
 import {
-  COMPANION_REFLECTION_INPUT_BUDGET,
   COMPANION_REFLECTION_STRATEGY_VERSION,
   claimReflectionRun,
   commitPersonaProposalV1,
@@ -55,6 +54,7 @@ import {
   type CompanionPersonaSourceRefV1,
   type CompanionReflectionRowV1,
 } from "@astella/agent-host";
+import { estimateTextTokens, resolveContextBudget } from "@astella/agent-core";
 import { currentWorkerWorkspaceTransaction, withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
 import { createProvider } from "../lib/ai-provider.ts";
 import { isJobLeaseActive, lockJobLease, throwIfJobAborted, withJobTransaction } from "../lib/job-lease.ts";
@@ -66,12 +66,13 @@ import { logger } from "../lib/logger.ts";
 import { parseMemoryExtractJson } from "./companion-memory-extractor.ts";
 import {
   COMPANION_REFLECTION_PROMPT_VERSION, COMPANION_REFLECTION_TASK_ID, COMPANION_REFLECTION_TASK_VERSION,
-  buildReflectionMessages, clipReflectionOverflow, companionReflectionOutputV1Schema,
+  buildReflectionMessages, companionReflectionOutputV1Schema,
   boundReflectionSnapshot, normalizeReflectionPayload, reflectionInputFingerprint, verifyReflectionOutput,
   reflectionInputSnapshotV1Schema,
-  type ReflectionInputSnapshotV1, type ReflectionVerifiedV1,
+  type ReflectionInputBudgetV1, type ReflectionInputSnapshotV1, type ReflectionVerifiedV1,
 } from "./companion-reflection-content.ts";
-import { companionReflectionGate, reflectionSnapshotSufficient, reflectionTailWindow } from "./companion-reflection-gate.ts";
+import { REGISTERED_FALLBACK_CAPABILITY } from "../lib/context-governor.ts";
+import { companionReflectionGate, reflectionSnapshotSufficient } from "./companion-reflection-gate.ts";
 import type { JobPayload } from "./index.ts";
 
 /** 一次回顾的输出上限：它是结构化结论，不是文章。 */
@@ -102,7 +103,8 @@ export async function runCompanionReflectionJob(job: JobPayload): Promise<void> 
   if (input.workspaceId !== job.workspaceId) throw new Error("companion_reflection workspace 与 job 不一致");
   throwIfJobAborted(job);
 
-  const prepared = await prepareReflection(job, input);
+  const inputBudget = await resolveReflectionInputBudget(job, input.userId);
+  const prepared = await prepareReflection(job, input, inputBudget);
   if (!prepared) return;
   if (prepared.reflection.decision !== "running") {
     // 门没过、或这一段已经被别人跑完：结论码已经在那一行上，没有该花的模型调用。
@@ -120,6 +122,37 @@ export async function runCompanionReflectionJob(job: JobPayload): Promise<void> 
 
 // ─── 1. 输入快照、门与认领 ───────────────────────────────────────────────
 
+/**
+ * 这次回顾的**输入容量**：只从本次实际路由的那份模型档案里取。
+ *
+ * 装配侧用 agent-core 的字节保守估算（`estimateTextTokens`）：它对中文是往多里算的，
+ * 于是入选的条目只会更少，不会发出一个必然被上游拒的请求。真实请求的精确计量与
+ * 硬上限仍在唯一边界上（`governContextPressure` + `measureChatRequest`）。
+ * 解析不出档案（没授权、路由不到）时返回 null：那时素材整条带着，
+ * 由调用前的闸给出真实限制，而不是在这里换一个猜测的小数字。
+ */
+async function resolveReflectionInputBudget(
+  job: JobPayload,
+  userId: string,
+): Promise<ReflectionInputBudgetV1 | null> {
+  const govCtx = await resolveAIGovernanceContext(job.workspaceId, userId);
+  if (!govCtx.consentOk) return null;
+  const textRes = resolveProviderForTask(govCtx, "companion_agent");
+  const provider = createProvider(textRes.providerName, textRes.providerConfig);
+  const declared = provider.getCapabilities?.() ?? null;
+  const capability = declared && typeof declared.contextWindowTokens === "number" && declared.contextWindowTokens > 0
+    ? declared : null;
+  const budget = resolveContextBudget({
+    capability,
+    registeredCapability: capability ? undefined : REGISTERED_FALLBACK_CAPABILITY,
+    requestedOutputTokens: REFLECTION_MAX_OUTPUT_TOKENS,
+    outputLimitEnforced: capability?.outputLimitEnforced ?? true,
+    inputHardLimitTokens: capability?.inputHardLimitTokens ?? null,
+  });
+  // 素材本身不该把请求推到压缩线，所以停在触发线之内。
+  return { triggerTokens: budget.triggerTokens, countTokens: estimateTextTokens };
+}
+
 interface PreparedReflection {
   readonly reflection: CompanionReflectionRowV1;
   readonly snapshot: ReflectionInputSnapshotV1;
@@ -136,6 +169,7 @@ interface PreparedReflection {
 async function prepareReflection(
   job: JobPayload,
   input: z.infer<typeof jobPayloadSchema>,
+  inputBudget: ReflectionInputBudgetV1 | null,
 ): Promise<PreparedReflection | null> {
   return withWorkerWorkspaceTransaction(
     { workspaceId: input.workspaceId, userId: input.userId },
@@ -161,7 +195,12 @@ async function prepareReflection(
         ...(input.selfNoteKey ? { wake: { key: input.selfNoteKey, revision: input.selfNoteRevision! } } : {}),
         toolReceipts: receipts,
         relatedMemories: related,
-      });
+      }, inputBudget ?? undefined);
+      if (snapshot.inputOmitted) {
+        // 「她这次没读到什么」要能在日志里答出来；被整条挡住不等于没发生。
+        logger.info({ jobId: job.id, conversationId: input.conversationId, omitted: snapshot.inputOmitted },
+          "companion reflection omitted whole sources over the declared input budget");
+      }
       const fingerprint = reflectionInputFingerprint(snapshot, COMPANION_REFLECTION_STRATEGY_VERSION);
       const created = await createOrLoadReflection(tx, {
         userId: input.userId,
@@ -279,12 +318,11 @@ async function readSegmentMessages(tx: WorkerTransaction, input: {
      WHERE conversation_id = ${input.conversationId}::uuid
        AND seq > ${input.fromSeq} AND seq <= ${input.toSeq}
        AND role IN ('user', 'assistant')
-     ORDER BY seq DESC
-     LIMIT ${COMPANION_REFLECTION_INPUT_BUDGET.maxMessages}
+     ORDER BY seq
   `);
-  // 库里按 seq 倒序取**尾窗**，交给模型前排回正序（见 reflectionTailWindow 的注释：
-  // 取前 N 条会把刚说完的那句截掉，段落还会被误判成"没落定"）。
-  const window = reflectionTailWindow((Array.isArray(rows) ? rows : []).map((row) => ({
+  // 整段都读出来，能给她几条由档案声明的容量在那一步判（boundReflectionSnapshot）：
+  // 这里夹一个条数上限，就等于在声明之外再抄一份，而且被夹掉的那些没人知道。
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
     id: String(row.id),
     seq: Number(row.seq),
     role: row.role as "user" | "assistant",
@@ -292,8 +330,7 @@ async function readSegmentMessages(tx: WorkerTransaction, input: {
     text: textFromBlocks(row.blocks),
     contentHash: String(row.content_sha256 ?? ""),
     createdAt: new Date(row.created_at).toISOString(),
-  })), COMPANION_REFLECTION_INPUT_BUDGET.maxMessages);
-  return window.sort((left, right) => left.seq - right.seq);
+  }));
 }
 
 function textFromBlocks(blocks: unknown): string {
@@ -325,7 +362,6 @@ async function readSegmentToolReceipts(tx: WorkerTransaction, input: {
      WHERE c.conversation_id = ${input.conversationId}::uuid
        AND m.role = 'user' AND m.seq > ${input.fromSeq} AND m.seq <= ${input.toSeq}
      ORDER BY c.created_at
-     LIMIT ${COMPANION_REFLECTION_INPUT_BUDGET.maxToolReceipts}
   `);
   return (Array.isArray(rows) ? rows : []).map((row) => ({
     id: String(row.id), name: String(row.name), status: String(row.status),
@@ -336,8 +372,9 @@ async function readSegmentToolReceipts(tx: WorkerTransaction, input: {
 /**
  * 她已经记下的相关条目（避免把同一件事再说成新发现）。
  *
- * 只取判断、偏好与相处笔记三类、按更新时间有界读取：这不是"把全空间历史塞进去"，
+ * 只取判断、偏好与相处笔记三类、按更新时间排：这不是"把全空间历史塞进去"，
  * 而是让她看得见自己已经说过什么（§7 收紧不相关供给，同时不省掉必要来源）。
+ * 给到哪一条由档案声明的容量整条取舍，不在这里夹条数。
  */
 async function readRelatedMemories(tx: WorkerTransaction, input: { workspaceId: string; userId: string }) {
   const rows = await tx.execute<{
@@ -353,7 +390,6 @@ async function readRelatedMemories(tx: WorkerTransaction, input: { workspaceId: 
        AND (a.valid_until IS NULL OR a.valid_until > now())
        AND a.kind IN ('judgment', 'preference', 'interaction_note')
      ORDER BY a.updated_at DESC
-     LIMIT ${COMPANION_REFLECTION_INPUT_BUDGET.maxRelatedMemories}
   `);
   return (Array.isArray(rows) ? rows : []).map((row) => ({
     id: String(row.id), kind: String(row.kind), content: String(row.content),
@@ -494,12 +530,7 @@ async function runReflectionModelCall(
         { temperature: 0.2, maxTokens: REFLECTION_MAX_OUTPUT_TOKENS, responseFormat: "json_object" },
         env.signal);
       const normalized = normalizeReflectionPayload(parseMemoryExtractJson(result.content));
-      const clipped = clipReflectionOverflow(normalized.payload);
-      if (clipped.clipped.length > 0) {
-        // 超出容量的条目被剪掉，剩下的照收：这不是失败，但要看得见剪了几条。
-        logger.warn({ jobId: job.id, clipped: clipped.clipped }, "companion reflection trimmed over-capacity items");
-      }
-      const parsed = companionReflectionOutputV1Schema.safeParse(clipped.payload);
+      const parsed = companionReflectionOutputV1Schema.safeParse(normalized.payload);
       if (!parsed.success) {
         // 记下**哪一个字段不合**：只说"格式不对"，第二次跑还是同样失败，
         // 而线上排查的人什么也看不见（§12.2 要能分辨协议失败）。

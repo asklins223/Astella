@@ -31,6 +31,9 @@ const rawAuthResponseSchema = z.strictObject({
     // newly issued session. Session loading reads it again from /auth/me, but
     // the strict login envelope must still accept the field.
     workspaceEpoch: z.number().int().positive().optional(),
+    // 0413：会话签发给了哪种客户端（desktop/mobile）。桌面自己就是 desktop，
+    // 这个键只收不读；不声明它 strict ctx 会把整条登录信封拒掉（2026-10-12 实窗）。
+    clientKind: z.enum(["desktop", "mobile"]).optional(),
   }),
   // `login` / `register` 会带这一份名册，`switch-workspace` **不带**（它只回 token 与 ctx）。
   // 所以它是可选的：以前写成必填，切空间每次都 `unsupported_contract` —— 服务端已经切过去
@@ -52,7 +55,7 @@ const rawAuthResponseSchema = z.strictObject({
   csrfToken: nonEmptyStringSchema.optional(),
 });
 
-import type { WorkspaceContextV1 } from "@astella/shared/desktop-ipc-contracts";
+import type { WorkspaceContextV1, EmailCodePurposeV1 } from "@astella/shared/desktop-ipc-contracts";
 import { createWorkspaceResultV1Schema, renameWorkspaceResultV1Schema } from "@astella/shared/desktop-ipc-contracts";
 import { nonEmptyStringSchema } from "@astella/shared/desktop-ipc-contracts";
 import type { CreateWorkspaceResultV1, RenameWorkspaceResultV1 } from "@astella/shared/desktop-ipc-contracts";
@@ -301,13 +304,14 @@ export async function login(t: GatewayTransport, b: CompanionBridge, email: stri
     return t.loadSession(requestId);
   }
 
-export async function register(t: GatewayTransport, b: CompanionBridge, email: string, password: string, inviteToken?: string, displayName?: string, requestId?: string, remember?: boolean): Promise<SessionContextV1> {
+export async function register(t: GatewayTransport, b: CompanionBridge, email: string, password: string, inviteToken?: string, displayName?: string, requestId?: string, remember?: boolean, emailCode?: string): Promise<SessionContextV1> {
     await t.ensureConnected(requestId);
     await b.clearCompanionBridgeContext(requestId).catch(() => undefined);
     const persist = remember ?? t.credentialPersistence === "local_file";
-    const body: { email: string; password: string; inviteToken?: string; displayName?: string } = { email, password };
+    const body: { email: string; password: string; inviteToken?: string; displayName?: string; emailCode?: string } = { email, password };
     if (inviteToken) body.inviteToken = inviteToken;
     if (displayName) body.displayName = displayName;
+    if (emailCode) body.emailCode = emailCode;
     const result = await t.request("/auth/register-v2", { method: "POST", body: JSON.stringify(body) }, false, true, requestId, "invalid_credentials");
     const parsed = rawAuthResponseSchema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
@@ -322,6 +326,54 @@ export async function register(t: GatewayTransport, b: CompanionBridge, email: s
     await t.persistCredential(persist);
     return t.loadSession(requestId);
   }
+
+/** 发一枚邮箱验证码（注册/登录/找回共用）。限流与通道故障走 GatewayResult 错误分支。 */
+export async function sendEmailCode(t: GatewayTransport, email: string, purpose: EmailCodePurposeV1, requestId?: string): Promise<{ ok: true; resendInSeconds: number }> {
+  await t.ensureConnected(requestId);
+  const result = await t.request("/auth/email-code", {
+    method: "POST",
+    body: JSON.stringify({ email, purpose }),
+  }, false, true, requestId);
+  const payload = (result.body ?? {}) as Record<string, unknown>;
+  if (payload.ok !== true || typeof payload.resendInSeconds !== "number") {
+    throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+  }
+  return { ok: true, resendInSeconds: payload.resendInSeconds };
+}
+
+/**
+ * 邮箱验证码免密登录。会话语义与 `login` 逐点相同（清伴星桥、清运行态、
+ * 换 token、能力投影作废、凭据持久化）——差别只有敲的是码不是密码。
+ */
+export async function loginWithCode(t: GatewayTransport, b: CompanionBridge, email: string, code: string, requestId?: string, remember?: boolean): Promise<SessionContextV1> {
+  await t.ensureConnected(requestId);
+  await b.clearCompanionBridgeContext(requestId).catch(() => undefined);
+  const persist = remember ?? t.credentialPersistence === "local_file";
+  const result = await t.request("/auth/login-with-code", {
+    method: "POST",
+    body: JSON.stringify({ email, code, remember: persist }),
+  }, false, true, requestId, "invalid_credentials");
+  const parsed = rawAuthResponseSchema.safeParse(result.body);
+  if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+  t.commandIdempotency.clear();
+  b.clearCompanionRuntimeState();
+  t.token = parsed.data.token;
+  t.workspaceEpoch = 1;
+  t.roomProjectionCache = null;
+  t.forgetCapabilities();
+  await t.persistCredential(persist);
+  return t.loadSession(requestId);
+}
+
+/** 找回密码：验证码核对+设新密码都已在服务端完成，这里只等它回 204。 */
+export async function resetPassword(t: GatewayTransport, email: string, code: string, newPassword: string, requestId?: string): Promise<{ ok: true }> {
+  await t.ensureConnected(requestId);
+  await t.request("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ email, code, newPassword }),
+  }, false, true, requestId);
+  return { ok: true };
+}
 
 export async function logout(t: GatewayTransport, b: CompanionBridge, requestId?: string): Promise<{ loggedOut: true; serverRevoked: boolean }> {
     await b.clearCompanionBridgeContext(requestId).catch(() => undefined);

@@ -219,6 +219,15 @@ services:
       AUTH_RATE_LIMIT_WINDOW_MS: ${AUTH_RATE_LIMIT_WINDOW_MS:-900000}
       # Dev 栈放宽登录限流（E2E 多 spec 连续登录）；生产 compose 保持默认 5 次。
       AUTH_RATE_LIMIT_MAX_ATTEMPTS: ${AUTH_RATE_LIMIT_MAX_ATTEMPTS:-100}
+      # 邮箱验证码发信通道（可选）。注册默认强制验证码，只有这里显式声明
+      # EMAIL_VERIFICATION_DISABLED=true 才跳过（生产 compose 不透传该变量）。
+      EMAIL_VERIFICATION_DISABLED: ${EMAIL_VERIFICATION_DISABLED:-}
+      EMAIL_QQ_USER: ${EMAIL_QQ_USER:-}
+      EMAIL_QQ_PASS: ${EMAIL_QQ_PASS:-}
+      EMAIL_QQ_FROM: ${EMAIL_QQ_FROM:-}
+      EMAIL_2925_USER: ${EMAIL_2925_USER:-}
+      EMAIL_2925_PASS: ${EMAIL_2925_PASS:-}
+      EMAIL_2925_FROM: ${EMAIL_2925_FROM:-}
       # The development stack runs the approved companion vertical slices by
       # default. Production remains fail-closed in docker-compose.yml and must
       # opt in explicitly with deployment-owned environment variables.
@@ -252,6 +261,7 @@ services:
       # fail-closed（与 Assessment Critic 同类事故）。切 provider 时同步改这里与
       # config/ai-platforms.json。
       OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:-}
+      MIMO_API_KEY: ${MIMO_API_KEY:-}
       # 方案 16：LearningRun 独立 Assessment Critic（OpenAI-compatible；未配置 fail closed）。
       ASSESSMENT_CRITIC_URL: ${ASSESSMENT_CRITIC_URL:-}
       ASSESSMENT_CRITIC_KEY: ${ASSESSMENT_CRITIC_KEY:-}
@@ -347,6 +357,7 @@ services:
       # fail-closed（与 Assessment Critic 同类事故）。切 provider 时同步改这里与
       # config/ai-platforms.json。
       OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:-}
+      MIMO_API_KEY: ${MIMO_API_KEY:-}
       AI_ALLOW_DOCKER_DESKTOP_SYNTHETIC_DNS: ${AI_ALLOW_DOCKER_DESKTOP_SYNTHETIC_DNS:-true}
       # Keep worker-side execution authorization aligned with the API
       # bootstrap/routes; otherwise the API accepts a turn that the worker

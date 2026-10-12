@@ -47,7 +47,7 @@ export async function invokeNoteCapability(store: AgentWorkerAdvanceStore, call:
         startBlockOrdinal: input.startBlockOrdinal ?? 1,
         startBlockOffset: input.startBlockOffset ?? 0,
         draftsUpdatedAt: input.draftsUpdatedAt,
-        maxOutputChars: manifest.definition.maxOutputChars,
+        maxOutputChars: manifest.definition.maxOutputChars ?? Number.POSITIVE_INFINITY,
       }) };
     }
     return null;

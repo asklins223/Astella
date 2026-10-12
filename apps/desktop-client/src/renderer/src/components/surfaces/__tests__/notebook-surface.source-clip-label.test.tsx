@@ -94,7 +94,7 @@ async function show(openBag = true) {
   for (let i = 0; i < 14; i += 1) {
     await act(async () => { await vi.advanceTimersByTimeAsync(100); });
   }
-  if (openBag) fireEvent.click(view.getByRole("button", { name: "资料袋" }));
+  if (openBag) fireEvent.click(view.getAllByRole("button", { name: "资料袋" })[0]);
   return { ...view, published };
 }
 
@@ -118,7 +118,7 @@ describe("「来源片段」在一块屏上只许表示一个数", () => {
       const scroller = first.getByLabelText("正在阅读");
       scroller.scrollTop = 350;
       fireEvent.scroll(scroller);
-      fireEvent.click(first.getByRole("button", { name: "资料袋" }));
+      fireEvent.click(first.getAllByRole("button", { name: "资料袋" })[0]);
       fireEvent.click(first.getByRole("button", { name: "打开只读原始资料" }));
       const target = useRoomStore.getState().returnTarget;
       first.unmount();
@@ -144,7 +144,7 @@ describe("「来源片段」在一块屏上只许表示一个数", () => {
     const view = await show(false);
     expect(view.container.querySelector(".note-transcript")?.textContent).toContain("正文一段。");
     expect(view.container.querySelector(".source-clips")).toBeNull();
-    fireEvent.click(view.getByRole("button", { name: "资料袋" }));
+    fireEvent.click(view.getAllByRole("button", { name: "资料袋" })[0]);
     expect(view.container.querySelector(".source-clips .clip")).not.toBeNull();
     fireEvent.click(view.getByRole("button", { name: "合起资料袋" }));
     expect(view.container.querySelector(".source-clips")).toBeNull();

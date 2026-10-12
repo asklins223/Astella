@@ -136,6 +136,7 @@ describe("labels", () => {
   it("边类型有中文标签", () => {
     expect(graphEdgeKindLabel("relates_to")).toBe("语义关联");
     expect(graphEdgeKindLabel("contains_note")).toBe("收录笔记");
+    expect(graphEdgeKindLabel("references")).toBe("正文引用");
   });
 });
 

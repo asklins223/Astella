@@ -33,7 +33,11 @@ export function SpaceArrival() {
     <div className="space-arrival__edge" aria-hidden="true"><i /><i /><i /></div>
     <div className="space-arrival__sign" role="status">
       <span className="space-arrival__seal" aria-hidden="true"><DoorOpen size={22} /></span>
-      <div><small>{arrival.reason === "create" ? "新书房准备好了" : "我们到了"}</small><strong>{arrival.name}</strong><span>{spaceRoleLabel(arrival)}</span></div>
+      <div><small>{arrival.reason === "create" ? "新书房准备好了" : "我们到了"}</small><strong>{arrival.name}</strong><span>{spaceRoleLabel(arrival)}</span>
+        {/* 审计 F4：切换空间会静默收走上一间的搜索词、阅读位置和返回栈，
+            以前只有一句「我们到了」，回来的人以为数据丢了。到这儿就把话说清。 */}
+        {arrival.fromWorkspaceId ? <span className="space-arrival__scope">上一间书房的搜索词和阅读位置留在那里了；这间从头开始。</span> : null}
+      </div>
       <button type="button" aria-label="收起到达桌签" onClick={() => clearSpaceArrival(arrival.generation)}><X size={15} /></button>
     </div>
   </div>;

@@ -158,10 +158,6 @@ function normalizeMaterialText(value: unknown): string {
   return String(value ?? "").replace(/\s+/g, " ").trim();
 }
 
-function slice(value: unknown, max: number): string {
-  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
-}
-
 /**
  * 当天 12 个计数。
  *
@@ -257,7 +253,7 @@ async function collectPersona(tx: WorkerTransaction, scope: DayScope): Promise<D
     speakingStyle: typeof effective.speakingStyle === "string" ? effective.speakingStyle : "",
     examples: Array.isArray(effective.examples)
       ? (effective.examples as Array<{ text?: unknown }>)
-          .map((e) => slice(e.text, 200))
+          .map((e) => normalizeMaterialText(e.text))
           .filter((text) => text.length > 0)
       : [],
     activeness: activeness.success ? activeness.data : null,
@@ -625,10 +621,11 @@ export async function collectDiaryMaterial(tx: WorkerTransaction, scope: DayScop
     LIMIT 30
   `);
   for (const row of pickQuoteCandidates(Array.isArray(quoteRows) ? quoteRows : [])) {
-    const text = slice(row.content, 180);
+    const text = normalizeMaterialText(row.content);
     if (!text) continue;
     const ref = `引${(quoteRef += 1)}`;
-    const label = `《${slice(row.note_title, 24)}》里写着`.slice(0, 80);
+    // 标题不再剪到 80：篇名是她要引的东西，切在半截上就像笔记本身只有这么长。
+    const label = `《${normalizeMaterialText(row.note_title)}》里写着`;
     embeds.push({ ref, kind: "quote", label, text, noteId: row.note_id });
   }
 
@@ -790,7 +787,6 @@ async function diaryPermissionSnapshotIsCurrent(
   const requiresConsent = [
     govCtx.providerName,
     govCtx.textProviderName,
-    govCtx.visionProviderName,
     govCtx.embeddingProviderName,
   ].some((name) => name !== null && name.toLowerCase() !== "mock");
   const consentPresent = settings?.consent_version !== null && settings?.consent_version !== undefined
@@ -854,7 +850,7 @@ async function selectDiaryMoment(input: {
       try {
         const result = await provider.chatCompletion(
           messages,
-          { temperature: 0.2, maxTokens: 2_000, responseFormat: "json_object" },
+          { temperature: 0.2, responseFormat: "json_object" },
           env.signal,
         );
         const parsed = companionDiarySelectionSchema.safeParse(parseMemoryExtractJson(result.content));
@@ -1417,7 +1413,9 @@ async function persistDiary(
     // §9.4：写入端即限制 ≤200 字，确保读取注入时不需截断、不丢失信息。
     // 存 digest（事实备忘）而不是 diary 正文：候选一旦被确认就每轮注入，
     // 让主观创作进记忆等于给她下一轮的引用提供一个"出处"。
-    const memoryContent = `${scope.date} 桌宠日记：${draft.digest}`.slice(0, 200);
+    // 篇幅由那一个声明源管；这里不再自己剪一刀——剪了就把"被裁过"这件事藏进了
+    // 一条看起来完整的记忆，写入那一头的告警也就看不见。
+    const memoryContent = `${scope.date} 桌宠日记：${draft.digest}`;
     if (countingToneIn(draft.digest) || draft.digest.length === 0) return true;
     await tx.execute(sql`
       INSERT INTO assistant_memory_items

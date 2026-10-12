@@ -160,7 +160,6 @@ async function artifactDocumentResponse(requestUrl: URL, method: string): Promis
   }
 
   const assembled = assembleArtifactDocument({ artifactId, content })
-  if (!assembled.ok) return response(413, assembled.detail, method)
 
   const document = assembled.document
   return new Response(method === 'HEAD' ? null : document, {

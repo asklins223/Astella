@@ -29,9 +29,9 @@ describe("renderCompanionMarkdown（§4.8：可见正文保留结构，由渲染
 
   it("代码块整段原样保留，不当成正文折行", () => {
     show("例子：\n\n```ts\nconst a = 1;\nconst b = 2;\n```\n");
-    const pre = screen.getByTestId("root").querySelector("pre");
-    expect(pre?.textContent).toBe("const a = 1;\nconst b = 2;");
-    expect(pre?.getAttribute("data-lang")).toBe("ts");
+    const paper = screen.getByTestId("root").querySelector(".code-paper");
+    expect(paper?.querySelector("pre")?.textContent).toBe("const a = 1;\nconst b = 2;");
+    expect(paper?.getAttribute("data-language")).toBe("ts");
     expect(screen.getByTestId("root").textContent).not.toContain("```");
   });
 

@@ -91,7 +91,7 @@ function installListApi(workspaces: readonly WorkspaceSummaryV1[]) {
 }
 
 async function renderMenu(props: { readonly onSwitched?: (workspaceName: string) => void } = {}) {
-  const result = render(<HudSpaceMenu notice={null} {...props} />);
+  const result = render(<HudSpaceMenu {...props} />);
   await waitFor(() => expect(screen.getByRole("button", { name: /个人书房/ })).toBeTruthy());
   return result;
 }
@@ -127,7 +127,7 @@ describe("HudSpaceMenu", () => {
         create: createWorkspace,
       },
     });
-    render(<HudSpaceMenu notice={null} onSwitched={() => undefined} />);
+    render(<HudSpaceMenu onSwitched={() => undefined} />);
     fireEvent.click(await screen.findByRole("button", { name: "新建空间" }));
     const nameField = await screen.findByLabelText("新协作空间名称");
     fireEvent.change(nameField, { target: { value: "海岸研究室" } });
@@ -151,7 +151,7 @@ describe("HudSpaceMenu", () => {
         }),
       },
     });
-    render(<HudSpaceMenu notice={null} onSwitched={() => undefined} />);
+    render(<HudSpaceMenu onSwitched={() => undefined} />);
     fireEvent.click(await screen.findByRole("button", { name: "新建空间" }));
     const nameField = await screen.findByLabelText("新协作空间名称");
     fireEvent.change(nameField, { target: { value: "不该成功的空间" } });
@@ -175,7 +175,7 @@ describe("HudSpaceMenu", () => {
       },
     });
     useRoomStore.setState({ activeRunId: "11111111-9999-4999-8999-999999999999" });
-    render(<HudSpaceMenu notice={null} onSwitched={onSwitched} />);
+    render(<HudSpaceMenu onSwitched={onSwitched} />);
     await waitFor(() => expect(screen.getByRole("button", { name: /海岸研究室/ })).toBeTruthy());
 
     const row = screen.getByRole("button", { name: /海岸研究室/ });
@@ -199,7 +199,7 @@ describe("HudSpaceMenu", () => {
       },
     });
     useRoomStore.setState({ activeRunId: null });
-    render(<HudSpaceMenu notice={null} onSwitched={() => undefined} />);
+    render(<HudSpaceMenu onSwitched={() => undefined} />);
     await waitFor(() => expect(screen.getByRole("button", { name: /海岸研究室/ })).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: /海岸研究室/ }));

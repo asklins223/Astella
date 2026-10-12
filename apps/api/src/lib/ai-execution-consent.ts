@@ -3,8 +3,8 @@ import { AIConsentRequiredError, AIDataPolicyDeniedError, queryRows, type AgentS
 import { resolveSystemProviderForCapability } from "@astella/shared/task-router";
 
 export function systemUsesExternalAI(): boolean {
-  return ["agent_turn", "vision", "text_generation", "embedding"].some(
-    capability => resolveSystemProviderForCapability(capability as "agent_turn" | "vision" | "text_generation" | "embedding") !== "mock",
+  return ["agent_turn", "text_generation", "embedding"].some(
+    capability => resolveSystemProviderForCapability(capability as "agent_turn" | "text_generation" | "embedding") !== "mock",
   );
 }
 

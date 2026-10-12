@@ -1,14 +1,33 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { estimateTextTokens } from "@astella/agent-core";
+import type { ProviderCapability } from "@astella/shared";
+import { companionMemoryContentMaxLength } from "@astella/shared/companion-memory-desktop-contracts";
 import {
   assembleCompanionContext,
   budgetCompanionMemoryDirectory,
 } from "../companion-context-orchestrator.ts";
+import { resolveRouteInputTokens } from "../companion-context-handoff.ts";
 import { taskEntityFromPersistedPageContext } from "../companion-task-memory.ts";
 import type { CompanionMemoryDirectoryEntry } from "../companion-memory-vector.ts";
 
 function memoryId(index: number): string {
   return `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+}
+
+/** 一条只声明了窗口与最大输出的路由档案：容量由它解析出来，测试不自造 token 数。 */
+function routeCapability(contextWindowTokens: number, maxOutputTokens = 4_096): ProviderCapability {
+  return {
+    providerId: "test-provider",
+    modelId: "test-model",
+    visionModelId: "test-vision",
+    toolMode: "native_tools",
+    contextWindowTokens,
+    reservedOutputTokens: maxOutputTokens,
+    maxInputTokens: contextWindowTokens,
+    maxOutputTokens,
+    fingerprint: "f".repeat(64),
+  };
 }
 
 test("任务身份只从持久化页面上下文中的合法实体 ID 推导", () => {
@@ -30,7 +49,7 @@ test("任务身份只从持久化页面上下文中的合法实体 ID 推导", (
   assert.equal(taskEntityFromPersistedPageContext({ context: { pageKind: "home" } }), null);
 });
 
-test("active 目录按条数与保守 token 预算截断，并限制标题和适用条件长度", () => {
+test("active 目录按声明容量整条取舍，少给了几条当场说清楚", () => {
   const source: CompanionMemoryDirectoryEntry[] = Array.from({ length: 40 }, (_, index) => ({
     memoryId: memoryId(index + 1),
     kind: "preference",
@@ -41,18 +60,33 @@ test("active 目录按条数与保守 token 预算截断，并限制标题和适
     revision: 1,
     epistemicStatus: null,
   }));
-  const budgeted = budgetCompanionMemoryDirectory(source);
-  const measuredTokens = budgeted.entries.reduce(
-    (total, entry) => total + Math.ceil(Buffer.byteLength(JSON.stringify(entry), "utf8") / 2),
-    0,
-  );
+  // 度量与实现同一个来源（agent-core 的保守字节口径）。以前这里写的是
+  // `Buffer.byteLength/2`，于是测试算的是一套数、实现算的是另一套——
+  // 判据红的时候分不清是取舍错了还是尺子不一样长。
+  const measureTokens = (entry: CompanionMemoryDirectoryEntry) => estimateTextTokens(JSON.stringify(entry));
+  const totalTokens = (entries: readonly CompanionMemoryDirectoryEntry[]) =>
+    entries.reduce((total, entry) => total + measureTokens(entry), 0);
 
-  assert.ok(budgeted.entries.length > 0);
-  assert.ok(budgeted.entries.length <= 12);
-  assert.ok(measuredTokens <= 1024);
-  assert.equal(budgeted.tokenEstimate, measuredTokens);
-  assert.ok(budgeted.entries.every((entry) => entry.title.length <= 56));
-  assert.ok(budgeted.entries.every((entry) => (entry.appliesWhen?.length ?? 0) <= 64));
+  // 容量给足：40 条整条进来，一条都不该被剪字。
+  const wide = budgetCompanionMemoryDirectory(source, 100_000);
+  assert.equal(wide.entries.length, 40);
+  assert.equal(wide.omittedCount, 0);
+  assert.deepEqual(wide.entries, source, "目录条目的标题与适用条件整条给，不再按字符剪短");
+  assert.equal(wide.tokenEstimate, totalTokens(source), "读数按整条计量，不是剪过之后再量");
+
+  // 容量收紧：整条装不下的就不给，但少给的数量必须是看得见的。
+  const tight = budgetCompanionMemoryDirectory(source, 1_024);
+  assert.ok(tight.entries.length > 0);
+  assert.ok(tight.entries.length < 40);
+  assert.equal(tight.entries.length + tight.omittedCount, 40);
+  assert.ok(tight.tokenEstimate <= 1_024, "入选的整条仍停在声明容量之内");
+  assert.equal(tight.tokenEstimate, totalTokens(tight.entries));
+  // 入选的仍是**那一条完整的目录项**：不是把标题剪短来凑容量
+  for (const entry of tight.entries) {
+    assert.ok(source.some((original) => original.memoryId === entry.memoryId
+      && original.title === entry.title && original.appliesWhen === entry.appliesWhen),
+    "目录条目被剪过再入选");
+  }
 });
 
 test("普通对话只注入 resident 正文和 active 元数据目录", async () => {
@@ -141,11 +175,31 @@ test("普通对话只注入 resident 正文和 active 元数据目录", async ()
   assert.doesNotMatch(calls.join("\n"), /UPDATE assistant_memory_items|memory_usage_log/);
 });
 
-test("resident 正文装配再次校验条数、估算 token 与 UTF-8 字节预算", async () => {
+/** resident 那一条读返回给定行，其余读（目录、手册、整理结论）返回空。 */
+function residentTx(rows: readonly Record<string, unknown>[]) {
+  let calls = 0;
+  return {
+    execute: async () => {
+      calls += 1;
+      return calls === 1 ? [...rows] : [];
+    },
+  } as never;
+}
+
+test("resident 正文整条装配：装不下的整条不入选并可计数，不再逐条校字数与字节", async () => {
+  const bodies = {
+    short: "中".repeat(100),
+    mid: "文".repeat(120),
+    // 正文长度的唯一声明源是写入合同那条线（shared），到线的那一条仍然整条进来。
+    // 以前这里还要再过「每条 ≤1000 字符 / ≤1000 字节 / 320 token / 6 条」四道闸门。
+    longest: "长".repeat(companionMemoryContentMaxLength),
+    overContract: "超".repeat(companionMemoryContentMaxLength + 50),
+  };
   const rows = [
-    { id: memoryId(201), content: "中".repeat(200) },
-    { id: memoryId(202), content: "文".repeat(160) },
-    { id: memoryId(203), content: "abc" },
+    { id: memoryId(201), content: bodies.short },
+    { id: memoryId(202), content: bodies.mid },
+    { id: memoryId(203), content: bodies.longest },
+    { id: memoryId(204), content: bodies.overContract },
   ].map((row) => ({
     ...row,
     kind: "goal",
@@ -156,18 +210,36 @@ test("resident 正文装配再次校验条数、估算 token 与 UTF-8 字节预
     last_used_at: null,
     user_confirmed: true,
   }));
-  let calls = 0;
-  const context = await assembleCompanionContext(
-    { execute: async () => { calls += 1; return calls === 1 ? rows : []; } } as never,
-    { workspaceId: "workspace-1", userId: "user-1" },
-    { runId: "run-1", pageContext: null },
-  );
 
-  assert.deepEqual(context.usedMemoryIds, [memoryId(201), memoryId(203)]);
-  assert.equal(context.residentByteCount, Buffer.byteLength("中".repeat(200) + "abc", "utf8"));
-  assert.ok(context.residentByteCount <= 1000);
-  assert.ok(context.residentTokenEstimate <= 320);
-  assert.equal(context.residentMemories.length, 2);
+  // 容量给足：三条整条装配，最长那条一字不减；超出写入合同那条线的整条不入选**并计数**。
+  const wide = await assembleCompanionContext(residentTx(rows),
+    { workspaceId: "workspace-1", userId: "user-1" }, { runId: "run-1", pageContext: null });
+  assert.deepEqual(wide.residentMemories.map((memory) => memory.content),
+    [bodies.short, bodies.mid, bodies.longest], "resident 正文整条给，不剪半句");
+  assert.ok(!wide.residentMemoryIds.includes(memoryId(204)), "超出写入合同长度线的该整条不入选");
+  assert.ok(!wide.residentMemories.some((memory) => memory.content.includes("超")),
+    "超长那条被剪短后入选了——剪过的记忆她会照着剪过的话说");
+  assert.equal(wide.residentOmittedCount, 1, "少带的那一条必须计数，否则与「没有这条记忆」同一个读数");
+  assert.equal(wide.residentByteCount,
+    [bodies.short, bodies.mid, bodies.longest]
+      .reduce((total, content) => total + Buffer.byteLength(content, "utf8"), 0));
+  assert.equal(wide.residentTokenEstimate,
+    [bodies.short, bodies.mid, bodies.longest].reduce((total, content) => total + estimateTextTokens(content), 0));
+
+  // 容量收紧：整条装不下的不进 prompt，少了几条仍然对得上。
+  const capability = routeCapability(6_644);
+  const tight = await assembleCompanionContext(residentTx(rows),
+    { workspaceId: "workspace-1", userId: "user-1" },
+    { runId: "run-2", pageContext: null, modelCapability: capability });
+  assert.equal(tight.memoryCapacityTokens, resolveRouteInputTokens(capability),
+    "取舍用的容量必须来自这条路由声明的窗口，不是抄在代码里的数");
+  assert.ok(tight.residentMemories.length > 0, "紧容量也不该把正文全清空：至少装得下第一条");
+  assert.ok(tight.residentMemories.length < 3, "这一轮没发生取舍，样本就没造好");
+  assert.equal(tight.residentMemories.length + (tight.residentOmittedCount ?? 0), rows.length);
+  assert.ok(tight.residentTokenEstimate <= (tight.memoryCapacityTokens ?? 0));
+  for (const memory of tight.residentMemories) {
+    assert.ok(Object.values(bodies).includes(memory.content), "入选的正文不再是整条");
+  }
 });
 
 test("正式学习 tutor 不读取或注入 resident 与 active 记忆", async () => {

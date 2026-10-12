@@ -7,6 +7,10 @@
  *
  * 做法：
  *  1. 用一次性账号在**跑着的 dev api** 上开一间协作空间、一篇已共享的笔记；
+ *     ⚠️ 注册默认强制邮箱验证码，本脚本拿不到真码——跑它之前把 dev api 用
+ *     `EMAIL_VERIFICATION_DISABLED=true` 起（`docker compose -f docker-compose.dev.yml
+ *     up -d api` 前在 `.env` 里写一行即可），否则会收到 400 `client_update_required`
+ *     或 503 `email_channel_unavailable`；
  *  2. 起一个真 Electron 窗口（临时 profile，走界面登录）作为所有者；
  *  3. 第二个客户端用成员身份连上同一篇（`--second-window` 时起第二个真窗口，
  *     否则起一个协议级 provider，两者都是真连接）；

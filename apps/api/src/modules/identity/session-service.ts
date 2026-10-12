@@ -33,6 +33,7 @@ import {
   hashToken,
   nextSessionExpiry,
   verifyPassword,
+  type SessionClientKind,
   type SessionContext,
 } from "./credentials.ts";
 // **类型**引入：编译期被抹掉，所以不构成运行时环
@@ -65,16 +66,27 @@ const SESSION_CLEANUP_BATCH = 1000;
  * `executor` 是**可选的**：调用方若已经在 actor 事务里（登录、切空间、注册），
  * 传进来就能复用同一事务——`sessions` 的写策略要求 `user_id = app.user_id`，
  * 没有 actor 上下文的裸 `db` 写会被 RLS 挡掉（静默 0 行，不是报错）。
+ *
+ * `clientKind`（0413）记的是这枚凭据签发给了哪一种客户端。手机会话不得写笔记正文，
+ * 判据读的就是这一列；缺省 `desktop`，所以桌面端与所有既有调用方一次都不用改。
  */
 export async function issueSession(
   userId: string,
   workspaceId: string,
   executor?: ApiTransaction,
+  clientKind: SessionClientKind = "desktop",
 ): Promise<{ token: string; ctx: SessionContext }> {
   const token = generateToken();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
-  const values = { token: hashToken(token), userId, workspaceId, createdAt: now, expiresAt };
+  const values = {
+    token: hashToken(token),
+    userId,
+    workspaceId,
+    clientKind,
+    createdAt: now,
+    expiresAt,
+  };
   // R-011: 存储 token 的哈希值，而非明文
   if (executor) {
     await executor.insert(sessions).values(values);
@@ -90,13 +102,25 @@ export async function issueSession(
     .from(workspaces)
     .where(eq(workspaces.id, workspaceId))
     .limit(1);
-  return { token, ctx: { userId, workspaceId, workspaceEpoch: workspace?.workspaceEpoch ?? 1 } };
+  return {
+    token,
+    ctx: { userId, workspaceId, workspaceEpoch: workspace?.workspaceEpoch ?? 1, clientKind },
+  };
 }
 
-export async function loginWithPassword(
-  email: string,
-  password: string,
-): Promise<{ token: string; ctx: SessionContext; workspaces: WorkspaceInfo[] } | null> {
+/** 登录路径共享的最小用户形状：密码核对用 passwordHash，建会话用另外两个。 */
+export interface LoginUser {
+  id: string;
+  email: string;
+  passwordHash: string;
+  personalWorkspaceId: string | null;
+}
+
+/**
+ * 按邮箱读出可登录的用户行（会话建立之前，走 SECURITY DEFINER 函数——
+ * 原因见下方 R4 / P0-4 注释，此处不重复）。密码登录与验证码登录共用。
+ */
+export async function findLoginUserByEmail(email: string): Promise<LoginUser | null> {
   const normalizedEmail = canonicalizeEmail(email);
   // R4（round-3 审计）：不再用 lower(email) = ...（无表达式索引 → 每次登录 Seq Scan）。
   // canonicalizeEmail 已在注册/邀请路径将 email 小写存储，直接 eq(users.email, ...)
@@ -112,35 +136,33 @@ export async function loginWithPassword(
     id: string;
     email: string;
     password_hash: string;
-    role: string;
-    created_at: Date;
-    updated_at: Date;
     personal_workspace_id: string | null;
-    display_name: string | null;
-    avatar_url: string | null;
   };
   const rows = await db.execute<LoginUserRow>(sql`
-    SELECT * FROM public.astella_find_user_by_email(${normalizedEmail})
+    SELECT id, email, password_hash, personal_workspace_id
+    FROM public.astella_find_user_by_email(${normalizedEmail})
   `);
   const row = (rows as unknown as LoginUserRow[])[0];
-  // 函数返回的是库的列名（snake_case），这里映回 drizzle 的 camelCase 形状，
-  // 下面所有读 user.xxx 的代码不用改。
-  const user = row
-    ? {
-        id: row.id,
-        email: row.email,
-        passwordHash: row.password_hash,
-        role: row.role,
-        personalWorkspaceId: row.personal_workspace_id,
-        displayName: row.display_name,
-        avatarUrl: row.avatar_url,
-      }
-    : null;
-  if (!user) {
-    await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
-    return null;
-  }
-  if (!(await verifyPassword(password, user.passwordHash))) return null;
+  if (!row) return null;
+  return {
+    id: row.id,
+    email: row.email,
+    passwordHash: row.password_hash,
+    personalWorkspaceId: row.personal_workspace_id,
+  };
+}
+
+/**
+ * 为已确认身份的用户走完登录：列活跃空间、签发会话、回登录信封。
+ * 密码核对与验证码核对**之后**都走这一条，保证两条登录路的会话语义一致。
+ *
+ * `clientKind` 由登录接口从请求体里读出来（0413）——两条登录路共用这一条，
+ * 所以"手机上的会话"这件事只需要在这里落进凭据一次。
+ */
+export async function establishLoginSession(
+  user: LoginUser,
+  clientKind: SessionClientKind = "desktop",
+): Promise<{ token: string; ctx: SessionContext; workspaces: WorkspaceInfo[] } | null> {
   // 空间建立之前的 actor 事务：这条路的**第一件事**就是把"这个人属于哪些空间"
   // 读出来，而 RLS 的租户守卫要的正是"当前空间"。所以用 actor 上下文
   // （`app.user_id`）而不是 workspace 上下文——`workspace_members` /
@@ -190,9 +212,23 @@ export async function loginWithPassword(
       (user.personalWorkspaceId && activeWorkspaceIds.has(user.personalWorkspaceId))
         ? user.personalWorkspaceId
         : memberships[0].workspaceId;
-    const session = await issueSession(user.id, defaultWorkspaceId, tx);
+    const session = await issueSession(user.id, defaultWorkspaceId, tx, clientKind);
     return { ...session, workspaces: workspacesList };
   });
+}
+
+export async function loginWithPassword(
+  email: string,
+  password: string,
+  clientKind: SessionClientKind = "desktop",
+): Promise<{ token: string; ctx: SessionContext; workspaces: WorkspaceInfo[] } | null> {
+  const user = await findLoginUserByEmail(email);
+  if (!user) {
+    await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
+    return null;
+  }
+  if (!(await verifyPassword(password, user.passwordHash))) return null;
+  return establishLoginSession(user, clientKind);
 }
 
 /**
@@ -219,7 +255,7 @@ export async function decodeToken(token: string): Promise<SessionContext | null>
   return withActorTransaction({ userId: SYSTEM_USER_ID, sessionToken: tokenHash }, async (tx) => {
     const session = await tx.query.sessions.findFirst({
       where: eq(sessions.token, tokenHash),
-      columns: { userId: true, workspaceId: true, createdAt: true, expiresAt: true },
+      columns: { userId: true, workspaceId: true, clientKind: true, createdAt: true, expiresAt: true },
     });
     if (!session) return null;
     if (session.expiresAt < new Date()) {
@@ -333,6 +369,8 @@ export async function decodeToken(token: string): Promise<SessionContext | null>
       // 空间行读不到时退回 1（而不是 0）：契约是 positiveInt，0 会让整个会话
       // 在客户端解析失败。读不到只可能是空间刚被删，那种情况下一次请求就会被拒。
       workspaceEpoch,
+      // 0413：正文写入的闸门逐请求读这一位（写在会话行上，不是请求头上）。
+      clientKind: session.clientKind,
       // 2026-10-03：与 workspaceEpoch 同一份读数，供 /auth/me 复用，
       // 不再为 name / workspace_type 单独发一次查询。行读不到时留 null，
       // 由消费方按既有语义兜底（与 workspaceOwnerId 的处理方式一致）。
@@ -421,6 +459,23 @@ export async function changePassword(
     await tx.update(users).set({ passwordHash: newHash, updatedAt: new Date() }).where(eq(users.id, userId));
     // 撤销"这个人的全部会话"是改密的语义本身，所以 actor 就是这个人，
     // 不带 sessionToken——`sec01_v1_sessions_actor_*` 的空令牌分支允许按 user_id 批量删。
+    await tx.delete(sessions).where(eq(sessions.userId, userId));
+    return true;
+  });
+}
+
+/**
+ * 找回密码：邮箱验证码核对通过后直接设置新密码，并撤销该用户全部会话
+ * （语义同 changePassword，只是不验旧密码——信任链是验证码本身）。
+ * actor 事务与 RLS 的原因同 changePassword 见上。
+ */
+export async function resetPassword(userId: string, newPassword: string): Promise<boolean> {
+  return withActorTransaction({ userId }, async (tx) => {
+    const user = await tx.query.users.findFirst({ where: eq(users.id, userId) });
+    if (!user) return false;
+    const newHash = await hashPassword(newPassword);
+    await tx.update(users).set({ passwordHash: newHash, updatedAt: new Date() }).where(eq(users.id, userId));
+    // 改密即全端重新登录：这条与 changePassword 相同，是语义本身。
     await tx.delete(sessions).where(eq(sessions.userId, userId));
     return true;
   });

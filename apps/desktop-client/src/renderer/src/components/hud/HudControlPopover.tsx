@@ -5,7 +5,7 @@ import { HudSpaceMenu } from "./HudSpaceMenu";
 import { HudAccountCard } from "./HudAccountCard";
 import { useHudPopoverMotion, type HudMenuKind } from "./use-hud-popover-motion";
 
-export function HudControlPopover({ kind, rootRef, spaceRef, accountRef, guideRef, guide, id, notice, onClose, onOpenAccount, onSwitched }: {
+export function HudControlPopover({ kind, rootRef, spaceRef, accountRef, guideRef, guide, id, onClose, onOpenAccount, onSwitched }: {
   readonly kind: HudMenuKind | null;
   readonly rootRef: RefObject<HTMLDivElement | null>;
   readonly spaceRef: RefObject<HTMLButtonElement | null>;
@@ -13,7 +13,6 @@ export function HudControlPopover({ kind, rootRef, spaceRef, accountRef, guideRe
   readonly guideRef: RefObject<HTMLButtonElement | null>;
   readonly guide: CompanionGuideController;
   readonly id: string;
-  readonly notice: string | null;
   readonly onClose: () => void;
   readonly onOpenAccount: () => void;
   readonly onSwitched: (name: string) => void;
@@ -31,7 +30,7 @@ export function HudControlPopover({ kind, rootRef, spaceRef, accountRef, guideRe
       {shown === "guide"
         ? <CompanionGuideBook guide={guide} onClose={onClose} />
         : shown === "space"
-        ? <HudSpaceMenu notice={notice} onClose={onClose} onSwitched={onSwitched} onManage={onOpenAccount} />
+        ? <HudSpaceMenu onClose={onClose} onSwitched={onSwitched} onManage={onOpenAccount} />
         : <HudAccountCard onOpenAccount={onOpenAccount} onClose={onClose} />}
     </div>
   );

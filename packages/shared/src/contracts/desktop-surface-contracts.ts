@@ -100,6 +100,11 @@ export const desktopSourceCreateRequestSchema = z
     content: z.string().optional(),
     url: z.string().url().optional(),
     /**
+     * 审计 F8：来路不只网址。文件采进来时写 `文件 高等数学第三版.pdf`，
+     * 详情页的来源行照着念；不传时服务端退回 `url ?? null`。
+     */
+    origin: z.string().max(500).optional(),
+    /**
      * 审计 F33：同一个网址默认查重、不建新条目；用户明确说"再采一次"时带这个
      * 标志重发，服务端才真的再建一份。
      */

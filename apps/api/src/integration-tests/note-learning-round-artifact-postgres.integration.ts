@@ -113,9 +113,10 @@ before(async () => {
   app = Fastify({ logger: false });
   await app.register(sensible);
   await app.register(authRoutes);
-  await app.register(noteLearningRoundRoutes, { teaching: {
-    provider: deterministicTeachingExplainProviderV1(), modelId: "offline-test", external: false,
-  } });
+  await app.register(noteLearningRoundRoutes, {
+    teaching: { provider: deterministicTeachingExplainProviderV1(), modelId: "offline-test", external: false },
+    artifact: { provider: async () => { throw new Error("offline fixture must not call a model"); }, modelId: "unconfigured" },
+  });
   await app.ready();
   token = (await issueSession(userId, workspaceId)).token;
 });
@@ -208,6 +209,24 @@ test("生成那一发：产物行恰好 1 条、teaching.artifact_id 指向它�
   assert.equal(/<script/i.test(html), false, "产物里不许出现脚本");
   // 屏数与输入对应：讲解 ＋ 例子 ＋ 2 条计划步骤。
   assert.equal((html.match(/class="astella-artifact-pane"/g) ?? []).length, 4);
+});
+
+test("完整长页面通过生产保存链路，并由真实 HTTP 原样读回", async () => {
+  const round = await createRound("完整长讲解");
+  const failures: string[] = [];
+  const html = `<main>${"详细讲解。".repeat(120_000)}页面末尾</main>`;
+  const teaching = await withWorkspaceTransaction({ workspaceId, userId }, tx => createTeaching(tx, { workspaceId, userId }, {
+    roundId: String(round.roundId), expectedRevision: Number(round.revision), kind: "explanation",
+    content: { explanation: "完整的讲解依据。" }, sourceBlockOrdinals: [4], snapshotHash: "fixture-hash",
+    drivingQuestionRevision: 1, kernelTaskRef: null, artifact: { kind: "rendered", html, generatorRef: "long-test" },
+  }, { reportArtifactFailure: message => failures.push(message) }));
+  const artifacts = await artifactRows(String(round.roundId));
+  assert.equal(artifacts.length, 1, failures.join("\n"));
+  assert.equal(String(artifacts[0].html), html);
+  const response = await call("GET", `/v2/note-learning-round-artifacts/${artifacts[0].id}`);
+  assert.equal(response.statusCode, 200, response.body.slice(0, 200));
+  assert.equal(response.body, html);
+  assert.equal(teaching.kind, "explanation");
 });
 
 test("按 id 取整份：200 ＋ text/html ＋ 与库内逐字节相同（不套 JSON 信封）", async () => {

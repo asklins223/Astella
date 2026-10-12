@@ -1,5 +1,5 @@
 import { listCompanionSelfNotes } from "@astella/agent-host";
-import { renderCompanionSelfNotes } from "@astella/shared";
+import { COMPANION_AGENT_TOOL_LABELS, renderCompanionSelfNotes } from "@astella/shared";
 import { resolveCompanionPersonaContext } from "./companion-identity-context.ts";
 import { reserveCompanionProviderCall } from "./companion-agent-events.ts";
 import { renderPlaybookCandidates, renderPlaybookCatalog } from "./companion-playbooks.ts";
@@ -40,6 +40,7 @@ import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger.ts";
 import { companionSavedNoteEditExists } from "./companion-note-edit.ts";
+import { listSucceededWriteToolNames } from "./companion-tool-call-ledger.ts";
 import { ProviderRequestError } from "../lib/provider-request-error.ts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { loadHereAndNow, renderHereAndNow } from "./companion-here-and-now.ts";
@@ -78,6 +79,7 @@ import {
   splitCommittedDisplaySegments,
   type CompanionDisplaySegmentState,
 } from "../lib/tts-segments.ts";
+import { readVoiceStyleInstruction } from "@astella/shared/voice-expression-tags";
 import { companionVoiceExpressionBoundaries, companionVoiceSegmentExpression, projectCompanionVoiceExpression } from "./companion-voice-expression.ts";
 import {
   assembleCompanionContext,
@@ -97,7 +99,7 @@ import {
   finalizeCompanionReplyText,
   renderCompanionContextHandoff,
   renderUserAttachedImagesLine,
-  REPLAY_WINDOW_MESSAGES,
+  REPLAY_HISTORY_READ_ROWS,
 } from "./companion-dialogue-content.ts";
 import {
   type CompanionDialogueHandlerContext,
@@ -298,7 +300,7 @@ export async function runCompanionDialogue(
         // 排除非对话与未完成的助手输出，保留用户连发的补充以及发送时间、回合状态；摘要水位
         // 必须从这份相同的可见尾部计算，不能让 system 注记占掉最近消息名额。
         const historyRows = await readCompanionHistoryRows(tx, run.conversation_id, {
-          beforeSeq: currentUserSeq, limit: REPLAY_WINDOW_MESSAGES,
+          beforeSeq: currentUserSeq, limit: REPLAY_HISTORY_READ_ROWS,
         });
         const recentWithSeq = historyRows
           .slice()
@@ -465,11 +467,10 @@ export async function runCompanionDialogue(
           ORDER BY CASE WHEN status IN ('requested', 'executing', 'waiting_confirmation', 'outcome_unknown')
                         THEN 0 ELSE 1 END,
                    updated_at DESC, id DESC
-          LIMIT 64
         `);
         const proposalRows = await tx.execute<{
           id: string; status: string; decision: string | null; title: string;
-          target_summary: string; result_safe_summary: string | null; expires_at: string;
+          target_summary: string; result_safe_summary: string | null; expires_at: string | null;
         }>(sql`
           SELECT id::text AS id, status, decision, title, target_summary,
                  result_safe_summary, expires_at::text AS expires_at
@@ -477,7 +478,6 @@ export async function runCompanionDialogue(
           WHERE conversation_id = ${run.conversation_id}
           ORDER BY CASE WHEN status IN ('pending', 'executing') THEN 0 ELSE 1 END,
                    updated_at DESC, id DESC
-          LIMIT 32
         `);
         return {
           runId: run.id,
@@ -888,6 +888,9 @@ export async function runCompanionDialogue(
     });
     voiceSegmentState = split.next;
     if (split.segments.length === 0) return;
+    // turn 级风格指令：从模型原文提第一条（一轮一条），随每段下发，服务端合成时
+    // 从事件重读。表达关闭（带路正式作答/用户关掉语音标记）时模型不该写、也不认。
+    const instruction = expressionEnabled ? readVoiceStyleInstruction(modelText) : null;
     const segments = split.segments.flatMap((segment) => {
       const synthesis = companionVoiceSegmentExpression(expression, segment, expressionEnabled);
       if (!synthesis.text) return [];
@@ -903,6 +906,7 @@ export async function runCompanionDialogue(
         synthesisText,
         synthesisTextSha256,
         cue: synthesis.cue,
+        ...(instruction ? { instruction } : {}),
       }];
     });
     if (segments.length === 0) return;
@@ -981,7 +985,7 @@ export async function runCompanionDialogue(
         workspaceId: ctx.workspaceId,
         userId: read.userId,
         conversationId: read.conversationId,
-        sourceHash: () => replaySummaryCoverage?.sourceSha256 ?? null,
+        sourceHash: () => contextReceipts.currentRequestHash() ?? replaySummaryCoverage?.sourceSha256 ?? null,
         latestPressure: () => contextReceipts.latestPressure(),
       }),
       expiresAt,
@@ -1001,20 +1005,28 @@ export async function runCompanionDialogue(
     const outputIncomplete = err instanceof AgentOutputError && err.code === "output_truncated";
     const outputUnverified = err instanceof AgentOutputError && err.code === "unverified_quote";
     let noteEditSaved = false;
+    let savedWriteNames: string[] = [];
     if (outputUnverified) {
       try { noteEditSaved = await companionSavedNoteEditExists({ workspaceId: ctx.workspaceId, userId: read.userId }, read.runId); }
       catch { logger.warn({ runId: read.runId }, "could not verify saved note edit while reporting quote failure"); }
+      try { savedWriteNames = await listSucceededWriteToolNames({ workspaceId: ctx.workspaceId, userId: read.userId }, read.runId); }
+      catch { logger.warn({ runId: read.runId }, "could not list succeeded writes while reporting quote failure"); }
     }
+    // 终答被引文判不过不等于这轮什么都没做：写操作已经落库、不会随终答回滚。
+    // 只说"答复没有完成"就把她做成的事报成没做——照实点名哪些留下了。
     const unverifiedQuoteFailureText = noteEditSaved
       ? "笔记正文修改已保存；这次修改说明的引文没有核对通过，说明未完成。"
-      : "这次引文与已读取的原文对不上，答复没有完成。";
+      : savedWriteNames.length > 0
+        ? `这次引文与已读取的原文对不上，说明没有完成；已经做成的操作仍保留：${
+          savedWriteNames.map((name) => COMPANION_AGENT_TOOL_LABELS[name] ?? name).join("、")}。`
+        : "这次引文与已读取的原文对不上，答复没有完成。";
     const providerRejected = err instanceof ProviderRequestError;
     const rateLimited = providerRejected && err.status === 429;
     const policyDenied = err instanceof AIDataPolicyDeniedError;
     await markCompanionRunFailed(
       read,
       ctx.workspaceId,
-      contextChanged ? err.code : policyDenied ? "AI_DATA_POLICY_DENIED" : budgetExceeded || outputIncomplete ? "AGENT_BUDGET_EXCEEDED" : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
+      contextChanged ? err.code : policyDenied ? "AI_DATA_POLICY_DENIED" : outputIncomplete ? "REPLY_LENGTH_LIMIT" : budgetExceeded ? "AGENT_BUDGET_EXCEEDED" : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
       !policyDenied && !budgetExceeded && !outputIncomplete && !outputUnverified && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
       contextChanged ? err.message : policyDenied ? "请在 AI 数据同意页开启「允许发送到外部模型服务」后继续。" : contextOverflow ? "这次需要带入的内容太多，没法一次读完；可以按段继续。" : outputUnverified ? unverifiedQuoteFailureText : outputIncomplete ? "这次答复达到长度上限，已说出的内容保留；可以接着分段讲。" : budgetExceeded
         ? "companion agent budget exceeded"

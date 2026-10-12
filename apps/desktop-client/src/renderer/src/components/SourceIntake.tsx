@@ -17,8 +17,10 @@ import {
 } from "../app/source-intake";
 import {
   MAX_BATCH_CAPTURE_FILES,
+  beginCaptureRun,
   canCaptureSource,
   captureSourceTasks,
+  consumeBatchReceipt,
   readCaptureFiles,
   type BatchCaptureOutcome,
   type CaptureTask,
@@ -393,12 +395,20 @@ export function GlobalDropOverlay() {
         // 读文件时已经报过一部分进度（那是"准备"），这里从"开始建来源"重新数一遍，
         // 所以界面上那一条进度条从头到尾走的是同一件事：收下第几份。
         const result = await captureSourceTasks(tasks, {
-          isCurrent,
+          run: beginCaptureRun(),
+          shouldStop: () => !isCurrent(),
           onProgress: (done) => { if (isCurrent()) setPhase({ kind: "working", stage: "capturing", done: outcomes.length + done, total, name: null }); },
         });
-        if (!result) return;
+        if (!result) {
+          // 被中止（换空间，或来源库那边开了一批新的收录顶上来）：收起浮层，
+          // 别把「正在收进第 N/N 份…」永远挂在屏幕上说一件已经结束的事。
+          if (isCurrent()) reset();
+          return;
+        }
         if (result.created) dispatchSourceCaptured(result.created.sourceId, result.created.title);
         setPhase({ kind: "report", outcomes: [...outcomes, ...result.outcomes], overflow, created: result.created });
+        // 这一层已经把自己的回执说清楚了，消费模块回执，避免来源库再播一遍。
+        consumeBatchReceipt();
         return;
       }
     }
@@ -474,6 +484,20 @@ export function GlobalDropOverlay() {
     }
   }, [phase]);
 
+  /**
+   * 审计 F3：正在收的时候要能停。以前 working 阶段的 Esc 被显式忽略，卡片上也没有
+   * 按钮，收了三十份想停只能看着它跑完。取消只拦后面的：已经建好的来源留着，
+   * 读数不会倒着说「没收过」。
+   */
+  const cancelWorking = useCallback(() => {
+    beginCaptureRun();
+    reset();
+    const target = returnFocusRef.current;
+    window.requestAnimationFrame(() => {
+      if (target?.isConnected) target.focus({ preventScroll: true });
+    });
+  }, [reset]);
+
   useEffect(() => {
     if (!phase) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -484,8 +508,9 @@ export function GlobalDropOverlay() {
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         return;
       }
-      if (event.key !== "Escape" || phaseRef.current?.kind === "working") return;
+      if (event.key !== "Escape") return;
       event.preventDefault();
+      if (phaseRef.current?.kind === "working") { cancelWorking(); return; }
       reset();
       const target = returnFocusRef.current;
       window.requestAnimationFrame(() => {
@@ -494,7 +519,7 @@ export function GlobalDropOverlay() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [phase, reset]);
+  }, [phase, reset, cancelWorking]);
 
   if (!phase) return null;
 
@@ -526,6 +551,8 @@ export function GlobalDropOverlay() {
             <div className="source-intake-drop__progress" aria-hidden="true">
               <span style={{ transform: `scaleX(${working.total === 0 ? 0 : working.done / working.total})` }} />
             </div>
+            {/* 已收下的来源留着；取消只停后面还没处理的几份（Esc 同一条路）。 */}
+            <button type="button" className="button" onClick={cancelWorking}>取消剩下的</button>
           </>
         ) : report ? (
           <>

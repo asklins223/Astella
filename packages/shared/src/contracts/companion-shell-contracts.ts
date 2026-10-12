@@ -15,6 +15,7 @@
 
 import { z } from "zod";
 import { isTtsVoiceAllowed, ttsEngineV1Schema } from "../tts-voice-catalog.ts";
+import { VOICE_STYLE_INSTRUCTION_MAX_UNITS, voiceStyleInstructionUnits } from "../voice-expression-tags.ts";
 import {
   companionAgentPermissionLevelSchema,
   companionAgentSettingsV1Schema,
@@ -414,6 +415,12 @@ export const companionVoicePreferenceV1Schema = z.object({
   engine: ttsEngineV1Schema,
   /** 一定落在该引擎的音色目录内：目录外的存量值由服务端回落成该引擎默认音色。 */
   voice: z.string().min(1).max(120),
+  /**
+   * 用户自写的说话风格（qwen `instruction` 参数）。null = 没设过，合成时用
+   * config 默认。它只是**兜底**：伴星模型每轮自己写的指令优先于它（模型优先、
+   * 偏好兜底），edge 引擎不消费它。
+   */
+  instruction: z.string().max(VOICE_STYLE_INSTRUCTION_MAX_UNITS * 2).nullable(),
   /** 用户没有显式保存过时为 null（此时 engine/voice 是 config 默认，不是用户的选择）。 */
   explicit: z.boolean(),
   updatedAt: z.string().datetime().nullable(),
@@ -424,12 +431,17 @@ export type CompanionVoicePreferenceV1 = z.infer<typeof companionVoicePreference
  * 写入。voice 必须属于所选引擎的目录——这条跨字段校验放在合同层而不是 service 里，
  * 是因为 `voice` 会原样进上游的计费接口：放一个引擎与音色不匹配的组合过去，
  * 上游只回一句 `[cosyvoice:]Engine error [411]`，用户看到的是"点了没反应"。
+ *
+ * `instruction` 可选：缺省表示"不动这条偏好"；显式 null 表示清除（回 config 默认）。
+ * 长度按上游的计数规则卡（汉字算 2，共 100 单位）——超限的指令发过去会被上游拒，
+ * 在这里拦下并让人改短，比合成时静默回退更诚实。
  */
 export const companionVoicePreferencePatchV1Schema = z
   .object({
     version: z.literal(1),
     engine: ttsEngineV1Schema,
     voice: z.string().min(1).max(120),
+    instruction: z.string().max(VOICE_STYLE_INSTRUCTION_MAX_UNITS * 2).nullable().optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -438,6 +450,13 @@ export const companionVoicePreferencePatchV1Schema = z
         code: z.ZodIssueCode.custom,
         path: ["voice"],
         message: `voice ${value.voice} 不在引擎 ${value.engine} 的音色目录内`,
+      });
+    }
+    if (value.instruction != null && voiceStyleInstructionUnits(value.instruction) > VOICE_STYLE_INSTRUCTION_MAX_UNITS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["instruction"],
+        message: `说话风格超过 ${VOICE_STYLE_INSTRUCTION_MAX_UNITS} 字符（汉字算 2），请精简后再保存`,
       });
     }
   });

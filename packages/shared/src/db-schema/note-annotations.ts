@@ -31,7 +31,7 @@ export const noteAnnotations = pgTable("note_annotations", {
   }).onDelete("cascade"),
   sourceRange: check("note_annotations_source_range_check", sql`${t.startBlockOrdinal} >= 0 AND ${t.endBlockOrdinal} >= ${t.startBlockOrdinal} AND ${t.startOffset} >= 0 AND ${t.endOffset} >= 0 AND (${t.endBlockOrdinal} > ${t.startBlockOrdinal} OR ${t.endOffset} > ${t.startOffset})`),
   excerptLength: check("note_annotations_excerpt_length_check", sql`char_length(${t.excerpt}) BETWEEN 1 AND 2000`),
-  explanationLength: check("note_annotations_explanation_length_check", sql`char_length(${t.explanation}) <= 8000`),
+  explanationLength: check("note_annotations_explanation_length_check", sql`char_length(${t.explanation}) >= 1`),
   revisionPositive: check("note_annotations_revision_check", sql`${t.revision} >= 1`),
   noteVersionIndex: index("note_annotations_note_version_idx").on(t.workspaceId, t.userId, t.noteId, t.noteVersionId, t.createdAt, t.id),
   workspaceIdUnique: uniqueIndex("note_annotations_workspace_id_unique_idx").on(t.workspaceId, t.id),

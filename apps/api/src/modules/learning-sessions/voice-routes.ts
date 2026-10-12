@@ -3,7 +3,7 @@
  *
  * 端点（全部 requireSession）：
  * - POST /voice/tts  { text, voice? } → audio/mpeg（edge-tts 容器合成，真实朗读）
- * - POST /voice/transcribe：ASR 上传 → SiliconFlow → transcript
+ * - POST /voice/transcribe：ASR 上传 → MiMo（mimo-v2.5-asr）→ transcript
  *
  * 本文件打通「朗读」生产路径：cards 页 onReadAloud 调此端点返回 mp3，
  * 不再 console 桩。
@@ -44,7 +44,7 @@ import {
   companionVoicePlaybackOutcomeRequestV1Schema,
   companionVoiceSpeakSegmentRequestV2Schema,
 } from "@astella/shared/companion-voice-contracts";
-import { siliconFlowTranscribe, SiliconFlowAsrError } from "./voice-providers/siliconflow-asr.ts";
+import { mimoTranscribe, MimoAsrError, resolveMimoAsrConfig } from "./voice-providers/mimo-asr.ts";
 import { currentApiWorkspaceTransaction, scopeOfSession } from "../../db/client.ts";
 import {
   COMPANION_RATE_LIMITS,
@@ -76,8 +76,6 @@ const ttsBodySchema = z.object({
   voice: z.literal("zh-CN-XiaoxiaoNeural").optional(),
   purpose: z.enum(["notification", "guidance", "thought"]).optional(),
 });
-
-const COMPANION_ASR_MODEL = "FunAudioLLM/SenseVoiceSmall";
 
 function multipartFieldValues(fields: Record<string, unknown> | undefined, name: string): unknown[] {
   const raw = fields?.[name];
@@ -218,6 +216,8 @@ function responseAbortController(reply: Pick<FastifyReply, "raw">): AbortControl
 async function synthesizeCompanionSegmentBytes(args: {
   text: string;
   voice: string;
+  /** 这一轮的说话风格指令（段事件带下来的模型自写值）；缺省回退偏好 → config。 */
+  instruction?: string;
   selection: ResolvedTtsSelection;
   queueKey: string;
   scope: { workspaceId: string; userId: string; currentActiveTransaction: () => unknown };
@@ -234,6 +234,7 @@ async function synthesizeCompanionSegmentBytes(args: {
       scope: args.scope,
       signal: args.signal,
       selection: args.selection,
+      ...(args.instruction ? { instruction: args.instruction } : {}),
       onQwenFallback: (error) => {
         attempted = "edge";
         args.log.warn({ err: error, ordinal: args.ordinal }, "qwen tts failed; falling back to edge-tts");
@@ -430,9 +431,10 @@ export async function voiceRoutes(app: FastifyInstance) {
             },
             // deferOutcome：预热先不落合成结果，等客户端真来取时补记（见 warm 模块注释）。
             deferOutcome: true,
-            synthesize: (text, voice) => synthesizeCompanionSegmentBytes({
+            synthesize: (text, voice, instruction) => synthesizeCompanionSegmentBytes({
               text,
               voice,
+              ...(instruction ? { instruction } : {}),
               selection,
               queueKey: `${scope.workspaceId}:${scope.userId}`,
               scope: { ...scope, currentActiveTransaction: currentApiWorkspaceTransaction },
@@ -453,26 +455,38 @@ export async function voiceRoutes(app: FastifyInstance) {
     const session = req.session!;
     const { stored, updatedAt } = await getStoredVoicePreference(session.userId, session.workspaceId);
     const selection = resolveTtsSelection(stored, loadTtsEngineConfig());
+    // instruction 回**用户存的原值**（没设过是 null），不是解析后的生效值：设置页要显示
+    // "你写了什么"，而不是把 config 默认演成用户的选择（与 explicit 同一套诚实原则）。
+    const storedInstruction = typeof stored?.instruction === "string" && stored.instruction.trim().length > 0
+      ? stored.instruction.trim()
+      : null;
     return {
       version: 1,
       engine: selection.engine,
       voice: selection.engine === "qwen" ? selection.qwenVoice : selection.edgeVoice,
+      instruction: storedInstruction,
       explicit: selection.explicit,
       updatedAt: selection.explicit ? updatedAt : null,
     };
   });
 
-  // PATCH /voice/preference — 保存选择。engine 与 voice 的搭配由合同层白名单把关。
+  // PATCH /voice/preference — 保存选择。engine 与 voice 的搭配由合同层白名单把关；
+  // instruction 缺省不动、null 清除、字符串设置（长度由合同层按上游计数规则把关）。
   app.patch("/voice/preference", { preHandler: [requireSession] }, async (req) => {
     const body = parseBody(app, companionVoicePreferencePatchV1Schema, req.body);
     const session = req.session!;
-    await setVoicePreference(session.userId, session.workspaceId, body.engine, body.voice);
+    await setVoicePreference(session.userId, session.workspaceId, body.engine, body.voice, body.instruction);
+    const { stored, updatedAt } = await getStoredVoicePreference(session.userId, session.workspaceId);
+    const storedInstruction = typeof stored?.instruction === "string" && stored.instruction.trim().length > 0
+      ? stored.instruction.trim()
+      : null;
     return {
       version: 1,
       engine: body.engine,
       voice: body.voice,
+      instruction: storedInstruction,
       explicit: true,
-      updatedAt: new Date().toISOString(),
+      updatedAt: updatedAt ?? new Date().toISOString(),
     };
   });
 
@@ -529,9 +543,10 @@ userId: session.userId,
           ordinal: parsed.data.ordinal,
           segmentId: parsed.data.segmentId,
         },
-        synthesize: (text, voice) => synthesizeCompanionSegmentBytes({
+        synthesize: (text, voice, instruction) => synthesizeCompanionSegmentBytes({
           text,
           voice,
+          ...(instruction ? { instruction } : {}),
           selection,
           queueKey: `${session.workspaceId}:${session.userId}`,
           scope: { workspaceId: session.workspaceId, userId: session.userId, currentActiveTransaction: currentApiWorkspaceTransaction },
@@ -561,7 +576,7 @@ userId: session.userId,
     // 客户端把它按音色身份缓在自己电脑上，换了音色就该重新合成，不换就再也不来。
     const persistentAudio = body.purpose === "guidance" || body.purpose === "thought";
     const selection: ResolvedTtsSelection = body.purpose === "notification"
-      ? { engine: "edge", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenVoice: "", explicit: true }
+      ? { engine: "edge", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenVoice: "", qwenInstruction: "", explicit: true }
       : body.purpose === "guidance"
         ? { ...resolveTtsSelection(null, loadTtsEngineConfig()), engine: "qwen" }
         : await resolveSelectionForSynthesis(req.session!, req.log);
@@ -636,8 +651,8 @@ userId: session.userId,
     return reply.code(200).send({ version: 1, recorded: true });
   });
 
-  // POST /voice/transcribe：ASR（救火 6b——multipart 音频上传 → SiliconFlow 识别）。
-  // 请求：multipart/form-data，字段 file=<音频>（mp3/wav/m4a；SenseVoice 支持）。
+  // POST /voice/transcribe：ASR（救火 6b——multipart 音频上传 → MiMo 识别）。
+  // 请求：multipart/form-data，字段 file=<音频>（MiMo 只收 wav/mp3；其余容器在出网前被拒）。
   // 响应：{ text, asrProvider, asrModel }（逐字 transcript；ASR 失败 → 4xx/5xx fail closed）。
   app.post("/voice/transcribe", { preHandler: [requireSession, requireAiConsent] }, async (req, reply) => {
     const aborted = responseAbortController(reply);
@@ -729,21 +744,23 @@ userId: session.userId,
           productionAiGovernancePorts,
         );
         asrCall.noteBytes(audio.length);
+        // 审计标签与实际调用同一份解析（谁在识别、用哪个模型，两处不许各说各话）。
+        const companionAsrModel = resolveMimoAsrConfig()?.model ?? "unconfigured";
         const result = await transcribeCompanionDialogueAudio({ ...scopeOfSession(req.session),
-userId: req.session.userId,
+          userId: req.session.userId,
           audio,
           filename,
           asrProvider: {
-            transcribe: (buf, fn) => asrCall.run({ provider: "siliconflow", modelId: COMPANION_ASR_MODEL },
-              () => siliconFlowTranscribe(buf, fn, {
-                apiKey: process.env.SILICONFLOW_API_KEY,
+            transcribe: (buf, fn) => asrCall.run({ provider: "mimo", modelId: companionAsrModel },
+              () => mimoTranscribe(buf, fn, {
                 scope: scopeOfSession(req.session),
                 currentActiveTransaction: currentApiWorkspaceTransaction,
                 signal: aborted.signal,
+                language: companionFields.language,
               })),
           },
-          asrProviderName: "siliconflow",
-          asrModel: COMPANION_ASR_MODEL,
+          asrProviderName: "mimo",
+          asrModel: companionAsrModel,
           language: companionFields.language,
         });
         return reply
@@ -771,10 +788,10 @@ userId: req.session.userId,
         productionAiGovernancePorts,
       );
       plainAsrCall.noteBytes(audio.length);
+      const transcriptionModel = resolveMimoAsrConfig()?.model ?? "unconfigured";
       const result = await plainAsrCall.run(
-        { provider: "siliconflow", modelId: process.env.VOICE_ASR_MODEL ?? "FunAudioLLM/SenseVoiceSmall" },
-        () => siliconFlowTranscribe(new Uint8Array(audio), filename, {
-          apiKey: process.env.SILICONFLOW_API_KEY,
+        { provider: "mimo", modelId: transcriptionModel },
+        () => mimoTranscribe(new Uint8Array(audio), filename, {
           scope: scopeOfSession(req.session),
           currentActiveTransaction: currentApiWorkspaceTransaction,
           signal: aborted.signal,
@@ -782,16 +799,23 @@ userId: req.session.userId,
       );
       return reply.send({
         text: result.text,
-        asrProvider: "siliconflow",
-        asrModel: process.env.VOICE_ASR_MODEL ?? "FunAudioLLM/SenseVoiceSmall",
+        asrProvider: "mimo",
+        asrModel: transcriptionModel,
       });
     } catch (err) {
-      if (err instanceof SiliconFlowAsrError) {
-        // 只透出 code + 静态文案：SiliconFlowAsrError.message 可能含 provider
+      if (err instanceof MimoAsrError) {
+        // 只透出 code + 静态文案：MimoAsrError.message 可能含 provider
         // 网络细节/端点，不透出（与 edge-tts 分支同一 security 约定）。
-        // code 字段必须携带：客户端 friendlyVoiceError 只按 data.code 归一化
+        // code 字段必须携带：客户端按 data.code 归一化文案
         // （review 2026-08-12：502 缺 code → ASR 失败全落默认文案）。
-        return reply.code(502).send({ error: err.code, code: err.code, message: "语音转写服务暂不可用，请稍后重试" });
+        // 格式不对是**请求本身**的问题（MiMo 只收 wav/mp3），归 415 而不是 502：
+        // 客户端该换录音格式，不是等一会儿重试。
+        const status = err.code === "UNSUPPORTED_AUDIO_FORMAT" ? 415 : 502;
+        return reply.code(status).send({
+          error: err.code,
+          code: err.code,
+          message: status === 415 ? "这段录音的格式不支持，请改用 wav 或 mp3 上传" : "语音转写服务暂不可用，请稍后重试",
+        });
       }
       throw err;
     }

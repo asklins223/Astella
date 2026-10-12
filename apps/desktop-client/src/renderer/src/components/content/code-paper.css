@@ -1,0 +1,72 @@
+/**
+ * 代码纸：共用的一批 token 色与那张带纸沿的面。
+ *
+ * `code-tokens.ts` 把语法标签映射成下面这些 class 名，CodeMirror（编辑态的代码块、
+ * 源码态的围栏）与不跑编辑器的地方（笔记阅读态、伴星递来的代码）发出的是同一批类，
+ * 所以颜色只许有这一处。
+ *
+ * 变量挂在 `.hud-surface`（应用根上那个类，笔记与伴星都在它里面）；纸面主题写在
+ * `.notebook-workspace[data-writing-theme]`，它是更近的祖先，只改笔记这一处的纸。
+ * 每枚 token 都在对应纸底上核过 4.5:1：日纸 #f1f2e6、夜纸 #201f1c、伴星那张暖纸 #f4ecd7。
+ */
+.hud-surface {
+  --code-paper: #f1f2e6;
+  --code-paper-line: #e5e4d3;
+  --code-ink: #405447;
+  --code-rail: #69776b;
+  --code-keyword: #64528a;
+  --code-type: #3e6b50;
+  --code-call: #92583c;
+  --code-property: #3f6484;
+  --code-string: #4f6d3d;
+  --code-number: #8d5d26;
+  --code-comment: #626a58;
+  --code-meta: #7d5f36;
+  --code-escape: #9c5134;
+}
+
+/* 夜纸的代码面比正文再深一格：此前它是浅底压奶油字，读侧基本看不见。 */
+.hud-surface .notebook-workspace[data-writing-theme="night"] {
+  --code-paper: #201f1c;
+  --code-paper-line: #36342d;
+  --code-ink: #e5dac8;
+  --code-rail: #a89f8d;
+  --code-keyword: #b6a3dd;
+  --code-type: #8fc4a3;
+  --code-call: #d9a37a;
+  --code-property: #92bfd6;
+  --code-string: #a8cf8f;
+  --code-number: #e0bb7a;
+  --code-comment: #97a08c;
+  --code-meta: #c4a97e;
+  --code-escape: #e29b7d;
+}
+
+/* 白纸只换纸底与墨色，token 沿用日纸那一套：白底只会让对比度更高。 */
+.hud-surface .notebook-workspace[data-writing-theme="white"] {
+  --code-paper: #f4f3ee;
+  --code-paper-line: #e2e1d6;
+  --code-ink: #252525;
+  --code-rail: #7c7768;
+}
+
+.code-keyword { color: var(--code-keyword); }
+.code-type { color: var(--code-type); }
+.code-call { color: var(--code-call); }
+.code-property { color: var(--code-property); }
+.code-string { color: var(--code-string); }
+.code-number { color: var(--code-number); }
+.code-comment { color: var(--code-comment); font-style: italic; }
+.code-meta { color: var(--code-meta); }
+.code-escape { color: var(--code-escape); }
+
+/* 那张纸本身：语言与复制留在纸沿，正文从纸沿下面起。 */
+.hud-surface .code-paper { margin: 20px 0; border: 1px solid var(--code-paper-line); border-radius: 16px; background: var(--code-paper); }
+.hud-surface .code-paper__rail { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 12px; border-bottom: 1px solid var(--code-paper-line); color: var(--code-rail); font: 500 11px/1.5 "Noto Sans SC Variable", sans-serif; user-select: none; }
+.hud-surface .code-paper__language { color: var(--code-ink); letter-spacing: .04em; }
+.hud-surface .code-paper__copy { border: 0; padding: 3px 8px; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.hud-surface .code-paper__copy:hover { background: color-mix(in srgb, var(--code-ink) 10%, transparent); color: var(--code-ink); }
+
+/* 代码的字：长行在纸里横向滚，缩进与换行照原文。 */
+.hud-surface .code-body { margin: 0; padding: 13px 19px 16px; overflow-x: auto; color: var(--code-ink); font: 14px/1.85 ui-monospace, "SFMono-Regular", Consolas, monospace; white-space: pre; }
+.hud-surface .code-body code { background: none; padding: 0; font: inherit; }

@@ -17,7 +17,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { COMPANION_AGENT_TOOL_DEFINITIONS } from "@astella/shared/companion-agent-registry";
+import { COMPANION_AGENT_TOOL_DEFINITIONS, getAgentCapability } from "@astella/shared/companion-agent-registry";
 
 const definition = COMPANION_AGENT_TOOL_DEFINITIONS.find((d) => d.name === "companion_revise_own_style");
 
@@ -50,8 +50,10 @@ test("必须给出**理由** —— §4.8.4「记录作者、范围和依据」�
 });
 
 test("说明里写清生效时点：下一轮新消息，当前调用固定", () => {
-  assert.match(definition!.description, /用户下一轮新发来的消息被接受时自动采用/);
-  assert.match(definition!.description, /当前已开始的调用照旧/);
+  // 生效时点是两条能力共用的纪律，收在场景指引上（方案 52 §4.1），去重后一次只进一份。
+  const shared = (getAgentCapability("companion_revise_own_style")!.sceneGuidance!.shared ?? []).join("\n");
+  assert.match(shared, /用户下一轮新发来的消息被接受时自动采用/);
+  assert.match(shared, /当前已开始的调用照旧/);
 });
 
 test("【自证】判据认得出「把 name 顺手加进去」这个真实退化", () => {

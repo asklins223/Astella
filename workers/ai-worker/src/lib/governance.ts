@@ -73,17 +73,11 @@ export function isConfiguredProviderRequired(
 export interface AIGovernanceContext {
   providerName: string;
   providerConfig: import("./ai-provider.ts").AIProviderRuntimeConfig;
-  /** 独立的文本生成（轻量任务）provider 配置。
+  /** 副模型：轻量文本任务，也是**主模型看不了图时那双眼睛**（2026-10-12）。
    * 当系统配置中 text_generation 映射到不同于 agent_turn 的平台时,
-   * 此字段持有该平台配置,用于低复杂度文本生成任务,以便使用更便宜的模型。
-   * 当未单独配置时为 null,回退到 providerName/providerConfig。 */
+   * 此字段持有该平台配置。当未单独配置时为 null,回退到 providerName/providerConfig。 */
   textProviderName: string | null;
   textProviderConfig: import("./ai-provider.ts").AIProviderRuntimeConfig | null;
-  /** 独立的视觉模型配置。当系统配置了独立的 vision 平台时,
-   * 此字段与 providerConfig 不同（不同平台/Key/模型）。
-   * 当未配置 vision 时,回退到 providerConfig。 */
-  visionProviderName: string | null;
-  visionProviderConfig: import("./ai-provider.ts").AIProviderRuntimeConfig | null;
   /** 伴星恢复备用 provider；按当前正式配置解析，可以与主槽使用同一模型。
    * 旧的跨模型恢复经验不覆盖用户的固定模型决定。
    * 未配置时为 null，loop 跳过此备用级。 */
@@ -106,16 +100,14 @@ export interface AIGovernanceContext {
  * which provider slot to read from the governance context.
  *
  * Resolution priority within the governance context:
- *   1. If the task requires "vision", use visionProviderName/visionProviderConfig
- *      (falls back to text provider if no separate vision config).
- *   2. If the task requires "text_generation", use textProviderName/
+ *   1. If the task requires "text_generation", use textProviderName/
  *      textProviderConfig if set (enables cheaper models for lightweight tasks
  *      like validation/rubric/question generation). Falls back to main provider.
- *   3. If the task requires "agent_turn", use the main providerName/providerConfig.
- *   4. If the task requires "embedding", the governance context does not hold
+ *   2. If the task requires "agent_turn", use the main providerName/providerConfig.
+ *   3. If the task requires "embedding", the governance context does not hold
  *      an embedding slot — callers should use createEmbeddingProvider() directly.
  *      This function returns the text provider as a fallback.
- *   5. For unknown capabilities, fall back based on task complexity:
+ *   4. For unknown capabilities, fall back based on task complexity:
  *      high → agent_turn provider, low → text_generation provider.
  *
  * @see 原据 provider-registry-refactor.md §3.4（2026-09-29 已归档）
@@ -125,15 +117,6 @@ export function resolveProviderForTask(
   task: AITaskType,
 ): { providerName: string; providerConfig: import("./ai-provider.ts").AIProviderRuntimeConfig } {
   const cap = getCapabilityForTask(task);
-
-  // Vision tasks use the vision provider slot
-  if (cap === "vision") {
-    if (ctx.visionProviderName && ctx.visionProviderConfig) {
-      return { providerName: ctx.visionProviderName, providerConfig: ctx.visionProviderConfig };
-    }
-    // Fall back to text provider for vision
-    return { providerName: ctx.providerName, providerConfig: ctx.providerConfig };
-  }
 
   // Text generation: use dedicated text provider if configured (enables
   // routing lightweight tasks to a cheaper model). Falls back to main provider.
@@ -167,33 +150,35 @@ export function resolveProviderForTask(
 }
 
 /**
- * 识图路由（2026-10-06 配置重设计）：这次识图该用谁的眼睛。
+ * 识图路由（2026-10-12「不再单独配识图模型」）：这次识图该用谁的眼睛。
  *
  * 顺序（**声明即真相**，不做运行时能力探测）：
  *   1. 当前对话模型声明 `vision: true` → 用它（主模型自己看）；
- *   2. 否则 `capabilities.vision` 有映射、且它的模型没被声明显式 `vision: false`
- *      → 用专门的识图模型；
- *   3. 都没有 → null：调用方明确失败/不下发读图工具，**绝不**回落给看不见的模型。
+ *   2. 否则副模型（`text_generation` 那台）声明 `vision: true` → 用它；
+ *   3. 都没有 → null：调用方明确失败/不下发读图工具，**绝不**回落给看不了的模型。
+ *
+ * 两处都要求**显式声明 true**：没写 `vision` 的模型不算能看图——"没声明"当作
+ * "能看"会让一次图片外发变成猜，而猜错的表现是模型对着图编内容。
  */
 export function resolveVisionReader(gov: Pick<
   AIGovernanceContext,
-  "providerName" | "providerConfig" | "visionProviderName" | "visionProviderConfig"
->): { providerName: string; providerConfig: AIGovernanceContext["providerConfig"]; source: "main" | "dedicated" } | null {
+  "providerName" | "providerConfig" | "textProviderName" | "textProviderConfig"
+>): { providerName: string; providerConfig: AIGovernanceContext["providerConfig"]; source: "main" | "aux" } | null {
   if (gov.providerConfig.modelProfile?.vision === true) {
     return { providerName: gov.providerName, providerConfig: gov.providerConfig, source: "main" };
   }
   if (
-    gov.visionProviderName
-    && gov.visionProviderConfig
-    && gov.visionProviderConfig.modelProfile?.vision !== false
+    gov.textProviderName
+    && gov.textProviderConfig
+    && gov.textProviderConfig.modelProfile?.vision === true
   ) {
-    return { providerName: gov.visionProviderName, providerConfig: gov.visionProviderConfig, source: "dedicated" };
+    return { providerName: gov.textProviderName, providerConfig: gov.textProviderConfig, source: "aux" };
   }
   return null;
 }
 
 /**
- * 配置层面"现在有没有能看图的模型"（不需要治理上下文：agent_turn 与 vision
+ * 配置层面"现在有没有能看图的模型"（不需要治理上下文：agent_turn 与 text_generation
  * 两个槽都只由 config/ai-platforms.json 决定）。
  *
  * here-and-now 用它把"这篇有 N 张图，看不了"的措辞与**工具下发面**对齐——
@@ -202,8 +187,8 @@ export function resolveVisionReader(gov: Pick<
 export function visionReaderAvailableFromConfig(): boolean {
   const agent = resolveSystemPlatform("agent_turn");
   if (agent?.modelProfile?.vision === true) return true;
-  const vision = resolveSystemPlatform("vision");
-  return Boolean(vision && vision.modelProfile?.vision !== false);
+  const auxiliary = resolveSystemPlatform("text_generation");
+  return auxiliary?.modelProfile?.vision === true;
 }
 
 /**
@@ -297,14 +282,8 @@ export async function resolveAIGovernanceContext(
     }
   }
 
-  // vision — 独立系统级视觉平台（未配置时回退到主 provider）
-  let visionProviderName: string | null = null;
-  let visionProviderConfig: import("./ai-provider.ts").AIProviderRuntimeConfig | null = null;
-  const visionPlatform = resolveSystemPlatform("vision");
-  if (visionPlatform) {
-    visionProviderName = visionPlatform.type;
-    visionProviderConfig = runtimeConfigFromResolved(visionPlatform);
-  }
+  // vision — 没有独立槽位（2026-10-12）：谁的眼睛由 agent_turn / text_generation
+  // 两台模型档案的 vision 声明决定，见 resolveVisionReader。
 
   // text_generation — 独立系统级轻量文本平台（未配置时回退到主 provider）
   let textProviderName: string | null = null;
@@ -337,10 +316,9 @@ export async function resolveAIGovernanceContext(
   let policy: WorkspaceAIPolicy = createDefaultAIPolicy();
   let consentOk = true;
 
-  // Check consent for any non-mock external provider (agent / vision / text_gen / embedding).
+  // Check consent for any non-mock external provider (agent / text_gen / embedding).
   const anyExternalNonMock =
     providerName.toLowerCase() !== "mock" ||
-    (visionProviderName != null && visionProviderName.toLowerCase() !== "mock") ||
     (textProviderName != null && textProviderName.toLowerCase() !== "mock") ||
     (embeddingProviderName != null && embeddingProviderName.toLowerCase() !== "mock");
 
@@ -366,7 +344,7 @@ export async function resolveAIGovernanceContext(
     }
   }
 
-  return { providerName, providerConfig, textProviderName, textProviderConfig, visionProviderName, visionProviderConfig, companionFallbackProviderName, companionFallbackProviderConfig, embeddingProviderName, embeddingProviderConfig, consentOk, policy };
+  return { providerName, providerConfig, textProviderName, textProviderConfig, companionFallbackProviderName, companionFallbackProviderConfig, embeddingProviderName, embeddingProviderConfig, consentOk, policy };
 }
 
 

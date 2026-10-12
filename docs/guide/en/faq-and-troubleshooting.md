@@ -34,7 +34,9 @@ For 429, wait according to `Retry-After`. Email and IP counters are separate; su
 
 ### Can I recover a forgotten password?
 
-There is no email self-service recovery. `/auth/change-password` requires the current password. The Owner endpoint `/auth/recovered-users/:userId/reset-password` only initializes an unset password for an imported/restored user; it cannot reset arbitrary existing accounts. It is not a general recovery endpoint.
+Yes, with an email verification code: on the sign-in screen choose "忘记密码？", enter your address, read the 6-digit code and set a new password. A successful reset revokes every session of that account, so you sign in again with the new password. The code is valid for 5 minutes, works once, and a resend has to wait 60 seconds.
+
+This depends on the server's outbound mail channel (QQ Mail SMTP, falling back to 2925). When no mail arrives, check whether the server has credentials configured: the endpoint answers 503 with "邮箱验证通道尚未配置", which is a server configuration fact, not an account problem. Registration is also verification-code-only by default. `/auth/change-password` still requires the current password (changing it while signed in), and the Owner endpoint `/auth/recovered-users/:userId/reset-password` only initializes an unset password for an imported/restored user — it is not a general recovery endpoint.
 
 ### Is a port occupied, or is the client using the wrong address?
 

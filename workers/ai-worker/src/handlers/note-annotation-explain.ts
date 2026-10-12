@@ -26,11 +26,14 @@ const visibleNoteCondition = sql.raw(noteVisibleSqlText(
   "NULLIF(current_setting('app.user_id', true), '')::uuid",
 ));
 const explanationSchema = z.strictObject({
-  explanation: z.string().trim().min(12).max(650),
-  example: z.string().trim().max(350).nullable(),
+  // 长度随模型档案与原文走：天花板只认 `maxOutputTokens`。原先这里卡 650 字，
+  // 模型一写长整条任务就以 output_shape 终结，而内容本身是合法的。
+  // example 不设下限：模型交空串等同于"没有例子"，此前 `max(350)` 也放它过。
+  explanation: z.string().trim().min(12),
+  example: z.string().trim().nullable(),
 });
 
-function parseExplanation(raw: string) {
+export function parseExplanation(raw: string) {
   let value: unknown;
   try { value = extractJsonFromText(raw, ["explanation", "example"]); } catch { throw new NoteAnnotationOutputError("批注解释不是可保存的结构化内容"); }
   const result = explanationSchema.safeParse(value);
@@ -67,7 +70,7 @@ export async function runNoteAnnotationExplain(job: JobPayload): Promise<void> {
       eq(schema.noteBlocks.workspaceId, job.workspaceId), eq(schema.noteBlocks.versionId, input.noteVersionId),
       eq(schema.noteBlocks.type, "heading"), sql`${schema.noteBlocks.ordinal} < ${anchor.startBlockOrdinal}`,
     )).orderBy(sql`${schema.noteBlocks.ordinal} DESC`).limit(1);
-    const heading = previousHeading ? noteBlockRenderedTextV1(previousHeading.type, previousHeading.content).slice(0, 160) : "";
+    const heading = previousHeading ? noteBlockRenderedTextV1(previousHeading.type, previousHeading.content) : "";
     return { text: anchor.excerpt, heading };
   });
 
@@ -91,8 +94,8 @@ export async function runNoteAnnotationExplain(job: JobPayload): Promise<void> {
   ];
   const generationParameters = {
     temperature: 0.25,
-    // 2026-10-06 起跟随平台配置开思考；思考 token 计入 maxTokens，预算相应上调。
-    maxTokens: 2_600,
+    // 天花板只认档案声明：思考与否由档案定，handler 不再自报一个预算数
+    // ——那个数在档案缺失时就是把正文砍成半截的那把刀。
     responseFormat: "json_object" as const,
   };
   const inputSnapshotHash = noteLearningSnapshotHash({

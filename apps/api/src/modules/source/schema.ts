@@ -6,6 +6,8 @@ export const sourceCreateSchema = z.object({
   title: z.string().max(500).optional(),
   content: z.string().optional(),
   url: z.string().url().optional(),
+  // 审计 F8：文件采进来时的来路（`文件 X.pdf`）。不传时退回 url ?? null。
+  origin: z.string().max(500).optional(),
   metadata: z.record(z.unknown()).optional(),
   // 审计 F33：用户明确说"再采一次"时才绕过同网址查重。
   force: z.boolean().optional(),

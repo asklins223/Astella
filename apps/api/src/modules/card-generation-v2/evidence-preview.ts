@@ -31,23 +31,21 @@ export interface EvidencePreviewItem {
   originalPreview: string | null;
 }
 
-const MAX_PREVIEWS = 20;
-const MAX_PREVIEW_CHARS = 2000;
-
+// 证据预览的条数与单条长度都随正文走：合同侧不再写死上界，读侧也从不悄悄剪——
+// 一条长引用要么整条给出来，要么在别处以可见的失败收场，不会变成半条"原文依据"。
 export async function loadEvidencePreviewItems(
   tx: ApiTransaction,
   workspaceId: string,
   refIds: string[],
 ): Promise<EvidencePreviewItem[]> {
-  const ids = [...new Set(refIds)].slice(0, MAX_PREVIEWS);
+  const ids = [...new Set(refIds)];
   if (ids.length === 0) return [];
 
   const rows = await tx.select().from(evidenceSnapshotsV2)
     .where(and(
       eq(evidenceSnapshotsV2.workspaceId, workspaceId),
       inArray(evidenceSnapshotsV2.evidenceSnapshotId, ids),
-    ))
-    .limit(MAX_PREVIEWS);
+    ));
   if (rows.length === 0) return [];
 
   const blockIds = [...new Set(
@@ -171,7 +169,7 @@ export async function loadEvidencePreviewItems(
       startOffset: row.startOffset,
       endOffset: row.endOffset,
     });
-    const preview = quote.trim().slice(0, MAX_PREVIEW_CHARS);
+    const preview = quote.trim();
     // 落点还在、文字也没变，却切出个空串——那是这条证据本身没有正文，
     // 和"找不到原文"是两件事，不该占用后者的位置。
     if (state === "located" && !preview) continue;
@@ -182,7 +180,7 @@ export async function loadEvidencePreviewItems(
       sourceState: state,
       originalPreview: state === "located"
         ? null
-        : (copyTextById.get(row.evidenceSnapshotId) ?? "").trim().slice(0, MAX_PREVIEW_CHARS) || null,
+        : (copyTextById.get(row.evidenceSnapshotId) ?? "").trim() || null,
     });
   }
   return items;

@@ -198,6 +198,23 @@
 .universe-detail-relation small { font-size: 10px; color: #6c8164; }
 .universe-detail-relation strong { font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .universe-detail-relation:hover { background: #e0edd8; }
+/* 层一的正文引用：方向在左、笔记名在最重的那一格，整行没有底色。
+   这一面板里唯一的实心块是「打开这一篇笔记」那颗主按钮，别跟它抢。 */
+.universe-references ul { display: grid; gap: 1px; list-style: none; margin: 0; padding: 0; }
+/* 只命中列表里的行：写成 `.universe-references button` 会把下面那颗折叠按钮也
+   排成两列网格（特异性还比 `.universe-references__more` 高），屏上就是"还有 2 篇
+   没列出"被挤成两行。 */
+.universe-references li button { display: grid; grid-template-columns: 46px minmax(0, 1fr); align-items: baseline; gap: 9px; width: 100%; border: 0; border-radius: 11px; padding: 7px 9px 7px 0; background: transparent; text-align: left; color: #426852; }
+.universe-references em { font: 600 10px/1.9 var(--font-ui); font-style: normal; color: #7d8f76; }
+.universe-references strong { font-size: 12.5px; font-weight: 650; line-height: 1.75; overflow-wrap: anywhere; }
+.universe-references li button:hover { background: #eef3e6; }
+.universe-references li button:hover em { color: #6c8164; }
+.universe-references li button:hover strong { text-decoration: underline; text-decoration-color: #a9c1a3; text-underline-offset: 3px; }
+.universe-references li button:focus-visible { outline: 2px solid #5d9c7f; outline-offset: 2px; }
+/* 收起来的那一半：与笔记名那一格对齐，底色只包住字，不铺成第二条横带。 */
+.universe-references__more { display: block; width: fit-content; margin-top: 6px; margin-left: 55px; border: 0; border-radius: 11px; padding: 6px 9px; background: transparent; color: #6c8164; font-size: 11px; font-weight: 650; white-space: nowrap; }
+.universe-references__more:hover { background: #eef3e6; color: #426852; text-decoration: underline; text-underline-offset: 3px; }
+.universe-references__more:focus-visible { outline: 2px solid #5d9c7f; outline-offset: 2px; }
 .universe-detail-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; padding: 15px 18px; border-top: 1px solid #52714614; background: #fbf8e8; }
 .universe-detail-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 39px; border: 2px solid #fffef1; border-radius: 20px; padding: 0 13px; font-size: 11px; font-weight: 700; }
 .universe-detail-actions .is-primary { flex: 1; background: #f1bea3; color: #674a3b; box-shadow: 0 3px 0 #d49d81; }

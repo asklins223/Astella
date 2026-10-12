@@ -1,5 +1,13 @@
 import { resolveCompanionPersonaProfile } from "@astella/shared/pet-persona-presets";
 import { companionPersonaProfileV1Schema } from "@astella/shared";
+import { PERSONA_FIELD_CAPACITY } from "@astella/shared/pet-persona-merge";
+
+/**
+ * 每轮注入的身份文档开头窗口（码点）。它**不是**这篇文档的上限——存储上限是
+ * `PERSONA_FIELD_CAPACITY.selfDescription`；读到底走 `companion_read_identity` 的
+ * 分段（下面 `documentTruncated` 那一句就是告诉她还有多少没进来）。
+ */
+export const PERSONA_DOCUMENT_INJECTION_WINDOW_CHARS = 2_400;
 
 /** Shared persona data only; callers choose the execution or conversation policy. */
 export interface CompanionPersonaContextProfile {
@@ -86,7 +94,7 @@ export function renderPersonaBehaviour(persona: {
   }
   const catchphrase = persona.boundaries?.catchphrase;
   if (typeof catchphrase === "string" && catchphrase.trim().length > 0) {
-    lines.push(`你的口头禅是「${catchphrase.trim().slice(0, 30)}」。当前话题有呼应时才自然用，不把它当结尾签名，也不拿它宣告没有实际发生的活动；用户专门询问或要求说这句话时可以回应。`);
+    lines.push(`你的口头禅是「${sanitizePersonaField(catchphrase.trim(), PERSONA_FIELD_CAPACITY.catchphrase)}」。当前话题有呼应时才自然用，不把它当结尾签名，也不拿它宣告没有实际发生的活动；用户专门询问或要求说这句话时可以回应。`);
   }
   return lines;
 }
@@ -95,19 +103,19 @@ export function renderPersonaBehaviour(persona: {
 export function buildCompanionPersonaData(profile: CompanionPersonaContextProfile | null | undefined): string[] {
   const persona = profile
     ? {
-        name: sanitizePersonaField(profile.name, 60),
-        speakingStyle: sanitizePersonaField(profile.speakingStyle, 1000),
+        name: sanitizePersonaField(profile.name, PERSONA_FIELD_CAPACITY.name),
+        speakingStyle: sanitizePersonaField(profile.speakingStyle, PERSONA_FIELD_CAPACITY.speakingStyle),
+        // 条数不在这封顶：她的标签与例句存了几条就都进来，以前 .slice(0,10) /
+        // .slice(0,5) 会把她自己的认识悄悄少给几条，界面上看不出少过。
         personalityTags: profile.personalityTags
-          .slice(0, 10)
-          .map((tag) => sanitizePersonaField(tag, 20))
+          .map((tag) => sanitizePersonaField(tag, PERSONA_FIELD_CAPACITY.personalityTags))
           .filter((tag) => tag.length > 0),
         examples: profile.examples
-          .slice(0, 5)
-          .map((example) => sanitizePersonaField(example.text, 200))
+          .map((example) => sanitizePersonaField(example.text, PERSONA_FIELD_CAPACITY.example))
           .filter((example) => example.length > 0),
         // 自由文档保留篇章；默认加载前段，读取工具可展开本轮固定的全文。
-        selfDescription: renderSelfAuthoredDocument(profile.selfDescription?.slice(0, 2400)),
-        documentTruncated: (profile.selfDescription?.length ?? 0) > 2400,
+        selfDescription: renderSelfAuthoredDocument(profile.selfDescription?.slice(0, PERSONA_DOCUMENT_INJECTION_WINDOW_CHARS)),
+        documentTruncated: (profile.selfDescription?.length ?? 0) > PERSONA_DOCUMENT_INJECTION_WINDOW_CHARS,
         documentChars: profile.selfDescription?.length ?? 0,
         // 活跃度/边界不是自由文本，不需要 sanitizePersonaField（无注入面），
         // 但 catchphrase 是用户自填的，进 prompt 前必须走同一道净化。

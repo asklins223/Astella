@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="day">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>门禁更新流程演示 · 拾星笔记</title>
+<style>
+  /* 颜色取自 apps/desktop-client/src/renderer/src/components/desktop-access-gate.css
+     的三套主题变量；主按钮的蜜桃底、2px 陶土描边与不对称圆角也照抄那一处。
+     本页只是演示稿，不引任何依赖与图片。 */
+  :root {
+    --hud-peach: #e89568;
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --radius-card: 18px 22px 17px 20px;
+    --radius-button: 17px 21px 16px 19px;
+  }
+  html[data-theme="day"] {
+    --sky-1: #cfe3ea; --sky-2: #f2e6d0;
+    --gate-paper-strong: #fffaf0;
+    --gate-ink: #2d2119; --gate-ink-soft: #625044; --gate-ink-faint: #806d5f;
+    --gate-line: rgba(73, 52, 37, 0.22);
+    --gate-field: rgba(255, 252, 245, 0.9);
+    --gate-action: #bd542c; --gate-action-text: #a94322;
+    --gate-success: #526a46; --gate-danger: #8c3d26;
+    --shadow: 0 18px 40px rgba(67, 43, 27, 0.20);
+  }
+  html[data-theme="dusk"] {
+    --sky-1: #b5764f; --sky-2: #f0c79a;
+    --gate-paper-strong: #fff7ec;
+    --gate-ink: #2f1b15; --gate-ink-soft: #4a2f25; --gate-ink-faint: #6d4939;
+    --gate-line: rgba(71, 37, 24, 0.34);
+    --gate-field: #fff4e7;
+    --gate-action: #a44228; --gate-action-text: #87341e;
+    --gate-success: #386654; --gate-danger: #982f22;
+    --shadow: 0 18px 40px rgba(58, 28, 16, 0.26);
+  }
+  html[data-theme="night"] {
+    --sky-1: #1d2536; --sky-2: #3a302a;
+    --gate-paper-strong: #3a302a;
+    --gate-ink: #f0dfc8; --gate-ink-soft: #c7b49b; --gate-ink-faint: #b8a68f;
+    --gate-line: rgba(244, 223, 192, 0.19);
+    --gate-field: rgba(24, 20, 18, 0.46);
+    --gate-action: #d86d3a; --gate-action-text: #ee8b52;
+    --gate-success: #9cb28d; --gate-danger: #ffb08a;
+    --shadow: 0 18px 44px rgba(0, 0, 0, 0.44);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 26px 26px 60px;
+    color: var(--gate-ink);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    background: #efe7db;
+  }
+  html[data-theme="night"] body { background: #171412; }
+
+  .doc-head { max-width: 1080px; margin: 0 auto 18px; }
+  .doc-head h1 { margin: 0 0 6px; font-size: 21px; letter-spacing: 0.01em; }
+  .doc-head p { margin: 0; color: var(--gate-ink-soft); font-size: 13px; line-height: 1.7; }
+  .doc-head code { font-family: "SF Mono", Menlo, monospace; font-size: 12px; }
+
+  .switcher {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    max-width: 1080px; margin: 16px auto 0;
+  }
+  .switcher b { font-size: 12px; font-weight: 700; color: var(--gate-ink-faint); align-self: center; margin-right: 2px; }
+  .switcher button {
+    font: inherit; font-size: 12px; font-weight: 650;
+    padding: 6px 11px; cursor: pointer;
+    color: var(--gate-ink-soft);
+    border: 1px solid var(--gate-line);
+    border-radius: 999px;
+    background: var(--gate-paper-strong);
+  }
+  .switcher button[aria-pressed="true"] {
+    color: #fff; border-color: var(--gate-action); background: var(--gate-action);
+  }
+
+  /* ── 舞台：一扇假的门禁窗，用渐变代替真实海报图 ───────────────── */
+  .stage {
+    position: relative;
+    max-width: 1080px; height: 640px; margin: 18px auto 0;
+    overflow: hidden;
+    border: 1px solid var(--gate-line);
+    border-radius: 14px;
+    background:
+      radial-gradient(120% 90% at 78% 12%, var(--sky-1) 0%, transparent 58%),
+      linear-gradient(160deg, var(--sky-2) 0%, var(--sky-1) 100%);
+    box-shadow: var(--shadow);
+  }
+  .stage::after {
+    /* 窗口的红绿灯与拖拽条，只为了看 chip 会不会落进标题按钮那一条 */
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 42px;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.05), transparent);
+    pointer-events: none;
+  }
+  .traffic { position: absolute; top: 16px; left: 18px; display: flex; gap: 8px; z-index: 3; }
+  .traffic i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+
+  .panel {
+    position: absolute; top: 88px; left: 74px; width: 400px; z-index: 2;
+    display: grid; gap: 16px;
+  }
+  .brand { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 750; }
+  .brand span.mark {
+    width: 30px; height: 30px; display: grid; place-items: center;
+    border-radius: 10px 12px 9px 11px;
+    background: linear-gradient(150deg, #6f86b8, #2f3f63);
+    color: #ffe9c9; font-size: 15px;
+  }
+  .brand i { width: 6px; height: 6px; border-radius: 50%; background: var(--gate-action); }
+  .panel h2 { margin: 0; font-size: 30px; line-height: 1.25; letter-spacing: 0.01em; }
+  .panel .sub { margin: -8px 0 0; font-size: 13px; color: var(--gate-ink-soft); }
+  .rule { height: 1px; background: var(--gate-line); }
+  .field { display: grid; gap: 6px; }
+  .field label { font-size: 13px; font-weight: 750; }
+  .field .box {
+    display: flex; align-items: center; gap: 9px; min-height: 50px; padding: 0 14px;
+    color: var(--gate-ink-faint); font-size: 14px;
+    border: 1px solid var(--gate-line); border-radius: 13px 17px 12px 16px;
+    background: var(--gate-field);
+  }
+  .primary {
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    min-height: 50px; padding: 11px 18px;
+    color: #3e2d22; font-size: 14px; font-weight: 750;
+    text-shadow: 0 1px rgba(255,255,255,0.32);
+    border: 2px solid #af522c; border-radius: var(--radius-button);
+    background-color: var(--hud-peach);
+    box-shadow: 0 5px 11px rgba(67, 43, 27, 0.16);
+  }
+  .quiet { justify-self: start; font-size: 13px; font-weight: 700; color: var(--gate-action-text); background: none; border: 0; padding: 0; }
+
+  /* ── 那颗角标 chip（已实现的那一层） ─────────────────────────────
+     跟着空的那半边跑：这一屏表单在左列，所以贴右下；注册那屏表单在右列，实现里换到左下。
+     不放上角：Windows 的自绘标题按钮（最小化/最大化/关闭）就在右上角，会盖住菜单键。
+     玻璃配方照抄门禁自己的台灯时间菜单：同一档 blur、同一条暖描边、同一道内高光，
+     半径用字段那一档的不对称切角。不做 999px 药丸——那形是 hover 提示的形。 */
+  .chip {
+    position: absolute; z-index: 4; bottom: 14px; right: 18px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 12px;
+    color: var(--gate-ink); font-size: 13px; font-weight: 650;
+    border: 1px solid rgba(91, 61, 40, 0.28);
+    border-radius: 13px 17px 12px 16px;
+    background: rgba(255, 249, 236, 0.8);
+    box-shadow: 0 9px 20px rgba(59, 37, 21, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px) saturate(1.08);
+  }
+  /* 黄昏的底是暗的，而这一档的正文变量整套是"深墨压浅纸"，三处颜色单独提到夜间那一族。 */
+  html[data-theme="dusk"] .chip {
+    color: #fff4e8;
+    border-color: rgba(255, 216, 178, 0.27);
+    background: rgba(70, 39, 27, 0.8);
+    box-shadow: 0 10px 22px rgba(58, 28, 17, 0.3), inset 0 1px 0 rgba(255, 242, 222, 0.09);
+  }
+  html[data-theme="dusk"] .chip .act,
+  html[data-theme="dusk"] .chip .hint,
+  html[data-theme="dusk"] .chip[data-tone="new"] .ver,
+  html[data-theme="dusk"] .chip[data-tone="new"] .txt { color: #ee8b52; }
+  html[data-theme="dusk"] .chip .ver { color: #fff4e8; }
+  html[data-theme="night"] .chip {
+    border-color: rgba(255, 218, 160, 0.22);
+    background: rgba(24, 22, 20, 0.78);
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 244, 220, 0.07);
+  }
+  .chip .ver { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .chip .act { font: inherit; font-weight: 700; color: var(--gate-action-text); background: none; border: 0; padding: 0; cursor: pointer; }
+  .chip .hint { color: var(--gate-ink-soft); font-weight: 560; }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gate-success); }
+  .chip[data-tone="new"] .ver, .chip[data-tone="new"] .txt { color: var(--gate-action-text); font-weight: 700; }
+  .chip[data-tone="busy"] .dot { background: var(--gate-action); animation: blink 1s infinite var(--ease-out); }
+  .chip[data-tone="bad"] .dot { background: var(--gate-danger); }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+  /* ── 更新弹窗（这一层是提案，尚未实现） ───────────────────────── */
+  .scrim {
+    position: absolute; inset: 0; z-index: 5; display: none; place-items: center;
+    background: rgba(31, 20, 13, 0.34);
+    backdrop-filter: blur(2px);
+  }
+  html[data-theme="night"] .scrim { background: rgba(6, 5, 4, 0.58); }
+  .scrim[data-open="true"] { display: grid; }
+  .dialog {
+    width: min(460px, calc(100% - 48px));
+    border: 1px solid var(--gate-line); border-radius: var(--radius-card);
+    background: var(--gate-paper-strong);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    animation: rise 320ms var(--ease-out);
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(9px) scale(0.992); } to { opacity: 1; transform: none; } }
+  .dialog__head { display: grid; gap: 3px; padding: 20px 22px 14px; }
+  .dialog__kicker { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 750; letter-spacing: 0.16em; color: var(--gate-ink-faint); }
+  .dialog__title { font-size: 21px; font-weight: 750; letter-spacing: 0.01em; }
+  .dialog__title small { font-size: 12px; font-weight: 600; color: var(--gate-ink-faint); letter-spacing: 0; }
+  .dialog__meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--gate-ink-soft); }
+  .dialog__body { padding: 4px 22px 6px; }
+  .notes { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .notes li { display: grid; grid-template-columns: 14px 1fr; gap: 8px; font-size: 13px; line-height: 1.65; color: var(--gate-ink-soft); }
+  .notes li::before { content: "✦"; color: var(--gate-action); font-size: 11px; line-height: 1.9; }
+  .dialog__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 22px 20px; }
+  .dialog__foot .right { display: flex; gap: 10px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 8px 15px;
+    font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+    border-radius: 13px 16px 12px 15px; border: 1px solid var(--gate-line);
+    color: var(--gate-ink); background: transparent;
+  }
+  .btn--go {
+    color: #3e2d22; text-shadow: 0 1px rgba(255,255,255,0.3);
+    border: 2px solid #af522c; background: var(--hud-peach);
+    box-shadow: 0 4px 10px rgba(67, 43, 27, 0.16);
+  }
+  .btn--ghost { border-color: transparent; color: var(--gate-action-text); }
+
+  /* 下载进度：真实字节 + 一条会动的填充 */
+  .progress { padding: 2px 22px 4px; }
+  .progress__line { display: flex; justify-content: space-between; font-size: 12px; color: var(--gate-ink-soft); font-variant-numeric: tabular-nums; }
+  .progress__track { position: relative; height: 8px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: rgba(120, 90, 66, 0.16); }
+  .progress__fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--hud-peach), var(--gate-action)); transition: width 260ms var(--ease-out); }
+  .progress__fill::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.42), transparent); animation: sweep 1.5s infinite linear; }
+  @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+  .progress__note { margin: 8px 0 0; font-size: 12px; line-height: 1.6; color: var(--gate-ink-faint); }
+
+  .callout { margin: 4px 22px 0; padding: 10px 12px; font-size: 12.5px; line-height: 1.65; border-radius: 12px; }
+  .callout--ok { color: var(--gate-success); background: rgba(82, 106, 70, 0.10); }
+  .callout--flat { color: var(--gate-ink-soft); background: rgba(120, 90, 66, 0.08); }
+  .callout--bad { color: var(--gate-danger); background: rgba(140, 61, 38, 0.10); }
+  html[data-theme="night"] .callout--ok { background: rgba(156, 178, 141, 0.12); }
+  html[data-theme="night"] .callout--flat { background: rgba(240, 223, 200, 0.08); }
+  html[data-theme="night"] .callout--bad { background: rgba(255, 176, 138, 0.12); }
+
+  /* ── 对照表 ─────────────────────────────────────────────── */
+  .strip { max-width: 1080px; margin: 22px auto 0; display: grid; gap: 10px; }
+  .strip h3 { margin: 6px 0 0; font-size: 14px; }
+  .strip .row { display: flex; flex-wrap: wrap; gap: 10px; }
+  table { max-width: 1080px; margin: 18px auto 0; width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--gate-line); color: var(--gate-ink-soft); }
+  th { font-weight: 750; color: var(--gate-ink); }
+  td b { color: var(--gate-ink); }
+</style>
+</head>
+<body>
+  <header class="doc-head">
+    <h1>门禁更新流程演示</h1>
+    <p>
+      左下角那颗 <code>.desktop-access-gate__update</code> 已经实现；中间的<b>更新弹窗是提案</b>，点 chip 上的「检查更新」或下面任一相位即可看到。
+      配色、描边、不对称圆角都取自 <code>desktop-access-gate.css</code> 的三套主题，没有图片与外部依赖。
+    </p>
+  </header>
+
+  <nav class="switcher" id="phases">
+    <b>相位</b>
+    <button data-phase="idle">idle 未查</button>
+    <button data-phase="checking">checking 检查中</button>
+    <button data-phase="upToDate">upToDate 已最新</button>
+    <button data-phase="available" aria-pressed="true">available 有新版</button>
+    <button data-phase="downloading">downloading 下载中</button>
+    <button data-phase="ready">ready 待安装</button>
+    <button data-phase="unreachable">unreachable 没查到</button>
+    <button data-phase="failed">failed 失败</button>
+  </nav>
+  <nav class="switcher" id="themes">
+    <b>主题</b>
+    <button data-theme="day" aria-pressed="true">日间</button>
+    <button data-theme="dusk">黄昏</button>
+    <button data-theme="night">夜间</button>
+  </nav>
+
+  <main class="stage">
+    <div class="traffic"><i style="background:#ef6a5f"></i><i style="background:#f5bd4f"></i><i style="background:#61c554"></i></div>
+
+    <div class="panel">
+      <div class="brand"><span class="mark">✦</span>拾星笔记<i></i></div>
+      <h2>欢迎回来</h2>
+      <p class="sub">登录后继续上次的学习。</p>
+      <div class="rule"></div>
+      <div class="field"><label>邮箱</label><div class="box">name@example.com</div></div>
+      <div class="field"><label>密码</label><div class="box">输入密码</div></div>
+      <div class="primary">→] 登录</div>
+      <button class="quiet">✉ 用验证码登录 &nbsp;·&nbsp; ⚿ 忘记密码？</button>
+    </div>
+
+    <div class="chip" id="chip"></div>
+
+    <div class="scrim" id="scrim">
+      <section class="dialog" id="dialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle"></section>
+    </div>
+  </main>
+
+  <section class="strip">
+    <h3>同一颗 chip 的八种长相</h3>
+    <div class="row" id="chipStrip"></div>
+  </section>
+
+  <table>
+    <thead><tr><th>相位</th><th>chip 说什么</th><th>弹窗</th><th>能点什么</th></tr></thead>
+    <tbody>
+      <tr><td><b>idle</b></td><td>v1.6.0 · 检查更新</td><td>不出现</td><td>检查更新</td></tr>
+      <tr><td><b>checking</b></td><td>检查中…（禁用）</td><td>不出现</td><td>—</td></tr>
+      <tr><td><b>upToDate</b></td><td>v1.6.0 · 已是最新</td><td>一句结论 + 上次检查时间</td><td>关闭 / 再查一次</td></tr>
+      <tr><td><b>available</b></td><td>发现新版本 v1.7.0 · 下载更新</td><td>版本号 / 发布时间 / 包大小 / 这次改了哪几条</td><td>稍后 · 下载更新</td></tr>
+      <tr><td><b>downloading</b></td><td>v1.7.0 正在下载 46%</td><td>进度条 + 真实字节 + 「可以先把登录做完」</td><td>稍后（<b>没有取消</b>，实现里没这能力）</td></tr>
+      <tr><td><b>ready</b></td><td>新版本已就绪 · 重启并安装</td><td>装完会回到当前账号 + 更新说明</td><td>稍后 · 重启并安装</td></tr>
+      <tr><td><b>unreachable</b></td><td>v1.6.0 · 这次没查到</td><td>平语气一句 + 再试一次</td><td>再试一次</td></tr>
+      <tr><td><b>failed</b></td><td>更新没完成 · 查看</td><td>错误语气 + 校验/网络原因 + 手动下载页</td><td>重试 · 打开下载页</td></tr>
+    </tbody>
+  </table>
+
+<script>
+  var CURRENT = "1.6.0";
+  var NEXT = "1.7.0";
+  var SIZE = 128 * 1024 * 1024;
+
+  var NOTES = [
+    "注册改成邮箱验证码两步：先填资料，再去邮箱取码。",
+    "登录页多了「用验证码登录」和「忘记密码？」，不用记密码也能进屋。",
+    "伴星的记事与日汇总在离线后再补一次，不再只活在那一天。",
+    "修掉了窄窗口下顶栏控件叠在一起的问题。",
+  ];
+
+  function mb(bytes) { return (bytes / 1024 / 1024).toFixed(1) + " MB"; }
+
+  var CHIP = {
+    idle:        { tone: "",      html: '<span class="ver">v' + CURRENT + '</span><button class="act">⟳ 检查更新</button>' },
+    checking:    { tone: "busy",  html: '<span class="dot"></span><span class="txt">检查中…</span>' },
+    upToDate:    { tone: "",      html: '<span class="ver">v' + CURRENT + '</span><button class="act">⟳ 检查更新</button><span class="hint">已是最新</span>' },
+    available:   { tone: "new",   html: '<span class="dot" style="background:var(--gate-action)"></span><span class="txt">发现新版本 v' + NEXT + '</span><button class="act">↓ 下载更新</button>' },
+    downloading: { tone: "new",   html: '<span class="txt">v' + NEXT + ' 正在下载 <b class="pct">46</b>%</span>' },
+    ready:       { tone: "new",   html: '<span class="dot"></span><span class="txt">新版本已就绪</span><button class="act">↓ 重启并安装</button>' },
+    unreachable: { tone: "bad",   html: '<span class="ver">v' + CURRENT + '</span><button class="act">⟳ 检查更新</button><span class="hint">这次没查到</span>' },
+    failed:      { tone: "bad",   html: '<span class="txt">更新没完成</span><button class="act">查看</button>' },
+  };
+
+  function dialogFor(phase) {
+    var head = function (kicker, title, small) {
+      return '<div class="dialog__head"><div class="dialog__kicker">✦ 拾星笔记 · ' + kicker + '</div>'
+        + '<div class="dialog__title" id="dialogTitle">' + title + (small ? ' <small>' + small + '</small>' : '') + '</div></div>';
+    };
+    var meta = '<div class="dialog__meta"><span>◷ 发布于 2026 年 10 月 11 日</span><span>▤ 安装包 ' + mb(SIZE) + '</span></div>';
+    var notes = '<ul class="notes">' + NOTES.map(function (n) { return "<li>" + n + "</li>"; }).join("") + "</ul>";
+
+    switch (phase) {
+      case "upToDate":
+        return head("客户端更新", "已经是最新", "v" + CURRENT)
+          + '<div class="callout callout--ok">这台设备上的版本就是最新的，不用做任何事。</div>'
+          + '<div class="dialog__body"><p style="margin:14px 0 0;font-size:12.5px;color:var(--gate-ink-faint)">上次检查：今天 16:52 · 来源：更新清单</p></div>'
+          + foot("关闭", [["再查一次", "btn"]]);
+      case "available":
+        return head("客户端更新", "新版本 v" + NEXT, "· 建议更新") + '<div class="dialog__body">' + meta + '</div>'
+          + '<div class="dialog__body"><p style="margin:10px 0 8px;font-size:12px;font-weight:750;letter-spacing:.1em;color:var(--gate-ink-faint)">这次更新</p>' + notes + '</div>'
+          + foot("稍后", [["下载更新 ↓", "btn btn--go"]]);
+      case "downloading":
+        return head("客户端更新", "正在下载 v" + NEXT)
+          + '<div class="progress"><div class="progress__line"><span class="dl-text">58.9 MB / ' + mb(SIZE) + '</span><span class="pct">46%</span></div>'
+          + '<div class="progress__track"><div class="progress__fill" id="fill"></div></div>'
+          + '<p class="progress__note">下载走外部镜像，不占这台服务器的带宽；<b>可以先把登录做完</b>，下完会提示你重启。</p></div>'
+          + foot("稍后", []);
+      case "ready":
+        return head("客户端更新", "新版本已下载好", "v" + NEXT)
+          + '<div class="callout callout--ok">重启后会回到当前账号，本机记录不会丢。</div>'
+          + '<div class="dialog__body"><p style="margin:14px 0 0;font-size:12.5px;color:var(--gate-ink-faint)">安装包校验通过 · 58 秒前下载完成</p></div>'
+          + foot("稍后", [["重启并安装", "btn btn--go"]]);
+      case "unreachable":
+        return head("客户端更新", "这次没查到更新信息")
+          + '<div class="callout callout--flat">清单没回应（网络或对方限流）。<b>这不是更新坏了</b>，过一会儿再试一次就好。</div>'
+          + foot("关闭", [["再试一次", "btn btn--go"]]);
+      case "failed":
+        return head("客户端更新", "更新没能完成")
+          + '<div class="callout callout--bad">安装包校验不通过（摘要与清单不一致）。为避免装上坏包，已停在这一步。</div>'
+          + foot("关闭", [["打开下载页", "btn"], ["重试", "btn btn--go"]]);
+      default:
+        return null;
+    }
+  }
+
+  function foot(ghostLabel, rights) {
+    return '<div class="dialog__foot"><button class="btn btn--ghost">' + ghostLabel + '</button>'
+      + '<div class="right">' + rights.map(function (r) { return '<button class="' + r[1] + '">' + r[0] + '</button>'; }).join("") + '</div></div>';
+  }
+
+  var chip = document.getElementById("chip");
+  var scrim = document.getElementById("scrim");
+  var dialog = document.getElementById("dialog");
+  var timer = null;
+  var phase = "available";
+
+  function render() {
+    var c = CHIP[phase];
+    chip.innerHTML = c.html;
+    chip.setAttribute("data-tone", c.tone);
+    var d = dialogFor(phase);
+    if (d) {
+      dialog.innerHTML = d;
+      scrim.setAttribute("data-open", "true");
+    } else {
+      scrim.setAttribute("data-open", "false");
+    }
+    runTicker();
+  }
+
+  // 下载中的数字要真的动，不然看不出"进度是活的还是画上去的"。
+  function runTicker() {
+    if (timer) { clearInterval(timer); timer = null; }
+    if (phase !== "downloading") return;
+    var pct = 46;
+    var fill = document.getElementById("fill");
+    if (fill) fill.style.width = pct + "%";
+    timer = setInterval(function () {
+      pct = Math.min(99, pct + 1);
+      if (fill) fill.style.width = pct + "%";
+      Array.prototype.forEach.call(document.querySelectorAll(".pct"), function (el) { el.textContent = pct + (el.closest(".chip") ? "" : "%"); });
+      var line = document.querySelector(".dl-text");
+      if (line) line.textContent = mb(SIZE * pct / 100) + " / " + mb(SIZE);
+      var chipPct = document.querySelector('.chip .pct');
+      if (chipPct) chipPct.textContent = pct;
+    }, 700);
+  }
+
+  document.getElementById("phases").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-phase]");
+    if (!b) return;
+    phase = b.dataset.phase;
+    Array.prototype.forEach.call(this.querySelectorAll("button"), function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+    render();
+  });
+  document.getElementById("themes").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-theme]");
+    if (!b) return;
+    document.documentElement.setAttribute("data-theme", b.dataset.theme);
+    Array.prototype.forEach.call(this.querySelectorAll("button"), function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+  });
+  chip.addEventListener("click", function (e) {
+    if (!e.target.closest("button")) return;
+    if (phase === "idle" || phase === "upToDate" || phase === "unreachable") { phase = "checking"; sync(); setTimeout(function () { phase = "available"; sync(); }, 900); }
+  });
+  function sync() {
+    Array.prototype.forEach.call(document.querySelectorAll("#phases button"), function (x) { x.setAttribute("aria-pressed", String(x.dataset.phase === phase)); });
+    render();
+  }
+
+  // 八种 chip 长相并排列一遍，方便横向比。
+  var strip = document.getElementById("chipStrip");
+  Object.keys(CHIP).forEach(function (k) {
+    var box = document.createElement("div");
+    box.style.cssText = "position:relative;display:inline-block";
+    box.innerHTML = '<div class="chip" style="position:static" data-tone="' + CHIP[k].tone + '">' + CHIP[k].html + "</div>";
+    strip.appendChild(box);
+  });
+
+  render();
+</script>
+</body>
+</html>

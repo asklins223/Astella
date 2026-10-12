@@ -41,9 +41,9 @@ describe("助理权限就地档", () => {
     fireEvent.click(trigger);
     const menu = await screen.findByRole("menu", { name: "助理权限档位" });
     expect(within(menu).getAllByRole("menuitemradio").map(item => item.textContent)).toEqual([
-      "仅可读取只读取和查询，执行改动前需要你调整权限。",
-      "分步确认每次产生改动前先征求你的确认。",
-      "自动执行跳转、设置与填充可以自动执行；不可恢复的操作仍会确认。",
+      "审阅保存先查看生成或更新后的结果，确认后保存；取消恢复原文。删除与高危操作执行前确认。",
+      "分步确认写入和更新先展示结果，等你确认保存；取消恢复原文。删除与高危操作执行前确认。",
+      "自动执行写入和更新可以自动保存；删除与高危操作仍在执行前确认。",
     ]);
     const icons = within(menu).getAllByRole("menuitemradio").map(item => item.querySelector("svg")?.getAttribute("class"));
     expect(icons.map(icon => ["lucide-eye", "lucide-hand", "lucide-zap"].find(name => icon?.includes(name)) ?? null))
@@ -79,8 +79,8 @@ describe("助理权限就地档", () => {
     await waitFor(() => expect(screen.getAllByRole("button", { name: "助理权限：自动执行" })).toHaveLength(2));
 
     fireEvent.click(screen.getAllByRole("button", { name: "助理权限：自动执行" })[1]);
-    fireEvent.click(await screen.findByRole("menuitemradio", { name: /仅可读取/ }));
-    await waitFor(() => expect(screen.getAllByRole("button", { name: "助理权限：仅可读取" })).toHaveLength(2));
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: /审阅保存/ }));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "助理权限：审阅保存" })).toHaveLength(2));
     expect(patches).toEqual([
       { revision: 5, agentPermissionLevel: "full" },
       { revision: 6, agentPermissionLevel: "read_only" },

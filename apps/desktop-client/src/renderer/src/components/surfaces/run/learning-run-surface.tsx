@@ -1360,10 +1360,10 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
   const returnTarget = contractTarget ?? snapshot.returnTargetV2;
   const exitRoute = routeForReturnTarget(returnTarget);
   const exitDestinationLabel = exitRoute.kind === "review.queue" ? "回到复习队列"
-    : exitRoute.kind === "note.detail" ? "回到这篇笔记" : "返回学习空间";
+    : exitRoute.kind === "note.detail" ? "回到这篇笔记" : "返回书房";
   const returnsToCard = returnTarget.kind === "card" && Boolean(snapshot.target.cardId);
   const nextChallengeLabel = result?.outcome === "declared_unable"
-    ? "先回研究册把这条看懂，再回来验证"
+    ? "先回笔记把这条看懂，再回来验证"
     : result && result.gapFacets.length
       ? `先补上「${facetText(result.gapFacets.slice(0, 1), "")}」`
       : returnTargetLabel(returnTarget);

@@ -5,6 +5,7 @@ import { InlineImage, renderNoteInline, renderNoteMath, renderNotePlainText, typ
 import { openExternalLink } from "../../../app/external-link";
 import { NoteReadingLink } from "./note-library-links";
 import { NoteMermaid } from "./note-mermaid";
+import { CodePaper } from "../../content/code-paper";
 
 /** Render the allowlisted syntax tree as React elements. Annotation offsets follow this same tree. */
 export function NoteMarkdownReading({ type, content, options }: { type: string; content: string; options: NoteInlineRenderOptions }) {
@@ -57,7 +58,8 @@ export function NoteMarkdownReading({ type, content, options }: { type: string; 
       const language = (code?.properties.className as string[] | undefined)?.find(name => name.startsWith("language-"))?.slice(9);
       const start = offset; offset += source.length;
       if (language?.toLowerCase() === "mermaid") return <NoteMermaid key={key} source={source} />;
-      return <pre key={key} className="code-block" data-language={language}><code>{renderNotePlainText(source, { ...options, textOffset: start })}</code></pre>;
+      return <CodePaper key={key} fence={language} source={source} start={start}
+        renderText={(text, at) => renderNotePlainText(text, { ...options, textOffset: at })} />;
     }
     if (tag === "sup") {
       const reference = node.children.find((child): child is NoteMarkdownElement => child.type === "element" && child.tagName === "a" && child.properties.dataFootnoteRef !== undefined);

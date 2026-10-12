@@ -403,7 +403,7 @@ describe("LearningRunSurface · 动作区", () => {
     expect(followup.className).toContain("primary");
     const finish = screen.getByRole("button", { name: /结束但不改变复习/ });
     expect(finish.closest("details")).toBeNull();
-    expect(screen.queryByRole("button", { name: "返回学习空间" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "返回书房" })).toBeNull();
     // 不再声称"正在准备下一步"——checkpoint 等的是用户，不是后台。
     expect(document.body.textContent).not.toContain("正在准备下一步");
     expect(document.body.textContent).toContain("这次没有形成可记录的结论");

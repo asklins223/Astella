@@ -160,9 +160,11 @@ export function CompanionNotificationCenter(props: {
     position();
     const observer = new ResizeObserver(position); observer.observe(root);
     window.addEventListener("resize", position);
-    const timer = window.setInterval(position, 160);
+    // 审计 F12：定位循环不再 160ms 常驻。收起态降到 500ms 量级（只要不跟随
+    // 纸签，抖动不可见）；纸签/收件箱打开时才回到跟手指的节奏。
+    const timer = window.setInterval(position, selected || inboxOpen ? 160 : 480);
     return () => { observer.disconnect(); window.removeEventListener("resize", position); window.clearInterval(timer); };
-  }, [items.length > 0, key, inboxOpen, props.blocked]);
+  }, [items.length > 0, key, inboxOpen, props.blocked, selected]);
 
   if (!items.length) return null;
   const Icon = selected ? ICONS[selected.kind] : Bell;
@@ -171,7 +173,7 @@ export function CompanionNotificationCenter(props: {
   const soundNote = voicePhase === "preparing" ? "正在准备朗读…" : voicePhase === "speaking" ? "正在朗读通知"
     : busy ? microphoneBusy ? "正在录音，这条通知仅显示文字" : "伴星正在回复，这条通知仅显示文字"
       : silent ? "安静送达" : voicePhase === "consent_required" ? "语音需要先确认 AI 数据同意，消息已送达" : voicePhase === "failed" ? "声音暂时不可用，消息已送达" : "消息已送达";
-  return createPortal(<div ref={rootRef} className="companion-notifications" data-companion-owned="true" data-collapsed={!selected && !inboxOpen || undefined} hidden={props.blocked} onKeyDown={event => {
+  return createPortal(<div ref={rootRef} className="companion-notifications" data-companion-owned="true" data-collapsed={!selected && !inboxOpen || undefined} data-blocked={props.blocked || undefined} onKeyDown={event => {
     if (event.key === "Escape" && (selected || inboxOpen)) { event.preventDefault(); event.stopPropagation(); collapse(); }
   }}>
     {selected && !inboxOpen ? <section className="companion-notification-paper" data-tactile-page data-kind={selected.kind} aria-label={`伴星通知：${selected.title}`}>

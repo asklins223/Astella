@@ -101,6 +101,6 @@ Metrics have no application authentication, so restrict reachability. Production
 
 Admin tokens are separate from user sessions. Bounded in-process log buffers disappear on restart and are not durable audit records. The production base does not mount a socket; development and deployment overlays give API socket access equivalent to host management. Project-scope checks do not turn raw Docker socket access into a restricted credential. See [Deployment](deployment.md).
 
-Other limits: no secret manager, automatic scaling or email password recovery. Operators configure backup schedules and alert receivers; image/secret scans and migration-lifecycle tests require explicit execution/wiring. Failed deployment may restart previous application images, but database migrations do not automatically roll back.
+Other limits: no secret manager and no automatic scaling. Outbound verification mail goes through external personal mailbox accounts (QQ Mail, falling back to 2925) with credentials in `.env`/compose environment variables, so its quota is decided by the provider and registration and password recovery depend on it being reachable. Operators configure backup schedules and alert receivers; image/secret scans and migration-lifecycle tests require explicit execution/wiring. Failed deployment may restart previous application images, but database migrations do not automatically roll back.
 
 [Guide index](../README.md) · [Deployment](deployment.md) · [API and data](api-and-data.md) · [Troubleshooting](faq-and-troubleshooting.md)

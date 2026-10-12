@@ -175,6 +175,10 @@ export async function createAgentProposal(
             last_event_seq = ${eventSeq}, updated_at = now()
         WHERE id = ${event.read.runId}
           AND status IN ('accepted', 'running')
+          AND workspace_id=${event.ctx.workspaceId} AND user_id=${event.read.userId}
+          AND cancel_requested_at IS NULL
+          AND EXISTS(SELECT 1 FROM user_companion_account_state a WHERE a.user_id=companion_turn_runs.user_id
+            AND a.global_enabled AND a.epoch=companion_turn_runs.account_epoch)
         RETURNING id
       `);
       if (!fenced[0]) throw new CompanionToolError("这一轮已经不在进行中了");
@@ -188,7 +192,8 @@ export async function createAgentProposal(
           (${proposalId}, ${event.ctx.workspaceId}, ${event.read.userId}, ${event.read.conversationId},
            ${event.read.userMessageId}, ${event.read.generation}, ${JSON.stringify(parsedPayload.data)},
            ${payloadSha256}, ${title}, ${targetSummary}, ${impactSummary}, 'pending',
-           ${sha256Utf8V1(`agent:${event.read.runId}:${call.id}`)}, now() + interval '5 minutes',
+           ${sha256Utf8V1(`agent:${event.read.runId}:${call.id}`)},
+           CASE WHEN ${parsedPayload.data.kind}='agent_tool_review' THEN NULL ELSE now() + interval '5 minutes' END,
            'agent_tool', ${event.read.runId}, ${call.id},
            ${definition.toolVersion}, ${definition.riskClass})
       `);
@@ -203,13 +208,15 @@ export async function createAgentProposal(
       // 记的是**她准备改的那件事**，以及**依据的是用户哪句原话**——两个值都来自提案
       // 自己的 payload，不另编一句话。原话那一行要紧：历史里只剩"记住一条偏好"时，
       // 用户过几天看不出这条是从哪一句来的，也就没法定要不要撤回。
-      const sourceQuote = "sourceQuote" in parsedPayload.data
-        && typeof parsedPayload.data.sourceQuote === "string" ? parsedPayload.data.sourceQuote : null;
+      const sourceQuote = parsedPayload.data.kind === "agent_tool_review" && typeof parsedPayload.data.arguments.sourceQuote === "string"
+        ? parsedPayload.data.arguments.sourceQuote : "sourceQuote" in parsedPayload.data
+          && typeof parsedPayload.data.sourceQuote === "string" ? parsedPayload.data.sourceQuote : null;
       const noticeText = [
         title,
         targetSummary,
         ...(sourceQuote ? [`依据你的原话：「${sourceQuote}」`] : []),
-        "确认后才会执行。",
+        parsedPayload.data.kind === "agent_tool_review" && parsedPayload.data.confirmationStage === "after_preview"
+          ? "结果已准备好，确认后保存；取消会恢复原文。" : "确认后才会执行。",
       ].join("\n");
       const noticeBlocks = [
         { type: "text", text: noticeText },

@@ -17,7 +17,7 @@ import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { sql } from "drizzle-orm";
 import { readCompanionHistoryRows, companionHistoryText } from "../handlers/companion-dialogue-store.ts";
 import { loadHereAndNow, renderHereAndNow } from "../handlers/companion-here-and-now.ts";
-import { REPLAY_WINDOW_MESSAGES } from "../handlers/companion-context-handoff.ts";
+import { REPLAY_HISTORY_READ_ROWS } from "../handlers/companion-context-handoff.ts";
 import { COMPANION_VOICE_EXPRESSION_PROTOCOL_V1, readVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
 import { snapshotDialogueWireBody } from "./dialogue-experiment.ts";
 import { assertProductionProbeConfiguration } from "./production-preflight.ts";
@@ -107,7 +107,7 @@ try {
         event={ctx:{...f.event.ctx,id:jobId,payload:{runId},signal:new AbortController().signal},read:{...f.event.read,runId,generation:index+1}};
       }
       const source = await withWorkerWorkspaceTransaction({workspaceId:event.ctx.workspaceId, userId:event.read.userId}, async tx => {
-        const rows = await readCompanionHistoryRows(tx, f.conversationId, {beforeSeq:String(seq), limit:REPLAY_WINDOW_MESSAGES});
+        const rows = await readCompanionHistoryRows(tx, f.conversationId, {beforeSeq:String(seq), limit:REPLAY_HISTORY_READ_ROWS});
         const snapshot = await loadHereAndNow(tx, {workspaceId:event.ctx.workspaceId,userId:event.read.userId,
           conversationId:f.conversationId,userText:text});
         const current = await tx.execute<{created_at:string}>(sql`SELECT to_char(created_at AT TIME ZONE 'UTC',

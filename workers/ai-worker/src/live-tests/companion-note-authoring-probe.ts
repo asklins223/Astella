@@ -8,7 +8,6 @@ import { runCompanionAgentLoop } from "../handlers/companion-agent-runtime.ts";
 import { createGovernedProvider } from "../lib/governance.ts";
 import { createCompanionContextReceipts } from "../handlers/companion-context-receipts.ts";
 import { reserveCompanionProviderCall } from "../handlers/companion-agent-events.ts";
-import { companionCreatedNoteId } from "../handlers/companion-note-authoring.ts";
 import { createCompanionStreamDelivery } from "../handlers/companion-dialogue-stream.ts";
 
 // Full real model/tool loop with synthetic knowledge and a scoped disposable
@@ -49,7 +48,7 @@ try {
   assert.equal(delivery.deliveredText(),reply.text);
   const [created] = await f.mutate(tx=>tx`SELECT n.id,n.title,n.current_version_id,
     string_agg(b.content,E'\n\n' ORDER BY b.ordinal) AS body FROM notes n JOIN note_blocks b ON b.version_id=n.current_version_id
-    WHERE n.id=${companionCreatedNoteId(read.runId)} AND n.workspace_id=${scope.workspaceId} GROUP BY n.id`);
+    WHERE n.id IN (SELECT (result_ref::jsonb->>'noteId')::uuid FROM companion_agent_tool_calls WHERE run_id=${read.runId} AND name='companion_create_note' AND status='succeeded') AND n.workspace_id=${scope.workspaceId} GROUP BY n.id`);
   const calls = await f.mutate(tx=>tx`SELECT name,status,result_ref FROM companion_agent_tool_calls WHERE run_id=${read.runId} ORDER BY created_at`);
   const [run] = await f.mutate(tx=>tx`SELECT step_count,tool_call_count,model_call_count,turn_interpretation FROM companion_turn_runs WHERE id=${read.runId}`);
   save("note-authoring-live-20261008", {model:route.model,reply,created,relatedNoteId:related.note.id,calls,run,wire,elapsedMs:Date.now()-started,

@@ -1,0 +1,119 @@
+{
+  "date": "2026-10-10",
+  "scope": "Codex browser walkthrough of the standalone local frontend prototype; no real account, model, native device or sync service.",
+  "dataTests": {
+    "command": "node --test demos/__tests__/mobile-companion-data.test.cjs",
+    "passed": 6,
+    "failed": 0
+  },
+  "syntaxChecks": [
+    "mobile-companion-data.js",
+    "mobile-companion-layout.js",
+    "capture-mobile-companion-layout.mjs"
+  ],
+  "browserChecks": [
+    {
+      "name": "existing note search, quoted ask, return to exact reading position and original notes tab",
+      "result": "passed",
+      "restoredScrollTop": 73.75
+    },
+    {
+      "name": "image explanation, create, edit same note, before/after, reader, conversation",
+      "result": "passed",
+      "sameNewNoteCount": 1,
+      "originalImageCardCount": 1,
+      "version": 2
+    },
+    {
+      "name": "desktop edit changes mobile current body",
+      "result": "passed",
+      "version": 3
+    },
+    {
+      "name": "voice transcript saved faithfully, missing receipt resolved without duplicate",
+      "result": "passed",
+      "shortNoteCount": 1
+    },
+    {
+      "name": "failed operation retains original notes; retry creates once",
+      "result": "passed",
+      "notesBeforeRetry": 3,
+      "notesAfterRetry": 4
+    },
+    {
+      "name": "stale edit rejected, retry based on latest preserves desktop addition",
+      "result": "passed"
+    },
+    {
+      "name": "stop before write",
+      "result": "passed",
+      "remainingOriginalNotes": 3
+    },
+    {
+      "name": "offline, declined AI consent, readonly, space draft isolation",
+      "result": "passed"
+    },
+    {
+      "name": "history search, new conversation, busy draft retained and late old result isolated",
+      "result": "passed"
+    },
+    {
+      "name": "local PNG decode and honest no-model response",
+      "result": "passed",
+      "imagePixels": [
+        560,
+        680
+      ]
+    },
+    {
+      "name": "speech controls pause and interrupt; input receives focus",
+      "result": "passed",
+      "listeningQuality": "not verified"
+    },
+    {
+      "name": "glass disabled uses solid surface; update does not reanimate ask sheet",
+      "result": "passed",
+      "sheetOpacity": 1,
+      "sheetUpdateAnimation": "none"
+    },
+    {
+      "name": "standalone narrow CSS viewport",
+      "result": "passed",
+      "device": [
+        390,
+        844
+      ],
+      "horizontalOverflow": 0
+    }
+  ],
+  "keyboardEvidence": {
+    "attachmentKept": true,
+    "contentHeight": 150,
+    "device": [
+      320,
+      640
+    ],
+    "draft": "讲讲这张图",
+    "keyboard": 244,
+    "overflow": 0,
+    "portrait": [
+      84,
+      64
+    ],
+    "replyVisibleLines": 1,
+    "scale": "150%"
+  },
+  "screenshots": [
+    "11-complete-demo-overview.jpg",
+    "12-complete-demo-reading.jpg",
+    "13-complete-demo-same-note.jpg",
+    "14-complete-demo-keyboard.jpg"
+  ],
+  "pageErrors": [],
+  "notVerified": [
+    "Native keyboard, permissions, camera, audio routing, native performance, mobile Live2D",
+    "Real model, backend persistence, multi-device event stream, server task recovery",
+    "Actual ASR, listening quality, PDF or Word reading",
+    "Reproducible Playwright runner was syntax checked only; actual evidence came from the browser walkthrough"
+  ]
+}

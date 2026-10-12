@@ -66,10 +66,25 @@ const findSource = (shortName: string): string | null => {
   return null;
 };
 
+/**
+ * 引用里写了路径就**按路径**找，只给短名才回退到按目录猜。
+ * 仓库里有两份 `hud-surface.css`（`components/` 96 行与 `components/hud/` 3,345 行），
+ * 只按短名找会抓错文件，把一条本来正确的 `components/hud/hud-surface.css:205` 报成悬空。
+ */
+const locate = (spec: string): string | null =>
+  (spec.includes("/") ? resolve(spec) : null) ?? findSource(spec.split("/").pop() as string);
+
 type Reference = { doc: string; spec: string; line: number };
 function collectReferences(doc: string, source: string): Reference[] {
+  // 文档里常见的是 `[hud-surface.css:205-255](apps/.../components/hud/hud-surface.css)`：
+  // 链接**文字**只有短名，真路径在括号里。仓库里有两份同名 `hud-surface.css`，
+  // 不接住这个路径就会按短名抓到另一份，把对的引用报成悬空。
   return [...source.matchAll(/([A-Za-z0-9_./-]+\.(?:css|ts|tsx|mjs|js)):(\d+)(?:-(\d+))?/g)]
-    .map(hit => ({ doc, spec: hit[1], line: Number.parseInt(hit[2], 10) }));
+    .map((hit) => {
+      const linked = /^\]\(([^)\s#]+)/.exec(source.slice(hit.index + hit[0].length))?.[1];
+      const spec = linked && /\.(?:css|ts|tsx|mjs|js)$/.test(linked) ? linked : hit[1];
+      return { doc, spec, line: Number.parseInt(hit[2], 10) };
+    });
 }
 
 const references = DOCS.flatMap(doc => {
@@ -96,7 +111,7 @@ describe("文档的源码引用不许悬空", () => {
 
   it("被引用的文件都存在", () => {
     const missing = references
-      .filter((r) => findSource(r.spec.split("/").pop() as string) === null)
+      .filter((r) => locate(r.spec) === null)
       .map((r) => `  ${r.doc}  →  ${r.spec}:${r.line}`);
     expect(missing, `这些引用指向的文件不存在：\n${missing.join("\n")}`).toEqual([]);
   });
@@ -104,7 +119,7 @@ describe("文档的源码引用不许悬空", () => {
   it("行号落在文件范围内，且那一行不是空的", () => {
     const dangling: string[] = [];
     for (const reference of references) {
-      const file = findSource(reference.spec.split("/").pop() as string);
+      const file = locate(reference.spec);
       if (file === null) continue;
       const lines = readFileSync(file, "utf8").split("\n");
       if (reference.line > lines.length) {

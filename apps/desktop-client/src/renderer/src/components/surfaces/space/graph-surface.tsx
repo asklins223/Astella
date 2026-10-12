@@ -65,12 +65,12 @@ import {
   type UnderstandingGraph,
   type UniverseLayout,
 } from "./understanding-universe-data.ts";
+import { RELATION_ROW_LIMIT } from "./graph-surface-types";
 
 type ObjectiveNode = Extract<UnderstandingNodeProjectionV3, { nodeRef: { kind: "objective" } }>;
 
 const EMPTY_GRAPH: UnderstandingGraph = { nodes: [], edges: [] };
 const SEARCH_RESULT_LIMIT = 8;
-const RELATION_LIMIT = 8;
 /**
  * 建议关系那一档的屏上说法（§11.3）。
  *
@@ -278,6 +278,7 @@ function toUniverseGraph(
     supported_by: "contains",
     relates_to: "contains",
     supersedes: "generated_from",
+    references: "contains",
   };
   return {
     nodes: graphNodes,
@@ -1020,6 +1021,7 @@ export function GraphSurface() {
                     onContinue={() => openNoteJourney(displayNoteId)}
                     onOpenNote={() => openNoteJourney(displayNoteId)}
                     onSelectObjective={objectiveId => { const node = projectionByKey.get(`objective:${objectiveId}`); if (node) revealProjection(node); }}
+                    onSelectNote={targetNoteId => { const node = projectionByKey.get(`note:${targetNoteId}`); if (node) revealProjection(node); }}
                   />
                 ) : null}
                 {displayNoteId && displayLayer !== "overview" ? (
@@ -1060,8 +1062,8 @@ export function GraphSurface() {
                   {isObjectiveNode(displayProjection) ? <div><dt>当前状态</dt><dd>{graphObjectiveStateLabel(displayProjection.personal.state)}</dd></div> : null}
                 </dl>
                 <section className="universe-detail-relations">
-                  <div className="universe-detail-section-title"><span>真实光路</span><small>{displayNeighbors.length > RELATION_LIMIT ? `显示前 ${RELATION_LIMIT} 条，共 ${displayNeighbors.length} 条` : displayNeighbors.length ? "选择一条光路继续探索" : "暂无相邻星体"}</small></div>
-                  {displayNeighbors.length ? <div>{displayNeighbors.slice(0, RELATION_LIMIT).map(({ edge, node }) => (
+                  <div className="universe-detail-section-title"><span>真实光路</span><small>{displayNeighbors.length > RELATION_ROW_LIMIT ? `显示前 ${RELATION_ROW_LIMIT} 条，共 ${displayNeighbors.length} 条` : displayNeighbors.length ? "选择一条光路继续探索" : "暂无相邻星体"}</small></div>
+                  {displayNeighbors.length ? <div>{displayNeighbors.slice(0, RELATION_ROW_LIMIT).map(({ edge, node }) => (
                     <div key={edge.edgeId} className="universe-detail-relation-row">
                       <button type="button" className="universe-detail-relation" onClick={() => revealProjection(node)}>
                         <i className={`is-${node.nodeRef.kind === "objective" ? "card" : node.nodeRef.kind === "evidence" ? "key_point" : node.nodeRef.kind}`} aria-hidden="true" />

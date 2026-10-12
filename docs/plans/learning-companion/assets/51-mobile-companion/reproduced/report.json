@@ -1,0 +1,127 @@
+{
+  "scope": "Frontend local fixture, local account simulation; no model, real authentication, native keyboard or real sync.",
+  "checks": [
+    "menu > settings page > consent > dismiss > return to source",
+    "notes > reader > quoted ask > back returns to notes",
+    "image > explanation > create > edit same object > comparison > reader > conversation",
+    "motion off has no delayed overlay or input on the content tab",
+    "three representative keyboard sizes; DOM width and readable space; companion keeps her seat and bubble in the smallest window; no page errors"
+  ],
+  "geometry": [
+    {
+      "mode": "history",
+      "device": {
+        "width": 390,
+        "height": 844,
+        "top": 44,
+        "bottom": 888
+      },
+      "content": {
+        "width": 390,
+        "height": 371,
+        "top": 146,
+        "bottom": 517
+      },
+      "header": {
+        "width": 390,
+        "height": 64,
+        "top": 82,
+        "bottom": 146
+      },
+      "companion": null,
+      "bubble": null,
+      "horizontalOverflow": 0,
+      "visibleReplyLines": 10
+    },
+    {
+      "mode": "history",
+      "device": {
+        "width": 360,
+        "height": 720,
+        "top": 44,
+        "bottom": 764
+      },
+      "content": {
+        "width": 360,
+        "height": 275.84375,
+        "top": 139.15625,
+        "bottom": 415
+      },
+      "header": {
+        "width": 360,
+        "height": 66.15625,
+        "top": 73,
+        "bottom": 139.15625
+      },
+      "companion": null,
+      "bubble": null,
+      "horizontalOverflow": 0,
+      "visibleReplyLines": 7
+    },
+    {
+      "mode": "history",
+      "device": {
+        "width": 320,
+        "height": 640,
+        "top": 44,
+        "bottom": 684
+      },
+      "content": {
+        "width": 320,
+        "height": 204.296875,
+        "top": 155.703125,
+        "bottom": 360
+      },
+      "header": {
+        "width": 320,
+        "height": 82.703125,
+        "top": 73,
+        "bottom": 155.703125
+      },
+      "companion": null,
+      "bubble": null,
+      "horizontalOverflow": 0,
+      "visibleReplyLines": 3
+    },
+    {
+      "mode": "scene",
+      "device": {
+        "width": 320,
+        "height": 640,
+        "top": 44,
+        "bottom": 684
+      },
+      "content": {
+        "width": 320,
+        "height": 269.34375,
+        "top": 148.65625,
+        "bottom": 418
+      },
+      "header": {
+        "width": 320,
+        "height": 66.65625,
+        "top": 82,
+        "bottom": 148.65625
+      },
+      "companion": {
+        "width": 320,
+        "height": 209.34375,
+        "top": 176.65625,
+        "bottom": 386
+      },
+      "bubble": {
+        "width": 288,
+        "height": 146.875,
+        "top": 263.125,
+        "bottom": 410
+      },
+      "horizontalOverflow": 0,
+      "visibleReplyLines": 0
+    }
+  ],
+  "screenshots": [
+    "01-conversation.png",
+    "02-contextual-reading.png",
+    "03-same-note-edit.png"
+  ]
+}

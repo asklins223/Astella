@@ -16,6 +16,7 @@ import { describe, it, beforeEach } from "node:test";
 import { randomUUID } from "node:crypto";
 import {
   assembleCandidateEvidenceBindingPlanV2,
+  runDeterministicGroundingContract,
 } from "@astella/shared/card-generation-v2-pipeline";
 import { CardGenerationV2ServiceError } from "../modules/card-generation-v2/helpers.ts";
 import type { GroundingCriticReportV2 } from "@astella/shared/card-quality-v2-contracts";
@@ -186,5 +187,62 @@ describe("assembleCandidateEvidenceBindingPlanV2", () => {
     const { plan: p1 } = assemble();
     const { plan: p2 } = assemble();
     assert.equal(p1.bindingPlanHash, p2.bindingPlanHash);
+  });
+});
+
+/**
+ * 可选教学支持字段（boundary/misconception/workedExample）同样要有 grounding 裁决。
+ *
+ * 绑定计划按 `enumerateCandidateTargetUnits` 枚举候选**实际写了**的字段，逐条要求裁决；
+ * 离线 grounding 此前只写 explanation 一条，于是模型一给出可选字段，这一发就以
+ * `binding_support_verdict_missing`（"missing grounding verdict"）整发终结——内容合法，
+ * 读数却把它当故障。这里用同一份确定性合同现算，钉住两条判据始终同一份。
+ */
+describe("runDeterministicGroundingContract × 可选教学支持字段", () => {
+  it("候选写了哪几条字段，裁决就出哪几条；绑定计划不再因缺裁决整发失败", async () => {
+    candidate.objective.learningSupport = {
+      explanation: "共识协议保证故障容忍。",
+      boundary: "只覆盖 crash fault，不涉及 byzantine fault。",
+      misconception: "容易以为节点数过半就一定达成共识。",
+      workedExample: "三节点里一节点失联，其余两节点仍可就同一值达成一致。",
+    };
+    const report = await runDeterministicGroundingContract(candidate, manifest);
+    assert.deepEqual(
+      report.learningSupport.map((entry) => entry.field).sort(),
+      ["boundary", "explanation", "misconception", "workedExample"],
+      "候选写了四条，裁决就该出四条",
+    );
+    assert.ok(report.learningSupport.every((entry) => entry.verdict === "entailed"));
+
+    // 用这份现算的裁决装配：缺一条都会在 binding_support_verdict_missing 上整发失败。
+    const { plan } = assembleCandidateEvidenceBindingPlanV2({
+      runId: candidate.runId,
+      workspaceId: WORKSPACE_ID,
+      candidate,
+      groundingReport: report,
+      evidenceManifest: manifest,
+      eligibilityVector: eligibility,
+    });
+    const supportTargets = plan.bindings
+      .map((binding) => binding.targetUnit)
+      .filter((unit) => unit.kind === "learning_support")
+      .map((unit) => (unit as { kind: "learning_support"; field: string }).field)
+      .sort();
+    assert.deepEqual(
+      supportTargets,
+      ["boundary", "explanation", "misconception", "workedExample"],
+      "四条字段都要落进绑定计划",
+    );
+  });
+
+  it("空字段不算写了：只写 explanation 时裁决也只有 explanation 一条", async () => {
+    candidate.objective.learningSupport = {
+      explanation: "共识协议保证故障容忍。",
+      boundary: "   ",
+      misconception: "",
+      workedExample: undefined,
+    };
+    const report = await runDeterministicGroundingContract(candidate, manifest);
+    assert.deepEqual(report.learningSupport.map((entry) => entry.field), ["explanation"]);
   });
 });

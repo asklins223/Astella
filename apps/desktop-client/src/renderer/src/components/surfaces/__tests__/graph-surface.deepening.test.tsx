@@ -34,6 +34,7 @@ import type {
 import type { NoteDeepeningV3 } from "@astella/shared/note-deepening-v3-contracts";
 import { useRoomStore } from "../../../app/room-store.ts";
 import { GraphSurface } from "../space/graph-surface.tsx";
+import { RELATION_ROW_LIMIT } from "../space/graph-surface-types";
 import { clearGraphJourneys } from "../space/graph-journey";
 
 beforeAll(() => {
@@ -234,6 +235,74 @@ describe("星图三层展开 · 39d W8-1 §11.2", () => {
     expect((await within(results).findByRole("option", { name: new RegExp(fresh.label) })).textContent).toContain("未开始");
     fireEvent.change(search, { target: { value: practiced.label } });
     expect((await within(results).findByRole("option", { name: /已经练习的目标/ })).textContent).toContain("练过，还不稳");
+  });
+
+  /**
+   * 画布上那条引用线不认方向，而「我引了它」和「它引了我」是两件事。层一那一份清单
+   * 就是把这条线说成能点的话（2026-10-10 补，接 `references` 边那一次）。
+   */
+  it("层一按方向列出正文引用，点一行跳到那一颗星", async () => {
+    stubGateway({
+      snapshot: {
+        ...RICH_SNAPSHOT,
+        edges: [
+          ...RICH_SNAPSHOT.edges,
+          { edgeId: "ref-out", kind: "references", from: { kind: "note", id: NOTE_ID }, to: { kind: "note", id: OTHER_NOTE_ID }, reasonCodes: ["link_id"], decidable: false },
+          { edgeId: "ref-in", kind: "references", from: { kind: "note", id: OTHER_NOTE_ID }, to: { kind: "note", id: NOTE_ID }, reasonCodes: ["link_title"], decidable: false },
+        ] as UnderstandingEdgeProjectionV3[],
+      },
+      deepening: RICH_DEEPENING,
+    });
+    render(<GraphSurface />);
+    const panel = await openNode("索引与代价");
+
+    expect(await within(panel).findByText("正文里的引用")).toBeTruthy();
+    const row = within(panel).getByText("引用了").closest("button")!;
+    expect(row.textContent).toContain("事务隔离级别");
+    expect(within(panel).getByText("被引用").closest("button")?.textContent).toContain("事务隔离级别");
+    fireEvent.click(row);
+    expect(await within(panel).findByRole("heading", { name: "事务隔离级别" })).toBeTruthy();
+  });
+
+  /**
+   * 折叠**按方向各切一刀**：被很多篇引用、自己只引了两篇的那种笔记，整串切会把
+   * 「引用了」那一半整个挤掉，方向就又看不全了。收起来的数量必须说出来——
+   * 不说，这一串读起来就是"这篇只有这些关系"。
+   */
+  it("引用一多就按方向各收一刀，并说清还有几篇没列出", async () => {
+    const cited = Array.from({ length: RELATION_ROW_LIMIT + 2 }, (_, index) => ({
+      id: nextId(), label: `被引笔记 ${String(index + 1).padStart(2, "0")}`,
+    }));
+    stubGateway({
+      snapshot: {
+        ...RICH_SNAPSHOT,
+        nodes: [...RICH_SNAPSHOT.nodes, ...cited.map(note => noteNode(note.id, note.label))],
+        edges: [
+          ...RICH_SNAPSHOT.edges,
+          ...cited.map(note => ({
+            edgeId: `ref-${note.id}`, kind: "references",
+            from: { kind: "note", id: NOTE_ID }, to: { kind: "note", id: note.id },
+            reasonCodes: ["link_id"], decidable: false,
+          })),
+          { edgeId: "ref-inbound", kind: "references", from: { kind: "note", id: OTHER_NOTE_ID }, to: { kind: "note", id: NOTE_ID }, reasonCodes: ["link_title"], decidable: false },
+        ] as UnderstandingEdgeProjectionV3[],
+      },
+      deepening: RICH_DEEPENING,
+    });
+    render(<GraphSurface />);
+    const panel = await openNode("索引与代价");
+
+    expect(await within(panel).findByText("正文里的引用")).toBeTruthy();
+    expect(within(panel).getAllByText("引用了").length).toBe(RELATION_ROW_LIMIT);
+    expect(within(panel).getAllByText("被引用").length).toBe(1);
+    fireEvent.click(within(panel).getByRole("button", { name: `还有 ${cited.length - RELATION_ROW_LIMIT} 篇没列出` }));
+    expect(within(panel).getAllByText("引用了").length).toBe(cited.length);
+    expect(within(panel).getByRole("button", { name: "收起" })).toBeTruthy();
+
+    // 展开记的是"为哪一篇展开"：跳到另一篇（它只有 1 条）不能带着这一篇的展开状态。
+    fireEvent.click(within(panel).getAllByText("被引用")[0]!.closest("button")!);
+    expect(await within(panel).findByRole("heading", { name: "事务隔离级别" })).toBeTruthy();
+    expect(within(panel).queryByRole("button", { name: "收起" })).toBeNull();
   });
 
   it("按笔记读时连续换篇，册页保持展开，隐藏画布索引不抢键盘焦点", async () => {

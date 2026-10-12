@@ -34,11 +34,13 @@ const visibleNoteCondition = sql.raw(noteVisibleSqlText(
 ));
 
 const overviewChunkSchema = z.strictObject({
-  gist: z.string().trim().min(8).max(180),
+  // 只卡下限：说清楚是要求，"最多多少字"不是。上限原先与提示词里那串数字互相打架
+  // （提示词写 120／160／140，合同写 180／200／200），模型按提示词写、按合同被拒。
+  gist: z.string().trim().min(8),
   points: z.array(z.strictObject({
     blockOrdinal: z.number().int().min(0).max(100_000),
-    quote: z.string().trim().min(8).max(200),
-    explanation: z.string().trim().min(8).max(200),
+    quote: z.string().trim().min(8),
+    explanation: z.string().trim().min(8),
   })).min(1),
 });
 
@@ -61,17 +63,23 @@ function compactEvidence(value: string): { text: string; sourceOffsets: number[]
   return { text: text.join(""), sourceOffsets };
 }
 
-function exactQuote(blockText: string, candidate: string): string | null {
+export function exactQuote(blockText: string, candidate: string): string | null {
   const needle = compactEvidence(candidate).text;
   if (needle.length < 8) return null;
   const source = compactEvidence(blockText);
-  const start = source.text.indexOf(needle);
-  if (start < 0) return null;
+  const offset = source.text.indexOf(needle);
+  if (offset < 0) return null;
+  // `indexOf` 给的是 UTF-16 码元下标，而 sourceOffsets 是按**码点**记的：正文里只要有
+  // emoji 这类增补平面字符，两者就不再相等，直接用会把一条本来正确的引用判成"核不回
+  // 原文"（脑图那边早就做了这个换算，速看这边漏了）。
+  const start = Array.from(source.text.slice(0, offset)).length;
   const from = source.sourceOffsets[start];
-  const to = source.sourceOffsets[start + needle.length - 1];
+  const to = source.sourceOffsets[start + Array.from(needle).length - 1];
   if (from === undefined || to === undefined) return null;
   const quote = Array.from(blockText).slice(from, to + 1).join("").trim();
-  return quote.length <= 500 ? quote : null;
+  // 引多长由它要支撑的那个重点决定：原先超过 500 字就判"核不回原文"，
+  // 于是模型引用一段长论证时，整份速看跟着失败。
+  return quote.length > 0 ? quote : null;
 }
 
 function imageSafeText(content: string): { text: string; imageCount: number } {
@@ -122,7 +130,7 @@ function buildChunks(blocks: readonly SourceBlock[], pieceChars: number) {
   return chunks;
 }
 
-function parseOverviewChunk(raw: string) {
+export function parseOverviewChunk(raw: string) {
   let parsed: unknown;
   try { parsed = extractJsonFromText(raw, ["gist", "points"]); } catch {
     throw new NoteOverviewOutputError("速看结果不是可核对的结构化内容");
@@ -130,6 +138,41 @@ function parseOverviewChunk(raw: string) {
   const result = overviewChunkSchema.safeParse(parsed);
   if (!result.success) throw new NoteOverviewOutputError("速看结果缺少清楚的重点或原文依据");
   return result.data;
+}
+
+/**
+ * 把模型给的重点逐条核回原文。**核不上的逐条剔除并计数，而不是整份失败**——
+ * 一条引用核不回原文，说明这一条不可信，但不该因此把同一段里已经核实的其他重点一起丢掉。
+ * 这正是"内容合法、读数把它当故障"的老毛病；剔除条数会记进 coverage，所以少给了几条是看得见的。
+ */
+export function resolveOverviewPoints(
+  points: readonly { blockOrdinal: number; quote: string; explanation: string }[],
+  blockAt: (ordinal: number) => SourceBlock | undefined,
+): { points: OverviewPoint[]; dropped: number } {
+  const kept: OverviewPoint[] = [];
+  let dropped = 0;
+  for (const point of points) {
+    const source = blockAt(point.blockOrdinal);
+    const quote = source && source.type !== "image" ? exactQuote(source.content, point.quote) : null;
+    if (!quote) { dropped += 1; continue; }
+    kept.push({ blockOrdinal: point.blockOrdinal, quote, explanation: point.explanation });
+  }
+  return { points: kept, dropped };
+}
+
+/**
+ * 各段要点合成一份清单：按原文顺序排，同一段同一句只留一条。
+ *
+ * 界面上它是一份编号清单，顺序就是读的顺序，而各段是并发生成的、返回次序不保证；
+ * 长笔记分段时相邻两段常各自引用同一句，照单全收就变成重复清单。
+ */
+export function orderOverviewPoints(sections: readonly OverviewPoint[][]): OverviewPoint[] {
+  return sections
+    .flat()
+    .filter((point, index, all) => all.findIndex(
+      (item) => item.blockOrdinal === point.blockOrdinal && item.quote === point.quote,
+    ) === index)
+    .sort((left, right) => left.blockOrdinal - right.blockOrdinal);
 }
 
 async function readFrozenNote(job: JobPayload, input: { noteId: string; noteVersionId: string }) {
@@ -171,7 +214,14 @@ function buildPrompt(chunkIndex: number, chunkCount: number, lines: readonly { o
   return [
     "请帮第一次接触这篇笔记的人快速听懂内容。用自然、通俗的中文解释术语，不要用空泛的评价，也不要编造材料没有说的事实。",
     `这是笔记文字的第 ${chunkIndex + 1}/${chunkCount} 部分；所有部分都会分别处理。只概括本部分，不要假装看到了其他部分。`,
-    "返回严格 JSON：{\"gist\":\"一句话说清本部分，最多120字\",\"points\":[{\"blockOrdinal\":原文段落序号,\"quote\":\"从该段逐字摘录8到160字\",\"explanation\":\"一句白话重点，30到140字\"}]}。重点的条数由这一部分的内容决定，多给几条更好时就不用只给一条，尽量来自不同段落；每条先讲读者需要知道什么，再讲它有什么用，不写“这段揭示了”“体现了”之类评价。引用必须来自下方某一段原文；图片占位说明不是可引用原文。不要输出 Markdown 代码围栏或额外文本。",
+    "返回严格 JSON：{\"gist\":\"...\",\"points\":[{\"blockOrdinal\":原文段落序号,\"quote\":\"...\",\"explanation\":\"...\"}]}。",
+    // 长度只给形状，不给数字：写死字数会让"一句能说清的事"被撑长、把"需要两句话的事"砍断。
+    "gist 是这一部分的小结：说清它整体在讲什么、几件事之间是什么关系，让没读过原文的人也能接上。写成连贯的一段话，不要写成目录或罗列。",
+    // 条数由内容定：这是"重点"该有的样子，不是配额。
+    "points 是读者真正该带走的重点，会按原文顺序排成一份编号清单。条数由这一部分的内容决定——有几件独立的事就写几条；不要为了凑数把一件事拆成两条，也不要把几件事压成一条。",
+    "每条 explanation 先讲读者需要知道什么，再讲它有什么用；不要写“这段揭示了”“体现了”“说明了作者”这类评价句，也不要把 quote 的原话再复述一遍。",
+    "quote 从该段逐字摘录，长度以“只看这一句也能认出在说哪件事”为准，通常是一句完整的话。必须来自下方某一段原文；图片占位说明不是可引用原文。",
+    "尽量让不同的重点来自不同段落；同一段确实有几件独立的事时，才从同一段取多条。不要输出 Markdown 代码围栏或额外文本。",
     "笔记内容：",
     source,
   ].join("\n\n");
@@ -257,7 +307,7 @@ export async function runNoteOverviewGenerate(job: JobPayload): Promise<void> {
   async function generateOverviewChunk(
     chunkIndex: number,
     chunk: (typeof chunks)[number],
-  ): Promise<{ gist: string; points: OverviewPoint[] }> {
+  ): Promise<{ gist: string; points: OverviewPoint[]; dropped: number }> {
     const messages = messagesFor(chunkIndex, chunks.length, chunk.lines);
     const inputSnapshotHash = noteLearningSnapshotHash({
       taskVersion: 1,
@@ -294,19 +344,15 @@ export async function runNoteOverviewGenerate(job: JobPayload): Promise<void> {
         };
       },
     });
-    const points = parsed.points.map((point) => {
-      if (!chunk.ordinals.has(point.blockOrdinal)) throw new NoteOverviewOutputError("速看引用指向了另一段笔记");
-      const source = blocks.find((block) => block.ordinal === point.blockOrdinal);
-      const quote = source && source.type !== "image" ? exactQuote(source.content, point.quote) : null;
-      if (!quote) throw new NoteOverviewOutputError("速看中的原文引用无法与笔记核对");
-      return { blockOrdinal: point.blockOrdinal, quote, explanation: point.explanation };
-    });
-    return { gist: parsed.gist, points };
+    // 逐条核回原文；核不上的只剔掉那一条，不把同一段里已经核实的其他重点一起丢掉。
+    const resolved = resolveOverviewPoints(parsed.points, (ordinal) =>
+      chunk.ordinals.has(ordinal) ? blocks.find((block) => block.ordinal === ordinal) : undefined);
+    return { gist: parsed.gist, points: resolved.points, dropped: resolved.dropped };
   }
 
   // 各段互相独立，一起发才让长笔记和短笔记花掉差不多的墙上时间；批次只数并发，
   // 每一段都会跑完——把它当成覆盖闸门就会重新变成「这篇太长读不完」。
-  const generated: { gist: string; points: OverviewPoint[] }[] = [];
+  const generated: { gist: string; points: OverviewPoint[]; dropped: number }[] = [];
   for (let start = 0; start < chunks.length; start += PROVIDER_CALL_BATCH) {
     const batch = chunks.slice(start, start + PROVIDER_CALL_BATCH);
     generated.push(...await Promise.all(batch.map((chunk, offset) => generateOverviewChunk(start + offset, chunk))));
@@ -322,10 +368,12 @@ export async function runNoteOverviewGenerate(job: JobPayload): Promise<void> {
   }
   if (references.length === 0) throw new NoteOverviewOutputError("速看没有留下可回到原文的依据");
   const gists = generated.map((section) => section.gist);
-  const points = generated.flatMap((section) => section.points);
-  const body = gists.length === 1 ? gists[0]! : gists.join("\n");
-  // 落库那一列的 CHECK 就是这条线（note_overviews_body_length_check），按码点比。
-  if (Array.from(body).length > 20_000) throw new NoteOverviewOutputError("这份速看超过可保存长度，请从笔记中选一段开始");
+  // 要点按原文顺序排、同一段同一句只留一条（见 orderOverviewPoints）。
+  const points = orderOverviewPoints(generated.map((section) => section.points));
+  const pointsDropped = generated.reduce((sum, section) => sum + section.dropped, 0);
+  // 正文由各段小结组成，空行分段（界面上按 markdown 渲染）。长度不设本地上限：
+  // 天花板是这一次路由的输出额度与上下文预算，存储那一层只管"有没有内容"（0412/0419）。
+  const body = gists.join("\n\n");
 
   await withJobTransaction(job, async (tx) => {
     await lockJobLease(tx, job);
@@ -350,9 +398,10 @@ export async function runNoteOverviewGenerate(job: JobPayload): Promise<void> {
       noteId: input.noteId,
       noteVersionId: input.noteVersionId,
       body,
-      overviewPoints: points,
+      // 一条都没剩下时存 null 而不是空数组：库里那条 CHECK 管的是"要么没有、要么至少一条"。
+      overviewPoints: points.length > 0 ? points : null,
       sourceReferences: references,
-      coverage: { totalBlocks: blocks.length, textBlocksRead, imageBlocksNotRead },
+      coverage: { totalBlocks: blocks.length, textBlocksRead, imageBlocksNotRead, pointsDropped },
       generationJobId: job.id,
       sourceMessageId: null,
       conversationId: null,

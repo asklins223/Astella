@@ -33,6 +33,7 @@ const FACET_BY_KNOWLEDGE_FORM_V3: Record<string, "recall" | "paraphrase" | "expl
 import {
   DeterministicAuthoringProvider,
   allocateStrategies,
+  deriveConceptLabelFromStatement,
   extractAtomsDeterministic,
   runDeterministicGroundingContract,
   type SourceBlockInput,
@@ -109,7 +110,7 @@ export function createDeterministicCardGenerateV3Provider(): CardGenerationV3Pro
         const strategy = allocations[index]!.strategy;
         const planObjective: PlannedObjectiveV2 = {
           objectiveLocalId,
-          objectiveStatement: entry.atom.proposition.slice(0, 2000),
+          objectiveStatement: entry.atom.proposition,
           priority: index === 0 ? "critical" : index < 3 ? "important" : "optional",
           knowledgeForm: entry.atom.knowledgeFormHint,
           strategy,
@@ -137,17 +138,17 @@ export function createDeterministicCardGenerateV3Provider(): CardGenerationV3Pro
         const proposition = entry.atom.proposition;
         candidates.push({
           objectiveLocalId,
-          conceptLabel: planObjective.objectiveStatement.slice(0, 200),
-          publicSummary: planObjective.objectiveStatement.slice(0, 1500),
+          conceptLabel: deriveConceptLabelFromStatement(planObjective.objectiveStatement),
+          publicSummary: planObjective.objectiveStatement,
           answerForm: "prose",
-          answerParts: [{ text: proposition.slice(0, 4000) }],
+          answerParts: [{ text: proposition }],
           judgingPoints: [{
             facet: FACET_BY_KNOWLEDGE_FORM_V3[entry.atom.knowledgeFormHint] ?? "recall",
-            criterion: `说出这一句的关键点：${proposition.slice(0, 200)}`,
+            criterion: `说出这一句的关键点：${proposition}`,
             required: true,
             partIndexes: [1],
           }],
-          explanation: proposition.slice(0, 6000),
+          explanation: proposition,
           front: drafted.presentation.front,
           hints: drafted.hints,
           estimatedReviewSeconds: planObjective.estimatedReviewCostSeconds,

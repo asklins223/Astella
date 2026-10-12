@@ -63,8 +63,9 @@ describe("来源资料架的连续操作", () => {
     const api = installApi(), pending = deferred(); api.search.global.mockReturnValueOnce(pending.promise);
     render(<SourceLibrarySurface />); await waitFor(() => expect(cards()).toHaveLength(2));
     fireEvent.change(screen.getByRole("textbox", { name: "搜索标题或正文" }), { target: { value: "正文关键词" } });
-    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
-    fireEvent.click(screen.getByRole("button", { name: "清空搜索" }));
+    fireEvent.click(screen.getByRole("button", { name: "搜索正文" }));
+    // 输入即筛选之后，空结果页里也有一颗「清空搜索」；这里点的是输入框里那颗。
+    fireEvent.click(screen.getAllByRole("button", { name: "清空搜索" })[0]);
     await act(async () => pending.resolve(ok({ items: [{ objectId: "first" }], total: 1 })));
     expect(cards()).toEqual(["记忆研究", "阅读节奏"]);
     expect(useRoomStore.getState().pageReadableView?.view.filters?.some(filter => filter.label === "搜索")).toBe(false);
@@ -75,8 +76,8 @@ describe("来源资料架的连续操作", () => {
     api.search.global.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
     render(<SourceLibrarySurface />); await waitFor(() => expect(cards()).toHaveLength(2));
     const input = screen.getByRole("textbox", { name: "搜索标题或正文" });
-    fireEvent.change(input, { target: { value: "第一份正文" } }); fireEvent.click(screen.getByRole("button", { name: "搜索" }));
-    fireEvent.change(input, { target: { value: "第二份正文" } }); fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    fireEvent.change(input, { target: { value: "第一份正文" } }); fireEvent.click(screen.getByRole("button", { name: "搜索正文" }));
+    fireEvent.change(input, { target: { value: "第二份正文" } }); fireEvent.click(screen.getByRole("button", { name: "搜索正文" }));
     await act(async () => second.resolve(ok({ items: [{ objectId: "second" }], total: 1 })));
     await act(async () => first.resolve(ok({ items: [{ objectId: "first" }], total: 1 })));
     expect(cards()).toEqual(["阅读节奏"]);
@@ -85,7 +86,7 @@ describe("来源资料架的连续操作", () => {
   it("从材料返回保留关键词和资料架位置，换工作区则不带过去", async () => {
     installApi(); const view = render(<SourceLibrarySurface />); await waitFor(() => expect(cards()).toHaveLength(2));
     fireEvent.change(screen.getByRole("textbox", { name: "搜索标题或正文" }), { target: { value: "阅读节奏" } });
-    fireEvent.click(screen.getByRole("button", { name: "搜索" })); await waitFor(() => expect(cards()).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "搜索正文" })); await waitFor(() => expect(cards()).toHaveLength(1));
     const list = document.querySelector<HTMLElement>(".source-list")!; list.scrollTop = 190; fireEvent.scroll(list);
     view.unmount(); render(<SourceLibrarySurface />); await waitFor(() => expect(cards()).toHaveLength(1));
     expect(screen.getByRole<HTMLInputElement>("textbox", { name: "搜索标题或正文" }).value).toBe("阅读节奏");
@@ -248,13 +249,14 @@ describe("少一步的材料录入", () => {
     fireEvent.change(screen.getByLabelText("要采集的文件"), { target: { files } });
 
     await waitFor(() => expect(api.source.create).toHaveBeenCalledTimes(3));
-    // 逐份走正常收录流程：正文是文件内容，标题取文件名（去掉扩展名）。
+    // 逐份走正常收录流程：正文是文件内容，标题取文件名（去掉扩展名），
+    // 来路写进 origin（审计 F8：文件不是「粘贴的正文」）。
     expect(api.source.create.mock.calls.map((call) => call[0].request)).toEqual([
-      { content: "# 一", title: "甲" },
-      { content: "# 二", title: "乙" },
-      { content: "# 三", title: "丙" },
+      { content: "# 一", origin: "文件 甲.md", title: "甲" },
+      { content: "# 二", origin: "文件 乙.md", title: "乙" },
+      { content: "# 三", origin: "文件 丙.md", title: "丙" },
     ]);
-    await waitFor(() => expect(onBatchCaptured).toHaveBeenCalledWith({ accepted: 2, failed: 1 }));
+    await waitFor(() => expect(onBatchCaptured).toHaveBeenCalledWith({ accepted: 2, failed: 1, duplicates: 0 }));
     // 没进来的那一份要点名：读者要知道该补哪一份，而不是只看到「收下 2 份」。
     expect(await screen.findByText(/乙\.md/)).toBeTruthy();
     expect(screen.getByText(/解析队列满了/)).toBeTruthy();
@@ -377,7 +379,7 @@ describe("原文与附页", () => {
     fireEvent.click(await screen.findByRole("button", { name: "笔记 1" }));
     fireEvent.click(screen.getByRole("button", { name: /《我的笔记》/ }));
     expect(useRoomStore.getState().activeNoteRef).toMatchObject({ noteId: "note", noteVersionId: "version", mode: "preview" });
-    expect(useRoomStore.getState().returnTarget?.label).toBe("返回来源资料");
+    expect(useRoomStore.getState().returnTarget?.label).toBe("返回来源库");
     expect(useRoomStore.getState().activeSourceId).toBeNull();
     act(() => useRoomStore.getState().returnTarget?.run());
     expect(useRoomStore.getState().activeSourceId).toBe("first");

@@ -31,6 +31,8 @@
 .hud-surface .search-command input::-webkit-search-decoration { appearance: none; display: none; }
 .hud-surface .search-command__clear { display: grid; place-items: center; flex: none; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: #e7ecd8; }
 .hud-surface .search-command__clear:hover { background: #d6e3c7; }
+.hud-surface .search-undo { display: inline-flex; align-items: center; gap: 8px; margin: 0 2px 10px; padding: 7px 13px; border-radius: 14px; background: #eef2e0; color: var(--hud-soft); }
+.hud-surface .search-undo .text-action { min-height: 28px; font-weight: 750; }
 .hud-surface .search-command__shortcut { margin-right: 6px; color: #889780; font-family: inherit; font-size: 12px; line-height: 1.5; white-space: nowrap; }
 .hud-surface .search-filter-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; padding: 16px 0 2px; }
 .hud-surface .search-types { position: relative; display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 20px; background: #d6e5c8; isolation: isolate; }

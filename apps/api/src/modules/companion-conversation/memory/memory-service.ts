@@ -26,6 +26,7 @@ import {
   type AccountPreferenceWriteRejection,
 } from "@astella/shared/companion-memory-scope";
 import { companionMemoryContentMaxLength } from "@astella/shared/companion-memory-desktop-contracts";
+import { logger } from "../../../lib/logger.ts";
 import { closeDeliveriesForMemoryItem } from "../delivery/delivery-service.ts";
 import { maskEntriesForSource, unmaskEntriesForSource } from "../discovery/discovery-service.ts";
 
@@ -299,6 +300,22 @@ function toContract(row: typeof assistantMemoryItems.$inferSelect): MemoryItemV2
   };
 }
 
+/**
+ * §9.4/§25：一条记忆的篇幅只有 shared 的那一个声明源（合同、注入取舍、读侧同一份）。
+ *
+ * 生产端（提取器、摘要、日记）超出时**整条不写**并留下日志；这里是所有写入路径的
+ * 最后一道。收到超长内容说明上面某一处漏了判据——仍然收住，但把"剪了尾"记进服务日志：
+ * 静默把一句话变成半句话落库，读的人既看不出来，也回不到原文。
+ */
+function fitMemoryContent(content: string, kind: string, memoryItemId?: string): string {
+  if (content.length <= companionMemoryContentMaxLength) return content;
+  logger.warn(
+    { kind, memoryItemId, contentChars: content.length, keptChars: companionMemoryContentMaxLength },
+    "memory content exceeded the declared capacity and was clamped at the write entry",
+  );
+  return content.slice(0, companionMemoryContentMaxLength);
+}
+
 /** upsert：同 (kind, sourceEventId) 活跃记忆更新；无来源记忆靠 userStated 区分。 */
 export async function upsertMemory(
   executor: ApiTransaction,
@@ -329,8 +346,7 @@ export async function upsertMemory(
   },
   now: Date = new Date(),
 ): Promise<MemoryItemV2> {
-  // §9.4/§25：一条记忆的篇幅由 shared 的那一个声明源决定（合同、注入预算、读侧同一份）。
-  const content = input.content.slice(0, companionMemoryContentMaxLength);
+  const content = fitMemoryContent(input.content, input.kind);
   if (input.appliesWhen && input.appliesWhen.length > companionMemoryContentMaxLength) {
     throw new RangeError(`Memory applicability condition exceeds ${companionMemoryContentMaxLength} characters.`);
   }
@@ -946,7 +962,7 @@ export async function correctMemory(
   if (existing.revision !== input.expectedRevision) {
     throw new MemoryRevisionConflictError(existing.revision);
   }
-  const content = input.content.slice(0, companionMemoryContentMaxLength);
+  const content = fitMemoryContent(input.content, existing.kind, memoryItemId);
   const metadataChanged =
     (input.appliesWhen !== undefined && input.appliesWhen !== existing.appliesWhen)
     || (input.validFrom !== undefined && (input.validFrom?.toISOString() ?? null) !== existing.validFrom)

@@ -4,3 +4,7 @@
 export type StateFilter = "all" | "attention" | "unseen" | "understood";
 
 export type DeepeningLayer = "overview" | "local" | "records";
+
+/** 右栏一份关系清单先列几条。两处（目标那侧的「真实光路」与笔记那侧的
+ *  「正文里的引用」）共用一个数，否则同一个面板里两张清单会按两套尺度收起。 */
+export const RELATION_ROW_LIMIT = 8;

@@ -57,7 +57,6 @@ const ENV_REF_PATTERN = /^\$\{([A-Z_][A-Z0-9_]*)\}$/;
 /** 已知能力。用于校验配置的 capability 键是不是拼错了。 */
 const KNOWN_CAPABILITIES = [
   "text_generation",
-  "vision",
   "agent_turn",
   "companion_fallback",
   "embedding",
@@ -91,6 +90,9 @@ const LEGACY_PLATFORM_OPTION_KEYS = [
 
 /** 推理档位的合法取值（与 shared 的 ReasoningEffort 同集合）。 */
 const REASONING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+
+/** 思考开关字段的两种方言（与 shared 的 ThinkingParamDialect 同集合）。 */
+const THINKING_PARAM_DIALECTS = ["enable_thinking", "reasoning_effort"] as const;
 
 export function resolveConfigPath(raw: string | undefined = process.env.AI_PLATFORMS_CONFIG): string {
   return resolve(raw && raw.trim().length > 0 ? raw.trim() : DEFAULT_CONFIG_PATH);
@@ -232,6 +234,17 @@ export function validateConfig(raw: unknown): ConfigIssue[] {
             });
           }
         }
+        // 思考开关方言：拼错的值会被 provider 当成"未声明"，于是回落到
+        // enable_thinking —— 面板上的说法与实际下发的字段不一致，正是"改了但没生效"。
+        const thinkingParam = options.thinkingParam;
+        if (thinkingParam !== undefined
+          && !(typeof thinkingParam === "string" && (THINKING_PARAM_DIALECTS as readonly string[]).includes(thinkingParam))) {
+          issues.push({
+            path: `platforms.${id}.options.thinkingParam`,
+            message: `思考开关方言必须是 ${THINKING_PARAM_DIALECTS.join(" / ")}（写错会被当成未声明，回落 enable_thinking）`,
+            blocking: true,
+          });
+        }
       }
       // 模型档案的形状校验。
       const models = definition.models as Record<string, unknown> | undefined;
@@ -354,12 +367,6 @@ export function validateConfig(raw: unknown): ConfigIssue[] {
           path: `capabilities.${capability}.model`,
           message: `模型 "${mapping.model}" 未在 platforms.${platform}.models 中声明能力（上下文/输出/识图/推理档位）`,
           blocking: true,
-        });
-      } else if (capability === "vision" && platformDefinition.models![mapping.model]?.vision === false) {
-        issues.push({
-          path: `capabilities.${capability}`,
-          message: `识图映射的模型 "${mapping.model}" 被自己声明为 vision:false——识图会按"没有可用的看图模型"处理`,
-          blocking: false,
         });
       }
     }

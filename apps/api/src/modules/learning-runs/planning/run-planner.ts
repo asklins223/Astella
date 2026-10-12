@@ -263,7 +263,9 @@ export function planRun(target: RunPlannerTargetInput, options: PlannerOptions):
   const intent = GOAL_INTENT[options.goal];
   const hint = selectPromptAngle(options, intent, target.claim);
   const prompt = buildTaskPrompt(intent, hint, target.claim);
-  const targetSummary = intent === "recall" ? "" : target.claim.slice(0, 160);
+  // 目标陈述整条给出（2026-10-12 裁决）：这里是**上屏与落库的成果**，
+  // 以前 .slice(0, 160) 会把一句目标切成半句，学习者与归档看到的都是残句。
+  const targetSummary = intent === "recall" ? "" : target.claim;
   const primaryFamily: "text" | "voice" = options.responsePreference === "voice" ? "voice" : "text";
   const estSeconds = primaryFamily === "voice" ? 75 : 60;
 
@@ -322,7 +324,8 @@ function planStructuredRun(target: RunPlannerTargetInput, options: PlannerOption
   const taskId = randomTaskId();
   const intent = GOAL_INTENT[options.goal];
   const prompt = buildTaskPrompt(intent, selectPromptAngle(options, intent, target.claim), target.claim);
-  const targetSummary = target.claim.slice(0, 160);
+  // 目标陈述整条给出，不按字数切半句（2026-10-12 裁决；见 planRun 同名字段的说明）。
+  const targetSummary = target.claim;
   // §5.3/§7.7：stabilize/clarify/explore 偏好下生成 structured_bundle
   // （ordering + relation 两个互补 part；无 qualification → practice 上限）；
   // repair/transfer 目标仍用单 part 结构题（修复/关系语义明确）。
@@ -440,7 +443,9 @@ function planV2Run(target: RunPlannerTargetInput, options: PlannerOptions): Plan
       ? `${basePrompt}。新情境：${options.applicationScenario}。请根据这个情境说明你的判断和理由。`
       : `${basePrompt}。请换一个与刚才笔记示例不同的具体情境，说明你会怎样使用这条知识。`
     : basePrompt;
-  const targetSummary = v2.publicSummary.slice(0, 160);
+  // publicSummary 整条进 targetSummary（2026-10-12 裁决）：这句是要落库上屏的
+  // 目标陈述，切到 160 字会让学习者与归档看到的和作者写的不是一句。
+  const targetSummary = v2.publicSummary;
   const estSeconds = 60;
 
   // 结构化：主位结构题仅在用户显式要 structured 时生成（此时整题降为

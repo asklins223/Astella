@@ -33,7 +33,8 @@ new Map<string, NoteDocLocalSession>()
  */
 const noteDocLocalSessions = new Map<string, NoteDocLocalSession>();
 
-const NOTE_DOC_PENDING_MAX = 200;
+// 与缓存那一侧同一个数：从它那里引入，不再各写一份（见 note-doc-cache-store）。
+const NOTE_DOC_PENDING_MAX = NOTE_DOC_PENDING_LIMIT;
 
 /**
  * 单篇笔记 Markdown 的取回上限（5 MB）。
@@ -82,6 +83,7 @@ import {
   createNoteDocState,
   mergeNoteDocUpdates,
 } from "./note-doc-state.ts";
+import { NOTE_DOC_PENDING_LIMIT } from "./note-doc-cache-store.ts";
 import {
   CardActivationReceiptDesktopV1,
   CardGenerationCancelResultV1,

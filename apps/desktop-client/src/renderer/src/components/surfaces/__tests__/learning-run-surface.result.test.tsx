@@ -402,7 +402,7 @@ describe("LearningRunSurface · 结算页结构", () => {
     expect(actions?.parentElement).toBe(board);
     expect(document.querySelector<HTMLDetailsElement>(".learning-run-result-report")?.open).toBe(false);
     expect(screen.getByRole("button", { name: "看参考答案与解释" }).closest("details")).toBe(report);
-    expect(screen.getByRole("button", { name: "返回学习空间" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "返回书房" })).toBeTruthy();
   });
 
   it("判定再多也把出口留在板上：12 条 rubric 时报告列与出口是兄弟", async () => {
@@ -424,7 +424,7 @@ describe("LearningRunSurface · 结算页结构", () => {
     await waitFor(() => expect(document.querySelector(".learning-run-result-actions")).not.toBeNull());
 
     const buttons = [...document.querySelectorAll<HTMLButtonElement>(".learning-run-result-actions button")];
-    expect(buttons.map((b) => b.textContent)).toEqual(["回到学习卡", "返回学习空间"]);
+    expect(buttons.map((b) => b.textContent)).toEqual(["回到学习卡", "返回书房"]);
     expect(buttons[0]?.className).toContain("primary");
     expect(buttons[1]?.className).not.toContain("primary");
     fireEvent.click(buttons[0]!);
@@ -436,7 +436,7 @@ describe("LearningRunSurface · 结算页结构", () => {
     await waitFor(() => expect(document.querySelector(".learning-run-result-board")).not.toBeNull());
 
     expect(onExit).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "返回学习空间" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回书房" }));
     expect(onExit).toHaveBeenCalledTimes(1);
   });
 

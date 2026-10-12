@@ -8,7 +8,6 @@ import {
   CONVERSATION_SUMMARY_MAX_CHARS,
   conversationSummaryOutputSchema,
   renderConversationSummary,
-  SUMMARIZER_INPUT_CHARS,
 } from "../companion-summarizer.ts";
 import { summarizerJobKey } from "../companion-dialogue-store.ts";
 
@@ -78,13 +77,19 @@ test("summarizer schema: 中文键（模型实际回的形状）不通过", () =
   assert.equal(conversationSummaryOutputSchema.safeParse(asModelReplies).success, false);
 });
 
-// 与上一条同族的方向性错误：窗口两头都在往回看（SQL 取最早 200 条 + 这里从头部切
-// 12 000 字）。会话是往上长的，摘要要的正是"最近这一段聊了什么"。
-test("summarizer 输入窗口: 超预算时保留结尾，不是开头", () => {
-  const long = `用户：最早的一句\n${"填充内容。".repeat(SUMMARIZER_INPUT_CHARS)}\n桌宠：最新的一句`;
-  const userTurn = buildSummarizerMessages({ conversationText: long })[1].content;
-  assert.ok(userTurn.endsWith("桌宠：最新的一句"), "尾巴必须在");
-  assert.ok(!userTurn.includes("最早的一句"), "超预算时开头可以让位");
+// 会话是往上长的，摘要要的正是"最近这一段聊了什么"。窗口两头都往回看的写法
+// （SQL 取最早若干条 + 从头部切字符）会让最新那句永远进不了摘要。
+test("summarizer 输入窗口: 超容量时保留结尾，更早的整条记为未覆盖", () => {
+  const rows = [
+    { id: "m-1", seq: "1", role: "user", contentSha256: "a".repeat(64), blocks: [{ type: "text", text: "最早的一句" }] },
+    { id: "m-2", seq: "2", role: "assistant", contentSha256: "b".repeat(64), blocks: [{ type: "text", text: "最新的一句" }] },
+  ];
+  const snapshot = buildSummarizerSnapshot(rows, "桌宠：最新的一句".length, "conv-1", (text) => text.length);
+  assert.equal(snapshot.transcript, "桌宠：最新的一句");
+  assert.deepEqual(snapshot.uncovered.map((span) => span.fromSeq), [1], "没读那一条要如实记下来");
+  const turn = buildSummarizerMessages({ conversationText: snapshot.transcript })[1].content;
+  assert.ok(turn.endsWith("桌宠：最新的一句"), "尾巴必须在");
+  assert.ok(!turn.includes("最早的一句"), "超容量时开头可以让位");
 });
 
 test("summarizer snapshot: 精确记录实际输入水位、排除系统消息并校验来源版本", () => {
@@ -93,13 +98,13 @@ test("summarizer snapshot: 精确记录实际输入水位、排除系统消息�
     { id: "system-11", seq: "11", role: "system", contentSha256: "b".repeat(64), blocks: [{ type: "text", text: "内部注记" }] },
     { id: "message-10", seq: "10", role: "user", contentSha256: "a".repeat(64), blocks: [{ type: "text", text: "先问" }] },
   ];
-  const snapshot = buildSummarizerSnapshot(rows, 100);
+  const snapshot = buildSummarizerSnapshot(rows, 100, "", (text) => text.length);
   assert.equal(snapshot.transcript, "用户：先问\n桌宠：后答");
   assert.equal(snapshot.coverageFromSeq, "10");
   assert.equal(snapshot.coverageThroughSeq, "12");
   assert.equal(snapshot.sourceHash.length, 64);
 
-  const truncated = buildSummarizerSnapshot(rows, "桌宠：后答".length);
+  const truncated = buildSummarizerSnapshot(rows, "桌宠：后答".length, "", (text) => text.length);
   assert.equal(truncated.transcript, "桌宠：后答");
   assert.equal(truncated.coverageFromSeq, "12", "水位要从真正进入 prompt 的第一条消息开始");
   assert.equal(truncated.coverageThroughSeq, "12");
@@ -247,22 +252,25 @@ test("44 §5.1：父摘要作为递增输入进入提示词，而不是默认从
   assert.ok(!withoutParent[0].content.includes("<previous_summary>"));
 });
 
-test("44 §5.2：摘要输入预算取自摘要模型的实际能力，不是固定字符数", () => {
+test("44 §5.2：摘要输入预算取自摘要模型的实际能力，单位是档案的 token", () => {
   const small = resolveSummarizerInputTokens({ contextWindowTokens: 8_000, maxOutputTokens: 4_096 });
   const large = resolveSummarizerInputTokens({ contextWindowTokens: 1_000_000, maxOutputTokens: 131_072 });
   assert.ok(small < large, "小窗口摘要模型必须拿到更小的输入预算");
-  assert.ok(small <= SUMMARIZER_INPUT_CHARS, "字符上限仍然只是地板之上的封顶");
-  assert.equal(resolveSummarizerInputTokens(null), Math.floor(SUMMARIZER_INPUT_CHARS / 2));
+  // 拿不到档案时不是"换一个猜的字符数"，而是按登记的那份保守能力解析同一个量。
+  const registered = resolveSummarizerInputTokens(null);
+  assert.ok(Number.isSafeInteger(registered) && registered > 0, "登记保守能力也要给一个真实 token 数");
+  assert.ok(registered > small && registered < large, "登记窗口落在两者之间（128k 那条保守值）");
 });
 
-test("44 §5.2：分块预算变小后覆盖区间随之收窄，而不是仍然宣称读到全部", () => {
+test("44 §5.2：分块容量变小后覆盖区间随之收窄，而不是仍然宣称读到全部", () => {
   const rows = [
     { id: "m-1", seq: "1", role: "user", contentSha256: "a".repeat(64), blocks: [{ type: "text", text: "甲".repeat(40) }] },
     { id: "m-2", seq: "2", role: "assistant", contentSha256: "b".repeat(64), blocks: [{ type: "text", text: "乙".repeat(40) }] },
     { id: "m-3", seq: "3", role: "user", contentSha256: "c".repeat(64), blocks: [{ type: "text", text: "丙".repeat(40) }] },
   ];
-  const wide = buildSummarizerSnapshot(rows, 500, "conv-1");
-  const narrow = buildSummarizerSnapshot(rows, 50, "conv-1");
+  const countChars = (text: string) => text.length;
+  const wide = buildSummarizerSnapshot(rows, 500, "conv-1", countChars);
+  const narrow = buildSummarizerSnapshot(rows, 50, "conv-1", countChars);
   assert.equal(wide.coverageFromSeq, "1");
   assert.equal(narrow.coverageFromSeq, "3");
   assert.equal(narrow.uncovered.length, 2, "更早的两条这次没读，必须如实记下来");

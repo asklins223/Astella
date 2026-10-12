@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ARTIFACT_MAX_BYTES,
-  ARTIFACT_MAX_TAG_OPENERS,
   artifactDocumentContentSecurityPolicy,
   classifyFramePolicySubject,
   isAllowedSubFrameNavigation,
@@ -110,25 +108,12 @@ describe('产物文档的组装与配额（D4 §6）', () => {
     expect(assembled.document).toContain('astella:artifact-frame')
   })
 
-  it('超字节整份拒绝，不做截断后半篇', () => {
-    const tooBig = 'x'.repeat(ARTIFACT_MAX_BYTES + 1)
-    const result = assembleArtifactDocument({ artifactId: ID, content: tooBig })
-    expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.reason).toBe('too_many_bytes')
-  })
-
-  it('标签起始符超量整份拒绝', () => {
-    const manyTags = '<i></i>'.repeat(Math.ceil(ARTIFACT_MAX_TAG_OPENERS / 2) + 1)
-    const result = assembleArtifactDocument({ artifactId: ID, content: manyTags })
-    expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.reason).toBe('too_many_tags')
-  })
-
-  it('正对照：紧贴上限的产物仍然放行（配额不许把正常尺寸的东西挡在外面）', () => {
-    const justUnder = 'y'.repeat(ARTIFACT_MAX_BYTES)
-    const result = assembleArtifactDocument({ artifactId: ID, content: justUnder })
+  it('完整长页面和多节点内容都能组装，末尾不丢', () => {
+    const content = `<main>${'<i>完整节点</i>'.repeat(30_000)}${'详细讲解'.repeat(150_000)}页面末尾</main>`
+    const result = assembleArtifactDocument({ artifactId: ID, content })
     expect(result.ok).toBe(true)
+    expect(result.document).toContain(content)
+    expect(result.document).toContain('页面末尾')
   })
+
 })

@@ -406,7 +406,7 @@ export interface CriticInputV2 {
     facet: string;
     required: boolean;
   }>;
-  /** evidence hashes + 允许引用的 evidence preview。 */
+  /** evidence hashes + 允许引用的冻结原文（整条给出，不再按字数截预览）。 */
   evidenceRefs: Array<{ evidenceSnapshotHash: string; preview: string }>;
   /** Task intent / interaction family / public payload hash / artifact text。 */
   taskIntent: string;
@@ -470,12 +470,14 @@ export interface CriticEvidenceSnapshotRow {
   blockContent: string;
 }
 
-const CRITIC_EVIDENCE_PREVIEW_MAX_CHARS = 2_000;
-
 /**
  * Rebuilds the frozen evidence quote from its immutable note block coordinates.
  * The two hashes make a changed block or an invalid span fail closed before any
  * source text reaches the model.
+ *
+ * 引文整条交给 Critic（2026-10-12 裁决：喂模型的输入不按字数静默裁）。
+ * 条数一侧本来就受任务闭包约束——只展开本次评估引用的 evidence，没有再挂
+ * 每条形 2000 字的预览上限：被裁半句的证据会把 covered 判成 missing。
  */
 export function materializeCriticEvidenceRefs(
   expectedEvidence: Array<{ evidenceSnapshotId: string; evidenceSnapshotHash: string }>,
@@ -526,7 +528,7 @@ export function materializeCriticEvidenceRefs(
     if (!preview) throw new CriticOutputError(`empty frozen evidence quote: ${evidenceSnapshotId}`);
     return {
       evidenceSnapshotHash: row.evidenceSnapshotHash,
-      preview: preview.slice(0, CRITIC_EVIDENCE_PREVIEW_MAX_CHARS),
+      preview,
     };
   });
 }

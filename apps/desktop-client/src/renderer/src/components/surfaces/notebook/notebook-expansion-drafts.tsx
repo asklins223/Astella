@@ -98,7 +98,7 @@ export function NoteExpansionDrafts(props: Props) {
   }, [props.task.taskId]);
 
   return <div className="note-expansion-drafts" ref={rootRef}>
-    {props.task.confirmedCandidateIds?.length ? <p className="note-expansion-drafts__saved" role="status" ref={savedRef}><Check size={16} aria-hidden="true" />已收下 {props.task.confirmedCandidateIds.length} 篇 · {props.task.status === "confirmed" ? "可从关联笔记再次打开" : "其余草稿还可以继续读、修改和收下"}</p> : null}
+    {props.task.confirmedCandidateIds?.length ? <p className="note-expansion-drafts__saved" role="status" ref={savedRef}><Check size={16} aria-hidden="true" />已收下 {props.task.confirmedCandidateIds.length} 篇 · {props.task.status === "confirmed" ? "可在往外学页再次打开" : "其余草稿还可以继续读、修改和收下"}</p> : null}
     <div className="note-expansion-drafts__books" hidden={opened !== null} ref={booksRef}>
       {props.task.drafts.map((draft, position) => {
         const saved = props.task.confirmedCandidateIds?.includes(draft.candidateId) ?? false;

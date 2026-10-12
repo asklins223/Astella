@@ -50,6 +50,7 @@ export const EDGE_KIND_LABEL = {
   supported_by: "证据支撑",
   sourced_from: "来源材料",
   contains_note: "收录笔记",
+  references: "正文引用",
 } as const satisfies Record<UnderstandingEdgeProjectionV3["kind"], string>;
 
 export function graphEdgeKindLabel(kind: UnderstandingEdgeProjectionV3["kind"]): string {

@@ -122,7 +122,7 @@ export function classifyAgentRunFailure(input: {
   return {
     failureClass: "not_applicable",
     note: `${substantive.capability} 在这次的材料或条件下没有做成`
-      + `${substantive.error ? `（${substantive.error.slice(0, 120)}）` : ""}：`
+      + `${substantive.error ? `（${substantive.error}）` : ""}：`
       + "记下适用条件，下次先核对条件再走这条路；这不是「这项能力不行」。",
     contributesRule: true,
     citedOperation: substantive,

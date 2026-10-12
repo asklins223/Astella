@@ -7,6 +7,7 @@ import { isWebLinkUrl } from "@astella/shared/desktop-ipc-contracts";
 import { openExternalLink } from "../../app/external-link";
 import { WebCitationContext, WebCitationText, type WebCitation } from "./companion-web-citations";
 import { ReadableMath } from "../content/readable-math";
+import { CodePaper } from "../content/code-paper";
 
 function segmentSource(segment: NoteDocInlineSegment): string {
   switch (segment.kind) {
@@ -168,7 +169,7 @@ function renderBlocks(text: string, depth: number): ReactNode[] {
       cursor += 1;
       while (cursor < lines.length && !FENCE_LINE.test(lines[cursor])) body.push(lines[cursor++]);
       if (cursor < lines.length) cursor += 1;
-      blocks.push(<pre className="companion-md__code" data-lang={fence[1] || undefined} key={`b${key++}`}>{body.join("\n")}</pre>);
+      blocks.push(<CodePaper key={`b${key++}`} fence={fence[1] || undefined} source={body.join("\n")} />);
       continue;
     }
     // Multiline display math may contain blank lines or Markdown-looking TeX.

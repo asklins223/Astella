@@ -31,7 +31,7 @@ import { createHash } from "node:crypto";
 
 import { fetchUrlContentOnce } from "../handlers/parse-source.ts";
 
-/** 正文上限。超出部分不读，标题另算。 */
+/** 单次交回的正文窗口宽度；读到底靠 `offset` 续读，不是"只许看前这么多"。 */
 export const PUBLIC_DOCUMENT_MAX_TEXT = 6000;
 /** 标题上限。 */
 export const PUBLIC_DOCUMENT_MAX_TITLE = 200;
@@ -47,16 +47,23 @@ export interface AgentPublicDocument {
   /** 重定向之后的实际 URL：回执里的"这份内容是从哪儿来的"。 */
   url: string;
   title: string;
-  /** 已清洗的纯正文，最多 {@link PUBLIC_DOCUMENT_MAX_TEXT} 字符。 */
+  /** 本次交回的那一段正文（从 {@link offset} 起的一个窗口）。 */
   text: string;
-  /** 正文是否因为长度上限被截断。 */
+  /** 这一段的起点（码点序号）。 */
+  offset: number;
+  /** 还有下一段时给续读的起点；读到底就是 null。 */
+  nextOffset: number | null;
+  /** 整篇清洗后正文的码点数——她据此知道"还有多少没读"。 */
+  totalChars: number;
+  /** 这一段之后是否还有内容（等于 `nextOffset !== null`）。 */
   truncated: boolean;
   /** ISO 时间戳。 */
   fetchedAt: string;
   /**
-   * **完整**已提取正文的 sha256 —— 不是被截断那段的。
+   * **完整**已提取正文的 sha256 —— 不是这一段。
    *
-   * 截断长度是给模型的输入预算，截断点会随上限调整；内容身份不该跟着它变。
+   * 窗口宽度是给模型的单次输入预算，会随上限调整；内容身份不该跟着它变，
+   * 所以分段续读时各次拿到的 hash 必须一致——不一致就是页面换了。
    */
   contentHash: string;
 }
@@ -128,17 +135,26 @@ function normalizeTitle(title: string | null | undefined): string {
   return title.replace(/\s+/g, " ").trim().slice(0, PUBLIC_DOCUMENT_MAX_TITLE);
 }
 
+export interface AgentPublicDocumentReadOptions {
+  /** 从清洗后正文的第几个码点开始（默认 0）。 */
+  readonly offset?: number;
+  /** 这一次最多交回多少码点（默认 {@link PUBLIC_DOCUMENT_MAX_TEXT}）。 */
+  readonly maxChars?: number;
+}
+
 /**
  * 读一份公开网页。
  *
- * 取消语义：进来之前检查一次、出 fetch 之后检查一次；再叠一层 25 秒总闸。
- * 两者用 `AbortSignal.any` 合成，所以父取消与超时**都**能打断它——
- * 只挂其中一个，另一个就会变成"设了但没用"。
+ * 取消语义：进来之前检查一次、出 fetch 之后检查一次；再叠一层总闸
+ * （{@link PUBLIC_DOCUMENT_TIMEOUT_MS}，含全部重定向）——那是给挂死的纯数据读取
+ * 收口的故障时限，不是内容预算。两者用 `AbortSignal.any` 合成，所以父取消与超时
+ * **都**能打断它；只挂其中一个，另一个就会变成"设了但没用"。
  */
 export async function readAgentPublicDocument(
   url: string,
   signal: AbortSignal,
   dependencies: AgentPublicDocumentDependencies = {},
+  options: AgentPublicDocumentReadOptions = {},
 ): Promise<AgentPublicDocument> {
   if (signal.aborted) {
     throw signal.reason instanceof Error ? signal.reason : new AgentPublicDocumentError("已取消");
@@ -203,15 +219,24 @@ export async function readAgentPublicDocument(
   // 内容身份取**完整**正文：截断上限是给模型的输入预算，改上限不该改内容身份。
   const contentHash = createHash("sha256").update(body, "utf8").digest("hex");
 
-  // 抓取器已经清洗过正文（HTML 走 extractTextFromHtml）。这里只在清洗结果上截断，
-  // 不再对 HTML 做任何二次切分——那会把标记切坏，也会把"我们截在哪"变成格式问题。
-  const truncated = body.length > PUBLIC_DOCUMENT_MAX_TEXT;
+  // 抓取器已经清洗过正文（HTML 走 extractTextFromHtml）。这里只在清洗结果上切窗口，
+  // 不再对 HTML 做任何二次切分——那会把标记切坏，也会把"我们切在哪"变成格式问题。
+  // 切点按码点，emoji 与代理对不会被劈成半个。
+  const chars = Array.from(body);
+  const totalChars = chars.length;
+  const offset = Math.min(Math.max(0, Math.trunc(options.offset ?? 0)), totalChars);
+  const windowChars = Math.max(1, Math.trunc(options.maxChars ?? PUBLIC_DOCUMENT_MAX_TEXT));
+  const end = Math.min(totalChars, offset + windowChars);
+  const nextOffset = end < totalChars ? end : null;
 
   return {
     url: finalUrl,
     title: normalizeTitle(fetched.title),
-    text: truncated ? body.slice(0, PUBLIC_DOCUMENT_MAX_TEXT) : body,
-    truncated,
+    text: chars.slice(offset, end).join(""),
+    offset,
+    nextOffset,
+    totalChars,
+    truncated: nextOffset !== null,
     fetchedAt: new Date().toISOString(),
     contentHash,
   };

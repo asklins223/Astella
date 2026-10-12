@@ -9,6 +9,7 @@ import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts"
 import { parseMarkdownTable } from "@astella/shared/note-doc-schema";
 import { useRoomStore } from "../../../app/room-store";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult, RendererGatewayError } from "../../../app/desktop-client";
+import { stashLibraryReceipt } from "../../../app/source-batch-capture";
 import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
@@ -24,6 +25,8 @@ import {
 import {
   SOURCE_STATUS_POLL_MAX_ATTEMPTS,
   SOURCE_STATUS_POLL_MS,
+  SOURCE_STATUS_POLL_TOTAL_ATTEMPTS,
+  SOURCE_STATUS_SLOW_POLL_MS,
   isSourceSettling,
   needsOriginAddress,
 } from "./source-index.ts";
@@ -251,14 +254,16 @@ function SourceDetailContent({ scope, activeSourceId }: { readonly scope: number
       setStalled(false);
       return;
     }
-    if (pollAttemptsRef.current >= SOURCE_STATUS_POLL_MAX_ATTEMPTS) {
+    if (pollAttemptsRef.current >= SOURCE_STATUS_POLL_TOTAL_ATTEMPTS) {
       setStalled(true);
       return;
     }
+    // 审计 F7：快档用完转慢档继续跟（与来源库同一条口径）。
+    const delay = pollAttemptsRef.current >= SOURCE_STATUS_POLL_MAX_ATTEMPTS ? SOURCE_STATUS_SLOW_POLL_MS : SOURCE_STATUS_POLL_MS;
     const timer = window.setTimeout(() => {
       pollAttemptsRef.current += 1;
       void reload({ silent: true });
-    }, SOURCE_STATUS_POLL_MS);
+    }, delay);
     return () => window.clearTimeout(timer);
   }, [source, reload]);
 
@@ -293,7 +298,7 @@ function SourceDetailContent({ scope, activeSourceId }: { readonly scope: number
 
   const openNote = (noteId: string, noteVersionId: string, mode: "preview" | "live-preview") => {
     setActiveNoteRef({ noteId, noteVersionId, mode });
-    invoke("open-notebook", { returnTo: { label: "返回来源资料", run: () => {
+    invoke("open-notebook", { returnTo: { label: "返回来源库", run: () => {
       setActiveSourceId(sourceId);
       invoke("open-source", { returnTo: { label: "返回来源库", run: () => invoke("open-sources") } });
     } } });
@@ -420,6 +425,9 @@ function SourceDetailContent({ scope, activeSourceId }: { readonly scope: number
       }));
       if (!alive.current) return;
       setArchiveConfirm(false);
+      // 回执寄给来源库（这一屏马上卸载）：行消失了，总得有一句话说明它去哪了、
+      // 还能不能找回，而不是读成「删掉了」。
+      stashLibraryReceipt(`《${source?.title ?? "这份来源"}》已归档，可在「已归档」页签找回。`);
       invoke("open-sources");
     } catch (error) {
       if (alive.current) setNotice({ tone: "error", text: `归档没成功：${gatewayErrorMessage(error)}` });
@@ -672,7 +680,7 @@ function SourceDetailContent({ scope, activeSourceId }: { readonly scope: number
               ))}
               <footer className="source-provenance">
                 <dl className="source-facts">
-                  <div><dt>来源地址</dt><dd>{source.origin ?? (needsOriginAddress(source) ? "这份网页来源没有记录地址" : "粘贴的正文，没有地址")}</dd></div>
+                  <div><dt>来源</dt><dd>{source.origin ?? (needsOriginAddress(source) ? "这份网页来源没有记录地址" : "粘贴的正文，没有地址")}</dd></div>
                   <div><dt>收录于</dt><dd><time dateTime={source.createdAt}>{formatDate(source.createdAt)}</time></dd></div>
                 </dl>
               </footer>

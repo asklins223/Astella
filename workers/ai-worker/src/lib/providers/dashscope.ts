@@ -78,11 +78,6 @@ registerFactory("dashscope", "text_generation", (config) => {
   return provider ? provider as unknown as CapabilityImpl : null;
 });
 
-registerFactory("dashscope", "vision", (config) => {
-  const provider = createDashScopeProvider(config);
-  return provider ? provider as unknown as CapabilityImpl : null;
-});
-
 registerFactory("dashscope", "agent_turn", (config) => {
   const provider = createDashScopeProvider(config);
   return provider ? provider as unknown as CapabilityImpl : null;

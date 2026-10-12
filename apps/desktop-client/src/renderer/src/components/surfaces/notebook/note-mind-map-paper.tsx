@@ -5,7 +5,7 @@ import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../
 import { useRoomStore } from "../../../app/room-store";
 import { useNotebookFullscreenActive, useNotebookFullscreenState } from "./notebook-fullscreen-state";
 import { NoteMarkdownReading } from "./note-markdown-reading";
-import { layoutMindMap } from "./note-mind-map-layout";
+import { layoutMindMap } from "@astella/shared/note-mind-map-layout";
 
 const COLORS = ["#9c6349", "#637c65", "#737592", "#ad8349", "#558184", "#a06479"];
 type View = { x: number; y: number; scale: number };

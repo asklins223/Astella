@@ -80,7 +80,7 @@ test("③ 没登记的 kind 排到最后，不插队", () => {
 test("④ 两个消费点不再各自抄表：那一格里不许再出现按 kind 分支的 switch", () => {
   const consumers = [
     { rel: "apps/api/src/modules/learning-dashboard/service.ts", anchor: "function priorityScore(" },
-    { rel: "apps/api/src/modules/companion-conversation/learning-action-bridge.ts", anchor: "const sorted = [" },
+    { rel: "apps/api/src/modules/companion-conversation/companion-learning-menu-context.ts", anchor: "const sorted = [" },
   ] as const;
   for (const { rel, anchor } of consumers) {
     const whole = stripComments(readFileSync(join(REPO_ROOT, rel), "utf8"));
@@ -106,6 +106,6 @@ test("判据自己的灵敏度：合成文本喂进去，各判各的", () => {
   // 真实消费点的区间非空，且确实包含那一次调用（证明 ④ 读到位了，不是靠 substring 走运）。
   const dashBody = regionFrom("apps/api/src/modules/learning-dashboard/service.ts", "function priorityScore(");
   assert.ok(dashBody.length > 20 && dashBody.includes("primaryActionPrecedenceV3"), dashBody.slice(0, 80));
-  const bridgeBody = regionFrom("apps/api/src/modules/companion-conversation/learning-action-bridge.ts", "const sorted = [");
+  const bridgeBody = regionFrom("apps/api/src/modules/companion-conversation/companion-learning-menu-context.ts", "const sorted = [");
   assert.ok(bridgeBody.includes("primaryActionPrecedenceV3"), bridgeBody.slice(0, 80));
 });

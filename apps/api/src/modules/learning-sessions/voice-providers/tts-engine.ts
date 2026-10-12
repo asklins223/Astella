@@ -25,6 +25,7 @@ import { qwenTtsSynthesizeStreamForUser, type QwenTtsOptions } from "./qwen-tts.
 import { AIConsentRequiredError, AIDataPolicyDeniedError } from "@astella/agent-host";
 import { createGovernedMediaCall, type ApiAIGovernanceDependencies } from "../../../lib/ai-governance.ts";
 import { productionAiGovernancePorts } from "../../../governance/ai-governance-runtime.ts";
+import { logger } from "../../../lib/logger.ts";
 
 /** 治理拒绝与"上游挂了"是两回事：拒绝不该触发降级重试。 */
 function isGovernanceDenial(error: unknown): boolean {
@@ -152,6 +153,12 @@ export interface SynthesizeTtsBytesArgs {
   edgeRate?: string;
   /** qwen 按用户串行的队列键（workspaceId:userId）。 */
   queueKey: string;
+  /**
+   * 这一轮伴星自写的说话风格指令（模型优先）。缺省/为空时回退
+   * `selection.qwenInstruction`（用户偏好），再回退 config——三层兜底的前两层
+   * 在这里合流。edge 分支不消费它（edge 没有指令参数，也不需要）。
+   */
+  instruction?: string | null;
   /** qwen 降级 edge 时的观测钩子（日志/测试断言）。 */
   onQwenFallback?: (error: unknown) => void;
   /**
@@ -195,6 +202,17 @@ export async function synthesizeTtsBytes(args: SynthesizeTtsBytesArgs): Promise<
   // 引擎与音色优先取这次的 selection（用户偏好），缺省才回 config。
   const engine = args.selection?.engine ?? cfg.engine;
   const qwenVoice = args.selection?.qwenVoice ?? cfg.qwen.voice;
+  // 三层兜底：模型这轮自写的指令 → 用户偏好 → config 默认。合法性已在上游各自把关
+  // （段事件合同 / resolveTtsSelection），这里只取第一个非空。edge 分支不消费。
+  const instruction = args.instruction?.trim() || args.selection?.qwenInstruction || cfg.qwen.instruction;
+  // 谁的风格在生效（model/preference/config）是这条链唯一要回答的读数：
+  // 审计行只记「qwen 被调了」，风格对不对只能从这里查。
+  if (engine === "qwen") {
+    logger.info({
+      instructionSource: args.instruction?.trim() ? "model" : args.selection?.qwenInstruction ? "preference" : "config",
+      instruction,
+    }, "qwen tts instruction resolved");
+  }
 
   const edgeOptions: EdgeTtsProviderOptions = {
     ...(args.edgeRate ? { rate: args.edgeRate } : {}),
@@ -256,7 +274,7 @@ export async function synthesizeTtsBytes(args: SynthesizeTtsBytesArgs): Promise<
             model: cfg.qwen.model,
             format: cfg.qwen.format,
             sampleRate: cfg.qwen.sampleRate,
-            ...(cfg.qwen.instruction ? { instruction: cfg.qwen.instruction } : {}),
+            ...(instruction ? { instruction } : {}),
           };
           try {
             // 门与净化都在**真的发出去之前**：没同意 / 政策拒发时这一次 qwen 压根不发，
@@ -329,11 +347,12 @@ export async function synthesizeTtsBytes(args: SynthesizeTtsBytesArgs): Promise<
     ctx: {
       workspaceId: args.scope.workspaceId,
       userId: args.scope.userId,
-      // 输入快照就是"这一段要念什么 + 念给谁 + 用哪身"：同一段文本同一音色才可复用。
+      // 输入快照就是"这一段要念什么 + 念给谁 + 用哪身 + 怎么说"：同一段文本同音色
+      // 同风格才可复用——换个 instruction 念出来的是另一段音频。
       inputSnapshotRef: {
         kind: "task",
         id: args.queueKey,
-        hash: ttsInputHash(args.text, args.edgeVoice, args.edgeRate ?? "+0%", engine),
+        hash: ttsInputHash(args.text, args.edgeVoice, args.edgeRate ?? "+0%", engine, instruction),
       },
       permissionLevel: "server",
       signal: args.signal,
@@ -359,13 +378,13 @@ export async function synthesizeTtsBytes(args: SynthesizeTtsBytesArgs): Promise<
 }
 
 /**
- * 输入快照哈希：文本 + edge 音色/语速 + 选中的引擎。四者任一不同都是另一次合成。
+ * 输入快照哈希：文本 + edge 音色/语速 + 选中的引擎 + 说话风格指令。任一不同都是另一次合成。
  *
- * 判据是「同一份输入才允许复用旧结果」——同一段文字换个音色念，出来的是另一段
- * 音频，拿上一次的检查点当这一次的，就是把「她刚才那句」说成另一句。
+ * 判据是「同一份输入才允许复用旧结果」——同一段文字换个音色或换个风格念，出来的是
+ * 另一段音频，拿上一次的检查点当这一次的，就是把「她刚才那句」说成另一个说法。
  */
-function ttsInputHash(text: string, voice: string, rate: string, engine: string): string {
+function ttsInputHash(text: string, voice: string, rate: string, engine: string, instruction: string): string {
   return createHash("sha256")
-    .update([text, voice, rate, engine].join(" "))
+    .update([text, voice, rate, engine, instruction].join(" "))
     .digest("hex");
 }

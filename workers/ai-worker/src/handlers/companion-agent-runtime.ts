@@ -18,18 +18,12 @@ import {
 import {
   AgentRole,
   COMPANION_AGENT_CONTRACT_VERSION,
-  COMPANION_AGENT_DEADLINE_MS,
   companionAgentCapabilitySnapshotV1Schema,
-  COMPANION_AGENT_MAX_TOOL_CALLS,
-  COMPANION_AGENT_MAX_MODEL_CALLS,
-  COMPANION_AGENT_MAX_TOOL_CALLS_PER_STEP,
-  COMPANION_AGENT_MAX_STEPS,
   COMPANION_AGENT_TOOL_LABELS,
   allowedMainRouteV2Schema,
   getCompanionAgentTool,
   resolveAllCompanionAgentTools,
   validateCompanionAgentToolArguments,
-  type CompanionAgentBudgetSnapshotV1,
   type CompanionAgentToolStatus,
   type CompanionContentBlockV1,
   type AgentTurnRequest,
@@ -48,8 +42,9 @@ import {
   joinVisibleSegmentsDeduped,
   VISIBLE_SEGMENT_SEPARATOR,
 } from "./companion-visible-segments.ts";
-import { COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS } from "./companion-context-receipts.ts";
+import { companionContextAssemblyCapacity } from "./companion-context-receipts.ts";
 import { boundedStepSender } from "./companion-compaction.ts";
+import { compactActiveToolContext, createWorkingStateSummarizer } from "./companion-active-context-compaction.ts";
 import { renderPendingOffersAsRecords } from "./companion-context-handoff.ts";
 import { runCompanionAgentModelStep } from "./companion-agent-task.ts";
 import { logger } from "../lib/logger.ts";
@@ -73,6 +68,8 @@ import { unavailableCompanionToolSummary } from "./companion-tool-outcome.ts";
 import { companionNumericEvidenceContext } from "./companion-context-evidence.ts";
 import { companionToolFailureFaces } from "./companion-tool-failure-faces.ts";
 import { runCompanionToolExecution } from "./companion-tool-execution-run.ts";
+import { CompanionToolPreparation } from "./companion-tool-preparation.ts";
+import { companionExecutionPolicy } from "./companion-execution-policy.ts";
 import { createdNoteToolResult, readCreatedNoteReceipt } from "./companion-note-authoring.ts";
 import { EagerDispatchScheduler } from "./companion-eager-scheduler.ts";
 import {
@@ -96,7 +93,7 @@ export {
   VISION_EGRESS_UNAVAILABLE_SAFE_SUMMARY,
 } from "./companion-tool-outcome.ts";
 
-import { readCompanionWebSearchReceipts, readWebSearchReceipt, webSearchCitationBlocks, webSearchServiceAvailable, WEB_SEARCH_MAX_CALLS_PER_TURN } from "../agent/web-search.ts";
+import { readCompanionWebSearchReceipts, readWebSearchReceipt, webSearchCitationBlocks, webSearchServiceAvailable } from "../agent/web-search.ts";
 
 type AgentMessage = AgentTurnRequest["messages"][number];
 
@@ -115,16 +112,12 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   if (!meta.globalEnabled || meta.currentAccountEpoch !== args.read.accountEpoch) {
     throw new Error("companion agent account epoch is stale or globally disabled");
   }
-  // 预算有两个来源，必须取更紧的那个：
-  // 1) 合同预算 COMPANION_AGENT_DEADLINE_MS（整个 run，跨确认续跑累加）——已耗尽
-  //    则直接终结，不再开新尝试；
-  // 2) 本次尝试的 loop deadline（方案 29 §4.9 第 6 项：三套预算收一）——
-  //    由 `resolveCompanionAgentBudget()` 从任务配置派生，给持久化留出余量。
-  //    Worker 持续续租，租约只承担失联回收；取消或租约失效仍中止当前调用。
+  // One deployment time policy covers the run and resumed attempts; leases renew independently.
   const handlerStartedAtMs = args.handlerStartedAtMs ?? attemptStartedAt;
   const agentBudget = resolveCompanionAgentBudget();
   const handlerDeadlineAt = handlerStartedAtMs + agentBudget.loopDeadlineMs;
-  const contractDeadlineAt = attemptStartedAt + COMPANION_AGENT_DEADLINE_MS - meta.elapsedMs;
+  const budget = companionExecutionPolicy();
+  const contractDeadlineAt = attemptStartedAt + (budget.deadlineMs ?? Infinity) - meta.elapsedMs;
   const deadlineAt = Math.min(handlerDeadlineAt, contractDeadlineAt);
   if (deadlineAt <= attemptStartedAt) {
     throw new CompanionAgentBudgetExceededError("companion agent execution budget exhausted");
@@ -143,22 +136,15 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   // 原来这里 `selectSkill()` 用 triggerHints 子串匹配挑一个技能，工具面 = 它的
   // toolNames；没命中就是空工具面 + 单步。基线实测 90.7% 的轮次一个工具都没有——
   // "读记忆 / 看系统状态 / 跳转页面"不是被她拒绝，而是**根本没出现在她面前**。
-  // 现在每轮都给出权限档允许的全部工具，步数用固定预算。
-  const budget: CompanionAgentBudgetSnapshotV1 = {
-    // 固定预算，但仍夹在合同上限之下：COMPANION_AGENT_MAX_STEPS 是对外声明的
-    // 安全边界，改本地常量不该悄悄越过它。
-    maxSteps: Math.min(AGENT_LOOP_MAX_STEPS, COMPANION_AGENT_MAX_STEPS),
-    maxToolCallsPerStep: COMPANION_AGENT_MAX_TOOL_CALLS_PER_STEP,
-    maxToolCalls: COMPANION_AGENT_MAX_TOOL_CALLS,
-    maxModelCalls: COMPANION_AGENT_MAX_MODEL_CALLS,
-    // 合同声明的 run 预算（审计口径）；实际生效的 deadline 还会被 handler
-    // 超时预算收紧，见 deadlineAt。
-    deadlineMs: COMPANION_AGENT_DEADLINE_MS,
-  };
+  // 每轮给出权限档允许的全部工具，直到当前任务完成。
   // Latest-turn attention is independent of durable goals and historical actions.
   const attentionRequestHash = sha256Utf8V1(args.read.userText);
   event.constraints = { ...event.constraints, webSearchEnabled: meta.webSearchEnabled === true && webSearchServiceAvailable() };
   const availableDefinitions = resolveAllCompanionAgentTools(meta.permissionLevel, event.constraints);
+  // 空工具面只有一种来路：权限档读不出来（合法档位下读类工具总在）。这时**不说**才是坏事——
+  // 她会一脸无辜地答"我手上没有这个入口"，用户看到的是她突然不会用工具，而不是账号状态有问题。
+  if (availableDefinitions.length === 0)
+    throw new Error(`companion tool surface resolved empty for permission "${String(meta.permissionLevel)}"`);
   const cachedInterpretation = meta.turnInterpretation?.requestHash === attentionRequestHash ? meta.turnInterpretation : null;
   /**
    * 分类器**不等**——它和"闲聊版第一步"并行跑（2026-10-07 用户决定：首字延迟里
@@ -203,7 +189,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     ? buildCasualFirstStepRequest({
       turnPolicy: typeof args.baseMessages[0]?.content === "string" ? args.baseMessages[0].content : "",
       permissionLevel: meta.permissionLevel,
-      stepBudget: budget.maxSteps,
+      stepBudget: budget.maxSteps ?? Infinity,
       messages,
       maxTokens: companionStepOutputCeiling(args.provider),
       tools: availableDefinitions.map(({ name, description, parameters }) => ({ name, description, parameters })),
@@ -228,10 +214,6 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   // 作废是这条飞地的正常出口之一：先接住，免得没人处理的 rejection 冒出来。
   speculativeFlight?.catch(() => undefined);
   const attention = await attentionPromise;
-  // Full-note editing needs room for paginated reads, writes and a verified final reply.
-  if (attention.toolUse === "act" && attention.candidateOperations.includes("companion_edit_note")) {
-    budget.maxSteps = COMPANION_AGENT_MAX_STEPS;
-  }
   /**
    * 把她自己那些"用户这句没接的收尾"降级成记录（判据与实测见 `renderPendingOffersAsRecords`）。
    *
@@ -275,7 +257,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
    *
    * 摘工具从来没能真正拦住误写：要不要动数据由 `riskClass`、`requiresConfirmation`
    * 与提案确认门在执行侧判（`companion-tool-execution.ts` 还会复核这轮是否真的给过）。
-   * 意图仍然有用，它管的是档位与姿态——步数预算、开不开思考、闲聊还是办事的语气，见下面。
+   * 意图仍然有用，它管的是开不开思考、闲聊还是办事的语气，见下面。
    */
   const definitions = availableDefinitions;
   const toolDefinitions = definitions.map((definition) => ({
@@ -338,10 +320,45 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       status: "thinking", safeLabel: "正在思考…",
     });
   }
-  // 压力触发的一次有界压缩（44 §5.4）：折的是**这一次请求**的回放尾部，不是工作
-  // 上下文——run 的交接快照仍是折叠前的形态，崩溃恢复只会拿到更多上下文。
+  // 历史摘要与当前工具工作状态在请求压力出现时压缩；原始交接快照、步骤
+  // 与工具账本保留完整证据，恢复时可重新读取。
+  let compactionRequest: AgentTurnRequest | null = null;
+  let compactionProvider = args.provider;
+  let historyFoldApplied = false;
   const sendWithBoundedCompaction = boundedStepSender({
-    fold: args.replayFold,
+    beginRequest: request => {
+      compactionRequest = request as AgentTurnRequest;
+      args.contextReceipts?.beginRequest(auditHash(request));
+    },
+    fold: async replay => {
+      // replayFold indexes the original history. Once folded, those positions
+      // no longer identify the same messages and must never be reused.
+      const history = historyFoldApplied ? null : args.replayFold?.(replay) ?? null;
+      if (history) historyFoldApplied = true;
+      const pressure = args.contextReceipts?.latestPressure();
+      if (!compactionRequest || !pressure) {
+        if (history) messages = [...history.messages];
+        return history;
+      }
+      try {
+        const active = await compactActiveToolContext({
+          request: { ...compactionRequest, messages: [...history?.messages ?? replay] },
+          targetInputTokens: pressure.targetTokens,
+          maxOutputTokens: companionStepOutputCeiling(compactionProvider),
+          ...(compactionProvider.countTextTokens ? { countTokens: (text: string) => compactionProvider.countTextTokens!(text) } : {}),
+          summarize: createWorkingStateSummarizer(compactionProvider,
+            { signal: args.ctx.signal, deadlineAt }),
+        });
+        const folded = active ?? history;
+        if (folded) messages = [...folded.messages];
+        return folded;
+      } catch (error) {
+        if (args.ctx.signal.aborted) throw error;
+        logger.warn({ runId: args.read.runId, err: error }, "active tool context compaction failed; preserving original evidence");
+        if (history) messages = [...history.messages];
+        return history;
+      }
+    },
     hasAttempt: () => args.contextReceipts?.hasCompactionAttempt() ?? false,
     // 额度在每次重发之前消耗（companion-compaction.ts 的两条重发路径都会调）；
     // 折成功与折不动都算用掉本轮那一次，闸随后按 over_trigger_line 放行。
@@ -364,7 +381,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   });
   const contextText = companionNumericEvidenceContext(args.baseMessages);
   if (args.continuationProposalId) {
-    messages = await loadContinuation(event, messages, args.continuationProposalId);
+    messages = await loadContinuation(event, messages, args.continuationProposalId, deadlineAt);
   }
   let stepCount = resolveAgentStepCountForResume(meta);
   const resumedStepCount = stepCount;
@@ -419,13 +436,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
    * 要求 `looksTruncatedReply(` 的调用仍出现在运行时侧，挪进别的模块会让它红。
    */
   const companionReplyIsTruncated = (text: string): boolean => looksTruncatedReply(stripVoiceExpressionTags(text));
-  /**
-   * 本轮**实际生效**的步数预算。合同快照 `budget` 保持声明值不动（它是审计口径），
-   * 只有终答步违约宽限时这个局部值抬高，见 planWithheldFinalStepCalls。
-   */
-  let stepBudget = budget.maxSteps;
-  /** 终答步违约的宽限额度：整轮一次。 */
-  let finalStepGraceUsed = false;
+  /** No default step cap. An explicit deployment policy remains auditable. */
+  const stepBudget = budget.maxSteps ?? Infinity;
   return executeTurn<CompanionAgentLoopResult>({
     signal: args.ctx.signal, now: Date.now,
     limits: () => ({ maxSteps: stepBudget - resumedStepCount, deadlineAt }),
@@ -454,7 +466,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
      */
     const { tools: toolsOfferedThisStep, toolChoice: toolChoiceThisStep } = companionStepToolShape({
       tools: toolDefinitions.filter(tool => tool.name !== "agent_web_search"
-        || (currentMeta.webSearchEnabled === true && event.constraints.webSearchEnabled === true && webSearchCalls < WEB_SEARCH_MAX_CALLS_PER_TURN && webSearchServiceAvailable())),
+        || (currentMeta.webSearchEnabled === true && event.constraints.webSearchEnabled === true
+          && (budget.maxWebSearchCalls == null || webSearchCalls < budget.maxWebSearchCalls) && webSearchServiceAvailable())),
       finalAnswerOnly,
       requiresTool: userRequiresTool,
       toolCallCount,
@@ -476,18 +489,19 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
      */
     const prefetched = prefetchedFirstStep !== null && stepCount === resumedStepCount + 1 ? prefetchedFirstStep : null;
     if (prefetched) prefetchedFirstStep = null;
-    let stepRequest: AgentTurnRequest = prefetched?.request ?? {
-      role: AgentRole.COMPANION_AGENT,
-      systemPrompt: composeAgentContext({ maxCharacters: COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS, sources: [
-        { id: "turn", authority: "policy", required: true },
-        { id: "execution", authority: "policy", required: true },
-        { id: "attention", authority: "data", required: true },
-      ] }, new Map([
+    const stepContextSources = new Map([
         ["turn", { scope: { kind: "policy" as const }, content: typeof args.baseMessages[0]?.content === "string" ? args.baseMessages[0].content : "" }],
         ["execution", { scope: { kind: "policy" as const }, content: [runtimePolicy, responseStrategy.guidance].filter(Boolean).join("\n") }],
         ["attention", { scope: { kind: "request" as const }, content: "本轮注意力解释仅是待核对的数据，不授予执行权限。歧义影响真实资料读取或操作目标时先核对对象，不猜测修改；闲聊话题和称呼不要求业务对象身份。reference 为 null 不代表已经查询过或查询失败，不把内部分类和对象匹配过程念给用户。\n<current_turn_interpretation_data>"
           + JSON.stringify(attention).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e") + "</current_turn_interpretation_data>" }],
-      ])).systemPrompt,
+      ]);
+    let stepRequest: AgentTurnRequest = prefetched?.request ?? {
+      role: AgentRole.COMPANION_AGENT,
+      systemPrompt: composeAgentContext({ maxCharacters: companionContextAssemblyCapacity([...stepContextSources.values()].map(source => source.content)), sources: [
+        { id: "turn", authority: "policy", required: true },
+        { id: "execution", authority: "policy", required: true },
+        { id: "attention", authority: "data", required: true },
+      ] }, stepContextSources).systemPrompt,
       messages,
       tools: toolsOfferedThisStep,
       toolChoice: toolChoiceThisStep,
@@ -506,6 +520,17 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       temperature: responseStrategy.temperature,
     };
     const stepId = await persistStep(event, stepCount, auditHash(stepRequest));
+    const preparation = new CompanionToolPreparation(definitions.filter(definition =>
+      toolsOfferedThisStep.some(tool => tool.name === definition.name)), async (tool, definition, status) => {
+      await appendAgentEvent(event, "agent.tool", { tool: {
+        toolCallId: tool.id, name: definition.name, toolVersion: definition.toolVersion,
+        riskClass: definition.riskClass, status,
+        safeLabel: status === "requested"
+          ? `正在准备${(COMPANION_AGENT_TOOL_LABELS[definition.name] ?? "这一步").replace(/^正在/, "")}`
+          : COMPANION_AGENT_TOOL_LABELS[definition.name] ?? "这一步",
+        ...(status === "not_executed" ? { safeSummary: "内容准备中断，这一步没有执行。" } : {}),
+      } });
+    });
     // 这一步默认走主档；需要恢复时采用正式 companion_fallback 槽。
     // 当前用户要求主/备用均固定 DeepSeek，选择备用槽不再意味着换成另一种模型。
     let stepProvider = steerSwapToFallback
@@ -641,10 +666,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
        */
       const canStreamThisStep = Boolean(args.onProviderDelta)
         && typeof stepProvider.chatCompletionStream === "function"
-        // 明确动作请求的工具步先整段取回：只有拿到 tool_calls 后才能知道
-        // 开场白是否属于最终回复。流式先吐「办好了」再调工具，会造成复读或假完成。
-        && (finalAnswerOnly || (stepRequest.toolChoice !== "required"
-          && (stepRequest.tools.length === 0 || stepProvider.chatCompletionStreamToolCalls === true)));
+        && (finalAnswerOnly || stepRequest.tools.length === 0 || stepProvider.chatCompletionStreamToolCalls === true);
+      compactionProvider = stepProvider;
 
       if (prefetched) {
         // The speculative stream has already completed (and may have delivered
@@ -682,6 +705,10 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
               timeoutMs: providerCallTimeout,
               onProviderDelta: args.onProviderDelta!,
               separatorBefore: visibleSegmentDelivered.includes(true) ? VISIBLE_SEGMENT_SEPARATOR : "",
+              // Action steps stream tool progress while keeping prose private
+              // until the completed call and its actual outcome are known.
+              deferPublication: stepRequest.toolChoice === "required",
+              onToolCallStarted: preparation.observe,
               // 不给回调时 provider 与这一步**完全不做额外的事**（少传一个键）。
               ...(eagerScheduler
                 ? {
@@ -769,7 +796,10 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           providerCallTimeout,
         );
       }
+      await preparation.finish(result.toolCalls ?? []);
     } catch (error) {
+      await preparation.finish([]).catch(preparationError => logger.warn(
+        { runId: args.read.runId, err: preparationError }, "companion tool preparation could not be settled"));
       if (eagerScheduler) await eagerScheduler.close(true);
       // 归因：run 预算耗尽（含 handler abort —— 它的 signal 就是 args.ctx.signal）
       // 必须与 provider 故障区分开，否则运维无法从错误码看出"真超时"。
@@ -918,46 +948,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       throw new AgentOutputError("output_truncated", "companion answer reached its output ceiling");
     }
     if (finalAnswerOnly && calls.length > 0) {
-      // 终答步的工具面是收起的（见上面 finalAnswerOnly 的注释），provider 仍然回
-      // tool_calls 就是违反请求合同。原来这里 `finishStep(failed)` + 抛错整轮失败，
-      // 实机 2026-09-22 这是 INTERNAL_ERROR 的头号成因（3 次里 2 次），而她报错前
-      // 已经把这轮的话说出去一大半——用户看到的是"事情差一步做成、结果弹报错"。
-      // 现在按 planWithheldFinalStepCalls 走两条 fail-open 出口，都不执行她没被
-      // 给到的工具之外的东西：要么多给一步把这次查询真跑掉再收尾，要么丢掉这些
-      // 调用、用她已经产出的文本交付。
-      const unknownToolNames = calls
-        .map((call) => String(call.name ?? ""))
-        .filter((name) => !toolDefinitions.some((tool) => tool.name === name));
-      if (planWithheldFinalStepCalls({
-        graceAlreadyUsed: finalStepGraceUsed,
-        unknownToolNames,
-        remainingMs: deadlineAt - Date.now(),
-        stepBudget,
-      }) === "grace") {
-        finalStepGraceUsed = true;
-        stepBudget += AGENT_LOOP_GRACE_STEPS;
-        logger.warn(
-          { runId: args.read.runId, stepCount, tools: calls.map((call) => call.name), stepBudget },
-          "companion final step asked for tools that were withheld; granting one grace round",
-        );
-      } else {
-        logger.warn(
-          {
-            runId: args.read.runId,
-            stepCount,
-            tools: calls.map((call) => call.name),
-            unknownToolNames,
-            reason: finalStepGraceUsed ? "grace-already-used"
-              : unknownToolNames.length > 0 ? "unknown-tool"
-                : stepBudget + AGENT_LOOP_GRACE_STEPS > COMPANION_AGENT_MAX_STEPS
-                  ? "step-budget"
-                  : "deadline",
-            chars: String(result.content ?? "").trim().length,
-          },
-          "companion final step tool calls dropped; delivering what she said",
-        );
-        calls = [];
-      }
+      await finishStep(event, stepId, "failed", undefined, "AGENT_TOOL_CALL_LIMIT");
+      throw new CompanionAgentBudgetExceededError("configured step limit reached before task completion");
     }
     // 这一步说过的话交给产出核对（三类判据见 `reviewCompanionStepCorrection`）。
     // 必须显式写 `: string`：`said → lookupClaim → steerSwapToFallback → stepProvider → result → said`
@@ -1114,7 +1106,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         ...args.contextReceipts?.runMetaPatch() });
       return { kind: "settled", result: { status: "completed", text, blocks: richBlocks, memoryRefs: [] } };
     }
-    if (calls.length > COMPANION_AGENT_MAX_TOOL_CALLS_PER_STEP) {
+    if (budget.maxToolCallsPerStep !== null && calls.length > budget.maxToolCallsPerStep) {
       await finishStep(event, stepId, "failed", undefined, "AGENT_TOOL_CALL_LIMIT");
       throw new Error("too many tool calls in one agent step");
     }
@@ -1209,35 +1201,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       }
       const serializedArgs = canonicalJsonV1(parsedArgs.data);
       const argsHash = sha256Utf8V1(serializedArgs);
-      if (serializedArgs.length > definition.maxInputChars) {
-        // 同上：输入过大一样是「从未开始」。两者的差别只在改法（缩短输入 vs 改字段），
-        // 而模型只有拿到 `not_executed` 才知道**这一趟是输入的问题、不是工具坏了**。
-        const oversized = companionToolFailureFaces({
-          status: "not_executed",
-          safeSummary: "工具输入超过安全大小限制",
-        });
-        await recordRejectedToolCall(
-          event, stepId, identity, argsHash,
-          definition, "failed", oversized.safeSummary,
-        );
-        await appendAgentEvent(event, "agent.tool", {
-          tool: {
-            toolCallId: identity.id,
-            name: identity.name,
-            toolVersion: definition.toolVersion,
-            riskClass: definition.riskClass,
-            status: oversized.ledgerStatus,
-            safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
-            safeSummary: oversized.safeSummary,
-          },
-        });
-        messages.push({
-          role: "tool",
-          toolCallId: identity.id,
-          content: JSON.stringify({ ok: false, status: oversized.modelStatus, error: "tool input too large" }),
-        });
-        continue;
-      }
+      // Field/range limits come from the capability's actual schema. A second
+      // generic JSON character cap rejects valid escaped Markdown and evidence.
       const record = await ensureAgentToolCall(
         event,
         stepId,
@@ -1254,6 +1219,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         await appendAgentEvent(event, "agent.tool", {
           tool: {
             toolCallId: record.toolCallId,
+            ...(record.toolCallId !== identity.id ? { preparationToolCallId: identity.id } : {}),
             name: definition.name,
             toolVersion: definition.toolVersion,
             riskClass: definition.riskClass,
@@ -1312,7 +1278,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         }
         continue;
       }
-      if (record.isNew && toolCallCount >= budget.maxToolCalls) {
+      if (record.isNew && budget.maxToolCalls !== null && toolCallCount >= budget.maxToolCalls) {
         await updateToolCall(event, operationCallId, {
           status: "blocked",
           safeSummary: "已达到本次 Agent 的工具调用上限",
@@ -1338,7 +1304,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
        * 所以直接把它终结成 `blocked`，精确词只给模型。
        */
       const searchLimitReached = identity.name === "agent_web_search"
-        && webSearchCalls >= WEB_SEARCH_MAX_CALLS_PER_TURN;
+        && budget.maxWebSearchCalls != null && webSearchCalls >= budget.maxWebSearchCalls;
       const unavailableSummary = unavailableCompanionToolSummary(identity.name, event.constraints, { searchLimitReached });
       if (unavailableSummary) {
         const unavailable = companionToolFailureFaces({
@@ -1469,12 +1435,9 @@ export { readLatestPageContextRow };
 
 // 步进规划族已搬到 companion-step-plan.ts（B2）。纯搬运：判据、上限、类型一字未改。
 import {
-  AGENT_LOOP_GRACE_STEPS,
-  AGENT_LOOP_MAX_STEPS,
   buildCompanionStepCorrectionInstruction,
   companionStepCorrectionMessages,
   companionStepRuntimePolicy,
-  planWithheldFinalStepCalls,
   reviewCompanionStepCorrection,
   stepHoldChars,
   type CompanionAgentLoopResult,

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { logger } from "../lib/logger.ts";
 import { z } from "zod";
 import type { DiaryMaterial, DiaryPiece } from "./companion-diary-content.ts";
 
@@ -63,7 +64,13 @@ function buildCandidate(
   material: DiaryMaterial,
 ): DiaryCandidate | null {
   const originals = uniquePieces(piecesInput).sort((a, b) => (a.at || "99:99").localeCompare(b.at || "99:99"));
+  // 取行页宽，不是"这一篇 moment 只值这么多"：超出页宽的部分要在日志里看得见，
+  // 否则她写的日记少了哪一段，谁都不知道。
   const pieces = originals.slice(-MAX_CANDIDATE_PIECES);
+  if (originals.length > pieces.length) {
+    logger.warn({ droppedPieces: originals.length - pieces.length, material: piecesInput.length },
+      "diary candidate dropped the earliest pieces of a moment because of the read page");
+  }
   const textChars = pieces.reduce((total, piece) => total + piece.text.length, 0);
   if (pieces.length === 0 || textChars < 6) return null;
   // Keep a contiguous ending, including later corrections and outcomes. Never
@@ -73,7 +80,11 @@ function buildCandidate(
   const boundedPieces: DiaryPiece[] = [];
   for (const piece of [...pieces].reverse()) {
     if (!piece.text.trim()) continue;
-    if (boundedPieces.length > 0 && used + piece.text.length > MAX_CANDIDATE_TEXT_CHARS) break;
+    if (boundedPieces.length > 0 && used + piece.text.length > MAX_CANDIDATE_TEXT_CHARS) {
+      logger.warn({ droppedChars: used, candidateTextLimit: MAX_CANDIDATE_TEXT_CHARS },
+        "diary candidate stopped collecting at the text ceiling; the earlier turns of this moment are not in it");
+      break;
+    }
     boundedPieces.unshift({ ...piece });
     used += piece.text.length;
   }
@@ -187,6 +198,12 @@ export function buildDiaryCandidates(material: DiaryMaterial): DiaryCandidate[] 
 
   const kept: DiaryCandidate[] = [];
   const keptNotes = new Set<string>();
+  // 一天的 moment 多过这一档时，落选的那几条要说得出来——不然她写的日记少了什么，
+  // 只有在界面上少一段的时候才隐约感觉得到。
+  if (ranked.length > MAX_DIARY_CANDIDATES) {
+    logger.warn({ droppedCandidates: ranked.length - MAX_DIARY_CANDIDATES, momentCount: ranked.length },
+      "diary kept the highest-ranked moments and dropped the rest for this day");
+  }
   for (const { candidate } of ranked) {
     if (candidate.noteId && keptNotes.has(candidate.noteId)) continue;
     kept.push(candidate);

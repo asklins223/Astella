@@ -15,7 +15,7 @@ import {
   RevisionConflictError,
   NoteNotDeletedError,
 } from "./service.ts";
-import { requireSession, requireOwner, isWorkspaceOwner } from "../identity/middleware.ts";
+import { requireSession, requireOwner, isWorkspaceOwner, requireNoteContentWrites } from "../identity/middleware.ts";
 import { and, inArray, isNull } from "drizzle-orm";
 import { notes } from "@astella/shared/db-schema/note";
 import { visibleNotesCondition } from "./visibility.ts";
@@ -222,12 +222,14 @@ userId: req.session.userId,
   // 活文档（或按 onLoadDocument 从库里补齐后的文档），再经同一个 onStoreDocument
   // 落盘并投影。这里**不**接受整篇正文——整篇写入在并发下会复制块（4.0 实测）。
   // RBAC: 与 WS 的只读判定同一个谓词（requireOwner === !readOnly）。
+  // 手机会话额外吃一道 `requireNoteContentWrites`（0413）：规则是「手机上人不改正文，
+  // 伴星改」，而伴星那条路是内部 tool call、根本不经过这里——所以挡掉这一个口只挡到人。
   app.post<{ Params: { id: string } }>(
     "/v2/notes/:id/doc-update",
     // bodyLimit 是粗筛（防止无界字符串进 JSON 解析）：合法增量的 base64 约 2.7MB，
     // 这里留到 8MB。真正的尺寸判据是下面按**解码后字节数**的那条，它才能给出
     // `update_too_large`——框架的 413 只会说 "Payload Too Large"，客户端无从分辨。
-    { preHandler: [requireOwner], bodyLimit: 8 * 1024 * 1024 },
+    { preHandler: [requireOwner, requireNoteContentWrites], bodyLimit: 8 * 1024 * 1024 },
     async (req, reply) => {
       const params = uuidParamSchema.safeParse(req.params);
       if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
@@ -383,13 +385,15 @@ actorUserId: req.session.userId,
 
   // POST /notes/:id/versions/:versionId/restore — 恢复到指定版本
   // CONC-05: 可选 baseVersionId 乐观检查，不匹配时返回 409
-  // RBAC: 仅 owner 可恢复版本
+  // RBAC: 仅 owner 可恢复版本。恢复把整篇正文换成旧的那一份，**它算改正文**，
+  // 所以手机会话同样吃 `requireNoteContentWrites`（0413）——伴星改正文走内部
+  // tool call，不经过这一条，挡在这里不会挡到她。
   const restoreSchema = z.object({
     baseVersionId: z.string().uuid().optional(),
   }).default({});
   app.post<{ Params: { id: string; versionId: string } }>(
     "/notes/:id/versions/:versionId/restore",
-    { preHandler: [requireOwner] },
+    { preHandler: [requireOwner, requireNoteContentWrites] },
     async (req, reply) => {
       const params = uuidParamSchema.safeParse(req.params);
       if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });

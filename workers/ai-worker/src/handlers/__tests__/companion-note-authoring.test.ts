@@ -16,8 +16,9 @@ test("正文链接、Wiki和HTML都必须来自已核对的笔记，代码中的
 
 test("创建身份稳定，保存回执含可打开的新笔记入口，恢复时只认真实回执形状", () => {
   const receipt = { kind: "created_note" as const, noteId: NOTE, noteVersionId: VERSION, title: "欧姆定律", linkedNotes: [] };
-  assert.equal(companionCreatedNoteId(NOTE), companionCreatedNoteId(NOTE));
-  assert.notEqual(companionCreatedNoteId(NOTE), companionCreatedNoteId(VERSION));
+  assert.equal(companionCreatedNoteId(NOTE, "call-a"), companionCreatedNoteId(NOTE, "call-a"));
+  assert.notEqual(companionCreatedNoteId(NOTE, "call-a"), companionCreatedNoteId(VERSION, "call-a"));
+  assert.notEqual(companionCreatedNoteId(NOTE, "call-a"), companionCreatedNoteId(NOTE, "call-b"));
   const result = createdNoteToolResult(receipt);
   assert.deepEqual(result.blocks, [{ type: "nav", label: "打开《欧姆定律》", route: { kind: "note", noteId: NOTE } }]);
   assert.deepEqual(readCreatedNoteReceipt(result.resultRef!), receipt);

@@ -7,7 +7,7 @@ import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
  * 的 ChatMessage 宽：多 tool 角色、多 toolCalls/reasoning）。用窄的那个类型会在
  * 工具回合上直接不兼容——而那恰恰是最需要折叠的一步。
  */
-import { AIContextCompactionRequiredError } from "../lib/context-governor.ts";
+import { AIContextCompactionRequiredError, AIContextOverflowError } from "../lib/context-governor.ts";
 
 type ReplayMessage = AgentTurnRequest["messages"][number];
 
@@ -43,6 +43,7 @@ export interface SummaryCoverageBound {
 }
 
 export interface CompactionFoldReceipt {
+  sourceKind?: "active_tool_rounds";
   /** 被折掉的那一段（含端点）。 */
   foldedFromSeq: string;
   foldedThroughSeq: string;
@@ -191,7 +192,7 @@ export interface BoundedCompactionInput<T> {
    * 同时返回折好的消息数组：调用方不必把数组藏在闭包里，回执与实际发送的形状
    * 也因此必然是同一份。
    */
-  compact: () => { messages: ReplayMessage[]; receipt: CompactionFoldReceipt } | null;
+  compact: () => { messages: ReplayMessage[]; receipt: CompactionFoldReceipt } | null | Promise<{ messages: ReplayMessage[]; receipt: CompactionFoldReceipt } | null>;
   /** 本轮是否还有压缩额度。 */
   hasAttempt: () => boolean;
   /**
@@ -232,20 +233,21 @@ export async function withBoundedContextCompaction<T>(
   try {
     return await input.send(initialMessages);
   } catch (error) {
-    if (!(error instanceof AIContextCompactionRequiredError)) throw error;
+    if (!(error instanceof AIContextCompactionRequiredError) && !(error instanceof AIContextOverflowError)) throw error;
     if (!input.hasAttempt()) throw error;
     // 冷却先问一句：同一份失败输入刚折过就再折，等于每轮白烧一次而情况不变。
     const verdict = input.cooldown ? await input.cooldown.decide() : null;
-    const folded = verdict && !verdict.allowed ? null : input.compact();
+    // Consume before a model-based compaction call. The summarizer itself must
+    // not recursively request compaction of the same input.
+    input.consumeAttempt();
+    const folded = verdict && !verdict.allowed ? null : await input.compact();
     if (!folded) {
-      input.consumeAttempt();
       try {
         return await input.send(initialMessages);
       } finally {
         await input.cooldown?.record({ at: new Date() });
       }
     }
-    input.consumeAttempt();
     input.onCompacted?.(folded.receipt);
     try {
       return await input.send(folded.messages);
@@ -282,7 +284,8 @@ export interface FoldedReplay {
  * （整段取回、流式、截断重试）因此共用同一条纪律，而不是各写一遍「万一超了怎么办」。
  */
 export function boundedStepSender(input: {
-  fold?: (messages: readonly ReplayMessage[]) => FoldedReplay | null;
+  beginRequest?: (request: { messages: readonly ReplayMessage[] }) => void;
+  fold?: (messages: readonly ReplayMessage[]) => FoldedReplay | null | Promise<FoldedReplay | null>;
   hasAttempt: () => boolean;
   consumeAttempt: () => void;
   onCompacted: (receipt: CompactionFoldReceipt) => void;
@@ -291,12 +294,15 @@ export function boundedStepSender(input: {
   return <TRequest extends { messages: readonly ReplayMessage[] }>(
     request: TRequest,
     send: (request: TRequest) => Promise<AgentTurnResult>,
-  ): Promise<AgentTurnResult> => withBoundedContextCompaction<AgentTurnResult>({
+  ): Promise<AgentTurnResult> => {
+    input.beginRequest?.(request);
+    return withBoundedContextCompaction<AgentTurnResult>({
     send: (messages) => send(applyCompactedMessages(request, messages)),
     compact: () => input.fold?.(request.messages) ?? null,
     hasAttempt: input.hasAttempt,
     consumeAttempt: input.consumeAttempt,
     onCompacted: input.onCompacted,
     ...(input.cooldown ? { cooldown: input.cooldown } : {}),
-  }, request.messages);
+    }, request.messages);
+  };
 }

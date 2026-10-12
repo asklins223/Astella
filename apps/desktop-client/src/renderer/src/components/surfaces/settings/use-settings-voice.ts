@@ -31,8 +31,11 @@ export function useSettingsVoice(input: {
    * 保存"这一身"。引擎与音色成对写：切到 edge 时把 edge 那条固定音色一起写下去，
    * 库里不留"引擎=edge + 音色是千问的"的半套状态（服务端读到不配对会整条回默认，
    * 但那是兜底，不该由界面产生）。
+   *
+   * `instruction` 三态：undefined = 这次不动风格（换音色时保持原样）、null = 清除、
+   * 字符串 = 设置。长度在服务端合同按上游计数规则把关（汉字算 2，共 100 单位）。
    */
-  const changeVoice = async (engine: TtsEngineV1, voice: string) => {
+  const changeVoice = async (engine: TtsEngineV1, voice: string, instruction?: string | null) => {
     if (voiceSavingRef.current) return;
     voiceSavingRef.current = true;
     setVoiceSaving(true);
@@ -42,6 +45,7 @@ export function useSettingsVoice(input: {
         meta: createRequestMeta(epochRef.current),
         engine,
         voice,
+        ...(instruction !== undefined ? { instruction } : {}),
       });
       setVoicePreference(unwrapGatewayResult(response));
     } catch (error) {

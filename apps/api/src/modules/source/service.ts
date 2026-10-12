@@ -278,7 +278,7 @@ export async function createSource(
         workspaceId,
         type: detectedType,
         title,
-        origin: input.url ?? null,
+        origin: input.origin ?? input.url ?? null,
         status: SourceStatus.DRAFT,
         metadata,
         createdBy: userId,

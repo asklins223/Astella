@@ -11,7 +11,7 @@
  * 交互都是它为**这一个知识点**现画的。服务端不再决定画面长什么样，只保留三道闸：
  *
  *   1. **安全**（本文件）：不引用任何外部资源、不碰网络、不逃出 frame、不写 cookie 与
- *      存储；超配额整份拒绝。隔离本身由不透明 origin ＋ `sandbox="allow-scripts"`
+ *      存储。隔离本身由不透明 origin ＋ `sandbox="allow-scripts"`
  *      单能力 ＋ CSP 三路分流承担（D4 §3），这里是内容一侧的同一条边界。
  *   2. **依据**（`round-artifact-measure.ts` 与服务端渲染器）：`outline` 里每一条引文都要在
  *      冻结正文那一块里**逐字找得到**；核过的原句由服务端在动态页面外展示。AI 页面可以
@@ -25,9 +25,6 @@
  * 扫字符串是为了让"这一份不该出现的东西"在**生成时就红**，而不是在真窗口里静默失效。
  * 判据宁可宽一点：宁可毙掉一份其实无害的页面，也不要让"外链"这一类靠模型自觉。
  */
-
-/** 页面正文的字符上界。配额挡的是"一份写飞了的页面"，不是"一份画得细的页面"。 */
-export const ARTIFACT_DOCUMENT_MAX_CHARS_V1 = 120_000;
 
 /** 页面至少要有这么多字，否则它不是一份教具，是一张空壳。 */
 export const ARTIFACT_DOCUMENT_MIN_CHARS_V1 = 400;
@@ -193,9 +190,6 @@ export function checkArtifactDocumentV1(
 
   if (html.length < ARTIFACT_DOCUMENT_MIN_CHARS_V1) {
     return fail("too_small", `${html.length} 字符，低于 ${ARTIFACT_DOCUMENT_MIN_CHARS_V1}`);
-  }
-  if (html.length > ARTIFACT_DOCUMENT_MAX_CHARS_V1) {
-    return fail("too_large", `${html.length} 字符，超过 ${ARTIFACT_DOCUMENT_MAX_CHARS_V1}`);
   }
   const referenceScan = maskDocumentNamespacesV1(html);
   for (const rule of FORBIDDEN_DOCUMENT_PATTERNS_V1) {

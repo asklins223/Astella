@@ -981,6 +981,8 @@ export type { RuntimeFenceRecord };
  */
 const TTS_ENGINE_KEY = "tts_engine" as const;
 const TTS_VOICE_KEY = "tts_voice" as const;
+/** 用户自写的说话风格（qwen instruction 兜底层）。未设 = 回 config 默认。 */
+const TTS_INSTRUCTION_KEY = "tts_instruction" as const;
 
 /**
  * 读库里的音色偏好**原样**（未校验）。
@@ -1008,22 +1010,37 @@ export async function getStoredVoicePreference(
     const explicit = row?.explicitPreferences;
     const storedAt = row?.updatedAt ? row.updatedAt.toISOString() : null;
     if (!explicit) return { stored: null, updatedAt: null };
-    if (explicit[TTS_ENGINE_KEY] === undefined && explicit[TTS_VOICE_KEY] === undefined) {
+    if (
+      explicit[TTS_ENGINE_KEY] === undefined &&
+      explicit[TTS_VOICE_KEY] === undefined &&
+      explicit[TTS_INSTRUCTION_KEY] === undefined
+    ) {
       return { stored: null, updatedAt: null };
     }
     return {
-      stored: { engine: explicit[TTS_ENGINE_KEY], voice: explicit[TTS_VOICE_KEY] },
+      stored: {
+        engine: explicit[TTS_ENGINE_KEY],
+        voice: explicit[TTS_VOICE_KEY],
+        instruction: explicit[TTS_INSTRUCTION_KEY],
+      },
       updatedAt: storedAt,
     };
   });
 }
 
-/** 写音色偏好（两个键一起写，不留半套状态）。 */
+/**
+ * 写音色偏好（engine/voice 一起写，不留半套状态）。
+ *
+ * `instruction` 三态：`undefined` = 这次不动风格键（换引擎/音色时保持原样）；
+ * `null` = 清除（回 config 默认）；字符串 = 设置。三态由合同层保证合法
+ * （超限在 PATCH 的 superRefine 就被拒了）。
+ */
 export async function setVoicePreference(
   userId: string,
   workspaceId: string,
   engine: TtsEngineV1,
   voice: string,
+  instruction?: string | null,
 ): Promise<{ engine: TtsEngineV1; voice: string; updatedAt: string }> {
   return withWorkspaceTransaction({ workspaceId, userId }, async (tx) => {
     const now = new Date();
@@ -1036,10 +1053,14 @@ export async function setVoicePreference(
       ))
       .for("update");
     const row = existing[0];
-    // 只动这两个键：default_input_priority 等同行的其他偏好必须原样留着。
+    // 只动这几个键：default_input_priority 等同行的其他偏好必须原样留着。
     const explicit = { ...(row?.explicitPreferences ?? {}) };
     explicit[TTS_ENGINE_KEY] = engine;
     explicit[TTS_VOICE_KEY] = voice;
+    if (instruction !== undefined) {
+      if (instruction === null) delete explicit[TTS_INSTRUCTION_KEY];
+      else explicit[TTS_INSTRUCTION_KEY] = instruction;
+    }
     if (!row) {
       await tx.insert(userLearningPreferencesTable).values({
         userId,

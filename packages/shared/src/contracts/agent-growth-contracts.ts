@@ -17,18 +17,26 @@ export const agentMethodCapabilityV1Schema = z.object({
 export const agentMethodEvidenceV1Schema = z.object({
   memoryId: z.string().uuid().optional(), memoryRevision: z.number().int().positive().optional(),
   runId: z.string().uuid().optional(), runRevision: z.number().int().positive().optional(),
-  eventId: z.string().min(1).max(240).optional(), note: z.string().max(400).optional(),
+  eventId: z.string().min(1).max(240).optional(), note: z.string().optional(),
 }).strict().refine(value => !!(value.memoryId || value.runId || value.eventId), "缺少经验来源");
+/**
+ * 一条手册（method）的边界，**先声明成常量**再进 schema：`companion_read_playbook` 的
+ * `maxOutputChars` 要按这些数派生，不能再挂那个跟它无关的 4,000 默认值。
+ */
+export const AGENT_METHOD_TITLE_MAX_CHARS = 120;
+export const AGENT_METHOD_APPLIES_WHEN_MAX_CHARS = 200;
 export const agentMethodV1Schema = z.object({
   version: z.literal(1), methodId: z.string().uuid(), revision: z.number().int().positive(),
-  title: z.string().min(1).max(120), appliesWhen: z.string().min(1).max(200),
-  steps: z.array(z.string().min(1).max(400)).max(20), exceptions: z.array(z.string().min(1).max(400)).max(10),
-  evidence: z.array(agentMethodEvidenceV1Schema).max(40),
+  title: z.string().min(1).max(AGENT_METHOD_TITLE_MAX_CHARS),
+  appliesWhen: z.string().min(1).max(AGENT_METHOD_APPLIES_WHEN_MAX_CHARS),
+  steps: z.array(z.string().min(1)),
+  exceptions: z.array(z.string().min(1)),
+  evidence: z.array(agentMethodEvidenceV1Schema),
   /**
    * 独立来源数（§6.4）：`evidence` 是完整的派生关系，而「有几条依据」要按**原始来源**
    * 算——同一次运行派生出的记忆、摘要与候选只算一条。两者不是同一个数，也不该合成一个。
    */
-  evidenceIndependentCount: z.number().int().nonnegative(), capabilities: z.array(agentMethodCapabilityV1Schema).max(20),
+  evidenceIndependentCount: z.number().int().nonnegative(), capabilities: z.array(agentMethodCapabilityV1Schema),
   state: agentMethodStateV1Schema, userControlled: z.boolean(),
   epistemicStatus: agentMethodEpistemicStatusV1Schema,
   availability: z.enum(["available", "pending", "disabled", "source_changed", "capability_changed", "previous_version"]),
@@ -47,9 +55,11 @@ export const proposeAgentMethodV1Schema = z.object({
   title: z.string().trim().min(1).max(120), appliesWhen: z.string().trim().min(1).max(200),
 }).strict();
 export const reviseAgentMethodV1Schema = z.object({
-  expectedRevision: z.number().int().positive(), title: z.string().trim().min(1).max(120),
-  appliesWhen: z.string().trim().min(1).max(200), steps: z.array(z.string().trim().min(1).max(400)).min(1).max(20),
-  exceptions: z.array(z.string().trim().min(1).max(400)).max(10), reason: z.string().trim().min(1).max(500),
+  expectedRevision: z.number().int().positive(), title: z.string().trim().min(1).max(AGENT_METHOD_TITLE_MAX_CHARS),
+  appliesWhen: z.string().trim().min(1).max(AGENT_METHOD_APPLIES_WHEN_MAX_CHARS),
+  steps: z.array(z.string().trim().min(1)).min(1),
+  exceptions: z.array(z.string().trim().min(1)),
+  reason: z.string().trim().min(1).max(500),
 }).strict();
 export const controlAgentMethodV1Schema = z.object({
   expectedRevision: z.number().int().positive(), action: z.enum(["confirm", "disable", "restore"]),

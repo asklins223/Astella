@@ -16,20 +16,12 @@
  *   3. **确定性**：同输入 ⇒ 逐字节相同（不写时间戳、不写随机 id）。真模型那一刀
  *      换的就是这个函数（§6 落地记录第 3 条），外壳与失败策略不动。
  *
- * 超配额（0285 的 `nlra_html_len_chk` 上界 524288 字符）是**整份拒绝**：返回
- * `ok:false`，由调用方决定"这一条教学产物没有动态版本"，**不许截断 HTML 凑数**——
- * 截出来的半份在 frame 里只会画成怪东西（与桌面 `assembleArtifactDocument` 同一条判据）。
+ * 成品完整保存，正文规模不设本地字符配额。
  */
 import type { RoundTeachingContentV1 } from "../contracts/note-learning-round-contracts.ts";
 
 /** 今天只有这一档（与 0285 的 `nlra_kind_chk`、线上合同的 enum 同宽）。 */
 export const ROUND_ARTIFACT_KIND_V1 = "dynamic_explanation" as const;
-
-/**
- * 整份 HTML 的字符上界：与 0285 的 CHECK 同宽，口径是**字符数**（PG 的
- * `char_length` 数的是码点，下面的计数也数码点，不数 UTF-16 码元）。
- */
-export const ROUND_ARTIFACT_MAX_CHARS_V1 = 524_288;
 
 /** 生成用的那一份输入：解释正文 ＋ 可选例子 ＋ 计划步骤（都来自这一轮已冻结的东西）。 */
 export type RoundArtifactInputV1 = Pick<RoundTeachingContentV1, "explanation" | "example"> & {
@@ -110,13 +102,5 @@ export function buildDeterministicArtifactHtmlV1(
   for (const step of planSteps) panes.push(paneV1(panes.length, "计划", step));
 
   const html = panes.join("");
-  const length = artifactCharLengthV1(html);
-  if (length > ROUND_ARTIFACT_MAX_CHARS_V1) {
-    return {
-      ok: false,
-      reason: "over_quota",
-      detail: `产物 ${length} 字符，超过上限 ${ROUND_ARTIFACT_MAX_CHARS_V1}（整份拒绝，不截断）`,
-    };
-  }
   return { ok: true, html };
 }

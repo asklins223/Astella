@@ -630,17 +630,10 @@ export function diaryLengthShortfall(blocks: DiaryBlock[], material: DiaryMateri
   return null;
 }
 
-/**
- * 一段正文的上限。**schema 与压平必须用同一个数**：
- * 先前者写 1200、后者切 1000，一段 1100 字的正文会被静默从中间切断，
- * 而块合同（20000）不会喊——坏在句子里，坏得没有痕迹。
- */
-const DIARY_PARAGRAPH_MAX_CHARS = 1_200;
-
 /** 她能引用的东西只有素材里列过的那些编号。 */
 export const diaryBlockDraftSchema = z.strictObject({
   blocks: z.array(z.discriminatedUnion("type", [
-    z.object({ type: z.literal("text"), text: z.string().min(1).max(DIARY_PARAGRAPH_MAX_CHARS) }).strict(),
+    z.object({ type: z.literal("text"), text: z.string().min(1) }).strict(),
     z.object({
       type: z.literal("image"),
       ref: z.string().min(1).max(8),
@@ -648,12 +641,14 @@ export const diaryBlockDraftSchema = z.strictObject({
       caption: z.string().max(120).optional(),
     }).strict(),
     z.object({ type: z.literal("quote"), ref: z.string().min(1).max(8) }).strict(),
-  ])).min(1).max(24),
+  ])).min(1),
 });
 
 /** 一段正文里的空白压平（段与段之间的换行不在这一步——那是块与块之间的事）。 */
 export function flattenParagraph(value: string): string {
-  return value.replace(/\s+/g, " ").trim().slice(0, DIARY_PARAGRAPH_MAX_CHARS);
+  // 不在这里剪段长：段落篇幅由合同那道 `.max` 判（显式失败 + 修复重试），
+  // 剪一刀会把她的原话截成半句落库，读的人看不出被裁过。
+  return value.replace(/\s+/g, " ").trim();
 }
 
 /** 派生记忆只取可核对的素材；模型写的感想不能再变成它下一次检索到的「事实」。 */

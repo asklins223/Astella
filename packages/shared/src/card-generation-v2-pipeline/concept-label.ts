@@ -37,9 +37,8 @@ export function deriveConceptLabelFromStatement(statement: string): string {
     label = work.trim().slice(0, 24).trim();
   }
 
-  // 清理尾部残留标点并限长（列上限 200，这里保守 60）。
-  label = label.replace(/[，,。．；;：:！!？?、]+$/g, "").trim();
-  return label.slice(0, 60);
+  // 清理尾部残留标点；长度随句子本身走，不再另设剪尾上限。
+  return label.replace(/[，,。．；;：:！!？?、]+$/g, "").trim();
 }
 
 /** 回填候选：statement 优先；statement 派生失败时用 publicSummary 兜底。 */

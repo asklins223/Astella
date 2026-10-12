@@ -72,7 +72,7 @@ export async function runAgentAdvance(job: JobPayload) {
           directRequest: run.direct_request, messages: run.messages, operations: projection.operations }) : null;
         const outcome = await executeAgentStep({
           signal: job.signal,
-          context: { prepare: () => declared ? Promise.resolve(declared.request) : buildAgentGoalRequest(store, run) },
+          context: { prepare: () => declared ? Promise.resolve(declared.request) : buildAgentGoalRequest(store, run, provider?.resolveOutputTokenLimit?.()) },
           state: {
             // Fingerprint the exact JSON snapshot, which includes fractional model temperatures.
             prepare: async request => { const prepared = await store.step(request, sha256Utf8V1(JSON.stringify(request)), declared ? "declared_request" : "model");

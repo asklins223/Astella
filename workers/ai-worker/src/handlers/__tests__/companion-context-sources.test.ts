@@ -26,3 +26,19 @@ test("unversioned/invalid memory-bearing snapshots cannot silently reuse their o
   }), CompanionContextChangedError);
   await assertCompanionHandoffSourcesCurrent(tx([]), scope, { memoryRefs: [], memorySourceVersions: [] });
 });
+
+// 取数侧现实上界是 resident ≤6 + directory ≤500；解析上限曾写死 32，账号第 33 条
+// active 记忆入库后每轮都撞 too_big → CONTEXT_STALE（2026-10-12 实测复盘）。
+test("33+ memory sources parse fine — the bound is anti-malformed, not a freshness rule", async () => {
+  const many = Array.from({ length: 40 }, (_, i) => ({
+    memoryId: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+    revision: 1,
+  }));
+  const rows = many.map(source => ({ id: source.memoryId, revision: 1 }));
+  await assertCompanionHandoffSourcesCurrent(tx(rows), scope, {
+    memoryRefs: [],
+    memoryDirectory: many.map(source => ({ ...source, kind: "preference", title: "t", appliesWhen: null,
+      validFrom: null, validUntil: null, epistemicStatus: "supported" })),
+    memorySourceVersions: many,
+  });
+});

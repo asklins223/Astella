@@ -86,6 +86,20 @@ function session(workspaceEpoch: number, workspaceId = WORKSPACE_ID): SessionCon
   });
 }
 
+/** 没登录：门禁停在登录/注册那一屏，右上角的更新入口只在这一屏出现。 */
+function anonymousSession(): SessionContextV1 {
+  return sessionContextSchema.parse({
+    version: 1,
+    status: "anonymous",
+    user: null,
+    workspace: null,
+    membership: null,
+    capabilities: null,
+    workspaceEpoch: 0,
+    credentialPersistence: "none",
+  });
+}
+
 /** 会话还在，但服务端要求重新验证身份——门禁停在「请再次输入密码」那一屏。 */
 function reauthSession(): SessionContextV1 {
   return sessionContextSchema.parse({
@@ -175,6 +189,14 @@ function installApi(options: { hangSession?: boolean; initialSession?: SessionCo
       logout,
     },
     workspace: { list: vi.fn(), switch: vi.fn() },
+    // 登录那一屏右上角挂着更新入口，它进屏就查一次版本；这里给一条"没查到"就够了，
+    // 重点是别让 store 的调用打到 undefined 上，把无关的 rejection 混进结论里。
+    update: {
+      getState: vi.fn(async () => ({ ok: false })),
+      check: vi.fn(async () => ({ ok: false })),
+      download: vi.fn(async () => ({ ok: false })),
+      install: vi.fn(async () => ({ ok: false })),
+    },
     subscriptions: {
       subscribe: vi.fn(async ({ topic }: { readonly topic: SubscriptionTopicM2 }) => {
         const subscriptionId = `${topic.kind}-subscription-${++subscriptionSeq}`;
@@ -451,5 +473,46 @@ describe("DesktopAccessGate 重认证那一屏的出口", () => {
     fireEvent.click(exit);
 
     await screen.findByText("这台设备已经退出登录。这次的登录状态没能通知学习服务撤销，它会在学习服务那边留到自动过期。");
+  });
+});
+
+/**
+ * 右上角那颗版本/更新入口用 `position: fixed` 钉在窗口上，而
+ * `.desktop-access-gate__panel` 入场时被 GSAP 打了 transform（x + scale）。
+ * 带 transform 的祖先会接管 fixed 的 containing block：chip 一旦落在 panel 里，
+ * 切一次登录↔注册它就先贴到面板右缘、等 `clearProps` 撤掉 transform 再弹回窗口角。
+ * 真窗实测那一帧的横向偏移是 926px（x=1384 → 458），人眼看到的就是"跳一下"。
+ *
+ * jsdom 没有布局，量不出偏移，所以这里钉的是**结构**：它必须是 `<main>` 的直接
+ * 子节点、不在 panel 里——这一点成立，transform 就接管不到它。
+ */
+describe("门禁右上角更新入口的落点", () => {
+  async function renderAuthGate() {
+    installApi({ initialSession: anonymousSession() });
+    render(
+      <DesktopAccessGate>
+        <button type="button" data-testid="room-focus">学习页面</button>
+      </DesktopAccessGate>,
+    );
+    await screen.findByRole("button", { name: "登录" });
+    return document.querySelector(".desktop-access-gate__update");
+  }
+
+  it("版本与更新挂在 panel 之外，入场动效的 transform 接管不到它", async () => {
+    const chip = await renderAuthGate();
+    expect(chip).toBeTruthy();
+    expect(chip?.closest(".desktop-access-gate__panel")).toBeNull();
+    expect(chip?.parentElement?.classList.contains("desktop-access-gate")).toBe(true);
+  });
+
+  it("切到注册那一屏，chip 仍在 panel 之外", async () => {
+    await renderAuthGate();
+
+    fireEvent.click(screen.getByRole("button", { name: /还没有账号？注册/ }));
+    await screen.findByRole("button", { name: "下一步" });
+
+    const chip = document.querySelector(".desktop-access-gate__update");
+    expect(chip?.closest(".desktop-access-gate__panel")).toBeNull();
+    expect(chip?.parentElement?.classList.contains("desktop-access-gate")).toBe(true);
   });
 });

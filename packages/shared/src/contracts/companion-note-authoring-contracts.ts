@@ -1,7 +1,10 @@
 import { z } from "zod";
 
-/** Content is bounded by the actual model window and note storage/update byte contracts,
- * not an extra agent-only character or block count quota. */
+/**
+ * 内容篇幅由模型窗口与笔记存储/更新的字节合同决定，不在这里再加一份 agent 专用的
+ * 字符或条数配额——链接也同理：一篇新笔记引用几篇已有笔记由内容决定
+ * （以前 links/linkedNotes 各封顶 6 条，第七个链接会让整次建笔记失败）。
+ */
 export const companionCreateNoteV1Schema = z.object({
   title: z.string().trim().min(1).max(200),
   markdown: z.string().trim().min(1).describe("根据当前讨论整理的完整独立笔记，支持标题、列表、表格、代码与公式"),
@@ -9,14 +12,14 @@ export const companionCreateNoteV1Schema = z.object({
     noteId: z.string().uuid(),
     noteVersionId: z.string().uuid().describe("本轮companion_read_note实际返回的version"),
     reason: z.string().trim().min(5).max(240).describe("说明这篇已有笔记与新笔记的具体关系，不能只凭标题猜测"),
-  }).strict()).max(6).default([]),
+  }).strict()).default([]),
 }).strict();
 export type CompanionCreateNoteV1 = z.infer<typeof companionCreateNoteV1Schema>;
 
 export const companionCreatedNoteV1Schema = z.object({
   kind: z.literal("created_note"),
   noteId: z.string().uuid(), noteVersionId: z.string().uuid(), title: z.string().min(1).max(200),
-  linkedNotes: z.array(z.object({ noteId: z.string().uuid(), title: z.string().max(200) }).strict()).max(6),
+  linkedNotes: z.array(z.object({ noteId: z.string().uuid(), title: z.string().max(200) }).strict()),
 }).strict();
 export type CompanionCreatedNoteV1 = z.infer<typeof companionCreatedNoteV1Schema>;
 

@@ -6,20 +6,26 @@ export const noteOverviewV1Schema = z.strictObject({
   noteId: z.string().uuid(),
   noteVersionId: z.string().uuid(),
   noteVersionNumber: z.number().int().positive(),
-  body: z.string().min(1).max(20_000),
+  body: z.string().min(1),
   points: z.array(z.strictObject({
-    explanation: z.string().min(8).max(200),
+    explanation: z.string().min(8),
     blockOrdinal: z.number().int().min(0).max(100_000),
-    quote: z.string().min(8).max(500),
-  })).min(1).max(6).nullable().optional(),
+    quote: z.string().min(8),
+  })).min(1).nullable().optional(),
   references: z.array(z.strictObject({
     blockOrdinal: z.number().int().min(0).max(100_000),
-    quote: z.string().min(8).max(500),
-  })).max(32),
+    quote: z.string().min(8),
+  })),
   coverage: z.strictObject({
     totalBlocks: z.number().int().nonnegative().max(100_000),
     textBlocksRead: z.number().int().nonnegative().max(100_000),
     imageBlocksNotRead: z.number().int().nonnegative().max(100_000),
+    /**
+     * 因为"引用核不回原文"而被逐条剔除的要点数。放开长度与条数之后，一条核不上的
+     * 引用不再让整份速看失败——它只是不出现；这个数让"少给了几条"是可见的，
+     * 而不是无声的（0419 同一轮）。旧行没有这一格，所以是可选的。
+     */
+    pointsDropped: z.number().int().nonnegative().optional(),
   }).nullable(),
   generationJobId: z.string().uuid().nullable(),
   sourceMessageId: z.string().uuid().nullable(),
@@ -43,7 +49,7 @@ export const createNoteOverviewTaskV1Schema = z.strictObject({
 });
 
 export const noteOverviewTaskStatusV1Schema = z.enum(["queued", "running", "ready", "failed"]);
-export const noteOverviewTaskFailureReasonV1Schema = z.enum(["ai_consent_required", "ai_data_policy_denied", "unknown"]);
+export const noteOverviewTaskFailureReasonV1Schema = z.enum(["ai_consent_required", "ai_data_policy_denied", "generation_incomplete", "unknown"]);
 export const noteOverviewTaskV1Schema = z.strictObject({
   taskId: z.string().uuid(),
   agentRunId: z.string().uuid().optional(),

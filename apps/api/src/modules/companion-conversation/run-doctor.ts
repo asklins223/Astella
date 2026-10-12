@@ -128,7 +128,7 @@ function buildMarkdown(report: Omit<CompanionRunDoctorV1, "markdown">): string {
     `- Run：${report.run.id}`,
     `- 状态：${report.run.status}；第 ${report.run.generation} 代`,
     `- 后台任务：${report.queue.status ?? "无可读关联任务"}`,
-    `- Agent 预算：步骤 ${report.executionBudget.stepsUsed}/${report.executionBudget.maxSteps}，工具 ${report.executionBudget.toolCallsUsed}/${report.executionBudget.maxToolCalls}，累计 ${report.executionBudget.elapsedMs} ms`,
+    `- Agent 执行：步骤 ${report.executionBudget.stepsUsed}${report.executionBudget.maxSteps === null ? "" : `/${report.executionBudget.maxSteps}`}，工具 ${report.executionBudget.toolCallsUsed}${report.executionBudget.maxToolCalls === null ? "" : `/${report.executionBudget.maxToolCalls}`}，累计 ${report.executionBudget.elapsedMs} ms`,
     `- 工具账本：${report.ledger.toolCounts.reduce((sum, entry) => sum + entry.count, 0)} 条；结果待核对 ${report.ledger.unknownToolOutcomeCount} 条`,
     `- 当前可读事件：${report.ledger.retainedEventCount} 条`,
   ];

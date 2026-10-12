@@ -41,8 +41,9 @@ import {
   recoverCompanionRunFailureSpanBestEffort,
 } from "./companion-dialogue-store.ts";
 import { CompanionAgentBudgetExceededError } from "../lib/non-retryable-errors.ts";
-import { COMPANION_AGENT_TOOL_TIMEOUT_MS, COMPANION_AGENT_TOOL_LABELS } from "@astella/shared";
-import { READ_IMAGE_TOOL_TIMEOUT_MS, type AgentEventContext } from "./companion-read-tools.ts";
+import { COMPANION_AGENT_TOOL_LABELS } from "@astella/shared";
+import { type AgentEventContext } from "./companion-read-tools.ts";
+import { resolveCompanionAgentBudget, resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import type { CompanionAgentToolDefinitionV1, CompanionAgentToolStatus } from "@astella/shared";
 
 export type ToolExecutionRun =
@@ -61,6 +62,7 @@ export interface ToolExecutionRunArgs {
   operationCallId: string;
   /** provider 那个 id——tool 消息要按它回。 */
   toolCallId: string;
+  reviewProposalId?: string;
   arguments: Record<string, unknown>;
   /** 整轮的工具执行截止时刻；`remainingMs` 从它算。 */
   deadlineAt: number;
@@ -69,6 +71,17 @@ export interface ToolExecutionRunArgs {
   /** 运行 id，只进日志。 */
   runId: string;
   logger: ToolExecutionRunLogger;
+}
+
+export function companionToolExecutionTimeout(definition: Pick<CompanionAgentToolDefinitionV1, "name" | "riskClass">): number {
+  // Writes include a durable API dispatch and CRDT save, or nested generation.
+  // They are bounded by the run deadline, not the quick database-read budget.
+  if (definition.riskClass !== "read") return resolveCompanionAgentBudget().loopDeadlineMs;
+  if (["companion_read_image", "agent_web_search", "agent_read_public_document"].includes(definition.name))
+    return resolveProviderCallTimeout("companion_agent");
+  // Local reads already have database statement/lock timeouts. An extra guessed
+  // ten-second tool ceiling can fail healthy work while its query still runs.
+  return resolveCompanionAgentBudget().loopDeadlineMs;
 }
 
 /**
@@ -84,6 +97,8 @@ export async function runCompanionToolExecution(args: ToolExecutionRunArgs): Pro
   await appendAgentEvent(event, "agent.tool", {
     tool: {
       toolCallId: operationCallId,
+      ...(args.reviewProposalId ? { proposalId: args.reviewProposalId } : {}),
+      ...(operationCallId !== args.toolCallId ? { preparationToolCallId: args.toolCallId } : {}),
       name: definition.name,
       toolVersion: definition.toolVersion,
       riskClass: definition.riskClass,
@@ -111,14 +126,7 @@ export async function runCompanionToolExecution(args: ToolExecutionRunArgs): Pro
         );
       },
       args.signal,
-      // 读图里嵌的是一次视觉模型往返，10s 的通用工具预算对它来说必然超时；
-      // 其余工具查一次库就返回，45s 只是把尾延迟留给真正需要它的那一个。
-      Math.min(
-        definition.name === "companion_read_image"
-          ? READ_IMAGE_TOOL_TIMEOUT_MS
-          : COMPANION_AGENT_TOOL_TIMEOUT_MS,
-        remainingMs,
-      ),
+      Math.min(companionToolExecutionTimeout(definition), remainingMs),
       (lateError) => {
         // 迟到 settle 此前被静默吞掉（无任何可观测信号）。只记日志，
         // 不回写状态：此刻审计行已按超时终结。
@@ -156,6 +164,7 @@ export async function runCompanionToolExecution(args: ToolExecutionRunArgs): Pro
     await appendAgentEvent(event, "agent.tool", {
       tool: {
         toolCallId: operationCallId,
+        ...(args.reviewProposalId ? { proposalId: args.reviewProposalId } : {}),
         name: definition.name,
         toolVersion: definition.toolVersion,
         riskClass: definition.riskClass,

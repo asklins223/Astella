@@ -434,6 +434,8 @@ const authRegisterInputSchema = z.strictObject({
   password: newPasswordSchema,
   inviteToken: inviteTokenSchema.optional(),
   displayName: z.string().trim().min(1).max(200).optional(),
+  // 邮箱验证码：服务端在发信通道配置齐全时才强制；未配置时服务端不看这一格。
+  emailCode: z.string().trim().regex(/^\d{6}$/).optional(),
   remember: z.boolean(),
 });
 const authReauthenticateInputSchema = z.strictObject({ ...m1InputBase, password: secretInputSchema });
@@ -447,8 +449,28 @@ const authJoinWorkspaceInputSchema = z.strictObject({
   ...m1InputBase,
   inviteToken: inviteTokenSchema,
 });
+const emailCodeField = z.string().trim().regex(/^\d{6}$/, "验证码为 6 位数字");
+const authSendEmailCodeInputSchema = z.strictObject({
+  ...m1InputBase,
+  email: emailSchema,
+  purpose: z.enum(["register", "login", "reset_password"]),
+});
+const authLoginWithCodeInputSchema = z.strictObject({
+  ...m1InputBase,
+  email: emailSchema,
+  code: emailCodeField,
+  remember: z.boolean(),
+});
+const authResetPasswordInputSchema = z.strictObject({
+  ...m1InputBase,
+  email: emailSchema,
+  code: emailCodeField,
+  newPassword: newPasswordSchema,
+});
 const logoutOutputSchema = z.strictObject({ loggedOut: z.literal(true), serverRevoked: z.boolean() });
 const changePasswordOutputSchema = z.strictObject({ changed: z.literal(true), sessionsRevoked: z.literal(true) });
+const sendEmailCodeOutputSchema = z.strictObject({ ok: z.literal(true), resendInSeconds: z.number().int().nonnegative() });
+const resetPasswordOutputSchema = z.strictObject({ ok: z.literal(true) });
 
 export function registerAuthChannels(deps: AuthChannelDeps): void {
   const {
@@ -490,13 +512,33 @@ installHandler(DESKTOP_IPC_CHANNELS.authGetState, runtimeInputSchema, options, a
 
   installHandler(DESKTOP_IPC_CHANNELS.authRegister, authRegisterInputSchema, options, async (_event, _window, input) => {
     formalAssessmentGuard.failClosed("disconnected");
-    const session = await ns_auth.register(gateway.gatewayTransport, gateway.companionBridge, input.email, input.password, input.inviteToken, input.displayName, input.meta.requestId, input.remember);
+    const session = await ns_auth.register(gateway.gatewayTransport, gateway.companionBridge, input.email, input.password, input.inviteToken, input.displayName, input.meta.requestId, input.remember, input.emailCode);
     setActiveWorkspaceEpoch(session.workspaceEpoch);
     rememberSession(session);
     await recoverPersistedReturnMarker(input.meta.requestId);
     void startCompanionLifecycle(session.workspaceEpoch);
     return session;
   }, (output) => safeWorkspaceEpoch(output), sessionContextSchema);
+
+  // 邮箱验证码三通道。发码与找回密码都发生在**未登录**状态，与
+  // authGetSurfaceManifest 同一注册形状（不带 epoch 取值器）。
+  installHandler(DESKTOP_IPC_CHANNELS.authSendEmailCode, authSendEmailCodeInputSchema, options, async (_event, _window, input) => {
+    return ns_auth.sendEmailCode(gateway.gatewayTransport, input.email, input.purpose, input.meta.requestId);
+  }, undefined, sendEmailCodeOutputSchema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.authLoginWithCode, authLoginWithCodeInputSchema, options, async (_event, _window, input) => {
+    formalAssessmentGuard.failClosed("disconnected");
+    const session = await ns_auth.loginWithCode(gateway.gatewayTransport, gateway.companionBridge, input.email, input.code, input.meta.requestId, input.remember);
+    setActiveWorkspaceEpoch(session.workspaceEpoch);
+    rememberSession(session);
+    await recoverPersistedReturnMarker(input.meta.requestId);
+    void startCompanionLifecycle(session.workspaceEpoch);
+    return session;
+  }, (output) => safeWorkspaceEpoch(output), sessionContextSchema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.authResetPassword, authResetPasswordInputSchema, options, async (_event, _window, input) => {
+    return ns_auth.resetPassword(gateway.gatewayTransport, input.email, input.code, input.newPassword, input.meta.requestId);
+  }, undefined, resetPasswordOutputSchema);
 
   installHandler(DESKTOP_IPC_CHANNELS.authJoinWorkspace, authJoinWorkspaceInputSchema, options, async (_event, _window, input) => {
     assertEpochBoundaryExempt(input.meta, getActiveWorkspaceEpoch());

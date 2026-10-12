@@ -21,6 +21,19 @@ public sealed record InstalledInstallation(string AppId, string Version, string 
     bool DesktopShortcut, PackageFile[] Files, string LicenseId = Identity.LicenseId);
 public sealed record InstallProgress(double Fraction, string Message);
 
+/// <param name="OldProgramDirectory">新位置安装成功后，未能移除的旧程序目录。</param>
+public sealed record InstallResult(InstalledInstallation Installation, string? OldProgramDirectory = null);
+
+/// <summary>文件写入被系统拒绝，保留原异常供诊断；仅凭拒绝码不能判断具体原因。</summary>
+public sealed class WriteDeniedException(string path, Exception inner) : IOException(Describe(path), inner)
+{
+    public string Path { get; } = path;
+    private static string Describe(string path) =>
+        $"安装器暂时无法写入「{System.IO.Path.GetFileName(path)}」。可能是文件被占用、文件夹权限不足，或安全软件阻止了写入。\n\n"
+        + "请关闭拾星笔记后重试，或在这一步选择其他有写入权限的独立文件夹，例如 D:\\Apps\\Astella。"
+        + "如果仍然失败，请检查安全软件的拦截记录，并查看安装诊断记录中的具体原因。";
+}
+
 public interface IInstallationRegistration
 {
     InstalledInstallation? Read();

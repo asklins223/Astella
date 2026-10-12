@@ -7,7 +7,6 @@ import { ReviewSurface } from "./surfaces/review/ReviewSurface.tsx";
 import { StudySurface } from "./surfaces/study/StudySurface.tsx";
 import { ResumableSurface } from "./surfaces/library/ResumableSurface.tsx";
 import { ValidationSurface } from "./surfaces/run/validation-surface";
-import { SurfaceReturnControl } from "./surfaces/study/SurfaceReturnControl.tsx";
 import {
   ObjectiveDetailSurface,
   ObjectiveLibrarySurface,

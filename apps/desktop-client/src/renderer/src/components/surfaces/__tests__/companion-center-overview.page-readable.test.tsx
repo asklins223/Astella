@@ -143,17 +143,17 @@ describe("伴星中心 · 概览：三块各露一行，没露出的不登记", 
     expect(titles()).toContain("最近一篇日记");
   });
 
-  it("待回应的件数与日记日期取自屏上那两格，不自己算", () => {
+  it("待确认的件数与日记日期取自屏上那两格，不自己算", () => {
     renderOverview();
     const view = publishedView()!;
     expect(view.metrics).toEqual([
-      { label: "待回应", value: document.querySelector(".cc-overview__response > div > span")?.textContent ?? "" },
+      { label: "待确认", value: document.querySelector(".cc-overview__response > div > span")?.textContent ?? "" },
       { label: "最近日记", value: document.querySelector(".cc-overview__diary time")?.textContent ?? "" },
     ]);
     expect(view.metrics?.[0].value).toBe("2 件提议");
   });
 
-  it("只露最新提议，计数包含全部待回应提议", () => {
+  it("只露最新提议，计数包含全部待确认提议", () => {
     renderOverview({
       activity: {
         ok: true,
@@ -165,7 +165,7 @@ describe("伴星中心 · 概览：三块各露一行，没露出的不登记", 
     expect(labels).not.toContain("第三条");
     expect(labels).toContain("第一条");
     expect(labels).not.toContain("第二条");
-    expect(view.metrics?.find((entry) => entry.label === "待回应")?.value).toBe("3 件提议");
+    expect(view.metrics?.find((entry) => entry.label === "待确认")?.value).toBe("3 件提议");
     expect(document.querySelector(".cc-overview__response")?.textContent).toContain("3 件提议");
   });
 

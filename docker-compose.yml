@@ -171,6 +171,17 @@ services:
       AUTH_RATE_LIMIT_STORE: ${AUTH_RATE_LIMIT_STORE:-postgres}
       AUTH_RATE_LIMIT_WINDOW_MS: ${AUTH_RATE_LIMIT_WINDOW_MS:-900000}
       AUTH_RATE_LIMIT_MAX_ATTEMPTS: ${AUTH_RATE_LIMIT_MAX_ATTEMPTS:-5}
+      # 邮箱验证码发信通道（QQ → 2925 降级）。两家全空 = 通道未配置，此时
+      # **注册会被 503 挡住**（注册默认强制验证码，见 EMAIL_VERIFICATION_DISABLED）——
+      # 不配凭据不是"跳过验证"，是"这一环境开不了新账号"。要让注册免验证码，
+      # 得在这里显式透传 EMAIL_VERIFICATION_DISABLED=true，本栈故意不透传。
+      # compose 只透传显式列出的变量，新增 EMAIL_* 时必须在这里补一行。
+      EMAIL_QQ_USER: ${EMAIL_QQ_USER:-}
+      EMAIL_QQ_PASS: ${EMAIL_QQ_PASS:-}
+      EMAIL_QQ_FROM: ${EMAIL_QQ_FROM:-}
+      EMAIL_2925_USER: ${EMAIL_2925_USER:-}
+      EMAIL_2925_PASS: ${EMAIL_2925_PASS:-}
+      EMAIL_2925_FROM: ${EMAIL_2925_FROM:-}
       # Companion Center base capabilities ship together; provider/device
       # enhancements remain independently gated. Each service declares exactly the
       # flags it reads; api/worker defaults are enforced by
@@ -215,6 +226,7 @@ services:
       # fail-closed（与 Assessment Critic 同类事故）。切 provider 时同步改这里与
       # config/ai-platforms.json。
       OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:-}
+      MIMO_API_KEY: ${MIMO_API_KEY:-}
       # 方案 16：LearningRun 独立 Assessment Critic（OpenAI-compatible）。
       # 2026-09-15 审计 · 设计 P0-2：此前 prod 完全没有注入这三个变量，而 compose
       # 只把显式列出的变量传进容器 → run-critic 恒抛 CriticUnavailableError →
@@ -292,6 +304,7 @@ services:
       # fail-closed（与 Assessment Critic 同类事故）。切 provider 时同步改这里与
       # config/ai-platforms.json。
       OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:-}
+      MIMO_API_KEY: ${MIMO_API_KEY:-}
       AI_ALLOW_DOCKER_DESKTOP_SYNTHETIC_DNS: ${AI_ALLOW_DOCKER_DESKTOP_SYNTHETIC_DNS:-false}
       # 2026-09-15 审计：API_INTERNAL_URL 已删除——唯一的 TS 读取方（learning_session_assess
       # handler）在 7be4ffe 退役，worker 现在没有任何 HTTP 客户端回连 API（出站只到

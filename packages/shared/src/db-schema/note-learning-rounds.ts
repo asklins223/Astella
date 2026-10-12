@@ -242,7 +242,7 @@ export const noteLearningRoundArtifacts = pgTable(
     /** 按轮次读这一轮的产物（重放与审计）；「按 id 取整份」走主键。 */
     roundCreatedIdx: index("nlra_round_created_idx").on(t.roundId, t.createdAt),
     kindCheck: check("nlra_kind_chk", sql`${t.kind} IN ('dynamic_explanation')`),
-    htmlLenCheck: check("nlra_html_len_chk", sql`char_length(${t.html}) BETWEEN 1 AND 524288`),
+    htmlLenCheck: check("nlra_html_len_chk", sql`char_length(${t.html}) >= 1`),
     snapshotHashCheck: check("nlra_snapshot_hash_chk", sql`char_length(${t.snapshotHash}) BETWEEN 8 AND 128`),
   }),
 );

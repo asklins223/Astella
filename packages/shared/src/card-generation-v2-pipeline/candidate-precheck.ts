@@ -23,6 +23,7 @@ import type {
   GroundingCriticReportV2,
   QualityIssue,
 } from "../contracts/card-quality-v2-contracts.ts";
+import { enumerateCandidateTargetUnits } from "./binding-plan-core.ts";
 import type { AssemblerEvidenceManifest } from "./binding-plan-core.ts";
 
 // `QualityIssue` 是两份 precheck 与门禁共同的结论形状，住在质量合同里（四阶段 Critic
@@ -109,11 +110,16 @@ export async function runDeterministicGroundingContract(
       verdict: inScope ? ("entailed" as const) : ("insufficient" as const),
       evidenceSnapshotIds: candidate.objective.evidenceRefIds,
     })),
-    learningSupport: [{
-      field: "explanation" as const,
+    // 逐条覆盖候选**实际写了**的教学支持字段：绑定计划按 `enumerateCandidateTargetUnits`
+    // 枚举同一批字段并要求每条都有裁决（缺一条即 `binding_support_verdict_missing` 整发失败）。
+    // 此前这里只写 explanation 一条，于是模型一给出 boundary/misconception/workedExample，
+    // 这一发就以"missing grounding verdict"终结——内容是合法的，读数却把它当成了故障。
+    // 必选与可选字段的处置仍由绑定计划那一段判（可选字段 insufficient 时跳过绑定，不阻断）。
+    learningSupport: enumerateCandidateTargetUnits(candidate).learningSupport.map(({ field }) => ({
+      field,
       verdict: inScope ? ("entailed" as const) : ("insufficient" as const),
       evidenceSnapshotIds: candidate.objective.evidenceRefIds,
-    }],
+    })),
     relationSupport: candidate.objective.relations.map((relation) => ({
       relationId: relation.relationId,
       verdict: inScope ? ("entailed" as const) : ("insufficient" as const),

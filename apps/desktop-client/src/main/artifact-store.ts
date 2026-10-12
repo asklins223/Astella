@@ -17,7 +17,6 @@ import type { Stats } from "node:fs";
 import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { isArtifactId } from "../shared/artifact-frame";
-import { assembleArtifactDocument } from "./artifact-surface";
 import { DesktopGatewayFailure } from "./desktop-gateway-failure";
 import type { GatewayErrorCode } from "@astella/shared/desktop-ipc-contracts";
 
@@ -92,15 +91,8 @@ export async function ensureArtifactStored(
 
   const html = await deps.fetchArtifactHtml(input.artifactId, input.requestId);
 
-  // 配额检查**只走 `artifact-surface.ts` 那一份口径**（常量与比较都在那里）：读侧组装时
-  // 判的是同一个函数、同一份数字，写与读两边不会各有一套"大小上限"。超限整份拒绝。
-  const assembled = assembleArtifactDocument({ artifactId: input.artifactId, content: html });
-  if (!assembled.ok) {
-    throw new ArtifactStoreFailure("unsupported_contract", `产物超配额（${assembled.reason}）：${assembled.detail}`);
-  }
-
   // 先写同目录临时名再 rename：读侧只认 `<id>.html`，崩溃留下的半份永远不会被读成
-  // "已经在了"——那正是"整份产物"这条约定最容易被破坏的地方（写一半的 HTML 也能过配额）。
+  // "已经在了"——那正是"整份产物"这条约定最容易被破坏的地方。
   const temporaryPath = `${targetPath}.tmp-${randomBytes(6).toString("hex")}`;
   try {
     await mkdir(resolve(deps.userDataDir, "artifacts"), { recursive: true });

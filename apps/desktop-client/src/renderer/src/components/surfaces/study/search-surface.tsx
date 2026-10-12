@@ -29,6 +29,8 @@ export function SearchSurface() {
   const openButton = useRef<HTMLButtonElement>(null);
   const rows = useRef(new Map<string, HTMLDivElement>());
   const [previewOpen, setPreviewOpen] = useState(false);
+  /** 审计 F13：Esc 清词留下一次可撤销的机会，不再第一下就把输入删干净且无路可回。 */
+  const [clearedQuery, setClearedQuery] = useState<string | null>(null);
   const [compact, setCompact] = useState(false);
   const keyboardBrowsing = useRef(false);
   const focusPreview = useRef(false);
@@ -169,7 +171,13 @@ export function SearchSurface() {
   return <HudPage page="search">
     <section ref={root} className="search-desk" data-has-query={hasQuery} data-has-results={desk.visible.length > 0} data-compact={compact} data-preview-open={previewOpen} onKeyDown={event => {
       if (event.key === "Escape" && compact && previewOpen) { event.preventDefault(); event.stopPropagation(); closePreview(); }
-      else if (event.key === "Escape" && desk.query) { event.preventDefault(); event.stopPropagation(); setQuery(""); input.current?.focus(); }
+      else if (event.key === "Escape" && desk.query) {
+        event.preventDefault();
+        event.stopPropagation();
+        setClearedQuery(desk.query);
+        setQuery("");
+        input.current?.focus();
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         if (compact && previewOpen) { focusSearch.current = true; closePreview(); } else input.current?.focus();
@@ -180,8 +188,10 @@ export function SearchSurface() {
           <span className="search-command__icon" aria-hidden="true"><Search size={23} strokeWidth={2.5} /></span>
           <label className="sr-only" htmlFor={queryId}>搜索来源、笔记与学习卡</label>
           <input id={queryId} ref={input} data-search-query="true" type="search" maxLength={500} value={desk.query} aria-controls={hasQuery ? listId : undefined} aria-activedescendant={selected ? `${listId}-${objectKey(selected)}` : undefined}
-            placeholder="想找什么？写下一个关键词…" onChange={event => setQuery(event.currentTarget.value)} onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)} onKeyDown={event => keys(event, true)} />
-          {desk.query ? <button type="button" className="search-command__clear" aria-label="清空搜索关键词" onClick={() => { setQuery(""); input.current?.focus(); }}><X size={17} aria-hidden="true" /></button> : <kbd className="search-command__shortcut" aria-hidden="true">⌘ K</kbd>}
+            placeholder="想找什么？写下一个关键词…" onChange={event => { setClearedQuery(null); setQuery(event.currentTarget.value); }} onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)} onKeyDown={event => keys(event, true)} />
+          {desk.query ? <button type="button" className="search-command__clear" aria-label="清空搜索关键词" onClick={() => { setQuery(""); input.current?.focus(); }}><X size={17} aria-hidden="true" /></button> : null}
+          {/* 审计 F9：快捷键提示与输入状态解耦——有词的时候也看得见怎么唤回搜索框。 */}
+          <kbd className="search-command__shortcut" aria-hidden="true">⌘ K</kbd>
         </div>
         <div className="search-filter-row">
           <nav className="search-types" aria-label="结果类型">
@@ -192,6 +202,7 @@ export function SearchSurface() {
         </div>
       </div>
       <p className="sr-only" role="status" aria-live="polite">{desk.sessionReady && hasQuery ? listBusy ? indexStateLine : !desk.searchFailure && !desk.filterFailure ? progressLabel : "" : ""}</p>
+      {clearedQuery ? <p className="search-undo small" role="status">关键词已清空。<button type="button" className="text-action" onClick={() => { setQuery(clearedQuery); setClearedQuery(null); input.current?.focus(); }}>撤销</button></p> : null}
       {!hasQuery ? <div className="search-welcome">
         <div className="search-welcome__objects" aria-hidden="true"><span><BookOpen size={48} strokeWidth={1.8} /></span><span><FileText size={43} strokeWidth={1.8} /></span><i><Search size={36} strokeWidth={2.3} /></i></div>
         {!desk.sessionReady && !desk.sessionFailure ? <SurfaceDataState kind="loading" message={SEARCH_STATE_LINES.confirmingSession} detail="正在准备这个学习空间的内容。" />

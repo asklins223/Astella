@@ -291,13 +291,13 @@ export function assembleCardGenerationV3(
     if (reuse) reasonCodes.push(`reuse-${reuse.basis}`);
     return {
       objectiveLocalId: entry.draft.objectiveLocalId,
-      objectiveStatement: entry.draft.objectiveDraft.objectiveStatement.slice(0, 2000),
+      objectiveStatement: entry.draft.objectiveDraft.objectiveStatement,
       priority: proposal?.priority ?? "important",
       knowledgeForm: entry.draft.objectiveDraft.knowledgeForm,
       strategy: strategyAllocations[index]!.strategy,
       practiceForm: practiceAllocations[index]!.form,
-      sourceAtomIds: entry.sourceAtomIds.slice(0, 100),
-      reasonCodes: reasonCodes.slice(0, 20),
+      sourceAtomIds: entry.sourceAtomIds,
+      reasonCodes,
       estimatedReviewCostSeconds: entry.draft.presentationDraft.estimatedReviewSeconds,
       changeContext: reuse ?? { kind: "create_new" },
     };

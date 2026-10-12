@@ -37,8 +37,8 @@ const hashSchema = z.string().regex(/^[0-9a-f]{64}$/);
 export const cardGenerationCandidateQualityIssueV1Schema = z.strictObject({
   code: z.string().min(1).max(120),
   severity: z.enum(["hard", "soft"]),
-  detail: z.string().min(1).max(2000),
-  sourceQuote: z.string().min(1).max(2000).optional(),
+  detail: z.string().min(1),
+  sourceQuote: z.string().min(1).optional(),
 });
 export type CardGenerationCandidateQualityIssueV1 = z.infer<typeof cardGenerationCandidateQualityIssueV1Schema>;
 
@@ -279,7 +279,7 @@ export type CardGenerationRunServerViewV2 = z.infer<typeof cardGenerationRunServ
 
 /** Only known reasons cross IPC; provider errors and model output stay in main. */
 export const cardGenerationRunFailureV1Schema = z.strictObject({
-  reason: z.enum(["consent_required", "external_disabled", "output_invalid", "timeout", "quality_failed"]),
+  reason: z.enum(["consent_required", "external_disabled", "output_invalid", "output_truncated", "timeout", "quality_failed"]),
   stage: z.enum(["generate", "check", "rewrite"]).nullable(),
 });
 export type CardGenerationRunFailureV1 = z.infer<typeof cardGenerationRunFailureV1Schema>;
@@ -290,6 +290,8 @@ export function projectCardGenerationRunFailureV1(error: CardGenerationRunServer
   if (code === "ai_consent_required" || /AIConsentRequiredError|AI_CONSENT_REQUIRED/.test(message)) return { reason: "consent_required", stage: null };
   if (code === "ai_data_policy_denied" || /AIDataPolicyDeniedError|AI_DATA_POLICY_DENIED/.test(message)) return { reason: "external_disabled", stage: null };
   if (code === "quality_gate_failed") return { reason: "quality_failed", stage: null };
+  if (code === "generation_output_truncated" || /output rejected: output_truncated/.test(message)) return { reason: "output_truncated",
+    stage: /card_content_check_v3/.test(message) ? "check" : /card_candidate_rewrite_v3/.test(message) ? "rewrite" : "generate" };
   if (code === "generation_output_invalid" || /output rejected: output_shape/.test(message)) return { reason: "output_invalid",
     stage: /card_content_check_v3/.test(message) ? "check" : /card_candidate_rewrite_v3/.test(message) ? "rewrite" : "generate" };
   if (code === "generation_timeout" || /wall-clock budget exhausted|output rejected: timeout/.test(message)) return { reason: "timeout", stage: null };
@@ -379,18 +381,18 @@ export const cardGenerationCandidateV1Schema = z.strictObject({
   planObjectiveLocalId: z.string().min(1).max(160),
   recommendation: z.strictObject({
     recommended: z.boolean(),
-    reasonCodes: z.array(z.string().min(1).max(120)).max(20),
+    reasonCodes: z.array(z.string().min(1)),
   }),
   objective: z.strictObject({
-    statement: z.string().min(1).max(2000),
-    publicSummary: z.string().min(1).max(1500),
+    statement: z.string().min(1),
+    publicSummary: z.string().min(1),
     knowledgeForm: knowledgeFormV2Schema,
   }),
   front: z.strictObject({
-    cue: z.string().min(1).max(2000),
-    context: z.string().min(1).max(3000).optional(),
-    prompt: z.string().min(1).max(2000),
-    mediaRefs: z.array(z.string().min(1).max(200)).max(20).optional(),
+    cue: z.string().min(1),
+    context: z.string().min(1).optional(),
+    prompt: z.string().min(1),
+    mediaRefs: z.array(z.string().min(1).max(200)).optional(),
   }),
   strategy: cardStrategyV2Schema,
   transformationKind: teachingTransformationV2Schema,
@@ -402,7 +404,7 @@ export const cardGenerationCandidateV1Schema = z.strictObject({
   candidateEvidenceBindingPlanHash: hashSchema.nullable(),
   candidateRevisionHash: hashSchema,
   qualityState: z.enum(["authored", "checking", "passed", "failed", "dropped"]),
-  qualityIssues: z.array(cardGenerationCandidateQualityIssueV1Schema).max(40),
+  qualityIssues: z.array(cardGenerationCandidateQualityIssueV1Schema),
   /**
    * 审核页只需要"这张卡配了哪种客观题、几个候选"。选项文本与正确项**不下发**：
    * 它们属于判分内容，随列表下发等于绕过答案查看记账。
@@ -411,7 +413,7 @@ export const cardGenerationCandidateV1Schema = z.strictObject({
     .strictObject({
       kind: z.enum(["single_choice", "true_false", "ordering", "matching"]),
       // 判断题没有可数的选项集合，因此不带该字段（不是 0）。
-      optionCount: z.number().int().min(1).max(12).optional(),
+      optionCount: z.number().int().min(1).optional(),
     })
     .nullable()
     .optional(),

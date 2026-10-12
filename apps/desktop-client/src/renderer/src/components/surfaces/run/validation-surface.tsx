@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DesktopRouteV1 } from "@astella/shared/desktop-ipc-contracts";
 import type { RoomIntent } from "../../../app/room-machine";
 import { useRoomStore } from "../../../app/room-store";
@@ -29,6 +29,12 @@ export function ValidationSurface() {
   const setNavigationGuard = useRoomStore((state) => state.setNavigationGuard);
   const pendingExit = useRef<PendingExit | null>(null);
   const mounted = useRef(true);
+  /**
+   * 审计 F3：作答中按 Esc 或点目录栏会被 navigationGuard 接管后立刻释放本轮——
+   * 页内出口明明有一张「要现在停下来吗」的确认纸，这两个入口却一句话不说就把人
+   * 传回首页。现在接管时先落进这张同样口径的确认纸：确认才走，取消就继续作答。
+   */
+  const [navExit, setNavExit] = useState<{ intent?: RoomIntent } | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -88,10 +94,34 @@ export function ValidationSurface() {
       if (!pendingExit.current) setNavigationGuard(null);
       return;
     }
-    const runId = activeRunId;
-    setNavigationGuard((intent) => { void handleRunExit(runId, undefined, intent); });
+    setNavigationGuard((intent) => {
+      // 释放已经在路上时，后续点击只更新落点（沿用旧行为），不再多弹一次确认纸。
+      if (pendingExit.current) { pendingExit.current.intent = intent; return; }
+      setNavExit({ intent });
+    });
     return () => { if (!pendingExit.current) setNavigationGuard(null); };
   }, [activeRunId, handleRunExit, setNavigationGuard]);
 
-  return <LearningRunSurface onExit={activeRunId ? (request) => { void handleRunExit(activeRunId, request); } : undefined} />;
+  const confirmNavExit = useCallback(() => {
+    const intent = navExit?.intent;
+    setNavExit(null);
+    if (activeRunId) void handleRunExit(activeRunId, undefined, intent);
+  }, [activeRunId, handleRunExit, navExit]);
+
+  return <>
+    <LearningRunSurface onExit={activeRunId ? (request) => { void handleRunExit(activeRunId, request); } : undefined} />
+    {navExit ? (
+      <div className="run-confirmation-backdrop">
+        <div className="run-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="learning-run-nav-confirmation-title" aria-describedby="learning-run-nav-confirmation-description"
+          onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setNavExit(null); } }}>
+          <h2 id="learning-run-nav-confirmation-title">要现在停下来吗？</h2>
+          <p id="learning-run-nav-confirmation-description">已经写下的内容会替你留着，回来可以从这里接着做。</p>
+          <div className="actions">
+            <button type="button" className="button primary" onClick={confirmNavExit}>结束这一轮</button>
+            <button type="button" className="button" onClick={() => setNavExit(null)}>我继续做</button>
+          </div>
+        </div>
+      </div>
+    ) : null}
+  </>;
 }

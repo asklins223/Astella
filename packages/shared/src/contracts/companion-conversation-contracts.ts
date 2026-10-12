@@ -10,6 +10,7 @@
  */
 
 import { z } from "zod";
+import { VOICE_STYLE_INSTRUCTION_MAX_UNITS, voiceStyleInstructionUnits } from "../voice-expression-tags.ts";
 import { companionNoteEditingContextV1Schema } from "./companion-note-authoring-contracts.ts";
 import { allowedMainRouteV2Schema } from "./companion-bridge-contracts.ts";
 import {
@@ -126,6 +127,13 @@ export const companionImageBlockV1Schema = z.object({
   assetId: z.string().uuid().optional(),
 }).strict();
 
+/**
+ * 卡片富块里题面/摘要的展示长度，**这一个**声明就是全部：合同按它校验，装配按它取预览。
+ *
+ * 它不是给她的额度——同一轮工具的 value 里是完整题面，块只做纸上那一段。
+ */
+export const COMPANION_CARD_BLOCK_PREVIEW_MAX_CHARS = 600;
+
 export const companionContentBlockV1Schema = z.discriminatedUnion("type", [
   companionTextBlockV1Schema,
   z.object({
@@ -183,16 +191,15 @@ export const companionContentBlockV1Schema = z.discriminatedUnion("type", [
    * 不是让模型用文字"画"——她用字符画箭头时，客户端只能当纯文本换行显示，
    * 手机上还会折行错乱。
    *
-   * 只做"竖向步骤流"这一种版式：条目数与字段长度都收紧，渲染层不需要布局引擎，
-   * 也不会因为模型给出 40 步而把消息列撑爆。
+   * 竖向步骤流随实际内容延展，长流程仍能完整阅读。
    */
   z.object({
     type: z.literal("diagram"),
     title: z.string().min(1).max(60),
     steps: z.array(z.object({
-      label: z.string().min(1).max(40),
-      detail: z.string().max(80).optional(),
-    }).strict()).min(2).max(8),
+      label: z.string().min(1),
+      detail: z.string().optional(),
+    }).strict()).min(2),
   }).strict(),
   /**
    * 她打开的那张卡片**内容**（§4.8）。`nav` 块只回答"跳去哪"，这块回答"这张卡写着什么"——
@@ -201,12 +208,15 @@ export const companionContentBlockV1Schema = z.discriminatedUnion("type", [
    * 字段按 `learning_cards_v2` 真实有的东西来：题面（front.cue/prompt）、
    * 这张卡在考什么（public_summary）、知识形态。**没有"答案"字段**——
    * 回忆卡的正文里本来就不存标准答案，编一个出来比缺一个字段更糟。
+   *
+   * `front`/`summary` 是**展示预览**：整份题面同时进工具的 value（她自己看的），
+   * 所以裁这一块不会让她读少什么；上限只有下面这一个源。
    */
   z.object({
     type: z.literal("card"),
     cardId: z.string().uuid(),
-    front: z.string().min(1).max(600),
-    summary: z.string().max(600).nullable(),
+    front: z.string().min(1).max(COMPANION_CARD_BLOCK_PREVIEW_MAX_CHARS),
+    summary: z.string().max(COMPANION_CARD_BLOCK_PREVIEW_MAX_CHARS).nullable(),
     knowledgeForm: z.string().max(40).nullable(),
   }).strict(),
   companionImageBlockV1Schema,
@@ -631,6 +641,19 @@ export const deferReviewReasonCodeV1Schema = z.enum([
 ]);
 
 export const proposedLearningActionPayloadV1Schema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("agent_tool_review"),
+    toolName: z.string().regex(/^[a-z][a-z0-9_]*$/).max(80),
+    arguments: z.record(z.unknown()),
+    confirmationStage: z.enum(["after_preview", "before_execute"]),
+    expectedTarget: z.record(z.unknown()).optional(),
+    preview: z.object({
+      title: z.string().min(1).max(200),
+      markdown: z.string().optional(),
+      beforeMarkdown: z.string().optional(),
+      noteId: z.string().uuid().optional(),
+    }).strict(),
+  }).strict(),
   z.object({ kind: z.literal("open_review") }).strict(),
   z.object({ kind: z.literal("open_card"), cardId: z.string().uuid() }).strict(),
   z.object({ kind: z.literal("open_star_map"), keyPointId: z.string().uuid().optional() }).strict(),
@@ -760,7 +783,7 @@ export const companionActionProposalV1Schema = z.object({
   requiresConfirmation: z.literal(true),
   status: z.enum(["pending", "rejected", "accepted", "executing", "succeeded", "failed", "expired"]),
   decision: z.enum(["confirm", "reject"]).nullable(),
-  expiresAt: z.string().datetime(),
+  expiresAt: z.string().datetime().nullable(),
   decidedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -943,7 +966,7 @@ export const companionPublicErrorCodeV1Schema = z.enum([
 export const companionErrorV1Schema = z.object({
   version: z.literal(1),
   error: companionPublicErrorCodeV1Schema,
-  message: z.string().min(1).max(240),
+  message: z.string().min(1),
   recoverable: z.boolean(),
   requestId: z.string().min(1).max(120),
 }).strict();
@@ -1000,12 +1023,21 @@ export const companionVoiceSegmentReadyPayloadV2Schema = z.strictObject({
   synthesisText: z.string().min(1).max(200),
   synthesisTextSha256: z.string().regex(/^[a-f0-9]{64}$/),
   cue: characterCuePayloadV1Schema,
+  /**
+   * 这一轮的说话风格指令（模型从正文 `[voice-style:…]` 提取，一轮一条随每段下发，
+   * 服务端合成时从事件重读）。缺省 = 模型这轮没写，合成侧回退用户偏好 → config。
+   * 只有 qwen 消费；渲染层不需要它（桌面过桥时与 synthesisText 一起剥掉）。
+   */
+  instruction: z.string().min(1).max(VOICE_STYLE_INSTRUCTION_MAX_UNITS * 2).optional(),
 }).superRefine((value, context) => {
   if (value.displayEnd <= value.displayStart) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["displayEnd"], message: "displayEnd must be greater than displayStart" });
   }
   if (value.displayEnd - value.displayStart !== value.displayText.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["displayText"], message: "display range must match displayText length" });
+  }
+  if (value.instruction !== undefined && voiceStyleInstructionUnits(value.instruction) > VOICE_STYLE_INSTRUCTION_MAX_UNITS) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["instruction"], message: "instruction exceeds upstream unit budget" });
   }
 });
 export type CompanionVoiceSegmentReadyPayloadV2 = z.infer<typeof companionVoiceSegmentReadyPayloadV2Schema>;
@@ -1088,6 +1120,12 @@ export const companionStreamEventV1Schema = z.discriminatedUnion("type", [
   }).strict() }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("error"), payload: z.object({
     code: companionPublicErrorCodeV1Schema, recoverable: z.boolean(), requestId: z.string().min(1).max(120).optional(),
+    /**
+     * 这一轮**为什么**停下的那句话。worker 在写事件时就带上（reason），
+     * 2026-10-12 补进合同：strict 下多出来的键会让整条事件在所有客户端被判失败，
+     * 屏幕上只留一个永远转不过去的"正在路上"——比没有这行字更糟。
+     */
+    message: z.string().min(1).max(400).optional(),
   }).strict() }).strict(),
   ]);
 
@@ -1112,3 +1150,17 @@ export const companionTtsStreamRequestV1Schema = z.object({
   // 15b：TTS 引擎选择（缺省 = config tts.engine；前端通常不传，由服务端决定）。
   engine: z.enum(["qwen", "edge"]).optional(),
 }).strict();
+
+/**
+ * 读对话原文这一族的**分页预算**，声明与执行共用这一个数。
+ *
+ * 以前它是 worker 里的私有常量（`companion-summary-retrieval.ts`），而能力面上这两格写的
+ * 是 `defineAgentCapability` 的默认 4,000——两头都对不上：真要按 4,000 执法就会把消息切半。
+ * 规则不变：**一条消息要么整条给，要么这一轮不给**，装不下的留给下一次 `fromSeq`。
+ */
+export const PAST_MESSAGES_MAX_CHARS = 6_000;
+
+/** 结果信封（会话 id、覆盖区间、truncated 与游标）的最大尺寸：按最大合法载荷实测 235 字。 */
+export const PAST_MESSAGES_RESULT_ENVELOPE_CHARS = 300;
+
+export const PAST_MESSAGES_MAX_RESULT_CHARS = PAST_MESSAGES_MAX_CHARS + PAST_MESSAGES_RESULT_ENVELOPE_CHARS;

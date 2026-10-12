@@ -227,7 +227,7 @@ describe("production companion interaction", () => {
     expect(send).toHaveBeenCalledWith({ text: "我们先聊聊晚饭吧" });
     expect(screen.getByRole("button", { name: "全部对话" }).getAttribute("aria-pressed")).toBe("true");
   });
-  it("closes input synchronously on send and recovers rejected text without opening a permanent bubble", async () => {
+  it("recovers rejected text into the reopened input and keeps it until the user clears it", async () => {
     let finish!: (value: boolean) => void;
     const send = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve; }));
     state.chat = interactionSession({ send, feedSelection: "原文上下文" });
@@ -238,8 +238,10 @@ describe("production companion interaction", () => {
     expect(screen.queryByRole("textbox", { name: "给 小鲸 的消息" })).toBeNull();
     expect(send).toHaveBeenCalledWith({ text: "解释这句话", selection: { text: "原文上下文" } });
     await act(async () => finish(false));
-    fireEvent.click(screen.getByRole("button", { name: "气泡轻聊" }));
+    // 审计 F1：失败后输入面板自己放回来，草稿就摆在眼前（不再是"字凭空消失"）。
     expect((screen.getByRole("textbox", { name: "给 小鲸 的消息" }) as HTMLTextAreaElement).value).toBe("解释这句话");
+    // 审计 F2：草稿非空时不再按闲置自动收；清空后恢复原来的 90 秒让位节奏。
+    fireEvent.change(screen.getByRole("textbox", { name: "给 小鲸 的消息" }), { target: { value: "" } });
     advance(91_000);
     expect(screen.queryByRole("textbox", { name: "给 小鲸 的消息" })).toBeNull();
   });
@@ -446,7 +448,9 @@ describe("production companion interaction", () => {
     advance(60_000);
     expect(dismissLiveReply).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "收起过程" }));
-    advance(6_000);
+    // 审计 F5 放宽了停留预算（4–15s 起步 4s），等待窗口同步放宽；
+    // 断言的仍是"过程气泡有自己的一段命、不跟回复同生共死"。
+    advance(7_500);
     expect(dismissLiveReply).toHaveBeenCalled();
     expect(screen.getByRole("status", { name: "小鲸 正在做的事" })).toBeTruthy();
     advance(3_000);

@@ -40,6 +40,7 @@ import {
   unwrapCompanionJsonEnvelope,
 } from "../companion-dialogue-content.ts";
 import { isGroundedTutorRequestedPageContext } from "../companion-dialogue.ts";
+import { selectCompanionReplayWindow } from "../companion-context-handoff.ts";
 import { pickCompanionFailureFallbackLine } from "../companion-dialogue-failure-retention.ts";
 
 test("grounded tutor：LearningRun 页面必须请求受限模式", () => {
@@ -58,6 +59,9 @@ test("grounded tutor：LearningRun 页面必须请求受限模式", () => {
 });
 
 test("摘要裁剪水位复用 prompt 的可见尾部选择规则", () => {
+  // 两条链必须落在同一个 seq 上，否则「摘要没覆盖、原文也没回放」的空档又回来。
+  // 2026-10-12 起窗口由 `selectCompanionReplayWindow` 一处决定，所以这里钉的是
+  // "同一个函数给出的同一份结果"，不再是"两处各写一个 20 条且相等"。
   const paired = boundCompanionRecentHistory([
     { seq: "1", role: "user", text: "旧问题" },
     { seq: "2", role: "assistant", text: "旧答案啊" },
@@ -73,15 +77,23 @@ test("摘要裁剪水位复用 prompt 的可见尾部选择规则", () => {
     { seq: "3", role: "user", text: "新消息".repeat(4_000) },
   ]);
   assert.deepEqual(budgeted.map((message) => message.seq), ["1", "2", "3"],
-    "完整近期消息交给 token 预算治理");
+    "整条近期消息交给请求上下文治理，不在这里按条数或字符剪");
 
-  const windowed = boundCompanionRecentHistory(Array.from({ length: 21 }, (_, index) => ({
+  const history = Array.from({ length: 21 }, (_, index) => ({
     seq: String(index + 1),
     role: "user" as const,
     text: `m${index + 1}`,
-  })));
-  assert.equal(windowed[0]?.seq, "2", "窗口大小由同一个 20 条常量决定");
-  assert.equal(windowed.at(-1)?.seq, "21");
+  }));
+  assert.equal(boundCompanionRecentHistory(history).length, 21, "没给声明容量时不按条数收边");
+  const capacity = { maxInputTokens: 40 };
+  assert.deepEqual(boundCompanionRecentHistory(history, capacity),
+    selectCompanionReplayWindow(history, capacity).messages,
+    "摘要水位与 prompt 尾部不再走同一个选择器");
+  const windowed = selectCompanionReplayWindow(history, capacity);
+  assert.ok(windowed.messages.length > 0 && windowed.receipt.omittedCount > 0, "样本要真的发生取舍");
+  assert.equal(windowed.messages[0]?.seq, String(21 - windowed.messages.length + 1));
+  assert.equal(windowed.receipt.uncoveredThroughSeq, String(21 - windowed.messages.length),
+    "少带的那一段最新一条要说得出 seq，摘要才接得上裁剪点");
 });
 
 test("交接快照绑定输入水位并按账本状态区分完成、未决和失败动作", () => {
@@ -208,7 +220,18 @@ test("方法目录、人格和固定协议进入同一 system 消息，当前提
   assert.deepEqual(messages.at(-1), { role: "user", content: "今天只是想聊晚饭。" });
 });
 
-test("超预算的页面或旧摘要整块省略，当前问题和确定性接续仍完整保留", () => {
+/**
+ * 2026-10-11 改判：装配层**不再按固定字符省略**。原来这两条断言的是
+ * `COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS`（100,000 字符）在装配阶段就把超大的页面与
+ * 旧摘要整块挤掉；现在容量按本轮实际源长派生，超限判定交给 governed provider 那次
+ * **按所选模型 token 窗口**做的全请求计量（`lib/__tests__/context-governor.test.ts` 覆盖
+ * 那条，压缩与溢出都在那儿）。
+ *
+ * 这条用例仍然守着三条不能退的：① 不切片——整块进或整块不出，绝不出半截原文；
+ * ② 确定性接续（watermark）必须完整保留；③ 当前问题不被上下文挤掉或改写。
+ * 用户原文与选区是她在读的东西，砍掉它等于让她对着半句作答。
+ */
+test("超大页面与旧摘要整块纳入、不切片，当前问题和确定性接续仍完整保留", () => {
   const receipts: import("@astella/agent-core").AgentContextReceipt[] = [];
   const messages = buildCompanionPersonaMessages({
     userText: "今晚想做什么菜？", recentMessages: [], pageContext: { old: "x".repeat(20000) },
@@ -216,10 +239,17 @@ test("超预算的页面或旧摘要整块省略，当前问题和确定性接�
     continuationData: "<continuation_data>current watermark</continuation_data>",
     contextReceipt: values => receipts.push(...values),
   });
-  assert.equal(receipts.find(item => item.id === "page_context")?.status, "budget_omitted");
-  assert.equal(receipts.find(item => item.id === "summary")?.status, "budget_omitted");
-  assert.match(String(messages[0].content), /<continuation_data>current watermark<\/continuation_data>/);
-  assert.ok(!String(messages[0].content).includes('"old":"x'));
+  const included = receipts.filter(item => item.status === "included").map(item => item.id);
+  assert.ok(included.includes("page_context") && included.includes("summary"),
+    "装配层不再省略：这两块必须整块纳入，由窗口计量决定发不发");
+  assert.deepEqual(receipts.filter(item => item.status === "budget_omitted").map(item => item.id), [],
+    "容量派生之后不该有任何一条被 budget 挤掉");
+  const system = String(messages[0].content);
+  // 不切片：整块在，边界完整。数原文里的字符总量，不比 substring——页面块是 JSON 封装的。
+  assert.ok((system.match(/x/g) ?? []).length >= 20_000, "页面原文整块可见，不是半截");
+  assert.ok((system.match(/旧任务/g) ?? []).length >= 6_000,
+    "摘要整块纳入，不被裁掉尾部（多出来的一次是 C 层前言点名它）");
+  assert.match(system, /<continuation_data>current watermark<\/continuation_data>/);
   assert.deepEqual(messages.at(-1), { role: "user", content: "今晚想做什么菜？" });
 });
 
@@ -388,7 +418,7 @@ test("petProfile 是数据不是指令：边界标记 + 注入文本不可伪造
   assert.ok(!styleLine.includes("</persona_data>"), "字段不能带出闭合标记");
 });
 
-test("persona 输入边界：recent ≤20条，当前合法问句不截断", () => {
+test("persona 输入边界：recent 整条给，当前合法问句不截断", () => {
   const many = Array.from({ length: 30 }, (_, i) => ({
     role: "user" as const,
     text: `m${i}`,
@@ -398,8 +428,10 @@ test("persona 输入边界：recent ≤20条，当前合法问句不截断", () 
     recentMessages: many,
     pageContext: { big: "y".repeat(3_000) },
   });
-  // system + 20 条历史 + 当前问句
-  assert.equal(messages.length, 1 + 20 + 1);
+  // system + 30 条历史（整条）+ 当前问句：装配这一层不再按条数收边，
+  // 完整请求能不能发出去由调用前的上下文压力闸判定。
+  assert.equal(messages.length, 1 + 30 + 1);
+  assert.equal(String(messages[1]?.content), "m0", "留下的不再是被剪掉前 10 条之后的那批");
   assert.equal(String(messages.at(-1)?.content).length, 5_000);
   // 记忆/上下文不再截断（截断的残缺上下文会产生误导；6bf2ac3）：
   // pageContext 以完整 canonical JSON 注入 system 数据块。

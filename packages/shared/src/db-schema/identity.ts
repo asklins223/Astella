@@ -187,6 +187,30 @@ export const authRateLimits = pgTable(
 );
 
 /**
+ * 邮箱验证码（注册验证 / 邮箱登录 / 找回密码）。
+ *
+ * 全局表、无 RLS（会话建立之前读写，与 auth_rate_limits 同类；见迁移
+ * 0407 的说明）。同一 (email, purpose) 至多一行：重发即覆盖，
+ * 核对成功即删行，明文不落库。
+ */
+export const emailVerificationCodes = pgTable(
+  "email_verification_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: text("email").notNull(),
+    purpose: text("purpose").notNull(),
+    codeHash: text("code_hash").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    pairUnique: uniqueIndex("email_verification_codes_pair_idx").on(t.email, t.purpose),
+    expiryIdx: index("email_verification_codes_expiry_idx").on(t.expiresAt),
+  }),
+);
+
+/**
  * N-011: AI 调用审计日志。
  * 记录每次 AI 调用的 workspace、用户、job、provider、模型、操作类型、
  * 数据类别、数据量、token 成本、耗时和状态，支持隐私追溯。
@@ -204,6 +228,10 @@ export const aiAuditLog = pgTable(
     dataCategories: text("data_categories").array().notNull().default([]), // note_content | user_answer | question | claim | quote
     dataSizeBytes: integer("data_size_bytes"),
     costTokens: integer("cost_tokens"),
+    // 观测用的用量拆分。**不参与预算**：计数端口刻意不接 cachedTokens。
+    promptTokens: integer("prompt_tokens"),
+    completionTokens: integer("completion_tokens"),
+    cachedTokens: integer("cached_tokens"),
     durationMs: integer("duration_ms"),
     status: text("status").notNull().default("success"), // success | failed | blocked
     errorMessage: text("error_message"),

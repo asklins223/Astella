@@ -152,7 +152,7 @@ it("keeps her own sentence on this machine in the voice she actually used, and n
     headers: { "Content-Type": "audio/mpeg", "X-Astella-Tts-Voice": spoken } }));
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const path = new URL(String(input)).pathname;
-    if (path === "/voice/preference") return new Response(JSON.stringify({ version: 1, engine: "qwen", voice: spoken, explicit: true, updatedAt: null }));
+    if (path === "/voice/preference") return new Response(JSON.stringify({ version: 1, engine: "qwen", voice: spoken, instruction: null, explicit: true, updatedAt: null }));
     if (path === "/voice/tts") { bodies.push(String(init?.body)); return tts(); }
     throw new Error(`unexpected ${path}`);
   });
@@ -182,7 +182,7 @@ it("an edge fallback still plays a thought but is not kept as her recording", as
   const bodies: string[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const path = new URL(String(input)).pathname;
-    if (path === "/voice/preference") return new Response(JSON.stringify({ version: 1, engine: "qwen", voice: "longhua_v3.1", explicit: true, updatedAt: null }));
+    if (path === "/voice/preference") return new Response(JSON.stringify({ version: 1, engine: "qwen", voice: "longhua_v3.1", instruction: null, explicit: true, updatedAt: null }));
     if (path === "/voice/tts") {
       bodies.push(String(init?.body));
       // qwen 挂了，服务端兜底成 edge 并如实回报用上的音色。

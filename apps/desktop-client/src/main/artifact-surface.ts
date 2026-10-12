@@ -94,22 +94,10 @@ export function isAllowedSubFrameNavigation(input: {
   return atInitialDocument && isArtifactFrameUrl(input.target)
 }
 
-/**
- * 配额（D4 §6 的"字节／节点数：服务端生成时与主进程组装时双重校验"）。
- *
- * **起点值，W4-1 核定**：512 KiB 字节与 20 000 个标签起始符。节点数只能是静态近似——
- * 产物里的脚本本来就能在运行时造 DOM，真正兜住资源耗尽的是 watchdog 与崩溃恢复
- * （D4 §6 那两行），这里挡的是"一眼就知道超量"的产物。
- */
-export const ARTIFACT_MAX_BYTES = 512 * 1024
-export const ARTIFACT_MAX_TAG_OPENERS = 20_000
-
-export type ArtifactAssemblyResult =
-  | { ok: true; document: string }
-  | { ok: false; reason: 'too_many_bytes' | 'too_many_tags'; detail: string }
+export type ArtifactAssemblyResult = { ok: true; document: string }
 
 /**
- * 组装：我们的模板 + 产物内容。**整份拒绝，不做"截断后半篇"**（D4 §6 触顶行为那一列）。
+ * 组装完整产物；大小与节点数由内容决定。
  *
  * 为什么用字符串拼接而不是把内容塞进某个容器再 `innerHTML`：产物要能带自己的
  * `<script>` 才叫"整份 HTML + 脚本"，而 `innerHTML` 插进去的脚本按 HTML 规范**不会执行**。
@@ -120,23 +108,6 @@ export function assembleArtifactDocument(input: {
   artifactId: string
   content: string
 }): ArtifactAssemblyResult {
-  const bytes = Buffer.byteLength(input.content, 'utf8')
-  if (bytes > ARTIFACT_MAX_BYTES) {
-    return {
-      ok: false,
-      reason: 'too_many_bytes',
-      detail: `产物 ${bytes} 字节，超过上限 ${ARTIFACT_MAX_BYTES}`
-    }
-  }
-  const tagOpeners = (input.content.match(/</g) ?? []).length
-  if (tagOpeners > ARTIFACT_MAX_TAG_OPENERS) {
-    return {
-      ok: false,
-      reason: 'too_many_tags',
-      detail: `产物含 ${tagOpeners} 个标签起始符，超过上限 ${ARTIFACT_MAX_TAG_OPENERS}`
-    }
-  }
-
   const template = artifactDocumentTemplate()
   const marker = template.indexOf(ARTIFACT_TEMPLATE_PLACEHOLDER)
   if (marker < 0) {

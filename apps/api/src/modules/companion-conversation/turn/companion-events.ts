@@ -176,14 +176,15 @@ export interface CompanionRunNodeRow {
 
 export interface CompanionRunSummaryRow {
   runId: string;
+  userMessageId: string;
   status: string;
   /** 客户端"接着说话"要用的 CAS 值（见 desktop 合同的 generation 字段）。 */
   generation: number;
   stepCount: number;
   toolCallCount: number;
   /** 本 run 冻结的预算（`budget_snapshot`），缺失时退回合同上限。 */
-  maxSteps: number;
-  maxToolCalls: number;
+  maxSteps: number | null;
+  maxToolCalls: number | null;
   assistantMessageId: string | null;
   nodeCount: number;
 }
@@ -252,6 +253,7 @@ export async function listCompanionRunNodes(args: {
     const runRows = await tx
       .select({
         runId: companionTurnRuns.id,
+        userMessageId: companionTurnRuns.userMessageId,
         status: companionTurnRuns.status,
         generation: companionTurnRuns.generation,
         stepCount: companionTurnRuns.stepCount,
@@ -293,6 +295,7 @@ export async function listCompanionRunNodes(args: {
         const budget = row.budgetSnapshot as { maxSteps?: unknown; maxToolCalls?: unknown } | null;
         return {
           runId: row.runId,
+          userMessageId: row.userMessageId,
           status: row.status,
           generation: row.generation,
           stepCount: row.stepCount,

@@ -35,6 +35,7 @@ export type CompanionPollDeps = {
   readonly conversation: { readonly id: string } | null;
   readonly mode: "closed" | "conversation" | "actions" | "history";
   readonly phase: "idle" | "loading" | "ready" | "sending" | "error";
+  readonly followReviewContinuation?: boolean;
   /** agent 导航 route 轮询的游标（跨轮次保留，所以是 ref 而不是 state）。 */
   readonly routeCursorRef: { current: number | null };
   /** 收到新的导航 chip 就往 chip 行里塞。 */
@@ -49,7 +50,7 @@ export type CompanionPollDeps = {
 const AGENT_ROUTE_POLL_INTERVAL_MS = 1_600;
 
 export function useCompanionPolls(deps: CompanionPollDeps): void {
-  const { conversation, mode, phase, routeCursorRef, pushNavChips, setRunTraces, tracesRevision } = deps;
+  const { conversation, mode, phase, routeCursorRef, pushNavChips, setRunTraces, tracesRevision, followReviewContinuation = false } = deps;
 
   // ── agent 导航 route 轮询 ─────────────────────────────────────────────
   // 与抽屉同开同关：跳转 chip 只出现在抽屉里，常驻轮询没有必要。
@@ -104,7 +105,7 @@ export function useCompanionPolls(deps: CompanionPollDeps): void {
   const sending = phase === "sending";
   useEffect(() => {
     if (!conversation) return;
-    if (mode !== "history" && !sending) return;
+    if (mode !== "history" && !sending && !followReviewContinuation) return;
     let cancelled = false;
     const poll = async () => {
       try {
@@ -127,5 +128,5 @@ export function useCompanionPolls(deps: CompanionPollDeps): void {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [conversation, mode, sending, tracesRevision, setRunTraces]);
+  }, [conversation, mode, sending, tracesRevision, setRunTraces, followReviewContinuation]);
 }

@@ -49,8 +49,12 @@ function NotebookNoteListContent({ scope, ...props }: Props & { readonly scope: 
   }, [library.items, props.currentId, props.currentTitle, term]);
 
   // Search all title pages, without pretending that a match in the first page is the whole library.
+  // 审计 F13：打字期间先防抖——以前每敲一个字就串行拉全部分页，长输入会发涩；
+  // 停手 260ms 后再把剩余页一次读完。
   useEffect(() => {
-    if (term && library.nextCursor && !library.loading && !library.failure) void library.loadMore();
+    if (!term || !library.nextCursor || library.loading || library.failure) return;
+    const timer = window.setTimeout(() => { void library.loadMore(); }, 260);
+    return () => window.clearTimeout(timer);
   }, [term, library.nextCursor, library.loading, library.failure, library.loadMore]);
 
   const close = () => { setOpen(false); triggerRef.current?.focus({ preventScroll: true }); };

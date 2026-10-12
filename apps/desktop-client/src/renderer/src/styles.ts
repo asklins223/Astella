@@ -34,6 +34,8 @@ import "./styles.css";
 import "@milkdown/kit/prose/view/style/prosemirror.css";
 import "katex/dist/katex.min.css";
 import "./components/content/readable-math.css";
+/* 代码的墨色：笔记三视图与伴星代码共用的一批 token class，放在公共层让各域的纸面各自接。 */
+import "./components/content/code-paper.css";
 import "./components/home-room.css";
 
 /* ── 2. 视觉母本 ────────────────────────────────────────────────────────── */

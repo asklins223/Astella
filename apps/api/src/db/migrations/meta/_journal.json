@@ -2864,6 +2864,55 @@
       "when": 1791590907000,
       "tag": "0412_note_overview_body_without_length_ceiling",
       "breakpoints": true
+    },
+    {
+      "idx": 409,
+      "version": "7",
+      "when": 1791590908000,
+      "tag": "0413_sessions_client_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 410,
+      "version": "7",
+      "when": 1791590909000,
+      "tag": "0414_companion_tool_confirmed_grant",
+      "breakpoints": true
+    },
+    {
+      "idx": 411,
+      "version": "7",
+      "when": 1791590910000,
+      "tag": "0415_generated_artifact_content_without_size_ceiling",
+      "breakpoints": true
+    },
+    {
+      "idx": 412,
+      "version": "7",
+      "when": 1791590911000,
+      "tag": "0416_companion_note_links_without_count_ceiling",
+      "breakpoints": true
+    },
+    {
+      "idx": 413,
+      "version": "7",
+      "when": 1791590912000,
+      "tag": "0417_companion_note_creation_without_payload_ceiling",
+      "breakpoints": true
+    },
+    {
+      "idx": 414,
+      "version": "7",
+      "when": 1791590913000,
+      "tag": "0418_note_annotation_explanation_without_length_ceiling",
+      "breakpoints": true
+    },
+    {
+      "idx": 415,
+      "version": "7",
+      "when": 1791590914000,
+      "tag": "0419_note_artifact_counts_without_ceiling",
+      "breakpoints": true
     }
   ]
 }

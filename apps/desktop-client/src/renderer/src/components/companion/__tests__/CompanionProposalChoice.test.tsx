@@ -48,10 +48,10 @@ describe("CompanionProposalChoice", () => {
       />,
     );
 
-    expect(screen.getByText("需要你的选择")).toBeTruthy();
+    expect(screen.getByText("操作前请确认")).toBeTruthy();
     expect(screen.getByText("伴星活跃度")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
-    fireEvent.click(screen.getByRole("button", { name: "暂不执行" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消操作" }));
     expect(onDecide).toHaveBeenNthCalledWith(1, "confirm");
     expect(onDecide).toHaveBeenNthCalledWith(2, "reject");
   });
@@ -67,7 +67,7 @@ describe("CompanionProposalChoice", () => {
     );
 
     expect(screen.getByRole("button", { name: "正在确认…" }).hasAttribute("disabled")).toBe(true);
-    expect(screen.getByRole("button", { name: "暂不执行" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "取消操作" }).hasAttribute("disabled")).toBe(true);
   });
 
   it("历史中的终态保留结果但不再提供重复操作", () => {
@@ -141,7 +141,7 @@ describe("CompanionProposalChoice", () => {
     );
 
     expect(screen.getByText("已过期")).toBeTruthy();
-    expect(screen.queryByText("需要你的选择")).toBeNull();
+    expect(screen.queryByText("操作前请确认")).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
   });
 
@@ -150,5 +150,31 @@ describe("CompanionProposalChoice", () => {
     expect(companionProposalExpired("不是时间")).toBe(false);
     expect(companionProposalExpired(PAST_EXPIRY)).toBe(true);
     expect(companionProposalExpired(FUTURE_EXPIRY)).toBe(false);
+  });
+});
+
+
+describe("完整结果的保存审阅", () => {
+  const markdown = "# 改好后的笔记\n\n" + "完整段落，不应因等待审阅被截断。\n\n".repeat(80) + "最后的结论";
+  const state: CompanionProposalUiState = { phase: "ready", proposal: { ...PENDING_STATE.proposal,
+    expiresAt: null, payload: { kind: "agent_tool_review", toolName: "companion_edit_note", arguments: {},
+      confirmationStage: "after_preview", preview: { title: "原笔记", markdown, beforeMarkdown: "原文内容" } } } };
+  it("两档低权限查看完整结果后才保存，取消回调无需先写入", () => {
+    const onDecide = vi.fn();
+    render(<CompanionProposalChoice proposalId={state.proposal.proposalId} state={state} context="history" onDecide={onDecide} />);
+    expect(screen.getByText("结果已准备好，等你保存")).toBeTruthy();
+    expect(screen.getByLabelText("待保存的完整结果").textContent).toContain("最后的结论");
+    expect(document.querySelector(".companion-write-preview__source pre")?.textContent).toBe(markdown);
+    expect(screen.getByText("原文内容")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "保存这次改动" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消并还原" }));
+    expect(onDecide.mock.calls).toEqual([["confirm"], ["reject"]]);
+  });
+  it("已经确认但尚未保存成功时不能重复提交，保留完整预览", () => {
+    render(<CompanionProposalChoice proposalId={state.proposal.proposalId}
+      state={{ ...state, proposal: { ...state.proposal, status: "accepted", decision: "confirm" } }} context="history" onDecide={vi.fn()} />);
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByLabelText("待保存的完整结果").textContent).toContain("最后的结论");
+    expect(screen.queryByText("已完成")).toBeNull();
   });
 });

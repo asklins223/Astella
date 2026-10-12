@@ -1,0 +1,650 @@
+{
+  "skill": "audit",
+  "generated_at": "2026-10-11T12:50:00+08:00",
+  "project_name": "拾星笔记 · 桌面客户端",
+  "target": {
+    "type": "code",
+    "reference": "apps/desktop-client/src/renderer/src（components/hud、components/surfaces/{notebook,study,review,run,source,settings,space,companion}、components/companion、app/）+ 真窗口 CDP 9223 隔离实例",
+    "pages_audited": [
+      "首页 Home V2",
+      "来源库与采集纸页",
+      "笔记列表与笔记阅读/编辑",
+      "全局搜索",
+      "今日学习",
+      "复习队列",
+      "理解星图",
+      "设置中心",
+      "伴星中心与对话手记",
+      "气泡轻聊",
+      "制卡方案纸",
+      "速看页"
+    ]
+  },
+  "audit_framework": [
+    "Nielsen-10",
+    "responsive",
+    "performance"
+  ],
+  "findings": [
+    {
+      "id": "audit-1",
+      "heuristic": "recognition",
+      "severity": "major",
+      "description": "速看页按钮莫名灰掉：「做个互动演示」「问问伴星」被禁用时零解释，文字照旧，用户只能猜是不是坏了；旧版速看记录里按钮永远灰着。",
+      "evidence": "notebook/notebook-overview-paper.tsx:32-35, :50（disabled 无 title 无旁注）",
+      "suggestion": "禁用即说明理由并给动作：旧版记录写明「这条是 v3 的记录，去当前版重新生成」，dirty 写明「先保存版本」并给保存按钮。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-2",
+      "heuristic": "consistency",
+      "severity": "major",
+      "description": "同一个入口三个名字：正文页眉叫「来源资料」、工具条叫「资料袋」、旁页里叫「原始资料」，同一屏两词同框，用户怀疑是两份东西。",
+      "evidence": "notebook/notebook-surface.tsx:4153, :4180, :4194-4196",
+      "suggestion": "选定「资料袋」为唯一名，页眉、工具条、旁页标题、页内标题统一；「只读」放副标题。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-3",
+      "heuristic": "consistency",
+      "severity": "major",
+      "description": "同一功能两种叫法：页签写「速看」，学习记录筛选、错误提示、空态里写「速览」，同屏并存，用户以为是两种记录。",
+      "evidence": "notebook/notebook-desk.tsx:17 vs note-learning-footprint.tsx:43、notebook-surface.tsx:3809、:3819",
+      "suggestion": "全仓统一一个词（速看或速览），筛选 chip、加载更多、错误、空态、aria 一次替换。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-4",
+      "heuristic": "visibility",
+      "severity": "major",
+      "description": "复习队列主操作失败时回执不在按钮旁，而在右侧「接下来翻哪张」侧袋底部，窄窗（≤1230px）还被排到卡组下方；点「开始到期复习」看似没反应。",
+      "evidence": "review/ReviewSurface.tsx:1181-1188、review/review-queue.css:112-116",
+      "suggestion": "start/defer 失败在卡面动作区就地出条，侧袋只留摘要。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-5",
+      "heuristic": "consistency",
+      "severity": "minor",
+      "description": "「往外学」四种叫法并存：页签「往外学」、页眉「关联笔记」、记录条目「拓展笔记」、筛选「新笔记」，难以确认是不是同一批东西。",
+      "evidence": "notebook/notebook-desk.tsx:19、notebook-surface.tsx:4161、note-learning-footprint.tsx:26, :37",
+      "suggestion": "页面入口一个词、记录类型标签一个词，同源常量。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-6",
+      "heuristic": "visibility",
+      "severity": "minor",
+      "description": "保存状态两套词表：阅读态「已同步/等待同步/同步失败」、编辑态「已自动保存/草稿/离线暂存」，切换即换词；阅读态显示同步失败时编辑工具条隐藏，屏上无重试入口。",
+      "evidence": "notebook/notebook-surface.tsx:4163 vs :4086-4091、notebook/notebook-desk.tsx:287-289",
+      "suggestion": "一套枚举一套文案；阅读态失败给「去编辑并重试」。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-7",
+      "heuristic": "real-world-match",
+      "severity": "minor",
+      "description": "加载/空态泄漏内部术语：「先确认工作区、Note identity 与当前版本」「研究册暂时不可用」（产品叫拾星笔记），空态还是死胡同、没有下一步按钮。",
+      "evidence": "notebook/notebook-surface.tsx:3024-3028（空态未传 action，surface-data.tsx:156-157 已预留槽位）",
+      "suggestion": "换成「正在打开这篇笔记…/打不开这篇笔记」；空态给「新建笔记」「打开笔记库」。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-8",
+      "heuristic": "responsive",
+      "severity": "minor",
+      "description": "≤900px 视口（对应 150% 缩放验收档）下今日手账「伴星日记」整块 display:none，三个入口的说明小字也一并隐藏且无提示，用户不知道功能还在。",
+      "evidence": "study/study-surface.css:180-193",
+      "suggestion": "改为折叠入口或保留一行日记链接，不整块消失。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-9",
+      "heuristic": "user-control",
+      "severity": "minor",
+      "description": "批注草稿在换篇时被静默清空，而批注页文案承诺「合起附页会保留这次输入」（实际只在同一篇内有效），写到一半点走另一篇文字无声消失。",
+      "evidence": "notebook/use-notebook-annotation-draft.ts:16 vs notebook-annotation-composer.tsx:23",
+      "suggestion": "换篇前提示未保存批注，或草稿按 noteId 持久化。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-10",
+      "heuristic": "flexibility",
+      "severity": "minor",
+      "description": "老手路径薄：快捷键只覆盖编辑动作（⌘S/⌘K），切页签、切三态、切篇、上一篇下一篇全靠鼠标，全应用无快捷键清单，键位只能逐个悬停 title 攒。",
+      "evidence": "notebook/notebook-surface.tsx:2947-2957、notebook/notebook-desk.tsx:272、notebook-editor-tools.tsx:21-24",
+      "suggestion": "设置加一页快捷键表；页签（⌘1-5）与三态切换加键位。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-11",
+      "heuristic": "help-docs",
+      "severity": "minor",
+      "description": "只读身份下「编辑/源码」的禁用解释只写在 title 上，而 disabled 按钮通常不触发 tooltip，协作成员看到两颗灰按钮只能猜权限。",
+      "evidence": "notebook/notebook-desk.tsx:260-262",
+      "suggestion": "用 aria-disabled 保持可聚焦并在分组旁加常驻一行说明。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-12",
+      "heuristic": "performance",
+      "severity": "minor",
+      "description": "笔记列表搜索每敲一个词就把全库标题分页串行拉完，库大时输入变涩。",
+      "evidence": "notebook/notebook-note-list.tsx:51-54",
+      "suggestion": "防抖 + 先搜已加载页，显示「还要搜 N 页，点继续」。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-13",
+      "heuristic": "consistency",
+      "severity": "major",
+      "description": "「学习空间」一词三义：顶栏气泡指工作区、左下返回胶囊指书房首页、左栏 aria 指页面目录；用户点「返回学习空间」以为打开空间切换器，实际回首页。",
+      "evidence": "App.tsx:131、hud/HudRoomControl.tsx:294-301、DirectoryRail.tsx:343、hud/HudSpaceMenu.tsx:67-68、search-surface.tsx:191",
+      "suggestion": "「回书房首页」统一改叫书房/首页，与工作区（空间）分家；目录栏 aria 改「页面目录」。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-14",
+      "heuristic": "user-control",
+      "severity": "major",
+      "description": "Esc 与可见的返回按钮走两条路：页面挂着「返回笔记库/返回星图」，按 Esc 却一律回首页，星图相机/选中/滚动位置全丢。真窗口已复现：笔记页按 Esc 落在首页而非笔记库。",
+      "evidence": "App.tsx:96-101 vs :130-132、app/room-store.ts:518（导航即清 returnTarget）",
+      "suggestion": "Esc 优先走 returnTarget.run（没有再回首页），与返回胶囊同语义。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-15",
+      "heuristic": "error-prevention",
+      "severity": "major",
+      "description": "正式测评中按 Esc 或点目录栏一次即刻退出，绕过页内「要现在停下来吗」确认；手滑一个 Esc 就从测评被传回首页。",
+      "evidence": "run/validation-surface.tsx:86-94、app/room-store.ts:492-497、App.tsx:100、DirectoryRail.tsx:358",
+      "suggestion": "guard 路径先弹同一张确认纸（或至少给「本轮已结束」回执）再导航。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-16",
+      "heuristic": "error-recovery",
+      "severity": "major",
+      "description": "切换空间静默清空搜索词、阅读位置、复习队列第 40 张的位置、返回栈并强制回首页；切换前确认只提「进行中的测评会结束」，之后只有一张「我们到了」桌签，回来时像数据丢了。",
+      "evidence": "app/room-store.ts:448-491、hud/HudSpaceMenu.tsx:83, :90-93、hud/SpaceArrival.tsx:28, :34-38",
+      "suggestion": "切换确认里写清真实清场范围，或到达后追加一条可回看的「已离开上一空间的搜索与阅读位置」回执。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-17",
+      "heuristic": "recognition",
+      "severity": "major",
+      "description": "左侧目录栏 10 个图标全程无任何可视标签：无文字、无悬停 tooltip（title 只写在悬停不到的折叠态），今日学习与复习、来源与笔记的自绘图标只能靠猜。真窗口确认 title=null、data-label 无视觉消费。",
+      "evidence": "DirectoryRail.tsx:344-362、hud/hud-pages.css:106-107、guidance/companion-guidance.css:226",
+      "suggestion": "展开态补 title 与 hover/focus 纸签标签（attr(data-label)），或常驻短文字。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-18",
+      "heuristic": "consistency",
+      "severity": "major",
+      "description": "同一个目的地最多三套名字（查找/搜索/全局搜索、来源/来源资料/来源库、笔记/笔记库/全部笔记），且目录栏、房间功能、快捷键三份清单互不共用，条目集合还不一致。",
+      "evidence": "DirectoryRail.tsx:41-57、home-v2/home-feature-registry.ts:77-97、hud/hud-pages.ts:135-140 等、App.tsx:45-57",
+      "suggestion": "以页面标题为唯一命名源，目录/房间/快捷键从同一份注册表派生。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-19",
+      "heuristic": "responsive",
+      "severity": "major",
+      "description": "≤760px CSS 宽度（正是 200% 缩放验收视口 720×405）把说明文字压到 5-6px、返回胶囊 7px——主行动与说明几乎不可读。真窗口 720×405 实测最小字号 5px。",
+      "evidence": "hud/hud-pages.css:148-152、approved-surfaces.css:224-230；判据 DESIGN.md:153「缩放不靠缩小文字塞满」",
+      "suggestion": "紧凑档改重排/折叠（隐副标题、图标化操作、最小字号 ≥10px），删缩字规则。",
+      "effort": "major-rework"
+    },
+    {
+      "id": "audit-20",
+      "heuristic": "responsive",
+      "severity": "minor",
+      "description": "短窗口下目录栏改为隐藏滚动条的内部滚动，末尾「伴星/设置」入口可能落在折叠线以下且无任何可见提示。",
+      "evidence": "hud/hud-surface.css:1441-1451（注释自陈 scroll them invisibly）",
+      "suggestion": "紧凑档减少条目并入「更多」，或露出可见滚动指示。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-21",
+      "heuristic": "help-docs",
+      "severity": "minor",
+      "description": "全局快捷键（⌘K/r/g/⌘Enter）全应用无处可查；唯一的 ⌘K 提示是 aria-hidden 的 kbd 且只在无词时渲染；r、g 是无修饰单键，焦点不在输入框时随手一按就跳页。",
+      "evidence": "App.tsx:45-57, :106-110、search-surface.tsx:184、settings 内搜「快捷」零命中",
+      "suggestion": "设置加快捷键表；单键改带修饰或给首次提示；提示与状态解耦。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-22",
+      "heuristic": "visibility",
+      "severity": "minor",
+      "description": "「未完成的学习」页把目录栏高亮成「首页」，当前位置指示说错。",
+      "evidence": "DirectoryRail.tsx:327-339（兜底 return \"home\"）、TaskSurface.tsx:325",
+      "suggestion": "补 resumable → today 映射或给它一个目录条目。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-23",
+      "heuristic": "consistency",
+      "severity": "minor",
+      "description": "空间角色标签三套语言：首次进入页写 Personal/Owner/Member（英文），顶栏写「个人空间 · 所有者」，设置页写「Owner · 个人空间」。",
+      "evidence": "hud/HudFirstSpace.tsx:11-14、app/space-identity.ts:14-16、settings/settings-data-tables.ts:40-46",
+      "suggestion": "三处统一走 spaceRoleLabel。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-24",
+      "heuristic": "aesthetic",
+      "severity": "minor",
+      "description": "回首页后 1.9 秒目录栏无用户触发地自动收起，并带动左下「今日下一步」岛重排，一趟导航两次版面形变，读起来是「版面自己动了一下」。",
+      "evidence": "DirectoryRail.tsx:235-248、hud/hud-surface.css:372-377, :478",
+      "suggestion": "到家后保持展开，或形变共用同一次由用户动作触发。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-25",
+      "heuristic": "error-recovery",
+      "severity": "minor",
+      "description": "搜索页有关键词时 Esc 先静默清空关键词与阅读位置（无撤销、无提示），想退出页面得再按一次；「Esc 清空关键词」提示反而只在无词时显示。",
+      "evidence": "search-surface.tsx:170-172, :199、app/room-store.ts:722",
+      "suggestion": "第一下只收预览不改词，或清词给一次性「已清空（⌘Z 撤回）」；提示按当前状态显示。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-26",
+      "heuristic": "user-control",
+      "severity": "minor",
+      "description": "「学习卡」页页内返回控件永远 display:none 却是该页唯一初始焦点目标，键盘焦点实际留在目录栏图标上（代码推断，未真窗验证）。",
+      "evidence": "approved-surfaces.css:212、study/SurfaceReturnControl.tsx:21、TaskSurface.tsx:109-122",
+      "suggestion": "删掉这份永不可见的重复控件，或让它真正承担初始焦点。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-27",
+      "heuristic": "error-recovery",
+      "severity": "major",
+      "description": "发送失败提示只有 60 秒，而发送一开始轻聊面板就关了——失败时用户看到的是「我打的字凭空消失」，错误与气泡一起消失，草稿里的那句话没人告诉他。",
+      "evidence": "companion/CompanionHud.tsx:879, :902, :989, :1266、use-companion-interaction.ts:55",
+      "suggestion": "失败不进 transient 计时，失败时别关输入面板，或在手记/身边留持久「上一条没发出去」标记。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-28",
+      "heuristic": "user-control",
+      "severity": "major",
+      "description": "轻聊输入面板闲置 90 秒自动收起：打字停下来想一会、或把鼠标移到回复上逐句读（读回复不给输入续时），输入框悄悄没了，体感「我的话没了」。",
+      "evidence": "use-companion-interaction.ts:46, :50、CompanionHud.tsx:1183, :1142-1145",
+      "suggestion": "草稿非空时不自动收（或收起前给「草稿还在」纸签）；activity 采集扩到整个 HUD 浮层。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-29",
+      "heuristic": "consistency",
+      "severity": "major",
+      "description": "中心动态页「查看提议」点一下就把投递记成「已处理」，但提案根本还没决定，近况「待回应 N 件」随之消失；看一眼等于处理完，手记里确认还挂着。",
+      "evidence": "companion/companion-activity-page.tsx:61、companion-activity-panel.tsx:210、companion-center-overview.tsx:61",
+      "suggestion": "查看只记 presented，真正 confirm/reject 才置 acted，卡片区分「看过/已决定」。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-30",
+      "heuristic": "visibility",
+      "severity": "major",
+      "description": "待确认没有任何常驻入口：确认纸签被关闭（或重启、换空间）后身边没有角标，提案快照只在打开手记后才加载，直到过期都没人提醒。",
+      "evidence": "CompanionReplyPapers.tsx:28、CompanionHistoryDrawer.tsx:342、app/companion-chat-session.tsx:934-945",
+      "suggestion": "手记入口加待确认角标，启动/切空间预拉 pending proposals，必要时发通知纸签。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-31",
+      "heuristic": "visibility",
+      "severity": "major",
+      "description": "纯文字回复全文显示后 2.4-6 秒即自动收起（300 字即触顶 6 秒），鼠标不在气泡上就在阅读中途消失，页脚却写「读完后收起」——读完由计时器判定而不是用户。",
+      "evidence": "CompanionHud.tsx:731-758, :1165、companion/companion-bubble-reveal.ts:122-128",
+      "suggestion": "正文未读完或未收到明确关闭动作不收；页脚改为真实规则。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-32",
+      "heuristic": "consistency",
+      "severity": "minor",
+      "description": "同一个目的地五种叫法：对话手记/我们的对话手记/手记/对话记录/聊天记录，中心里又叫「对话」，纸签让他「去对话记录」、按钮叫「手记」，入口要靠猜。",
+      "evidence": "CompanionHud.tsx:1349, :1288, :1165、CompanionHistoryDrawer.tsx:321, :330, :263、companion-center-model.ts:10",
+      "suggestion": "定主名「对话手记」，按钮/页脚/纸签/报错全用同一词。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-33",
+      "heuristic": "consistency",
+      "severity": "minor",
+      "description": "任务与确认两套概念各三种说法（交给我的事/手边的事、等你确认/待确认/待选择…），且记忆候选也叫「待确认」，与要用户决定的「待确认」重名。",
+      "evidence": "CompanionHistoryDrawer.tsx:341-342、CompanionGoalBubble.tsx:46-49、CompanionReplyPapers.tsx:95、companion-center-model.ts:23",
+      "suggestion": "每个概念固定一词跨三处复用；记忆候选改「候选/待收录」。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-34",
+      "heuristic": "error-prevention",
+      "severity": "minor",
+      "description": "语音面板 X 和 Esc 直接结束会话并丢弃未发送转写，无确认；唯一警告藏在麦克风按钮的 title 里。",
+      "evidence": "companion/CompanionVoiceConversation.tsx:34-35、use-companion-interaction.ts:29-37、CompanionHud.tsx:1348",
+      "suggestion": "转写非空时先提示，或把转写带进文字输入再关。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-35",
+      "heuristic": "error-recovery",
+      "severity": "minor",
+      "description": "语音发送失败提示「文字仍留在这里」是误导：文字只在只读的「刚才你说」里，没进输入框、不可编辑。",
+      "evidence": "use-companion-voice-input.ts:151-160、CompanionVoiceConversation.tsx:43-44、CompanionHud.tsx:926, :902",
+      "suggestion": "失败时回填轻聊草稿并打开输入，或文案改成「这一句没送出，请重新说」。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-36",
+      "heuristic": "visibility",
+      "severity": "minor",
+      "description": "打开对话手记期间整个通知中心连角标一起隐藏，期间到达的通知要等关闭手记才出现，感觉通知时有时无。",
+      "evidence": "CompanionPresence.tsx:1741、CompanionNotificationCenter.tsx:174, :114-117",
+      "suggestion": "blocked 时只压住纸签自动弹出，保留角标与 inbox。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-37",
+      "heuristic": "recognition",
+      "severity": "minor",
+      "description": "中心「对话」页里的操作提议只有一句小字「可在对话手记查看」没有跳转，与近况「查看提议」、身边确认纸构成三条不一致的路径。",
+      "evidence": "companion/companion-dialogue-panel.tsx:121（无按钮）；对照 companion-center-overview.tsx:61、CompanionHistoryDrawer.tsx:411-413",
+      "suggestion": "小字旁给直接打开手记「待确认」的按钮（已有定向打开链路可复用）。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-38",
+      "heuristic": "performance",
+      "severity": "minor",
+      "description": "通知列表非空（含只读历史，最多 30 条常驻）时，定位循环 160ms 一次做 getBoundingClientRect + 全量障碍物查询，静置使用也有稳定背景开销。",
+      "evidence": "CompanionNotificationCenter.tsx:147-165、companion-notifications.ts:64-67",
+      "suggestion": "收起态降到 500ms 以上或仅在 resize/内容变化时测量；障碍物选择器缓存。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-39",
+      "heuristic": "real-world-match",
+      "severity": "minor",
+      "description": "三套「静音」口径并存且无处说明区别：快捷设置「安静/专注」只抑制主动提示、不关伴星回复朗读，设置里另有「本机总静音」，用户拨了安静仍会被回复出声惊到。",
+      "evidence": "CompanionHud.tsx:1470-1478、CompanionPresence.tsx:329-332, :1744、settings-companion-voice.tsx:73",
+      "suggestion": "按钮旁加作用范围小字（「只管她的主动提示，回复仍会发声」）。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-40",
+      "heuristic": "user-control",
+      "severity": "minor",
+      "description": "手记里按 Esc 不是关闭而是切回并打开轻聊输入——Esc 无法逐层退出，反而替用户打开了新面板（真窗口已复现：Esc 后手记关闭、输入框弹出）。",
+      "evidence": "CompanionHistoryDrawer.tsx:285-299、CompanionHud.tsx:1388-1391",
+      "suggestion": "Esc 分层退出，或手记 Esc 直接关闭、不自动开另一个面板。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-41",
+      "heuristic": "help-docs",
+      "severity": "minor",
+      "description": "语音能力不可用时麦克风按钮只是 disabled，title 仍是「开始语音对话」，点了没反应也没说为什么。",
+      "evidence": "CompanionHud.tsx:1348（disabled={!voice.supported}，data-unsupported 无文案消费）",
+      "suggestion": "不支持时 title/aria 改「这台设备不支持语音对话」并给设置入口。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-42",
+      "heuristic": "visibility",
+      "severity": "major",
+      "description": "批量收录中途离开来源库会被静默中断：进度消失、无任何回执，已收的与没收的说不清，采集按钮还被禁用无法重开查看，也没有取消入口。",
+      "evidence": "source/source-capture.tsx:112-146, :161, :287、app/source-batch-capture.ts:194-195、TaskSurface.tsx:320, :332",
+      "suggestion": "批量收录脱离页面生命周期（进度挂全局 store），切页后继续跑并落收据；至少中断时留「已收下 N 份、M 份中断」持久回执。",
+      "effort": "major-rework"
+    },
+    {
+      "id": "audit-43",
+      "heuristic": "consistency",
+      "severity": "major",
+      "description": "批量路径把「重复」算成成功，收据虚报「已收下 5 份材料，正在解析」（含 2 份已存在的）；DESIGN 承诺的重复三选一只存在于单份路径，同一动作两种说法。",
+      "evidence": "app/source-batch-capture.ts:204-211、source/source-capture.tsx:165-170, :277-279, :341-348、source-library-surface.tsx:281-283",
+      "suggestion": "重复项单独归类，收据写「新收 3 份、2 份已存在」，批量也给「打开已有」出口。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-44",
+      "heuristic": "user-control",
+      "severity": "minor",
+      "description": "导入进行中无法取消也收不掉进度卡：Escape 在 working 阶段被显式忽略，工作分支只有进度条没有按钮，只能看着跑完。",
+      "evidence": "components/SourceIntake.tsx:487, :516-529, :546-565、source/source-capture.tsx:270-275, :287",
+      "suggestion": "working 阶段提供取消/收起，或允许 Esc 折叠成常驻进度签。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-45",
+      "heuristic": "error-prevention",
+      "severity": "minor",
+      "description": "同一个「退出登录」两个入口防护不一致：顶栏气泡两步确认，设置页一键即走、无确认不可撤销，设置页更容易误触。",
+      "evidence": "settings/settings-surface.tsx:1378-1386 vs hud/HudAccountCard.tsx:125-142",
+      "suggestion": "设置页也走 armed 确认并写清「学习记录不受影响」，与气泡一致。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-46",
+      "heuristic": "real-world-match",
+      "severity": "minor",
+      "description": "「画面与滚动」的渲染兼容开关被放进「数据与维护」，用户找显示设置会先去「主题与动效」，分类描述也不覆盖它。",
+      "evidence": "settings/settings-surface.tsx:1904-1921、settings-book.tsx:11, :14、settings-rendering-panel.tsx:43-46",
+      "suggestion": "挪到「主题与动效」，或分类描述点名「渲染兼容模式」。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-47",
+      "heuristic": "recognition",
+      "severity": "minor",
+      "description": "来源库搜索要按回车才生效，且输入框内容可与屏上结果长期不一致：继续敲词列表仍按旧词过滤，看起来「搜了但没反应」；清空却即时生效（不对称）。",
+      "evidence": "source/source-library-surface.tsx:441-449, :205-244, :140-143",
+      "suggestion": "本地字段输入即过滤（正文检索仍回车），或框内标注「回车搜索正文」。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-48",
+      "heuristic": "visibility",
+      "severity": "minor",
+      "description": "解析状态 60 秒后停止自动刷新（4s×15 次预算），大 PDF 或排队超一分钟很常见，用户得到一句「页面已停止自动刷新」和一颗要反复点的按钮。",
+      "evidence": "source/source-index.ts:212-214、source-library-surface.tsx:160-175, :494-499、source-detail-surface.tsx:248-263",
+      "suggestion": "耗尽后转低频长轮询继续显示真实状态，「重新读取」只作加速。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-49",
+      "heuristic": "real-world-match",
+      "severity": "minor",
+      "description": "从文件收录的 PDF/Word 在详情页被写成「粘贴的正文，没有地址」，列表类型也只有 WEB/MD/CODE/TXT，文件出处与格式完全丢失，对不上用户自己的记忆。",
+      "evidence": "app/source-batch-capture.ts:169-170、source/source-detail-surface.tsx:675、notebook/surface-data.tsx:339-355、source-library-surface.tsx:515-527",
+      "suggestion": "原始文件名写进 origin，页脚区分「来自文件 X/粘贴的正文/网页地址」，类型标记补 PDF/DOCX。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-50",
+      "heuristic": "help-docs",
+      "severity": "minor",
+      "description": "最有用的三条导入能力（任意处粘贴、整窗拖入、支持格式清单）界面上从不说明，靠用户试出来；格式提示一输入就被字数统计顶掉。",
+      "evidence": "source/source-capture.tsx:215-224, :328、components/SourceIntake.tsx:412-425, :568",
+      "suggestion": "采集纸页常驻一行「支持的格式与上限 + 可直接粘贴/拖入窗口」。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-51",
+      "heuristic": "error-recovery",
+      "severity": "minor",
+      "description": "详情页归档成功后直接跳回来源库，回执留在已卸载的详情页里；行消失、无「已归档」提示，可逆性只写在悬停 title 里，容易读成「删掉了」。",
+      "evidence": "source/source-detail-surface.tsx:412-429、source-library-surface.tsx:325, :569-577",
+      "suggestion": "跳转时带来源库级回执「《X》已归档，可在已归档找回」。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-52",
+      "heuristic": "consistency",
+      "severity": "minor",
+      "description": "同一张设置纸三种报错落点：有的在卡顶常驻 notice，伴星开关失败在分区 body 顶部、音色失败在章节顶部；用户在页面底部拨开关失败时视线落点和报错位置分离，以为「点了没反应」。",
+      "evidence": "settings-book.tsx:92-95、settings-companion-panel.tsx:79-80、settings-companion-voice.tsx:68",
+      "suggestion": "保存失败统一走卡顶 notice 或在出错那行就地标注。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-53",
+      "heuristic": "performance",
+      "severity": "minor",
+      "description": "设置页每次按键重建全部已访问分区（在「账户与空间」打字也重建其他五个分区）；来源库每次聚焦全量重走最多 6 页索引（未实测帧率）。",
+      "evidence": "settings/settings-surface.tsx:2056, :2112-2114、source/source-library-surface.tsx:96-122、source/source-index.ts:23, :58-77",
+      "suggestion": "非当前分区 body 缓存为元素引用；索引并行或带增量协商。",
+      "effort": "medium"
+    },
+    {
+      "id": "audit-54",
+      "heuristic": "consistency",
+      "severity": "minor",
+      "description": "能力状态把「通道已接入」读起来像「功能可用」：模型没下载也显示绿色「已接入」，行说明却写「不可用时自动回落到文字输入」，两句话拼不出真实状态。",
+      "evidence": "settings/settings-companion-status.tsx:110-112, :32-37、main/desktop-gateway-transport.ts:219-227",
+      "suggestion": "并列显示「通道已接入 / 模型已装(未装)」，或 chip 改「已接入通道」。",
+      "effort": "quick-win"
+    },
+    {
+      "id": "audit-55",
+      "heuristic": "user-control",
+      "severity": "minor",
+      "description": "设置页即时保存与显式保存混用（主题动效即时生效、显示名密码要按保存），离开设置页时打了半截的显示名/密码/邀请码静默蒸发，与刚建立的「改了就会存」心智冲突。",
+      "evidence": "settings/settings-surface.tsx:1706, :1715、settings-account-panel.tsx:83-90、TaskSurface.tsx:338",
+      "suggestion": "脏值徽标 + 离开确认，或这几项改失焦即存。",
+      "effort": "medium"
+    }
+  ],
+  "opportunities": [
+    {
+      "title": "一条返回路径、一个名字：导航与术语统一",
+      "addresses_findings": [
+        "audit-13",
+        "audit-14",
+        "audit-17",
+        "audit-18",
+        "audit-23",
+        "audit-2",
+        "audit-3",
+        "audit-5",
+        "audit-32",
+        "audit-33",
+        "audit-39",
+        "audit-46",
+        "audit-54",
+        "audit-40",
+        "audit-49"
+      ],
+      "priority": "high",
+      "rationale": "13 条 findings 横跨四个域，全部是「同一目的地/概念多套名字」或「两个动作两条路径」。这正是用户说「用着怪怪的」最直接的来源：猜词、猜图标、Esc 与按钮不一致。多数是纯文案/aria/键位改动，quick-win 密度最高，先做这一包性价比最高。"
+    },
+    {
+      "title": "离开、中断与切换要有回执：状态不静默消失",
+      "addresses_findings": [
+        "audit-42",
+        "audit-16",
+        "audit-27",
+        "audit-28",
+        "audit-30",
+        "audit-9",
+        "audit-55",
+        "audit-44",
+        "audit-51",
+        "audit-36"
+      ],
+      "priority": "high",
+      "rationale": "10 条 findings 的共同形状是「用户离开/中断/切换后，进行中的事或草稿静默消失且无回执」——批量收录切页断掉、发送失败 60 秒蒸发、输入 90 秒收起、切空间清空位置、批注草稿换篇被清。它们制造的是「我的东西丢了」的不信任感，比任何单页布局问题都伤核心体验。"
+    },
+    {
+      "title": "禁用、失败与过期就地说话，并给出下一步",
+      "addresses_findings": [
+        "audit-1",
+        "audit-4",
+        "audit-6",
+        "audit-7",
+        "audit-11",
+        "audit-22",
+        "audit-25",
+        "audit-29",
+        "audit-31",
+        "audit-35",
+        "audit-41",
+        "audit-47",
+        "audit-48",
+        "audit-52"
+      ],
+      "priority": "high",
+      "rationale": "13 条 findings 是「状态被说了但没说给人听」：按钮灰掉无理由、失败回执在三屏之外、过期提示与状态词不一致、回复收起规则与页脚文案矛盾。集中修一套「就地解释 + 可行动」的表达规范（禁用必配理由与动作、失败贴着动作出现），可批量消掉 major 与大量 minor。"
+    },
+    {
+      "title": "缩放与窄窗按重排，不靠缩字",
+      "addresses_findings": [
+        "audit-19",
+        "audit-20",
+        "audit-8"
+      ],
+      "priority": "medium",
+      "rationale": "3 条 responsive findings 都发生在验收声明覆盖的缩放档：200% 视口下说明文字 5px（真窗实测）、目录栏隐形滚动裁入口、150% 下日记整块消失。与 DESIGN「缩放不靠缩小文字塞满」直接冲突；量不大但影响合规承诺，需要一次系统性的紧凑档重排。"
+    },
+    {
+      "title": "危险与不可逆动作的防护拉齐",
+      "addresses_findings": [
+        "audit-15",
+        "audit-34",
+        "audit-45",
+        "audit-43"
+      ],
+      "priority": "medium",
+      "rationale": "4 条 findings 显示同类动作防护等级不一：测评里 Esc 一键绕过确认、语音 X 丢弃转写无提示、退出登录一个入口两步一个入口一步、批量把重复算成功。统一「什么必须确认、什么可以即走」的口径，避免最怕误触的地方反而最裸奔。"
+    },
+    {
+      "title": "可发现性与性能细节包",
+      "addresses_findings": [
+        "audit-10",
+        "audit-21",
+        "audit-50",
+        "audit-37",
+        "audit-12",
+        "audit-24",
+        "audit-38",
+        "audit-53",
+        "audit-26"
+      ],
+      "priority": "low",
+      "rationale": "低风险但累积体感的杂项：快捷键与粘贴/拖入能力无处可查、提议路径不闭环、常驻 160ms 定位循环与设置全分区重建。适合作为改版间隙的清理包，不单独立项。"
+    }
+  ],
+  "summary": {
+    "total_findings": 55,
+    "by_severity": {
+      "major": 18,
+      "minor": 37
+    },
+    "by_heuristic": {
+      "recognition": 4,
+      "consistency": 12,
+      "visibility": 8,
+      "real-world-match": 4,
+      "responsive": 3,
+      "user-control": 7,
+      "flexibility": 1,
+      "help-docs": 4,
+      "performance": 3,
+      "error-prevention": 3,
+      "error-recovery": 5,
+      "aesthetic": 1
+    },
+    "top_opportunities": [
+      "一条返回路径、一个名字：导航与术语统一",
+      "离开、中断与切换要有回执：状态不静默消失",
+      "禁用、失败与过期就地说话，并给出下一步"
+    ]
+  }
+}

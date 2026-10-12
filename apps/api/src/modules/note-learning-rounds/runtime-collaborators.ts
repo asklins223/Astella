@@ -22,8 +22,9 @@
  *   1. **模型配置从哪来**（`resolveTeachingModelConfig` 读环境）；
  *   2. **"未配置"用什么字面量表示**（`"unconfigured"`）——而且这个字面量在
  *      路由里被**比较了 4 次**（`:652`、`:800`、`:930`、`:937`）；
- *   3. **三个协作者怎么互相配对**（讲解与演示共用同一份 modelConfig，但各自
- *      独立注入，为了让离线用例能造出"讲解成、演示不成"这一种形状）。
+ *   3. **三个协作者怎么互相配对**（讲解走 `text_generation`，整页演示走
+ *      `agent_turn`——2026-10-12 实测前者的档案额度装不下一份整页；两者各自独立
+ *      注入，为了让离线用例能造出"讲解成、演示不成"这一种形状）。
  *
  * 第 2 条尤其值得搬：`"unconfigured"` 是个**约定**，而约定散在 4 个比较点上，
  * 意味着改一次就要找 4 处。这里的判据改成 `ready` 这个布尔，调用点不再碰字面量。
@@ -34,7 +35,7 @@
  * 靠它们造形状，搬走会让那些用例全部失效。搬走的是"没注入时怎么造"这一段。
  */
 
-import { llmTeachingExplainProvider, resolveTeachingModelConfig } from "./teaching/teaching-llm.ts";
+import { llmTeachingExplainProvider, resolveArtifactModelConfig, resolveTeachingModelConfig } from "./teaching/teaching-llm.ts";
 import { createGovernedApiRequester } from "../../lib/ai-governance.ts";
 import { productionAiGovernancePorts } from "../../governance/ai-governance-runtime.ts";
 import { createRoundTargetGrounder, type RoundTargetGrounder } from "./target-grounding.ts";
@@ -88,7 +89,11 @@ export function createRoundRuntimeCollaborators(
   overrides: RoundRuntimeOverrides = {},
 ): RoundRuntimeCollaborators {
   const modelConfig = resolveTeachingModelConfig();
+  // 轮次演示与讲解**不同台**（2026-10-12 用户决定）：整页写作要的是 agent_turn 那台的
+  // 声明输出额度，讲解那一步留在 text_generation 不跟着换。
+  const artifactModelConfig = resolveArtifactModelConfig();
   const configuredModelId = modelConfig?.model ?? UNCONFIGURED_MODEL_ID;
+  const configuredArtifactModelId = artifactModelConfig?.model ?? UNCONFIGURED_MODEL_ID;
   // A model-step retry must retain its safe page. Inputs are frozen per run;
   // WeakMap keeps concurrent requests and their metadata repairs separate.
   const artifactProviders = new WeakMap<DynamicArtifactInputV1, { scope: string; provider: DynamicArtifactProviderV1 }>();
@@ -104,7 +109,9 @@ export function createRoundRuntimeCollaborators(
       const scope = `${step.scope.workspaceId}:${step.scope.userId}`;
       let cached = artifactProviders.get(input);
       if (!cached || cached.scope !== scope) {
-        cached = { scope, provider: llmDynamicArtifactProvider({ config: modelConfig,
+        cached = { scope, provider: llmDynamicArtifactProvider({ config: artifactModelConfig,
+          maxOutputTokens: artifactModelConfig?.maxOutputTokens,
+          headers: artifactModelConfig?.headers,
           requester: createGovernedApiRequester(
             step.scope, "note_dynamic_artifact", ["note_content"], productionAiGovernancePorts),
         }) };
@@ -112,7 +119,7 @@ export function createRoundRuntimeCollaborators(
       }
       return cached.provider(input, step);
     }) satisfies DynamicArtifactProviderV1,
-    modelId: configuredModelId,
+    modelId: configuredArtifactModelId,
   };
 
   return {

@@ -21,6 +21,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import { pageReadableV1Schema } from "@astella/shared/companion-bridge-contracts";
 import { noteVisibleSqlText } from "@astella/shared/note-visibility";
+import { noteBlocksToPmNodes, pmNodesToNoteBlocks, type NoteDocBlockSpec } from "@astella/shared/note-doc-schema";
 import { PAGE_KIND_LABELS } from "./companion-here-and-now.ts";
 import { CompanionToolUnavailableError } from "./companion-tool-result.ts";
 
@@ -49,7 +50,7 @@ export interface ReadPageBlock {
 }
 
 export interface ReadPage {
-  readonly blocks: readonly { ordinal: number; content: string; startOffset: number; complete: boolean }[];
+  readonly blocks: readonly { ordinal: number; blockIndex: number; content: string; startOffset: number; complete: boolean }[];
   readonly body: string;
   /** 本页实际读到的最后一个块序号；一块都没有时为 null。 */
   readonly endOrdinal: number | null;
@@ -71,7 +72,7 @@ export function paginateReadBlocks(blocks: readonly ReadPageBlock[], maxChars: n
     throw new Error("invalid read page budget or offset");
   }
   const parts: string[] = [];
-  const pageBlocks: Array<{ ordinal: number; content: string; startOffset: number; complete: boolean }> = [];
+  const pageBlocks: Array<{ ordinal: number; blockIndex: number; content: string; startOffset: number; complete: boolean }> = [];
   let used = 0;
   let endOrdinal: number | null = null;
   let blockTextTruncated = false;
@@ -90,7 +91,7 @@ export function paginateReadBlocks(blocks: readonly ReadPageBlock[], maxChars: n
     // UTF-16 offset agrees with JS/string contracts, but never splits a surrogate pair.
     if (take < remaining.length && /[\uD800-\uDBFF]/.test(remaining.charAt(take - 1))) take--;
     const text = remaining.slice(0, take);
-    pageBlocks.push({ ordinal: block.ordinal, content: text, startOffset: offset, complete: offset === 0 && take === block.content.length });
+    pageBlocks.push({ ordinal: block.ordinal, blockIndex: block.ordinal - 1, content: text, startOffset: offset, complete: offset === 0 && take === block.content.length });
     parts.push(separator + text);
     used += separator.length + text.length;
     endOrdinal = block.ordinal;
@@ -167,14 +168,10 @@ export async function loadNoteReadPage(
   const head = heads[0] as NoteReadRow | undefined;
   if (!head) return null;
   const blocks = await tx.execute(sql`
-    SELECT numbered.ordinal::text AS ordinal, numbered.content FROM (
-      SELECT row_number() OVER (ORDER BY nb.ordinal) AS ordinal, nb.content
+    SELECT numbered.ordinal::text AS ordinal, numbered.type, numbered.content FROM (
+      SELECT row_number() OVER (ORDER BY nb.ordinal) AS ordinal, nb.type, nb.content
       FROM note_blocks nb WHERE nb.version_id = ${head.version_id}::uuid
-    ) numbered WHERE numbered.ordinal >= ${input.startOrdinal} ORDER BY numbered.ordinal
-  `);
-  const totals = await tx.execute(sql`
-    SELECT count(*)::text AS total FROM note_blocks nb
-    WHERE nb.version_id = ${head.version_id}::uuid
+    ) numbered ORDER BY numbered.ordinal
   `);
   const images = await tx.execute(sql`
     SELECT a.id::text AS id, count(*) OVER () AS total
@@ -185,13 +182,21 @@ export async function loadNoteReadPage(
     ORDER BY a.created_at DESC, a.id
     LIMIT 6
   `);
+  // The live editor bootstraps these blocks through this same projection. Older
+  // notes can still contain unnormalized Markdown (especially table spacing).
+  // Return the exact editable representation, rather than false conflict evidence.
+  // Resolve references against the whole document before selecting a read page.
+  const editableBlocks = pmNodesToNoteBlocks(noteBlocksToPmNodes(
+    (blocks as { type: NoteDocBlockSpec["type"]; content: string }[]).map(({ type, content }) => ({ type, content })),
+  ));
   // 分页与续读指针在装载半里完成（组合点只有这一处）：工具与集测看到的是同一页。
   const page = paginateReadBlocks(
-    (blocks as { ordinal: string; content: string }[]).map((row) => ({ ordinal: Number(row.ordinal), content: row.content })),
+    editableBlocks.map((block, index) => ({ ordinal: index + 1, content: block.content }))
+      .filter(block => block.ordinal >= input.startOrdinal),
     input.maxChars,
     input.startOffset,
   );
-  const totalBlocks = Number((totals[0] as { total?: string } | undefined)?.total ?? 0);
+  const totalBlocks = editableBlocks.length;
   const nextStartOrdinal = page.nextStartOffset !== null ? page.endOrdinal : page.endOrdinal !== null && page.endOrdinal < totalBlocks
     ? page.endOrdinal + 1
     : null;
@@ -277,14 +282,7 @@ export async function loadSourceReadPage(
  */
 export const READ_IMAGE_MAX_RAW_BYTES = 2_000_000;
 
-/**
- * 读图的独立工具预算。
- *
- * `COMPANION_AGENT_TOOL_TIMEOUT_MS`(10s) 是按"查一次库"定的；读图里嵌的是一次
- * 完整的视觉模型往返（GLM-4.1V-Thinking-Flash 带思考，20–40s 是常态）。沿用 10s
- * 不是"偶尔超时"而是**每轮必超时**，而她拿到的是 `ok:false` + 一句通用失败。
- * 仍受 run deadline 夹住（取 min），不会把整轮拖爆。
- */
+/** Nested vision uses the configured provider duration rather than a quick-read ceiling. */
 export const READ_IMAGE_TOOL_TIMEOUT_MS = DEFAULT_AI_PROVIDER_TIMEOUT_MS;
 
 /** 政策拒绝时给她的那句话：说得出原因、也给得出出路，不出现内部术语。 */

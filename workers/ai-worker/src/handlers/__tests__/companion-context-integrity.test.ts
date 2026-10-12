@@ -10,9 +10,12 @@ test("全文编辑可以完整取得八千字及精确块边界，过长单块�
   assert.equal(page.blockTextTruncated, false);
   assert.deepEqual(page.blocks.map(block => block.content), blocks.map(block => block.content));
   assert.ok(page.blocks.every(block => block.complete && block.startOffset === 0));
+  assert.deepEqual(page.blocks.map(block => block.blockIndex), Array.from({ length: 55 }, (_, i) => i));
   const partial = paginateReadBlocks([{ ordinal: 1, content: "代码".repeat(11_000) }], 20_000);
   assert.equal(partial.blocks[0]?.complete, false);
   assert.equal(partial.nextStartOffset, 20_000);
+  const later = paginateReadBlocks(blocks.slice(20), 3000);
+  assert.equal(later.blocks[0]?.blockIndex, 20, "editing coordinates must not restart at each read page");
 });
 import { boundCompanionRecentHistory } from "../companion-context-handoff.ts";
 import { foldReplayUnderSummaryCoverage, replayToMessages } from "../companion-compaction.ts";

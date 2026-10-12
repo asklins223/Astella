@@ -216,7 +216,7 @@ export function HomeV2Provider({ children }: { readonly children: ReactNode }) {
           : home.reviewState === "syncing" ? "正在读取…" : "暂时读不到";
         break;
       case "current-notebook":
-        detail = home.note?.title ?? "还没有存好的研究册";
+        detail = home.note?.title ?? "还没有打开过的笔记";
         // 审计 F25：投影不含全量总数（`noteCount` 恒为 null），此前卡片附注写"数量 —"，
         // 读起来像"还没加载完"。这一格要说的是"点进去能做什么"，不是全库有多少。
         meta = home.note ? "继续阅读" : "从一份材料开始";

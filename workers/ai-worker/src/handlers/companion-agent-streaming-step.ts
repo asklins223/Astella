@@ -76,6 +76,7 @@ export async function runStreamingAgentStep(args: {
    * 不传 ⇒ 与现在的行为逐字相同。
    */
   onToolCallSettled?: (slot: { index: number; id: string; name: string; argsText: string }) => void;
+  onToolCallStarted?: (slot: { index: number; id: string; name: string }) => void;
   /** 分段符（见上方说明）：非首段传 "\n\n"，首段传空串。 */
   separatorBefore?: string;
   /**
@@ -297,6 +298,7 @@ export async function runStreamingAgentStep(args: {
           tools: args.stepRequest.tools,
           toolChoice: args.stepRequest.toolChoice,
           // 只在调用方要了的时候才挂：不挂就是 undefined，provider 不做任何额外工作。
+          ...(args.onToolCallStarted ? { onToolCallStarted: args.onToolCallStarted } : {}),
           ...(args.onToolCallSettled
             ? { onToolCallSettled: (slot: { index: number; id: string; name: string; argsText: string }) => args.onToolCallSettled!(slot) }
             : {}),

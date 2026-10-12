@@ -108,10 +108,10 @@ export type ObjectiveRevisionClassV2 = z.infer<
 
 export const publicLearningCardFrontV2Schema = z
   .strictObject({
-    cue: z.string().min(1).max(2000),
-    context: z.string().min(1).max(3000).optional(),
-    prompt: z.string().min(1).max(2000),
-    mediaRefs: z.array(z.string().min(1).max(200)).max(20).optional(),
+    cue: z.string().min(1),
+    context: z.string().min(1).optional(),
+    prompt: z.string().min(1),
+    mediaRefs: z.array(z.string().min(1).max(200)).optional(),
   })
   .strict();
 export type PublicLearningCardFrontV2 = z.infer<
@@ -128,7 +128,7 @@ export const publicLearningCardV2Schema = z
     objectiveRevision: z.number().int().min(1),
     lifecycle: z.enum(["active", "archived", "superseded"]),
     front: publicLearningCardFrontV2Schema,
-    publicSummary: z.string().min(1).max(1500),
+    publicSummary: z.string().min(1),
     knowledgeForm: knowledgeFormV2Schema,
     strategy: cardStrategyV2Schema,
     sourceLabel: z.string().min(1).max(300).nullable(),
@@ -183,25 +183,24 @@ export const learningCardRevealV2Schema = z
     reveal: z
       .strictObject({
         canonicalAnswer: canonicalAnswerV2Schema,
-        explanation: z.string().min(1).max(6000),
-        boundary: z.string().min(1).max(3000).optional(),
-        misconception: z.string().min(1).max(3000).optional(),
-        workedExample: z.string().min(1).max(6000).optional(),
+        explanation: z.string().min(1),
+        boundary: z.string().min(1).optional(),
+        misconception: z.string().min(1).optional(),
+        workedExample: z.string().min(1).optional(),
       })
       .strict(),
     evidencePreviews: z
       .array(
         z.strictObject({
           evidenceSnapshotId: z.string().uuid(),
-          preview: z.string().max(2000),
+          preview: z.string(),
           sourceLabel: z.string().min(1).max(300).nullable(),
           sourceState: z.enum(["located", "drifted", "missing"]),
           // 0275 之后才有值：密封时冻住的原文。null 有两种来源（存量证据 / 副本行缺失），
           // 界面必须把它当成"这段没被冻住"而不是"没有原文"。
-          originalPreview: z.string().max(2000).nullable(),
+          originalPreview: z.string().nullable(),
         }),
-      )
-      .max(20),
+      ),
     exposureId: z.string().uuid(),
     exposedAt: z.string().datetime({ offset: true }),
     revealPayloadHash: z.string().regex(/^[0-9a-f]{64}$/),
@@ -293,22 +292,22 @@ export const learningObjectiveRevisionV2Schema = z
     objectiveId: z.string().uuid(),
     revision: z.number().int().min(1),
     workspaceId: z.string().uuid(),
-    objectiveStatement: z.string().min(1).max(2000),
-    publicSummary: z.string().min(1).max(1500),
+    objectiveStatement: z.string().min(1),
+    publicSummary: z.string().min(1),
     knowledgeForm: knowledgeFormV2Schema,
-    preferredIntents: z.array(taskIntentSchema).min(1).max(6),
+    preferredIntents: z.array(taskIntentSchema).min(1),
     canonicalAnswer: canonicalAnswerV2Schema,
     learningSupport: z
       .strictObject({
-        explanation: z.string().min(1).max(6000),
-        boundary: z.string().min(1).max(3000).optional(),
-        misconception: z.string().min(1).max(3000).optional(),
-        workedExample: z.string().min(1).max(6000).optional(),
+        explanation: z.string().min(1),
+        boundary: z.string().min(1).optional(),
+        misconception: z.string().min(1).optional(),
+        workedExample: z.string().min(1).optional(),
       })
       .strict(),
     scoringRubric: objectiveRubricV2Schema,
-    relations: z.array(objectiveRelationV2Schema).max(100),
-    evidenceBindings: z.array(evidenceBindingV2Schema).max(200),
+    relations: z.array(objectiveRelationV2Schema),
+    evidenceBindings: z.array(evidenceBindingV2Schema),
     supersedesObjectiveRevisionId: z.string().uuid().nullable(),
     semanticTargetFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
     targetRevisionHash: z.string().regex(/^[0-9a-f]{64}$/),

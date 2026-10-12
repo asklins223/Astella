@@ -1048,7 +1048,8 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
       const allowedNumbersSource = `${thoughtMaterial.facts ?? ""}
 到期复习 ${thoughtMaterial.readyReviews}；12 小时内到期 ${thoughtMaterial.dueSoonReviews}；连续学习 ${thoughtMaterial.streakDays}；熟悉度 ${thoughtMaterial.familiarity.toFixed(2)}`;
       const messages = [{ role: "user" as const, content: prompt }];
-      const generationParameters = { temperature: 0.9, maxTokens: 2_000, disableThinking: true, responseFormat: "json_object" as const };
+      // 天花板只认档案声明：这一发的上限由 provider 按模型档案给，handler 不再自报一个数。
+      const generationParameters = { temperature: 0.9, disableThinking: true, responseFormat: "json_object" as const };
       const provider = await thoughtProvider();
       const inputSnapshotHash = sha256Utf8V1(stableStringify({
         taskVersion: 2,
@@ -1194,7 +1195,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
         recentlySaid: thoughtMaterial.recentlySaid,
       });
       const messages = [{ role: "user" as const, content: prompt }];
-      const generationParameters = { temperature: 0.9, maxTokens: 2_000, disableThinking: true, responseFormat: "json_object" as const };
+      const generationParameters = { temperature: 0.9, disableThinking: true, responseFormat: "json_object" as const };
       const provider = await thoughtProvider();
       const inputSnapshotHash = sha256Utf8V1(stableStringify({
         taskVersion: 2,

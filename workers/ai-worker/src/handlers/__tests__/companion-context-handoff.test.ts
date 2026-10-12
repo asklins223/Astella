@@ -17,11 +17,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  REPLAY_WINDOW_MESSAGES,
   boundCompanionRecentHistory,
   buildCompanionContextHandoffSnapshotV1,
   renderCompanionContextHandoff,
   renderPendingOffersAsRecords,
+  selectCompanionReplayWindow,
   type CompanionContextHandoffInputV1,
   type CompanionRecentHistoryMessage,
 } from "../companion-context-handoff.ts";
@@ -123,17 +123,28 @@ test("【自证】把 outcome_unknown 混进 completed 会立刻被抓出来", (
   assert.equal(degraded.actionLedger.unresolved.length, 0, "自证：退化样本确实把未决清空了");
 });
 
-test("回放窗口是**20**，且摘要器必须让开它（两处各写一个 20 就会静默重叠）", () => {
-  assert.equal(REPLAY_WINDOW_MESSAGES, 20);
-  // §4.7.4：不把固定消息条数当**边界定义**——条数只是预算，水位才是边界。
-  const many = Array.from({ length: REPLAY_WINDOW_MESSAGES * 2 }, (_, i) =>
-    msg(i % 2 === 0 ? "user" : "assistant", `第 ${i} 条`, `m-${i}`));
-  const bounded = boundCompanionRecentHistory(many);
-  assert.ok(bounded.length <= REPLAY_WINDOW_MESSAGES, "收边之后还超过回放窗口");
-  // 保留的是**最近**的那些，不是最早的
-  assert.equal(bounded[bounded.length - 1]?.seq, `m-${REPLAY_WINDOW_MESSAGES * 2 - 1}`);
-});
 
+test("回放窗口按声明预算整条取舍：留下的必须是最近那一段，少带了几条当场说清", () => {
+  // §4.7.4：不把固定条数当**边界定义**。2026-10-12 起窗口由本次路由模型声明的输入
+  // 预算决定，一条要么整条带走、要么这一轮不带；不给容量时根本不做条数取舍。
+  const history = Array.from({ length: 40 }, (_, i) =>
+    msg(i % 2 === 0 ? "user" : "assistant", `第 ${i} 条`, `m-${i}`));
+
+  const whole = boundCompanionRecentHistory(history);
+  assert.equal(whole.length, 40, "没给声明容量时不该再按条数收边");
+
+  const capacity = { maxInputTokens: 100 };
+  const { messages: taken, receipt } = selectCompanionReplayWindow(history, capacity);
+  assert.ok(taken.length > 0 && taken.length < history.length, "紧容量必须真的取舍，否则下面的断言全是空的");
+  // 留下的是**末尾那一段连续的整条**：中间挖洞会把她上一句和用户下一句拆开
+  assert.deepEqual(taken, history.slice(history.length - taken.length));
+  assert.equal(receipt.takenCount, taken.length);
+  assert.equal(receipt.omittedCount, history.length - taken.length, "少带的条数要如实等于少掉的条数");
+  assert.equal(receipt.capacityTokens, capacity.maxInputTokens);
+  assert.ok(receipt.usedTokens <= capacity.maxInputTokens);
+  // 没带走的那一段里最新的一条：她由此知道「不是没发生过」，也知道从哪个 seq 取回
+  assert.equal(receipt.uncoveredThroughSeq, history[history.length - taken.length - 1]?.seq);
+});
 test("短回复与前面的用户问题都保持原样", () => {
   // 短句可能是有效确认，不能仅凭长度判断失败。
   const bounded = boundCompanionRecentHistory([
@@ -148,15 +159,21 @@ test("短回复与前面的用户问题都保持原样", () => {
 });
 
 test("【自证】判据认得出「留下的是最早那批」这个真实退化", () => {
+  // 这一条要防的退化从来没变：紧容量下留下的若是**最早那批**，她就读不到自己上一句。
+  // 变的只是判据不再由条数 20 决定，而由声明预算整条取舍决定。
   const history = Array.from({ length: 40 }, (_, i) =>
     msg(i % 2 === 0 ? "user" : "assistant", `第 ${i} 条`, `m-${i}`));
-  const bounded = boundCompanionRecentHistory(history);
-  // 正控制：保留的是**末尾**那批。
-  assert.equal(bounded[bounded.length - 1]?.text, "第 39 条");
-  // 反向：若实现从前面切（留下最早那批），上面这条与这条都会红。
-  assert.notEqual(bounded[bounded.length - 1]?.text, "第 0 条");
-  assert.ok(bounded.some((m) => m.text === "第 39 条"), "最近那条必须留着");
-  assert.ok(!bounded.some((m) => m.text === "第 0 条"), "最早那条应当已被丢掉");
+  const { messages: taken, receipt } = selectCompanionReplayWindow(history, { maxInputTokens: 100 });
+  assert.ok(taken.length > 0 && taken.length < history.length, "自证样本没造好：这一轮没发生取舍");
+  // 正控制：保留的是**末尾**那批，最早那条已被丢掉（不再是因为条数刚好 20）。
+  assert.equal(taken[taken.length - 1]?.text, "第 39 条");
+  assert.ok(taken.some((m) => m.text === "第 39 条"), "最近那条必须留着");
+  assert.ok(!taken.some((m) => m.text === "第 0 条"), "最早那条应当已被丢掉");
+  assert.equal(receipt.uncoveredThroughSeq, "m-29", "没带走的那一段最新的是一条要说得清 seq");
+  // 反向：若实现从前面切（留下最早那批、条数一样），上面两条判据都会红。
+  const forwardCut = history.slice(0, taken.length);
+  assert.ok(forwardCut.some((m) => m.text === "第 0 条") && !forwardCut.some((m) => m.text === "第 39 条"),
+    "自证样本没造好：从前面切那一批必须同时满足这两条反向判据");
 });
 
 test("按索引降级她自己的收尾：问句和陈述式的等待句都算，没点到的不动", () => {
@@ -203,4 +220,21 @@ test("降级只动末段、可重复应用，并保住正文之外的字段", ()
   const parts = [{ role: "assistant", content: [{ type: "text", text: "带着图的一条？" }] }];
   assert.equal(renderPendingOffersAsRecords(parts, [0])[0]?.content, parts[0]!.content,
     "非字符串正文不动——邀请只出现在纯文本回复里");
+});
+
+
+test("长任务交接保留全部回执、待确认提案和完整说明", () => {
+  const actions = Array.from({ length: 90 }, (_, index) => ({ receiptId: `receipt-${index}`, toolCallId: `call-${index}`,
+    name: "companion_edit_note", status: index % 2 ? "outcome_unknown" : "succeeded",
+    safeSummary: `第 ${index} 次修改：${"完整说明。".repeat(100)}尾部回执` }));
+  const proposals = Array.from({ length: 40 }, (_, index) => ({ id: `proposal-${index}`, status: "pending", decision: null,
+    title: `第 ${index} 个提案`, targetSummary: "完整改动说明。".repeat(100), resultSafeSummary: null, expiresAt: null }));
+  const snapshot = buildCompanionContextHandoffSnapshotV1({ ...input(), actionLedger: actions, proposals });
+  assert.equal(snapshot.actionLedger.completed.length, 45);
+  assert.equal(snapshot.actionLedger.unresolved.length, 45);
+  assert.equal(snapshot.proposals.length, 40);
+  const rendered = renderCompanionContextHandoff(snapshot);
+  assert.ok(rendered.includes(actions[89]!.safeSummary));
+  assert.ok(rendered.includes(proposals[39]!.targetSummary));
+  assert.ok(rendered.includes("第 39 个提案"));
 });

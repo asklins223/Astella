@@ -82,7 +82,7 @@ The parts that matter:
 
 | Function | Where | What it owns | What it stays out of |
 | --- | --- | --- | --- |
-| `executeTurn` | `execute-turn.ts` | The bounded loop: `step 1..maxSteps`, `signal.throwIfAborted()`, `now() >= deadlineAt → budgetError()`, until `advance()` returns `{kind:"settled"}` | Never touches the model, never touches the database |
+| `executeTurn` | `execute-turn.ts` | Continuous advancement; `maxSteps:null` disables the step-count ceiling, `signal.throwIfAborted()`, `now() >= deadlineAt → budgetError()`, until `advance()` returns `{kind:"settled"}` | Never touches the model, never touches the database |
 | `executeAgentStep` | `execute-step.ts` | One checkpointable step: `context.prepare()` → `state.prepare()` → `model.execute` → **`state.saveResponse` before any capability runs** → `capabilities.invoke` one at a time → `state.apply` | Does not decide when the turn ends |
 | `runAgentModelStep` | `model-step.ts` | A single model boundary on the `runAiTask` kernel, budget `{maxModelCalls:1, maxAutoRetries:0}`, completion criterion `structured_parsed`; maps `lease_lost` or `cancelled` to inactive, `timeout` or `budget_exhausted` to timeout | No retrying — retries belong to the outer job |
 | `resolveAgentTurnInterpretation` | `attention.ts` | Binds the utterance to host objects; records one ambiguity each for an unknown sequence number, an unresolvable referent and an unavailable capability (capped at 6); pure small talk is forced to `toolUse:"none"` | Does not guess — if it cannot resolve, it marks `uncertain` |
@@ -209,7 +209,7 @@ Everything is decided once, before a request goes out, at `prepareGovernedAIPayl
 4. Data categories are **declared by the call site**: goal advancement passes `["note_content","user_answer"]` (`advance.ts`), and image parts add `image_content` automatically; this vocabulary is exactly `ai_audit_log.data_categories`.
 5. Audit is written only by `logAICall` (`workers/ai-worker/src/lib/governance.ts`), recording provider/model/operation/tokens/duration/status/userId/jobId and **never the body text**.
 
-Non-retryability is decided at two layers: the task kernel retries only `transport / timeout / output_shape` (`packages/shared/src/ai-task-kernel.ts`); at the job layer `isNonRetryableError` (`workers/ai-worker/src/lib/non-retryable-errors.ts`, pattern table) kills billing exhaustion, `invalid api key`, `access denied`, `not configured`, `consent not signed` and context-dependent 401/403 outright. Read-only permission is enforced before queuing: `requireAgentAuthority` (`store.ts`).
+Non-retryability is decided at two layers: the task kernel retries only `transport / timeout / output_shape` (`packages/shared/src/ai-task-kernel.ts`); output truncation retains `output_truncated` and does not replay as a network failure; at the job layer `isNonRetryableError` (`workers/ai-worker/src/lib/non-retryable-errors.ts`, pattern table) kills billing exhaustion, `invalid api key`, `access denied`, `not configured`, `consent not signed` and context-dependent 401/403 outright. Read-only permission is enforced before queuing: `requireAgentAuthority` (`store.ts`).
 
 ## Numbers worth remembering
 
@@ -217,10 +217,10 @@ These are mechanism defaults. Deployment overrides and remaining task time can r
 
 | Mechanism | Default and source |
 | --- | --- |
-| Companion loop | At most 8 steps, 4 tools per step, 12 tools and 12 model calls per turn; contract deadline 30 minutes and ordinary tool timeout 10 seconds. See `companion-agent-contracts.ts`; long note generation has a dedicated budget |
-| Goal advancement | Up to 3 steps per execution and 4 calls per step; model calls respect remaining task time and provider budget. See `agent/advance.ts` |
+| Companion loop | No default step, per-step tool or cumulative call ceiling; runs settle on completion, cancellation or an explicit deployment deadline. Operator overrides are recorded in the budget snapshot. See `companion-execution-policy.ts` |
+| Goal advancement | No fixed step or per-step tool count; an expired processing slice resumes the same goal. Model calls respect provider declarations and remaining time. See `agent/advance.ts` |
 | Main queue | 120-second lease, renewed every 30 seconds while running; reaping uses the latest heartbeat, with at most 3 attempts. See `queue.ts`, `index.ts`, migration 0394 |
-| Execution time | Provider default 15 minutes, handler default 30 minutes; loop retains 15 seconds for persistence. The lease does not cap total runtime. See `lib/handler-timeout-config.ts` |
+| Execution time | Provider default 15 minutes, ordinary handler default 30 minutes; Companion has no total deadline by default, and explicit deployment deadlines retain 15 seconds for persistence. The lease does not cap total runtime. See `lib/handler-timeout-config.ts` |
 | Multistage cards | Default total budget 60 minutes with separate outbox leases and renewal. See `card-generation-v2/outbox-queue.ts` |
 | Quotas | At most 5 active Agent runs and 50 pending jobs per workspace |
 | Context | Trigger 0.80 and target 0.60 of the hard budget; cooldown and compaction attempts are separately bounded |
@@ -248,3 +248,5 @@ Context governance has real-database, model-comparison and selected window evide
 | One-shot evidence capture | `GET /companion/runs/:id/issue-bundle` (`run-diagnostics-routes.ts`); the provider health probe `scripts/companion-provider-health.mjs` (must run inside the worker container) |
 
 Related pages: [The companion experience (product design)](./companion-experience.md) · [AI and the companion](./ai-and-companion.md) · [Astella system architecture](./architecture.md) · [API and data](./api-and-data.md) · [Desktop client](./desktop-client.md) · [FAQ and troubleshooting](./faq-and-troubleshooting.md)
+
+Generated explanations, diagrams, diary blocks and learned method steps follow their content. Their complete documents pass through generation, persistence and desktop loading without additional character or node quotas. Model context/output declarations and explicit storage/transport contracts still apply.

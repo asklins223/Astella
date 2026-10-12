@@ -28,7 +28,19 @@ it("reports generated content height without feeding the iframe viewport back in
   expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ phase: "heartbeat", contentHeight: 210 }), "*");
   const hostStyle = template.querySelector("style[data-artifact-host]")!.textContent!;
   expect(hostStyle).toContain("min-height: 0 !important");
-  expect(hostStyle).not.toMatch(/display: block|background: transparent.*body|margin: 0|padding: 0.*body/);
+  expect(hostStyle).not.toMatch(/display: block|margin: 0|padding: 0.*body/);
+  // 底色归宿主（2026-10-12 用户裁决「只锁底色，画面仍自由」）：宿主只把文档画布钉成透明，
+  // 让笔记纸面透出来；scene 里面的配色与字色搭配仍归生成的那一页自己。
+  // 字色刻意不在这里钉：实测有深色卡片靠 body 那句浅色字撑住，宿主替它定墨色就变成黑底黑字。
+  expect(hostStyle).toMatch(/html, body, #astella-artifact-root\s*\{\s*background: transparent !important/);
+  expect(hostStyle).not.toMatch(/(^|[\s;{])color:\s*[^;]+!important/);
+  expect(hostStyle).toContain("color-scheme: light !important");
+});
+
+it("lets the generated page keep painting inside the scene", () => {
+  const template = new DOMParser().parseFromString(artifactDocumentTemplate(), "text/html");
+  const hostStyle = template.querySelector("style[data-artifact-host]")!.textContent!;
+  expect(hostStyle).not.toMatch(/\[data-stage\]|\.astella-art__scene[^,]*\{[^}]*background/);
 });
 
 it("includes the generated page's own body spacing in its measured height", () => {

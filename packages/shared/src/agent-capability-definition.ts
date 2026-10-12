@@ -33,12 +33,13 @@ export function defineAgentCapability(
   name: string, description: string, riskClass: CompanionAgentToolDefinitionV1["riskClass"],
   requiresConfirmation: boolean, argumentSchema: z.ZodType<Record<string, unknown>>,
   presentation: AgentCapabilityDeclaration["presentation"],
-  limits: { maxInputChars?: number; maxOutputChars?: number } = {},
+  limits: { maxInputChars?: number | null; maxOutputChars?: number | null; confirmationStage?: "before_execute" | "after_preview" } = {},
   sceneGuidance?: AgentCapabilitySceneGuidance,
 ): AgentCapabilityDeclaration {
   return { ...(sceneGuidance ? { sceneGuidance } : {}), definition: companionAgentToolDefinitionV1Schema.parse({
     version: 1, toolVersion: "1.0.0", name, description, riskClass, requiresConfirmation,
-    parameters: agentToolParameters(argumentSchema), maxInputChars: limits.maxInputChars ?? 4000,
-    maxOutputChars: limits.maxOutputChars ?? 4000,
+    parameters: agentToolParameters(argumentSchema), maxInputChars: limits.maxInputChars === undefined ? 4000 : limits.maxInputChars,
+    maxOutputChars: limits.maxOutputChars === undefined ? 4000 : limits.maxOutputChars,
+    ...(limits.confirmationStage ? { confirmationStage: limits.confirmationStage } : {}),
   }), argumentSchema, presentation };
 }

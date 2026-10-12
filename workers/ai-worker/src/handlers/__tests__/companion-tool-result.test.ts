@@ -181,7 +181,9 @@ test("子步骤预算的 signal 被**向下传进**执行器（40b §4.1-2「向
   const ledger = readFileSync(join(resolve(import.meta.dirname, ".."), "companion-tool-call-ledger.ts"), "utf8");
   const idx = ledger.indexOf("if (!recorded) throw new CompanionToolOutcomeUnknownError");
   assert.ok(idx >= 0, "账本里找不到 `!recorded` 那一支");
-  const after = ledger.slice(idx, idx + 600);
+  const successEvent = ledger.indexOf('await appendAgentEvent(event, "agent.tool"', idx);
+  assert.ok(successEvent > idx, "必须能定位成功事件，取消检查要在它之前");
+  const after = ledger.slice(idx, successEvent);
   assert.match(after, /if \(signal\?\.aborted\) throw new CompanionToolOutcomeUnknownError/,
     "成功记账之前没有复查 signal —— 一次结果不确定的写会被说成成功");
 });

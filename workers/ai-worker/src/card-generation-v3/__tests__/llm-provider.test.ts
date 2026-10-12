@@ -55,10 +55,9 @@ test("一次 complete 恰好一发 chatCompletion，且把内核给的 signal �
     "任务定义组好的那份提示原样发出去，不在端口里再拼一层系统角色");
   assert.deepEqual(
     { ...fake.calls[0]?.options },
-    { temperature: 0, responseFormat: "json_object", maxTokens: 10000 },
-    "采样取值与输出预算都要说死：第四发真模型就是被平台默认那一档 max_tokens 截断的"
-    + "（报 `Unterminated string in JSON`、没有 zod 路径）；2026-10-06 起开思考，"
-    + "思考 token 也计入预算，maxTokens 再抬一档",
+    { temperature: 0, responseFormat: "json_object" },
+    "采样取值说死；天花板不再由端口自报——本轮裁决把 maxTokens 归一到 provider 档案声明，"
+    + "端口再抄一个数就是第二次定义那个不存在的东西",
   );
 });
 

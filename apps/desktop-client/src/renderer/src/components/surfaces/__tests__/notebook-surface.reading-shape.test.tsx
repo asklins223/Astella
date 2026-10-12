@@ -10,6 +10,7 @@ import { noteAnnotationV1Schema } from "@astella/shared/note-annotation-contract
 import { noteRecallRecordV1Schema } from "@astella/shared/note-recall-contracts";
 import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, progressNoteExplanation, resetNoteExplanations, useNoteCompanionExplanations } from "../../companion/note-companion-explanation";
 import { textRangeAtOffsets } from "../notebook/notebook-reading-block";
+import { noteReadingText } from "../notebook/note-reading-text";
 
 /**
  * 阅读页画出来的是不是编辑器里那一份（2026-09-24 对拍量出来的七类）。
@@ -280,6 +281,29 @@ describe("阅读页画的是编辑器里那一份", () => {
     expect(view.queryByText("从记得的地方接着读")).toBeNull();
   });
 
+  it("有重点的引用没核对上时，剔了几条要在纸面上说出来", async () => {
+    // 引用核不回原文的重点会被逐条剔除，而不是让整份速看失败（0419 同一轮）。
+    // 剔了几条必须说出来——否则"少给了几条"在界面上是无声的。
+    const overview = {
+      overviewId: "55555555-4555-4555-8555-555555555555",
+      noteId: NOTE_ID,
+      noteVersionId: VERSION_ID,
+      noteVersionNumber: 1,
+      body: "Tool 可以调用外部能力。",
+      points: [{ explanation: "Tool 是 Agent 调用外部能力的入口。", blockOrdinal: 0, quote: "Tool 是 Agent 调用外部能力的入口。" }],
+      references: [{ blockOrdinal: 0, quote: "Tool 是 Agent 调用外部能力的入口。" }],
+      coverage: { totalBlocks: 1, textBlocksRead: 1, imageBlocksNotRead: 0, pointsDropped: 2 },
+      generationJobId: "66666666-4666-4666-8666-666666666666",
+      sourceMessageId: null,
+      conversationId: null,
+      versionState: "current",
+      createdAt: "2026-09-29T10:00:00.000Z",
+    };
+    const view = await show([block("paragraph", "Tool 是 Agent 调用外部能力的入口。")], undefined, undefined, false, undefined, [overview]);
+    fireEvent.click(view.getByRole("button", { name: "速看" }));
+    expect(within(view.getByRole("article", { name: "这篇笔记的速看" })).getByText("有 2 条重点的原文引用没有核对上，没有收录。")).toBeTruthy();
+  });
+
   it("速看开关挂在纸面框上，页内容的翻页动画抢不走它的位置", async () => {
     const view = await show([block("paragraph", "Tool 是 Agent 调用外部能力的入口。")]);
     fireEvent.click(view.getByRole("button", { name: "速看" }));
@@ -456,7 +480,9 @@ describe("阅读页画的是编辑器里那一份", () => {
     const rendered = [...body().querySelectorAll<HTMLElement>(".reading-block")];
     expect(rendered).toHaveLength(blocks.length);
     blocks.forEach((item, index) => {
-      expect(rendered[index]?.textContent).toBe(noteBlockRenderedTextV1(item.type, item.content));
+      // 取的是批注与「选中这句」实际数的那串字（`noteReadingText` 会跳过带
+      // `data-note-decoration` 的记号与代码纸沿），不是裸 textContent。
+      expect(noteReadingText(rendered[index]!)).toBe(noteBlockRenderedTextV1(item.type, item.content));
     });
   });
 

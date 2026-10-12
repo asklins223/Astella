@@ -19,7 +19,6 @@ import type { DiaryEmbed, DiaryMaterial } from "./companion-diary-content.ts";
 
 const DIARY_IMAGE_MAX_RAW_BYTES = 2_000_000;
 
-const DIARY_IMAGE_DESCRIPTION_MAX_CHARS = 300;
 
 const DIARY_IMAGE_PROMPT_VERSION = "diary-image-description-v1";
 
@@ -146,13 +145,12 @@ export async function describeDiaryImage(input: {
               ],
             },
           ],
-          { maxTokens: 500, temperature: 0.3, responseFormat: "text", model: provider.visionModelId },
+          { temperature: 0.3, responseFormat: "text", model: provider.visionModelId },
           env.signal,
         );
         const description = stripProviderControlTokens(String(result.content ?? ""))
           .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, DIARY_IMAGE_DESCRIPTION_MAX_CHARS);
+          .trim();
         return {
           ok: true,
           output: { description },
@@ -171,7 +169,7 @@ export async function describeDiaryImage(input: {
         job: input.job,
         userId: input.userId,
         parseOutput: (value) => {
-          const parsed = z.object({ description: z.string().max(DIARY_IMAGE_DESCRIPTION_MAX_CHARS) }).strict().safeParse(value);
+          const parsed = z.object({ description: z.string() }).strict().safeParse(value);
           return parsed.success ? parsed.data : null;
         },
       }),

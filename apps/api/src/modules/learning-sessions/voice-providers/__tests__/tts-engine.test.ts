@@ -193,7 +193,7 @@ test("selection 指定 qwen 音色：进上游的是这一身，不是 config �
     edgeVoice: "zh-CN-XiaoxiaoNeural",
     queueKey: "ws:user",
     scope: TEST_SCOPE,
-    selection: { engine: "qwen", qwenVoice: "longanlingxi_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", explicit: true },
+    selection: { engine: "qwen", qwenVoice: "longanlingxi_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "", explicit: true },
     deps: baseDeps({
       loadConfig: () => makeConfig("qwen", "ws-123"),
       qwenSynthesize: async (_key, _text, options) => {
@@ -218,7 +218,7 @@ test("selection 说 edge：config 是 qwen 也不碰 qwen，不做'先试千问�
     edgeVoice: "zh-CN-XiaoxiaoNeural",
     queueKey: "ws:user",
     scope: TEST_SCOPE,
-    selection: { engine: "edge", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", explicit: true },
+    selection: { engine: "edge", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "", explicit: true },
     deps: baseDeps({
       loadConfig: () => makeConfig("qwen", "ws-123"),
       qwenSynthesize: async () => {
@@ -251,6 +251,79 @@ test("不传 selection：仍旧用 config 那条音色（默认行为没被动�
     }),
   });
   assert.equal(seenVoice, makeConfig("qwen", "ws-123").qwen.voice);
+});
+
+// ─── instruction 三层兜底（模型自写 → 用户偏好 → config）─────────────────────
+
+const captureInstruction = () => {
+  let seen = "";
+  return {
+    deps: baseDeps({
+      loadConfig: () => makeConfig("qwen", "ws-123"),
+      qwenSynthesize: async (_key, _text, options) => {
+        seen = options.instruction ?? "";
+        return { stream: streamOf("qwen"), contentType: "audio/mpeg" };
+      },
+      edgeSynthesize: async () => {
+        throw new Error("edge must not be called");
+      },
+    }),
+    read: () => seen,
+  };
+};
+
+test("instruction 三层兜底：模型自写 > 用户偏好 > config 默认", async () => {
+  const withConfig = { ...makeConfig("qwen", "ws-123") };
+  withConfig.qwen.instruction = "config 默认风格";
+
+  // 三层同在：用模型的。
+  const model = captureInstruction();
+  await synthesizeTtsBytes({
+    text: "中不中", edgeVoice: "zh-CN-XiaoxiaoNeural", queueKey: "ws:user", scope: TEST_SCOPE,
+    instruction: "用河南话讲",
+    selection: { engine: "qwen", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "用户偏好", explicit: true },
+    deps: { ...model.deps, loadConfig: () => withConfig },
+  });
+  assert.equal(model.read(), "用河南话讲");
+
+  // 模型没写：用用户偏好。
+  const pref = captureInstruction();
+  await synthesizeTtsBytes({
+    text: "中不中", edgeVoice: "zh-CN-XiaoxiaoNeural", queueKey: "ws:user", scope: TEST_SCOPE,
+    selection: { engine: "qwen", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "用户偏好", explicit: true },
+    deps: { ...pref.deps, loadConfig: () => withConfig },
+  });
+  assert.equal(pref.read(), "用户偏好");
+
+  // 模型没写、偏好也没有：用 config。
+  const config = captureInstruction();
+  await synthesizeTtsBytes({
+    text: "中不中", edgeVoice: "zh-CN-XiaoxiaoNeural", queueKey: "ws:user", scope: TEST_SCOPE,
+    selection: { engine: "qwen", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "", explicit: true },
+    deps: { ...config.deps, loadConfig: () => withConfig },
+  });
+  assert.equal(config.read(), "config 默认风格");
+});
+
+test("instruction 只进 qwen 参数：edge 分支连字段都不该出现", async () => {
+  let edgeOptions: Record<string, unknown> | undefined;
+  await synthesizeTtsBytes({
+    text: "你好", edgeVoice: "zh-CN-XiaoxiaoNeural", queueKey: "ws:user", scope: TEST_SCOPE,
+    instruction: "用河南话讲",
+    selection: { engine: "edge", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "", explicit: true },
+    deps: baseDeps({
+      loadConfig: () => makeConfig("qwen", "ws-123"),
+      qwenSynthesize: async () => {
+        throw new Error("qwen must not be called");
+      },
+      edgeSynthesize: async (_text, _voice, options) => {
+        edgeOptions = options as Record<string, unknown>;
+        return { audio: bytes("edge"), voice: "zh-CN-XiaoxiaoNeural", contentType: "audio/mpeg" };
+      },
+    }),
+  });
+  assert.ok(edgeOptions);
+  assert.equal("instruction" in edgeOptions, false, "edge 没有指令参数，多出来的字段只会在上游面前出丑");
 });
 
 /**

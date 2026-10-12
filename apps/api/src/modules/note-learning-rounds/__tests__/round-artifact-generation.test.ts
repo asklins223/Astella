@@ -38,7 +38,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   ARTIFACT_ILLUSTRATION_NOTICE_V1,
-  ARTIFACT_MAX_STEPS_V1,
   ARTIFACT_MIN_STEPS_V1,
   groundArtifactStepsV1,
   hasMeasurementClaimV1,
@@ -47,7 +46,6 @@ import {
   type ArtifactNodeV1,
 } from "@astella/shared/note-dynamic-artifact/round-artifact-measure";
 import {
-  ARTIFACT_DOCUMENT_MAX_CHARS_V1,
   ARTIFACT_DOCUMENT_MIN_CHARS_V1,
   artifactDocumentTextV1,
   checkArtifactDocumentV1,
@@ -60,6 +58,7 @@ import {
   DYNAMIC_ARTIFACT_PROMPT_VERSION,
   DYNAMIC_ARTIFACT_TASK_ID,
   DYNAMIC_ARTIFACT_TASK_VERSION,
+  ARTIFACT_MODEL_CALLS_V1,
   artifactCompletionSatisfiedV1,
   buildDynamicArtifactPrompt,
   createDynamicArtifactResponseSessionV1,
@@ -74,7 +73,6 @@ import {
   DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1,
   buildDynamicArtifactHtmlV1,
 } from "@astella/shared/note-dynamic-artifact/round-artifact-render";
-import { ROUND_ARTIFACT_MAX_CHARS_V1 } from "@astella/shared/note-dynamic-artifact/round-artifact";
 import { ARTIFACT_FAILURE_COMBINATIONS_V1 } from "../round/artifact-failure.ts";
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..", "..", "..");
@@ -255,33 +253,27 @@ test("§6.1 结构保证：合同收不下任何数字字段（读数只能是�
   );
 });
 
-test("outline 是 2–6 条：少一条不成其为一次演示，多一条整份拒绝（不截断、不补齐）", () => {
+test("outline 只有下界：一条都不成其为一次演示；步数不设上限，长材料自然多几步", () => {
   const base = docFor();
   assert.equal(dynamicArtifactDocV1Schema.safeParse({ ...base, outline: [base.outline[0]!] }).success, false,
     "一条也收下了：那不是一次演示，是一个标题");
-  const seven = Array.from({ length: ARTIFACT_MAX_STEPS_V1 + 1 }, (_, i) => ({ ...base.outline[0]!, title: `第 ${i} 步` }));
-  assert.equal(dynamicArtifactDocV1Schema.safeParse({ ...base, outline: seven }).success, false);
-  // 顶格那一份收得下（避免把上界钉死在真模型写得出来的下面）。
-  const six = Array.from({ length: ARTIFACT_MAX_STEPS_V1 }, (_, i) => ({ ...base.outline[0]!, title: `第 ${i} 步` }));
-  assert.equal(dynamicArtifactDocV1Schema.safeParse({ ...base, outline: six }).success, true);
-  // 完成判据与合同同一条区间，不靠合同自己把关（内核看的是已解析出来的对象）。
+  // 不设上限：四十步的流程照收（2026-10-12 定：演示步数由材料决定，没有"最多几步"）。
+  const many = Array.from({ length: 40 }, (_, i) => ({ ...base.outline[0]!, title: `第 ${i} 步` }));
+  assert.equal(dynamicArtifactDocV1Schema.safeParse({ ...base, outline: many }).success, true);
+  // 完成判据与合同同一条下界（内核看的是已解析出来的对象）。
   assert.equal(artifactCompletionSatisfiedV1({ ...base, outline: [base.outline[0]!] }, BLOCKS), false);
-  assert.equal(artifactCompletionSatisfiedV1({ ...base, outline: seven }, BLOCKS), false);
+  assert.equal(artifactCompletionSatisfiedV1({ ...base, outline: many }, BLOCKS), true);
 });
 
-test("document 的长度上下界在合同与安全闸上是同一条线（两处不同宽就有一条形同虚设）", () => {
+test("document 保留最小成品要求，完整长页面不被固定字符上限拒收", () => {
   const base = docFor();
   const justUnder = "字".repeat(ARTIFACT_DOCUMENT_MIN_CHARS_V1 - 1);
   assert.equal(dynamicArtifactDocV1Schema.safeParse({ ...base, document: justUnder }).success, false);
-  const atMin = "字".repeat(ARTIFACT_DOCUMENT_MIN_CHARS_V1);
-  assert.equal(dynamicArtifactDocV1Schema.safeParse({ ...base, document: atMin }).success, true);
-  const atMax = "字".repeat(ARTIFACT_DOCUMENT_MAX_CHARS_V1);
-  assert.equal(dynamicArtifactDocV1Schema.safeParse({ ...base, document: atMax }).success, true);
-  assert.equal(dynamicArtifactDocV1Schema.safeParse({ ...base, document: `${atMax}字` }).success, false);
-  // 合同在解析那一刻就卡住了，但别的调用方可以绕过 zod 直接递进来，所以闸门本身也要卡。
   assert.equal(checkArtifactDocumentV1({ document: justUnder }).verdict.violation?.reason, "too_small");
-  assert.equal(checkArtifactDocumentV1({ document: atMax }).ok, true);
-  assert.equal(checkArtifactDocumentV1({ document: `${atMax}字` }).verdict.violation?.reason, "too_large");
+  const long = `<main>${"完整讲解。".repeat(30_000)}尾部内容</main>`;
+  assert.equal(dynamicArtifactDocV1Schema.safeParse({ ...base, document: long }).success, true);
+  assert.equal(checkArtifactDocumentV1({ document: long }).ok, true);
+  assert.equal(artifactCompletionSatisfiedV1({ ...base, document: long }, BLOCKS), true);
 });
 
 test("任务版本必须上到 3：换的是合同，v2 留下的检查点与半份产物不许被默默复用", () => {
@@ -289,7 +281,7 @@ test("任务版本必须上到 3：换的是合同，v2 留下的检查点与半
   assert.equal(DYNAMIC_ARTIFACT_TASK_VERSION, 3);
   assert.match(source, /DYNAMIC_ARTIFACT_TASK_VERSION = 3/,
     "改了合同却没改 taskVersion：v2 的检查点会被这一版当成同一发任务复用");
-  assert.equal(DYNAMIC_ARTIFACT_PROMPT_VERSION, "note-dynamic-artifact-v17");
+  assert.equal(DYNAMIC_ARTIFACT_PROMPT_VERSION, "note-dynamic-artifact-v18");
   assert.equal(DYNAMIC_ARTIFACT_TASK_ID, "note_dynamic_artifact_v1");
   assert.equal(DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1, "note_dynamic_artifact_v1@v3",
     "落库那一列记的还是旧版本：事后查不出这一份是按哪一版合同做的");
@@ -529,7 +521,28 @@ test("字段形状、重复标题可修复；不安全网页不保留，不串�
   assert.doesNotMatch(session.prompt(INPUT), /不要返回 document/);
 });
 
-test("修复不会绕过引用、严格字段和两次调用上限，不能悄悄改写已保留的网页", async () => {
+test("整页写完才发现碰上安全闸：把规则名回给模型重发一次，第二次判死", async () => {
+  // 2026-10-12 实测：一发 43197 token 的整页因为脚本里 `parent.appendChild` 被判红，
+  // 而这一类在旧形状里连重发的机会都没有——三分钟的产出直接丢掉，用户看到的是"老是报错"。
+  const doc = docFor();
+  const unsafe = { ...doc, document: pageAround("<script>if(parent){ parent.appendChild(node); }</script>") };
+  const session = createDynamicArtifactResponseSessionV1();
+  const prompts: string[] = [];
+  let calls = 0;
+  const result = await runDynamicArtifactV1({
+    input: INPUT, scope: { workspaceId: "w", userId: "u" },
+    source: { idempotencyKey: "safety-retry", leaseToken: "lease", noteVersionId: "v", sourceContentHash: "hash" },
+    currentActiveTransaction: () => undefined,
+    provider: async (input) => { prompts.push(session.prompt(input)); calls++; return session.accept(unsafe, input); },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(calls, 2, "第一次判红该重发整页，第二次就该停，不再花第三发的钱");
+  assert.match(prompts[1]!, /上一次交付的整页被安全检查拒绝：父窗口句柄/);
+  assert.equal(prompts[1]!.includes("不要返回 document"), false,
+    "违规的那一份不是可留待修字段的安全页面，不能被存下来只改字段");
+});
+
+test("修复不会绕过引用、严格字段和调用上限，不能悄悄改写已保留的网页", async () => {
   const session = createDynamicArtifactResponseSessionV1();
   const doc = docFor();
   const broken = { ...doc, title: "长".repeat(41) };
@@ -541,7 +554,8 @@ test("修复不会绕过引用、严格字段和两次调用上限，不能悄�
     provider: async input => { calls++; return session.accept(broken, input); },
   });
   assert.equal(result.ok, false);
-  assert.equal(calls, 2);
+  // 上限取任务声明的那一份（一发整页 + 至多三次截断重发 + 一发字段修复），不在这重数一遍。
+  assert.equal(calls, ARTIFACT_MODEL_CALLS_V1);
   assert.equal(session.accept({ ...doc, document: "replacement" }, INPUT).ok, false);
 });
 
@@ -779,6 +793,14 @@ test("§6.1：正常教学内容不许被误伤，诚实的免责也不许被判
     "前半句免责就把后半句的声明一起放过去了");
   assert.equal(hasMeasurementClaimV1("不体现实际耗时或效果。这是实测记录。"), true);
   assert.equal(hasMeasurementClaimV1("耗时 12 毫秒，这个不是实测"), true, "免责词在判词之后也算数了");
+  // 紧贴判词的单字否定：2026-10-12 真窗口那一发就是被「非实测结果」判死的（163 秒白跑）。
+  assert.equal(hasMeasurementClaimV1("读数为教学模拟，非实测结果"), false,
+    "模型按提示词把读数标成示意值，却被判成声称实测：整页白生成一次");
+  assert.equal(hasMeasurementClaimV1("未实测，仅示意过程"), false);
+  assert.equal(hasMeasurementClaimV1("本页面数据为示意，无实测含义"), false);
+  // 但否定必须**紧贴**判词才算免责，否则「非但」这种词就把闸放开了。
+  assert.equal(hasMeasurementClaimV1("非但实测结果惊人，耗时也夸张"), true,
+    "「非但」不该护住后面的「实测」与「耗时」");
 });
 
 // ════════════════════════════════════════════════════════════════════════
@@ -959,54 +981,30 @@ test("不伪造进度：产物里没有进度条、没有百分比（v3 干脆�
   assert.equal(visible.includes("第 1 步"), false, "产物里还留着步数读数：v3 的画面由模型自己排，那一格没有服务端可给的来源");
 });
 
-test("超配额整份拒绝（不截断）——闸门本身仍要对将来生效", () => {
-  // 合同那一层的上限管住了模型，可这条闸门要防的是将来有人放宽它、或是别的调用方绕过 zod
-  // 递进来（服务端自己渲染的证据回执与文字等价也乘在这个额度里）。
-  const oversized = NODES.map((node) => ({ ...node, narration: "x".repeat(ROUND_ARTIFACT_MAX_CHARS_V1) }));
+test("渲染完整长讲解，原文与末尾内容不因旧配额消失", () => {
+  const oversized = NODES.map((node) => ({ ...node, narration: "讲".repeat(180_000) + "尾部要点" }));
   const built = buildDynamicArtifactHtmlV1({
-    doc: docFor(),
-    nodes: oversized,
-    snapshotHash: "726f6b03d3d48cc646abd3b370ce97e8",
-    generatorRef: "g",
+    doc: docFor(), nodes: oversized, snapshotHash: "726f6b03d3d48cc646abd3b370ce97e8", generatorRef: "g",
   });
-  assert.equal(built.ok, false, "一份超大的产物被放行了：截出来的半份在 frame 里只会画成怪东西");
-  assert.equal(built.ok === false && built.reason, "over_quota");
-  assert.equal("html" in built, false, "被拒的那一份不许留下任何半截 HTML");
+  assert.ok(built.ok);
+  assert.ok(built.html.length > 524_288);
+  assert.equal((built.html.match(/尾部要点/g) ?? []).length, NODES.length);
 });
 
-test("配额：合同顶格的那一份也远低于硬上限（所以超配额这道闸是兜底，不是日常的限流）", () => {
-  // 顶格那一份：文档写满 12 万、outline 顶格六条、文案与引文都顶格。节点也必须是六条，
-  // 否则渲染器先在「条数对不上」那一道退回来，这条用例就改成在测别的东西了。
-  const fatNodes: readonly ArtifactNodeV1[] = Array.from({ length: ARTIFACT_MAX_STEPS_V1 }, (_, i) => ({
-    index: i,
-    title: "步".repeat(24),
-    narration: "讲".repeat(200),
-    sectionLabel: "提取练习四步走",
-    quote: "据".repeat(160),
+test("长页面和多步骤一起渲染，回查条目全量保留", () => {
+  const nodes: readonly ArtifactNodeV1[] = Array.from({ length: 40 }, (_, index) => ({
+    index, title: `步骤 ${index + 1}`, narration: "完整说明", sectionLabel: "过程", quote: "原文依据",
   }));
-  const fat = docFor({
-    title: "标".repeat(40),
-    subject: "概".repeat(60),
-    caution: "补".repeat(120),
-    document: "字".repeat(ARTIFACT_DOCUMENT_MAX_CHARS_V1),
-    outline: fatNodes.map((node) => ({
-      title: node.title,
-      narration: node.narration,
-      evidenceOrdinal: BLOCKS[1]!.ordinal,
-      evidenceQuote: node.quote,
-    })),
-  });
+  const document = `<main>${"详细页面。".repeat(30_000)}页面末尾</main>`;
   const built = buildDynamicArtifactHtmlV1({
-    doc: fat,
-    nodes: fatNodes,
-    snapshotHash: "726f6b03d3d48cc646abd3b370ce97e8",
-    generatorRef: "g",
+    doc: docFor({ document, outline: nodes.map(node => ({ title: node.title, narration: node.narration,
+      evidenceOrdinal: BLOCKS[1]!.ordinal, evidenceQuote: node.quote })) }),
+    nodes, snapshotHash: "726f6b03d3d48cc646abd3b370ce97e8", generatorRef: "g",
   });
-  assert.ok(built.ok, "顶格的一份被拒了：合同上限与渲染器对不上");
-  const size = [...built.html].length;
-  assert.ok(size < ROUND_ARTIFACT_MAX_CHARS_V1 / 2,
-    `顶格的一份 ${size} 字符，超过硬上限的一半 ${ROUND_ARTIFACT_MAX_CHARS_V1 / 2}：`
-    + "配额那道闸已经变成日常限流，而不是兜底");
+  assert.ok(built.ok);
+  assert.ok(built.html.includes("页面末尾"));
+  assert.ok(built.html.includes('data-outline-count="40"'));
+  assert.ok(built.html.includes("步骤 40"));
 });
 
 test("空依据与条数对不上：渲染器如实说 empty，不画一个只有空壳的纸", () => {
@@ -1137,7 +1135,9 @@ test("§15.5：这一发真的是通过 runAiTask 跑的（判据钉在源码形
   }
   const kernel = readFileSync(KERNEL_FILE, "utf8");
   assert.match(kernel, /AI_TASK_RETRYABLE_FAILURE_CLASSES/);
-  assert.match(source, /maxAutoRetries: 1/, "预算没有交给内核声明");
+  assert.match(source, /maxAutoRetries: maxModelCalls - 1/, "预算没有交给内核声明");
+  assert.match(source, /maxModelCalls = deps\.maxModelCalls \?\? ARTIFACT_MODEL_CALLS_V1/,
+    "调用上限没有单一来源：一发整页 + 至多三次截断重发 + 一发字段修复都在那一个常量里");
   // currentActiveTransaction 是必填端口：类型上就堵死了"忘了传"这条路。
   assert.match(source, /currentActiveTransaction: options\.currentActiveTransaction/);
 });
@@ -1227,12 +1227,17 @@ test("提示词：给内容与动态讲解目标，网页的创意与设计交�
   }
   assert.ok(prompt.includes("对象的运动、形变、轨迹或关系变化"));
   assert.ok(prompt.includes("window.setLessonMotion(motion)"));
+  // 2026-10-12 用户裁决「只锁底色，画面仍自由」：创作提示只交代画布归宿主，不指定风格。
+  assert.ok(prompt.includes("整页的画布底色由宿主决定"));
+  assert.ok(prompt.includes("卡片、图表、面板这些控件自身的颜色仍由你决定"));
 });
 
 test("提示词：完整材料与问题保留，保存与原文回查字段不决定网页结构", () => {
   const prompt = buildDynamicArtifactPrompt(INPUT);
   assert.ok(prompt.includes("附属字段不决定网页的画面结构"));
-  assert.ok(prompt.includes("2–6 条文字说明和对应原文，用于网页之外的回查"));
+  // 条数由 ARTIFACT_MIN/MAX_STEPS_V1 派生（2026-10-12 从 2–6 抬到 2–12）：这里跟着常量断言，
+  // 免得改一处常量、提示词那一句却留在旧数上。
+  assert.ok(prompt.includes(`outline 提供至少 ${ARTIFACT_MIN_STEPS_V1} 条文字说明和对应原文，用于网页之外的回查`));
   const lines = prompt.split("\n");
   const format = JSON.parse(lines.find(line => line.startsWith('{"title"'))!);
   assert.deepEqual(Object.keys(format), ["title", "subject", "caution", "document", "outline"]);
@@ -1301,7 +1306,7 @@ test("确定性 provider：材料不够时如实失败，而不是凑一份空�
   assert.equal(none.ok === false && none.message, "artifact_material_missing");
 });
 
-test("真 provider：非 2xx 按可重试性分类，形状不合就是 output_shape，截断单独归类", async () => {
+test("真 provider：非 2xx 按可重试性分类，形状不合与截断都归可重试那一边", async () => {
   const provider503 = llmDynamicArtifactProvider({
     config: { url: "https://example.invalid/v1", key: "k", model: "m" },
     requester: (async () => ({ status: 503, body: {} })) as never,
@@ -1324,8 +1329,9 @@ test("真 provider：非 2xx 按可重试性分类，形状不合就是 output_s
       body: { choices: [{ finish_reason: "length", message: { content: "{}" } }] },
     })) as never,
   })(INPUT, { signal: new AbortController().signal });
-  assert.equal(truncated.ok === false && truncated.class, "quality",
-    "被 token 上界截断的半份页面被归成别的一类：重试同一份提示词只会再截一次，那不是重试该做的事");
+  assert.equal(truncated.ok === false && truncated.class, "output_shape",
+    "被输出上限截断的半份页面归成了不可重试那一流：2026-10-12 用户裁决整页允许再试（至多三次），"
+    + "上限取模型档案声明的一次最大输出后，截断回到「没写完」而不是「写错了」");
 
   const shapeBad = await llmDynamicArtifactProvider({
     config: { url: "u", key: "k", model: "m" },

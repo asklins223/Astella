@@ -9,7 +9,7 @@ import { useCompanionResource } from "./use-companion-resource";
 import { useDiscoveryBookmarks } from "./use-discovery-bookmarks";
 
 type HistoryRead = CompanionHistoryPageV1 & { search: string; anchorId: string | null };
-export function CompanionDialoguePage({ refreshKey, focusMessageId, onFocusConsumed, companionName }: { refreshKey: number; focusMessageId: string | null; onFocusConsumed: () => void; companionName?: string }) {
+export function CompanionDialoguePage({ refreshKey, focusMessageId, onFocusConsumed, companionName, onOpenProposal }: { refreshKey: number; focusMessageId: string | null; onFocusConsumed: () => void; companionName?: string; /** 由伴星中心传入：打开对话手记处理这条记录里的操作提议（审计 F11）。 */ onOpenProposal?: (proposalId: string) => void }) {
   const motionOff = useRoomStore(state => state.reducedMotion || state.motionMode === "off");
   const [query, setQuery] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
@@ -59,5 +59,7 @@ export function CompanionDialoguePage({ refreshKey, focusMessageId, onFocusConsu
   };
   return <DialoguePanel section={changingTarget ? { ok: false, message: "" } : resource.section ?? { ok: false, message: resource.failure ?? "" }} initialLoading={Boolean(changingTarget || (!resource.section && resource.loading))} historyKey={`${appliedQuery}:${anchorId ?? "latest"}`} items={changingTarget ? [] : items} cursor={cursor} query={query} appliedQuery={appliedQuery} searching={resource.loading || Boolean(changingTarget)} loadingMore={loadingMore} error={error}
     onLatest={anchorId || appliedQuery ? () => { setAnchorId(null); setQuery(""); setAppliedQuery(""); setError(null); } : undefined}
-    onQuery={value => { setQuery(value); if (!value.trim()) setAppliedQuery(""); }} onSearch={() => { setError(null); setAnchorId(null); if (appliedQuery === query.trim()) void resource.reload(); else setAppliedQuery(query.trim()); }} onLoadMore={() => void loadMore()} onRetry={() => void resource.reload()} companionName={companionName} discoveryFor={item => { const request = dialogueDiscoveryRequest(item); return request ? bookmarks.forRequest(request) : null; }} />;
+    onQuery={value => { setQuery(value); if (!value.trim()) setAppliedQuery(""); }} onSearch={() => { setError(null); setAnchorId(null); if (appliedQuery === query.trim()) void resource.reload(); else setAppliedQuery(query.trim()); }} onLoadMore={() => void loadMore()} onRetry={() => void resource.reload()} companionName={companionName} discoveryFor={item => { const request = dialogueDiscoveryRequest(item); return request ? bookmarks.forRequest(request) : null; }}
+    /* 审计 F11：中心里的提议不再只是小字——打开手记去处理，和近况「查看提议」同一条路。 */
+    onOpenProposal={onOpenProposal} />;
 }

@@ -127,6 +127,7 @@ test("活跃度与延期复习：说的是用户看得懂的那一档 / 那句�
 test("每一种 kind 都产出三行、都在合同上限内", () => {
   const uuid = "6f0d6a2c-1f0f-4a1e-9a6e-1b2c3d4e5f60";
   const samples: Record<string, unknown> = {
+    agent_tool_review: { kind: "agent_tool_review", toolName: "companion_edit_note", arguments: {}, confirmationStage: "after_preview", preview: { title: "原笔记", markdown: "完整更新结果" } },
     resume_learning_run: { kind: "resume_learning_run", runId: uuid },
     start_learning_run_v2: { kind: "start_learning_run_v2", request: { originV2: { kind: "today", objectiveId: uuid }, goal: "stabilize", idempotencyKey: "k", requestedTimeBudgetSeconds: 180 } },
     save_memory: { kind: "save_memory", memoryKind: "goal", content: "先看完再动手" },

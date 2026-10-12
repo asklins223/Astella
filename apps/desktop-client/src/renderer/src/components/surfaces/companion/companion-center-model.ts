@@ -20,7 +20,7 @@ export const MEMORY_KIND_LABEL: Record<CompanionMemoryKindV1, string> = {
 };
 export const MEMORY_SCOPE_LABEL: Record<CompanionMemoryScopeV1, string> = { global: "所有书房", workspace: "这个书房", task: "只在这项任务里" };
 export const MEMORY_STATE_LABEL: Record<string, string> = {
-  candidate: "待确认", active: "已写入", pinned: "已固定", archived: "已归档", scheduled: "尚未生效", expired: "已过期", linked: "真实关联", orphaned: "关联失效",
+  candidate: "待收录", active: "已写入", pinned: "已固定", archived: "已归档", scheduled: "尚未生效", expired: "已过期", linked: "真实关联", orphaned: "关联失效",
 };
 export const MEMORY_KIND_OPTIONS = Object.entries(MEMORY_KIND_LABEL).map(([value, label]) => ({ value: value as CompanionMemoryKindV1, label }));
 export const isCompanionJudgment = (item: { readonly kind: CompanionMemoryKindV1 }) => item.kind === "judgment";

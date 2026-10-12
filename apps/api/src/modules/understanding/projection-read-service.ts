@@ -85,6 +85,15 @@ export interface UnderstandingProjectionReadBody {
     continuationToken: string | null;
   };
   evidenceTruncated: false;
+  /**
+   * 星图事实基础的诚实标注：canonical/practice 事件读满上限时 truncated 为 true，
+   * `…ReadBefore` 给出**续读位置**（快照里最旧一条事件的时间；更早的这次没读到）。
+   * 少读必须让人看出来——这份投影是模型与界面据以下结论的事实来源。
+   */
+  canonicalEventsTruncated: boolean;
+  canonicalEventsReadBefore: string | null;
+  practiceEventsTruncated: boolean;
+  practiceEventsReadBefore: string | null;
   nodes: Array<Record<string, unknown>>;
   edges: Array<Record<string, unknown>>;
   currentTarget: { keyPointId: string; reasonCodes: string[] } | null;
@@ -116,6 +125,17 @@ export function projectionKpPageSize(): number {
 // 大工作区全量活跃消费卡无界装载。与 kp 分片思想对齐：超限记告警并截断（超限部分的卡及其 kp
 // 不进入投影快照）。
 const PROJECTION_MAX_CARDS = 5000;
+
+/**
+ * 单次事件读取的条数上限——**唯一声明处**（env PROJECTION_EVENT_READ_LIMIT 可在试用前冻结，
+ * 与 projectionKpPageSize 同思路）。数的是**吞吐**（一次请求拉进内存并投影的行数），不是覆盖：
+ * 读满时不静默——响应里逐流标 `…EventsTruncated` 并给 `…EventsReadBefore` 续读位置，
+ * 同时记告警（照抄 PROJECTION_MAX_CARDS 触顶记告警的形状）。
+ */
+export function projectionEventReadLimit(): number {
+  const raw = Number(process.env.PROJECTION_EVENT_READ_LIMIT);
+  return Number.isFinite(raw) && raw >= 1 && raw <= 10_000 ? Math.floor(raw) : 100;
+}
 
 const CURSOR_TIME_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}$/;
 
@@ -257,7 +277,10 @@ export async function loadUnderstandingProjection(
 ): Promise<ProjectionReadOutcome> {
   const lens = params.lens ?? "current_target";
   // 该 user 的 canonical envelope（published）→ personal 事实。
-  const envelopeRows = await tx
+  // 有界读取 + limit+1 探针：读满就标 truncated、给续读位置，不把「只读了最近一截」
+  // 伪装成全部事实（topology-repository 的「单旋钮 + 探针 + truncated 台账」形状）。
+  const eventLimit = projectionEventReadLimit();
+  const envelopeProbe = await tx
     .select()
     .from(canonicalLearningEventOutbox)
     .where(and(
@@ -266,8 +289,10 @@ export async function loadUnderstandingProjection(
       eq(canonicalLearningEventOutbox.status, "published"),
     ))
     .orderBy(desc(canonicalLearningEventOutbox.createdAt))
-    .limit(100);
-  const practiceRows = await tx
+    .limit(eventLimit + 1);
+  const canonicalEventsTruncated = envelopeProbe.length > eventLimit;
+  const envelopeRows = canonicalEventsTruncated ? envelopeProbe.slice(0, eventLimit) : envelopeProbe;
+  const practiceProbe = await tx
     .select()
     .from(practiceTrailEventOutbox)
     .where(and(
@@ -279,7 +304,31 @@ export async function loadUnderstandingProjection(
       eq(practiceTrailEventOutbox.scope, "official_user"),
     ))
     .orderBy(desc(practiceTrailEventOutbox.createdAt))
-    .limit(100);
+    .limit(eventLimit + 1);
+  const practiceEventsTruncated = practiceProbe.length > eventLimit;
+  const practiceRows = practiceEventsTruncated ? practiceProbe.slice(0, eventLimit) : practiceProbe;
+  // 续读位置：快照里最旧一条事件的时间；比它更早的那部分这次没有读到。
+  const canonicalEventsReadBefore = canonicalEventsTruncated
+    ? envelopeRows.at(-1)!.createdAt.toISOString()
+    : null;
+  const practiceEventsReadBefore = practiceEventsTruncated
+    ? practiceRows.at(-1)!.createdAt.toISOString()
+    : null;
+  if (canonicalEventsTruncated || practiceEventsTruncated) {
+    // 触顶记告警（照抄卡装载上限那一处的形状）：截断规模要能在运维侧看到。
+    logger.warn(
+      {
+        workspaceId: scope.workspaceId,
+        userId: scope.userId,
+        limit: eventLimit,
+        canonicalTruncated: canonicalEventsTruncated,
+        canonicalReadBefore: canonicalEventsReadBefore,
+        practiceTruncated: practiceEventsTruncated,
+        practiceReadBefore: practiceEventsReadBefore,
+      },
+      "projection 事件读取达到上限，快照只含最近一段事实（更早事件未读，续读位置已标注）",
+    );
+  }
 
   const targetKeyPointId = params.targetKeyPointId ?? null;
   const routePlanId = params.routePlanId ?? null;
@@ -883,6 +932,11 @@ export async function loadUnderstandingProjection(
     },
     // V2：无 evidence 数据源（V1 evidence.keyPointId 已删），故不截断。
     evidenceTruncated: false,
+    // 事件读满上限时如实标注：少读了、从哪继续读，都写进响应，不静默限幅。
+    canonicalEventsTruncated,
+    canonicalEventsReadBefore,
+    practiceEventsTruncated,
+    practiceEventsReadBefore,
     nodes,
     edges,
     currentTarget: targetKeyPointId

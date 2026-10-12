@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AIProvider } from "../../lib/ai-provider.ts";
-import { getCompanionAgentTool, resolveAllCompanionAgentTools } from "@astella/shared";
+import { AI_UNDECLARED_OUTPUT_TOKENS, COMPANION_AGENT_TOOL_LABELS, resolveAllCompanionAgentTools } from "@astella/shared";
+import { modelOutputTokenLimit } from "../../lib/providers/model-output-budget.ts";
 import {
   companionClassifierRecent,
   companionOfferCandidates,
@@ -65,7 +66,7 @@ test("全文格式调整提供明确编辑协议，保留只分析与不改的�
   assert.deepEqual(result.candidateOperations, ["companion_edit_note"]);
 });
 
-test("生成请求的分类输入包含现役能力说明，当前笔记与历史拒绝不会替代能力事实", async () => {
+test("生成请求的分类输入只带短说法不带整份说明，当前笔记与历史拒绝不会替代能力事实", async () => {
   const note = { kind: "note_version" as const, id: "11111111-1111-4111-8111-111111111111",
     versionId: "22222222-2222-4222-8222-222222222222" };
   const names = resolveAllCompanionAgentTools("full").map(tool => tool.name);
@@ -75,11 +76,13 @@ test("生成请求的分类输入包含现役能力说明，当前笔记与历�
     assert.deepEqual(input.objects, [note]);
     assert.equal(input.current, "生成拓展笔记");
     assert.deepEqual(input.capabilities.map((tool: { name: string }) => tool.name), names);
+    // 方案 52 §4.5：分类器的活儿是从面里挑 name，整份 description 每轮白付 3,394 token。
+    assert.ok(input.capabilities.every((tool: { description?: string }) => tool.description === undefined),
+      "分类输入不能再带上工具级 description；要加回去先跑对照");
     const handoff = input.capabilities.find((tool: { name: string }) => tool.name === "agent_start_goal");
-    assert.equal(handoff.description, getCompanionAgentTool("agent_start_goal")!.description,
-      "用途取唯一能力清单，不能只给无法说明用途的内部名字");
+    assert.equal(handoff.label, COMPANION_AGENT_TOOL_LABELS["agent_start_goal"],
+      "用途取唯一能力清单里的短说法，不在分类器里另写一份文案");
     assert.equal(handoff.riskClass, "reversible_low");
-    assert.match(handoff.description, /速看.*拓展草稿/);
     assert.match(instruction, /历史助手说过能力没接上、不能保存，不是当前能力事实/);
     assert.match(instruction, /不要求用户再说‘保存’或指定保存位置/);
     return { content: JSON.stringify({ ...proposal(true),
@@ -265,23 +268,43 @@ test("整轮预算耗尽时不再启动分类模型调用", async () => {
 });
 
 test("退休用途开关不能扩大分类输入、输出额度或重启来源生成", async () => {
-  let calls = 0;
-  const model = { ...provider(() => false), chatCompletion: async (
-    messages: Parameters<AIProvider["chatCompletion"]>[0], options: Parameters<AIProvider["chatCompletion"]>[1],
-  ) => {
-    calls++;
-    const input = JSON.parse(String(messages.at(-1)?.content));
-    assert.deepEqual(Object.keys(input).sort(), ["capabilities", "conversationClock", "current", "objects", "recent"]);
-    assert.doesNotMatch(String(messages[0]?.content), /dialogueFrame|userRecords/);
-    assert.equal(options?.maxTokens, 900);
-    assert.equal(options?.disableThinking, true);
-    return { content: JSON.stringify(proposal(false)), usage: {} };
-  } } as AIProvider;
+  // 输出额度只认模型档案：handler 自报的那个数（2026-10-12 之前是 900）已经从这一发里
+  // 拿掉，wire 上的天花板由 provider 按档案解析（解析本身钉在
+  // providers/__tests__/model-output-budget.test.ts）。所以这里挡的回归换成两条还成立的：
+  // ① 调用方再往这一发塞任何一个额度数字（抬高或压低都算砍话的刀回来了）；
+  // ② 那个退休开关改得动分类输入、这一发带出去的参数，或重启来源生成。
+  const profileDeclared = 384_000;
+  const sent: Array<{ payload: string; instruction: string; options: Record<string, unknown> }> = [];
+  const model = { ...provider(() => false),
+    // 档案声明这一档就是 provider 真正会用上的天花板；它只看 profile，与开关无关。
+    resolveOutputTokenLimit: () => modelOutputTokenLimit({ maxOutputTokens: profileDeclared },
+      AI_UNDECLARED_OUTPUT_TOKENS),
+    chatCompletion: async (
+      messages: Parameters<AIProvider["chatCompletion"]>[0], options: Parameters<AIProvider["chatCompletion"]>[1],
+    ) => {
+      sent.push({ payload: String(messages.at(-1)?.content), instruction: String(messages[0]?.content),
+        options: { ...options } });
+      return { content: JSON.stringify(proposal(false)), usage: {} };
+    } } as AIProvider;
+
   const legacyCaller = { ...taskContext(), dialogueFrameEnabled: true };
   const result = await interpretCompanionTurn(model, [{ role: "user", content: "我还没交呢" }], legacyCaller);
-  assert.equal(calls, 1);
+  assert.equal(sent.length, 1);
   assert.equal(result.intent, "conversation");
   assert.equal("dialogueFrame" in result, false);
+
+  const ceilingKeys = Object.keys(sent[0]!.options).filter(key => /token|budget|limit|ceil|max/i.test(key));
+  assert.deepEqual(ceilingKeys, [], "分类器不再自报输出额度：这一发的上界只由档案声明那一处决定");
+  assert.equal(model.resolveOutputTokenLimit?.(), profileDeclared,
+    "退休开关在场时，provider 解析出来的仍是档案声明的那一档");
+  const input = JSON.parse(sent[0]!.payload);
+  assert.deepEqual(Object.keys(input).sort(), ["capabilities", "conversationClock", "current", "objects", "recent"]);
+  assert.doesNotMatch(sent[0]!.instruction, /dialogueFrame|userRecords/);
+  assert.equal(sent[0]!.options.disableThinking, true, "关思考是档位判据，不是砍话的那把刀，退休开关动不到它");
+
+  await interpretCompanionTurn(model, [{ role: "user", content: "我还没交呢" }], taskContext());
+  assert.equal(sent.length, 2);
+  assert.deepEqual(sent[1], sent[0], "开关开与关送出去的分类输入与这一发参数必须一字不差");
 });
 
 test("模型有效返回 uncertain 与调用失败在观测中分别记录", async () => {

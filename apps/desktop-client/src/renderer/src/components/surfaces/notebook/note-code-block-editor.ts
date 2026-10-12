@@ -4,8 +4,8 @@ import { CodeMirrorBlock, codeBlockConfig, codeBlockView, type CodeBlockConfig }
 import { Compartment, EditorState, Prec } from "@codemirror/state";
 import { EditorView as CodeMirror, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view";
 import { indentWithTab } from "@codemirror/commands";
-import { languages } from "@codemirror/language-data";
-import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { syntaxHighlighting } from "@codemirror/language";
+import { codeHighlighter, codeLanguages } from "../../content/code-tokens";
 import { Plugin } from "@milkdown/kit/prose/state";
 import { undoCommand, redoCommand } from "y-prosemirror";
 import { noteAiLockKey } from "./note-ai-lock";
@@ -14,7 +14,6 @@ import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { NoteMermaid } from "./note-mermaid";
 export { codeBlockConfig };
-export const noteCodeLanguages = languages;
 
 /** The existing CodeMirror component supplies languages and editing; history belongs to our shared document. */
 export function noteCodeBlockPlugins() {
@@ -23,7 +22,7 @@ export function noteCodeBlockPlugins() {
     const writable = () => { const pos = getPos(); return view.editable && pos !== undefined && !(noteAiLockKey.getState(view.state) ?? []).some(lock => pos >= lock.from && pos < lock.to); };
     const readOnly = new Compartment(); let fromDocument = false, lastReadonly = !writable();
     let previewRoot: Root | null = null, previewElement: HTMLElement | null = null;
-    const config: CodeBlockConfig = { ...ctx.get(codeBlockConfig.key), languages,
+    const config: CodeBlockConfig = { ...ctx.get(codeBlockConfig.key), languages: codeLanguages,
       copyText: "复制代码", searchPlaceholder: "搜索代码语言", noResultText: "没有找到这个语言", expandIcon: "⌄", searchIcon: "⌕", clearSearchIcon: "×", copyIcon: "",
       onCopy: text => { void copyText(text); },
       previewLabel: "图表预览", previewLoading: "正在绘制图表…", previewToggleButton: only => only ? "编辑图表" : "只看图表",
@@ -32,7 +31,7 @@ export function noteCodeBlockPlugins() {
         if (!previewElement) { previewElement = document.createElement("div"); previewRoot = createRoot(previewElement); }
         previewRoot!.render(createElement(NoteMermaid, { source })); return previewElement;
       },
-      extensions: [lineNumbers(), highlightActiveLine(), syntaxHighlighting(defaultHighlightStyle), CodeMirror.lineWrapping,
+      extensions: [lineNumbers(), highlightActiveLine(), syntaxHighlighting(codeHighlighter), CodeMirror.lineWrapping,
         Prec.highest(readOnly.of(EditorState.readOnly.of(lastReadonly))),
         EditorState.changeFilter.of(() => fromDocument || writable()),
         Prec.highest(keymap.of([

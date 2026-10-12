@@ -26,8 +26,9 @@ export const MAX_PAST_CONVERSATION_HITS = 5;
 /** 取回原文时一次最多读多少条消息。 */
 export const MAX_PAST_CONVERSATION_MESSAGES = 20;
 
-/** Soft page budget: a single message is always complete, even if larger. */
-export const PAST_MESSAGES_MAX_CHARS = 6_000;
+// 分页预算的唯一来源在声明层（`companion-conversation-contracts.ts`）：这一族的两格
+// `maxOutputChars` 由它派生，这里只是执行它。规则照旧——一条消息要么整条给，要么不给。
+import { PAST_MESSAGES_MAX_CHARS } from "@astella/shared";
 
 export interface PastConversationScope {
   workspaceId: string;

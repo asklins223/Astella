@@ -9,13 +9,13 @@ import { queryRows, type AgentSqlExecutor } from "./store.ts";
 export async function createPrivateNoteRecords(tx: AgentSqlExecutor,
   scope: { workspaceId: string; userId: string },
   input: { title: string; titleSource: "manual" | "auto"; blocks: readonly NoteDocBlockSpec[];
-    noteId?: string; noteVersionId?: string; companionRunId?: string;
+    noteId?: string; noteVersionId?: string; companionRunId?: string; companionToolCallId?: string;
     linkRefs?: readonly { noteId: string; noteVersionId: string }[] }) {
   const noteId = input.noteId ?? randomUUID(), noteVersionId = input.noteVersionId ?? randomUUID();
   // The restricted worker receives only this scoped creation function, never
   // general INSERT/UPDATE rights over users' existing notes.
   await tx.execute(sql`SELECT astella_create_private_note_v1(${scope.workspaceId},${scope.userId},${noteId},
-    ${noteVersionId},${input.title},${input.titleSource},${JSON.stringify({ blocks: input.blocks, linkRefs: input.linkRefs ?? [] })}::jsonb,
+    ${noteVersionId},${input.title},${input.titleSource},${JSON.stringify({ blocks: input.blocks, linkRefs: input.linkRefs ?? [], companionToolCallId: input.companionToolCallId ?? null })}::jsonb,
     ${input.companionRunId ?? null}::uuid)`);
   const [saved] = await queryRows<{ id: string; current_version_id: string }>(tx,
     sql`SELECT id,current_version_id FROM notes WHERE id=${noteId} AND workspace_id=${scope.workspaceId}

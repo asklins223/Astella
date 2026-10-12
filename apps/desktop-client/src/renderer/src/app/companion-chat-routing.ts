@@ -232,6 +232,10 @@ export function companionTurnErrorMessage(error: unknown): string {
 
 export function companionReplyFailureMessage(code: unknown, recoverable: unknown): string {
   if (code === "CONTEXT_STALE") return "这一轮引用的记忆已变更或撤回。重新发送，我会按现在的内容继续。";
+  // 达到长度上限不是"没做成"：已经说出的那半句是有效的，缺的是后半段。
+  // 以前这条落进 recoverable=false 的通用文案，用户看到「这一轮没能完成。重新说一遍就好」＋半截正文，
+  // 而 worker 早就写好了「可以接着分段讲」——两侧说的是两件事。
+  if (code === "REPLY_LENGTH_LIMIT") return "这次答复达到长度上限，已经说出的内容保留；说一句「接着讲」，我就从断的地方往下说。";
   if (code === "RATE_LIMITED") return "模型服务暂时繁忙，稍后再试就好。已经做好的内容还在。";
   if (code === "PROVIDER_UNAVAILABLE") return "模型服务暂时不可用，已经做好的内容还在。";
   return recoverable === false ? "这一轮没能完成。重新说一遍就好。" : "这一轮没能完成，可以再试一次。";

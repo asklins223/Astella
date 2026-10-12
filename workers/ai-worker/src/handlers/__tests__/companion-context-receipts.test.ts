@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { AgentContextReceipt } from "@astella/agent-core";
 import {
   createCompanionContextReceipts,
-  COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS,
+  companionContextAssemblyCapacity,
 } from "../companion-context-receipts.ts";
 
 const receipt = (id: string, status: AgentContextReceipt["status"], characters = 10): AgentContextReceipt => ({
@@ -19,7 +19,7 @@ test("44 §3.3：装配回执随预算一起落库，budget_omitted 不再只进
   ]);
   const patch = receipts.runMetaPatch();
   assert.ok(patch.contextAssemblyReceipt);
-  assert.equal(patch.contextAssemblyReceipt.maxCharacters, COMPANION_CONTEXT_SYSTEM_MAX_CHARACTERS);
+  assert.equal(patch.contextAssemblyReceipt.maxCharacters, companionContextAssemblyCapacity([{ characters: 120 }, { characters: 80 }, { characters: 400 }]));
   assert.equal(patch.contextAssemblyReceipt.omittedCount, 1);
   assert.deepEqual(patch.contextAssemblyReceipt.omitted.map((entry) => entry.id), ["page_context"]);
   assert.deepEqual([...receipts.admittedSources()].sort(), ["memory_directory", "resident_memory"]);
@@ -98,4 +98,16 @@ test("落库的那一份不含任何请求内容", () => {
   const receipts = createCompanionContextReceipts();
   receipts.recordAssembly([receipt("here_and_now", "included", 12)]);
   assert.equal(JSON.stringify(receipts.runMetaPatch()).includes("今天聊"), false);
+});
+
+test("同一请求只压一次，新的工具回合增长后可以再次压缩", () => {
+  const receipts = createCompanionContextReceipts();
+  receipts.beginRequest("step-a");
+  assert.equal(receipts.currentRequestHash(), "step-a");
+  receipts.consumeCompactionAttempt();
+  receipts.beginRequest("step-a");
+  assert.equal(receipts.hasCompactionAttempt(), false);
+  receipts.beginRequest("step-b-with-more-tool-results");
+  assert.equal(receipts.hasCompactionAttempt(), true);
+  assert.equal(receipts.currentRequestHash(), "step-b-with-more-tool-results");
 });

@@ -94,6 +94,7 @@ import {
 import type { TeachingExplainProviderV1 } from "./teaching/teaching-explain.ts";
 import { createRoundRuntimeCollaborators } from "./runtime-collaborators.ts";
 import {
+  ARTIFACT_MODEL_CALLS_V1,
   runDynamicArtifactV1,
   type DynamicArtifactProviderV1,
 } from "@astella/shared/note-dynamic-artifact/round-artifact-model";
@@ -931,8 +932,10 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
       const demo = await runDynamicArtifactV1({
         provider: artifactGenerator.provider,
         modelId: artifactGenerator.modelId,
-        // 至少 1 次、不超过剩下额度：内核按失败类别决定要不要用掉那一次重试。
-        maxModelCalls: Math.min(2, artifactCallBudget),
+        // 至少 1 次、不超过剩下额度与整页那一档的调用预算（1 发整页 + 至多三次截断重发
+        // + 1 发只修回查字段）。以前这里只给 2：轮内那次截断的重发机会比独立任务少两次，
+        // 同一份页子在两条路上一个能救回来一个不能。
+        maxModelCalls: Math.min(ARTIFACT_MODEL_CALLS_V1, artifactCallBudget),
         maxDurationMs: artifactRemainingMs,
         attemptId: frozen.attempt.id,
         input: {

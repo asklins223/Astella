@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  buildReflectionMessages, buildReflectionPrompt, clipReflectionOverflow, companionReflectionOutputV1Schema, normalizeReflectionPayload,
+  buildReflectionMessages, buildReflectionPrompt, companionReflectionOutputV1Schema, normalizeReflectionPayload,
   reflectionInputFingerprint, verifyReflectionOutput, boundReflectionSnapshot,
   type ReflectionInputSnapshotV1,
 } from "../companion-reflection-content.ts";
@@ -135,14 +135,18 @@ test("输入指纹只认消息身份、人格版本与策略版本：重排空�
     "同 id 的原话改写之后不能复用旧响应");
 });
 
-test("真实外发双消息都执行输入容量：超长原话与回执不绕过上限", () => {
-  const input = snapshot({ messages: snapshot().messages.map(m => ({ ...m, text: "长".repeat(100000) + "越界尾文" })),
+test("超长原话与回执整条不入选并留下条数，而不是砍掉尾部当读过", () => {
+  const budget = { triggerTokens: 20_000, countTokens: (text: string) => text.length };
+  const input = boundReflectionSnapshot(snapshot({ messages: snapshot().messages.map(m => ({ ...m, text: "长".repeat(100000) + "越界尾文" })),
     toolReceipts: [{ id: invented, name: "read", status: "succeeded", safeSummary: "回".repeat(100000) + "越界回执" }],
     relatedMemories: [{ id: invented, kind: "preference", revision: 1, epistemicStatus: "supported",
-      content: "记".repeat(100000) + "越界记忆" }] });
+      content: "记".repeat(100000) + "越界记忆" }] }), budget);
   const messages = buildReflectionMessages(input);
-  assert.ok(messages.reduce((n, m) => n + m.content.length, 0) < 10000);
   for (const message of messages) assert.doesNotMatch(message.content, /越界尾文|越界回执|越界记忆/);
+  // 装不下的是**整条**：留下的那一条必须还是它自己的全文。
+  assert.deepEqual(input.inputOmitted, { messages: 3, toolReceipts: 1, relatedMemories: 1, selfNotes: 0,
+    triggerTokens: 20_000 });
+  assert.match(messages[1].content, /本次容量之外的材料/);
 });
 
 test("历史材料只外发一次，原话中的角色声明不进入系统规则", () => {
@@ -180,31 +184,29 @@ test("归一层不许把不认识的认识状态改成能用的值，也不许�
   assert.equal(companionReflectionOutputV1Schema.safeParse(missing.payload).success, true);
 });
 
-test("剪容量：模型多给一条经验时不要整次回顾作废", () => {
+test("反思保留全部判断与合作方法，不按固定条数剪掉", () => {
   const one = { text: "一句判断", epistemicStatus: "tentative",
     sourceMessageIds: ["5f0c1a44-0000-4000-8000-000000000001"] };
   const raw = { decision: "proposals", summary: "s", judgments: [one, { ...one }, { ...one }],
     experiences: [{ title: "甲种做法", triggerCondition: "条件甲", steps: ["先看一眼"], sourceMessageIds: [one.sourceMessageIds[0]] },
       { title: "乙种做法", triggerCondition: "条件乙", steps: ["先看一眼"], sourceMessageIds: [one.sourceMessageIds[0]] },
       { title: "丙种做法", triggerCondition: "条件丙", steps: ["先看一眼"], sourceMessageIds: [one.sourceMessageIds[0]] }] };
-  const { payload, clipped } = clipReflectionOverflow(normalizeReflectionPayload(raw).payload);
+  const { payload } = normalizeReflectionPayload(raw);
   const parsed = companionReflectionOutputV1Schema.safeParse(payload);
   assert.equal(parsed.success, true, JSON.stringify(parsed.success ? {} : parsed.error.issues));
-  assert.equal(parsed.success && parsed.data.judgments.length, 2);
-  assert.equal(parsed.success && parsed.data.experiences.length, 2);
-  assert.deepEqual(clipped, ["judgments:1", "experiences:1"]);
+  assert.equal(parsed.success && parsed.data.judgments.length, 3);
+  assert.equal(parsed.success && parsed.data.experiences.length, 3);
 });
 
-test("剪容量也要管到 persona：她那一段自我描述的依据给多了，剪掉而不是整份判废", () => {
+test("自我描述保留全部来源，依据核对不按条数裁剪", () => {
   const ids = Array.from({ length: 8 }, (_u, i) =>
     `5f0c1a44-0000-4000-8000-00000000000${i + 1}`);
   const raw = { decision: "proposals", summary: "s",
     persona: { selfDescription: "我在学着不把读过的东西数一遍。", reason: "对方明确说过", sourceMessageIds: ids } };
-  const { payload, clipped } = clipReflectionOverflow(normalizeReflectionPayload(raw).payload);
+  const { payload } = normalizeReflectionPayload(raw);
   const parsed = companionReflectionOutputV1Schema.safeParse(payload);
   assert.equal(parsed.success, true, JSON.stringify(parsed.success ? {} : parsed.error.issues));
-  assert.equal(parsed.success && parsed.data.persona?.sourceMessageIds.length, 6);
-  assert.deepEqual(clipped, ["persona.sourceMessageIds"]);
+  assert.equal(parsed.success && parsed.data.persona?.sourceMessageIds.length, 8);
 });
 
 test("自主选择无需用户背书；对用户的判断仍必须引用用户原话", () => {
@@ -219,14 +221,17 @@ test("自主选择无需用户背书；对用户的判断仍必须引用用户�
   assert.equal(result.output.decision, "proposals");
 });
 
-test("长记事按整篇选入预算，唤醒条目优先，未读全文不能覆盖", () => {
+test("长记事按整篇选入档案声明的容量，唤醒条目优先，未读全文不能覆盖", () => {
   const note = (key: string) => ({ key, revision: 1, userDisabled: false, title: key,
     body: "整篇\n".repeat(8192), tier: "active" as const, nextReviewAt: null, expiresAt: null,
     reason: "自己的问题", updatedAt: "2026-10-10T00:00:00Z" });
-  const input = boundReflectionSnapshot(snapshot({ selfNotes: [note("a"), note("b"), note("wake")], wake: { key: "wake", revision: 1 } }));
+  // 容量来自模型档案（这里用可读的字长度当计量端口）：一篇约 2.5 万，装不下的整篇不入选。
+  const budget = { triggerTokens: 80_000, countTokens: (text: string) => text.length };
+  const input = boundReflectionSnapshot(snapshot({ selfNotes: [note("a"), note("b"), note("wake")], wake: { key: "wake", revision: 1 } }), budget);
   assert.deepEqual(input.selfNotes?.map(n => n.key), ["wake", "a"]);
   assert.equal(input.selfNotes?.[0].body, note("wake").body);
   assert.equal(input.selfNoteIndex?.length, 3);
+  assert.equal(input.inputOmitted?.selfNotes, 1);
   const write = { key: "b", expectedRevision: 1, title: "b", body: "不完整的改写", tier: "active" as const, reason: "改写" };
   const result = verifyReflectionOutput({ ...base, selfNotes: [write, { ...write, key: "new", expectedRevision: 0 }, { ...write, key: "new", expectedRevision: 0 }] }, input);
   assert.deepEqual(result.output.selfNotes.map(n => n.key), ["new"]);

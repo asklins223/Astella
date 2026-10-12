@@ -111,7 +111,7 @@ interface ActiveCompanionSpeech {
 }
 
 const BUBBLE_EXIT_MS = 280;
-const CARD_ONLY_LINE = "我把这件事整理成了一条可执行建议，已经收进对话记录里。";
+const CARD_ONLY_LINE = "我把这件事整理成了一条可执行建议，已经收进对话手记里。";
 /** 出声结束后呼吸环从当前振幅回落到静息的时长（方案 §4）。 */
 const COMPANION_BREATH_RETURN_MS = 300;
 /** 停止后的就地说明在气泡里停留多久；之后由用户的下一次发送或这里收掉。 */
@@ -396,7 +396,7 @@ export function CompanionHud({
     const api = typeof window === "undefined" ? undefined : window.astella;
     if (!api?.noteExpansion) {
       setExpansionTaskState("error");
-      setExpansionTaskMessage("后台整理暂时不可用。伴星回复仍保存在对话记录里，你可以回到笔记页重试。");
+      setExpansionTaskMessage("后台整理暂时不可用。伴星回复仍保存在对话手记里，你可以回到笔记页重试。");
       return;
     }
     const key = `${intent.noteId}:${intent.noteVersionId}:${reply.messageId}`;
@@ -432,11 +432,11 @@ export function CompanionHud({
         ? "这批草稿已回到笔记页，可以逐篇检查后再收下。"
         : task.status === "failed"
           ? "这次整理没有完成。回到笔记页可以查看原因并重试。"
-          : "已经开始整理。进度和可编辑草稿会留在这篇笔记里；这段对话也会保存在伴星手记中。" );
+          : "已经开始整理。进度和可编辑草稿会留在这篇笔记里；这段对话也会保存在对话手记中。" );
     } catch (error) {
       if (guideAiPermissionFailure(error)) { setExpansionTaskState("idle"); return; }
       setExpansionTaskState("error");
-      setExpansionTaskMessage(`没有开始整理：${gatewayErrorMessage(error)}。可以重试，伴星回复仍在手记里。`);
+      setExpansionTaskMessage(`没有开始整理：${gatewayErrorMessage(error)}。可以重试，伴星回复仍在对话手记里。`);
     }
   };
   const ensureRevealDriver = useCallback((): CompanionRevealDriver => {
@@ -899,12 +899,20 @@ export function CompanionHud({
       if (sent) { chat.dismissFeedSelection(); imageAttachment.clear(); }
       else if (sendId === preparingSendIdRef.current) {
         noteReplySaveAttemptRef.current = null;
-        if (!fromVoice && (sourceConversationId === null || sourceConversationId === conversationIdRef.current)) setInput((current) => current || text);
+        // 失败时把输入面板放回来（审计 F1）：以前发送一开始就收起输入，
+        // 失败后屏幕上只剩一条 60 秒就走的错误——用户体感是"我打的字凭空消失"。
+        if (!fromVoice && (sourceConversationId === null || sourceConversationId === conversationIdRef.current)) {
+          setInput((current) => current || text);
+          chat.setMode("conversation");
+        }
       }
       return sent;
     } catch (error) {
       noteReplySaveAttemptRef.current = null;
-      if (!fromVoice && (sourceConversationId === null || sourceConversationId === conversationIdRef.current)) setInput((current) => current || text);
+      if (!fromVoice && (sourceConversationId === null || sourceConversationId === conversationIdRef.current)) {
+        setInput((current) => current || text);
+        chat.setMode("conversation");
+      }
       throw error;
     } finally {
       if (sendId === preparingSendIdRef.current) setPreparingSend(false);
@@ -1162,7 +1170,7 @@ export function CompanionHud({
                   <p className="companion-hud__output-note" role="status">{outputNotice}</p>
                 ) : null}
                 {outputTone === "note" && !activeNoteExplanation && chat.feedNoteAnchor && chat.phase === "error" ? <button type="button" className="text-action companion-hud__output-retry" onClick={() => { void sendText(chat.feedPrompt ?? "请用通俗易懂的话解释这段，并举一个短例子。").catch(() => undefined); }}>重试这段解释</button> : null}
-                {outputTone === "reply" || outputTone === "stopped" ? <footer className="companion-hud__reply-foot"><span>{chat.phase === "sending" ? "正在回复…" : chat.richReply ? "已留在手记" : "读完后收起"}</span><button type="button" className="text-action" onClick={() => chat.setMode("history")}>手记<ChevronLeft size={14} /></button></footer> : null}
+                {outputTone === "reply" || outputTone === "stopped" ? <footer className="companion-hud__reply-foot"><span>{chat.phase === "sending" ? "正在回复…" : chat.richReply ? "已留在对话手记" : "一会后收起 · 停在她的话上会多留一会"}</span><button type="button" className="text-action" onClick={() => chat.setMode("history")}>对话手记<ChevronLeft size={14} /></button></footer> : null}
                 {/* 停止（方案 §6）：生成中用户视线在气泡上，不该强迫他把鼠标移到旁边的按钮列。 */}
                 {(chat.phase === "sending" || preparingSend) && !railVisible ? (
                   <button
@@ -1285,7 +1293,7 @@ export function CompanionHud({
                       </button>
                     ) : null}
                     <button type="button" onClick={() => chat.setMode("history")}>
-                      <History size={18} /><span><strong>我们的对话手记</strong><small>回看连续对话和动作建议</small></span>
+                      <History size={18} /><span><strong>对话手记</strong><small>回看连续对话和动作建议</small></span>
                     </button>
                     <button
                       type="button"
@@ -1345,8 +1353,8 @@ export function CompanionHud({
         </div>, document.body)}
       {chat.mode !== "history" ? <nav className="companion-hud__controls" aria-label={`${chat.companionName} 身边的交互`}>
         <button type="button" data-active={chat.mode === "conversation" || undefined} onPointerDown={playButtonBounce} onClick={() => { interaction.closeVoice(); setSettingsOpen(false); chat.setMode(chat.mode === "conversation" ? "closed" : "conversation"); }} title="气泡轻聊" aria-label="气泡轻聊"><MessageCircle size={18} aria-hidden="true" /></button>
-        {voiceEnabled ? <button ref={micRef} type="button" data-active={interaction.voiceOpen || undefined} data-voice-phase={voice.activity} data-unsupported={!voice.supported || undefined} onPointerDown={playButtonBounce} onClick={() => { setSettingsOpen(false); toggleVoice(); }} disabled={!voice.supported} title={voice.phase === "idle" ? "开始语音对话" : "结束语音对话（未发送的内容会丢弃）"} aria-label={voice.phase === "idle" ? "开始语音对话" : "结束语音对话"}>{voice.phase === "closing" ? <Loader2 className="companion-hud__spin" size={18} aria-hidden="true" /> : <Mic size={18} aria-hidden="true" />}</button> : null}
-        <button type="button" onPointerDown={playButtonBounce} onClick={() => { interaction.closeVoice(); setSettingsOpen(false); chat.setMode("history"); }} title="对话手记" aria-label="对话手记"><History size={18} aria-hidden="true" /></button>
+        {voiceEnabled ? <button ref={micRef} type="button" data-active={interaction.voiceOpen || undefined} data-voice-phase={voice.activity} data-unsupported={!voice.supported || undefined} onPointerDown={playButtonBounce} onClick={() => { setSettingsOpen(false); toggleVoice(); }} title={!voice.supported ? "这台设备没有可用的麦克风" : voice.phase === "idle" ? "开始语音对话" : "结束语音对话（没说完的会放进文字输入）"} aria-label={!voice.supported ? "这台设备没有可用的麦克风" : voice.phase === "idle" ? "开始语音对话" : "结束语音对话"}>{voice.phase === "closing" ? <Loader2 className="companion-hud__spin" size={18} aria-hidden="true" /> : <Mic size={18} aria-hidden="true" />}</button> : null}
+        <button type="button" onPointerDown={playButtonBounce} onClick={() => { interaction.closeVoice(); setSettingsOpen(false); chat.setMode("history"); }} title="对话手记" aria-label={chat.pendingProposalCount > 0 ? `对话手记，${chat.pendingProposalCount} 件待确认` : "对话手记"}><History size={18} aria-hidden="true" />{chat.pendingProposalCount > 0 ? <i className="companion-hud__badge" aria-hidden="true">{chat.pendingProposalCount}</i> : null}</button>
         <button ref={moreControlRef} type="button" data-active={chat.mode === "actions" || settingsOpen || undefined} onPointerDown={playButtonBounce} onClick={() => { interaction.closeVoice(); chat.setMode(chat.mode === "actions" ? "closed" : "actions"); }} title="设置与快捷操作" aria-label="设置与快捷操作"><Settings2 size={18} aria-hidden="true" /></button>
       </nav> : null}
       <CompanionGoalBubble anchorRef={hudRef} motionMode={motionMode} blocked={floatingBlocked || settingsOpen || chat.mode === "history"}
@@ -1472,6 +1480,7 @@ function CompanionQuickSettings({ settings, onOpenVoiceSettings, onOpenCenter }:
         <button type="button" onClick={settings.onResetPosition}><RotateCcw size={13} />重置位置</button>
         <button type="button" onClick={settings.onHide}>暂时隐藏伴星</button>
       </div>
+      <p className="companion-hud__permission-note">「安静」与「专注」只停她的主动提示；回复时的朗读与通知声音照旧，整机静音在「全部伴星设置」。</p>
     </section>
     <section className="companion-hud__setting-group"><h4 className="companion-hud__setting-title">继续了解</h4>
       <div className="companion-hud__setting-buttons"><button type="button" onClick={onOpenCenter}>伴星中心</button><button type="button" onClick={onOpenVoiceSettings}>全部伴星设置</button></div>

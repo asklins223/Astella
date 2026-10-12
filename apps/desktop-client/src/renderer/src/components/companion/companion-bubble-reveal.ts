@@ -115,13 +115,17 @@ export function estimateCompanionReadDurationMs(charCount: number): number {
 
 /**
  * 回复念完后的停留时长（2026-09-19 方案 §3）：旧实现固定 1.1s，长内容根本读不完。
- * 这里按文字长度自适应 2.4–6s：起步 2.4s，每字 +12ms——300 字（气泡容量上限）时
- * 正好到 6s 封顶。悬停、聚焦、待选卡片、朗读中的暂停语义由调用方实现，这里只算
- * "该停留多久"这一个纯量。
+ * 这里按文字长度自适应 4–15s：起步 4s，每字 +20ms——300 字（气泡容量上限）时
+ * 8s 多，更长正文到 15s 封顶。悬停、聚焦、待选卡片、朗读中的暂停语义由调用方实现，
+ * 这里只算"该停留多久"这一个纯量。
+ *
+ * 2026-10-11（审计 F5）：原来的 2.4–6s 对几百字的解释太短——用户把鼠标放在别处
+ * 边看边想，6 秒后气泡在眼前收走，"读完"由计时器而不是人判定。停留预算整体放宽，
+ * 页脚文案同步改成真实规则（鼠标停在她的话上会继续续时）。
  */
-const HOLD_BASE_MS = 2_400;
-const HOLD_MAX_MS = 6_000;
-const HOLD_MS_PER_CHAR = 12;
+const HOLD_BASE_MS = 4_000;
+const HOLD_MAX_MS = 15_000;
+const HOLD_MS_PER_CHAR = 20;
 
 export function companionBubbleHoldMs(charCount: number): number {
   const extra = Math.max(0, Math.floor(charCount)) * HOLD_MS_PER_CHAR;

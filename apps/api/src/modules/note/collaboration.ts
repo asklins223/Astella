@@ -2,7 +2,6 @@ import * as Y from "yjs";
 import { projectFragmentBlocks } from "./doc-fragment.ts";
 import { Hocuspocus } from "@hocuspocus/server";
 import type { FastifyInstance } from "fastify";
-import websocket from "@fastify/websocket";
 import type { WebSocket as WsSocket, RawData } from "ws";
 import { and, eq } from "drizzle-orm";
 import { noteBlocks, noteDocumentStates, notes } from "@astella/shared/db-schema/note";
@@ -10,7 +9,7 @@ import { users } from "@astella/shared/db-schema/identity";
 import { logger } from "../../lib/logger.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { decodeToken } from "../identity/session-service.ts";
-import { isWorkspaceOwner } from "../identity/middleware.ts";
+import { isWorkspaceOwner, isNoteContentWriteForbiddenForSession } from "../identity/middleware.ts";
 import {
   loadNoteDoc,
   persistNoteDoc,
@@ -29,7 +28,8 @@ import { disconnectAndVerifyNoteDocSave } from "./note-doc-save-confirmation.ts"
  * 笔记协同的服务端（批次 4.2）。
  *
  * 一条连接能不能改，判据**只有服务端一份**：`onAuthenticate` 从 token 解出 session，
- * `isWorkspaceOwner` 决定 `connectionConfig.readOnly`，服务端此后一律拒收该连接的更新。
+ * `isWorkspaceOwner` 与 0413 的 `isNoteContentWriteForbiddenForSession`（手机会话只读）
+ * 决定 `connectionConfig.readOnly`，服务端此后一律拒收该连接的更新。
  * 界面隐藏按钮不是权限，客户端说什么都不算——这跟这次审查里"服务端可写、UI 判只读"
  * 那类分裂是同一个问题的两面。
  *
@@ -357,7 +357,11 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
       displayName: note.displayName,
     });
 
-    const readOnly = !isWorkspaceOwner(session);
+    // 0413：手机会话在这一层同样只读。规则是「手机上人不改正文，伴星改」，而伴星
+    // 根本不连这条 WS（她的写入走 `companion-edit-dispatch` 的内部 tool call），
+    // 所以把手机连接设成只读只挡到人，不挡到她。凭据带回来的 `client_kind` 才是
+    // 判据——WS 升级请求带不了 Authorization，头这一路本来就不可用。
+    const readOnly = !isWorkspaceOwner(session) || isNoteContentWriteForbiddenForSession(session);
     // 只读要写进 connectionConfig，不是自己挡消息：服务端会据此回一条
     // `Authenticated("readonly")` 让客户端知道自己只读，之后同步/更新一律回
     // `SyncStatus(false)`（否定确认）。在 `beforeHandleMessage` 里抛错会断整条
@@ -496,7 +500,6 @@ export async function disconnectAndConfirmNoteDocSaved(
  * 只有一份，就是 `onAuthenticate`，而且它按文档逐条判——换一篇笔记就要重新过一遍。
  */
 export async function noteCollaborationRoutes(app: FastifyInstance) {
-  await app.register(websocket);
   app.get("/note-doc", { websocket: true }, (socket, request) => {
     handleNoteDocConnection(socket, request.raw);
   });
@@ -611,8 +614,9 @@ export async function applyUploadedDocUpdate(input: {
     workspaceId: input.workspaceId,
     noteId: input.noteId,
     versionId: note.currentVersionId,
-    // 可写性由路由上的 `requireOwner` 判（与 `onAuthenticate` 同一个谓词）；走到这里
-    // 就是可写。这里不再判第二次，否则又多一套可能互相矛盾的判据。
+    // 可写性由路由上的 `requireOwner` + `requireNoteContentWrites` 判（与
+    // `onAuthenticate` 同一个谓词）；走到这里就是可写。这里不再判第二次，否则又多一套
+    // 可能互相矛盾的判据。
     readOnly: false,
   };
 
@@ -691,7 +695,8 @@ export async function publishRestoredNoteDoc(input: {
     workspaceId: input.workspaceId,
     noteId: input.noteId,
     versionId: input.versionId,
-    // 可写性由路由上的 `requireOwner` 判过（与 `onAuthenticate` 同一个谓词）；走到这里就是可写。
+    // 可写性由路由上的 `requireOwner` 与 `requireNoteContentWrites` 判过（与
+    // `onAuthenticate` 同一个谓词）；走到这里就是可写。
     readOnly: false,
   };
   const connection = await noteCollaboration.openDirectConnection(documentNameForNote(input.noteId), context);

@@ -361,6 +361,10 @@ export const DESKTOP_IPC_CHANNELS = {
   authReauthenticate: "astella.v1.auth.reauthenticate",
   authChangePassword: "astella.v1.auth.changePassword",
   authJoinWorkspace: "astella.v1.auth.joinWorkspace",
+  // 邮箱验证码三链路：发码、验证码登录、找回密码。
+  authSendEmailCode: "astella.v1.auth.sendEmailCode",
+  authLoginWithCode: "astella.v1.auth.loginWithCode",
+  authResetPassword: "astella.v1.auth.resetPassword",
   // 旧版设置页回补（2026-09-18）：档案、头像与退出工作区。
   authProfileGet: "astella.v1.auth.profile.get",
   authUpdateProfile: "astella.v1.auth.profile.update",
@@ -1148,6 +1152,16 @@ export const gatewayErrorCodeValues = [
   // sign-up forms can say what actually went wrong instead of collapsing every
   // 4xx into one generic sentence.
   "email_exists",
+  // 邮箱验证码三链路的服务端 token（400/409 由网关按 token 翻码，
+  // 503 发信通道故障翻成 email_send_failed；文案在 renderer 的 gatewayErrorMessage）。
+  "client_update_required",
+  "invalid_email_code",
+  "expired_email_code",
+  "email_code_attempts_exhausted",
+  "email_send_failed",
+  "email_channel_unavailable",
+  "email_daily_limit_reached",
+  "account_unavailable",
   "invite_invalid",
   "invite_expired",
   "invite_consumed",
@@ -2283,9 +2297,14 @@ export const companionBridgeStateV1Schema = z.strictObject({
 });
 export type CompanionBridgeStateV1 = z.infer<typeof companionBridgeStateV1Schema>;
 
+/** 邮箱验证码用途：注册验证 / 验证码登录 / 找回密码。 */
+export type EmailCodePurposeV1 = "register" | "login" | "reset_password";
+
 export const authSurfaceManifestResultV1Schema = z.strictObject({
   manifest: authSurfaceManifestV1Schema,
   testMode: z.boolean(),
+  /** 邮箱验证码通道是否配置齐全；旧服务端不带此字段（视为未配置）。 */
+  emailChannelAvailable: z.boolean().optional(),
 });
 export type AuthSurfaceManifestResultV1 = z.infer<typeof authSurfaceManifestResultV1Schema>;
 
@@ -2483,10 +2502,14 @@ export interface AstellaDesktopApiM1 {
     getSurfaceManifest(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<AuthSurfaceManifestResultV1>>;
     getState(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<SessionContextV1>>;
     login(input: { meta: RequestMetaV1; email: string; password: string; remember: boolean }): Promise<GatewayResultV1<SessionContextV1>>;
-    register(input: { meta: RequestMetaV1; email: string; password: string; inviteToken?: string; displayName?: string; remember: boolean }): Promise<GatewayResultV1<SessionContextV1>>;
+    register(input: { meta: RequestMetaV1; email: string; password: string; inviteToken?: string; displayName?: string; emailCode?: string; remember: boolean }): Promise<GatewayResultV1<SessionContextV1>>;
     logout(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<{ loggedOut: true; serverRevoked: boolean }>>;
     reauthenticate(input: { meta: RequestMetaV1; password: string }): Promise<GatewayResultV1<SessionContextV1>>;
     changePassword(input: { meta: RequestMetaV1; commandId: string; currentPassword: string; newPassword: string }): Promise<GatewayResultV1<{ changed: true; sessionsRevoked: true }>>;
+    /** 发一枚邮箱验证码；服务端限流失败也走 GatewayResult 的 error 分支。 */
+    sendEmailCode(input: { meta: RequestMetaV1; email: string; purpose: EmailCodePurposeV1 }): Promise<GatewayResultV1<{ ok: true; resendInSeconds: number }>>;
+    loginWithCode(input: { meta: RequestMetaV1; email: string; code: string; remember: boolean }): Promise<GatewayResultV1<SessionContextV1>>;
+    resetPassword(input: { meta: RequestMetaV1; email: string; code: string; newPassword: string }): Promise<GatewayResultV1<{ ok: true }>>;
     joinWorkspace(input: { meta: RequestMetaV1; inviteToken: string }): Promise<GatewayResultV1<SessionContextV1>>;
     /**
      * 旧版设置页回补：档案读写、头像与退出协作工作区。
@@ -2974,7 +2997,8 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
      */
     readonly voicePreference: {
       get(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionVoicePreferenceV1Schema>>>;
-      patch(input: { meta: RequestMetaV1; engine: TtsEngineV1; voice: string }): Promise<GatewayResultV1<z.infer<typeof companionVoicePreferenceV1Schema>>>;
+      /** `instruction` 缺省 = 不动这条偏好；null = 清除（回 config 默认）。 */
+      patch(input: { meta: RequestMetaV1; engine: TtsEngineV1; voice: string; instruction?: string | null }): Promise<GatewayResultV1<z.infer<typeof companionVoicePreferenceV1Schema>>>;
     };
   };
   readonly note: {

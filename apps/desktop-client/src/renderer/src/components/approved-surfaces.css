@@ -113,21 +113,6 @@
   left: 365px;
 }
 
-.approved-surface__return {
-  position: absolute;
-  z-index: 38;
-  bottom: 22px;
-  left: 92px;
-  min-width: 132px;
-  height: 46px;
-  border-color: rgba(255, 255, 255, 0.22);
-  border-radius: 24px;
-  background: rgba(43, 31, 24, 0.88);
-  box-shadow: var(--hud-shadow-small);
-  color: #fff3df;
-  backdrop-filter: blur(12px);
-}
-
 .approved-state {
   display: grid;
   width: 100%;
@@ -209,8 +194,6 @@
 .desktop-app[data-surface-open="true"] .companion-presence .companion-visual-shell {
   cursor: default;
 }
-.desktop-app[data-surface-open="true"] .surface-return-control { display: none !important; }
-.desktop-app[data-directory-rail="collapsed"] .approved-surface__return { left: 22px; width: 176px; padding-left: 70px; }
 .desktop-app[data-directory-rail="collapsed"] .approved-surface__content { left: 22px; }
 .desktop-app[data-directory-rail="collapsed"] .task-surface:is(.task-surface--source-detail, .task-surface--objective-detail, .task-surface--graph) .approved-surface__content { left: 335px; }
 
@@ -220,15 +203,13 @@
 
 @media (max-width: 900px), (max-height: 520px) {
   .approved-surface__heading { top: 9px; left: 64px; max-width: calc(100vw - 270px); padding: 4px 7px; border: 2px solid rgba(255, 252, 235, 0.78); border-radius: 10px 12px 9px 11px; background: rgba(71, 52, 39, 0.62); }
-  .approved-surface__heading h2 { font-size: 12px; }
-  .approved-surface__heading p { margin-top: 1px; font-size: 5px; }
+  .approved-surface__heading h2 { font-size: 14px; }
+  .approved-surface__heading p { margin-top: 1px; font-size: 10px; }
   .task-surface:is(.task-surface--objective-library, .task-surface--objective-detail) .approved-surface__heading { top: 9px; left: 52px; max-width: calc(100vw - 220px); padding: 4px 7px; border-width: 2px; border-radius: 10px 12px 9px 11px; background: var(--hud-mint); box-shadow: 0 5px 10px rgba(45, 28, 17, 0.24); }
-  .task-surface:is(.task-surface--objective-library, .task-surface--objective-detail) .approved-surface__heading h2 { font-size: 12px; }
-  .task-surface:is(.task-surface--objective-library, .task-surface--objective-detail) .approved-surface__heading p { margin-top: 1px; font-size: 5px; }
+  .task-surface:is(.task-surface--objective-library, .task-surface--objective-detail) .approved-surface__heading h2 { font-size: 14px; }
+  .task-surface:is(.task-surface--objective-library, .task-surface--objective-detail) .approved-surface__heading p { margin-top: 1px; font-size: 10px; }
   .approved-surface__content { top: 48px; right: 124px; bottom: 32px; left: 64px; }
   .task-surface:is(.task-surface--source-detail, .task-surface--objective-detail, .task-surface--graph) .approved-surface__content { right: 44px; left: 194px; }
-  .approved-surface__return { bottom: 10px; left: 48px; min-width: 82px; height: 27px; padding: 0 9px; font-size: 7px; }
-  .desktop-app[data-directory-rail="collapsed"] .approved-surface__return { left: 11px; width: 102px; padding-left: 46px; }
   .desktop-app[data-directory-rail="collapsed"] .approved-surface__content { left: 11px; }
   .desktop-app[data-directory-rail="collapsed"] .task-surface:is(.task-surface--source-detail, .task-surface--objective-detail, .task-surface--graph) .approved-surface__content { left: 178px; }
   .approved-state { min-height: 90px; gap: 4px; padding: 12px; }

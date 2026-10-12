@@ -38,7 +38,12 @@
     "siliconflow": {
       "type": "siliconflow",
       "apiKey": "${SILICONFLOW_API_KEY}",
-      "baseUrl": "https://api.siliconflow.cn/v1"
+      "baseUrl": "https://api.siliconflow.cn/v1",
+      "models": {
+        "BAAI/bge-m3": {
+          "contextWindowTokens": 8192
+        }
+      }
     },
     "siliconflow-chat": {
       "type": "openai_compatible",
@@ -120,6 +125,31 @@
         }
       }
     },
+    "mimo": {
+      "type": "openai_compatible",
+      "apiKey": "${MIMO_API_KEY}",
+      "baseUrl": "https://api.xiaomimimo.com/v1",
+      "models": {
+        "mimo-v2.6-flash": {
+          "contextWindowTokens": 1000000,
+          "maxOutputTokens": 131072,
+          "vision": true,
+          "reasoning": {
+            "levels": [
+              "none",
+              "low",
+              "medium",
+              "high"
+            ],
+            "default": "medium"
+          }
+        },
+        "mimo-v2.5-asr": {}
+      },
+      "options": {
+        "thinkingParam": "reasoning_effort"
+      }
+    },
     "mock": {
       "type": "mock"
     }
@@ -130,16 +160,16 @@
       "model": "deepseek-v4.1-flash"
     },
     "text_generation": {
-      "platform": "siliconflow-chat",
-      "model": "THUDM/GLM-4-9B-0414"
+      "platform": "mimo",
+      "model": "mimo-v2.6-flash"
     },
     "companion_fallback": {
-      "platform": "opencode-go",
-      "model": "deepseek-v4.1-flash"
+      "platform": "mimo",
+      "model": "mimo-v2.6-flash"
     },
-    "vision": {
-      "platform": "bigmodel",
-      "model": "GLM-4.1V-Thinking-Flash"
+    "speech_recognition": {
+      "platform": "mimo",
+      "model": "mimo-v2.5-asr"
     },
     "embedding": {
       "platform": "siliconflow",

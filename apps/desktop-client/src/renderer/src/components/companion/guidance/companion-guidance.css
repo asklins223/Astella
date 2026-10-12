@@ -232,6 +232,7 @@ body[data-companion-guidance] .hud-rail .nav-chip::after { display: none; }
 .space-arrival__sign { position: absolute; top: calc(60px + var(--native-caption-band, 22px)); right: 25px; display: flex; align-items: center; gap: 14px; max-width: min(420px, calc(100vw - 30px)); padding: 16px 20px; background: #fff8e6; color: #596c51; border: 2px solid #fffdf5; border-radius: 8px 22px 22px 22px; box-shadow: 0 5px 0 #cbbc99, 0 14px 22px #3c37282b; pointer-events: auto; transform-origin: 88% -24px; }
 .space-arrival__sign > div { min-width: 0; display: flex; flex-direction: column; }
 .space-arrival__sign small { font-size: 10px; color: #9ba287; letter-spacing: .1em; }
+.space-arrival__sign .space-arrival__scope { margin-top: 4px; font-size: 11px; line-height: 1.5; color: #7d8a6e; }
 .space-arrival__sign strong { font-size: 20px; line-height: 1.5; font-weight: 750; letter-spacing: -.02em; overflow-wrap: anywhere; }
 .space-arrival__sign > div > span { margin-top: 2px; color: #869376; font-size: 11px; }
 .space-arrival__seal { flex-shrink: 0; display: grid; place-items: center; width: 47px; height: 47px; background: #e2eccf; color: #8ea575; border: 1px dashed #aab994; border-radius: 13px; transform: rotate(-7deg); }

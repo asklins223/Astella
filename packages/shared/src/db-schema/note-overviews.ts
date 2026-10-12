@@ -13,13 +13,18 @@ export const noteOverviews = pgTable("note_overviews", {
   body: text("body").notNull(),
   overviewPoints: jsonb("overview_points").$type<Array<{ explanation: string; blockOrdinal: number; quote: string }> | null>(),
   sourceReferences: jsonb("source_references").$type<Array<{ blockOrdinal: number; quote: string }>>().notNull().default([]),
-  coverage: jsonb("coverage").$type<{ totalBlocks: number; textBlocksRead: number; imageBlocksNotRead: number } | null>(),
+  coverage: jsonb("coverage").$type<{ totalBlocks: number; textBlocksRead: number; imageBlocksNotRead: number; pointsDropped?: number } | null>(),
   generationJobId: uuid("generation_job_id"),
   sourceMessageId: uuid("source_message_id"),
   conversationId: uuid("conversation_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
-  bodyLength: check("note_overviews_body_length_check", sql`char_length(${t.body}) BETWEEN 1 AND 20000`),
+  // 正文只管有没有内容：长度由输出额度与上下文预算管（0412 去掉了 1..20000 那条，
+  // 这里此前还留着旧约束名，与库里的 `note_overviews_body_present_check` 对不上）。
+  bodyPresent: check("note_overviews_body_present_check", sql`char_length(${t.body}) >= 1`),
+  // 条数不设上限（0419）：要点由材料决定，引用由实际核到的原文决定。
+  pointsShape: check("note_overviews_overview_points_shape_check", sql`${t.overviewPoints} IS NULL OR (jsonb_typeof(${t.overviewPoints}) = 'array' AND jsonb_array_length(${t.overviewPoints}) >= 1)`),
+  referencesShape: check("note_overviews_source_references_shape_check", sql`jsonb_typeof(${t.sourceReferences}) = 'array' AND jsonb_array_length(${t.sourceReferences}) >= 1`),
   versionBelongsToNote: foreignKey({
     name: "note_overviews_version_note_fk",
     columns: [t.workspaceId, t.noteId, t.noteVersionId],

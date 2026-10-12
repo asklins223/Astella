@@ -33,6 +33,7 @@ import {isVisionGatedCompanionTool,
   companionPageLabelV2,
   type CompanionAgentToolDefinitionV1,
   PAST_MESSAGES_MAX_CHARS,
+  COMPANION_CARD_BLOCK_PREVIEW_MAX_CHARS,
 } from "@astella/shared";
 import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
@@ -153,7 +154,10 @@ export async function executeReadTool(
           : "本次联网搜索不可用；继续回答，但无法联网核实" };
     }
     case "agent_read_public_document": {
-      const userTexts = [event.read.userText, ...event.read.recentMessages.filter(message => message.role === "user").slice(-3).map(message => message.text)];
+      // 窗口里**所有**用户说过的话都算授权依据：只认最近 3 条时，用户四轮前贴过的链接
+      // 会被判成"没给过"，她会去要一个已经给过的东西。窗口本身已由声明预算收边。
+      const userTexts = [event.read.userText,
+        ...event.read.recentMessages.filter(message => message.role === "user").map(message => message.text)];
       const value = await executeExternalCapability({ workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         { name: definition.name, arguments: args }, userTexts, event.ctx.signal);
       return { value, safeSummary: ("truncated" in value && value.truncated) ? "已读取公开文档的一部分，来源与覆盖范围已保留" : "已读取公开文档，来源与正文已核对" };
@@ -203,7 +207,8 @@ export async function executeReadTool(
     case "companion_recall_past_conversation": {
       const conversationId = typeof args.conversationId === "string" ? args.conversationId : null;
       const fromSeq = typeof args.fromSeq === "number" ? args.fromSeq : null;
-      const query = String(args.query ?? "").trim().slice(0, 120);
+      // 不再剪搜索词：剪掉的那半句会悄悄改掉搜出来的东西（与 companion_search_notes 同一条口径）。
+      const query = String(args.query ?? "").trim();
       if (conversationId && fromSeq === null) {
         // 只给会话 id 不给起点，就退回复检索：拿 id 去猜内容正是这个工具禁止的做法。
         return {
@@ -254,7 +259,7 @@ export async function executeReadTool(
               goals: goals.items.map((goal) => ({
                 memoryId: goal.ref.memoryId,
                 revision: goal.ref.revision,
-                content: goal.content.slice(0, 200),
+                content: goal.content,
                 appliesWhen: goal.appliesWhen,
                 taskCount: goal.taskCount,
               })),
@@ -423,8 +428,10 @@ export async function executeReadTool(
               // 用查回来的真 card_id：传进来的那个可能是 objectiveId（见上面的别名规则），
               // 而块里的 cardId 是客户端跳转的落点，合同只校验"是不是 uuid"，不会替我认错。
               cardId: card.card_id,
-              front: front.slice(0, 600),
-              summary: card.summary?.slice(0, 600) ?? null,
+              // 纸上这一段是展示预览，长度由卡片块合同那一个源定；整份题面在上面的 value 里，
+              // 所以她能读到的一切都在，块只是摆在纸面上的那一截。
+              front: front.slice(0, COMPANION_CARD_BLOCK_PREVIEW_MAX_CHARS),
+              summary: card.summary?.slice(0, COMPANION_CARD_BLOCK_PREVIEW_MAX_CHARS) ?? null,
               knowledgeForm: card.form,
             }]
           : [],
@@ -628,7 +635,7 @@ export async function executeReadTool(
       }
       const bytes = await getObjectBytes(asset.object_key, READ_IMAGE_MAX_RAW_BYTES);
       const question = typeof args.question === "string" && args.question.trim()
-        ? args.question.trim().slice(0, 200)
+        ? args.question.trim()
         : "图里写了什么、画了什么";
       const govCtx = await resolveAIGovernanceContext(event.ctx.workspaceId, event.read.userId);
       // 2026-10-06 识图路由：主模型声明能看图就用主模型，否则用专门的识图模型；
@@ -941,12 +948,12 @@ export async function executeReadTool(
     }
     case "companion_render_diagram": {
       // 呈现类：不查库、不写库，只是把她给的结构变成一块交给客户端（§4.8）。
-      // 参数已经过 zod 校验（2–8 步、长度上限），这里只做一次防御性截断。
-      const title = String(args.title).trim().slice(0, 60);
-      const steps = (args.steps as Array<{ label: string; detail?: string }>).slice(0, 8)
+      // 参数已校验；所有步骤和补充说明完整交给客户端。
+      const title = String(args.title).trim();
+      const steps = (args.steps as Array<{ label: string; detail?: string }>)
         .map((step) => ({
-          label: String(step.label).trim().slice(0, 40),
-          ...(step.detail ? { detail: String(step.detail).trim().slice(0, 80) } : {}),
+          label: String(step.label).trim(),
+          ...(step.detail ? { detail: String(step.detail).trim() } : {}),
         }))
         .filter((step) => step.label.length > 0);
       if (steps.length < 2) throw new CompanionToolError("流程图至少需要两个步骤");

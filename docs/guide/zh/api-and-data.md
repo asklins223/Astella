@@ -84,6 +84,7 @@
 - 会话令牌落库前做 SHA-256（`sessions.token` 存十六进制摘要），库泄了也不是一条可用凭据；解码走 `withActorTransaction`，成员行缺失或 `left_at` 非空当场删会话。滑动续期由 `nextSessionExpiry()` 决定：TTL 30 天、剩余不足一半才续、绝对上限 180 天。过期清理在启动时与每小时各跑一次（`cleanupExpiredSessions()`）。
 - 口令长度按流程不同：登录 `min 4`（只做形状校验，不是强度要求）、注册 `min 8`、改密新密码 `min 8`、Owner 为恢复用户初始化未设置的密码 `min 12`，上界统一 200。
 - 归属判定只有一个谓词：`isWorkspaceOwner()`（`membershipRole === "owner"` 或 `workspaceOwnerId === userId`），`requireOwner`、`/v1/auth/capabilities` 与笔记投影共用它，避免"服务端允许写、界面判只读"。
+- 会话记住自己签发给了哪一种客户端（`sessions.client_kind`，迁移 0413）：`POST /auth/login`、`POST /auth/register-v2` 与 `POST /auth/login-with-code` 各接受一个可选的 `clientKind`（`desktop` | `mobile`，缺省 `desktop`，取值域同时是请求体的 enum 与库里那句 CHECK，所以桌面端一次调用都不用改；填了别的值走 400，不归一成 desktop）。判据读**会话行**而不是请求头——能改请求头的人也能把它抹掉，那就不是 enforcement；换空间重签 token 时这一位跟着带过去。手机会话在两条正文写入路由（`POST /v2/notes/:id/doc-update`、`POST /notes/:id/versions/:versionId/restore`）上吃 403 `mobile_note_edit_forbidden`，实时文档那一侧 `onAuthenticate` 用同一个谓词把连接设成只读。规则是"手机上人不改笔记正文，伴星改"，而伴星改正文走内部 tool call（`modules/note/companion-edit-dispatch.ts`），根本没有 HTTP 入口，所以这道闸只挡到人、不挡到她。谓词只有一处：`identity/middleware.ts` 的 `isNoteContentWriteForbiddenForSession`。
 
 ## 多租户与行级安全
 

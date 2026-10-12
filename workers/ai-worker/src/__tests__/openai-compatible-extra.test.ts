@@ -95,6 +95,23 @@ test("按轮关闭思考的参数优先于旧网关额外参数", async () => {
   assert.equal(sent.enable_thinking,false);
 });
 
+test("reasoning_effort 方言按档案档位下发，关思考落到声明里最接近关的一档", async () => {
+  // 小米 MiMo 实测忽略 enable_thinking（reasoning_tokens 照旧），只认 reasoning_effort。
+  // 平台声明方言后，字段名与档位都来自声明，调用方只表达"要不要关"。
+  const sent: Record<string, unknown>[] = [];
+  const make = () => new OpenAICompatibleProvider({ apiKey: "test-key", baseUrl: "https://api.example.com/v1",
+    model: "mimo", modelProfile: { reasoning: { levels: ["low", "medium", "high"], default: "medium" } },
+    platformOptions: { thinkingParam: "reasoning_effort" },
+    request: async (_url, _headers, body) => { sent.push(body as Record<string, unknown>);
+      return { status: 200, statusText: "OK", body: { choices: [{ message: { content: "好。" }, finish_reason: "stop" }] } }; } });
+  await make().chatCompletion(messages, { responseFormat: "text" });
+  await make().chatCompletion(messages, { responseFormat: "text", disableThinking: true });
+  assert.equal(sent[0].reasoning_effort, "medium");
+  assert.equal(sent[1].reasoning_effort, "low", "声明里没有 none 时只能降到自己的最低档");
+  assert.equal(sent[0].enable_thinking, undefined);
+  assert.equal(sent[1].enable_thinking, undefined);
+});
+
 function mockRequester(response: PublicJsonResponse): PublicJsonRequester {
   return async () => response;
 }

@@ -1112,3 +1112,117 @@ test("装配保留同来源同形态但答案主张不同的目标", () => {
     assert.equal(assembled.plan.result.objectives[0]!.changeContext.kind, "create_new");
   }
 });
+
+// ── 数量与长度：条数随用户声明、长度随内容，不再另写一套更小的上限 ──────
+
+test("用户声明 19 张时信封整批收下，再由草稿级按 activationHardMax 逐条留因剔除", () => {
+  const contents = Array.from({ length: 19 }, (_, index) => candidateContent(`obj-${index + 1}`));
+  const parsed = JSON.parse(generateJson(contents));
+  const output = cardGenerateV3OutputSchema.parse(parsed);
+  assert.equal(output.candidates.length, 19, "合同不该在 8 张上整批拒——提示词按声明要到 19 张");
+
+  const { kept, dropped } = validateCardGenerateV3Drafts(expandToDrafts(contents), { activationHardMax: 19 });
+  assert.equal(kept.length, 19);
+  assert.deepEqual(dropped, [], "声明 19 张、交回 19 张时一条都不该剔");
+
+  const under = validateCardGenerateV3Drafts(expandToDrafts(contents), { activationHardMax: 8 });
+  assert.equal(under.kept.length, 8);
+  assert.equal(under.dropped.length, 11, "多出来的 11 条要逐条留因，不是静默丢");
+  assert.ok(under.dropped.every((item) => item.reason.includes("上限")));
+});
+
+test("长目标陈述、长解释与长判分点整段过合同并原样落到计划与候选", async () => {
+  const longStatement = "这一条目标陈述很长。".repeat(400) + "陈述的最后一句完整保留。";
+  const longExplanation = "解释正文。".repeat(1200) + "解释的最后一句完整保留。";
+  const longCriterion = "判分要点。".repeat(400) + "判分点的最后一句完整保留。";
+  const longAnswer = "答案原文。".repeat(900) + "答案的最后一句完整保留。";
+
+  const content = candidateContent("obj-long");
+  content.publicSummary = longStatement;
+  content.explanation = longExplanation;
+  content.judgingPoints = [{ ...content.judgingPoints[0]!, criterion: longCriterion }];
+  content.answerParts = [{ text: longAnswer }];
+  content.hints = { level1: "长一级提示。".repeat(80), level2: "长二级提示。".repeat(80) };
+
+  const proposals = [{
+    objectiveLocalId: "obj-long",
+    objectiveStatement: longStatement,
+    priority: "important" as const,
+    knowledgeForm: "causal_model" as const,
+    rationale: "长理由。".repeat(120),
+  }];
+  const expanded = expandCardGenerateV3OutputV3({
+    planIntent: { kind: "author_candidates", recommendedCardCount: 1 },
+    objectiveProposals: proposals,
+    candidates: [content],
+  });
+  assert.deepEqual(expanded.droppedInvalid, [], "长内容不该被逐条剔除");
+  const draft = expanded.output.candidates[0]!;
+  assert.equal(draft.objectiveDraft.objectiveStatement, longStatement);
+  assert.equal(draft.objectiveDraft.learningSupport.explanation, longExplanation);
+  if (draft.objectiveDraft.canonicalAnswer.kind !== "text") assert.fail("prose 答案应当展开成 text 形状");
+  assert.equal(draft.objectiveDraft.canonicalAnswer.unit.text, longAnswer, "长答案不该被剪到 4000 字");
+  assert.equal(draft.hints.level1, content.hints.level1, "长提示不该被剪到 600 字");
+
+  const assembled = assembleCardGenerationV3(assemblyInput(expanded.output.candidates, expanded.output));
+  if (assembled.plan.result.kind !== "author_candidates") assert.fail("这一批应该出目标");
+  assert.equal(assembled.plan.result.objectives[0]!.objectiveStatement, longStatement, "计划里的目标陈述不该被剪到 2000 字");
+
+  const revision = assembled.candidates[0]!;
+  assert.equal(revision.objective.objectiveStatement, longStatement, "落库那一份的目标陈述也要完整");
+  assert.equal(revision.objective.learningSupport.explanation, longExplanation, "落库那一份的解释也要完整");
+  assert.ok(
+    revision.objective.canonicalAnswer.kind === "text"
+      && revision.objective.canonicalAnswer.unit.text === longAnswer,
+    "落库那一份的答案也要完整",
+  );
+});
+
+test("检查腿与改写腿拿到完整依据原文：不按条数、不按字数剪", () => {
+  const longQuote = "封存原文。".repeat(400) + "依据的最后一句完整保留。";
+  const manyRefs = Array.from({ length: 16 }, (_, index) => `4f1e2d3c-4b5a-4978-8796-a5b4c3d2${String(index).padStart(4, "0")}`);
+  const manifest: AssemblerEvidenceManifest = {
+    workspaceId: "workspace-1",
+    sourceSnapshotId: "source-1",
+    evidence: [
+      entry(EVIDENCE_A, BLOCK_ONE),
+      { ...entry(EVIDENCE_A, BLOCK_ONE), evidenceSnapshotId: manyRefs[0]!, content: longQuote },
+      ...manyRefs.slice(1).map((id) => ({ ...entry(EVIDENCE_A, BLOCK_ONE), evidenceSnapshotId: id, content: `第 ${id} 条依据` })),
+    ],
+  };
+
+  const content = candidateContent("obj-cited", [EVIDENCE_A, ...manyRefs]);
+  const expanded = expandCardGenerateV3OutputV3(JSON.parse(generateJson([content])));
+  const assembled = assembleCardGenerationV3(assemblyInput(expanded.output.candidates, expanded.output));
+  const checkPrompt = buildCardContentCheckV3Prompt({
+    ...checkInputFor(assembled),
+    evidenceManifest: manifest,
+  });
+  assert.ok(checkPrompt.includes(longQuote.slice(-30)), "单条依据原文要完整进检查腿，不该停在 1500 字");
+  assert.ok(checkPrompt.includes(manyRefs[15]!), "引用的第 16 条依据也要进检查腿，不该只给前 12 条");
+  assert.ok(checkPrompt.includes(longQuote.slice(0, 30)), "依据开头同样完整");
+
+  const rewritePrompt = buildCardCandidateRewriteV3Prompt({
+    runId: RUN_ID,
+    sourceContent: noteBlocks.map((block) => block.text).join("\n\n"),
+    candidate: assembled.candidates[0]!,
+    issues: [{ code: "unsupported_claim", detail: "这条结论在原文里找不到依据" }],
+    hints: content.hints,
+    evidenceManifest: manifest,
+  });
+  assert.ok(rewritePrompt.includes(longQuote.slice(-30)), "改写腿拿到的依据原文不该停在 200 字");
+});
+
+test("判分点覆盖多少种意图，目标就保留多少种——不按固定 6 支剪", () => {
+  const facets = ["recall", "paraphrase", "explain", "example", "apply", "boundary", "procedure", "relate", "repair"] as const;
+  const content = candidateContent("obj-facets");
+  content.judgingPoints = facets.map((facet, index) => ({
+    facet,
+    criterion: `第 ${index + 1} 种意图的判分点`,
+    required: true,
+    partIndexes: [1],
+  }));
+  const expanded = expandCardGenerateV3OutputV3(JSON.parse(generateJson([content])));
+  assert.deepEqual(expanded.droppedInvalid, []);
+  assert.equal(expanded.output.candidates[0]!.objectiveDraft.preferredTaskIntents.length, facets.length);
+});

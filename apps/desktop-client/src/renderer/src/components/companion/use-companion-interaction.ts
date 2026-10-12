@@ -21,6 +21,7 @@ export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled
     onTurn: text => sendVoiceRef.current(text),
     onInterrupt: () => interruptVoiceRef.current(),
     onSessionEnd: () => { setVoiceOpen(false); },
+    onTurnFailed: text => setInput(current => current || text),
   });
   useEffect(() => {
     if (obscured && (voice.phase === "open" || voice.phase === "starting" || voice.phase === "closing")) voice.pause();
@@ -43,7 +44,9 @@ export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled
     setVoiceOpen(false);
     voice.cancel();
   }, [chat.conversationId, voice.cancel]);
-  const inputLife = useCompanionTransient(chat.mode === "conversation" ? `${chat.conversationId}:input` : null, 90_000, obscured);
+  // 草稿非空时不按"闲置 90 秒"收：打字停下来想一会、或抬头去读回复，输入框不该
+  // 自己走掉（审计 F2）。空输入时保留原来的让位节奏。
+  const inputLife = useCompanionTransient(chat.mode === "conversation" ? `${chat.conversationId}:input` : null, 90_000, obscured || input.trim().length > 0);
   const menuLife = useCompanionTransient(chat.mode === "actions" ? `${chat.conversationId}:menu` : null, 90_000, obscured);
   // 会话开着的时候不按"闲置 90 秒"收：人在说话，气泡不该自己走掉。
   const voiceLife = useCompanionTransient(voiceOpen && voiceSession > 0 ? `voice:${voiceSession}` : null, 90_000, obscured || voice.phase !== "idle");
@@ -52,7 +55,10 @@ export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled
   useEffect(() => { if (voiceOpen && !voiceLife.visible) setVoiceOpen(false); }, [voiceOpen, voiceLife.visible]);
   const errorKey = chat.interrupted ? `interrupted:${chat.conversationId}:${chat.interrupted.text}:${chat.interrupted.message}`
     : chat.phase === "error" && chat.failure ? `error:${chat.conversationId}:${chat.failure}` : null;
-  const errorLife = useCompanionTransient(errorKey, 60_000, obscured);
+  // 审计 F1：发送失败的提示不再 60 秒后自己消失。失败是"这件事没完成"，
+  // 要留到下一次发送（key 变化）或状态本身被解决为止；60 秒只是它仍在
+  // 走动的上限形式（key 消失时一起消失）。
+  const errorLife = useCompanionTransient(errorKey, 60_000, obscured || errorKey !== null);
   const toolKey = chat.nodes.some(node => node.kind === "tool")
     ? `${chat.conversationId}:${chat.nodes.map(node => `${node.key}:${node.state}`).join("|")}:${chat.phase === "sending" ? "running" : "done"}` : null;
   const toolNeedsAttention = chat.nodes.some(node => node.kind === "tool" && ["waiting_confirmation", "outcome_unknown", "failed", "not_executed", "unavailable"].includes(node.state));

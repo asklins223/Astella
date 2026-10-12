@@ -26,13 +26,17 @@ export async function processCompanionNoteEdit(scope: { workspaceId: string; use
         WHERE c.id=${callId} AND c.workspace_id=${scope.workspaceId} AND c.user_id=${scope.userId}
           AND c.name='companion_edit_note' AND c.status='executing' AND c.result_ref IS NULL
           AND r.status IN ('accepted','running') AND r.cancel_requested_at IS NULL
-          AND a.global_enabled AND a.epoch=r.account_epoch AND r.permission_level<>'read_only'
+          AND a.global_enabled AND a.epoch=r.account_epoch
+          AND ((r.permission_level='full' AND c.arguments->>'operation' NOT IN ('delete_selection','delete_blocks'))
+            OR astella_companion_tool_confirmed_v1(r.id,c.tool_call_id))
           AND j.status='running' AND j.type='companion_agent' AND j.requested_by=c.user_id
           AND m.left_at IS NULL AND (m.role='owner' OR w.owner_id=c.user_id)
           AND n.deleted_at IS NULL AND (n.share_scope='shared' OR n.created_by=c.user_id)
           AND r.page_context->'context'->>'noteId'=n.id::text
           AND EXISTS(SELECT 1 FROM jsonb_array_elements(r.permission_snapshot->'offeredTools') t WHERE t->>'name'='companion_edit_note')
-        FOR UPDATE OF c,r,a SKIP LOCKED`);
+        -- A locked live run/account is still authorized. Wait and recheck;
+        -- skipping it would turn ordinary contention into a false failure receipt.
+        FOR UPDATE OF c,r,a`);
       const row = rows[0];
       if (!row) {
         await tx.execute(sql`UPDATE companion_agent_tool_calls SET result_ref=${JSON.stringify({ kind: "note_edit_failed", message: "这轮已经停止、页面已变化或没有编辑权限，笔记没有改动。" })}

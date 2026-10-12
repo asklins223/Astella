@@ -8,7 +8,7 @@
  *    技能层已整条删除，工具面每轮全给。）
  * - 确认续跑：run 停在 waiting_for_confirmation 并冻结 proposal → 带 proposalId 重新入队 →
  *   loadContinuation 回填结果 → 同一次 run 产出最终答复（不做新用户对话）；
- * - 执行预算耗尽：累计耗时段达到合同上限 → 直接终结，不再调用 provider；
+ * - 执行预算耗尽：累计耗时段达到显式部署时限 → 直接终结，不再调用 provider；
  * - epoch 失效：run 冻结的 epoch 与当前不一致 → 拒绝执行且零副作用。
  *
  * 这些是方案验收清单里"确认后继续同一次 run""超过预算安全终止""global off/epoch
@@ -47,7 +47,7 @@ after(async () => {
 
 const { runCompanionDialogue } = await import("../handlers/companion-dialogue.ts");
 const { ensureAgentToolCall, loadContinuation, safeArgumentsHash, updateToolCall } = await import("../handlers/companion-tool-call-ledger.ts");
-const { companionStreamEventV1Schema, getCompanionAgentTool, COMPANION_AGENT_DEADLINE_MS } = await import("@astella/shared");
+const { companionStreamEventV1Schema, getCompanionAgentTool } = await import("@astella/shared");
 
 async function seedBase(): Promise<{ workspaceId: string; userId: string }> {
   const ws = randomUUID();
@@ -156,7 +156,7 @@ async function readState(ws: string, uid: string, f: Fixture) {
   return sql.begin(async (tx) => {
     await tx`SELECT set_config('app.workspace_id', ${ws}, true)`;
     await tx`SELECT set_config('app.user_id', ${uid}, true)`;
-    const run = await tx`SELECT status, permission_level, step_count, tool_call_count,
+    const run = await tx`SELECT status, permission_level, step_count, tool_call_count, model_call_count, budget_snapshot,
                                 agent_elapsed_ms, waiting_proposal_id, last_event_seq
                          FROM companion_turn_runs WHERE id = ${f.runId}`;
     const assistant = await tx`SELECT id, seq, kind, blocks, run_id, action_ref
@@ -172,7 +172,7 @@ async function readState(ws: string, uid: string, f: Fixture) {
     const steps = await tx`SELECT step_no, kind, status, request_hash
                            FROM companion_agent_steps WHERE run_id = ${f.runId} ORDER BY step_no`;
     const proposals = await tx`SELECT id, status, origin, risk_class, agent_tool_call_id,
-                                      expires_at > now() AS live
+                                      payload,expires_at IS NULL OR expires_at > now() AS live
                                FROM companion_action_proposals WHERE conversation_id = ${f.conversationId}`;
     return {
       run: run[0],
@@ -406,34 +406,52 @@ test("只回一张确认卡：卡要在历史里留下可读的记录，而不�
   }
 });
 
-/**
- * 终答步 provider 违约（工具面已收起、仍然回 tool_calls）→ 整轮不得失败（方案 29 §12.8）。
- *
- * 实机 2026-09-22：最近 3 次 INTERNAL_ERROR 里 **2 次是这一条**，而她报错前已经把
- * 这轮的话说出去一大半（afecc8d2 82 字、9e484924 149 字）——用户看到的是"事情差
- * 一步做成，结果弹报错"。原来的处理是 `finishStep(failed)` + 抛错。
- *
- * 这里用 mock 的剧本标记复现违约（带标记时每步都要工具，否则走不到终答步）。
- * 步数钉死在 6 = 声明预算 4 + 宽限 2：宽限整轮只给一次，provider 反复违约时步数
- * 上界必须是确定的（把这条改回"每次都宽限"，本用例就会红）。
- */
-test("Agent：终答步仍回 tool_calls → 给一次宽限并交付答复，不判 failed", async () => {
+test("低权限长代码笔记完整到达预览，合法 JSON 转义不受通用字符上限拒绝", async () => {
   const { workspaceId, userId } = await seedBase();
   const f = await seedAgentRun(workspaceId, userId, {
-    userText: "看一下我的学习进度【mock:wants-tool】【mock:tool-after-withheld】",
+    userText: "写一篇代码示例【mock:wants-tool】【mock:escaped-note】", permissionLevel: "read_only",
+  });
+  try {
+    await invoke(workspaceId, userId, { runId: f.runId });
+    const state = await readState(workspaceId, userId, f);
+    assert.equal(state.run.status, "waiting_for_confirmation");
+    const [proposal] = state.proposals;
+    const payload = typeof proposal.payload === "string" ? JSON.parse(proposal.payload) : proposal.payload;
+    assert.equal(payload.kind, "agent_tool_review");
+    assert.equal(payload.confirmationStage, "after_preview");
+    assert.equal(payload.preview.markdown, "```text\n" + "\\".repeat(9500) + "\n```");
+    assert.ok(state.toolCalls.some(call => call.name === "companion_create_note" && call.status === "waiting_confirmation"));
+    const rows = await sql.begin(async tx => {
+      await tx`SELECT set_config('app.workspace_id',${workspaceId},true),set_config('app.user_id',${userId},true)`;
+      return tx`SELECT count(*)::int AS count FROM notes WHERE workspace_id=${workspaceId}`;
+    });
+    assert.equal(rows[0].count, 0, "预览不能进入正式笔记或自动保存");
+  } finally { await f.cleanup(); }
+});
+
+/** A real, finite task must outlive the old guessed step/tool budgets. */
+test("Agent：20 个工具回合继续执行到任务完成，不提前收起工具面", async () => {
+  const { workspaceId, userId } = await seedBase();
+  const f = await seedAgentRun(workspaceId, userId, {
+    userText: "看一下我的学习进度【mock:wants-tool】【mock:twenty-tool-rounds】",
+    agentElapsedMs: 3_000_000_000,
   });
   try {
     await invoke(workspaceId, userId, { runId: f.runId });
     const s = await readState(workspaceId, userId, f);
-    const types = s.events.map((e) => (e as { type: string }).type);
-
-    assert.equal(s.run.status, "succeeded", "provider 违约不得把 run 判成 failed");
-    assert.ok(types.includes("assistant.final"), "必须交付终态答复");
-    assert.equal(types.includes("error"), false, "违约步不得向用户下发 error 帧");
-    assert.equal(Number(s.run.step_count), 6, "步数 = 声明 4 + 宽限 2，只宽限一次");
-    assert.ok(Number(s.run.tool_call_count) >= 4,
-      "她违约要的那次查询必须真的执行掉，而不是把这句话当承诺交付");
-    assert.equal(s.assistant.length, 1, "一轮一条答复");
+    const types = s.events.map(e => (e as { type: string }).type);
+    assert.equal(s.run.status, "succeeded");
+    assert.ok(types.includes("assistant.final"));
+    assert.equal(types.includes("error"), false);
+    assert.equal(Number(s.run.step_count), 21);
+    assert.equal(Number(s.run.tool_call_count), 20);
+    assert.ok(Number(s.run.model_call_count) >= 22, "分类器和所有模型步骤都过真实原子计数，不受旧默认调用上限截断");
+    assert.ok(Number(s.run.agent_elapsed_ms) >= 3_000_000_000, "累计活跃时间不被整型毫秒计数截断");
+    assert.deepEqual(s.run.budget_snapshot, { maxSteps: null, maxToolCallsPerStep: null,
+      maxToolCalls: null, maxModelCalls: null, maxWebSearchCalls: null, deadlineMs: null });
+    assert.equal(s.toolCalls.length, 20, "每次读取都经过真实账本，不复用旧读取回执");
+    assert.ok(s.toolCalls.every(call => call.status === "succeeded"));
+    assert.equal(s.assistant.length, 1);
   } finally {
     await f.cleanup();
   }
@@ -791,20 +809,15 @@ test("Agent 写操作结果不明：provider 换 call id 时不重放；相同�
   }
 });
 
-/**
- * 执行预算耗尽 → 直接终结、零副作用（方案 40b 的失败关闭）。
- *
- * 耗尽的那个数**由声明给**（`COMPANION_AGENT_DEADLINE_MS`），不是硬写 120s：
- * 预算链在 2026-10 收到一处之后，合同上限是 30 分钟，那个 120s 只是当时抄下来的
- * 一份影子值——它把这条用例变成了"断言某个字面量还等于旧的影子"，
- * 于是预算改了、这条红、而真实行为完全正常。
- */
-test("Agent 执行预算：累计耗时段已达合同上限 → 直接终结且不调用 provider", async () => {
+/** Explicit deployment time limits still stop before any provider or tool call. */
+test("Agent 执行预算：累计耗时段已达显式部署时限 → 直接终结且不调用 provider", async () => {
   const { workspaceId, userId } = await seedBase();
   const f = await seedAgentRun(workspaceId, userId, {
     userText: "看一下我的学习进度",
-    agentElapsedMs: COMPANION_AGENT_DEADLINE_MS,
+    agentElapsedMs: 60_000,
   });
+  const oldTimeout = process.env.WORKER_TIMEOUT_COMPANION_AGENT_MS;
+  process.env.WORKER_TIMEOUT_COMPANION_AGENT_MS = "60000";
   try {
     await assert.rejects(
       invoke(workspaceId, userId, { runId: f.runId }),
@@ -819,6 +832,8 @@ test("Agent 执行预算：累计耗时段已达合同上限 → 直接终结且
     assert.equal(s.toolCalls.length, 0, "不得执行任何工具");
     assert.equal(s.steps.length, 0, "不得开始新步骤");
   } finally {
+    if (oldTimeout === undefined) delete process.env.WORKER_TIMEOUT_COMPANION_AGENT_MS;
+    else process.env.WORKER_TIMEOUT_COMPANION_AGENT_MS = oldTimeout;
     await f.cleanup();
   }
 });

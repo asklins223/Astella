@@ -365,15 +365,19 @@
 
 .companion-md__table th { font-weight: 700; }
 
-.companion-md__code {
-  overflow-x: auto;
-  margin: 5px 0 0;
-  padding: 6px 8px;
-  font: 10.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
-  white-space: pre;
-  border-radius: 9px;
-  background: rgba(52, 38, 24, .08);
+/* 她递来的代码走她那张暖纸：token 色跟着纸底换，变量只在这一处覆盖。
+   聊天里的围栏与交付纸上那块代码现在是同一种东西：语言、复制、上色的字。 */
+.hud-surface :is(.companion-record__body .code-paper, .companion-record__code-sheet) {
+  --code-paper: #f4ecd7;
+  --code-paper-line: #ddcfaa;
+  --code-ink: var(--companion-ink);
+  --code-rail: var(--companion-muted);
 }
+.hud-surface .companion-record__body .code-paper { margin: 8px 0; border-radius: 13px 17px 12px 15px; overflow: hidden; }
+.hud-surface .companion-record__body .code-paper .code-body { padding: 8px 11px 10px; font: 11px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* 复制的形态跟着她那张代码纸：同一场对话里两处按钮不该一个实心一个空心。 */
+.hud-surface .companion-record__body .code-paper__copy { min-height: 28px; padding: 3px 7px; background: #fff9e8; color: #50664a; }
+.hud-surface .companion-record__body .code-paper__copy:hover { background: #fffbef; color: #50664a; }
 
 /* 她给的链接：标签 + 去处两行，点了交给系统浏览器（方案 35 F7）。
    它是 `<button>` 而不是 `<a>`——应用内永远不导航出去，所以这里要的只是

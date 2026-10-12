@@ -91,7 +91,6 @@ import {
   parseCompanionInboxSseFrame,
   parseCompanionSseFrame,
 } from "../desktop-gateway";
-import { ARTIFACT_MAX_BYTES } from "../artifact-surface";
 
 const pairingSecret = Buffer.alloc(32, 9);
 const pairingSecretEncoded = pairingSecret.toString("base64url");
@@ -1877,7 +1876,7 @@ describe("DesktopGateway", () => {
       authorization: "Bearer test-artifact-token",
     }]);
 
-    // 服务端失败体（JSON）与超限都在网关被拒：字节不可能流进落盘口。
+    // 服务端失败体（JSON）仍在网关被拒，不能当成 HTML 保存。
     artifactResponse = () => new Response(JSON.stringify({ error: "not_found" }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -1885,12 +1884,10 @@ describe("DesktopGateway", () => {
     await expect(ns_artifact.getNoteLearningRoundArtifactHtml(gateway.gatewayTransport, artifactId, "request-artifact-json"))
       .rejects.toMatchObject({ code: "unsupported_contract", retry: "user_action" });
 
-    artifactResponse = () => new Response(new Uint8Array(ARTIFACT_MAX_BYTES + 1), {
-      status: 200,
-      headers: { "Content-Type": "text/html" },
-    });
-    await expect(ns_artifact.getNoteLearningRoundArtifactHtml(gateway.gatewayTransport, artifactId, "request-artifact-oversized"))
-      .rejects.toMatchObject({ code: "unsupported_contract", retry: "user_action" });
+    const longHtml = `<main>${"完整讲解".repeat(160_000)}页面末尾</main>`;
+    artifactResponse = () => new Response(longHtml, { status: 200, headers: { "Content-Type": "text/html" } });
+    await expect(ns_artifact.getNoteLearningRoundArtifactHtml(gateway.gatewayTransport, artifactId, "request-artifact-long"))
+      .resolves.toBe(longHtml);
 
     // 找不到／不可见：服务端 404，如实透传（与取图那条同形）。
     artifactResponse = () => new Response(JSON.stringify({ error: "not_found" }), {

@@ -27,6 +27,7 @@ test("没有偏好：整身回 config，并标成未显式设置", () => {
     engine: "qwen",
     qwenVoice: "longhua_v3.1",
     edgeVoice: "zh-CN-XiaoxiaoNeural",
+    qwenInstruction: "",
     explicit: false,
   });
   assert.deepEqual(resolveTtsSelection({}, CFG).explicit, false);
@@ -77,4 +78,21 @@ test("config 自己选 edge 时，未设置的账号就走 edge", () => {
   const resolved = resolveTtsSelection(null, { ...CFG, engine: "edge" });
   assert.equal(resolved.engine, "edge");
   assert.equal(resolved.explicit, false);
+});
+
+test("说话风格偏好：合法则用，空/非字符串/超限都回 config 默认（整体丢弃不截断）", () => {
+  const withDefault = { ...CFG, qwen: { ...CFG.qwen, instruction: "默认风格" } };
+  assert.equal(
+    resolveTtsSelection({ engine: "qwen", voice: "longhua_v3.1", instruction: "用四川话讲" }, CFG).qwenInstruction,
+    "用四川话讲",
+    "用户偏好应当生效（它是模型没写指令时的兜底）",
+  );
+  // instruction 独立于 engine/voice：半个偏好回默认说的是引擎与音色，不该拖垮风格。
+  assert.equal(resolveTtsSelection({ instruction: "慢慢说" }, withDefault).qwenInstruction, "慢慢说");
+  assert.equal(resolveTtsSelection(null, withDefault).qwenInstruction, "默认风格");
+  assert.equal(resolveTtsSelection({ instruction: "" }, withDefault).qwenInstruction, "默认风格");
+  assert.equal(resolveTtsSelection({ instruction: "   " }, withDefault).qwenInstruction, "默认风格");
+  assert.equal(resolveTtsSelection({ instruction: 42 }, withDefault).qwenInstruction, "默认风格");
+  // 超限的存量值整体回默认：截一半的风格描述可能改变语义，也可能被上游拒。
+  assert.equal(resolveTtsSelection({ instruction: "温柔".repeat(51) }, withDefault).qwenInstruction, "默认风格");
 });

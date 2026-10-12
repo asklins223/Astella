@@ -14,12 +14,13 @@ import { eq } from "drizzle-orm";
 import { findPrivatePayloadLeaks, assertNoCardOrKeyPointNode } from "@astella/shared";
 import { learningObjectivesV2 } from "@astella/shared/db-schema/card-generation-v2";
 import { learningObjectiveOriginsV2 } from "@astella/shared/db-schema/card-generation-v2";
+import { noteBlocks } from "@astella/shared/db-schema/note";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 
 process.env.DATABASE_URL ??= testDatabaseUrl("DATABASE_URL");
 // 自播种纯 V2 工作区（替代被 0176 清库抹掉的手工工作区 4f825f38-…）。
 const sql = (await import("postgres")).default(process.env.DATABASE_URL, { max: 1 });
-const { seedPureV2Workspace } = await import("./helpers/pure-v2-workspace-fixture.ts");
+const { seedPureV2Workspace, seedNotesOnlyWorkspace } = await import("./helpers/pure-v2-workspace-fixture.ts");
 const pureV2 = await seedPureV2Workspace(sql, { objectiveCount: 3 });
 const FIXTURE_WORKSPACE = pureV2.workspaceId;
 const SYSTEM_USER = pureV2.userId;
@@ -145,6 +146,46 @@ test("TP-10: 单集合上限护栏如实回报截断且保持 revision 确定", 
   } finally {
     if (previousLimit === undefined) delete process.env.TOPOLOGY_SNAPSHOT_COLLECTION_LIMIT;
     else process.env.TOPOLOGY_SNAPSHOT_COLLECTION_LIMIT = previousLimit;
+    await fixture.cleanup();
+  }
+});
+
+/**
+ * 「我在正文里引用了另一篇，星图上看不到那条线」（2026-10-10 用户报）。
+ *
+ * 这一条必须打在真库上：单元测试（`__tests__/note-link-edges.test.ts`）能证明解析口径，
+ * 但**读哪几块**是 SQL 决定的——按当前版本取块、`LIKE` 粗筛有没有把写了链接的块留下、
+ * 代码块跟着同一份解析走。这几样错一样，症状都是星图上安静地少线。
+ */
+test("TP-11: 当前版本正文里的库内链接连成 references 边，代码里的不算", async () => {
+  // 第 4 篇只被代码引用：那一类误连会多出一条边，而不是被去重掩盖。
+  const fixture = await seedNotesOnlyWorkspace(sql, { noteCount: 4 });
+  const ctx = { workspaceId: fixture.workspaceId, userId: fixture.userId };
+  const [firstId, secondId, thirdId] = fixture.noteIds;
+  const [firstVersion] = fixture.versionIds;
+  try {
+    await withWorkspaceTransaction(ctx, (tx) => tx.insert(noteBlocks).values([
+      { versionId: firstVersion, workspaceId: ctx.workspaceId, ordinal: 1,
+        type: "paragraph", content: "接着看 [[notes-only-1]]。" },
+      { versionId: firstVersion, workspaceId: ctx.workspaceId, ordinal: 2,
+        type: "code", content: "[[notes-only-3]]" },
+      { versionId: firstVersion, workspaceId: ctx.workspaceId, ordinal: 3,
+        type: "paragraph", content: `配置写成 \`[[notes-only-3]]\` 就行，另见 [第三篇](astella-note:${thirdId})。` },
+    ]));
+
+    const snapshot = await withWorkspaceTransaction(ctx, (tx) =>
+      buildTopologySnapshotV3(tx, ctx));
+    const references = snapshot.edges.filter(edge => edge.kind === "references");
+    assert.deepEqual(
+      references.map(edge => `${edge.from.id}>${edge.to.id}:${edge.reasonCodes[0]}`).sort(),
+      [`${firstId}>${secondId}:link_title`, `${firstId}>${thirdId}:link_id`].sort(),
+    );
+    // 引用是他写下的事实，不是待确认的建议：不给表态那一列（星图上因此是实线）。
+    for (const edge of references) {
+      assert.equal(edge.decidable, false);
+      assert.equal(edge.relationStatus, undefined);
+    }
+  } finally {
     await fixture.cleanup();
   }
 });

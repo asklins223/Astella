@@ -82,7 +82,7 @@ describe("real message blocks in floating papers", () => {
     const view = render(<CompanionReplyPapers chat={chat} paused={false} />);
     expect(screen.getAllByRole("article")).toHaveLength(1);
     expect(screen.getByText("1 / 3 项")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "下一项待处理动作" }));
+    fireEvent.click(screen.getByRole("button", { name: "下一项动作" }));
     fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
     expect(chat.decideProposal).toHaveBeenCalledWith("two", "confirm");
     view.rerender(<CompanionReplyPapers chat={{ ...chat, proposalStates: { one: interactionProposal("succeeded"), two: interactionProposal("rejected"), three: interactionProposal() } }} paused={false} />);
@@ -93,7 +93,7 @@ describe("real message blocks in floating papers", () => {
     expect(screen.getAllByRole("article")).toHaveLength(1);
     expect(screen.getByText("已完成 1 项 · 已跳过 1 项 · 已过期 1 项")).toBeTruthy();
     expect(screen.queryByText("目标")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "查看对话记录" }));
+    fireEvent.click(screen.getByRole("button", { name: "查看对话手记" }));
     expect(chat.setMode).toHaveBeenCalledWith("history");
     advance(11_000);
     view.rerender(<CompanionReplyPapers chat={finished} paused={false} />);
@@ -119,7 +119,7 @@ describe("real message blocks in floating papers", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "确认执行" }));
     const finished = { ...chat, proposalStates: { one: interactionProposal("succeeded"), two: interactionProposal("succeeded") } };
     view.rerender(<><input aria-label="页面内容" /><CompanionReplyPapers chat={finished} paused={false} /></>);
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "查看对话记录" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "查看对话手记" }));
     act(() => screen.getByRole("textbox", { name: "页面内容" }).focus());
     view.rerender(<><input aria-label="页面内容" /><CompanionReplyPapers chat={{ ...finished, proposalStates: { ...finished.proposalStates, later: interactionProposal() } }} paused={false} /></>);
     expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "页面内容" }));

@@ -29,6 +29,7 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
+import { AI_CONSENT_VERSION } from "@astella/shared";
 import { assertFixtureWipeClean, wipeCardGenerationFixtures } from "./card-generation-fixture-cleanup.ts";
 // **只取类型**：下面那些被 `await import(...)` 的模块会在模块作用域开 postgres 连接池
 // （本文件 `after` 负责关它们），类型导入编译后不留痕迹，不触发那次打开。
@@ -41,6 +42,11 @@ const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 process.env.DATABASE_URL_API ??= ADMIN_URL;
 delete process.env.CARD_GENERATION_V2_LLM;
+// 与 V2 那把开关一起清：这份文件的读数（尤其"成功路径恰好 2 次语义调用"）只在确定性
+// 替身下成立。开发机 `.env` 里配着 `CARD_GENERATION_V3_PROVIDER=llm` 时，漏删它会把整条
+// 默认路径带进真模型分支——多出来的重检让调用数变成 5，几格用例跟着一起红。
+// 需要真模型档的两格自己显式设（见下方 `CARD_GENERATION_V3_PROVIDER = "llm"`），不靠环境。
+delete process.env.CARD_GENERATION_V3_PROVIDER;
 
 const admin = postgres(ADMIN_URL, { max: 2 });
 
@@ -274,6 +280,12 @@ before(async () => {
       await tx`INSERT INTO users (id, email, password_hash)
         VALUES (${id}, ${`cardgen-v3-${id}@example.invalid`}, 'unused')
         ON CONFLICT (id) DO NOTHING`;
+      // Production now checks consent before accepting a run. These are isolated
+      // fixture accounts; provider calls below still use injected test ports.
+      await tx`INSERT INTO user_ai_settings(user_id,consent_at,consent_version,data_policy)
+        VALUES(${id},now(),${AI_CONSENT_VERSION},${tx.json({sendToExternal:true})})
+        ON CONFLICT(user_id) DO UPDATE SET consent_at=excluded.consent_at,
+          consent_version=excluded.consent_version,data_policy=excluded.data_policy`;
     }
     await tx`INSERT INTO workspaces (id, owner_id, name)
       VALUES (${WORKSPACE_ID}, ${USER_ID}, 'Card Gen V3 IT') ON CONFLICT (id) DO NOTHING`;

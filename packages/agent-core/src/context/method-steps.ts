@@ -67,7 +67,7 @@ export function planMethodStepsFromRun(input: {
     );
   }
   for (const operation of failed) {
-    const reason = operation.error ? `（${operation.error.slice(0, 120)}）` : "";
+    const reason = operation.error ? `（${operation.error}）` : "";
     const replacement = succeeded.find(step => step !== input.renderStep(operation.capability));
     exceptions.push(
       `${input.renderStep(operation.capability)} 在这次没有走通${reason}。`

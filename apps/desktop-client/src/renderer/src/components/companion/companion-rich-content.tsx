@@ -5,6 +5,7 @@ import { copyText } from "../../app/clipboard";
 import { LightboxViewer } from "../surfaces/source/image-viewer";
 import { useSourceImage } from "../surfaces/source/source-image";
 import { renderCompanionMarkdown } from "./companion-markdown";
+import { CodeLines, useCodeHighlight } from "../content/code-paper";
 
 function ImagePlaceholder({ loading, retry }: { loading: boolean; retry: () => void }) {
   return <div className="companion-record__image-placeholder" role="status">
@@ -57,12 +58,13 @@ export function CompanionRecordImage({ block, onReadingChange }: {
 export function CompanionCodeBlock({ block }: { block: Extract<CompanionContentBlockV1, { type: "code" }> }) {
   const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
   const [busy, setBusy] = useState(false);
+  const highlight = useCodeHighlight(block.code, block.language);
   return <figure className="companion-record__code-sheet">
     <figcaption><span>{block.language || "代码片段"}</span><button type="button" disabled={busy} aria-label="复制代码" onClick={() => {
       setBusy(true);
       void copyText(block.code).then(ok => setCopied(ok ? "copied" : "failed")).finally(() => setBusy(false));
     }}>{copied === "copied" ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}<span>{busy ? "正在复制" : copied === "copied" ? "已复制" : "复制"}</span></button></figcaption>
-    <pre className="companion-record__code" tabIndex={0} aria-label={`${block.language || "代码"}内容`}><code>{block.code}</code></pre>
+    <pre className="companion-record__code code-body" tabIndex={0} aria-label={`${block.language || "代码"}内容`}><code><CodeLines highlight={highlight} source={block.code} /></code></pre>
     {copied === "failed" ? <p className="companion-record__copy-status" role="status">没能复制，请再试一次。</p> : null}
     <span className="sr-only" role="status">{copied === "copied" ? "代码已复制" : ""}</span>
   </figure>;

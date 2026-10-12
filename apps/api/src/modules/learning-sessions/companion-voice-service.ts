@@ -141,7 +141,11 @@ export interface CompanionTtsSegmentRef {
 }
 
 export interface TtsSynthesizeFn {
-  (text: string, voice: string): Promise<{ audio: Uint8Array | Buffer; engine?: "qwen" | "edge" }>;
+  /**
+   * `instruction` 是这一轮的说话风格指令（段事件里带下来的模型自写值）；
+   * 缺省 = 模型这轮没写，由合成侧回退用户偏好 → config。
+   */
+  (text: string, voice: string, instruction?: string): Promise<{ audio: Uint8Array | Buffer; engine?: "qwen" | "edge" }>;
 }
 
 /**
@@ -247,7 +251,7 @@ export async function synthesizeCompanionTtsSegment(args: {
   // 第一阶段：事务内只做只读校验并取回文本（快路径，不持有长事务）。
   const staged = await withWorkspaceTransaction(
     { workspaceId: args.workspaceId, userId: args.userId },
-    async (tx): Promise<{ text: string } | { statusCode: number; error: { code: string; message: string } }> => {
+    async (tx): Promise<{ text: string; instruction?: string } | { statusCode: number; error: { code: string; message: string } }> => {
       const events = await tx.execute<{ payload: unknown }>(
         sql`
           SELECT payload
@@ -297,7 +301,11 @@ export async function synthesizeCompanionTtsSegment(args: {
           error: { code: "TURN_CANCELLED", message: "run is not playable" },
         };
       }
-      return { text: parsedPayload.data.synthesisText };
+      // 合同层已校验长度与单位预算；这里再 trim 一次防库里存了带首尾空白的值。
+      const instruction = parsedPayload.data.instruction?.trim();
+      return instruction
+        ? { text: parsedPayload.data.synthesisText, instruction }
+        : { text: parsedPayload.data.synthesisText };
     },
   );
   if ("error" in staged) {
@@ -313,7 +321,7 @@ export async function synthesizeCompanionTtsSegment(args: {
   // 记一条 failed、返回 502 + 静态文案，客户端照既有逻辑降级纯文字。
   let synthesized: { audio: Uint8Array | Buffer; engine?: "qwen" | "edge" };
   try {
-    synthesized = await args.synthesize(staged.text, args.voice ?? "zh-CN-XiaoxiaoNeural");
+    synthesized = await args.synthesize(staged.text, args.voice ?? "zh-CN-XiaoxiaoNeural", staged.instruction);
   } catch (error) {
     await recordOutcome("failed", {
       errorCode: error instanceof Error ? error.constructor.name : "unknown",

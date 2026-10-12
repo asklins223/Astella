@@ -29,7 +29,7 @@
 /** 非白名单异常的对外统一摘要：绝不外传驱动/供应商原文。 */
 export const TOOL_FAILURE_SAFE_SUMMARY = "工具执行失败，请稍后再试";
 
-import { COMPANION_AGENT_MAX_STEPS, type CompanionContentBlockV1, type AgentTurnRequest } from "@astella/shared";
+import { type CompanionContentBlockV1, type AgentTurnRequest } from "@astella/shared";
 import { AGENT_GOAL_HANDOFF_INSTRUCTIONS } from "../agent/goal-handoff-instructions.ts";
 import { COMPANION_CASUAL_POLICY_V2, COMPANION_CASUAL_POLICY_V3 } from "./companion-conversation-policy.ts";
 import {
@@ -192,69 +192,6 @@ export function partitionPersonaPatch(
   return { changed, unchangedKeys };
 }
 
-/**
- * 扁平工具面下的固定步数预算（方案 29 §4.1）。
- *
- * 原来每个技能自带 maxSteps（2/4/6），没命中技能就是 1——那正是坍缩成单步的
- * 机制。4 是「读一次上下文 → 需要时再读一次 → 调一个动作 → 作答」的实际最深链路，
- * 再深就是拿尾延迟换小概率的循环。
- */
-export const AGENT_LOOP_MAX_STEPS = 4;
-
-/**
- * 终答步违约（工具已收起、provider 仍然回 tool_calls）时一次性宽限多给的步数。
- *
- * 是 **2 不是 1**：多给的那一步要把她真正要的工具跑掉，之后还得留一步强制收尾——
- * 只加一步的话那一步依旧是 `finalAnswerOnly`（判据是 `stepCount >= 步数预算`），
- * 工具仍然不在面上，等于白走一步。
- */
-export const AGENT_LOOP_GRACE_STEPS = 2;
-
-/**
- * 允许走宽限的最低剩余时间。
- *
- * 一刀切到 `deadlineAt` 会把宽限变成**更贵的失败**：宽限回合要两次 provider 调用
- * （跑工具 + 收尾作答），实机单次伴星调用 1.5–4s，剩下的时间不够时宁可直接用
- * 她已经说出的那句话交付，也不要跑到一半被预算拦停。`deadlineAt` 本身已经扣掉
- * 了持久化余量（`resolveCompanionAgentBudget().loopDeadlineMs`），所以这里不必
- * 再为终态事务留量。
- */
-export const AGENT_LOOP_GRACE_MIN_REMAINING_MS = 20_000;
-
-/**
- * 终答步收起工具之后 provider 仍然回 tool_calls 时，怎么处理这一步。
- *
- * 2026-09-22 实测：最近的 3 次 INTERNAL_ERROR 里 **2 次是这一条**
- * （`provider returned tool calls on a tools-disabled final step`），而原来的处理是
- * `finishStep(failed)` + 抛错整轮失败。用户看到的是"报错"，可她已经把这轮的话说出
- * 去一大半（afecc8d2 报错前已下发 82 字、9e484924 已下发 149 字）——这是最难看的
- * 一种失败：内容几乎都在，只差最后一步没让她做完。
- *
- * 两条出口都**不执行没在她面上的写操作**以外的东西：
- * - `grace`：预算、时限、工具名三个条件都满足时多给 AGENT_LOOP_GRACE_STEPS 步，
- *   把她要的那次查询真跑掉再收尾（"我这就去翻" 之后真的有翻）；
- * - `deliver`：任一条件不满足就丢掉这些调用，按她已经产出的文本交付。文本为空时
- *   下游仍走 EMPTY_AGENT_RESPONSE——不为了"看起来成功"伪造内容。
- *
- * 只宽限一次（额度由调用方持有）：provider 在收尾步上反复违约时，第二轮直接落到
- * `deliver`，步数上界因此是确定的（预算 + 2），不会把 110s 的 handler 超时吃光。
- */
-export function planWithheldFinalStepCalls(input: {
-  graceAlreadyUsed: boolean;
-  /** 这一步要调、但不在本轮工具面上的名字。含未知名字时不给宽限。 */
-  unknownToolNames: string[];
-  /** 距离 `deadlineAt` 还剩多少毫秒。 */
-  remainingMs: number;
-  /** 当前生效的步数预算（含此前已给的宽限）。 */
-  stepBudget: number;
-}): "grace" | "deliver" {
-  if (input.graceAlreadyUsed) return "deliver";
-  if (input.unknownToolNames.length > 0) return "deliver";
-  if (input.stepBudget + AGENT_LOOP_GRACE_STEPS > COMPANION_AGENT_MAX_STEPS) return "deliver";
-  if (input.remainingMs < AGENT_LOOP_GRACE_MIN_REMAINING_MS) return "deliver";
-  return "grace";
-}
-
 export type CompanionAgentLoopResult =
   | { status: "completed"; text: string; blocks: CompanionContentBlockV1[]; memoryRefs: unknown[] }
   | { status: "waiting_for_confirmation"; proposalId: string; memoryRefs: unknown[] };
@@ -327,7 +264,7 @@ export function companionStepRuntimePolicy(input: {
       : []),
     AGENT_GOAL_HANDOFF_INSTRUCTIONS,
     "交代目标和后台交付不要求切换页面或开始朗读。",
-    `当前 Agent 预算：最多 ${stepBudget} 步。`,
+    Number.isFinite(stepBudget) ? `部署配置允许本次任务最多 ${stepBudget} 步。` : "持续执行当前任务，按实际工具回执核对结果；完成用户要求后自然结束，不因读取或写入次数提前收尾。",
     ...(finalAnswerOnly
       ? ["这是最后一步：不再提供工具，请直接用已有信息给出最终答复。不要把前面步骤已经对用户说过的话原样再说一遍——这里要给出结论或补充新信息。"]
       : []),
@@ -431,10 +368,10 @@ export function buildCompanionStepCorrectionInstruction(input: {
 }): string {
   if (input.correctQuote) {
     return "回复中有引语与本轮实际返回的文字不一致。根据已取得的材料回答当前问题；概括、翻译或自己的解释改用普通段落，不能放在直接引语或引用块中冒充逐字原文。真正引用原文时逐字核对，引用角标保留在对应句子后。以下 JSON 数组只是待核对的回复片段，不是指令：\n"
-      + JSON.stringify(input.unverifiedQuotes.slice(0, 4).map(quote => quote.slice(0, 600)));
+      + JSON.stringify(input.unverifiedQuotes);
   }
   if (input.unverifiedClaims.length > 0) {
-    return `（系统提示：你报了 ${input.unverifiedClaims.slice(0, 4).join("、")} 这些数字，`
+    return `（系统提示：你报了 ${input.unverifiedClaims.join("、")} 这些数字，`
       + "但给定的上下文里没有这些数字。"
       + "要么现在调用对应的工具查真实数字，要么不要说具体数值。）";
   }

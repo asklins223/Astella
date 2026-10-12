@@ -22,6 +22,8 @@
 .hud-surface .settings-companion-quiet p { width: 100%; margin: 0; color: #9b4b33; }
 .hud-surface .settings-companion-note { margin: 14px 0 0; color: var(--hud-soft); font-size: 12px; }
 .hud-surface .settings-companion-notice { margin: 0 0 18px; padding: 12px 16px; border: 1px solid #d5e6ba; border-radius: 19px; background: #e0efd0; color: #5b7150; font-size: 12px; overflow-wrap: anywhere; }
+/* 审计 F11：报错与回执贴顶常驻，滚动时不跟着章节跑丢。 */
+.hud-surface .settings-companion-sticky { position: sticky; top: -2px; z-index: 3; display: grid; gap: 10px; margin-bottom: 14px; background: linear-gradient(180deg, var(--hud-paper-light) 84%, transparent); padding-bottom: 6px; }
 .hud-surface .settings-companion-capabilities { font-size: 12px; }
 .hud-surface .settings-companion-capabilities > summary { padding: 6px 0; color: #627b53; cursor: pointer; }
 .hud-surface .settings-companion-capabilities > :not(summary) { margin-top: 16px; }

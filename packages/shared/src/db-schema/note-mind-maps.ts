@@ -17,7 +17,8 @@ export const noteMindMaps = pgTable("note_mind_maps", {
   generationJobId: uuid("generation_job_id").notNull(), modelId:text("model_id").notNull(),promptVersion:text("prompt_version").notNull(),
   createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
 }, t => ({
-  contentShape:check("note_mind_maps_content_check",sql`jsonb_typeof(${t.content}->'nodes')='array' AND jsonb_array_length(${t.content}->'nodes') BETWEEN 2 AND 120`),
+  // 一张图有多少节点由材料决定（合同侧已放开 `MIND_MAP_MAX_NODES`）：这里只留"至少两个节点才成图"（0419）。
+  contentShape:check("note_mind_maps_content_check",sql`jsonb_typeof(${t.content}->'nodes')='array' AND jsonb_array_length(${t.content}->'nodes') >= 2`),
   versionBelongsToNote:foreignKey({name:"note_mind_maps_version_note_fk",columns:[t.workspaceId,t.noteId,t.noteVersionId],foreignColumns:[noteVersions.workspaceId,noteVersions.noteId,noteVersions.id]}).onDelete("cascade"),
   jobBelongsToWorkspace:foreignKey({name:"note_mind_maps_job_workspace_fk",columns:[t.generationJobId,t.workspaceId],foreignColumns:[jobs.id,jobs.workspaceId]}).onDelete("restrict"),
   jobUnique:uniqueIndex("note_mind_maps_job_unique_idx").on(t.workspaceId,t.generationJobId),

@@ -153,21 +153,21 @@ export const learningTargetSnapshotV2Schema = z
         cardRevision: z.number().int().min(1).nullable(),
         publicPayloadHash: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
         revealPayloadHash: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
-        objectiveStatement: z.string().min(1).max(2000),
-        publicSummary: z.string().min(1).max(1500),
+        objectiveStatement: z.string().min(1),
+        publicSummary: z.string().min(1),
         knowledgeForm: knowledgeFormV2Schema,
-        preferredIntents: z.array(taskIntentSchema).min(1).max(6),
+        preferredIntents: z.array(taskIntentSchema).min(1),
         canonicalAnswer: canonicalAnswerV2Schema,
         learningSupport: z
           .strictObject({
-            explanation: z.string().min(1).max(6000),
-            boundary: z.string().min(1).max(3000).optional(),
-            misconception: z.string().min(1).max(3000).optional(),
-            workedExample: z.string().min(1).max(6000).optional(),
+            explanation: z.string().min(1),
+            boundary: z.string().min(1).optional(),
+            misconception: z.string().min(1).optional(),
+            workedExample: z.string().min(1).optional(),
           })
           .strict(),
         scoringRubric: objectiveRubricV2Schema,
-        relations: z.array(objectiveRelationV2Schema).max(100),
+        relations: z.array(objectiveRelationV2Schema),
         /**
          * 0245：随目标一起冻下来的客观练习件（选择 / 判断 / 排序 / 配对）。
          * null = 这张卡没有练习件。规划器只从冻结快照消费（§16.4），所以它必须
@@ -239,7 +239,7 @@ export const learningRunTargetPublicV2Schema = z
     publicationRevision: z.number().int().min(1).nullable(),
     cardRevision: z.number().int().min(1).nullable(),
     publicPayloadHash: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
-    publicSummary: z.string().min(1).max(1500),
+    publicSummary: z.string().min(1),
     semanticTargetFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
     targetRevisionHash: z.string().regex(/^[0-9a-f]{64}$/),
   })

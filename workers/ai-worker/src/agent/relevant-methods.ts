@@ -1,4 +1,5 @@
 import type { AgentMethodV1 } from "@astella/shared/agent-growth-contracts";
+import { AGENT_PROMPT_DIRECTORY_LIMIT } from "@astella/agent-host";
 
 /**
  * 方案 44 §6.1：专业任务（制卡、拓展、速看、演示）执行时读取**相关**的合作/生成经验。
@@ -18,11 +19,12 @@ import type { AgentMethodV1 } from "@astella/shared/agent-growth-contracts";
  * 单独记（§6.3）；这里只负责「让她看见」。
  */
 
-/** 目录一次最多给几条。 */
-export const MAX_RELEVANT_METHODS = 4;
-
-/** 单条目录的字符上限：标题 + 适用条件，不是正文。 */
-export const METHOD_CATALOG_ITEM_MAX_CHARS = 200;
+/**
+ * 目录一次最多给几条：条数预算的唯一声明源在 @astella/agent-host（与手册目录的 20/5 同处，
+ * 2026-10-12 收口），这里只引用、不再各写一遍。超限是**整条取舍**——少给的条数挂在
+ * 数组回执上（不可枚举），渲染时如实说出，不静默消失。
+ */
+export const MAX_RELEVANT_METHODS = AGENT_PROMPT_DIRECTORY_LIMIT;
 
 const STOPWORDS = new Set([
   "的", "了", "和", "与", "或", "在", "是", "有", "把", "被", "给", "对", "和", "个", "这", "那",
@@ -66,6 +68,9 @@ export function methodRelevanceTerms(text: string, max = 12): string[] {
  * 排序按命中词数：命中多的更像这条任务真正会用到的做法。只给标题与适用条件——
  * 正文仍要按 `methodId + revision` 另行展开（`readAgentMethod`），展开才记「读过」，
  * 目录出现只记「提供过」（§6.3：两者不是一回事）。
+ *
+ * 超限是**整条取舍**：少给几条挂在返回数组的不可枚举回执上（`omittedCount`），
+ * 普通数组消费方不受影响，渲染侧读得到「这次目录短了几条」。
  */
 export function selectRelevantMethods(
   methods: readonly AgentMethodV1[],
@@ -88,7 +93,11 @@ export function selectRelevantMethods(
     if (score > 0) scored.push({ method, score });
   }
   scored.sort((a, b) => b.score - a.score || a.method.title.localeCompare(b.method.title));
-  return scored.slice(0, limit).map(entry => entry.method);
+  const picked = scored.slice(0, limit).map(entry => entry.method);
+  Object.defineProperty(picked, "omittedCount", {
+    value: Math.max(0, scored.length - limit), enumerable: false, configurable: true,
+  });
+  return picked;
 }
 
 /**
@@ -96,16 +105,20 @@ export function selectRelevantMethods(
  *
  * 措辞必须写清三件事：这是**合作指引**、它**不**改变原文事实与权限、以及「适用条件
  * 不对就别用」。否则一条本来只适用于某类材料的方法会被当成放之四海皆准的规矩。
+ *
+ * 标题与适用条件**整条给出**（2026-10-12 裁决：进提示词的输入不按字数静默裁）——
+ * 砍半句的「适用条件」正是最容易让模型误用一条做法的位置。
  */
 export function renderMethodCatalogBlock(methods: readonly AgentMethodV1[]): string {
   if (methods.length === 0) return "";
+  const omitted = (methods as readonly unknown[] & { omittedCount?: number }).omittedCount ?? 0;
   const data = (value: unknown): string =>
     JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
   const items = methods.map(method => ({
     methodId: method.methodId,
     revision: method.revision,
-    title: method.title.slice(0, METHOD_CATALOG_ITEM_MAX_CHARS),
-    appliesWhen: method.appliesWhen.slice(0, METHOD_CATALOG_ITEM_MAX_CHARS),
+    title: method.title,
+    appliesWhen: method.appliesWhen,
   }));
   return [
     "<related_methods>",
@@ -113,6 +126,8 @@ export function renderMethodCatalogBlock(methods: readonly AgentMethodV1[]): str
     "· 它们只是合作指引，不改变原文事实、证据引用、领域输出结构与安全校验，也不授予任何权限；",
     "· 逐条看「适用条件」——条件对不上就不要用，用错一条比不用更糟；",
     "· 这里给的是标题与适用条件，正文不在其中；真正要照着做时再按 methodId 与 revision 取正文。",
+    // 整条取舍的留痕：少给了几条要如实说，不让「短了的目录」被当成「她只有这些做法」。
+    ...(omitted > 0 ? [`· 目录按条数上限整条取舍，这次另有 ${omitted} 条相关做法没有列进来。`] : []),
     data(items),
     "</related_methods>",
   ].join("\n");

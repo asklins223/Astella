@@ -54,6 +54,18 @@ describe("实时工具帧与本轮快照接续", () => {
 });
 
 describe("companion agent node stream", () => {
+  it("merges a streamed write preview with its existing saved operation", () => {
+    for (const existing of [[], [tool("succeeded", { toolCallId: "saved-write" })]]) {
+      const nodes = fold([
+        ...existing,
+        tool("requested", { toolCallId: "new-preview" }),
+        tool("succeeded", { toolCallId: "saved-write", preparationToolCallId: "new-preview", safeSummary: "已保存" }),
+      ]);
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]).toMatchObject({ key: "tool:saved-write", state: "succeeded", summary: "已保存" });
+      expect(countAgentToolCalls(nodes)).toBe(1);
+    }
+  });
   it("keeps one row per tool call across its whole status lifecycle", () => {
     const nodes = fold([tool("requested"), tool("executing"), tool("succeeded", { safeSummary: "已打开 3 张卡片" })]);
     expect(nodes).toHaveLength(1);

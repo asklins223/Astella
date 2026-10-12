@@ -15,6 +15,7 @@ import { DomainError } from "@astella/shared";
 export function cardGenerationFailureCode(error: unknown): string {
   const value = error as { code?: unknown; failureClass?: unknown } | null;
   if (value?.code === "ai_consent_required" || value?.code === "ai_data_policy_denied") return value.code;
+  if (value?.code === "output_truncated" || value?.failureClass === "output_truncated") return "generation_output_truncated";
   if (value?.failureClass === "output_shape") return "generation_output_invalid";
   if (value?.failureClass === "timeout") return "generation_timeout";
   return "generation_failed";

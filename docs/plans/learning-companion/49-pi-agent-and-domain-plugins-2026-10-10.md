@@ -10,6 +10,27 @@
 >
 > 阅读分工：[42](./42-unified-agent-and-companion-experience-2026-10-04.md)定义统一 Agent、状态所有者和产品体验；[41a](./41a-unified-agent-foundation-2026-09-28.md)定义可靠执行；[44](./44-unified-context-window-and-compaction-2026-10-05.md)定义上下文与压缩；[40](./40-companion-long-term-experience-and-diary-prd-2026-09-25.md)、[40b](./40b-companion-runtime-and-observability-2026-09-27.md)、[45](./45-model-authored-voice-expression-2026-10-07.md)继续负责人格、记忆、失败表达与声音。本方案补充运行引擎和插件组织方式。
 
+> **2026-10-11 复核补充（先看这一节再读正文）**：本轮没有安装 Pi、没有改运行链路，决策状态仍是未采用。下面是把本文 §12「实施前必须通过阶段 0 回答」的那几条当作问题去查 v1.1.0 的 docs 与源码后得到的答案，以及本文写错的一处假设。
+>
+> **§12 那五条门槛，现在有答案了（依据 v1.1.0 的 `docs/sdk.md`、`docs/extensions.md`、`docs/session-format.md`、`packages/agent/src/agent-loop.ts`、`packages/ai/src/types.ts`）**：
+>
+> | 门槛 | 结论 | 依据 |
+> | --- | --- | --- |
+> | 消息/工具/模型元数据能否无损投影 | **能** | `SessionManager.inMemory(cwd, options, entries)` 接受手工构造的 JSONL entry；`responseId`／`thinkingSignature`／`textSignature`／`thoughtSignature` 等不透明字段原样回环。文档明确写着「赋 `session.agent.state.messages` **不会**替换持久上下文」——正是 §6.1 警告的那个坑，上游替我们确认了 |
+> | 能否在工具副作用前可靠保存响应 | **能** | `agent-loop.ts:467` 的 `await message_end` 严格早于 `:269` 的 `executeToolCalls()`；扩展钩子是**串行 await** 派发（`core/extensions/runner.ts:1089-1107`），且 `tool_call` 可返回 `{block, reason}` 直接否决。注意一条：同批次的多个调用可能并行跑，§7.1 的「顺序工具执行」仍要宿主自己保证 |
+> | 资源与模型配置能否完全由宿主管 | **能** | `compaction.enabled:false`、`defaultTools:[]`／`noTools`、`SessionManager.inMemory()`、`noExtensions/noSkills/noPromptTemplates/noContextFiles`、内存版 `SettingsManager` |
+> | 能否释放后台等待而不多花模型调用 | **不是 pi 的事** | 接受回执＋领域唤醒本来就是宿主侧，pi 既帮不上也不挡；§7.2 的设计照旧成立 |
+> | 投机首步与交付策略能否不复制循环 | **未验证** | pi 有 `before_provider_request`／`provider_stream_request`／`after_provider_response`／`transformContext` 这些面，看着够，但正文净化与 eager dispatch 接得住没有，只能实测 |
+>
+> **本文 §6.2 的假设是错的，这条最要紧**：原文写「Pi AI 的受控 fetch 适配……」，把注入 fetch 当成有保障的出口。实际 `ProviderRequestOptions.fetch` 是**按 adapter 支持**的——Google 两个 adapter 直接抛 `Custom fetch is not supported`（`api/google-generative-ai.ts:88`、`google-vertex.ts:97`），bedrock 只认 `httpAgent` 而忽略它，WebSocket 旁路根本不走 fetch；而且 pi 自己会装一个 undici 全局 dispatcher（`coding-agent/src/core/http-dispatcher.ts:80`），没有熔断接缝。**有保障的出口是自己实现一个 `Provider` 用 `pi.registerProvider()` 注册进去**，也就是出网治理（HTTPS/地址检查、解析地址固定、响应限额、超时、熔断、有界重试）要接管整个 provider，不是包一层传输。这把 §9 阶段 1 的难度从「中等」推到「高」，实施前必须按这个形状重估。
+>
+> **两条本文没有的实事**：
+>
+> - **pi 会交回 `Usage.cacheRead`/`cacheWrite`/`cost`**（`packages/ai/src/types.ts:433`）。本仓库当时 `cacheHitTokens` 解析出来就丢掉、`ai_audit_log` 只有一个 `cost_tokens` 总数，所以谁也不知道上游缓不缓存——这一项是 pi 在这轮调研里唯一的直接加分。
+> - **重量**：130 个包的依赖闭包、解包 22.9 MB，硬依赖 openai／@anthropic-ai/sdk／@google/genai／@aws-sdk/client-bedrock-runtime／undici，外加 esbuild 与 quickjs-wasm。engines `node >= 22.19.0`，本机 v22.23.2 够，容器内 Node 待核。
+>
+> **还要补一句口径**：换 pi **买不到 token 收益**。本文 §1 设的「成功体现在两方面」里不含这一条，但容易被读成含——本文写完后同一天，[52](./52-companion-tool-surface-description-budget-2026-10-11.md) 的 §4 与 §4.5 已在现役内核落地并加了守卫，聊天面工具面实测从 8,800 收到 **7,741 token**（真 tokenizer，`deepseek-v4.1-flash`）。这些工作在换引擎时要重做一遍，不会自动继承。
+
 ## 1. 候选方向与目标
 
 伴星体验与成长的具体实施见[50](./50-companion-persona-presence-and-growth-refactor-2026-10-10.md)，沿现役执行链路独立推进。本文仅评估未来可能的引擎与插件接入；50 的交付与验收不依赖本文采用结果。

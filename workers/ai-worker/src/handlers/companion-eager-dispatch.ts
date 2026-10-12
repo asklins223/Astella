@@ -210,6 +210,7 @@ export function eagerDispatchDecisions(
       continue;
     }
 
+
     // 顺序保证：N+1 已经开始 ⇒ N 不会再有分片。
     const laterStarted = indices.some((other) => other > index && byIndex.get(other)!.argsText.length > 0);
     if (!laterStarted && options.streamFinished !== true) {

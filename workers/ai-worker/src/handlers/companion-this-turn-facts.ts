@@ -372,14 +372,10 @@ async function resolvePreviousToolId(
 
 // ─── 渲染 ─────────────────────────────────────────────────────────────────
 
-function truncate(value: string, max: number): string {
-  const chars = Array.from(value.replace(/\s+/g, " ").trim());
-  return chars.length > max ? `${chars.slice(0, max).join("")}…` : chars.join("");
-}
 
 function renderNoteLine(note: NoteFactRow, runs: NoteRunRow[]): string {
   const parts = [
-    `笔记《${truncate(note.title, 24)}》：noteId=${note.id}`,
+    `笔记《${note.title}》：noteId=${note.id}`,
     `${ageLabel(Number(note.age_minutes))}改过`,
     `正文 ${note.block_count} 块`,
   ];
@@ -396,7 +392,7 @@ function renderCardLine(ref: TurnReference, card: CardFactRow): string {
     ? (card.overdue ? "到期待复习" : "已安排复习")
     : "没有待复习安排";
   const deferred = card.user_deferred_until ? `，用户已延后到 ${card.user_deferred_until}` : "";
-  return `- 「${truncate(ref.text, 24)}」：学习卡《${truncate(card.cue ?? "", 24)}》`
+  return `- 「${ref.text}」：学习卡《${card.cue ?? ""}》`
     + `（cardId=${card.card_id}，${state}${deferred}）。`;
 }
 
@@ -454,7 +450,7 @@ export async function loadThisTurnFacts(
     }
 
     if (!ref.resolvable) {
-      lines.push(`- 「${truncate(ref.text, 20)}」：没法确定用户指的是哪一项（当前这一屏没有给出具体对象），别猜、也别声称查过。`);
+      lines.push(`- 「${ref.text}」：没法确定用户指的是哪一项（当前这一屏没有给出具体对象），别猜、也别声称查过。`);
       hitRules.add(ref.rule);
       continue;
     }
@@ -465,11 +461,11 @@ export async function loadThisTurnFacts(
       if (card) {
         lines.push(renderCardLine(ref, card));
       } else if (ref.ordinal != null) {
-        lines.push(`- 「${truncate(ref.text, 24)}」：这是用户当前这一屏上的第 ${ref.ordinal} 项`
+        lines.push(`- 「${ref.text}」：这是用户当前这一屏上的第 ${ref.ordinal} 项`
           + `${ref.screenState ? `（状态：${ref.screenState}）` : ""}，但库里没能对上它对应的学习卡；`
           + "要操作它先用检索工具确认 id。");
       } else {
-        lines.push(`- 「${truncate(ref.text, 24)}」：没能在库里对上这一屏上的对象；要操作它先用检索工具确认 id。`);
+        lines.push(`- 「${ref.text}」：没能在库里对上这一屏上的对象；要操作它先用检索工具确认 id。`);
       }
       hitRules.add(ref.rule);
       continue;
@@ -486,19 +482,19 @@ export async function loadThisTurnFacts(
     }
     const card = bestByCoverage(cardRows, refTerms, (row) => row.cue ?? "");
     if (card) {
-      lines.push(`- 「${truncate(ref.text, 24)}」：没有同名笔记，但这个说法对得上学习卡《${truncate(card.cue ?? "", 24)}》（cardId=${card.card_id}）。`);
+      lines.push(`- 「${ref.text}」：没有同名笔记，但这个说法对得上学习卡《${card.cue ?? ""}》（cardId=${card.card_id}）。`);
       hitRules.add(ref.rule);
       continue;
     }
     const reminder = bestByCoverage(reminderRows, refTerms, (row) => row.text);
     if (reminder) {
-      lines.push(`- 「${truncate(ref.text, 20)}」：对得上一条待提醒（id=${reminder.id}，${reminder.fire_at_local} 提醒「${truncate(reminder.text, 20)}」）。`);
+      lines.push(`- 「${ref.text}」：对得上一条待提醒（id=${reminder.id}，${reminder.fire_at_local} 提醒「${reminder.text}」）。`);
       hitRules.add(ref.rule);
       continue;
     }
     const memory = bestByCoverage(memoryRows, refTerms, (row) => row.content);
     if (memory) {
-      lines.push(`- 「${truncate(ref.text, 20)}」：记忆里有一条相关记录（${memory.kind}）：${truncate(memory.content, 40)}`);
+      lines.push(`- 「${ref.text}」：记忆里有一条相关记录（${memory.kind}）：${memory.content}`);
       hitRules.add(ref.rule);
       continue;
     }
@@ -508,8 +504,8 @@ export async function loadThisTurnFacts(
     }
     const nearest = await findNearestNoteTitle(tx, scope, ref.text);
     lines.push(nearest
-      ? `- 「${truncate(ref.text, 20)}」：这是用户当前这一屏上的对象，库里没有标题匹配的笔记；最接近的是《${truncate(nearest.title, 24)}》（相似度 ${nearest.score.toFixed(2)}）。没匹配不等于没有，要查就调用 companion_search_notes。`
-      : `- 「${truncate(ref.text, 20)}」：这是用户当前这一屏上的对象，库里没有标题匹配的笔记。没匹配不等于没有，要查就调用 companion_search_notes。`);
+      ? `- 「${ref.text}」：这是用户当前这一屏上的对象，库里没有标题匹配的笔记；最接近的是《${nearest.title}》（相似度 ${nearest.score.toFixed(2)}）。没匹配不等于没有，要查就调用 companion_search_notes。`
+      : `- 「${ref.text}」：这是用户当前这一屏上的对象，库里没有标题匹配的笔记。没匹配不等于没有，要查就调用 companion_search_notes。`);
     hitRules.add(ref.rule);
   }
 

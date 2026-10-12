@@ -27,7 +27,6 @@ import {
   agentTurnResultSchema,
   companionAgentSettingsV1Schema,
   COMPANION_AGENT_CONTRACT_VERSION,
-  COMPANION_AGENT_MAX_MODEL_CALLS,
   type AgentTurnResult,
   type CompanionAgentBudgetSnapshotV1,
   type CompanionAgentPermissionLevel,
@@ -45,6 +44,7 @@ import { lockJobLease } from "../lib/job-lease.ts";
 import { CompanionAgentBudgetExceededError } from "../lib/non-retryable-errors.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
+import { companionExecutionPolicy } from "./companion-execution-policy.ts";
 import { agentTurnInterpretationV1Schema, type AgentTurnInterpretationV1, type AgentAttentionObjectV1 } from "@astella/shared/agent-contracts";
 
 const persistedAgentStepCheckpointSchema = agentTurnResultSchema;
@@ -55,6 +55,7 @@ export async function reserveCompanionProviderCall(event: {
   read: Pick<AgentEventContext["read"], "userId" | "runId" | "accountEpoch" | "generation">;
 }): Promise<void> {
   if (event.ctx.requestedBy !== event.read.userId) throw new CompanionAgentBudgetExceededError("companion initiating user changed");
+  const modelCallLimit = companionExecutionPolicy().maxModelCalls ?? null;
   await withWorkerWorkspaceTransaction({ workspaceId: event.ctx.workspaceId, userId: event.read.userId }, async tx => {
     await lockJobLease(tx, event.ctx);
     await assertCompanionContextSourcesCurrent(tx, { workspaceId: event.ctx.workspaceId, userId: event.read.userId }, event.read.runId);
@@ -68,7 +69,7 @@ export async function reserveCompanionProviderCall(event: {
         AND r.account_epoch=${event.read.accountEpoch} AND r.generation=${event.read.generation}
         AND r.status IN ('accepted','running','waiting_for_confirmation')
         AND a.user_id=r.user_id AND a.global_enabled AND a.epoch=r.account_epoch
-        AND r.model_call_count<${COMPANION_AGENT_MAX_MODEL_CALLS}
+        AND (${modelCallLimit}::int IS NULL OR r.model_call_count<${modelCallLimit}::int)
       RETURNING r.model_call_count`);
     if (!rows.length) throw new CompanionAgentBudgetExceededError("companion provider budget exhausted or turn obsolete");
   });

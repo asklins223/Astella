@@ -311,7 +311,7 @@ export const companionDailySummaryV1Schema = z.strictObject({
    * 单个 text 块（内容来自当时的 `summary`），所以这里永远非空——
    * 渲染层不需要为"旧日子没有块"写分支。
    */
-  blocks: z.array(companionDailyBlockV1Schema).max(24),
+  blocks: z.array(companionDailyBlockV1Schema),
   /** 该日日记派生出的记忆条目（可能是候选，等确认）。 */
   memory: z.strictObject({
     memoryItemId: z.string().uuid(),

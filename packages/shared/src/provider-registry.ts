@@ -66,13 +66,13 @@ export const PROVIDER_METADATA: readonly ProviderDescriptor[] = [
   {
     id: "mock",
     label: "Mock（开发用）",
-    capabilities: ["text_generation", "vision", "agent_turn", "embedding", "rerank"],
+    capabilities: ["text_generation", "agent_turn", "embedding", "rerank"],
     defaults: {},
   },
   {
     id: "openai_compatible",
     label: "OpenAI 兼容接口",
-    capabilities: ["text_generation", "vision", "agent_turn", "embedding"],
+    capabilities: ["text_generation", "agent_turn", "embedding"],
     defaults: {
       text_generation: { baseUrl: "", model: "" },
       embedding: { model: "" },
@@ -81,15 +81,11 @@ export const PROVIDER_METADATA: readonly ProviderDescriptor[] = [
   {
     id: "dashscope",
     label: "阿里云百炼 / DashScope",
-    capabilities: ["text_generation", "vision", "agent_turn", "embedding"],
+    capabilities: ["text_generation", "agent_turn", "embedding"],
     defaults: {
       text_generation: {
         baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
         model: "qwen-plus",
-      },
-      vision: {
-        baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        model: "qwen3-vl-plus",
       },
       embedding: { model: "text-embedding-v1" },
     },

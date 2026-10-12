@@ -78,8 +78,9 @@
 .hud-surface .notebook-desk__side-scroll .note-annotation-paper__explanation strong { color: #466b50; font-weight: 750; }
 .hud-surface .notebook-desk__side-scroll .note-annotation-paper__explanation .companion-md__heading { margin: 24px 0 12px; color: #466b50; font-size: 17px; font-weight: 800; line-height: 1.6; }
 .hud-surface .notebook-desk__side-scroll .note-annotation-paper__explanation > :first-child { margin-top: 0; }
-.hud-surface .notebook-desk__side-scroll .note-annotation-paper :is(.companion-md__code, code) { padding: 2px 5px; border-radius: 6px; background: #edf0e1; font: .9em/1.8 ui-monospace, "SFMono-Regular", Consolas, monospace; }
-.hud-surface .notebook-desk__side-scroll .note-annotation-paper .companion-md__code { margin: 18px 0; padding: 13px 15px; border-radius: 13px; overflow-x: auto; white-space: pre; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper :not(pre) > code { padding: 2px 5px; border-radius: 6px; background: #edf0e1; font: .9em/1.8 ui-monospace, "SFMono-Regular", Consolas, monospace; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper .code-paper { margin: 18px 0; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper .code-paper .code-body { padding: 13px 15px; font-size: 13px; }
 .hud-surface .notebook-desk__side-scroll .note-annotation-paper .companion-md__table-scroll { max-width: 100%; overflow-x: auto; margin-block: 18px; }
 .hud-surface .notebook-desk__side-scroll .note-annotation-paper .companion-md__table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .hud-surface .notebook-desk__side-scroll .note-annotation-paper :is(th, td) { padding: 9px 11px; border: 1px solid #dce0ce; text-align: left; vertical-align: top; }

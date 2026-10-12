@@ -21,7 +21,7 @@ import type { JobPayload } from "./index.ts";
 export const COMPANION_DIARY_REVISION_PROMPT_VERSION = "diary-revision-v2";
 const TASK_ID = "companion_diary_revision";
 const TASK_VERSION = 1;
-const checkpointSchema = z.object({ blocks: z.array(companionDailyBlockV1Schema).max(24), digest: z.string() }).strict();
+export const companionDiaryRevisionCheckpointV1Schema = z.object({ blocks: z.array(companionDailyBlockV1Schema), digest: z.string() }).strict();
 
 /** Recreate reference-only embed instructions; never send storage URLs as prose. */
 export function diaryRevisionDraft(draft: DiaryDraft, material: DiaryMaterial): z.infer<typeof diaryBlockDraftSchema> {
@@ -124,7 +124,7 @@ export async function reviseDiaryDraft(input: {
         job: input.job, userId: input.userId,
         personaVersion: { profileRevision: input.persona.revision, examplesRevision: input.persona.revision,
           defaultExpressionVersion: input.persona.defaultExpressionVersion ?? "" },
-        parseOutput(value) { const parsed = checkpointSchema.safeParse(value); return parsed.success ? parsed.data : null; },
+        parseOutput(value) { const parsed = companionDiaryRevisionCheckpointV1Schema.safeParse(value); return parsed.success ? parsed.data : null; },
       }),
     });
     if (sourceChanged || input.job.signal?.aborted || receipt.failure?.class === "cancelled") return null;

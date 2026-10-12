@@ -115,6 +115,10 @@ export class MockProvider implements AIProvider {
        */
       const scriptedWithheldViolation = request.messages.some((message) =>
         message.role === "user" && String(message.content ?? "").includes("【mock:tool-after-withheld】"));
+      // A finite workload exceeding the former 4/8-step and 12-call defaults.
+      const scriptedLongTask = request.messages.some(message => message.role === "user"
+        && String(message.content ?? "").includes("【mock:twenty-tool-rounds】"));
+      const longTaskNeedsTool = scriptedLongTask && request.messages.filter(message => message.role === "tool").length < 20;
       /**
        * 剧本 `【mock:fact-span】`：终答**引用读数目录**（`{{f:key}}`，39b §9.4 / 39d W2-5）。
        * 真实模型会不会这么写，只有真跑能证；但"她写了就必须被服务端换成目录里的值、
@@ -140,7 +144,16 @@ export class MockProvider implements AIProvider {
        */
       const scriptedMemoryProposal = request.messages.some((message) =>
         message.role === "user" && String(message.content ?? "").includes("【mock:wants-memory】"));
-      const wantsToolCall = ((scriptedWithheldViolation || !toolResult) && !scriptedFactSpan && !scriptedLeak)
+      const scriptedEscapedNote = request.messages.some(message => message.role === "user"
+        && String(message.content ?? "").includes("【mock:escaped-note】"));
+      if (scriptedEscapedNote && !request.messages.some(message => message.toolCalls?.some(call => call.name === "companion_create_note"))) {
+        const call = toolResult
+          ? { name: "companion_create_note", arguments: { title: "代码示例", markdown: "```text\n" + "\\".repeat(9500) + "\n```", links: [] } }
+          : { name: "companion_search_notes", arguments: { query: "代码示例" } };
+        return { content: null, toolCalls: [{ id: `call_note_${randomUUID()}`, ...call }], finishReason: "tool_calls",
+          usage: this.estimateUsage(JSON.stringify(request), JSON.stringify(call)), providerRequestId: "mock-note-preview" };
+      }
+      const wantsToolCall = ((scriptedWithheldViolation || longTaskNeedsTool || !toolResult) && !scriptedFactSpan && !scriptedLeak)
         // `tool_choice:"required"` 是 provider 原生机制（39b §9.5）。mock 以前**完全不理它**，
         // 于是"required 生效了"这类断言全是空转——它按自己的偏好回话，看起来却像模型照办了。
         // 现在按真实合同走：这一档下必须回 tool_calls。
@@ -354,9 +367,10 @@ fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
     const isToolIntentCall = messages.some(message => message.role === "system"
       && String(message.content).includes("goalObjectIndex"));
     if (isToolIntentCall) {
+      const readTask = userContent.includes("【mock:twenty-tool-rounds】");
       const action = userContent.includes("【mock:wants-tool】")
         || userContent.includes("【mock:wants-memory】");
-      const decided = JSON.stringify({ intent: action ? "task" : "conversation", toolUse: action ? "act" : "none",
+      const decided = JSON.stringify({ intent: action || readTask ? "task" : "conversation", toolUse: readTask ? "read" : action ? "act" : "none",
         subjects: [], goalRelation: action ? "new" : "unrelated", candidateOperations: [], ambiguities: [] });
       return { content: decided, usage: this.estimateUsage(userContent, decided) };
     }
@@ -496,10 +510,6 @@ function estimateTokenCount(text: string): number {
 // Mock provider supports all capabilities for development and testing.
 
 registerFactory("mock", "text_generation", (config) => {
-  return new MockProvider({ modelProfile: config.modelProfile }) as unknown as CapabilityImpl;
-});
-
-registerFactory("mock", "vision", (config) => {
   return new MockProvider({ modelProfile: config.modelProfile }) as unknown as CapabilityImpl;
 });
 

@@ -2,9 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, ty
 import { ArrowRight, Check, FilePlus2, FileText, FolderOpen, Link2, LoaderCircle, Upload, X } from "lucide-react";
 import type { DesktopSourceCreateRequest, DesktopSourceDuplicateV1 } from "@astella/shared/desktop-surface-contracts";
 import type { MarkdownBundleKind, MarkdownBundlePreviewV1 } from "@astella/shared/desktop-ipc-contracts";
-import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
+import { createRequestMeta, gatewayErrorMessage, getCurrentWorkspaceEpoch, unwrapGatewayResult } from "../../../app/desktop-client";
 import { DOCUMENT_FILE_PATTERN, MAX_CAPTURE_BYTES, captureBytes, formatCaptureSize, hasOpenModal, isEditableTarget } from "../../../app/source-intake";
-import { MAX_BATCH_CAPTURE_FILES, captureSourceTasks, readCaptureFile, readCaptureFiles, type BatchCaptureOutcome, type CaptureTask } from "../../../app/source-batch-capture";
+import { MAX_BATCH_CAPTURE_FILES, beginCaptureRun, captureSourceTasks, consumeBatchReceipt, readCaptureFile, readCaptureFiles, type BatchCaptureOutcome, type CaptureTask } from "../../../app/source-batch-capture";
 import { inspectMarkdownBundle, localizeMarkdownBundle } from "../../../app/source-bundle-capture";
 import { SpaceSharingNotice } from "../../space-sharing-notice";
 import { formatRelative } from "../notebook/surface-data";
@@ -27,7 +27,7 @@ export function CaptureStrip({ disabled, lockedReason, epochRef, receipt, summar
   readonly summary: ReactNode;
   readonly onCaptured: (id: string, title: string) => void | Promise<void>;
   /** 一次收下多份时的出口：页面用它写收据并刷新索引（逐份调 onCaptured 会刷新 N 次）。 */
-  readonly onBatchCaptured: (result: { readonly accepted: number; readonly failed: number }) => void | Promise<void>;
+  readonly onBatchCaptured: (result: { readonly accepted: number; readonly failed: number; readonly duplicates?: number }) => void | Promise<void>;
   readonly onOpenExisting: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -109,8 +109,17 @@ export function CaptureStrip({ disabled, lockedReason, epochRef, receipt, summar
    * 收完之后失败的那些要留在这一屏上：读者需要知道**哪几份没进来**才能再去补一次，
    * 只报「已收下 N 份」的话，剩下那几份就凭空消失了。
    */
-  const acceptFiles = async (files: readonly File[]) => {
-    if (files.length === 0 || busyRef.current || disabled) return;
+  /**
+   * 审计 F3：批量收一半时给一个停下的出口。旧批在下一份之前收手——已经建好的
+   * 来源留着，读数不会倒着说「没收过」；这一屏的进度立刻收掉。
+   */
+  const cancelBatch = () => {
+    beginCaptureRun();
+    incoming.current++;
+    busyRef.current = false;
+    setBatch(null); setReading(null); setBundling(null);
+  };
+  const acceptFiles = async (files: readonly File[]) => {    if (files.length === 0 || busyRef.current || disabled) return;
     const request = ++incoming.current;
     busyRef.current = true;
     setError(null); setDuplicate(null); setOpen(false);
@@ -150,24 +159,37 @@ export function CaptureStrip({ disabled, lockedReason, epochRef, receipt, summar
    * 批量拖文件与带图导入两条入口共用这一句：`preFailures` 是**这一步之前**就已经知道的失败
    * （读不出来的、超限没收的、图片没落地的），进度与最后那行「N 份没收进来」都要把它们算进去，
    * 不然两处会各说一套数。
+   *
+   * 2026-10-11（审计 F1）：`uiCurrent` 只管**这一屏要不要跟着更新**；收录本身不再随页面
+   * 卸载收手——离开来源库去读一条材料时它继续跑，跑完的回执留在模块层，回来时来源库读走。
+   * 中止条件只有「空间/账号换了」与「又有新的一批顶上来」。
    */
-  const runTasks = async (tasks: readonly CaptureTask[], preFailures: readonly BatchCaptureOutcome[], isCurrent: () => boolean, warnings: readonly BatchCaptureOutcome[] = []) => {
+  const runTasks = async (tasks: readonly CaptureTask[], preFailures: readonly BatchCaptureOutcome[], uiCurrent: () => boolean, warnings: readonly BatchCaptureOutcome[] = []) => {
     setImageWarnings(warnings);
     if (tasks.length === 0) { setBatch(null); setBatchFailures(preFailures); return; }
+    const run = beginCaptureRun();
+    const epoch = getCurrentWorkspaceEpoch();
     const result = await captureSourceTasks(tasks, {
-      isCurrent,
-      onProgress: (done, total) => { if (isCurrent()) setBatch({ done, total }); },
+      run,
+      shouldStop: () => getCurrentWorkspaceEpoch() !== epoch,
+      onProgress: (done, total) => { if (uiCurrent()) setBatch({ done, total }); },
     });
-    if (!result || !isCurrent()) return;
+    if (!result) { if (uiCurrent()) setBatch(null); return; }
+    // 用户已离开这一屏（换页/换了新的采集请求）：回执留在模块层，来源库下次挂载时会读走。
+    if (!uiCurrent()) return;
     setBatch(null);
     // 三类都要留着：超限没收的、读不出来的、建来源失败的。
     // 少留一样，那一份就在读者眼里凭空消失了（这里曾经只留后两样）。
     const failures = [...preFailures, ...result.outcomes.filter((outcome) => !outcome.ok)];
     setBatchFailures(failures);
+    // 审计 F2：重复项既不算「收下 N 份」，也不算失败，单独计数如实汇报。
     await onBatchCaptured({
-      accepted: result.outcomes.filter((outcome) => outcome.ok).length,
+      accepted: result.outcomes.filter((outcome) => outcome.ok && !outcome.duplicate).length,
       failed: failures.reduce((count, failure) => count + (failure.count ?? 1), 0),
+      duplicates: result.outcomes.filter((outcome) => outcome.duplicate).length,
     });
+    // 这一屏已经把回执说出来了，消费掉，别让来源库再重复一遍。
+    consumeBatchReceipt();
   };
   /**
    * 选一个包，先只看一眼：主进程在盘上把几篇正文与图片引用归类，一次网络都不发。
@@ -273,6 +295,8 @@ export function CaptureStrip({ disabled, lockedReason, epochRef, receipt, summar
           : batch ? <p role="status">正在收进第 {Math.min(batch.done + 1, batch.total)}/{batch.total} 份…</p>
           : busy ? <p role="status">正在收下材料…</p>
           : duplicate && !open ? <p role="status">这份材料已经有啦</p> : null}
+        {/* 审计 F3：收一半想停的时候有个出口；已收下的留着，只停后面的。 */}
+        {reading || batch ? <button type="button" className="text-action" onClick={cancelBatch}>取消剩下的</button> : null}
         {batchFailures.length > 0 ? (
           <details className="capture-report" open><summary>{batchFailures.reduce((count, item) => count + (item.count ?? 1), 0)} 份材料未能收录</summary>
             <ul className="capture-batch-failures" aria-label="没收进来的材料">{batchFailures.map((outcome, index) => <li key={`${index}-${outcome.name}`}><b>{outcome.name}</b>：{outcome.message}</li>)}</ul>
@@ -328,6 +352,8 @@ export function CaptureStrip({ disabled, lockedReason, epochRef, receipt, summar
               <div className="source-file-line"><span className={`capture-count${overLimit ? " over" : ""}`}>{bytes ? `${formatCaptureSize(bytes)} / ${formatCaptureSize(MAX_CAPTURE_BYTES)}` : "文本、Markdown、代码、PDF、Word"}</span>
                 <button type="button" className="text-action" onClick={() => fileRef.current?.click()}><Upload size={14} aria-hidden="true" />选择文件（可多选）</button>
               </div>
+              {/* 审计 F9：能粘哪、能拖哪、支持什么后缀，一直摆在纸上——不用靠试出来。 */}
+              <p className="capture-format-hint">支持的格式：文本、Markdown、代码、PDF、Word；单份正文上限 {formatCaptureSize(MAX_CAPTURE_BYTES)}。在任意页面粘贴、或把文件拖进窗口，也能直接收录。</p>
             </> : mode === "url" ? <><label htmlFor="capture-url">网页地址</label>
               <input id="capture-url" type="url" value={url} placeholder="https://" onChange={event => { incoming.current++; setUrl(event.currentTarget.value); }} />
             </> : <SourceBundlePreview preview={bundle} reading={bundling === "reading"} onPick={kind => void openBundle(kind)} onCommit={() => void commitBundle()} onClear={() => setBundle(null)} />}

@@ -2,6 +2,7 @@ import type { CompanionJourneyAction } from "@astella/shared/companion-journey-c
 import type { CompanionActivityDeliveryV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { useCallback,useEffect,useRef,useState } from "react";
 import { useCompanionChat } from "../../../app/companion-chat-session";
+import { journalProposalNeedsDecision } from "../../../components/companion/companion-journal-model";
 import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
 import { useRoomStore } from "../../../app/room-store";
 import { readAuthenticatedSession } from "../../../app/surface-session";
@@ -69,6 +70,9 @@ export function CompanionActivityPage(props: { refreshKey: number; onMemory: (id
     deliverySection={activity.section ?? { ok: false, message: activity.failure ?? "正在加载动态" }}
     deliveries={items} journeyLoading={journey.loading && !journey.section} learningLoading={learning.loading && !learning.section} deliveryLoading={activity.loading && !activity.section}
     busy={busy} error={error} onStart={start} onAction={act} onPresent={present} onDelivery={deliver}
+    /* 审计 F3：点过「查看提议」只说明用户去看了，不等于他决定了。卡片状态以提案本身
+       为准——只要那份提案还在等决定，就仍然写「待确认」，不再假装已经处理完。 */
+    pendingProposalIds={new Set(Object.entries(chat.proposalStates).filter(([, state]) => journalProposalNeedsDecision(state)).map(([id]) => id))}
     onResumeLearning={id => { const room = useRoomStore.getState(); room.setActiveRunId(id); room.invoke("validate"); }}
     onOpenObjective={id => { const room = useRoomStore.getState(); room.setActiveObjectiveId(id); room.invoke("open-objective"); }} onRetry={() => void reload()} />;
 }

@@ -35,7 +35,7 @@ afterEach(() => {
 
 test("resolveHandlerTimeout returns active built-in defaults", () => {
   assert.equal(resolveHandlerTimeout("parse_source"), 60_000);
-  assert.equal(resolveHandlerTimeout("companion_agent"), DEFAULT_AI_TASK_TIMEOUT_MS);
+  assert.equal(resolveHandlerTimeout("companion_agent"), Infinity);
   for (const type of ["companion_memory_extract", "companion_summarizer", "companion_daily_summary",
     "note_overview_generate", "note_annotation_explain", "note_expansion_generate", "note_dynamic_artifact_generate"]) {
     assert.equal(resolveHandlerTimeout(type), DEFAULT_AI_TASK_TIMEOUT_MS);
@@ -52,9 +52,15 @@ test("resolveHandlerTimeout respects a per-type override", () => {
   assert.equal(resolveHandlerTimeout("parse_source"), 120_000);
 });
 
+test("显式伴星时限按部署配置执行，不额外压成 24 小时", () => {
+  process.env.WORKER_TIMEOUT_COMPANION_AGENT_MS = String(28 * 24 * 60 * 60_000);
+  assert.equal(resolveHandlerTimeout("companion_agent"), 28 * 24 * 60 * 60_000);
+});
+
 test("resolveHandlerTimeout respects the global override", () => {
   process.env.WORKER_MODEL_TIMEOUT_MS = "60000";
   assert.equal(resolveHandlerTimeout("unknown_type"), 60_000);
+  assert.equal(resolveHandlerTimeout("companion_agent"), Infinity, "legacy global chat timeout must not cut an agent task short");
 });
 
 test("resolveHandlerTimeout ignores invalid env values", () => {
@@ -92,21 +98,17 @@ test("dynamic artifact generation finishes inside the handler and follows its ov
 /** The renewable lease is a recovery window; execution budgets still reserve persistence time. */
 test("续租独立于执行预算，handler > run > 单次模型调用", async () => {
   const { LEASE_TIMEOUT_MS } = await import("../queue.ts");
-  const { COMPANION_AGENT_DEADLINE_MS, COMPANION_AGENT_TOOL_TIMEOUT_MS } = await import("@astella/shared");
   const { READ_IMAGE_TOOL_TIMEOUT_MS } = await import("../handlers/companion-read-tools.ts");
   const {
     COMPANION_AGENT_PERSISTENCE_MARGIN_MS,
     resolveCompanionAgentBudget,
   } = await import("../lib/handler-timeout-config.ts");
 
+  process.env.WORKER_TIMEOUT_COMPANION_AGENT_MS = "1800000";
   const handler = resolveHandlerTimeout("companion_agent");
   const runBudget = handler - COMPANION_AGENT_PERSISTENCE_MARGIN_MS;
 
   assert.ok(handler > LEASE_TIMEOUT_MS, "长任务应能跨过可续租的崩溃回收窗口");
-  assert.ok(
-    COMPANION_AGENT_DEADLINE_MS >= handler,
-    "合同预算不该在一个新 attempt 里比 handler 更早绑住：那会把超时误记成 AGENT_BUDGET_EXCEEDED",
-  );
   assert.ok(
     READ_IMAGE_TOOL_TIMEOUT_MS < runBudget,
     "最重的单个工具必须能在 run 预算内跑完一次，否则它每一次都会被中途掐死",
@@ -115,10 +117,7 @@ test("续租独立于执行预算，handler > run > 单次模型调用", async (
     resolveProviderCallTimeout("companion_agent") < runBudget,
     "一次 provider 调用不能吃完整个 run 预算（后面的收尾就没有余地了）",
   );
-  assert.ok(
-    runBudget - READ_IMAGE_TOOL_TIMEOUT_MS >= COMPANION_AGENT_TOOL_TIMEOUT_MS * 2,
-    "读完一张图之后，至少要还剩两次查库工具的时间，否则这一步之后什么都做不了",
-  );
+  assert.ok(runBudget > READ_IMAGE_TOOL_TIMEOUT_MS, "工具执行受整轮剩余时间约束，不叠加猜测的查库次数预算");
 
   // 派生链本身：三层是 lease 的函数，不是三个各自维护的数字。
   const budget = resolveCompanionAgentBudget();
@@ -131,8 +130,8 @@ test("续租独立于执行预算，handler > run > 单次模型调用", async (
   );
   assert.equal(
     RESOLVED_TIMEOUT_INFO.defaultTimeouts.companion_agent,
-    DEFAULT_AI_TASK_TIMEOUT_MS,
-    "伴星跟随统一任务时限，不能再被两分钟租约限制",
+    Infinity,
+    "伴星没有默认整轮时限，由单次服务超时与租约回收处理失联",
   );
 });
 

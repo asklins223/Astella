@@ -135,18 +135,18 @@ describe("companionBubbleLineHeights", () => {
 });
 
 describe("companionBubbleHoldMs", () => {
-  it("replaces the old fixed 1.1s hold with a 2.4s floor (plan §3: short replies need time too)", () => {
-    expect(companionBubbleHoldMs(0)).toBe(2_400);
-    expect(companionBubbleHoldMs(-3)).toBe(2_400);
-    expect(companionBubbleHoldMs(10)).toBe(2_520);
+  it("keeps a readable floor for short replies (2026-10-11 审计 F5 放宽到 4s)", () => {
+    expect(companionBubbleHoldMs(0)).toBe(4_000);
+    expect(companionBubbleHoldMs(-3)).toBe(4_000);
+    expect(companionBubbleHoldMs(10)).toBe(4_200);
   });
 
-  it("grows with the text and caps at 6s at the bubble capacity (300 chars)", () => {
-    expect(companionBubbleHoldMs(100)).toBe(3_600);
-    expect(companionBubbleHoldMs(300)).toBe(6_000);
+  it("grows with the text and caps at 15s (2026-10-11 审计 F5：6s 对长解释太短)", () => {
+    expect(companionBubbleHoldMs(100)).toBe(6_000);
+    expect(companionBubbleHoldMs(300)).toBe(10_000);
   });
 
   it("stays at the cap for over-long text", () => {
-    expect(companionBubbleHoldMs(500)).toBe(6_000);
+    expect(companionBubbleHoldMs(800)).toBe(15_000);
   });
 });

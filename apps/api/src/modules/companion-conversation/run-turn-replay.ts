@@ -16,11 +16,19 @@ import {
 } from "@astella/shared/db-schema";
 import type { ApiTransaction } from "../../db/client.ts";
 import type { CompanionRunDoctorScope } from "./run-doctor.ts";
+import {
+  boundedCollectionV1,
+  DIAGNOSTIC_LEDGER_ENTRY_MAX_COUNT,
+  DIAGNOSTIC_STEP_MAX_COUNT,
+  DIAGNOSTIC_TIMELINE_EVENT_MAX_COUNT,
+  DIAGNOSTIC_TIMELINE_EVENT_PROBE_LIMIT,
+  DIAGNOSTIC_TOOL_CALL_MAX_COUNT,
+  REPLAY_HANDOFF_MAX_BYTES,
+  REPLAY_PROMPT_MESSAGE_MAX_CHARS,
+  REPLAY_PROMPT_MESSAGE_MAX_COUNT,
+  REPLAY_PROMPT_TOTAL_MAX_CHARS,
+} from "./run-diagnostics-bounds.ts";
 
-const MAX_HANDOFF_BYTES = 524_288;
-const MAX_PROMPT_MESSAGES = 64;
-const MAX_PROMPT_MESSAGE_CHARS = 16_000;
-const MAX_PROMPT_TOTAL_CHARS = 48_000;
 const KNOWN_EVENT_TYPES = new Set<CompanionTurnReplayV1["timeline"]["events"][number]["type"]>([
   "turn.accepted", "assistant.status", "agent.tool", "assistant.delta", "assistant.final",
   "character.cue", "action.proposed", "action.decision", "action.expired", "voice.segment.ready",
@@ -100,10 +108,6 @@ function iso(value: Date | null | undefined): string | null {
   return value instanceof Date && Number.isFinite(value.getTime()) ? value.toISOString() : null;
 }
 
-function clipped(value: string | null | undefined, max: number): string | null {
-  return value == null ? null : value.slice(0, max);
-}
-
 function hashOrNull(value: string | null | undefined): string | null {
   return value && /^[a-f0-9]{64}$/.test(value) ? value : null;
 }
@@ -125,7 +129,7 @@ function storedUserText(blocks: unknown): string {
 function resolveHandoff(input: CompanionTurnReplayProjectionInput) {
   const handoff = input.handoff;
   if (!handoff) return { status: "not_retained" as const, source: null, sha256: null, version: null };
-  if (handoff.snapshotBytes > MAX_HANDOFF_BYTES || handoff.snapshot === null) {
+  if (handoff.snapshotBytes > REPLAY_HANDOFF_MAX_BYTES || handoff.snapshot === null) {
     return { status: "over_limit" as const, source: null, sha256: hashOrNull(handoff.snapshotSha256), version: handoff.snapshotVersion };
   }
   try {
@@ -163,9 +167,9 @@ function resolveHandoff(input: CompanionTurnReplayProjectionInput) {
 function promptMessages(source: ReturnType<typeof resolveHandoff>["source"]) {
   if (!source) return { messages: [] as CompanionTurnReplayV1["context"]["promptMessages"], truncated: false };
   const messages: CompanionTurnReplayV1["context"]["promptMessages"] = [];
-  let remainingChars = MAX_PROMPT_TOTAL_CHARS;
-  let truncated = source.modelMessages.length > MAX_PROMPT_MESSAGES;
-  for (const message of source.modelMessages.slice(0, MAX_PROMPT_MESSAGES)) {
+  let remainingChars = REPLAY_PROMPT_TOTAL_MAX_CHARS;
+  let truncated = source.modelMessages.length > REPLAY_PROMPT_MESSAGE_MAX_COUNT;
+  for (const message of source.modelMessages.slice(0, REPLAY_PROMPT_MESSAGE_MAX_COUNT)) {
     let imageContentOmitted = 0;
     const text = typeof message.content === "string"
       ? message.content
@@ -176,7 +180,7 @@ function promptMessages(source: ReturnType<typeof resolveHandoff>["source"]) {
         }
         return part.text;
       }).join("");
-    const charLimit = Math.min(MAX_PROMPT_MESSAGE_CHARS, remainingChars);
+    const charLimit = Math.min(REPLAY_PROMPT_MESSAGE_MAX_CHARS, remainingChars);
     const safeText = text.slice(0, charLimit);
     const messageTruncated = safeText.length < text.length;
     messages.push({
@@ -208,28 +212,30 @@ function safeMessageBlocks(blocks: unknown): { blocks: CompanionContentBlockV1[]
 }
 
 function projectLedger(source: NonNullable<ReturnType<typeof resolveHandoff>["source"]>) {
+  // 条数上限在 `DIAGNOSTIC_LEDGER_ENTRY_MAX_COUNT` 一处声明；单条字段长度交给合同
+  // `.max(...)`——真超了就是 schema.parse 抛，看得见，不再是逐字段悄悄剪。
   const entries = <T extends { receiptId: string; toolCallId: string; name: string; safeSummary: string | null }>(items: readonly T[]) =>
-    items.slice(0, 64).map((item) => ({
-      receiptId: item.receiptId.slice(0, 200),
-      toolCallId: item.toolCallId.slice(0, 200),
-      name: item.name.slice(0, 80),
-      safeSummary: clipped(item.safeSummary, 240),
+    boundedCollectionV1(items, DIAGNOSTIC_LEDGER_ENTRY_MAX_COUNT).items.map((item) => ({
+      receiptId: item.receiptId,
+      toolCallId: item.toolCallId,
+      name: item.name,
+      safeSummary: item.safeSummary,
     }));
   return {
     completed: entries(source.actionLedger.completed),
-    unresolved: source.actionLedger.unresolved.slice(0, 64).map((item) => ({
-      receiptId: item.receiptId.slice(0, 200),
-      toolCallId: item.toolCallId.slice(0, 200),
-      name: item.name.slice(0, 80),
-      status: item.status.slice(0, 40),
-      safeSummary: clipped(item.safeSummary, 240),
+    unresolved: boundedCollectionV1(source.actionLedger.unresolved, DIAGNOSTIC_LEDGER_ENTRY_MAX_COUNT).items.map((item) => ({
+      receiptId: item.receiptId,
+      toolCallId: item.toolCallId,
+      name: item.name,
+      status: item.status,
+      safeSummary: item.safeSummary,
     })),
-    notCompleted: source.actionLedger.notCompleted.slice(0, 64).map((item) => ({
-      receiptId: item.receiptId.slice(0, 200),
-      toolCallId: item.toolCallId.slice(0, 200),
-      name: item.name.slice(0, 80),
-      status: item.status.slice(0, 40),
-      safeSummary: clipped(item.safeSummary, 240),
+    notCompleted: boundedCollectionV1(source.actionLedger.notCompleted, DIAGNOSTIC_LEDGER_ENTRY_MAX_COUNT).items.map((item) => ({
+      receiptId: item.receiptId,
+      toolCallId: item.toolCallId,
+      name: item.name,
+      status: item.status,
+      safeSummary: item.safeSummary,
     })),
   };
 }
@@ -250,33 +256,33 @@ export function projectCompanionTurnReplayV1(input: CompanionTurnReplayProjectio
       contentSha256: message.contentSha256,
       createdAt: iso(message.createdAt) ?? new Date(0).toISOString(),
     }));
-  const steps = input.steps.slice(0, 16).map((step) => ({
+  const steps = boundedCollectionV1(input.steps, DIAGNOSTIC_STEP_MAX_COUNT).items.map((step) => ({
     stepNo: step.stepNo,
-    kind: step.kind.slice(0, 60),
+    kind: step.kind,
     status: step.status,
     requestHash: hashOrNull(step.requestHash),
     resultHash: hashOrNull(step.resultHash),
     startedAt: iso(step.startedAt) ?? new Date(0).toISOString(),
     finishedAt: iso(step.finishedAt),
   }));
-  const toolCalls = input.toolCalls.slice(0, 64).map((tool) => ({
-    toolCallId: tool.toolCallId.slice(0, 200),
-    name: tool.name.slice(0, 80),
-    toolVersion: tool.toolVersion.slice(0, 40),
+  const toolCalls = boundedCollectionV1(input.toolCalls, DIAGNOSTIC_TOOL_CALL_MAX_COUNT).items.map((tool) => ({
+    toolCallId: tool.toolCallId,
+    name: tool.name,
+    toolVersion: tool.toolVersion,
     riskClass: tool.riskClass,
     status: tool.status,
     proposalId: tool.proposalId,
     argumentsSha256: hashOrNull(tool.argumentsSha256),
-    safeSummary: clipped(tool.resultSafeSummary, 240),
+    safeSummary: tool.resultSafeSummary,
     createdAt: iso(tool.createdAt) ?? new Date(0).toISOString(),
     updatedAt: iso(tool.updatedAt) ?? new Date(0).toISOString(),
   }));
-  const retainedEvents = input.events.slice(0, 201);
+  const retainedEvents = input.events.slice(0, DIAGNOSTIC_TIMELINE_EVENT_PROBE_LIMIT);
   const knownEvents = retainedEvents.filter((event) => KNOWN_EVENT_TYPES.has(event.type as never));
-  const eventTailComplete = retainedEvents.length <= 200
+  const eventTailComplete = retainedEvents.length <= DIAGNOSTIC_TIMELINE_EVENT_MAX_COUNT
     && knownEvents.length === retainedEvents.length
     && (input.run.lastEventSeq === 0 || retainedEvents[0]?.seq === input.run.lastEventSeq);
-  const timelineEvents = knownEvents.slice(0, 200).reverse().map((event) => ({
+  const timelineEvents = boundedCollectionV1(knownEvents, DIAGNOSTIC_TIMELINE_EVENT_MAX_COUNT).items.slice().reverse().map((event) => ({
     seq: event.seq,
     type: event.type as CompanionTurnReplayV1["timeline"]["events"][number]["type"],
     occurredAt: iso(event.createdAt) ?? new Date(0).toISOString(),
@@ -294,11 +300,13 @@ export function projectCompanionTurnReplayV1(input: CompanionTurnReplayProjectio
       createdAt: iso(input.run.createdAt) ?? new Date(0).toISOString(),
       startedAt: iso(input.run.startedAt),
       finishedAt: iso(input.run.finishedAt),
-      providerId: clipped(input.run.providerId, 120),
-      modelId: clipped(input.run.modelId, 160),
-      promptVersion: clipped(input.run.promptVersion, 200),
+      // 这几个字段的长度只在诊断合同里定一次（companion-run-diagnostics）：
+      // 库里读出超长的那一行是要被人看见的异常，不该在回放里被剪成看着合法的值。
+      providerId: input.run.providerId,
+      modelId: input.run.modelId,
+      promptVersion: input.run.promptVersion,
       promptHash: hashOrNull(input.run.promptHash),
-      leakGateVersion: clipped(input.run.leakGateVersion, 120),
+      leakGateVersion: input.run.leakGateVersion,
       stepCount: safeInt(input.run.stepCount),
       toolCallCount: safeInt(input.run.toolCallCount),
       agentElapsedMs: safeInt(input.run.agentElapsedMs),
@@ -405,7 +413,7 @@ export async function loadCompanionTurnReplayV1(
       eq(companionAgentSteps.runId, runId),
       eq(companionAgentSteps.workspaceId, scope.workspaceId),
       eq(companionAgentSteps.userId, scope.userId),
-    )).orderBy(asc(companionAgentSteps.stepNo)).limit(16),
+    )).orderBy(asc(companionAgentSteps.stepNo)).limit(DIAGNOSTIC_STEP_MAX_COUNT + 1),
     tx.select({
       toolCallId: companionAgentToolCalls.toolCallId,
       name: companionAgentToolCalls.name,
@@ -421,7 +429,7 @@ export async function loadCompanionTurnReplayV1(
       eq(companionAgentToolCalls.runId, runId),
       eq(companionAgentToolCalls.workspaceId, scope.workspaceId),
       eq(companionAgentToolCalls.userId, scope.userId),
-    )).orderBy(asc(companionAgentToolCalls.createdAt)).limit(64),
+    )).orderBy(asc(companionAgentToolCalls.createdAt)).limit(DIAGNOSTIC_TOOL_CALL_MAX_COUNT + 1),
     tx.select({
       seq: companionStreamEvents.seq,
       type: companionStreamEvents.type,
@@ -431,7 +439,7 @@ export async function loadCompanionTurnReplayV1(
       eq(companionStreamEvents.workspaceId, scope.workspaceId),
       eq(companionStreamEvents.userId, scope.userId),
       gt(companionStreamEvents.expiresAt, now),
-    )).orderBy(desc(companionStreamEvents.seq)).limit(201),
+    )).orderBy(desc(companionStreamEvents.seq)).limit(DIAGNOSTIC_TIMELINE_EVENT_PROBE_LIMIT),
   ]);
 
   return projectCompanionTurnReplayV1({ run, handoff, messages, steps, toolCalls, events });

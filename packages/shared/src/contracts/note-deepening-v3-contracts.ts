@@ -149,16 +149,16 @@ export function deriveNoteStateAxesV3(facts: NoteAxisFactsV3): NoteStateAxesV3 {
 /** 「核心问题」：一条目标实际在追问什么。不是这一篇的目录，是**问句**。 */
 export const noteDeepeningCoreQuestionV3Schema = z.strictObject({
   objectiveId: z.string().uuid(),
-  label: z.string().min(1).max(200),
-  summary: z.string().min(1).max(1500),
+  label: z.string().min(1),
+  summary: z.string().min(1),
 });
 export type NoteDeepeningCoreQuestionV3 = z.infer<typeof noteDeepeningCoreQuestionV3Schema>;
 
 /** 「已形成的目标」：从这一篇的正文长出来、且此刻仍是他的一条主张。 */
 export const noteDeepeningObjectiveV3Schema = z.strictObject({
   objectiveId: z.string().uuid(),
-  label: z.string().min(1).max(200),
-  summary: z.string().min(1).max(1500),
+  label: z.string().min(1),
+  summary: z.string().min(1),
   state: objectivePersonalStateV3Schema,
   /** 「打开某个学习位置」要用的那一把钥匙（打开目标 / 打开这一轮）。 */
   runId: z.string().uuid().nullable(),
@@ -194,7 +194,7 @@ export type NoteDeepeningRelationV3 = z.infer<typeof noteDeepeningRelationV3Sche
  */
 export const noteDeepeningGapV3Schema = z.strictObject({
   objectiveId: z.string().uuid(),
-  label: z.string().min(1).max(200),
+  label: z.string().min(1),
   /** 这一条为什么算缺口——直接是目标状态的人话，不另算。 */
   state: objectivePersonalStateV3Schema,
 });

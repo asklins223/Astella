@@ -25,7 +25,6 @@
  * `this.transport.` 换成 `t.`）。手抄这类搬移最容易走形。
  */
 import { z } from "zod";
-import { ARTIFACT_MAX_BYTES } from "./artifact-surface";
 import { DesktopGatewayFailure } from "./desktop-gateway-failure";
 import { safeUuid } from "./desktop-gateway-uuid";
 import type { GatewayTransport } from "./desktop-gateway-transport";
@@ -35,7 +34,7 @@ export async function getNoteLearningArtifactHtml(t: GatewayTransport, artifactI
     const result = await t.requestBinaryBytes(
       `/v2/note-learning-artifacts/${safeUuid(artifactId)}`,
       { method: "GET" },
-      { accept: "text/html", contentTypePrefix: "text/html", maxBytes: ARTIFACT_MAX_BYTES },
+      { accept: "text/html", contentTypePrefix: "text/html", maxBytes: Number.POSITIVE_INFINITY },
       requestId,
     );
     return Buffer.from(result.bytes).toString("utf8");
@@ -46,7 +45,7 @@ export async function getNoteLearningRoundArtifactHtml(t: GatewayTransport, arti
     const result = await t.requestBinaryBytes(
       `/v2/note-learning-round-artifacts/${safeUuid(artifactId)}`,
       { method: "GET" },
-      { accept: "text/html", contentTypePrefix: "text/html", maxBytes: ARTIFACT_MAX_BYTES },
+      { accept: "text/html", contentTypePrefix: "text/html", maxBytes: Number.POSITIVE_INFINITY },
       requestId,
     );
     return Buffer.from(result.bytes).toString("utf8");

@@ -41,9 +41,12 @@ export async function listAgentLongGoals(tx: AgentSqlExecutor, scope: AgentScope
       ${cursor ? sql`AND (updated_at,id)<(${cursor.updatedAt}::timestamptz,${cursor.runId}::uuid)` : sql``}
     ORDER BY updated_at DESC,id DESC LIMIT ${query.limit + 1}`);
   const goals = rows.slice(0, query.limit);
+  // 目标文本整条给出（合同上限 8000 是声明过的预算），不再给半句 400 字的截断。
+  // `position<=5` 只是「最近 5 条」的显示窗口：`task_count` 数的是全量，
+  // 少显示了几条读侧拿 taskCount 减窗口长度就核对得出来，不是静默裁。
   const tasks = goals.length ? await queryRows<{ id: string; revision: number; goal: string; status: string;
     updated_at: string | Date; task_count: string | number; long_goal_ref: { memoryId: string; revision: number } }>(tx, sql`
-    SELECT * FROM (SELECT id,revision,left(goal,400) AS goal,status,updated_at,long_goal_ref,
+    SELECT * FROM (SELECT id,revision,goal,status,updated_at,long_goal_ref,
       count(*) OVER(PARTITION BY long_goal_ref->>'memoryId') AS task_count,
       row_number() OVER(PARTITION BY long_goal_ref->>'memoryId' ORDER BY updated_at DESC,id DESC) AS position
       FROM agent_runs WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId}

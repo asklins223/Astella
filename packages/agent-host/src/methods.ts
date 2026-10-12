@@ -100,6 +100,18 @@ async function lockVersion(tx: AgentSqlExecutor, scope: AgentScopeV1, id: string
   if (Number(row.version)!==revision) throw new AgentStoreError(409,"method_revision_conflict","方法已经有新版本，请核对后再保存。");
 }
 /**
+ * 方法目录与「进提示词的目录」条数的唯一声明处（2026-10-12 裁决：一个数字只有一个源；
+ * worker 侧与 companion-playbooks 只引用、不再各写一遍）。
+ *
+ * 条数上限数的是**吞吐**（一次装配能进 prompt 几行），不是覆盖：超限的那几条整条不给，
+ * 并把"少给了几条"留在字段上（`catalogOmittedCount` 等），不许静默消失。
+ */
+export const AGENT_METHOD_CATALOG_LIMIT = 20;
+/** 候选与目录是两个集合：共用一个数会让「候选挤掉目录」这种退化没法解释（§4.6.10）。 */
+export const AGENT_METHOD_CANDIDATE_LIMIT = 5;
+/** 「相关做法目录」「采用的偏好」进 prompt 的条数预算：两处同一份声明，不是两份 4。 */
+export const AGENT_PROMPT_DIRECTORY_LIMIT = 4;
+/**
  * `activeOnly` 是「可自动采用」这个围栏，SQL 与读侧投影两道都要在。
  * SQL excludes disputed methods; active tentative methods can be tried autonomously.
  * tentative（依据还没核）不该占走目录上限、也不该出现在目录里。
@@ -110,7 +122,7 @@ export async function listAgentMethods(tx: AgentSqlExecutor, scope: AgentScopeV1
     FROM companion_procedural_playbooks p ${stats}
     WHERE p.workspace_id=${scope.workspaceId} AND p.user_id=${scope.userId}
       ${activeOnly ? sql`AND p.method_state='active' AND p.epistemic_status <> 'disputed'` : sql``}
-    ORDER BY p.updated_at DESC,p.id LIMIT ${activeOnly ? 20 : 100}`);
+    ORDER BY p.updated_at DESC,p.id LIMIT ${activeOnly ? AGENT_METHOD_CATALOG_LIMIT : 100}`);
   return rows.map(row=>projectAgentMethod(row)).filter(method=>!activeOnly || method.availability==="available");
 }
 /**
@@ -122,7 +134,7 @@ export async function listAgentMethods(tx: AgentSqlExecutor, scope: AgentScopeV1
  * 「用户改过之后下一轮不再照旧的来」这条就没有可观察的落点（方案 50 §16 第 6 步）。
  * 所以另开一条有界的候选通道，状态原样带出去，由装配层写明它还没核对。
  */
-export async function listAgentMethodCandidates(tx: AgentSqlExecutor, scope: AgentScopeV1, limit = 5) {
+export async function listAgentMethodCandidates(tx: AgentSqlExecutor, scope: AgentScopeV1, limit = AGENT_METHOD_CANDIDATE_LIMIT) {
   const rows = await queryRows<AgentMethodRow>(tx, sql`SELECT p.*,s.*,
     astella_agent_method_sources_current(p.id,p.workspace_id,p.user_id) AS sources_current
     FROM companion_procedural_playbooks p ${stats}
@@ -142,12 +154,14 @@ export async function listAgentMethodCandidates(tx: AgentSqlExecutor, scope: Age
  *
  * 排序只有一处（最近更新的在前），两个上限分别作用在各自的桶上：目录那 20 条是
  * 「可自动采用」的名额，候选那 5 条是她自己还没核对的尝试，两本账不能互相挤占。
+ * 上限来自本文件顶部的唯一声明处；整条取舍之后**少给的条数必须留在字段上**，
+ * 让「这次目录比上一次短」是可见的事实，不是静默消失。
  */
 export async function listAgentMethodBuckets(tx: AgentSqlExecutor, scope: AgentScopeV1, limits: {
   catalogLimit?: number; candidateLimit?: number;
 } = {}) {
-  const catalogLimit = limits.catalogLimit ?? 20;
-  const candidateLimit = limits.candidateLimit ?? 5;
+  const catalogLimit = limits.catalogLimit ?? AGENT_METHOD_CATALOG_LIMIT;
+  const candidateLimit = limits.candidateLimit ?? AGENT_METHOD_CANDIDATE_LIMIT;
   const rows = await queryRows<AgentMethodRow & { bucket: string }>(tx, sql`SELECT p.*,s.*,
     astella_agent_method_sources_current(p.id,p.workspace_id,p.user_id) AS sources_current,
     CASE
@@ -162,11 +176,13 @@ export async function listAgentMethodBuckets(tx: AgentSqlExecutor, scope: AgentS
       )
     ORDER BY p.updated_at DESC,p.id`);
   const projected = rows.map((row) => ({ bucket: row.bucket, method: projectAgentMethod(row) }));
+  const catalogMatched = projected.filter((entry) => entry.bucket === "catalog" && entry.method.availability === "available");
+  const candidatesMatched = projected.filter((entry) => entry.bucket === "candidate" && entry.method.availability === "pending");
   return {
-    catalog: projected.filter((entry) => entry.bucket === "catalog" && entry.method.availability === "available")
-      .slice(0, catalogLimit).map((entry) => entry.method),
-    candidates: projected.filter((entry) => entry.bucket === "candidate" && entry.method.availability === "pending")
-      .slice(0, candidateLimit).map((entry) => entry.method),
+    catalog: catalogMatched.slice(0, catalogLimit).map((entry) => entry.method),
+    candidates: candidatesMatched.slice(0, candidateLimit).map((entry) => entry.method),
+    catalogOmittedCount: Math.max(0, catalogMatched.length - catalogLimit),
+    candidateOmittedCount: Math.max(0, candidatesMatched.length - candidateLimit),
   };
 }
 /** 读前核对：版本要对得上，并且此刻仍可采用。依据被纠正／被停用／暂定的都读不出正文。 */
@@ -330,17 +346,26 @@ export async function upsertAgentMethodCandidate(tx: AgentSqlExecutor, scope: Ag
    * **停用是例外**：用户说的是「别再给我这条」，不是「这条归我管」。照样并存的话，
    * 每次提炼都造一份孪生候选，停用就变成了需要反复清理的事——而停用本该是彻底的。
    */
+  /**
+   * 自主整理出来的新方法只是**候选**，要用户确认才成为 active（§6.8.2）。这一行原来
+   * 把新建也写成 'active'，于是「未确认就自称可用」从写入那一刻就成立，而读侧
+   * （availability 由 method_state 推）判得是对的——错的是写侧。
+   *
+   * 已经确认过（active）且未被用户接管的，重复整理只更新内容、不降回候选：后台一次
+   * 提炼不该让用户的确认失效，这与上面那段「选并存而不是标争议」同一判据。
+   */
   const write = async (playbookKey: string) => {
     const [row] = await queryRows<{id:string;version:number}>(tx,sql`INSERT INTO companion_procedural_playbooks
       (playbook_key,workspace_id,user_id,title,trigger_condition,steps,exceptions,evidence,evidence_origins,epistemic_status,author,method_state,change_reason)
       VALUES(${playbookKey},${scope.workspaceId},${scope.userId},${input.title},${input.triggerCondition},
         ${JSON.stringify(input.steps)}::jsonb,${JSON.stringify(input.exceptions)}::jsonb,${JSON.stringify(evidence)}::jsonb,
         ${JSON.stringify(evidenceOrigins)}::jsonb,
-        ${epistemicStatus},${input.author},${epistemicStatus === "disputed" ? "disputed" : "active"},'自主整理；适用时采用，并持续核对效果。')
+        ${epistemicStatus},${input.author},${epistemicStatus === "disputed" ? "disputed" : "candidate"},'自主整理；适用时采用，并持续核对效果。')
       ON CONFLICT(workspace_id,user_id,playbook_key) DO UPDATE
         SET title=EXCLUDED.title,trigger_condition=EXCLUDED.trigger_condition,steps=EXCLUDED.steps,exceptions=EXCLUDED.exceptions,
           evidence=EXCLUDED.evidence,evidence_origins=EXCLUDED.evidence_origins,epistemic_status=EXCLUDED.epistemic_status,author=EXCLUDED.author,
-          method_state=EXCLUDED.method_state,change_reason='自主修订；适用时采用，并持续核对效果。',version=companion_procedural_playbooks.version+1,updated_at=now()
+          method_state=CASE WHEN companion_procedural_playbooks.method_state='active' THEN 'active' ELSE EXCLUDED.method_state END,
+          change_reason='自主修订；适用时采用，并持续核对效果。',version=companion_procedural_playbooks.version+1,updated_at=now()
         WHERE NOT companion_procedural_playbooks.user_controlled
           AND companion_procedural_playbooks.method_state NOT IN ('disabled','disputed')
       RETURNING id,version`);
@@ -404,7 +429,7 @@ export function createAgentMethodStore<Tx extends AgentSqlExecutor>(ports: Agent
             title:input.title, triggerCondition:input.appliesWhen,
             steps:noted.map(capability=>agentMethodStepFor(capability.name)),
             exceptions:[AGENT_METHOD_BASELINE_EXCEPTION, plan.failureNote ?? ""].filter(Boolean),
-            evidence:[{runId:run.id,runRevision:run.revision,note:run.goal.slice(0,400)}],
+            evidence:[{runId:run.id,runRevision:run.revision,note:run.goal}],
             epistemicStatus:plan.epistemicStatus,
             author:"maintenance",
           });
@@ -431,7 +456,7 @@ export function createAgentMethodStore<Tx extends AgentSqlExecutor>(ports: Agent
           VALUES(${`agent-run:${run.id}:${run.revision}`},${scope.workspaceId},${scope.userId},${input.title},${input.appliesWhen},
           ${JSON.stringify(stepPlan.steps)}::jsonb,
           ${JSON.stringify([...stepPlan.exceptions, ...(plan.failureNote ? [plan.failureNote] : [])])}::jsonb,
-          ${JSON.stringify([{runId:run.id,runRevision:run.revision,note:run.goal.slice(0,400)}])}::jsonb,${JSON.stringify(capabilities)}::jsonb,
+          ${JSON.stringify([{runId:run.id,runRevision:run.revision,note:run.goal}])}::jsonb,${JSON.stringify(capabilities)}::jsonb,
           ${run.id},${run.revision},'user','从这次真实合作整理，适用时采用。','active',${plan.epistemicStatus})
           ON CONFLICT(workspace_id,user_id,playbook_key) DO NOTHING RETURNING id`);
         const [existing]=created ? [created] : await queryRows<{id:string}>(tx,sql`SELECT id FROM companion_procedural_playbooks

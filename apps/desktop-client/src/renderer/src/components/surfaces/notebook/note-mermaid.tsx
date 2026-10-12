@@ -41,6 +41,6 @@ export function NoteMermaid({ source }: { source: string }) {
     <div data-note-decoration="true">
       {current.src ? <ZoomableReadingImage src={current.src} alt="Mermaid 图表" /> : <p className="small" role="status">{current.failed ? "图表没能绘制，请核对下面的 Mermaid 源码。" : "正在绘制图表…"}</p>}
     </div>
-    <details open={Boolean(current.failed)}><summary data-note-decoration="true">Mermaid 源码</summary><pre className="code-block"><code>{source}</code></pre></details>
+    <details open={Boolean(current.failed)}><summary data-note-decoration="true">Mermaid 源码</summary><pre className="code-body"><code>{source}</code></pre></details>
   </div>;
 }

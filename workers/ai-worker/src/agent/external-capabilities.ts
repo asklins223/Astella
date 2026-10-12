@@ -33,7 +33,7 @@ export async function executeExternalCapability(scope: AgentScopeV1, call: { nam
     const search = entry.argumentSchema.parse(call.arguments) as Parameters<typeof executeWebSearch>[1];
     return executeWebSearch(scope, search, signal);
   }
-  const input = entry.argumentSchema.parse(call.arguments) as { url: string };
+  const input = entry.argumentSchema.parse(call.arguments) as { url: string; offset?: number };
   const url = requireUserDocumentUrl(input.url, userTexts);
   signal.throwIfAborted();
   assertOutsideRegisteredTransactions({ boundary: "Agent public document read", caller: call.name });
@@ -43,7 +43,7 @@ export async function executeExternalCapability(scope: AgentScopeV1, call: { nam
   const started = performance.now();
   let status: "success" | "error" | "cancelled" = "error";
   try {
-    const document = await (deps.read ?? readAgentPublicDocument)(url, signal);
+    const document = await (deps.read ?? readAgentPublicDocument)(url, signal, {}, { offset: input.offset });
     signal.throwIfAborted(); status = "success";
     return { status: "succeeded" as const, ...document };
   } catch (error) { status = signal.aborted ? "cancelled" : "error"; throw error; }

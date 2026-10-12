@@ -30,9 +30,9 @@ describe("CompanionRunTraceView", () => {
 
     const { container } = render(<CompanionRunTraceView trace={trace} />);
     expect(container.querySelector("details")?.open).toBe(true);
-    expect(screen.getByText("等待选择 · 2 步 · 1 次工具")).toBeTruthy();
+    expect(screen.getByText("待确认 · 2 步 · 1 次工具")).toBeTruthy();
     expect(screen.getByText("已完成")).toBeTruthy();
-    expect(screen.getAllByText("等待选择").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("待确认").length).toBeGreaterThan(0);
   });
 
   it("run 已结束时不会把缺少完成帧的实时节点继续标成进行中", () => {

@@ -212,3 +212,10 @@ export function needsStatusRefresh(items: readonly DesktopSourceListItem[]): boo
 export const SOURCE_STATUS_POLL_MS = 4_000;
 /** ponytail: a bounded poll, so a stuck job cannot keep a read alive forever. */
 export const SOURCE_STATUS_POLL_MAX_ATTEMPTS = 15;
+/**
+ * 2026-10-11（审计 F7）：快轮询用完（约 60 秒）之后不停手，降频继续——一份大 PDF
+ * 或 worker 排队超过一分钟很常见，"页面已停止自动刷新 + 一颗要反复点的按钮"把等待
+ * 说成了故障。慢档 20 秒一次、再跑 15 次（约 5 分钟），之后才真的停下报"已停止"。
+ */
+export const SOURCE_STATUS_SLOW_POLL_MS = 20_000;
+export const SOURCE_STATUS_POLL_TOTAL_ATTEMPTS = SOURCE_STATUS_POLL_MAX_ATTEMPTS + 15;

@@ -9,6 +9,7 @@ import { NotebookSelectionActions } from "../notebook-selection-actions";
 import { ReadingBlock, ReadingBlockContent } from "../notebook-reading-block";
 import { readNoteAnchorTextV1 } from "@astella/shared/note-annotation-contracts";
 import { noteBlockRenderedTextV1 } from "@astella/shared/note-doc-schema";
+import { noteReadingText } from "../note-reading-text";
 
 const id = (n: number) => `${String(n).padStart(8, "0")}-4111-8111-8111-${String(n).padStart(12, "0")}`;
 const date = "2026-10-01T00:00:00.000Z";
@@ -180,8 +181,10 @@ it("跨段批注直接覆盖两段原句，不添加摘录占位；代码和表�
     const plain = noteBlockRenderedTextV1(type, content);
     const local = { ...annotation, anchor: { ...anchor, startBlockOrdinal: 0, endBlockOrdinal: 0, startOffset: 1, endOffset: plain.length - 1 } };
     const rendered = render(<ReadingBlockContent block={block} mark={null} annotations={[local]} onOpenAnnotation={open} />);
-    expect(rendered.container.textContent).toBe(plain);
-    expect(rendered.getAllByRole("button").map(marker => marker.textContent).join("")).toBe(plain.slice(1, -1));
+    // 字符流走 `noteReadingText` 那一份判据（与选中原文、批注区间同一个来源）：
+    // 代码块纸沿上的语言名与「复制」带 `data-note-decoration`，不该数进去。
+    expect(noteReadingText(rendered.container)).toBe(plain);
+    expect(rendered.getAllByRole("button", { name: /^打开批注：/ }).map(marker => marker.textContent).join("")).toBe(plain.slice(1, -1));
     rendered.unmount();
   }
 });

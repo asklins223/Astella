@@ -15,12 +15,13 @@ import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { currentWorkerWorkspaceTransaction } from "../db.ts";
 import { JobLeaseLostError, type JobLeaseContext } from "../lib/job-lease.ts";
 import type { AIProvider } from "../lib/ai-provider.ts";
-import { DEFAULT_AI_PROVIDER_TIMEOUT_MS, getCompanionAgentTool } from "@astella/shared";
+import { DEFAULT_AI_PROVIDER_TIMEOUT_MS, getCompanionAgentTool,
+  COMPANION_AGENT_TOOL_LABELS, COMPANION_AGENT_TOOL_DISCOVERY } from "@astella/shared";
 import { boundCompanionRecentHistory, type CompanionRecentHistoryMessage } from "./companion-context-handoff.ts";
 import { conversationInstant, type CompanionConversationClock } from "./companion-conversation-evidence.ts";
 
 const TASK_ID = "companion_tool_intent";
-const TASK_VERSION = 12;
+const TASK_VERSION = 13;
 /**
  * 分类器关闭思考、单次调用且不自行重试。调用等待使用公共模型上限；
  * 超时仍保留 uncertain，不能据此把可能需要读取资料的请求当作闲聊。
@@ -83,6 +84,19 @@ export function companionOfferCandidates(messages: readonly ChatMessage[]): numb
     .map((item) => item.index);
 }
 
+/**
+ * 分类器的任务只是从面里挑候选 name，所以给它 `label`（平均 7.6 字的短说法）而不是
+ * 整份 description：2026-10-11 实测这份载荷 4,480 → 1,456 token，每一轮都付。
+ * 同批 30 条对照里，编造面外名字 0 条、写候选 0.37→0.43 且从不重复，
+ * 「声称 act 却没点名任何工具」由 2 条降到 0（见方案 52 §4.5）。
+ */
+function companionIntentCapabilityEntry(name: string): Record<string, unknown> {
+  const definition = getCompanionAgentTool(name);
+  if (!definition) return { name };
+  return { name, riskClass: definition.riskClass, label: COMPANION_AGENT_TOOL_LABELS[name],
+    ...(COMPANION_AGENT_TOOL_DISCOVERY[name] ? { discovery: COMPANION_AGENT_TOOL_DISCOVERY[name] } : {}) };
+}
+
 function toolIntentMessages(messages: readonly ChatMessage[], taskContext: CompanionToolIntentTaskContext): ChatMessage[] | null {
   const latest = [...messages].reverse().find((message) => message.role === "user");
   if (!latest) return null;
@@ -106,7 +120,7 @@ function toolIntentMessages(messages: readonly ChatMessage[], taskContext: Compa
       role: "system",
       content: [
         '你解释用户本轮的注意力，只输出 JSON：{"intent":"conversation|question|task|task_control|mixed","toolUse":"none|read|act|uncertain","subjects":[],"goalRelation":"unrelated|new|continue|revise|control|discuss|unclear","candidateOperations":[],"ambiguities":[],"pendingOfferIndexes":[]}。枚举选一个值；有确实需要定位的讨论对象时才加 {"description":"讨论对象"}，只有 objects 中存在对应真实对象时才加 objectIndex；goalObjectIndex 同理，未指向真实目标时省略。',
-        "objects 是宿主提供的当前页面对象及相关后台目标，索引从0开始；不发明身份。目标引用只可指向agent_run。capabilities 给出本轮工具的 name、description 与 riskClass；candidateOperations只填其中的name，是候选而非执行授权。没有对象、代词未消解或修改范围不明，记入ambiguities；只读查询可用于核对，不能猜测执行写入。",
+        "objects 是宿主提供的当前页面对象及相关后台目标，索引从0开始；不发明身份。目标引用只可指向agent_run。capabilities 给出本轮工具的 name、riskClass 与 label（label 是这一格短说法，discovery 只有一部分工具有）；candidateOperations只填其中的name，是候选而非执行授权。没有对象、代词未消解或修改范围不明，记入ambiguities；只读查询可用于核对，不能猜测执行写入。",
         "当用户要查看自己的文章、笔记、图片、引用、卡片或实时信息，或要求导航、设置和执行动作时，必须先用工具；口语化、简称、代词和间接表达也一样。",
         "用户需要实际计算或核对数值、公式代入时也需要工具；只解释数学概念或聊感受可直接回答。",
         "当 capabilities 含 agent_web_search 时，用户要联网查找公开资料、核实事实或查询最新信息，用question/read，并将agent_web_search记入候选；普通知识解释和闲聊仍可直接回答。未提供该能力时不要声称能联网。",
@@ -130,10 +144,7 @@ function toolIntentMessages(messages: readonly ChatMessage[], taskContext: Compa
     },
     { role: "user", content: JSON.stringify({ current, recent: timedRecent,
       conversationClock: taskContext.conversationClock ?? null, objects: taskContext.objects ?? [],
-      capabilities: (taskContext.capabilities ?? []).map(name => {
-        const definition = getCompanionAgentTool(name);
-        return definition ? { name, description: definition.description, riskClass: definition.riskClass } : { name };
-      }) }) },
+      capabilities: (taskContext.capabilities ?? []).map(companionIntentCapabilityEntry) }) },
   ];
 }
 
@@ -210,10 +221,9 @@ export async function interpretCompanionTurn(
     },
     execute: async (input, env) => {
       const answer = await provider.chatCompletion(input.messages, {
-        // 900：这一格输出只有一两百 token 的分类 JSON。2026-10-06 之前为了容纳
-        // 思考把它提到 2000，但**这一轮开不开思考正是由这一步决定的**——分类器
-        // 自己开高档，闲聊轮就先白等十几秒（它在每一轮的关键路径上）。
-        maxTokens: 900,
+        // 天花板只认档案声明：这一发的上限由 provider 按模型档案给，
+        // handler 报的数字早就不是这一发的真实上界了。
+        // 关思考仍由 disableThinking 决定——它是档位判据，不是砍话的那把刀。
         temperature: 0,
         responseFormat: "json_object",
         disableThinking: true,

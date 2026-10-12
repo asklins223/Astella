@@ -25,12 +25,10 @@ function workspaceRoleLabel(workspace: WorkspaceSummaryV1): string {
 function HudFirstSpace({
   workspaces,
   workspaceEpoch,
-  notice,
   onCommitted,
 }: {
   readonly workspaces: readonly WorkspaceSummaryV1[];
   readonly workspaceEpoch: number;
-  readonly notice?: string | null;
   readonly onCommitted: () => void;
 }) {
   const dialogRef = useRef<HTMLElement>(null);
@@ -125,7 +123,7 @@ function HudFirstSpace({
     }
   };
 
-  const status = failure ?? receipt ?? notice ?? null;
+  const status = failure ?? receipt ?? null;
 
   return (
     <section ref={dialogRef} className="first-space" role="dialog" aria-modal="true" aria-labelledby="first-space-title">
@@ -212,12 +210,10 @@ function HudFirstSpace({
 export function HudFirstSpaceScene({
   session,
   workspaces,
-  notice,
   onCommitted,
 }: {
   readonly session: SessionContextV1;
   readonly workspaces: readonly WorkspaceSummaryV1[];
-  readonly notice?: string | null;
   readonly onCommitted: () => void;
 }) {
   useHudPage("space", { spaceFirstEntry: true });
@@ -245,7 +241,6 @@ export function HudFirstSpaceScene({
       <HudFirstSpace
         workspaces={workspaces}
         workspaceEpoch={session.workspaceEpoch}
-        notice={notice}
         onCommitted={onCommitted}
       />
     </>

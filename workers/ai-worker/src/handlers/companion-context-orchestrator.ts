@@ -1,16 +1,23 @@
 /**
  * 伴星记忆上下文装配（40 §4.6.6）。
  *
- * 生成前只注入少量 resident 正文与有界 active 目录；active 正文由显式检索或按 ID
- * 读取工具展开。目录曝光不刷新 last_used_at，避免把“列出线索”误记为实际使用。
+ * 生成前注入 resident 正文与 active 目录，两条通道都按**本次路由模型声明的输入预算
+ * 整条取舍**：一条要么整条给、要么这一轮不给，没入选的条数随结果报出去。
+ * 以前这里是四道各自写一遍的闸门（6 条 / 320 token / 1000 字符 / 1000 字节）加目录
+ * 标题与适用条件的两处 clip——同一件事四个数，还会把记忆剪成半句。
+ * active 正文仍由显式检索或按 ID 读取工具展开。目录曝光不刷新 last_used_at，
+ * 避免把“列出线索”误记为实际使用。
  *
  * grounded_tutor 分支不注入任何长期记忆/人格闲聊内容，防止污染正式学习。
  */
 
 import { sql } from "drizzle-orm";
-import { budgetAgentContextRecords } from "@astella/agent-core";
+import { budgetAgentContextRecords, estimateTextTokens } from "@astella/agent-core";
+import type { ProviderCapability } from "@astella/shared";
+import { companionMemoryContentMaxLength } from "@astella/shared/companion-memory-desktop-contracts";
 import type { AgentMemoryContextSourceV1 } from "@astella/shared/agent-contracts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
+import { resolveRouteInputTokens } from "./companion-context-handoff.ts";
 import { taskEntityFromPersistedPageContext } from "./companion-task-memory.ts";
 import { logger } from "../lib/logger.ts";
 import {
@@ -54,28 +61,28 @@ export interface ContextAssemblyResult {
   retrievalMode: "directory" | "disabled";
   usedMemoryIds: string[];
   residentMemoryIds: string[];
+  /** 本轮实际带走的字节/token 读数（是**测量**，不是闸门）。 */
   residentTokenEstimate: number;
   residentByteCount: number;
   directoryTokenEstimate: number;
+  /**
+   * 按声明预算整条取舍后**没入选**的条数：正文与目录各一条通道，各记一笔。
+   * 没有这两笔，「她这轮没看到某条记忆」与「那条记忆根本不存在」在数据上分不开。
+   */
+  residentOmittedCount?: number;
+  directoryOmittedCount?: number;
+  /** 取舍是按哪个声明容量做的（本次路由模型档案解析出的输入 token）。 */
+  memoryCapacityTokens?: number;
 }
 
 type Executor = import("@astella/agent-host").AgentSqlExecutor;
 
+/**
+ * 引用清单是给界面看的投影（「本轮她用了哪几条记忆」），不是模型输入：
+ * 条数与摘要宽度只约束那一格，正文进不进 prompt 由下面的声明预算整条取舍决定。
+ */
 const MEMORY_REF_MAX = 3;
 const MEMORY_REF_CONTENT_MAX = 80;
-const MEMORY_CONTENT_MAX = 200;
-const RESIDENT_MEMORY_MAX_COUNT = 6;
-const RESIDENT_MEMORY_TOKEN_BUDGET = 320;
-const RESIDENT_MEMORY_BYTE_BUDGET = 1000;
-const RESIDENT_MEMORY_CHAR_BUDGET = 1000;
-const MEMORY_DIRECTORY_MAX_COUNT = 12;
-const MEMORY_DIRECTORY_TOKEN_BUDGET = 1024;
-
-function estimateDirectoryTokens(entry: CompanionMemoryDirectoryEntry): number {
-  // 使用 UTF-8 字节的一半作保守估算：对中文高于常见 tokenizer 的字符成本，
-  // 对 UUID 与拉丁文本也留余量；此值用于硬预算，不伪称模型 tokenizer 的精确计数。
-  return Math.ceil(Buffer.byteLength(JSON.stringify(entry), "utf8") / 2);
-}
 
 /**
  * 读上一次后台整理返回的那段结论（§4.5.10 / §4.6.9）。
@@ -102,20 +109,31 @@ async function readOrganizationSurface(
   return first?.surface ?? null;
 }
 
+/**
+ * active 目录：一条**整条**入选或整条不入选，不切标题也不切适用条件。
+ *
+ * 目录是「有这一条记忆、什么时候用它」的索引，标题剪成半句她就照着半句判断。
+ * 条目本身的长度由写入合同管（shared 的 `companionMemoryContentMaxLength` 同时约束
+ * 正文与 appliesWhen），这里不写第二份。容量是本次路由模型声明的输入 token；
+ * 没入选的条数如实报出去，不静默。
+ */
 export function budgetCompanionMemoryDirectory(
-  entries: CompanionMemoryDirectoryEntry[],
-): { entries: CompanionMemoryDirectoryEntry[]; tokenEstimate: number } {
-  const compact = entries.map((entry): CompanionMemoryDirectoryEntry => ({
-      ...entry,
-      title: entry.title.trim().slice(0, 56),
-      appliesWhen: entry.appliesWhen?.trim().slice(0, 64) || null,
-    })).filter(entry => entry.title);
-  const result = budgetAgentContextRecords(compact, {
-    maxItems: MEMORY_DIRECTORY_MAX_COUNT, maxTokens: MEMORY_DIRECTORY_TOKEN_BUDGET,
-    measure: entry => ({ characters: JSON.stringify(entry).length,
-      bytes: Buffer.byteLength(JSON.stringify(entry), "utf8"), tokens: estimateDirectoryTokens(entry) }),
+  entries: readonly CompanionMemoryDirectoryEntry[],
+  capacityTokens: number,
+): { entries: CompanionMemoryDirectoryEntry[]; tokenEstimate: number; omittedCount: number } {
+  const whole = entries.filter(entry => entry.title.trim().length > 0);
+  const result = budgetAgentContextRecords(whole, {
+    maxTokens: capacityTokens,
+    measure: (entry) => {
+      const serialized = JSON.stringify(entry);
+      return {
+        characters: serialized.length,
+        bytes: Buffer.byteLength(serialized, "utf8"),
+        tokens: estimateTextTokens(serialized),
+      };
+    },
   });
-  return { entries: result.items, tokenEstimate: result.tokens };
+  return { entries: result.items, tokenEstimate: result.tokens, omittedCount: entries.length - result.items.length };
 }
 
 /**
@@ -141,6 +159,14 @@ export async function assembleCompanionContext(
      * 记忆/人格」——手册与整理结论属于同一类"陪伴层上下文"）。
      */
     playbooksDisabled?: boolean;
+    /**
+     * 本次实际路由的模型能力快照。记忆正文与目录的取舍容量由它声明的窗口解析（44 §4.1），
+     * 不再各写一份条数/字符/字节闸门。拿不到档案时 `resolveRouteInputTokens` 走
+     * agent-core 登记的保守能力同一条解析——仍然是一个声明出来的 token 数。
+     */
+    modelCapability?: ProviderCapability | null;
+    /** 这一轮请求声明的输出上限；缺省由档案声明的最大输出或登记兜底表达。 */
+    requestedOutputTokens?: number | null;
   },
 ): Promise<ContextAssemblyResult> {
   // 正式学习 grounded_tutor 不注入记忆/人格（§11.1）。
@@ -158,12 +184,19 @@ export async function assembleCompanionContext(
       residentTokenEstimate: 0,
       residentByteCount: 0,
       directoryTokenEstimate: 0,
+      residentOmittedCount: 0,
+      directoryOmittedCount: 0,
     };
   }
 
+  // 两条通道各自停在声明容量之内；**完整请求**能不能发出去仍由调用前的
+  // `governContextPressure` 计量决定，这里不替它猜一个更小的字符数。
+  const capacityTokens = resolveRouteInputTokens(input.modelCapability, input.requestedOutputTokens);
   const taskEntity = taskEntityFromPersistedPageContext(input.pageContext);
   const residentRows = await retrieveResidentCompanionMemories(tx, scope, taskEntity);
   const directoryRows = await retrieveActiveCompanionMemoryDirectory(tx, scope, taskEntity);
+  // 正文长度由写入合同声明（shared 的唯一来源），超出那条的旧记录整条不入选并计数——
+  // 不是把它剪短：剪过的记忆 she 会照着剪过的话说。
   const items: ContextMemoryItem[] = residentRows.map((item) => ({
     memoryId: item.memoryId,
     revision: item.revision,
@@ -174,16 +207,20 @@ export async function assembleCompanionContext(
     lastUsedAt: item.lastUsedAt,
     userConfirmed: item.userConfirmed,
     epistemicStatus: item.epistemicStatus,
-  })).filter(item => item.content.length <= MEMORY_CONTENT_MAX);
+  })).filter(item => item.content.length <= companionMemoryContentMaxLength);
 
-  // Resident 正文独立占预算；active 目录使用自己的 token/条数预算。
+  // resident 正文与 active 目录是两条独立通道，各自整条取舍；条数由声明容量决定。
   const residentBudget = budgetAgentContextRecords(items, {
-    maxItems: RESIDENT_MEMORY_MAX_COUNT, maxCharacters: RESIDENT_MEMORY_CHAR_BUDGET,
-    maxBytes: RESIDENT_MEMORY_BYTE_BUDGET, maxTokens: RESIDENT_MEMORY_TOKEN_BUDGET,
-    measure: item => { const bytes = Buffer.byteLength(item.content, "utf8");
-      return { characters: item.content.length, bytes, tokens: Math.ceil(bytes / 3) }; },
+    maxTokens: capacityTokens,
+    measure: (item) => {
+      const bytes = Buffer.byteLength(item.content, "utf8");
+      return { characters: item.content.length, bytes, tokens: estimateTextTokens(item.content) };
+    },
   });
   const { items: budgetedItems, characters: budgetUsed, tokens: residentTokenEstimate, bytes: residentByteCount } = residentBudget;
+  // 「没入选」只有一种读数：取回的行里本轮实际没进 prompt 的都在这一格里——
+  // 超出写入合同那条长度线的记录也是整条没进，少算它们就等于把它们说成不存在。
+  const residentOmittedCount = residentRows.length - budgetedItems.length;
 
   const residentMemories = budgetedItems.map((item) => ({
     kind: item.kind,
@@ -193,7 +230,7 @@ export async function assembleCompanionContext(
     // 否则她会把它们当定论复述（§4.5.4 / §4.6.3「停止自动作确定陈述」）。
     epistemicStatus: item.epistemicStatus,
   }));
-  const directory = budgetCompanionMemoryDirectory(directoryRows);
+  const directory = budgetCompanionMemoryDirectory(directoryRows, capacityTokens);
 
   // §4.6.10：手册目录与记忆目录是两条独立通道——手册讲"怎么协作"，
   // 记忆讲"关于用户的什么"。目录有界（PLAYBOOK_CATALOG_LIMIT），正文不进来。
@@ -257,6 +294,9 @@ export async function assembleCompanionContext(
       residentTokenEstimate,
       residentByteCount,
       directoryTokenEstimate: directory.tokenEstimate,
+      memoryCapacityTokens: capacityTokens,
+      residentOmittedCount,
+      directoryOmittedCount: directory.omittedCount,
     },
     "companion context assembled",
   );
@@ -278,6 +318,9 @@ export async function assembleCompanionContext(
     residentTokenEstimate,
     residentByteCount,
     directoryTokenEstimate: directory.tokenEstimate,
+    residentOmittedCount,
+    directoryOmittedCount: directory.omittedCount,
+    memoryCapacityTokens: capacityTokens,
   };
 }
 

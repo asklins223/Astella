@@ -190,7 +190,10 @@
     & .day-tabs button { flex: 1; justify-content: center; padding: 5px 9px; min-height: 34px; font-size: 11px; }
     & .day-tabs svg { width: 14px; }
     & .day-paper { padding: 15px; border-radius: 21px; }
-    & .day-rail { display: none; }
+    /* 审计 F9：窄窗不再把「伴星日记」整块藏掉——它本来就是一行，收成一行还在这里，
+       总比用户以为这个功能没了强。 */
+    & .day-rail .day-rail__card { grid-template-columns: minmax(0, 1fr) auto; }
+    & .day-rail .day-rail__card h2 { display: none; }
   }
 }
 @media (max-height: 580px) {

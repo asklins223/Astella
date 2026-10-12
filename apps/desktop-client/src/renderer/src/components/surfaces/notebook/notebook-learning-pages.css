@@ -15,6 +15,7 @@
 .hud-surface .note-overview-paper__references { margin-top: 9px; color: var(--hud-soft); font-size: 12px; line-height: 1.85; }
 .hud-surface .note-overview-paper__references blockquote { margin: 12px 0 6px; padding: 4px 0 4px 12px; border-left: 2px solid var(--hud-mint); font: 14px/1.9 "Noto Sans SC Variable", sans-serif; overflow-wrap: anywhere; }
 .hud-surface .note-overview-paper__coverage { color: var(--hud-soft); font-size: 11px; line-height: 1.8; }
+.hud-surface .note-overview-paper__blocked { margin: 8px 0 0; color: var(--hud-clay); font-size: 12px; line-height: 1.8; }
 .hud-surface .note-overview-paper > footer { margin-top: 17px; padding-top: 17px; border-top: 1px solid var(--hud-line); }
 .hud-surface .note-recall-paper__question { margin: 22px 0 13px; padding-bottom: 18px; border-bottom: 2px dashed var(--hud-line); font: 750 25px/1.7 "Noto Sans SC Variable", sans-serif; text-wrap: balance; overflow-wrap: anywhere; letter-spacing: -.035em; }
 .hud-surface .note-recall-paper__question:focus { outline: none; }

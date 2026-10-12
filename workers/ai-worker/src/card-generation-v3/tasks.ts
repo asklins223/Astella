@@ -245,7 +245,7 @@ export function buildCardGenerateV3Prompt(input: CardGenerateV3TaskInput): strin
   const blockPositions = new Map(input.noteBlocks.map((block, index) => [block.blockId, index + 1]));
   const existing = input.existingObjectives.length > 0
     ? input.existingObjectives
-      .map((objective) => `- (${objective.objectiveId.slice(0, 8)}…) ${objective.statement}`)
+      .map((objective) => `- (${objective.objectiveId}) ${objective.statement}`)
       .join("\n")
     : "（这篇还没有任何目标）";
   const evidence = input.evidence
@@ -444,11 +444,10 @@ export function buildCardContentCheckV3Prompt(input: CardContentCheckV3TaskInput
   const candidates = input.candidates
     .map(({ objectiveLocalId, candidate }) => {
       const citedEvidence = candidate.objective.evidenceRefIds
-        .slice(0, 12)
         .map((evidenceId) => {
           const entry = evidenceById.get(evidenceId);
           return entry
-            ? `- ${entry.evidenceSnapshotId}：${(entry.content ?? "").slice(0, 1500)}`
+            ? `- ${entry.evidenceSnapshotId}：${entry.content ?? ""}`
             : null;
         })
         .filter((item): item is string => item !== null)
@@ -743,7 +742,7 @@ export function buildCardCandidateRewriteV3Prompt(
   input: CardCandidateRewriteV3TaskInput,
 ): string {
   const evidence = input.evidenceManifest.evidence
-    .map((entry) => `- ${entry.evidenceSnapshotId}：${(entry.content ?? "").slice(0, 200)}`)
+    .map((entry) => `- ${entry.evidenceSnapshotId}：${entry.content ?? ""}`)
     .join("\n");
   const issues = input.issues.map((issue) => `- ${issue.code}：${issue.detail}`).join("\n");
   const { candidate } = input;

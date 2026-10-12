@@ -23,7 +23,6 @@ const userId = "00000000-0000-0000-0000-000000000002";
 const governance: AIGovernanceContext = {
   providerName: "mock", providerConfig: {},
   textProviderName: null, textProviderConfig: null,
-  visionProviderName: null, visionProviderConfig: null,
   companionFallbackProviderName: null, companionFallbackProviderConfig: null,
   embeddingProviderName: null, embeddingProviderConfig: null,
   consentOk: true,
