@@ -27,7 +27,7 @@ function bubble(goals = controller()) {
 it("初次加载和读取失败不显示空任务邀请，已读取的成果在刷新期间保留", () => {
   const goals = controller();
   const view = render(bubble({ ...goals, items: [], loading: true }));
-  expect(screen.getByRole("region", { name: "伴星手边的事" }).getAttribute("aria-busy")).toBe("true");
+  expect(screen.getByRole("region", { name: "伴星交给我的事" }).getAttribute("aria-busy")).toBe("true");
   expect(screen.queryByRole("button", { name: "说说要做什么" })).toBeNull();
   view.rerender(bubble({ ...goals, items: [], error: "网络连接中断" }));
   expect(screen.getByText("任务记录没有加载成功")).toBeTruthy();
@@ -38,7 +38,7 @@ it("初次加载和读取失败不显示空任务邀请，已读取的成果在�
   expect(screen.getByRole("button", { name: "速看" })).toBeTruthy();
 });
 it("手记读取失败不被当成还没有任务", () => {
-  render(<CompanionGoalJournal goals={{ ...controller(), items: [], error: "连接中断" }} targetId={null} onChat={vi.fn()} onArtifactOpen={vi.fn()} />);
+  render(<CompanionGoalJournal goals={{ ...controller(), items: [], error: "连接中断" }} targetId={null} onArtifactOpen={vi.fn()} />);
   expect(screen.queryByText(/还没有交给我的任务/)).toBeNull();
   expect(screen.getByRole("alert").textContent).toContain("连接中断");
 });
@@ -49,7 +49,7 @@ it("keeps detailed Markdown in the journal and exposes only the latest compatibl
   fireEvent.click(screen.getByRole("button", { name: "速看" }));
   expect(room.setActiveNoteRef).toHaveBeenCalledWith(expect.objectContaining({ learningResult: { kind: "note_overview", artifactId: "saved", taskId: "job", noteVersionId: "version" } }));
   view.unmount();
-  render(<CompanionGoalJournal goals={controller()} targetId="run" onChat={vi.fn()} onArtifactOpen={vi.fn()} />);
+  render(<CompanionGoalJournal goals={controller()} targetId="run" onArtifactOpen={vi.fn()} />);
   expect(screen.getByText("速看已做好").tagName).toBe("STRONG");
   expect(screen.getByText("已保留原文事实").tagName).toBe("LI");
 });
@@ -128,7 +128,7 @@ it("opens the exact card run for user review from both the light bubble and jour
   expect(room.setActiveCardGenerationRunId.mock.invocationCallOrder[0]).toBeLessThan(room.invoke.mock.invocationCallOrder[0]);
   view.unmount(); vi.clearAllMocks();
   const onArtifactOpen = vi.fn();
-  render(<CompanionGoalJournal goals={controller(ready)} targetId="run" onChat={vi.fn()} onArtifactOpen={onArtifactOpen} />);
+  render(<CompanionGoalJournal goals={controller(ready)} targetId="run" onArtifactOpen={onArtifactOpen} />);
   fireEvent.click(screen.getByRole("button", { name: /待审核学习卡.*由你审核与保存/ }));
   expect(room.setActiveCardGenerationRunId).toHaveBeenCalledWith("card-run");
   expect(onArtifactOpen).toHaveBeenCalledOnce();
@@ -150,7 +150,7 @@ it("treats no card recommendation as an answer without inventing an artifact or 
   expect(screen.queryByRole("alert")).toBeNull();
   expect(screen.queryByText("这段更适合阅读理解")).toBeNull();
   view.unmount();
-  render(<CompanionGoalJournal goals={controller(answer)} targetId="run" onChat={vi.fn()} onArtifactOpen={vi.fn()} />);
+  render(<CompanionGoalJournal goals={controller(answer)} targetId="run" onArtifactOpen={vi.fn()} />);
   expect(screen.getByText("这段更适合阅读理解").tagName).toBe("STRONG");
   expect(screen.getByText("这次不建议制卡")).toBeTruthy();
   expect(screen.queryByRole("region", { name: "做好的成果" })).toBeNull();
@@ -170,7 +170,7 @@ it("opens running and failed card tasks without claiming there is a finished art
     expect(room.invoke).toHaveBeenLastCalledWith("open-card-generation");
     expect(screen.queryByRole("button", { name: "待审核学习卡" })).toBeNull();
     view.unmount();
-    const journal = render(<CompanionGoalJournal goals={controller(item)} targetId="run" onChat={vi.fn()} onArtifactOpen={vi.fn()} />);
+    const journal = render(<CompanionGoalJournal goals={controller(item)} targetId="run" onArtifactOpen={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: label }));
     expect(room.setActiveCardGenerationRunId).toHaveBeenLastCalledWith("exact-card-run");
     journal.unmount();
@@ -186,7 +186,7 @@ it("puts a later read-only answer ahead of retained artifacts without claiming a
   fireEvent.click(screen.getByRole("button", { name: "拓展草稿" }));
   expect(room.setActiveNoteRef).toHaveBeenCalledWith(expect.objectContaining({ learningView: "expansion" }));
   view.unmount();
-  render(<CompanionGoalJournal goals={controller(reading)} targetId="run" onChat={vi.fn()} onArtifactOpen={vi.fn()} />);
+  render(<CompanionGoalJournal goals={controller(reading)} targetId="run" onArtifactOpen={vi.fn()} />);
   const answer = screen.getByText("已核对修改后的正文"), retained = screen.getByRole("region", { name: "做好的成果" });
   expect(answer.compareDocumentPosition(retained) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: /拓展草稿 · 第 1 批/ }));
@@ -234,7 +234,7 @@ it("owns Escape after an action releases focus, folds controls first, and leaves
     expect(onClose).not.toHaveBeenCalled();
     fireEvent.keyDown(document.body, { key: "Escape" });
     expect(onClose).toHaveBeenCalledOnce();
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "查看伴星手边的事" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "查看交给我的事" }));
     expect(roomEscape).not.toHaveBeenCalled();
   } finally { window.removeEventListener("keydown", roomEscape); }
 });

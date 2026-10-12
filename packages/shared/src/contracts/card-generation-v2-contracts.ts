@@ -26,6 +26,12 @@ import { taskIntentSchema } from "./learning-run-contracts.ts";
 
 // ─── §7/§9 基础枚举 ──────────────────────────────────────────────────────
 
+/** 一次制卡请求最多要几张：这是唯一的声明源，能力面与执行侧都引用它，不再各夹一遍。 */
+export const CARD_GENERATION_HARD_MAX_CARDS_CEILING = 50;
+
+/** 没说"最多几张"时的自适应默认量。它是默认值，不是上限——要 30 张就给 30 张。 */
+export const CARD_GENERATION_DEFAULT_HARD_MAX_CARDS = 8;
+
 export const CardLearningGoalValuesV2 = [
   "remember",
   "understand",
@@ -193,7 +199,7 @@ export const createCardGenerationRunRequestV2Schema = z
     quantity: z
       .strictObject({
         kind: z.literal("adaptive"),
-        hardMaxCards: z.number().int().min(0).max(50).optional(),
+        hardMaxCards: z.number().int().min(0).max(CARD_GENERATION_HARD_MAX_CARDS_CEILING).optional(),
       })
       .strict(),
     preferredStrategies: z
@@ -260,7 +266,7 @@ export const generationSemanticSpecV2Schema = z
         quantity: z
           .strictObject({
             kind: z.literal("adaptive"),
-            hardMaxCards: z.number().int().min(0).max(50).optional(),
+            hardMaxCards: z.number().int().min(0).max(CARD_GENERATION_HARD_MAX_CARDS_CEILING).optional(),
           })
           .strict(),
         preferredStrategies: z

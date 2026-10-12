@@ -60,7 +60,7 @@ export interface AgentRevisionRow {
   goal: string; status: string;
   conversation_id: string | null;
   inputs: unknown; summary: string | null; error: string | null;
-  model_calls: number; max_model_calls: number;
+  model_calls: number; max_model_calls: number | null;
   started_at: string | null; last_active_at: string; recorded_at: string;
   superseded_by_revision: number | null;
   long_goal_ref?:AgentRunRevisionV1["longGoal"];
@@ -72,7 +72,7 @@ export interface SupersededRunSnapshot {
   goal: string; status: string; resume_from_revision: number | null;
   conversation_id: string | null; account_epoch: number;
   inputs: unknown; summary: string | null; error: string | null;
-  model_calls: number; max_model_calls: number;
+  model_calls: number; max_model_calls: number | null;
   revision_started_at: string | Date | null; updated_at: string | Date;
   long_goal_ref?:AgentRunRevisionV1["longGoal"];
 }
@@ -139,7 +139,7 @@ export function isoTimestamp(value: string | Date | null): string | null {
 export function projectAgentRunRevisionV1(args: {
   scope: AgentScopeV1; runId: string; revision: number; goal: string; status: string;
   conversationId: string | null; inputs: unknown; summary: string | null; error: string | null;
-  modelCalls: number; maxModelCalls: number; startedAt: string | null; lastActiveAt: string;
+  modelCalls: number; maxModelCalls: number | null; startedAt: string | null; lastActiveAt: string;
   recordedAt: string | null; supersededByRevision: number | null;
   operations: AgentOperationRow[];
   longGoal?:AgentRunRevisionV1["longGoal"];
@@ -152,7 +152,7 @@ export function projectAgentRunRevisionV1(args: {
     operations: own.map(row => projectAgentOperation(args.scope, args.runId, row)),
     artifacts: agentOperationArtifacts(own),
     summary: args.summary, error: args.error,
-    modelCalls: Number(args.modelCalls), maxModelCalls: Number(args.maxModelCalls),
+    modelCalls: Number(args.modelCalls), maxModelCalls: args.maxModelCalls,
     startedAt: args.startedAt, lastActiveAt: args.lastActiveAt,
     recordedAt: args.recordedAt, supersededByRevision: args.supersededByRevision,
   });
@@ -176,7 +176,7 @@ export function projectAgentRunHistoryV1(args: {
   current: {
     scope: AgentScopeV1; goal: string; status: string; conversationId: string | null;
     inputs: unknown; longGoal?:AgentRunRevisionV1["longGoal"];summary: string | null; error: string | null;
-    modelCalls: number; maxModelCalls: number; startedAt: string | null; lastActiveAt: string;
+    modelCalls: number; maxModelCalls: number | null; startedAt: string | null; lastActiveAt: string;
   };
   /** 本页范围内的已存档版本，revision 倒序。 */
   recorded: AgentRevisionRow[];

@@ -9,8 +9,8 @@ import { CompanionGoalMethod } from "./CompanionGoalMethod";
 import { CompanionCardTasks } from "./CompanionCardTasks";
 
 /** Task records live inside our conversation book, using the same projection as the bubble. */
-export function CompanionGoalJournal({ goals, targetId, onChat, onArtifactOpen }: {
-  goals: AgentGoalsController; targetId: string | null; onChat: () => void; onArtifactOpen: () => void;
+export function CompanionGoalJournal({ goals, targetId, onArtifactOpen }: {
+  goals: AgentGoalsController; targetId: string | null; onArtifactOpen: () => void;
 }) {
   const [selectedId, setSelectedId] = useState(targetId);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -53,7 +53,7 @@ export function CompanionGoalJournal({ goals, targetId, onChat, onArtifactOpen }
       </button>)}
     </section> : null}
     <CompanionCardTasks operations={run.operations} artifacts={run.artifacts} scope={goals.scope} onOpen={onArtifactOpen} />
-    <div className="companion-goal-journal__next"><p>{goalNextHint(run)}</p><CompanionGoalControls run={run} goals={goals} onNewGoal={onChat} /></div>
+    <div className="companion-goal-journal__next"><p>{goalNextHint(run)}</p><CompanionGoalControls run={run} goals={goals} /></div>
     {hasCurrentArtifact ? delivery : null}
     <CompanionGoalMethod key={`${goals.scope}:${run.runId}:${run.revision}`} run={run} scope={goals.scope} onOpen={onArtifactOpen} />
     <details className="companion-goal-journal__process"><summary>查看生成记录 · {run.operations.length} 项</summary>

@@ -6,8 +6,8 @@ import { useCompanionResource } from "../surfaces/companion/use-companion-resour
 import { CompanionSelect } from "../surfaces/companion/companion-select";
 
 /** The same revision-fenced actions serve the bubble and the journal. */
-export function CompanionGoalControls({ run, goals, onNewGoal }: {
-  run: AgentRunV1; goals: AgentGoalsController; onNewGoal: () => void;
+export function CompanionGoalControls({ run, goals }: {
+  run: AgentRunV1; goals: AgentGoalsController;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(run.goal);
@@ -19,7 +19,6 @@ export function CompanionGoalControls({ run, goals, onNewGoal }: {
   const bindingChanged = bindingChoice === "current" && (!latest || !selectedBinding
     || selectedBinding.ref.memoryId !== latest.ref.memoryId || selectedBinding.ref.revision !== latest.ref.revision);
   const changing = Boolean(goals.pending);
-  const exhausted = run.modelCalls >= run.maxModelCalls;
   useEffect(() => { setEditing(false); setDraft(run.goal); setDraftRevision(run.revision); }, [run.runId, goals.scope]);
   if (editing) return <form className="companion-goal-edit" onSubmit={event => {
     event.preventDefault();
@@ -50,10 +49,9 @@ export function CompanionGoalControls({ run, goals, onNewGoal }: {
       <button type="button" disabled={changing} onClick={() => setEditing(false)}>取消修改</button></div>
   </form>;
   return <div className="companion-goal-controls">
-    {exhausted ? <button type="button" onClick={onNewGoal}><Pencil size={14} />交代新任务</button>
-      : <button type="button" disabled={changing} onClick={() => { setDraft(run.goal); setDraftRevision(run.revision); setBindingChoice("keep"); setSelectedBinding(null); setEditing(true); }}><Pencil size={14} />修改要求</button>}
+    <button type="button" disabled={changing} onClick={() => { setDraft(run.goal); setDraftRevision(run.revision); setBindingChoice("keep"); setSelectedBinding(null); setEditing(true); }}><Pencil size={14} />修改要求</button>
     {agentGoalActive(run) ? <button type="button" disabled={changing} onClick={() => void goals.change(run, "pause")}><Pause size={14} />暂停</button>
-      : ["paused", "failed"].includes(run.status) && !exhausted ? <button type="button" disabled={changing} onClick={() => void goals.change(run, "resume")}><Play size={14} />继续处理</button> : null}
+      : ["paused", "failed"].includes(run.status) ? <button type="button" disabled={changing} onClick={() => void goals.change(run, "resume")}><Play size={14} />继续处理</button> : null}
     {agentGoalActive(run) || run.status === "paused" ? <button type="button" disabled={changing} onClick={() => void goals.change(run, "cancel")}><Square size={13} />停止这件事</button> : null}
   </div>;
 }

@@ -3,7 +3,7 @@ import { executeTurn, executeAgentStep, runAgentModelStep, declaredAgentRequestS
 import { createAgentAdvanceStore, AgentStoreError, projectRun } from "@astella/agent-host";
 import { agentGoalDeliveryManifest } from "@astella/shared/agent-capabilities";
 import { getAgentCapability } from "@astella/shared/agent-capability-catalog";
-import { agentTurnResultSchema } from "@astella/shared";
+import { agentTurnResultSchema, COMPANION_AGENT_MAX_STEPS } from "@astella/shared";
 import { sha256Utf8V1 } from "@astella/shared/content-hash";
 import type { JobPayload } from "../handlers/index.ts";
 import { buildAgentGoalRequest } from "./goal-context.ts";
@@ -57,8 +57,10 @@ export async function runAgentAdvance(job: JobPayload) {
     if (!provider.executeAgentTurn) throw new AgentStoreError(422, "capability_unavailable", "当前模型不能执行持续目标。");
     }
     const deadlineAt = Date.now() + resolveCompanionAgentBudget("agent_run_advance").loopDeadlineMs;
+    // 一个处理时段只由墙钟收口：跑满时段就重新排队接着做（slice_exhausted → needsAdvance），
+    // 步数本身取自 shared 的声明，null 就是没有上限。
     await executeTurn({ signal: job.signal, now: Date.now,
-      limits: () => ({ maxSteps: 3, deadlineAt }), budgetError: () => new AgentStoreError(422, "slice_exhausted", "本次处理时段已结束。"),
+      limits: () => ({ maxSteps: COMPANION_AGENT_MAX_STEPS, deadlineAt }), budgetError: () => new AgentStoreError(422, "slice_exhausted", "本次处理时段已结束。"),
       advance: async () => {
         const run = await store.read();
         const projection = await store.invoke((tx, current) => projectRun(tx, store.scope, current));
@@ -93,9 +95,8 @@ export async function runAgentAdvance(job: JobPayload) {
             errors: { inactive: () => new AgentStoreError(409, "advance_obsolete", "当前执行已经停止。"),
               timeout: () => new HandlerTimeoutError(Math.max(1, deadlineAt-Date.now())) },
           }); } },
-          capabilities: { maxCalls: 4, invoke: async (call, allowed) => {
+          capabilities: { invoke: async (call) => {
             try {
-              if (!allowed) throw new AgentStoreError(422, "step_tool_budget", "本步执行上限已到，请在下一步继续。");
               const invoke = capabilityInvoker(call.name, job.signal ?? new AbortController().signal);
               if (!invoke) throw new AgentStoreError(400, "unknown_capability", "当前没有这项能力。");
               return await invoke(store, call);

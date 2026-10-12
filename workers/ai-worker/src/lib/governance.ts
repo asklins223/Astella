@@ -503,6 +503,7 @@ function createCallRecorder(input: {
   costTokens?: number | null;
   promptTokens?: number | null;
   completionTokens?: number | null;
+  cachedTokens?: number | null;
   status?: string;
   errorMessage?: string | null;
   dataSizeBytes?: number | null;
@@ -585,7 +586,7 @@ export function createGovernedProvider(
   const governed: import("./ai-provider.ts").AIProvider = {
     ...provider,
     chatCompletion: async (messages, options, signal) => {
-      options = { ...options, maxTokens: provider.resolveOutputTokenLimit?.(options.maxTokens) ?? options.maxTokens };
+      options = { ...options, maxTokens: provider.resolveOutputTokenLimit?.() ?? options.maxTokens };
       const startedAt = performance.now();
       let data: Record<string, unknown>;
       try {
@@ -611,6 +612,7 @@ export function createGovernedProvider(
           costTokens: result.usage?.totalTokens ?? null,
           promptTokens: result.usage?.promptTokens ?? null,
           completionTokens: result.usage?.completionTokens ?? null,
+          cachedTokens: result.usage?.cacheHitTokens ?? null,
         });
         return result;
       } catch (err) {
@@ -625,7 +627,7 @@ export function createGovernedProvider(
   };
   if (provider.chatCompletionStream) {
     governed.chatCompletionStream = async (messages, options, signal, onDelta) => {
-      options = { ...options, maxTokens: provider.resolveOutputTokenLimit?.(options.maxTokens) ?? options.maxTokens };
+      options = { ...options, maxTokens: provider.resolveOutputTokenLimit?.() ?? options.maxTokens };
       const startedAt = performance.now();
       let data: Record<string, unknown>;
       try {
@@ -658,7 +660,14 @@ export function createGovernedProvider(
           signal,
           onDelta,
         );
-        recordCall("chat_completion_stream", "stream", startedAt, { costTokens: result.usage?.totalTokens ?? null });
+        recordCall("chat_completion_stream", "stream", startedAt, {
+          costTokens: result.usage?.totalTokens ?? null,
+          // 流式这一步以前只报总数，所以「伴星这一步输入到底多大」在这张表里查不到；
+          // 现役正文交付走的就是这条路，前缀缓存的收益也必须从这里读。
+          promptTokens: result.usage?.promptTokens ?? null,
+          completionTokens: result.usage?.completionTokens ?? null,
+          cachedTokens: result.usage?.cacheHitTokens ?? null,
+        });
         return result;
       } catch (err) {
         recordCall("chat_completion_stream", "stream", startedAt, {
@@ -672,7 +681,7 @@ export function createGovernedProvider(
   }
   if (provider.executeAgentTurn) {
     governed.executeAgentTurn = async (request, signal) => {
-      request = { ...request, maxTokens: provider.resolveOutputTokenLimit?.(request.maxTokens) ?? request.maxTokens };
+      request = { ...request, maxTokens: provider.resolveOutputTokenLimit?.() ?? request.maxTokens };
       const startedAt = performance.now();
       let data: Record<string, unknown>;
       try {
@@ -700,6 +709,7 @@ export function createGovernedProvider(
           costTokens: result.usage?.totalTokens ?? null,
           promptTokens: result.usage?.promptTokens ?? null,
           completionTokens: result.usage?.completionTokens ?? null,
+          cachedTokens: result.usage?.cacheHitTokens ?? null,
         });
         return result;
       } catch (err) {
@@ -829,6 +839,10 @@ export interface AICallAuditParams {
   dataCategories?: string[];
   dataSizeBytes?: number | null;
   costTokens?: number | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  /** provider 交回的前缀缓存命中量。只作观测，不接进上下文预算端口。 */
+  cachedTokens?: number | null;
   durationMs?: number | null;
   status?: string;
   errorMessage?: string | null;
@@ -868,6 +882,9 @@ export async function logAICall(
       dataCategories: params.dataCategories ?? [],
       dataSizeBytes: params.dataSizeBytes ?? null,
       costTokens: params.costTokens ?? null,
+      promptTokens: params.promptTokens ?? null,
+      completionTokens: params.completionTokens ?? null,
+      cachedTokens: params.cachedTokens ?? null,
       durationMs: params.durationMs ?? null,
       status: params.status ?? "success",
       errorMessage: params.errorMessage ? safeErrorMessage(params.errorMessage) : null,

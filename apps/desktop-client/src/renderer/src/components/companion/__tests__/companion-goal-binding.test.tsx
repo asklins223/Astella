@@ -16,7 +16,7 @@ const run: AgentRunV1={version:1,runId:"run",identityId:"identity",revision:1,go
 function goals(): AgentGoalsController {return {items:[run],scope:1,error:null,loading:false,pending:null,nextCursor:null,moreLoading:false,moreError:null,
   change:vi.fn(async()=>false),refresh:vi.fn(async()=>{}),ensure:vi.fn(async()=>{}),loadMore:vi.fn(async()=>{})};}
 it("rebinds only the version explicitly selected by the user, or explicitly removes the binding", async()=>{
-  const controller=goals();render(<CompanionGoalControls run={run} goals={controller} onNewGoal={vi.fn()}/>);
+  const controller=goals();render(<CompanionGoalControls run={run} goals={controller}/>);
   fireEvent.click(screen.getByRole("button",{name:"修改要求"}));
   fireEvent.click(screen.getByRole("button",{name:"按哪个目标继续"}));
   fireEvent.click(screen.getByRole("option",{name:"确认使用当前第 2 版"}));
@@ -28,12 +28,12 @@ it("rebinds only the version explicitly selected by the user, or explicitly remo
   await waitFor(()=>expect(controller.change).toHaveBeenLastCalledWith(run,{goal:run.goal,longGoal:null}));
 });
 it("a newer memory arriving after selection cannot silently replace the approved version", async()=>{
-  const controller=goals();const view=render(<CompanionGoalControls run={run} goals={controller} onNewGoal={vi.fn()}/>);
+  const controller=goals();const view=render(<CompanionGoalControls run={run} goals={controller}/>);
   fireEvent.click(screen.getByRole("button",{name:"修改要求"}));
   fireEvent.click(screen.getByRole("button",{name:"按哪个目标继续"}));
   fireEvent.click(screen.getByRole("option",{name:"确认使用当前第 2 版"}));
   resource.latest={ref:{memoryId:"memory",revision:3},content:"后来改过的目标"};
-  view.rerender(<CompanionGoalControls run={run} goals={controller} onNewGoal={vi.fn()}/>);
+  view.rerender(<CompanionGoalControls run={run} goals={controller}/>);
   expect((screen.getByRole("button",{name:"按新要求继续"}) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByText("当前目标")).toBeTruthy();expect(controller.change).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button",{name:"核对并使用第 3 版"}));

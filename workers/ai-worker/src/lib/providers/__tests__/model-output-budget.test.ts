@@ -5,13 +5,14 @@ import { OpenCodeGoProvider } from "../opencode-go.ts";
 import { createGovernedProvider } from "../../governance.ts";
 import type { ContextGateReceipt } from "../../context-governor.ts";
 
-test("small content targets cannot take the reasoning allowance away", () => {
-  for (const requested of [500, 2000, 8000, 24000, undefined]) {
-    assert.equal(modelOutputTokenLimit({ maxOutputTokens: 384000 }, requested, 16384), 384000);
-  }
-  assert.equal(modelOutputTokenLimit(undefined, 24000, 16384), 16384);
+test("the wire ceiling comes from the profile, never from a per-task number", () => {
+  // 声明了就用声明值：任务侧报 500 还是 24000 都不该把推理与正文的额度挤小。
+  assert.equal(modelOutputTokenLimit({ maxOutputTokens: 384000 }, 16384), 384000);
+  // 没声明时用这一档平台的兜底（openai_compatible 是 shared 的那一个实测值）。
+  assert.equal(modelOutputTokenLimit(undefined, 16384), 16384);
+  // 档案里挂着的坏值不算声明，同样落回兜底——字段合法性由配置那一层管。
   for (const invalid of [0, -1, NaN, Infinity]) {
-    assert.equal(modelOutputTokenLimit({ maxOutputTokens: 384000 }, invalid, 16384), undefined);
+    assert.equal(modelOutputTokenLimit({ maxOutputTokens: invalid }, 16384), 16384);
   }
 });
 
@@ -35,5 +36,5 @@ test("governance reserves the same output budget that the provider actually send
   assert.equal(body?.max_output_tokens, 384000);
   assert.equal(receipt?.budget.outputReservationTokens, 384000);
   assert.deepEqual(body?.reasoning, { effort: "high" });
-  assert.equal(provider.resolveOutputTokenLimit?.(2000), 384000);
+  assert.equal(provider.resolveOutputTokenLimit?.(), 384000);
 });

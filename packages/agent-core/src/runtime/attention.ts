@@ -38,6 +38,6 @@ export function resolveAgentTurnInterpretation(proposal: unknown, input: {
     goalRelation: conversational ? "unrelated" : value.goalRelation,
     candidateOperations: conversational ? [] : candidateOperations,
     toolUse: conversational ? "none" : ambiguities.length && value.toolUse === "act" ? "uncertain" : value.toolUse,
-    ambiguities: [...new Set(ambiguities)].slice(0, 6), status: ambiguities.length || value.toolUse === "uncertain" ? "uncertain" : "interpreted",
+    ambiguities: [...new Set(ambiguities)], status: ambiguities.length || value.toolUse === "uncertain" ? "uncertain" : "interpreted",
   });
 }

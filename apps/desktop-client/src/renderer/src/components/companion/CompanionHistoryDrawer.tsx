@@ -184,7 +184,7 @@ export function CompanionHistoryDrawer({
         </p>
       )
       : allMessages == null
-        ? <p className="companion-history__system">对话记录还没有就绪。</p>
+        ? <p className="companion-history__system">对话手记还没有就绪。</p>
         : null;
 
   /**
@@ -260,7 +260,7 @@ export function CompanionHistoryDrawer({
         data-stage={exiting ? "exiting" : "visible"}
         data-motion={motionMode}
         tabIndex={-1}
-        aria-label="关闭对话记录"
+        aria-label="关闭对话手记"
         onClick={onClose}
       />
       <aside
@@ -294,7 +294,9 @@ export function CompanionHistoryDrawer({
               setSearchInput("");
               setDateFilter(null);
             } else {
-              onBack();
+              // Esc 逐层退出到关闭为止，不替用户打开别的东西。以前这里是 onBack——
+              // 手记关掉的同时轻聊输入框弹出来，按了 Esc 反而多出一个面板。
+              onClose();
             }
             return;
           }
@@ -318,7 +320,7 @@ export function CompanionHistoryDrawer({
       <header className="companion-history__header">
         <span className="companion-journal__cover-mark" aria-hidden="true"><BookHeart size={24} /></span>
         <div className="companion-history__heading">
-          <h2 id="companion-history-title">我们的对话手记</h2>
+          <h2 id="companion-history-title">对话手记</h2>
           <p>{chat.companionName} <span>·</span> 这间书房，一起留下的日常</p>
         </div>
         <div className="companion-history__header-actions">
@@ -327,11 +329,11 @@ export function CompanionHistoryDrawer({
             <button type="button" onClick={() => {
               positionsRef.current.set(filter, { top: listRef.current?.scrollTop ?? 0, latest: stickToBottomRef.current });
               setFilter("all"); setRecordOpen(true);
-            }} aria-label="聊天记录" title="查找消息">
+            }} aria-label="搜索对话手记" title="查找消息">
               <Search size={20} />
             </button>
           ) : null}
-          <button type="button" onClick={onClose} aria-label="关闭对话记录"><X size={20} /></button>
+          <button type="button" onClick={onClose} aria-label="关闭对话手记"><X size={20} /></button>
         </div>
       </header>
       <div className="companion-journal__workspace">
@@ -355,8 +357,8 @@ export function CompanionHistoryDrawer({
                 setSearchInput(event.currentTarget.value);
                 void ensureAllMessages();
               }}
-              placeholder="搜索聊天记录"
-              aria-label="搜索聊天记录"
+              placeholder="搜索对话手记"
+              aria-label="搜索对话手记"
             />
             {searchInput ? <button type="button" onClick={() => setSearchInput("")} aria-label="清空搜索词"><X size={12} /></button> : null}
           </div>
@@ -406,14 +408,14 @@ export function CompanionHistoryDrawer({
             chat.setMode("history"); positionsRef.current.delete("all"); stickToBottomRef.current = true; chooseSection("all");
             requestAnimationFrame(() => drawerRef.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true }));
           }} /></div> : null}
-          {!recordOpen && filter === "thoughts" ? null : !recordOpen && filter === "goals" && goals ? <CompanionGoalJournal key={`${goals.scope}:${goalTarget?.visit ?? 0}`} goals={goals} targetId={goalTarget?.runId ?? null} onChat={onBack} onArtifactOpen={onClose} /> : !recordOpen && filter === "pending" ? <section className="companion-journal__pending-page" aria-label="等你决定的事">
+          {!recordOpen && filter === "thoughts" ? null : !recordOpen && filter === "goals" && goals ? <CompanionGoalJournal key={`${goals.scope}:${goalTarget?.visit ?? 0}`} goals={goals} targetId={goalTarget?.runId ?? null} onArtifactOpen={onClose} /> : !recordOpen && filter === "pending" ? <section className="companion-journal__pending-page" aria-label="等你决定的事">
             <header className="companion-journal__section-heading"><span className="companion-journal__section-symbol"><CircleCheck size={26} aria-hidden="true" /></span><div><h3>等你作个决定</h3><p>先看要做什么，再决定是否交给伴星。</p></div></header>
             {pendingProposals.length === 0 ? <div className="companion-journal__empty"><Sparkles size={36} /><strong>没有等你确认的事情</strong><p>需要你决定的动作会留在这里。</p></div> : pendingProposals.map(([id, state]) => <div className="companion-history__pending" key={id}>
               <CompanionProposalChoice proposalId={id} state={state} context="history" onDecide={decision => { void chat.decideProposal(id, decision); }} onRetry={() => chat.retryProposal(id)} />
             </div>)}
           </section> : !recordOpen ? (
             <>
-              {chat.phase === "loading" ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />正在加载对话记录…</p> : null}
+              {chat.phase === "loading" ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />正在加载对话手记…</p> : null}
               {chat.historyLoadingOlder ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />正在加载更早的对话…</p> : null}
               {chat.historyOlderError ? <p className="companion-history__system" role="status">{chat.historyOlderError}<button type="button" className="companion-record__retry" onClick={() => { prevScrollHeightRef.current = listRef.current?.scrollHeight ?? null; void chat.loadOlderMessages(); }}>重试加载</button></p> : null}
               {!chat.messages.length && chat.phase !== "loading" ? <div className="companion-journal__empty"><MessageCircle size={38} aria-hidden="true" /><strong>从一句话开始</strong><p>想说的、想问的，都可以写在下面。</p></div> : null}
@@ -467,7 +469,7 @@ export function CompanionHistoryDrawer({
           ) : (
             /* ── 聊天记录视图：只负责「找」。选中搜索命中或日期后回到上面的对话时间线定位 ── */
             <>
-              {chat.phase === "loading" ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />正在加载对话记录…</p> : null}
+              {chat.phase === "loading" ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />正在加载对话手记…</p> : null}
               {(() => {
                 const keyword = searchInput.trim();
                 if (!keyword) {

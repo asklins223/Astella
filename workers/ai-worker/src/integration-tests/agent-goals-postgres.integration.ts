@@ -216,10 +216,12 @@ test("approved active preferences remain scoped, temporary goals do not rewrite 
   const context = await loadAgentGenerationContext({ id: child.execution.id, workspaceId: scope.workspaceId, requestedBy: scope.userId,
     leaseToken: randomUUID(), payload: { agentRunId: run.runId, agentRevision: 1 } });
   assert.match(context.instructions, /先举日常例子/); assert.match(context.instructions, /这一次只给公式/);
+  // 记账是观测，不是配额：一个目标的子生成不会因为「已经跑了 14 发」被拒。
+  // 真正会让它停下的是围栏本身——租约失效、这一版被新要求替代、取消。
   await admin`UPDATE agent_runs SET model_calls=14 WHERE id=${run.runId}`;
   await context.reserveModelCall();
-  await assert.rejects(context.reserveModelCall(), /预算已用完/);
-  assert.equal((await api.get(scope, run.runId)).modelCalls, 15);
+  await context.reserveModelCall();
+  assert.equal((await api.get(scope, run.runId)).modelCalls, 16);
   assert.match((await workerPorts.transaction(scope, tx => loadAgentLearningContext(tx, scope))).preferences[0].content, /先举日常例子/);
 });
 

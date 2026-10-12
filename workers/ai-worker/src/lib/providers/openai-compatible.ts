@@ -12,7 +12,7 @@ import {
   type PublicJsonRequester,
   type PublicStreamingRequester,
 } from "@astella/shared/public-json-http";
-import { shouldUsePromptCache } from "@astella/shared";
+import { shouldUsePromptCache, AI_UNDECLARED_OUTPUT_TOKENS } from "@astella/shared";
 import type { AIProvider, ProviderUsage } from "../ai-provider.ts";
 import {
   readChatCompletionContent,
@@ -120,12 +120,14 @@ export class OpenAICompatibleProvider implements AIProvider {
     return {};
   }
 
-  private outputTokenLimit(value: number | undefined): number | undefined {
-    return this.resolveOutputTokenLimit(value);
+  private outputTokenLimit(): number | undefined {
+    return this.resolveOutputTokenLimit();
   }
 
-  resolveOutputTokenLimit(requested?: number): number | undefined {
-    return modelOutputTokenLimit(this.modelProfile, requested, 16_384);
+  resolveOutputTokenLimit(): number | undefined {
+    // 天花板来自档案声明；拿不到声明时用那一个有实测依据的平台兜底。
+    // handler 报的 maxTokens 不参与这里——那些数各写一遍，档案缺失时就成了砍话的刀。
+    return modelOutputTokenLimit(this.modelProfile, AI_UNDECLARED_OUTPUT_TOKENS);
   }
 
   private applyModelSampling(body: Record<string, unknown>): void {
@@ -184,7 +186,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     onDelta: (deltaText: string) => void,
   ): Promise<{ content: string; toolCalls: AgentTurnResult["toolCalls"]; finishReason: string }> {
     if (signal?.aborted) throw abortError(signal, "before request");
-    const maxTokens = this.outputTokenLimit(options.maxTokens ?? 4096);
+    const maxTokens = this.outputTokenLimit();
     const temperature = options.temperature ?? 0.2;
     const model = options.model ?? this.modelId;
     const disableMaxTokens = this.platformOptions?.disableMaxTokens ?? false;
@@ -554,7 +556,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     };
     this.applyModelSampling(body);
     if (shouldSetMaxTokens) {
-      body.max_tokens = this.outputTokenLimit(maxTokens);
+      body.max_tokens = this.outputTokenLimit();
     }
     // R1: Merge extra headers (e.g., X-DashScope-WorkSpace)
     const headers: Record<string, string> = {
@@ -659,7 +661,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     const shouldSetMaxTokens = this.maxTokensStrategy === "always" || !disableMaxTokens;
     if (shouldSetMaxTokens) {
       // AI P2 #25：出口夹取；非法/缺失即省略字段（用 provider 默认），不发垃圾值。
-      const maxTokens = this.outputTokenLimit(request.maxTokens);
+      const maxTokens = this.outputTokenLimit();
       if (maxTokens !== undefined) requestBody.max_tokens = maxTokens;
     }
 
@@ -795,10 +797,10 @@ export class OpenAICompatibleProvider implements AIProvider {
   getCapabilities(): ProviderCapability {
     const contextWindowTokens = this.modelProfile?.contextWindowTokens
       ?? DEFAULT_CONTEXT_WINDOW_TOKENS;
-    // 输出预算默认 16384——这是对 openai_compatible 模型实际输出能力的校准值
-    // （实测 deepseek-v4-flash-0731 在 max_tokens=32768 时输出过 15442 token 后自停；
-    // 而 provider 在「不传 max_tokens」时的默认上限仅为 8192，会截断大输出）。
-    const maxOutputTokens = this.modelProfile?.maxOutputTokens ?? 16384;
+    // 输出预算默认取自 shared 的那一个校准兜底值（AI_UNDECLARED_OUTPUT_TOKENS）——
+    // 这是对 openai_compatible 模型实际输出能力的校准（实测 deepseek-v4-flash-0731 在
+    // max_tokens=32768 时输出过 15442 token 后自停；不传 max_tokens 时端点默认只有 8192）。
+    const maxOutputTokens = this.modelProfile?.maxOutputTokens ?? AI_UNDECLARED_OUTPUT_TOKENS;
     const reservedOutputTokens = maxOutputTokens;
     return {
       providerId: this.id,

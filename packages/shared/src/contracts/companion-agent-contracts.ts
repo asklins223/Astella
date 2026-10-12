@@ -12,15 +12,15 @@
 import { z } from "zod";
 import { isCompanionAutonomousTool } from "../companion-autonomy.ts";
 import { companionEditedNoteV1Schema } from "./companion-note-authoring-contracts.ts";
-import { DEFAULT_AI_TASK_TIMEOUT_MS } from "../ai-execution-budgets.ts";
 
 export const COMPANION_AGENT_CONTRACT_VERSION = 1 as const;
-export const COMPANION_AGENT_MAX_STEPS = 8;
-export const COMPANION_AGENT_MAX_TOOL_CALLS_PER_STEP = 4;
-export const COMPANION_AGENT_MAX_TOOL_CALLS = 12;
-export const COMPANION_AGENT_MAX_MODEL_CALLS = 12;
-export const COMPANION_AGENT_DEADLINE_MS = DEFAULT_AI_TASK_TIMEOUT_MS;
-export const COMPANION_AGENT_TOOL_TIMEOUT_MS = 10_000;
+// Counts are observations, not task-completion rules. Null means no default
+// count ceiling; hosts may freeze explicit deployment limits in the run receipt.
+export const COMPANION_AGENT_MAX_STEPS = null;
+export const COMPANION_AGENT_MAX_TOOL_CALLS_PER_STEP = null;
+export const COMPANION_AGENT_MAX_TOOL_CALLS = null;
+export const COMPANION_AGENT_MAX_MODEL_CALLS = null;
+export const COMPANION_AGENT_DEADLINE_MS = null;
 
 /**
  * 受"图片可以外发"这条政策管的能力档工具。
@@ -163,6 +163,7 @@ export const companionAgentToolDefinitionV1Schema = z.object({
   parameters: z.record(z.unknown()),
   riskClass: companionAgentRiskClassSchema,
   requiresConfirmation: z.boolean(),
+  confirmationStage: z.enum(["before_execute", "after_preview"]).optional(),
   // Editing carries both expected original blocks and replacement Markdown, including JSON escapes.
   maxInputChars: z.number().int().positive().max(150_000),
   maxOutputChars: z.number().int().positive().max(70_000),
@@ -173,6 +174,8 @@ export type CompanionAgentToolDefinitionV1 = z.infer<
 
 export const companionAgentToolEventV1Schema = z.object({
   toolCallId: z.string().min(1).max(200),
+  /** A streamed preparation may resolve to an existing durable operation. */
+  preparationToolCallId: z.string().min(1).max(200).optional(),
   name: z.string().min(1).max(80),
   toolVersion: z.string().min(1).max(40),
   riskClass: companionAgentRiskClassSchema,
@@ -195,12 +198,13 @@ export const companionAgentToolEventV1Schema = z.object({
 export type CompanionAgentToolEventV1 = z.infer<typeof companionAgentToolEventV1Schema>;
 
 export const companionAgentBudgetSnapshotV1Schema = z.object({
-  maxSteps: z.number().int().positive().max(COMPANION_AGENT_MAX_STEPS),
-  maxToolCallsPerStep: z.literal(COMPANION_AGENT_MAX_TOOL_CALLS_PER_STEP),
-  maxToolCalls: z.literal(COMPANION_AGENT_MAX_TOOL_CALLS),
-  maxModelCalls: z.literal(COMPANION_AGENT_MAX_MODEL_CALLS).optional(),
+  maxSteps: z.number().int().positive().nullable(),
+  maxToolCallsPerStep: z.number().int().positive().nullable(),
+  maxToolCalls: z.number().int().positive().nullable(),
+  maxModelCalls: z.number().int().positive().nullable().optional(),
+  maxWebSearchCalls: z.number().int().positive().nullable().optional(),
   // Saved receipts describe the budget used then, including pre-renewal 120s runs.
-  deadlineMs: z.number().int().positive().max(24 * 60 * 60_000),
+  deadlineMs: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable(),
 }).strict();
 export type CompanionAgentBudgetSnapshotV1 = z.infer<
   typeof companionAgentBudgetSnapshotV1Schema
@@ -210,11 +214,12 @@ export type CompanionAgentBudgetSnapshotV1 = z.infer<
 export const companionAgentCapabilitySnapshotV1Schema = z.object({
   version: z.literal(COMPANION_AGENT_CONTRACT_VERSION),
   level: companionAgentPermissionLevelSchema,
+  // 工具面每轮全给（§4.1），这里不给它封顶：新增能力不该先撞上这层快照校验。
   offeredTools: z.array(z.object({
     name: z.string().regex(/^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/).max(80),
     toolVersion: z.string().min(1).max(40),
     riskClass: companionAgentRiskClassSchema,
-  }).strict()).max(64),
+  }).strict()),
 }).strict();
 export type CompanionAgentCapabilitySnapshotV1 = z.infer<
   typeof companionAgentCapabilitySnapshotV1Schema
@@ -245,15 +250,17 @@ export const COMPANION_PROPOSAL_EXECUTED_TOOLS: ReadonlySet<string> = new Set([
 
 export function canUseCompanionAgentTool(
   permission: CompanionAgentPermissionLevel,
-  definition: Pick<CompanionAgentToolDefinitionV1, "riskClass" | "requiresConfirmation" | "name">,
+  definition: Pick<CompanionAgentToolDefinitionV1, "riskClass" | "requiresConfirmation" | "name" | "confirmationStage">,
+  arguments_: Record<string, unknown> = {},
 ): { allowed: boolean; requiresConfirmation: boolean; reason?: string } {
+  if (!companionAgentPermissionLevelSchema.safeParse(permission).success)
+    return { allowed: false, requiresConfirmation: false, reason: "权限状态暂时无法确认，这次操作没有执行。" };
   if (definition.riskClass === "read" || isCompanionAutonomousTool(definition.name)) {
     return { allowed: true, requiresConfirmation: false };
   }
-  if (permission === "read_only") {
-    return { allowed: false, requiresConfirmation: false, reason: "agent permission is read_only" };
-  }
-  if (definition.riskClass === "irreversible") {
+  if (definition.confirmationStage === "before_execute" || definition.riskClass === "irreversible"
+    || (definition.riskClass === "consequential" && definition.requiresConfirmation) || (definition.name === "companion_edit_note"
+    && typeof arguments_.operation === "string" && arguments_.operation.startsWith("delete"))) {
     return { allowed: true, requiresConfirmation: true };
   }
   // 命令本体只在提案那条路执行的工具：直执行会撞「没有执行器」，所以 full 档也出提案。
@@ -261,14 +268,20 @@ export function canUseCompanionAgentTool(
   if (COMPANION_PROPOSAL_EXECUTED_TOOLS.has(definition.name)) {
     return { allowed: true, requiresConfirmation: true };
   }
-  if (permission === "guided") {
-    const requiresConfirmation = definition.riskClass !== "reversible_low"
-      || definition.requiresConfirmation;
-    return { allowed: true, requiresConfirmation };
+  if (permission === "guided" || permission === "read_only") {
+    return { allowed: true, requiresConfirmation: true };
   }
   // full = 用户预授权（2026-09-19 对齐产品原设计：权限分级就是用户的授权开关）。
   // 用户把权限开到 full，就表示"这类动作不必每次都问我"——工具直接执行，
   // 路由类结果直接自动跳转（见 companionAgentRouteEventV1.autoExecute）。
   // 安全底线只有一条：irreversible 已在上方被拦下（无论授权到哪一档都要人点头）。
   return { allowed: true, requiresConfirmation: false };
+}
+
+export function companionToolConfirmationStage(
+  definition: Pick<CompanionAgentToolDefinitionV1, "riskClass" | "name" | "confirmationStage">,
+  arguments_: Record<string, unknown>,
+): "after_preview" | "before_execute" {
+  return definition.confirmationStage === "before_execute" || definition.riskClass !== "reversible_low" || (definition.name === "companion_edit_note"
+    && String(arguments_.operation).startsWith("delete")) ? "before_execute" : "after_preview";
 }

@@ -298,7 +298,9 @@ test("chatCompletion: system 进 instructions，user 进 input", async () => {
   assert.equal(body.instructions, "系统 A\n\n系统 B");
   assert.deepEqual(body.input, [{ role: "user", content: "问题" }]);
   assert.equal(body.stream, false);
-  assert.equal(body.max_output_tokens, 4096);
+  // 档案没声明时，线上发的是这一档平台自己声明的最大输出——调用方那个 4096
+  // 不再是天花板（它只会在档案缺失时把长回答砍成半截话）。
+  assert.equal(body.max_output_tokens, 131_072);
 });
 
 test("chatCompletion: 默认 JSON 模式，responseFormat=text 时不下发 text.format", async () => {
@@ -535,12 +537,44 @@ test("executeAgentTurn: tools 使用 Responses 扁平 function 格式，无 func
   }]);
   assert.equal(calls[0].body.tool_choice, "auto");
   assert.equal(calls[0].body.instructions, "你是伴星助手。");
-  assert.equal(calls[0].body.max_output_tokens, 700);
+  // 同上：没档案声明时用平台最大输出，700 这个按任务抄的数不再上线。
+  assert.equal(calls[0].body.max_output_tokens, 131_072);
   assert.equal(calls[0].body.text, undefined, "有工具时不下发 JSON 模式");
   assert.equal(result.content, "好的");
   assert.equal(result.finishReason, "stop");
   assert.deepEqual(result.toolCalls, []);
   assert.equal(result.providerRequestId, "resp_test_1");
+});
+
+/**
+ * steer 的内部核对指令是**步中**注入的一条 system 消息（companion-step-plan.ts 的
+ * companionStepCorrectionMessages）。Responses 只有一个 instructions 字段，
+ * 这条若被跳过，她就只收到重附的用户回合，不知道那句是要纠正上一段。
+ */
+test("executeAgentTurn: 步中注入的 system 指令并进 instructions，input 不留下 system item", async () => {
+  const { request, calls } = recordingRequester(ok(completionResponse({
+    output: [{
+      type: "message",
+      role: "assistant",
+      content: [{ type: "output_text", text: "好的" }],
+    }],
+    usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+  })));
+  await makeProvider({ request }).executeAgentTurn(agentTurnRequest({
+    messages: [
+      { role: "user", content: "把刚才那段改一下" },
+      { role: "assistant", content: "已改成三段。" },
+      { role: "system", content: "这是本轮的内部核对，不是新的用户请求。" },
+      { role: "user", content: "把刚才那段改一下" },
+    ],
+  }));
+  assert.equal(calls[0].body.instructions,
+    "你是伴星助手。\n\n这是本轮的内部核对，不是新的用户请求。");
+  assert.deepEqual(calls[0].body.input, [
+    { role: "user", content: "把刚才那段改一下" },
+    { role: "assistant", content: "已改成三段。" },
+    { role: "user", content: "把刚才那段改一下" },
+  ]);
 });
 
 test("executeAgentTurn: function_call output item → toolCalls（arguments 已解析）", async () => {
@@ -703,6 +737,40 @@ test("完成事件的正文与已收到增量不一致时不能静默替换或�
   await assert.rejects(() => makeProvider({ streamRequest: request }).chatCompletionStream([{ role: "user", content: "问题" }],
     { responseFormat: "text" }, undefined, () => undefined),
     (error: unknown) => error instanceof ProviderStreamError && error.code === "stream_content_mismatch");
+});
+
+test("terminal-only text and an omitted final delta settle without a second model call", async () => {
+  for (const prefix of ["", "完整"]) {
+    const { request, captured } = streamingRequester([
+      ...(prefix ? [`data: ${JSON.stringify({ type: "response.output_text.delta", delta: prefix })}\n\n`] : []),
+      `data: ${JSON.stringify({ type: "response.completed", response: { output: [{ type: "message", content: [{ type: "output_text", text: "完整正文" }] }] } })}\n\n`,
+    ]);
+    const deltas: string[] = [];
+    const result = await makeProvider({ streamRequest: request }).chatCompletionStream(
+      [{ role: "user", content: "问题" }], { responseFormat: "text" }, undefined, text => deltas.push(text));
+    assert.equal(result.content, "完整正文");
+    assert.equal(deltas.join(""), "完整正文");
+    assert.equal(captured.length, 1);
+  }
+});
+
+test("Responses emits write preparation before arguments finish and dispatches only a completed item once", async () => {
+  const item = { type: "function_call", call_id: "write", name: "companion_create_note", arguments: "" };
+  const done = { ...item, arguments: JSON.stringify({ title: "测试", markdown: "合成正文" }) };
+  const events: string[] = [];
+  const { request } = streamingRequester([
+    `data: ${JSON.stringify({ type: "response.output_item.added", output_index: 0, item })}\n\n`,
+    `data: ${JSON.stringify({ type: "response.function_call_arguments.delta", output_index: 0, delta: done.arguments })}\n\n`,
+    `data: ${JSON.stringify({ type: "response.output_item.done", output_index: 0, item: done })}\n\n`,
+    `data: ${JSON.stringify({ type: "response.completed", response: { output: [done] } })}\n\n`,
+  ]);
+  const result = await makeProvider({ streamRequest: request }).chatCompletionStream(
+    [{ role: "user", content: "生成笔记" }], { responseFormat: "text", tools: agentTurnRequest().tools,
+      onToolCallStarted: call => events.push(`started:${call.id}`),
+      onToolCallSettled: call => events.push(`settled:${call.id}`),
+    }, undefined, () => undefined);
+  assert.deepEqual(events, ["started:write", "settled:write"]);
+  assert.equal(result.toolCalls?.[0]?.id, "write");
 });
 
 test("声明阶段输出的模型不提前发布未知阶段，完成时只发布已确认最终正文", async () => {

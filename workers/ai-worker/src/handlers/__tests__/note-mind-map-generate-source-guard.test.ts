@@ -44,9 +44,11 @@ test("写入所在的那个事务块里，同时持有租约锁并重查可见�
     "笔记在生成期间被收回或软删时不能继续写入——这条复查要在 insert 之前");
 });
 
-test("读不全就明确失败，不许一边少读一边声称 allTextRead", () => {
-  assert.match(source, /textChars > 96_000/, "超过全文读取上限要抛错，而不是悄悄截断");
-  assert.match(source, /chunks\.length > 8/, "收缩到八块还装不下要抛错——当前模型读不了这篇");
+test("长正文按声明预算分段读完，不再按字符数整篇拒绝", () => {
+  assert.doesNotMatch(source, /96_000|96000/, "全文读取上限这种与窗口无关的字符闸门已经取消：读得下多少由这一档模型档案决定");
+  assert.doesNotMatch(source, /chunks\.length\s*[><]=?\s*\d/, "段数不设上限——长正文只是多几段，不能因为段多就报「当前模型读不了这篇」");
+  assert.ok(source.includes("planCoveringChunks"), "分段要走共用的那一个覆盖分段器");
+  assert.ok(source.includes("AIContextOverflowError"), "装不下时报的是真实原因（声明预算），不是编出来的字数上限");
   assert.ok(source.includes("allTextRead: true") && source.includes("imageBlocksNotRead:"),
     "覆盖率要随结果一起存：读了哪些段、跳过几张图，事后才核对得起来");
 });

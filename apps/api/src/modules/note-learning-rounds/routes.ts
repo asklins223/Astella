@@ -171,7 +171,7 @@ function mergeSuspectWarningsV1(input: {
     grouped.set(key, roundSuspectClaimV1Schema.parse({ ...claim,
       unitIds: [...new Set([...(prior?.unitIds ?? []), ...claim.unitIds])] }));
   }
-  return [...grouped.values()].slice(0, 6);
+  return [...grouped.values()];
 }
 
 /** 内部形状 → 线上形状：时间是 ISO 字符串，且整份要过合同（合同漂移当场红）。 */

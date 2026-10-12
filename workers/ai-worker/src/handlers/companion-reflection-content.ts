@@ -24,7 +24,6 @@ import { companionSelfNoteV1Schema, companionSelfNoteWriteV1Schema, type Compani
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { PERSONA_FIELD_CAPACITY } from "@astella/shared/pet-persona-merge";
-import { COMPANION_REFLECTION_INPUT_BUDGET } from "@astella/agent-host";
 
 export const COMPANION_REFLECTION_TASK_ID = "companion_reflection";
 export const COMPANION_REFLECTION_TASK_VERSION = 1;
@@ -44,7 +43,7 @@ export interface ReflectionMessageV1 {
   readonly seq: number;
   readonly role: "user" | "assistant";
   readonly kind: string;
-  /** 真实原话（已按快照容量截断）；她回复的是**交付出去的正文**，不是拟发草稿。 */
+  /** 真实原话，整条给；她回复的是**交付出去的正文**，不是拟发草稿。 */
   readonly text: string;
   /**
    * 库里那一行的内容哈希。进 read 边当「还是不是当初那一条」的身份证据，
@@ -91,6 +90,22 @@ export interface ReflectionInputSnapshotV1 {
   readonly relatedMemories: readonly ReflectionRelatedMemoryV1[];
   readonly selfNotes?: readonly CompanionSelfNoteV1[];
   readonly wake?: { key: string; revision: number };
+  /**
+   * 这次**整条没进素材**的条数，以及做取舍时用的那条档案触发线。
+   *
+   * 「她没读到什么」必须和「她读到了什么」一样能被查出来，否则一次回顾写成
+   * `no_change` 时，没人分得清是真没东西，还是素材被预算挡在了外面。
+   */
+  readonly inputOmitted?: ReflectionInputOmittedV1;
+}
+
+export interface ReflectionInputOmittedV1 {
+  readonly messages: number;
+  readonly toolReceipts: number;
+  readonly relatedMemories: number;
+  readonly selfNotes: number;
+  /** 取舍依据：本次实际路由的模型档案解析出的输入触发线（token）。 */
+  readonly triggerTokens: number;
 }
 
 /** 模型那一次回顾的输出合同。每一项都有上限，超出即整条拒收（不是截断后照收）。 */
@@ -139,7 +154,10 @@ export interface ReflectionVerifiedV1 {
 
 type ReflectionCitedSourceV1 = { kind: "user_message" | "assistant_message"; id: string; revision?: string | null };
 
-/** Persist only the bounded material actually sent; retries keep this exact input. */
+/**
+ * 快照落库的就是**真正送出去的那一份**：重投与重启复用同一条输入，不再重新取材。
+ * 条数不在这里封顶——装不下的由 `boundReflectionSnapshot` 按档案声明整条留下或整条不入选。
+ */
 export const reflectionInputSnapshotV1Schema = z.object({
   now: z.string().datetime({ offset: true }).optional(),
   selfNoteIndex: z.array(z.object({ key: z.string(), revision: z.number().int().positive(), title: z.string(),
@@ -152,32 +170,77 @@ export const reflectionInputSnapshotV1Schema = z.object({
   persona: z.object({ revision: z.number().int(), name: z.string(), speakingStyle: z.string(),
     selfDescription: z.string().nullable(), personalityTags: z.array(z.string()) }),
   messages: z.array(z.object({ id: z.string().uuid(), seq: z.number().int(), role: z.enum(["user", "assistant"]),
-    kind: z.string(), text: z.string(), contentHash: z.string().optional(), createdAt: z.string().datetime({ offset: true }).optional() })).max(COMPANION_REFLECTION_INPUT_BUDGET.maxMessages),
-  toolReceipts: z.array(z.object({ id: z.string().uuid(), name: z.string(), status: z.string(), safeSummary: z.string() }))
-    .max(COMPANION_REFLECTION_INPUT_BUDGET.maxToolReceipts),
+    kind: z.string(), text: z.string(), contentHash: z.string().optional(), createdAt: z.string().datetime({ offset: true }).optional() })),
+  toolReceipts: z.array(z.object({ id: z.string().uuid(), name: z.string(), status: z.string(), safeSummary: z.string() })),
   relatedMemories: z.array(z.object({ id: z.string().uuid(), kind: z.string(), content: z.string(),
-    epistemicStatus: z.string(), revision: z.number().int() })).max(COMPANION_REFLECTION_INPUT_BUDGET.maxRelatedMemories),
+    epistemicStatus: z.string(), revision: z.number().int() })),
+  inputOmitted: z.object({ messages: z.number().int().nonnegative(), toolReceipts: z.number().int().nonnegative(),
+    relatedMemories: z.number().int().nonnegative(), selfNotes: z.number().int().nonnegative(),
+    triggerTokens: z.number().int().positive() }).optional(),
 });
 
-export function boundReflectionSnapshot(snapshot: ReflectionInputSnapshotV1): ReflectionInputSnapshotV1 {
-  // Keep whole documents. Unread records remain discoverable, but cannot be overwritten
-  // from a partial body. A wake's own document takes precedence in this bounded pass.
+/**
+ * 一次回顾的输入容量：唯一来源是**本次实际路由的模型档案**解析出的那条线，
+ * 加上一个真实计量端口（provider 自带 tokenizer 优先，缺则保守字节估算）。
+ * 这里不再自己记"多少条、多少字"。
+ */
+export interface ReflectionInputBudgetV1 {
+  readonly triggerTokens: number;
+  readonly countTokens: (text: string) => number;
+}
+
+/**
+ * 按档案声明的容量做**整条**取舍：一条要么原样给她，要么整条不入选并数下来。
+ *
+ * 逐条砍字会让「成长反思读到的原话」变成半句话，而半句话正是她最容易当成整件事
+ * 概括去写结论的那种输入。装不下时少给她几条真东西，比把每条都弄残要好。
+ * 消息从最新往回收（活口在末尾），其余按检索给的顺序收；单条超容量的整条跳过，
+ * 后面的条目仍有机会——与 `budgetAgentContextRecords` 同一个口径。
+ */
+export function boundReflectionSnapshot(
+  snapshot: ReflectionInputSnapshotV1,
+  budget?: ReflectionInputBudgetV1,
+): ReflectionInputSnapshotV1 {
+  // A wake's own document takes precedence; unread records stay discoverable
+  // through the index but cannot be overwritten from a partial body.
   const notes = [...(snapshot.selfNotes ?? [])].sort((a, b) =>
     Number(b.key === snapshot.wake?.key) - Number(a.key === snapshot.wake?.key));
-  let noteChars = 0;
-  const selfNotes = notes.filter(note => {
-    if (noteChars + note.body.length > 65_536) return false;
-    noteChars += note.body.length; return true;
-  });
-  return { ...snapshot, selfNotes,
-    selfNoteIndex: snapshot.selfNoteIndex ?? notes.map(({ key, revision, title, tier }) => ({ key, revision, title, tier })),
-    messages: snapshot.messages.slice(-COMPANION_REFLECTION_INPUT_BUDGET.maxMessages).map(m => ({ ...m,
-      text: clip(m.text, m.role === "user" ? COMPANION_REFLECTION_INPUT_BUDGET.maxMessageChars
-        : COMPANION_REFLECTION_INPUT_BUDGET.maxAssistantChars) })),
-    toolReceipts: snapshot.toolReceipts.slice(0, COMPANION_REFLECTION_INPUT_BUDGET.maxToolReceipts)
-      .map(r => ({ ...r, safeSummary: clip(r.safeSummary, 200) })),
-    relatedMemories: snapshot.relatedMemories.slice(0, COMPANION_REFLECTION_INPUT_BUDGET.maxRelatedMemories)
-      .map(m => ({ ...m, content: clip(m.content, 160) })),
+  const index = snapshot.selfNoteIndex ?? notes.map(({ key, revision, title, tier }) => ({ key, revision, title, tier }));
+  if (!budget) return { ...snapshot, selfNotes: notes, selfNoteIndex: index };
+
+  // 先量掉不可选的那部分（规则、人格、材料区骨架），剩下的容量才分给素材。
+  const remaining = { tokens: Math.max(0, budget.triggerTokens - budget.countTokens(
+    buildReflectionPrompt({ ...snapshot, selfNotes: [], selfNoteIndex: [], messages: [], toolReceipts: [], relatedMemories: [] })
+      + renderReflectionMessages({ ...snapshot, messages: [], toolReceipts: [], relatedMemories: [] }),
+  )) };
+  const take = <T>(items: readonly T[], renderLine: (item: T) => string, reverse = false): T[] => {
+    const picked: T[] = [];
+    for (const item of reverse ? [...items].reverse() : items) {
+      const cost = budget.countTokens(renderLine(item));
+      if (cost > remaining.tokens) continue;
+      picked.push(item);
+      remaining.tokens -= cost;
+    }
+    return reverse ? picked.reverse() : picked;
+  };
+  const selfNotes = take(notes, (note) => JSON.stringify(note));
+  const messages = take(snapshot.messages, renderReflectionMessageLine, true);
+  const toolReceipts = take(snapshot.toolReceipts, renderReflectionReceiptLine);
+  const relatedMemories = take(snapshot.relatedMemories, renderReflectionMemoryLine);
+  return {
+    ...snapshot,
+    selfNotes,
+    selfNoteIndex: index,
+    messages,
+    toolReceipts,
+    relatedMemories,
+    inputOmitted: {
+      messages: snapshot.messages.length - messages.length,
+      toolReceipts: snapshot.toolReceipts.length - toolReceipts.length,
+      relatedMemories: snapshot.relatedMemories.length - relatedMemories.length,
+      selfNotes: notes.length - selfNotes.length,
+      triggerTokens: budget.triggerTokens,
+    },
   };
 }
 
@@ -451,37 +514,47 @@ function dedupeCited(
   });
 }
 
-/** 快照容量的执行点：超限的消息不进 prompt，成本上限才是上限。 */
-function clip(text: string, max: number): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
+/** 快照容量判据的唯一出处：`boundReflectionSnapshot` 量的就是这几行渲染出来的东西。 */
+function flat(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function renderReflectionMessageLine(message: ReflectionMessageV1): string {
+  const speaker = message.role === "user" ? "用户" : "伴星";
+  return `${message.seq}. ${speaker}（${message.kind}｜id=${message.id}${message.createdAt ? `｜时间=${message.createdAt}` : ""}）：`
+    + flat(message.text);
+}
+
+function renderReflectionReceiptLine(receipt: ReflectionToolReceiptV1): string {
+  return `- ${receipt.name}（${receipt.status}｜id=${receipt.id}）：` + flat(receipt.safeSummary);
+}
+
+function renderReflectionMemoryLine(memory: ReflectionRelatedMemoryV1): string {
+  return `- [${memory.kind}/${memory.epistemicStatus} r${memory.revision}] ` + flat(memory.content);
 }
 
 export function renderReflectionMessages(snapshot: ReflectionInputSnapshotV1): string {
   const lines: string[] = [];
   lines.push(`# 你们刚发生的一段相处（ seq ${snapshot.fromSeq + 1}–${snapshot.toSeq}）`);
-  for (const message of snapshot.messages) {
-    const speaker = message.role === "user" ? "用户" : "伴星";
-    lines.push(`${message.seq}. ${speaker}（${message.kind}｜id=${message.id}${message.createdAt ? `｜时间=${message.createdAt}` : ""}）：`
-      + clip(message.text, message.role === "user"
-        ? COMPANION_REFLECTION_INPUT_BUDGET.maxMessageChars
-        : COMPANION_REFLECTION_INPUT_BUDGET.maxAssistantChars));
-  }
+  for (const message of snapshot.messages) lines.push(renderReflectionMessageLine(message));
   if (snapshot.toolReceipts.length > 0) {
     lines.push("");
     lines.push("# 这一段里真实执行过的动作与回执");
-    for (const receipt of snapshot.toolReceipts) {
-      lines.push(`- ${receipt.name}（${receipt.status}｜id=${receipt.id}）：`
-        + clip(receipt.safeSummary, 200));
-    }
+    for (const receipt of snapshot.toolReceipts) lines.push(renderReflectionReceiptLine(receipt));
   }
   if (snapshot.relatedMemories.length > 0) {
     lines.push("");
     lines.push("# 她已经记下的相关条目（用来避免把同一件事再说成新发现）");
-    for (const memory of snapshot.relatedMemories) {
-      lines.push(`- [${memory.kind}/${memory.epistemicStatus} r${memory.revision}] `
-        + clip(memory.content, 160));
-    }
+    for (const memory of snapshot.relatedMemories) lines.push(renderReflectionMemoryLine(memory));
+  }
+  const omitted = snapshot.inputOmitted;
+  if (omitted && omitted.messages + omitted.toolReceipts + omitted.relatedMemories + omitted.selfNotes > 0) {
+    // 让她知道自己读的是一段**有缺口的**材料：没有这一句，`no_change` 与"素材被预算
+    // 挡住"在她那里是同一件事，而这两件的处理方式完全不同。
+    lines.push("");
+    lines.push(`# 本次容量之外的材料（没有给出原文，不能当成读过）`
+      + `：原话 ${omitted.messages} 条、动作回执 ${omitted.toolReceipts} 条、已记条目 ${omitted.relatedMemories} 条、自己的记事 ${omitted.selfNotes} 条`
+      + `。需要那部分就说没有读到，不要据缺口下结论。`);
   }
   return lines.join("\n");
 }
@@ -504,7 +577,8 @@ export function renderReflectionPersona(snapshot: ReflectionInputSnapshotV1): st
  * 素材与指令分开也与日记那一路一致（`buildDiaryRevisionPrompt`）。
  */
 export function buildReflectionMessages(snapshot: ReflectionInputSnapshotV1): Array<{ role: "system" | "user"; content: string }> {
-  snapshot = boundReflectionSnapshot(snapshot);
+  // 快照在取材的那一步就已按档案容量收过（整条入选或整条不入选），这里只渲染：
+  // 重投与协议修复必须复用**同一份**素材，重新收一遍会让同一次回顾的输入随路由漂移。
   return [
     { role: "system", content: buildReflectionPrompt(snapshot) },
     { role: "user", content: `下面是待回顾的历史素材，按系统规则回顾。只输出一个 json 对象。\n\n${renderReflectionMessages(snapshot)}` },

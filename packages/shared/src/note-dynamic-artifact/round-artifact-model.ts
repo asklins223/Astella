@@ -63,7 +63,7 @@ export const DYNAMIC_ARTIFACT_TASK_ID = "note_dynamic_artifact_v1";
  * 按 taskVersion 分开，所以 v2 留下的半份不会被这一版默默复用。
  */
 export const DYNAMIC_ARTIFACT_TASK_VERSION = 3;
-export const DYNAMIC_ARTIFACT_PROMPT_VERSION = "note-dynamic-artifact-v17";
+export const DYNAMIC_ARTIFACT_PROMPT_VERSION = "note-dynamic-artifact-v18";
 
 /** 讲一个动作（"合上书先讲一遍"），不讲一个栏目（"讲解"）。 */
 const ARTIFACT_OUTLINE_TITLE_MAX_V1 = 24;
@@ -132,6 +132,7 @@ export function buildDynamicArtifactPrompt(input: DynamicArtifactInputV1): strin
   return [
     "请根据下面的学习内容，制作一个有趣、生动的动态讲解动画网页，帮助读者直观理解。",
     "网页的创意、视觉风格、版面、配色、图形、交互和动画由你自由设计。",
+    "这一页嵌在应用的浅色纸面上展示，整页的画布底色由宿主决定：不要给 html、body 或最外层容器铺深色或渐变到底的底色，正文与留白按浅色纸面来配；卡片、图表、面板这些控件自身的颜色仍由你决定。",
     "交付自包含的 HTML/CSS/JavaScript，供应用直接嵌入展示。",
     "让核心知识发生在画面中：用对象的运动、形变、轨迹或关系变化呈现过程与因果，让读者能观察并探索。按内容选择合适的动画与操作方式。",
     "忠实保留原文的含义与适用条件；画面、说明和计算应一致，交互过程与边界输入都能正确运行。",
@@ -161,6 +162,12 @@ export function createDynamicArtifactResponseSessionV1() {
   let savedDocument: string | null = null;
   let metadata: unknown = null;
   let repairReason = "";
+  /**
+   * 安全闸拒绝的那条规则（2026-10-12 用户裁决：整页写完才发现违规，允许把规则名回给
+   * 模型重发**一次**）。第二次就判死——同一份提示词连着踩同一条规则，再花第三发钱没有意义。
+   */
+  let pageRejection = "";
+  let pageRejectionUsed = false;
   const metadataSchema = dynamicArtifactDocV1Schema.omit({ document: true });
   const bind = (input: DynamicArtifactInputV1) => {
     if (boundInput === input) return;
@@ -168,10 +175,18 @@ export function createDynamicArtifactResponseSessionV1() {
     savedDocument = null;
     metadata = null;
     repairReason = "";
+    pageRejection = "";
+    pageRejectionUsed = false;
   };
   return {
     prompt(input: DynamicArtifactInputV1): string {
       bind(input);
+      if (pageRejection && !savedDocument) {
+        return [
+          buildDynamicArtifactPrompt(input),
+          `上一次交付的整页被安全检查拒绝：${pageRejection}。重做一份完整的页面，不要再出现那种写法。这一页只在隔离网页框里运行：不许碰父窗口、顶层导航、网络、外部资源或存储。`,
+        ].join("\n");
+      }
       if (!savedDocument) return buildDynamicArtifactPrompt(input);
       return [
         "动态讲解网页已生成并保留。本次只修正保存和原文回查字段，不要返回 document 或重写 HTML。",
@@ -209,9 +224,21 @@ export function createDynamicArtifactResponseSessionV1() {
           return { ok: false, class: "output_shape", message: `动态页面原文回查字段核对失败（${repairReason}）` };
         }
       }
+      const pageSafety = checkArtifactDocumentV1({ document: checked.data.document });
+      if (!pageSafety.ok) {
+        const rule = pageSafety.verdict.violation?.rule ?? pageSafety.verdict.violation?.reason ?? "unknown";
+        // 违规页面不进 `savedDocument`：那是可以带着修字段的一份安全页面，这一份不是。
+        if (!pageRejectionUsed) {
+          pageRejectionUsed = true;
+          pageRejection = rule;
+          return { ok: false, class: "output_shape", message: `动态页面没有通过安全检查（${rule}）` };
+        }
+        return { ok: false, class: "quality", message: `动态页面仍然没有通过安全检查（${rule}）` };
+      }
       savedDocument = null;
       metadata = null;
       repairReason = "";
+      pageRejection = "";
       return { ok: true, output: checked.data };
     },
   };
@@ -223,13 +250,24 @@ export function createDynamicArtifactResponseSessionV1() {
  * `max_tokens` 是**必需**的一格：一份整页 HTML＋SVG＋脚本轻易到两万 token，不给上界，
  * 网关会在中途截断，返回半份 JSON——解析失败被记成 `output_shape`，白花一次调用。
  * 给足之后截断的理由回到它该在的地方：`finish_reason === "length"` 单独归类。
+ *
+ * 上界取**模型档案声明的一次最大输出 token**（`maxOutputTokens`，与伴星那一步同一个
+ * 口径）：DeepSeek 这类推理模型的 `max_output_tokens` 是**思考与正文的合计**，档案没
+ * 声明时才回落到下面那个常数——留一个拍来的小数只会把整页砍断，不会省到钱。
  */
 export const ARTIFACT_COMPLETION_TOKENS_V1 = 24_000;
 
 export function llmDynamicArtifactProvider(options: {
   config: DynamicArtifactModelConfigV1 | null;
   requester?: PublicJsonRequester;
+  /** 模型档案声明的一次最大输出 token；未声明时走 `ARTIFACT_COMPLETION_TOKENS_V1`。 */
+  maxOutputTokens?: number;
+  /** 平台自己的必填请求头（如 OpenCode Go 的会话标识）；凭据仍由治理层拼。 */
+  headers?: Record<string, string>;
 }): DynamicArtifactProviderV1 {
+  const completionTokens = options.maxOutputTokens && options.maxOutputTokens > 0
+    ? options.maxOutputTokens
+    : ARTIFACT_COMPLETION_TOKENS_V1;
   const sessions = new WeakMap<DynamicArtifactInputV1, ReturnType<typeof createDynamicArtifactResponseSessionV1>>();
   return async (input, step) => {
     if (!options.config) return { ok: false, class: "invalid_input", message: "artifact_model_unconfigured" };
@@ -243,11 +281,11 @@ export function llmDynamicArtifactProvider(options: {
       sessions.set(input, session);
     }
     const response = await options.requester(options.config.url, {
-      authorization: `Bearer ${options.config.key}`, "content-type": "application/json",
+      authorization: `Bearer ${options.config.key}`, "content-type": "application/json", ...options.headers,
     }, {
       model: options.config.model,
       messages: [{ role: "user", content: session.prompt(input) }],
-      temperature: 0.4, max_tokens: ARTIFACT_COMPLETION_TOKENS_V1,
+      temperature: 0.4, max_tokens: completionTokens,
       response_format: { type: "json_object" }, enable_thinking: false, stream: false,
     }, step.signal);
     if (response.status < 200 || response.status >= 300) {
@@ -258,9 +296,9 @@ export function llmDynamicArtifactProvider(options: {
       usage?: { prompt_tokens?: number; completion_tokens?: number } };
     const finish = body.choices?.[0]?.finish_reason;
     if (finish === "length") {
-      // 截断的半份页面是**内容**问题（写太长），不是网络问题：重试同一份提示词只会再
-      // 截一次。归到 quality，内核对 quality 不做自动重试，把额度留给用户点「换一种讲解」。
-      return { ok: false, class: "quality", message: "artifact page was truncated by the token limit" };
+      // 截断的半份页面写不进合同，值得再花一次钱：这一类归 `output_shape`，内核按
+      // 可重试处理，整页重发的次数由任务预算（至多三次）兜着，不在这自己数。
+      return { ok: false, class: "output_shape", message: "artifact page was truncated by the token limit" };
     }
     try {
       const raw = body.choices?.[0]?.message?.content ?? "";
@@ -290,9 +328,11 @@ export function deterministicDynamicArtifactProviderV1(): DynamicArtifactProvide
     if (input.blocks.length === 0) {
       return { ok: false, class: "invalid_input", message: "artifact_material_missing" };
     }
+    // 材料里每一条都留：按 `ARTIFACT_MAX_STEPS_V1` 裁掉的那些条目用户读不到，也没人
+    // 说明被裁了什么。条数由合同判（`groundArtifactStepsV1` 的 over_quota），判失败
+    // 会带出真实的那一句「这次给了 N 步」。
     const usable = input.blocks
-      .filter((block) => block.type !== "heading" && plainTextForGroundingV1(block.text).length > 0)
-      .slice(0, ARTIFACT_MAX_STEPS_V1);
+      .filter((block) => block.type !== "heading" && plainTextForGroundingV1(block.text).length > 0);
     if (usable.length < ARTIFACT_MIN_STEPS_V1) {
       return { ok: false, class: "invalid_input", message: "artifact_material_missing" };
     }
@@ -411,6 +451,15 @@ export function artifactCompletionSatisfiedV1(
   return claims.every((text) => !hasMeasurementClaimV1(text));
 }
 
+/**
+ * 这一发的调用预算（2026-10-12 用户裁决：整页被截断允许再试，至多三次）。
+ *
+ * 五次的构成：一发整页 + 至多三次截断重发 + 一发只修回查字段的短请求。内核按
+ * `1 + maxAutoRetries` 数尝试次数，所以两者一起改；只改调用数不改重试数，截断仍会
+ * 在第一次就判失败。父目标那一层给到 16 次，这里不是瓶颈。
+ */
+export const ARTIFACT_MODEL_CALLS_V1 = 5;
+
 export function createDynamicArtifactTaskV1(deps: {
   provider: DynamicArtifactProviderV1;
   input: DynamicArtifactInputV1;
@@ -420,16 +469,17 @@ export function createDynamicArtifactTaskV1(deps: {
   maxDurationMs?: number;
 }): AiTaskDefinition<DynamicArtifactInputV1, DynamicArtifactDocV1> {
   const blocks = deps.input.blocks;
+  const maxModelCalls = deps.maxModelCalls ?? ARTIFACT_MODEL_CALLS_V1;
   return {
     id: DYNAMIC_ARTIFACT_TASK_ID,
     version: DYNAMIC_ARTIFACT_TASK_VERSION,
     mode: "structured",
     resourceClass: "interactive_ai",
     budget: {
-      maxModelCalls: deps.maxModelCalls ?? 2,
+      maxModelCalls,
       stepTimeoutMs: Math.min(ARTIFACT_STEP_TIMEOUT_MS, deps.maxDurationMs ?? ARTIFACT_TASK_DEADLINE_MS),
       taskDeadlineMs: Math.min(ARTIFACT_TASK_DEADLINE_MS, deps.maxDurationMs ?? ARTIFACT_TASK_DEADLINE_MS),
-      maxAutoRetries: 1,
+      maxAutoRetries: maxModelCalls - 1,
     },
     completion: {
       kind: "custom",

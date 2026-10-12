@@ -43,15 +43,15 @@ export function CompanionGoalBubble({ anchorRef, motionMode, blocked, open, sele
   }, [visible, adjusting, onClose]);
   const close = () => { onClose(); buttonRef.current?.focus({ preventScroll: true }); };
   return <>
-    <button ref={buttonRef} className="companion-goal-tab" type="button" aria-label="查看伴星手边的事" aria-expanded={visible} disabled={blocked}
+    <button ref={buttonRef} className="companion-goal-tab" type="button" aria-label="查看交给我的事" aria-expanded={visible} disabled={blocked}
       onClick={() => { if (visible) close(); else { onOpen(); void goals.refresh(); } }}>
       {activeCount ? <LoaderCircle size={15} className="companion-hud__spin" aria-hidden="true" /> : <Check size={15} aria-hidden="true" />}
-      <span>{activeCount ? `手边 ${activeCount} 件事` : "手边的事"}</span>
+      <span>{activeCount ? `交给我的事 ${activeCount} 件` : "交给我的事"}</span>
     </button>
     {createPortal(<div ref={floatingRef} className="companion-hud--floating companion-goal-float" data-companion-owned="true" data-motion={motionMode}
       data-side={side} data-blocked={!visible || undefined}>
       <div ref={headRef} className="companion-hud__head">
-        {visible ? <section className="companion-hud__output companion-goal-bubble" aria-label="伴星手边的事" aria-busy={initialLoading}>
+        {visible ? <section className="companion-hud__output companion-goal-bubble" aria-label="伴星交给我的事" aria-busy={initialLoading}>
           <header className="companion-goal-bubble__header"><span>{selected ? goalStatusText[selected.status] : "交给我的事"}</span>
             <button type="button" aria-label="收起任务气泡" onClick={close}><X size={16} /></button></header>
           <div className="companion-goal-bubble__body">
@@ -67,7 +67,7 @@ export function CompanionGoalBubble({ anchorRef, motionMode, blocked, open, sele
               </div> : null}
               <CompanionCardTasks operations={selected.operations} artifacts={selected.artifacts} scope={goals.scope} onOpen={close} />
               <p className="companion-goal-bubble__hint" role="status">{goalNextHint(selected)}</p>
-              {adjusting ? <CompanionGoalControls run={selected} goals={goals} onNewGoal={onChat} /> : null}
+              {adjusting ? <CompanionGoalControls run={selected} goals={goals} /> : null}
             </> : !initialLoading && !initialError ? <><p className="companion-goal-bubble__hint">告诉我想做什么，例如整理笔记、解释问题，或准备学习卡。</p>
               <button type="button" className="companion-goal-primary" onClick={onChat}>说说要做什么</button></> : null}
             {goals.error ? <p className="companion-goal-error" role="alert">{goals.error}<button type="button" onClick={() => void goals.refresh()}>重新读取</button></p> : null}
@@ -76,7 +76,7 @@ export function CompanionGoalBubble({ anchorRef, motionMode, blocked, open, sele
             {selected ? <><button ref={adjustRef} type="button" aria-expanded={adjusting} onClick={() => setAdjusting(value => !value)}><Settings2 size={14} />调整<ChevronDown size={12} /></button>
               <button type="button" onClick={() => onDetails(selected.runId)}><BookOpenText size={14} />去手记看完整记录</button></> : null}
           </footer>
-          {goals.items.length > 1 ? <nav className="companion-goal-bubble__paging" aria-label="切换手边的事">
+          {goals.items.length > 1 ? <nav className="companion-goal-bubble__paging" aria-label="切换交给我的事">
             <button type="button" aria-label="上一件事" disabled={index === 0 || Boolean(goals.pending)} onClick={() => onSelect(goals.items[index-1].runId)}><ChevronLeft size={14} /></button>
             <span>{index+1} / {goals.items.length}</span>
             <button type="button" aria-label="下一件事" disabled={index === goals.items.length-1 || Boolean(goals.pending)} onClick={() => onSelect(goals.items[index+1].runId)}><ChevronRight size={14} /></button>

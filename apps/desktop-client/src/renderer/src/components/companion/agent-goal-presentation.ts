@@ -43,7 +43,6 @@ export function goalHeadline(run: AgentRunV1) {
 }
 export function goalNextHint(run: AgentRunV1) {
   if (run.operations.some(operation => operation.status === "outcome_unknown")) return "暂时无法确认操作结果，先查看完整记录，避免重复生成。";
-  if (run.modelCalls >= run.maxModelCalls && run.status !== "completed") return "这次处理额度已用完，成果保留。可以重新交代一个更小的目标。";
   if (run.status === "failed") return run.operations.some(operation => operation.execution.kind === "card_generation")
     ? "这批学习卡的生成或核对没有完成。可以打开本次任务查看草稿、原因和重试方式；进入任务页面不代表候选已通过核对。"
     : "可以调整要求再继续，已经做好的内容会保留。";

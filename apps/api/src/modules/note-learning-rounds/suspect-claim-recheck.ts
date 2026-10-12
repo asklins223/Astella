@@ -153,5 +153,7 @@ export async function readSuspectClaimFollowUpV1(
     pendingByKey.set(key, { ...pending, unitIds: [...new Set([...(prior?.unitIds ?? []), unitId])] });
   }
 
-  return { recheckTargets: recheckTargets.slice(0, 6), pendingClaims: [...pendingByKey.values()].slice(0, 6) };
+  // 待核的 claim 有几条就报几条：以前收成 6 条，第 7 条起在界面上根本不存在，
+  // 用户看到的"都核对过了"是数出来的，不是真核对过的。
+  return { recheckTargets, pendingClaims: [...pendingByKey.values()] };
 }

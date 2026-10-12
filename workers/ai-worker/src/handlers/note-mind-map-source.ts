@@ -49,7 +49,7 @@ function splitAtCodePointLimit(value: string, limit: number): string[] {
   return result;
 }
 
-export function buildChunks(blocks: readonly SourceBlock[], limit = 16_000) {
+export function buildChunks(blocks: readonly SourceBlock[], limit: number) {
   const chunks: { readonly lines: readonly { ordinal: number; text: string }[]; readonly ordinals: ReadonlySet<number> }[] = [];
   let lines: { ordinal: number; text: string }[] = [];
   let charCount = 0;

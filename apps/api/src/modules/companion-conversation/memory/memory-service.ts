@@ -25,6 +25,7 @@ import {
   accountPreferenceWriteDecision,
   type AccountPreferenceWriteRejection,
 } from "@astella/shared/companion-memory-scope";
+import { companionMemoryContentMaxLength } from "@astella/shared/companion-memory-desktop-contracts";
 import { closeDeliveriesForMemoryItem } from "../delivery/delivery-service.ts";
 import { maskEntriesForSource, unmaskEntriesForSource } from "../discovery/discovery-service.ts";
 
@@ -328,11 +329,10 @@ export async function upsertMemory(
   },
   now: Date = new Date(),
 ): Promise<MemoryItemV2> {
-  // §9.4/§25：写入端统一限制 ≤200 字。upsertMemory 是所有写入路径的统一入口，
-  // 在此做防御性截断，确保无论调用方是否已截断，写入数据库的内容都不超过 200 字。
-  const content = input.content.slice(0, 200);
-  if (input.appliesWhen && input.appliesWhen.length > 200) {
-    throw new RangeError("Memory applicability condition exceeds 200 characters.");
+  // §9.4/§25：一条记忆的篇幅由 shared 的那一个声明源决定（合同、注入预算、读侧同一份）。
+  const content = input.content.slice(0, companionMemoryContentMaxLength);
+  if (input.appliesWhen && input.appliesWhen.length > companionMemoryContentMaxLength) {
+    throw new RangeError(`Memory applicability condition exceeds ${companionMemoryContentMaxLength} characters.`);
   }
   if (input.validFrom && input.validUntil && input.validUntil <= input.validFrom) {
     throw new RangeError("Memory validity must end after it starts.");
@@ -795,7 +795,7 @@ export async function listRecycledMemories(
   return list.map((row) => ({
     id: String(row.id),
     kind: String(row.kind),
-    content: String(row.content ?? "").slice(0, 200),
+    content: String(row.content ?? "").slice(0, companionMemoryContentMaxLength),
     deletedAt: row.deleted_at,
     purgeAfter: row.purge_after,
     sourceEventId: row.source_event_id ?? null,
@@ -946,13 +946,13 @@ export async function correctMemory(
   if (existing.revision !== input.expectedRevision) {
     throw new MemoryRevisionConflictError(existing.revision);
   }
-  const content = input.content.slice(0, 200);
+  const content = input.content.slice(0, companionMemoryContentMaxLength);
   const metadataChanged =
     (input.appliesWhen !== undefined && input.appliesWhen !== existing.appliesWhen)
     || (input.validFrom !== undefined && (input.validFrom?.toISOString() ?? null) !== existing.validFrom)
     || (input.validUntil !== undefined && (input.validUntil?.toISOString() ?? null) !== existing.validUntil);
-  if (input.appliesWhen && input.appliesWhen.length > 200) {
-    throw new RangeError("Memory applicability condition exceeds 200 characters.");
+  if (input.appliesWhen && input.appliesWhen.length > companionMemoryContentMaxLength) {
+    throw new RangeError(`Memory applicability condition exceeds ${companionMemoryContentMaxLength} characters.`);
   }
   const validFrom = input.validFrom === undefined
     ? existing.validFrom ? new Date(existing.validFrom) : null

@@ -43,15 +43,6 @@ export const COMPANION_REFLECTION_THRESHOLDS = {
   maxOpenPerAccount: 3,
 } as const;
 
-/** 输入快照的有界容量：单次回顾能读多少条原话、多少字。成本上限，不是表达篇幅。 */
-export const COMPANION_REFLECTION_INPUT_BUDGET = {
-  maxMessages: 24,
-  maxMessageChars: 600,
-  maxAssistantChars: 400,
-  maxToolReceipts: 8,
-  maxRelatedMemories: 6,
-} as const;
-
 /**
  * 反思的结论码只有一个定义处：`@astella/shared/db-schema/companion-memory`
  * （那里同时是 0400/0401 两条 CHECK 的镜像）。在这里再抄一份枚举，

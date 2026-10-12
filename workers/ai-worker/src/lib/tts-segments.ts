@@ -5,8 +5,9 @@
  *   validateCompanionOutput 后由本模块剔除，不进入 voice segment）；
  * - 切句优先 `。！？；\n` 或 `.?!;` + 空白；句子至少 8 个中文字符，
  *   final 强制 flush；单段最多 160 字符，超限在最近合法标点/空白强制切分；
- * - 每 run 最多 200 段、总可朗读文本最多 20000 字（与回复硬上限
- *   COMPANION_HARD_MAX_CHARS 对齐——回复多长就朗读多长，实际不限制）；
+ * - 每 run 的段数与总字数**不另立上限**：由回复合同 `COMPANION_REPLY_MAX_CHARS`
+ *   派生（回复多长就朗读多长）。以前这里抄过一份 200 段／20000 字，对着的是早已
+ *   放宽的旧硬上限，结果是长回复的后半段安静地没有声音；
  *   2026-08-12+（15a 新反馈）：用户明确不要朗读上限，去掉原 20 段/2000 字、
  *   40 段/4000 字的限制。
  * - 净化后为空 → 零段（不发 voice.segment.ready）；
@@ -14,10 +15,12 @@
  */
 
 import { createHash } from "node:crypto";
+import { COMPANION_REPLY_MAX_CHARS } from "@astella/shared";
 
-export const TTS_MAX_SEGMENTS = 200;
-export const TTS_MAX_TOTAL_CHARS = 20_000;
 export const TTS_MAX_SEGMENT_CHARS = 160;
+/** 朗读的范围就是回复的范围：这两数由回复合同派生，不在这里第二次决定能念多少。 */
+export const TTS_MAX_TOTAL_CHARS = COMPANION_REPLY_MAX_CHARS;
+export const TTS_MAX_SEGMENTS = Math.ceil(COMPANION_REPLY_MAX_CHARS / TTS_MAX_SEGMENT_CHARS) + 1;
 /** 15b 二期（问题2 修复）：首段提前触发的最小字符数——流式文字生成中，
  *  缓冲达到该长度即切出首段（不要求完整句），让 TTS 合成尽早开始，声音
  *  与文字感官同步（"字幕般"）；后续段仍按完整句切，朗读连贯性不受影响。 */

@@ -25,7 +25,8 @@ import { assertJobLease, lockJobLease, withJobTransaction } from "../lib/job-lea
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { companionSummaryTotal } from "../lib/metrics.ts";
 import { parseMemoryExtractJson } from "./companion-memory-extractor.ts";
-import { resolveContextBudget } from "@astella/agent-core";
+import { resolveContextBudget, estimateTextTokens } from "@astella/agent-core";
+import { REGISTERED_FALLBACK_CAPABILITY } from "../lib/context-governor.ts";
 import {
   contextCoverageManifestV1Schema,
   type ContextCoverageManifestV1,
@@ -75,8 +76,6 @@ const SUMMARIZER_PROMPT = [
   "按消息发送时间区分早先与较新的话题；时间指交流时间，不证明描述的事件已发生。用户连续补充同一话题时合并理解；回复失败、取消或被后续消息接替不代表用户意图已执行，不把旧请求改写成已完成的事或今天的新活动。",
 ].join("\n");
 
-export const SUMMARIZER_INPUT_CHARS = 12_000;
-
 /**
  * 压缩策略版本。
  *
@@ -85,8 +84,10 @@ export const SUMMARIZER_INPUT_CHARS = 12_000;
  */
 export const COMPACTION_POLICY_VERSION = "companion-summary-v3";
 
-/** 单次压缩计划最多读多少个分段（44 §5.4：分块计划也有总调用上限）。 */
-export const MAX_SUMMARIZER_CHUNKS = 4;
+/**
+ * 一次取数的分页宽度，只是吞吐护栏：读多少**段**由会话正文的实际长度决定。
+ */
+const SUMMARIZER_PAGE_ROWS = 100;
 
 /**
  * 本次摘要请求声明的输出上限（44 §4.1 的 O）。
@@ -142,15 +143,17 @@ function conversationSourceId(conversationId: string, messageId: string): string
 }
 
 /**
- * Freeze the exact authored-message range that fits the summarizer budget.
- * Newer rows win; the source hash makes late edits/deletes reject the result.
+ * 冻结这段 transcript 里**装得下**的那部分已发消息。
  *
- * 完整记录优先于凑数：装不下的整条消息进 `uncovered`，而不是被切半后仍算已覆盖。
+ * 容量与计量单位都是**摘要模型档案声明的 token**：一条要么整条给，要么整条记进
+ * `uncovered`——旧写法按字符夹，再配一个 `chars/2` 的换算猜 token，两头都不是声明。
+ * 新的整条记录仍可后来被读到（`companion_read_history`），只是这一次没进摘要。
  */
 export function buildSummarizerSnapshot(
   rows: SummarizerSnapshotMessage[],
-  maxChars = SUMMARIZER_INPUT_CHARS,
+  maxInputTokens: number,
   conversationId = "",
+  countTokens: (text: string) => number = estimateTextTokens,
 ): SummarizerSnapshot {
   const ordered = rows
     .filter((row) => row.role === "user" || row.role === "assistant")
@@ -166,13 +169,13 @@ export function buildSummarizerSnapshot(
   for (let index = ordered.length - 1; index >= 0; index -= 1) {
     const row = ordered[index];
     const line = transcriptLine(row);
-    const additional = line.length + (selected.length > 0 ? 1 : 0);
-    if (used + additional > maxChars) {
+    const cost = countTokens(line);
+    if (used + cost > maxInputTokens) {
       skipped.push(row);
       continue;
     }
+    used += cost;
     selected.unshift({ row, line });
-    used += additional;
   }
   const transcript = selected.map((item) => item.line).join("\n");
   const first = selected[0]?.row;
@@ -246,18 +249,15 @@ export interface ParentSummaryView {
  * 于是新摘要默认代表「全部更早历史」，而它其实只代表自己读过的那一段——更早的
  * 约束、纠正与材料版本会在下一轮被静默丢掉。把父摘要一并给出，新结论才是真的
  * 接在旧结论上，而不是重新开始。
+ *
+ * transcript 已由 `buildSummarizerSnapshot` 按档案声明的容量收过（整条入选或整条
+ * 不入选），这里不再按字符砍尾——砍掉的那一段会在覆盖清单里被算成读过。
  */
 export function buildSummarizerMessages(input: {
   conversationText: string;
   parent?: ParentSummaryView | null;
-  inputTokenBudget?: number;
 }): Array<{ role: "system" | "user"; content: string }> {
   const parentText = input.parent ? renderConversationSummary(input.parent.summary) : null;
-  // 分块后不再按固定字符静默砍尾：调用方按摘要模型的**真实** token 预算分块，
-  // 这里的字符上限只是最后一道地板，不承担「假装覆盖了没读的部分」的角色。
-  const maxChars = input.inputTokenBudget
-    ? Math.max(2_000, input.inputTokenBudget)
-    : SUMMARIZER_INPUT_CHARS;
   const system = [
     SUMMARIZER_PROMPT,
     ...(parentText
@@ -275,7 +275,7 @@ export function buildSummarizerMessages(input: {
   ].join("\n");
   return [
     { role: "system", content: system },
-    { role: "user", content: input.conversationText.slice(-maxChars) },
+    { role: "user", content: input.conversationText },
   ];
 }
 
@@ -284,24 +284,26 @@ export function buildSummarizerMessages(input: {
  *
  * 主模型能装 100 万 token 不代表摘要模型也能一次读完。预算按摘要模型的**实际**
  * 能力解析，并停在压缩触发线之前，使摘要输入本身不必触发下一轮压缩。
- * 固定字符上限只作为极小窗口模型的地板。
+ * 档案拿不到时用 agent-core 登记的保守能力同一条解析——仍然是一个声明出来的 token 数，
+ * 不是一个抄在代码里的字符数。
  */
 export function resolveSummarizerInputTokens(
   capability: { contextWindowTokens: number; maxOutputTokens: number; reservedOutputTokens?: number } | null | undefined,
 ): number {
-  const fallback = Math.floor(SUMMARIZER_INPUT_CHARS / 2);
-  if (!capability || !(capability.contextWindowTokens > 0)) return fallback;
+  const declared = capability && capability.contextWindowTokens > 0 ? capability : null;
   const budget = resolveContextBudget({
-    registeredCapability: {
-      contextWindowTokens: capability.contextWindowTokens,
-      reservedOutputTokens: capability.reservedOutputTokens ?? capability.maxOutputTokens,
-      maxOutputTokens: capability.maxOutputTokens,
-    },
+    ...(declared
+      ? { registeredCapability: {
+        contextWindowTokens: declared.contextWindowTokens,
+        reservedOutputTokens: declared.reservedOutputTokens ?? declared.maxOutputTokens,
+        maxOutputTokens: declared.maxOutputTokens,
+      } }
+      : { registeredCapability: REGISTERED_FALLBACK_CAPABILITY }),
     // 摘要输出的上限就是本次请求声明的值。
     requestedOutputTokens: SUMMARIZER_OUTPUT_TOKENS,
     outputLimitEnforced: true,
   });
-  return Math.min(SUMMARIZER_INPUT_CHARS, budget.triggerTokens);
+  return budget.triggerTokens;
 }
 
 /**
@@ -439,13 +441,25 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
 
   // 摘要模型自己的输入预算（44 §5.2）。主模型能读 100 万 token 不代表摘要模型也行。
   const summarizerCapability = provider.getCapabilities?.() ?? null;
-  const summarizerInputTokens = resolveSummarizerInputTokens(summarizerCapability);
-  // 分块边界（44 §5.2／§5.4）：按摘要模型的真实预算分块，分块数本身也有上限。
-  const chunkChars = Math.max(2_000, Math.min(SUMMARIZER_INPUT_CHARS, summarizerInputTokens));
+  // 一次分块的宽度就是这条档案声明的输入容量：不再拿一个字符常量去夹它，
+  // 也不把 token 与字符混在同一个比较里。计量走 agent-core 的保守字节口径。
+  const chunkTokens = resolveSummarizerInputTokens(summarizerCapability);
+  // 计一次真实 token（provider 自带 tokenizer 优先）时要 await，而选材发生在事务里；
+  // 装配侧宁可往多里算（入选更少），精确计量与硬上限仍由调用前的闸负责。
+  const toSnapshotRows = (rows: CompanionHistoryRow[]) => rows.map((row) => ({
+    id: row.id,
+    seq: row.seq,
+    role: row.role,
+    contentSha256: row.content_sha256,
+    blocks: row.blocks,
+    pageContext: row.page_context,
+    createdAt: row.created_at,
+    replyStatus: row.run_status,
+  }));
 
   const { snapshot, parent, contextRevision } = await withJobTransaction(job, async (tx) => {
-    // 先用和对话 prompt 相同的 20 条 + 字符预算规则找到真实裁剪点。
-    // 这样，被 24k 字符预算挤出 prompt、但仍在最近 20 条里的旧消息也能进入摘要，
+    // 先用和对话 prompt 相同的回放窗口规则找到真实裁剪点。
+    // 这样，被回放窗口挤出 prompt、但仍在最近那几条里的旧消息也能进入摘要，
     // 而不是留下“摘要没覆盖、原文也没回放”的空档。
     const tailRows = await readCompanionHistoryRows(tx, conversationId, { limit: REPLAY_WINDOW_MESSAGES });
     const visibleTail = boundCompanionRecentHistory(tailRows.slice().reverse().map((row) => ({
@@ -476,43 +490,25 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
       coverageThroughSeq: head.coverage_through_seq,
     } : null;
 
-    // 100 行只是数据库分页大小，不是会话摘要边界。真实边界由上面的回放选择器确定，
-    // 实际输入按摘要模型的 token 预算限定；长会话不再被固定 200 行截断。
+    // 取到什么时候停由**会话本身**决定：读到有覆盖为止，或读到会话头为止。
+    // 分段数不封顶——长会话剩下的那一段若没人再取回，就会永远停在
+    // 「摘要没覆盖、原文也没回放」那一侧。
+    // SUMMARIZER_PAGE_ROWS 只是每次往返的行数，属于吞吐护栏，不是覆盖边界。
     const sourceRows: CompanionHistoryRow[] = [];
     // 用户主动“整理近期对话”也应覆盖仍在回放窗口里的短对话；后台压缩才只取裁剪点之前。
     let beforeSeq = job.payload.includeRecent === true ? undefined : tailStartSeq;
-    let chunks = 0;
-    while (chunks < MAX_SUMMARIZER_CHUNKS) {
-      const rows = await readCompanionHistoryRows(tx, conversationId, { beforeSeq, limit: 100 });
+    for (;;) {
+      const rows = await readCompanionHistoryRows(tx, conversationId, { beforeSeq, limit: SUMMARIZER_PAGE_ROWS });
       if (rows.length === 0) break;
       sourceRows.push(...rows);
-      chunks += 1;
-      const candidate = buildSummarizerSnapshot(sourceRows.map((row) => ({
-        id: row.id,
-        seq: row.seq,
-        role: row.role,
-        contentSha256: row.content_sha256,
-        blocks: row.blocks,
-        pageContext: row.page_context,
-        createdAt: row.created_at,
-        replyStatus: row.run_status,
-      })), chunkChars, conversationId);
-      if (candidate.coverageFromSeq) break;
+      const candidate = buildSummarizerSnapshot(toSnapshotRows(sourceRows), chunkTokens, conversationId);
+      if (candidate.coverageFromSeq || rows.length < SUMMARIZER_PAGE_ROWS) break;
       beforeSeq = rows.at(-1)!.seq;
     }
 
     return {
       contextRevision,
-      snapshot: buildSummarizerSnapshot(sourceRows.map((row) => ({
-        id: row.id,
-        seq: row.seq,
-        role: row.role,
-        contentSha256: row.content_sha256,
-        blocks: row.blocks,
-        pageContext: row.page_context,
-        createdAt: row.created_at,
-        replyStatus: row.run_status,
-      })), chunkChars, conversationId),
+      snapshot: buildSummarizerSnapshot(toSnapshotRows(sourceRows), chunkTokens, conversationId),
       parent,
     };
   });
@@ -528,7 +524,6 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
   const messages = buildSummarizerMessages({
     conversationText: snapshot.transcript,
     parent,
-    inputTokenBudget: summarizerInputTokens,
   });
   const generationParameters = { temperature: 0.2, maxTokens: SUMMARIZER_OUTPUT_TOKENS, responseFormat: "json_object" as const };
   const inputSnapshotHash = sha256Utf8V1(stableStringify({
@@ -618,18 +613,10 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
     const currentSourceRows = await readCompanionHistoryRows(tx, conversationId, {
       fromSeq: coverageFromSeq,
       beforeSeq: (BigInt(coverageThroughSeq) + 1n).toString(),
-      limit: chunkChars,
+      // 覆盖区间里每条消息至少要一个 token，所以行数不会超过那一段的 token 容量。
+      limit: chunkTokens,
     });
-    const currentSnapshot = buildSummarizerSnapshot(currentSourceRows.map((row) => ({
-      id: row.id,
-      seq: row.seq,
-      role: row.role,
-      contentSha256: row.content_sha256,
-      blocks: row.blocks,
-      pageContext: row.page_context,
-      createdAt: row.created_at,
-      replyStatus: row.run_status,
-    })), chunkChars, conversationId);
+    const currentSnapshot = buildSummarizerSnapshot(toSnapshotRows(currentSourceRows), chunkTokens, conversationId);
     if (
       currentSnapshot.coverageFromSeq !== coverageFromSeq
       || currentSnapshot.coverageThroughSeq !== coverageThroughSeq

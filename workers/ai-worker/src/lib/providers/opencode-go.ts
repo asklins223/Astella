@@ -171,8 +171,17 @@ function buildAgentTurnInput(
   messages: AgentTurnMessage[],
 ): { instructions: string | null; input: ResponsesInputItem[] } {
   const input: ResponsesInputItem[] = [];
+  const injectedSystem: string[] = [];
   for (const message of messages) {
-    if (message.role === "system") continue;
+    if (message.role === "system") {
+      // Responses 只有一个 instructions 字段，没有逐条 system item（与 buildChatInput
+      // 同一处理）。按出现顺序接在宿主政策之后：步中注入的内部核对指令若在这里被丢掉，
+      // 她就只收到重附的用户回合，不知道那句是要纠正上一段。
+      injectedSystem.push(typeof message.content === "string"
+        ? message.content
+        : message.content.filter((part) => part.type === "text").map((part) => part.text).join("\n"));
+      continue;
+    }
     if (message.role === "tool") {
       const output = typeof message.content === "string"
         ? message.content
@@ -205,7 +214,11 @@ function buildAgentTurnInput(
       });
     }
   }
-  return { instructions: systemPrompt.trim() || null, input };
+  const instructions = [systemPrompt, ...injectedSystem]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join("\n\n");
+  return { instructions: instructions || null, input };
 }
 
 // ─── Responses API 响应解析（导出供单测直接覆盖） ─────────────────────────
@@ -567,7 +580,7 @@ export class OpenCodeGoProvider implements AIProvider {
       ...reasoning,
     };
     if (!(this.platformOptions?.disableMaxTokens ?? false)) {
-      body.max_output_tokens = this.resolveOutputTokenLimit(options.maxTokens ?? 4096);
+      body.max_output_tokens = this.resolveOutputTokenLimit();
     }
     const response = await this.request(this.endpoint, this.headers(false), body, signal);
     if (signal?.aborted) throw abortError(signal, "after response");
@@ -627,7 +640,7 @@ export class OpenCodeGoProvider implements AIProvider {
       ...this.nativeToolFields(tools, options.nativeAgentRequest?.toolChoice ?? options.toolChoice, reasoning),
     };
     if (!(this.platformOptions?.disableMaxTokens ?? false)) {
-      body.max_output_tokens = this.resolveOutputTokenLimit(options.maxTokens ?? 4096);
+      body.max_output_tokens = this.resolveOutputTokenLimit();
     }
     const response = await this.streamRequest(this.endpoint, this.headers(true), body, signal);
     if (signal?.aborted) {
@@ -657,6 +670,25 @@ export class OpenCodeGoProvider implements AIProvider {
     let usage: AgentTurnResult["usage"] = null;
     let providerRequestId: string | null = null;
     const itemPhases = new Map<number, unknown>();
+    const startedCalls = new Set<string>();
+    const settledCalls = new Set<string>();
+    const observeTool = (item: unknown, index: number, done: boolean) => {
+      const call = asRecord(item);
+      if (call?.type !== "function_call" || typeof call.call_id !== "string" || typeof call.name !== "string") return;
+      if (!startedCalls.has(call.call_id)) {
+        startedCalls.add(call.call_id);
+        options.onToolCallStarted?.({ index, id: call.call_id, name: call.name });
+      }
+      // Responses supplies an explicit item completion boundary. Never dispatch
+      // arguments.delta fragments, even if one happens to parse as JSON.
+      if (!done || settledCalls.has(call.call_id) || typeof call.arguments !== "string") return;
+      try {
+        const args = JSON.parse(call.arguments);
+        if (!args || typeof args !== "object" || Array.isArray(args)) return;
+      } catch { return; }
+      settledCalls.add(call.call_id);
+      options.onToolCallSettled?.({ index, id: call.call_id, name: call.name, argsText: call.arguments });
+    };
     let withheldUnknownPhase = false;
     /** 终止事件/断流后的统一收尾：先抛 provider 错误，再拒绝空输出。 */
     const settle = (): void => {
@@ -680,6 +712,8 @@ export class OpenCodeGoProvider implements AIProvider {
         case "response.output_item.done":
           if (typeof parsed.output_index === "number" && asRecord(parsed.item)?.type === "message")
             itemPhases.set(parsed.output_index, asRecord(parsed.item)?.phase);
+          if (typeof parsed.output_index === "number")
+            observeTool(parsed.item, parsed.output_index, parsed.type === "response.output_item.done");
           return false;
         case "response.output_text.delta": {
           const phase = itemPhases.get(typeof parsed.output_index === "number" ? parsed.output_index : 0);
@@ -699,7 +733,10 @@ export class OpenCodeGoProvider implements AIProvider {
           const terminal = asRecord(parsed.response);
           if (terminal && Array.isArray(terminal.output)) {
             const finalText = readResponsesFinalText(terminal);
-            if (this.modelProfile?.supportsAssistantPhase && withheldUnknownPhase && finalText?.startsWith(content)) {
+            // Some gateways deliver text only in the terminal output, or omit
+            // its last delta. Reconcile a matching prefix without another model
+            // call; a genuinely different emitted prefix still fails closed.
+            if (finalText?.startsWith(content)) {
               const suffix = finalText.slice(content.length);
               content = finalText;
               if (suffix) onDelta(suffix);
@@ -710,6 +747,7 @@ export class OpenCodeGoProvider implements AIProvider {
             const malformed = parsedTurn.toolCalls.find(call => call.argumentsMalformed);
             if (malformed) providerError = new AgentOutputError("arguments_malformed", "provider stream returned malformed tool arguments");
             toolCalls = parsedTurn.toolCalls.map(({ id, name, arguments: args }) => ({ id, name, arguments: args }));
+            terminal.output.forEach((item, index) => observeTool(item, index, true));
             reasoningHandles = readResponsesReasoningHandles(terminal);
             usage = readResponsesUsage(terminal);
             providerRequestId = parsedTurn.requestId;
@@ -801,7 +839,7 @@ export class OpenCodeGoProvider implements AIProvider {
       ...reasoning,
     };
     if (!(this.platformOptions?.disableMaxTokens ?? false)) {
-      body.max_output_tokens = this.resolveOutputTokenLimit(request.maxTokens);
+      body.max_output_tokens = this.resolveOutputTokenLimit();
     }
     Object.assign(body, this.nativeToolFields(request.tools, request.toolChoice, reasoning));
     // 无工具轮不再强制 json_object（根因二 2026-09-19，与 openai-compatible 同步）：
@@ -880,8 +918,10 @@ export class OpenCodeGoProvider implements AIProvider {
     };
   }
 
-  resolveOutputTokenLimit(requested?: number): number | undefined {
-    return modelOutputTokenLimit(this.modelProfile, requested, this.maxOutputTokens);
+  resolveOutputTokenLimit(): number | undefined {
+    // 与 openai-compatible 同一口径：档案声明优先，没声明用这一档平台自己声明的最大输出，
+    // 不回落到场点默认的 8192。handler 报的那个数不再当天花板。
+    return modelOutputTokenLimit(this.modelProfile, this.maxOutputTokens);
   }
 
   countTextTokens(text: string): Promise<number | null> {

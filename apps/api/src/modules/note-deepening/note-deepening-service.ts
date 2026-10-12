@@ -141,9 +141,8 @@ export function feedbackOfDeepeningV3(rubricResults: unknown): NoteDeepeningReco
     if (!reason) continue;
     out.push({
       verdict: record.verdict as NoteDeepeningRecordV3["feedback"][number]["verdict"],
-      reason: reason.slice(0, 1000),
+      reason,
     });
-    if (out.length >= 8) break;
   }
   return out;
 }
@@ -474,7 +473,7 @@ export async function readNoteDeepeningV3(
 
   const allEvidenceIds = [...new Set(
     [...evidenceByObjective.values()].flatMap((set) => [...set]),
-  )].slice(0, 1000);
+  )];
   const evidenceRows = allEvidenceIds.length > 0
     ? await tx
         .select({ id: evidenceSnapshotsV2.evidenceSnapshotId, supportDescription: evidenceSnapshotsV2.supportDescription })
@@ -520,7 +519,6 @@ export async function readNoteDeepeningV3(
       occurredAt: at.toISOString(),
       materialBasis: materialIds
         .filter((id) => evidenceLabelById.has(id))
-        .slice(0, 8)
         .map((id) => ({ evidenceSnapshotId: id, supportSummary: evidenceLabelById.get(id)! })),
       cardId: objectiveId ? cardByObjective.get(objectiveId) ?? null : null,
     });

@@ -41,7 +41,7 @@ export interface AgentRunRow {
   id: string; workspace_id: string; user_id: string; identity_id: string; account_epoch: number;
   revision: number; resume_from_revision: number | null; goal: string; status: AgentRunV1["status"]; inputs: AgentInputRefV1[];
   conversation_id: string | null; messages: AgentTurnRequest["messages"];
-  summary: string | null; error: string | null; model_calls: number; max_model_calls: number;
+  summary: string | null; error: string | null; model_calls: number; max_model_calls: number | null;
   advance_job_id: string | null; advance_lease_token: string | null;
   revision_started_at: Date | string | null;
   created_at: Date | string; updated_at: Date | string;
@@ -55,7 +55,10 @@ export async function readRun(tx: AgentSqlExecutor, scope: AgentScopeV1, id: str
   if (!row) throw new AgentStoreError(404, "run_not_found", "这件事现在读不到。");
   return row;
 }
-/** 一次读完一页目标的操作行（每目标仍按 created_at,id 保留前 100 条）。 */
+/**
+ * 一次读完一页目标的操作行。这里不限量：一个目标真正做了多少操作，投影就得看到多少——
+ * 早先按每目标 100 条截断会让交付核对把「读不到的回执」当成没交付。
+ */
 export async function readRunOperations(
   tx: AgentSqlExecutor, scope: AgentScopeV1, runIds: string[],
 ): Promise<Map<string, AgentOperationRow[]>> {
@@ -64,7 +67,7 @@ export async function readRunOperations(
   const ids = sql.join(runIds.map(id => sql`${id}::uuid`), sql`, `);
   const rows = await queryRows<AgentOperationRow>(tx, sql`SELECT * FROM agent_operations
     WHERE run_id IN (${ids}) AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
-    ORDER BY run_id,created_at,id LIMIT ${runIds.length * 100}`);
+    ORDER BY run_id,created_at,id`);
   for (const row of rows) {
     const key = row.run_id ?? runIds[0]!;
     const bucket = grouped.get(key);

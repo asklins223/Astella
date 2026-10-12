@@ -2822,6 +2822,48 @@
       "when": 1791590901000,
       "tag": "0406_update_manifest_cache",
       "breakpoints": true
+    },
+    {
+      "idx": 403,
+      "version": "7",
+      "when": 1791590902000,
+      "tag": "0407_email_verification_codes",
+      "breakpoints": true
+    },
+    {
+      "idx": 404,
+      "version": "7",
+      "when": 1791590903000,
+      "tag": "0408_ai_audit_usage_detail",
+      "breakpoints": true
+    },
+    {
+      "idx": 405,
+      "version": "7",
+      "when": 1791590904000,
+      "tag": "0409_companion_agent_continuous_execution",
+      "breakpoints": true
+    },
+    {
+      "idx": 406,
+      "version": "7",
+      "when": 1791590905000,
+      "tag": "0410_companion_tool_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 407,
+      "version": "7",
+      "when": 1791590906000,
+      "tag": "0411_agent_run_execution_without_call_ceiling",
+      "breakpoints": true
+    },
+    {
+      "idx": 408,
+      "version": "7",
+      "when": 1791590907000,
+      "tag": "0412_note_overview_body_without_length_ceiling",
+      "breakpoints": true
     }
   ]
 }

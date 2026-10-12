@@ -13,7 +13,7 @@ export const agentLongGoalV1Schema=z.object({
   appliesWhen:z.string().max(200).nullable(),updatedAt:z.string().datetime(),
   tasks:z.array(z.object({runId:z.string().uuid(),revision:z.number().int().positive(),
     goalRevision:z.number().int().positive(),goal:z.string().max(8000),status:agentRunStatusV1Schema,
-    summary:z.string().max(12000).nullable(),updatedAt:z.string().datetime()}).strict()).max(5),
+    summary:z.string().nullable(),updatedAt:z.string().datetime()}).strict()).max(5),
   taskCount:z.number().int().nonnegative().default(0),
 }).strict();
 export const agentLongGoalsV1Schema=z.object({version:z.literal(1),items:z.array(agentLongGoalV1Schema).max(50),nextCursor:z.string().max(1024).nullable().default(null)}).strict();

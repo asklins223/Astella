@@ -66,7 +66,10 @@ export interface ArtifactNodeV1 {
   readonly quote: string;
 }
 
-/** 一份演示最多几步。知识过程再长也不该是一堂课；超出的整份拒绝，不截断。 */
+/**
+ * 一份演示最多几步。知识过程再长也不该是一堂课；超出的**整份判失败并如实说明**，
+ * 没有任何调用方可以按这个数裁掉条目——裁掉的那几条用户读不到，也没人解释过。
+ */
 export const ARTIFACT_MAX_STEPS_V1 = 6;
 /** 少于这么多步就不成其为「走一遍」，整份拒绝。 */
 export const ARTIFACT_MIN_STEPS_V1 = 2;
@@ -110,6 +113,19 @@ export function plainTextForGroundingV1(content: string): string {
 /** 比较用：只压掉空白，其余逐字保留。中文本来就没有词间空白，这一层主要是给引文折行。 */
 function squashWhitespaceV1(text: string): string {
   return text.replace(/\s+/g, "");
+}
+
+/** 字面命中那一句判据的唯一写法：`plain` 已经是去掉标记并压掉空白的那一份。 */
+function containsQuoteV1(plainBlockText: string, quote: string): boolean {
+  return plainBlockText.includes(squashWhitespaceV1(quote));
+}
+
+/**
+ * 「这一句真的出现在那一块里」。分段读正文的调用方也要按同一个口径核，所以把这一条
+ * 单独交出去——**只**是字面命中；条数、重名与整份取舍仍由 `groundArtifactStepsV1` 裁定。
+ */
+export function evidenceQuoteMatchesBlockV1(blockText: string, quote: string): boolean {
+  return containsQuoteV1(squashWhitespaceV1(plainTextForGroundingV1(blockText)), quote);
 }
 
 const EVIDENCE_QUOTE_MAX_V1 = 160;
@@ -200,7 +216,7 @@ export function groundArtifactStepsV1(input: {
       reject("unknown_block");
       return;
     }
-    if (!plainOf(block).includes(squashWhitespaceV1(quote))) {
+    if (!containsQuoteV1(plainOf(block), quote)) {
       reject("quote_not_found");
       return;
     }
@@ -288,6 +304,11 @@ export function hasMeasurementClaimV1(text: string): boolean {
       if (at < 0) continue;
       const before = lower.slice(0, at);
       if (MEASUREMENT_DISCLAIMERS_V1.some((disclaimer) => before.includes(disclaimer))) continue;
+      // 紧贴判词的否定前缀（「非实测」「未实测」「未经实测」）就是免责本身。
+      // 2026-10-12 真窗口那一发实测：提示词要求把读数标成示意值，模型老实写「非实测结果」，
+      // 整页跑了 163 秒之后被完成判据判死——拦的应该是"声称测过"，不是这三个字出现过。
+      // 只认**紧贴**的那一个：「非但实测结果惊人」的「但」挡不住，仍然照拒。
+      if (/(?:未经|非|未|无|没)$/.test(before.trimEnd())) continue;
       return true;
     }
     return false;

@@ -27,22 +27,24 @@ export type AgentAttentionObjectV1 = z.infer<typeof agentAttentionObjectV1Schema
 export const agentTurnInterpretationProposalV1Schema = z.object({
   intent: z.enum(["conversation", "question", "task", "task_control", "mixed"]),
   toolUse: z.enum(["none", "read", "act", "uncertain"]),
-  subjects: z.array(z.object({ description: z.string().max(120), objectIndex: z.number().int().nonnegative().optional() }).strict()).max(6),
+  // 解释的条目数不在这里收口：提示词要求「窗口里每一条这样的消息都要列出来」，
+  // 合同再封顶就是让它在说完之后被判非法。单条描述仍按字段长度校验。
+  subjects: z.array(z.object({ description: z.string().max(120), objectIndex: z.number().int().nonnegative().optional() }).strict()),
   goalRelation: z.enum(["unrelated", "new", "continue", "revise", "control", "discuss", "unclear"]),
   goalObjectIndex: z.number().int().nonnegative().optional(),
-  candidateOperations: z.array(z.string().min(1).max(100)).max(6),
-  ambiguities: z.array(z.string().max(200)).max(6),
+  candidateOperations: z.array(z.string().min(1).max(100)),
+  ambiguities: z.array(z.string().max(200)),
   /**
    * 伴星自己消息里**用户这一句没有接**的收尾邀请，按宿主给出的候选索引回填。
    *
    * 它是"哪一条"，不是"哪几个字"：由看得见她的上一条与用户这一句的那次解释来判断，
    * 下游只负责把那条消息的收尾改成记录形态。默认空 = 本轮没有待收的账。
    */
-  pendingOfferIndexes: z.array(z.number().int().nonnegative()).max(8).default([]),
+  pendingOfferIndexes: z.array(z.number().int().nonnegative()).default([]),
 }).strict();
 export const agentTurnInterpretationV1Schema = agentTurnInterpretationProposalV1Schema.omit({ subjects: true, goalObjectIndex: true }).extend({
   version: z.literal(1), requestHash: z.string().regex(/^[a-f0-9]{64}$/),
-  subjects: z.array(z.object({ description: z.string().max(120), reference: agentAttentionObjectV1Schema.nullable() }).strict()).max(6),
+  subjects: z.array(z.object({ description: z.string().max(120), reference: agentAttentionObjectV1Schema.nullable() }).strict()),
   goalReference: agentAttentionObjectV1Schema.nullable(),
   status: z.enum(["interpreted", "uncertain"]),
   // Existing experimental rows may carry this key. Discard it before any replay
@@ -52,15 +54,20 @@ export const agentTurnInterpretationV1Schema = agentTurnInterpretationProposalV1
 export type AgentTurnInterpretationV1 = z.infer<typeof agentTurnInterpretationV1Schema>;
 
 export const AGENT_GOAL_DELIVERY_CAPABILITY = "agent_deliver_goal";
+/**
+ * 交付说明是她自己写的那一段话，篇幅不在这里定：一步能说多少由模型档案声明的输出
+ * 额度决定。条目数同样不设上限——用户交代了 24 条要求时要能逐条对上，
+ * 而不是合同只收 20 条，剩下的悄悄不算交付。ID 类字段仍按身份校验。
+ */
 export const agentGoalDeliveryV1Schema = z.object({
   outcome: z.enum(["completed", "needs_input", "failed"]),
-  summary: z.string().trim().min(1).max(12000),
+  summary: z.string().trim().min(1),
   requirements: z.array(z.object({
-    requirement: z.string().trim().min(1).max(500),
+    requirement: z.string().trim().min(1),
     fulfilled: z.boolean(),
-    evidenceCallIds: z.array(z.string().min(1).max(200)).max(10).default([]),
+    evidenceCallIds: z.array(z.string().min(1).max(200)).default([]),
     textOnly: z.boolean().default(false),
-  }).strict()).min(1).max(20),
+  }).strict()).min(1),
 }).strict();
 export type AgentGoalDeliveryV1 = z.infer<typeof agentGoalDeliveryV1Schema>;
 
@@ -163,9 +170,12 @@ export const agentRunV1Schema = z.object({
   status: agentRunStatusV1Schema, conversationId: z.string().uuid().nullable(),
   inputs: z.array(agentInputRefV1Schema).max(20),
   longGoal:agentLongGoalRefV1Schema.nullable().optional(),
-  operations: z.array(agentOperationV1Schema).max(100), artifacts: z.array(agentArtifactRefV1Schema).max(100),
-  summary: z.string().max(12000).nullable(), error: z.string().max(1000).nullable(),
-  modelCalls: z.number().int().nonnegative(), maxModelCalls: z.number().int().positive(),
+  // A run's own trajectory is never capped here: the operations and artifacts it
+  // actually produced are the record, and a long job legitimately has more than
+  // any fixed count of them. `maxModelCalls` is null when nothing ceilings it.
+  operations: z.array(agentOperationV1Schema), artifacts: z.array(agentArtifactRefV1Schema),
+  summary: z.string().nullable(), error: z.string().max(1000).nullable(),
+  modelCalls: z.number().int().nonnegative(), maxModelCalls: z.number().int().positive().nullable(),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
 }).strict();
 // ─── 目标列表分页（方案 42 第一批 A）────────────────────────────────────────
@@ -227,10 +237,10 @@ export const agentRunRevisionV1Schema = z.object({
   conversationId: z.string().uuid().nullable(),
   inputs: z.array(agentInputRefV1Schema).max(20),
   longGoal:agentLongGoalRefV1Schema.nullable().optional(),
-  operations: z.array(agentOperationV1Schema).max(100),
-  artifacts: z.array(agentArtifactRefV1Schema).max(100),
-  summary: z.string().max(12000).nullable(), error: z.string().max(1000).nullable(),
-  modelCalls: z.number().int().nonnegative(), maxModelCalls: z.number().int().positive(),
+  operations: z.array(agentOperationV1Schema),
+  artifacts: z.array(agentArtifactRefV1Schema),
+  summary: z.string().nullable(), error: z.string().max(1000).nullable(),
+  modelCalls: z.number().int().nonnegative(), maxModelCalls: z.number().int().positive().nullable(),
   // 功能部署之前已经开始的一版没有确切起始时间：给 null，不用迁移时间冒充。
   startedAt: z.string().datetime().nullable(),
   lastActiveAt: z.string().datetime(),

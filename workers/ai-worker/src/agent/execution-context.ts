@@ -4,6 +4,7 @@ import { AgentStoreError, listAgentMethods, queryRows, recordAgentMethodOffered,
 import type { AgentScopeV1 } from "@astella/shared/agent-contracts";
 import { composeAgentContext, type AgentContextSource } from "@astella/agent-core";
 import { sanitizePersonaField } from "../handlers/companion-identity-context.ts";
+import { companionContextAssemblyCapacity } from "../handlers/companion-context-receipts.ts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { loadAgentLearningContext } from "./learning-context.ts";
 import { renderMethodCatalogBlock, selectRelevantMethods } from "./relevant-methods.ts";
@@ -58,14 +59,19 @@ function generationInstructions(input: {
     ["current_goal", { scope: scopedData, content: input.goal ? `<current_goal>${data(input.goal)}</current_goal>` : "" }],
     ["methods", { scope: scopedData, content: input.methodCatalog }],
   ]);
-  return composeAgentContext({ maxCharacters: 64000, sources: [
+  // 容量按本轮**实际带来的**源长派生，不写固定字符数：这里截一刀，下游 governed
+  // provider 按所选模型的 token 窗口做的那次全请求计量就再也看不到被砍掉的原文，
+  // 「她到底没看到什么」在数据上和「窗口够用」长得一样。逐条 maxCharacters 同删——
+  // 保留完整源，让完整请求预算决定放不放得下，而不是先静默丢再往下发。
+  return composeAgentContext({ maxCharacters: companionContextAssemblyCapacity(
+    [...sources.values()].map((source) => ({ characters: source.content.length }))), sources: [
     { id: "policy", authority: "policy", required: true },
-    { id: "persona", authority: "data", priority: 10, maxCharacters: 4000 },
-    { id: "preferences", authority: "data", priority: 20, maxCharacters: 5000 },
+    { id: "persona", authority: "data", priority: 10 },
+    { id: "preferences", authority: "data", priority: 20 },
     // 相关经验排在当前目标之后：目标决定**做什么**，做法只在她已经知道要做什么之后
     // 才有意义（§6.1「冻结材料、领域合同和相关合作/生成经验」）。
-    { id: "methods", authority: "data", priority: 15, maxCharacters: 4000 },
-    { id: "current_goal", authority: "data", required: Boolean(input.goal), maxCharacters: 50000 },
+    { id: "methods", authority: "data", priority: 15 },
+    { id: "current_goal", authority: "data", required: Boolean(input.goal) },
   ] }, sources, input.scope).systemPrompt;
 }
 
@@ -132,10 +138,8 @@ export async function loadAgentExecutionContext(
         }
         // 这次执行自己的围栏必须在记账之前、于同一段事务里核实。
         if (ports.chargeCall) await ports.chargeCall(tx);
-        const [charged] = await queryRows<{ id: string }>(tx,
-          sql`UPDATE agent_runs SET model_calls=model_calls+1,updated_at=now()
-            WHERE id=${run.id} AND model_calls<max_model_calls-1 RETURNING id`);
-        if (!charged) throw new AgentStoreError(422, "budget_exhausted", "这件事的生成预算已用完，已有结果保留。");
+        // 记账是观测，不是配额：父目标不会因为「已经跑了 N 发」而拒绝一次真实需要的生成。
+        await tx.execute(sql`UPDATE agent_runs SET model_calls=model_calls+1,updated_at=now() WHERE id=${run.id}`);
       });
       // 紧贴 provider 请求前的最后一道：只中止，不记账。
       await ports.assertExecutionFence();

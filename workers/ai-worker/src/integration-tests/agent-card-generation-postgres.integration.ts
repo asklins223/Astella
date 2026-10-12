@@ -8,7 +8,7 @@
  *      且**不写假 jobs**：`agent_operations.job_id IS NULL`，执行体落在
  *      `card_generation_run_id` 上，"排到了"不等于"这批卡已经有了"。
  *   2. 操作身份只由影响生成的规范参数组成：换 provider call id 复用同一批，
- *      换任何影响生成的参数才长出新一批，第 9 次被 `operation_budget` 挡住。
+ *      换任何影响生成的参数才长出新一批（不按"一个目标最多几批"收口）。
  *   3. 绑定是四层的：run 身份、归属空间/用户、冻结材料集合、候选可审性。
  *      少一层就串账——串到别的空间、别的用户、没冻结的材料，或一张都不可审的批次。
  *   4. 可审交付 = 审核开放 ∧ **最新**修订 ∧ passed ∧ undecided ∧ unpublished ∧ 有
@@ -435,19 +435,20 @@ test("操作身份只由影响生成的规范参数组成：换 provider call id
   assert.notEqual(changed.execution.id, child.execution.id, "参数不同要另建一批");
   assert.equal(await runCount(scope.workspaceId), 2);
 
-  // 上限：同一个目标最多 8 次操作，第 9 次被挡住，且不再建第 9 批。
+  // 一个目标能做几批不由条数决定：换一组影响生成的规范参数就是新的语义请求，照常建。
   await admin`UPDATE card_generation_runs_v2 SET status='closed_without_activation' WHERE id=${changed.execution.id}`;
   for (let index = 0; index < 6; index += 1) {
     const extra = await startCard(advance, cardArgs(f, { hardMaxCards: 1 + index }), `provider-budget-${index}`);
     await admin`UPDATE card_generation_runs_v2 SET status='closed_without_activation' WHERE id=${extra.execution.id}`;
   }
   const [{ ops }] = await admin`SELECT count(*)::int ops FROM agent_operations WHERE run_id=${run.runId}`;
-  assert.equal(ops, 8, "同一个目标最多 8 次操作");
-  // 第 9 次要挑一组**前八次都没用过**的规范参数：hardMaxCards:8 是第一次的缺省值，
-  // 照抄会命中「同一操作身份复用」，测到的是幂等不是上限。
-  await rejectsWith(() => startCard(advance,
-    cardArgs(f, { detailThreshold: "concise", hardMaxCards: 3 }), "provider-over-budget"), /生成上限/);
-  assert.equal(await runCount(scope.workspaceId), 8, "被上限挡住的那一次不再建新批次");
+  assert.equal(ops, 8);
+  // 第 9 次挑一组**前八次都没用过**的规范参数（hardMaxCards:8 是第一次的缺省值，
+  // 照抄会命中「同一操作身份复用」，测不到这一格）。
+  const ninth = await startCard(advance,
+    cardArgs(f, { detailThreshold: "concise", hardMaxCards: 3 }), "provider-ninth");
+  assert.equal(ninth.status, "accepted", "第九次不再被一个与模型无关的条数挡住");
+  assert.equal(await runCount(scope.workspaceId), 9, "新一批照常建出来");
   await advance.release(true);
   await finishAdvance(first.id);
 });
@@ -672,7 +673,7 @@ test("可审交付的两层合取：最新修订 ∧ 未决定 ∧ 未发布 ∧
   deliveredArtifact(await read(), "证据补齐后同一批重新可交付");
 });
 
-test("共同预算：每一次真实 provider.complete 都记在目标上，耗尽就不再发请求", async () => {
+test("共同预算：每一次真实 provider.complete 都记在目标上", async () => {
   const f = await fixture(), scope = { workspaceId: f.workspaceId, userId: f.userId };
   const run = await api.create(scope, { requestId: randomUUID(), goal: "出卡", inputs: [f.input] });
   const first = await lease(scope, run.runId), advance = createAgentAdvanceStore(workerPorts, first, run.runId, 1);
@@ -689,21 +690,19 @@ test("共同预算：每一次真实 provider.complete 都记在目标上，耗�
   assert.equal(await parentModelCalls(run.runId) - before, domain,
     "每一次真实 provider.complete（含内核自动补采样）都记在目标预算上，一发不多一发不少");
 
-  // 预算耗尽：目标账已满时，这一发不再外发任何 provider 请求。
-  const second = await anotherNote(scope, "预算那一篇", LEARNABLE_BLOCKS);
+  // 记账不是配额：同一目标上再开一批，照旧发真实请求、照旧计数。
+  // 以前这一格钉的是「账满了就不许再发」，那是一个与模型无关的写死次数上限。
+  const second = await anotherNote(scope, "再要一批", LEARNABLE_BLOCKS);
   const run2 = await api.create(scope, { requestId: randomUUID(), goal: "再来一批", inputs: [asInput(second)] });
   const lease2 = await lease(scope, run2.runId), advance2 = createAgentAdvanceStore(workerPorts, lease2, run2.runId, 1);
   await advance2.acquire();
-  const exhausted = await startCard(advance2, cardArgs(second), "provider-exhausted");
+  const again = await startCard(advance2, cardArgs(second), "provider-second-batch");
   await advance2.release(true);
   await finishAdvance(lease2.id);
-  await admin`UPDATE agent_runs SET model_calls=max_model_calls WHERE id=${run2.runId}`;
-  const saturated = await parentModelCalls(run2.runId);
-
-  await runSimplifiedChain(exhausted.execution.id);
-  assert.equal(await parentModelCalls(run2.runId), saturated, "预算耗尽时不再发额外 provider 请求");
-  assert.notEqual(await runStatus(exhausted.execution.id), "review_ready",
-    "预算耗尽不该凭空产出一批可审候选");
+  const beforeSecond = await parentModelCalls(run2.runId);
+  await runSimplifiedChain(again.execution.id);
+  assert.equal(await runStatus(again.execution.id), "review_ready", "同一目标上的第二批照常做完");
+  assert.ok((await parentModelCalls(run2.runId)) - beforeSecond > 0, "第二批的真实调用照样记在这个目标名下");
 });
 
 test("既有无父目标批次不记其他 Agent 的账；Agent 完成之后审核台那一发仍能继续", async () => {

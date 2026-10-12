@@ -5,21 +5,21 @@ import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 
 const request: AgentTurnRequest = { role: "companion_agent", systemPrompt: "test", messages: [{ role: "user", content: "task" }], tools: [], toolChoice: "auto", maxTokens: 200, temperature: 0 };
 const response: AgentTurnResult = { content: "", toolCalls: [1,2,3].map(id => ({ id: String(id), name: "read", arguments: {} })), finishReason: "tool_calls", usage: null, providerRequestId: null };
-test("a saved response precedes all effects and surplus calls still receive tool replies", async () => {
+test("a saved response precedes effects, and every call this step made is answered", async () => {
   const trace: string[] = [];
   await executeAgentStep({ context: { prepare: async () => request },
     state: { prepare: async input => ({ request: input, checkpoint: "step", response: null }),
       saveResponse: async () => { trace.push("saved"); }, apply: async (_step, _response, results) => { assert.equal(results.length, 3); trace.push("applied"); } },
     model: { execute: async () => { trace.push("model"); return response; } },
-    capabilities: { maxCalls: 2, invoke: async (call, allowed) => { trace.push(`${call.id}:${allowed}`); return { accepted: allowed }; } },
+    capabilities: { invoke: async (call) => { trace.push(call.id); return { accepted: true }; } },
   });
-  assert.deepEqual(trace, ["model", "saved", "1:true", "2:true", "3:false", "applied"]);
+  assert.deepEqual(trace, ["model", "saved", "1", "2", "3", "applied"]);
 });
 test("resume uses the saved response without a second model call", async () => {
   await executeAgentStep({ context: { prepare: async () => request },
     state: { prepare: async input => ({ request: input, checkpoint: "step", response }), saveResponse: async () => { throw new Error("unexpected save"); },
       apply: async () => "resumed" }, model: { execute: async () => { throw new Error("unexpected model call"); } },
-    capabilities: { maxCalls: 4, invoke: async () => ({ status: "succeeded" }) },
+    capabilities: { invoke: async () => ({ status: "succeeded" }) },
   });
 });
 test("cancellation after checkpoint persistence blocks every effect", async () => {
@@ -27,6 +27,6 @@ test("cancellation after checkpoint persistence blocks every effect", async () =
   await assert.rejects(executeAgentStep({ signal: abort.signal, context: { prepare: async () => request },
     state: { prepare: async input => ({ request: input, checkpoint: "step", response: null }),
       saveResponse: async () => { abort.abort(new Error("cancelled")); }, apply: async () => { throw new Error("unexpected apply"); } },
-    model: { execute: async () => response }, capabilities: { maxCalls: 4, invoke: async () => { throw new Error("unexpected effect"); } },
+    model: { execute: async () => response }, capabilities: { invoke: async () => { throw new Error("unexpected effect"); } },
   }), /cancelled/);
 });

@@ -467,7 +467,7 @@ export type RoundTeachingKindV1 = z.infer<typeof roundTeachingKindV1Schema>;
 
 /** A likely-factual issue worth a learner's review; it is not a claim that the note is wrong. */
 export const roundSuspectClaimV1Schema = z.strictObject({
-  unitIds: z.array(z.string().min(1).max(160)).min(1).max(6),
+  unitIds: z.array(z.string().min(1).max(160)).min(1),
   sourceBlockOrdinal: z.number().int().positive().nullable(),
   sourceQuote: z.string().min(4).max(2_000).nullable(),
   reason: z.string().trim().min(1).max(1_000),
@@ -481,17 +481,18 @@ export type RoundSuspectClaimV1 = z.infer<typeof roundSuspectClaimV1Schema>;
 /**
  * 一条教学产物的正文（结构化，不是一段裸文本）：
  *  - `explanation`：这一节在说什么；
- *  - `example`：可选的一句例子（确定性 provider 只从材料里取，不自己编）；
+ *  - `example`：一句例子（确定性 provider 只从材料里取，不自己编）；
  *  - 依据（引用了哪些块）**不在正文里**，走 `sourceBlockOrdinals` 单独一格——
  *    依据要能点开定位到那一块，塞进正文就只剩一句"根据笔记"。
  *
- * 上限 4000 字是形状上的界，不是产品的目标长度；真正的长度受表达方式控制（后续刀）。
+ * 篇幅不在合同里定：一步能写多少由这一发实际路由的模型档案声明的输出额度决定
+ * （写超了会被输出上限截断，那条路径自己有告警与重发）。合同只管形状。
  */
 export const roundTeachingContentV1Schema = z.strictObject({
-  explanation: z.string().trim().min(1).max(4_000),
-  example: z.string().trim().min(1).max(4_000).optional(),
+  explanation: z.string().trim().min(1),
+  example: z.string().trim().min(1).optional(),
   /** Retained with the immutable teaching row so the review warning survives reloads. */
-  suspectClaims: z.array(roundSuspectClaimV1Schema).max(6).optional(),
+  suspectClaims: z.array(roundSuspectClaimV1Schema).optional(),
 });
 export type RoundTeachingContentV1 = z.infer<typeof roundTeachingContentV1Schema>;
 

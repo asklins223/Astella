@@ -63,7 +63,9 @@ export function createAgentAdvanceStore<Tx extends AgentSqlExecutor = AgentSqlEx
         const [cached] = await queryRows<AgentStepRow>(tx, sql`SELECT * FROM agent_run_steps
           WHERE run_id=${runId} AND revision=${revision} AND applied=false ORDER BY ordinal LIMIT 1`);
         if (cached?.response) return { step: cached, response: agentTurnResultSchema.parse(cached.response) };
-        if (executionKind === "model" && run.model_calls >= run.max_model_calls) throw new AgentStoreError(422, "budget_exhausted", "这件事的本轮预算用完了，已做好的内容保留。");
+        // 这里不再按调用数停手。会让一个目标停下来的只有真实围栏：租约失效、
+        // 这一版被新要求替代、取消、以及连续两轮拿不到可核验进展的收口判据。
+        // model_calls 仍然累计，它是这一版做了多少事的观测值，不是配额。
         const [step] = cached ? [cached] : await queryRows<AgentStepRow>(tx, sql`INSERT INTO agent_run_steps
           (run_id,workspace_id,user_id,revision,ordinal,context_snapshot,request_hash,execution_kind)
           VALUES(${runId},${scope.workspaceId},${scope.userId},${revision},

@@ -99,7 +99,8 @@ export interface AIProvider {
   executeAgentTurn?(request: AgentTurnRequest, signal?: AbortSignal): Promise<AgentTurnResult>;
   getCapabilities?(): ProviderCapability;
   /** Effective transport output ceiling, also used by the context governor. */
-  resolveOutputTokenLimit?(requested?: number): number | undefined;
+  /** 这一发的输出天花板：档案声明值，拿不到声明时是这一档平台的兜底。 */
+  resolveOutputTokenLimit?(): number | undefined;
   /** Local tokenizer for this model; null means no verified tokenizer exists. */
   countTextTokens?(text: string): Promise<number | null>;
 

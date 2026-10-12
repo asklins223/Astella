@@ -85,6 +85,6 @@ export * from "./contracts/job-payload-contracts.ts";
 export type * from "./content-hash.ts";
 
 export * from "./contracts/object-transfer-contracts.ts";
-export { DEFAULT_AI_PROVIDER_TIMEOUT_MS, DEFAULT_AI_TASK_TIMEOUT_MS } from "./ai-execution-budgets.ts";
+export { DEFAULT_AI_PROVIDER_TIMEOUT_MS, DEFAULT_AI_TASK_TIMEOUT_MS, AI_UNDECLARED_OUTPUT_TOKENS } from "./ai-execution-budgets.ts";
 
 export * from "./companion-autonomy.ts";

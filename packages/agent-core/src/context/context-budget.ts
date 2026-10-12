@@ -1,4 +1,4 @@
-import type { ProviderCapability } from "@astella/shared";
+import { AI_UNDECLARED_OUTPUT_TOKENS, type ProviderCapability } from "@astella/shared";
 import {
   contextBudgetSnapshotV1Schema,
   contextPressureDecisionV1Schema,
@@ -40,10 +40,10 @@ export const REGISTERED_FALLBACK_CONTEXT_WINDOW_TOKENS = 128_000;
 /**
  * 请求**没有**声明输出上限、且 provider 也未强制下发时的保守输出预留。
  *
- * 上游默认通常远小于平台最大值（openai-compatible 注释记录：不传 max_tokens 时
- * 默认只有 8192）。但预算不能因此假定「输出很小」——预留必须覆盖实际可能被执行的上限。
+ * 数值不在这里第二次定义：它与 provider 线上实际会被执行的那个兜底是同一件事
+ * （见 shared 的 `AI_UNDECLARED_OUTPUT_TOKENS`，那里带实测依据）。
  */
-export const CONSERVATIVE_DEFAULT_OUTPUT_TOKENS = 16_384;
+export const CONSERVATIVE_DEFAULT_OUTPUT_TOKENS = AI_UNDECLARED_OUTPUT_TOKENS;
 
 export type AgentContextBudgetErrorCode =
   | "budget_unresolved"

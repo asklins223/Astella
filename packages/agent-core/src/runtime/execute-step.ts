@@ -9,7 +9,8 @@ export interface AgentStepPorts<TCheckpoint, TResult> {
     apply(checkpoint: TCheckpoint, response: AgentTurnResult, results: AgentTurnRequest["messages"]): Promise<TResult>;
   };
   model: { execute(request: AgentTurnRequest, checkpoint: TCheckpoint): Promise<AgentTurnResult> };
-  capabilities: { maxCalls: number; invoke(call: AgentTurnResult["toolCalls"][number], allowed: boolean): Promise<unknown> };
+  /** Every call the model actually made this step runs. A step is not a ticket quota. */
+  capabilities: { invoke(call: AgentTurnResult["toolCalls"][number]): Promise<unknown> };
 }
 
 /** Checkpoint the model response before any capability can commit an effect. */
@@ -19,10 +20,9 @@ export async function executeAgentStep<TCheckpoint, TResult>(ports: AgentStepPor
   const response = prepared.response ?? await ports.model.execute(prepared.request, prepared.checkpoint);
   if (!prepared.response) await ports.state.saveResponse(prepared.checkpoint, response);
   const results: AgentTurnRequest["messages"] = [];
-  for (const [index, call] of response.toolCalls.entries()) {
+  for (const call of response.toolCalls) {
     ports.signal?.throwIfAborted();
-    const value = await ports.capabilities.invoke(call, index < ports.capabilities.maxCalls);
-    results.push({ role: "tool", toolCallId: call.id, content: JSON.stringify(value) });
+    results.push({ role: "tool", toolCallId: call.id, content: JSON.stringify(await ports.capabilities.invoke(call)) });
   }
   ports.signal?.throwIfAborted();
   return ports.state.apply(prepared.checkpoint, response, results);

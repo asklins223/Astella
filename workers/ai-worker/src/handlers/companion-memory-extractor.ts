@@ -13,6 +13,7 @@ import { z } from "zod";
 import { taskEntityFromPersistedPageContext, type CompanionTaskEntityRef } from "./companion-task-memory.ts";
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
+import { companionMemoryContentMaxLength } from "@astella/shared/companion-memory-desktop-contracts";
 import { readJobPayloadString, resolveCompanionMemoryTemporalMetadata } from "@astella/shared";
 import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { logger } from "../lib/logger.ts";
@@ -148,8 +149,8 @@ export function isVolatileStatisticMemory(content: string): boolean {
 
 const memoryExtractCandidateSchema = z.object({
   kind: z.enum(["preference", "goal", "learning_context", "interaction_note", "episodic"]),
-  // §9.4：写入端即限制 ≤200 字，确保读取注入时不需截断、不丢失信息。
-  content: z.string().min(1).max(200),
+  // §9.4：一条记忆的篇幅只有那一个声明源（shared 的合同常量）。
+  content: z.string().min(1).max(companionMemoryContentMaxLength),
   importance: z.number().min(0).max(1).default(0.5),
   /**
    * 保持必填：它是 §9.1 `> 0.6` 置信度闸的输入。给默认值等于替模型表态
@@ -170,7 +171,7 @@ const memoryExtractCandidateSchema = z.object({
   sourceSpeaker: z.enum(["user", "assistant"]).optional(),
   sourceQuote: z.string().trim().min(3).max(80).optional(),
   sourceBasis: z.enum(["direct_statement", "inferred_from_statement"]).optional(),
-  appliesWhen: z.string().trim().min(1).max(200).nullable().default(null),
+  appliesWhen: z.string().trim().min(1).max(companionMemoryContentMaxLength).nullable().default(null),
   validUntil: z.string().datetime({ offset: true }).nullable().default(null),
   linkedEntityIds: z.array(z.string()).max(10).default([]),
 });

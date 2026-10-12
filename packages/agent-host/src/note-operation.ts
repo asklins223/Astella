@@ -32,8 +32,8 @@ export async function startAgentNoteOperation(tx: AgentSqlExecutor, scope: Agent
     if (saved) return { ...projectToolResult(scope, run.id, saved), reused: true,
       noteId: ref.noteId, noteVersionId: ref.noteVersionId };
   }
-  const [count] = await queryRows<{ n: string }>(tx, sql`SELECT count(*) AS n FROM agent_operations WHERE run_id=${run.id}`);
-  if (Number(count?.n) >= 8) throw new AgentStoreError(422, "operation_budget", "这件事已到生成上限，先保留当前结果。");
+  // 一个目标要做几次生成交给执行侧的判据（同一份材料同一能力已幂等复用、取消即停），
+  // 不在这里按条数收口；只保留队列背压那一条。
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`job-quota:${scope.workspaceId}`},0))`);
   const [quota] = await queryRows<{ n: string }>(tx, sql`SELECT count(*) AS n FROM jobs WHERE workspace_id=${scope.workspaceId} AND status='pending'`);
   if (Number(quota?.n) >= 50) throw new AgentStoreError(429, "queue_busy", "队列正在处理较多内容，稍后再继续。");
@@ -47,7 +47,7 @@ export async function startAgentNoteOperation(tx: AgentSqlExecutor, scope: Agent
       ...(direct.request.focusAnchor ? { focusAnchor: direct.request.focusAnchor } : {}),
       ...(direct.request.sourceMessageId ? { sourceMessageId: direct.request.sourceMessageId, conversationId: direct.request.conversationId } : {}),
     } : {}),
-    userId: scope.userId, agentRunId: run.id, agentRevision: run.revision, agentGoal: run.goal.slice(0,2000) };
+    userId: scope.userId, agentRunId: run.id, agentRevision: run.revision, agentGoal: run.goal };
   await tx.execute(sql`INSERT INTO agent_operations(id,run_id,workspace_id,user_id,revision,tool_call_id,capability,job_id)
     VALUES(${operationId},${run.id},${scope.workspaceId},${scope.userId},${run.revision},${key},${call.name},${jobId})`);
   await tx.execute(sql`INSERT INTO jobs(id,type,workspace_id,requested_by,payload,status,priority,resource_class,idempotency_key)

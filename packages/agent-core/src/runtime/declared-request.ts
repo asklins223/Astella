@@ -30,7 +30,7 @@ export function declaredAgentRequestStep(input: {
         : "这次生成没有完成，已有内容保留。";
   const response: AgentTurnResult = { content: "", usage: {}, providerRequestId: null, toolCalls: current.length || reused ? [{
     id: `domain-delivery:${input.runId}:${input.revision}`, name: AGENT_GOAL_DELIVERY_CAPABILITY,
-    arguments: { outcome: done ? "completed" : "failed", summary, requirements: [{ requirement: input.goal.slice(0,500),
+    arguments: { outcome: done ? "completed" : "failed", summary, requirements: [{ requirement: input.goal,
       fulfilled: done, textOnly: false, evidenceCallIds: done ? evidence.map(value => value.callId) : [] }] },
   }] : [{ id: `domain-retry:${input.runId}:${input.revision}`, name: capability,
     arguments: { noteId: input.directRequest.noteId, noteVersionId: input.directRequest.request.noteVersionId } }], finishReason: "tool_calls" };

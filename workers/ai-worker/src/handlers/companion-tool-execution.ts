@@ -1,3 +1,4 @@
+import { reviewedTargetMatches } from "./companion-reviewed-target.ts";
 import { AgentStoreError, listCompanionSelfNotes, writeCompanionSelfNote } from "@astella/agent-host";
 import { reserveCompanionProviderCall } from "./companion-agent-events.ts";
 import { executeAgentGoalTool } from "../agent/companion-tools.ts";
@@ -28,10 +29,10 @@ import { executeWebSearch, webSearchCitationBlocks } from "../agent/web-search.t
 
 import { sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
-import {
-  isVisionGatedCompanionTool,
+import {isVisionGatedCompanionTool,
   companionPageLabelV2,
   type CompanionAgentToolDefinitionV1,
+  PAST_MESSAGES_MAX_CHARS,
 } from "@astella/shared";
 import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
@@ -288,17 +289,33 @@ export async function executeReadTool(
           },
         );
       }
-      const history = event.read.recentMessages.slice(-limit).map((message) => ({
-        seq: message.seq ?? null,
-        role: message.role,
-        text: message.text,
-        createdAt: conversationInstant(message.createdAt),
-      }));
-      return { value: { messages: history,
+      // 尾部这一支以前把窗口里的消息**整把**返回，一条字符预算都没有：assistant 的单条
+      // 正文上限是 20 万字（`COMPANION_REPLY_MAX_CHARS`），20 条就是它的好几倍，而能力面上
+      // 写的是默认 4,000。两头都不说真话。现在按与取回原文同一份预算分页，规则也同一份——
+      // **一条消息要么整条给，要么这一轮不给**，剩下的用 `nextFromSeq` 接着读。
+      const window = event.read.recentMessages.slice(-limit);
+      const taken: typeof window = [];
+      let chars = 0;
+      let skipped: typeof window[number] | null = null;
+      for (const message of window) {
+        if (taken.length > 0 && chars + message.text.length > PAST_MESSAGES_MAX_CHARS) {
+          skipped = message;
+          break;
+        }
+        taken.push(message);
+        chars += message.text.length;
+      }
+      const history = taken.map((message) => ({ seq: message.seq ?? null, role: message.role,
+        text: message.text, createdAt: conversationInstant(message.createdAt) }));
+      const truncated = skipped !== null;
+      return { value: { messages: history, truncated,
+        nextFromSeq: skipped?.seq ?? null,
         source: { kind: "current_conversation_tail", conversationId: event.read.conversationId,
           timestampMeaning: "message_creation_not_narrated_event", observedAt: event.read.conversationClock?.observedAt ?? null,
           timezone: event.read.conversationClock?.timezone ?? null },
-      }, safeSummary: `已读取 ${history.length} 条对话历史` };
+      }, safeSummary: truncated
+        ? `已读取 ${history.length} 条对话历史，这一页装不下的部分按 nextFromSeq 续读`
+        : `已读取 ${history.length} 条对话历史` };
     }
         case "companion_read_memory":
     case "companion_recall_memory":
@@ -415,7 +432,8 @@ export async function executeReadTool(
       };
     }
     case "companion_search_notes": {
-      const query = String(args.query).trim().slice(0, 120);
+      // 不再把搜索词剪到 120 字：她写长了一点，被裁掉的那半句会悄悄改掉搜出来的东西。
+      const query = String(args.query).trim();
       const limit = typeof args.limit === "number" ? Math.min(10, Math.max(1, args.limit)) : 5;
       const terms = noteSearchTerms(query);
       const anyMatch = args.match === "any";
@@ -966,7 +984,10 @@ export async function executeDirectTool(
   if (["agent_start_goal", "agent_revise_goal", "agent_control_goal"].includes(definition.name))
     return executeAgentGoalTool(event, definition.name, args);
   switch (definition.name) {
-    case "companion_create_note": return executeCompanionCreateNote(event, args, signal);
+    case "companion_create_note": {
+      if (!toolCallId) throw new CompanionToolError("创建笔记缺少这轮的执行记录，没有重复保存。");
+      return executeCompanionCreateNote(event, args, signal, toolCallId);
+    }
     case "companion_edit_note": {
       if (!toolCallId) throw new CompanionToolError("正文编辑缺少这轮的执行记录，请重新发送要求。");
       return executeCompanionNoteEdit(event, toolCallId, signal);
@@ -1146,7 +1167,7 @@ export async function executeDirectTool(
     case "companion_remember_judgment":
     case "companion_forget_memory":
       // 函数体已搬到 companion-memory-tools.ts（按域切，见那里）。
-      return executeCompanionMemoryTool(event, definition, args);
+      return executeCompanionMemoryTool(event, definition, args, toolCallId);
     case "companion_set_boundary": {
       // 只合并显式给出的键，不动其它边界。已开始的调用继续使用
       // 启动时固定的人格版本；下一次尚未开始的调用才会读到这次修改。
@@ -1275,37 +1296,21 @@ export async function executeDirectTool(
       };
     }
     case "companion_cancel_reminder": {
-      const reminderId = typeof args.reminderId === "string" ? args.reminderId : null;
+      const reminderId = String(args.reminderId);
       const cancelled = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         async (tx) => {
-          // 无 id 时取消最近的一条——"那个提醒不用了"通常指的就是下一个。
-          const rows = reminderId
-            ? await tx.execute<{ id: string; text: string }>(sql`
-              UPDATE companion_reminders SET status = 'cancelled', updated_at = now()
-              WHERE workspace_id = ${event.ctx.workspaceId}
-                AND user_id = ${event.read.userId}
-                AND status = 'pending'
-                AND id = ${reminderId}::uuid
-              RETURNING id::text AS id, text
-            `)
-            : await tx.execute<{ id: string; text: string }>(sql`
-              UPDATE companion_reminders SET status = 'cancelled', updated_at = now()
-              WHERE id = (
-                SELECT c.id FROM companion_reminders c
-                WHERE c.workspace_id = ${event.ctx.workspaceId}
-                  AND c.user_id = ${event.read.userId}
-                  AND c.status = 'pending'
-                ORDER BY c.fire_at
-                LIMIT 1
-                FOR UPDATE SKIP LOCKED
-              )
-              RETURNING id::text AS id, text
-            `);
-          return (Array.isArray(rows) ? rows : [])[0] ?? null;
+          const rows = await tx.execute<{ id: string; text: string }>(sql`
+            UPDATE companion_reminders SET status = 'cancelled', updated_at = now()
+            WHERE workspace_id = ${event.ctx.workspaceId} AND user_id = ${event.read.userId}
+              AND status = 'pending' AND id = ${reminderId}::uuid
+              AND ${reviewedTargetMatches(event, toolCallId, sql`jsonb_build_object('text',text,'fireAt',fire_at::text)`)}
+            RETURNING id::text AS id, text
+          `);
+          return rows[0] ?? null;
         },
       );
-      if (!cancelled) throw new CompanionToolError("没有可取消的提醒");
+      if (!cancelled) throw new CompanionToolError("提醒已经变化或不再可取消，请重新查看");
       return {
         value: { reminderId: cancelled.id },
         safeSummary: `已取消提醒「${cancelled.text.slice(0, 40)}」`,

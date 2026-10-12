@@ -82,8 +82,15 @@ export type CompanionPersonaCommitOutcomeV1 =
   | { readonly kind: "unchanged"; readonly profile: CompanionPersonaProfileContent }
   | { readonly kind: "conflict"; readonly reason: CompanionPersonaCommitFailureV1 };
 
-/** 她能改的项与字符容量；越界的值在落库前就被收住，不靠调用方各自记得切。 */
+/**
+ * 她能改的项与字符容量；容量只有 `PERSONA_FIELD_CAPACITY` 那一个声明源。
+ *
+ * 越界一律报出去，不悄悄剪尾：剪掉的那半句她看不见，下一次读回来的就是被改过的自己。
+ */
 function clampAssistantEdit(field: PersonaAssistantEditableField, value: unknown): unknown {
+  const overflow = (name: string, limit: number): void => {
+    throw new Error(`${name} exceeds the persona capacity of ${limit} characters`);
+  };
   if (field === "selfDescription") {
     const text = typeof value === "string" ? value : "";
     if (text.trim().length === 0) throw new Error("selfDescription edit requires non-empty text");
@@ -91,14 +98,20 @@ function clampAssistantEdit(field: PersonaAssistantEditableField, value: unknown
     return text;
   }
   if (field === "speakingStyle") {
-    return typeof value === "string" ? value.slice(0, PERSONA_FIELD_CAPACITY.speakingStyle) : value;
+    if (typeof value === "string" && value.length > PERSONA_FIELD_CAPACITY.speakingStyle) overflow("speakingStyle", PERSONA_FIELD_CAPACITY.speakingStyle);
+    return value;
   }
   if (field === "personalityTags") {
     if (!Array.isArray(value)) return value;
-    return value.map((tag) => String(tag).slice(0, PERSONA_FIELD_CAPACITY.personalityTags));
+    return value.map((tag) => {
+      const text = String(tag);
+      if (text.length > PERSONA_FIELD_CAPACITY.personalityTags) overflow("personalityTag", PERSONA_FIELD_CAPACITY.personalityTags);
+      return text;
+    });
   }
   if (field === "boundaries.catchphrase") {
-    return typeof value === "string" ? value.slice(0, PERSONA_FIELD_CAPACITY.catchphrase) : value;
+    if (typeof value === "string" && value.length > PERSONA_FIELD_CAPACITY.catchphrase) overflow("catchphrase", PERSONA_FIELD_CAPACITY.catchphrase);
+    return value;
   }
   return value;
 }

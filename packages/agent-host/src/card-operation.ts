@@ -10,6 +10,7 @@ import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
 import { agentInputRefV1Schema, type AgentScopeV1 } from "@astella/shared/agent-contracts";
 import { createGenerationRunInTransaction, CardGenerationV2ServiceError, type CardGenerationRunCreationTx } from "@astella/card-generation";
 import type { CreateCardGenerationRunRequestV2 } from "@astella/shared/card-generation-v2-contracts";
+import { CARD_GENERATION_DEFAULT_HARD_MAX_CARDS, CARD_GENERATION_HARD_MAX_CARDS_CEILING } from "@astella/shared/card-generation-v2-contracts";
 import type { AgentOperationStore } from "./operation-store.ts";
 
 /** 现役制卡链的初始那一发 outbox。绑定只认这一个 jobType——审核台那几发不是它。 */
@@ -39,7 +40,8 @@ export function cardGenerationOptions(input: {
     sourceScopeKind: "whole_note",
     learningGoal: typeof input.learningGoal === "string" ? input.learningGoal : "understand",
     detailThreshold: typeof input.detailThreshold === "string" ? input.detailThreshold : "balanced",
-    hardMaxCards: Math.max(1, Math.min(8, Number(input.hardMaxCards) || 8)),
+    hardMaxCards: Math.max(1, Math.min(CARD_GENERATION_HARD_MAX_CARDS_CEILING,
+      Number(input.hardMaxCards) || CARD_GENERATION_DEFAULT_HARD_MAX_CARDS)),
   };
 }
 
@@ -145,9 +147,8 @@ export async function invokeCardGenerationCapability(
       }
     }
 
-    const [count] = await queryRows<{ n: string }>(tx,
-      sql`SELECT count(*) AS n FROM agent_operations WHERE run_id=${run.id}`);
-    if (Number(count?.n) >= 8) throw new AgentStoreError(422, "operation_budget", "这件事已到生成上限，先保留当前结果。");
+    // 不在这里按操作条数收口：同一个目标要重做几批卡由它自己的材料与判据决定，
+    // 领域侧的「已有在制批次」「日限额」才是真围栏。
 
     const operationId = randomUUID();
     let created: { runId: string; status: string };

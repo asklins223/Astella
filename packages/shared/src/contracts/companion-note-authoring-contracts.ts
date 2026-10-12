@@ -1,8 +1,10 @@
 import { z } from "zod";
 
+/** Content is bounded by the actual model window and note storage/update byte contracts,
+ * not an extra agent-only character or block count quota. */
 export const companionCreateNoteV1Schema = z.object({
   title: z.string().trim().min(1).max(200),
-  markdown: z.string().trim().min(20).max(12_000).describe("根据当前讨论整理的完整独立笔记，支持标题、列表、表格、代码与公式"),
+  markdown: z.string().trim().min(1).describe("根据当前讨论整理的完整独立笔记，支持标题、列表、表格、代码与公式"),
   links: z.array(z.object({
     noteId: z.string().uuid(),
     noteVersionId: z.string().uuid().describe("本轮companion_read_note实际返回的version"),
@@ -20,22 +22,22 @@ export type CompanionCreatedNoteV1 = z.infer<typeof companionCreatedNoteV1Schema
 
 /** Positions and source identity come from the current paper, never model guesses. */
 export const companionNoteEditingContextV1Schema = z.object({
-  tail: z.object({ block: z.number().int().nonnegative(), expectedBlock: z.string().max(100_000) }).strict().optional(),
+  tail: z.object({ block: z.number().int().nonnegative(), expectedBlock: z.string() }).strict().optional(),
   cursor: z.object({ block: z.number().int().nonnegative(), offset: z.number().int().nonnegative(),
-    coordinate: z.enum(["document", "source", "reading"]), expectedBlock: z.string().max(100_000), sourceText: z.string().max(100_000).optional() }).strict().optional(),
+    coordinate: z.enum(["document", "source", "reading"]), expectedBlock: z.string(), sourceText: z.string().optional() }).strict().optional(),
   selection: z.object({ startBlock: z.number().int().nonnegative(), endBlock: z.number().int().nonnegative(),
     startOffset: z.number().int().nonnegative(), endOffset: z.number().int().nonnegative(),
-    excerpt: z.string().min(1).max(20_000), expectedBlocks: z.array(z.string().max(100_000)).max(100) }).strict().optional(),
+    excerpt: z.string().min(1), expectedBlocks: z.array(z.string()) }).strict().optional(),
 }).strict();
 export type CompanionNoteEditingContextV1 = z.infer<typeof companionNoteEditingContextV1Schema>;
 
 export const companionEditNoteV1Schema = z.object({
   noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
   operation: z.enum(["insert_at_cursor", "append", "replace_selection", "delete_selection", "replace_blocks", "delete_blocks"]),
-  markdown: z.string().max(20_000).optional().describe("要插入或替换的新正文；表格用GFM，流程图用mermaid围栏"),
-  startBlock: z.number().int().nonnegative().optional().describe("0起算，正文读取的第1块对应0"),
-  endBlock: z.number().int().nonnegative().optional(),
-  expectedBlocks: z.array(z.string().max(100_000)).min(1).max(100).optional().describe("逐字复制本轮实际读取的各块content，避免覆盖新改动"),
+  markdown: z.string().optional().describe("要插入或替换的新正文；表格用GFM，流程图用mermaid围栏"),
+  startBlock: z.number().int().nonnegative().optional().describe("复制读取结果首块的blockIndex（0起算），不要传ordinal；只改complete=true的整块"),
+  endBlock: z.number().int().nonnegative().optional().describe("复制读取结果末块的blockIndex（包含该块）"),
+  expectedBlocks: z.array(z.string()).min(1).optional().describe("逐字复制本轮实际读取的各块content，避免覆盖新改动"),
 }).strict().superRefine((value, ctx) => {
   if (!value.operation.startsWith("delete") && !value.markdown?.trim()) ctx.addIssue({ code: "custom", path: ["markdown"], message: "需要新正文" });
   if (value.operation.endsWith("blocks") && (value.startBlock === undefined || value.endBlock === undefined
