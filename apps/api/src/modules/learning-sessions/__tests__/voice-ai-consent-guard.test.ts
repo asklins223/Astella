@@ -17,11 +17,11 @@ const ROUTES = "src/modules/learning-sessions/voice-routes.ts";
 const source = readFileSync(ROUTES, "utf8");
 
 /**
- * 会把学习正文或用户音频送出本机的端点。
+ * 会把学习正文/用户音频送往外部，或建立外部语音服务连接的端点。
  * `/voice/preference` 读写的是本机偏好、`playback-outcome` 只上报一个状态，
  * 三者都不外发内容，所以不在这张名单里。
  */
-const OUTBOUND = ["/voice/tts", "/voice/tts/stream", "/voice/transcribe"];
+const OUTBOUND = ["/voice/tts", "/voice/tts/stream", "/voice/transcribe", "/voice/prewarm"];
 
 describe("语音外发端点必须过同意门", () => {
   for (const path of OUTBOUND) {

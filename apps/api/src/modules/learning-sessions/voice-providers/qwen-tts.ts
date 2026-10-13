@@ -39,7 +39,7 @@ export interface QwenTtsOptions {
   rate?: number;
   /** 音调（默认 1） */
   pitch?: number;
-  /** 指令控制（高质量声音描述，可选；qwen-audio-3.1-tts-flash 系统音色支持任意指令） */
+  /** 指令控制（可选；自然语言调节音调、语速、情感和音色特点）。 */
   instruction?: string;
   /** 连接/任务超时 ms（默认 30s） */
   timeoutMs?: number;
@@ -144,6 +144,18 @@ export function qwenTtsActiveTaskCount(): number {
 export function qwenTtsQueuedKeyCount(): number {
   return qwenQueueTails.size;
 }
+
+/** A handshake-only warm connection; it never starts a synthesis task. */
+export type QwenTtsConnectionWarmResult = "warmed" | "already_warm" | "skipped";
+
+export const qwenTtsConnectionWarmStats = {
+  started: 0,
+  reused: 0,
+  skipped: 0,
+  failed: 0,
+  consumed: 0,
+  expired: 0,
+};
 
 /** 测试钩子：清空等待队列、占用计数与队列尾（避免用例之间互相影响）。 */
 export function resetQwenTaskQueueForTests(): void {
@@ -261,6 +273,10 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const CANCEL_SETTLE_TIMEOUT_MS = 5_000;
 /** 15b 二期：IDLE 连接空闲自动断开（阿里文档：任务结束后 60s 无新任务自动断开） */
 const POOL_IDLE_TIMEOUT_MS = 60_000;
+/** 预热连接只等首段语音 10 秒，未用即关。 */
+const PREWARM_IDLE_TIMEOUT_MS = 10_000;
+/** 预热握手自身最多占用 4 秒；正常 TTS 仍使用原 30 秒任务超时。 */
+const PREWARM_CONNECT_TIMEOUT_MS = 4_000;
 
 function wsUrl(workspaceId: string): string {
   // 北京地域：wss://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference
@@ -278,6 +294,7 @@ interface PooledQwenConnection {
   socket: WebSocket;
   alive: boolean;
   idleTimer: ReturnType<typeof setTimeout> | null;
+  speculativeWarm: boolean;
   /** 连接身份：WS URL + apiKey。见 connectionKey 的说明。 */
   key: string;
 }
@@ -299,7 +316,85 @@ function connectionKey(options: QwenTtsOptions): string {
   return `${wsUrl(options.workspaceId)}|${options.apiKey}`;
 }
 
+function hasIdleQwenConnection(options: QwenTtsOptions): boolean {
+  const key = connectionKey(options);
+  const bucket = idleConnections.get(key);
+  const WebSocketImpl = options.WebSocketImpl ?? WebSocket;
+  for (const conn of [...(bucket ?? [])]) {
+    if (conn.alive && conn.socket.readyState === WebSocketImpl.OPEN) return true;
+    closePooledConnection(conn, WebSocketImpl);
+  }
+  return false;
+}
+
+/**
+ * Open one short-lived Qwen socket while the model is generating its first sentence.
+ * The speculative slot is global to this API process, so a burst of turns cannot create
+ * a burst of idle provider sockets. Failures are deliberately non-fatal to chat/TTS.
+ */
+export async function warmQwenTtsConnection(options: QwenTtsOptions): Promise<QwenTtsConnectionWarmResult> {
+  const WebSocketImpl = options.WebSocketImpl ?? WebSocket;
+  if (options.signal?.aborted) {
+    qwenTtsConnectionWarmStats.skipped += 1;
+    return "skipped";
+  }
+  if (hasIdleQwenConnection(options)) {
+    qwenTtsConnectionWarmStats.reused += 1;
+    return "already_warm";
+  }
+  if (speculativeWarmConnection && (!speculativeWarmConnection.alive || speculativeWarmConnection.socket.readyState !== WebSocketImpl.OPEN)) {
+    clearSpeculativeWarmSlot(speculativeWarmConnection);
+  }
+  if (
+    speculativeWarmPending || speculativeWarmConnection || qwenTaskWaiters.length > 0
+    || activeQwenTasks >= resolveQwenTtsMaxConcurrency()
+  ) {
+    qwenTtsConnectionWarmStats.skipped += 1;
+    return "skipped";
+  }
+
+  speculativeWarmPending = true;
+  speculativeWarmController = new AbortController();
+  const controller = speculativeWarmController;
+  const abortFromCaller = () => controller.abort();
+  options.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  qwenTtsConnectionWarmStats.started += 1;
+  try {
+    const conn = await acquireQwenConnection({
+      ...options,
+      signal: controller.signal,
+      timeoutMs: Math.min(options.timeoutMs ?? PREWARM_CONNECT_TIMEOUT_MS, PREWARM_CONNECT_TIMEOUT_MS),
+    });
+    if (controller.signal.aborted || conn.socket.readyState !== WebSocketImpl.OPEN) {
+      closePooledConnection(conn, WebSocketImpl);
+      qwenTtsConnectionWarmStats.skipped += 1;
+      return "skipped";
+    }
+    conn.speculativeWarm = true;
+    speculativeWarmConnection = conn;
+    releaseQwenConnection(conn, true, WebSocketImpl, PREWARM_IDLE_TIMEOUT_MS);
+    return "warmed";
+  } catch {
+    qwenTtsConnectionWarmStats.failed += 1;
+    return "skipped";
+  } finally {
+    options.signal?.removeEventListener("abort", abortFromCaller);
+    if (speculativeWarmController === controller) speculativeWarmController = null;
+    speculativeWarmPending = false;
+  }
+}
+
 const idleConnections = new Map<string, Set<PooledQwenConnection>>();
+let speculativeWarmPending = false;
+let speculativeWarmConnection: PooledQwenConnection | null = null;
+let speculativeWarmController: AbortController | null = null;
+
+function clearSpeculativeWarmSlot(conn: PooledQwenConnection, expired = false): void {
+  if (!conn.speculativeWarm) return;
+  conn.speculativeWarm = false;
+  if (speculativeWarmConnection === conn) speculativeWarmConnection = null;
+  if (expired) qwenTtsConnectionWarmStats.expired += 1;
+}
 
 function clearPoolIdleTimer(conn: PooledQwenConnection): void {
   if (conn.idleTimer) {
@@ -308,8 +403,9 @@ function clearPoolIdleTimer(conn: PooledQwenConnection): void {
   }
 }
 
-function closePooledConnection(conn: PooledQwenConnection, WebSocketImpl: typeof WebSocket): void {
+function closePooledConnection(conn: PooledQwenConnection, WebSocketImpl: typeof WebSocket, expired = false): void {
   clearPoolIdleTimer(conn);
+  clearSpeculativeWarmSlot(conn, expired);
   conn.alive = false;
   const bucket = idleConnections.get(conn.key);
   bucket?.delete(conn);
@@ -324,9 +420,19 @@ function closePooledConnection(conn: PooledQwenConnection, WebSocketImpl: typeof
 
 /** 测试用：清空池状态（避免测试间串扰）。 */
 export function resetQwenConnectionPool(): void {
+  speculativeWarmController?.abort();
+  speculativeWarmController = null;
+  speculativeWarmPending = false;
   for (const bucket of [...idleConnections.values()])
     for (const conn of [...bucket]) closePooledConnection(conn, WebSocket);
   idleConnections.clear();
+  speculativeWarmConnection = null;
+  qwenTtsConnectionWarmStats.started = 0;
+  qwenTtsConnectionWarmStats.reused = 0;
+  qwenTtsConnectionWarmStats.skipped = 0;
+  qwenTtsConnectionWarmStats.failed = 0;
+  qwenTtsConnectionWarmStats.consumed = 0;
+  qwenTtsConnectionWarmStats.expired = 0;
 }
 
 /** 测试钩子：空闲连接槽位数。 */
@@ -354,7 +460,13 @@ function acquireQwenConnection(
     bucket!.delete(idle);
     if (bucket!.size === 0) idleConnections.delete(key);
     clearPoolIdleTimer(idle);
-    if (idle.alive && idle.socket.readyState === WebSocketImpl.OPEN) return Promise.resolve(idle);
+    if (idle.alive && idle.socket.readyState === WebSocketImpl.OPEN) {
+      if (idle.speculativeWarm) {
+        clearSpeculativeWarmSlot(idle);
+        qwenTtsConnectionWarmStats.consumed += 1;
+      }
+      return Promise.resolve(idle);
+    }
     closePooledConnection(idle, WebSocketImpl);
   }
   const url = wsUrl(options.workspaceId);
@@ -382,7 +494,7 @@ function acquireQwenConnection(
     }
     options.signal?.addEventListener("abort", onAbort, { once: true });
     if (options.signal?.aborted) { onAbort(); return; }
-    socket.on("open", () => settle(() => resolve({ socket, alive: true, idleTimer: null, key })));
+    socket.on("open", () => settle(() => resolve({ socket, alive: true, idleTimer: null, speculativeWarm: false, key })));
     socket.on("error", (err) => settle(() => reject(
       new QwenTtsError("NETWORK_ERROR", `qwen TTS WebSocket 错误：${err instanceof Error ? err.message : String(err)}`),
     )));
@@ -397,6 +509,7 @@ function releaseQwenConnection(
   conn: PooledQwenConnection,
   reusable: boolean,
   WebSocketImpl: typeof WebSocket,
+  idleTimeoutMs = POOL_IDLE_TIMEOUT_MS,
 ): void {
   if (!conn.alive) return;
   if (!reusable || conn.socket.readyState !== WebSocketImpl.OPEN) {
@@ -416,8 +529,8 @@ function releaseQwenConnection(
   // PERF-BN6 修复：idle timer 加 .unref()，无请求时该 60s 保活计时器
   // 不阻塞进程优雅停机/退出（对齐项目其它 .unref() 惯例）。
   conn.idleTimer = setTimeout(() => {
-    closePooledConnection(conn, WebSocketImpl);
-  }, POOL_IDLE_TIMEOUT_MS);
+    closePooledConnection(conn, WebSocketImpl, conn.speculativeWarm);
+  }, idleTimeoutMs);
   conn.idleTimer.unref();
 }
 

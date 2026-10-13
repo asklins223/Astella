@@ -5,8 +5,9 @@ import { closeDatabase } from "../db.ts";
 import type { ReadContext } from "../handlers/companion-dialogue-store.ts";
 const url=testDatabaseUrl("DATABASE_URL_MIGRATOR");
 if(new URL(url).pathname!=="/astella_companion_live_20261007"
-  && !new URL(url).pathname.startsWith("/astella_note_authoring_"))
-  throw new Error("Use the designated disposable live acceptance database or an isolated note-authoring database");
+  && !new URL(url).pathname.startsWith("/astella_note_authoring_")
+  && !new URL(url).pathname.startsWith("/astella_initiative_"))
+  throw new Error("Use the designated disposable live acceptance database or an isolated note-authoring / initiative database");
 const admin=postgres(url,{max:2});
 export async function fixture() {
   const workspaceId = randomUUID(), userId = randomUUID(), runId = randomUUID();
@@ -24,6 +25,10 @@ export async function fixture() {
       VALUES(${conversationId},${workspaceId},${userId},'dialogue','回归','auto','active')`;
     await tx`INSERT INTO companion_messages(id,conversation_id,workspace_id,user_id,role,seq,kind,blocks,content_sha256)
       VALUES(${messageId},${conversationId},${workspaceId},${userId},'user',1,'text','[]',${'0'.repeat(64)})`;
+    // The first user message consumed seq 1. Production advances this counter
+    // when it stores that message; the live fixture must do the same before any
+    // proposal or assistant message is inserted.
+    await tx`UPDATE companion_conversations SET next_message_seq=2 WHERE id=${conversationId}`;
     await tx`INSERT INTO jobs(id,type,workspace_id,requested_by,payload,status,lease_token,started_at)
       VALUES(${jobId},'companion_agent',${workspaceId},${userId},${tx.json({runId})},'running','budget-lease',now())`;
     await tx`INSERT INTO companion_turn_runs(id,conversation_id,workspace_id,user_id,user_message_id,generation,status,

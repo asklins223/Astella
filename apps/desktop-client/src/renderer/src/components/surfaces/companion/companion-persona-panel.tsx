@@ -1,8 +1,10 @@
+import { CompanionParticipationPreferences } from "./companion-participation-preferences";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 import type { CompanionPersonaPendingRevisionV1,CompanionPersonaPendingV1,CompanionPersonaPresetV1,CompanionPersonaProfileV1,CompanionPersonaProfileVersionV1,CompanionPersonaV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { PERSONA_FIELD_CAPACITY, personaOriginOf, type PersonaSwitchOption, type SwitchableField } from "@astella/shared/pet-persona-merge";
 import { renderCompanionMarkdown } from "../../companion/companion-markdown";
 import { useEffect,useId,useLayoutEffect,useMemo,useRef,useState } from "react";
+import type { ReactNode } from "react";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { formatDate } from "../notebook/surface-data";
@@ -29,7 +31,7 @@ type PersonaPendingProps = {
   readonly onRetryPending?: () => void;
 };
 
-type PersonaPanelProps = { section: Section<CompanionPersonaV1>; persona: CompanionPersonaV1 | null; versions: CompanionPersonaProfileVersionV1[] | null; versionsError: string | null; busy: string | null; error: string | null; notice: string | null; onPreset: (preset: CompanionPersonaPresetV1) => void; onActiveness: (value: CompanionPersonaProfileV1["activeness"]) => void; onBoundary: (key: (typeof BOUNDARY_ITEMS)[number][0]) => void; onReset: () => void; onRestore: (revision: number) => void; onReloadVersions: () => void; onRename: (name: string) => Promise<boolean> | void; onSelfDescription: (text: string) => Promise<boolean> | void; onSettings?: () => void; onRetry: () => void; switchTarget?: CompanionPersonaPresetV1 | null; switchOptions?: readonly PersonaSwitchOption[]; overwrite?: readonly SwitchableField[]; onOverwrite?: (fields: readonly SwitchableField[]) => void; onSwitchCancel?: () => void; onSwitchConfirm?: () => void } & PersonaPendingProps;
+type PersonaPanelProps = { section: Section<CompanionPersonaV1>; persona: CompanionPersonaV1 | null; versions: CompanionPersonaProfileVersionV1[] | null; versionsError: string | null; busy: string | null; error: string | null; notice: string | null; voiceStyleControl?: ReactNode; onPreset: (preset: CompanionPersonaPresetV1) => void; onActiveness: (value: CompanionPersonaProfileV1["activeness"]) => void; onBoundary: (key: (typeof BOUNDARY_ITEMS)[number][0]) => void; onReset: () => void; onRestore: (revision: number) => void; onReloadVersions: () => void; onRename: (name: string) => Promise<boolean> | void; onSelfDescription: (text: string) => Promise<boolean> | void; onSettings?: () => void; onRetry: () => void; switchTarget?: CompanionPersonaPresetV1 | null; switchOptions?: readonly PersonaSwitchOption[]; overwrite?: readonly SwitchableField[]; onOverwrite?: (fields: readonly SwitchableField[]) => void; onSwitchCancel?: () => void; onSwitchConfirm?: () => void } & PersonaPendingProps;
 
 function CompanionNameRow(props: { readonly current: string; readonly busy: boolean; readonly onRename: (name: string) => Promise<boolean> | void }) {
   const [draft, setDraft] = useState<string | null>(null);
@@ -307,6 +309,10 @@ export function PersonaPanel(props: PersonaPanelProps) {
         {profile?.examples.length ? <details className="cc-details"><summary>看看一句日常回应</summary><blockquote>{profile.examples[0].text}</blockquote></details> : null}
       </section>
     </div>
+    <CompanionParticipationPreferences />
+    {props.voiceStyleControl ? <CenterSection title="语音风格" detail="这项跟着账号走，说的是她平时怎么发声。你在对话里点的名（换方言、放慢、温柔些）那一轮优先，不用在这里设。">
+      {props.voiceStyleControl}
+    </CenterSection> : null}
     <details className="cc-persona-wardrobe" open={wardrobeOpen} onToggle={event => setPresetsOpen(event.currentTarget.open)}>
     <summary>切换人格预设<span>{props.persona.presets.find(preset => preset.presetId === profile?.presetId)?.name ?? "自定义表达"}</span></summary>
     <CenterSection title={PERSONA_SECTIONS.appearance} detail="选一份作为新的基础。你们已经调整过的内容默认保留。">

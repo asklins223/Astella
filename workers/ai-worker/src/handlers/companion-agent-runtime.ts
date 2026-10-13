@@ -1,3 +1,8 @@
+import { CompanionToolNotExecutedError } from "./companion-tool-result.ts";
+import { isCompanionParticipationClosure } from "./companion-participation-output.ts";
+import { sql } from "drizzle-orm";
+import { agentTurnInterpretationV1Schema } from "@astella/shared/agent-contracts";
+import { isCompanionAutonomousTool } from "@astella/shared/companion-autonomy";
 import { companionEditedNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
 import { collectAgentCapabilitySceneGuidance } from "@astella/shared/agent-capability-catalog";
 import type { CompanionAgentLoopArgs } from "../contracts/companion-agent-loop.ts";
@@ -35,8 +40,9 @@ import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags"
 import { COMPANION_TOOL_INTENT_TIMEOUT_MS, interpretCompanionTurn } from "./companion-tool-intent.ts";
 import { companionAttentionObjects } from "./companion-attention.ts";
 import { companionTurnThinking } from "./companion-turn-thinking.ts";
+import { companionActionProgressLabel } from "./companion-action-progress.ts";
 import { companionResponseStrategy } from "./companion-response-strategy.ts";
-import { buildCasualFirstStepRequest, shouldKeepSpeculativeFirstStep } from "./companion-speculative-first-step.ts";
+import { startCompanionSpeculativeFirstSteps } from "./companion-speculative-flights.ts";
 import {
   findDuplicateSegment,
   joinVisibleSegmentsDeduped,
@@ -70,7 +76,7 @@ import { companionToolFailureFaces } from "./companion-tool-failure-faces.ts";
 import { runCompanionToolExecution } from "./companion-tool-execution-run.ts";
 import { CompanionToolPreparation } from "./companion-tool-preparation.ts";
 import { companionExecutionPolicy } from "./companion-execution-policy.ts";
-import { createdNoteToolResult, readCreatedNoteReceipt } from "./companion-note-authoring.ts";
+import { createdNoteToolResult, readCreatedNoteReceipt, userForbidsNoteLibraryRead } from "./companion-note-authoring.ts";
 import { EagerDispatchScheduler } from "./companion-eager-scheduler.ts";
 import {
   EAGER_TOOL_DISPATCH_ENABLED,
@@ -101,14 +107,24 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   if (typeof args.provider.executeAgentTurn !== "function") {
     throw new Error("provider does not support companion agent turns");
   }
+  let utterancePublished = false;
   const event: AgentEventContext = {
     ctx: args.ctx,
     read: args.read,
     expiresAt: args.expiresAt,
     constraints: args.toolConstraints,
+    onUtterancePublished: async (...published) => {
+      utterancePublished = true;
+      await args.onUtterancePublished?.(...published);
+    },
   };
   const attemptStartedAt = Date.now();
   const meta = await readRunMeta(event);
+  if (meta.stepCount > 0) {
+    const [published] = await withWorkerWorkspaceTransaction({ workspaceId: args.ctx.workspaceId, userId: args.read.userId },
+      tx => tx.execute(sql`SELECT 1 FROM companion_run_utterances WHERE run_id=${args.read.runId} LIMIT 1`));
+    utterancePublished = Boolean(published);
+  }
   if (!meta.globalEnabled || meta.currentAccountEpoch !== args.read.accountEpoch) {
     throw new Error("companion agent account epoch is stale or globally disabled");
   }
@@ -116,7 +132,8 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   const handlerStartedAtMs = args.handlerStartedAtMs ?? attemptStartedAt;
   const agentBudget = resolveCompanionAgentBudget();
   const handlerDeadlineAt = handlerStartedAtMs + agentBudget.loopDeadlineMs;
-  const budget = companionExecutionPolicy();
+  const configuredBudget = companionExecutionPolicy();
+  const budget = args.read.initiativeInput ? { ...configuredBudget, maxSteps: Math.min(configuredBudget.maxSteps ?? 8, 8) } : configuredBudget;
   const contractDeadlineAt = attemptStartedAt + (budget.deadlineMs ?? Infinity) - meta.elapsedMs;
   const deadlineAt = Math.min(handlerDeadlineAt, contractDeadlineAt);
   if (deadlineAt <= attemptStartedAt) {
@@ -139,80 +156,100 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   // 每轮给出权限档允许的全部工具，直到当前任务完成。
   // Latest-turn attention is independent of durable goals and historical actions.
   const attentionRequestHash = sha256Utf8V1(args.read.userText);
-  event.constraints = { ...event.constraints, webSearchEnabled: meta.webSearchEnabled === true && webSearchServiceAvailable() };
-  const availableDefinitions = resolveAllCompanionAgentTools(meta.permissionLevel, event.constraints);
+  const notePage = (args.read.pageContext as { context?: { pageKind?: string; replyPurpose?: string; annotationTarget?: unknown }; selection?: unknown } | null);
+  const writingAnnotation = Boolean(notePage?.context?.annotationTarget);
+  const completeNoteReply = !writingAnnotation && Boolean(notePage?.context?.replyPurpose
+    || (notePage?.context?.pageKind === "note" && notePage.selection));
+  event.constraints = {
+    ...event.constraints,
+    webSearchEnabled: meta.webSearchEnabled === true && webSearchServiceAvailable(),
+    noteLibraryReadEnabled: event.constraints.noteLibraryReadEnabled !== false
+      && !userForbidsNoteLibraryRead(args.read.userText),
+  };
+  const availableDefinitions = resolveAllCompanionAgentTools(meta.permissionLevel, event.constraints).filter(definition => {
+    if (definition.name === "companion_publish_utterance" && completeNoteReply) return false;
+    if (definition.name === "companion_write_annotation" && !writingAnnotation) return false;
+    if (definition.name === "companion_finish_participation" && !args.read.initiativeInput) return false;
+    return !args.read.initiativeInput || isCompanionAutonomousTool(definition.name)
+      || (definition.riskClass === "read" && !["companion_open_page", "companion_open_note", "companion_open_card"].includes(definition.name));
+  });
   // 空工具面只有一种来路：权限档读不出来（合法档位下读类工具总在）。这时**不说**才是坏事——
   // 她会一脸无辜地答"我手上没有这个入口"，用户看到的是她突然不会用工具，而不是账号状态有问题。
   if (availableDefinitions.length === 0)
     throw new Error(`companion tool surface resolved empty for permission "${String(meta.permissionLevel)}"`);
-  const cachedInterpretation = meta.turnInterpretation?.requestHash === attentionRequestHash ? meta.turnInterpretation : null;
+  const cachedInterpretation = args.read.initiativeInput ? agentTurnInterpretationV1Schema.parse({
+    version: 1, requestHash: attentionRequestHash, intent: "question", toolUse: "uncertain", subjects: [],
+    goalRelation: "unrelated", goalReference: null, candidateOperations: [], ambiguities: [], status: "interpreted",
+  }) : writingAnnotation ? agentTurnInterpretationV1Schema.parse({
+    version: 1, requestHash: attentionRequestHash, intent: "task", toolUse: "act", subjects: [],
+    goalRelation: "new", goalReference: null, candidateOperations: ["companion_write_annotation"], ambiguities: [], status: "interpreted",
+  }) : meta.turnInterpretation?.requestHash === attentionRequestHash ? meta.turnInterpretation : null;
   /**
    * 分类器**不等**——它和"闲聊版第一步"并行跑（2026-10-07 用户决定：首字延迟里
    * 最大的一块就是这次串行往返，实测 1.9–2.4s，而且不产出任何可见内容）。
    */
-  const attentionPromise = cachedInterpretation ?? interpretCompanionTurn(args.provider, args.baseMessages, {
-    requestHash: attentionRequestHash,
-    objects: companionAttentionObjects(args.read, meta.relatedGoals),
-    capabilities: availableDefinitions.map(definition => definition.name),
-    recentMessages: args.read.recentMessages,
-    conversationClock: args.read.conversationClock,
-    job: args.ctx,
-    runId: args.read.runId,
-    userId: args.read.userId,
-    permissionLevel: meta.permissionLevel,
-    stepTimeoutMs: Math.min(COMPANION_TOOL_INTENT_TIMEOUT_MS, deadlineAt - Date.now()),
-    currentActiveTransaction: currentWorkerWorkspaceTransaction,
-    verifyAttempt: (attempt) => isJobLeaseActive({ ...args.ctx, leaseToken: attempt.leaseToken }),
-    onReceipt: (receipt) => logger.info({ runId: args.read.runId,
-      providerId: args.provider.id, modelId: args.provider.modelId, ...receipt },
-    "companion interpretation settled; failure metadata contains no conversation or provider text"),
+  const attentionResult = cachedInterpretation
+    ? Promise.resolve(cachedInterpretation)
+    : interpretCompanionTurn(args.provider, args.baseMessages, {
+      requestHash: attentionRequestHash,
+      objects: companionAttentionObjects(args.read, meta.relatedGoals),
+      capabilities: availableDefinitions.map(definition => definition.name),
+      recentMessages: args.read.recentMessages,
+      conversationClock: args.read.conversationClock,
+      job: args.ctx,
+      runId: args.read.runId,
+      userId: args.read.userId,
+      permissionLevel: meta.permissionLevel,
+      stepTimeoutMs: Math.min(COMPANION_TOOL_INTENT_TIMEOUT_MS, deadlineAt - Date.now()),
+      currentActiveTransaction: currentWorkerWorkspaceTransaction,
+      verifyAttempt: (attempt) => isJobLeaseActive({ ...args.ctx, leaseToken: attempt.leaseToken }),
+      onReceipt: (receipt) => logger.info({ runId: args.read.runId,
+        providerId: args.provider.id, modelId: args.provider.modelId, ...receipt },
+      "companion interpretation settled; failure metadata contains no conversation or provider text"),
+    });
+  const attentionPromise = attentionResult.then(async (attention) => {
+    // Persist any explicit account preference before the speculative stream's release gate opens.
+    const voicePreferenceWrite = await args.onTurnInterpretation?.(attention);
+    return voicePreferenceWrite ? { ...attention, voicePreferenceWrite } : attention;
   });
 
-  let messages = args.baseMessages
+  const dialogueHistory = args.baseMessages
     .filter((message) => message.role !== "system")
     .map((message) => ({ role: message.role, content: message.content } as AgentMessage));
-  const currentRequest = [...messages].reverse().find((message) => message.role === "user");
+  // In a new internal run, prior speech is historical data. Replaying the last
+  // assistant as this execution's live reasoning step makes thinking providers
+  // require handles from an entirely different run.
+  let messages = args.read.initiativeInput ? [] : [...dialogueHistory];
+  const currentRequest = args.read.initiativeInput
+    ? { role: "system" as const, hostObservation: true as const,
+      content: JSON.stringify({ ...args.read.initiativeInput, recentDialogue: dialogueHistory }) }
+    : [...messages].reverse().find((message) => message.role === "user");
   if (!currentRequest) throw new Error("companion turn is missing its current user request");
+  if (args.read.initiativeInput) messages.push(currentRequest);
 
   /**
-   * 投机的一步（2026-10-07）：分类器还在路上时，先把"闲聊版第一步"**流式**发出去。
-   * 判据与请求形状见 `companion-speculative-first-step`；放行闸在交付管线那一侧
-   * （`runStreamingAgentStep` 的 `releaseGate`）：分类器同意之前一个字都不下发，
-   * 不同意就整版作废（抛 Discarded，不欠用户任何东西），等待与从前一致。
-   *
-   * 为什么仍走流式而不是缓冲：缓冲要等整段生成完才交付，实测首字 4s，比原来还慢；
-   * 流式 + 攒住才是"分类器落地的瞬间就把已经生成的部分吐出去"。
+   * 两条投机（闲聊形状 + 提问形状）现在就出发，分类器不等。发与收的细节、
+   * 入场条件与"为什么走流式"都写在 `companion-speculative-flights.ts`；
+   * 攒住/作废由 `runStreamingAgentStep` 的 `releaseGate` 执行，留哪一版在下面定。
    */
-  const speculativeRequest = cachedInterpretation === null
-    && typeof args.provider.chatCompletionStream === "function"
-    && args.onProviderDelta
-    ? buildCasualFirstStepRequest({
-      turnPolicy: typeof args.baseMessages[0]?.content === "string" ? args.baseMessages[0].content : "",
-      permissionLevel: meta.permissionLevel,
-      stepBudget: budget.maxSteps ?? Infinity,
-      messages,
-      maxTokens: companionStepOutputCeiling(args.provider),
-      tools: availableDefinitions.map(({ name, description, parameters }) => ({ name, description, parameters })),
-    })
-    : null;
-  /** 投机那一步真的发过字没有——保留时它就是这一步的 `stepEmitted`。 */
-  let speculativeEmitted = false;
-  const speculativeFlight = speculativeRequest
-    ? runStreamingAgentStep({
-      provider: args.provider,
-      stepRequest: speculativeRequest,
-      ctxSignal: args.ctx.signal,
-      timeoutMs: Math.min(resolveProviderCallTimeout("companion_agent"), Math.max(1, deadlineAt - Date.now())),
-      onProviderDelta: args.onProviderDelta!,
-      // 第一步之前没有任何段下发过，分段符为空（与真实第一步同口径）。
-      separatorBefore: "",
-      holdUntilChars: stepHoldChars({ userAskedForAction: false }),
-      onTextEmitted: () => { speculativeEmitted = true; },
-      releaseGate: () => Promise.resolve(attentionPromise).then(shouldKeepSpeculativeFirstStep),
-    })
-    : null;
-  // 作废是这条飞地的正常出口之一：先接住，免得没人处理的 rejection 冒出来。
-  speculativeFlight?.catch(() => undefined);
+  const speculativeFlights = startCompanionSpeculativeFirstSteps({
+    provider: args.provider,
+    ctxSignal: args.ctx.signal,
+    onProviderDelta: args.onProviderDelta,
+    ...(args.onReasoningDelta ? { onReasoningDelta: args.onReasoningDelta } : {}),
+    attention: attentionPromise,
+    cachedInterpretation,
+    turnPolicy: typeof args.baseMessages[0]?.content === "string" ? args.baseMessages[0].content : "",
+    permissionLevel: meta.permissionLevel,
+    stepBudget: budget.maxSteps ?? Infinity,
+    messages,
+    deadlineAt,
+    availableTools: availableDefinitions
+      .map(({ name, description, parameters }) => ({ name, description, parameters })),
+    webSearchAllowed: meta.webSearchEnabled === true && event.constraints.webSearchEnabled === true
+      && (budget.maxWebSearchCalls == null || budget.maxWebSearchCalls > 0) && webSearchServiceAvailable(),
+    toolCallCount: meta.toolCallCount,
+  });
   const attention = await attentionPromise;
   /**
    * 把她自己那些"用户这句没接的收尾"降级成记录（判据与实测见 `renderPendingOffersAsRecords`）。
@@ -226,19 +263,9 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
    * 降级按同样的索引重放一次，输出逐字一致。
    */
   messages = renderPendingOffersAsRecords(messages, attention.pendingOfferIndexes);
-  let prefetchedFirstStep: { request: AgentTurnRequest; result: AgentTurnResult; emitted: boolean } | null = null;
-  if (speculativeFlight && speculativeRequest && shouldKeepSpeculativeFirstStep(attention)) {
-    try {
-      prefetchedFirstStep = { request: speculativeRequest, result: await speculativeFlight, emitted: speculativeEmitted };
-      logger.info({ runId: args.read.runId, ms: Date.now() - handlerStartedAtMs },
-        "speculative casual first step kept; answering without waiting for the classifier round-trip");
-    } catch (err) {
-      // 投机请求一旦送达文字，或输出额度/鉴权等确定性失败，就和正式流式
-      // 步一样直接失败。无条件回退会再次生成、重复送达已发布的前缀。
-      if (!canRetryCompanionStream(err, { emitted: speculativeEmitted, now: Date.now(), deadline: deadlineAt })) throw err;
-      logger.warn({ runId: args.read.runId, err }, "speculative casual first step failed; falling back to the normal path");
-    }
-  }
+  let prefetchedFirstStep = await speculativeFlights.settle({
+    attention, runId: args.read.runId, deadlineAt, handlerStartedAtMs,
+  });
   const toolIntent = attention.toolUse === "none" ? false : attention.toolUse === "uncertain" ? null : true;
   const userRequiresTool = companionStepRequiresTool(toolIntent);
   const userAskedForAction = attention.toolUse === "act";
@@ -306,15 +333,27 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
    * 这一轮开不开思考（判据与理由见 `companion-turn-thinking`）：**整轮定一次**，
    * 不在每个 step 重算——闲聊轮的每一步都该是同一档，否则工具回来看一眼又变慢。
    */
-  const turnThinking = companionTurnThinking(attention);
+  const lightweightInitiative = args.read.initiativeInput && ["app.started", "reply.finished"].includes(args.read.initiativeInput.topic);
+  const turnThinking = lightweightInitiative
+    ? { disableThinking: true, basis: `initiative:${args.read.initiativeInput!.topic}` }
+    : companionTurnThinking(attention);
   const responseStrategy = companionResponseStrategy(attention);
   // 这是调用意图，不是上游实际消耗：不支持 none 的模型仍使用最低思考档。
   logger.info({ runId: args.read.runId, requestedDisableThinking: turnThinking.disableThinking,
     providerId: args.provider.id, modelId: args.provider.modelId, basis: turnThinking.basis },
     "companion turn thinking preference resolved; provider applies declared levels");
-  // 按任务的处理策略表达等待阶段，不宣称看到了模型内部过程。请求默认档的轮次
-  // 补发 thinking；偏好关思考的闲聊仍留 waiting/回复状态，即使上游只能降档。
-  if (!turnThinking.disableThinking) {
+  // 先显示可观察的工作状态，不把模型内部思维链当作 UI 内容。明确动作轮用任务状态
+  // 取代泛化的「正在思考」；status 事件与 assistant.delta/TTS 分开。
+  const actionProgressLabel = companionActionProgressLabel(attention, requestedActionTools);
+  if (actionProgressLabel) {
+    await emitCompanionAssistantStatus({
+      workspaceId: args.ctx.workspaceId, read: args.read, expiresAt: args.expiresAt,
+      status: "acting", safeLabel: actionProgressLabel,
+    });
+  } else if (!turnThinking.disableThinking && prefetchedFirstStep === null) {
+    // 提问等非动作轮显示 thinking；偏好关思考的闲聊留在 waiting/回复状态。
+    // 留下投机的第一步时**不再发这一条**：那一刻答案已经在手里、正文正在下发，
+    // 「正在思考…」会晚于首字落库，成了一句假话（闲聊版投机一直就是这么处理的）。
     await emitCompanionAssistantStatus({
       workspaceId: args.ctx.workspaceId, read: args.read, expiresAt: args.expiresAt,
       status: "thinking", safeLabel: "正在思考…",
@@ -386,6 +425,18 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   let stepCount = resolveAgentStepCountForResume(meta);
   const resumedStepCount = stepCount;
   let toolCallCount = meta.toolCallCount;
+  event.verifyUtterance = text => {
+    if (visibleSegments.some(segment => segment.trim()))
+      throw new CompanionToolNotExecutedError("这轮已经开始连续回复，请接着把当前回复完成。需要分几句交流时，从第一句使用发言能力，避免正文和发言重复。");
+    const checked = reviewCompanionStepCorrection({ said: text, contextText, messages, turnToolUse: attention.toolUse,
+      pageContext: args.read.pageContext, groundedTutorContext: args.read.groundedTutorContext,
+      stepCalls: 0, toolCallCount, finalAnswerOnly: false, stepCount, stepBudget: budget.maxSteps ?? Infinity,
+      nowMs: Date.now(), deadlineAt, userAskedForAction: false, requestedActionTools: [],
+      actionSteerAttempts: 0, lookupClaimSteered: false, quoteCorrectionUsed: false });
+    if (checked.unverifiedQuotes.length || checked.unverifiedClaims.length)
+      throw new CompanionToolNotExecutedError("这条发言的原文引用或个人读数尚未核对，没有发布。先读取真实来源，或改成有依据的表达后再说。");
+  };
+
   /**
    * 本轮可见正文的分段（④-b）：每个产出文本的步各占一段，按顺序拼接。
    *
@@ -482,7 +533,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       // 收起过工具的那一份，所以终答步不会还背着编辑规程）。
       sceneGuidance: collectAgentCapabilitySceneGuidance(
         toolsOfferedThisStep.map((tool) => tool.name), currentMeta.permissionLevel),
-    });
+    }) + (writingAnnotation ? "\n用户从原句发起了伴星解释。必须用 companion_write_annotation 独立写入完整解释；聊天正文不会保存成解释。原句身份已绑定，不需要再确认。需要上下文可以先读；完整写入即交付，final 默认 true，界面据保存回执立即结束。可以在同一次输出简短交流，不要在后续模型步骤重复解释或确认写完。只有用户要求的其他工作尚未完成时设 final=false。批注正文不带方言、语音标签、聊天前言或执行说明。" : completeNoteReply ? "\n这轮正文会完整保存为笔记学习内容。用连续最终正文完整交付，不使用分句发言工具；前言和执行说明不能代替解释，不能只给一段等待后补。" : "");
     /**
      * 第一步可能已经有现成的：投机的闲聊版（见上面的 speculative）。
      * 分类器确认没有需要改写历史或补入注意力对象的内容，才复用这版闲聊请求。
@@ -492,7 +543,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     const stepContextSources = new Map([
         ["turn", { scope: { kind: "policy" as const }, content: typeof args.baseMessages[0]?.content === "string" ? args.baseMessages[0].content : "" }],
         ["execution", { scope: { kind: "policy" as const }, content: [runtimePolicy, responseStrategy.guidance].filter(Boolean).join("\n") }],
-        ["attention", { scope: { kind: "request" as const }, content: "本轮注意力解释仅是待核对的数据，不授予执行权限。歧义影响真实资料读取或操作目标时先核对对象，不猜测修改；闲聊话题和称呼不要求业务对象身份。reference 为 null 不代表已经查询过或查询失败，不把内部分类和对象匹配过程念给用户。\n<current_turn_interpretation_data>"
+        ["attention", { scope: { kind: "request" as const }, content: "本轮注意力解释仅是待核对的数据，不授予执行权限。歧义影响真实资料读取或操作目标时先核对对象，不猜测修改；闲聊话题和称呼不要求业务对象身份。reference 为 null 不代表已经查询过或查询失败，不把内部分类和对象匹配过程念给用户。voiceStyle.decision 是本轮声音语义结果：apply 时宿主把 instruction 直接交给 TTS，none 时跟随账号已保存的方言偏好和默认声音，clarify 时先向用户问清楚。voiceStyle.persistentPreference 只记录用户明确要求的长期默认；临时切换必须 keep。voicePreferenceWrite 是宿主写入回执，只有 saved/unchanged 才能确认已记住，failed 时须如实说明。\n<current_turn_interpretation_data>"
           + JSON.stringify(attention).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e") + "</current_turn_interpretation_data>" }],
       ]);
     let stepRequest: AgentTurnRequest = prefetched?.request ?? {
@@ -665,6 +716,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
        *   未声明的实现那一步仍走整段取回；opencode_go 已解析流式工具回执。
        */
       const canStreamThisStep = Boolean(args.onProviderDelta)
+        && !utterancePublished
         && typeof stepProvider.chatCompletionStream === "function"
         && (finalAnswerOnly || stepRequest.tools.length === 0 || stepProvider.chatCompletionStreamToolCalls === true);
       compactionProvider = stepProvider;
@@ -704,6 +756,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
                 ctxSignal: signal,
               timeoutMs: providerCallTimeout,
               onProviderDelta: args.onProviderDelta!,
+              ...(args.onReasoningDelta ? { onReasoningDelta: args.onReasoningDelta } : {}),
               separatorBefore: visibleSegmentDelivered.includes(true) ? VISIBLE_SEGMENT_SEPARATOR : "",
               // Action steps stream tool progress while keeping prose private
               // until the completed call and its actual outcome are known.
@@ -852,7 +905,19 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
           "companion agent step hit the model's own output ceiling; nothing left to grow into");
       }
     }
+    if (args.read.initiativeInput && isCompanionParticipationClosure(result.content)) result = { ...result, content: "" };
     let calls = result.toolCalls ?? [];
+    if (calls.length === 0 && (utterancePublished || !String(result.content ?? "").trim())) {
+      const [published] = await withWorkerWorkspaceTransaction({ workspaceId: args.ctx.workspaceId, userId: args.read.userId },
+        tx => tx.execute(sql`SELECT 1 FROM companion_run_utterances WHERE run_id=${args.read.runId} LIMIT 1`));
+      // Publishing selects an explicit message channel. A subsequent bare final
+      // only ends execution; it cannot leak completion notes or repeat speech.
+      if (utterancePublished || published || (args.read.initiativeInput && !String(result.content ?? "").trim())) {
+        await finishStep(event, stepId, "succeeded", sha256Utf8V1(""));
+        await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
+        return { kind: "settled", result: { status: "completed", text: "", blocks: richBlocks, memoryRefs: [] } };
+      }
+    }
     // 退化回复闸（2026-09-20 重写）：正文短得不正常、**这一步一个字都没真正下发**、
     // 模型也没要调工具——换**另一个模型**把这一步重跑一次，取更长者。
     //
@@ -1227,6 +1292,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
             safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
             ...(record.safeSummary ? { safeSummary: record.safeSummary } : {}),
             ...(definition.name === "companion_edit_note" && record.status === "succeeded" && record.resultRef ? { noteEdit: companionEditedNoteV1Schema.parse(JSON.parse(record.resultRef)) } : {}),
+            ...(definition.name === "companion_write_annotation" && record.status === "succeeded" && record.resultRef ? { noteAnnotation: JSON.parse(record.resultRef) } : {}),
             ...(record.status === "waiting_confirmation" && record.proposalId
               ? { proposalId: record.proposalId }
               : {}),
@@ -1420,6 +1486,30 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       // 收尾这一次带上预算读数：它是**最后一次真实发送**的口径（44 §4）。
       ...args.contextReceipts?.runMetaPatch(),
     });
+    const closingCall = calls.at(-1);
+    const closesSilently = args.read.initiativeInput && closingCall?.name === "companion_finish_participation";
+    const closesSpeech = closingCall?.name === "companion_publish_utterance"
+      && (closingCall.arguments as { final?: boolean } | null)?.final !== false
+      && calls.every(call => ["companion_publish_utterance", "companion_write_annotation"].includes(call.name));
+    // A committed publication or explicit silent decision is the result itself.
+    // Do not spend another model round trip merely to confirm execution ended.
+    const succeededCalls = calls.every(call => {
+      const receipt = [...messages].reverse().find(message => message.role === "tool" && message.toolCallId === call.id);
+      if (!receipt || typeof receipt.content !== "string") return false;
+      try { return JSON.parse(receipt.content).ok === true; } catch { return false; }
+    });
+    const deliveredAnnotation = writingAnnotation && calls.some(call => {
+      if (call.name !== "companion_write_annotation" || (call.arguments as { final?: boolean } | null)?.final === false) return false;
+      const receipt = [...messages].reverse().find(message => message.role === "tool" && message.toolCallId === call.id);
+      try { return receipt && JSON.parse(String(receipt.content)).ok === true; } catch { return false; }
+    });
+    if (deliveredAnnotation && calls.every(call => ["companion_write_annotation", "companion_publish_utterance"].includes(call.name))) {
+      // The independent artifact is already delivered. Optional speech failure cannot turn it into another generation loop.
+      return { kind: "settled", result: { status: "completed", text: utterancePublished ? "" : said.trim(), blocks: richBlocks, memoryRefs: [] } };
+    }
+    if ((closesSilently || closesSpeech) && succeededCalls) {
+      return { kind: "settled", result: { status: "completed", text: "", blocks: richBlocks, memoryRefs: [] } };
+    }
     return { kind: "continue" };
     },
   });

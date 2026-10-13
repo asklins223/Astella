@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
 import { companionConversations, companionMessages, companionTurnRuns } from "@astella/shared/db-schema/companion-conversations";
 
@@ -39,7 +39,7 @@ export async function assistantReplyTextForNote(
     readonly selectionText?: string | null;
   },
 ): Promise<string | null> {
-  const [source] = await tx.select({ blocks: companionMessages.blocks }).from(companionMessages)
+  const [source] = await tx.select({ runId: companionTurnRuns.id }).from(companionMessages)
     .innerJoin(companionConversations, eq(companionConversations.id, companionMessages.conversationId))
     .innerJoin(companionTurnRuns, and(
       eq(companionTurnRuns.id, companionMessages.runId),
@@ -67,5 +67,14 @@ export async function assistantReplyTextForNote(
           : sql`${companionTurnRuns.pageContext} #>> '{selection,text}' = ${input.selectionText}`,
     ));
   if (!source) return null;
-  return source.blocks.flatMap((block) => block.type === "text" ? [block.text] : []).join("\n").trim() || null;
+  // The final message owns provenance; the entire succeeded run owns its answer.
+  // This also protects older clients that submit only the last published sentence.
+  const parts = await tx.select({ blocks: companionMessages.blocks }).from(companionMessages).where(and(
+    eq(companionMessages.runId, source.runId),
+    eq(companionMessages.workspaceId, scope.workspaceId),
+    eq(companionMessages.userId, scope.userId),
+    eq(companionMessages.role, "assistant"), eq(companionMessages.kind, "text"),
+  )).orderBy(asc(companionMessages.seq));
+  return parts.map(part => part.blocks.flatMap(block => block.type === "text" ? [block.text] : []).join("\n").trim())
+    .filter(Boolean).join("\n\n") || null;
 }

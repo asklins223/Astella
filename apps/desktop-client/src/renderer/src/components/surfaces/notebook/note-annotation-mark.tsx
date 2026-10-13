@@ -93,7 +93,7 @@ export function NoteAnnotationMark(props: {
   const open = () => { dismiss(); props.onOpen?.(props.annotation); };
   return <>
     <span className={props.badge ? "note-annotation-badge" : "note-annotation-anchor"} ref={marker} role="button" tabIndex={0}
-      aria-label={props.badge ? `批注 ${props.number} · ${props.annotation.sourceMessageId ? "伴星解释" : props.annotation.generationJobId ? "白话解释" : "自己的批注"}：${props.annotation.anchor.excerpt}` : `打开批注：${props.annotation.anchor.excerpt}`} aria-expanded={props.open ?? false}
+      aria-label={props.badge ? `批注 ${props.number} · ${props.annotation.sourceMessageId || props.annotation.generationJobId ? "伴星解释" : "自己的批注"}：${props.annotation.anchor.excerpt}` : `打开批注：${props.annotation.anchor.excerpt}`} aria-expanded={props.open ?? false}
       aria-describedby={shown && !props.open ? tooltipId : undefined}
       data-number={props.number}
       data-note-annotation-id={props.annotation.annotationId}

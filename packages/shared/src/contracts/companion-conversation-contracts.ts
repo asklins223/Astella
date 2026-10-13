@@ -11,7 +11,7 @@
 
 import { z } from "zod";
 import { VOICE_STYLE_INSTRUCTION_MAX_UNITS, voiceStyleInstructionUnits } from "../voice-expression-tags.ts";
-import { companionNoteEditingContextV1Schema } from "./companion-note-authoring-contracts.ts";
+import { companionNoteEditingContextV1Schema, companionAnnotationTargetV1Schema } from "./companion-note-authoring-contracts.ts";
 import { allowedMainRouteV2Schema } from "./companion-bridge-contracts.ts";
 import {
   characterCueEmotionV1Schema,
@@ -134,6 +134,12 @@ export const companionImageBlockV1Schema = z.object({
  */
 export const COMPANION_CARD_BLOCK_PREVIEW_MAX_CHARS = 600;
 
+/** Optional next-message prompts attached to a completed assistant reply. */
+export const companionFollowupSuggestionsBlockV1Schema = z.object({
+  type: z.literal("follow_up_suggestions"),
+  prompts: z.array(z.string().min(4).max(120)).min(1).max(3),
+}).strict();
+
 export const companionContentBlockV1Schema = z.discriminatedUnion("type", [
   companionTextBlockV1Schema,
   z.object({
@@ -220,6 +226,7 @@ export const companionContentBlockV1Schema = z.discriminatedUnion("type", [
     knowledgeForm: z.string().max(40).nullable(),
   }).strict(),
   companionImageBlockV1Schema,
+  companionFollowupSuggestionsBlockV1Schema,
 ]);
 
 export type CompanionContentBlockV1 = z.infer<typeof companionContentBlockV1Schema>;
@@ -259,6 +266,8 @@ export const companionMessageV1Schema = z.object({
     "cancelled",
   ]),
   blocks: z.array(companionContentBlockV1Schema).min(1).max(32),
+  /** Optional continuation prompts are presentation metadata, stored outside the hashed content blocks. */
+  followUpPrompts: z.array(z.string().min(4).max(120)).max(3).optional(),
   selection: companionSelectionV1Schema.optional(),
   runId: z.string().uuid().nullable(),
   clientMessageId: z.string().uuid().nullable(),
@@ -289,7 +298,7 @@ export const companionTurnRunV1Schema = z.object({
   version: z.literal(1),
   id: z.string().uuid(),
   conversationId: z.string().uuid(),
-  userMessageId: z.string().uuid(),
+  userMessageId: z.string().uuid().nullable(),
   assistantMessageId: z.string().uuid().nullable(),
   generation: z.number().int().positive(),
   status: companionRunStatusV1Schema,
@@ -371,6 +380,8 @@ export const companionPageContextV1Schema = z.discriminatedUnion("pageKind", [
     noteId: z.string().uuid(),
     noteVersionId: z.string().uuid().optional(),
     editing: companionNoteEditingContextV1Schema.optional(),
+    replyPurpose: z.enum(["annotation", "overview", "recall", "recall_hint", "expansion"]).optional(),
+    annotationTarget: companionAnnotationTargetV1Schema.optional(),
   }).strict(),
   z.object({
     pageKind: z.literal("today"),
@@ -960,6 +971,15 @@ export const companionPublicErrorCodeV1Schema = z.enum([
   "NO_ACTIVE_RUN",
   "NO_CANDIDATE",
   "PAYLOAD_HASH_MISMATCH",
+  // 孤儿 run 回收（0232/0424）写进 `error` 事件的那些码。列进枚举不是走形式：
+  // 不在枚举里的事件帧会被桌面主进程的严格校验**整帧丢弃**，于是"回收发生了、
+  // 客户端什么也没看见"，气泡永远停在"正在路上"。JOB_MISSING/JOB_DEAD 是补登记
+  // （0232 早就在写，客户端一直读不到）。
+  "JOB_MISSING",
+  "JOB_DEAD",
+  "JOB_NEVER_STARTED",
+  "JOB_LEASE_LOST",
+  "JOB_FINISHED_WITHOUT_RUN",
   "INTERNAL_ERROR",
 ]);
 
@@ -1015,6 +1035,7 @@ export type CharacterCuePayloadV1 = z.infer<typeof characterCuePayloadV1Schema>;
  */
 export const companionVoiceSegmentReadyPayloadV2Schema = z.strictObject({
   version: z.literal(2),
+  messageId: z.string().uuid().optional(),
   segmentId: z.string().regex(/^[a-f0-9]{64}$/),
   ordinal: z.number().int().min(1).max(200),
   displayText: z.string().min(1).max(160),
@@ -1024,8 +1045,9 @@ export const companionVoiceSegmentReadyPayloadV2Schema = z.strictObject({
   synthesisTextSha256: z.string().regex(/^[a-f0-9]{64}$/),
   cue: characterCuePayloadV1Schema,
   /**
-   * 这一轮的说话风格指令（模型从正文 `[voice-style:…]` 提取，一轮一条随每段下发，
-   * 服务端合成时从事件重读）。缺省 = 模型这轮没写，合成侧回退用户偏好 → config。
+   * 这一轮的说话风格指令（并行的结构化注意力解释器结合当前话语和近期上下文语义判定；
+   * 只有解释缺失时，宿主才从明确点名的方言请求兜底识别。一轮一条随每段下发，
+   * 服务端合成时从事件重读）。缺省 = 本轮没有声音变化请求，合成侧回退用户偏好 → config。
    * 只有 qwen 消费；渲染层不需要它（桌面过桥时与 synthesisText 一起剥掉）。
    */
   instruction: z.string().min(1).max(VOICE_STYLE_INSTRUCTION_MAX_UNITS * 2).optional(),
@@ -1071,12 +1093,39 @@ export const companionStreamEventV1Schema = z.discriminatedUnion("type", [
      * 只有真的开了思考档，worker 才会补发一条 `thinking`。
      */
     status: z.enum(["waiting", "thinking", "acting"]), safeLabel: z.string().min(1).max(240),
+    inputKind: z.enum(["user", "initiative"]).optional(),
+  }).strict() }).strict(),
+  z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("assistant.thinking"), payload: z.object({
+    /**
+     * 本轮内从 0 递增的思考块序号。
+     *
+     * 与 `assistant.delta.appendFrom` 不同，这里刻意**不是**写入偏移：这一串文字
+     * 永远不会被拼成任何正文，客户端只需要按顺序续接显示尾部，所以缺口/重复都
+     * 只影响显示，不需要对账。
+     */
+    index: z.number().int().nonnegative(),
+    /**
+     * 模型这一轮思考的原文增量。
+     *
+     * 只用于显示：不进 `assistant.delta`、不进 `companion_messages`、不进语音分段，
+     * 因此朗读链路根本看不见它。流事件随 `companion_stream_events` 的 TTL 一起清；
+     * 完成后另有独立的 run 历史留档，不混入答案正文。
+     */
+    text: z.string().min(1).max(4_000),
   }).strict() }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("agent.tool"), payload: z.object({
     tool: companionAgentToolEventV1Schema,
   }).strict() }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("assistant.delta"), payload: z.object({
     appendFrom: z.number().int().nonnegative(), textDelta: z.string().min(1).max(2_000),
+  }).strict() }).strict(),
+  z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("assistant.utterance"), payload: z.object({
+    messageId: z.string().uuid(), messageSeq: z.number().int().positive(),
+    text: z.string().min(1).max(12_000), proactive: z.boolean(),
+    deviceSessionId: z.string().max(200).nullable(),
+  }).strict() }).strict(),
+  z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("turn.completed"), payload: z.object({
+    messageIds: z.array(z.string().uuid()).max(40), silent: z.boolean(),
   }).strict() }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("assistant.final"), payload: z.object({
     messageId: z.string().uuid(), textLength: z.number().int().nonnegative(),
@@ -1088,6 +1137,12 @@ export const companionStreamEventV1Schema = z.discriminatedUnion("type", [
       kind: z.string().min(1).max(64),
       content: z.string().min(1).max(80),
     }).strict()).max(3).optional(),
+    followUpPrompts: z.array(z.string().min(4).max(120)).min(1).max(3).optional(),
+  }).strict() }).strict(),
+  z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("assistant.followups.ready"), payload: z.object({
+    messageId: z.string().uuid(),
+    messageContentSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    followUpPrompts: z.array(z.string().min(4).max(120)).max(3),
   }).strict() }).strict(),
   z.object({ ...companionStreamEventBaseShapeV1, type: z.literal("character.cue"), payload: z.object({
     cue: characterCuePayloadV1Schema,

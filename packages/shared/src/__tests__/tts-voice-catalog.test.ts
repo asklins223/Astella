@@ -7,12 +7,17 @@ import {
   DEFAULT_TTS_ENGINE,
   DEFAULT_TTS_VOICE,
   EDGE_TTS_VOICE_OPTIONS,
+  QWEN_TTS_SUPPORTED_DIALECTS,
   QWEN_TTS_VOICE_OPTIONS,
   TTS_PREVIEW_ASSET_DIR,
   TTS_PREVIEW_TEXT,
   defaultTtsVoiceFor,
   findTtsVoiceOption,
   isTtsVoiceAllowed,
+  qwenDialectRequestedByUser,
+  qwenVoiceForInstruction,
+  QWEN_TTS_DIALECT_VOICE_BY_DIALECT,
+  QWEN_TTS_GENERAL_DIALECT_VOICE,
   ttsVoiceOptionsFor,
 } from "../tts-voice-catalog.ts";
 
@@ -74,4 +79,28 @@ test("试听句非空、单句、在朗读长度上限内", () => {
   assert.ok(TTS_PREVIEW_TEXT.length <= 120, "试听句要短到一点就能听完");
   assert.equal(TTS_PREVIEW_TEXT.includes("<"), false, "试听句不能含标签形状字符");
   assert.equal(/https?:\/\//.test(TTS_PREVIEW_TEXT), false);
+});
+
+test("20 个方言请求都认得出名字，并换成会说该方言的系统女声", () => {
+  assert.equal(QWEN_TTS_SUPPORTED_DIALECTS.length, 20);
+  for (const dialect of QWEN_TTS_SUPPORTED_DIALECTS) {
+    const instruction = `请用${dialect}说一句`;
+    assert.equal(qwenDialectRequestedByUser(instruction), dialect, dialect);
+    const voice = qwenVoiceForInstruction("longhua_v3.1", instruction, "qwen-audio-3.1-tts-flash");
+    assert.equal(voice, QWEN_TTS_DIALECT_VOICE_BY_DIALECT[dialect] ?? QWEN_TTS_GENERAL_DIALECT_VOICE, dialect);
+    assert.notEqual(voice, "longhua_v3.1", `${dialect} 不该留在不会说方言的账号音色上`);
+
+    // 真实输入常把方言放在句首：“河南话讲个故事”，不能只接受“用河南话讲”。
+    assert.equal(qwenDialectRequestedByUser(`${dialect}讲个故事`), dialect, `${dialect} 句首语序`);
+  }
+  // 没点方言时不许偷偷换人。
+  assert.equal(qwenVoiceForInstruction("longhua_v3.1", "今晚早点歇着", "qwen-audio-3.1-tts-flash"), "longhua_v3.1");
+});
+
+test("只切换明确要求表达的方言，过滤否定请求并保留‘别忘了’的肯定请求", () => {
+  assert.equal(qwenDialectRequestedByUser("讲一个河南话的故事"), "河南话");
+  assert.equal(qwenDialectRequestedByUser("不要用河南话，改用普通话"), null);
+  assert.equal(qwenDialectRequestedByUser("不要河南话，讲普通话"), null);
+  assert.equal(qwenDialectRequestedByUser("河南话不要讲，还是普通话"), null);
+  assert.equal(qwenDialectRequestedByUser("不要忘了用河南话"), "河南话");
 });

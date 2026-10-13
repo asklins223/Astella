@@ -4,7 +4,8 @@ import { resolveDiagnosticCompanionTurn as resolveAgentTurnInterpretation } from
 const input = { requestHash: "a".repeat(64), objects: [{ kind: "agent_run" as const, id: "11111111-1111-1111-1111-111111111111", revision: 2 }],
   capabilities: ["agent_control_goal", "agent_list_goals"] };
 const task = { intent: "task_control", toolUse: "act", subjects: [{ description: "刚才那件事", objectIndex: 0 }],
-  goalRelation: "control", goalObjectIndex: 0, candidateOperations: ["agent_control_goal"], ambiguities: [] };
+  goalRelation: "control", goalObjectIndex: 0, candidateOperations: ["agent_control_goal"], ambiguities: [],
+  voiceStyle: { decision: "none", instruction: null } };
 const sourceRecords = [
   {index:0,role:"user",content:"报告写完了，明天交。"},
   {index:1,role:"assistant",content:"已经交了，接下来休息。"},
@@ -12,7 +13,7 @@ const sourceRecords = [
 ];
 const dialogueInput = {...input,dialogueSources:sourceRecords,currentMessageIndex:2};
 const dialogueProposal = {intent:"conversation",toolUse:"none",subjects:[],goalRelation:"unrelated",
-  candidateOperations:[],ambiguities:[],dialogueFrame:{purpose:"correction",evidence:{messageIndex:2,quote:"还没交呢"},userState:[
+  candidateOperations:[],ambiguities:[],voiceStyle:{decision:"none",instruction:null},dialogueFrame:{purpose:"correction",evidence:{messageIndex:2,quote:"还没交呢"},userState:[
     {topic:"报告",aspect:"progress",relation:"statement",messageIndex:0,quote:"报告写完了"},
     {topic:"报告",aspect:"timing",relation:"statement",messageIndex:0,quote:"明天交"},
     {topic:"报告",aspect:"progress",relation:"correction",messageIndex:2,quote:"还没交呢，写完而已"},

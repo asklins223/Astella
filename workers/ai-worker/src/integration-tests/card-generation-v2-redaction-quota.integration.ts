@@ -126,13 +126,14 @@ async function createRun(versionId: string) {
     quantity: { kind: "adaptive" as const },
     clientRequestId: `rq-${randomUUID()}`,
   };
+  const idempotencyKey = `rq-key-${randomUUID()}`;
   const result = await createGenerationRunV2(
     { workspaceId: WORKSPACE_ID, userId: USER_ID },
     versionId,
     body,
-    `rq-key-${randomUUID()}`,
+    idempotencyKey,
   );
-  return { ...result, body };
+  return { ...result, body, idempotencyKey };
 }
 
 async function runPipelineOnce() {
@@ -611,7 +612,7 @@ test("§22.6：V2 生成配额 — 在途并发上限 + 24h 速率上限 + 幂�
       { workspaceId: WORKSPACE_ID, userId: USER_ID },
       forFirst.versionId,
       first.body,
-      (await admin`SELECT idempotency_key FROM card_generation_runs_v2 WHERE id = ${first.runId}`)[0].idempotency_key,
+      first.idempotencyKey,
     );
     assert.equal(replay.runId, first.runId, "idempotent replay must return same run despite quota");
 

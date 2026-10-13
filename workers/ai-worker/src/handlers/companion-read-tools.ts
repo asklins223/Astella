@@ -39,6 +39,8 @@ export interface AgentEventContext {
    * 放这里而不是逐层加参数：它是"这一轮的事实"，与 run/workspace 同生命周期。
    */
   constraints: CompanionAgentToolExecutionConstraints;
+  verifyUtterance?: (text: string) => void;
+  onUtterancePublished?: (messageId: string, text: string, rawText: string) => Promise<void>;
 }
 
 /** 每页正文预算；超长块用块内游标续读，不丢弃余下正文。 */

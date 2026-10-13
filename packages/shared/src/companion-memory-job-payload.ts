@@ -25,6 +25,7 @@ export const COMPANION_MEMORY_JOB_PAYLOAD_FIELDS = {
    * `request.id` 写入，worker 处理该 job 时打进日志，两端可用同一 id 串起来。
    */
   traceId: "traceId",
+  assistantMessageId: "assistantMessageId",
 } as const;
 
 /** 伴星记忆类 job payload 的已知字段（其余字段由各 job 自行约定）。 */
@@ -35,6 +36,7 @@ export interface CompanionMemoryJobPayload {
   date?: string;
   timezone?: string;
   traceId?: string;
+  assistantMessageId?: string;
 }
 
 export type CompanionMemoryJobPayloadKey = keyof typeof COMPANION_MEMORY_JOB_PAYLOAD_FIELDS;

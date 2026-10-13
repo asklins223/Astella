@@ -134,15 +134,16 @@ test("记忆 handler 携小数参数真正调用 provider 并写入可检索记�
   assert.equal(memory[0].source_session_id,conversationId);
 });
 
-test("摘要 handler 携小数参数落库，摘要输入区分相邻两次划选并排除已取消问题", async () => {
-  const fixture=await job("companion_summarizer",{conversationId,userId});
+test("摘要 handler 携小数参数落库，摘要输入区分相邻划选并保留取消状态", async () => {
+  const fixture=await job("companion_summarizer",{conversationId,userId,includeRecent:true});
   await runCompanionSummarizer(fixture as Parameters<typeof runCompanionSummarizer>[0]);
   const call=calls.find(call=>call.messages.some(message=>String(message.content).includes("会话摘要器")));
   assert.equal(call?.temperature,0.2);
   const transcript=JSON.stringify(call?.messages);
   assert.match(transcript,/间隔重复：在快忘记时复习/);
   assert.match(transcript,/检索练习：合上笔记自己回忆/);
-  assert.ok(!transcript.includes("已取消问题"));
+  assert.match(transcript, /回复状态 cancelled/);
+  assert.match(transcript, /已取消问题/);
   const rows=await withWorkerWorkspaceTransaction({workspaceId,userId},tx=>tx.execute(sql`
     SELECT coverage_through_seq FROM conversation_summaries WHERE conversation_id=${conversationId}`));
   assert.equal(rows.length,1);

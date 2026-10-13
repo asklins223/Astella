@@ -29,7 +29,7 @@ import {
 } from "../../db/client.ts";
 import { COMPANION_ACCOUNT_NOTIFY_CHANNEL } from "../../companion-contracts/notify-contracts.ts";
 import { type StoredVoicePreference } from "../learning-sessions/voice-providers/tts-preference.ts";
-import { type TtsEngineV1 } from "@astella/shared/tts-voice-catalog";
+import { QWEN_TTS_DIALECT_PREFERENCE_KEY, type TtsEngineV1 } from "@astella/shared/tts-voice-catalog";
 import {
   companionRuntimeFences,
   type CompanionAnimationVoiceOff,
@@ -983,6 +983,7 @@ const TTS_ENGINE_KEY = "tts_engine" as const;
 const TTS_VOICE_KEY = "tts_voice" as const;
 /** 用户自写的说话风格（qwen instruction 兜底层）。未设 = 回 config 默认。 */
 const TTS_INSTRUCTION_KEY = "tts_instruction" as const;
+const TTS_DIALECT_KEY = QWEN_TTS_DIALECT_PREFERENCE_KEY;
 
 /**
  * 读库里的音色偏好**原样**（未校验）。
@@ -1013,7 +1014,8 @@ export async function getStoredVoicePreference(
     if (
       explicit[TTS_ENGINE_KEY] === undefined &&
       explicit[TTS_VOICE_KEY] === undefined &&
-      explicit[TTS_INSTRUCTION_KEY] === undefined
+      explicit[TTS_INSTRUCTION_KEY] === undefined &&
+      explicit[TTS_DIALECT_KEY] === undefined
     ) {
       return { stored: null, updatedAt: null };
     }
@@ -1022,6 +1024,7 @@ export async function getStoredVoicePreference(
         engine: explicit[TTS_ENGINE_KEY],
         voice: explicit[TTS_VOICE_KEY],
         instruction: explicit[TTS_INSTRUCTION_KEY],
+        dialect: explicit[TTS_DIALECT_KEY],
       },
       updatedAt: storedAt,
     };
@@ -1041,6 +1044,7 @@ export async function setVoicePreference(
   engine: TtsEngineV1,
   voice: string,
   instruction?: string | null,
+  dialect?: string | null,
 ): Promise<{ engine: TtsEngineV1; voice: string; updatedAt: string }> {
   return withWorkspaceTransaction({ workspaceId, userId }, async (tx) => {
     const now = new Date();
@@ -1060,6 +1064,10 @@ export async function setVoicePreference(
     if (instruction !== undefined) {
       if (instruction === null) delete explicit[TTS_INSTRUCTION_KEY];
       else explicit[TTS_INSTRUCTION_KEY] = instruction;
+    }
+    if (dialect !== undefined) {
+      if (dialect === null) delete explicit[TTS_DIALECT_KEY];
+      else explicit[TTS_DIALECT_KEY] = dialect;
     }
     if (!row) {
       await tx.insert(userLearningPreferencesTable).values({

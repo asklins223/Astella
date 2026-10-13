@@ -678,17 +678,15 @@ test("长期规则 + 当前例外：例外不覆盖长期规则，只有明确�
 
 /**
  * 0374 给 §6.8 明列的字段补上了两个落点：
- * `method_state`（candidate / active / disabled / disputed）是「有效状态」，
+ * `method_state`（active / disabled / disputed）是「采用状态」，
  * `companion_method_uses` 是「实际使用关联」，`change_reason` 是可读的修订理由。
  *
- * **进目录与读正文的条件是三个一起成立**：方法 `active`（走过真实
- * `control('confirm')`）**且** 来源精确版本仍然有效
+ * **进目录与读正文的条件是三个一起成立**：方法 `active`（非用户控制的方法默认自主采用）**且** 来源精确版本仍然有效
  * （`astella_agent_method_sources_current`）**且** 引用的能力版本没有变。
  * §6.9：「能力发生版本变化、不可用或出现反证时核对适用性，必要时停用」。
  *
- * 因此这里**不做「先写一条 tentative 方法、再放宽有效性断言」**：
- * 每条方法都走真实的 `upsertAgentMethodCandidate` → `control('confirm')`
- * 生命周期，来源里必须钉住 `memoryRevision`。写夹具、读目录、读正文、
+ * 因此这里不放宽来源判据：每条方法都走真实的 `upsertAgentMethodCandidate` 写入，
+ * 来源里必须钉住 `memoryRevision`。写夹具、读目录、读正文、
  * 咨询记账、停用、修订全部用**现役 service**，测试内不复制领域 SQL。
  */
 const methodStore = createAgentMethodStore({
@@ -713,7 +711,7 @@ const apiMethodStore = createAgentMethodStore({
 const availableMethods = (scope: Scope) =>
   inWorker(scope, (tx) => listAgentMethods(tx as AgentSqlExecutor, scope, true));
 
-/** 走真实写入口立一条方法候选（写完是 candidate，用户还没采用）。 */
+/** 走真实写入口立一条自主采用的方法；认识状态仍是 tentative。 */
 const proposeMethod = (scope: Scope, input: Parameters<typeof upsertAgentMethodCandidate>[2]) =>
   inWorker(scope, (tx) => upsertAgentMethodCandidate(tx as AgentSqlExecutor, scope, input));
 
@@ -725,7 +723,7 @@ async function pinnedSource(scope: Scope, content: string): Promise<{ memoryId: 
   return { memoryId: memory.memoryItemId, revision: state!.revision };
 }
 
-/** 真实 propose 出来的候选方法。返回 null 就是写入口自己拒绝了这批依据。 */
+/** 真实写入口产出的方法。返回 null 就是写入口自己拒绝了这批依据。 */
 async function candidateMethod(
   scope: Scope,
   options: { key: string; title: string; appliesWhen: string; content?: string },
@@ -743,13 +741,13 @@ async function candidateMethod(
   return { memoryId: source.memoryId, methodId: written.playbookId, revision: written.version };
 }
 
-/** 走过真实 `control('confirm')`，让它成为 active。 */
+/** 用户明确接管方法；自动采用不妨碍之后由用户控制。 */
 const adopt = (scope: Scope, methodId: string, revision: number) =>
   apiMethodStore.control(scope, methodId, {
     expectedRevision: revision, action: "confirm", reason: "用户确认采用这个方法。",
   });
 
-test("方法生命周期：candidate 必须经用户确认才 active；未确认的不进目录也读不到正文", async () => {
+test("方法生命周期：有来源的非用户控制方法自主采用，认识状态仍是 tentative", async () => {
   const f = await fixture();
   const scope: Scope = { workspaceId: f.home, userId: f.userId };
   const { methodId, revision } = await candidateMethod(scope, {
@@ -757,29 +755,20 @@ test("方法生命周期：candidate 必须经用户确认才 active；未确认
   });
 
   const listed = await methodStore.list(scope);
-  const candidate = listed.items.find(item => item.methodId === methodId);
-  assert.ok(candidate, "刚整理出的方法连列表都读不到");
-  assert.equal(candidate.state, "candidate", "刚整理出的方法不该已经是 active");
-  assert.notEqual(candidate.availability, "available",
-    "未经用户确认的方法就自称可用：一次反馈不该直接升为稳定经验（§6.8.2）");
-  assert.equal((await availableMethods(scope)).some(item => item.methodId === methodId), false,
-    "确认之前它就出现在可用目录里了");
-  assert.equal(
-    await inWorker(scope, (tx) => readAgentMethod(tx as AgentSqlExecutor, scope, methodId, revision)), null,
-    "确认之前就能按当前版本读出正文");
-
-  const adopted = await adopt(scope, methodId, revision);
-  assert.equal(adopted.state, "active", "用户确认之后没有变成 active");
-  assert.equal(adopted.availability, "available", "已确认且来源精确的方法没有被判为可用");
-  assert.ok(adopted.revision > revision, "确认没有推进版本");
-  assert.equal(adopted.userControlled, true, "用户确认没有把它标成用户可控");
-  assert.equal(adopted.changeReason, "用户确认采用这个方法。", "状态变化没有留下可读原因");
-
+  const method = listed.items.find(item => item.methodId === methodId);
+  assert.ok(method, "刚整理出的方法连列表都读不到");
+  assert.equal(method.state, "active", "有来源且非用户控制的方法应按 0405 自主采用");
+  assert.equal(method.epistemicStatus, "tentative", "自主采用不能伪装成已验证");
+  assert.equal(method.availability, "available", "有效来源的方法没有进入可用态");
+  assert.equal(method.userControlled, false, "自主采用不能冒充用户确认");
   assert.equal((await availableMethods(scope)).some(item => item.methodId === methodId), true,
-    "已采用的方法没有进可用目录");
+    "自主采用的方法没有进可用目录");
+  assert.equal(
+    (await inWorker(scope, (tx) => readAgentMethod(tx as AgentSqlExecutor, scope, methodId, revision)))?.state,
+    "active", "按当前版本仍读不出自主采用的方法正文");
 
   const body = await methodStore.get(scope, methodId);
-  assert.equal(body.revision, adopted.revision);
+  assert.equal(body.revision, revision);
   assert.deepEqual(body.steps, ["先给一个日常类比", "再给定义"]);
   assert.equal(body.appliesWhen, "讲机制时");
 });

@@ -276,6 +276,12 @@ const desktopApi: AstellaDesktopApiM2 = {
     feedbackMethod: (input) => invoke(DESKTOP_IPC_CHANNELS.agentMethodFeedback, input),
   },
   companion: {
+    initiative: {
+      getPreferences: input => invoke(DESKTOP_IPC_CHANNELS.companionParticipationGet, input),
+      setPreferences: input => invoke(DESKTOP_IPC_CHANNELS.companionParticipationPut, input),
+      identity: input => invoke(DESKTOP_IPC_CHANNELS.companionAwarenessIdentity, input),
+      observe: input => invoke(DESKTOP_IPC_CHANNELS.companionAwarenessObserve, input),
+    },
     home: {
       getProjection: (input) => invoke(DESKTOP_IPC_CHANNELS.companionHomeGetProjection, input)
     },

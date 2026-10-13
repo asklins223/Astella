@@ -348,6 +348,22 @@ BEGIN
 END
 $$;
 
+-- Participation: user prose + temporary factual leases; history remains immutable.
+DO $$ DECLARE t text; BEGIN
+  FOREACH t IN ARRAY ARRAY['companion_participation_preferences','companion_awareness_sessions','companion_awareness_observations','companion_study_spans','companion_attention_plans'] LOOP
+    IF to_regclass('public.'||t) IS NOT NULL THEN
+      EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON public.%I TO astella_api,astella_worker',t);
+    END IF;
+  END LOOP;
+  IF to_regclass('public.companion_participation_preference_versions') IS NOT NULL THEN
+    REVOKE ALL ON public.companion_participation_preference_versions FROM astella_api,astella_worker;
+    GRANT SELECT ON public.companion_participation_preference_versions TO astella_api,astella_worker;
+    GRANT SELECT,INSERT,DELETE ON public.companion_run_utterances TO astella_api,astella_worker;
+    GRANT INSERT ON public.companion_turn_runs,public.companion_conversations TO astella_worker;
+    REVOKE UPDATE ON public.companion_run_utterances FROM astella_api,astella_worker;
+  END IF;
+END $$;
+
 -- Autonomous notebook: scoped mutable current rows, immutable trigger-owned history.
 DO $$ BEGIN
   IF to_regclass('public.companion_self_notes') IS NOT NULL THEN
@@ -593,7 +609,8 @@ BEGIN
     GRANT UPDATE ON TABLE public.companion_conversations TO astella_worker;
   END IF;
   IF to_regclass('public.companion_messages') IS NOT NULL THEN
-    GRANT INSERT ON TABLE public.companion_messages TO astella_worker;
+    -- 追问建议由后台任务在终态之后补写，写的是展示元数据列 follow_up_prompts。
+    GRANT INSERT, UPDATE ON TABLE public.companion_messages TO astella_worker;
   END IF;
   IF to_regclass('public.companion_turn_runs') IS NOT NULL THEN
     GRANT UPDATE ON TABLE public.companion_turn_runs TO astella_worker;
@@ -619,6 +636,15 @@ BEGIN
   -- 不给 DELETE：念头历史是"她说过什么"的凭据，过期行由 api 侧的 TTL 任务处理。
   IF to_regclass('public.assistant_thoughts') IS NOT NULL THEN
     GRANT INSERT, UPDATE ON TABLE public.assistant_thoughts TO astella_worker;
+  END IF;
+  -- 0421：账号级长期默认方言是**语义判定**的产物（哪一句是「以后都用」、哪一句只是
+  -- 「这句换个口音」），判定只发生在 worker 的结构化注意力解释器里，而落点是 API 侧
+  -- 读的那一行 `workspace_id IS NULL` 账号偏好。不镜像这份写权限，bootstrap 的
+  -- `REVOKE ALL` 会把 0421 抹掉，表现不是报错而是她说「记住了」之后下一轮又不说方言。
+  -- 仍然不给 DELETE：撤回偏好是删 jsonb 里那个键，不是删这一行（同一行还放着
+  -- 作答模态与音色选择）。
+  IF to_regclass('public.user_learning_preferences') IS NOT NULL THEN
+    GRANT SELECT, INSERT, UPDATE ON TABLE public.user_learning_preferences TO astella_worker;
   END IF;
   -- Agent 方案 §5：高风险工具由 **worker** 冻结确认 proposal（旧链路由 API 创建，
   -- 因此这里此前只有 UPDATE）。缺 INSERT 会让所有需确认的写工具在受限角色下
@@ -1363,6 +1389,8 @@ DO $$ DECLARE t text; BEGIN
     'astella_agent_run_authorized(uuid)',
     'astella_companion_reflection_authority(uuid,uuid,uuid)',
     'astella_enqueue_companion_self_wakes()',
+    'astella_enqueue_companion_attention()',
+    'astella_companion_study_spans(uuid)',
     'astella_enqueue_companion_reflection()',
     'astella_companion_reflection_thresholds()',
     'astella_close_abandoned_reflection()',
@@ -1402,6 +1430,10 @@ DO $$ DECLARE t text; BEGIN
   END IF;
   IF to_regprocedure('public.astella_agent_run_authorized(uuid)') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.astella_agent_run_authorized(uuid) TO astella_worker;
+  END IF;
+  IF to_regprocedure('public.astella_enqueue_companion_attention()') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_attention() TO astella_worker;
+    GRANT EXECUTE ON FUNCTION public.astella_companion_study_spans(uuid) TO astella_api,astella_worker;
   END IF;
   IF to_regprocedure('public.astella_enqueue_companion_self_wakes()') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_self_wakes() TO astella_worker;
@@ -1514,7 +1546,9 @@ BEGIN
       'companion_reflection_sources',
       'companion_reflection_checkpoints',
       'companion_persona_profile_versions',
-      'companion_self_note_versions'
+      'companion_self_note_versions',
+      'companion_participation_preference_versions',
+      'companion_run_utterances'
     )
     AND (
       NOT has_table_privilege(
@@ -1720,9 +1754,9 @@ BEGIN
       ('validation_assistance_exposures', true, false, false, false),
       ('learning_unit_exposure', true, true, true, false),
       ('learning_exposure_dependency_ledger', true, true, true, false),
-      ('companion_conversations', true, false, true, false),
-      ('companion_messages', true, true, false, false),
-      ('companion_turn_runs', true, false, true, false),
+      ('companion_conversations', true, true, true, false),
+      ('companion_messages', true, true, true, false),
+      ('companion_turn_runs', true, true, true, false),
       ('companion_persona_profiles', true, true, true, false),
       ('companion_persona_profile_versions', true, true, false, false),
       ('companion_stream_events', true, true, true, false),
@@ -1743,6 +1777,10 @@ BEGIN
       ('assistant_thoughts', true, true, true, false),
       -- 0237：AI 同意/数据政策，worker 只读（签署与修改是 api 侧的事）。
       ('user_ai_settings', true, false, false, false),
+      -- 0421：账号级学习偏好这一行 jsonb。读=本轮正文要按已保存的长期方言来写；
+      -- 写/改=「以后都用河南话」这类持续要求由 worker 的语义判定落库。不删行：
+      -- 撤回方言是删 jsonb 里的 tts_dialect 键，同一行还放着作答模态与音色选择。
+      ('user_learning_preferences', true, true, true, false),
       -- companion 处理器的学习上下文读取面。
       ('learning_runs', true, false, false, false),
       ('learning_tasks', true, false, false, false),
@@ -1846,6 +1884,13 @@ BEGIN
       -- 方案 50 §8.3：反思那一行与它的模型检查点由 worker 全权维护；
       -- 派生来源边只写与删（边一旦落下就不改，改等于伪造当时的依据）。
       ('companion_self_notes', true, true, true, true),
+      ('companion_participation_preferences', true, true, true, true),
+      ('companion_participation_preference_versions', true, false, false, false),
+      ('companion_awareness_sessions', true, true, true, true),
+      ('companion_awareness_observations', true, true, true, true),
+      ('companion_study_spans', true, true, true, true),
+      ('companion_attention_plans', true, true, true, true),
+      ('companion_run_utterances', true, true, false, true),
       ('companion_self_note_versions', true, false, false, false),
       ('companion_reflections', true, true, true, true),
       ('companion_reflection_sources', true, true, false, true),
@@ -2039,6 +2084,8 @@ BEGIN
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_method_sources_current(uuid,uuid,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_job_current(uuid,uuid,uuid,boolean)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_agent_run_authorized(uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_enqueue_companion_attention()')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_companion_study_spans(uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_enqueue_companion_self_wakes()')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_enqueue_companion_reflection()')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_companion_reflection_thresholds()')
@@ -2097,6 +2144,7 @@ BEGIN
   JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public'
     AND has_function_privilege('astella_api', p.oid, 'EXECUTE')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_companion_study_spans(uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_create_private_note_v1(uuid,uuid,uuid,uuid,text,text,jsonb,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_pending_companion_note_edits_v1()')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.astella_pending_companion_note_shares_v1()')
@@ -2228,6 +2276,9 @@ BEGIN
       ('astella_worker', 'astella_enqueue_agent_recovery()'),
       ('astella_worker', 'astella_agent_job_current(uuid,uuid,uuid,boolean)'),
       ('astella_worker', 'astella_agent_run_authorized(uuid)'),
+      ('astella_worker', 'astella_enqueue_companion_attention()'),
+      ('astella_worker', 'astella_companion_study_spans(uuid)'),
+      ('astella_api', 'astella_companion_study_spans(uuid)'),
       ('astella_worker', 'astella_enqueue_companion_self_wakes()'),
       ('astella_worker', 'astella_enqueue_companion_reflection()'),
       ('astella_worker', 'astella_companion_reflection_thresholds()'),

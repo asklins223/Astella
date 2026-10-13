@@ -68,10 +68,45 @@ export async function reserveCompanionProviderCall(event: {
           AND j.type='companion_agent' AND j.payload->>'runId'=r.id::text)
         AND r.account_epoch=${event.read.accountEpoch} AND r.generation=${event.read.generation}
         AND r.status IN ('accepted','running','waiting_for_confirmation')
+        AND (r.input_source IS NULL OR (r.model_call_count<8 AND (
+          WITH RECURSIVE ancestors AS (
+            SELECT id,input_source,model_call_count,0 AS depth FROM companion_turn_runs WHERE id=r.id
+            UNION ALL SELECT p.id,p.input_source,p.model_call_count,c.depth+1 FROM companion_turn_runs p
+              JOIN ancestors c ON p.id=(c.input_source->>'parentRunId')::uuid
+              WHERE c.depth<24 AND p.workspace_id=r.workspace_id AND p.user_id=r.user_id AND p.input_source IS NOT NULL
+          ) SELECT coalesce(sum(model_call_count),0) FROM ancestors
+        )<24))
         AND a.user_id=r.user_id AND a.global_enabled AND a.epoch=r.account_epoch
         AND (${modelCallLimit}::int IS NULL OR r.model_call_count<${modelCallLimit}::int)
       RETURNING r.model_call_count`);
     if (!rows.length) throw new CompanionAgentBudgetExceededError("companion provider budget exhausted or turn obsolete");
+  });
+}
+
+/** Reserve the single optional post-turn model call against the originating run's call budget. */
+export async function reserveCompanionFollowupProviderCall(event: {
+  ctx: AgentEventContext["ctx"];
+  read: Pick<AgentEventContext["read"], "userId" | "runId" | "accountEpoch" | "generation">;
+  assistantMessageId: string;
+}): Promise<void> {
+  if (event.ctx.requestedBy !== event.read.userId) throw new CompanionAgentBudgetExceededError("companion initiating user changed");
+  const modelCallLimit = companionExecutionPolicy().maxModelCalls ?? null;
+  await withWorkerWorkspaceTransaction({ workspaceId: event.ctx.workspaceId, userId: event.read.userId }, async tx => {
+    await lockJobLease(tx, event.ctx);
+    const rows = await tx.execute(sql`UPDATE companion_turn_runs r
+      SET model_call_count=model_call_count+1,updated_at=now()
+      FROM user_companion_account_state a
+      WHERE r.id=${event.read.runId} AND r.workspace_id=${event.ctx.workspaceId}
+        AND r.user_id=${event.read.userId} AND r.assistant_message_id=${event.assistantMessageId}
+        AND r.account_epoch=${event.read.accountEpoch} AND r.generation=${event.read.generation}
+        AND r.status='succeeded'
+        AND EXISTS (SELECT 1 FROM jobs j WHERE j.id=${event.ctx.id}
+          AND j.type='companion_followup_suggestions' AND j.payload->>'runId'=r.id::text
+          AND j.payload->>'assistantMessageId'=r.assistant_message_id::text)
+        AND a.user_id=r.user_id AND a.global_enabled AND a.epoch=r.account_epoch
+        AND (${modelCallLimit}::int IS NULL OR r.model_call_count<${modelCallLimit}::int)
+      RETURNING r.model_call_count`);
+    if (!rows.length) throw new CompanionAgentBudgetExceededError("companion follow-up call budget exhausted or turn obsolete");
   });
 }
 

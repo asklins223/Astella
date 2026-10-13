@@ -371,7 +371,9 @@ fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
       const action = userContent.includes("【mock:wants-tool】")
         || userContent.includes("【mock:wants-memory】");
       const decided = JSON.stringify({ intent: action || readTask ? "task" : "conversation", toolUse: readTask ? "read" : action ? "act" : "none",
-        subjects: [], goalRelation: action ? "new" : "unrelated", candidateOperations: [], ambiguities: [] });
+        subjects: [], goalRelation: action ? "new" : "unrelated", candidateOperations: [], ambiguities: [],
+        // 结构合同里 voiceStyle 是必填项：缺它会让整条 mock 链停在"读不到"那一格。
+        voiceStyle: { decision: "none", instruction: null, persistentPreference: { action: "keep", dialect: null } } });
       return { content: decided, usage: this.estimateUsage(userContent, decided) };
     }
 
@@ -413,6 +415,20 @@ fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
           type: "text",
           text: "利息并入本金，这几个字以前读起来很快，现在看着就会停一下。并不是题目忽然换了模样，是那个追问让我重新注意到这个步骤。我还想把来由讲得更直白些，少绕一点。今天的这段先留在这里。",
         }],
+      });
+      return { content, usage: this.estimateUsage(userContent, content) };
+    }
+
+    // 2026-10-13：可选追问的窄夹具，形状与上面 diary 那条一致——标记是普通测试材料，
+    // 没带标记的请求仍落回通用假文本。数字控制给几条，用来钉「多给的要收进上限」
+    // 和「AI 决定不给」这两端。
+    const followupMarker = /【mock:followup-prompts:(\d+)】/.exec(messages
+      .map((message) => (typeof message.content === "string" ? message.content : ""))
+      .join(" "));
+    if (followupMarker && systemContent.includes("并可选给出下一条用户消息")) {
+      const content = JSON.stringify({
+        prompts: ["这条追问方向一", "这条追问方向二", "这条追问方向三", "这条追问方向四"]
+          .slice(0, Number(followupMarker[1])),
       });
       return { content, usage: this.estimateUsage(userContent, content) };
     }

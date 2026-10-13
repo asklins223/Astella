@@ -16,7 +16,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
-import { resolveRunPersonaPin } from "../companion-dialogue.ts";
+// 判据本体在 companion-run-persona-pin.ts（纯函数，不查库）；handler 侧的
+// "必须把决策交给它"由下面那条源码判据盯住。
+import { resolveRunPersonaPin } from "../companion-run-persona-pin.ts";
 
 const PRESET_VERSION = "pet-persona-presets-v1";
 

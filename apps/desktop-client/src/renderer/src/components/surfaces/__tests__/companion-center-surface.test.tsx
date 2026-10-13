@@ -429,6 +429,11 @@ function renderCompanionCenter() {
     </CompanionChatProvider>,
   );
 }
+/** 「合作方式」不再是独立一档：它就是类型筛到「偏好」后换一副规则口吻。 */
+async function onlyPreferences() {
+  fireEvent.click(await screen.findByRole("button", { name: "筛选记忆列表类型" }));
+  fireEvent.click(screen.getByRole("option", { name: /^偏好$/ }));
+}
 
 describe("重构后的伴星中心", () => {
   it("提供七个内容页面，规则与数据管理有独立设置入口", async () => {
@@ -658,7 +663,7 @@ describe("重构后的伴星中心", () => {
     const rule = { ...memoryItem(), scope: "global" as const, appliesWhen: "讲解新概念时", pinned: false };
     api.companion.memory.list.mockResolvedValue(ok({ version: 2, items: [rule, secondMemoryItem()] }));
     renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
-    fireEvent.click(await screen.findByRole("button", { name: "合作方式" }));
+    await onlyPreferences();
     expect(screen.getByText("我们怎样合作")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /这个月完成力学复习/ })).toBeNull();
     expect(screen.getByText("所有书房")).toBeTruthy();
@@ -673,7 +678,7 @@ describe("重构后的伴星中心", () => {
       code: "memory_global_condition_bound", safeMessageKey: "error.memory_global_condition_bound", retry: "never",
     }));
     renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
-    fireEvent.click(await screen.findByRole("button", { name: "合作方式" }));
+    await onlyPreferences();
     fireEvent.click(screen.getByRole("button", { name: "添加合作方式" }));
     fireEvent.change(screen.getByLabelText("新记忆内容"), { target: { value: "讲解时先举例再解释" } });
     fireEvent.change(screen.getByLabelText("新记忆适用条件"), { target: { value: "正式作答时不要主动提示" } });
@@ -698,7 +703,7 @@ describe("重构后的伴星中心", () => {
   it("仅修订适用条件也能保存，并提交编辑开始时的 revision", async () => {
     const api = installApi();
     renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
-    fireEvent.click(await screen.findByRole("button", { name: "合作方式" }));
+    await onlyPreferences();
     fireEvent.click(screen.getByRole("button", { name: "修订" }));
     expect(screen.getByRole("button", { name: "保存修订" }).hasAttribute("disabled")).toBe(true);
     fireEvent.change(screen.getByLabelText("修订后的适用条件"), { target: { value: "新概念讲解时，做题时先让我试试" } });
@@ -732,7 +737,7 @@ describe("重构后的伴星中心", () => {
   it("合作方式停用与恢复都等待真实回执，显示保存状态", async () => {
     const api = installApi();
     renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
-    fireEvent.click(await screen.findByRole("button", { name: "合作方式" }));
+    await onlyPreferences();
     api.companion.memory.list.mockResolvedValue(ok({ version: 2, items: [{ ...memoryItem(), archived: true }] }));
     fireEvent.click(screen.getByRole("button", { name: "暂时不用" }));
     expect(await screen.findByRole("button", { name: "恢复这条规则" })).toBeTruthy();

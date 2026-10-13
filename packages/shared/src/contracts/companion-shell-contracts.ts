@@ -14,7 +14,7 @@
  */
 
 import { z } from "zod";
-import { isTtsVoiceAllowed, ttsEngineV1Schema } from "../tts-voice-catalog.ts";
+import { isTtsVoiceAllowed, QWEN_TTS_SUPPORTED_DIALECTS, ttsEngineV1Schema } from "../tts-voice-catalog.ts";
 import { VOICE_STYLE_INSTRUCTION_MAX_UNITS, voiceStyleInstructionUnits } from "../voice-expression-tags.ts";
 import {
   companionAgentPermissionLevelSchema,
@@ -421,6 +421,8 @@ export const companionVoicePreferenceV1Schema = z.object({
    * 偏好兜底），edge 引擎不消费它。
    */
   instruction: z.string().max(VOICE_STYLE_INSTRUCTION_MAX_UNITS * 2).nullable(),
+  /** Persistent account-level Qwen dialect; null follows standard Mandarin/default voice behavior. */
+  dialect: z.enum(QWEN_TTS_SUPPORTED_DIALECTS).nullable().default(null),
   /** 用户没有显式保存过时为 null（此时 engine/voice 是 config 默认，不是用户的选择）。 */
   explicit: z.boolean(),
   updatedAt: z.string().datetime().nullable(),
@@ -442,6 +444,8 @@ export const companionVoicePreferencePatchV1Schema = z
     engine: ttsEngineV1Schema,
     voice: z.string().min(1).max(120),
     instruction: z.string().max(VOICE_STYLE_INSTRUCTION_MAX_UNITS * 2).nullable().optional(),
+    /** undefined = unchanged; null = standard Mandarin/default; a listed dialect = persistent default. */
+    dialect: z.enum(QWEN_TTS_SUPPORTED_DIALECTS).nullable().optional(),
   })
   .strict()
   .superRefine((value, ctx) => {

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 320">
+  <rect width="420" height="320" rx="12" fill="#f7f1e3"/>
+  <rect x="16" y="16" width="388" height="288" rx="8" fill="#fffaf0" stroke="#e5dfce"/>
+  <g font-family="system-ui, sans-serif" fill="#5c6e5b">
+    <text x="38" y="48" font-size="17" font-weight="600">观察一条增长曲线</text>
+    <text x="38" y="71" font-size="10" fill="#9aa18c">手绘示例 · 四次等间隔观察</text>
+    <g stroke="#e1e7d7" stroke-dasharray="3 4"><path d="M70 110h270M70 150h270M70 190h270M70 230h270"/></g>
+    <path d="M70 99v144h282" fill="none" stroke="#96a78a" stroke-width="1.5"/>
+    <path d="M98 227 166 211 234 179 302 131" fill="none" stroke="#548c75" stroke-width="3" stroke-linecap="round"/>
+    <g fill="#548c75" stroke="#fffaf0" stroke-width="2"><circle cx="98" cy="227" r="5"/><circle cx="166" cy="211" r="5"/><circle cx="234" cy="179" r="5"/><circle cx="302" cy="131" r="5"/></g>
+    <g font-size="11"><text x="91" y="211">10</text><text x="159" y="195">20</text><text x="226" y="163">40</text><text x="294" y="115">70</text></g>
+    <g font-size="10" fill="#92a086"><text x="96" y="261">1</text><text x="163" y="261">2</text><text x="232" y="261">3</text><text x="300" y="261">4</text><text x="317" y="283">观察次数</text><text x="35" y="103">数量</text></g>
+    <text x="38" y="290" font-size="10" fill="#a1a58f">想一想：只看线向上，能判断增长加快吗？</text>
+  </g>
+</svg>

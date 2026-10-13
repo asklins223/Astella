@@ -1,6 +1,8 @@
 import * as Y from "yjs";
 import { projectFragmentBlocks } from "./doc-fragment.ts";
 import { Hocuspocus } from "@hocuspocus/server";
+// Load Fastify's websocket route type augmentation for consumers that typecheck this route directly.
+import "@fastify/websocket";
 import type { FastifyInstance } from "fastify";
 import type { WebSocket as WsSocket, RawData } from "ws";
 import { and, eq } from "drizzle-orm";
@@ -8,6 +10,7 @@ import { noteBlocks, noteDocumentStates, notes } from "@astella/shared/db-schema
 import { users } from "@astella/shared/db-schema/identity";
 import { logger } from "../../lib/logger.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
+// WebSocket Auth frames reuse the identity domain's canonical session decoder.
 import { decodeToken } from "../identity/session-service.ts";
 import { isWorkspaceOwner, isNoteContentWriteForbiddenForSession } from "../identity/middleware.ts";
 import {

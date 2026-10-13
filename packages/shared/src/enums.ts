@@ -61,6 +61,8 @@ export const JobType = {
   PARSE_SOURCE: "parse_source",
   // Companion Agent v1：日常对话与受控工具 loop（03 §8.1）
   COMPANION_AGENT: "companion_agent",
+  COMPANION_INITIATIVE: "companion_initiative",
+  COMPANION_FOLLOWUP_SUGGESTIONS: "companion_followup_suggestions",
   AGENT_RUN_ADVANCE: "agent_run_advance",
   // 22 真桌宠记忆与上下文：日常对话记忆提取 / 会话摘要 / 每日总结 / embedding 重建
   COMPANION_MEMORY_EXTRACT: "companion_memory_extract",

@@ -1,4 +1,21 @@
 import { z } from "zod";
+import { noteAnnotationAnchorV1Schema, noteAnnotationV1Schema } from "./note-annotation-contracts.ts";
+
+/** The host binds the exact saved quote and operation identity before the agent starts writing. */
+export const companionAnnotationTargetV1Schema = z.object({
+  requestId: z.string().uuid(),
+  anchor: noteAnnotationAnchorV1Schema,
+}).strict();
+export const companionWriteAnnotationV1Schema = z.object({
+  markdown: z.string().trim().min(1).describe("独立、完整的原句解释正文，可包含例子、公式、列表或代码；不写聊天前言和执行状态"),
+  final: z.boolean().optional().describe("这次解释写完即已交付时为 true（默认），无需再调模型确认。仅用户还有未完成的其他工作时为 false"),
+}).strict();
+export const companionWrittenAnnotationV1Schema = z.object({
+  kind: z.literal("written_annotation"),
+  requestId: z.string().uuid(),
+  annotation: noteAnnotationV1Schema,
+}).strict();
+export type CompanionWrittenAnnotationV1 = z.infer<typeof companionWrittenAnnotationV1Schema>;
 
 /**
  * 内容篇幅由模型窗口与笔记存储/更新的字节合同决定，不在这里再加一份 agent 专用的

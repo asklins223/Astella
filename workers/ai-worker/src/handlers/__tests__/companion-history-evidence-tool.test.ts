@@ -42,3 +42,11 @@ test("一页装得下时如实说没有下一页，不多要一次续读", async
   assert.equal(value.truncated,false);
   assert.equal(value.nextFromSeq,null);
 });
+
+test("用户明确拒绝资料读取时，执行层阻止模型直接调用笔记搜索", async () => {
+  const event = { read: { userId: "test-user" }, constraints: { noteLibraryReadEnabled: false } } as unknown as AgentEventContext;
+  await assert.rejects(
+    executeReadTool(event, getCompanionAgentTool("companion_search_notes")!, { query: "欧姆定律" }),
+    /要求不读取笔记库/,
+  );
+});

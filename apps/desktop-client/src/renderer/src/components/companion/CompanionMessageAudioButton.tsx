@@ -9,7 +9,7 @@ import { useRoomStore } from "../../app/room-store";
 export const COMPANION_AUDIO_CACHE_CHANGED = "astella:companion-audio-cache-changed";
 
 /** 手记与伴星中心共用的原声入口。没有本机录音就不承诺回放。 */
-export function CompanionMessageAudioButton({ runId }: { runId: string | null }) {
+export function CompanionMessageAudioButton({ runId, exchange = false }: { runId: string | null; exchange?: boolean }) {
   const scope = useRoomStore(state => state.workspaceScopeRevision);
   const [cached, setCached] = useState<{ runId: string; scope: number; ordinals: number[] } | null>(null);
   const [phase, setPhase] = useState<"idle" | "loading" | "playing">("idle");
@@ -57,7 +57,7 @@ export function CompanionMessageAudioButton({ runId }: { runId: string | null })
   if (!ordinals) return failure ? <span className="companion-message-audio__error" role="status">{failure}</span> : null;
   const active = phase !== "idle";
   return <span className="companion-message-audio">
-    <button type="button" className="companion-message-audio__button" aria-label={active ? "停止播放这条消息的音频" : "播放这条消息的音频"}
+    <button type="button" className="companion-message-audio__button" aria-label={active ? exchange ? "停止播放这段交流的音频" : "停止播放这条消息的音频" : exchange ? "播放这段交流的音频" : "播放这条消息的音频"}
       aria-pressed={active} title="播放当时已缓存的声音；本机保留最近 100 条消息的音频" onClick={() => {
         if (playback.current) { playback.current.stop(); return; }
         setFailure(null);

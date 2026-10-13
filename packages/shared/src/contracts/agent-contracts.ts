@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { QWEN_TTS_SUPPORTED_DIALECTS } from "../tts-voice-catalog.ts";
 
 export const agentRunStatusV1Schema = z.enum([
   "queued", "running", "waiting", "paused", "completed", "failed", "cancelled",
@@ -24,6 +25,29 @@ export const agentAttentionObjectV1Schema = z.object({
   id: z.string().uuid(), revision: z.number().int().positive().optional(), versionId: z.string().uuid().optional(),
 }).strict();
 export type AgentAttentionObjectV1 = z.infer<typeof agentAttentionObjectV1Schema>;
+export const agentPersistentVoicePreferenceV1Schema = z.object({
+  action: z.enum(["keep", "set", "clear"]),
+  dialect: z.enum(QWEN_TTS_SUPPORTED_DIALECTS).nullable(),
+}).strict().superRefine((value, ctx) => {
+  if ((value.action === "set") !== (value.dialect !== null)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["dialect"], message: "set requires a dialect; keep/clear require null" });
+  }
+});
+export type AgentPersistentVoicePreferenceV1 = z.infer<typeof agentPersistentVoicePreferenceV1Schema>;
+const agentPersistentVoicePreferenceV1WithDefaultSchema = agentPersistentVoicePreferenceV1Schema
+  .default({ action: "keep", dialect: null });
+export const agentVoiceStyleDecisionV1Schema = z.object({
+  decision: z.enum(["none", "apply", "clarify"]),
+  instruction: z.string().trim().min(1).max(50).nullable(),
+  /** Durable dialect is independent from a one-turn override and from voice tone settings. */
+  persistentPreference: agentPersistentVoicePreferenceV1WithDefaultSchema,
+}).strict();
+export const agentVoicePreferenceWriteStatusV1Schema = z.enum(["not_requested", "saved", "unchanged", "failed"]);
+export type AgentVoicePreferenceWriteStatusV1 = z.infer<typeof agentVoicePreferenceWriteStatusV1Schema>;
+const agentVoiceStyleDecisionV1WithDefaultSchema = agentVoiceStyleDecisionV1Schema
+  .default({ decision: "none", instruction: null, persistentPreference: { action: "keep", dialect: null } });
+/** Input view keeps legacy/unit callers able to omit host-managed preference metadata. */
+export type AgentVoiceStyleDecisionV1 = z.input<typeof agentVoiceStyleDecisionV1Schema>;
 export const agentTurnInterpretationProposalV1Schema = z.object({
   intent: z.enum(["conversation", "question", "task", "task_control", "mixed"]),
   toolUse: z.enum(["none", "read", "act", "uncertain"]),
@@ -34,6 +58,8 @@ export const agentTurnInterpretationProposalV1Schema = z.object({
   goalObjectIndex: z.number().int().nonnegative().optional(),
   candidateOperations: z.array(z.string().min(1).max(100)),
   ambiguities: z.array(z.string().max(200)),
+  /** Semantic, current-turn TTS direction. `none` never inherits a past request implicitly. */
+  voiceStyle: agentVoiceStyleDecisionV1Schema,
   /**
    * 伴星自己消息里**用户这一句没有接**的收尾邀请，按宿主给出的候选索引回填。
    *
@@ -43,6 +69,10 @@ export const agentTurnInterpretationProposalV1Schema = z.object({
   pendingOfferIndexes: z.array(z.number().int().nonnegative()).default([]),
 }).strict();
 export const agentTurnInterpretationV1Schema = agentTurnInterpretationProposalV1Schema.omit({ subjects: true, goalObjectIndex: true }).extend({
+  // Older persisted turn interpretations predate voiceStyle; safely replay them as no request.
+  voiceStyle: agentVoiceStyleDecisionV1WithDefaultSchema,
+  /** Host receipt: the semantic preference write was committed before generation. */
+  voicePreferenceWrite: agentVoicePreferenceWriteStatusV1Schema.default("not_requested"),
   version: z.literal(1), requestHash: z.string().regex(/^[a-f0-9]{64}$/),
   subjects: z.array(z.object({ description: z.string().max(120), reference: agentAttentionObjectV1Schema.nullable() }).strict()),
   goalReference: agentAttentionObjectV1Schema.nullable(),

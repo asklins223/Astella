@@ -6,7 +6,7 @@
  * - `after > latestEventSeq` / 格式错误 / 其他 conversation 的 Last-Event-ID → 400 INVALID_CURSOR；
  * - after 早于仍可连续 replay 的最小 cursor → 写 SSE headers 前 409 CURSOR_EXPIRED；
  * - 先 replay durable events（expires 内），再 live（NOTIFY wake + 1s durable poll）；
- * - 每 15s heartbeat comment；每 conversation ≤3 连接、每账号 ≤10 → 429；
+ * - 每 15s heartbeat comment；每 conversation 与每账号均最多 10 条连接 → 429；
  * - latest-generation fence 由 Worker 写侧保证（cancel/supersede 后迟到输出零写入）。
  */
 
@@ -15,6 +15,7 @@ import { companionConversations, companionStreamEvents, companionTurnRuns } from
 import { withWorkspaceTransaction } from "../../../db/client.ts";
 import { subscribeCompanionEvents } from "../../../lib/companion-notify.ts";
 import { logger } from "../../../lib/logger.ts";
+import type { CompanionRunNodeEventV1 } from "@astella/shared/companion-chat-desktop-contracts";
 import {
   COMPANION_AGENT_MAX_STEPS,
   COMPANION_AGENT_MAX_TOOL_CALLS,
@@ -23,8 +24,10 @@ import {
 // ─── 连接限制 ────────────────────────────────────────────────────────────
 // M4（审计修复·部署标注）：连接计数与 companion-rate-limit 同属单进程内存态
 // ——当前部署为单 API 实例；多实例部署时总连接数/限额会按实例拆分（每实例
-// 可各自打满 3/10 上限），上线多实例前必须换共享存储（Redis/Postgres）。
-const SLOTS_PER_CONVERSATION = 3;
+// 可各自打满 10/10 上限），上线多实例前必须换共享存储（Redis/Postgres）。
+// 同一 inbox 可以同时由桌面和多个移动端会话打开。每会话与每账号使用同一总上限，
+// 避免移动端连接占满会话名额后，把桌面的回复事件流挡在门外。
+const SLOTS_PER_CONVERSATION = 10;
 const SLOTS_PER_USER = 10;
 // F10（round-4）：每次 replay/轮询最多加载的事件条数。SSE 以 cursor 递增在
 // 后续 poll（2.5s）与 replay flush 续读，validate 已确保窗口连续（窗口计数校验），
@@ -150,17 +153,14 @@ export async function listCompanionAgentRoutes(args: {
 
 // ─── Agent 过程节点轮询（2026-09-19，只读） ──────────────────────────────
 //
-// 方案 §1 第三层：抽屉里每条 assistant 消息下方要有一行「过程 N 步 · 调用 M 次工具」，
-// 点开是完整节点列表。SSE 是实时通道、不是历史通道（事件还有 TTL），所以这里补一个
-// 与 agent-routes 同形状的只读窗口：seq > after 的节点事件 + 会话最近的 run 摘要。
+// 实时节点窗口补回漏接的工具；includeThinking 按需读取随对话保存的完整过程档案。
+// 手记按已加载消息的 runId 读取历史，不受实时事件 TTL 或最近 20 轮窗口限制。
 //
 // 两个刻意的选择：
 //   1. **payload 原样透传**，不在服务端把事件折成节点。桌面端已经有一个收敛函数
 //      （`companion-agent-nodes.ts`）在实时链路上跑，历史链路复用同一个函数才不会出现
 //      "实时看的和翻历史看到的不是一回事"。
-//   2. **每个 run 带上 nodeCount**：事件会被 TTL 清掉，而消息不会。`stepCount > 0` 但
-//      `nodeCount === 0` 就是"过程记录已过期"的确凿判据——UI 据此显示说明，而不是留白
-//      或伪造占位（方案 §1 明确要求区分这两种情况）。
+//   2. **每个 run 带上 nodeCount**：包含持久档案中的节点，旧版本未留档的轮次仍可能没有详情。
 
 /** 折进"过程"的事件类型。与桌面端 companion-agent-nodes 认的三个 type 一致。 */
 const COMPANION_NODE_EVENT_TYPES = ["assistant.status", "agent.tool"] as const;
@@ -176,7 +176,7 @@ export interface CompanionRunNodeRow {
 
 export interface CompanionRunSummaryRow {
   runId: string;
-  userMessageId: string;
+  userMessageId: string | null;
   status: string;
   /** 客户端"接着说话"要用的 CAS 值（见 desktop 合同的 generation 字段）。 */
   generation: number;
@@ -187,6 +187,8 @@ export interface CompanionRunSummaryRow {
   maxToolCalls: number | null;
   assistantMessageId: string | null;
   nodeCount: number;
+  thinkingText?: string | null;
+  processTimeline?: CompanionRunNodeEventV1[];
 }
 
 export async function listCompanionRunNodes(args: {
@@ -194,6 +196,8 @@ export async function listCompanionRunNodes(args: {
   userId: string;
   conversationId: string;
   after: number;
+  includeThinking?: boolean;
+  runIds?: readonly string[];
 }): Promise<
   | { ok: true; items: CompanionRunNodeRow[]; runs: CompanionRunSummaryRow[]; latestSeq: number }
   | { ok: false; statusCode: 404; code: "NOT_FOUND"; message: string }
@@ -260,11 +264,15 @@ export async function listCompanionRunNodes(args: {
         toolCallCount: companionTurnRuns.toolCallCount,
         budgetSnapshot: companionTurnRuns.budgetSnapshot,
         assistantMessageId: companionTurnRuns.assistantMessageId,
+        thinkingText: args.includeThinking ? companionTurnRuns.thinkingText : sql<string | null>`NULL`,
+        processTimeline: args.includeThinking ? companionTurnRuns.processTimeline : sql<CompanionRunNodeEventV1[]>`'[]'::jsonb`,
       })
       .from(companionTurnRuns)
-      .where(eq(companionTurnRuns.conversationId, args.conversationId))
+      .where(and(eq(companionTurnRuns.conversationId, args.conversationId),
+        eq(companionTurnRuns.workspaceId, args.workspaceId), eq(companionTurnRuns.userId, args.userId),
+        args.runIds?.length ? inArray(companionTurnRuns.id, [...args.runIds]) : undefined))
       .orderBy(desc(companionTurnRuns.createdAt))
-      .limit(COMPANION_RUN_SUMMARY_LIMIT);
+      .limit(args.runIds?.length ? 100 : COMPANION_RUN_SUMMARY_LIMIT);
 
     // 每个 run 当前还剩多少条可读节点事件（TTL 清理后归零 → UI 显式说明"已过期"）。
     const countRows = await tx
@@ -303,7 +311,8 @@ export async function listCompanionRunNodes(args: {
           maxSteps: typeof budget?.maxSteps === "number" ? budget.maxSteps : COMPANION_AGENT_MAX_STEPS,
           maxToolCalls: typeof budget?.maxToolCalls === "number" ? budget.maxToolCalls : COMPANION_AGENT_MAX_TOOL_CALLS,
           assistantMessageId: row.assistantMessageId,
-          nodeCount: nodeCounts.get(row.runId) ?? 0,
+          nodeCount: Math.max(nodeCounts.get(row.runId) ?? 0, row.processTimeline.filter(event => event.type !== "assistant.thinking").length),
+          ...(args.includeThinking ? { thinkingText: row.thinkingText, processTimeline: row.processTimeline } : {}),
         };
       }),
       latestSeq,
@@ -535,6 +544,8 @@ export async function openCompanionEventStream(args: {
   workspaceId: string;
   userId: string;
   conversationId: string;
+  /** 只有桌面本轮显式允许语音时才做旁路音频预合成。 */
+  voiceOutputRequested?: boolean;
   afterRaw: string | null | undefined;
   lastEventId: string | null | undefined;
   writer: CompanionEventStreamWriter;
@@ -553,7 +564,7 @@ export async function openCompanionEventStream(args: {
   }
 
   // 在任何数据库 await 之前就注册断开回调。客户端可能在 cursor 校验或
-  // replay 查询期间断开；若等到查询完成后才监听，单进程 3/10 槽位会泄漏。
+  // replay 查询期间断开；若等到查询完成后才监听，单进程 10/10 槽位会泄漏。
   let aborted = false;
   let streamReady = false;
   let slotReleased = false;
@@ -598,7 +609,7 @@ export async function openCompanionEventStream(args: {
     resolved.after,
   ).catch((err) => {
     // §5.3：validate 内 DB 异常必须释放 slot，否则该连接槽位永久泄漏
-    // （多实例下 3/10 连接限制是 per-process，总量可超限）。
+    // （多实例下 10/10 连接限制是 per-process，总量可超限）。
     logger.warn(
       { err: err instanceof Error ? err.message : String(err), conversationId: args.conversationId },
       "companion SSE cursor validation failed",
@@ -610,7 +621,7 @@ export async function openCompanionEventStream(args: {
     // 2026-09 后端审查修复（P1）：400/404/409 早退同样必须释放 slot。此前只有
     // 抛异常路径与 replay 失败路径释放，断开监听又在 DB await 之后才注册——
     // 每个 INVALID_CURSOR/NOT_FOUND/CURSOR_EXPIRED 请求都会永久占用一个
-    // per-conversation(3)/per-user(10) 名额（内存计数无 TTL），409 又正是客户端
+    // per-conversation(10)/per-user(10) 名额（内存计数无 TTL），409 又正是客户端
     // TTL 过期的常规恢复路径 → 数次重连后该用户被 429 锁死到进程重启。
     releaseSlotOnce();
     return { statusCode: validated.statusCode, error: { code: validated.code, message: validated.message } };
@@ -674,9 +685,11 @@ export async function openCompanionEventStream(args: {
           dispose();
           return;
         }
-        // 先把这一批里的段交给预热，再推流：客户端收到事件时合成已经在跑，
-        // 它来取就是命中（同一段不会被合成两次，见 companion-tts-warm）。
-        notifySegmentWarm({ workspaceId: args.workspaceId, userId: args.userId }, events);
+        // 本回合允许出声时，先把这一批段交给预热再推流：客户端收到事件时合成已经在跑，
+        // 它来取就是命中（同一段不会被合成两次，见 companion-tts-warm）。静音回合不合成。
+        if (args.voiceOutputRequested === true) {
+          notifySegmentWarm({ workspaceId: args.workspaceId, userId: args.userId }, events);
+        }
         // 连续窗口才推流并推进 cursor。
         for (const event of events) {
           if (args.writer.write(formatCompanionSse(event)) === false) {

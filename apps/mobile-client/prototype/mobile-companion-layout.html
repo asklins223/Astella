@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f8fafd">
+  <title>拾星笔记 · 随身伴星完整体验 Demo</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="mobile-companion-layout.css?v=20261011-blue-flow-r29">
+  <link rel="stylesheet" href="mobile-companion-centers.css?v=20261011-blue-flow-r29">
+  <link rel="stylesheet" href="mobile-companion-scene.css?v=20261011-blue-flow-r29">
+  <link rel="stylesheet" href="mobile-companion-theme.css?v=20261012-reading-quiet-flow-r34">
+</head>
+<body>
+  <main class="workbench">
+    <aside class="lab-panel">
+      <a class="brand" href="mobile-companion-layout.html"><span class="brand-mark">✦</span> 拾星笔记 <small>ASTELLA</small></a>
+      <p class="eyebrow">随身伴星 / FRONTEND DEMO 08</p>
+      <h1>把书房带走，<br>和她接着学。</h1>
+      <p class="lab-intro">打开就见到伴星。和她聊一会儿，递来一页材料，随时切回同一份聊天记录。</p>
+      <div class="journey"><span>01</span><p>打开菜单 → 个人中心 → 登录 / 注册</p><span>02</span><p>伴星中心 → 表达、记忆与日记</p><span>03</span><p>读笔记 → 问一段 → 查看修改</p><span>04</span><p>设置字号与朗读，再接着学习</p></div>
+      <details class="lab-controls">
+        <summary>屏幕与体验条件</summary>
+        <div class="lab-controls-body">
+        <label class="lab-field">屏幕<select id="device-size"><option value="390,844">390 × 844</option><option value="360,720">360 × 720</option><option value="320,640">320 × 640</option><option value="430,932">430 × 932</option></select></label>
+        <label class="lab-field">正文<select id="text-size"><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option></select></label>
+        <label class="lab-field">下一次执行<select id="failure-mode"><option value="none">正常完成</option><option value="failed">执行失败</option><option value="unknown">已保存，回执丢失</option><option value="conflict">写入前版本变化</option></select></label>
+        <label class="lab-check"><input id="offline-toggle" type="checkbox">断网</label>
+        <label class="lab-check"><input id="readonly-toggle" type="checkbox">只读空间</label>
+        <label class="lab-check"><input id="consent-toggle" type="checkbox">尚未同意 AI</label>
+        <label class="lab-check"><input id="keyboard-toggle" type="checkbox">键盘占位</label>
+        <label class="lab-check"><input id="motion-toggle" type="checkbox">关闭动效</label>
+        <label class="lab-check"><input id="glass-toggle" type="checkbox" checked>玻璃模糊</label>
+        <div class="lab-actions"><button id="preview-flow">重播入场流光</button><button id="first-run">体验空书房</button><button id="reset-demo">重置演示数据</button></div>
+        </div>
+      </details>
+      <p class="prototype-boundary">本机前端原型 · 账号、聊天与笔记使用演示数据。已接入本机 Live2D；语音使用演示输入与浏览器朗读，未连接服务端。</p>
+      <p class="lab-note">独立前端原型。内容与执行由本机样例驱动，保存在此浏览器；右侧共用同一份演示数据。账号流程仅在本机模拟，凭据不外发；注册请使用演示数据。已接入项目本机 Live2D 模型；未连接认证、AI 模型与同步服务。图片可本机预览；示例图片有预写讲解。语音输入使用转写样例，不采集麦克风；播报使用浏览器声音，口型按播报时序估计。</p>
+    </aside>
+    <section class="preview-area" aria-label="手机体验预览">
+      <div id="device" class="phone"></div>
+      <p class="preview-caption"><i></i> 可连续操作 · 本机保存 <span id="metrics"></span></p>
+    </section>
+    <aside class="mirror-panel">
+      <p class="eyebrow">DESKTOP / 同一份演示数据</p>
+      <h2>回到电脑，<br>还在原处。</h2>
+      <p class="mirror-intro">在手机创建或修改后，这里直接显示同一对象。也可以从这里更新笔记，核对手机的变化。</p>
+      <div id="desktop-mirror" class="desktop-mirror" aria-label="桌面数据预览"></div>
+      <div class="design-note"><span>角色在前，纸面接住每一次学习。</span><p>蓝白渐变衬托伴星，对话时底部光晕随音波强弱流动，读笔记时回到安静纸面。无色玻璃留给操作，白色纸面留给长文。蓝色标出行动与回执；从伴星切到记录，再读同一篇笔记。</p></div>
+    </aside>
+  </main>
+  <script src="notebook-icons.js"></script>
+  <script src="mobile-companion-data.js?v=20261011-role-style-r24"></script>
+  <script src="mobile-companion-account.js?v=20261011-role-style-r24"></script>
+  <script src="mobile-companion-centers.js?v=20261011-role-style-r24"></script>
+  <script src="mobile-companion-motion.js?v=20261011-role-style-r24"></script>
+  <script src="mobile-companion-live2d.js?v=20261013-assets-r1"></script>
+  <script src="mobile-companion-scene.js?v=20261012-reading-quiet-flow-r34"></script>
+  <script src="mobile-companion-layout.js?v=20261011-blue-flow-r29"></script>
+</body>
+</html>

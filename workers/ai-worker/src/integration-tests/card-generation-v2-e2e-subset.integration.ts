@@ -189,7 +189,46 @@ async function runPipelineOnce() {
   const { pollV2Outbox } = await import("../handlers/card-generation-v2-handler.ts");
   const processed = await pollV2Outbox(20);
   assert.ok(processed >= 1, `worker must process outbox jobs (got ${processed})`);
+  await processPendingAgentAdvances();
   return processed;
+}
+
+/**
+ * V2 stores a real Agent Run beside each domain generation run. The test used to advance only
+ * card_generation_run_outbox_v2, leaving the corresponding agent_run_advance jobs pending; by
+ * the third case the real run-capacity guard correctly rejected every new run. Drain those jobs
+ * through the production handler so this suite covers the Agent receipt/settlement half too.
+ */
+async function processPendingAgentAdvances() {
+  const { runAgentAdvance } = await import("../agent/advance.ts");
+  const { markJobSucceeded } = await import("../queue.ts");
+  for (let count = 0; count < 100; count += 1) {
+    const [pending] = await admin`SELECT id FROM jobs
+      WHERE workspace_id=${WORKSPACE_ID} AND type='agent_run_advance' AND status='pending'
+      AND scheduled_at<=now() ORDER BY scheduled_at,id LIMIT 1`;
+    if (!pending) return;
+    const leaseToken = randomUUID();
+    const [claimed] = await admin`UPDATE jobs
+      SET status='running',lease_token=${leaseToken},started_at=now(),attempts=attempts+1
+      WHERE id=${pending.id} AND status='pending'
+      RETURNING id,type,payload,workspace_id,requested_by,attempts,resource_class`;
+    if (!claimed) continue;
+    assert.ok(claimed.requested_by, "Agent advance needs its trusted actor");
+    const job = {
+      id: String(claimed.id),
+      type: String(claimed.type),
+      payload: claimed.payload as Record<string, unknown>,
+      workspaceId: String(claimed.workspace_id),
+      requestedBy: String(claimed.requested_by),
+      attempts: Number(claimed.attempts),
+      leaseToken,
+      resourceClass: String(claimed.resource_class) as "interactive" | "maintenance",
+      signal: new AbortController().signal,
+    };
+    await runAgentAdvance(job);
+    assert.equal(await markJobSucceeded(job), true, `Agent advance job ${job.id} should settle`);
+  }
+  assert.fail("Agent advance queue did not drain within 100 direct requests");
 }
 
 before(async () => {
@@ -288,9 +327,11 @@ test("C22：同一 Idempotency-Key 重放 → 同 run，不产生重复 outbox/r
   const second = await createRun(versionId, clientRequestId, key);
   assert.equal(first.runId, second.runId, "C22 same idempotency key must return same run");
 
+  // 统一 Agent 层会从请求派生领域幂等键，所以按本测试唯一的源版本计数，
+  // 避免依赖外层 key 的映射细节。
   const runCount = await admin`
     SELECT count(*)::int AS n FROM card_generation_runs_v2
-    WHERE workspace_id = ${WORKSPACE_ID} AND idempotency_key = ${key}`;
+    WHERE workspace_id = ${WORKSPACE_ID} AND note_version_id = ${versionId}`;
   assert.equal(runCount[0].n, 1, "C22 must create exactly one run row");
 
   // 判的是"重放没有多入队一枚 job"，与这一发投到哪条链无关——所以不再按 jobType 过滤
@@ -755,7 +796,7 @@ test("C45：开启复习那一档 → 恰一条待处理安排，回执报库里
   createdScheduleIds.push(row.id);
   assert.equal(row.status, "pending", "新排的那一行必须是待处理");
   assert.equal(row.subject_type, "card", "安排挂在卡这一类主体上");
-  assert.equal(row.review_dimension, "", "「保存并开启复习」排的是默认那一维度");
+  assert.equal(row.review_dimension, "recall", "「保存并开启复习」使用当前默认回忆维度");
   // 那两个数不是这里该写死的字面量：首档由 discrete-v2 的阶梯导出，策略版本由那份模块导出。
   // 对账的是"激活这一发有没有去读唯一出处"——调用方另写一份 `1` 或 `"discrete-v2"`，
   // 阶梯改了它不会跟着改，屏幕上那句"第一次复习排在 X"就与策略悄悄分叉。

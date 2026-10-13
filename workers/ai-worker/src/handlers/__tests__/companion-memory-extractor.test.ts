@@ -378,6 +378,10 @@ const thinkingSanctioned = new Set([
   // 它被单独挪进这个模块而不是留在运行时里，正是为了让这条守卫仍然管得住对话主链路：
   // `companion-agent-runtime.ts` 只能经 `companionTurnThinking` 决定思考档。
   "companion-active-context-compaction.ts",
+  // 2026-10-13：回复终态之后补的可选追问。它不在这条守卫保护的"她回话的路"上，
+  // 但它只有一次 3 秒的窗口：开思考档的模型普遍要十几秒，追问就永远赶不到气泡上，
+  // 而这件事本身只是"要不要再问一句"的判断，不是给她组织的正文。
+  "companion-followup-suggestions.ts",
 ]);
 
 test("伴星思考档：对话按本轮意图，念头短 JSON 关闭，其余后台常开", () => {

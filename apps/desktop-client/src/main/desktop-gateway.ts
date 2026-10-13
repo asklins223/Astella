@@ -1574,6 +1574,7 @@ export class DesktopGateway {
     eventCursor: number,
     onEvent: (event: CompanionChatStreamEventV1) => void | Promise<void>,
     onError?: (error: unknown) => void,
+    voiceOutput = false,
   ): Promise<() => void> {
     await this.transport.ensureConnected();
     const safeConversationId = safeUuid(conversationId);
@@ -1602,6 +1603,7 @@ export class DesktopGateway {
             `${configuration.config.apiOrigin}/`,
           );
           eventsUrl.searchParams.set("after", String(cursor));
+          if (voiceOutput) eventsUrl.searchParams.set("voiceOutput", "1");
           const response = await fetch(eventsUrl, {
             method: "GET",
             headers,

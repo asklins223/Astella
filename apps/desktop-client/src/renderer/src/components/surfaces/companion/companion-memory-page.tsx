@@ -1,9 +1,8 @@
 import type { CompanionMemoryKindV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { Archive,Map,RotateCcw } from "lucide-react";
 import { Activity,useEffect,useRef,useState } from "react";
-import { CompanionSelfNotesPage } from "./companion-self-notes-page";
-import { CompanionMethodsPage } from "./companion-methods-page";
-import { CompanionLongGoalsPage } from "./companion-long-goals-page";
+import { CompanionHerNotesPage } from "./companion-her-notes-page";
+import { CompanionGoalsAndMethodsPage } from "./companion-goals-and-methods-page";
 import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
 import { useRoomStore } from "../../../app/room-store";
 import { SectionState } from "./companion-center-primitives";
@@ -16,25 +15,28 @@ import { publishCompanionRecordsChanged,useCompanionRecordsRefresh,useCompanionR
 
 type MemoryPageProps = { refreshKey: number; requestedMemoryId: string | null; onFocusConsumed: () => void;
   requestedMethodId?: string | null; onMethodFocusConsumed?: () => void };
+/**
+ * 三档按「这是谁留下的什么」划分，不再按 kind 切片：
+ * 「合作方式」原本是全部记忆按 preference 的筛选，「长期目标」原本是 goal 的筛选，
+ * 两者都退回「关于你的」里的类型筛选；「她的看法」和「她的记事」是同一次反思写出的
+ * 两个槽，合并成「她的记事」。
+ */
 export function CompanionMemoryPage(props: MemoryPageProps) {
-  const [view,setView] = useState<"all" | "cooperation" | "methods" | "goals" | "self">("all");
-  useEffect(() => { if (props.requestedMemoryId) setView("all"); },[props.requestedMemoryId]);
-  useEffect(() => { if (props.requestedMethodId) setView("methods"); },[props.requestedMethodId]);
+  const [view,setView] = useState<"about" | "herself" | "goals">("about");
+  useEffect(() => { if (props.requestedMemoryId) setView("about"); },[props.requestedMemoryId]);
+  useEffect(() => { if (props.requestedMethodId) setView("goals"); },[props.requestedMethodId]);
   return <>
     <div className="cc-segments cc-memory-views" role="group" aria-label="记忆视图">
-      <button type="button" aria-pressed={view==="all"} onClick={()=>setView("all")}>全部记忆</button>
-      <button type="button" aria-pressed={view==="cooperation"} onClick={()=>setView("cooperation")}>合作方式</button>
-      <button type="button" aria-pressed={view==="methods"} onClick={()=>setView("methods")}>我们的方法</button>
-      <button type="button" aria-pressed={view==="self"} onClick={()=>setView("self")}>她的记事</button>
-      <button type="button" aria-pressed={view==="goals"} onClick={()=>setView("goals")}>长期目标</button>
+      <button type="button" aria-pressed={view==="about"} onClick={()=>setView("about")}>关于你的</button>
+      <button type="button" aria-pressed={view==="herself"} onClick={()=>setView("herself")}>她的记事</button>
+      <button type="button" aria-pressed={view==="goals"} onClick={()=>setView("goals")}>目标与方法</button>
     </div>
-    {view==="self" ? <CompanionSelfNotesPage refreshKey={props.refreshKey} /> : null}
-    <Activity mode={view==="methods" ? "visible" : "hidden"}><CompanionMethodsPage refreshKey={props.refreshKey} requestedId={props.requestedMethodId} onFocusConsumed={props.onMethodFocusConsumed} /></Activity>
-    <Activity mode={view==="goals" ? "visible" : "hidden"}><CompanionLongGoalsPage refreshKey={props.refreshKey} onMemory={id=>{useRoomStore.getState().setCompanionCenterTarget({tab:"memory",focusMemoryId:id});setView("all");}} /></Activity>
-    <Activity mode={view==="all" || view==="cooperation" ? "visible" : "hidden"}><CompanionMemoryRecordsPage {...props} cooperation={view==="cooperation"} onViewMemory={()=>setView("all")} /></Activity>
+    <Activity mode={view==="herself" ? "visible" : "hidden"}><CompanionHerNotesPage refreshKey={props.refreshKey} /></Activity>
+    <Activity mode={view==="goals" ? "visible" : "hidden"}><CompanionGoalsAndMethodsPage refreshKey={props.refreshKey} requestedMethodId={props.requestedMethodId} onFocusConsumed={props.onMethodFocusConsumed} onMemory={id=>{useRoomStore.getState().setCompanionCenterTarget({tab:"memory",focusMemoryId:id});setView("about");}} /></Activity>
+    <Activity mode={view==="about" ? "visible" : "hidden"}><CompanionMemoryRecordsPage {...props} /></Activity>
   </>;
 }
-function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusConsumed, cooperation, onViewMemory }: MemoryPageProps & { cooperation: boolean; onViewMemory: () => void }) {
+function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusConsumed }: MemoryPageProps) {
   const [anchorId, setAnchorId] = useState(requestedMemoryId);
   const resource = useCompanionResource(async meta => {
     const result = await window.astella.companion.memory.list({ meta, query: { includeCandidates: true, includeArchived: true, ...(anchorId ? { focusMemoryId: anchorId } : {}) } });
@@ -45,7 +47,6 @@ function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusCons
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<"all" | CompanionMemoryKindV1>("all");
   const [filter, setFilter] = useState<MemoryStateFilter>("all");
-  useEffect(() => { setKind(cooperation ? "preference" : "all"); setFilter("all"); setQuery(""); if (cooperation) setCreateKind("preference"); },[cooperation]);
   const [mapOpen, setMapOpen] = useState(false);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -71,7 +72,7 @@ function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusCons
   useEffect(() => {
     if (!requestedMemoryId) return;
     setAnchorId(requestedMemoryId);
-    setSelectedId(requestedMemoryId); setQuery(""); setKind("all"); setFilter("all"); onViewMemory(); setMapOpen(false); setMaintenanceOpen(false);
+    setSelectedId(requestedMemoryId); setQuery(""); setKind("all"); setFilter("all"); setMapOpen(false); setMaintenanceOpen(false);
   }, [requestedMemoryId]);
   useEffect(() => {
     if (!requestedMemoryId || !resource.section || resource.loading) return;
@@ -102,7 +103,7 @@ function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusCons
     });
   };
   const openMemory = (id: string) => {
-    setAnchorId(id); setSelectedId(id); setQuery(""); setKind("all"); setFilter("all"); onViewMemory();
+    setAnchorId(id); setSelectedId(id); setQuery(""); setKind("all"); setFilter("all");
     setMapOpen(false); setMaintenanceOpen(false);
   };
   const create = () => void write("create", async () => {
@@ -111,8 +112,8 @@ function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusCons
     const created = unwrapGatewayResult(await window.astella.companion.memory.create({ meta: resource.meta(),
       request: { kind: createKind, content, scope: createKind === "preference" ? createScope : "workspace", appliesWhen: createAppliesWhen.trim() || null } }));
     setSelectedId(created.memoryItemId); setCreateContent(""); setCreateAppliesWhen(""); setCreateScope("workspace"); setCreateOpen(false);
-    setQuery(""); setKind(cooperation && created.kind === "preference" ? "preference" : "all"); setFilter("all");
-    if (created.kind !== "preference") onViewMemory();
+    setQuery(""); setFilter("all");
+    if (created.kind !== kind) setKind("all");
     setNotice(`已保存，适用于${MEMORY_SCOPE_LABEL[created.scope]}。`);
     await resource.reload({ silent: true });
   });
@@ -140,11 +141,11 @@ function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusCons
     {lastDeleted ? <div className="cc-undo" role="status"><span>已删除：{lastDeleted.content}</span><button type="button" className="cc-link" disabled={busy !== null} onClick={() => void write("undo", async () => { unwrapGatewayResult(await window.astella.companion.memory.restoreDeleted({ meta: resource.meta(), memoryId: lastDeleted.id })); openMemory(lastDeleted.id); setLastDeleted(null); setNotice("这条记忆已恢复。"); await resource.reload({ silent: true }); })}><RotateCcw size={14} />撤回删除</button></div> : null}
     <MemoryPanel section={resource.section} items={items} focus={selected} revisions={selectedId && revisions.section?.ok && revisions.section.value.memoryItemId === selectedId ? revisions.section.value.items : null} revisionsError={selectedId && revisions.section && !revisions.section.ok && !revisions.loading ? revisions.section.message : null} onRetryRevisions={() => void revisions.reload()}
       query={query} kind={kind} pinFilter={filter} busy={busy} error={error} notice={notice} confirmDelete={confirmDelete} confirmErase={confirmErase}
-      createOpen={createOpen} createContent={createContent} createKind={createKind} correctionOpen={correctionOpen} correctionContent={correctionContent} cooperation={cooperation}
+      createOpen={createOpen} createContent={createContent} createKind={createKind} correctionOpen={correctionOpen} correctionContent={correctionContent}
       ruleEditor={{ create: { disabled: busy !== null, appliesWhen: createAppliesWhen, onAppliesWhen: setCreateAppliesWhen,
         scope: { value: createScope, onChange: setCreateScope, allowGlobal: createKind === "preference" } },
         correction: { disabled: busy !== null, appliesWhen: correctionAppliesWhen, onAppliesWhen: setCorrectionAppliesWhen } }}
-      onQuery={setQuery} onKind={setKind} onPinFilter={setFilter} onFocus={setSelectedId} onAction={memoryAction} onConfirmDelete={setConfirmDelete} onConfirmErase={setConfirmErase}
+      onQuery={setQuery} onKind={value => { setKind(value); if (value === "preference") setCreateKind("preference"); setFilter("all"); setQuery(""); }} onPinFilter={setFilter} onFocus={setSelectedId} onAction={memoryAction} onConfirmDelete={setConfirmDelete} onConfirmErase={setConfirmErase}
       onCreateOpen={open => { setCreateOpen(open); setError(null); setNotice(null); }} onCreateContent={setCreateContent} onCreateKind={value => { setCreateKind(value); if (value !== "preference") setCreateScope("workspace"); }}
       onCorrectionOpen={open => { if (open && selected) { setCorrectionContent(selected.content); setCorrectionAppliesWhen(selected.appliesWhen ?? ""); setCorrectionBase({ id: selected.memoryItemId, revision: selected.revision }); } setCorrectionOpen(open); }} onCorrectionContent={setCorrectionContent}
       onCreate={create} onCorrect={correct}

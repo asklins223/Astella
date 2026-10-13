@@ -1,3 +1,6 @@
+import { arrangeCompanionAttention } from "@astella/agent-host";
+import { executeCompanionParticipationTool } from "./companion-participation-tools.ts";
+import { executeCompanionWriteAnnotation } from "./companion-annotation-authoring.ts";
 import { reviewedTargetMatches } from "./companion-reviewed-target.ts";
 import { AgentStoreError, listCompanionSelfNotes, writeCompanionSelfNote } from "@astella/agent-host";
 import { reserveCompanionProviderCall } from "./companion-agent-events.ts";
@@ -126,10 +129,16 @@ export async function executeReadTool(
   // 外发政策门禁。工具面本来已经把受管工具摘掉了（见 resolveAllCompanionAgentTools），
   // 这里再拦一次是因为**工具名是模型给的**：不复核就等于"下发面没列出来"这件事
   // 只是运气好，而不是一个保证。判定只看服务端解析出的约束，不看模型自述。
+  if (event.constraints?.noteLibraryReadEnabled === false
+    && ["companion_search_notes", "companion_read_note"].includes(definition.name)) {
+    throw new CompanionToolBlockedError("你这轮要求不读取笔记库，我不会搜索或读取其他笔记。");
+  }
   if (isVisionGatedCompanionTool(definition.name) && event.constraints.visionEnabled !== true) {
     throw new CompanionToolBlockedError(VISION_EGRESS_DENIED_MESSAGE);
   }
   switch (definition.name) {
+    case "companion_read_participation":
+      return executeCompanionParticipationTool(event, definition.name, args);
     case "companion_read_identity": {
       const document = event.read.petProfile?.selfDescription ?? "";
       const offset = Number(args.offset ?? 0), end = Math.min(document.length, offset + Number(args.maxChars ?? 16_000));
@@ -991,6 +1000,15 @@ export async function executeDirectTool(
   if (["agent_start_goal", "agent_revise_goal", "agent_control_goal"].includes(definition.name))
     return executeAgentGoalTool(event, definition.name, args);
   switch (definition.name) {
+    case "companion_save_participation":
+    case "companion_arrange_attention":
+    case "companion_publish_utterance":
+    case "companion_finish_participation":
+      return executeCompanionParticipationTool(event, definition.name, args, toolCallId);
+    case "companion_write_annotation": {
+      if (!toolCallId) throw new CompanionToolError("解释写入缺少执行身份，没有重复保存。");
+      return executeCompanionWriteAnnotation(event, args, signal, toolCallId);
+    }
     case "companion_create_note": {
       if (!toolCallId) throw new CompanionToolError("创建笔记缺少这轮的执行记录，没有重复保存。");
       return executeCompanionCreateNote(event, args, signal, toolCallId);
@@ -1020,16 +1038,36 @@ export async function executeDirectTool(
           if (definition.name === "companion_schedule_wake") {
             const [current] = await listCompanionSelfNotes(tx, scope, { key: String(args.key), includeArchived: true });
             if (!current) throw new CompanionToolError("先写下或读取这条自己的记事，再安排重评。");
-            return writeCompanionSelfNote(tx, scope, { key: current.key, expectedRevision: Number(args.expectedRevision),
-              title: current.title, body: current.body, tier: current.tier, nextReviewAt: args.at as string | null,
+            const saved = await writeCompanionSelfNote(tx, scope, { key: current.key, expectedRevision: Number(args.expectedRevision),
+              title: current.title, body: current.body, tier: current.tier, nextReviewAt: null,
               expiresAt: current.expiresAt, reason: String(args.reason) });
+            const key = `self:${saved.key}`.slice(0,120);
+            const [prior] = await tx.execute<{ revision: number }>(sql`SELECT revision FROM companion_attention_plans
+              WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND entry_key=${key}`);
+            const attention = await arrangeCompanionAttention(tx, scope, { key, expectedRevision: prior?.revision ?? 0,
+              intent: `接着推进自己的记事「${saved.title}」。${String(args.reason)}`, topics: [], nextReviewAt: args.at as string | null,
+              expiresAt: saved.expiresAt, preferenceRevision: null, selfNote: { key: saved.key, revision: saved.revision },
+              state: args.at ? "active" : "completed" }, { conversationId: event.read.conversationId, runId: event.read.runId });
+            return { ...saved, nextReviewAt: attention.nextReviewAt };
           }
-          return writeCompanionSelfNote(tx, scope, args as unknown as import("@astella/shared").CompanionSelfNoteWriteV1);
+          const input = args as unknown as import("@astella/shared").CompanionSelfNoteWriteV1;
+          const saved = await writeCompanionSelfNote(tx, scope, { ...input, nextReviewAt: null });
+          if (input.nextReviewAt) {
+            const key = `self:${saved.key}`.slice(0,120);
+            const [prior] = await tx.execute<{ revision: number }>(sql`SELECT revision FROM companion_attention_plans
+              WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND entry_key=${key}`);
+            await arrangeCompanionAttention(tx, scope, { key, expectedRevision: prior?.revision ?? 0,
+              intent: `接着推进自己的记事「${saved.title}」。${input.reason}`, topics: [], nextReviewAt: input.nextReviewAt,
+              expiresAt: saved.expiresAt, preferenceRevision: null, selfNote: { key: saved.key, revision: saved.revision }, state: "active" },
+              { conversationId: event.read.conversationId, runId: event.read.runId });
+          }
+          return { ...saved, nextReviewAt: input.nextReviewAt ?? null };
         }).catch(error => {
           if (error instanceof AgentStoreError) throw new CompanionToolError(error.message);
           throw error;
         });
-      return { value: note, safeSummary: "自己的记事已保存；内部重评安排不需要用户确认。" };
+      return { value: note, resultRef: JSON.stringify({selfNote:{key:note.key,revision:note.revision}}),
+        safeSummary: "自己的记事已保存；内部重评安排不需要用户确认。" };
     }
     case "companion_revise_identity": {
       const outcome = await withAutonomousWriteTransaction(event,

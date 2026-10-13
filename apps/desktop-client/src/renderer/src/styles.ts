@@ -92,6 +92,7 @@ import "./components/render-error-boundary.css";
 /* ── 4c. 伴星：交互台在浮层里，带自己的局部 token 表 ─────────────────────── */
 import "./components/companion/companion-root.css";
 import "./components/companion/companion-bubble.css";
+import "./components/companion/companion-voice-style-control.css";
 import "./components/companion/companion-chat-record.css";
 import "./components/companion/companion-web-citations.css";
 import "./components/companion/companion-hud.css";

@@ -11,7 +11,7 @@
 
 import { z } from "zod";
 import { isCompanionAutonomousTool } from "../companion-autonomy.ts";
-import { companionEditedNoteV1Schema } from "./companion-note-authoring-contracts.ts";
+import { companionEditedNoteV1Schema, companionWrittenAnnotationV1Schema } from "./companion-note-authoring-contracts.ts";
 
 export const COMPANION_AGENT_CONTRACT_VERSION = 1 as const;
 // Counts are observations, not task-completion rules. Null means no default
@@ -48,6 +48,8 @@ export interface CompanionAgentToolExecutionConstraints {
   visionEnabled?: boolean;
   /** Account opt-in plus current search-service availability. Missing means off. */
   webSearchEnabled?: boolean;
+  /** The current user explicitly forbids searching or reading the note library. Missing means allowed. */
+  noteLibraryReadEnabled?: boolean;
 }
 
 export const companionAgentPermissionLevelSchema = z.enum([
@@ -184,6 +186,7 @@ export const companionAgentToolEventV1Schema = z.object({
   proposalId: z.string().uuid().optional(),
   safeSummary: z.string().max(240).optional(),
   noteEdit: companionEditedNoteV1Schema.optional(),
+  noteAnnotation: companionWrittenAnnotationV1Schema.optional(),
   noteEditTarget: z.object({ noteId: z.string().uuid(), startBlock: z.number().int().nonnegative(), endBlock: z.number().int().nonnegative() }).strict().optional(),
   route: z.record(z.unknown()).optional(),
   /**
@@ -255,7 +258,8 @@ export function canUseCompanionAgentTool(
 ): { allowed: boolean; requiresConfirmation: boolean; reason?: string } {
   if (!companionAgentPermissionLevelSchema.safeParse(permission).success)
     return { allowed: false, requiresConfirmation: false, reason: "权限状态暂时无法确认，这次操作没有执行。" };
-  if (definition.riskClass === "read" || isCompanionAutonomousTool(definition.name)) {
+  if (definition.riskClass === "read" || isCompanionAutonomousTool(definition.name)
+    || ["companion_save_participation", "companion_write_annotation"].includes(definition.name)) {
     return { allowed: true, requiresConfirmation: false };
   }
   if (definition.confirmationStage === "before_execute" || definition.riskClass === "irreversible"

@@ -80,6 +80,19 @@ function makeProvider(overrides: Partial<ConstructorParameters<typeof OpenCodeGo
   });
 }
 
+test("an actual host observation follows her last reply without inventing user speech or reasoning", async () => {
+  const { request, calls } = recordingRequester(ok({ status: "completed", output: [] }));
+  await makeProvider({ request }).executeAgentTurn({ role: AgentRole.COMPANION_AGENT,
+    systemPrompt: "trusted policy", tools: [], maxTokens: 100, temperature: 0.2,
+    messages: [{ role: "user", content: "earlier real user request" }, { role: "assistant", content: "earlier actual answer" },
+      { role: "system", hostObservation: true, content: "new actual host observation" }] });
+  const body = calls[0]!.body;
+  const items = body.input as Array<Record<string, unknown>>;
+  assert.deepEqual(items.map(item => item.role ?? item.type), ["user", "assistant", "system"]);
+  assert.equal(items.at(-1)!.content, "new actual host observation");
+  assert.equal(body.instructions, "trusted policy");
+});
+
 test("工具循环的流式终答保留原生调用/回执及不透明思考句柄，经过同一外发治理", async () => {
   const { request, captured } = streamingRequester([
     'data: {"type":"response.output_text.delta","delta":"笔记已保存，可以打开。"}\n\n',
@@ -703,9 +716,11 @@ test("executeAgentTurn: 已 abort 的 signal 立即抛错且不发请求", async
 
 // ─── 流式 ────────────────────────────────────────────────────────────────
 
-test("Responses 最终正文排除中间 commentary，未声明 phase 的旧返回仍完整保留", () => {
+test("Responses 最终正文排除中间与未知阶段，兼容 final 和未声明 phase 的旧返回", () => {
   const message = (text: string, phase?: string) => ({ type: "message", phase, content: [{ type: "output_text", text }] });
   assert.equal(readResponsesFinalText({ output: [message("内部预备说明", "commentary"), message("最终正文", "final_answer")] }), "最终正文");
+  assert.equal(readResponsesFinalText({ output: [message("私有分析", "analysis"), message("最终正文", "final")] }), "最终正文");
+  assert.equal(readResponsesFinalText({ output: [message("只有私有分析", "analysis")] }), null);
   assert.equal(readResponsesFinalText({ output: [message("旧格式一"), message("旧格式二")] }), "旧格式一旧格式二");
   assert.equal(readResponsesFinalText({ output: [message("只有中间消息", "commentary")] }), null);
 });
@@ -729,6 +744,35 @@ test("流式发布 final_answer，commentary 原样回放时带原始 phase", as
   assert.equal(inputs[1]?.phase, undefined);
 });
 
+test("未声明阶段能力的模型也不外发 analysis，final 阶段仍可见", async () => {
+  const { request } = streamingRequester([
+    'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","phase":"analysis"}}\n\n',
+    'data: {"type":"response.output_text.delta","output_index":0,"delta":"私有分析"}\n\n',
+    'data: {"type":"response.output_item.added","output_index":1,"item":{"type":"message","phase":"final"}}\n\n',
+    'data: {"type":"response.output_text.delta","output_index":1,"delta":"用户可见答案"}\n\n',
+    'data: {"type":"response.completed","response":{"status":"completed","output":[{"type":"message","phase":"analysis","content":[{"type":"output_text","text":"私有分析"}]},{"type":"message","phase":"final","content":[{"type":"output_text","text":"用户可见答案"}]}]}}\n\n',
+  ]);
+  const deltas: string[] = [];
+  const result = await makeProvider({ streamRequest: request }).chatCompletionStream(
+    [{ role: "user", content: "问题" }], { responseFormat: "text" }, undefined, text => deltas.push(text));
+  assert.deepEqual(deltas, ["用户可见答案"]);
+  assert.equal(result.content, "用户可见答案");
+  assert.equal(result.phase, "final_answer");
+});
+
+test("仅有 analysis 阶段时拒绝空的可见答复", async () => {
+  const { request } = streamingRequester([
+    'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","phase":"analysis"}}\n\n',
+    'data: {"type":"response.output_text.delta","output_index":0,"delta":"私有分析"}\n\n',
+    'data: {"type":"response.completed","response":{"status":"completed","output":[{"type":"message","phase":"analysis","content":[{"type":"output_text","text":"私有分析"}]}]}}\n\n',
+  ]);
+  const deltas: string[] = [];
+  await assert.rejects(() => makeProvider({ streamRequest: request }).chatCompletionStream(
+    [{ role: "user", content: "问题" }], { responseFormat: "text" }, undefined, text => deltas.push(text)),
+  (error: unknown) => error instanceof ProviderStreamError && error.code === "stream_empty");
+  assert.deepEqual(deltas, []);
+});
+
 test("完成事件的正文与已收到增量不一致时不能静默替换或宣布成功", async () => {
   const { request } = streamingRequester([
     'data: {"type":"response.output_text.delta","delta":"半截旧稿"}\n\n',
@@ -737,6 +781,61 @@ test("完成事件的正文与已收到增量不一致时不能静默替换或�
   await assert.rejects(() => makeProvider({ streamRequest: request }).chatCompletionStream([{ role: "user", content: "问题" }],
     { responseFormat: "text" }, undefined, () => undefined),
     (error: unknown) => error instanceof ProviderStreamError && error.code === "stream_content_mismatch");
+});
+
+test("带索引的增量先于 commentary 阶段到达时不误判，并保留同响应的工具调用", async () => {
+  const toolCall = { type: "function_call", call_id: "call_context", name: "companion_read_context", arguments: "{}" };
+  const { request } = streamingRequester([
+    'data: {"type":"response.output_text.delta","output_index":0,"delta":"仅内部使用的准备说明"}\n\n',
+    `data: ${JSON.stringify({ type: "response.output_item.done", output_index: 0,
+      item: { type: "message", phase: "commentary", content: [{ type: "output_text", text: "仅内部使用的准备说明" }] } })}\n\n`,
+    `data: ${JSON.stringify({ type: "response.output_item.done", output_index: 1, item: toolCall })}\n\n`,
+    `data: ${JSON.stringify({ type: "response.completed", response: { status: "completed", output: [
+      { type: "message", phase: "commentary", content: [{ type: "output_text", text: "仅内部使用的准备说明" }] }, toolCall,
+    ] } })}\n\n`,
+  ]);
+  const deltas: string[] = [];
+  const result = await makeProvider({ streamRequest: request }).chatCompletionStream(
+    [{ role: "user", content: "看看当前学习上下文" }],
+    { responseFormat: "text", tools: agentTurnRequest().tools }, undefined, text => deltas.push(text));
+  assert.equal(result.content, "");
+  assert.deepEqual(deltas, []);
+  assert.equal(result.toolCalls?.[0]?.id, "call_context");
+});
+
+test("流中标 final_answer、终态标 commentary 且文本逐字一致时保留这版并带回工具调用", async () => {
+  const toolCall = { type: "function_call", call_id: "call_search", name: "companion_search_notes", arguments: "{}" };
+  const text = "我先去库里搜一下这篇笔记";
+  const { request } = streamingRequester([
+    `data: ${JSON.stringify({ type: "response.output_item.added", output_index: 0, item: { type: "message", phase: "final_answer" } })}\n\n`,
+    `data: ${JSON.stringify({ type: "response.output_text.delta", output_index: 0, delta: text })}\n\n`,
+    `data: ${JSON.stringify({ type: "response.output_item.done", output_index: 1, item: toolCall })}\n\n`,
+    `data: ${JSON.stringify({ type: "response.completed", response: { status: "completed", output: [
+      { type: "message", phase: "commentary", content: [{ type: "output_text", text }] }, toolCall,
+    ] } })}\n\n`,
+  ]);
+  const deltas: string[] = [];
+  const result = await makeProvider({ streamRequest: request }).chatCompletionStream(
+    [{ role: "user", content: "整理成一篇笔记" }],
+    { responseFormat: "text", tools: agentTurnRequest().tools }, undefined, delta => deltas.push(delta));
+  assert.equal(result.content, text);
+  assert.deepEqual(deltas, [text]);
+  assert.equal(result.toolCalls?.[0]?.id, "call_search");
+});
+
+test("终态有另一份正文时，已下发前缀出现在终态里也不能当一致", async () => {
+  const streamed = "已下发的前缀";
+  const { request } = streamingRequester([
+    `data: ${JSON.stringify({ type: "response.output_item.added", output_index: 0, item: { type: "message", phase: "final_answer" } })}\n\n`,
+    `data: ${JSON.stringify({ type: "response.output_text.delta", output_index: 0, delta: streamed })}\n\n`,
+    `data: ${JSON.stringify({ type: "response.completed", response: { status: "completed", output: [
+      { type: "message", phase: "commentary", content: [{ type: "output_text", text: streamed }] },
+      { type: "message", phase: "final_answer", content: [{ type: "output_text", text: "另一份完整的正文" }] },
+    ] } })}\n\n`,
+  ]);
+  await assert.rejects(() => makeProvider({ streamRequest: request }).chatCompletionStream(
+    [{ role: "user", content: "问题" }], { responseFormat: "text" }, undefined, () => undefined),
+  (error: unknown) => error instanceof ProviderStreamError && error.code === "stream_content_mismatch");
 });
 
 test("terminal-only text and an omitted final delta settle without a second model call", async () => {
@@ -771,6 +870,37 @@ test("Responses emits write preparation before arguments finish and dispatches o
     }, undefined, () => undefined);
   assert.deepEqual(events, ["started:write", "settled:write"]);
   assert.equal(result.toolCalls?.[0]?.id, "write");
+});
+
+test("思考增量只交给 onReasoningDelta，不混进正文也不改变收尾", async () => {
+  const { request } = streamingRequester([
+    'data: {"type":"response.reasoning_text.delta","item_id":"rs_1","delta":"先确认他要的是定义还是例子"}\n\n',
+    'data: {"type":"response.reasoning_text.delta","item_id":"rs_1","delta":"，这题有标准答案。"}\n\n',
+    'data: {"type":"response.output_text.delta","output_index":0,"delta":"合力等于质量乘加速度。"}\n\n',
+    'data: {"type":"response.completed","response":{"status":"completed","output":[{"type":"message","phase":"final_answer","content":[{"type":"output_text","text":"合力等于质量乘加速度。"}]}]}}\n\n',
+  ]);
+  const deltas: string[] = [];
+  const reasoning: string[] = [];
+  const result = await makeProvider({ streamRequest: request }).chatCompletionStream(
+    [{ role: "user", content: "牛顿第二定律是什么" }],
+    { responseFormat: "text", onReasoningDelta: text => reasoning.push(text) },
+    undefined, text => deltas.push(text));
+  assert.deepEqual(reasoning, ["先确认他要的是定义还是例子", "，这题有标准答案。"]);
+  assert.deepEqual(deltas, ["合力等于质量乘加速度。"]);
+  assert.equal(result.content, "合力等于质量乘加速度。");
+});
+
+test("没要思考出口的调用方一切照旧（不传回调时 provider 不做任何额外的事）", async () => {
+  const { request } = streamingRequester([
+    'data: {"type":"response.reasoning_text.delta","delta":"内部推理"}\n\n',
+    'data: {"type":"response.output_text.delta","delta":"正文"}\n\n',
+    'data: {"type":"response.completed","response":{"status":"completed","output":[{"type":"message","phase":"final_answer","content":[{"type":"output_text","text":"正文"}]}]}}\n\n',
+  ]);
+  const deltas: string[] = [];
+  const result = await makeProvider({ streamRequest: request }).chatCompletionStream(
+    [{ role: "user", content: "问题" }], { responseFormat: "text" }, undefined, text => deltas.push(text));
+  assert.deepEqual(deltas, ["正文"]);
+  assert.equal(result.content, "正文");
 });
 
 test("声明阶段输出的模型不提前发布未知阶段，完成时只发布已确认最终正文", async () => {
@@ -836,13 +966,15 @@ test("chatCompletionStream: 收到正文但缺完成事件，不能把断流当�
 test("chatCompletionStream: 输出额度耗尽，包括无末尾换行，使用不可重试的截断错误", async () => {
   for (const ending of ["\n\n", ""]) {
     const { request } = streamingRequester([
-      'data: {"type":"response.output_text.delta","delta":"半截答复"}\n\n',
+      'data: {"type":"response.output_text.delta","output_index":0,"delta":"半截答复"}\n\n',
       'data: {"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}' + ending,
     ]);
-    const provider = makeProvider({ streamRequest: request });
+    const provider = makeProvider({ streamRequest: request, modelProfile: { supportsAssistantPhase: false } });
+    const deltas: string[] = [];
     await assert.rejects(() => provider.chatCompletionStream(
-      [{ role: "user", content: "hi" }], { responseFormat: "text" }, undefined, () => undefined),
+      [{ role: "user", content: "hi" }], { responseFormat: "text" }, undefined, delta => deltas.push(delta)),
       (error: unknown) => error instanceof AgentOutputError && error.code === "output_truncated");
+    assert.deepEqual(deltas, ["半截答复"]);
   }
 });
 

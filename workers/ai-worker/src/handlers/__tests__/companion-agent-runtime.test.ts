@@ -67,6 +67,13 @@ import { AgentOutputError } from "../../lib/non-retryable-errors.ts";
 import { CompanionStreamStoppedError } from "../companion-dialogue-stream.ts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
+import { AGENT_GOAL_HANDOFF_INSTRUCTIONS } from "../../agent/goal-handoff-instructions.ts";
+
+test("automatic note linking starts with one combined search and retries only when needed", () => {
+  assert.match(AGENT_GOAL_HANDOFF_INSTRUCTIONS, /先用companion_search_notes的match=any做一次简短组合查询/);
+  assert.match(AGENT_GOAL_HANDOFF_INSTRUCTIONS, /只有一次搜索没有返回有用候选时，才换一个更宽的组合词重试一次/);
+  assert.doesNotMatch(AGENT_GOAL_HANDOFF_INSTRUCTIONS, /分开的查询词/);
+});
 
 test("rate, account and authorization rejections do not repeat through a buffered fallback", () => {
   const state={emitted:false,now:10,deadline:100};
@@ -140,7 +147,7 @@ test("低权限保留写能力供预览，实际业务写入必须等待确认",
     for (const definition of tools) {
       const auth = canUseCompanionAgentTool(permission, definition);
       assert.equal(auth.allowed, true);
-      assert.equal(auth.requiresConfirmation, definition.riskClass !== "read" && !isCompanionAutonomousTool(definition.name));
+      assert.equal(auth.requiresConfirmation, definition.riskClass !== "read" && !(isCompanionAutonomousTool(definition.name) || ["companion_save_participation", "companion_write_annotation"].includes(definition.name)));
     }
   }
 });
@@ -154,7 +161,7 @@ test("工具解析：guided 的业务写操作都确认，读取与自主记录�
     // 读取永不确认；约定类写入（提醒）是用户亲口要过的、可逆且不改学习状态，
     // guided 下也直接执行；其余写操作一律先出提案。
     const autoExecutes = definition.riskClass === "read"
-      || isCompanionAutonomousTool(definition.name);
+      || (isCompanionAutonomousTool(definition.name) || ["companion_save_participation", "companion_write_annotation"].includes(definition.name));
     assert.equal(
       auth.requiresConfirmation,
       !autoExecutes,
@@ -344,6 +351,91 @@ test("放行闸：定论前不下发，同意时把已生成的部分一次放�
   const result = await running;
   assert.equal(seen.join(""), "在忙啥呢——刚把熵讲完");
   assert.equal(result.content, "在忙啥呢——刚把熵讲完");
+});
+
+/** 会同时吐正文与思考的 provider（思考增量与正文一一交错，模拟真实流的形状）。 */
+function thinkingStubProvider(args: { text: string[], reasoning: string[] }): AIProvider {
+  return {
+    id: "stub", modelId: "stub-model", visionModelId: "stub-model", promptVersion: "test",
+    chatCompletion: async () => { throw new Error("not used"); },
+    executeAgentTurn: async () => { throw new Error("not used"); },
+    chatCompletionStream: async (
+      _messages: unknown, options: { onReasoningDelta?: (text: string) => void },
+      _signal: AbortSignal | undefined, onDelta: (delta: string) => void,
+    ) => {
+      let content = "";
+      for (let i = 0; i < args.text.length; i++) {
+        const thought = args.reasoning[i];
+        if (thought) options.onReasoningDelta?.(thought);
+        content += args.text[i]!;
+        onDelta(args.text[i]!);
+        await new Promise((resolve) => setTimeout(resolve, 4));
+      }
+      return { content };
+    },
+  } as unknown as AIProvider;
+}
+
+test("投机作废时连思考一起丢掉：判否之前攒着的想法一个字都不露", async () => {
+  const reasoning = ["先想想他问的是", "哪一个概念", "，再决定要不要举例。"];
+  const provider = thinkingStubProvider({ text: ["这句", "不该", "被看见"], reasoning });
+  let settleGate: (allowed: boolean) => void = () => {};
+  const gate = new Promise<boolean>((resolve) => { settleGate = resolve; });
+  const reasoningSeen: string[] = [];
+  const running = runStreamingAgentStep({
+    provider,
+    stepRequest: STREAM_STEP_REQUEST as never,
+    ctxSignal: new AbortController().signal,
+    timeoutMs: 5_000,
+    onProviderDelta: async () => true,
+    onReasoningDelta: (text) => { reasoningSeen.push(text); },
+    releaseGate: () => gate,
+  });
+  // 生成完（思考全部攒住了）才判否——考验的是"整块丢掉"而不是"来不及发"。
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.deepEqual(reasoningSeen, [], "闸还关着就不该有思考漏出去");
+  settleGate(false);
+  await assert.rejects(running, (error: unknown) => error instanceof CompanionSpeculativeStepDiscardedError);
+  assert.deepEqual(reasoningSeen, []);
+});
+
+test("判定留下时把攒着的思考一次放出，之后的照常边想边流", async () => {
+  const reasoning = ["先想想他问的是", "哪一个概念", "，再决定要不要举例。"];
+  const provider = thinkingStubProvider({ text: ["合力", "等于", "质量乘加速度"], reasoning });
+  let settleGate: (allowed: boolean) => void = () => {};
+  const gate = new Promise<boolean>((resolve) => { settleGate = resolve; });
+  const reasoningSeen: string[] = [];
+  const running = runStreamingAgentStep({
+    provider,
+    stepRequest: STREAM_STEP_REQUEST as never,
+    ctxSignal: new AbortController().signal,
+    timeoutMs: 5_000,
+    onProviderDelta: async () => true,
+    onReasoningDelta: (text) => { reasoningSeen.push(text); },
+    releaseGate: () => gate,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 12));
+  settleGate(true);
+  await running;
+  assert.equal(reasoningSeen.join(""), reasoning.join(""));
+});
+
+test("正文还被坍缩闸攒着时思考已经在往外流（两条闸各管各的）", async () => {
+  const reasoning = ["这句很短", "但思考是真的"];
+  const provider = thinkingStubProvider({ text: ["嗯", "嗯"], reasoning });
+  const delivered: string[] = [];
+  const reasoningSeen: string[] = [];
+  await runStreamingAgentStep({
+    provider,
+    stepRequest: STREAM_STEP_REQUEST as never,
+    ctxSignal: new AbortController().signal,
+    timeoutMs: 5_000,
+    onProviderDelta: async (text) => { delivered.push(text); return true; },
+    onReasoningDelta: (text) => { reasoningSeen.push(text); },
+    holdUntilChars: 1_000_000,
+  });
+  assert.deepEqual(delivered, [], "一个字都没放行的正文不该交给交付管线");
+  assert.equal(reasoningSeen.join(""), reasoning.join(""));
 });
 
 test("快速流式生成结束后仍等待分类；取消后晚到的放行不能再吐字", async () => {

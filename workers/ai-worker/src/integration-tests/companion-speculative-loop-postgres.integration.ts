@@ -76,7 +76,9 @@ async function fixture() {
 test("真实工具循环保留完整JSON，并按块内游标读到长段落的最后一句", async () => {
   const f = await fixture();
   const noteId=randomUUID(), versionId=randomUUID();
-  const original="\\".repeat(5000)+"关键结论在最后。";
+  // Quotes are JSON-escaped by the tool envelope while remaining stable in the
+  // editor's Markdown projection; backslashes here would be consumed as Markdown escapes.
+  const original='"'.repeat(5000)+"关键结论在最后。";
   try {
     await f.mutate(async tx => {
       await tx`INSERT INTO notes(id,workspace_id,title,created_by) VALUES(${noteId},${f.event.ctx.workspaceId},'长段落',${f.event.read.userId})`;
@@ -87,9 +89,10 @@ test("真实工具循环保留完整JSON，并按块内游标读到长段落的�
         VALUES(${f.event.ctx.workspaceId},${versionId},1,'paragraph',${original})`;
     });
     const pages:string[]=[];
+    const pageReceipts: Array<Record<string, unknown>> = [];
     const provider:AIProvider=new MockProvider();
     provider.chatCompletion=async()=>({content:JSON.stringify({intent:"question",toolUse:"read",
-      subjects:[],goalRelation:"unrelated",candidateOperations:[],ambiguities:[],pendingOfferIndexes:[]}),usage:{}});
+      subjects:[],goalRelation:"unrelated",candidateOperations:[],ambiguities:[],voiceStyle:{decision:"none",instruction:null},pendingOfferIndexes:[]}),usage:{}});
     let calls=0;
     provider.executeAgentTurn=async request=>{
       calls++;
@@ -100,6 +103,9 @@ test("真实工具循环保留完整JSON，并按块内游标读到长段落的�
         const parsed=JSON.parse(tool.content);
         assert.equal(parsed.ok,true);
         pages.push(parsed.data.body);
+        pageReceipts.push({ bodyLength: parsed.data.body.length, truncated: parsed.data.truncated,
+          endOrdinal: parsed.data.endOrdinal, nextStartOrdinal: parsed.data.nextStartOrdinal,
+          nextStartOffset: parsed.data.nextStartOffset });
         next=parsed.data;
         if(!parsed.data.truncated) return {content:"内容已经读完了。",toolCalls:[],finishReason:"stop",usage:null,providerRequestId:null};
       }
@@ -115,7 +121,7 @@ test("真实工具循环保留完整JSON，并按块内游标读到长段落的�
       toolConstraints:{visionEnabled:false},baseMessages:[{role:"system",content:"读完指定笔记。"},
         {role:"user",content:"请读这篇笔记的完整正文。"}],expiresAt:new Date(Date.now()+60000).toISOString()});
     assert.equal(result.status,'completed');
-    assert.equal(pages.join(''),original);
+    assert.equal(pages.join(''),original, JSON.stringify(pageReceipts));
     assert.equal(calls,3,"两页工具取材之后只生成一次终答");
     const [run]=await f.mutate(tx=>tx`SELECT context_pressure FROM companion_turn_runs WHERE id=${f.event.read.runId}`);
     assert.equal(run.context_pressure.inputTokens,contextReceipts.latestPressure()?.inputTokens,
@@ -140,7 +146,7 @@ test("命中输出上限时保留已流出的正文，但不会把半截答案�
     const provider:AIProvider=new MockProvider();
     const delivered:string[]=[];
     provider.chatCompletion=async()=>({content:JSON.stringify({intent:"conversation",toolUse:"none",
-      subjects:[],goalRelation:"unrelated",candidateOperations:[],ambiguities:[],pendingOfferIndexes:[]}),usage:{}});
+      subjects:[],goalRelation:"unrelated",candidateOperations:[],ambiguities:[],voiceStyle:{decision:"none",instruction:null},pendingOfferIndexes:[]}),usage:{}});
     const prefix="这一段已经说出来，但还没有把后面的内容讲完";
     provider.chatCompletionStream=async(_messages,_options,_signal,onDelta)=>{
       onDelta(prefix);return {content:prefix,toolCalls:[],finishReason:"length"};
@@ -157,13 +163,19 @@ test("命中输出上限时保留已流出的正文，但不会把半截答案�
   } finally {await f.cleanup();}
 });
 
-test("概念提问丢弃闲聊预生成，正式无工具流式请求开启思考并只交付正式正文", async () => {
+/**
+ * 2026-10-13 起问题轮也有自己的投机形状：干净的解释（无指称/歧义/候选动作、目标无关）
+ * 会保留**提问版**那条流（开思考、完整工具面、无注意力块），闲聊版照旧作废；
+ * 用户的等待从"分类器 + 正式第一步"变成"两者取最大"。
+ */
+test("干净的问题保留提问版投机，闲聊版作废且不再多发一次正式请求", async () => {
   const f=await fixture();
   try {
     const provider:AIProvider=new MockProvider();
+    provider.chatCompletionStreamToolCalls = true;
     const modes:Array<boolean|undefined>=[], temperatures:Array<number|undefined>=[], policies:string[]=[], delivered:string[]=[];
     provider.chatCompletion=async()=>({content:JSON.stringify({intent:"question",toolUse:"none",
-      subjects:[],goalRelation:"unrelated",candidateOperations:[],ambiguities:[],pendingOfferIndexes:[]}),usage:{}});
+      subjects:[],goalRelation:"unrelated",candidateOperations:[],ambiguities:[],voiceStyle:{decision:"none",instruction:null},pendingOfferIndexes:[]}),usage:{}});
     provider.chatCompletionStream=async(_messages,options,_signal,onDelta)=>{
       modes.push(options.disableThinking);
       temperatures.push(options.temperature);
@@ -177,12 +189,56 @@ test("概念提问丢弃闲聊预生成，正式无工具流式请求开启思�
       toolConstraints:{visionEnabled:false},baseMessages:[{role:"system",content:"解释概念。"},
         {role:"user",content:"牛顿第二定律是什么？"}],expiresAt:new Date(Date.now()+60000).toISOString(),
       onProviderDelta:async text=>{delivered.push(text);return true;}});
+    // 两条投机同时发出（闲聊先建、提问后建），分类落地后只留提问版：没有第三次调用。
     assert.deepEqual(modes,[true,false]);
     assert.deepEqual(temperatures,[0.9,0.3]);
     assert.match(policies[1]!, /方向是否颠倒/);
+    assert.doesNotMatch(policies[1]!, /current_turn_interpretation_data/);
     assert.equal(result.status,"completed");
     assert.equal(result.text,"牛顿第二定律说的是：合力等于质量乘加速度。");
     assert.equal(delivered.join(""),result.text);
+    // 答案已在手里就不再发「正在思考…」：那条状态会晚于首字，是一句假话。
+    const statuses = await f.mutate(tx => tx`SELECT payload->>'status' AS status FROM companion_stream_events
+      WHERE run_id=${f.event.read.runId} AND type='assistant.status'`);
+    assert.equal(statuses.some(row => row.status === "thinking"), false,
+      JSON.stringify(statuses));
+  } finally {await f.cleanup();}
+});
+
+test("解释带来指称或目标关联时两条投机都作废，正式请求仍看到注意力块", async () => {
+  const f=await fixture();
+  try {
+    const provider:AIProvider=new MockProvider();
+    provider.chatCompletionStreamToolCalls = true;
+    const prompts:string[]=[], delivered:string[]=[];
+    provider.chatCompletion=async()=>({content:JSON.stringify({intent:"question",toolUse:"none",
+      subjects:[{description:"那篇笔记",objectIndex:0}],goalRelation:"continue",candidateOperations:[],
+      ambiguities:[],voiceStyle:{decision:"none",instruction:null},pendingOfferIndexes:[]}),usage:{}});
+    provider.chatCompletionStream=async(_messages,options,_signal,onDelta)=>{
+      const prompt=String(_messages[0]?.content);
+      prompts.push(prompt);
+      // 每条都长于 12 字的流式放行阈值，否则 deliver 不会触发（本用例直接跑循环，没有对话层的尾部补写）。
+      const content=prompt.includes("current_turn_interpretation_data") ? "这是带注意力块的正式答案，按规定交付。"
+        : options.disableThinking ? "这是应该作废的闲聊猜测。" : "这是没有注意力块的提问版答案。";
+      onDelta(content);
+      return {content,toolCalls:[],finishReason:"stop"};
+    };
+    provider.executeAgentTurn=async()=>{throw new Error("无工具请求不需要缓冲重跑");};
+    const result=await runCompanionAgentLoop({ctx:f.event.ctx,read:{...readContext(f),userText:"我那篇笔记讲了什么？"},provider,
+      toolConstraints:{visionEnabled:false},baseMessages:[{role:"system",content:"解释概念。"},
+        {role:"user",content:"我那篇笔记讲了什么？"}],expiresAt:new Date(Date.now()+60000).toISOString(),
+      onProviderDelta:async text=>{delivered.push(text);return true;}});
+    // 两条投机（闲聊 + 提问版）都被作废，正式第一步带着注意力块发出，只交付它的正文。
+    assert.equal(prompts.length,3);
+    assert.doesNotMatch(prompts[1]!, /current_turn_interpretation_data/);
+    assert.match(prompts[2]!, /current_turn_interpretation_data/);
+    assert.equal(result.status,"completed");
+    assert.equal(result.text,"这是带注意力块的正式答案，按规定交付。");
+    assert.equal(delivered.join(""),result.text);
+    // 投机作废时「正在思考…」照发——那时她确实还在想。
+    const statuses = await f.mutate(tx => tx`SELECT payload->>'status' AS status FROM companion_stream_events
+      WHERE run_id=${f.event.read.runId} AND type='assistant.status'`);
+    assert.equal(statuses.some(row => row.status === "thinking"), true, JSON.stringify(statuses));
   } finally {await f.cleanup();}
 });
 
@@ -191,10 +247,11 @@ test("旧审校开关不能恢复失败实验，解释直接交付且保留说�
   try {
     process.env.COMPANION_EXPLANATION_REVIEW_V1="true";
     const provider:AIProvider=new MockProvider(),delivered:string[]=[],modes:Array<boolean|undefined>=[];
+    provider.chatCompletionStreamToolCalls = true;
     let bufferedCalls=0;
     const answer="热量通常从较热物体传给较冷物体。可以把这个过程叫作「物体与环境之间缓慢地传递热量」。";
     provider.chatCompletion=async()=>({content:JSON.stringify({intent:"question",toolUse:"none",subjects:[],
-      goalRelation:"unrelated",candidateOperations:[],ambiguities:[],pendingOfferIndexes:[]}),usage:{}});
+      goalRelation:"unrelated",candidateOperations:[],ambiguities:[],voiceStyle:{decision:"none",instruction:null},pendingOfferIndexes:[]}),usage:{}});
     provider.executeAgentTurn=async()=>{bufferedCalls++;throw new Error("默认关闭时不额外生成审校报告");};
     provider.chatCompletionStream=async(_messages,options,_signal,onDelta)=>{
       modes.push(options.disableThinking);
@@ -229,6 +286,7 @@ test("真实缓存解释中的退休用途字段不再改变思考、采样或�
           quote: userText, sourceSha256: sha256Utf8V1(userText) }] },
     })} WHERE id=${f.event.read.runId}`);
     const provider: AIProvider = new MockProvider();
+    provider.chatCompletionStreamToolCalls = true;
     let classifierCalls = 0;
     const delivered: string[] = [], modes: Array<boolean | undefined> = [], temperatures: Array<number | undefined> = [];
     provider.chatCompletion = async () => { classifierCalls++; throw new Error("缓存命中不重新分类"); };
@@ -260,12 +318,13 @@ test("纯文本创作在真实循环交付长对白，不误入引文纠正或�
   const answer = "天快黑了，年轻人推开灯塔的门。守灯人说：“等这阵风过去，我们再把灯点亮。”\n\n“你外婆从来不提他。”她母亲说，“我小时候问过一回，她没说话，第二天把我送去镇上念书了。后来我就没再问。”\n\n守灯人留下一张纸条：\n\n> 等这阵风过去，我们再把灯点亮。";
   try {
     const provider: AIProvider = new MockProvider();
+    provider.chatCompletionStreamToolCalls = true;
     provider.chatCompletion = async () => ({ content: JSON.stringify({ intent: "task", toolUse: "none",
-      subjects: [], goalRelation: "unrelated", candidateOperations: [], ambiguities: [], pendingOfferIndexes: [] }), usage: {} });
+      subjects: [], goalRelation: "unrelated", candidateOperations: [], ambiguities: [], voiceStyle: { decision: "none", instruction: null }, pendingOfferIndexes: [] }), usage: {} });
     let calls = 0;
     provider.executeAgentTurn = async request => {
       calls += 1;
-      assert.equal(request.tools.length, 0);
+      assert.ok(request.tools.length > 0, "agent tools remain available even when this answer needs none");
       assert.notEqual(request.toolChoice, "required");
       return { content: answer, toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null };
     };
@@ -289,7 +348,7 @@ test("已附选区的回复即使无需工具也核对引用块原文", async ()
   try {
     const provider: AIProvider = new MockProvider();
     provider.chatCompletion = async () => ({ content: JSON.stringify({ intent: "question", toolUse: "none",
-      subjects: [], goalRelation: "unrelated", candidateOperations: [], ambiguities: [], pendingOfferIndexes: [] }), usage: {} });
+      subjects: [], goalRelation: "unrelated", candidateOperations: [], ambiguities: [], voiceStyle: { decision: "none", instruction: null }, pendingOfferIndexes: [] }), usage: {} });
     let primaryCalls = 0, fallbackCalls = 0;
     provider.executeAgentTurn = async () => {
       primaryCalls += 1;

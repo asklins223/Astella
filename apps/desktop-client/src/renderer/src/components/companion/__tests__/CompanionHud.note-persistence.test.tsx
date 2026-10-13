@@ -7,7 +7,7 @@ import type { GatewayResultV1 } from "@astella/shared/desktop-ipc-contracts";
 import type { NoteAnnotationAnchorV1, NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 import { CompanionHud, type CompanionHudSettings } from "../CompanionHud.tsx";
 import { DEFAULT_WINDOW_LIVE2D_MODEL_ID } from "../window-live2d-contract.ts";
-import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, progressNoteExplanation, resetNoteExplanations, useNoteCompanionExplanations } from "../note-companion-explanation";
+import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, progressNoteExplanation, resetNoteExplanations, readNoteExplanation, useNoteCompanionExplanations } from "../note-companion-explanation";
 
 const { chatState } = vi.hoisted(() => ({ chatState: { current: null as unknown } }));
 
@@ -139,6 +139,7 @@ function renderHud() {
 describe("伴星回答保存回笔记", () => {
   let writeOverview: ReturnType<typeof vi.fn>;
   let writeAnnotation: ReturnType<typeof vi.fn<(request: unknown) => Promise<GatewayResultV1<NoteAnnotationV1>>>>;
+  let readAnnotations: ReturnType<typeof vi.fn<(...args: unknown[]) => Promise<unknown>>>;
   let annotationVersionState: "current" | "older";
 
   beforeEach(() => {
@@ -170,6 +171,7 @@ describe("伴星回答保存回笔记", () => {
       createdAt: "2026-09-29T00:00:00.000Z",
     }));
     annotationVersionState = "current";
+    readAnnotations = vi.fn(async () => ok({ version: 1, items: [], nextCursor: null }));
     writeAnnotation = vi.fn<(request: unknown) => Promise<GatewayResultV1<NoteAnnotationV1>>>(async () => ok({
       annotationId: "66666666-6666-4666-8666-666666666666",
       noteId: NOTE_ID,
@@ -186,7 +188,7 @@ describe("伴星回答保存回笔记", () => {
       configurable: true,
       value: {
         noteOverview: { write: writeOverview },
-        noteAnnotation: { write: writeAnnotation },
+        noteAnnotation: { write: writeAnnotation, list: (...args: unknown[]) => readAnnotations(...args) },
       },
     });
     resetNoteExplanations();
@@ -236,11 +238,11 @@ describe("伴星回答保存回笔记", () => {
 
   it("选文交接和生成期间，选文条随气泡展示并能回到原句进度", () => {
     const item = beginNoteExplanation({ noteId: NOTE_ID, anchor: NOTE_ANCHOR });
-    progressNoteExplanation(item.id, "");
+    progressNoteExplanation(item.id);
     chatState.current = session({ mode: "closed", phase: "sending", feedNoteIntent: null, feedNoteAnchor: { noteId: NOTE_ID, anchor: NOTE_ANCHOR } });
     renderHud();
     expect(document.querySelector(".companion-hud__reply-heading strong")?.textContent).toBe("伴星");
-    expect(screen.getByText("伴星正在解释").closest(".companion-hud__output")).toBeTruthy();
+    expect(screen.getByText("伴星正在写解释").closest(".companion-hud__output")).toBeTruthy();
     expect(screen.getByRole("button", { name: `查看原句解释：${NOTE_ANCHOR.excerpt}` })).toBeTruthy();
     expect(screen.queryByText("这次选文")).toBeNull();
     expect(screen.queryByText("查看所选原文")).toBeNull();
@@ -377,9 +379,15 @@ describe("伴星回答保存回笔记", () => {
     window.removeEventListener("astella:note-expansion-task-started", startedEvent);
   });
 
-  async function beginAnnotationReply() {
+  function annotationReceipt(attemptId: string): NoteAnnotationV1 {
+    return { annotationId: attemptId, noteId: NOTE_ID, anchor: NOTE_ANCHOR, explanation: "工具是 Agent 调用外部能力的接口。",
+      sourceMessageId: null, generationJobId: "55555555-5555-4555-8555-555555555555", revision: 1, versionState: annotationVersionState,
+      createdAt: "2026-10-02T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z" };
+  }
+
+  async function beginAnnotationReply(receive = true) {
     const item = beginNoteExplanation({ noteId: NOTE_ID, anchor: NOTE_ANCHOR });
-    progressNoteExplanation(item.id, "");
+    progressNoteExplanation(item.id);
     chatState.current = session({
       feedPrompt: "用大白话解释这段",
       feedSelection: NOTE_ANCHOR.excerpt,
@@ -400,18 +408,8 @@ describe("伴星回答保存回笔记", () => {
       view.rerender(<CompanionHud motionMode="off" voiceEnabled={false} actions={[]} settings={settings()} onRunAction={vi.fn()} />);
     });
 
-    await act(async () => { void completeNoteExplanation(item.id, MESSAGE_ID, "工具是 Agent 调用外部能力的接口。"); });
-
-    expect(writeAnnotation).toHaveBeenCalledTimes(1);
-    expect(writeAnnotation.mock.calls[0]?.[0]).toMatchObject({
-      noteId: NOTE_ID,
-      command: {
-        kind: "create",
-        anchor: NOTE_ANCHOR,
-        explanation: "工具是 Agent 调用外部能力的接口。",
-        sourceMessageId: MESSAGE_ID,
-      },
-    });
+    if (receive) act(() => { completeNoteExplanation(item.id, annotationReceipt(item.id)); });
+    expect(writeAnnotation).not.toHaveBeenCalled();
     return view;
   }
 
@@ -456,31 +454,34 @@ describe("伴星回答保存回笔记", () => {
     expect(document.querySelector(".companion-hud__output")).toBeNull();
     expect(document.querySelector(".companion-hud__selection-context")).toBeNull();
     expect(screen.queryByRole("article", { name: /笔记关联|这次选文/ })).toBeNull();
-    expect(writeAnnotation).toHaveBeenCalledTimes(1);
+    expect(writeAnnotation).not.toHaveBeenCalled();
   });
 
-  it("保存失败在回复内重试，成功后不产生第二张状态纸", async () => {
-    writeAnnotation.mockRejectedValueOnce(new Error("保存暂时不可用"));
-    await beginAnnotationReply();
-    const retry = await screen.findByRole("button", { name: "重试保存批注" });
+  it("回执读取失败在回复内重试，成功后不产生第二张状态纸", async () => {
+    readAnnotations.mockRejectedValueOnce(new Error("回执读取暂时不可用"));
+    await beginAnnotationReply(false);
+    const item = useNoteCompanionExplanations.getState().items[0]!;
+    await act(async () => { await readNoteExplanation(item.id); });
+    const retry = await screen.findByRole("button", { name: "重新读取批注" });
     expect(retry.closest(".companion-hud__output")).toBeTruthy();
-    expect(screen.getByText("解释未保存")).toBeTruthy();
+    expect(screen.getByText("批注回执暂未读到")).toBeTruthy();
+    readAnnotations.mockResolvedValueOnce(ok({ version: 1, items: [annotationReceipt(item.id)], nextCursor: null }));
     fireEvent.click(retry);
     expect(await screen.findByText("解释已贴回原句")).toBeTruthy();
-    expect(writeAnnotation).toHaveBeenCalledTimes(2);
-    expect(screen.queryByRole("button", { name: "重试保存批注" })).toBeNull();
+    expect(writeAnnotation).not.toHaveBeenCalled(); expect(readAnnotations).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("button", { name: "重新读取批注" })).toBeNull();
     expect(screen.queryByRole("article", { name: /笔记关联|这次选文/ })).toBeNull();
   });
 
   it.each(["收起气泡", "换一处选文"])("保存迟到时，%s不会被旧回执重新打开或清掉", async (action) => {
-    const receipt = await writeAnnotation({});
-    writeAnnotation.mockClear();
     let finishSave!: () => void;
-    writeAnnotation.mockImplementationOnce(() => new Promise(resolve => { finishSave = () => resolve(receipt); }));
     const savedEvent = vi.fn();
     window.addEventListener("astella:note-annotation-saved", savedEvent);
-    const view = await beginAnnotationReply();
-    await screen.findByText("正在保存批注");
+    const view = await beginAnnotationReply(false);
+    const item = useNoteCompanionExplanations.getState().items[0]!;
+    readAnnotations.mockImplementationOnce(() => new Promise(resolve => { finishSave = () => resolve(ok({ version: 1, items: [annotationReceipt(item.id)], nextCursor: null })); }));
+    act(() => { void readNoteExplanation(item.id); });
+    await screen.findByText("正在读取批注");
     const dismissFeedNoteAnchor = vi.fn();
     const nextAnchor = { ...NOTE_ANCHOR, startOffset: 13, endOffset: 20, excerpt: "获取实时信息" };
     patchChat(view, {

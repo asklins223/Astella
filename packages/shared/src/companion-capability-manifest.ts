@@ -1,8 +1,10 @@
 import { z } from "zod";
+import { companionParticipationToolWriteV1Schema, companionAttentionWriteV1Schema,
+  companionPublishUtteranceV1Schema, companionFinishParticipationV1Schema } from "./contracts/companion-initiative-contracts.ts";
 import { companionSelfNoteWriteV1Schema } from "./companion-autonomy.ts";
 import { PERSONA_FIELD_CAPACITY } from "./pet-persona-merge.ts";
 import { defineAgentCapability as tool, type AgentCapabilityDeclaration } from "./agent-capability-definition.ts";
-import { companionCreateNoteV1Schema, companionEditNoteV1Schema } from "./contracts/companion-note-authoring-contracts.ts";
+import { companionCreateNoteV1Schema, companionEditNoteV1Schema, companionWriteAnnotationV1Schema } from "./contracts/companion-note-authoring-contracts.ts";
 import { companionShareNoteV1Schema } from "./contracts/note-share-contracts.ts";
 import {
   COMPANION_PAGE_DESTINATIONS_V2,
@@ -76,6 +78,14 @@ const SELF_EXPRESSION_SCENE_GUIDANCE = {
 };
 
 export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] = [
+  tool("companion_read_participation", "读取用户自由表达的相处偏好、当前事实和正在关注的安排。observedAt 是当前服务端时刻；study 是实际前台学习时段的估计。偏好原文是权威；计时和事件只是可修订的执行安排。", "read", false, emptyArguments, { label: "正在看看我们的相处偏好" }, { maxOutputChars: 32_000 }),
+  tool("companion_save_participation", "用户本轮明确要求以后怎样相处、主动参与或停用时，先读 participation，再合并保存自由 Markdown，保留未修改的要求与原意。不要编成问候/休息等固定规则类型；明确数值原样保留，‘久了’不必补问分钟数。只有真实保存回执后才说记住；保存后按现有事实安排关注。", "reversible_low", false, companionParticipationToolWriteV1Schema,
+    { label: "正在记住我们的相处方式", discovery: "直接告诉伴星以后怎样相处，她会记住并结合实际情境践行。" }, { maxInputChars: 20_000 }),
+  tool("companion_arrange_attention", "为用户偏好或自己的具体疑问安排事件与重评，也可完成旧关注。先 read_participation 获取 observedAt，不猜当前时刻。intent 写目的、事实、下一步和收尾条件。基于偏好带最新 preferenceRevision，基于记事带真实 selfNote。学习时长从 study.started 开始关注并结合实际累计安排 nextReviewAt：明确分钟数原样保留，‘学久了’由你选择合理的近时重评，不任意推到隔天；后台没有已知学习进展时等下一次学习事件，不空转。时刻是重评安排，不是新造的用户规则。实际时长不能由你重置，提醒后将当时累计值记入 intent，按后续新增学习时间判断。答后复查订阅 reply.finished，只有用户回答会产生它。无下一步就完成。", "reversible_low", false, companionAttentionWriteV1Schema, { label: "正在安排接着关注" }, { maxInputChars: 6_000 }),
+  tool("companion_publish_utterance", "主动考虑后确有值得说的新想法、提醒、问候或闲聊时发布一条独立发言；用户明确要求分次交流时也可使用。普通回答直接完整回复，不靠本工具拆段凑消息。text 表达这次真正想说的完整意思，final 默认 true，发布回执即完成，不再调模型确认结束；只有真实工作未完才设 false。学习成果用写工具保存，本工具只发布对白。", "reversible_low", false, companionPublishUtteranceV1Schema, { label: "正在接着说" }, { maxInputChars: 14_000 }),
+  tool("companion_finish_participation", "内部主动考虑没有值得说的新内容时，调用 decision=silent 直接结束；不发布‘没有补充／安静收尾’等执行说明，不需要额外模型调用。", "reversible_low", false, companionFinishParticipationV1Schema, { label: "考虑已结束" }),
+  tool("companion_write_annotation", "用户从原句发起伴星解释时，用本工具独立写入完整解释。原句、位置与保存身份已绑定在 annotationTarget，不能改换。markdown 是正式学习内容，用清楚的书面中文；聊天回应可以另说，不能拿发言代替写入。final 默认 true，真实保存回执即完成交付，不需要另外调用模型总结或重复全文。只有用户要求的其他工作尚未完成时设 false。保存后的批注可由用户编辑、删除和继续拓展。", "reversible_low", false, companionWriteAnnotationV1Schema,
+    { label: "正在写原句解释" }, { maxInputChars: null, maxOutputChars: null }),
   tool("companion_edit_note", "用户明确要改当前笔记正文时调用：插入、追加、替换选区、删除或按块替换。读取和分析问题不算完成，不要等她再说一次「改」。原文版本变了就停止，收到保存回执才说完成。", "reversible_low", false, companionEditNoteV1Schema,
     { label: "正在调整笔记正文", discovery: "调整整篇笔记的标题、代码块和排版；在光标后补充、追加、删除或替换正文。" }, { maxInputChars: null, maxOutputChars: null },
     NOTE_EDITING_SCENE_GUIDANCE),
@@ -89,8 +99,8 @@ export const companionCapabilityManifest: readonly AgentCapabilityDeclaration[] 
   // 看不到任务队列」）。这些不是"锦上添花的工具"：没有它们，她能说的只有闲聊。
   // 描述统一写成"什么时候该调"，因为工具描述是她唯一能看到的用法说明。
   tool("companion_search_notes", "按关键词搜当前空间可见笔记的标题与正文，返回真实身份。找指定笔记用 match=all，找关联内容用 match=any。候选只是关键词匹配，必须读正文核对关系，不能凭标题建链接。", "read", false, z.object({ query: z.string().min(1).max(120), limit: z.number().int().min(1).max(10).optional(), match: z.enum(["all", "any"]).optional() }).strict(), { label: "正在翻你的笔记" }),
-  tool("companion_create_note", "用户明确要把讨论整理成新笔记时调用。先搜相关笔记、读正文再选 links，没关联就留空。只要速看或拓展草稿走 agent_start_goal；回执后才说完成。", "reversible_low", false, companionCreateNoteV1Schema,
-    { label: "正在写成笔记", discovery: "把聊清楚的知识点写成一篇可编辑笔记，并链接库内读过的相关内容。" }, { maxInputChars: null, maxOutputChars: null }),
+  tool("companion_create_note", "用户要把讨论写成新笔记时调用。允许查资料时先搜读再选 links；禁止时独立保存、links 留空。速看/拓展草稿走 agent_start_goal；仅凭回执报完成。", "reversible_low", false, companionCreateNoteV1Schema,
+    { label: "正在写成笔记", discovery: "把聊清楚的知识点写成一篇可编辑笔记；经用户允许时可链接库内相关内容。" }, { maxInputChars: null, maxOutputChars: null }),
   // 「开启共享」这一句她以前只能回"没那个按钮"，而且这回她说的是真的：工具面里没有共享，
   // 页面词表里也没有协作空间，连跳过去自己点都跳不了（2026-10-09 线上）。补的是这个真缺口。
   // 判据沿用服务端 `setNoteShareScope` 的**作者**校验，不是空间角色——"我是所有者"不等于

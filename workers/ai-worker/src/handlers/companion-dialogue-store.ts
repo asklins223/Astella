@@ -47,7 +47,8 @@ export interface ReadContext {
   runId: string;
   conversationId: string;
   userId: string;
-  userMessageId: string;
+  userMessageId: string | null;
+  initiativeInput?: import("@astella/shared/companion-initiative-contracts").CompanionInitiativeInputV1 | null;
   generation: number;
   runStatus: string;
   /** L11：run 创建时冻结的账号世代（surface_epoch）。 */
@@ -674,7 +675,7 @@ export async function emitCompanionAssistantStatus(args: {
         accountEpoch: read.accountEpoch,
         seq,
         type: "assistant.status",
-        payload: { status, safeLabel },
+        payload: { status, safeLabel, inputKind: read.initiativeInput ? "initiative" : "user" },
         expiresAt,
       });
       await tx.execute(sql`
@@ -691,6 +692,7 @@ export async function emitCompanionAssistantStatus(args: {
 }
 
 export interface CompanionTtsSegmentEvent {
+  messageId?: string;
   version: 2;
   segmentId: string;
   ordinal: number;
@@ -768,6 +770,7 @@ export async function emitCompanionTtsSegments(args: {
             ${args.runId}, ${args.generation}, ${args.accountEpoch}, 'voice.segment.ready',
             ${JSON.stringify({
               version: segment.version,
+              ...(segment.messageId ? { messageId: segment.messageId } : {}),
               segmentId: segment.segmentId,
               ordinal: segment.ordinal,
               displayText: segment.displayText,
@@ -1006,6 +1009,24 @@ export async function enqueueCompanionMemoryJobs(
   }
 }
 
+/** Queue optional follow-up generation in the same transaction that persists the reply. */
+export async function enqueueCompanionFollowupSuggestions(
+  tx: { execute(query: unknown): Promise<unknown> },
+  args: { workspaceId: string; userId: string; runId: string; assistantMessageId: string },
+): Promise<void> {
+  await tx.execute(sql`
+    INSERT INTO jobs
+      (type, workspace_id, requested_by, payload, status, priority, resource_class, idempotency_key)
+    VALUES
+      ('companion_followup_suggestions', ${args.workspaceId}, ${args.userId},
+       ${JSON.stringify({ runId: args.runId, userId: args.userId, assistantMessageId: args.assistantMessageId })},
+       'pending', 20, 'interactive_ai', ${`companion-followups:${args.assistantMessageId}`})
+    ON CONFLICT (workspace_id, idempotency_key)
+      WHERE idempotency_key IS NOT NULL
+    DO NOTHING
+  `);
+}
+
 export interface CompanionFailureSpanScope {
   workspaceId: string;
   userId: string;
@@ -1096,7 +1117,7 @@ export async function recoverCompanionRunFailureSpanBestEffort(
 
 /** run failed + error event（fence：仅 active run 可写终态；cancel/supersede 后零写入）。 */
 export async function markCompanionRunFailed(
-  read: Pick<ReadContext, "runId" | "conversationId" | "userId" | "generation" | "accountEpoch">,
+  read: Pick<ReadContext, "runId" | "conversationId" | "userId" | "generation" | "accountEpoch" | "initiativeInput">,
   workspaceId: string,
   code: string,
   recoverable: boolean,
@@ -1107,6 +1128,21 @@ export async function markCompanionRunFailed(
     await withWorkerWorkspaceTransaction(
       { workspaceId, userId: read.userId },
       async (tx) => {
+        // A revoked initiative is a quiet stop, not a failed answer to an imaginary user request.
+        if (read.initiativeInput && code === "CONTEXT_STALE") {
+          const [stopped] = await tx.execute(sql`UPDATE companion_turn_runs SET status='cancelled',error_code=NULL,
+            finished_at=now(),waiting_proposal_id=NULL WHERE id=${read.runId} AND status IN ('accepted','running') RETURNING id`);
+          if (!stopped) return;
+          const messages = await tx.execute<{ message_id: string }>(sql`SELECT message_id FROM companion_run_utterances WHERE run_id=${read.runId} ORDER BY created_at`);
+          const [counter] = await tx.execute<{ seq: string }>(sql`UPDATE companion_conversations SET next_event_seq=next_event_seq+1
+            WHERE id=${read.conversationId} RETURNING (next_event_seq-1)::text AS seq`);
+          await insertStreamEvent(tx, { workspaceId,userId:read.userId,conversationId:read.conversationId,runId:read.runId,
+            generation:read.generation,accountEpoch:read.accountEpoch,seq:Number(counter!.seq),type:"turn.completed",
+            payload:{messageIds:messages.map(m=>m.message_id),silent:!messages.length},expiresAt:new Date(Date.now()+24*3_600_000).toISOString() });
+          await tx.execute(sql`UPDATE companion_turn_runs SET last_event_seq=${Number(counter!.seq)},updated_at=now() WHERE id=${read.runId}`);
+          await tx.execute(sql`SELECT pg_notify('astella_companion_events_v1',${JSON.stringify({conversationId:read.conversationId,maxSeq:Number(counter!.seq)})})`);
+          return;
+        }
         // fence：只有 run 仍 active 才标记 failed（已被 cancel/supersede → 不写 error event，
         // turn.cancelled 已由 cancel 路径负责）。
         // waiting_proposal_id 一并清空：终态 run 不得残留挂起确认指针。

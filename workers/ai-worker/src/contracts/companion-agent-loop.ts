@@ -1,4 +1,5 @@
 import type { AgentTurnRequest, ChatMessage, CompanionAgentToolExecutionConstraints } from "@astella/shared";
+import type { AgentTurnInterpretationV1, AgentVoicePreferenceWriteStatusV1 } from "@astella/shared/agent-contracts";
 import type { AIProvider } from "../lib/ai-provider.ts";
 import type { CompanionDialogueHandlerContext, ReadContext } from "../handlers/companion-dialogue-store.ts";
 import type { CompanionContextReceipts } from "../handlers/companion-context-receipts.ts";
@@ -26,7 +27,7 @@ export interface CompanionAgentLoopArgs {
    */
   activeness?: "quiet" | "moderate" | "active" | null;
   /**
-   * 服务端判定的执行约束（目前只有 `visionEnabled` = 用户允许把图片外发）。
+   * 服务端判定的执行约束（图片外发授权与当前轮是否允许读取笔记库）。
    *
    * 同一份约束管两件事：① 受政策管的工具**不下发**（看不见才不会答应之后看不了）；
    * ② 执行前独立复核一次——工具名是模型给的，下发面拦不住一个硬要调的编造。
@@ -54,7 +55,18 @@ export interface CompanionAgentLoopArgs {
    * 流式下发回调（每一步）：provider 的原始增量在这里交给对话 handler 做
    * 净化/校验/落库；返回 false 表示本轮已终止（校验失败或 run 已失效）。
    */
+  onUtterancePublished?: (messageId: string, text: string, rawText: string) => Promise<void>;
   onProviderDelta?: (delta: string) => Promise<boolean>;
+  /**
+   * 思考增量出口（2026-10-13）：模型这一轮真正在想什么，逐段交给对话 handler 下发。
+   *
+   * 与 `onProviderDelta` 是**两条独立的通道**：这一路不净化、不校验、不落正文，
+   * 因此也永远进不了朗读。写失败只让思考显示自己停下，绝不影响这一轮回复。
+   */
+  onReasoningDelta?: (text: string) => void;
+  /** Structured semantic direction is resolved before the speculative first step is released. */
+  onTurnInterpretation?: (interpretation: AgentTurnInterpretationV1) =>
+    void | AgentVoicePreferenceWriteStatusV1 | Promise<void | AgentVoicePreferenceWriteStatusV1>;
   /**
    * handler 进入时刻（job 超时计时起点）。缺省回落到 loop 起点——测试等
    * 无 job 包装的调用方不需要它。用于把 run 预算夹在 handler abort 之内。

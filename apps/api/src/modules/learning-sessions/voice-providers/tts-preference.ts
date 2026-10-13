@@ -11,6 +11,7 @@
 
 import {
   isTtsVoiceAllowed,
+  QWEN_TTS_SUPPORTED_DIALECTS,
   TTS_ENGINE_VALUES,
   type TtsEngineV1,
 } from "@astella/shared/tts-voice-catalog";
@@ -23,6 +24,8 @@ export interface StoredVoicePreference {
   voice?: unknown;
   /** 用户自写的说话风格（qwen instruction 兜底）；未设/非法 = 用 config 默认。 */
   instruction?: unknown;
+  /** 独立的长期方言偏好；不会覆盖用户自定义音色/语速描述。 */
+  dialect?: unknown;
 }
 
 export interface ResolvedTtsSelection {
@@ -37,6 +40,10 @@ export interface ResolvedTtsSelection {
    * 不合法退回 config"。edge 引擎不消费它。
    */
   qwenInstruction: string;
+  /** Whether qwenInstruction came from an explicit account setting rather than config. */
+  qwenInstructionExplicit: boolean;
+  /** 持久方言，与本轮 instruction 分开；本轮临时方言可以覆盖它。 */
+  qwenDialect: (typeof QWEN_TTS_SUPPORTED_DIALECTS)[number] | null;
   /** 是否是用户显式保存过的选择；false 表示这一身是 config 默认给的。 */
   explicit: boolean;
 }
@@ -44,12 +51,17 @@ export interface ResolvedTtsSelection {
 function normalizeStored(stored: StoredVoicePreference | null): {
   engine: TtsEngineV1 | null;
   voice: string | null;
+  dialect: (typeof QWEN_TTS_SUPPORTED_DIALECTS)[number] | null;
 } {
   const engine = typeof stored?.engine === "string" && (TTS_ENGINE_VALUES as readonly string[]).includes(stored.engine)
     ? (stored.engine as TtsEngineV1)
     : null;
   const voice = typeof stored?.voice === "string" && stored.voice.length > 0 ? stored.voice : null;
-  return { engine, voice };
+  const dialect = typeof stored?.dialect === "string"
+    && (QWEN_TTS_SUPPORTED_DIALECTS as readonly string[]).includes(stored.dialect)
+    ? stored.dialect as (typeof QWEN_TTS_SUPPORTED_DIALECTS)[number]
+    : null;
+  return { engine, voice, dialect };
 }
 
 /** instruction 独立于 engine/voice 校验：它是另一个维度的偏好，坏一条不该拖垮整身。 */
@@ -61,6 +73,12 @@ function normalizeStoredInstruction(stored: StoredVoicePreference | null, fallba
   // 库里的存量值可能超限（合同改过、或早先没校验）：整体退回默认，不截断。
   if (voiceStyleInstructionUnits(trimmed) > VOICE_STYLE_INSTRUCTION_MAX_UNITS) return fallback;
   return trimmed;
+}
+
+function hasValidStoredInstruction(stored: StoredVoicePreference | null): boolean {
+  const raw = stored?.instruction;
+  return typeof raw === "string" && raw.trim().length > 0
+    && voiceStyleInstructionUnits(raw.trim()) <= VOICE_STYLE_INSTRUCTION_MAX_UNITS;
 }
 
 /**
@@ -80,10 +98,14 @@ export function resolveTtsSelection(
     qwenVoice: cfg.qwen.voice,
     edgeVoice: cfg.edge.voice,
     qwenInstruction,
+    qwenInstructionExplicit: hasValidStoredInstruction(stored),
+    qwenDialect: normalizeStored(stored).dialect,
     explicit: false,
   };
   const { engine, voice } = normalizeStored(stored);
   if (!engine || !voice) return fallback;
   if (!isTtsVoiceAllowed(engine, voice)) return fallback;
-  return { engine, qwenVoice: voice, edgeVoice: cfg.edge.voice, qwenInstruction, explicit: true };
+  return { engine, qwenVoice: voice, edgeVoice: cfg.edge.voice, qwenInstruction,
+    qwenInstructionExplicit: hasValidStoredInstruction(stored),
+    qwenDialect: normalizeStored(stored).dialect, explicit: true };
 }

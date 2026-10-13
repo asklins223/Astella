@@ -15,3 +15,5 @@ export {listAgentLongGoals,requireAgentLongGoal} from "./long-goals.ts";
 export * from "./compaction-state.ts";
 
 export * from "./self-notes.ts";
+
+export * from "./participation.ts";

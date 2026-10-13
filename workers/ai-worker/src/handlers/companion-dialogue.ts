@@ -1,5 +1,10 @@
+import { finishCompanionParticipation } from "./companion-participation-tools.ts";
+import { enqueueParticipationObservation } from "@astella/agent-host";
+import { enqueueSystemEventDelivery } from "./companion-delivery-write.ts";
+import { readParticipationPreferences } from "@astella/agent-host";
+import { companionInitiativeInputV1Schema } from "@astella/shared/companion-initiative-contracts";
 import { listCompanionSelfNotes } from "@astella/agent-host";
-import { COMPANION_AGENT_TOOL_LABELS, renderCompanionSelfNotes } from "@astella/shared";
+import { COMPANION_AGENT_TOOL_LABELS, companionTurnWritesDocumentContent, renderCompanionSelfNotes } from "@astella/shared";
 import { resolveCompanionPersonaContext } from "./companion-identity-context.ts";
 import { reserveCompanionProviderCall } from "./companion-agent-events.ts";
 import { renderPlaybookCandidates, renderPlaybookCatalog } from "./companion-playbooks.ts";
@@ -51,6 +56,8 @@ import {
   createCompanionStreamDelivery,
   reconcileStreamedText,
 } from "./companion-dialogue-stream.ts";
+import { createCompanionThinkingDelivery } from "./companion-thinking-stream.ts";
+import { resolveRunPersonaPin } from "./companion-run-persona-pin.ts";
 import {
   AIConsentRequiredError,
   AIDataPolicyDeniedError,
@@ -58,7 +65,11 @@ import {
   resolveVisionReader,
 } from "../lib/governance.ts";
 import { createCompanionContextReceipts } from "./companion-context-receipts.ts";
-import { createCompactionTraceRecorder } from "./companion-context-handoff.ts";
+import {
+  createCompactionTraceRecorder,
+  resolveRouteInputTokens,
+  selectCompanionInteractiveReplayWindow,
+} from "./companion-context-handoff.ts";
 import { resolveCompanionTurnProviders } from "./companion-turn-providers.ts";
 import { createCompactionCooldownPorts } from "./companion-compaction-cooldown.ts";
 import { foldReplayUnderSummaryCoverage, replayToMessages } from "./companion-compaction.ts";
@@ -73,13 +84,15 @@ import { AgentOutputError, CompanionAgentBudgetExceededError, CompanionContextCh
 import { AIContextOverflowError } from "../lib/context-governor.ts";
 import { AgentContextError } from "@astella/agent-core";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
-import type { AgentMemoryContextSourceV1 } from "@astella/shared/agent-contracts";
+import type { AgentMemoryContextSourceV1, AgentVoiceStyleDecisionV1 } from "@astella/shared/agent-contracts";
 import {
   companionSegmentId,
   splitCommittedDisplaySegments,
   type CompanionDisplaySegmentState,
 } from "../lib/tts-segments.ts";
-import { readVoiceStyleInstruction } from "@astella/shared/voice-expression-tags";
+import { resolveCompanionVoiceInstruction } from "./companion-voice-request-style.ts";
+import { persistCompanionDialectPreference, readCompanionDialectPreference } from "./companion-voice-preference.ts";
+import { qwenDialectForInstruction } from "@astella/shared/tts-voice-catalog";
 import { companionVoiceExpressionBoundaries, companionVoiceSegmentExpression, projectCompanionVoiceExpression } from "./companion-voice-expression.ts";
 import {
   assembleCompanionContext,
@@ -115,6 +128,7 @@ import {
   isCompanionVoiceDialogueEnabled,
   isCompanionMemoryContextEnabled,
   enqueueCompanionMemoryJobs,
+  enqueueCompanionFollowupSuggestions,
   readConversationSummaryChain,
   readCompanionHistoryRows,
   countCompanionHistoryMessages,
@@ -140,73 +154,6 @@ export function isGroundedTutorRequestedPageContext(
 ): boolean {
   return pageContext?.pageKind === "learning_run"
     && pageContext.requestedCapability === "grounded_tutor";
-}
-
-export interface RunPersonaPin {
-  /** 本次调用绑定的人格版本号。 */
-  revision: number;
-  examplesRevision: number;
-  defaultExpressionVersion: string;
-  /** 绑定的那一版的正文（来自不可变版本行，或首次固定时的账号当前档案）。 */
-  content: unknown;
-  /** true = 这一次是首次固定（随后要把三个身份字段写回 run）。 */
-  fresh: boolean;
-}
-
-/**
- * 一个 run 绑定哪一版人格（40 §4.8.4 / 40b §5.3.2 / A50）。
- *
- * ## 两条硬规则，写在这个纯函数里
- *
- * 1. **一次调用使用固定版本。** 已经固定过的 run 只认它自己那个号，正文从那条
- *    **不可变版本行**读；只有首次固定才读账号当前档案，随后把号写回 run，
- *    之后每一轮都走"已固定"分支。于是同一个 run 的第 1 轮与第 40 轮拿到的是
- *    同一份人格，不会因为中途改设置而分属两版。
- *
- * 2. **排队的（待生效）那一版对当前 run 不生效。** 账号人格现在有「当前 / 待生效」
- *    两版（`companion_persona_profiles.pending_revision`）。待生效存在的意义是
- *    "让用户看得见还没生效的那一版"，不是"让某个 run 提前用上它"——合同把它的生效
- *    时点写成"下一次会话建立时"，而这里的判断发生在 run **已经建立之后**。
- *    所以这个函数只认 `currentRevision`，并对 `stagedRevision` 做一次硬断言：
- *    万一将来有人把待生效也当成候选传进来，当场抛错，而不是让用户在一次
- *    已经进行中的对话里被悄悄换掉人格。
- */
-export function resolveRunPersonaPin(input: {
-  /** run 上已固定的号；null = 这一次还没固定过。 */
-  pinnedRevision: number | null;
-  pinnedExamplesRevision: number | null;
-  pinnedDefaultExpressionVersion: string | null;
-  /** 账号当前生效的版本号与正文（只有首次固定时才用得上）。 */
-  currentRevision: number | null;
-  currentContent: unknown;
-  /** 账号排队的待生效版本号（明确不参与本次绑定）。 */
-  stagedRevision: number | null;
-  /** 已固定那一版的不可变版本行正文。 */
-  pinnedContent: unknown;
-  currentDefaultExpressionVersion: string;
-}): RunPersonaPin {
-  const fresh = input.pinnedRevision === null;
-  const revision = fresh
-    ? Number(input.currentRevision ?? 0)
-    : Number(input.pinnedRevision);
-  if (input.stagedRevision !== null && revision === input.stagedRevision) {
-    throw new Error(
-      "companion run must not bind the pending persona revision before it is activated",
-    );
-  }
-  const examplesRevision = fresh
-    ? revision
-    : Number(input.pinnedExamplesRevision ?? input.pinnedRevision);
-  return {
-    revision,
-    examplesRevision,
-    defaultExpressionVersion: fresh
-      ? input.currentDefaultExpressionVersion
-      : (input.pinnedDefaultExpressionVersion ?? input.currentDefaultExpressionVersion),
-    // 首次固定读当前档案；已固定读那一版的不可变版本行（revision 0 = 无覆盖）。
-    content: fresh ? (input.currentContent ?? null) : (input.pinnedContent ?? null),
-    fresh,
-  };
 }
 
 // ─── run 编排 ─────────────────────────────────────────────────────────────
@@ -236,7 +183,7 @@ export async function runCompanionDialogue(
       async (tx) => {
         const runRows = await tx.execute<{
           id: string; conversation_id: string; user_id: string; generation: number;
-          status: string; page_context: unknown; user_message_id: string;
+          status: string; page_context: unknown; user_message_id: string | null; input_source: unknown;
           account_epoch: string | number | null;
           persona_profile_revision: number | null;
           persona_examples_revision: number | null;
@@ -245,7 +192,7 @@ export async function runCompanionDialogue(
           permission_snapshot: unknown; cancel_requested_at: string | null;
           delivery_observation: unknown;
         }>(sql`
-          SELECT id, conversation_id, user_id, generation, status, page_context, user_message_id,
+          SELECT id, conversation_id, user_id, generation, status, page_context, user_message_id, input_source,
                  account_epoch, context_grant_id, permission_level, permission_snapshot,
                  persona_profile_revision, persona_examples_revision, default_expression_version,
                  delivery_observation,
@@ -296,7 +243,7 @@ export async function runCompanionDialogue(
               ? block.label.trim().slice(0, 80)
               : "用户发来的图片",
           }));
-        const currentUserSeq = userRows[0]?.seq ?? "0";
+        const currentUserSeq = userRows[0]?.seq ?? conv.next_message_seq;
         // 排除非对话与未完成的助手输出，保留用户连发的补充以及发送时间、回合状态；摘要水位
         // 必须从这份相同的可见尾部计算，不能让 system 注记占掉最近消息名额。
         const historyRows = await readCompanionHistoryRows(tx, run.conversation_id, {
@@ -487,6 +434,7 @@ export async function runCompanionDialogue(
           conversationId: run.conversation_id,
           userId: run.user_id,
           userMessageId: run.user_message_id,
+          initiativeInput: run.input_source ? companionInitiativeInputV1Schema.parse(run.input_source) : null,
           generation: run.generation,
           runStatus: run.status,
           accountEpoch: Number(run.account_epoch ?? 0),
@@ -616,6 +564,36 @@ export async function runCompanionDialogue(
     reserveCall: () => reserveCompanionProviderCall({ ctx, read }),
   });
 
+  // Read up to 200 rows for retrieval, but do not place the whole page into every
+  // interactive model request. A large declared context window is a hard capacity,
+  // not a reason to replay unrelated years of dialogue; older messages stay
+  // addressable through companion_read_history and the existing summary coverage.
+  const replayWindow = selectCompanionInteractiveReplayWindow(
+    read.recentMessages,
+    resolveRouteInputTokens(provider.getCapabilities?.() ?? null, provider.resolveOutputTokenLimit?.()),
+  );
+  read.recentMessages = replayWindow.messages;
+  replayTailSeqs = replayWindow.messages.map((message) => message.seq ?? null);
+  if (read.contextHandoff) {
+    read.contextHandoff = {
+      ...read.contextHandoff,
+      historyStartSeq: replayWindow.messages[0]?.seq ?? read.contextHandoff.currentRequest.messageSeq,
+      clippedMessageCount: read.contextHandoff.clippedMessageCount + replayWindow.receipt.omittedCount,
+      historyTail: replayWindow.messages.flatMap((message) => message.seq
+        ? [{ seq: message.seq, role: message.role, text: message.text }]
+        : []),
+      replayWindow: replayWindow.receipt,
+    };
+  }
+  logger.info({
+    runId: read.runId,
+    modelId: provider.modelId,
+    capacityTokens: replayWindow.receipt.capacityTokens,
+    usedTokens: replayWindow.receipt.usedTokens,
+    takenCount: replayWindow.receipt.takenCount,
+    omittedCount: replayWindow.receipt.omittedCount,
+  }, "companion interactive replay window selected");
+
   // 40 §4.6.6：resident 正文常驻，active 只注入有预算的目录（非 grounded_tutor）。
   const emptyMemoryContext = (): ContextAssemblyResult => ({
     residentMemories: read.residentMemories,
@@ -691,6 +669,11 @@ export async function runCompanionDialogue(
   const selfNotes = read.groundedTutorContext ? [] : await withWorkerWorkspaceTransaction(
     { workspaceId: ctx.workspaceId, userId: read.userId }, tx => listCompanionSelfNotes(tx,
       { workspaceId: ctx.workspaceId, userId: read.userId }));
+  // 上一轮说过「以后都用河南话」之后，账号里那一行就是这一轮的声音身份；正文也要
+  // 跟着它，否则她开口是方言、写出来还是普通话。
+  const accountVoiceDialect = await readCompanionDialectPreference({
+    workspaceId: ctx.workspaceId, userId: read.userId,
+  });
   let messages: ReturnType<typeof buildCompanionPersonaMessages>;
   try {
     messages = buildCompanionPersonaMessages({
@@ -704,6 +687,9 @@ export async function runCompanionDialogue(
         logger.info({ runId: read.runId, sources: receipts }, "agent context budget receipt");
       },
       userText: read.userText,
+      initiativeInput: read.initiativeInput,
+      participationPreferences: await withWorkerWorkspaceTransaction({ workspaceId: ctx.workspaceId, userId: read.userId },
+        tx => readParticipationPreferences(tx, { workspaceId: ctx.workspaceId, userId: read.userId })),
       recentMessages: read.recentMessages,
       conversationClock: read.conversationClock,
       pageContext: read.pageContext,
@@ -716,6 +702,7 @@ export async function runCompanionDialogue(
       conversationSummary: read.conversationSummary,
       continuationData: renderCompanionContextHandoff(handoffDraft),
       petProfile: read.petProfile,
+      accountVoiceDialect,
     });
   } catch (error) {
     if (error instanceof AgentContextError) {
@@ -827,7 +814,7 @@ export async function runCompanionDialogue(
         type: "assistant.status",
         // 这一刻还不知道这一轮开不开思考（判据要等本轮的注意力解释跑完），
         // 所以只显示等待回复。真开了思考，运行时会在判定之后补一条 thinking。
-        payload: { status: "waiting", safeLabel: "正在准备回复…" },
+        payload: { status: "waiting", safeLabel: "正在准备回复…", inputKind: read.initiativeInput ? "initiative" : "user" },
         expiresAt,
       });
       // §5.2 确定性来源：thinking → think/curious/0.35（与 status 同事务原子下发）。
@@ -858,16 +845,23 @@ export async function runCompanionDialogue(
   let voiceSegmentState: CompanionDisplaySegmentState = { cursor: 0, sentCount: 0 };
   let voiceSegmentsEnabled = isCompanionVoiceDialogueEnabled();
   let voiceSegmentsWritten = false;
+  let publishedVoiceChars = 0;
   const voiceExpressionEnabled = !read.groundedTutorContext && read.petProfile?.boundaries?.allowVoiceTags !== false;
   const voiceDeliveryDecision = decideCompanionVoiceDelivery({
     voiceDialogueEnabled: voiceSegmentsEnabled,
     formalAnswerInProgress: read.formalAnswerInProgress,
   });
+  let semanticVoiceStyle: AgentVoiceStyleDecisionV1 | null = null;
+  /**
+   * 这一轮的字要不要落进笔记/卡片。判据取结构化解释的候选能力（工具面按声明装配），
+   * 不等工具真跑起来——第一段话可能在调用工具之前就说完了，而文案轮整轮都回普通话。
+   */
+  let turnWritesDocumentContent = false;
   if (voiceDeliveryDecision === "formal_answer_in_progress") {
     // 这一句是这条门唯一的可查痕迹：没有它，"她今天怎么不念了"只能靠猜。
     logger.info({ runId: read.runId }, "正式作答中：这一轮伴星回复只出文字，不切句也不送合成");
   }
-  const emitVisibleVoiceSegments = async (visibleText: string, isFinal: boolean, modelText: string): Promise<void> => {
+  const emitVisibleVoiceSegments = async (visibleText: string, isFinal: boolean, modelText: string, messageId?: string, displayOffset = publishedVoiceChars): Promise<void> => {
     // 不是"藏掉播放"：直接不发段事件，于是正文也不会被送去外部合成服务。
     // 上面那句 `voiceSegmentsEnabled` 是另一件事——它是"这一段写失败之后本回合别再试"，
     // 可以在一轮中途被关掉，而正式作答是整轮都不念。
@@ -875,7 +869,18 @@ export async function runCompanionDialogue(
     if (voiceDeliveryDecision !== "delivered") return;
     const expression = projectCompanionVoiceExpression(modelText, read.factSpans?.values ?? {});
     const expressionEnabled = voiceExpressionEnabled;
+    // Whole-turn voice style is a user-directed semantic choice and remains available
+    // even when the persona disables incidental emotion/rich-sound tags.
+    const voiceInstruction = resolveCompanionVoiceInstruction(read.userText, semanticVoiceStyle, {
+      accountDialect: accountVoiceDialect, documentWork: turnWritesDocumentContent,
+    });
     if (isFinal) logger.info({ runId: read.runId, expressionEnabled,
+      voiceStyleProtocol: "companion-voice-style-intent-v1",
+      voiceStyleDecision: semanticVoiceStyle?.decision ?? "unavailable",
+      voiceInstructionSource: voiceInstruction.source,
+      voiceAccountDialect: accountVoiceDialect,
+      voiceDocumentWork: turnWritesDocumentContent,
+      voiceDialect: qwenDialectForInstruction(voiceInstruction.instruction),
       expressionProtocol: "companion-voice-expression-v1",
       controlTags: expression.marks.filter(mark => mark.kind === "control").map(mark => mark.tag).slice(0, 64),
       richTagCount: expression.marks.filter(mark => mark.kind === "rich").length,
@@ -888,9 +893,10 @@ export async function runCompanionDialogue(
     });
     voiceSegmentState = split.next;
     if (split.segments.length === 0) return;
-    // turn 级风格指令：从模型原文提第一条（一轮一条），随每段下发，服务端合成时
-    // 从事件重读。表达关闭（带路正式作答/用户关掉语音标记）时模型不该写、也不认。
-    const instruction = expressionEnabled ? readVoiceStyleInstruction(modelText) : null;
+    // turn 级风格指令直接来自并行结构化注意力解释器；显式请求识别只在解释没有
+    // 声音变化时兜底，不覆盖 apply/clarify 的语义结果。它独立于句内情绪/拟声标签开关。
+    // 随每段下发，服务端合成时从事件重读。
+    const instruction = voiceInstruction.instruction;
     const segments = split.segments.flatMap((segment) => {
       const synthesis = companionVoiceSegmentExpression(expression, segment, expressionEnabled);
       if (!synthesis.text) return [];
@@ -898,11 +904,12 @@ export async function runCompanionDialogue(
       const synthesisTextSha256 = synthesis.textSha256;
       return [{
         version: 2 as const,
+        ...(messageId ? { messageId } : {}),
         segmentId: companionSegmentId(read.runId, read.generation, segment.ordinal, synthesisTextSha256),
         ordinal: segment.ordinal,
         displayText: segment.displayText,
-        displayStart: segment.displayStart,
-        displayEnd: segment.displayEnd,
+        displayStart: segment.displayStart + displayOffset,
+        displayEnd: segment.displayEnd + displayOffset,
         synthesisText,
         synthesisTextSha256,
         cue: synthesis.cue,
@@ -945,6 +952,17 @@ export async function runCompanionDialogue(
     factSpanValues: read.factSpans?.values ?? {},
     notifyCompanionEvent,
     onVisibleCommitted: async (_committed, visibleText, modelText) => emitVisibleVoiceSegments(visibleText, false, modelText),
+  });
+  /**
+   * 思考走**另一条通道**（2026-10-13）：不净化、不校验、不进正文、不进朗读，
+   * 写失败只让它自己停下。放在这里而不是交付管线里，就是为了让它拿不到
+   * `onVisibleCommitted`——语音分段只由已提交的可见正文驱动。
+   */
+  const thinkingDelivery = createCompanionThinkingDelivery({
+    ctx,
+    read,
+    expiresAt,
+    notifyCompanionEvent,
   });
   let assistantText: string;
   let ttsRawText: string | null = null;
@@ -990,7 +1008,29 @@ export async function runCompanionDialogue(
       }),
       expiresAt,
       continuationProposalId,
-      onProviderDelta: (delta) => streamingDelivery.onRawDelta(delta),
+      onProviderDelta: read.initiativeInput ? undefined : (delta) => streamingDelivery.onRawDelta(delta),
+      onReasoningDelta: thinkingDelivery.onReasoningDelta,
+      onTurnInterpretation: async (interpretation) => {
+        semanticVoiceStyle = interpretation.voiceStyle;
+        turnWritesDocumentContent = companionTurnWritesDocumentContent(interpretation.candidateOperations);
+        try {
+          return await persistCompanionDialectPreference({
+            workspaceId: ctx.workspaceId,
+            userId: read.userId,
+            change: interpretation.voiceStyle.persistentPreference,
+          });
+        } catch {
+          logger.warn({ runId: read.runId }, "persistent companion dialect preference write failed");
+          return "failed";
+        }
+      },
+      onUtterancePublished: async (messageId, text, rawText) => {
+        const draftCursor = voiceSegmentState.cursor;
+        voiceSegmentState = { cursor: 0, sentCount: voiceSegmentState.sentCount };
+        try { await emitVisibleVoiceSegments(text, true, rawText, messageId, draftCursor + publishedVoiceChars);
+          publishedVoiceChars += text.length + 2; }
+        finally { voiceSegmentState = { ...voiceSegmentState, cursor: draftCursor }; }
+      },
       handlerStartedAtMs,
     });
   } catch (err) {
@@ -1047,6 +1087,11 @@ export async function runCompanionDialogue(
       failureText: outputUnverified ? unverifiedQuoteFailureText : undefined,
     });
     throw err;
+  } finally {
+    // 循环一结束（成功、失败、还是等着确认）就不再有新思考了；把压在节流窗口里的
+    // 最后一块刷出去，这条通道就此关门。放 finally 是因为三个出口都不该带着半块
+    // 思考离开，而它的成败与快慢**不影响**这一轮怎么收尾。
+    await thinkingDelivery.finish();
   }
   // 折叠轨迹并进交接快照（44 §3.3）。位置要紧：必须紧跟 loop、在任何分支之前——
   // 围栏允许 waiting_for_confirmation 时写（那一步同样可能折过），而这个分支自己会
@@ -1071,6 +1116,11 @@ export async function runCompanionDialogue(
     } else {
       await emitVisibleVoiceSegments(flushed.text, true, streamingDelivery.modelText());
     }
+    return;
+  }
+  if (!agentResult.text.trim() || read.initiativeInput?.facts.canSpeak === false) {
+    await thinkingDelivery.finish();
+    await finishCompanionParticipation(ctx, read, expiresAt);
     return;
   }
   // 定成下游唯一看到的文本（剥信封 → 渲染占位符 → 目录外的键留痕；三步顺序是契约，
@@ -1171,7 +1221,7 @@ export async function runCompanionDialogue(
     throw new Error("companion streamed text diverged from validated text");
   }
   // 强制刷新最后一个未闭合句。已经在增量阶段发出的区间由 cursor 保证不会重复。
-  await emitVisibleVoiceSegments(assistantText, true, ttsRawText);
+  await emitVisibleVoiceSegments(assistantText, true, ttsRawText, undefined, publishedVoiceChars);
 
   // ── 阶段 3c：终态事务（message + final + run succeeded） ──
   // 15b：TTS 段已在 delta 过程（流式）或 validate 后（非流式）逐个下发完毕，
@@ -1185,11 +1235,13 @@ export async function runCompanionDialogue(
   // 工具带出的跳转块跟在正文之后（方案 29 §4.8）。正文仍是**第一个块**：
   // 按 `blocks[0].text` 取正文的老读法（含下一轮装配 prompt）不受影响，
   // 而 `textOfCompanionBlocks` 只认 text/code/citation，nav 不会污染模型上下文。
+  const orderedRichBlocks = [...agentResult.blocks.filter(block => block.type === "citation" && block.referenceId),
+    ...agentResult.blocks.filter(block => !(block.type === "citation" && block.referenceId))];
   const blocks = [
     { type: "text", text: assistantText, emotion: replyEmotion },
     // Preserve every search source before optional rich results; at most three searches yield 24 sources.
-    ...[...agentResult.blocks.filter(block => block.type === "citation" && block.referenceId),
-      ...agentResult.blocks.filter(block => !(block.type === "citation" && block.referenceId))].slice(0, 31),
+    // Reserve one block slot for the asynchronous optional follow-up suggestions.
+    ...orderedRichBlocks.slice(0, 32),
   ];
   const contentSha256 = sha256Utf8V1(canonicalJsonV1(blocks));
   const textSha256 = sha256Utf8V1(assistantText);
@@ -1352,7 +1404,23 @@ export async function runCompanionDialogue(
           }
         }
 
+        const [publishedBeforeFinal] = read.initiativeInput ? await tx.execute(sql`SELECT 1 FROM companion_run_utterances WHERE run_id=${read.runId} LIMIT 1`) : [];
+        if (read.initiativeInput && !publishedBeforeFinal) await enqueueSystemEventDelivery(tx, {
+          workspaceId: ctx.workspaceId, userId: read.userId, systemEventId: `initiative:${assistantMessageId}`,
+          text: assistantText, ttlHours: 0.025, initiative: { conversationId: read.conversationId,
+            messageId: assistantMessageId, runId: read.runId, generation: read.generation, deviceSessionId: read.initiativeInput.deviceSessionId },
+        });
+        if (read.userMessageId && !(read.pageContext as { context?: { replyPurpose?: string } } | null)?.context?.replyPurpose) await enqueueParticipationObservation(tx, { workspaceId: ctx.workspaceId, userId: read.userId }, {
+          topic: "reply.finished", dedupeKey: `reply:${read.runId}`, conversationId: read.conversationId,
+          parentRunId: read.runId, facts: { messageIds: [assistantMessageId] }, ttlMs: 120_000,
+        });
         // 22 方案：终态事务内异步入队记忆提取/摘要任务。
+        if (read.userMessageId) await enqueueCompanionFollowupSuggestions(tx, {
+          workspaceId: ctx.workspaceId,
+          userId: read.userId,
+          runId: read.runId,
+          assistantMessageId,
+        });
         await enqueueCompanionMemoryJobs(tx, {
           workspaceId: ctx.workspaceId,
           userId: read.userId,

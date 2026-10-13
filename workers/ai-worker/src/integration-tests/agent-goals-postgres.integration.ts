@@ -180,8 +180,9 @@ test("semantic capability identity, paused receipts and failed continuation reus
   await assert.rejects(advance.step(request, "late"), /被新的要求替代/);
   const artifactId = randomUUID();
   await admin.begin(async tx => {
-    await tx`INSERT INTO note_overviews(id,workspace_id,user_id,note_id,note_version_id,body,generation_job_id)
-      VALUES(${artifactId},${scope.workspaceId},${scope.userId},${f.input.noteId},${f.input.noteVersionId},'成果',${child.execution.id})`;
+    await tx`INSERT INTO note_overviews(id,workspace_id,user_id,note_id,note_version_id,body,source_references,generation_job_id)
+      VALUES(${artifactId},${scope.workspaceId},${scope.userId},${f.input.noteId},${f.input.noteVersionId},'成果',
+        '[{"blockOrdinal":1,"quote":"成果依据"}]'::jsonb,${child.execution.id})`;
     await tx`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id IN (${first.id},${child.execution.id})`;
   });
   const pausedLease = await lease(scope, run.runId), receipt = createAgentAdvanceStore(workerPorts, pausedLease, run.runId, 1);
@@ -276,8 +277,9 @@ test("checkpoint restart, child receipt wake, retained artifacts and revision fe
   await admin`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id=${firstLease.id}`;
   const artifactId = randomUUID();
   await admin.begin(async tx => {
-    await tx`INSERT INTO note_overviews(id,workspace_id,user_id,note_id,note_version_id,body,generation_job_id)
-      VALUES(${artifactId},${scope.workspaceId},${scope.userId},${f.input.noteId},${f.input.noteVersionId},'光能转化为有机物中的化学能。',${jobId})`;
+    await tx`INSERT INTO note_overviews(id,workspace_id,user_id,note_id,note_version_id,body,source_references,generation_job_id)
+      VALUES(${artifactId},${scope.workspaceId},${scope.userId},${f.input.noteId},${f.input.noteVersionId},'光能转化为有机物中的化学能。',
+        '[{"blockOrdinal":1,"quote":"叶绿体利用光能制造有机物。"}]'::jsonb,${jobId})`;
     await tx`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id=${jobId}`;
   });
   const secondLease = await lease(scope, run.runId);

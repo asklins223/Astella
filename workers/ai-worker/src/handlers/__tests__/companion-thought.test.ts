@@ -42,6 +42,18 @@ test("主动念头候选与表达使用同一份完整人格，没有账号档�
   assert.ok(buildThoughtCandidatePrompt(baseMaterial({petProfile:defaultPersona}),1).includes(defaultPersona.speakingStyle));
 });
 
+test("账号存着长期方言时，念头的候选与表达都照方言写；没存就不提", () => {
+  const withDialect = baseMaterial({ accountDialect: "河南话" });
+  const expression = buildExpressionPrompt({ ...withDialect, facts: null,
+    thoughtText: "该提醒他歇一会儿", groundingNames: [], recentlySaid: [] });
+  for (const prompt of [buildThoughtCandidatePrompt(withDialect, 2), expression]) {
+    assert.ok(prompt.includes("长期默认方言「河南话」"), prompt.slice(0, 120));
+    assert.ok(prompt.includes("不要写成普通话再指望合成去变"));
+  }
+  const plain = buildThoughtCandidatePrompt(baseMaterial(), 2);
+  assert.ok(!plain.includes("长期默认方言"));
+});
+
 function baseMaterial(overrides: Partial<ThoughtMaterial> = {}): ThoughtMaterial {
   return {
     today: "2026-09-18",
@@ -53,6 +65,7 @@ function baseMaterial(overrides: Partial<ThoughtMaterial> = {}): ThoughtMaterial
     daysSinceLastLearning: null,
     familiarity: 0,
     petName: "Mao",
+    accountDialect: null,
     allowNudgeLearning: true,
     allowPlayful: true,
     catchphrase: null,

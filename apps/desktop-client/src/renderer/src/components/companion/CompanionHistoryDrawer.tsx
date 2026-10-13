@@ -9,8 +9,7 @@ import { gatewayErrorMessage } from "../../app/desktop-client";
 import { companionMessageText, navChipsStillOutsideMessages, useCompanionChat, type CompanionNavChip } from "../../app/companion-chat-session";
 import { stopCompanionSpeech } from "../../app/companion-voice-playback";
 import { type CompanionVoiceInput } from "./use-companion-voice-input";
-import { CompanionChatRecordArticle, MonthCalendar, highlightText, messageDayKey, messageDayLabel, messageTime, shouldShowRunTrace } from "./CompanionChatRecord";
-import { CompanionRunTraceView } from "./CompanionRunTraceView";
+import { CompanionChatRecordArticle, MonthCalendar, highlightText, messageDayKey, messageDayLabel, messageTime } from "./CompanionChatRecord";
 import { visibleTurnFailure } from "./companion-hud-state";
 import { CompanionProposalChoice } from "./CompanionProposalChoice";
 import { CompanionHistoryComposer } from "./CompanionHistoryComposer";
@@ -25,7 +24,7 @@ import { plainCompanionBubbleText, renderCompanionMarkdown } from "./companion-m
 import { feedSelectionToCompanion } from "./companion-feed";
 import { useTactileSurface } from "../motion/use-tactile-surface";
 import { useCompanionJournalMotion } from "./use-companion-journal-motion";
-
+import { CompanionJournalTimeline } from "./CompanionJournalTimeline";
 
 export function CompanionHistoryDrawer({
   open,
@@ -395,6 +394,10 @@ export function CompanionHistoryDrawer({
         onWheel={handleListWheel}
         onTouchStart={handleListTouchStart}
         onTouchMove={handleListTouchMove}
+        onClickCapture={event => {
+          const summary = (event.target as HTMLElement).closest(".companion-history__trace > summary");
+          if (summary) releaseStick();
+        }}
       >
         {/* 内容层：贴底跟随观察它的高度（见上方 pinToLatest 注释）。样式上它接管了
             原 .companion-history__list 的 flex/gap/padding，容器只留 overflow。 */}
@@ -419,52 +422,7 @@ export function CompanionHistoryDrawer({
               {chat.historyLoadingOlder ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />正在加载更早的对话…</p> : null}
               {chat.historyOlderError ? <p className="companion-history__system" role="status">{chat.historyOlderError}<button type="button" className="companion-record__retry" onClick={() => { prevScrollHeightRef.current = listRef.current?.scrollHeight ?? null; void chat.loadOlderMessages(); }}>重试加载</button></p> : null}
               {!chat.messages.length && chat.phase !== "loading" ? <div className="companion-journal__empty"><MessageCircle size={38} aria-hidden="true" /><strong>从一句话开始</strong><p>想说的、想问的，都可以写在下面。</p></div> : null}
-              {chat.messages.map((message, index) => {
-                const previous = index > 0 ? chat.messages[index - 1] : null;
-                const showDay = !previous || messageDayKey(previous.createdAt) !== messageDayKey(message.createdAt);
-                return (
-                  <Fragment key={message.id}>
-                    {showDay ? <div className="companion-history__day" data-day-key={messageDayKey(message.createdAt)}>{messageDayLabel(message.createdAt)}</div> : null}
-                    {renderArticle(message)}
-                  </Fragment>
-                );
-              })}
-              {/*
-                进行中的一轮（2026-09-19 ③）：历史此前只渲染 `listMessages` 的快照，而
-                `companion_messages` 只在 `assistant.final` 的终态事务里才写——于是"她正在说的
-                这段话"在历史里根本不存在，用户必须等整轮结束才能看到。`draft` 早就在气泡里
-                实时显示了，这里把它按同一条消息的样子折进历史（同一份文本，不另起数据源）。
-                过程留痕按 runId 找：进行中那轮的 `assistantMessageId` 还是 null，不能用它匹配。
-              */}
-              {(() => {
-                const draft = chat.draft;
-                if (!draft) return null;
-                const trace = chat.runTraces.find((item) => item.summary.runId === draft.runId) ?? null;
-                const choices = [...new Set(trace?.nodes.flatMap(node => node.proposalId ? [node.proposalId] : []) ?? [])]
-                  .filter(id => journalProposalNeedsAttention(chat.proposalStates[id]));
-                if (!draft.text.trim() && !choices.length) return null;
-                return (
-                  <article className="companion-record__turn" data-role="assistant" data-live="true">
-                    <header><span className="companion-record__author"><i className="companion-record__avatar" aria-hidden="true"><Sparkles size={15} /></i><strong>{chat.companionName}</strong></span><time>正在回复…</time></header>
-                    <div className="companion-record__body">{renderCompanionMarkdown(smoothedDraftText)}</div>
-                    {choices.length ? <div className="companion-record__decisions">{choices.map(id => <CompanionProposalChoice key={id} proposalId={id}
-                      state={chat.proposalStates[id]} context="history"
-                      onDecide={decision => { void chat.decideProposal(id, decision); }} onRetry={() => chat.retryProposal(id)} />)}</div> : null}
-                    {trace && shouldShowRunTrace(trace)
-                      ? (
-                        <div className="companion-record__attachments">
-                          <CompanionRunTraceView
-                            trace={trace}
-                            defaultOpen={false}
-                            quiet
-                          />
-                        </div>
-                        )
-                      : null}
-                  </article>
-                );
-              })()}
-              {chat.phase === "sending" && !chat.draft?.text.trim() ? <p className="companion-history__system"><Loader2 className="companion-hud__spin" size={14} />{chat.companionName} 正在回复…</p> : null}
+              <CompanionJournalTimeline chat={chat} draftText={smoothedDraftText} />
             </>
           ) : (
             /* ── 聊天记录视图：只负责「找」。选中搜索命中或日期后回到上面的对话时间线定位 ── */
@@ -591,5 +549,5 @@ function useSmoothedDraftText(draft: { runId: string; text: string } | null): st
   }, [draft?.runId]);
 
   const text = draft?.text ?? "";
-  return text.slice(0, shownLength);
+  return stateRef.current.runId === draft?.runId ? text.slice(0, shownLength) : "";
 }

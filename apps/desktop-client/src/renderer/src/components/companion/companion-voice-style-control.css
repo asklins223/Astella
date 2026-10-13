@@ -1,0 +1,64 @@
+.hud-surface .companion-voice-style { display: grid; gap: 8px; min-width: 0; }
+.hud-surface .companion-voice-style__choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 7px; }
+.hud-surface .companion-voice-style__choices button {
+  display: flex;
+  min-width: 0;
+  min-height: 54px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid #dce5d0;
+  border-radius: 15px 17px 14px 16px;
+  background: #fffef7;
+  color: #596b55;
+  text-align: left;
+  transition: border-color 150ms ease, background-color 150ms ease, transform 150ms ease;
+}
+.hud-surface .companion-voice-style__choices button[aria-pressed="true"] {
+  border-color: #87b39a;
+  background: #e5f1df;
+  color: #3f765e;
+  box-shadow: inset 0 0 0 1px #b7d4bd;
+}
+.hud-surface .companion-voice-style__choices button:hover:not(:disabled) { transform: translateY(-1px); }
+.hud-surface .companion-voice-style :where(button, textarea, select):disabled { cursor: default; opacity: .55; }
+.hud-surface .companion-voice-style__choices button strong { font-size: 12px; font-weight: 750; }
+.hud-surface .companion-voice-style__choices button small { color: #7d8977; font-size: 10px; line-height: 1.5; }
+/* 自定义那一格单列铺满：说明文字、输入框、保存按钮各占一行。
+   两列栅格会把输入框挤进 auto 列（说明文字一插进去就错位），按钮也会拉成一条空杠。 */
+.hud-surface .companion-voice-style__custom { display: grid; gap: 7px; }
+.hud-surface .companion-voice-style__custom label { color: #6a7a62; font-size: 11px; font-weight: 700; }
+.hud-surface .companion-voice-style__custom textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 66px;
+  padding: 8px 11px;
+  border: 1px solid #dce5d0;
+  border-radius: 13px 15px 13px 14px;
+  background: #fffef7;
+  color: #4d5d49;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.55;
+  resize: vertical;
+}
+.hud-surface .companion-voice-style__save {
+  justify-self: start;
+  min-height: 34px;
+  padding: 6px 16px;
+  border: 1px solid #8eb79a;
+  border-radius: 14px 16px 14px 15px;
+  background: #e2efdc;
+  color: #477359;
+  font-size: 11px;
+  font-weight: 700;
+}
+.hud-surface .companion-voice-style__message { margin: 0; color: #7b8871; font-size: 10px; line-height: 1.65; }
+.hud-surface .companion-voice-style__message.is-error { color: #a34d39; }
+.hud-surface .companion-voice-style :where(button, textarea, select):focus-visible { outline: 2px solid #59a988; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .hud-surface .companion-voice-style__choices button { transition: none; }
+  .hud-surface .companion-voice-style__choices button:hover:not(:disabled) { transform: none; }
+}

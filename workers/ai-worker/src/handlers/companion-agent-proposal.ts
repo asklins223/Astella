@@ -129,6 +129,7 @@ export async function createAgentProposal(
   call: { id: string; arguments: Record<string, unknown> },
   payload: Record<string, unknown>,
 ): Promise<{ proposalId: string; safeSummary: string }> {
+  if (!event.read.userMessageId || event.read.initiativeInput) throw new CompanionToolError("主动参与不能替用户发起业务确认。");
   const parsedPayload = proposedLearningActionPayloadV1Schema.safeParse(payload);
   if (!parsedPayload.success) throw new CompanionToolError("这次要记的内容没通过校验，先没有写入");
   const proposalId = randomUUID();

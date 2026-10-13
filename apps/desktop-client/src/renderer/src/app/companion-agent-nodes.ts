@@ -236,6 +236,7 @@ export function reconcileCompanionAgentNodes(live: CompanionAgentNodes, snapshot
 export interface CompanionRunTrace {
   readonly summary: CompanionRunSummaryV1;
   readonly nodes: CompanionAgentNodes;
+  readonly events?: readonly CompanionRunNodeEventV1[];
 }
 
 /**
@@ -251,15 +252,80 @@ export function buildCompanionRunTraces(
   runs: readonly CompanionRunSummaryV1[],
   items: readonly CompanionRunNodeEventV1[],
 ): readonly CompanionRunTrace[] {
-  const byRun = new Map<string, CompanionAgentNodes>();
+  const byRun = new Map<string, CompanionRunNodeEventV1[]>();
   for (const item of items) {
     if (!item.runId) continue;
-    byRun.set(item.runId, appendCompanionAgentNode(byRun.get(item.runId) ?? [], {
-      eventType: item.type,
-      payload: item.payload,
-    }));
+    byRun.set(item.runId, [...byRun.get(item.runId) ?? [], item]);
   }
-  return runs.map((summary) => ({ summary, nodes: byRun.get(summary.runId) ?? [] }));
+  return runs.map((summary) => {
+    const events = mergeProcessEvents(summary.processTimeline ?? [], byRun.get(summary.runId) ?? []);
+    return { summary, events, nodes: processNodes(events) };
+  });
+}
+
+function mergeProcessEvents(left: readonly CompanionRunNodeEventV1[], right: readonly CompanionRunNodeEventV1[]) {
+  const bySeq = new Map(left.map(event => [event.seq, event]));
+  for (const event of right) bySeq.set(event.seq, event);
+  return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+}
+
+function processNodes(events: readonly CompanionRunNodeEventV1[]): CompanionAgentNodes {
+  return events.reduce<CompanionAgentNodes>((nodes, event) => appendCompanionAgentNode(nodes, {
+    eventType: event.type, payload: event.payload,
+  }), []);
+}
+
+/** 快照补全已收到的事件；旧轮询不撤销终态，也不清掉刚完成的记录。 */
+export function mergeCompanionRunTraces(current: readonly CompanionRunTrace[], incoming: readonly CompanionRunTrace[]): readonly CompanionRunTrace[] {
+  const result = new Map(current.map(trace => [trace.summary.runId, trace]));
+  for (const trace of incoming) {
+    const previous = result.get(trace.summary.runId);
+    if (!previous) { result.set(trace.summary.runId, trace); continue; }
+    const events = mergeProcessEvents(previous.events ?? [], trace.events ?? []);
+    const previousTerminal = ["succeeded", "failed", "cancelled", "superseded"].includes(previous.summary.status);
+    const incomingActive = ["accepted", "running", "waiting_for_confirmation"].includes(trace.summary.status);
+    result.set(trace.summary.runId, {
+      summary: { ...trace.summary,
+        status: previousTerminal && incomingActive ? previous.summary.status : trace.summary.status,
+        assistantMessageId: trace.summary.assistantMessageId ?? previous.summary.assistantMessageId,
+        thinkingText: (trace.summary.thinkingText?.length ?? 0) >= (previous.summary.thinkingText?.length ?? 0)
+          ? trace.summary.thinkingText : previous.summary.thinkingText,
+        processTimeline: trace.summary.processTimeline ?? previous.summary.processTimeline,
+        stepCount: Math.max(trace.summary.stepCount, previous.summary.stepCount),
+        toolCallCount: Math.max(trace.summary.toolCallCount, previous.summary.toolCallCount),
+      },
+      events,
+      nodes: reconcileCompanionAgentNodes(previous.nodes, processNodes(events)),
+    });
+  }
+  return [...result.values()];
+}
+
+/** SSE 与历史共用同一份过程记录，正文落地时无需等下一次轮询再搬面板。 */
+export function recordCompanionRunEvent(current: readonly CompanionRunTrace[], event: {
+  runId: string; generation: number; seq: number; eventType: string; payload: unknown;
+}): readonly CompanionRunTrace[] {
+  const process = ["assistant.status", "assistant.thinking", "agent.tool"].includes(event.eventType);
+  const terminal = ["assistant.final", "turn.completed", "turn.cancelled", "error"].includes(event.eventType);
+  if (!process && !terminal) return current;
+  const previous = current.find(trace => trace.summary.runId === event.runId);
+  const payload = event.payload as { messageId?: unknown; text?: unknown };
+  const events = process ? mergeProcessEvents(previous?.events ?? [], [{ version: 1, seq: event.seq,
+    runId: event.runId, type: event.eventType, payload: event.payload }]) : previous?.events ?? [];
+  const nodes = processNodes(events);
+  const thinkingText = events.filter(item => item.type === "assistant.thinking")
+    .map(item => (item.payload as { text?: string }).text ?? "").join("");
+  const summary: CompanionRunSummaryV1 = { version: 1, runId: event.runId, generation: event.generation,
+    status: "running", stepCount: 0, toolCallCount: 0, maxSteps: null, maxToolCalls: null,
+    assistantMessageId: null, nodeCount: nodes.length, ...previous?.summary,
+    ...(thinkingText ? { thinkingText: thinkingText.length >= (previous?.summary.thinkingText?.length ?? 0)
+      ? thinkingText : previous?.summary.thinkingText } : {}),
+    ...(terminal ? { status: event.eventType === "error" ? "failed" : event.eventType === "turn.cancelled" ? "cancelled" : "succeeded" } : {}),
+    ...(typeof payload.messageId === "string" ? { assistantMessageId: payload.messageId } : {}),
+  };
+  summary.toolCallCount = Math.max(summary.toolCallCount, countAgentToolCalls(nodes));
+  const trace = { summary, nodes: reconcileCompanionAgentNodes(previous?.nodes ?? [], nodes), events };
+  return previous ? current.map(item => item.summary.runId === event.runId ? trace : item) : [...current, trace];
 }
 
 /**
@@ -270,5 +336,7 @@ export function buildCompanionRunTraces(
  * 是两种不同的说法，不能合并。
  */
 export function companionRunTraceExpired(trace: CompanionRunTrace): boolean {
-  return trace.summary.stepCount > 0 && trace.summary.nodeCount === 0 && trace.nodes.length === 0;
+  return !trace.summary.thinkingText?.trim()
+    && !trace.events?.length
+    && trace.summary.stepCount > 0 && trace.summary.nodeCount === 0 && trace.nodes.length === 0;
 }

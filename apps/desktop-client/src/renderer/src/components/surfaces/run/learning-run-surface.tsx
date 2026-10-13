@@ -54,6 +54,7 @@ import {
 import { AssessmentDisputeStrip } from "../review/assessment-dispute-strip.tsx";
 import { useRoomStore } from "../../../app/room-store";
 import { useCompanionHomeProjection } from "../../../app/companion-home-projection";
+import { useCompanionHelpOpportunity } from "../../../app/companion-help-opportunity";
 import { speakCompanionLine, type CompanionSpeechHandle } from "../../../app/companion-voice-playback";
 import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
@@ -319,6 +320,10 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
   const discoveryResultKey = resultState.kind === "result"
     ? `${resultState.value.runId}:${resultState.value.result.snapshotId}:${resultState.value.result.outcome}`
     : null;
+  useCompanionHelpOpportunity(resultState.kind === "result" ? {
+    domain: "run", entityId: resultState.value.runId, revision: discoveryResultKey!,
+    description: `这次学习已产生结果：${resultState.value.result.outcome}。是否需要接着解释或陪用户回看，应读取当前结果再判断。`,
+  } : null, "result.available");
   const showResult = resultState.kind === "result" || resultState.kind === "terminal";
   const finishResultCeremony = useCallback(() => {
     setResultAcknowledgementActive(false);

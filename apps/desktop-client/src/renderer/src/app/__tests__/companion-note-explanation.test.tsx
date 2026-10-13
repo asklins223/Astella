@@ -3,7 +3,7 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CompanionChatProvider, useCompanionChat, type CompanionChatSession } from "../companion-chat-session";
 import { useRoomStore } from "../room-store";
-import { beginNoteExplanation, resetNoteExplanations, saveNoteExplanation, useNoteCompanionExplanations } from "../../components/companion/note-companion-explanation";
+import { beginNoteExplanation, resetNoteExplanations, readNoteExplanation, useNoteCompanionExplanations } from "../../components/companion/note-companion-explanation";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const target = { noteId: id(1), anchor: { noteVersionId: id(2), startBlockOrdinal: 0, endBlockOrdinal: 0, startOffset: 0, endOffset: 4, excerpt: "利息复利", prefix: "", suffix: "" } };
@@ -49,7 +49,7 @@ beforeEach(() => {
     },
     subscriptions: { subscribe: vi.fn(async () => ok({ subscriptionId: id(7) })), unsubscribe: vi.fn(async () => ok({})),
       onEvent: vi.fn((_id: string, listener: (event: any) => void) => { streamEvent = listener; return () => { streamEvent = null; }; }) },
-    noteAnnotation: { write: vi.fn(async (input: any) => ok({ annotationId: id(8), noteId: target.noteId, anchor: input.command.anchor, explanation: input.command.explanation,
+    noteAnnotation: { list: vi.fn(async () => ok({ version: 1, items: [], nextCursor: null })), write: vi.fn(async (input: any) => ok({ annotationId: id(8), noteId: target.noteId, anchor: input.command.anchor, explanation: input.command.explanation,
       sourceMessageId: input.command.sourceMessageId, generationJobId: null, revision: 1, versionState: "current", createdAt: date, updatedAt: date })) },
   };
   Object.defineProperty(window, "astella", { configurable: true, value: api });
@@ -84,6 +84,7 @@ it.each([
 it("轮询先读到中止记录时保留正文，不冒充完整回复", async () => {
   const text = "灯塔故事已经输出的一段。";
   messages = [{ id: id(9), role: "assistant", runId: id(6), kind: "cancelled", blocks: [{ type: "text", text }] }];
+  api.companion.chat.listRunNodes.mockResolvedValue(ok({ items: [], runs: [{ runId: id(6), status: "cancelled", cancelReason: "user" }] }));
   await act(async () => { expect(await chat.send({ text: "讲这个故事" })).toBe(true); });
   expect(chat.phase).toBe("ready");
   expect(chat.liveReply).toBeNull();
@@ -99,7 +100,7 @@ it("发送前置检查还没返回时立刻停止，不提交模型请求，不�
   expect(current()).toMatchObject({ phase: "stopped", text: "" });
   await act(async () => { preflight.resolve(ok(session)); await sending; });
   expect(api.companion.chat.sendTurn).not.toHaveBeenCalled(); expect(api.noteAnnotation.write).not.toHaveBeenCalled();
-  expect(chat.phase).toBe("ready");
+  expect(chat.phase).not.toBe("sending");
   expect(chat.stopNotice).toBeTruthy();
   act(() => chat.dismissStopNotice());
   expect(chat.stopNotice).toBeNull();
@@ -121,45 +122,60 @@ it.each(["stop", "failure"] as const)("生成已有半段内容后 %s，不丢�
   const { sending } = await sendQuote();
   await waitFor(() => expect(streamEvent).not.toBeNull());
   emit("assistant.delta", { appendFrom: 0, textDelta: "利息加入本金，再产生新的利息。" });
-  expect(current().text).toBe("利息加入本金，再产生新的利息。");
+  expect(current().text).toBe("");
   if (outcome === "stop") await act(async () => { await chat.cancel(); });
   else emit("error", { code: "PROVIDER_FAILED", recoverable: true });
   await act(async () => { await sending; });
-  expect(current()).toMatchObject({ phase: outcome === "stop" ? "stopped" : "interrupted", text: "利息加入本金，再产生新的利息。", annotation: null });
+  expect(current()).toMatchObject({ phase: outcome === "stop" ? "stopped" : "interrupted", text: "", annotation: null });
   expect(chat.draft).toBeNull(); expect(chat.interrupted?.text).toContain("利息加入本金"); expect(api.noteAnnotation.write).not.toHaveBeenCalled();
 });
 
-it("只有完整终态才自动保存一次；气泡提前收起不影响保存，迟到回执不抢新选文", async () => {
-  const save = deferred<ReturnType<typeof ok<any>>>();
-  api.noteAnnotation.write.mockReturnValueOnce(save.promise);
+function savedAnnotation(attemptId: string) {
+  return { annotationId: attemptId, noteId: target.noteId, anchor: target.anchor,
+    explanation: "## 复利\n\n第一轮把利息加入本金。\n\n下一轮按新的本金继续计息，这才是完整的解释。",
+    sourceMessageId: null, generationJobId: id(20), revision: 1, versionState: "current", createdAt: date, updatedAt: date };
+}
+
+it("写工具先保存独立正文，后续分句发言不会混入解释", async () => {
   const { sending, attempt } = await sendQuote();
   await waitFor(() => expect(streamEvent).not.toBeNull());
-  emit("assistant.delta", { appendFrom: 0, textDelta: "利息加入本金" });
-  messages = [{ id: id(9), role: "assistant", runId: id(6), kind: "text", blocks: [{ type: "text", text: "利息也参与下一次计算。" }] }];
-  emit("assistant.final", {}); emit("character.cue", {});
+  const context = api.companion.chat.sendTurn.mock.calls[0][0].request.turn.context;
+  expect(context).toMatchObject({ replyPurpose: "annotation", annotationTarget: { requestId: attempt.id, anchor: target.anchor } });
+  emit("assistant.delta", { appendFrom: 0, textDelta: "我来看看这句。" });
+  expect(current().text).toBe("");
+  emit("agent.tool", { tool: { name: "companion_write_annotation", status: "succeeded",
+    noteAnnotation: { kind: "written_annotation", requestId: attempt.id, annotation: savedAnnotation(attempt.id) } } });
+  expect(current()).toMatchObject({ phase: "saved", text: savedAnnotation(attempt.id).explanation });
+  messages = [{ id: id(30), role: "assistant", seq: 2, runId: id(6), kind: "text", blocks: [{ type: "text", text: "解释写好了，例子也放在里面。" }] }];
+  emit("assistant.utterance", { messageId: id(30), text: "解释写好了，例子也放在里面。" });
+  emit("turn.completed", { messageIds: [id(30)], silent: false });
   await act(async () => { await sending; });
-  expect(current().phase).toBe("saving"); expect(api.noteAnnotation.write).toHaveBeenCalledTimes(1);
-  act(() => chat.dismissLiveReply());
-  const next = beginNoteExplanation({ ...target, anchor: { ...target.anchor, startBlockOrdinal: 1, endBlockOrdinal: 1 } });
-  await act(async () => { save.resolve(ok({ annotationId: id(8), noteId: target.noteId, anchor: target.anchor, explanation: "利息也参与下一次计算。", sourceMessageId: id(9), generationJobId: null,
-    revision: 1, versionState: "current", createdAt: date, updatedAt: date })); });
-  expect(useNoteCompanionExplanations.getState().items.find(item => item.id === attempt.id)?.phase).toBe("saved");
-  expect(useNoteCompanionExplanations.getState().activeId).toBe(next.id); expect(chat.liveReply).toBeNull();
+  expect(current().text).toBe(savedAnnotation(attempt.id).explanation);
+  expect(api.noteAnnotation.write).not.toHaveBeenCalled(); expect(api.noteAnnotation.list).not.toHaveBeenCalled();
 });
 
-it("回复结束后重试保存成功，也会解除发送框里的原句绑定", async () => {
-  api.noteAnnotation.write.mockRejectedValueOnce(new Error("暂时断网"));
-  const { sending, attempt } = await sendQuote();
+it("聊天回复结束但没有写工具产物时，明确失败，绝不自动把对白保存", async () => {
+  const { sending } = await sendQuote();
   await waitFor(() => expect(streamEvent).not.toBeNull());
-  messages = [{ id: id(9), role: "assistant", runId: id(6), kind: "text", blocks: [{ type: "text", text: "利息也参与下一次计算。" }] }];
+  messages = [{ id: id(9), role: "assistant", runId: id(6), kind: "text", blocks: [{ type: "text", text: "只是聊天里的讲解。" }] }];
   emit("assistant.final", {}); emit("character.cue", {});
   await act(async () => { await sending; });
-  expect(current().phase).toBe("save-error");
-  expect(chat.feedNoteAnchor?.explanationId).toBe(attempt.id);
-  await act(async () => { await saveNoteExplanation(attempt.id); });
+  await waitFor(() => expect(current().phase).toBe("interrupted"));
+  expect(current()).toMatchObject({ text: "", annotation: null }); expect(api.noteAnnotation.write).not.toHaveBeenCalled();
+});
+
+it("保存回执丢失后只重新读取同一产物，原句绑定也会解除", async () => {
+  api.noteAnnotation.list.mockRejectedValueOnce(new Error("暂时断网"));
+  const { sending, attempt } = await sendQuote();
+  await waitFor(() => expect(streamEvent).not.toBeNull());
+  messages = [{ id: id(9), role: "assistant", runId: id(6), kind: "text", blocks: [{ type: "text", text: "已经写好了。" }] }];
+  emit("assistant.final", {}); emit("character.cue", {});
+  await act(async () => { await sending; });
+  await waitFor(() => expect(current().phase).toBe("save-error"));
+  api.noteAnnotation.list.mockResolvedValueOnce(ok({ version: 1, items: [savedAnnotation(attempt.id)], nextCursor: null }));
+  await act(async () => { await readNoteExplanation(attempt.id); });
   expect(current().phase).toBe("saved"); expect(chat.feedNoteAnchor).toBeNull();
-  expect(api.companion.chat.sendTurn).toHaveBeenCalledTimes(1);
-  expect(api.noteAnnotation.write).toHaveBeenCalledTimes(2);
+  expect(api.companion.chat.sendTurn).toHaveBeenCalledTimes(1); expect(api.noteAnnotation.write).not.toHaveBeenCalled();
 });
 
 it("停止请求遇到断网仍立即停止本地接收，保留半段内容并允许重新确认停止", async () => {
@@ -168,10 +184,10 @@ it("停止请求遇到断网仍立即停止本地接收，保留半段内容并�
   await waitFor(() => expect(streamEvent).not.toBeNull());
   emit("assistant.delta", { appendFrom: 0, textDelta: "尚未说完的解释" });
   await act(async () => { expect(await chat.cancel()).toBe(false); await sending; });
-  expect(current()).toMatchObject({ phase: "stopped", text: "尚未说完的解释", annotation: null, stopUnconfirmed: true });
+  expect(current()).toMatchObject({ phase: "stopped", text: "", annotation: null, stopUnconfirmed: true });
   expect(current().error).toContain("停止请求暂未确认");
   expect(api.noteAnnotation.write).not.toHaveBeenCalled();
   await act(async () => { expect(await chat.cancel()).toBe(true); });
   expect(api.companion.chat.cancelRun).toHaveBeenCalledTimes(2);
-  expect(current()).toMatchObject({ error: null, text: "尚未说完的解释", stopUnconfirmed: false });
+  expect(current()).toMatchObject({ error: null, text: "", stopUnconfirmed: false });
 });

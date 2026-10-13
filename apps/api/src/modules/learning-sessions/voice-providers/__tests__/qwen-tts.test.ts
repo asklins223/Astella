@@ -9,11 +9,12 @@
 // qwen-tts-user-queue.test.ts 共用同一份替身，避免协议改动时两处漂移）。
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { qwenTtsSynthesizeStream, qwenTtsSynthesizeStreamForUser, qwenTtsActiveTaskCount, QwenTtsError, type QwenTtsOptions } from "../qwen-tts.ts";
+import { qwenTtsSynthesizeStream, qwenTtsSynthesizeStreamForUser, qwenTtsActiveTaskCount, qwenTtsConnectionWarmStats, QwenTtsError, warmQwenTtsConnection, type QwenTtsOptions } from "../qwen-tts.ts";
 import {
   MockWebSocket,
   QWEN_TEST_BASE_OPTS,
   launchQwenTask,
+  openPendingSockets,
   pumpStream,
   resetQwenTestState,
   serveTaskBody,
@@ -219,5 +220,28 @@ test("并发任务归还的连接全部保留，下一轮无需逐个重新握�
   assert.equal(b.ws.runTaskIds().length, 2);
   serveTaskBody(a.ws); serveTaskBody(b.ws);
   await Promise.all([pump((await c.result).stream), pump((await d.result).stream)]);
+  resetState();
+});
+
+test("Qwen 预连接只完成握手，并由下一次真实 TTS 消费", async () => {
+  resetState();
+  const warming = warmQwenTtsConnection(BASE_OPTS);
+  const concurrentWarm = warmQwenTtsConnection(BASE_OPTS);
+  assert.equal(await concurrentWarm, "skipped", "同一进程中并发预热只允许一个占位");
+  await settleTicks();
+  openPendingSockets();
+  assert.equal(await warming, "warmed");
+  assert.equal(MockWebSocket.instances.length, 1, "只创建一个预热连接");
+  assert.equal(await warmQwenTtsConnection(BASE_OPTS), "already_warm", "已有连接时不再额外建连");
+  const ws = MockWebSocket.instances[0]!;
+  assert.deepEqual(ws.sentActions(), [], "预热只握手，不发送 run-task 或文本");
+  assert.equal(qwenTtsConnectionWarmStats.started, 1);
+
+  const task = await startTask("真正要读的句子。");
+  assert.equal(task.ws, ws, "真实 TTS 消费预热连接，不重复建连");
+  assert.equal(qwenTtsConnectionWarmStats.consumed, 1);
+  serveTaskBody(ws);
+  await pump((await task.result).stream);
+  assert.equal(ws.runTaskIds().length, 1, "只有真实请求开始合成任务");
   resetState();
 });

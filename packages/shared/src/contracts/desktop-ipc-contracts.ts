@@ -1,3 +1,4 @@
+import { companionParticipationPreferencesV1Schema, companionParticipationPreferencesWriteV1Schema, companionAwarenessObservationV1Schema, companionAwarenessReceiptV1Schema, companionAwarenessIdentityV1Schema } from "./companion-initiative-contracts.ts";
 import { companionSelfNoteV1Schema, companionSelfNoteListV1Schema, companionSelfNoteWriteV1Schema, companionSelfNoteControlV1Schema } from "../companion-autonomy.ts";
 import { createNoteMindMapTaskV1Schema, noteMindMapLatestTaskQueryV1Schema, noteMindMapLatestTaskV1Schema, noteMindMapPageV1Schema, noteMindMapTaskV1Schema, noteMindMapSourceV1Schema } from "./note-mind-map-contracts.ts";
 import type { NoteWritingAction, NoteWritingResult } from "./note-writing-contracts.ts";
@@ -404,6 +405,10 @@ export const DESKTOP_IPC_CHANNELS = {
   subscriptionsEvent: "astella.v1.subscriptions.event",
   subscriptionsUnsubscribe: "astella.v1.subscriptions.unsubscribe",
   roomGetProjection: "astella.v1.room.getProjection",
+  companionParticipationGet: "astella.v1.companion.initiative.getPreferences",
+  companionParticipationPut: "astella.v1.companion.initiative.setPreferences",
+  companionAwarenessIdentity: "astella.v1.companion.initiative.identity",
+  companionAwarenessObserve: "astella.v1.companion.initiative.observe",
   companionHomeGetProjection: "astella.v1.companion.home.getProjection",
   companionRoomGetProfile: "astella.v1.companion.room.getProfile",
   companionRoomPatchProfile: "astella.v1.companion.room.patchProfile",
@@ -2391,6 +2396,8 @@ const companionChatSubscriptionTopicSchema = z.strictObject({
   kind: z.literal("companionChat"),
   conversationId: uuidSchema,
   eventCursor: nonNegativeIntSchema.optional(),
+  /** 仅用于允许本回合出声时启用服务端句段音频预合成。 */
+  voiceOutput: z.boolean().optional(),
 });
 /**
  * 一篇笔记的协同订阅（批次 4.3）。主进程按 noteId 建/退 WS 连接：同一篇笔记在多个窗口
@@ -2715,6 +2722,12 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
     uploadImage(input: { meta: RequestMetaV1; request: NoteImageUploadRequestV1 }): Promise<GatewayResultV1<{ version: 1; url: string }>>;
   };
   readonly companion: {
+    readonly initiative: {
+      getPreferences(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionParticipationPreferencesV1Schema>>>;
+      setPreferences(input: { meta: RequestMetaV1; request: z.infer<typeof companionParticipationPreferencesWriteV1Schema> }): Promise<GatewayResultV1<z.infer<typeof companionParticipationPreferencesV1Schema>>>;
+      identity(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionAwarenessIdentityV1Schema>>>;
+      observe(input: { meta: RequestMetaV1; request: z.infer<typeof companionAwarenessObservationV1Schema> }): Promise<GatewayResultV1<z.infer<typeof companionAwarenessReceiptV1Schema>>>;
+    };
     readonly home: {
       getProjection(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionHomeProjectionV1Schema>>>;
     };

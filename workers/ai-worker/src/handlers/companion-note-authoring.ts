@@ -49,18 +49,32 @@ export function assertGeneratedNoteLinks(markdown: string, allowedIds: ReadonlyS
 
 export type CompanionNoteAuthoringEvent = {
   ctx: AgentEventContext["ctx"];
-  read: Pick<AgentEventContext["read"], "runId" | "userId" | "accountEpoch" | "generation">;
+  read: Pick<AgentEventContext["read"], "runId" | "userId" | "accountEpoch" | "generation" | "userText">;
 };
+
+/** A direct, current-turn request to avoid library/source reads disables both search and note reading. */
+export function userForbidsNoteLibraryRead(userText: string | null | undefined): boolean {
+  const text = userText?.normalize("NFKC").trim();
+  if (!text) return false;
+  const chineseOptOut = /(?:不要(?!忘(?:了|记|掉))|别(?!忘(?:了|记|掉))|不用|不必|无需|不想|请勿|切勿|禁止)(?:再|去|继续)?(?:搜索|搜|检索|查找|查阅|查|读取|阅读|读|查看|看|打开|浏览)(?:任何|其他|别的|额外|已有|现有|我的|所有)?(?:笔记库|资料库|知识库|笔记|资料|材料|来源|文档|内容)/u;
+  const englishOptOut = /(?:do not|don't|dont|never|without)\s+(?:search|read|look up|browse)(?:\s+(?:any|other|existing|my|additional))?\s+(?:notes?|materials?|sources?|documents?|library|knowledge base)/iu;
+  return chineseOptOut.test(text) || englishOptOut.test(text);
+}
 
 export async function prepareCompanionGeneratedNote(tx: AgentSqlExecutor, event: CompanionNoteAuthoringEvent, input: CompanionCreateNoteV1) {
   const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };
   const links = [...new Map(input.links.map(link => [link.noteId, link])).values()];
   assertGeneratedNoteLinks(input.markdown, new Set(links.map(link => link.noteId)));
-  const [searched] = await queryRows<{ found: boolean }>(tx, sql`SELECT EXISTS(SELECT 1 FROM companion_agent_tool_calls
-    WHERE run_id=${event.read.runId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
-      AND name='companion_search_notes' AND status='succeeded') AS found`);
-  if (!searched?.found)
-    throw new CompanionToolNotExecutedError("先搜索库里与这个知识点相关的笔记，再保存；没有相关内容也可以写成独立笔记。");
+  const forbidsLibraryRead = userForbidsNoteLibraryRead(event.read.userText);
+  if (forbidsLibraryRead && links.length > 0)
+    throw new CompanionToolNotExecutedError("你这轮要求不读取其他资料，因此这篇笔记不添加库内关联。");
+  if (!forbidsLibraryRead) {
+    const [searched] = await queryRows<{ found: boolean }>(tx, sql`SELECT EXISTS(SELECT 1 FROM companion_agent_tool_calls
+      WHERE run_id=${event.read.runId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
+        AND name='companion_search_notes' AND status='succeeded') AS found`);
+    if (!searched?.found)
+      throw new CompanionToolNotExecutedError("先搜索库里与这个知识点相关的笔记，再保存；没有相关内容也可以写成独立笔记。");
+  }
   const linkedNotes: CompanionCreatedNoteV1["linkedNotes"] = [];
   const readingPaths: string[] = [];
   for (const link of links) {

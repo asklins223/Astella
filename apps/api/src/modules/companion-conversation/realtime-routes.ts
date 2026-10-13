@@ -10,6 +10,7 @@ import {
   companionStreamEventV1Schema,
   createCompanionTurnResponseV1Schema,
 } from "@astella/shared/companion-conversation-contracts";
+// Realtime sessions use the identity domain's canonical token decoder.
 import { decodeToken } from "../identity/session-service.ts";
 import { scopeOfSession } from "../../db/client.ts";
 import { CompanionConversationError, createCompanionTurn } from "./turn/turn-service.ts";

@@ -466,7 +466,7 @@ test("P2 SSE：replay turn.accepted + after 推进 + INVALID_CURSOR/CURSOR_EXPIR
   }
 });
 
-test("P2 SSE：连接限制——同 conversation 第 4 条连接 429", async () => {
+test("P2 SSE：连接限制——同 conversation 第 11 条连接 429", async () => {
   const { workspaceId, userId, conversationId, cleanup } = await seedConversation();
   try {
     const aborts: (() => void)[] = [];
@@ -479,22 +479,20 @@ test("P2 SSE：连接限制——同 conversation 第 4 条连接 429", async ()
         close: () => {},
       },
     });
-    const r1 = await openOne();
-    const r2 = await openOne();
-    const r3 = await openOne();
-    assert.equal(r1.statusCode, 200);
-    assert.equal(r2.statusCode, 200);
-    assert.equal(r3.statusCode, 200);
-    // openCompanionEventStream() 在首个 DB await 前就注册 onAbort（释放 slot 的回调）
-    for (const r of [r1, r2, r3]) if ("stream" in r) r.stream.start();
-    const r4 = await openOne();
-    assert.equal(r4.statusCode, 429);
-    if ("error" in r4) assert.equal(r4.error.code, "TOO_MANY_CONNECTIONS");
+    for (let index = 0; index < 10; index += 1) {
+      const result = await openOne();
+      assert.equal(result.statusCode, 200);
+      if ("stream" in result) result.stream.start();
+    }
+    // 当前契约是每会话和每账号各 10 条；第 11 条必须被拒绝。
+    const rejected = await openOne();
+    assert.equal(rejected.statusCode, 429);
+    if ("error" in rejected) assert.equal(rejected.error.code, "TOO_MANY_CONNECTIONS");
     // 释放后重新可开
     for (const cb of aborts) cb();
-    const r5 = await openOne();
-    assert.equal(r5.statusCode, 200);
-    if ("stream" in r5) r5.stream.start();
+    const afterRelease = await openOne();
+    assert.equal(afterRelease.statusCode, 200);
+    if ("stream" in afterRelease) afterRelease.stream.start();
     for (const cb of aborts) cb();
   } finally {
     await cleanup();

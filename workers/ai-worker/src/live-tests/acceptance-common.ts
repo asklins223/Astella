@@ -26,7 +26,9 @@ const num = (v:unknown):number|null => typeof v==="number" && Number.isFinite(v)
 export type WireReceipt = {model:unknown;effort:unknown;enableThinking:unknown;outputLimit:unknown;temperature:number|null;instructionHash:string;
   inputTokens:number|null;outputTokens:number|null;reasoningTokens:number|null;elapsedMs:number;transport:string;errorKind?:string;
   completedTextHash?:string;streamedTextHash?:string;completedTextMatchesDeltas?:boolean;outputMessageCount?:number;
-  messagePhases?:Array<string|null>;returnedModel?:string};
+  messagePhases?:Array<string|null>;returnedModel?:string;responseHeadersMs?:number;firstByteMs?:number;
+  firstSseEventMs?:number;firstPhaseMetadataMs?:number;firstOutputTextDeltaMs?:number;
+  firstUnphasedTextDeltaMs?:number;firstFinalPhaseTextDeltaMs?:number};
 
 export function platform(capability:Capability, declaredModelOverride?: string):ResolvedPlatform {
   const resolved=resolveSystemPlatform(capability);
@@ -77,7 +79,10 @@ export function observedProvider(p:ResolvedPlatform, sessionId:string, receipts:
       if(response.status>=400){
         const error=obj(obj(response.body).error);
         const message=String(error.message??obj(response.body).message??"").toLowerCase();
-        receipt.errorKind=/context|input.*token|token.*limit/.test(message)?"context_limit":/body|payload|entity|size/.test(message)?"request_size":"other";
+        receipt.errorKind=/context|input.*token|token.*limit/.test(message)?"context_limit"
+          : /last.*message|assistant.*(?:last|end)|prefix/.test(message)?"message_sequence"
+            : /reasoning.*(?:back|missing|required)/.test(message)?"reasoning_replay"
+              : /body|payload|entity|size/.test(message)?"request_size":"other";
       }
       const usage=obj(obj(response.body).usage);
       const returnedModel=obj(response.body).model;
@@ -90,23 +95,40 @@ export function observedProvider(p:ResolvedPlatform, sessionId:string, receipts:
   };
   const streamRequest:PublicStreamingRequester=async(url,headers,body,signal)=>{
     body = experimentalBody(body);
-    const receipt=capture(body,"sse"), started=Date.now();
+    const receipt=capture(body,"sse"), started=performance.now();
+    const elapsed=()=>Math.max(0,Math.round(performance.now()-started));
     let response: Awaited<ReturnType<typeof postSseToPublicEndpoint>>;
     try {
       response=await postSseToPublicEndpoint(url,headers,body,signal);
     } catch (error) {
-      receipt.elapsedMs=Date.now()-started;
+      receipt.elapsedMs=elapsed();
       throw error;
     }
+    receipt.responseHeadersMs=elapsed();
     return {...response,body:(async function*(){
       const decoder=new TextDecoder();let buffer="",streamedText="";
+      const phaseByOutputIndex=new Map<number,unknown>();
       const inspect=(line:string)=>{
         if(!line.startsWith("data:"))return;
         try {
           const event=obj(JSON.parse(line.slice(5).trim()));
+          receipt.firstSseEventMs??=elapsed();
           const returnedModel=obj(event.response).model;
           if(typeof returnedModel==="string"&&/^[A-Za-z0-9._/-]{1,120}$/.test(returnedModel))receipt.returnedModel=returnedModel;
-          if(event.type==="response.output_text.delta"&&typeof event.delta==="string")streamedText+=event.delta;
+          if ((event.type==="response.output_item.added"||event.type==="response.output_item.done")
+            && typeof event.output_index==="number" && obj(event.item).type==="message") {
+            const phase=obj(event.item).phase;
+            if(phase!==undefined&&phase!==null)receipt.firstPhaseMetadataMs??=elapsed();
+            phaseByOutputIndex.set(event.output_index,phase);
+          }
+          if(event.type==="response.output_text.delta"&&typeof event.delta==="string") {
+            streamedText+=event.delta;
+            receipt.firstOutputTextDeltaMs??=elapsed();
+            const index=typeof event.output_index==="number"?event.output_index:null;
+            const phase=index===null?undefined:phaseByOutputIndex.get(index);
+            if(phase===undefined)receipt.firstUnphasedTextDeltaMs??=elapsed();
+            if(phase==="final_answer"||phase==="final")receipt.firstFinalPhaseTextDeltaMs??=elapsed();
+          }
           if(event.type==="response.completed"&&Array.isArray(obj(event.response).output)){
             const messages=(obj(event.response).output as unknown[]).filter(item=>obj(item).type==="message");
             const completedText=messages.flatMap(item=>Array.isArray(obj(item).content)?obj(item).content as unknown[]:[])
@@ -126,11 +148,12 @@ export function observedProvider(p:ResolvedPlatform, sessionId:string, receipts:
         } catch { /* no private reasoning retained; visible terminal text is hashed only */ }
       };
       try{for await(const chunk of response.body){
+        receipt.firstByteMs??=elapsed();
         buffer+=decoder.decode(chunk,{stream:true});
         let newline:number;while((newline=buffer.indexOf("\n"))>=0){inspect(buffer.slice(0,newline));buffer=buffer.slice(newline+1);}
         yield chunk;
       } inspect(buffer+decoder.decode());}
-      finally{receipt.elapsedMs=Date.now()-started;}})()};
+      finally{receipt.elapsedMs=elapsed();}})()};
   };
   const config={apiKey:p.apiKey!,baseUrl:p.baseUrl!,model:p.model,modelProfile:p.modelProfile,request,streamRequest};
   if(p.type==="opencode_go")return new OpenCodeGoProvider({...config,sessionId,platformOptions:p.options});

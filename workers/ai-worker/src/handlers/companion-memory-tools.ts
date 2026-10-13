@@ -120,7 +120,7 @@ export async function executeCompanionMemoryTool(
         event.read.memoryRefs.push({
           memoryId: memory.memoryId,
           kind: memory.kind,
-          content: memory.content,
+          content: memory.content.slice(0, 80),
         });
       }
       return {

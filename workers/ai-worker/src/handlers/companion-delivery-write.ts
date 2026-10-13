@@ -24,6 +24,7 @@ export interface SystemEventDelivery {
   readonly systemEventId: string;
   readonly text: string;
   readonly ttlHours: number;
+  readonly initiative?: { conversationId: string; messageId: string; runId: string; generation: number; deviceSessionId: string | null };
 }
 
 /**
@@ -49,7 +50,8 @@ export async function enqueueSystemEventDelivery(
            ${JSON.stringify({
              kind: "system_event",
              systemEventId: dedupeKey,
-             text: delivery.text,
+             text: delivery.initiative ? delivery.text.slice(0, 200) : delivery.text,
+             ...(delivery.initiative ? { initiative: delivery.initiative } : {}),
            })}::jsonb,
            now() + (${delivery.ttlHours} * interval '1 hour')
     FROM assistant_deliveries

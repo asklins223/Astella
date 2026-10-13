@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { ReasoningEffort } from "@astella/shared/platform-config";
 import { platform, observedProvider, save, type WireReceipt } from "./acceptance-common.ts";
 import { fixture, readContext, closeFixtureDatabase } from "./runtime-fixture.ts";
 import { withWorkspaceTransaction, closeDatabase as closeApiDatabase } from "../../../../apps/api/src/db/client.ts";
@@ -14,8 +15,23 @@ import { createCompanionStreamDelivery } from "../handlers/companion-dialogue-st
 // account. HTTP queue/UI evidence is recorded separately.
 if (!new URL(process.env.DATABASE_URL_MIGRATOR!).pathname.startsWith("/astella_note_authoring_"))
   throw new Error("Use an isolated astella_note_authoring_* database");
-const route = platform("agent_turn"), wire: WireReceipt[] = [];
+const configuredRoute = platform("agent_turn");
+const requestedEffort = process.env.LIVE_PROBE_EFFORT;
+if (requestedEffort && !configuredRoute.modelProfile?.reasoning?.levels.includes(requestedEffort as ReasoningEffort))
+  throw new Error("LIVE_PROBE_EFFORT must be a reasoning level declared for agent_turn");
+const route = requestedEffort
+  ? { ...configuredRoute, modelProfile: { ...configuredRoute.modelProfile!, reasoning: {
+      ...configuredRoute.modelProfile!.reasoning!, default: requestedEffort as ReasoningEffort,
+    } } }
+  : configuredRoute;
+const wire: WireReceipt[] = [];
 const f = await fixture();
+// This probe verifies autonomous note creation. Its random disposable account
+// explicitly uses the full permission level so no real user's confirmation is
+// bypassed and the test can verify the saved note end to end.
+await f.mutate(tx => tx`UPDATE user_companion_account_state
+  SET agent_settings=jsonb_set(agent_settings,'{permissionLevel}','"full"'::jsonb)
+  WHERE user_id=${f.event.read.userId}`);
 const text = "把刚才聊的电功率总结成一篇笔记给我，区分固定电压和固定电流，并链接库内相关的笔记。";
 const history = [
   { role: "user" as const, text: "电功率与电阻的关系是什么？" },
@@ -35,14 +51,24 @@ try {
   { userId:scope.userId,operation:"companion_agent",reserveCall:()=>reserveCompanionProviderCall({ctx:f.event.ctx,read}) }, receipts.pressureGate);
   const delivery = createCompanionStreamDelivery({job:f.event.ctx,ctx:f.event.ctx,read,
     expiresAt:new Date(Date.now()+120000).toISOString(),factSpanValues:{},notifyCompanionEvent:async()=>{}});
-  const started = Date.now();
+  const started = performance.now();
+  let firstAgentTextDeltaMs: number | null = null;
+  let firstPersistedVisibleTextMs: number | null = null;
   const reply = await runCompanionAgentLoop({ctx:f.event.ctx,read,provider,contextReceipts:receipts,
     toolConstraints:{visionEnabled:false},baseMessages:buildCompanionPersonaMessages({userText:text,recentMessages:history,
       pageContext:null,petProfile:null,scope}),expiresAt:new Date(Date.now()+120000).toISOString(),
-    onProviderDelta:delta=>delivery.onRawDelta(delta)});
+    onProviderDelta:async delta=>{
+      firstAgentTextDeltaMs ??= Math.round(performance.now()-started);
+      const before=delivery.deliveredChars();
+      const keepGoing=await delivery.onRawDelta(delta);
+      if(before===0&&delivery.deliveredChars()>0)firstPersistedVisibleTextMs ??= Math.round(performance.now()-started);
+      return keepGoing;
+    }});
   assert.equal(reply.status,"completed");
   if (reply.status!=="completed") throw new Error("unexpected confirmation");
   await delivery.writeTail(reply.text);
+  if(firstPersistedVisibleTextMs===null&&delivery.deliveredChars()>0)
+    firstPersistedVisibleTextMs=Math.round(performance.now()-started);
   const streamed = await delivery.finish();
   assert.ok(streamed.ok);
   assert.equal(delivery.deliveredText(),reply.text);
@@ -51,12 +77,15 @@ try {
     WHERE n.id IN (SELECT (result_ref::jsonb->>'noteId')::uuid FROM companion_agent_tool_calls WHERE run_id=${read.runId} AND name='companion_create_note' AND status='succeeded') AND n.workspace_id=${scope.workspaceId} GROUP BY n.id`);
   const calls = await f.mutate(tx=>tx`SELECT name,status,result_ref FROM companion_agent_tool_calls WHERE run_id=${read.runId} ORDER BY created_at`);
   const [run] = await f.mutate(tx=>tx`SELECT step_count,tool_call_count,model_call_count,turn_interpretation FROM companion_turn_runs WHERE id=${read.runId}`);
-  save("note-authoring-live-20261008", {model:route.model,reply,created,relatedNoteId:related.note.id,calls,run,wire,elapsedMs:Date.now()-started,
+  const elapsedMs=Math.round(performance.now()-started);
+  save(process.env.LIVE_PROBE_NAME ?? "note-authoring-live-20261008", {model:route.model,effort:requestedEffort??route.modelProfile?.reasoning?.default??null,
+    reply,created,relatedNoteId:related.note.id,calls,run,wire,elapsedMs,firstAgentTextDeltaMs,firstPersistedVisibleTextMs,
     deliveredText:delivery.deliveredText()});
   assert.ok(created, "real note persistence required");
   assert.ok(created.body.includes(`astella-note:${related.note.id}`), "real library link required");
   console.log(JSON.stringify({ok:true,model:route.model,steps:run.step_count,tools:run.tool_call_count,
-    savedNoteId:created.id,linkedNoteId:related.note.id,transports:wire.map(item=>item.transport),elapsedMs:Date.now()-started}));
+    savedNoteId:created.id,linkedNoteId:related.note.id,transports:wire.map(item=>item.transport),elapsedMs,
+    firstAgentTextDeltaMs,firstPersistedVisibleTextMs,effort:requestedEffort??route.modelProfile?.reasoning?.default??null}));
 } finally {
   await f.cleanup(); await closeFixtureDatabase(); await closeApiDatabase();
 }

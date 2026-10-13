@@ -93,6 +93,35 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); Reflect.deleteProperty(window, "astella"); });
 
 describe("手记记录刷新与当前回复的状态归属", () => {
+  it("同一轮可逐句发言，第一句之后仍在继续，完成时不重复追加正文", async () => {
+    await openHistory(); const { sending } = await startSend();
+    const first = { ...userMessage(id(5)), id: id(40), role: "assistant" as const, runId: id(6), seq: 2,
+      blocks: [{ type: "text" as const, text: "第一件事，我们先确定条件。" }] };
+    items = [first];
+    emit("assistant.utterance", { messageId: first.id, messageSeq: 2, text: first.blocks[0]!.text, proactive: false, deviceSessionId: null });
+    await waitFor(() => expect(chat.messages.some(m => m.id === first.id)).toBe(true));
+    expect(chat.phase).toBe("sending");
+    const second = { ...first, id: id(41), seq: 3, blocks: [{ type: "text" as const, text: "接着，再看这个条件下会发生什么。" }] };
+    items = [first, second];
+    emit("assistant.utterance", { messageId: second.id, messageSeq: 3, text: second.blocks[0]!.text, proactive: false, deviceSessionId: null });
+    expect(chat.phase).toBe("sending");
+    emit("turn.completed", { messageIds: [first.id, second.id], silent: false });
+    await act(async () => { expect(await sending).toBe(true); });
+    expect(chat.phase).toBe("ready"); expect(chat.messages.filter(m => m.role === "assistant")).toHaveLength(2);
+    expect(chat.liveReply?.text).toBe(`${first.blocks[0]!.text}\n\n${second.blocks[0]!.text}`);
+  });
+  it("主动参与可以安静结束，不产生等待超时或虚构消息", async () => {
+    await openHistory(); let receiving!: Promise<void>;
+    act(() => { receiving = chat.receiveInitiative!({ conversationId: id(5), messageId: id(40), runId: id(6), generation: 1, deviceSessionId: null }); });
+    await waitFor(() => expect(streamEvent).not.toBeNull());
+    emit("turn.accepted", { clientMessageId: id(8), userMessageId: null, status: "accepted" });
+    emit("assistant.status", { inputKind: "initiative", status: "thinking", safeLabel: "正在思考…" });
+    expect(chat.phase).toBe("ready");
+    expect(chat.draft).toBeNull();
+    emit("turn.completed", { messageIds: [], silent: true });
+    await act(async () => { await receiving; });
+    expect(chat.phase).toBe("ready"); expect(chat.failure).toBeNull(); expect(chat.messages).toHaveLength(0);
+  });
   it("本轮工具即刻投影，快照补回丢失回执；新轮不继承旧工具或旧统计", async () => {
     await openHistory();
     const { sending } = await startSend();
@@ -118,7 +147,7 @@ describe("手记记录刷新与当前回复的状态归属", () => {
     listRunNodes.mockResolvedValue(ok({ items: [], runs: [] }));
     await act(async () => chat.setMode("conversation"));
     await openHistory();
-    await waitFor(() => expect(chat.runTraces).toHaveLength(0));
+    await waitFor(() => expect(chat.runTraces).toHaveLength(1));
     expect(chat.nodes.find(node => node.kind === "tool")?.state).toBe("succeeded");
     addReply();
     await act(async () => { await sending; });
@@ -256,6 +285,60 @@ it("原始订阅已丢失时，持久化终答身份会自动补回确认后的�
   listRunNodes.mockResolvedValue(ok({ items: [], runs: [{ version: 1, runId: id(6), status: "succeeded", generation: 1,
     stepCount: 2, toolCallCount: 1, maxSteps: null, maxToolCalls: null, assistantMessageId: id(71), nodeCount: 0 }] }));
   await waitFor(() => expect(chat.messages.some(message => message.id === id(71))).toBe(true), { timeout: 6000 });
-  expect(streamEvent).toBeNull();
-  expect(chat.phase).toBe("ready");
+  await waitFor(() => expect(chat.phase).toBe("ready"));
+  expect(chat.draft).toBeNull();
+});
+
+it("思考增量只喂给思考窗口：收是一块、露是一步一步，正文草稿不因它变化", async () => {
+  const full = "先确认他问的是散射还是颜色。举个傍晚的例子就够了。";
+  await openHistory();
+  const { sending } = await startSend();
+  expect(chat.thinking).toBe("");
+  emit("assistant.thinking", { index: 0, text: "先确认他问的是散射还是颜色。" });
+  emit("assistant.thinking", { index: 1, text: "举个傍晚的例子就够了。" });
+  // 收到不等于立刻画完：心跳每拍只搬积压的一小步，界面才不会一跳一跳。
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
+  expect(chat.thinking.length).toBeGreaterThan(0);
+  expect(chat.thinking.length).toBeLessThan(full.length);
+  await waitFor(() => expect(chat.thinking).toBe(full), { timeout: 6_000 });
+  expect(chat.draft).toBeNull();
+  // 重连接上的重放：同一块再来一次不重复贴。
+  emit("assistant.thinking", { index: 1, text: "举个傍晚的例子就够了。" });
+  expect(chat.thinking).toBe(full);
+  // 中间缺了一块：接着拼会拼出她没想过的句子，所以整窗从这一块重新起头。
+  emit("assistant.thinking", { index: 5, text: "后面这段是补回来的新起点。" });
+  await waitFor(() => expect(chat.thinking).toBe("后面这段是补回来的新起点。"), { timeout: 6_000 });
+  emit("assistant.delta", { appendFrom: 0, textDelta: "蓝光更容易被空气分子散射。" });
+  expect(chat.draft?.text).toBe("蓝光更容易被空气分子散射。");
+  addReply();
+  await act(async () => { expect(await sending).toBe(true); });
+});
+
+it("接替重试又撞 409 时空手再发一次：那条 run 刚好没了不该把用户挡死", async () => {
+  const conflictResult = { version: 1 as const, ok: false as const,
+    error: { version: 1 as const, code: "conflict" as const, retry: "never" as const,
+      safeMessageKey: "上一条还挂着", requestId: "conflict-1" },
+    requestId: "conflict-1", correlationId: "conflict-1", schemaRevision: "desktop-ipc-v1" };
+  const sendTurn = vi.mocked(window.astella.companion.chat.sendTurn);
+  sendTurn.mockReset();
+  sendTurn.mockResolvedValueOnce(conflictResult as never);
+  sendTurn.mockResolvedValueOnce(conflictResult as never);
+  sendTurn.mockResolvedValue(ok({ version: 1, status: "accepted", conversationId: id(5), runId: id(6),
+    generation: 43, eventCursor: 0, clientMessageId: id(70), userMessageId: id(71) }));
+  listRunNodes.mockResolvedValue(ok({
+    items: [],
+    runs: [{ version: 1, runId: id(60), status: "accepted", generation: 42, stepCount: 0, toolCallCount: 0,
+      maxSteps: 20, maxToolCalls: 40, assistantMessageId: null, nodeCount: 0 }],
+  }));
+  await openHistory();
+  const { sending } = await startSend();
+  await waitFor(() => expect(sendTurn).toHaveBeenCalledTimes(3));
+  // 第一次空手（本地不知道有 run）→ 读到 42 带着号接替 → 又被挡 → 第三次回到空手。
+  const bodies = sendTurn.mock.calls.map(call => call[0].request.turn);
+  expect(bodies[0]).not.toHaveProperty("supersedesGeneration");
+  expect(bodies[1]).toMatchObject({ supersedesGeneration: 42 });
+  expect(bodies[2]).not.toHaveProperty("supersedesGeneration");
+  addReply();
+  await act(async () => { expect(await sending).toBe(true); });
+  expect(chat.blockedByRun).toBeNull();
 });

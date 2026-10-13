@@ -70,6 +70,8 @@ export interface CompanionHudSettings {
 export interface CompanionHudProps {
   readonly motionMode: "full" | "lite" | "off";
   readonly voiceEnabled: boolean;
+  /** 全局/账号静音与练习模式只关闭扬声，不影响麦克风输入。 */
+  readonly voiceOutputEnabled?: boolean;
   readonly actions: readonly CompanionHudAction[];
   readonly settings: CompanionHudSettings;
   readonly onRunAction: (id: string) => void;
@@ -141,6 +143,7 @@ function playButtonBounce(event: ReactPointerEvent<HTMLButtonElement>) {
 export function CompanionHud({
   motionMode,
   voiceEnabled,
+  voiceOutputEnabled: requestedVoiceOutputEnabled,
   actions,
   settings,
   onRunAction,
@@ -148,6 +151,7 @@ export function CompanionHud({
   floatingBlocked = false,
   onTaskBubbleOpenChange,
 }: CompanionHudProps) {
+  const voiceOutputEnabled = requestedVoiceOutputEnabled ?? voiceEnabled;
   const chat = useCompanionChat();
   const [moreView, setMoreView] = useState<MoreView>("menu");
   /** Settings use their own scrollable paper beside the actual model. */
@@ -184,6 +188,7 @@ export function CompanionHud({
   /** 回合结束后只发布一次的稳定摘要（方案 §3 无障碍）：流式文本不再是持续 live region。 */
   const [turnSummary, setTurnSummary] = useState("");
   const [revealedChars, setRevealedChars] = useState(0);
+  const [readthroughReplyId, setReadthroughReplyId] = useState<string | null>(null);
   const [bubbleStage, setBubbleStage] = useState<BubbleStage>("visible");
   const [preparingSend, setPreparingSend] = useState(false);
   const preparingSendIdRef = useRef(0);
@@ -598,7 +603,12 @@ export function CompanionHud({
     reveal.noteArrived(draft.text.length);
     setBubbleStage("visible");
 
-    if (!voiceEnabled) {
+    if (!voiceOutputEnabled) {
+      activeSpeechPlanRef.current = null;
+      speechPositionSessionRef.current = null;
+      speechSessionRef.current?.stop();
+      speechSessionRef.current = null;
+      pendingVoiceSegmentsRef.current = pendingVoiceSegmentsRef.current.filter((segment) => segment.runId !== draft.runId);
       reveal.noteSession("unavailable");
       return;
     }
@@ -640,7 +650,7 @@ export function CompanionHud({
       });
     }
     pendingVoiceSegmentsRef.current = remainingSegments;
-  }, [chat.draft, ensureRevealDriver, voiceEnabled, voiceSegmentRevision]);
+  }, [chat.draft, ensureRevealDriver, voiceOutputEnabled, voiceSegmentRevision]);
 
   useEffect(() => {
     const reply = chat.liveReply;
@@ -682,12 +692,13 @@ export function CompanionHud({
     // 前后到达，此刻把缓冲里的段喂进去还来得及播。
     let session = speechSessionRef.current;
     speechSessionRef.current = null;
-    if (!session && voiceEnabled) {
+    if (!voiceOutputEnabled) pendingVoiceSegmentsRef.current = [];
+    if (!session && voiceOutputEnabled) {
       session = beginCompanionSpeechLine({ strictSegments: true });
     }
     let handle: ActiveCompanionSpeech | null = null;
     if (session) {
-      if (!voiceEnabled) {
+      if (!voiceOutputEnabled) {
         // 语音被关掉：会话收干净，别挂在后台继续合成。
         activeSpeechPlanRef.current = null;
         speechPositionSessionRef.current = null;
@@ -722,6 +733,11 @@ export function CompanionHud({
     }
     activeSpeechPlanRef.current = handle?.planId ?? null;
     let stopped = false;
+    // 手记在 assistant.final 后即可阅读；伴星旁边的追问要等这条回复的
+    // 朗读/静音阅读时间线真正走完，再开放为可点击气泡。
+    const unsubscribeReadthrough = reveal.onComplete(() => {
+      if (!stopped) setReadthroughReplyId(reply.messageId);
+    });
     let holdTimer = 0;
     let exitTimer = 0;
     /**
@@ -779,6 +795,7 @@ export function CompanionHud({
 
     return () => {
       stopped = true;
+      unsubscribeReadthrough?.();
       window.clearInterval(holdTimer);
       window.clearTimeout(exitTimer);
       handle?.stop();
@@ -786,7 +803,7 @@ export function CompanionHud({
         speechPositionSessionRef.current = null;
       }
     };
-  }, [chat.dismissLiveReply, chat.draft, chat.interrupted, ensureRevealDriver, chat.liveReply, voiceEnabled]);
+  }, [chat.dismissLiveReply, chat.draft, chat.interrupted, ensureRevealDriver, chat.liveReply, voiceOutputEnabled]);
 
   /**
    * 播放进度 → 显现驱动器（2026-09-19 字幕式朗读）。
@@ -888,6 +905,7 @@ export function CompanionHud({
       const selection = chat.feedSelection ?? chat.feedNoteAnchor?.anchor.excerpt;
       const sent = await chat.send({
         text,
+        ...(requestedVoiceOutputEnabled === true ? { voiceOutput: true } : {}),
         // 输入框传图（2026-10-06）：附件随这一轮走；发送成功才清掉，
         // 失败时留在输入框边——用户点一次重试就够。
         ...(imageAttachment.image
@@ -917,7 +935,7 @@ export function CompanionHud({
     } finally {
       if (sendId === preparingSendIdRef.current) setPreparingSend(false);
     }
-  }, [chat, input, imageAttachment]);
+  }, [chat, input, imageAttachment, requestedVoiceOutputEnabled]);
 
   useEffect(() => {
     const requestId = chat.autoSendRequestId;
@@ -989,13 +1007,18 @@ export function CompanionHud({
   const interruptedNote = interruptedSlotText && chat.failure ? chat.failure : null;
   /** 朗读降级说明随回复收起；拾音提示只属于独立语音气泡。 */
   const outputNotice = speechNotice;
-  const slot: { readonly tone: "reply" | "process" | "stopped" | "note"; readonly text: string } | null =
+  const slot: { readonly tone: "reply" | "thinking" | "process" | "stopped" | "note"; readonly text: string } | null =
     preparingSend && chat.phase !== "sending" ? { tone: "process", text: "正在发送消息…" }
       : replySlotText ? { tone: "reply", text: replySlotText }
       : chat.stopNotice ? { tone: "stopped", text: stoppedText || chat.stopNotice }
         : interruptedSlotText && interaction.errorVisible ? { tone: "stopped", text: interruptedSlotText }
           : chat.phase === "error" && chat.failure && interaction.errorVisible ? { tone: "note", text: chat.feedNoteAnchor ? "这段解释还没生成，原文没有改动。" : chat.failure }
-            : chat.phase === "sending" && activeNode && !hasToolProcess ? { tone: "process", text: nodeLabel(activeNode) }
+            : chat.phase === "sending" && !shownReply && chat.thinking && !hasToolProcess
+              // 她在想什么就显示什么（服务端只在真的开思考档时才发这些字）。
+              // 一旦有正文可露（`shownReply`）这条立刻让位——思考从来不是回复的一部分。
+              // 工具已经在跑的轮次不显示：那种轮子的进度归工具气泡说。
+              ? { tone: "thinking", text: chat.thinking }
+              : chat.phase === "sending" && activeNode && !hasToolProcess ? { tone: "process", text: nodeLabel(activeNode) }
               : phase === "waiting" && !hasToolProcess ? { tone: "process", text: companionTurnProcessLine(chat.nodes) }
                     : speechNotice && interaction.errorVisible ? { tone: "note", text: speechNotice }
                       : null;
@@ -1152,13 +1175,20 @@ export function CompanionHud({
                 onWheel={noteReplyActivity}
                 onFocus={noteReplyActivity}
               >
-                <header className="companion-hud__reply-heading"><strong><Sparkles size={15} />{outputTone === "reply" || outputTone === "process" ? chat.companionName : "这轮对话"}</strong>{chat.liveReply || chat.richReply ? <button type="button" onClick={dismissReply} aria-label="收起伴星回复"><X size={16} /></button> : null}</header>
+                <header className="companion-hud__reply-heading"><strong><Sparkles size={15} />{outputTone === "reply" || outputTone === "process" ? chat.companionName
+                  // 「她在想」只在真的想到东西时才这样写（那条状态是服务端按思考档发的）。
+                    : outputTone === "thinking" ? "她在想" : "这轮对话"}</strong>{chat.liveReply || chat.richReply ? <button type="button" onClick={dismissReply} aria-label="收起伴星回复"><X size={16} /></button> : null}</header>
                 {activeNoteExplanation ? <CompanionNoteExplanationContext item={activeNoteExplanation} /> : null}
                 <span className="companion-hud__presence-dot" ref={presenceRef} aria-hidden="true" />
                 {/* 长回复的正文在它自己里面滚，新字钉在视野里（见上面的跟随 effect）。 */}
-                <p className="companion-hud__output-body" ref={setBubbleBodyEl} onScroll={handleBubbleScroll}><WebCitationContext.Provider value={webSources}><WebCitationText text={outputText} /></WebCitationContext.Provider></p>
+                <p className="companion-hud__output-body" ref={setBubbleBodyEl} onScroll={handleBubbleScroll}>
+                  {/* 思考是模型自己的原话：不剥标记、不解析引用，也不进朗读。 */}
+                  {outputTone === "thinking" ? outputText
+                    : <WebCitationContext.Provider value={webSources}><WebCitationText text={outputText} /></WebCitationContext.Provider>}
+                </p>
                 {outputTone === "reply" ? <CompanionWebSources sources={webSources} /> : null}
                 {chat.richReply ? <CompanionReplyAttachments key={`attachments:${chat.richReply.messageId}`} chat={chat}
+                  followupsReady={readthroughReplyId === chat.richReply.messageId}
                   paused={floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history" || chat.phase === "sending" || revealedChars < (replyText || draftText).length || breath === "speaking" || replyProcessOpen}
                   onDismiss={dismissReply} /> : null}
                 {/* 视觉流式文本**不是**持续 live region（方案 §3 无障碍）：逐字更新会让读屏
@@ -1272,6 +1302,14 @@ export function CompanionHud({
               才代表本轮失败；抽屉读成功会把 phase 推回 ready 而 failure 留着，
               那属于上一轮的陈旧报错，不该永远挂在这张气泡上。 */}
                 {turnFailure ? <p className="companion-hud__note companion-hud__note--error" role="status">{turnFailure}</p> : null}
+                {/* 那句"或者先点停止"以前是空的：停止那颗按钮只在本机握着活动轮时才存在，
+              而挡住发送的往往是重启前的、或 worker 已经不再管的僵尸 run。认得出那条 run，
+              这里才给一个真能按的出口。 */}
+                {turnFailure && chat.blockedByRun ? (
+                  <button type="button" className="text-action companion-hud__output-retry" onClick={() => { void chat.stopBlockedTurn(); }}>
+                    停掉上一条，这句再发
+                  </button>
+                ) : null}
               </section>
             ) : null}
             {interaction.voiceOpen ? <CompanionVoiceConversation voice={voice} onClose={interaction.closeVoice}

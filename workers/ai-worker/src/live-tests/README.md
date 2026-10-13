@@ -2,6 +2,8 @@
 
 这是显式启用的付费网络测试，不被常规单测入口自动运行。只使用合成检索材料、测试图与虚构对话；不取真实笔记、照片或私人记忆，不打印凭据与明文推理。
 
+`companion-initiative-semantic-probe.ts` 验证方案 56 的自由相处约定、实际关注安排与生产内部执行。使用 `astella_initiative_*` 隔离库，`DATABASE_URL_MIGRATOR` 设为实际 migrator，`DATABASE_URL_WORKER`／`DATABASE_URL` 设为实际 worker；不要使用隔离库脚本输出的管理员示例证明权限。运行：`REAL_MODEL_BATCH=1 node --import tsx src/live-tests/companion-initiative-semantic-probe.ts`。默认三个合成约定，另走真实启动、刚开始学习与五十分钟约定下的提醒；51 分钟是受限的合成区间，没有实际等待计时。`INITIATIVE_PROBE_CASE=built-in-defaults-without-preference` 单独验证修订号 0 的新账户仍会真实问候；也可用它选择其他已有案例，空匹配会拒绝运行。结果及各次尝试保存在 `outputs/audits/2026-10-13-initiative/`；[实施记录](../../../../docs/testing/companion-initiative-2026-10-13.md) 区分工具／持久化、窗口、声音与长期自然度。探针不经过 HTTP 提交或实际队列派发，不等同于设备端端到端验收。
+
 `companion-note-generation-routing-probe.ts` 核对速看、拓展草稿与纯聊天请求的分类边界，使用合成当前笔记与旧能力拒绝回复。以 `REAL_MODEL_BATCH=1` 显式运行，输出 `note-generation-routing-20261008.json`；它仅测试分类，不创建任务或读取真实账号数据。真实窗口生成与保存回执另见 `docs/testing/companion-note-generation-routing-2026-10-08.md`。
 
 `companion-note-authoring-probe.ts` 使用 `astella_note_authoring_*` 一次性库、合成知识讨论和一篇相关笔记，走真实模型的搜索、阅读、创建笔记与最终流式交付。显式设置 `REAL_MODEL_BATCH=1` 及受限 API/worker 连接后运行；夹具自动清理，结果写入 `note-authoring-live-20261008.json`。这是生产工具循环与持久化/交付管线验证，不包括 HTTP 提交、队列派发或 Electron 操作；真实窗口与失败样本另见 `docs/testing/companion-note-authoring-2026-10-08.md`。
@@ -41,6 +43,8 @@ REAL_MODEL_BATCH=1 LIVE_QUALITY_CURRENT_ONLY=1 LIVE_QUALITY_REVIEW=1 LIVE_QUALIT
 这里的接话操作方可以是编码 agent，不应把它标成真实人类用户。夹具直接构造读取阶段上下文，不是完整 HTTP/UI 端到端测试。当前版本接入 `reserveCompanionProviderCall`，并保存实际出网 instructions 与哈希；只保存本夹具的合成材料，不记录凭据、请求头或 HTTP 错误正文。2026-10-07 的五场普通输入测试共 32 轮，含修复失败实录，见 `outputs/audits/2026-10-07-live/natural-dialogue-report.md`。前三场尚未接计数端口，应按 wire 回执检查请求数；`natural-dialogue-normal.json` 是早期夹具终态状态错误，不计为产品质量样本。
 
 `voice-expression-probe.ts` 使用真实人格、首步请求与流式执行器生成安慰、祝贺、解释和轻笑四个合成样本，记录原始标记、干净正文和请求回执到 `voice-expression.json`。它不读取账号历史，不额外调用情绪分类器。标签出现率不能代表全部多轮对话；听感与真人验收记录见 `../handlers/__tests__/voice-expression-experience-qa.md`。
+
+`voice-dialect-semantic-probe.ts` 复用生产结构化注意力提示词与解释合同，以七轮合成对话核对「这一轮怎么说」与「以后默认怎么说」：提到家乡与询问方言词义都不切换、"以后都用河南话"落成长期 set、临时点名四川话只盖那一轮并在此后回到已保存的河南话默认、"以后都用普通话"落 clear、clear 之后的普通轮不再重复 apply。它只调用当前 `agent_turn` 路由，不读账号也不写数据库——账号级那一行的真实读写见 `../integration-tests/companion-voice-dialect-preference-postgres.integration.ts`。成功判据是每轮的 decision/persistentPreference 与「合成侧最终拿到的方言」三者同时符合预期；它证明的是判定语义，不是方言听感。
 
 ### 2026-10-07 研究驱动复验
 

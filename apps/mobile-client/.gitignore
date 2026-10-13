@@ -1,0 +1,6 @@
+node_modules/
+dist/
+# 本机同步来的伴星模型与 Live2D 运行资源（许可 redistributionAllowed:false）
+public/assets/companion/
+*.log
+.env.local

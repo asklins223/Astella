@@ -1,3 +1,4 @@
+import { companionInitiativeDeliveryRefV1Schema } from "./companion-initiative-contracts.ts";
 import { z } from "zod";
 
 export const COMPANION_ROOM_SLOTS = ["desk", "shelf", "window", "rest"] as const;
@@ -153,7 +154,8 @@ export const companionHomeProjectionV1Schema = z.strictObject({
      * 念想同样念出口（2026-10-07 用户决定），只是走伴星身边的主动提示音：
      * 进了任务页、总静音或窗口不可见时她不出声，气泡照旧。
      */
-    origin: z.enum(["thought", "reminder", "system"]).default("system"),
+    initiative: companionInitiativeDeliveryRefV1Schema.optional(),
+    origin: z.enum(["thought", "reminder", "system", "initiative"]).default("system"),
   }).nullable(),
   roomProfile: companionRoomProfileV1Schema,
 }).superRefine((value, context) => {

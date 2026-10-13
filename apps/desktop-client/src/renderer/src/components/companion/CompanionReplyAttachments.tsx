@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Code2, FileText, GitBranch, Image, Layers, M
 import type { CompanionContentBlockV1 } from "@astella/shared/companion-conversation-contracts";
 import { desktopRouteFromAgentRoute, type CompanionChatSession } from "../../app/companion-chat-session";
 import { CompanionMessageRichBlocks } from "./CompanionChatRecord";
+import { CompanionFollowupPrompts } from "./CompanionFollowupPrompts";
 import { useCompanionTransient } from "./use-companion-transient";
 
 function attachmentLabel(block: CompanionContentBlockV1): string {
@@ -53,8 +54,8 @@ function ReplyContentGallery({ blocks, chat, onReadingChange }: {
 
 /** One reply owns its delivery, reading material and lifetime. Never queue old
  * blocks as new room notifications. Reading a note is not a claim of citation. */
-export function CompanionReplyAttachments({ chat, paused, onDismiss }: {
-  chat: CompanionChatSession; paused: boolean; onDismiss: () => void;
+export function CompanionReplyAttachments({ chat, paused, followupsReady = true, onDismiss }: {
+  chat: CompanionChatSession; paused: boolean; followupsReady?: boolean; onDismiss: () => void;
 }) {
   const reply = chat.richReply;
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
@@ -80,6 +81,7 @@ export function CompanionReplyAttachments({ chat, paused, onDismiss }: {
     if (reply && blocks.length === 0) chat.dismissRichReply();
   }, [reply?.messageId, blocks.length, chat.dismissRichReply]);
   if (!reply || blocks.length === 0) return null;
+  const followups = blocks.flatMap((block) => block.type === "follow_up_suggestions" ? block.prompts : []);
   const links = blocks.filter(block => block.type === "nav");
   const material = blocks.filter(block => block.type === "quote" || block.type === "citation");
   const results = blocks.filter((block): block is ResultBlock => block.type === "image" || block.type === "diagram" || block.type === "card" || block.type === "code");
@@ -89,6 +91,7 @@ export function CompanionReplyAttachments({ chat, paused, onDismiss }: {
     return next;
   });
   return <div className="companion-reply-attachments" onPointerMove={life.activity} onKeyDown={life.activity} onWheel={life.activity} onFocus={life.activity}>
+    {followupsReady && followups.length > 0 ? <CompanionFollowupPrompts prompts={followups} chat={chat} /> : null}
     {links.length ? <div className="companion-reply-attachments__destinations"><CompanionMessageRichBlocks blocks={links} chat={chat} onNavNavigated={onDismiss} /></div> : null}
     {results.length ? <ReplyContentGallery key={reply.messageId} blocks={results} chat={chat} onReadingChange={setReadingContent} /> : null}
     {material.length ? <details className="companion-reply-attachments__materials" onToggle={event => noteOpen("materials", event.currentTarget.open)}>

@@ -195,8 +195,8 @@ export interface CapabilityMapping {
  * 于是"配置文件里有一个契约描述不到的节点"，两侧各自维护默认值。
  * 现在把它纳入契约：字段与优先级有单一出处，读取方按类型解析。
  *
- * 取值优先级（workerId 为例，其余字段同理）：
- *   配置文件 tts.qwen.* > 环境变量 DASHSCOPE_TTS_WORKSPACE_ID > 默认值。
+ * 取值优先级：配置文件 `tts.qwen.*` 优先；缺 workspaceId 时回退
+ * `DASHSCOPE_TTS_WORKSPACE_ID`，其余字段使用内置默认值。
  */
 export interface TtsQwenSettings {
   /** DashScope TTS workspaceId（wss:// 端点标识）。 */
@@ -208,6 +208,7 @@ export interface TtsQwenSettings {
   sampleRate?: number;
   /** 指令控制（≤100 字符）。 */
   instruction?: string;
+  /** 项目默认女声克隆得到的方言角色音色；支持方言的轮次优先使用它。 */
 }
 
 /** edge-tts（容器内）语音设置。 */

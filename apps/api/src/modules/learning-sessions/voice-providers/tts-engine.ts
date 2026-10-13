@@ -16,6 +16,7 @@
  */
 
 import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
+import { qwenDialectForInstruction, qwenVoiceForInstruction } from "@astella/shared/tts-voice-catalog";
 import { createHash, randomUUID } from "node:crypto";
 import { runAiTask, type AiStepResult, type AiTaskDefinition } from "@astella/shared/ai-task-kernel";
 import { edgeTtsSynthesize, EdgeTtsError, type EdgeTtsProviderOptions } from "./edge-tts.ts";
@@ -201,16 +202,57 @@ export async function synthesizeTtsBytes(args: SynthesizeTtsBytesArgs): Promise<
   const cfg = loadConfig();
   // 引擎与音色优先取这次的 selection（用户偏好），缺省才回 config。
   const engine = args.selection?.engine ?? cfg.engine;
-  const qwenVoice = args.selection?.qwenVoice ?? cfg.qwen.voice;
-  // 三层兜底：模型这轮自写的指令 → 用户偏好 → config 默认。合法性已在上游各自把关
-  // （段事件合同 / resolveTtsSelection），这里只取第一个非空。edge 分支不消费。
-  const instruction = args.instruction?.trim() || args.selection?.qwenInstruction || cfg.qwen.instruction;
-  // 谁的风格在生效（model/preference/config）是这条链唯一要回答的读数：
-  // 审计行只记「qwen 被调了」，风格对不对只能从这里查。
+  const preferredQwenVoice = args.selection?.qwenVoice ?? cfg.qwen.voice;
+  // 用户偏好 / config 提供伴星稳定的基础音色；本轮指令补充场景表达。
+  // 方言与声音描述分开存：本轮明确方言覆盖长期方言；仅有场景表达时与长期方言合并。
+  // 项目默认女声由克隆音色保证，不把 config 的通用音色词混进方言指令；用户显式
+  // 保存的语速/音色描述可以作为次级要求保留。
+  const baseInstruction = args.selection?.qwenInstruction?.trim() || cfg.qwen.instruction?.trim() || "";
+  const turnInstruction = args.instruction?.trim() || "";
+  const turnDialect = qwenDialectForInstruction(turnInstruction);
+  // This canonical phrase is emitted by the semantic classifier for a current-turn
+  // Mandarin reset. It must beat an older stored dialect even if that reset could not persist.
+  const turnRequestsStandardMandarin = /(?:使用|请用|改用)标准普通话/u.test(turnInstruction);
+  const requestedDialect = turnDialect ?? (turnRequestsStandardMandarin
+    ? null
+    : args.selection?.qwenDialect ?? qwenDialectForInstruction(baseInstruction));
+  // 本轮点名方言时，那条指令就是这一轮的完整说法：账号里的音色描述不叠加进来。
+  // 实测过长描述会把短方言指令冲淡（听感只剩普通话加几个方言词），方言轮要走官方短格式。
+  const baseSceneInstructions = args.selection?.qwenInstructionExplicit && !turnDialect
+    ? baseInstruction.split(/[，,。；;]+/u).map((part) => part.trim())
+      .filter((part) => part && !qwenDialectForInstruction(part))
+    : [];
+  const turnSceneInstructions = turnInstruction
+    .split(/[，,。；;]+/u)
+    .map((part) => part.trim())
+    .filter((part) => part && !qwenDialectForInstruction(part));
+  const dialectSceneInstruction = [...baseSceneInstructions, ...turnSceneInstructions].join("，");
+  const instruction = requestedDialect
+    ? `请用${requestedDialect}表达。${dialectSceneInstruction}`
+    : turnInstruction && baseInstruction
+      ? `保持基础音色：${baseInstruction}。本轮表达要求：${turnInstruction}`
+      : turnInstruction || baseInstruction;
+  // 点名方言时换成会说该方言的系统女声（shared 目录那张表）。项目那条普通话样本
+  // 复刻出来的嗓子接方言指令只改节奏不改口音，实测被否，所以这里不再优先用它。
+  const qwenVoice = qwenVoiceForInstruction(
+    preferredQwenVoice,
+    engine === "qwen" ? instruction : null,
+    cfg.qwen.model,
+  );
+  // 谁的风格在生效（dialect-only / dialect+scene / 本轮指令叠加 preference 或 config /
+  // 只有 preference / 只有 config）是这条链唯一要回答的读数：
+  // 审计行只记「qwen 被调了」，风格对不对只能从这里查。preference 只在**账号里真存着**
+  // 那句话时报——回落到 config 默认描述时不能说成用户的偏好。
   if (engine === "qwen") {
     logger.info({
-      instructionSource: args.instruction?.trim() ? "model" : args.selection?.qwenInstruction ? "preference" : "config",
+      instructionSource: requestedDialect
+        ? dialectSceneInstruction ? "dialect+scene" : "dialect-only"
+        : turnInstruction
+          ? (args.selection?.qwenInstructionExplicit ? "turn+preference" : baseInstruction ? "turn+config" : "turn")
+          : args.selection?.qwenInstructionExplicit ? "preference" : baseInstruction ? "config" : "none",
       instruction,
+      voice: qwenVoice,
+      voiceOverriddenForDialect: qwenVoice !== preferredQwenVoice,
     }, "qwen tts instruction resolved");
   }
 
@@ -352,7 +394,7 @@ export async function synthesizeTtsBytes(args: SynthesizeTtsBytesArgs): Promise<
       inputSnapshotRef: {
         kind: "task",
         id: args.queueKey,
-        hash: ttsInputHash(args.text, args.edgeVoice, args.edgeRate ?? "+0%", engine, instruction),
+        hash: ttsInputHash(args.text, engine === "qwen" ? qwenVoice : args.edgeVoice, args.edgeRate ?? "+0%", engine, instruction),
       },
       permissionLevel: "server",
       signal: args.signal,
@@ -378,7 +420,7 @@ export async function synthesizeTtsBytes(args: SynthesizeTtsBytesArgs): Promise<
 }
 
 /**
- * 输入快照哈希：文本 + edge 音色/语速 + 选中的引擎 + 说话风格指令。任一不同都是另一次合成。
+ * 输入快照哈希：文本 + 当前引擎实际选中的音色 + 语速 + 引擎 + 说话风格指令。任一不同都是另一次合成。
  *
  * 判据是「同一份输入才允许复用旧结果」——同一段文字换个音色或换个风格念，出来的是
  * 另一段音频，拿上一次的检查点当这一次的，就是把「她刚才那句」说成另一个说法。

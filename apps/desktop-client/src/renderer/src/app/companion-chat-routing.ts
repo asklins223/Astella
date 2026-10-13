@@ -223,15 +223,25 @@ export function isCompanionRunConflict(error: unknown): boolean {
   return error instanceof RendererGatewayError && error.code === "conflict";
 }
 
-export function companionTurnErrorMessage(error: unknown): string {
+export function companionTurnErrorMessage(error: unknown, blockedRunIdentified = true): string {
   if (isCompanionRunConflict(error)) {
-    return "上一条她还没说完，这条没能发出去。等她说完，或者先点停止。";
+    // 认得出是哪一条挡着，界面上就有那颗「停掉上一条」；认不出（那条读被限流，
+    // 或者它已经不在最新的摘要窗口里）就别再指向一个不存在的按钮——服务端的回收器
+    // 会在几十秒内把它收掉，说清这件事才是真话。
+    return blockedRunIdentified
+      ? "上一条还挂着。按「停掉上一条」，这句就能立刻发出去。"
+      : "上一条还挂着，系统几十秒内会自动收掉它。这句还在你手里，稍等一下再发。";
   }
   return gatewayErrorMessage(error);
 }
 
 export function companionReplyFailureMessage(code: unknown, recoverable: unknown): string {
   if (code === "CONTEXT_STALE") return "这一轮引用的记忆已变更或撤回。重新发送，我会按现在的内容继续。";
+  // 孤儿 run 被回收（迁移 0232/0424）：这一轮的处理任务根本没跑起来，或跑它的进程
+  // 已经没了。说清楚"不是这句话的问题"，并且别再指向一颗此刻并不存在的停止按钮。
+  if (typeof code === "string" && code.startsWith("JOB_")) {
+    return "这一轮没能开始处理（后台任务没跑起来）。这句可以直接再发一次。";
+  }
   // 达到长度上限不是"没做成"：已经说出的那半句是有效的，缺的是后半段。
   // 以前这条落进 recoverable=false 的通用文案，用户看到「这一轮没能完成。重新说一遍就好」＋半截正文，
   // 而 worker 早就写好了「可以接着分段讲」——两侧说的是两件事。

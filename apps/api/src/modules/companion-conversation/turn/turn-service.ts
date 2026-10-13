@@ -102,6 +102,8 @@ function sanitizeContext(request: CreateCompanionTurnRequestV1): unknown {
       return { version: 1, context: { ...base }, ...withExtra({}) };
     case "note":
       return { version: 1, context: { ...base, noteId: ctx.noteId, ...(ctx.noteVersionId ? { noteVersionId: ctx.noteVersionId } : {}),
+        ...(ctx.replyPurpose ? { replyPurpose: ctx.replyPurpose } : {}),
+        ...(ctx.annotationTarget ? { annotationTarget: ctx.annotationTarget } : {}),
         ...(ctx.editing ? { editing: ctx.editing } : {}) }, ...withExtra({}) };
     case "review":
       return { version: 1, context: { ...base, cardId: ctx.cardId ?? null, keyPointId: ctx.keyPointId ?? null }, ...withExtra({}) };
@@ -421,7 +423,7 @@ export async function createCompanionTurn(args: {  workspaceId: string;
     // active run 规则（partial unique 保证至多一条 active；SQL 过滤避免
     // 拉取该 conversation 全部 run 行——L6）
     const activeRows = await tx
-      .select({ id: companionTurnRuns.id, generation: companionTurnRuns.generation })
+      .select({ id: companionTurnRuns.id, generation: companionTurnRuns.generation, inputSource: companionTurnRuns.inputSource })
       .from(companionTurnRuns)
       .where(and(
         eq(companionTurnRuns.conversationId, args.conversationId),
@@ -431,7 +433,7 @@ export async function createCompanionTurn(args: {  workspaceId: string;
     const activeRun = activeRows[0] ?? null;
     let supersededRunId: string | null = null;
     if (activeRun) {
-      if (request.supersedesGeneration !== activeRun.generation) {
+      if (!activeRun.inputSource && request.supersedesGeneration !== activeRun.generation) {
         throw new CompanionConversationError("RUN_ALREADY_ACTIVE", 409, "active run requires matching supersedesGeneration");
       }
       // 旧 run → superseded，先写 turn.cancelled

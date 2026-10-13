@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AIProvider } from "../../lib/ai-provider.ts";
-import { AI_UNDECLARED_OUTPUT_TOKENS, COMPANION_AGENT_TOOL_LABELS, resolveAllCompanionAgentTools } from "@astella/shared";
+import { AI_UNDECLARED_OUTPUT_TOKENS, COMPANION_AGENT_TOOL_LABELS, getCompanionAgentTool, resolveAllCompanionAgentTools } from "@astella/shared";
 import { modelOutputTokenLimit } from "../../lib/providers/model-output-budget.ts";
 import {
+  buildCompanionTurnInterpretationMessages,
   companionClassifierRecent,
   companionOfferCandidates,
   interpretCompanionTurn,
@@ -28,7 +29,39 @@ function taskContext(signal = new AbortController().signal) {
 }
 
 const proposal = (action: boolean) => ({ intent: action ? "task" : "conversation", toolUse: action ? "act" : "none",
-  subjects: [], goalRelation: action ? "new" : "unrelated", candidateOperations: [], ambiguities: [] });
+  subjects: [], goalRelation: action ? "new" : "unrelated", candidateOperations: [], ambiguities: [],
+  voiceStyle: { decision: "none", instruction: null } });
+
+test("structured attention interprets dialect intent from current wording and recent context", async () => {
+  const messages = [
+    { role: "user" as const, content: "我老家在河南。" },
+    { role: "assistant" as const, content: "你最近想家了？" },
+    { role: "user" as const, content: "用家乡话给我讲个故事。" },
+  ];
+  const history = [
+    { role: "user" as const, text: "我老家在河南。", seq: "1" },
+    { role: "assistant" as const, text: "你最近想家了？", seq: "2" },
+  ];
+  const promptMessages = buildCompanionTurnInterpretationMessages(messages, {
+    objects: [], capabilities: [], recentMessages: history,
+  });
+  assert.ok(promptMessages);
+  assert.match(String(promptMessages[0]?.content), /不能靠关键词或固定词序猜/);
+  assert.match(String(promptMessages[0]?.content), /只提到地区、讲自己想家、询问方言词义[^。]*都不等于切换声音/);
+  assert.match(String(promptMessages[0]?.content), /只有用户明确说“以后\/今后\/之后都默认\/一直用某具体方言”这类持续要求时才 set/);
+  assert.match(String(promptMessages[0]?.content), /recent/);
+  const model = { ...provider(() => false), chatCompletion: async () => ({
+    content: JSON.stringify({ ...proposal(false), voiceStyle: {
+      decision: "apply", instruction: "请用河南话表达，语气自然温暖",
+    } }),
+    usage: {},
+  }) } as AIProvider;
+  const result = await interpretCompanionTurn(model, messages, {
+    ...taskContext(), recentMessages: history,
+  });
+  assert.deepEqual(result.voiceStyle, { decision: "apply", instruction: "请用河南话表达，语气自然温暖",
+    persistentPreference: { action: "keep", dialect: null } });
+});
 
 test("纠正的分类输入保留同一消息的时间证据，来源错位不借用别的日期", async () => {
   const messages = [{ role: "assistant" as const, content: "昨天整理了笔记。" },
@@ -64,6 +97,28 @@ test("全文格式调整提供明确编辑协议，保留只分析与不改的�
   assert.equal(result.toolUse, "act");
   assert.equal(result.goalRelation, "unrelated");
   assert.deepEqual(result.candidateOperations, ["companion_edit_note"]);
+});
+
+test("用户禁止读取资料时仍可创建独立笔记，工具目录和分类提示都遵守限制", async () => {
+  const definitions = resolveAllCompanionAgentTools("full", { noteLibraryReadEnabled: false });
+  const names = definitions.map(tool => tool.name);
+  assert.ok(!names.includes("companion_search_notes"));
+  assert.ok(!names.includes("companion_read_note"));
+  assert.ok(names.includes("companion_create_note"));
+  assert.match(getCompanionAgentTool("companion_create_note")!.description,
+    /禁止时独立保存、links 留空/);
+  const model = { ...provider(() => true), chatCompletion: async (messages: Parameters<AIProvider["chatCompletion"]>[0]) => {
+    const input = JSON.parse(String(messages.at(-1)?.content));
+    const instruction = String(messages[0]?.content);
+    assert.deepEqual(input.capabilities.map((tool: { name: string }) => tool.name), names);
+    assert.match(instruction, /明确禁止搜索或读取资料时，仍独立创建新笔记，不发起资料读取或添加库内链接/);
+    return { content: JSON.stringify({ ...proposal(true), candidateOperations: ["companion_create_note"] }), usage: {} };
+  } } as AIProvider;
+  const result = await interpretCompanionTurn(model, [
+    { role: "user", content: "把刚才聊的知识点写成新笔记，不要读取其他资料。" },
+  ], { ...taskContext(), permissionLevel: "full", capabilities: names });
+  assert.equal(result.toolUse, "act");
+  assert.deepEqual(result.candidateOperations, ["companion_create_note"]);
 });
 
 test("生成请求的分类输入只带短说法不带整份说明，当前笔记与历史拒绝不会替代能力事实", async () => {

@@ -15,6 +15,7 @@
  */
 import { sql } from "drizzle-orm";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
+import { queryRows, type AgentSqlExecutor } from "@astella/agent-host";
 
 /** 与 `companion-thought.ts` 共用：这条 SQL 在仓库里只准出现一次。 */
 export const FORMAL_ANSWER_PHASES = [
@@ -53,14 +54,14 @@ export interface FormalAnswerTarget {
 }
 
 export async function findFormalAnswerTarget(
-  tx: WorkerTx,
+  tx: AgentSqlExecutor,
   scope: { workspaceId: string; userId: string },
 ): Promise<FormalAnswerTarget | null> {
-  const rows = await tx.execute<{
+  const rows = await queryRows<{
     run_id: string; task_id: string; objective_id: string | null; objective_revision: number | null;
     card_id: string | null; card_revision: number | null; task_prompt: string | null;
     public_summary: string | null; canonical_answer: string | null;
-  }>(sql`
+  }>(tx, sql`
     SELECT r.id AS run_id, r.active_task_id AS task_id, t.prompt AS task_prompt,
            snap.objective_id, snap.objective_revision, snap.card_id, snap.card_revision,
            snap.target->>'publicSummary' AS public_summary,

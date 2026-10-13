@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { noteAnnotationV1Schema, type NoteAnnotationAnchorV1, type NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
+import { noteAnnotationPageV1Schema, noteAnnotationV1Schema, type NoteAnnotationAnchorV1, type NoteAnnotationV1 } from "@astella/shared/note-annotation-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
 import type { CompanionFeedNoteAnchor } from "./companion-feed";
@@ -10,7 +10,6 @@ export interface NoteCompanionExplanation {
   readonly target: CompanionFeedNoteAnchor;
   readonly phase: NoteCompanionExplanationPhase;
   readonly text: string;
-  readonly messageId: string | null;
   readonly error: string | null;
   readonly stopUnconfirmed: boolean;
   readonly annotation: NoteAnnotationV1 | null;
@@ -43,7 +42,7 @@ export function pendingNoteExplanation(target: CompanionFeedNoteAnchor): NoteCom
 export function beginNoteExplanation(target: CompanionFeedNoteAnchor, id = crypto.randomUUID()): NoteCompanionExplanation {
   const pending = pendingNoteExplanation(target);
   if (pending) return pending;
-  const item: NoteCompanionExplanation = { id, target, phase: "preparing", text: "", messageId: null, error: null, stopUnconfirmed: false, annotation: null, dismissed: false };
+  const item: NoteCompanionExplanation = { id, target, phase: "preparing", text: "", error: null, stopUnconfirmed: false, annotation: null, dismissed: false };
   useNoteCompanionExplanations.setState(state => ({ activeId: id, items: [item, ...state.items.map(previous =>
     previous.target.noteId === target.noteId && noteAnchorsOverlap(previous.target.anchor, target.anchor)
       ? { ...previous, dismissed: true } : previous)] }));
@@ -54,8 +53,8 @@ function update(id: string, change: Partial<NoteCompanionExplanation>, accept: (
   useNoteCompanionExplanations.setState(state => ({ items: state.items.map(item => item.id === id && accept(item) ? { ...item, ...change } : item) }));
 }
 
-export function progressNoteExplanation(id: string, text: string) {
-  update(id, { phase: "explaining", text }, item => item.phase === "preparing" || item.phase === "explaining");
+export function progressNoteExplanation(id: string) {
+  update(id, { phase: "explaining" }, item => item.phase === "preparing" || item.phase === "explaining");
 }
 
 export function interruptNoteExplanation(id: string, phase: "stopped" | "interrupted", error: string | null = null) {
@@ -89,42 +88,49 @@ export function stopNoteExplanation(id: string) {
 export function noteExplanationLabel(item: NoteCompanionExplanation): string {
   switch (item.phase) {
     case "preparing": return "伴星正在准备解释";
-    case "explaining": return "伴星正在解释";
-    case "saving": return "正在保存批注";
+    case "explaining": return "伴星正在写解释";
+    case "saving": return "正在读取批注";
     case "saved": return item.annotation?.versionState === "older" ? "解释已留在旧版批注" : "解释已贴回原句";
     case "stopped": return "解释已停止";
     case "interrupted": return "解释中断了";
-    case "save-error": return "解释未保存";
+    case "save-error": return "批注回执暂未读到";
   }
 }
 
-export async function completeNoteExplanation(id: string, messageId: string, text: string) {
+export function completeNoteExplanation(id: string, value: unknown): boolean {
   const item = useNoteCompanionExplanations.getState().items.find(item => item.id === id);
-  if (!item || !noteExplanationBusy(item) || item.phase === "saving") return;
-  if (!text.trim()) { interruptNoteExplanation(id, "interrupted", "这次没有生成可保存的解释。"); return; }
-  update(id, { phase: "save-error", messageId, text, error: null });
-  await saveNoteExplanation(id);
+  const receipt = noteAnnotationV1Schema.safeParse(value);
+  if (!item || !receipt.success) return false;
+  const annotation = receipt.data;
+  if (annotation.annotationId !== id || annotation.noteId !== item.target.noteId
+    || !annotation.generationJobId || annotation.sourceMessageId !== null
+    || Object.keys(item.target.anchor).some(key => annotation.anchor[key as keyof NoteAnnotationAnchorV1] !== item.target.anchor[key as keyof NoteAnnotationAnchorV1])) return false;
+  if (item.phase === "saved" && item.annotation?.revision === annotation.revision) return true;
+  update(id, { phase: "saved", annotation, text: annotation.explanation, error: null, stopUnconfirmed: false });
+  window.dispatchEvent(new CustomEvent("astella:note-annotation-saved", { detail: { noteId: annotation.noteId, annotation } }));
+  return true;
 }
 
-/** Retry uses the same final message identity; the API deduplicates that identity. Partial text never enters this path. */
-export async function saveNoteExplanation(id: string) {
+/** Stream reconnects and retries only read the tool-authored artifact. Speech never enters a write command. */
+export async function readNoteExplanation(id: string) {
   const item = useNoteCompanionExplanations.getState().items.find(item => item.id === id);
-  if (!item || item.phase !== "save-error" || !item.messageId) return;
+  if (!item || item.phase === "saved" || item.phase === "stopped") return;
   update(id, { phase: "saving", error: null });
   try {
-    if (!window.astella?.noteAnnotation) throw new Error("批注保存暂不可用，可以稍后重试。");
-    const annotation = noteAnnotationV1Schema.parse(unwrapGatewayResult(await window.astella.noteAnnotation.write({
-      meta: createRequestMeta(), noteId: item.target.noteId,
-      command: { kind: "create", anchor: item.target.anchor, explanation: item.text, sourceMessageId: item.messageId },
-    })));
-    if (annotation.noteId !== item.target.noteId || Object.keys(item.target.anchor).some(key => annotation.anchor[key as keyof NoteAnnotationAnchorV1] !== item.target.anchor[key as keyof NoteAnnotationAnchorV1])
-      || annotation.sourceMessageId !== item.messageId) throw new Error("批注保存回执与这次解释不一致，请重试保存。");
-    // A workspace reset removes the attempt: its late receipt must not enter the new workspace.
-    if (!useNoteCompanionExplanations.getState().items.some(current => current.id === id)) return;
-    update(id, { phase: "saved", annotation, error: null });
-    window.dispatchEvent(new CustomEvent("astella:note-annotation-saved", { detail: { noteId: annotation.noteId, annotation } }));
+    if (!window.astella?.noteAnnotation) throw new Error("批注读取暂不可用，可以稍后重新读取。");
+    let before: string | undefined;
+    do {
+      const page = noteAnnotationPageV1Schema.parse(unwrapGatewayResult(await window.astella.noteAnnotation.list({
+        meta: createRequestMeta(), noteId: item.target.noteId, noteVersionId: item.target.anchor.noteVersionId,
+        ...(before ? { before } : {}),
+      })));
+      const annotation = page.items.find(annotation => annotation.annotationId === id);
+      if (annotation && completeNoteExplanation(id, annotation)) return;
+      before = page.nextCursor ?? undefined;
+    } while (before);
+    update(id, { phase: "interrupted", error: "这轮没有写入原句解释。可以重新解释；聊天内容没有被当成批注保存。" }, current => current.phase !== "saved");
   } catch (error) {
-    update(id, { phase: "save-error", error: gatewayErrorMessage(error) });
+    update(id, { phase: "save-error", error: gatewayErrorMessage(error) }, current => current.phase !== "saved");
   }
 }
 

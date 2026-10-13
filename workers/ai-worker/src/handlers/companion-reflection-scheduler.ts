@@ -28,7 +28,7 @@ export async function tickCompanionReflectionScheduler(): Promise<void> {
   if (now - lastTickAt < TICK_INTERVAL_MS) return;
   try {
     const rows = await db.execute<{ enqueued: number }>(sql`
-      SELECT public.astella_enqueue_companion_reflection() + public.astella_enqueue_companion_self_wakes() AS enqueued
+      SELECT public.astella_enqueue_companion_reflection() + public.astella_enqueue_companion_self_wakes() + public.astella_enqueue_companion_attention() AS enqueued
     `);
     lastTickAt = now;
     const enqueued = Number((Array.isArray(rows) ? rows : [])[0]?.enqueued ?? 0);

@@ -4,6 +4,7 @@ import {
   COMPANION_AGENT_MAX_STEPS,
   COMPANION_AGENT_MAX_TOOL_CALLS,
   COMPANION_AGENT_MAX_TOOL_CALLS_PER_STEP,
+  COMPANION_DIAGNOSTIC_EVENT_TYPES_V1,
   companionAgentBudgetSnapshotV1Schema,
   companionRunIssueBundleV1Schema,
   type CompanionRunListV1,
@@ -25,11 +26,7 @@ import {
   DIAGNOSTIC_TOOL_CALL_MAX_COUNT,
 } from "./run-diagnostics-bounds.ts";
 
-const KNOWN_EVENT_TYPES = new Set<string>([
-  "turn.accepted", "assistant.status", "agent.tool", "assistant.delta", "assistant.final",
-  "character.cue", "action.proposed", "action.decision", "action.expired", "voice.segment.ready",
-  "turn.cancelled", "error", "proactive.delivery", "proactive.delivery.updated",
-]);
+const KNOWN_EVENT_TYPES = new Set<string>(COMPANION_DIAGNOSTIC_EVENT_TYPES_V1);
 
 type BundleFile = CompanionRunIssueBundleV1["files"][number];
 type BundleRunFile = Extract<BundleFile, { path: "run.json" }>;

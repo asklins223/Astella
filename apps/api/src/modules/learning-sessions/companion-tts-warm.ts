@@ -42,13 +42,20 @@ interface WarmEntry {
   readonly controller: AbortController;
   readonly turn?: { workspaceId: string; conversationId: string; runId: string; generation: number };
   expiresAt: number;
+  expiryTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const entries = new Map<string, WarmEntry>();
 const inFlightPerUser = new Map<string, Set<WarmEntry>>();
 
 function discardEntry(segmentId: string, entry: WarmEntry): void {
-  entries.delete(segmentId);
+  if (entry.expiryTimer) {
+    clearTimeout(entry.expiryTimer);
+    entry.expiryTimer = null;
+  }
+  // An expiry/eviction callback for an older entry must not delete a newer
+  // synthesis that reused the same segment id.
+  if (entries.get(segmentId) === entry) entries.delete(segmentId);
   const inFlight = inFlightPerUser.get(entry.userId);
   inFlight?.delete(entry);
   if (inFlight?.size === 0) inFlightPerUser.delete(entry.userId);
@@ -121,9 +128,20 @@ export function warmCompanionSegment(args: {
       inFlight.delete(entry);
       if (inFlight.size === 0 && inFlightPerUser.get(args.userId) === inFlight) inFlightPerUser.delete(args.userId);
     });
-  const entry: WarmEntry = { userId: args.userId, promise, controller, turn: args.turn, expiresAt: now + COMPANION_TTS_WARM_TTL_MS };
+  const entry: WarmEntry = {
+    userId: args.userId,
+    promise,
+    controller,
+    turn: args.turn,
+    expiresAt: now + COMPANION_TTS_WARM_TTL_MS,
+    expiryTimer: null,
+  };
   inFlight.add(entry);
   entries.set(args.segmentId, entry);
+  // TTL is a real release deadline, not only a lazy lookup check. This also
+  // aborts a synthesis whose client stopped listening and never comes back.
+  entry.expiryTimer = setTimeout(() => discardEntry(args.segmentId, entry), COMPANION_TTS_WARM_TTL_MS);
+  entry.expiryTimer.unref();
   pruneExpired(now);
   // 没人来取也不能变成未处理拒绝。
   void promise.catch(() => undefined);

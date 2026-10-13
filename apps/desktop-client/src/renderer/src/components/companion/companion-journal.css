@@ -100,8 +100,6 @@
 .companion-record__decisions { margin-top: 16px; }
 .companion-record__references > .companion-record__citation { margin: 8px 0 12px; }
 .companion-record__decision-history > .companion-choice-card { margin-block: 8px 12px; }
-.companion-history__trace-meta { color: var(--hud-soft); font-size: 11px; }
-.companion-record__attachments .companion-history__trace ol li small { white-space: normal; overflow: visible; font-size: 11px; line-height: 1.7; }
 .companion-history__compose-area { flex: none; margin-top: 3px; padding-top: 12px; border-top: 1px solid #ede7d8; }
 .companion-history__composer { display: block; padding: 9px 11px 7px; border: 1px solid #dddcc8; border-radius: 16px; background: #f7f8f0; }
 .companion-history__composer:focus-within { border-color: #879f79; background: #f4f7ed; }

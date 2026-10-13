@@ -193,6 +193,10 @@ services:
     # + db/client.ts:462 的 end({timeout:5}) 5s = 最坏 15s；Docker 默认 10s 会
     # 在 DB 池关闭前 SIGKILL。这里 20s（15s + 5s 余量）。
     stop_grace_period: 20s
+    # `@astella/*` workspace packages are symlinked from node_modules; tsx
+    # ignores those links by default. Watch the bind-mounted sources explicitly
+    # so API schemas reload with the Worker that writes their persisted blocks.
+    command: ["./node_modules/.bin/tsx", "watch", "--include", "/app/packages/*/src/**/*.ts", "src/server.ts"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -335,6 +339,8 @@ services:
     # （index.ts:726-732 / db.ts:201）= 最坏 52s，这里给 60s（+8s 余量）。
     # 少了这行，`make down` / 重建容器会在 drain 途中 SIGKILL，V2 租约来不及交还。
     stop_grace_period: 60s
+    # Keep shared contracts and agent packages in sync with the Worker runtime.
+    command: ["./node_modules/.bin/tsx", "watch", "--include", "/app/packages/*/src/**/*.ts", "src/index.ts"]
     depends_on:
       postgres:
         condition: service_healthy

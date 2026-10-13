@@ -184,7 +184,7 @@
       "format": "mp3",
       "sampleRate": 22050,
       "workspaceId": "llm-55ujpy2wafojbdp8",
-      "instruction": "可爱的年轻女性声音，25 岁左右，声音甜美温柔、略带活泼，语速自然适中，适合轻松陪伴式对话"
+      "instruction": "青年女性声音，音调中等偏柔，音色甜美圆润，语速自然适中，情感温柔明亮，适合学习陪伴对话"
     },
     "edge": {
       "voice": "zh-CN-XiaoxiaoNeural",

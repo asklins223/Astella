@@ -51,6 +51,7 @@ const material: ThoughtMaterial = {
   daysSinceLastLearning: null,
   familiarity: 0.1,
   petName: null,
+      accountDialect: null,
   allowNudgeLearning: true,
   allowPlayful: false,
   catchphrase: null,

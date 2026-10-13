@@ -2913,6 +2913,55 @@
       "when": 1791590914000,
       "tag": "0419_note_artifact_counts_without_ceiling",
       "breakpoints": true
+    },
+    {
+      "idx": 416,
+      "version": "7",
+      "when": 1791860542000,
+      "tag": "0420_companion_followup_suggestions_async",
+      "breakpoints": true
+    },
+    {
+      "idx": 417,
+      "version": "7",
+      "when": 1791860543000,
+      "tag": "0421_worker_writes_account_dialect_preference",
+      "breakpoints": true
+    },
+    {
+      "idx": 418,
+      "version": "7",
+      "when": 1791860544000,
+      "tag": "0422_companion_stream_events_assistant_thinking",
+      "breakpoints": true
+    },
+    {
+      "idx": 419,
+      "version": "7",
+      "when": 1791860544001,
+      "tag": "0423_companion_initiative",
+      "breakpoints": true
+    },
+    {
+      "idx": 420,
+      "version": "7",
+      "when": 1791860544002,
+      "tag": "0424_companion_reclaim_covers_never_started_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 421,
+      "version": "7",
+      "when": 1791860544003,
+      "tag": "0425_companion_run_thinking_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 422,
+      "version": "7",
+      "when": 1791860544004,
+      "tag": "0426_companion_process_timeline_archive",
+      "breakpoints": true
     }
   ]
 }

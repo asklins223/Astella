@@ -133,10 +133,7 @@ export function CompanionHomeProjectionProvider({ children }: { readonly childre
   }, [reload, state.projection]);
 
   useEffect(() => {
-    if (surface) {
-      requestGenerationRef.current += 1;
-      return;
-    }
+    // Participation deliveries belong to the current page as well as the room.
 
     const knownScope = scopeRef.current;
     if (

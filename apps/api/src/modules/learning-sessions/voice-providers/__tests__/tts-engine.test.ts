@@ -11,6 +11,7 @@ import { synthesizeTtsBytes, type TtsEngineDeps } from "../tts-engine.ts";
 import type { ApiAIGovernanceDependencies } from "../../../../lib/ai-governance.ts";
 import { EdgeTtsError } from "../edge-tts.ts";
 import type { TtsEngineConfig } from "../tts-config.ts";
+import { QWEN_TTS_STANDARD_MANDARIN_INSTRUCTION } from "@astella/shared/tts-voice-catalog";
 
 function makeConfig(engine: "qwen" | "edge", workspaceId: string): TtsEngineConfig {
   return {
@@ -193,7 +194,7 @@ test("selection 指定 qwen 音色：进上游的是这一身，不是 config �
     edgeVoice: "zh-CN-XiaoxiaoNeural",
     queueKey: "ws:user",
     scope: TEST_SCOPE,
-    selection: { engine: "qwen", qwenVoice: "longanlingxi_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "", explicit: true },
+    selection: { engine: "qwen", qwenVoice: "longanlingxi_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "", qwenInstructionExplicit: false, qwenDialect: null, explicit: true },
     deps: baseDeps({
       loadConfig: () => makeConfig("qwen", "ws-123"),
       qwenSynthesize: async (_key, _text, options) => {
@@ -218,7 +219,7 @@ test("selection 说 edge：config 是 qwen 也不碰 qwen，不做'先试千问�
     edgeVoice: "zh-CN-XiaoxiaoNeural",
     queueKey: "ws:user",
     scope: TEST_SCOPE,
-    selection: { engine: "edge", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "", explicit: true },
+    selection: { engine: "edge", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "", qwenInstructionExplicit: false, qwenDialect: null, explicit: true },
     deps: baseDeps({
       loadConfig: () => makeConfig("qwen", "ws-123"),
       qwenSynthesize: async () => {
@@ -253,15 +254,17 @@ test("不传 selection：仍旧用 config 那条音色（默认行为没被动�
   assert.equal(seenVoice, makeConfig("qwen", "ws-123").qwen.voice);
 });
 
-// ─── instruction 三层兜底（模型自写 → 用户偏好 → config）─────────────────────
+// ─── 基础音色偏好 + 本轮表达指令（方言/场景不能覆盖伴星音色）───────────────
 
 const captureInstruction = () => {
   let seen = "";
+  let seenVoice = "";
   return {
     deps: baseDeps({
       loadConfig: () => makeConfig("qwen", "ws-123"),
       qwenSynthesize: async (_key, _text, options) => {
         seen = options.instruction ?? "";
+        seenVoice = options.voice;
         return { stream: streamOf("qwen"), contentType: "audio/mpeg" };
       },
       edgeSynthesize: async () => {
@@ -269,28 +272,41 @@ const captureInstruction = () => {
       },
     }),
     read: () => seen,
+    readVoice: () => seenVoice,
   };
 };
 
-test("instruction 三层兜底：模型自写 > 用户偏好 > config 默认", async () => {
+test("方言指令用官方短格式并换成会说方言的系统女声；普通场景指令叠加基础音色", async () => {
   const withConfig = { ...makeConfig("qwen", "ws-123") };
   withConfig.qwen.instruction = "config 默认风格";
 
-  // 三层同在：用模型的。
+  // 方言表达优先走文档建议的直接指令，不混入通用音色描述；
+  // 发音人换成会说该方言的系统女声（普通话样本复刻出来的嗓子接方言指令只改节奏，实测被否）。
   const model = captureInstruction();
   await synthesizeTtsBytes({
     text: "中不中", edgeVoice: "zh-CN-XiaoxiaoNeural", queueKey: "ws:user", scope: TEST_SCOPE,
-    instruction: "用河南话讲",
-    selection: { engine: "qwen", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "用户偏好", explicit: true },
+    instruction: "请用河南话表达，语气轻松俏皮，笑点前停顿",
+    selection: { engine: "qwen", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "青年女性，甜美圆润", qwenInstructionExplicit: false, qwenDialect: null, explicit: true },
     deps: { ...model.deps, loadConfig: () => withConfig },
   });
-  assert.equal(model.read(), "用河南话讲");
+  assert.equal(model.read(), "请用河南话表达。语气轻松俏皮，笑点前停顿");
+  assert.equal(model.readVoice(), "longanhuan_v3.1", "方言轮换成会说河南话的系统女声");
+
+  // 非方言场景表达仍与用户偏好合并，确保日常说话风格不回退。
+  const scene = captureInstruction();
+  await synthesizeTtsBytes({
+    text: "中不中", edgeVoice: "zh-CN-XiaoxiaoNeural", queueKey: "ws:user", scope: TEST_SCOPE,
+    instruction: "语气偏慢",
+    selection: { engine: "qwen", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "青年女性，甜美圆润", qwenInstructionExplicit: true, qwenDialect: null, explicit: true },
+    deps: { ...scene.deps, loadConfig: () => withConfig },
+  });
+  assert.equal(scene.read(), "保持基础音色：青年女性，甜美圆润。本轮表达要求：语气偏慢");
 
   // 模型没写：用用户偏好。
   const pref = captureInstruction();
   await synthesizeTtsBytes({
     text: "中不中", edgeVoice: "zh-CN-XiaoxiaoNeural", queueKey: "ws:user", scope: TEST_SCOPE,
-    selection: { engine: "qwen", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "用户偏好", explicit: true },
+    selection: { engine: "qwen", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "用户偏好", qwenInstructionExplicit: true, qwenDialect: null, explicit: true },
     deps: { ...pref.deps, loadConfig: () => withConfig },
   });
   assert.equal(pref.read(), "用户偏好");
@@ -299,10 +315,57 @@ test("instruction 三层兜底：模型自写 > 用户偏好 > config 默认", a
   const config = captureInstruction();
   await synthesizeTtsBytes({
     text: "中不中", edgeVoice: "zh-CN-XiaoxiaoNeural", queueKey: "ws:user", scope: TEST_SCOPE,
-    selection: { engine: "qwen", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "", explicit: true },
+    selection: { engine: "qwen", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "", qwenInstructionExplicit: false, qwenDialect: null, explicit: true },
     deps: { ...config.deps, loadConfig: () => withConfig },
   });
   assert.equal(config.read(), "config 默认风格");
+});
+
+test("长期方言跨轮生效，单轮另一方言临时覆盖且都走系统方言女声", async () => {
+  const withClone = { ...makeConfig("qwen", "ws-123") };
+  const persistent = captureInstruction();
+  const selection = {
+    engine: "qwen" as const,
+    qwenVoice: "longhua_v3.1",
+    edgeVoice: "zh-CN-XiaoxiaoNeural",
+    qwenInstruction: "声音温柔，语速偏慢",
+    qwenInstructionExplicit: true,
+    qwenDialect: "河南话" as const,
+    explicit: true,
+  };
+  await synthesizeTtsBytes({
+    text: "晚上好", edgeVoice: "zh-CN-XiaoxiaoNeural", queueKey: "ws:user", scope: TEST_SCOPE,
+    selection,
+    deps: { ...persistent.deps, loadConfig: () => withClone },
+  });
+  assert.equal(persistent.read(), "请用河南话表达。声音温柔，语速偏慢");
+  assert.equal(persistent.readVoice(), "longanhuan_v3.1");
+
+  const temporary = captureInstruction();
+  await synthesizeTtsBytes({
+    text: "晚上好", edgeVoice: "zh-CN-XiaoxiaoNeural", queueKey: "ws:user", scope: TEST_SCOPE,
+    instruction: "请用四川话表达，语气轻快",
+    selection,
+    deps: { ...temporary.deps, loadConfig: () => withClone },
+  });
+  assert.equal(temporary.read(), "请用四川话表达。语气轻快");
+  assert.equal(temporary.readVoice(), "longanhuan_v3.1");
+  assert.equal(selection.qwenDialect, "河南话", "单轮四川话是事件覆盖，不改已保存的河南话偏好");
+});
+
+test("语义层明确改普通话时覆盖旧方言，即使持久设置更新失败", async () => {
+  const model = captureInstruction();
+  const withClone = { ...makeConfig("qwen", "ws-123") };
+  await synthesizeTtsBytes({
+    text: "晚上好", edgeVoice: "zh-CN-XiaoxiaoNeural", queueKey: "ws:user", scope: TEST_SCOPE,
+    instruction: QWEN_TTS_STANDARD_MANDARIN_INSTRUCTION,
+    selection: { engine: "qwen", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural",
+      qwenInstruction: "青年女性，甜美圆润", qwenInstructionExplicit: false,
+      qwenDialect: "河南话", explicit: true },
+    deps: { ...model.deps, loadConfig: () => withClone },
+  });
+  assert.equal(model.read(), `保持基础音色：青年女性，甜美圆润。本轮表达要求：${QWEN_TTS_STANDARD_MANDARIN_INSTRUCTION}`);
+  assert.equal(model.readVoice(), "longhua_v3.1", "清除语义优先级高于旧河南话克隆音色");
 });
 
 test("instruction 只进 qwen 参数：edge 分支连字段都不该出现", async () => {
@@ -310,7 +373,7 @@ test("instruction 只进 qwen 参数：edge 分支连字段都不该出现", asy
   await synthesizeTtsBytes({
     text: "你好", edgeVoice: "zh-CN-XiaoxiaoNeural", queueKey: "ws:user", scope: TEST_SCOPE,
     instruction: "用河南话讲",
-    selection: { engine: "edge", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "", explicit: true },
+    selection: { engine: "edge", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenInstruction: "", qwenInstructionExplicit: false, qwenDialect: null, explicit: true },
     deps: baseDeps({
       loadConfig: () => makeConfig("qwen", "ws-123"),
       qwenSynthesize: async () => {

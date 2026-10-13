@@ -174,8 +174,14 @@ function buildAgentTurnInput(
   const injectedSystem: string[] = [];
   for (const message of messages) {
     if (message.role === "system") {
-      // Responses 只有一个 instructions 字段，没有逐条 system item（与 buildChatInput
-      // 同一处理）。按出现顺序接在宿主政策之后：步中注入的内部核对指令若在这里被丢掉，
+      if (message.hostObservation) {
+        // Preserve the actual host event after history. It is neither new user
+        // speech nor a fabricated model function call / reasoning handle.
+        input.push({ role: "system", content: toResponsesContent(message.content) });
+        continue;
+      }
+      // 普通策略合并到 instructions（与 buildChatInput 同一处理）。
+      // 按出现顺序接在宿主政策之后：步中注入的内部核对指令若在这里被丢掉，
       // 她就只收到重附的用户回合，不知道那句是要纠正上一段。
       injectedSystem.push(typeof message.content === "string"
         ? message.content
@@ -262,17 +268,31 @@ export function readResponsesText(body: unknown): string | null {
 /** No-tool completion publishes the final answer, not intermediate commentary. */
 export function readResponsesFinalText(body: unknown): string | null {
   const messages = readOutputItems(body).filter(item => item.type === "message");
-  const finals = messages.filter(item => item.phase === "final_answer");
-  return readResponsesText({ output: finals.length ? finals : messages.filter(item => item.phase !== "commentary") });
+  const finals = messages.filter(item => isFinalAnswerPhase(item.phase));
+  // Explicit non-final phases (including analysis and unknown future phases)
+  // are never user-visible. Unphased messages remain compatible with legacy
+  // gateways that do not return phase metadata.
+  return readResponsesText({ output: finals.length ? finals : messages.filter(item => item.phase === undefined) });
 }
 
 function responsesPhase(body: unknown, finalOnly = false): "commentary" | "final_answer" | undefined {
   const messages = readOutputItems(body).filter(item => item.type === "message");
-  const finals = messages.filter(item => item.phase === "final_answer");
-  const selected = finalOnly ? (finals.length ? finals : messages.filter(item => item.phase !== "commentary")) : messages;
+  const finals = messages.filter(item => isFinalAnswerPhase(item.phase));
+  const selected = finalOnly ? (finals.length ? finals : messages.filter(item => item.phase === undefined)) : messages;
   const phases = new Set(selected.map(item => item.phase));
   const first = [...phases][0];
-  return phases.size === 1 && (first === "commentary" || first === "final_answer") ? first : undefined;
+  if (phases.size !== 1) return undefined;
+  if (first === "commentary") return "commentary";
+  return isFinalAnswerPhase(first) || first === undefined ? "final_answer" : undefined;
+}
+
+function isFinalAnswerPhase(phase: unknown): boolean {
+  // OpenCode Go streams have returned both Responses spellings in live runs.
+  return phase === "final_answer" || phase === "final";
+}
+
+function isPrivateOrUnknownPhase(phase: unknown): boolean {
+  return phase !== undefined && phase !== "commentary" && !isFinalAnswerPhase(phase);
 }
 
 /**
@@ -611,7 +631,8 @@ export class OpenCodeGoProvider implements AIProvider {
   /**
    * 真实流式：`stream: true` + Responses SSE。
    * 文本增量为 `response.output_text.delta`（data.delta），
-   * `response.completed` 结束；reasoning 增量不下发（不进入用户可见文本）。
+   * `response.completed` 结束；思考增量 `response.reasoning_text.delta` 只在调用方
+   * 挂了 `onReasoningDelta` 时透出，它**永远不进** `onDelta` 那条正文通路。
    */
   async chatCompletionStream(
     messages: ChatMessage[],
@@ -670,8 +691,14 @@ export class OpenCodeGoProvider implements AIProvider {
     let usage: AgentTurnResult["usage"] = null;
     let providerRequestId: string | null = null;
     const itemPhases = new Map<number, unknown>();
+    const pendingTextByIndex = new Map<number, string>();
     const startedCalls = new Set<string>();
     const settledCalls = new Set<string>();
+    const publishText = (text: string): void => {
+      if (!text) return;
+      content += text;
+      onDelta(text);
+    };
     const observeTool = (item: unknown, index: number, done: boolean) => {
       const call = asRecord(item);
       if (call?.type !== "function_call" || typeof call.call_id !== "string" || typeof call.name !== "string") return;
@@ -710,28 +737,64 @@ export class OpenCodeGoProvider implements AIProvider {
       switch (parsed.type) {
         case "response.output_item.added":
         case "response.output_item.done":
-          if (typeof parsed.output_index === "number" && asRecord(parsed.item)?.type === "message")
-            itemPhases.set(parsed.output_index, asRecord(parsed.item)?.phase);
+          if (typeof parsed.output_index === "number" && asRecord(parsed.item)?.type === "message") {
+            const index = parsed.output_index;
+            const phase = asRecord(parsed.item)?.phase;
+            itemPhases.set(index, phase);
+            if (phase === "commentary" || isPrivateOrUnknownPhase(phase)) {
+              // A provider may send text deltas before the message metadata.
+              // Discard them once a private/unknown phase arrives.
+              pendingTextByIndex.delete(index);
+            } else if (isFinalAnswerPhase(phase)) {
+              const pending = pendingTextByIndex.get(index);
+              if (pending) publishText(pending);
+              pendingTextByIndex.delete(index);
+            }
+          }
           if (typeof parsed.output_index === "number")
             observeTool(parsed.item, parsed.output_index, parsed.type === "response.output_item.done");
           return false;
         case "response.output_text.delta": {
-          const phase = itemPhases.get(typeof parsed.output_index === "number" ? parsed.output_index : 0);
-          if (phase === "commentary") return false;
-          if (this.modelProfile?.supportsAssistantPhase && phase !== "final_answer") {
+          const outputIndex = typeof parsed.output_index === "number" ? parsed.output_index : null;
+          const phase = outputIndex === null ? undefined : itemPhases.get(outputIndex);
+          if (phase === "commentary" || isPrivateOrUnknownPhase(phase)) return false;
+          if (this.modelProfile?.supportsAssistantPhase && !isFinalAnswerPhase(phase)) {
             withheldUnknownPhase = true;
             return false;
           }
           const delta = parsed.delta;
           if (typeof delta === "string" && delta.length > 0) {
-            content += delta;
-            onDelta(delta);
+            // Models declared phase-free have no private commentary phase;
+            // publish immediately so EOF and output truncation retain the
+            // visible partial answer. Keep the conservative buffer for
+            // phase-capable and unprofiled models.
+            if (outputIndex !== null && phase === undefined && this.modelProfile?.supportsAssistantPhase !== false) {
+              pendingTextByIndex.set(outputIndex, (pendingTextByIndex.get(outputIndex) ?? "") + delta);
+              withheldUnknownPhase = true;
+            } else publishText(delta);
           }
+          return false;
+        }
+        case "response.reasoning_text.delta": {
+          // 思考增量走**另一条路**：它不是正文，永不进净化/朗读/历史，只让等待有内容看。
+          // 不传回调就什么都不做（与这条流以前的行为逐字相同）。
+          if (typeof options.onReasoningDelta === "function" && typeof parsed.delta === "string")
+            options.onReasoningDelta(parsed.delta);
           return false;
         }
         case "response.completed": {
           const terminal = asRecord(parsed.response);
           if (terminal && Array.isArray(terminal.output)) {
+            const output = readOutputItems(terminal);
+            const hasFinalAnswer = output.some(item => item.type === "message" && isFinalAnswerPhase(item.phase));
+            for (const [index, pending] of pendingTextByIndex) {
+              const item = output[index];
+              const isVisibleMessage = item?.type === "message" && (
+                isFinalAnswerPhase(item.phase) || (item.phase === undefined && !hasFinalAnswer)
+              );
+              if (isVisibleMessage) publishText(pending);
+            }
+            pendingTextByIndex.clear();
             const finalText = readResponsesFinalText(terminal);
             // Some gateways deliver text only in the terminal output, or omit
             // its last delta. Reconcile a matching prefix without another model
@@ -741,8 +804,19 @@ export class OpenCodeGoProvider implements AIProvider {
               content = finalText;
               if (suffix) onDelta(suffix);
             }
-            if ((finalText ?? "") !== content) providerError = new ProviderStreamError(this.id, "stream_content_mismatch");
-            finalPhase = responsesPhase({ output: readOutputItems(terminal).filter(item => item.phase !== "commentary") });
+            // 上游实测（2026-10-13，要求工具的步骤 2/3 复现）：同一条消息在流事件里
+            // 标 final_answer、在终态快照里标 commentary（两份文本逐字相同），只是
+            // **标签**变了。这时整条请求作废重打没有保护任何人——重打出来的还是同一段
+            // 文字。当终态里所有 message 的全文与已下发的正文逐字一致，就接受这版并
+            // 保留内容；文本真的不同的情况仍 fail closed。
+            const terminalMessageText = readResponsesText(terminal);
+            if ((finalText ?? "") !== content
+              && !(finalText === null && content.length > 0 && terminalMessageText === content)) {
+              providerError = new ProviderStreamError(this.id, "stream_content_mismatch");
+            }
+            // Commentary and analysis items may coexist with the final answer.
+            // Report only the publishable answer phase to downstream clients.
+            finalPhase = responsesPhase({ output }, true);
             const parsedTurn = parseResponsesAgentTurn(terminal, hasTools);
             const malformed = parsedTurn.toolCalls.find(call => call.argumentsMalformed);
             if (malformed) providerError = new AgentOutputError("arguments_malformed", "provider stream returned malformed tool arguments");

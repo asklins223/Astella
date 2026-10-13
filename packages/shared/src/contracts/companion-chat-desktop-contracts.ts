@@ -43,6 +43,8 @@ export const companionChatSendTurnRequestV1Schema = z.strictObject({
   conversationId: z.string().uuid(),
   /** 幂等键（UUID），透传为 `Idempotency-Key` 头。 */
   idempotencyKey: z.string().uuid(),
+  /** 本回合是否允许语音输出；缺省按静音处理，也作为服务端预热意图。 */
+  voiceOutput: z.boolean().optional(),
   turn: createCompanionTurnRequestV1Schema,
 });
 export type CompanionChatSendTurnRequestV1 = z.infer<typeof companionChatSendTurnRequestV1Schema>;
@@ -147,7 +149,7 @@ export type CompanionAgentRoutesListResultV1 = z.infer<typeof companionAgentRout
 export const companionRunNodeEventV1Schema = z.strictObject({
   version: z.literal(1),
   seq: z.number().int().nonnegative(),
-  /** 事件类型：assistant.status / agent.skill / agent.tool。 */
+  /** 过程事件：assistant.status / assistant.thinking / agent.tool。 */
   type: z.string().min(1).max(64),
   /** 事件 payload（与 SSE 帧里的 payload 同一个对象）。 */
   payload: z.unknown(),
@@ -164,6 +166,8 @@ export type CompanionRunNodeEventV1 = z.infer<typeof companionRunNodeEventV1Sche
 export const companionRunSummaryV1Schema = z.strictObject({
   version: z.literal(1),
   runId: z.string().uuid(),
+  /** Internal consideration has no user message; keep the API's source identity. */
+  userMessageId: z.string().uuid().nullable().optional(),
   status: z.string().min(1).max(32),
   /**
    * 这一轮的 generation（`companion_turn_runs.generation`）。
@@ -184,9 +188,12 @@ export const companionRunSummaryV1Schema = z.strictObject({
   maxToolCalls: z.number().int().positive().nullable(),
   /** 本轮终态 assistant 消息 id；用户停止时是那条 kind='cancelled' 的部分记录。 */
   assistantMessageId: z.string().uuid().nullable(),
+  /** 仅在 includeThinking 请求中返回；独立于答案正文保存的本轮思考记录。 */
+  thinkingText: z.string().nullable().optional(),
+  /** 随对话保留的思考与工具事件，按 seq 排列；实时事件清理不影响这份记录。 */
+  processTimeline: z.array(companionRunNodeEventV1Schema).optional(),
   /**
-   * 该 run 当前仍可读的节点事件条数。`stepCount > 0 && nodeCount === 0` ⇒ 过程记录
-   * 已被 TTL 清理——UI 必须显式说明，不显示空白、不伪造占位（方案 §1）。
+   * 本轮可读的状态与工具事件条数，包括持久档案。旧轮次可能未留存详情。
    */
   nodeCount: z.number().int().nonnegative(),
 });
@@ -201,6 +208,10 @@ export const companionRunNodesListRequestV1Schema = z.strictObject({
    * 那段，中间被跳过的事件拿不回来。UI 每次全量取最新即可（不传）。
    */
   afterSeq: z.number().int().nonnegative().optional(),
+  /** 读取完整思考与过程档案；流式轮询不应重复传输大段文本。 */
+  includeThinking: z.boolean().optional(),
+  /** 读取已加载历史消息对应的轮次，避免旧消息受最近 20 轮窗口限制。 */
+  runIds: z.array(z.string().uuid()).max(100).optional(),
 });
 export type CompanionRunNodesListRequestV1 = z.infer<typeof companionRunNodesListRequestV1Schema>;
 
@@ -213,7 +224,7 @@ export const companionRunNodesListResultV1Schema = z.strictObject({
    * 两种都不该被当成"这一轮没有过程"。
    */
   items: z.array(companionRunNodeEventV1Schema).max(200),
-  runs: z.array(companionRunSummaryV1Schema).max(20),
+  runs: z.array(companionRunSummaryV1Schema).max(100),
   latestSeq: z.number().int().nonnegative(),
 });
 export type CompanionRunNodesListResultV1 = z.infer<typeof companionRunNodesListResultV1Schema>;

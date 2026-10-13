@@ -26,7 +26,7 @@ export type CompanionSelfNoteWriteV1 = z.infer<typeof companionSelfNoteWriteV1Sc
 
 /** These tools affect only the companion's own records, not users' materials. */
 export const COMPANION_AUTONOMOUS_TOOLS = ["companion_read_identity", "companion_revise_identity", "companion_revise_own_style",
-  "companion_revise_own_tags", "companion_read_self_notes", "companion_write_self_note", "companion_schedule_wake"] as const;
+  "companion_revise_own_tags", "companion_read_self_notes", "companion_write_self_note", "companion_schedule_wake", "companion_arrange_attention", "companion_publish_utterance", "companion_finish_participation"] as const;
 export function isCompanionAutonomousTool(name: string): boolean {
   return (COMPANION_AUTONOMOUS_TOOLS as readonly string[]).includes(name);
 }

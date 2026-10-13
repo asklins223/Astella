@@ -158,6 +158,44 @@ describe("production companion interaction", () => {
     expect(document.querySelector(".companion-hud__sr-status")?.textContent).toBe(`${partial}（已停止）`);
   });
 
+  it("把她正在想的内容填进等待，正文一露头就整块让位", () => {
+    const thought = "他问的是散射，先想清楚要不要举天空的例子。";
+    state.chat = interactionSession({ mode: "closed", phase: "sending", processRunId: "current", thinking: thought });
+    render(<Harness />);
+    advance(1_200);
+    const bubble = document.querySelector(".companion-hud__output")!;
+    expect(bubble.getAttribute("data-tone")).toBe("thinking");
+    expect(bubble.querySelector(".companion-hud__reply-heading")?.textContent).toContain("她在想");
+    expect(bubble.querySelector(".companion-hud__output-body")?.textContent).toBe(thought);
+    // 思考不是回复的一部分：正文开始露字，气泡整个换过去，不留半句想法在下面。
+    patch({ draft: { runId: "current", text: "蓝光更容易被空气分子散射。" } });
+    advance(1_200);
+    const after = document.querySelector(".companion-hud__output")!;
+    expect(after.getAttribute("data-tone")).toBe("reply");
+    expect(after.querySelector(".companion-hud__output-body")?.textContent).toContain("蓝光");
+    expect(after.querySelector(".companion-hud__output-body")?.textContent).not.toContain("先想清楚");
+  });
+
+  it("工具已经在跑的轮次不用思考盖住进度", () => {
+    state.chat = interactionSession({ mode: "closed", phase: "sending", processRunId: "current",
+      thinking: "该先读笔记再回答。",
+      nodes: [{ key: "tool:read", kind: "tool", label: "查阅原文", state: "running", toolName: "companion_read_note", summary: null, proposalId: null }] });
+    render(<Harness />);
+    advance(1_200);
+    expect(document.querySelector(".companion-hud__output")?.getAttribute("data-tone")).not.toBe("thinking");
+    expect(screen.queryByText("该先读笔记再回答。")).toBeNull();
+  });
+
+  it("被上一条挡住时，「停掉上一条」是真能按的一颗按钮", async () => {
+    const stopBlockedTurn = vi.fn(async () => undefined);
+    state.chat = interactionSession({ mode: "conversation", phase: "error",
+      failure: "上一条还挂着。按「停掉上一条」，这句就能立刻发出去。",
+      blockedByRun: { runId: "zombie-run", generation: 7 }, stopBlockedTurn });
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "停掉上一条，这句再发" }));
+    await act(async () => { expect(stopBlockedTurn).toHaveBeenCalledOnce(); });
+  });
+
   it.each(["bubble", "journal"] as const)("%s keeps complete over-limit sources and blocks button/Enter until corrected", async view => {
     const send = vi.fn(async () => true);
     const selection = "字".repeat(COMPANION_SELECTION_MAX_CHARS) + "尾部更正";

@@ -20,13 +20,13 @@
  *
  * 两段 effect 一行没改，依赖数组一个没动。Provider 那边只多了一句调用。
  */
-import { useEffect } from "react";
+import { useEffect, type Dispatch, type SetStateAction } from "react";
 import {
   createRequestMeta,
   gatewayErrorMessage,
   requireWorkspaceEpoch,
 } from "./desktop-client";
-import { buildCompanionRunTraces, type CompanionRunTrace } from "./companion-agent-nodes";
+import { buildCompanionRunTraces, mergeCompanionRunTraces, type CompanionRunTrace } from "./companion-agent-nodes";
 import { desktopRouteFromAgentRoute } from "./companion-chat-routing";
 import type { CompanionNavChip } from "./companion-chat-session";
 
@@ -41,9 +41,10 @@ export type CompanionPollDeps = {
   /** 收到新的导航 chip 就往 chip 行里塞。 */
   readonly pushNavChips: (chips: CompanionNavChip[]) => void;
   /** 过程留痕轮询的落点。 */
-  readonly setRunTraces: (traces: readonly CompanionRunTrace[]) => void;
+  readonly setRunTraces: Dispatch<SetStateAction<readonly CompanionRunTrace[]>>;
   /** 留痕版本号——**刻意不进依赖**：它是这两个 effect 之间唯一的连接。 */
   readonly tracesRevision: number;
+  readonly historyRunIds?: readonly string[];
 };
 
 /** 与 agent-routes 同一节奏：1.6 秒一次。跑在抽屉开着、或一轮正在跑的时候。 */
@@ -103,24 +104,36 @@ export function useCompanionPolls(deps: CompanionPollDeps): void {
   // 跑在两个时刻：抽屉开着（要显示历史过程）与一轮正在跑（轨道要显示真实步数）。
   // 与 agent-routes 同一节奏的低频轮询，失败不打断聊天主链路——它是补白，不是主链路。
   const sending = phase === "sending";
+  const runIdsKey = (deps.historyRunIds ?? []).join(",");
   useEffect(() => {
     if (!conversation) return;
     if (mode !== "history" && !sending && !followReviewContinuation) return;
     let cancelled = false;
+    let thinkingLoaded = false;
+    let reading = false;
     const poll = async () => {
+      if (reading) return;
+      reading = true;
       try {
         const epoch = await requireWorkspaceEpoch();
+        const includeThinking = mode === "history" && !thinkingLoaded;
+        const runIds = includeThinking && runIdsKey ? runIdsKey.split(",") : [];
+        const batches = runIds.length ? Array.from({ length: Math.ceil(runIds.length / 100) }, (_, i) => runIds.slice(i * 100, (i + 1) * 100)) : [undefined];
+        for (const batch of batches) {
         // 同上：补白轮询不走 unwrapGatewayResult，避免 not-ok 触发门禁全量重置。
         const result = await window.astella.companion.chat.listRunNodes({
           meta: createRequestMeta(epoch),
-          request: { version: 1, conversationId: conversation.id },
+          request: { version: 1, conversationId: conversation.id, ...(includeThinking ? { includeThinking: true } : {}), ...(batch ? { runIds: batch } : {}) },
         });
         if (cancelled) return;
         if (!result.ok) return;
-        setRunTraces(buildCompanionRunTraces(result.data.runs, result.data.items));
+        const traces = buildCompanionRunTraces(result.data.runs, result.data.items);
+        setRunTraces(current => mergeCompanionRunTraces(current, traces));
+        }
+        if (includeThinking) thinkingLoaded = true;
       } catch {
         // 只读补充信息：拿不到就维持上一次的快照，不把错误抛到气泡上。
-      }
+      } finally { reading = false; }
     };
     void poll();
     const timer = window.setInterval(() => void poll(), AGENT_ROUTE_POLL_INTERVAL_MS);
@@ -128,5 +141,5 @@ export function useCompanionPolls(deps: CompanionPollDeps): void {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [conversation, mode, sending, tracesRevision, setRunTraces, followReviewContinuation]);
+  }, [conversation, mode, sending, tracesRevision, setRunTraces, followReviewContinuation, runIdsKey]);
 }

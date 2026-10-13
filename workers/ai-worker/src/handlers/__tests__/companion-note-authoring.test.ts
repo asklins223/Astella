@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { companionCreateNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
-import { assertGeneratedNoteLinks, companionCreatedNoteId, createdNoteToolResult, readCreatedNoteReceipt } from "../companion-note-authoring.ts";
+import { assertGeneratedNoteLinks, companionCreatedNoteId, createdNoteToolResult, readCreatedNoteReceipt,
+  userForbidsNoteLibraryRead } from "../companion-note-authoring.ts";
 
 const NOTE = "11111111-1111-4111-8111-111111111111";
 const VERSION = "22222222-2222-4222-8222-222222222222";
@@ -31,4 +32,17 @@ test("独立笔记允许没有已有材料，关联必须带读取版本与具�
   assert.deepEqual(companionCreateNoteV1Schema.parse(input).links, []);
   assert.equal(companionCreateNoteV1Schema.safeParse({ ...input, links: [{ noteId: NOTE, reason: "提供电流和电压的关系" }] }).success, false);
   assert.equal(companionCreateNoteV1Schema.safeParse({ ...input, links: [{ noteId: NOTE, noteVersionId: VERSION, reason: "提供电流和电压的关系" }] }).success, true);
+});
+
+test("识别用户明确的资料读取限制，但不把正向提醒误判成禁读", () => {
+  for (const text of [
+    "把刚才讨论写成笔记，不要读取其他资料。",
+    "整理成独立笔记，不用搜笔记库。",
+    "Do not read other sources while writing this note.",
+  ]) assert.equal(userForbidsNoteLibraryRead(text), true, text);
+  for (const text of [
+    "不要忘了搜索相关笔记。",
+    "搜索欧姆定律笔记并说明关联。",
+    "不要读错笔记，再核对适用条件。",
+  ]) assert.equal(userForbidsNoteLibraryRead(text), false, text);
 });

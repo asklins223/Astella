@@ -133,12 +133,27 @@ test("real generation context includes expression protocol and respects the user
   const input = { userText: "你好", recentMessages: [], pageContext: null };
   const system = String(buildCompanionPersonaMessages(input)[0]!.content);
   assert.match(system, /声音表达协议/);
+  assert.match(system, /整体说话风格由并行的结构化注意力解释器判定/);
+  assert.match(system, /回复正文禁止输出 \[voice-style/);
   assert.match(system, /\[giggles\]/);
   assert.match(system, /历史回复中的标记已由宿主剥除/);
   const persona = resolveCompanionPersonaContext(null);
   const off = String(buildCompanionPersonaMessages({ ...input, petProfile: { ...persona, boundaries: { ...persona.boundaries, allowVoiceTags: false } } })[0]!.content);
-  assert.match(off, /声音表达已关闭/);
+  assert.match(off, /句内语音情绪与拟声表达已关闭/);
+  assert.match(off, /整体说话风格仍按下方独立的风格协议处理/);
+  assert.match(off, /整体说话风格由并行的结构化注意力解释器判定/);
+  assert.match(off, /\[voice-style:/);
+  assert.doesNotMatch(off, /\[giggles\]/);
   assert.doesNotMatch(off, /声音表达协议：/);
+});
+
+test("a saved account dialect carries into the written reply, not only the voice", () => {
+  const input = { userText: "晚上好", recentMessages: [], pageContext: null };
+  const withDialect = String(buildCompanionPersonaMessages({ ...input, accountVoiceDialect: "河南话" })[0]!.content);
+  assert.match(withDialect, /账号里已保存长期默认方言「河南话」/);
+  assert.match(withDialect, /正文也按这个方言的说法和用词写/);
+  const without = String(buildCompanionPersonaMessages(input)[0]!.content);
+  assert.doesNotMatch(without, /账号里已保存长期默认方言/);
 });
 
 

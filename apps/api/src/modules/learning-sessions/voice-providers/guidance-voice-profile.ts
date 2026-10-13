@@ -7,7 +7,7 @@ export function guidanceVoiceProfile(config: TtsEngineConfig): CompanionGuidance
   const { model, voice, format, sampleRate, instruction } = config.qwen;
   return {
     version: 1,
-    profileId: createHash("sha256").update(JSON.stringify([1, "qwen", model, voice, format, sampleRate, instruction])).digest("hex"),
+    profileId: createHash("sha256").update(JSON.stringify([2, "qwen", model, voice, format, sampleRate, instruction])).digest("hex"),
     voice,
   };
 }

@@ -250,7 +250,7 @@ export type CompanionCuePriority =
   | "sync-error";
 
 /** 主动气泡是谁：与投影合同 `proactiveCue.origin` 同一套。 */
-export type CompanionCueOrigin = "thought" | "reminder" | "system";
+export type CompanionCueOrigin = "thought" | "reminder" | "system" | "initiative";
 
 /**
  * 例行气泡的**显示去抖**，不是频率策略。

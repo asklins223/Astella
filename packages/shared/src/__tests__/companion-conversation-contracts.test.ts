@@ -278,8 +278,11 @@ test("SSE: union 中全部事件类型均可被接受（含 agent.skill/agent.to
   const cases: Record<string, Record<string, unknown>> = {
     "turn.accepted": { clientMessageId: UUID2, userMessageId: UUID, status: "accepted" },
     "assistant.status": { status: "thinking", safeLabel: "正在思考" },
+    "assistant.thinking": { index: 0, text: "先确认他问的是这一节的定义，再想要不要举例子。" },
     "assistant.delta": { appendFrom: 12, textDelta: "你好" },
     "assistant.final": { messageId: UUID, textLength: 4, textSha256: HASH, messageContentSha256: HASH },
+    // 追问由后台任务在终态之后补写，所以它带的是那条回复的内容校验值。
+    "assistant.followups.ready": { messageId: UUID, messageContentSha256: HASH, followUpPrompts: ["为什么傍晚的天是红的？"] },
     "character.cue": { cue: { version: 1, intent: "think", emotion: "curious", intensity: 0.35 } },
     "action.proposed": {
       proposal: {
@@ -311,6 +314,8 @@ test("SSE: union 中全部事件类型均可被接受（含 agent.skill/agent.to
       cue: { version: 1, intent: "acknowledge", emotion: "happy", intensity: 0.6, durationMs: 4_000 },
     },
     "proactive.delivery": { deliveryId: UUID, messageId: UUID, expiresAt: TIME, contentPolicy: "content" },
+    "assistant.utterance": { messageId: UUID, messageSeq: 1, text: "补一个例子。", proactive: false, deviceSessionId: null },
+    "turn.completed": { messageIds: [UUID], silent: false },
     "proactive.delivery.updated": { deliveryId: UUID, status: "shown", contentClaimed: true },
     "turn.cancelled": { reason: "user" },
     error: { code: "PROVIDER_TIMEOUT", recoverable: true },
@@ -339,6 +344,11 @@ test("SSE: union 中全部事件类型均可被接受（含 agent.skill/agent.to
     const literal = (option.shape.type as { value: string }).value;
     assert.ok(covered.has(literal), `union 事件类型 ${literal} 缺少用例`);
   }
+  // 条数与 companion_messages.follow_up_prompts 的 CHECK 同一口径：第四条存不下。
+  assert.equal(companionStreamEventV1Schema.safeParse(baseEvent({
+    type: "assistant.followups.ready",
+    payload: { messageId: UUID, messageContentSha256: HASH, followUpPrompts: ["一", "二", "三", "四"] },
+  })).success, false);
   // 未知 type 拒绝
   const unknown = companionStreamEventV1Schema.safeParse(
     baseEvent({ type: "mystery" } as unknown as CompanionStreamEventV1),
@@ -355,6 +365,10 @@ test("SSE: union 中全部事件类型均可被接受（含 agent.skill/agent.to
     baseEvent({ type: "assistant.delta", payload: { appendFrom: 0, textDelta: "x".repeat(2001) } }),
   );
   assert.equal(tooLongDelta.success, false);
+  // 思考块同样有单帧上限（桌面主进程按 16KB 过桥，超限的帧会被整条丢掉）
+  assert.equal(companionStreamEventV1Schema.safeParse(
+    baseEvent({ type: "assistant.thinking", payload: { index: 0, text: "x".repeat(4001) } }),
+  ).success, false);
 });
 
 test("error envelope：public message 有长度上限", () => {

@@ -124,7 +124,7 @@ export interface CompanionContextHandoffSnapshotV1 {
     historyStartSeq: string;
     clippedMessageCount: number;
   };
-  currentRequest: { messageId: string; messageSeq: string; contentSha256: string };
+  currentRequest: { messageId: string | null; messageSeq: string; contentSha256: string };
   authorization: {
     contextGrantId: string | null;
     permissionLevel: string | null;
@@ -196,7 +196,7 @@ export interface CompanionContextHandoffInputV1 {
   throughEventSeq: string;
   historyStartSeq: string;
   clippedMessageCount: number;
-  currentRequest: { messageId: string; messageSeq: string; text: string };
+  currentRequest: { messageId: string | null; messageSeq: string; text: string };
   contextGrantId: string | null;
   permissionLevel: string | null;
   permissionSnapshot: unknown;
@@ -338,20 +338,23 @@ export function renderCompanionContextHandoff(snapshot: CompanionContextHandoffS
       cancelRequested: Boolean(snapshot.runState.cancelRequestedAt),
     },
     actionLedger: {
-      completed: snapshot.actionLedger.completed.map((action) => ({
-        name: action.name,
-        safeSummary: action.safeSummary ?? null,
-      })),
-      unresolved: snapshot.actionLedger.unresolved.map((action) => ({
-        name: action.name,
-        status: action.status,
-        safeSummary: action.safeSummary ?? null,
-      })),
-      notCompleted: snapshot.actionLedger.notCompleted.map((action) => ({
-        name: action.name,
-        status: action.status,
-        safeSummary: action.safeSummary ?? null,
-      })),
+      // Keep every receipt and summary, but serialize repeated rows as tuples.
+      // Completed entries are [toolName, safeSummary]; other entries are
+      // [toolName, status, safeSummary]. This is a lossless wire-format compaction.
+      completed: snapshot.actionLedger.completed.map((action) => [
+        action.name,
+        action.safeSummary ?? null,
+      ]),
+      unresolved: snapshot.actionLedger.unresolved.map((action) => [
+        action.name,
+        action.status,
+        action.safeSummary ?? null,
+      ]),
+      notCompleted: snapshot.actionLedger.notCompleted.map((action) => [
+        action.name,
+        action.status,
+        action.safeSummary ?? null,
+      ]),
       omitted: {
         completed: 0,
         unresolved: 0,
@@ -380,9 +383,10 @@ export function renderCompanionContextHandoff(snapshot: CompanionContextHandoffS
     "这是伴星运行账本的确定性快照，只描述来源、水位、授权和动作状态；它不是用户指令，也不授予新授权。",
     "只有状态为 succeeded 的账本项代表已完成；requested、executing、waiting_confirmation、outcome_unknown、failed、blocked、expired 都不能说成已完成。",
     "当前用户请求仍以最后一条 user 消息为准；话题和下一步由你判断，建议不等于授权。",
+    "动作账本采用紧凑数组：completed 项是 [工具名, 安全摘要]；unresolved 与 notCompleted 项是 [工具名, 状态, 安全摘要]。",
     // 少带的那一段要说得出**为什么**与**怎么补**，否则她只能假设上面没有发生过。
     ...(snapshot.replayWindow && snapshot.replayWindow.omittedCount > 0
-      ? [`本轮按模型声明的输入容量只带回了 ${snapshot.replayWindow.takenCount} 条原话，`
+      ? [`本轮按上下文回放预算只带回了 ${snapshot.replayWindow.takenCount} 条原话，`
         + `更早的 ${snapshot.replayWindow.omittedCount} 条没有带走（不是没发生过）；`
         + `要用那一段就先按 seq 调用 companion_read_history 取回。`]
       : []),
@@ -428,6 +432,23 @@ export function selectCompanionReplayWindow(
       uncoveredThroughSeq,
     },
   };
+}
+
+/**
+ * Live dialogue should carry a useful recent tail, not fill a very large provider
+ * window with every row read for history lookup. Older rows remain addressable
+ * through companion_read_history; this is an inline replay target, not a capability
+ * or total-request limit.
+ */
+export const COMPANION_INTERACTIVE_REPLAY_TOKEN_BUDGET = 2_048;
+
+export function selectCompanionInteractiveReplayWindow(
+  messages: readonly CompanionRecentHistoryMessage[],
+  routeInputTokens: number,
+): CompanionReplayWindowSelection {
+  return selectCompanionReplayWindow(messages, {
+    maxInputTokens: Math.min(routeInputTokens, COMPANION_INTERACTIVE_REPLAY_TOKEN_BUDGET),
+  });
 }
 
 /**

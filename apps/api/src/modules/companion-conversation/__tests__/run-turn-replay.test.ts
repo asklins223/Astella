@@ -200,3 +200,22 @@ test("private turn replay bounds prompt text and reports truncation", () => {
   assert.equal(report.context.promptMessages[0]?.truncated, true);
   assert.equal(report.context.promptMessagesTruncated, true);
 });
+
+test("追问迟到事件算本轮尾巴的一部分，不被当成缺事件", () => {
+  // assistant.followups.ready 由后台任务在终态之后写入同一条 run。诊断侧以前
+  // 各自维护一份 known 列表，漏加时不报错，只是 eventTailComplete 静默变 false。
+  const input = replayInput();
+  const report = projectCompanionTurnReplayV1({
+    ...input,
+    run: { ...input.run, lastEventSeq: 22 },
+    events: [
+      { seq: 22, type: "assistant.followups.ready", createdAt: now },
+      ...input.events,
+    ],
+  });
+  assert.equal(report.timeline.eventTailComplete, true);
+  assert.deepEqual(report.timeline.events.map((event) => event.type), [
+    "voice.segment.ready", "assistant.final", "assistant.followups.ready",
+  ]);
+  assert.equal(report.delivery.assistantFinalEventSeen, true);
+});

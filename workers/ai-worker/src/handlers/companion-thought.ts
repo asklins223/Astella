@@ -24,6 +24,7 @@ import { createHash } from "node:crypto";
 import { companionLeakGateVersionV1 } from "@astella/shared/companion-leak-gates";
 import { stableStringify, sha256Utf8V1 } from "@astella/shared/content-hash";
 import type { WorkerTransaction } from "../db.ts";
+import { readStoredDialectPreference } from "./companion-voice-preference.ts";
 import { readCompanionThoughtJobPayload } from "@astella/shared";
 import { PET_PERSONA_PRESET_VERSION } from "@astella/shared/pet-persona-presets";
 import {
@@ -100,6 +101,11 @@ export interface ThoughtMaterial {
   readonly familiarity: number;
   readonly petName: string | null;
   readonly petProfile?: CompanionPersonaContextProfile;
+  /**
+   * 账号里存的长期默认方言（`tts_dialect`）。主动开口是她自己在说话，不是文案工作，
+   * 所以存着就照它写——念出来的口音走同一份偏好，字和声音不该分家。
+   */
+  readonly accountDialect: string | null;
   readonly allowNudgeLearning: boolean;
   readonly allowPlayful: boolean;
   readonly catchphrase: string | null;
@@ -605,10 +611,18 @@ export function finalizeThoughtExpression(
   return selectThoughtExpression([text], grounding);
 }
 
+/** 主动开口是她自己在说话，不是往文档里写字：账号存着方言就照着说。 */
+function thoughtDialectLine(dialect: string | null): string {
+  return dialect
+    ? `账号里存着她的长期默认方言「${dialect}」：这句主动开口的话按这个方言的说法和用词写，不要写成普通话再指望合成去变。`
+    : "";
+}
+
 export function buildThoughtCandidatePrompt(material: ThoughtMaterial, llmGap: number): string {
   return [
     `你是学习桌宠${material.petName ? `「${material.petName}」` : ""}。基于事实生成 ${llmGap} 条"主动开口的念头"候选——就是你没被问、但想主动说一句的话。`,
     ...buildCompanionPersonaData(material.petProfile),
+    thoughtDialectLine(material.accountDialect),
     COMPANION_IDENTITY_BOUNDARY_V4,
     material.facts ? `你知道的当下：\n${material.facts}` : "",
     `关系数据：到期复习 ${material.readyReviews} 条；12 小时内将要到期 ${material.dueSoonReviews} 条；连续学习 ${material.streakDays} 天；熟悉度 ${material.familiarity.toFixed(2)}（0 刚认识，1 很熟）。`,
@@ -623,6 +637,7 @@ export function buildThoughtCandidatePrompt(material: ThoughtMaterial, llmGap: n
 export function buildExpressionPrompt(args: {
   petName: string | null;
   petProfile?: CompanionPersonaContextProfile;
+  accountDialect?: string | null;
   familiarity: number;
   allowPlayful: boolean;
   allowNudgeLearning: boolean;
@@ -636,6 +651,7 @@ export function buildExpressionPrompt(args: {
   const lines = [
     `你是学习桌宠${args.petName ? `「${args.petName}」` : ""}。基于下面这条"念头"写一句主动开口的话。`,
     ...buildCompanionPersonaData(args.petProfile ?? resolveCompanionPersonaContext(null)),
+    thoughtDialectLine(args.accountDialect ?? null),
     COMPANION_IDENTITY_BOUNDARY_V4,
     `念头：${args.thoughtText}`,
     args.facts ? `你知道的当下（可以据此措辞，但不要照念数字）：\n${args.facts}` : "",
@@ -920,6 +936,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
 
     const petProfile = resolveCompanionPersonaContext(row.persona_profile);
     const boundaries = petProfile.boundaries ?? {};
+    const accountDialect = await readStoredDialectPreference(tx, userId);
     const quietHours = accountRows[0]?.quiet_hours as CompanionQuietHours | null;
     // 没有账号行时按 moderate 处理：未知不等于"最多"，也不等于"静音"。
     const rawLevel = accountRows[0]?.intervention_level;
@@ -947,6 +964,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
       defaultExpressionVersion: String(PET_PERSONA_PRESET_VERSION),
       petName: petProfile.name,
       petProfile,
+      accountDialect,
       allowNudgeLearning: boundaries.allowNudgeLearning !== false,
       allowPlayful: boundaries.allowPlayful !== false,
       catchphrase: boundaries.catchphrase ?? null,
@@ -1185,6 +1203,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
       const prompt = buildExpressionPrompt({
         petName: thoughtMaterial.petName,
         petProfile: thoughtMaterial.petProfile,
+        accountDialect: thoughtMaterial.accountDialect,
         familiarity: thoughtMaterial.familiarity,
         allowPlayful: thoughtMaterial.allowPlayful,
         allowNudgeLearning: thoughtMaterial.allowNudgeLearning,

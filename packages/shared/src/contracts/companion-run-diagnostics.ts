@@ -223,6 +223,19 @@ const replayContextWatermarkV1Schema = z.object({
   clippedMessageCount: z.number().int().nonnegative(),
 }).strict();
 
+/**
+ * 诊断时间线认识的事件类型。API 侧的 known-events 过滤读同一份，新增流事件类型
+ * 只在这里加一次——漏加会把 eventTailComplete 判成 false，而不是报错。
+ */
+export const COMPANION_DIAGNOSTIC_EVENT_TYPES_V1 = [
+  "turn.accepted", "assistant.status", "assistant.thinking", "agent.tool", "assistant.delta", "assistant.final", "assistant.utterance", "turn.completed",
+  "assistant.followups.ready", "character.cue", "action.proposed", "action.decision",
+  "action.expired", "voice.segment.ready", "turn.cancelled", "error",
+  "proactive.delivery", "proactive.delivery.updated",
+] as const;
+
+export type CompanionDiagnosticEventTypeV1 = (typeof COMPANION_DIAGNOSTIC_EVENT_TYPES_V1)[number];
+
 export const companionTurnReplayV1Schema = z.object({
   version: z.literal(1),
   run: z.object({
@@ -248,7 +261,7 @@ export const companionTurnReplayV1Schema = z.object({
     snapshotVersion: z.number().int().positive().nullable(),
     watermark: replayContextWatermarkV1Schema.nullable(),
     currentRequest: z.object({
-      messageId: z.string().uuid(),
+      messageId: z.string().uuid().nullable(),
       messageSeq: z.string().regex(/^\d{1,20}$/),
       contentSha256: z.string().regex(/^[a-f0-9]{64}$/),
     }).strict().nullable(),
@@ -280,7 +293,7 @@ export const companionTurnReplayV1Schema = z.object({
     imageBlocksOmitted: z.number().int().nonnegative(),
     contentSha256: z.string().regex(/^[a-f0-9]{64}$/),
     createdAt: z.string().datetime(),
-  }).strict()).max(2),
+  }).strict()).max(42),
   steps: z.array(z.object({
     stepNo: z.number().int().positive(),
     kind: z.string().min(1).max(60),
@@ -306,12 +319,7 @@ export const companionTurnReplayV1Schema = z.object({
     eventTailComplete: z.boolean(),
     events: z.array(z.object({
       seq: z.number().int().positive(),
-      type: z.enum([
-        "turn.accepted", "assistant.status", "agent.tool", "assistant.delta", "assistant.final",
-        "character.cue", "action.proposed", "action.decision", "action.expired", "voice.segment.ready",
-        "turn.cancelled", "error",
-        "proactive.delivery", "proactive.delivery.updated",
-      ]),
+      type: z.enum(COMPANION_DIAGNOSTIC_EVENT_TYPES_V1),
       occurredAt: z.string().datetime(),
     }).strict()).max(200),
   }).strict(),
@@ -325,11 +333,7 @@ export const companionTurnReplayV1Schema = z.object({
 
 export type CompanionTurnReplayV1 = z.infer<typeof companionTurnReplayV1Schema>;
 
-const issueBundleEventTypeV1Schema = z.enum([
-  "turn.accepted", "assistant.status", "agent.tool", "assistant.delta", "assistant.final",
-  "character.cue", "action.proposed", "action.decision", "action.expired", "voice.segment.ready",
-  "turn.cancelled", "error", "proactive.delivery", "proactive.delivery.updated",
-]);
+const issueBundleEventTypeV1Schema = z.enum(COMPANION_DIAGNOSTIC_EVENT_TYPES_V1);
 
 export const companionRunIssueBundleV1Schema = z.object({
   version: z.literal(1),
@@ -422,7 +426,7 @@ export const companionHandoffReplaySourceV1Schema = z.object({
   conversationId: z.string().uuid(),
   watermark: replayContextWatermarkV1Schema,
   currentRequest: z.object({
-    messageId: z.string().uuid(),
+    messageId: z.string().uuid().nullable(),
     messageSeq: z.string().regex(/^\d{1,20}$/),
     contentSha256: z.string().regex(/^[a-f0-9]{64}$/),
   }).strict(),

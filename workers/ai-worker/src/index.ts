@@ -1,3 +1,4 @@
+import { runCompanionInitiative } from "./handlers/companion-initiative.ts";
 import { runAgentAdvance, tickAgentRecovery, markAgentAdvanceFailed } from "./agent/advance.ts";
 import { sql } from "drizzle-orm";
 import { logger } from "./lib/logger.ts";
@@ -6,6 +7,7 @@ import { closeDatabase, db, resolveWorkerStatementTimeoutMs, resolveWorkerDataba
 import { NOTIFY_CHANNEL } from "./lib/job-notify.ts";
 import { markSourceParseFailed, runParseSource } from "./handlers/parse-source.ts";
 import { runCompanionDialogue } from "./handlers/companion-dialogue.ts";
+import { runCompanionFollowupSuggestions } from "./handlers/companion-followup-suggestions-job.ts";
 import { runCompanionMemoryExtract } from "./handlers/companion-memory-extractor.ts";
 import { runCompanionMemoryOrganizeJob } from "./handlers/companion-memory-organize.ts";
 import { tickCompanionMemoryOrganizeScheduler } from "./handlers/companion-memory-organize-scheduler.ts";
@@ -21,7 +23,6 @@ import { runNoteAnnotationExplain } from "./handlers/note-annotation-explain.ts"
 import { runNoteDynamicArtifactGenerate } from "./handlers/note-dynamic-artifact-generate.ts";
 import { runNoteExpansionGenerate } from "./handlers/note-expansion-generate.ts";
 import { tickCompanionDailySummaryScheduler } from "./handlers/companion-daily-summary-scheduler.ts";
-import { tickCompanionThoughtScheduler } from "./handlers/companion-thought-scheduler.ts";
 import { tickCompanionMemoryMaintenance } from "./handlers/companion-memory-maintenance.ts";
 import { tickCompanionProposalExpiry } from "./handlers/companion-proposal-expiry-scheduler.ts";
 import { tickCompanionRunReconcile } from "./handlers/companion-run-reconcile-scheduler.ts";
@@ -77,6 +78,8 @@ const HANDLERS = {
   parse_source: runParseSource,
   // Companion Agent：统一对话入口（payload 只含 opaque runId）
   companion_agent: runCompanionDialogue,
+  companion_initiative: runCompanionInitiative,
+  companion_followup_suggestions: runCompanionFollowupSuggestions,
   agent_run_advance: runAgentAdvance,
   // 22 真桌宠记忆与上下文：日常提取 / 会话摘要 / embedding 重建
   companion_memory_extract: runCompanionMemoryExtract,
@@ -537,8 +540,7 @@ export async function tick(): Promise<void> {
   await tickCompanionMemoryOrganizeScheduler();
   // 方案 50 §9.1：同一个人格的后台回顾入队（1h 桶，段落水位幂等）。
   await tickCompanionReflectionScheduler();
-  // 念头管线切片②（2026-09-18）：念头生成调度（4h 桶幂等，内部 15min 节流）。
-  await tickCompanionThoughtScheduler();
+  // 主动参与由事实观察和 Agent 自己安排的关注触发；不再生产四小时批量台词。
   // Agent 方案 §5：过期/世代失效的确认兜底回收（内部 throttle）。
   // 不放在 claim 之后——被锁死的 conversation 没有 job 可 claim，必须在每轮
   // tick 都尝试终结，否则 run 会永久停在 waiting_for_confirmation。

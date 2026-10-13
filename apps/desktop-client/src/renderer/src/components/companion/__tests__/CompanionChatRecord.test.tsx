@@ -35,6 +35,8 @@ function session(goToRoute = vi.fn().mockResolvedValue(undefined)): CompanionCha
   return {
     runTraces: [],
     proposalStates: {},
+    // 追问入口要判断「用户是否已经开始下一轮」，读的就是这一列。
+    messages: [],
     decideProposal: vi.fn(),
     goToRoute,
   } as unknown as CompanionChatSession;
@@ -91,7 +93,7 @@ describe("手记正文与附页的阅读层级", () => {
       stepCount: 1, toolCallCount: 0, maxSteps: 4, maxToolCalls: 4, assistantMessageId: message().id, nodeCount: 1 },
     nodes: [{ key: "status:1", kind: "thinking", label: "思考中", state: "succeeded", toolName: null, summary: null, proposalId: null }],
   });
-  it("普通成功闲聊不展示过程；工具记录与引用默认折叠，正文和可操作成果先出现", () => {
+  it("普通闲聊省去过程；工具过程在正文前折叠，引用与成果保留阅读层级", () => {
     const ordinary = render(<CompanionChatRecordArticle message={message()} chat={interactionSession({ runTraces: [runTrace()] })} />);
     expect(ordinary.container.querySelector(".companion-history__trace")).toBeNull();
     ordinary.unmount();
@@ -107,7 +109,7 @@ describe("手记正文与附页的阅读层级", () => {
     expect(references.open).toBe(false); expect(process.open).toBe(false);
     expect(screen.getByRole("button", { name: "打开成果" }).closest("details")).toBeNull();
     expect(container.querySelector(".companion-record__body")!.compareDocumentPosition(references) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(process.querySelector("summary")?.textContent).not.toContain("次工具");
+    expect(process.compareDocumentPosition(container.querySelector(".companion-record__body")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
   it("同一个确认同时出现在消息和过程时只展示一次，按钮在折叠区外；完成后留下折叠的确认记录", () => {
     const waiting = runTrace("waiting_for_confirmation");
@@ -502,5 +504,55 @@ describe("MonthCalendar 的可选范围", () => {
     expect(dayButton(10)?.querySelector("i")?.textContent).toBe("2");
     expect(dayButton(12)?.querySelector("i")?.textContent).toBe("1");
     expect(dayButton(10)?.getAttribute("data-selected")).toBe("true");
+  });
+});
+
+describe("可选追问：给不给由 AI 决定，给了才是入口", () => {
+  // 追问是消息上的展示元数据（follow_up_prompts），不再是正文块。
+  function chatWith(overrides: Partial<CompanionChatSession>): CompanionChatSession {
+    return {
+      ...session(),
+      conversationId: "1e1e1e1e-1e1e-4e1e-9e1e-1e1e1e1e1e1e",
+      phase: "ready",
+      messages: [],
+      ...overrides,
+    } as unknown as CompanionChatSession;
+  }
+
+  it("元数据里的追问可以点，点了就是一句普通的用户消息", () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    render(<CompanionChatRecordArticle
+      message={message({ followUpPrompts: ["冰的六方格子怎么让密度变小？", "出一道小练习"] })}
+      chat={chatWith({ send })} />);
+    fireEvent.click(screen.getByRole("button", { name: "出一道小练习" }));
+    expect(send).toHaveBeenCalledWith({ text: "出一道小练习" });
+  });
+
+  it("AI 决定不给时不留空壳，也不写一句‘还想问什么’", () => {
+    render(<CompanionChatRecordArticle message={message()} chat={chatWith({})} />);
+    expect(screen.queryByText("可以接着问")).toBeNull();
+    expect(screen.queryByRole("group", { name: "可以接着问" })).toBeNull();
+  });
+
+  it("旧记录里写进正文的追问块仍然显示，不改已经保存过的对话", () => {
+    render(<CompanionChatRecordArticle
+      message={message({ followUpPrompts: undefined, blocks: [
+        { type: "text", text: "结冰时体积会变大。" },
+        { type: "follow_up_suggestions", prompts: ["为什么冬天湖面结冰后鱼还活着"] },
+      ] })}
+      chat={chatWith({})} />);
+    expect(screen.getByRole("button", { name: "为什么冬天湖面结冰后鱼还活着" })).toBeTruthy();
+  });
+
+  it("用户已经开始下一轮，上一回复的追问入口退场", () => {
+    render(<CompanionChatRecordArticle
+      message={message({ seq: 12, followUpPrompts: ["出一道小练习"] })}
+      chat={chatWith({ messages: [message({
+        id: "4a2b3c4d-5e6f-4a70-9b8c-1d2e3f4a5b6c",
+        seq: 13,
+        role: "user",
+        blocks: [{ type: "text", text: "那雪呢？" }],
+      })] })} />);
+    expect(screen.queryByRole("button", { name: "出一道小练习" })).toBeNull();
   });
 });

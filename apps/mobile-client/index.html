@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <!--
+      CSP 里 connect-src 仅放行同源或构建时配置的 API 和对应 WebSocket 地址。
+      `unsafe-eval` 是**为伴星的渲染留的**：与桌面端共用的那份 pixi 6.5 构建在启动时
+      会构造一次函数（实测报 "Current environment does not allow unsafe-eval"），
+      而它在 CSP 下没有别的开关——`@pixi/unsafe-eval` 只补丁 npm 安装的 @pixi/*，
+      管不到这份 UMD 包。代价是有界的：模型生成的讲解**不**跑在这个文档里，
+      它跑在 public/artifact-sandbox.html 那一格自带策略、且不给 allow-same-origin
+      的沙箱页里，所以这一条放开的是已随包的本地渲染代码，不是外部内容。
+      2026-10-12 实测：不放开则舞台退回静帧（她只出现在 .figure-static 里）。
+    -->
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'__API_ORIGIN__; frame-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+    <meta name="theme-color" content="#f8fafd">
+    <meta name="description" content="拾星笔记 · 随身伴星">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="/assets/brand/app-icon.png" sizes="1024x1024" type="image/png">
+    <link rel="apple-touch-icon" href="/assets/brand/app-icon.png">
+    <title>拾星笔记</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

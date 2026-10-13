@@ -1,0 +1,65 @@
+<!doctype html>
+<!--
+  动态讲解的沙箱页。
+
+  为什么单独一份：伴星生成的 HTML 里有**行内脚本**（那是"动态"讲解的本体），
+  而应用自己的 CSP 只允许 'self'。把成品塞进 srcdoc 或 blob 会**继承父页策略**，
+  于是只能给整应用放开 'unsafe-inline'——那才是真的把门打开了。
+
+  改成同源的一个独立文档：它带自己的 CSP（只放开这一份文档里的行内脚本，
+  同时 default-src 'none' 断掉一切外部取数），父页策略保持严格。
+  iframe 再叠一层 `sandbox="allow-scripts"`（**不给** allow-same-origin），
+  这一格运行在透明分界之外，读不到应用的存储与令牌。
+
+  与桌面端同一姿态：`ARTIFACT_FRAME_SANDBOX = 'allow-scripts'`。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:;">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>讲解</title>
+    <style>
+      html, body { margin: 0; background: #fff; color: #35465d; font: 15px/1.7 system-ui, sans-serif; }
+      #stage { padding: 4px 2px 24px; }
+      .ready-note { color: #8394a8; font-size: 13px; padding: 18px; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"><p class="ready-note">讲解正在就位…</p></div>
+    <script>
+      (() => {
+        const stage = document.getElementById('stage')
+        let nonce = null
+        let parentOrigin = ''
+
+        // 只认父窗口那一条，且要带上手势里的 nonce；别人 post 进来的东西一律不看。
+        window.addEventListener('message', (event) => {
+          if (event.source !== window.parent) return
+          const data = event.data
+          if (!data || data.kind !== 'astella:artifact') return
+          if (nonce !== null && data.nonce !== nonce) return
+          nonce = data.nonce
+          parentOrigin = event.origin
+          render(data.html)
+          window.parent.postMessage({ kind: 'astella:artifact:ready', nonce }, parentOrigin || '*')
+        }, false)
+
+        function render(html) {
+          if (typeof html !== 'string') return
+          stage.replaceChildren()
+          stage.innerHTML = html
+          // innerHTML 里的 <script> 不会执行（这是浏览器的规定，不是缺陷）：
+          // 把每一个原地换成新节点，让它们按文档顺序跑一次。
+          for (const node of [...stage.querySelectorAll('script')]) {
+            const fresh = document.createElement('script')
+            for (const attr of [...node.attributes]) fresh.setAttribute(attr.name, attr.value)
+            fresh.textContent = node.textContent || ''
+            node.replaceWith(fresh)
+          }
+        }
+      })()
+    </script>
+  </body>
+</html>

@@ -1,3 +1,4 @@
+import { companionParticipationRoutes } from "./participation-routes.ts";
 /**
  * 阶段 02（W1）任务 02-3：Companion shell 路由（§5.4.3 + §12.5）。
  *
@@ -52,6 +53,7 @@ import { scopeOfSession } from "../../db/client.ts";
 import { buildSimpleErrorBody } from "../../lib/error-envelope.ts";
 
 export async function companionShellRoutes(app: FastifyInstance) {
+  await companionParticipationRoutes(app);
   // GET /public/auth-surface-manifest — 阶段 02（W1）任务 02-5：随构建签名的
   // auth-surface manifest（§12.3 + §13.3）。公开端点（不 requireSession）：
   // 未登录的登录/注册页也能获取角色说明、公开帮助与通用错误帮助，不依赖 authenticated

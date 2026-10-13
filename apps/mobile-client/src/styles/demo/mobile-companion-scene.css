@@ -1,0 +1,62 @@
+/* The role remains the focal point. Controls and current speech keep their own
+ * layout space so a keyboard can never hide the latest reply. */
+.phone[data-screen="chat"] .topbar { height:64px; }
+.phone[data-screen="chat"] .topbar .top-left,.phone[data-screen="chat"] .space-button { top:8px; }
+.dialogue-modes { position:absolute;left:50%;top:8px;transform:translateX(-50%);display:flex;padding:3px;border-radius:24px;gap:1px; }
+.dialogue-modes button { padding:8px 12px;border-radius:20px;min-height:44px;min-width:44px;font-size:calc(12px * var(--text-scale));color:var(--muted); }
+.dialogue-modes button[aria-pressed="true"] { background:linear-gradient(160deg,#ffffffd9,#ffffff57);box-shadow:inset 0 0 0 1px #fff,0 2px 5px #00000006;color:var(--accent);font-weight:600; }
+.scene-scroll { padding:0;overflow:hidden; }
+.companion-scene { position:relative;height:100%;min-height:0;display:flex;flex-direction:column; }
+.scene-title { flex:none;align-self:center;z-index:3;display:flex;flex-direction:column;align-items:center;gap:0;pointer-events:none;margin:0 18px 4px; }
+.scene-title-main { display:flex;align-items:center;gap:2px;pointer-events:none; }
+.scene-title-heading { margin:0;font-size:calc(24px * var(--text-scale));letter-spacing:-.04em;font-weight:600;max-width:calc(var(--device-w) - 100px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.scene-title button { display:flex;align-items:center;gap:6px;padding:0 10px;pointer-events:auto;min-height:44px; }
+.scene-title svg { width:14px;height:14px;color:var(--soft); }
+.scene-title>span { font-size:calc(11px * var(--text-scale));color:var(--muted);line-height:1.8; }
+.live2d-seat { position:relative;flex:1;min-height:0; }
+.scene-model-layer { position:absolute;z-index:1;pointer-events:none;overflow:hidden; }
+.scene-model-layer canvas { display:block;width:100%;height:100%; }
+.model-status { position:absolute;top:40%;left:20px;right:20px;text-align:center;font-size:calc(13px * var(--text-scale));color:var(--muted);line-height:1.8; }
+.scene-speech { flex:none;margin:6px 22px 9px;position:relative;z-index:3;border-radius:22px;padding:14px 18px 13px;min-height:80px; }
+.scene-speech::before { content:'';position:absolute;left:calc(50% - 6px);top:-6px;width:12px;height:12px;transform:rotate(45deg);border-top:1px solid #ffffffdd;border-left:1px solid #ffffffdd;background:rgba(255,255,255,.5); }
+.bubble-speaker { display:flex;align-items:center;gap:7px;font-size:calc(11px * var(--text-scale));color:var(--muted);margin-bottom:6px;line-height:1.5; }
+.bubble-speaker>i { width:4px;height:4px;border-radius:50%;background:var(--accent); }
+.scene-speech p { font-size:calc(15px * var(--text-scale));line-height:1.8;color:var(--ink);max-height:5.4em;overflow-x:hidden;overflow-y:auto;display:block;overflow-wrap:anywhere;overscroll-behavior:contain;touch-action:pan-y;scrollbar-width:none; }
+.scene-speech p::-webkit-scrollbar { display:none; }
+.bubble-links { display:flex;gap:10px;flex-wrap:wrap; }
+.bubble-more { display:block;min-height:44px;min-width:44px;padding:7px 0 0;font-size:calc(12px * var(--text-scale));color:var(--accent);text-underline-offset:4px; }
+.voice-dock { padding:9px 14px 5px;position:relative; }
+.voice-controls { display:flex;align-items:center;justify-content:center;gap:18px; }
+.voice-side { width:46px;height:46px;border-radius:50%;display:grid;place-items:center;color:var(--muted); }
+.voice-side svg { width:19px;height:19px; }
+.voice-main { min-width:154px;min-height:58px;border-radius:32px;display:flex;align-items:center;justify-content:center;gap:10px;padding:10px 20px;color:var(--accent); }
+.voice-main svg { width:22px;height:22px;stroke-width:1.8; }
+.voice-main span { font-size:calc(14px * var(--text-scale));font-weight:550; }
+.voice-aux { display:flex;align-items:center;justify-content:center;gap:12px;margin-top:9px;min-height:20px;flex-wrap:wrap; }
+.voice-aux small { font-size:calc(10px * var(--text-scale));color:var(--muted);line-height:1.6; }
+.voice-aux button { font-size:calc(12px * var(--text-scale));min-height:44px;text-decoration:underline;text-underline-offset:4px;color:var(--accent); }
+.voice-wave { position:relative;height:77px;margin:-5px -8px 1px; }
+.particle-wave { display:block;width:100%;height:57px; }
+.voice-wave>span { display:block;text-align:center;font-size:calc(12px * var(--text-scale));color:var(--muted); }
+.voice-transcript { text-align:center;font-size:calc(12px * var(--text-scale));line-height:1.65;color:var(--muted);margin:6px 0 11px;min-height:18px;max-height:3.3em;overflow:hidden; }
+.voice-active { padding-top:0; }
+.voice-active .voice-main { min-height:51px; }
+.scene-return { display:block;min-height:44px;font-size:calc(12px * var(--text-scale));color:var(--accent);margin:0 auto; }
+.phone.narrow .dialogue-modes button { padding:7px 8px; }
+.phone.narrow .voice-controls { gap:13px; }
+.phone.narrow .voice-main { min-width:140px;padding:10px 16px; }
+.phone.short .scene-title-heading { font-size:calc(21px * var(--text-scale)); }
+.phone.short .scene-title>span { font-size:calc(10px * var(--text-scale)); }
+.phone.short .voice-wave { height:60px; }
+.phone.short .particle-wave { height:40px; }
+.phone.short .voice-dock { padding:4px 6px 0; }
+.phone.short .voice-main { min-height:48px; }
+.phone.short .voice-aux { margin-top:6px; }
+.phone.short .scene-speech { margin:5px 16px 8px;padding:12px 15px;min-height:72px; }
+/* Keep current text in the normal flow; only the model yields extra space. */
+.phone.keyboard-on[data-dialogue="scene"][data-screen="chat"] .scene-title { display:none; }
+.phone.keyboard-on[data-dialogue="scene"][data-screen="chat"] .scene-speech { display:block;margin:4px 16px 6px;padding:10px 14px;min-height:0; }
+.phone.keyboard-on[data-dialogue="scene"][data-screen="chat"] .scene-speech p { max-height:3.6em; }
+.phone.keyboard-on[data-dialogue="scene"][data-screen="chat"] .bubble-more { padding-top:0; }
+.phone.no-glass .dialogue-modes button[aria-pressed="true"] { background:#fff; }
+@media (prefers-reduced-motion:reduce) { .voice-main,.scene-speech { animation:none; } }

@@ -8,7 +8,7 @@ import { CompanionRunTraceView } from "../CompanionRunTraceView.tsx";
 afterEach(cleanup);
 
 describe("CompanionRunTraceView", () => {
-  it("默认展开历史执行过程，并用文字呈现每个节点状态", () => {
+  it("默认折叠历史执行过程，并保留每个节点的真实状态", () => {
     const trace: CompanionRunTrace = {
       summary: {
         version: 1,
@@ -29,9 +29,9 @@ describe("CompanionRunTraceView", () => {
     };
 
     const { container } = render(<CompanionRunTraceView trace={trace} />);
-    expect(container.querySelector("details")?.open).toBe(true);
-    expect(screen.getByText("待确认 · 2 步 · 1 次工具")).toBeTruthy();
-    expect(screen.getByText("已完成")).toBeTruthy();
+    expect(container.querySelector("details")?.open).toBe(false);
+    expect(screen.getByText("执行工具 1 次")).toBeTruthy();
+    expect(screen.getByText("已完成", { selector: "small" })).toBeTruthy();
     expect(screen.getAllByText("待确认").length).toBeGreaterThan(0);
   });
 
@@ -55,12 +55,12 @@ describe("CompanionRunTraceView", () => {
     };
 
     render(<CompanionRunTraceView trace={trace} />);
-    expect(screen.getByText("已完成 · 1 步 · 0 次工具")).toBeTruthy();
-    expect(screen.getByText("已完成")).toBeTruthy();
+    expect(screen.getByText("处理过程")).toBeTruthy();
+    expect(screen.getByText("已完成", { selector: "small" })).toBeTruthy();
     expect(screen.queryByText("进行中")).toBeNull();
   });
 
-  it("结果不明的操作默认展开，并明确显示待核对状态", () => {
+  it("结果不明的操作默认折叠，展开内容保留待核对状态", () => {
     const { container } = render(<CompanionRunTraceView trace={traceWith({
       key: "tool:uncertain",
       kind: "tool",
@@ -70,9 +70,9 @@ describe("CompanionRunTraceView", () => {
       summary: "这项操作可能已经发生，但暂时没有确定回执；请先核对状态，不要重复操作。",
       proposalId: null,
     })} />);
-    expect(container.querySelector("details")?.open).toBe(true);
+    expect(container.querySelector("details")?.open).toBe(false);
     expect(screen.getByText("结果待核对")).toBeTruthy();
-    expect(screen.getByText(/请先核对状态/)).toBeTruthy();
+    expect(screen.getByText(/请先核对状态/, { selector: "p" })).toBeTruthy();
   });
 
   /**
@@ -88,7 +88,7 @@ describe("CompanionRunTraceView", () => {
       key: "tool:stats", kind: "tool", label: modelFacing, state: "succeeded",
       toolName: "companion_get_learning_stats", summary: "今日 39 分钟", proposalId: null,
     })} />);
-    expect(screen.getByText("正在看你的学习数据")).toBeTruthy();
+    expect(screen.getByText("正在看你的学习数据", { selector: "strong" })).toBeTruthy();
     expect(screen.queryByText(modelFacing)).toBeNull();
     expect(document.body.textContent).not.toContain("只在用户问进度时调用");
   });
@@ -98,7 +98,7 @@ describe("CompanionRunTraceView", () => {
       key: "tool:odd", kind: "tool", label: "companion_do_something_new 的说明文字", state: "succeeded",
       toolName: "companion_do_something_new", summary: null, proposalId: null,
     })} />);
-    expect(screen.getByText("正在处理…")).toBeTruthy();
+    expect(screen.getByText("正在处理…", { selector: "strong" })).toBeTruthy();
     expect(document.body.textContent).not.toContain("companion_do_something_new");
   });
 });

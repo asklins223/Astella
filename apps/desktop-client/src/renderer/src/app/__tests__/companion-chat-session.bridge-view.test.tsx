@@ -171,12 +171,30 @@ describe("可读视图跟着屏幕一起进 bridge context", () => {
     fireEvent.click(view.getByRole("button", { name: "发送" }));
 
     await waitFor(() => expect(sendTurn).toHaveBeenCalledTimes(1));
+    expect(sendTurn.mock.calls[0]?.[0].request.voiceOutput).toBeUndefined();
     expect(sendTurn.mock.calls[0]?.[0].request.turn.context).toMatchObject({
       pageKind: "note",
       sharing: "page_registered",
       noteId,
       noteVersionId,
     });
+  });
+
+  it("明确允许朗读时把预热意图传给主进程，但不混入服务端 turn 内容", async () => {
+    useRoomStore.setState({ hudPage: "home" });
+    let chat: ReturnType<typeof useCompanionChat> | null = null;
+    function CaptureChat() {
+      chat = useCompanionChat();
+      return null;
+    }
+    render(<CompanionChatProvider><CaptureChat /></CompanionChatProvider>);
+    await waitFor(() => expect(setContext).toHaveBeenCalled());
+
+    await act(async () => { await chat!.send({ text: "语音预连接验证", voiceOutput: true }); });
+
+    const request = sendTurn.mock.calls[0]?.[0].request;
+    expect(request.voiceOutput).toBe(true);
+    expect(request.turn).not.toHaveProperty("voiceOutput");
   });
 
   it("编辑页保留光标，发送前保存当前正文，失败后立即解除局部锁定", async () => {

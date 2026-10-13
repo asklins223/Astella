@@ -1,3 +1,4 @@
+import { isCompanionAutonomousTool } from "@astella/shared/companion-autonomy";
 /**
  * 伴星 agent 的**工具调用账本**（2026-09-30 拆出，B2）。
  *
@@ -22,7 +23,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { companionEditedNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
+import { companionEditedNoteV1Schema, companionWrittenAnnotationV1Schema } from "@astella/shared/companion-note-authoring-contracts";
 import type { AgentTurnRequest, AgentTurnResult } from "@astella/shared";
 import { sql } from "drizzle-orm";
 import {
@@ -257,6 +258,9 @@ export async function executeTool(
   signal?: AbortSignal,
 ): Promise<AgentToolExecutionResult | { waiting: true; proposalId: string }> {
   let confirmedProposalId: string | undefined;
+  if (event.read.initiativeInput && !isCompanionAutonomousTool(definition.name)
+    && (definition.riskClass !== "read" || ["companion_open_page", "companion_open_note", "companion_open_card"].includes(definition.name)))
+    throw new CompanionToolBlockedError("这次只有内部关注，不能替用户执行业务操作。");
   let authorization = canUseCompanionAgentTool(
     (await readRunMeta(event)).permissionLevel,
     definition,
@@ -362,6 +366,7 @@ export async function executeTool(
       status: "succeeded",
       ...(confirmedProposalId ? { proposalId: confirmedProposalId } : {}),
       ...(definition.name === "companion_edit_note" && result.resultRef ? { noteEdit: companionEditedNoteV1Schema.parse(JSON.parse(result.resultRef)) } : {}),
+      ...(definition.name === "companion_write_annotation" && result.resultRef ? { noteAnnotation: companionWrittenAnnotationV1Schema.parse(JSON.parse(result.resultRef)) } : {}),
       safeLabel: COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description.slice(0, 240),
       safeSummary: result.safeSummary,
       ...(result.route ? { route: result.route } : {}),

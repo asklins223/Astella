@@ -87,7 +87,7 @@ export function HomeProjectionProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(() => invalidate(), [invalidate]);
 
   useEffect(() => {
-    if (surface || !window.astella) return;
+    if (!window.astella) return;
     let active = true;
     const cleanups: Array<() => void> = [];
     const api = window.astella;
@@ -125,7 +125,7 @@ export function HomeProjectionProvider({ children }: { children: ReactNode }) {
       active = false;
       for (const cleanup of cleanups) cleanup();
     };
-  }, [invalidate, surface]);
+  }, [invalidate]);
 
   useEffect(() => {
     if (surface) {

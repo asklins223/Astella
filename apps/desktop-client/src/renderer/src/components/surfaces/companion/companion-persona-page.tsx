@@ -1,10 +1,13 @@
 import { companionPersonaPatchFromContent,companionPersonaPatchFromPresetSwitch,type CompanionPersonaPresetV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { personaFromDefaultPreset, planPersonaSwitch, type SwitchableField } from "@astella/shared/pet-persona-merge";
+import type { CompanionVoicePreferenceV1 } from "@astella/shared";
+import type { TtsEngineV1 } from "@astella/shared/tts-voice-catalog";
 import type { GatewayResultV1 } from "@astella/shared/desktop-ipc-contracts";
 import { useEffect,useRef,useState } from "react";
 import { useCompanionChat } from "../../../app/companion-chat-session";
 import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
 import { companionDisplayName,publishCompanionDisplayName } from "../../companion/companion-display-name";
+import { CompanionVoiceStyleControl } from "../../companion/CompanionVoiceStyleControl";
 import { SectionState } from "./companion-center-primitives";
 import { PersonaPanel } from "./companion-persona-panel";
 import { publishCompanionRecordsChanged,useCompanionRecordsRefresh,useCompanionResource } from "./use-companion-resource";
@@ -16,14 +19,22 @@ export function CompanionPersonaPage(props: { refreshKey: number; onSettings: ()
   const persona = useCompanionResource(meta => window.astella.companion.persona.get({ meta }), [props.refreshKey]);
   const versions = useCompanionResource(meta => window.astella.companion.persona.versions({ meta }), [props.refreshKey]);
   const pending = useCompanionResource(meta => window.astella.companion.persona.pending({ meta }), [props.refreshKey]);
+  const voiceResource = useCompanionResource(meta => window.astella.companion.voicePreference.get({ meta }), [props.refreshKey]);
   const [busy, setBusy] = useState<string | null>(null);
   const lock = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [voicePreference, setVoicePreference] = useState<CompanionVoicePreferenceV1 | null>(null);
+  const [voiceSaving, setVoiceSaving] = useState(false);
+  const voiceSavingRef = useRef(false);
   const reload = async () => { await Promise.all([persona.reload({ silent: true }), versions.reload({ silent: true }), pending.reload({ silent: true })]); };
   useCompanionRecordsRefresh(reload);
   const value = persona.section?.ok ? persona.section.value : null;
   const pendingValue = pending.section?.ok ? pending.section.value : null;
+  useEffect(() => {
+    setVoicePreference(voiceResource.section?.ok ? voiceResource.section.value : null);
+  }, [voiceResource.section]);
   useEffect(() => {
     if (!value) return;
     const name = companionDisplayName(value);
@@ -78,8 +89,40 @@ export function CompanionPersonaPage(props: { refreshKey: number; onSettings: ()
     ).then((ok) => { if (ok) setSwitchTarget(null); });
   };
 
+  const changeVoiceStyle = async (engine: TtsEngineV1, voice: string, instruction?: string | null): Promise<boolean> => {
+    if (voiceSavingRef.current) return false;
+    voiceSavingRef.current = true;
+    setVoiceSaving(true);
+    setVoiceError(null);
+    try {
+      const response = await window.astella.companion.voicePreference.patch({
+        meta: voiceResource.meta(),
+        engine,
+        voice,
+        ...(instruction !== undefined ? { instruction } : {}),
+      });
+      setVoicePreference(unwrapGatewayResult(response));
+      void voiceResource.reload({ silent: true });
+      return true;
+    } catch (cause) {
+      setVoiceError(gatewayErrorMessage(cause));
+      return false;
+    } finally {
+      voiceSavingRef.current = false;
+      setVoiceSaving(false);
+    }
+  };
+
+  const voiceStyleControl = voicePreference
+    ? <CompanionVoiceStyleControl preference={voicePreference} saving={voiceSaving} error={voiceError} onChange={changeVoiceStyle} />
+    : voiceResource.loading || !voiceResource.section
+      ? <p className="cc-muted" role="status">正在读取语音偏好…</p>
+      : voiceResource.section.ok
+        ? null
+        : <SectionState message="语音偏好暂时读不到" detail={voiceResource.section.message} onRetry={() => void voiceResource.reload()} />;
+
   if (!persona.section) return <SectionState loading={persona.loading} message={persona.loading ? "正在加载人格档案" : "人格档案当前不可用"} detail={persona.failure ?? undefined} onRetry={() => void reload()} />;
-  return <PersonaPanel section={persona.section} persona={value}
+  return <PersonaPanel section={persona.section} persona={value} voiceStyleControl={voiceStyleControl}
     versions={versions.section?.ok ? versions.section.value.versions : null}
     versionsError={versions.section && !versions.section.ok ? versions.section.message : versions.failure}
     pending={pending.section?.ok ? pending.section.value : undefined}

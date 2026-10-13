@@ -86,6 +86,11 @@
       "import": "./src/companion-agent-registry.ts",
       "default": "./src/companion-agent-registry.ts"
     },
+    "./companion-autonomy": {
+      "types": "./src/companion-autonomy.ts",
+      "import": "./src/companion-autonomy.ts",
+      "default": "./src/companion-autonomy.ts"
+    },
     "./companion-bridge-contracts": {
       "types": "./src/contracts/companion-bridge-contracts.ts",
       "import": "./src/contracts/companion-bridge-contracts.ts",
@@ -729,6 +734,16 @@
       "types": "./src/note-companion-transform.ts",
       "import": "./src/note-companion-transform.ts",
       "default": "./src/note-companion-transform.ts"
+    },
+    "./companion-initiative-contracts": {
+      "types": "./src/contracts/companion-initiative-contracts.ts",
+      "import": "./src/contracts/companion-initiative-contracts.ts",
+      "default": "./src/contracts/companion-initiative-contracts.ts"
+    },
+    "./companion-default-participation": {
+      "types": "./src/companion-default-participation.ts",
+      "import": "./src/companion-default-participation.ts",
+      "default": "./src/companion-default-participation.ts"
     }
   },
   "dependencies": {

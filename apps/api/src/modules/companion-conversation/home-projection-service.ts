@@ -1,3 +1,4 @@
+import { companionInitiativeDeliveryRefV1Schema } from "@astella/shared/companion-initiative-contracts";
 import {
   and,
   desc,
@@ -427,7 +428,8 @@ async function readProactiveCue(
     // 到点提醒（0238）走同一条 system_event 通道，但它是用户明确要过的东西：
     // 前端按 origin 决定气泡停留时长与是否念出口。run.completed 这类系统事件
     // 既不是念头也不是提醒，归 system。
-    const origin = thoughtMatch !== null
+    const initiative = companionInitiativeDeliveryRefV1Schema.safeParse((payload as Record<string, unknown>).initiative);
+    const origin = initiative.success ? "initiative" : thoughtMatch !== null
       ? "thought"
       : (systemEventId !== null && /^reminder:[0-9a-fA-F-]{36}$/.test(systemEventId))
         ? "reminder"
@@ -437,6 +439,7 @@ async function readProactiveCue(
       expiresAt: row.expiresAt.toISOString(),
       revision: row.inboxSequence,
       origin,
+      ...(initiative.success ? { initiative: initiative.data } : {}),
       ...(thoughtMatch ? { thoughtId: thoughtMatch[1] } : {}),
     };
   }

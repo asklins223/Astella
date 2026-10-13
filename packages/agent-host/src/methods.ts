@@ -330,7 +330,7 @@ export async function upsertAgentMethodCandidate(tx: AgentSqlExecutor, scope: Ag
     if (!source) return null;
   }
   /**
-   * 写候选。**冲突不静默丢弃**（方案 44 §6.4）。
+   * 保存自主整理的方法。**冲突不静默丢弃**（方案 44 §6.4）。
    *
    * 原来的形状是：`ON CONFLICT … DO UPDATE … WHERE NOT user_controlled`，条件不成立时
    * `RETURNING` 什么都不给，函数返回 `null`——与「这次没有可用依据」**长得一模一样**。
@@ -347,12 +347,9 @@ export async function upsertAgentMethodCandidate(tx: AgentSqlExecutor, scope: Ag
    * 每次提炼都造一份孪生候选，停用就变成了需要反复清理的事——而停用本该是彻底的。
    */
   /**
-   * 自主整理出来的新方法只是**候选**，要用户确认才成为 active（§6.8.2）。这一行原来
-   * 把新建也写成 'active'，于是「未确认就自称可用」从写入那一刻就成立，而读侧
-   * （availability 由 method_state 推）判得是对的——错的是写侧。
-   *
-   * 已经确认过（active）且未被用户接管的，重复整理只更新内容、不降回候选：后台一次
-   * 提炼不该让用户的确认失效，这与上面那段「选并存而不是标争议」同一判据。
+   * 方案 50 §20 / 迁移 0405：未被用户控制且来源未受质疑的方法默认自主采用。
+   * 认识状态仍保持 tentative，采用不等于验证；用户停用或争议状态继续受冲突条件保护。
+   * 重复整理已 active 的方法不能把它降回候选，也不能覆盖用户接管的版本。
    */
   const write = async (playbookKey: string) => {
     const [row] = await queryRows<{id:string;version:number}>(tx,sql`INSERT INTO companion_procedural_playbooks
@@ -360,7 +357,7 @@ export async function upsertAgentMethodCandidate(tx: AgentSqlExecutor, scope: Ag
       VALUES(${playbookKey},${scope.workspaceId},${scope.userId},${input.title},${input.triggerCondition},
         ${JSON.stringify(input.steps)}::jsonb,${JSON.stringify(input.exceptions)}::jsonb,${JSON.stringify(evidence)}::jsonb,
         ${JSON.stringify(evidenceOrigins)}::jsonb,
-        ${epistemicStatus},${input.author},${epistemicStatus === "disputed" ? "disputed" : "candidate"},'自主整理；适用时采用，并持续核对效果。')
+        ${epistemicStatus},${input.author},${epistemicStatus === "disputed" ? "disputed" : "active"},'自主整理；适用时采用，并持续核对效果。')
       ON CONFLICT(workspace_id,user_id,playbook_key) DO UPDATE
         SET title=EXCLUDED.title,trigger_condition=EXCLUDED.trigger_condition,steps=EXCLUDED.steps,exceptions=EXCLUDED.exceptions,
           evidence=EXCLUDED.evidence,evidence_origins=EXCLUDED.evidence_origins,epistemic_status=EXCLUDED.epistemic_status,author=EXCLUDED.author,

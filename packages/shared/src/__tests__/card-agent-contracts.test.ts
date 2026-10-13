@@ -37,6 +37,13 @@ function request(assistant: Record<string, unknown>) {
   };
 }
 
+test("host observations preserve system identity at a real message boundary", () => {
+  const input = { ...request({}), messages: [{ role: "system", hostObservation: true, content: "actual host event" }] };
+  assert.equal(agentTurnRequestSchema.parse(input).messages[0]!.hostObservation, true);
+  for (const role of ["user", "assistant", "tool"])
+    assert.equal(agentTurnRequestSchema.safeParse({ ...input, messages: [{ ...input.messages[0], role }] }).success, false);
+});
+
 test("agentTurnRequestSchema: 明确动作请求允许要求工具调用", () => {
   assert.equal(agentTurnRequestSchema.parse({ ...request({}), toolChoice: "required" }).toolChoice, "required");
   assert.equal(agentTurnRequestSchema.safeParse({ ...request({}), toolChoice: "none" }).success, false);

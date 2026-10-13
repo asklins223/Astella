@@ -516,6 +516,11 @@ function createCallRecorder(input: {
         operation: `${audit.operation}:${method}`,
         dataCategories: audit.dataCategories ? [...audit.dataCategories] : undefined,
         costTokens: outcome.costTokens ?? null,
+        // 观测列（迁移 0408）：不传的话 ai_audit_log 永远是空的，前缀缓存与
+        // 逐步输入体积就只剩 probes 能看。调用方全都已经算好这三个值。
+        promptTokens: outcome.promptTokens ?? null,
+        completionTokens: outcome.completionTokens ?? null,
+        cachedTokens: outcome.cachedTokens ?? null,
         durationMs,
         status: outcome.status ?? "success",
         errorMessage: outcome.errorMessage ?? null,
@@ -564,7 +569,17 @@ export function createGovernedProvider(
   const governed: import("./ai-provider.ts").AIProvider = {
     ...provider,
     chatCompletion: async (messages, options, signal) => {
-      options = { ...options, maxTokens: provider.resolveOutputTokenLimit?.() ?? options.maxTokens };
+      const providerOutputLimit = provider.resolveOutputTokenLimit?.();
+      options = {
+        ...options,
+        // The provider profile is the hard ceiling; callers may request a smaller
+        // budget for lightweight structured metadata such as follow-up prompts.
+        maxTokens: providerOutputLimit === undefined
+          ? options.maxTokens
+          : options.maxTokens === undefined
+            ? providerOutputLimit
+            : Math.min(options.maxTokens, providerOutputLimit),
+      };
       const startedAt = performance.now();
       let data: Record<string, unknown>;
       try {

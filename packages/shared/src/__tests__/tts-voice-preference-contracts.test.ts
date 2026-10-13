@@ -80,6 +80,23 @@ test("写入：instruction 按上游计数规则卡长（汉字算 2，超 100 �
   );
 });
 
+test("写入：长期方言仅接受官方目录值，null 清除但不影响自定义音色描述", () => {
+  assert.equal(companionVoicePreferencePatchV1Schema.safeParse({
+    version: 1, engine: "qwen", voice: "longhua_v3.1", dialect: "河南话",
+  }).success, true);
+  assert.equal(companionVoicePreferencePatchV1Schema.safeParse({
+    version: 1, engine: "qwen", voice: "longhua_v3.1", dialect: "未知方言",
+  }).success, false);
+  assert.equal(companionVoicePreferencePatchV1Schema.safeParse({
+    version: 1, engine: "qwen", voice: "longhua_v3.1", dialect: null,
+  }).success, true);
+  const legacy = companionVoicePreferenceV1Schema.parse({
+    version: 1, engine: "qwen", voice: "longhua_v3.1", instruction: "语速偏慢",
+    explicit: false, updatedAt: null,
+  });
+  assert.equal(legacy.dialect, null, "旧服务端响应安全回落为未设置长期方言");
+});
+
 test("回执：读侧必须是完整的五件套", () => {
   const parsed = companionVoicePreferenceV1Schema.safeParse({
     version: 1, engine: "qwen", voice: "longhua_v3.1", instruction: null, explicit: false, updatedAt: null,

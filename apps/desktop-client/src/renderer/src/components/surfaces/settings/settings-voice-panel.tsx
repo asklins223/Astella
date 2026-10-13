@@ -15,7 +15,6 @@
  * 硬约束（`AGENTS.md`）：声音设置**跟着账号走**，不跟空间走。别把它搬进空间设置那一组。
  */
 import type { ReactElement } from "react";
-import { useEffect, useState } from "react";
 import { SettingRow } from "./settings-primitives.tsx";
 import {
   TTS_ENGINE_OPTIONS,
@@ -29,7 +28,6 @@ import {
 import { HudSegmented } from "../../hud/HudControls";
 import { Pause, Play } from "lucide-react";
 import { TTS_PREVIEW_TEXT, type TtsEngineV1, type TtsVoiceOptionV1 } from "@astella/shared/tts-voice-catalog";
-import { VOICE_STYLE_INSTRUCTION_MAX_UNITS, voiceStyleInstructionUnits } from "@astella/shared/voice-expression-tags";
 import type { CompanionVoicePreferenceV1 } from "@astella/shared";
 import type { useSettingsVoice } from "./use-settings-voice.ts";
 
@@ -47,21 +45,6 @@ import type { useSettingsVoice } from "./use-settings-voice.ts";
     voicePreference, voicePreferenceRead, voiceSaving, voicePlayer, changeVoice, previewVoice,
     onTogglePlayer: toggleVoicePlayer,
   } = props;
-
-  // 说话风格草稿：读到偏好后同步一次，之后按用户输入走；保存成功会带回新偏好再同步。
-  const [styleDraft, setStyleDraft] = useState("");
-  const [styleDirty, setStyleDirty] = useState(false);
-  useEffect(() => {
-    if (!styleDirty) setStyleDraft(voicePreference?.instruction ?? "");
-  }, [voicePreference?.instruction, styleDirty]);
-  const styleUnits = voiceStyleInstructionUnits(styleDraft);
-  const styleOverLimit = styleUnits > VOICE_STYLE_INSTRUCTION_MAX_UNITS;
-  const saveStyle = () => {
-    if (!voicePreference || voiceSaving || styleOverLimit) return;
-    const trimmed = styleDraft.trim();
-    void changeVoice(voicePreference.engine, voicePreference.voice, trimmed === "" ? null : trimmed)
-      .then(() => setStyleDirty(false));
-  };
 
   const voiceRow = (option: TtsVoiceOptionV1, inUse: boolean) => (
     <SettingRow
@@ -122,46 +105,6 @@ import type { useSettingsVoice } from "./use-settings-voice.ts";
           (option) => voiceRow(option, voicePreference.voice === option.voice),
         )
       : null}
-
-    {/* 说话风格：qwen 的 instruction 参数，只在千问引擎下有意义（edge 没有这个参数）。
-        它是**兜底**——伴星每轮按内容自己写的风格优先于这里，这里写的是"平时怎么说话"。 */}
-    {voicePreference && voicePreference.engine === "qwen" ? (
-      <div className="settings-field">
-        <label className="settings-field__label" htmlFor="settings-voice-style">说话风格</label>
-        <div className="hud-field">
-          <input
-            id="settings-voice-style"
-            value={styleDraft}
-            placeholder="如：温柔自然，语速适中"
-            maxLength={VOICE_STYLE_INSTRUCTION_MAX_UNITS}
-            disabled={voiceSaving}
-            onChange={(event) => {
-              setStyleDraft(event.currentTarget.value);
-              setStyleDirty(true);
-            }}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter") return;
-              event.preventDefault();
-              saveStyle();
-            }}
-          />
-          <button
-            type="button"
-            className="button primary"
-            disabled={voiceSaving || styleOverLimit || !styleDirty}
-            onClick={saveStyle}
-          >
-            {voiceSaving ? "保存中…" : "保存"}
-          </button>
-        </div>
-        <p className="small" role={styleOverLimit ? "alert" : undefined}>
-          {styleOverLimit
-            ? `超出了 ${VOICE_STYLE_INSTRUCTION_MAX_UNITS} 字符上限（汉字算 2，当前 ${styleUnits}），请精简后再保存。`
-            : "一句话描述她平时怎么说话；留空用默认。这轮要变着说（方言、放慢）时她会自己加，写在这儿的是你的保底。"}
-        </p>
-        {styleDirty ? <p className="small" role="status">改动还没保存，离开这一页会丢失。</p> : null}
-      </div>
-    ) : null}
   </div>
   <div className="settings-voice__player" data-empty={voicePlayer ? undefined : "true"}>
     <button

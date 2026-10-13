@@ -4,12 +4,12 @@
  * 结构：
  *   "tts": {
  *     "engine": "qwen" | "edge",          // 默认 qwen
- *     "qwen": { model, voice, format, sampleRate, workspaceId },
+ *     "qwen": { model, voice, format, sampleRate, workspaceId, instruction },
  *     "edge": { voice, rate }
  *   }
  *
  * 读取路径：dev 容器 cwd=/app 且 config mount 到 /app/config；宿主 cwd 为
- * apps/api 时用 ../.. 回退。workspaceId 支持 env 兜底 DASHSCOPE_TTS_WORKSPACE_ID。
+ * apps/api 时用 ../.. 回退。workspaceId 支持环境变量兜底。
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -21,7 +21,7 @@ export interface QwenTtsConfig {
   voice: string;
   format: string;
   sampleRate: number;
-  /** 指令控制（高质量声音描述，≤100 字符；qwen-audio-3.1-tts-flash 系统音色支持任意指令） */
+  /** Qwen 指令控制：自然语言调节音调、语速、情感和音色特点；长度不超过 100 字符单位。 */
   instruction: string;
 }
 export interface TtsEngineConfig {
@@ -38,7 +38,7 @@ const DEFAULTS: TtsEngineConfig = {
     voice: "longhua_v3.1",
     format: "mp3",
     sampleRate: 22050,
-    instruction: "可爱的年轻女性声音，25 岁左右，声音甜美温柔、略带活泼，语速自然适中，适合轻松陪伴式对话",
+    instruction: "青年女性声音，音调中等偏柔，音色甜美圆润，语速自然适中，情感温柔明亮，适合学习陪伴对话",
   },
   edge: { voice: "zh-CN-XiaoxiaoNeural", rate: "+0%" },
 };

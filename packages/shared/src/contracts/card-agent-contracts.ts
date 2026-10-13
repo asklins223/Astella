@@ -197,6 +197,11 @@ export const agentTurnRequestSchema = z.object({
      */
     reasoning: z.array(providerReasoningHandleSchema).optional(),
     phase: z.enum(["commentary", "final_answer"]).optional(),
+    /** A real host event is a message boundary, distinct from policy and user speech. */
+    hostObservation: z.literal(true).optional(),
+  }).superRefine((message, context) => {
+    if (message.hostObservation && message.role !== "system")
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["hostObservation"], message: "host observations require system identity" });
   })),
   /** 工具 schema（按 role allowlist） */
   tools: z.array(z.object({

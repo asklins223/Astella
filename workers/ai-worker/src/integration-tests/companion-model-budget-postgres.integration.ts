@@ -74,7 +74,8 @@ test("turn attention reads real conversation goals as candidates and round-trips
     assert.deepEqual(new Set(related.relatedGoals?.map(goal => goal.id)), new Set(goalIds),
       "multiple owned goals remain candidates; an unbound or foreign goal is excluded");
     const attention = resolveAgentTurnInterpretation({ intent: 'conversation', toolUse: 'none',
-      subjects: [{ description: '泡茶休息' }], goalRelation: 'unrelated', candidateOperations: [], ambiguities: [] },
+      subjects: [{ description: '泡茶休息' }], goalRelation: 'unrelated', candidateOperations: [], ambiguities: [],
+      voiceStyle: { decision: 'none', instruction: null } },
       { requestHash: '1'.repeat(64), objects: related.relatedGoals ?? [], capabilities: [] });
     await f.mutate(tx => tx`UPDATE companion_turn_runs SET turn_interpretation=${tx.json(attention)}
       WHERE id=${f.event.read.runId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}`);

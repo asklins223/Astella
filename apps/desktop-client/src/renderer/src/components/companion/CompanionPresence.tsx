@@ -1,3 +1,6 @@
+import { isCompanionSpeechActive, subscribeCompanionSpeechActivity } from "../../app/companion-voice-playback";
+import { requireWorkspaceEpoch } from "../../app/desktop-client";
+import { useCompanionAwareness } from "../../app/use-companion-awareness";
 import { useSpaceArrival } from "../hud/space-arrival";
 import { publishCompanionAccountChanged, subscribeCompanionAccountChanged } from "./companion-events";
 // 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
@@ -263,7 +266,7 @@ export function CompanionPresence() {
   useEffect(() => setCueOpenError(null), [homeCueThoughtId]);
   const [externalModalOpen, setExternalModalOpen] = useState(false);
   const [taskBubbleOpen, setTaskBubbleOpen] = useState(false);
-  const { mode, setMode, assistantCue, liveReply, phase: chatPhase, companionName, setCompanionName } = useCompanionChat();
+  const { mode, setMode, assistantCue, liveReply, phase: chatPhase, companionName, setCompanionName, conversationId, receiveInitiative } = useCompanionChat();
   const engaged = mode !== "closed";
   /**
    * 聊天回复的语义 cue（2026-09-19 接 CharacterCuePayloadV1）：intensity 不再固定
@@ -314,6 +317,10 @@ export function CompanionPresence() {
   const targetWorldAnchor = companionPlacementOwner === "user" && companionUserAnchor
     ? companionUserAnchor
     : COMPANION_HOME_ANCHORS[companionHomeZone];
+  useCompanionAwareness(conversationId);
+  const [replySpeaking, setReplySpeaking] = useState(isCompanionSpeechActive);
+  useEffect(() => subscribeCompanionSpeechActivity(() => setReplySpeaking(isCompanionSpeechActive())), []);
+
   const hudPage = useRoomStore((state) => state.hudPage);
   const guideFilm = useRoomStore(state => state.companionGuideFilm);
   const notebookFullscreen = useNotebookFullscreenActive();
@@ -325,7 +332,7 @@ export function CompanionPresence() {
   const sceneKey = surface ?? "room";
   const assessmentMode = companionPolicy.mode === "assessment";
   const companionVisualOnly = companionPolicy.mode === "ambient" || assessmentMode;
-  const taskSurfaceQuiet = companionVisualOnly && !engaged;
+  const taskSurfaceQuiet = companionVisualOnly && !engaged && !liveReply && chatPhase !== "sending";
   // 页面级存在感（2026-09-16 裁决 3）：按页静音只抑制**主动**输出（气泡/提示音/
   // 提示语音），不阻断用户主动点击触发的互动；专注模式在任务面关闭时自动结束。
   const pageMuted = mutedCompanionSceneKeys.includes(sceneKey);
@@ -479,6 +486,7 @@ export function CompanionPresence() {
 
   const prioritizedCue = useCompanionProactiveCue(companionProjection.projection?.proactiveCue ?? null);
 
+
   /**
    * 气泡的展示回执：这句话在屏幕上露出来过（displayed）、用户点开过（acted）。
    * 服务端两条规则都读它——念头日预算只算"被看见过的"，划走降权只看已送达之后的状态；
@@ -503,6 +511,20 @@ export function CompanionPresence() {
       },
     }),
   }), []);
+  useEffect(() => {
+    const cue = companionProjection.projection?.proactiveCue, delivery = cue?.initiative;
+    if (!cue || !delivery || !receiveInitiative || chatPhase === "sending" || replySpeaking || presencePaused || companionSilenced || assessmentMode || guideOpen) return;
+    let cancelled = false;
+    void requireWorkspaceEpoch().then(async epoch => {
+      const api = window.astella?.companion?.initiative;
+      if (!api) return;
+      const identity = unwrapGatewayResult(await api.identity({ meta: createRequestMeta(epoch) }));
+      if (cancelled || delivery.deviceSessionId && delivery.deviceSessionId !== identity.deviceSessionId) return;
+      await receiveInitiative(delivery);
+      await cueDeliveryReporter.shown({cueKey:`initiative:${delivery.runId}`,inboxSequence:cue.revision});
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [companionProjection.projection?.proactiveCue, receiveInitiative, chatPhase, replySpeaking, presencePaused, companionSilenced, assessmentMode, guideOpen, cueDeliveryReporter]);
   const revealedCueRef = useRef<{ readonly cueKey: string; readonly inboxSequence: number } | null>(null);
 
   const projectCompanionIntoCamera = useCallback(() => {
@@ -755,7 +777,7 @@ export function CompanionPresence() {
         // 念想也要念出口（2026-10-07 用户决定）。这条生命周期只喂 `origin === "thought"`
         // 的投递，到点的提醒走通知中心自己的 `audio`（`use-companion-notification-sources.ts`），
         // 所以这里不会把同一句话念两遍。出声仍旧只在房间里生效：任务页、总静音、
-        // 窗口不可见时被 `audible` 闸挡下，气泡照旧。
+        // 窗口不可见时被 `audible` 闸挡下；念想照常显示文字气泡并朗读。
         speakHomeV2Cue(prioritizedCue.text);
         window.dispatchEvent(new CustomEvent("astella:home-v2-sound", { detail: { kind: "footstep" } }));
         if (prioritizedCue.priority === "ordinary") {
@@ -1654,6 +1676,7 @@ export function CompanionPresence() {
             motionMode={motionMode}
             floatingBlocked={homeV2ModalOpen || externalModalOpen}
             voiceEnabled={!assessmentMode}
+            voiceOutputEnabled={!assessmentMode && accountState !== null && !masterMuted && accountState.voiceOff !== true}
             actions={homeMode ? actionItems : []}
             onRunAction={runActionItem}
             onAgentToolState={handleAgentToolState}

@@ -17,6 +17,7 @@ import { copyText } from "../../app/clipboard";
 import { companionMessageCopyText } from "./companion-message-copy";
 import { journalProposalNeedsAttention } from "./companion-journal-model";
 import { CompanionMessageAudioButton } from "./CompanionMessageAudioButton";
+import { CompanionFollowupPrompts } from "./CompanionFollowupPrompts";
 
 /**
  * 「聊天记录」子级页面（2026-09-19，微信式）。
@@ -60,7 +61,10 @@ export function messageDayLabel(value: string): string {
 }
 
 export function shouldShowRunTrace(trace: CompanionRunTrace): boolean {
-  return trace.summary.toolCallCount > 0 || trace.nodes.some(node => node.kind === "tool");
+  return Boolean(trace.summary.thinkingText?.trim())
+    || Boolean(trace.events?.some(event => event.type === "assistant.thinking"))
+    || trace.summary.toolCallCount > 0
+    || trace.nodes.some(node => node.kind === "tool");
 }
 
 export function stopSummary(trace: CompanionRunTrace | null): string {
@@ -221,23 +225,38 @@ export function CompanionMessageRichBlocks({
 export function CompanionChatRecordArticle({
   message,
   chat,
+  showTrace = true,
+  showHeader = true,
 }: {
   readonly message: CompanionMessageV1;
   readonly chat: CompanionChatSession;
+  readonly showTrace?: boolean;
+  readonly showHeader?: boolean;
 }) {
   const [copyNote, setCopyNote] = useState<string | null>(null);
+  const runSpeechMessages = message.runId ? chat.messages.filter(m => m.role === "assistant" && m.runId === message.runId) : [];
+  const ownsRunAudio = runSpeechMessages.length <= 1 || runSpeechMessages.at(-1)?.id === message.id;
   const selection = message.role === "user" ? message.selection : undefined;
+  // 追问建议是当前回合的快捷入口。用户开始下一轮后，旧入口从手记中退场，
+  // 但历史消息本身仍保留，避免改写已经保存的对话。
+  const hasLaterUserMessage = chat.messages.some(candidate => candidate.role === "user" && candidate.seq > message.seq);
+  const legacyFollowups = message.blocks.flatMap((block) => block.type === "follow_up_suggestions" ? block.prompts : []);
+  const followups = message.role === "assistant" && !hasLaterUserMessage
+    ? message.followUpPrompts?.length ? message.followUpPrompts : legacyFollowups
+    : [];
   const richBlocks = message.blocks.filter((block) => block.type === "nav" || block.type === "quote"
       || block.type === "diagram" || block.type === "card" || block.type === "image" || block.type === "citation" || block.type === "code");
   const trace = message.role === "assistant"
-    ? chat.runTraces.find((item) => item.summary.assistantMessageId === message.id) ?? null
+    ? chat.runTraces.find((item) => item.summary.assistantMessageId === message.id
+      || (message.runId && item.summary.runId === message.runId)) ?? null
     : null;
+  const ownsRunTrace = !message.runId || chat.messages.find(item => item.role === "assistant" && item.runId === message.runId)?.id === message.id;
   const sources = companionWebCitations(message.blocks);
   const references = richBlocks.filter(block => block.type === "quote" || (block.type === "citation" && !block.referenceId));
   const results = richBlocks.filter(block => block.type !== "quote" && block.type !== "citation");
   const proposalIds = message.role === "assistant" ? [...new Set([
     ...message.blocks.flatMap(block => block.type === "action_ref" ? [block.proposalId] : []),
-    ...trace?.nodes.flatMap(node => node.proposalId ? [node.proposalId] : []) ?? [],
+    ...(ownsRunAudio ? trace?.nodes.flatMap(node => node.proposalId ? [node.proposalId] : []) ?? [] : []),
   ])] : [];
   const pending = proposalIds.filter(id => journalProposalNeedsAttention(chat.proposalStates[id]));
   const settled = proposalIds.filter(id => !journalProposalNeedsAttention(chat.proposalStates[id]));
@@ -245,26 +264,22 @@ export function CompanionChatRecordArticle({
     state={chat.proposalStates[id]} context="history"
     onDecide={decision => { void chat.decideProposal(id, decision); }} onRetry={() => chat.retryProposal(id)} />);
   return (
-    <article className={richBlocks.length > 0 ? "companion-record__turn companion-record__rich-turn" : "companion-record__turn"} data-message-id={message.id} data-role={message.role} data-kind={message.kind} data-cancelled={message.kind === "cancelled" || undefined}>
-      <header><span className="companion-record__author"><i className="companion-record__avatar" aria-hidden="true">{message.role === "user" ? <UserRound size={15} /> : <Sparkles size={15} />}</i><strong>{message.role === "user" ? "你" : chat.companionName}{message.kind === "voice_transcript" ? " · 语音" : ""}</strong></span><span className="companion-record__meta">{message.role === "assistant" ? <CompanionMessageAudioButton runId={message.runId} /> : null}<time>{messageTime(message.createdAt)}</time></span></header>
+    <article className={richBlocks.length > 0 ? "companion-record__turn companion-record__rich-turn" : "companion-record__turn"} data-message-id={message.id} data-role={message.role} data-kind={message.kind} data-headerless={!showHeader || undefined} data-cancelled={message.kind === "cancelled" || undefined}>
+      {showHeader ? <header><span className="companion-record__author"><i className="companion-record__avatar" aria-hidden="true">{message.role === "user" ? <UserRound size={15} /> : <Sparkles size={15} />}</i><strong>{message.role === "user" ? "你" : chat.companionName}{message.kind === "voice_transcript" ? " · 语音" : ""}</strong></span><span className="companion-record__meta">{message.role === "assistant" && ownsRunAudio ? <CompanionMessageAudioButton runId={message.runId} exchange={runSpeechMessages.length > 1} /> : null}<time>{messageTime(message.createdAt)}</time></span></header> : null}
+      {showTrace && ownsRunTrace && trace && shouldShowRunTrace(trace) ? <CompanionRunTraceView trace={trace} /> : null}
       {selection ? <details className="companion-record__selection"><summary><Quote size={14} aria-hidden="true" /><span>引用的原文</span><q>{selection.text.slice(0, 96)}</q></summary><CompanionQuoteBlock block={{ type: "quote", label: "当时选中的原文", text: selection.text }} /></details> : null}
       {/* 正文从 §4.8 起保留 markdown，由这里排版（抽屉与记录页共用本组件）。 */}
       <div className="companion-record__body">{renderCompanionMarkdown(companionMessageText({ ...message, blocks: message.blocks.filter(block => block.type === "text") }), sources)}</div>
       <CompanionWebSources sources={sources} />
       {results.length ? <div className="companion-record__results"><CompanionMessageRichBlocks blocks={results} chat={chat} /></div> : null}
+      {followups.length > 0 ? <CompanionFollowupPrompts prompts={followups} chat={chat} /> : null}
       {message.kind === "cancelled" ? <p className="companion-record__stopped">你在这里停下了{stopSummary(trace)}</p> : null}
       {message.kind === "error" ? <p className="companion-record__stopped">这一轮没能说完{stopSummary(trace)}</p> : null}
       {pending.length ? <div className="companion-record__decisions">{choices(pending)}</div> : null}
-      {references.length || settled.length || (trace && shouldShowRunTrace(trace)) ? <div className="companion-record__attachments">
+      {references.length || settled.length ? <div className="companion-record__attachments">
         {references.length ? <details className="companion-record__references"><summary><Quote size={14} aria-hidden="true" />查阅与出处 <small>{references.length}</small></summary><CompanionMessageRichBlocks blocks={references} chat={chat} /></details> : null}
         {settled.length ? <details className="companion-record__decision-history"><summary>确认记录 <small>{settled.length}</small></summary>{choices(settled)}</details> : null}
-        {trace && shouldShowRunTrace(trace) ? (
-        <CompanionRunTraceView
-          trace={trace}
-          defaultOpen={false}
-          quiet
-        />
-      ) : null}</div> : null}
+      </div> : null}
       <div className="companion-record__actions"><button type="button" className="text-action" onClick={() => {
         void copyText(companionMessageCopyText(message)).then((copied) => setCopyNote(copied ? "已复制" : "复制失败，请重试"));
       }}><Copy size={16} />{copyNote ?? "复制文字"}</button></div>

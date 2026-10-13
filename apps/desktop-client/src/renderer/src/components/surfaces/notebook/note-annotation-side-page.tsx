@@ -58,7 +58,7 @@ export function NoteAnnotationSidePage(props: {
       <details className="note-annotation-paper__source"><summary>对照原句</summary><blockquote>{anchor.excerpt}</blockquote></details>
       <div className="note-annotation-paper__explanation">{renderCompanionMarkdown(explanation)}</div>
       {example ? <details className="note-annotation-paper__more"><summary>看个比方</summary>{renderCompanionMarkdown(`举个例子：${example}`)}</details> : null}
-      <small>{annotation.sourceMessageId ? "伴星补充" : annotation.generationJobId ? "白话解释" : "自己的批注"} · {new Date(annotation.createdAt).toLocaleString()}</small>
+      <small>{annotation.sourceMessageId || annotation.generationJobId ? "伴星解释" : "自己的批注"} · {new Date(annotation.createdAt).toLocaleString()}</small>
       {!props.readOnlySnapshot && props.onDelete ? <AnnotationDeleteControl
         annotation={annotation}
         hasArtifact={artifact?.status === "ready" && Boolean(artifact.artifact)}

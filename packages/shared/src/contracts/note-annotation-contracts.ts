@@ -55,7 +55,7 @@ export const noteAnnotationV1Schema = z.strictObject({
   annotationId: z.string().uuid(),
   noteId: z.string().uuid(),
   anchor: noteAnnotationAnchorV1Schema,
-  explanation: z.string().max(8_000),
+  explanation: z.string(),
   sourceMessageId: z.string().max(160).nullable(),
   generationJobId: z.string().uuid().nullable(),
   revision: z.number().int().min(1),
@@ -76,7 +76,7 @@ export const noteAnnotationListQueryV1Schema = z.strictObject({
 });
 export const createNoteAnnotationV1Schema = z.strictObject({
   anchor: noteAnnotationAnchorV1Schema,
-  explanation: z.string().trim().min(1).max(8_000),
+  explanation: z.string().trim().min(1),
   sourceMessageId: z.string().trim().min(1).max(160).optional(),
 });
 export const createNoteAnnotationTaskV1Schema = z.strictObject({
@@ -98,7 +98,7 @@ export const noteAnnotationLatestTaskQueryV1Schema = z.strictObject({ noteVersio
 export const noteAnnotationLatestTaskV1Schema = z.strictObject({ version: z.literal(1), task: noteAnnotationTaskV1Schema.nullable() });
 export const updateNoteAnnotationV1Schema = z.strictObject({
   expectedRevision: z.number().int().min(1),
-  explanation: z.string().trim().max(8_000),
+  explanation: z.string().trim(),
 });
 export const deleteNoteAnnotationV1Schema = z.strictObject({
   expectedRevision: z.number().int().min(1),

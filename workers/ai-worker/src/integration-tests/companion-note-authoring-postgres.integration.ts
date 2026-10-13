@@ -5,7 +5,8 @@ import postgres from "postgres";
 import { getCompanionAgentTool, resolveAllCompanionAgentTools } from "@astella/shared";
 import { testDatabaseUrl } from "@astella/shared/integration-test-db-env";
 import { createPrivateNoteRecords } from "@astella/agent-host";
-import { executeCompanionCreateNote, companionCreatedNoteId, type CompanionNoteAuthoringEvent } from "../handlers/companion-note-authoring.ts";
+import { executeCompanionCreateNote, companionCreatedNoteId, userForbidsNoteLibraryRead,
+  type CompanionNoteAuthoringEvent } from "../handlers/companion-note-authoring.ts";
 import { executeReadTool } from "../handlers/companion-tool-execution.ts";
 import type { AgentEventContext } from "../handlers/companion-read-tools.ts";
 import { closeDatabase, withWorkerWorkspaceTransaction } from "../db.ts";
@@ -21,9 +22,10 @@ const admin = postgres(dbUrl, { max: 2 });
 after(async () => { await admin.end(); await closeDatabase(); await closeApiDatabase(); });
 const ARTICLE = "# 电功率\n\n电功率表示单位时间内转换的电能。直流电路中 P = UI；纯电阻且适用欧姆定律时，也可写成 P = I²R。\n\n不能把恒定电压与恒定电流两个条件混为一谈。";
 
-async function fixture() {
+async function fixture(options: { userText?: string; searchCompleted?: boolean } = {}) {
   const workspaceId = randomUUID(), userId = randomUUID(), runId = randomUUID(), jobId = randomUUID();
   const conversationId = randomUUID(), messageId = randomUUID(), stepId = randomUUID(), creationCallId = randomUUID();
+  const userText = options.userText ?? "把刚才聊的电功率写成一篇笔记，链接相关笔记。";
   const mutate = <T>(action: (tx: postgres.TransactionSql) => Promise<T>) => admin.begin(async tx => {
     await tx`SELECT set_config('app.workspace_id',${workspaceId},true),set_config('app.user_id',${userId},true)`;
     return action(tx);
@@ -37,10 +39,12 @@ async function fixture() {
       VALUES(${conversationId},${workspaceId},${userId},'dialogue','知识点讨论','auto','active',2)`;
     await tx`INSERT INTO companion_messages(id,conversation_id,workspace_id,user_id,role,seq,kind,blocks,content_sha256)
       VALUES(${messageId},${conversationId},${workspaceId},${userId},'user',1,'text',
-        ${tx.json([{ type: 'text', text: '把刚才聊的电功率写成一篇笔记，链接相关笔记。' }])},${'0'.repeat(64)})`;
+        ${tx.json([{ type: 'text', text: userText }])},${'0'.repeat(64)})`;
     await tx`INSERT INTO jobs(id,type,workspace_id,requested_by,payload,status,lease_token,started_at)
       VALUES(${jobId},'companion_agent',${workspaceId},${userId},${tx.json({runId})},'running','authoring-lease',now())`;
-    const permissionSnapshot = { version: 1, level: 'full', offeredTools: resolveAllCompanionAgentTools('full').map(({name,toolVersion,riskClass}) => ({name,toolVersion,riskClass})) };
+    const permissionSnapshot = { version: 1, level: 'full', offeredTools: resolveAllCompanionAgentTools('full', {
+      noteLibraryReadEnabled: !userForbidsNoteLibraryRead(userText),
+    }).map(({name,toolVersion,riskClass}) => ({name,toolVersion,riskClass})) };
     await tx`INSERT INTO companion_turn_runs(id,conversation_id,workspace_id,user_id,user_message_id,generation,status,
       idempotency_key_hash,request_body_hash,account_epoch,job_id,permission_level,permission_snapshot)
       VALUES(${runId},${conversationId},${workspaceId},${userId},${messageId},1,'running',${'a'.repeat(64)},${'b'.repeat(64)},0,${jobId},'full',${tx.json(permissionSnapshot)})`;
@@ -52,11 +56,11 @@ async function fixture() {
       tool_version,arguments,arguments_sha256,risk_class,status,result_ref)
     VALUES(${randomUUID()},${workspaceId},${userId},${conversationId},${runId},${stepId},${name === 'companion_create_note' ? creationCallId : randomUUID()},${name},'1.0.0',
       ${JSON.stringify(args)}::jsonb,${'c'.repeat(64)},${name === 'companion_create_note' ? 'reversible_low' : 'read'},${status},${resultRef})`);
-  await record("companion_search_notes", { query: "电功率 欧姆定律" });
+  if (options.searchCompleted !== false) await record("companion_search_notes", { query: "电功率 欧姆定律" });
   await record("companion_create_note", { title: "电功率", markdown: ARTICLE, links: [] }, "executing");
   const event: CompanionNoteAuthoringEvent = {
     ctx: { id: jobId, workspaceId, requestedBy: userId, leaseToken: 'authoring-lease', payload: { runId }, signal: new AbortController().signal },
-    read: { userId, runId, accountEpoch: 0, generation: 1 },
+    read: { userId, runId, accountEpoch: 0, generation: 1, userText },
   };
   const related = await withWorkspaceTransaction({workspaceId,userId}, tx => createNote(tx, workspaceId, userId, {
     title: "欧姆定律基础", blocks: [{type:'paragraph',content:'在温度等物理条件不变的导体中，电压与电流的比值为电阻，可写为 U = IR。'}],
@@ -154,6 +158,20 @@ test("没有相关材料时保存独立笔记，不虚构关联；未搜索时�
   await f.record("companion_search_notes", { query: "没有匹配的独立概念" });
   const saved = await executeCompanionCreateNote(f.event, { title: "电功率", markdown: ARTICLE }, undefined, f.creationCallId);
   assert.deepEqual(saved.value.linkedNotes, []);
+});
+
+test("用户明确要求不读其他资料时，不暴露或执行库搜索仍可保存独立笔记", async () => {
+  const f = await fixture({ userText: "把电功率整理成笔记，不要读取其他资料。", searchCompleted: false });
+  const readEvent = { ...f.event, constraints: { noteLibraryReadEnabled: false } } as AgentEventContext;
+  assert.equal(resolveAllCompanionAgentTools("full", readEvent.constraints).some(tool => tool.name === "companion_search_notes"), false);
+  await assert.rejects(
+    executeReadTool(readEvent, getCompanionAgentTool("companion_search_notes")!, { query: "电功率" }),
+    /要求不读取笔记库/,
+  );
+  const saved = await executeCompanionCreateNote(f.event, { title: "电功率", markdown: ARTICLE, links: [] }, undefined, f.creationCallId);
+  assert.deepEqual(saved.value.linkedNotes, []);
+  assert.equal((await f.mutate(tx => tx`SELECT count(*)::int AS count FROM companion_agent_tool_calls
+    WHERE run_id=${f.event.read.runId} AND name='companion_search_notes'`))[0]?.count, 0);
 });
 
 test("只凭标题、未读版本、改版或跨空间的关联不落库", async () => {

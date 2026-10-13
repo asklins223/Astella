@@ -597,8 +597,8 @@ describe("伴星解释与原句批注并行", () => {
   it("伴星完成不抢占手写批注的输入和焦点，两份批注独立保存并都能打开", async () => {
     const view = await show([block("paragraph", excerpt)], undefined, undefined, false, undefined, undefined, []);
     let attempt!: ReturnType<typeof beginNoteExplanation>;
-    act(() => { attempt = beginNoteExplanation(target); progressNoteExplanation(attempt.id, "利息加入本金"); });
-    fireEvent.click(view.getByRole("button", { name: /伴星正在解释.*查看/ }));
+    act(() => { attempt = beginNoteExplanation(target); progressNoteExplanation(attempt.id); });
+    fireEvent.click(view.getByRole("button", { name: /伴星正在写解释.*查看/ }));
     fireEvent.click(view.getByRole("button", { name: "另写自己的批注" }));
     const draft = view.getByRole("textbox", { name: "记下你的理解" }) as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "我的理解：下一轮用更大的本金算。" } });
@@ -609,15 +609,15 @@ describe("伴星解释与原句批注并行", () => {
       generationJobId: null, revision: 1, versionState: "current", createdAt: "2026-10-02T00:00:00.000Z", updatedAt: "2026-10-02T00:00:00.000Z",
     })));
     Object.assign(window.astella!.noteAnnotation, { write });
-    await act(async () => { await completeNoteExplanation(attempt.id, "55555555-5555-4555-8555-555555555555", "利息成为下一轮本金的一部分。"); });
+    await act(async () => { completeNoteExplanation(attempt.id, { annotationId: attempt.id, noteId: target.noteId, anchor: target.anchor, explanation: "利息成为下一轮本金的一部分。", sourceMessageId: null, generationJobId: "55555555-5555-4555-8555-555555555555", revision: 1, versionState: "current", createdAt: "2026-10-02T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z" }); });
     expect(draft.value).toBe("我的理解：下一轮用更大的本金算。");
     expect(document.activeElement).toBe(draft);
     expect(view.getByRole("region", { name: "写自己的批注" })).toBeTruthy();
     expect(view.queryByText("伴星正在解释")).toBeNull();
     fireEvent.click(view.getByRole("button", { name: "保存批注" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-    expect(write).toHaveBeenCalledTimes(2);
-    expect(write.mock.calls[1]![0].command.sourceMessageId).toBeUndefined();
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write.mock.calls[0]![0].command.sourceMessageId).toBeUndefined();
     fireEvent.click(view.getByRole("button", { name: "收起批注" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(300); });
     const own = view.getByRole("button", { name: /批注.*自己的批注/ });
@@ -632,7 +632,7 @@ describe("伴星解释与原句批注并行", () => {
 
   it("重新选择正在解释的原句，解释入口打开已有进度，状态文字不污染选区锚点", async () => {
     const view = await show([block("paragraph", excerpt)], undefined, undefined, false, undefined, undefined, []);
-    act(() => { const item = beginNoteExplanation(target); progressNoteExplanation(item.id, "利息也会继续产生利息"); });
+    act(() => { const item = beginNoteExplanation(target); progressNoteExplanation(item.id); });
     const content = view.body().querySelector<HTMLElement>("[data-note-block-content]")!;
     const range = textRangeAtOffsets(content, 0, excerpt.length)!;
     act(() => { window.getSelection()?.removeAllRanges(); window.getSelection()?.addRange(range); });
@@ -642,18 +642,17 @@ describe("伴星解释与原句批注并行", () => {
     fireEvent.click(view.getByRole("button", { name: "查看解释进度" }));
     const side = view.getByRole("region", { name: "伴星原句解释" });
     expect(within(side).getByText(excerpt)).toBeTruthy();
-    expect(within(side).getByText("利息也会继续产生利息")).toBeTruthy();
+    expect(within(side).getByText("伴星正在写解释")).toBeTruthy();
     expect(useNoteCompanionExplanations.getState().items).toHaveLength(1);
     expect(content.textContent).toBe(excerpt);
   });
 
   it("停止后的状态与未完成内容留在原句附页，关闭附页不自动写成批注", async () => {
     const view = await show([block("paragraph", excerpt)], undefined, undefined, false, undefined, undefined, []);
-    act(() => { const item = beginNoteExplanation(target); progressNoteExplanation(item.id, "只生成了半句"); interruptNoteExplanation(item.id, "stopped"); });
+    act(() => { const item = beginNoteExplanation(target); progressNoteExplanation(item.id); interruptNoteExplanation(item.id, "stopped"); });
     fireEvent.click(view.getByRole("button", { name: /解释已停止.*查看/ }));
     const side = view.getByRole("region", { name: "伴星原句解释" });
-    expect(within(side).getByText("只生成了半句")).toBeTruthy();
-    expect(within(side).getByText("以下是未完成的内容，没有写成批注。")).toBeTruthy();
+    expect(within(side).getByText("没有留下批注，可以随时重新解释。")).toBeTruthy();
     expect(view.queryByRole("button", { name: `打开批注：${excerpt}` })).toBeNull();
     fireEvent.click(within(side).getByRole("button", { name: "收起这次状态" }));
     expect(view.queryByRole("region", { name: "伴星原句解释" })).toBeNull();
@@ -663,7 +662,7 @@ describe("伴星解释与原句批注并行", () => {
   it("在附页重新解释后，附页立即跟随新任务，不残留旧任务的停止状态", async () => {
     const view = await show([block("paragraph", excerpt)], undefined, undefined, false, undefined, undefined, []);
     let previousId = "";
-    act(() => { const item = beginNoteExplanation(target); previousId = item.id; progressNoteExplanation(item.id, "旧的半句"); interruptNoteExplanation(item.id, "stopped"); });
+    act(() => { const item = beginNoteExplanation(target); previousId = item.id; progressNoteExplanation(item.id); interruptNoteExplanation(item.id, "stopped"); });
     fireEvent.click(view.getByRole("button", { name: /解释已停止.*查看/ }));
     fireEvent.click(view.getByRole("button", { name: "重新解释" }));
     const next = useNoteCompanionExplanations.getState().items[0]!;
@@ -671,8 +670,8 @@ describe("伴星解释与原句批注并行", () => {
     const side = view.getByRole("region", { name: "伴星原句解释" });
     expect(within(side).getByText("伴星正在准备解释")).toBeTruthy();
     expect(within(side).queryByText("旧的半句")).toBeNull();
-    act(() => { progressNoteExplanation(next.id, "新的完整解释正在生成"); });
-    expect(within(side).getByText("新的完整解释正在生成")).toBeTruthy();
+    act(() => { progressNoteExplanation(next.id); });
+    expect(within(side).getByText("伴星正在写解释")).toBeTruthy();
     expect(within(side).getByRole("button", { name: "停止解释" })).toBeTruthy();
   });
 });

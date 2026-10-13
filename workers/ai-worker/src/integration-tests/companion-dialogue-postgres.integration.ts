@@ -29,6 +29,7 @@ import type { CompanionContextHandoffSnapshotV1 } from "../handlers/companion-di
 import { OpenCodeGoProvider } from "../lib/providers/opencode-go.ts";
 import { ProviderStreamError } from "../lib/provider-request-error.ts";
 import { AgentOutputError } from "../lib/non-retryable-errors.ts";
+import { AIContextOverflowError } from "../lib/context-governor.ts";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 // worker db.ts 读 DATABASE_URL，
@@ -233,7 +234,7 @@ test("原文引文纠正后仍不匹配时发布失败，不保存成功答案�
       selection: { text: "胡克定律仅在弹性限度内适用，超过范围后不能继续套用。", sharing: "user_selected" } })}
       WHERE id=${run.runId}`);
     MockProvider.prototype.chatCompletion = async () => ({ content: JSON.stringify({ intent: "question", toolUse: "none",
-      subjects: [], goalRelation: "unrelated", candidateOperations: [], ambiguities: [], pendingOfferIndexes: [] }), usage: {} });
+      subjects: [], goalRelation: "unrelated", candidateOperations: [], ambiguities: [], voiceStyle: { decision: "none", instruction: null }, pendingOfferIndexes: [] }), usage: {} });
     MockProvider.prototype.executeAgentTurn = async () => {
       calls += 1;
       return { content: "> 弹簧总是满足胡克定律，没有任何适用限制。", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null };
@@ -272,7 +273,7 @@ for (const corrected of [true, false]) test(`实际读取后引文纠正：${cor
   let calls = 0;
   try {
     MockProvider.prototype.chatCompletion = async () => ({ content: JSON.stringify({ intent: "question", toolUse: "read",
-      subjects: [], goalRelation: "unrelated", candidateOperations: ["companion_read_current_page"], ambiguities: [], pendingOfferIndexes: [] }), usage: {} });
+      subjects: [], goalRelation: "unrelated", candidateOperations: ["companion_read_current_page"], ambiguities: [], voiceStyle: { decision: "none", instruction: null }, pendingOfferIndexes: [] }), usage: {} });
     MockProvider.prototype.executeAgentTurn = async request => {
       calls += 1;
       if (calls === 1) return { content: "", toolCalls: [{ id: "read-for-quote", name: "companion_read_current_page", arguments: {} }],
@@ -336,7 +337,7 @@ test("存量超大必要来源在调用模型前失败并发布终态，不让�
     await readInScope(scope, tx => tx`UPDATE companion_turn_runs SET page_context=${tx.json({ version: 1,
       selection: { text: "段".repeat(110_000), sharing: "user_selected" } })} WHERE id=${run.runId}`);
     await assert.rejects(invokeRun(scope.workspaceId, scope.userId, run),
-      (error: unknown) => error instanceof Error && error.name === "AgentContextError");
+      (error: unknown) => error instanceof AIContextOverflowError);
     const [result] = await readInScope(scope, tx => tx`SELECT status, error_code, model_call_count FROM companion_turn_runs WHERE id=${run.runId}`);
     assert.equal(result.status, "failed");
     assert.equal(result.error_code, "AGENT_BUDGET_EXCEEDED");
@@ -408,7 +409,7 @@ for (const mode of ["eof", "output-limit", "delayed-phase"] as const) {
         if (mode === "output-limit") {
           const error = actual.events.find(e => e.type === "error")!;
           assert.equal(error.payload.recoverable, false);
-          assert.equal(actual.run!.error_code, "AGENT_BUDGET_EXCEEDED");
+          assert.equal(actual.run!.error_code, "REPLY_LENGTH_LIMIT");
         }
       }
     } finally {
@@ -417,6 +418,65 @@ for (const mode of ["eof", "output-limit", "delayed-phase"] as const) {
     }
   });
 }
+
+test("思考走独立通道：assistant.thinking 落库，正文、消息与朗读侧都看不见它", async () => {
+  const { workspaceId, userId } = await seedBase();
+  const s = await seedDialogueRun(workspaceId, userId, { userText: "今天学得有点绕不过来了。" });
+  const answer = "绕不过来就先停在这一句上，不用今天把所有环节都补齐。";
+  const thoughts = ["他还没说完的是哪一段，", "先接住情绪，", "再问要不要拆开看。"];
+  const previousChatCompletion = MockProvider.prototype.chatCompletion;
+  const previousExecute = MockProvider.prototype.executeAgentTurn;
+  try {
+    // 解释是干净的闲聊轮，投机的那一步被保留、正式第一步不再重跑。
+    // mock 无所谓思考档（真机上闲聊轮压根不吐思考字），这里要测的是**通道**：
+    // provider 交出来的思考必须只落在 assistant.thinking 这一条上。
+    MockProvider.prototype.chatCompletion = async () => ({ content: JSON.stringify({
+      intent: "conversation", toolUse: "none", subjects: [], goalRelation: "unrelated",
+      candidateOperations: [], ambiguities: [], voiceStyle: { decision: "none", instruction: null },
+      pendingOfferIndexes: [] }), usage: {} });
+    MockProvider.prototype.executeAgentTurn = async () => {
+      throw new Error("投机的那一步已被保留，不该再走缓冲重跑");
+    };
+    Object.defineProperty(MockProvider.prototype, "chatCompletionStream", { ...mockStreamDescriptor,
+      value: async (_messages: unknown, options: { onReasoningDelta?: (text: string) => void },
+        _signal: AbortSignal | undefined, onDelta: (text: string) => void) => {
+        for (const thought of thoughts) {
+          options.onReasoningDelta?.(thought);
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        onDelta(answer);
+        return { content: answer, toolCalls: [], finishReason: "stop" };
+      } });
+    await invokeRun(workspaceId, userId, s);
+    const actual = await readInScope({ workspaceId, userId }, async (tx) => ({
+      events: await tx`SELECT type, payload FROM companion_stream_events WHERE run_id=${s.runId} ORDER BY seq`,
+      messages: await tx`SELECT blocks FROM companion_messages WHERE run_id=${s.runId} AND role='assistant'`,
+      run: (await tx`SELECT status FROM companion_turn_runs WHERE id=${s.runId}`)[0],
+    }));
+    assert.equal(actual.run!.status, "succeeded");
+    const thinking = actual.events.filter((event) => event.type === "assistant.thinking");
+    assert.ok(thinking.length > 0, "思考块必须真的落到事件流里");
+    assert.equal(thinking.map((event) => event.payload.text).join(""), thoughts.join(""));
+    assert.deepEqual(thinking.map((event) => event.payload.index), thinking.map((_, i) => i));
+    const visible = actual.events.filter((event) => event.type === "assistant.delta")
+      .map((event) => event.payload.textDelta).join("");
+    assert.equal(visible, answer, "已下发正文只有答案，思考一个字都没混进来");
+    const savedText = actual.messages[0]!.blocks
+      .filter((block: { type: string }) => block.type === "text")
+      .map((block: { text: string }) => block.text).join("");
+    assert.equal(savedText, answer);
+    // 朗读分段由已提交的可见正文驱动，所以"正文里没有"就等于"念不到"；
+    // 这里再把这条不变量钉死一次：除 assistant.thinking 之外任何事件都不许带这些字。
+    assert.ok(!JSON.stringify(actual.events.filter((event) => event.type !== "assistant.thinking"))
+      .includes(thoughts[0]!));
+    assert.ok(!JSON.stringify(actual.messages).includes(thoughts[1]!));
+  } finally {
+    MockProvider.prototype.chatCompletion = previousChatCompletion;
+    MockProvider.prototype.executeAgentTurn = previousExecute;
+    Object.defineProperty(MockProvider.prototype, "chatCompletionStream", { ...mockStreamDescriptor, value: undefined });
+    await s.cleanup();
+  }
+});
 
 test("P2 §5.2：accepted run → assistant message + status/delta/final 事件 + run succeeded + last_event_seq", async () => {
   const { workspaceId, userId } = await seedBase();
@@ -872,11 +932,15 @@ test("真实读取保留每条消息的时间和来源；重试不更新首次�
     assert.doesNotMatch(system, /用户这一轮问的是学习数据/, "普通聊天不能被恒定的作答影响键转成学习统计问题");
     const timeline = JSON.parse(system.slice(system.indexOf("<conversation_timeline>")).split("\n")[2]!);
     assert.equal(timeline.timezone, "Asia/Tokyo");
-    assert.equal(timeline.history[0].utteredAt, "2026-10-03T02:03:04.000Z");
-    assert.equal(timeline.history[1].speaker, "assistant");
-    assert.equal(timeline.history[1].utteredAt, "2026-10-03T02:03:05.000Z");
-    assert.equal(snapshot.modelMessages[1]!.content, oldText);
-    assert.equal(snapshot.modelMessages[2]!.content, "已经交了呀。");
+    // The existing 2,048-token interactive replay target omits this oversized
+    // user message whole. Its original text/time remain readable below; the
+    // inline timeline must describe the exact tail that the provider received.
+    assert.equal(snapshot.replayWindow?.omittedCount, 1);
+    assert.equal(timeline.history.length, 1);
+    assert.equal(timeline.history[0].speaker, "assistant");
+    assert.equal(timeline.history[0].utteredAt, "2026-10-03T02:03:05.000Z");
+    assert.equal(snapshot.modelMessages[1]!.content, "已经交了呀。");
+    assert.equal(snapshot.modelMessages[2]!.content, "你今天有什么有意思的事？");
     const [message] = await readInScope({workspaceId,userId}, tx => tx`SELECT created_at FROM companion_messages WHERE id=${s.userMessageId}`);
     assert.equal(timeline.current.utteredAt, new Date(message!.created_at).toISOString());
     assert.ok(timeline.history[0].elapsedMs > 0);

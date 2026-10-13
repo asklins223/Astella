@@ -24,7 +24,7 @@ import { setCompanionSegmentWarmHook } from "../companion-conversation/turn/comp
 import { assertSafeTtsInput, DEFAULT_VOICE_PROFILE } from "./voice-tts-policy.ts";
 import { edgeTtsSynthesizeStream, EdgeTtsError } from "./voice-providers/edge-tts.ts";
 import { stripVoiceExpressionTags } from "@astella/shared/voice-expression-tags";
-import { qwenTtsSynthesizeStreamForUser, QwenTtsError } from "./voice-providers/qwen-tts.ts";
+import { qwenTtsSynthesizeStreamForUser, QwenTtsError, warmQwenTtsConnection } from "./voice-providers/qwen-tts.ts";
 import { loadTtsEngineConfig } from "./voice-providers/tts-config.ts";
 import { guidanceVoiceProfile } from "./voice-providers/guidance-voice-profile.ts";
 import { synthesizeTtsBytes } from "./voice-providers/tts-engine.ts";
@@ -249,6 +249,45 @@ async function synthesizeCompanionSegmentBytes(args: {
 }
 
 export async function voiceRoutes(app: FastifyInstance) {
+  // Qwen 只预建 WebSocket 握手：不发 run-task、不传占位文本，也不合成音频。
+  // 桌面端在用户明确允许本回合出声时与 turn 请求并行调用；预热失败不影响对话。
+  app.post("/voice/prewarm", { preHandler: [requireSession, requireAiConsent] }, async (req, reply) => {
+    if (rejectDisabledCompanionVoice(reply, "COMPANION_VOICE_DIALOGUE_V1_ENABLED")) return;
+    const session = req.session!;
+    if (!(await rateLimitVoice(
+      reply,
+      req.id,
+      `${session.workspaceId}:${session.userId}:tts-prewarm`,
+      COMPANION_RATE_LIMITS.ttsPrewarmPerMinute.limit,
+      COMPANION_RATE_LIMITS.ttsPrewarmPerMinute.windowMs,
+    ))) return;
+    const emptyBody = z.strictObject({}).safeParse(req.body ?? {});
+    if (!emptyBody.success) {
+      return reply.code(400).send({ version: 1, error: "INVALID_REQUEST", message: "prewarm accepts no payload" });
+    }
+
+    const config = loadTtsEngineConfig();
+    const selection = await resolveSelectionForSynthesis(session, req.log);
+    const apiKey = process.env.DASHSCOPE_API_KEY ?? "";
+    if (selection.engine !== "qwen" || !config.qwen.workspaceId || !apiKey) {
+      return { version: 1, prewarmed: false };
+    }
+
+    const aborted = responseAbortController(reply);
+    const result = await warmQwenTtsConnection({
+      workspaceId: config.qwen.workspaceId,
+      apiKey,
+      model: config.qwen.model,
+      voice: selection.qwenVoice,
+      format: config.qwen.format,
+      sampleRate: config.qwen.sampleRate,
+      instruction: selection.qwenInstruction,
+      signal: aborted.signal,
+    });
+    req.log.debug({ result }, "companion qwen tts connection prewarm");
+    return { version: 1, prewarmed: result !== "skipped" };
+  });
+
   // P6 §13 POST /voice/tts/stream：句子级流式 TTS（chunked 透传，边收边播）。
   // 每稳定句一条独立流；generation/segmentId/ordinal 由客户端维持；打断时
   // 客户端 abort HTTP（上游连接中断）并递增 audio fence。
@@ -411,6 +450,8 @@ export async function voiceRoutes(app: FastifyInstance) {
    * 注册式而不是让 SSE 侧 import 本模块——那会成环（本模块已经反向依赖它）。
    */
   setCompanionSegmentWarmHook((scope, notices) => {
+    // 与真正取音频的 /voice/tts 门一致：关闭语音能力时不做后台合成。
+    if (!isCompanionDialogueEnabled() || process.env.COMPANION_VOICE_DIALOGUE_V1_ENABLED !== "true") return;
     void (async () => {
       // 一身到底：同一批段共用一次偏好解析（逐段读库既慢又可能在半途换音色）。
       const selection = await resolveSelectionForSynthesis(scope, app.log);
@@ -465,8 +506,9 @@ export async function voiceRoutes(app: FastifyInstance) {
       engine: selection.engine,
       voice: selection.engine === "qwen" ? selection.qwenVoice : selection.edgeVoice,
       instruction: storedInstruction,
+      dialect: selection.qwenDialect,
       explicit: selection.explicit,
-      updatedAt: selection.explicit ? updatedAt : null,
+      updatedAt: stored ? updatedAt : null,
     };
   });
 
@@ -475,7 +517,7 @@ export async function voiceRoutes(app: FastifyInstance) {
   app.patch("/voice/preference", { preHandler: [requireSession] }, async (req) => {
     const body = parseBody(app, companionVoicePreferencePatchV1Schema, req.body);
     const session = req.session!;
-    await setVoicePreference(session.userId, session.workspaceId, body.engine, body.voice, body.instruction);
+    await setVoicePreference(session.userId, session.workspaceId, body.engine, body.voice, body.instruction, body.dialect);
     const { stored, updatedAt } = await getStoredVoicePreference(session.userId, session.workspaceId);
     const storedInstruction = typeof stored?.instruction === "string" && stored.instruction.trim().length > 0
       ? stored.instruction.trim()
@@ -485,6 +527,7 @@ export async function voiceRoutes(app: FastifyInstance) {
       engine: body.engine,
       voice: body.voice,
       instruction: storedInstruction,
+      dialect: resolveTtsSelection(stored, loadTtsEngineConfig()).qwenDialect,
       explicit: true,
       updatedAt: updatedAt ?? new Date().toISOString(),
     };
@@ -576,10 +619,15 @@ userId: session.userId,
     // 客户端把它按音色身份缓在自己电脑上，换了音色就该重新合成，不换就再也不来。
     const persistentAudio = body.purpose === "guidance" || body.purpose === "thought";
     const selection: ResolvedTtsSelection = body.purpose === "notification"
-      ? { engine: "edge", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenVoice: "", qwenInstruction: "", explicit: true }
+      ? { engine: "edge", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenVoice: "", qwenInstruction: "",
+        qwenInstructionExplicit: false, qwenDialect: null, explicit: true }
       : body.purpose === "guidance"
         ? { ...resolveTtsSelection(null, loadTtsEngineConfig()), engine: "qwen" }
-        : await resolveSelectionForSynthesis(req.session!, req.log);
+        : body.purpose === "thought"
+          ? await resolveSelectionForSynthesis(req.session!, req.log)
+          // 不带 purpose 的朗读念的是用户自己的正文：账号里存的方言是给陪说话用的，
+          // 把课文念成方言就是「文字风格异常」换了个出口。音色与语速照旧跟账号。
+          : { ...await resolveSelectionForSynthesis(req.session!, req.log), qwenDialect: null };
     try {
       // 2026-09-19 语音链路改造：普通朗读也走「qwen WS 优先 + edge 兜底」——
       // 此前硬编码 edge 容器 HTTP（实测每段 2.3–2.5s），桌面伴星的语音完全

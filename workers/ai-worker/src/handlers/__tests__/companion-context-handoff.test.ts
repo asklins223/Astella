@@ -19,8 +19,10 @@ import test from "node:test";
 import {
   boundCompanionRecentHistory,
   buildCompanionContextHandoffSnapshotV1,
+  COMPANION_INTERACTIVE_REPLAY_TOKEN_BUDGET,
   renderCompanionContextHandoff,
   renderPendingOffersAsRecords,
+  selectCompanionInteractiveReplayWindow,
   selectCompanionReplayWindow,
   type CompanionContextHandoffInputV1,
   type CompanionRecentHistoryMessage,
@@ -145,6 +147,31 @@ test("回放窗口按声明预算整条取舍：留下的必须是最近那一�
   // 没带走的那一段里最新的一条：她由此知道「不是没发生过」，也知道从哪个 seq 取回
   assert.equal(receipt.uncoveredThroughSeq, history[history.length - taken.length - 1]?.seq);
 });
+
+test("交互历史不因模型超大窗口而无限变长，旧消息仍留下按需取回水位", () => {
+  const history = Array.from({ length: 24 }, (_, index) =>
+    msg(index % 2 === 0 ? "user" : "assistant", `消息 ${index}：${"x".repeat(1_200)}`, `m-${index}`));
+  const selected = selectCompanionInteractiveReplayWindow(history, 1_000_000);
+
+  assert.equal(selected.receipt.capacityTokens, COMPANION_INTERACTIVE_REPLAY_TOKEN_BUDGET);
+  assert.ok(selected.messages.length > 0 && selected.messages.length < history.length);
+  assert.deepEqual(selected.messages, history.slice(history.length - selected.messages.length),
+    "保留的必须是最近连续尾部，不能在历史中间挖洞");
+  assert.equal(selected.receipt.omittedCount, history.length - selected.messages.length);
+  assert.equal(selected.receipt.uncoveredThroughSeq, history[history.length - selected.messages.length - 1]?.seq);
+  assert.ok(selected.receipt.usedTokens <= selected.receipt.capacityTokens);
+});
+
+test("交互尾部遵守更小的路由硬容量", () => {
+  const history = Array.from({ length: 8 }, (_, index) => msg(
+    index % 2 === 0 ? "user" : "assistant", `消息 ${index}：${"x".repeat(900)}`, `m-${index}`));
+  const selected = selectCompanionInteractiveReplayWindow(history, 1_500);
+
+  assert.equal(selected.receipt.capacityTokens, 1_500);
+  assert.ok(selected.receipt.usedTokens <= 1_500);
+  assert.equal(selected.messages.at(-1)?.seq, "m-7", "最新一条历史必须保留");
+});
+
 test("短回复与前面的用户问题都保持原样", () => {
   // 短句可能是有效确认，不能仅凭长度判断失败。
   const bounded = boundCompanionRecentHistory([
@@ -237,4 +264,21 @@ test("长任务交接保留全部回执、待确认提案和完整说明", () =>
   assert.ok(rendered.includes(actions[89]!.safeSummary));
   assert.ok(rendered.includes(proposals[39]!.targetSummary));
   assert.ok(rendered.includes("第 39 个提案"));
+  const serialized = rendered.split("\n").find(line => line.startsWith("{"));
+  assert.ok(serialized, "交接快照应包含可解析的序列化账本");
+  const payload = JSON.parse(serialized) as {
+    actionLedger: {
+      completed: unknown[][];
+      unresolved: unknown[][];
+      notCompleted: unknown[][];
+    };
+  };
+  assert.equal(payload.actionLedger.completed.length, 45);
+  assert.equal(payload.actionLedger.unresolved.length, 45);
+  assert.deepEqual(payload.actionLedger.completed[44], [actions[88]!.name, actions[88]!.safeSummary]);
+  assert.deepEqual(payload.actionLedger.unresolved[44], [
+    actions[89]!.name,
+    actions[89]!.status,
+    actions[89]!.safeSummary,
+  ]);
 });

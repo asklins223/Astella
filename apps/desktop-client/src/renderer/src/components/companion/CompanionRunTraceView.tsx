@@ -1,128 +1,99 @@
-// 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
-import type { CSSProperties } from "react";
-import {
-  companionRunTraceExpired,
-  nodeLabel,
-  type CompanionRunTrace,
-} from "../../app/companion-agent-nodes";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, CircleCheck, CircleDashed, TriangleAlert, X } from "lucide-react";
+import { companionRunTraceExpired, nodeLabel, type CompanionRunTrace } from "../../app/companion-agent-nodes";
+import { companionProcessPreview, companionProcessRows, type CompanionProcessRow } from "../../app/companion-process-timeline";
 import type { CompanionProposalUiState } from "../../app/companion-chat-session";
 import { CompanionProposalChoice } from "./CompanionProposalChoice";
 
-const NODE_STATE_LABEL = {
-  running: "进行中",
-  succeeded: "已完成",
-  waiting_confirmation: "待确认",
-  outcome_unknown: "结果待核对",
-  failed: "失败",
-  cancelled: "已停止",
-  // 与「失败」分开：没开始 ≠ 试过了没成；用不了 ≠ 被拒绝。
-  not_executed: "没有开始",
-  unavailable: "这次用不了",
-} as const;
-
+const NODE_STATE_LABEL = { running: "进行中", succeeded: "已完成", waiting_confirmation: "待确认",
+  outcome_unknown: "结果待核对", failed: "失败", cancelled: "已停止", not_executed: "没有开始", unavailable: "这次用不了" } as const;
 type NodeState = keyof typeof NODE_STATE_LABEL;
 
-function runStateLabel(status: string): string {
-  switch (status) {
-    case "accepted":
-    case "running":
-      return "进行中";
-    case "waiting_for_confirmation":
-      return "待确认";
-    case "succeeded":
-      return "已完成";
-    case "failed":
-      return "失败";
-    case "cancel_requested":
-    case "cancelled":
-      return "已停止";
-    default:
-      return "过程记录";
-  }
-}
-
-function displayedNodeState(nodeState: NodeState, runStatus: string): NodeState {
-  if (nodeState !== "running" && nodeState !== "waiting_confirmation") return nodeState;
+function displayedNodeState(state: NodeState, runStatus: string): NodeState {
+  if (state !== "running" && state !== "waiting_confirmation") return state;
   if (runStatus === "succeeded") return "succeeded";
   if (runStatus === "failed") return "failed";
-  if (runStatus === "cancelled" || runStatus === "cancel_requested") return "cancelled";
-  return nodeState;
+  if (["cancelled", "cancel_requested", "superseded"].includes(runStatus)) return "cancelled";
+  return state;
 }
 
-function shouldOpenRunTrace(trace: CompanionRunTrace): boolean {
-  return trace.summary.stepCount > 1
-    || trace.summary.toolCallCount > 0
-    || trace.summary.status === "waiting_for_confirmation"
-    || trace.summary.status === "failed"
-    || trace.nodes.some((node) => node.state === "waiting_confirmation"
-      || node.state === "outcome_unknown"
-      || node.state === "failed"
-      // 这两类也算"这一轮没有拿到结果"：诊断视图不该把它们显示成一路绿灯。
-      || node.state === "not_executed"
-      || node.state === "unavailable");
+function stateMark(state: NodeState) {
+  if (state === "succeeded") return <CircleCheck size={14} />;
+  if (state === "cancelled") return <X size={14} />;
+  if (["failed", "outcome_unknown", "not_executed", "unavailable"].includes(state)) return <TriangleAlert size={14} />;
+  return <CircleDashed size={14} />;
 }
 
-/** 实时回复与历史消息共用的真实执行轨迹。 */
-export function CompanionRunTraceView({
-  trace,
-  defaultOpen = shouldOpenRunTrace(trace),
-  proposalStates,
-  onDecideProposal,
-  onRetryProposal,
-  quiet = false,
-}: {
-  readonly trace: CompanionRunTrace;
-  readonly defaultOpen?: boolean;
+function ProcessStep({ row, state, proposalStates, onDecideProposal, onRetryProposal }: {
+  readonly row: CompanionProcessRow;
+  readonly state: NodeState;
   readonly proposalStates?: Readonly<Record<string, CompanionProposalUiState>>;
   readonly onDecideProposal?: (proposalId: string, decision: "confirm" | "reject") => void;
   readonly onRetryProposal?: (proposalId: string) => void;
-  readonly quiet?: boolean;
 }) {
-  const expired = companionRunTraceExpired(trace);
-  const stateLabel = runStateLabel(trace.summary.status);
-  return (
-    <details className="companion-history__trace" open={defaultOpen}>
-      <summary>
-        <span>做事经过</span>
-        <small>{quiet ? stateLabel : `${stateLabel} · ${trace.summary.stepCount} 步 · ${trace.summary.toolCallCount} 次工具`}</small>
-      </summary>
-      {quiet ? <p className="companion-history__trace-meta">这次共 {trace.summary.stepCount} 步，{trace.summary.toolCallCount} 次工具调用。</p> : null}
-      {expired ? (
-        <p className="companion-history__trace-expired">过程记录已过期，只保留近期对话过程。</p>
-      ) : (
-        <ol>
-          {trace.nodes.map((node, index) => {
-            // assistant.status 没有单独的 completed 帧；历史摘要已经终态时仍照搬实时
-            // running 会出现「整轮已完成 / 节点仍进行中」的矛盾。只对未决节点采用
-            // 服务端真实 run 终态，已经明确成功/失败的工具节点保持原样。
-            const state = displayedNodeState(node.state, trace.summary.status);
-            return (
-              <li
-                key={node.key}
-                data-state={state}
-                style={{ "--trace-delay": Math.min(5, Math.max(0, trace.nodes.length - 1 - index)) } as CSSProperties}
-              >
-                <div>
-                  <span>{nodeLabel(node)}</span>
-                  {node.summary ? <small>{node.summary}</small> : null}
-                  {node.proposalId && proposalStates && onDecideProposal ? (
-                    <CompanionProposalChoice
-                      proposalId={node.proposalId}
-                      state={proposalStates[node.proposalId]}
-                      context="history"
-                      onDecide={(decision) => onDecideProposal(node.proposalId as string, decision)}
-                      onRetry={onRetryProposal
-                        ? () => { onRetryProposal(node.proposalId as string); }
-                        : undefined}
-                    />
-                  ) : null}
-                </div>
-                <em>{NODE_STATE_LABEL[state]}</em>
-              </li>
-            );
-          })}
-        </ol>
-      )}
-    </details>
-  );
+  const [expanded, setExpanded] = useState(false);
+  const thinking = row.kind === "thinking";
+  const text = thinking ? row.text : row.node.summary ?? "";
+  const label = thinking ? state === "running" ? "正在思考" : "已思考" : nodeLabel(row.node);
+  return <details className={`companion-history__trace-step ${thinking ? "companion-history__trace-thinking" : "companion-history__trace-tool"}`} open={expanded}>
+    <summary aria-expanded={expanded} aria-label={`${expanded ? "收起" : "展开"}${thinking ? "这段思考" : "这项操作详情"}`}
+      onClick={event => { event.preventDefault(); setExpanded(current => !current); }}>
+      <span className="companion-history__trace-mark" aria-hidden="true">{stateMark(state)}</span>
+      <strong>{label}</strong>
+      {!thinking ? <small>{NODE_STATE_LABEL[state]}</small> : null}
+      {text ? <span className="companion-history__trace-separator" aria-hidden="true">·</span> : null}
+      <span className="companion-history__trace-step-preview" aria-hidden="true">{text.replace(/\s+/g, " ").trim()}</span>
+    </summary>
+    <div className="companion-history__trace-step-detail">
+      <p>{text || NODE_STATE_LABEL[state]}</p>
+      {row.kind === "node" && row.node.proposalId && proposalStates && onDecideProposal ? <CompanionProposalChoice
+        proposalId={row.node.proposalId} state={proposalStates[row.node.proposalId]} context="history"
+        onDecide={decision => onDecideProposal(row.node.proposalId!, decision)}
+        onRetry={onRetryProposal ? () => onRetryProposal(row.node.proposalId!) : undefined} /> : null}
+    </div>
+  </details>;
+}
+
+/** 实时、收尾与历史共用；流更新不接管用户的展开状态。 */
+export function CompanionRunTraceView({ trace, defaultOpen = false, live = false,
+  proposalStates, onDecideProposal, onRetryProposal,
+}: {
+  readonly trace: CompanionRunTrace;
+  readonly defaultOpen?: boolean;
+  readonly live?: boolean;
+  readonly quiet?: boolean;
+  readonly proposalStates?: Readonly<Record<string, CompanionProposalUiState>>;
+  readonly onDecideProposal?: (proposalId: string, decision: "confirm" | "reject") => void;
+  readonly onRetryProposal?: (proposalId: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(defaultOpen);
+  const previewRef = useRef<HTMLSpanElement>(null);
+  const rows = useMemo(() => companionProcessRows(trace), [trace.events, trace.nodes, trace.summary.thinkingText]);
+  const preview = companionProcessPreview(trace, rows).replace(/\s+/g, " ").trim().slice(-360);
+  const hasThinking = rows.some(row => row.kind === "thinking");
+  const toolCount = Math.max(trace.summary.toolCallCount, trace.nodes.filter(node => node.kind === "tool").length);
+  const label = toolCount ? `执行工具 ${toolCount} 次` : hasThinking ? live ? "思考中" : "思考记录" : "处理过程";
+  useLayoutEffect(() => {
+    const element = previewRef.current;
+    if (element) element.scrollLeft = element.scrollWidth;
+  }, [preview, expanded]);
+  if (!rows.length && !toolCount && !companionRunTraceExpired(trace)) return null;
+  return <details className="companion-history__trace" open={expanded} data-live={live || undefined}>
+    <summary aria-expanded={expanded} aria-label={`${expanded ? "收起" : "展开"}${label}`}
+      onClick={event => { event.preventDefault(); setExpanded(current => !current); }}>
+      <ChevronRight className="companion-history__trace-chevron" size={15} aria-hidden="true" />
+      <span className="companion-history__trace-label">{label}</span>
+      <span ref={previewRef} className="companion-history__trace-preview" aria-hidden="true">{preview}</span>
+    </summary>
+    <ol className="companion-history__trace-timeline">
+      {rows.map(row => {
+        const state = row.kind === "thinking" ? live && row === rows.at(-1) ? "running" : "succeeded"
+          : displayedNodeState(row.node.state, trace.summary.status);
+        return <li key={row.key} data-state={state} data-kind={row.kind}>
+          <ProcessStep row={row} state={state} proposalStates={proposalStates} onDecideProposal={onDecideProposal} onRetryProposal={onRetryProposal} />
+        </li>;
+      })}
+    </ol>
+    {companionRunTraceExpired(trace) ? <p className="companion-history__trace-expired">这条旧对话的过程详情未留存。</p> : null}
+  </details>;
 }

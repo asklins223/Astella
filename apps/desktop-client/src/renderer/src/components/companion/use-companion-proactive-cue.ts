@@ -7,7 +7,7 @@ export function useCompanionProactiveCue(proactive: CompanionHomeProjectionV1["p
   const revision = proactive?.revision;
   const thoughtId = proactive?.thoughtId;
   const origin = proactive?.origin;
-  return useMemo(() => text && revision && origin ? {
+  return useMemo(() => text && revision && origin && origin !== "initiative" ? {
     priority: "ordinary" as const,
     text,
     zone: "rest" as const,

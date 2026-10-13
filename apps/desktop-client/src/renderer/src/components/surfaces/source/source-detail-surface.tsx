@@ -1,3 +1,4 @@
+import { useCompanionHelpOpportunity } from "../../../app/companion-help-opportunity";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Archive, ArrowRight, BookOpen, Check, FileText, List, LoaderCircle, Pencil, RotateCcw, X } from "lucide-react";
 import type {
@@ -137,6 +138,13 @@ function SourceDetailContent({ scope, activeSourceId }: { readonly scope: number
   }, [activeSourceId], { refreshOnFocus: true });
 
   const source = data?.detail.source ?? null;
+  useCompanionHelpOpportunity(source?.status === "failed" && activeSourceId ? {
+    domain: "source", entityId: activeSourceId, revision: source.updatedAt,
+    description: "当前这份来源解析失败，页面有重新解析入口。可以结合真实原因解释恢复办法；不能替用户自行重试。",
+  } : notice?.tone === "error" && activeSourceId ? {
+    domain: "source", entityId: activeSourceId, revision: source?.updatedAt ?? "unavailable",
+    description: notice.text.slice(0,1000),
+  } : null);
   const segments = data?.detail.segments ?? [];
   const notes = data?.notes.items ?? [];
   useLayoutEffect(() => {

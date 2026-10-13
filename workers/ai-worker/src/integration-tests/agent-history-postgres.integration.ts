@@ -136,8 +136,9 @@ async function completedOperation(scope: Scope, runId: string, revision: number,
   await advance.release(false);
   const overviewId = randomUUID();
   await admin.begin(async tx => {
-    await tx`INSERT INTO note_overviews(id,workspace_id,user_id,note_id,note_version_id,body,generation_job_id)
-      VALUES(${overviewId},${scope.workspaceId},${scope.userId},${note.noteId},${note.noteVersionId},'光能转化为有机物中的化学能。',${child.execution.id})`;
+    await tx`INSERT INTO note_overviews(id,workspace_id,user_id,note_id,note_version_id,body,source_references,generation_job_id)
+      VALUES(${overviewId},${scope.workspaceId},${scope.userId},${note.noteId},${note.noteVersionId},'光能转化为有机物中的化学能。',
+        '[{"blockOrdinal":1,"quote":"叶绿体利用光能制造有机物。"}]'::jsonb,${child.execution.id})`;
     await tx`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id IN (${first.id},${child.execution.id})`;
   });
   const receipt = await lease(scope, runId, revision);

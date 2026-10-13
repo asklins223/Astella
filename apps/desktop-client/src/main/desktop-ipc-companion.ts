@@ -1,3 +1,8 @@
+import { randomUUID } from "node:crypto";
+const companionAppLaunchId = randomUUID();
+const companionLaunchWallClock = Date.now(), companionLaunchMonotonic = performance.now();
+import { powerMonitor } from "electron";
+import { companionParticipationPreferencesV1Schema, companionParticipationPreferencesWriteV1Schema, companionAwarenessObservationV1Schema, companionAwarenessReceiptV1Schema, companionAwarenessIdentityV1Schema } from "@astella/shared/companion-initiative-contracts";
 import { registerAgentChannels } from "./desktop-ipc-agent";
 import type { GatewayTransport } from "./desktop-gateway-transport";
 import type { InputSchema, ParsedMeta } from "./desktop-ipc";
@@ -703,10 +708,33 @@ channel(DESKTOP_IPC_CHANNELS.companionAnswerModeGet, runtimeInputSchema, async (
     requireM2Route(contract, "settings.section");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_companion.setCompanionVoicePreference(gateway.gatewayTransport, 
-      { engine: input.engine, voice: input.voice, ...(input.instruction !== undefined ? { instruction: input.instruction } : {}) },
+      { engine: input.engine, voice: input.voice,
+        ...(input.instruction !== undefined ? { instruction: input.instruction } : {}) },
       input.meta.requestId,
     );
   }, companionVoicePreferenceV1Schema)
+
+channel(DESKTOP_IPC_CHANNELS.companionParticipationGet, runtimeInputSchema, async (_event, _window, input) => {
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.getParticipationPreferences(gateway.gatewayTransport, input.meta.requestId);
+  }, companionParticipationPreferencesV1Schema);
+  channel(DESKTOP_IPC_CHANNELS.companionParticipationPut, z.object({ meta: requestMetaSchema, request: companionParticipationPreferencesWriteV1Schema }).strict(), async (_event, _window, input) => {
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.setParticipationPreferences(gateway.gatewayTransport, input.request, input.meta.requestId);
+  }, companionParticipationPreferencesV1Schema);
+  channel(DESKTOP_IPC_CHANNELS.companionAwarenessIdentity, runtimeInputSchema, async (event, _window, input) => {
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return { version: 1 as const, appLaunchId: companionAppLaunchId, deviceSessionId: `desktop:${companionAppLaunchId}:${event.sender.id}`, host: "desktop" as const };
+  }, companionAwarenessIdentityV1Schema);
+  channel(DESKTOP_IPC_CHANNELS.companionAwarenessObserve, z.object({ meta: requestMetaSchema, request: companionAwarenessObservationV1Schema }).strict(), async (event, window, input) => {
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.observeCompanionAwareness(gateway.gatewayTransport, { ...input.request,
+      appLaunchId: companionAppLaunchId, deviceSessionId: `desktop:${companionAppLaunchId}:${event.sender.id}`, host: "desktop",
+      occurredAt: new Date(companionLaunchWallClock + performance.now() - companionLaunchMonotonic).toISOString(),
+      context: { ...input.request.context, unlocked: powerMonitor.getSystemIdleState(60) !== "locked",
+        foreground: input.request.context.foreground && window.isVisible() && !window.isMinimized() && window.isFocused() },
+    }, input.meta.requestId);
+  }, companionAwarenessReceiptV1Schema);
 
 channel(DESKTOP_IPC_CHANNELS.companionHomeGetProjection, runtimeInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");

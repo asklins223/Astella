@@ -1,3 +1,4 @@
+import { companionParticipationPreferencesV1Schema, companionParticipationPreferencesWriteV1Schema, companionAwarenessObservationV1Schema, companionAwarenessReceiptV1Schema } from "@astella/shared/companion-initiative-contracts";
 import { resolveObjectResponse, uploadRemoteObject } from "./desktop-object-transfers";
 /**
  * 网关的「伴星」那一族 —— **2026-09-30 从 `DesktopGateway` 类搬出**。
@@ -786,7 +787,7 @@ export async function listCompanionRunNodes(t: GatewayTransport,
     await t.ensureConnected(requestId);
     const after = request.afterSeq != null ? String(request.afterSeq) : "0";
     const result = await t.request(
-      `/companion/conversations/${request.conversationId}/run-nodes?after=${after}`,
+      `/companion/conversations/${request.conversationId}/run-nodes?after=${after}${request.includeThinking ? "&includeThinking=true" : ""}${request.runIds?.length ? `&runIds=${encodeURIComponent(request.runIds.join(","))}` : ""}`,
       { method: "GET" },
       true,
       true,
@@ -1077,6 +1078,11 @@ export async function sendCompanionTurn(t: GatewayTransport,
     requestId?: string,
   ): Promise<CompanionChatSendTurnResultV1> {
     await t.ensureConnected(requestId);
+    if (request.voiceOutput === true) {
+      // 与回合创建并行建好 Qwen 握手；失败、限流或不支持都不阻塞实际对话。
+      void t.request("/voice/prewarm", { method: "POST", body: "{}" }, true, true)
+        .catch(() => undefined);
+    }
     const result = await t.request(
       `/companion/conversations/${request.conversationId}/turns`,
       { method: "POST", body: JSON.stringify(request.turn), headers: { "Idempotency-Key": request.idempotencyKey } },
@@ -1280,8 +1286,11 @@ async function resolveCachedVoiceProfile(
       const preference = await getCompanionVoicePreference(t, requestId);
       // 身份只进哈希：engine 与 voice 合起来才是"她这一身"，单看音色名会漏掉引擎换了。
       // instruction 也进：它是这一身怎么说的一部分，改了风格偏好旧音频就该作废。
+      // 方言必须一起进（第 2 版）：账号存上长期方言后合成走的是复刻角色的方言音，
+      // 只哈希 engine+voice+instruction 的话，同一句念想会一直命中存下方言之前那条
+      // 普通话录音——日志里指令到位、服务端也真合成过，用户听到的却还是普通话。
       return {
-        profileId: createHash("sha256").update(JSON.stringify([1, preference.engine, preference.voice, preference.instruction])).digest("hex"),
+        profileId: createHash("sha256").update(JSON.stringify([2, preference.engine, preference.voice, preference.instruction, preference.dialect ?? null])).digest("hex"),
         voice: preference.voice,
       };
     }
@@ -1464,3 +1473,21 @@ export async function transitionCompanionOnboarding(t: GatewayTransport,
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }
+
+export async function getParticipationPreferences(t: GatewayTransport, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const result = await t.request("/me/companion/participation", { method: "GET" }, true, true, requestId);
+  return companionParticipationPreferencesV1Schema.parse(result.body);
+}
+export async function setParticipationPreferences(t: GatewayTransport,
+  request: z.infer<typeof companionParticipationPreferencesWriteV1Schema>, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const result = await t.request("/me/companion/participation", { method: "PUT", body: JSON.stringify(request) }, true, true, requestId);
+  return companionParticipationPreferencesV1Schema.parse(result.body);
+}
+export async function observeCompanionAwareness(t: GatewayTransport,
+  request: z.infer<typeof companionAwarenessObservationV1Schema>, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const result = await t.request("/me/companion/awareness", { method: "POST", body: JSON.stringify(request) }, true, true, requestId);
+  return companionAwarenessReceiptV1Schema.parse(result.body);
+}

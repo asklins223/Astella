@@ -158,6 +158,13 @@
 .companion-hud--floating .companion-hud__output[data-tone="process"] { background: #e5ecd8; }
 .companion-hud--floating .companion-hud__output[data-tone="process"] .companion-hud__output-body { font: 13px/1.8 "Noto Sans SC Variable", sans-serif; }
 .companion-hud--floating .companion-hud__output[data-tone="note"] .companion-hud__output-body { font: 13px/1.7 "Noto Sans SC Variable", sans-serif; }
+/* 思考（2026-10-13）：等待里终于有真的内容可看，但它读起来不能像她的回答——
+   纸色比状态条更冷一档、字更小更淡，正文第一个字一到整块让位。 */
+.companion-hud--floating .companion-hud__output[data-tone="thinking"] { background: #e6ebe0; }
+.companion-hud--floating .companion-hud__output[data-tone="thinking"] .companion-hud__output-body {
+  color: var(--companion-muted, var(--hud-soft, #705d4d));
+  font: 12.5px/1.75 "Noto Sans SC Variable", sans-serif;
+}
 .companion-hud__output-retry { margin-top: 5px; min-height: 32px; padding: 3px 0; }
 .companion-hud__reply-foot { display: flex; align-items: center; justify-content: space-between; gap: 7px; margin-top: 6px; font-size: 11px; color: var(--hud-soft); }
 .companion-hud__reply-foot .text-action { display: inline-flex; gap: 4px; align-items: center; min-height: 36px; padding: 3px 0; background: transparent; border: 0; font-size: 11px; color: inherit; }
@@ -344,6 +351,13 @@
 .companion-reply-content__paging button { display: grid; place-items: center; width: 32px; min-height: 30px; padding: 0; border: 0; border-radius: 10px; background: #e5ecd8; color: #50664a; cursor: pointer; }
 .companion-reply-content__paging button:disabled { opacity: .35; cursor: default; }
 .companion-reply-attachments { margin-top: 9px; font-size: 12px; }
+.companion-followups { display: grid; gap: 6px; margin: 3px 0 10px; }
+.companion-followups > span { color: var(--companion-muted, var(--hud-soft)); font-size: 10.5px; line-height: 1.4; }
+.companion-followups > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.companion-followups button { min-height: 38px; max-width: 100%; padding: 7px 10px; border: 1px solid #c3cdb1; border-radius: 12px 16px 11px 14px; background: #e5ecd8; color: var(--companion-ink, var(--hud-ink)); font: inherit; font-size: 11px; line-height: 1.55; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.companion-followups button:hover:not(:disabled) { border-color: #91ad8b; background: #dce8d2; }
+.companion-followups button:focus-visible { outline: 2px solid var(--hud-green); outline-offset: 2px; }
+.companion-followups button:disabled { opacity: .5; cursor: default; }
 .companion-reply-attachments__destinations .companion-record__nav { margin: 0 0 8px; }
 .companion-reply-attachments__destinations .companion-record__nav button { width: 100%; min-height: 42px; justify-content: flex-start; padding: 9px 11px; border: 1px solid #c3cdb1; border-radius: 12px 16px 11px 14px; background: #e5ecd8; color: #3d583d; text-align: left; line-height: 1.6; }
 /* 附页与上面的正文用虚线分开；材料内部每一项自己是实线，两种线不重复。 */

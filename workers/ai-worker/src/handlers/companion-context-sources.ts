@@ -3,6 +3,8 @@ import { agentMemoryContextSourcesCurrent, queryRows, type AgentSqlExecutor } fr
 import { agentMemoryContextSourceV1Schema, type AgentScopeV1 } from "@astella/shared/agent-contracts";
 import { CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
 import type { CompanionContextHandoffSnapshotV1 } from "./companion-context-handoff.ts";
+import { isWithinQuietHours, type CompanionQuietHours } from "@astella/shared/companion-proactive-policy";
+import { findFormalAnswerTarget } from "../lib/formal-answer-signal.ts";
 
 /**
  * 解析防御，不是业务闸：只兜「快照被塞进畸形大数组」，不承担新鲜度语义
@@ -33,6 +35,57 @@ export async function assertCompanionHandoffSourcesCurrent(
 /** Reused at provider reservation, stream flush and final commit. The checks
  * use the host's current transaction, including row locks through its commit. */
 export async function assertCompanionContextSourcesCurrent(tx: AgentSqlExecutor, scope: AgentScopeV1, runId: string): Promise<void> {
+  const [run] = await queryRows<{ input_source: import("@astella/shared/companion-initiative-contracts").CompanionInitiativeInputV1 | null }>(tx,
+    sql`SELECT input_source FROM companion_turn_runs WHERE id=${runId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}`);
+  if (run?.input_source) {
+    const input = run.input_source;
+    const [account] = await queryRows<{ global_enabled: boolean; presence: { presence?: string } | null; quiet_hours: CompanionQuietHours | null }>(tx,
+      sql`SELECT global_enabled,presence,quiet_hours FROM user_companion_account_state WHERE user_id=${scope.userId}`);
+    if (!account?.global_enabled || ["dnd", "offline"].includes(account.presence?.presence ?? "")
+      || (account.quiet_hours && isWithinQuietHours(account.quiet_hours, new Date()))
+      || await findFormalAnswerTarget(tx, scope)) throw new CompanionContextChangedError();
+    const [muted] = await queryRows(tx,sql`SELECT 1 FROM companion_room_profiles WHERE workspace_id=${scope.workspaceId}
+      AND user_id=${scope.userId} AND proactive_muted`);
+    if (muted) throw new CompanionContextChangedError();
+    const [pref] = await queryRows<{ revision: number }>(tx, sql`SELECT revision FROM companion_participation_preferences WHERE user_id=${scope.userId}`);
+    if ((pref?.revision ?? 0) !== input.preferenceRevision) throw new CompanionContextChangedError();
+    if (input.attentionKey) {
+      const [valid] = await queryRows(tx, sql`SELECT 1 FROM companion_attention_plans WHERE workspace_id=${scope.workspaceId}
+        AND user_id=${scope.userId} AND entry_key=${input.attentionKey} AND revision=${input.attentionRevision}
+        AND state='active' AND (expires_at IS NULL OR expires_at>now())`);
+      // An agent may deliberately finish or revise its own plan; user edits are fenced by preference revision.
+      if (!valid) {
+        const [owned] = await queryRows(tx, sql`SELECT 1 FROM companion_attention_plans WHERE workspace_id=${scope.workspaceId}
+          AND user_id=${scope.userId} AND entry_key=${input.attentionKey} AND parent_run_id=${runId}`);
+        if (!owned) throw new CompanionContextChangedError();
+      }
+    }
+    const selfNote = input.facts.selfNote as { key?: string; revision?: number } | null | undefined;
+    if (selfNote?.key) {
+      const [valid] = await queryRows(tx, sql`SELECT 1 FROM companion_self_notes WHERE workspace_id=${scope.workspaceId}
+        AND user_id=${scope.userId} AND entry_key=${selfNote.key}
+        AND (revision=${selfNote.revision ?? 0} OR EXISTS(SELECT 1 FROM companion_agent_tool_calls tc
+          WHERE tc.run_id=${runId} AND tc.status='succeeded'
+            AND (CASE WHEN tc.name IN ('companion_write_self_note','companion_schedule_wake') AND tc.result_ref IS NOT NULL
+              THEN tc.result_ref::jsonb ELSE NULL END)->'selfNote'=jsonb_build_object('key',entry_key,'revision',revision)))
+        AND NOT user_disabled AND tier<>'archived'
+        AND (expires_at IS NULL OR expires_at>now())`);
+      if (!valid) throw new CompanionContextChangedError();
+    }
+    if (input.facts.canSpeak === true) {
+      const [typing] = await queryRows(tx,sql`SELECT 1 FROM companion_awareness_sessions WHERE workspace_id=${scope.workspaceId}
+        AND user_id=${scope.userId} AND updated_at>now()-interval '45 seconds' AND typing_until>now()`);
+      if (typing) throw new CompanionContextChangedError();
+      const [present] = await queryRows(tx, sql`SELECT 1 FROM companion_awareness_sessions
+        WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND device_session_id=${input.deviceSessionId}
+          AND updated_at>now()-interval '45 seconds' AND context->>'foreground'='true' AND context->>'unlocked'='true'
+          AND coalesce(context->>'participationAllowed','true')='true'
+          AND (typing_until IS NULL OR typing_until<=now())
+          AND (${input.facts.currentPageKey ?? null}::text IS NULL OR context->'page'->>'key'=${input.facts.currentPageKey ?? null}::text)
+          AND (${input.facts.currentPageRevision ?? null}::text IS NULL OR context->'page'->>'revision'=${input.facts.currentPageRevision ?? null}::text)`);
+      if (!present) throw new CompanionContextChangedError();
+    }
+  }
   const [saved] = await queryRows<{ snapshot: CompanionContextHandoffSnapshotV1 }>(tx, sql`
     SELECT snapshot FROM companion_context_handoff_snapshots
     WHERE run_id=${runId} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}

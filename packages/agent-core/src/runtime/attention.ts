@@ -31,9 +31,21 @@ export function resolveAgentTurnInterpretation(proposal: unknown, input: {
   // 本轮没有账——宁可不做，也不要让一次凭空的索引改写她的历史。
   const offerCandidates = new Set(input.offerCandidates ?? []);
   const pendingOfferIndexes = [...new Set(value.pendingOfferIndexes.filter(index => offerCandidates.has(index)))];
+  const voiceStyle = {
+    decision: value.voiceStyle.decision === "apply" && value.voiceStyle.instruction
+      ? "apply" as const
+      : value.voiceStyle.decision === "clarify" ? "clarify" as const : "none" as const,
+    instruction: value.voiceStyle.decision === "apply" ? value.voiceStyle.instruction : null,
+    persistentPreference: value.voiceStyle.persistentPreference.action === "set" && value.voiceStyle.persistentPreference.dialect
+      ? value.voiceStyle.persistentPreference
+      : value.voiceStyle.persistentPreference.action === "clear"
+        ? { action: "clear" as const, dialect: null }
+        : { action: "keep" as const, dialect: null },
+  };
   const conversational = value.intent === "conversation" || (value.intent === "question" && value.toolUse === "none");
   const { goalObjectIndex: _index, subjects: _subjects, ...fields } = value;
   return agentTurnInterpretationV1Schema.parse({ ...fields, pendingOfferIndexes, version: 1, requestHash: input.requestHash,
+    voiceStyle,
     subjects, goalReference: conversational || value.goalRelation === "unrelated" || value.goalRelation === "new" ? null : goalReference,
     goalRelation: conversational ? "unrelated" : value.goalRelation,
     candidateOperations: conversational ? [] : candidateOperations,

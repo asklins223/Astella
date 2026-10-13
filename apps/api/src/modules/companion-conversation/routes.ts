@@ -17,7 +17,7 @@ import { cancelCompanionRun } from "./turn/companion-cancel.ts";
 import { openCompanionEventStream, listCompanionAgentRoutes, listCompanionRunNodes } from "./turn/companion-events.ts";
 import { openCompanionThought } from "./turn/thought-service.ts";
 import { listCompanionThoughts } from "./turn/thought-history.ts";
-import { companionChatListThoughtsRequestV1Schema } from "@astella/shared/companion-chat-desktop-contracts";
+import { companionChatListThoughtsRequestV1Schema, companionRunNodesListRequestV1Schema } from "@astella/shared/companion-chat-desktop-contracts";
 import {
   ensureCompanionInbox,
   listCompanionMessages,
@@ -317,7 +317,7 @@ userId: req.session.userId,
 
   // GET /companion/conversations/:id/events — 03 §5.3 SSE。
   // 先完成全部校验（cursor/连接限制/404/409），成功才 writeHead 进入流。
-  app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { after?: string; voiceOutput?: string } }>(
     "/companion/conversations/:id/events",
     { preHandler: [requireSession, requireCompanionDialogue] },
     async (req, reply) => {
@@ -327,6 +327,7 @@ userId: req.session.userId,
       const result = await openCompanionEventStream({ ...scopeOfSession(req.session),
 userId: req.session.userId,
         conversationId: req.params.id,
+        voiceOutputRequested: req.query.voiceOutput === "1",
         afterRaw,
         lastEventId,
         writer: {
@@ -435,7 +436,7 @@ userId: req.session.userId,
   // 实时链路那个收敛函数折成节点，避免"实时的过程"和"翻历史的过程"两套口径。
   // 另外按 run 返回步数/工具次数摘要与当前仍可读的节点条数——后者是"过程记录已过期"
   // 的唯一诚实判据（消息不随 TTL 消失，事件会）。
-  app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { after?: string; includeThinking?: string; runIds?: string } }>(
     "/companion/conversations/:id/run-nodes",
     { preHandler: [requireSession, requireCompanionDialogue] },
     async (req, reply) => {
@@ -451,11 +452,19 @@ userId: req.session.userId,
           requestId: req.id,
         });
       }
+      const archiveRequest = companionRunNodesListRequestV1Schema.safeParse({ version: 1,
+        conversationId: req.params.id, afterSeq: after,
+        ...(req.query.runIds ? { runIds: req.query.runIds.split(",") } : {}),
+      });
+      if (!archiveRequest.success) return reply.code(400).send({ version: 1, error: "INVALID_REQUEST",
+        message: "invalid conversation or run ids", recoverable: false, requestId: req.id });
       try {
         const result = await listCompanionRunNodes({ ...scopeOfSession(req.session),
 userId: req.session.userId,
           conversationId: req.params.id,
           after,
+          includeThinking: req.query.includeThinking === "true",
+          runIds: archiveRequest.data.runIds,
         });
         if (!result.ok) {
           return reply.code(result.statusCode).header("cache-control", "no-store").send({
@@ -487,6 +496,8 @@ userId: req.session.userId,
             maxToolCalls: run.maxToolCalls,
             assistantMessageId: run.assistantMessageId,
             nodeCount: run.nodeCount,
+            ...(run.thinkingText !== undefined ? { thinkingText: run.thinkingText } : {}),
+            ...(run.processTimeline !== undefined ? { processTimeline: run.processTimeline } : {}),
           })),
           latestSeq: result.latestSeq,
         });

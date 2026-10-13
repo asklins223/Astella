@@ -23,7 +23,7 @@ async function reportActivity(scope: number, sequence: number, transition: "disp
 }
 
 function deliverActivityCue(cue: CompanionHomeProjectionV1["proactiveCue"], scope: number): void {
-  if (!cue || cue.origin === "thought" || scope !== useRoomStore.getState().workspaceScopeRevision) return;
+  if (!cue || ["thought", "initiative"].includes(cue.origin) || scope !== useRoomStore.getState().workspaceScopeRevision) return;
   const reminder = cue.origin === "reminder";
   notifyCompanion({
     id: `activity:${scope}:${cue.revision}`, kind: reminder ? "reminder" : "help", scope,
@@ -89,34 +89,4 @@ export function useCompanionNotificationSources(): void {
   useEffect(() => {
     if (companionCurrent) deliverActivityCue(cue ?? null, scope);
   }, [cue, companionCurrent, scope]);
-  // The room projection is lazy on task pages; reminders still need their real event path.
-  useEffect(() => {
-    const api = window.astella;
-    if (!surface || !api?.subscriptions) return;
-    let active = true;
-    let reading = false;
-    let pendingEpoch: number | null = null;
-    const cleanups: Array<() => void> = [];
-    const read = async () => {
-      if (reading) return;
-      reading = true;
-      try {
-        while (active && pendingEpoch !== null) {
-          const epoch = pendingEpoch; pendingEpoch = null;
-          const projection = unwrapGatewayResult(await api.companion.home.getProjection({ meta: createRequestMeta(epoch) }));
-          if (active && useRoomStore.getState().workspaceScopeRevision === scope) deliverActivityCue(projection.proactiveCue, scope);
-        }
-      } catch { /* The next gateway event or returning home retries the read. */ }
-      finally { reading = false; }
-    };
-    void api.subscriptions.subscribe({ meta: createRequestMeta(), topic: { kind: "runtime" } }).then(response => {
-      const subscription = unwrapGatewayResult(response);
-      const unsubscribe = () => { void api.subscriptions.unsubscribe({ meta: createRequestMeta(), subscriptionId: subscription.subscriptionId }).catch(() => undefined); };
-      if (!active) { unsubscribe(); return; }
-      cleanups.push(unsubscribe, api.subscriptions.onEvent(subscription.subscriptionId, event => {
-        if (event.data.kind === "companion_activity_changed") { pendingEpoch = event.workspaceEpoch; void read(); }
-      }));
-    }).catch(() => undefined);
-    return () => { active = false; for (const cleanup of cleanups.reverse()) cleanup(); };
-  }, [scope, surface]);
 }

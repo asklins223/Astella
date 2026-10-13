@@ -68,7 +68,7 @@ export function projectCompanionDelivery(delivery: AssistantDeliveryV2 & { expir
       ? { kind: "proposal", proposalId: payload.proposalId }
       : payload.kind === "memory_item"
         ? { kind: "memory", memoryId: payload.memoryItemId }
-        : { kind: "none" };
+        : payload.kind === "system_event" && payload.initiative ? { kind: "dialogue", messageId: payload.initiative.messageId } : { kind: "none" };
   return companionActivityDeliveryV1Schema.parse({
     version: 1,
     deliveryId: delivery.deliveryId,

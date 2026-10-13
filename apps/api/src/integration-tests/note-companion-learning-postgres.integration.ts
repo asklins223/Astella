@@ -14,9 +14,11 @@ import { noteExpansionRoutes } from "../modules/note-expansions/routes.ts";
 import { noteOverviewRoutes } from "../modules/note-overviews/routes.ts";
 import { noteRecallRoutes } from "../modules/note-recalls/routes.ts";
 import { noteLearningArtifactRoutes } from "../modules/note-learning-artifacts/routes.ts";
+import { companionParticipationRoutes } from "../modules/companion-shell/participation-routes.ts";
 
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 2 });
 testDatabaseUrl("DATABASE_URL_API");
+process.env.DATABASE_URL_WORKER = testDatabaseUrl("DATABASE_URL_WORKER");
 
 type Fixture = V2FixtureSeeded;
 type AssistantReplyInput = {
@@ -26,6 +28,7 @@ type AssistantReplyInput = {
   noteVersionId: string;
   selectionText?: string;
   answer?: string;
+  answerParts?: string[];
 };
 type AssistantReply = { conversationId: string; messageId: string };
 
@@ -96,10 +99,11 @@ async function seedAssistantReply(input: AssistantReplyInput): Promise<Assistant
        request_body_hash,page_context,started_at,finished_at)
       VALUES(${runId},${conversationId},${input.workspaceId},${input.userId},${userMessageId},1,'succeeded',
         ${hash(runId)},${hash(`${runId}:body`)},${tx.json(pageContext)},now(),now())`;
-    await tx`INSERT INTO companion_messages
+    const parts = input.answerParts ?? [answer];
+    for (const [index, part] of parts.entries()) await tx`INSERT INTO companion_messages
       (id,conversation_id,workspace_id,user_id,seq,role,kind,blocks,run_id,content_sha256)
-      VALUES(${assistantMessageId},${conversationId},${input.workspaceId},${input.userId},2,'assistant','text',
-        ${tx.json([{ type: "text", text: answer }])},${runId},${hash(answer)})`;
+      VALUES(${index === parts.length-1 ? assistantMessageId : randomUUID()},${conversationId},${input.workspaceId},${input.userId},${index+2},'assistant','text',
+        ${tx.json([{ type: "text", text: part }])},${runId},${hash(part)})`;
     await tx`UPDATE companion_turn_runs SET assistant_message_id=${assistantMessageId} WHERE id=${runId}`;
   });
   return { conversationId, messageId: assistantMessageId };
@@ -133,6 +137,37 @@ async function seedCompletedExpansionTask(input: {
       VALUES(${input.taskId},${input.workspaceId},${input.userId},${input.noteId},${input.noteVersionId},${input.requestId},
         ${input.source.messageId},${input.source.conversationId},${tx.json(input.drafts)})`;
   });
+  await settleAgentAdvanceForJob(input.workspaceId, input.userId, input.taskId);
+}
+
+/** Complete the Agent wrapper after this fixture supplies the real domain-job receipt. */
+async function settleAgentAdvanceForJob(workspaceId: string, userId: string, taskId: string) {
+  const [operation] = await admin`SELECT run_id FROM agent_operations
+    WHERE workspace_id=${workspaceId} AND user_id=${userId} AND job_id=${taskId} LIMIT 1`;
+  assert.ok(operation, "completed domain task must belong to an Agent operation");
+  const { runAgentAdvance } = await import("../../../../workers/ai-worker/src/agent/advance.ts");
+  const { markJobSucceeded } = await import("../../../../workers/ai-worker/src/queue.ts");
+  for (let count = 0; count < 8; count += 1) {
+    const [pending] = await admin`SELECT id FROM jobs WHERE workspace_id=${workspaceId}
+      AND type='agent_run_advance' AND status='pending' AND payload->>'runId'=${String(operation.run_id)}
+      AND scheduled_at<=now() ORDER BY scheduled_at,id LIMIT 1`;
+    if (!pending) return;
+    const leaseToken = randomUUID();
+    const [claimed] = await admin`UPDATE jobs SET status='running',lease_token=${leaseToken},
+      started_at=now(),attempts=attempts+1 WHERE id=${pending.id} AND status='pending'
+      RETURNING id,type,payload,workspace_id,requested_by,attempts,resource_class`;
+    if (!claimed) continue;
+    assert.ok(claimed.requested_by, "Agent advance needs its trusted actor");
+    const job = {
+      id: String(claimed.id), type: String(claimed.type),
+      payload: claimed.payload as Record<string, unknown>, workspaceId: String(claimed.workspace_id),
+      requestedBy: String(claimed.requested_by), attempts: Number(claimed.attempts), leaseToken,
+      resourceClass: String(claimed.resource_class), signal: new AbortController().signal,
+    };
+    await runAgentAdvance(job);
+    assert.equal(await markJobSucceeded(job), true, `Agent advance ${job.id} should settle`);
+  }
+  assert.fail("Agent advance did not settle after eight receipts");
 }
 
 async function seedCompletedOverviewTask(input: {
@@ -154,6 +189,7 @@ async function seedCompletedOverviewTask(input: {
         ${tx.json([{ blockOrdinal: 2, quote: "利息加入本金后，下一次也会继续产生利息。" }])},
         ${tx.json({ totalBlocks: 4, textBlocksRead: 4, imageBlocksNotRead: 0 })},${input.taskId})`;
   });
+  await settleAgentAdvanceForJob(input.workspaceId, input.userId, input.taskId);
 }
 
 before(async () => {
@@ -180,17 +216,25 @@ before(async () => {
   await app.register(noteOverviewRoutes);
   await app.register(noteRecallRoutes);
   await app.register(noteLearningArtifactRoutes);
+  await app.register(companionParticipationRoutes);
   await app.ready();
 });
 
 after(async () => {
   try {
     await app.close();
-    await fixture?.cleanup();
-    await foreign?.cleanup();
+    for (const seeded of [fixture, foreign]) {
+      if (!seeded) continue;
+      // These fixtures now settle real Agent advances; remove their operation
+      // receipts before the shared fixture cleanup deletes the referenced jobs.
+      await admin`DELETE FROM agent_operations WHERE workspace_id=${seeded.workspaceId} AND user_id=${seeded.userId}`;
+      await seeded.cleanup();
+    }
     if (memberId) await admin`DELETE FROM users WHERE id=${memberId}`;
   } finally {
     await closeDatabase();
+    const { closeDatabase: closeWorkerDatabase } = await import("../../../../workers/ai-worker/src/db.ts");
+    await closeWorkerDatabase();
     await admin.end();
   }
 });
@@ -317,6 +361,50 @@ test("跨段批注保存完整范围，解释任务使用同一选区，错误�
   assert.equal(started.statusCode, 200, started.body); assert.deepEqual(started.json().anchor, anchor);
   const wrong = await call("POST", `${path()}/annotation-tasks`, { anchor: { ...anchor, excerpt: anchor.excerpt.replace("为什么会增长", "另一个标题") }, requestId: randomUUID() });
   assert.equal(wrong.statusCode, 409, wrong.body); assert.equal(wrong.json().error, "note_anchor_mismatch");
+});
+
+test("新账户首次观察补齐运行状态，默认问候入队；已关闭的账户保持关闭", async () => {
+  const request = { version: 1, id: randomUUID(), appLaunchId: randomUUID(), deviceSessionId: `new-account:${randomUUID()}`,
+    host: "desktop", topic: "app.started", occurredAt: new Date().toISOString(), elapsedMs: 0,
+    context: { foreground: true, unlocked: true, typing: false, learning: false, conversationId: null,
+      page: { key: "home", label: "书房", revision: null, context: null } } };
+  const first = await call("POST", "/me/companion/awareness", request, foreign.token);
+  assert.equal(first.statusCode, 200, first.body);
+  await admin.begin(async tx => {
+    await tx`SELECT set_config('app.workspace_id',${foreign.workspaceId},true),set_config('app.user_id',${foreign.userId},true)`;
+    const [state] = await tx`SELECT epoch,global_enabled FROM user_companion_account_state WHERE user_id=${foreign.userId}`;
+    assert.equal(state!.global_enabled, true);
+    const [queued] = await tx`SELECT id FROM jobs WHERE requested_by=${foreign.userId} AND type='companion_initiative'
+      AND payload->>'observationId'=${request.id}`;
+    assert.ok(queued);
+    await tx`UPDATE user_companion_account_state SET global_enabled=false,epoch=epoch+1 WHERE user_id=${foreign.userId}`;
+  });
+  const second = await call("POST", "/me/companion/awareness", { ...request, id: randomUUID(), topic: "context.updated" }, foreign.token);
+  assert.equal(second.statusCode, 200, second.body);
+  await admin.begin(async tx => {
+    await tx`SELECT set_config('app.workspace_id',${foreign.workspaceId},true),set_config('app.user_id',${foreign.userId},true)`;
+    const [state] = await tx`SELECT global_enabled FROM user_companion_account_state WHERE user_id=${foreign.userId}`;
+    assert.equal(state!.global_enabled, false);
+  });
+});
+
+test("独立批注正文不被分句来源对白覆盖", async () => {
+  const excerpt = "利息加入本金后";
+  const parts = ["第一次先把新增利息并入本金。", "下一轮在新的本金上计算利息，完整的解释到这里结束。"];
+  const source = await seedAssistantReply({ workspaceId: fixture.workspaceId, userId: fixture.userId,
+    noteId: fixture.noteId, noteVersionId: fixture.noteVersionId, selectionText: excerpt, answerParts: parts });
+  const anchor = { noteVersionId: fixture.noteVersionId, startBlockOrdinal: 2, endBlockOrdinal: 2,
+    startOffset: 0, endOffset: excerpt.length, excerpt, prefix: "", suffix: "，下一次也会继续产生利息。" };
+  const explanation = "## 独立解释正文\n\n本金包括上轮利息，因此下轮计息的基数增加。这里的例子和后续内容属于批注，并非对白。";
+  const payload = { anchor, sourceMessageId: source.messageId, explanation };
+  const saved = await call("POST", `${path()}/annotations`, payload);
+  assert.equal(saved.statusCode, 200, saved.body);
+  assert.equal(saved.json().explanation, explanation);
+  const reopened = await call("GET", `${path()}/annotations`);
+  assert.equal(reopened.json().items.find((item: { sourceMessageId: string }) => item.sourceMessageId === source.messageId)?.explanation, explanation);
+  const replay = await call("POST", `${path()}/annotations`, payload);
+  assert.equal(replay.statusCode, 200, replay.body);
+  assert.equal(replay.json().annotationId, saved.json().annotationId);
 });
 
 test("选区批注锚定精确原句、按修订更新，且不能伪造选区来源", async () => {

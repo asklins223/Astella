@@ -1168,6 +1168,10 @@ export async function clearMemories(
   await executor.execute(sql`UPDATE companion_self_notes SET user_disabled=true,tier='archived',next_review_at=NULL,
     revision=revision+1,reason='用户清空记忆，停止使用这篇记事。',updated_at=${now.toISOString()}::timestamptz
     WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND NOT user_disabled`);
+  await executor.execute(sql`UPDATE companion_attention_plans SET state='completed',next_review_at=NULL,
+    revision=revision+1,updated_at=${now.toISOString()}::timestamptz
+    WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND state='active'
+      AND (preference_revision IS NULL OR self_note IS NOT NULL AND self_note<>'null'::jsonb)`);
   const updated = await executor.update(assistantMemoryItems)
     .set({ deletedAt: now, updatedAt: now, purgeAfter: new Date(now.getTime() + MEMORY_RECYCLE_BIN_DAYS * 24 * 60 * 60 * 1000) })
     .where(and(

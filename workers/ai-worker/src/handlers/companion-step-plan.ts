@@ -60,7 +60,7 @@ export function companionStepCorrectionMessages(input: {
           : "上一段尚未显示，可以修正后完整回答当前问题。",
       ].join("\n"),
     },
-    { ...input.currentRequest, role: "user" },
+    { ...input.currentRequest, role: input.currentRequest.role === "system" ? "system" : "user" },
   ];
 }
 

@@ -811,6 +811,8 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
   const cardGenerationStreams = createRunStreamLedger();
   /** 伴星会话事件流：conversationId → 停止函数（每个会话至多一条）。 */
   const companionChatStreams = new Map<string, () => void>();
+  /** 异步建连完成前也占位；否则并发订阅会各自开一条 SSE，直到服务端三条上限。 */
+  const companionChatStreamsPending = new Set<string>();
   /**
    * 笔记协同流：noteId → 该笔记的连接句柄（每篇至多一条，多个窗口共用）。
    *
@@ -1204,9 +1206,12 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
    * 同一会话已有流时不重复建连——先建的那条游标最旧，续传最完整。流的停止由
    * 订阅生命周期负责（最后一个订阅消失、窗口销毁、登出、切工作区）。
    */
-  const ensureCompanionChatStream = (conversationId: string, eventCursor: number): void => {
-    if (!hasCompanionChatSubscription(conversationId) || companionChatStreams.has(conversationId)) return;
+  const ensureCompanionChatStream = (conversationId: string, eventCursor: number, voiceOutput: boolean): void => {
+    if (!hasCompanionChatSubscription(conversationId)
+      || companionChatStreams.has(conversationId)
+      || companionChatStreamsPending.has(conversationId)) return;
     const streamWorkspaceEpoch = activeWorkspaceEpoch;
+    companionChatStreamsPending.add(conversationId);
     void gateway.watchCompanionConversationEvents(
       conversationId,
       eventCursor,
@@ -1214,13 +1219,23 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
         if (streamWorkspaceEpoch !== activeWorkspaceEpoch) return;
         emit("companionChat", { kind: "companion_chat_event", conversationId, event }, activeWorkspaceEpoch);
       },
+      undefined,
+      voiceOutput,
     ).then((stop) => {
+      companionChatStreamsPending.delete(conversationId);
       if (!hasCompanionChatSubscription(conversationId) || streamWorkspaceEpoch !== activeWorkspaceEpoch) {
         stop();
         return;
       }
+      // 另一路生命周期回调可能已经安装了同会话流；迟到的建连不能覆盖它并丢掉停止句柄。
+      if (companionChatStreams.has(conversationId)) {
+        stop();
+        return;
+      }
       companionChatStreams.set(conversationId, stop);
-    }).catch(() => undefined);
+    }).catch(() => {
+      companionChatStreamsPending.delete(conversationId);
+    });
   };
 
   /**
@@ -1843,7 +1858,7 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
     if (input.topic.kind === "companionChat") {
       // eventCursor 缺省 0（无回合游标的降级路径）：主进程从头重放，渲染层
       // 按 runId/generation 过滤，不会把历史帧渲染成本轮回复。
-      ensureCompanionChatStream(input.topic.conversationId, input.topic.eventCursor ?? 0);
+      ensureCompanionChatStream(input.topic.conversationId, input.topic.eventCursor ?? 0, input.topic.voiceOutput === true);
     }
     if (input.topic.kind === "noteDoc") {
       ensureNoteDocStream(input.topic.noteId);

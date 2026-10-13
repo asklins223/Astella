@@ -1,3 +1,4 @@
+import { companionInitiativeDeliveryRefV1Schema, type CompanionInitiativeDeliveryRefV1 } from "./companion-initiative-contracts.ts";
 /**
  * Main ↔ Pet Context / Event / Command Bridge V2 合同（冻结：文档 16 §14）。
  *
@@ -193,7 +194,7 @@ export type AssistantDeliveryPayloadRefV2 =
   | { kind: "message"; messageId: string }
   | { kind: "proposal"; proposalId: string }
   | { kind: "action_result"; proposalId: string }
-  | { kind: "system_event"; systemEventId: string; text?: string }
+  | { kind: "system_event"; systemEventId: string; text?: string; initiative?: CompanionInitiativeDeliveryRefV1 }
   /** §16.2：contentPreview 为候选内容摘要 ≤80 字，仅 UI 展示。 */
   | { kind: "memory_item"; memoryItemId: string; contentPreview?: string };
 
@@ -594,7 +595,7 @@ export const assistantDeliveryV2Schema = z.strictObject({
     z.strictObject({ kind: z.literal("message"), messageId: z.string().uuid() }),
     z.strictObject({ kind: z.literal("proposal"), proposalId: z.string().uuid() }),
     z.strictObject({ kind: z.literal("action_result"), proposalId: z.string().uuid() }),
-    z.strictObject({ kind: z.literal("system_event"), systemEventId: z.string().min(1), text: z.string().min(1).max(240).optional() }),
+    z.strictObject({ kind: z.literal("system_event"), systemEventId: z.string().min(1), text: z.string().min(1).max(240).optional(), initiative: companionInitiativeDeliveryRefV1Schema.optional() }),
     z.strictObject({ kind: z.literal("memory_item"), memoryItemId: z.string().uuid(), contentPreview: z.string().min(1).max(80).optional() }),
   ]),
   displayLease: z

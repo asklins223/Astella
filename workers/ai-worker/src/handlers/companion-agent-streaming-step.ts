@@ -106,6 +106,17 @@ export async function runStreamingAgentStep(args: {
    * 后者管"这段字够不够长、值不值得发"。
    */
   releaseGate?: () => Promise<boolean>;
+  /**
+   * 思考增量出口（2026-10-13）。与正文**同闸不同路**：
+   *
+   * - 同闸：投机的那一步在分类器落地前不能确定会不会整版作废，作废草稿的思考
+   *   显示出来就是一句假话（她最后根本没照这个想），所以放行之前先攒着；
+   *   判定留下就一次性补上攒住的部分，随后照常边想边流；判定作废就整块丢掉。
+   * - 不同路：`holdUntilChars` 与 `deferPublication` 管的是**正文**（坍缩闸要拿
+   *   够长的字才能判退化、动作轮要整段攒住），思考不该被它们压住——那 20 秒
+   *   正是这段文字要填空白的地方。
+   */
+  onReasoningDelta?: (deltaText: string) => void;
 }): Promise<AgentTurnResult> {
   args.ctxSignal.throwIfAborted();
   const controller = new AbortController();
@@ -210,17 +221,39 @@ export async function runStreamingAgentStep(args: {
     deliver(text);
   };
 
+  /**
+   * 思考通路的放行状态：只由 `releaseGate` 决定（见 args 上的说明）。
+   * 不传闸门（正式那一步、以及没有投机的轮次）就一开始直通，provider 吐多少流多少。
+   */
+  let reasoningGateOpen = args.releaseGate === undefined;
+  let heldReasoning = "";
+  const emitReasoning = (text: string): void => {
+    const sink = args.onReasoningDelta;
+    if (!sink || discarded || stopped || text.length === 0) return;
+    if (!reasoningGateOpen) {
+      heldReasoning += text;
+      return;
+    }
+    sink(text);
+  };
+
   const gateSettled = args.releaseGate
     ? args.releaseGate().then((allowed) => {
       if (discarded || stopped) return;
       if (!allowed) {
         // 整版作废：此刻一个字都没下发，重跑不需要撤回任何东西。
+        // 攒着的思考同样整块丢掉——它属于这一版，而这一版没说过一个字。
+        heldReasoning = "";
         discarded = true;
         stopped = true;
         controller.abort();
         return;
       }
       gateOpen = true;
+      reasoningGateOpen = true;
+      const reasoning = heldReasoning;
+      heldReasoning = "";
+      if (reasoning.length > 0) args.onReasoningDelta?.(reasoning);
       releaseHeld();
     }).catch(() => {
       discarded = true;
@@ -302,6 +335,8 @@ export async function runStreamingAgentStep(args: {
           ...(args.onToolCallSettled
             ? { onToolCallSettled: (slot: { index: number; id: string; name: string; argsText: string }) => args.onToolCallSettled!(slot) }
             : {}),
+          // 只在调用方要了的时候才挂：不挂时 provider 一个字都不多做。
+          ...(args.onReasoningDelta ? { onReasoningDelta: emitReasoning } : {}),
         },
         signal,
         (delta) => {

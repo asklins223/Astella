@@ -18,7 +18,7 @@ const CFG: TtsEngineConfig = {
     format: "mp3",
     sampleRate: 22050,
     instruction: "",
-  },
+      },
   edge: { voice: "zh-CN-XiaoxiaoNeural", rate: "+0%" },
 };
 
@@ -28,6 +28,8 @@ test("没有偏好：整身回 config，并标成未显式设置", () => {
     qwenVoice: "longhua_v3.1",
     edgeVoice: "zh-CN-XiaoxiaoNeural",
     qwenInstruction: "",
+    qwenInstructionExplicit: false,
+    qwenDialect: null,
     explicit: false,
   });
   assert.deepEqual(resolveTtsSelection({}, CFG).explicit, false);
@@ -95,4 +97,12 @@ test("说话风格偏好：合法则用，空/非字符串/超限都回 config �
   assert.equal(resolveTtsSelection({ instruction: 42 }, withDefault).qwenInstruction, "默认风格");
   // 超限的存量值整体回默认：截一半的风格描述可能改变语义，也可能被上游拒。
   assert.equal(resolveTtsSelection({ instruction: "温柔".repeat(51) }, withDefault).qwenInstruction, "默认风格");
+});
+
+test("长期方言与自定义声音描述分开保留，并能被合成选择读取", () => {
+  const selection = resolveTtsSelection({ dialect: "河南话", instruction: "语速偏慢，声音温柔" }, CFG);
+  assert.equal(selection.qwenDialect, "河南话");
+  assert.equal(selection.qwenInstruction, "语速偏慢，声音温柔");
+  assert.equal(selection.qwenInstructionExplicit, true);
+  assert.equal(resolveTtsSelection({ dialect: "未知方言" }, CFG).qwenDialect, null);
 });

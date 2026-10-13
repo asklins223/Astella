@@ -112,14 +112,12 @@ export async function createNoteAnnotation(
   if (!noteAnchorMatchesV1(blocks, input.anchor)) {
     throw new NoteAnnotationError("note_anchor_mismatch", "这段原句和笔记里的显示位置对不上，请重新选择后再贴回批注。");
   }
-  if (input.sourceMessageId && !(await isAssistantReplyForNote(tx, scope, {
-    messageId: input.sourceMessageId,
-    noteId,
-    noteVersionId: input.anchor.noteVersionId,
-    selectionText: input.anchor.excerpt,
-  }))) {
-    throw new NoteAnnotationError("source_message_not_found", "伴星回复没有带着这句原文，暂时不能贴成批注。");
-  }
+  if (input.sourceMessageId && !await isAssistantReplyForNote(tx, scope, {
+    messageId: input.sourceMessageId, noteId,
+    noteVersionId: input.anchor.noteVersionId, selectionText: input.anchor.excerpt,
+  })) throw new NoteAnnotationError("source_message_not_found", "伴星回复没有带着这句原文，暂时不能贴成批注。");
+  // The supplied document is authored content. Source speech is only provenance.
+  const explanation = input.explanation;
   const [inserted] = await tx.insert(noteAnnotations).values({
     ...scope,
     noteId,
@@ -131,7 +129,7 @@ export async function createNoteAnnotation(
     excerpt: input.anchor.excerpt,
     prefix: input.anchor.prefix,
     suffix: input.anchor.suffix,
-    explanation: input.explanation,
+    explanation,
     sourceMessageId: input.sourceMessageId ?? null,
   }).onConflictDoNothing().returning();
   if (inserted) return project(inserted, note.currentVersionId);
@@ -148,7 +146,7 @@ export async function createNoteAnnotation(
         && existing.excerpt === input.anchor.excerpt
         && existing.prefix === input.anchor.prefix
         && existing.suffix === input.anchor.suffix;
-      if (sameAnchor && existing.explanation === input.explanation) return project(existing, note.currentVersionId);
+      if (sameAnchor && existing.explanation === explanation) return project(existing, note.currentVersionId);
       throw new NoteAnnotationError("save_unconfirmed", "这条伴星回复已经贴在另一个位置，没有覆盖原批注。");
     }
   }

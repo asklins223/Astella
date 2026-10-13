@@ -96,6 +96,17 @@ export interface ChatOptions {
     name: string;
     argsText: string;
   }) => void;
+  /**
+   * 模型内部思考的原文增量（2026-10-13）。
+   *
+   * 只有真正实现 Responses 思考通道（`response.reasoning_text.delta`）的 provider
+   * 会调它。**默认关闭**：不传就什么都不做，与之前的行为逐字相同。
+   *
+   * 用途只有一个——让等待有内容看。调用方拿到的是**未净化**的模型内部文本，
+   * 不能当正文（不进可见文本管线、不进朗读、不进历史），所以它和 `onDelta`
+   * 是两条完全独立的路。回调同样**不得被 await**（跑在 SSE 读取循环里）。
+   */
+  onReasoningDelta?: (deltaText: string) => void;
 }
 
 /** Chat 调用结果 */

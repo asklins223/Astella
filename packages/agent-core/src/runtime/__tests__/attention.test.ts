@@ -5,7 +5,8 @@ import { agentTurnInterpretationV1Schema } from "@astella/shared/agent-contracts
 const input = { requestHash: "a".repeat(64), objects: [{ kind: "agent_run" as const, id: "11111111-1111-1111-1111-111111111111", revision: 2 }],
   capabilities: ["agent_control_goal", "agent_list_goals"] };
 const task = { intent: "task_control", toolUse: "act", subjects: [{ description: "刚才那件事", objectIndex: 0 }],
-  goalRelation: "control", goalObjectIndex: 0, candidateOperations: ["agent_control_goal"], ambiguities: [] };
+  goalRelation: "control", goalObjectIndex: 0, candidateOperations: ["agent_control_goal"], ambiguities: [],
+  voiceStyle: { decision: "none", instruction: null } };
 test("a task can bind a scoped goal; subsequent small talk cannot inherit its operation or relation", () => {
   const control = resolveAgentTurnInterpretation(task, input);
   assert.deepEqual(control.goalReference, input.objects[0]);
@@ -60,6 +61,38 @@ test("模型不能在现役合同中返回退休用途字段", () => {
   assert.equal(result.status, "uncertain");
   assert.equal(result.toolUse, "uncertain");
   assert.equal("dialogueFrame" in result, false);
+});
+
+test("structured voice decision survives resolution and legacy records default to no voice change", () => {
+  const apply = resolveAgentTurnInterpretation({ ...task,
+    voiceStyle: { decision: "apply", instruction: "请用河南话表达，语速自然" } }, input);
+  assert.deepEqual(apply.voiceStyle, { decision: "apply", instruction: "请用河南话表达，语速自然",
+    persistentPreference: { action: "keep", dialect: null } });
+  const clarify = resolveAgentTurnInterpretation({ ...task,
+    voiceStyle: { decision: "clarify", instruction: null } }, input);
+  assert.deepEqual(clarify.voiceStyle, { decision: "clarify", instruction: null,
+    persistentPreference: { action: "keep", dialect: null } });
+  const { voiceStyle: _voiceStyle, ...legacyRecord } = resolveAgentTurnInterpretation(task, input);
+  assert.deepEqual(agentTurnInterpretationV1Schema.parse(legacyRecord).voiceStyle,
+    { decision: "none", instruction: null, persistentPreference: { action: "keep", dialect: null } });
+});
+
+test("persistent dialect changes are distinct from one-turn overrides and default safely", () => {
+  const persistent = resolveAgentTurnInterpretation({ ...task, voiceStyle: {
+    decision: "apply", instruction: "请用河南话表达",
+    persistentPreference: { action: "set", dialect: "河南话" },
+  } }, input);
+  assert.deepEqual(persistent.voiceStyle.persistentPreference, { action: "set", dialect: "河南话" });
+  const temporary = resolveAgentTurnInterpretation({ ...task, voiceStyle: {
+    decision: "apply", instruction: "请用四川话表达",
+    persistentPreference: { action: "keep", dialect: null },
+  } }, input);
+  assert.deepEqual(temporary.voiceStyle.persistentPreference, { action: "keep", dialect: null });
+  const reset = resolveAgentTurnInterpretation({ ...task, voiceStyle: {
+    decision: "apply", instruction: "使用标准普通话",
+    persistentPreference: { action: "clear", dialect: null },
+  } }, input);
+  assert.deepEqual(reset.voiceStyle.persistentPreference, { action: "clear", dialect: null });
 });
 
 test("存量解释读取时丢弃退休实验字段，保留原有任务与权限判断", () => {

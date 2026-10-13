@@ -108,6 +108,8 @@ export const COMPANION_RATE_LIMITS = Object.freeze({
   asrPerMinute: { limit: 10, windowMs: 60_000 },
   asrPerHour: { limit: 60, windowMs: 3_600_000 },
   ttsPerMinute: { limit: 60, windowMs: 60_000 },
+  // 最多与创建回合同频，避免预连接端点被单独刷；进程级连接槽再兜住并发。
+  ttsPrewarmPerMinute: { limit: 12, windowMs: 60_000 },
   exportPerHour: { limit: 3, windowMs: 3_600_000 },
   // companion bridge context 发布/续租/撤销（§14.2）：与其余 companion 路由
   // 一致的 per-(workspace,user) 内存固定窗口限流，防认证客户端滥用端点。

@@ -5,7 +5,8 @@ import {
   validateAgentCapabilityArguments,
 } from "../agent-capability-catalog.ts";
 import { agentGoalExecutionManifest } from "../agent-capabilities.ts";
-import { COMPANION_AGENT_TOOL_DEFINITIONS, getCompanionAgentTool } from "../companion-agent-registry.ts";
+import { COMPANION_AGENT_TOOL_DEFINITIONS, COMPANION_DOCUMENT_AUTHORING_TOOLS,
+  companionTurnWritesDocumentContent, getCompanionAgentTool } from "../companion-agent-registry.ts";
 import { agentToolParameters } from "../agent-tool-parameters.ts";
 
 test("every surface resolves the same unique capability, validator, model schema and executor metadata", () => {
@@ -76,4 +77,13 @@ test("每条场景指引都挂在真实存在的能力上，且只在会话面�
       assert.notDeepEqual(entry.sceneGuidance.guided, entry.sceneGuidance.full);
     }
   }
+});
+
+test("「文案工作」的名单都指向真实登记的能力，改名不会悄悄放过方言", () => {
+  for (const name of COMPANION_DOCUMENT_AUTHORING_TOOLS) {
+    assert.ok(getAgentCapability(name), `${name} 已不在能力目录里：名单要同步，否则文案轮会照常带方言念给用户`);
+  }
+  assert.equal(companionTurnWritesDocumentContent(["companion_read_note", "companion_search_notes"]), false,
+    "读资料与讲解不算文案工作");
+  assert.equal(companionTurnWritesDocumentContent(["agent_start_goal"]), true);
 });

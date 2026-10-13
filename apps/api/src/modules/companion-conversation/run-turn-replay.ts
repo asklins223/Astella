@@ -1,9 +1,11 @@
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import {
+  COMPANION_DIAGNOSTIC_EVENT_TYPES_V1,
   companionContentBlockV1Schema,
   companionHandoffReplaySourceV1Schema,
   companionTurnReplayV1Schema,
   type CompanionContentBlockV1,
+  type CompanionDiagnosticEventTypeV1,
   type CompanionTurnReplayV1,
 } from "@astella/shared";
 import { canonicalJsonV1, sha256Utf8V1 } from "@astella/shared/content-hash";
@@ -29,18 +31,14 @@ import {
   REPLAY_PROMPT_TOTAL_MAX_CHARS,
 } from "./run-diagnostics-bounds.ts";
 
-const KNOWN_EVENT_TYPES = new Set<CompanionTurnReplayV1["timeline"]["events"][number]["type"]>([
-  "turn.accepted", "assistant.status", "agent.tool", "assistant.delta", "assistant.final",
-  "character.cue", "action.proposed", "action.decision", "action.expired", "voice.segment.ready",
-  "turn.cancelled", "error", "proactive.delivery", "proactive.delivery.updated",
-]);
+const KNOWN_EVENT_TYPES = new Set<CompanionDiagnosticEventTypeV1>(COMPANION_DIAGNOSTIC_EVENT_TYPES_V1);
 
 type ReplayRunRow = {
   id: string;
   workspaceId: string;
   userId: string;
   conversationId: string;
-  userMessageId: string;
+  userMessageId: string | null;
   assistantMessageId: string | null;
   status: CompanionTurnReplayV1["run"]["status"];
   generation: number;
@@ -68,6 +66,7 @@ export interface CompanionTurnReplayProjectionInput {
   } | null;
   messages: Array<{
     id: string;
+    runId?: string | null;
     seq: number;
     role: "user" | "assistant" | "system";
     kind: CompanionTurnReplayV1["messages"][number]["kind"];
@@ -140,9 +139,10 @@ function resolveHandoff(input: CompanionTurnReplayProjectionInput) {
     const userMessage = input.messages.find((message) => message.id === input.run.userMessageId);
     if (
       parsed.data.currentRequest.messageId !== input.run.userMessageId
-      || !userMessage
-      || parsed.data.currentRequest.messageSeq !== String(userMessage.seq)
-      || parsed.data.currentRequest.contentSha256 !== sha256Utf8V1(storedUserText(userMessage.blocks))
+      || (input.run.userMessageId !== null && (!userMessage
+        || parsed.data.currentRequest.messageSeq !== String(userMessage.seq)
+        || parsed.data.currentRequest.contentSha256 !== sha256Utf8V1(storedUserText(userMessage.blocks))))
+      || (input.run.userMessageId === null && parsed.data.currentRequest.contentSha256 !== sha256Utf8V1(""))
     ) {
       return { status: "invalid_snapshot" as const, source: null, sha256: null, version: null };
     }
@@ -244,9 +244,9 @@ export function projectCompanionTurnReplayV1(input: CompanionTurnReplayProjectio
   const handoff = resolveHandoff(input);
   const prompt = promptMessages(handoff.source);
   const safeMessages = input.messages
-    .filter((message) => message.id === input.run.userMessageId || message.id === input.run.assistantMessageId)
+    .filter((message) => message.id === input.run.userMessageId || message.id === input.run.assistantMessageId || message.runId === input.run.id)
     .sort((a, b) => a.seq - b.seq)
-    .slice(0, 2)
+    .slice(0, 42)
     .map((message) => ({
       id: message.id,
       seq: message.seq,
@@ -389,6 +389,7 @@ export async function loadCompanionTurnReplayV1(
   const [messages, steps, toolCalls, events] = await Promise.all([
     tx.select({
       id: companionMessages.id,
+      runId: companionMessages.runId,
       seq: companionMessages.seq,
       role: companionMessages.role,
       kind: companionMessages.kind,
@@ -399,7 +400,7 @@ export async function loadCompanionTurnReplayV1(
       eq(companionMessages.workspaceId, scope.workspaceId),
       eq(companionMessages.userId, scope.userId),
       eq(companionMessages.conversationId, run.conversationId),
-      inArray(companionMessages.id, messageIds),
+      sql`(${messageIds.length ? inArray(companionMessages.id, messageIds) : sql`FALSE`} OR ${companionMessages.runId}=${run.id})`,
     )).orderBy(asc(companionMessages.seq)),
     tx.select({
       stepNo: companionAgentSteps.stepNo,
