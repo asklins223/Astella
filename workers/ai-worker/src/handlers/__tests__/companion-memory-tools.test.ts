@@ -118,6 +118,21 @@ test("转交的那一行真的指向本模块（标签留着但忘了转交＝�
     + "要么某个记忆工具没被转交（死分支），要么转交了不该属于这一族的工具");
 });
 
+test("按 ID 展开与召回工具都返回认识状态及不可当作事实复述的提示", () => {
+  const source = readFileSync(join(HANDLERS, "companion-memory-tools.ts"), "utf8");
+  assert.match(source, /epistemicStatus: memory\.epistemicStatus/);
+  assert.match(source, /epistemicNotice: memoryEpistemicNotice\(memory\.epistemicStatus\)/);
+  assert.match(source, /epistemicStatus: item\.epistemicStatus/);
+  assert.match(source, /epistemicNotice: memoryEpistemicNotice\(item\.epistemicStatus\)/);
+  assert.match(source, /sourceType: memory\.sourceType/);
+  assert.match(source, /createdAt: memory\.createdAt/);
+  assert.match(source, /updatedAt: memory\.updatedAt/);
+  assert.match(source, /sourceType: item\.sourceType/);
+  assert.match(source, /createdAt: item\.createdAt/);
+  assert.match(source, /updatedAt: item\.updatedAt/);
+  assert.match(source, /已被新的说法替代，不能当作当前事实/);
+});
+
 test("本模块只接记忆族：别的一个都不接，来了就报错而不是静默返回空", () => {
   // 真跑一次：不是记忆工具就该当场拒绝，而不是默默给一个空结果。
   const foreign = {

@@ -7,22 +7,33 @@ const set = store.set.bind(store)
 const get = store.get.bind(store)
 let focusReturnTarget: HTMLElement | null = null
 let dismissCurrentSheet: (() => void) | null = null
+let sheetRevision = 0
 
 export function openSheet(sheet: SheetSpec): void {
   if (!get().sheet) {
     const active = document.activeElement
     focusReturnTarget = sheet.trigger ?? (active instanceof HTMLElement ? active : null)
   }
-  set({ sheet })
+  sheetRevision += 1
+  dismissCurrentSheet = null
+  set({ sheet: { ...sheet, instanceId: sheetRevision } })
+}
+
+export function isCurrentSheet(sheet: SheetSpec): boolean {
+  return get().sheet?.instanceId === sheet.instanceId && get().sheet !== null
 }
 
 export function closeSheet({ restoreFocus = true }: { restoreFocus?: boolean } = {}): void {
   const target = focusReturnTarget ?? get().sheet?.trigger ?? null
   focusReturnTarget = null
+  const closedRevision = ++sheetRevision
+  dismissCurrentSheet = null
   set({ sheet: null })
   if (restoreFocus && target) {
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (target.isConnected) target.focus({ preventScroll: true })
+      if (sheetRevision === closedRevision && !get().sheet && target.isConnected && !target.closest('[inert]')) {
+        target.focus({ preventScroll: true })
+      }
     }))
   }
 }

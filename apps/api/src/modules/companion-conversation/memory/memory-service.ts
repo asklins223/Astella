@@ -16,7 +16,6 @@ import {
   assistantMemoryItems,
   assistantMemoryItemRevisions,
   assistantMemorySourceSuppressions,
-  companionMemoryMutationLockKey,
   MEMORY_CONTENT_SIMILARITY_THRESHOLD,
   MEMORY_SEMANTIC_SIMILARITY_THRESHOLD,
 } from "@astella/shared/db-schema/assistant-memory";
@@ -29,6 +28,7 @@ import { companionMemoryContentMaxLength } from "@astella/shared/companion-memor
 import { logger } from "../../../lib/logger.ts";
 import { closeDeliveriesForMemoryItem } from "../delivery/delivery-service.ts";
 import { maskEntriesForSource, unmaskEntriesForSource } from "../discovery/discovery-service.ts";
+import { lockMemoryMutations } from "./memory-mutation-lock.ts";
 
 // 轻微·15（round-4）：LIST 无分页时的防御性上限。
 const MEMORY_LIST_LIMIT = 200;
@@ -44,13 +44,6 @@ export const MEMORY_RECYCLE_BIN_DAYS = 30;
 export interface MemoryScope {
   workspaceId: string;
   userId: string;
-}
-
-/** Serialize automatic extraction against every user-driven memory deletion path. */
-async function lockMemoryMutations(executor: ApiTransaction, userId: string): Promise<void> {
-  await executor.execute(sql`
-    SELECT pg_advisory_xact_lock(hashtextextended(${companionMemoryMutationLockKey(userId)}, 0))
-  `);
 }
 
 export class MemorySourceSuppressedError extends Error {
@@ -118,10 +111,21 @@ export type MemorySourceBasis =
   | "companion_interpretation";
 export type MemoryBudgetTier = CompanionMemoryBudgetTier;
 
+/**
+ * 常驻档的准入只看**一条**声明出来的 token 预算。
+ *
+ * 0344 原来钉了三条线（6 条 / 320 tok / 1,000 B），可这三条互相不是同一件事：
+ * 条数和字节只是 token 的代理，代理两条等于三条线打架；而 320 这个数与注入侧
+ * 根本不是一个来源——伴星提示词那侧的常驻容量由
+ * `COMPANION_MEMORY_CONTEXT_ESTIMATE_BUDGET × RESIDENT_MEMORY_BUDGET_SHARE`
+ * 声明（8,000 × 0.8 = 6,400 tok）。写侧 320、注入侧 6,400，于是"她能不能记住这条"
+ * 由一个谁都没声明过的条数说了算，第 7 条被拒时她上下文里还空着 6,000 多 tok。
+ *
+ * 现在两侧读同一个数（迁移 0430 的函数体里写死同一个 6,400，由
+ * `0344-…-migration.test.ts` 的那条守卫钉住一致）。
+ */
 export const COMPANION_MEMORY_RESIDENT_BUDGET_V1 = {
-  items: 6,
-  tokenEstimate: 320,
-  byteCount: 1000,
+  tokenEstimate: 6_400,
 } as const;
 
 /**
@@ -147,7 +151,8 @@ export interface MemoryBudgetStatusV1 {
   resident: {
     used: MemoryBudgetUsageV1;
     limits: typeof COMPANION_MEMORY_RESIDENT_BUDGET_V1;
-    available: MemoryBudgetUsageV1;
+    /** 只剩一条闸门可算：条数与字节是读数，不是名额。 */
+    available: { tokenEstimate: number };
   };
   active: MemoryBudgetUsageV1;
   /**
@@ -158,6 +163,16 @@ export interface MemoryBudgetStatusV1 {
     used: MemoryBudgetUsageV1;
     limits: typeof COMPANION_MEMORY_ARCHIVED_BUDGET_V1;
     available: MemoryBudgetUsageV1;
+  };
+  usage: {
+    windowDays: 30;
+    searchRequests: number;
+    returnedMemories: number;
+    emptySearches: number;
+    vectorSearches: number;
+    keywordSearches: number;
+    directoryExposures: number;
+    explicitReads: number;
   };
 }
 
@@ -180,6 +195,7 @@ export interface MemoryItemV2 {
   kind: MemoryKindV2;
   content: string;
   sourceEventId: string | null;
+  sourceEventIds: string[];
   sourceSessionId: string | null;
   sourceSpeaker: MemorySourceSpeaker | null;
   sourceBasis: "direct_statement" | "inferred_from_statement" | null;
@@ -188,6 +204,7 @@ export interface MemoryItemV2 {
   validUntil: string | null;
   userStated: boolean;
   userConfirmed: boolean;
+  confirmedAt: string | null;
   candidate: boolean;
   importance: number;
   confidence: number;
@@ -203,6 +220,7 @@ export interface MemoryItemV2 {
   authorType: MemoryAuthorType;
   authorId: string | null;
   epistemicStatus: MemoryEpistemicStatus;
+  supersededById: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -212,6 +230,7 @@ export interface MemoryRevisionV1 {
   kind: MemoryKindV2;
   content: string;
   sourceEventId: string | null;
+  sourceEventIds: string[];
   sourceSessionId: string | null;
   sourceSpeaker: MemorySourceSpeaker | null;
   sourceBasis: "direct_statement" | "inferred_from_statement" | null;
@@ -220,6 +239,7 @@ export interface MemoryRevisionV1 {
   validUntil: string | null;
   userStated: boolean;
   userConfirmed: boolean;
+  confirmedAt: string | null;
   importance: number;
   confidence: number;
   scope: MemoryScopeV2;
@@ -227,6 +247,7 @@ export interface MemoryRevisionV1 {
   authorType: MemoryAuthorType;
   authorId: string | null;
   epistemicStatus: MemoryEpistemicStatus;
+  supersededById: string | null;
   supersededAt: string;
 }
 
@@ -238,7 +259,7 @@ export class MemoryRevisionConflictError extends Error {
 }
 
 /** 简单冲突检测：与新记忆相似度超过共用判据的活跃记忆归入同一 conflict_group。 */
-async function markMemoryConflictIfSimilar(
+  async function markMemoryConflictIfSimilar(
   executor: ApiTransaction,
   scope: MemoryScope,
   memoryId: string,
@@ -272,6 +293,7 @@ function toContract(row: typeof assistantMemoryItems.$inferSelect): MemoryItemV2
     kind: row.kind as MemoryKindV2,
     content: row.content,
     sourceEventId: row.sourceEventId,
+    sourceEventIds: row.sourceEventIds ?? [],
     sourceSessionId: row.sourceSessionId,
     sourceSpeaker: row.sourceSpeaker as MemorySourceSpeaker | null,
     sourceBasis: row.sourceBasis as "direct_statement" | "inferred_from_statement" | null,
@@ -280,6 +302,7 @@ function toContract(row: typeof assistantMemoryItems.$inferSelect): MemoryItemV2
     validUntil: row.validUntil?.toISOString() ?? null,
     userStated: row.userStated,
     userConfirmed: row.userConfirmed,
+    confirmedAt: row.confirmedAt?.toISOString() ?? null,
     candidate: row.candidate,
     importance: row.importance,
     confidence: row.confidence,
@@ -295,6 +318,7 @@ function toContract(row: typeof assistantMemoryItems.$inferSelect): MemoryItemV2
     authorType: row.authorType as MemoryAuthorType,
     authorId: row.authorId,
     epistemicStatus: row.epistemicStatus as MemoryEpistemicStatus,
+    supersededById: row.supersededById ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -383,6 +407,12 @@ export async function upsertMemory(
       if (existing[0].authorType === "user" && input.userStated !== true) {
         return toContract(existing[0]);
       }
+      // A user-marked disputed or consolidated row cannot be silently revived by
+      // a delayed extraction. The user can explicitly correct it from the UI.
+      if ((existing[0].epistemicStatus === "disputed" || existing[0].epistemicStatus === "superseded")
+          && input.userStated !== true) {
+        return toContract(existing[0]);
+      }
       // 账号级守卫（42 阶段 1 E）：按最终 shape 判——省略 scope / appliesWhen 是**沿用**
       // 库里那一条，不是免检**。拦在 UPDATE 之前，源行、副本与 revision/history 都不动。
       assertGlobalPreferenceWritable({
@@ -420,6 +450,7 @@ export async function upsertMemory(
           epistemicStatus: input.userStated === true ? "supported" : "tentative",
           userStated: input.userStated ?? existing[0].userStated,
           userConfirmed: input.userStated === true ? true : existing[0].userConfirmed,
+          confirmedAt: input.userStated === true ? now : existing[0].confirmedAt,
           pinned: input.pinned ?? existing[0].pinned,
           // 内容变化后需要重新生成 embedding。
           embeddingStatus: existing[0].embeddingStatus === "ready"
@@ -481,6 +512,7 @@ export async function upsertMemory(
     validUntil: input.validUntil ?? null,
     userStated: input.userStated ?? false,
     userConfirmed: input.userStated ?? false,
+    confirmedAt: input.userStated === true ? now : null,
     candidate: input.candidate ?? true,
     importance: input.importance ?? (input.userStated ? 0.8 : 0.5),
     confidence: input.confidence ?? 0.5,
@@ -512,6 +544,8 @@ export async function upsertMemory(
                       AND ${assistantMemoryItems.sourceEventId} IS NOT NULL`,
       setWhere: sql`${assistantMemoryItems.deletedAt} IS NULL
                    AND ${assistantMemoryItems.sourceEventId} IS NOT NULL
+                   AND (${assistantMemoryItems.epistemicStatus} NOT IN ('disputed', 'superseded')
+                        OR excluded.author_type = 'user')
                    AND (${assistantMemoryItems.authorType} <> 'user' OR excluded.author_type = 'user')`,
       set: {
         // 语义与上面 update 分支一致：调用方没给的就沿用库里已有的
@@ -535,6 +569,7 @@ export async function upsertMemory(
         epistemicStatus: sql`excluded.epistemic_status`,
         userStated: sql`excluded.user_stated`,
         userConfirmed: sql`excluded.user_confirmed`,
+        confirmedAt: sql`coalesce(excluded.confirmed_at, ${assistantMemoryItems.confirmedAt})`,
         pinned: sql`excluded.pinned`,
         // 内容变了就得重新生成 embedding——与 update 分支同一判据
         embeddingStatus: sql`case when ${assistantMemoryItems.embeddingStatus} = 'ready'
@@ -599,6 +634,7 @@ export async function confirmMemory(
     .set({
       candidate: false,
       userConfirmed: true,
+      confirmedAt: now,
       sourceType: rows[0].sourceType === "model_inferred" ? "confirmed" : rows[0].sourceType,
       embeddingStatus: rows[0].embeddingStatus === "none" ? "pending" : rows[0].embeddingStatus,
       updatedAt: now,
@@ -862,18 +898,13 @@ export async function archiveMemory(
   executor: ApiTransaction,
   scope: MemoryScope,
   memoryItemId: string,
-  now: Date = new Date(),
 ): Promise<MemoryItemV2 | null> {
-  const updated = await executor.update(assistantMemoryItems)
-    .set({ archivedAt: now, updatedAt: now })
-    .where(and(
-      eq(assistantMemoryItems.id, memoryItemId),
-      eq(assistantMemoryItems.workspaceId, scope.workspaceId),
-      eq(assistantMemoryItems.userId, scope.userId),
-      isNull(assistantMemoryItems.deletedAt),
-    ))
-    .returning();
-  return updated[0] ? toContract(updated[0]) : null;
+  const result = await moveMemoryBudgetTier(executor, scope, {
+    memoryItemId, tier: "archived", actorType: "user", actorId: scope.userId,
+  });
+  if (result.status === "missing") return null;
+  const current = await getMemory(executor, scope, memoryItemId);
+  return current ? { ...current, archived: true } : null;
 }
 
 /** 恢复归档。 */
@@ -881,18 +912,13 @@ export async function restoreMemory(
   executor: ApiTransaction,
   scope: MemoryScope,
   memoryItemId: string,
-  now: Date = new Date(),
 ): Promise<MemoryItemV2 | null> {
-  const updated = await executor.update(assistantMemoryItems)
-    .set({ archivedAt: null, updatedAt: now })
-    .where(and(
-      eq(assistantMemoryItems.id, memoryItemId),
-      eq(assistantMemoryItems.workspaceId, scope.workspaceId),
-      eq(assistantMemoryItems.userId, scope.userId),
-      isNull(assistantMemoryItems.deletedAt),
-    ))
-    .returning();
-  return updated[0] ? toContract(updated[0]) : null;
+  const result = await moveMemoryBudgetTier(executor, scope, {
+    memoryItemId, tier: "active", actorType: "user", actorId: scope.userId,
+  });
+  if (result.status === "missing") return null;
+  const current = await getMemory(executor, scope, memoryItemId);
+  return current ? { ...current, archived: false } : null;
 }
 
 /** 忽略：写 `dismissed_at`，并把那条候选交付结账成 `dismissed`（doc 34 L42）。
@@ -931,6 +957,7 @@ export async function dismissMemory(
          AND EXISTS (
            SELECT 1 FROM assistant_memory_embeddings mv
            WHERE mv.memory_id = m.id
+             AND mv.model_revision = av.model_revision
              AND 1 - (mv.embedding <=> av.embedding) > ${MEMORY_SEMANTIC_SIMILARITY_THRESHOLD}
          )
     `);
@@ -997,11 +1024,13 @@ export async function correctMemory(
       // Editing an interpretation does not turn it into a fact about the user.
       userStated: existing.kind !== "judgment",
       userConfirmed: true,
+      confirmedAt: now,
       candidate: false,
       sourceType: "user_stated",
       authorType: "user",
       authorId: scope.userId,
       epistemicStatus: "supported",
+      supersededById: null,
       embeddingStatus: "pending",
       updatedAt: now,
     })
@@ -1020,6 +1049,40 @@ export async function correctMemory(
   }
   await markMemoryConflictIfSimilar(executor, scope, memoryItemId, content);
   await closeDeliveriesForMemoryItem(executor, scope, { memoryItemId, transition: "acted" }, now);
+  return toContract(updated[0]);
+}
+
+/** Flag a memory as disputed without erasing its source or rewriting its text. */
+export async function disputeMemory(
+  executor: ApiTransaction,
+  scope: MemoryScope,
+  memoryItemId: string,
+  expectedRevision: number,
+  now: Date = new Date(),
+): Promise<MemoryItemV2 | null> {
+  await lockMemoryMutations(executor, scope.userId);
+  const existing = await getMemory(executor, scope, memoryItemId);
+  if (!existing) return null;
+  if (existing.revision !== expectedRevision) {
+    throw new MemoryRevisionConflictError(existing.revision);
+  }
+  if (existing.epistemicStatus === "disputed") return existing;
+  const updated = await executor.update(assistantMemoryItems)
+    .set({ epistemicStatus: "disputed", authorType: "user", authorId: scope.userId, updatedAt: now })
+    .where(and(
+      eq(assistantMemoryItems.id, memoryItemId),
+      eq(assistantMemoryItems.workspaceId, scope.workspaceId),
+      eq(assistantMemoryItems.userId, scope.userId),
+      eq(assistantMemoryItems.revision, expectedRevision),
+      isNull(assistantMemoryItems.deletedAt),
+    ))
+    .returning();
+  if (!updated[0]) {
+    const current = await getMemory(executor, scope, memoryItemId);
+    if (!current) return null;
+    throw new MemoryRevisionConflictError(current.revision);
+  }
+  await closeDeliveriesForMemoryItem(executor, scope, { memoryItemId, transition: "dismissed" }, now);
   return toContract(updated[0]);
 }
 
@@ -1096,15 +1159,36 @@ export async function getMemoryBudgetStatus(
   const empty = (): MemoryBudgetUsageV1 => ({ items: 0, tokenEstimate: 0, byteCount: 0 });
   const resident = usage.get("resident") ?? empty();
   const archived = usage.get("archived") ?? empty();
+  const retrievalRows = await executor.execute<{
+    search_requests: number | string;
+    returned_memories: number | string;
+    empty_searches: number | string;
+    vector_searches: number | string;
+    keyword_searches: number | string;
+    directory_exposures: number | string;
+    explicit_reads: number | string;
+  }>(sql`
+    SELECT
+      count(*) FILTER (WHERE retrieval_mode IN ('vector', 'keyword_fallback'))::integer AS search_requests,
+      COALESCE(sum(cardinality(memory_ids)) FILTER (WHERE retrieval_mode IN ('vector', 'keyword_fallback')), 0)::integer AS returned_memories,
+      count(*) FILTER (WHERE retrieval_mode IN ('vector', 'keyword_fallback') AND cardinality(memory_ids) = 0)::integer AS empty_searches,
+      count(*) FILTER (WHERE retrieval_mode = 'vector')::integer AS vector_searches,
+      count(*) FILTER (WHERE retrieval_mode = 'keyword_fallback')::integer AS keyword_searches,
+      COALESCE(sum(cardinality(memory_ids)) FILTER (WHERE retrieval_mode = 'directory'), 0)::integer AS directory_exposures,
+      COALESCE(sum(cardinality(memory_ids)) FILTER (WHERE retrieval_mode = 'on_demand_id'), 0)::integer AS explicit_reads
+    FROM memory_usage_log
+    WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
+      AND created_at >= now() - interval '30 days'
+  `);
+  const retrieval = retrievalRows[0];
+  const count = (value: number | string | undefined) => Number(value ?? 0);
   return {
     version: 1,
     resident: {
       used: resident,
       limits: COMPANION_MEMORY_RESIDENT_BUDGET_V1,
       available: {
-        items: Math.max(0, COMPANION_MEMORY_RESIDENT_BUDGET_V1.items - resident.items),
         tokenEstimate: Math.max(0, COMPANION_MEMORY_RESIDENT_BUDGET_V1.tokenEstimate - resident.tokenEstimate),
-        byteCount: Math.max(0, COMPANION_MEMORY_RESIDENT_BUDGET_V1.byteCount - resident.byteCount),
       },
     },
     active: usage.get("active") ?? empty(),
@@ -1116,6 +1200,16 @@ export async function getMemoryBudgetStatus(
         tokenEstimate: 0,
         byteCount: Math.max(0, COMPANION_MEMORY_ARCHIVED_BUDGET_V1.byteCount - archived.byteCount),
       },
+    },
+    usage: {
+      windowDays: 30,
+      searchRequests: count(retrieval?.search_requests),
+      returnedMemories: count(retrieval?.returned_memories),
+      emptySearches: count(retrieval?.empty_searches),
+      vectorSearches: count(retrieval?.vector_searches),
+      keywordSearches: count(retrieval?.keyword_searches),
+      directoryExposures: count(retrieval?.directory_exposures),
+      explicitReads: count(retrieval?.explicit_reads),
     },
   };
 }
@@ -1270,6 +1364,7 @@ export async function listMemoryRevisions(
     kind: row.kind as MemoryKindV2,
     content: row.content,
     sourceEventId: row.sourceEventId,
+    sourceEventIds: row.sourceEventIds ?? [],
     sourceSessionId: row.sourceSessionId,
     sourceSpeaker: row.sourceSpeaker as MemorySourceSpeaker | null,
     sourceBasis: row.sourceBasis as "direct_statement" | "inferred_from_statement" | null,
@@ -1278,6 +1373,7 @@ export async function listMemoryRevisions(
     validUntil: row.validUntil?.toISOString() ?? null,
     userStated: row.userStated,
     userConfirmed: row.userConfirmed,
+    confirmedAt: row.confirmedAt?.toISOString() ?? null,
     importance: row.importance,
     confidence: row.confidence,
     scope: row.scope as MemoryScopeV2,
@@ -1285,6 +1381,7 @@ export async function listMemoryRevisions(
     authorType: row.authorType as MemoryAuthorType,
     authorId: row.authorId,
     epistemicStatus: row.epistemicStatus as MemoryEpistemicStatus,
+    supersededById: row.supersededById ?? null,
     supersededAt: row.supersededAt.toISOString(),
   }));
 }

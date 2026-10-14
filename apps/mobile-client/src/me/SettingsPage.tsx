@@ -1,5 +1,5 @@
 import { ParticipationPreferences } from "./ParticipationPreferences.tsx";
-import { useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { Icon } from '../app/icons.tsx'
 import { usePhoneRoot } from '../app/phone-root.tsx'
 import { originOf, openSheet, requestSheetClose, useSheet } from '../ui/sheet-store.ts'
@@ -9,9 +9,8 @@ import { setChatLayout, setTextScale, textScaleOptions, usePrefs, type ChatLayou
 /**
  * 使用设置。
  *
- * 这一屏只放**这台设备上真能改的东西**：字号落在 `--text-scale`，
- * 对话显示决定打开时先见到她还是先见到记录，减少动效让所有过渡直接就位。
- * 她的名字、表达与记忆还没接到手机上，所以这里没有那几行。
+ * 字号、对话显示与减少动效作用于这台设备；相处约定保存到账号。
+ * 自绘选项面板和试读正文让设置结果可以当场感知。
  */
 export function SettingsPage({ userId }: { userId: string | undefined }) {
   const prefs = usePrefs()
@@ -172,6 +171,8 @@ function SettingChoiceOptions<T extends string | number>({
   const [activeIndex, setActiveIndex] = useState(selectedIndex)
   const refs = useRef<Array<HTMLButtonElement | null>>([])
 
+  useEffect(() => setActiveIndex(selectedIndex), [selectedIndex])
+
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     let next = index
     if (event.key === 'ArrowDown' || event.key === 'ArrowRight') next = (index + 1) % options.length
@@ -181,6 +182,7 @@ function SettingChoiceOptions<T extends string | number>({
     else return
     event.preventDefault()
     setActiveIndex(next)
+    onChoose(options[next]!.value)
     refs.current[next]?.focus({ preventScroll: true })
   }
 

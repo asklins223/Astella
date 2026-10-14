@@ -32,6 +32,10 @@ test("0335 keeps diary selection checkpoints private, scoped, and versioned", ()
 test("worker-only diary checkpoints stay private after role bootstrap", () => {
   assert.match(roleGrants, /'companion_diary_generation_checkpoints'/);
   assert.match(roleGrants, /REVOKE ALL PRIVILEGES ON TABLE public\.companion_diary_generation_checkpoints FROM astella_api/);
-  assert.match(roleGrants, /API unexpectedly has access to worker-only diary checkpoints/);
+  assert.match(roleGrants, /API diary checkpoint access must be scoped DELETE only/);
+  assert.match(roleGrants, /GRANT DELETE ON TABLE public\.companion_diary_generation_checkpoints TO astella_api/);
+  assert.match(roleGrants, /has_table_privilege\(\s*'astella_api',\s*'public\.companion_diary_generation_checkpoints',\s*'SELECT'\s*\)/);
+  assert.match(roleGrants, /NOT has_table_privilege\(\s*'astella_api',\s*'public\.companion_diary_generation_checkpoints',\s*'DELETE'\s*\)/);
+  assert.doesNotMatch(roleGrants, /GRANT SELECT[^;]*companion_diary_generation_checkpoints[^;]*TO astella_api/);
   assert.match(roleGrants, /\('companion_diary_generation_checkpoints', true, true, true, true\)/);
 });

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """反事实重放台（39b §10 / 39d W1-1）：只读、不花模型调用。
 
-它回答一个问题：**这 11 道输出闸里，每一条在最近 30 天的真实流量上还漏不漏？**
+它回答一个问题：**这 9 道对话输出闸里，每一条在最近 30 天的真实流量上还漏不漏？**
 漏的判定分三类——`covered`（供给侧机制已经给出确定的真值可填）、`rescued-by-tool`
 （该调的工具仍在面上）、`still-leaks`（两者都没有）。退出码的规则只有一条：
 **任一被标成「删除」的闸 `covered + rescued-by-tool < 100%` 即非 0。**
@@ -11,7 +11,7 @@
 
 ## 判据只有一份实现
 
-11 道闸**不在本文件里重写**——它们由 `workers/ai-worker/scripts/companion-gate-eval.ts`
+9 道闸**不在本文件里重写**——它们由 `workers/ai-worker/scripts/companion-gate-eval.ts`
 通过 tsx 直接 import 真函数执行。理由：同一判据在 TS 与 Python 正则里各写一份是这条链上
 最贵的错法（`companion-quality-report.py` 的 `VISION_TIME_QUESTION` 已经吃过一次：
 元字符集不同，漏改的后果是**样本静默变少**而不是报错）。本文件只负责取数、
@@ -21,16 +21,13 @@ P2 键表的取用、触发分类与退出码。
 
 1. **历史环境块没有落库**（39b §10：`companion_agent_steps` 只有 `request_hash`）。
    重放只能按 `loadHereAndNow` **在重放时刻**重建环境块——同一账号的 509 轮因此共用
-   同一份今天的读数。所以 G1／G2／G6／G10 的触发数记的是**重算口径**；不受环境影响的
-   闸（G4／G5／G7／G8／G9／G11）是**原话逐字重算**，与当时一致。
+   同一份今天的读数。所以 G1／G2／G6 的触发数记的是**重算口径**；不受环境影响的
+   闸（G4／G5／G7／G8／G9）是**原话逐字重算**，与当时一致。
    **P1（G3 的覆盖）同一条边界**：指称解析里的规则②③ 读的是"此刻这一屏"的可读视图、
    规则④ 读的是该会话最近 20 次工具调用——都是重放时刻的真值，不是历史那一刻的。
 2. **P1（W2-3）与 P2（W2-5）都已落地**：指称解析由判据桥调**真实现**
    （`loadThisTurnFacts` + `noteReference`），读数目录的**键表与量词集**也从桥里现取
    （`mode: spans`，来自 `companion-fact-spans.ts`）。本文件不再自己维护这两份模拟。
-   G10／G11 的覆盖读**产出侧守卫**（`validateThoughtExpression` + 送达前的
-   `readsOutStatistics` 抑制）：念头气泡在新机制下没有读数目录，那两条判据已经在产出
-   这一步执行，后置闸的触发是重复的。
 3. 本台**没有**做"当时那一轮的模型还会不会再犯"的推断。它只判判据的触发与覆盖。
 
 用法：
@@ -73,16 +70,13 @@ GATE_DISPOSITION = {
     "G7": "keep",
     "G8": "keep",
     "G9": "keep",
-    "G10": "delete",
-    "G11": "delete",
 }
 
-# 11 道闸的触发前提分类（39b §9.1 的"类"列）。
+# 9 道闸的触发前提分类（39b §9.1 的"类"列）。
 GATE_CLASS = {
     "G1": "A", "G2": "A", "G3": "A", "G4": "A", "G6": "A",
     "G5": "A-prime",
     "G7": "B", "G8": "B", "G9": "B",
-    "G10": "C", "G11": "C",
 }
 
 # P2 的量词集：主流程从判据桥现取（`mode: spans`），这里只留一个空集占位。
@@ -473,7 +467,7 @@ def self_test_wiring() -> int:
 
 
 def bridge_self_test() -> int:
-    """判据桥自己的自证（per-turn 活跃度／历史出处否证／G10 空源／入库闸阳性对照）。
+    """判据桥自己的自证（per-turn 活跃度／历史出处否证／入库闸阳性对照）。
 
     台子的读数正确与否，取决于那四条接线通不通，而它们在真实数据上**有一半是惰性的**
     （这个账号的档案恰好是 `active`，这一窗过报恰好 0 条）——所以必须有一层不依赖数据的证明。
@@ -485,7 +479,7 @@ def bridge_self_test() -> int:
          str(BRIDGE), "--self-test"],
         capture_output=True, text=True, env=env, input="")
     ok = proc.returncode == 0
-    print(f"  {'ok  ' if ok else 'FAIL'} 桥自证：per-turn 活跃度／历史出处否证／G10 空源／入库闸阳性对照"
+    print(f"  {'ok  ' if ok else 'FAIL'} 桥自证：per-turn 活跃度／历史出处否证／入库闸阳性对照"
           + ("" if ok else f"  实得退出码 {proc.returncode}"))
     # 把桥里**逐条**的失败原样端出来：只报一个聚合的 FAIL，变异自证就只能说"红在桥上"，
     # 说不清红在哪一条接线——而"红在正确的那条断言上"正是这一族要证明的东西。
@@ -547,37 +541,7 @@ def reading_basis(gate: str, facts: dict) -> dict:
                        + (f"这一窗量到 {grandfathered} 条过不了今天的闸——它们是闸的**历史战绩**"
                           "（阳性对照），不是今天会漏" if grandfathered else
                           "这一窗没有任何一条过不了 ⇒ 触发 0 是「量不到」，不是「没用」")}
-    if gate == "G10":
-        empty = int(facts.get("g10_empty_source", 0))
-        total = int(facts.get("g10_measurable", 0))
-        legs = ([f"空 allowedSource 的 {empty} 条按设计恒不触发"
-                 f"（`companion-thought.ts:258` 首行 return false）"] if empty else [])
-        return {"basis": BASIS_EXACT, "legs": legs,
-                "why": f"分母＝拿到非空数字来源的 {total} 条；空源那几条不是 0 触发，"
-                       "是判据根本没跑（分母已把它们剔出）"}
-    if gate == "G11":
-        return {"basis": BASIS_EXACT, "legs": [],
-                "why": "判据不带 allowedSource（`readsOutStatistics` 只有一个入参）"
-                       "⇒ 空源不影响它，分母就是全部念头"}
     return {"basis": BASIS_EXACT, "legs": [], "why": ""}
-
-
-def fetch_thoughts(days: int, emails_sql: str) -> list[dict]:
-    """念头链的产物（G10／G11 的数据源）。
-
-    G10／G11 的判据长在 `companion-thought.ts` 上，它们的输入是**念头气泡的正文**，
-    不在 `companion_turn_runs` 里。只收 `source='llm'` 那批——`streak`／`review_due`
-    是模板句（她自己没写数字），没有可判定的正文。
-    """
-    return rows(f"""
-        SELECT t.id, t.user_id, t.text, t.source, t.created_at,
-               coalesce(t.leak_gate_version, '') AS leak_gate_version
-        FROM assistant_thoughts t
-        WHERE t.created_at > now() - interval '{days} days'
-          AND t.source = 'llm'
-          AND t.user_id IN (SELECT id FROM users WHERE email IN ({emails_sql}))
-        ORDER BY t.created_at
-    """)
 
 
 # ─── 判据执行桥 ────────────────────────────────────────────────────────────
@@ -639,8 +603,7 @@ QUANTIFIER_SHAPE = re.compile(r"\d+(?:\.\d+)?\s*(分钟|小时|天|周|张|篇|�
 
 
 def statistic_tokens(text: str) -> set[str]:
-    """正文里"数字 + 量词"的形状。G11 只回布尔、G10 只回布尔，它们的命中项
-    要在这里现取——判据本身不吐 token 明细。"""
+    """正文里"数字 + 量词"的形状，供 G1 的覆盖分类使用。"""
     return {match.group(0).strip() for match in QUANTIFIER_SHAPE.finditer(text or "")}
 
 
@@ -667,7 +630,7 @@ def span_able(tokens: set[str]) -> bool:
 def classify(gate: str, turn: dict, gate_result: dict, p1: dict, text: str) -> dict:
     """给一条已触发的闸定桶。返回 `{bucket, why}`。"""
     face = set(turn.get("tool_face", []))
-    # G1 自带命中明细（更准）；G10／G11 只有布尔，用正文现取的形状代理。
+    # G1 自带命中明细；其余闸按各自判据返回布尔值。
     gate_tokens = {str(token) for token in (gate_result.get("detail") or [])}
     tokens = gate_tokens or statistic_tokens(text)
 
@@ -696,14 +659,6 @@ def classify(gate: str, turn: dict, gate_result: dict, p1: dict, text: str) -> d
     if gate == "G4":
         # 覆盖来自 P3（动作步没有 prose 通道），而 P3 取决于 S1 探针 ① < 2%。
         return {"bucket": "conditional", "why": "覆盖依赖 P3；P3 取决于 S1 探针（W2-4）"}
-
-    if gate in ("G10", "G11"):
-        # 念头气泡没有读数目录（主动开口时没人在问），覆盖来自**产出侧守卫**：
-        # `validateThoughtExpression` 的统计形状拒绝 + 送达前 `readsOutStatistics` 抑制
-        # ——两者都在她定稿那一步执行（桥的 `thoughtGuardCovers`）。
-        if turn.get("thought_guard_covers"):
-            return {"bucket": "covered", "why": "产出侧守卫会拒掉／抑制这条气泡（判据已前移）"}
-        return {"bucket": "still-leaks", "why": f"产出侧守卫没拦住（{sorted(tokens) or '无'}）"}
 
     return {"bucket": "keep", "why": "去向为保留，不参与删闸判决"}
 
@@ -734,8 +689,8 @@ def exit_code_for(buckets: dict[str, dict[str, int]],
     ①`still-leaks`（含 `unclassified`）> 0 —— 原判据；
     ②**触发数 = 0** —— 没有一次触发不构成"这道闸没用了"的证据，只构成"这一窗口的
       样本里没出现"；把 0 触发读成 100% 覆盖，是 2026-09-25 那轮台账里最该防的错法；
-    ③**可判分母 = 0** —— 判据需要的输入不存在时它**恒不触发**（G10 在
-      `allowedSource` 为空时第一行就 return false；G5 的 A′ 前置 `stepEmitted` 从不落库）。
+    ③**可判分母 = 0** —— 判据需要的输入不存在时它**恒不触发**（G5 的 A′ 前置
+      `stepEmitted` 从不落库）。
       这种 0 是"测不出来"，不是"没有"。
 
     ④**触发不可归因** ⇒ 不算证据。归因的根据是库里那一列 `leak_gate_version`（39d #28）：
@@ -835,13 +790,11 @@ def self_test() -> int:
     unclassified["G3"] = {"covered": 0, "rescued-by-tool": 0, "still-leaks": 0, "conditional": 0,
                           "keep": 0, "unclassified": 2}
 
-    # 新增两条：0 触发、分母 0 —— 都必须红（它们正是"看起来全绿"的那两种形状）
+    # 零触发、分母为 0、零触发但有分母都必须拒绝删闸。
     zero_fired = {gate: dict(value) for gate, value in all_covered.items()}
-    zero_fired["G10"] = {"covered": 0, "rescued-by-tool": 0, "still-leaks": 0, "conditional": 0,
+    zero_fired["G1"] = {"covered": 0, "rescued-by-tool": 0, "still-leaks": 0, "conditional": 0,
                          "keep": 0, "unclassified": 0}
     code_zero, problems_zero = exit_code_for(zero_fired, GATE_DISPOSITION, None, attribution_for())
-    # 空窗口（今天 `--days 1` 的真实形状）：一条触发都没有、归因格子也全 0。
-    # 这一窗该说的是"零触发"，不是"归因到了但只落在 0 天"——那种读法会让人以为真有样本被日期挡住了。
     empty_window = {gate: dict(value) for gate, value in all_covered.items()}
     empty_window["G1"] = {"covered": 0, "rescued-by-tool": 0, "still-leaks": 0, "conditional": 0,
                           "keep": 0, "unclassified": 0}
@@ -851,17 +804,12 @@ def self_test() -> int:
                             "unattributed": 0, "attributed_days": 0}))
     blind_denominator = {gate: dict(value) for gate, value in all_covered.items()}
     code_blind, problems_blind = exit_code_for(
-        blind_denominator, GATE_DISPOSITION, {"G10": 0, "G1": 12, "G3": 90, "G11": 55},
-        attribution_for())
-    # 分母健康但零触发：也要红（空集不是"这闸没用"，是"没量到"）
+        blind_denominator, GATE_DISPOSITION, {"G1": 0, "G3": 90}, attribution_for())
     zero_with_denominator = {gate: dict(value) for gate, value in all_covered.items()}
-    zero_with_denominator["G10"] = {"covered": 0, "rescued-by-tool": 0, "still-leaks": 0,
+    zero_with_denominator["G1"] = {"covered": 0, "rescued-by-tool": 0, "still-leaks": 0,
                                     "conditional": 0, "keep": 0, "unclassified": 0}
     code_empty, problems_empty = exit_code_for(
-        zero_with_denominator, GATE_DISPOSITION,
-        {"G10": 55, "G1": 12, "G3": 90, "G11": 55}, attribution_for())
-    # 归因的三种形状：全是无版本（这一列落地前的历史行）／掺了旧版本／归因齐了但只落在一天。
-    # 三种都必须红，且各只点名那一道闸——别的闸归因是健康的，不许连坐。
+        zero_with_denominator, GATE_DISPOSITION, {"G1": 12, "G3": 90}, attribution_for())
     code_missing, problems_missing = exit_code_for(
         all_covered, GATE_DISPOSITION, None,
         attribution_for(G1={"attributed": 0, "stale": 0, "missing": 3,
@@ -872,8 +820,8 @@ def self_test() -> int:
                             "unattributed": 1, "attributed_days": 3}))
     code_one_day, problems_one_day = exit_code_for(
         all_covered, GATE_DISPOSITION, None,
-        attribution_for(G11={"attributed": 4, "stale": 0, "missing": 0,
-                             "unattributed": 0, "attributed_days": 1}))
+        attribution_for(G3={"attributed": 4, "stale": 0, "missing": 0,
+                            "unattributed": 0, "attributed_days": 1}))
     # 缺整份归因读数：判不了，也要红（这条是为"上游忘了传"那种形状准备的）
     code_nodata, problems_nodata = exit_code_for(all_covered, GATE_DISPOSITION)
     # 空窗口（真实账号 0 条）：只许说"这一窗没量到"，不许把逐闸的结论端出去——
@@ -892,13 +840,13 @@ def self_test() -> int:
     ok = (code_green == 0 and problems_green == []
           and code_red == 1 and problems_red == [("G1", 1)] and code_conditional == 0
           and code_unknown == 1 and problems_unknown == [("G3", 2)]
-          and code_zero == 1 and problems_zero[0][0] == "G10" and "零触发" in str(problems_zero[0][1])
+          and code_zero == 1 and problems_zero[0][0] == "G1" and "零触发" in str(problems_zero[0][1])
           and code_blind == 1 and any("可判分母为 0" in str(x[1]) for x in problems_blind)
           and code_empty == 1 and any("第一份证据是空集" in str(x[1]) for x in problems_empty)
           and code_missing == 1 and problems_missing[0][0] == "G1" and "未归因" in str(problems_missing[0][1])
           and code_stale == 1 and problems_stale[0][0] == "G3" and "旧版本 1 条" in str(problems_stale[0][1])
-          # G11 归因齐了但只落在一天 → 红；G1／G3／G10 跨两日且已归因 → 不该出现在问题里
-          and code_one_day == 1 and problems_one_day[0][0] == "G11" and len(problems_one_day) == 1
+          # G3 归因齐了但只落在一天 → 红；G1 跨两日且已归因 → 不该出现在问题里
+          and code_one_day == 1 and problems_one_day[0][0] == "G3" and len(problems_one_day) == 1
           and "单日照旧" in str(problems_one_day[0][1])
           and code_nodata == 1 and any("没有闸版本归因读数" in str(x[1]) for x in problems_nodata)
           # 空窗口那条：该说"量不到"，不该冒出"归因到了但只落在 0 天"
@@ -918,9 +866,9 @@ def self_test() -> int:
     print(f"自证：全覆盖 → {code_green}（期望 0）；G1 留 1 条 → {code_red}（期望 1，命中 {problems_red}）；"
           f"G4 只有 conditional → {code_conditional}（期望 0，不替 W2-4 拍板）；"
           f"G3 有未分类 → {code_unknown}（期望 1，命中 {problems_unknown}）")
-    print(f"        G10 零触发（无分母信息）→ {code_zero}（期望 1，命中 {problems_zero}）；"
-          f"G10 空集但有分母 → {code_empty}（期望 1）；G3 单日触发 → {code_one_day}（期望 1，命中 {problems_one_day}）；"
-          f"G10 分母 0 → {code_blind}（期望 1，命中 {problems_blind}）")
+    print(f"        G1 零触发（无分母信息）→ {code_zero}（期望 1，命中 {problems_zero}）；"
+          f"G1 空集但有分母 → {code_empty}（期望 1）；G3 单日触发 → {code_one_day}（期望 1，命中 {problems_one_day}）；"
+          f"G1 分母 0 → {code_blind}（期望 1，命中 {problems_blind}）")
     print(f"        归因：G1 全无版本 → {code_missing}（期望 1，命中 {problems_missing}）；"
           f"G3 掺旧版本 → {code_stale}（期望 1）；没传归因读数 → {code_nodata}（期望 1）")
     print(f"        空窗口（真实账号 0 条）→ {code_blank}（期望 1，只许报窗口那一条，命中 {problems_blank}）；"
@@ -938,11 +886,10 @@ def self_test_basis() -> int:
     （把上界报成精确），而那不会让任何别的用例变红。混在一起时"全绿"就分不清是哪条标签在动。
     下面的断言都写成"这一条闸的这一格必须等于这个值"，变异时红点唯一。
     """
-    # 一份"今天量到的形状"：G1 过报 0、G6 触发轮零工具、G10 有空源条数。
+    # 一份"今天量到的形状"：G1 过报 0、G6 触发轮零工具。
     today = {
         "history_disqualified": {"G1": 0, "G6": 0},
         "g6_fired": 1, "g6_fired_with_tool_calls": 0,
-        "g10_empty_source": 0, "g10_measurable": 63,
     }
     checks: list[tuple[str, bool, object]] = [
         ("G1 过报 0 ⇒ 精确", reading_basis("G1", today)["basis"] == BASIS_EXACT,
@@ -973,13 +920,6 @@ def self_test_basis() -> int:
         ("G6 永远挂着原始列那一支",
          any("result_safe_summary" in leg for leg in reading_basis("G6", today)["legs"]),
          reading_basis("G6", today)["legs"]),
-        # G10：空源条数出现在 legs 里，且口径仍��精确（分母已把它们剔出）。
-        ("G10 空源 3 条要列出来",
-         any("3 条" in leg for leg in reading_basis(
-             "G10", {**today, "g10_empty_source": 3})["legs"]),
-         reading_basis("G10", {**today, "g10_empty_source": 3})["legs"]),
-        ("G10 空源 0 条时那一支不出现", reading_basis("G10", today)["legs"] == [],
-         reading_basis("G10", today)["legs"]),
         # B 类三道：口径必须是「不可修」，且分母 0 的**理由**要指向"库里那份正文过了闸"。
         ("G7 口径＝不可修", reading_basis("G7", today)["basis"] == BASIS_UNFIXABLE,
          reading_basis("G7", today)["basis"]),
@@ -988,7 +928,7 @@ def self_test_basis() -> int:
         ("G9 口径＝不可修", reading_basis("G9", today)["basis"] == BASIS_UNFIXABLE,
          reading_basis("G9", today)["basis"]),
         # 11 道闸都要有口径，且没有一道是"空理由"（漏写标签会读成精确）。
-        ("11 道闸都有口径", len({reading_basis(g, today)["basis"] for g in GATE_DISPOSITION}) >= 3,
+        ("9 道闸都有口径", len({reading_basis(g, today)["basis"] for g in GATE_DISPOSITION}) >= 3,
          {g: reading_basis(g, today)["basis"] for g in sorted(GATE_DISPOSITION)}),
     ]
     ok = all(flag for _, flag, _ in checks)
@@ -1000,7 +940,7 @@ def self_test_basis() -> int:
 # ─── 主流程 ───────────────────────────────────────────────────────────────
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="11 道输出闸的反事实重放（只读）")
+    parser = argparse.ArgumentParser(description="9 道对话输出闸的反事实重放（只读）")
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--json", type=str, default="", help="把结果写成 JSON")
     parser.add_argument("--no-ambient", action="store_true", help="跳过环境块重建（快，但 G1/G2/G6 变裸判）")
@@ -1138,7 +1078,6 @@ def main() -> int:
             "historyTexts": [history[turn["run_id"]]] if history.get(turn["run_id"]) else [],
             "activeness": activeness_by_user.get(turn["user_id"], "active"),
             "toolResultTexts": [call["summary"] for call in tool_calls.get(turn["run_id"], [])],
-            "allowedNumberSource": entry.get("allowedNumberSource", ""),
         })
     got = run_bridge(bridge_turns)
     gate_results = {entry["runId"]: entry for entry in got["turns"]}
@@ -1168,10 +1107,6 @@ def main() -> int:
         reply_text = text_of_blocks(turn["assistant_blocks"])
         for gate, result in entry["gates"].items():
             if not result.get("fired"):
-                continue
-            # C 类判据（G10／G11）长在念头链上，那里的输入是念头气泡正文——
-            # 拿对话轮的回复跑它们只会得到一个好看但没意义的数。它们在下面单独跑。
-            if GATE_CLASS[gate] == "C":
                 continue
             # A 类闸的硬前提：整轮零工具调用。不满足时当时不会走到这条判据。
             # **G5（A′）故意不走这一行**：它那条零工具前置是**本步**的 `calls.length === 0`
@@ -1250,46 +1185,9 @@ def main() -> int:
         print("        ↑ 没有任何一条非空正文过不了今天的闸 ⇒ 三道闸的触发数为 0，"
               "而这**不等于**它们没用（库里没有它们该抓的输入），只等于这一窗量不到")
 
-    # 4) 念头链（G10／G11）：输入是念头气泡正文，数据源与对话轮不同。
-    thoughts = fetch_thoughts(args.days, ",".join("'" + e + "'" for e in DEV_REAL_ACCOUNT_EMAILS))
-    if thoughts:
-        # allowedSource 取该用户的环境块（真 renderHereAndNow）——念头链喂给判据的事实来源
-        # 与对话侧同一份。`--no-ambient` 时为空串，此时 G10 按设计恒不触发（判据首行
-        # `if (allowedSource.length === 0) return false`），读数要跟着一起看。
-        ambient_by_user: dict[str, str] = {}
-        for turn in turns:
-            entry = ambient.get(turn["run_id"], {})
-            if entry.get("systemText"):
-                ambient_by_user.setdefault(turn["user_id"], entry["systemText"])
-        thought_payload = [{
-            "runId": thought["id"],
-            "replyText": thought["text"],
-            "allowedNumberSource": ambient_by_user.get(thought["user_id"], ""),
-            "isThought": True,
-        } for thought in thoughts]
-        thought_got = run_bridge(thought_payload)
-        print(f"念头链：{len(thoughts)} 条（source='llm'）参与 G10／G11")
-        for thought, entry in zip(thoughts, thought_got["turns"]):
-            for gate in ("G10", "G11"):
-                result = entry["gates"][gate]
-                if not result.get("fired"):
-                    continue
-                classification = classify(
-                    gate,
-                    {"tool_calls": [], "tool_face": [],
-                     "thought_guard_covers": bool(entry.get("thoughtGuardCovers"))},
-                    result, {}, thought["text"])
-                buckets[gate][classification["bucket"]] += 1
-                fired[gate].append({"run_id": thought["id"], "source": "thought",
-                                    "created_at": thought["created_at"],
-                                    "leak_gate_version": thought["leak_gate_version"],
-                                    **classification, "detail": result.get("detail")})
-
-    thought_eval_turns = thought_got["turns"] if thoughts else []
-
     # 可判分母（39d W6-1 对账）：判据要用的输入不存在时它**恒不触发**，
     # 那种 0 是"测不出来"不是"没有"。G5 的 A′ 前置 `stepEmitted` 从不落库，
-    # 所以这一格永远是 0；G10 的分子是"念头气泡拿到了非空数字来源"的条数。
+    # 所以这一格永远是 0。
     a_class_eligible = [t for t in turns
                         if int(t["tool_call_count"]) == 0 and ambient.get(t["run_id"], {}).get("systemText")]
     # 分母只数**有可能触发闸的行**：没有助手正文的回合（今天量到占 A 类前置的 24%）
@@ -1308,9 +1206,6 @@ def main() -> int:
         # 所以"删掉它会不会漏"在库里根本没有可判的输入——判据只能对"已经在它下游"的
         # 文本说话。它们去向都是 keep，但分母必须如实写 0，免得哪天按"触发 5 次"翻成 delete。
         "G7": 0, "G8": 0, "G9": 0,
-        "G10": sum(1 for e in thought_eval_turns
-                   if int(((e.get("gates") or {}).get("G10") or {}).get("sourceChars") or 0) > 0),
-        "G11": len(thought_eval_turns),
     }
     # 生产把它们合成了一条闸、共用一份预算（`runtime.ts:3235,3239-3240,3249`）：
     # 分条计数会把"一次拦截"报成"两次触发"，所以单位一并印出来。
@@ -1326,7 +1221,6 @@ def main() -> int:
     # 读数口径要用的**量出来的**事实（不是常量）：
     #   · G1／G6 的过报量＝"把生产有的会话历史补进出处后就站不住"的命中条数；
     #   · G6 的暴露面＝触发它的那几轮里调过工具的条数（决定摘要列有没有参与）；
-    #   · G10 的空源条数＝判据首行就 return false 的那几条（"没触发"与"没判"必须分开）。
     history_disqualified = {gate: sum_dropped_by_history(gate, fired[gate], gate_results)
                             for gate in ("G1", "G6")}
     g6_with_tools = sum(1 for item in fired["G6"]
@@ -1336,13 +1230,10 @@ def main() -> int:
     g5_by_tier = {tier: sum(1 for entry in gate_results.values()
                             if (entry.get("g5ByTier") or {}).get(tier))
                   for tier in ("quiet", "moderate", "active")}
-    g10_empty_source = sum(1 for e in thought_eval_turns if (e.get("thoughtGuard") or {}).get("emptySource"))
     basis_facts = {
         "history_disqualified": history_disqualified,
         "g6_fired": sum(buckets["G6"].values()),
         "g6_fired_with_tool_calls": g6_with_tools,
-        "g10_empty_source": g10_empty_source,
-        "g10_measurable": measurable["G10"],
         "b_class_grandfathered": len(rejected_by_validator),
         "g5_by_tier": g5_by_tier,
     }
@@ -1397,10 +1288,7 @@ def main() -> int:
                       f"／旧版本 {attribution[g]['stale']}"
                       f"／无版本 {attribution[g]['missing']}"
                       for g in sorted(delete_gates, key=lambda x: int(x[1:])))
-          + f"（本窗口带闸版本的回合 {sum(1 for t in turns if t['leak_gate_version'] == current_version)}"
-          f"／念头 {sum(1 for th in thoughts if th['leak_gate_version'] == current_version)}）")
-    print(f"\nG10 的可判分母用的是**重放时刻**重建出来的环境块（历史那一屏没落库），"
-          f"所以它的空集说的是「以今天的读数去判这 {len(thoughts)} 条气泡」，不是「当时判不出问题」。")
+          + f"（本窗口带闸版本的回合 {sum(1 for t in turns if t['leak_gate_version'] == current_version)}）")
     print(f"会话历史过报否证：G1 的 {history_disqualified['G1']} 条、G6 的 {history_disqualified['G6']} 条"
           "会**因为补上生产有、台子原来没喂的会话历史而站不住**"
           f"（这一窗补进去的历史共 {sum(len(v) for v in history.values())} 字）；"

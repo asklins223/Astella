@@ -673,7 +673,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     // 强制 JSON 曾是 json_envelope_leak 的直接来源（模型按信封形状输出 → 白名单外
     // 的键解包失败 → 整轮失败）。structured_action fallback 由 parseAgentTurnToolCalls
     // 对 content 做 JSON 解析承担：模型真的回 {"toolCalls":[…]} 时仍会被解析，
-    // 自然文本则原样返回。需要 JSON 的调用方（记忆抽取/念头/V2）走 chatCompletion，
+    // 自然文本则原样返回。需要 JSON 的调用方（记忆抽取/主动交流/V2）走 chatCompletion，
     // 那条路径的 responseFormat 契约不变。
 
     // B2（计划 §2.5）：prompt cache 控制。

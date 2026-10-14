@@ -49,7 +49,14 @@ import { agentTurnInterpretationV1Schema, type AgentTurnInterpretationV1, type A
 
 const persistedAgentStepCheckpointSchema = agentTurnResultSchema;
 
-/** Reserve at the provider boundary; checkpoint reads and denied external policy consume no calls. */
+/**
+ * Reserve at the provider boundary; checkpoint reads and denied external policy consume no calls.
+ *
+ * 次数只由下面那份执行政策的声明值决定（`maxModelCalls`）。这里原来还叠了两道写死的闸
+ * ——主动运行本轮 8 次、沿 `parentRunId` 关联链合计 24 次（2026-10-13 用户决定：Agent 不设硬上限，
+ * 运行侧只留失控收敛判据）。跨运行的接续另有结构性收口：主动运行没有用户消息，因此不产生
+ * `reply.finished`；到点的关注要在场、要过账号声明的节奏闸，并且必须唤得起、能过期。
+ */
 export async function reserveCompanionProviderCall(event: {
   ctx: AgentEventContext["ctx"];
   read: Pick<AgentEventContext["read"], "userId" | "runId" | "accountEpoch" | "generation">;
@@ -68,14 +75,6 @@ export async function reserveCompanionProviderCall(event: {
           AND j.type='companion_agent' AND j.payload->>'runId'=r.id::text)
         AND r.account_epoch=${event.read.accountEpoch} AND r.generation=${event.read.generation}
         AND r.status IN ('accepted','running','waiting_for_confirmation')
-        AND (r.input_source IS NULL OR (r.model_call_count<8 AND (
-          WITH RECURSIVE ancestors AS (
-            SELECT id,input_source,model_call_count,0 AS depth FROM companion_turn_runs WHERE id=r.id
-            UNION ALL SELECT p.id,p.input_source,p.model_call_count,c.depth+1 FROM companion_turn_runs p
-              JOIN ancestors c ON p.id=(c.input_source->>'parentRunId')::uuid
-              WHERE c.depth<24 AND p.workspace_id=r.workspace_id AND p.user_id=r.user_id AND p.input_source IS NOT NULL
-          ) SELECT coalesce(sum(model_call_count),0) FROM ancestors
-        )<24))
         AND a.user_id=r.user_id AND a.global_enabled AND a.epoch=r.account_epoch
         AND (${modelCallLimit}::int IS NULL OR r.model_call_count<${modelCallLimit}::int)
       RETURNING r.model_call_count`);

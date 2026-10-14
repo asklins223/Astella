@@ -9,7 +9,7 @@ import {
   type WebContents
 } from 'electron'
 import { appendFileSync, createReadStream, mkdirSync, writeFileSync } from 'node:fs'
-import { readFile, realpath, stat } from 'node:fs/promises'
+import { readFile, realpath, rm, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { createAssetResponsePlan, mimeTypeForPath } from './asset-response'
@@ -827,6 +827,13 @@ function reportStartupFailure(error: unknown): void {
 app.whenReady()
   .then(async () => {
   traceBoot('whenReady-resolved')
+  // Retired thought-history audio was private to the old read-back journal.
+  // Remove its local cache once; no current voice path reads or recreates it.
+  try {
+    await rm(resolve(app.getPath('userData'), 'companion-thought-audio'), { recursive: true, force: true })
+  } catch {
+    traceBoot('retired-companion-audio-cache-cleanup-failed')
+  }
   // Keep enough local evidence to distinguish renderer crashes from driver
   // compatibility. Do not collect page contents or send diagnostics anywhere.
   void app.getGPUInfo('complete').then((info) => {
@@ -892,9 +899,6 @@ app.whenReady()
     guidanceAudioCache: new CompanionVoiceAudioCache(
       // 目录名不改：这台电脑上已经攒下的带路音频要继续命中，换名字等于让所有人重合成一遍。
       resolve(app.getPath('userData'), 'companion-guidance-audio')
-    ),
-    thoughtAudioCache: new CompanionVoiceAudioCache(
-      resolve(app.getPath('userData'), 'companion-thought-audio')
     ),
     messageAudioCache: new CompanionMessageAudioCache(
       resolve(app.getPath('userData'), 'companion-message-audio')

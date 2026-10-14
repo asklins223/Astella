@@ -1,4 +1,4 @@
-import type { CompanionMemoryKindV1 } from "@astella/shared/companion-memory-desktop-contracts";
+import type { CompanionMemoryBudgetTierV1, CompanionMemoryKindV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { Archive,Map,RotateCcw } from "lucide-react";
 import { Activity,useEffect,useRef,useState } from "react";
 import { CompanionHerNotesPage } from "./companion-her-notes-page";
@@ -42,7 +42,9 @@ function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusCons
     const result = await window.astella.companion.memory.list({ meta, query: { includeCandidates: true, includeArchived: true, ...(anchorId ? { focusMemoryId: anchorId } : {}) } });
     return result.ok ? { ...result, data: { ...result.data, focusId: anchorId } } : result;
   }, [refreshKey, anchorId]);
+  const budget = useCompanionResource(meta => window.astella.companion.memory.budget({ meta }), [refreshKey]);
   useCompanionRecordsRefresh(resource.reload);
+  useCompanionRecordsRefresh(budget.reload);
   const [selectedId, setSelectedId] = useState<string | null>(requestedMemoryId);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<"all" | CompanionMemoryKindV1>("all");
@@ -102,6 +104,29 @@ function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusCons
       await resource.reload({ silent: true });
     });
   };
+  const dispute = () => {
+    if (!selected) return;
+    const item = selected;
+    void write("dispute", async () => {
+      unwrapGatewayResult(await window.astella.companion.memory.dispute({ meta: resource.meta(), memoryId: item.memoryItemId, expectedRevision: item.revision }));
+      setNotice("已标记为有争议；伴星不会再把它当作事实召回。你可以继续纠正内容或查看原来源。");
+      await resource.reload({ silent: true });
+    });
+  };
+  const moveBudgetTier = (tier: CompanionMemoryBudgetTierV1) => {
+    if (!selected) return;
+    const item = selected;
+    void write("budget", async () => {
+      unwrapGatewayResult(await window.astella.companion.memory.moveBudgetTier({ meta: resource.meta(), memoryId: item.memoryItemId, tier }));
+      setNotice(`已将这条记忆移到${tier === "resident" ? "常驻" : tier === "active" ? "按需检索" : "归档"}层。`);
+      await Promise.all([resource.reload({ silent: true }), budget.reload({ silent: true })]);
+    });
+  };
+  const openSource = (messageId: string) => {
+    const room = useRoomStore.getState();
+    room.setCompanionCenterTarget({ tab: "dialogue", focusMessageId: messageId });
+    room.invoke("open-companion-center");
+  };
   const openMemory = (id: string) => {
     setAnchorId(id); setSelectedId(id); setQuery(""); setKind("all"); setFilter("all");
     setMapOpen(false); setMaintenanceOpen(false);
@@ -141,6 +166,7 @@ function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusCons
     {lastDeleted ? <div className="cc-undo" role="status"><span>已删除：{lastDeleted.content}</span><button type="button" className="cc-link" disabled={busy !== null} onClick={() => void write("undo", async () => { unwrapGatewayResult(await window.astella.companion.memory.restoreDeleted({ meta: resource.meta(), memoryId: lastDeleted.id })); openMemory(lastDeleted.id); setLastDeleted(null); setNotice("这条记忆已恢复。"); await resource.reload({ silent: true }); })}><RotateCcw size={14} />撤回删除</button></div> : null}
     <MemoryPanel section={resource.section} items={items} focus={selected} revisions={selectedId && revisions.section?.ok && revisions.section.value.memoryItemId === selectedId ? revisions.section.value.items : null} revisionsError={selectedId && revisions.section && !revisions.section.ok && !revisions.loading ? revisions.section.message : null} onRetryRevisions={() => void revisions.reload()}
       query={query} kind={kind} pinFilter={filter} busy={busy} error={error} notice={notice} confirmDelete={confirmDelete} confirmErase={confirmErase}
+      budget={budget.section?.ok ? budget.section.value : null} onBudgetTier={moveBudgetTier} onDispute={dispute} onOpenSource={openSource} onOpenMemory={openMemory}
       createOpen={createOpen} createContent={createContent} createKind={createKind} correctionOpen={correctionOpen} correctionContent={correctionContent}
       ruleEditor={{ create: { disabled: busy !== null, appliesWhen: createAppliesWhen, onAppliesWhen: setCreateAppliesWhen,
         scope: { value: createScope, onChange: setCreateScope, allowGlobal: createKind === "preference" } },

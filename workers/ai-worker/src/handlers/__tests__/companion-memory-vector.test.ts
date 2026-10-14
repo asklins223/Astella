@@ -55,6 +55,9 @@ const ROW = {
   pinned: true,
   last_used_at: null,
   user_confirmed: true,
+  source_type: "user_stated",
+  created_at: "2026-10-01T12:00:00.000Z",
+  updated_at: "2026-10-04T12:00:00.000Z",
 };
 
 test("历史长记忆的常驻、搜索与按版本续读保留尾部撤销条件", async () => {
@@ -67,6 +70,9 @@ test("历史长记忆的常驻、搜索与按版本续读保留尾部撤销条�
   assert.equal(resident[0]?.content, content);
   assert.equal(search.items[0]?.content, content);
   assert.equal(expanded?.content, content);
+  assert.equal(expanded?.sourceType, "user_stated");
+  assert.equal(expanded?.createdAt, ROW.created_at);
+  assert.equal(expanded?.updatedAt, ROW.updated_at);
 });
 
 test("extractQueryKeywords 拉丁词整体保留、过滤单字母", () => {
@@ -86,13 +92,19 @@ test("extractQueryKeywords 长 CJK 段切重叠 bigram（无词边界兜底）",
   assert.ok(!keywords.includes("今天我们聊聊光合作用吧"));
 });
 
-test("extractQueryKeywords bigram 超预算时头尾采样，不丢句尾语义重心", () => {
-  // 16 字 run → 15 个 bigram > 默认 12：顺序截断会恰好丢掉句尾的"有机化学"。
-  const keywords = extractQueryKeywords("我上周说过这周想重点突破有机化学");
-  assert.ok(keywords.length <= 12);
-  assert.ok(keywords.includes("有机"), `head+tail sample: ${keywords.join(",")}`);
-  assert.ok(keywords.includes("化学"), `head+tail sample: ${keywords.join(",")}`);
-  assert.ok(keywords.includes("这周"));
+test("extractQueryKeywords bigram 超预算时整句均匀取样，不留盲区", () => {
+  // 20 字 run → 19 个 bigram > 默认 16。旧写法只保前半+后半，等于把**句子中段整段扔掉**，
+  // 而中文问句的名词常常就在中段："我今年备考的那个考试是什么时候来着"（16 个 bigram
+  // 留 12）被丢掉的正好是「考试」——实测这样一问直接 **0 命中**，不是没匹配上，是词元根本没生成。
+  const head = extractQueryKeywords("我上周说过这周想重点突破有机化学");
+  assert.ok(head.length <= 16);
+  assert.ok(head.includes("有机"), `均匀取样: ${head.join(",")}`);
+  assert.ok(head.includes("化学"), `均匀取样: ${head.join(",")}`);
+  assert.ok(head.includes("这周"));
+
+  const middle = extractQueryKeywords("我今年备考的那个考试是什么时候来着");
+  assert.ok(middle.includes("考试"), `中段那个词没了，这条问句检索必然空手: ${middle.join(",")}`);
+  assert.ok(middle.includes("来着"), "句尾仍然要保住");
 });
 
 test("extractQueryKeywords 无边界的 CJK 长串切 bigram（短串整段保留）", () => {
@@ -141,6 +153,33 @@ test("keyword fallback 有关键词时生成 ILIKE ANY 匹配", async () => {
   await retrieveCompanionMemoriesKeyword(tx as never, { workspaceId: "w", userId: "u" }, "光合作用 light reaction", 8);
   assert.equal(tx.queries.length, 1);
   assert.ok(tx.queries[0].includes("ILIKE ANY"));
+});
+
+test("关键词与向量召回都保留认识状态，供模型标注待核对或已替代记忆", async () => {
+  const disputedRow = { ...ROW, epistemic_status: "disputed" };
+  const scope = { workspaceId: "w", userId: "u" };
+  const keywordTx = capturingTx([disputedRow]);
+  const keyword = await retrieveCompanionMemoriesKeyword(keywordTx as never, scope, "光合", 8);
+  assert.equal(keyword.items[0]?.epistemicStatus, "disputed");
+  assert.equal(keyword.items[0]?.sourceType, "user_stated");
+  assert.equal(keyword.items[0]?.createdAt, ROW.created_at);
+  assert.equal(keyword.items[0]?.updatedAt, ROW.updated_at);
+  assert.match(keywordTx.queries[0] ?? "", /epistemic_status/);
+  assert.match(keywordTx.queries[0] ?? "", /source_type, created_at, updated_at/);
+
+  const vectorTx = capturingTx([disputedRow]);
+  const provider: EmbeddingProviderLike = {
+    id: "mock", embeddingModelId: "mock-v1", embed: async () => new Array(1024).fill(0.01),
+  };
+  const vector = await retrieveCompanionMemoriesVector(
+    vectorTx as never, scope, "光合", provider, 8, null, new Array(1024).fill(0.01),
+  );
+  assert.equal(vector.items[0]?.epistemicStatus, "disputed");
+  assert.equal(vector.items[0]?.sourceType, "user_stated");
+  assert.ok(vectorTx.queries.some((query) => query.includes("m.epistemic_status")),
+    "向量 SQL 必须把认识状态和正文一起取回");
+  assert.ok(vectorTx.queries.some((query) => query.includes("m.source_type, m.created_at, m.updated_at")),
+    "向量 SQL 必须一并返回来源和时间元数据");
 });
 
 test("普通语义召回只查 active；resident 独立常驻读取，归档只按显式请求搜索", async () => {

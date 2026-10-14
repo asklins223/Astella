@@ -289,7 +289,7 @@ async function main(): Promise<number> {
       : `   ⇒ ${withValue} 行已被真实服务写进版本（生产者验通）；其余 ${a.unattributed} 行仍是落地前的历史样本，别拿它们当某一版闸的证据。`);
   }
   console.log("S1 ①required 下 0 个 tool_calls 的比例：由 companion-s1-required-probe.ts 直接测量；本台只重放已发生的参数样本。");
-  console.log("   归因那一半已具备（`leak_gate_version` 随回合与念头落库，台子的删闸判据从 09-25 起读这一列）。");
+  console.log("   归因那一半已具备（`leak_gate_version` 随回合落库，台子的删闸判据从 09-25 起读这一列）。");
   return 0;
 }
 

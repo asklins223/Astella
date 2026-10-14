@@ -15,6 +15,7 @@ const EXPORTS = [
 ] as const;
 const CLEAR_ACTIONS = [
   { kind: "memory", title: "清空全部记忆", detail: "把当前书房中你的记忆、候选移入回收区，30 天内可恢复；连续对话与人格保留。" },
+  { kind: "derived", title: "清除伴星整理内容", detail: "永久清除当前书房的日记、她的记事、方法、记忆使用统计与这些内容的版本；对话和人格保留。" },
   { kind: "history", title: "清空连续对话记录", detail: "清除当前书房中你的对话正文与收件消息；记忆、人格、旅程与动态状态保留。" },
   { kind: "audit", title: "删除操作与邀请记录", detail: "清除当前书房中你的操作与邀请记录；不会重新触发邀请。" },
 ] as const;
@@ -44,6 +45,9 @@ export function SettingsCompanionData(props: { meta: () => RequestMetaV1; onRead
     if (kind === "memory") {
       const result = unwrapGatewayResult(await window.astella.companion.memory.clear({ meta: props.meta() }));
       setNotice(`已将 ${result.deletedCount} 条记忆移入回收区，可在 30 天内恢复。`);
+    } else if (kind === "derived") {
+      const result = unwrapGatewayResult(await window.astella.companion.memory.clearDerived({ meta: props.meta() }));
+      setNotice(`已清除 ${result.deletedDiaries} 篇日记、${result.deletedDiaryEntries} 条日记关联、${result.deletedDiaryMemories} 条日记记忆、${result.deletedSelfNotes} 篇她的记事、${result.deletedMethods} 条方法及 ${result.deletedMemoryUsageRecords} 条使用统计。`);
     } else if (kind === "history") {
       const result = unwrapGatewayResult(await window.astella.companion.history.clear({ meta: props.meta() }));
       // 服务端删的是整段会话并新建收件箱：轻聊与手记里缓存的那条会话 id 已经不存在了，
@@ -67,6 +71,6 @@ export function SettingsCompanionData(props: { meta: () => RequestMetaV1; onRead
     {notice ? <p className="settings-companion-notice" role="status">{notice}</p> : null}
     <div className="settings-companion-privacy"><div><strong>AI 数据同意</strong><p>外发内容的授权与审计在账号的 AI 数据同意页统一管理。</p></div><button type="button" className="button" onClick={() => useRoomStore.getState().setSettingsSection(SETTINGS_SECTION_AI_CONSENT)}>查看数据同意</button></div>
     <section className="settings-companion-chapter"><header><h3>导出副本</h3><p>副本保存在本机的「下载 / Astella / 伴星」，每次导出会保存为新文件。</p></header><div className="settings-companion-exports">{EXPORTS.map(item => <button type="button" key={item.kind} disabled={busy !== null} onClick={() => exportData(item.kind)}><Download size={18} aria-hidden="true" /><span><strong>导出{item.title}</strong><small>{item.detail}</small></span></button>)}</div></section>
-    <section className="settings-companion-chapter settings-companion-danger"><header><h3>清除数据</h3><p>先核对每项的范围：记忆可在 30 天内恢复，对话与操作记录永久清除。</p></header>{CLEAR_ACTIONS.map(item => <div key={item.kind} className="settings-companion-clear"><div><Trash2 size={16} aria-hidden="true" /><span><strong>{item.title}</strong><small>{item.detail}</small></span><button ref={element => { openRefs.current[item.kind] = element; }} type="button" className="danger-quiet" disabled={busy !== null} aria-expanded={confirm === item.kind} onClick={() => setConfirm(confirm === item.kind ? null : item.kind)}>{confirm === item.kind ? "取消" : "清除"}</button></div>{confirm === item.kind ? <div className="settings-companion-confirm" role="group" aria-label={`确认${item.title}`}><p>{item.detail} {item.kind === "memory" ? "可在记忆页的回收区恢复。" : "这项操作不可恢复。"}</p><button type="button" className="button danger" disabled={busy !== null} onClick={() => clear(item.kind)}>{busy === item.kind ? "正在清除…" : `确认${item.title}`}</button></div> : null}</div>)}</section>
+    <section className="settings-companion-chapter settings-companion-danger"><header><h3>清除数据</h3><p>记忆可在 30 天内恢复；整理内容、对话与操作记录会永久清除。人格档案单独保留。</p></header>{CLEAR_ACTIONS.map(item => <div key={item.kind} className="settings-companion-clear"><div><Trash2 size={16} aria-hidden="true" /><span><strong>{item.title}</strong><small>{item.detail}</small></span><button ref={element => { openRefs.current[item.kind] = element; }} type="button" className="danger-quiet" disabled={busy !== null} aria-expanded={confirm === item.kind} onClick={() => setConfirm(confirm === item.kind ? null : item.kind)}>{confirm === item.kind ? "取消" : "清除"}</button></div>{confirm === item.kind ? <div className="settings-companion-confirm" role="group" aria-label={`确认${item.title}`}><p>{item.detail} {item.kind === "memory" ? "可在记忆页的回收区恢复。" : "这项操作不可恢复。"}</p><button type="button" className="button danger" disabled={busy !== null} onClick={() => clear(item.kind)}>{busy === item.kind ? "正在清除…" : `确认${item.title}`}</button></div> : null}</div>)}</section>
   </div>;
 }

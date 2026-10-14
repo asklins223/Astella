@@ -1,91 +1,150 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { clamp, frames, panelPlacement, rectTransform, transformOf, type Rect } from '../platform/geometry.ts'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type PointerEvent } from 'react'
+import { clamp, panelPlacement, transformOf, type Rect } from '../platform/geometry.ts'
 import { useMotion } from '../platform/motion.ts'
 import { usePhoneRoot } from '../app/phone-root.tsx'
 import { Icon } from '../app/icons.tsx'
-import { registerSheetDismiss } from './sheet-store.ts'
+import { isCurrentSheet, registerSheetDismiss } from './sheet-store.ts'
 
 export interface SheetSpec {
   kind: string
   title: string
-  /** 玻璃只给短操作面板；长内容与提问面板用纸面（demo 里 menu/spaces/attach 用玻璃）。 */
+  /** Short actions use glass; sustained reading and questions use paper. */
   variant?: 'glass' | 'paper'
   origin: Rect
-  /** Control that opened the panel; focus returns here after its spring closes. */
   trigger?: HTMLElement | null
   children: ReactNode
+  /** Assigned by the store so a replaced panel owns fresh motion and focus. */
+  instanceId?: number
 }
 
-/**
- * 上下文面板。
- *
- * 概念是 demo 定下的那一条：**面板从触发它的那一枚长出来，收起时再退回去**，
- * 底下的内容与阅读位置一动不动（遮罩只是压暗，不锁住页面）。所以这里没有居中弹窗。
- */
-export function Sheet({ spec, onClose }: { spec: SheetSpec; onClose: () => void }) {
+const EXPANDED = new Set(['ask', 'companion-chat', 'note-picker', 'consent', 'selection', 'annotation'])
+const EASE_OUT = 'cubic-bezier(.22,.9,.25,1)'
+
+/** Replacing a sheet cancels its old animation and close callback immediately. */
+export function Sheet(props: { spec: SheetSpec; onClose: () => void }) {
+  return <SheetSurface key={props.spec.instanceId ?? props.spec.kind} {...props} />
+}
+
+function SheetSurface({ spec, onClose }: { spec: SheetSpec; onClose: () => void }) {
   const root = usePhoneRoot()
   const box = useRef<HTMLElement>(null)
+  const scrim = useRef<HTMLDivElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
+  const panelAnimation = useRef<Animation | null>(null)
+  const scrimAnimation = useRef<Animation | null>(null)
+  const mounted = useRef(true)
   const closingRef = useRef(false)
+  const drag = useRef<{ id: number; element: HTMLElement; fromX: number; fromY: number; baseX: number; baseY: number; sx: number; sy: number; dy: number; locked: boolean; samples: Array<{ y: number; time: number }> } | null>(null)
   const [layout, setLayout] = useState<Rect | null>(null)
   const [closing, setClosing] = useState(false)
   const motion = useMotion()
+  const titleId = useId()
+  const expanded = EXPANDED.has(spec.kind)
+
+  useLayoutEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      panelAnimation.current?.cancel()
+      scrimAnimation.current?.cancel()
+      const current = drag.current
+      drag.current = null
+      if (current?.element.hasPointerCapture(current.id)) current.element.releasePointerCapture(current.id)
+    }
+  }, [])
 
   useLayoutEffect(() => {
     if (!root) return
-    const background = [...root.querySelectorAll<HTMLElement>(':scope > .topbar, :scope > .viewport, :scope > .bottom-area')]
-    const previous = background.map((element) => element.inert)
-    background.forEach((element) => { element.inert = true })
+    const background = [...root.querySelectorAll<HTMLElement>(
+      ':scope > .topbar, :scope > .utility-header, :scope > .viewport, :scope > .bottom-area',
+    )]
+    const previous = background.map(element => element.inert)
+    background.forEach(element => { element.inert = true })
     return () => background.forEach((element, index) => { element.inert = previous[index] ?? false })
   }, [root])
 
   const finishClose = useCallback(() => {
-    onClose()
-    const target = spec.trigger
-    if (!target) return
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (target.isConnected) target.focus({ preventScroll: true })
-    }))
-  }, [onClose, spec.trigger])
+    if (mounted.current && isCurrentSheet(spec)) onClose()
+  }, [onClose, spec])
 
   useLayoutEffect(() => {
     const node = box.current
     if (!node || !root) return
-    const size = { width: root.clientWidth, height: root.clientHeight }
     const head = node.querySelector<HTMLElement>('.sheet-head')
     const content = node.querySelector<HTMLElement>('.sheet-content')
-    const shell = getComputedStyle(node)
+    const inner = node.querySelector<HTMLElement>('.sheet-content-inner')
     const px = (value: string) => Number.parseFloat(value) || 0
-    const frame = px(shell.paddingTop) + px(shell.paddingBottom) + px(shell.borderTopWidth) + px(shell.borderBottomWidth)
-    // `.sheet-content` is itself a scroll container; `node.scrollHeight` only
-    // sees its flex viewport and undercounts long selections and action rows.
-    const natural = (head?.offsetHeight ?? 0) + (content?.scrollHeight ?? 0) + frame
-    const cap = spec.kind === 'ask' || spec.kind === 'selection' ? size.height * 0.76 : size.height - 76
-    setLayout(panelPlacement(spec.kind, spec.origin, size, Math.min(natural, cap)))
+    const measure = () => {
+      const rect = root.getBoundingClientRect()
+      const visual = window.visualViewport
+      const visibleBottom = visual ? Math.min(rect.bottom, visual.height + visual.offsetTop) : rect.bottom
+      const size = { width: root.clientWidth, height: Math.max(0, visibleBottom - rect.top) }
+      const shell = getComputedStyle(node)
+      const body = content ? getComputedStyle(content) : null
+      const frame = px(shell.paddingTop) + px(shell.paddingBottom) + px(shell.borderTopWidth) + px(shell.borderBottomWidth)
+      const bodyPadding = body ? px(body.paddingTop) + px(body.paddingBottom) : 0
+      // The intrinsic body can expand when a tool step opens and shrink on fold.
+      const natural = (head?.offsetHeight ?? 0) + (inner?.offsetHeight ?? 0) + frame + bodyPadding
+      const hasExchange = Boolean(node.querySelector('[data-has-messages="true"]'))
+      const conversationRatio = root.classList.contains('keyboard-on') || size.height < 500 ? 0.9 : hasExchange ? 0.76 : 0.60
+      const cap = spec.kind === 'companion-chat' ? size.height * conversationRatio
+        : spec.kind === 'ask' || spec.kind === 'selection' ? size.height * 0.82 : size.height - 60
+      const next = panelPlacement(spec.kind, spec.origin, size, spec.kind === 'companion-chat' ? Math.max(0, cap) : Math.min(natural, Math.max(0, cap)))
+      setLayout(previous => previous && Object.keys(next).every(key => previous[key as keyof Rect] === next[key as keyof Rect]) ? previous : next)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    if (inner) observer.observe(inner)
+    if (head) observer.observe(head)
+    observer.observe(root)
+    const exchangeObserver = new MutationObserver(measure)
+    if (spec.kind === 'companion-chat' && inner) exchangeObserver.observe(inner, { attributes: true, attributeFilter: ['data-has-messages'], subtree: true })
+    window.visualViewport?.addEventListener('resize', measure)
+    window.visualViewport?.addEventListener('scroll', measure)
+    return () => {
+      observer.disconnect()
+      exchangeObserver.disconnect()
+      window.visualViewport?.removeEventListener('resize', measure)
+      window.visualViewport?.removeEventListener('scroll', measure)
+    }
   }, [spec, root])
 
-  // 长出来那一下：从触发处的框变换走到最终框；关掉时走反方向的收缩。
+  const placed = layout !== null
   useLayoutEffect(() => {
     const node = box.current
-    if (!node || !layout || !root || motion.off) return
-    const target = { ...layout, height: node.offsetHeight }
-    const start = rectTransform(spec.origin, target)
-    const animation = node.animate(
-      frames((p, t) => ({
-        transform: transformOf({
-          x: start.x * (1 - p),
-          y: start.y * (1 - p),
-          sx: 1 + (start.sx - 1) * (1 - p),
-          sy: 1 + (start.sy - 1) * (1 - p),
-        }),
-        opacity: 0.12 + 0.88 * clamp(t, 0, 1),
-      })),
-      { duration: 460, easing: 'linear', fill: 'both' },
-    )
-    return () => {
-      if (animation.playState !== 'finished') animation.cancel()
+    if (!node || !layout || motion.off) return
+    const originX = clamp(spec.origin.x + spec.origin.width / 2 - layout.x, 0, layout.width)
+    const originY = clamp(spec.origin.y + spec.origin.height / 2 - layout.y, 0, layout.height)
+    node.style.transformOrigin = expanded ? '50% 100%' : `${originX}px ${originY}px`
+    // Grow close to the trigger without stretching text from a tiny icon into
+    // a full document. Reading panels arrive from their lower edge instead.
+    const fromY = expanded ? 28 : clamp((spec.origin.y + spec.origin.height / 2 - layout.y - layout.height / 2) * 0.08, -16, 16)
+    const animation = node.animate([
+      { transform: `translate3d(0,${fromY}px,0) scale(${expanded ? 0.985 : 0.94})`, opacity: 0 },
+      { transform: 'translate3d(0,0,0) scale(1)', opacity: 1 },
+    ], { duration: expanded ? 300 : 230, easing: EASE_OUT, fill: 'both' })
+    panelAnimation.current = animation
+    animation.onfinish = () => {
+      if (panelAnimation.current !== animation) return
+      animation.cancel()
+      panelAnimation.current = null
     }
-  }, [layout, motion.off, root, spec.origin])
+    if (scrim.current) {
+      scrimAnimation.current?.cancel()
+      scrimAnimation.current = scrim.current.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' })
+    }
+    return () => animation.cancel()
+    // The first placement starts entrance; growing content does not replay it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placed, motion.off, expanded, spec])
+
+  useLayoutEffect(() => {
+    if (!motion.off) return
+    panelAnimation.current?.cancel()
+    scrimAnimation.current?.cancel()
+    if (box.current) box.current.style.transform = ''
+    if (closingRef.current) finishClose()
+  }, [motion.off, finishClose])
 
   useLayoutEffect(() => {
     const node = box.current
@@ -97,94 +156,120 @@ export function Sheet({ spec, onClose }: { spec: SheetSpec; onClose: () => void 
 
   const requestClose = useCallback(() => {
     if (closingRef.current) return
-    const node = box.current
-    if (!node || !layout || !root || motion.off) {
-      finishClose()
-      return
-    }
     closingRef.current = true
     setClosing(true)
+    const node = box.current
+    if (!node || !layout || motion.off) { finishClose(); return }
     const computed = getComputedStyle(node)
     const matrix = new DOMMatrix(computed.transform === 'none' ? undefined : computed.transform)
-    const parsedOpacity = Number.parseFloat(computed.opacity)
-    const opacity = Number.isFinite(parsedOpacity) ? parsedOpacity : 1
-    const destination = rectTransform(spec.origin, { ...layout, height: node.offsetHeight })
-    const animation = node.animate(
-      frames((progress) => ({
-        transform: transformOf({
-          x: matrix.e + (destination.x - matrix.e) * progress,
-          y: matrix.f + (destination.y - matrix.f) * progress,
-          sx: matrix.a + (destination.sx - matrix.a) * progress,
-          sy: matrix.d + (destination.sy - matrix.d) * progress,
-        }),
-        opacity: opacity * (1 - clamp(progress * 1.3, 0, 1)),
-      })),
-      { duration: 340, easing: 'linear', fill: 'both' },
-    )
+    const opacity = Number.parseFloat(computed.opacity) || 0
+    panelAnimation.current?.cancel()
+    const animation = node.animate([
+      { transform: transformOf({ x: matrix.e, y: matrix.f, sx: matrix.a, sy: matrix.d }), opacity },
+      { transform: transformOf({ x: matrix.e, y: matrix.f + (expanded ? 26 : 8), sx: matrix.a * 0.98, sy: matrix.d * 0.98 }), opacity: 0 },
+    ], { duration: 170, easing: 'cubic-bezier(.4,0,1,1)', fill: 'both' })
+    panelAnimation.current = animation
+    if (scrim.current) {
+      const scrimOpacity = Number.parseFloat(getComputedStyle(scrim.current).opacity) || 0
+      scrimAnimation.current?.cancel()
+      scrimAnimation.current = scrim.current.animate([{ opacity: scrimOpacity }, { opacity: 0 }], { duration: 170, fill: 'both' })
+    }
     void animation.finished.then(finishClose).catch(() => {})
-  }, [finishClose, layout, motion.off, root, spec.origin])
+  }, [finishClose, layout, motion.off, expanded])
 
-  useEffect(() => registerSheetDismiss(requestClose), [requestClose])
-
+  useLayoutEffect(() => registerSheetDismiss(requestClose), [requestClose])
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') requestClose()
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      requestClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [requestClose])
 
+  const returnDrag = () => {
+    const current = drag.current
+    drag.current = null
+    if (current?.element.hasPointerCapture(current.id)) current.element.releasePointerCapture(current.id)
+    if (!current?.locked) return
+    const node = box.current
+    if (!node || closingRef.current) return
+    const transform = getComputedStyle(node).transform
+    node.style.transform = ''
+    panelAnimation.current?.cancel()
+    if (motion.off) return
+    const animation = node.animate([{ transform }, { transform: 'translate3d(0,0,0) scale(1)' }], { duration: 180, easing: EASE_OUT })
+    panelAnimation.current = animation
+  }
+  const startDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (!expanded || !event.isPrimary || event.button !== 0 || closingRef.current
+      || (event.target instanceof Element && event.target.closest('button, input, textarea, a'))) return
+    drag.current = { id: event.pointerId, element: event.currentTarget, fromX: event.clientX, fromY: event.clientY, baseX: 0, baseY: 0, sx: 1, sy: 1, dy: 0, locked: false, samples: [{ y: event.clientY, time: event.timeStamp }] }
+  }
+  const moveDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const current = drag.current
+    const node = box.current
+    if (!current || current.id !== event.pointerId || !node) return
+    const dy = event.clientY - current.fromY
+    if (!current.locked) {
+      if (Math.abs(event.clientX - current.fromX) > Math.abs(dy) || dy < -8) { drag.current = null; return }
+      if (dy < 8) return
+      current.locked = true
+      current.element.setPointerCapture(event.pointerId)
+      const transform = getComputedStyle(node).transform
+      const matrix = new DOMMatrix(transform === 'none' ? undefined : transform)
+      current.baseX = matrix.e
+      current.baseY = matrix.f
+      current.sx = matrix.a
+      current.sy = matrix.d
+      panelAnimation.current?.cancel()
+    }
+    event.preventDefault()
+    current.dy = Math.max(0, dy)
+    current.samples.push({ y: event.clientY, time: event.timeStamp })
+    current.samples = current.samples.filter(sample => event.timeStamp - sample.time <= 100)
+    node.style.transform = transformOf({ x: current.baseX, y: current.baseY + current.dy, sx: current.sx, sy: current.sy })
+  }
+  const endDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const current = drag.current
+    if (!current || current.id !== event.pointerId) return
+    const first = current.samples[0]
+    const last = current.samples[current.samples.length - 1]
+    const velocity = first && last && event.timeStamp - last.time < 120 ? (last.y - first.y) / Math.max(1, last.time - first.time) : 0
+    if (current.locked && (current.dy > Math.min(100, (layout?.height ?? 400) * 0.25) || (current.dy > 40 && velocity > 0.5))) {
+      drag.current = null
+      if (current.element.hasPointerCapture(current.id)) current.element.releasePointerCapture(current.id)
+      requestClose()
+    } else returnDrag()
+  }
+
   const containTabFocus = (event: React.KeyboardEvent<HTMLElement>) => {
     if (event.key !== 'Tab') return
     const node = box.current
     if (!node) return
-    const controls = [...node.querySelectorAll<HTMLElement>(
-      'a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
-    )].filter((element) => element.getClientRects().length > 0 && !element.closest('[inert]'))
-    if (controls.length === 0) {
-      event.preventDefault()
-      node.focus({ preventScroll: true })
-      return
-    }
-    const first = controls[0]!
-    const last = controls[controls.length - 1]!
+    const controls = [...node.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])')]
+      .filter(element => element.getClientRects().length > 0 && !element.closest('[inert]'))
+    const first = controls[0]
+    const last = controls[controls.length - 1]
     const active = document.activeElement
-    if (event.shiftKey && (active === first || !node.contains(active))) {
-      event.preventDefault()
-      last.focus({ preventScroll: true })
-    } else if (!event.shiftKey && (active === last || !node.contains(active))) {
-      event.preventDefault()
-      first.focus({ preventScroll: true })
-    }
+    if (!first || !last) { event.preventDefault(); node.focus({ preventScroll: true }); return }
+    if (event.shiftKey && (active === first || !node.contains(active))) { event.preventDefault(); last.focus({ preventScroll: true }) }
+    else if (!event.shiftKey && (active === last || !node.contains(active))) { event.preventDefault(); first.focus({ preventScroll: true }) }
   }
 
   return (
     <div className={`modal-host${closing ? ' is-closing' : ''}`} role="presentation" inert={closing}>
-      <div className="scrim" onClick={requestClose} aria-hidden="true" />
-      <section
-        ref={box}
-        className={`sheet ${spec.variant === 'glass' ? 'glass' : 'paper-panel'}`}
-        data-panel={spec.kind}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="sheet-title"
-        tabIndex={-1}
-        onKeyDown={containTabFocus}
-        style={layout ? {
-          left: `${layout.x}px`,
-          top: `${layout.y}px`,
-          width: `${layout.width}px`,
-          height: `${layout.height}px`,
-        } : { visibility: 'hidden' }}
-      >
+      <div ref={scrim} className="scrim" onClick={requestClose} aria-hidden="true" />
+      <section ref={box} className={`sheet ${spec.variant === 'glass' ? 'glass' : 'paper-panel'}`} data-panel={spec.kind} data-expanded={expanded} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onKeyDown={containTabFocus}
+        style={layout ? { left: `${layout.x}px`, top: `${layout.y}px`, width: `${layout.width}px`, height: `${layout.height}px` } : { visibility: 'hidden' }}>
         <div className="sheet-page">
-          <div className="sheet-head">
-            <h2 id="sheet-title">{spec.title}</h2>
-            <button ref={closeButton} className="icon-button" type="button" onClick={requestClose} aria-label="关闭面板">
-              <Icon name="x" />
-            </button>
+          <div className="sheet-head" data-draggable={expanded} onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={returnDrag} onLostPointerCapture={() => { if (drag.current?.locked) returnDrag() }}>
+            {expanded && <span className="sheet-grip" aria-hidden="true" />}
+            <h2 id={titleId}>{spec.title}</h2>
+            <button ref={closeButton} className="icon-button" type="button" onClick={requestClose} aria-label="关闭面板"><Icon name="x" /></button>
           </div>
-          <div className="sheet-content">{spec.children}</div>
+          <div className="sheet-content"><div className="sheet-content-inner">{spec.children}</div></div>
         </div>
       </section>
     </div>

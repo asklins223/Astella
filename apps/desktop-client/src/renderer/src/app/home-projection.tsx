@@ -51,9 +51,9 @@ function scopeFromSession(session: {
 }
 
 function isProjectionInvalidation(event: GatewayEventV1): boolean {
-  // companion_activity_changed = 收件箱多了一条投递。主动念头气泡（proactiveCue）
-  // 由伴星小屋投影渲染，而它是**惰性读**：没有这次失效，worker 送来的念头要等到
-  // 用户切页面/手动刷新才看得见，而投递 2 小时就过期——体感就是"从不主动提醒"。
+  // companion_activity_changed = 收件箱多了一条投递。提醒与系统消息由伴星小屋投影
+  // 渲染，而它是**惰性读**：没有这次失效，后台送来的内容要等到用户切页面/手动刷新
+  // 才看得见，而投递两小时就过期——体感就是"从不主动提醒"。
   return event.data.kind === "snapshot_invalidated"
     || event.data.kind === "connection_changed"
     || event.data.kind === "companion_activity_changed";

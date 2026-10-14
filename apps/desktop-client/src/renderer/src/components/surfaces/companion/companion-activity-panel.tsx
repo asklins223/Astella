@@ -214,7 +214,9 @@ function ActivityDeliveryCard({ item, busy, onPresent, onDelivery, pendingPropos
   return <article ref={ref} className="cc-delivery" data-state={item.state} data-expired={item.expired || undefined}>
     <span className="cc-delivery__dot" aria-hidden="true" />
     <div><strong>{item.label}</strong><small>{formatRelative(item.createdAt)} · {item.expired ? "已失效" : proposalPending ? "待确认" : item.state === "acted" ? "已处理" : item.state === "dismissed" ? "已忽略" : needsDeliveryResponse(item) ? "待确认" : "未处理"}</small>
-      {!item.expired && DELIVERY_PENDING_STATES.includes(item.state) ? <div className="cc-actions"><button type="button" className="cc-link" disabled={busy} onClick={() => onDelivery(item, "acted")}>{item.target.kind === "none" ? "知道了" : item.target.kind === "proposal" ? "查看提议" : "查看"}</button><button type="button" className="cc-link cc-muted" disabled={busy} onClick={() => onDelivery(item, "dismissed")}>忽略</button></div> : null}
+    {/* 她已经说出口的话不会因为没人看见就作废：过了展示窗口只剩「已失效」，
+        但那条消息真实存在，所以留在「查看」这个跳转——跳去读那句话不等于把声音补播一遍。 */}
+    {DELIVERY_PENDING_STATES.includes(item.state) && (!item.expired || item.target.kind === "dialogue") ? <div className="cc-actions"><button type="button" className="cc-link" disabled={busy} onClick={() => onDelivery(item, "acted")}>{item.target.kind === "none" ? "知道了" : item.target.kind === "proposal" ? "查看提议" : "查看"}</button>{!item.expired ? <button type="button" className="cc-link cc-muted" disabled={busy} onClick={() => onDelivery(item, "dismissed")}>忽略</button> : null}</div> : null}
     </div>
   </article>;
 }

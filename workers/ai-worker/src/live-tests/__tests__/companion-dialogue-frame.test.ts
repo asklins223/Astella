@@ -7,7 +7,7 @@ test("记录的用途仍可用于离线比较，完整证据不裁正文，也�
   const content = "背景🫧\r\n".repeat(400) + "还没交呢，写完而已";
   const result = resolveDiagnosticCompanionTurn({
     intent: "conversation", toolUse: "none", subjects: [], goalRelation: "unrelated",
-    candidateOperations: [], ambiguities: [],
+    candidateOperations: [], ambiguities: [], voiceStyle: { decision: "none", instruction: null },
     dialogueFrame: { purpose: "correction", evidence: { messageIndex: 0, quote: "还没交呢" },
       userState: [{ topic: "报告", aspect: "progress", relation: "correction", messageIndex: 0, quote: "还没交呢，写完而已" }] },
   }, { requestHash: "a".repeat(64), objects: [], capabilities: [],

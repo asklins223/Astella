@@ -139,19 +139,38 @@ test("summarizer 排队按消息桶去重，不按 run", () => {
 test("conversation_summary 块: 带出事件与待跟进，剥掉能提前闭合边界的标记", () => {
   const block = renderConversationSummary({
     title: "桌宠功能调试与用户偏好设置",
-    keyEvents: ["设了口头禅", "关掉催复习", "第三件", "第四件不该出现"],
+    keyEvents: ["设了口头禅", "关掉催复习", "第三件", "第四件该出现"],
     followUps: ["要不要把复习排到周末"],
     userPreferences: ["喜欢语音"],
   });
   assert.ok(block?.includes("<conversation_summary>"));
   assert.ok(block?.includes("更早那段对话：桌宠功能调试与用户偏好设置"));
   assert.ok(block?.includes("设了口头禅；关掉催复习；第三件"));
-  assert.ok(!block?.includes("第四件"), "keyEvents 只取前三");
+  // 条数不再写死（原来只给前三）：装得下就都带。摘要存了 10 条关键事件却只注入 3 条，
+  // 剩下 7 条在她的上下文里查无此事，而那块偏偏让她以为"这段我全读过"。
+  assert.ok(block?.includes("第四件该出现"), "容量装得下就不该有硬条数上限");
   assert.ok(block?.includes("还没了结：要不要把复习排到周末"));
   assert.ok(block?.includes("消息边界无法核实"));
   assert.ok(block?.includes("以对应工具回执为准"));
   assert.ok(block?.endsWith("</conversation_summary>"));
   assert.ok(block!.length <= CONVERSATION_SUMMARY_MAX_CHARS + 40);
+});
+
+test("conversation_summary 块：装不下时丢整条，不砍半句，必留行永远在", () => {
+  // 上限仍然是一条声明出来的容量（CONVERSATION_SUMMARY_MAX_CHARS），不是截断点：
+  // 超了退**整项**，边界声明与收尾标签不许被砍掉——砍过一次，几周前的一个数字
+  // 就会被当成当前事实读回去（44 §4.4/§9.35）。
+  const long = "先".repeat(300);
+  const block = renderConversationSummary({
+    title: "一次很长的讲解",
+    keyEvents: [long, long, long, long, long],
+    userPreferences: ["喜欢语音"],
+  }, { maxChars: 800 });
+  assert.ok(block, "800 的容量连必留行都该放得下");
+  assert.ok(block!.length <= 800, `超出声明容量：${block!.length}`);
+  assert.ok(!block!.includes(`${long}；${long}；${long}；`), "五条 300 字的装不下，就该整条略过");
+  assert.ok(block!.includes("</conversation_summary>"));
+  assert.ok(block!.includes("要报数字得重新查"));
 });
 
 test("watermarked conversation summary is labeled as a topic hint, not an action receipt", () => {

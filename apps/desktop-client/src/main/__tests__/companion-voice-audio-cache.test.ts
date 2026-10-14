@@ -8,19 +8,16 @@ import { speakCompanionVoice } from "../desktop-gateway-ns-companion";
 import type { CompanionGuidanceVoiceProfileV1, CompanionVoiceSpeakResultV1 } from "@astella/shared/companion-voice-contracts";
 
 let directory: string;
-let thoughtDirectory: string;
 const scope: VoiceAudioScope = { deployment: "http://127.0.0.1:4000", userId: "00000000-0000-4000-8000-000000000001" };
 const profile: CompanionGuidanceVoiceProfileV1 = { version: 1, profileId: "a".repeat(64), voice: "longhua_v3.1" };
 const audio: CompanionVoiceSpeakResultV1 = { version: 1, mimeType: "audio/mpeg", voice: profile.voice, audioBase64: "SUQzBA==", byteLength: 4 };
 const text = "我陪你从书房开始，接着找到笔记。";
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "guidance-audio-"));
-  thoughtDirectory = await mkdtemp(join(tmpdir(), "thought-audio-"));
 });
 afterEach(async () => {
   vi.restoreAllMocks();
   await rm(directory, { recursive: true, force: true });
-  await rm(thoughtDirectory, { recursive: true, force: true });
 });
 async function clipFiles() {
   const folder = join(directory, (await readdir(directory))[0]);
@@ -94,7 +91,6 @@ function transport() {
     ASTELLA_DESKTOP_PAIRING_KEY_ID: "desktop-key-1", ASTELLA_DESKTOP_PAIRING_SECRET: Buffer.alloc(32, 9).toString("base64url"),
     ASTELLA_DOMAIN_SCHEMA_REVISION: "domain-v2-test" }, {
       guidanceAudioCache: new CompanionVoiceAudioCache(directory),
-      thoughtAudioCache: new CompanionVoiceAudioCache(thoughtDirectory),
     });
   const t = gateway.gatewayTransport;
   t.connection = { version: 1, kind: "ready", schemaRevision: "domain-v2-test" };
@@ -143,56 +139,4 @@ it("an account change drops a late synthesis before it can be cached or played",
   release!(new Response(Buffer.from(audio.audioBase64, "base64"), { headers: { "Content-Type": "audio/mpeg", "X-Astella-Tts-Voice": profile.voice } }));
   await rejected;
   expect(await readdir(directory)).toEqual([]);
-});
-
-it("keeps her own sentence on this machine in the voice she actually used, and never pays for it twice", async () => {
-  let spoken = "longhua_v3.1";
-  const bodies: string[] = [];
-  const tts = vi.fn(() => new Response(Buffer.from(audio.audioBase64, "base64"), {
-    headers: { "Content-Type": "audio/mpeg", "X-Astella-Tts-Voice": spoken } }));
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-    const path = new URL(String(input)).pathname;
-    if (path === "/voice/preference") return new Response(JSON.stringify({ version: 1, engine: "qwen", voice: spoken, instruction: null, explicit: true, updatedAt: null }));
-    if (path === "/voice/tts") { bodies.push(String(init?.body)); return tts(); }
-    throw new Error(`unexpected ${path}`);
-  });
-  const request = { version: 1 as const, purpose: "thought" as const, text };
-
-  await speakCompanionVoice(transport(), request);
-  // 念想是她亲口的那一句：正文用什么音色，这一句就用什么音色，不另起一身。
-  expect(JSON.parse(bodies[0])).toEqual({ text, voice: "zh-CN-XiaoxiaoNeural", purpose: "thought" });
-
-  // 重启（换一条 transport，memo 也随之清空）再听同一句：一次合成都该省下来。
-  const reopened = transport();
-  await speakCompanionVoice(reopened, request);
-  await speakCompanionVoice(reopened, request);
-  expect(tts).toHaveBeenCalledOnce();
-  expect((await readdir(thoughtDirectory)).length).toBe(1);
-  // 两个桶各自落盘：在手记里翻旧念想不该把带路那几句的合成成果顶掉。
-  expect(await readdir(directory)).toEqual([]);
-
-  // 用户换了音色，旧的那一身不能继续冒充她——身份进缓存 key，所以要重新合成一条。
-  spoken = "longanlingxi_v3.1";
-  reopened.thoughtVoiceProfile!.at -= 60_001;
-  expect((await speakCompanionVoice(reopened, request)).voice).toBe(spoken);
-  expect(tts).toHaveBeenCalledTimes(2);
-});
-
-it("an edge fallback still plays a thought but is not kept as her recording", async () => {
-  const bodies: string[] = [];
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-    const path = new URL(String(input)).pathname;
-    if (path === "/voice/preference") return new Response(JSON.stringify({ version: 1, engine: "qwen", voice: "longhua_v3.1", instruction: null, explicit: true, updatedAt: null }));
-    if (path === "/voice/tts") {
-      bodies.push(String(init?.body));
-      // qwen 挂了，服务端兜底成 edge 并如实回报用上的音色。
-      return new Response(Buffer.from(audio.audioBase64, "base64"), { headers: { "Content-Type": "audio/mpeg", "X-Astella-Tts-Voice": "zh-CN-XiaoxiaoNeural" } });
-    }
-    throw new Error(`unexpected ${path}`);
-  });
-  const request = { version: 1 as const, purpose: "thought" as const, text };
-  expect((await speakCompanionVoice(transport(), request)).voice).toBe("zh-CN-XiaoxiaoNeural");
-  expect(await readdir(thoughtDirectory)).toEqual([]);
-  await speakCompanionVoice(transport(), request);
-  expect(bodies).toHaveLength(2);
 });

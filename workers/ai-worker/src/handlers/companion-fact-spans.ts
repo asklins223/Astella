@@ -6,8 +6,7 @@ import type { WorkerTransaction } from "../db.ts";
  * 读数由服务端填充（P2，39b §9.4；39d W2-5）：她只写键，真值在下发前由服务端渲染。
  *
  * 原事故是"编数"：她一句"本周你学了 107 分钟"（真值 154），而上下文里根本没有这个数——
- * 事后闸只能救回一次，并且要先付一步假话（话是流式说出口的）。同一类还有念头链的
- * "还有 25 项复习在排队"（那是真值，但它是她**抄**出来的：抄错就是编）。
+ * 事后闸只能救回一次，并且要先付一步假话（话是流式说出口的）。同一类也包括在主动场景复述复习数量：即使来源值真实，未经服务端校验的复述仍可能抄错。
  *
  * 做法照抄本项目已验证过的形状（日记「她只给编号，真货由服务端带」，`companion-daily-summary`）：
  *   - 回合开始产出一个**目录** `{ key → 值 }`，进 prompt 的是目录**本身**；
@@ -17,8 +16,7 @@ import type { WorkerTransaction } from "../db.ts";
  *
  * 做完之后她正文里的数字只有三种来源：① 服务端目录；② 用户自己说的话；③ 名字里的数字。
  *
- * 一处一个来源：目录里的值就是 `readLearningStats`（工具与环境块共用那份）与念头链
- * 素材里已经算好的那几个数，本模块**不另开查询**。
+ * 目录里的值来自 `readLearningStats` 已经取得的统计，本模块**不另开重复查询**。
  */
 
 /** 目录里允许出现的键，以及各自的量词（问句判据与产出对齐用同一份，见 `askableFactSpanKeys`）。 */
@@ -83,11 +81,8 @@ export function askableFactSpanKeys(userText: string | undefined): FactSpanKey[]
 }
 
 /**
- * 连续学习天数（"她主动开口"与"用户问"两条链**共用这一份**）。
- *
- * 判据与念头链原来那段一字不差：取最近 14 条日记（新→旧），`learningRunsCompleted`
- * 或 `learningRunsCreated` 大于 0 就接着数，遇到一天没有就停。抽出来是因为它现在有两个
- * 消费者（事实目录与念头素材），两处各写一遍就会出现"她说连续 3 天、念头说连续 4 天"。
+ * 连续学习天数，供对话事实目录使用。取最近 14 条日记（新→旧），
+ * `learningRunsCompleted` 或 `learningRunsCreated` 大于 0 就接着数，遇到一天没有就停。
  */
 /** 这一轮有没有一题正等着答（活动 run 的活动任务）。 */
 async function hasAnswerableTask(
@@ -130,9 +125,7 @@ export async function readStreakDays(
 /**
  * 这一轮的目录（值＋块）。**没有可报的键就返回 null**——不发明空块、也不留下空目录。
  *
- * 值一律来自调用方已经读到的那些数（`stats` 就是 `readLearningStats` 那一份，念头链
- * 传它自己素材里那两个），本函数只额外读一个 `streak_days`（它没人在算，且只在被问到
- * 时才读）。
+ * 值来自调用方已经读取的 `readLearningStats`；本函数只在需要时额外读取 `streak_days`。
  */
 export async function loadFactSpans(
   tx: WorkerTransaction,

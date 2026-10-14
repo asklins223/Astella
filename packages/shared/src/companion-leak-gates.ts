@@ -1,7 +1,7 @@
 /**
  * 伴星泄露闸的**身份表**（39d #28 的第一步）。
  *
- * 为什么先立表、后加列：G1..G11 这串号今天**只存在于重放台的 python 里**
+ * 为什么先立表、后加列：G1..G9 这串号今天**只存在于重放台的 python 里**
  * （`scripts/companion-gate-counterfactual.py` 的 `GATE_DISPOSITION`），代码里没有这串号——
  * 判据是一段段导出的函数。于是台子与代码之间的对应**靠人对质**：改了判据、删了一道闸，
  * 台子不会知道，只会拿着旧的号继续读。要落"这一发产出于哪一版闸"那一列，
@@ -18,7 +18,7 @@ import { createHash } from "node:crypto";
 export type CompanionLeakGateDispositionV1 = "keep" | "delete" | "conditional";
 
 /** 判据所在的模块代号（worker 侧的用例把它映射到真文件去验导出名）。 */
-export type CompanionLeakGateModuleV1 = "companion-dialogue-content" | "companion-thought";
+export type CompanionLeakGateModuleV1 = "companion-dialogue-content";
 
 export interface CompanionLeakGateV1 {
   readonly id: string;
@@ -38,7 +38,6 @@ export interface CompanionLeakGateV1 {
 }
 
 const DIALOGUE = "companion-dialogue-content" as const;
-const THOUGHT = "companion-thought" as const;
 
 export const COMPANION_LEAK_GATES_V1: readonly CompanionLeakGateV1[] = [
   { id: "G1", judge: "unverifiedNumericClaims", judgeModule: DIALOGUE, scope: "正文里的数字与量词，比上下文集", disposition: "delete", because: "事实 span 落地后她能填的数字只剩服务端给的（W2-5）" },
@@ -50,8 +49,6 @@ export const COMPANION_LEAK_GATES_V1: readonly CompanionLeakGateV1[] = [
   { id: "G7", judge: "containsCompanionInternalToken", judgeModule: DIALOGUE, scope: "内部标记、uuid、工具名漏到屏上", disposition: "keep", because: "词表应改成从注册表生成，防线本身留着" },
   { id: "G8", judge: "looksLikeJsonEnvelope", judgeModule: DIALOGUE, scope: "整封 JSON 信封当回复", disposition: "keep", because: "结构判据" },
   { id: "G9", judge: "looksLikeJsonFragment", judgeModule: DIALOGUE, scope: "半截 JSON", disposition: "keep", because: "流式路径唯一的防线" },
-  { id: "G10", judge: "introducesUnverifiedNumbers", judgeModule: THOUGHT, scope: "念头里自己带出来的数字", disposition: "delete", because: "念头链也走 span，她不再抄数字" },
-  { id: "G11", judge: "readsOutStatistics", judgeModule: THOUGHT, scope: "把统计量词念出来", disposition: "delete", because: "形状判据的极限：作品名里的数字必须放过" },
 ];
 
 function canonical(gates: readonly CompanionLeakGateV1[]): string {

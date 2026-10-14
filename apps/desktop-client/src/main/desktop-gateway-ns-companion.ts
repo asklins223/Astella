@@ -19,7 +19,6 @@ const companionActivityTimelineWireSchema = z.strictObject({
   serverTime: z.string().datetime({ offset: true }),
 });
 
-import { createHash } from "node:crypto";
 import type { VoiceAudioProfile } from "./companion-voice-audio-cache";
 import type { MessageAudioScope } from "./companion-message-audio-cache";
 import type { CompanionCachedVoiceListResultV1, CompanionCachedVoiceReadRequestV1 } from "@astella/shared/companion-voice-contracts";
@@ -40,10 +39,6 @@ import {  CompanionAgentRoutesListRequestV1,
   CompanionChatEnsureResultV1,
   CompanionChatListMessagesRequestV1,
   CompanionChatListMessagesResultV1,
-  CompanionChatOpenThoughtRequestV1,
-  CompanionChatOpenThoughtResultV1,
-  CompanionChatListThoughtsRequestV1,
-  CompanionChatListThoughtsResultV1,
   CompanionChatProposalDecideRequestV1,
   CompanionChatProposalDecideResultV1,
   CompanionChatProposalGetRequestV1,
@@ -56,8 +51,6 @@ import {  CompanionAgentRoutesListRequestV1,
   companionChatCancelRunResultV1Schema,
   companionChatEnsureResultV1Schema,
   companionChatListMessagesResultV1Schema,
-  companionChatOpenThoughtResultV1Schema,
-  companionChatListThoughtsResultV1Schema,
   companionChatProposalDecideResultV1Schema,
   companionChatProposalGetResultV1Schema,
   companionChatSendTurnResultV1Schema,
@@ -131,6 +124,9 @@ import {  CompanionActivityTimelineV1,
   companionHistoryPageV1Schema,
   companionHistorySearchV1Schema,
   companionMemoryClearResultV1Schema,
+  companionMemoryBudgetMoveV1Schema,
+  companionMemoryBudgetStatusV1Schema,
+  companionDerivedDataClearResultV1Schema,
   companionMemoryConflictListV1Schema,
   companionMemoryConflictResolveResultV1Schema,
   companionMemoryItemV1Schema,
@@ -260,6 +256,14 @@ export async function clearCompanionMemories(t: GatewayTransport, requestId?: st
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }
+
+export async function clearCompanionDerivedData(t: GatewayTransport, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const result = await t.request("/companion/derived-data", { method: "DELETE" }, true, true, requestId);
+  const parsed = companionDerivedDataClearResultV1Schema.safeParse(result.body);
+  if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+  return parsed.data;
+}
 
 export async function correctCompanionMemory(t: GatewayTransport, memoryId: string, request: CompanionMemoryCorrectInputV1, requestId?: string): Promise<CompanionMemoryItemV1> {
     await t.ensureConnected(requestId);
@@ -772,6 +776,54 @@ export async function listCompanionMemories(t: GatewayTransport,
     return parsed.data;
   }
 
+export async function getCompanionMemoryBudget(t: GatewayTransport, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const result = await t.request("/companion/memory/budget", { method: "GET" }, true, true, requestId);
+  const parsed = companionMemoryBudgetStatusV1Schema.safeParse(result.body);
+  if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+  return parsed.data;
+}
+
+export async function moveCompanionMemoryBudgetTier(
+  t: GatewayTransport,
+  memoryId: string,
+  tier: "resident" | "active" | "archived",
+  requestId?: string,
+) {
+  await t.ensureConnected(requestId);
+  const result = await t.request(
+    `/companion/memory/${safeUuid(memoryId)}/budget-tier`,
+    { method: "POST", body: JSON.stringify({ tier }) },
+    true,
+    true,
+    requestId,
+  );
+  const parsed = companionMemoryBudgetMoveV1Schema.safeParse(
+    (result.body as { result?: unknown } | null)?.result,
+  );
+  if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+  return parsed.data;
+}
+
+export async function disputeCompanionMemory(
+  t: GatewayTransport,
+  memoryId: string,
+  expectedRevision: number,
+  requestId?: string,
+): Promise<CompanionMemoryItemV1> {
+  await t.ensureConnected(requestId);
+  const result = await t.request(
+    `/companion/memory/${safeUuid(memoryId)}/dispute`,
+    { method: "POST", body: JSON.stringify({ expectedRevision }) },
+    true,
+    true,
+    requestId,
+  );
+  const parsed = companionMemoryItemV1Schema.safeParse(result.body);
+  if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+  return parsed.data;
+}
+
 export async function listCompanionMemoryConflicts(t: GatewayTransport, requestId?: string) {
     await t.ensureConnected(requestId);
     const result = await t.request("/companion/memory/conflicts", { method: "GET" }, true, true, requestId);
@@ -833,36 +885,6 @@ export async function openCompanionExport(t: GatewayTransport,
       throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     }
     return response;
-  }
-
-export async function listCompanionThoughts(t: GatewayTransport,
-  request: CompanionChatListThoughtsRequestV1,
-  requestId?: string,
-): Promise<CompanionChatListThoughtsResultV1> {
-  await t.ensureConnected(requestId);
-  const query = new URLSearchParams({ limit: String(request.limit ?? 30) });
-  if (request.before) query.set("before", safeUuid(request.before));
-  const result = await t.request(`/companion/thoughts?${query}`, { method: "GET" }, true, true, requestId);
-  const parsed = companionChatListThoughtsResultV1Schema.safeParse(result.body);
-  if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-  return parsed.data;
-}
-
-export async function openCompanionThought(t: GatewayTransport, 
-    request: CompanionChatOpenThoughtRequestV1,
-    requestId?: string,
-  ): Promise<CompanionChatOpenThoughtResultV1> {
-    await t.ensureConnected(requestId);
-    const result = await t.request(
-      `/companion/thoughts/${request.thoughtId}/open`,
-      { method: "POST", body: JSON.stringify({ version: 1 }) },
-      true,
-      true,
-      requestId,
-    );
-    const parsed = companionChatOpenThoughtResultV1Schema.safeParse(result.body);
-    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data;
   }
 
 export async function patchCompanionAccountState(t: GatewayTransport, 
@@ -1229,14 +1251,12 @@ export async function speakCompanionVoice(t: GatewayTransport,
     };
     const session = t.currentSession;
     const deployment = t.configuration?.config.apiOrigin;
-    // 两个会留在本机的桶：带路那几句是写死的引导，念想是她自己说过的话。
-    // 除此之外（普通通知、正文）都是一次性的，落盘只会攒下一堆没人再听的字节。
-    const bucket = request.purpose === "guidance" ? "guidance" : request.purpose === "thought" ? "thought" : null;
-    const cache = bucket === "guidance" ? t.guidanceAudioCache : bucket === "thought" ? t.thoughtAudioCache : null;
-    if (!bucket || !cache || !deployment || session?.status !== "authenticated") return synthesize();
+    // Guidance clips are fixed, reviewed lines; ordinary notifications and message audio are one-off.
+    const cache = request.purpose === "guidance" ? t.guidanceAudioCache : null;
+    if (!cache || !deployment || session?.status !== "authenticated") return synthesize();
     const userId = session.user.userId, token = t.token;
     const isCurrent = () => t.currentSession?.status === "authenticated" && t.currentSession.user.userId === userId && t.token === token;
-    const profile = await resolveCachedVoiceProfile(t, bucket, requestId);
+    const profile = await resolveCachedVoiceProfile(t, requestId);
     // 拿不到音色身份就不冒这份缓存：这一句照样念，只是这一次不留在本机。
     // 缓存的本职是省成本，一次设置页的抖动不该演成"她没声音"。
     if (!profile) return synthesize();
@@ -1253,16 +1273,13 @@ export async function speakCompanionVoice(t: GatewayTransport,
 /**
  * 本机音频缓存用的音色身份（60 秒内同一趟只读一次）。
  *
- * 带路取服务端审核过的默认档；念想跟着**这个账号存着的那一身**走——她与正文是同一个声音，
- * 用户在设置里换了音色，本机那些旧音频就该整体作废，所以身份进缓存 key，
- * 而不是只拿文本当 key、然后把旧声音一直当命中。
+ * Guidance uses the service's reviewed default profile. A failed profile read only disables caching.
  *
  * 读失败返回 `null`，由调用方退回"这次不缓存"：身份读不到时最坏的代价是多一次合成，
  * 而不是伴星忽然安静。
  */
 async function resolveCachedVoiceProfile(
   t: GatewayTransport,
-  bucket: "guidance" | "thought",
   requestId?: string,
 ): Promise<VoiceAudioProfile | null> {
   const session = t.currentSession;
@@ -1270,11 +1287,8 @@ async function resolveCachedVoiceProfile(
   if (session?.status !== "authenticated" || !deployment) return null;
   const userId = session.user.userId, token = t.token;
   const profileKey = `${deployment}:${userId}:${t.transportEpoch}`;
-  const memo = () => bucket === "guidance" ? t.guidanceVoiceProfile : t.thoughtVoiceProfile;
-  const remember = (value: { key: string; at: number; value: Promise<VoiceAudioProfile> } | null) => {
-    if (bucket === "guidance") t.guidanceVoiceProfile = value;
-    else t.thoughtVoiceProfile = value;
-  };
+  const memo = () => t.guidanceVoiceProfile;
+  const remember = (value: { key: string; at: number; value: Promise<VoiceAudioProfile> } | null) => { t.guidanceVoiceProfile = value; };
   const cached = memo();
   if (cached?.key === profileKey && Date.now() - cached.at < 60_000) {
     const profile = await cached.value.catch(() => null);
@@ -1282,18 +1296,6 @@ async function resolveCachedVoiceProfile(
     if (profile !== null) return profile;
   }
   const value = (async (): Promise<VoiceAudioProfile> => {
-    if (bucket === "thought") {
-      const preference = await getCompanionVoicePreference(t, requestId);
-      // 身份只进哈希：engine 与 voice 合起来才是"她这一身"，单看音色名会漏掉引擎换了。
-      // instruction 也进：它是这一身怎么说的一部分，改了风格偏好旧音频就该作废。
-      // 方言必须一起进（第 2 版）：账号存上长期方言后合成走的是复刻角色的方言音，
-      // 只哈希 engine+voice+instruction 的话，同一句念想会一直命中存下方言之前那条
-      // 普通话录音——日志里指令到位、服务端也真合成过，用户听到的却还是普通话。
-      return {
-        profileId: createHash("sha256").update(JSON.stringify([2, preference.engine, preference.voice, preference.instruction, preference.dialect ?? null])).digest("hex"),
-        voice: preference.voice,
-      };
-    }
     await t.ensureConnected(requestId);
     const response = await t.request("/voice/guidance-profile", { method: "GET" }, true, true, requestId);
     const parsed = companionGuidanceVoiceProfileV1Schema.safeParse(response.body);

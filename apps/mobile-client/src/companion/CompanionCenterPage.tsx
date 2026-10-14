@@ -6,6 +6,7 @@ import { companionLine } from '../conversation/status-line.ts'
 import { setChatLayout } from '../state/prefs.ts'
 import { useCompanion } from '../state/companion.ts'
 import { useSession } from '../state/session.ts'
+import { CompanionSeat } from './CompanionSeat.tsx'
 
 /** 伴星中心接回唯一的实时会话；尚未接通的记忆、日记入口不伪装成可操作功能。 */
 export function CompanionCenterPage() {
@@ -33,7 +34,7 @@ export function CompanionCenterPage() {
             <span className="buddy-status glass"><i />{line}</span>
           </div>
           <span className="buddy-halo" aria-hidden="true" />
-          <span className="portrait" aria-hidden="true"><img src="/assets/companion-static.png" alt="" /></span>
+          <div className="companion-center-live"><CompanionSeat /></div>
         </div>
 
         <div className="companion-section-heading">

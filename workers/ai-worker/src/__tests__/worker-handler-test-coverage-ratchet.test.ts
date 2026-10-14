@@ -65,16 +65,16 @@ const BASELINE_UNTESTED: ReadonlySet<string> = new Set([
   // 后者由 `integration-tests/companion-memory-handlers-postgres.integration.ts`
   // 覆盖（它真连 Postgres 调 `tickCompanionMemoryMaintenance`），但那份不是
   // `.test.ts`，不进本棘轮的 blob——所以这里别把它当成行为覆盖。
+  // 2026-10-14：`companion-memory-embedding` 已被 companion-memory-embedding-jobs.test.ts
+  // 引用，覆盖写入事务的幂等入队与 rebuild 的当前模型 revision 判据，故从未测基线移除。
   "card-generation-v2-handler",
   "companion-daily-summary-scheduler",
   "companion-delivery-write",
   "companion-dialogue-deltas",
-  "companion-memory-embedding",
   "companion-note-reads",
   "companion-proposal-expiry-scheduler",
   "companion-reminder-scheduler",
   "companion-run-reconcile-scheduler",
-  "companion-thought-scheduler",
   "note-expansion-generate",
 ]);
 

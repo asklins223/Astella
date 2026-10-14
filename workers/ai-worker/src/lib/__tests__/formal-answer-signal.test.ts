@@ -82,7 +82,7 @@ describe("判据只有一份", () => {
     // 第一次我就是写了个 `> 300`，实际 228 个源文件——阈值本身没意义。
     const names = scanned.map((file) => file.split("/").pop());
     assert.ok(names.includes("formal-answer-signal.ts"), "没扫到判据自己，路径不对");
-    assert.ok(names.includes("companion-thought.ts"), "没扫到念头管线，路径不对");
+    assert.ok(names.includes("companion-initiative.ts"), "没扫到主动交流管线，路径不对");
     assert.ok(names.includes("memory-service.ts"), "没扫到 api 侧，路径不对");
     assert.equal(
       withPurpose.length,

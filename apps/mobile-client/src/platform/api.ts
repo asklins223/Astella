@@ -110,30 +110,37 @@ export type WorkspaceSwitch = z.infer<typeof workspaceSwitchSchema>
 
 /** 三条登录/注册路都要带 clientKind：判据落在签发的会话上，之后每个请求都跟着走。 */
 export const authApi = {
-  login(input: { email: string; password: string; remember?: boolean }) {
+  login(input: { email: string; password: string; remember?: boolean }, signal?: AbortSignal) {
     return requestJson<unknown>('/auth/login', {
       method: 'POST',
       body: { ...input, clientKind: CLIENT_KIND },
+      signal,
     }).then(parseAs(authEnvelopeSchema))
   },
-  loginWithCode(input: { email: string; code: string; remember?: boolean }) {
+  loginWithCode(input: { email: string; code: string; remember?: boolean }, signal?: AbortSignal) {
     return requestJson<unknown>('/auth/login-with-code', {
       method: 'POST',
       body: { ...input, clientKind: CLIENT_KIND },
+      signal,
     }).then(parseAs(authEnvelopeSchema))
   },
   /** 注册默认强制两步：不带 emailCode 时服务端回 400 `client_update_required`。 */
-  requestEmailCode(email: string, purpose: 'register' | 'login' | 'reset_password') {
+  requestEmailCode(email: string, purpose: 'register' | 'login' | 'reset_password', signal?: AbortSignal) {
     return requestJson<{ ok: boolean; resendInSeconds: number }>('/auth/email-code', {
       method: 'POST',
       body: { email, purpose },
+      signal,
     })
   },
-  register(input: { email: string; password: string; displayName?: string; emailCode?: string }) {
+  register(input: { email: string; password: string; displayName?: string; emailCode?: string }, signal?: AbortSignal) {
     return requestJson<unknown>('/auth/register-v2', {
       method: 'POST',
       body: { ...input, clientKind: CLIENT_KIND },
+      signal,
     }).then(parseAs(authEnvelopeSchema))
+  },
+  resetPassword(input: { email: string; code: string; newPassword: string }, signal?: AbortSignal) {
+    return requestJson<void>('/auth/reset-password', { method: 'POST', body: input, signal })
   },
   me(signal?: AbortSignal) {
     return requestJson<unknown>('/auth/me', { signal }).then(parseAs(authMeSchema))
@@ -166,8 +173,8 @@ export const authApi = {
       body: { workspaceId },
     }).then(parseAs(workspaceSwitchSchema))
   },
-  logout() {
-    return requestJson<void>('/auth/logout', { method: 'POST' })
+  logout(signal?: AbortSignal) {
+    return requestJson<void>('/auth/logout', { method: 'POST', signal })
   },
 }
 
@@ -228,6 +235,8 @@ const companionRunSummarySchema = z.object({
   maxSteps: z.number().int().positive().nullable(),
   maxToolCalls: z.number().int().positive().nullable(),
   assistantMessageId: z.string().nullable(),
+  thinkingText: z.string().nullable().optional(),
+  processTimeline: z.array(companionRunNodeSchema).optional(),
   nodeCount: z.number().int().nonnegative(),
 }).passthrough()
 export type CompanionRunSummary = z.infer<typeof companionRunSummarySchema>
@@ -338,9 +347,14 @@ export const companionApi = {
    * `CURSOR_EXPIRED`（服务端 rule：`after + 1 < minReplayable`）。`run-nodes` 回的
    * `latestSeq` 就是"从最新处挂"的那个值——2026-10-12 实测，逐条对过。
    */
-  async runNodes(conversationId: string, after = 0, signal?: AbortSignal): Promise<CompanionRunSnapshot> {
+  async runNodes(
+    conversationId: string,
+    after = 0,
+    signal?: AbortSignal,
+    options: { includeThinking?: boolean; runIds?: string[] } = {},
+  ): Promise<CompanionRunSnapshot> {
     const raw = await requestJson<unknown>(`/companion/conversations/${conversationId}/run-nodes`, {
-      query: { after },
+      query: { after, includeThinking: options.includeThinking, runIds: options.runIds?.length ? options.runIds.join(',') : undefined },
       signal,
     })
     return companionRunSnapshotSchema.parse(raw)
@@ -395,6 +409,30 @@ const noteVersionsSchema = z.object({
   }).passthrough()),
 }).passthrough()
 
+const restoredNoteVersionSchema = z.object({
+  note: z.object({
+    id: z.string().uuid(),
+    workspaceId: z.string().uuid(),
+    title: z.string().max(200),
+    titleSource: z.enum(['manual', 'auto']),
+    currentVersionId: z.string().uuid(),
+    updatedAt: isoTime,
+  }).passthrough(),
+  version: z.object({
+    id: z.string().uuid(),
+    noteId: z.string().uuid(),
+    versionNo: z.number().int().positive(),
+    contentHash: z.string().regex(/^[a-f0-9]{32}$/),
+    createdAt: isoTime,
+    updatedAt: isoTime,
+  }).passthrough(),
+  blocks: z.array(z.object({
+    ordinal: z.number().int().nonnegative(),
+    type: z.enum(['paragraph', 'heading', 'code', 'list', 'quote', 'image']),
+    content: z.string().max(50_000),
+  }).passthrough()),
+}).passthrough()
+
 export const notesApi = {
   list(input: { limit?: number; cursor?: string; trashed?: boolean } = {}) {
     return requestJson<unknown>('/notes', { query: input }).then(parseAs(noteListPageSchema))
@@ -413,8 +451,14 @@ export const notesApi = {
   detail(noteId: string) {
     return requestJson<unknown>(`/v2/notes/${noteId}`).then(parseAs(noteDetailV1Schema))
   },
-  versions(noteId: string) {
-    return requestJson<unknown>(`/notes/${noteId}/versions`).then(parseAs(noteVersionsSchema))
+  versions(noteId: string, input: { limit?: number; offset?: number } = {}) {
+    return requestJson<unknown>(`/notes/${noteId}/versions`, { query: input }).then(parseAs(noteVersionsSchema))
+  },
+  restoreVersion(noteId: string, versionId: string, baseVersionId: string) {
+    return requestJson<unknown>(`/notes/${noteId}/versions/${versionId}/restore`, {
+      method: 'POST',
+      body: { baseVersionId },
+    }).then(parseAs(restoredNoteVersionSchema))
   },
   overviews(noteId: string) {
     return requestJson<unknown>(`/v2/notes/${noteId}/overviews`).then(parseAs(noteOverviewPageV1Schema))

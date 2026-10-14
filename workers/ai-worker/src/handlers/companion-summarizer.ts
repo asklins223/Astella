@@ -34,15 +34,19 @@ import {
   type ContextCoverageSpanV1,
 } from "@astella/shared/context-budget-contracts";
 import {
-  boundCompanionRecentHistory,
   REPLAY_HISTORY_READ_ROWS,
 } from "./companion-dialogue-content.ts";
+import {
+  COMPANION_INTERACTIVE_REPLAY_TOKEN_BUDGET,
+  selectCompanionInteractiveReplayWindow,
+} from "./companion-context-handoff.ts";
 import type { JobPayload } from "./index.ts";
 import { runWorkerAiTask } from "./worker-ai-task.ts";
 import {
   companionHistoryText, readCompanionHistoryRows, readParentSummary, upsertCommittedSummary,
   type CompanionHistoryRow,
 } from "./companion-dialogue-store.ts";
+import type { WorkerTransaction } from "../db.ts";
 
 class SummarizerOutputError extends Error {
   constructor() {
@@ -51,13 +55,16 @@ class SummarizerOutputError extends Error {
   }
 }
 
+/** 摘要每段最多存几条：写侧上限，也是注入侧取数的上界（同一个数只管一次）。 */
+const SUMMARY_SECTION_MAX_ITEMS = 20;
+
 export const conversationSummaryOutputSchema = z.object({
   title: z.string().min(1).max(200),
-  topics: z.array(z.string().min(1).max(200)).max(20).default([]),
-  userGoals: z.array(z.string().min(1).max(500)).max(20).default([]),
-  keyEvents: z.array(z.string().min(1).max(500)).max(20).default([]),
-  userPreferences: z.array(z.string().min(1).max(500)).max(20).default([]),
-  followUps: z.array(z.string().min(1).max(500)).max(20).default([]),
+  topics: z.array(z.string().min(1).max(200)).max(SUMMARY_SECTION_MAX_ITEMS).default([]),
+  userGoals: z.array(z.string().min(1).max(500)).max(SUMMARY_SECTION_MAX_ITEMS).default([]),
+  keyEvents: z.array(z.string().min(1).max(500)).max(SUMMARY_SECTION_MAX_ITEMS).default([]),
+  userPreferences: z.array(z.string().min(1).max(500)).max(SUMMARY_SECTION_MAX_ITEMS).default([]),
+  followUps: z.array(z.string().min(1).max(500)).max(SUMMARY_SECTION_MAX_ITEMS).default([]),
   emotionalState: z.string().min(1).max(40).default("neutral"),
 });
 
@@ -389,10 +396,17 @@ export function renderConversationSummary(
     "</conversation_summary>",
   ];
   // 可选项按重要性排列，逐条放入直到装不下——不再截断整块。
+  //
+  // **条数不写死**（原来是 3 条办过的事 / 3 条未了结 / 2 条偏好）：这几条数字既不是
+  // 容量也不是合同，只是历史上顺手划的线。她存了 10 条关键事件时，注入回去的只有 3 条，
+  // 剩下 7 条在摘要库里躺着、她的上下文里查无此事——「有摘要」被她当成「这段我全读过」。
+  // 现在按这一块的声明容量取舍：装得下多少带多少，装不下的那条整条不留（不砍半句）。
+  const sectionMax = SUMMARY_SECTION_MAX_ITEMS;
   const sections = [
-    { label: "办过的事", items: list(row.keyEvents, 3), counts: [3, 2, 1] },
-    { label: "还没了结", items: list(row.followUps, 3), counts: [3, 2, 1] },
-    { label: "他偏好的", items: list(row.userPreferences, 2), counts: [2, 1] },
+    { label: "办过的事", items: list(row.keyEvents, sectionMax) },
+    { label: "还没了结", items: list(row.followUps, sectionMax) },
+    { label: "他偏好的", items: list(row.userPreferences, sectionMax) },
+    { label: "他在推进的", items: list(row.userGoals, sectionMax) },
   ];
 
   const block = (extra: string[]): string =>
@@ -401,15 +415,46 @@ export function renderConversationSummary(
   const chosen: string[] = [];
   for (const section of sections) {
     if (section.items.length === 0) continue;
-    // 取当前仍装得下的最详细档；一档都放不下就整段略过，而不是砍成半句。
-    const fit = section.counts.find((count) =>
-      count > 0 && count <= section.items.length
-      && block([...chosen, `${section.label}：${section.items.slice(0, count).join("；")}`]).length <= limit);
-    if (fit !== undefined) chosen.push(`${section.label}：${section.items.slice(0, fit).join("；")}`);
+    // 从全量往下退，取当前仍装得下的那一条线；一条都放不下就整段略过。
+    let fit = 0;
+    for (let count = section.items.length; count >= 1; count -= 1) {
+      if (block([...chosen, `${section.label}：${section.items.slice(0, count).join("；")}`]).length <= limit) {
+        fit = count;
+        break;
+      }
+    }
+    if (fit > 0) chosen.push(`${section.label}：${section.items.slice(0, fit).join("；")}`);
   }
   const rendered = block(chosen);
   // 连必留行都装不下（上限被调到异常小）：返回 null 而不是产出半截块。
   return rendered.length > limit ? null : rendered;
+}
+
+/**
+ * 摘要侧的裁剪锚点：**本轮 prompt 实际带走的第一条**的前一条。
+ *
+ * 抽出来单独导出是因为这个数以前在两侧各算一遍：对话侧按 2,048 tok 的回放预算裁，
+ * 摘要侧只过了一遍可见性过滤（不带容量等于不裁），锚点落在 200 行读取页的开头。
+ * 两个"同一个裁剪点"其实不是同一个，中间那段（150 轮实测 176 条）既没进摘要
+ * 也没进回放，而且随会话越长越宽。共享这一个函数之后，两侧不可能再漂移。
+ *
+ * 预算取 `COMPANION_INTERACTIVE_REPLAY_TOKEN_BUDGET` 整值：对话侧用的是
+ * `min(路由声明, 预算)`，恒 ≤ 这里，所以这里只会**多覆盖**、不会留洞。
+ */
+export async function resolveCompanionSummarizerTailAnchor(
+  tx: WorkerTransaction,
+  conversationId: string,
+): Promise<string | undefined> {
+  const tailRows = await readCompanionHistoryRows(tx, conversationId, { limit: REPLAY_HISTORY_READ_ROWS });
+  const visibleTail = selectCompanionInteractiveReplayWindow(
+    tailRows.slice().reverse().map((row) => ({
+      seq: row.seq,
+      role: row.role as "user" | "assistant",
+      text: companionHistoryText(row),
+    })),
+    COMPANION_INTERACTIVE_REPLAY_TOKEN_BUDGET,
+  ).messages;
+  return visibleTail[0]?.seq;
 }
 
 export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
@@ -459,16 +504,9 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
   }));
 
   const { snapshot, parent, contextRevision } = await withJobTransaction(job, async (tx) => {
-    // 先用和对话 prompt 相同的回放窗口规则找到真实裁剪点。
-    // 这样，被回放窗口挤出 prompt、但仍在最近那几条里的旧消息也能进入摘要，
-    // 而不是留下“摘要没覆盖、原文也没回放”的空档。
-    const tailRows = await readCompanionHistoryRows(tx, conversationId, { limit: REPLAY_HISTORY_READ_ROWS });
-    const visibleTail = boundCompanionRecentHistory(tailRows.slice().reverse().map((row) => ({
-      seq: row.seq,
-      role: row.role as "user" | "assistant",
-      text: companionHistoryText(row),
-    })));
-    const tailStartSeq = visibleTail[0]?.seq;
+    // 锚点与对话回放共用同一条裁剪规则（见 `resolveCompanionSummarizerTailAnchor`）：
+    // 被回放窗口挤出 prompt 的那些旧消息要进摘要，不许留下"摘要没覆盖、原文也没回放"的空档。
+    const tailStartSeq = await resolveCompanionSummarizerTailAnchor(tx, conversationId);
 
     // 上一份摘要：本次结论要接在它上面，而不是假装从头覆盖（44 §5.1）。
     // 会话内容修订号：这份摘要的覆盖是否仍然有效，判定与提交都在同一事务里做

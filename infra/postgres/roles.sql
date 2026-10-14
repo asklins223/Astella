@@ -369,7 +369,8 @@ DO $$ BEGIN
   IF to_regclass('public.companion_self_notes') IS NOT NULL THEN
     GRANT SELECT,INSERT,UPDATE,DELETE ON public.companion_self_notes TO astella_api,astella_worker;
     REVOKE ALL ON public.companion_self_note_versions FROM astella_api,astella_worker;
-    GRANT SELECT ON public.companion_self_note_versions TO astella_api,astella_worker;
+    GRANT SELECT,DELETE ON public.companion_self_note_versions TO astella_api;
+    GRANT SELECT ON public.companion_self_note_versions TO astella_worker;
   END IF;
 END $$;
 
@@ -409,13 +410,17 @@ BEGIN
 END
 $$;
 
--- Diary selection output contains private worker state, not an API read model.
--- The broad API grant above is intentional for application tables, so revoke
--- this checkpoint explicitly on every post-migration role bootstrap.
+-- Diary selection output remains unreadable to the API. User initiated
+-- derived-data cleanup may delete only the scoped checkpoint rows.
 DO $$
 BEGIN
   IF to_regclass('public.companion_diary_generation_checkpoints') IS NOT NULL THEN
     REVOKE ALL PRIVILEGES ON TABLE public.companion_diary_generation_checkpoints FROM astella_api;
+    GRANT DELETE ON TABLE public.companion_diary_generation_checkpoints TO astella_api;
+  END IF;
+  IF to_regclass('public.memory_usage_log') IS NOT NULL THEN
+    REVOKE ALL PRIVILEGES ON TABLE public.memory_usage_log FROM astella_api;
+    GRANT SELECT, DELETE ON TABLE public.memory_usage_log TO astella_api;
   END IF;
 END
 $$;
@@ -491,14 +496,6 @@ BEGIN
     -- 0238：到点提醒表。`<here_and_now>` 里"下一条提醒"要读它，schedule/cancel
     -- 两个工具要写它。缺 SELECT 的表现不是报错给用户，而是她**看不见自己许的约**。
     'companion_reminders',
-    -- 主动念头表。worker 每一轮都要读它（今日已送达几条、最近的去重向量），
-    -- 也要写它（落候选、定稿文本/embedding、candidate→delivered/suppressed 状态）。
-    -- 缺权限的表现不是"气泡少一条"，而是 **companion_thought job 三次重试全 dead**
-    -- （permission denied 归 operational_error）——主动链在受限角色下整条静默停摆。
-    -- 实机 2026-09-21：owner 工作区连着三个调度点 dead，`last_error` 全是
-    -- `permission denied for table assistant_thoughts`，而 dev 库这张表此前
-    -- 只对 api/migrator 授权。
-    'assistant_thoughts',
     -- 0237：账号级 AI 同意与数据外发政策。`governance.ts` 现在每轮都要读它来决定
     -- 能不能出网；缺 SELECT 时 worker 不是"降级"，而是**所有 companion job 直接 dead**
     -- （permission denied 被归成 operational_error）。这张表在 roles.sql 里原本零覆盖，
@@ -517,8 +514,8 @@ BEGIN
     'companion_account_invitations',
     'companion_journeys',
     'companion_sandbox_namespaces',
-    -- The thought worker reads this space's proactive mute switch before
-    -- speaking; the migration grant must survive the bootstrap REVOKE ALL.
+    -- The initiative handler reads this space's proactive mute switch before
+    -- letting her speak on her own; the grant must survive the bootstrap REVOKE ALL.
     'companion_room_profiles',
     'learning_artifacts',
     'learning_run_events',
@@ -630,12 +627,6 @@ BEGIN
   -- （cancel/missed），但不删行——fired 的提醒是"她说过做到"的凭据。
   IF to_regclass('public.companion_reminders') IS NOT NULL THEN
     GRANT INSERT, UPDATE ON TABLE public.companion_reminders TO astella_worker;
-  END IF;
-  -- 主动念头：SELECT 在上面的读集合里，这里补写侧。INSERT=落候选，
-  -- UPDATE=定稿文本/embedding 与 candidate→delivered/suppressed 的状态机。
-  -- 不给 DELETE：念头历史是"她说过什么"的凭据，过期行由 api 侧的 TTL 任务处理。
-  IF to_regclass('public.assistant_thoughts') IS NOT NULL THEN
-    GRANT INSERT, UPDATE ON TABLE public.assistant_thoughts TO astella_worker;
   END IF;
   -- 0421：账号级长期默认方言是**语义判定**的产物（哪一句是「以后都用」、哪一句只是
   -- 「这句换个口音」），判定只发生在 worker 的结构化注意力解释器里，而落点是 API 侧
@@ -1013,14 +1004,8 @@ BEGIN
     GRANT EXECUTE ON FUNCTION public.astella_reclaim_stale_companion_proposals()
       TO astella_worker;
   END IF;
-  -- 0227/0231 念头批量生成入队 + 0232 孤儿 run 回收。两支都是 worker 侧定时器
-  -- 调用的 SECURITY DEFINER 函数，缺授权时**不会有任何用户可见报错**：前者让
-  -- assistant_thoughts 恒 0 行（"完全没感知到主动提醒"），后者让卡住的会话
-  -- 永远停在"正在思考"。
-  IF to_regprocedure('public.astella_enqueue_companion_thoughts()') IS NOT NULL THEN
-    GRANT EXECUTE ON FUNCTION public.astella_enqueue_companion_thoughts()
-      TO astella_worker;
-  END IF;
+  -- 0232 孤儿 run 回收是 worker 侧定时器调用的 SECURITY DEFINER 函数；缺授权会让
+  -- 卡住的会话永远停在"正在思考"。
   IF to_regprocedure('public.astella_reclaim_orphaned_companion_runs()') IS NOT NULL THEN
     GRANT EXECUTE ON FUNCTION public.astella_reclaim_orphaned_companion_runs()
       TO astella_worker;
@@ -1541,6 +1526,7 @@ BEGIN
       'companion_method_uses',
       'agent_run_revisions',
       'assistant_memory_budget_events',
+      'memory_usage_log',
       -- 方案 50：反思的结论与产出是 worker 写的，API 只读并在采用复查不过时改结论码。
       'companion_reflections',
       'companion_reflection_sources',
@@ -1672,6 +1658,25 @@ BEGIN
     RAISE EXCEPTION 'companion persona profile versions must be append-only for API and worker';
   END IF;
 
+  IF to_regclass('public.companion_self_note_versions') IS NOT NULL AND (
+    NOT has_table_privilege('astella_api', 'public.companion_self_note_versions', 'SELECT')
+    OR has_table_privilege('astella_api', 'public.companion_self_note_versions', 'INSERT')
+    OR has_table_privilege('astella_api', 'public.companion_self_note_versions', 'UPDATE')
+    OR NOT has_table_privilege('astella_api', 'public.companion_self_note_versions', 'DELETE')
+    OR has_table_privilege('astella_api', 'public.companion_self_note_versions', 'TRUNCATE')
+    OR has_table_privilege('astella_api', 'public.companion_self_note_versions', 'REFERENCES')
+    OR has_table_privilege('astella_api', 'public.companion_self_note_versions', 'TRIGGER')
+    OR NOT has_table_privilege('astella_worker', 'public.companion_self_note_versions', 'SELECT')
+    OR has_table_privilege('astella_worker', 'public.companion_self_note_versions', 'INSERT')
+    OR has_table_privilege('astella_worker', 'public.companion_self_note_versions', 'UPDATE')
+    OR has_table_privilege('astella_worker', 'public.companion_self_note_versions', 'DELETE')
+    OR has_table_privilege('astella_worker', 'public.companion_self_note_versions', 'TRUNCATE')
+    OR has_table_privilege('astella_worker', 'public.companion_self_note_versions', 'REFERENCES')
+    OR has_table_privilege('astella_worker', 'public.companion_self_note_versions', 'TRIGGER')
+  ) THEN
+    RAISE EXCEPTION 'self note versions must be SELECT plus scoped DELETE for API, SELECT only for worker';
+  END IF;
+
   IF to_regclass('public.companion_diary_generation_checkpoints') IS NOT NULL AND (
     has_table_privilege(
       'astella_api', 'public.companion_diary_generation_checkpoints', 'SELECT'
@@ -1679,7 +1684,7 @@ BEGIN
       'astella_api', 'public.companion_diary_generation_checkpoints', 'INSERT'
     ) OR has_table_privilege(
       'astella_api', 'public.companion_diary_generation_checkpoints', 'UPDATE'
-    ) OR has_table_privilege(
+    ) OR NOT has_table_privilege(
       'astella_api', 'public.companion_diary_generation_checkpoints', 'DELETE'
     ) OR has_table_privilege(
       'astella_api', 'public.companion_diary_generation_checkpoints', 'TRUNCATE'
@@ -1689,7 +1694,19 @@ BEGIN
       'astella_api', 'public.companion_diary_generation_checkpoints', 'TRIGGER'
     )
   ) THEN
-    RAISE EXCEPTION 'API unexpectedly has access to worker-only diary checkpoints';
+    RAISE EXCEPTION 'API diary checkpoint access must be scoped DELETE only';
+  END IF;
+
+  IF to_regclass('public.memory_usage_log') IS NOT NULL AND (
+    NOT has_table_privilege('astella_api', 'public.memory_usage_log', 'SELECT')
+    OR has_table_privilege('astella_api', 'public.memory_usage_log', 'INSERT')
+    OR has_table_privilege('astella_api', 'public.memory_usage_log', 'UPDATE')
+    OR NOT has_table_privilege('astella_api', 'public.memory_usage_log', 'DELETE')
+    OR has_table_privilege('astella_api', 'public.memory_usage_log', 'TRUNCATE')
+    OR has_table_privilege('astella_api', 'public.memory_usage_log', 'REFERENCES')
+    OR has_table_privilege('astella_api', 'public.memory_usage_log', 'TRIGGER')
+  ) THEN
+    RAISE EXCEPTION 'API memory usage access must be scoped SELECT and DELETE only';
   END IF;
 
   IF to_regclass('public.companion_context_handoff_snapshots') IS NOT NULL AND (
@@ -1772,9 +1789,6 @@ BEGIN
       ('user_companion_account_state', true, false, false, false),
       -- 0238：到点提醒。读（"下一条提醒"进 `<here_and_now>`）+ 写 + 改状态，不删行。
       ('companion_reminders', true, true, true, false),
-      -- 主动念头：读（今日已送达条数、去重用的近期 embedding）+ 写候选 + 改状态/定稿。
-      -- 缺任何一项都不是"少一条气泡"，而是 companion_thought job 全 dead。
-      ('assistant_thoughts', true, true, true, false),
       -- 0237：AI 同意/数据政策，worker 只读（签署与修改是 api 侧的事）。
       ('user_ai_settings', true, false, false, false),
       -- 0421：账号级学习偏好这一行 jsonb。读=本轮正文要按已保存的长期方言来写；
@@ -2065,12 +2079,10 @@ BEGIN
     -- 0217：失效 companion 确认的定时兜底回收。
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.astella_reclaim_stale_companion_proposals()')
-    -- 0227/0232/0238：上面 granted 的三支 worker 定时器函数必须同时出现在这份
+    -- 0232/0238：上面 granted 的 worker 定时器函数必须同时出现在这份
     -- "预期权限"清单里。它们是**两份清单**：只加 GRANT 而忘了这里，role-bootstrap
     -- 会在下一次 `docker compose up` 时 exit 3，而 api 因为 depends_on 直接起不来——
     -- 容器一直活着的话这个洞完全看不见（实机 2026-09-21 就是这样埋下的）。
-    AND p.oid IS DISTINCT FROM
-      to_regprocedure('public.astella_enqueue_companion_thoughts()')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.astella_reclaim_orphaned_companion_runs()')
     AND p.oid IS DISTINCT FROM
@@ -2296,7 +2308,6 @@ BEGIN
       ('astella_worker', 'astella_renew_job_lease(uuid,uuid,text)'),
       ('astella_worker', 'astella_finish_job(uuid,uuid,text)'),
       ('astella_worker', 'astella_fail_job(uuid,uuid,text,text,integer)'),
-      ('astella_worker', 'astella_enqueue_companion_thoughts()'),
       ('astella_worker', 'astella_reclaim_orphaned_companion_runs()'),
       ('astella_worker', 'astella_fire_due_companion_reminders(integer)'),
       ('astella_worker', 'astella_enqueue_companion_daily_summaries()'),

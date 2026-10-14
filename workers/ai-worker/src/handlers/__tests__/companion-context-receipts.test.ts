@@ -100,6 +100,33 @@ test("落库的那一份不含任何请求内容", () => {
   assert.equal(JSON.stringify(receipts.runMetaPatch()).includes("今天聊"), false);
 });
 
+test("记忆小预算阶段的遗漏数与字符数进入 run meta，且不带记忆正文", () => {
+  const receipts = createCompanionContextReceipts();
+  receipts.recordMemoryOmissions({
+    residentCount: 2,
+    directoryCount: 3,
+    residentCharacters: 280,
+    directoryCharacters: 190,
+    capacityEstimate: 8_000,
+  });
+  assert.deepEqual(receipts.runMetaPatch().companionMemoryOmissions, {
+    residentCount: 2,
+    directoryCount: 3,
+    residentCharacters: 280,
+    directoryCharacters: 190,
+    capacityEstimate: 8_000,
+  });
+  assert.doesNotMatch(JSON.stringify(receipts.runMetaPatch()), /用户的原始记忆正文/);
+  receipts.recordMemoryOmissions({
+    residentCount: 0,
+    directoryCount: 0,
+    residentCharacters: 0,
+    directoryCharacters: 0,
+    capacityEstimate: 8_000,
+  });
+  assert.equal(receipts.runMetaPatch().companionMemoryOmissions, undefined);
+});
+
 test("同一请求只压一次，新的工具回合增长后可以再次压缩", () => {
   const receipts = createCompanionContextReceipts();
   receipts.beginRequest("step-a");

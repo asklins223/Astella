@@ -20,6 +20,7 @@ interface Live2DModel {
   scale: { x: number; set: (value: number) => void }
   position: { x: number; y: number; set: (x: number, y: number) => void }
   autoUpdate: boolean
+  motion?: (group: string, index?: number, priority?: number) => void | Promise<unknown>
   internalModel: {
     originalWidth: number
     originalHeight: number
@@ -71,6 +72,11 @@ export class CompanionRuntime {
   private readonly canvas: HTMLCanvasElement
   private readonly observer: ResizeObserver
   private readonly beforeUpdate: () => void
+  private readonly onVisibilityChange = () => {
+    this.host.hidden = !this.seat || document.hidden || this.state === 'unavailable'
+    this.position()
+    this.run()
+  }
   private app: PixiApp | null = null
   private model: Live2DModel | null = null
   private box: Box = { left: 0, right: 1, top: 0, bottom: 1 }
@@ -98,7 +104,11 @@ export class CompanionRuntime {
       event.preventDefault()
       this.fail('图形资源中断，请刷新重试')
     })
-    this.beforeUpdate = () => this.setLevel(this.readLevel())
+    document.addEventListener('visibilitychange', this.onVisibilityChange)
+    this.beforeUpdate = () => {
+      this.position()
+      this.setLevel(this.readLevel())
+    }
     // 开发期把这一份挂到 window 上：舞台不亮时能从外部读到 pixi 的真实状态，
     // 而不是靠猜（2026-10-12 实测就是这么定位到没画的）。生产构建里被摇掉。
     if (import.meta.env.DEV) (window as unknown as { __companionRuntime?: unknown }).__companionRuntime = this
@@ -125,23 +135,40 @@ export class CompanionRuntime {
     this.run()
   }
 
+  /** Keep the companion visibly alive, and let her acknowledge the start of a turn. */
+  setActivity(activity: 'idle' | 'waiting' | 'thinking' | 'acting' | 'streaming', off: boolean): void {
+    this.host.dataset.activity = off ? 'still' : activity
+  }
+
+  playMotion(group: 'Bubble', index = 0): void {
+    if (this.disposed || this.off || this.host.hidden || this.state !== 'ready' || !this.model?.motion) return
+    try {
+      void Promise.resolve(this.model.motion(group, index, 3)).catch(() => undefined)
+    } catch {
+      // A missing optional motion must never interrupt the conversation or model stage.
+    }
+  }
+
   private position(): void {
     // 释放之后 observer 还可能递进来一次排队的回调：那时 app 已经拆掉，
     // 再碰它就是控制台里那条 "reading 'stop' of null"（实测过两遍）。
     if (this.disposed || !this.seat?.isConnected) return
-    let left = 0
-    let top = 0
-    for (let node: HTMLElement | null = this.seat; node && node !== this.root; node = node.offsetParent as HTMLElement | null) {
-      left += node.offsetLeft
-      top += node.offsetTop
+    const root = this.root.getBoundingClientRect()
+    const seat = this.seat.getBoundingClientRect()
+    const scaleX = this.root.clientWidth / Math.max(1, root.width)
+    const scaleY = this.root.clientHeight / Math.max(1, root.height)
+    const variant = this.seat.dataset.companionSeat ?? 'scene'
+    if (this.host.dataset.seat !== variant) this.host.dataset.seat = variant
+    const placement = {
+      left: `${(seat.left - root.left) * scaleX}px`,
+      top: `${(seat.top - root.top) * scaleY}px`,
+      width: `${seat.width * scaleX}px`,
+      height: `${seat.height * scaleY}px`,
     }
-    Object.assign(this.host.style, {
-      left: `${left}px`,
-      top: `${top}px`,
-      width: `${this.seat.clientWidth}px`,
-      height: `${this.seat.clientHeight}px`,
-    })
-    if (this.state === 'ready') this.fit()
+    for (const [key, value] of Object.entries(placement)) {
+      if (this.host.style[key as 'left' | 'top' | 'width' | 'height'] !== value) this.host.style[key as 'left' | 'top' | 'width' | 'height'] = value
+    }
+    if (this.state === 'ready' && (this.canvas.clientWidth !== this.seat.clientWidth || this.canvas.clientHeight !== this.seat.clientHeight)) this.fit()
   }
 
   private fit(): void {
@@ -310,6 +337,10 @@ export class CompanionRuntime {
       this.state = 'ready'
       this.onStateChange(this.state, null)
       this.run()
+      // This model's idle motion is authored as a loop. Without starting it,
+      // autoUpdate only redraws the same neutral pose, which made every seat
+      // look like a pasted sticker even though the Live2D canvas was running.
+      try { void Promise.resolve(model.motion?.('Idle', 0, 1)).catch(() => undefined) } catch { /* Keep the static pose as a safe fallback. */ }
     } catch (error) {
       if (!this.disposed) this.fail(error instanceof Error ? error.message : 'Live2D 无法加载')
     }
@@ -320,6 +351,7 @@ export class CompanionRuntime {
     // "reading 'stop' of null"——开发期 StrictMode 每次挂载都会走两遍。
     if (this.disposed) return
     this.disposed = true
+    document.removeEventListener('visibilitychange', this.onVisibilityChange)
     this.observer.disconnect()
     this.model?.internalModel.off('beforeModelUpdate', this.beforeUpdate)
     this.model?.destroy()

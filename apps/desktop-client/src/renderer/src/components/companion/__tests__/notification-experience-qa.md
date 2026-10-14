@@ -35,4 +35,4 @@ SettingsSurface 的 jsdom 用例在卸载时输出 `HTMLMediaElement.pause` 未�
 
 `actions` 分别提供 navigate、confirm、cancel，可返回 Promise；失败保留气泡并允许重试，返回 false 保持当前消息。`snoozable` 提供本地 10 分钟延后，`onShown / onDismiss / onSnooze` 用于真实业务回执。固定提示使用已生成的 clip，动态内容只传 audio.text，统一走 Edge TTS 通知用途。默认等空闲投递，用户直接操作的指导才选择 immediate；通知组件负责声音避让，无需各来源自行争抢播放器。
 
-现已接入设备模型、笔记速看、互动演示、拓展草稿（包括伴星对话入口）、今日复习、约定提醒与服务端 system delivery。个人念头保留原来的伴星表达。
+现已接入设备模型、笔记速看、互动演示、拓展草稿（包括伴星对话入口）、今日复习、约定提醒与服务端 system delivery。主动发言沿同一 Agent 对话呈现，不再走独立念想投递。

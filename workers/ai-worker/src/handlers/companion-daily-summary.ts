@@ -13,9 +13,7 @@
  *   4. 写不出来就诚实留一行 failed 带成因，不返回任何看起来像日记的兜底文本。
  *
  * 两件事没变、也不能变：
- *   - `facts` 那 12 个计数继续写库（界面不再显示）。`companion-thought.ts` 读
- *     `facts->>'learningRunsCreated'/'learningRunsCompleted'` 算连续学习天数，
- *     少了它们主动念头会静默归零。
+ *   - `facts` 那 12 个计数继续写库（界面不再显示），供日记与学习进度汇总使用。
  *   - 派生记忆的 `source_event_id = 'daily-summary:<date>'` 与 ≤200 字上限，
  *     「查看关联记忆」按这个键找。存的是**事实备忘**（digest），不是日记正文：
  *     候选记忆一旦确认就每轮注入，把主观创作存成记忆等于让她把自己的情绪
@@ -386,22 +384,6 @@ export async function collectDiaryMaterial(tx: WorkerTransaction, scope: DayScop
     });
   }
 
-  const thoughtRows = await tx.execute<{ at_local: string; text: string; source_id: string }>(sql`
-    SELECT ${clockOf(scope, "delivered_at")} AS at_local, text, id::text AS source_id
-    FROM assistant_thoughts
-    WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
-      AND status = 'delivered'
-      AND delivered_at >= ${dayStart(scope)} AND delivered_at < ${dayEnd(scope)}
-    ORDER BY delivered_at ASC
-    LIMIT 3
-  `);
-  for (const row of Array.isArray(thoughtRows) ? thoughtRows : []) {
-    pieces.push({
-      text: `我主动开口说的是：${row.text}`, group: "her", weight: 2, at: row.at_local,
-      sourceId: row.source_id, sourceType: "thought",
-    });
-  }
-
   const memoryRows = await tx.execute<{ content: string; memory_id: string; source_version: string }>(sql`
     SELECT content, id::text AS memory_id, updated_at::text AS source_version
     FROM assistant_memory_items
@@ -653,7 +635,7 @@ export async function collectDiaryMaterial(tx: WorkerTransaction, scope: DayScop
   const rowsIn = (rows: unknown) => (Array.isArray(rows) ? rows.length : 0);
   events =
     rowsIn(noteRows) + rowsIn(sourceRows) + rowsIn(runRows) + rowsIn(reminderRows)
-    + rowsIn(thoughtRows) + rowsIn(memoryRows) + rowsIn(messageRows);
+    + rowsIn(memoryRows) + rowsIn(messageRows);
 
   const subject = pickDiarySubject(pieces);
   return {
@@ -1160,7 +1142,6 @@ export async function runCompanionDailySummary(job: JobPayload): Promise<void> {
   const baseScope = { workspaceId: job.workspaceId, userId, date, timezone };
 
   // 素材与人格先拿：失败行也要写真实 facts，否则一个失败日会静默打断
-  // companion-thought 的连续学习天数计算（旧实现写的是 '{}'::jsonb）。
   const prepared = await withJobTransaction(job, async (tx) => {
     const diaryEnabledSince = await currentDiaryMaterialStart(tx, userId);
     if (!diaryEnabledSince) return null;

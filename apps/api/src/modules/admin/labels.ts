@@ -108,7 +108,6 @@ export const JOB_TYPE_LABELS: Record<string, string> = {
   companion_dialogue: "伴星对话",
   companion_summarizer: "会话摘要",
   companion_daily_summary: "每日回顾",
-  companion_thought: "伴星随想",
   companion_memory_extract: "记忆提取",
   companion_memory_embedding_rebuild: "记忆重建",
   companion_memory_organize: "记忆整理",

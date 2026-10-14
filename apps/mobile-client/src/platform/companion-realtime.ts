@@ -38,6 +38,7 @@ interface PendingCommand {
   resolve: (response: CreateCompanionTurnResponseV1) => void
   reject: (error: Error) => void
   timer: ReturnType<typeof setTimeout>
+  socket: WebSocket
 }
 
 function webSocketUrl(): string {
@@ -76,21 +77,22 @@ export function openCompanionRealtime(options: CompanionRealtimeHandlers): {
   let subscribed = false
   let attempt = 0
   let timer: ReturnType<typeof setTimeout> | undefined
-  let gapRecovering = false
+  const gapRecovering = new WeakSet<WebSocket>()
   const pending = new Map<string, PendingCommand>()
 
-  const failPending = (error: Error) => {
-    for (const command of pending.values()) {
+  const failPending = (error: Error, source?: WebSocket) => {
+    for (const [requestId, command] of pending) {
+      if (source && command.socket !== source) continue
       clearTimeout(command.timer)
+      pending.delete(requestId)
       command.reject(error)
     }
-    pending.clear()
   }
 
-  const send = (message: object): boolean => {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return false
+  const send = (message: object, target = socket): boolean => {
+    if (!target || target.readyState !== WebSocket.OPEN) return false
     try {
-      socket.send(JSON.stringify(message))
+      target.send(JSON.stringify(message))
       return true
     } catch {
       return false
@@ -105,12 +107,12 @@ export function openCompanionRealtime(options: CompanionRealtimeHandlers): {
     }
   }
 
-  const handleMessage = (raw: unknown) => {
-    if (closed) return
+  const handleMessage = (raw: unknown, source: WebSocket) => {
+    if (closed || socket !== source) return
     let value: unknown = raw
     try {
       if (typeof raw === 'string') value = JSON.parse(raw)
-      else if (raw instanceof Blob) void raw.text().then((text) => handleMessage(text))
+      else if (raw instanceof Blob) void raw.text().then((text) => handleMessage(text, source), () => {})
       else if (raw instanceof ArrayBuffer) value = JSON.parse(new TextDecoder().decode(raw))
       else return
     } catch {
@@ -155,18 +157,24 @@ export function openCompanionRealtime(options: CompanionRealtimeHandlers): {
           socket?.close(4401, 'unauthorized')
           return
         }
-        if ((message.error.code === 'CURSOR_EXPIRED' || message.error.code === 'INVALID_CURSOR') && !gapRecovering) {
-          gapRecovering = true
+        if ((message.error.code === 'CURSOR_EXPIRED' || message.error.code === 'INVALID_CURSOR') && !gapRecovering.has(source)) {
+          gapRecovering.add(source)
           subscribed = false
           options.onState?.('retrying')
-          void Promise.resolve(options.onGap())
+          void Promise.resolve().then(() => options.onGap())
             .then(() => {
-              gapRecovering = false
+              gapRecovering.delete(source)
+              if (closed || socket !== source || source.readyState !== WebSocket.OPEN) return
               subscribe()
             })
             .catch((error: unknown) => {
-              gapRecovering = false
+              gapRecovering.delete(source)
+              if (closed || socket !== source) return
               options.onError?.(error instanceof Error ? error.message : '同步对话记录失败。')
+              // A failed snapshot leaves this socket subscribed from an expired
+              // cursor. Close it before reconnecting so it cannot keep delivering
+              // events beside the new socket.
+              source.close(4000, 'snapshot recovery failed')
               scheduleReconnect()
             })
           return
@@ -217,14 +225,17 @@ export function openCompanionRealtime(options: CompanionRealtimeHandlers): {
       }
       next.send(JSON.stringify({ version: 1, type: 'auth', token }))
     }
-    next.onmessage = (event) => handleMessage(event.data)
+    next.onmessage = (event) => handleMessage(event.data, next)
     next.onerror = () => { /* close is the single reconnect path */ }
     next.onclose = (event) => {
-      if (socket === next) socket = null
-      authenticated = false
-      subscribed = false
-      failPending(new RealtimeUnavailableError())
-      if (closed) return
+      const wasCurrent = socket === next
+      if (wasCurrent) {
+        socket = null
+        authenticated = false
+        subscribed = false
+      }
+      failPending(new RealtimeUnavailableError(), next)
+      if (closed || !wasCurrent) return
       if (event.code === 4401) {
         options.onUnauthorized?.()
         options.onState?.('closed')
@@ -235,7 +246,8 @@ export function openCompanionRealtime(options: CompanionRealtimeHandlers): {
   }
 
   const submitTurn = (body: CreateCompanionTurnRequestV1) => {
-    if (!socket || socket.readyState !== WebSocket.OPEN || !authenticated || !subscribed) {
+    const target = socket
+    if (!target || target.readyState !== WebSocket.OPEN || !authenticated || !subscribed) {
       return Promise.reject(new RealtimeUnavailableError())
     }
     const requestId = body.clientMessageId
@@ -244,8 +256,8 @@ export function openCompanionRealtime(options: CompanionRealtimeHandlers): {
         pending.delete(requestId)
         reject(new RealtimeUnavailableError('WebSocket 回执超时'))
       }, COMMAND_ACK_TIMEOUT_MS)
-      pending.set(requestId, { resolve, reject, timer: commandTimer })
-      if (!send({ version: 1, type: 'turn.submit', requestId, conversationId: options.conversationId, body })) {
+      pending.set(requestId, { resolve, reject, timer: commandTimer, socket: target })
+      if (!send({ version: 1, type: 'turn.submit', requestId, conversationId: options.conversationId, body }, target)) {
         clearTimeout(commandTimer)
         pending.delete(requestId)
         reject(new RealtimeUnavailableError())

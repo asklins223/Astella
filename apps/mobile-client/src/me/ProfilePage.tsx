@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from 'react'
 import { SOURCE_IMAGE_MIME_TYPES } from '@astella/shared/source-image-contracts'
 import { Icon } from '../app/icons.tsx'
-import { goTab, push } from '../app/nav.ts'
+import { push } from '../app/nav.ts'
 import { companionLine } from '../conversation/status-line.ts'
 import { useCompanion } from '../state/companion.ts'
 import { loadCompanionAccount, permissionLabel, useCompanionAccount } from '../state/companion-account.ts'
@@ -9,26 +9,29 @@ import { signOut, updateMyProfile, uploadMyAvatar, useSession } from '../state/s
 import { ApiError, requestBlob } from '../platform/api-client.ts'
 import { getToken } from '../platform/credentials.ts'
 import { handleUnauthorized } from '../state/session.ts'
+import { usePhoneRoot } from '../app/phone-root.tsx'
+import { closeSheet, openSheet, originOf, requestSheetClose } from '../ui/sheet-store.ts'
 
 const MAX_AVATAR_BYTES = 10 * 1024 * 1024
 
 /**
  * 个人中心。
  *
- * 结构照 demo 的 `centers.body()` 里 `profile` 那一支：`profile-card.glass` 说清这是谁的账号，
- * `account-link.glass` 是她（带着她此刻的状态），下面是两组真的能点开的行。
- * 没有接进来的入口就不摆——她的表达、记忆与日记还没到手机上，这里不留一张点了没反应的卡。
+ * 账号身份、可保存的资料与伴星中心入口保持各自的阅读重心。
+ * 编辑表单独占整行，保存后就地反馈；退出前保留一次明确选择。
  */
 export function ProfilePage() {
   const session = useSession()
   const account = useCompanionAccount()
+  const root = usePhoneRoot()
   const line = companionLine(useCompanion())
   const filePicker = useRef<HTMLInputElement>(null)
   const nameTrigger = useRef<HTMLButtonElement>(null)
   const [editingName, setEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState(session.me?.displayName ?? '')
-  const [busy, setBusy] = useState<'name' | 'avatar' | null>(null)
+  const [busy, setBusy] = useState<'name' | 'avatar' | 'signout' | null>(null)
   const [profileError, setProfileError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
     void loadCompanionAccount()
@@ -53,11 +56,17 @@ export function ProfilePage() {
     }
     setBusy('name')
     setProfileError(null)
+    setNotice(null)
     try {
       await updateMyProfile({ displayName: value || null })
       setEditingName(false)
+      setNotice(value ? '称呼已保存。' : '已改为显示邮箱。')
       window.requestAnimationFrame(() => nameTrigger.current?.focus({ preventScroll: true }))
     } catch (error) {
+      if (error instanceof ApiError && error.isUnauthorized) {
+        handleUnauthorized()
+        return
+      }
       setProfileError(profileErrorMessage(error, '称呼没有保存，输入内容还在。'))
     } finally {
       setBusy(null)
@@ -67,6 +76,7 @@ export function ProfilePage() {
   async function chooseAvatar(file: File | undefined) {
     if (!file || busy) return
     setProfileError(null)
+    setNotice(null)
     if (!SOURCE_IMAGE_MIME_TYPES.includes(file.type as typeof SOURCE_IMAGE_MIME_TYPES[number])) {
       setProfileError('暂不支持这种图片，请选 PNG、JPG、GIF 或 WebP。')
       return
@@ -78,11 +88,33 @@ export function ProfilePage() {
     setBusy('avatar')
     try {
       await uploadMyAvatar(file)
+      setNotice('头像已更新。')
     } catch (error) {
+      if (error instanceof ApiError && error.isUnauthorized) {
+        handleUnauthorized()
+        return
+      }
       setProfileError(profileErrorMessage(error, '头像没有上传成功，可以重新选择后再试。'))
     } finally {
       setBusy(null)
     }
+  }
+
+  function confirmSignOut(event: MouseEvent<HTMLButtonElement>) {
+    if (busy) return
+    openSheet({
+      kind: 'signout', title: '退出这台设备？', variant: 'paper', trigger: event.currentTarget,
+      origin: originOf(event.currentTarget, root),
+      children: <div className="profile-signout-panel">
+        <p>下次使用需要重新登录。保存在书房的手记和对话会留在账号里。</p>
+        <button type="button" className="primary" onClick={() => {
+          closeSheet({ restoreFocus: false })
+          setBusy('signout')
+          void signOut().finally(() => setBusy(null))
+        }}>退出登录</button>
+        <button type="button" className="secondary" onClick={requestSheetClose}>继续使用</button>
+      </div>,
+    })
   }
 
   return (
@@ -98,32 +130,10 @@ export function ProfilePage() {
               <span>{busy === 'avatar' ? '上传中' : '换头像'}</span>
             </button>
             <div>
-              <h1>{displayName || me?.email || '个人资料'}</h1>
-              {displayName && <p>{me?.email}</p>}
-              {editingName ? (
-                <form className="profile-name-form" onSubmit={(event) => void saveName(event)}>
-                  <label htmlFor="profile-display-name">你的称呼</label>
-                  <input
-                    id="profile-display-name"
-                    autoFocus
-                    maxLength={32}
-                    value={nameDraft}
-                    placeholder="留空时显示邮箱"
-                    disabled={busy !== null}
-                    onChange={(event) => setNameDraft(event.currentTarget.value)}
-                  />
-                  <div>
-                    <button type="button" disabled={busy !== null} onClick={() => {
-                      setNameDraft(displayName)
-                      setEditingName(false)
-                      setProfileError(null)
-                      window.requestAnimationFrame(() => nameTrigger.current?.focus({ preventScroll: true }))
-                    }}>取消</button>
-                    <button type="submit" disabled={busy !== null || nameDraft.trim() === displayName}>{busy === 'name' ? '保存中…' : '保存称呼'}</button>
-                  </div>
-                </form>
-              ) : (
-                <button ref={nameTrigger} className="edit-profile-link profile-name-edit" type="button" disabled={busy !== null} onClick={() => { setNameDraft(displayName); setEditingName(true); setProfileError(null) }}>
+              <h1>{displayName || '我的账号'}</h1>
+              <p>{me?.email}</p>
+              {!editingName && (
+                <button ref={nameTrigger} className="edit-profile-link profile-name-edit" type="button" disabled={busy !== null} onClick={() => { setNameDraft(displayName); setEditingName(true); setProfileError(null); setNotice(null) }}>
                   <Icon name="pencil" />
                   {displayName ? '修改称呼' : '设置称呼'}
                 </button>
@@ -131,6 +141,17 @@ export function ProfilePage() {
               <span className="account-device"><Icon name="monitor" />手机与桌面 · 同一账号</span>
             </div>
           </div>
+          {editingName && <form className="profile-name-form" onSubmit={(event) => void saveName(event)}>
+            <label htmlFor="profile-display-name">你的称呼 <small>{nameDraft.length} / 32</small></label>
+            <input id="profile-display-name" autoFocus maxLength={32} value={nameDraft} placeholder="留空时显示邮箱" autoComplete="nickname" enterKeyHint="done" disabled={busy !== null} onChange={(event) => setNameDraft(event.currentTarget.value)} />
+            <div>
+              <button type="button" disabled={busy !== null} onClick={() => {
+                setNameDraft(displayName); setEditingName(false); setProfileError(null)
+                window.requestAnimationFrame(() => nameTrigger.current?.focus({ preventScroll: true }))
+              }}>取消</button>
+              <button type="submit" disabled={busy !== null || nameDraft.trim() === displayName}>{busy === 'name' ? '保存中…' : '保存称呼'}</button>
+            </div>
+          </form>}
           <input
             ref={filePicker}
             className="visually-hidden"
@@ -146,6 +167,7 @@ export function ProfilePage() {
             }}
           />
           {profileError && <p className="profile-edit-error" role="alert">{profileError}</p>}
+          {notice && <p className="profile-edit-notice" role="status"><Icon name="check" />{notice}</p>}
         </div>
 
         <button className="account-link glass" type="button" onClick={(event) => push({ kind: 'companion' }, event.currentTarget)} aria-label="进入伴星中心" data-focus-key="profile:companion">
@@ -155,7 +177,7 @@ export function ProfilePage() {
           <span>
             <small>你的学习搭档</small>
             <strong>{line}</strong>
-            <em>正文由她改；你在这台设备上读、选、问。</em>
+            <em>看看她记得什么，继续你们的学习。</em>
           </span>
           <i className="card-arrow"><Icon name="arrow-right" /></i>
         </button>
@@ -185,9 +207,9 @@ export function ProfilePage() {
           )}
         </div>
 
-        <button className="logout-link" type="button" onClick={() => void signOut()}>
+        <button className="logout-link" type="button" disabled={busy !== null} onClick={confirmSignOut}>
           <Icon name="log-out" />
-          退出登录
+          {busy === 'signout' ? '正在退出…' : '退出登录'}
         </button>
       </div>
     </section>
@@ -195,7 +217,7 @@ export function ProfilePage() {
 }
 
 function avatarInitial(displayName: string, email: string | undefined): string {
-  return displayName.slice(0, 1) || email?.slice(0, 1).toUpperCase() || '阅'
+  return Array.from(displayName)[0] || email?.slice(0, 1).toUpperCase() || '阅'
 }
 
 function avatarObjectKey(url: string): string | null {

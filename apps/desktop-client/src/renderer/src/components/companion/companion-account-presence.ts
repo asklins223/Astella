@@ -109,8 +109,8 @@ export function quietHoursPatch(
  * - 输入框被清空时，回 `null` 的旧写法让界面什么都不做，而受控值把旧时间弹回去 ——
  *   用户以为"改了没生效"，其实是根本没提交（方案 35 D3）。
  * - 两端相等更不能悄悄放过：服务端把 `startLocal === endLocal` 判成**全天静默**
- *   （`companion-proactive-policy.ts:244`，且 `companion-proactive-policy.test.ts:187`
- *   把这条行为钉成了合同）。那是一个合法取值，但对用户来说等于"她再也不说话"，
+ *   （`companion-proactive-policy.ts` 的 `isWithinQuietHours`，
+ *   `companion-proactive-policy.test.ts` 把这条行为钉成了合同；行号不写死，那两份都在收口后缩过）。那是一个合法取值，但对用户来说等于"她再也不说话"，
  *   而界面上没有任何一处解释过。所以：不提交，并把原因说在界面上。
  */
 export function quietHoursWithBoundary(

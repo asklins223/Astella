@@ -284,8 +284,6 @@ import {
   companionChatProposalDecideResultV1Schema,
   companionAgentRoutesListRequestV1Schema,
   companionAgentRoutesListResultV1Schema,
-  companionChatOpenThoughtRequestV1Schema,
-  companionChatOpenThoughtResultV1Schema,
   companionChatCancelRunRequestV1Schema,
   companionChatCancelRunResultV1Schema,
   companionRunNodesListRequestV1Schema,
@@ -394,7 +392,6 @@ type WindowResolver = (contents: WebContents, sourceUrl: string) => BrowserWindo
 
 export type DesktopIpcRegistrationOptions = {
   readonly guidanceAudioCache?: import("./companion-voice-audio-cache").CompanionVoiceAudioCache;
-  readonly thoughtAudioCache?: import("./companion-voice-audio-cache").CompanionVoiceAudioCache;
   readonly messageAudioCache?: import("./companion-message-audio-cache").CompanionMessageAudioCache;
   readonly resolveWindow: WindowResolver;
   readonly getWindowState: (window: BrowserWindow) => WindowStateSnapshot;
@@ -709,7 +706,6 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
   const gateway = options.gateway ?? new DesktopGateway(options.env, {
     credentials: options.credentials ?? createSessionCredentialStore(),
     guidanceAudioCache: options.guidanceAudioCache,
-    thoughtAudioCache: options.thoughtAudioCache,
     messageAudioCache: options.messageAudioCache,
   });
   const env = options.env ?? process.env;
@@ -834,7 +830,7 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): As
   /**
    * 收件箱事件**合流广播**。inbox SSE 在连接时会把未 ACK 的积压**全量重放**
    * （`after=0`，实测 26 条），逐条 emit 会让渲染层在同一瞬间发起同等次数的
-   * 投影重取——而主动念头气泡已经把投影刷新当成自己的触发源（方案 29 §9.15）。
+   * 投影重取——而主动交流气泡已经把投影刷新当成自己的触发源（方案 29 §9.15）。
    * 一段突发只广播一次，带最大的那个 sequence。
    */
   let companionInboxBroadcastTimer: ReturnType<typeof setTimeout> | null = null;

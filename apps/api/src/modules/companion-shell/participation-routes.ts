@@ -6,7 +6,7 @@ import { requireSession } from "../identity/middleware.ts";
 import { parseBody } from "../../lib/validate.ts";
 import { withWorkspaceTransaction, scopeOfSession } from "../../db/client.ts";
 import { buildSimpleErrorBody } from "../../lib/error-envelope.ts";
-import { ensureCompanionAccountState } from "../companion-conversation/turn/companion-account-epoch.ts";
+import { ensureCompanionAccountState } from "../../companion-contracts/companion-account-epoch.ts";
 
 export async function companionParticipationRoutes(app: FastifyInstance) {
   app.get("/me/companion/participation", { preHandler: [requireSession] }, async req =>

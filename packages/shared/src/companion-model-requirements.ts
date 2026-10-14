@@ -42,7 +42,6 @@ export const MODEL_REQUIREMENT_TASKS = [
   "companion_dialogue",
   "companion_tutor",
   "companion_diary",
-  "companion_thought",
   "companion_memory",
   "companion_proactive",
   "ai_egress",
@@ -80,7 +79,7 @@ export const MODEL_REQUIREMENT_SOURCE_VERSIONS = [
   "COMPANION_DIARY_DRAFT_PROMPT_VERSION",
   "AI_TASK_RETRYABLE_FAILURE_CLASSES",
   "AI_CONSENT_REQUIRED_CODE",
-  "PROACTIVE_POLICY_LIMITS",
+  "PROACTIVE_CADENCE_MS",
   "COMPANION_MEMORY_JOB_PAYLOAD_FIELDS",
 ] as const;
 export type ModelRequirementSourceVersion = (typeof MODEL_REQUIREMENT_SOURCE_VERSIONS)[number];
@@ -109,7 +108,6 @@ export interface ModelRequirement {
 const DIALOGUE_AND_FRIENDS = [
   "companion_dialogue",
   "companion_tutor",
-  "companion_thought",
   "companion_diary",
 ] as const;
 
@@ -204,9 +202,9 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
   {
     id: "LEAK_GATE_IDENTITY_TABLE",
     purpose:
-      "泄露闸 G1–G11 的身份表：每道闸的判据函数名、所在模块、处置与理由，"
+      "泄露闸 G1–G9 的身份表：每道闸的判据函数名、所在模块、处置与理由，"
       + "版本由表内容派生。台子（重放/对照）与代码读同一份号，否则改了判据台子不知道。",
-    appliesTo: ["companion_dialogue", "companion_thought"],
+    appliesTo: ["companion_dialogue", "companion_proactive"],
     sourceVersion: "COMPANION_LEAK_GATES_V1",
     enforcedBy: "service",
     evidence: {
@@ -222,7 +220,7 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
     purpose:
       "内部 token、上下文回显与裸 uuid 不得出现在可见正文。uuid 出现在她的话里永远是内部 id，"
       + "落点与原文由服务端另交给富块。",
-    appliesTo: ["companion_dialogue", "companion_thought"],
+    appliesTo: ["companion_dialogue", "companion_proactive"],
     sourceVersion: "COMPANION_LEAK_GATES_V1",
     enforcedBy: "service",
     evidence: {
@@ -285,7 +283,7 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
       "输出拒绝原因的结构与泄露校验：流式每个 flush 都过同一份判据，"
       + "只做「必须先于任何对外写入」那部分——空、超长、内部 token 泄露三选一，"
       + "命中即终止 run，不让任何字符先落到用户面前。",
-    appliesTo: ["companion_dialogue", "companion_tutor", "companion_thought"],
+    appliesTo: ["companion_dialogue", "companion_tutor", "companion_proactive"],
     sourceVersion: "COMPANION_HARD_MAX_CHARS",
     enforcedBy: "service",
     evidence: {
@@ -342,18 +340,17 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
     },
   },
   {
-    id: "PROACTIVE_TYPE_AND_QUOTA",
+    id: "PROACTIVE_CADENCE",
     purpose:
-      "主动触发：静默时段、额度、反馈抑制在**派发前**判定。`surface` 结论与普通念头"
-      + "不因生成或到期就唤醒对话；授权提醒仍按自己的调度送达，不误归搭便车而漏送。",
+      "例行主动交流按账号介入档位控制最小间隔；用户约定的触发式推送只校验设备状态与有效期。",
     appliesTo: ["companion_proactive"],
-    sourceVersion: "PROACTIVE_POLICY_LIMITS",
+    sourceVersion: "PROACTIVE_CADENCE_MS",
     enforcedBy: "service",
     evidence: {
       file: "packages/shared/src/companion-proactive-policy.ts",
-      export: "POLICY_LIMITS",
+      export: "PROACTIVE_CADENCE_MS",
       resolve: "module",
-      note: "额度与抑制的另一半在 `companion-proactive-quota.ts`（按使用会话，不按切页）。",
+      note: "例行机会在 Agent 执行前按该间隔节流，触发式消息使用 evaluateTriggeredPush。",
     },
   },
   {
@@ -375,7 +372,7 @@ export const MODEL_REQUIREMENTS: readonly ModelRequirement[] = [
     purpose:
       "模型预算与业务提交是两条轴：只有 transport/timeout/output_shape 值得再花一次钱；"
       + "权限、内容版本、无效输入、实质质量问题不自动重试，提交失败也绝不回头重跑模型。",
-    appliesTo: ["companion_dialogue", "companion_tutor", "companion_diary", "companion_thought"],
+    appliesTo: ["companion_dialogue", "companion_tutor", "companion_diary", "companion_proactive"],
     sourceVersion: "AI_TASK_RETRYABLE_FAILURE_CLASSES",
     enforcedBy: "service",
     evidence: {

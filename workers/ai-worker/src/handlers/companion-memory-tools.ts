@@ -56,6 +56,7 @@ import {
 } from "./companion-memory-vector.ts";
 import { taskEntityFromPersistedPageContext } from "./companion-task-memory.ts";
 import { readPlaybookById } from "./companion-playbooks.ts";
+import { enqueueCompanionMemoryEmbeddingRebuild } from "./companion-memory-embedding-jobs.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
 import { runWorkerEmbeddingTask } from "./worker-ai-task.ts";
 import type { EmbeddingProviderLike } from "../lib/ai-provider.ts";
@@ -63,6 +64,15 @@ import {
   CompanionToolError,
   type AgentToolExecutionResult,
 } from "./companion-tool-result.ts";
+
+function memoryEpistemicNotice(status: string | null): string | null {
+  switch (status) {
+    case "tentative": return "尚未核对，不能当作已确认事实。";
+    case "disputed": return "仍有争议，不能当作定论。";
+    case "superseded": return "已被新的说法替代，不能当作当前事实。";
+    default: return null;
+  }
+}
 
 export async function executeCompanionMemoryTool(
   event: AgentEventContext,
@@ -131,6 +141,11 @@ export async function executeCompanionMemoryTool(
           appliesWhen: memory.appliesWhen,
           validFrom: memory.validFrom,
           validUntil: memory.validUntil,
+          sourceType: memory.sourceType,
+          createdAt: memory.createdAt,
+          updatedAt: memory.updatedAt,
+          epistemicStatus: memory.epistemicStatus,
+          epistemicNotice: memoryEpistemicNotice(memory.epistemicStatus),
           revision: memory.revision,
         },
         safeSummary: "已展开一条仍有效的记忆正文",
@@ -240,9 +255,47 @@ export async function executeCompanionMemoryTool(
           kind: item.kind,
           content: item.content,
           userConfirmed: item.userConfirmed,
+          sourceType: item.sourceType,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
           budgetTier: item.budgetTier,
+          epistemicStatus: item.epistemicStatus,
+          epistemicNotice: memoryEpistemicNotice(item.epistemicStatus),
           revision: item.revision,
         }));
+      // Log the memories actually returned to the agent, not every candidate
+      // the search considered. This makes retrieval coverage measurable and
+      // refreshes recency only after a user-requested search surfaced a row.
+      try {
+        await withWorkerWorkspaceTransaction(
+          { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+          async (tx) => {
+            if (memories.length > 0) {
+              const ids = `{${memories.map(memory => memory.memoryId).join(",")}}`;
+              await tx.execute(sql`
+                UPDATE assistant_memory_items
+                   SET last_used_at = now()
+                 WHERE workspace_id = ${event.ctx.workspaceId}
+                   AND user_id = ${event.read.userId}
+                   AND id = ANY(${ids}::uuid[])
+                   AND budget_tier = 'active'
+                   AND deleted_at IS NULL
+                   AND dismissed_at IS NULL
+              `);
+            }
+            await tx.execute(sql`
+              INSERT INTO memory_usage_log
+                (workspace_id, user_id, run_id, memory_ids, retrieval_mode, latency_ms)
+              VALUES
+                (${event.ctx.workspaceId}, ${event.read.userId}, ${event.read.runId},
+                 ${`{${memories.map(memory => memory.memoryId).join(",")}}`}::uuid[],
+                 ${searchResult.retrieval.mode}, ${searchResult.retrieval.latencyMs})
+            `);
+          },
+        );
+      } catch (error) {
+        logger.warn({ err: error, runId: event.read.runId }, "memory recall usage logging failed");
+      }
       return {
         value: { memories, retrievalMode: searchResult.retrieval.mode },
         safeSummary: memories.length > 0
@@ -308,6 +361,42 @@ export async function executeCompanionMemoryTool(
       const inserted = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         async (tx) => {
+          await tx.execute(sql`
+            SELECT pg_advisory_xact_lock(
+              hashtextextended(${companionMemoryMutationLockKey(event.read.userId)}, 0)
+            )
+          `);
+          const duplicateRows = await tx.execute<{ id: string }>(sql`
+            SELECT id
+              FROM assistant_memory_items
+             WHERE workspace_id = ${event.ctx.workspaceId}
+               AND user_id = ${event.read.userId}
+               AND kind = 'judgment'
+               AND lower(regexp_replace(btrim(content), '[[:space:]]+', ' ', 'g')) =
+                   lower(regexp_replace(btrim(${text}), '[[:space:]]+', ' ', 'g'))
+               AND source_event_ids && ${toTextArrayLiteral(sourceEventIds)}::text[]
+               AND deleted_at IS NULL
+               AND dismissed_at IS NULL
+               AND epistemic_status NOT IN ('disputed', 'superseded')
+             ORDER BY updated_at DESC, id
+             LIMIT 1
+             FOR UPDATE
+          `);
+          if (duplicateRows[0]?.id) {
+            const duplicateId = String(duplicateRows[0].id);
+            await tx.execute(sql`
+              UPDATE assistant_memory_items
+                 SET source_event_ids = (
+                       SELECT array_agg(DISTINCT source_id ORDER BY source_id)
+                         FROM unnest(COALESCE(source_event_ids, ARRAY[]::text[]) || ${toTextArrayLiteral(sourceEventIds)}::text[]) AS merged(source_id)
+                     ),
+                     updated_at = now()
+               WHERE id = ${duplicateId}::uuid
+                 AND workspace_id = ${event.ctx.workspaceId}
+                 AND user_id = ${event.read.userId}
+            `);
+            return { id: duplicateId, alreadyRecorded: true };
+          }
           const rows = await tx.execute<{ id: string }>(sql`
             INSERT INTO assistant_memory_items
               (workspace_id, user_id, kind, content, source_event_ids,
@@ -323,18 +412,28 @@ export async function executeCompanionMemoryTool(
                ${epistemicStatus}, 'companion', 'none', now(), now())
             RETURNING id
           `);
-          return rows[0];
+          if (rows[0]?.id) {
+            await enqueueCompanionMemoryEmbeddingRebuild(tx, {
+              workspaceId: event.ctx.workspaceId,
+              userId: event.read.userId,
+              idempotencyKey: `memory-embedding:${rows[0].id}`,
+            });
+          }
+          return rows[0]?.id ? { id: String(rows[0].id), alreadyRecorded: false } : null;
         },
       );
 
       return {
         value: {
           memoryId: inserted?.id ?? null,
+          alreadyRecorded: inserted?.alreadyRecorded ?? false,
           // 刻意把「这只是她的理解」放进回执：模型下一句就不该把它当事实说出去。
           epistemicStatus,
           subjective: true,
         },
-        safeSummary: "记下了她对这一件事的理解（这是她的看法，不是事实）",
+        safeSummary: inserted?.alreadyRecorded
+          ? "这条看法已经记过；补上了这次共同依据，没有再新建一条"
+          : "记下了她对这一件事的理解（这是她的看法，不是事实）",
       };
     }
     case "companion_save_memory": {
@@ -354,6 +453,11 @@ export async function executeCompanionMemoryTool(
           const temporal = await readCompanionMemoryWriteSource(tx, event, {
             kind, content, sourceQuote, appliesWhen, validUntil,
           });
+          await tx.execute(sql`
+            SELECT pg_advisory_xact_lock(
+              hashtextextended(${companionMemoryMutationLockKey(event.read.userId)}, 0)
+            )
+          `);
           /**
            * 同一类里已经有的那几条（最多三条）与**逐字相同**的那一条（2026-10-10）。
            *
@@ -362,6 +466,23 @@ export async function executeCompanionMemoryTool(
            * 于是她只能一遍遍"新存"。这里给的是事实而不是判断：完全相同的那条不重复写，
            * 其余同类条目连 id 一起交给她，改还是另记由她按用户的原话决定。
            */
+          if (kind !== "episodic" && kind !== "interaction_note") {
+            const exact = await tx.execute<{ id: string }>(sql`
+              SELECT id
+                FROM assistant_memory_items
+               WHERE workspace_id = ${event.ctx.workspaceId}
+                 AND user_id = ${event.read.userId}
+                 AND kind = ${kind}
+                 AND lower(regexp_replace(btrim(content), '[[:space:]]+', ' ', 'g')) =
+                     lower(regexp_replace(btrim(${content}), '[[:space:]]+', ' ', 'g'))
+                 AND deleted_at IS NULL AND dismissed_at IS NULL AND archived_at IS NULL
+                 AND epistemic_status NOT IN ('disputed','superseded')
+               ORDER BY updated_at DESC, id
+               LIMIT 1
+               FOR UPDATE
+            `);
+            if (exact[0]?.id) return { duplicateId: String(exact[0].id), sameKind: [] as Array<{id:string;content:string}> };
+          }
           const existing = await tx.execute<{ id: string; content: string; revision: number | string }>(sql`
             SELECT id, content, revision FROM assistant_memory_items
             WHERE workspace_id = ${event.ctx.workspaceId} AND user_id = ${event.read.userId}
@@ -371,9 +492,6 @@ export async function executeCompanionMemoryTool(
             ORDER BY updated_at DESC, id
             LIMIT 3
           `);
-          const duplicate = (Array.isArray(existing) ? existing : [])
-            .find((row) => String(row.content).trim() === content.trim());
-          if (duplicate) return { duplicateId: String(duplicate.id), sameKind: [] as Array<{id:string;content:string}> };
           const rows = await tx.execute<{ id: string }>(sql`
             INSERT INTO assistant_memory_items
               (workspace_id, user_id, kind, content, source_event_id, source_session_id,
@@ -387,6 +505,13 @@ export async function executeCompanionMemoryTool(
                true, true, false, 0.8, 0.9, 'workspace', 'user_stated', false, 'pending')
             RETURNING id
           `);
+          if (rows[0]?.id) {
+            await enqueueCompanionMemoryEmbeddingRebuild(tx, {
+              workspaceId: event.ctx.workspaceId,
+              userId: event.read.userId,
+              idempotencyKey: `memory-embedding:${rows[0].id}`,
+            });
+          }
           return {
             insertedId: rows[0]?.id ?? null,
             sameKind: (Array.isArray(existing) ? existing : []).map((row) => ({
@@ -518,6 +643,12 @@ export async function executeCompanionMemoryTool(
           `);
           const updated = (Array.isArray(updatedRows) ? updatedRows : [])[0];
           if (!updated) return { kind: "stale" as const };
+
+          await enqueueCompanionMemoryEmbeddingRebuild(tx, {
+            workspaceId: event.ctx.workspaceId,
+            userId: event.read.userId,
+            idempotencyKey: `memory-embedding:${memoryId}:${updated.revision}`,
+          });
 
           // 和 API correctMemory 一样，修订后不让旧候选继续挂在收件箱里。
           await tx.execute(sql`

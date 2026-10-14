@@ -238,7 +238,7 @@ function wipe(seeded: Seeded): void {
  */
 const AMBIENT_GROWTH_ALLOWED_V1: Record<string, string> = {
   assistant_page_contexts: '活窗口的页面上下文簿记（伴星读页面那一族），开一次窗口必涨几行',
-  jobs: '共享工作区里活着的伴星调度器同一时刻会写念头 job（实测涨的是 companion_thought 行）。'
+  jobs: '共享工作区里的后台流程可能同时写入无关 job 行。'
     + '能不能算我的残留由上面那一格按 id 归属判，不靠这张表被放行',
   understanding_projection_checkpoints: '理解的增量投影读标（按 workspace+user 游标推进），'
     + '这一发提交了练习事件之后它自己往前挪一格；它没有 run_id 也没有 objective 归属，不是剧本种的行',
@@ -853,8 +853,8 @@ try {
       const after = workspaceCensus(seeded.workspaceId)
       const growth = diffCensus(censusBefore, after)
       readings.censusGrowth = growth
-      // 涨表本身不等于"我留了残留"：这个工作区是**共享的**——活着的伴星调度器会在同一时刻往里写
-      // `jobs`（实测这一发涨的是 `companion_thought` 行），与剧本无关。所以豁免不能靠"表名放行"，
+      // 涨表本身不等于"我留了残留"：这个工作区是**共享的**——其他后台流程会在同一时刻往里写
+      // `jobs`，与剧本无关。所以豁免不能靠"表名放行"，
       // 要靠**归属**：把涨了的每一张表里所有 uuid 列拿本次种下的那批 id 过一遍，
       // 只要有一行指得到我的 id，不管它在不在豁免名单里，一律红。
       const seededIds = [

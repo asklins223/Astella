@@ -3,6 +3,7 @@
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import type {
   AstellaDesktopApiM2,
+  GatewayEventV1,
   GatewayResultV1,
   SessionContextV1,
 } from "@astella/shared/desktop-ipc-contracts";
@@ -18,6 +19,8 @@ import {
   CompanionHomeProjectionProvider,
   useCompanionHomeProjection,
 } from "../companion-home-projection.tsx";
+import { useCompanionNotificationSources } from "../../components/companion/use-companion-notification-sources.ts";
+import { useCompanionNotifications } from "../../components/companion/companion-notifications.ts";
 
 type Deferred<T> = {
   readonly promise: Promise<T>;
@@ -106,7 +109,10 @@ const roomProjection: RoomProjectionV1 = {
   degradation: null,
 };
 
-function companionProjection(revision: number): CompanionHomeProjectionV1 {
+function companionProjection(
+  revision: number,
+  proactiveCue: CompanionHomeProjectionV1["proactiveCue"] = null,
+): CompanionHomeProjectionV1 {
   return companionHomeProjectionV1Schema.parse({
     version: 1,
     snapshotAt: `2026-09-11T08:00:0${revision}.000Z`,
@@ -128,7 +134,7 @@ function companionProjection(revision: number): CompanionHomeProjectionV1 {
       candidateCount: 0,
       updatedAt: "2026-09-11T08:00:00.000Z",
     },
-    proactiveCue: null,
+    proactiveCue,
     roomProfile: {
       version: 1,
       revision,
@@ -156,6 +162,11 @@ function Probe() {
   return null;
 }
 
+function NotificationProbe() {
+  useCompanionNotificationSources();
+  return null;
+}
+
 function installApi(api: unknown) {
   Object.defineProperty(window, "astella", {
     configurable: true,
@@ -175,6 +186,64 @@ afterEach(() => {
 });
 
 describe("CompanionHomeProjectionProvider", () => {
+  it("delivers a reminder after a runtime event while Settings is open", async () => {
+    useRoomStore.setState({ surface: "settings" });
+    useCompanionNotifications.setState({ items: [] });
+    const callbacks = new Map<string, (event: GatewayEventV1) => void>();
+    const reminder = {
+      text: "该休息一下了",
+      expiresAt: "2026-09-11T09:30:00.000Z",
+      revision: 9,
+      origin: "reminder" as const,
+    };
+    const getCompanionProjection = vi.fn()
+      .mockResolvedValueOnce(ok(companionProjection(1)))
+      .mockResolvedValueOnce(ok(companionProjection(2, reminder)));
+    installApi({
+      auth: { getState: vi.fn().mockResolvedValue(ok(authenticatedSession)) },
+      room: { getProjection: vi.fn().mockResolvedValue(ok(roomProjection)) },
+      companion: {
+        home: { getProjection: getCompanionProjection },
+        voice: { asrModel: { getState: vi.fn().mockResolvedValue(ok({ status: "installed" })) } },
+      },
+      subscriptions: {
+        subscribe: vi.fn().mockImplementation(({ topic }: { topic: { kind: string } }) => (
+          Promise.resolve(ok({ subscriptionId: `${topic.kind}-subscription` }))
+        )),
+        onEvent: vi.fn().mockImplementation((subscriptionId: string, callback: (event: GatewayEventV1) => void) => {
+          callbacks.set(subscriptionId, callback);
+          return () => callbacks.delete(subscriptionId);
+        }),
+        unsubscribe: vi.fn().mockResolvedValue(ok({ closed: true })),
+      },
+    });
+
+    render(
+      <HomeProjectionProvider>
+        <CompanionHomeProjectionProvider><NotificationProbe /></CompanionHomeProjectionProvider>
+      </HomeProjectionProvider>,
+    );
+    await waitFor(() => expect(getCompanionProjection).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(callbacks.size).toBe(2));
+
+    act(() => callbacks.get("runtime-subscription")?.({
+      version: 1,
+      subscriptionId: "runtime-subscription",
+      workspaceEpoch: 7,
+      cursor: "cursor-companion-activity-1",
+      eventRevision: 1,
+      kind: "companion_activity_changed",
+      schemaRevision: "desktop-ipc-v1",
+      data: { kind: "companion_activity_changed", inboxSequence: 9 },
+    }));
+
+    await waitFor(() => expect(getCompanionProjection).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(useCompanionNotifications.getState().items[0]).toMatchObject({
+      kind: "reminder",
+      body: "该休息一下了",
+    }));
+  });
+
   it("refreshes after CAS conflict without replaying the rejected equipment choice", async () => {
     const refreshedProjection = deferred<GatewayResultV1<CompanionHomeProjectionV1>>();
     const getCompanionProjection = vi.fn()

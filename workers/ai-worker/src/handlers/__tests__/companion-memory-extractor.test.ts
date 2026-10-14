@@ -38,7 +38,7 @@ test("isVolatileStatisticMemory：拦『现在这一份』统计，不拦用户�
   assert.equal(isVolatileStatisticMemory("用户偏好短节奏学习，每次练习约10分钟，每天总计约40分钟，中间需休息。"), false);
   assert.equal(isVolatileStatisticMemory("下个月要考日语N3"), false);
   // 名字里带量词的卡/笔记标题不是统计。误判的后果是**这条记忆根本没写进去**——
-  // 比误放难发现得多（气泡那条同判据已经踩过一次，见 companion-thought 的 readsOutStatistics）。
+  // 比误放难发现得多；普通对话与主动交流共用同一输出闸。
   assert.equal(isVolatileStatisticMemory("今天学了「背 3 条法律」那张卡，还没掌握。"), false);
   assert.equal(isVolatileStatisticMemory("本周把《每天 5 张图》那篇读完了。"), false);
   // 掩码只洗名字：名字之外的读数照样要拦。
@@ -369,9 +369,6 @@ const thinkingSanctioned = new Set([
   // 投机的"闲聊版第一步"（2026-10-07）：它按定义就是不开思考的那一版，且只有
   // 分类器确认本轮解释为空时结果才会被保留（见 shouldKeepSpeculativeFirstStep）。
   "companion-speculative-first-step.ts",
-  // 2026-10-07：主动念头的候选与改写是已核对素材的短 JSON 表达，
-  // 当前生产实现明确关闭思考；对话提问/任务仍按本轮意图选择。
-  "companion-thought.ts",
   // 2026-10-11：压缩用的**工作状态摘要**。产出是给她自己接续工作的内部件，不是讲给
   // 用户的回复，而这次调用发生在已经紧张的那一次请求里面、卡在 deadlineAt 上——
   // 开高档等于在她回话的路上再加十几秒。判据与分类器、投机闲聊版同一档。
@@ -384,7 +381,7 @@ const thinkingSanctioned = new Set([
   "companion-followup-suggestions.ts",
 ]);
 
-test("伴星思考档：对话按本轮意图，念头短 JSON 关闭，其余后台常开", () => {
+test("伴星思考档：对话按本轮意图选择，其余后台按各自预算运行", () => {
   // 扫的是 handlers 目录本体（`..`），不是 __tests__ ——旧版本用的 `.` 会把自己
   // 所在的测试目录当扫描面，`.test.` 过滤又把里面的文件全排除，等于空转。
   const dir = new URL("..", import.meta.url);

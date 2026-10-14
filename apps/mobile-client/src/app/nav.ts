@@ -10,6 +10,7 @@ export type Pushed =
   | { kind: 'explain'; noteId: string }
   | { kind: 'companion' }
   | { kind: 'settings' }
+  | { kind: 'profile' }
 
 export type NavDirection = 'push' | 'pop' | 'tab-forward' | 'tab-backward' | 'none'
 
@@ -62,8 +63,14 @@ export function transitionCurrentPage(direction: 'tab-forward' | 'tab-backward')
 export function push(route: Pushed, origin?: HTMLElement | null): void {
   const same = (item: Pushed) =>
     item.kind === route.kind && ('noteId' in item ? 'noteId' in route && item.noteId === route.noteId : true)
-  if (get().pushed.some(same)) return
-  navigate({ tab: get().tab, pushed: [...get().pushed, route] }, 'push', origin)
+  const current = get()
+  const existingIndex = current.pushed.findIndex(same)
+  if (existingIndex === current.pushed.length - 1 && existingIndex >= 0) return
+  if (existingIndex >= 0) {
+    navigate({ tab: current.tab, pushed: current.pushed.slice(0, existingIndex + 1) }, 'pop', origin)
+    return
+  }
+  navigate({ tab: current.tab, pushed: [...current.pushed, route] }, 'push', origin)
 }
 
 export function pop(): void {

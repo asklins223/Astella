@@ -36,6 +36,7 @@ import { toTextArrayLiteral } from "@astella/shared/pg-text-array";
 import { resolveSystemProviderForCapability } from "@astella/shared/task-router";
 import { agentMethodEvidenceV1Schema } from "@astella/shared/agent-growth-contracts";
 import { companionMemoryMutationLockKey } from "@astella/shared/db-schema/assistant-memory";
+import { enqueueCompanionMemoryEmbeddingRebuild } from "./companion-memory-embedding-jobs.ts";
 import { getDefaultPersonaPreset } from "@astella/shared/pet-persona-presets";
 import { personaFromDefaultPreset } from "@astella/shared/pet-persona-merge";
 import type {
@@ -803,9 +804,20 @@ async function commitReflection(
 
         // All conflicts have been checked before experience writes. The persona,
         // experiences, derivation edges and conclusion share this transaction.
+        let wroteMemory = false;
         for (const judgment of verified.output.judgments) {
           const memoryId = await insertReflectionJudgment(tx, input, judgment);
-          if (memoryId) produced.push({ kind: "memory", id: memoryId, revision: "1" });
+          if (memoryId) {
+            produced.push({ kind: "memory", id: memoryId, revision: "1" });
+            wroteMemory = true;
+          }
+        }
+        if (wroteMemory) {
+          await enqueueCompanionMemoryEmbeddingRebuild(tx, {
+            workspaceId: input.workspaceId,
+            userId: input.userId,
+            idempotencyKey: `memory-embedding:${job.id}`,
+          });
         }
         for (const experience of verified.output.experiences) {
           const method = await upsertReflectionMethod(tx, input, experience);

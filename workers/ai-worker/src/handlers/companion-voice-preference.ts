@@ -65,7 +65,7 @@ export async function persistCompanionDialectPreference(input: {
  * 否则用户说「以后都用河南话」之后，她的声音变了、写出来的字还是普通话。
  *
  * 一份判据两个入口：对话链自己开事务走 `readCompanionDialectPreference`，
- * 已经在某个 worker 事务里的调用方（念头）搭同一趟车。
+ * 已经在 worker 事务里的调用方复用当前事务读取。
  */
 export async function readStoredDialectPreference(
   tx: WorkerTransaction,

@@ -398,7 +398,7 @@ describe("伴星常连接跟随窗口可见性（M16）", () => {
    * `snapshot_invalidated` 在渲染层是两条大读：门禁的 bootstrap 复核 + 书房投影重取。
    * 以前写任何一条账号设置都无条件广播，于是输入框旁边换一个助理权限档位，
    * 用户看到的就是"全局重刷"。只有「她整个开没开」真的改到房间读得到的东西
-   * （两条常连接、收件箱投递、主动念头），才值这一次广播。
+   * （两条常连接、收件箱投递、主动交流），才值这一次广播。
    */
   it("写账号偏好不广播快照失效，只有开关伴星才广播", async () => {
     const s = await setup();
@@ -419,5 +419,5 @@ describe("伴星常连接跟随窗口可见性（M16）", () => {
     });
     expect(enabled.ok).toBe(true);
     await settle();
-    expect(s.invalidations(), "开关伴星要重取一次：常连接与主动念头都跟着它变").toBeGreaterThan(before);  });
+    expect(s.invalidations(), "开关伴星要重取一次：常连接与主动交流都跟着它变").toBeGreaterThan(before);  });
 });

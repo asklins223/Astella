@@ -34,6 +34,7 @@ import {
   clearMemories,
   confirmMemory,
   correctMemory,
+  disputeMemory,
   deleteMemory,
   dismissMemory,
   exportMemories,
@@ -58,6 +59,7 @@ import {
   type MemoryScopeV2,
   type MemorySourceTypeV2,
 } from "./memory-service.ts";
+import { clearCompanionDerivedData } from "./memory-derived-data-service.ts";
 import { getMemoryStarMap } from "./memory-star-map.ts";
 import { isMemoryContextEnabled, isMemoryVectorRebuildEnabled } from "../../../config/learning-companion-flags.ts";
 import {
@@ -106,8 +108,24 @@ async function canQueueMemoryAi(scope: { workspaceId: string; userId: string }, 
   return true;
 }
 
-/** 筛选与读取用的完整 kind：含判断记录（40 §4.5.4）。 */
-const memoryKindSchema = z.enum([
+/**
+ * 向量重建是**按人整批**扫 pending/none 的活，一次确认排一条就够。
+ *
+ * 没有幂等键时 `jobs` 的去重索引根本不生效（唯一索引带 `WHERE idempotency_key IS NOT NULL`）：
+ * 实测一次「确认 6 条」炸出 6 条重复重建任务，各自再烧一次外发调用。
+ * 键按小时分桶，与补偿调度器同一口径（两边的键前缀不同，不会互相吃掉）。
+ */
+async function enqueueEmbeddingRebuild(scope: { workspaceId: string; userId: string }): Promise<void> {
+  await createJob({
+    type: "companion_memory_embedding_rebuild",
+    workspaceId: scope.workspaceId,
+    requestedBy: scope.userId,
+    payload: { userId: scope.userId },
+    idempotencyKey: `memory-embedding-rebuild:${scope.userId}:${new Date().toISOString().slice(0, 13)}`,
+  });
+}
+
+/** 筛选与读取用的完整 kind：含判断记录（40 §4.5.4）。 */const memoryKindSchema = z.enum([
   "preference",
   "goal",
   "learning_context",
@@ -169,6 +187,10 @@ const correctMemoryBodySchema = z.object({
   if (value.validFrom && value.validUntil && Date.parse(value.validUntil) <= Date.parse(value.validFrom)) {
     context.addIssue({ code: "custom", path: ["validUntil"], message: "validUntil must follow validFrom" });
   }
+});
+
+const disputeMemoryBodySchema = z.strictObject({
+  expectedRevision: z.number().int().min(1),
 });
 
 export async function memoryRoutes(app: FastifyInstance) {
@@ -385,12 +407,7 @@ export async function memoryRoutes(app: FastifyInstance) {
       // §13.8：确认后的记忆自动触发 embedding 重建（仅非候选记忆）
       if (!body.data.candidate && isMemoryVectorRebuildEnabled()) {
         try {
-          await createJob({
-            type: "companion_memory_embedding_rebuild",
-            workspaceId: scope.workspaceId,
-            requestedBy: scope.userId,
-            payload: { userId: scope.userId },
-          });
+          await enqueueEmbeddingRebuild(scope);
         } catch {
           // embedding 重建入队失败不阻断主请求
         }
@@ -421,12 +438,7 @@ export async function memoryRoutes(app: FastifyInstance) {
       // §13.8：确认后的记忆自动触发 embedding 重建
       if (isMemoryVectorRebuildEnabled()) {
         try {
-          await createJob({
-            type: "companion_memory_embedding_rebuild",
-            workspaceId: scope.workspaceId,
-            requestedBy: scope.userId,
-            payload: { userId: scope.userId },
-          });
+          await enqueueEmbeddingRebuild(scope);
         } catch {
           // embedding 重建入队失败不阻断主请求
         }
@@ -592,6 +604,34 @@ export async function memoryRoutes(app: FastifyInstance) {
   );
 
   app.post<{ Params: { id: string }; Body: unknown }>(
+    "/companion/memory/:id/dispute",
+    { preHandler: [requireSession] },
+    async (req, reply) => {
+      const params = memoryParamsSchema.safeParse(req.params);
+      const body = disputeMemoryBodySchema.safeParse(req.body ?? {});
+      if (!params.success || !body.success) throw app.httpErrors.badRequest("dispute body 非法");
+      const scope = scopeOfSession(req.session);
+      let item: MemoryItemV2 | null;
+      try {
+        item = await withWorkspaceTransaction(scope, tx =>
+          disputeMemory(tx, scope, params.data.id, body.data.expectedRevision),
+        );
+      } catch (error) {
+        if (error instanceof MemoryRevisionConflictError) {
+          return reply.code(409).send({
+            error: "memory_revision_conflict",
+            message: "这条记忆已有新版本；请重新读取后再标记。",
+            currentRevision: error.currentRevision,
+          });
+        }
+        throw error;
+      }
+      if (!item) return reply.code(404).send({ error: "memory_not_found", message: "记忆不存在" });
+      return reply.header("Cache-Control", "no-store").send(item);
+    },
+  );
+
+  app.post<{ Params: { id: string }; Body: unknown }>(
     "/companion/memory/:id/correct",
     { preHandler: [requireSession] },
     async (req, reply) => {
@@ -624,6 +664,14 @@ export async function memoryRoutes(app: FastifyInstance) {
       }
       if (!item) {
         return reply.code(404).send({ error: "memory_not_found", message: "记忆不存在" });
+      }
+      // 内容修订会把已有向量标成 pending；尽快补算，避免等到下一次无关写入。
+      if (!item.candidate && item.embeddingStatus === "pending" && isMemoryVectorRebuildEnabled()) {
+        try {
+          await enqueueEmbeddingRebuild(scope);
+        } catch {
+          // 重建失败不回滚用户已经完成的修订。
+        }
       }
       return reply.header("Cache-Control", "no-store").send(item);
     },
@@ -699,6 +747,16 @@ export async function memoryRoutes(app: FastifyInstance) {
   );
 
   app.delete(
+    "/companion/derived-data",
+    { preHandler: [requireSession] },
+    async (req, reply) => {
+      const scope = scopeOfSession(req.session);
+      const result = await withWorkspaceTransaction(scope, tx => clearCompanionDerivedData(tx, scope));
+      return reply.header("Cache-Control", "no-store").send({ version: 1, ...result });
+    },
+  );
+
+  app.delete(
     "/companion/memory",
     { preHandler: [requireSession] },
     async (req, reply) => {
@@ -719,12 +777,7 @@ export async function memoryRoutes(app: FastifyInstance) {
       }
       const scope = scopeOfSession(req.session);
       if (!await canQueueMemoryAi(scope, reply)) return;
-      await createJob({
-        type: "companion_memory_embedding_rebuild",
-        workspaceId: scope.workspaceId,
-        requestedBy: scope.userId,
-        payload: { userId: scope.userId },
-      });
+      await enqueueEmbeddingRebuild(scope);
       return reply.header("Cache-Control", "no-store").send({ version: 1, queued: true });
     },
   );

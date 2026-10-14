@@ -32,7 +32,6 @@ const DEFAULT_TIMEOUTS: Record<string, number> = {
   companion_memory_organize: DEFAULT_AI_TASK_TIMEOUT_MS,
   // 方案 50 §9.2：后台回顾。一次结构化调用 + 至多一次协议修复，走 maintenance 车道。
   companion_reflection: DEFAULT_AI_TASK_TIMEOUT_MS,
-  companion_thought: DEFAULT_AI_TASK_TIMEOUT_MS,
   note_overview_generate: DEFAULT_AI_TASK_TIMEOUT_MS,
   note_mind_map_generate: DEFAULT_AI_TASK_TIMEOUT_MS,
   note_annotation_explain: DEFAULT_AI_TASK_TIMEOUT_MS,

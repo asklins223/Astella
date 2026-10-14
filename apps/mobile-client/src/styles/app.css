@@ -71,7 +71,7 @@ body,
 .profile-name-form input {
   width: 100%;
   min-width: 0;
-  min-height: 38px;
+  min-height: 44px;
   padding: 0 10px;
   border: 1px solid var(--line-strong);
   border-radius: 11px;
@@ -100,7 +100,7 @@ body,
   padding: 0 18px;
 }
 .boot-retry {
-  min-height: 40px;
+  min-height: 44px;
   margin-top: 8px;
   padding: 0 16px;
   border: 1px solid var(--line-strong);
@@ -110,6 +110,7 @@ body,
   font-size: calc(12px * var(--text-scale));
 }
 .boot-retry:focus-visible { outline: 2px solid #85a8d2; outline-offset: 2px; }
+.phone .state-note button { min-height: 44px; }
 .session-recovery {
   align-content: center;
   justify-items: center;
@@ -280,7 +281,7 @@ body,
 .hand-empty-actions .is-commit svg:first-child { position: absolute; left: 15px; width: 17px; }
 .hand-empty-actions .is-commit span { flex: none; text-align: center; }
 .hand-empty-actions .is-commit svg:last-child { position: absolute; right: 14px; width: 15px; opacity: .82; }
-.hand-empty-actions .hand-notes-link { min-height: 42px; justify-content: center; padding: 0 4px; color: var(--muted); }
+.hand-empty-actions .hand-notes-link { min-height: 44px; justify-content: center; padding: 0 4px; color: var(--muted); }
 .hand-empty-actions .hand-notes-link svg { width: 14px; color: var(--soft); }
 .hand-connection { background: #f4f7fc; border-color: #d3dfed; }
 .hand-active { border-left: 3px solid #79a0cc; }

@@ -61,6 +61,9 @@ export function CompanionActivityPage(props: { refreshKey: number; onMemory: (id
         else if (item.target.kind === "dialogue") props.onMessage(item.target.messageId);
         else if (item.target.kind === "proposal") { chat.retryProposal(item.target.proposalId); chat.setMode("history"); }
       }
+      // 过了展示窗口的条目没有可回执的认领记录，服务端会拒。跳到她说过的那句话本身就够了，
+      // 不该为了「让她说过的话看得见」再补一次状态写入。
+      if (item.expired) return;
       const updated = unwrapGatewayResult(await window.astella.companion.activity.ack({ meta: activity.meta(), request: { deliveryId: item.deliveryId, inboxSequence: item.inboxSequence, transition } }));
       setOverrides(current => ({ ...current, [updated.deliveryId]: updated }));
     });

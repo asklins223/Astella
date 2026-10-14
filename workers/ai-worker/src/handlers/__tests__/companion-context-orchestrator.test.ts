@@ -6,6 +6,7 @@ import { companionMemoryContentMaxLength } from "@astella/shared/companion-memor
 import {
   assembleCompanionContext,
   budgetCompanionMemoryDirectory,
+  COMPANION_MEMORY_CONTEXT_ESTIMATE_BUDGET,
 } from "../companion-context-orchestrator.ts";
 import { resolveRouteInputTokens } from "../companion-context-handoff.ts";
 import { taskEntityFromPersistedPageContext } from "../companion-task-memory.ts";
@@ -153,26 +154,32 @@ test("普通对话只注入 resident 正文和 active 元数据目录", async ()
   }]);
   assert.deepEqual(context.usedMemoryIds, [residentId, activeId]);
   assert.equal(context.retrievalMode, "directory");
+  assert.ok(
+    context.residentTokenEstimate + context.directoryTokenEstimate <= (context.memoryCapacityTokens ?? 0),
+    "resident 与目录必须共用一个小预算",
+  );
   assert.ok(!JSON.stringify(context.memoryDirectory).includes("正文不应自动进入提示词"));
   assert.match(calls[0] ?? "", /budget_tier = 'resident'/);
   assert.match(calls[1] ?? "", /budget_tier = 'active'/);
-  // 4 次查询：resident 正文、active 目录、手册目录与候选（**一次取回**，两条通道靠 SQL 的
-  // CASE 分桶）、整理结论（§4.5.10 的 surface，一次性消费）。
-  // 仍然全是**读**——统计写入在独立的 best-effort 事务里，那条不变。
-  const reads = [
+  // 4 次上下文读取：resident 正文、active 目录、手册目录与候选（**一次取回**，两条通道靠 SQL 的
+  // CASE 分桶）、整理结论（§4.5.10 的 surface，一次性消费）。实际装配还会记本轮曝光：
+  // 同事务加 advisory lock，再按 runId 幂等写 memory_usage_log。
+  const contextReads = [
     { match: /budget_tier = 'resident'/, why: "resident 正文" },
     { match: /budget_tier = 'active'/, why: "active 目录" },
     { match: /method_state='active' AND p\.epistemic_status <> 'disputed'/, why: "手册目录与候选一次取回" },
     { match: /UPDATE companion_memory_organization_state/, why: "整理结论（一次性消费）" },
   ];
-  assert.equal(calls.length, reads.length, `context assembly 只读数据：${reads.map((r) => r.why).join(" + ")}`);
-  for (const read of reads) {
-    assert.ok(calls.some((sql) => read.match.test(sql)), `缺少这一条读：${read.why}`);
+  for (const read of contextReads) {
+    assert.ok(calls.some((sql) => read.match.test(sql)), `缺少这一条上下文读取：${read.why}`);
   }
   // 两个桶的谓词在同一条 SQL 里：只留下目录那道门，候选就会被一并放进来。
   assert.ok(calls.some((sql) => /method_state='candidate' AND p\.epistemic_status <> 'disputed'/.test(sql)),
     "候选的判据必须与目录同一条查询出现");
-  assert.doesNotMatch(calls.join("\n"), /UPDATE assistant_memory_items|memory_usage_log/);
+  assert.equal(calls.length, 6, "四次上下文读取 + 曝光去重锁 + 一次性曝光写入");
+  assert.equal(calls.filter((query) => /INSERT INTO memory_usage_log/.test(query)).length, 1,
+    "一次装配最多记录一条 run 级曝光");
+  assert.doesNotMatch(calls.join("\n"), /UPDATE assistant_memory_items/);
 });
 
 /** resident 那一条读返回给定行，其余读（目录、手册、整理结论）返回空。 */
@@ -188,8 +195,8 @@ function residentTx(rows: readonly Record<string, unknown>[]) {
 
 test("resident 正文整条装配：装不下的整条不入选并可计数，不再逐条校字数与字节", async () => {
   const bodies = {
-    short: "中".repeat(100),
-    mid: "文".repeat(120),
+    short: "中".repeat(20),
+    mid: "文".repeat(30),
     // 正文长度的唯一声明源是写入合同那条线（shared），到线的那一条仍然整条进来。
     // 以前这里还要再过「每条 ≤1000 字符 / ≤1000 字节 / 320 token / 6 条」四道闸门。
     longest: "长".repeat(companionMemoryContentMaxLength),
@@ -222,21 +229,27 @@ test("resident 正文整条装配：装不下的整条不入选并可计数，�
   assert.equal(wide.residentOmittedCount, 1, "少带的那一条必须计数，否则与「没有这条记忆」同一个读数");
   assert.equal(wide.residentByteCount,
     [bodies.short, bodies.mid, bodies.longest]
-      .reduce((total, content) => total + Buffer.byteLength(content, "utf8"), 0));
+      .reduce((total, content) => total + Buffer.byteLength(JSON.stringify({
+        kind: "goal", content, epistemicStatus: null,
+      }), "utf8"), 0));
   assert.equal(wide.residentTokenEstimate,
-    [bodies.short, bodies.mid, bodies.longest].reduce((total, content) => total + estimateTextTokens(content), 0));
+    [bodies.short, bodies.mid, bodies.longest].reduce((total, content) => total + estimateTextTokens(JSON.stringify({
+      kind: "goal", content, epistemicStatus: null,
+    })), 0));
+  assert.equal(wide.residentOmittedCharacters, bodies.overContract.length);
 
   // 容量收紧：整条装不下的不进 prompt，少了几条仍然对得上。
   const capability = routeCapability(6_644);
   const tight = await assembleCompanionContext(residentTx(rows),
     { workspaceId: "workspace-1", userId: "user-1" },
     { runId: "run-2", pageContext: null, modelCapability: capability });
-  assert.equal(tight.memoryCapacityTokens, resolveRouteInputTokens(capability),
-    "取舍用的容量必须来自这条路由声明的窗口，不是抄在代码里的数");
+  assert.equal(tight.memoryCapacityTokens,
+    Math.min(resolveRouteInputTokens(capability), COMPANION_MEMORY_CONTEXT_ESTIMATE_BUDGET),
+    "总容量同时受路由声明和小型长期记忆预算约束");
   assert.ok(tight.residentMemories.length > 0, "紧容量也不该把正文全清空：至少装得下第一条");
   assert.ok(tight.residentMemories.length < 3, "这一轮没发生取舍，样本就没造好");
   assert.equal(tight.residentMemories.length + (tight.residentOmittedCount ?? 0), rows.length);
-  assert.ok(tight.residentTokenEstimate <= (tight.memoryCapacityTokens ?? 0));
+  assert.ok(tight.residentTokenEstimate + tight.directoryTokenEstimate <= (tight.memoryCapacityTokens ?? 0));
   for (const memory of tight.residentMemories) {
     assert.ok(Object.values(bodies).includes(memory.content), "入选的正文不再是整条");
   }

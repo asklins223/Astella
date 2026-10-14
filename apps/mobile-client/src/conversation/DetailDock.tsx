@@ -1,6 +1,7 @@
-import { goTab, pop, push, type Pushed } from '../app/nav.ts'
+import { pop, push, type Pushed } from '../app/nav.ts'
 import { Icon } from '../app/icons.tsx'
-import { setDraft, setDraftContext, useCompanion } from '../state/companion.ts'
+import { usePhoneRoot } from '../app/phone-root.tsx'
+import { openContextCompanion } from './context-companion.tsx'
 import { generateExplainer, useNotes } from '../state/notes.ts'
 
 /**
@@ -11,19 +12,20 @@ import { generateExplainer, useNotes } from '../state/notes.ts'
  */
 export function DetailDock({ route }: { route: Pushed }) {
   const notes = useNotes()
-  const companion = useCompanion()
+  const root = usePhoneRoot()
   const title = notes.reader?.title ?? ''
 
   if (route.kind !== 'reader') {
     return (
       <div className="detail-dock glass">
-        <button className="detail-ask" type="button" onClick={pop}>
-          <Icon name="book-open" />
+        <button className="detail-ask" type="button" onClick={event => openContextCompanion(event.currentTarget, root)}>
+          <Icon name="message-square-text" />
           <span>
-            回正文
-            <small>这一篇还停在原来那一格</small>
+            和伴星聊聊这里
+            <small>带着当前内容，原页仍保留</small>
           </span>
         </button>
+        <button className="icon-button" type="button" onClick={pop} aria-label="回到原来的页面"><Icon name="arrow-left" /></button>
       </div>
     )
   }
@@ -36,27 +38,19 @@ export function DetailDock({ route }: { route: Pushed }) {
       <button
         className="detail-ask"
         type="button"
-        onClick={() => {
-          // 先保住用户已经写下的那句话；引用笔记只补上下文，不替人改正文或发送。
-          if (!companion.draft.trim()) {
-            setDraft(emptyReader
-              ? `请根据我们的交流，帮我整理《${title || '这篇手记'}》。`
-              : title ? `关于《${title}》：` : '')
-          }
-          setDraftContext({
+        onClick={event => {
+          openContextCompanion(event.currentTarget, root, { label: title || '这篇手记', context: {
             pageKind: 'note',
             sharing: 'page_registered',
             noteId: route.noteId,
             ...(reader?.detail?.currentVersionId ? { noteVersionId: reader.detail.currentVersionId } : {}),
-          })
-          goTab('chat')
-          requestAnimationFrame(() => document.getElementById('chat-input')?.focus({ preventScroll: true }))
+          } })
         }}
       >
         <Icon name="message-square-text" />
         <span>
-          {emptyReader ? '请伴星整理这篇手记' : '问这篇笔记'}
-          <small>{emptyReader ? '先生成正文，再由你确认' : '提问或修改，保留当前内容'}</small>
+          {emptyReader ? '一起整理这篇手记' : '边读边和伴星聊'}
+          <small>{emptyReader ? '告诉她你想留下什么' : '原文在身后，解释与修改在这里'} </small>
         </span>
       </button>
       {!emptyReader && <button

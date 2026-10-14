@@ -142,6 +142,7 @@ export async function getMemoryStarMap(
     WHERE m.workspace_id = ${scope.workspaceId}
       AND m.user_id = ${scope.userId}
       AND m.deleted_at IS NULL
+      AND m.dismissed_at IS NULL
       AND m.candidate = false
       AND m.archived_at IS NULL
       AND (m.valid_from IS NULL OR m.valid_from <= now())

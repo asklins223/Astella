@@ -209,7 +209,7 @@ export async function runCompanionDialogue(
         `);
         const conv = convRows[0];
         if (!conv) return null;
-        // 正式作答中就不念出来（doc 34 L15 的另一半）。判据与念头管线同一个来源，
+        // 正式作答中就不念出来（doc 34 L15 的另一半）。判据与主动交流入口共用同一来源，
         // 在**这一轮**读一次就够：一次 provider 调用远长于六个阶段的跃迁窗口，
         // 中途放开等于在用户正在答的那一题上开口。
         // 同一次读取顺手把**正在作答的那一题的身份**也带出来（39d W2-6 要往
@@ -637,6 +637,13 @@ export async function runCompanionDialogue(
       memoryContext = emptyMemoryContext();
     }
   }
+  contextReceipts.recordMemoryOmissions({
+    residentCount: memoryContext.residentOmittedCount ?? 0,
+    directoryCount: memoryContext.directoryOmittedCount ?? 0,
+    residentCharacters: memoryContext.residentOmittedCharacters ?? 0,
+    directoryCharacters: memoryContext.directoryOmittedCharacters ?? 0,
+    capacityEstimate: memoryContext.memoryCapacityTokens ?? 0,
+  });
 
   const handoffInput = {
     ...(read.contextHandoff ?? {
@@ -696,6 +703,10 @@ export async function runCompanionDialogue(
       groundedTutorContext: read.groundedTutorContext,
       residentMemories: read.residentMemories,
       memoryDirectory: read.memoryDirectory,
+      memoryOmissions: {
+        residentCount: memoryContext.residentOmittedCount ?? 0,
+        directoryCount: memoryContext.directoryOmittedCount ?? 0,
+      },
       hereAndNow: read.hereAndNow,
       thisTurnFacts: read.thisTurnFacts,
       factSpans: read.factSpans?.block ?? null,

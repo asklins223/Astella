@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useRef, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Icon } from '../app/icons.tsx'
-import { push } from '../app/nav.ts'
+import { goTab, push } from '../app/nav.ts'
 import { useSession } from '../state/session.ts'
 import { handleUnauthorized } from '../state/session.ts'
 import { loadMoreNotes, loadNotes, setNoteSearchQuery, updateNoteSearch, useNotes } from '../state/notes.ts'
 import { ApiError } from '../platform/api-client.ts'
 import { notesApi, type NoteListItem } from '../platform/api.ts'
+import { SOURCE_IMAGE_MIME_TYPES } from '@astella/shared/source-image-contracts'
+import { companionStore, setComposerError, setDraft, setDraftContext, setPendingImage } from '../state/companion.ts'
+import { companionImageError } from '../conversation/image-intake.ts'
 import { MobileImage } from '../ui/MobileImage.tsx'
 import { renderBlock } from './reading.ts'
 
@@ -15,14 +18,17 @@ export function NotesPage() {
   const notes = useNotes()
   const session = useSession()
   const scroller = useRef<HTMLElement>(null)
+  const photoPicker = useRef<HTMLInputElement>(null)
   const searchRequest = useRef<AbortController | null>(null)
   const searchGeneration = useRef(0)
+  const [photoError, setPhotoError] = useState<string | null>(null)
   const query = notes.browse.query
   const search = notes.browse.search
   const keyword = query.trim()
+  const previousKeyword = useRef(keyword)
 
   useEffect(() => {
-    void loadNotes(true)
+    void loadNotes()
   }, [])
 
   const runSearch = useCallback(async ({
@@ -49,7 +55,7 @@ export function NotesPage() {
       const page = await notesApi.search({ q, limit: 20, cursor, signal: controller.signal })
       if (generation !== searchGeneration.current) return
       updateNoteSearch((current) => ({
-        items: append ? [...current.items, ...page.items] : page.items,
+        items: append ? [...new Map([...current.items, ...page.items].map((item) => [item.objectId, item])).values()] : page.items,
         total: page.total,
         nextCursor: page.nextCursor,
         loading: false,
@@ -80,7 +86,10 @@ export function NotesPage() {
       updateNoteSearch({ items: [], total: 0, nextCursor: null, loading: false, loadingMore: false, error: null })
       return
     }
-    updateNoteSearch((current) => ({ ...current, loading: true, loadingMore: false, error: null }))
+    if (previousKeyword.current === keyword && search.items.length > 0 && !search.error && !search.loading && !search.loadingMore) return
+    const changed = previousKeyword.current !== keyword
+    previousKeyword.current = keyword
+    updateNoteSearch((current) => ({ ...current, ...(changed ? { items: [], total: 0, nextCursor: null } : {}), loading: true, loadingMore: false, error: null }))
     const timer = window.setTimeout(() => {
       void runSearch({ q: keyword, append: false, generation })
     }, 260)
@@ -94,6 +103,7 @@ export function NotesPage() {
   useEffect(() => () => {
     searchRequest.current?.abort()
     searchGeneration.current += 1
+    updateNoteSearch((current) => ({ ...current, loading: false, loadingMore: false }))
   }, [])
 
   const loadMoreSearch = useCallback(() => {
@@ -109,8 +119,8 @@ export function NotesPage() {
   function onScroll() {
     const node = scroller.current
     if (!node || node.scrollHeight - node.scrollTop - node.clientHeight >= 160) return
-    if (keyword) loadMoreSearch()
-    else void loadMoreNotes()
+    if (keyword) { if (!search.error) loadMoreSearch() }
+    else if (!notes.list.error) void loadMoreNotes()
   }
 
   function retrySearch() {
@@ -128,33 +138,69 @@ export function NotesPage() {
         : `${notes.list.items.length} 篇笔记`
 
   return (
-    <section className="page-scroll" ref={scroller} onScroll={onScroll} data-view-key="notes" aria-label="手记内容">
+    <section className="page-scroll notes-shelf" ref={scroller} onScroll={onScroll} data-view-key="notes" aria-label="手记内容">
       <div className="section-title">
         <div>
           <h1>手记</h1>
           <p>已经留下的，随时回来读。</p>
         </div>
-        <span>{count}</span>
+        <span className="notes-shelf-status"><span aria-live="polite">{count}</span>{!searching && <button className="notes-refresh" type="button" aria-label="刷新手记列表" disabled={notes.list.loading || notes.list.loadingMore} onClick={() => void loadNotes(true)}><Icon name="history" /></button>}</span>
       </div>
 
-      <div className="search">
-        <Icon name="search" aria-hidden="true" />
-        <label className="visually-hidden" htmlFor="note-search">搜索手记标题与正文</label>
-        <input
-          id="note-search"
-          value={query}
-          placeholder="搜索标题与正文"
-          onChange={(event) => setNoteSearchQuery(event.target.value)}
-        />
-        {query && (
-          <button className="search-clear" type="button" aria-label="清除搜索" onClick={() => {
-            setNoteSearchQuery('')
-            requestAnimationFrame(() => document.getElementById('note-search')?.focus({ preventScroll: true }))
-          }}>
-            <Icon name="x" />
-          </button>
-        )}
+      <div className="notes-shelf-tools">
+        <div className="search">
+          <Icon name="search" aria-hidden="true" />
+          <label className="visually-hidden" htmlFor="note-search">搜索手记标题与正文</label>
+          <input
+            id="note-search"
+            value={query}
+            placeholder="搜索标题与正文"
+            type="search"
+            autoComplete="off"
+            enterKeyHint="search"
+            onChange={(event) => setNoteSearchQuery(event.target.value)}
+          />
+          {query && (
+            <button className="search-clear" type="button" aria-label="清除搜索" onClick={() => {
+              setNoteSearchQuery('')
+              requestAnimationFrame(() => document.getElementById('note-search')?.focus({ preventScroll: true }))
+            }}>
+              <Icon name="x" />
+            </button>
+          )}
+        </div>
+        <button
+          className="notes-photo-action"
+          type="button"
+          aria-label="拍照或从相册选图，带着图片问伴星"
+          title="拍照或从相册选图，带着图片问伴星"
+          onClick={() => photoPicker.current?.click()}
+        ><Icon name="image" /><span>图片提问</span></button>
       </div>
+      <input
+        ref={photoPicker}
+        className="visually-hidden"
+        type="file"
+        accept={SOURCE_IMAGE_MIME_TYPES.join(',')}
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0]
+          event.currentTarget.value = ''
+          if (!file) return
+          const issue = companionImageError(file)
+          if (issue) { setPhotoError(issue); return }
+          setPhotoError(null)
+          setComposerError('')
+          setDraftContext(null)
+          if (!companionStore.get().draft.trim()) {
+            setDraft('请帮我读一下这张图片，把适合留下的内容整理成手记。')
+          }
+          setPendingImage(file)
+          goTab('chat')
+        }}
+      />
+      {photoError && <p className="notes-photo-error" role="alert">{photoError}</p>}
 
       <div className="list-label">
         <span>{session.me?.workspaceName ?? '我的书房'}</span>
@@ -195,8 +241,8 @@ export function NotesPage() {
         <button key={item.id} className="note-row" data-focus-key={`note:${item.id}`} type="button" onClick={() => push({ kind: 'reader', noteId: item.id, title: item.title })}>
           <NoteCover item={item} />
           <span>
-            <strong>{item.title}</strong>
-            <small>更新于 {formatWhen(item.updatedAt)}</small>
+            <strong>{item.title || '无标题笔记'}</strong>
+            <small>{formatWhen(item.updatedAt) ? `更新于 ${formatWhen(item.updatedAt)}` : '已保存'}</small>
           </span>
           <Icon name="chevron-right" />
         </button>
@@ -206,34 +252,29 @@ export function NotesPage() {
       {searching && search.error && (
         <div className="notes-load-error state-note" role="alert">
           <p>{search.error}</p>
-          <button type="button" disabled={search.loading} onClick={retrySearch}>
-            {search.loading ? '正在重试…' : '重试搜索'}
+          <button type="button" disabled={search.loading || search.loadingMore} onClick={search.items.length > 0 && search.nextCursor ? loadMoreSearch : retrySearch}>
+            {search.loading || search.loadingMore ? '正在重试…' : search.items.length > 0 && search.nextCursor ? '重试更多结果' : '重试搜索'}
           </button>
         </div>
       )}
-      {!searching && notes.list.loading && <p className="empty" role="status">正在取你的笔记。</p>}
+      {!searching && notes.list.loading && notes.list.items.length === 0 && <p className="empty" role="status">正在取你的笔记。</p>}
       {searching && !search.loading && !search.error && search.items.length === 0 && (
-        <div className="empty"><Icon name="search" /><p>没有找到匹配的手记，可以换个词试试。</p></div>
+        <div className="empty shelf-empty"><Icon name="search" /><h2>没有找到“{keyword}”</h2><p>试试更短的词，标题和正文都会搜索。</p><button type="button" className="secondary" onClick={() => setNoteSearchQuery('')}>查看全部手记</button></div>
       )}
       {!searching && !notes.list.loading && !notes.list.error && notes.list.items.length === 0 && (
-        <div className="empty"><Icon name="book-open" /><p>这里还没有内容。想留下时，告诉伴星整理成笔记。</p></div>
+        <div className="empty shelf-empty"><Icon name="book-open" /><h2>第一篇手记，从一次交流开始</h2><p>读到想留下的内容时，让伴星整理成笔记。</p><button type="button" className="secondary" onClick={() => goTab('chat')}>和伴星聊聊</button></div>
       )}
       {searching && search.loadingMore && <p className="empty" role="status">正在找更早的匹配内容。</p>}
       {!searching && notes.list.loadingMore && <p className="empty" role="status">更早的还在来。</p>}
 
-      {searching && search.error && search.nextCursor && (
-        <button className="load-more-notes secondary" type="button" disabled={search.loadingMore} onClick={loadMoreSearch}>
-          重试加载更多结果
-        </button>
-      )}
       {searching && search.nextCursor && !search.error && (
         <button className="load-more-notes secondary" type="button" disabled={search.loadingMore} onClick={loadMoreSearch}>
           {search.loadingMore ? '正在加载更多结果…' : `继续查看结果（${search.items.length} / ${search.total}）`}
         </button>
       )}
       {!searching && notes.list.nextCursor && (
-        <button className="load-more-notes secondary" type="button" disabled={notes.list.loadingMore} onClick={() => void loadMoreNotes()}>
-          {notes.list.loadingMore ? '正在加载更早的手记…' : '加载更早的手记'}
+        <button className="load-more-notes secondary" type="button" disabled={notes.list.loadingMore || notes.list.loading} onClick={() => void loadMoreNotes()}>
+          {notes.list.loadingMore ? '正在加载更早的手记…' : notes.list.error ? '重试加载更早的手记' : '加载更早的手记'}
         </button>
       )}
     </section>

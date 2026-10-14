@@ -1,5 +1,5 @@
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
-import type { CompanionMemoryItemV1,CompanionMemoryKindV1,CompanionMemoryRevisionV1 } from "@astella/shared/companion-memory-desktop-contracts";
+import type { CompanionMemoryBudgetStatusV1,CompanionMemoryBudgetTierV1,CompanionMemoryItemV1,CompanionMemoryKindV1,CompanionMemoryRevisionV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { Archive,Pencil,Pin,Plus,Trash2 } from "lucide-react";
 import { useEffect,useMemo,useRef,type KeyboardEvent } from "react";
 import { HUD_PAGES } from "../../hud/hud-pages";
@@ -57,6 +57,8 @@ function formatMemoryTime(value: string | null): string {
 type MemoryPanelProps = {
   section: Section<{ version: 2; items: CompanionMemoryItemV1[] }>; items: CompanionMemoryItemV1[]; focus: CompanionMemoryItemV1 | null;
   revisions: CompanionMemoryRevisionV1[] | null; revisionsError: string | null; onRetryRevisions: () => void;
+  budget: CompanionMemoryBudgetStatusV1 | null; onBudgetTier: (tier: CompanionMemoryBudgetTierV1) => void; onDispute: () => void;
+  onOpenSource: (messageId: string) => void; onOpenMemory: (memoryId: string) => void;
   query: string; kind: "all" | CompanionMemoryKindV1; pinFilter: MemoryStateFilter; busy: string | null; error: string | null; notice: string | null;
   confirmDelete: boolean; confirmErase: boolean;
   createOpen: boolean; createContent: string; createKind: CompanionMemoryKindV1; correctionOpen: boolean; correctionContent: string;
@@ -175,6 +177,17 @@ export function MemoryPanel(props: MemoryPanelProps) {
     <strong>{item.content}</strong><time>{formatRelative(item.updatedAt)} · {MEMORY_SCOPE_LABEL[item.scope]}</time>
   </button>;
   return <div ref={panelRef} className="cc-memory">
+    {props.budget ? <details className="cc-memory-budget">
+      <summary aria-label="展开记忆用量与检索统计">记忆用量与检索统计</summary>
+      <div className="cc-memory-budget__details" aria-label="记忆分层预算">
+        <strong>记忆在伴星上下文中的位置</strong>
+        <span>常驻 {props.budget.resident.used.items} 条 · 约 {props.budget.resident.used.tokenEstimate}/{props.budget.resident.limits.tokenEstimate} tokens</span>
+        <span>按需 {props.budget.active.items} 条 · 归档 {props.budget.archived.used.items}/{props.budget.archived.limits.items} 条</span>
+        <span>近 30 天检索 {props.budget.usage.searchRequests} 次 · 命中 {props.budget.usage.returnedMemories} 条 · 空结果 {props.budget.usage.emptySearches} 次</span>
+        <span>目录带入 {props.budget.usage.directoryExposures} 条 · 按需展开 {props.budget.usage.explicitReads} 条</span>
+        <small>常驻内容会随对话带入；按需内容由伴星根据问题检索；归档内容不会自动召回。</small>
+      </div>
+    </details> : null}
     {cooperation && !props.createOpen ? <div className="cc-rule-intro"><h3>我们怎样合作</h3><p>她会在相处中调整合作习惯；你可以随时纠正，每次合作仍以你当下的要求为准。</p></div> : null}
     <div className="cc-toolbar">{props.createOpen ? <h3 className="cc-memory-create-title">{cooperation ? "添加合作方式" : "添加记忆"}</h3> : <CenterSearch value={props.query} onChange={props.onQuery} placeholder={cooperation ? "找一种合作习惯…" : "找一件她记住的事…"} label="筛选记忆列表" />}<button type="button" className="cc-button" onClick={() => props.onCreateOpen(!props.createOpen)}><Plus size={16} aria-hidden="true" />{props.createOpen ? "收起添加" : cooperation ? "添加合作方式" : "手动添加"}</button></div>
     {!props.createOpen ? <div className="cc-filter-line" role="group" aria-label="记忆列表筛选"><CompanionSelect paper ariaLabel="筛选记忆列表类型" value={props.kind} options={MEMORY_LIST_KIND_OPTIONS} onChange={props.onKind} /><CompanionSelect paper ariaLabel="筛选记忆列表状态" value={props.pinFilter} options={stateOptions} onChange={props.onPinFilter} /><span>{visible.length} 条</span><button type="button" className="cc-link" disabled={props.busy !== null} onClick={props.onSummarize}>{props.busy === "summarize" ? "整理中…" : "整理近期对话"}</button></div> : null}
@@ -187,14 +200,19 @@ export function MemoryPanel(props: MemoryPanelProps) {
       {visible.length ? <aside className="cc-memory-focus" aria-label="所选记忆详情">{selected ? <article className="cc-memory-detail">
         <header><span className="cc-kicker">{kindLabel(selected)}</span><span className="cc-badge">{stateLabel(selected)}</span></header>
         {props.correctionOpen ? <form className="cc-form" onSubmit={event => { event.preventDefault(); props.onCorrect(); }}><label>{cooperation ? "修订合作方式" : "纠正这条记忆"}<textarea disabled={props.busy !== null} value={props.correctionContent} maxLength={200} onChange={event => props.onCorrectionContent(event.currentTarget.value)} aria-label="纠正后的记忆内容" /></label>{props.ruleEditor ? <MemoryRuleFields fields={props.ruleEditor.correction} editing /> : null}<p className="cc-rule-form-note">这次修订仍适用于{MEMORY_SCOPE_LABEL[selected.scope]}。</p><div className="cc-actions"><button type="button" className="cc-link" disabled={props.busy !== null} onClick={() => props.onCorrectionOpen(false)}>取消</button><button type="submit" className="cc-button is-primary" disabled={!props.correctionContent.trim() || (props.correctionContent.trim() === selected.content && (!props.ruleEditor || (props.ruleEditor.correction.appliesWhen.trim() || null) === selected.appliesWhen)) || props.busy !== null}>{props.busy === "correct" ? "正在保存…" : "保存修订"}</button></div></form> : <p className="cc-memory-detail__body">{selected.content}</p>}
-        <MemoryFacts item={selected} mode={cooperation ? "rule" : "all"} />
+        <MemoryFacts item={selected} mode={cooperation ? "rule" : "all"} onOpenSource={props.onOpenSource} onOpenMemory={props.onOpenMemory} />
         <div className="cc-actions">
           {selected.candidate ? <button type="button" className="cc-button is-primary" disabled={props.busy !== null} onClick={() => props.onAction("confirm")}>{cooperation ? "确认采用" : "确认写入"}</button> : null}
           {!selected.candidate && !selected.archived ? <button type="button" className="cc-button" disabled={props.busy !== null} onClick={() => props.onAction(selected.pinned ? "unpin" : "pin")}><Pin size={14} />{selected.pinned ? "取消固定" : "固定"}</button> : null}
           {!props.correctionOpen && !selected.archived ? <button type="button" className="cc-button" disabled={props.busy !== null} onClick={() => props.onCorrectionOpen(true)}><Pencil size={14} />{cooperation ? "修订" : "纠正"}</button> : null}
+          {!selected.candidate && selected.epistemicStatus !== "disputed" && selected.epistemicStatus !== "superseded" ? <button type="button" className="cc-link" disabled={props.busy !== null} onClick={props.onDispute}>标记有争议</button> : null}
           {!selected.candidate ? <button type="button" className="cc-link" disabled={props.busy !== null} onClick={() => props.onAction(selected.archived ? "restore" : "archive")}><Archive size={14} />{cooperation ? selected.archived ? "恢复这条规则" : "暂时不用" : selected.archived ? "恢复" : "归档"}</button> : <button type="button" className="cc-link" disabled={props.busy !== null} onClick={() => props.onAction("dismiss")}>暂不采用</button>}
         </div>
-        {cooperation ? <details className="cc-details"><summary>来源与有效期</summary><MemoryFacts item={selected} mode="provenance" /></details> : null}
+        {!selected.candidate ? <div className="cc-memory-tier" aria-label="记忆检索层级">
+          <span>检索层级：{memoryTierLabel(selected.budgetTier)}</span>
+          {(["resident", "active", "archived"] as const).filter(tier => tier !== selected.budgetTier).map(tier => <button key={tier} type="button" className="cc-link" disabled={props.busy !== null} onClick={() => props.onBudgetTier(tier)}>{tier === "resident" ? "移到常驻" : tier === "active" ? "改为按需" : "归档"}</button>)}
+        </div> : null}
+        {cooperation ? <details className="cc-details"><summary>来源与有效期</summary><MemoryFacts item={selected} mode="provenance" onOpenSource={props.onOpenSource} onOpenMemory={props.onOpenMemory} /></details> : null}
         {props.revisionsError ? <SectionState message="旧版本暂不可用" detail={props.revisionsError} onRetry={props.onRetryRevisions} /> : props.revisions === null ? <small role="status">正在加载旧版本…</small> : props.revisions.length ? <details className="cc-details"><summary>查看旧版本（{props.revisions.length}）</summary>{props.revisions.map(revision => <div key={revision.revision}><small>第 {revision.revision} 版 · {MEMORY_AUTHOR_LABEL[revision.authorType]} · {MEMORY_EPISTEMIC_LABEL[revision.epistemicStatus]} · 来源：{MEMORY_SOURCE_LABEL[revision.sourceType]}</small><p>{revision.content}</p><small>适用于{MEMORY_SCOPE_LABEL[revision.scope]} · {revision.appliesWhen ?? "无额外条件"}</small><small>被替代于 {formatRelative(revision.supersededAt)}</small></div>)}</details> : null}
         <details className="cc-details cc-memory-remove"><summary>移除这条记忆</summary><p>普通删除进入回收区；彻底清除无法恢复。</p><div className="cc-actions"><MemoryDeleteAction active={props.confirmDelete} busy={props.busy !== null} onOpen={() => props.onConfirmDelete(true)} onCancel={() => props.onConfirmDelete(false)} onConfirm={() => props.onAction("remove")} /><MemoryEraseAction active={props.confirmErase} busy={props.busy !== null} onOpen={() => props.onConfirmErase(true)} onCancel={() => props.onConfirmErase(false)} onConfirm={() => props.onAction("erase")} /></div></details>
       </article> : <SectionState message="选择一条记忆" detail="查看它的内容、来源与版本。" />}</aside> : null}
@@ -202,14 +220,22 @@ export function MemoryPanel(props: MemoryPanelProps) {
   </div>;
 }
 
-function MemoryFacts({ item, mode }: { item: CompanionMemoryItemV1; mode: "all" | "rule" | "provenance" }) {
+function memoryTierLabel(tier: CompanionMemoryBudgetTierV1): string {
+  return tier === "resident" ? "常驻" : tier === "active" ? "按需检索" : "归档";
+}
+
+function MemoryFacts({ item, mode, onOpenSource, onOpenMemory }: { item: CompanionMemoryItemV1; mode: "all" | "rule" | "provenance"; onOpenSource: (messageId: string) => void; onOpenMemory: (memoryId: string) => void }) {
+  const sourceIds = [...new Set([item.sourceEventId, ...item.sourceEventIds].filter((id): id is string => Boolean(id)))];
+  const linkableSourceIds = sourceIds.filter(id => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id));
   return <dl className="cc-facts">
-    {mode !== "rule" ? <div><dt>来源</dt><dd>{item.sourceSpeaker ? MEMORY_SPEAKER_LABEL[item.sourceSpeaker] : MEMORY_SOURCE_LABEL[item.sourceType]}{item.sourceBasis === "inferred_from_statement" ? "（根据原话整理）" : ""}</dd></div> : null}
+    {mode !== "rule" ? <div><dt>来源</dt><dd>{item.sourceSpeaker ? MEMORY_SPEAKER_LABEL[item.sourceSpeaker] : MEMORY_SOURCE_LABEL[item.sourceType]}{item.sourceBasis === "inferred_from_statement" ? "（根据原话整理）" : ""}{linkableSourceIds.length ? <span className="cc-memory-source-links">{linkableSourceIds.slice(0, 8).map((id, index) => <button type="button" className="cc-link" key={id} onClick={() => onOpenSource(id)}>{linkableSourceIds.length > 1 ? `核对原话 ${index + 1}` : "核对原话"}</button>)}</span> : sourceIds.length ? <small>已保留来源引用，但暂时无法定位到具体消息。</small> : <small>没有可回溯的原话来源。</small>}</dd></div> : null}
     {mode !== "provenance" ? <div><dt>范围</dt><dd>{MEMORY_SCOPE_LABEL[item.scope]}</dd></div> : null}
     {mode !== "rule" ? <div><dt>作者</dt><dd>{MEMORY_AUTHOR_LABEL[item.authorType]} · {MEMORY_EPISTEMIC_LABEL[item.epistemicStatus]}</dd></div> : null}
     {mode !== "provenance" && item.appliesWhen ? <div><dt>适用条件</dt><dd>{item.appliesWhen}</dd></div> : null}
     {mode !== "rule" ? <div><dt>有效期</dt><dd>{formatMemoryTime(item.validFrom ?? item.createdAt)} 至 {item.validUntil ? formatMemoryTime(item.validUntil) : "无截止时间"}</dd></div> : null}
     {mode !== "provenance" ? <div><dt>更新</dt><dd>{formatRelative(item.updatedAt)} · 第 {item.revision} 版</dd></div> : null}
+    {mode !== "rule" ? <div><dt>置信度</dt><dd>{Math.round(item.confidence * 100)}%{item.userConfirmed ? ` · ${item.confirmedAt ? `用户于 ${formatMemoryTime(item.confirmedAt)} 确认` : "用户已确认"}` : " · 尚未由用户确认"}</dd></div> : null}
+    {item.supersededById ? <div><dt>替代条目</dt><dd><button type="button" className="cc-link" onClick={() => onOpenMemory(item.supersededById!)}>打开替代它的记忆</button></dd></div> : null}
   </dl>;
 }
 

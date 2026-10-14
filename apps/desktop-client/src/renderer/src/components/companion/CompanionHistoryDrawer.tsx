@@ -3,7 +3,7 @@ import { useCompanionPaperPlacement } from "./use-companion-paper-placement";
 // 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { Fragment, useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDownToLine, BookHeart, BookOpenText, CalendarDays, ChevronLeft, CircleCheck, Cloud, FileText, Loader2, MessageCircle, Search, Sparkles, X } from "lucide-react";
+import { ArrowDownToLine, BookHeart, BookOpenText, CalendarDays, ChevronLeft, CircleCheck, FileText, Loader2, MessageCircle, Search, Sparkles, X } from "lucide-react";
 import type { CompanionMessageV1 } from "@astella/shared/companion-conversation-contracts";
 import { gatewayErrorMessage } from "../../app/desktop-client";
 import { companionMessageText, navChipsStillOutsideMessages, useCompanionChat, type CompanionNavChip } from "../../app/companion-chat-session";
@@ -18,7 +18,6 @@ import type { CompanionComposerImage } from "./companion-composer-image";
 import { isCompanionComposition } from "./companion-composer-key";
 import { CompanionGoalJournal } from "./CompanionGoalJournal";
 import type { AgentGoalsController } from "./use-agent-goals";
-import { CompanionThoughtJournal } from "./CompanionThoughtJournal";
 import { journalProposalNeedsAttention, journalProposalNeedsDecision } from "./companion-journal-model";
 import { plainCompanionBubbleText, renderCompanionMarkdown } from "./companion-markdown";
 import { feedSelectionToCompanion } from "./companion-feed";
@@ -97,8 +96,7 @@ export function CompanionHistoryDrawer({
   // （搜索 / 月历筛选 / 时间线），返回箭头回到对话视图——微信的聊天记录就是
   // 与聊天共窗的页内切换。入口只是头部右侧的一个图标按钮。
   const [recordOpen, setRecordOpen] = useState(false);
-  const [filter, setFilter] = useState<"all" | "thoughts" | "pending" | "goals">("all");
-  const [thoughtsVisited, setThoughtsVisited] = useState(false);
+  const [filter, setFilter] = useState<"all" | "pending" | "goals">("all");
   useTactileSurface(drawerRef, `${recordOpen ? "search" : filter}:${mounted}`);
   useEffect(() => {
     if (open && goalTarget) { setRecordOpen(false); setFilter("goals"); }
@@ -112,7 +110,6 @@ export function CompanionHistoryDrawer({
   const chooseSection = (next: typeof filter) => {
     positionsRef.current.set(recordOpen ? "search" : filter, { top: listRef.current?.scrollTop ?? 0, latest: stickToBottomRef.current });
     setRecordOpen(false); setFilter(next);
-    if (next === "thoughts") setThoughtsVisited(true);
     if (next === "goals") void goals?.refresh();
   };
   useEffect(() => {
@@ -196,7 +193,6 @@ export function CompanionHistoryDrawer({
     setRecordOpen(false);
     setFilter("all");
     setSearchInput("");
-    setThoughtsVisited(false);
     setDateFilter(null);
     setCalendarOpen(false);
     positionsRef.current.clear();
@@ -338,7 +334,6 @@ export function CompanionHistoryDrawer({
       <div className="companion-journal__workspace">
       <nav className="companion-history__tabs" aria-label="手记内容">
         <button type="button" className="text-action" aria-label="全部对话" aria-pressed={!recordOpen && filter === "all"} onClick={() => chooseSection("all")}><MessageCircle size={18} /><span><strong>全部对话</strong><small>你一句，我一句</small></span></button>
-        <button type="button" className="text-action" aria-label="伴星念想" aria-pressed={!recordOpen && filter === "thoughts"} onClick={() => chooseSection("thoughts")}><Cloud size={18} /><span><strong>伴星念想</strong><small>想起你的时候</small></span></button>
         {goals ? <button type="button" className="text-action" aria-label={`交给我的事 ${goals.items.length}`} aria-pressed={!recordOpen && filter === "goals"} onClick={() => chooseSection("goals")}><BookOpenText size={18} /><span><strong>交给我的事</strong><small>要求、进展与成果</small></span><i className="companion-history__count">{goals.items.length}</i></button> : null}
         <button type="button" className="text-action" aria-label={`待确认 ${pendingProposals.length}`} aria-pressed={!recordOpen && filter === "pending"} onClick={() => chooseSection("pending")}><CircleCheck size={18} /><span><strong>待确认</strong><small>等你作个决定</small></span><i className="companion-history__count" data-attention={pendingProposals.length > 0 || undefined}>{pendingProposals.length}</i></button>
         <p className="companion-journal__rail-note">话留在纸上，<br />我还在你身旁。</p>
@@ -403,15 +398,7 @@ export function CompanionHistoryDrawer({
             原 .companion-history__list 的 flex/gap/padding，容器只留 overflow。 */}
         <div ref={contentRef} className="companion-history__content">
           {/* ── 对话视图：日期分组时间线 ── */}
-          {thoughtsVisited ? <div className="companion-journal__kept-page" hidden={recordOpen || filter !== "thoughts"}><CompanionThoughtJournal companionName={chat.companionName} onReady={() => {
-            const position = positionsRef.current.get("thoughts");
-            if (!recordOpen && filter === "thoughts" && position && listRef.current) listRef.current.scrollTop = position.top;
-          }} onBringToChat={(text, date) => {
-            feedSelectionToCompanion({ text: `${chat.companionName}的念想（${date}）：${text}`, source: "selection" });
-            chat.setMode("history"); positionsRef.current.delete("all"); stickToBottomRef.current = true; chooseSection("all");
-            requestAnimationFrame(() => drawerRef.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true }));
-          }} /></div> : null}
-          {!recordOpen && filter === "thoughts" ? null : !recordOpen && filter === "goals" && goals ? <CompanionGoalJournal key={`${goals.scope}:${goalTarget?.visit ?? 0}`} goals={goals} targetId={goalTarget?.runId ?? null} onArtifactOpen={onClose} /> : !recordOpen && filter === "pending" ? <section className="companion-journal__pending-page" aria-label="等你决定的事">
+          {!recordOpen && filter === "goals" && goals ? <CompanionGoalJournal key={`${goals.scope}:${goalTarget?.visit ?? 0}`} goals={goals} targetId={goalTarget?.runId ?? null} onArtifactOpen={onClose} /> : !recordOpen && filter === "pending" ? <section className="companion-journal__pending-page" aria-label="等你决定的事">
             <header className="companion-journal__section-heading"><span className="companion-journal__section-symbol"><CircleCheck size={26} aria-hidden="true" /></span><div><h3>等你作个决定</h3><p>先看要做什么，再决定是否交给伴星。</p></div></header>
             {pendingProposals.length === 0 ? <div className="companion-journal__empty"><Sparkles size={36} /><strong>没有等你确认的事情</strong><p>需要你决定的动作会留在这里。</p></div> : pendingProposals.map(([id, state]) => <div className="companion-history__pending" key={id}>
               <CompanionProposalChoice proposalId={id} state={state} context="history" onDecide={decision => { void chat.decideProposal(id, decision); }} onRetry={() => chat.retryProposal(id)} />

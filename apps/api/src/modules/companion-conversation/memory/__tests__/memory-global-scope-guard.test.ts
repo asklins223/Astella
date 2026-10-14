@@ -452,20 +452,29 @@ describe("guided 提案确认链：拒绝也要有可读回执", () => {
   it("有效的账号级修订仍然走通提案链", async () => {
     const existing = memoryRow({ scope: "global", content: "习惯晚上九点之后写笔记" });
     const fake = fakeTx({ selects: [[existing]] });
-    const outcome = await executeCompanionMemoryProposalAction({
-      tx: fake.tx,
-      workspaceId: SCOPE.workspaceId,
-      userId: SCOPE.userId,
-      proposal: { conversation_id: "44444444-4444-4444-8444-444444444444", source_message_id: null },
-      payload: {
-        kind: "revise_memory",
-        memoryId: existing.id,
-        expectedRevision: 1,
-        content: "习惯晚上九点之后写笔记，白天只做采集",
-      },
-    });
-    assert.equal(outcome?.resultRef, existing.id);
-    assert.ok(fake.ops.some((op) => op.op === "update"), "正常的账号级修订被守卫拦掉了");
+    const previousFlag = process.env.COMPANION_MEMORY_VECTOR_V1;
+    try {
+      process.env.COMPANION_MEMORY_VECTOR_V1 = "true";
+      const outcome = await executeCompanionMemoryProposalAction({
+        tx: fake.tx,
+        workspaceId: SCOPE.workspaceId,
+        userId: SCOPE.userId,
+        proposal: { conversation_id: "44444444-4444-4444-8444-444444444444", source_message_id: null },
+        payload: {
+          kind: "revise_memory",
+          memoryId: existing.id,
+          expectedRevision: 1,
+          content: "习惯晚上九点之后写笔记，白天只做采集",
+        },
+      });
+      assert.equal(outcome?.resultRef, existing.id);
+      assert.ok(fake.ops.some((op) => op.op === "update"), "正常的账号级修订被守卫拦掉了");
+      assert.ok(fake.executedSql.some((query) => query.includes("companion_memory_embedding_rebuild")),
+        "提案修订没有在同一事务里排向量重建");
+    } finally {
+      if (previousFlag === undefined) delete process.env.COMPANION_MEMORY_VECTOR_V1;
+      else process.env.COMPANION_MEMORY_VECTOR_V1 = previousFlag;
+    }
   });
 
   it("CAS 冲突仍然是 ACTION_STALE/409，不被新映射吞掉", async () => {

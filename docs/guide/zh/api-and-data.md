@@ -55,7 +55,7 @@
 | 复习 | `review` | `/v2/reviews/*` | 到期队列、延迟、目标暂停、原文揭示、一次性提醒、订阅 |
 | 学习运行与目标 | `learning-runs`、`learning-objectives`、`learning-dashboard` | `/learning-runs*`、`/v2/learning-runs/:runId/*`、`/learning/assessments/:assessmentId/disputes*`、`/v2/learning-objectives*`、`/v2/learning-dashboard`、`/v2/home/*` | 运行需要 `LEARNING_RUN_ENABLED=true`，否则全部 404；争议与更正单独一条注册链 |
 | 理解与深读 | `note-deepening`、`understanding` | `/v3/understanding/*`、`/understanding/projection*`、`/understanding/routes/plan` | 拓扑快照、深读、关系判定、投影与增量 |
-| 伴星家族 | `companion-shell`、`companion-conversation`（含 `memory/`、`delivery/`、`discovery/`、`turn/`）、`companion-bridge`、`companion-journey` | `/me/companion*`、`/public/auth-surface-manifest`、`/companion/*`（对话、消息、thoughts、proposals、memory、deliveries、inbox、daily、journeys、pet-profile、room-profile、home-projection、history、runs 诊断、export） | 对话与记忆各按能力开关 fail closed（`COMPANION_DIALOGUE_V1_ENABLED`、`COMPANION_JOURNEY_V2`、`COMPANION_MEMORY_VECTOR_V1`、`COMPANION_PET_PROFILE_V1`、`COMPANION_BRIDGE_V2` 等） |
+| 伴星家族 | `companion-shell`、`companion-conversation`（含 `memory/`、`delivery/`、`discovery/`、`turn/`）、`companion-bridge`、`companion-journey` | `/me/companion*`、`/public/auth-surface-manifest`、`/companion/*`（对话、消息、proposals、memory、deliveries、inbox、daily、journeys、pet-profile、room-profile、home-projection、history、runs 诊断、export） | 对话与记忆各按能力开关 fail closed（`COMPANION_DIALOGUE_V1_ENABLED`、`COMPANION_JOURNEY_V2`、`COMPANION_MEMORY_VECTOR_V1`、`COMPANION_PET_PROFILE_V1`、`COMPANION_BRIDGE_V2` 等） |
 | Agent | `agent` | `/agent/runs*`、`/agent/long-goals`、`/agent/methods*`、`/agent/method-uses/:useId/feedback` | 运行与方法库的读写；这一层今天哪些真跑着、哪些只有后端，见 [统一 Agent 运行时（技术）](./agent-runtime.md) 的"已接通 vs 只有后端"，验收缺口另记在[方案索引](../../plans/learning-companion/README.md) |
 | 语音 | `learning-sessions` | `/voice/tts`、`/voice/tts/stream`、`/voice/transcribe`、`/voice/preference`、`/voice/guidance-profile`、`/voice/tts/playback-outcome` | TTS/ASR；未开语音能力时 404 |
 | 作业与检索 | `job`、`search`、`import`、`export`、`upload` | `/jobs*`、`/search*`、`/import/markdown`、`/export/*`、`/uploads/*` | job 只读投影（payload 与 `last_error` 脱敏）；上传三个端点 + 下载 |
@@ -122,7 +122,7 @@
 | `astella_api` | `NOBYPASSRLS`，`public` 无 `CREATE` | 全部业务表 `SELECT/INSERT/UPDATE/DELETE`（无 DDL、无 `TRUNCATE/REFERENCES/TRIGGER`）；`drizzle` schema 只 `USAGE` + journal 只读（`/ready` 要查）；对 append-only 与私有 worker 状态逐表收紧 |
 | `astella_worker` | `NOBYPASSRLS`，`public` 无 `CREATE`、无 `drizzle` USAGE | 一份显式读集 + 受控函数（`astella_claim_jobs`、`astella_renew_job_lease`、`astella_finish_job`、`astella_reap_stale_jobs`…）的 `EXECUTE` |
 
-> **说明：** 迁移里写的逐表 `GRANT` 会被 `roles.sql` 那次 `REVOKE ALL` 抹掉——它是在迁移**之后**跑的。所以每条给 `astella_worker` 的新授权必须在 `roles.sql` 里再写一遍，漏掉的后果不是报错而是静默失效：0385 的 `agent_context_compaction_state` 就这么让 worker `permission denied`，整条压缩冷却链在真库上什么都没做；更早的 `assistant_thoughts`、`user_ai_settings` 同理（后者缺 `SELECT` 时所有 companion job 直接 dead）。
+> **说明：** 迁移里写的逐表 `GRANT` 会被 `roles.sql` 那次 `REVOKE ALL` 抹掉——它是在迁移**之后**跑的。所以每条给 `astella_worker` 的新授权必须在 `roles.sql` 里再写一遍，漏掉的后果不是报错而是静默失效：0385 的 `agent_context_compaction_state` 就这么让 worker `permission denied`，整条压缩冷却链在真库上什么都没做；更早的 `user_ai_settings` 同理（缺 `SELECT` 时所有 companion job 直接 dead）。
 
 `REQUIRE_RLS_DISABLED=true` 那条检查现在的语义是"启用了 RLS 的表必须都有策略"：数量为 0 才放行，`role-grants` 因此会在策略没跟上时直接失败，而不是让应用带着裸隔离启动。
 

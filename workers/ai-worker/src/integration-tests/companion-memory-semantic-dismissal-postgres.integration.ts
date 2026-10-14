@@ -64,7 +64,10 @@ before(async () => {
     }
     await tx`
       INSERT INTO assistant_memory_embeddings (memory_id, workspace_id, user_id, embedding, model_revision, updated_at)
-      VALUES (${dismissedId}, ${workspaceId}, ${userId}, ${NEAR}::vector, 'BAAI/bge-m3', now())
+      VALUES
+        (${dismissedId}, ${workspaceId}, ${userId}, ${NEAR}::vector, 'BAAI/bge-m3', now()),
+        (${freshId}, ${workspaceId}, ${userId}, ${NEAR}::vector, 'BAAI/bge-m3', now()),
+        (${unrelatedId}, ${workspaceId}, ${userId}, ${FAR}::vector, 'BAAI/bge-m3', now())
     `;
   });
 });

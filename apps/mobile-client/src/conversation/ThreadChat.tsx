@@ -1,11 +1,14 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { Fragment, useMemo } from 'react'
 import { goTab, push } from '../app/nav.ts'
 import { Icon } from '../app/icons.tsx'
 import { loadOlder, sendTurn, setDraft, useCompanion, type CompanionState } from '../state/companion.ts'
 import { useNotes } from '../state/notes.ts'
-import { dialogueText, followupPrompts, MessageContent } from './message-content.tsx'
+import { dialogueText, DialogueMarkdown, followupPrompts, MessageContent } from './message-content.tsx'
 import { ProposalCard } from './ProposalCard.tsx'
 import { turnLine } from './status-line.ts'
+import { RunProcess } from './RunProcess.tsx'
+import { presentMessages } from './presentation.ts'
+import { useThreadScroll } from './use-thread-scroll.ts'
 
 /** 顶部那三枚：把她真能做的事写成一句话，点了就落进输入框，不自动发出去。 */
 const GENERAL_PROMPTS = ['帮我拆解一个难懂的概念', '把刚才的结论整理成笔记', '我读到哪儿才算懂了？']
@@ -20,30 +23,16 @@ const NOTE_PROMPTS = ['帮我把这篇笔记理一遍', '指出这篇笔记里�
 export function ThreadChat() {
   const companion = useCompanion()
   const notes = useNotes()
-  const scroller = useRef<HTMLElement>(null)
-  const pinned = useRef(true)
+  const { scroller, content, following, jumpToLatest } = useThreadScroll(companion)
 
-  useLayoutEffect(() => {
-    const node = scroller.current
-    if (!node || !pinned.current) return
-    node.scrollTop = node.scrollHeight
-  }, [companion.messages.length, companion.messages.at(-1)?.followUpPrompts?.length, companion.turn?.text, companion.proposals.length])
-
-  useEffect(() => {
-    const node = scroller.current
-    if (!node) return
-    const onScroll = () => {
-      pinned.current = node.scrollHeight - node.scrollTop - node.clientHeight < 96
-      node.classList.toggle('content-cut', node.scrollTop > 8)
-      if (node.scrollTop < 120 && companion.olderAvailable && !companion.loadingHistory) void loadOlder()
-    }
-    node.addEventListener('scroll', onScroll, { passive: true })
-    return () => node.removeEventListener('scroll', onScroll)
-  }, [companion.olderAvailable, companion.loadingHistory])
-
-  const edit = companion.noteEdits.at(-1)
   const prompts = notes.reader?.noteId || companion.draftContext?.pageKind === 'note' ? NOTE_PROMPTS : GENERAL_PROMPTS
-  const titleOf = useNoteTitle(edit?.noteId)
+  const titleOf = useNoteTitle()
+  const presentedMessages = presentMessages(companion.messages)
+  const firstAssistantByRun = new Map<string, string>()
+  for (const entry of presentedMessages) {
+    const message = entry.message
+    if (message.role === 'assistant' && message.runId && !firstAssistantByRun.has(message.runId)) firstAssistantByRun.set(message.runId, entry.key)
+  }
   const lastRetryableMessageId = [...companion.messages].reverse().find((message) => {
     if (message.role !== 'user') return false
     const run = companion.runs.find((item) => item.userMessageId === message.id)
@@ -64,7 +53,9 @@ export function ThreadChat() {
     && !hasContextualFollowups
 
   return (
-    <section className="page-scroll" ref={scroller} data-view-key="chat:history" role="log" aria-live="polite" aria-label="和伴星的记录">
+    <>
+    <section className="page-scroll" ref={scroller} data-view-key="chat:history" aria-label="和伴星的记录">
+      <div ref={content} className="thread-record-content">
       <h1 className="visually-hidden">和伴星的记录</h1>
       {companion.capability === 'off' && (
         <div className="state-note">
@@ -86,19 +77,30 @@ export function ThreadChat() {
       ) : (
         <p className="date-line">同一份交流 · 手机与桌面</p>
       )}
-      {companion.messages.map((message, index) => (
+      {presentedMessages.map(({ key, message }) => {
+        const isFirstReply = Boolean(message.runId && firstAssistantByRun.get(message.runId) === key)
+        const orphanedProcess = Boolean(message.runId && message.role === 'user' && !firstAssistantByRun.has(message.runId) && message.runId !== companion.turn?.runId)
+        const receipt = isFirstReply ? companion.noteEdits.find(item => item.runId === message.runId) : null
+        return (
+        <Fragment key={key}>
+        {isFirstReply && message.runId && <RunProcess runId={message.runId} />}
         <MessageRow
-          key={message.id}
+          key={key}
           message={message}
           outcome={companion.runs.find((run) => run.userMessageId === message.id && !run.assistantMessageId)?.status ?? null}
           canRestore={message.id === lastRetryableMessageId}
           showFollowups={message.id === latestAssistantId}
           followupsDisabled={companion.turn !== null && !companion.turn.initiative}
           onFollowup={(prompt) => { void sendTurn(prompt) }}
-          delivery={index === lastAssistant(companion.messages) && edit ? { noteId: edit.noteId, title: titleOf(edit.noteId), summary: edit.summary, at: edit.at } : null}
+          delivery={receipt ? { noteId: receipt.noteId, title: titleOf(receipt.noteId), summary: receipt.summary, at: receipt.at } : null}
         />
-      ))}
-      {companion.turn && (!companion.turn.initiative || companion.turn.text) && <LiveRow turn={companion.turn} tools={companion.tools} />}
+        {orphanedProcess && message.runId && <RunProcess runId={message.runId} />}
+        </Fragment>
+      )})}
+      {companion.turn && (!companion.turn.initiative || companion.turn.visible) && <>
+        {!firstAssistantByRun.has(companion.turn.runId) && <RunProcess key={companion.turn.runId} runId={companion.turn.runId} />}
+        {(companion.turn.text || !companion.runProcesses[companion.turn.runId]?.rows.length) && <LiveRow turn={companion.turn} />}
+      </>}
       {companion.proposals.map((card) => (
         <ProposalCard key={card.proposalId} card={card} />
       ))}
@@ -109,7 +111,10 @@ export function ThreadChat() {
           ))}
         </div>
       )}
+      </div>
     </section>
+    {!following && <button className="thread-latest" type="button" onClick={jumpToLatest}><Icon name="arrow-right" />回到最新</button>}
+    </>
   )
 }
 
@@ -169,7 +174,7 @@ function MessageRow({ message, delivery, outcome, canRestore, showFollowups, fol
     const state = messageOutcome(outcome)
     const retryable = Boolean(state?.retry && canRestore && text.trim() && message.blocks.every((block) => block.type === 'text'))
     return (
-      <article className="message mine">
+      <article className="message mine" data-message-id={message.id}>
         {message.blocks.some((block) => block.type === 'image') && <MessageContent blocks={message.blocks.filter((block) => block.type === 'image')} />}
         <div className="user-bubble">{text}</div>
         {state && (
@@ -183,7 +188,7 @@ function MessageRow({ message, delivery, outcome, canRestore, showFollowups, fol
   }
   if (message.role === 'system') return <p className="status-inline">{text}</p>
   return (
-    <article className="message">
+    <article className="message" data-message-id={message.id}>
       <div className="message-meta">
         <span>伴星</span>
         <span>{clock(message.createdAt)}</span>
@@ -204,27 +209,20 @@ function MessageRow({ message, delivery, outcome, canRestore, showFollowups, fol
   )
 }
 
-function LiveRow({ turn, tools }: { turn: NonNullable<CompanionState['turn']>; tools: CompanionState['tools'] }) {
-  const running = tools.filter((item) => item.status === 'running' || item.status === 'waiting_confirmation')
+function LiveRow({ turn }: { turn: NonNullable<CompanionState['turn']> }) {
   return (
     <article className="message" data-phase={turn.phase}>
       <div className="message-meta">
         <span>伴星</span>
-        <span>{turnLine(turn)}</span>
+        <span role="status">{turnLine(turn)}</span>
       </div>
-      {turn.text ? <p className="assistant-text">{turn.text}</p> : <p className="line-think" aria-hidden="true"><i /><i /><i /></p>}
-      {running.length > 0 && <p className="status-inline">{running[0]!.safeLabel}</p>}
+      {turn.text ? <DialogueMarkdown text={turn.text} /> : !turn.thinkingText && <p className="line-think" aria-hidden="true"><i /><i /><i /></p>}
       {turn.gapped && <p className="status-inline">这一段中间缺了一截，正在整段重读。</p>}
     </article>
   )
 }
 
-function lastAssistant(messages: CompanionState['messages']): number {
-  for (let index = messages.length - 1; index >= 0; index -= 1) if (messages[index]?.role === 'assistant') return index
-  return -1
-}
-
-function useNoteTitle(noteId: string | undefined): (id: string) => string {
+function useNoteTitle(): (id: string) => string {
   const notes = useNotes()
   return useMemo(() => {
     const byId = new Map(notes.list.items.map((item) => [item.id, item.title]))

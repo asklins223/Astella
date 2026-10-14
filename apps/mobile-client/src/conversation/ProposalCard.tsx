@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { companionApi } from '../platform/api.ts'
-import { decide, type ProposalCard as Card } from '../state/companion.ts'
+import { decide, retryProposalDetails, type ProposalCard as Card } from '../state/companion.ts'
 import { Icon } from '../app/icons.tsx'
 
 interface Review {
@@ -86,7 +86,11 @@ export function ProposalCard({ card }: { card: Card }) {
         )}
       </div>
       {error && <p className="status-inline">{error}</p>}
-      {!card.payloadSha256 && !settled && <p className="status-inline">正在核对这一份说明…</p>}
+      {!card.payloadSha256 && !settled && <div className="status-inline">确认前需要取回这一份说明。<button type="button" disabled={loading} onClick={() => {
+        setLoading(true)
+        setError(null)
+        void retryProposalDetails(card.proposalId).then(ok => { if (!ok) setError('说明暂时没取到，请稍后再试。') }).finally(() => setLoading(false))
+      }}>{loading ? '正在核对…' : '重新核对说明'}</button></div>}
     </section>
   )
 }

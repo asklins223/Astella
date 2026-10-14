@@ -25,7 +25,8 @@ import { retrievePlaybookViews }
   from "../../../../workers/ai-worker/src/handlers/companion-playbooks.ts";
 import { createHash } from "node:crypto";
 import { upsertAgentMethodCandidate, adoptPendingPersonaForNewTurn, pendingPersonaProposalSources,
-  createAgentMethodStore, readAgentMethod, writeCompanionSelfNote, listCompanionSelfNotes, controlCompanionSelfNote } from "@astella/agent-host";
+  createAgentMethodStore, readAgentMethod, writeCompanionSelfNote, listCompanionSelfNotes, controlCompanionSelfNote,
+  recordCompanionAwareness } from "@astella/agent-host";
 import { closeDatabase as closeWorkerDatabase, withWorkerWorkspaceTransaction }
   from "../../../../workers/ai-worker/src/db.ts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
@@ -1037,33 +1038,39 @@ test("记事分层按资源容量整理，归档释放常驻位，重评时间�
   } finally { await f.cleanup(); }
 });
 
-test("持久唤醒消费一次，绕过普通反思间隔与三回合门；安静结束不再自行排队", async () => {
+test("到点的自己记事只消费一次：绕过普通反思间隔，唤醒走主动道，水位由真实入队清掉", async () => {
   const f = await fixture(), scope = { workspaceId: f.workspaceId, userId: f.userId };
-  let calls = 0;
-  const restore = reflectionModelFixture({ summary: "我暂时没有新的依据，不用改变。" }, messages => {
-    calls++; assert.match(String(messages[0].content), /这次由你安排的记事 curiosity/);
-  });
   try {
     await admin`DELETE FROM companion_messages WHERE conversation_id=${f.conversationId} AND seq>2`;
     const note = await withWorkerWorkspaceTransaction(scope, tx => writeCompanionSelfNote(tx, scope,
       { ...ownNote("curiosity"), nextReviewAt: new Date(Date.now() + 3600_000).toISOString() }));
-    // Model-owned time is durable in the DB; no process-local timer is involved.
+    // 模型自己定的时间在库里，不靠进程内的计时器。
     await admin`UPDATE companion_self_notes SET next_review_at=now()-interval '1 minute'
       WHERE workspace_id=${f.workspaceId} AND user_id=${f.userId}`;
+    // 0427 之后，到点的记事只在**这个书房**还有新鲜在场租约时才被消费。
+    // 用宿主那侧同一个入口记这条事实（不是手插一行 JSON）：租约与生产读到的是同一份。
     const enqueue = () => withWorkerWorkspaceTransaction(scope, tx => tx.execute<{ count: number }>(sql`
       SELECT astella_enqueue_companion_self_wakes() AS count`));
-    assert.equal((await enqueue())[0].count, 1); assert.equal((await enqueue())[0].count, 0);
-    const [job] = await admin`SELECT id,payload FROM jobs WHERE workspace_id=${f.workspaceId} AND type='companion_reflection'`;
-    const leaseToken = randomUUID();
-    await admin`UPDATE jobs SET status='running',lease_token=${leaseToken},started_at=now() WHERE id=${job.id}`;
-    await runCompanionReflectionJob({ id: job.id, workspaceId: f.workspaceId, requestedBy: f.userId,
-      leaseToken, payload: job.payload });
-    assert.equal(calls, 1);
-    assert.equal((await f.readReflection())[0].decision, "no_change");
+    assert.equal((await enqueue())[0].count, 0, "人还没在这个书房里，到点也不该被吃掉");
+    assert.notEqual((await withWorkerWorkspaceTransaction(scope, tx => listCompanionSelfNotes(tx, scope)))[0].nextReviewAt, null,
+      "没消费成的一次不清水位");
+    await withWorkerWorkspaceTransaction(scope, tx => recordCompanionAwareness(tx, scope, {
+      version: 1, id: randomUUID(), appLaunchId: randomUUID(), deviceSessionId: "api-fixture:device",
+      host: "desktop", topic: "context.updated", occurredAt: new Date().toISOString(), elapsedMs: 0,
+      context: { foreground: true, unlocked: true, typing: false, learning: false,
+        participationAllowed: true, conversationId: null, page: null },
+    }));
+    assert.equal((await enqueue())[0].count, 1);
+    assert.equal((await enqueue())[0].count, 0, "同一次到点不重复排队");
+    // 0423 之后这支唤醒交给同一个 Agent（companion_initiative），不再是普通的后台反思道。
+    const [job] = await admin`SELECT id,payload,status FROM jobs WHERE workspace_id=${f.workspaceId}
+      AND type='companion_initiative' AND payload->>'selfNoteKey'='curiosity'`;
+    assert.ok(job, "到点的自己记事要真的排进主动参与队列");
+    assert.equal(job.status, "pending");
     const [current] = await withWorkerWorkspaceTransaction(scope, tx => listCompanionSelfNotes(tx, scope));
-    assert.equal(current.revision, note.revision); assert.equal(current.nextReviewAt, null);
-    assert.equal((await enqueue())[0].count, 0);
-  } finally { restore(); await f.cleanup(); }
+    assert.equal(current.revision, note.revision, "唤醒本身不推进记事版本");
+    assert.equal(current.nextReviewAt, null, "消费掉的那次水位已清，不会下一拍又来一遍");
+  } finally { await f.cleanup(); }
 });
 
 test("唤醒读取后用户停用，旧返回不能写身份或新记事", async () => {

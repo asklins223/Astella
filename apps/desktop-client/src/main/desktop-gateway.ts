@@ -209,7 +209,6 @@ import {
 import {
   companionAgentRoutesListResultV1Schema,
   companionRunNodesListResultV1Schema,
-  companionChatOpenThoughtResultV1Schema,
   companionChatEnsureResultV1Schema,
   companionChatListMessagesResultV1Schema,
   companionChatProposalDecideResultV1Schema,
@@ -227,8 +226,6 @@ import {
   type CompanionChatProposalGetResultV1,
   type CompanionChatSendTurnRequestV1,
   type CompanionChatSendTurnResultV1,
-  type CompanionChatOpenThoughtRequestV1,
-  type CompanionChatOpenThoughtResultV1,
   type CompanionChatCancelRunRequestV1,
   type CompanionChatCancelRunResultV1,
   companionChatCancelRunResultV1Schema,
@@ -667,7 +664,6 @@ export class DesktopGateway {
     options: {
       credentials?: SessionCredentialStore | null;
       guidanceAudioCache?: CompanionVoiceAudioCache;
-      thoughtAudioCache?: CompanionVoiceAudioCache;
       messageAudioCache?: CompanionMessageAudioCache;
       /**
        * 协同传输的实现。默认用真的 Hocuspocus provider；测试里换成假的，才能断言
@@ -708,7 +704,6 @@ export class DesktopGateway {
       connection,
       trust,
       options.guidanceAudioCache ?? null,
-      options.thoughtAudioCache ?? null,
       options.messageAudioCache ?? null,
     );
     this.bridge = new CompanionBridge(this.transport);

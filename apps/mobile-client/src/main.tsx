@@ -15,6 +15,10 @@ import './styles/demo/mobile-companion-centers.css'
 import './styles/demo/mobile-companion-scene.css'
 import './styles/demo/mobile-companion-theme.css'
 import './styles/app.css'
+import './styles/run-process.css'
+import './styles/motion.css'
+import './styles/page-refinements.css'
+import './styles/context-companion.css'
 import { App } from './app/App.tsx'
 
 // StrictMode 会把挂载跑两遍：伴星的画布与事件流都必须能在"挂—卸—再挂"下

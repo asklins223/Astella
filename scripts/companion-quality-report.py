@@ -369,7 +369,7 @@ def collect(since: str | None) -> dict:
     advance = echo = opener_repeat = seen = 0
     # 推进率按"这一轮有没有查过东西"分开算（理由见上面 bodies_raw 的注释）。
     by_class = {"tool": [0, 0], "chat": [0, 0]}  # [分母=答句数, 分子=带延续性的]
-    # JOIN 不上 run 的答句（主动念头落库那一类）不进任何一个分母：它们不是"回合的答句"，
+    # JOIN 不上 run 的答句不进任何一个分母：它们不是"回合的答句"，
     # 混进 chat 那档会把闲聊的推进率往下压，而这正是这次要分开的东西。
     no_run = 0
     prev_user = prev_opener = None
@@ -660,62 +660,21 @@ def collect(since: str | None) -> dict:
           {since_clause(since, 'e.created_at')};
     """)
 
-    # 「主动投递」以前数的是 `companion_proactive_deliveries`——那张表**没有任何 INSERT**
-    # （只有一个清理路径的 UPDATE、导出读、TTL 删），所以它恒 0，我拿着那个 0 说过
-    # "主动投递 = 0"。真实的主动投递走 `assistant_deliveries`
-    # （`payload_ref->>'systemEventId'` 以 `thought:` / `reminder:` / `run.completed:` 开头）。
-    #
-    # 两类分开数（方案 29 §9.61）：`thought:` 是她**自己想开口**（受按偏好的间隔管），
-    # `reminder:` / `run.completed:` 是**用户先要过或正在等的**（不进频率）。
-    # 混在一个数里就看不出"她话太少"还是"闹钟没响"——那是两个完全不同的故障。
+    # 只读保留用户已经约定或正在等待的提醒与运行完成回执；旧念想候选和送达历史不再查询。
     pro_rows = rows("""
         SELECT split_part(d.payload_ref->>'systemEventId', ':', 1) AS kind,
                coalesce(d.state, '-') AS state, count(*) AS n
         FROM assistant_deliveries d
         WHERE d.payload_ref->>'systemEventId' LIKE '%:%'
+          AND split_part(d.payload_ref->>'systemEventId', ':', 1) IN ('reminder', 'run.completed')
         GROUP BY 1, 2;
     """)
-
-    def pro_stats(kinds: tuple[str, ...]) -> dict[str, int]:
-        by_state = {r["state"]: int(r["n"]) for r in pro_rows if r["kind"] in kinds}
-        return {
-            "total": sum(by_state.values()),
-            # 与 worker 的节奏判定同一口径：displayed（露过）/ acted（点过）/ dismissed（划走）。
-            # 只数 displayed 会把点过的那条从分子里丢掉，两处口径一旦不同名就会互相打脸。
-            "seen": sum(by_state.get(state, 0) for state in ("displayed", "acted", "dismissed")),
-            "queued": by_state.get("queued", 0),
-        }
-
-    routine = pro_stats(("thought",))
-    triggered = pro_stats(("reminder", "run.completed"))
+    triggered_by_state = {r["state"]: int(r["n"]) for r in pro_rows}
     proactive = {
-        # 念头气泡：已送达 = 进过展示通道；queued 是"写好了但还没被人看见"。
-        "thought_deliveries": routine["total"],
-        "thought_displayed": routine["seen"],
-        "thought_queued": routine["queued"],
-        # 触发式：用户约好的提醒 + 他正在等的学习完成回执。
-        "triggered_deliveries": triggered["total"],
-        "triggered_displayed": triggered["seen"],
-        "triggered_queued": triggered["queued"],
-        # 候选为什么没变成气泡：状态分布就是抑制的账（§8.3 要的就是这一眼）。
-        "thought_status": {
-            r["status"]: int(r["n"]) for r in rows(
-                "SELECT status, count(*) n FROM assistant_thoughts GROUP BY 1;"
-            )
-        },
-        "thoughts": int(scalar("SELECT count(*) FROM assistant_thoughts;") or 0),
-        # 漏斗的后半段：送达≠被看见。`delivered` 只是"进了收件箱通道"，
-        # 真正决定体感的是 opened；过期没打开的那几条，用户根本没遇到过。
-        "thought_opened": int(scalar(
-            "SELECT count(*) FROM assistant_thoughts WHERE opened_at IS NOT NULL;"
-        ) or 0),
-        "thought_expired_unopened": int(scalar("""
-            SELECT count(*) FROM assistant_thoughts
-            WHERE opened_at IS NULL AND expires_at IS NOT NULL AND expires_at < now();
-        """) or 0),
-        "thought_jobs_dead": int(scalar("""
-            SELECT count(*) FROM jobs WHERE type='companion_thought' AND status='dead';
-        """) or 0),
+        "triggered_deliveries": sum(triggered_by_state.values()),
+        "triggered_displayed": sum(triggered_by_state.get(state, 0)
+                                    for state in ("displayed", "acted", "dismissed")),
+        "triggered_queued": triggered_by_state.get("queued", 0),
     }
 
     # ─── 系统视野问答：学习时长答对率（方案 §8.5）────────────────────────────
@@ -883,7 +842,7 @@ def collect(since: str | None) -> dict:
             "advance_tool_n": by_class["tool"][0],
             "advance_tool_rate": (round(by_class["tool"][1] / by_class["tool"][0], 3)
                                   if by_class["tool"][0] else 0),
-            # JOIN 不上 run 的答句（主动念头那一类），两个分母都不进，只报个数。
+            # JOIN 不上 run 的答句，两个分母都不进，只报个数。
             "advance_no_run_n": no_run,
             "echo_rate": round(echo / seen, 3) if seen else 0,
             "opener_repeat_rate": round(opener_repeat / seen, 3) if seen else 0,
@@ -1176,21 +1135,8 @@ def render(metrics: dict) -> None:
 
     print("\n【时延 / 主动性】方案 #8 #9")
     print(f"  首字 p50={ttft['p50']}ms p90={ttft['p90']}ms")
-    # 数字来源换了表（见 metrics 里的注释）：以前这个位置打的是
-    # `companion_proactive_deliveries` 的行数，而那张表没人写，所以它永远是 0，
-    # 我拿 0 当过结论。现在打的是真链路，并把"为什么 16 个候选只出去 3 条"摊开。
-    print(f"  念头气泡：送达 {pro['thought_deliveries']}（被看见过 {pro['thought_displayed']}"
-          f" / 排队待展示 {pro['thought_queued']}）  死掉的念头 job = {pro['thought_jobs_dead']}")
-    # 触发式（用户约好的提醒 + 他正在等的学习完成回执）单独一行：它不进频率闸，
-    # 所以"这一类一条都没送达"和"送达了但没人看见"是两种不同的坏，混在念头那一行里看不出来。
-    print(f"  触发式推送：送达 {pro['triggered_deliveries']}（被看见过 {pro['triggered_displayed']}"
-          f" / 排队待展示 {pro['triggered_queued']}）  ← 到点提醒与运行完成回执，不受频率管")
-    # 漏斗只给绝对数：n=3 的时候算百分比是演戏（这条会话里已经退掉过两个这类指标）。
-    print(f"  念头漏斗：候选 {pro['thought_status'].get('candidate', 0)} → 送达 {pro['thought_status'].get('delivered', 0)}"
-          f" → 被打开 {pro['thought_opened']}（过期没人看 {pro['thought_expired_unopened']}）"
-          "   ← 送达不等于被看见；应用没开时这一档必然全 0")
-    print(f"  念头状态分布 = {pro['thought_status']}"
-          "   ← candidate 堆着不动就是抑制在起作用（间隔/熟悉度/去重/静默时段）")
+    print(f"  约定提醒与运行完成回执：送达 {pro['triggered_deliveries']}"
+          f"（被看见过 {pro['triggered_displayed']} / 排队待展示 {pro['triggered_queued']}）")
 
 
 # ─── 逐闸台账（39d W1-2） ──────────────────────────────────────────────────
@@ -1253,10 +1199,7 @@ def gate_ledger(since: str | None) -> dict:
     ledger = {"window_days": replay.get("window_days"), "baseline": baseline, "changed_ratio": changed, "gates": {}}
     for gate, buckets in replay.get("buckets", {}).items():
         entries = replay.get("fired", {}).get(gate, [])
-        # G10／G11 的输入是念头气泡，不是对话轮——按 source 分开，别拿念头 id 去 join
-        # `companion_turn_runs`（那会静默得到 0 行，把"触发数"印成 0）。
         turn_ids = [item["run_id"] for item in entries if item.get("source") == "turn"]
-        thought_ids = [item["run_id"] for item in entries if item.get("source") == "thought"]
         turn_sql = ",".join("'" + value + "'" for value in turn_ids) or "''"
         cost = rows(f"""
             SELECT count(*) n, round(avg(r.step_count), 2) avg_steps,
@@ -1268,7 +1211,7 @@ def gate_ledger(since: str | None) -> dict:
         ledger["gates"][gate] = {"disposition": GATE_LEDGER_DISPOSITION_LABELS.get(
             raw_disposition, f"?（重放台未给出：{raw_disposition}）"),
                                 "buckets": buckets, "fired": cost,
-                                "fired_turns": len(turn_ids), "fired_thoughts": len(thought_ids)}
+                                "fired_turns": len(turn_ids)}
     return ledger
 
 
@@ -1282,13 +1225,12 @@ def render_gate_ledger(ledger: dict) -> None:
     print(f"  正文改变比例（哈希口径，A 类多步轮）= {ledger['changed_ratio']}")
     # `unknown` 一列必须有：重放台在没跑环境块重建时把 G3 判成"未知"（不许算成已覆盖），
     # 少了这一列，那一行会显示触发 N 而三格全 0，看着像"读数丢了"而不是"判据没跑"。
-    print(f"  {'闸':<4}{'去向':<7}{'触发':>5}{'（轮/念）':>10}{'covered':>9}{'rescued':>9}{'leak':>6}{'unknown':>8}"
+    print(f"  {'闸':<4}{'去向':<7}{'触发':>5}{'轮数':>8}{'covered':>9}{'rescued':>9}{'leak':>6}{'unknown':>8}"
           f"{'平均步':>8}{'平均ms':>8}")
     for gate in sorted(ledger["gates"], key=lambda g: int(g[1:])):
         entry = ledger["gates"][gate]
         stat, cost = entry["buckets"], entry["fired"]
-        total = entry["fired_turns"] + entry["fired_thoughts"]
-        split = f"{entry['fired_turns']}/{entry['fired_thoughts']}"
+        total = entry["fired_turns"]
         steps = "-" if not cost["n"] else str(cost["avg_steps"])
         millis = "-" if not cost["n"] else str(cost["avg_ms"])
         print(f"  {gate:<4}{entry['disposition']:<7}{total:>5}{split:>10}{stat['covered']:>9}"

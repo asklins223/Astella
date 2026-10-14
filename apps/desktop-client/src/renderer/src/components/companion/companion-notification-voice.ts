@@ -1,7 +1,7 @@
 import type { CompanionNotificationAudio } from "./companion-notifications";
 import { splitForSpeech } from "../../app/companion-speech-segments";
 
-export type NotificationVoicePurpose = "notification" | "guidance" | "thought";
+export type NotificationVoicePurpose = "notification" | "guidance";
 
 export interface NotificationVoiceHost {
   readonly available: () => boolean;
@@ -16,7 +16,6 @@ export type NotificationVoicePhase = "preparing" | "speaking" | "paused" | "fini
 const SYNTHESIS_DEADLINE_MS: Record<NotificationVoicePurpose, number> = {
   notification: 8_000,
   guidance: 20_000,
-  thought: 20_000,
 };
 let host: NotificationVoiceHost | null = null;
 let generation = 0;
@@ -95,12 +94,9 @@ export async function speakCompanionNotification(input: {
   active = playback;
   input.report("preparing");
   emit();
-  // 一句念想是一段话，不是一段音频：按句切开逐段取，每段各自命中本机缓存、各自合成。
-  // 于是 `COMPANION_VOICE_MAX_TEXT_LENGTH` 只管"一次请求回多少字节、该等多久"，
-  // 不再冒充"能念多少字"。带固定提示音的通知仍然就是那一条预制音频。
+  // Long notification text is split for the speech API's per-request size limit.
   const lines = input.clip ? [input.text] : splitForSpeech(input.text).map(segment => segment.text);
-  // 一次请求该等多久，只有一个源：背景提示 8 秒念不出来就该放弃；带路和念想是会反复
-  // 听的固定句（而且念一次就留在本机），值得等到 20 秒。
+  // Background notifications have a short deadline; reviewed guidance clips may take longer.
   const synthesizeDeadlineMs = SYNTHESIS_DEADLINE_MS[input.purpose ?? "notification"];
   let deadline: ReturnType<typeof setTimeout> | undefined;
   const within = <T>(promise: Promise<T>, ms: number, reason: string): Promise<T> => new Promise<T>((resolve, reject) => {

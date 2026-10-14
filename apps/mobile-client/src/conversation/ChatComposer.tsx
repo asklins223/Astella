@@ -14,8 +14,7 @@ import {
 import { useNotes } from '../state/notes.ts'
 import { Icon } from '../app/icons.tsx'
 import { startMobileRecording, type MobileRecording } from './audio-capture.ts'
-
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+import { companionImageError } from './image-intake.ts'
 
 /**
  * 输入区把照片、语音、文字收在一条路径里：语音先成为可编辑文字，确认后才发送。
@@ -254,12 +253,9 @@ export function ChatComposer() {
           const file = event.currentTarget.files?.[0]
           event.currentTarget.value = ''
           if (!file) return
-          if (!SOURCE_IMAGE_MIME_TYPES.includes(file.type as typeof SOURCE_IMAGE_MIME_TYPES[number])) {
-            setComposerError('暂不支持这种图片格式，请选 JPEG、PNG、GIF 或 WebP。')
-            return
-          }
-          if (file.size > MAX_IMAGE_BYTES) {
-            setComposerError('图片超过 10 MB，请压缩后再选。')
+          const issue = companionImageError(file)
+          if (issue) {
+            setComposerError(issue)
             return
           }
           setPendingImage(file)
@@ -301,6 +297,7 @@ export function ChatComposer() {
             <textarea
               id="chat-input"
               rows={1}
+              enterKeyHint="send"
               placeholder={composerPlaceholder(companion)}
               value={companion.draft}
               onChange={(event) => setDraft(event.target.value)}

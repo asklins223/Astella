@@ -107,6 +107,21 @@ export interface CompanionReplayWindowReceiptV1 {
    * 与摘要的 `uncovered` 同一个词：这一段由 `companion_read_history` 按 seq 取回。
    */
   uncoveredThroughSeq: string | null;
+  /**
+   * 整条比本轮窗口还长、这一轮带不走的那几条（正文**不剪**，只按 seq 指回原消息）。
+   *
+   * 没有这一笔时，读数上"少带了几条"和"一条超长把整段挤光"是同一个形状：
+   * 她从最新往回装，第一条塞不下就停，于是刚写完一篇长讲解之后那几轮，
+   * 她连自己上一句和用户的前几句都看不见（实测带回 0 条、2,048 tok 全空着）。
+   */
+  oversizedSkipped?: CompanionOversizedReplayEntryV1[];
+}
+
+export interface CompanionOversizedReplayEntryV1 {
+  seq: string | null;
+  role: "user" | "assistant";
+  /** 这一条自己的 token 读数（按同一条计量口径）。 */
+  tokens: number;
 }
 
 export interface CompanionReplayWindowSelection {
@@ -390,6 +405,12 @@ export function renderCompanionContextHandoff(snapshot: CompanionContextHandoffS
         + `更早的 ${snapshot.replayWindow.omittedCount} 条没有带走（不是没发生过）；`
         + `要用那一段就先按 seq 调用 companion_read_history 取回。`]
       : []),
+    // 整条比整个窗口还长的那几条单独点名：不点名的话，"我上一句到底说过什么"
+    // 在账本上没有任何痕迹，她会当成自己没说过（正文不剪进这里——剪过的字她会照着说）。
+    ...(snapshot.replayWindow?.oversizedSkipped ?? []).map(entry =>
+      `seq=${entry.seq ?? "?"} 那条${entry.role === "assistant" ? "是你自己发的长内容" : "是用户发的长内容"}`
+      + `（约 ${entry.tokens} tok，整条比本轮回放窗口还长），这一轮没带走正文——它说过，只是装不下；`
+      + `要谈那一段就按这个 seq 调用 companion_read_history 取回原文。`),
     serialized,
     "</continuation_data>",
   ].join("\n");
@@ -401,6 +422,11 @@ export function renderCompanionContextHandoff(snapshot: CompanionContextHandoffS
  * 装不下的那条连同更早的一起留下：回放是一段连续的对话，中间挖洞会把她自己上一句
  * 和用户下一句拆开。留下的仍然读得到——`companion_read_history` 按 seq 取回，
  * 所以少带不等于丢掉。短答「好。」是有效历史，不是那一轮用户话没成功的证据。
+ *
+ * 但"**整条塞不进整个窗口**"是另一回事：那种条按上面的规矩停住，等于让她刚写完
+ * 一篇长讲解之后的每一轮**一条原话都带不走**（实测带回 0 条、2,048 tok 全空着，
+ * 而她自己的长回复是常态输出：真实会话 531 条里有 7 条超过整个窗口，最长 3,494 tok）。
+ * 这一类不剪正文、也不挡住后面——记下 seq 指回原文，继续往前把装得下的带走。
  */
 export function selectCompanionReplayWindow(
   messages: readonly CompanionRecentHistoryMessage[],
@@ -409,13 +435,20 @@ export function selectCompanionReplayWindow(
   const countTokens = capacity.countTokens ?? estimateTextTokens;
   const visible = messages.filter(message => message.text.trim().length > 0);
   const taken: CompanionRecentHistoryMessage[] = [];
+  const oversizedSkipped: CompanionOversizedReplayEntryV1[] = [];
   let usedTokens = 0;
   let uncoveredThroughSeq: string | null = null;
   for (let index = visible.length - 1; index >= 0; index -= 1) {
     const message = visible[index]!;
     const cost = countTokens(message.text);
+    if (cost > capacity.maxInputTokens) {
+      // 这条自己就超整个窗口：谁能读到它由 seq 决定，不由本轮预算决定。
+      if (uncoveredThroughSeq === null) uncoveredThroughSeq = message.seq ?? null;
+      oversizedSkipped.unshift({ seq: message.seq ?? null, role: message.role, tokens: cost });
+      continue;
+    }
     if (usedTokens + cost > capacity.maxInputTokens) {
-      uncoveredThroughSeq = message.seq ?? null;
+      if (uncoveredThroughSeq === null) uncoveredThroughSeq = message.seq ?? null;
       break;
     }
     usedTokens += cost;
@@ -430,6 +463,7 @@ export function selectCompanionReplayWindow(
       takenCount: taken.length,
       omittedCount: visible.length - taken.length,
       uncoveredThroughSeq,
+      ...(oversizedSkipped.length > 0 ? { oversizedSkipped } : {}),
     },
   };
 }

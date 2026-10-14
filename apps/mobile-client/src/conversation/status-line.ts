@@ -11,7 +11,7 @@ export function companionLine(companion: CompanionState, detail = false): string
   if (companion.stream === 'connecting' || companion.stream === 'retrying') return '正在接上…'
   if (companion.stream === 'closed') return '连接已断开'
   const turn = companion.turn
-  if (turn && (!turn.initiative || turn.text)) return turn.statusLabel ?? PHASE_LABEL[turn.phase]
+  if (turn && (!turn.initiative || turn.visible)) return turn.statusLabel ?? PHASE_LABEL[turn.phase]
   return detail ? '陪你读' : '我在'
 }
 
@@ -19,7 +19,7 @@ const PHASE_LABEL: Record<NonNullable<CompanionState['turn']>['phase'], string> 
   waiting: '正在路上',
   thinking: '正在想',
   acting: '正在动手',
-  streaming: '在说',
+  streaming: '正在回复',
 }
 
 /** 活的那一轮还没落库，措辞从 phase 直接给。 */

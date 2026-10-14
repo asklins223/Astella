@@ -128,8 +128,7 @@ export interface ReadContext {
     examples: { text: string }[];
     /**
      * 活跃度与边界（方案 29 §3.3 / 抱怨 #2）。此前对话链路**根本不查这两列**——
-     * 它们只被念头调度器读，所以用户在设置里调的活跃度、勾的边界，对日常对话的
-     * 影响是字面意义的零。
+     * 它们现在同时用于普通对话与 Agent 主动交流，避免设置只影响一种入口。
      */
     activeness: PetProfileActiveness | null;
     boundaries: PetPersonaPresetBoundaries | null;
@@ -992,7 +991,7 @@ export async function enqueueCompanionMemoryJobs(
   }
   // 2026-09-22 实测：这条排队原来是"每个 run 排一次"（连续会话每轮都过 seq≥30），
   // 摘要器修好之后就变成**每轮**稳定烧 7.6 秒 / 6 932 token、并写一行新摘要。
-  // 改成按消息数分桶：同一段对话每满 40 条才摘一次，与 §9.61 念头排队的 bucket 同法。
+  // 改成按消息数分桶：同一段对话每满 40 条才摘一次，避免连续交流逐轮重复摘要。
   if (process.env.COMPANION_SUMMARIZER_V1 === "true" && args.messageSeq >= 30) {
     await tx.execute(sql`
       INSERT INTO jobs

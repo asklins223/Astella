@@ -21,7 +21,6 @@
   transform: translateX(-50%);
   pointer-events: none;
 }
-
 .companion-bubble::after {
   position: absolute;
   top: 100%;
@@ -70,111 +69,5 @@
   to {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
-  }
-}
-
-/* 念头气泡可点击态（切片④）：按钮自己站到气泡通道上，气泡在它内部转 static。
-   原来这两层是反的——absolute 的气泡挂在一个零内高、纯 block 的按钮里，按钮盒子
-   塌成 0×0（`scripts/companion-ui-css-probe.mjs` 实测：actor 0×0、可见中心的
-   `elementFromPoint` 命中到 `.desktop-app`、真点击不触发），于是"点开和她聊"
-   这条邀请最长挂 30 秒却一次都点不到。定位链现在归按钮，视觉皮肤仍归气泡。
-   祖先链整层是 `pointer-events:none`（`styles.css:352`），所以这里必须自己接回来。 */
-button.companion-cue-open {
-  position: absolute;
-  z-index: 6;
-  bottom: var(--companion-lane-bubble, calc(100% + 60px));
-  left: 50%;
-  display: block;
-  width: max-content;
-  max-width: min(280px, 36vw);
-  margin: 0;
-  padding: 0;
-  appearance: none;
-  border: none;
-  background: none;
-  font: inherit;
-  color: inherit;
-  text-align: inherit;
-  transform: translateX(-50%);
-  pointer-events: auto;
-  cursor: pointer;
-}
-
-button.companion-cue-open .companion-bubble {
-  position: relative;
-  bottom: auto;
-  left: auto;
-  width: 100%;
-  max-width: none;
-  transform: none;
-}
-
-button.companion-cue-open:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 3px;
-  border-radius: 24px;
-}
-
-.companion-cue-error {
-  position: absolute;
-  z-index: 7;
-  bottom: calc(100% - 24px);
-  left: 50%;
-  width: min(280px, 56vw);
-  padding: 9px 11px;
-  border: 1px solid var(--line, #d9d1c4);
-  border-radius: 12px;
-  background: var(--paper, #fffaf0);
-  color: var(--ink, #342c25);
-  box-shadow: 0 8px 24px rgb(30 24 15 / 16%);
-  font-size: 12px;
-  line-height: 1.5;
-  text-align: center;
-  transform: translateX(-50%);
-  pointer-events: auto;
-}
-
-.companion-cue-error button {
-  display: block;
-  margin: 5px auto 0;
-  padding: 3px 8px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.companion-cue-error button:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-
-/* 通道已经由按钮负责居中，气泡在这条链里只做竖直入场，不再重复 translateX。 */
-@media (prefers-reduced-motion: no-preference) {
-  button.companion-cue-open .companion-bubble[data-motion="full"],
-  button.companion-cue-open .companion-bubble[data-motion="lite"] {
-    animation-name: companion-bubble-in-in-place;
-  }
-}
-
-@keyframes companion-bubble-in-in-place {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* 窄窗口下的折行保护（与 `.companion-bubble` 那条同值，按容器改挂到按钮上）。 */
-@media (max-width: 1247px) {
-  button.companion-cue-open {
-    max-width: min(240px, 54vw);
   }
 }

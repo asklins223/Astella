@@ -4,14 +4,12 @@ import { sql } from "drizzle-orm";
 import { agentTurnInterpretationV1Schema } from "@astella/shared/agent-contracts";
 import { isCompanionAutonomousTool } from "@astella/shared/companion-autonomy";
 import { companionEditedNoteV1Schema } from "@astella/shared/companion-note-authoring-contracts";
-import { collectAgentCapabilitySceneGuidance } from "@astella/shared/agent-capability-catalog";
 import type { CompanionAgentLoopArgs } from "../contracts/companion-agent-loop.ts";
-import { executeTurn, composeAgentContext } from "@astella/agent-core";
+import { executeTurn } from "@astella/agent-core";
 import {
   auditHash,
   boundedToolCallIdentity,
   companionStepRequiresTool,
-  companionStepToolShape,
   ensureAgentToolCall,
   executeCompanionAgentTurnWithToolChoiceFallback,
   loadContinuation,
@@ -21,7 +19,6 @@ import {
   updateToolCall,
 } from "./companion-tool-call-ledger.ts";
 import {
-  AgentRole,
   COMPANION_AGENT_CONTRACT_VERSION,
   companionAgentCapabilitySnapshotV1Schema,
   COMPANION_AGENT_TOOL_LABELS,
@@ -48,7 +45,6 @@ import {
   joinVisibleSegmentsDeduped,
   VISIBLE_SEGMENT_SEPARATOR,
 } from "./companion-visible-segments.ts";
-import { companionContextAssemblyCapacity } from "./companion-context-receipts.ts";
 import { boundedStepSender } from "./companion-compaction.ts";
 import { compactActiveToolContext, createWorkingStateSummarizer } from "./companion-active-context-compaction.ts";
 import { renderPendingOffersAsRecords } from "./companion-context-handoff.ts";
@@ -76,6 +72,9 @@ import { companionToolFailureFaces } from "./companion-tool-failure-faces.ts";
 import { runCompanionToolExecution } from "./companion-tool-execution-run.ts";
 import { CompanionToolPreparation } from "./companion-tool-preparation.ts";
 import { companionExecutionPolicy } from "./companion-execution-policy.ts";
+import { repairDegenerateCompanionAnswer } from "./companion-answer-repair.ts";
+import { assembleCompanionStepRequest, companionStepPolicyText, companionStepToolSurface, companionWebSearchAllowedForStep } from "./companion-agent-step-assembly.ts";
+import { companionInitiativeInterpretationFields, renderCompanionInitiativeObservation } from "./companion-initiative-observation.ts";
 import { createdNoteToolResult, readCreatedNoteReceipt, userForbidsNoteLibraryRead } from "./companion-note-authoring.ts";
 import { EagerDispatchScheduler } from "./companion-eager-scheduler.ts";
 import {
@@ -133,7 +132,9 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   const agentBudget = resolveCompanionAgentBudget();
   const handlerDeadlineAt = handlerStartedAtMs + agentBudget.loopDeadlineMs;
   const configuredBudget = companionExecutionPolicy();
-  const budget = args.read.initiativeInput ? { ...configuredBudget, maxSteps: Math.min(configuredBudget.maxSteps ?? 8, 8) } : configuredBudget;
+  // 主动参与不再自带一份写死的步数闸（2026-10-13 用户决定：Agent 不设硬上限）。
+  // 失控收敛由同一份执行政策的时间与步数声明负责，不按"这是她自己发起的"另开一档。
+  const budget = configuredBudget;
   const contractDeadlineAt = attemptStartedAt + (budget.deadlineMs ?? Infinity) - meta.elapsedMs;
   const deadlineAt = Math.min(handlerDeadlineAt, contractDeadlineAt);
   if (deadlineAt <= attemptStartedAt) {
@@ -177,10 +178,9 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   // 她会一脸无辜地答"我手上没有这个入口"，用户看到的是她突然不会用工具，而不是账号状态有问题。
   if (availableDefinitions.length === 0)
     throw new Error(`companion tool surface resolved empty for permission "${String(meta.permissionLevel)}"`);
-  const cachedInterpretation = args.read.initiativeInput ? agentTurnInterpretationV1Schema.parse({
-    version: 1, requestHash: attentionRequestHash, intent: "question", toolUse: "uncertain", subjects: [],
-    goalRelation: "unrelated", goalReference: null, candidateOperations: [], ambiguities: [], status: "interpreted",
-  }) : writingAnnotation ? agentTurnInterpretationV1Schema.parse({
+  const cachedInterpretation = args.read.initiativeInput ? agentTurnInterpretationV1Schema.parse(
+    companionInitiativeInterpretationFields({ requestHash: attentionRequestHash, topic: args.read.initiativeInput.topic }))
+    : writingAnnotation ? agentTurnInterpretationV1Schema.parse({
     version: 1, requestHash: attentionRequestHash, intent: "task", toolUse: "act", subjects: [],
     goalRelation: "new", goalReference: null, candidateOperations: ["companion_write_annotation"], ambiguities: [], status: "interpreted",
   }) : meta.turnInterpretation?.requestHash === attentionRequestHash ? meta.turnInterpretation : null;
@@ -216,16 +216,25 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   const dialogueHistory = args.baseMessages
     .filter((message) => message.role !== "system")
     .map((message) => ({ role: message.role, content: message.content } as AgentMessage));
-  // In a new internal run, prior speech is historical data. Replaying the last
-  // assistant as this execution's live reasoning step makes thinking providers
-  // require handles from an entirely different run.
-  let messages = args.read.initiativeInput ? [] : [...dialogueHistory];
-  const currentRequest = args.read.initiativeInput
+  /**
+   * 主动参与按**对话**装配（2026-10-13）：历史就是真实的 user/assistant 回合，宿主报告的时刻
+   * 是一条带 hostObservation 的 system 观察消息，排在历史之后。原来这两样被压成一个 JSON 块、
+   * 历史塞进 `recentDialogue` 字段，她读到的是"关于这段聊天的材料"，接不出上一句是谁说的、
+   * 隔了多久——那正是"像个人一样接着聊"最需要的两层。
+   *
+   * 回放的是 role+content 两份纯文本（`companion-context-handoff.ts:312` 已经把工具与思考句柄
+   * 剥掉），不带上一轮运行的句柄；观察消息压在末尾，避免出现"以 assistant 结尾"的那一类
+   * provider 要求。跨运行句柄的旧错误来自把上一轮当本轮草稿，不是来自历史本身。
+   */
+  let messages = [...dialogueHistory];
+  const initiativeObservation = args.read.initiativeInput
     ? { role: "system" as const, hostObservation: true as const,
-      content: JSON.stringify({ ...args.read.initiativeInput, recentDialogue: dialogueHistory }) }
-    : [...messages].reverse().find((message) => message.role === "user");
+      content: renderCompanionInitiativeObservation(args.read.initiativeInput) }
+    : null;
+  const currentRequest = initiativeObservation
+    ?? [...messages].reverse().find((message) => message.role === "user");
   if (!currentRequest) throw new Error("companion turn is missing its current user request");
-  if (args.read.initiativeInput) messages.push(currentRequest);
+  if (initiativeObservation) messages.push(initiativeObservation);
 
   /**
    * 两条投机（闲聊形状 + 提问形状）现在就出发，分类器不等。发与收的细节、
@@ -332,11 +341,11 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
   /**
    * 这一轮开不开思考（判据与理由见 `companion-turn-thinking`）：**整轮定一次**，
    * 不在每个 step 重算——闲聊轮的每一步都该是同一档，否则工具回来看一眼又变慢。
+   *
+   * 主动参与不再按事件名另开一档：招呼与陪着说话是 conversation 语域，走的正是
+   * 「闲聊关思考」这条现役规则；答后再看一眼和页面帮助是提问档，该开就开。
    */
-  const lightweightInitiative = args.read.initiativeInput && ["app.started", "reply.finished"].includes(args.read.initiativeInput.topic);
-  const turnThinking = lightweightInitiative
-    ? { disableThinking: true, basis: `initiative:${args.read.initiativeInput!.topic}` }
-    : companionTurnThinking(attention);
+  const turnThinking = companionTurnThinking(attention);
   const responseStrategy = companionResponseStrategy(attention);
   // 这是调用意图，不是上游实际消耗：不支持 none 的模型仍使用最低思考档。
   logger.info({ runId: args.read.runId, requestedDisableThinking: turnThinking.disableThinking,
@@ -510,66 +519,48 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     // tool can never be proposed on the final step, so a confirmation always
     // leaves at least one step to report the result back.
     const finalAnswerOnly = stepCount >= stepBudget;
-    /**
-     * 这一步的工具面与 `tool_choice`，**成对**算出来（判据在 `companionStepToolShape`：
-     * `tools: []` 配 `required` 是 provider 直接 400 的那一对，2026-09-22 实测 3 次
-     * INTERNAL_ERROR 里 2 次是它）。
-     */
-    const { tools: toolsOfferedThisStep, toolChoice: toolChoiceThisStep } = companionStepToolShape({
-      tools: toolDefinitions.filter(tool => tool.name !== "agent_web_search"
-        || (currentMeta.webSearchEnabled === true && event.constraints.webSearchEnabled === true
-          && (budget.maxWebSearchCalls == null || webSearchCalls < budget.maxWebSearchCalls) && webSearchServiceAvailable())),
+    // 工具面、执行政策与请求装配这三样的判据在 `companion-agent-step-assembly.ts`。
+    const { tools: toolsOfferedThisStep, toolChoice: toolChoiceThisStep } = companionStepToolSurface({
+      toolDefinitions,
+      webSearchAllowedForStep: companionWebSearchAllowedForStep({
+        accountEnabled: currentMeta.webSearchEnabled === true,
+        constraintsEnabled: event.constraints.webSearchEnabled === true,
+        limit: budget.maxWebSearchCalls,
+        used: webSearchCalls,
+      }),
       finalAnswerOnly,
       requiresTool: userRequiresTool,
       toolCallCount,
     });
-    const runtimePolicy = companionStepRuntimePolicy({
+    const runtimePolicy = companionStepPolicyText({
       permissionLevel: currentMeta.permissionLevel,
       toolCount: toolDefinitions.length,
       stepBudget,
       finalAnswerOnly,
       attentionIntent: attention.intent,
-      // 按这一步真的发下去的工具面取场景指引（`toolsOfferedThisStep` 已经是
-      // 收起过工具的那一份，所以终答步不会还背着编辑规程）。
-      sceneGuidance: collectAgentCapabilitySceneGuidance(
-        toolsOfferedThisStep.map((tool) => tool.name), currentMeta.permissionLevel),
-    }) + (writingAnnotation ? "\n用户从原句发起了伴星解释。必须用 companion_write_annotation 独立写入完整解释；聊天正文不会保存成解释。原句身份已绑定，不需要再确认。需要上下文可以先读；完整写入即交付，final 默认 true，界面据保存回执立即结束。可以在同一次输出简短交流，不要在后续模型步骤重复解释或确认写完。只有用户要求的其他工作尚未完成时设 final=false。批注正文不带方言、语音标签、聊天前言或执行说明。" : completeNoteReply ? "\n这轮正文会完整保存为笔记学习内容。用连续最终正文完整交付，不使用分句发言工具；前言和执行说明不能代替解释，不能只给一段等待后补。" : "");
+      offeredToolNames: toolsOfferedThisStep.map((tool) => tool.name),
+      writingAnnotation,
+      completeNoteReply,
+    });
     /**
      * 第一步可能已经有现成的：投机的闲聊版（见上面的 speculative）。
      * 分类器确认没有需要改写历史或补入注意力对象的内容，才复用这版闲聊请求。
      */
     const prefetched = prefetchedFirstStep !== null && stepCount === resumedStepCount + 1 ? prefetchedFirstStep : null;
     if (prefetched) prefetchedFirstStep = null;
-    const stepContextSources = new Map([
-        ["turn", { scope: { kind: "policy" as const }, content: typeof args.baseMessages[0]?.content === "string" ? args.baseMessages[0].content : "" }],
-        ["execution", { scope: { kind: "policy" as const }, content: [runtimePolicy, responseStrategy.guidance].filter(Boolean).join("\n") }],
-        ["attention", { scope: { kind: "request" as const }, content: "本轮注意力解释仅是待核对的数据，不授予执行权限。歧义影响真实资料读取或操作目标时先核对对象，不猜测修改；闲聊话题和称呼不要求业务对象身份。reference 为 null 不代表已经查询过或查询失败，不把内部分类和对象匹配过程念给用户。voiceStyle.decision 是本轮声音语义结果：apply 时宿主把 instruction 直接交给 TTS，none 时跟随账号已保存的方言偏好和默认声音，clarify 时先向用户问清楚。voiceStyle.persistentPreference 只记录用户明确要求的长期默认；临时切换必须 keep。voicePreferenceWrite 是宿主写入回执，只有 saved/unchanged 才能确认已记住，failed 时须如实说明。\n<current_turn_interpretation_data>"
-          + JSON.stringify(attention).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e") + "</current_turn_interpretation_data>" }],
-      ]);
-    let stepRequest: AgentTurnRequest = prefetched?.request ?? {
-      role: AgentRole.COMPANION_AGENT,
-      systemPrompt: composeAgentContext({ maxCharacters: companionContextAssemblyCapacity([...stepContextSources.values()].map(source => source.content)), sources: [
-        { id: "turn", authority: "policy", required: true },
-        { id: "execution", authority: "policy", required: true },
-        { id: "attention", authority: "data", required: true },
-      ] }, stepContextSources).systemPrompt,
+    let stepRequest: AgentTurnRequest = assembleCompanionStepRequest({
+      turnPolicy: typeof args.baseMessages[0]?.content === "string" ? args.baseMessages[0].content : "",
+      runtimePolicy,
+      executionGuidance: responseStrategy.guidance,
+      attention,
       messages,
       tools: toolsOfferedThisStep,
       toolChoice: toolChoiceThisStep,
       disableThinking: turnThinking.disableThinking,
-      /**
-       * 这一步能说多少，**只由模型档案声明的输出上限**决定（2026-10-07 用户决定：
-       * 这是 agent，不是单轮 chat，代码里不许留一个会把话砍断的小数）。
-       *
-       * 旧值 2000/4000 是 2026-09-19 为「思考吃满预算」抬上来的，本质仍是拍脑袋的数：
-       * 它同时是终答的天花板，长解释、读图后的长转述、带路里的多段话都会说到一半停。
-       * provider 自己会按 `maxOutputTokens` 夹一次（见 opencode-go / openai-compatible），
-       * 所以这里传档案声明的值就是"要多少给多少，模型自己收口"。
-       * 未声明档案的 provider（mock、旧配置）走 `COMPANION_STEP_OUTPUT_FALLBACK_TOKENS`。
-       */
-      maxTokens: companionStepOutputCeiling(args.provider),
+      provider: args.provider,
       temperature: responseStrategy.temperature,
-    };
+      prefetchedRequest: prefetched?.request ?? null,
+    });
     const stepId = await persistStep(event, stepCount, auditHash(stepRequest));
     const preparation = new CompanionToolPreparation(definitions.filter(definition =>
       toolsOfferedThisStep.some(tool => tool.name === definition.name)), async (tool, definition, status) => {
@@ -918,83 +909,18 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         return { kind: "settled", result: { status: "completed", text: "", blocks: richBlocks, memoryRefs: [] } };
       }
     }
-    // 退化回复闸（2026-09-20 重写）：正文短得不正常、**这一步一个字都没真正下发**、
-    // 模型也没要调工具——换**另一个模型**把这一步重跑一次，取更长者。
-    //
-    // 此前它形同虚设，两个原因：
-    //   1. 判据 `!stepEmitted` 在流式路径恒不成立（吐过字就置位），实机连续四轮
-    //      落库 `现在是`(3)/`今天`(2)/`最近`(2)/`你`(1) 全是流式，闸一次没拦；
-    //      现在 `onTextEmitted` 只在**真的下发**时触发（见 holdUntilChars），语义回到位。
-    //   2. `currentUserPromptLen >= 8` 把"哈哈"这类短输入整个排除，而那正是坍缩最
-    //      严重的地方。去掉它——反正每轮至多重跑一次，最坏成本一次调用。
-    // 重跑若带回工具调用则弃用（那是要走工具循环的信号，不是能直接落库的正文）。
-    const canRepair = typeof args.fallbackProvider?.executeAgentTurn === "function";
-    if (
-      canRepair
-      && !degenerateRetried
-      && calls.length === 0
-      && !stepEmitted
-      && Date.now() < deadlineAt
-      && typeof result.content === "string"
-      && companionReplyIsTruncated(result.content)
-    ) {
-      degenerateRetried = true;
-      // 每一级都用同一条线判"还是半截话吗"，字数线按用户配置的活跃度取。
-      // 降级阶梯（方案 29 §9.6）：只换**另一个模型/provider**——实测主模型退化窗口里
-      // 同模型重跑同样会退化（连着两次都吐半截话），唯一有效的是换一个模型。
-      const repairLadder: Array<{ label: string; provider: AIProvider }> = [];
-      if (args.fallbackProvider) repairLadder.push({ label: "fallback-model", provider: args.fallbackProvider });
-      logger.warn(
-        {
-          runId: args.read.runId,
-          stepCount,
-          chars: result.content.trim().length,
-          ladder: repairLadder.map((step) => step.label),
-        },
-        "companion agent produced a degenerate answer; walking the repair ladder",
-      );
-      for (const rung of repairLadder) {
-        if (Date.now() >= deadlineAt) break;
-        // 已经拿到结构完整的答案就停——不为"更长"再花一次调用。
-        if (!companionReplyIsTruncated(String(result.content ?? ""))) break;
-        try {
-          const retryTimeoutMs = Math.min(resolveProviderCallTimeout("companion_agent"), Math.max(1, deadlineAt - Date.now()));
-          const retryRequest = { ...stepRequest,
-            maxTokens: Math.min(stepRequest.maxTokens, companionStepOutputCeiling(rung.provider)) };
-          const retryResult = await runWithAbortBudget(
-            (signal) => runModelStepTask(
-              rung.provider,
-              retryRequest,
-              signal,
-              (taskSignal) => rung.provider.executeAgentTurn!(retryRequest, taskSignal),
-              retryTimeoutMs,
-            ),
-            args.ctx.signal,
-            retryTimeoutMs,
-          );
-          const retryCalls = retryResult.toolCalls ?? [];
-          const retryText = typeof retryResult.content === "string" ? retryResult.content.trim() : "";
-          // 重跑值不值：**结构上补全了**就算值，哪怕只多一个字。实机退化形态是
-          // `今天已经学了1` → `今天已经学了18分钟啦`，长度差不到 10 字，
-          // 但前者是个说了一半的句子。只比长度会把这种修复判成"没变好"而丢掉。
-          const retryIsWhole = retryText.length > 0 && !companionReplyIsTruncated(retryText);
-          const retryIsLonger = retryText.length > String(result.content ?? "").trim().length;
-          if (retryCalls.length === 0 && (retryIsWhole || retryIsLonger)) {
-            logger.info(
-              { runId: args.read.runId, stepCount, rung: rung.label, chars: retryText.length, whole: retryIsWhole },
-              "companion degenerate-answer repair rung produced a better answer",
-            );
-            result = retryResult;
-            calls = retryCalls;
-          }
-        } catch (retryError) {
-          logger.warn(
-            { err: retryError, stepCount, rung: rung.label },
-            "companion degenerate-answer repair rung failed; trying the next one",
-          );
-        }
-      }
-    }
+    // 修复阶梯的判据与日志在 companion-answer-repair.ts（本轮之前它和循环缠在一起，
+    // 58 条运行时用例一条都没盯到这条降级路径）。
+    const repair = await repairDegenerateCompanionAnswer({
+      result, calls, stepRequest, stepEmitted, alreadyRetried: degenerateRetried,
+      deadlineAt, stepCount, runId: args.read.runId,
+      fallbackProvider: args.fallbackProvider, ctxSignal: args.ctx.signal, isTruncated: companionReplyIsTruncated,
+      invokeProvider: ({ provider, request, signal, timeoutMs }) => runModelStepTask(
+        provider, request, signal, taskSignal => provider.executeAgentTurn!(request, taskSignal), timeoutMs),
+    });
+    result = repair.result;
+    calls = repair.calls;
+    degenerateRetried = repair.retried;
     // Repair incomplete drafts first. Every surviving explanation then takes
     // complete delivery guards; a repaired draft cannot bypass them.
     if (result.finishReason === "length") {
@@ -1527,7 +1453,6 @@ export { readLatestPageContextRow };
 import {
   buildCompanionStepCorrectionInstruction,
   companionStepCorrectionMessages,
-  companionStepRuntimePolicy,
   reviewCompanionStepCorrection,
   stepHoldChars,
   type CompanionAgentLoopResult,

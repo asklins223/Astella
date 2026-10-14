@@ -25,6 +25,16 @@ test("help requires a domain fact; long dwell alone has no difficulty flag", () 
   assert.equal(companionAwarenessObservationV1Schema.safeParse(observation).success, false);
   assert.equal(companionAwarenessObservationV1Schema.safeParse({ ...observation, evidence: { domain: "source", entityId: "id", revision: "1", description: "本次解析失败，有重新解析入口。" } }).success, true);
 });
+test("quiet presence requires an observed foreground, allowed, non-typing duration", () => {
+  const observation = { version: 1, id: randomUUID(), deviceSessionId: "browser:session", appLaunchId: randomUUID(), host: "browser",
+    topic: "presence.quiet", occurredAt: new Date().toISOString(), elapsedMs: 15_000,
+    context: { foreground: true, unlocked: true, typing: false, learning: false, quietForMs: 180_000,
+      conversationId: null, page: null } };
+  assert.equal(companionAwarenessObservationV1Schema.safeParse(observation).success, true);
+  assert.equal(companionAwarenessObservationV1Schema.safeParse({ ...observation, context: { ...observation.context, foreground: false } }).success, false);
+  assert.equal(companionAwarenessObservationV1Schema.safeParse({ ...observation, context: { ...observation.context, typing: true } }).success, false);
+  assert.equal(companionAwarenessObservationV1Schema.safeParse({ ...observation, context: { ...observation.context, quietForMs: undefined } }).success, false);
+});
 test("initiative source has its own identity, and speech/silence have explicit events", () => {
   const input = { version: 1, kind: "initiative", preparationJobId: randomUUID(), observationId: randomUUID(), attentionKey: null, attentionRevision: null,
     preferenceRevision: 1, parentRunId: null, deviceSessionId: "desktop:launch:window", topic: "app.started", intent: "接住启动问候", facts: {} };

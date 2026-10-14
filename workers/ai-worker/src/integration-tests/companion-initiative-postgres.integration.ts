@@ -109,7 +109,7 @@ test("content-page help and learning review are built in without personal prefer
     WHERE j.requested_by=${study.userId} AND j.type='companion_initiative' AND o.topic='study.started'`).length,1);
 });
 
-test("ordinary user prose persists across workspaces, has CAS/history, and another user cannot read it", async () => {
+test("ordinary user prose persists across workspaces, has CAS/history, and another user cannot read it", async (t) => {
   const f = await fixture(), other = await fixture();
   const saved = await prefs(f, "学久了提醒我走走；重新打开没看懂的笔记先帮我回忆。");
   assert.equal(saved.revision, 1);
@@ -119,7 +119,26 @@ test("ordinary user prose persists across workspaces, has CAS/history, and anoth
   const otherScope = { ...f, workspaceId: anotherWorkspace };
   assert.equal((await transaction(otherScope, tx => readParticipationPreferences(tx, otherScope))).markdown, saved.markdown);
   assert.equal((await transaction(other, tx => readParticipationPreferences(tx, other))).markdown, "");
-  assert.equal((await transaction(other,tx=>tx.execute(sql`SELECT 1 FROM companion_participation_preferences WHERE user_id=${f.userId}`))).length,0);
+  /**
+   * 「别人读不到本人偏好」必须在**受限角色**连接上验：本仓库的夹具走的是超户串，
+   * 超户绕过 RLS，查不到行不等于策略生效，查得到也不等于越权（前一轮就因此
+   * 在超户配置下假红、在受限配置下假绿）。用 `scripts/dev-disposable-db.sh` 打印的
+   * `RLS_TEST_API_DATABASE_URL` 跑真角色；没有它就明说这一条没验到。
+   */
+  const apiRoleUrl = process.env.RLS_TEST_API_DATABASE_URL?.trim();
+  if (!apiRoleUrl) t.diagnostic("未设 RLS_TEST_API_DATABASE_URL：跳过跨用户 RLS 那条断言（超户连接验不出策略）");
+  else {
+    const apiRole = postgres(apiRoleUrl, { max: 1 });
+    try {
+      await apiRole`SELECT set_config('app.workspace_id', ${other.workspaceId}, false)`;
+      await apiRole`SELECT set_config('app.user_id', ${other.userId}, false)`;
+      assert.equal((await apiRole`SELECT 1 FROM companion_participation_preferences WHERE user_id=${f.userId}`).length, 0,
+        "受限角色下别人还是读到了本人的相处偏好");
+      await apiRole`SELECT set_config('app.user_id', ${f.userId}, false)`;
+      assert.equal((await apiRole`SELECT markdown FROM companion_participation_preferences WHERE user_id=${f.userId}`).length, 1,
+        "本人这一侧还是读不到自己的相处偏好");
+    } finally { await apiRole.end({ timeout: 2 }); }
+  }
   await assert.rejects(() => prefs(f, "修改", 0), /刚刚有变化/);
   const rows = await admin`SELECT revision FROM companion_participation_preference_versions WHERE user_id=${f.userId}`;
   assert.equal(rows.length, 1);
@@ -257,12 +276,13 @@ for (const userInitiated of [false, true]) test(`the same agent publishes real u
   const stream = Object.getOwnPropertyDescriptor(MockProvider.prototype, "chatCompletionStream")!;
   let step = 0;
   MockProvider.prototype.executeAgentTurn = async request => {
-    if (step === 0) assert.equal(request.messages.some(m => m.role === "user"), userInitiated);
     if (step === 0 && !userInitiated) {
+      // 主动那一轮没有新的用户话语：宿主观察压在末尾，她后面再没有「刚进来的那句用户话」可答。
+      // 过去几轮的 user/assistant 原文照样回放——那是她要接着聊的那段交流本身。
       const observation = request.messages.at(-1)!;
       assert.equal(observation.role, "system");
       assert.equal(observation.hostObservation, true);
-      assert.equal(JSON.parse(String(observation.content)).kind, "initiative");
+      assert.match(String(observation.content), /这不是他发来的话/);
     }
     step++;
     assert.equal(step, 1, "A batch of complete utterances must finish without an extra provider request");
@@ -380,7 +400,7 @@ test("ordinary complete answer is one message; a useful later thought uses an in
   await prepare(f);
   const child = await runPrepared(f,async request => {
     const observation = request.messages.at(-1)!;
-    assert.equal(JSON.parse(String(observation.content)).topic,'reply.finished');
+    assert.match(String(observation.content), /刚把用户那一轮答完/, "答后考虑要说清这是接着刚才那一轮");
     return { content: "", toolCalls: [{ id: "useful-new-thought", name: "companion_publish_utterance",
       arguments: { text: "有个容易误用的细节：这个延迟只是最早时间，主线程忙时回调会更晚执行。" } }],
       finishReason: "tool_calls", usage: { promptTokens: 10, completionTokens: 10 }, providerRequestId: null };
@@ -394,7 +414,7 @@ test("ordinary complete answer is one message; a useful later thought uses an in
   assert.equal(observations.length,1,'补充不能给自己再安排一轮补充');
 });
 
-test("previous assistant speech stays historical data at an internal execution boundary", async () => {
+test("an internal execution reads the exchange as a conversation, with the host event last", async () => {
   const f = await fixture();
   await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,content_sha256)
     VALUES(${randomUUID()},${f.workspaceId},${f.userId},${f.conversationId},1,'assistant','text',
@@ -402,12 +422,22 @@ test("previous assistant speech stays historical data at an internal execution b
   await admin`UPDATE companion_conversations SET next_message_seq=2 WHERE id=${f.conversationId}`;
   await prefs(f, "有值得补充的新内容再说。"); await observe(f); await prepare(f);
   const run = await runPrepared(f, async request => {
-    assert.equal(request.messages.some(message => message.role === "assistant" || message.role === "user"), false);
+    // 她要说的是「接着刚才」，所以刚才那句得是真实的一轮，不是报表里的一个字段。
+    const spoken = request.messages.filter(message => message.role === "assistant");
+    assert.equal(spoken.length, 1, "已发布的发言按真实消息回放");
+    assert.match(String(spoken[0]!.content), /上次已经解释过递归的终止条件/);
+    // 但它不是本轮的草稿：观察压在末尾，回放的消息不带上一轮的工具与思考句柄。
     const observation = request.messages.at(-1)!;
+    assert.equal(observation.role, "system");
     assert.equal(observation.hostObservation, true);
-    const source = JSON.parse(String(observation.content));
-    assert.ok(source.recentDialogue.some((message: { role: string; content: string }) =>
-      message.role === "assistant" && message.content.includes("递归的终止条件")));
+    for (const message of request.messages) {
+      assert.equal((message as { toolCalls?: unknown }).toolCalls, undefined, "跨运行的工具句柄不能拼进新的原生工具轮");
+      assert.equal((message as { reasoning?: unknown }).reasoning, undefined, "跨运行的思考句柄不能拼进新的原生工具轮");
+    }
+    const text = String(observation.content);
+    assert.match(text, /这不是他发来的话/, "她要知道这不是用户又发了一句");
+    for (const plumbing of ["preparationJobId", "recentDialogue", "attentionRevision"])
+      assert.ok(!text.includes(plumbing), `宿主内部字段 ${plumbing} 不该出现在她的观察里`);
     return silentAnswer();
   });
   assert.equal((await admin`SELECT status FROM companion_turn_runs WHERE id=${run.id}`)[0]!.status,"succeeded");
@@ -429,4 +459,82 @@ test("a rejected attention revision has a known outcome and can be corrected by 
   assert.deepEqual(calls.map(call => call.status),["not_executed","succeeded"]);
   assert.equal((await admin`SELECT revision FROM companion_attention_plans WHERE user_id=${f.userId}`)[0]!.revision,1);
   assert.equal((await admin`SELECT status FROM companion_turn_runs WHERE id=${run.id}`)[0]!.status,"succeeded");
+});
+
+test("a due wake waits until she is actually at the app instead of burning itself", async () => {
+  const f = await fixture(); await prefs(f, "学久了提醒我走走。"); await observe(f); await prepare(f);
+  const [origin] = await admin`SELECT id FROM companion_turn_runs WHERE user_id=${f.userId}`;
+  await transaction(f, tx => arrangeCompanionAttention(tx, f, { key: "study-rest", expectedRevision: 0,
+    intent: "接着看这段前台学习够不够长，够就提醒起身。", topics: ["study.started"],
+    nextReviewAt: new Date(Date.now() + 30_000).toISOString(), expiresAt: null, preferenceRevision: 1,
+    selfNote: null, state: "active" }, { conversationId: f.conversationId, runId: origin!.id }));
+  await admin`UPDATE companion_attention_plans SET next_review_at=now()-interval '1 second' WHERE user_id=${f.userId}`;
+  // 人走了：租约过期。到点也不该被吃掉——吃掉又没说出来，这条关注就永久睡着了。
+  await admin`UPDATE companion_awareness_sessions SET updated_at=now()-interval '2 minutes' WHERE user_id=${f.userId}`;
+  assert.equal(Number((await admin`SELECT astella_enqueue_companion_attention() AS n`)[0]!.n), 0);
+  assert.ok((await admin`SELECT next_review_at FROM companion_attention_plans WHERE user_id=${f.userId}`)[0]!.next_review_at,
+    "她回来之前这次安排要一直留着");
+  assert.equal((await admin`SELECT 1 FROM jobs WHERE requested_by=${f.userId} AND type='companion_initiative'
+    AND status='pending' AND payload->>'attentionKey' IS NOT NULL`).length, 0);
+  // 她回来了：同一条安排这一次真的唤起。
+  await admin`UPDATE companion_awareness_sessions SET updated_at=now() WHERE user_id=${f.userId}`;
+  assert.equal(Number((await admin`SELECT astella_enqueue_companion_attention() AS n`)[0]!.n), 1);
+  assert.equal((await admin`SELECT next_review_at FROM companion_attention_plans WHERE user_id=${f.userId}`)[0]!.next_review_at, null);
+});
+
+test("one note earns one help chance per launch, not one per saved version", async () => {
+  const f = await fixture(), noteId = randomUUID();
+  const arrive = (revision: string) => transaction(f, tx => recordCompanionAwareness(tx, f, {
+    version: 1, id: randomUUID(), appLaunchId: f.launchId, deviceSessionId: `device:${f.launchId}`, host: "desktop",
+    topic: "page.arrived", occurredAt: new Date().toISOString(), elapsedMs: 0,
+    context: { foreground: true, unlocked: true, typing: false, learning: false, conversationId: f.conversationId,
+      page: { key: `note-read:${noteId}`, label: "笔记", revision, context: null } } }));
+  assert.equal(await arrive("version-1"), true);
+  // 同一篇笔记又存了一版：还是这次启动里的那一页，不再要一整轮模型。
+  assert.equal(await arrive("version-2"), false);
+  assert.equal((await admin`SELECT 1 FROM companion_awareness_observations WHERE user_id=${f.userId} AND topic='page.arrived'`).length, 1);
+  assert.equal((await admin`SELECT 1 FROM jobs WHERE requested_by=${f.userId} AND type='companion_initiative'
+    AND payload->>'observationId' IS NOT NULL`).length, 1);
+});
+
+test("a routine opening yields to the account's declared cadence while a greeting does not", async () => {
+  const f = await fixture();
+  await admin`UPDATE user_companion_account_state SET intervention_level='moderate' WHERE user_id=${f.userId}`;
+  await admin`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,content_sha256,created_at)
+    VALUES(${randomUUID()},${f.workspaceId},${f.userId},${f.conversationId},1,'assistant','proactive',
+      '[{"type":"text","text":"刚才那段要不要再看一遍。"}]'::jsonb,${"0".repeat(64)},now()-interval '10 minutes')`;
+  await admin`UPDATE companion_conversations SET next_message_seq=2 WHERE id=${f.conversationId}`;
+  const noteId = randomUUID();
+  await transaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(), appLaunchId: f.launchId,
+    deviceSessionId: `device:${f.launchId}`, host: "desktop", topic: "page.arrived", occurredAt: new Date().toISOString(), elapsedMs: 0,
+    context: { foreground: true, unlocked: true, typing: false, learning: false, conversationId: f.conversationId,
+      page: { key: `note-read:${noteId}`, label: "笔记", revision: "version-1", context: null } } }));
+  await prepare(f);
+  assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId}`).length, 0,
+    "到页面的搭话是新起话题，90 分钟前刚说过就不再起一整轮");
+  // 招呼是用户先要过的相处方式，不进这条节奏。
+  await observe(f); await prepare(f);
+  assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId}`).length, 1);
+});
+
+test("a quiet-presence chance is considered once per declared cadence, even when she says nothing", async () => {
+  const f = await fixture();
+  await admin`UPDATE user_companion_account_state SET intervention_level='moderate' WHERE user_id=${f.userId}`;
+  const quiet = () => transaction(f, tx => recordCompanionAwareness(tx, f, { version: 1, id: randomUUID(),
+    appLaunchId: f.launchId, deviceSessionId: `device:${f.launchId}`, host: "desktop", topic: "presence.quiet",
+    occurredAt: new Date().toISOString(), elapsedMs: 0,
+    context: { foreground: true, unlocked: true, typing: false, learning: false, speaking: false,
+      participationAllowed: true, quietForMs: 240_000, conversationId: f.conversationId,
+      page: { key: "home", label: "书房", revision: null, context: null } } }));
+  assert.equal(await quiet(), true);
+  await prepare(f);
+  await runPrepared(f, async () => silentAnswer());
+  // 又一轮安静：她什么都没说出来，但这一次「想起要说点什么」已经花过一回了。
+  assert.equal(await quiet(), true, "第二次闲场仍然如实入库");
+  await prepare(f);
+  assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId}`).length, 1,
+    "间隔内不再起第二轮；只按发言计的话，用户会感到她隔一会儿就想起一次，哪怕一句也没说");
+  // 招呼是用户先要过的，不受这条节奏管。
+  await observe(f); await prepare(f);
+  assert.equal((await admin`SELECT 1 FROM companion_turn_runs WHERE user_id=${f.userId} AND input_source->>'topic'='app.started'`).length, 1);
 });

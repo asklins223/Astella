@@ -102,3 +102,12 @@ test("⑥ 手册目录进上下文，正文不进来（§4.6.10）", () => {
   assert.doesNotMatch(catalogType, /steps|exceptions|evidence/,
     "目录条目类型里出现了正文字段：手册正文会随目录进 prompt，目录因此无界");
 });
+
+test("⑦ 归并用保留条目的 revision 做 CAS，并保留其真实 importance", () => {
+  const source = read("workers/ai-worker/src/handlers/companion-memory-organize.ts");
+  assert.match(source, /expectedKeepRevision/);
+  assert.match(source, /t\.revision = \$\{expectedKeepRevision\}/);
+  assert.match(source, /importance: candidate\.importance/);
+  assert.match(source, /SELECT id, kind, content, revision, importance,/);
+  assert.doesNotMatch(source, /t\.revision = \$\{drop\.revision\}/);
+});

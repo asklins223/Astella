@@ -16,7 +16,9 @@ describe('回答与查阅材料的阅读关系', () => {
   it('记录保留原文并独立展开，正文使用真实 Markdown 排版', () => {
     const html = renderToStaticMarkup(createElement(MessageContent, { blocks }))
     expect(html).toContain('<strong>能量没变少</strong>')
-    expect(html).toContain('<summary>查阅的材料 · 热力学手记</summary>')
+    expect(html).toMatch(/<button[^>]*class="dialogue-material-trigger"[^>]*aria-expanded="false"/)
+    expect(html).toContain('查阅的材料 · 热力学手记')
+    expect(html).toContain('class="dialogue-material-content" hidden=""')
     expect(html).toContain('原文里还包含下一章的长表格。')
   })
 

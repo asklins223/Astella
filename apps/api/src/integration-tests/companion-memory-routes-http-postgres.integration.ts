@@ -17,11 +17,33 @@ import {
   accountPreferenceRejectionMessage,
   type AccountPreferenceWriteRejection,
 } from "@astella/shared/companion-memory-scope";
+// 正文上限只有一处声明（§9.4）：这一层既要用它验 400，也要用它造"满载的一条"。
+import { companionMemoryContentMaxLength } from "@astella/shared/companion-memory-desktop-contracts";
 
 process.env.COMPANION_MEMORY_VECTOR_V1 = "true";
 // 星图是独立开关（§9.8），只开 VECTOR 时 /memory/star-map 会 404。
 process.env.COMPANION_MEMORY_STAR_MAP_V1 = "true";
 process.env.COMPANION_SUMMARIZER_V1 = "true";
+
+/**
+ * 常驻档的准入只剩一条闸门：本轮声明的 **6,400 tok**（迁移 0430 覆盖 0344 的三条线，
+ * 与 `COMPANION_MEMORY_RESIDENT_BUDGET_V1` 同源）。条数与字节只是读数。
+ * 写入端把正文钉在 companionMemoryContentMaxLength 字，全用汉字时一条恰好 200 tok
+ * （SQL 侧 token = CEIL(octet_length/3)，汉字 3 字节/字），所以装满这一条预算需要 32 条。
+ */
+const RESIDENT_TOKEN_BUDGET = 6_400;
+const FULL_CONTENT_TOKENS = companionMemoryContentMaxLength;
+const ITEMS_TO_FILL_RESIDENT = RESIDENT_TOKEN_BUDGET / FULL_CONTENT_TOKENS;
+
+const CJK_NUMERALS = "零一二三四五六七八九";
+const cjkNumerals = (value: number) =>
+  String(value).split("").map((digit) => CJK_NUMERALS[Number(digit)]!).join("");
+
+/** 满载正文：整串都是汉字、长度正好触到写入端上限，于是每条恰好 200 tok。 */
+function fullResidentContent(index: number): string {
+  const tail = `第${cjkNumerals(index)}条`;
+  return "容".repeat(companionMemoryContentMaxLength - tail.length) + tail;
+}
 
 // Test fixture setup creates users/workspaces directly, while the API's own
 // pool can remain on the restricted astella_api role for the request path.
@@ -154,6 +176,9 @@ test("记忆维护在排队前拒绝未同意、空对话和跨用户会话，�
   await updateAIConsent(workspaceId, userA, "qa-consent-v1");
   const policy = await getAIPrivacySettings(workspaceId, userA);
   if (policy?.requiresConsent) {
+    // Signing consent turns text export on atomically; explicitly turn it back
+    // off here to exercise the independent data-policy denial path.
+    await updateAIDataPolicy(workspaceId, userA, { sendToExternal: false, sendImageContent: false, piiDetection: true, auditLogging: true });
     const denied = await app.inject(req(tokenA, "POST", `/companion/conversations/${conversationA}/summarize`));
     assert.equal(denied.statusCode, 403, denied.body);
     assert.equal(denied.json().error, "ai_data_policy_denied");
@@ -166,10 +191,10 @@ test("记忆维护在排队前拒绝未同意、空对话和跨用户会话，�
   assert.equal(afterJobs[0].n, beforeJobs[0].n, "以上拒绝不能先排后台任务");
 });
 
-test("预算状态只返回占用；层级 API 满额时返回候选且不会替用户降层", async () => {
-  const ids: string[] = [];
+test("预算状态只返回占用；短句不论几条都进得来，装满 6,400 tok 才返回候选且不会替用户降层", async () => {
+  const shortIds: string[] = [];
   for (let index = 0; index < 7; index += 1) {
-    ids.push(await createMemory(tokenB, {
+    shortIds.push(await createMemory(tokenB, {
       content: `容量预算测试 ${index} ${randomUUID()}`,
     }));
   }
@@ -181,30 +206,62 @@ test("预算状态只返回占用；层级 API 满额时返回候选且不会替
   assert.equal(status.json().active.items, 7);
   assert.equal(status.body.includes("容量预算测试"), false, "预算读数不回传记忆正文");
 
-  for (const id of ids.slice(0, 6)) {
+  // 这一族过去在第七次 POST 就回 409，理由是"容量满了"，而那轮她上下文里的常驻位还空着
+  // 六千多 tok：用户明确说过的事就这么被拒之门外。现在只有一条 token 闸门，7 条短句全进得来。
+  for (const [index, id] of shortIds.entries()) {
     const moved = await app.inject(req(tokenB, "POST", `/companion/memory/${id}/budget-tier`, { tier: "resident" }));
-    assert.equal(moved.statusCode, 200, moved.body);
+    assert.equal(moved.statusCode, 200, `第 ${index + 1} 条短句被按条数拒了：${moved.body}`);
     assert.equal(moved.json().result.status, "moved");
   }
+  const afterShort = await app.inject(req(tokenB, "GET", "/companion/memory/budget"));
+  assert.equal(afterShort.json().resident.used.items, 7, "条数是读数，不是名额");
+  assert.equal(afterShort.json().resident.limits.tokenEstimate, RESIDENT_TOKEN_BUDGET);
+  assert.equal(afterShort.json().resident.available.tokenEstimate,
+    RESIDENT_TOKEN_BUDGET - afterShort.json().resident.used.tokenEstimate,
+    "剩余名额必须由那条 token 预算算出来，否则用户看到的「还能记几条」是假的");
 
-  const overflow = await app.inject(req(tokenB, "POST", `/companion/memory/${ids[6]}/budget-tier`, { tier: "resident" }));
+  // 清掉短句，让下面的 token 算术从一个空的常驻档起算（满载一条 = 200 tok）。
+  const clearedShort = await app.inject(req(tokenB, "DELETE", "/companion/memory"));
+  assert.equal(clearedShort.statusCode, 200);
+  assert.equal(clearedShort.json().deletedCount, 7);
+
+  const fullIds: string[] = [];
+  for (let index = 0; index < ITEMS_TO_FILL_RESIDENT; index += 1) {
+    const id = await createMemory(tokenB, { content: fullResidentContent(index) });
+    const moved = await app.inject(req(tokenB, "POST", `/companion/memory/${id}/budget-tier`, { tier: "resident" }));
+    assert.equal(moved.statusCode, 200, `第 ${index + 1} 条满载正文本该进得了 ${RESIDENT_TOKEN_BUDGET} tok 的常驻档：${moved.body}`);
+    assert.equal(moved.json().result.status, "moved");
+    fullIds.push(id);
+  }
+
+  const overflowId = await createMemory(tokenB, { content: fullResidentContent(ITEMS_TO_FILL_RESIDENT) });
+  const overflow = await app.inject(req(tokenB, "POST", `/companion/memory/${overflowId}/budget-tier`, { tier: "resident" }));
   assert.equal(overflow.statusCode, 409);
   assert.equal(overflow.headers["cache-control"], "no-store");
   assert.equal(overflow.json().error, "memory_resident_budget_full");
   assert.equal(overflow.json().result.status, "capacity");
-  assert.equal(overflow.json().result.suggestedDowngrades.length, 6);
+  assert.deepEqual(overflow.json().result.limits, { tokenEstimate: RESIDENT_TOKEN_BUDGET },
+    "满额回执只能声明那一条真存在的预算；再报条数或字节就是给用户一个不存在的名额");
+  assert.equal(overflow.json().result.current.items, ITEMS_TO_FILL_RESIDENT);
+  assert.equal(overflow.json().result.current.tokenEstimate, RESIDENT_TOKEN_BUDGET);
+  assert.equal(overflow.json().result.requested.tokenEstimate, FULL_CONTENT_TOKENS);
+  assert.equal(overflow.json().result.suggestedDowngrades.length, 10,
+    "拒绝必须给出能腾位的记忆（按可逆降级顺序，最多 10 条）");
 
   const afterOverflow = await app.inject(req(tokenB, "GET", "/companion/memory/budget"));
-  assert.equal(afterOverflow.json().resident.used.items, 6, "满额拒绝不能静默挪走已有记忆");
+  assert.equal(afterOverflow.json().resident.used.items, ITEMS_TO_FILL_RESIDENT, "满额拒绝不能静默挪走已有记忆");
+  assert.equal(afterOverflow.json().resident.available.tokenEstimate, 0);
   assert.equal(afterOverflow.json().active.items, 1);
-  const invalidTier = await app.inject(req(tokenB, "POST", `/companion/memory/${ids[6]}/budget-tier`, { tier: "pinned" }));
+  const invalidTier = await app.inject(req(tokenB, "POST", `/companion/memory/${overflowId}/budget-tier`, { tier: "pinned" }));
   assert.equal(invalidTier.statusCode, 400);
-  const crossUser = await app.inject(req(tokenA, "POST", `/companion/memory/${ids[0]}/budget-tier`, { tier: "active" }));
+  // 用一条**还活着**的记忆来探跨用户：已经被清空的行连原主人都拿不到，就证不出"不泄露存在性"。
+  const crossUser = await app.inject(req(tokenA, "POST", `/companion/memory/${fullIds[0]}/budget-tier`, { tier: "active" }));
   assert.equal(crossUser.statusCode, 404, "层级调整不得泄露另一用户的记忆是否存在");
 
   const cleared = await app.inject(req(tokenB, "DELETE", "/companion/memory"));
   assert.equal(cleared.statusCode, 200);
-  assert.equal(cleared.json().deletedCount, 7, "清除本测试数据，避免污染后续跨用户断言");
+  assert.equal(cleared.json().deletedCount, ITEMS_TO_FILL_RESIDENT + 1,
+    "清除本测试数据，避免污染后续跨用户断言");
 });
 
 test("创建：合法 body → 201；已知字段非法 → 400（未知字段按本层约定被忽略）", async () => {
@@ -216,7 +273,8 @@ test("创建：合法 body → 201；已知字段非法 → 400（未知字段�
   const badKind = await app.inject(req(tokenA, "POST", "/companion/memory", { kind: "not_a_kind", content: "x" }));
   assert.equal(badKind.statusCode, 400);
 
-  const tooLong = await app.inject(req(tokenA, "POST", "/companion/memory", { kind: "goal", content: "字".repeat(201) }));
+  const tooLong = await app.inject(req(tokenA, "POST", "/companion/memory",
+    { kind: "goal", content: "字".repeat(companionMemoryContentMaxLength + 1) }));
   assert.equal(tooLong.statusCode, 400, "§9.4 上限 200 字必须在 HTTP 层拒绝");
 
   // 未知字段：本模块的路由 schema 沿用 z.object（13 处）而非 strictObject（2 处），
@@ -335,6 +393,35 @@ test("pin / unpin / archive / restore / dismiss 状态迁移都可往返", async
     "restore 后回到默认列表",
   );
   await step("dismiss");
+});
+
+test("预算端点返回分层占用；争议标记有 CAS、留来源并阻止错误状态覆盖", async () => {
+  const sourceEventId = randomUUID();
+  const id = await createMemory(tokenA, { kind: "preference", content: "喜欢先看答案", sourceEventId, candidate: false });
+  const before = (await app.inject(req(tokenA, "GET", "/companion/memory"))).json().items
+    .find((item: { memoryItemId: string }) => item.memoryItemId === id);
+  assert.equal(before.sourceEventId, sourceEventId);
+  assert.ok(before.confirmedAt, "本人通过记忆管理页手动新增即为明确确认");
+  assert.equal(before.userConfirmed, true);
+
+  const budget = await app.inject(req(tokenA, "GET", "/companion/memory/budget"));
+  assert.equal(budget.statusCode, 200);
+  assert.equal(budget.json().version, 1);
+  assert.ok(budget.json().resident.used.items >= 0);
+  // 常驻档只有这一条名额可报：6,400 tok，与迁移 0430 的闸门同一个数（`0344-…-migration.test.ts`
+  // 钉住两处一致）；条数与字节只是读数，报进 limits 就是在承诺一个不存在的上限。
+  assert.equal(budget.json().resident.limits.tokenEstimate, RESIDENT_TOKEN_BUDGET);
+  const residentAvailable = budget.json().resident.available.tokenEstimate;
+  assert.equal(typeof residentAvailable, "number", "剩余常驻名额必须按那条 token 预算算得出来");
+  assert.ok(residentAvailable >= 0, "已经用掉的读数不能把剩余名额算成负数");
+
+  const disputed = await app.inject(req(tokenA, "POST", `/companion/memory/${id}/dispute`, { expectedRevision: before.revision }));
+  assert.equal(disputed.statusCode, 200, disputed.body);
+  assert.equal(disputed.json().epistemicStatus, "disputed");
+  assert.equal(disputed.json().sourceEventId, sourceEventId, "标争议保留原始来源");
+  assert.equal(disputed.json().revision, before.revision + 1);
+  const stale = await app.inject(req(tokenA, "POST", `/companion/memory/${id}/dispute`, { expectedRevision: before.revision }));
+  assert.equal(stale.statusCode, 409, "过期版本不能覆盖后续决定");
 });
 
 test("记忆修订：来源不变、历史可读、旧 revision 提交会冲突", async () => {

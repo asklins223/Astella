@@ -126,8 +126,7 @@
 .companion-history .companion-record__date-btn { border: 1px solid #dedbc8; border-radius: 13px; background: #f7f8f0; }
 .companion-journal__search-back { display: inline-flex; align-items: center; align-self: flex-start; gap: 4px; min-height: 38px; padding: 0; border: 0; background: transparent; color: #7d876e; font-size: 11px; cursor: pointer; }
 .companion-history__system { display: inline-flex; align-self: center; align-items: center; flex-wrap: wrap; gap: 6px; margin: 8px 0; color: var(--hud-soft); font-size: 11px; }
-.companion-history__error, .companion-journal__read-error { margin: 8px 0 0; padding: 8px 11px; border-radius: 10px; color: #925e43; background: #f9efdf; font-size: 12px; line-height: 1.7; }
-.companion-journal__read-error button { margin-left: 8px; padding: 5px 0; border: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; }
+.companion-history__error { margin: 8px 0 0; padding: 8px 11px; border-radius: 10px; color: #925e43; background: #f9efdf; font-size: 12px; line-height: 1.7; }
 .companion-history__nav { flex: none; max-height: 100px; overflow: auto; padding: 6px 0; }
 .companion-history__nav > div { display: flex; align-items: center; gap: 7px; font-size: 11px; }
 .companion-history__nav button { min-height: 30px; padding: 3px 8px; border: 0; border-radius: 8px; background: #e4eddb; color: var(--hud-ink); }
@@ -139,33 +138,14 @@
 .companion-journal__empty > svg { color: #a5b596; }
 .companion-journal__empty > strong { color: #809071; font-size: 15px; font-weight: 600; }
 .companion-journal__empty > p { margin: 0; color: #b0a58d; font-size: 12px; line-height: 1.9; }
-.companion-journal__pending-page, .companion-thought-journal { display: flex; flex: 1; flex-direction: column; min-height: 0; }
-.companion-journal__kept-page { display: flex; flex: 1; min-height: 0; }
-.companion-journal__kept-page[hidden] { display: none; }
+.companion-journal__pending-page { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .companion-history__pending { margin: 0 0 16px; padding: 16px; border: 1px solid #eddcc1; border-radius: 15px; background: #fbf4e9; }
 .companion-history__pending .companion-choice-card { margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; }
-.companion-thought-journal__entries { list-style: none; margin: 0; padding: 0; }
-.companion-thought-journal__entries > li { position: relative; display: flex; gap: 16px; padding: 0 0 25px; }
-.companion-thought-journal__entries > li:not(:last-child)::before { content: ""; position: absolute; left: 5px; top: 16px; bottom: 4px; width: 1px; background: #e4e7d7; }
-.companion-thought-journal__dot { display: block; width: 11px; height: 11px; flex: none; margin-top: 4px; border: 2px solid #cedbc0; border-radius: 50%; background: #fffdf6; }
-.companion-thought-journal__entries > li > div { flex: 1; min-width: 0; }
-.companion-thought-journal__entries header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; color: #a0a08a; font-size: 10px; }
-.companion-thought-journal__entries header small { font-size: 10px; color: #aaa18b; }
-.companion-thought-journal__entries .companion-record__body { color: #6b775e; font-size: 14px; }
-.companion-thought-journal__actions { display: flex; align-items: center; gap: 14px; }
-.companion-thought-journal__reply, .companion-thought-journal__speak, .companion-thought-journal__more { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; min-height: 32px; margin-top: 7px; padding: 4px 0; border: 0; background: transparent; color: #8ea07d; font-size: 11px; cursor: pointer; }
-/* 正在念与念不成都用同一条文字级的变化说明，不加第二种控件、不换底色。 */
-.companion-thought-journal__speak[data-speaking] { color: #52704a; }
-.companion-thought-journal__speak[data-phase="failed"],
-.companion-thought-journal__speak[data-phase="consent_required"],
-.companion-thought-journal__speak[data-phase="silent"] { color: #925e46; }
-.companion-thought-journal__more { margin-left: 27px; text-decoration: underline; text-underline-offset: 4px; }
 .companion-history .companion-goal-journal h3 { font-family: "Noto Sans SC Variable", sans-serif; color: #5d6e52; font-size: 20px; }
 .companion-history .companion-goal-journal__index button { border-radius: 12px; padding: 17px 9px; }
 .companion-history__list [data-flash="true"] { animation: companion-history-flash 1.6s ease-out; }
 @media (hover: hover) and (pointer: fine) {
   .companion-history__tabs .text-action:hover { background: #e9eddf; }
-  .companion-record__actions .text-action:hover, .companion-thought-journal__reply:hover, .companion-thought-journal__speak:hover { color: #627c58; }
   .companion-history .companion-goal-journal__index button:hover { background: #f4f6ec; }
 }
 @container companion-journal (max-width: 620px) {

@@ -1,5 +1,5 @@
 /**
- * DB 连通性与迁移状态集成测试（救火 2 验证 + 诊断）。
+ * DB 连通性与迁移状态集成测试（核心表存在 + 退役数据结构不会复活）。
  *
  * 验证当前 LearningRun 核心表在真实 Postgres 中存在，且已退役的
  * Session/Episode 表不会被 fresh migration 重新创建。
@@ -28,9 +28,11 @@ const RETIRED_TABLES = [
   "learning_tutor_detours",
   "learning_tutor_permissions",
   "learning_tutor_action_nonces",
+  "assistant_thoughts",
 ];
+const RETIRED_FUNCTIONS = ["astella_enqueue_companion_thoughts"];
 
-test("LearningRun 核心表存在且 Session/Episode 表已删除", async (t) => {
+test("LearningRun 核心表存在且退役表与调度函数已删除", async (t) => {
   if (!CONN) {
     t.skip("DATABASE_URL_API 未配置——跳过 DB 集成测试");
     return;
@@ -52,6 +54,18 @@ test("LearningRun 核心表存在且 Session/Episode 表已删除", async (t) =>
       [RETIRED_TABLES],
     );
     assert.deepEqual(retired.rows, [], `退役表仍存在：${retired.rows.map((row) => row.table_name).join(", ")}`);
+    const retiredFunctions = await pool.query(
+      `SELECT p.proname AS function_name
+       FROM pg_proc p
+       JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND p.proname = ANY($1::text[])`,
+      [RETIRED_FUNCTIONS],
+    );
+    assert.deepEqual(
+      retiredFunctions.rows,
+      [],
+      `退役调度函数仍存在：${retiredFunctions.rows.map((row) => row.function_name).join(", ")}`,
+    );
   } finally {
     await pool.end();
   }

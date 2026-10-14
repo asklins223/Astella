@@ -69,8 +69,6 @@ export const JobType = {
   COMPANION_SUMMARIZER: "companion_summarizer",
   COMPANION_DAILY_SUMMARY: "companion_daily_summary",
   COMPANION_MEMORY_EMBEDDING_REBUILD: "companion_memory_embedding_rebuild",
-  // 基础主动念头调度；LLM 只增强措辞，不改变 job 合同与可降级语义。
-  COMPANION_THOUGHT: "companion_thought",
   // 用户从笔记纸签启动的速看生成。结果由 note_overviews 保存，与伴星对话解耦。
   NOTE_OVERVIEW_GENERATE: "note_overview_generate",
   NOTE_MIND_MAP_GENERATE: "note_mind_map_generate",

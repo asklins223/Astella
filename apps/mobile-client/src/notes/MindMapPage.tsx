@@ -7,6 +7,9 @@ import { usePhoneRoot } from '../app/phone-root.tsx'
 import { closeSheet, openSheet } from '../ui/sheet-store.ts'
 import { focusBlock, generateMindMap, useNotes } from '../state/notes.ts'
 import { MindMapView } from './MindMapView.tsx'
+import { NoteActivityPending, NoteActivityUnavailable } from './NoteActivity.tsx'
+import { useSheet } from '../ui/sheet-store.ts'
+import { blockText, findQuoteOrdinal } from './reading.ts'
 
 /**
  * 思维导图那一屏。
@@ -17,25 +20,31 @@ import { MindMapView } from './MindMapView.tsx'
 export function MindMapPage({ noteId }: { noteId: string }) {
   const notes = useNotes()
   const root = usePhoneRoot()
-  const reader = notes.reader
+  const reader = notes.reader?.noteId === noteId ? notes.reader : null
+  const sheet = useSheet()
   const [focused, setFocused] = useState<MindMapNodeV1 | null>(null)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const mindMap = reader?.mindMap
 
   // 进来就是要看这张图：没有的时候替她把任务发出去，而不是空着一屏等一次点击。
   useEffect(() => {
-    if (mindMap?.phase === 'idle') void generateMindMap()
-  }, [mindMap?.phase])
+    if (reader?.detail && mindMap?.phase === 'idle') void generateMindMap()
+  }, [reader?.detail, mindMap?.phase])
 
   useEffect(() => {
     setCollapsed(new Set())
     setFocused(null)
   }, [mindMap?.data?.mindMapId])
 
+  useEffect(() => {
+    if (sheet?.kind !== 'node') setFocused(null)
+  }, [sheet?.kind])
+
   if (!reader?.detail) {
     return (
-      <section className="page-scroll reader-scroll" data-view-key={`map:${noteId}`} aria-label="思维导图">
-        <article className="paper"><p className="state-note">这篇笔记还没取到，脑图也就没有底本。</p></article>
+      <section className="page-scroll map-scroll" data-view-key={`map:${noteId}`} aria-label="思维导图">
+        <div className="map-heading map-heading--unavailable"><div className="map-heading-mark"><Icon name="list-tree" /></div><div><p>把笔记摊成一张图</p><h1>思维导图</h1></div></div>
+        <NoteActivityUnavailable motif="map" label="正在接回这篇手记" loading={reader?.loading} error={reader?.error} />
       </section>
     )
   }
@@ -58,6 +67,8 @@ export function MindMapPage({ noteId }: { noteId: string }) {
       trigger: element,
       children: <NodeCard
         node={node}
+        noteId={noteId}
+        sourceVersionId={mindMap?.data?.noteVersionId ?? null}
         hasChildren={hasChildren}
         collapsed={isCollapsed}
         onToggleBranch={(nodeId, nextCollapsed) => setCollapsed((current) => {
@@ -71,25 +82,24 @@ export function MindMapPage({ noteId }: { noteId: string }) {
   }
 
   return (
-    <section className="page-scroll map-scroll" data-view-key={`map:${noteId}`} aria-label="思维导图">
-      {mindMap && (mindMap.phase === 'idle' || mindMap.phase === 'queued' || mindMap.phase === 'running') && (
-        <div className="task-card">
-          <div className="task-top"><i />正在做</div>
-          <h3>{reader.title}</h3>
-          <p>{mindMap.phase === 'idle' ? '正在把这件事交给她：先把层次分出来，再给每一支找原文依据。' : '她在搭这一张图：先把层次分出来，再给每一支找原文依据。'}</p>
-          <div className="progress">
-            <i style={{ width: mindMap.phase === 'idle' ? '10%' : mindMap.phase === 'queued' ? '18%' : '64%' }} />
-          </div>
+    <section className="page-scroll map-scroll" data-view-key={`map:${noteId}`} data-companion-note-id={noteId} data-companion-note-version={mindMap?.data?.noteVersionId ?? reader.detail.currentVersionId} aria-label="思维导图">
+      <header className="map-heading">
+        <div className="map-heading-mark"><Icon name="list-tree" /></div>
+        <div>
+          <p>一篇手记 · 思路星图</p>
+          <h1>{reader.title}</h1>
+          <span>从第 {mindMap?.data?.noteVersionNumber ?? reader.detail.currentVersion.versionNo} 版正文整理</span>
         </div>
-      )}
+      </header>
+      {mindMap && (mindMap.phase === 'idle' || mindMap.phase === 'queued' || mindMap.phase === 'running') && <NoteActivityPending motif="map" phase={mindMap.phase} label="整理层次" detail="伴星会把这一篇的层次分开，并为每一支保留原文依据。" />}
       {mindMap?.phase === 'failed' && (
-        <div className="task-card error">
-          <div className="task-top"><Icon name="circle-help" />这次没完成</div>
-          <h3>{reader.title}</h3>
-          <p>{mindMap.error}</p>
-          <div className="task-actions"><button type="button" onClick={() => void generateMindMap()}>再画一次</button></div>
+        <div className="mindmap-error" role="alert">
+          <span className="mindmap-error-mark"><Icon name="list-tree" /></span>
+          <div><strong>星枝暂时没有接上</strong><p>{mindMap.error || '这张图没有生成完成，可以重新整理。'}</p></div>
+          <button type="button" onClick={() => void generateMindMap()}>重新整理</button>
         </div>
       )}
+      {mindMap?.phase === 'ready' && !mindMap.data && <div className="mindmap-error" role="alert"><span className="mindmap-error-mark"><Icon name="list-tree" /></span><div><strong>导图内容没有取到</strong><p>生成已经结束，可以重新整理这一张图。</p></div><button type="button" onClick={() => void generateMindMap()}>重新生成</button></div>}
       {mindMap?.phase === 'ready' && mindMap.data && (
         <>
           {mindMap.forVersion !== reader.detail.currentVersion.versionNo && (
@@ -115,16 +125,22 @@ export function MindMapPage({ noteId }: { noteId: string }) {
 
 function NodeCard({
   node,
+  noteId,
+  sourceVersionId,
   hasChildren,
   collapsed,
   onToggleBranch,
 }: {
   node: MindMapNodeV1
+  noteId: string
+  sourceVersionId: string | null
   hasChildren: boolean
   collapsed: boolean
   onToggleBranch: (nodeId: string, collapsed: boolean) => void
 }) {
   const [branchCollapsed, setBranchCollapsed] = useState(collapsed)
+  const activeReader = useNotes().reader
+  const detail = activeReader?.noteId === noteId ? activeReader.detail : null
 
   useEffect(() => setBranchCollapsed(collapsed), [collapsed, node.id])
 
@@ -148,25 +164,33 @@ function NodeCard({
       {node.references.length > 0 ? (
         <>
           <div className="list-label"><span>原文依据</span><span>{node.references.length} 处</span></div>
-          {node.references.map((reference, index) => (
+          {node.references.map((reference, index) => {
+            const blocks = detail?.currentVersion.blocks ?? []
+            const original = blocks.find((block) => block.ordinal === reference.blockOrdinal)
+            const ordinal = detail?.currentVersionId === sourceVersionId && original && blockText(original).includes(reference.quote)
+              ? reference.blockOrdinal : findQuoteOrdinal(blocks, reference.quote)
+            return (
             <button
               key={index}
               className="sheet-row"
               type="button"
+              disabled={ordinal === null}
               onClick={() => {
+                if (ordinal === null) return
                 closeSheet()
-                focusBlock(reference.blockOrdinal)
+                focusBlock(ordinal)
                 pop()
               }}
             >
               <Icon name="quote" />
               <span>
                 {reference.quote}
-                <small>第 {reference.blockOrdinal + 1} 段 · 点开回到正文</small>
+                <small>{ordinal === null ? '正文已变化，这句原文暂时无法定位' : `第 ${ordinal + 1} 段 · 回到正文`}</small>
               </span>
               <Icon name="chevron-right" />
             </button>
-          ))}
+            )
+          })}
         </>
       ) : (
         <p className="sheet-copy">这一支她没有给出原文依据。可以先回到正文那一段，圈出来问她。</p>

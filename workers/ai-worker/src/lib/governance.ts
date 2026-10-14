@@ -572,13 +572,9 @@ export function createGovernedProvider(
       const providerOutputLimit = provider.resolveOutputTokenLimit?.();
       options = {
         ...options,
-        // The provider profile is the hard ceiling; callers may request a smaller
-        // budget for lightweight structured metadata such as follow-up prompts.
-        maxTokens: providerOutputLimit === undefined
-          ? options.maxTokens
-          : options.maxTokens === undefined
-            ? providerOutputLimit
-            : Math.min(options.maxTokens, providerOutputLimit),
+        // Provider adapters send their model-profile ceiling on the wire; handler
+        // maxTokens is advisory and cannot be used to reserve a smaller budget.
+        maxTokens: providerOutputLimit ?? options.maxTokens,
       };
       const startedAt = performance.now();
       let data: Record<string, unknown>;

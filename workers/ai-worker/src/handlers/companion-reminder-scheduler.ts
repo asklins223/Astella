@@ -7,8 +7,8 @@
  * 非 superuser、无 BYPASSRLS，直接 SELECT 会被 RLS 滤成空集——dev 正常、生产静默
  * 什么都不做，是这类定时器最难查的失效方式。
  *
- * 与念头调度（companion-thought-scheduler）不同，这里没有进程内节流：函数自身
- * 幂等（FOR UPDATE SKIP LOCKED + dedupe_key 唯一），多副本并发调用只是重复扫描。
+ * 这里没有进程内节流：函数自身幂等（FOR UPDATE SKIP LOCKED + dedupe_key 唯一），
+ * 多副本并发调用只是重复扫描。
  */
 
 import { sql } from "drizzle-orm";

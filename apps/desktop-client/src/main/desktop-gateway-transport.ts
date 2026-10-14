@@ -346,8 +346,6 @@ export class GatewayTransport {
       connection: ApiConnectionStateV1,
       trust: LocalApiTrustV1,
       readonly guidanceAudioCache: CompanionVoiceAudioCache | null = null,
-      /** 念想那一句的本机音频桶；与带路分目录，翻手记不顶掉带路的缓存。 */
-      readonly thoughtAudioCache: CompanionVoiceAudioCache | null = null,
       readonly messageAudioCache: CompanionMessageAudioCache | null = null,
     ) {
       this.configuration = configuration;
@@ -379,8 +377,6 @@ export class GatewayTransport {
       if (users.owned && this.activeRequests.get(requestId) === controller) this.activeRequests.delete(requestId);
     }
     guidanceVoiceProfile: { key: string; at: number; value: Promise<VoiceAudioProfile> } | null = null;
-    /** 念想缓存的音色身份来自账号设置，与带路的默认档不是一回事，所以各记一份。 */
-    thoughtVoiceProfile: { key: string; at: number; value: Promise<VoiceAudioProfile> } | null = null;
   // ── 连接与凭据（2026-09-30 第四刀） ────────────────────────────────
   //
   // `ensureConnected` 被全类 **198 个方法**调用——它是整个网关的入口门，

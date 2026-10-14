@@ -61,15 +61,20 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
           AND EXISTS(SELECT 1 FROM user_companion_account_state a WHERE a.user_id=${scope.userId}
             AND a.global_enabled AND a.epoch=${event.read.accountEpoch}) RETURNING id`);
       if (!alive) throw new CompanionToolBlockedError("用户已经接话或结束这轮，这条内容没有继续发布。");
-      const [count] = await tx.execute<{ n: number }>(sql`SELECT count(*)::integer AS n FROM companion_run_utterances WHERE run_id=${event.read.runId}`);
-      if ((count?.n ?? 0) >= 40) throw new CompanionToolBlockedError("这一轮发言已满，请先把交流收尾。");
+      // 这一轮的失控形状是「把同一句再说一遍」，不是说到第几条。原来按 40 条砍，
+      // 一条把意思讲完的长交流也会在半句上被拦（2026-10-13 用户决定：不设写死的输出条数）。
+      const messageId = randomUUID(), blocks = [{ type: "text", text }];
+      const contentSha256 = sha256Utf8V1(canonicalJsonV1(blocks));
+      const spoken = await tx.execute<{ content_sha256: string }>(sql`SELECT m.content_sha256 FROM companion_run_utterances u
+        JOIN companion_messages m ON m.id=u.message_id WHERE u.run_id=${event.read.runId}`);
+      if (spoken.some(row => row.content_sha256 === contentSha256))
+        throw new CompanionToolNotExecutedError("这句话这轮已经说过了。要说新的意思，或者收尾。");
       const [counter] = await tx.execute<{ message_seq: string; event_seq: string }>(sql`UPDATE companion_conversations
         SET next_message_seq=next_message_seq+1,next_event_seq=next_event_seq+1,last_message_at=now(),updated_at=now()
         WHERE id=${event.read.conversationId} RETURNING (next_message_seq-1)::text AS message_seq,(next_event_seq-1)::text AS event_seq`);
-      const messageId = randomUUID(), blocks = [{ type: "text", text }];
       await tx.execute(sql`INSERT INTO companion_messages(id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,run_id,content_sha256)
         VALUES(${messageId},${scope.workspaceId},${scope.userId},${event.read.conversationId},${Number(counter!.message_seq)},
-          'assistant',${event.read.initiativeInput ? "proactive" : "text"},${JSON.stringify(blocks)}::jsonb,${event.read.runId},${sha256Utf8V1(canonicalJsonV1(blocks))})`);
+          'assistant',${event.read.initiativeInput ? "proactive" : "text"},${JSON.stringify(blocks)}::jsonb,${event.read.runId},${contentSha256})`);
       await tx.execute(sql`INSERT INTO companion_run_utterances(workspace_id,user_id,run_id,tool_call_id,message_id)
         VALUES(${scope.workspaceId},${scope.userId},${event.read.runId},${toolCallId},${messageId})`);
       await insertStreamEvent(tx, { ...scope, conversationId: event.read.conversationId, runId: event.read.runId,
@@ -78,7 +83,7 @@ export async function executeCompanionParticipationTool(event: AgentEventContext
           proactive: Boolean(event.read.initiativeInput), deviceSessionId: event.read.initiativeInput?.deviceSessionId ?? null }, expiresAt: event.expiresAt });
       await tx.execute(sql`UPDATE companion_turn_runs SET last_event_seq=${Number(counter!.event_seq)} WHERE id=${event.read.runId}`);
       await tx.execute(sql`SELECT pg_notify('astella_companion_events_v1',${JSON.stringify({ conversationId: event.read.conversationId, maxSeq: Number(counter!.event_seq) })})`);
-      if (event.read.initiativeInput && !count?.n) await enqueueSystemEventDelivery(tx, { ...scope,
+      if (event.read.initiativeInput && spoken.length === 0) await enqueueSystemEventDelivery(tx, { ...scope,
         systemEventId: `initiative:${messageId}`, text, ttlHours: 0.025,
         initiative: { conversationId: event.read.conversationId, messageId, runId: event.read.runId, generation: event.read.generation,
           deviceSessionId: event.read.initiativeInput.deviceSessionId } });

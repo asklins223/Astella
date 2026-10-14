@@ -1,7 +1,7 @@
 /**
  * worker 侧写一条 inbox 投递（方案 29 §9.15）。
  *
- * worker 有几个producer要往用户的收件箱里放东西（主动念头、到点提醒），走的都是
+ * worker 有几个 producer 要往用户的收件箱里放东西（Agent 主动交流、到点提醒），走的都是
  * `assistant_deliveries.kind='system_event'` 这条展示通道。API 侧同一个动作在
  * `delivery-service.deliver()` 里做三件事：取 inbox_sequence、写行、随事务 NOTIFY。
  * worker 直写时漏掉任何一件都会留下"后端说送了、客户端却看不见"的洞，而且**不报错**：
@@ -29,7 +29,7 @@ export interface SystemEventDelivery {
 
 /**
  * 幂等入队：同一 systemEventId 重复调用只留一条，返回该行的 delivery id。
- * 返回 null 表示这条早就在了（例如念头已被送达过）。
+ * 返回 null 表示这条早就在了（例如主动交流已投递过）。
  */
 export async function enqueueSystemEventDelivery(
   tx: WorkerTransaction,

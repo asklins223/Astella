@@ -431,8 +431,8 @@ export async function loadHereAndNow(
   `);
   const petRow = petRows[0];
 
-  // conversationId 为空 = 跨**本空间所有**会话取最近一次说话（念头管线没有"当前会话"，
-  // 它要的就是"多久没理我了"）；有则排除本轮，避免"距上次说话 0 分钟"这种自指噪音。
+  // conversationId 为空 = 跨**本空间所有**会话取最近一次说话（主动交流机会需要整体对话间隔）；
+  // 有则排除本轮，避免"距上次说话 0 分钟"这种自指噪音。
   // workspace_id 必须在：多空间审查实测到，缺它时 A 空间的发言会改掉 B 空间她说的
   // "你已经 3 天没理我了"——同一句话在两个空间里指向两个事实。
   const excludeCurrentConversation = scope.conversationId
@@ -575,7 +575,7 @@ export async function loadHereAndNow(
     ? await readLearningStats(tx, scope)
     : null;
   const factSpans = await loadFactSpans(tx, scope, factSpanKeys, learningStats);
-  // 边界缺省按"允许"读，与念头管线（`boundaries.allowNudgeLearning !== false`）同一口径：
+  // 边界缺省按"允许"读，与主动交流入口（`boundaries.allowNudgeLearning !== false`）同一口径：
   // 两处的默认值不一样时，"她以为关着/其实开着"这类分裂又会回来。
   const profileBoundaries = (petRow?.boundaries ?? {}) as Record<string, unknown>;
   const boundaryFacts = asksForBoundaryChange(scope.userText)

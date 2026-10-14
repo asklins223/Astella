@@ -51,8 +51,9 @@ test("只挡「已固定的那一版被改写」，不挡首次固定（NULL →
   assert.match(migration, /USING ERRCODE = '55000'/, "固定版本被改写属于 object_not_in_prerequisite_state（55000）");
 });
 
-test("锁刻意不覆盖日记检查点 / 每日摘要 / 念头：那是新的一次生成，不是同一次调用被改写", () => {
-  for (const table of ["companion_diary_generation_checkpoints", "companion_daily_summaries", "assistant_thoughts"]) {
+test("锁刻意不覆盖日记检查点与每日摘要：那是新的一次生成，不是同一次调用被改写", () => {
+  // 念头表（assistant_thoughts）已由 0428 退役，不再列入——对不存在的表「没有触发器」永远为真。
+  for (const table of ["companion_diary_generation_checkpoints", "companion_daily_summaries"]) {
     assert.doesNotMatch(
       migration,
       new RegExp(`CREATE TRIGGER[^;]*ON public\\.${table}`),

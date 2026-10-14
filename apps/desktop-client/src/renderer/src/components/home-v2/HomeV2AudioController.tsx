@@ -35,11 +35,6 @@ import type {
 
 type HomeV2SoundKind = "page" | "footstep" | "magic" | "success";
 
-export type HomeV2VoiceRequest = {
-  readonly text: string;
-  readonly reason: "cue" | "touch";
-};
-
 /**
  * Frozen audio tuning for the cottage.
  *
@@ -75,8 +70,6 @@ export const HOME_V2_AUDIO_TUNING = Object.freeze({
   }),
   success: Object.freeze({ notesHz: [660, 880, 990] as const, gain: 0.022, noteSeconds: 0.27, intervalSeconds: 0.1 }),
   voice: Object.freeze({
-    cooldownMs: 6_000,
-    failureBackoffMs: 60_000,
     analyserFftSize: 256,
     analyserSmoothing: 0.82,
   }),
@@ -254,9 +247,6 @@ export function HomeV2AudioController() {
   const voiceRef = useRef<VoicePlayback | null>(null);
   const mouthLevelRef = useRef(0);
   const mouthReleaseFrameRef = useRef(0);
-  const voiceRequestGenerationRef = useRef(0);
-  const lastVoiceRef = useRef<{ text: string; at: number }>({ text: "", at: 0 });
-  const voiceFailureAtRef = useRef(0);
   const masterMuted = useRoomStore((state) => state.masterMuted);
   const surface = useRoomStore((state) => state.surface);
   const windowState = useRoomStore((state) => state.windowState);
@@ -448,7 +438,7 @@ export function HomeV2AudioController() {
   audibleRef.current = audible;
 
   /**
-   * 伴星**主动**发声的那一路：提示音、手边念想、带路旁白，以及 success 这一记音效。
+   * 伴星**主动**发声的那一路：提示音、主动交流、带路旁白，以及 success 这一记音效。
    * 它们不是用户要的回答，所以进任务页、窗口被盖住都得收声——用户在读东西或已经
    * 走开了，房间不该替他制造动静。
    */
@@ -628,9 +618,7 @@ export function HomeV2AudioController() {
 
   useEffect(() => subscribeCompanionAudioPriority(() => {
     if (!isCompanionMicrophoneActive()) return;
-    // Recording also invalidates a touch/cue request that has not finished decoding.
-    voiceRequestGenerationRef.current++;
-    // 会话开麦可以保留正在念的回复，但手边念想等背景声音必须让路。
+    // Recording lets active replies continue, but stops background notification audio.
     if (isCompanionReplyBlockedByMicrophone() || !isCompanionSpeechActive()) stopVoicePlayback();
   }), [stopVoicePlayback]);
 
@@ -638,7 +626,7 @@ export function HomeV2AudioController() {
    * 通道开关：分两层，**别把"听不见"当成"别说"**。
    *
    * - 静音或没解锁：整条音频通道关掉，挂起 AudioContext，正在念的和在路上的都作废。
-   * - 只是窗口被盖住：收掉伴星**主动**那点动静（提示音、念想、带路旁白），正在念的
+   * - 只是窗口被盖住：收掉伴星**主动**那点动静（提示音、带路旁白），正在念的
    *   回复继续念完。旧口径把这两层合成一条，失焦那一刻声音当场断掉。
    *
    * 这里以前还负责把环境床的增益 ramp 上去——那一层删掉之后，这一段只剩"该不该
@@ -651,14 +639,12 @@ export function HomeV2AudioController() {
     const mayReleaseProactiveSpeech = useRoomStore.getState().windowState === "visible"
       || !isPausedCompanionGuidanceSpeech();
     if (!replyAudible) {
-      voiceRequestGenerationRef.current += 1;
       if (mayReleaseProactiveSpeech) stopCompanionNotificationSpeech();
       stopVoicePlayback();
       void graph.context.suspend().catch(() => undefined);
       return;
     }
     if (!proactiveAudible) {
-      voiceRequestGenerationRef.current += 1;
       if (mayReleaseProactiveSpeech) stopCompanionNotificationSpeech();
     }
     void graph.context.resume().catch(() => undefined);
@@ -675,70 +661,6 @@ export function HomeV2AudioController() {
     window.addEventListener("astella:home-v2-sound", play);
     return () => window.removeEventListener("astella:home-v2-sound", play);
   }, []);
-
-  useEffect(() => {
-    const speak = (event: Event) => {
-      const detail = (event as CustomEvent<Partial<HomeV2VoiceRequest>>).detail;
-      const text = typeof detail?.text === "string" ? detail.text.trim() : "";
-      const graph = graphRef.current;
-      const tuning = HOME_V2_AUDIO_TUNING.voice;
-      if (!text || !graph || !audibleRef.current) return;
-      // A voice cue is a progressive enhancement, never a queue: a newer line
-      // replaces the one being spoken instead of stacking behind it.
-      const now = Date.now();
-      if (voiceFailureAtRef.current && now - voiceFailureAtRef.current < tuning.failureBackoffMs) return;
-      const previous = lastVoiceRef.current;
-      if (previous.text === text && now - previous.at < tuning.cooldownMs) return;
-      // 回复朗读优先（2026-09-19）：用户主动问出来的那条回复是他要的反馈，提示音是背景。
-      // 背景抢掉正在念的回复，听感上就是"气泡回来了却没发音"——所以正在念的时候，
-      // 这次提示音直接丢弃（不排队、也不打断），连请求都不发。
-      if (isCompanionSpeechActive() || isCompanionNotificationSpeechActive() || isCompanionMicrophoneActive()) return;
-      const requestGeneration = ++voiceRequestGenerationRef.current;
-      // 提示音和对话台词共用同一路音频：没有回复在念时，提示音先到就先占住。
-      stopVoicePlayback();
-      stopCompanionSpeech();
-      lastVoiceRef.current = { text, at: now };
-
-      const speakApi = window.astella?.companion?.voice?.speak;
-      if (!speakApi) return;
-      void speakApi.call(window.astella.companion.voice, {
-        meta: createRequestMeta(workspaceEpochRef.current ?? undefined),
-        // thought：这一句会留在本机，手记里回读同一句时不再重新合成。
-        request: { version: 1, text, purpose: "thought" },
-      })
-        .then(async (response) => {
-          if (requestGeneration !== voiceRequestGenerationRef.current) return;
-          const result = unwrapGatewayResult(response);
-          const active = graphRef.current;
-          if (!active || !audibleRef.current || graphRef.current !== active) return;
-          const buffer = await decodeBase64Audio(active.context, result.audioBase64);
-          if (
-            requestGeneration !== voiceRequestGenerationRef.current
-            || graphRef.current !== active
-            || !audibleRef.current
-            || isCompanionSpeechActive() || isCompanionNotificationSpeechActive() || isCompanionMicrophoneActive()
-          ) return;
-          await playVoiceBuffer(buffer, () => undefined, () => audibleRef.current
-            && requestGeneration === voiceRequestGenerationRef.current
-            && !isCompanionSpeechActive() && !isCompanionNotificationSpeechActive() && !isCompanionMicrophoneActive());
-        })
-        .catch((error: unknown) => {
-          if (requestGeneration !== voiceRequestGenerationRef.current) return;
-          // Speech is optional: a missing engine, an expired session or a
-          // rejected contract must leave the room silent and fully usable.
-          voiceFailureAtRef.current = Date.now();
-          void gatewayErrorMessage(error);
-          setHomeV2VoiceLevel(0);
-        });
-    };
-
-    window.addEventListener("astella:home-v2-speak", speak);
-    return () => {
-      window.removeEventListener("astella:home-v2-speak", speak);
-      voiceRequestGenerationRef.current += 1;
-      stopVoicePlayback();
-    };
-  }, [playVoiceBuffer, stopVoicePlayback]);
 
   return null;
 }

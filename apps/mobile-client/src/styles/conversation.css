@@ -146,7 +146,7 @@
   line-height: 1.6;
 }
 .message-outcome button {
-  min-height: 38px;
+  min-height: 44px;
   padding: 0 8px;
   border-radius: 11px;
   color: var(--accent);
@@ -200,18 +200,18 @@
 .composer-attachment-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer-attachment-copy strong { font-size: calc(11px * var(--text-scale)); font-weight: 570; }
 .composer-attachment-copy small { color: var(--muted); font-size: calc(9px * var(--text-scale)); }
-.composer-attachment-remove { width: 40px; height: 40px; color: var(--muted); }
+.composer-attachment-remove { width: 44px; height: 44px; color: var(--muted); }
 .composer-attachment-remove svg { width: 17px; height: 17px; }
 .composer-feedback { margin: 0 10px 5px; color: #985f54; font-size: calc(10px * var(--text-scale)); line-height: 1.55; }
 .composer-turn-hint { margin: 0 10px 5px; color: var(--muted); font-size: calc(10px * var(--text-scale)); line-height: 1.55; }
 .composer-feedback-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.composer-retry { flex: none; min-height: 38px; padding: 0 10px; color: var(--accent); font-size: calc(10px * var(--text-scale)); }
+.composer-retry { flex: none; min-height: 44px; padding: 0 10px; color: var(--accent); font-size: calc(10px * var(--text-scale)); }
 .voice-draft-label { display: flex; align-items: center; gap: 6px; margin: 0 10px 5px; color: #698777; font-size: calc(9px * var(--text-scale)); line-height: 1.5; }
 .voice-draft-label svg { width: 13px; height: 13px; flex: none; }
 .composer .attach-image { width: 44px; height: 44px; color: var(--muted); }
 .composer .attach-image svg { width: 19px; height: 19px; }
 .composer .attach-image.selected { color: var(--accent); background: #ffffff73; }
-.composer .record-voice { width: 40px; height: 44px; flex: none; color: #5c8279; }
+.composer .record-voice { width: 44px; height: 44px; flex: none; color: #5c8279; }
 .composer .record-voice svg { width: 18px; height: 18px; }
 .recording-controls { display: flex; align-items: center; gap: 7px; min-width: 0; min-height: 44px; flex: 1; padding: 0 2px 0 7px; }
 .recording-pulse { width: 9px; height: 9px; flex: none; border-radius: 50%; background: #c76555; box-shadow: 0 0 0 4px #c765551c; animation: recording-pulse 1.2s ease-in-out infinite; }
@@ -219,7 +219,7 @@
 .recording-copy strong { color: #855f54; font-size: calc(10px * var(--text-scale)); font-weight: 600; }
 .recording-copy small { color: var(--muted); font-size: calc(9px * var(--text-scale)); }
 .recording-cancel,
-.recording-finish { min-height: 38px; flex: none; padding: 0 9px; border-radius: 13px; font-size: calc(10px * var(--text-scale)); }
+.recording-finish { min-height: 44px; flex: none; padding: 0 9px; border-radius: 13px; font-size: calc(10px * var(--text-scale)); }
 .recording-cancel { color: var(--muted); }
 .recording-finish { color: #fffdf7; background: #3b8274; box-shadow: 0 2px 6px #2b706733; }
 .composer-connection { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 8px 5px; color: var(--muted); font-size: calc(9px * var(--text-scale)); }

@@ -22,6 +22,9 @@ export interface RetrievedMemory {
   pinned: boolean;
   lastUsedAt: string | null;
   userConfirmed: boolean;
+  sourceType: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
   /** 有据 / 待核对 / 有争议 / 已被替代（40 §4.5.4）。 */
   epistemicStatus: string | null;
 }
@@ -41,6 +44,9 @@ export interface CompanionMemoryDirectoryEntry {
 
 export interface CompanionMemoryReadResult extends CompanionMemoryDirectoryEntry {
   content: string;
+  sourceType: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface MemoryRetrievalResult {
@@ -98,11 +104,13 @@ export function isCompanionMemoryVectorEnabled(): boolean {
  * - 拉丁/数字子串 ≥2 字符整体保留（截断到 30），混排 token 如 "light反应" 拆开；
  * - Han 连续段 ≤4 字整体保留；>4 字切重叠 bigram（无分词器条件下召回率最高的
  *   子串单位，如"今天我们聊聊光合作用吧"→ 含"光合"/"作用"等 bigram）；
- * - bigram 超出剩余预算时做**头尾采样**（前半 + 后半）：中文句子的语义重心常在
- *   句尾宾语（"……重点突破有机化学"），按位置顺序截断会恰好丢掉它；
- * - 去重、总量封顶（默认 12），控制 ILIKE ANY 模式规模。
+ * - bigram 超出剩余预算时**整句均匀取样**（保头保尾，中间按步长取）：中文问句的
+ *   名词常在句中（"……那个考试是什么时候来着"），按位置截断或只保前后两段都会把
+ *   要搜的那个词整段扔掉，检索直接空手；
+ * - 去重、总量封顶（默认 16：一条中文问句多半 15 个上下 bigram，卡在 12 就要扔掉词元，
+ *   而模式数组本身不是瓶颈），控制 ILIKE ANY 模式规模。
  */
-export function extractQueryKeywords(query: string, maxKeywords = 12): string[] {
+export function extractQueryKeywords(query: string, maxKeywords = 16): string[] {
   const keywords: string[] = [];
   const push = (kw: string): boolean => {
     if (!keywords.includes(kw)) keywords.push(kw);
@@ -121,15 +129,20 @@ export function extractQueryKeywords(query: string, maxKeywords = 12): string[] 
       } else {
         grams = [];
         for (let i = 0; i + 2 <= han.length; i++) grams.push(han.slice(i, i + 2));
-        // 头尾采样：超预算时保前半 + 后半 bigram，避免丢句尾语义重心。
+        // 超预算时**整句均匀取样**（保头保尾，中间按步长取）。
+        //
+        // 这里原来是"前半 + 后半"，等于把句子中段整段扔掉——而中文问句的名词常常
+        // 就在中段："我今年备考的那个考试是什么时候来着"（16 个 bigram 留 12 个）
+        // 被扔掉的正好是「考试」。实测这条问出 **0 条**，不是没匹配上，是词元根本没生成。
         const remaining = maxKeywords - keywords.length;
         if (remaining <= 0) break;
         if (grams.length > remaining) {
-          const head = Math.ceil(remaining / 2);
-          grams = [
-            ...grams.slice(0, head),
-            ...grams.slice(grams.length - (remaining - head)),
-          ];
+          const sampled: string[] = [];
+          for (let slot = 0; slot < remaining; slot += 1) {
+            const index = Math.round((slot * (grams.length - 1)) / Math.max(1, remaining - 1));
+            if (!sampled.includes(grams[index]!)) sampled.push(grams[index]!);
+          }
+          grams = sampled;
         }
       }
       for (const gram of grams) {
@@ -160,6 +173,9 @@ function mapMemoryRow(row: Record<string, unknown>): RetrievedMemory {
     pinned: Boolean(row.pinned),
     lastUsedAt: row.last_used_at ? String(row.last_used_at) : null,
     userConfirmed: Boolean(row.user_confirmed),
+    sourceType: typeof row.source_type === "string" ? row.source_type : null,
+    createdAt: row.created_at == null ? null : String(row.created_at),
+    updatedAt: row.updated_at == null ? null : String(row.updated_at),
     epistemicStatus: typeof row.epistemic_status === "string" ? row.epistemic_status : null,
   };
 }
@@ -178,6 +194,7 @@ export async function retrieveResidentCompanionMemories(
        AND budget_tier = 'resident'
        AND deleted_at IS NULL
        AND dismissed_at IS NULL
+       AND epistemic_status NOT IN ('disputed', 'superseded')
        AND candidate = false
        AND archived_at IS NULL
        AND (valid_from IS NULL OR valid_from <= now())
@@ -217,13 +234,15 @@ export async function retrieveActiveCompanionMemoryDirectory(
   taskEntity: CompanionTaskEntityRef | null = null,
 ): Promise<CompanionMemoryDirectoryEntry[]> {
   const result = await tx.execute(sql`
-    SELECT id, kind, content, applies_when, valid_from, valid_until, revision, epistemic_status
+    SELECT id, kind, content, applies_when, valid_from, valid_until, revision, epistemic_status,
+           source_type, created_at, updated_at
       FROM assistant_memory_items
      WHERE workspace_id = ${scope.workspaceId}
        AND user_id = ${scope.userId}
        AND budget_tier = 'active'
        AND deleted_at IS NULL
        AND dismissed_at IS NULL
+       AND epistemic_status NOT IN ('disputed', 'superseded')
        AND candidate = false
        AND archived_at IS NULL
        AND (valid_from IS NULL OR valid_from <= now())
@@ -255,6 +274,7 @@ export async function readActiveCompanionMemoryById(
        AND budget_tier = 'active'
        AND deleted_at IS NULL
        AND dismissed_at IS NULL
+       AND epistemic_status NOT IN ('disputed', 'superseded')
        AND candidate = false
        AND archived_at IS NULL
        AND (valid_from IS NULL OR valid_from <= now())
@@ -267,6 +287,9 @@ export async function readActiveCompanionMemoryById(
   return {
     ...mapMemoryDirectoryRow(row),
     content: String(row.content ?? ""),
+    sourceType: typeof row.source_type === "string" ? row.source_type : null,
+    createdAt: row.created_at == null ? null : String(row.created_at),
+    updatedAt: row.updated_at == null ? null : String(row.updated_at),
   };
 }
 
@@ -384,8 +407,21 @@ export async function retrieveCompanionMemoriesKeyword(
   const keywordFilter = contentPatternsLiteral && kindLiteral
     ? sql` AND (content ILIKE ANY(${contentPatternsLiteral}::text[]) OR kind ILIKE ANY(${kindLiteral}::text[]))`
     : sql``;
+  /**
+   * 命中了几个词元就排几个——**这条之前是不存在的**。
+   *
+   * 旧排序只有 `pinned, importance, updated_at`：查询词元只用来**筛**，不用来**排**。
+   * 实测两周体量的语料问 12 个自然问题，top-1 命中 2/12——问"有机化学要突破哪两块"时，
+   * 一句沾了"化学"的噪声（importance 0.5）排在正主前面，而正主本身 importance 更低。
+   * 捞回来的东西是对的、顺序是错的，她照着前面的说，用户读到的就是"记错了"。
+   */
+  const matchedTerms = contentPatternsLiteral
+    ? sql`(SELECT count(*)::int FROM unnest(${contentPatternsLiteral}::text[]) p WHERE content ILIKE p)`
+    : sql`0::int`;
   const result = await tx.execute(sql`
-    SELECT id, kind, content, budget_tier, revision, importance, pinned, last_used_at, user_confirmed
+    SELECT id, kind, content, budget_tier, revision, importance, pinned, last_used_at, user_confirmed,
+           epistemic_status, source_type, created_at, updated_at,
+           ${matchedTerms} AS matched_terms
     FROM assistant_memory_items
     WHERE workspace_id = ${scope.workspaceId}
       AND user_id = ${scope.userId}
@@ -394,6 +430,7 @@ export async function retrieveCompanionMemoriesKeyword(
       -- 都不看这一位（doc 34 L14）——用户明确忽略过的事，下一轮照样被提升成
       -- 正式记忆并注入提示词。
       AND dismissed_at IS NULL
+      AND epistemic_status NOT IN ('disputed', 'superseded')
       AND candidate = false
       ${budgetTierFilter}
       AND archived_at IS NULL
@@ -402,7 +439,7 @@ export async function retrieveCompanionMemoriesKeyword(
       ${taskScopeVisibility(taskEntity, scope, "")}
       ${missingEmbeddingFilter}
       ${keywordFilter}
-    ORDER BY pinned DESC, importance DESC, updated_at DESC
+    ORDER BY matched_terms DESC, pinned DESC, importance DESC, updated_at DESC
     LIMIT ${topK}
   `);
   const items = rowsOf<Record<string, unknown>>(result).map(mapMemoryRow);
@@ -435,6 +472,7 @@ export async function retrieveCompanionMemoriesVector(
     const result = await tx.execute(sql`
       SELECT m.id, m.kind, m.content, m.budget_tier, m.revision,
              m.importance, m.pinned, m.last_used_at, m.user_confirmed,
+             m.epistemic_status, m.source_type, m.created_at, m.updated_at,
              1 - (e.embedding <=> ${queryVec}::vector) AS similarity,
              CASE
                WHEN m.last_used_at IS NULL THEN 0.5
@@ -451,6 +489,7 @@ export async function retrieveCompanionMemoriesVector(
         AND m.deleted_at IS NULL
         -- 与关键词降级路径同一句判据：被忽略过的记忆不参与召回（doc 34 L14）。
         AND m.dismissed_at IS NULL
+        AND m.epistemic_status NOT IN ('disputed', 'superseded')
         AND m.candidate = false
         ${budgetTierFilter}
         AND m.archived_at IS NULL

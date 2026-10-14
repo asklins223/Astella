@@ -111,15 +111,15 @@ describe("shared notification voice channel", () => {
     expect(isCompanionNotificationSpeechActive()).toBe(false);
   });
 
-  it("念想整条念出来：超过单次请求上限的那一句是切成几句念，不是被截掉", async () => {
+  it("long speech text is split at the per-request limit without dropping words", async () => {
     const long = "这一句先说书房里的那条线。" + "第二句接着说它断在哪儿，以及为什么要从五分钟接上。".repeat(6) + "最后收一句不留标点的尾巴";
-    await run({ text: long, purpose: "thought" });
+    await run({ text: long, purpose: "guidance" });
     const calls = (host.synthesize as ReturnType<typeof vi.fn>).mock.calls;
     expect(calls.length).toBeGreaterThan(1);
-    // 一个字都不丢：拼回去必须还是原文（trim 后），这是"不设朗读上限"的全部含义。
+    // Joining the sent segments must preserve the original text.
     expect(calls.map(call => String(call[0])).join("")).toBe(long.trim());
     expect(calls.every(call => call[1] === undefined)).toBe(true);
-    expect(calls.every(call => call[2] === "thought")).toBe(true);
+    expect(calls.every(call => call[2] === "guidance")).toBe(true);
     expect(host.play).toHaveBeenCalledTimes(calls.length);
   });
 
@@ -132,7 +132,7 @@ describe("shared notification voice channel", () => {
   it("她念到一半被停掉时，后面的句子不再往外取", async () => {
     let release: ((buffer: AudioBuffer) => void) | undefined;
     host.synthesize = vi.fn(() => new Promise<AudioBuffer>(done => { release = done; }));
-    const pending = run({ text: "第一句讲完了。第二句还排在后面。", purpose: "thought" });
+    const pending = run({ text: "第一句讲完了。第二句还排在后面。", purpose: "guidance" });
     await Promise.resolve();
     release!(buffer);
     await Promise.resolve();

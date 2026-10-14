@@ -37,6 +37,7 @@ import {
 import type { WorkerTransaction } from "../db.ts";
 import type { JobPayload } from "./index.ts";
 import { runWorkerAiTask } from "./worker-ai-task.ts";
+import { enqueueCompanionMemoryEmbeddingRebuild } from "./companion-memory-embedding-jobs.ts";
 
 /**
  * 单次抽取按**独立事实**收，不再设条数上限（40 §4.5.6 第 3 条本轮裁决的落地形状）。
@@ -776,7 +777,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
         skippedDismissedTwins += 1;
         continue;
       }
-      await tx.execute(sql`
+      const insertedRows = await tx.execute<{ id: string }>(sql`
         INSERT INTO assistant_memory_items
           (workspace_id, user_id, kind, content, source_event_id, source_session_id, source_speaker, source_basis,
            applies_when, valid_from, valid_until, user_stated, user_confirmed,
@@ -792,7 +793,15 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
         ON CONFLICT (workspace_id, user_id, kind, source_event_id)
           WHERE deleted_at IS NULL AND source_event_id IS NOT NULL
         DO NOTHING
+        RETURNING id
       `);
+      if (insertedRows[0]?.id) {
+        await enqueueCompanionMemoryEmbeddingRebuild(tx, {
+          workspaceId: job.workspaceId,
+          userId,
+          idempotencyKey: `memory-embedding:${job.id}`,
+        });
+      }
       const memoryRows = await tx.execute<{ id: string }>(sql`
         SELECT id FROM assistant_memory_items
         WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId}

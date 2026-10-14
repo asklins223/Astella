@@ -75,6 +75,8 @@ export const assistantMemoryItems = pgTable(
     userStated: boolean("user_stated").notNull().default(false),
     /** 独立来源记忆（无事件/会话来源）由用户明确确认。 */
     userConfirmed: boolean("user_confirmed").notNull().default(false),
+    /** 用户确认的时间；不能用 updated_at 推断确认发生于何时。 */
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
     /** 候选记忆（未经确认）不参与主动策略。 */
     candidate: boolean("candidate").notNull().default(false),
     /** 记忆重要性（0-1），影响检索排序。 */
@@ -131,6 +133,8 @@ export const assistantMemoryItems = pgTable(
      * 只在 `kind === 'judgment'` 时必填（迁移 0347 用 CHECK 钉住）。
      */
     sourceEventIds: text("source_event_ids").array(),
+    /** 被归并替代时指向保留的记忆；删除胜出项后置空，但旧项仍不参与召回。 */
+    supersededById: uuid("superseded_by_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -244,6 +248,7 @@ export const assistantMemoryItemRevisions = pgTable(
     kind: text("kind").notNull(),
     content: text("content").notNull(),
     sourceEventId: text("source_event_id"),
+    sourceEventIds: text("source_event_ids").array(),
     sourceSessionId: uuid("source_session_id"),
     sourceSpeaker: text("source_speaker"),
     sourceBasis: text("source_basis"),
@@ -252,6 +257,7 @@ export const assistantMemoryItemRevisions = pgTable(
     validUntil: timestamp("valid_until", { withTimezone: true }),
     userStated: boolean("user_stated").notNull(),
     userConfirmed: boolean("user_confirmed").notNull(),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
     importance: real("importance").notNull(),
     confidence: real("confidence").notNull(),
     scope: text("scope").notNull(),
@@ -259,6 +265,7 @@ export const assistantMemoryItemRevisions = pgTable(
     authorType: text("author_type").notNull(),
     authorId: uuid("author_id"),
     epistemicStatus: text("epistemic_status").notNull(),
+    supersededById: uuid("superseded_by_id"),
     supersededAt: timestamp("superseded_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

@@ -16,7 +16,6 @@ const { MockProvider } = await import("../lib/providers/mock.ts");
 const { registerFactory } = await import("../lib/provider-factory.ts");
 const { runCompanionMemoryExtract } = await import("../handlers/companion-memory-extractor.ts");
 const { runCompanionSummarizer } = await import("../handlers/companion-summarizer.ts");
-const { runCompanionThought } = await import("../handlers/companion-thought.ts");
 const { readCompanionHistoryRows, countCompanionHistoryMessages, companionHistoryText } = await import("../handlers/companion-dialogue-store.ts");
 
 const userId = randomUUID(), workspaceId = randomUUID(), conversationId = randomUUID();
@@ -39,10 +38,6 @@ class RecoveryProvider extends MockProvider {
       }] };
     } else if (prompt.includes("会话摘要器")) {
       output = { title: "依次讨论两段不同原文", topics: ["间隔重复", "检索练习"] };
-    } else if (prompt.includes('"thoughts"')) {
-      output = { thoughts: [{ text: "窗边安静下来了，想歇会儿就陪你坐着。", urgency: 85, topic: "休息" }] };
-    } else if (prompt.includes('"variants"')) {
-      output = { variants: ["窗边安静下来了，想歇会儿就陪你坐着。"] };
     } else {
       throw new Error("unexpected recovery provider request");
     }
@@ -147,17 +142,6 @@ test("摘要 handler 携小数参数落库，摘要输入区分相邻划选并�
   const rows=await withWorkerWorkspaceTransaction({workspaceId,userId},tx=>tx.execute(sql`
     SELECT coverage_through_seq FROM conversation_summaries WHERE conversation_id=${conversationId}`));
   assert.equal(rows.length,1);
-});
-
-test("念头 handler 携小数参数调用生成与表达，并实际写出念头", async () => {
-  const start=calls.length;
-  const fixture=await job("companion_thought",{userId});
-  await runCompanionThought(fixture as Parameters<typeof runCompanionThought>[0]);
-  assert.ok(calls.slice(start).length>=2,"候选生成和表达都须到达 provider，不能回退掩盖失败");
-  assert.ok(calls.slice(start).every(call=>call.temperature===0.9));
-  const rows=await admin`SELECT source,status FROM assistant_thoughts WHERE workspace_id=${workspaceId} AND source='llm'`;
-  assert.ok(rows.length>0);
-  assert.ok(rows.some(row=>row.status==='delivered'));
 });
 
 test("有限归纳的记忆能写入新作者词表，数据库默认值也不再违反自己的约束", async () => {

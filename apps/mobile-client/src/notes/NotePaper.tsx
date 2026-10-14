@@ -5,6 +5,7 @@ import { MobileImage } from '../ui/MobileImage.tsx'
 import { noteLinkTarget } from '@astella/shared/note-markdown'
 import { blockText, inlineRuns, piecesWithMarks, renderBlock, type BlockPoint, type MarkRange } from './reading.ts'
 import { ReadableMath } from './ReadableMath.tsx'
+import { useMotion } from '../platform/motion.ts'
 
 interface Props {
   title: string
@@ -13,6 +14,7 @@ interface Props {
   activeAnnotationId: string | null
   focusOrdinal: number | null
   onSelection: (from: BlockPoint, to: BlockPoint, text: string) => void
+  onSelectionText?: (text: string) => void
   onClearSelection: () => void
   onMarkClick: (annotation: NoteAnnotationV1) => void
   onNoteLink: (href: string, label: string, origin: HTMLAnchorElement) => void
@@ -34,20 +36,32 @@ export function NotePaper({
   activeAnnotationId,
   focusOrdinal,
   onSelection,
+  onSelectionText,
   onClearSelection,
   onMarkClick,
   onNoteLink,
 }: Props) {
   const root = useRef<HTMLDivElement>(null)
+  const motion = useMotion()
+
+  useEffect(() => {
+    let frame: number | null = null
+    const update = () => {
+      if (frame !== null) cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => readSelection(root.current, onSelection, onClearSelection, onSelectionText))
+    }
+    document.addEventListener('selectionchange', update)
+    return () => { document.removeEventListener('selectionchange', update); if (frame !== null) cancelAnimationFrame(frame) }
+  }, [onSelection, onClearSelection, onSelectionText])
 
   useEffect(() => {
     if (focusOrdinal === null) return
     const node = root.current?.querySelector<HTMLElement>(`[data-ordinal="${focusOrdinal}"]`)
-    node?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    node?.scrollIntoView({ block: 'center', behavior: motion.off ? 'auto' : 'smooth' })
     node?.classList.add('selected')
     const timer = setTimeout(() => node?.classList.remove('selected'), 1400)
-    return () => clearTimeout(timer)
-  }, [focusOrdinal])
+    return () => { clearTimeout(timer); node?.classList.remove('selected') }
+  }, [focusOrdinal, motion.off])
 
   const rendered = useMemo(() => {
     const firstContentIndex = blocks.findIndex((block) => blockText(block).trim().length > 0)
@@ -68,10 +82,10 @@ export function NotePaper({
     <div
       className="paper-blocks"
       ref={root}
-      onPointerUp={() => readSelection(root.current, onSelection, onClearSelection)}
+      onPointerUp={() => readSelection(root.current, onSelection, onClearSelection, onSelectionText)}
       onKeyUp={(event) => {
         if (event.shiftKey || event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-          readSelection(root.current, onSelection, onClearSelection)
+          readSelection(root.current, onSelection, onClearSelection, onSelectionText)
         }
       }}
     >
@@ -296,6 +310,7 @@ function readSelection(
   root: HTMLElement | null,
   onSelection: Props['onSelection'],
   onClear: () => void,
+  onText?: (text: string) => void,
 ): void {
   const selection = window.getSelection()
   if (!selection || selection.isCollapsed || selection.rangeCount === 0 || !root) {
@@ -309,7 +324,12 @@ function readSelection(
   }
   const from = pointOf(selection.anchorNode, selection.anchorOffset, root)
   const to = pointOf(selection.focusNode, selection.focusOffset, root)
-  if (!from || !to || (from.ordinal === to.ordinal && from.offset === to.offset)) {
+  if (!from || !to) {
+    if (selection.anchorNode && selection.focusNode && root.contains(selection.anchorNode) && root.contains(selection.focusNode)) onText?.(text)
+    else onClear()
+    return
+  }
+  if (from.ordinal === to.ordinal && from.offset === to.offset) {
     onClear()
     return
   }

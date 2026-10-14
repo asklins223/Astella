@@ -1,65 +1,150 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { pop } from './nav.ts'
+import { useCallback, useEffect, useRef, type PointerEvent, type MouseEvent } from 'react'
+import { navStore, pop } from './nav.ts'
 
-/**
- * 左沿右滑退回上一层。
- *
- * 位移**跟手**：手指走多少，上层纸面就走多少（阻尼只在超过边界后加），
- * 松手不到阈值就弹回去——半途停住会让"我在哪一层"这件事说不清。
- * 只在有得退的时候接管，退无可退时那一道手势什么也不做（不去抢横向滚动）。
- */
-const EDGE_PX = 22
-const THRESHOLD_RATIO = 0.38
+const EDGE_PX = 24
+const DIRECTION_SLOP = 8
+const THRESHOLD_RATIO = 0.32
 
+interface Gesture {
+  id: number
+  element: HTMLElement
+  fromX: number
+  fromY: number
+  baseX: number
+  startedAt: number
+  width: number
+  locked: boolean
+  distance: number
+  samples: Array<{ x: number; time: number }>
+}
+
+/** Only a deliberate horizontal swipe takes the pointer from the page. */
 export function useEdgeBack(active: boolean): { dragX: number; handlers: PointerHandlers } {
-  const [dragX, setDragX] = useState(0)
-  const gesture = useRef<{ id: number; fromX: number; fromY: number; started: boolean } | null>(null)
-  const width = useRef(0)
+  const gesture = useRef<Gesture | null>(null)
+  const suppressClickUntil = useRef(0)
 
-  const release = useCallback(() => {
-    const value = dragX
-    setDragX(0)
+  const reset = useCallback((immediate = false) => {
+    const current = gesture.current
     gesture.current = null
-    if (active && width.current > 0 && value > width.current * THRESHOLD_RATIO) pop()
-  }, [active, dragX])
+    if (current?.element.hasPointerCapture(current.id)) current.element.releasePointerCapture(current.id)
+    if (current) {
+      if (immediate) current.element.style.transition = 'none'
+      current.element.removeAttribute('data-dragging')
+      current.element.style.transform = ''
+      if (immediate) requestAnimationFrame(() => { current.element.style.transition = '' })
+    }
+  }, [])
 
-  if (!active) {
-    return { dragX: 0, handlers: {} }
-  }
+  useEffect(() => {
+    if (!active) reset(true)
+    let transitionId = navStore.get().transitionId
+    const unsubscribe = navStore.subscribe(() => {
+      const nextId = navStore.get().transitionId
+      if (nextId === transitionId) return
+      transitionId = nextId
+      if (gesture.current) reset(true)
+    })
+    const stop = () => { if (document.hidden) reset(true) }
+    document.addEventListener('visibilitychange', stop)
+    return () => {
+      unsubscribe()
+      document.removeEventListener('visibilitychange', stop)
+      const current = gesture.current
+      if (current?.element.hasPointerCapture(current.id)) current.element.releasePointerCapture(current.id)
+      gesture.current = null
+    }
+  }, [active, reset])
+
+  if (!active) return { dragX: 0, handlers: {} }
 
   return {
-    dragX,
+    dragX: 0,
     handlers: {
       onPointerDown: (event) => {
+        if (!event.isPrimary || event.button !== 0 || gesture.current) return
         const bounds = event.currentTarget.getBoundingClientRect()
         const localX = event.clientX - bounds.left
         if (localX < 0 || localX > EDGE_PX) return
-        width.current = bounds.width
-        gesture.current = { id: event.pointerId, fromX: event.clientX, fromY: event.clientY, started: true }
-        event.currentTarget.setPointerCapture(event.pointerId)
+        const target = event.target instanceof Element ? event.target : null
+        if (!target?.closest('.edge-back-hitbox')) return
+        if (target?.closest('button, a, input, textarea, select, [contenteditable="true"], [role="slider"], [data-no-edge-back]')) return
+        if (window.getSelection()?.isCollapsed === false) return
+        const transform = getComputedStyle(event.currentTarget).transform
+        const matrix = new DOMMatrix(transform === 'none' ? undefined : transform)
+        gesture.current = {
+          id: event.pointerId,
+          element: event.currentTarget,
+          fromX: event.clientX,
+          fromY: event.clientY,
+          baseX: matrix.e,
+          startedAt: event.timeStamp,
+          width: bounds.width,
+          locked: false,
+          distance: 0,
+          samples: [{ x: event.clientX, time: event.timeStamp }],
+        }
       },
       onPointerMove: (event) => {
-        const grab = gesture.current
-        if (!grab || grab.id !== event.pointerId) return
-        if (Math.abs(event.clientY - grab.fromY) > 42) {
-          gesture.current = null
-          setDragX(0)
-          return
+        const current = gesture.current
+        if (!current || current.id !== event.pointerId) return
+        const dx = event.clientX - current.fromX
+        const dy = Math.abs(event.clientY - current.fromY)
+        if (!current.locked) {
+          // Preserve vertical scrolling and touch-and-hold text selection.
+          if (event.timeStamp - current.startedAt > 420 || window.getSelection()?.isCollapsed === false
+            || dx < -DIRECTION_SLOP || (dy > DIRECTION_SLOP && dy > Math.abs(dx) * 0.8)) {
+            reset()
+            return
+          }
+          if (dx < DIRECTION_SLOP || dx < dy * 1.25) return
+          current.locked = true
+          current.element.setPointerCapture(event.pointerId)
         }
-        setDragX(Math.max(0, event.clientX - grab.fromX))
+        event.preventDefault()
+        const distance = Math.max(0, current.baseX + dx)
+        current.distance = distance > current.width ? current.width + (distance - current.width) * 0.12 : distance
+        current.samples.push({ x: event.clientX, time: event.timeStamp })
+        current.samples = current.samples.filter(sample => event.timeStamp - sample.time <= 100)
+        // Keep pointer tracking out of React's page render. A long note should
+        // not rebuild its complete DOM on every move of the user's finger.
+        current.element.setAttribute('data-dragging', '1')
+        current.element.style.transform = `translate3d(${current.distance}px,0,0)`
       },
-      onPointerUp: release,
-      onPointerCancel: () => {
-        gesture.current = null
-        setDragX(0)
+      onPointerUp: (event) => {
+        const current = gesture.current
+        if (!current || current.id !== event.pointerId) return
+        if (!current.locked) { reset(); return }
+        event.preventDefault()
+        suppressClickUntil.current = event.timeStamp + 450
+        const first = current.samples[0]
+        const last = current.samples[current.samples.length - 1]
+        const velocity = first && last && event.timeStamp - last.time < 120
+          ? (last.x - first.x) / Math.max(1, last.time - first.time)
+          : 0
+        const commit = current.distance > current.width * THRESHOLD_RATIO
+          || (current.distance > 48 && velocity > 0.5)
+        if (commit) {
+          // Capture the visible drag before removing the outer translation.
+          pop()
+          reset(true)
+        } else reset()
+      },
+      onPointerCancel: () => reset(),
+      onLostPointerCapture: () => { if (gesture.current?.locked) reset() },
+      onClickCapture: (event) => {
+        if (event.timeStamp > suppressClickUntil.current) return
+        event.preventDefault()
+        event.stopPropagation()
       },
     },
   }
 }
 
 interface PointerHandlers {
-  onPointerDown?: (event: React.PointerEvent) => void
-  onPointerMove?: (event: React.PointerEvent) => void
-  onPointerUp?: (event: React.PointerEvent) => void
-  onPointerCancel?: (event: React.PointerEvent) => void
+  onPointerDown?: (event: PointerEvent<HTMLElement>) => void
+  onPointerMove?: (event: PointerEvent<HTMLElement>) => void
+  onPointerUp?: (event: PointerEvent<HTMLElement>) => void
+  onPointerCancel?: (event: PointerEvent<HTMLElement>) => void
+  onLostPointerCapture?: (event: PointerEvent<HTMLElement>) => void
+  onClickCapture?: (event: MouseEvent<HTMLElement>) => void
 }

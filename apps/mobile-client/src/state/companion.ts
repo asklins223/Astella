@@ -1,5 +1,4 @@
 import type { CompanionAgentToolEventV1 } from '@astella/shared/companion-agent-contracts'
-import { companionAgentToolEventV1Schema } from '@astella/shared/companion-agent-contracts'
 import type {
   CompanionPageContextV1,
   CompanionContentBlockV1,
@@ -13,6 +12,10 @@ import { ApiError } from '../platform/api-client.ts'
 import { openCompanionRealtime, RealtimeUnavailableError, type CompanionRealtimeState } from '../platform/companion-realtime.ts'
 import { handleUnauthorized } from './session.ts'
 import { createStore, useStore } from './store.ts'
+import { appendRunProcess, emptyRunProcess, mergeRunProcesses, processToolTrace, readProcessTool, restoreRunProcesses,
+  upsertProcessTool, type CompanionRunProcess, type ToolTrace } from './companion-process.ts'
+
+export type { CompanionRunProcess, CompanionRunProcessRow, ToolTrace } from './companion-process.ts'
 
 export type ProposalStatus = 'pending' | 'rejected' | 'accepted' | 'executing' | 'succeeded' | 'failed' | 'expired'
 
@@ -28,16 +31,8 @@ export interface ProposalCard {
   runId: string | null
 }
 
-export interface ToolTrace {
-  toolCallId: string
-  name: string
-  status: string
-  safeLabel: string
-  safeSummary?: string
-  proposalId?: string
-}
-
 export interface NoteEditReceipt {
+  runId: string | null
   noteId: string
   noteVersionId: string
   operation: string
@@ -49,10 +44,15 @@ export interface LiveTurn {
   runId: string
   generation: number
   initiative?: boolean
+  /** A silent consideration becomes visible only when it emits thinking, tools, or speech. */
+  visible: boolean
   /** waiting = 还在路上；thinking = 真的开了思考档；acting = 正在动手。三个词不说混。 */
   phase: 'waiting' | 'thinking' | 'acting' | 'streaming'
   statusLabel: string | null
   text: string
+  thinkingText: string
+  thinkingLastIndex: number
+  thinkingGapped: boolean
   /** 增量出现过缝：不猜内容，末尾用长度核对触发整段重读。 */
   gapped: boolean
 }
@@ -66,6 +66,9 @@ export interface CompanionState {
   messages: CompanionMessage[]
   /** Recent run outcomes make interrupted turns legible after a refresh. */
   runs: CompanionRunSummary[]
+  /** Real process history, keyed by run so refresh and older messages retain their own traces. */
+  runProcesses: Record<string, CompanionRunProcess>
+  runProcessErrors: Record<string, string>
   olderAvailable: boolean
   loadingHistory: boolean
   turn: LiveTurn | null
@@ -93,6 +96,8 @@ export const companionStore = createStore<CompanionState>({
   historyReady: false,
   messages: [],
   runs: [],
+  runProcesses: {},
+  runProcessErrors: {},
   olderAvailable: false,
   loadingHistory: false,
   turn: null,
@@ -128,6 +133,7 @@ let settledGeneration = 0
 let inboxRequest: AbortController | null = null
 let transcriptionRequest: AbortController | null = null
 let imageUploadRequest: AbortController | null = null
+let reportedRunError: { runId: string; message: string } | null = null
 
 function prioritizeUserInput(): void {
   window.dispatchEvent(new Event('astella:companion-user-input'))
@@ -136,10 +142,24 @@ function prioritizeUserInput(): void {
   const scope = scopeGeneration
   settledGeneration = Math.max(settledGeneration, turn.generation)
   set({ turn: null })
-  void companionApi.cancelRun(turn.runId, turn.generation).catch(() => {
+  void companionApi.cancelRun(turn.runId, turn.generation).catch((error) => {
     // The next real user turn also supersedes an internal participation on the server.
     if (scope !== scopeGeneration) return
+    handleUnauthorizedForScope(error, scope)
   })
+}
+
+/** Background reads and best-effort controls still share the account session. */
+function handleUnauthorizedForScope(error: unknown, scope: number, conversationId?: string | null): boolean {
+  if (scope !== scopeGeneration || (conversationId !== undefined && conversationId !== get().conversationId)) return false
+  if (!(error instanceof ApiError) || !error.isUnauthorized) return false
+  handleUnauthorized()
+  return true
+}
+
+/** Contextual input participates in attention without replacing the main draft. */
+export function notifyCompanionInput(): void {
+  prioritizeUserInput()
 }
 
 export function setDraft(text: string): void {
@@ -252,14 +272,17 @@ async function attachRealtime(conversationId: string, scope: number): Promise<vo
     ...snapshot.runs.filter((run) => !isActiveRun(run.status)).map((run) => run.generation),
     0,
   )
-  const resumedTurn = restoreActiveTurn(snapshot)
+  const runProcesses = restoreRunProcesses(snapshot)
+  const resumedTurn = restoreActiveTurn(snapshot, runProcesses)
   set({
     messages: page.items,
     historyReady: true,
     olderAvailable: page.hasMore,
     runs: snapshot.runs,
+    runProcesses,
+    runProcessErrors: {},
     turn: resumedTurn,
-    tools: resumedTurn ? restoreTools(snapshot, resumedTurn.runId) : [],
+    tools: resumedTurn ? runProcesses[resumedTurn.runId]?.tools ?? [] : [],
     proposals: restoreProposals(snapshot),
   })
   hydrateRestoredProposals(get().proposals)
@@ -284,6 +307,7 @@ async function attachRealtime(conversationId: string, scope: number): Promise<vo
       } catch (error) {
         if (scope === scopeGeneration && generation === attachGeneration && get().conversationId === conversationId) {
           set({ historyReady: wasReady, turn: previousTurn })
+          handleUnauthorizedForScope(error, scope, conversationId)
         }
         throw error
       }
@@ -296,14 +320,16 @@ async function attachRealtime(conversationId: string, scope: number): Promise<vo
         ...nextSnapshot.runs.filter((run) => !isActiveRun(run.status)).map((run) => run.generation),
         0,
       )
-      const resumedTurn = restoreActiveTurn(nextSnapshot)
+      const runProcesses = mergeRunProcesses(get().runProcesses, restoreRunProcesses(nextSnapshot))
+      const resumedTurn = restoreActiveTurn(nextSnapshot, runProcesses)
       set({
         messages: page.items,
         historyReady: true,
         olderAvailable: page.hasMore,
         runs: nextSnapshot.runs,
+        runProcesses,
         turn: resumedTurn,
-        tools: resumedTurn ? restoreTools(nextSnapshot, resumedTurn.runId) : [],
+        tools: resumedTurn ? runProcesses[resumedTurn.runId]?.tools ?? [] : [],
         proposals: restoreProposals(nextSnapshot),
       })
       hydrateRestoredProposals(get().proposals)
@@ -322,9 +348,14 @@ async function loadConversationSnapshot(conversationId: string): Promise<{
   try {
     const [page, snapshot] = await Promise.all([
       companionApi.messages(conversationId, { limit: 50, signal: controller.signal }),
-      companionApi.runNodes(conversationId, 0, controller.signal),
+      companionApi.runNodes(conversationId, 0, controller.signal, { includeThinking: true }),
     ])
-    return { page, snapshot }
+    const missingRunIds = [...new Set(page.items.flatMap((message) => message.runId ? [message.runId] : []))]
+      .filter((runId) => !snapshot.runs.some((run) => run.runId === runId))
+    if (!missingRunIds.length) return { page, snapshot }
+    const olderProcesses = await companionApi.runNodes(conversationId, 0, controller.signal,
+      { includeThinking: true, runIds: missingRunIds })
+    return { page, snapshot: { ...snapshot, runs: [...snapshot.runs, ...olderProcesses.runs] } }
   } finally {
     clearTimeout(timeout)
   }
@@ -349,6 +380,7 @@ export function resetConversation(): void {
   cursor = 0
   latestGeneration = 0
   settledGeneration = 0
+  reportedRunError = null
   closeConversation()
   set({
     capability: 'unknown',
@@ -356,6 +388,8 @@ export function resetConversation(): void {
     historyReady: false,
     messages: [],
     runs: [],
+    runProcesses: {},
+    runProcessErrors: {},
     olderAvailable: false,
     loadingHistory: false,
     turn: null,
@@ -418,13 +452,17 @@ export async function loadOlder(): Promise<void> {
   const oldest = state.messages[0]?.seq
   if (!state.conversationId || oldest === undefined || state.loadingHistory) return
   const conversationId = state.conversationId
+  const scope = scopeGeneration
   set({ loadingHistory: true })
   try {
     const page = await companionApi.messages(conversationId, { limit: 50, beforeSeq: oldest })
-    if (get().conversationId !== conversationId) return
+    if (scope !== scopeGeneration || get().conversationId !== conversationId) return
     set({ messages: [...page.items, ...get().messages], olderAvailable: page.hasMore, loadingHistory: false })
+    void refreshRunArchives(page.items.flatMap((message) => message.runId ? [message.runId] : []))
   } catch (error) {
-    if (get().conversationId === conversationId) set({ loadingHistory: false, error: describe(error) })
+    if (scope !== scopeGeneration || get().conversationId !== conversationId) return
+    if (handleUnauthorizedForScope(error, scope, conversationId)) return
+    set({ loadingHistory: false, error: describe(error) })
   }
 }
 
@@ -436,7 +474,7 @@ export async function loadOlder(): Promise<void> {
  */
 export async function sendTurn(
   text: string,
-  options: { selection?: CompanionSelectionV1; context?: CompanionPageContextV1 } = {},
+  options: { selection?: CompanionSelectionV1; context?: CompanionPageContextV1; composer?: 'main' | 'isolated' } = {},
 ): Promise<boolean> {
   if (get().turn?.initiative) prioritizeUserInput()
   const state = get()
@@ -445,10 +483,11 @@ export async function sendTurn(
 
   const conversationId = state.conversationId
   const scope = scopeGeneration
-  const pendingImage = options.selection ? null : state.pendingImage
-  const pendingVoice = options.selection ? null : state.pendingVoice
-  const submittedContext = options.context ?? state.draftContext
-  const sendingCurrentDraft = !options.selection && state.draft.trim() === trimmed
+  const isolated = options.composer === 'isolated' || Boolean(options.selection)
+  const pendingImage = isolated ? null : state.pendingImage
+  const pendingVoice = isolated ? null : state.pendingVoice
+  const submittedContext = options.context ?? (isolated ? null : state.draftContext)
+  const sendingCurrentDraft = !isolated && state.draft.trim() === trimmed
   const previousTurn = state.turn
   let imageBlock = pendingImage ? state.pendingImageBlock : null
   let optimisticId: string | null = null
@@ -508,16 +547,20 @@ export async function sendTurn(
   }
   set({
     messages: [...current.messages, optimistic],
-    draft: current.draft.trim() === trimmed ? '' : current.draft,
+    draft: sendingCurrentDraft ? '' : current.draft,
     ...(sendingCurrentDraft ? { draftContext: null } : {}),
     composerError: null,
     tools: [],
     turn: {
       runId: '',
       generation: 0,
+      visible: true,
       phase: 'waiting',
       statusLabel: null,
       text: '',
+      thinkingText: '',
+      thinkingLastIndex: -1,
+      thinkingGapped: false,
       gapped: false,
     },
   })
@@ -559,11 +602,11 @@ export async function sendTurn(
     return true
   } catch (error) {
     if (scope !== scopeGeneration || get().conversationId !== conversationId) return false
-    if (error instanceof ApiError && error.isUnauthorized) handleUnauthorized()
+    if (handleUnauthorizedForScope(error, scope, conversationId)) return false
     set({
       ...(optimisticId ? { messages: get().messages.filter((message) => message.id !== optimisticId) } : {}),
-      ...(!options.selection ? { draft: restoreDraft(trimmed, get().draft) } : {}),
-      ...(!options.selection && get().draftContext === null && submittedContext ? { draftContext: submittedContext } : {}),
+      ...(!isolated ? { draft: restoreDraft(trimmed, get().draft) } : {}),
+      ...(!isolated && get().draftContext === null && submittedContext ? { draftContext: submittedContext } : {}),
       turn: previousTurn,
       uploadingImage: false,
       composerError: describeSendError(error, Boolean(pendingImage && !imageBlock)),
@@ -604,28 +647,55 @@ function describeTranscriptionError(error: unknown): string {
 function applyTurnAccepted(accepted: CreateCompanionTurnResponseV1): void {
   cursor = Math.max(cursor, accepted.eventCursor)
   latestGeneration = Math.max(latestGeneration, accepted.generation)
-  const stillRunning = accepted.status === 'accepted' || accepted.status === 'running'
+  const stillRunning = (accepted.status === 'accepted' || accepted.status === 'running')
+    && accepted.generation > settledGeneration
   if (!stillRunning) settledGeneration = Math.max(settledGeneration, accepted.generation)
+  const current = get().turn
+  const sameTurn = current?.runId === accepted.runId && current.generation === accepted.generation
+  const process = get().runProcesses[accepted.runId] ?? emptyRunProcess(accepted.runId, accepted.generation)
   set({
+    messages: get().messages.map((message) => message.clientMessageId === accepted.clientMessageId
+      ? { ...message, id: accepted.userMessageId, runId: accepted.runId } : message),
+    runProcesses: { ...get().runProcesses, [accepted.runId]: { ...process, generation: accepted.generation,
+      status: accepted.generation <= settledGeneration && isActiveRun(accepted.status) ? process.status : accepted.status } },
     turn: stillRunning
       ? {
           runId: accepted.runId,
           generation: accepted.generation,
-          phase: get().turn?.phase === 'streaming' ? 'streaming' : 'waiting',
-          statusLabel: get().turn?.statusLabel ?? null,
-          text: get().turn?.text ?? '',
-          gapped: get().turn?.gapped ?? false,
+          visible: sameTurn ? current.visible : true,
+          phase: sameTurn ? current.phase : 'waiting',
+          statusLabel: sameTurn ? current.statusLabel : null,
+          text: sameTurn ? current.text : '',
+          thinkingText: sameTurn ? current.thinkingText : process.thinkingText,
+          thinkingLastIndex: sameTurn ? current.thinkingLastIndex : process.thinkingLastIndex,
+          thinkingGapped: sameTurn ? current.thinkingGapped : process.thinkingGapped,
+          gapped: sameTurn ? current.gapped : false,
         }
       : null,
   })
+  // A retried submit may return a cursor beyond already emitted process frames.
+  // Read its archive even while active so those thoughts/tools are not skipped.
+  if (!sameTurn || !stillRunning) void refreshRunArchives([accepted.runId])
+  const scope = scopeGeneration
+  const conversationId = get().conversationId
+  if (conversationId) void companionApi.messages(conversationId, { limit: 50 }).then((page) => {
+    if (scope !== scopeGeneration || conversationId !== get().conversationId) return
+    const userMessage = page.items.find((message) => message.id === accepted.userMessageId)
+    if (userMessage) set({ messages: replacePersistedMessage(get().messages, userMessage) })
+    if (!stillRunning) set({ messages: mergePersistedPage(get().messages, page.items) })
+  }).catch((error) => { handleUnauthorizedForScope(error, scope, conversationId) })
 }
 
 export async function interrupt(): Promise<void> {
   const turn = get().turn
   if (!turn?.runId) return
+  const scope = scopeGeneration
+  const conversationId = get().conversationId
   try {
     await companionApi.cancelRun(turn.runId, turn.generation)
   } catch (error) {
+    if (scope !== scopeGeneration || conversationId !== get().conversationId) return
+    if (handleUnauthorizedForScope(error, scope, conversationId)) return
     set({ error: describe(error) })
   }
 }
@@ -633,6 +703,8 @@ export async function interrupt(): Promise<void> {
 export async function decide(proposalId: string, decision: 'confirm' | 'reject'): Promise<void> {
   const card = get().proposals.find((item) => item.proposalId === proposalId)
   if (!card || card.deciding || !card.payloadSha256) return
+  const scope = scopeGeneration
+  const conversationId = get().conversationId
   const mark = (patch: Partial<ProposalCard>) => ({
     proposals: get().proposals.map((item) => (item.proposalId === proposalId ? { ...item, ...patch } : item)),
   })
@@ -641,6 +713,8 @@ export async function decide(proposalId: string, decision: 'confirm' | 'reject')
     await companionApi.decideProposal(proposalId, { decision, expectedPayloadSha256: card.payloadSha256 })
     // 终态由 action.decision / agent.tool 的事件回来，这里不自己判成功。
   } catch (error) {
+    if (scope !== scopeGeneration || conversationId !== get().conversationId) return
+    if (handleUnauthorizedForScope(error, scope, conversationId)) return
     set({
       ...mark({ deciding: false }),
       error: error instanceof ApiError && error.status === 409
@@ -650,7 +724,7 @@ export async function decide(proposalId: string, decision: 'confirm' | 'reject')
   }
 }
 
-function restoreActiveTurn(snapshot: CompanionRunSnapshot): LiveTurn | null {
+function restoreActiveTurn(snapshot: CompanionRunSnapshot, processes: Record<string, CompanionRunProcess>): LiveTurn | null {
   const active = snapshot.runs.find((run) => isActiveRun(run.status))
   if (!active) return null
 
@@ -659,11 +733,12 @@ function restoreActiveTurn(snapshot: CompanionRunSnapshot): LiveTurn | null {
     ? statusNode.payload as { status?: unknown; safeLabel?: unknown; inputKind?: unknown }
     : null
   const status = payload?.status
-  const phase: LiveTurn['phase'] = status === 'thinking' || status === 'acting' || status === 'waiting'
+  const process = processes[active.runId]
+  const phase: LiveTurn['phase'] = process?.phase ?? (status === 'thinking' || status === 'acting' || status === 'waiting'
     ? status
     : active.status === 'waiting_for_confirmation'
       ? 'acting'
-      : 'waiting'
+      : 'waiting')
   const fallbackLabel = active.status === 'waiting_for_confirmation'
     ? '等你确认'
     : active.status === 'cancel_requested'
@@ -674,12 +749,16 @@ function restoreActiveTurn(snapshot: CompanionRunSnapshot): LiveTurn | null {
   return {
     runId: active.runId,
     generation: active.generation,
-    initiative: payload?.inputKind === 'initiative',
+    initiative: active.userMessageId === null || payload?.inputKind === 'initiative',
+    visible: (active.userMessageId !== null && payload?.inputKind !== 'initiative') || Boolean(process?.thinkingText || process?.tools.length),
     phase,
-    statusLabel: typeof payload?.safeLabel === 'string' ? payload.safeLabel : fallbackLabel,
+    statusLabel: process?.statusLabel ?? (typeof payload?.safeLabel === 'string' ? payload.safeLabel : fallbackLabel),
     // The history snapshot carries status/tool nodes, not assistant deltas. If this
     // resumed run completes, finalize() will compare lengths and fetch its full reply.
     text: '',
+    thinkingText: process?.thinkingText ?? '',
+    thinkingLastIndex: process?.thinkingLastIndex ?? -1,
+    thinkingGapped: process?.thinkingGapped ?? false,
     gapped: false,
   }
 }
@@ -691,34 +770,54 @@ function isActiveRun(status: string): boolean {
     || status === 'cancel_requested'
 }
 
-function restoreTools(snapshot: CompanionRunSnapshot, runId: string): ToolTrace[] {
-  const byCall = new Map<string, ToolTrace>()
-  for (const item of snapshot.items) {
-    if (item.runId !== runId || item.type !== 'agent.tool' || !item.payload || typeof item.payload !== 'object') continue
-    const parsed = companionAgentToolEventV1Schema.safeParse((item.payload as { tool?: unknown }).tool)
-    if (!parsed.success) continue
-    const tool = parsed.data
-    byCall.set(tool.toolCallId, {
-      toolCallId: tool.toolCallId,
-      name: tool.name,
-      status: tool.status,
-      safeLabel: tool.safeLabel,
-      ...(tool.safeSummary ? { safeSummary: tool.safeSummary } : {}),
-      ...(tool.proposalId ? { proposalId: tool.proposalId } : {}),
-    })
+/** Fetch retained process archives for loaded message runs, including runs beyond the latest 20. */
+export async function refreshRunArchives(runIds: string[]): Promise<void> {
+  const conversationId = get().conversationId
+  const scope = scopeGeneration
+  if (!conversationId || !runIds.length) return
+  try {
+    const snapshot = await companionApi.runNodes(conversationId, 0, undefined,
+      { includeThinking: true, runIds: [...new Set(runIds)].slice(0, 100) })
+    if (scope !== scopeGeneration || conversationId !== get().conversationId) return
+    const incomingIds = new Set(snapshot.runs.map((run) => run.runId))
+    const runProcessErrors = { ...get().runProcessErrors }
+    for (const runId of runIds) delete runProcessErrors[runId]
+    const runProcesses = mergeRunProcesses(get().runProcesses, restoreRunProcesses(snapshot))
+    set({ runs: [...snapshot.runs, ...get().runs.filter((run) => !incomingIds.has(run.runId))]
+      .sort((left, right) => right.generation - left.generation), runProcesses, runProcessErrors })
+    if (reportedRunError) {
+      const errorRun = snapshot.runs.find((run) => run.runId === reportedRunError?.runId)
+      if (errorRun?.userMessageId === null && get().error === reportedRunError.message) {
+        set({ error: null })
+        reportedRunError = null
+      }
+    }
+    const active = get().turn
+    const process = active?.runId ? runProcesses[active.runId] : null
+    if (active && process) set({ tools: process.tools, turn: { ...active,
+      thinkingText: process.thinkingText, thinkingLastIndex: process.thinkingLastIndex,
+      thinkingGapped: process.thinkingGapped,
+      visible: active.visible || Boolean(process.thinkingText || process.tools.length),
+      phase: active.text ? 'streaming' : process.phase,
+      statusLabel: active.text ? null : process.statusLabel } })
+  } catch (error) {
+    if (scope !== scopeGeneration || conversationId !== get().conversationId) return
+    if (error instanceof ApiError && error.isUnauthorized) handleUnauthorized()
+    else set({ runProcessErrors: { ...get().runProcessErrors,
+      ...Object.fromEntries(runIds.map((runId) => [runId, '这轮过程暂时没有同步成功，可以重试。'])) } })
   }
-  return [...byCall.values()]
 }
 
 /** 从 durable run nodes 重建尚未结束的提议；刷新或补游标后仍可在「手边」决定。 */
 function restoreProposals(snapshot: CompanionRunSnapshot): ProposalCard[] {
   const byId = new Map<string, ProposalCard>()
-  for (const item of snapshot.items) {
+  const nodes = [...snapshot.runs.flatMap((run) => run.processTimeline ?? []), ...snapshot.items]
+    .sort((left, right) => left.seq - right.seq)
+  for (const item of nodes) {
     if (!item.payload || typeof item.payload !== 'object') continue
     const payload = item.payload as Record<string, unknown>
     if (item.type === 'agent.tool') {
-      const parsed = companionAgentToolEventV1Schema.safeParse(payload.tool)
-      const tool = parsed.success ? parsed.data : null
+      const tool = readProcessTool(payload.tool)
       if (!tool?.proposalId || tool.status !== 'waiting_confirmation') continue
       byId.set(tool.proposalId, {
         proposalId: tool.proposalId,
@@ -771,8 +870,18 @@ function isProposalStatus(value: unknown): value is ProposalStatus {
 
 function hydrateRestoredProposals(cards: ProposalCard[]): void {
   for (const card of cards) {
-    if (card.status !== 'pending' || card.payloadSha256) continue
-    companionApi.proposal(card.proposalId).then((snapshot) => {
+    if (card.status === 'pending' && !card.payloadSha256) void retryProposalDetails(card.proposalId)
+  }
+}
+
+/** A failed proposal read leaves its confirmation disabled and offers a real retry. */
+export async function retryProposalDetails(proposalId: string): Promise<boolean> {
+  const scope = scopeGeneration
+  const conversationId = get().conversationId
+  if (!conversationId || !get().proposals.some((card) => card.proposalId === proposalId)) return false
+  try {
+      const snapshot = await companionApi.proposal(proposalId)
+      if (scope !== scopeGeneration || conversationId !== get().conversationId) return false
       const proposal = snapshot.proposal
       set({
         proposals: get().proposals.map((item) => item.proposalId === proposal.proposalId
@@ -782,31 +891,50 @@ function hydrateRestoredProposals(cards: ProposalCard[]): void {
               targetSummary: proposal.targetSummary,
               impactSummary: proposal.impactSummary,
               payloadSha256: proposal.payloadSha256,
-              status: proposal.status,
+              status: proposal.status === 'pending' && item.status !== 'pending' ? item.status : proposal.status,
             }
           : item),
       })
-    }).catch((error) => {
-      if (!(error instanceof ApiError) || error.status !== 404) set({ error: describe(error) })
-    })
+      return true
+  } catch (error) {
+    if (scope !== scopeGeneration || conversationId !== get().conversationId) return false
+    if (error instanceof ApiError && error.isUnauthorized) handleUnauthorized()
+    else set({ error: describe(error) })
+    return false
   }
 }
 
 function handleEvent(event: CompanionStreamEventV1): void {
+  if (event.seq <= cursor) return
   cursor = Math.max(cursor, event.seq)
   switch (event.type) {
     case 'assistant.status': {
       if (!acceptRunEvent(event)) return
       const turn = openTurn(event)
+      const process = recordProcessEvent(event)
+      const initiative = event.payload.inputKind === 'initiative' || turn.initiative
       set({ turn: { ...turn, initiative: event.payload.inputKind === 'initiative' || turn.initiative,
+        visible: !initiative || Boolean(turn.text || process?.thinkingText || process?.tools.length),
         phase: event.payload.status, statusLabel: event.payload.safeLabel } })
+      return
+    }
+    case 'assistant.thinking': {
+      if (!acceptRunEvent(event)) return
+      const turn = openTurn(event)
+      const process = recordProcessEvent(event)
+      if (!process) return
+      set({ turn: { ...turn, visible: true, phase: 'thinking', statusLabel: process.statusLabel,
+        thinkingText: process.thinkingText, thinkingLastIndex: process.thinkingLastIndex,
+        thinkingGapped: process.thinkingGapped } })
       return
     }
     case 'assistant.delta': {
       if (!acceptRunEvent(event)) return
       const turn = openTurn(event)
       const next = appendDelta(turn.text, event.payload.appendFrom, event.payload.textDelta)
-      set({ turn: { ...turn, phase: 'streaming', text: next.text, gapped: turn.gapped || next.gapped } })
+      updateProcess(event.runId, { phase: 'streaming', statusLabel: null })
+      set({ turn: { ...turn, visible: true, phase: 'streaming', statusLabel: null,
+        text: next.text, gapped: turn.gapped || next.gapped } })
       return
     }
     case 'assistant.utterance': {
@@ -815,14 +943,18 @@ function handleEvent(event: CompanionStreamEventV1): void {
       const message: CompanionMessage = { version: 1, id: payload.messageId, conversationId: event.conversationId,
         seq: payload.messageSeq, role: 'assistant', kind: payload.proactive ? 'proactive' : 'text',
         blocks: [{ type: 'text', text: payload.text }], runId: event.runId, createdAt: event.createdAt }
-      set({ messages: [...get().messages.filter(m => m.id !== message.id), message].sort((a, b) => a.seq - b.seq),
-        turn: { ...openTurn(event), initiative: payload.proactive, text: '' } })
+      updateProcess(event.runId, { phase: 'waiting', statusLabel: null })
+      set({ messages: mergeMessage(get().messages, message),
+        turn: { ...openTurn(event), initiative: payload.proactive, visible: true,
+          phase: 'waiting', statusLabel: null, text: '' } })
       return
     }
     case 'turn.completed': {
       latestGeneration = Math.max(latestGeneration, event.generation)
       settledGeneration = Math.max(settledGeneration, event.generation)
+      updateProcess(event.runId, { status: 'succeeded', statusLabel: null })
       if (get().turn?.runId === event.runId) set({ turn: null })
+      if (event.runId) void refreshRunArchives([event.runId])
       return
     }
     case 'assistant.final': {
@@ -835,8 +967,9 @@ function handleEvent(event: CompanionStreamEventV1): void {
     }
     case 'agent.tool':
       if (!acceptRunEvent(event)) return
-      set({ turn: openTurn(event) })
-      applyToolEvent(event.payload.tool, event.runId)
+      set({ turn: { ...openTurn(event), visible: true } })
+      recordProcessEvent(event)
+      applyToolEvent(event.payload.tool, event.runId, event.seq)
       return
     case 'action.proposed': {
       if (!acceptRunEvent(event)) return
@@ -876,8 +1009,10 @@ function handleEvent(event: CompanionStreamEventV1): void {
     case 'turn.cancelled': {
       latestGeneration = Math.max(latestGeneration, event.generation)
       settledGeneration = Math.max(settledGeneration, event.generation)
+      updateProcess(event.runId, { status: 'cancelled', statusLabel: null })
       const turn = get().turn
       if (turn?.generation === event.generation && turn.runId === event.runId) set({ turn: null })
+      if (event.runId) void refreshRunArchives([event.runId])
       return
     }
     case 'error': {
@@ -888,10 +1023,18 @@ function handleEvent(event: CompanionStreamEventV1): void {
       latestGeneration = Math.max(latestGeneration, event.generation)
       settledGeneration = Math.max(settledGeneration, event.generation)
       const turn = get().turn
+      const message = reason || (event.payload.recoverable ? '这一轮没说完，可以再发一次。' : '这一轮停下了。')
+      const errorRun = get().runs.find((run) => run.runId === event.runId)
+      const initiative = (turn?.runId === event.runId && turn.initiative) || errorRun?.userMessageId === null
+      const process = event.runId ? get().runProcesses[event.runId] ?? emptyRunProcess(event.runId, event.generation) : null
+      if (process && event.runId) set({ runProcesses: { ...get().runProcesses,
+        [event.runId]: { ...process, status: 'failed', statusLabel: null, error: message } } })
+      if (!initiative && event.runId) reportedRunError = { runId: event.runId, message }
       set({
         ...(turn?.generation === event.generation && (!event.runId || turn.runId === event.runId) ? { turn: null } : {}),
-        error: reason || (event.payload.recoverable ? '这一轮没说完，可以再发一次。' : '这一轮停下了。'),
+        ...(!initiative ? { error: message } : {}),
       })
+      if (event.runId) void refreshRunArchives([event.runId])
       return
     }
     default:
@@ -922,17 +1065,38 @@ function openTurn(event: CompanionStreamEventV1): LiveTurn {
   return {
     runId: event.runId ?? '',
     generation: event.generation,
+    visible: true,
     phase: 'waiting',
     statusLabel: null,
     text: '',
+    thinkingText: '',
+    thinkingLastIndex: -1,
+    thinkingGapped: false,
     gapped: false,
   }
+}
+
+function recordProcessEvent(event: CompanionStreamEventV1): CompanionRunProcess | null {
+  if (!event.runId) return null
+  const current = get().runProcesses[event.runId] ?? emptyRunProcess(event.runId, event.generation)
+  const process = appendRunProcess(current, { version: 1, seq: event.seq, type: event.type,
+    runId: event.runId, payload: event.payload })
+  set({ runProcesses: { ...get().runProcesses, [event.runId]: { ...process, generation: event.generation } } })
+  return process
+}
+
+function updateProcess(runId: string | null, patch: Partial<CompanionRunProcess>): void {
+  if (!runId) return
+  const process = get().runProcesses[runId]
+  if (process) set({ runProcesses: { ...get().runProcesses, [runId]: { ...process, ...patch } } })
 }
 
 function finalize(event: Extract<CompanionStreamEventV1, { type: 'assistant.final' }>): void {
   if (!acceptRunEvent(event)) return
   latestGeneration = Math.max(latestGeneration, event.generation)
   settledGeneration = Math.max(settledGeneration, event.generation)
+  updateProcess(event.runId, { status: 'succeeded', phase: 'streaming', statusLabel: null })
+  if (event.runId) void refreshRunArchives([event.runId])
   const turn = get().turn
   const matchesTurn = turn?.generation === event.generation && turn.runId === event.runId
   const text = turn?.text ?? ''
@@ -946,10 +1110,12 @@ function finalize(event: Extract<CompanionStreamEventV1, { type: 'assistant.fina
         .messages(conversationId, { limit: 50 })
         .then((page) => {
           if (scope === scopeGeneration && conversationId === get().conversationId) {
-            set({ messages: page.items, olderAvailable: page.hasMore })
+            set({ messages: mergePersistedPage(get().messages, page.items) })
           }
         })
-        .catch(describeError)
+        .catch((error) => {
+          if (scope === scopeGeneration && conversationId === get().conversationId) describeError(error)
+        })
     }
     return
   }
@@ -988,7 +1154,7 @@ function finalize(event: Extract<CompanionStreamEventV1, { type: 'assistant.fina
       if (!persisted) return
       set({ messages: replacePersistedMessage(get().messages, persisted) })
     })
-    .catch(() => undefined)
+    .catch((error) => { handleUnauthorizedForScope(error, scope, conversationId) })
 }
 
 function applyFollowupSuggestions(
@@ -1018,7 +1184,7 @@ function applyFollowupSuggestions(
       if (!persisted) return
       set({ messages: replacePersistedMessage(get().messages, attachFollowupSuggestions(persisted, prompts)) })
     })
-    .catch(() => undefined)
+    .catch((error) => { handleUnauthorizedForScope(error, scope, conversationId) })
 }
 
 function attachFollowupSuggestions<T extends CompanionMessage>(message: T, prompts: string[]): T {
@@ -1029,7 +1195,8 @@ function attachFollowupSuggestions<T extends CompanionMessage>(message: T, promp
 }
 
 function replacePersistedMessage(messages: CompanionMessage[], persisted: CompanionMessage): CompanionMessage[] {
-  const index = messages.findIndex((message) => message.id === persisted.id)
+  const index = messages.findIndex((message) => message.id === persisted.id
+    || (persisted.clientMessageId && message.clientMessageId === persisted.clientMessageId))
   const current = index < 0 ? null : messages[index]
   const currentLegacyFollowups = current?.blocks.find((block) => block.type === 'follow_up_suggestions')
   const currentLegacyPrompts = currentLegacyFollowups && (currentLegacyFollowups as { prompts?: unknown }).prompts
@@ -1054,26 +1221,23 @@ function replacePersistedMessage(messages: CompanionMessage[], persisted: Compan
   })
 }
 
-function applyToolEvent(tool: CompanionAgentToolEventV1, runId: string | null): void {
-  const trace: ToolTrace = {
-    toolCallId: tool.toolCallId,
-    name: tool.name,
-    status: tool.status,
-    safeLabel: tool.safeLabel,
-    safeSummary: tool.safeSummary,
-    proposalId: tool.proposalId,
-  }
-  const known = get().tools.some((item) => item.toolCallId === tool.toolCallId)
-  const tools = known
-    ? get().tools.map((item) => (item.toolCallId === tool.toolCallId ? trace : item))
-    : [...get().tools, trace]
+function mergePersistedPage(messages: CompanionMessage[], persisted: CompanionMessage[]): CompanionMessage[] {
+  return persisted.reduce((merged, message) => replacePersistedMessage(merged, message), messages)
+}
+
+function applyToolEvent(tool: CompanionAgentToolEventV1, runId: string | null, seq: number): void {
+  const trace = processToolTrace(tool, seq)
+  const process = runId ? get().runProcesses[runId] : null
+  const tools = process?.tools ?? upsertProcessTool(get().tools, trace)
   const turn = get().turn
-  const receipt = readNoteEdit(tool)
+  const receipt = readNoteEdit(tool, runId)
 
   set({
     tools,
-    ...(turn ? { turn: { ...turn, phase: 'acting' as const } } : {}),
-    ...(receipt ? { noteEdits: [...get().noteEdits, receipt] } : {}),
+    ...(turn ? { turn: { ...turn, phase: process?.phase ?? 'acting', statusLabel: process?.statusLabel ?? null } } : {}),
+    ...(receipt && !get().noteEdits.some((item) => item.runId === runId && item.noteId === receipt.noteId
+      && item.noteVersionId === receipt.noteVersionId && item.operation === receipt.operation)
+      ? { noteEdits: [...get().noteEdits, receipt] } : {}),
     ...(tool.proposalId && tool.status === 'waiting_confirmation'
       ? {
           proposals: upsertProposal(get().proposals, {
@@ -1090,39 +1254,21 @@ function applyToolEvent(tool: CompanionAgentToolEventV1, runId: string | null): 
       : {}),
   })
 
-  // 事件里只带指纹时，标题、影响说明与 payloadSha256 要现取一次快照才提得了决定。
-  if (tool.proposalId && tool.status === 'waiting_confirmation' && !tool.safeSummary) {
-    companionApi
-      .proposal(tool.proposalId)
-      .then((snapshot) => {
-        const proposal = (snapshot as { proposal?: Record<string, unknown> }).proposal
-        if (!proposal) return
-        set({
-          proposals: get().proposals.map((card) =>
-            card.proposalId === tool.proposalId
-              ? {
-                  ...card,
-                  title: (proposal.title as string) ?? card.title,
-                  targetSummary: (proposal.targetSummary as string) ?? card.targetSummary,
-                  impactSummary: (proposal.impactSummary as string) ?? card.impactSummary,
-                  payloadSha256: (proposal.payloadSha256 as string) ?? card.payloadSha256,
-                  status: (proposal.status as ProposalStatus) ?? card.status,
-                }
-              : card,
-          ),
-        })
-      })
-      .catch(describeError)
+  // Summary text is not an approval fingerprint; any missing fingerprint needs the real proposal.
+  if (tool.proposalId && tool.status === 'waiting_confirmation') {
+    hydrateRestoredProposals(get().proposals.filter((card) => card.proposalId === tool.proposalId))
   }
 }
 
-function readNoteEdit(tool: CompanionAgentToolEventV1): NoteEditReceipt | null {
+function readNoteEdit(tool: CompanionAgentToolEventV1, runId: string | null): NoteEditReceipt | null {
+  if (tool.status !== 'succeeded') return null
   const edit = tool.noteEdit
   if (!edit || typeof edit !== 'object') return null
   const noteId = (edit as { noteId?: unknown }).noteId
   const noteVersionId = (edit as { noteVersionId?: unknown }).noteVersionId
   if (typeof noteId !== 'string' || typeof noteVersionId !== 'string') return null
   return {
+    runId,
     noteId,
     noteVersionId,
     operation: String((edit as { operation?: unknown }).operation ?? 'unknown'),
@@ -1154,6 +1300,10 @@ function mergeMessage(messages: CompanionMessage[], message: CompanionMessage): 
 }
 
 function describeError(error: unknown): void {
+  if (error instanceof ApiError && error.isUnauthorized) {
+    handleUnauthorized()
+    return
+  }
   set({ error: describe(error) })
 }
 

@@ -16,6 +16,7 @@ import {
   archiveMemory,
   confirmMemory,
   deleteMemory,
+  dismissMemory,
   pinMemory,
   upsertMemory,
 } from "../modules/companion-conversation/memory/memory-service.ts";
@@ -93,7 +94,7 @@ test("候选记忆不进星图；确认后才成为节点（默认 candidate=tru
   assert.equal(map.cursor, null);
 });
 
-test("已删除与已归档记忆不出现在星图", async () => {
+test("已删除、已归档与已忽略记忆不出现在星图", async () => {
   const deleted = await inTx((tx) => upsertMemory(tx, scope, {
     kind: "learning_context",
     content: "将被删除",
@@ -106,13 +107,21 @@ test("已删除与已归档记忆不出现在星图", async () => {
     sourceEventId: `star-map-archived:${randomUUID()}`,
     candidate: false,
   }));
+  const dismissed = await inTx((tx) => upsertMemory(tx, scope, {
+    kind: "learning_context",
+    content: "将被忽略",
+    sourceEventId: `star-map-dismissed:${randomUUID()}`,
+    candidate: false,
+  }));
 
   await inTx((tx) => deleteMemory(tx, scope, deleted.memoryItemId));
   await inTx((tx) => archiveMemory(tx, scope, archived.memoryItemId));
+  await inTx((tx) => dismissMemory(tx, scope, dismissed.memoryItemId));
 
   const ids = (await inTx((tx) => getMemoryStarMap(tx, scope))).nodes.map((node) => node.memoryId);
   assert.equal(ids.includes(deleted.memoryItemId), false, "已删除记忆不得出现");
   assert.equal(ids.includes(archived.memoryItemId), false, "已归档记忆不得出现");
+  assert.equal(ids.includes(dismissed.memoryItemId), false, "用户明确忽略的记忆不得留在星图");
 });
 
 test("pinned 节点排在 active 之前，且实体关联与 orphaned 标记如实返回", async () => {

@@ -47,7 +47,11 @@ test("决定窗口的地方只有一处：链上不许有第二个按条数切�
   for (const file of chain) {
     const text = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
     if (file !== "companion-context-handoff.ts") {
-      assert.match(text, /boundCompanionRecentHistory|selectCompanionReplayWindow/,
+      // 交互预算那一层（`selectCompanionInteractiveReplayWindow`）也是同一个主人家的：
+      // 它只是把「本轮声明的容量」夹成 min(路由, 回放预算) 再转给同一个选择器。
+      // 摘要器现在经它取锚点——两侧必须是同一个裁剪决定，否则就会出现
+      // 「摘要没覆盖、原文也没回放」的那一层（150 轮实测曾宽达 176 条）。
+      assert.match(text, /boundCompanionRecentHistory|selectCompanionReplayWindow|selectCompanionInteractiveReplayWindow/,
         `${file} 没再经过那个唯一的窗口选择器`);
     }
     assert.doesNotMatch(text,

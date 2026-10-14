@@ -14,7 +14,7 @@
  *
  * 2026-09-19：3 → 4。claim 现在为交互车道保留一个槽位（见
  * `INTERACTIVE_RESERVE_SLOTS`），后台 job 的上限因此变成 `并发 - 1`；
- * 默认提到 4 是为了让后台（解析/记忆/念头）仍保有原来的 3 条车道，
+ * 默认提到 4 是为了让后台（解析/记忆/主动交流）仍保有原来的 3 条车道，
  * 而不是用"砍后台吞吐"来换对话延迟。
  */
 export const DEFAULT_QUEUE_CONCURRENCY = 4;
@@ -25,7 +25,7 @@ export const MAX_QUEUE_CONCURRENCY = 16;
 /**
  * 为交互车道（`interactive_ai`：伴星对话 / 表单校验问答）保留的槽位数。
  *
- * 动机：后台 job 的 handler 超时可达 110s（念头生成、记忆重建），此前它们
+ * 动机：后台 job 的 handler 超时可达 110s（主动交流、记忆重建），此前它们
  * 可以占满全部槽位——用户发消息时 turn job 只能排在后面，表现为"有时候要等
  * 很久才回"。`astella_claim_jobs` 现在按类别限流，后台同时最多占用
  * `并发 - 保留` 个槽位，交互 job 永远有槽可领。

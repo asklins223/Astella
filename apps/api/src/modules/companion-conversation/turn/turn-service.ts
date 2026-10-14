@@ -28,7 +28,7 @@ import {
 import { noteImageAssets } from "@astella/shared/db-schema/note";
 import { sourceImageObjectKeyFromUrl, sourceImageUrlFromObjectKey } from "@astella/shared/source-image-contracts";
 import { resolveAuthSurfaceManifestSecret } from "../../../companion-contracts/auth-surface.ts";
-import { ensureCompanionAccountState, getCompanionAccountEpoch } from "./companion-account-epoch.ts";
+import { ensureCompanionAccountState, getCompanionAccountEpoch } from "../../../companion-contracts/companion-account-epoch.ts";
 import { reclaimExpiredCompanionProposals, invalidateSupersededRunProposals } from "./companion-proposal-expiry.ts";
 import { retainCompanionCancelledPartial } from "./companion-cancelled-retention.ts";
 import { activateAssistantPersonaForNewTurn } from "../pet-profile-service.ts";

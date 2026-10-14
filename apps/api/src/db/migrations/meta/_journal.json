@@ -2962,6 +2962,41 @@
       "when": 1791860544004,
       "tag": "0426_companion_process_timeline_archive",
       "breakpoints": true
+    },
+    {
+      "idx": 423,
+      "version": "7",
+      "when": 1791860544005,
+      "tag": "0427_companion_wakes_only_when_she_is_here",
+      "breakpoints": true
+    },
+    {
+      "idx": 424,
+      "version": "7",
+      "when": 1791860544006,
+      "tag": "0428_remove_companion_thoughts",
+      "breakpoints": true
+    },
+    {
+      "idx": 425,
+      "version": "7",
+      "when": 1791903000000,
+      "tag": "0429_companion_memory_audit_closure",
+      "breakpoints": true
+    },
+    {
+      "idx": 426,
+      "version": "7",
+      "when": 1791903000001,
+      "tag": "0430_companion_memory_resident_capacity_follows_prompt_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 427,
+      "version": "7",
+      "when": 1791903000002,
+      "tag": "0431_companion_memory_embedding_repair_enqueue",
+      "breakpoints": true
     }
   ]
 }

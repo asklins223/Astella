@@ -68,7 +68,7 @@
 | `companion_memory_embedding_rebuild` | `runCompanionMemoryEmbeddingRebuild` | — | 最重的一个：单批 200 行向量重建 |
 | `companion_daily_summary` | `runCompanionDailySummary` | — | 日汇总 + 她按人格写的第一人称日记正文 |
 | `companion_memory_organize` | `runCompanionMemoryOrganizeJob` | — | 后台语义整理 |
-| `companion_thought` | `runCompanionThought` | — | 候选念头生成、表达与送达 |
+
 | `note_overview_generate` | `runNoteOverviewGenerate` | — | 笔记速看 |
 | `note_annotation_explain` | `runNoteAnnotationExplain` | — | 批注解释 |
 | `note_dynamic_artifact_generate` | `runNoteDynamicArtifactGenerate` | — | 动态教具 |
@@ -267,7 +267,7 @@ make verify                                  # 已包含 typecheck + test + pr-g
 | 摘要与接续 | `companion-summarizer.ts`、`companion-context-handoff.ts`、`companion-summary-retrieval.ts` | `conversation_summaries`、`companion_context_handoff_snapshots` |
 | 日汇总与日记 | `companion-daily-summary.ts`、`companion-diary-content.ts`、`companion-diary-candidates.ts`、`companion-diary-checkpoints.ts` | `companion_daily_summaries`、`companion_diary_generation_checkpoints` |
 | 人格 | `companion-persona-self-edit.ts` + 对话侧读取当前/待生效两版 | `companion_persona_profiles`、`companion_persona_profile_versions`、`pet_profiles` |
-| 念头与主动送达 | `companion-thought.ts`、`companion-delivery-write.ts`、`companion-proposal-copy.ts` | `assistant_deliveries`（唯一的送达通道）、`companion_action_proposals`；`companion_proactive_deliveries` 只有表定义与测试引用，没有生产写入方 |
+| 主动交流 | `companion-initiative.ts`、`companion-agent-runtime.ts`、`companion-participation-tools.ts` | `companion_turn_runs` 与 `companion_messages`；消息引用进入现役收件箱 |
 | 发现簿与长期经验 | 发现簿的读写在 API 侧，不在 worker；方法经验由 `packages/agent-host/src/methods.ts` 持有 | `companion_discovery_entries`、`companion_procedural_playbooks`、`companion_method_revisions` / `companion_method_uses` |
 
 自改人格的四件事（语气、性格标签、表达分量、边界）与她的自我描述共用**同一个身份写入口** `commitPersonaProposalV1()`（`packages/agent-host/src/identity.ts`）：前台工具与后台回顾都经它落，规则只有一份。改动靠 `fieldOrigin` 记账标成 `assistant`，换人格时才知道哪几项是她写的、不该被预设冲掉；账号从没选过人格时以系统默认人格为底稿起一份档案，而不是回一句"改不了"；内容没变不给"已改"回执也不占版本号；`name` 在类型上就不让她改。每条待生效版本还记「出自哪一次提议」（前台是那次运行，后台是那次回顾）：同一次运行里先改语气再改标签两项都留，不相干的两笔不并成一条，新的那笔回到当前生效的版本重排，旧的仍在人格版本记录里可恢复。
@@ -289,7 +289,7 @@ make verify                                  # 已包含 typecheck + test + pr-g
 | `scripts/companion-provider-health.mjs` | 需在 worker 容器内跑 | 每个模型槽打一次固定问句，看今天会不会吐半截话；判据复用生产的 `looksTruncatedReply` |
 | `scripts/companion-turn-e2e-verify.py` | `--rounds` | 端到端验流式批次数、失败率、落库正文形态 |
 | `scripts/companion-quality-report.py` | `--compare <baseline.json>` | 只读库出质量基线与改前/改后 delta |
-| `scripts/companion-gate-counterfactual.py` | 只读 | 11 道输出闸在最近 30 天真实流量上反事实重放，删闸的第一份证据 |
+| `scripts/companion-gate-counterfactual.py` | 只读 | 9 道对话输出闸在最近 30 天真实流量上反事实重放，删闸的第一份证据 |
 
 `companion-provider-health.mjs` 必须在 worker 容器里跑：主机上的 `AI_PLATFORMS_CONFIG` 指向容器看不到的路径，解析结果会是 `provider=mock` 加一句"平台未配置"，那测不出任何真东西。它不打印 key，也不打印带凭证的 URL，只输出 provider 名、模型、延迟与结论。
 

@@ -34,6 +34,14 @@ import {
   companionMemoryUsedCount,
 } from "../lib/metrics.ts";
 
+/**
+ * Long-term memory is a compact aid, not a second copy of the model's context window.
+ * Remaining active memories stay available through the explicit recall/read tools.
+ * The estimator used here is the repository's conservative UTF-8 byte measure.
+ */
+export const COMPANION_MEMORY_CONTEXT_ESTIMATE_BUDGET = 8_000;
+const RESIDENT_MEMORY_BUDGET_SHARE = 0.8;
+
 export interface ContextMemoryItem {
   memoryId: string;
   revision: number;
@@ -71,6 +79,8 @@ export interface ContextAssemblyResult {
    */
   residentOmittedCount?: number;
   directoryOmittedCount?: number;
+  residentOmittedCharacters?: number;
+  directoryOmittedCharacters?: number;
   /** 取舍是按哪个声明容量做的（本次路由模型档案解析出的输入 token）。 */
   memoryCapacityTokens?: number;
 }
@@ -186,12 +196,16 @@ export async function assembleCompanionContext(
       directoryTokenEstimate: 0,
       residentOmittedCount: 0,
       directoryOmittedCount: 0,
+      residentOmittedCharacters: 0,
+      directoryOmittedCharacters: 0,
     };
   }
 
-  // 两条通道各自停在声明容量之内；**完整请求**能不能发出去仍由调用前的
-  // `governContextPressure` 计量决定，这里不替它猜一个更小的字符数。
-  const capacityTokens = resolveRouteInputTokens(input.modelCapability, input.requestedOutputTokens);
+  // resident 与目录共用一个小预算，不各拿一份完整模型窗口。active 剩余正文仍可由
+  // companion_recall_memory / companion_read_memory 按需读取。
+  const routeCapacityTokens = resolveRouteInputTokens(input.modelCapability, input.requestedOutputTokens);
+  const capacityTokens = Math.min(routeCapacityTokens, COMPANION_MEMORY_CONTEXT_ESTIMATE_BUDGET);
+  const residentCapacityTokens = Math.floor(capacityTokens * RESIDENT_MEMORY_BUDGET_SHARE);
   const taskEntity = taskEntityFromPersistedPageContext(input.pageContext);
   const residentRows = await retrieveResidentCompanionMemories(tx, scope, taskEntity);
   const directoryRows = await retrieveActiveCompanionMemoryDirectory(tx, scope, taskEntity);
@@ -209,12 +223,17 @@ export async function assembleCompanionContext(
     epistemicStatus: item.epistemicStatus,
   })).filter(item => item.content.length <= companionMemoryContentMaxLength);
 
-  // resident 正文与 active 目录是两条独立通道，各自整条取舍；条数由声明容量决定。
+  // 两条通道整条取舍；先给 resident 核心记忆份额，目录使用总预算的剩余部分。
   const residentBudget = budgetAgentContextRecords(items, {
-    maxTokens: capacityTokens,
+    maxTokens: residentCapacityTokens,
     measure: (item) => {
-      const bytes = Buffer.byteLength(item.content, "utf8");
-      return { characters: item.content.length, bytes, tokens: estimateTextTokens(item.content) };
+      const serialized = JSON.stringify({
+        kind: item.kind,
+        content: item.content,
+        epistemicStatus: item.epistemicStatus,
+      });
+      const bytes = Buffer.byteLength(serialized, "utf8");
+      return { characters: serialized.length, bytes, tokens: estimateTextTokens(serialized) };
     },
   });
   const { items: budgetedItems, characters: budgetUsed, tokens: residentTokenEstimate, bytes: residentByteCount } = residentBudget;
@@ -230,7 +249,18 @@ export async function assembleCompanionContext(
     // 否则她会把它们当定论复述（§4.5.4 / §4.6.3「停止自动作确定陈述」）。
     epistemicStatus: item.epistemicStatus,
   }));
-  const directory = budgetCompanionMemoryDirectory(directoryRows, capacityTokens);
+  const directory = budgetCompanionMemoryDirectory(
+    directoryRows,
+    Math.max(0, capacityTokens - residentTokenEstimate),
+  );
+  const residentIncludedIds = new Set(budgetedItems.map(item => item.memoryId));
+  const directoryIncludedIds = new Set(directory.entries.map(item => item.memoryId));
+  const residentOmittedCharacters = residentRows
+    .filter(item => !residentIncludedIds.has(item.memoryId))
+    .reduce((sum, item) => sum + item.content.length, 0);
+  const directoryOmittedCharacters = directoryRows
+    .filter(item => !directoryIncludedIds.has(item.memoryId))
+    .reduce((sum, item) => sum + JSON.stringify(item).length, 0);
 
   // §4.6.10：手册目录与记忆目录是两条独立通道——手册讲"怎么协作"，
   // 记忆讲"关于用户的什么"。目录有界（PLAYBOOK_CATALOG_LIMIT），正文不进来。
@@ -276,6 +306,32 @@ export async function assembleCompanionContext(
   const directoryIds = directory.entries.map((item) => item.memoryId);
   const exposedIds = [...new Set([...residentIds, ...directoryIds])];
 
+  // 记录真正进入这一轮上下文的 resident 正文与目录条目。重复装配可能发生在同一 run
+  // 的重试路径上，按 runId 幂等，避免把一次对话算成多次曝光。目录只算曝光，不刷新
+  // last_used_at；只有用户问题触发的显式召回/展开才代表实际使用。
+  try {
+    await tx.execute(sql`
+      SELECT pg_advisory_xact_lock(
+        hashtextextended('companion-memory-exposure:' || ${input.runId}, 0)
+      )
+    `);
+    await tx.execute(sql`
+      INSERT INTO memory_usage_log
+        (workspace_id, user_id, run_id, memory_ids, retrieval_mode, latency_ms)
+      SELECT ${scope.workspaceId}, ${scope.userId}, ${input.runId}::uuid,
+             ${`{${exposedIds.join(",")}}`}::uuid[], 'directory', 0
+       WHERE NOT EXISTS (
+         SELECT 1 FROM memory_usage_log
+          WHERE workspace_id = ${scope.workspaceId}
+            AND user_id = ${scope.userId}
+            AND run_id = ${input.runId}::uuid
+            AND retrieval_mode = 'directory'
+       )
+    `);
+  } catch (error) {
+    logger.warn({ err: error, runId: input.runId }, "memory directory exposure logging failed");
+  }
+
   // 记录本轮可见的 resident 与目录项数；目录项不被当作已展开正文。
   try {
     companionMemoryRetrievalModeTotal.labels("directory").inc();
@@ -297,6 +353,8 @@ export async function assembleCompanionContext(
       memoryCapacityTokens: capacityTokens,
       residentOmittedCount,
       directoryOmittedCount: directory.omittedCount,
+      residentOmittedCharacters,
+      directoryOmittedCharacters,
     },
     "companion context assembled",
   );
@@ -320,6 +378,8 @@ export async function assembleCompanionContext(
     directoryTokenEstimate: directory.tokenEstimate,
     residentOmittedCount,
     directoryOmittedCount: directory.omittedCount,
+    residentOmittedCharacters,
+    directoryOmittedCharacters,
     memoryCapacityTokens: capacityTokens,
   };
 }

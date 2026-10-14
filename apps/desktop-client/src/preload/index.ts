@@ -328,9 +328,6 @@ const desktopApi: AstellaDesktopApiM2 = {
       listAgentRoutes: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatAgentRoutes, input),
       // 过程节点留痕（2026-09-19）：抽屉里的「过程 N 步 · 调用 M 次工具」。
       listRunNodes: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatRunNodes, input),
-      // 念头主动开场（切片④）：点击念头气泡，她先开口。
-      openThought: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatOpenThought, input),
-      listThoughts: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatListThoughts, input),
       // 停止本轮（2026-09-19）：服务端原子取消 + 已输出文本留档。
       cancelRun: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatCancelRun, input)
     },
@@ -346,6 +343,8 @@ const desktopApi: AstellaDesktopApiM2 = {
     // 伴星中心（页 20）：共同记录的读取与记忆裁决。这里没有对话发送通道。
     memory: {
       list: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryList, input),
+      budget: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryBudget, input),
+      moveBudgetTier: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryBudgetMove, input),
       starMap: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryStarMap, input),
       confirm: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryConfirm, input),
       pin: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryPin, input),
@@ -370,10 +369,12 @@ const desktopApi: AstellaDesktopApiM2 = {
       correct: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryCorrect, input),
       revisions: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryRevisions, input),
       dismiss: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryDismiss, input),
+      dispute: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryDispute, input),
       conflicts: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryConflicts, input),
       resolveConflict: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryResolveConflict, input),
       rebuildEmbeddings: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryRebuildEmbeddings, input),
       clear: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryClear, input),
+      clearDerived: (input) => invoke(DESKTOP_IPC_CHANNELS.companionDerivedDataClear, input),
       summarizeRecent: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemorySummarizeRecent, input)
     },
     daily: {

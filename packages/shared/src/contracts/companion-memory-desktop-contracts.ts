@@ -49,6 +49,63 @@ export type CompanionMemoryScopeV1 = z.infer<typeof companionMemoryScopeV1Schema
 export const companionMemoryBudgetTierV1Schema = z.enum(["resident", "active", "archived"]);
 export type CompanionMemoryBudgetTierV1 = z.infer<typeof companionMemoryBudgetTierV1Schema>;
 
+const companionMemoryBudgetUsageV1Schema = z.strictObject({
+  items: z.number().int().nonnegative(),
+  tokenEstimate: z.number().int().nonnegative(),
+  byteCount: z.number().int().nonnegative(),
+});
+/** 常驻档的唯一闸门：本轮提示词侧声明的常驻 token 容量（8,000 × 0.8 = 6,400）。 */
+const companionMemoryResidentLimitsV1Schema = z.strictObject({
+  tokenEstimate: z.number().int().positive(),
+});
+
+export const companionMemoryBudgetStatusV1Schema = z.strictObject({
+  version: z.literal(1),
+  resident: z.strictObject({
+    used: companionMemoryBudgetUsageV1Schema,
+    // 常驻档只剩**一条**声明出来的 token 闸门（44 §4.4 / 迁移 0430）：条数与字节是读数，
+    // 把它们写进 limits 就是向客户端承诺一个已经不存在的上限。
+    limits: companionMemoryResidentLimitsV1Schema,
+    available: z.strictObject({ tokenEstimate: z.number().int().nonnegative() }),
+  }),
+  active: companionMemoryBudgetUsageV1Schema,
+  archived: z.strictObject({
+    used: companionMemoryBudgetUsageV1Schema,
+    limits: z.strictObject({ items: z.number().int().positive(), byteCount: z.number().int().positive() }),
+    available: companionMemoryBudgetUsageV1Schema,
+  }),
+  usage: z.strictObject({
+    windowDays: z.literal(30),
+    searchRequests: z.number().int().nonnegative(),
+    returnedMemories: z.number().int().nonnegative(),
+    emptySearches: z.number().int().nonnegative(),
+    vectorSearches: z.number().int().nonnegative(),
+    keywordSearches: z.number().int().nonnegative(),
+    directoryExposures: z.number().int().nonnegative(),
+    explicitReads: z.number().int().nonnegative(),
+  }),
+});
+export type CompanionMemoryBudgetStatusV1 = z.infer<typeof companionMemoryBudgetStatusV1Schema>;
+
+export const companionDerivedDataClearResultV1Schema = z.strictObject({
+  version: z.literal(1),
+  deletedDiaries: z.number().int().nonnegative(),
+  deletedDiaryEntries: z.number().int().nonnegative(),
+  deletedDiaryMemories: z.number().int().nonnegative(),
+  deletedDiaryCheckpoints: z.number().int().nonnegative(),
+  deletedMemoryUsageRecords: z.number().int().nonnegative(),
+  deletedSelfNotes: z.number().int().nonnegative(),
+  deletedSelfNoteVersions: z.number().int().nonnegative(),
+  deletedMethods: z.number().int().nonnegative(),
+});
+
+export const companionMemoryBudgetMoveV1Schema = z.discriminatedUnion("status", [
+  z.strictObject({ status: z.literal("moved"), memoryId: z.string().uuid(), fromTier: companionMemoryBudgetTierV1Schema, tier: companionMemoryBudgetTierV1Schema, revision: z.number().int().positive(), residentUsage: companionMemoryBudgetUsageV1Schema }),
+  z.strictObject({ status: z.literal("unchanged"), memoryId: z.string().uuid(), tier: companionMemoryBudgetTierV1Schema, revision: z.number().int().positive() }),
+  z.strictObject({ status: z.enum(["missing", "not_eligible"]) }),
+  z.strictObject({ status: z.literal("capacity"), memoryId: z.string().uuid(), requestedTier: z.literal("resident"), current: companionMemoryBudgetUsageV1Schema, requested: companionMemoryBudgetUsageV1Schema, limits: companionMemoryResidentLimitsV1Schema, suggestedDowngrades: z.array(z.strictObject({ memoryId: z.string().uuid(), title: z.string(), revision: z.number().int().positive(), tokenEstimate: z.number().int().nonnegative(), byteCount: z.number().int().nonnegative() })) }),
+]);
+
 export const companionMemorySourceTypeV1Schema = z.enum([
   "user_stated",
   "model_inferred",
@@ -107,6 +164,7 @@ export const companionMemoryItemV1Schema = z.strictObject({
   kind: companionMemoryKindV1Schema,
   content: z.string().min(1).max(companionMemoryContentMaxLength),
   sourceEventId: z.string().max(240).nullable(),
+  sourceEventIds: z.array(z.string().max(240)).max(100),
   sourceSessionId: z.string().uuid().nullable(),
   sourceSpeaker: companionMemorySourceSpeakerV1Schema.nullable(),
   sourceBasis: companionMemorySourceBasisV1Schema.nullable(),
@@ -115,6 +173,7 @@ export const companionMemoryItemV1Schema = z.strictObject({
   validUntil: isoTimestampSchema.nullable(),
   userStated: z.boolean(),
   userConfirmed: z.boolean(),
+  confirmedAt: isoTimestampSchema.nullable(),
   /** true = 候选记忆：尚未写入长期记忆，等用户在伴星中心裁决。 */
   candidate: z.boolean(),
   importance: z.number().min(0).max(1),
@@ -131,6 +190,7 @@ export const companionMemoryItemV1Schema = z.strictObject({
   authorType: companionMemoryAuthorTypeV1Schema,
   authorId: z.string().uuid().nullable(),
   epistemicStatus: companionMemoryEpistemicStatusV1Schema,
+  supersededById: z.string().uuid().nullable(),
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,
 });
@@ -141,6 +201,7 @@ export const companionMemoryRevisionV1Schema = z.strictObject({
   kind: companionMemoryKindV1Schema,
   content: z.string().min(1).max(companionMemoryContentMaxLength),
   sourceEventId: z.string().max(240).nullable(),
+  sourceEventIds: z.array(z.string().max(240)).max(100),
   sourceSessionId: z.string().uuid().nullable(),
   sourceSpeaker: companionMemorySourceSpeakerV1Schema.nullable(),
   sourceBasis: companionMemorySourceBasisV1Schema.nullable(),
@@ -149,6 +210,7 @@ export const companionMemoryRevisionV1Schema = z.strictObject({
   validUntil: isoTimestampSchema.nullable(),
   userStated: z.boolean(),
   userConfirmed: z.boolean(),
+  confirmedAt: isoTimestampSchema.nullable(),
   importance: z.number().min(0).max(1),
   confidence: z.number().min(0).max(1),
   scope: companionMemoryScopeV1Schema,
@@ -156,6 +218,7 @@ export const companionMemoryRevisionV1Schema = z.strictObject({
   authorType: companionMemoryAuthorTypeV1Schema,
   authorId: z.string().uuid().nullable(),
   epistemicStatus: companionMemoryEpistemicStatusV1Schema,
+  supersededById: z.string().uuid().nullable(),
   supersededAt: isoTimestampSchema,
 });
 export type CompanionMemoryRevisionV1 = z.infer<typeof companionMemoryRevisionV1Schema>;
@@ -246,7 +309,7 @@ export type CompanionMemoryStarMapV2 = z.infer<typeof companionMemoryStarMapV2Sc
 /**
  * 日记只有她自己写的那一段话。当天计数（`companion_daily_summaries.facts`）**不再上线**：
  * 用户 2026-09-21 的裁决是"这跟系统统计数据有什么区别"，而 facts 仍要写进 DB，
- * 因为 `companion-thought.ts` 靠 `learningRunsCreated/Completed` 算连续学习天数。
+ * 因为 `companion-fact-spans.ts` 会用 `learningRunsCreated/Completed` 计算对话可引用的连续学习天数。
  */
 export const companionDailyFailureReasonV1Schema = z.enum([
   "consent_required",

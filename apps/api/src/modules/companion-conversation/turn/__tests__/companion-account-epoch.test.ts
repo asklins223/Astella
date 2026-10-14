@@ -7,7 +7,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { getCompanionAccountEpoch } from "../companion-account-epoch.ts";
+import { getCompanionAccountEpoch } from "../../../../companion-contracts/companion-account-epoch.ts";
 
 function stubTx(rows: unknown[]): {
   tx: { execute(q: unknown): Promise<unknown> };

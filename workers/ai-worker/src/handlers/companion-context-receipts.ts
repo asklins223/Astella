@@ -25,6 +25,16 @@ export function companionContextAssemblyCapacity(sources: readonly (string | { c
 export interface CompanionContextReceiptRunMeta {
   contextAssemblyReceipt?: ContextAssemblyReceiptV1;
   contextPressure?: ContextPressureReceiptV1;
+  /** Memory omitted during its earlier shared-budget selection, before prompt assembly. */
+  companionMemoryOmissions?: CompanionMemoryOmissionReceipt;
+}
+
+export interface CompanionMemoryOmissionReceipt {
+  residentCount: number;
+  directoryCount: number;
+  residentCharacters: number;
+  directoryCharacters: number;
+  capacityEstimate: number;
 }
 
 export interface CompanionContextReceipts {
@@ -52,6 +62,8 @@ export interface CompanionContextReceipts {
   latestPressure(): ContextPressureReceiptV1 | null;
   /** 记录本轮装配的逐条准入回执（included / empty / budget_omitted）。 */
   recordAssembly(receipts: readonly AgentContextReceipt[]): void;
+  /** 记录记忆专属小预算阶段的整条取舍；正文不进入回执。 */
+  recordMemoryOmissions(receipt: CompanionMemoryOmissionReceipt): void;
   /** 本轮纳入的条目 id；调用方用它决定哪些记忆算「这一轮真的用上了」。 */
   admittedSources(): ReadonlySet<string>;
   /**
@@ -66,6 +78,7 @@ export interface CompanionContextReceipts {
 export function createCompanionContextReceipts(): CompanionContextReceipts {
   const admitted = new Set<string>();
   let assembly: readonly AgentContextReceipt[] | undefined;
+  let memoryOmissions: CompanionMemoryOmissionReceipt | undefined;
   let pressure: ContextPressureReceiptV1 | null = null;
   let compactionAttemptAvailable = true;
   let requestKey: string | null = null;
@@ -92,6 +105,9 @@ export function createCompanionContextReceipts(): CompanionContextReceipts {
       admitted.clear();
       for (const receipt of receipts) if (receipt.status === "included") admitted.add(receipt.id);
     },
+    recordMemoryOmissions(receipt) {
+      memoryOmissions = receipt.residentCount + receipt.directoryCount > 0 ? receipt : undefined;
+    },
     admittedSources: () => admitted,
     runMetaPatch() {
       const contextAssemblyReceipt = summarizeContextAssemblyReceipt({
@@ -101,6 +117,7 @@ export function createCompanionContextReceipts(): CompanionContextReceipts {
       return {
         ...(contextAssemblyReceipt ? { contextAssemblyReceipt } : {}),
         ...(pressure ? { contextPressure: pressure } : {}),
+        ...(memoryOmissions ? { companionMemoryOmissions: memoryOmissions } : {}),
       };
     },
   };

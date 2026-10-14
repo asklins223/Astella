@@ -88,7 +88,7 @@ sequenceDiagram
 
 | 触发方 | 入队实现 | 结果怎么回到屏幕 |
 | --- | --- | --- |
-| 伴星对话、笔记批注、来源解析、记忆与念头任务 | `apps/api/src/modules/job/service.ts` 的 `createJob()` | 伴星走 SSE；批注与来源走任务/操作状态轮询 |
+| 伴星 Agent、笔记批注、来源解析与记忆任务 | `apps/api/src/modules/job/service.ts` 的 `createJob()` | 伴星走 SSE；批注与来源走任务/操作状态轮询 |
 | 笔记页发起的速看、往外学、动态页面，以及制卡 | `packages/agent-host/src/note-operation.ts` 与 `store.ts:enqueueAdvance` 的直接 `INSERT INTO jobs` | 渲染层轮询 operation / job 状态，例如 `renderer/src/components/surfaces/notebook/use-notebook-overview.ts` |
 | LearningRun 的作答判定与 Commit | 不入 `jobs`：api 进程自己轮 `learning_run_processing_outbox` | 事件写入后由 `/learning-runs/:runId/events` 推给客户端 |
 
@@ -170,7 +170,7 @@ sequenceDiagram
 
 不是"全在 worker"。分工是按**这条链要不要被重试、排队和跨进程恢复**决定的：
 
-在 worker 的：`jobs` 表已注册的 handler（`workers/ai-worker/src/index.ts` 的 `HANDLERS` 映射）——来源解析、伴星 Agent 回合与工具执行、记忆抽取/摘要/每日总结/嵌入重建/语义整理、主动念头、笔记速看/批注解释/拓展/动态页面，以及制卡 V3（`workers/ai-worker/src/card-generation-v3/handler.ts`）。
+在 worker 的：`jobs` 表已注册的 handler（`workers/ai-worker/src/index.ts` 的 `HANDLERS` 映射）——来源解析、伴星 Agent 回合与工具执行、记忆抽取/摘要/每日总结/嵌入重建/语义整理、主动交流准备、笔记速看/批注解释/拓展/动态页面，以及制卡 V3（`workers/ai-worker/src/card-generation-v3/handler.ts`）。
 
 在 api 进程内的：`learning_run_processing_outbox` 的消费与 Assessment Critic 调用（`apps/api/src/modules/learning-runs/processing/run-processing-tick.ts`，在 `server.ts` 接线，10 秒一轮、每轮取 50 条、失败指数退避到 60 秒）；`learning-runs/planning/run-critic.ts` 与 `disputes/dispute-recheck.ts`；`note-learning-rounds/teaching/teaching-explain.ts`；语音转写 `learning-sessions/voice-providers/siliconflow-asr.ts`；TTS 引擎与 edge-tts 客户端（同目录的 `tts-engine.ts`、`edge-tts.ts`）；主动投递生成 `companion-conversation/delivery/proactive-generator.ts`。
 

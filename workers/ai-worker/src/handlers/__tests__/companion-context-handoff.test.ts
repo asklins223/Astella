@@ -282,3 +282,46 @@ test("长任务交接保留全部回执、待确认提案和完整说明", () =>
     actions[89]!.safeSummary,
   ]);
 });
+
+test("尾部那条整条塞不进窗口时：短话照样带得回来，超长那条记进回执", () => {
+  // 2026-10-14 实测到的塌陷形状：从最新往回装，第一条塞不下就 break。
+  // 她刚写完一篇长讲解（真实会话 531 条里有 7 条比整个回放窗口还长，最长 3,494 tok），
+  // 于是接下来那几轮回放**一条都没有**：带回 0 条、用掉 0 tok、2,048 容量全空着，
+  // 连自己上一句和用户的前几句都看不见。这不是预算不够，是停了不该停的地方。
+  const oversized = "长".repeat(9_000);
+  const history = [
+    ...Array.from({ length: 8 }, (_, index) =>
+      msg(index % 2 === 0 ? "user" : "assistant", `第 ${index + 1} 句短话`, `m-${index + 1}`)),
+    msg("assistant", oversized, "m-9"),
+  ];
+  const { messages: taken, receipt } = selectCompanionReplayWindow(history, { maxInputTokens: 2_048 });
+
+  assert.ok(taken.length > 0, "超长那一条不许把前面的短话一起清零");
+  assert.equal(taken.some((item) => item.text === oversized), false, "整条超窗口的正文不带进来，剪半句更糟");
+  assert.equal(taken.at(-1)?.seq, "m-8", "跳过超长那条之后，紧邻它前面那条要带走");
+  assert.equal(taken.at(0)?.seq, "m-1");
+  assert.deepEqual(receipt.oversizedSkipped?.map((entry) => entry.seq), ["m-9"]);
+  assert.equal(receipt.uncoveredThroughSeq, "m-9", "没带走里最新的一条是那条超长的，不是被预算挡住的更早的");
+  assert.ok(receipt.usedTokens <= receipt.capacityTokens);
+  assert.equal(receipt.omittedCount, history.length - taken.length, "少带的条数仍然如实");
+});
+
+test("超长那条在交接块里说得清：说过、这一轮没带正文、按哪个 seq 取回", () => {
+  const snapshot = buildCompanionContextHandoffSnapshotV1(input({
+    replayWindow: {
+      version: 1,
+      capacityTokens: 2_048,
+      usedTokens: 480,
+      takenCount: 6,
+      omittedCount: 191,
+      uncoveredThroughSeq: "m-9",
+      oversizedSkipped: [{ seq: "m-9", role: "assistant", tokens: 3_494 }],
+    },
+  }));
+  const rendered = renderCompanionContextHandoff(snapshot);
+
+  assert.match(rendered, /seq=m-9/);
+  assert.match(rendered, /是你自己发的长内容/);
+  assert.match(rendered, /没带走正文/);
+  assert.match(rendered, /companion_read_history/);
+});

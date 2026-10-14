@@ -508,6 +508,6 @@ export async function insertAuthoredCandidatesBatched(
  * 必须带 `app.user_id`；而这四条 LLM 管道的事务是以 `userId: null` 打开的，
  * 在事务内部再开一个带用户身份的作用域会被作用域守卫直接拒
  * （`nested worker workspace database work cannot change workspace or user context`）。
- * 伴星侧（`companion-thought.ts`、`companion-dialogue.ts`）一直是在事务外解析好
- * 再传进去的，这里对齐同一个写法：一次普通读取 + 一次解析，都在 tx 外完成。
+ * 伴星对话侧一直是在事务外解析好再传进去的，这里对齐同一个写法：一次普通读取 +
+ * 一次解析，都在 tx 外完成。
  */

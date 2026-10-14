@@ -76,7 +76,7 @@ test("失败任务是 warn，动作是按类型的重试", () => {
   const backlog: QueueSummary = {
     ...emptyQueue(),
     byType: [
-      { jobType: "companion_thought", label: "伴星随想", known: true, pending: 0, running: 0, failedRecent: 7, deadTotal: 0, oldestPendingSeconds: 0 },
+      { jobType: "companion_agent", label: "伴星回复", known: true, pending: 0, running: 0, failedRecent: 7, deadTotal: 0, oldestPendingSeconds: 0 },
     ],
     totals: { pending: 0, running: 0, failedRecent: 7, deadTotal: 0, oldestPendingSeconds: 0 },
   };
@@ -84,7 +84,7 @@ test("失败任务是 warn，动作是按类型的重试", () => {
   assert.equal(todo.counts.warn, 1);
   const [item] = todo.items;
   assert.equal(item.action.kind, "retry_failed");
-  assert.equal(item.action.jobType, "companion_thought", "动作必须带上具体作业类型");
+  assert.equal(item.action.jobType, "companion_agent", "动作必须带上具体作业类型");
   assert.equal(item.count, 7);
 });
 
@@ -113,7 +113,7 @@ test("死信是 info，动作是清理，且带类型", () => {
   const backlog: QueueSummary = {
     ...emptyQueue(),
     byType: [
-      { jobType: "companion_thought", label: "伴星随想", known: true, pending: 0, running: 0, failedRecent: 0, deadTotal: 92, oldestPendingSeconds: 0 },
+      { jobType: "companion_agent", label: "伴星回复", known: true, pending: 0, running: 0, failedRecent: 0, deadTotal: 92, oldestPendingSeconds: 0 },
     ],
     totals: { pending: 0, running: 0, failedRecent: 0, deadTotal: 92, oldestPendingSeconds: 0 },
   };
@@ -121,7 +121,7 @@ test("死信是 info，动作是清理，且带类型", () => {
   const [item] = todo.items;
   assert.equal(item.severity, "info");
   assert.equal(item.action.kind, "purge_dead");
-  assert.equal(item.action.jobType, "companion_thought");
+  assert.equal(item.action.jobType, "companion_agent");
   assert.equal(item.count, 92);
 });
 

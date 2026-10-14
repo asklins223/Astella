@@ -420,17 +420,17 @@ async function readProactiveCue(
     const text = (payload as Record<string, unknown>).text;
     if (typeof text !== "string") continue;
     const trimmed = text.trim();
-    if (trimmed.length === 0 || trimmed.length > 200) continue;
-    // 念头管线切片④：systemEventId 形如 "thought:<uuid>" 时气泡可点击开场。
     const systemEventIdRaw = (payload as Record<string, unknown>).systemEventId;
     const systemEventId = typeof systemEventIdRaw === "string" ? systemEventIdRaw : null;
-    const thoughtMatch = systemEventId ? /^thought:([0-9a-fA-F-]{36})$/.exec(systemEventId) : null;
+    const initiative = companionInitiativeDeliveryRefV1Schema.safeParse((payload as Record<string, unknown>).initiative);
+    // 200 字那条线原本只服务旧的短主动消息：当前 Agent 主动交流一轮可以有几条完整发言，首条只是让客户端
+    // 认领这个运行的引子，正文由事件流取。拿它当闸门会把长一点的开场招呼整个挡掉——她说了话，
+    // 界面却因为字数不认领。
+    if (trimmed.length === 0 || (!initiative.success && trimmed.length > 200)) continue;
     // 到点提醒（0238）走同一条 system_event 通道，但它是用户明确要过的东西：
     // 前端按 origin 决定气泡停留时长与是否念出口。run.completed 这类系统事件
-    // 既不是念头也不是提醒，归 system。
-    const initiative = companionInitiativeDeliveryRefV1Schema.safeParse((payload as Record<string, unknown>).initiative);
-    const origin = initiative.success ? "initiative" : thoughtMatch !== null
-      ? "thought"
+    // 既不是 Agent 主动交流也不是提醒，归 system。
+    const origin = initiative.success ? "initiative"
       : (systemEventId !== null && /^reminder:[0-9a-fA-F-]{36}$/.test(systemEventId))
         ? "reminder"
         : "system";
@@ -440,7 +440,6 @@ async function readProactiveCue(
       revision: row.inboxSequence,
       origin,
       ...(initiative.success ? { initiative: initiative.data } : {}),
-      ...(thoughtMatch ? { thoughtId: thoughtMatch[1] } : {}),
     };
   }
   return null;

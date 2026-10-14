@@ -1,7 +1,7 @@
 /**
  * 反事实重放台的**判据执行桥**（39b §10 / 39d W1-1）。
  *
- * 为什么需要它：重放台要「不信任日志，重算」11 道输出闸，而这些判据**只能有一份实现**。
+ * 为什么需要它：重放台要「不信任日志，重算」9 道对话输出闸，而这些判据**只能有一份实现**。
  * 把它们逐条翻译成 Python 正则是这条链上最贵的错法——`scripts/companion-quality-report.py`
  * 已经在注释里吃过一次同类亏（同一条判据在 TS 与 POSIX 正则里各写一份，元字符集不同，
  * 漏改的后果是**样本静默变少**而不是报错）。所以这里不翻译：直接 import 真函数。
@@ -50,11 +50,6 @@ import {
   unverifiedQuoteClaims,
   validateCompanionOutput,
 } from "../src/handlers/companion-dialogue-content.ts";
-import {
-  introducesUnverifiedNumbers,
-  readsOutStatistics,
-  validateThoughtExpression,
-} from "../src/handlers/companion-thought.ts";
 import { FACT_SPAN_KEYS } from "../src/handlers/companion-fact-spans.ts";
 import {
   loadHereAndNow,
@@ -73,10 +68,6 @@ interface ReplayTurn {
   ambient?: (Omit<HereAndNowSnapshot, "dueReviews"> & { dueReviews?: number }) | null;
   userTexts?: string[];
   toolResultTexts?: string[];
-  /** 用户自己说的话（G10 的 allowedSource 里"用户说的话"那一半）。 */
-  allowedNumberSource?: string;
-  /** 念头气泡：G10／G11 的覆盖判定改读**产出侧守卫**（见 `thoughtGuardCovers`）。 */
-  isThought?: boolean;
   /**
    * 本轮**之前**同一会话里的用户原话（生产的 `recentMessages` 那一半，见文件头 §4）。
    *
@@ -250,7 +241,7 @@ function runThresholds(): void {
 /**
  * 桥的自证（`--self-test`）：台子新加的三条输入通道，各自证明**真的接上了**。
  *
- * 为什么必须有：per-turn `activeness`、`historyTexts`、G10 空源短路这三条，全都是
+ * 为什么必须有：per-turn `activeness`、`historyTexts` 这两条，全都是
  * "接上就改变读数、没接上读数照样好看"的那种接线。今天这个账号的档案恰好是 `active`，
  * 所以**漏接 activeness 一条都不会让读数变**——没有自证的话，那条线断了要等到
  * 某个用户把活跃度调成"安静"才被发现，而那时读数已经错了一段时间。
@@ -295,22 +286,7 @@ function runSelfTest(): void {
   check("这 1 条进过报否证（差集非空）",
     claimsWithHistory.historyAdjudication.G1.droppedByHistory, ["18分钟"]);
   check("历史字数要被记下来", claimsWithHistory.historyChars > 0, true);
-  // ③ G10 空源短路：`introducesUnverifiedNumbers` 首行 `if (allowedSource.length === 0) return false`
-  //    ⇒ 空源时 G10 **恒不触发**。这不是"判过了没漏"，是"判据根本没跑"，
-  //    所以 `emptySource` 必须能把它单独拎出来（分母已按它剔出）。
-  const thought = one({ replyText: "你今天学了42分钟", isThought: true, allowedNumberSource: "" });
-  check("空源时 G10 恒不触发", thought.gates.G10.fired, false);
-  check("空源要被标出来", thought.thoughtGuard.emptySource, true);
-  // `thoughtGuardCovers` 答的是**另一个问题**（"产出侧守卫会不会当场压掉这条"），
-  // 它不因空源而变假——把它与 G10 的触发混成一件事，正是台账记的那个形状问题。
-  // 钉住的是"两者**互相独立**"：空源 ⇒ G10 不触发，但覆盖判定仍照常给真值。
-  check("空源不影响覆盖判定（它是另一个问题）", thought.thoughtGuardCovers, true);
-  const thoughtWithSource = one({
-    replyText: "你今天学了42分钟", isThought: true, allowedNumberSource: "你今天学了7分钟",
-  });
-  check("有源时同一个数判得出（这条闸不是恒不触发）", thoughtWithSource.gates.G10.fired, true);
-  check("有源时 emptySource 为假", thoughtWithSource.thoughtGuard.emptySource, false);
-  // ④ 入库前闸的阳性对照：`storedBodyAccepted` 必须对真信封判假、对正常正文判真。
+  // ③ 入库前闸的阳性对照：`storedBodyAccepted` 必须对真信封判假、对正常正文判真。
   check("JSON 信封正文过不了入库闸",
     one({ replyText: 'content":"习惯在晚上写笔记","kind":"preference"}' }).storedBodyAccepted, false);
   check("正常正文过得了入库闸", one({ replyText: "今天已经学了12分钟啦。" }).storedBodyAccepted, true);
@@ -321,7 +297,7 @@ function runSelfTest(): void {
     for (const failure of failures) console.error(`桥自证失败 ${failure}`);
     process.exit(1);
   }
-  console.error("桥自证通过：per-turn 活跃度／历史出处否证／G10 空源短路／入库闸阳性对照，四条接线都钉住了");
+  console.error("桥自证通过：per-turn 活跃度／历史出处否证／入库闸阳性对照，三条接线都钉住了");
   process.exit(0);
 }
 
@@ -400,9 +376,7 @@ function judgeTurns(turns: ReplayTurn[], activeness: string) {
     // 这条不变量正是 G7／G8／G9 可判分母写 0 的唯一理由，而它是**可以量的**：把真
     // 判据 `validateCompanionOutput` 架在库里的正文上跑一遍，有一条判不过就说明这条不变量
     // 已经破了，那时"分母 0"从"没有可判输入"变成"我们没看"，必须拒绝而不是照旧报 0。
-    const storedBodyGate = turn.isThought === true
-      ? null
-      : validateCompanionOutput(said);
+    const storedBodyGate = validateCompanionOutput(said);
 
     return {
       runId: turn.runId,
@@ -416,23 +390,8 @@ function judgeTurns(turns: ReplayTurn[], activeness: string) {
         G6: { claims: quoteClaims, overReported: quoteNoHistory,
               droppedByHistory: droppedByHistory(quoteNoHistory, quoteClaims) },
       },
-      storedBodyAccepted: storedBodyGate === null ? null : storedBodyGate.ok,
-      storedBodyRejectReason: storedBodyGate !== null && !storedBodyGate.ok ? storedBodyGate.reason : null,
-      // 念头链：G10／G11 的同名判据**已经在产出侧执行**（`validateThoughtExpression`
-      // 与送达前的 `readsOutStatistics` 抑制）。这条字段回答的是"这条气泡在新机制下
-      // 还会不会被交付"——`true` = 会被当场拒掉／抑制 ⇒ 后置闸的这次触发是重复的。
-      // `emptySource` 单独拎出来：`introducesUnverifiedNumbers` 首行就
-      // `if (allowedSource.length === 0) return false`（`companion-thought.ts:258`），
-      // 那种"没触发"是**按设计恒不触发**，与"判过了没触发"必须分开报。
-      thoughtGuard: {
-        sourceChars: (turn.allowedNumberSource ?? "").length,
-        emptySource: (turn.allowedNumberSource ?? "").length === 0,
-        expressionRejected: turn.isThought === true && !validateThoughtExpression(said, [], turn.allowedNumberSource ?? ""),
-        readsOutStatistics: turn.isThought === true && readsOutStatistics(said),
-      },
-      thoughtGuardCovers: turn.isThought === true
-        ? !validateThoughtExpression(said, [], turn.allowedNumberSource ?? "") || readsOutStatistics(said)
-        : false,
+      storedBodyAccepted: storedBodyGate.ok,
+      storedBodyRejectReason: !storedBodyGate.ok ? storedBodyGate.reason : null,
       activeness: turnActiveness,
       // G5 现在与活跃度无关（40 §4.4.2 移除了字数线）。三档仍然各算一次，
       // 是为了让台子在有人把字数线重新引回来时**当场看出**读数分岔了——
@@ -453,12 +412,6 @@ function judgeTurns(turns: ReplayTurn[], activeness: string) {
         G7: { fired: containsCompanionInternalToken(said) },
         G8: { fired: looksLikeJsonEnvelope(said) },
         G9: { fired: looksLikeJsonFragment(said) },
-        // C 类：念头链（那里根本没有工具）。allowedSource 取用户原话 + 用户视图。
-        G10: {
-          fired: introducesUnverifiedNumbers(said, turn.allowedNumberSource ?? ""),
-          sourceChars: (turn.allowedNumberSource ?? "").length,
-        },
-        G11: { fired: readsOutStatistics(said) },
       },
     };
   });

@@ -35,7 +35,6 @@ import { HOME_V2_COMPANION_DRAG_EVENT } from "../home-v2/home-ambient-director";
 import {
   COMPANION_HOME_ANCHORS,
   clampCompanionAnchorToPolygon,
-  companionCueAllowed,
   companionPositionForProjectedFootAnchor,
   companionPointerHasPrimaryContact,
   companionSafeInset,
@@ -58,9 +57,7 @@ import { CompanionHud, type CompanionHudAction } from "./CompanionHud";
 import { useCompanionSeatBudget } from "./use-companion-seat-budget";
 import { useNotebookFullscreenActive } from "../surfaces/notebook/notebook-fullscreen-state";
 import { createCueDeliveryReporter, findCueDelivery } from "./companion-cue-delivery";
-import { useCompanionProactiveCue } from "./use-companion-proactive-cue";
 import { CompanionNotificationCenter } from "./CompanionNotificationCenter";
-import { useCompanionCueLifecycle } from "./use-companion-cue-lifecycle";
 import { hasForeignModal } from "./companion-modal-ownership";
 import { useCompanionChat } from "../../app/companion-chat-session";
 import type { CompanionAgentNodeState } from "../../app/companion-agent-nodes";
@@ -96,12 +93,6 @@ const HOME_V2_FLOOR_POLYGON = normalizedHomeFloorPolygon();
  */
 function durationFor(mode: "full" | "lite" | "off", full: number) {
   return mode === "off" ? 0 : mode === "lite" ? full * 0.55 : full;
-}
-
-function speakHomeV2Cue(text: string): void {
-  window.dispatchEvent(new CustomEvent("astella:home-v2-speak", {
-    detail: { text, reason: "cue" },
-  }));
 }
 
 const COMPANION_FIXED_POSE = Object.freeze({ x: 0, y: 0, rotation: 0, scaleX: 1 } as const);
@@ -183,7 +174,6 @@ export function CompanionPresence() {
     movedWithPrimaryContact: boolean;
   } | null>(null);
   const suppressInviteRef = useRef(false);
-  const shownCueRef = useRef<string | null>(null);
   const anchorInitializedRef = useRef(false);
   const worldAnchorRef = useRef<CompanionNormalizedAnchor>({ ...COMPANION_HOME_ANCHORS[companionHomeZone] });
   const projectCompanionRef = useRef<() => void>(() => undefined);
@@ -257,13 +247,6 @@ export function CompanionPresence() {
     };
   }, []);
   const [touchKind, setTouchKind] = useState<"head" | "body" | null>(null);
-  const [homeCue, setHomeCue] = useState<string | null>(null);
-  /** 当前气泡若源自念头（切片④），可点击让她主动开场。 */
-  const [homeCueThoughtId, setHomeCueThoughtId] = useState<string | null>(null);
-  const [cueOpenError, setCueOpenError] = useState<string | null>(null);
-  const [cueOpening, setCueOpening] = useState(false);
-  const cueOpeningRef = useRef(false);
-  useEffect(() => setCueOpenError(null), [homeCueThoughtId]);
   const [externalModalOpen, setExternalModalOpen] = useState(false);
   const [taskBubbleOpen, setTaskBubbleOpen] = useState(false);
   const { mode, setMode, assistantCue, liveReply, phase: chatPhase, companionName, setCompanionName, conversationId, receiveInitiative } = useCompanionChat();
@@ -484,12 +467,9 @@ export function CompanionPresence() {
     };
   }, [dragging]);
 
-  const prioritizedCue = useCompanionProactiveCue(companionProjection.projection?.proactiveCue ?? null);
-
-
   /**
    * 气泡的展示回执：这句话在屏幕上露出来过（displayed）、用户点开过（acted）。
-   * 服务端两条规则都读它——念头日预算只算"被看见过的"，划走降权只看已送达之后的状态；
+   * 服务端两条规则都读它——展示确认只计算真正看见的内容，划走降权只看已送达后的状态；
    * 在补上这一步之前，首页这一路的投递 22 条里 21 条永远停在 `queued`。
    */
   const cueDeliveryReporter = useMemo(() => createCueDeliveryReporter({
@@ -519,13 +499,14 @@ export function CompanionPresence() {
       const api = window.astella?.companion?.initiative;
       if (!api) return;
       const identity = unwrapGatewayResult(await api.identity({ meta: createRequestMeta(epoch) }));
-      if (cancelled || delivery.deviceSessionId && delivery.deviceSessionId !== identity.deviceSessionId) return;
+      // 这一次机会是发给**哪台设备**的，由服务端在观察时定下来。认不出目标设备就谁都不出声：
+      // 原来的写法在 deviceSessionId 为空时两边都会接，同一句问候会在两台机器上各念一遍。
+      if (cancelled || delivery.deviceSessionId !== identity.deviceSessionId) return;
       await receiveInitiative(delivery);
       await cueDeliveryReporter.shown({cueKey:`initiative:${delivery.runId}`,inboxSequence:cue.revision});
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [companionProjection.projection?.proactiveCue, receiveInitiative, chatPhase, replySpeaking, presencePaused, companionSilenced, assessmentMode, guideOpen, cueDeliveryReporter]);
-  const revealedCueRef = useRef<{ readonly cueKey: string; readonly inboxSequence: number } | null>(null);
 
   const projectCompanionIntoCamera = useCallback(() => {
     if (!homeMode || dragRef.current) return;
@@ -719,93 +700,9 @@ export function CompanionPresence() {
 
   useEffect(() => {
     if (!touchKind) return;
-    const settle = gsap.delayedCall(1.85, () => {
-      setTouchKind(null);
-      setHomeCue(null);
-      setHomeCueThoughtId(null);
-    });
+    const settle = gsap.delayedCall(1.85, () => setTouchKind(null));
     return () => { settle.kill(); };
   }, [touchKind]);
-
-  useEffect(() => { shownCueRef.current = null; }, [workspaceScopeRevision]);
-
-  useCompanionCueLifecycle({
-    cue: prioritizedCue?.origin === "thought" ? prioritizedCue : null,
-    paused: presencePaused || companionSilenced || guideOpen,
-    scopeRevision: workspaceScopeRevision,
-    start: (prioritizedCue) => {
-      if (shownCueRef.current === prioritizedCue.key) return;
-      if (prioritizedCue.priority === "ordinary") {
-        let lastAt = 0;
-        try {
-          lastAt = Number(window.localStorage.getItem("astella.home-v2.last-ordinary-cue") ?? "0");
-        } catch {
-          // A privacy-restricted session may not expose persistent storage.
-        }
-        // 只是显示去抖：她多久主动开口一次由服务端按 intervention_level 决定。
-        // 触发式（提醒/系统事件）在这一步直接放行。
-        if (!companionCueAllowed({
-          origin: prioritizedCue.origin,
-          priority: prioritizedCue.priority,
-          lastOrdinaryCueAt: lastAt,
-          now: Date.now(),
-        })) return;
-      }
-      const revealAt = prioritizedCue.priority === "ordinary" ? 3.2 : 1.05;
-      // 到点的**提醒**是用户亲口要过的东西（0238），不是她随口一提：气泡要停得久。
-      const isCommitment = prioritizedCue.origin === "reminder";
-      const hideAt = prioritizedCue.priority === "ordinary"
-        ? (prioritizedCue.thoughtId || isCommitment ? 30 : 7.4)
-        : 5;
-      const cueTimeline = gsap.timeline();
-      const cueTarget = {
-        cueKey: prioritizedCue.key,
-        inboxSequence: prioritizedCue.inboxSequence,
-      };
-      cueTimeline.call(() => {
-        shownCueRef.current = prioritizedCue.key;
-        revealedCueRef.current = cueTarget;
-        // Cues may choose a contextual semantic perch, but a hand-placed world
-        // anchor is immutable until the user drags or explicitly resets it.
-        if (!dragRef.current && placementOwnerRef.current === "semantic") {
-          setCompanionHomePlacement(prioritizedCue.zone);
-        }
-        setHomeCue(prioritizedCue.text);
-        setHomeCueThoughtId(prioritizedCue.thoughtId);
-        // 主动开口不只是长出一个气泡：她得先有个"咦，你看这边"的动作。
-        pushCharacterMoment("reminder");
-        // 念想也要念出口（2026-10-07 用户决定）。这条生命周期只喂 `origin === "thought"`
-        // 的投递，到点的提醒走通知中心自己的 `audio`（`use-companion-notification-sources.ts`），
-        // 所以这里不会把同一句话念两遍。出声仍旧只在房间里生效：任务页、总静音、
-        // 窗口不可见时被 `audible` 闸挡下；念想照常显示文字气泡并朗读。
-        speakHomeV2Cue(prioritizedCue.text);
-        window.dispatchEvent(new CustomEvent("astella:home-v2-sound", { detail: { kind: "footstep" } }));
-        if (prioritizedCue.priority === "ordinary") {
-          try {
-            window.localStorage.setItem("astella.home-v2.last-ordinary-cue", String(Date.now()));
-          } catch {
-            // The cue can still be shown without persisting its low-frequency gate.
-          }
-        }
-        void cueDeliveryReporter.shown(cueTarget);
-      }, undefined, revealAt);
-      cueTimeline.call(() => {
-        setHomeCue(null);
-        setHomeCueThoughtId(null);
-        revealedCueRef.current = null;
-      }, undefined, hideAt);
-      return () => {
-        cueTimeline.kill();
-        // Losing focus or opening a task cancels the cue lifecycle. Clear any
-        // text already revealed so resuming cannot leave a one-shot prompt
-        // pinned indefinitely after its timeline has been destroyed, and return a
-        // borrowed position immediately.
-        setHomeCue(null);
-        setHomeCueThoughtId(null);
-        revealedCueRef.current = null;
-      };
-    },
-  });
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -1380,33 +1277,6 @@ export function CompanionPresence() {
     })
   ), []);
 
-  // 念头气泡点击（切片④）：她的开场消息落进会话并打开聊天抽屉。
-  const openThoughtCue = useCallback(async (thoughtId: string) => {
-    if (cueOpeningRef.current) return;
-    cueOpeningRef.current = true;
-    setCueOpening(true);
-    setCueOpenError(null);
-    const revealed = revealedCueRef.current;
-    try {
-      const result = await window.astella.companion.chat.openThought({
-        meta: createRequestMeta(),
-        request: { version: 1, thoughtId },
-      });
-      if (!result.ok) throw result.error;
-      setHomeCue(null);
-      setHomeCueThoughtId(null);
-      setMode("history");
-      revealedCueRef.current = null;
-      // `revealed` 与可点的气泡是同一处代码同时设的，取不到就是这条气泡不该有回执。
-      if (revealed) void cueDeliveryReporter.opened(revealed);
-    } catch {
-      setCueOpenError("这条念头暂时打不开。可以再点一次，或打开对话记录。");
-    } finally {
-      cueOpeningRef.current = false;
-      setCueOpening(false);
-    }
-  }, [cueDeliveryReporter, setMode]);
-
   const runActionItem = useCallback((id: string) => {
     setMode("closed");
     runHomeV2Feature(id as HomeFeatureId);
@@ -1441,7 +1311,6 @@ export function CompanionPresence() {
   // （放在 companionUnavailable 声明之后，见该常量定义处。）
 
   const completionCue = presentedCompanionMoment === "confirm" ? "这次学习已经收好，新的理解正回到小屋里。" : null;
-  const visibleHomeCue = completionCue ?? (guideOpen ? null : homeCue);
   /**
    * 她这一轮在做什么，由服务端那条 cue 的 `intent` 决定**姿势**（2026-09-20 接入）。
    *
@@ -1698,36 +1567,13 @@ export function CompanionPresence() {
             }}
           />
         ) : null}
-        {/* 主动提示气泡与回复气泡共用头顶通道，同样不能放进裁切画布。 */}
-        {companionPolicy.proactive === "allow" && visibleHomeCue && !hudOccupied && !engaged ? (
-          homeCueThoughtId && !completionCue ? (
-            <button
-              type="button"
-              className="companion-cue-open"
-              onClick={() => void openThoughtCue(homeCueThoughtId)}
-              aria-label={`${visibleHomeCue}——${cueOpening ? "正在打开" : "点开和她聊"}`}
-              aria-describedby={cueOpenError ? "companion-cue-open-error" : undefined}
-              disabled={cueOpening}
-            >
-              <CompanionBubble
-                text={visibleHomeCue}
-                tone={completionCue ? "touch" : "cue"}
-                motionMode={motionMode}
-              />
-            </button>
-          ) : (
-            <CompanionBubble
-              text={visibleHomeCue}
-              tone={completionCue ? "touch" : "cue"}
-              motionMode={motionMode}
-            />
-          )
-        ) : null}
-        {cueOpenError && homeCueThoughtId && !completionCue && visibleHomeCue && !engaged ? (
-          <div id="companion-cue-open-error" className="companion-cue-error" role="status">
-            <span>{cueOpenError}</span>
-            <button type="button" onClick={() => { setCueOpenError(null); setMode("history"); }}>打开对话记录</button>
-          </div>
+        {/* 只有学习完成的回执走这条头顶通道；她主动说的话走真实消息流，由对话纸认领，不另起气泡。 */}
+        {companionPolicy.proactive === "allow" && completionCue && !hudOccupied && !engaged ? (
+          <CompanionBubble
+            text={completionCue}
+            tone="touch"
+            motionMode={motionMode}
+          />
         ) : null}
       </div>
 

@@ -1,9 +1,10 @@
-import { isWithinQuietHours } from "@astella/shared/companion-proactive-policy";
+import { isWithinQuietHours, proactiveCadenceMs, routineCadenceBlocked } from "@astella/shared/companion-proactive-policy";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { readParticipationPreferences, readCompanionAwareness, listCompanionAttention } from "@astella/agent-host";
 import { companionInitiativeInputV1Schema } from "@astella/shared/companion-initiative-contracts";
 import { isCompanionDefaultParticipationOpportunity } from "@astella/shared/companion-default-participation";
+import { companionInitiativePushKind } from "./companion-initiative-observation.ts";
 import { sha256Utf8V1 } from "@astella/shared/content-hash";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { resolveAIGovernanceContext } from "../lib/governance.ts";
@@ -41,8 +42,8 @@ export async function runCompanionInitiative(ctx: CompanionDialogueHandlerContex
   await withWorkerWorkspaceTransaction(scope, async tx => {
     await lockJobLease(tx, ctx);
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`companion-initiative:${scope.userId}`},0))`);
-    const [account] = await tx.execute<{ epoch: number; global_enabled: boolean; presence: { presence?: string } | null; quiet_hours: import("@astella/shared/companion-proactive-policy").CompanionQuietHours | null }>(
-      sql`SELECT epoch,global_enabled,presence,quiet_hours FROM user_companion_account_state WHERE user_id=${scope.userId}`);
+    const [account] = await tx.execute<{ epoch: number; global_enabled: boolean; intervention_level: string | null; presence: { presence?: string } | null; quiet_hours: import("@astella/shared/companion-proactive-policy").CompanionQuietHours | null }>(
+      sql`SELECT epoch,global_enabled,intervention_level,presence,quiet_hours FROM user_companion_account_state WHERE user_id=${scope.userId}`);
     if (!account?.global_enabled) return;
     const [muted] = await tx.execute(sql`SELECT 1 FROM companion_room_profiles WHERE workspace_id=${scope.workspaceId}
       AND user_id=${scope.userId} AND proactive_muted`);
@@ -88,10 +89,44 @@ export async function runCompanionInitiative(ctx: CompanionDialogueHandlerContex
     if (awareness.sessions.some(s => s.typing || (s.context as {speaking?:boolean}).speaking)) { await deferParticipation(tx,ctx,15_000); return; }
     // A stale page or launcher does not speak later in another context.
     if (observation && observation.topic !== "preference.changed" && !present) return;
+    // 她自己安排的到点：人不在这台设备前面时不要起整轮模型，也不要把这次安排吃掉。
+    // 留在 due 状态等下一次唤醒（0427 的入队同样要求她在场），比出声给空房间诚实得多。
+    if (!observation && !present) { await deferParticipation(tx, ctx, 60_000); return; }
     const observedPage = (observation?.facts.context as { page?: { key?: string; revision?: string | null } } | undefined)?.page;
     const presentPage = (present?.context as { page?: { key?: string; revision?: string | null } } | undefined)?.page;
     if (observation && ["page.arrived", "help.available", "result.available"].includes(observation.topic)
       && (!observedPage || observedPage.key !== presentPage?.key || observedPage.revision !== presentPage?.revision)) return;
+    /**
+     * 她自己新起的话题按账号里已声明的介入档位排间隔（节奏的唯一实现在 shared 的
+     * proactive-policy）。用户先要过的东西——招呼、答后接续、
+     * 刚落在她手上的失败与结果——不进这条闸。
+     *
+     * 拦在起运行之前，不是拦在她说话之前：一次「翻到一篇笔记」原本要付一整轮 Agent。
+     */
+    const initiativeTopic = observation?.topic ?? (selfNote ? "self_note.due" : "attention.due");
+    if (companionInitiativePushKind(initiativeTopic) === "routine") {
+      const level = (account.intervention_level ?? "moderate") as import("@astella/shared/companion-proactive-policy").CompanionInterventionLevelV1;
+      // 上一次「她自己想起要说点什么」：既算她说出口的那一句，也算她安静结束的那一次考虑。
+      // 只按发言计的话，「闲到几分钟→想一想→没什么可说」每次都重新付一整轮模型，
+      // 用户感觉到的就是她隔一会儿就起一次念头，哪怕一句也没说。
+      // 读数按 worker 租约能看到的当前书房计（跨书房的账号级读数要 definer 函数才能穿过 RLS，本轮没加）。
+      const [lastSpoken] = await tx.execute<{ at: Date | string | null }>(sql`SELECT max(created_at) AS at FROM companion_messages
+        WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND role='assistant' AND kind='proactive'`);
+      const recentRuns = await tx.execute<{ topic: string | null; at: Date | string }>(sql`
+        SELECT input_source->>'topic' AS topic, created_at AS at FROM companion_turn_runs
+        WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND input_source->>'kind'='initiative'
+        ORDER BY created_at DESC LIMIT 20`);
+      const considered = recentRuns.filter(row => typeof row.topic === "string"
+        && companionInitiativePushKind(row.topic) === "routine").map(row => new Date(row.at).getTime());
+      const lastAt = Math.max(considered.length ? Math.max(...considered) : 0,
+        lastSpoken?.at ? new Date(lastSpoken.at).getTime() : 0);
+      const msSince = lastAt > 0 ? Date.now() - lastAt : null;
+      if (routineCadenceBlocked({ interventionLevel: level, msSinceLastCue: msSince })) {
+        // 到点的关注不在这一步被吃掉：等到间隔过去再唤起，她仍然记得自己要回头看什么。
+        await deferParticipation(tx, ctx, Math.max(1_000, proactiveCadenceMs(level) - (msSince ?? 0) + 1_000));
+        return;
+      }
+    }
     const hintedConversation = observation?.conversation_id ?? plan?.conversationId ?? null;
     let [conversation] = await tx.execute<{ id: string; next_generation: number }>(sql`
       SELECT id,next_generation FROM companion_conversations WHERE workspace_id=${scope.workspaceId}
@@ -118,9 +153,11 @@ export async function runCompanionInitiative(ctx: CompanionDialogueHandlerContex
       observationId: observation?.id ?? null, attentionKey: plan?.key ?? null, attentionRevision: plan?.revision ?? null,
       preferenceRevision: pref.revision, parentRunId: observation ? observation.parent_run_id : plan?.parentRunId ?? null,
       deviceSessionId: (present?.deviceSessionId as string | undefined) ?? null,
-      topic: observation?.topic ?? (selfNote ? "self_note.due" : "attention.due"), intent: selfNote
+      topic: initiativeTopic, intent: selfNote
         ? `接着推进自己的关注：${selfNote.title}。先展开自己的记事，按其具体下一步查阅、构思或收尾；有真实新进展才考虑分享。`
-        : applicable.map(p => p.intent).join("\n").slice(0, 4_000),
+        // 同时到点的关注要完整到达：拼起来再裁尾，等于替她忘掉后半件事。
+        // 装不下由上下文闸门按声明处理，不在这里静默丢内容。
+        : applicable.map(p => p.intent).join("\n"),
       facts: { selfNote: selfNote ? { key: selfNote.entry_key, revision: selfNote.revision } : plan?.selfNote ?? null, observation: observation?.facts ?? null, awareness, attention: applicable, canSpeak: Boolean(present),
         currentPageKey: context?.page?.key ?? null, currentPageRevision: context?.page?.revision ?? null },
     });

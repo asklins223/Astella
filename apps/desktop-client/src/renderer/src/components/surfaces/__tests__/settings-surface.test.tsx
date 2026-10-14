@@ -182,7 +182,12 @@ function installApi(options: {
       }),
     },
     companion: {
-      memory: { clear: vi.fn(async () => ok({ version: 1 as const, deletedCount: 3 })) },
+      memory: {
+        clear: vi.fn(async () => ok({ version: 1 as const, deletedCount: 3 })),
+        clearDerived: vi.fn(async () => ok({ version: 1 as const, deletedDiaries: 1, deletedDiaryEntries: 2,
+          deletedDiaryMemories: 3, deletedDiaryCheckpoints: 1, deletedMemoryUsageRecords: 4,
+          deletedSelfNotes: 5, deletedSelfNoteVersions: 6, deletedMethods: 7 })),
+      },
       history: { clear: vi.fn(async () => ok({ version: 1 as const, deletedMessages: 7, deletedConversations: 2 })) },
       data: {
         export: vi.fn(async (_input: { kind: "all" | "memory" | "audit" }) => ok({ version: 1 as const, saved: true, canceled: false, fileName: "companion-test.json", bytes: 100 })),
@@ -1800,14 +1805,20 @@ describe("重构后的伴星设置：规则、设备和数据各有入口", () =
     expect(confirmation.textContent).toContain("30 天");
     expect(api.companion.memory.clear).not.toHaveBeenCalled();
     fireEvent.click(within(clearRows[0]).getByRole("button", { name: "取消" }));
+    expect(api.companion.memory.clearDerived).not.toHaveBeenCalled();
     fireEvent.click(within(clearRows[1]).getByRole("button", { name: "清除" }));
+    expect(screen.getByRole("group", { name: "确认清除伴星整理内容" }).textContent).toContain("永久清除");
+    fireEvent.click(screen.getByRole("button", { name: "确认清除伴星整理内容" }));
+    await screen.findByText(/已清除 1 篇日记、2 条日记关联、3 条日记记忆/);
+    expect(api.companion.memory.clearDerived).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(clearRows[2]).getByRole("button", { name: "清除" }));
     expect(screen.getByRole("group", { name: "确认清空连续对话记录" }).textContent).toContain("不可恢复");
     fireEvent.click(screen.getByRole("button", { name: "确认清空连续对话记录" }));
     await screen.findByText("已清除 7 条消息、2 段对话；动态收件箱已重新建立。");
     expect(api.companion.history.clear).toHaveBeenCalledTimes(1);
     expect(api.companion.memory.clear).not.toHaveBeenCalled();
     expect(conversationInvalidated).toBe(1);
-    fireEvent.click(within(clearRows[2]).getByRole("button", { name: "清除" }));
+    fireEvent.click(within(clearRows[3]).getByRole("button", { name: "清除" }));
     fireEvent.click(screen.getByRole("button", { name: "确认删除操作与邀请记录" }));
     await screen.findByText("已删除 4 条操作记录和 2 条邀请记录。");
     expect(conversationInvalidated).toBe(1);
@@ -1830,7 +1841,7 @@ describe("重构后的伴星设置：规则、设备和数据各有入口", () =
   it("打开清除确认时焦点留在取消，Esc 收起后回到原操作且不清除数据", async () => {
     const { api } = await openRules();
     fireEvent.click(screen.getByRole("tab", { name: "伴星数据" }));
-    const historyRow = document.querySelectorAll<HTMLElement>(".settings-companion-clear")[1];
+    const historyRow = document.querySelectorAll<HTMLElement>(".settings-companion-clear")[2];
     const open = within(historyRow).getByRole("button", { name: "清除" });
     fireEvent.click(open);
     expect(document.activeElement).toBe(within(historyRow).getByRole("button", { name: "取消" }));

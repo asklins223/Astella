@@ -19,10 +19,10 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 /** 冻结基线。删一条闸 → 这里减一，并在实施日志里给出 (a) 重放台 still-leaks=0、(b) 真实流量 0 触发。 */
-const GATE_BASELINE = 11;
+const GATE_BASELINE = 9;
 
 /**
- * 11 道输出闸的判据函数（39b §9.1 的 G1–G11）。
+ * 对话输出闸的九个判据函数（G1–G9）。
  *
  * 顺序即编号顺序，**不要重排**：删闸时把那一行删掉并同步 `GATE_BASELINE`，
  * 重排会让 review 看不出"到底删的是哪一道"。
@@ -37,8 +37,6 @@ const GATE_JUDGES: ReadonlyArray<{ id: string; fn: string; file: string }> = [
   { id: "G7", fn: "containsCompanionInternalToken", file: "../handlers/companion-dialogue-content.ts" },
   { id: "G8", fn: "looksLikeJsonEnvelope", file: "../handlers/companion-dialogue-content.ts" },
   { id: "G9", fn: "looksLikeJsonFragment", file: "../handlers/companion-dialogue-content.ts" },
-  { id: "G10", fn: "introducesUnverifiedNumbers", file: "../handlers/companion-thought.ts" },
-  { id: "G11", fn: "readsOutStatistics", file: "../handlers/companion-thought.ts" },
 ];
 
 /**
@@ -51,8 +49,8 @@ const GATE_JUDGES: ReadonlyArray<{ id: string; fn: string; file: string }> = [
 const RUNTIME_FILES = [
   "../handlers/companion-agent-runtime.ts",
   "../handlers/companion-dialogue-stream.ts",
-  "../handlers/companion-thought.ts",
   "../handlers/companion-step-plan.ts",
+  "../handlers/companion-dialogue-content.ts",
 ];
 
 function read(relative: string): string {
@@ -72,7 +70,7 @@ function isCalled(source: string, name: string): boolean {
   return new RegExp(`\\b${name}\\s*\\(`).test(source);
 }
 
-test("棘轮：11 道判据仍然导出、仍然被运行时调用，且个数不超过基线", () => {
+test("棘轮：9 道判据仍然导出、仍然被运行时调用，且个数不超过基线", () => {
   const exportedByFile = new Map<string, Set<string>>();
   for (const gate of GATE_JUDGES) {
     if (!exportedByFile.has(gate.file)) {

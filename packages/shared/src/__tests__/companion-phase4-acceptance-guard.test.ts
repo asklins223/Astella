@@ -95,15 +95,11 @@ test("A19｜已发布成稿受保护：后台重跑不能替换（§5.5）", () 
 // ── A15：正式作答期间，提醒持久、日记安静更新、形象可见 ──────────────────
 
 test("A15｜正式作答期间**不弹**普通招呼（安静规则生效）", () => {
-  // ⚠️ 这个闸**不在**投递钩子里。投递钩子走的是触发式（跑完之后的"要继续吗"），
-  // 那一路按 0238/0270 只看设备在不在与过期；正式作答期间**不弹普通招呼**
-  // 是念头管线那条路（她"自己想开口"）的职责。
-  // 查错文件会得到一个恒假的断言，或者更糟——恒真。
-  const thought = read("workers", "ai-worker", "src", "handlers", "companion-thought.ts");
-  assert.match(thought, /formalAnswerInProgress/,
-    "念头管线没有读正式作答状态 —— 作答中途她会插话");
-  assert.match(thought, /formal_answer_in_progress/,
-    "决策结果里没有这一档 —— 安静规则在这一层就没了");
+  const initiative = read("workers", "ai-worker", "src", "handlers", "companion-initiative.ts");
+  assert.match(initiative, /findFormalAnswerTarget\(tx, scope\)/,
+    "主动交流准备没有读正式作答状态 —— 作答中途她会插话");
+  assert.match(initiative, /deferParticipation\(tx,\s*ctx,\s*60_000\)/,
+    "正式作答期间没有暂停并保留这次机会");
 });
 
 test("A15｜约定提醒**持久**：只被设备不在与过期挡，不被作答/额度挡", () => {

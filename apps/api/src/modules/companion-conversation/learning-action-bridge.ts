@@ -21,7 +21,7 @@ import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.t
 // Plan 23 CS-05/CS-06：Objective Surface 派生 companion 上下文（不再依赖 V1 card_key_points.claim）。
 import { deliver } from "./delivery/delivery-service.ts";
 import { resolveAuthSurfaceManifestSecret } from "../../companion-contracts/auth-surface.ts";
-import { getCompanionAccountEpoch } from "./turn/companion-account-epoch.ts";
+import { getCompanionAccountEpoch } from "../../companion-contracts/companion-account-epoch.ts";
 import {
   buildCompanionLearningRunContext,
   contextRevisionForCompanionLearningRun,

@@ -19,7 +19,7 @@ function opaqueId(prefix: string): string {
  *
  * 为什么要有一个模块级兜底：主进程的 `assertEpoch` 已改成 fail-closed（不带 epoch
  * 即视为过期），而"调用方漏传 epoch"是常态而非例外——`SourceIntake` 的批量采集、
- * 笔记图片上传、伴星念头气泡都不持有任何 epoch 游标。让 `createRequestMeta()`
+ * 笔记图片上传、伴星主动交流气泡都不持有任何 epoch 游标。让 `createRequestMeta()`
  * 默认取当前边界，使漏传在结构上不可能发生；显式传参仍然优先，各 surface 自己的
  * 游标语义不变。
  */

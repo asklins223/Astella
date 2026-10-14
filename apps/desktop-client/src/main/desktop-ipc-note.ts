@@ -255,8 +255,6 @@ import {
   companionChatProposalDecideResultV1Schema,
   companionAgentRoutesListRequestV1Schema,
   companionAgentRoutesListResultV1Schema,
-  companionChatOpenThoughtRequestV1Schema,
-  companionChatOpenThoughtResultV1Schema,
   companionChatCancelRunRequestV1Schema,
   companionChatCancelRunResultV1Schema,
   companionRunNodesListRequestV1Schema,

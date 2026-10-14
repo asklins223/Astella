@@ -5,9 +5,8 @@ import type { CompanionActivityDeliveryV1 } from "@astella/shared/companion-memo
  *
  * 服务端把每一次主动开口写成一条 `assistant_deliveries`（`kind='system_event'`），
  * 而两条规则都建立在"这一条被看见过"之上：
- * - 念头日预算（`companion-thought.ts` 的 `delivered_today`）只算 opened/displayed/
- *   acted/dismissed，避免从没露出的念头白占一天的额度；
- * - 划走降权（`proactive-hook.ts` 的 `feedbackStates`）只看已送达之后的状态。
+ * - Displayed and acted receipts describe what reached the user; queued, expired,
+ *   cancelled and suppressed deliveries do not count as interaction.
  * 可是首页气泡这一路从来没人回执过：实测 22 条 system_event 里 21 条停在 `queued`，
  * 唯一一条 `displayed` 来自伴星中心动态页。也就是说预算的"被看见"这一栏永远是 0，
  * 上面两条闸都建在不存在的数据上。

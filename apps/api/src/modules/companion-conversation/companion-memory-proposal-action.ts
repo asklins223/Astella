@@ -15,6 +15,7 @@ import {
   type MemoryKindV2,
 } from "./memory/memory-service.ts";
 import { accountPreferenceRejectionMessage } from "@astella/shared/companion-memory-scope";
+import { isMemoryVectorRebuildEnabled } from "../../config/learning-companion-flags.ts";
 import { CompanionConversationError } from "./turn/turn-service.ts";
 
 type ProposalPayload = { kind: string; [key: string]: unknown };
@@ -22,6 +23,24 @@ type MemoryProposal = {
   conversation_id: string;
   source_message_id: string | null;
 };
+
+async function enqueueEmbeddingForWrittenMemory(
+  tx: ApiTransaction,
+  input: { workspaceId: string; userId: string; memory: { memoryItemId: string; revision: number; embeddingStatus: string; candidate: boolean } },
+): Promise<void> {
+  if (!isMemoryVectorRebuildEnabled() || input.memory.candidate || input.memory.embeddingStatus !== "pending") return;
+  await tx.execute(sql`
+    INSERT INTO jobs
+      (type, workspace_id, requested_by, payload, status, priority, resource_class, idempotency_key)
+    VALUES
+      ('companion_memory_embedding_rebuild', ${input.workspaceId}, ${input.userId},
+       ${JSON.stringify({ userId: input.userId })}, 'pending', 10, 'maintenance',
+       ${`memory-embedding:${input.memory.memoryItemId}:${input.memory.revision}`})
+    ON CONFLICT (workspace_id, idempotency_key)
+      WHERE idempotency_key IS NOT NULL
+    DO NOTHING
+  `);
+}
 
 /**
  * 账号级（跨空间）写入被拒 → 现役 companion 错误合同的 4xx（42 阶段 1 E）。
@@ -78,6 +97,7 @@ export async function executeCompanionMemoryProposalAction(input: {
       if (parsed.data.decision === "confirm") {
         const confirmed = await confirmMemory(input.tx, scope, memoryId);
         if (!confirmed) throw new CompanionConversationError("NOT_FOUND", 404, "memory not found");
+        await enqueueEmbeddingForWrittenMemory(input.tx, { ...scope, memory: confirmed });
         return { resultRef: memoryId, safeSummary: "记忆已确认" };
       }
       const rejected = await deleteMemory(input.tx, scope, memoryId);
@@ -104,6 +124,7 @@ export async function executeCompanionMemoryProposalAction(input: {
           : {}),
       });
       if (!revised) throw new CompanionConversationError("NOT_FOUND", 404, "memory not found");
+      await enqueueEmbeddingForWrittenMemory(input.tx, { ...scope, memory: revised });
       return {
         resultRef: action.memoryId,
         safeSummary: `记忆已修订到第 ${revised.revision} 版`,
@@ -178,5 +199,6 @@ export async function executeCompanionMemoryProposalAction(input: {
     if (error instanceof MemoryGlobalScopeRejectedError) throw accountScopeRejected(error);
     throw error;
   }
+  await enqueueEmbeddingForWrittenMemory(input.tx, { ...scope, memory: saved });
   return { resultRef: saved.memoryItemId, safeSummary: "已保存记忆" };
 }

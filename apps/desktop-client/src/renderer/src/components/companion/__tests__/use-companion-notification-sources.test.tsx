@@ -8,28 +8,22 @@ import { useCompanionNotificationSources } from "../use-companion-notification-s
 const source = vi.hoisted(() => ({
   home: null as null | { sanitizedReviewSummary: { state: string; data: { dueCount: number } } },
   companion: null as null | { proactiveCue: { origin: string; revision: number; text: string } },
-  reload: vi.fn(), timeline: vi.fn(), present: vi.fn(), ack: vi.fn(), projection: vi.fn(),
+  reload: vi.fn(), timeline: vi.fn(), present: vi.fn(), ack: vi.fn(),
 }));
 vi.mock("../../../app/home-projection", () => ({ useHomeProjection: () => ({ projection: source.home, reload: source.reload }) }));
 vi.mock("../../../app/companion-home-projection", () => ({ useCompanionHomeProjection: () => ({ projection: source.companion }) }));
 vi.mock("../use-voice-model-notifications", () => ({ useVoiceModelNotifications: () => {} }));
 
 const ok = <T,>(data: T) => ({ ok: true, data });
-let receive: ((event: { workspaceEpoch: number; data: { kind: string } }) => void) | undefined;
 beforeEach(() => {
   vi.useFakeTimers(); vi.resetAllMocks();
-  source.home = null; source.companion = null; receive = undefined;
+  source.home = null; source.companion = null;
   useRoomStore.setState({ workspaceScopeRevision: 7, surface: null, windowState: "visible" });
   useCompanionNotifications.setState({ items: [] });
   source.timeline.mockResolvedValue(ok({ items: [{ inboxSequence: 9, deliveryId: "reminder-delivery" }] }));
   source.present.mockResolvedValue(ok({})); source.ack.mockResolvedValue(ok({}));
   window.astella = {
-    companion: { activity: { timeline: source.timeline, present: source.present, ack: source.ack }, home: { getProjection: source.projection } },
-    subscriptions: {
-      subscribe: vi.fn(async () => ok({ subscriptionId: "notifications-runtime" })),
-      unsubscribe: vi.fn(async () => ok({})),
-      onEvent: vi.fn((_, listener) => { receive = listener; return () => { receive = undefined; }; }),
-    },
+    companion: { activity: { timeline: source.timeline, present: source.present, ack: source.ack } },
   } as unknown as typeof window.astella;
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
@@ -57,20 +51,10 @@ describe("real notification source adapters", () => {
     expect(source.ack).toHaveBeenCalledWith(expect.objectContaining({ request: { deliveryId: "reminder-delivery", inboxSequence: 9, transition: "acted" } }));
   });
 
-  it("receives due reminders through runtime events while Settings is open", async () => {
-    useRoomStore.setState({ surface: "settings" });
-    source.projection.mockResolvedValue(ok({ proactiveCue: { origin: "reminder", revision: 9, text: "该休息一下了" } }));
-    renderHook(useCompanionNotificationSources); await act(async () => {});
-    await act(async () => receive?.({ workspaceEpoch: 4, data: { kind: "companion_activity_changed" } }));
-    expect(source.projection).toHaveBeenCalledWith(expect.objectContaining({ meta: expect.objectContaining({ workspaceEpoch: 4 }) }));
-    expect(useCompanionNotifications.getState().items[0].body).toBe("该休息一下了");
-  });
-  it("also accepts system deliveries, while personal thoughts keep their existing companion expression", async () => {
+  it("accepts system deliveries", async () => {
     source.companion = { proactiveCue: { origin: "system", revision: 9, text: "刚才的学习记录已保存" } };
-    const view = renderHook(useCompanionNotificationSources);
+    renderHook(useCompanionNotificationSources);
     expect(useCompanionNotifications.getState().items[0]).toMatchObject({ kind: "help", source: "书房消息", body: "刚才的学习记录已保存" });
-    source.companion = { proactiveCue: { origin: "thought", revision: 10, text: "想起昨天一起读的那段话" } };
-    view.rerender(); expect(useCompanionNotifications.getState().items).toHaveLength(1);
   });
 
   it("prevents a late reminder receipt from acting in another workspace", async () => {

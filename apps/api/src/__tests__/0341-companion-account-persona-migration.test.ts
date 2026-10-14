@@ -40,7 +40,8 @@ test("0341 isolates shared persona by user and keeps relationship state workspac
 });
 
 test("0341 records the persona versions pinned to dialogue and diary generation", () => {
-  for (const table of ["companion_turn_runs", "companion_diary_generation_checkpoints", "companion_daily_summaries", "assistant_thoughts"]) {
+  // assistant_thoughts 已由 0428 退役；留着只会让这条守卫对着一个不存在的表空转。
+  for (const table of ["companion_turn_runs", "companion_diary_generation_checkpoints", "companion_daily_summaries"]) {
     assert.match(migration, new RegExp(`ALTER TABLE public\\.${table}[\\s\\S]*?ADD COLUMN persona_profile_revision integer,[\\s\\S]*?ADD COLUMN persona_examples_revision integer,[\\s\\S]*?ADD COLUMN default_expression_version text`));
   }
 });

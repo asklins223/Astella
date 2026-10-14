@@ -215,6 +215,17 @@
 .hud-surface .cc-rule-intro p { margin-top: 0; }
 .hud-surface .cc-form .cc-rule-conditions textarea { min-height: 64px; }
 .hud-surface .cc-memory-workspace { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); flex: 1; gap: 24px; min-height: 0; }
+.hud-surface .cc-memory-budget { flex: none; border: 1px solid color-mix(in srgb, var(--cc-ink) 9%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--cc-paper) 76%, white); color: var(--cc-muted); font-size: 11px; }
+.hud-surface .cc-memory-budget > summary { display: flex; min-height: 36px; align-items: center; padding: 7px 12px; color: var(--cc-muted); cursor: pointer; font-weight: 550; list-style: none; }
+.hud-surface .cc-memory-budget > summary::-webkit-details-marker { display: none; }
+.hud-surface .cc-memory-budget > summary::before { content: "›"; margin-right: 8px; color: var(--cc-muted); font-size: 17px; line-height: 1; }
+.hud-surface .cc-memory-budget[open] > summary::before { transform: rotate(90deg); }
+.hud-surface .cc-memory-budget > summary:focus-visible { outline: 2px solid var(--cc-accent, #5a9b8d); outline-offset: -3px; border-radius: inherit; }
+.hud-surface .cc-memory-budget[open] > .cc-memory-budget__details { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 16px; padding: 0 14px 10px; }
+.hud-surface .cc-memory-budget__details strong { color: var(--cc-ink); font: 600 13px/1.5 var(--cc-serif); }
+.hud-surface .cc-memory-budget__details small { flex-basis: 100%; line-height: 1.6; }
+.hud-surface .cc-memory-tier { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0 0 16px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--cc-ink) 4%, transparent); color: var(--cc-muted); font-size: 11px; }
+.hud-surface .cc-memory-source-links { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; margin-left: 8px; }
 .hud-surface .cc-memory-workspace.is-empty { grid-template-columns: minmax(0, 1fr); }
 .hud-surface .cc-memory-list { min-width: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 6px; }
 .hud-surface .cc-memory-list h3 { padding: 7px 0 11px; border-bottom: 1px solid var(--cc-line); color: var(--cc-muted); font-size: 12px; font-weight: 550; }

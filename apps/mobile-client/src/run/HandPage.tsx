@@ -1,27 +1,25 @@
-import { useState } from 'react'
+import { useState, type MouseEvent } from 'react'
 import { goTab, push } from '../app/nav.ts'
 import { Icon } from '../app/icons.tsx'
 import { ProposalCard } from '../conversation/ProposalCard.tsx'
 import { dialogueText } from '../conversation/message-content.tsx'
 import { companionLine } from '../conversation/status-line.ts'
-import { interrupt, retryConversation, setDraft, useCompanion } from '../state/companion.ts'
+import { companionStore, interrupt, retryConversation, setDraft, setDraftContext, useCompanion } from '../state/companion.ts'
 import { useNotes } from '../state/notes.ts'
+import { interruptedUserRun } from './attention.ts'
+import { usePhoneRoot } from '../app/phone-root.tsx'
+import { closeSheet, openSheet, originOf, requestSheetClose } from '../ui/sheet-store.ts'
 
 /** 只列出当前确实需要接手的工作；完整过程仍在唯一那条对话里。 */
 export function HandPage() {
   const companion = useCompanion()
   const notes = useNotes()
+  const root = usePhoneRoot()
   const [retrying, setRetrying] = useState(false)
   const [stopping, setStopping] = useState(false)
   const pending = companion.proposals.filter((item) => item.status === 'pending')
   const latestEdit = companion.noteEdits.at(-1)
-  const latestRun = companion.runs.reduce<(typeof companion.runs)[number] | undefined>(
-    (latest, run) => !latest || run.generation > latest.generation ? run : latest,
-    undefined,
-  )
-  const interrupted = latestRun && (latestRun.status === 'failed' || latestRun.status === 'cancelled')
-    ? latestRun
-    : undefined
+  const interrupted = interruptedUserRun(companion)
   const interruptedMessage = interrupted?.userMessageId
     ? companion.messages.find((item) => item.id === interrupted.userMessageId)
     : undefined
@@ -34,7 +32,8 @@ export function HandPage() {
   const restoring = companion.capability === 'unknown'
     || (companion.capability === 'on' && !companion.historyReady && !connectionNeedsHelp)
   const attentionCount = pending.length + Number(connectionNeedsHelp) + Number(Boolean(interrupted))
-  const busy = Boolean(companion.turn || pending.length || connectionNeedsHelp || interrupted || restoring)
+  const activeTurn = companion.turn?.visible ? companion.turn : null
+  const busy = Boolean(activeTurn || pending.length || connectionNeedsHelp || interrupted || restoring)
 
   async function reconnect() {
     if (retrying) return
@@ -59,21 +58,45 @@ export function HandPage() {
     }
   }
 
-  function restoreInterruptedText() {
+  function restoreInterruptedText(event: MouseEvent<HTMLButtonElement>) {
     if (!interruptedText) return
+    const returnToComposer = () => {
+      goTab('chat')
+      requestAnimationFrame(() => document.getElementById('chat-input')?.focus({ preventScroll: true }))
+    }
+    const current = companionStore.get()
+    if (current.draft.trim() || current.pendingImage || current.pendingVoice || current.draftContext) {
+      openSheet({
+        kind: 'recover-draft', title: '保留正在写的内容', variant: 'paper', trigger: event.currentTarget,
+        origin: originOf(event.currentTarget, root),
+        children: <div className="draft-recovery-panel">
+          <p>输入框里已有内容。原消息可以追加在末尾，也可以先继续当前草稿。</p>
+          <blockquote>{interruptedText}</blockquote>
+          <button className="primary" type="button" onClick={() => {
+            const draft = companionStore.get().draft.trimEnd()
+            setDraft(draft ? `${draft}\n\n${interruptedText}` : interruptedText)
+            closeSheet({ restoreFocus: false })
+            returnToComposer()
+          }}>追加到输入框</button>
+          <button className="secondary" type="button" onClick={() => { closeSheet({ restoreFocus: false }); returnToComposer() }}>继续当前草稿</button>
+          <button className="text-action" type="button" onClick={requestSheetClose}>暂时留在这里</button>
+        </div>,
+      })
+      return
+    }
+    setDraftContext(null)
     setDraft(interruptedText)
-    goTab('chat')
-    requestAnimationFrame(() => document.getElementById('chat-input')?.focus({ preventScroll: true }))
+    returnToComposer()
   }
 
   return (
-    <section className="page-scroll utility-scroll hand-scroll" aria-label="手边">
+    <section className="page-scroll utility-scroll hand-scroll" data-view-key="hand" aria-label="手边">
       <div className="utility-page hand-page">
         <header className="utility-title hand-title">
           <p className="utility-eyebrow">随时接上 · 书房进展</p>
           <div className="hand-title-row">
             <h1>手边</h1>
-            <span className="hand-count"><strong>{attentionCount}</strong><span>件待接手</span></span>
+            <span className="hand-count"><strong>{restoring ? '—' : attentionCount}</strong><span>{restoring ? '正在读取' : '件待接手'}</span></span>
           </div>
           <p className="utility-description">等你决定的事留在这里，完整交流仍在对话里。</p>
         </header>
@@ -98,14 +121,14 @@ export function HandPage() {
           </section>
         )}
 
-        {companion.turn && (
+        {activeTurn && (
           <section className="hand-active task-card" aria-label="正在进行的对话">
             <div className="task-top"><i />{companionLine(companion)}</div>
-            <h2>{companion.turn.statusLabel || '这一轮还在继续'}</h2>
-            <p>{companion.turn.text || '伴星正在处理这条消息。切到手记不会中断这一轮。'}</p>
+            <h2>{activeTurn.statusLabel || '这一轮还在继续'}</h2>
+            <p className="hand-active-preview">{activeTurn.text || '伴星正在处理这条消息。切到手记不会中断这一轮。'}</p>
             <div className="task-actions">
               <button type="button" className="is-commit" onClick={() => goTab('chat')}>回到这一轮</button>
-              {companion.turn.runId && (
+              {activeTurn.runId && (
                 <button type="button" disabled={stopping} onClick={() => void stopCurrentTurn()}>
                   {stopping ? '正在停止…' : '停止这一轮'}
                 </button>

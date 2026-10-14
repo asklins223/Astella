@@ -68,6 +68,15 @@ export async function runCompanionMemoryEmbeddingRebuild(job: JobPayload): Promi
           -- embed 故障就让这条记忆永久没有向量，只能降级关键词检索，且无任何补偿
           -- 路径。这里让失败行按小时级重试：既不丢记忆，也不会形成热点循环。
           OR (embedding_status = 'failed' AND updated_at < now() - interval '1 hour')
+          -- Ready 只表示上一次模型下有向量。模型切换后，向量召回会按当前
+          -- model_revision 排除旧空间；手动重建也必须把这类行重新选出来。
+          OR (embedding_status = 'ready' AND NOT EXISTS (
+            SELECT 1 FROM assistant_memory_embeddings e
+            WHERE e.memory_id = assistant_memory_items.id
+              AND e.workspace_id = assistant_memory_items.workspace_id
+              AND e.user_id = assistant_memory_items.user_id
+              AND e.model_revision = ${provider.embeddingModelId}
+          ))
         )
       ORDER BY updated_at ASC
       LIMIT ${BATCH_LIMIT}
@@ -239,6 +248,13 @@ export async function dismissSemanticTwin(
            AND d.id <> ${input.memoryId}
            AND d.deleted_at IS NULL
            AND d.dismissed_at IS NOT NULL
+           AND dv.model_revision = (
+             SELECT current_embedding.model_revision
+             FROM assistant_memory_embeddings current_embedding
+             WHERE current_embedding.memory_id = ${input.memoryId}
+               AND current_embedding.workspace_id = ${input.workspaceId}
+               AND current_embedding.user_id = ${input.userId}
+           )
            AND 1 - (dv.embedding <=> ${input.embedding}::vector) >
                  ${MEMORY_SEMANTIC_SIMILARITY_THRESHOLD}
        )

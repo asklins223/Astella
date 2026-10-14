@@ -94,6 +94,7 @@ const SETS: Record<string, Node> = {
     ['circle', { cx: '12', cy: '13', r: '4' }],
   ],
   monitor: [['rect', { x: '3', y: '4', width: '18', height: '12', rx: '2' }], ['path', { d: 'M9 20h6M12 16v4' }]],
+  mail: [['rect', { x: '3', y: '5', width: '18', height: '14', rx: '2' }], ['path', { d: 'm3 7 9 6 9-6' }]],
   lock: [['rect', { x: '4', y: '10', width: '16', height: '11', rx: '3' }], ['path', { d: 'M8 10V7a4 4 0 0 1 8 0v3' }]],
   shield: [['path', { d: 'M12 3l7 3v6c0 4.2-3 7.4-7 9-4-1.6-7-4.8-7-9V6l7-3Z' }], ['path', { d: 'm9 12 2 2 4-4' }]],
   download: [

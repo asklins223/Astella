@@ -64,6 +64,7 @@ function fakeExecutor(
   const inserts: Array<Record<string, unknown>> = [];
   /** 随事务发的 NOTIFY 就计在这里：结完账必须唤醒别的设备，没结账就不许发。 */
   const executes: string[] = [];
+  const queryTexts: string[] = [];
   const operations: string[] = [];
   let selectIndex = 0;
   let returnIndex = 0;
@@ -101,13 +102,27 @@ function fakeExecutor(
     update: () => chain(),
     insert: () => chain(),
     delete: () => chain(),
-    execute: () => {
+    execute: (query: unknown) => {
       executes.push("execute");
       operations.push("execute");
+      queryTexts.push(sqlTemplateText(query));
       return Promise.resolve([]);
     },
   });
-  return { executor: root as unknown as ApiTransaction, updates, inserts, executes, operations };
+  return { executor: root as unknown as ApiTransaction, updates, inserts, executes, operations, queryTexts };
+}
+
+function sqlTemplateText(query: unknown): string {
+  const chunks = (query as { queryChunks?: unknown[] } | null)?.queryChunks ?? [];
+  return chunks.map((chunk) => {
+    if (typeof chunk === "string") return chunk;
+    if (chunk && typeof chunk === "object") {
+      const value = (chunk as { value?: unknown }).value;
+      if (Array.isArray(value)) return value.map(String).join("");
+      if (Array.isArray((chunk as { queryChunks?: unknown[] }).queryChunks)) return sqlTemplateText(chunk);
+    }
+    return "";
+  }).join("");
 }
 
 function isDeliveryWrite(set: Record<string, unknown> | undefined): boolean {
@@ -139,6 +154,13 @@ describe("记忆动作要把对应的候选交付结账", () => {
     const closed = deliveryWrites(updates);
     assert.equal(closed.length, 1);
     assert.equal(closed[0]?.state, "dismissed");
+  });
+
+  it("语义忽略只比较同一 embedding model revision 的向量", async () => {
+    const { executor, queryTexts } = fakeExecutor([], [[memoryRow()], [{ id: "delivery-1" }]]);
+    await dismissMemory(executor, scope, MEMORY_ID);
+    assert.ok(queryTexts.some((query) => query.includes("mv.model_revision = av.model_revision")),
+      "异维或异模型向量不能进入 pgvector 距离计算");
   });
 
   it("删除记忆（纠正路径经由它）→ 交付不能继续排着", async () => {

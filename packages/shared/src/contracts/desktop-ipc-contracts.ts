@@ -188,6 +188,10 @@ import {
   companionHistorySearchV1Schema,
   companionMemoryItemV1Schema,
   companionMemoryClearResultV1Schema,
+  companionDerivedDataClearResultV1Schema,
+  companionMemoryBudgetMoveV1Schema,
+  companionMemoryBudgetStatusV1Schema,
+  companionMemoryBudgetTierV1Schema,
   companionMemoryConflictListV1Schema,
   companionMemoryConflictResolveResultV1Schema,
   companionMemoryListV1Schema,
@@ -465,6 +469,10 @@ export const DESKTOP_IPC_CHANNELS = {
   companionMemoryResolveConflict: "astella.v1.companion.memory.resolveConflict",
   companionMemoryRebuildEmbeddings: "astella.v1.companion.memory.rebuildEmbeddings",
   companionMemoryClear: "astella.v1.companion.memory.clear",
+  companionDerivedDataClear: "astella.v1.companion.derivedData.clear",
+  companionMemoryBudget: "astella.v1.companion.memory.budget",
+  companionMemoryBudgetMove: "astella.v1.companion.memory.budgetMove",
+  companionMemoryDispute: "astella.v1.companion.memory.dispute",
   companionMemorySummarizeRecent: "astella.v1.companion.memory.summarizeRecent",
   companionDailyGet: "astella.v1.companion.daily.get",
   companionDailyMonth: "astella.v1.companion.daily.month",
@@ -529,9 +537,6 @@ export const DESKTOP_IPC_CHANNELS = {
   companionChatRunNodes: "astella.v1.companion.chat.runNodes.list",
   // 停止本轮（2026-09-19）：POST /companion/runs/:id/cancel。
   companionChatCancelRun: "astella.v1.companion.chat.cancelRun",
-  // 念头主动开场（切片④，2026-09-18）。
-  companionChatOpenThought: "astella.v1.companion.chat.openThought",
-  companionChatListThoughts: "astella.v1.companion.chat.listThoughts",
   // LearningRun 页面只读上下文 + 一次性 grounded tutor 授权。HTTP 协议不变，
   // 这里只把既有服务端端点收进 Electron 的 typed bridge。
   companionLearningRunGetContext: "astella.v1.companion.learningRun.getContext",
@@ -2835,15 +2840,6 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
         meta: RequestMetaV1;
         request: import("./companion-chat-desktop-contracts.ts").CompanionRunNodesListRequestV1;
       }): Promise<GatewayResultV1<import("./companion-chat-desktop-contracts.ts").CompanionRunNodesListResultV1>>;
-      /** 主动开场（切片④，2026-09-18）：点击念头气泡，把她的开场消息落进会话。 */
-      openThought(input: {
-        meta: RequestMetaV1;
-        request: import("./companion-chat-desktop-contracts.ts").CompanionChatOpenThoughtRequestV1;
-      }): Promise<GatewayResultV1<import("./companion-chat-desktop-contracts.ts").CompanionChatOpenThoughtResultV1>>;
-      listThoughts(input: {
-        meta: RequestMetaV1;
-        request: import("./companion-chat-desktop-contracts.ts").CompanionChatListThoughtsRequestV1;
-      }): Promise<GatewayResultV1<import("./companion-chat-desktop-contracts.ts").CompanionChatListThoughtsResultV1>>;
       /**
        * 停止本轮（2026-09-19）：服务端原子取消 + 写 turn.cancelled(reason=user)，
        * worker 在 fence 处把已输出的文本以 kind='cancelled' 留档。
@@ -2887,6 +2883,8 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
      */
     readonly memory: {
       list(input: { meta: RequestMetaV1; query?: CompanionMemoryListQuery }): Promise<GatewayResultV1<z.infer<typeof companionMemoryListV1Schema>>>;
+      budget(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionMemoryBudgetStatusV1Schema>>>;
+      moveBudgetTier(input: { meta: RequestMetaV1; memoryId: Uuid; tier: z.infer<typeof companionMemoryBudgetTierV1Schema> }): Promise<GatewayResultV1<z.infer<typeof companionMemoryBudgetMoveV1Schema>>>;
       recycleList(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionMemoryRecycleListV1Schema>>>;
       starMap(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionMemoryStarMapV2Schema>>>;
       confirm(input: { meta: RequestMetaV1; memoryId: Uuid }): Promise<GatewayResultV1<z.infer<typeof companionMemoryItemV1Schema>>>;
@@ -2919,10 +2917,12 @@ export interface AstellaDesktopApiM2 extends AstellaDesktopApiM1 {
       correct(input: { meta: RequestMetaV1; memoryId: Uuid; request: CompanionMemoryCorrectInputV1 }): Promise<GatewayResultV1<z.infer<typeof companionMemoryItemV1Schema>>>;
       revisions(input: { meta: RequestMetaV1; memoryId: Uuid }): Promise<GatewayResultV1<z.infer<typeof companionMemoryRevisionListV1Schema>>>;
       dismiss(input: { meta: RequestMetaV1; memoryId: Uuid }): Promise<GatewayResultV1<z.infer<typeof companionMemoryItemV1Schema>>>;
+      dispute(input: { meta: RequestMetaV1; memoryId: Uuid; expectedRevision: number }): Promise<GatewayResultV1<z.infer<typeof companionMemoryItemV1Schema>>>;
       conflicts(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionMemoryConflictListV1Schema>>>;
       resolveConflict(input: { meta: RequestMetaV1; memoryId: Uuid; removeId: Uuid }): Promise<GatewayResultV1<z.infer<typeof companionMemoryConflictResolveResultV1Schema>>>;
       rebuildEmbeddings(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionMemoryQueueResultV1Schema>>>;
       clear(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionMemoryClearResultV1Schema>>>;
+      clearDerived(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionDerivedDataClearResultV1Schema>>>;
       summarizeRecent(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionMemoryQueueResultV1Schema>>>;
     };
     readonly daily: {

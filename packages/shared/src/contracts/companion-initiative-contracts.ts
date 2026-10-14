@@ -25,18 +25,19 @@ export const companionParticipationToolWriteV1Schema = companionParticipationPre
 
 export const COMPANION_AWARENESS_TOPICS = [
   "app.started", "app.foreground", "page.arrived", "help.available", "result.available",
-  "reply.finished", "preference.changed", "study.started",
+  "reply.finished", "preference.changed", "study.started", "presence.quiet",
 ] as const;
 export const companionAwarenessTopicV1Schema = z.enum(COMPANION_AWARENESS_TOPICS);
 export type CompanionAwarenessTopicV1 = z.infer<typeof companionAwarenessTopicV1Schema>;
 export const companionAttentionWriteV1Schema = z.object({
   key: z.string().min(1).max(120), expectedRevision: z.number().int().nonnegative(),
   intent: z.string().min(1).max(4_000).describe("为什么要继续关注、下一步、何时不必继续；不是给用户创造的固定规则"),
-  topics: z.array(companionAwarenessTopicV1Schema).max(8),
-  nextReviewAt: z.string().datetime({ offset: true }).nullable(),
+  topics: z.array(companionAwarenessTopicV1Schema).max(8).describe("订阅宿主报告过的实际事件；答后复查用 reply.finished，只有用户的回答会产生它"),
+  nextReviewAt: z.string().datetime({ offset: true }).nullable().describe("按 read_participation 的 observedAt 算，不猜当前时刻；到点只重新考虑，不必须发言"),
   expiresAt: z.string().datetime({ offset: true }).nullable(),
-  preferenceRevision: z.number().int().nonnegative().nullable(),
-  selfNote: z.object({ key: z.string().min(1).max(120), revision: z.number().int().positive() }).strict().nullable(),
+  preferenceRevision: z.number().int().nonnegative().nullable().describe("依据用户偏好排的安排带最新 revision，偏好一改旧安排就失去权威"),
+  selfNote: z.object({ key: z.string().min(1).max(120), revision: z.number().int().positive() }).strict().nullable()
+    .describe("接着自己的记事推进时带真实 key 与 revision"),
   state: z.enum(["active", "completed"]),
 }).strict();
 export type CompanionAttentionWriteV1 = z.infer<typeof companionAttentionWriteV1Schema>;
@@ -49,6 +50,7 @@ export type CompanionAttentionV1 = z.infer<typeof companionAttentionV1Schema>;
 export const companionAwarenessContextV1Schema = z.object({
   foreground: z.boolean(), unlocked: z.boolean(), typing: z.boolean(), learning: z.boolean(),
   speaking: z.boolean().optional(), participationAllowed: z.boolean().optional(),
+  quietForMs: z.number().int().min(180_000).max(86_400_000).optional(),
   conversationId: z.string().uuid().nullable(),
   page: z.object({
     key: z.string().min(1).max(240), label: z.string().min(1).max(120),
@@ -61,7 +63,7 @@ export const companionAwarenessObservationV1Schema = z.object({
   version: z.literal(1), id: z.string().uuid(),
   deviceSessionId: z.string().min(1).max(200), appLaunchId: z.string().uuid(),
   host: z.enum(["desktop", "browser"]),
-  topic: z.enum(["app.started", "app.foreground", "page.arrived", "help.available", "result.available", "context.updated"]),
+  topic: z.enum(["app.started", "app.foreground", "page.arrived", "help.available", "result.available", "context.updated", "presence.quiet"]),
   occurredAt: z.string().datetime({ offset: true }),
   /** Monotonic elapsed duration; wall-clock changes, lock, sleep and background do not earn study time. */
   elapsedMs: z.number().int().min(0).max(45_000),
@@ -72,6 +74,9 @@ export const companionAwarenessObservationV1Schema = z.object({
     description: z.string().min(1).max(1_000),
   }).strict().optional(),
 }).strict().superRefine((value, ctx) => {
+  if (value.topic === "presence.quiet" && (!value.context.foreground || !value.context.unlocked
+    || value.context.typing || value.context.participationAllowed === false || value.context.quietForMs === undefined))
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["context"], message: "quiet presence requires an allowed foreground and an observed quiet duration" });
   if (["help.available", "result.available"].includes(value.topic) && !value.evidence)
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["evidence"], message: "help requires actual domain evidence" });
   if (value.topic === "page.arrived" && !value.context.page)
@@ -97,7 +102,11 @@ export const companionInitiativeInputV1Schema = z.object({
   attentionRevision: z.number().int().positive().nullable(),
   preferenceRevision: z.number().int().nonnegative(),
   parentRunId: z.string().uuid().nullable(), deviceSessionId: z.string().max(200).nullable(),
-  topic: z.string().min(1).max(80), intent: z.string().max(4_000),
+  topic: z.string().min(1).max(80),
+  // 同一时刻到点的多条关注合起来送给她。这里只留一个防失控的尺寸上界，
+  // 不再按 4_000 裁尾——那会静默丢掉后半件她本来要接着想的事。
+  // 真正装不下时由上下文装配的声明闸门处理。
+  intent: z.string().max(64_000),
   facts: z.record(z.unknown()),
 }).strict();
 export type CompanionInitiativeInputV1 = z.infer<typeof companionInitiativeInputV1Schema>;

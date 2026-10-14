@@ -5,8 +5,7 @@
  * 读的是同一个常量，而它们分属两个进程、两份 import。谁在 SQL 里顺手写一个 `> 0.85`，
  * 两边就会悄悄分叉——同一句话在一边算重复、另一边算新事，而 typecheck 与单测都不会红。
  *
- * 只管 SQL 的 `similarity(`。`companion-thought.ts` 里的 `embeddingDuplicateThreshold: 0.85`
- * 是**向量余弦**的另一套判据，数值相同纯属巧合，不要为了"统一"把它们并成一个常量。
+ * 只管 SQL 的 `similarity(`。向量嵌入的相似度判据属于另一套度量，数值相同纯属巧合，不要为了"统一"把它们并成一个常量。
  */
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";

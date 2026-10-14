@@ -1,11 +1,8 @@
 /**
  * 「这个人此刻在不在正式作答」——伴星能不能出声的唯一判据（doc 34 L12 / L15）。
  *
- * 为什么单独一处：这条判据原本只有念头管线（`companion-thought.ts` 的
- * `formal_answer_in_progress`）在用，语音投递那条路上**没有任何地方问过它**。
- * 于是"正式作答期间不许打扰"这句话的形状是：桌面把念出来的那段隐藏掉了，
- * 服务端照样切句、照样把正文发给外部合成服务（门只装在半条路上）。
- * 两边各写一份 SQL 迟早一处收紧一处放宽，所以取数与判断都收在这里。
+ * 主动交流准备、提交与语音投递共用这一条判据，避免只在界面隐藏内容，
+ * 或在不同服务各写一份 SQL 后逐渐分叉。
  *
  * 判据来自最近仍在活动的 Run、当前题目的 `learning_task_variants.purpose`
  * （`formal | facet | diagnostic | practice`）与 `learning_runs.phase`。
@@ -17,7 +14,7 @@ import { sql } from "drizzle-orm";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { queryRows, type AgentSqlExecutor } from "@astella/agent-host";
 
-/** 与 `companion-thought.ts` 共用：这条 SQL 在仓库里只准出现一次。 */
+/** 共享的作答阶段判据，避免各条伴星输出路径分叉。 */
 export const FORMAL_ANSWER_PHASES = [
   "preparing",
   "active",
@@ -115,7 +112,7 @@ export async function findFormalAnswerTarget(
   };
 }
 
-/** 只读判据：需要它的人自己决定挡什么（念头管线挡整条提示，语音那条只挡出声）。 */
+/** 只读判据：需要它的调用方决定暂停主动交流、语音或两者。 */
 export async function isFormalAnswerInProgress(
   tx: WorkerTx,
   scope: { workspaceId: string; userId: string },

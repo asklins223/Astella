@@ -23,7 +23,7 @@ async function reportActivity(scope: number, sequence: number, transition: "disp
 }
 
 function deliverActivityCue(cue: CompanionHomeProjectionV1["proactiveCue"], scope: number): void {
-  if (!cue || ["thought", "initiative"].includes(cue.origin) || scope !== useRoomStore.getState().workspaceScopeRevision) return;
+  if (!cue || cue.origin === "initiative" || scope !== useRoomStore.getState().workspaceScopeRevision) return;
   const reminder = cue.origin === "reminder";
   notifyCompanion({
     id: `activity:${scope}:${cue.revision}`, kind: reminder ? "reminder" : "help", scope,

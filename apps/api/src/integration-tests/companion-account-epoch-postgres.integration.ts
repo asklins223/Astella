@@ -15,7 +15,7 @@ import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getCompanionOverview, updateCompanionAccountState } from "../modules/companion-shell/service.ts";
-import { getCompanionAccountEpoch } from "../modules/companion-conversation/turn/companion-account-epoch.ts";
+import { getCompanionAccountEpoch } from "../companion-contracts/companion-account-epoch.ts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 
 const CONN = process.env.DATABASE_URL_API ?? process.env.DATABASE_URL;

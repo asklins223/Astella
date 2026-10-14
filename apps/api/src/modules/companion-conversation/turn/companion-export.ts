@@ -89,6 +89,18 @@ export async function exportCompanionDataStream(
         voiceProvenance: 0,
         proactiveDeliveries: 0,
         actionProposals: 0,
+        memories: 0,
+        memoryRevisions: 0,
+        diaryEntries: 0,
+        selfNotes: 0,
+        selfNoteVersions: 0,
+        methods: 0,
+        methodRevisions: 0,
+        methodUses: 0,
+        personaProfiles: 0,
+        personaVersions: 0,
+        budgetEvents: 0,
+        memoryUsageRecords: 0,
       };
       const hasher = createHash("sha256");
       const emitLine = async (line: string): Promise<void> => {
@@ -339,6 +351,124 @@ export async function exportCompanionDataStream(
         }
         counts.actionProposals = recordCount;
       }
+
+      // The full companion export includes derived memory artifacts as well as
+      // conversations. Embeddings and runtime/provider metadata are deliberately
+      // excluded; provenance and user-visible revisions are retained.
+      const emitRecordSet = async (
+        kind: string,
+        countKey: keyof typeof counts,
+        load: () => Promise<unknown>,
+      ): Promise<void> => {
+        const result = await load();
+        const rows = Array.isArray(result)
+          ? result as Array<Record<string, unknown>>
+          : result && typeof result === "object" && Array.isArray((result as { rows?: unknown }).rows)
+            ? (result as { rows: Array<Record<string, unknown>> }).rows
+            : [];
+        const bounded = rows.slice(0, COMPANION_EXPORT_MAX_ROWS);
+        for (const value of bounded) {
+          await emitLine(JSON.stringify({ version: 1, kind, value }));
+        }
+        counts[countKey] = bounded.length;
+        if (rows.length > COMPANION_EXPORT_MAX_ROWS) {
+          logger.warn({ workspaceId: args.workspaceId, userId: args.userId, kind, limit: COMPANION_EXPORT_MAX_ROWS },
+            "companion export reached record limit; output truncated");
+        }
+      };
+
+      await emitRecordSet("memory", "memories", () => tx.execute(sql`
+        SELECT id, kind, content, source_event_id, source_event_ids, source_session_id,
+               source_speaker, source_basis, applies_when, valid_from, valid_until,
+               user_stated, user_confirmed, confirmed_at, candidate, importance,
+               confidence, scope, budget_tier, pinned, archived_at, dismissed_at,
+               source_type, revision, author_type, author_id, epistemic_status,
+               superseded_by_id, created_at, updated_at
+          FROM assistant_memory_items
+         WHERE workspace_id = ${args.workspaceId} AND user_id = ${args.userId}
+           AND deleted_at IS NULL
+         ORDER BY created_at, id LIMIT ${COMPANION_EXPORT_MAX_ROWS + 1}
+      `));
+      await emitRecordSet("memory_revision", "memoryRevisions", () => tx.execute(sql`
+        SELECT memory_id, revision, kind, content, source_event_id, source_event_ids,
+               source_session_id, source_speaker, source_basis, applies_when,
+               valid_from, valid_until, user_stated, user_confirmed, confirmed_at,
+               importance, confidence, scope, source_type, author_type, author_id,
+               epistemic_status, superseded_by_id, superseded_at
+          FROM assistant_memory_item_revisions
+         WHERE workspace_id = ${args.workspaceId} AND user_id = ${args.userId}
+         ORDER BY memory_id, revision LIMIT ${COMPANION_EXPORT_MAX_ROWS + 1}
+      `));
+      await emitRecordSet("diary_entry", "diaryEntries", () => tx.execute(sql`
+        SELECT id, date, timezone, facts, blocks, summary, selection_reason, selected_id,
+               source_event_ids, status, revision, hidden_at, deleted_at, delete_reason,
+               generated_at, created_at, updated_at
+          FROM companion_daily_summaries
+         WHERE workspace_id = ${args.workspaceId} AND user_id = ${args.userId}
+           AND deleted_at IS NULL
+         ORDER BY date, id LIMIT ${COMPANION_EXPORT_MAX_ROWS + 1}
+      `));
+      await emitRecordSet("self_note", "selfNotes", () => tx.execute(sql`
+        SELECT entry_key, revision, user_disabled, title, body, tier,
+               next_review_at, expires_at, reason, updated_at
+          FROM companion_self_notes
+         WHERE workspace_id = ${args.workspaceId} AND user_id = ${args.userId}
+         ORDER BY entry_key LIMIT ${COMPANION_EXPORT_MAX_ROWS + 1}
+      `));
+      await emitRecordSet("self_note_revision", "selfNoteVersions", () => tx.execute(sql`
+        SELECT entry_key, revision, snapshot, created_at
+          FROM companion_self_note_versions
+         WHERE workspace_id = ${args.workspaceId} AND user_id = ${args.userId}
+         ORDER BY entry_key, revision LIMIT ${COMPANION_EXPORT_MAX_ROWS + 1}
+      `));
+      await emitRecordSet("method", "methods", () => tx.execute(sql`
+        SELECT id, playbook_key, title, trigger_condition, steps, exceptions, evidence,
+               evidence_origins, version, epistemic_status, author, method_state,
+               user_controlled, capability_refs, source_run_id, source_run_revision,
+               change_reason, created_at, updated_at
+          FROM companion_procedural_playbooks
+         WHERE workspace_id = ${args.workspaceId} AND user_id = ${args.userId}
+         ORDER BY playbook_key, id LIMIT ${COMPANION_EXPORT_MAX_ROWS + 1}
+      `));
+      await emitRecordSet("method_revision", "methodRevisions", () => tx.execute(sql`
+        SELECT method_id, revision, snapshot, recorded_at
+          FROM companion_method_revisions
+         WHERE workspace_id = ${args.workspaceId} AND user_id = ${args.userId}
+         ORDER BY method_id, revision LIMIT ${COMPANION_EXPORT_MAX_ROWS + 1}
+      `));
+      await emitRecordSet("method_use", "methodUses", () => tx.execute(sql`
+        SELECT id, method_id, method_revision, context_kind, context_id,
+               context_revision, source_key, stage, feedback, comment,
+               created_at, feedback_at
+          FROM companion_method_uses
+         WHERE workspace_id = ${args.workspaceId} AND user_id = ${args.userId}
+         ORDER BY created_at, id LIMIT ${COMPANION_EXPORT_MAX_ROWS + 1}
+      `));
+      await emitRecordSet("persona_profile", "personaProfiles", () => tx.execute(sql`
+        SELECT revision, pending_revision, profile, created_at, updated_at
+          FROM companion_persona_profiles WHERE user_id = ${args.userId}
+         LIMIT ${COMPANION_EXPORT_MAX_ROWS + 1}
+      `));
+      await emitRecordSet("persona_revision", "personaVersions", () => tx.execute(sql`
+        SELECT revision, examples_revision, author, action, reason, proposal_kind,
+               proposal_id, module_scope, source_workspace_id, profile, created_at
+          FROM companion_persona_profile_versions WHERE user_id = ${args.userId}
+         ORDER BY revision LIMIT ${COMPANION_EXPORT_MAX_ROWS + 1}
+      `));
+      await emitRecordSet("memory_budget_event", "budgetEvents", () => tx.execute(sql`
+        SELECT id, memory_id, memory_revision, from_tier, to_tier, actor_type,
+               actor_id, created_at
+          FROM assistant_memory_budget_events
+         WHERE workspace_id = ${args.workspaceId} AND user_id = ${args.userId}
+         ORDER BY created_at, id LIMIT ${COMPANION_EXPORT_MAX_ROWS + 1}
+      `));
+      await emitRecordSet("memory_usage", "memoryUsageRecords", () => tx.execute(sql`
+        SELECT run_id, memory_ids, retrieval_mode, latency_ms, created_at
+          FROM memory_usage_log
+         WHERE workspace_id = ${args.workspaceId} AND user_id = ${args.userId}
+         ORDER BY created_at, id LIMIT ${COMPANION_EXPORT_MAX_ROWS + 1}
+      `));
+
       const recordsSha256 = hasher.digest("hex");
       // footer 不参与 recordsSha256（覆盖范围至 footer 前一行为止），且 hasher
       // 已终结——必须直写 onLine，不能走会 update 哈希的 emitLine（2026-08-23

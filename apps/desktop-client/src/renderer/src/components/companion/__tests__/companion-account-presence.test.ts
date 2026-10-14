@@ -52,7 +52,7 @@ describe("账号级 presence 选项（2026-09-16 裁决 3）", () => {
     expect(cleared.ok === false && cleared.reason).toContain("都要填");
 
     // 两端相等在服务端那一侧是**合法值**，含义是"一整天都不说话"
-    // （`companion-proactive-policy.ts:244`，那里还有测试把它钉成合同）。
+    // （`companion-proactive-policy.ts` 的 `isWithinQuietHours`，那里还有测试把它钉成合同）。
     // 所以拦在界面上并说清后果，而不是让用户以为自己只是设了一个零长的窗口。
     const same = quietHoursWithBoundary(current, "endLocal", "22:00");
     expect(same.ok).toBe(false);

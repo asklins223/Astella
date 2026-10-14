@@ -67,6 +67,7 @@ interface PendingRow {
   kind: string;
   content: string;
   revision: number;
+  importance: number;
   budget_tier: string;
   pinned: boolean;
   applies_when: string | null;
@@ -119,7 +120,7 @@ async function loadCandidates(
   limit: number,
 ): Promise<PendingRow[]> {
   return rowsOf<Omit<PendingRow, "valid_until"> & { valid_until: Date | string | null }>(await tx.execute(sql`
-    SELECT id, kind, content, revision, budget_tier, pinned, applies_when,
+    SELECT id, kind, content, revision, importance, budget_tier, pinned, applies_when,
            valid_until, source_event_id, source_event_ids,
            -- 独立事件数：同一事件反复摘要只算一份，所以按 source_event_id 去重计数，
            -- 而不是看这条记忆被更新过几次（§4.6.3「同一事件反复摘要只算一份证据」）。
@@ -261,6 +262,7 @@ async function mergeMemory(
   tx: Parameters<Parameters<typeof withWorkerWorkspaceTransaction>[1]>[0],
   scope: PlaybookScope,
   keepId: string,
+  expectedKeepRevision: number,
   drop: PendingRow,
 ): Promise<boolean> {
   const result = rowsOf<{ id: string }>(await tx.execute(sql`
@@ -278,11 +280,12 @@ async function mergeMemory(
                     ) AS src
            ),
            epistemic_status = 'supported',
+           importance = GREATEST(t.importance, ${drop.importance}),
            updated_at = now()
      WHERE t.id = ${keepId}
        AND t.workspace_id = ${scope.workspaceId}
        AND t.user_id = ${scope.userId}
-       AND t.revision = ${drop.revision}
+       AND t.revision = ${expectedKeepRevision}
        AND t.deleted_at IS NULL
      RETURNING t.id
   `));
@@ -294,12 +297,18 @@ async function markSuperseded(
   tx: Parameters<Parameters<typeof withWorkerWorkspaceTransaction>[1]>[0],
   scope: PlaybookScope,
   memoryId: string,
+  supersededById: string,
   expectedRevision: number,
 ): Promise<boolean> {
   const result = rowsOf<{ id: string }>(await tx.execute(sql`
     UPDATE assistant_memory_items
-       SET epistemic_status = 'superseded', updated_at = now()
+       SET epistemic_status = 'superseded',
+           superseded_by_id = ${supersededById}::uuid,
+           budget_tier = 'archived',
+           archived_at = now(),
+           updated_at = now()
      WHERE id = ${memoryId}
+       AND id <> ${supersededById}::uuid
        AND workspace_id = ${scope.workspaceId}
        AND user_id = ${scope.userId}
        AND revision = ${expectedRevision}
@@ -392,7 +401,7 @@ export async function runCompanionMemoryOrganize(input: {
         kind: candidate.kind,
         sameFactTwinId: twin?.id ?? null,
         sameFactTwinContradicts: twin?.contradicts ?? false,
-        importance: 0.5,
+        importance: candidate.importance,
         pinned: candidate.pinned,
         appliesWhen: candidate.applies_when,
         validFrom: null,
@@ -411,10 +420,12 @@ export async function runCompanionMemoryOrganize(input: {
           break;
         }
         case "merge": {
-          // 保留新的一条（列表按 updated_at ASC 取，所以 candidate 更旧）；
-          // 把更近的那条判为「已被替代」，来源全部挂到留下的这条上。
-          if (twin && await mergeMemory(tx, scope, candidate.id, { ...candidate, id: twin.id, revision: twin.revision })) {
-            if (await markSuperseded(tx, scope, twin.id, twin.revision)) mergedIds.push(twin.id);
+          // 保留更新的一条（整理批次按 updated_at ASC 取，所以 twin 更新）；
+          // 把当前较旧项判为「已被替代」，来源全部挂到保留项上。
+          if (twin && await mergeMemory(
+            tx, scope, twin.id, twin.revision, candidate,
+          )) {
+            if (await markSuperseded(tx, scope, candidate.id, twin.id, candidate.revision)) mergedIds.push(candidate.id);
           }
           break;
         }

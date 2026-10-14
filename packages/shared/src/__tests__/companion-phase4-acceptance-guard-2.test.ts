@@ -19,29 +19,19 @@ import test from "node:test";
 
 const REPO = resolve(import.meta.dirname, "..", "..", "..", "..");
 const read = (...parts: string[]) => readFileSync(join(REPO, ...parts), "utf8");
-const thought = read("workers", "ai-worker", "src", "handlers", "companion-thought.ts");
+const initiative = read("workers", "ai-worker", "src", "handlers", "companion-initiative.ts");
+const stepPlan = read("workers", "ai-worker", "src", "handlers", "companion-step-plan.ts");
 const assessment = read("apps", "api", "src", "modules", "learning-runs", "processing", "run-processing-assessment.ts");
 const dbSchema = read("packages", "shared", "src", "db-schema", "companion-memory.ts");
 const gapHelp = read("apps", "api", "src", "modules", "learning-runs", "gap-help", "gap-help-service.ts");
 
 // ── A14：打招呼且无统计 ─────────────────────────────────────────────────
 
-test("A14｜她想开口时**不许编数**", () => {
-  // §8.1：普通招呼「可不含业务读数」。一旦她说了"你今天学了 3 张卡"而用户没说过，
-  // 那是编造——所以有一道按"今天能引用的数字来源"比对的闸。
-  assert.match(thought, /introducesUnverifiedNumbers/,
-    "念头管线没有数字闸 —— 她会说出用户从没表达过的学习读数");
-  assert.match(thought, /readsOutStatistics/,
-    "没有「不许报统计」这一档 —— 学习次数、完成数这类会从她嘴里出来");
-});
-
-test("A14｜不启动任务", () => {
-  // 「她说了话」与「她去查/去建」是两件事。开口这一路不该带工具执行。
-  const start = thought.indexOf("export function buildDeterministicThoughts");
-  assert.ok(start > 0, "找不到念头生成");
-  const body = thought.slice(start, start + 4000);
-  assert.ok(!/request_hint|start_learning_run|create_objective/.test(body),
-    "她想开口的那一路里带了会启动任务的动作");
+test("A14｜主动交流与普通对话共用数字出处核验", () => {
+  assert.match(stepPlan, /unverifiedNumericClaims\(input\.said, input\.contextText\)/,
+    "主动表达没有走与对话相同的数字出处核验");
+  assert.match(initiative, /companion_agent/,
+    "主动交流没有进入现役 Agent 执行链");
 });
 
 // ── A16：同题跨入口连续求助 ───────────────────────────────────────────

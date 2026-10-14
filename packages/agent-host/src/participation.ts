@@ -41,9 +41,10 @@ export async function writeParticipationPreferences(tx: AgentSqlExecutor, scope:
 }
 
 export async function listCompanionAttention(tx: AgentSqlExecutor, scope: Scope): Promise<CompanionAttentionV1[]> {
+  // 读她自己排的关注，不按条数截：截了就是替她忘掉排在后面的那件。
   const rows = await queryRows<Record<string, unknown>>(tx, sql`SELECT * FROM companion_attention_plans
     WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND state='active'
-      AND (expires_at IS NULL OR expires_at>now()) ORDER BY updated_at DESC LIMIT 20`);
+      AND (expires_at IS NULL OR expires_at>now()) ORDER BY updated_at DESC`);
   return rows.map(row => companionAttentionV1Schema.parse({ key: row.entry_key, revision: row.revision,
     intent: row.intent, topics: row.topics, nextReviewAt: isoOrNull(row.next_review_at), expiresAt: isoOrNull(row.expires_at),
     preferenceRevision: row.preference_revision, selfNote: row.self_note, state: row.state,
@@ -58,8 +59,14 @@ export async function arrangeCompanionAttention(tx: AgentSqlExecutor, scope: Sco
   const pref = await readParticipationPreferences(tx, scope);
   if (plan.preferenceRevision !== null && (!pref.enabled || plan.preferenceRevision !== pref.revision))
     throw new AgentStoreError(409, "participation_stale", "这个安排依据的相处偏好已经变化。");
-  if (plan.nextReviewAt && new Date(plan.nextReviewAt).getTime() < Date.now() + 15_000)
-    throw new AgentStoreError(400, "attention_too_soon", "下次重评至少留十五秒；当前能完成的事情请在这次做完。");
+  // 重评时间只要求「在将来」：过去或此刻的时刻由她在这轮自己处理完，不需要一个写死的秒数闸门。
+  if (plan.nextReviewAt && new Date(plan.nextReviewAt).getTime() <= Date.now())
+    throw new AgentStoreError(400, "attention_not_future", "重评时间要留在将来；此刻就能做完的事在这轮就做，或者把这条关注标为完成。");
+  // 不再限制「同时在关注几件事」（2026-10-13 用户决定：Agent 不设硬上限）。
+  // 换成一条真实的正确性要求：活跃关注必须唤得起——有事件或有重评时间，
+  // 否则它就是一条谁也到不了的僵尸安排，只会堆在那里。
+  if (plan.state === "active" && !plan.topics.length && !plan.nextReviewAt)
+    throw new AgentStoreError(400, "attention_unreachable", "这条安排既没有订阅事件，也没有重评时间，她不会有机会看到它。给出其中一项，或者直接标为完成。");
   if (plan.selfNote) {
     const [note] = await queryRows(tx, sql`SELECT 1 FROM companion_self_notes WHERE workspace_id=${scope.workspaceId}
       AND user_id=${scope.userId} AND entry_key=${plan.selfNote.key} AND revision=${plan.selfNote.revision}
@@ -70,13 +77,6 @@ export async function arrangeCompanionAttention(tx: AgentSqlExecutor, scope: Sco
     WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND entry_key=${plan.key} FOR UPDATE`);
   if ((existing?.revision ?? 0) !== plan.expectedRevision)
     throw new AgentStoreError(409, "attention_stale", `这个关注安排当前版本为 ${existing?.revision ?? 0}（0 表示还不存在），这次没有写入。请核对当前安排后使用实际版本修改。`);
-  if (plan.state === "active") {
-    const [count] = await queryRows<{ n: number }>(tx, sql`SELECT count(*)::integer AS n FROM companion_attention_plans
-      WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND entry_key<>${plan.key}
-        AND state='active' AND (expires_at IS NULL OR expires_at>now())`);
-    if ((count?.n ?? 0) >= 20)
-      throw new AgentStoreError(409, "attention_capacity", "正在关注的事情已满，请先收尾已经不需要的关注。");
-  }
   const revision = (existing?.revision ?? 0) + 1;
   await tx.execute(sql`INSERT INTO companion_attention_plans(workspace_id,user_id,entry_key,revision,intent,topics,
       next_review_at,expires_at,preference_revision,self_note,state,conversation_id,parent_run_id)
@@ -139,9 +139,12 @@ export async function recordCompanionAwareness(tx: AgentSqlExecutor, scope: Scop
   if (previous?.observed_at && new Date(observation.occurredAt).getTime() < new Date(previous.observed_at).getTime()) return false;
   // Deduplicate before crediting time or moving the lease. Heartbeats are factual records too.
   const evidence = observation.evidence;
+  // 一次「到达」的身份是**这次启动里的那个页面**，不是它的版本号，也不是哪块 webContents 报的：
+  // 原来 revision 在键里，他改一次笔记、或者渲染层重载换了 deviceSessionId，同一段内容就再要一整轮
+  // 模型。正文版本仍然在 prep 里核对（旧页面不能在新版本上开口），只是不再拿它当重复计数的依据。
   const dedupeKey = observation.topic === "app.started" ? `launch:${observation.host}:${observation.appLaunchId}`
     : observation.topic === "page.arrived" && isCompanionDefaultHelpPage(observation.context.page?.key)
-      ? `page:${observation.host}:${observation.appLaunchId}:${observation.deviceSessionId}:${observation.context.page!.key}:${observation.context.page!.revision ?? ""}`
+      ? `page:${observation.host}:${observation.appLaunchId}:${observation.context.page!.key}`
     : evidence && ["help.available", "result.available"].includes(observation.topic)
       ? `fact:${scope.workspaceId}:${observation.topic}:${evidence.domain}:${evidence.entityId}:${evidence.revision}`
       : `observation:${observation.id}`;

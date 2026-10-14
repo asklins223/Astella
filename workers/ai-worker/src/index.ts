@@ -11,12 +11,12 @@ import { runCompanionFollowupSuggestions } from "./handlers/companion-followup-s
 import { runCompanionMemoryExtract } from "./handlers/companion-memory-extractor.ts";
 import { runCompanionMemoryOrganizeJob } from "./handlers/companion-memory-organize.ts";
 import { tickCompanionMemoryOrganizeScheduler } from "./handlers/companion-memory-organize-scheduler.ts";
+import { tickCompanionMemoryEmbeddingScheduler } from "./handlers/companion-memory-embedding-scheduler.ts";
 import { runCompanionReflectionJob } from "./handlers/companion-reflection.ts";
 import { tickCompanionReflectionScheduler } from "./handlers/companion-reflection-scheduler.ts";
 import { runCompanionSummarizer } from "./handlers/companion-summarizer.ts";
 import { runCompanionMemoryEmbeddingRebuild } from "./handlers/companion-memory-embedding.ts";
 import { runCompanionDailySummary } from "./handlers/companion-daily-summary.ts";
-import { runCompanionThought } from "./handlers/companion-thought.ts";
 import { runNoteMindMapGenerate } from "./handlers/note-mind-map-generate.ts";
 import { runNoteOverviewGenerate } from "./handlers/note-overview-generate.ts";
 import { runNoteAnnotationExplain } from "./handlers/note-annotation-explain.ts";
@@ -90,8 +90,6 @@ const HANDLERS = {
   companion_memory_organize: runCompanionMemoryOrganizeJob,
   // 方案 50 §9：同一个人格的后台回顾。门在 gate，结论码落在 companion_reflections。
   companion_reflection: runCompanionReflectionJob,
-  // 念头管线切片②（2026-09-18）：候选念头生成 + 表达 + 送达。
-  companion_thought: runCompanionThought,
   note_overview_generate: runNoteOverviewGenerate,
   note_mind_map_generate: runNoteMindMapGenerate,
   note_annotation_explain: runNoteAnnotationExplain,
@@ -538,6 +536,7 @@ export async function tick(): Promise<void> {
   await tickCompanionMemoryMaintenance();
   // 40 §4.6.3：后台整理的入队 tick（1h 桶，内部按阈值挑人）。
   await tickCompanionMemoryOrganizeScheduler();
+  await tickCompanionMemoryEmbeddingScheduler();
   // 方案 50 §9.1：同一个人格的后台回顾入队（1h 桶，段落水位幂等）。
   await tickCompanionReflectionScheduler();
   // 主动参与由事实观察和 Agent 自己安排的关注触发；不再生产四小时批量台词。

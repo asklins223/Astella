@@ -269,10 +269,6 @@ import {
   companionChatProposalDecideResultV1Schema,
   companionAgentRoutesListRequestV1Schema,
   companionAgentRoutesListResultV1Schema,
-  companionChatOpenThoughtRequestV1Schema,
-  companionChatOpenThoughtResultV1Schema,
-  companionChatListThoughtsRequestV1Schema,
-  companionChatListThoughtsResultV1Schema,
   companionChatCancelRunRequestV1Schema,
   companionChatCancelRunResultV1Schema,
   companionRunNodesListRequestV1Schema,
@@ -312,6 +308,10 @@ import {
   companionHistorySearchV1Schema,
   companionMemoryItemV1Schema,
   companionMemoryClearResultV1Schema,
+  companionMemoryBudgetMoveV1Schema,
+  companionMemoryBudgetStatusV1Schema,
+  companionMemoryBudgetTierV1Schema,
+  companionDerivedDataClearResultV1Schema,
   companionMemoryConflictListV1Schema,
   companionMemoryConflictResolveResultV1Schema,
   companionMemoryCreateInputV1Schema,
@@ -518,14 +518,6 @@ const companionChatRunNodesInputSchema = z.strictObject({
   ...m1InputBase,
   request: companionRunNodesListRequestV1Schema,
 });
-const companionChatOpenThoughtInputSchema = z.strictObject({
-  ...m1InputBase,
-  request: companionChatOpenThoughtRequestV1Schema,
-});
-const companionChatListThoughtsInputSchema = z.strictObject({
-  ...m1InputBase,
-  request: companionChatListThoughtsRequestV1Schema,
-});
 const companionChatCancelRunInputSchema = z.strictObject({
   ...m1InputBase,
   request: companionChatCancelRunRequestV1Schema,
@@ -555,6 +547,8 @@ const companionMemoryListInputSchema = z.strictObject({
 export const companionMemoryIdInputSchema = z.strictObject({ ...m1InputBase, memoryId: uuidSchema });
 const companionMemoryCreateInputSchema = z.strictObject({ ...m1InputBase, request: companionMemoryCreateInputV1Schema });
 const companionMemoryCorrectInputSchema = z.strictObject({ ...m1InputBase, memoryId: uuidSchema, request: companionMemoryCorrectInputV1Schema });
+const companionMemoryDisputeInputSchema = z.strictObject({ ...m1InputBase, memoryId: uuidSchema, expectedRevision: z.number().int().min(1) });
+const companionMemoryBudgetMoveInputSchema = z.strictObject({ ...m1InputBase, memoryId: uuidSchema, tier: companionMemoryBudgetTierV1Schema });
 const companionMemoryResolveConflictInputSchema = z.strictObject({ ...m1InputBase, memoryId: uuidSchema, removeId: uuidSchema });
 const companionDailyGetInputSchema = z.strictObject({
   ...m1InputBase,
@@ -774,7 +768,7 @@ channel(DESKTOP_IPC_CHANNELS.companionHomeGetProjection, runtimeInputSchema, asy
     } else stopCompanionLifecycle();
     /**
      * 只有「她整个开没开」这一档改的是**房间读得到**的东西——两条常连接、收件箱投递、
-     * 主动念头都在这个失效的作用域里。其余全是账号级偏好（助理权限档位、静默时段、
+     * 主动交流都在这个失效的作用域里。其余全是账号级偏好（助理权限档位、静默时段、
      * 语音开关、日记开关……），渲染层听 `astella:companion-account-changed` 自己重读账号就够了。
      *
      * 以前这里无条件广播：输入框旁边按一下档位，就要付一次门禁 bootstrap 复核
@@ -880,20 +874,6 @@ channel(DESKTOP_IPC_CHANNELS.companionHomeGetProjection, runtimeInputSchema, asy
     return ns_companion.listCompanionRunNodes(gateway.gatewayTransport, input.request, input.meta.requestId);
   }, companionRunNodesListResultV1Schema);
 
-  // 念想历史只读，不消耗表达；与其余伴星通道共用路由与空间 epoch 门控。
-  channel(DESKTOP_IPC_CHANNELS.companionChatListThoughts, companionChatListThoughtsInputSchema, async (_event, _window, input) => {
-    requireM2Route(contract, "room.home");
-    assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    return ns_companion.listCompanionThoughts(gateway.gatewayTransport, input.request, input.meta.requestId);
-  }, companionChatListThoughtsResultV1Schema);
-
-  // 气泡念头主动开场：只有用户点气泡时才消费念头并写入对话。
-  channel(DESKTOP_IPC_CHANNELS.companionChatOpenThought, companionChatOpenThoughtInputSchema, async (_event, _window, input) => {
-    requireM2Route(contract, "room.home");
-    assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    return ns_companion.openCompanionThought(gateway.gatewayTransport, input.request, input.meta.requestId);
-  }, companionChatOpenThoughtResultV1Schema);
-
   // 停止本轮（2026-09-19）：与其余伴星通道同一路由门控。202 / 200 幂等同形状。
   channel(DESKTOP_IPC_CHANNELS.companionChatCancelRun, companionChatCancelRunInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");
@@ -920,6 +900,18 @@ channel(DESKTOP_IPC_CHANNELS.companionHomeGetProjection, runtimeInputSchema, asy
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_companion.listCompanionMemories(gateway.gatewayTransport, input.query ?? {}, input.meta.requestId);
   }, companionMemoryListV1Schema);
+
+  channel(DESKTOP_IPC_CHANNELS.companionMemoryBudget, runtimeInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.getCompanionMemoryBudget(gateway.gatewayTransport, input.meta.requestId);
+  }, companionMemoryBudgetStatusV1Schema);
+
+  channel(DESKTOP_IPC_CHANNELS.companionMemoryBudgetMove, companionMemoryBudgetMoveInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.moveCompanionMemoryBudgetTier(gateway.gatewayTransport, input.memoryId, input.tier, input.meta.requestId);
+  }, companionMemoryBudgetMoveV1Schema);
 
   channel(DESKTOP_IPC_CHANNELS.companionMemoryStarMap, runtimeInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");
@@ -1031,6 +1023,12 @@ channel(DESKTOP_IPC_CHANNELS.companionMemoryCreate, companionMemoryCreateInputSc
     return ns_companion.correctCompanionMemory(gateway.gatewayTransport, input.memoryId, input.request, input.meta.requestId);
   }, companionMemoryItemV1Schema);
 
+  channel(DESKTOP_IPC_CHANNELS.companionMemoryDispute, companionMemoryDisputeInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.disputeCompanionMemory(gateway.gatewayTransport, input.memoryId, input.expectedRevision, input.meta.requestId);
+  }, companionMemoryItemV1Schema);
+
   channel(DESKTOP_IPC_CHANNELS.companionMemoryRevisions, companionMemoryIdInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
@@ -1066,6 +1064,12 @@ channel(DESKTOP_IPC_CHANNELS.companionMemoryCreate, companionMemoryCreateInputSc
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_companion.clearCompanionMemories(gateway.gatewayTransport, input.meta.requestId);
   }, companionMemoryClearResultV1Schema);
+
+  channel(DESKTOP_IPC_CHANNELS.companionDerivedDataClear, runtimeInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.clearCompanionDerivedData(gateway.gatewayTransport, input.meta.requestId);
+  }, companionDerivedDataClearResultV1Schema);
 
   channel(DESKTOP_IPC_CHANNELS.companionMemorySummarizeRecent, runtimeInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");

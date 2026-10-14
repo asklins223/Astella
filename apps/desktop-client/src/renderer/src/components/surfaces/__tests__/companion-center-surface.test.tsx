@@ -96,6 +96,7 @@ function memoryItem(): CompanionMemoryItemV1 {
     kind: "preference",
     content: "我更喜欢从例子开始理解概念",
     sourceEventId: null,
+    sourceEventIds: [],
     sourceSessionId: null,
     sourceSpeaker: null,
     sourceBasis: null,
@@ -104,6 +105,7 @@ function memoryItem(): CompanionMemoryItemV1 {
     validUntil: null,
     userStated: true,
     userConfirmed: true,
+    confirmedAt: null,
     candidate: false,
     importance: 0.9,
     confidence: 1,
@@ -119,6 +121,7 @@ function memoryItem(): CompanionMemoryItemV1 {
     authorType: "user",
     authorId: "33333333-3333-4333-8333-333333333333",
     epistemicStatus: "supported",
+    supersededById: null,
     createdAt: UPDATED_AT,
     updatedAt: UPDATED_AT,
   };

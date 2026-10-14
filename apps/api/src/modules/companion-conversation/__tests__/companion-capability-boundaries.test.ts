@@ -119,9 +119,12 @@ const ON_REQUEST_GATED_ROUTES: RouteCase[] = [
 const PRE_HANDLER_GATED_ROUTES: RouteCase[] = [
   { label: "dialogue: learning-context", flag: "COMPANION_DIALOGUE_V1_ENABLED", method: "GET", url: "/companion/learning-context" },
   { label: "dialogue: continuous history", flag: "COMPANION_DIALOGUE_V1_ENABLED", method: "GET", url: "/companion/history" },
-  { label: "dialogue: thought history", flag: "COMPANION_DIALOGUE_V1_ENABLED", method: "GET", url: "/companion/thoughts" },
   { label: "dialogue: history search", flag: "COMPANION_DIALOGUE_V1_ENABLED", method: "GET", url: "/companion/history/search?q=x" },
   { label: "dialogue: inbox ensure", flag: "COMPANION_DIALOGUE_V1_ENABLED", method: "POST", url: "/companion/inbox/ensure", payload: {} },
+];
+
+const RETIRED_ROUTES: ReadonlyArray<Pick<RouteCase, "label" | "method" | "url">> = [
+  { label: "retired thought history", method: "GET", url: "/companion/thoughts" },
 ];
 
 describe("A 组：onRequest 能力门禁 → flag 关闭时匿名也 404", () => {
@@ -160,6 +163,15 @@ describe("B 组：preHandler 门禁 → 认证优先，路由必须存在", () =
           `${route.label} 匿名请求必须 401（认证先于能力门禁）；实际 ${response.statusCode}`,
         );
       }
+    });
+  }
+});
+
+describe("已退役的独立历史接口", () => {
+  for (const route of RETIRED_ROUTES) {
+    it(`${route.label} 不再提供`, async () => {
+      const response = await app.inject({ method: route.method, url: route.url });
+      assert.equal(response.statusCode, 404);
     });
   }
 });

@@ -4,7 +4,7 @@
  * ## 它补的是什么洞
  *
  * 现有 112 份集测**大多是单模块 + 隔离 PostgreSQL**，**没有一条**把
- * 学习事件投递 → 伴星对话 → 记忆写入与召回 → 念头调度 → 主动消息 → 日记成稿
+ * 学习事件投递 → 伴星对话 → 记忆写入与召回 → 主动消息投递 → 日记成稿
  * 串在**同一个进程**里跑一遍（文档 29 §3.5 那一类问题的成因：每个模块单独测都对，
  * 串起来不对，而没有测试发现——语音链路通了文字没通、抽取 job 静默失败、
  * 投递与送达脱节，都是这一类）。
@@ -147,7 +147,6 @@ test("§0 · 四个环节的入口在**同一个进程**里都装得上（全文
   const entries = await Promise.all([
     import("../handlers/companion-dialogue.ts").then((m) => ["伴星对话", typeof m.runCompanionDialogue] as const),
     import("../handlers/companion-delivery-write.ts").then((m) => ["主动消息投递", typeof m.enqueueSystemEventDelivery] as const),
-    import("../handlers/companion-thought-scheduler.ts").then((m) => ["念头调度", typeof m.tickCompanionThoughtScheduler] as const),
     import("../handlers/companion-daily-summary.ts").then((m) => ["日记成稿", typeof m.runCompanionDailySummary] as const),
   ]);
   for (const [name, kind] of entries) {
@@ -436,40 +435,10 @@ test("§4 · 伴星对话在**这个进程**里跑出声，并落到曝光账（
 });
 
 /**
- * §5 · 念头调度与 §6 · 日记成稿：**最后两环**，在**这个进程**里真的走一遍。
- *
- * 这两环都要经**任务队列**（`assertJobLease` 会核对 `jobs` 行的 status/leaseToken），
- * 所以这里手种一条**已持有租约**的 running 任务——不是为了让它们"能跑"，而是因为
- * 任务面在生产里就是那个形状，而跳过它就等于把队列那一层从演练里拿掉。
- *
- * **只替换模型**：人格与素材走真读，生成走 mock provider。
+ * Daily diary generation goes through a leased job in the same process.
+ * Only the model is replaced; persona and source material use their real readers.
  */
-test("§5 · 念头调度：调度器在**这个进程**里被调一次，并说出它排了什么", async () => {
-  const { tickCompanionThoughtScheduler } = await import("../handlers/companion-thought-scheduler.ts");
-  // 调度器的第一道闸是"距上次跑够久没够"（`lastSchedulerRunAt`），测试里两个 tick
-  // 连着调，第二次会被静默跳过——**那本身是要记的事实**，所以这里只调一次并
-  // 断言它**要么**排了、**要么**明确说没排（不留空白）。
-  const before = await readInScope(scope(), (tx) => tx`
-    SELECT count(*)::int AS n FROM jobs WHERE workspace_id = ${workspaceId} AND type LIKE 'companion_thought%'`);
-  await tickCompanionThoughtScheduler();
-  const after = await readInScope(scope(), (tx) => tx`
-    SELECT count(*)::int AS n FROM jobs WHERE workspace_id = ${workspaceId} AND type LIKE 'companion_thought%'`);
-  assert.ok(
-    Number(after[0]?.n ?? 0) >= Number(before[0]?.n ?? 0),
-    "念头调度器跑完之后队列里的念头任务变**少**了：它要么撤了任务要么读了别处",
-  );
-  // 排了的话，那一行的**到期时刻**必须真的有值——排了却 `scheduled_at` 为空，
-  // 屏上会说已安排，而它永远不会被 worker 捡起来。
-  const rows = await readInScope(scope(), (tx) => tx`
-    SELECT id, scheduled_at FROM jobs
-    WHERE workspace_id = ${workspaceId} AND type LIKE 'companion_thought%'`);
-  for (const row of rows as unknown as Array<{ scheduled_at: Date | null }>) {
-    assert.ok(row.scheduled_at,
-      "念头任务被排进来了但 scheduled_at 是空的：它永远不会被捡起来，而屏上会说「已安排」");
-  }
-});
-
-test("§6 · 日记成稿：经**任务队列**真的跑一遍，失败也要说得出是哪一种", async () => {
+test("daily diary generation runs through the leased job and reports failures", async () => {
   const { runCompanionDailySummary } = await import("../handlers/companion-daily-summary.ts");
   const jobId = randomUUID();
   const leaseToken = `drill-lease-${randomUUID()}`;

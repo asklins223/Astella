@@ -55,8 +55,13 @@ test("两档各有**自己的**文案，且都不是「失败」", () => {
 });
 
 test("诊断视图把这两档也算作「这一轮没拿到结果」", () => {
-  assert.match(traceView, /node\.state === "not_executed"/);
-  assert.match(traceView, /node\.state === "unavailable"/);
+  // 形状从两个 `node.state === "…"` 分支变成了一条数组判定（过程时间线重排时改的）；
+  // 要钉住的还是同一件事：这两档和 failed、outcome_unknown 一样拿警示标记，
+  // 不能被画成「这一步做完了」。
+  const line = traceView.split("\n").find(row => row.includes('["failed"') && row.includes(".includes("));
+  assert.ok(line, "找不到那条判「这一轮没拿到结果」的分支");
+  for (const status of ["not_executed", "unavailable"])
+    assert.ok(line!.includes(`"${status}"`), `${status} 不再算「这一轮没拿到结果」，用户会以为她已经做完`);
 });
 
 test("【自证】判据认得出「只改约束、忘了改客户端」这个真实退化", () => {

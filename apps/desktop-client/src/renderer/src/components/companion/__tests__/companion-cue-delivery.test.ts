@@ -69,7 +69,7 @@ describe("主动气泡的展示回执", () => {
     expect(lookup).toHaveBeenCalledTimes(1);
   });
 
-  it("下一念头是新的一条，必须还能回执", async () => {
+  it("下一条主动发言是新的一条，必须还能回执", async () => {
     const { reporter, present } = harness();
     await reporter.shown({ cueKey: "ordinary:42", inboxSequence: 42 });
     await reporter.shown({ cueKey: "ordinary:47", inboxSequence: 47 });
@@ -116,7 +116,7 @@ describe("主动气泡的展示回执", () => {
   });
 
   it("这一页暂时找不到那条投递时，下一次露出要重新找", async () => {
-    // 动态时间线是一页最新 50 条。刚入队的念头投影先到、时间线后到是正常顺序，
+    // 动态时间线是一页最新 50 条。主动发言投影先到、时间线后到是正常顺序，
     // 把"这一次没找到"当成永久结论，气泡的回执就再也发不出去了。
     let lookups = 0;
     const lookup = vi.fn(async (): Promise<CueDeliveryRef | null> => {

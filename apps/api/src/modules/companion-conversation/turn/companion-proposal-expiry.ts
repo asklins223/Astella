@@ -8,7 +8,7 @@
  */
 
 import { sql } from "drizzle-orm";
-import { getCompanionAccountEpoch } from "./companion-account-epoch.ts";
+import { getCompanionAccountEpoch } from "../../../companion-contracts/companion-account-epoch.ts";
 
 export type ExpiredProposalRow = {
   id: string; conversation_id: string;

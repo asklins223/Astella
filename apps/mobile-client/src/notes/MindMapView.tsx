@@ -26,10 +26,13 @@ type Gesture =
  */
 export function MindMapView({ content, focusedId, collapsed, onToggleBranch, onFocus }: Props) {
   const [view, setView] = useState({ x: 0, y: 0, scale: 1, fitted: false })
+  const [mode, setMode] = useState<'diagram' | 'outline'>('diagram')
   const frame = useRef<HTMLDivElement>(null)
   const pointers = useRef(new Map<number, Point>())
   const gesture = useRef<Gesture | null>(null)
   const suppressClick = useRef(false)
+  const fitScale = useRef(0.32)
+  const measured = useRef<{ width: number; height: number; content: MindMapContentV1 } | null>(null)
 
   const layout = useMemo(() => layoutMindMap(content, collapsed), [content, collapsed])
   const width = Math.max(1, layout.bounds.right - layout.bounds.left)
@@ -37,14 +40,17 @@ export function MindMapView({ content, focusedId, collapsed, onToggleBranch, onF
 
   const fit = useCallback(() => {
     const box = frame.current?.getBoundingClientRect()
-    if (!box) return
-    const scale = Math.min(1.15, (box.width - 28) / width, (box.height - 28) / height)
-    // 要居中的是**内容框**，不是坐标原点：树以主题为中心向两侧长，bounds.left 是负数，
-    // 只按原点平移会把整张图推出画框（390 宽实测只剩一角可见）。
+    if (!box || box.width <= 28 || box.height <= 28) return
+    const desiredScale = Math.min(1.15, (box.width - 28) / width, (box.height - 28) / height)
+    // Keep the first view readable and tappable. A large map intentionally opens
+    // around its subject; the reader can zoom out when they want the whole tree.
+    const scale = Math.max(1, desiredScale)
+    fitScale.current = scale
+    const fits = desiredScale >= 1
     setView({
       scale,
-      x: (box.width - width * scale) / 2 - layout.bounds.left * scale,
-      y: (box.height - height * scale) / 2 - layout.bounds.top * scale,
+      x: fits ? (box.width - width * scale) / 2 - layout.bounds.left * scale : box.width / 2,
+      y: fits ? (box.height - height * scale) / 2 - layout.bounds.top * scale : box.height / 2,
       fitted: true,
     })
   }, [height, layout.bounds.bottom, layout.bounds.left, layout.bounds.right, layout.bounds.top, width])
@@ -54,7 +60,7 @@ export function MindMapView({ content, focusedId, collapsed, onToggleBranch, onF
     if (!box) return
     const focus = point ?? { x: box.width / 2, y: box.height / 2 }
     setView((current) => {
-      const scale = clamp(current.scale * factor)
+      const scale = clamp(current.scale * factor, fitScale.current)
       const contentX = (focus.x - current.x) / current.scale
       const contentY = (focus.y - current.y) / current.scale
       return { ...current, x: focus.x - contentX * scale, y: focus.y - contentY * scale, scale }
@@ -96,20 +102,57 @@ export function MindMapView({ content, focusedId, collapsed, onToggleBranch, onF
 
   const childrenOf = (id: string) => layout.children.get(id) ?? []
 
-  // 首帧与窗口尺寸变化后重新贴合。节点展开时也重新居中，避免新分支落到画框外。
+  // 重排分支时保留当前位置，只在首次打开或画框真的变大/变小时贴合。
   useEffect(() => {
     const node = frame.current
     if (!node) return
-    const timer = window.setTimeout(fit, 0)
-    const observer = new ResizeObserver(fit)
+    const measure = () => {
+      const size = node.getBoundingClientRect()
+      const prior = measured.current
+      const changed = !prior || prior.content !== content || Math.abs(prior.width - size.width) > 1 || Math.abs(prior.height - size.height) > 1
+      measured.current = { width: size.width, height: size.height, content }
+      if (changed) fit()
+    }
+    const timer = window.setTimeout(measure, 0)
+    const observer = new ResizeObserver(measure)
     observer.observe(node)
     return () => {
       window.clearTimeout(timer)
       observer.disconnect()
     }
-  }, [fit])
+  }, [fit, mode, content])
+
+  const outline = useMemo(() => {
+    const result: Array<{ node: MindMapNodeV1; depth: number }> = []
+    const visit = (id: string, depth: number) => {
+      const node = content.nodes.find((item) => item.id === id)
+      if (!node) return
+      result.push({ node, depth })
+      if (!collapsed.has(id)) for (const child of layout.children.get(id) ?? []) visit(child.id, depth + 1)
+    }
+    visit(content.rootId, 0)
+    return result
+  }, [content, collapsed, layout.children])
 
   return (
+    <div className="mindmap-workspace">
+      <div className="mindmap-view-switch" role="group" aria-label="导图显示方式">
+        <button type="button" aria-pressed={mode === 'diagram'} onClick={() => setMode('diagram')}>导图</button>
+        <button type="button" aria-pressed={mode === 'outline'} onClick={() => setMode('outline')}>阅读提纲</button>
+      </div>
+      {mode === 'outline' ? (
+        <div className="mindmap-outline" aria-label="导图阅读提纲">
+          {outline.map(({ node, depth }) => (
+            <div className="mindmap-outline-row" key={node.id} style={{ marginLeft: Math.min(depth, 3) * 12 }}>
+              <button type="button" data-focused={focusedId === node.id ? '1' : '0'} onClick={(event) => onFocus(node, event.currentTarget)}>
+                <strong>{node.label}</strong>
+                <small>{node.references.length ? `${node.references.length} 处原文依据 · 查看说明` : '查看说明'}</small>
+              </button>
+              {childrenOf(node.id).length > 0 && <button className="outline-branch-toggle" type="button" aria-label={`${collapsed.has(node.id) ? '展开' : '收起'}${node.label}的分支`} aria-expanded={!collapsed.has(node.id)} onClick={() => onToggleBranch(node.id, !collapsed.has(node.id))}>{collapsed.has(node.id) ? '＋' : '－'}</button>}
+            </div>
+          ))}
+        </div>
+      ) : <>
     <div
       className="mindmap"
       ref={frame}
@@ -135,6 +178,7 @@ export function MindMapView({ content, focusedId, collapsed, onToggleBranch, onF
         if (currentGesture.kind === 'pan' && currentGesture.id === event.pointerId) {
           const dx = point.x - currentGesture.start.x
           const dy = point.y - currentGesture.start.y
+          if (Math.hypot(dx, dy) <= 6 && !suppressClick.current) return
           if (Math.hypot(dx, dy) > 6) {
             suppressClick.current = true
             if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -147,7 +191,7 @@ export function MindMapView({ content, focusedId, collapsed, onToggleBranch, onF
           const second = pointers.current.get(currentGesture.ids[1])!
           const center = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 }
           const distance = Math.max(1, Math.hypot(first.x - second.x, first.y - second.y))
-          const scale = clamp(currentGesture.scale * distance / currentGesture.distance)
+          const scale = clamp(currentGesture.scale * distance / currentGesture.distance, fitScale.current)
           setView((current) => ({
             ...current,
             scale,
@@ -158,8 +202,14 @@ export function MindMapView({ content, focusedId, collapsed, onToggleBranch, onF
       }}
       onPointerUp={finishPointer}
       onPointerCancel={finishPointer}
+      onLostPointerCapture={(event) => {
+        if (pointers.current.has(event.pointerId)) finishPointer(event)
+      }}
       onWheel={(event) => {
-        if (!event.ctrlKey && Math.abs(event.deltaY) < 24) return
+        if (!event.ctrlKey) {
+          setView((current) => ({ ...current, x: current.x - event.deltaX, y: current.y - event.deltaY }))
+          return
+        }
         const point = localPoint(event)
         zoomAt(event.deltaY > 0 ? 0.9 : 1.1, point)
       }}
@@ -193,7 +243,7 @@ export function MindMapView({ content, focusedId, collapsed, onToggleBranch, onF
             className={`node node-${p.node.kind}`}
             data-focused={focusedId === p.node.id ? '1' : '0'}
             data-collapsed={collapsed.has(p.node.id) ? '1' : '0'}
-            style={{ left: p.x - p.width / 2, top: p.y - p.height / 2, width: p.width, minHeight: p.height }}
+            style={{ left: p.x - p.width / 2, top: p.y - p.height / 2, width: p.width, minHeight: Math.max(68, p.height) }}
             aria-label={`${p.node.label}${childrenOf(p.node.id).length ? '，有下级分支' : ''}${p.node.references.length ? `，${p.node.references.length} 处原文依据` : ''}`}
             onClick={(event) => {
               if (suppressClick.current) {
@@ -210,16 +260,18 @@ export function MindMapView({ content, focusedId, collapsed, onToggleBranch, onF
         ))}
       </div>
 
-      <div className="mindmap-tools glass">
+      <div className="mindmap-tools glass" onPointerDown={(event) => event.stopPropagation()}>
         <button type="button" className="icon-btn" onClick={() => zoomAt(1.25)} aria-label="放大">＋</button>
         <button type="button" className="icon-btn" onClick={() => zoomAt(1 / 1.25)} aria-label="缩小">－</button>
-        <button type="button" className="icon-btn" onClick={fit} aria-label="看全这一张图">全</button>
+        <button type="button" className="icon-btn" onClick={fit} aria-label="回到主题节点">主题</button>
       </div>
       <p className="mindmap-hint">拖动平移 · 双指缩放 · 点节点看说明和分支操作</p>
+    </div>
+      </>}
     </div>
   )
 }
 
-function clamp(scale: number): number {
-  return Math.max(0.32, Math.min(2.4, scale))
+function clamp(scale: number, fittedScale: number): number {
+  return Math.max(Math.min(0.32, fittedScale), Math.min(2.4, scale))
 }

@@ -52,7 +52,6 @@ const CAPABILITY_FLAGS = {
     COMPANION_MEMORY_VECTOR_V1: { dev: true, prod: true },
     COMPANION_SUMMARIZER_V1: { dev: true, prod: true },
     COMPANION_DAILY_SUMMARY_V1: { dev: true, prod: true },
-    COMPANION_THOUGHTS_V1: { dev: true, prod: true },
   },
 };
 

@@ -491,7 +491,7 @@ companion-agent-runtime 1534 → 1473、companion-dialogue 1523 → 1488。
   fail-open 会让 global-off 形同虚设；而 worker 侧**根本建不了行**——`ailearn_worker`
   在这张表上只有 SELECT（0075 注释明写「有意不 GRANT」），要让它建行就得把全局开关的
   写权限交给 worker，比 LEFT JOIN 更糟。
-- 三个取值每一个都有依据（[ensureCompanionAccountState](../../../apps/api/src/modules/companion-conversation/turn/companion-account-epoch.ts)）：
+- 三个取值每一个都有依据（[ensureCompanionAccountState](../../../apps/api/src/companion-contracts/companion-account-epoch.ts)）：
   - `global_enabled = true` **显式写**，不靠列默认——把「用户还没表达关闭意图」误记成
     「用户关闭了伴星」，比原缺陷更糟；显式写也防着将来有人改 DEFAULT 时静默翻成回退。
   - `epoch = 0` 与 `getCompanionAccountEpoch` 对无行用户返回的 0 一致，两边对不上

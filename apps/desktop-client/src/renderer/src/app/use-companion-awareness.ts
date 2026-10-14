@@ -7,6 +7,7 @@ import { HUD_PAGES } from "../components/hud/hud-pages";
 import { stopCompanionNotificationSpeech } from "../components/companion/companion-notification-voice";
 import { isCompanionSpeechActive, subscribeCompanionSpeechActivity } from "./companion-voice-playback";
 import { companionAwarenessPageState } from "./companion-awareness-page";
+import { createCompanionQuietPresenceTracker } from "@astella/shared/companion-awareness-idle";
 
 /** Real lifecycle and semantic arrivals. Heartbeats renew factual leases; they never call a model. */
 export function useCompanionAwareness(conversationId: string | null) {
@@ -17,10 +18,14 @@ export function useCompanionAwareness(conversationId: string | null) {
   const pageState = companionAwarenessPageState(page);
   const participationBlocked = useRoomStore(state => state.onboardingOpen || state.companionGuideOpen);
   const publishRef = useRef<((topic: CompanionAwarenessObservationV1["topic"], evidence?: CompanionAwarenessObservationV1["evidence"]) => Promise<void>) | null>(null);
+  const activityRef = useRef<(() => void) | null>(null);
+  const priorPageKey = useRef(pageKey);
   useEffect(() => {
     const api = window.astella?.companion?.initiative;
     if (!api) return;
     let closed = false, started = false, typingUntil = 0, lastInputAt = -Infinity, lastAt = performance.now();
+    const quietPresence = createCompanionQuietPresenceTracker(lastAt);
+    let quietEpisodeVersion = 0, quietObservationId: string | null = null, lastActivityObservationAt = -Infinity;
     let identity: { version: 1; appLaunchId: string; deviceSessionId: string; host: "desktop" | "browser" } | undefined;
     let sequence = Promise.resolve();
     const context = (): CompanionAwarenessContextV1 => {
@@ -50,10 +55,25 @@ export function useCompanionAwareness(conversationId: string | null) {
           if (closed || latest.current.page.workspaceScopeRevision !== page.workspaceScopeRevision) return;
           const now = performance.now();
           const currentContext = context();
-          const request = { ...identity, id: crypto.randomUUID(), topic, occurredAt: new Date().toISOString(),
-            elapsedMs: Math.min(45_000, Math.max(0, Math.round(now - lastAt))), context: currentContext, ...(evidence ? { evidence } : {}) };
+          const quietForMs = topic === "presence.quiet"
+            ? quietPresence.quietForMs(now, currentContext.foreground && currentContext.unlocked
+              && !currentContext.typing && currentContext.participationAllowed !== false)
+            : null;
+          if (topic === "presence.quiet" && quietForMs === null) return;
+          const episodeVersion = quietEpisodeVersion;
+          if (topic === "presence.quiet") quietObservationId ??= crypto.randomUUID();
+          const request = { ...identity,
+            id: topic === "presence.quiet" ? quietObservationId! : crypto.randomUUID(),
+            topic, occurredAt: new Date().toISOString(),
+            elapsedMs: Math.min(45_000, Math.max(0, Math.round(now - lastAt))),
+            context: quietForMs === null ? currentContext : { ...currentContext, quietForMs },
+            ...(evidence ? { evidence } : {}) };
           lastAt = now;
           unwrapGatewayResult(await api.observe({ meta: createRequestMeta(epoch), request }));
+          if (topic === "presence.quiet" && quietEpisodeVersion === episodeVersion) {
+            quietPresence.markReported();
+            quietObservationId = null;
+          }
           if (!started && currentContext.foreground && currentContext.participationAllowed) {
             unwrapGatewayResult(await api.observe({ meta: createRequestMeta(epoch), request: { ...request, id: crypto.randomUUID(), topic: "app.started", elapsedMs: 0 } }));
             started = true;
@@ -63,10 +83,32 @@ export function useCompanionAwareness(conversationId: string | null) {
       return sequence;
     };
     publishRef.current = publish;
-    const foreground = () => { void publish(document.hasFocus() && document.visibilityState === "visible" ? "app.foreground" : "context.updated"); };
+    const activity = () => {
+      const now = performance.now();
+      quietEpisodeVersion += 1;
+      quietObservationId = null;
+      quietPresence.markActivity(now);
+      if (now - lastActivityObservationAt >= 5_000) {
+        lastActivityObservationAt = now;
+        void publish("context.updated");
+      }
+    };
+    activityRef.current = activity;
+    let lastPointerMoveAt = -Infinity;
+    const pointerMove = () => {
+      const now = performance.now();
+      if (now - lastPointerMoveAt < 1_000) return;
+      lastPointerMoveAt = now;
+      activity();
+    };
+    const foreground = () => {
+      activity();
+      void publish(document.hasFocus() && document.visibilityState === "visible" ? "app.foreground" : "context.updated");
+    };
     const typing = (event: Event) => {
       const target = event.target;
       if (!(target instanceof Element) || !target.closest(".companion-hud, .companion-interaction, .companion-history, [data-companion-composer]")) return;
+      activity();
       typingUntil = performance.now() + 6_000;
       stopCompanionNotificationSpeech();
       window.dispatchEvent(new Event("astella:companion-user-input"));
@@ -74,18 +116,27 @@ export function useCompanionAwareness(conversationId: string | null) {
     };
     const help = (event: Event) => { const detail = (event as CustomEvent<CompanionAwarenessObservationV1["evidence"]>).detail; if (detail) void publish("help.available", detail); };
     const result = (event: Event) => { const detail = (event as CustomEvent<CompanionAwarenessObservationV1["evidence"]>).detail; if (detail) void publish("result.available", detail); };
-    const timer = window.setInterval(() => void publish("context.updated"), 15_000);
+    const timer = window.setInterval(() => {
+      void publish("context.updated");
+      void publish("presence.quiet");
+    }, 15_000);
     const stopSpeechWatch = subscribeCompanionSpeechActivity(() => void publish("context.updated"));
     window.addEventListener("focus", foreground); window.addEventListener("blur", foreground);
     document.addEventListener("visibilitychange", foreground); document.addEventListener("input", typing, true);
+    document.addEventListener("pointerdown", activity, true); document.addEventListener("pointermove", pointerMove, { capture: true, passive: true });
+    document.addEventListener("keydown", activity, true); document.addEventListener("wheel", activity, { capture: true, passive: true });
+    document.addEventListener("touchstart", activity, { capture: true, passive: true });
     window.addEventListener("astella:companion-help-opportunity", help);
     window.addEventListener("astella:companion-result-available", result);
     void publish("context.updated");
     return () => {
-      closed = true; publishRef.current = null; clearInterval(timer);
+      closed = true; publishRef.current = null; activityRef.current = null; clearInterval(timer);
       stopSpeechWatch();
       window.removeEventListener("focus", foreground); window.removeEventListener("blur", foreground);
       document.removeEventListener("visibilitychange", foreground); document.removeEventListener("input", typing, true);
+      document.removeEventListener("pointerdown", activity, true); document.removeEventListener("pointermove", pointerMove, true);
+      document.removeEventListener("keydown", activity, true); document.removeEventListener("wheel", activity, true);
+      document.removeEventListener("touchstart", activity, true);
       window.removeEventListener("astella:companion-help-opportunity", help);
       window.removeEventListener("astella:companion-result-available", result);
     };
@@ -94,6 +145,11 @@ export function useCompanionAwareness(conversationId: string | null) {
     // Loading, recovery and result changes revoke the prior view before the next heartbeat.
     void publishRef.current?.("context.updated");
   }, [pageState.ready, pageState.revision]);
+  useEffect(() => {
+    if (priorPageKey.current === pageKey) return;
+    priorPageKey.current = pageKey;
+    activityRef.current?.();
+  }, [pageKey]);
   useEffect(() => { void publishRef.current?.("context.updated"); }, [participationBlocked]);
   useEffect(() => {
     // Content must settle; scrolling, refreshing counters and lease renewal are not new arrivals.

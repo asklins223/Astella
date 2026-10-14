@@ -5,8 +5,10 @@ import { useSession } from '../state/session.ts'
 import { setChatLayout } from '../state/prefs.ts'
 import { push } from '../app/nav.ts'
 import { Icon } from '../app/icons.tsx'
-import { dialogueText, FollowupSuggestions, followupPrompts } from './message-content.tsx'
-import { companionLine } from './status-line.ts'
+import { dialogueText, DialogueMarkdown, FollowupSuggestions, followupPrompts } from './message-content.tsx'
+import { companionLine, turnLine } from './status-line.ts'
+import { RunProcess } from './RunProcess.tsx'
+import { presentMessages } from './presentation.ts'
 
 /**
  * 伴星那一屏。
@@ -19,19 +21,23 @@ export function SceneChat() {
   const companion = useCompanion()
   const session = useSession()
   const latestAssistant = useMemo(
-    () => [...companion.messages].reverse().find((message) => message.role === 'assistant') ?? null,
+    () => presentMessages(companion.messages).reverse().find((entry) => entry.message.role === 'assistant')?.message ?? null,
     [companion.messages],
   )
   const latest = latestAssistant ? dialogueText(latestAssistant.blocks) : ''
   const latestMessage = companion.messages.at(-1)
-  const prompts = latestMessage?.role === 'assistant' ? followupPrompts(latestMessage.blocks) : []
+  const prompts = latestMessage?.role === 'assistant'
+    ? latestMessage.followUpPrompts?.length ? latestMessage.followUpPrompts : followupPrompts(latestMessage.blocks)
+    : []
 
-  const text = companion.turn?.text.trim() ? companion.turn.text : latest
-  const speech = useRef<HTMLParagraphElement>(null)
+  const visibleTurn = companion.turn && (!companion.turn.initiative || companion.turn.visible) ? companion.turn : null
+  const currentUtterance = visibleTurn && latestAssistant?.runId === visibleTurn.runId ? latest : ''
+  const text = visibleTurn ? visibleTurn.text || currentUtterance : latest
+  const speech = useRef<HTMLDivElement>(null)
   const staysAtLatest = useRef(true)
   const lastEntry = useRef<string | null>(null)
-  const entryKey = companion.turn && (!companion.turn.initiative || companion.turn.text)
-    ? `run:${companion.turn.runId || companion.turn.generation}`
+  const entryKey = visibleTurn
+    ? `run:${visibleTurn.runId || visibleTurn.generation}`
     : latestAssistant?.id ?? null
 
   useLayoutEffect(() => {
@@ -42,7 +48,9 @@ export function SceneChat() {
     staysAtLatest.current = node.scrollHeight - node.scrollTop - node.clientHeight < 24
     lastEntry.current = entryKey
   }, [entryKey, text])
-  const edit = companion.noteEdits.at(-1)
+  const shownRunId = visibleTurn?.runId || latestAssistant?.runId
+  const hasProcess = Boolean(shownRunId && companion.runProcesses[shownRunId]?.rows.length)
+  const edit = shownRunId ? companion.noteEdits.find(item => item.runId === shownRunId) : null
   const pending = companion.proposals.filter((card) => card.status === 'pending').length
 
   return (
@@ -63,9 +71,9 @@ export function SceneChat() {
             伴星<i />
             <span>{companionLine(companion)}</span>
           </span>
-          <p
+          {(!visibleTurn || text || !hasProcess) && <div
+            className="scene-reply"
             ref={speech}
-            aria-live="polite"
             onScroll={(event) => {
               const node = event.currentTarget
               staysAtLatest.current = node.scrollHeight - node.scrollTop - node.clientHeight < 24
@@ -75,19 +83,22 @@ export function SceneChat() {
               ? '这台服务端没开对话，手记还是可以读。'
               : !companion.historyReady
                 ? companion.error ? '对话暂时没接上，请在下方重新连接。' : '正在接上书房，连好后就能继续聊。'
-                : text || '我在。想聊什么，直接告诉我。'}
-          </p>
-          {(!companion.turn || companion.turn.initiative) && prompts.length > 0 && (
+                : text ? <DialogueMarkdown text={text} />
+                  : visibleTurn ? <p role="status">{turnLine(visibleTurn)}</p>
+                    : '我在。想聊什么，直接告诉我。'}
+          </div>}
+          {shownRunId && <RunProcess runId={shownRunId} mode="compact" />}
+          {!visibleTurn && prompts.length > 0 && (
             <FollowupSuggestions prompts={prompts} onSend={(prompt) => { void sendTurn(prompt) }} disabled={!companion.historyReady} />
           )}
-          {(text || edit || pending > 0) && (
+          {(text || visibleTurn || edit || pending > 0) && (
             <div className="bubble-links">
               {edit && (
                 <button className="bubble-more" type="button" onClick={() => push({ kind: 'reader', noteId: edit.noteId, title: '' })}>
                   打开笔记
                 </button>
               )}
-              {pending > 0 && !edit && <button className="bubble-more" type="button" onClick={() => setChatLayout('history', session.me?.userId)}>有 {pending} 项等你确认</button>}
+              {pending > 0 && <button className="bubble-more" type="button" onClick={() => setChatLayout('history', session.me?.userId)}>有 {pending} 项等你确认</button>}
               <button className="bubble-more" type="button" onClick={() => setChatLayout('history', session.me?.userId)}>看完整对话</button>
             </div>
           )}

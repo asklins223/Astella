@@ -7,6 +7,7 @@ import type { NoteAnnotationAnchorV1 } from '@astella/shared/note-annotation-con
 import { notesApi, uuid, type NoteListItem, type NoteSearchPage } from '../platform/api.ts'
 import { ApiError } from '../platform/api-client.ts'
 import { companionStore } from './companion.ts'
+import { handleUnauthorized } from './session.ts'
 import { createStore, useStore } from './store.ts'
 
 /**
@@ -41,6 +42,7 @@ export interface ReaderState {
   artifact: TaskView<NoteLearningArtifactV1>
   artifactHtml: string | null
   artifactHtmlFor: string | null
+  artifactHtmlError: string | null
   /** 从脑图节点、速看要点或批注跳回正文时，落在哪一块。 */
   focusOrdinal: number | null
   /** 伴星刚动过这一篇：给一条就地可点的说明，而不是弹层。 */
@@ -93,40 +95,112 @@ const set = store.set.bind(store)
 
 const POLL_MS = 1600
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
+const pollTokens = new Map<string, symbol>()
 let workspaceGeneration = 0
+let listGeneration = 0
+let readerGeneration = 0
+let detailGeneration = 0
+let annotationGeneration = 0
+const annotationWrites = new Set<string>()
+const removedAnnotationIds = new Set<string>()
+const artifactHtmlRequests = new Map<string, Promise<string | null>>()
+let focusFrame: number | null = null
+type TaskKind = 'overview' | 'mindMap' | 'artifact'
+const taskGenerations: Record<TaskKind, number> = { overview: 0, mindMap: 0, artifact: 0 }
+interface ReaderScope { workspace: number; reader: number; noteId: string }
+interface TaskScope<K extends TaskKind = TaskKind> { reader: ReaderScope; kind: K; generation: number; versionId: string }
+
+function readerScope(noteId = get().reader?.noteId): ReaderScope | null {
+  if (!noteId || get().reader?.noteId !== noteId) return null
+  return { workspace: workspaceGeneration, reader: readerGeneration, noteId }
+}
+
+function isCurrentReader(scope: ReaderScope): boolean {
+  return scope.workspace === workspaceGeneration && scope.reader === readerGeneration
+    && get().reader?.noteId === scope.noteId
+}
+
+function isCurrentVersion(scope: ReaderScope, versionId: string): boolean {
+  return isCurrentReader(scope) && get().reader?.detail?.currentVersionId === versionId
+}
+
+function annotationWriteKey(scope: ReaderScope, kind: 'save' | 'explain', anchor: NoteAnnotationAnchorV1): string {
+  // Positions within an immutable version identify the same passage regardless
+  // of property order or the amount of surrounding context included by a caller.
+  return `${scope.workspace}:${scope.reader}:${kind}:${anchor.noteVersionId}:${anchor.startBlockOrdinal}:${anchor.startOffset}:${anchor.endBlockOrdinal}:${anchor.endOffset}`
+}
+
+function beginTask<K extends TaskKind>(scope: ReaderScope, kind: K, versionId: string): TaskScope<K> {
+  stopPoll(`${kind}:${scope.noteId}`)
+  return { reader: scope, kind, generation: ++taskGenerations[kind], versionId }
+}
+
+function isCurrentTask(scope: TaskScope): boolean {
+  return isCurrentReader(scope.reader) && taskGenerations[scope.kind] === scope.generation
+    && get().reader?.detail?.currentVersionId === scope.versionId
+}
+
+function taskPatch<K extends TaskKind>(scope: TaskScope<K>, view: ReaderState[K]): void {
+  if (!isCurrentTask(scope)) return
+  readerPatch({ [scope.kind]: view } as Partial<ReaderState>, scope.reader)
+}
+
+function failTask(scope: TaskScope, error: unknown): void {
+  if (!isCurrentTask(scope)) return
+  if (handleExpiredSession(error)) return
+  taskPatch(scope, { phase: 'failed', data: null, forVersion: null, error: taskFailure(error) })
+}
+
+function handleExpiredSession(error: unknown): boolean {
+  if (!(error instanceof ApiError) || !error.isUnauthorized) return false
+  handleUnauthorized()
+  return true
+}
 
 function poll(key: string, tick: () => Promise<boolean>, onError?: (error: unknown) => void): void {
   stopPoll(key)
-  const timer = setTimeout(async () => {
-    timers.delete(key)
-    let keepGoing = false
-    try {
-      keepGoing = await tick()
-    } catch (error) {
-      onError?.(error)
-      keepGoing = false
-    }
-    if (keepGoing) poll(key, tick, onError)
-  }, POLL_MS)
-  timers.set(key, timer)
+  const token = Symbol(key)
+  pollTokens.set(key, token)
+  const schedule = () => {
+    const timer = setTimeout(async () => {
+      if (pollTokens.get(key) !== token) return
+      timers.delete(key)
+      let keepGoing = false
+      try {
+        keepGoing = await tick()
+      } catch (error) {
+        if (pollTokens.get(key) === token) onError?.(error)
+      }
+      // A tick may already be awaiting its response when the reader closes or a
+      // newer task starts. Its response must never revive the cancelled poll.
+      if (pollTokens.get(key) !== token) return
+      if (keepGoing) schedule()
+      else pollTokens.delete(key)
+    }, POLL_MS)
+    timers.set(key, timer)
+  }
+  schedule()
 }
 
 function stopPoll(key: string): void {
   const timer = timers.get(key)
   if (timer) clearTimeout(timer)
   timers.delete(key)
+  pollTokens.delete(key)
 }
 
 function stopAllPolls(): void {
-  for (const key of [...timers.keys()]) stopPoll(key)
+  if (focusFrame !== null) cancelAnimationFrame(focusFrame)
+  focusFrame = null
+  for (const key of new Set([...timers.keys(), ...pollTokens.keys()])) stopPoll(key)
 }
 
 const isLive = (phase: TaskPhase): boolean => phase === 'queued' || phase === 'running'
 const running = (status: string): boolean => status === 'queued' || status === 'running'
 
-function readerPatch(patch: Partial<ReaderState>, expectedNoteId?: string): void {
+function readerPatch(patch: Partial<ReaderState>, scope: ReaderScope): void {
   const reader = get().reader
-  if (!reader || (expectedNoteId && reader.noteId !== expectedNoteId)) return
+  if (!reader || !isCurrentReader(scope)) return
   set({ reader: { ...reader, ...patch } })
 }
 
@@ -135,43 +209,62 @@ function readerPatch(patch: Partial<ReaderState>, expectedNoteId?: string): void
 export async function loadNotes(refresh = false): Promise<void> {
   const list = get().list
   if (list.loading || (list.items.length > 0 && !refresh)) return
-  const generation = workspaceGeneration
-  set({ list: { ...list, loading: true, error: null } })
+  const workspace = workspaceGeneration
+  const generation = ++listGeneration
+  set({ list: { ...list, loading: true, loadingMore: false, error: null } })
   try {
     const page = await notesApi.list({ limit: 30 })
-    if (generation !== workspaceGeneration) return
-    set({ list: { items: page.items, loading: false, loadingMore: false, nextCursor: page.nextCursor ?? null, error: null } })
+    if (workspace !== workspaceGeneration || generation !== listGeneration) return
+    set({ list: { items: uniqueNotes(page.items), loading: false, loadingMore: false, nextCursor: page.nextCursor ?? null, error: null } })
   } catch (error) {
-    if (generation !== workspaceGeneration) return
+    if (workspace !== workspaceGeneration || generation !== listGeneration) return
+    if (handleExpiredSession(error)) return
     set({ list: { ...get().list, loading: false, error: describe(error) } })
   }
 }
 
 export async function loadMoreNotes(): Promise<void> {
   const list = get().list
-  if (!list.nextCursor || list.loadingMore) return
-  const generation = workspaceGeneration
-  set({ list: { ...list, loadingMore: true } })
+  if (!list.nextCursor || list.loading || list.loadingMore) return
+  const cursor = list.nextCursor
+  const workspace = workspaceGeneration
+  const generation = listGeneration
+  const isCurrent = () => workspace === workspaceGeneration && generation === listGeneration
+    && get().list.nextCursor === cursor && !get().list.loading
+  set({ list: { ...list, loadingMore: true, error: null } })
   try {
-    const page = await notesApi.list({ limit: 30, cursor: list.nextCursor })
-    if (generation !== workspaceGeneration) return
+    const page = await notesApi.list({ limit: 30, cursor })
+    if (!isCurrent()) return
     set({
       list: {
-        ...list,
-        items: [...list.items, ...page.items],
-        nextCursor: page.nextCursor ?? null,
+        ...get().list,
+        items: uniqueNotes([...get().list.items, ...page.items]),
+        nextCursor: page.nextCursor === cursor ? null : page.nextCursor ?? null,
         loadingMore: false,
+        error: null,
       },
     })
   } catch (error) {
-    if (generation !== workspaceGeneration) return
+    if (!isCurrent()) return
+    if (handleExpiredSession(error)) return
     set({ list: { ...get().list, loadingMore: false, error: describe(error) } })
   }
+}
+
+function uniqueNotes(items: NoteListItem[]): NoteListItem[] {
+  return [...new Map(items.map((item) => [item.id, item])).values()]
 }
 
 /** A workspace switch is a hard content boundary; never keep the previous shelf visible. */
 export function resetNotesForWorkspace(): void {
   workspaceGeneration += 1
+  listGeneration += 1
+  readerGeneration += 1
+  detailGeneration += 1
+  annotationGeneration += 1
+  annotationWrites.clear()
+  removedAnnotationIds.clear()
+  artifactHtmlRequests.clear()
   stopAllPolls()
   editWatcher?.()
   editWatcher = null
@@ -199,6 +292,13 @@ export function updateNoteSearch(
 // ─── 阅读器 ───────────────────────────────────────────────────────────────
 
 export async function openNote(noteId: string, title = ''): Promise<void> {
+  const editOffset = companionStore.get().noteEdits.length
+  readerGeneration += 1
+  const requestGeneration = ++detailGeneration
+  annotationGeneration += 1
+  annotationWrites.clear()
+  removedAnnotationIds.clear()
+  artifactHtmlRequests.clear()
   stopAllPolls()
   editWatcher?.()
   editWatcher = null
@@ -216,221 +316,346 @@ export async function openNote(noteId: string, title = ''): Promise<void> {
       artifact: idle(),
       artifactHtml: null,
       artifactHtmlFor: null,
+      artifactHtmlError: null,
       focusOrdinal: null,
       editedByCompanion: null,
     },
   })
+  const scope = readerScope(noteId)!
   try {
     const detail = await notesApi.detail(noteId)
-    if (get().reader?.noteId !== noteId) return
-    readerPatch({ detail, loading: false, title: detail.title }, noteId)
-    // 三份"最新任务"与批注同时问，谁回来都不等别人；四个视图各自填自己的格子。
-    // 每一次都要有人接住失败：`void` 掉一个会抛的 Promise 就是控制台里一条没人接的
-    // rejection（实测 artifact-tasks 服务端 500 时屏上什么都不说）。
-    void hydrateAnnotations(noteId)
-    void hydrateOverviewTask(noteId, detail.currentVersionId).catch((error) => readerPatch({
-      overview: { phase: 'failed', data: null, forVersion: detail.currentVersion.versionNo, error: taskFailure(error) },
-    }, noteId))
-    void hydrateMindMapTask(noteId, detail.currentVersionId).catch((error) => readerPatch({
-      mindMap: { phase: 'failed', data: null, forVersion: detail.currentVersion.versionNo, error: taskFailure(error) },
-    }, noteId))
-    void hydrateArtifactTasks(noteId, detail.currentVersionId).catch((error) => readerPatch({
-      artifact: { phase: 'failed', data: null, forVersion: detail.currentVersion.versionNo, error: taskFailure(error) },
-    }, noteId))
-    watchCompanionEdits(noteId)
+    if (!isCurrentReader(scope) || requestGeneration !== detailGeneration) return
+    readerPatch({ detail, loading: false, title: detail.title }, scope)
+    hydrateReaderViews(scope, detail.currentVersionId)
+    watchCompanionEdits(scope, editOffset)
   } catch (error) {
-    readerPatch({ loading: false, error: describe(error) }, noteId)
+    if (requestGeneration !== detailGeneration || !isCurrentReader(scope)) return
+    if (handleExpiredSession(error)) return
+    readerPatch({ loading: false, error: describe(error) }, scope)
   }
 }
 
+/**
+ * A confirmed history restore already returns the target snapshot and blocks.
+ * Replace only the open note's content while keeping its route and scroll
+ * position alive; reopening it would briefly erase the reader and lose focus.
+ */
+export function applyRestoredNoteVersion(
+  noteId: string,
+  result: Awaited<ReturnType<typeof notesApi.restoreVersion>>,
+): boolean {
+  const scope = readerScope(noteId)
+  const current = get().reader
+  if (!scope || !current?.detail || result.note.id !== noteId || result.version.noteId !== noteId
+    || result.note.currentVersionId !== result.version.id) return false
+
+  const blocks = result.blocks
+    .map(({ ordinal, type, content }) => ({ ordinal, type, content }))
+    .sort((first, second) => first.ordinal - second.ordinal)
+  const detail: NoteDetailV1 = {
+    ...current.detail,
+    title: result.note.title,
+    titleSource: result.note.titleSource,
+    currentVersionId: result.version.id,
+    revision: result.version.id,
+    snapshotAt: result.note.updatedAt,
+    currentVersion: {
+      versionId: result.version.id,
+      noteId,
+      versionNo: result.version.versionNo,
+      contentHash: result.version.contentHash,
+      createdAt: result.version.createdAt,
+      updatedAt: result.version.updatedAt,
+      blocks,
+    },
+  }
+  const focusedBlockStillExists = blocks.some((block) => block.ordinal === current.focusOrdinal)
+  annotationGeneration += 1
+  annotationWrites.clear()
+  removedAnnotationIds.clear()
+  readerPatch({
+    detail,
+    title: detail.title,
+    loading: false,
+    error: null,
+    annotations: [],
+    annotationsError: null,
+    overview: idle(),
+    mindMap: idle(),
+    artifact: idle(),
+    artifactHtml: null,
+    artifactHtmlFor: null,
+    artifactHtmlError: null,
+    focusOrdinal: focusedBlockStillExists ? current.focusOrdinal : null,
+    editedByCompanion: null,
+  }, scope)
+  set(({ list, browse }) => ({
+    list: {
+      ...list,
+      items: list.items.map((item) => item.id === noteId
+        ? { ...item, title: detail.title, titleSource: detail.titleSource, currentVersionId: detail.currentVersionId, updatedAt: detail.currentVersion.updatedAt }
+        : item),
+    },
+    browse: {
+      ...browse,
+      search: {
+        ...browse.search,
+        items: browse.search.items.map((item) => item.objectId === noteId ? { ...item, title: detail.title } : item),
+      },
+    },
+  }))
+  hydrateReaderViews(scope, detail.currentVersionId)
+  return true
+}
+
 export function closeNote(): void {
+  readerGeneration += 1
+  detailGeneration += 1
+  annotationGeneration += 1
+  annotationWrites.clear()
+  removedAnnotationIds.clear()
+  artifactHtmlRequests.clear()
   stopAllPolls()
   editWatcher?.()
   editWatcher = null
   set({ reader: null })
 }
 
-async function hydrateAnnotations(noteId: string): Promise<void> {
+function hydrateReaderViews(scope: ReaderScope, versionId: string): void {
+  // Independent views settle independently. Each view's request generation also
+  // prevents an opening snapshot from replacing a generation the user started.
+  const annotations = hydrateAnnotations(scope)
+  const generation = annotationGeneration
+  void annotations.then((loaded) => {
+    if (!loaded || generation !== annotationGeneration || !isCurrentVersion(scope, versionId)) return
+    return hydrateAnnotationTask(scope, versionId, generation)
+  }).catch((error) => {
+    if (generation !== annotationGeneration || !isCurrentVersion(scope, versionId)) return
+    if (handleExpiredSession(error)) return
+    readerPatch({ annotationsError: taskFailure(error) }, scope)
+  })
+  const overview = beginTask(scope, 'overview', versionId)
+  void hydrateOverviewTask(overview).catch((error) => failTask(overview, error))
+  const mindMap = beginTask(scope, 'mindMap', versionId)
+  void hydrateMindMapTask(mindMap).catch((error) => failTask(mindMap, error))
+  const artifact = beginTask(scope, 'artifact', versionId)
+  void hydrateArtifactTasks(artifact).catch((error) => failTask(artifact, error))
+}
+
+async function hydrateAnnotations(scope: ReaderScope): Promise<boolean> {
+  const generation = ++annotationGeneration
   try {
-    const page = await notesApi.annotations(noteId)
-    readerPatch({ annotations: page.items, annotationsError: null }, noteId)
+    const page = await notesApi.annotations(scope.noteId)
+    if (generation !== annotationGeneration || !isCurrentReader(scope)) return false
+    readerPatch({ annotations: uniqueAnnotations(page.items), annotationsError: null }, scope)
+    return true
   } catch (error) {
-    readerPatch({ annotationsError: taskFailure(error) }, noteId)
+    if (generation !== annotationGeneration || !isCurrentReader(scope)) return false
+    if (handleExpiredSession(error)) return false
+    readerPatch({ annotationsError: taskFailure(error) }, scope)
+    return false
   }
+}
+
+async function hydrateAnnotationTask(scope: ReaderScope, versionId: string, generation: number): Promise<void> {
+  const result = await notesApi.latestAnnotationTask(scope.noteId, versionId)
+  if (generation !== annotationGeneration || !isCurrentVersion(scope, versionId) || !result.task) return
+  const task = result.task
+  if (task.annotation) addAnnotation(scope, task.annotation)
+  if (running(task.status)) trackAnnotationTask(scope, task.anchor, task.taskId)
+  else if (task.status === 'failed') readerPatch({ annotationsError: reasonText(task.failureReason) }, scope)
 }
 
 export function retryAnnotations(noteId: string): void {
-  readerPatch({ annotationsError: null }, noteId)
-  void hydrateAnnotations(noteId)
+  const scope = readerScope(noteId)
+  if (!scope) return
+  readerPatch({ annotationsError: null }, scope)
+  const versionId = get().reader?.detail?.currentVersionId
+  const annotations = hydrateAnnotations(scope)
+  const generation = annotationGeneration
+  void annotations.then((loaded) => {
+    if (!loaded || !versionId || generation !== annotationGeneration || !isCurrentVersion(scope, versionId)) return
+    return hydrateAnnotationTask(scope, versionId, generation)
+  }).catch((error) => {
+    if (!versionId || generation !== annotationGeneration || !isCurrentVersion(scope, versionId)) return
+    if (handleExpiredSession(error)) return
+    readerPatch({ annotationsError: taskFailure(error) }, scope)
+  })
 }
 
-async function hydrateOverviewTask(noteId: string, noteVersionId: string): Promise<void> {
-  const result = await notesApi.latestOverviewTask(noteId, noteVersionId)
-  if (get().reader?.noteId !== noteId) return
+async function hydrateOverviewTask(scope: TaskScope<'overview'>): Promise<void> {
+  const result = await notesApi.latestOverviewTask(scope.reader.noteId, scope.versionId)
+  if (!isCurrentTask(scope)) return
   if (!result.task) {
-    readerPatch({ overview: idle() }, noteId)
+    taskPatch(scope, idle<never>())
     return
   }
-  applyOverviewTask(noteId, result.task)
+  applyOverviewTask(scope, result.task)
   if (running(result.task.status)) poll(
-    `overview:${noteId}`,
-    () => refreshOverviewTask(noteId, noteVersionId),
-    (error) => readerPatch({ overview: { phase: 'failed', data: null, forVersion: null, error: taskFailure(error) } }, noteId),
+    `overview:${scope.reader.noteId}`,
+    () => refreshOverviewTask(scope),
+    (error) => failTask(scope, error),
   )
 }
 
-async function refreshOverviewTask(noteId: string, noteVersionId: string): Promise<boolean> {
-  if (get().reader?.noteId !== noteId) return false
-  const result = await notesApi.latestOverviewTask(noteId, noteVersionId)
-  if (get().reader?.noteId !== noteId) return false
+async function refreshOverviewTask(scope: TaskScope<'overview'>): Promise<boolean> {
+  if (!isCurrentTask(scope)) return false
+  const result = await notesApi.latestOverviewTask(scope.reader.noteId, scope.versionId)
+  if (!isCurrentTask(scope)) return false
   if (!result.task) {
-    readerPatch({ overview: { phase: 'failed', data: null, forVersion: null, error: '生成状态没取到，请再试一次。' } }, noteId)
+    taskPatch(scope, { phase: 'failed', data: null, forVersion: null, error: '生成状态没取到，请再试一次。' })
     return false
   }
-  applyOverviewTask(noteId, result.task)
+  applyOverviewTask(scope, result.task)
   return running(result.task.status)
 }
 
-function applyOverviewTask(noteId: string, task: { status: string; overview: NoteOverviewV1 | null; failureReason: string | null }): void {
-  readerPatch({
-    overview: {
-      phase: task.status === 'ready' ? 'ready' : task.status === 'failed' ? 'failed' : (task.status as TaskPhase),
-      data: task.overview,
-      forVersion: task.overview?.noteVersionNumber ?? null,
-      error: task.status === 'failed' ? reasonText(task.failureReason) : null,
-    },
-  }, noteId)
+function applyOverviewTask(scope: TaskScope<'overview'>, task: { status: string; overview: NoteOverviewV1 | null; failureReason: string | null }): void {
+  taskPatch(scope, {
+    phase: task.status === 'ready' ? 'ready' : task.status === 'failed' ? 'failed' : (task.status as TaskPhase),
+    data: task.overview,
+    forVersion: task.overview?.noteVersionNumber ?? null,
+    error: task.status === 'failed' ? reasonText(task.failureReason) : null,
+  })
 }
 
-async function hydrateMindMapTask(noteId: string, noteVersionId: string): Promise<void> {
-  const result = await notesApi.latestMindMapTask(noteId, noteVersionId)
-  if (get().reader?.noteId !== noteId) return
+async function hydrateMindMapTask(scope: TaskScope<'mindMap'>): Promise<void> {
+  const result = await notesApi.latestMindMapTask(scope.reader.noteId, scope.versionId)
+  if (!isCurrentTask(scope)) return
   if (!result.task) {
-    readerPatch({ mindMap: idle() }, noteId)
+    taskPatch(scope, idle<never>())
     return
   }
-  applyMindMapTask(noteId, result.task)
+  applyMindMapTask(scope, result.task)
   if (running(result.task.status)) poll(
-    `mindmap:${noteId}`,
-    () => refreshMindMapTask(noteId, noteVersionId),
-    (error) => readerPatch({ mindMap: { phase: 'failed', data: null, forVersion: null, error: taskFailure(error) } }, noteId),
+    `mindMap:${scope.reader.noteId}`,
+    () => refreshMindMapTask(scope),
+    (error) => failTask(scope, error),
   )
 }
 
-async function refreshMindMapTask(noteId: string, noteVersionId: string): Promise<boolean> {
-  if (get().reader?.noteId !== noteId) return false
-  const result = await notesApi.latestMindMapTask(noteId, noteVersionId)
-  if (get().reader?.noteId !== noteId) return false
+async function refreshMindMapTask(scope: TaskScope<'mindMap'>): Promise<boolean> {
+  if (!isCurrentTask(scope)) return false
+  const result = await notesApi.latestMindMapTask(scope.reader.noteId, scope.versionId)
+  if (!isCurrentTask(scope)) return false
   if (!result.task) {
-    readerPatch({ mindMap: { phase: 'failed', data: null, forVersion: null, error: '生成状态没取到，请再试一次。' } }, noteId)
+    taskPatch(scope, { phase: 'failed', data: null, forVersion: null, error: '生成状态没取到，请再试一次。' })
     return false
   }
-  applyMindMapTask(noteId, result.task)
+  applyMindMapTask(scope, result.task)
   return running(result.task.status)
 }
 
-function applyMindMapTask(noteId: string, task: { status: string; mindMap: NoteMindMapV1 | null; failureReason: string | null; failureMessage?: string | null }): void {
-  readerPatch({
-    mindMap: {
-      phase: task.status === 'ready' ? 'ready' : task.status === 'failed' ? 'failed' : (task.status as TaskPhase),
-      data: task.mindMap,
-      forVersion: task.mindMap?.noteVersionNumber ?? null,
-      error: task.status === 'failed' ? (task.failureMessage || reasonText(task.failureReason ?? null)) : null,
-    },
-  }, noteId)
+function applyMindMapTask(scope: TaskScope<'mindMap'>, task: { status: string; mindMap: NoteMindMapV1 | null; failureReason: string | null; failureMessage?: string | null }): void {
+  taskPatch(scope, {
+    phase: task.status === 'ready' ? 'ready' : task.status === 'failed' ? 'failed' : (task.status as TaskPhase),
+    data: task.mindMap,
+    forVersion: task.mindMap?.noteVersionNumber ?? null,
+    error: task.status === 'failed' ? (task.failureMessage || reasonText(task.failureReason ?? null)) : null,
+  })
 }
 
-async function hydrateArtifactTasks(noteId: string, noteVersionId: string): Promise<void> {
+async function hydrateArtifactTasks(scope: TaskScope<'artifact'>): Promise<void> {
   // 任务页必须带 noteVersionId：服务端那条 query 校验不过就回 400「记录位置无效」。
-  const page = await notesApi.artifactTasks(noteId, noteVersionId)
-  if (get().reader?.noteId !== noteId) return
-  const ready = page.items.find((item) => item.status === 'ready' && item.artifact)
-  const live = page.items.find((item) => running(item.status))
-  if (ready?.artifact) {
-    readerPatch({
-      artifact: { phase: 'ready', data: ready.artifact, forVersion: ready.artifact.noteVersionNumber, error: null },
-    }, noteId)
+  const page = await notesApi.artifactTasks(scope.reader.noteId, scope.versionId)
+  if (!isCurrentTask(scope)) return
+  // The API orders newest first. An old finished artifact must not hide a newer
+  // running or failed attempt, otherwise the page appears to ignore regeneration.
+  const latest = page.items[0]
+  if (!latest) {
+    taskPatch(scope, idle<never>())
     return
   }
-  if (live) {
-    readerPatch({ artifact: { phase: live.status as TaskPhase, data: null, forVersion: null, error: null } }, noteId)
+  applyArtifactTask(scope, latest)
+  if (running(latest.status)) {
     poll(
-      `artifact:${noteId}`,
-      () => refreshArtifactTask(noteId, live.taskId),
-      (error) => readerPatch({ artifact: { phase: 'failed', data: null, forVersion: null, error: taskFailure(error) } }, noteId),
+      `artifact:${scope.reader.noteId}`,
+      () => refreshArtifactTask(scope, latest.taskId),
+      (error) => failTask(scope, error),
     )
-    return
   }
-  readerPatch({ artifact: idle() }, noteId)
 }
 
-async function refreshArtifactTask(noteId: string, taskId: string): Promise<boolean> {
-  if (get().reader?.noteId !== noteId) return false
-  const task = await notesApi.artifactTask(noteId, taskId)
-  if (get().reader?.noteId !== noteId) return false
-  readerPatch({
-    artifact: {
-      phase: task.status === 'ready' ? 'ready' : task.status === 'failed' ? 'failed' : (task.status as TaskPhase),
-      data: task.artifact,
-      forVersion: task.artifact?.noteVersionNumber ?? null,
-      error: task.status === 'failed' ? reasonText(task.failureReason) : null,
-    },
-  }, noteId)
+async function refreshArtifactTask(scope: TaskScope<'artifact'>, taskId: string): Promise<boolean> {
+  if (!isCurrentTask(scope)) return false
+  const task = await notesApi.artifactTask(scope.reader.noteId, taskId)
+  if (!isCurrentTask(scope)) return false
+  applyArtifactTask(scope, task)
   return running(task.status)
+}
+
+function applyArtifactTask(scope: TaskScope<'artifact'>, task: { status: string; artifact: NoteLearningArtifactV1 | null; failureReason: string | null }): void {
+  taskPatch(scope, {
+    phase: task.status === 'ready' ? 'ready' : task.status === 'failed' ? 'failed' : (task.status as TaskPhase),
+    data: task.artifact,
+    forVersion: task.artifact?.noteVersionNumber ?? null,
+    error: task.status === 'failed' ? reasonText(task.failureReason) : null,
+  })
 }
 
 // ─── 触发一次生成 ─────────────────────────────────────────────────────────
 
 export async function generateOverview(): Promise<void> {
   const reader = get().reader
-  if (!reader?.detail) return
+  const readerRequest = readerScope()
+  if (!reader?.detail || !readerRequest || isLive(reader.overview.phase)) return
   const noteId = reader.detail.noteId
   const noteVersionId = reader.detail.currentVersionId
-  readerPatch({ overview: { ...idle(), phase: 'queued' } }, noteId)
+  const scope = beginTask(readerRequest, 'overview', noteVersionId)
+  taskPatch(scope, { ...idle<never>(), phase: 'queued' })
   let task: Awaited<ReturnType<typeof notesApi.createOverviewTask>>
   try {
     task = await notesApi.createOverviewTask(noteId, { noteVersionId, requestId: uuid() })
   } catch (error) {
-    readerPatch({ overview: { phase: 'failed', data: null, forVersion: null, error: taskFailure(error) } }, noteId)
+    failTask(scope, error)
     return
   }
-  if (get().reader?.noteId !== noteId) return
-  applyOverviewTask(noteId, task)
+  if (!isCurrentTask(scope)) return
+  applyOverviewTask(scope, task)
   if (running(task.status)) poll(
     `overview:${noteId}`,
-    () => refreshOverviewTask(noteId, noteVersionId),
-    (error) => readerPatch({ overview: { phase: 'failed', data: null, forVersion: null, error: taskFailure(error) } }, noteId),
+    () => refreshOverviewTask(scope),
+    (error) => failTask(scope, error),
   )
 }
 
 export async function generateMindMap(): Promise<void> {
   const reader = get().reader
-  if (!reader?.detail) return
+  const readerRequest = readerScope()
+  if (!reader?.detail || !readerRequest || isLive(reader.mindMap.phase)) return
   const noteId = reader.detail.noteId
   const noteVersionId = reader.detail.currentVersionId
-  readerPatch({ mindMap: { ...idle(), phase: 'queued' } }, noteId)
+  const scope = beginTask(readerRequest, 'mindMap', noteVersionId)
+  taskPatch(scope, { ...idle<never>(), phase: 'queued' })
   let task: Awaited<ReturnType<typeof notesApi.createMindMapTask>>
   try {
     task = await notesApi.createMindMapTask(noteId, { noteVersionId, requestId: uuid() })
   } catch (error) {
-    readerPatch({ mindMap: { phase: 'failed', data: null, forVersion: null, error: taskFailure(error) } }, noteId)
+    failTask(scope, error)
     return
   }
-  if (get().reader?.noteId !== noteId) return
-  applyMindMapTask(noteId, task)
+  if (!isCurrentTask(scope)) return
+  applyMindMapTask(scope, task)
   if (running(task.status)) poll(
-    `mindmap:${noteId}`,
-    () => refreshMindMapTask(noteId, noteVersionId),
-    (error) => readerPatch({ mindMap: { phase: 'failed', data: null, forVersion: null, error: taskFailure(error) } }, noteId),
+    `mindMap:${noteId}`,
+    () => refreshMindMapTask(scope),
+    (error) => failTask(scope, error),
   )
 }
 
 export async function generateExplainer(anchor?: NoteAnnotationAnchorV1): Promise<void> {
   const reader = get().reader
-  if (!reader?.detail) return
+  const readerRequest = readerScope()
+  if (!reader?.detail || !readerRequest || isLive(reader.artifact.phase)) return
   const noteId = reader.detail.noteId
   const noteVersionId = reader.detail.currentVersionId
-  readerPatch({ artifact: { ...idle(), phase: 'queued' } }, noteId)
+  if (anchor && anchor.noteVersionId !== noteVersionId) {
+    readerPatch({ artifact: { ...idle(), phase: 'failed', error: '笔记刚刚更新，请重新选取原文。' } }, readerRequest)
+    return
+  }
+  const scope = beginTask(readerRequest, 'artifact', noteVersionId)
+  taskPatch(scope, { ...idle<never>(), phase: 'queued' })
+  readerPatch({ artifactHtml: null, artifactHtmlFor: null, artifactHtmlError: null }, readerRequest)
   let task
   try {
     task = await notesApi.createArtifactTask(noteId, {
@@ -441,22 +666,15 @@ export async function generateExplainer(anchor?: NoteAnnotationAnchorV1): Promis
     })
   } catch (error) {
     // 失败要落在屏上的一句话，不是控制台里一个没人接的 reject。
-    readerPatch({ artifact: { phase: 'failed', data: null, forVersion: null, error: taskFailure(error) } }, noteId)
+    failTask(scope, error)
     return
   }
-  if (get().reader?.noteId !== noteId) return
-  readerPatch({
-    artifact: {
-      phase: task.status === 'ready' ? 'ready' : (task.status as TaskPhase),
-      data: task.artifact,
-      forVersion: task.artifact?.noteVersionNumber ?? null,
-      error: task.status === 'failed' ? reasonText(task.failureReason) : null,
-    },
-  }, noteId)
+  if (!isCurrentTask(scope)) return
+  applyArtifactTask(scope, task)
   if (running(task.status)) poll(
     `artifact:${noteId}`,
-    () => refreshArtifactTask(noteId, task.taskId),
-    (error) => readerPatch({ artifact: { phase: 'failed', data: null, forVersion: null, error: taskFailure(error) } }, noteId),
+    () => refreshArtifactTask(scope, task.taskId),
+    (error) => failTask(scope, error),
   )
 }
 
@@ -468,14 +686,34 @@ export async function ensureExplainerHtml(): Promise<string | null> {
   const noteId = reader.noteId
   if (!noteId) return null
   if (reader.artifactHtmlFor === artifact.artifactId && reader.artifactHtml) return reader.artifactHtml
-  try {
-    const html = await notesApi.artifactHtml(artifact.artifactId)
-    readerPatch({ artifactHtml: html, artifactHtmlFor: artifact.artifactId }, noteId)
-    return html
-  } catch (error) {
-    readerPatch({ error: describe(error) }, noteId)
-    return null
-  }
+  const scope = readerScope(noteId)!
+  const isCurrent = () => isCurrentReader(scope)
+    && get().reader?.artifact.data?.artifactId === artifact.artifactId
+  const requestKey = `${scope.workspace}:${scope.reader}:${artifact.artifactId}`
+  const pending = artifactHtmlRequests.get(requestKey)
+  if (pending) return pending
+  readerPatch({ artifactHtmlError: null }, scope)
+  const request = (async () => {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 20_000)
+    try {
+      const html = await notesApi.artifactHtml(artifact.artifactId, controller.signal)
+      if (!isCurrent()) return null
+      readerPatch({ artifactHtml: html, artifactHtmlFor: artifact.artifactId, artifactHtmlError: null }, scope)
+      return html
+    } catch (error) {
+      const failure = controller.signal.aborted ? new Error('讲解画面加载超时，请重试。') : error
+      if (!isCurrent()) return null
+      if (handleExpiredSession(failure)) return null
+      readerPatch({ artifactHtmlError: describe(failure) }, scope)
+      return null
+    } finally {
+      window.clearTimeout(timeout)
+    }
+  })()
+  artifactHtmlRequests.set(requestKey, request)
+  try { return await request }
+  finally { if (artifactHtmlRequests.get(requestKey) === request) artifactHtmlRequests.delete(requestKey) }
 }
 
 // ─── 标注 ─────────────────────────────────────────────────────────────────
@@ -486,67 +724,146 @@ export async function ensureExplainerHtml(): Promise<string | null> {
  * 这走的是**批注**那一族：结果是一条挂在原句锚点上的说明，笔记正文一个字都没动。
  * 手机上不给人直接改正文，但圈一段出来问、把答案留在原处，是这一屏该有的能力。
  */
-export async function explainSelection(anchor: NoteAnnotationAnchorV1): Promise<void> {
+/** true means accepted by the server; a queued task still finishes by polling. */
+export async function explainSelection(anchor: NoteAnnotationAnchorV1): Promise<boolean> {
   const reader = get().reader
-  if (!reader?.detail) return
+  const scope = readerScope()
+  if (!reader?.detail || !scope) return false
   const noteId = reader.detail.noteId
+  if (anchor.noteVersionId !== reader.detail.currentVersionId) {
+    readerPatch({ annotationsError: '笔记刚刚更新，请重新选取原文。' }, scope)
+    return false
+  }
+  const writeKey = annotationWriteKey(scope, 'explain', anchor)
+  if (annotationWrites.has(writeKey)) return false
+  annotationWrites.add(writeKey)
+  annotationGeneration += 1
+  readerPatch({ annotationsError: null }, scope)
+  let polling = false
   try {
     const task = await notesApi.createAnnotationTask(noteId, { anchor, requestId: uuid() })
-    if (get().reader?.noteId !== noteId) return
+    if (!isCurrentVersion(scope, anchor.noteVersionId)) return false
     if (task.annotation) {
-      readerPatch({ annotations: [task.annotation, ...get().reader!.annotations], annotationsError: null }, noteId)
-      return
+      addAnnotation(scope, task.annotation)
+      return true
     }
     if (running(task.status)) {
-      poll(`annotate:${noteId}`, () => refreshAnnotationTask(noteId, task.taskId), (error) => readerPatch({ annotationsError: taskFailure(error) }, noteId))
-      return
+      polling = true
+      trackAnnotationTask(scope, anchor, task.taskId)
+      return true
     }
-    if (task.status === 'failed') readerPatch({ annotationsError: reasonText(task.failureReason) }, noteId)
+    if (task.status === 'failed') readerPatch({ annotationsError: reasonText(task.failureReason) }, scope)
+    else readerPatch({ annotationsError: '生成已结束，但批注没有返回，请重试。' }, scope)
+    return false
   } catch (error) {
-    readerPatch({ annotationsError: taskFailure(error) }, noteId)
+    if (!isCurrentVersion(scope, anchor.noteVersionId)) return false
+    if (handleExpiredSession(error)) return false
+    readerPatch({ annotationsError: taskFailure(error) }, scope)
+    return false
+  } finally {
+    if (!polling) annotationWrites.delete(writeKey)
   }
 }
 
-async function refreshAnnotationTask(noteId: string, taskId: string): Promise<boolean> {
-  if (get().reader?.noteId !== noteId) return false
-  const task = await notesApi.annotationTask(noteId, taskId)
-  const reader = get().reader
-  if (!reader || reader.noteId !== noteId) return false
-  if (task.annotation && !reader.annotations.some((item) => item.annotationId === task.annotation!.annotationId)) {
-    readerPatch({ annotations: [task.annotation, ...reader.annotations], annotationsError: null }, noteId)
-  }
-  if (task.status === 'failed') readerPatch({ annotationsError: reasonText(task.failureReason) }, noteId)
+function trackAnnotationTask(scope: ReaderScope, anchor: NoteAnnotationAnchorV1, taskId: string): void {
+  const writeKey = annotationWriteKey(scope, 'explain', anchor)
+  annotationWrites.add(writeKey)
+  poll(`annotate:${scope.noteId}:${taskId}`, async () => {
+    const live = await refreshAnnotationTask(scope, anchor.noteVersionId, taskId)
+    if (!live) annotationWrites.delete(writeKey)
+    return live
+  }, (error) => {
+    annotationWrites.delete(writeKey)
+    if (!isCurrentVersion(scope, anchor.noteVersionId)) return
+    if (handleExpiredSession(error)) return
+    readerPatch({ annotationsError: taskFailure(error) }, scope)
+  })
+}
+
+async function refreshAnnotationTask(scope: ReaderScope, versionId: string, taskId: string): Promise<boolean> {
+  if (!isCurrentVersion(scope, versionId)) return false
+  const task = await notesApi.annotationTask(scope.noteId, taskId)
+  if (!isCurrentVersion(scope, versionId)) return false
+  if (task.annotation) addAnnotation(scope, task.annotation)
+  if (task.status === 'failed') readerPatch({ annotationsError: reasonText(task.failureReason) }, scope)
+  else if (task.status === 'ready' && !task.annotation) readerPatch({ annotationsError: '生成已结束，但批注没有返回，请重试。' }, scope)
   return running(task.status)
 }
 
-export async function saveAnnotation(anchor: NoteAnnotationAnchorV1, explanation: string): Promise<void> {
+function uniqueAnnotations(items: NoteAnnotationV1[]): NoteAnnotationV1[] {
+  const byId = new Map<string, NoteAnnotationV1>()
+  for (const item of items) {
+    if (removedAnnotationIds.has(item.annotationId)) continue
+    const previous = byId.get(item.annotationId)
+    if (!previous || item.revision > previous.revision) byId.set(item.annotationId, item)
+  }
+  return [...byId.values()]
+}
+
+function addAnnotation(scope: ReaderScope, annotation: NoteAnnotationV1): void {
+  if (!isCurrentReader(scope)) return
+  annotationGeneration += 1
+  readerPatch({ annotations: uniqueAnnotations([annotation, ...get().reader!.annotations]), annotationsError: null }, scope)
+}
+
+export async function saveAnnotation(anchor: NoteAnnotationAnchorV1, explanation: string): Promise<boolean> {
   const reader = get().reader
-  if (!reader?.detail) return
+  const scope = readerScope()
+  if (!reader?.detail || !scope) return false
   const noteId = reader.detail.noteId
+  if (anchor.noteVersionId !== reader.detail.currentVersionId) {
+    readerPatch({ annotationsError: '笔记刚刚更新，请重新选取原文。' }, scope)
+    return false
+  }
+  const writeKey = annotationWriteKey(scope, 'save', anchor)
+  if (annotationWrites.has(writeKey)) return false
+  annotationWrites.add(writeKey)
+  annotationGeneration += 1
+  readerPatch({ annotationsError: null }, scope)
   try {
     const result = await notesApi.createAnnotation(noteId, { anchor, explanation })
-    const current = get().reader
-    if (!current || current.noteId !== noteId) return
-    if ('removed' in result) void hydrateAnnotations(noteId)
-    else readerPatch({ annotations: [result, ...current.annotations], annotationsError: null }, noteId)
+    if (!isCurrentVersion(scope, anchor.noteVersionId)) return false
+    if ('removed' in result) void hydrateAnnotations(scope)
+    else addAnnotation(scope, result)
+    return true
   } catch (error) {
-    readerPatch({ annotationsError: taskFailure(error) }, noteId)
+    if (!isCurrentVersion(scope, anchor.noteVersionId)) return false
+    if (handleExpiredSession(error)) return false
+    readerPatch({ annotationsError: taskFailure(error) }, scope)
+    return false
+  } finally {
+    annotationWrites.delete(writeKey)
   }
 }
 
 /** 删一条批注会连带删掉它那一页讲解，回执里说得很明白，屏上照实说。 */
 export async function removeAnnotation(annotation: NoteAnnotationV1): Promise<void> {
   const reader = get().reader
-  if (!reader?.detail) return
+  const scope = readerScope()
+  if (!reader?.detail || !scope) return
   const noteId = reader.detail.noteId
+  const writeKey = `${scope.workspace}:${scope.reader}:remove:${annotation.annotationId}`
+  if (annotationWrites.has(writeKey)) return
+  annotationWrites.add(writeKey)
+  annotationGeneration += 1
+  readerPatch({ annotationsError: null }, scope)
   try {
     const result = await notesApi.deleteAnnotation(noteId, annotation.annotationId, annotation.revision)
     const current = get().reader
-    if (!current || current.noteId !== noteId) return
-    readerPatch({ annotations: current.annotations.filter((item) => item.annotationId !== annotation.annotationId) }, noteId)
-    if ('removedArtifacts' in result && result.removedArtifacts > 0) readerPatch({ artifact: idle() }, noteId)
+    if (!current || !isCurrentReader(scope)) return
+    annotationGeneration += 1
+    removedAnnotationIds.add(annotation.annotationId)
+    readerPatch({ annotations: current.annotations.filter((item) => item.annotationId !== annotation.annotationId) }, scope)
+    if ('removedArtifacts' in result && result.removedArtifacts > 0) {
+      beginTask(scope, 'artifact', current.detail!.currentVersionId)
+      readerPatch({ artifact: idle(), artifactHtml: null, artifactHtmlFor: null, artifactHtmlError: null }, scope)
+    }
   } catch (error) {
-    readerPatch({ annotationsError: taskFailure(error) }, noteId)
+    if (!isCurrentReader(scope)) return
+    if (handleExpiredSession(error)) return
+    readerPatch({ annotationsError: taskFailure(error) }, scope)
+  } finally {
+    annotationWrites.delete(writeKey)
   }
 }
 
@@ -558,17 +875,24 @@ export async function removeAnnotation(annotation: NoteAnnotationV1): Promise<vo
  */
 export function focusBlock(ordinal: number | null): void {
   if (ordinal === null) return
-  const noteId = get().reader?.noteId
-  if (!noteId) return
-  readerPatch({ focusOrdinal: ordinal }, noteId)
-  const key = `focus:${noteId}:${ordinal}`
+  const scope = readerScope()
+  if (!scope) return
+  const noteId = scope.noteId
+  const key = `focus:${noteId}`
   stopPoll(key)
-  const timer = setTimeout(() => {
-    timers.delete(key)
-    const reader = get().reader
-    if (reader?.noteId === noteId && reader.focusOrdinal === ordinal) readerPatch({ focusOrdinal: null }, noteId)
-  }, 1600)
-  timers.set(key, timer)
+  if (focusFrame !== null) cancelAnimationFrame(focusFrame)
+  readerPatch({ focusOrdinal: null }, scope)
+  focusFrame = requestAnimationFrame(() => {
+    focusFrame = null
+    if (!isCurrentReader(scope)) return
+    readerPatch({ focusOrdinal: ordinal }, scope)
+    const timer = setTimeout(() => {
+      timers.delete(key)
+      const reader = get().reader
+      if (isCurrentReader(scope) && reader?.focusOrdinal === ordinal) readerPatch({ focusOrdinal: null }, scope)
+    }, 1600)
+    timers.set(key, timer)
+  })
 }
 
 // ─── 伴星改动 ─────────────────────────────────────────────────────────────
@@ -579,22 +903,43 @@ let editWatcher: (() => void) | null = null
  * 笔记正文只能由伴星改。她在对话里改完之后，手机端要**当场**把阅读那一侧重读一次，
  * 而不是让用户以为看到的是同一版——这条订阅就是那个"当场"。
  */
-function watchCompanionEdits(noteId: string): void {
+function watchCompanionEdits(scope: ReaderScope, editOffset: number): void {
   if (editWatcher) return
-  let seen = companionStore.get().noteEdits.length
-  editWatcher = companionStore.subscribe(() => {
+  let seen = editOffset
+  const refreshOnEdit = () => {
+    if (!isCurrentReader(scope)) return
     const edits = companionStore.get().noteEdits
     if (edits.length === seen) return
+    const fresh = edits.slice(seen)
     seen = edits.length
-    const last = edits[edits.length - 1]
+    const last = [...fresh].reverse().find((edit) => edit.noteId === scope.noteId)
     const reader = get().reader
-    if (!last || reader?.noteId !== noteId || !reader.detail || last.noteId !== noteId) return
-    readerPatch({ editedByCompanion: { noteVersionId: last.noteVersionId, summary: last.summary, at: last.at } }, noteId)
+    if (!last || !reader?.detail) return
+    const generation = ++detailGeneration
+    readerPatch({ editedByCompanion: { noteVersionId: last.noteVersionId, summary: last.summary, at: last.at } }, scope)
     void notesApi
-      .detail(noteId)
-      .then((detail) => readerPatch({ detail, title: detail.title }, noteId))
-      .catch((error) => readerPatch({ error: describe(error) }, noteId))
-  })
+      .detail(scope.noteId)
+      .then((detail) => {
+        if (!isCurrentReader(scope) || generation !== detailGeneration) return
+        const changedVersion = get().reader?.detail?.currentVersionId !== detail.currentVersionId
+        readerPatch({ detail, title: detail.title, error: null }, scope)
+        if (changedVersion) {
+          stopAllPolls()
+          annotationWrites.clear()
+          readerPatch({ overview: idle(), mindMap: idle(), artifact: idle(), artifactHtml: null, artifactHtmlFor: null, artifactHtmlError: null, focusOrdinal: null }, scope)
+          hydrateReaderViews(scope, detail.currentVersionId)
+        }
+      })
+      .catch((error) => {
+        if (generation !== detailGeneration || !isCurrentReader(scope)) return
+        if (handleExpiredSession(error)) return
+        readerPatch({ error: describe(error) }, scope)
+      })
+  }
+  editWatcher = companionStore.subscribe(refreshOnEdit)
+  // The initial detail fetch may span a companion edit; process changes that
+  // arrived during opening before waiting for another store notification.
+  refreshOnEdit()
 }
 
 function reasonText(reason: string | null): string {

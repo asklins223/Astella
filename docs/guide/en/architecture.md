@@ -88,7 +88,7 @@ The three paths differ; don't collapse them into one in your head:
 
 | Trigger | Enqueue implementation | How the result reaches the screen |
 | --- | --- | --- |
-| Companion dialogue, note annotation explanation, source parsing, memory and thought jobs | `createJob()` in `apps/api/src/modules/job/service.ts` | Dialogue uses SSE; annotations and sources poll task/operation status |
+| Companion Agent, note annotation explanation, source parsing and memory jobs | `createJob()` in `apps/api/src/modules/job/service.ts` | Dialogue uses SSE; annotations and sources poll task/operation status |
 | Note-page 速看 (overview), 往外学 (learn outward), dynamic artifact, plus card generation | direct `INSERT INTO jobs` in `packages/agent-host/src/note-operation.ts` and `store.ts:enqueueAdvance` | Renderer polls operation/job status, e.g. `renderer/src/components/surfaces/notebook/use-notebook-overview.ts` |
 | LearningRun answer assessment and Commit | not in `jobs` at all: the api process polls `learning_run_processing_outbox` | events written, then pushed on `/learning-runs/:runId/events` |
 
@@ -170,7 +170,7 @@ Three things about this table that lead to wrong conclusions if you read it too 
 
 Not "all of it in worker". The split follows one question: does this chain need to be retried, queued and recoverable across processes.
 
-In worker: the handlers behind `jobs` (`HANDLERS` in `workers/ai-worker/src/index.ts`) — source parsing, companion agent turns and tool execution, memory extraction / summarisation / daily summary / embedding rebuild / semantic organisation, proactive thoughts, note overview / annotation explanation / expansion / dynamic artifact, and card generation V3 (`workers/ai-worker/src/card-generation-v3/handler.ts`).
+In worker: the handlers behind `jobs` (`HANDLERS` in `workers/ai-worker/src/index.ts`) — source parsing, companion agent turns and tool execution, memory extraction / summarisation / daily summary / embedding rebuild / semantic organisation, proactive initiative preparation, note overview / annotation explanation / expansion / dynamic artifact, and card generation V3 (`workers/ai-worker/src/card-generation-v3/handler.ts`).
 
 In the api process: consumption of `learning_run_processing_outbox` together with the Assessment Critic call (`apps/api/src/modules/learning-runs/processing/run-processing-tick.ts`, wired at `server.ts`, one tick per 10s, 50 commands per tick, exponential backoff to 60s on failure); `learning-runs/planning/run-critic.ts` and `disputes/dispute-recheck.ts`; `note-learning-rounds/teaching/teaching-explain.ts`; speech transcription `learning-sessions/voice-providers/siliconflow-asr.ts`; the TTS engine and edge-tts client (`tts-engine.ts`, `edge-tts.ts` in the same folder); proactive delivery generation `companion-conversation/delivery/proactive-generator.ts`.
 

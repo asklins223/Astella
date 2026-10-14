@@ -348,11 +348,9 @@ test("home projection uses the safe system profile and exposes only aggregate me
   assert.doesNotMatch(JSON.stringify(projection), /never return|privateMemory|rawMemories/);
 });
 
-test("proactive cue origin：念头可点开、到点提醒是承诺、其余算系统事件", async () => {
+test("proactive cue origin distinguishes reminders from system events", async () => {
   const uuid = "11111111-1111-1111-1111-111111111111";
   const cases: [string, Record<string, unknown>, Record<string, unknown>][] = [
-    ["thought", { kind: "system_event", systemEventId: `thought:${uuid}`, text: "想起你昨天那道题。" },
-      { text: "想起你昨天那道题。", origin: "thought", thoughtId: uuid }],
     ["reminder", { kind: "system_event", systemEventId: `reminder:${uuid}`, text: "该去复习了。" },
       { text: "该去复习了。", origin: "reminder" }],
     ["run.completed", { kind: "system_event", systemEventId: `run.completed:${uuid}`, text: "刚学完了。" },

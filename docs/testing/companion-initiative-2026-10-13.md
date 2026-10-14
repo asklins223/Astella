@@ -24,7 +24,7 @@
 | [桌面消息](../../apps/desktop-client/src/renderer/src/app/companion-chat-session.tsx) | 首条主动消息通过现役收件箱引用接入 SSE，后续同一运行接续；真实消息去重、历史和整段交流回听 |
 | [手机消息与观察](../../apps/mobile-client/src/state/companion.ts) | 可见文档及已加载笔记观察、现役鉴权 WS、多发言与静默终态；输入、拍照或语音起步接替内部运行 |
 
-到点只重新给 Agent 一次判断机会。每十五秒的前台状态续租不直接调用模型；每分钟维护 tick 仅处理到期关注、自己的记事与清理。旧四小时普通念想调度没有注册在当前 worker 主循环，新通道不受旧“一次使用一条”和统一主动间隔限制。
+到点只重新给 Agent 一次判断机会。
 
 内部输入保留 `user_message_id=NULL`，实际接受的观察以 `system`／`hostObservation` 输入；之前的交流作为历史数据提供，没有编造用户请求、工具回执或隐藏推理句柄。每次发布再次核对最新来源。选择工具发言后，最终正文只结束执行，不再重复发一条；短的“安静结束／本轮不发言”等执行收尾也不会成为聊天记录。
 
@@ -103,3 +103,73 @@
 - 真实模型探针专测 `built-in-defaults-without-preference`，个人偏好修订号为 0，启动观察实际经过生产 Agent／发布工具完成问候；2 次模型调用，探针通过。该单个样本不能证明各类问候都自然，也不替代长期体验验证。
 - shared、agent-host、ai-worker 与 mobile-client 类型检查通过；桌面 `npm run build` 和手机 `npm run build` 通过。桌面完整 `npm run typecheck` 当前仍报 4 处现有测试类型错误，位于 `companion-chat-routing.turn-error.test.ts` 和 `companion-chat-session.history-status.test.tsx`，本次修改文件无相应报错。
 - 本次只构建 workspace 产物，没有替换或安装正在使用的 App。现有 Electron 开发窗口目前显示“暂时无法打开学习空间／学习服务暂时不可用”，因此无法从真实窗口进入偏好页核对这次列表；普通浏览器直接访问 renderer dev 地址也无法注入 Electron 宿主 API。安装版当时未运行，独立的开发进程没有被重启或打断。要在安装版看到改动，还需后续打包安装；当前工作区运行需先恢复学习服务并重启桌面宿主。
+
+## 2026-10-13 晚间复核与重做（用户判定第一版「不太行」之后）
+
+用户复核第一版后指出：这版把「主动」做成了「事件响应」，她还是不像会自己找人说话的人。按新决定重做了开口时机、语域、输入装配、额度与可见性，八项范围一次改到底。
+
+| 问题 | 改动 | 落点 |
+| --- | --- | --- |
+| 没有非事件的开口时机 | 「陪着的时候」进账号默认：人还在前台、这一阵安静下来时她可以自己想起点什么说一句、也可以问近况；到点的关注只在**真的有设备在前台**时才被消费，不在场时重新安排而不是吃掉水位 | `companion-default-participation.ts`、`0427_companion_wakes_only_when_she_is_here.sql`、`companion-initiative.ts` |
+| 主动发言一律讲课腔 | 按参与依据分语域：招呼/前台/学习开始/偏好改动=陪聊（casual、温度 0.9，沿用现役「闲聊关思考」判据），页面与难题/答后看一眼=讲解，自己的关注=办事。不再为主动通道另开一档思考 | `companion-default-participation.ts` 的 `companionParticipationRegister`、`companion-initiative-observation.ts`、`companion-agent-runtime.ts` |
+| 她读到的是关于聊天的报表 | 历史按真实 user/assistant 回合回放，宿主观察压成一句人话的 system 观察消息排在末尾；`initiative_input` 那份 JSON 整包、重复的禁止条款从提示里删掉 | `companion-agent-runtime.ts`、`companion-dialogue-content.ts` |
+| 写死的次数与字数闸门 | 去掉主动运行 maxSteps≤8、本轮 8 次/关联链 24 次、一轮 40 条发言、同时 20 条关注、重评最早 15 秒、intent 截 4000 字符。留下的都是失控收敛形状：重复发布同一句按重复拦、活跃关注必须有唤起条件、执行政策声明的 `maxModelCalls` 继续生效 | `companion-agent-runtime.ts`、`companion-agent-events.ts`、`companion-participation-tools.ts`、`agent-host/participation.ts` |
+| 成本密度反了 | 同一篇笔记在这次启动里只有一次帮忙机会（去重身份不再含正文版本与 deviceSession，版本仍在 prep 核对）；她自己新起的话题在**起运行之前**过账号声明的介入档位间隔，招呼与答后接续不受这条闸 | `agent-host/participation.ts`、`companion-initiative.ts` |
+| 她说了话可能看不见 | 过了 90 秒展示窗口的主动发言仍可从「动态」跳到那句话（跳转不等于补播声音）；首条发言超过 200 字不再被挡在认领之外；目标设备为空时两台都不出声 | `companion-activity-panel.tsx`、`companion-activity-page.tsx`、`home-projection-service.ts`、`CompanionPresence.tsx` |
+| 旧链路半退休 | 本轮未清理，见下方遗留 | — |
+
+### 本轮验证
+
+- 类型检查：shared、agent-host、ai-worker、api、desktop-client 各自 `npm run typecheck` 通过。
+- 单元测试：agent-host 39/39；shared 931/932（唯一红是聊天面工具说明总量 4309 > 预算 4000，见遗留）；ai-worker 1704/1706；api 2934/2941；desktop 3604/3622。
+- 新增测试：`companion-initiative-observation.test.ts`（语域与观察装配 6 项）、`companion-participation-tool-guards.test.ts`、`companion-annotation-authoring-guards.test.ts`（这两条同时把 handler 覆盖棘轮从 2 项缺口降到 0）；集测新增「到点的关注要在场」「一篇笔记一次机会」「例行机会让位于档位节奏」3 项，并把原来钉 JSON 报表形状的两条改成钉真实回放。
+- PostgreSQL 集测在隔离库 `astella_initiative_fix_20261013`（全部 0427 迁移重放）上主动链 21/22 通过。
+
+### 仍然存在的限制与红
+
+1. **旧念想链路已摘除，数据清理已执行**：handler、调度器、API、桌面 IPC、专页、thought 语音缓存和历史重放分支已删除；0428 删除旧 jobs、送达事件与 `assistant_thoughts` 表。本机开发库曾有 192 条候选、980 条旧 job 和 64 条旧投递；已只应用 0428，复查确认旧表、调度函数、job 和投递都为零／不存在。其他部署执行 0428 前仍会保留旧数据；当前构建没有只读查看入口。该次没有连带应用待执行的 0427、0429。
+2. **聊天面工具说明预算红**：新增 5 个参与工具后合计 4309 字符，超 方案52 的 4000。本轮已把三条超限说明压回单条 150 以内并消除与字段 describe 的重复，剩下的缺口要么继续压既有说明，要么按能力增长调整预算——不该由我悄悄改数字。
+3. **这份集测只在超户串下跑得动**：以真实 `astella_worker` 角色跑同一文件时 `companion_stream_events` 插入被拒，12 项全红；因此「另一个用户读不到本人偏好」那条断言在超户配置下是假红（超户绕过 RLS）。主动链的真实角色权限口径目前没有覆盖。
+4. **api 的两条结构红已顺手收掉**：模块环守卫点名 `companion-shell/participation-routes.ts` 直接 import `companion-conversation/turn/companion-account-epoch.ts`（第二条 shell→conversation 边）。按守卫自己的提示把账户 epoch 助手搬进中立层 `apps/api/src/companion-contracts/companion-account-epoch.ts`，重接 6 处引用与 1 处文档链接。语音档位那条散开的 `process.env` 读数改回 `config/learning-companion-flags.ts` 的函数。神文件清单：`companion-agent-runtime.ts` 从 1559 行降到 1470 行，搬出两块内聚策略——`companion-agent-step-assembly.ts`（这一步的工具面、执行政策与请求装配）与 `companion-answer-repair.ts`（退化回复的降级阶梯），判据与文案一字未改，并补了 15 条用例（那条修复阶梯此前一条测试都没有）。输出闸棘轮要求的「`looksTruncatedReply(` 仍留在运行时侧」由注入 `isTruncated` 保住，没有出现第二份判据。
+5. **自然度只有机械证据**：本轮没有重跑真实模型探针，也没有真实窗口与听感验收。语域、回放装配和「陪着的时候」这条默认能不能让她说得像人，需要在 `companion-initiative-semantic-probe` 上加一个招呼/闲聊样本并在真实书房里连用一天才能定。节奏判据按当前书房的上一次主动发言计，跨书房合并需要一个 definer 函数，本轮没加。
+
+## 2026-10-14 全量复核（旧链删完之后）
+
+复核范围：这条链的七项行为改动、新加的 `presence.quiet` 在场闲时机会、旧念想链的删除面、三支新迁移、以及权限目录与守卫。
+
+### 复核确认没问题的
+
+- 七项改动都还在原位：语域分档、真实历史回放、在场才唤起、节奏拦在起运行之前、写死额度已拆、同一篇笔记一次机会、主动发言可见性。`recentDialogue` 与 `initiative_input` 那份 JSON 整包没有被改回来。
+- 补上的 `presence.quiet` 接得干净：进观察合同与 `COMPANION_AWARENESS_TOPICS`、默认机会（不要求先订阅）、语域是陪聊档、节奏归 routine、单调时钟的闲时追踪（后台时间不攒机会、每次输入起新的一集）、观察 id 按集固定所以一次机会只排一次队。手机端也发同一件事。
+- 旧链删除面在代码里是齐的：生成器与调度、API 两条 route、桌面手记入口与页、IPC/preload/网关、`assistant_thoughts` 与入队函数、roles.sql 五处清单同步改；`db-migrations` 那条现在把「退役表与退役函数」当真在验。聊天面工具说明预算回到 4000 内。
+- 迁移日志 426 条 idx/文件名双向对齐；`0428` 的 DROP 与 `0427` 的函数替换都可重放。
+
+### 本次修掉的
+
+| # | 问题 | 处置 |
+| --- | --- | --- |
+| 1 | `.github/scripts/verify-companion-capability-config.mjs` 还要求 compose 里有 `COMPANION_THOUGHTS_V1`，而两个 compose 都已删掉它——CI 每次构建都会红 | 删表格那行与 `.env.example` 的键，连同两行讲旧开关的注释（它们当时正压在 `AUTH_RATE_LIMIT_STORE` 头上，会被读成那行的说明） |
+| 2 | `0427` 的在场判据按**用户**算，prep 与读侧都按**书房**算：她在 A 房间，B 房间的关注照样被唤起，然后 prep 在本房间找不到人 → 每 60 秒空转一次自己重排 | 两个唤醒函数都加 `workspace_id` 同域条件，注释说明为什么必须同域 |
+| 3 | `0427` 只在真的插入成功时清水位；一旦撞幂等键就不清，而键里带着同一个 `next_review_at` epoch → 每拍都撞同一个键，且这条永远卡在 `ORDER BY next_review_at LIMIT 50` 的队首，把新关注挤掉 | 冲突时把水位往前挪一分钟（换一个新键，下一拍必然推进） |
+| 4 | 人不在场期间，过期的 active 关注永远不会被消费，也永远不会结束——正是 `0423` 要求「必须唤得起」想避免的僵尸行 | 每拍的清理段把过期 active 安排收成 `completed` |
+| 5 | `0429` 四处裸 DDL 不可重放：这份文件以后再被编辑一次就会在已迁库上重跑并死在「列已存在」，`migrate` 挂 → role-grants → api 容器起不来 | 改 `IF NOT EXISTS` / 先 `DROP CONSTRAINT|TRIGGER IF EXISTS`；并在同一库上把文件重跑一遍验证（现在只发 NOTICE） |
+| 6 | `0428` 两处删除有风险：`agent_operations.job_id` 对 `jobs` 是 ON DELETE RESTRICT（真被引用时迁移整体中止）；删掉某人最大的 `assistant_deliveries` 序号会让下一条送达复用序号，而客户端按序号判新旧 | jobs 删除加 `NOT EXISTS` 守卫；气泡只删已过展示窗口的行，并写明原因 |
+| 7 | 节奏闸只按「她说出口的那一句」计：她安静结束时不计时，于是每闲满三分钟就再付一整轮模型——用户看到的是她隔一会儿想起一次、却什么都没说出来 | 改成按「上一次例行起意」计（含安静结束的那些次）；新增一条隔离库集测钉住（同窗口第二次不再起轮，招呼不受这条管） |
+| 8 | api 的「持久唤醒消费一次」用例前提停在 `0423` 之前：还在查 `companion_reflection` job，而且没有在场租约 | 先记一条真实在场（走 `recordCompanionAwareness`，不手插 JSON），再按现合同断言唤醒进主动道；真实角色下该文件 33/33 |
+| 9 | 空转守卫与死码：`0341`/`0356` 还在遍历已删除的 `assistant_thoughts`（对不存在的表永远为真）；日记素材联合里没人生产的 `"thought"`；`visibleHomeCue` 成了纯别名而注释还在说两条气泡共用头顶通道；三处注释还在讲 thought 角色 | 摘掉条目并写明理由、删死联合分支、内联别名并改注释、 roles.sql「thought worker」改指主动处理器、音频缓存与静默时段的过期行号引用改成指向实现本身 |
+
+### 复核没解决、要单独处理的
+
+1. **worker 的 `test:*postgres` 跑不了真实 `astella_worker` 角色**：`companion_stream_events` 第一条 `assistant.status` 插入就被拒（该表 RLS 要 `app.workspace_id/app.user_id` 对上）。这不是本条链的问题——一条老的对话集测在同一角色下同样红。`make test-postgres` 的 worker 腿因此是红的，而主 CI 只跑 `*.test.ts`，所以没人看见。上面所有集测都是用超户串跑的（跨用户 RLS 那条断言在这种情况下会假红，已改成没设受限角色时明说跳过）。
+2. **`0428` 毁掉了旧念想说过的最后一份原文**：那条链只写 `assistant_thoughts.text` 与一条投递引用，从不写 `companion_messages`。按「删净，连入口一起」这是接受的代价，但对已有账号不可恢复，发布说明里要写明白。
+3. `0429` 里对 `assistant_memory_item_revisions` 的 UPDATE 只有表主能跑（api/worker 被禁），挪到任何授权面后面都会坏；同一张表上现在有两个 BEFORE UPDATE 触发器，先后顺序没有写下来。属记忆那条链，留给它自己的收口。
+4. 伴星落点的「语义四区」现在没有生产写入者：`setCompanionHomePlacement` 在 `CompanionPresence.tsx` 里解构后没人调用（旧调用者随念想生命周期一起删了），`room-store` 的 `companionHomeZone/companionPlacementOwner` 只能停在开机的 `rest`，`COMPANION_HOME_ANCHORS` 四区等于没用。要么接回主动发言的落点选择，要么整条收掉。
+5. 还活着但没人用的导出：`companion-proactive-quota.ts` 的 `evaluateLearningSuggestion`/`LEARNING_NUDGE_KINDS` 与 `ProactiveKindV1` 的多数取值、`companion-cue-delivery.ts` 的 `opened`（唯一调用者随旧念想页一起删了，`acted` 仍从「动态」可达）。
+6. 文档还有把旧闸门当现成能力写的：方案 40/40b/42/50/51；`docs/guide/zh/companion-experience.md:13` 用了 DESIGN.md 明令不再写的「我们的对话手记」，en 那侧 `agent-runtime.md:138` 夹着没翻译的中文。
+7. 被节奏挡下的多条例行安排会约在同一个瞬间再醒（成本有界，不会成风暴，但也不摊开）。
+
+### 08:45 追的两处红
+
+- 「决定窗口的地方只有一处」：摘要器改走 `selectCompanionInteractiveReplayWindow`。看了实现，那层只是把本轮声明的容量夹成 `min(路由预算, 2048)` 再转给**同一个** `selectCompanionReplayWindow`，不是第二个按条数切尾部的口子；守卫只是把那一条 `doesNotMatch`（禁第二个切点）原样留着，加了一个名字。改法成立。
+- 两份新集测的注册面：都进了 `apps/api` 的 `test:companion:postgres`，棘轮绿。
+- 同一层追出的一条新红：embedding 调度把 consent 判据搬进了库内函数 `astella_enqueue_companion_memory_embedding_repair`（`0431:37-38` 有 `consent_at`/`consent_version` 两条），而守卫只读 TS 源码。已把断言搬到判据真正住的地方，并按函数名找迁移文件（不写死迁移号）；现在 2/2，worker 全量 1707/1707、shared 916/916、api 与 worker typecheck 0 错。

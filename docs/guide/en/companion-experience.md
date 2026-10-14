@@ -10,7 +10,7 @@ The companion is the shared Agent's dialogue and execution entry for learners. S
 | --- | --- |
 | Short chat | Ask questions, quote current material, inspect replies and action confirmations; start voice dialogue |
 | Task bubble | Track ongoing work and results, revise requirements, pause, resume, stop or retain a cooperation method |
-| Conversation journal | All dialogue, companion thoughts, delegated work and pending decisions; inspect process, sources and results, with no new input field |
+| Conversation journal | Real dialogue, delegated work and pending decisions; proactive Agent messages are ordinary dialogue messages, with no separate thought history or read-only review |
 | Companion Center | Overview, conversation history search, diary, memory, discovery, activity and persona; its conversation tab does not send turns or decide live proposals |
 | Guided tour | Topic book on the control island, with skip, pause and replay; marked examples do not create actual learning records |
 

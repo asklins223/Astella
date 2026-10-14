@@ -744,6 +744,11 @@
       "types": "./src/companion-default-participation.ts",
       "import": "./src/companion-default-participation.ts",
       "default": "./src/companion-default-participation.ts"
+    },
+    "./companion-awareness-idle": {
+      "types": "./src/companion-awareness-idle.ts",
+      "import": "./src/companion-awareness-idle.ts",
+      "default": "./src/companion-awareness-idle.ts"
     }
   },
   "dependencies": {

@@ -15,9 +15,7 @@ import { CompanionConversationError, createCompanionTurn } from "./turn/turn-ser
 import { createCompanionLearningRunContextGrantRequestV1Schema, createMenuProposalRequestV1Schema, createToolProposalRequestV1Schema, proposalDecisionRequestV1Schema } from "@astella/shared";
 import { cancelCompanionRun } from "./turn/companion-cancel.ts";
 import { openCompanionEventStream, listCompanionAgentRoutes, listCompanionRunNodes } from "./turn/companion-events.ts";
-import { openCompanionThought } from "./turn/thought-service.ts";
-import { listCompanionThoughts } from "./turn/thought-history.ts";
-import { companionChatListThoughtsRequestV1Schema, companionRunNodesListRequestV1Schema } from "@astella/shared/companion-chat-desktop-contracts";
+import { companionRunNodesListRequestV1Schema } from "@astella/shared/companion-chat-desktop-contracts";
 import {
   ensureCompanionInbox,
   listCompanionMessages,
@@ -501,52 +499,6 @@ userId: req.session.userId,
           })),
           latestSeq: result.latestSeq,
         });
-      } catch (err) {
-        if (err instanceof CompanionConversationError) {
-          return reply.code(err.statusCode).send(
-          buildCompanionErrorBody(err, { recoverable: true, requestId: req.id }),
-        );
-        }
-        throw err;
-      }
-    },
-  );
-
-  app.get<{ Querystring: { before?: string; limit?: string } }>(
-    "/companion/thoughts",
-    { preHandler: [requireSession, requireCompanionDialogue] },
-    async (req, reply) => {
-      if (!(await rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:read`, COMPANION_RATE_LIMITS.readQueriesPerMinute.limit, COMPANION_RATE_LIMITS.readQueriesPerMinute.windowMs))) return;
-      try {
-        const request = companionChatListThoughtsRequestV1Schema.safeParse({
-          version: 1,
-          limit: parsePaginationInt(req.query.limit, 30),
-          ...(req.query.before ? { before: req.query.before } : {}),
-        });
-        if (!request.success) throw new CompanionConversationError("INVALID_REQUEST", 400, "invalid thought history query");
-        const result = await listCompanionThoughts({ ...scopeOfSession(req.session), userId: req.session.userId, request: request.data });
-        return reply.header("cache-control", "no-store").send(result);
-      } catch (error) {
-        if (error instanceof CompanionConversationError) return reply.code(error.statusCode).send(buildCompanionErrorBody(error, { recoverable: true, requestId: req.id }));
-        throw error;
-      }
-    },
-  );
-
-  // POST /companion/thoughts/:id/open — 念头管线切片④（2026-09-18）。
-  // 气泡点击主动开场：念头的表达落为 kind='proactive' 的 assistant 开场消息，
-  // 念头 delivered → spent（不可重复点开）。
-  app.post<{ Params: { id: string } }>(
-    "/companion/thoughts/:id/open",
-    { preHandler: [requireSession, requireCompanionDialogue] },
-    async (req, reply) => {
-      if (!(await rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:read`, COMPANION_RATE_LIMITS.readQueriesPerMinute.limit, COMPANION_RATE_LIMITS.readQueriesPerMinute.windowMs))) return;
-      try {
-        const result = await openCompanionThought({ ...scopeOfSession(req.session),
-userId: req.session.userId,
-          thoughtId: req.params.id,
-        });
-        return reply.code(result.statusCode).header("cache-control", "no-store").send(result.body);
       } catch (err) {
         if (err instanceof CompanionConversationError) {
           return reply.code(err.statusCode).send(

@@ -68,7 +68,7 @@ The image `workers/ai-worker/Dockerfile` builds on `node:22.11.0-alpine3.20`; th
 | `companion_memory_embedding_rebuild` | `runCompanionMemoryEmbeddingRebuild` | — | the heaviest one: 200 rows per batch |
 | `companion_daily_summary` | `runCompanionDailySummary` | — | daily digest plus the first-person diary written in her persona |
 | `companion_memory_organize` | `runCompanionMemoryOrganizeJob` | — | background semantic organization |
-| `companion_thought` | `runCompanionThought` | — | candidate thought generation, phrasing and delivery |
+
 | `note_overview_generate` | `runNoteOverviewGenerate` | — | note quick-look |
 | `note_annotation_explain` | `runNoteAnnotationExplain` | — | annotation explanation |
 | `note_dynamic_artifact_generate` | `runNoteDynamicArtifactGenerate` | — | dynamic teaching artifact |
@@ -267,7 +267,7 @@ The budget arithmetic is 30 + 30 + 8: qwen's default `DEFAULT_TIMEOUT_MS = 30_00
 | summaries and handoff | `companion-summarizer.ts`, `companion-context-handoff.ts`, `companion-summary-retrieval.ts` | `conversation_summaries`, `companion_context_handoff_snapshots` |
 | daily digest and diary | `companion-daily-summary.ts`, `companion-diary-content.ts`, `companion-diary-candidates.ts`, `companion-diary-checkpoints.ts` | `companion_daily_summaries`, `companion_diary_generation_checkpoints` |
 | persona | `companion-persona-self-edit.ts`, plus the dialogue side reading current and pending revisions | `companion_persona_profiles`, `companion_persona_profile_versions`, `pet_profiles` |
-| thoughts and proactive delivery | `companion-thought.ts`, `companion-delivery-write.ts`, `companion-proposal-copy.ts` | `assistant_deliveries` (the only delivery channel), `companion_action_proposals`; `companion_proactive_deliveries` has a table definition and test references only, with no production writer |
+| proactive conversation | `companion-initiative.ts`, `companion-agent-runtime.ts`, `companion-participation-tools.ts` | `companion_turn_runs` and `companion_messages`; message references enter the existing inbox |
 | discovery book and long-term experience | the book is read and written on the API side, not in the worker; method experience is owned by `packages/agent-host/src/methods.ts` | `companion_discovery_entries`, `companion_procedural_playbooks`, `companion_method_revisions` / `companion_method_uses` |
 
 The four self-edit tools (tone, personality tags, expression weight, boundaries) and her self-description share **one identity write entry point**, `commitPersonaProposalV1()` in `packages/agent-host/src/identity.ts`: the in-turn tool and the background review both go through it, so the rules exist once. Each change is booked through `fieldOrigin` as `assistant`, so switching persona later can tell which fields she wrote and must not be wiped by the preset; when the account never picked a persona the system default persona becomes the base for a new profile instead of answering "cannot change"; an unchanged value earns neither an "edited" receipt nor a version number; and `name` is not editable by her at the type level. Every staged version also records **which proposal** produced it (a foreground run, or one review): two edits in the same run both stay, two unrelated proposals never merge into one — the newer one re-bases on the currently effective persona while the superseded version remains restorable in the persona history.
@@ -289,7 +289,7 @@ Every real-model probe needs an explicit switch, and CI never satisfies it, so n
 | `scripts/companion-provider-health.mjs` | must run inside the worker container | one fixed prompt per model slot, to see whether it returns half a sentence today; reuses production's `looksTruncatedReply` |
 | `scripts/companion-turn-e2e-verify.py` | `--rounds` | end to end: streaming batch counts and span, failure rate and cause, the shape of the stored body |
 | `scripts/companion-quality-report.py` | `--compare <baseline.json>` | read-only corpus report plus before/after delta |
-| `scripts/companion-gate-counterfactual.py` | read-only | counterfactual replay of the 11 output gates over the last 30 days of real traffic; the first piece of evidence for removing a gate |
+| `scripts/companion-gate-counterfactual.py` | read-only | counterfactual replay of the nine dialogue output gates over the last 30 days of real traffic; the first piece of evidence for removing a gate |
 
 `companion-provider-health.mjs` has to run inside the worker container: on the host `AI_PLATFORMS_CONFIG` points at a path the container cannot see, so resolution yields `provider=mock` plus "platform not configured", which measures nothing real. It prints no keys and no credentialed URLs — only provider name, model, latency and conclusion.
 

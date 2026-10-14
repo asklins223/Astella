@@ -352,6 +352,71 @@ test("active 目录只含有界元数据，并提示相关时按 ID 与版本展
     "目录文本和其中的时间不能变成用户可见输出或数字来源");
 });
 
+test("上下文编排选好的记忆在序列化时不再二次限条或裁掉目录字段", () => {
+  const residentMemories = Array.from({ length: 31 }, (_, index) => ({
+    kind: "preference",
+    content: "常驻第" + (index + 1) + "条",
+  }));
+  const memoryDirectory = Array.from({ length: 13 }, (_, index) => ({
+    memoryId: "11111111-1111-4111-8111-" + String(index + 1).padStart(12, "0"),
+    kind: "preference",
+    title: "目录第" + (index + 1) + "条标题" + "标".repeat(70) + "尾标识" + (index + 1),
+    appliesWhen: "适用条件" + (index + 1) + "条".repeat(80) + "条件尾标识" + (index + 1),
+    validFrom: null,
+    validUntil: null,
+    revision: 1,
+    epistemicStatus: null,
+  }));
+  const messages = buildCompanionPersonaMessages({
+    userText: "继续",
+    recentMessages: [],
+    pageContext: null,
+    residentMemories,
+    memoryDirectory,
+  });
+  const system = String(messages[0]?.content ?? "");
+
+  assert.match(system, /常驻第31条/, "预算已选中的 resident 不能再被固定条数静默丢弃");
+  assert.match(system, /尾标识13/, "目录第 13 条不能在序列化层消失");
+  assert.match(system, /条件尾标识13/, "完整适用条件不能被切成半句");
+});
+
+test("模型能分清本轮没注入记忆与记忆不存在，并只在相关时按需检索", () => {
+  const messages = buildCompanionPersonaMessages({
+    userText: "你还记得我的习惯吗？",
+    recentMessages: [],
+    pageContext: null,
+    memoryOmissions: { residentCount: 2, directoryCount: 3 },
+  });
+  const system = String(messages[0]?.content ?? "");
+  assert.match(system, /resident 2 条、目录 3 条/);
+  assert.match(system, /没带入不代表不存在/);
+  assert.match(system, /当前问题确实需要相关旧记忆时/);
+  assert.match(system, /companion_recall_memory/);
+  assert.match(system, /长期记忆不是每轮都要搜索/);
+  assert.match(system, /过去的交流或约定/);
+  assert.match(system, /记录\/修订时间/);
+  assert.match(system, /模型推断、待核、争议或已替代/);
+});
+
+test("没有目录线索时，模型仍可在长期偏好可能相关时主动检索；严格 tutor 不受影响", () => {
+  const ordinary = buildCompanionPersonaMessages({
+    userText: "继续按之前的方式讲。",
+    recentMessages: [],
+    pageContext: null,
+  });
+  assert.match(String(ordinary[0]?.content), /长期记忆不是每轮都要搜索/);
+  assert.match(String(ordinary[0]?.content), /companion_recall_memory/);
+
+  const tutor = buildCompanionPersonaMessages({
+    userText: "解释这段材料。",
+    recentMessages: [],
+    pageContext: null,
+    groundedTutorContext: { claim: "材料说明的结论", evidence: [] },
+  });
+  assert.doesNotMatch(String(tutor[0]?.content), /长期记忆不是每轮都要搜索/);
+});
+
 test("persona 历史：完整的最近20条交给请求预算治理", () => {
   const many = Array.from({ length: 20 }, (_, i) => ({
     role: "user" as const,
@@ -907,14 +972,8 @@ test("looksTruncatedReply：不误伤正常回复", () => {
 // ─── "承诺当答案"判据（2026-09-21）：样本取自活库真实落库正文 ─────────────
 
 /**
- * 泄露判据以前有**两份**（对话侧一份、念头侧一份），实机 2026-09-21 拿同一批样本
- * 双向比对，两个方向各有一个洞：
- *  - `<here_and_now>` / `activeMemories` / `pageContext` 这种上下文回显，只有对话侧认得——
- *    而念头链路的 prompt 里**就带着** `<here_and_now>`（`facts: renderHereAndNow(…)`），
- *    等于"被喂了标记的那条链"恰好不拦它；
- *  - 裸 uuid 只有念头侧认得，所以对话里她把 noteId/cardId 念出来没人管。
- * 现在两条链共用 `containsCompanionInternalToken` 一份定义。这三条断言钉的是
- * "合并之后两边的覆盖面都还在"，不是新行为。
+ * 统一的输出边界覆盖上下文标记、内部字段与裸 UUID，避免内部 prompt 内容或对象 ID
+ * 被当作用户可见的回复。下面的断言固定这些输出边界。
  */
 test("containsCompanionInternalToken：上下文回显与裸 uuid 都算泄露（两条链共用一份）", () => {
   assert.equal(containsCompanionInternalToken("<here_and_now> 今日已学 12 分钟"), true);

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryPanel } from "../companion/companion-center-panels.tsx";
-import type { CompanionMemoryItemV1 } from "@astella/shared/companion-memory-desktop-contracts";
+import type { CompanionMemoryBudgetStatusV1, CompanionMemoryItemV1 } from "@astella/shared/companion-memory-desktop-contracts";
 import { useRoomStore } from "../../../app/room-store.ts";
 import type { PageReadableV1 } from "@astella/shared/companion-bridge-contracts";
 
@@ -26,6 +26,7 @@ function memory(id: string, content: string, overrides: Partial<CompanionMemoryI
     kind: "preference",
     content,
     sourceEventId: null,
+    sourceEventIds: [],
     sourceSessionId: null,
     sourceSpeaker: null,
     sourceBasis: null,
@@ -34,6 +35,7 @@ function memory(id: string, content: string, overrides: Partial<CompanionMemoryI
     validUntil: null,
     userStated: false,
     userConfirmed: true,
+    confirmedAt: null,
     candidate: false,
     importance: 0.6,
     confidence: 0.9,
@@ -49,6 +51,7 @@ function memory(id: string, content: string, overrides: Partial<CompanionMemoryI
     authorType: "extractor",
     authorId: null,
     epistemicStatus: "supported",
+    supersededById: null,
     createdAt: "2026-09-20T00:00:00.000Z",
     updatedAt: "2026-09-22T00:00:00.000Z",
     ...overrides,
@@ -56,6 +59,23 @@ function memory(id: string, content: string, overrides: Partial<CompanionMemoryI
 }
 
 const noop = () => undefined;
+
+const memoryBudget: CompanionMemoryBudgetStatusV1 = {
+  version: 1,
+  resident: {
+    used: { items: 1, tokenEstimate: 24, byteCount: 96 },
+    // 常驻档只剩一条 token 闸门（迁移 0430）；条数与字节只是读数，不进 limits/available。
+    limits: { tokenEstimate: 6400 },
+    available: { tokenEstimate: 6376 },
+  },
+  active: { items: 3, tokenEstimate: 80, byteCount: 320 },
+  archived: {
+    used: { items: 2, tokenEstimate: 55, byteCount: 220 },
+    limits: { items: 500, byteCount: 200000 },
+    available: { items: 498, tokenEstimate: 0, byteCount: 199780 },
+  },
+  usage: { windowDays: 30, searchRequests: 3, returnedMemories: 2, emptySearches: 1, vectorSearches: 1, keywordSearches: 2, directoryExposures: 2, explicitReads: 0 },
+};
 
 type MemoryPanelProps = Parameters<typeof MemoryPanel>[0];
 
@@ -71,6 +91,11 @@ function renderPanel(props: Partial<MemoryPanelProps> = {}) {
     revisions: [],
     revisionsError: null,
     onRetryRevisions: noop,
+    budget: null,
+    onBudgetTier: noop,
+    onDispute: noop,
+    onOpenSource: noop,
+    onOpenMemory: noop,
     query: "",
     kind: "all",
     pinFilter: "all",
@@ -122,6 +147,7 @@ it("记忆详情会展示当前作者/版本，并可展开查看带来源的旧
       kind: "preference",
       content: "旧版内容",
       sourceEventId: "evt-1",
+      sourceEventIds: [],
       sourceSessionId: null,
       sourceSpeaker: "user",
       sourceBasis: "inferred_from_statement",
@@ -130,6 +156,7 @@ it("记忆详情会展示当前作者/版本，并可展开查看带来源的旧
       validUntil: null,
       userStated: false,
       userConfirmed: true,
+      confirmedAt: null,
       importance: 0.6,
       confidence: 0.9,
       scope: "workspace",
@@ -137,6 +164,7 @@ it("记忆详情会展示当前作者/版本，并可展开查看带来源的旧
       authorType: "extractor",
       authorId: null,
       epistemicStatus: "tentative",
+      supersededById: null,
       supersededAt: "2026-09-22T00:00:00.000Z",
     }],
   });
@@ -145,6 +173,18 @@ it("记忆详情会展示当前作者/版本，并可展开查看带来源的旧
   expect(screen.getByText("查看旧版本（1）")).toBeTruthy();
   expect(screen.getByText("旧版内容")).toBeTruthy();
   expect(screen.getByText(/来源：模型推断/)).toBeTruthy();
+});
+
+it("记忆用量默认收起，需要时可展开查看分层与检索统计", () => {
+  renderPanel({ budget: memoryBudget });
+  const disclosure = screen.getByText("记忆用量与检索统计").closest("details");
+  expect(disclosure?.open).toBe(false);
+  expect(screen.getByText("记忆用量与检索统计")).toBeTruthy();
+  fireEvent.click(screen.getByText("记忆用量与检索统计"));
+  expect(disclosure?.open).toBe(true);
+  expect(screen.getByText("近 30 天检索 3 次 · 命中 2 条 · 空结果 1 次")).toBeTruthy();
+  fireEvent.click(screen.getByText("记忆用量与检索统计"));
+  expect(disclosure?.open).toBe(false);
 });
 
 it("记忆详情展示适用条件和有效时间窗", () => {

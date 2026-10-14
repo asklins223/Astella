@@ -1,6 +1,7 @@
 import { companionApi } from '../platform/api.ts'
 import { ApiError } from '../platform/api-client.ts'
 import { applyAccountMotionPreference } from '../platform/motion.ts'
+import { handleUnauthorized } from './session.ts'
 import { createStore, useStore } from './store.ts'
 
 export interface CompanionAccountState {
@@ -29,6 +30,10 @@ export async function loadCompanionAccount(): Promise<void> {
     set({ loaded: true, permissionLevel: findPermissionLevel(account), error: null })
   } catch (error) {
     if (generation !== requestGeneration) return
+    if (error instanceof ApiError && error.isUnauthorized) {
+      handleUnauthorized()
+      return
+    }
     const message = error instanceof ApiError
       ? error.status === 0 ? '连接暂时不可用，请稍后重试。'
         : error.status >= 500 ? '伴星设置暂时不可用，请稍后重试。' : error.message

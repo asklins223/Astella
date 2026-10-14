@@ -57,7 +57,7 @@ import {
   recordCompanionTtsPlaybackOutcome,
   transcribeCompanionDialogueAudio,
 } from "./companion-voice-service.ts";
-import { isCompanionDialogueEnabled } from "../../config/learning-companion-flags.ts";
+import { isCompanionDialogueEnabled, isCompanionVoiceDialogueEnabled } from "../../config/learning-companion-flags.ts";
 import { z } from "zod";
 import { buildCompanionErrorBody } from "../../lib/error-envelope.ts";
 
@@ -74,7 +74,7 @@ const ttsBodySchema = z.object({
   text: z.string().min(1).max(2000),
   /** 朗读只允许已审核的固定 voice；扩展需新增 profile mapping。 */
   voice: z.literal("zh-CN-XiaoxiaoNeural").optional(),
-  purpose: z.enum(["notification", "guidance", "thought"]).optional(),
+  purpose: z.enum(["notification", "guidance"]).optional(),
 });
 
 function multipartFieldValues(fields: Record<string, unknown> | undefined, name: string): unknown[] {
@@ -451,7 +451,7 @@ export async function voiceRoutes(app: FastifyInstance) {
    */
   setCompanionSegmentWarmHook((scope, notices) => {
     // 与真正取音频的 /voice/tts 门一致：关闭语音能力时不做后台合成。
-    if (!isCompanionDialogueEnabled() || process.env.COMPANION_VOICE_DIALOGUE_V1_ENABLED !== "true") return;
+    if (!isCompanionDialogueEnabled() || !isCompanionVoiceDialogueEnabled()) return;
     void (async () => {
       // 一身到底：同一批段共用一次偏好解析（逐段读库既慢又可能在半途换音色）。
       const selection = await resolveSelectionForSynthesis(scope, app.log);
@@ -614,20 +614,15 @@ userId: session.userId,
     // 净化校验（拒绝 SSML/URL/
     // 隐藏提示/非法 voice profile；DEFAULT_VOICE_PROFILE 通过 allowlist）。
     assertSafeTtsInput(body.text, DEFAULT_VOICE_PROFILE);
-    // thought = 她已经说过/正要说的那一句念想。音色与不带 purpose 的正文完全同一身
-    // （账号存着什么就是什么），唯一区别是这一路要把实际用上的音色回报给客户端：
-    // 客户端把它按音色身份缓在自己电脑上，换了音色就该重新合成，不换就再也不来。
-    const persistentAudio = body.purpose === "guidance" || body.purpose === "thought";
+    const persistentAudio = body.purpose === "guidance";
     const selection: ResolvedTtsSelection = body.purpose === "notification"
       ? { engine: "edge", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenVoice: "", qwenInstruction: "",
         qwenInstructionExplicit: false, qwenDialect: null, explicit: true }
       : body.purpose === "guidance"
         ? { ...resolveTtsSelection(null, loadTtsEngineConfig()), engine: "qwen" }
-        : body.purpose === "thought"
-          ? await resolveSelectionForSynthesis(req.session!, req.log)
-          // 不带 purpose 的朗读念的是用户自己的正文：账号里存的方言是给陪说话用的，
-          // 把课文念成方言就是「文字风格异常」换了个出口。音色与语速照旧跟账号。
-          : { ...await resolveSelectionForSynthesis(req.session!, req.log), qwenDialect: null };
+        // 不带 purpose 的朗读念的是用户自己的正文：账号里存的方言是给陪说话用的，
+        // 把课文念成方言就是「文字风格异常」换了个出口。音色与语速照旧跟账号。
+        : { ...await resolveSelectionForSynthesis(req.session!, req.log), qwenDialect: null };
     try {
       // 2026-09-19 语音链路改造：普通朗读也走「qwen WS 优先 + edge 兜底」——
       // 此前硬编码 edge 容器 HTTP（实测每段 2.3–2.5s），桌面伴星的语音完全

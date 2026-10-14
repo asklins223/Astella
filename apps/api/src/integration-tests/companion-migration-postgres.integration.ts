@@ -59,15 +59,18 @@ test("0088：六张 companion 表存在且 RLS ENABLE+FORCE，policy 为 workspa
     );
     assert.equal(policies.length >= COMPANION_TABLES.length, true, "每张表至少一个 policy");
     const { rows: policyExprs } = await pool.query(
-      `SELECT c.relname AS tablename, pg_get_expr(p.polqual, p.polrelid) AS qual
+      `SELECT c.relname AS tablename,
+              pg_get_expr(p.polqual, p.polrelid) AS qual,
+              pg_get_expr(p.polwithcheck, p.polrelid) AS check_expr
        FROM pg_policy p
        JOIN pg_class c ON c.oid = p.polrelid
        WHERE p.polrelid = ANY(ARRAY(SELECT ('public.' || unnest($1::text[]))::regclass))`,
       [COMPANION_TABLES],
     );
     for (const p of policyExprs as Array<Record<string, string | null>>) {
-      assert.match(p.qual ?? "", /app\.workspace_id/, `${p.tablename} policy 必须匹配 app.workspace_id`);
-      assert.match(p.qual ?? "", /app\.user_id/, `${p.tablename} policy 必须匹配 app.user_id`);
+      const expression = `${p.qual ?? ""} ${p.check_expr ?? ""}`;
+      assert.match(expression, /app\.workspace_id/, `${p.tablename} policy 必须匹配 app.workspace_id`);
+      assert.match(expression, /app\.user_id/, `${p.tablename} policy 必须匹配 app.user_id`);
     }
   } finally {
     await pool.end();

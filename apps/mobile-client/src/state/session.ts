@@ -174,15 +174,21 @@ export async function signOut(): Promise<void> {
   restoreController?.abort(new Error('正在退出登录。'))
   restoreController = null
   const generation = ++authGeneration
-  let logoutError: string | null = null
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(new Error('退出请求超时。')), 8_000)
+  const logout = authApi.logout(controller.signal)
+  // Sign out on this device immediately. Revocation is best effort, but it is
+  // bounded so a stalled network cannot keep the account page open forever.
+  clearToken()
+  set({ status: 'signed_out', me: null, error: null })
   try {
-    await authApi.logout()
+    await logout
+    clearTimeout(timeout)
   } catch {
-    logoutError = '这台设备已退出，服务端暂时没有收到注销请求。'
-  } finally {
-    if (generation !== authGeneration) return
-    clearToken()
-    set({ status: 'signed_out', me: null, error: logoutError })
+    clearTimeout(timeout)
+    if (generation === authGeneration && get().status === 'signed_out') {
+      set({ error: '这台设备已退出，服务端注销状态暂时无法确认。' })
+    }
   }
 }
 

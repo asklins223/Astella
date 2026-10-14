@@ -1,7 +1,4 @@
-/**
- * 几何：面板从哪一行长出来、盖到哪儿，全部沿用 demo 的 `mobile-companion-motion.js`
- * 里那一份算法（`panelPlacement` / `rectTransform` / `localRect`），不另起一套。
- */
+/** Shared geometry for contextual panels and small physical feedback. */
 export interface Rect {
   x: number
   y: number
@@ -42,17 +39,19 @@ export function localRect(rect: DOMRect, root: DOMRect): Rect {
  * 其余从触发它的那一枚长出来，落不下去就往上翻。
  */
 export function panelPlacement(kind: string, origin: Rect, size: Size, height: number): Rect {
-  const margin = 12
-  const expanded = ['ask', 'note-picker', 'consent', 'selection', 'annotation'].includes(kind)
-  const width = expanded ? size.width - margin * 2 : Math.min(size.width - margin * 2, 304)
-  const maxHeight = size.height - 76
-  const resolved = Math.min(height, maxHeight)
+  const margin = Math.min(12, size.width / 12)
+  const expanded = ['ask', 'companion-chat', 'note-picker', 'consent', 'selection', 'annotation'].includes(kind)
+  const width = Math.max(0, expanded ? size.width - margin * 2 : Math.min(size.width - margin * 2, 344))
+  const top = Math.min(48, Math.max(margin, size.height * 0.08))
+  const bottom = Math.min(16, margin)
+  const maxHeight = Math.max(0, size.height - top - bottom)
+  const resolved = clamp(height, 0, maxHeight)
   let x = expanded ? (size.width - width) / 2 : origin.x
-  let y = expanded ? size.height - resolved - 16 : origin.y + origin.height + 9
-  if (!expanded && y + resolved > size.height - 16) y = origin.y - resolved - 10
+  let y = expanded ? size.height - resolved - bottom : origin.y + origin.height + 9
+  if (!expanded && y + resolved > size.height - bottom) y = origin.y - resolved - 10
   return {
-    x: clamp(x, margin, size.width - width - margin),
-    y: clamp(y, 48, size.height - resolved - 16),
+    x: clamp(x, margin, Math.max(margin, size.width - width - margin)),
+    y: clamp(y, top, Math.max(top, size.height - resolved - bottom)),
     width,
     height: resolved,
   }
@@ -62,8 +61,8 @@ export function rectTransform(from: Rect, to: Rect): { x: number; y: number; sx:
   return {
     x: from.x - to.x,
     y: from.y - to.y,
-    sx: Math.max(0.04, from.width / to.width),
-    sy: Math.max(0.04, from.height / to.height),
+    sx: Math.max(0.04, from.width / Math.max(1, to.width)),
+    sy: Math.max(0.04, from.height / Math.max(1, to.height)),
   }
 }
 
