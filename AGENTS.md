@@ -11,8 +11,8 @@
 | 产品、用户、权限与已确认能力 | [PRODUCT.md](PRODUCT.md) |
 | 视觉方向、布局与交互 | [DESIGN.md](DESIGN.md) |
 | 伴星主动交流、用户自定义参与偏好、分句与自主续答、页面感知和唤醒能力 | [方案 56](docs/plans/learning-companion/56-companion-initiative-and-natural-exchange-2026-10-13.md)（所有账号默认支持自然分句与答后补充考虑、相关页面帮助、启动问候、久学休息，以及**人在前台、手头安静下来时她自己想起点什么就说一句或问一句近况**；口气按参与依据分档，招呼与闲聊走陪聊、页面与难题走讲解；定时批量念想链已删除，不再有独立的「伴星念想」页。个人自由偏好用于细化，不是启用前提。真实调用链与验证范围见实施记录） |
-| App 与小程序的随身伴星、便携学习与共享数据 | [方案 51](docs/plans/learning-companion/51-mobile-companion-full-agent-product-design-2026-10-10.md)（宿主／分发与两处内部冲突见 §19。2026-10-12 已有 `apps/mobile-client/src` 独立 React 浏览器工程并接真实 API，与 `prototype/` 区分；尚无原生客户端） |
-| 手机交流重设计、服务端语音与两端共用 WebSocket | [方案 55](docs/plans/learning-companion/55-mobile-redesign-and-companion-realtime-2026-10-12.md)（手机语音输入已接小米 MiMo 整段识别，手机对话已接鉴权 WebSocket；移动端尚无流式 ASR/TTS，桌面仍用 SSE 与本机 ASR） |
+| App 与小程序的随身伴星、便携学习与共享数据 | [方案 51](docs/plans/learning-companion/51-mobile-companion-full-agent-product-design-2026-10-10.md)（2026-10-14 用户决定以 iOS SwiftUI 和 Android Kotlin/Compose 两套原生 App 取代 React 手机客户端；原生端视觉采用系统中性色与单一系统蓝；旧工程状态见文首更新） |
+| 手机交流重设计、服务端语音与两端共用 WebSocket | [方案 55](docs/plans/learning-companion/55-mobile-redesign-and-companion-realtime-2026-10-12.md)（原生端复用伴星 WebSocket 与 MiMo 整段 ASR；没有流式 ASR/TTS，桌面仍用 SSE 与本机 ASR） |
 | 全项目 Agent、持续身份、成长闭环与伴星体验 | [方案 42](docs/plans/learning-companion/42-unified-agent-and-companion-experience-2026-10-04.md) |
 | 伴星带路、首次使用、新空间认识与空间到达体验（42 之后实施） | [方案 43](docs/plans/learning-companion/43-companion-guidance-and-space-arrival-2026-10-04.md) |
 | 笔记学习的页面、流程与状态 | [方案 41](docs/plans/learning-companion/41-note-companion-learning-experience-2026-09-28.md) |

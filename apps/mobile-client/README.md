@@ -1,89 +1,55 @@
-# 手机端（apps/mobile-client）
+# 拾星手机端
 
-拾星笔记的随身客户端。React 19 + Vite + TypeScript 的网页工程，直接打 `apps/api`。
+手机端现由两套独立原生 App 组成：iOS 使用 SwiftUI 与少量 UIKit（照片选择、音频采集、Keychain）；Android 使用 Kotlin 与 Jetpack Compose。React/Vite 浏览器客户端已退出产品构建链路，真实调用代码位于 `ios/Astella/` 与 `android/app/src/main/`。历史 `prototype/` 只供追溯，不参与原生构建。
 
-**视觉以 `prototype/` 为唯一设计基线**（2026-10-12 拍板）：那四张 CSS（layout → centers →
-scene → theme）整份抄进 `src/styles/demo/` 按同一顺序 import，组件 DOM 用它的类名与层级，
-不另起第二套观感。原型自己跑在 `prototype/mobile-companion-layout.html`。
+两端复用同一账号、书房、伴星 inbox、消息、手记与 API 语义；界面和系统动作分别由宿主平台原生实现。一级入口统一为“对话／手边／手记”，个人页从右上角进入。对话中的“伴星／记录”切换始终呈现同一份会话。视觉使用 Apple 系统中性色与单一系统蓝，适配深浅色外观，不用装饰性多色渐变；视觉层级、纸面与动效合同见 [原生界面与动效规范](DESIGN_SPEC.md)。
 
-```
-div.app.phone
-  ├ header.topbar          对话屏放 .dialogue-modes，其余屏放 .identity（她的半身像 + 状态签）
-  ├ div.viewport
-  │   └ div.page-layer     整屏推进/退回的动画层
-  │       └ section.page-scroll   每一屏自己的滚动容器
-  ├ div.bottom-area        对话屏 .composer-tray，详情屏 .detail-dock，tab 屏 .navigation-tray
-  └ .companion-flow        脚下那层光（挂在整屏上，不随页面重排）
-```
+## 已接入的真实链路
 
+- Bearer 邮箱登录，凭据分别保存到 iOS Keychain 与 Android Keystore 加密存储。
+- 注册、邮箱验证码登录、忘记密码与密码重置使用服务端邮件验证码流程；认证屏固定视口，状态说明就近呈现。
+- `/companion/inbox/ensure` 获取共享会话；鉴权 WebSocket `/companion/realtime` 订阅持久事件并提交回合，连接不可用时用相同 `clientMessageId` 回退 HTTP。
+- 图片在用户发送时上传到 `/uploads/companion-images`，可以与文字同回合发送；历史私有图片通过登录态读取。
+- 麦克风录音为 16 kHz 单声道 WAV，通过 `/voice/transcribe` 调用现有小米 MiMo 整段识别；结果可编辑并保留 `voiceArtifactId` 来源。没有流式 ASR 或 TTS 播放。
+- `/notes` 与 `/search` 使用服务端游标分页，`/v2/notes/:id` 打开当前只读版本。正文支持标题、引用、代码、列表、表格和需要鉴权的图片；可把当前手记版本附到下一轮对话，也可将整段原文绑定当前版本，保存个人批注或发起原文讲解。
+- 手记详情可打开速览、脑图、分步讲解和版本记录。派生内容使用真实任务创建、状态轮询、失败原因和重试；版本恢复用当前版本 ID 作并发基线。
+- “手边”显示真实进行中的 run 与连接状态，包括等待确认的状态；不伪造任务历史或进度。
+- 账户页通过真实 API 上传头像、保存或清除称呼、显示伴星权限、切换可访问书房、查看并更新账号级 AI 使用同意和数据策略。个人约定读写 `/me/companion/participation`；阅读字号、对话记录视图和本机动效偏好按账号分设备保存。
 
-## 跑起来
+## 开发与构建
 
-```bash
-cd apps/mobile-client
-npm install
-npm run dev            # 本机 http://127.0.0.1:5173
-```
+需要 Xcode 27（最低部署版本 iOS 18）、JDK 17、Android SDK Platform 37 和兼容的 Build Tools。API 地址在“我的 → 服务地址”设置。iOS 默认连本机模拟器的 `127.0.0.1:4000`；Android Debug 默认连模拟器宿主 `10.0.2.2:4000`。真机需要填写该设备可访问的 HTTPS API 地址。
 
-前置是本机 API 在 4000 上（`docker compose -f docker-compose.dev.yml up -d` 那一套）。
-开发时**同源代理**：`vite.config.ts` 里 `DEV_API_PATHS` 那份路径表把 `/auth`、`/me`、
-`/companion`、`/notes`、`/v2`、`/voice`、`/uploads` 转发到 `http://127.0.0.1:4000`，所以不用改 API 的
-`CORS_ORIGIN`。要连别的后端就设 `VITE_API_ORIGIN`，同时把这一格来源加进服务端的
-`CORS_ORIGIN`（那一项留空 = 不发 CORS 头，浏览器会挡掉）。
-
-伴星的 Live2D 资源与静帧不提交进这个目录（模型作者登记的是 `redistributionAllowed:false`）。
-`npm run dev` 前会自动从桌面端那一份**已批准**的同机副本同步过来（增量、按 mtime），
-落在 `public/assets/`，已在 `.gitignore` 里。
+### iOS
 
 ```bash
-npm run typecheck      # web + node 两份 tsconfig
-npm test               # vitest：锚点偏移、WebSocket 游标恢复、增量归位、脑图布局、事件合同、提议卡形状
-npm run build          # 生产构建，顺带证明 node-only 模块不在运行时图里
-node scripts/probe-baseline.mjs   # 按基线逐屏走查（真手机 390×844，量计算样式与盒子）
+xcodebuild -project ios/Astella.xcodeproj -scheme Astella \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath /tmp/astella-ios-derived \
+  CODE_SIGNING_ALLOWED=NO build
 ```
 
-走查证据落 `../../outputs/mobile-client-shell-2026-10-12/`（`b01…b20` 加 `baseline-log.txt`）。
-每屏看的是**实测的盒子与计算样式**：登录卡 380×366 / radius 29px、阅读 `.paper` 374 宽、
-`.setting-field` 行高 93、`--text-scale` 改 1.25 之后标题真的变 33.75px、`overflowX=0`。
+### Android
 
-## 这一屏做什么
+```bash
+cd android
+./gradlew assembleDebug
+```
 
-| 屏 | 接口 |
-| --- | --- |
-| 开屏 | 无网络，纯时间线；关掉动效就直接位 |
-| 伴星舞台 | `PIXI` + Cubism 加载 `companion-live2d-whale-v3`（四道许可闸门），口型与脚下流光同源 |
-| 登录 / 注册 | `POST /auth/login`、`/auth/email-code` + `/auth/register-v2`（强制两步）、`/auth/login-with-code` |
-| 对话 | `POST /companion/inbox/ensure` 取**唯一那条**会话；鉴权 WebSocket `/companion/realtime` 订阅事件并发送回合，断线时同 `clientMessageId` 回退 HTTP；照片经 `POST /uploads/companion-images` 上传；打断与提案确认仍走现有 HTTP |
-| 笔记 | `GET /notes`、`GET /v2/notes/:id`（投影里已带 blocks，不在浏览器跑 Yjs） |
-| 速看 / 思维导图 / 动态讲解 / 标注 | `…/overview-tasks`、`…/mind-map-tasks`、`…/learning-artifact-tasks`、`…/annotations`，都是后台作业，1600ms 轮询 |
+Android `local.properties`、Gradle 缓存和构建产物不会提交。开发清单只在 Debug 变体放开本机 HTTP；Release 只允许 HTTPS。
 
-## 笔记在手机上是只读的
+### 本轮构建与运行核对（2026-10-15，返工复核）
 
-人不能手动改正文，伴星可以。这条不只是界面上没给入口：
+- iOS：标准 Debug 构建成功，最新 App 已安装到 iPhone 18 Pro Max / iOS 27 模拟器；实际查看登录页和注册第 1、2 步。后续复核时 Device Hub 报告主机已锁定，无法继续操作登录后页面、键盘和其余认证步骤。
+- Android：使用 JDK 17、Android SDK 37 执行 `./gradlew --offline assembleDebug` 成功，最新 APK 已安装到 API 37 模拟器。主机锁定后 CUA 无法读取其窗口；此前的 Android 页面截图属于前一构建，不能代替本次界面复核。
+- 2026-10-15 再次返工后的源码（包括代码块局部横向查看修正）通过 iOS `xcodebuild` 与 Android `assembleDebug`，并重新安装到上述两台已启动的模拟器；macOS 仍锁定，故没有新窗口截图或当前构建的触控验证。详细范围见审查记录最新一节。
+- 新建本地隔离测试账号 `codex-mobile-redo-qa-20261015@example.test`，通过已有的开发注册旁路建立后已恢复原邮箱验证配置；真实密码登录 API 返回 200。该 `.test` 邮箱没有可访问的收件箱，因此有效验证码、注册邮件和重置邮件仍未验证。登录密码不写入仓库，解锁模拟器后由用户在设备上手动输入。
+- 同一账号下创建了仅用于视觉复核的真实手记；`/notes`、`/v2/notes/:id`、版本与批注读取均返回 200。这证明本地服务端数据链可用，不代表最新 App 窗口已通过视觉或触控验收。
+- AI 使用协议仍未签署，未触发外部模型生成。当前均为模拟器验证，没有实体 iPhone 或 Android 手机验收。
+- 最新继续返工的双端 Debug 构建与安装成功：修正个人约定冲突保稿、书架查询乱序、外部 AI 数据开关前置校验和图片读取上限。最新 CUA 检查仍因 macOS 锁屏无法访问 Simulator 窗口，因此这些改动尚无新截图或触控验收；旧截图不代表当前安装版本。
+- 本轮又修正了手记切换后的迟到批注响应，以及发送验证码期间仍可修改邮箱／路由的问题；双端重新构建并安装。当前主机仍锁定，尚无这一版的窗口截图与触控证据。
+- 页面证据、已修正问题和未完成范围见 [原生手机页面多轮审查记录](MOBILE_AUDIT.md)。
 
-- 签发给手机端的会话在 `sessions.client_kind` 上写着 `mobile`（迁移 0413），
-  `POST /v2/notes/:id/doc-update` 与版本还原对这种会话回 403 `mobile_note_edit_forbidden`，
-  实时协同那条 WS 也强制 `readOnly`。判据跟着**凭据**走，拿着 token 直接调接口也改不了。
-- 伴星改笔记没有 HTTP 入口（`apps/api/src/modules/note/companion-edit-dispatch.ts` 走内部
-  工具调用），所以这道闸不影响她。
-- 她能做的：读、选一段问她、把一句批注留在原句上（批注不是正文）。改动前后可以在提议卡上
-  核对（guided 档），改完阅读屏会出现「伴星刚改了这一篇」并给到版本时间线。
+## 当前限制
 
-## 还没做
-
-移动端朗读（TTS）、手边/复习/空间切换、星图，以及账号中心里的人格／记忆／日记。
-聊天照片已接入相机/相册选择、真实上传、同回合提问和带鉴权的历史展示。语音输入已接小米 MiMo：浏览器录音转成 16 kHz 单声道 WAV，经服务端 `/voice/transcribe` 整段识别后填入可编辑输入框；它不是流式识别，也不会在浏览器直连小米接口。
-手机服务端必须启用 `COMPANION_VOICE_DIALOGUE_V1_ENABLED=true`、用户允许语音识别，并配置 MiMo `mimo-v2.5-asr`，否则接口会按权限或能力开关拒绝。其他能力按方案 51 的排期继续实现，不在这一版里冒充完成。
-
-## 2026-10-12 交流重设计
-
-真实交流页默认见伴星，通过顶部“记录”展开同一段交流；两种视图不换 inbox、不丢草稿。
-记录获得完整阅读空间，取消角色固定占 37vh 与重复的底部导航留白。文字增量不再驱动口型。
-输入区跟随 visualViewport，中文输入法选字回车不发送。
-
-开发服务器的 `/demos/companion-realtime.html` 仍是独立的语音状态示意，使用本机角色资源，
-其中转写与回复明确标为样例；真实录音入口在正式对话输入区，当前只做整段 ASR，没有声音播放。
-可体验开始、说好了、暂停、继续、我想说、结束与同一份记录切换。
-
-[方案 55](../../docs/plans/learning-companion/55-mobile-redesign-and-companion-realtime-2026-10-12.md)
-记录了手机 MiMo ASR 和移动端 WebSocket 的实现边界。桌面尚未迁移 WebSocket，仍使用 SSE 和本机 ASR；两端 TTS、音频投递与播放也尚未接入。
+移动端 TTS、流式 ASR 和手记正文编辑仍未实现；服务端目前提供的整段语音识别、只读正文和派生学习内容已由原生页面直接接入。批注入口以整段原文为范围；若 Markdown 结构无法与服务端锚点规则精确对应，会显示服务端冲突并保留原文，不会写入错位批注。相机／麦克风权限、不同 Android 设备音频行为、实体设备长时间交互和硬件刷新率／帧率仍待真机验收；模拟器不能证明稳定 60/120 fps。

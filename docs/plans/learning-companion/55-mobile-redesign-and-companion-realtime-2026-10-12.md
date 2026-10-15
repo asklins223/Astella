@@ -1,5 +1,7 @@
 # 55 · 手机交流重设计与两端共用的伴星实时接口
 
+**2026-10-14 原生双端决定：**用户明确取代手机 React 客户端，使用 iOS SwiftUI 与 Android Kotlin/Jetpack Compose 两套原生工程，iOS 视觉与动效作为 Android 的共同标尺。用户之后明确采用 Apple 系统中性色与单一系统蓝，移除多色装饰渐变，并适配深浅色外观。共享 `/companion/inbox/ensure`、`/companion/realtime`、`/voice/transcribe` 和消息合同；图片上传仍由用户发送动作触发。两端已有登录、WebSocket 会话／回执、MiMo 整段转写和手记读取代码。React 描述是 2026-10-12 历史实现状态；桌面仍使用 SSE 与本机 ASR，移动端也没有流式 ASR/TTS。当前工程和未迁移能力见 [`apps/mobile-client/README.md`](../../../apps/mobile-client/README.md) 与 [界面规范](../../../apps/mobile-client/DESIGN_SPEC.md)。
+
 日期：2026-10-12。用户要求重新检查已开始实施的手机端，并提出手机语音在服务端执行、伴星改用 WebSocket、桌面共用接口而继续本机 ASR；后续明确手机 ASR 使用小米 MiMo。
 
 首轮分析记录：真实手机交流页的构图调整、独立语音状态示意、接口与迁移建议。以下是后续实现状态（2026-10-12）：手机已有鉴权伴星 WebSocket，负责订阅持久事件和提交文字回合；麦克风录音通过现有 `/voice/transcribe` 上传服务端，由小米 MiMo `mimo-v2.5-asr` 做整段识别，结果回填可编辑草稿。服务端语音开关默认关闭，且需要用户语音识别同意与 MiMo 配置。当前没有流式 ASR、WS 二进制音频、移动端 TTS/播放或桌面 WebSocket 迁移；ASR 容器建议已由用户选择小米 MiMo 的决定取代。

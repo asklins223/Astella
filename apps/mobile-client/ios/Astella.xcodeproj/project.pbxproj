@@ -1,0 +1,266 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* Models.swift */; };
+		A10000000000000000000002 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* KeychainTokenStore.swift */; };
+		A10000000000000000000003 /* MobileAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* MobileAPI.swift */; };
+		A10000000000000000000004 /* CompanionRealtime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* CompanionRealtime.swift */; };
+		A10000000000000000000005 /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* AppStore.swift */; };
+		A10000000000000000000006 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* DesignSystem.swift */; };
+		A10000000000000000000007 /* VoiceCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* VoiceCapture.swift */; };
+		A10000000000000000000008 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* RootView.swift */; };
+		A10000000000000000000009 /* NotesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* NotesScreen.swift */; };
+		A10000000000000000000010 /* HandAndAccountScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* HandAndAccountScreens.swift */; };
+		A10000000000000000000011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000001 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* KeychainTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTokenStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000003 /* MobileAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileAPI.swift; sourceTree = "<group>"; };
+		A20000000000000000000004 /* CompanionRealtime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionRealtime.swift; sourceTree = "<group>"; };
+		A20000000000000000000005 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000006 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		A20000000000000000000007 /* VoiceCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCapture.swift; sourceTree = "<group>"; };
+		A20000000000000000000008 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		A20000000000000000000009 /* NotesScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesScreen.swift; sourceTree = "<group>"; };
+		A20000000000000000000010 /* HandAndAccountScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandAndAccountScreens.swift; sourceTree = "<group>"; };
+		A20000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A20000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A20000000000000000000013 /* Astella.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Astella.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A40000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A30000000000000000000001 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000001 /* Models.swift */,
+				A20000000000000000000002 /* KeychainTokenStore.swift */,
+				A20000000000000000000003 /* MobileAPI.swift */,
+				A20000000000000000000004 /* CompanionRealtime.swift */,
+				A20000000000000000000005 /* AppStore.swift */,
+				A20000000000000000000006 /* DesignSystem.swift */,
+				A20000000000000000000007 /* VoiceCapture.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		A30000000000000000000002 /* Screens */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000008 /* RootView.swift */,
+				A20000000000000000000009 /* NotesScreen.swift */,
+				A20000000000000000000010 /* HandAndAccountScreens.swift */,
+			);
+			path = Screens;
+			sourceTree = "<group>";
+		};
+		A30000000000000000000003 /* Astella */ = {
+			isa = PBXGroup;
+			children = (
+				A30000000000000000000001 /* App */,
+				A30000000000000000000002 /* Screens */,
+				A20000000000000000000011 /* Assets.xcassets */,
+				A20000000000000000000012 /* Info.plist */,
+			);
+			path = Astella;
+			sourceTree = "<group>";
+		};
+		A30000000000000000000004 = {
+			isa = PBXGroup;
+			children = (
+				A30000000000000000000003 /* Astella */,
+				A30000000000000000000013 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A30000000000000000000013 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000013 /* Astella.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A50000000000000000000001 /* Astella */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A60000000000000000000002 /* Build configuration list for PBXNativeTarget "Astella" */;
+			buildPhases = (
+				A40000000000000000000001 /* Sources */,
+				A40000000000000000000002 /* Frameworks */,
+				A40000000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Astella;
+			productName = Astella;
+			productReference = A20000000000000000000013 /* Astella.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A80000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					A50000000000000000000001 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+				};
+			};
+			buildConfigurationList = A60000000000000000000001 /* Build configuration list for PBXProject "Astella" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				"zh-Hans",
+			);
+			mainGroup = A30000000000000000000004;
+			productRefGroup = A30000000000000000000013 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A50000000000000000000001 /* Astella */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A40000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000011 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A40000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* Models.swift in Sources */,
+				A10000000000000000000002 /* KeychainTokenStore.swift in Sources */,
+				A10000000000000000000003 /* MobileAPI.swift in Sources */,
+				A10000000000000000000004 /* CompanionRealtime.swift in Sources */,
+				A10000000000000000000005 /* AppStore.swift in Sources */,
+				A10000000000000000000006 /* DesignSystem.swift in Sources */,
+				A10000000000000000000007 /* VoiceCapture.swift in Sources */,
+				A10000000000000000000008 /* RootView.swift in Sources */,
+				A10000000000000000000009 /* NotesScreen.swift in Sources */,
+				A10000000000000000000010 /* HandAndAccountScreens.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A70000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A70000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A70000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Astella/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.astella.mobile;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A70000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Astella/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.astella.mobile;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A60000000000000000000001 /* Build configuration list for PBXProject "Astella" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A70000000000000000000001 /* Debug */,
+				A70000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A60000000000000000000002 /* Build configuration list for PBXNativeTarget "Astella" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A70000000000000000000003 /* Debug */,
+				A70000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A80000000000000000000001 /* Project object */;
+}
