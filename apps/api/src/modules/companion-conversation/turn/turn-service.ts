@@ -97,7 +97,7 @@ function validateTurnFileBlocks(
 
 /** 计算持久化 page context：只保存 grant 的 opaque 元数据，不保存签名。 */
 function sanitizeContext(request: CreateCompanionTurnRequestV1): unknown {
-  if (!request.context && !request.selection && !request.diaryReference) return null;
+  if (!request.context && !request.selection && !request.diaryReference && !request.clientSurface) return null;
   // 划选/拖拽投喂（2026-09-18）：selection 与 context 同 jsonb 持久化，
   // worker parsePageContext 读取后以 <selection_data> 注入 prompt。
   const selection = request.selection
@@ -112,6 +112,9 @@ function sanitizeContext(request: CreateCompanionTurnRequestV1): unknown {
     ...body,
     ...(selection ? { selection } : {}),
     ...(diaryReference ? { diaryReference } : {}),
+    // 扩展 C（2026-10-15）：发起端界面随 page_context 落库，worker 与提案确认
+    // 据此把 mobile 发起的正文编辑切成 before_execute 确认提案。
+    ...(request.clientSurface ? { clientSurface: request.clientSurface } : {}),
   });
   if (!request.context) return withExtra({ version: 1, context: null });
   const ctx = request.context;

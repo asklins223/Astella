@@ -13,7 +13,11 @@ import { CompanionToolNotExecutedError } from "./companion-tool-result.ts";
 /** Review complete generated data. Actual effects wait for one frozen decision. */
 export async function prepareCompanionToolReview(event: AgentEventContext,
   definition: CompanionAgentToolDefinitionV1, arguments_: Record<string, unknown>) {
-  const confirmationStage = companionToolConfirmationStage(definition, arguments_);
+  // 扩展 C（2026-10-15）：page_context 里随回合上抛的发起端界面——mobile 发起的
+  // 正文修改切成 before_execute 确认提案（桌面行为不变）。
+  const originClientKind = ((event.read.pageContext as { clientSurface?: unknown } | null)?.clientSurface === "mobile")
+    ? "mobile" : null;
+  const confirmationStage = companionToolConfirmationStage(definition, arguments_, { originClientKind });
   let expectedTarget: Record<string, unknown> | undefined;
   const preview: { title: string; markdown?: string; beforeMarkdown?: string; noteId?: string } = {
     title: String(arguments_.title ?? COMPANION_AGENT_TOOL_LABELS[definition.name] ?? "查看这次改动").slice(0, 200),
@@ -47,7 +51,9 @@ export async function prepareCompanionToolReview(event: AgentEventContext,
     preview.beforeMarkdown = result.blocks.map(block => noteBlockMarkdown(block.type, block.content)).join("\n\n");
     try {
       const changed = previewCompanionNoteEdit(result.blocks, input, editing);
-      preview.markdown = confirmationStage === "after_preview"
+      // before_execute 的非删除操作（如 mobile 改写确认）给"改后全文"做对照；
+      // 删除类给"将被删的原文"，让用户确认前知道自己在删什么。
+      preview.markdown = confirmationStage === "after_preview" || !String(input.operation).startsWith("delete")
         ? changed.map(block => noteBlockMarkdown(block.type, block.content)).join("\n\n")
         : `将从《${result.title}》删除以下原文：\n\n${input.expectedBlocks?.join("\n\n") ?? editing.selection?.excerpt ?? ""}`;
     } catch (error) { if (error instanceof NoteEditConflict) throw new CompanionToolNotExecutedError(error.message); throw error; }

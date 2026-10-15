@@ -285,7 +285,14 @@ export function canUseCompanionAgentTool(
 export function companionToolConfirmationStage(
   definition: Pick<CompanionAgentToolDefinitionV1, "riskClass" | "name" | "confirmationStage">,
   arguments_: Record<string, unknown>,
+  options?: { originClientKind?: string | null },
 ): "after_preview" | "before_execute" {
+  // 扩展 C（2026-10-15）：手机发起的回合里，笔记正文修改一律先经人确认
+  // （产品规则「手机上人不改正文，伴星改」的交互面：改写建议 + 前后对照，
+  // 用户确认后才经伴星通道落库）。桌面（缺省）行为不变。
+  if (options?.originClientKind === "mobile" && definition.name === "companion_edit_note") {
+    return "before_execute";
+  }
   return definition.confirmationStage === "before_execute" || definition.riskClass !== "reversible_low" || (definition.name === "companion_edit_note"
     && String(arguments_.operation).startsWith("delete")) ? "before_execute" : "after_preview";
 }

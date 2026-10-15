@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { COMPANION_AUTONOMOUS_TOOLS } from "../companion-autonomy.ts";
 import test from "node:test";
 import {
+  companionToolConfirmationStage,
   canUseCompanionAgentTool,
   COMPANION_PROPOSAL_EXECUTED_TOOLS,
   companionAgentToolEventV1Schema,
@@ -294,4 +295,29 @@ test("身份和自己的记事在三档均自主执行；权限开关仍控制�
   assert.equal(canUseCompanionAgentTool("read_only", getCompanionAgentTool("companion_create_note")!).allowed, true);
   assert.equal(validateCompanionAgentToolArguments("companion_schedule_wake", {
     key: "curiosity", expectedRevision: 2, at: "2026-10-11T09:00:00+08:00", reason: "稍后再看看" }).success, true);
+});
+
+// ─── 扩展 C（2026-10-15）：mobile 发起的正文修改走 before_execute 确认 ───
+
+test("companionToolConfirmationStage：mobile 发起的 companion_edit_note 一律 before_execute；桌面不变", () => {
+  const definition = { riskClass: "reversible_low" as const, name: "companion_edit_note", confirmationStage: undefined as unknown };
+  const replaceArgs = { operation: "replace_selection" };
+  // 缺省（桌面）：replace 走 after_preview
+  assert.equal(companionToolConfirmationStage(definition as never, replaceArgs), "after_preview");
+  // mobile：replace 也切成 before_execute（确认后写回）
+  assert.equal(
+    companionToolConfirmationStage(definition as never, replaceArgs, { originClientKind: "mobile" }),
+    "before_execute",
+  );
+  // 其他工具不受影响
+  const other = { riskClass: "reversible_low" as const, name: "companion_search_notes", confirmationStage: undefined as unknown };
+  assert.equal(
+    companionToolConfirmationStage(other as never, {}, { originClientKind: "mobile" }),
+    "after_preview",
+  );
+  // 桌面显式传入也不改变
+  assert.equal(
+    companionToolConfirmationStage(definition as never, replaceArgs, { originClientKind: "desktop" }),
+    "after_preview",
+  );
 });

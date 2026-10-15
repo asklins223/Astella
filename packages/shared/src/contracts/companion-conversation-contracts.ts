@@ -463,6 +463,12 @@ export const createCompanionTurnRequestV1Schema = z.object({
   blocks: z.array(companionContentBlockV1Schema).min(1).max(2),
   voiceArtifactId: z.string().uuid().optional(),
   sourceSurface: z.enum(["pet", "main"]),
+  /**
+   * 发起端界面（2026-10-15 扩展 C）：`mobile` 发起的回合里，伴星对笔记正文的
+   * 修改（companion_edit_note）一律先出「确认后写回」提案（before_execute），
+   * 用户在客户端看前后对照后确认才落库；桌面（缺省）行为不变。
+   */
+  clientSurface: z.enum(["desktop", "mobile"]).optional(),
   supersedesGeneration: z.number().int().positive().optional(),
   context: companionPageContextV1Schema.optional(),
   // 划选/拖拽投喂（2026-09-18）：用户在页面上选中的原文，随 turn 上抛。

@@ -14,7 +14,17 @@ export async function acceptCompanionToolReview(tx: ApiTransaction,
   const review = parsed.data;
   const definition = getCompanionAgentTool(review.toolName);
   const validated = definition ? validateCompanionAgentToolArguments(definition.name, review.arguments) : null;
-  if (!definition || !validated?.success || companionToolConfirmationStage(definition, review.arguments) !== review.confirmationStage)
+  // 扩展 C（2026-10-15）：mobile 发起的正文修改在 worker 侧按 before_execute 出提案，
+  // 这里复算时必须带上同一个 origin，否则 409 把手机端的确认全打回。
+  let originClientKind: string | null = null;
+  if (definition?.name === "companion_edit_note" && proposal.agent_run_id) {
+    const originRows = await tx.execute<{ client_surface: string | null }>(sql`
+      SELECT page_context->>'clientSurface' AS client_surface FROM companion_turn_runs
+      WHERE id=${proposal.agent_run_id}::uuid AND workspace_id=${scope.workspaceId}`);
+    if (originRows[0]?.client_surface === "mobile") originClientKind = "mobile";
+  }
+  if (!definition || !validated?.success
+    || companionToolConfirmationStage(definition, review.arguments, { originClientKind }) !== review.confirmationStage)
     throw new CompanionConversationError("ACTION_STALE", 409, "reviewed tool arguments are no longer valid");
   const rows = await tx.execute(sql`
     SELECT c.id FROM companion_agent_tool_calls c JOIN companion_turn_runs r ON r.id=c.run_id
