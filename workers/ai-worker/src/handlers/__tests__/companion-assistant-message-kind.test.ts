@@ -32,8 +32,6 @@ test("普通问答的终态消息记 text", () => {
   assert.equal(companionAssistantMessageKind(undefined), "text");
 });
 
-const DIALOGUE = join(import.meta.dirname, "../companion-dialogue.ts");
-const dialogueSource = readFileSync(DIALOGUE, "utf8");
 const FINALIZATION = join(import.meta.dirname, "../companion-dialogue-finalization.ts");
 const finalizationSource = readFileSync(FINALIZATION, "utf8");
 const STORE = join(import.meta.dirname, "../companion-dialogue-store.ts");
