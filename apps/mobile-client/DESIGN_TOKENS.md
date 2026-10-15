@@ -30,25 +30,29 @@
 | 选段交给伴星（2026-10-15 新增） | 迷你伴星从页头飞抵选区（共享元素），选区亮成光带 → 底部纸面 sheet 升起流式呈现；确认后选区逐字替换波浪动画；取消光带退回选区消失 |
 | 「+」二级菜单（2026-10-15 新增） | 项圆形图标从 + 位置弹簧散开（stagger 24ms），轻遮罩，点外关闭；收起向 + 归位 |
 
-## 三、MotionTokens（参数表，iOS 实测值随阶段 2 回填）
+## 三、MotionTokens（iOS 值已定（阶段 2 实测），Android 换算随阶段 7 回填）
 
 | 语义名 | 用途 | iOS | Android（换算） | reduceMotion 降级 |
 | --- | --- | --- | --- | --- |
-| press | 按压缩放反馈 | 待回填（现值 0.22s/bounce 0.06 与 0.2s/0.04 两档） | 待回填 | 无缩放，仅颜色/透明反馈 |
-| routePush | 页面推入/退出 | 待回填（现值 spring 0.32s/bounce 0.06） | 待回填 | 短淡入淡出（120ms） |
-| segment | 分段/页签切换 | 待回填（现值 spring 0.38s/bounce 0.08） | 待回填 | 即时切换+淡入 |
+| press | 主按钮按压缩放 | `spring(duration: 0.22, bounce: 0.06)`（scale 0.985） | 待回填 | 无缩放，仅颜色/透明反馈 |
+| pressSoft | 次级按钮按压缩放 | `spring(duration: 0.2, bounce: 0.04)`（scale 0.99） | 待回填 | 无缩放，仅颜色/透明反馈 |
+| routePush | 页面推入/退出 | `spring(duration: 0.32, bounce: 0.06)` | 待回填 | 短淡入淡出（120ms） |
+| segment | 分段/页签切换 | `spring(duration: 0.38, bounce: 0.08)` | 待回填 | 即时切换+淡入 |
 | menuStagger | 菜单项散开间隔 | 24ms | 24ms | 0ms（整组淡入） |
-| messageSend | 气泡飞入 | 待回填 | 待回填 | 淡入就位 |
-| absorbFlight | 吸收飞行 | 待回填（贝塞尔+缩放） | 待回填 | 缩略图淡出+chip 直接出现 |
-| selectionBeam | 选区光带亮起/退回 | 待回填 | 待回填 | 选区底色变化 |
-| sheetRise | 底部 sheet 升起 | 待回填 | 待回填 | 淡入 |
+| messageSend | 气泡飞入 | 待回填（阶段 5 定义） | 待回填 | 淡入就位 |
+| absorbFlight | 吸收飞行 | 待回填（阶段 5 定义） | 待回填 | 缩略图淡出+chip 直接出现 |
+| selectionBeam | 选区光带亮起/退回 | 待回填（阶段 5 定义） | 待回填 | 选区底色变化 |
+| sheetRise | 底部 sheet 升起 | 待回填（阶段 5 定义） | 待回填 | 淡入 |
 
-## 四、间距 / 圆角 / 字阶（iOS 实测值随阶段 2 回填）
+代码落点：`ios/Astella/Design/Motion.swift`（`Motion.press/.pressSoft/.routePush/.segment`、`Motion.gated(reduceMotion, _)` 统一门控）。
 
-- 间距 scale：4 / 8 / 12 / 16 / 20 / 24（dp/pt 同值）。
-- 圆角：10 / 14 / 16 / 20 / capsule；纸面 16，按钮胶囊。
-- 字阶：iOS 系统字阶（largeTitle/title2/title3/body/subheadline/footnote/caption）；Android 按同名层级映射 M3 slot，**不抄 iOS 负字距**（Roboto 负 tracking 发糊），行高以 iOS lineSpacing 实测为准。
-- 颜色：iOS 系统语义色（label/secondaryLabel/systemBlue/systemBackground/…）；Android 映射 M3 角色（onSurface/onSurfaceVariant/primary/background/surface/surfaceVariant/outline/error）。两端业务代码只用语义名（ink/muted/accent/canvas/paper/inset/paperEdge/success/danger）。
+## 四、间距 / 圆角 / 字阶（iOS 值已定（阶段 2），Android 映射随阶段 7 回填）
+
+- 间距 scale（`StudySpacing`）：xs 4 / sm 8 / md 12 / lg 16 / xl 20 / xxl 24（dp/pt 同值）。
+- 圆角 scale（`StudyRadius`，全部 continuous）：sm 10 / md 14 / lg 16 / xl 20 / xxl 24；纸面默认 lg、按钮胶囊。原调用点的 15/17/18/21 魔法值已归一到最近档（2026-10-15）。
+- 字距（`StudyTracking`）：largeTitle −0.45 / title −0.25（iOS 实测）；Android 按同名层级映射 M3 slot，**不抄 iOS 负字距**（Roboto 负 tracking 发糊），行高以 iOS lineSpacing 为准。
+- 字阶：iOS 系统字阶（largeTitle/title2/title3/body/subheadline/footnote/caption）；Android 映射 M3 typography slot。
+- 颜色：iOS 系统语义色（label/secondaryLabel/systemBlue/systemBackground/…，`StudyPalette`，已合并 blue/blueDeep 为 accent）；Android 映射 M3 角色（onSurface/onSurfaceVariant/primary/background/surface/surfaceVariant/outline/error）。两端业务代码只用语义名（ink/muted/accent/canvas/paper/inset/paperEdge/success/danger）。
 
 ## 五、伴星事件 → Live2D 动作映射（两端共用；资产与映射细节随阶段 4/9 回填）
 

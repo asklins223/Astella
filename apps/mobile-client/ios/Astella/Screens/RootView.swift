@@ -10,7 +10,7 @@ struct AstellaApp: App {
         WindowGroup {
             RootView()
                 .environment(store)
-                .tint(StudyPalette.blueDeep)
+                .tint(StudyPalette.accent)
         }
     }
 }
@@ -47,7 +47,7 @@ private struct SessionRecoveryScreen: View {
         VStack(spacing: 14) {
             Image(systemName: "books.vertical")
                 .font(.system(size: 30, weight: .medium))
-                .foregroundStyle(StudyPalette.blueDeep)
+                .foregroundStyle(StudyPalette.accent)
                 .frame(width: 64, height: 64)
                 .background(StudyPalette.sky, in: Circle())
             Text("正在接回你的书房")
@@ -60,7 +60,7 @@ private struct SessionRecoveryScreen: View {
                 Button("重新连接") { Task { await store.restoreSession() } }
                     .modifier(PrimaryActionStyle()).padding(.top, 4)
                 Button("返回登录") { store.logout() }
-                    .font(.subheadline.weight(.medium)).foregroundStyle(StudyPalette.blueDeep)
+                    .font(.subheadline.weight(.medium)).foregroundStyle(StudyPalette.accent)
             }
         }
         .padding(30)
@@ -328,7 +328,7 @@ struct LoginScreen: View {
             HStack(spacing: 13) {
                 Image(systemName: symbol)
                     .font(.system(size: compact ? 19 : 23, weight: .medium))
-                    .foregroundStyle(StudyPalette.blueDeep)
+                    .foregroundStyle(StudyPalette.accent)
                     .frame(width: compact ? 44 : 54, height: compact ? 44 : 54)
                     .background(StudyPalette.sky, in: Circle())
                     .accessibilityHidden(true)
@@ -366,7 +366,7 @@ struct LoginScreen: View {
                     Spacer()
                     Button("忘记密码？") { navigate(.forgot) }
                         .font(.footnote.weight(.medium))
-                        .foregroundStyle(StudyPalette.blueDeep)
+                        .foregroundStyle(StudyPalette.accent)
                         .frame(minHeight: 40)
                 }
             case .register:
@@ -381,7 +381,7 @@ struct LoginScreen: View {
                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { showInviteField.toggle() }
                 }
                 .font(.footnote.weight(.medium))
-                .foregroundStyle(StudyPalette.blueDeep)
+                .foregroundStyle(StudyPalette.accent)
                 .frame(minHeight: 36, alignment: .leading)
                 if showInviteField {
                     input("邀请码", placeholder: "选填", text: $inviteToken, field: .inviteToken)
@@ -445,7 +445,7 @@ struct LoginScreen: View {
         HStack(spacing: 9) {
             Image(systemName: "envelope.fill")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(StudyPalette.blueDeep)
+                .foregroundStyle(StudyPalette.accent)
             Text(normalizedEmail)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(StudyPalette.ink)
@@ -461,7 +461,7 @@ struct LoginScreen: View {
                 }
             }
             .font(.footnote.weight(.medium))
-            .foregroundStyle(StudyPalette.blueDeep)
+            .foregroundStyle(StudyPalette.accent)
             .frame(minHeight: 40)
         }
         .padding(.horizontal, 12)
@@ -478,7 +478,7 @@ struct LoginScreen: View {
                 sendCode(advance: false)
             }
             .font(.footnote.weight(.medium))
-            .foregroundStyle(StudyPalette.blueDeep)
+            .foregroundStyle(StudyPalette.accent)
             .disabled(store.isLoading || resendIn > 0)
             .frame(minHeight: 40)
         }
@@ -491,7 +491,7 @@ struct LoginScreen: View {
                     Text("第一次使用？").foregroundStyle(StudyPalette.muted)
                     Button("创建账号") { navigate(.register) }
                         .fontWeight(.semibold)
-                        .foregroundStyle(StudyPalette.blueDeep)
+                        .foregroundStyle(StudyPalette.accent)
                 }
                 .font(.subheadline)
                 HStack(spacing: 6) {
@@ -570,7 +570,7 @@ struct LoginScreen: View {
             Button(action: submit) { primaryActionLabel }
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.capsule)
-                .tint(StudyPalette.blue)
+                .tint(StudyPalette.accent)
                 .disabled(store.isLoading || !canContinue)
         } else {
             Button(action: submit) { primaryActionLabel }
@@ -587,7 +587,7 @@ struct LoginScreen: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(StudyPalette.blueDeep)
+        .foregroundStyle(StudyPalette.accent)
     }
 
     @ViewBuilder
@@ -600,7 +600,7 @@ struct LoginScreen: View {
             }
             .buttonStyle(.glass)
             .buttonBorderShape(.capsule)
-            .tint(StudyPalette.blueDeep)
+            .tint(StudyPalette.accent)
         } else {
             Button(action: goBack) {
                 Label("返回", systemImage: "chevron.left")
@@ -608,7 +608,7 @@ struct LoginScreen: View {
                     .frame(minHeight: 44)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(StudyPalette.blueDeep)
+            .foregroundStyle(StudyPalette.accent)
         }
     }
 
@@ -691,7 +691,7 @@ struct LoginScreen: View {
     private func navigate(_ next: AuthRoute, preserveNotice: Bool = false) {
         focusedInput = nil
         if !preserveNotice { store.clearAuthFeedback() }
-        withAnimation(reduceMotion ? nil : .spring(duration: 0.32, bounce: 0.06)) {
+        withAnimation(Motion.gated(reduceMotion, Motion.routePush)) {
             route = next
         }
     }
@@ -741,7 +741,7 @@ private struct AuthStepProgress: View {
             HStack(spacing: 4) {
                 ForEach(0..<total, id: \.self) { index in
                     Capsule()
-                        .fill(index < current ? StudyPalette.blueDeep : StudyPalette.paperEdge)
+                        .fill(index < current ? StudyPalette.accent : StudyPalette.paperEdge)
                         .frame(width: 17, height: 4)
                 }
             }
@@ -776,7 +776,7 @@ private struct AuthFeedbackBanner: View {
     private var tint: Color {
         switch kind {
         case .error: StudyPalette.danger
-        case .success: StudyPalette.blueDeep
+        case .success: StudyPalette.accent
         }
     }
 
@@ -908,7 +908,7 @@ private struct AuthCodeInput: View {
                             .foregroundStyle(StudyPalette.ink)
                             .frame(maxWidth: .infinity, minHeight: 27)
                         Capsule()
-                            .fill(focusedInput == .code && index == min(code.count, 5) ? StudyPalette.blueDeep : .clear)
+                            .fill(focusedInput == .code && index == min(code.count, 5) ? StudyPalette.accent : .clear)
                             .frame(width: 19, height: 2)
                     }
                     .frame(maxWidth: .infinity)
@@ -974,7 +974,7 @@ struct ConversationScreen: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(reduceMotion || store.localReduceMotion ? nil : .spring(duration: 0.38, bounce: 0.08), value: store.chatShowsRecords)
+            .animation(Motion.gated(reduceMotion || store.localReduceMotion, Motion.segment), value: store.chatShowsRecords)
 
             if let error = store.errorMessage {
                 ConversationFailurePanel(message: error) {
@@ -1048,7 +1048,7 @@ struct ConversationScreen: View {
                 HStack(spacing: 9) {
                     Image(systemName: "book.closed.fill")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(StudyPalette.blueDeep)
+                        .foregroundStyle(StudyPalette.accent)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("正在围绕手记交流")
                             .font(.caption.weight(.semibold))
@@ -1075,7 +1075,7 @@ struct ConversationScreen: View {
                     Image(systemName: "photo")
                         .font(.system(size: 19, weight: .medium))
                         .frame(width: 42, height: 46)
-                        .foregroundStyle(StudyPalette.blueDeep)
+                        .foregroundStyle(StudyPalette.accent)
                         .contentShape(Rectangle())
                 }
                 .accessibilityLabel("选择图片")
@@ -1091,7 +1091,7 @@ struct ConversationScreen: View {
                     Image(systemName: voiceCapture.isRecording ? "stop.circle.fill" : "mic")
                         .font(.system(size: 19, weight: .medium))
                         .frame(width: 38, height: 46)
-                        .foregroundStyle(voiceCapture.isRecording ? StudyPalette.danger : StudyPalette.blueDeep)
+                        .foregroundStyle(voiceCapture.isRecording ? StudyPalette.danger : StudyPalette.accent)
                         .contentShape(Rectangle())
                 }
                 .accessibilityLabel(voiceCapture.isRecording ? "结束录音并识别" : "语音输入")
@@ -1117,7 +1117,7 @@ struct ConversationScreen: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .modifier(StudyGlassSurfaceStyle(radius: 24, interactive: true))
+            .modifier(StudyGlassSurfaceStyle(radius: StudyRadius.xxl, interactive: true))
         }
         .padding(.horizontal, 14)
         .padding(.top, 8)
@@ -1138,12 +1138,12 @@ struct ConversationScreen: View {
             .contentShape(Circle())
         if #available(iOS 26.0, *) {
             if canSend {
-                icon.glassEffect(.regular.tint(StudyPalette.blue).interactive(), in: Circle())
+                icon.glassEffect(.regular.tint(StudyPalette.accent).interactive(), in: Circle())
             } else {
                 icon.glassEffect(.regular, in: Circle())
             }
         } else {
-            icon.background(canSend ? StudyPalette.blueDeep : StudyPalette.inset, in: Circle())
+            icon.background(canSend ? StudyPalette.accent : StudyPalette.inset, in: Circle())
         }
     }
 }
@@ -1172,7 +1172,7 @@ private struct ConversationFailurePanel: View {
             Spacer(minLength: 4)
             Button("重试", action: retry)
                 .font(.footnote.weight(.semibold))
-                .foregroundStyle(StudyPalette.blueDeep)
+                .foregroundStyle(StudyPalette.accent)
                 .buttonStyle(.borderless)
         }
         .padding(.horizontal, 12)
@@ -1224,10 +1224,10 @@ struct CompanionScene: View {
                                     Button { onPrompt(prompt) } label: {
                                         Text(title)
                                             .font(.footnote.weight(.medium))
-                                            .foregroundStyle(StudyPalette.blueDeep)
+                                            .foregroundStyle(StudyPalette.accent)
                                             .padding(.horizontal, 10)
                                             .frame(minHeight: 40)
-                                            .modifier(StudyGlassSurfaceStyle(radius: 21, interactive: true))
+                                            .modifier(StudyGlassSurfaceStyle(radius: StudyRadius.xl, interactive: true))
                                     }
                                     .buttonStyle(.plain)
                                 }

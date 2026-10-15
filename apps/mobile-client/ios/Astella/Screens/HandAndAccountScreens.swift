@@ -54,7 +54,7 @@ struct HandScreen: View {
                         VStack(alignment: .leading, spacing: 11) {
                             HStack(spacing: 9) {
                                 Image(systemName: run.status == "waiting_for_confirmation" ? "hand.raised" : "clock.arrow.circlepath")
-                                    .foregroundStyle(StudyPalette.blueDeep)
+                                    .foregroundStyle(StudyPalette.accent)
                                 Text(run.statusLabel)
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(StudyPalette.ink)
@@ -85,7 +85,7 @@ struct HandScreen: View {
                     VStack(spacing: 8) {
                         Image(systemName: "checkmark.circle")
                             .font(.system(size: 31, weight: .light))
-                            .foregroundStyle(StudyPalette.blueDeep)
+                            .foregroundStyle(StudyPalette.accent)
                             .padding(.bottom, 5)
                         Text("暂时没有待确认事项")
                             .font(.title3.weight(.semibold))
@@ -98,7 +98,7 @@ struct HandScreen: View {
                             .fixedSize(horizontal: false, vertical: true)
                         Button("回到对话") { store.selectedTab = .conversation }
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(StudyPalette.blueDeep)
+                            .foregroundStyle(StudyPalette.accent)
                             .padding(.top, 3)
                             .frame(minHeight: 44)
                     }
@@ -143,13 +143,13 @@ struct HandScreen: View {
     private func statusPanel(title: String, detail: String, symbol: String, retry: @escaping () -> Void) -> some View {
         NoticeSurface {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: symbol).foregroundStyle(StudyPalette.blueDeep)
+                Image(systemName: symbol).foregroundStyle(StudyPalette.accent)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(StudyPalette.ink)
                     Text(detail).font(.footnote).foregroundStyle(StudyPalette.muted)
                     Button("重新连接", action: retry)
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(StudyPalette.blueDeep)
+                        .foregroundStyle(StudyPalette.accent)
                         .padding(.top, 2)
                 }
                 Spacer(minLength: 0)
@@ -185,7 +185,7 @@ struct AccountScreen: View {
                         } else {
                             Text(profileInitial)
                                 .font(.title3.weight(.semibold))
-                                .foregroundStyle(StudyPalette.blueDeep)
+                                .foregroundStyle(StudyPalette.accent)
                                 .frame(width: 48, height: 48)
                                 .background(StudyPalette.sky, in: Circle())
                         }
@@ -292,7 +292,7 @@ struct AccountScreen: View {
                             .foregroundStyle(StudyPalette.muted)
                         Toggle("我已阅读并同意《AI 使用协议》", isOn: $consentAccepted)
                             .font(.footnote.weight(.medium))
-                            .tint(StudyPalette.blueDeep)
+                            .tint(StudyPalette.accent)
                             .disabled(isAccountBusy)
                         Button("同意并开启外部 AI") { Task { await store.acceptAIConsent() } }
                             .disabled(isAccountBusy || !consentAccepted)
@@ -342,7 +342,7 @@ struct AccountScreen: View {
         }
         .scrollContentBackground(.hidden)
         .background(DawnBackground())
-        .tint(StudyPalette.blueDeep)
+        .tint(StudyPalette.accent)
         .navigationTitle("我的")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -403,7 +403,7 @@ struct AccountScreen: View {
                 Text(detail).font(.caption).foregroundStyle(StudyPalette.muted)
             }
         }
-        .tint(StudyPalette.blueDeep)
+        .tint(StudyPalette.accent)
         .disabled(store.isAccountBusy || disabled)
     }
 
@@ -433,7 +433,7 @@ struct AccountScreen: View {
 
     private func accountLink(title: String, detail: String, symbol: String) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol).font(.system(size: 17, weight: .medium)).foregroundStyle(StudyPalette.blueDeep)
+            Image(systemName: symbol).font(.system(size: 17, weight: .medium)).foregroundStyle(StudyPalette.accent)
                 .frame(width: 34, height: 38)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(StudyPalette.ink)
@@ -458,7 +458,7 @@ private struct ProfileAvatarImage: View {
             if let image {
                 Image(uiImage: image).resizable().scaledToFill()
             } else {
-                Text(fallback).font(.title2.weight(.semibold)).foregroundStyle(StudyPalette.blueDeep)
+                Text(fallback).font(.title2.weight(.semibold)).foregroundStyle(StudyPalette.accent)
                     .frame(width: 54, height: 54).background(StudyPalette.sky)
             }
         }
@@ -524,7 +524,7 @@ private struct MobileSettingsScreen: View {
                         UserDefaults.standard.set(value, forKey: mobilePreferenceKey(userId, "reduceMotion"))
                     }
                 ))
-                .tint(StudyPalette.blueDeep)
+                .tint(StudyPalette.accent)
                 .disabled(systemReduceMotion)
                 Text(systemReduceMotion ? "系统辅助功能已要求减少动效。" : reduceMotion ? "此设备会减少页面过渡。" : "使用轻柔的原生页面过渡。")
                     .font(.caption)
@@ -538,7 +538,7 @@ private struct MobileSettingsScreen: View {
         }
         .scrollContentBackground(.hidden)
         .background(DawnBackground())
-        .tint(StudyPalette.blueDeep)
+        .tint(StudyPalette.accent)
         .navigationTitle("使用设置").navigationBarTitleDisplayMode(.inline)
         .task(id: userId) {
             textScale = UserDefaults.standard.object(forKey: mobilePreferenceKey(userId, "textScale")) as? Double ?? 1
@@ -570,7 +570,7 @@ private struct ParticipationPreferencesEditor: View {
                     Text("页面帮助、自然分句、主动问候与久学休息会根据你实际在看的内容和相处偏好判断是否出现。")
                         .font(.footnote).foregroundStyle(StudyPalette.muted).padding(.top, 7)
                 }
-                .font(.subheadline.weight(.medium)).tint(StudyPalette.blueDeep)
+                .font(.subheadline.weight(.medium)).tint(StudyPalette.accent)
                 if isLoading && !loaded { ProgressView("正在读取个人约定…") }
                 else {
                     TextField("写下你希望她怎样陪你学习", text: $markdown, axis: .vertical)
@@ -583,7 +583,7 @@ private struct ParticipationPreferencesEditor: View {
                             .modifier(SecondaryActionStyle()).disabled(isSaving || !loaded || markdown == savedMarkdown)
                         if !markdown.isEmpty {
                             Button(enabled ? "暂停" : "恢复") { Task { await save(enabled: !enabled) } }
-                                .font(.subheadline.weight(.medium)).foregroundStyle(StudyPalette.blueDeep).disabled(isSaving)
+                                .font(.subheadline.weight(.medium)).foregroundStyle(StudyPalette.accent).disabled(isSaving)
                         }
                     }
                     Text(markdown.isEmpty ? "尚未添加个人约定，默认陪伴方式会照常生效。" : enabled ? "个人约定正在生效。" : "个人约定已暂停，默认陪伴方式仍会生效。")
@@ -720,7 +720,7 @@ private struct CompanionCenterScreen: View {
                             Label("查看完整记录", systemImage: "book.open")
                         }
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(StudyPalette.blueDeep)
+                        .foregroundStyle(StudyPalette.accent)
                         .frame(minHeight: 44)
                     }
                     .padding(.top, 3)
@@ -745,7 +745,7 @@ private func featureAccountMessage(_ text: String, isError: Bool, retry: (() -> 
             .foregroundStyle(isError ? StudyPalette.danger : StudyPalette.success)
         VStack(alignment: .leading, spacing: 5) {
             Text(text).font(.footnote).foregroundStyle(StudyPalette.muted)
-            if let retry { Button("重新读取", action: retry).font(.caption.weight(.semibold)).foregroundStyle(StudyPalette.blueDeep) }
+            if let retry { Button("重新读取", action: retry).font(.caption.weight(.semibold)).foregroundStyle(StudyPalette.accent) }
         }
     }.padding(11).frame(maxWidth: .infinity, alignment: .leading).background(StudyPalette.inset, in: RoundedRectangle(cornerRadius: 13))
 }

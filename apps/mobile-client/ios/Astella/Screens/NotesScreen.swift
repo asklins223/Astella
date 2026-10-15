@@ -21,7 +21,7 @@ struct NotesScreen: View {
                     } label: {
                         Image(systemName: "arrow.clockwise")
                             .font(.body.weight(.medium))
-                            .foregroundStyle(StudyPalette.blueDeep)
+                            .foregroundStyle(StudyPalette.accent)
                             .frame(width: 42, height: 42)
                     }
                     .modifier(GlassIconActionStyle())
@@ -45,7 +45,7 @@ struct NotesScreen: View {
                 }
                 .padding(.horizontal, 14)
                 .frame(minHeight: 48)
-                .modifier(StudyGlassSurfaceStyle(radius: 15, interactive: true))
+                .modifier(StudyGlassSurfaceStyle(radius: StudyRadius.md, interactive: true))
 
                 if let error = store.notesErrorMessage {
                     NoticeSurface {
@@ -56,7 +56,7 @@ struct NotesScreen: View {
                             Text(error).font(.footnote).foregroundStyle(StudyPalette.muted)
                             Button("重新加载") { Task { await store.loadNotes(query: query) } }
                                 .font(.footnote.weight(.semibold))
-                                .foregroundStyle(StudyPalette.blueDeep)
+                                .foregroundStyle(StudyPalette.accent)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -70,7 +70,7 @@ struct NotesScreen: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Image(systemName: query.isEmpty ? "book.closed" : "magnifyingglass")
                             .font(.system(size: 24, weight: .regular))
-                            .foregroundStyle(StudyPalette.blueDeep)
+                            .foregroundStyle(StudyPalette.accent)
                             .frame(width: 54, height: 54)
                             .background(StudyPalette.sky, in: Circle())
                         Text(query.isEmpty ? "书架还空着" : "没有找到这篇手记")
@@ -85,7 +85,7 @@ struct NotesScreen: View {
                                 Label("去对话里开始", systemImage: "arrow.up.right")
                                     .font(.subheadline.weight(.semibold))
                             }
-                            .foregroundStyle(StudyPalette.blueDeep)
+                            .foregroundStyle(StudyPalette.accent)
                             .padding(.top, 3)
                         }
                     }
@@ -179,7 +179,7 @@ struct NoteShelfRow: View {
         HStack(alignment: .center, spacing: 13) {
             Image(systemName: "doc.text")
                 .font(.system(size: 17, weight: .regular))
-                .foregroundStyle(StudyPalette.blueDeep)
+                .foregroundStyle(StudyPalette.accent)
                 .frame(width: 28, height: 34)
             VStack(alignment: .leading, spacing: 5) {
                 Text(note.title)
@@ -227,7 +227,7 @@ private struct FeaturedNoteRow: View {
                 Spacer()
                 Image(systemName: "arrow.up.right")
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(StudyPalette.blueDeep)
+                    .foregroundStyle(StudyPalette.accent)
             }
             Text(note.title)
                 .font(.system(.title3, weight: .semibold))
@@ -247,7 +247,7 @@ private struct FeaturedNoteRow: View {
             }
             Text("打开手记")
                 .font(.footnote.weight(.semibold))
-                .foregroundStyle(StudyPalette.blueDeep)
+                .foregroundStyle(StudyPalette.accent)
         }
         .padding(.vertical, 13)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -306,7 +306,7 @@ struct NoteDetailScreen: View {
                             .font(.footnote)
                             .foregroundStyle(StudyPalette.danger)
                         Button("重新读取批注") { Task { await store.loadNoteAnnotations(noteId) } }
-                            .font(.footnote.weight(.semibold)).foregroundStyle(StudyPalette.blueDeep)
+                            .font(.footnote.weight(.semibold)).foregroundStyle(StudyPalette.accent)
                     } else if let status = store.annotationStatus {
                         Label(status, systemImage: "checkmark.circle")
                             .font(.footnote)
@@ -419,7 +419,7 @@ struct NoteDetailScreen: View {
                 .padding(.leading, 14)
                 .overlay(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(StudyPalette.blue.opacity(0.6))
+                        .fill(StudyPalette.accent.opacity(0.6))
                         .frame(width: 3)
                 }
         case "code":
@@ -444,7 +444,7 @@ struct NoteDetailScreen: View {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text(ordered ? "\(index + 1)." : "•")
                             .font(.system(size: bodyPointSize * store.readingScale, weight: .semibold))
-                            .foregroundStyle(StudyPalette.blueDeep)
+                            .foregroundStyle(StudyPalette.accent)
                         Text(lines[index])
                             .font(.system(size: bodyPointSize * store.readingScale))
                             .lineSpacing(4)
@@ -728,14 +728,14 @@ private struct NoteFeatureLinks: View {
                         Text(kind.title)
                             .font(.caption.weight(.medium))
                     }
-                    .foregroundStyle(StudyPalette.blueDeep)
+                    .foregroundStyle(StudyPalette.accent)
                     .frame(maxWidth: .infinity, minHeight: 54)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .modifier(StudyGlassSurfaceStyle(radius: 17, interactive: true))
+        .modifier(StudyGlassSurfaceStyle(radius: StudyRadius.lg, interactive: true))
     }
 }
 
@@ -803,12 +803,12 @@ private struct NoteVersionsScreen: View {
     private func versionRow(_ version: [String: Any]) -> some View {
         let current = version["id"] as? String == store.noteDocument?.versionId
         if current {
-            PaperSurface(padding: 16, radius: 18) {
+            PaperSurface(padding: StudySpacing.lg, radius: StudyRadius.xl) {
                 VStack(alignment: .leading, spacing: 11) {
                     HStack(spacing: 11) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.title3)
-                            .foregroundStyle(StudyPalette.blueDeep)
+                            .foregroundStyle(StudyPalette.accent)
                         VStack(alignment: .leading, spacing: 3) {
                             Text("第 \(version["versionNo"] as? Int ?? 1) 版")
                                 .font(.headline.weight(.semibold)).foregroundStyle(StudyPalette.ink)
@@ -818,7 +818,7 @@ private struct NoteVersionsScreen: View {
                         Spacer()
                         Text("当前")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(StudyPalette.blueDeep)
+                            .foregroundStyle(StudyPalette.accent)
                     }
                     if let document = store.noteDocument, document.id == noteId,
                        let excerpt = document.blocks.first(where: { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.type != "image" })?.content {
@@ -846,7 +846,7 @@ private struct NoteVersionsScreen: View {
                 }
                 Spacer()
                 Button("恢复") { selected = version; showRestore = true }
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(StudyPalette.blueDeep)
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(StudyPalette.accent)
                     .disabled(restoring)
             }
             .padding(.vertical, 10)
@@ -907,7 +907,7 @@ private struct NoteOverviewScreen: View {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Label("核心脉络", systemImage: "text.quote")
                                         .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(StudyPalette.blueDeep)
+                                        .foregroundStyle(StudyPalette.accent)
                                     Text(overview["body"] as? String ?? "")
                                         .font(.body).lineSpacing(5).foregroundStyle(StudyPalette.ink)
                                 }
@@ -917,7 +917,7 @@ private struct NoteOverviewScreen: View {
                                     HStack(alignment: .top, spacing: 12) {
                                         Text(String(format: "%02d", entry.offset + 1))
                                             .font(.caption.monospacedDigit().weight(.semibold))
-                                            .foregroundStyle(StudyPalette.blueDeep)
+                                            .foregroundStyle(StudyPalette.accent)
                                             .padding(.top, 2)
                                         VStack(alignment: .leading, spacing: 7) {
                                             Text(point["explanation"] as? String ?? "").font(.body).foregroundStyle(StudyPalette.ink)
@@ -1045,7 +1045,7 @@ private struct NoteMindMapScreen: View {
                         let node = item.node
                         VStack(alignment: .leading, spacing: 7) {
                             HStack(spacing: 10) {
-                                Circle().fill(node["kind"] as? String == "root" ? StudyPalette.blueDeep : StudyPalette.muted.opacity(0.55))
+                                Circle().fill(node["kind"] as? String == "root" ? StudyPalette.accent : StudyPalette.muted.opacity(0.55))
                                     .frame(width: node["kind"] as? String == "root" ? 10 : 7, height: node["kind"] as? String == "root" ? 10 : 7)
                                 Text(node["label"] as? String ?? "")
                                     .font((node["kind"] as? String == "root" ? Font.title3 : Font.subheadline).weight(.semibold))
@@ -1059,7 +1059,7 @@ private struct NoteMindMapScreen: View {
                             ForEach(Array(((node["references"] as? [[String: Any]]) ?? []).enumerated()), id: \.offset) { entry in
                                 let ref = entry.element
                                 Label(ref["quote"] as? String ?? "", systemImage: "quote.opening")
-                                    .font(.caption).foregroundStyle(StudyPalette.blueDeep).padding(.leading, CGFloat(item.depth) * 18 + 20)
+                                    .font(.caption).foregroundStyle(StudyPalette.accent).padding(.leading, CGFloat(item.depth) * 18 + 20)
                             }
                         }
                         .padding(.vertical, 10)
@@ -1171,7 +1171,7 @@ private struct NoteExplainScreen: View {
                                 .font(.footnote).foregroundStyle(StudyPalette.muted)
                             if artifact["versionState"] as? String == "older" {
                                 Text("基于第 \(artifact["noteVersionNumber"] as? Int ?? 1) 版手记")
-                                    .font(.caption.weight(.medium)).foregroundStyle(StudyPalette.blueDeep)
+                                    .font(.caption.weight(.medium)).foregroundStyle(StudyPalette.accent)
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     ForEach(Array(outline.enumerated()), id: \.offset) { entry in
@@ -1183,7 +1183,7 @@ private struct NoteExplainScreen: View {
                                     .font(.caption.monospacedDigit().weight(.semibold))
                                     .foregroundStyle(.white)
                                     .frame(width: 29, height: 29)
-                                    .background(StudyPalette.blueDeep, in: Circle())
+                                    .background(StudyPalette.accent, in: Circle())
                                 Text(item["title"] as? String ?? "")
                                     .font(.headline.weight(.semibold)).foregroundStyle(StudyPalette.ink)
                             }
@@ -1306,7 +1306,7 @@ private func featureError(_ message: String, retry: @escaping () -> Void) -> som
     return HStack(alignment: .top, spacing: 10) {
         Image(systemName: consentRequired ? "lock.shield" : policyDisabled ? "hand.raised" : "wifi.exclamationmark")
             .font(.system(size: 17, weight: .medium))
-            .foregroundStyle(consentRequired || policyDisabled ? StudyPalette.blueDeep : StudyPalette.danger)
+            .foregroundStyle(consentRequired || policyDisabled ? StudyPalette.accent : StudyPalette.danger)
             .frame(width: 22, height: 24)
         VStack(alignment: .leading, spacing: 4) {
             Text(consentRequired ? "这项整理需要你的授权" : policyDisabled ? "外部 AI 已关闭" : "这次整理没有完成")
@@ -1324,12 +1324,12 @@ private func featureError(_ message: String, retry: @escaping () -> Void) -> som
                 } label: {
                     Text("查看 AI 使用设置")
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(StudyPalette.blueDeep)
+                        .foregroundStyle(StudyPalette.accent)
                 }
                 .padding(.top, 2)
             } else {
                 Button("重新读取", action: retry)
-                    .font(.footnote.weight(.semibold)).foregroundStyle(StudyPalette.blueDeep)
+                    .font(.footnote.weight(.semibold)).foregroundStyle(StudyPalette.accent)
                     .padding(.top, 2)
             }
         }
@@ -1411,7 +1411,7 @@ private struct FeatureGenerationPrimer: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("尚未生成 · 第 \(document?.versionNumber ?? 1) 版")
-                    .font(.caption.weight(.semibold)).foregroundStyle(StudyPalette.blueDeep)
+                    .font(.caption.weight(.semibold)).foregroundStyle(StudyPalette.accent)
                 Text(title).font(.title3.weight(.semibold)).foregroundStyle(StudyPalette.ink)
                 Text(description).font(.subheadline).lineSpacing(3).foregroundStyle(StudyPalette.muted)
             }
@@ -1424,7 +1424,7 @@ private struct FeatureGenerationPrimer: View {
                             .font(.footnote).lineSpacing(3).foregroundStyle(StudyPalette.muted)
                             .padding(.leading, 12).padding(.vertical, 2)
                             .overlay(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 1).fill(StudyPalette.blue.opacity(0.58)).frame(width: 2)
+                                RoundedRectangle(cornerRadius: 1).fill(StudyPalette.accent.opacity(0.58)).frame(width: 2)
                             }
                             .lineLimit(4)
                     }
@@ -1456,7 +1456,7 @@ private struct FeatureGenerationPrimer: View {
                     HStack(alignment: .top, spacing: 14) {
                         Text("主题")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(StudyPalette.blueDeep)
+                            .foregroundStyle(StudyPalette.accent)
                             .padding(.horizontal, 11).padding(.vertical, 8)
                             .background(StudyPalette.sky, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         VStack(alignment: .leading, spacing: 10) {
@@ -1471,7 +1471,7 @@ private struct FeatureGenerationPrimer: View {
                             HStack(alignment: .top, spacing: 12) {
                                 Text(String(format: "%02d", index + 1))
                                     .font(.caption.monospacedDigit().weight(.semibold))
-                                    .foregroundStyle(StudyPalette.blueDeep)
+                                    .foregroundStyle(StudyPalette.accent)
                                     .frame(width: 25, alignment: .leading)
                                 Text(label).font(.subheadline.weight(index == 0 ? .semibold : .regular)).foregroundStyle(StudyPalette.ink)
                             }
@@ -1493,7 +1493,7 @@ private struct FeatureGenerationPrimer: View {
     private func previewStep(_ number: String, title: String, isFirst: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(number).font(.caption2.monospacedDigit().weight(.semibold)).foregroundStyle(StudyPalette.muted)
-            Text(title).font(.footnote.weight(.semibold)).foregroundStyle(isFirst ? StudyPalette.blueDeep : StudyPalette.ink)
+            Text(title).font(.footnote.weight(.semibold)).foregroundStyle(isFirst ? StudyPalette.accent : StudyPalette.ink)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

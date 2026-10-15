@@ -12,7 +12,11 @@
 		A10000000000000000000003 /* MobileAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* MobileAPI.swift */; };
 		A10000000000000000000004 /* CompanionRealtime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* CompanionRealtime.swift */; };
 		A10000000000000000000005 /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* AppStore.swift */; };
-		A10000000000000000000006 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* DesignSystem.swift */; };
+		A10000000000000000000012 /* Tokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* Tokens.swift */; };
+		A10000000000000000000013 /* Motion.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* Motion.swift */; };
+		A10000000000000000000014 /* Surfaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* Surfaces.swift */; };
+		A10000000000000000000015 /* Buttons.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* Buttons.swift */; };
+		A10000000000000000000016 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* Components.swift */; };
 		A10000000000000000000007 /* VoiceCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* VoiceCapture.swift */; };
 		A10000000000000000000008 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* RootView.swift */; };
 		A10000000000000000000009 /* NotesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* NotesScreen.swift */; };
@@ -26,8 +30,12 @@
 		A20000000000000000000003 /* MobileAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileAPI.swift; sourceTree = "<group>"; };
 		A20000000000000000000004 /* CompanionRealtime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionRealtime.swift; sourceTree = "<group>"; };
 		A20000000000000000000005 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
-		A20000000000000000000006 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		A20000000000000000000007 /* VoiceCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCapture.swift; sourceTree = "<group>"; };
+		A20000000000000000000014 /* Tokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tokens.swift; sourceTree = "<group>"; };
+		A20000000000000000000015 /* Motion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Motion.swift; sourceTree = "<group>"; };
+		A20000000000000000000016 /* Surfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Surfaces.swift; sourceTree = "<group>"; };
+		A20000000000000000000017 /* Buttons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Buttons.swift; sourceTree = "<group>"; };
+		A20000000000000000000018 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		A20000000000000000000008 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		A20000000000000000000009 /* NotesScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesScreen.swift; sourceTree = "<group>"; };
 		A20000000000000000000010 /* HandAndAccountScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandAndAccountScreens.swift; sourceTree = "<group>"; };
@@ -55,7 +63,6 @@
 				A20000000000000000000003 /* MobileAPI.swift */,
 				A20000000000000000000004 /* CompanionRealtime.swift */,
 				A20000000000000000000005 /* AppStore.swift */,
-				A20000000000000000000006 /* DesignSystem.swift */,
 				A20000000000000000000007 /* VoiceCapture.swift */,
 			);
 			path = App;
@@ -71,10 +78,23 @@
 			path = Screens;
 			sourceTree = "<group>";
 		};
+		A30000000000000000000005 /* Design */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000014 /* Tokens.swift */,
+				A20000000000000000000015 /* Motion.swift */,
+				A20000000000000000000016 /* Surfaces.swift */,
+				A20000000000000000000017 /* Buttons.swift */,
+				A20000000000000000000018 /* Components.swift */,
+			);
+			path = Design;
+			sourceTree = "<group>";
+		};
 		A30000000000000000000003 /* Astella */ = {
 			isa = PBXGroup;
 			children = (
 				A30000000000000000000001 /* App */,
+				A30000000000000000000005 /* Design */,
 				A30000000000000000000002 /* Screens */,
 				A20000000000000000000011 /* Assets.xcassets */,
 				A20000000000000000000012 /* Info.plist */,
@@ -172,7 +192,11 @@
 				A10000000000000000000003 /* MobileAPI.swift in Sources */,
 				A10000000000000000000004 /* CompanionRealtime.swift in Sources */,
 				A10000000000000000000005 /* AppStore.swift in Sources */,
-				A10000000000000000000006 /* DesignSystem.swift in Sources */,
+				A10000000000000000000012 /* Tokens.swift in Sources */,
+				A10000000000000000000013 /* Motion.swift in Sources */,
+				A10000000000000000000014 /* Surfaces.swift in Sources */,
+				A10000000000000000000015 /* Buttons.swift in Sources */,
+				A10000000000000000000016 /* Components.swift in Sources */,
 				A10000000000000000000007 /* VoiceCapture.swift in Sources */,
 				A10000000000000000000008 /* RootView.swift in Sources */,
 				A10000000000000000000009 /* NotesScreen.swift in Sources */,
