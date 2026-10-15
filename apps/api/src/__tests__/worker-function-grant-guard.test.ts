@@ -308,3 +308,14 @@ test("【自证】重授对账认得出 0426 这种「迁移授了、roles.sql �
     "摘掉重授后判据没报红——这条守卫是空断言",
   );
 });
+
+test("pre-migration worker INSERT expectations use the same schema gate as their grants", () => {
+  const gate = "to_regclass('public.companion_participation_preference_versions') IS NOT NULL";
+  const grantAt = ROLE_BOOTSTRAP.indexOf("GRANT INSERT ON public.companion_turn_runs,public.companion_conversations TO astella_worker");
+  assert.ok(grantAt > 0);
+  assert.ok(ROLE_BOOTSTRAP.slice(ROLE_BOOTSTRAP.lastIndexOf("  IF ", grantAt), grantAt).includes(gate));
+  for (const table of ["companion_conversations", "companion_turn_runs"]) {
+    assert.ok(ROLE_BOOTSTRAP.includes(`('${table}', true, ${gate}, true, false)`),
+      `${table}: an old database must pass bootstrap before the participation migration exists`);
+  }
+});

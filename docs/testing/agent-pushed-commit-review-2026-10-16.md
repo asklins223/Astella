@@ -16,3 +16,9 @@ The two failure cases were reproduced in the isolated review PostgreSQL database
 At review time, the human's `v1.8.0` tag points to the base commit above; its release workflows are separate from these follow-up corrections. The tag must not be moved to disguise that difference. The production private environment has a root-only backup and contains the required MiMo key and container configuration path; remote MiMo authentication returned HTTP 200 and listed the configured model. This is configuration reachability evidence, not evidence that the new application images have already been deployed.
 
 This review adds database fault/ownership checks, not a new native UI or multi-day acceptance claim. The earlier report's unresolved acceptance limits—sustained proactive-content quality, comparable end-to-end latency, interrupted voice delivery and long-running semantic retention—remain explicit.
+
+## Production upgrade bootstrap correction
+
+The first v1.8.1 production deployment correctly backed up the database, then failed before migrations because its worker privilege expectation unconditionally required INSERT on `companion_conversations` and `companion_turn_runs`. The actual grants depend on `companion_participation_preference_versions`, which is absent from the existing v1.6.0 schema. The automatic rollback restored the previous application images; no migration had run.
+
+The expectation now uses the same table-existence gate as the grants. This retains the old-schema privilege contract before migration and the full initiative contract after migration. A separate network-isolated PostgreSQL container restored only the production schema, without user data. The exact tagged bootstrap reproduced exit 3; the corrected bootstrap passed with exit 0. A permanent grant/expectation guard covers this upgrade boundary. This correction changes deployment SQL and tests only; the already verified v1.8.1 application images can be reused by immutable digest.

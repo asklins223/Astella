@@ -1793,9 +1793,11 @@ BEGIN
       ('validation_assistance_exposures', true, false, false, false),
       ('learning_unit_exposure', true, true, true, false),
       ('learning_exposure_dependency_ledger', true, true, true, false),
-      ('companion_conversations', true, true, true, false),
+      -- Before 0422 the worker cannot create proactive runs/conversations.
+      -- Bootstrap runs against that old schema before applying migrations.
+      ('companion_conversations', true, to_regclass('public.companion_participation_preference_versions') IS NOT NULL, true, false),
       ('companion_messages', true, true, true, false),
-      ('companion_turn_runs', true, true, true, false),
+      ('companion_turn_runs', true, to_regclass('public.companion_participation_preference_versions') IS NOT NULL, true, false),
       ('companion_persona_profiles', true, true, true, false),
       ('companion_persona_profile_versions', true, true, false, false),
       ('companion_stream_events', true, true, true, false),
