@@ -107,6 +107,14 @@ const SITES: LockOrderSite[] = [
     why: "轮次收尾先锁 run 再写会话",
   },
   {
+    // 2026-10-16（神文件棘轮）：终态事务从 companion-dialogue.ts 分出。它第一句就是
+    // run 行锁（lockCompanionRunForEventWrite），做完状态/世代栅栏才分配会话计数器。
+    file: "workers/ai-worker/src/handlers/companion-dialogue-finalization.ts",
+    runLock: /lockCompanionRunForEventWrite\(/,
+    conversationLock: /UPDATE\s+companion_conversations/,
+    why: "终态事务先锁 run 行再做状态/世代栅栏，最后才拿会话 seq",
+  },
+  {
     file: "workers/ai-worker/src/handlers/companion-participation-tools.ts",
     runLock: /UPDATE\s+companion_turn_runs/,
     conversationLock: /UPDATE\s+companion_conversations/,

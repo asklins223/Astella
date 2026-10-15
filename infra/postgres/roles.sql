@@ -1084,6 +1084,9 @@ BEGIN
     -- （companion-dialogue-store.ts:469），缺授权时整条 UPDATE 抛错，
     -- 长会话压缩交接快照那一步必挂；平时不压缩就一声不响，所以一直没被发现。
     ('public.astella_assert_handoff_snapshot_fence(uuid,integer)', 'astella_worker'),
+    -- 0438：交接快照的压缩追加函数——worker 推进快照的唯一入口（写在 SELECT 里调用，
+    -- 缺授权时那一条历史压力压缩整步 42501，长会话才走得到）。
+    ('public.astella_append_handoff_compactions_v1(uuid,text,jsonb,text)', 'astella_worker'),
     ('public.companion_process_event_payload(text,jsonb)', 'astella_api, astella_worker')
   ) AS required(signature, roles) LOOP
     IF to_regprocedure(fn.signature) IS NOT NULL THEN
@@ -2170,6 +2173,9 @@ BEGIN
       to_regprocedure('public.astella_invalidate_covered_conversation_summaries(uuid, bigint)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.astella_assert_handoff_snapshot_fence(uuid,integer)')
+    -- 0438：交接快照压缩追加（与上面那份 GRANT、下面那份必检清单成对）。
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.astella_append_handoff_compactions_v1(uuid,text,jsonb,text)')
     -- 扩展函数（pg_trgm/pgvector/…）按 deptype='e' 整体放行：它们是库代码，
     -- 上面按扩展统一恢复 EXECUTE，逐个列举会再次变成打地鼠。
     AND NOT EXISTS (
@@ -2399,6 +2405,8 @@ BEGIN
       -- 0431/0389：worker 显式调用的两支（前者是调度器入队，后者写在 UPDATE 的 WHERE 里）。
       ('astella_worker', 'astella_enqueue_companion_memory_embedding_repair()'),
       ('astella_worker', 'astella_assert_handoff_snapshot_fence(uuid,integer)'),
+      -- 0438：worker 推进交接快照的唯一入口。
+      ('astella_worker', 'astella_append_handoff_compactions_v1(uuid,text,jsonb,text)'),
       -- 0433：改写/删除消息的触发器往下调用这一支给摘要盖区间级作废标记，
       -- api 与 worker 两条写路径都会触发。
       ('astella_api', 'astella_invalidate_covered_conversation_summaries(uuid, bigint)'),

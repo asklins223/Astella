@@ -22,6 +22,9 @@ const journal = read("apps/api/src/db/migrations/meta/_journal.json");
 const indexSource = read("workers/ai-worker/src/index.ts");
 const timeoutConfig = read("workers/ai-worker/src/lib/handler-timeout-config.ts");
 const dialogueSource = read("workers/ai-worker/src/handlers/companion-dialogue.ts");
+// 2026-10-16（神文件棘轮）：终态事务从编排文件抽进 companion-dialogue-finalization.ts，
+// 追问排队与回复落库同属那一笔事务，判据跟着真实位置走。
+const finalizationSource = read("workers/ai-worker/src/handlers/companion-dialogue-finalization.ts");
 const storeSource = read("workers/ai-worker/src/handlers/companion-dialogue-store.ts");
 const jobSource = read("workers/ai-worker/src/handlers/companion-followup-suggestions-job.ts");
 const contractsSource = read("packages/shared/src/contracts/companion-conversation-contracts.ts");
@@ -70,12 +73,14 @@ test("③ 追问是展示元数据：不进正文哈希，也不作废摘要与�
     "把追问塞回正文会改写 content_sha256 依赖的内容");
   assert.doesNotMatch(dialogueSource, /follow_up_suggestions/,
     "回复正文里又出现追问块：建议混进了正文哈希");
+  assert.doesNotMatch(finalizationSource, /follow_up_suggestions/,
+    "终态事务里又出现追问块：建议混进了正文哈希");
   assert.match(contractsSource, /followUpPrompts: z\.array\(z\.string\(\)\.min\(4\)\.max\(120\)\)\.max\(3\)\.optional\(\)/,
     "消息合同里的追问元数据被拿掉了");
 });
 
 test("④ 排队与回复终态同一笔事务，迟到时窗只在客户端一侧", () => {
-  assert.match(dialogueSource, /await enqueueCompanionFollowupSuggestions\(tx, \{/,
+  assert.match(finalizationSource, /await enqueueCompanionFollowupSuggestions\(tx, \{/,
     "追问任务不在终态事务里排队：回复落库成功、任务丢失，没人会知道");
   assert.match(storeSource, /'companion_followup_suggestions', \$\{args\.workspaceId\}, \$\{args\.userId\},/);
   assert.match(storeSource, /companion-followups:\$\{args\.assistantMessageId\}/,

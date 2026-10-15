@@ -9,18 +9,14 @@ import { executeTurn } from "@astella/agent-core";
 import {
   auditHash,
   boundedToolCallIdentity,
-  companionStepRequiresTool,
   ensureAgentToolCall,
   executeCompanionAgentTurnWithToolChoiceFallback,
   loadContinuation,
   recordRejectedToolCall,
   safeArgumentsHash,
-  steerableToolNames,
   updateToolCall,
 } from "./companion-tool-call-ledger.ts";
 import {
-  COMPANION_AGENT_CONTRACT_VERSION,
-  companionAgentCapabilitySnapshotV1Schema,
   COMPANION_AGENT_TOOL_LABELS,
   allowedMainRouteV2Schema,
   getCompanionAgentTool,
@@ -42,21 +38,15 @@ import { companionResponseStrategy } from "./companion-response-strategy.ts";
 import { containsCompanionToolProtocol } from "./companion-tool-protocol-output.ts";
 import { CompanionToolOutputRepairError } from "./companion-tool-output-repair.ts";
 import { companionTimeWakeupConstraint, companionExecutionConstraintGuidance } from "./companion-execution-constraints.ts";
-import { startCompanionSpeculativeFirstSteps } from "./companion-speculative-flights.ts";
 import {
   findDuplicateSegment,
   joinVisibleSegmentsDeduped,
   VISIBLE_SEGMENT_SEPARATOR,
 } from "./companion-visible-segments.ts";
-import { boundedStepSender } from "./companion-compaction.ts";
-import { compactActiveToolContext, createWorkingStateSummarizer } from "./companion-active-context-compaction.ts";
-import { bindHistoryForCompaction, compactUncoveredHistory, createHistoryExchangeSummarizer } from "./companion-history-pressure-compaction.ts";
-import { createCompactionCheckpoint, restoreCompactionCheckpoint, compactionSourceMessages } from "./companion-compaction-checkpoint.ts";
-import { createCompanionCompactionProgressStore } from "./companion-compaction-progress.ts";
+import { restoreCompactionCheckpoint } from "./companion-compaction-checkpoint.ts";
 import { encodeCompanionRuntimeCheckpoint, loadCompanionRuntimeCheckpoint, saveCompanionRuntimeInput,
   type CompanionRuntimeState } from "./companion-runtime-checkpoint.ts";
-import { renderPendingOffersAsRecords } from "./companion-context-handoff.ts";
-import { runCompanionAgentModelStep, companionAgentModelInputHash } from "./companion-agent-task.ts";
+import { companionAgentModelInputHash, createCompanionModelStepRunner } from "./companion-agent-task.ts";
 import { logger } from "../lib/logger.ts";
 import { runWithAbortBudget } from "../lib/handler-timeout.ts";
 import {
@@ -66,13 +56,13 @@ import {
 import { AgentOutputError, CompanionAgentBudgetExceededError, CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
 import { ProviderRequestError } from "../lib/provider-request-error.ts";
 import { currentWorkerWorkspaceTransaction, withWorkerWorkspaceTransaction } from "../db.ts";
-import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
-import { isJobLeaseActive, JobLeaseLostError } from "../lib/job-lease.ts";
-import type { AIProvider } from "../lib/ai-provider.ts";
+import { isJobLeaseActive } from "../lib/job-lease.ts";
 import {
   emitCompanionAssistantStatus,
   recoverCompanionRunFailureSpanBestEffort,
 } from "./companion-dialogue-store.ts";
+import { settleCompanionTurnPreamble } from "./companion-turn-preamble.ts";
+import { createCompanionStepCompaction } from "./companion-step-compaction.ts";
 import { looksTruncatedReply, companionStepOutputCeiling, sanitizeCompanionVisibleText } from "./companion-dialogue-content.ts";
 import { unavailableCompanionToolSummary } from "./companion-tool-outcome.ts";
 import { companionNumericEvidenceContext } from "./companion-context-evidence.ts";
@@ -84,13 +74,10 @@ import { repairDegenerateCompanionAnswer } from "./companion-answer-repair.ts";
 import { assembleCompanionStepRequest, companionStepPolicyText, companionStepToolSurface, companionWebSearchAllowedForStep } from "./companion-agent-step-assembly.ts";
 import { companionInitiativeInterpretationFields, renderCompanionInitiativeObservation } from "./companion-initiative-observation.ts";
 import { createdNoteToolResult, readCreatedNoteReceipt, userForbidsNoteLibraryRead } from "./companion-note-authoring.ts";
-import { EagerDispatchScheduler } from "./companion-eager-scheduler.ts";
 import {
   EAGER_TOOL_DISPATCH_ENABLED,
-  EAGER_DISPATCH_ELIGIBLE_TOOLS,
-  eagerDispatchOne,
+  createCompanionEagerScheduler,
 } from "./companion-eager-dispatch-config.ts";
-import { eagerCommitRecheck, type StreamToolCallSlot } from "./companion-eager-dispatch.ts";
 import { canRetryCompanionStream, runStreamingAgentStep } from "./companion-agent-streaming-step.ts";
 import { CompanionStreamStoppedError } from "./companion-dialogue-stream.ts";
 export { runStreamingAgentStep };
@@ -280,112 +267,30 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     if (recovered.phase === "settled") return recovered.result!;
   }
 
-  /**
-   * 两条投机（闲聊形状 + 提问形状）现在就出发，分类器不等。发与收的细节、
-   * 入场条件与"为什么走流式"都写在 `companion-speculative-flights.ts`；
-   * 攒住/作废由 `runStreamingAgentStep` 的 `releaseGate` 执行，留哪一版在下面定。
-   */
-  const speculativeFlights = startCompanionSpeculativeFirstSteps({
-    provider: args.provider,
-    ctxSignal: args.ctx.signal,
-    onProviderDelta: recovered ? undefined : args.onProviderDelta,
-    ...(args.onReasoningDelta ? { onReasoningDelta: args.onReasoningDelta } : {}),
-    attention: attentionPromise,
+  // 回合前段（投机器、注意力落定、历史绑定、工具面与能力快照）整段搬到
+  // companion-turn-preamble.ts；messages 仍归运行时所有，用访问器接进去。
+  const preamble = await settleCompanionTurnPreamble({
+    loopArgs: args,
+    event,
+    meta,
+    budget,
+    availableDefinitions,
+    dialogueHistory,
+    recovered,
+    attentionPromise,
     cachedInterpretation,
-    turnPolicy: typeof args.baseMessages[0]?.content === "string" ? args.baseMessages[0].content : "",
-    permissionLevel: meta.permissionLevel,
-    stepBudget: budget.maxSteps ?? Infinity,
-    messages,
+    handlerStartedAtMs,
     deadlineAt,
-    availableTools: availableDefinitions
-      .map(({ name, description, parameters }) => ({ name, description, parameters })),
-    webSearchAllowed: meta.webSearchEnabled === true && event.constraints.webSearchEnabled === true
-      && (budget.maxWebSearchCalls == null || budget.maxWebSearchCalls > 0) && webSearchServiceAvailable(),
-    toolCallCount: meta.toolCallCount,
-  });
-  const attention = await attentionPromise;
-  /**
-   * 把她自己那些"用户这句没接的收尾"降级成记录（判据与实测见 `renderPendingOffersAsRecords`）。
-   *
-   * 索引空间就是这里的 `messages`：分类器那侧按"去掉 system 之后"的位置编号，这一份也是，
-   * 所以中间不需要换算——换算一次就是两套编号，迟早对不上。
-   *
-   * 位置在投机那步**之后**是故意的：投机的请求早已按未改写的消息发出去了，只有
-   * `shouldKeepSpeculativeFirstStep` 保证"有待收的账就整版作废"，两者才不会各说一套。
-   * 交接快照里存的仍是改写前的基线；重试时同一份 `turn_interpretation` 已落库，
-   * 降级按同样的索引重放一次，输出逐字一致。
-   */
-  if (!recovered) messages = renderPendingOffersAsRecords(messages, attention.pendingOfferIndexes);
-  // The current host observation was appended after the frozen dialogue. It
-  // must remain in the request, but is not part of the historical binding.
-  const historyBinding = bindHistoryForCompaction(args.historyForCompaction, dialogueHistory,
-    messages.slice(0, dialogueHistory.length));
-  let prefetchedFirstStep = await speculativeFlights.settle({
-    attention, runId: args.read.runId, deadlineAt, handlerStartedAtMs,
-  });
-  const toolIntent = attention.toolUse === "none" ? false : attention.toolUse === "uncertain" ? null : true;
-  const userRequiresTool = companionStepRequiresTool(toolIntent,
-    attention.toolUse === "read" ? attention.candidateOperations : undefined);
-  const userAskedForAction = attention.toolUse === "act";
-  /**
-   * 工具面只由声明决定：权限档 + 数据外发政策，也就是 `resolveAllCompanionAgentTools`
-   * 给出的那一份（它自己的注释：Exposure is a view of the project catalog, filtered by
-   * current permissions and data-egress policy）。**本轮意图不再参与筛选。**
-   *
-   * 原来这里按 `attention.toolUse === "act"` 才留写类工具，于是分类器的一次猜测成了
-   * 能力总闸。2026-10-09 线上：用户说「生成一片新笔记…然后开启共享」，共享没有对应能力，
-   * 分类器因此记下一条歧义，`resolveAgentTurnInterpretation` 把 act 降成 uncertain
-   * （agent-core/runtime/attention.ts:40），于是 `companion_create_note` 整批被摘——
-   * **一个做不到的请求否掉了做得到的那个**。她照着自己那一份工具清单如实回答"我手上没有
-   * 新建笔记的入口"，下一轮单句请求时工具又在了，于是当众改口。本地 159 轮里 28.2% 的轮次
-   * 写类工具为空，另有 5 轮分类器自己点名了写操作却被摘。
-   *
-   * 摘工具从来没能真正拦住误写：要不要动数据由 `riskClass`、`requiresConfirmation`
-   * 与提案确认门在执行侧判（`companion-tool-execution.ts` 还会复核这轮是否真的给过）。
-   * 意图仍然有用，它管的是开不开思考、闲聊还是办事的语气，见下面。
-   */
-  const definitions = availableDefinitions;
-  const toolDefinitions = definitions.map((definition) => ({
-    name: definition.name,
-    description: definition.description,
-    parameters: definition.parameters,
-  }));
-  // steer 时要**点名**该调哪个工具：小模型对"你去调用工具"这种泛指不敏感，
-  // 对"调用 companion_search_notes"会照做（只列读类，且限 10 个免得提示比正文还长）。
-  const steerableReadTools = steerableToolNames(definitions, "lookup");
-  // action 那一支以前没有名字可点（只有泛指文案），实机 2026-09-22 场景 T 就是在这儿翻车的：
-  // 用户说「以后别主动催我复习」，她两步都只回"我记下了"，`companion_set_boundary` 一次没调。
-  const steerableActionTools = steerableToolNames(definitions, "action");
-  // 只点名本轮解释**自己指出**的那些写操作。`companionActionResultRecorded` 拿这份判
-  // "她声称的动作是否已有回执"，把全部写工具塞进去等于让任意一次写替这次声称作证。
-  // 一个都没点名时留空：纠正指令会退回 `steerableActionTools`（见 step-plan 那条 fallback），
-  // 宁可多 steer 一次，也不要放过一句没做过的事。
-  const requestedActionTools = attention.candidateOperations.filter(name => definitions.some(
-    definition => definition.name === name && definition.riskClass !== "read"));
-  const providerCapabilities = args.provider.getCapabilities?.();
-  const providerCapabilityFingerprint = sha256Utf8V1(canonicalJsonV1({
-    capabilityFingerprint: providerCapabilities?.fingerprint ?? null,
-    toolMode: providerCapabilities?.toolMode ?? null,
-    contextWindowTokens: providerCapabilities?.contextWindowTokens ?? null,
-    providerId: args.provider.id,
-    modelId: args.provider.modelId,
-    tools: toolDefinitions.map((tool) => tool.name),
-  }));
-  const capabilitySnapshot = companionAgentCapabilitySnapshotV1Schema.parse({
-    version: COMPANION_AGENT_CONTRACT_VERSION,
-    level: meta.permissionLevel,
-    offeredTools: definitions.map(({ name, toolVersion, riskClass }) => ({ name, toolVersion, riskClass })),
-  });
-  await updateRunMeta(event, {
-    permissionLevel: meta.permissionLevel,
-    permissionSnapshot: capabilitySnapshot,
-    turnInterpretation: attention,
-    budgetSnapshot: budget,
-    providerCapabilityFingerprint,
     elapsedMsDelta: elapsedDelta(),
-    // 装配回执随预算一起落库（44 §3.3）。没有它，`budget_omitted` 只存在于日志。
-    ...args.contextReceipts?.runMetaPatch(),
+    getMessages: () => messages,
+    setMessages: (next) => { messages = next; },
   });
+  const {
+    attention, historyBinding, userRequiresTool, userAskedForAction, definitions, toolDefinitions,
+    steerableReadTools, steerableActionTools, requestedActionTools,
+  } = preamble;
+  let prefetchedFirstStep = preamble.prefetchedFirstStep;
+
 
   /**
    * 这一轮开不开思考（判据与理由见 `companion-turn-thinking`）：**整轮定一次**，
@@ -417,102 +322,34 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       status: "thinking", safeLabel: "正在思考…",
     });
   }
-  // 历史摘要与当前工具工作状态在请求压力出现时压缩；原始交接快照、步骤
-  // 与工具账本保留完整证据，恢复时可重新读取。
-  let compactionRequest: AgentTurnRequest | null = null;
-  let compactionProvider = args.provider;
-  let compactionStepId: string | null = null;
-  const sourceProgress = (sourceKind: "history_exchanges" | "active_tool_rounds") => compactionRequest && compactionStepId
-    ? createCompanionCompactionProgressStore({ event, stepId: compactionStepId, request: compactionRequest,
-      provider: compactionProvider, sourceKind }) : undefined;
+  // 压力压缩的发出口整段搬到 companion-step-compaction.ts（发送、检查点恢复、
+  // 历史/工具折叠与轨迹记账同属一域）；运行时保留可变状态的所有权，用访问器接进去。
   let historyFoldApplied = recovered?.state.historyFoldApplied ?? false;
   const compactedEvidence: AgentTurnRequest["messages"] = [...recovered?.state.compactedEvidence ?? []];
-  const sendWithBoundedCompaction = boundedStepSender({
-    beginRequest: request => {
-      compactionRequest = request as AgentTurnRequest;
-      args.contextReceipts?.beginRequest(auditHash(request));
-    },
-    restore: () => {
-      if (compactionRequest) {
-        const restored = restoreCompactionCheckpoint({ runId: args.read.runId, conversationId: args.read.conversationId,
-          request: compactionRequest, traces: args.compactionCheckpoints ?? [] });
-        if (restored) {
-          compactedEvidence.push(...compactionSourceMessages(restored.source));
-          messages = [...restored.messages];
-          historyFoldApplied = true;
-          logger.info({ runId: args.read.runId, sourceKind: restored.receipt.sourceKind ?? "summary_coverage" },
-            "restored complete compaction checkpoint for identical request");
-          return restored;
-        }
-      }
-      return null;
-    },
-    fold: async replay => {
-      // replayFold indexes the original history. Once folded, those positions
-      // no longer identify the same messages and must never be reused.
-      const pressure = args.contextReceipts?.latestPressure();
-      let history = null;
-      if (!historyFoldApplied && compactionRequest && pressure && historyBinding) {
-        try {
-          history = await compactUncoveredHistory({ request: { ...compactionRequest, messages: [...replay] },
-            binding: historyBinding, targetInputTokens: pressure.targetTokens,
-            maxOutputTokens: companionStepOutputCeiling(compactionProvider),
-            ...(compactionProvider.countTextTokens ? { countTokens: (text: string) => compactionProvider.countTextTokens!(text) } : {}),
-            summarize: createHistoryExchangeSummarizer(compactionProvider, { signal: args.ctx.signal, deadlineAt }, sourceProgress("history_exchanges")),
-          });
-        } catch (error) {
-          if (args.ctx.signal.aborted || error instanceof JobLeaseLostError || error instanceof CompanionContextChangedError) throw error;
-          logger.warn({ runId: args.read.runId, failureType: error instanceof Error ? error.name : typeof error }, "history compaction failed; preserving complete original exchanges");
-        }
-      }
-      history ??= historyFoldApplied ? null : args.replayFold?.(replay) ?? null;
-      if (history) historyFoldApplied = true;
-      if (!compactionRequest || !pressure) {
-        if (history) messages = [...history.messages];
-        return history;
-      }
-      try {
-        const active = await compactActiveToolContext({
-          request: { ...compactionRequest, messages: [...history?.messages ?? replay] },
-          targetInputTokens: pressure.targetTokens,
-          maxOutputTokens: companionStepOutputCeiling(compactionProvider),
-          ...(compactionProvider.countTextTokens ? { countTokens: (text: string) => compactionProvider.countTextTokens!(text) } : {}),
-          summarize: createWorkingStateSummarizer(compactionProvider,
-            { signal: args.ctx.signal, deadlineAt }, sourceProgress("active_tool_rounds")),
-        });
-        const folded = active ?? history;
-        if (folded) messages = [...folded.messages];
-        return folded;
-      } catch (error) {
-        if (args.ctx.signal.aborted || error instanceof JobLeaseLostError || error instanceof CompanionContextChangedError) throw error;
-        logger.warn({ runId: args.read.runId, failureType: error instanceof Error ? error.name : typeof error }, "active tool context compaction failed; preserving original evidence");
-        if (history) messages = [...history.messages];
-        return history;
-      }
-    },
-    hasAttempt: () => args.contextReceipts?.hasCompactionAttempt() ?? false,
-    // 额度在每次重发之前消耗（companion-compaction.ts 的两条重发路径都会调）；
-    // 折成功与折不动都算用掉本轮那一次，闸随后按 over_trigger_line 放行。
-    consumeAttempt: () => args.contextReceipts?.consumeCompactionAttempt(),
-    ...(args.compactionCooldown ? { cooldown: args.compactionCooldown } : {}),
-    onCompacted: async (receipt, foldedMessages, source) => {
-      compactedEvidence.push(...compactionSourceMessages(source));
-      const pressure = args.contextReceipts?.latestPressure() ?? null;
-      args.compactionTrace?.record({
-        ...receipt,
-        ...(compactionRequest ? { checkpoint: createCompactionCheckpoint(args.read, compactionRequest, foldedMessages, source) } : {}),
-        modelId: pressure?.modelId ?? null,
-        inputTokens: pressure?.inputTokens ?? null,
-        triggerTokens: pressure?.triggerTokens ?? null,
-        hardInputTokens: pressure?.hardInputTokens ?? null,
-        reason: pressure?.reason ?? null,
-        at: new Date().toISOString(),
-      });
-      await args.persistCompactionTraces?.();
-      logger.warn({ runId: args.read.runId, stepCount, ...receipt },
-        "context pressure compacted source-bound history or tool evidence");
-    },
+  const stepCompaction = createCompanionStepCompaction({
+    event,
+    read: args.read,
+    runId: args.read.runId,
+    conversationId: args.read.conversationId,
+    signal: args.ctx.signal,
+    deadlineAt,
+    initialProvider: args.provider,
+    contextReceipts: args.contextReceipts,
+    compactionCheckpoints: args.compactionCheckpoints,
+    compactionCooldown: args.compactionCooldown,
+    compactionTrace: args.compactionTrace,
+    persistCompactionTraces: args.persistCompactionTraces,
+    replayFold: args.replayFold,
+    historyBinding,
+    compactedEvidence,
+    getMessages: () => messages,
+    setMessages: (next) => { messages = next; },
+    getStepCount: () => stepCount,
+    getHistoryFoldApplied: () => historyFoldApplied,
+    setHistoryFoldApplied: (value) => { historyFoldApplied = value; },
   });
+  const sendWithBoundedCompaction = stepCompaction.send;
+
   const contextText = companionNumericEvidenceContext(args.baseMessages);
   let stepCount = recovered?.state.stepCount ?? resolveAgentStepCountForResume(meta);
   const resumedStepCount = stepCount;
@@ -683,7 +520,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
       prefetchedRequest: prefetched?.request ?? null,
     });
     const stepId = await persistStep(event, stepCount, auditHash(stepRequest));
-    compactionStepId = stepId;
+    stepCompaction.setStepId(stepId);
     const preparation = new CompanionToolPreparation(definitions.filter(definition =>
       toolsOfferedThisStep.some(tool => tool.name === definition.name)), async (tool, definition, status) => {
       await appendAgentEvent(event, "agent.tool", { tool: {
@@ -738,79 +575,17 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
     }
     await saveCompanionRuntimeInput(event, stepId, encodeCompanionRuntimeCheckpoint(recoveryIdentity,
       { phase: "input", state: { ...workingState(stepCount - 1), steerSwapToFallback: pendingSteer } }));
-    const runModelStepTask = (
-      provider: AIProvider,
-      request: AgentTurnRequest,
-      signal: AbortSignal,
-      execute: (taskSignal: AbortSignal) => Promise<AgentTurnResult>,
-      timeoutMs = resolveProviderCallTimeout("companion_agent"),
-    ): Promise<AgentTurnResult> => {
-      const taskTimeoutMs = Math.min(timeoutMs, deadlineAt - Date.now());
-      if (taskTimeoutMs <= 0) {
-        throw new CompanionAgentBudgetExceededError("companion agent deadline exceeded before model step");
-      }
-      return runCompanionAgentModelStep({
-        job: args.ctx,
-        runId: args.read.runId,
-        stepId,
-        userId: args.read.userId,
-        permissionLevel: meta.permissionLevel,
-        request,
-        provider,
-        signal,
-        timeoutMs: taskTimeoutMs,
-        currentActiveTransaction: currentWorkerWorkspaceTransaction,
-        verifyAttempt: async attempt => {
-          if (!(await isJobLeaseActive({ ...args.ctx, leaseToken: attempt.leaseToken }))) return false;
-          await withWorkerWorkspaceTransaction({ workspaceId: args.ctx.workspaceId, userId: args.read.userId },
-            tx => assertCompanionContextSourcesCurrent(tx, { workspaceId: args.ctx.workspaceId, userId: args.read.userId }, args.read.runId));
-          return true;
-        },
-        checkpoint: createCompanionAgentStepCheckpointPort(event, stepId),
-        execute,
-      });
-    };
+    const runModelStepTask = createCompanionModelStepRunner({
+      job: args.ctx,
+      read: args.read,
+      event,
+      permissionLevel: meta.permissionLevel,
+      deadlineAt: () => deadlineAt,
+      getStepId: () => stepId,
+    });
     let result;
       const eagerScheduler = EAGER_TOOL_DISPATCH_ENABLED
-        ? new EagerDispatchScheduler({
-          dispatch: (slot: StreamToolCallSlot) => eagerDispatchOne(event, stepId, slot, deadlineAt, {
-            ...args,
-            // 提交前复查（40b §4.1-1 / A76）：取消、租约失效、权限撤销与
-            // 账号世代变化都会把这一格挡在提交之外。带副作用的一律落
-            // `outcome_unknown` —— **不假回滚**（§3.2）。
-            //
-            // 为什么在这里现查而不是看循环开头那份快照：这两件事之间可能过去
-            // 好几秒（流式一整轮），用户点取消就是在这中间发生的。
-            commitGuard: async () => {
-              const recheck = eagerCommitRecheck({
-                // 撤权/世代变化：与循环开头那次同一条判据现查一遍。
-                revoked: await readRunMeta(event).then(
-                  (meta) => !meta.globalEnabled || meta.currentAccountEpoch !== args.read.accountEpoch,
-                ),
-                cancelled: event.ctx.signal.aborted,
-                leaseLost: !isJobLeaseActive({ ...args.ctx, leaseToken: args.ctx.leaseToken }),
-                // 白名单里目前全是只读工具，所以带副作用的这一支还不会走到。
-                // 留着这个参数是有意的：白名单将来放宽时，这里**已经是**正确的形状，
-                // 不需要再改一次（40b §1.5「补救机制的退出条件要事先写清」）。
-                hasSideEffect: false,
-              });
-              if (!recheck.commit) {
-                throw new Error(`eager dispatch commit recheck: ${recheck.status}`);
-              }
-            },
-          }),
-          decision: {
-            eligibleTools: EAGER_DISPATCH_ELIGIBLE_TOOLS,
-            // 确认门（A58）：第 N 格要用户确认时，第 N+1 格的只读也不能提前跑。
-            // 不传这一项时判据认不出确认门，等于赌序号缺口里是空的。
-            requiresConfirmation: (name: string) =>
-              getCompanionAgentTool(name)?.requiresConfirmation === true,
-          },
-          onError: (slot: { name: string; index: number }, error: unknown) => logger.warn(
-            { runId: args.read.runId, tool: slot.name, index: slot.index, err: error },
-            "companion eager tool dispatch failed",
-          ),
-        })
+        ? createCompanionEagerScheduler({ jobArgs: args, event, deadlineAt: () => deadlineAt, getStepId: () => stepId })
         : null;
 
     try {
@@ -857,7 +632,7 @@ export async function runCompanionAgentLoop(args: CompanionAgentLoopArgs): Promi
         && !utterancePublished
         && typeof stepProvider.chatCompletionStream === "function"
         && (finalAnswerOnly || stepRequest.tools.length === 0 || stepProvider.chatCompletionStreamToolCalls === true);
-      compactionProvider = stepProvider;
+      stepCompaction.setProvider(stepProvider);
 
       if (prefetched) {
         // The speculative stream has already completed (and may have delivered

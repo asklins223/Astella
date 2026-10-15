@@ -1391,9 +1391,14 @@ test("工具面只由权限档与数据外发政策装配，不再被本轮判�
   assert.match(source,
     /const availableDefinitions = resolveAllCompanionAgentTools\(meta\.permissionLevel, event\.constraints\)/,
     "工具面必须来自那份按声明过滤的目录，不是另起一处清单");
-  const assembly = /^  const definitions = ([^;]+);$/m.exec(source);
+  // 2026-10-16（神文件棘轮）：装配那一句随回合前段搬进 companion-turn-preamble.ts，
+  // 判据跟着真实位置走——目录仍在运行时装配，装配点仍不许再加一道筛选。
+  const preamble = readFileSync(new URL("../companion-turn-preamble.ts", import.meta.url), "utf8");
+  const assembly = /^  const definitions = ([^;]+);$|^\s+definitions: ([^,]+),$/m.exec(preamble);
   assert.ok(assembly, "找不到工具面装配那一句（形状变了，这条判据要先跟着改）");
-  assert.equal(assembly[1].trim(), "availableDefinitions",
-    `工具面又被加了筛选（${assembly[1].trim()}）：能不能被她看见只该由权限档与外发政策决定，`
+  assert.match((assembly[1] ?? assembly[2]).trim(), /^(deps\.)?availableDefinitions$/,
+    `工具面又被加了筛选（${(assembly[1] ?? assembly[2]).trim()}）：能不能被她看见只该由权限档与外发政策决定，`
     + "要不要真写由 riskClass、确认门与执行侧复核决定");
+  assert.match(source, /availableDefinitions,\n\s+dialogueHistory,/,
+    "运行时不再把那份目录交给装配点 —— 工具面改由别处自己拼了");
 });

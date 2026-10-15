@@ -148,3 +148,62 @@ export async function eagerDispatchOne(
   if (run.kind === "waiting") return run.proposalId;
   return run.execution.value;
 }
+
+/**
+ * 构建提前派发调度器（2026-10-15 从 companion-agent-runtime.ts 迁入装配）。
+ * 开关判据、白名单与提交前复查的原注释随代码留在这里；运行时只按 EAGER_TOOL_DISPATCH_ENABLED
+ * 选择建或不建。stepId 与 deadlineAt 是循环内可变状态，用访问器接进来。
+ */
+export function createCompanionEagerScheduler(deps: {
+  jobArgs: CompanionAgentLoopArgs;
+  event: AgentEventContext;
+  deadlineAt: () => number;
+  getStepId: () => string;
+}): EagerDispatchScheduler {
+  return new EagerDispatchScheduler({
+    dispatch: (slot: StreamToolCallSlot) => eagerDispatchOne(deps.event, deps.getStepId(), slot, deps.deadlineAt(), {
+      ...deps.jobArgs,
+      // 提交前复查（40b §4.1-1 / A76）：取消、租约失效、权限撤销与
+      // 账号世代变化都会把这一格挡在提交之外。带副作用的一律落
+      // `outcome_unknown` —— **不假回滚**（§3.2）。
+      //
+      // 为什么在这里现查而不是看循环开头那份快照：这两件事之间可能过去
+      // 好几秒（流式一整轮），用户点取消就是在这中间发生的。
+      commitGuard: async () => {
+        const recheck = eagerCommitRecheck({
+          // 撤权/世代变化：与循环开头那次同一条判据现查一遍。
+          revoked: await readRunMeta(deps.event).then(
+            (meta) => !meta.globalEnabled || meta.currentAccountEpoch !== deps.jobArgs.read.accountEpoch,
+          ),
+          cancelled: deps.event.ctx.signal.aborted,
+          leaseLost: !isJobLeaseActive({ ...deps.jobArgs.ctx, leaseToken: deps.jobArgs.ctx.leaseToken }),
+          // 白名单里目前全是只读工具，所以带副作用的这一支还不会走到。
+          // 留着这个参数是有意的：白名单将来放宽时，这里**已经是**正确的形状，
+          // 不需要再改一次（40b §1.5「补救机制的退出条件要事先写清」）。
+          hasSideEffect: false,
+        });
+        if (!recheck.commit) {
+          throw new Error(`eager dispatch commit recheck: ${recheck.status}`);
+        }
+      },
+    }),
+    decision: {
+      eligibleTools: EAGER_DISPATCH_ELIGIBLE_TOOLS,
+      // 确认门（A58）：第 N 格要用户确认时，第 N+1 格的只读也不能提前跑。
+      // 不传这一项时判据认不出确认门，等于赌序号缺口里是空的。
+      requiresConfirmation: (name: string) =>
+        getCompanionAgentTool(name)?.requiresConfirmation === true,
+    },
+    onError: (slot: { name: string; index: number }, error: unknown) => logger.warn(
+      { runId: deps.jobArgs.read.runId, tool: slot.name, index: slot.index, err: error },
+      "companion eager tool dispatch failed",
+    ),
+  });
+}
+
+import { EagerDispatchScheduler } from "./companion-eager-scheduler.ts";
+import { eagerCommitRecheck } from "./companion-eager-dispatch.ts";
+import { readRunMeta } from "./companion-agent-events.ts";
+import { isJobLeaseActive } from "../lib/job-lease.ts";
+import { logger } from "../lib/logger.ts";
+import type { CompanionAgentLoopArgs } from "../contracts/companion-agent-loop.ts";

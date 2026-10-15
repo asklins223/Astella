@@ -34,12 +34,15 @@ test("普通问答的终态消息记 text", () => {
 
 const DIALOGUE = join(import.meta.dirname, "../companion-dialogue.ts");
 const dialogueSource = readFileSync(DIALOGUE, "utf8");
+const FINALIZATION = join(import.meta.dirname, "../companion-dialogue-finalization.ts");
+const finalizationSource = readFileSync(FINALIZATION, "utf8");
 const STORE = join(import.meta.dirname, "../companion-dialogue-store.ts");
 const storeSource = readFileSync(STORE, "utf8");
 
 /**
  * 终态写入 2026-10-14 从 `companion-dialogue` 抽进了 `companion-dialogue-store`
- * 的 `insertCompanionFinalAssistantMessage`（那个编排文件贴着神文件阈值）。
+ * 的 `insertCompanionFinalAssistantMessage`（那个编排文件贴着神文件阈值），
+ * 2026-10-16（神文件棘轮）调用点又随终态事务搬进 `companion-dialogue-finalization.ts`。
  * 本体分居两处，判据也得分两处盯——盯错地方就会一直红在错误的位置，
  * 而真正的回归（INSERT 里写死 'text'）反而没人看。
  */
@@ -53,8 +56,8 @@ test("终态写入用这一处判据，不在 INSERT 里写死 kind", () => {
   assert.doesNotMatch(statement, /'text'/);
 });
 
-test("调用点把 read 交给判据，不在 dialogue 里自定 kind", () => {
-  assert.match(dialogueSource, /kind:\s*companionAssistantMessageKind\(read\)/,
+test("调用点把 read 交给判据，不在收尾里自定 kind", () => {
+  assert.match(finalizationSource, /kind:\s*companionAssistantMessageKind\(read\)/,
     "终态写入的 kind 必须来自 companionAssistantMessageKind(read)——"
     + "主动轮的收尾按 read.initiativeInput 记 proactive，写死 'text' 会漏掉她主动说的大部分话");
 });

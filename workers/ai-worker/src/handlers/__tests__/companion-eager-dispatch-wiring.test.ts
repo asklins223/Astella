@@ -38,8 +38,13 @@ test("默认关闭：没有环境变量时，运行时压根不建调度器", ()
   assert.match(config, /process\.env\.COMPANION_EAGER_TOOL_DISPATCH === "1"/,
     "开关的判据变了 —— 它必须是显式的 \"1\"，不能是任何非空即真");
   // 运行时确实**按开关**建，而不是无条件建。
-  assert.match(runtime, /EAGER_TOOL_DISPATCH_ENABLED\s*\n?\s*\?\s*new EagerDispatchScheduler/,
+  // 2026-10-16（神文件棘轮）：`new EagerDispatchScheduler` 的装配随工厂搬进
+  // companion-eager-dispatch-config.ts；开关三元留在运行时——「按不按要求建」这件事
+  // 仍然必须在调用点看得见，所以这里两侧各钉一半，而不是把判据整体挪走。
+  assert.match(runtime, /EAGER_TOOL_DISPATCH_ENABLED\s*\n?\s*\?\s*createCompanionEagerScheduler\([\s\S]*:\s*null;/,
     "调度器不再受开关控制 —— 它现在会无条件建起来");
+  assert.match(config, /return new EagerDispatchScheduler\(/,
+    "装配不再经由工厂 —— 运行时会拿到一个不受开关控制的构造");
 });
 
 test("收口在循环看到 toolCalls 之前 —— 否则会重复执行", () => {
