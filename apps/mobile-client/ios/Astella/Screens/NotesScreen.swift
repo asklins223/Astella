@@ -857,7 +857,7 @@ private struct NoteVersionsScreen: View {
         loading = true; failure = nil
         defer { loading = false }
         do {
-            let page = try await store.api.request("/notes/\(noteId)/versions", query: [URLQueryItem(name: "limit", value: "50"), URLQueryItem(name: "offset", value: "0")]) as? [String: Any] ?? [:]
+            let page = try await store.noteVersions(noteId: noteId)
             items = page["items"] as? [[String: Any]] ?? []
         } catch { failure = noteFeatureFailure(error) }
     }
@@ -867,7 +867,7 @@ private struct NoteVersionsScreen: View {
         restoring = true; failure = nil
         defer { restoring = false; selected = nil }
         do {
-            _ = try await store.api.request("/notes/\(noteId)/versions/\(versionId)/restore", method: "POST", body: ["baseVersionId": baseVersionId])
+            try await store.restoreNoteVersion(noteId: noteId, versionId: versionId, baseVersionId: baseVersionId)
             await store.loadNote(noteId)
             await load()
         } catch { failure = noteFeatureFailure(error) }
@@ -970,10 +970,10 @@ private struct NoteOverviewScreen: View {
         loading = true; failure = nil
         defer { loading = false }
         do {
-            let page = try await store.api.request("/v2/notes/\(noteId)/overviews") as? [String: Any] ?? [:]
+            let page = try await store.noteOverviews(noteId: noteId)
             let items = page["items"] as? [[String: Any]] ?? []
             overview = items.first(where: { $0["noteVersionId"] as? String == versionId }) ?? items.first
-            let latest = try await store.api.request("/v2/notes/\(noteId)/overview-tasks/latest", query: [URLQueryItem(name: "noteVersionId", value: versionId)]) as? [String: Any] ?? [:]
+            let latest = try await store.latestOverviewTask(noteId: noteId, noteVersionId: versionId)
             task = latest["task"] as? [String: Any]
             if let current = task, ["queued", "running"].contains(current["status"] as? String ?? "") { await pollTask(current) }
         } catch { failure = noteFeatureFailure(error) }
@@ -985,7 +985,7 @@ private struct NoteOverviewScreen: View {
         working = true; failure = nil
         defer { working = false }
         do {
-            let created = try await store.api.request("/v2/notes/\(noteId)/overview-tasks", method: "POST", body: ["noteVersionId": versionId, "requestId": UUID().uuidString.lowercased()]) as? [String: Any] ?? [:]
+            let created = try await store.createOverviewTask(noteId: noteId, noteVersionId: versionId)
             task = created
             await pollTask(created)
         } catch {
@@ -1000,7 +1000,7 @@ private struct NoteOverviewScreen: View {
         working = true
         for _ in 0..<30 {
             do {
-                let value = try await store.api.request("/v2/notes/\(noteId)/overview-tasks/\(taskId)") as? [String: Any] ?? [:]
+                let value = try await store.overviewTask(noteId: noteId, taskId: taskId)
                 task = value
                 if let result = value["overview"] as? [String: Any] { overview = result }
                 let status = value["status"] as? String ?? ""
@@ -1103,10 +1103,10 @@ private struct NoteMindMapScreen: View {
         guard let versionId = store.noteDocument?.versionId else { return }
         loading = true; failure = nil; defer { loading = false }
         do {
-            let page = try await store.api.request("/v2/notes/\(noteId)/mind-maps") as? [String: Any] ?? [:]
+            let page = try await store.noteMindMaps(noteId: noteId)
             let items = page["items"] as? [[String: Any]] ?? []
             map = items.first(where: { $0["noteVersionId"] as? String == versionId }) ?? items.first
-            let latest = try await store.api.request("/v2/notes/\(noteId)/mind-map-tasks/latest", query: [URLQueryItem(name: "noteVersionId", value: versionId)]) as? [String: Any] ?? [:]
+            let latest = try await store.latestMindMapTask(noteId: noteId, noteVersionId: versionId)
             if let task = latest["task"] as? [String: Any], ["queued", "running"].contains(task["status"] as? String ?? "") { await poll(task) }
         } catch { failure = noteFeatureFailure(error) }
     }
@@ -1116,7 +1116,7 @@ private struct NoteMindMapScreen: View {
               let versionId = store.noteDocument?.versionId else { return }
         loading = true; failure = nil; defer { loading = false }
         do {
-            let task = try await store.api.request("/v2/notes/\(noteId)/mind-map-tasks", method: "POST", body: ["noteVersionId": versionId, "requestId": UUID().uuidString.lowercased()]) as? [String: Any] ?? [:]
+            let task = try await store.createMindMapTask(noteId: noteId, noteVersionId: versionId)
             await poll(task)
         } catch {
             failure = noteFeatureFailure(error)
@@ -1130,7 +1130,7 @@ private struct NoteMindMapScreen: View {
         working = true
         for _ in 0..<30 {
             do {
-                let value = try await store.api.request("/v2/notes/\(noteId)/mind-map-tasks/\(taskId)") as? [String: Any] ?? [:]
+                let value = try await store.mindMapTask(noteId: noteId, taskId: taskId)
                 if let result = value["mindMap"] as? [String: Any] { map = result }
                 let status = value["status"] as? String ?? ""
                 if status == "ready" { working = false; return }
@@ -1230,7 +1230,7 @@ private struct NoteExplainScreen: View {
         guard let versionId = store.noteDocument?.versionId else { return }
         loading = true; failure = nil; defer { loading = false }
         do {
-            let page = try await store.api.request("/v2/notes/\(noteId)/learning-artifact-tasks", query: [URLQueryItem(name: "noteVersionId", value: versionId)]) as? [String: Any] ?? [:]
+            let page = try await store.learningArtifactTasks(noteId: noteId, noteVersionId: versionId)
             let tasks = page["items"] as? [[String: Any]] ?? []
             let latest = tasks.first(where: { $0["sourceKind"] as? String == "overview" })
             task = latest
@@ -1244,7 +1244,7 @@ private struct NoteExplainScreen: View {
               let versionId = store.noteDocument?.versionId else { return }
         working = true; failure = nil; defer { working = false }
         do {
-            let created = try await store.api.request("/v2/notes/\(noteId)/learning-artifact-tasks", method: "POST", body: ["noteVersionId": versionId, "requestId": UUID().uuidString.lowercased(), "sourceKind": "overview"]) as? [String: Any] ?? [:]
+            let created = try await store.createLearningArtifactTask(noteId: noteId, noteVersionId: versionId)
             task = created
             await poll(created)
         } catch {
@@ -1259,7 +1259,7 @@ private struct NoteExplainScreen: View {
         working = true
         for _ in 0..<30 {
             do {
-                let value = try await store.api.request("/v2/notes/\(noteId)/learning-artifact-tasks/\(taskId)") as? [String: Any] ?? [:]
+                let value = try await store.learningArtifactTask(noteId: noteId, taskId: taskId)
                 task = value
                 if let result = value["artifact"] as? [String: Any] { artifact = result }
                 let status = value["status"] as? String ?? ""

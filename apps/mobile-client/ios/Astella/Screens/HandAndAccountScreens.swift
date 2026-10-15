@@ -628,7 +628,7 @@ private struct ParticipationPreferencesEditor: View {
         isLoading = true; error = nil
         defer { isLoading = false }
         do {
-            let value = try await store.api.request("/me/companion/participation") as? [String: Any] ?? [:]
+            let value = try await store.loadParticipation()
             let serverMarkdown = value["markdown"] as? String ?? ""
             revision = value["revision"] as? Int ?? 0
             enabled = value["enabled"] as? Bool ?? true
@@ -643,9 +643,7 @@ private struct ParticipationPreferencesEditor: View {
         isSaving = true; error = nil; notice = nil
         defer { isSaving = false }
         do {
-            let result = try await store.api.request("/me/companion/participation", method: "PUT", body: [
-                "expectedRevision": revision, "markdown": markdown, "enabled": nextEnabled,
-            ]) as? [String: Any] ?? [:]
+            let result = try await store.saveParticipation(expectedRevision: revision, markdown: markdown, enabled: nextEnabled)
             revision = result["revision"] as? Int ?? revision + 1
             enabled = result["enabled"] as? Bool ?? nextEnabled
             markdown = result["markdown"] as? String ?? markdown

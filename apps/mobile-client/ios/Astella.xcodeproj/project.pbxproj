@@ -17,8 +17,23 @@
 		A10000000000000000000014 /* Surfaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* Surfaces.swift */; };
 		A10000000000000000000015 /* Buttons.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* Buttons.swift */; };
 		A10000000000000000000016 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* Components.swift */; };
+		A10000000000000000000017 /* AstellaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* AstellaApp.swift */; };
+		A10000000000000000000018 /* AuthScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* AuthScreen.swift */; };
+		A10000000000000000000019 /* AuthComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000021 /* AuthComponents.swift */; };
+		A10000000000000000000020 /* MainTabShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* MainTabShell.swift */; };
+		A10000000000000000000021 /* SessionRecoveryScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* SessionRecoveryScreen.swift */; };
+		A10000000000000000000022 /* ConversationScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000024 /* ConversationScreen.swift */; };
+		A10000000000000000000023 /* CompanionScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000025 /* CompanionScene.swift */; };
+		A10000000000000000000024 /* MessageHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000026 /* MessageHistory.swift */; };
+		A10000000000000000000025 /* MessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000027 /* MessageRow.swift */; };
+		A10000000000000000000026 /* ConversationFailurePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000028 /* ConversationFailurePanel.swift */; };
+		A10000000000000000000027 /* ConversationDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000029 /* ConversationDTOs.swift */; };
+		A10000000000000000000028 /* SessionMethods.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000030 /* SessionMethods.swift */; };
+		A10000000000000000000029 /* ConversationMethods.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000031 /* ConversationMethods.swift */; };
+		A10000000000000000000030 /* NotesMethods.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000032 /* NotesMethods.swift */; };
+		A10000000000000000000031 /* HandMethods.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000033 /* HandMethods.swift */; };
+		A10000000000000000000032 /* AccountMethods.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000034 /* AccountMethods.swift */; };
 		A10000000000000000000007 /* VoiceCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* VoiceCapture.swift */; };
-		A10000000000000000000008 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* RootView.swift */; };
 		A10000000000000000000009 /* NotesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* NotesScreen.swift */; };
 		A10000000000000000000010 /* HandAndAccountScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* HandAndAccountScreens.swift */; };
 		A10000000000000000000011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* Assets.xcassets */; };
@@ -36,7 +51,22 @@
 		A20000000000000000000016 /* Surfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Surfaces.swift; sourceTree = "<group>"; };
 		A20000000000000000000017 /* Buttons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Buttons.swift; sourceTree = "<group>"; };
 		A20000000000000000000018 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
-		A20000000000000000000008 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		A20000000000000000000019 /* AstellaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstellaApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000020 /* AuthScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthScreen.swift; sourceTree = "<group>"; };
+		A20000000000000000000021 /* AuthComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthComponents.swift; sourceTree = "<group>"; };
+		A20000000000000000000022 /* MainTabShell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabShell.swift; sourceTree = "<group>"; };
+		A20000000000000000000023 /* SessionRecoveryScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRecoveryScreen.swift; sourceTree = "<group>"; };
+		A20000000000000000000024 /* ConversationScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationScreen.swift; sourceTree = "<group>"; };
+		A20000000000000000000025 /* CompanionScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionScene.swift; sourceTree = "<group>"; };
+		A20000000000000000000026 /* MessageHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageHistory.swift; sourceTree = "<group>"; };
+		A20000000000000000000027 /* MessageRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageRow.swift; sourceTree = "<group>"; };
+		A20000000000000000000028 /* ConversationFailurePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationFailurePanel.swift; sourceTree = "<group>"; };
+		A20000000000000000000029 /* ConversationDTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationDTOs.swift; sourceTree = "<group>"; };
+		A20000000000000000000030 /* SessionMethods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionMethods.swift; sourceTree = "<group>"; };
+		A20000000000000000000031 /* ConversationMethods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationMethods.swift; sourceTree = "<group>"; };
+		A20000000000000000000032 /* NotesMethods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesMethods.swift; sourceTree = "<group>"; };
+		A20000000000000000000033 /* HandMethods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandMethods.swift; sourceTree = "<group>"; };
+		A20000000000000000000034 /* AccountMethods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountMethods.swift; sourceTree = "<group>"; };
 		A20000000000000000000009 /* NotesScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesScreen.swift; sourceTree = "<group>"; };
 		A20000000000000000000010 /* HandAndAccountScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandAndAccountScreens.swift; sourceTree = "<group>"; };
 		A20000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -58,6 +88,9 @@
 		A30000000000000000000001 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				A20000000000000000000019 /* AstellaApp.swift */,
+				A30000000000000000000009 /* DTO */,
+				A30000000000000000000010 /* Store */,
 				A20000000000000000000001 /* Models.swift */,
 				A20000000000000000000002 /* KeychainTokenStore.swift */,
 				A20000000000000000000003 /* MobileAPI.swift */,
@@ -68,14 +101,63 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		A30000000000000000000009 /* DTO */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000029 /* ConversationDTOs.swift */,
+			);
+			path = DTO;
+			sourceTree = "<group>";
+		};
+		A30000000000000000000010 /* Store */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000030 /* SessionMethods.swift */,
+				A20000000000000000000031 /* ConversationMethods.swift */,
+				A20000000000000000000032 /* NotesMethods.swift */,
+				A20000000000000000000033 /* HandMethods.swift */,
+				A20000000000000000000034 /* AccountMethods.swift */,
+			);
+			path = Store;
+			sourceTree = "<group>";
+		};
 		A30000000000000000000002 /* Screens */ = {
 			isa = PBXGroup;
 			children = (
-				A20000000000000000000008 /* RootView.swift */,
 				A20000000000000000000009 /* NotesScreen.swift */,
 				A20000000000000000000010 /* HandAndAccountScreens.swift */,
 			);
 			path = Screens;
+			sourceTree = "<group>";
+		};
+		A30000000000000000000006 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000020 /* AuthScreen.swift */,
+				A20000000000000000000021 /* AuthComponents.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		A30000000000000000000007 /* Shell */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000022 /* MainTabShell.swift */,
+				A20000000000000000000023 /* SessionRecoveryScreen.swift */,
+			);
+			path = Shell;
+			sourceTree = "<group>";
+		};
+		A30000000000000000000008 /* Conversation */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000024 /* ConversationScreen.swift */,
+				A20000000000000000000025 /* CompanionScene.swift */,
+				A20000000000000000000026 /* MessageHistory.swift */,
+				A20000000000000000000027 /* MessageRow.swift */,
+				A20000000000000000000028 /* ConversationFailurePanel.swift */,
+			);
+			path = Conversation;
 			sourceTree = "<group>";
 		};
 		A30000000000000000000005 /* Design */ = {
@@ -94,6 +176,9 @@
 			isa = PBXGroup;
 			children = (
 				A30000000000000000000001 /* App */,
+				A30000000000000000000006 /* Auth */,
+				A30000000000000000000007 /* Shell */,
+				A30000000000000000000008 /* Conversation */,
 				A30000000000000000000005 /* Design */,
 				A30000000000000000000002 /* Screens */,
 				A20000000000000000000011 /* Assets.xcassets */,
@@ -198,7 +283,22 @@
 				A10000000000000000000015 /* Buttons.swift in Sources */,
 				A10000000000000000000016 /* Components.swift in Sources */,
 				A10000000000000000000007 /* VoiceCapture.swift in Sources */,
-				A10000000000000000000008 /* RootView.swift in Sources */,
+				A10000000000000000000017 /* AstellaApp.swift in Sources */,
+				A10000000000000000000018 /* AuthScreen.swift in Sources */,
+				A10000000000000000000019 /* AuthComponents.swift in Sources */,
+				A10000000000000000000020 /* MainTabShell.swift in Sources */,
+				A10000000000000000000021 /* SessionRecoveryScreen.swift in Sources */,
+				A10000000000000000000022 /* ConversationScreen.swift in Sources */,
+				A10000000000000000000023 /* CompanionScene.swift in Sources */,
+				A10000000000000000000024 /* MessageHistory.swift in Sources */,
+				A10000000000000000000025 /* MessageRow.swift in Sources */,
+				A10000000000000000000026 /* ConversationFailurePanel.swift in Sources */,
+				A10000000000000000000027 /* ConversationDTOs.swift in Sources */,
+				A10000000000000000000028 /* SessionMethods.swift in Sources */,
+				A10000000000000000000029 /* ConversationMethods.swift in Sources */,
+				A10000000000000000000030 /* NotesMethods.swift in Sources */,
+				A10000000000000000000031 /* HandMethods.swift in Sources */,
+				A10000000000000000000032 /* AccountMethods.swift in Sources */,
 				A10000000000000000000009 /* NotesScreen.swift in Sources */,
 				A10000000000000000000010 /* HandAndAccountScreens.swift in Sources */,
 			);

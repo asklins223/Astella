@@ -46,6 +46,14 @@ struct CompanionMessage: Identifiable, Hashable {
         }.joined(separator: "\n\n")
     }
 
+    init(id: String, seq: Int, role: String, blocks: [CompanionBlock], createdAt: String) {
+        self.id = id
+        self.seq = seq
+        self.role = role
+        self.blocks = blocks
+        self.createdAt = createdAt
+    }
+
     init?(_ value: [String: Any]) {
         guard let id = value["id"] as? String else { return nil }
         self.id = id
@@ -290,6 +298,14 @@ struct ActiveRun: Identifiable, Hashable {
     var stepCount: Int
     var toolCallCount: Int
     var thinkingText: String?
+
+    init(id: String, status: String, stepCount: Int, toolCallCount: Int, thinkingText: String?) {
+        self.id = id
+        self.status = status
+        self.stepCount = stepCount
+        self.toolCallCount = toolCallCount
+        self.thinkingText = thinkingText
+    }
 
     init?(_ value: [String: Any]) {
         guard let id = value["runId"] as? String else { return nil }

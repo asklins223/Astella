@@ -34,8 +34,10 @@ final class MobileAPI {
         return url
     }
 
-    func request(_ path: String, method: String = "GET", body: Any? = nil,
-                 query: [URLQueryItem] = [], idempotencyKey: String? = nil) async throws -> Any {
+    /// 传输层共用出口：组请求 → 发送 → HTTP 状态/错误信封判定，返回成功响应体。
+    /// 两个 `request` 重载（[String:Any] 与泛型 Decodable）的错误形态都由这里决定。
+    private func perform(_ path: String, method: String, body: Any?,
+                         query: [URLQueryItem], idempotencyKey: String?) async throws -> Data {
         var request = URLRequest(url: try url(path, query: query))
         request.httpMethod = method
         request.timeoutInterval = 30
@@ -64,8 +66,25 @@ final class MobileAPI {
                 message: payload?["message"] as? String ?? "请求没有完成，请稍后重试。"
             )
         }
+        return data
+    }
+
+    func request(_ path: String, method: String = "GET", body: Any? = nil,
+                 query: [URLQueryItem] = [], idempotencyKey: String? = nil) async throws -> Any {
+        let data = try await perform(path, method: method, body: body, query: query, idempotencyKey: idempotencyKey)
         if data.isEmpty { return NSNull() }
         return try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+    }
+
+    /// 泛型 Decodable 出口：与 `[String:Any]` 出口共用 `perform`（HTTP 状态与错误信封
+    /// 处理完全一致），仅把响应体交给 JSONDecoder。空响应按错误抛出（解码无从谈起）。
+    func request<T: Decodable>(_ path: String, method: String = "GET", body: [String: Any]? = nil,
+                               query: [URLQueryItem] = [], idempotencyKey: String? = nil) async throws -> T {
+        let data = try await perform(path, method: method, body: body, query: query, idempotencyKey: idempotencyKey)
+        guard !data.isEmpty else {
+            throw MobileAPIError(status: 200, code: "empty_response", message: "服务端返回了空响应。")
+        }
+        return try JSONDecoder().decode(T.self, from: data)
     }
 
     func imageData(_ address: String) async throws -> Data {
