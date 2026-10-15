@@ -149,6 +149,22 @@ export async function eagerDispatchOne(
   return run.execution.value;
 }
 
+/** Check the current asynchronous lease result before an eager read can proceed. */
+export async function assertCompanionEagerCommitCurrent(event: AgentEventContext): Promise<void> {
+  const meta = await readRunMeta(event);
+  const leaseActive = await isJobLeaseActive(event.ctx);
+  const recheck = eagerCommitRecheck({
+    revoked: !meta.globalEnabled || meta.currentAccountEpoch !== event.read.accountEpoch,
+    cancelled: event.ctx.signal.aborted,
+    leaseLost: !leaseActive,
+    // Only side-effect-free reads are eligible for eager dispatch.
+    hasSideEffect: false,
+  });
+  if (!recheck.commit) {
+    throw new Error(`eager dispatch commit recheck: ${recheck.status}`);
+  }
+}
+
 /**
  * 构建提前派发调度器（2026-10-15 从 companion-agent-runtime.ts 迁入装配）。
  * 开关判据、白名单与提交前复查的原注释随代码留在这里；运行时只按 EAGER_TOOL_DISPATCH_ENABLED
@@ -169,23 +185,7 @@ export function createCompanionEagerScheduler(deps: {
       //
       // 为什么在这里现查而不是看循环开头那份快照：这两件事之间可能过去
       // 好几秒（流式一整轮），用户点取消就是在这中间发生的。
-      commitGuard: async () => {
-        const recheck = eagerCommitRecheck({
-          // 撤权/世代变化：与循环开头那次同一条判据现查一遍。
-          revoked: await readRunMeta(deps.event).then(
-            (meta) => !meta.globalEnabled || meta.currentAccountEpoch !== deps.jobArgs.read.accountEpoch,
-          ),
-          cancelled: deps.event.ctx.signal.aborted,
-          leaseLost: !isJobLeaseActive({ ...deps.jobArgs.ctx, leaseToken: deps.jobArgs.ctx.leaseToken }),
-          // 白名单里目前全是只读工具，所以带副作用的这一支还不会走到。
-          // 留着这个参数是有意的：白名单将来放宽时，这里**已经是**正确的形状，
-          // 不需要再改一次（40b §1.5「补救机制的退出条件要事先写清」）。
-          hasSideEffect: false,
-        });
-        if (!recheck.commit) {
-          throw new Error(`eager dispatch commit recheck: ${recheck.status}`);
-        }
-      },
+      commitGuard: () => assertCompanionEagerCommitCurrent(deps.event),
     }),
     decision: {
       eligibleTools: EAGER_DISPATCH_ELIGIBLE_TOOLS,

@@ -83,7 +83,7 @@ export async function finalizeCompanionDialogueTurn(args: {
   const contentSha256 = sha256Utf8V1(canonicalJsonV1(blocks));
   const textSha256 = sha256Utf8V1(assistantText);
   try {
-    await withWorkerWorkspaceTransaction(
+    const published = await withWorkerWorkspaceTransaction(
       { workspaceId: ctx.workspaceId, userId: read.userId },
       async (tx) => {
         await lockCompanionRunForEventWrite(tx, read.runId);
@@ -291,8 +291,10 @@ export async function finalizeCompanionDialogueTurn(args: {
           { runId: read.runId, messageId: assistantMessageId, seq: messageSeq },
           "companion dialogue run succeeded",
         );
+        return true;
       },
     );
+    if (!published) return;
     // §10.5 关系状态：对话成功完成一次 turn，familiarity +0.01（上限 1）、
     // interaction_count +1、刷新 last_active_at。独立事务 + 失败静默：
     // 关系状态是弱事实，绝不影响对话主链路（迁移 0178 前该 UPDATE 无权限也安全跳过）。

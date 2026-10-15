@@ -1948,3 +1948,64 @@ test("private compaction append merges concurrent traces, preserves frozen input
     assert.equal(await recordCompanionContextCompactions({ ...scope, runId: run.runId, snapshot, sha256, compactions: [trace("7")] }), false);
   } finally { await run.cleanup(); await otherRun.cleanup(); }
 });
+
+test("eager precommit rejects an asynchronously replaced job lease", async () => {
+  const scope = await seedBase();
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId);
+  const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 1 });
+  const { assertCompanionEagerCommitCurrent } = await import("../handlers/companion-eager-dispatch-config.ts");
+  const event = { ctx: { id: run.jobId, payload: { runId: run.runId }, workspaceId: scope.workspaceId,
+    requestedBy: scope.userId, leaseToken: "fixture-lease", signal: new AbortController().signal },
+    read: { runId: run.runId, conversationId: run.cid, userId: scope.userId, generation: 1, accountEpoch: 0 },
+    expiresAt: new Date(Date.now() + 60_000).toISOString(), constraints: {} } as unknown as Parameters<typeof assertCompanionEagerCommitCurrent>[0];
+  try {
+    await assertCompanionEagerCommitCurrent(event);
+    await admin`UPDATE jobs SET lease_token='replacement-eager-owner' WHERE id=${run.jobId}`;
+    await assert.rejects(assertCompanionEagerCommitCurrent(event), /eager dispatch commit recheck/);
+  } finally {
+    await admin.end({ timeout: 2 });
+    await run.cleanup();
+  }
+});
+
+test("a cancelled, superseded or already finalized turn cannot count another interaction", async () => {
+  const { finalizeCompanionDialogueTurn } = await import("../handlers/companion-dialogue-finalization.ts");
+  for (const runStatus of ["cancelled", "superseded", "succeeded"]) {
+    const scope = await seedBase();
+    const run = await seedDialogueRun(scope.workspaceId, scope.userId, { runStatus });
+    try {
+      // Enter the actual finalization boundary after cancellation/another owner won.
+      // No model or stream is needed: publication must refuse this terminal run.
+      await finalizeCompanionDialogueTurn({
+        ctx: { id: run.jobId, payload: { runId: run.runId }, workspaceId: scope.workspaceId,
+          requestedBy: scope.userId, leaseToken: "fixture-lease", signal: new AbortController().signal },
+        read: { runId: run.runId, conversationId: run.cid, userId: scope.userId, generation: 1, accountEpoch: 0 },
+        runId: run.runId, provider: { id: "mock", modelId: "mock-v1" },
+        agentResult: { status: "completed", text: "Late answer", blocks: [] },
+        assistantText: "Late answer", ttsRawText: "Late answer", voiceExpressionEnabled: false,
+        memoryContext: { memoryRefs: [] }, voiceSegmentsWritten: false,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        streamingDelivery: { deliveredText: () => "" }, notifyCompanionEvent: async () => undefined,
+      } as unknown as Parameters<typeof finalizeCompanionDialogueTurn>[0]);
+      const profiles = await readInScope(scope, tx => tx`SELECT interaction_count FROM pet_profiles
+        WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId}`);
+      assert.equal(profiles.length, 0, `${runStatus}: an unpublished turn must not create a relationship fact`);
+      const messages = await readInScope(scope, tx => tx`SELECT id FROM companion_messages
+        WHERE conversation_id=${run.cid} AND role='assistant'`);
+      assert.equal(messages.length, 0);
+    } finally { await run.cleanup(); }
+  }
+});
+
+test("one successfully delivered turn counts exactly one interaction", async () => {
+  const scope = await seedBase();
+  const run = await seedDialogueRun(scope.workspaceId, scope.userId);
+  try {
+    await invokeRun(scope.workspaceId, scope.userId, run);
+    await invokeRun(scope.workspaceId, scope.userId, run);
+    const [profile] = await readInScope(scope, tx => tx`SELECT interaction_count,familiarity FROM pet_profiles
+      WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId}`);
+    assert.equal(Number(profile?.interaction_count), 1);
+    assert.equal(Number(profile?.familiarity), 0.01);
+  } finally { await run.cleanup(); }
+});
