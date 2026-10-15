@@ -56,11 +56,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.astella.mobile.data.AppUiState
 import com.astella.mobile.data.AppViewModel
-import com.astella.mobile.ui.CompanionPortrait
-import com.astella.mobile.ui.PaperSurface
-import com.astella.mobile.ui.PageHeading
-import com.astella.mobile.ui.StudyPalette
-import com.astella.mobile.ui.rememberSystemReducedMotion
+import com.astella.mobile.ui.design.CompanionPortrait
+import com.astella.mobile.ui.design.PaperSurface
+import com.astella.mobile.ui.design.PageHeading
+import com.astella.mobile.ui.design.StudyPalette
+import com.astella.mobile.ui.design.StudyRadius
+import com.astella.mobile.ui.design.rememberSystemReducedMotion
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -71,7 +72,7 @@ fun AccountSubpageRow(title: String, subtitle: String, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(if (title == "使用设置") Icons.Filled.Settings else Icons.Filled.AutoAwesome,
-            contentDescription = null, tint = StudyPalette.blueDeep, modifier = Modifier.size(22.dp))
+            contentDescription = null, tint = StudyPalette.accent, modifier = Modifier.size(22.dp))
         Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, color = StudyPalette.ink, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
             Text(subtitle, color = StudyPalette.muted, style = MaterialTheme.typography.bodySmall)
@@ -204,14 +205,14 @@ private fun ParticipationPreferencesCard(state: AppUiState, viewModel: AppViewMo
     Column(Modifier.fillMaxWidth().padding(top = 5.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("个人约定", color = StudyPalette.ink, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("默认陪伴能力一直生效；个人约定用来补充你希望她怎样陪你学习。", color = StudyPalette.muted, style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(onClick = { showDefaults = !showDefaults }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+            OutlinedButton(onClick = { showDefaults = !showDefaults }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(StudyRadius.md)) {
                 Text(if (showDefaults) "收起默认陪伴方式" else "查看默认陪伴方式")
             }
             if (showDefaults) {
                 Text("页面帮助、自然分句、主动问候和久学休息会按实际上下文与偏好判断是否出现。", color = StudyPalette.muted, style = MaterialTheme.typography.bodySmall)
             }
             if (!loaded && busy) Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(17.dp), color = StudyPalette.blueDeep, strokeWidth = 2.dp)
+                CircularProgressIndicator(Modifier.size(17.dp), color = StudyPalette.accent, strokeWidth = 2.dp)
                 Text("正在读取个人约定…", Modifier.padding(start = 8.dp), color = StudyPalette.muted, style = MaterialTheme.typography.bodySmall)
             } else {
                 OutlinedTextField(
@@ -220,11 +221,11 @@ private fun ParticipationPreferencesCard(state: AppUiState, viewModel: AppViewMo
                     modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 5,
                     enabled = !busy, label = { Text("个人约定") },
                     placeholder = { Text("例如：遇到难懂的地方时，先举例，再让我试着解释。") },
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(StudyRadius.md),
                     colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = StudyPalette.inset,
                         unfocusedContainerColor = StudyPalette.inset,
-                        focusedBorderColor = StudyPalette.blueDeep,
+                        focusedBorderColor = StudyPalette.accent,
                         unfocusedBorderColor = StudyPalette.paperEdge,
                     ),
                 )
@@ -254,7 +255,7 @@ private fun ParticipationPreferencesCard(state: AppUiState, viewModel: AppViewMo
             }
             conflictLatestMarkdown?.let { latest ->
                 Column(
-                    Modifier.fillMaxWidth().background(StudyPalette.inset, RoundedCornerShape(13.dp)).padding(12.dp),
+                    Modifier.fillMaxWidth().background(StudyPalette.inset, RoundedCornerShape(StudyRadius.md)).padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     Text("另一台设备保存的版本", color = StudyPalette.muted, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
@@ -311,7 +312,7 @@ fun CompanionCenterScreen(state: AppUiState, viewModel: AppViewModel, onBack: ()
                     }
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Button(onClick = { onConversation(false) }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(24.dp)) {
+                    Button(onClick = { onConversation(false) }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(StudyRadius.xxl)) {
                         Text("回到对话")
                     }
                     TextButton(onClick = { onConversation(true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) { Text("查看完整记录") }

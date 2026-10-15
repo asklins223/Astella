@@ -26,6 +26,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +39,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.astella.mobile.data.AppViewModel
 import com.astella.mobile.data.MainTab
+import com.astella.mobile.ui.design.DawnBackground
+import com.astella.mobile.ui.design.LocalReduceMotion
+import com.astella.mobile.ui.design.StudyPalette
+import com.astella.mobile.ui.design.rememberSystemReducedMotion
 import com.astella.mobile.ui.screens.AccountScreen
 import com.astella.mobile.ui.screens.CompanionCenterScreen
 import com.astella.mobile.ui.screens.ConversationScreen
@@ -48,7 +53,6 @@ import com.astella.mobile.ui.screens.NoteFeatureScreen
 import com.astella.mobile.ui.screens.NotesScreen
 import com.astella.mobile.ui.screens.SessionRecoveryScreen
 import com.astella.mobile.ui.screens.MobileSettingsScreen
-import com.astella.mobile.ui.rememberSystemReducedMotion
 
 @Composable
 fun AstellaRoot(viewModel: AppViewModel = viewModel()) {
@@ -69,117 +73,119 @@ fun AstellaRoot(viewModel: AppViewModel = viewModel()) {
         }
     }
 
-    if (!state.isAuthenticated) {
-        if (viewModel.hasStoredSession()) SessionRecoveryScreen(state, viewModel)
-        else LoginScreen(state, viewModel)
-        return
-    }
+    CompositionLocalProvider(LocalReduceMotion provides state.localReduceMotion) {
+        if (!state.isAuthenticated) {
+            if (viewModel.hasStoredSession()) SessionRecoveryScreen(state, viewModel)
+            else LoginScreen(state, viewModel)
+            return@CompositionLocalProvider
+        }
 
-    val inSubpage = showAccount || selectedNoteId != null || selectedNoteFeature != null
-    Scaffold(
-        contentWindowInsets = WindowInsets.safeDrawing,
-        bottomBar = {
-            if (!inSubpage) {
-                NavigationBar(
-                    containerColor = StudyPalette.paper.copy(alpha = .96f),
-                    tonalElevation = 1.dp,
-                ) {
-                    MainTab.entries.forEach { tab ->
-                        NavigationBarItem(
-                            selected = selectedTab == tab,
-                            onClick = { selectedTab = tab },
-                            icon = { Icon(tabIcon(tab), contentDescription = null) },
-                            label = { Text(tab.label) },
-                            alwaysShowLabel = true,
-                        )
-                    }
-                }
-            }
-        },
-    ) { inset ->
-        DawnBackground(Modifier.padding(inset)) {
-            AnimatedContent(
-                targetState = when {
-                    showAccount -> accountSubpage?.let { "account:$it" } ?: "account"
-                    selectedNoteFeature != null -> "feature:${selectedNoteFeature}:${selectedNoteId}"
-                    selectedNoteId != null -> "note:${selectedNoteId}"
-                    else -> selectedTab.name
-                },
-                label = "main-page-transition",
-                transitionSpec = {
-                    if (reduceMotion) {
-                        fadeIn(tween(1)) togetherWith fadeOut(tween(1))
-                    } else {
-                        val initialDepth = destinationDepth(initialState)
-                        val targetDepth = destinationDepth(targetState)
-                        when {
-                            targetDepth > initialDepth ->
-                                (slideInHorizontally(tween(280)) { it } + fadeIn(tween(160))) togetherWith
-                                    (slideOutHorizontally(tween(280)) { -it } + fadeOut(tween(120)))
-                            targetDepth < initialDepth ->
-                                (slideInHorizontally(tween(280)) { -it } + fadeIn(tween(160))) togetherWith
-                                    (slideOutHorizontally(tween(280)) { it } + fadeOut(tween(120)))
-                            else -> fadeIn(tween(180)) togetherWith fadeOut(tween(120))
+        val inSubpage = showAccount || selectedNoteId != null || selectedNoteFeature != null
+        Scaffold(
+            contentWindowInsets = WindowInsets.safeDrawing,
+            bottomBar = {
+                if (!inSubpage) {
+                    NavigationBar(
+                        containerColor = StudyPalette.paper.copy(alpha = .96f),
+                        tonalElevation = 1.dp,
+                    ) {
+                        MainTab.entries.forEach { tab ->
+                            NavigationBarItem(
+                                selected = selectedTab == tab,
+                                onClick = { selectedTab = tab },
+                                icon = { Icon(tabIcon(tab), contentDescription = null) },
+                                label = { Text(tab.label) },
+                                alwaysShowLabel = true,
+                            )
                         }
                     }
-                },
-            ) { destination ->
-                when {
-                    showAccount && accountSubpage == "settings" -> MobileSettingsScreen(
-                        state, viewModel, onBack = { accountSubpage = null },
-                    )
-                    showAccount && accountSubpage == "companion" -> CompanionCenterScreen(
-                        state, viewModel, onBack = { accountSubpage = null },
-                        onConversation = { records ->
-                            viewModel.setChatShowsRecords(records)
-                            accountSubpage = null
-                            showAccount = false
-                            selectedNoteFeature = null
-                            selectedNoteId = null
-                            selectedTab = MainTab.Conversation
-                        },
-                    )
-                    showAccount -> AccountScreen(
-                        state, viewModel,
-                        onBack = { showAccount = false },
-                        onSettings = { accountSubpage = "settings" },
-                        onCompanion = { accountSubpage = "companion" },
-                    )
-                    selectedNoteFeature != null && selectedNoteId != null -> NoteFeatureScreen(
-                        noteId = selectedNoteId!!,
-                        kind = selectedNoteFeature!!,
-                        state = state,
-                        viewModel = viewModel,
-                        onBack = { selectedNoteFeature = null },
-                        onAccount = { showAccount = true },
-                    )
-                    destination.startsWith("note:") -> NoteDetailScreen(
-                        noteId = selectedNoteId ?: destination.removePrefix("note:"),
-                        state = state,
-                        viewModel = viewModel,
-                        onBack = { selectedNoteId = null },
-                        onAccount = { showAccount = true },
-                        onContinue = { document ->
-                            viewModel.continueWithNote(document)
-                            selectedTab = MainTab.Conversation
-                            selectedNoteFeature = null
-                            selectedNoteId = null
-                        },
-                        onOpenFeature = { feature -> selectedNoteFeature = feature },
-                    )
-                    destination == MainTab.Conversation.name -> ConversationScreen(state, viewModel, onAccount = { showAccount = true })
-                    destination == MainTab.Hand.name -> HandScreen(
-                        state, viewModel,
-                        onAccount = { showAccount = true },
-                        onConversation = { selectedTab = MainTab.Conversation },
-                    )
-                    else -> NotesScreen(
-                        state,
-                        viewModel,
-                        onOpenNote = { selectedNoteId = it },
-                        onAccount = { showAccount = true },
-                        onConversation = { selectedTab = MainTab.Conversation },
-                    )
+                }
+            },
+        ) { inset ->
+            DawnBackground(Modifier.padding(inset)) {
+                AnimatedContent(
+                    targetState = when {
+                        showAccount -> accountSubpage?.let { "account:$it" } ?: "account"
+                        selectedNoteFeature != null -> "feature:${selectedNoteFeature}:${selectedNoteId}"
+                        selectedNoteId != null -> "note:${selectedNoteId}"
+                        else -> selectedTab.name
+                    },
+                    label = "main-page-transition",
+                    transitionSpec = {
+                        if (reduceMotion) {
+                            fadeIn(tween(1)) togetherWith fadeOut(tween(1))
+                        } else {
+                            val initialDepth = destinationDepth(initialState)
+                            val targetDepth = destinationDepth(targetState)
+                            when {
+                                targetDepth > initialDepth ->
+                                    (slideInHorizontally(tween(280)) { it } + fadeIn(tween(160))) togetherWith
+                                        (slideOutHorizontally(tween(280)) { -it } + fadeOut(tween(120)))
+                                targetDepth < initialDepth ->
+                                    (slideInHorizontally(tween(280)) { -it } + fadeIn(tween(160))) togetherWith
+                                        (slideOutHorizontally(tween(280)) { it } + fadeOut(tween(120)))
+                                else -> fadeIn(tween(180)) togetherWith fadeOut(tween(120))
+                            }
+                        }
+                    },
+                ) { destination ->
+                    when {
+                        showAccount && accountSubpage == "settings" -> MobileSettingsScreen(
+                            state, viewModel, onBack = { accountSubpage = null },
+                        )
+                        showAccount && accountSubpage == "companion" -> CompanionCenterScreen(
+                            state, viewModel, onBack = { accountSubpage = null },
+                            onConversation = { records ->
+                                viewModel.setChatShowsRecords(records)
+                                accountSubpage = null
+                                showAccount = false
+                                selectedNoteFeature = null
+                                selectedNoteId = null
+                                selectedTab = MainTab.Conversation
+                            },
+                        )
+                        showAccount -> AccountScreen(
+                            state, viewModel,
+                            onBack = { showAccount = false },
+                            onSettings = { accountSubpage = "settings" },
+                            onCompanion = { accountSubpage = "companion" },
+                        )
+                        selectedNoteFeature != null && selectedNoteId != null -> NoteFeatureScreen(
+                            noteId = selectedNoteId!!,
+                            kind = selectedNoteFeature!!,
+                            state = state,
+                            viewModel = viewModel,
+                            onBack = { selectedNoteFeature = null },
+                            onAccount = { showAccount = true },
+                        )
+                        destination.startsWith("note:") -> NoteDetailScreen(
+                            noteId = selectedNoteId ?: destination.removePrefix("note:"),
+                            state = state,
+                            viewModel = viewModel,
+                            onBack = { selectedNoteId = null },
+                            onAccount = { showAccount = true },
+                            onContinue = { document ->
+                                viewModel.continueWithNote(document)
+                                selectedTab = MainTab.Conversation
+                                selectedNoteFeature = null
+                                selectedNoteId = null
+                            },
+                            onOpenFeature = { feature -> selectedNoteFeature = feature },
+                        )
+                        destination == MainTab.Conversation.name -> ConversationScreen(state, viewModel, onAccount = { showAccount = true })
+                        destination == MainTab.Hand.name -> HandScreen(
+                            state, viewModel,
+                            onAccount = { showAccount = true },
+                            onConversation = { selectedTab = MainTab.Conversation },
+                        )
+                        else -> NotesScreen(
+                            state,
+                            viewModel,
+                            onOpenNote = { selectedNoteId = it },
+                            onAccount = { showAccount = true },
+                            onConversation = { selectedTab = MainTab.Conversation },
+                        )
+                    }
                 }
             }
         }

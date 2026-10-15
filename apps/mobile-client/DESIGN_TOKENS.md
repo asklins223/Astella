@@ -30,29 +30,29 @@
 | 选段交给伴星（2026-10-15 新增） | 迷你伴星从页头飞抵选区（共享元素），选区亮成光带 → 底部纸面 sheet 升起流式呈现；确认后选区逐字替换波浪动画；取消光带退回选区消失 |
 | 「+」二级菜单（2026-10-15 新增） | 项圆形图标从 + 位置弹簧散开（stagger 24ms），轻遮罩，点外关闭；收起向 + 归位 |
 
-## 三、MotionTokens（iOS 值已定（阶段 2 实测），Android 换算随阶段 7 回填）
+## 三、MotionTokens（iOS 值已定（阶段 2 实测），Android 换算已回填（阶段 7））
 
 | 语义名 | 用途 | iOS | Android（换算） | reduceMotion 降级 |
 | --- | --- | --- | --- | --- |
-| press | 主按钮按压缩放 | `spring(duration: 0.22, bounce: 0.06)`（scale 0.985） | 待回填 | 无缩放，仅颜色/透明反馈 |
-| pressSoft | 次级按钮按压缩放 | `spring(duration: 0.2, bounce: 0.04)`（scale 0.99） | 待回填 | 无缩放，仅颜色/透明反馈 |
-| routePush | 页面推入/退出 | `spring(duration: 0.32, bounce: 0.06)` | 待回填 | 短淡入淡出（120ms） |
-| segment | 分段/页签切换 | `spring(duration: 0.38, bounce: 0.08)` | 待回填 | 即时切换+淡入 |
+| press | 主按钮按压缩放 | `spring(duration: 0.22, bounce: 0.06)`（scale 0.985） | `spring(dampingRatio 0.94, stiffness 255)` | 无缩放，仅颜色/透明反馈 |
+| pressSoft | 次级按钮按压缩放 | `spring(duration: 0.2, bounce: 0.04)`（scale 0.99） | `spring(dampingRatio 0.96, stiffness 305)` | 无缩放，仅颜色/透明反馈 |
+| routePush | 页面推入/退出 | `spring(duration: 0.32, bounce: 0.06)` | `spring(dampingRatio 0.94, stiffness 120)` | 短淡入淡出（120ms） |
+| segment | 分段/页签切换 | `spring(duration: 0.38, bounce: 0.08)` | `spring(dampingRatio 0.92, stiffness 85)` | 即时切换+淡入 |
 | menuStagger | 菜单项散开间隔 | 24ms | 24ms | 0ms（整组淡入） |
 | messageSend | 气泡飞入 | 待回填（阶段 5 定义） | 待回填 | 淡入就位 |
 | absorbFlight | 吸收飞行 | 待回填（阶段 5 定义） | 待回填 | 缩略图淡出+chip 直接出现 |
 | selectionBeam | 选区光带亮起/退回 | 待回填（阶段 5 定义） | 待回填 | 选区底色变化 |
 | sheetRise | 底部 sheet 升起 | 待回填（阶段 5 定义） | 待回填 | 淡入 |
 
-代码落点：`ios/Astella/Design/Motion.swift`（`Motion.press/.pressSoft/.routePush/.segment`、`Motion.gated(reduceMotion, _)` 统一门控）。
+代码落点：iOS `ios/Astella/Design/Motion.swift`（`Motion.*` + `Motion.gated` 统一门控）；Android `ui/design/MotionTokens.kt`（`MotionTokens.*` + `enabledMotion()` + `Modifier.pressScale`）。换算式 `dampingRatio = 1 - bounce`、`ω0 ≈ 3.5 / duration_s`、`stiffness = ω0²`（2026-10-15 阶段 7 回填）。
 
-## 四、间距 / 圆角 / 字阶（iOS 值已定（阶段 2），Android 映射随阶段 7 回填）
+## 四、间距 / 圆角 / 字阶（iOS 值已定（阶段 2），Android 映射已回填（阶段 7））
 
 - 间距 scale（`StudySpacing`）：xs 4 / sm 8 / md 12 / lg 16 / xl 20 / xxl 24（dp/pt 同值）。
 - 圆角 scale（`StudyRadius`，全部 continuous）：sm 10 / md 14 / lg 16 / xl 20 / xxl 24；纸面默认 lg、按钮胶囊。原调用点的 15/17/18/21 魔法值已归一到最近档（2026-10-15）。
-- 字距（`StudyTracking`）：largeTitle −0.45 / title −0.25（iOS 实测）；Android 按同名层级映射 M3 slot，**不抄 iOS 负字距**（Roboto 负 tracking 发糊），行高以 iOS lineSpacing 为准。
-- 字阶：iOS 系统字阶（largeTitle/title2/title3/body/subheadline/footnote/caption）；Android 映射 M3 typography slot。
-- 颜色：iOS 系统语义色（label/secondaryLabel/systemBlue/systemBackground/…，`StudyPalette`，已合并 blue/blueDeep 为 accent）；Android 映射 M3 角色（onSurface/onSurfaceVariant/primary/background/surface/surfaceVariant/outline/error）。两端业务代码只用语义名（ink/muted/accent/canvas/paper/inset/paperEdge/success/danger）。
+- 字距（`StudyTracking`）：largeTitle −0.45 / title −0.25（iOS 实测）；Android typography **letterSpacing 全 0**（`ui/design/TypeTokens.kt`，不抄 iOS 负字距——Roboto 负 tracking 发糊），lineHeight 按 iOS lineSpacing 感觉取 sp 显式值（headlineLarge 41 / titleLarge 28 / titleMedium 25 / bodyLarge 23 / bodyMedium 21 / bodySmall 18）。
+- 字阶：iOS 系统字阶；Android M3 slot 映射：headlineLarge 34 / headlineMedium 28 / titleLarge 22 / titleMedium 20 / bodyLarge 17 / bodyMedium 15 / bodySmall 13 / labelMedium 12 / labelSmall 11。
+- 颜色：iOS 系统语义色（`StudyPalette`，blue/blueDeep 已合并为 accent）；Android M3 角色映射（`ui/design/ColorTokens.kt`）：ink→onSurface、muted→onSurfaceVariant、accent→primary（固定系统蓝，不用 Material You 动态取色）、sky→primary 9% alpha、canvas→background、paper→surface、inset→surfaceVariant、paperEdge→outline、success→tertiary（自定义绿）、danger→error；surfaceContainer 七槽显式中性值替换 M3 baseline 紫调。两端业务代码只用语义名（ink/muted/accent/canvas/paper/inset/paperEdge/success/danger）。
 
 ## 五、伴星事件 → Live2D 动作映射（两端共用；代码落点 `ios/Astella/Companion/CompanionEvents.swift` 的 `CompanionEventMap`，阶段 4a 定表，4b/9 绑定核对）
 

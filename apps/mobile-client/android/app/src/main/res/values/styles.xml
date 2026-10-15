@@ -1,10 +1,15 @@
 <resources>
+    <!--
+      父主题保留框架 Material（工程未引入 com.google.android.material 依赖，且构建固定离线，
+      无法改用 Theme.Material3.DayNight.NoActionBar）；明暗外观由 values-night 成对提供。
+      状态栏与导航栏同 Compose canvas 对齐：透明色 + MainActivity 的 enableEdgeToEdge()，
+      不再写死 #FFF2F2F7；窗口 fontFamily 覆盖去掉，交回系统默认。
+    -->
     <style name="Theme.Astella" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:statusBarColor">#FFF2F2F7</item>
-        <item name="android:navigationBarColor">#FFF2F2F7</item>
         <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:colorAccent">#007AFF</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>

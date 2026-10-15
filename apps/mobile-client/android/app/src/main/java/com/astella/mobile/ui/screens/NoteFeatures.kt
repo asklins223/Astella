@@ -55,10 +55,12 @@ import com.astella.mobile.data.AppUiState
 import com.astella.mobile.data.AppViewModel
 import com.astella.mobile.data.ApiFailure
 import com.astella.mobile.data.NoteDocument
-import com.astella.mobile.ui.NoticeSurface
-import com.astella.mobile.ui.PaperSurface
-import com.astella.mobile.ui.PageHeading
-import com.astella.mobile.ui.StudyPalette
+import com.astella.mobile.ui.design.NoticeSurface
+import com.astella.mobile.ui.design.PaperSurface
+import com.astella.mobile.ui.design.PageHeading
+import com.astella.mobile.ui.design.StudyPalette
+import com.astella.mobile.ui.design.StudySpacing
+import com.astella.mobile.ui.design.StudyRadius
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -71,12 +73,12 @@ fun SessionRecoveryScreen(state: AppUiState, viewModel: AppViewModel) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(Icons.Filled.Refresh, null, Modifier.size(36.dp), tint = StudyPalette.blueDeep)
+        Icon(Icons.Filled.Refresh, null, Modifier.size(36.dp), tint = StudyPalette.accent)
         Text("正在接回你的书房", Modifier.padding(top = 17.dp), color = StudyPalette.ink,
             fontSize = 25.sp, fontWeight = FontWeight.SemiBold)
         Text(state.error ?: "正在恢复登录状态与学习记录。", Modifier.padding(top = 8.dp),
             color = StudyPalette.muted, textAlign = TextAlign.Center)
-        if (state.isLoading) CircularProgressIndicator(Modifier.padding(top = 22.dp).size(22.dp), color = StudyPalette.blueDeep)
+        if (state.isLoading) CircularProgressIndicator(Modifier.padding(top = 22.dp).size(22.dp), color = StudyPalette.accent)
         else Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(onClick = { viewModel.logout() }) { Text("返回登录") }
             Button(onClick = { viewModel.restoreSession() }) { Text("重新连接") }
@@ -109,7 +111,7 @@ private fun FeatureHeader(title: String, onBack: () -> Unit, onAccount: () -> Un
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回$title", tint = StudyPalette.ink) }
         Spacer(Modifier.weight(1f))
-        IconButton(onClick = onAccount) { Icon(Icons.Filled.AccountCircle, "我的账户", tint = StudyPalette.blueDeep) }
+        IconButton(onClick = onAccount) { Icon(Icons.Filled.AccountCircle, "我的账户", tint = StudyPalette.accent) }
     }
 }
 
@@ -123,7 +125,7 @@ private fun FeatureFailure(message: String, retry: () -> Unit, onAccount: (() ->
             if (consentRequired) Icons.Filled.Lock else Icons.Filled.WifiOff,
             contentDescription = null,
             modifier = Modifier.padding(top = 2.dp).size(19.dp),
-            tint = if (consentRequired) StudyPalette.blueDeep else StudyPalette.danger,
+            tint = if (consentRequired) StudyPalette.accent else StudyPalette.danger,
         )
         Column(Modifier.weight(1f).padding(start = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(
@@ -179,7 +181,7 @@ private fun featureFailure(cause: Throwable, fallback: String): String {
 @Composable
 private fun FeatureLoading(label: String) {
     Row(Modifier.fillMaxWidth().padding(25.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-        CircularProgressIndicator(Modifier.size(19.dp), color = StudyPalette.blueDeep, strokeWidth = 2.dp)
+        CircularProgressIndicator(Modifier.size(19.dp), color = StudyPalette.accent, strokeWidth = 2.dp)
         Text(label, Modifier.padding(start = 10.dp), color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
     }
 }
@@ -207,7 +209,7 @@ private fun FeatureGenerationPrimer(kind: String, document: NoteDocument?, modif
     }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("尚未生成 · 第 ${document?.versionNumber ?: 1} 版", color = StudyPalette.blueDeep,
+            Text("尚未生成 · 第 ${document?.versionNumber ?: 1} 版", color = StudyPalette.accent,
                 style = androidx.compose.material3.MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             Text(title, color = StudyPalette.ink, style = androidx.compose.material3.MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Text(description, color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium, lineHeight = 24.sp)
@@ -217,7 +219,7 @@ private fun FeatureGenerationPrimer(kind: String, document: NoteDocument?, modif
                 Text("原文节选 · 第 ${document.versionNumber} 版 · ${document.blocks.size} 个内容块", color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                 document.firstReadableExcerpt()?.let { excerpt ->
                     Row(verticalAlignment = Alignment.Top) {
-                        androidx.compose.foundation.layout.Box(Modifier.padding(top = 2.dp).width(2.dp).height(50.dp).background(StudyPalette.blue.copy(alpha = .62f)))
+                        androidx.compose.foundation.layout.Box(Modifier.padding(top = 2.dp).width(2.dp).height(50.dp).background(StudyPalette.accent.copy(alpha = .62f)))
                         Text("“$excerpt”", Modifier.padding(start = 10.dp), color = StudyPalette.muted,
                             style = androidx.compose.material3.MaterialTheme.typography.bodySmall, lineHeight = 21.sp, maxLines = 4, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
@@ -234,7 +236,7 @@ private fun FeatureGenerationPrimer(kind: String, document: NoteDocument?, modif
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         listOf("主线", "关键点", "原文依据").forEachIndexed { index, label ->
-                            Text(label, color = if (index == 0) StudyPalette.blueDeep else StudyPalette.ink,
+                            Text(label, color = if (index == 0) StudyPalette.accent else StudyPalette.ink,
                                 style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.SemiBold, maxLines = 1)
                             if (index < 2) {
@@ -249,8 +251,8 @@ private fun FeatureGenerationPrimer(kind: String, document: NoteDocument?, modif
             }
             "mindmap" -> {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("主题", Modifier.clip(RoundedCornerShape(9.dp)).background(StudyPalette.sky)
-                        .padding(horizontal = 11.dp, vertical = 7.dp), color = StudyPalette.blueDeep,
+                    Text("主题", Modifier.clip(RoundedCornerShape(StudyRadius.sm)).background(StudyPalette.sky)
+                        .padding(horizontal = 11.dp, vertical = 7.dp), color = StudyPalette.accent,
                         style = androidx.compose.material3.MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     Row(Modifier.padding(start = 16.dp), verticalAlignment = Alignment.Top) {
                         Column(Modifier.padding(end = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -273,7 +275,7 @@ private fun FeatureGenerationPrimer(kind: String, document: NoteDocument?, modif
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     listOf("先说明主题", "再结合原文解释", "留下可回看的依据").forEachIndexed { index, label ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("%02d".format(index + 1), color = StudyPalette.blueDeep,
+                            Text("%02d".format(index + 1), color = StudyPalette.accent,
                                 style = androidx.compose.material3.MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                             Text(label, Modifier.padding(start = 12.dp), color = StudyPalette.ink,
                                 style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
@@ -294,9 +296,9 @@ private fun FeatureGenerateButton(label: String, busy: Boolean, enabled: Boolean
         onClick = onClick,
         enabled = enabled && !busy,
         modifier = modifier.fillMaxWidth().height(52.dp),
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(StudyRadius.xxl),
         colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-            containerColor = StudyPalette.blueDeep,
+            containerColor = StudyPalette.accent,
             contentColor = androidx.compose.ui.graphics.Color.White,
             disabledContainerColor = StudyPalette.inset,
             disabledContentColor = StudyPalette.muted,
@@ -359,27 +361,27 @@ private fun NoteVersionsScreen(noteId: String, state: AppUiState, viewModel: App
         if (error != null) item { FeatureFailure(error!!, retry = { scope.launch { load() } }, onAccount = onAccount) }
         if (loading && versions.isEmpty()) item { FeatureLoading("正在读取版本…") }
         if (!loading && versions.isEmpty() && error == null) item {
-            PaperSurface(Modifier.fillMaxWidth(), padding = 18.dp) {
+            PaperSurface(Modifier.fillMaxWidth(), padding = StudySpacing.xl) {
                 Text("目前只有当前版本，还没有可回看的旧记录。", color = StudyPalette.muted, textAlign = TextAlign.Center)
             }
         }
         items(versions, key = { it.optString("id") }) { version ->
             val isCurrent = version.optString("id") == state.noteDocument?.versionId
             if (isCurrent) {
-                PaperSurface(Modifier.fillMaxWidth(), padding = 17.dp) {
+                PaperSurface(Modifier.fillMaxWidth(), padding = StudySpacing.lg) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             androidx.compose.foundation.layout.Box(
                                 Modifier.size(38.dp).background(StudyPalette.sky, androidx.compose.foundation.shape.CircleShape),
                                 contentAlignment = Alignment.Center,
-                            ) { Icon(Icons.Filled.CheckCircle, null, Modifier.size(21.dp), tint = StudyPalette.blueDeep) }
+                            ) { Icon(Icons.Filled.CheckCircle, null, Modifier.size(21.dp), tint = StudyPalette.accent) }
                             Column(Modifier.weight(1f).padding(start = 12.dp)) {
                                 Text("第 ${version.optInt("versionNo", 1)} 版", color = StudyPalette.ink,
                                     style = androidx.compose.material3.MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                                 Text(formatFeatureDate(version.optString("createdAt")), Modifier.padding(top = 3.dp), color = StudyPalette.muted,
                                     style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
                             }
-                            Text("当前", color = StudyPalette.blueDeep, style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
+                            Text("当前", color = StudyPalette.accent, style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold)
                         }
                         state.noteDocument.takeIf { it.id == noteId }?.firstReadableExcerpt()?.let { excerpt ->
@@ -523,7 +525,7 @@ private fun NoteOverviewScreen(noteId: String, state: AppUiState, viewModel: App
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(15.dp)) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("核心脉络", color = StudyPalette.blueDeep, style = androidx.compose.material3.MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                            Text("核心脉络", color = StudyPalette.accent, style = androidx.compose.material3.MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                             Text(value.optString("body"), color = StudyPalette.ink, style = androidx.compose.material3.MaterialTheme.typography.bodyLarge, lineHeight = 28.sp)
                         }
                         val coverage = value.optJSONObject("coverage")
@@ -534,7 +536,7 @@ private fun NoteOverviewScreen(noteId: String, state: AppUiState, viewModel: App
                         value.optJSONArray("points").objects().forEachIndexed { index, point ->
                             androidx.compose.material3.HorizontalDivider(color = StudyPalette.paperEdge)
                             Row(verticalAlignment = Alignment.Top) {
-                                Text("%02d".format(index + 1), color = StudyPalette.blueDeep, fontWeight = FontWeight.SemiBold, style = androidx.compose.material3.MaterialTheme.typography.labelMedium)
+                                Text("%02d".format(index + 1), color = StudyPalette.accent, fontWeight = FontWeight.SemiBold, style = androidx.compose.material3.MaterialTheme.typography.labelMedium)
                                 Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                                     Text(point.optString("explanation"), color = StudyPalette.ink, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium, lineHeight = 25.sp)
                                     Text("“${point.optString("quote")}”", color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.bodySmall, lineHeight = 22.sp)
@@ -654,13 +656,13 @@ private fun NoteMindMapScreen(noteId: String, state: AppUiState, viewModel: AppV
                     Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
                         Row(verticalAlignment = Alignment.Top) {
                             Spacer(Modifier.width((depth * 15).dp))
-                            androidx.compose.foundation.layout.Box(Modifier.padding(top = 5.dp).size(if (depth == 0) 10.dp else 7.dp).background(if (depth == 0) StudyPalette.blueDeep else StudyPalette.muted.copy(alpha = .65f), androidx.compose.foundation.shape.CircleShape))
+                            androidx.compose.foundation.layout.Box(Modifier.padding(top = 5.dp).size(if (depth == 0) 10.dp else 7.dp).background(if (depth == 0) StudyPalette.accent else StudyPalette.muted.copy(alpha = .65f), androidx.compose.foundation.shape.CircleShape))
                             Column(Modifier.weight(1f).padding(start = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(node.optString("label"), color = StudyPalette.ink, fontWeight = FontWeight.SemiBold,
                                     style = if (node.optString("kind") == "root") androidx.compose.material3.MaterialTheme.typography.titleMedium else androidx.compose.material3.MaterialTheme.typography.bodyLarge)
                                 node.optString("explanation").takeIf(String::isNotBlank)?.let { Text(it, color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.bodySmall) }
                                 node.optJSONArray("references").objects().forEach { ref ->
-                                    Text("“${ref.optString("quote")}”", color = StudyPalette.blueDeep, style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
+                                    Text("“${ref.optString("quote")}”", color = StudyPalette.accent, style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }
@@ -775,7 +777,7 @@ private fun NoteExplainScreen(noteId: String, state: AppUiState, viewModel: AppV
                     Column(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(value.optString("subject"), color = StudyPalette.ink, fontWeight = FontWeight.SemiBold, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
                         Text(value.optString("caution"), color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
-                        if (value.optString("versionState") == "older") Text("基于第 ${value.optInt("noteVersionNumber")} 版手记", color = StudyPalette.blueDeep, style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
+                        if (value.optString("versionState") == "older") Text("基于第 ${value.optInt("noteVersionNumber")} 版手记", color = StudyPalette.accent, style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
                     }
                 }
                 val outline = value.optJSONArray("outline").objects().sortedBy { it.optInt("index") }
@@ -783,7 +785,7 @@ private fun NoteExplainScreen(noteId: String, state: AppUiState, viewModel: AppV
                     Column(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             androidx.compose.foundation.layout.Box(Modifier.size(28.dp).background(StudyPalette.sky, androidx.compose.foundation.shape.CircleShape), contentAlignment = Alignment.Center) {
-                                Text("%02d".format(step.optInt("index") + 1), color = StudyPalette.blueDeep, fontWeight = FontWeight.SemiBold, style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
+                                Text("%02d".format(step.optInt("index") + 1), color = StudyPalette.accent, fontWeight = FontWeight.SemiBold, style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
                             }
                             Text(step.optString("title"), Modifier.padding(start = 10.dp), color = StudyPalette.ink, fontWeight = FontWeight.SemiBold, style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
                         }
@@ -805,7 +807,7 @@ private fun NoteExplainScreen(noteId: String, state: AppUiState, viewModel: AppV
 
 @Composable
 private fun FeatureNotice(text: String) {
-    NoticeSurface(Modifier.fillMaxWidth(), padding = 12.dp) {
+    NoticeSurface(Modifier.fillMaxWidth(), padding = StudySpacing.md) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.History, null, Modifier.size(16.dp), tint = StudyPalette.muted)
             Text(text, Modifier.padding(start = 8.dp), color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)

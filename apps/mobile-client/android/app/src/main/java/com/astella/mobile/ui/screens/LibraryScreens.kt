@@ -121,17 +121,21 @@ import com.astella.mobile.data.NoteDocument
 import com.astella.mobile.data.NoteAnnotation
 import com.astella.mobile.data.NoteAnnotationAnchor
 import com.astella.mobile.data.NoteSummary
-import com.astella.mobile.ui.ConnectionFailureNotice
-import com.astella.mobile.ui.CompanionPortrait
-import com.astella.mobile.ui.NoticeSurface
-import com.astella.mobile.ui.PaperSurface
-import com.astella.mobile.ui.PageHeading
-import com.astella.mobile.ui.StudyPalette
+import com.astella.mobile.ui.design.ConnectionFailureNotice
+import com.astella.mobile.ui.design.CompanionPortrait
+import com.astella.mobile.ui.design.NoticeSurface
+import com.astella.mobile.ui.design.PaperSurface
+import com.astella.mobile.ui.design.PageHeading
+import com.astella.mobile.ui.design.StudyPalette
+import com.astella.mobile.ui.design.StudyRadius
+import com.astella.mobile.ui.design.StudySpacing
+import com.astella.mobile.ui.design.SectionEyebrow
+import com.astella.mobile.ui.design.TonalSurface
 import kotlinx.coroutines.delay
 
 @Composable
 fun LoginScreen(state: AppUiState, viewModel: AppViewModel) {
-    val reduceMotion = state.localReduceMotion || com.astella.mobile.ui.rememberSystemReducedMotion()
+    val reduceMotion = state.localReduceMotion || com.astella.mobile.ui.design.rememberSystemReducedMotion()
     var route by rememberSaveable { mutableStateOf(MobileAuthRoute.Login) }
     var email by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -291,7 +295,7 @@ fun LoginScreen(state: AppUiState, viewModel: AppViewModel) {
                     Column(Modifier.padding(start = 11.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text("拾星笔记", color = StudyPalette.ink,
                             style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold, letterSpacing = (-0.35).sp)
+                            fontWeight = FontWeight.SemiBold)
                         Text("ASTELLA", color = StudyPalette.muted,
                             style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
                             fontSize = 9.sp, fontWeight = FontWeight.Medium, letterSpacing = 2.sp)
@@ -301,7 +305,7 @@ fun LoginScreen(state: AppUiState, viewModel: AppViewModel) {
                 Column(verticalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 5.dp)) {
                     Text(title(route), color = StudyPalette.ink,
                         fontSize = if (compact) 27.sp else 31.sp, lineHeight = if (compact) 33.sp else 37.sp,
-                        fontWeight = FontWeight.SemiBold, letterSpacing = (-0.8).sp)
+                        fontWeight = FontWeight.SemiBold)
                     if (!compact) Text(detail(route), color = StudyPalette.muted, fontSize = 15.sp, lineHeight = 21.sp)
                 }
             } else {
@@ -322,13 +326,13 @@ fun LoginScreen(state: AppUiState, viewModel: AppViewModel) {
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(pageIcon(route), contentDescription = null,
-                                modifier = Modifier.size(if (compact) 19.dp else 23.dp), tint = StudyPalette.blueDeep)
+                                modifier = Modifier.size(if (compact) 19.dp else 23.dp), tint = StudyPalette.accent)
                         }
                     }
                     Column(Modifier.padding(start = 13.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(title(route), color = StudyPalette.ink,
                             fontSize = if (compact) 25.sp else 29.sp, lineHeight = if (compact) 31.sp else 35.sp,
-                            fontWeight = FontWeight.SemiBold, letterSpacing = (-0.65).sp)
+                            fontWeight = FontWeight.SemiBold)
                         if (!compact) Text(detail(route), color = StudyPalette.muted, fontSize = 14.sp, lineHeight = 20.sp)
                     }
                 }
@@ -468,9 +472,9 @@ fun LoginScreen(state: AppUiState, viewModel: AppViewModel) {
                         onClick = { submit(activeRoute) },
                         modifier = Modifier.fillMaxWidth().height(54.dp),
                         enabled = canContinue(activeRoute) && !state.isLoading,
-                        shape = RoundedCornerShape(27.dp),
+                        shape = RoundedCornerShape(StudyRadius.xxl),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = StudyPalette.blueDeep,
+                            containerColor = StudyPalette.accent,
                             contentColor = Color.White,
                             disabledContainerColor = StudyPalette.paperEdge.copy(alpha = .82f),
                             disabledContentColor = StudyPalette.muted,
@@ -527,7 +531,7 @@ private fun AuthStepProgress(current: Int, total: Int) {
                 androidx.compose.foundation.layout.Box(
                     Modifier.width(17.dp).height(4.dp)
                         .clip(CircleShape)
-                        .background(if (index < current) StudyPalette.blueDeep else StudyPalette.paperEdge),
+                        .background(if (index < current) StudyPalette.accent else StudyPalette.paperEdge),
                 )
             }
         }
@@ -556,10 +560,10 @@ private fun AuthFieldError(message: String) {
 
 @Composable
 private fun AuthFeedbackBanner(title: String, message: String, isError: Boolean) {
-    val tint = if (isError) StudyPalette.danger else StudyPalette.blueDeep
+    val tint = if (isError) StudyPalette.danger else StudyPalette.accent
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(13.dp),
+        shape = RoundedCornerShape(StudyRadius.md),
         color = tint.copy(alpha = .08f),
         border = androidx.compose.foundation.BorderStroke(.8.dp, tint.copy(alpha = .16f)),
     ) {
@@ -582,11 +586,11 @@ private fun AuthFeedbackBanner(title: String, message: String, isError: Boolean)
 private fun AuthCodeRecipient(email: String, enabled: Boolean, onChange: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(13.dp),
+        shape = RoundedCornerShape(StudyRadius.md),
         color = StudyPalette.sky.copy(alpha = .65f),
     ) {
         Row(Modifier.padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Email, null, Modifier.size(15.dp), tint = StudyPalette.blueDeep)
+            Icon(Icons.Filled.Email, null, Modifier.size(15.dp), tint = StudyPalette.accent)
             Text(email, Modifier.padding(start = 9.dp).weight(1f), color = StudyPalette.ink,
                 style = androidx.compose.material3.MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             TextButton(onClick = onChange, enabled = enabled) { Text("更改") }
@@ -623,11 +627,11 @@ private fun AuthCodeField(code: String, onCodeChange: (String) -> Unit, imeActio
                                 val active = focused && index == code.length.coerceAtMost(5)
                                 Surface(
                                     modifier = Modifier.weight(1f).height(58.dp),
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = RoundedCornerShape(StudyRadius.md),
                                     color = StudyPalette.paper.copy(alpha = if (active) .96f else .78f),
                                     border = androidx.compose.foundation.BorderStroke(
                                         if (active) 1.4.dp else .8.dp,
-                                        if (active) StudyPalette.blueDeep else StudyPalette.paperEdge.copy(alpha = .8f),
+                                        if (active) StudyPalette.accent else StudyPalette.paperEdge.copy(alpha = .8f),
                                     ),
                                 ) {
                                     androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
@@ -635,7 +639,7 @@ private fun AuthCodeField(code: String, onCodeChange: (String) -> Unit, imeActio
                                             Text(code[index].toString(), color = StudyPalette.ink, fontSize = 21.sp,
                                                 fontWeight = FontWeight.SemiBold)
                                         } else if (active) {
-                                            androidx.compose.foundation.layout.Box(Modifier.width(2.dp).height(20.dp).background(StudyPalette.blueDeep))
+                                            androidx.compose.foundation.layout.Box(Modifier.width(2.dp).height(20.dp).background(StudyPalette.accent))
                                         }
                                     }
                                 }
@@ -697,17 +701,17 @@ private fun AuthInputField(
                     }
                 }
             } else null,
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(StudyRadius.lg),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = StudyPalette.ink,
                 unfocusedTextColor = StudyPalette.ink,
                 focusedContainerColor = StudyPalette.paper.copy(alpha = .96f),
                 unfocusedContainerColor = StudyPalette.paper.copy(alpha = .9f),
-                focusedBorderColor = StudyPalette.blueDeep,
+                focusedBorderColor = StudyPalette.accent,
                 unfocusedBorderColor = StudyPalette.paperEdge.copy(alpha = .85f),
                 focusedPlaceholderColor = StudyPalette.muted,
                 unfocusedPlaceholderColor = StudyPalette.muted,
-                cursorColor = StudyPalette.blueDeep,
+                cursorColor = StudyPalette.accent,
             ),
         )
     }
@@ -719,7 +723,7 @@ fun HandScreen(state: AppUiState, viewModel: AppViewModel, onAccount: () -> Unit
         Column(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 PageHeading(state.profile?.workspaceName ?: "我的书房", "手边", "需要你接续的学习工作，会在这里等你。", modifier = Modifier.weight(1f))
-                IconButton(onClick = onAccount) { Icon(Icons.Filled.AccountCircle, "我的账户", tint = StudyPalette.blueDeep) }
+                IconButton(onClick = onAccount) { Icon(Icons.Filled.AccountCircle, "我的账户", tint = StudyPalette.accent) }
             }
             state.error?.let { error ->
                 ConnectionFailureNotice("连接暂时中断", error, "重新连接") { viewModel.loadConversation() }
@@ -738,7 +742,7 @@ fun HandScreen(state: AppUiState, viewModel: AppViewModel, onAccount: () -> Unit
                     verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     Icon(Icons.Filled.CheckCircle, contentDescription = null,
-                        modifier = Modifier.padding(bottom = 4.dp).size(28.dp), tint = StudyPalette.blueDeep)
+                        modifier = Modifier.padding(bottom = 4.dp).size(28.dp), tint = StudyPalette.accent)
                     Text("暂时没有待确认事项", color = StudyPalette.ink,
                         style = androidx.compose.material3.MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text("新的学习步骤会在需要你时出现在这里。",
@@ -763,7 +767,7 @@ fun HandScreen(state: AppUiState, viewModel: AppViewModel, onAccount: () -> Unit
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 PageHeading(state.profile?.workspaceName ?: "我的书房", "手边", "需要你接续的学习工作，会在这里等你。", modifier = Modifier.weight(1f))
-                IconButton(onClick = onAccount) { Icon(Icons.Filled.AccountCircle, "我的账户", tint = StudyPalette.blueDeep) }
+                IconButton(onClick = onAccount) { Icon(Icons.Filled.AccountCircle, "我的账户", tint = StudyPalette.accent) }
             }
         }
         state.error?.let { error -> item {
@@ -781,14 +785,14 @@ fun HandScreen(state: AppUiState, viewModel: AppViewModel, onAccount: () -> Unit
                 Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.Top) {
                     Column(Modifier.width(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(Modifier.padding(top = 5.dp).size(9.dp).clip(CircleShape)
-                            .background(if (run.status == "waiting_for_confirmation") StudyPalette.blueDeep else StudyPalette.blue.copy(alpha = .5f)))
+                            .background(if (run.status == "waiting_for_confirmation") StudyPalette.accent else StudyPalette.accent.copy(alpha = .5f)))
                         if (run != state.runs.last()) Box(Modifier.padding(top = 5.dp).width(1.dp).height(75.dp).background(StudyPalette.paperEdge))
                     }
                     Column(Modifier.weight(1f).padding(start = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(run.statusLabel, color = StudyPalette.blueDeep, fontWeight = FontWeight.SemiBold)
+                            Text(run.statusLabel, color = StudyPalette.accent, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.weight(1f))
-                            if (run.status != "waiting_for_confirmation") CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = StudyPalette.blue)
+                            if (run.status != "waiting_for_confirmation") CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = StudyPalette.accent)
                         }
                         Text(run.thinkingText ?: when (run.status) {
                             "accepted" -> "这一轮已经接收，马上开始处理。"
@@ -829,7 +833,7 @@ fun NotesScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 PageHeading("你的书架", "手记", if (state.notes.isEmpty()) "和伴星整理过的内容，都会留在这里。" else "${state.notes.size} 篇 · 最近更新在前", modifier = Modifier.weight(1f))
                 IconButton(onClick = { viewModel.loadNotes(query) }) { Icon(Icons.Filled.Refresh, "刷新手记", tint = StudyPalette.muted) }
-                IconButton(onClick = onAccount) { Icon(Icons.Filled.AccountCircle, "我的账户", tint = StudyPalette.blueDeep) }
+                IconButton(onClick = onAccount) { Icon(Icons.Filled.AccountCircle, "我的账户", tint = StudyPalette.accent) }
             }
         }
         item {
@@ -840,11 +844,11 @@ fun NotesScreen(
                 singleLine = true,
                 placeholder = { Text("搜索标题与正文") },
                 leadingIcon = { Icon(Icons.Filled.Search, null, tint = StudyPalette.muted) },
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(StudyRadius.xl),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = StudyPalette.paper,
                     unfocusedContainerColor = StudyPalette.paper,
-                    focusedBorderColor = StudyPalette.blueDeep,
+                    focusedBorderColor = StudyPalette.accent,
                     unfocusedBorderColor = StudyPalette.paperEdge,
                 ),
             )
@@ -861,20 +865,20 @@ fun NotesScreen(
         }
         if (state.isLoading && state.notes.isEmpty()) item {
             Row(Modifier.fillMaxWidth().padding(top = 68.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(22.dp), color = StudyPalette.blueDeep, strokeWidth = 2.dp)
+                CircularProgressIndicator(Modifier.size(22.dp), color = StudyPalette.accent, strokeWidth = 2.dp)
                 Text("正在找回手记", Modifier.padding(start = 10.dp), color = StudyPalette.muted,
                     style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
             }
         } else if (state.notes.isEmpty() && state.notesError == null) item {
             Column(Modifier.fillMaxWidth().padding(top = 34.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Filled.Book, null, Modifier.size(28.dp), tint = StudyPalette.blueDeep)
+                Icon(Icons.Filled.Book, null, Modifier.size(28.dp), tint = StudyPalette.accent)
                 Text(if (query.isEmpty()) "书架还空着" else "没有找到这篇手记", Modifier.padding(top = 16.dp), color = StudyPalette.ink,
                     fontWeight = FontWeight.SemiBold, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
                 Text(if (query.isEmpty()) "和伴星聊出的学习成果，可以整理成手记，之后随时回来继续。" else "试试更短的关键词，或检查一下拼写。",
                     Modifier.padding(top = 6.dp, start = 18.dp, end = 18.dp), color = StudyPalette.muted,
                     style = androidx.compose.material3.MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
                 if (query.isEmpty()) androidx.compose.material3.TextButton(onClick = onConversation, modifier = Modifier.padding(top = 8.dp)) {
-                    Text("去对话里开始", color = StudyPalette.blueDeep)
+                    Text("去对话里开始", color = StudyPalette.accent)
                 }
             }
         } else {
@@ -907,7 +911,7 @@ fun NotesScreen(
             if (query.isNotBlank() || index > 0) {
             Column(Modifier.fillMaxWidth()) {
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onOpenNote(note.id) }.padding(vertical = 13.dp),
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(StudyRadius.sm)).clickable { onOpenNote(note.id) }.padding(vertical = 13.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
@@ -927,14 +931,14 @@ fun NotesScreen(
             }
             }
         }
-        if (state.isLoadingMoreNotes) item { CircularProgressIndicator(Modifier.fillMaxWidth().padding(12.dp).size(22.dp), color = StudyPalette.blueDeep) }
+        if (state.isLoadingMoreNotes) item { CircularProgressIndicator(Modifier.fillMaxWidth().padding(12.dp).size(22.dp), color = StudyPalette.accent) }
     }
 }
 
 @Composable
 private fun FeaturedNoteRow(note: NoteSummary, onOpen: () -> Unit) {
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onOpen).padding(vertical = 11.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(StudyRadius.sm)).clickable(onClick = onOpen).padding(vertical = 11.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -999,12 +1003,12 @@ fun NoteDetailScreen(
                             retryLabel = "重新加载",
                             onRetry = { viewModel.loadNote(noteId) },
                         )
-                    } else CircularProgressIndicator(Modifier.size(24.dp), color = StudyPalette.blueDeep)
+                    } else CircularProgressIndicator(Modifier.size(24.dp), color = StudyPalette.accent)
                 }
             } else {
                 item {
                     Column(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 25.dp)) {
-                        Eyebrow("拾星笔记  ·  第 ${document.versionNumber} 版")
+                        SectionEyebrow("拾星笔记  ·  第 ${document.versionNumber} 版")
                         Text(document.title, Modifier.padding(top = 9.dp), color = StudyPalette.ink,
                             style = androidx.compose.material3.MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.SemiBold, lineHeight = 36.sp)
@@ -1079,7 +1083,7 @@ fun NoteDetailScreen(
             androidx.compose.material3.Button(
                 onClick = { onContinue(document) },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 9.dp).height(50.dp),
-                shape = RoundedCornerShape(15.dp),
+                shape = RoundedCornerShape(StudyRadius.lg),
             ) { Text("在对话里继续提问") }
         }
     }
@@ -1161,7 +1165,7 @@ private fun NoteBlockRow(
         if (actionable) androidx.compose.material3.DropdownMenu(
             expanded = menuExpanded,
             onDismissRequest = { menuExpanded = false },
-            shape = RoundedCornerShape(15.dp),
+            shape = RoundedCornerShape(StudyRadius.lg),
             containerColor = StudyPalette.paper,
             tonalElevation = 0.dp,
             shadowElevation = 3.dp,
@@ -1191,7 +1195,7 @@ private fun NoteBlockView(block: NoteBlock, readingScale: Float = 1f, viewModel:
             fontWeight = FontWeight.SemiBold,
         )
         "quote" -> Row(verticalAlignment = Alignment.Top) {
-            Spacer(Modifier.padding(end = 10.dp).size(width = 3.dp, height = 42.dp).background(StudyPalette.blue.copy(alpha = .65f), RoundedCornerShape(2.dp)))
+            Spacer(Modifier.padding(end = 10.dp).size(width = 3.dp, height = 42.dp).background(StudyPalette.accent.copy(alpha = .65f), RoundedCornerShape(2.dp)))
             Text(
                 block.content.replace(Regex("(?m)^\\s*>\\s?"), ""),
                 color = StudyPalette.muted,
@@ -1203,7 +1207,7 @@ private fun NoteBlockView(block: NoteBlock, readingScale: Float = 1f, viewModel:
         }
         "code" -> Box(
             Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(StudyRadius.md))
                 .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant)
                 .horizontalScroll(rememberScrollState()),
         ) {
@@ -1225,7 +1229,7 @@ private fun NoteBlockView(block: NoteBlock, readingScale: Float = 1f, viewModel:
             Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 lines.forEachIndexed { index, line ->
                     Row(verticalAlignment = Alignment.Top) {
-                        Text(if (ordered) "${index + 1}." else "•", Modifier.padding(end = 9.dp), color = StudyPalette.blueDeep, fontWeight = FontWeight.SemiBold)
+                        Text(if (ordered) "${index + 1}." else "•", Modifier.padding(end = 9.dp), color = StudyPalette.accent, fontWeight = FontWeight.SemiBold)
                         Text(line, color = StudyPalette.ink, style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
                             fontSize = androidx.compose.material3.MaterialTheme.typography.bodyLarge.fontSize * readingScale,
                             lineHeight = androidx.compose.material3.MaterialTheme.typography.bodyLarge.lineHeight * 1.28f * readingScale,
@@ -1236,7 +1240,7 @@ private fun NoteBlockView(block: NoteBlock, readingScale: Float = 1f, viewModel:
         }
         "table" -> {
             val rows = noteTableRows(block.content)
-            Column(Modifier.fillMaxWidth().background(StudyPalette.inset.copy(alpha = .72f), RoundedCornerShape(14.dp)).padding(horizontal = 10.dp)) {
+            Column(Modifier.fillMaxWidth().background(StudyPalette.inset.copy(alpha = .72f), RoundedCornerShape(StudyRadius.md)).padding(horizontal = 10.dp)) {
                 rows.forEachIndexed { rowIndex, cells ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         cells.forEach { cell ->
@@ -1281,12 +1285,12 @@ private fun NoteAnnotationComposer(
 ) {
     var draft by rememberSaveable(block.ordinal) { mutableStateOf("") }
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(26.dp), color = StudyPalette.paper, tonalElevation = 4.dp) {
+        TonalSurface(radius = StudyRadius.xxl, tonalElevation = 4.dp) {
             Column(
                 Modifier.fillMaxWidth().widthIn(max = 440.dp).imePadding().padding(21.dp),
                 verticalArrangement = Arrangement.spacedBy(13.dp),
             ) {
-                Eyebrow("这段原文")
+                SectionEyebrow("这段原文")
                 Text(block.content.take(500), color = StudyPalette.ink,
                     style = androidx.compose.material3.MaterialTheme.typography.bodyMedium, maxLines = 8, overflow = TextOverflow.Ellipsis)
                 Text("操作会绑定整段原文和当前手记版本。", color = StudyPalette.muted,
@@ -1298,13 +1302,13 @@ private fun NoteAnnotationComposer(
                     placeholder = { Text("记下你的理解、疑问或提醒") },
                     minLines = 3,
                     maxLines = 6,
-                    shape = RoundedCornerShape(15.dp),
+                    shape = RoundedCornerShape(StudyRadius.lg),
                     enabled = !busy,
                 )
                 if (error != null) Text(error, color = StudyPalette.danger,
                     style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
                 if (busy) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = StudyPalette.blueDeep)
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = StudyPalette.accent)
                     Text("正在保存或生成…", color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
@@ -1354,7 +1358,7 @@ private fun NoteImageBlock(block: NoteBlock, viewModel: AppViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(
             Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 420.dp)
-                .clip(RoundedCornerShape(16.dp)).background(StudyPalette.inset),
+                .clip(RoundedCornerShape(StudyRadius.lg)).background(StudyPalette.inset),
             contentAlignment = Alignment.Center,
         ) {
             when {
@@ -1364,7 +1368,7 @@ private fun NoteImageBlock(block: NoteBlock, viewModel: AppViewModel) {
                     modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
                     contentScale = ContentScale.Fit,
                 )
-                loading -> CircularProgressIndicator(Modifier.size(22.dp), color = StudyPalette.blueDeep)
+                loading -> CircularProgressIndicator(Modifier.size(22.dp), color = StudyPalette.accent)
                 else -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
                         if (reference == null) "图片地址无法读取" else if (failed) "图片暂时无法打开" else "手记配图",
@@ -1435,7 +1439,7 @@ fun AccountScreen(state: AppUiState, viewModel: AppViewModel, onBack: () -> Unit
         item {
             Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
                 Text("账号", color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                PaperSurface(Modifier.fillMaxWidth(), padding = 16.dp) {
+                PaperSurface(Modifier.fillMaxWidth(), padding = StudySpacing.lg) {
                     Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1451,13 +1455,13 @@ fun AccountScreen(state: AppUiState, viewModel: AppViewModel, onBack: () -> Unit
                                 } else {
                                     Text(
                                         (state.profile?.displayName?.firstOrNull() ?: state.profile?.email?.firstOrNull() ?: '阅').uppercase(),
-                                        color = StudyPalette.blueDeep,
+                                        color = StudyPalette.accent,
                                         style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                     )
                                 }
                             }
-                            Text(if (state.isAccountBusy) "上传中" else "更换头像", color = StudyPalette.blueDeep,
+                            Text(if (state.isAccountBusy) "上传中" else "更换头像", color = StudyPalette.accent,
                                 style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
                         }
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
@@ -1482,7 +1486,7 @@ fun AccountScreen(state: AppUiState, viewModel: AppViewModel, onBack: () -> Unit
                         onClick = { viewModel.saveProfile(displayName) },
                         enabled = !state.isAccountBusy && displayName.trim() != state.profile?.displayName.orEmpty(),
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(StudyRadius.lg),
                     ) {
                         if (state.isAccountBusy) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp)
                         else Text(if (displayName.isBlank()) "清除称呼" else "保存称呼")
@@ -1500,16 +1504,16 @@ fun AccountScreen(state: AppUiState, viewModel: AppViewModel, onBack: () -> Unit
                         androidx.compose.material3.OutlinedButton(
                             onClick = { workspaceMenuOpen = true },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(15.dp),
+                            shape = RoundedCornerShape(StudyRadius.lg),
                         ) {
-                            Icon(Icons.Filled.Book, contentDescription = null, tint = StudyPalette.blueDeep)
+                            Icon(Icons.Filled.Book, contentDescription = null, tint = StudyPalette.accent)
                             Text(state.profile?.workspaceName ?: "选择书房", Modifier.weight(1f).padding(start = 8.dp))
                             Text("⌄", color = StudyPalette.muted)
                         }
                         androidx.compose.material3.DropdownMenu(
                             expanded = workspaceMenuOpen,
                             onDismissRequest = { workspaceMenuOpen = false },
-                            shape = RoundedCornerShape(15.dp),
+                            shape = RoundedCornerShape(StudyRadius.lg),
                             containerColor = StudyPalette.paper,
                             tonalElevation = 0.dp,
                             shadowElevation = 3.dp,
@@ -1570,7 +1574,7 @@ fun AccountScreen(state: AppUiState, viewModel: AppViewModel, onBack: () -> Unit
                                         onClick = viewModel::acceptAIConsent,
                                         enabled = !state.isAccountBusy && consentAccepted,
                                         modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(16.dp),
+                                        shape = RoundedCornerShape(StudyRadius.lg),
                                     ) {
                                         Text("同意并开启外部 AI")
                                     }
@@ -1590,13 +1594,13 @@ fun AccountScreen(state: AppUiState, viewModel: AppViewModel, onBack: () -> Unit
                             onClick = { viewModel.saveAIDataPolicy(policy) },
                             enabled = !state.isAccountBusy && policy != savedPolicy,
                             modifier = Modifier.align(Alignment.End),
-                            shape = RoundedCornerShape(16.dp),
-                        ) { Text("保存数据偏好", color = StudyPalette.blueDeep) }
+                            shape = RoundedCornerShape(StudyRadius.lg),
+                        ) { Text("保存数据偏好", color = StudyPalette.accent) }
                     }
             }
             }
         } else if (state.isAccountBusy) {
-            item { CircularProgressIndicator(Modifier.padding(22.dp).size(24.dp), color = StudyPalette.blueDeep) }
+            item { CircularProgressIndicator(Modifier.padding(22.dp).size(24.dp), color = StudyPalette.accent) }
         }
         item {
             Column {
@@ -1605,13 +1609,13 @@ fun AccountScreen(state: AppUiState, viewModel: AppViewModel, onBack: () -> Unit
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp),
                 ) { Text(if (showAdvancedService) "收起开发与服务" else "开发与服务") }
                 if (showAdvancedService) {
-                    PaperSurface(Modifier.fillMaxWidth(), padding = 16.dp) {
+                    PaperSurface(Modifier.fillMaxWidth(), padding = StudySpacing.lg) {
                         Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                             Text("服务地址", color = StudyPalette.ink, style = androidx.compose.material3.MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                             Text("仅在自建服务时修改。保存后会退出当前会话。", color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
                             SoftTextField(address, { address = it }, "https://study.example.com", keyboardType = KeyboardType.Uri)
-                            androidx.compose.material3.OutlinedButton(onClick = { viewModel.updateServiceAddress(address) }, enabled = address.isNotBlank(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-                                Text("保存并重新登录", color = StudyPalette.blueDeep)
+                            androidx.compose.material3.OutlinedButton(onClick = { viewModel.updateServiceAddress(address) }, enabled = address.isNotBlank(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(StudyRadius.lg)) {
+                                Text("保存并重新登录", color = StudyPalette.accent)
                             }
                         }
                     }
@@ -1664,19 +1668,14 @@ private fun SoftTextField(
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         visualTransformation = if (password) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(StudyRadius.md),
         colors = OutlinedTextFieldDefaults.colors(
             focusedContainerColor = StudyPalette.paper,
             unfocusedContainerColor = StudyPalette.paper,
-            focusedBorderColor = StudyPalette.blue.copy(alpha = .55f),
+            focusedBorderColor = StudyPalette.accent.copy(alpha = .55f),
             unfocusedBorderColor = StudyPalette.paperEdge,
         ),
     )
-}
-
-@Composable
-private fun Eyebrow(value: String) {
-    Text(value, color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
 }
 
 private fun formatDate(value: String): String = runCatching {

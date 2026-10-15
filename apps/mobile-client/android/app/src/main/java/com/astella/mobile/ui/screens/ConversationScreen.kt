@@ -77,11 +77,11 @@ import com.astella.mobile.data.AppViewModel
 import com.astella.mobile.data.CompanionBlock
 import com.astella.mobile.data.CompanionMessage
 import com.astella.mobile.R
-import com.astella.mobile.ui.CompanionPortrait
-import com.astella.mobile.ui.ConnectionFailureNotice
-import com.astella.mobile.ui.PaperSurface
-import com.astella.mobile.ui.StudyPalette
-import com.astella.mobile.ui.rememberSystemReducedMotion
+import com.astella.mobile.ui.design.CompanionPortrait
+import com.astella.mobile.ui.design.ConnectionFailureNotice
+import com.astella.mobile.ui.design.StudyPalette
+import com.astella.mobile.ui.design.StudyRadius
+import com.astella.mobile.ui.design.rememberSystemReducedMotion
 
 @Composable
 fun ConversationScreen(state: AppUiState, viewModel: AppViewModel, onAccount: () -> Unit) {
@@ -107,7 +107,7 @@ fun ConversationScreen(state: AppUiState, viewModel: AppViewModel, onAccount: ()
                 Text(state.profile?.workspaceName ?: "拾星书房", color = StudyPalette.muted,
                     style = androidx.compose.material3.MaterialTheme.typography.labelMedium, maxLines = 1)
                 Text("对话", color = StudyPalette.ink, style = androidx.compose.material3.MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold, letterSpacing = (-.25).sp)
+                    fontWeight = FontWeight.SemiBold)
             }
             Row(Modifier.padding(end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(7.dp).background(if (state.realtimeStatus == "已连接") StudyPalette.success else StudyPalette.muted.copy(alpha = .55f), CircleShape))
@@ -121,7 +121,7 @@ fun ConversationScreen(state: AppUiState, viewModel: AppViewModel, onAccount: ()
 
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)
-                .clip(RoundedCornerShape(20.dp)).background(StudyPalette.inset.copy(alpha = .9f)).padding(4.dp),
+                .clip(RoundedCornerShape(StudyRadius.xl)).background(StudyPalette.inset.copy(alpha = .9f)).padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             SegmentButton("伴星", selected = !state.chatShowsRecords, reduceMotion = reduceMotion, modifier = Modifier.weight(1f)) { viewModel.setChatShowsRecords(false) }
@@ -154,14 +154,14 @@ fun ConversationScreen(state: AppUiState, viewModel: AppViewModel, onAccount: ()
         state.pendingNoteContext?.let { note ->
             Surface(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
-                shape = RoundedCornerShape(14.dp),
-                color = StudyPalette.blue.copy(alpha = .08f),
+                shape = RoundedCornerShape(StudyRadius.md),
+                color = StudyPalette.accent.copy(alpha = .08f),
             ) {
                 Row(
                     Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Filled.Book, contentDescription = null, tint = StudyPalette.blueDeep, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Filled.Book, contentDescription = null, tint = StudyPalette.accent, modifier = Modifier.size(18.dp))
                     Column(Modifier.weight(1f).padding(start = 9.dp)) {
                         Text("正在围绕手记交流", color = StudyPalette.ink, style = androidx.compose.material3.MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                         Text(note.title, color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.labelSmall, maxLines = 1)
@@ -176,23 +176,23 @@ fun ConversationScreen(state: AppUiState, viewModel: AppViewModel, onAccount: ()
         Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp)) {
             state.selectedImage?.let { uri ->
                 Row(
-                    Modifier.fillMaxWidth().padding(bottom = 7.dp).clip(RoundedCornerShape(14.dp)).background(StudyPalette.inset).padding(8.dp),
+                    Modifier.fillMaxWidth().padding(bottom = 7.dp).clip(RoundedCornerShape(StudyRadius.md)).background(StudyPalette.inset).padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    LocalImage(uri, Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)))
+                    LocalImage(uri, Modifier.size(42.dp).clip(RoundedCornerShape(StudyRadius.sm)))
                     Text("图片将在发送时上传", Modifier.weight(1f).padding(start = 10.dp), color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.labelMedium)
                     IconButton(onClick = { viewModel.selectImage(null) }) { Icon(Icons.Filled.Close, contentDescription = "移除图片", tint = StudyPalette.muted) }
                 }
             }
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(23.dp),
+                shape = RoundedCornerShape(StudyRadius.xxl),
                 color = StudyPalette.paper.copy(alpha = .96f),
                 border = androidx.compose.foundation.BorderStroke(.6.dp, StudyPalette.paperEdge.copy(alpha = .62f)),
             ) {
                 Row(Modifier.padding(horizontal = 5.dp, vertical = 5.dp), verticalAlignment = Alignment.Bottom) {
                     IconButton(onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
-                        Icon(Icons.Filled.Photo, contentDescription = "选择图片", tint = StudyPalette.blueDeep)
+                        Icon(Icons.Filled.Photo, contentDescription = "选择图片", tint = StudyPalette.accent)
                     }
                     IconButton(onClick = {
                         if (state.isRecording) viewModel.stopAndTranscribe()
@@ -202,14 +202,14 @@ fun ConversationScreen(state: AppUiState, viewModel: AppViewModel, onAccount: ()
                         if (state.isTranscribing) CircularProgressIndicator(Modifier.size(21.dp), strokeWidth = 2.dp)
                         else Icon(if (state.isRecording) Icons.Filled.StopCircle else Icons.Filled.Mic,
                             contentDescription = if (state.isRecording) "结束录音并识别" else "语音输入",
-                            tint = if (state.isRecording) StudyPalette.danger else StudyPalette.blueDeep)
+                            tint = if (state.isRecording) StudyPalette.danger else StudyPalette.accent)
                     }
                     BasicTextField(
                         value = draft,
                         onValueChange = { draft = it; viewModel.draftChanged(it) },
                         modifier = Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 13.dp),
                         textStyle = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(color = StudyPalette.ink),
-                        cursorBrush = androidx.compose.ui.graphics.SolidColor(StudyPalette.blueDeep),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(StudyPalette.accent),
                         minLines = 1,
                         maxLines = 5,
                         decorationBox = { inner ->
@@ -236,7 +236,7 @@ fun ConversationScreen(state: AppUiState, viewModel: AppViewModel, onAccount: ()
                         },
                         enabled = !state.isSending && (draft.isNotBlank() || state.selectedImage != null),
                         modifier = Modifier.padding(bottom = 1.dp).size(40.dp).clip(CircleShape)
-                            .background(if (draft.isNotBlank() || state.selectedImage != null) StudyPalette.blueDeep else StudyPalette.inset),
+                            .background(if (draft.isNotBlank() || state.selectedImage != null) StudyPalette.accent else StudyPalette.inset),
                     ) {
                         if (state.isSending) CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
                         else Icon(
@@ -258,7 +258,7 @@ private fun SegmentButton(label: String, selected: Boolean, reduceMotion: Boolea
         tween(if (reduceMotion) 1 else 180),
         label = "segment-color",
     )
-    Surface(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(16.dp), color = background,
+    Surface(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(StudyRadius.lg), color = background,
         border = if (selected) androidx.compose.foundation.BorderStroke(.6.dp, StudyPalette.paperEdge.copy(alpha = .7f)) else null,
         shadowElevation = if (selected) 1.dp else 0.dp) {
         Text(label, Modifier.fillMaxWidth().padding(vertical = 9.dp), textAlign = TextAlign.Center,
@@ -282,7 +282,7 @@ private fun CompanionScene(state: AppUiState, reduceMotion: Boolean, onPrompt: (
                 CompanionPortrait(Modifier.width(158.dp), height = 178.dp, reduceMotion = reduceMotion)
                 Text("今天，想学点什么？", color = StudyPalette.ink,
                     style = androidx.compose.material3.MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold, letterSpacing = (-.25).sp)
+                    fontWeight = FontWeight.SemiBold)
                 Text("正在读的内容，或没想通的问题，都可以直接告诉伴星。", Modifier.padding(top = 6.dp).padding(horizontal = 14.dp),
                     color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
                     lineHeight = 21.sp, textAlign = TextAlign.Center)
@@ -302,7 +302,7 @@ private fun CompanionScene(state: AppUiState, reduceMotion: Boolean, onPrompt: (
                                 border = androidx.compose.foundation.BorderStroke(.7.dp, StudyPalette.paperEdge.copy(alpha = .8f)),
                                 shadowElevation = 0.dp,
                             ) {
-                                Text(label, Modifier.padding(horizontal = 13.dp, vertical = 10.dp), color = StudyPalette.blueDeep,
+                                Text(label, Modifier.padding(horizontal = 13.dp, vertical = 10.dp), color = StudyPalette.accent,
                                     style = androidx.compose.material3.MaterialTheme.typography.labelMedium)
                             }
                         }
@@ -335,7 +335,7 @@ private fun CompanionScene(state: AppUiState, reduceMotion: Boolean, onPrompt: (
                         lineHeight = androidx.compose.material3.MaterialTheme.typography.bodyLarge.lineHeight * 1.3f,
                     )
                     if (state.streamingText.isNotEmpty()) Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 2.dp, color = StudyPalette.blue)
+                        CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 2.dp, color = StudyPalette.accent)
                         Text("正在接着回答", Modifier.padding(start = 7.dp), color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
                     }
                     if (state.runs.isNotEmpty()) {
@@ -413,7 +413,7 @@ private fun MessageRow(message: CompanionMessage, viewModel: AppViewModel) {
             contentScale = androidx.compose.ui.layout.ContentScale.Crop)
         Surface(
             modifier = Modifier.fillMaxWidth(if (user) .88f else 1f),
-            shape = RoundedCornerShape(if (user) 18.dp else 0.dp),
+            shape = RoundedCornerShape(if (user) StudyRadius.xl else 0.dp),
             color = if (user) StudyPalette.sky.copy(alpha = .72f) else Color.Transparent,
         ) {
             Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -436,8 +436,8 @@ private fun AuthenticatedImage(url: String, description: String, viewModel: AppV
     var bytes by remember(url) { mutableStateOf<ByteArray?>(null) }
     LaunchedEffect(url) { bytes = runCatching { viewModel.imageBytes(url) }.getOrNull() }
     val bitmap = remember(bytes) { bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() } }
-    if (bitmap != null) Image(bitmap, description, Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)))
-    else Box(Modifier.fillMaxWidth().height(72.dp).clip(RoundedCornerShape(12.dp)).background(StudyPalette.sky.copy(alpha = .4f)), contentAlignment = Alignment.Center) {
+    if (bitmap != null) Image(bitmap, description, Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(StudyRadius.md)))
+    else Box(Modifier.fillMaxWidth().height(72.dp).clip(RoundedCornerShape(StudyRadius.md)).background(StudyPalette.sky.copy(alpha = .4f)), contentAlignment = Alignment.Center) {
         Text("正在载入图片…", color = StudyPalette.muted, style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
     }
 }
@@ -447,5 +447,5 @@ private fun LocalImage(uri: Uri, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val bitmap = remember(uri) { runCatching { context.contentResolver.openInputStream(uri)?.use(BitmapFactory::decodeStream) }.getOrNull() }
     if (bitmap != null) Image(bitmap.asImageBitmap(), contentDescription = "待发送图片", modifier = modifier, contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-    else Box(modifier.background(StudyPalette.sky, RoundedCornerShape(8.dp)))
+    else Box(modifier.background(StudyPalette.sky, RoundedCornerShape(StudyRadius.sm)))
 }

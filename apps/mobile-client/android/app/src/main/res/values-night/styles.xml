@@ -1,10 +1,10 @@
 <resources>
+    <!-- 夜间：同 values/styles.xml 的透明沉浸口径，浅色图标换深色底反色。 -->
     <style name="Theme.Astella" parent="android:style/Theme.Material.NoActionBar">
-        <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">#FF000000</item>
-        <item name="android:navigationBarColor">#FF000000</item>
         <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:colorAccent">#0A84FF</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
