@@ -27,6 +27,7 @@ import {
 } from "@astella/shared";
 import { noteImageAssets } from "@astella/shared/db-schema/note";
 import { sourceImageObjectKeyFromUrl, sourceImageUrlFromObjectKey } from "@astella/shared/source-image-contracts";
+import { companionFileObjectKeyFromUrl } from "@astella/shared/companion-file-contracts";
 import { resolveAuthSurfaceManifestSecret } from "../../../companion-contracts/auth-surface.ts";
 import { ensureCompanionAccountState, getCompanionAccountEpoch } from "../../../companion-contracts/companion-account-epoch.ts";
 import { reclaimExpiredCompanionProposals, invalidateSupersededRunProposals } from "./companion-proposal-expiry.ts";
@@ -69,6 +70,29 @@ const HARD_MAX_CHARS = 20_000;
 function textOfBlocks(blocks: CreateCompanionTurnRequestV1["blocks"]): string {
   const first = blocks[0];
   return first?.type === "text" ? first.text : "";
+}
+
+/**
+ * 对话文件块校验（2026-10-15 扩展 A）：url 必须是**本工作区、本用户**上传的
+ * 站内文件对象（`{workspaceId}/companion-files/{userId}/…`）。与图片的资产行
+ * 解析不同，文件不进 note_image_assets，隔离就落在路径段上；客户端给的其余
+ * 字段（name/mime/byteLength/text）按合同已在 zod 层收口，这里原样落库。
+ */
+function validateTurnFileBlocks(
+  workspaceId: string,
+  userId: string,
+  blocks: CreateCompanionTurnRequestV1["blocks"],
+): CreateCompanionTurnRequestV1["blocks"] {
+  if (!blocks.some((block) => block.type === "file")) return blocks;
+  const expectedPrefix = `${workspaceId}/companion-files/${userId}/`;
+  return blocks.map((block) => {
+    if (block.type !== "file") return block;
+    const key = companionFileObjectKeyFromUrl(block.url);
+    if (!key || !key.startsWith(expectedPrefix)) {
+      throw new CompanionConversationError("INVALID_REQUEST", 400, "attached file url is not a site-internal upload by this user");
+    }
+    return block;
+  });
 }
 
 /** 计算持久化 page context：只保存 grant 的 opaque 元数据，不保存签名。 */
@@ -514,7 +538,11 @@ export async function createCompanionTurn(args: {  workspaceId: string;
     );
 
     // 用户随这一轮附的图（2026-10-06 输入框传图）：解析成权威资产再落库。
-    const blocks = await resolveTurnImageBlocks(tx, args.workspaceId, request.blocks);
+    const blocks = validateTurnFileBlocks(
+      args.workspaceId,
+      args.userId,
+      await resolveTurnImageBlocks(tx, args.workspaceId, request.blocks),
+    );
 
     // 分配 seq/generation（原子自增）：UPDATE ... RETURNING 返回的是递增后的值，
     // 当前 turn 的 generation 应为递增前的旧值（首个 turn = 1）。

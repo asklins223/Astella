@@ -59,6 +59,7 @@ export * from "./capability-bundle.ts";
 export * from "./contracts/desktop-ipc-contracts.ts";
 export * from "./contracts/companion-character-contracts.ts";
 export * from "./contracts/companion-conversation-contracts.ts";
+export * from "./contracts/companion-file-contracts.ts";
 export * from "./contracts/companion-agent-contracts.ts";
 export * from "./contracts/companion-run-diagnostics.ts";
 export * from "./companion-agent-registry.ts";

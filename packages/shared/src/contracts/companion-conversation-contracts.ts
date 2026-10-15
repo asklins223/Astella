@@ -19,6 +19,7 @@ import {
 } from "./companion-character-contracts.ts";
 import { companionAgentToolEventV1Schema } from "./companion-agent-contracts.ts";
 import { sourceImageObjectKeyFromUrl } from "./source-image-contracts.ts";
+import { companionFileBlockV1Schema } from "./companion-file-contracts.ts";
 import { createLearningRunV2RequestSchema } from "./learning-target-v2-contracts.ts";
 
 // ─── 基础 ────────────────────────────────────────────────────────────────
@@ -226,6 +227,11 @@ export const companionContentBlockV1Schema = z.discriminatedUnion("type", [
     knowledgeForm: z.string().max(40).nullable(),
   }).strict(),
   companionImageBlockV1Schema,
+  /**
+   * 用户这一轮传的文件（2026-10-15 移动端扩展 A：对话发文件）。
+   * 正文由客户端本机抽取随块上送（「原件不出本机」：解析不发生服务端）。
+   */
+  companionFileBlockV1Schema,
   companionFollowupSuggestionsBlockV1Schema,
 ]);
 
@@ -449,8 +455,10 @@ export const createCompanionTurnRequestV1Schema = z.object({
   clientMessageId: z.string().uuid(),
   inputKind: z.enum(["text", "voice_transcript"]),
   /**
-   * 首个块必须是 text；可选的第二个块是**用户自己传的图**（2026-10-06 输入框传图）。
-   * 图片仍要有一条文字（哪怕很短）——注意力分类、标题、事实读取都以文字为准。
+   * 输入块（2026-10-15 扩展 A 放宽）：1–2 块；附件（图片或文件）至多一个。
+   * 首块可以是文字，也可以是**仅附件**（用户拖来一张图/一个文件、什么都没说）——
+   * 此时由服务端登记显式「仅附件意图」，客户端不许伪造文案。
+   * 语音转写仍必须是唯一文字块、不携带附件。
    */
   blocks: z.array(companionContentBlockV1Schema).min(1).max(2),
   voiceArtifactId: z.string().uuid().optional(),
@@ -476,14 +484,24 @@ export const createCompanionTurnRequestV1Schema = z.object({
   }).optional(),
 }).strict().superRefine((value, ctx) => {
   const [first, second] = value.blocks;
-  if (first?.type !== "text") {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks"], message: "v1 turn input must start with one text block" });
-  }
-  if (second && second.type !== "image") {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks", 1], message: "the only optional block is a user-attached image" });
-  }
-  if (second && value.inputKind === "voice_transcript") {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks", 1], message: "voice transcript turn carries no image block" });
+  const isAttachment = (block: { type: string }) => block.type === "image" || block.type === "file";
+  if (value.inputKind === "voice_transcript") {
+    if (first?.type !== "text") {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks"], message: "voice transcript turn must start with one text block" });
+    }
+    if (second) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks", 1], message: "voice transcript turn carries no attachment" });
+    }
+  } else if (!first || (first.type !== "text" && !isAttachment(first))) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks"], message: "text turn starts with one text block or one attachment" });
+  } else if (second) {
+    // 至多一个附件：text+附件、仅附件 均可；附件+附件、text+text 拒绝。
+    if (isAttachment(first) && isAttachment(second)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks", 1], message: "at most one attachment (image or file) per turn" });
+    }
+    if (!isAttachment(second)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["blocks", 1], message: "the only optional block is one image or file attachment" });
+    }
   }
   if ((value.inputKind === "voice_transcript") !== (value.voiceArtifactId !== undefined)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["voiceArtifactId"], message: "required iff voice_transcript" });

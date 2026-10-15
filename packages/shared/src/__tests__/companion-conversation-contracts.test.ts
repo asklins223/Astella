@@ -757,7 +757,9 @@ test("输入框传图：一轮可以带一张用户自己传的图，形状与�
   assert.equal(createCompanionTurnRequestV1Schema.safeParse(
     turn([image, { type: "text", text: "看图" }]),
   ).success, false);
-  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turn([image])).success, false);
+  // 2026-10-15 扩展 A：允许「仅附件」（用户拖一张图/一个文件、什么都没说），
+  // 由服务端登记显式「仅附件意图」，客户端不再伪造文案。
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turn([image])).success, true);
   // 至多一张，第二块只认 image。
   assert.equal(createCompanionTurnRequestV1Schema.safeParse(
     turn([{ type: "text", text: "两张" }, image, image]),
@@ -832,4 +834,96 @@ test("quote 块：她读到的原文由服务端带出，长度与字段都收�
     text: "正文",
     route: { kind: "home" },
   }).success, false);
+});
+
+// ─── 2026-10-15 扩展 A：回合附件合同（图片或文件，至多一个；允许仅附件） ───
+
+const FILE_URL = `/api/uploads/${UUID}/companion-files/${UUID2}/notes.pdf`;
+const FILE_BLOCK = {
+  type: "file",
+  url: FILE_URL,
+  name: "notes.pdf",
+  mime: "application/pdf",
+  byteLength: 1234,
+  text: "第一章 绪论……",
+};
+const IMAGE_BLOCK = {
+  type: "image",
+  url: `/api/uploads/${UUID}/companion/${UUID2}.png`,
+  label: "第 1 张",
+};
+function turnBody(overrides: Record<string, unknown>): Record<string, unknown> {
+  return {
+    version: 1,
+    clientMessageId: UUID,
+    inputKind: "text",
+    sourceSurface: "pet",
+    ...overrides,
+  };
+}
+
+test("扩展 A：text+文件、仅文件、仅图片、text+图片 均合法", () => {
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
+    blocks: [{ type: "text", text: "帮我看看" }, FILE_BLOCK],
+  })).success, true);
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
+    blocks: [FILE_BLOCK],
+  })).success, true);
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
+    blocks: [IMAGE_BLOCK],
+  })).success, true);
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
+    blocks: [{ type: "text", text: "看看这张图" }, IMAGE_BLOCK],
+  })).success, true);
+});
+
+test("扩展 A：双附件、text+text、附件+文字 的组合按合同拒绝", () => {
+  // 附件+附件：拒绝
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
+    blocks: [IMAGE_BLOCK, FILE_BLOCK],
+  })).success, false);
+  // text+text：拒绝（第二块必须是附件）
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
+    blocks: [{ type: "text", text: "一" }, { type: "text", text: "二" }],
+  })).success, false);
+  // 附件在前、文字在后：拒绝（第二块只能是附件）
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
+    blocks: [FILE_BLOCK, { type: "text", text: "补充" }],
+  })).success, false);
+});
+
+test("扩展 A：语音转写仍必须是唯一文字块、不带附件", () => {
+  const voice = (blocks: unknown[]) => turnBody({
+    inputKind: "voice_transcript",
+    voiceArtifactId: UUID2,
+    blocks,
+  });
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(
+    voice([{ type: "text", text: "念一下这段" }]),
+  ).success, true);
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(
+    voice([{ type: "text", text: "念一下" }, IMAGE_BLOCK]),
+  ).success, false);
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(
+    voice([FILE_BLOCK]),
+  ).success, false);
+});
+
+test("扩展 A：file 块字段按合同收口（url 站内、mime 白名单、text 上限）", () => {
+  // url 是外链：拒绝
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
+    blocks: [{ ...FILE_BLOCK, url: "https://example.com/x.pdf" }],
+  })).success, false);
+  // mime 不在白名单：拒绝
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
+    blocks: [{ ...FILE_BLOCK, mime: "application/x-msdownload" }],
+  })).success, false);
+  // text 超 100,000：拒绝
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
+    blocks: [{ ...FILE_BLOCK, text: "字".repeat(100_001) }],
+  })).success, false);
+  // byteLength 超 20MiB：拒绝
+  assert.equal(createCompanionTurnRequestV1Schema.safeParse(turnBody({
+    blocks: [{ ...FILE_BLOCK, byteLength: 21 * 1024 * 1024 }],
+  })).success, false);
 });

@@ -47,6 +47,7 @@ import { startCompanionNotifyListener, stopCompanionNotifyListener } from "./lib
 import { learningRunRoutes } from "./modules/learning-runs/run-routes.ts";
 import { learningDisputeRoutes } from "./modules/learning-runs/disputes/run-dispute-routes.ts";
 import { companionBridgeRoutes } from "./modules/companion-bridge/routes.ts";
+import { companionModelRoutes } from "./modules/companion-model/companion-model-routes.ts";
 import { companionJourneyRoutes } from "./modules/companion-journey/routes.ts";
 import { understandingProjectionRoutes } from "./modules/understanding/projection-routes.ts";
 import { proactiveInboxRoutes } from "./modules/companion-conversation/delivery/inbox-routes.ts";
@@ -442,6 +443,7 @@ async function main() {
   // 与 run 的生命周期写入不是同一条链。
   await app.register(learningDisputeRoutes);
   await app.register(companionBridgeRoutes);
+  await app.register(companionModelRoutes);
   await app.register(companionJourneyRoutes);
   await app.register(understandingProjectionRoutes);
   await app.register(proactiveInboxRoutes);

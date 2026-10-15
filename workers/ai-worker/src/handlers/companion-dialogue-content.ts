@@ -713,14 +713,35 @@ export function keepRecomputedBlocks(text: string): string {
   ) ?? []).join("\n");
 }
 
-/** 从 blocks 提取纯文本（与 turn-service 的 textOfBlocks 语义一致）。 */
+/**
+ * 从 blocks 提取纯文本（与 turn-service 的 textOfBlocks 语义一致）。
+ *
+ * 2026-10-15 扩展 A：用户这轮可以只丢一个文件/一张图过来（合同已放宽
+ * 「仅附件」）。这里把文件块的客户端本机抽取正文折进来，并在**没有任何文字**
+ * 时登记一条显式的服务端「仅附件意图」标注——伴星必须知道用户其实什么都没
+ * 说；这条标注由服务端生成，不是客户端伪造的文案。
+ */
 export function textOfCompanionBlocks(blocks: unknown): string {
   if (!Array.isArray(blocks)) return "";
-  return blocks
-    .map((b) => (b && typeof b === "object" && (b as { type?: string }).type === "text"
-      ? String((b as { text?: unknown }).text ?? "")
-      : ""))
-    .join("");
+  const texts: string[] = [];
+  let attachmentLabel = "";
+  for (const b of blocks) {
+    if (!b || typeof b !== "object") continue;
+    const block = b as { type?: string; text?: unknown; name?: unknown; mime?: unknown };
+    if (block.type === "text") {
+      texts.push(String(block.text ?? ""));
+    } else if (block.type === "file") {
+      const name = String(block.name ?? "附件");
+      const text = String(block.text ?? "");
+      texts.push(`〔附件·文件〕${name}\n${text}`.trim());
+      if (!attachmentLabel) attachmentLabel = `〔用户本轮只发送了附件（${name}），没有文字说明〕`;
+    } else if (block.type === "image" && !attachmentLabel) {
+      attachmentLabel = "〔用户本轮只发送了一张图片，没有文字说明〕";
+    }
+  }
+  const joined = texts.join("").trim();
+  if (joined.length > 0) return joined;
+  return attachmentLabel;
 }
 
 /**

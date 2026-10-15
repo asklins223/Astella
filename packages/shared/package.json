@@ -116,6 +116,11 @@
       "import": "./src/contracts/companion-conversation-contracts.ts",
       "default": "./src/contracts/companion-conversation-contracts.ts"
     },
+    "./companion-file-contracts": {
+      "types": "./src/contracts/companion-file-contracts.ts",
+      "import": "./src/contracts/companion-file-contracts.ts",
+      "default": "./src/contracts/companion-file-contracts.ts"
+    },
     "./companion-realtime-contracts": {
       "types": "./src/contracts/companion-realtime-contracts.ts",
       "import": "./src/contracts/companion-realtime-contracts.ts",

@@ -1,5 +1,6 @@
 import { OBJECT_TRANSFER_HEADER } from "@astella/shared/object-transfer-contracts";
 import { SOURCE_IMAGE_MAX_BYTES } from "@astella/shared/source-image-contracts";
+import { COMPANION_FILE_MAX_BYTES } from "@astella/shared/companion-file-contracts";
 /**
  * 图片上传与下载路由。
  *
@@ -27,6 +28,7 @@ import {
   fileTooLargeError,
   uploadNoteImage,
   uploadCompanionImage,
+  uploadCompanionFile,
   uploadImportedImage,
   uploadAvatar,
   downloadUploadObject,
@@ -238,6 +240,59 @@ export async function uploadRoutes(
         return reply.code(503).send({ error: "failed to upload image" });
       case "asset_persist_failed":
         return reply.code(503).send({ error: "failed to register uploaded image" });
+    }
+  });
+
+  // ─── POST /uploads/companion-files — 伴星对话文件上传（2026-10-15 扩展 A）──
+  // PDF/DOCX/txt/md 原件留档（不挂资产行，下载闸按路径段隔离）；给模型的正文由
+  // 客户端本机抽取、随回合上送——本路由不做任何解析（「原件不出本机」）。
+  app.post("/uploads/companion-files", { preHandler: [requireOwner] }, async (req, reply) => {
+    const fileDecision = await imageLimiter.consume(`upload:file:user:${req.session.userId}`);
+    if (!fileDecision.allowed) {
+      reply.header("Retry-After", retryAfterSeconds(fileDecision.resetAt));
+      return reply.code(429).send({ error: "rate_limited", message: "上传过于频繁，请稍后重试" });
+    }
+
+    const credential = getRequestCredential(req);
+    if (credential?.source === "cookie" && !hasValidCookieCsrf(req.method, req.headers)) {
+      return reply.code(403).send({ error: "csrf token required" });
+    }
+
+    if (!isStorageConfigured()) {
+      return reply.code(503).send({ error: "object storage is not configured" });
+    }
+
+    let file;
+    try {
+      file = await req.file({ limits: { fileSize: COMPANION_FILE_MAX_BYTES } });
+    } catch (err) {
+      if (fileTooLargeError(err)) {
+        return reply.code(413).send({ error: "file too large (max 20MB)", code: "FST_REQ_FILE_TOO_LARGE" });
+      }
+      throw err;
+    }
+    if (!file) return reply.code(400).send({ error: "no file provided" });
+
+    const requestedName = typeof file.fields?.name === "object" && "value" in file.fields.name
+      ? String((file.fields.name as { value?: unknown }).value ?? "")
+      : undefined;
+    const outcome = await uploadCompanionFile(scopeOfSession(req.session), { file, requestedName });
+    if (outcome.ok) {
+      return reply.code(201).send(outcome.body);
+    }
+    switch (outcome.reason) {
+      case "unsupported_type":
+        drainMultipartFile(file);
+        return reply.code(415).send({ error: "unsupported file type (pdf/docx/txt/md)" });
+      case "file_read_too_large":
+        drainMultipartFile(file);
+        return reply.code(413).send({ error: "file too large (max 20MB)", code: "FST_REQ_FILE_TOO_LARGE" });
+      case "content_type_mismatch":
+        return reply.code(415).send({ error: "file content does not match declared type" });
+      case "too_large":
+        return reply.code(413).send({ error: "file too large (max 20MB)" });
+      case "storage_upload_failed":
+        return reply.code(503).send({ error: "failed to upload file" });
     }
   });
 

@@ -23,6 +23,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { withActorTransaction, withWorkspaceTransaction, type WorkspaceTransactionContext } from "../../db/client.ts";
 import { noteImageAssets, notes } from "@astella/shared/db-schema/note";
+import {
+  companionFileUrlFromObjectKey,
+  companionFileExtensionForMimeType,
+  COMPANION_FILE_MIME_TYPES,
+  COMPANION_FILE_MAX_BYTES,
+  type CompanionFileMimeType,
+} from "@astella/shared/companion-file-contracts";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import { users } from "@astella/shared/db-schema/identity";
 import {
@@ -394,6 +401,94 @@ export async function uploadCompanionImage(
   return storeDetachedImage(scope, input, (ext) => `${scope.workspaceId}/companion/${randomUUID()}.${ext}`);
 }
 
+/** POST /uploads/companion-files 失败原因（routes.ts 映射状态码）。 */
+export type CompanionFileUploadFailure =
+  | "unsupported_type"
+  | "file_read_too_large"
+  | "content_type_mismatch"
+  | "too_large"
+  | "storage_upload_failed";
+
+export type CompanionFileUploadResult =
+  | {
+      ok: true;
+      body: { url: string; objectKey: string; name: string; mimeType: string; byteLength: number; sha256: string };
+    }
+  | { ok: false; reason: CompanionFileUploadFailure };
+
+/**
+ * 内容魔数复核（与声明 MIME 对表）：合同收得下 ⇔ 打得开是同一件事。
+ * PDF 看 `%PDF-` 头；DOCX 是 zip（`PK\x03\x04`）；txt/md 必须整体是合法 UTF-8
+ * （客户端抽取的正文也是 UTF-8，这里拦掉错标成文本的二进制）。
+ */
+function validateCompanionFileMagic(buffer: Buffer, mime: CompanionFileMimeType): boolean {
+  if (mime === "application/pdf") {
+    return buffer.length >= 5 && buffer.toString("ascii", 0, 5) === "%PDF-";
+  }
+  if (mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.docx") {
+    return buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04;
+  }
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 对话文件上传（2026-10-15 扩展 A：对话发文件）：POST /uploads/companion-files。
+ *
+ * 与伴星图同为「不挂资产行」的对象：下载闸按
+ * `{workspaceId}/companion-files/{uploaderId}/{uuid}.{ext}` 路径段做租户与上传者
+ * 隔离（见 downloadUploadObject 的 companion-files 分支）。原件只留档；给模型的
+ * 正文由客户端本机抽取、随回合上送，本函数不做任何解析（「原件不出本机」）。
+ */
+export async function uploadCompanionFile(
+  scope: WorkspaceTransactionContext,
+  input: { file: UploadFileHandle; requestedName?: string; staging?: { key: string; etag: string } },
+): Promise<CompanionFileUploadResult> {
+  const { file } = input;
+  const mime = file.mimetype as CompanionFileMimeType;
+  if (!COMPANION_FILE_MIME_TYPES.includes(mime)) {
+    return { ok: false, reason: "unsupported_type" };
+  }
+
+  let buffer: Buffer;
+  try {
+    buffer = await file.toBuffer();
+  } catch (err) {
+    if (fileTooLargeError(err)) return { ok: false, reason: "file_read_too_large" };
+    throw err;
+  }
+  if (buffer.length > COMPANION_FILE_MAX_BYTES) return { ok: false, reason: "too_large" };
+  if (!validateCompanionFileMagic(buffer, mime)) return { ok: false, reason: "content_type_mismatch" };
+
+  const objectKey = `${scope.workspaceId}/companion-files/${scope.userId}/${randomUUID()}.${companionFileExtensionForMimeType(mime)}`;
+  try {
+    await persistObject(objectKey, buffer, mime, input.staging);
+  } catch (err) {
+    logger.error({ err, objectKey }, "failed to upload companion file to storage");
+    return { ok: false, reason: "storage_upload_failed" };
+  }
+
+  // 展示名只取安全的 base 名（防路径注入），MIME 由服务端校验结果说了算。
+  const rawName = (input.requestedName ?? "").split(/[\\/]/).pop() ?? "";
+  const name = rawName.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 200)
+    || `${randomUUID()}.${companionFileExtensionForMimeType(mime)}`;
+  return {
+    ok: true,
+    body: {
+      url: companionFileUrlFromObjectKey(objectKey),
+      objectKey,
+      name,
+      mimeType: mime,
+      byteLength: buffer.length,
+      sha256: createHash("sha256").update(buffer).digest("hex"),
+    },
+  };
+}
+
 /**
  * 导入 Markdown 时随正文带进来的图片（`markdown_import_image` 用途）。
  *
@@ -574,14 +669,24 @@ export async function downloadUploadObject(
     const parts = path.split("/");
     const kind = parts[1];
     const isCompanionImage = kind === "companion";
-    if ((kind !== "notes" && kind !== "sources" && kind !== "imports" && !isCompanionImage)
-      || (isCompanionImage ? parts.length < 3 : parts.length < 4)) {
+    // 对话文件（2026-10-15 扩展 A）：{workspaceId}/companion-files/{uploaderId}/{name}.{ext}
+    const isCompanionFile = kind === "companion-files";
+    if ((kind !== "notes" && kind !== "sources" && kind !== "imports" && !isCompanionImage && !isCompanionFile)
+      || (isCompanionFile ? parts.length < 4 : isCompanionImage ? parts.length < 3 : parts.length < 4)) {
       return { ok: false, reason: "not_found" };
     }
     const pathWorkspaceId = parts[0];
     if (pathWorkspaceId !== scope.workspaceId) {
       return { ok: false, reason: "not_found" };
     }
+    if (isCompanionFile) {
+      // 文件不进 note_image_assets：按路径段做上传者隔离后直接放行
+      // （对象只有上传者本人的会话能拿到 url；孤儿对象仅本人可读，无跨租户面）。
+      if (parts[2] !== scope.userId) {
+        return { ok: false, reason: "not_found" };
+      }
+      // 落到资产登记校验块之外。
+    } else {
     // 登记校验：对象必须在 noteImageAssets 中登记，且所属笔记存在且未软删。
     // 防止软删/物理删笔记的图片、以及从未登记的孤儿对象仍可被直连下载。
     //
@@ -621,6 +726,7 @@ export async function downloadUploadObject(
     );
     if (!assetRow.row || !assetRow.noteExists) {
       return { ok: false, reason: "not_found" };
+    }
     }
   }
 
