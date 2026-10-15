@@ -54,17 +54,17 @@
 - 字阶：iOS 系统字阶（largeTitle/title2/title3/body/subheadline/footnote/caption）；Android 映射 M3 typography slot。
 - 颜色：iOS 系统语义色（label/secondaryLabel/systemBlue/systemBackground/…，`StudyPalette`，已合并 blue/blueDeep 为 accent）；Android 映射 M3 角色（onSurface/onSurfaceVariant/primary/background/surface/surfaceVariant/outline/error）。两端业务代码只用语义名（ink/muted/accent/canvas/paper/inset/paperEdge/success/danger）。
 
-## 五、伴星事件 → Live2D 动作映射（两端共用；资产与映射细节随阶段 4/9 回填）
+## 五、伴星事件 → Live2D 动作映射（两端共用；代码落点 `ios/Astella/Companion/CompanionEvents.swift` 的 `CompanionEventMap`，阶段 4a 定表，4b/9 绑定核对）
 
-| 事件 | 动作/表情 | 说明 |
-| --- | --- | --- |
-| idle | 呼吸默认循环 | 长时间无交互可微调视线 |
-| attention（拖拽悬停/选区工具条出现） | 眼神转向交互源 | 视线跟随最新交互源 |
-| absorb（文件/图片吸收） | 发现→前倾→光晕涟漪 | 失败：歪头 |
-| speak（TTS 播放） | ParamMouthOpenY 口型 + 身体微动 | 无 PCM 时按播放进度估计 |
-| thinking（回合运行中） | 思考循环 | 不常驻「正在做事」 |
-| fail（回合失败） | 歪头/遗憾 | 与错误面板同时 |
-| reduceMotion / PNG 降级 | 静止或静态图 | 见降级路径 |
+| 事件 | expression | motion | PNG 降级微反应（已实现参数见 CompanionStageView.react） |
+| --- | --- | --- | --- |
+| idle | — | "Idle"（4b 核对条目名） | 无 |
+| attention（拖拽悬停/选区工具条出现） | — | 视线跟随（ParamAngleY/ParamEyeBallX） | 有 |
+| absorb(true)（文件/图片吸收成功） | "surprised" | 前倾类 motion（4b 绑定） | scale 0.97→1.03→1 弹簧脉冲 |
+| absorb(false)/fail | "question" | 歪头（4b 绑定） | rotation −2°→0 |
+| thinking（回合运行中） | — | 循环 motion（4b 绑定） | opacity 1→0.85→1 单次 |
+| speak（TTS 播放） | — | 口型 ParamMouthOpenY（mouthOpen 驱动） | 0.6s 呼吸 scale 循环 |
+| reduceMotion / PNG 降级 | 静止或静态图 | 见降级路径 | 全部微反应冻结 |
 
 ## 六、粒子参数（阶段 5/9 回填）
 

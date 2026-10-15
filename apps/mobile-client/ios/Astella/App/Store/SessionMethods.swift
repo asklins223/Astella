@@ -159,6 +159,8 @@ extension AppStore {
             loadDevicePreferences(for: profile?.userId ?? "")
             await loadConversation()
             await loadNotes()
+            // 会话恢复成功后，后台校验/下载伴星 Live2D 模型（失败走 PNG 降级）。
+            startCompanionModelDownload()
         } catch {
             if (error as? MobileAPIError)?.status == 401 {
                 logout()

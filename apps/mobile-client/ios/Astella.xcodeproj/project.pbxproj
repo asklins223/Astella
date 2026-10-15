@@ -33,6 +33,10 @@
 		A10000000000000000000030 /* NotesMethods.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000032 /* NotesMethods.swift */; };
 		A10000000000000000000031 /* HandMethods.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000033 /* HandMethods.swift */; };
 		A10000000000000000000032 /* AccountMethods.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000034 /* AccountMethods.swift */; };
+		A10000000000000000000033 /* ModelDownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000035 /* ModelDownloadManager.swift */; };
+		A10000000000000000000034 /* CompanionEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000036 /* CompanionEvents.swift */; };
+		A10000000000000000000035 /* CompanionStageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000037 /* CompanionStageView.swift */; };
+		A10000000000000000000036 /* CompanionModelMethods.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000038 /* CompanionModelMethods.swift */; };
 		A10000000000000000000007 /* VoiceCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* VoiceCapture.swift */; };
 		A10000000000000000000009 /* NotesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* NotesScreen.swift */; };
 		A10000000000000000000010 /* HandAndAccountScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* HandAndAccountScreens.swift */; };
@@ -67,6 +71,10 @@
 		A20000000000000000000032 /* NotesMethods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesMethods.swift; sourceTree = "<group>"; };
 		A20000000000000000000033 /* HandMethods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandMethods.swift; sourceTree = "<group>"; };
 		A20000000000000000000034 /* AccountMethods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountMethods.swift; sourceTree = "<group>"; };
+		A20000000000000000000035 /* ModelDownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDownloadManager.swift; sourceTree = "<group>"; };
+		A20000000000000000000036 /* CompanionEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionEvents.swift; sourceTree = "<group>"; };
+		A20000000000000000000037 /* CompanionStageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionStageView.swift; sourceTree = "<group>"; };
+		A20000000000000000000038 /* CompanionModelMethods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionModelMethods.swift; sourceTree = "<group>"; };
 		A20000000000000000000009 /* NotesScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesScreen.swift; sourceTree = "<group>"; };
 		A20000000000000000000010 /* HandAndAccountScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandAndAccountScreens.swift; sourceTree = "<group>"; };
 		A20000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -117,6 +125,7 @@
 				A20000000000000000000032 /* NotesMethods.swift */,
 				A20000000000000000000033 /* HandMethods.swift */,
 				A20000000000000000000034 /* AccountMethods.swift */,
+				A20000000000000000000038 /* CompanionModelMethods.swift */,
 			);
 			path = Store;
 			sourceTree = "<group>";
@@ -172,12 +181,23 @@
 			path = Design;
 			sourceTree = "<group>";
 		};
+		A30000000000000000000011 /* Companion */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000035 /* ModelDownloadManager.swift */,
+				A20000000000000000000036 /* CompanionEvents.swift */,
+				A20000000000000000000037 /* CompanionStageView.swift */,
+			);
+			path = Companion;
+			sourceTree = "<group>";
+		};
 		A30000000000000000000003 /* Astella */ = {
 			isa = PBXGroup;
 			children = (
 				A30000000000000000000001 /* App */,
 				A30000000000000000000006 /* Auth */,
 				A30000000000000000000007 /* Shell */,
+				A30000000000000000000011 /* Companion */,
 				A30000000000000000000008 /* Conversation */,
 				A30000000000000000000005 /* Design */,
 				A30000000000000000000002 /* Screens */,
@@ -299,6 +319,10 @@
 				A10000000000000000000030 /* NotesMethods.swift in Sources */,
 				A10000000000000000000031 /* HandMethods.swift in Sources */,
 				A10000000000000000000032 /* AccountMethods.swift in Sources */,
+				A10000000000000000000033 /* ModelDownloadManager.swift in Sources */,
+				A10000000000000000000034 /* CompanionEvents.swift in Sources */,
+				A10000000000000000000035 /* CompanionStageView.swift in Sources */,
+				A10000000000000000000036 /* CompanionModelMethods.swift in Sources */,
 				A10000000000000000000009 /* NotesScreen.swift in Sources */,
 				A10000000000000000000010 /* HandAndAccountScreens.swift in Sources */,
 			);

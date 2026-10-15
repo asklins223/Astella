@@ -9,6 +9,8 @@ import Observation
 final class AppStore {
     let api = MobileAPI()
     let realtime = CompanionRealtime()
+    /// 伴星 Live2D 模型下载/缓存（阶段 4a）；init 中绑定 api，见下。
+    var companionModel: ModelDownloadManager
 
     var profile: UserProfile?
     var conversationId: String?
@@ -55,6 +57,7 @@ final class AppStore {
     var isAuthenticated: Bool { api.token != nil }
 
     init() {
+        companionModel = ModelDownloadManager(api: api)
         realtime.onEvent = { [weak self] event in self?.consume(event) }
         realtime.onState = { [weak self] state in self?.realtimeStatus = state }
         if api.token != nil {
